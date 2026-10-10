@@ -5541,6 +5541,266 @@ T("le via-ligne rejoint le pi en basse frequence", via_ligne_rejoint_le_pi)
 T("le moignon resonne a son quart d'onde", via_ligne_resonance_du_moignon)
 
 
+# -----------------------------------------------------------------------------
+# simulation_em 5.0.0 : LES OPTIONS DE ligne_mom 2.7.0 BRANCHEES
+# -----------------------------------------------------------------------------
+# Les pieces ci-dessus ne servaient a rien tant que la cascade ne les appelait
+# pas. On verifie qu'elle les appelle, et qu'elle le fait avec les bons
+# chiffres : la rugosite du facteur attendu, le dielectrique causal qui rend
+# la fiche a f_ref et seulement la, le via en ligne qui rejoint le pi, et la
+# mutuelle des futs de la paire.
+print("\nLes options de ligne_mom dans la cascade (simulation_em 5.0.0)")
+
+_FACE_SEULE = [_cu("GND", "plane"), _di("C", 0.2, 4.3), _cu("TOP", "signal")]
+_TRIPLAQUE = [_cu("G1", "plane"), _di("A", 0.2, 4.0), _cu("S", "signal"),
+              _di("B", 0.2, 4.0), _cu("G2", "plane")]
+
+
+def _gamma(abcd, longueur_m):
+    """gamma d'une ligne uniforme seule, lu sur son ABCD : A = ch(gamma l)."""
+    return np.arccosh(complex(abcd[0, 0])) / longueur_m
+
+
+def _ligne_seule(couches, couche, longueur, freqs, largeur=0.3, **stack):
+    d = _doc_via([_piste(0, 0, longueur, 0, couche, largeur=largeur)],
+                 couches=[dict(c) for c in couches], fc=1e9)
+    d["stackup"].update(stack)
+    return d, _se.simuler(d, garder_abcd=True, freqs_imposees=freqs)
+
+
+def la_section_recoit_sa_topologie_et_sa_hauteur():
+    """Microruban : « micro » et h ; triplaque centree : « triplaque » et b
+    entre plans ; triplaque decentree, coplanaire ou mode de paire : pas de
+    hauteur, elle se deduit. Et la cascade calcule avec les MEMES options que
+    le tableau : alpha au point central = alpha de la cascade a fc."""
+    g = _se._geometrie_pertes
+    assert g({"topo": "micro", "h": 2e-4}) == {"topologie": "micro", "hauteur": 2e-4}
+    assert g({"topo": "strip", "h": 1e-4, "b": 4e-4, "dissym": 0.0}) == \
+        {"topologie": "triplaque", "hauteur": 4e-4}
+    assert g({"topo": "strip", "h": 1e-4, "b": 4e-4, "dissym": 0.8}) == \
+        {"topologie": "triplaque"}
+    assert g({"topo": "micro", "h": 2e-4}, coplanaire=True) == {"topologie": "micro"}
+    assert g({"topo": "micro", "h": 2e-4}, couple=True) == {"topologie": "micro"}
+    lg = 0.03
+    d, r = _ligne_seule(_FACE_SEULE, 2, lg * 1e3, [1e9])
+    seg = r["segments"][0]
+    a_cascade = _gamma(r["abcd"][0], lg).real
+    a_table = seg["pertes_db"] / 8.686 / lg
+    proche(a_cascade, a_table, 2e-3, "alpha de la cascade contre celle du tableau")
+    # et c'est bien la hauteur de la section que `line_losses` a recue
+    z, eps = seg["z0"], seg["eps_eff"]
+    a_c, a_d = line_losses(z, eps, 0.3e-3, seg["er"], seg["tan_delta"], 1e9,
+                           35e-6, hauteur=seg["h"] * 1e-3, topologie="micro")
+    proche(a_c + a_d, a_table, 2e-3, "alpha du tableau contre line_losses(h donnee)")
+
+
+def la_rugosite_multiplie_la_perte_du_cuivre():
+    """Dielectrique sans perte : toute l'attenuation de la cascade est celle du
+    cuivre, et Rq = 1 um la multiplie par le K de Hammerstad-Groiss -- a la
+    resistance continue pres (0,2 %). Huray, borne par 1 + 3/2 SR. Zero : le
+    chiffre d'avant, au bit pres."""
+    sans_pertes = [dict(c, tan_delta=0.0) if c["type"] == "dielectric" else c
+                   for c in _FACE_SEULE]
+    fs, lg = [1e9, 5e9, 20e9], 0.05
+    _, r0 = _ligne_seule(sans_pertes, 2, lg * 1e3, fs)
+    lisse = [dict(c) for c in sans_pertes]
+    lisse[2]["rugosite_rms_um"] = 0.0
+    _, rz = _ligne_seule(lisse, 2, lg * 1e3, fs)
+    assert all(np.array_equal(a, b) for a, b in zip(r0["abcd"], rz["abcd"])), \
+        "une rugosite nulle change le resultat"
+    rug = [dict(c) for c in sans_pertes]
+    rug[2]["rugosite_rms_um"] = 1.0
+    _, r1 = _ligne_seule(rug, 2, lg * 1e3, fs)
+    hu = [dict(c) for c in sans_pertes]
+    hu[2].update(modele_rugosite="huray", rayon_nodule_um=0.5, rapport_surface=1.5)
+    _, r2 = _ligne_seule(hu, 2, lg * 1e3, fs)
+    for k, f in enumerate(fs):
+        a0 = _gamma(r0["abcd"][k], lg).real
+        k_ham = _gamma(r1["abcd"][k], lg).real / a0
+        k_hu = _gamma(r2["abcd"][k], lg).real / a0
+        proche(k_ham, _tl.facteur_rugosite(f, 1e-6), 3e-3,
+               "K de la cascade a %.0f GHz (Hammerstad, Rq 1 um)" % (f / 1e9))
+        proche(k_hu, _tl.facteur_rugosite(f, modele="huray", rayon_nodule=0.5e-6,
+                                          rapport_surface=1.5), 3e-3,
+               "K de la cascade a %.0f GHz (Huray)" % (f / 1e9))
+        assert 1.0 < k_hu < 1.0 + 1.5 * 1.5, k_hu
+    assert r1["modeles"]["rugosite"] == [2], r1["modeles"]
+
+
+def le_dielectrique_causal_rend_la_fiche_a_f_ref():
+    """Triplaque : eps_eff = er, donc (beta causal / beta) ^ 2 = er(f) / er
+    EXACTEMENT. A f_ref la cascade est la meme au bit pres ; au-dessus, er
+    baisse et la phase avance ; au-dessous, l'inverse. Desactive par defaut."""
+    fs, lg = [1e8, 1e9, 1e10], 0.002
+    _, r0 = _ligne_seule(_TRIPLAQUE, 2, lg * 1e3, fs, largeur=0.15)
+    _, r1 = _ligne_seule(_TRIPLAQUE, 2, lg * 1e3, fs, largeur=0.15,
+                         dielectrique_causal=True, f_ref_dielectrique=1e9)
+    assert r0["modeles"]["dielectrique_causal"] is False
+    assert r1["modeles"]["dielectrique_causal"] is True
+    assert np.allclose(r0["abcd"][1], r1["abcd"][1], rtol=1e-12, atol=0), \
+        "a f_ref, le causal doit rendre la fiche"
+    for k, f in enumerate(fs):
+        rapport = (_gamma(r1["abcd"][k], lg).imag / _gamma(r0["abcd"][k], lg).imag) ** 2
+        er_f, _ = _tl.djordjevic_sarkar(4.0, 0.02, 1e9, f)
+        proche(rapport, er_f / 4.0, 1e-6, "er(f)/er dans la vitesse de phase a %.1g Hz" % f)
+    assert _gamma(r1["abcd"][2], lg).imag < _gamma(r0["abcd"][2], lg).imag
+    assert _gamma(r1["abcd"][0], lg).imag > _gamma(r0["abcd"][0], lg).imag
+    # et le .s2p le dit
+    assert "Dielectrique causal" in r1["touchstone"] and \
+        "causal" not in r0["touchstone"]
+
+
+def _doc_via_options(modele, f_debut, f_fin, n=11):
+    via = {"drill_diameter": 0.25, "pad_diameter": 0.55,
+           "antipad_diameter": 0.80, "layer_from": 0, "layer_to": 6}
+    d = _doc_via([_piste(0, 0, 10, 0, 0), _piste(10, 0, 20, 0, 6, via=via)])
+    d["analyse"] = {"f_debut": f_debut, "f_fin": f_fin, "f_centre": f_debut,
+                    "points": n}
+    if modele:
+        d["stackup"]["modele_via"] = modele
+    return d
+
+
+def le_via_en_ligne_rejoint_le_pi():
+    """Meme L, meme C : a 10 MHz la cascade avec le via en ligne est celle du
+    pi a 1e-5 pres ; a 40 GHz, ou le via n'est plus court, elles divergent.
+    « auto » garde le pi -- au bit pres -- sur une bande basse, et passe en
+    ligne sur une bande haute ; la fiche dit lequel a servi."""
+    fs = [1e7, 4e10]
+    s = {}
+    for m in ("pi", "ligne"):
+        r = _se.simuler(_doc_via_options(m, 1e7, 4e10), garder_abcd=True,
+                        freqs_imposees=fs)
+        s[m] = r
+        assert r["discontinuites"]["transitions"][0]["modelise"]["modele_via"] == m
+    a_pi, a_li = s["pi"]["abcd"], s["ligne"]["abcd"]
+    # LES REACTANCES : la ligne porte en plus la resistance du barreau
+    # (R' du coaxial, 1,8 milliohm a 10 MHz), que le pi n'a pas.
+    proche(a_li[0][0, 1].imag, a_pi[0][0, 1].imag, 1e-5, "B (serie) a 10 MHz")
+    proche(a_li[0][1, 0].imag, a_pi[0][1, 0].imag, 1e-5, "C (derivation) a 10 MHz")
+    assert 0.0 <= a_li[0][0, 1].real - a_pi[0][0, 1].real < 5e-3, (a_li[0], a_pi[0])
+    s_pi = cascade_to_s(a_pi[1])
+    s_li = cascade_to_s(a_li[1])
+    assert abs(s_li[0, 0] - s_pi[0, 0]) > 1e-3, (s_li[0, 0], s_pi[0, 0])
+    # « auto » : bande basse -> pi, au bit pres ; bande haute -> ligne
+    bas = _se.simuler(_doc_via_options("auto", 1e8, 2e9))
+    bas_pi = _se.simuler(_doc_via_options("pi", 1e8, 2e9))
+    t = bas["discontinuites"]["transitions"][0]["modelise"]
+    assert t["modele_via"] == "pi" and t["phase_via_rad"] < _se.SEUIL_VIA_LIGNE, t
+    assert bas["s"] == bas_pi["s"], "sous le seuil, « auto » doit rendre le pi"
+    haut = _se.simuler(_doc_via_options(None, 1e8, 4e10))
+    t = haut["discontinuites"]["transitions"][0]["modelise"]
+    assert _se.MODELE_VIA_DEFAUT == "auto" and t["modele_via_demande"] == "auto"
+    assert t["modele_via"] == "ligne" and t["type"].startswith("ligne"), t
+
+
+def le_via_en_ligne_garde_le_moignon_et_le_contre_percage():
+    """Le via en ligne porte les MEMES moignons que le pi (`_moignons`) : a la
+    resonance du moignon entier la liaison s'effondre, et le contre-percage la
+    releve -- comme avec le pi."""
+    via = _via_moignon(0, 8)
+    r0 = _se.simuler(_doc_moignon(_SIX, 0, 4, via, fc=1e9, fmax=2e9))
+    f_res = r0["discontinuites"]["transitions"][0]["moignons"]["arrivee"]["resonance_hz"]
+    cp = dict(via, contre_percage={"cote": "dessous", "couche_garde": 4,
+                                   "moignon_residuel_mm": 0.1})
+
+    def creux(v):
+        d = _doc_moignon(_SIX, 0, 4, v, fc=f_res, fmax=f_res * 1.4)
+        d["analyse"]["f_debut"] = f_res * 0.6
+        d["analyse"]["points"] = 41
+        d["stackup"]["modele_via"] = "ligne"
+        r = _se.simuler(d)
+        assert r["discontinuites"]["transitions"][0]["modelise"]["modele_via"] == "ligne"
+        return min(20 * np.log10(max(abs(complex(*x[2])), 1e-15)) for x in r["s"])
+    avant, apres = creux(via), creux(cp)
+    assert avant < -20.0 and apres > avant + 20.0, (avant, apres)
+
+
+def _doc_paire_vias(ecart_vias, partenaire_connue=True):
+    vp = {"drill_diameter": 0.3, "pad_diameter": 0.6, "layer_from": 0,
+          "layer_to": 6, "x": 20.0, "y": 0.0, "net": "P"}
+    vn = dict(vp, y=ecart_vias, net="N")
+
+    def piste(x1, x2, couche, net, y, via=None):
+        o = _piste(x1, y, x2, y, couche, largeur=0.2, via=via)
+        o["net"] = net
+        return o
+    d = {"format": "cao-sim-em-3", "net": "P",
+         "stackup": {"layers": [dict(c) for c in _QUATRE]},
+         "geometry": {"objects": [piste(0, 20, 0, "P", 0.0),
+                                  piste(20, 40, 6, "P", 0.0, vp)]},
+         "voisinage": [piste(0, 20, 0, "N", 0.35),
+                       piste(20, 40, 6, "N", 0.35, vn)],
+         "paires": [["P", "N"]],
+         "vias": [vn] if partenaire_connue else [],
+         "analyse": {"f_debut": 1e8, "f_fin": 2e10, "f_centre": 1e9,
+                     "points": 11}}
+    if not partenaire_connue:
+        d["voisinage"][1].pop("via")
+    return d
+
+
+def la_mutuelle_des_futs_baisse_l_impair():
+    """Deux futs de la paire, courants opposes en mode impair : L - M, d'autant
+    plus bas qu'ils sont proches -- Grover (`mutuelle_partielle`), et sans
+    retour M est EXACTEMENT la mutuelle partielle des deux futs. Le mode
+    commun prend L + M. Sans via de la partenaire dans le document, l'ecart
+    est celui de la paire, jamais moins que l'antipad."""
+    vus = []
+    for e in (0.6, 1.0, 2.5):
+        r = _se.simuler(_doc_paire_vias(e))
+        m = r["s_diff"]["vias_mutuelle"][0]
+        assert m["ecart_source"] == "geometrie" and m["ecart_mm"] == e, m
+        vus.append((m["l_impair_nH"], m["m_impair_nH"], m["c_mutuelle_fF"], r))
+    assert vus[0][0] < vus[1][0] < vus[2][0], [v[0] for v in vus]
+    assert vus[0][2] > vus[1][2] > vus[2][2] >= 0.0, [v[2] for v in vus]
+    # sans retour : la mutuelle partielle de Grover, au chiffre pres
+    t = vus[1][3]["discontinuites"]["transitions"][0]
+    assert t["modelise"]["inductance_source"] == "self", t["modelise"]
+    h = t["cotes"]["hauteur_mm"] * 1e-3
+    m12 = _tl.mutuelle_partielle(0.0, h, 0.0, h, 1.0e-3)
+    proche(vus[1][1] * 1e-9, m12, 1e-3, "M des futs a 1 mm contre Grover")
+    # le mode impair voit la difference : |Sdd11| bouge entre 0,6 et 2,5 mm
+    s06 = vus[0][3]["s_diff"]["s_dd"][-1][0]
+    s25 = vus[2][3]["s_diff"]["s_dd"][-1][0]
+    assert abs(complex(*s06) - complex(*s25)) > 1e-3, (s06, s25)
+    # partenaire absente : l'ecart de la paire (0,35 mm) ramene a l'antipad
+    r = _se.simuler(_doc_paire_vias(1.0, partenaire_connue=False))
+    m = r["s_diff"]["vias_mutuelle"][0]
+    assert m["ecart_source"] == "antipad" and m["ecart_mm"] >= 0.6, m
+
+
+def le_dielectrique_causal_entre_dans_la_paire():
+    """La cascade differentielle -- celle de l'oeil -- prend er(f) dans ses
+    deux modes : identique a f_ref, plus rapide au-dessus."""
+    fs = [1e9, 1e10]
+    d0 = _doc_paire_vias(1.0)
+    d1 = _doc_paire_vias(1.0)
+    d1["stackup"].update(dielectrique_causal=True, f_ref_dielectrique=1e9)
+    r0 = _se.simuler(d0, garder_abcd=True, freqs_imposees=fs)["s_diff"]
+    r1 = _se.simuler(d1, garder_abcd=True, freqs_imposees=fs)["s_diff"]
+    assert np.allclose(r0["abcd_dd"][0], r1["abcd_dd"][0], rtol=1e-12, atol=0)
+    assert np.allclose(r0["s_cc"][0], r1["s_cc"][0], rtol=1e-12, atol=0)
+    p0 = np.angle(complex(*r0["s_dd"][1][2]))
+    p1 = np.angle(complex(*r1["s_dd"][1][2]))
+    assert abs(p1 - p0) > 1e-3, (p0, p1)
+
+
+T("le dielectrique causal entre dans la paire", le_dielectrique_causal_entre_dans_la_paire)
+T("la section donne sa topologie et sa hauteur aux pertes",
+  la_section_recoit_sa_topologie_et_sa_hauteur)
+T("la rugosite multiplie la perte du cuivre de la cascade par K",
+  la_rugosite_multiplie_la_perte_du_cuivre)
+T("le dielectrique causal rend la fiche a f_ref, er(f) dans la phase",
+  le_dielectrique_causal_rend_la_fiche_a_f_ref)
+T("le via en ligne rejoint le pi en basse frequence, « auto » choisit",
+  le_via_en_ligne_rejoint_le_pi)
+T("le via en ligne garde le moignon et le contre-percage",
+  le_via_en_ligne_garde_le_moignon_et_le_contre_percage)
+T("la mutuelle des futs de la paire : plus proches, L impair plus bas",
+  la_mutuelle_des_futs_baisse_l_impair)
+
+
 print("\n" + "-" * 62)
 print("  %d cas, %s" % (ok + ko, "tous passes" if not ko else "%d en echec" % ko))
 sys.exit(1 if ko else 0)

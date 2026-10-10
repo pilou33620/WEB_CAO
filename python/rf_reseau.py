@@ -89,7 +89,13 @@ try:
 except Exception:                                      # noqa: BLE001
     _SPARSE = None
 
-VERSION = "1.5.0"
+# 1.6.0 (2026-10-10) : les options de `ligne_mom` 2.7.0 -- topologie, hauteur
+# et rugosite de la couche dans les pertes du cuivre (piste de masse et
+# sections couplees), dielectrique causal dans [C](f) et tan delta(f) des
+# sections couplees. Les branches les recoivent par `simulation_em.simuler`.
+# La piste de masse passe aussi son epaisseur de cuivre, qu'elle laissait au
+# 35 um par defaut.
+VERSION = "1.6.0"
 FORMAT = "cao-sim-rf-1"
 FORMAT_RESULTAT = "cao-sim-rf-resultat-1"
 MASSE = "0"
@@ -610,7 +616,14 @@ def _ligne(couches, couche, largeur_mm, ep_mm, cache):
             "c": math.sqrt(r["eps_eff"]) / (tl.C_0 * r["z0"]),
             "l": r["z0"] * math.sqrt(r["eps_eff"]) / tl.C_0,
             "z0": r["z0"], "eps": r["eps_eff"], "h": info["h"],
-            "er": info["er"], "tan_delta": info["tan_delta"]}
+            "er": info["er"], "tan_delta": info["tan_delta"],
+            # LES OPTIONS DE PERTES DE CETTE SECTION (1.6.0) : la ligne est
+            # seule face a son plan, sans masse coplanaire -- elle recoit sa
+            # topologie, sa hauteur (h au plan, ou b entre plans) et la
+            # rugosite de sa couche. Voir `simulation_em._geometrie_pertes`.
+            "kw_pertes": dict(se._geometrie_pertes(info),
+                              **se._rugosite_couche(couches, couche)),
+            "ep": ep_mm}
     return cache[cle]
 
 
@@ -1205,7 +1218,8 @@ def admittance_masse(couches, g, freqs, cache):
             z = 1j * w * lv
             if li:
                 a_c, _ = tl.line_losses(li["z0"], li["eps"], larg * 1e-3,
-                                        li["er"], 0.0, f)
+                                        li["er"], 0.0, f, li["ep"] * 1e-3,
+                                        **li["kw_pertes"])
                 z += (2 * a_c * li["z0"] + 1j * w * li["l"]) * lg
             y += 1.0 / z
         ys.append(y)
@@ -1465,10 +1479,13 @@ def _decouper(branches, coupes):
 
 def phi_mtl(l_m, c_m, r_par_f, tan_delta, longueur_m, freqs):
     """`l_m` et `c_m` sont une matrice, ou une LISTE par frequence quand la
-    section est dispersive."""
+    section est dispersive ; `tan_delta` un nombre, ou une liste par
+    frequence quand le dielectrique est causal."""
     return [_phi_un(l_m[k] if isinstance(l_m, list) else l_m,
                     c_m[k] if isinstance(c_m, list) else c_m,
-                    r_par_f[k], tan_delta, longueur_m, f)
+                    r_par_f[k],
+                    tan_delta[k] if isinstance(tan_delta, list) else tan_delta,
+                    longueur_m, f)
             for k, f in enumerate(freqs)]
 
 
@@ -1546,9 +1563,15 @@ def _expm(a):
     return e
 
 
-def y_section(couches, section, objs, freqs, cache):
+def y_section(couches, section, objs, freqs, cache, opts=None):
     """Le 2N-ports d'une section couplee, bornes [proches..., lointaines...]
-    dans l'ordre lateral, et sa fiche."""
+    dans l'ordre lateral, et sa fiche.
+
+    `opts` (`simulation_em.options_modele`) : avec le dielectrique causal,
+    [C](f) suit er(f) a remplissage constant -- C0 + (C - C0)(er(f) - 1)/
+    (er - 1), la meme approximation que la ligne seule -- et tan delta(f) la
+    fiche prolongee. Les pertes du cuivre prennent la topologie et la
+    rugosite de la couche, pas la hauteur : la section est couplee."""
     membres = section["membres"]
     o0 = objs[0]
     couche = int(_nombre(o0.get("layer"), 0))
@@ -1575,11 +1598,13 @@ def y_section(couches, section, objs, freqs, cache):
     c_m = np.asarray(r["c"])[np.ix_(ordre, ordre)]
     lignes = [r["lignes"][q] for q in ordre]
     tan_d = _nombre(info.get("tan_delta"), 0.0)
+    kw = dict(se._geometrie_pertes(info, couple=True),
+              **se._rugosite_couche(couches, couche))
     r_f = []
     for f in freqs:
         r_f.append([2 * tl.line_losses(li["z0"], li["eps_eff"],
                                        _nombre(o.get("width")) * 1e-3,
-                                       info["er"], 0.0, f, ep * 1e-3)[0]
+                                       info["er"], 0.0, f, ep * 1e-3, **kw)[0]
                     * li["z0"] for li, o in zip(lignes, objs)])
     lg = (section["t2"] - section["t1"]) * 1e-3
     ys = []
@@ -1588,6 +1613,19 @@ def y_section(couches, section, objs, freqs, cache):
     # noyee dans un milieu homogene, n'en a pas.
     l_f, c_f = (dispersion_modale(l_m, c_m, info["er"], info["h"], freqs)
                 if info.get("topo") == "micro" else (l_m, c_m))
+    # LE DIELECTRIQUE CAUSAL : la part dielectrique de [C] suit er(f), et
+    # tan delta(f) la fiche. Rien ne bouge sans l'option.
+    er = _nombre(info.get("er"), 1.0)
+    if (opts or {}).get("causal") and er > 1.0 and tan_d > 0:
+        c0_m = np.asarray(r["c0"])[np.ix_(ordre, ordre)]
+        tds = []
+        cs = []
+        for k, f in enumerate(freqs):
+            er_f, td_f = se._dielectrique(er, tan_d, f, opts)
+            c_k = c_f[k] if isinstance(c_f, list) else c_f
+            cs.append(c0_m + (c_k - c0_m) * ((er_f - 1.0) / (er - 1.0)))
+            tds.append(td_f)
+        c_f, tan_d = cs, tds
     for p in phi_mtl(l_f, c_f, r_f, tan_d, lg, freqs):
         a_, b_, c_, d_ = p[:n, :n], p[:n, n:], p[n:, :n], p[n:, n:]
         bi = np.linalg.inv(b_)
@@ -1987,7 +2025,8 @@ def analyser(doc, journal=None):
                    for p, m in zip(prises, sec["membres"])]
         loin = [p[1] if m["sens"] else p[0]
                 for p, m in zip(prises, sec["membres"])]
-        yc = y_section(couches, sec, [p[2] for p in prises], freqs, cache)
+        yc = y_section(couches, sec, [p[2] for p in prises], freqs, cache,
+                       se.options_modele(doc))
         nets = [brutes[m["obj"][0]].get("net") or "" for m in sec["membres"]]
         if yc is None:
             raise ErreurRF("Longement non calculable entre %s."

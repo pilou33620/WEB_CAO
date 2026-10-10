@@ -2,6 +2,45 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 5.0.0
+# Date: 2026-10-10
+# Explication: LES OPTIONS DE ligne_mom 2.7.0 SONT BRANCHEES, ET LA MUTUELLE
+#   DES FUTS DE LA PAIRE EST COMPTEE. Voir la section « LES OPTIONS DE
+#   ligne_mom 2.7.0, BRANCHEES ICI », plus bas.
+#   1. HAUTEUR ET TOPOLOGIE (actif) : chaque section les donne a
+#      `line_losses` -- la topologie toujours, la hauteur (h, ou b entre
+#      plans) pour le ruban seul ; pas pour une coplanaire, un mode de paire
+#      ou une triplaque decentree, ou la hauteur deduite rend mieux le
+#      courant resserre. +0,07 % a +0,6 % sur les pertes des cas mesures.
+#   2. RUGOSITE (empilage, par couche ; lisse par defaut) : `_rugosite_couche`
+#      lit rugosite_rms_um / modele_rugosite / rayon_nodule_um /
+#      rapport_surface sur la couche de cuivre de la piste.
+#   3. DIELECTRIQUE CAUSAL (empilage ; desactive) : Djordjevic-Sarkar cale a
+#      f_ref_dielectrique, dans les pertes ET dans eps_eff et Z0 a remplissage
+#      constant -- cascade simple, paire (donc l'oeil), RF.
+#   4. MODELE DE VIA « pi » / « ligne » / « auto » (defaut « auto ») :
+#      `_abcd_via` pose le barreau en ligne avec le MEME L et le MEME C que le
+#      pi (il le rejoint en basse frequence), moignons et contre-percage
+#      compris ; « auto » garde le pi au bit pres tant que la phase du via
+#      reste sous 0,3 rad au haut de la bande. Tous les bancs passent avec.
+#   5. LA MUTUELLE DES FUTS DE LA PAIRE (`_mutuelle_paire`) : L - M en mode
+#      impair, L + M en mode commun, 2 C_m de plus par brin en impair ; ecart
+#      lu sur le via de la partenaire, sinon celui de la paire (jamais sous
+#      l'antipad). `s_diff["vias_mutuelle"]` le detaille.
+#   Le resultat porte `modeles` (les options qui ont servi), chaque
+#   transition `modelise.modele_via` ; le .s2p le note quand une option
+#   s'ecarte du defaut. Le format d'entree reste « cao-sim-em-3 » : les cles
+#   sont facultatives, et sans elles le calcul ne change que par le point 1
+#   (et le point 4 au-dela du seuil).
+#   RESTE (non corrige ici, signale) : la cascade passe a Getsinger le Z0
+#   STATIQUE avec l'eps_eff DEJA DISPERSE au point central.
+# Fonctions ajoutees : options_modele, _rugosite_couche, _dielectrique,
+#   _milieu_causal, _geometrie_pertes, _ligne_a, _abcd_via,
+#   _modele_via_resolu, _via_de_la_partenaire, _inductances_paire_vias,
+#   _capacite_mutuelle_vias, _mutuelle_paire.
+# Fonctions modifiees : simuler, _cascade_differentielle (+ opts),
+#   _modele_transition (rend « ligne » et « geo »).
+#
 # Version: 4.4.0
 # Date: 2026-10-10
 # Explication: LES VIAS ET LES COUDES DE LA PAIRE ENTRENT DANS LA CASCADE
@@ -684,7 +723,7 @@ except Exception as _exc:                              # noqa: BLE001
 
 FORMAT = "cao-sim-em-3"
 FORMAT_RESULTAT = "cao-sim-em-resultat-5"
-VERSION = "4.4.0"
+VERSION = "5.0.0"
 VERSION_MOTEURS = {
     "simulation_em": VERSION,
     "ligne_mom": getattr(tl, "VERSION", "2.5.0") if tl is not None else "indisponible",
@@ -2686,11 +2725,39 @@ def _modele_transition(trans, objets, segments, couches, z_bornes, refs_nets,
 
     trans["impact_retour"] = impact
 
+    # CE QUE LE VIA EN LIGNE ET LA MUTUELLE DE LA PAIRE LISENT, EN METRES ET
+    # EN FARADS : le barreau emprunte, ses pastilles, le milieu qu'il
+    # traverse, sa position et ses retours. Voir `_abcd_via` et
+    # `_mutuelle_paire`.
+    a = int(_nombre(trans.get("couche_depart"), 0))
+    b = int(_nombre(trans.get("couche_arrivee"), 0))
+    lo, hi = sorted((a, b))
+    z1 = (z_bornes[lo] if lo < len(z_bornes) else 0.0) * 1e-3
+    z2 = (z_bornes[hi + 1] if hi + 1 < len(z_bornes) else 0.0) * 1e-3
+    er_v, td_v = _milieu_traverse(couches, lo, hi)
+    cap = trans.get("capacite") or {}
+    a_position = (via or {}).get("x") is not None \
+        and (via or {}).get("y") is not None
+    retours = [{"x": _nombre(f.get("x")) * 1e-3, "y": _nombre(f.get("y")) * 1e-3,
+                "z1": z1, "z2": z2,
+                "rayon": max(_nombre(f.get("percage_mm"), 0.0), 1e-3) * 1e-3 / 2.0}
+               for f in ((trans.get("retour") or {}).get("vias") or [])
+               if f.get("retenu") and f.get("x") is not None
+               and f.get("y") is not None]
     return {"l": l_via, "c": c_via,
             "moignon_depart": moignons["depart"],
             "moignon_arrivee": moignons["arrivee"],
             "percage": d_percage, "antipad": d_antipad,
-            "cavite": param_cav}
+            "cavite": param_cav,
+            "ligne": {"longueur": max(z2 - z1, 0.0),
+                      "c_depart": _nombre(cap.get("pastille_depart_fF")) * 1e-15,
+                      "c_arrivee": _nombre(cap.get("pastille_arrivee_fF")) * 1e-15,
+                      "er": er_v, "tan_delta": td_v},
+            "geo": {"x_mm": _nombre((via or {}).get("x")),
+                    "y_mm": _nombre((via or {}).get("y")),
+                    "a_position": a_position,
+                    "z1": z1, "z2": z2, "lo": lo, "hi": hi,
+                    "retours": retours}}
 
 
 # ==========================================================================
@@ -5730,6 +5797,431 @@ def _couplage(couches, objets, doc, analyse, avertissements):
     }
 
 
+# ==========================================================================
+# LES OPTIONS DE ligne_mom 2.7.0, BRANCHEES ICI
+# --------------------------------------------------------------------------
+# `line_losses` sait depuis la 2.7.0 la hauteur, la topologie, la rugosite et
+# le dielectrique causal, et `abcd_via_ligne` pose le via en troncon de ligne.
+# Rien ne les lui passait. Ce qui suit les lit dans le document et les remet
+# a qui calcule -- la cascade simple, la paire, la RF et l'oeil, qui passent
+# tous par ici.
+#
+#   · HAUTEUR ET TOPOLOGIE : ACTIVES. La topologie se lisait sur eps_eff, et un
+#     microruban COUVERT, dont eps_eff frole er, passait pour une triplaque ;
+#     la hauteur se deduisait de Z0.racine(eps_eff), qui derive avec la
+#     dispersion de Getsinger. On les donne quand la section les connait.
+#     PAS LA HAUTEUR d'une section coplanaire ou d'un mode de paire : la
+#     regle de Wheeler ne voit alors que le microruban, et la hauteur DEDUITE
+#     -- plus basse -- est celle qui rend le courant resserre sur les aretes
+#     en regard. Ni celle d'une triplaque nettement decentree, que la formule
+#     de Wheeler 1978 suppose centree : la deduction rend mieux l'asymetrie.
+#   · RUGOSITE : par couche de cuivre, dans l'empilage. Zero par defaut, et
+#     zero rend K = 1 exactement.
+#   · DIELECTRIQUE CAUSAL : dans l'empilage. Desactive par defaut. Il entre
+#     dans les pertes ET dans la vitesse de phase : er(f) fait eps_eff(f) a
+#     remplissage constant, et Z0 suit -- Z0.racine(eps_eff) ne depend que de
+#     la geometrie. A f_ref, tout est identique au calcul non causal.
+#   · MODELE DE VIA : « pi », « ligne » ou « auto » (defaut). La ligne porte
+#     le MEME L et le MEME C que le pi -- elle le rejoint en basse frequence --
+#     mais repartis : c'est le pi qui derive quand le via n'est plus court
+#     devant la longueur d'onde. « auto » garde le pi tant que la phase du
+#     via au haut de la bande reste sous SEUIL_VIA_LIGNE, ou les deux sont le
+#     meme chiffre a 3e-4 pres, et passe en ligne au-dessus. ACTIF PAR
+#     DEFAUT : sous le seuil le resultat est celui du pi au bit pres, et tous
+#     les bancs passent avec (oeil a 16 Gb/s et RF compris).
+# ==========================================================================
+
+MODELES_VIA = ("pi", "ligne", "auto")
+MODELE_VIA_DEFAUT = "auto"
+
+# La frequence a laquelle la fiche du stratifie donne er et tan delta, quand
+# l'empilage ne la dit pas. C'est celle des fiches de FR-4 courantes.
+F_REF_DIELECTRIQUE = 1e9
+
+# « auto » passe le via en ligne quand sa phase propre, omega.racine(L C) au
+# haut de la bande, depasse ce seuil. A 0,3 rad, le pi C/2-L-C/2 s'ecarte de
+# la ligne de theta^4/24 = 3e-4 sur le terme A : en dessous, les deux sont le
+# meme chiffre et le pi garde ses resultats au bit pres.
+SEUIL_VIA_LIGNE = 0.3
+
+# Au-dela de cette dissymetrie (|t_haut - t_bas| / max), une triplaque ne
+# recoit pas sa hauteur entre plans : Wheeler 1978 la suppose centree.
+DISSYM_MAX_HAUTEUR = 0.2
+
+
+def _rugosite_couche(couches, indice):
+    """Les options de rugosite de `line_losses` pour une couche de cuivre, EN
+    METRES. Rien quand la couche n'en porte pas : K = 1.
+
+    Le document les ecrit EN MICROMETRES, et la cle le dit : rugosite_rms_um,
+    rayon_nodule_um. C'est l'unite dans laquelle les fiches de cuivre les
+    donnent, et une rugosite en millimetres ne se relit pas.
+
+    LA RUGOSITE EST CELLE DE LA COUCHE DE LA PISTE, et elle vaut pour le plan
+    aussi : `line_losses` n'a qu'un facteur. Un plan d'un autre cuivre que la
+    piste est donc compte avec celui de la piste -- c'est ecrit, et c'est la
+    face de la piste qui porte l'essentiel du courant en microruban.
+    """
+    if not (0 <= int(indice) < len(couches)):
+        return {}
+    c = couches[int(indice)] or {}
+    if c.get("type") != "copper":
+        return {}
+    modele = str(c.get("modele_rugosite") or "hammerstad").strip().lower()
+    rms = max(0.0, _nombre(c.get("rugosite_rms_um"), 0.0))
+    a = max(0.0, _nombre(c.get("rayon_nodule_um"), 0.0))
+    sr = max(0.0, _nombre(c.get("rapport_surface"), 0.0))
+    if modele == "huray" and a > 0 and sr > 0:
+        return {"modele_rugosite": "huray", "rayon_nodule": a * 1e-6,
+                "rapport_surface": sr}
+    if rms > 0:
+        return {"modele_rugosite": "hammerstad", "rugosite_rms": rms * 1e-6}
+    return {}
+
+
+def options_modele(doc):
+    """Les options de modele que porte le document : {causal, f_ref,
+    modele_via}.
+
+    Elles vivent dans l'EMPILAGE -- ce sont des proprietes de la carte et de
+    la facon de la decrire, et l'empilage voyage tel quel jusqu'a la RF et a
+    l'oeil -- ; `analyse` peut les surcharger, pour un « et si » qui ne touche
+    pas a la carte.
+    """
+    st = (doc or {}).get("stackup") or {}
+    a = (doc or {}).get("analyse") or {}
+
+    def lire(cle, defaut):
+        for src in (a, st):
+            if isinstance(src, dict) and src.get(cle) is not None:
+                return src.get(cle)
+        return defaut
+
+    f_ref = _nombre(lire("f_ref_dielectrique", F_REF_DIELECTRIQUE),
+                    F_REF_DIELECTRIQUE)
+    if not (f_ref > 0):
+        f_ref = F_REF_DIELECTRIQUE
+    mv = str(lire("modele_via", MODELE_VIA_DEFAUT) or "").strip().lower()
+    mv = {"π": "pi", "pi_l_c": "pi"}.get(mv, mv)
+    if mv not in MODELES_VIA:
+        mv = MODELE_VIA_DEFAUT
+    return {"causal": lire("dielectrique_causal", False) is True,
+            "f_ref": f_ref, "modele_via": mv}
+
+
+def _dielectrique(er, td, f, opts):
+    """(er, tan delta) a la frequence f : la fiche telle quelle, ou prolongee
+    par Djordjevic-Sarkar quand le dielectrique est causal."""
+    if not (opts and opts.get("causal")) or not (er > 1.0 and td > 0 and f > 0):
+        return er, td
+    return tl.djordjevic_sarkar(er, td, opts["f_ref"], f)
+
+
+def _milieu_causal(z0, eps, er, er_f):
+    """Z0 et eps_eff quand er devient er_f, a REMPLISSAGE CONSTANT.
+
+    q = (eps_eff - 1)/(er - 1) ne depend que de la geometrie ; Z0.racine(eps_eff)
+    non plus -- c'est Z0 dans l'air. La meme approximation que
+    `ligne_mom._pertes`, et elle est exacte en triplaque (q = 1).
+    """
+    if er_f == er or not (er > 1.0) or not (eps > 0):
+        return z0, eps
+    q = (eps - 1.0) / (er - 1.0)
+    eps_f = 1.0 + q * (er_f - 1.0)
+    if not (eps_f > 0):
+        return z0, eps
+    return z0 * math.sqrt(eps / eps_f), eps_f
+
+
+def _geometrie_pertes(info, coplanaire=False, couple=False):
+    """Topologie et hauteur pour `line_losses`, EN METRES. Voir l'en-tete :
+    la hauteur seulement quand la section est le ruban seul face a son ou
+    ses plans."""
+    triplaque = (info or {}).get("topo") == "strip"
+    kw = {"topologie": "triplaque" if triplaque else "micro"}
+    if coplanaire or couple:
+        return kw
+    if triplaque:
+        if _nombre(info.get("dissym"), 0.0) <= DISSYM_MAX_HAUTEUR \
+                and _nombre(info.get("b"), 0.0) > 0:
+            kw["hauteur"] = float(info["b"])
+    elif _nombre(info.get("h"), 0.0) > 0:
+        kw["hauteur"] = float(info["h"])
+    return kw
+
+
+def _ligne_a(z_stat, eps_stat, info, f, w_m, ep_m, kw, opts):
+    """(eps_eff, Z0, alpha_c, alpha_d) d'une section a la frequence f.
+
+    LE MEME CALCUL AU POINT CENTRAL ET DANS LA CASCADE : dielectrique (causal
+    ou non), Getsinger en microruban, puis les pertes avec les options de la
+    section. Sans option, c'est exactement ce que les deux faisaient.
+    """
+    er, td = info["er"], info["tan_delta"]
+    er_f, td_f = _dielectrique(er, td, f, opts)
+    z0, eps = _milieu_causal(z_stat, eps_stat, er, er_f)
+    if info["topo"] == "micro":
+        eps_f, z_f = tl.dispersion_getsinger(z0, eps, er_f, info["h"], f)
+    else:
+        eps_f, z_f = eps, z0
+    a_c, a_d = tl.line_losses(z_f, eps_f, w_m, er_f, td_f, f, ep_m, **kw)
+    return eps_f, z_f, a_c, a_d
+
+
+def _abcd_via(mv, f, z_t=0.0, modele="pi", l_via=None, c_via=None):
+    """La matrice ABCD d'un via de la cascade, en pi ou en ligne. EN SI.
+
+    `l_via` et `c_via` remplacent le L et le C du modele -- c'est ce que fait
+    la paire en mode impair, ou la mutuelle des futs les change.
+
+    EN LIGNE, LE MEME L ET LE MEME C. Le C de la ligne est celui des antipads,
+    reparti sur le barreau ; les pastilles restent en derivation a chaque
+    bout, les moignons aussi (`_admittance_moignon`, contre-percage compris).
+    Zc = racine(L/C) et le retard racine(L C) font une permittivite equivalente
+    que `abcd_via_ligne` lit avec `z_via` : B -> j omega L et C -> j omega C en
+    basse frequence, le pi exactement. La traversee de cavite, en serie, se
+    pose au milieu du barreau.
+    """
+    f = float(f)
+    l_v = mv["l"] if l_via is None else float(l_via)
+    c_v = mv["c"] if c_via is None else float(c_via)
+    y_dep = _admittance_moignon(mv["moignon_depart"], mv["percage"],
+                                mv["antipad"], f)
+    y_arr = _admittance_moignon(mv["moignon_arrivee"], mv["percage"],
+                                mv["antipad"], f)
+    lg = mv.get("ligne") or {}
+    c_dist = c_v - lg.get("c_depart", 0.0) - lg.get("c_arrivee", 0.0)
+    if modele == "ligne" and lg and l_v > 0 and c_dist > 0 \
+            and lg.get("longueur", 0.0) > 0:
+        tau = math.sqrt(l_v * c_dist)
+        z_v = math.sqrt(l_v / c_dist)
+        er_eq = (tl.C_0 * tau / lg["longueur"]) ** 2
+        demi = lg["longueur"] / 2.0
+        d = mv["percage"] * 1e-3
+        da = mv["antipad"] * 1e-3
+        haut = tl.abcd_via_ligne(demi, d, da, er_eq, f,
+                                 tan_delta=lg.get("tan_delta", 0.0),
+                                 c_depart=lg.get("c_depart", 0.0), z_via=z_v)
+        bas = tl.abcd_via_ligne(demi, d, da, er_eq, f,
+                                tan_delta=lg.get("tan_delta", 0.0),
+                                c_arrivee=lg.get("c_arrivee", 0.0), z_via=z_v)
+        serie = np.array([[1.0, complex(z_t)], [0.0, 1.0]], dtype=complex)
+        gauche = np.array([[1.0, 0.0], [y_dep, 1.0]], dtype=complex)
+        droite = np.array([[1.0, 0.0], [y_arr, 1.0]], dtype=complex)
+        return gauche @ haut @ serie @ bas @ droite
+    return tl.abcd_via_complet(l_v, c_v, f, y_dep, y_arr, z_t)
+
+
+def _modele_via_resolu(mv, demande, f_max):
+    """« pi » ou « ligne » pour CE via. « auto » choisit la ligne quand la
+    phase du via au haut de la bande depasse SEUIL_VIA_LIGNE ; une ligne sans
+    capacite repartie (aucun plan traverse) reste un pi -- elle n'aurait pas
+    de quoi se repartir."""
+    lg = mv.get("ligne") or {}
+    c_dist = mv["c"] - lg.get("c_depart", 0.0) - lg.get("c_arrivee", 0.0)
+    possible = bool(lg) and mv["l"] > 0 and c_dist > 0
+    theta = (2.0 * math.pi * float(f_max) * math.sqrt(mv["l"] * c_dist)
+             if possible else 0.0)
+    mv["phase_rad"] = theta
+    if demande == "ligne" and possible:
+        return "ligne"
+    if demande == "auto" and possible and theta > SEUIL_VIA_LIGNE:
+        return "ligne"
+    return "pi"
+
+
+# --------------------------------------------------------------------------
+# LA MUTUELLE DES DEUX FUTS DE LA PAIRE
+# --------------------------------------------------------------------------
+# La cascade de la paire posait le pi de chaque via sur chaque brin comme si
+# l'autre n'existait pas. En mode impair les deux futs portent des courants
+# OPPOSES : le flux de l'un retranche celui de l'autre, et l'inductance vue
+# par brin est L - M -- d'autant plus basse que les futs sont proches. C'est
+# la regle du metier : on serre les vias d'une paire pour baisser leur
+# impedance differentielle.
+#
+# LE CALCUL, PAR L'ENERGIE, comme `inductance_boucle_vias`. Les deux futs et
+# les vias de masse retenus forment un jeu de conducteurs paralleles ; leurs
+# inductances partielles sont celles de Grover (`mutuelle_partielle`). En mode
+# impair les futs portent +1 et -1, les retours a_k avec somme(a_k) = 0 ; en
+# mode commun +1 et +1, et les retours rendent les deux. Les a_k minimisent
+# l'energie -- c'est un systeme lineaire sous contrainte. L_impair et L_pair
+# par brin sont la moitie de ces energies ; M_impair et M_pair sont leurs
+# ecarts a l'inductance du fut seul DANS LE MEME JEU, et c'est cet ecart qu'on
+# retranche ou qu'on ajoute au L du pi -- qui reste celui que la fiche affiche.
+#
+# LES RETOURS DE LA PARTENAIRE ne sont pas dans le document : ce sont ceux du
+# via principal, RENVOYES PAR SYMETRIE autour du milieu des deux futs. C'est
+# la paire routee comme telle, et c'est dit dans la fiche.
+#
+# LA CAPACITE MUTUELLE. Entre deux plans, deux futs se voient comme une ligne
+# bifilaire (pi eps / acosh(s/2r) par metre), mais les plans ecrantent ce
+# couplage : le champ d'un fut s'y eteint comme exp(-pi x / b), b l'ecart des
+# deux plans qui encadrent le dielectrique traverse. On somme dielectrique par
+# dielectrique. En mode impair chaque brin voit 2 C_m de plus vers le plan
+# median ; en mode commun, rien.
+# --------------------------------------------------------------------------
+
+# Au-dela de cet ecart, le via de la partenaire trouve dans le document n'est
+# pas celui de la paire : on retombe sur l'ecart de la paire.
+ECART_VIAS_PAIRE_MAX = 3.0          # mm
+
+
+def _via_de_la_partenaire(doc, partenaire, x0, y0):
+    """(x, y) en mm du via de la partenaire le plus proche, ou None."""
+    meilleur = None
+    candidats = list(doc.get("vias") or [])
+    for o in (doc.get("voisinage") or []):
+        v = (o or {}).get("via")
+        if isinstance(v, dict):
+            candidats.append(dict(v, net=v.get("net") or o.get("net")))
+    for v in candidats:
+        if str((v or {}).get("net") or "") != str(partenaire):
+            continue
+        if v.get("x") is None or v.get("y") is None:
+            continue
+        x, y = _nombre(v.get("x")), _nombre(v.get("y"))
+        d = math.hypot(x - x0, y - y0)
+        if d <= 0 or d > ECART_VIAS_PAIRE_MAX:
+            continue
+        if meilleur is None or d < meilleur[0]:
+            meilleur = (d, x, y)
+    return None if meilleur is None else (meilleur[1], meilleur[2])
+
+
+def _inductances_paire_vias(s1, s2, retours):
+    """(L_seul, L_impair, L_pair) par brin, en henrys. Conducteurs en {x, y,
+    z1, z2, rayon}, EN METRES. Voir l'en-tete de section."""
+    cond = [s1, s2] + list(retours)
+    n = len(cond)
+    lp = np.zeros((n, n))
+    for i in range(n):
+        lp[i, i] = tl.inductance_partielle_propre(cond[i]["z1"], cond[i]["z2"],
+                                                  cond[i]["rayon"])
+        for j in range(i + 1, n):
+            d = math.hypot(cond[i]["x"] - cond[j]["x"],
+                           cond[i]["y"] - cond[j]["y"])
+            lp[i, j] = lp[j, i] = tl.mutuelle_partielle(
+                cond[i]["z1"], cond[i]["z2"], cond[j]["z1"], cond[j]["z2"], d)
+
+    def energie(i_sig, total):
+        i_sig = np.asarray(i_sig, dtype=float)
+        a_ss = float(i_sig @ lp[:2, :2] @ i_sig)
+        k = n - 2
+        if k == 0:
+            return a_ss
+        g = lp[2:, 2:]
+        b = lp[2:, :2] @ i_sig
+        sys_ = np.zeros((k + 1, k + 1))
+        sys_[:k, :k] = 2.0 * g
+        sys_[:k, k] = 1.0
+        sys_[k, :k] = 1.0
+        rhs = np.concatenate([-2.0 * b, [total]])
+        a = np.linalg.solve(sys_, rhs)[:k]
+        return a_ss + 2.0 * float(b @ a) + float(a @ g @ a)
+
+    # Sans retour, le fut seul n'a pas de boucle : sa self partielle, comme
+    # le plancher de `_inductance_transition`, et le mode commun de meme.
+    sans = (n == 2)
+    l_seul = lp[0, 0] if sans else energie([1.0, 0.0], -1.0)
+    l_impair = energie([1.0, -1.0], 0.0) / 2.0
+    l_pair = (energie([1.0, 1.0], 0.0) if sans
+              else energie([1.0, 1.0], -2.0)) / 2.0
+    return l_seul, l_impair, l_pair
+
+
+def _capacite_mutuelle_vias(couches, lo, hi, s_mm, rayon_mm):
+    """La capacite mutuelle de deux futs paralleles, en farads, ecrantee par
+    les plans. Voir l'en-tete de section."""
+    s = float(s_mm)
+    r = float(rayon_mm)
+    if not (s > 2.0 * r > 0):
+        return 0.0
+    z = _z_empilage(couches)
+    plans = [i for i, c in enumerate(couches)
+             if c.get("type") == "copper" and c.get("role") == "plane"]
+    c_m = 0.0
+    for k in range(int(lo), int(hi) + 1):
+        if not (0 <= k < len(couches)):
+            continue
+        c = couches[k]
+        if c.get("type") != "dielectric":
+            continue
+        t = _nombre(c.get("thickness"), 0.0)
+        if t <= 0:
+            continue
+        haut = [i for i in plans if i < k]
+        bas = [i for i in plans if i > k]
+        if haut and bas:
+            b = z[min(bas)] - z[max(haut) + 1]
+        elif haut:
+            b = 2.0 * (z[k + 1] - z[max(haut) + 1])
+        elif bas:
+            b = 2.0 * (z[min(bas)] - z[k])
+        else:
+            b = float("inf")
+        ecran = math.exp(-math.pi * s / b) if b > 0 else 0.0
+        c_m += (math.pi * tl.EPSILON_0 * _nombre(c.get("epsilon_r"), 4.3)
+                / math.acosh(s / (2.0 * r))) * t * 1e-3 * ecran
+    return c_m
+
+
+def _mutuelle_paire(mv, doc, partenaire, couplage, couches):
+    """La mutuelle des futs d'un via de la paire : {m_impair, m_pair, c_m,
+    ecart_mm, source}, en henrys et farads. None quand on ne peut rien en
+    dire."""
+    geo = mv.get("geo") or {}
+    if not geo or not partenaire:
+        return None
+    # L'ECART DES FUTS : la geometrie d'abord, l'ecart de la paire sinon --
+    # jamais moins que l'antipad, sous lequel deux vias ne se posent pas.
+    autre = None
+    if geo.get("a_position"):
+        autre = _via_de_la_partenaire(doc, partenaire, geo["x_mm"], geo["y_mm"])
+    if autre is not None:
+        ecart = math.hypot(autre[0] - geo["x_mm"], autre[1] - geo["y_mm"])
+        source = "geometrie"
+        dx = (autre[0] - geo["x_mm"]) / ecart
+        dy = (autre[1] - geo["y_mm"]) / ecart
+    else:
+        pas = 0.0
+        for p in (couplage or {}).get("paires") or []:
+            if p.get("net_voisin") == partenaire:
+                pas = _nombre(p.get("ecart"), 0.0) + _nombre(p.get("largeur"), 0.0)
+                break
+        if not (pas > 0):
+            return None
+        ecart = max(pas, _nombre(mv.get("antipad"), 0.0))
+        source = "ecart de la paire" if ecart == pas else "antipad"
+        dx, dy = 0.0, 1.0
+    rayon = mv["percage"] * 1e-3 / 2.0
+    if not (ecart * 1e-3 > 2.0 * rayon):
+        return None
+    x0, y0 = geo["x_mm"] * 1e-3, geo["y_mm"] * 1e-3
+    s1 = {"x": x0, "y": y0, "z1": geo["z1"], "z2": geo["z2"], "rayon": rayon}
+    s2 = dict(s1, x=x0 + dx * ecart * 1e-3, y=y0 + dy * ecart * 1e-3)
+    retours = []
+    for g in geo.get("retours") or []:
+        miroir = dict(g, x=s1["x"] + s2["x"] - g["x"], y=s1["y"] + s2["y"] - g["y"])
+        for q in (g, miroir):
+            libre = all(math.hypot(q["x"] - o["x"], q["y"] - o["y"])
+                        > q["rayon"] + o["rayon"] for o in [s1, s2] + retours)
+            if libre:
+                retours.append(q)
+    try:
+        l_seul, l_impair, l_pair = _inductances_paire_vias(s1, s2, retours)
+    except (ValueError, np.linalg.LinAlgError):
+        return None
+    m_impair = min(max(l_seul - l_impair, 0.0), 0.9 * mv["l"])
+    m_pair = max(l_pair - l_seul, 0.0)
+    c_m = _capacite_mutuelle_vias(couches, geo["lo"], geo["hi"], ecart,
+                                  mv["percage"] / 2.0)
+    return {"m_impair": float(m_impair), "m_pair": float(m_pair),
+            "c_m": float(c_m),
+            "ecart_mm": round(ecart, 4), "source": source,
+            "retours": len(retours)}
+
+
 def _abcd_deux_brins(m, mode):
     """La matrice ABCD d'un element pose a l'identique sur les DEUX brins de
     la paire, vue en mode differentiel ou commun.
@@ -5748,7 +6240,7 @@ def _abcd_deux_brins(m, mode):
 
 def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_diff, doc, analyse, avertissements, topo, garder_abcd=False,
                             modeles_via=None, coudes_par_troncon=None,
-                            z_trav=None):
+                            z_trav=None, opts=None):
     """Calcule la cascade de paramètres S en mode mixte pour la paire différentielle :
     - Sdd : différentiel pur 2x2 (sur z_ref_diff, ex: 100 Ω ou 90 Ω)
     - Scc : mode commun pur 2x2 (sur z_ref_comm = z_ref_diff / 4.0, ex: 25 Ω)
@@ -5765,13 +6257,19 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
 
     CE QUE LE VIA DEVIENT EN MODE IMPAIR. Son pi (L de boucle de Grover,
     capacite des antipads et des pastilles, moignons a chaque bout) est
-    applique tel quel a chaque brin. Deux simplifications, dites dans le
-    resultat : (1) la mutuelle entre les deux futs, qui REDUIT l'inductance
-    vue par le mode impair, est negligee -- l'inductance est donc majoree,
-    et l'oeil un peu pessimiste ; (2) la traversee de la cavite entre plans,
-    chemin du courant de RETOUR, n'est comptee qu'en mode commun : en mode
-    impair les retours des deux brins sont opposes et s'annulent.
+    applique a chaque brin, AVEC LA MUTUELLE DES DEUX FUTS (5.0.0, voir
+    `_mutuelle_paire`) : L - M_impair et C + 2 C_m en mode impair, L + M_pair
+    en mode commun. Sans via de la partenaire dans le document, l'ecart des
+    futs est celui de la paire, jamais moins que l'antipad ; `vias_mutuelle`
+    dit ce qui a ete pris. La traversee de la cavite entre plans, chemin du
+    courant de RETOUR, n'est comptee qu'en mode commun : en mode impair les
+    retours des deux brins sont opposes et s'annulent.
+
+    `opts` (`options_modele`) : le dielectrique causal fait er(f) dans les
+    pertes ET dans les eps_eff des deux modes, a remplissage constant ; le
+    modele de via est celui que la cascade simple a resolu (`mv["modele"]`).
     """
+    opts = opts or {}
     if not topo or not topo.get("cascadable") or not len(freqs):
         return None
 
@@ -5815,6 +6313,14 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
     long_n = sum(_longueur_v(v) for v in voisinage if v.get("net") == partenaire)
     delta_l_mm = abs(long_p - long_n) if (long_n > 0 and long_p > 0) else 0.0
 
+    # LA MUTUELLE DES FUTS, une fois par via : elle ne depend pas de la
+    # frequence.
+    mutuelles = {}
+    for i_v, mv in (modeles_via or {}).items():
+        mut = _mutuelle_paire(mv, doc, partenaire, couplage, couches)
+        if mut:
+            mutuelles[i_v] = mut
+
     matrices_sdd = []
     matrices_scc = []
     matrices_scd = []
@@ -5842,21 +6348,20 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
                 abcd_comm = abcd_comm @ _abcd_deux_brins(m_c, "comm")
             if modeles_via and i in modeles_via:
                 mv = modeles_via[i]
-                y_dep = _admittance_moignon(mv["moignon_depart"],
-                                            mv["percage"], mv["antipad"],
-                                            f_flt)
-                y_arr = _admittance_moignon(mv["moignon_arrivee"],
-                                            mv["percage"], mv["antipad"],
-                                            f_flt)
                 z_t = ((z_trav or {}).get(i) or {}).get(f)
                 if z_t is None:
                     z_t = _impedance_traversee(mv["cavite"], f_flt)
+                mut = mutuelles.get(i) or {}
+                modele = mv.get("modele", "pi")
                 abcd_diff = abcd_diff @ _abcd_deux_brins(
-                    tl.abcd_via_complet(mv["l"], mv["c"], f_flt, y_dep,
-                                        y_arr, 0.0), "diff")
+                    _abcd_via(mv, f_flt, 0.0, modele,
+                              l_via=mv["l"] - mut.get("m_impair", 0.0),
+                              c_via=mv["c"] + 2.0 * mut.get("c_m", 0.0)),
+                    "diff")
                 abcd_comm = abcd_comm @ _abcd_deux_brins(
-                    tl.abcd_via_complet(mv["l"], mv["c"], f_flt, y_dep,
-                                        y_arr, z_t), "comm")
+                    _abcd_via(mv, f_flt, z_t, modele,
+                              l_via=mv["l"] + mut.get("m_pair", 0.0)),
+                    "comm")
 
             if c and c.get("z_diff"):
                 z_diff_k = float(c["z_diff"])
@@ -5874,7 +6379,20 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
             tand = float(seg.get("tan_delta", 0.02))
             ep_m = float(seg.get("cuivre", 0.035)) * 1e-3
 
-            ac_odd, ad_odd = tl.line_losses(z_diff_k / 2.0, eps_odd, w_m, er, tand, f_flt, ep_m)
+            # LES OPTIONS DE PERTES, comme sur la ligne seule : la topologie
+            # et la rugosite de la couche -- pas la hauteur, un mode de paire
+            # n'est pas le ruban seul (`_geometrie_pertes`). Et le
+            # dielectrique causal, dans les pertes ET dans les deux eps_eff.
+            kw = dict(_geometrie_pertes({"topo": seg.get("topo")}, couple=True),
+                      **_rugosite_couche(couches, int(_nombre(seg.get("couche"), -1))))
+            er_f, tand_f = _dielectrique(er, tand, f_flt, opts)
+            if er_f != er:
+                z_odd_f, eps_odd = _milieu_causal(z_diff_k / 2.0, eps_odd, er, er_f)
+                z_even_f, eps_even = _milieu_causal(2.0 * z_comm_k, eps_even, er, er_f)
+                z_diff_k, z_comm_k = 2.0 * z_odd_f, z_even_f / 2.0
+                er, tand = er_f, tand_f
+
+            ac_odd, ad_odd = tl.line_losses(z_diff_k / 2.0, eps_odd, w_m, er, tand, f_flt, ep_m, **kw)
             alpha_odd = ac_odd + ad_odd
             beta_odd = 2.0 * math.pi * f_flt * math.sqrt(max(eps_odd, 1.0)) / tl.C_0
             gamma_odd = alpha_odd + 1j * beta_odd
@@ -5884,7 +6402,7 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
                               [sh_odd / z_diff_k, ch_odd]], dtype=complex)
             abcd_diff = abcd_diff @ m_odd
 
-            ac_even, ad_even = tl.line_losses(2.0 * z_comm_k, eps_even, w_m, er, tand, f_flt, ep_m)
+            ac_even, ad_even = tl.line_losses(2.0 * z_comm_k, eps_even, w_m, er, tand, f_flt, ep_m, **kw)
             alpha_even = ac_even + ad_even
             beta_even = 2.0 * math.pi * f_flt * math.sqrt(max(eps_even, 1.0)) / tl.C_0
             gamma_even = alpha_even + 1j * beta_even
@@ -5930,6 +6448,17 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
         # et l'oeil le disent, plutot que de le supposer.
         "vias": len(modeles_via or {}),
         "coudes": len(coudes_par_troncon or {}),
+        # LA MUTUELLE DES FUTS, via par via : ce qui a ete retranche en mode
+        # impair et ajoute en mode commun, et d'ou vient l'ecart.
+        "vias_mutuelle": [
+            {"troncon": i_v,
+             "m_impair_nH": round(m["m_impair"] * 1e9, 4),
+             "m_pair_nH": round(m["m_pair"] * 1e9, 4),
+             "c_mutuelle_fF": round(m["c_m"] * 1e15, 3),
+             "l_impair_nH": round((modeles_via[i_v]["l"] - m["m_impair"]) * 1e9, 4),
+             "ecart_mm": m["ecart_mm"], "ecart_source": m["source"],
+             "retours": m["retours"]}
+            for i_v, m in sorted(mutuelles.items())],
         "delta_l_mm": round(delta_l_mm, 4),
         "z_ref_diff": z_ref_diff,
         "z_ref_comm": z_ref_comm,
@@ -5976,6 +6505,9 @@ def simuler(doc, journal=None, garder_abcd=False, freqs_imposees=None):
     couches, objets, analyse = doc_valide(doc)
 
     objets = _partager_paire(doc, objets)
+    # LES OPTIONS DE MODELE (dielectrique causal, modele de via), lues une
+    # fois. Voir `options_modele`.
+    opts = options_modele(doc)
 
     fc = analyse["f_centre"]
     t_r, source_tr = _temps_montee(analyse)
@@ -6053,15 +6585,17 @@ def simuler(doc, journal=None, garder_abcd=False, freqs_imposees=None):
                     # La dispersion ne concerne que le microruban : la
                     # triplaque est noyee dans un milieu homogene, sa
                     # permittivite effective ne bouge pas avec la frequence.
-                    if info["topo"] == "micro":
-                        eps_f, z_f = tl.dispersion_getsinger(
-                            r["z0"], r["eps_eff"], info["er"], info["h"], fc)
-                    else:
-                        eps_f, z_f = r["eps_eff"], r["z0"]
-                    a_c, a_d = tl.line_losses(z_f, eps_f, largeur * 1e-3,
-                                              info["er"], info["tan_delta"],
-                                              fc, ep * 1e-3)
+                    # LES OPTIONS DE PERTES DE LA SECTION, une fois : la
+                    # topologie et la hauteur qu'elle connait, la rugosite de
+                    # sa couche. Voir `_geometrie_pertes`.
+                    kw = dict(_geometrie_pertes(
+                        info, coplanaire=int(r.get("cotes", 0)) > 0),
+                        **_rugosite_couche(couches, indice))
+                    eps_f, z_f, a_c, a_d = _ligne_a(
+                        r["z0"], r["eps_eff"], info, fc, largeur * 1e-3,
+                        ep * 1e-3, kw, opts)
                     cache[cle] = {"z0": z_f, "z0_statique": r["z0"],
+                                  "kw_pertes": kw,
                                   "eps_eff": eps_f, "alpha": a_c + a_d,
                                   "alpha_c": a_c, "alpha_d": a_d,
                                   "coplanaire": bool(r.get("coplanaire")),
@@ -6234,6 +6768,20 @@ def simuler(doc, journal=None, garder_abcd=False, freqs_imposees=None):
 
     freqs = (np.asarray(freqs_imposees, dtype=float)
              if freqs_imposees is not None else frequences(analyse))
+    # LE MODELE DE CHAQUE VIA, pi ou ligne, choisi sur la bande entiere et non
+    # frequence par frequence : un via qui changerait de modele en cours de
+    # bande ferait une marche dans la courbe. La fiche dit lequel a servi.
+    f_max = float(np.max(freqs)) if len(freqs) else fc
+    for i_t, mv in modeles_via.items():
+        mv["modele"] = _modele_via_resolu(mv, opts["modele_via"], f_max)
+        t = transitions_par_troncon.get(i_t)
+        if t is not None and isinstance(t.get("modelise"), dict):
+            t["modelise"]["modele_via"] = mv["modele"]
+            t["modelise"]["modele_via_demande"] = opts["modele_via"]
+            t["modelise"]["phase_via_rad"] = round(mv["phase_rad"], 5)
+            if mv["modele"] == "ligne":
+                t["modelise"]["type"] = ("ligne_L_C" if t["modelise"]["type"]
+                                         == "pi_L_C" else "ligne_L_C_moignons")
     matrices = []
     abcds = []
     # PAS DE CASCADE SUR CE QUI N'EST PAS UNE CHAINE. `freqs` reste rendu :
@@ -6255,20 +6803,16 @@ def simuler(doc, journal=None, garder_abcd=False, freqs_imposees=None):
             ep = round(_nombre(obj.get("copper_thickness"), 0.035), 6)
             c = cache[_cle_section(obj)]
             info = c["info"]
-            if info["topo"] == "micro":
-                eps_f, z_f = tl.dispersion_getsinger(
-                    c["z0_statique"], c["eps_eff"], info["er"], info["h"],
-                    float(f))
-            else:
-                eps_f, z_f = c["eps_eff"], c["z0_statique"]
             # L'EPAISSEUR DE CUIVRE PART AVEC, comme au point central. L'oublier
             # ici laissait `line_losses` reprendre son 35 um par defaut : le
             # tableau des troncons et la courbe S annoncaient alors deux pertes
             # differentes A LA MEME FREQUENCE des que le cuivre n'etait pas du
             # 35 um -- d'un facteur 4 sur du 9 um sous la profondeur de peau.
-            a_c, a_d = tl.line_losses(z_f, eps_f, seg["largeur"] * 1e-3,
-                                      info["er"], info["tan_delta"], float(f),
-                                      ep * 1e-3)
+            # LES OPTIONS DE LA SECTION PARTENT AUSSI, pour la meme raison :
+            # `_ligne_a` est le calcul du point central, frequence en plus.
+            eps_f, z_f, a_c, a_d = _ligne_a(
+                c["z0_statique"], c["eps_eff"], info, float(f),
+                seg["largeur"] * 1e-3, ep * 1e-3, c["kw_pertes"], opts)
             beta = 2 * math.pi * float(f) * math.sqrt(eps_f) / tl.C_0
 
             # LA DISCONTINUITE SE POSE AVANT LE TRONCON QU'ELLE PRECEDE.
@@ -6308,14 +6852,11 @@ def simuler(doc, journal=None, garder_abcd=False, freqs_imposees=None):
             # veut voir -- le creux ou il court-circuite la liaison.
             if i in transitions_par_troncon:
                 mv = modeles_via[i]
-                abcd = abcd @ tl.abcd_via_complet(
-                    mv["l"], mv["c"], float(f),
-                    _admittance_moignon(mv["moignon_depart"], mv["percage"],
-                                        mv["antipad"], float(f)),
-                    _admittance_moignon(mv["moignon_arrivee"], mv["percage"],
-                                        mv["antipad"], float(f)),
+                abcd = abcd @ _abcd_via(
+                    mv, float(f),
                     z_trav[i][f] if i in z_trav else
-                    _impedance_traversee(mv["cavite"], float(f)))
+                    _impedance_traversee(mv["cavite"], float(f)),
+                    mv["modele"])
 
             abcd = abcd @ tl.abcd_line(z_f, complex(a_c + a_d, beta),
                                        seg["longueur"] * 1e-3)
@@ -6348,6 +6889,15 @@ def simuler(doc, journal=None, garder_abcd=False, freqs_imposees=None):
                                      else "non declaree"),
         "Z0 moyen : %.2f ohm a %.4f GHz" % (ligne["z0_moyen"], fc / 1e9),
     ]
+    # LES OPTIONS QUI CHANGENT LE CHIFFRE partent avec le fichier, et
+    # seulement quand elles sont prises : un .s2p par defaut reste le meme.
+    if opts["causal"]:
+        entete.append("Dielectrique causal (Djordjevic-Sarkar), fiche a %.4g GHz"
+                      % (opts["f_ref"] / 1e9))
+    if opts["modele_via"] != MODELE_VIA_DEFAUT:
+        entete.append("Modele de via : %s" % opts["modele_via"])
+    if any(_rugosite_couche(couches, i) for i in range(len(couches))):
+        entete.append("Rugosite du cuivre comptee (empilage)")
 
     # LOT 3b : enrichir les discontinuités avec les valeurs modélisées
     # CE QUI EST AFFICHE EST CE QUI EST APPLIQUE. Les memes fonctions, les
@@ -6390,7 +6940,7 @@ def simuler(doc, journal=None, garder_abcd=False, freqs_imposees=None):
                                      garder_abcd=garder_abcd,
                                      modeles_via=modeles_via,
                                      coudes_par_troncon=coudes_par_troncon,
-                                     z_trav=z_trav)
+                                     z_trav=z_trav, opts=opts)
 
     resultat = {
         "format": FORMAT_RESULTAT,
@@ -6436,6 +6986,14 @@ def simuler(doc, journal=None, garder_abcd=False, freqs_imposees=None):
         "couplage": couplage,
         # CASCADE DIFFERENTIELLE : Sdd (differentiel pur), Scc (mode commun), Scd (conversion)
         "s_diff": s_diff,
+        # LES OPTIONS DE MODELE QUI ONT SERVI, telles que lues : un .s2p
+        # causal et un .s2p qui ne l'est pas ne se distinguent pas a l'oeil.
+        "modeles": {"dielectrique_causal": opts["causal"],
+                    "f_ref_dielectrique": opts["f_ref"],
+                    "modele_via": opts["modele_via"],
+                    "rugosite": sorted(set(
+                        i for i, c in enumerate(couches)
+                        if _rugosite_couche(couches, i)))},
         "duree": round(duree, 3),
         "avertissements": avertissements,
     }

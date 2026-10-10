@@ -437,6 +437,87 @@ La vérification de la carte lit la même chose dans le `cp` d'un perçage (voir
 [verification-carte.md](verification-carte.md#moignons-de-vias)).
 
 
+### Pertes, diélectrique causal, via en ligne (`simulation_em` 5.0.0)
+
+`ligne_mom` 2.7.0 sait la hauteur, la topologie, la rugosité et le
+diélectrique causal (`line_losses`), et poser le via en tronçon de ligne
+(`abcd_via_ligne`). La 5.0.0 de `simulation_em` les branche : cascade simple,
+cascade différentielle (donc l'**œil**, qui passe par `simuler`), **RF**
+(`rf_reseau` 1.6.0 : branches par `simuler`, sections couplées et piste de
+masse en direct) et pertes au genou du **crosstalk** (`crosstalk` 4.2.0).
+
+| Option | Où elle se règle | Défaut | Ce qu'elle change |
+| --- | --- | --- | --- |
+| Hauteur et topologie | lues dans la section | **active** | `topologie` toujours ; `hauteur` (h au plan, ou b entre plans) pour le ruban seul — pas pour une section coplanaire, un mode de paire ou une triplaque décentrée de plus de 20 %, où la hauteur *déduite* rend mieux le courant resserré |
+| Rugosité du cuivre | empilage, par couche | lisse (K = 1) | facteur K sur α_c : Hammerstad-Groiss (Rq) ou Huray (rayon des nodules, rapport de surface) |
+| Diélectrique causal | empilage | désactivé | Djordjevic-Sarkar calé sur la fiche à f_ref (1 GHz) : εr(f) dans les pertes **et** dans ε_eff et Z₀ (remplissage constant), donc dans la vitesse de phase |
+| Modèle de via | empilage | **« auto »** | « π », « ligne » (barreau réparti) ou « auto » : ligne quand la phase du via au haut de la bande dépasse 0,3 rad |
+
+Ce que l'empilage envoyé porte en plus (le document reste `cao-sim-em-3`) :
+
+    "stackup": {"layers": [
+                  {"type": "copper", …,
+                   "modele_rugosite": "hammerstad" | "huray",
+                   "rugosite_rms_um": 1.0,              // Hammerstad
+                   "rayon_nodule_um": 0.5, "rapport_surface": 1.5}, // Huray
+                  …],
+                "dielectrique_causal": true,
+                "f_ref_dielectrique": 1e9,              // Hz
+                "modele_via": "pi" | "ligne" | "auto"}
+
+`analyse` peut porter les trois dernières clés pour un « et si » qui ne touche
+pas à la carte. Le résultat dit ce qui a servi (`modeles`), chaque transition
+son modèle (`modelise.modele_via`, `phase_via_rad`), et le `.s2p` le note dans
+son en-tête quand une option s'écarte du défaut. **Une seule rugosité par
+section** : celle de la couche de la piste, comptée aussi pour le plan.
+
+**L'éditeur PCB** les saisit dans le panneau *Empilage physique* : sur une
+ligne de cuivre, « Rugosité du cuivre » (réglages usuels : lisse, ED standard
+Rq 2 µm, traité inversé Rq 1 µm, VLP 0,6 µm, HVLP 0,3 µm, et deux jeux de
+Huray), et sous la synthèse, « Modèles de simulation » (case *diélectrique
+causal*, fréquence de la fiche, modèle de via). Le document n'écrit
+`stack.cu[i].rug` et `stack.sim` que s'ils s'écartent du défaut. **La
+visionneuse** lit la rugosité que le fichier IPC-2581 déclare
+(`<Conductor type="SURFACE_ROUGHNESS_UPFACING|DOWNFACING|TREATED">` d'une
+`<Spec>`, la plus forte des faces, parseur 1.76) ; elle n'a pas de saisie, ni
+des options de modèle — la plupart des exports n'en portent pas.
+
+**Ce que cela change, mesuré** (microruban 0,58 mm sur 0,3 mm de FR-4,
+100 mm) : hauteur et topologie, 3,5355 → 3,5378 dB à 10 GHz (+0,07 %) ; sur
+une triplaque centrée de 0,47 mm, 4,764 → 4,778 dB (+0,3 %) ; un microruban
+couvert, +0,6 %. Rugosité, perte totale (diélectrique compris) multipliée par
+1,02 (Rq 0,3 µm) à 1,11 (Rq 2 µm) à 10 GHz. Causal, fiche à 1 GHz : à
+10 GHz ε_eff 3,438 → 3,345 et Z₀ 47,56 → 48,21 Ω. Via de 1,34 mm, 0,25 mm
+dans 0,8 mm d'antipad : le π à 0,002 dB près à 1 GHz (résistance du barreau), |S₂₁| −7,19 →
+−6,56 dB à 40 GHz.
+
+#### La mutuelle des fûts de la paire
+
+En mode impair les deux fûts portent des courants opposés : l'inductance vue
+par brin est L − M, d'autant plus basse qu'ils sont proches. Elle se calcule
+par l'énergie, comme `inductance_boucle_vias` : les deux fûts et les vias de
+masse retenus (ceux du via principal, **renvoyés par symétrie** pour la
+partenaire), inductances partielles de Grover, courants de retour qui
+minimisent l'énergie ; sans retour, M est exactement la mutuelle partielle des
+deux fûts. Le mode commun prend L + M. La capacité mutuelle (ligne bifilaire,
+écrantée par les plans en exp(−π s / b)) ajoute 2 C_m par brin en mode
+impair. L'écart des fûts : le via de la partenaire trouvé dans le document
+(`vias` ou le voisinage), sinon l'écart de la paire, jamais moins que
+l'antipad (`s_diff.vias_mutuelle[].ecart_source`).
+
+Mesuré (via traversant de 0,3 mm, 4 couches, sans via de masse,
+L = 0,534 nH) : L_impair 0,294 nH à 0,6 mm d'écart, 0,373 à 1 mm, 0,464 à
+2,5 mm ; C_m 7,2 / 1,0 / 0,002 fF.
+
+**Étalons** ([banc-ligne-mom.py](../python/test/banc-ligne-mom.py)) : la
+rugosité multiplie l'α_c de la cascade par le K attendu (Hammerstad et Huray,
+à 0,3 % près) ; le causal rend la fiche à f_ref au bit près et
+(β/β₀)² = εr(f)/εr en triplaque, paire comprise ; le via en ligne rejoint le π
+à 10 MHz (réactances à 10⁻⁵), garde moignon et contre-perçage, et « auto »
+rend le π au bit près sous le seuil ; la mutuelle baisse L_impair quand les
+fûts se rapprochent et vaut Grover sans retour. RF : [banc-rf.py](../python/test/banc-rf.py).
+
+
 ### Lire la courbe
 
 Deux traces : **S₁₁** (ce que le port d'entrée réfléchit) et **S₂₁** (ce qui
@@ -756,14 +837,14 @@ de boucle de Grover, C des antipads et des pastilles, moignons à chaque bout ;
 le T de Gupta des coudes) sont maintenant posés au même rang, **sur les deux
 brins** : en mode impair [A, 2B ; C/2, D], en mode commun [A, B/2 ; 2C, D].
 La traversée de cavité (chemin du retour) n'est comptée qu'en mode commun —
-en mode impair les retours des deux brins s'annulent ; la mutuelle entre les
-deux fûts est négligée, ce qui **majore** l'inductance vue par le mode impair
-(l'œil est un peu pessimiste). `s_diff` dit combien de vias et de coudes il
-porte, et l'œil le répète.
+en mode impair les retours des deux brins s'annulent. **Depuis la 5.0.0, la
+mutuelle entre les deux fûts est comptée** (voir « La mutuelle des fûts de la
+paire » plus bas) : L − M en mode impair, L + M en mode commun. `s_diff` dit
+combien de vias et de coudes il porte, et l'œil le répète.
 
 **Hors du modèle**, et dit dans chaque résultat : condensateurs de liaison
 (couplage AC), boîtier des modèles IBIS, conversion de mode d'une paire de
-tampons dissymétriques, mutuelle entre les fûts des vias de la paire.
+tampons dissymétriques.
 L'Ethernet cuivre (MLT-3, PAM-5) n'est pas binaire et n'a pas de gabarit.
 L'I²C (drain ouvert, front montant RC) n'a pas de gabarit non plus — mais son
 tampon IBIS se simule maintenant.

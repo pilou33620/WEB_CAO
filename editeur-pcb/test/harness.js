@@ -419,6 +419,9 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "cpNormRegles","cpRegles","cpRegle","cpRegleVia","cpVia","cpViasPerces","cpPaires","cpExcellon",
   "cpGerberX2","cpCouchesEmpruntees","cpCouchesZones","zoneCuivreEn","viaCuivreZone","zoneSig","gXY",
   "cpAjouter","cpModifier","cpSupprimer","CP_SUR","cmHtmlTopologie",
+  /* rugosité du cuivre et options de modèle de la simulation (01-core.js) */
+  "rugNorm","cuRug","setCuRug","rugLabel","RUG_PRESETS","RUG_MODELES",
+  "simModeles","simModelesNorm","setSimModeles","SIM_MODELES_VIA","SIM_VIA_DEFAUT",
   "cmDepuisSchema","cmTousGroupes","cmResumeSchema","cmLireChamp","pcbAppliquerEco","pcbDetecterDisparitesEco","cmEcartSchema",
   /* rooms (32-rooms.js) */
   "roomsDepuisDoc","roomsListe","roomNomCourt","roomCouleur","roomAuLabel","roomEtiquette","roomsBasculer",
@@ -24448,6 +24451,102 @@ T("rooms : sans schéma, les zones de l'analyse « Motifs & Blocs » ; sans rien
     const L=roomsListe();
     if(!z.length&&L.length)throw new Error("ni schéma ni analyse : aucune room");
   }finally{S.schDoc=avant;touch();}
+});
+T("empilage : rugosité et options de modèle — lecture bornée, aller-retour, couches",()=>{
+  setCuCount(4);applyPreset(presetsFor(4)[0]);
+  for(let i=0;i<S.cu;i++)setCuRug(i,null);
+  delete S.stack.sim;touch();
+  /* un document qui n'en parle pas n'en écrit rien, et se relit à l'identique */
+  const vide=serialize();
+  if(/"rug"|"sim"/.test(vide))throw new Error("un empilage lisse écrit une rugosité");
+  loadDoc(JSON.parse(vide),true);
+  if(serialize()!==vide)throw new Error("aller-retour lisse : "+firstDiff(JSON.parse(vide),JSON.parse(serialize()),""));
+  /* lecture bornée */
+  if(rugNorm({rms:0})!==null||rugNorm({rms:-1})!==null||rugNorm({m:"huray",a:1})!==null||rugNorm("x")!==null)
+    throw new Error("une rugosité nulle ou incomplète doit disparaître");
+  if(rugNorm({rms:99}).rms!==50||rugNorm({m:"?",rms:1}).m!=="hammerstad")throw new Error("bornes");
+  if(JSON.stringify(rugNorm({m:"huray",a:0.5,sr:1.5,rms:3}))!=='{"m":"huray","a":0.5,"sr":1.5}')
+    throw new Error("Huray garde ses deux paramètres et rien d'autre");
+  if(simModelesNorm({causal:false,fref:1e9,via:SIM_VIA_DEFAUT})!==null)throw new Error("défauts écrits");
+  if(JSON.stringify(simModelesNorm({causal:true,fref:2e9,via:"pi"}))!=='{"causal":true,"fref":2000000000,"via":"pi"}')
+    throw new Error(JSON.stringify(simModelesNorm({causal:true,fref:2e9,via:"pi"})));
+  if(simModelesNorm({causal:"oui",fref:-3,via:"bof"})!==null)throw new Error("options illisibles acceptées");
+  /* saisies, puis aller-retour */
+  setCuRug(0,{m:"hammerstad",rms:2});
+  setCuRug(3,{m:"huray",a:0.5,sr:1.5});
+  setSimModeles({causal:true,fref:2e9,via:"ligne"});
+  touch();
+  const a=serialize();
+  loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("aller-retour : "+firstDiff(JSON.parse(a),JSON.parse(serialize()),""));
+  if(cuRug(0).rms!==2||cuRug(3).m!=="huray"||cuRug(1)!==null)throw new Error("rugosités perdues");
+  const m=simModeles();
+  if(!m.causal||m.fref!==2e9||m.via!=="ligne")throw new Error(JSON.stringify(m));
+  /* un document trafiqué se relit borné */
+  const t=JSON.parse(a);
+  t.stack.cu[1].rug={m:"huray",a:"x",sr:2};t.stack.sim={via:"rien",fref:"vite"};
+  loadDoc(t,true);
+  if(cuRug(1)!==null||S.stack.sim)throw new Error("lecture non bornée : "+JSON.stringify(S.stack.sim));
+  loadDoc(JSON.parse(a),true);
+  /* un modèle d'usine garde la rugosité, un autre compte de couches les faces */
+  applyPreset(presetsFor(4)[0]);
+  if(!cuRug(0)||!cuRug(3))throw new Error("le modèle d'usine efface la rugosité");
+  setCuCount(6);
+  if(!cuRug(0)||cuRug(5).m!=="huray"||!simModeles().causal)throw new Error("perdu au changement de couches");
+  setCuCount(4);
+});
+T("empilage : la rugosité et les options partent au serveur, et se saisissent au panneau",()=>{
+  setCuCount(4);applyPreset(presetsFor(4)[0]);
+  for(let i=0;i<S.cu;i++)setCuRug(i,null);
+  delete S.stack.sim;touch();
+  /* lisse et par défaut : l'empilage envoyé est celui d'avant */
+  let st=simStackup();
+  if(st.layers.some(c=>"rugosite_rms_um" in c||"modele_rugosite" in c)||
+     "dielectrique_causal" in st||"modele_via" in st)
+    throw new Error("défauts envoyés : "+JSON.stringify(st).slice(0,200));
+  /* la saisie au panneau : le cuivre du dessus, un réglage usuel */
+  stkPick("cu",0);
+  const h=$("stk").innerHTML;
+  if(!/Rugosité du cuivre/.test(h)||!/skRugP/.test(h)||!/Modèles de simulation/.test(h)||!/skCausal/.test(h))
+    throw new Error("panneau d'empilage sans rugosité ni options");
+  $("skRugP").value="vlp";$("skRugP").onchange();
+  if(!cuRug(0)||cuRug(0).rms!==0.6)throw new Error("réglage usuel non repris : "+JSON.stringify(cuRug(0)));
+  undo();
+  if(cuRug(0))throw new Error("l'annulation garde la rugosité");
+  buildStackup();
+  $("skRugRms").value="1.25";$("skRugRms").onchange();
+  if(cuRug(0).rms!==1.25)throw new Error("Rq non repris");
+  buildStackup();
+  $("skRugM").value="huray";$("skRugM").onchange();
+  if(cuRug(0).m!=="huray"||!(cuRug(0).a>0))throw new Error("passage à Huray");
+  buildStackup();
+  $("skRugSR").value="2";$("skRugSR").onchange();
+  if(cuRug(0).sr!==2||!(cuRug(0).a>0))throw new Error("SR non repris");
+  buildStackup();
+  $("skCausal").checked=true;$("skCausal").onchange();
+  if(!simModeles().causal)throw new Error("case causale");
+  buildStackup();
+  $("skFref").value="2.5";$("skFref").onchange();
+  $("skViaM").value="pi";$("skViaM").onchange();
+  if(simModeles().fref!==2.5e9||simModeles().via!=="pi")throw new Error(JSON.stringify(simModeles()));
+  /* ce qui part au serveur, dans les unités qu'il lit */
+  setCuRug(2,{m:"hammerstad",rms:0.3});
+  st=simStackup();
+  const c0=st.layers[simCuIndex(0)], c2=st.layers[simCuIndex(2)], c1=st.layers[simCuIndex(1)];
+  if(c0.modele_rugosite!=="huray"||c0.rayon_nodule_um!==cuRug(0).a||c0.rapport_surface!==2||"rugosite_rms_um" in c0)
+    throw new Error("Huray envoyé : "+JSON.stringify(c0));
+  if(c2.modele_rugosite!=="hammerstad"||c2.rugosite_rms_um!==0.3)throw new Error("Rq envoyé : "+JSON.stringify(c2));
+  if("modele_rugosite" in c1)throw new Error("un cuivre lisse envoie une rugosité");
+  if(st.dielectrique_causal!==true||st.f_ref_dielectrique!==2.5e9||st.modele_via!=="pi")
+    throw new Error("options envoyées : "+JSON.stringify(st).slice(-120));
+  /* et c'est bien cet empilage que porte le document de simulation */
+  S.tracks.push({l:0,net:"RUG",w:0.3,x1:2,y1:2,x2:12,y2:2});touch();
+  const p=simDocPcb([S.tracks[S.tracks.length-1]],{z0:50,f1:1e8,f2:5e9,points:11,fc:1e9,tr:0});
+  if(!p.doc||JSON.stringify(p.doc.stackup)!==JSON.stringify(st))
+    throw new Error("document de simulation : "+(p.erreur||JSON.stringify(p.doc&&p.doc.stackup).slice(0,160)));
+  S.tracks.pop();
+  for(let i=0;i<S.cu;i++)setCuRug(i,null);
+  delete S.stack.sim;touch();
 });
 
 (async()=>{

@@ -103,6 +103,11 @@ function simStackupIpc(){
        donc le défaut grave — sur la foi d'un nom inventé. On le déclare, pour
        que la fiche puisse le dire plutôt que de l'affirmer. */
     if(simNetPlanSupposeIpc(netPlan)) c.net_suppose = true;
+    /* LA RUGOSITÉ DU FEUILLARD, quand le fichier la déclare (micromètres,
+       Rq) : le serveur la passe à `line_losses` (Hammerstad-Groiss). Sans
+       elle, rien ne part et le cuivre est lisse — l'IPC-2581 de la plupart
+       des outils ne la porte pas. */
+    if(cu.rug > 0){c.modele_rugosite = "hammerstad"; c.rugosite_rms_um = cu.rug;}
     couches.push(c);
     const g=LT.gap[k];
     if(g)couches.push({

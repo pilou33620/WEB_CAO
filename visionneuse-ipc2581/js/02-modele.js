@@ -1050,9 +1050,14 @@ function ltPreparer(){
          repli 0,02 sur toutes les cartes, y compris celles qui portent la
          valeur dans leur fichier. */
       const df=parseFloat(String(e.df||"").replace(",","."));
+      /* La rugosité du cuivre, en micromètres, quand le fichier la porte
+         (<Conductor type="SURFACE_ROUGHNESS_…"> d'une <Spec>) : la
+         simulation la passe aux pertes du cuivre. */
+      const rug=parseFloat(e.rug);
       return {nom:e.nom, genre:genre, cuivre:genre==="cuivre",
               ep:(e.ep||0)*k, er:isFinite(dk)&&dk>0?dk:0,
               df:isFinite(df)&&df>0?df:0,
+              rug:isFinite(rug)&&rug>0?rug:0,
               type:e.type||"", couche:c?c.i:-1};
     });
 
@@ -1065,7 +1070,8 @@ function ltPreparer(){
     const saisi=ltSaisi("cu",e.nom);
     LT.cu.push({nom:e.nom, rang:rang, couche:e.couche,
                 ep:saisi||e.ep||LT_EP_CU,
-                epSrc:saisi?"saisi":(e.ep?"fichier":"")});
+                epSrc:saisi?"saisi":(e.ep?"fichier":""),
+                rug:e.rug||0});
   });
 
   /* Un intervalle par couple de conducteurs voisins : l'épaisseur de

@@ -545,6 +545,18 @@
 #   (precis), _avertir, mapping_propose, et leurs constantes. `chaine_mtl`,
 #   `_modes_mtl` et `s_depuis_chaine` restent : rf_reseau et son banc s'en
 #   servent comme reference de lignes couplees.
+#
+# Version: 4.2.0
+# Date: 2026-10-10
+# Explication: LES PERTES AU GENOU PRENNENT LES OPTIONS DE ligne_mom 2.7.0.
+#   `alpha_genou` passe a `line_losses` la topologie de la section (lue,
+#   et non plus devinee sur eps_eff -- un microruban couvert passait pour une
+#   triplaque), la rugosite de la couche de cuivre (empilage, zero par
+#   defaut) et l'epaisseur du cuivre, laissee jusqu'ici a 35 um. Pas la
+#   hauteur : la ligne de l'agresseur est prise dans son bloc couple, et
+#   la hauteur deduite rend le courant resserre sur les aretes en regard.
+# Fonctions modifiees : alpha_genou (+ options_pertes), sections_couplees
+#   (qui les lui passe).
 # ==========================================
 """Crosstalk Niveau 2 : le pic de bruit relatif, paire par paire.
 
@@ -668,7 +680,7 @@ except Exception as _exc:                              # noqa: BLE001
 
 FORMAT = "cao-crosstalk-1"
 FORMAT_RESULTAT = "cao-crosstalk-resultat-1"
-VERSION = "4.1.0"
+VERSION = "4.2.0"
 VERSION_MOTEURS = {
     "crosstalk": VERSION,
     "simulation_em": getattr(se, "VERSION", "4.2.0") if se is not None else "indisponible",
@@ -2030,7 +2042,8 @@ def niveau2(morceaux, t_r, orange=SEUIL_ORANGE, rouge=SEUIL_ROUGE,
         "statut": pire_statut([s_n, s_f])}
 
 
-def alpha_genou(z0, eps_eff, largeur_mm, epsilon_r, tan_delta, t_r):
+def alpha_genou(z0, eps_eff, largeur_mm, epsilon_r, tan_delta, t_r,
+                options_pertes=None):
     """L'attenuation de la ligne au GENOU du front, 0,35 / t_r, en Np/m.
 
     R (effet de peau, `ligne_mom.line_losses_detaillees`) et G (tan delta du
@@ -2038,13 +2051,19 @@ def alpha_genou(z0, eps_eff, largeur_mm, epsilon_r, tan_delta, t_r):
     Au genou, c'est la composante la plus haute que le front porte vraiment :
     l'attenuation qu'on en tire est une MAJORATION de celle du front entier,
     donc une correction prudente -- elle ne retire jamais plus que la ligne.
+
+    `options_pertes` (4.2.0) : les options nommees de `line_losses` --
+    topologie et rugosite de la couche, que l'appelant lit dans l'empilage
+    (`simulation_em._geometrie_pertes`, `_rugosite_couche`). Sans elles, le
+    chiffre d'avant.
     """
     if not (z0 > 0 and eps_eff > 0 and largeur_mm > 0 and t_r > 0):
         return 0.0
     d = tl.line_losses_detaillees(float(z0), float(eps_eff),
                                   float(largeur_mm) * 1e-3,
                                   float(epsilon_r or eps_eff),
-                                  float(tan_delta or 0.0), 0.35 / float(t_r))
+                                  float(tan_delta or 0.0), 0.35 / float(t_r),
+                                  **(options_pertes or {}))
     return float(d.get("alpha_c", 0.0)) + float(d.get("alpha_d", 0.0))
 
 
@@ -2376,9 +2395,17 @@ def sections_couplees(couches, parcours, retenus, refs, t_r, notes,
                                              0.0, None,
                                              tuple(sorted(plans_nus)))
             inf = inf if isinstance(inf, dict) else {}
+            # LA TOPOLOGIE ET LA RUGOSITE DE LA COUCHE, pas la hauteur : la
+            # ligne de l'agresseur est prise dans son bloc couple, et c'est
+            # la hauteur deduite qui rend le courant resserre en regard.
+            # Et L'EPAISSEUR DU CUIVRE, que `line_losses` prenait a 35 um.
+            opt_p = dict(se._geometrie_pertes(inf, couple=True)
+                         if inf.get("topo") else {},
+                         epaisseur=_nb(seg.get("epaisseur"), 0.035) * 1e-3,
+                         **se._rugosite_couche(couches, seg["couche"]))
             alpha = alpha_genou(z0_a, eps[0] if len(eps) else 0.0,
                                 seg["largeur"], _nb(inf.get("er"), 0.0),
-                                _nb(inf.get("tan_delta"), 0.0), t_r)
+                                _nb(inf.get("tan_delta"), 0.0), t_r, opt_p)
         blocs.append({"s0": round(a, 4), "s1": round(b, 4),
                       "voisines": [p["net"] for p in presents],
                       "couplage": coef, "couplage_agresseurs": coef_agr,
