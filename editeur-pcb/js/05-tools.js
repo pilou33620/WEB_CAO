@@ -1501,9 +1501,13 @@ function followMoved(){
       seen.add(t);
       const P0={x,y}, hid=holder(t,en,x,y);
       out.p0fp.set(P0,hid);
-      if(etch!=="arracher"&&(isArc(t)||mode==="free"||etch==="etirer")){
+      if(etch!=="arracher"&&(isArc(t)||mode==="free")){
         out.rubber.push({t,e:en,P0});out.own.add(t);continue;
       }
+      /* « étirer » : seule la piste qui va vers ce qui reste s'étire ; celle
+         tendue entre deux points qui bougent (deux membres d'un groupe, un
+         composant et son via) part en bloc, comme dans les autres conduites */
+      const etire=etch==="etirer";
       // de coude en coude jusqu'à ce qui tient la piste
       const list=[t];
       let cur=t, ce=en, end="fixe";
@@ -1531,6 +1535,10 @@ function followMoved(){
             if((Math.abs(v.x-x)<EPS_J&&Math.abs(v.y-y)<EPS_J)||(Math.abs(v.x-Fz.x)<EPS_J&&Math.abs(v.y-Fz.y)<EPS_J))
               for(const o of list)out.rigidVia.add(o);
         continue;
+      }
+      if(etire){
+        for(let k=1;k<list.length;k++)seen.delete(list[k]);
+        out.rubber.push({t,e:en,P0});out.own.add(t);continue;
       }
       if(etch==="arracher"){
         if(end==="sel")for(let k=1;k<list.length;k++)seen.delete(list[k]);
@@ -1931,8 +1939,9 @@ function beginMove(){
   drag.follow=fol;
   drag.trk=[...S.sel.tracks].map(t=>({t,x1:t.x1,y1:t.y1,x2:t.x2,y2:t.y2}));
   // une piste tendue entre deux points qui bougent part en bloc, comme la sélection
-  for(const t of fol.rigid)drag.trk.push({t,x1:t.x1,y1:t.y1,x2:t.x2,y2:t.y2});
-  drag.via=[...S.sel.vias].map(v=>({v,x:v.x,y:v.y}));
+  // (sa couche et celle des vias : un groupe retourné les passe en miroir, `27-groupes.js`)
+  for(const t of fol.rigid)drag.trk.push({t,x1:t.x1,y1:t.y1,x2:t.x2,y2:t.y2,l:t.l,ca:t.ca});
+  drag.via=[...S.sel.vias].map(v=>({v,x:v.x,y:v.y,a:v.a,b:v.b}));
   drag.joints=moveJoints(fol.keys);
   const fps=[...S.sel.fps].map(fpById).filter(Boolean);
   fol.skip=new Set([...movedTracks(),...S.sel.vias,...fps]);
@@ -2733,10 +2742,13 @@ function flipSel(){
   const list=[...S.sel.fps];
   const drw=selDrawingsPcb();
   if(!list.length&&!drw.length)return;
+  // en plein glissement, comme R : le geste continue (`27-groupes.js`)
+  if(dragRetourner())return;
   push();
-  transformFps(list,()=>{
-    for(const id of list){const f=fpById(id);if(f)f.side=f.side?0:1;}
-  });
+  /* chaque boîtier sur place ; un groupe entier en miroir autour de son axe,
+     son cuivre interne sur la couche miroir (`fpsRetourner`, `groupeCouches`) */
+  const mir={ids:null};
+  transformFps(list,()=>{mir.ids=fpsRetourner(list);},{miroir:mir});
   for(const d of drw){d.layer=d.layer==="silkB"?"silkT":"silkB";}
   touch();refreshPanels();draw();
 }
