@@ -934,7 +934,8 @@ function fabReadme(files,dr){
     L.push("sont en attributs utilisateur nommes d'apres IPC-2581 <Backdrill> :");
     L.push("  BackDrill_StartLayer, BackDrill_MustNotCutLayer (couches comptees de 1),");
     L.push("  BackDrill_MaxStubLengthMM (fichier), BackDrill_DepthMM (par outil, mm).");
-    L.push("L'editeur n'exporte pas d'IPC-2581 : le contre-percage n'y est pas ecrit.");
+    L.push("Un outil qui n'exporte pas d'IPC-2581 n'a que ces attributs pour le dire ;");
+    L.push("ici, le fichier IPC-2581 (.xml) le porte aussi, en <Spec><Backdrill>.");
   }
   L.push("Board Outline (carte.GM1) : Mechanical Layer 1, PROFIL DE DECOUPE.");
   L.push("C'est ce fichier qui definit le detourage de la carte. Il porte");
@@ -945,6 +946,11 @@ function fabReadme(files,dr){
   L.push("IPC-D-356 (carte.ipc) : netlist de test electrique (E-test / flying probe).");
   L.push("Sans ce fichier, le fabricant ne peut pas verifier la conformite");
   L.push("electrique de la gravure par rapport au schema.");
+  for(const x of files.filter(f=>f.kind==="ipc2581"))
+    L.push(x.name+" : IPC-2581 revision C, toute la carte en un fichier XML (empilage,",
+           "cuivre et nets, zones remplies, percages et contre-percage, composants,",
+           "nomenclature), millimetres, meme origine que les Gerber. En cas de",
+           "desaccord, les Gerber et l'Excellon font foi.");
   if(files.some(f=>/\.dxf$/i.test(f.name)))
     L.push("Les .dxf (AutoCAD R12, millimetres) servent a la mecanique : -CARTE.dxf a",
            "l'echelle 1:1 dans le repere des Gerber (contour, trous, composants),",
@@ -1107,6 +1113,9 @@ function buildFabFiles(){
   /* La netlist de test : elle vient après les Gerber et le perçage, parce
      qu'elle décrit ce que ces fichiers-là auront gravé. */
   files.push({name:base+".ipc",text:ipcNetlist()});
+  /* Toute la carte en un fichier IPC-2581 (35-ipc2581-export.js), avant le
+     Master Drawing qui l'annonce. */
+  if(typeof ipc2581Fichier==="function")files.push(ipc2581Fichier());
   /* Le Master Drawing PDF : trois pages IPC (PCB Details, Files, Stack-up).
      Pur JS, zero dépendance. On passe la liste déjà construite pour éviter
      une récursion buildFabFiles → masterDrawingPdf → buildFabFiles. */
