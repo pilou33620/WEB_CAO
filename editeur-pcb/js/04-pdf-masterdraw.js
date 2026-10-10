@@ -506,6 +506,9 @@ function masterDrawingPdf(fabFiles){
   for(const f of dFiles)
     tableRow(f.name,drillDesc(f),true,alt=!alt);
   tableRow(fbase+".ipc","IPC-D-356 netlist (E-test / flying probe)",!!ipcF,alt=!alt);
+  /* l'IPC-2581 de 35-ipc2581-export.js, s'il est dans l'archive */
+  for(const f of (fabFiles||[]).filter(f=>f.kind==="ipc2581"))
+    tableRow(f.name,"IPC-2581 rev. C - complete board data (stackup, copper, drills, components, BOM), XML",true,alt=!alt);
   tableRow("positions.csv","Component positions (pick & place)",true,alt=!alt);
   tableRow("bom.csv","Bill of materials",true,alt=!alt);
   tableRow("EMPILAGE.txt","Stackup report",true,alt=!alt);

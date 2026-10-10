@@ -96,9 +96,17 @@ js/32-rooms.js           rooms : les blocs fonctionnels du schéma encadrés
 js/31-topologie.js       forme du cuivre de chaque net (graphe des pistes,
                          vias et broches) : point à point, chaîne, étoile,
                          fly-by ; moignons de dérivation et de vias
+js/35-ipc2581-export.js  export IPC-2581 révision C : toute la carte en un
+                         XML (empilage, cuivre et nets, zones remplies,
+                         perçages et contre-perçage, composants, empreintes,
+                         nomenclature) ; voir « Export IPC-2581 »
 outils/build-monofichier.py assemble le tout dans dist/
 outils/fonte-plans.py    réduit Liberation Sans à la fonte des plans
 test/harness.js          banc d'essai sans navigateur
+test/banc-ipc2581-export.py  relit les exports IPC-2581 écrits par le banc
+                         d'essai par la chaîne de la visionneuse
+                         (python/ipc2581_parser.py → ipc2581_json.py),
+                         et les valide contre le XSD s'il est fourni
 ```
 
 Ces fichiers viennent du dossier partagé, à la racine du dépôt :
@@ -454,9 +462,11 @@ nommés d'après les types `<Backdrill>` d'IPC-2581 :
     %TFBackDrill_MaxStubLengthMM,0.150*%  moignon résiduel admis
     %TABackDrill_DepthMM,1.234*%        profondeur de l'outil défini juste après
 
-Le LISEZ-MOI explique ce choix. L'éditeur **n'exporte pas d'IPC-2581** : le
-contre-perçage n'y est donc pas écrit (la visionneuse IPC-2581, elle, le lit).
-Le `.gbr` n'est pas listé par le master drawing (qui ne détaille que les
+Le LISEZ-MOI explique ce choix. L'export IPC-2581 (voir « Export
+IPC-2581 ») écrit le même contre-perçage avec les vrais types de la norme :
+une `<Spec>` faite de `<Backdrill type="START_LAYER | MUST_NOT_CUT_LAYER |
+MAX_STUB_LENGTH">` pointée par le `<SpecRef>` du trou du via, et un calque de
+perçage par passe pour le foret. Le `.gbr` n'est pas listé par le master drawing (qui ne détaille que les
 Excellon).
 
 ## Les règles de conception, et leurs figures
@@ -1288,6 +1298,91 @@ l'encadrer de `dfCalque(F,"NOM")` … `dfCalque(F)` ; un texte va sur le
 calque de sa catégorie (`cat`), le cadre et le cartouche se reconnaissent à
 leur place, et le reste va sur `DESSIN`. Le texte invisible du PDF n'y va
 pas : il sert la recherche du lecteur PDF, pas le modeleur.
+
+## Export IPC-2581
+
+**Fichier → IPC-2581 .xml** écrit toute la carte en un seul fichier XML,
+`<projet>.xml` (`carte.xml` sans projet) ; le même fichier part dans
+**Fabrication .zip**, annoncé par le Master Drawing et le LISEZ-MOI. Le code
+est dans `js/35-ipc2581-export.js` (`ipc2581Document`).
+
+**Révision C.** C'est la révision en vigueur (2020), celle qu'écrit KiCad par
+défaut, et son XSD est public. Tout ce qu'il nous faut — `<Backdrill>`, la
+rugosité en `<Conductor type="SURFACE_ROUGHNESS_UPFACING">`, les
+`<Dielectric>` — existe aussi en B ; la C ajoute la finition de surface
+(`<SurfaceFinish>`, codes de l'IPC-6012), le type de `<Step>` et l'état de
+l'empilage, et retire le niveau des `<FunctionMode>`.
+
+Ce qui part, section par section :
+
+| Section | Contenu |
+| --- | --- |
+| `Content` | rôle (`Proprietaire`), fonction `USERDEF` (fabrication, assemblage et nomenclature réunis), un `LayerRef` par calque, dictionnaires de traits (`LineDesc`) et de formes (`Circle`, `RectCenter`, `RectRound`, `Oval`, `Contour` pour les pastilles chanfreinées ou polygonales) |
+| `LogisticHeader`, `HistoryRecord` | émetteur, auteur et révision du dossier de projet, date |
+| `Bom` | une ligne par référence de commande (MPN, sinon valeur et boîtier) : repères, quantité, valeur, boîtier, MPN, fabricant en `Textual` ; `populate="false"` pour ce que la variante active ne pose pas |
+| `CadHeader` | une `<Spec>` par couche d'empilage — cuivre (conductivité, rugosité), diélectrique (matière, εr, tan δ, âme ou prépreg), masque (εr, couleur) —, la finition, et une par contre-perçage |
+| `Layer` | sérigraphie, pâte, masque, cuivres (`SIGNAL`, `MIXED` ou `PLANE` selon le rôle de couche), diélectriques, `CONTOUR` (`BOARD_OUTLINE`), un calque `DRILL` par portée avec son `<Span>` (borgnes et enterrés compris), `PERCAGE_NPTH`, un calque par passe de contre-perçage |
+| `Stackup` | la coupe, masque compris, épaisseur hors-tout |
+| `Step` | `PadStackDef` (pastilles et vias, perçage et forme par couche), `Profile` (contour et découpes), `Package` (une empreinte par géométrie : broches, forme, encombrement), `Component` (place, rotation, face, repère, valeur et MPN en `NonstandardAttribute`), `LogicalNet` (broche → net), `PhyNetGroup` (points de sonde des faces), et un `LayerFeature` par calque |
+
+Dans les `LayerFeature` : les pistes (`Line`) avec leur largeur, les arcs en
+`Arc`, les pastilles et les vias (`Pad` avec leur pile et leur broche), les
+**zones remplies** (`Contour` et ses `Cutout`), les traits et textes de
+sérigraphie (`UserSpecial` : les traits du Gerber, et le `Text` pour qu'un
+outil le lise), les ouvertures de masque et de pâte, les trous (`Hole`,
+`VIA` / `PLATED` / `NONPLATED`).
+
+**Le repère** est celui des Gerber du même dossier (`gOrigin`), en
+millimètres, Y vers le haut. Les rotations sont comptées dans le sens
+trigonométrique, comme le veut la norme — l'éditeur les compte dans le sens
+horaire, d'où 270° à l'écran pour 90° dans le fichier. Un composant posé
+dessous est un miroir en X puis une rotation (`<Xform mirror="true">`),
+l'ordre que suit la visionneuse ; le banc le vérifie broche par broche.
+
+**Les zones partent remplies.** Une zone de l'éditeur n'est qu'un contour :
+son cuivre se calcule au rendu, et le Gerber le dit en polarité négative.
+IPC-2581 veut le cuivre lui-même. `ipcRemplir` le calcule exactement comme
+`gerberCopper` le trace — la zone rognée à la carte moins sa marge et aux
+découpes, privée des découpes de zone, des trous du cuivre importé et du
+dégagement de tout cuivre d'un autre net, avec l'anneau et les bras de ses
+liaisons thermiques — mais en géométrie exacte, sans trame : toutes les
+arêtes sont coupées à leurs croisements, chaque tronçon qui sépare le dedans
+du dehors devient un bord, et les bords se rechaînent en îlots et en trous
+(`ipcBooleen`). Les cercles des dégagements partent en polygones
+**circonscrits** : un isolement exporté n'est jamais plus petit que la règle.
+Une géométrie dégénérée qui ne se refermerait pas donne la zone telle que
+dessinée et ses dégagements en `Cutout` (le banc d'essai exige qu'aucune
+zone d'exemple n'en arrive là).
+
+**Les arcs du contour sont gardés.** Le contour n'est qu'une liste de
+sommets ; les cordes égales d'un coin arrondi ou d'une carte ronde
+importés y sont reconnues par `dxfSegments`, comme pour le DXF, et partent en
+`PolyStepCurve` sur le cercle qui passe exactement par les sommets.
+
+Ce qui ne part pas : les règles de conception (classes, matrice), les paires
+différentielles et les contraintes, qui n'ont pas d'écriture que les outils
+de FAO reconnaissent ; la rugosité de Huray, qui n'a pas de type normalisé,
+part en `<Conductor type="OTHER">` commenté. Comme dans le Gerber, une zone
+ne se dégage pas autour d'un trou NPTH.
+
+**L'aller-retour.** `test/harness.js` écrit quatre exports dans
+`dist/essai-ipc2581/` — les deux cartes d'exemple, la seconde chargée de ce
+qui leur manque (contre-perçage, rugosité, composants dessous à 30° et 45°,
+pastilles chanfreinée, polygonale et oblongue, arc, découpe, trous NPTH,
+variante), la première aux coins arrondis percée d'une découpe ronde — et ce
+que l'éditeur en attend. `test/banc-ipc2581-export.py` les relit par la
+chaîne de la visionneuse et compare : composants (place, rotation, face,
+chaque broche sur sa pastille), nets, pistes et arcs, vias et trous, contour
+(aire au millième, arcs), couches et empilage, rugosité, contre-perçage,
+zones (le net raccordé, les autres dégagés), masque, pâte, nomenclature.
+
+    python3 outils/build-monofichier.py && node test/harness.js
+    python3 test/banc-ipc2581-export.py --xsd chemin/IPC-2581C.xsd
+
+Le XSD n'est pas dans le dépôt (il est à l'IPC) : KiCad en garde une copie,
+`qa/data/pcbnew/ipc2581/IPC-2581C.xsd`, que la CI télécharge. Sans `--xsd`
+(ou la variable `IPC2581_XSD`) ni `lxml`, la validation est sautée et le banc
+le dit.
 
 ## Gestionnaire de contraintes
 
