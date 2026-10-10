@@ -29,6 +29,7 @@ RACINE = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(RACINE, "python"))
 
+import ibis                                                          # noqa: E402
 import oeil                                                          # noqa: E402
 import simulation_em as se                                           # noqa: E402
 
@@ -392,6 +393,524 @@ def les_refus():
     t = [_piste(0, 0, 20, 0, "SIG"), _piste(20, 0, 40, 0, "SIG"),
          _piste(20, 0, 20, 15, "SIG")]
     _refus(_doc(t, {"debit": 1e8}), "net ramifie")
+
+
+# =============================================================================
+# 2.0.0 -- les gabarits verifies
+# =============================================================================
+
+def les_gabarits_verifies_disent_leur_source():
+    """SATA : la largeur est 1 - TJ de la tolerance du recepteur, en
+    losange ; PCIe 2 et 3 sont recoupes et se jugent a 10^-12 ; ce qui n'a
+    pas pu l'etre (USB 2.0 extremite, HDMI 1.4) le reste, et le DIT."""
+    for gid, larg, h in (("sata-gen1", 0.49, 0.325), ("sata-gen2", 0.43, 0.275),
+                         ("sata-gen3", 0.43, 0.240)):
+        g = oeil.gabarit(gid)
+        assert g["masque"]["largeur_ui"] == larg, gid
+        assert g["masque"]["hauteur_v"] == h, gid
+        assert g["masque"]["plat_ui"] == 0.0, gid
+        assert g["fiabilite"] == "corrobore" and g["ber"] == 1e-12, gid
+    for gid in ("pcie-gen2", "pcie-gen3"):
+        g = oeil.gabarit(gid)
+        assert g["fiabilite"] == "corrobore" and g["ber"] == 1e-12, gid
+    proche(oeil.gabarit("pcie-gen2")["masque"]["hauteur_v"], 0.120, 1e-12,
+           "PCIe 2 : 120 mV")
+    proche(oeil.gabarit("pcie-gen3")["masque"]["hauteur_v"], 0.025, 1e-12,
+           "PCIe 3 : 25 mV")
+    assert oeil.gabarit("pcie-gen3")["egaliseur"]["dfe"]["max_v"] == 0.030
+    for gid in ("usb2-hs-recepteur", "hdmi14-tmds"):
+        g = oeil.gabarit(gid)
+        assert g["fiabilite"] == "a_verifier", gid
+        assert "NON recoup" in g["source"] + g["note"], gid
+
+
+# =============================================================================
+# 2.0.0 -- l'oeil statistique : gigue, bruit, diaphonie
+# =============================================================================
+
+def la_gigue_aleatoire_suit_l_echelle_q():
+    """Ligne adaptee sans pertes, RJ seule : l'oeil a 10^-n se ferme de
+    sigma Q^-1(2 BER) de chaque cote -- la moitie des transitions seulement
+    change de bit, d'ou le facteur deux --, a la resolution de phase pres."""
+    rj = 0.05
+    st = _canal(50.0, 50.0, rj_ui=rj)["statistique"]
+    for c in st["contours"]:
+        att = 1.0 - 2.0 * rj * oeil.q_inverse(2.0 * c["ber"])
+        assert abs(c["largeur_ui"] - att) < 0.004, (c["ber"], c["largeur_ui"],
+                                                    att)
+    # La baignoire, sommee des deux cotes, rend la meme largeur que le
+    # contour au seuil : deux lectures de la meme distribution.
+    b = st["baignoire"]["ber"]
+    assert max(b) <= 0.5 + 1e-9 and min(b) >= 0.0
+    # Q de la baignoire, cote par cote, contre la distance au croisement :
+    # la somme des deux Q-distances vaut 1 UI, quel que soit le centrage.
+    tau = st["baignoire"]["tau"]
+    i_g = tau.index(-0.25)
+    i_d = tau.index(0.25)
+    d_g = rj * oeil.q_inverse(2.0 * b[i_g])
+    d_d = rj * oeil.q_inverse(2.0 * b[i_d])
+    proche(0.5 + d_g + d_d, 1.0, 0.01, "baignoire en echelle Q")
+
+
+def la_gigue_deterministe_s_ajoute_en_double_dirac():
+    """DJ en double Dirac : TJ(BER) = DJ + 2 sigma Q^-1(4 BER) -- chaque
+    Dirac porte la moitie des transitions."""
+    rj, dj = 0.03, 0.2
+    st = _canal(50.0, 50.0, rj_ui=rj, dj_ui=dj)["statistique"]
+    for c in st["contours"]:
+        att = 1.0 - dj - 2.0 * rj * oeil.q_inverse(4.0 * c["ber"])
+        assert abs(c["largeur_ui"] - att) < 0.004, (c["ber"], c["largeur_ui"],
+                                                    att)
+
+
+def le_bruit_gaussien_ferme_l_oeil_comme_erfc():
+    """Bruit de 20 mV rms sur un oeil parfait de 0,5 V : a 10^-n, la demi-
+    ouverture est 0,25 - sigma Q^-1(2 BER)."""
+    st = _canal(50.0, 50.0, bruit_v=0.02)["statistique"]
+    for c in st["contours"]:
+        att = 2.0 * (0.25 - 0.02 * oeil.q_inverse(2.0 * c["ber"]))
+        assert abs(c["hauteur"] - att) < 2 * st["pas_v"], (c["ber"],
+                                                           c["hauteur"], att)
+
+
+def l_oeil_statistique_converge_vers_le_pire_cas():
+    """Le treillis de Bewley (30 ohms, ligne ouverte) n'a qu'une poignee
+    d'echos qui comptent : leur pire alignement a une probabilite de
+    quelques pour mille, et des 10^-6 l'oeil statistique EST le pire cas,
+    a deux cases de tension pres. Il n'est jamais plus ferme que lui."""
+    r = _canal(30.0, 0.0, statistique=True)
+    h_pire = r["mesures"]["hauteur_pire"]
+    st = r["statistique"]
+    for c in st["contours"]:
+        assert c["hauteur"] >= h_pire - 2 * st["pas_v"], (c, h_pire)
+        assert abs(c["hauteur"] - h_pire) < 2 * st["pas_v"], (c, h_pire)
+    # Sur une liaison a pertes, l'oeil a 10^-6 est plus ouvert que le pire
+    # cas, et il se referme a mesure que le taux descend.
+    r = _canal(50.0, 50.0, debit=5e9, tr=40e-12, pertes=6.0, retard=3e-9,
+               statistique=True)
+    h = [c["hauteur"] for c in r["statistique"]["contours"]]
+    assert all(a >= b - 1e-12 for a, b in zip(h, h[1:])), h
+    assert h[-1] >= r["mesures"]["hauteur_pire"] - 2 * r["statistique"]["pas_v"]
+
+
+def la_diaphonie_bornee_retranche_sa_crete():
+    """Un agresseur de 50 mV de crete ferme le pire cas d'exactement deux
+    fois 50 mV, et l'oeil statistique profond d'autant."""
+    r0 = _canal(30.0, 0.0)
+    r = _canal(30.0, 0.0, agresseurs=[{"nom": "SCK", "coef": 0.05,
+                                       "v": 1.0}])
+    proche(r0["mesures"]["hauteur_pire"] - r["mesures"]["hauteur_pire"], 0.1,
+           1e-9, "pire cas moins deux cretes")
+    assert r["diaphonie"]["crete_totale_v"] == 0.05
+    c = r["statistique"]["contours"][-1]
+    assert abs(c["hauteur"] - r["mesures"]["hauteur_pire"]) < \
+        3 * r["statistique"]["pas_v"], (c["hauteur"],
+                                        r["mesures"]["hauteur_pire"])
+    # L'oeil PRBS, lui, ne la connait pas : la sequence voisine est inconnue.
+    proche(r["mesures"]["hauteur_prbs"], r0["mesures"]["hauteur_prbs"], 1e-12,
+           "PRBS sans diaphonie")
+
+
+def sans_gigue_ni_diaphonie_rien_ne_change():
+    """Les reglages de la 2.0.0 sont facultatifs : sans eux, pas un champ de
+    plus, pas un chiffre de change."""
+    r = _canal(30.0, 0.0)
+    assert "statistique" not in r and "diaphonie" not in r
+    r2 = _canal(30.0, 0.0, rj_ui=0.0, dj_ui=0.0, bruit_v=0.0, agresseurs=[])
+    assert "statistique" not in r2
+    assert r["mesures"] == r2["mesures"]
+    assert r["pire_cas"] == r2["pire_cas"]
+
+
+def le_gabarit_se_juge_aussi_au_taux_d_erreur():
+    g = {"id": "essai", "masque": {"type": "hexagone", "largeur_ui": 0.5,
+                                   "plat_ui": 0.0, "hauteur_v": 0.2}}
+    m = _canal(50.0, 50.0, v_bas=-1.0, gab=g, rj_ui=0.04)["mesures"]
+    assert m["ber_cible"] == 1e-12
+    # la gigue mange la largeur que le pire cas sans gigue laissait
+    assert m["marge_ber"] < m["marge_pire"], m
+    proche(m["largeur_ber_ui"], 1 - 2 * 0.04 * oeil.q_inverse(2e-12), 0.01,
+           "largeur a 1e-12")
+
+
+def les_voisines_du_couplage_deviennent_des_agresseurs():
+    """La voisine de MOSI, prise dans la fiche de couplage, avec le NEXT et
+    le FEXT du niveau 2 de crosstalk.py : le pire cas perd deux fois sa
+    crete, et le coefficient est celui que crosstalk.niveau2 rend."""
+    import crosstalk
+    objets = [_piste(0, 0, 60, 0, "MOSI")]
+    vois = [_piste(0, 0.6, 60, 0.6, "SCK")]
+    r = oeil.analyser(_doc(objets, {"gabarit": "spi-lvcmos33",
+                                    "agresseurs_auto": True}, vois))
+    xt = r["diaphonie"]["agresseurs"]
+    assert len(xt) == 1 and xt[0]["nom"] == "SCK", xt
+    a = xt[0]
+    assert a["coef"] == max(a["next"], a["fext"])
+    proche(a["crete_v"], a["coef"] * 3.3, 1e-9, "crete = coef x 3,3 V")
+    assert r["statistique"]["contours"][-1]["hauteur"] < \
+        r["mesures"]["hauteur_prbs"]
+    # le meme chiffre que l'onglet Crosstalk, recalcule a la main
+    d = _doc(objets, {}, vois)
+    d["analyse"]["temps_montee"] = 1.5e-9
+    res = se.simuler(d)
+    f = [x for x in res["couplage"]["paires"] if x["net_voisin"] == "SCK"][0]
+    zo, ze = f["z_impair"], f["z_pair"]
+    eo, ee = f["eps_eff_impair"], f["eps_eff_pair"]
+    co, ce = math.sqrt(eo) / zo, math.sqrt(ee) / ze
+    lo, le = zo * math.sqrt(eo), ze * math.sqrt(ee)
+    kc, kl = (co - ce) / (co + ce), (le - lo) / (le + lo)
+    td = f["longueur"] * 1e-3 * math.sqrt(0.5 * (eo + ee)) / oeil.C_0
+    n2 = crosstalk.niveau2([(0.25 * (kc + kl), 0.5 * (kl - kc), td)], 1.5e-9)
+    proche(a["next"], n2["next"], 1e-6, "NEXT du niveau 2")
+    proche(a["fext"], n2["fext"], 1e-6, "FEXT du niveau 2")
+    # sens connu : le FEXT seul, ou le NEXT seul
+    p = oeil._params({"gabarit": "spi-lvcmos33"},
+                     oeil.gabarit("spi-lvcmos33"))
+    for sens, cle in (("meme", "fext"), ("oppose", "next")):
+        x, _ = oeil.agresseurs_du_couplage(res["couplage"], p,
+                                           {"agresseurs_sens": sens})
+        proche(x[0]["coef"], a[cle], 1e-9, sens)
+    # la partenaire d'une paire n'est jamais un agresseur
+    x, notes = oeil.agresseurs_du_couplage(res["couplage"], p, {}, "SCK")
+    assert not x and notes
+
+
+# =============================================================================
+# 2.0.0 -- les modeles IBIS
+# =============================================================================
+
+def _ibis_lineaire(r=30.0, vcc=1.0, sigma=40e-12, c_comp=0.0, clamps=False,
+                   rf=50.0, nom="LIN"):
+    """Un tampon IBIS DONT ON CONNAIT LA REPONSE : courbes V-I droites (une
+    resistance r vers Vcc, une vers la masse) et formes d'onde gaussiennes
+    sous 50 ohms -- c'est un generateur de Thevenin, front gaussien compris."""
+    lignes = ["[IBIS Ver] 4.2", "[File Name] essai.ibs",
+              "[Component] ESSAI", "[Model] %s" % nom, "Model_type I/O",
+              "C_comp %gp %gp %gp" % ((c_comp * 1e12,) * 3),
+              "[Voltage Range] %g %g %g" % (vcc, vcc, vcc), "[Pulldown]"]
+    for v in np.linspace(-vcc, 2 * vcc, 7):
+        lignes.append("%g %g NA NA" % (v, v / r))
+    lignes.append("[Pullup]")
+    for v in np.linspace(-vcc, 2 * vcc, 7):
+        lignes.append("%g %g NA NA" % (v, -v / r))
+    if clamps:
+        # diodes franches : 0 jusqu'a 0,5 V de depassement, 1 ohm au-dela
+        lignes.append("[GND Clamp]")
+        for v in (-5.0, -0.5, 0.0, vcc):
+            lignes.append("%g %g" % (v, min(0.0, (v + 0.5) / 1.0)))
+        lignes.append("[POWER Clamp]")
+        for v in (-5.0, -0.5, 0.0, vcc):
+            lignes.append("%g %g" % (v, max(0.0, -(v + 0.5) / 1.0)))
+    for mot, haut in (("Rising", True), ("Falling", False)):
+        lignes += ["[%s Waveform]" % mot, "R_fixture = %g" % rf,
+                   "V_fixture = 0"]
+        for t in np.linspace(0, 10 * sigma, 201):
+            ph = 0.5 * math.erfc(-(t - 4 * sigma) / (sigma * math.sqrt(2)))
+            ku = ph if haut else 1 - ph
+            lignes.append("%.6gp %.9g NA NA" % (t * 1e12,
+                                                vcc * ku * rf / (r + rf)))
+    lignes.append("[End]")
+    return "\n".join(lignes)
+
+
+CMOS33 = """[IBIS Ver] 5.0
+[Comment Char] #_char
+[Component] CMOS33
+[Package]
+R_pkg 0.2 0.1 0.3
+# un commentaire, | n'en est plus un
+[Model] OUT33
+Model_type I/O
+C_comp 3.0pF 2.5pF 3.5pF
+Vinl = 0.8V
+Vinh = 2.0V
+[Voltage Range] 3.3V 3.0V 3.6V
+[Pulldown]
+-3.3 -60mA -50mA -70mA
+0.0 0 0 0
+0.3 15mA 12mA 18mA
+1.0 40mA 32mA 48mA
+3.3 52mA 42mA 62mA
+6.6 54mA NA 64mA
+[Pullup]
+-3.3 60mA 50mA 70mA
+0.0 0 0 0
+0.3 -12mA -10mA -15mA
+1.0 -32mA -26mA -39mA
+3.3 -42mA -34mA -50mA
+6.6 -44mA -36mA -52mA
+[GND Clamp]
+-3.3 -300mA -250mA -350mA
+-1.0 -50mA -40mA -60mA
+-0.7 -5mA -4mA -6mA
+-0.3 0 0 0
+0 0 0 0
+[POWER Clamp]
+-3.3 300mA 250mA 350mA
+-1.0 50mA 40mA 60mA
+-0.7 5mA 4mA 6mA
+-0.3 0 0 0
+0 0 0 0
+[Ramp]
+dV/dt_r 1.6/0.6n 1.4/0.8n 1.8/0.45n
+dV/dt_f 1.6/0.5n 1.4/0.7n 1.8/0.4n
+R_load = 50
+[Model] IN33
+Model_type Input
+C_comp 4pF NA NA
+[GND Clamp]
+-3.3 -300mA NA NA
+-1.0 -50mA NA NA
+-0.7 -5mA NA NA
+-0.3 0 NA NA
+0 0 NA NA
+[End]
+"""
+
+
+def la_lecture_ibis():
+    """Suffixes (m milli, M mega), « NA » renvoyant a typ, caractere de
+    commentaire change en cours de fichier, rapports de [Ramp], conventions
+    de signe des tableaux."""
+    proche(ibis.nombre("1.5nH"), 1.5e-9, 1e-12, "n")
+    proche(ibis.nombre("2M"), 2e6, 1e-12, "M mega")
+    proche(ibis.nombre("2mA"), 2e-3, 1e-12, "m milli")
+    proche(ibis.nombre("-3.3e-1V"), -0.33, 1e-12, "exposant")
+    assert ibis.nombre("NA") is None
+    lu = ibis.lire(CMOS33, "cmos33.ibs")
+    assert set(lu["modeles"]) == {"OUT33", "IN33"}
+    assert "[Package]" in lu["ignores"]
+    m = lu["modeles"]["OUT33"]
+    assert m["type"] == "I/O" and m["c_comp"] == (3e-12, 2.5e-12, 3.5e-12)
+    proche(m["vinh"], 2.0, 1e-12, "Vinh")
+    assert m["rampe"]["r"][0] == (1.6, 0.6e-9)
+    assert m["tableaux"]["pulldown"][-1][2] == m["tableaux"]["pulldown"][-1][1]
+    assert lu["modeles"]["IN33"]["c_comp"] == (4e-12, 4e-12, 4e-12)
+    t = ibis.Tampon(m, "typ")
+    proche(t.v_pu, 3.3, 1e-12, "Vcc typ")
+    proche(ibis.Tampon(m, "max").v_pu, 3.6, 1e-12, "Vcc max")
+    # a l'etat haut a vide, la broche est a Vcc ; a l'etat bas, a 0
+    proche(t.niveau(1.0, 0.0), 3.3, 1e-6, "niveau haut")
+    assert abs(t.niveau(0.0, 1.0)) < 1e-6
+    # un courant ENTRANT est positif : etat haut tire vers 0 V -> il sort
+    assert t.i_total(0.0, 1.0, 0.0)[0] < 0
+    assert t.i_statique(-1.0)[0] < 0          # diode de masse : il sort
+    assert ibis.est_emetteur(m) and not ibis.est_emetteur(lu["modeles"]["IN33"])
+    try:
+        ibis.lire("[IBIS Ver] 5.0\n[Component] X\n")
+    except ibis.ErreurIbis:
+        pass
+    else:
+        raise AssertionError("un fichier sans [Model] doit etre refuse")
+
+
+def _oeil_ibis(o, retard=1e-9, pertes=1.0, z0=50.0, gab=None):
+    """L'oeil d'une ligne ideale avec les tampons IBIS de `o`."""
+    p = oeil._params(o, gab)
+    ctx = oeil.preparer_ibis(o, p)
+    df, n, _, _ = oeil.grille(p["debit"], ctx["tr_lissage"] if ctx and
+                              ctx["temporel"] else p["tr"], retard,
+                              4 * p["tr"])
+    f = df * np.arange(1, n + 1)
+    abcd = oeil.ligne_ideale(f, z0, retard, pertes)
+    nl = None
+    if ctx and ctx["temporel"]:
+        nl = oeil.simuler_non_lineaire(ctx, f, abcd, p, z0)
+        p["v_haut"], p["v_bas"] = nl["v_haut"], nl["v_bas"]
+    return oeil.oeil(f, abcd, p, gab, non_lineaire=nl), nl
+
+
+def un_tampon_ibis_lineaire_rend_l_oeil_lineaire():
+    """Courbes V-I droites et front gaussien : le tampon IBIS EST le
+    generateur de Thevenin. Ligne ouverte attaquee par 30 ohms -- les echos
+    reviennent sur le tampon et y repartent : c'est la boucle tampon-canal
+    qui est eprouvee. Le lissage du canal (un front de la moitie de celui
+    du tampon) se compose en quadrature avec le front."""
+    sigma = 40e-12
+    r, nl = _oeil_ibis({"debit": 1e9, "r_charge": 0.0, "c_charge": 0.0,
+                        "ibis_emetteur": {"texte": _ibis_lineaire(sigma=sigma)}},
+                       pertes=1.0)
+    tr_eq = 2.5631 * sigma * math.sqrt(1.0 + oeil.LISSAGE_SUR_FRONT ** 2)
+    r2 = _canal(30.0, 0.0, tr=tr_eq, pertes=1.0)
+    for k in ("hauteur_prbs", "hauteur_pire", "niveau_1", "niveau_0",
+              "principal"):
+        assert abs(r["mesures"][k] - r2["mesures"][k]) < 0.01, (
+            k, r["mesures"][k], r2["mesures"][k])
+    proche(r["mesures"]["retard"], r2["mesures"]["retard"], 0.01, "retard")
+    assert nl["infos"]["asymetrie"] < 1e-3
+
+
+def la_simulation_temporelle_est_la_superposition_si_tout_est_lineaire():
+    """Le pas de temps ne sait rien de la linearite : sur un tampon
+    lineaire, la forme d'onde PRBS qu'il rend doit etre, au pas pres, la
+    somme des reponses a un echelon qu'il rend aussi."""
+    o = {"debit": 1e9, "r_charge": 0.0, "c_charge": 1e-12,
+         "ibis_emetteur": {"texte": _ibis_lineaire(c_comp=1e-12)}}
+    p = oeil._params(o, None)
+    ctx = oeil.preparer_ibis(o, p)
+    df, n, _, _ = oeil.grille(1e9, ctx["tr_lissage"], 1e-9, 4 * p["tr"])
+    f = df * np.arange(1, n + 1)
+    nl = oeil.simuler_non_lineaire(ctx, f, oeil.ligne_ideale(f, 50.0, 1e-9,
+                                                             1.0), p, 50.0)
+    bits = oeil.prbs(7)
+    y = nl["onde"](bits)
+    spu = oeil.ECHANTILLONS_UI
+    dt_e = 1e-9 / spu
+    t = np.arange(len(y)) * dt_e
+    s = nl["s"]
+    ts = np.arange(len(s)) * nl["dt"]
+    per = len(bits) * 1e-9
+    ampl = nl["v_haut"] - nl["v_bas"]
+    # avant la premiere transition comptee, l'etat du dernier bit
+    sup = np.full(len(y), nl["v_bas"] + ampl * int(bits[-1]))
+    # la sequence est periodique : les transitions des periodes d'avant
+    for rep in range(-6, 1):
+        for i in range(len(bits)):
+            prec = bits[i - 1]
+            if bits[i] != prec:
+                signe = 1.0 if bits[i] else -1.0
+                t0 = i * 1e-9 + rep * per
+                sup += signe * ampl * np.interp(t - t0, ts, s, left=0.0,
+                                                right=s[-1])
+    ecart = float(np.max(np.abs(y - sup)))
+    assert ecart < 2e-3 * ampl, ecart
+
+
+def le_c_comp_du_recepteur_vaut_une_capacite_de_charge():
+    """Un recepteur IBIS sans diode n'est que son C_comp : meme oeil, au
+    chiffre pres, que la capacite de charge saisie a la main."""
+    txt = CMOS33.replace("[GND Clamp]\n-3.3 -300mA NA NA\n-1.0 -50mA NA NA\n"
+                         "-0.7 -5mA NA NA\n-0.3 0 NA NA\n0 0 NA NA\n", "")
+    o = {"debit": 1e9, "tr": 100e-12, "v_haut": 1.0, "v_bas": 0.0,
+         "r_source": 30.0, "r_charge": 0.0,
+         "ibis_recepteur": {"texte": txt, "modele": "IN33"}}
+    r, nl = _oeil_ibis(o)
+    assert nl is None
+    r2 = _canal(30.0, 0.0, tr=100e-12, pertes=1.0, c_charge=4e-12)
+    # (a la grille pres : celle de l'IBIS compte aussi le front du tampon)
+    for k in ("hauteur_prbs", "hauteur_pire", "v_max_vu"):
+        proche(r["mesures"][k], r2["mesures"][k], 1e-3, k)
+
+
+def les_diodes_du_recepteur_ecretent():
+    """Ligne ouverte, tampon fort : la broche deborde de pres de deux fois
+    l'excursion. Les diodes du recepteur (franches, 0,5 V de seuil) la
+    tiennent a quelques dixiemes de volt des rails."""
+    vcc = 1.0
+    em = {"texte": _ibis_lineaire(r=10.0, vcc=vcc)}
+    rx = {"texte": _ibis_lineaire(r=10.0, vcc=vcc, clamps=True, nom="RX")}
+    base = {"debit": 1e9, "r_charge": 0.0, "c_charge": 0.0,
+            "ibis_emetteur": em}
+    r0, _ = _oeil_ibis(base, pertes=0.2)
+    r1, nl = _oeil_ibis(dict(base, ibis_recepteur=rx), pertes=0.2)
+    assert nl["infos"]["recepteur"]["diodes"]
+    assert r0["mesures"]["v_max_vu"] > vcc + 0.55, r0["mesures"]["v_max_vu"]
+    assert r1["mesures"]["v_max_vu"] < vcc + 0.55, r1["mesures"]["v_max_vu"]
+    assert r1["mesures"]["v_min_vu"] > -0.55, r1["mesures"]["v_min_vu"]
+    assert r0["mesures"]["v_min_vu"] < -0.55, r0["mesures"]["v_min_vu"]
+    # les niveaux etablis ne bougent pas : les diodes ne conduisent pas
+    proche(nl["v_haut"], vcc, 1e-3, "niveau haut etabli")
+
+
+def un_tampon_cmos_non_lineaire():
+    """Le tampon CMOS de [Ramp] seule, au coin typ : niveaux 0 et 3,3 V a
+    vide, fronts montant et descendant differents (la note le dit), et le
+    coin max -- plus fort -- deborde davantage."""
+    o = {"debit": 25e6, "r_charge": 0.0, "c_charge": 5e-12,
+         "ibis_emetteur": {"texte": CMOS33, "modele": "OUT33"}}
+    r, nl = _oeil_ibis(o, retard=1e-9, pertes=0.0)
+    proche(nl["v_haut"], 3.3, 1e-3, "niveau haut")
+    assert abs(nl["v_bas"]) < 1e-3
+    assert nl["infos"]["asymetrie"] > 0.05
+    assert "Ramp" in nl["infos"]["emetteur"]["commande"]
+    o2 = dict(o, ibis_emetteur={"texte": CMOS33, "modele": "OUT33",
+                                "coin": "max"})
+    r2, nl2 = _oeil_ibis(o2, retard=1e-9, pertes=0.0)
+    proche(nl2["v_haut"], 3.6, 1e-3, "niveau haut max")
+    assert r2["mesures"]["v_max_vu"] - 3.6 > r["mesures"]["v_max_vu"] - 3.3
+
+
+def les_refus_ibis():
+    d = _doc([_piste(0, 0, 30, 0, "SIG")],
+             {"debit": 1e8, "motif": "prbs15",
+              "ibis_emetteur": {"texte": CMOS33}})
+    _refus(d, "PRBS15 et IBIS")
+    e = _refus(_doc([_piste(0, 0, 30, 0, "SIG")],
+                    {"debit": 1e8, "ibis_emetteur": {"texte": CMOS33,
+                                                     "modele": "XX"}}),
+               "modele inconnu")
+    assert "OUT33" in e.conseil, e.conseil
+    e = _refus(_doc([_piste(0, 0, 30, 0, "SIG")],
+                    {"debit": 1e8, "ibis_emetteur": {"texte": CMOS33,
+                                                     "modele": "IN33"}}),
+               "un Input n'emet pas")
+    assert "émetteur" in e.message, e.message
+    _refus(_doc([_piste(0, 0, 30, 0, "SIG")],
+                {"debit": 1e8, "rj": -1e-12}), "gigue negative")
+
+
+# =============================================================================
+# 2.0.0 -- les vias de la paire
+# =============================================================================
+
+def les_vias_de_la_paire_entrent_dans_la_cascade():
+    """Une paire qui plonge de TOP a une couche interne par deux vias
+    traversants laisse sous elle deux moignons de 2,6 mm : ils resonnent
+    vers 14 GHz, et l'oeil a 16 Gb/s se ferme. La cascade differentielle ne
+    le voyait pas -- elle n'avait que les troncons. On compare la MEME
+    geometrie avec et sans ses vias, dans le meme calcul. Et un element pose
+    sur les deux brins double sa serie et divise sa derivation en mode
+    impair."""
+    m = np.array([[1.0, 7.0], [0.2, 1.0]], dtype=complex)
+    dd = se._abcd_deux_brins(m, "diff")
+    cc = se._abcd_deux_brins(m, "comm")
+    assert dd[0, 1] == 14.0 and dd[1, 0] == 0.1
+    assert cc[0, 1] == 3.5 and cc[1, 0] == 0.4
+
+    six = [_cu("TOP", "signal"), _di("PP", 0.200, 4.20), _cu("GND", "plane"),
+           _di("C1", 0.200, 4.50), _cu("IN1", "signal"),
+           _di("C2", 2.200, 4.50), _cu("PWR", "plane"),
+           _di("PP2", 0.200, 4.20), _cu("BOT", "signal")]
+
+    def piste(x1, x2, y, net, couche, via=None):
+        o = _piste(x1, y, x2, y, net, 0.2)
+        o["layer"] = couche
+        if via:
+            o["via"] = via
+        return o
+    # Traversant de TOP a BOT : la portee percee fait le moignon.
+    via = {"drill_diameter": 0.3, "pad_diameter": 0.6, "layer_from": 0,
+           "layer_to": 8}
+    objets = [piste(0, 20, 0, "P", 0), piste(20, 40, 0, "P", 4, via)]
+    vois = [piste(0, 20, 0.35, "N", 0), piste(20, 40, 0.35, "N", 4, via)]
+    d = _doc(objets, {}, vois, [("P", "N")])
+    d["stackup"]["layers"] = six
+    o = {"debit": 16e9, "tr": 20e-12, "v_haut": 1.0, "v_bas": -1.0,
+         "r_source": 100.0, "r_charge": 100.0, "c_charge": 0.0,
+         "mode": "diff"}
+    p = oeil._params(o, None)
+    df, n, _, _ = oeil.grille(16e9, 20e-12, 0.3e-9)
+    f = df * np.arange(1, n + 1)
+    # LA MEME CASCADE, SANS SES VIAS, dans le meme appel : le couplage --
+    # le plus cher -- n'est resolu qu'une fois.
+    orig = se._cascade_differentielle
+    sans = {}
+
+    def double(*a, **k):
+        sans["s_diff"] = orig(*a, **dict(k, modeles_via=None,
+                                          coudes_par_troncon=None,
+                                          z_trav=None))
+        return orig(*a, **k)
+    se._cascade_differentielle = double
+    try:
+        res = se.simuler(d, garder_abcd=True, freqs_imposees=f)
+    finally:
+        se._cascade_differentielle = orig
+    sd, s0 = res["s_diff"], sans["s_diff"]
+    assert sd["vias"] == 1 and s0["vias"] == 0, (sd["vias"], s0["vias"])
+    h_avec = oeil.oeil(f, sd["abcd_dd"], dict(p))["mesures"]["hauteur_pire"]
+    h_sans = oeil.oeil(f, s0["abcd_dd"], dict(p))["mesures"]["hauteur_pire"]
+    assert h_avec < h_sans - 0.02, (h_avec, h_sans)
 
 
 for nom, fn in list(globals().items()):

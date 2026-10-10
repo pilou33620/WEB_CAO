@@ -2,6 +2,16 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.21.0
+# Date: 2026-10-10
+# Explication: /api/oeil a son propre plafond de corps, MAX_OEIL (celui de
+#   python/oeil.py, 16 Mo) : le document peut maintenant porter le TEXTE de
+#   deux fichiers IBIS (emetteur et recepteur), qui pesent vite des
+#   megaoctets. Le reste de la route ne change pas.
+# Fonctions ajoutees/modifiees :
+# - MAX_OEIL
+# - CustomHandler._oeil_lancer
+#
 # Version: 2.20.0
 # Date: 2026-10-09
 # Explication: route /api/oeil -- le diagramme de l'oeil d'une liaison
@@ -557,6 +567,9 @@ MAX_SIM = getattr(simulation_em, "MAX_CORPS", 4 * 1024 * 1024)
 # Celui du crosstalk porte un parcours et son voisinage : meme ordre de
 # grandeur, et le plafond reste le sien pour pouvoir bouger seul.
 MAX_CROSSTALK = getattr(crosstalk, "MAX_CORPS", 4 * 1024 * 1024)
+# Celui de l'oeil est celui de la simulation, plus le TEXTE d'un ou deux
+# fichiers IBIS : son plafond est le sien.
+MAX_OEIL = max(MAX_SIM, getattr(oeil, "MAX_CORPS", 16 * 1024 * 1024))
 # Celui du RF porte le TEXTE des modeles .sNp, qui pesent vite des megaoctets.
 MAX_RF = getattr(rf_reseau, "MAX_CORPS", 8 * 1024 * 1024)
 # ET CELUI DU DC, QUI N'EN AVAIT AUCUN. Les trois autres routes refusaient un
@@ -2773,7 +2786,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if oeil is None or ERREUR_OEIL is not None:
             raise ErreurIPC(503, "Diagramme de l'œil indisponible : %s"
                                  % ERREUR_OEIL)
-        doc = self._lire_document(MAX_SIM)
+        doc = self._lire_document(MAX_OEIL)
         try:
             return oeil.analyser(doc, journal=sys.stderr.write)
         except oeil.ErreurOeil as exc:
