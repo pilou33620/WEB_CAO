@@ -331,7 +331,10 @@ stack.sim         {causal, fref (Hz), via}                       si hors défaut
 Rien ne s'écrit tant que tout est au défaut : un document qui n'en parle pas se
 relit à l'identique. `simStackup()` (`js/19-simulation.js`) envoie la rugosité
 sur chaque couche de cuivre et les options sur l'empilage ; la simulation, la
-RF, l'œil et les pertes du crosstalk les lisent (voir
+RF, l'œil et les pertes du crosstalk les lisent. La rugosité d'une couche de
+**plan** vaut pour le plan quand une piste s'y réfère (`simulation_em` 5.1.0 :
+elle ne touche que la résistance du plan) ; un plan laissé « lisse » n'envoie
+rien et prend celle de la piste, comme avant (voir
 [simulation-em.md](../docs/simulation-em.md#pertes-diélectrique-causal-via-en-ligne-simulation_em-500)).
 
 ### La nature d'un via se choisit, la portée suit

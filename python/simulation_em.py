@@ -2,6 +2,23 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 5.1.0
+# Date: 2026-10-10
+# Explication: LE PLAN DE REFERENCE A SA PROPRE RUGOSITE. Une seule rugosite
+#   par section -- celle de la couche de la piste -- valait pour le ruban ET
+#   le plan, alors que `ligne_mom.line_losses` separe R_ruban et R_plan. La
+#   2.8.0 de ligne_mom prend `rugosite_plan=` ; `_rugosite_section` le lui
+#   passe, lu sur la couche du plan de reference (les deux plans d'une
+#   triplaque). Un plan qui ne declare rien prend celle de la piste, comme
+#   avant ; declaree egale, ou absente partout : rien de plus ne part, et le
+#   calcul est celui de la 5.0.1 au bit pres. Branche dans la cascade simple
+#   (le cache des sections, donc la RF qui passe par `simuler`), dans
+#   `rf_reseau` et `crosstalk` ; PAS dans `_cascade_differentielle`, qui garde
+#   la rugosite de la piste pour ses deux modes.
+# Fonctions ajoutees : _rugosite_section, _indice_plan.
+# Fonctions modifiees : simuler (la section la recoit), _rugosite_couche
+#   (docstring).
+#
 # Version: 5.0.1
 # Date: 2026-10-10
 # Explication: LA DISPERSION N'EST PLUS COMPTEE DEUX FOIS DANS LA CASCADE.
@@ -733,7 +750,7 @@ except Exception as _exc:                              # noqa: BLE001
 
 FORMAT = "cao-sim-em-3"
 FORMAT_RESULTAT = "cao-sim-em-resultat-5"
-VERSION = "5.0.1"
+VERSION = "5.1.0"
 VERSION_MOTEURS = {
     "simulation_em": VERSION,
     "ligne_mom": getattr(tl, "VERSION", "2.5.0") if tl is not None else "indisponible",
@@ -5826,7 +5843,9 @@ def _couplage(couches, objets, doc, analyse, avertissements):
 #     en regard. Ni celle d'une triplaque nettement decentree, que la formule
 #     de Wheeler 1978 suppose centree : la deduction rend mieux l'asymetrie.
 #   · RUGOSITE : par couche de cuivre, dans l'empilage. Zero par defaut, et
-#     zero rend K = 1 exactement.
+#     zero rend K = 1 exactement. Le ruban prend celle de sa couche, le plan
+#     de reference celle de la sienne quand elle la declare (5.1.0,
+#     `_rugosite_section`), celle de la piste sinon.
 #   · DIELECTRIQUE CAUSAL : dans l'empilage. Desactive par defaut. Il entre
 #     dans les pertes ET dans la vitesse de phase : er(f) fait eps_eff(f) a
 #     remplissage constant, et Z0 suit -- Z0.racine(eps_eff) ne depend que de
@@ -5867,10 +5886,9 @@ def _rugosite_couche(couches, indice):
     rayon_nodule_um. C'est l'unite dans laquelle les fiches de cuivre les
     donnent, et une rugosite en millimetres ne se relit pas.
 
-    LA RUGOSITE EST CELLE DE LA COUCHE DE LA PISTE, et elle vaut pour le plan
-    aussi : `line_losses` n'a qu'un facteur. Un plan d'un autre cuivre que la
-    piste est donc compte avec celui de la piste -- c'est ecrit, et c'est la
-    face de la piste qui porte l'essentiel du courant en microruban.
+    C'EST LA RUGOSITE D'UNE COUCHE, celle de la piste quand on l'appelle sur
+    la piste. Le plan de reference a la sienne depuis la 5.1.0 : voir
+    `_rugosite_section`, qui l'ajoute quand elle differe.
     """
     if not (0 <= int(indice) < len(couches)):
         return {}
@@ -5887,6 +5905,73 @@ def _rugosite_couche(couches, indice):
     if rms > 0:
         return {"modele_rugosite": "hammerstad", "rugosite_rms": rms * 1e-6}
     return {}
+
+
+# Les cles par lesquelles une couche DECLARE sa rugosite -- zero compris : un
+# plan qui ecrit « rugosite_rms_um: 0 » se dit lisse, un plan qui n'ecrit rien
+# ne dit rien.
+_CLES_RUGOSITE_DOC = ("modele_rugosite", "rugosite_rms_um", "rayon_nodule_um",
+                      "rapport_surface")
+
+
+def _indice_plan(couches, indice, nom, vers_le_haut):
+    """L'indice du plan de reference nomme `nom`, cherche depuis la piste dans
+    la direction ou `section_de_couche` l'a trouve. -1 sans nom ou sans
+    plan de ce nom : on ne devine pas lequel c'est."""
+    if not nom:
+        return -1
+    pas = -1 if vers_le_haut else 1
+    k = int(indice) + pas
+    while 0 <= k < len(couches):
+        c = couches[k] or {}
+        if c.get("type") == "copper" and c.get("role") == "plane" \
+                and (c.get("name") or "") == nom:
+            return k
+        k += pas
+    return -1
+
+
+def _rugosite_section(couches, indice, info):
+    """Les options de rugosite de `line_losses` pour une SECTION : celle de la
+    couche de la piste (`_rugosite_couche`), et celle de son ou ses plans de
+    reference quand elle en differe (`rugosite_plan`, ligne_mom 2.8.0).
+
+    LA RUGOSITE DU PLAN EST CELLE DE SA COUCHE. `line_losses` separe la
+    resistance du ruban de celle du plan ; jusqu'a la 5.0.1, un seul facteur
+    -- celui de la piste -- valait pour les deux. Un plan d'un autre
+    feuillard (un cuivre standard sous une piste en HVLP) etait donc compte
+    avec la rugosite de la piste.
+
+    UN PLAN QUI NE DECLARE RIEN PREND CELLE DE LA PISTE, comme avant : c'est le
+    meme feuillard dans la plupart des empilages, et c'est la regle qui garde
+    au bit pres tous les documents qui ne la donnent que pour la piste.
+    Declaree -- zero compris, `rugosite_rms_um: 0` dit un plan lisse --, elle
+    est la sienne. Les deux plans d'une triplaque partent ensemble, et
+    `line_losses` moyenne leurs facteurs. Un plan qu'on ne retrouve pas par
+    son nom garde celle de la piste.
+
+    EGALE A CELLE DE LA PISTE, ou non declaree : rien de plus ne part, et le
+    calcul est celui d'avant au bit pres.
+    """
+    kw = _rugosite_couche(couches, indice)
+    info = info if isinstance(info, dict) else {}
+    plans = []
+    for nom, haut in ((info.get("plan_haut"), True),
+                      (info.get("plan_bas"), False)):
+        if nom:
+            plans.append(_indice_plan(couches, indice, nom, haut))
+    if not plans:
+        return kw
+    propres = []
+    for k in plans:
+        c = (couches[k] or {}) if k >= 0 else {}
+        if k >= 0 and any(cle in c for cle in _CLES_RUGOSITE_DOC):
+            propres.append(_rugosite_couche(couches, k))
+        else:
+            propres.append(dict(kw))
+    if all(p == kw for p in propres):
+        return kw
+    return dict(kw, rugosite_plan=propres[0] if len(propres) == 1 else propres)
 
 
 def options_modele(doc):
@@ -6600,7 +6685,7 @@ def simuler(doc, journal=None, garder_abcd=False, freqs_imposees=None):
                     # sa couche. Voir `_geometrie_pertes`.
                     kw = dict(_geometrie_pertes(
                         info, coplanaire=int(r.get("cotes", 0)) > 0),
-                        **_rugosite_couche(couches, indice))
+                        **_rugosite_section(couches, indice, info))
                     eps_f, z_f, a_c, a_d = _ligne_a(
                         r["z0"], r["eps_eff"], info, fc, largeur * 1e-3,
                         ep * 1e-3, kw, opts)

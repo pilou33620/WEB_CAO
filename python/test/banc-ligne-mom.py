@@ -5824,6 +5824,149 @@ T("la cascade ne disperse le microruban qu'une fois (Getsinger)",
   la_cascade_ne_disperse_qu_une_fois)
 
 
+# ==========================================================================
+# LE PLAN A SA PROPRE RUGOSITE (ligne_mom 2.8.0, simulation_em 5.1.0)
+# ==========================================================================
+
+def la_rugosite_du_plan_ne_touche_que_r_plan():
+    """`rugosite_plan` : None ou egale a celle du ruban, le detail est celui
+    d'avant au bit pres ; differente, R_ruban ne bouge pas et R_plan suit SON
+    facteur ; deux plans (triplaque), la moyenne des deux ; une cle inconnue
+    est refusee."""
+    dl = _tl.line_losses_detaillees
+    base = dict(z0=50.0, eps_eff=3.3, largeur=0.38e-3, epsilon_r=4.3,
+                tan_delta=0.02, freq=5e9, hauteur=0.2e-3, topologie="micro")
+    rug = dict(base, rugosite_rms=1e-6)
+    d0 = dl(**rug)
+    for egal in (None, {"rugosite_rms": 1e-6},
+                 {"rugosite_rms": 1e-6, "modele_rugosite": "hammerstad"}):
+        d1 = dl(**dict(rug, rugosite_plan=egal))
+        d1.pop("facteur_rugosite_plan", None)
+        assert d1 == d0, (egal, d1, d0)
+        assert _tl.line_losses(**dict(rug, rugosite_plan=egal)) == \
+            _tl.line_losses(**rug), egal
+    assert "facteur_rugosite_plan" not in d0
+    k1 = _tl.facteur_rugosite(5e9, 1e-6)
+    lisse = dl(**base)
+    # plan lisse sous un ruban rugueux : R_plan = celui du cuivre lisse
+    d2 = dl(**dict(rug, rugosite_plan={}))
+    assert d2["R_ruban"] == d0["R_ruban"], (d2["R_ruban"], d0["R_ruban"])
+    proche(d2["R_plan"], lisse["R_plan"], 1e-12, "R_plan d'un plan lisse")
+    assert d2["facteur_rugosite_plan"] == 1.0
+    proche(d0["R_plan"] / d2["R_plan"], k1, 1e-12, "K du ruban porte jadis au plan")
+    # plan plus rugueux que le ruban, Huray compris
+    d3 = dl(**dict(rug, rugosite_plan={"rugosite_rms": 2e-6}))
+    assert d3["R_ruban"] == d0["R_ruban"]
+    proche(d3["R_plan"] / lisse["R_plan"], _tl.facteur_rugosite(5e9, 2e-6), 1e-12,
+           "K propre du plan (Hammerstad)")
+    hu = {"modele_rugosite": "huray", "rayon_nodule": 0.5e-6, "rapport_surface": 1.5}
+    d4 = dl(**dict(base, rugosite_plan=hu))
+    assert d4["R_ruban"] == lisse["R_ruban"]
+    proche(d4["R_plan"] / lisse["R_plan"],
+           _tl.facteur_rugosite(5e9, modele="huray", rayon_nodule=0.5e-6,
+                                rapport_surface=1.5), 1e-12, "K propre du plan (Huray)")
+    proche(d4["alpha_c"], (d4["R_ruban"] + d4["R_plan"]) / 100.0, 1e-12,
+           "alpha_c = (R_ruban + R_plan) / 2 Z0")
+    # triplaque : les deux plans, la moyenne de leurs facteurs
+    tri = dict(base, eps_eff=4.0, epsilon_r=4.0, hauteur=0.43e-3,
+               topologie="triplaque")
+    t0 = dl(**tri)
+    t2 = dl(**dict(tri, rugosite_plan=[{"rugosite_rms": 2e-6}, {}]))
+    proche(t2["facteur_rugosite_plan"], (_tl.facteur_rugosite(5e9, 2e-6) + 1.0) / 2,
+           1e-12, "moyenne des deux plans")
+    proche(t2["R_plan"] / t0["R_plan"], t2["facteur_rugosite_plan"], 1e-12,
+           "R_plan de la triplaque")
+    assert t2["R_ruban"] == t0["R_ruban"]
+    # le modele « ancien » n'a pas de plan : rien ne change
+    a0 = dl(**dict(rug, modele_conducteur="ancien"))
+    a1 = dl(**dict(rug, modele_conducteur="ancien", rugosite_plan={}))
+    assert a1["alpha_c"] == a0["alpha_c"]
+    try:
+        dl(**dict(rug, rugosite_plan={"rugosite": 1e-6}))
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("une cle inconnue doit etre refusee")
+
+
+def la_section_passe_la_rugosite_de_son_plan():
+    """`_rugosite_section` : plan muet ou egal, les options de la piste telles
+    quelles ; plan declare, la sienne -- zero compris ; triplaque, les deux.
+    Et la cascade : un plan qui declare la rugosite de la piste rend la meme
+    ABCD au bit pres ; un plan lisse sous un ruban rugueux, le rapport des R
+    de `line_losses_detaillees(rugosite_plan={})`. La RF et le crosstalk
+    passent par la meme fonction."""
+    rs = _se._rugosite_section
+    cou = [dict(c) for c in _FACE_SEULE]
+    cou[2]["rugosite_rms_um"] = 1.0
+    info = {"topo": "micro", "plan_haut": "GND", "plan_bas": ""}
+    piste = {"modele_rugosite": "hammerstad", "rugosite_rms": 1e-6}
+    assert rs(cou, 2, info) == piste, rs(cou, 2, info)
+    cou[0]["rugosite_rms_um"] = 1.0
+    assert rs(cou, 2, info) == piste
+    cou[0]["rugosite_rms_um"] = 0.0
+    assert rs(cou, 2, info) == dict(piste, rugosite_plan={}), rs(cou, 2, info)
+    cou[0].update(modele_rugosite="huray", rayon_nodule_um=0.5, rapport_surface=1.5)
+    assert rs(cou, 2, info)["rugosite_plan"] == {
+        "modele_rugosite": "huray", "rayon_nodule": 0.5e-6, "rapport_surface": 1.5}
+    # piste lisse, plan rugueux
+    cou2 = [dict(c) for c in _FACE_SEULE]
+    cou2[0]["rugosite_rms_um"] = 2.0
+    assert rs(cou2, 2, info) == {"rugosite_plan": {"modele_rugosite": "hammerstad",
+                                                    "rugosite_rms": 2e-6}}
+    # un plan qu'on ne retrouve pas par son nom : celle de la piste
+    assert rs(cou2, 2, {"topo": "micro", "plan_haut": "AUTRE"}) == {}
+    # triplaque : les deux plans, chacun la sienne ou celle de la piste
+    tri = [dict(c) for c in _TRIPLAQUE]
+    tri[2]["rugosite_rms_um"] = 1.0
+    tri[4]["rugosite_rms_um"] = 3.0
+    it = {"topo": "strip", "plan_haut": "G1", "plan_bas": "G2"}
+    assert rs(tri, 2, it) == dict(piste, rugosite_plan=[
+        piste, {"modele_rugosite": "hammerstad", "rugosite_rms": 3e-6}]), rs(tri, 2, it)
+    # la cascade, dielectrique sans perte
+    sans_pertes = [dict(c, tan_delta=0.0) if c["type"] == "dielectric" else c
+                   for c in _FACE_SEULE]
+    fs, lg = [1e9, 5e9, 20e9], 0.05
+    rug = [dict(c) for c in sans_pertes]
+    rug[2]["rugosite_rms_um"] = 1.0
+    _, r1 = _ligne_seule(rug, 2, lg * 1e3, fs)
+    egal = [dict(c) for c in rug]
+    egal[0]["rugosite_rms_um"] = 1.0
+    _, re_ = _ligne_seule(egal, 2, lg * 1e3, fs)
+    assert all(np.array_equal(a, b) for a, b in zip(r1["abcd"], re_["abcd"])), \
+        "un plan qui declare la rugosite de la piste change le resultat"
+    pl = [dict(c) for c in rug]
+    pl[0]["rugosite_rms_um"] = 0.0
+    _, rp = _ligne_seule(pl, 2, lg * 1e3, fs)
+    h = rp["segments"][0]["h"] * 1e-3
+    for k, f in enumerate(fs):
+        a_p = _gamma(rp["abcd"][k], lg).real
+        a_1 = _gamma(r1["abcd"][k], lg).real
+        # la hauteur donnee, R ne depend que de la section : le rapport des
+        # alphas de la cascade est celui des R
+        r_pl = _tl.line_losses_detaillees(50.0, 3.0, 0.3e-3, 4.3, 0.0, f, 35e-6,
+                                          hauteur=h, topologie="micro",
+                                          rugosite_rms=1e-6, rugosite_plan={})
+        r_ru = _tl.line_losses_detaillees(50.0, 3.0, 0.3e-3, 4.3, 0.0, f, 35e-6,
+                                          hauteur=h, topologie="micro",
+                                          rugosite_rms=1e-6)
+        assert a_p < a_1, (f, a_p, a_1)
+        proche(a_p / a_1, r_pl["R_ac_par_m"] / r_ru["R_ac_par_m"], 3e-3,
+               "plan lisse sous ruban Rq 1 um a %.0f GHz" % (f / 1e9))
+    # la RF : la piste de masse de `rf_reseau` recoit la rugosite du plan
+    import rf_reseau
+    li = rf_reseau._ligne(pl, 2, 0.3, 0.035, {})
+    assert li["kw_pertes"].get("rugosite_plan") == {}, li["kw_pertes"]
+    li = rf_reseau._ligne(egal, 2, 0.3, 0.035, {})
+    assert "rugosite_plan" not in li["kw_pertes"], li["kw_pertes"]
+
+
+T("la rugosite propre du plan ne touche que R_plan (ligne_mom 2.8.0)",
+  la_rugosite_du_plan_ne_touche_que_r_plan)
+T("la section passe la rugosite de son plan de reference",
+  la_section_passe_la_rugosite_de_son_plan)
+
+
 print("\n" + "-" * 62)
 print("  %d cas, %s" % (ok + ko, "tous passes" if not ko else "%d en echec" % ko))
 sys.exit(1 if ko else 0)

@@ -468,8 +468,28 @@ Ce que l'empilage envoyé porte en plus (le document reste `cao-sim-em-3`) :
 `analyse` peut porter les trois dernières clés pour un « et si » qui ne touche
 pas à la carte. Le résultat dit ce qui a servi (`modeles`), chaque transition
 son modèle (`modelise.modele_via`, `phase_via_rad`), et le `.s2p` le note dans
-son en-tête quand une option s'écarte du défaut. **Une seule rugosité par
-section** : celle de la couche de la piste, comptée aussi pour le plan.
+son en-tête quand une option s'écarte du défaut.
+
+**Le plan de référence a sa propre rugosité** (`simulation_em` 5.1.0,
+`ligne_mom` 2.8.0). `line_losses` sépare la résistance du ruban (`R_ruban`)
+de celle du ou des plans (`R_plan`) ; jusqu'ici un seul facteur K, celui de
+la couche de la piste, valait pour les deux. `line_losses(…, rugosite_plan=)`
+en prend un pour le plan seul — un dict des mêmes options (`{}` : plan
+lisse), ou une liste de deux pour une triplaque, dont on moyenne les K — et
+ne touche que `R_plan`. `_rugosite_section` le lit sur la couche du plan de
+référence : **un plan qui ne déclare rien prend celle de la piste**, comme
+avant (même feuillard dans la plupart des empilages) ; déclarée — zéro
+compris, `"rugosite_rms_um": 0` dit un plan lisse —, c'est la sienne. Égale à
+celle de la piste ou absente : rien de plus ne part, et le calcul est celui
+d'avant au bit près. Branché dans la cascade simple (donc la RF qui passe par
+`simuler`), `rf_reseau` 1.7.0 et `crosstalk` 4.3.0 ; **pas dans la cascade
+différentielle** (l'œil), qui garde la rugosité de la piste pour ses deux
+modes. L'éditeur n'a rien à saisir de plus : la rugosité de chaque cuivre
+(`stack.cu[i].rug`) part déjà, celle du plan comprise ; un plan « lisse » n'y
+envoie rien, et prend donc celle de la piste. Mesuré (microruban 0,58 mm sur
+0,3 mm de FR-4, 100 mm, 10 GHz ; le plan porte 25 % de R) : piste HVLP
+(Rq 0,3 µm) sur plan ED standard (Rq 2 µm), α_c 4,83 → 5,61 dB/m et perte
+totale 3,496 → 3,574 dB, là où l'ancien calcul comptait le plan en HVLP.
 
 **L'éditeur PCB** les saisit dans le panneau *Empilage physique* : sur une
 ligne de cuivre, « Rugosité du cuivre » (réglages usuels : lisse, ED standard
@@ -514,7 +534,8 @@ rugosité multiplie l'α_c de la cascade par le K attendu (Hammerstad et Huray,
 à 0,3 % près) ; le causal rend la fiche à f_ref au bit près et
 (β/β₀)² = εr(f)/εr en triplaque, paire comprise ; le via en ligne rejoint le π
 à 10 MHz (réactances à 10⁻⁵), garde moignon et contre-perçage, et « auto »
-rend le π au bit près sous le seuil ; la mutuelle baisse L_impair quand les
+rend le π au bit près sous le seuil ; la rugosité propre du plan ne touche que
+`R_plan`, égale ou absente elle rend la même ABCD au bit près ; la mutuelle baisse L_impair quand les
 fûts se rapprochent et vaut Grover sans retour. RF : [banc-rf.py](../python/test/banc-rf.py).
 
 
