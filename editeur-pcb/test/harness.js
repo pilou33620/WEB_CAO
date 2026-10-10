@@ -405,6 +405,9 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "dfPlacerVue","dfReplacer","dfBoiteVue","dfBoiteItems","dfVersFeuille","dfDansPoly","dfCoupeLigne",
   "dfCoupePoly","dfClicFeuille","dfGlisser","dfLacher","dfToucher","dfChoisirOutil","dfOutilsTouche","dfSurSvg",
   "dfOublierCarte","DF_ROUGE","DF_GRILLE",
+  /* cote angulaire, chaînes, ordonnées, tolérances, vues qui s'écartent */
+  "dfNormTol","dfAngle","dfTolerer","dfPoserVueRepousser","dfPlaceProche","dfValeurCote","dfEditerTolerance",
+  "dfCoteEnCours","dfApercuCote","dfRendreListeCotes","DF_COTES","DF_TOL","dfBoitePts",
   /* gestionnaire de contraintes (01-core.js pour le modèle, 30-contraintes.js) */
   "cmNorm","cmCle","cmClrClasses","cmClrMax","cmMesures","cmRegleDe","cmVerifier","cmEvaluerGroupe",
   "cmManqueLongueur","cmLargeurPourZ","cmDrc","cmEdit","cmPoser","cmPoserPhysique","cmPoserMatrice",
@@ -22587,6 +22590,334 @@ T("plans : outils de la fenêtre — cote posée à la souris, glissée, effacé
     if(!dfOutilsTouche({key:"Escape",target:{tagName:"DIV"}})||DF.outil!=="sel")throw new Error("Échap doit rendre la sélection");
     if(dfOutilsTouche({key:"Delete",target:{tagName:"INPUT"}}))throw new Error("Suppr dans un champ reste au champ");
   }finally{dfChoisirOutil("sel");DF.sel=null;dfFermer();S.holes=[];S.dessin=null;}
+});
+
+/* ---------- cote angulaire, chaînes, ordonnées, tolérances, vues qui s'écartent ---------- */
+/* Les textes d'une cote posée, dans l'ordre où elle les dessine. */
+function dfTxtCote(F,id){
+  const e=F.cotes.find(c=>c.id===id);
+  if(!e)throw new Error("cote "+id+" absente de la feuille");
+  return F.items.slice(e.i0,e.i1).filter(it=>it.t==="t").map(it=>it.s);
+}
+/* La fenêtre ouverte sur la carte du moment : sans feuilles ni accroches
+   d'un essai précédent (la fenêtre les refait d'ordinaire après 180 ms). */
+function dfOuvrirNeuf(){DF.doc=null;DF.acc=null;dfOuvrir();}
+/* Un trapèze connu : le côté 3 (du sommet 3 au sommet 0) monte à 45° du
+   côté 0 ; la droite du côté 1 coupe celle du côté 3 à 45° aussi. */
+function dfTrapeze(){
+  const c=dfCoin(), x=c.x, y=c.y;
+  dxfPlateau([{x,y},{x:x+40,y},{x:x+40,y:y+20},{x:x+20,y:y+20}]);
+  return {x,y};
+}
+T("plans : cote angulaire — trois points ou deux arêtes, valeur exacte, elle suit le contour",()=>{
+  exCharger(1);
+  const o=dfTrapeze();
+  try{
+    const i3=dfAjouterCote({vue:"fab/carte",type:"ang",s:{type:"contour",i:0},a:{type:"contour",i:1},
+                            b:{type:"contour",i:3},dx:12,dy:5});
+    const i2=dfAjouterCote({vue:"fab/carte",type:"ang",a:{type:"bord",i:1,t:0.5},b:{type:"bord",i:3,t:0.5},dx:-4,dy:-9});
+    if(!i3||!i2)throw new Error("cote angulaire refusée");
+    const c=dfCfg().cotes;
+    if(Math.abs(dfMesurer(c[0]).v-45)>1e-9)throw new Error("trois points : "+dfMesurer(c[0]).v+"° au lieu de 45°");
+    const g=dfAngle(c[1]);
+    if(!g||Math.abs(g.v-45)>1e-9||Math.abs(g.s.x-(o.x+40))>1e-9||Math.abs(g.s.y-(o.y+40))>1e-9)
+      throw new Error("deux arêtes : sommet et angle faux "+JSON.stringify(g&&{s:g.s,v:g.v}));
+    let F=dfFab(dfDocument());
+    if(JSON.stringify(dfTxtCote(F,i3))!=='["45,0°"]'||JSON.stringify(dfTxtCote(F,i2))!=='["45,0°"]')
+      throw new Error("valeurs : "+dfTxtCote(F,i3)+" / "+dfTxtCote(F,i2));
+    /* l'arc : centré au sommet, du rayon où on l'a posé (13 mm de feuille) */
+    const v=F.vues.find(v=>v.cle==="fab/carte"), S0=dfVersFeuille(v)(o.x,o.y), e=F.cotes.find(k=>k.id===i3);
+    const arc=F.items.slice(e.i0,e.i1).find(it=>it.t==="p"&&it.sp[0].length>8);
+    if(!arc||arc.sp[0].some(p=>Math.abs(Math.hypot(p.x-S0.x,p.y-S0.y)-13)>1e-6))throw new Error("arc mal placé");
+    if(F.items.slice(e.i0,e.i1).filter(it=>it.t==="p"&&it.plein!=null).length!==2)throw new Error("deux flèches attendues");
+    /* sur le calque COTES du DXF, le degré en %%d */
+    const D=dxfLu(dxfFeuilles([F]).octets);
+    if(D.ents.filter(x=>x.type==="TEXT"&&x.cal==="COTES"&&x.s(1)==="45,0%%d").length!==2)throw new Error("angle absent du calque COTES");
+    /* posée dans l'angle opposé par le sommet : l'arc y passe, même valeur */
+    const io=dfAjouterCote({vue:"fab/carte",type:"ang",s:{type:"contour",i:0},a:{type:"contour",i:1},b:{type:"contour",i:3},dx:-8,dy:-3});
+    F=dfFab(dfDocument());
+    const eo=F.cotes.find(k=>k.id===io), bis={x:Math.cos(Math.PI/8),y:Math.sin(Math.PI/8)};
+    const arcO=F.items.slice(eo.i0,eo.i1).find(it=>it.t==="p"&&it.sp[0].length>8);
+    if(dfTxtCote(F,io)[0]!=="45,0°"||arcO.sp[0].some(p=>(p.x-S0.x)*bis.x+(p.y-S0.y)*bis.y>-1e-6))throw new Error("angle opposé par le sommet");
+    dfSupprimerCote(io);
+    /* le sommet 3 glisse : les deux cotes suivent */
+    S.board.pts[3]={x:o.x+10,y:o.y+20};boardChanged();
+    F=dfFab(dfDocument());
+    if(dfTxtCote(F,i3)[0]!=="63,4°")throw new Error("après déplacement : "+dfTxtCote(F,i3));
+    /* un sommet en moins : la cote de trois points devient orpheline, l'autre
+       tient toujours (côté 3 → côté 2 renuméroté : on vérifie qu'elle se
+       mesure encore, sans rien en dire de plus) */
+    dxfPlateau([{x:o.x,y:o.y},{x:o.x+40,y:o.y},{x:o.x+40,y:o.y+20}]);
+    F=dfFab(dfDocument());
+    const t=dfTxtCote(F,i3);
+    if(!F.cotes.find(k=>k.id===i3).orph||t[0]!=="63,4° (orpheline)")throw new Error("orpheline : "+t);
+    /* deux arêtes parallèles : pas de sommet, rien à coter */
+    dfTrapeze();
+    if(dfAngle({a:{type:"bord",i:0,t:0.5},b:{type:"bord",i:2,t:0.5}}))throw new Error("arêtes parallèles acceptées");
+  }finally{S.dessin=null;}
+});
+T("plans : cote angulaire posée à la souris — sommet et deux points, puis deux arêtes",()=>{
+  exCharger(1);
+  const o=dfTrapeze();
+  dfOuvrirNeuf();
+  try{
+    DF.page=0;
+    let F=DF.doc.feuilles[0];
+    const P=dfVersFeuille(F.vues.find(v=>v.cle==="fab/carte"));
+    const s=P(o.x,o.y), a=P(o.x+40,o.y), b=P(o.x+20,o.y+20);
+    dfChoisirOutil("ang");
+    dfClicFeuille(F,s.x+0.2,s.y-0.2,1.5);dfClicFeuille(F,a.x,a.y,1.5);dfClicFeuille(F,b.x,b.y,1.5);
+    if(DF.clics.length!==3)throw new Error("trois points accrochés attendus : "+DF.clics.length);
+    if(dfSurSvg(F).indexOf("df-el on")<0)throw new Error("l'arc doit se voir avant d'être posé");
+    const id=dfClicFeuille(F,s.x+15,s.y+4,1.5);
+    const c=dfCfg().cotes.find(k=>k.id===id);
+    if(!c||c.type!=="ang"||c.s.type!=="contour"||c.s.i!==0||c.a.i!==1||c.b.i!==3||c.b.type!=="contour"||Math.abs(c.dx-15)>1e-6)throw new Error("cote : "+JSON.stringify(c));
+    /* deux arêtes : cliquées loin de leurs sommets */
+    F=DF.doc.feuilles[0];
+    const m0=P(o.x+30,o.y), m3=P(o.x+5,o.y+5), m2=P(o.x+30,o.y+20);
+    dfChoisirOutil("ang");
+    dfClicFeuille(F,m0.x,m0.y+0.3,1.5);
+    if(!DF.clics.length||DF.clics[0].ref.type!=="bord")throw new Error("la première arête n'est pas prise : "+DF.msg);
+    dfClicFeuille(F,m2.x,m2.y,1.5);
+    if(DF.clics.length!==1)throw new Error("une arête parallèle doit être refusée");
+    dfClicFeuille(F,m3.x,m3.y,1.5);
+    const id2=dfClicFeuille(F,s.x+12,s.y+6,1.5);
+    const c2=dfCfg().cotes.find(k=>k.id===id2);
+    if(!c2||c2.s||c2.a.type!=="bord"||c2.b.i!==3)throw new Error("cote sur arêtes : "+JSON.stringify(c2));
+    if(dfTxtCote(DF.doc.feuilles[0],id2)[0]!=="45,0°")throw new Error("valeur : "+dfTxtCote(DF.doc.feuilles[0],id2));
+  }finally{dfChoisirOutil("sel");DF.sel=null;dfFermer();S.dessin=null;}
+});
+T("plans : cotes en chaîne — une seule ligne, elles suivent le composant, une référence perdue n'en touche qu'une",()=>{
+  exCharger(1);
+  const j=S.fps.find(f=>f.ref==="J2"), q=padsWorld(j).find(p=>String(p.n)==="1");
+  S.holes=[mkHole(q.x-10,q.y+1,3.2),mkHole(q.x+25,q.y-1,3.2)];
+  const [h0,h1]=S.holes;
+  try{
+    /* posés dans le désordre : la chaîne range ses points dans le sens coté */
+    const id=dfAjouterCote({vue:"fab/carte",type:"ch",sens:"h",dx:0,dy:-12,
+      pts:[{type:"trou",id:h1.id},{type:"trou",id:h0.id},{type:"pastille",fp:"J2",pad:"1",ou:"c"}]});
+    if(!id)throw new Error("chaîne refusée");
+    let F=dfFab(dfDocument());
+    if(JSON.stringify(dfTxtCote(F,id))!=='["10,00","25,00"]')throw new Error("valeurs : "+dfTxtCote(F,id));
+    const lignes=F2=>{const e=F2.cotes.find(k=>k.id===id);
+      return F2.items.slice(e.i0,e.i1).filter(it=>it.t==="p"&&Math.abs(it.lw-0.18)<1e-9&&it.sp[0].length===2);};
+    const L=lignes(F);
+    if(L.length!==2||Math.abs(L[0].sp[0][0].y-L[1].sp[0][0].y)>1e-9)throw new Error("les cotes d'une chaîne s'alignent sur une ligne");
+    /* le connecteur bouge de 2,5 mm : les deux valeurs suivent */
+    j.x+=2.5;
+    F=dfFab(dfDocument());
+    if(JSON.stringify(dfTxtCote(F,id))!=='["12,50","22,50"]')throw new Error("après déplacement : "+dfTxtCote(F,id));
+    /* le second trou effacé : sa cote seule devient orpheline, à sa dernière place */
+    S.holes=[h0];
+    F=dfFab(dfDocument());
+    const e=F.cotes.find(k=>k.id===id), t=F.items.slice(e.i0,e.i1).filter(it=>it.t==="t");
+    if(e.orph!==1)throw new Error("une seule valeur orpheline attendue : "+e.orph);
+    if(t[0].s!=="12,50"||t[0].c!==0||t[1].s!=="22,50 (orpheline)"||JSON.stringify(t[1].c)!==JSON.stringify(DF_ROUGE))
+      throw new Error("chaîne à moitié orpheline : "+t.map(x=>x.s+" "+JSON.stringify(x.c)));
+  }finally{S.holes=[];S.dessin=null;}
+});
+T("plans : cotes en chaîne posées à la souris — points, puis un clic hors accroche",()=>{
+  exCharger(1);
+  const c0=dfCoin();
+  S.holes=[mkHole(c0.x+5,c0.y+5,3.2),mkHole(c0.x+15,c0.y+5.5,3.2),mkHole(c0.x+32,c0.y+4.5,3.2)];
+  dfOuvrirNeuf();
+  try{
+    DF.page=0;
+    const F=DF.doc.feuilles[0], v=F.vues.find(v=>v.cle==="fab/carte"), P=dfVersFeuille(v), b=dfBoiteVue(F,v);
+    dfChoisirOutil("ch");DF.sens="h";
+    for(const h of S.holes){const p=P(h.x,h.y);dfClicFeuille(F,p.x+0.2,p.y+0.1,1.5);}
+    if(DF.clics.length!==3)throw new Error("trois points attendus : "+DF.clics.length+" "+DF.msg);
+    const p0=P(S.holes[0].x,S.holes[0].y);
+    /* l'aperçu suit la souris, puis la ligne se pose au-dessus de la carte */
+    DF.souris={X:p0.x,Y:b.y1-6};
+    if(dfSurSvg(F).indexOf("df-el-t")<0)throw new Error("l'aperçu doit montrer les valeurs");
+    const id=dfClicFeuille(F,p0.x,b.y1-6,1.5);
+    const c=dfCfg().cotes.find(k=>k.id===id);
+    if(!c||c.type!=="ch"||c.pts.length!==3||c.sens!=="h"||Math.abs(c.dy-(b.y1-6-p0.y))>1e-6)throw new Error("chaîne : "+JSON.stringify(c));
+    if(JSON.stringify(dfTxtCote(DF.doc.feuilles[0],id))!=='["10,00","17,00"]')throw new Error("valeurs : "+dfTxtCote(DF.doc.feuilles[0],id));
+    /* Entrée clôt la chaîne à la souris */
+    dfChoisirOutil("ch");DF.sens="v";
+    const F2=DF.doc.feuilles[0];
+    for(const h of S.holes.slice(0,2)){const p=P(h.x,h.y);dfClicFeuille(F2,p.x,p.y,1.5);}
+    DF.souris={X:b.x1-8,Y:p0.y};
+    if(!dfOutilsTouche({key:"Enter",target:{tagName:"DIV"}}))throw new Error("Entrée doit poser la chaîne");
+    const c2=dfCfg().cotes[1];
+    if(!c2||c2.sens!=="v"||dfTxtCote(DF.doc.feuilles[0],c2.id)[0]!=="0,50")throw new Error("chaîne verticale : "+JSON.stringify(c2));
+  }finally{dfChoisirOutil("sel");DF.sel=null;DF.sens="h";dfFermer();S.holes=[];S.dessin=null;}
+});
+T("plans : cotes d'ordonnée — depuis l'origine des fichiers de fabrication, ou d'un point accroché",()=>{
+  exCharger(1);
+  const o=gOrigin();
+  S.holes=[mkHole(o.x+10,o.y-5,3.2),mkHole(o.x+30,o.y-15,3.2)];
+  const fo=S.fabOrigin, so=S.origin;
+  try{
+    const ref=S.holes.map(h=>({type:"trou",id:h.id}));
+    const ix=dfAjouterCote({vue:"fab/carte",type:"ord",sens:"h",o:{type:"origine"},pts:ref,dx:0,dy:9});
+    const iy=dfAjouterCote({vue:"fab/carte",type:"ord",sens:"v",o:{type:"origine"},pts:ref,dx:-9,dy:0});
+    let F=dfFab(dfDocument());
+    if(JSON.stringify(dfTxtCote(F,ix))!=='["0","10,00","30,00"]')throw new Error("abscisses : "+dfTxtCote(F,ix));
+    /* Y vers le haut, comme les Gerber : le trou le plus haut a la plus grande ordonnée */
+    if(JSON.stringify(dfTxtCote(F,iy))!=='["15,00","5,00","0"]')throw new Error("ordonnées : "+dfTxtCote(F,iy));
+    /* les abscisses se lisent debout, au bout de lignes de rappel verticales */
+    const e=F.cotes.find(k=>k.id===ix), it=F.items.slice(e.i0,e.i1);
+    if(!it.filter(x=>x.t==="t").every(x=>x.rot===90))throw new Error("abscisses : texte debout attendu");
+    if(it.filter(x=>x.t==="p").length!==3)throw new Error("une ligne de rappel par valeur");
+    /* l'origine des fichiers passe à l'origine utilisateur : les cotes suivent */
+    S.origin={x:o.x+10,y:o.y-5};S.fabOrigin=true;
+    F=dfFab(dfDocument());
+    if(JSON.stringify(dfTxtCote(F,ix))!=='["0","0,00","20,00"]')throw new Error("depuis l'origine utilisateur : "+dfTxtCote(F,ix));
+    S.fabOrigin=fo;S.origin=so;
+    /* origine accrochée : le premier trou ; le second perdu devient seul orphelin */
+    const io=dfAjouterCote({vue:"fab/carte",type:"ord",sens:"h",o:ref[0],pts:[ref[1]],dx:0,dy:-20});
+    F=dfFab(dfDocument());
+    if(JSON.stringify(dfTxtCote(F,io))!=='["0","20,00"]')throw new Error("origine accrochée : "+dfTxtCote(F,io));
+    S.holes=[S.holes[0]];
+    F=dfFab(dfDocument());
+    if(F.cotes.find(k=>k.id===io).orph!==1||dfTxtCote(F,io)[1]!=="20,00 (orpheline)")throw new Error("orpheline : "+dfTxtCote(F,io));
+    /* à la souris : origine des fichiers, deux points, un clic hors accroche */
+    S.holes=[mkHole(o.x+10,o.y-5,3.2),mkHole(o.x+30,o.y-15,3.2)];
+    dfOuvrirNeuf();
+    try{
+      DF.page=0;
+      const G=DF.doc.feuilles[0], v=G.vues.find(v=>v.cle==="fab/carte"), P=dfVersFeuille(v), b=dfBoiteVue(G,v);
+      dfChoisirOutil("ord");DF.origFab=true;DF.sens="h";
+      for(const h of S.holes){const p=P(h.x,h.y);dfClicFeuille(G,p.x,p.y,1.5);}
+      const id=dfClicFeuille(G,P(o.x,o.y).x,b.y2+6,1.5);
+      const c=dfCfg().cotes.find(k=>k.id===id);
+      if(!c||c.type!=="ord"||c.o.type!=="origine"||c.pts.length!==2)throw new Error("ordonnée à la souris : "+JSON.stringify(c));
+      if(JSON.stringify(dfTxtCote(DF.doc.feuilles[0],id))!=='["0","10,00","30,00"]')throw new Error("valeurs : "+dfTxtCote(DF.doc.feuilles[0],id));
+    }finally{dfChoisirOutil("sel");DF.sel=null;DF.origFab=false;dfFermer();}
+  }finally{S.fabOrigin=fo;S.origin=so;S.holes=[];S.dessin=null;}
+});
+T("plans : tolérances portées sur la cote — écran, PDF cherchable, calque COTES du DXF",()=>{
+  exCharger(1);
+  const c0=dfCoin();
+  S.holes=[mkHole(c0.x+5,c0.y+5,3.2),mkHole(c0.x+15,c0.y+5,3.2)];
+  S.dessin={fonte:false};                     // codage WinAnsi lisible tel quel
+  const a={type:"trou",id:S.holes[0].id}, b={type:"trou",id:S.holes[1].id};
+  try{
+    const poser=(tol,dy)=>dfAjouterCote({vue:"fab/carte",type:"h",a,b,dx:0,dy,tol});
+    const sym=poser({genre:"sym",sup:-0.1},-6), asym=poser({genre:"asym",sup:0.1,inf:-0.05},-12),
+          lim=poser({genre:"lim",sup:-0.05,inf:0.1},-18), ref=poser({genre:"ref"},-24),
+          base=poser({genre:"base"},-30), fin=poser({genre:"sym",sup:0.005},-36);
+    const ang=dfAjouterCote({vue:"fab/carte",type:"d",a,dx:6,dy:6,tol:{genre:"asym",sup:0.1,inf:0}});
+    const c=dfCfg().cotes;
+    if(c[0].tol.sup!==0.1||c[2].tol.sup!==0.1||c[2].tol.inf!==-0.05)throw new Error("écarts mal rangés : "+JSON.stringify(c.map(k=>k.tol)));
+    const doc=dfDocument(), F=dfFab(doc), J=id=>JSON.stringify(dfTxtCote(F,id));
+    if(J(sym)!=='["10,00 ±0,10"]')throw new Error("symétrique : "+J(sym));
+    if(J(asym)!=='["10,00","+0,10","−0,05"]')throw new Error("asymétrique : "+J(asym));
+    if(J(lim)!=='["10,10","9,95"]')throw new Error("limites : "+J(lim));
+    if(J(ref)!=='["(10,00)"]')throw new Error("référence : "+J(ref));
+    if(J(base)!=='["10,00"]')throw new Error("exacte : "+J(base));
+    if(J(fin)!=='["10,00 ±0,005"]')throw new Error("écart fin : "+J(fin));
+    if(J(ang)!=='["Ø3,20","+0,10","0"]')throw new Error("diamètre tolérancé : "+J(ang));
+    /* les écarts superposés : plus petits, l'un au-dessus de l'autre */
+    const e=F.cotes.find(k=>k.id===asym), t=F.items.slice(e.i0,e.i1).filter(x=>x.t==="t");
+    if(!(t[1].pt<t[0].pt&&t[1].y<t[2].y&&t[1].x===t[2].x))throw new Error("écarts mal superposés");
+    /* la cote exacte est encadrée : un rectangle fermé autour de sa valeur */
+    const eb=F.cotes.find(k=>k.id===base), tb=F.items.slice(eb.i0,eb.i1);
+    const cadre=tb.find(x=>x.t==="p"&&x.ferme&&x.plein==null), bt=dfBoiteItems(F,eb.i0,eb.i1);
+    const tx=tb.find(x=>x.t==="t"), bx=cadre&&dfBoitePts(cadre.sp[0]);
+    if(!cadre||!(bx.x1<tx.x&&bx.x2>tx.x+dfLargeur("10,00",tx.pt)&&bx.y1<tx.y&&bx.y2>tx.y)||!bt)throw new Error("cadre de la cote exacte");
+    /* au PDF : du vrai texte, qui se cherche */
+    const pdf=dfLatin(dfPdfOctets(doc));
+    for(const s of ["(10,00 \\2610,10) Tj","(+0,10) Tj","(-0,05) Tj","(10,10) Tj","(9,95) Tj","(\\(10,00\\)) Tj","(\\3303,20) Tj"])
+      if(pdf.indexOf(s)<0)throw new Error("absent du PDF : "+s);
+    if(!dfChercher(doc,"±0,10").length||!dfChercher(doc,"(10,00)").length)throw new Error("la tolérance doit se chercher");
+    /* au DXF : sur le calque COTES, ± en %%p */
+    const D=dxfLu(dxfFeuilles([F]).octets), tx2=D.ents.filter(x=>x.type==="TEXT"&&x.cal==="COTES").map(x=>x.s(1));
+    for(const s of ["10,00 %%p0,10","+0,10","-0,05","10,10","9,95","(10,00)"])
+      if(tx2.indexOf(s)<0)throw new Error("absent du calque COTES : "+s+" ("+tx2.join(" | ")+")");
+    /* saisie : changer, effacer, refuser l'absurde */
+    if(!dfTolerer(sym,{genre:"asym",sup:0.2,inf:-0.1})||dfCfg().cotes[0].tol.genre!=="asym")throw new Error("tolérance non modifiée");
+    if(dfTolerer(sym,{genre:"zz"})!==false)throw new Error("genre inconnu accepté");
+    dfTolerer(sym,null);
+    if("tol" in dfCfg().cotes[0])throw new Error("tolérance non effacée");
+    /* un angle se tolère en degrés */
+    if(dfValeurCote({type:"ang",tol:{genre:"sym",sup:0.5}},45,false).p!=="45,0° ±0,5°")throw new Error("angle tolérancé");
+    if(dfValeurCote({type:"ang",tol:{genre:"lim",sup:0.25,inf:-0.25}},45,false).haut!=="45,25°")throw new Error("limites d'angle");
+  }finally{S.holes=[];S.dessin=null;}
+});
+T("plans : tolérance saisie dans la liste ou au double-clic sur la cote",()=>{
+  exCharger(1);
+  const c0=dfCoin();
+  S.holes=[mkHole(c0.x+5,c0.y+5,3.2),mkHole(c0.x+15,c0.y+5,3.2)];
+  const id=dfAjouterCote({vue:"fab/carte",type:"h",a:{type:"trou",id:S.holes[0].id},b:{type:"trou",id:S.holes[1].id},dx:0,dy:-8});
+  dfOuvrirNeuf();
+  try{
+    if(!dfEditerTolerance(id))throw new Error("le double-clic doit ouvrir la tolérance");
+    if(!DF.sel||DF.sel.id!==id)throw new Error("la cote doit être choisie");
+    const liste=document.getElementById("dfCotes").innerHTML;
+    if(liste.indexOf('data-tol="genre"')<0||liste.indexOf("df-cote-l on")<0)throw new Error("volet de tolérance absent");
+  }finally{DF.sel=null;dfFermer();S.holes=[];S.dessin=null;}
+});
+T("plans : cotes nouvelles — aller-retour du document, bornes",()=>{
+  exCharger(1);
+  const o=dfTrapeze();
+  S.holes=[mkHole(o.x+5,o.y+5,3.2),mkHole(o.x+15,o.y+5,3.2)];
+  const r=S.holes.map(h=>({type:"trou",id:h.id}));
+  try{
+    dfAjouterCote({vue:"fab/carte",type:"ang",s:{type:"contour",i:0},a:{type:"contour",i:1},b:{type:"bord",i:3,t:0.25},dx:9,dy:3,
+                   tol:{genre:"sym",sup:0.5}});
+    dfAjouterCote({vue:"fab/carte",type:"ang",a:{type:"bord",i:1,t:0.5},b:{type:"bord",i:3,t:0.5},dx:2,dy:2,tol:{genre:"base"}});
+    dfAjouterCote({vue:"asmT/carte",type:"ch",sens:"v",pts:[r[0],r[1],{type:"contour",i:0}],dx:-7,dy:0,tol:{genre:"lim",sup:0.1,inf:-0.1}});
+    dfAjouterCote({vue:"fab/carte",type:"ord",sens:"h",o:{type:"origine"},pts:r,dx:0,dy:5,tol:{genre:"ref"}});
+    dfDocument();                                  // les mémoires se remplissent au dessin
+    loadDoc(JSON.parse(serialize()),true);         // un trou neuf perd au premier passage ses champs par défaut
+    const a=serialize();
+    loadDoc(JSON.parse(a),true);
+    if(serialize()!==a)throw new Error("l'aller-retour change le document : "+firstDiff(JSON.parse(a),JSON.parse(serialize()),""));
+    const c=dfCfg().cotes;
+    if(c.length!==4||c[0].s.type!=="contour"||c[1].s||c[2].pts.length!==3||c[2].sens!=="v"||c[3].o.type!=="origine")
+      throw new Error("perdu au rechargement : "+JSON.stringify(c));
+    if(c[0].tol.sup!==0.5||c[1].tol.genre!=="base"||c[2].tol.inf!==-0.1||c[3].tol.genre!=="ref")throw new Error("tolérances perdues");
+    if(!c[2].memo||c[2].memo.pts.length!==3||!c[3].memo.o||!c[0].memo||c[0].memo.v!==45)throw new Error("mémoires : "+JSON.stringify(c.map(k=>k.memo)));
+    /* ce qui ne tient pas debout est écarté */
+    S.dessin={cotes:[
+      {id:1,vue:"fab/carte",type:"ch",sens:"h",pts:[r[0]]},                           // une chaîne d'un point
+      {id:2,vue:"fab/carte",type:"ord",sens:"h",pts:[r[0]]},                          // une ordonnée sans origine
+      {id:3,vue:"fab/carte",type:"ang",a:r[0],b:r[1]},                                // un angle sans sommet ni arêtes
+      {id:4,vue:"fab/carte",type:"ch",sens:"x",pts:[r[0],{type:"trou",id:"q"}]},      // une référence mal formée
+      {id:5,vue:"fab/carte",type:"ang",s:{type:"zz"},a:r[0],b:r[1]},                  // un sommet mal formé
+      {id:6,vue:"fab/carte",type:"h",a:r[0],b:r[1],tol:{genre:"asym",sup:0.1}},       // un écart manquant
+      {id:7,vue:"fab/carte",type:"ch",sens:"x",pts:[r[0],r[1]],tol:{genre:"sym",sup:"-0,2"}}]};
+    const n=dfCfg().cotes;
+    if(n.length!==2||n[0].id!==6||"tol" in n[0]||n[1].sens!=="h"||"tol" in n[1])throw new Error("bornes : "+JSON.stringify(n));
+    if(JSON.stringify(dfNormTol({genre:"lim",sup:-0.1,inf:0.2}))!=='{"genre":"lim","sup":0.2,"inf":-0.1}')throw new Error("limites inversées");
+  }finally{S.holes=[];S.dessin=null;}
+});
+T("plans : une vue lâchée sur une autre la repousse vers la place libre la plus proche",()=>{
+  exCharger(1);
+  const avant=JSON.stringify(dfDocument().feuilles.map(F=>F.items));
+  let F=dfFab(dfDocument());
+  const cles=F.vues.map(v=>v.cle);
+  const vn=F.vues.find(v=>v.cle==="fab/notes"), vp=F.vues.find(v=>v.cle==="fab/percage");
+  if(!vn||!vp)throw new Error("vues attendues sur le plan de fabrication : "+cles);
+  const bp=dfBoiteVue(F,vp);
+  const r=dfPoserVueRepousser("fab/notes",bp.x1,bp.y1);
+  if(!r||r.repoussees.indexOf("fab/percage")<0)throw new Error("le tableau de perçage doit s'écarter : "+JSON.stringify(r));
+  if(r.recouvertes.length)throw new Error("il y avait de la place : "+JSON.stringify(r));
+  const cfg=dfCfg();
+  if(!cfg.vues["fab/notes"]||!cfg.vues["fab/percage"])throw new Error("positions non enregistrées");
+  F=dfFab(dfDocument());
+  const Z=dfZone(F), C=Z.cart, b=k=>dfBoiteVue(F,F.vues.find(v=>v.cle===k));
+  const aire=(p,q)=>Math.max(0,Math.min(p.x2,q.x2)-Math.max(p.x1,q.x1))*Math.max(0,Math.min(p.y2,q.y2)-Math.max(p.y1,q.y1));
+  const bn=b("fab/notes");
+  /* à l'aimant et au cadre près */
+  if(Math.abs(bn.x1-bp.x1)>DF_GRILLE||Math.abs(bn.y1-bp.y1)>DF_GRILLE)throw new Error("la vue lâchée doit rester où on l'a posée");
+  for(const v of F.vues)if(v.cle!=="fab/notes"&&aire(dfBoiteVue(F,v),bn)>1e-6)throw new Error(v.cle+" recouvre encore les notes");
+  const bq=b("fab/percage");
+  if(bq.x1<Z.x1-1e-6||bq.y1<Z.y1-1e-6||bq.x2>Z.x2+0.5||bq.y2>Z.y2+0.5)throw new Error("perçage hors du cadre");
+  if(aire(bq,{x1:C.x,y1:C.y,x2:C.x+C.w,y2:C.y+C.h})>0)throw new Error("perçage sur le cartouche");
+  /* un seul pas d'historique */
+  undo();
+  if(Object.keys(dfCfg().vues).length)throw new Error("Ctrl+Z doit tout rendre");
+  if(JSON.stringify(dfDocument().feuilles.map(F=>F.items))!==avant)throw new Error("la disposition calculée a changé");
+  /* sans place libre : la moins recouvrante, et elle le dit */
+  const p=dfPlaceProche(F,60,40,100,100,[{x1:0,y1:0,x2:F.w,y2:F.h}]);
+  if(!p||!(p.recouvre>0))throw new Error("une feuille pleine doit le signaler : "+JSON.stringify(p));
+  if(dfPlaceProche(F,F.w,F.h,0,0,[])!==null)throw new Error("une boîte plus grande que le cadre n'a pas de place");
+  S.dessin=null;
 });
 
 /* ==========================================================================
