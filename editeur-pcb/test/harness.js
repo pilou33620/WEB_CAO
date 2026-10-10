@@ -391,7 +391,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simRfZ","simRfExclure","simRfImporter","simRfOublierModele","simRfBroche",
   "simRfValeurSI","trkAt","simRfMasque",
   /* les liens des bouts de piste, et la transformation des boîtiers */
-  "transformFps","linkSync","fpXformInv","groupeEtendreSel","groupeCadre","pcbAppliquerDefEmpreinte","padDist","updateRoute","hitTest",
+  "transformFps","linkSync","fpXformInv","groupeEtendreSel","groupeCadre","groupeCuivre","pcbAppliquerDefEmpreinte","padDist","updateRoute","hitTest",
   /* plans de fabrication et d'assemblage (29-draftsman.js) */
   "dfCfg","dfRegler","dfDocument","dfPdf","dfPdfOctets","dfChercher","dfSvg","dfWinAnsi","dfPdfLit",
   "dfLargeur","dfCouper","dfPercages","dfVue","dfOuvrir","dfFermer","dfExporter","DF_FORMATS","DF","dfImpedances",
@@ -2167,6 +2167,54 @@ T("groupes : F sur 4 couches, In1 ↔ In2, le via borgne passe de l'autre côté
     if(S.aRerouter.length)throw new Error("rien à re-router : "+S.aRerouter.map(g=>g.msg));
     undo();undo();
   }finally{setCuCount(cu0);suiviFin(reg);}
+});
+/* Copier-coller un groupe : un nouveau groupe, avec son cuivre interne. Dans
+   le décor du découplage, la puce, la capa et le via de masse forment le
+   groupe ; la piste vers le via d'alimentation en sort. */
+T("groupes : copier-coller donne un nouveau groupe, pistes internes copiées et liées aux copies",()=>{
+  const D=decouplage();
+  try{
+    clearSel();S.sel.fps.add(D.X.id);S.sel.fps.add(D.C.id);S.sel.vias.add(D.gnd);
+    key("g",{ctrlKey:true});
+    // la sélection ne nomme que les composants : le via et les pistes du groupe viennent d'eux-mêmes
+    clearSel();S.sel.fps.add(D.X.id);S.sel.fps.add(D.C.id);
+    const nf=S.fps.length, nt=S.tracks.length, nv=S.vias.length;
+    if(!copySelPcb())throw new Error("copie refusée");
+    S.mouse={x:60,y:60};
+    pasteClipPcb();
+    if(S.fps.length!==nf+2)throw new Error("deux composants collés : "+(S.fps.length-nf));
+    if(S.vias.length!==nv+1)throw new Error("le via du groupe vient, pas celui d'alimentation : "+(S.vias.length-nv));
+    if(S.tracks.length!==nt+2)throw new Error("puce → capa et capa → masse viennent, pas la piste qui sort : "+(S.tracks.length-nt));
+    const X2=S.fps.find(f=>S.sel.fps.has(f.id)&&f.pins===8), C2=S.fps.find(f=>S.sel.fps.has(f.id)&&f.pins===2);
+    const v2=S.vias.find(v=>S.sel.vias.has(v));
+    const g=S.groupes.find(g=>g.nom==="G1 (copie)");
+    if(S.groupes.length!==2||!g)throw new Error("un nouveau groupe « G1 (copie) » : "+S.groupes.map(g=>g.nom));
+    if(g.fps.length!==2||g.fps.indexOf(X2.id)<0||g.fps.indexOf(C2.id)<0||g.vias[0]!==v2.id)
+      throw new Error("le nouveau groupe tient les copies : "+JSON.stringify(g));
+    if(v2.id===D.gnd.id)throw new Error("le via collé a son propre identifiant");
+    // les liens des bouts visent les copies
+    const tx=[...S.sel.tracks].find(t=>t.net==="+3V3"), tg=[...S.sel.tracks].find(t=>t.net==="GND");
+    const vu=a=>a?(a.v!=null?"v"+a.v:a.f+"."+a.p):"-";
+    if(vu(tx.a1)!==X2.id+".8"||vu(tx.a2)!==C2.id+".1")throw new Error("puce → capa : "+vu(tx.a1)+" "+vu(tx.a2));
+    if(vu(tg.a1)!==C2.id+".2"||vu(tg.a2)!=="v"+v2.id)throw new Error("capa → masse : "+vu(tg.a1)+" "+vu(tg.a2));
+    const p=n=>padsWorld(n[0]).find(q=>q.n===n[1]);
+    relie("+3V3",p([X2,8]),p([C2,1]));relie("GND",p([C2,2]),v2);
+    // la copie se déplace d'un bloc, comme l'original
+    clearSel();S.sel.fps.add(C2.id);groupeEtendreSel();
+    if(!S.sel.fps.has(X2.id)||!S.sel.vias.has(v2))throw new Error("un clic sur la copie prend le nouveau groupe");
+    // un second collage : « G1 (copie 2) »
+    clearSel();S.sel.fps.add(D.X.id);groupeEtendreSel();
+    copySelPcb();S.mouse={x:60,y:90};pasteClipPcb();
+    if(!S.groupes.some(g=>g.nom==="G1 (copie 2)"))throw new Error("second collage : "+S.groupes.map(g=>g.nom));
+    undo();undo();
+    if(S.groupes.length!==1||S.fps.length!==nf)throw new Error("Ctrl+Z retire copies et groupes");
+    // couper le groupe emporte son cuivre interne, pas la piste qui sort
+    clearSel();S.sel.fps.add(D.C.id);groupeEtendreSel();
+    cutSelPcb();
+    if(S.fps.length!==nf-2||S.tracks.length!==nt-2||S.tracks[0].net!=="+3V3")
+      throw new Error("Ctrl+X : "+S.fps.length+" composant(s), "+S.tracks.length+" piste(s)");
+    undo();
+  }finally{undo();suiviFin(D.reg);}
 });
 /* Les vias de sortie : le via de masse au pied de la capa part avec elle. */
 function sortieDecor(){

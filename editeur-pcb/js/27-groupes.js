@@ -22,6 +22,8 @@
      · F (à l'arrêt ou en glissant) retourne le groupe EN MIROIR autour de
        l'axe vertical de son cadre : faces, places et rotations symétrisées,
        vias et pistes internes sur la couche miroir (voir plus bas) ;
+     · copié entier, il se colle en nouveau groupe (« G1 (copie) ») avec son
+       cuivre interne, sélectionné ou non, lié aux copies ;
      · Ctrl+G groupe la sélection, Ctrl+Maj+G dissout les groupes touchés ;
        le panneau Propriétés d'un composant dit son groupe et le dissout.
    Un membre effacé quitte son groupe ; un groupe sans composant, ou réduit à
@@ -268,3 +270,90 @@ function dragRetourner(){
   return true;
 }
 
+/* ==========================================================================
+   Copier-coller un groupe
+   --------------------------------------------------------------------------
+   Un groupe copié entier se colle en NOUVEAU groupe (« G1 (copie) »), avec son
+   cuivre interne même s'il n'était pas sélectionné : les pistes qui vont d'un
+   membre à un autre, et les vias libres qu'elles traversent. Une piste qui
+   aboutit à un composant hors du groupe sort : elle reste. Les liens des bouts
+   (`a1`/`a2`) visent les copies (`pcbClipContent`, `pasteClipPcb`).
+   ========================================================================== */
+/* Le cuivre interne d'un groupe. On part de chaque piste posée sur un membre,
+   de bout en bout (un via libre relie ses couches), sans franchir un membre ;
+   le morceau est interne s'il ne touche aucun autre composant et relie au
+   moins deux membres (pastilles ou vias du groupe) — un bout qui pend n'est
+   pas « entre membres ». */
+function groupeCuivre(g){
+  const fids=new Set(g.fps), gv=new Set(groupeVias(g)), K=(x,y)=>r3(x)+"|"+r3(y);
+  const pads=[], bouts=new Map(), vk=new Map();
+  const range=(M,k,o)=>{if(!M.has(k))M.set(k,[]);M.get(k).push(o);};
+  for(const id of g.fps){const f=fpById(id);if(f)for(const q of padsWorld(f))pads.push({f,q});}
+  for(const t of S.tracks){range(bouts,K(t.x1,t.y1),t);range(bouts,K(t.x2,t.y2),t);}
+  for(const v of S.vias)range(vk,K(v.x,v.y),v);
+  // ce qui tient le point : un membre (son nom), un autre composant, ou rien
+  const borne=(l,x,y)=>{
+    for(const v of vk.get(K(x,y))||[])if(gv.has(v)&&l>=v.a&&l<=v.b)return "v"+v.id;
+    for(const p of pads)if(padHolds(p.f,p.q,l,x,y))return p.f.id+"."+p.q.n;
+    const q=padAt(l,x,y);
+    return q&&!fids.has(q.fp.id)?"dehors":null;
+  };
+  const membre=b=>b&&b!=="dehors";
+  const vu=new Set(), out={tracks:[],vias:[]};
+  for(const t0 of S.tracks){
+    if(vu.has(t0)||!membre(borne(t0.l,t0.x1,t0.y1))&&!membre(borne(t0.l,t0.x2,t0.y2)))continue;
+    const pile=[t0], piece=[], pv=new Set(), bornes=new Set();
+    let dehors=false;
+    vu.add(t0);
+    while(pile.length){
+      const t=pile.pop();
+      piece.push(t);
+      for(const [x,y] of [[t.x1,t.y1],[t.x2,t.y2]]){
+        const b=borne(t.l,x,y);
+        if(b==="dehors"){dehors=true;continue;}
+        if(b){bornes.add(b);continue;}
+        // un point libre : les pistes qui y aboutissent, sur les couches qu'un via relie
+        const L=new Set([t.l]);
+        for(const v of vk.get(K(x,y))||[])
+          if(t.l>=v.a&&t.l<=v.b){pv.add(v);for(let l=v.a;l<=v.b;l++)L.add(l);}
+        for(const o of bouts.get(K(x,y))||[])if(!vu.has(o)&&L.has(o.l)){vu.add(o);pile.push(o);}
+      }
+    }
+    if(!dehors&&bornes.size>=2){out.tracks.push(...piece);out.vias.push(...pv);}
+  }
+  return out;
+}
+/* Ce que la copie emporte en plus : les groupes entiers de la sélection, leurs
+   vias et leur cuivre interne. */
+function groupesCopie(){
+  const gs=groupesEntiers([...S.sel.fps]), tracks=new Set(), vias=new Set();
+  for(const g of gs){
+    const c=groupeCuivre(g);
+    groupeVias(g).forEach(v=>vias.add(v));
+    c.tracks.forEach(t=>tracks.add(t));c.vias.forEach(v=>vias.add(v));
+  }
+  return {gs,tracks,vias};
+}
+/* « G1 » → « G1 (copie) », puis « G1 (copie 2) »… le premier libre. */
+function groupeNomCopie(nom){
+  const base=String(nom||"G").replace(/ \(copie(?: \d+)?\)$/,"");
+  for(let n=1;;n++){
+    const suf=" (copie"+(n>1?" "+n:"")+")", c=base.slice(0,40-suf.length)+suf;
+    if(!S.groupes.some(g=>g.nom===c))return c;
+  }
+}
+/* Au collage : chaque groupe du presse-papier (indices dans ses composants et
+   ses vias) devient un nouveau groupe des copies `nf`, `nv`. Rend leur nombre. */
+function groupesColler(src,nf,nv){
+  if(!Array.isArray(S.groupes))S.groupes=[];
+  const pris=(L,T)=>[...new Set((Array.isArray(L)?L:[]).filter(Number.isInteger).map(i=>T[i]).filter(Boolean))];
+  let n=0;
+  for(const g of (Array.isArray(src)?src:[])){
+    if(!g||typeof g!=="object")continue;
+    const fps=pris(g.fps,nf).map(f=>f.id), vias=pris(g.vias,nv).map(v=>v.id);
+    if(!fps.length||fps.length+vias.length<2)continue;
+    S.groupes.push({id:S.nextId++,nom:groupeNomCopie(g.nom),fps,vias});
+    n++;
+  }
+  return n;
+}
