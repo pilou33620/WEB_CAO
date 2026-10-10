@@ -26,8 +26,12 @@ Et, en lecture complete (1.1.0, `lire(..., complet=True)`), le BOITIER ET
 LES BROCHES : [Package], [Pin], [Diff Pin], [Model Selector],
 [Package Model] -> [Define Package Model] (diagonale des matrices ; les
 mutuelles sont dites, pas comptees), le renvoi [Algorithmic Model] -- voir
-« Le boitier et les broches ». Le reste (sous-modeles, [Model Spec],
-boitiers par sections) est ignore, et dit dans le resultat.
+« Le boitier et les broches ». Depuis la 1.2.0, les BOITIERS PAR SECTIONS
+(Len= dans [Pin Numbers], Fork/Endfork) se lisent et se mettent en cascade
+de lignes (`abcd_sections`), et les mutuelles entre les deux broches d'une
+paire se rendent pour etre comptees (`mutuelle_paire`,
+`abcd_boitier_paire`). Le reste (sous-modeles, [Model Spec]) est ignore,
+et dit dans le resultat.
 
 LE FICHIER .AMI d'un modele IBIS-AMI se lit aussi (`lire_ami`) : l'arbre de
 ses parametres, et ce qu'ils proposent pour un egaliseur de reference
@@ -68,7 +72,7 @@ try:
 except Exception:                                      # noqa: BLE001
     np = None
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 COINS = {"typ": 0, "min": 1, "max": 2}
 SUFFIXES = {"T": 1e12, "G": 1e9, "M": 1e6, "k": 1e3, "m": 1e-3, "u": 1e-6,
             "n": 1e-9, "p": 1e-12, "f": 1e-15}
@@ -346,11 +350,13 @@ def lire(texte, nom_fichier="", complet=False):
 #   [Package Model] nom -> [Define Package Model] : des matrices R, L, C
 #               par broche (pleine, en bande ou creuse). Elles priment sur
 #               les deux autres. On en prend la DIAGONALE ; les mutuelles
-#               sont lues pour etre DITES (le plus fort couplage, et celui
-#               entre les deux broches d'une paire), pas comptees. Une
-#               description par sections (Len=, [Number Of Sections]) n'est
-#               pas lue : on retombe alors sur [Pin] et [Package], et on le
-#               dit ;
+#               sont lues pour etre DITES (le plus fort couplage), et celles
+#               entre les deux broches d'une paire se rendent pour etre
+#               COMPTEES (1.2.0, `mutuelle_paire`). Une description par
+#               sections (Len=, [Number Of Sections]) se lit broche par
+#               broche (1.2.0, `_ligne_sections`) et devient une cascade de
+#               lignes (`abcd_sections`) ; une broche sans section retombe
+#               sur [Pin] et [Package], et on le dit ;
 #   [Diff Pin]  broche, broche inverse, vdiff, tdelay typ/min/max ;
 #   [Model Selector] : un nom de [Pin] qui designe plusieurs modeles, le
 #               premier etant celui par defaut.
@@ -371,8 +377,10 @@ def _mot_complet(res, etat, cle, arg, modele):
         mb = {"nom": arg.split()[0] if arg else "", "broches": [],
               "sections": 0, "lignes": {}, "genres": {},
               "diag": {"r": {}, "l": {}, "c": {}},
-              "mutuelles": {"r": {}, "l": {}, "c": {}}}
+              "mutuelles": {"r": {}, "l": {}, "c": {}},
+              "sections_broche": {}}
         etat["mb"], etat["matrice"], etat["rang"] = mb, None, None
+        etat["pile"] = None
         res["modeles_boitier"][mb["nom"]] = mb
     elif cle == "end package model":
         etat["mb"], etat["matrice"], etat["rang"] = None, None, None
@@ -445,10 +453,7 @@ def _ligne_complete(res, etat, section, ligne, modele):
     elif section == "model selector" and etat["selecteur"] is not None:
         res["selecteurs"][etat["selecteur"]].append(champs[0])
     elif section == "pin numbers" and etat["mb"] is not None:
-        etat["mb"]["broches"].append(champs[0])
-        if any("=" in c for c in ligne.split()) or "/" in ligne:
-            # Une description par sections (Len=, L=, R=, C=) : non lue.
-            etat["mb"]["sections"] = max(etat["mb"]["sections"], 1)
+        _ligne_sections(etat, ligne)
     elif section == "row" and etat["mb"] is not None \
             and etat["matrice"] and etat["rang"] is not None:
         cle = (etat["matrice"], etat["rang"])
@@ -460,6 +465,120 @@ def _ligne_complete(res, etat, section, ligne, modele):
             modele.setdefault("ami", []).append(
                 {"plateforme": bruts[1], "bibliotheque": bruts[2],
                  "fichier_ami": bruts[3]})
+
+
+def _ligne_sections(etat, ligne):
+    """Une ligne de [Pin Numbers] : une broche, et ses sections s'il y en a
+    (1.2.0) -- « A1 Len=0 L=1.2n / », puis « Len=1.2 L=2.3n C=4.3p / » sur
+    les lignes suivantes, « Fork » ... « Endfork » pour une derivation.
+    Les sections se rangent dans `sections_broche[broche]`, de la broche
+    vers le die, chacune {len, r, l, c, g} -- ou {fourche: [...]}."""
+    mb = etat["mb"]
+    jetons = ligne.replace("=", " = ").replace("/", " / ").split()
+    if not jetons:
+        return
+    if jetons[0].lower() not in ("len", "fork", "endfork"):
+        mb["broches"].append(jetons[0])
+        etat["pile"] = [mb["sections_broche"].setdefault(jetons[0], [])]
+        jetons = jetons[1:]
+    pile = etat.get("pile")
+    if pile is None:
+        return
+    courant = {}
+
+    def poser():
+        if courant:
+            pile[-1].append({k: float(courant.get(k) or 0.0)
+                             for k in ("len", "r", "l", "c", "g")})
+            courant.clear()
+            mb["sections"] = max(mb["sections"], 1)
+    i = 0
+    while i < len(jetons):
+        j = jetons[i]
+        jl = j.lower()
+        if jl == "fork":
+            poser()
+            fourche = {"fourche": []}
+            pile[-1].append(fourche)
+            pile.append(fourche["fourche"])
+        elif jl == "endfork":
+            poser()
+            if len(pile) > 1:
+                pile.pop()
+        elif j == "/":
+            poser()
+        elif i + 2 < len(jetons) and jetons[i + 1] == "=":
+            courant[jl] = nombre(jetons[i + 2])
+            i += 3
+            continue
+        i += 1
+    poser()
+
+
+def _totaux_sections(sections):
+    """{r, l, c} d'une suite de sections : les valeurs par unite de longueur
+    multipliees par la longueur, les localisees telles quelles ; la
+    capacite d'une derivation s'ajoute."""
+    tot = {"r": 0.0, "l": 0.0, "c": 0.0}
+    for s in sections:
+        if "fourche" in s:
+            tot["c"] += _totaux_sections(s["fourche"])["c"]
+            continue
+        k = s["len"] if s["len"] > 0 else 1.0
+        for x in tot:
+            tot[x] += s[x] * k
+    return tot
+
+
+def _sinhc(x):
+    """sinh(x) / x, 1 en zero."""
+    x = np.asarray(x, dtype=complex)
+    petit = np.abs(x) < 1e-6
+    sur = np.where(petit, 1.0, x)
+    return np.where(petit, 1.0 + x * x / 6.0, np.sinh(sur) / sur)
+
+
+def abcd_sections(freqs, sections):
+    """La matrice ABCD (N, 2, 2) d'une suite de sections, DE LA BROCHE VERS
+    LE DIE (l'ordre de la norme).
+
+    · Len > 0 : une LIGNE, R, L, G, C par unite de longueur ; avec
+      zl = (R + jwL) Len et yl = (G + jwC) Len, theta = racine(zl yl) :
+      A = D = ch theta, B = zl sh(theta)/theta, C = yl sh(theta)/theta --
+      ce qui reste juste quand C ou L est nul (serie ou derivation pure) ;
+    · Len = 0 : LOCALISEE, valeurs totales : C (et G) a la broche, puis R
+      et L en serie -- la topologie de [Package], a laquelle une section
+      unique revient exactement ;
+    · une derivation (Fork ... Endfork) : la branche, ouverte au bout, posee
+      en derivation, Y = C_b / A_b."""
+    w = 2 * math.pi * np.asarray(freqs, dtype=float)
+    n = len(w)
+    m = np.zeros((n, 2, 2), dtype=complex)
+    m[:, 0, 0] = m[:, 1, 1] = 1.0
+    for s in sections:
+        e = np.zeros((n, 2, 2), dtype=complex)
+        if "fourche" in s:
+            mb = abcd_sections(freqs, s["fourche"])
+            a = np.where(np.abs(mb[:, 0, 0]) > 1e-300, mb[:, 0, 0], 1e-300)
+            e[:, 0, 0] = e[:, 1, 1] = 1.0
+            e[:, 1, 0] = mb[:, 1, 0] / a
+        else:
+            z = s["r"] + 1j * w * s["l"]
+            y = s["g"] + 1j * w * s["c"]
+            if s["len"] > 0:
+                zl, yl = z * s["len"], y * s["len"]
+                th = np.sqrt(zl * yl)
+                sc = _sinhc(th)
+                e[:, 0, 0] = e[:, 1, 1] = np.cosh(th)
+                e[:, 0, 1] = zl * sc
+                e[:, 1, 0] = yl * sc
+            else:
+                e[:, 0, 0] = 1.0
+                e[:, 0, 1] = z
+                e[:, 1, 0] = y
+                e[:, 1, 1] = 1.0 + y * z
+        m = m @ e
+    return m
 
 
 def _matrices(mb):
@@ -489,15 +608,18 @@ def _matrices(mb):
                                          mb["broches"][col])] = v
 
 
-def couplage_boitier(mb, a, b=None):
+def couplage_boitier(mb, a, b=None, sauf=None):
     """Le coefficient de couplage |Mij| / sqrt(Mii Mjj) le plus fort de la
-    broche `a` (avec `b` seule si elle est donnee), en L et en C."""
+    broche `a` (avec `b` seule si elle est donnee, hors `sauf` sinon), en L
+    et en C."""
     sortie = {}
     for lettre in ("l", "c"):
         d = mb["diag"][lettre]
         k_max = 0.0
         for (i, j), v in mb["mutuelles"][lettre].items():
             if a not in (i, j) or (b is not None and b not in (i, j)):
+                continue
+            if sauf is not None and sauf in (i, j):
                 continue
             if d.get(i) and d.get(j):
                 k_max = max(k_max, abs(v) / math.sqrt(abs(d[i] * d[j])))
@@ -545,16 +667,22 @@ def paire_diff(lu, broche):
     return None
 
 
-def boitier_broche(lu, broche="", coin="typ"):
-    """Le boitier d'une broche : {r, l, c (SI), source, notes}.
+def boitier_broche(lu, broche="", coin="typ", comptee=None):
+    """Le boitier d'une broche : {r, l, c (SI), source, notes, sections}.
 
     Priorite, valeur par valeur : [Define Package Model] (diagonale), puis
     [Pin], puis [Package] a la colonne du coin. Sans rien de tout cela,
-    r = l = c = 0."""
+    r = l = c = 0. Une broche DECRITE PAR SECTIONS (1.2.0) les porte dans
+    `sections` -- r, l, c en sont alors les totaux, pour les dire -- et
+    elles remplacent tout le reste.
+
+    `comptee` : l'autre broche de la paire, dont la mutuelle est comptee
+    ailleurs (`mutuelle_paire`) -- la note ne dit que les autres."""
     col = COINS.get(coin, 0)
     notes = []
     val = {"r": 0.0, "l": 0.0, "c": 0.0}
     src = {"r": "", "l": "", "c": ""}
+    sections = None
     pk = lu.get("boitier") or {}
     for k in val:
         if pk.get(k) is not None and pk[k][col] is not None:
@@ -570,36 +698,119 @@ def boitier_broche(lu, broche="", coin="typ"):
         if mb is None:
             notes.append("[Package Model] %s défini hors du fichier (.pkg) : "
                          "non lu." % nom_mb)
+        elif (mb.get("sections_broche") or {}).get(broche):
+            sections = mb["sections_broche"][broche]
+            val = _totaux_sections(sections)
+            src = dict.fromkeys(val, "[Package Model] %s (%d section(s))"
+                                % (nom_mb, len(sections)))
         elif mb["sections"]:
-            notes.append("[Package Model] %s décrit par sections : non lu, "
-                         "[Pin] et [Package] le remplacent." % nom_mb)
+            notes.append("[Package Model] %s décrit par sections, mais pas "
+                         "la broche %s : [Pin] et [Package] la décrivent."
+                         % (nom_mb, broche))
         elif broche in mb["broches"]:
             for k in val:
                 if mb["diag"][k].get(broche) is not None:
                     val[k] = float(mb["diag"][k][broche])
                     src[k] = "[Package Model] " + nom_mb
-            kc = couplage_boitier(mb, broche)
-            if kc["l"] > 0 or kc["c"] > 0:
+            kc = couplage_boitier(mb, broche, sauf=comptee)
+            if (kc["l"] > 0 or kc["c"] > 0) and comptee:
+                notes.append("Mutuelles du [Package Model] hors de la paire "
+                             "%s/%s ignorées (couplage le plus fort de %s : "
+                             "k_L %.2f, k_C %.2f)."
+                             % (broche, comptee, broche, kc["l"], kc["c"]))
+            elif kc["l"] > 0 or kc["c"] > 0:
                 notes.append("Mutuelles du [Package Model] ignorées (couplage "
                              "le plus fort de %s : k_L %.2f, k_C %.2f)."
                              % (broche, kc["l"], kc["c"]))
     sources = sorted(set(s for s in src.values() if s))
     return {"r": val["r"], "l": val["l"], "c": val["c"],
             "source": " + ".join(sources) if sources else "aucun",
-            "notes": notes}
+            "notes": notes, "sections": sections}
+
+
+def mutuelle_paire(lu, a, b):
+    """LES MUTUELLES DU [Package Model] ENTRE LES DEUX BROCHES D'UNE PAIRE
+    (1.2.0) : {r, l, c, k_l, k_c, source} en SI, ou None.
+
+    `l` et `r` sont les termes hors diagonale des matrices ; `c` est la
+    capacite de COUPLAGE, positive -- la norme ecrit la matrice de Maxwell,
+    terme hors diagonale negatif, et des fichiers l'ecrivent positif : on en
+    prend la valeur absolue. La diagonale reste celle de Maxwell (capacite
+    totale de la broche) : en mode impair, chaque broche voit C + C_m ; en
+    mode pair, C - C_m. Une broche decrite par sections n'a pas de mutuelle
+    lue."""
+    nom = lu.get("modele_boitier") or ""
+    mb = (lu.get("modeles_boitier") or {}).get(nom)
+    if mb is None or not a or not b or a not in mb["broches"] \
+            or b not in mb["broches"]:
+        return None
+    sec = mb.get("sections_broche") or {}
+    if sec.get(a) or sec.get(b):
+        return None
+    vals = {}
+    for k in ("r", "l", "c"):
+        v = mb["mutuelles"][k].get((a, b))
+        if v is None:
+            v = mb["mutuelles"][k].get((b, a))
+        vals[k] = float(v) if v else 0.0
+    if not (vals["l"] or vals["c"] or vals["r"]):
+        return None
+    kc = couplage_boitier(mb, a, b)
+    return {"r": vals["r"], "l": vals["l"], "c": abs(vals["c"]),
+            "k_l": kc["l"], "k_c": kc["c"],
+            "source": "[Package Model] " + nom}
 
 
 def boitier_nul(bt):
     return bt is None or not (bt["r"] or bt["l"] or bt["c"])
 
 
+def abcd_boitier_paire(freqs, bt_p, bt_n, mut, sens):
+    """La matrice ABCD (N, 4, 4) par brin -- blocs [[A, B], [C, D]] sur
+    (p, n) -- des boitiers des deux broches d'une paire, COUPLES par leurs
+    mutuelles `mut` (`mutuelle_paire`) : impedance serie
+    [[R_p + jwL_p, R_m + jwL_m], [R_m + jwL_m, R_n + jwL_n]], admittance a la
+    broche jw [[C_p, -C_m], [-C_m, C_n]]. Meme topologie et meme `sens`
+    que `abcd_boitier` ; sans mutuelle, c'est elle, brin par brin."""
+    w = 2 * math.pi * np.asarray(freqs, dtype=float)
+    n = len(w)
+    p = bt_p or {"r": 0.0, "l": 0.0, "c": 0.0}
+    q = bt_n or {"r": 0.0, "l": 0.0, "c": 0.0}
+    mut = mut or {"r": 0.0, "l": 0.0, "c": 0.0}
+    z = np.zeros((n, 2, 2), dtype=complex)
+    y = np.zeros((n, 2, 2), dtype=complex)
+    z[:, 0, 0] = p["r"] + 1j * w * p["l"]
+    z[:, 1, 1] = q["r"] + 1j * w * q["l"]
+    z[:, 0, 1] = z[:, 1, 0] = mut["r"] + 1j * w * mut["l"]
+    y[:, 0, 0] = 1j * w * p["c"]
+    y[:, 1, 1] = 1j * w * q["c"]
+    y[:, 0, 1] = y[:, 1, 0] = -1j * w * mut["c"]
+    un = np.zeros((n, 2, 2), dtype=complex)
+    un[:, 0, 0] = un[:, 1, 1] = 1.0
+    serie = np.zeros((n, 4, 4), dtype=complex)
+    derive = np.zeros((n, 4, 4), dtype=complex)
+    serie[:, :2, :2] = serie[:, 2:, 2:] = un
+    derive[:, :2, :2] = derive[:, 2:, 2:] = un
+    serie[:, :2, 2:] = z
+    derive[:, 2:, :2] = y
+    return serie @ derive if sens == "emission" else derive @ serie
+
+
 def abcd_boitier(freqs, bt, sens):
     """La matrice ABCD (N, 2, 2) d'un boitier, ou None s'il est nul.
 
     `sens` « emission » : du die vers la broche -- R et L en serie, puis
-    C_pkg ; « reception » : de la broche vers le die -- C_pkg, puis R et L."""
+    C_pkg ; « reception » : de la broche vers le die -- C_pkg, puis R et L.
+    Un boitier PAR SECTIONS (1.2.0) est leur cascade (`abcd_sections`), de
+    la broche vers le die ; vue du die, la meme retournee -- un reseau
+    reciproque se retourne en echangeant A et D."""
     if boitier_nul(bt):
         return None
+    if bt.get("sections"):
+        m = abcd_sections(freqs, bt["sections"])
+        if sens == "emission":
+            m = m[:, ::-1, ::-1].transpose(0, 2, 1).copy()
+        return m
     w = 2 * math.pi * np.asarray(freqs, dtype=float)
     z = bt["r"] + 1j * w * bt["l"]
     y = 1j * w * bt["c"]

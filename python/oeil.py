@@ -62,9 +62,23 @@ DEPUIS LA 2.1.0, l'IBIS va jusqu'au bout, toujours FACULTATIF :
        de reference regle d'apres lui sur demande -- la bibliotheque du
        fabricant n'est PAS executee : voir `preparer_ami`.
 
+DEPUIS LA 2.2.0, la paire et le boitier vont jusqu'au bout :
+   12. une paire DISSYMETRIQUE -- largeurs ou masses differentes, vias ou
+       coudes sur un seul brin, un brin plus long -- passe par la cascade a
+       quatre acces de `simulation_em` 5.1.0 (`s_diff["abcd_brins"]`) : en
+       lineaire, son transfert differentiel (`transfert_paire`) ; avec des
+       tampons IBIS, les deux brins simules sur elle. Le brin le plus long
+       est celui que les longueurs designent, plus le brin N d'office. Une
+       paire symetrique rend l'oeil d'avant, au bit pres ;
+   13. les MUTUELLES du [Package Model] entre les deux broches d'une paire
+       de [Diff Pin] sont comptees (`ibis.mutuelle_paire`) : boitier couple
+       brin par brin, ou L - L_m et C + C_m dans la moyenne du mode impair ;
+   14. un boitier PAR SECTIONS (Len=) est une cascade de lignes
+       (`ibis.abcd_sections`).
+
 CE QUI N'EST PAS LA, et se dit dans chaque resultat : les condensateurs de
-liaison (couplage AC), les mutuelles d'un [Package Model] (lues, dites, pas
-comptees), un boitier decrit par sections, l'execution d'un modele AMI.
+liaison (couplage AC), les mutuelles d'un [Package Model] hors de la paire
+(lues, dites, pas comptees), l'execution d'un modele AMI.
 Les gabarits portent chacun leur FIABILITE : les normes sont payantes, et
 une valeur qui n'a pas pu etre recoupee le dit.
 
@@ -113,7 +127,7 @@ except Exception as _exc:                              # noqa: BLE001
     np = se = None
     ERREUR_OEIL = _exc
 
-VERSION = "2.1.0"
+VERSION = "2.2.0"
 FORMAT_RESULTAT = "cao-oeil-resultat-1"
 # UN FICHIER IBIS VOYAGE DANS LA REQUETE, en texte : quelques megaoctets pour
 # les plus gros composants, deux fois si l'emetteur et le recepteur en ont
@@ -1897,25 +1911,48 @@ def _charger_ibis(d, role, diff=False, boitier=True):
     m_n = t_n = None
     if diff:
         m_n, t_n = _tampon(lu, nom_n or m["nom"], coin_n, role)
-    bt = bt_n = None
+    bt = bt_n = mut = None
     if boitier:
-        bt = ibis.boitier_broche(lu, broche, coin)
+        # LES MUTUELLES DE LA PAIRE (2.2.0) : entre la broche et son
+        # inverse, elles se comptent ; les autres se disent.
+        if diff and broche and inverse:
+            mut = ibis.mutuelle_paire(lu, broche, inverse)
+        bt = ibis.boitier_broche(lu, broche, coin,
+                                 comptee=inverse if mut else None)
         if diff:
-            bt_n = ibis.boitier_broche(lu, inverse, coin_n)
+            bt_n = ibis.boitier_broche(lu, inverse, coin_n,
+                                       comptee=broche if mut else None)
         for x in (bt, bt_n):
             if x is not None:
                 notes.extend(x["notes"])
+        if mut:
+            notes.append("%s : mutuelles du %s entre %s et %s comptées "
+                         "(L_m %.3g nH, C_m %.3g pF ; k_L %.2f, k_C %.2f)."
+                         % (role, mut["source"], broche, inverse,
+                            mut["l"] * 1e9, mut["c"] * 1e12, mut["k_l"],
+                            mut["k_c"]))
         bt = None if ibis.boitier_nul(bt) else bt
         bt_n = None if ibis.boitier_nul(bt_n) else bt_n
     return {"lu": lu, "m": m, "t": t, "m_n": m_n, "t_n": t_n, "bt": bt,
             "bt_n": bt_n, "broche": broche, "inverse": inverse,
-            "paire": paire, "notes": notes, "coin": coin}
+            "paire": paire, "notes": notes, "coin": coin, "mut": mut}
 
 
 def _infos_boitier(bt):
     if bt is None:
         return None
-    return {"r": bt["r"], "l": bt["l"], "c": bt["c"], "source": bt["source"]}
+    sortie = {"r": bt["r"], "l": bt["l"], "c": bt["c"],
+              "source": bt["source"]}
+    if bt.get("sections"):
+        sortie["sections"] = len(bt["sections"])
+    return sortie
+
+
+def _infos_mutuelle(mut):
+    if not mut:
+        return None
+    return {"r": mut["r"], "l": mut["l"], "c": mut["c"], "k_l": mut["k_l"],
+            "k_c": mut["k_c"], "source": mut["source"]}
 
 
 def preparer_ibis(o, p):
@@ -1944,6 +1981,7 @@ def preparer_ibis(o, p):
     ctx = {"em": None, "m_em": None, "em_n": None, "m_em_n": None,
            "m_rx": None, "rx": None, "rx_n": None, "c_rx": None,
            "bt_em": (None, None), "bt_rx": (None, None), "decalage": 0.0, "vdiff": None,
+           "mut_em": None, "mut_rx": None,
            "infos": {}, "notes": [], "boitier": avec_bt,
            "r_mc": max(0.0, _nombre(o.get("r_charge_mc"), 0.0))}
     dt0 = p["ui"] / ECHANTILLONS_UI / 8.0
@@ -1964,7 +2002,7 @@ def preparer_ibis(o, p):
         except ibis.ErreurIbis as exc:
             raise ErreurOeil(exc.message, exc.conseil)
         ctx.update(em=t, m_em=m, em_n=b["t_n"], m_em_n=b["m_n"],
-                   bt_em=(b["bt"], b["bt_n"]))
+                   bt_em=(b["bt"], b["bt_n"]), mut_em=b["mut"])
         ctx["notes"].extend(b["notes"])
         if b["paire"] is not None:
             ctx["decalage"] = float(b["paire"]["tdelay"][ibis.COINS[t.coin]])
@@ -1985,6 +2023,8 @@ def preparer_ibis(o, p):
                 "coin_n": b["t_n"].coin,
                 "boitier_n": _infos_boitier(b["bt_n"]),
                 "tdelay": ctx["decalage"] if b["paire"] else None})
+            if b["mut"]:
+                ctx["infos"]["emetteur"]["mutuelle"] = _infos_mutuelle(b["mut"])
         p["tr"] = tr_e
         p["ffe"], p["ffe_principal"] = [1.0], 0
     if rx_d:
@@ -2005,6 +2045,7 @@ def preparer_ibis(o, p):
                                    tt.g_pow):
                 ctx[cle] = tt
         ctx["bt_rx"] = (b["bt"], b["bt_n"])
+        ctx["mut_rx"] = b["mut"]
         ctx["notes"].extend(b["notes"])
         if b["paire"] is not None and b["paire"]["vdiff"]:
             ctx["vdiff"] = abs(float(b["paire"]["vdiff"]))
@@ -2021,6 +2062,8 @@ def preparer_ibis(o, p):
                 "coin_n": t_n.coin, "c_comp_n": t_n.c_comp,
                 "boitier_n": _infos_boitier(b["bt_n"]),
                 "vdiff": ctx["vdiff"]})
+            if b["mut"]:
+                ctx["infos"]["recepteur"]["mutuelle"] = _infos_mutuelle(b["mut"])
     if dec_saisi:
         ctx["decalage"] = dec
     ctx["temporel"] = (ctx["em"] is not None or ctx["rx"] is not None or
@@ -2066,31 +2109,57 @@ def appliquer_boitiers(ctx, freqs, abcds, mode="simple"):
     devant, boitier du recepteur IBIS derriere. En differentiel (cascade
     du mode impair), le boitier de chaque brin est pose a l'identique sur
     les deux -- la MOYENNE des deux broches, serie doublee et derivation
-    divisee par deux. Rend (abcds, note)."""
+    divisee par deux. Rend (abcds, note).
+
+    LES MUTUELLES DE LA PAIRE (2.2.0, `ibis.mutuelle_paire`) entrent dans
+    cette moyenne comme elles entrent dans le mode impair : L - L_m et
+    R - R_m en serie, C + C_m a la broche. UN BOITIER PAR SECTIONS est sa
+    cascade de lignes (`ibis.abcd_sections`) : les memes sections sur les
+    deux brins se posent en mode impair telles quelles ([A, 2B ; C/2, D]),
+    des sections differentes retombent sur la moyenne de leurs totaux --
+    la cascade a quatre acces, elle, les pose brin par brin."""
     if not ctx:
         return abcds, ""
     m = np.array(abcds, dtype=complex)
-    touche = False
-    for cle, sens, actif in (("bt_em", "emission", ctx["em"] is not None),
-                             ("bt_rx", "reception", True)):
+    touche = mutuelle = False
+    moyenne = ""
+    for cle, sens, actif, cle_m in (
+            ("bt_em", "emission", ctx["em"] is not None, "mut_em"),
+            ("bt_rx", "reception", True, "mut_rx")):
         a, b = ctx[cle]
         if not actif or (a is None and b is None):
             continue
+        mb = None
         if mode == "diff":
-            moy = {k: 0.5 * ((a or {}).get(k, 0.0) + (b or {}).get(k, 0.0))
-                   for k in ("r", "l", "c")}
-            bt = {"r": 2.0 * moy["r"], "l": 2.0 * moy["l"],
-                  "c": moy["c"] / 2.0}
+            sa, sb = (a or {}).get("sections"), (b or {}).get("sections")
+            if sa and sa == sb:
+                m1 = ibis.abcd_boitier(freqs, a, sens)
+                mb = m1.copy()
+                mb[:, 0, 1] *= 2.0
+                mb[:, 1, 0] /= 2.0
+            else:
+                if sa or sb:
+                    moyenne = (" — boîtiers par sections différents sur "
+                               "les deux brins : la moyenne de leurs totaux")
+                mut = ctx.get(cle_m) or {}
+                mutuelle = mutuelle or bool(mut)
+                moy = {k: 0.5 * ((a or {}).get(k, 0.0) + (b or {}).get(k, 0.0))
+                       for k in ("r", "l", "c")}
+                bt = {"r": 2.0 * (moy["r"] - mut.get("r", 0.0)),
+                      "l": 2.0 * (moy["l"] - mut.get("l", 0.0)),
+                      "c": (moy["c"] + mut.get("c", 0.0)) / 2.0}
+                mb = ibis.abcd_boitier(freqs, bt, sens)
         else:
-            bt = a
-        mb = ibis.abcd_boitier(freqs, bt, sens)
+            mb = ibis.abcd_boitier(freqs, a, sens)
         if mb is None:
             continue
         m = mb @ m if sens == "emission" else m @ mb
         touche = True
     if not touche:
         return abcds, ""
-    return m, "boîtiers comptés (R/L_pkg en série, C_pkg à la broche)"
+    return m, ("boîtiers comptés (R/L_pkg en série, C_pkg à la broche%s)%s"
+               % (", mutuelles de la paire comprises" if mutuelle else "",
+                  moyenne))
 
 
 def abcd_depuis_s(s_plats, z_ref):
@@ -2268,60 +2337,135 @@ def simuler_non_lineaire(ctx, freqs, abcds, p, r0):
             "liaison": lia}
 
 
-def _canal_paire(ctx, freqs, abcd_dd, abcd_cc, p, r0, dt, symetrique=False,
-                 surlongueur=None):
-    """Les 4 x 4 reponses impulsionnelles de la paire PAR BRIN, boitiers,
-    surlongueur et charge comprises, et leur longueur utile."""
-    freqs = np.asarray(freqs, dtype=float)
-    n = len(freqs)
-    m = ibis.abcd_brins(abcd_dd, abcd_cc)
-    zero = np.array([0.0])
-    m0 = ibis.abcd_brins(
-        np.array([[[1.0, max(0.0, float(np.real(abcd_dd[0][0][1])))],
-                   [0.0, 1.0]]]),
-        np.array([[[1.0, max(0.0, float(np.real(abcd_cc[0][0][1])))],
-                   [0.0, 1.0]]]))
-    bt_e, bt_r = ctx["bt_em"], ctx["bt_rx"]
-    if symetrique:
-        bt_e, bt_r = (bt_e[0], bt_e[0]), (bt_r[0], bt_r[0])
-    if ctx["em"] is not None and (bt_e[0] or bt_e[1]):
-        m = ibis.abcd_par_brin(ibis.abcd_boitier(freqs, bt_e[0], "emission"),
-                               ibis.abcd_boitier(freqs, bt_e[1], "emission"),
-                               n) @ m
-        m0 = ibis.abcd_par_brin(ibis.abcd_boitier(zero, bt_e[0], "emission"),
-                                ibis.abcd_boitier(zero, bt_e[1], "emission"),
-                                1) @ m0
-    if surlongueur and not symetrique:
-        # La surlongueur d'un brin : une ligne seule, sur le brin n.
-        lg = ligne_ideale(freqs, surlongueur["z0"], surlongueur["retard"])
-        m = m @ ibis.abcd_par_brin(None, lg, n)
-    if bt_r[0] or bt_r[1]:
-        m = m @ ibis.abcd_par_brin(
-            ibis.abcd_boitier(freqs, bt_r[0], "reception"),
-            ibis.abcd_boitier(freqs, bt_r[1], "reception"), n)
-        m0 = m0 @ ibis.abcd_par_brin(
-            ibis.abcd_boitier(zero, bt_r[0], "reception"),
-            ibis.abcd_boitier(zero, bt_r[1], "reception"), 1)
-    # LA CHARGE PAR BRIN : la resistance differentielle entre les deux
-    # brins, l'impedance de mode commun (prise mediane) s'il y en a une, la
-    # capacite d'entree de chaque broche vers la masse.
+def _boitiers_brin(freqs, bt, mut, sens):
+    """(N, 4, 4) : les boitiers des deux broches (bt_p, bt_n), poses chacun
+    sur son brin -- et couples par les mutuelles de la paire s'il y en a
+    (`ibis.abcd_boitier_paire`)."""
+    if mut:
+        return ibis.abcd_boitier_paire(freqs, bt[0], bt[1], mut, sens)
+    return ibis.abcd_par_brin(ibis.abcd_boitier(freqs, bt[0], sens),
+                              ibis.abcd_boitier(freqs, bt[1], sens),
+                              len(freqs))
+
+
+def _continu_brins(m):
+    """La paire par brin (N, 4, 4) au continu, (1, 4, 4) : les resistances
+    serie, que la partie reelle de B au premier point approche."""
+    m0 = np.zeros((1, 4, 4), dtype=complex)
+    m0[0] = np.eye(4)
+    m0[0, :2, 2:] = np.real(np.asarray(m)[0, :2, 2:])
+    return m0
+
+
+def _charge_brins(ctx, p, w, symetrique=False):
+    """LA CHARGE PAR BRIN (N, 2, 2) en admittance : la resistance
+    differentielle entre les deux brins, l'impedance de mode commun (prise
+    mediane) s'il y en a une, la capacite d'entree de chaque broche vers la
+    masse."""
     r_l = p["r_charge"]
     yd = (1.0 / r_l) if 0 < r_l < 1e9 else 0.0
-    yc = (1.0 / ctx["r_mc"]) if ctx["r_mc"] > 0 else 0.0
-    cp, cn = ctx["c_rx"] or (2.0 * p["c_charge"], 2.0 * p["c_charge"])
+    r_mc = (ctx or {}).get("r_mc") or 0.0
+    yc = (1.0 / r_mc) if r_mc > 0 else 0.0
+    cp, cn = (ctx or {}).get("c_rx") or (2.0 * p["c_charge"],
+                                         2.0 * p["c_charge"])
     if symetrique:
         cn = cp
+    y = np.zeros((len(w), 2, 2), dtype=complex)
+    y[:, 0, 0] = yc / 4.0 + yd + 1j * w * cp
+    y[:, 1, 1] = yc / 4.0 + yd + 1j * w * cn
+    y[:, 0, 1] = y[:, 1, 0] = yc / 4.0 - yd
+    return y
 
-    def charge(w):
-        y = np.zeros((len(w), 2, 2), dtype=complex)
-        y[:, 0, 0] = yc / 4.0 + yd + 1j * w * cp
-        y[:, 1, 1] = yc / 4.0 + yd + 1j * w * cn
-        y[:, 0, 1] = y[:, 1, 0] = yc / 4.0 - yd
-        return y
-    s = ibis.s_depuis_abcd_4(ibis.charger_brins(m, charge(2 * math.pi *
-                                                          freqs)), r0)
-    s0 = np.real(ibis.s_depuis_abcd_4(ibis.charger_brins(m0, charge(zero)),
-                                      r0)[0])
+
+def _poser_boitiers_brins(ctx, freqs, m, m0, symetrique=False,
+                          avant_reception=None):
+    """Les boitiers des deux bouts, brin par brin, autour de la paire
+    (N, 4, 4) et de son continu (1, 4, 4) : (m, m0, compte). Celui de
+    l'emetteur ne se pose qu'avec un emetteur IBIS ; `avant_reception`
+    (N, 4, 4) s'insere juste avant celui du recepteur."""
+    zero = np.array([0.0])
+    bt_e, bt_r = ctx["bt_em"], ctx["bt_rx"]
+    mut_e, mut_r = ctx.get("mut_em"), ctx.get("mut_rx")
+    if symetrique:
+        bt_e, bt_r = (bt_e[0], bt_e[0]), (bt_r[0], bt_r[0])
+    compte = False
+    if ctx["em"] is not None and (bt_e[0] or bt_e[1] or mut_e):
+        m = _boitiers_brin(freqs, bt_e, mut_e, "emission") @ m
+        m0 = _boitiers_brin(zero, bt_e, mut_e, "emission") @ m0
+        compte = True
+    if avant_reception is not None:
+        m = m @ avant_reception
+    if bt_r[0] or bt_r[1] or mut_r:
+        m = m @ _boitiers_brin(freqs, bt_r, mut_r, "reception")
+        m0 = m0 @ _boitiers_brin(zero, bt_r, mut_r, "reception")
+        compte = True
+    return m, m0, compte
+
+
+def transfert_paire(ctx, freqs, m_brins, p):
+    """V_diff a la charge / V du generateur differentiel, a travers la paire
+    PAR BRIN (N, 4, 4) : (h, h0, note). C'est `transfert` pour une paire
+    dissymetrique, dont le mode impair ne reste pas impair.
+
+    Le generateur de Thevenin se partage en deux : +V/2 et -V/2, R_s/2 de
+    chaque cote ; la charge est celle de `_charge_brins`. Avec les blocs
+    [[A, B], [C, D]] et Y la charge, V1 = (A + B Y) V2, I1 = (C + D Y) V2 :
+        (A + B Y + Z_s (C + D Y)) V2 = E,  H = V2p - V2n.
+    Les boitiers IBIS s'y posent brin par brin, mutuelles de la paire
+    comprises. Pour une paire symetrique, c'est `transfert` sur le mode
+    impair, exactement."""
+    freqs = np.asarray(freqs, dtype=float)
+    m = np.array(m_brins, dtype=complex)
+    m0 = _continu_brins(m)
+    compte = False
+    if ctx:
+        m, m0, compte = _poser_boitiers_brins(ctx, freqs, m, m0)
+    zs = 0.5 * float(p["r_source"]) * np.eye(2)
+    e = np.array([0.5, -0.5], dtype=complex)
+
+    def h_de(mm, w):
+        y = _charge_brins(ctx, p, w)
+        k = (mm[:, :2, :2] + mm[:, :2, 2:] @ y
+             + zs @ (mm[:, 2:, :2] + mm[:, 2:, 2:] @ y))
+        v2 = np.linalg.solve(k, np.broadcast_to(e, (len(w), 2))[..., None])
+        return v2[:, 0, 0] - v2[:, 1, 0]
+    h = h_de(m, 2 * math.pi * freqs)
+    h0 = float(np.real(h_de(m0, np.array([0.0]))[0]))
+    return h, h0, ("boîtiers comptés brin par brin" if compte else "")
+
+
+def _canal_paire(ctx, freqs, abcd_dd, abcd_cc, p, r0, dt, symetrique=False,
+                 surlongueur=None, m_brins=None):
+    """Les 4 x 4 reponses impulsionnelles de la paire PAR BRIN, boitiers,
+    surlongueur et charge comprises, et leur longueur utile.
+
+    `m_brins` (N, 4, 4) : la paire par brin de la cascade a quatre acces de
+    `simulation_em` -- dissymetries et surlongueur comprises ; sinon, la
+    paire symetrique remise par brin depuis ses deux modes."""
+    freqs = np.asarray(freqs, dtype=float)
+    n = len(freqs)
+    zero = np.array([0.0])
+    if m_brins is not None and not symetrique:
+        m = np.array(m_brins, dtype=complex)
+        m0 = _continu_brins(m)
+        surlongueur = None
+    else:
+        m = ibis.abcd_brins(abcd_dd, abcd_cc)
+        m0 = ibis.abcd_brins(
+            np.array([[[1.0, max(0.0, float(np.real(abcd_dd[0][0][1])))],
+                       [0.0, 1.0]]]),
+            np.array([[[1.0, max(0.0, float(np.real(abcd_cc[0][0][1])))],
+                       [0.0, 1.0]]]))
+    lg = None
+    if surlongueur and not symetrique:
+        # La surlongueur d'un brin : une ligne seule, sur le brin n.
+        lg = ibis.abcd_par_brin(None, ligne_ideale(
+            freqs, surlongueur["z0"], surlongueur["retard"]), n)
+    m, m0, _ = _poser_boitiers_brins(ctx, freqs, m, m0, symetrique, lg)
+    s = ibis.s_depuis_abcd_4(ibis.charger_brins(
+        m, _charge_brins(ctx, p, 2 * math.pi * freqs, symetrique)), r0)
+    s0 = np.real(ibis.s_depuis_abcd_4(ibis.charger_brins(
+        m0, _charge_brins(ctx, p, zero, symetrique)), r0)[0])
     reps = [[ibis.reponses_impulsionnelles(freqs, s[:, i, j], s0[i, j], dt,
                                            None, ctx["tr_lissage"])[0]
              for j in range(4)] for i in range(4)]
@@ -2331,20 +2475,22 @@ def _canal_paire(ctx, freqs, abcd_dd, abcd_cc, p, r0, dt, symetrique=False,
 
 
 def simuler_paire(ctx, freqs, abcd_dd, abcd_cc, p, r0_diff, surlongueur=None,
-                  symetrique=False, seulement_onde=False):
+                  symetrique=False, seulement_onde=False, m_brins=None):
     """La paire simulee dans le temps, brin par brin : ce que
     `oeil(non_lineaire=...)` lit, plus les tensions des deux brins.
 
     `r0_diff` : la reference differentielle (R0 = r0_diff / 2 par brin).
     `symetrique` : la MEME paire, mais les deux brins pareils (ceux du brin
     p, sans decalage ni surlongueur) -- la reference a laquelle on compare
-    la vraie. `surlongueur` {retard, z0} : un brin plus long que l'autre."""
+    la vraie. `surlongueur` {retard, z0} : un brin plus long que l'autre.
+    `m_brins` : la paire dissymetrique par brin (cascade a quatre acces) ;
+    la reference symetrique reste alors celle de `abcd_dd` et `abcd_cc`."""
     ui = p["ui"]
     freqs = np.asarray(freqs, dtype=float)
     dt, k = _pas(freqs, ui)
     r0 = r0_diff / 2.0
     reps, L = _canal_paire(ctx, freqs, abcd_dd, abcd_cc, p, r0, dt,
-                           symetrique, surlongueur)
+                           symetrique, surlongueur, m_brins)
     em, em_n = ctx["em"], ctx["em_n"]
     if em is not None:
         cmd = ibis.commandes(ctx["m_em"], em, dt)
@@ -2703,6 +2849,7 @@ def analyser(doc, journal=None):
                          "L'œil demande une liaison d'un bout à l'autre : "
                          "sélectionnez un seul parcours, sans dérivation.")
     av = []
+    m_brins = None
     if p["mode"] == "diff":
         sd = res.get("s_diff") or {}
         abcds = sd.get("abcd_dd")
@@ -2712,13 +2859,23 @@ def analyser(doc, journal=None):
                              "Sélectionnez les deux pistes de la paire, ou "
                              "nommez la Piste 2.")
         nv, nc = int(sd.get("vias") or 0), int(sd.get("coudes") or 0)
-        av.append("Différentiel : la cascade du mode impair porte les "
-                  "tronçons de la paire%s." % (
-                      (", ses %d via(s) et %d coude(s), posés à l'identique "
-                       "sur les deux brins — la mutuelle entre les deux fûts "
-                       "est négligée, l'inductance du via est donc majorée"
-                       % (nv, nc)) if (nv or nc) else
-                      " ; elle n'a ni via ni coude"))
+        if sd.get("quatre_acces") and sd.get("abcd_brins") is not None:
+            # LA PAIRE DISSYMETRIQUE, BRIN PAR BRIN (2.2.0) : la cascade a
+            # quatre acces de `simulation_em`, conversions de mode comprises.
+            m_brins = np.array(sd["abcd_brins"], dtype=complex)
+            av.append("Différentiel : paire dissymétrique (%s) — cascade à "
+                      "quatre accès, brin par brin : chaque brin a sa "
+                      "section, ses vias et ses coudes, et l'œil lit la "
+                      "tension différentielle au récepteur, conversions de "
+                      "mode comprises." % "; ".join(
+                          sd.get("dissymetries") or ["forcée"]))
+        else:
+            av.append("Différentiel : la cascade du mode impair porte les "
+                      "tronçons de la paire%s." % (
+                          (", ses %d via(s) et %d coude(s), posés à "
+                           "l'identique sur les deux brins, mutuelle des "
+                           "fûts comprise" % (nv, nc)) if (nv or nc) else
+                          " ; elle n'a ni via ni coude"))
     else:
         abcds = res.get("abcd")
         if not abcds:
@@ -2729,14 +2886,25 @@ def analyser(doc, journal=None):
                                                         fenetre * 1e9))
     # -- les deux brins de la paire, ou le canal seul avec ses boitiers --
     abcd_cc, surlong, nl_ref = None, None, None
+    sd = res.get("s_diff") or {}
+    dl = float(sd.get("delta_l_mm") or 0.0)
+    if m_brins is not None and dl > 0 and sd.get("brin_long"):
+        segs = res.get("segments") or [{}]
+        eps = float(segs[0].get("eps_eff", 4.0) or 4.0)
+        av.append("Les deux brins diffèrent de %.3g mm : le brin %s est le "
+                  "plus long, et sa surlongueur (%.3g ps) est posée sur lui, "
+                  "côté récepteur, dans la cascade à quatre accès." % (
+                      dl, sd["brin_long"],
+                      dl * 1e-3 * math.sqrt(max(eps, 1.0)) / C_0 * 1e12))
     if ctx and ctx["paire"]:
-        sd = res.get("s_diff") or {}
-        if sd.get("s_cc") and len(sd["s_cc"]) == len(freqs):
+        if m_brins is not None and sd.get("abcd_cc") is not None:
+            # La reference symetrique : la paire symetrisee, ses deux modes.
+            abcd_cc = np.array(sd["abcd_cc"], dtype=complex)
+        elif sd.get("s_cc") and len(sd["s_cc"]) == len(freqs):
             abcd_cc = abcd_depuis_s(sd["s_cc"], sd.get("z_ref_comm") or
                                     0.25 * float(sd.get("z_ref_diff") or
                                                  100.0))
-        dl = float(sd.get("delta_l_mm") or 0.0)
-        if abcd_cc is not None and dl > 0:
+        if abcd_cc is not None and dl > 0 and m_brins is None:
             segs = res.get("segments") or [{}]
             eps = float(segs[0].get("eps_eff", 4.0) or 4.0)
             surlong = {"retard": dl * 1e-3 * math.sqrt(max(eps, 1.0)) / C_0,
@@ -2744,28 +2912,38 @@ def analyser(doc, journal=None):
                                    or 50.0), "mm": dl}
             av.append("Les deux brins diffèrent de %.3g mm : la surlongueur "
                       "(%.3g ps) est posée sur le brin inverse, comme une "
-                      "ligne seule — le dessin ne dit pas lequel est le plus "
-                      "long." % (dl, surlong["retard"] * 1e12))
+                      "ligne seule — la cascade de la paire ne dit pas lequel "
+                      "est le plus long." % (dl, surlong["retard"] * 1e12))
         if abcd_cc is None:
             av.append("Cascade du mode commun indisponible : la paire est "
                       "simulée en demi-circuit du mode impair, le mode "
                       "commun tenu fixe — décalage et dissymétries des deux "
                       "brins ne sont pas suivis.")
     note_bt = ""
-    if abcd_cc is None:
+    canal, h0_canal = abcds, None
+    mut = bool(ctx and (ctx.get("mut_em") or ctx.get("mut_rx")))
+    if m_brins is not None and not (temporel and abcd_cc is not None):
+        # LA PAIRE DISSYMETRIQUE EN LINEAIRE : le transfert differentiel
+        # de la paire par brin, boitiers poses brin par brin.
+        canal, h0_canal, note_bt = transfert_paire(ctx, freqs, m_brins, p)
+        if note_bt and mut:
+            note_bt += ", mutuelles de la paire comprises"
+    elif abcd_cc is None:
         abcds, note_bt = appliquer_boitiers(ctx, freqs, abcds, p["mode"])
+        canal = abcds
         if note_bt and p["mode"] == "diff" and asymetries(ctx):
             note_bt += " — la moyenne des deux broches, sur les deux brins"
-    elif any(ctx["bt_em"]) or any(ctx["bt_rx"]):
-        note_bt = "boîtiers comptés, broche par broche"
+    elif any(ctx["bt_em"]) or any(ctx["bt_rx"]) or mut:
+        note_bt = "boîtiers comptés, broche par broche%s" % (
+            ", mutuelles de la paire comprises" if mut else "")
     if ctx and ctx["notes"]:
         av.extend(ctx["notes"])
     nl = None
     if temporel and abcd_cc is not None:
         nl = simuler_paire(ctx, freqs, abcds, abcd_cc, p,
-                           _r_reference(res, p), surlong)
+                           _r_reference(res, p), surlong, m_brins=m_brins)
         p["v_haut"], p["v_bas"] = nl["v_haut"], nl["v_bas"]
-        if asymetries(ctx) or surlong:
+        if asymetries(ctx) or surlong or m_brins is not None:
             nl_ref = simuler_paire(ctx, freqs, abcds, abcd_cc, p,
                                    _r_reference(res, p), None,
                                    symetrique=True, seulement_onde=True)
@@ -2786,7 +2964,8 @@ def analyser(doc, journal=None):
             excursion=(nl["v_haut"] - nl["v_bas"]) if nl else None)
         p["bornes"] = list(p["bornes"]) + trouves
         av.extend(notes)
-    r = oeil(freqs, abcds, p, gab, journal=journal, non_lineaire=nl)
+    r = oeil(freqs, canal, p, gab, h0=h0_canal, journal=journal,
+             non_lineaire=nl)
     manque = []
     if not (p.get("rj_ui") or p.get("dj_ui") or p.get("bruit_v")):
         manque.append("sans gigue aléatoire ni bruit")
@@ -2820,6 +2999,8 @@ def analyser(doc, journal=None):
                 mc["asymetries"] = asymetries(ctx) + (
                     ["surlongueur de %.3g mm" % surlong["mm"]]
                     if surlong else []) + (
+                    ["paire : %s" % x for x in (sd.get("dissymetries") or [])]
+                    if m_brins is not None else []) + (
                     ["fronts montant et descendant du tampon différents "
                      "(%.0f %%) : le mode commun en vient même entre deux "
                      "brins identiques" % (100 * nl["infos"]["asymetrie"])]
@@ -2861,6 +3042,14 @@ def analyser(doc, journal=None):
         "parametres": {k: v for k, v in p.items() if k != "ctle"},
         "duree": round(time.time() - debut, 3),
     })
+    if m_brins is not None:
+        # CE QUI DISTINGUE LES DEUX BRINS, quand la cascade a quatre acces a
+        # servi -- rien de plus sinon : la reponse d'une paire symetrique
+        # reste celle d'avant.
+        r["paire_brins"] = {"dissymetries": list(sd.get("dissymetries") or []),
+                            "brin_long": sd.get("brin_long"),
+                            "delta_l_mm": dl,
+                            "vias": sd.get("vias_brins")}
     if journal:
         mes = r["mesures"]
         journal("  oeil « %s » : %.4g Gb/s, hauteur %.1f mV (pire %.1f mV),"
