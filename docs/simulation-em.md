@@ -541,9 +541,11 @@ aucune trace n'a le droit d'entrer.
 dispersion, pertes, coudes, vias, moignons), mais sur une grille régulière de
 plusieurs centaines à quelques milliers de fréquences (`freqs_imposees`). En
 mode différentiel, c'est la cascade du mode impair de la paire
-(`s_diff["abcd_dd"]`). `python/oeil.py` n'ajoute que ce qui l'entoure :
+(`s_diff["abcd_dd"]`), ses vias et ses coudes compris (voir plus bas).
+`python/oeil.py` (2.0.0) n'ajoute que ce qui l'entoure :
 
-1. **l'émetteur**, générateur de Thévenin linéaire : tension à vide, résistance
+1. **l'émetteur**, générateur de Thévenin linéaire (ou tampon IBIS, voir plus
+   bas) : tension à vide, résistance
    de sortie, front gaussien de temps de montée tᵣ (10–90 %) et, au besoin, une
    pré-accentuation (FFE) ;
 2. **le récepteur** : résistance de terminaison (vide = haute impédance) et
@@ -587,9 +589,23 @@ affichée à côté du verdict, parce que les normes sont payantes :
 
 | Fiabilité | Sens | Gabarits |
 | :--- | :--- | :--- |
-| recoupé | valeurs retrouvées dans une source publique (fiche de fabricant, note d'application), pas dans la norme elle-même | USB 2.0 HS Template 1, USB 3.x Gen 1 (après CTLE), PCIe Gen 1, SGMII |
-| à vérifier | valeurs de la norme non recoupées | USB 2.0 HS extrémité, PCIe Gen 2 et Gen 3, HDMI 1.4, SATA Gen 1 à 3 |
+| recoupé | valeurs retrouvées dans une source publique (fiche de fabricant, note d'application, procédure de test), pas dans la norme elle-même | USB 2.0 HS Template 1, USB 3.x Gen 1 (après CTLE), PCIe Gen 1, Gen 2 et Gen 3 (après CTLE et DFE de référence), SATA Gen 1 à 3, SGMII |
+| à vérifier | valeurs de la norme non recoupées : aucune source publique ne les reproduit | USB 2.0 HS extrémité (Template 2), HDMI 1.4 (TP2) |
 | dérivé | pas de gabarit officiel : seuils VIL/VIH du récepteur et sa fenêtre setup/hold | LVDS, MIPI D-PHY HS, SPI 3,3 V et 1,8 V, QSPI, SD High Speed, eMMC HS |
+
+**La vérification d'octobre 2026.** PCIe Gen 2 (120 mV, 0,60 UI à 10⁻¹²)
+et Gen 3 (25 mV, 0,3 UI derrière le CTLE à pôles 2 et 8 GHz, gain continu
+−6 à −12 dB, et le DFE à une prise bornée à ±30 mV) sont recoupés ; leurs
+valeurs n'ont pas bougé. SATA garde ses hauteurs (325, 275, 240 mVppd) et sa
+largeur passe de 0,4 UI à 1 − TJ de la tolérance à la gigue du récepteur :
+0,49 UI en Gen 1, 0,43 UI en Gen 2 et 3, en losange. USB 2.0 extrémité et
+HDMI 1.4 restent « à vérifier » : les seules valeurs publiques trouvées pour
+HDMI sont celles de la source HDMI 2.0 au bout du câble de référence, une
+autre exigence, qu'on ne recopie pas. Les gabarits PCIe et SATA portent aussi
+leur taux d'erreur (10⁻¹²) : c'est sur ce contour de l'œil statistique qu'ils
+se jugent quand la gigue est saisie. Les gabarits dérivés citent maintenant le
+composant réel (récepteurs LVDS SN65LVDS32 / DS90LV028A à ±100 mV, D-PHY à
+±70 mV en v1.2 et 40 mV chez Efinix en v1.1).
 
 Un gabarit au **connecteur** (USB 2.0 Template 1) se juge à la broche du
 connecteur : c'est le bon point quand la piste va du PHY au connecteur. Les
@@ -599,20 +615,149 @@ VIH pendant la fenêtre setup/hold du récepteur, avec les limites de tension
 absolues. L'œil y est centré au mieux, et le décalage entre donnée et horloge
 reste l'affaire de l'onglet *Bus synchrone*.
 
-**Hors du modèle**, et dit dans chaque résultat : émetteur et récepteur non
-linéaires (IBIS), gigue aléatoire, diaphonie des voisines, condensateurs de
-liaison, et en différentiel les vias et coudes de la paire (la cascade du mode
-impair ne porte que ses tronçons). L'Ethernet cuivre (MLT-3, PAM-5) n'est pas
-binaire et n'a pas de gabarit. L'I²C (drain ouvert, front montant RC) n'est pas
-linéaire et n'en a pas non plus.
+#### L'œil statistique — gigue, bruit, taux d'erreur (`oeil` 2.0.0)
 
-**Étalons** ([python/test/banc-oeil.py](../python/test/banc-oeil.py)) : la
-ligne adaptée sans pertes rend un œil parfait (demi-excursion, 1 UI, retard
+Le pire cas dit la frontière qu'**aucune** séquence ne franchit ; il ne dit pas
+combien de fois on s'en approche. Or une liaison se juge à un **taux
+d'erreur** (10⁻¹² pour PCIe et SATA), et deux choses le fixent que la réponse
+à un bit ne porte pas : la gigue de l'émetteur, qui déplace l'instant de
+lecture, et le bruit, qui déplace la tension lue. Dès qu'on saisit une gigue
+aléatoire (RJ, ps rms), une gigue déterministe (DJ, ps crête à crête, en
+double Dirac), un bruit de récepteur (mV rms) ou la diaphonie, le serveur
+ajoute l'**œil statistique** — sans tirage au sort :
+
+1. à chaque phase, la tension lue pour un « 1 » vaut v_c + A·c₀ + Σ aₖ·A·cₖ
+   (aₖ = ±1 indépendants) ; sa densité est le produit de convolution de deux
+   Dirac par curseur, construit sur une grille de 2 048 cases **dans le
+   domaine des probabilités** — jamais négatives, d'où des queues justes
+   jusqu'à 10⁻³⁰⁰, là où une transformée de Fourier plafonnerait vers 10⁻¹⁶.
+   L'erreur d'arrondi de chaque curseur est **reportée sur le suivant** :
+   l'extrême (tous les bits contre l'œil), là où se lisent les petits taux,
+   reste exact à une demi-case près ;
+2. le bruit gaussien s'y convolue, et chaque agresseur borné entre comme un
+   curseur de plus (deux Dirac à ±sa crête) ;
+3. la gigue mélange les phases, avec les probabilités exactes (erfc) de
+   chaque case de phase — affinée quatre fois, 1/256 UI, pour que le
+   croisement ne soit pas biaisé d'une demi-case ;
+4. le taux d'erreur à (τ, v) est ½ P(V₁ < v) + ½ P(V₀ > v) ; les **contours**
+   10⁻⁶, 10⁻⁹, 10⁻¹², 10⁻¹⁵ (et le taux visé) se tracent sur l'œil, la
+   **baignoire** (taux au seuil, phase par phase, en échelle logarithmique)
+   en dessous, et le gabarit se juge **aussi** sur le contour du taux visé —
+   c'est là que les gabarits PCIe et SATA, qui portent leur 10⁻¹², ont un
+   sens.
+
+Hypothèses, rendues avec le résultat : bits indépendants et équiprobables (pas
+la séquence PRBS), gigue rapportée à l'échantillonneur (celle de l'émetteur n'y
+est pas filtrée par le canal — prudent sur une liaison à pertes), décisions
+du DFE justes.
+
+**La diaphonie, bornée.** Chaque agresseur ajoute sa crête au pire cas, avec
+son signe le plus défavorable et au même instant que les autres (somme
+arithmétique : la seule qui soit un pire cas), et entre dans l'œil
+statistique comme ±sa crête. Les agresseurs se saisissent (`agresseurs` :
+crête en volts, ou coefficient × excursion), ou se **reprennent du couplage**
+(`agresseurs_auto`) : chaque voisine de la fiche de couplage de
+`simulation_em` donne ses modes pair et impair, d'où Kb et Kf — les mêmes que
+`crosstalk.coefficients_couple` —, et le **niveau 2** de `crosstalk.py` rend
+le NEXT et le FEXT, saturés ou non selon le front. Une voisine qui émet dans
+le même sens que la victime lui envoie son FEXT, en sens opposé son NEXT ;
+sans le savoir on prend le plus grand. L'excursion de l'agresseur est, faute
+de mieux, celle de la victime à sa charge. Derrière un CTLE, la crête passe
+par le gain crête du CTLE sous le genou du front. En différentiel, la
+partenaire n'est jamais un agresseur, et le bruit d'une piste majore celui de
+la paire. L'œil PRBS, lui, reste sans diaphonie : la séquence des voisines
+n'est pas connue.
+
+**Sans aucun de ces réglages, rien ne change** : la requête et la réponse sont
+celles de la 1.0.0, au chiffre près (c'est un cas du banc).
+
+#### Les modèles IBIS — émetteur et récepteur non linéaires
+
+`python/ibis.py` lit un fichier `.ibs` (ANSI/EIA-656) : de chaque `[Model]`,
+`Model_type`, `C_comp` (typ/min/max), `Vinl`/`Vinh`, les références
+(`[Voltage Range]`, `[Pullup Reference]`…), les quatre courbes V-I
+(`[Pullup]`, `[Pulldown]`, `[GND Clamp]`, `[POWER Clamp]`), `[Ramp]`, autant de
+`[Rising Waveform]` / `[Falling Waveform]` qu'il y en a (charge d'essai
+R/V/C_fixture), et `[Rgnd]`/`[Rpower]`. Les conventions de la norme sont
+tenues : courant positif quand il **entre** par la broche, tensions de
+`[Pullup]` et `[POWER Clamp]` relatives à leur référence (V_ref − V_broche),
+suffixes T G M k m u n p f (M = méga, m = milli), « NA » renvoyant à typ.
+Le reste (`[Package]`, `[Pin]`, sélecteurs, AMI) est ignoré **et dit** ; le
+boîtier (R/L/C_pkg) n'entre pas dans le calcul.
+
+**Le tampon émetteur, dans le temps** : I_broche = Ku(t)·I_pu(V) + Kd(t)·I_pd(V)
++ I_pc(V) + I_gc(V) + C_comp·dV/dt. Les commandes Ku, Kd viennent des formes
+d'onde : deux par front (deux charges d'essai), deux équations à chaque
+instant ; une seule, Kd = 1 − Ku ; aucune, `[Ramp]` et un Ku linéaire — la plus
+pauvre des trois, dite dans le résultat. Un front qui en interrompt un autre
+repart de la commande où le premier s'est arrêté.
+
+**La liaison se simule pas à pas.** Le canal est écrit en ondes de puissance
+sur une résistance de référence R₀ (le Z₀ de la ligne) : ses quatre
+paramètres S — la cascade ABCD de `simulation_em`, charge linéaire du
+récepteur comprise (R, C_comp) — deviennent des réponses impulsionnelles, et
+à chaque pas l'histoire est connue ; il reste deux équations à deux inconnues
+(les ondes entrantes), celles des bouts — tampon d'un côté, diodes du
+récepteur de l'autre —, qu'un Newton résout. Le passage en temporel demande
+une bande bornée : les S sont multipliés par une fenêtre gaussienne qui
+revient à lisser chaque trajet par un front de la **moitié** de celui du
+tampon (le haut de la grille suit ce lissage), **sauf la réflexion
+instantanée** de l'entrée, lue à ce qui déborde avant t = 0 et remise en
+Dirac — lissée, elle serait non causale et la boucle tampon-canal ne la
+verrait plus au bon instant.
+
+Deux simulations, et le reste ne change pas : deux **fronts isolés** (montant
+et descendant), dont la moyenne normalisée est la réponse à un échelon dont
+le pire cas, l'œil statistique et l'égaliseur ont besoin (l'écart entre les
+deux est rendu et signalé au-delà de 5 %) ; et la **séquence PRBS** elle-même,
+en régime établi, qui fait l'œil PRBS sans aucune linéarisation (PRBS7 ou 9 :
+PRBS15 serait trop long pas à pas, et le pire cas couvre de toute façon les
+longues suites). En différentiel, deux tampons en opposition attaquent
+chacun le demi-circuit du mode impair, le mode commun tenu à sa valeur
+continue (point fixe des deux niveaux) — la conversion de mode d'une paire
+dissymétrique n'est pas suivie. Un récepteur IBIS sans diode n'est que son
+C_comp : le calcul reste alors linéaire.
+
+#### Les vias de la paire (`simulation_em` 4.4.0)
+
+La cascade différentielle ne portait que les tronçons : une paire qui change
+de couche rendait le même S_dd — et le même œil — qu'une paire restée sur la
+sienne. Les modèles déjà calculés pour la piste principale (le π du via : L
+de boucle de Grover, C des antipads et des pastilles, moignons à chaque bout ;
+le T de Gupta des coudes) sont maintenant posés au même rang, **sur les deux
+brins** : en mode impair [A, 2B ; C/2, D], en mode commun [A, B/2 ; 2C, D].
+La traversée de cavité (chemin du retour) n'est comptée qu'en mode commun —
+en mode impair les retours des deux brins s'annulent ; la mutuelle entre les
+deux fûts est négligée, ce qui **majore** l'inductance vue par le mode impair
+(l'œil est un peu pessimiste). `s_diff` dit combien de vias et de coudes il
+porte, et l'œil le répète.
+
+**Hors du modèle**, et dit dans chaque résultat : condensateurs de liaison
+(couplage AC), boîtier des modèles IBIS, conversion de mode d'une paire de
+tampons dissymétriques, mutuelle entre les fûts des vias de la paire.
+L'Ethernet cuivre (MLT-3, PAM-5) n'est pas binaire et n'a pas de gabarit.
+L'I²C (drain ouvert, front montant RC) n'a pas de gabarit non plus — mais son
+tampon IBIS se simule maintenant.
+
+**Étalons** ([python/test/banc-oeil.py](../python/test/banc-oeil.py), 36 cas) :
+la ligne adaptée sans pertes rend un œil parfait (demi-excursion, 1 UI, retard
 de la ligne) ; une ligne ouverte attaquée par 30 Ω rend l'œil pire cas du
 diagramme en treillis à 0,3 % près ; avec 10 Ω, l'œil fermé se dit fermé ; le
 pire cas n'est jamais plus ouvert que le PRBS, ni en hauteur ni en marge ; un
 CTLE, une FFE ou un DFE ouvrent un œil fermé par les pertes ; la grille imposée
-rend la même cascade que la grille de la page.
+rend la même cascade que la grille de la page. **2.0.0** : sous RJ seule,
+l'œil se ferme de σ·Q⁻¹(2·BER) de chaque côté à 0,004 UI près, et sous
+DJ + RJ de DJ + 2σ·Q⁻¹(4·BER) (double Dirac) ; un bruit gaussien ferme
+l'ouverture de σ·Q⁻¹(2·BER) à deux cases près ; l'œil statistique du treillis
+de Bewley **est** le pire cas dès 10⁻⁶ ; un agresseur de crête A ferme le
+pire cas d'exactement 2A ; les voisines reprises du couplage portent le NEXT
+et le FEXT de `crosstalk.niveau2` ; un tampon IBIS aux courbes droites et au
+front gaussien rend l'œil du générateur de Thévenin à 1 % près (front composé
+avec le lissage), et sa forme d'onde PRBS simulée est, au pas près, la
+superposition de ses réponses à un échelon ; un récepteur IBIS sans diode
+rend l'œil de sa capacité ; des diodes franches tiennent le dépassement d'une
+ligne ouverte sous 0,55 V au-delà des rails ; deux vias traversants qui
+laissent des moignons de 2,6 mm ferment l'œil différentiel à 16 Gb/s.
 
 ### RF — le S₂₁ d'un réseau entre deux ports
 

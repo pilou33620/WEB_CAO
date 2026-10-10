@@ -36,11 +36,24 @@ impair (`s_diff["abcd_dd"]`). Ce module n'ajoute que ce qui est AUTOUR :
     5. le gabarit du protocole, et la marge : de combien on peut l'agrandir
        avant qu'une trace le touche.
 
-CE QUI N'EST PAS LA, et se dit dans chaque resultat : un emetteur et un
-recepteur NON lineaires (IBIS), la gigue aleatoire de l'emetteur, la
-diaphonie des voisines, les condensateurs de liaison (couplage AC). Les
-gabarits portent chacun leur FIABILITE : les normes sont payantes, et une
-valeur qui n'a pas pu etre recoupee le dit.
+DEPUIS LA 2.0.0, TROIS CHOSES DE PLUS, toutes FACULTATIVES -- sans elles,
+le resultat est celui de la 1.0.0 :
+    6. l'OEIL STATISTIQUE : gigue aleatoire (RJ) et deterministe (DJ) de
+       l'emetteur, bruit du recepteur, contours de taux d'erreur (10^-6 a
+       10^-15) et baignoire -- voir `oeil_statistique` ;
+    7. la DIAPHONIE des voisines, bornee, dans le pire cas et dans l'oeil
+       statistique : saisie, ou reprise du couplage de `simulation_em` par le
+       niveau 2 de `crosstalk.py` -- voir `agresseurs_du_couplage` ;
+    8. des tampons IBIS a l'emetteur et au recepteur, simules dans le temps
+       contre le canal (`ibis.py`) -- voir `simuler_non_lineaire`.
+Et la cascade differentielle porte maintenant les vias et les coudes de la
+paire (`simulation_em` 4.4.0).
+
+CE QUI N'EST PAS LA, et se dit dans chaque resultat : les condensateurs de
+liaison (couplage AC), le boitier des modeles IBIS, la conversion de mode
+d'une paire de tampons dissymetriques. Les gabarits portent chacun leur
+FIABILITE : les normes sont payantes, et une valeur qui n'a pas pu etre
+recoupee le dit.
 
 Le document d'entree est celui de `simulation_em` (format « cao-sim-em-* »)
 avec un champ de plus, EN UNITES SI :
@@ -51,7 +64,15 @@ avec un champ de plus, EN UNITES SI :
           gabarit (id de GABARITS ou ""), egaliseur (bool),
           ffe [coefficients], ffe_principal (rang du curseur principal),
           dfe_prises, dfe_max (V), ctle {adc_db, fz, fp1, fp2},
-          setup, hold (s, pour les gabarits « seuils »)}
+          setup, hold (s, pour les gabarits « seuils »),
+          -- facultatifs, 2.0.0 --
+          rj (s rms) ou rj_ui, dj (s crete a crete, double Dirac) ou dj_ui,
+          bruit_v (V rms au recepteur), ber_cible, statistique (bool),
+          agresseurs [{nom, crete_v} ou {nom, coef, v}],
+          agresseurs_auto (bool), agresseurs_sens "meme"|"oppose"|"inconnu",
+          agresseurs_v (V), agresseurs_tr (s),
+          ibis_emetteur, ibis_recepteur {texte, fichier, modele,
+                                         coin "typ"|"min"|"max"}}
 """
 
 import math
@@ -71,9 +92,12 @@ except Exception as _exc:                              # noqa: BLE001
     np = se = None
     ERREUR_OEIL = _exc
 
-VERSION = "1.0.0"
+VERSION = "2.0.0"
 FORMAT_RESULTAT = "cao-oeil-resultat-1"
-MAX_CORPS = 4 * 1024 * 1024
+# UN FICHIER IBIS VOYAGE DANS LA REQUETE, en texte : quelques megaoctets pour
+# les plus gros composants, deux fois si l'emetteur et le recepteur en ont
+# chacun un.
+MAX_CORPS = 16 * 1024 * 1024
 
 # Echantillons par intervalle unitaire : 64 colonnes par UI, 128 sur les deux
 # UI affichees. C'est aussi la resolution de la largeur d'oeil (1/64 UI).
@@ -176,9 +200,19 @@ GABARITS = [
      "debit": 480e6, "mode": "diff",
      "lieu": "À l'entrée du récepteur, au bout de la liaison.",
      "fiabilite": "a_verifier",
-     "source": "USB 2.0 §7.1.2.2, Templates 2 et 4 (extrémité lointaine).",
-     "note": "Coordonnées non recoupées : vérifiez les points du template "
-             "dans la spécification avant de vous fier au verdict.",
+     # VERIFIE EN 2026-10 SANS SUCCES : aucune source publique accessible
+     # (fiches TI, Keysight, Diodes AN77, notes onsemi) ne reproduit les
+     # points du Template 2 ; elles renvoient toutes a la figure 7-15 de la
+     # norme. Les points ci-dessous sont ceux de la figure tels qu'on s'en
+     # souvient (0 V a 12,5 et 87,5 % UI, ±175 mV de 35 a 65 % UI) : ils
+     # restent « a verifier », et c'est dit.
+     "source": "USB 2.0 §7.1.2.2, figure 7-15 (Template 2, extrémité de "
+               "câble captif / TP3 d'un hub) et figure 7-17 (Template 4, "
+               "sensibilité du récepteur au bout du câble).",
+     "note": "Points du template NON recoupés : aucune source publique "
+             "consultée (fiches TI, Keysight, Diodes, onsemi) ne les "
+             "reproduit ; elles renvoient à la figure 7-15 de la norme. "
+             "Vérifiez-les avant de vous fier au verdict.",
      "masque": {"type": "polygone",
                 "points": [[-0.375, 0.0], [-0.15, 0.175], [0.15, 0.175],
                            [0.375, 0.0], [0.15, -0.175], [-0.15, -0.175]]},
@@ -223,10 +257,22 @@ GABARITS = [
      "nom": "PCIe Gen 2 (5 GT/s) — récepteur",
      "debit": 5e9, "mode": "diff",
      "lieu": "Aux broches du récepteur (horloge commune).",
-     "fiabilite": "a_verifier",
-     "source": "PCIe 2.0 : VRX-DIFF-PP-CC ≥ 120 mV, TRX-TJ-CC ≤ 0,40 UI "
-               "(largeur 0,6 UI).",
-     "note": "Désaccentuation de l'émetteur −3,5 dB (−6 dB possible).",
+     "fiabilite": "corrobore",
+     "ber": 1e-12,
+     # PCIe 2.0 Base, §4.3.4 (5 GT/s, horloge commune) : VRX-DIFF-PP-CC >=
+     # 120 mV et TRX-TJ-CC <= 0,40 UI, soit 0,60 UI d'ouverture a 1e-12.
+     # Recoupe : guide de simulation PCIe de Microchip, tableau
+     # « Specifications of the Received Signal for PCIe » (5 Gb/s : hauteur
+     # 120 mV, largeur 0,6 UI). Le 0,4 UI qu'on lit parfois est la largeur
+     # de 2,5 GT/s.
+     "source": "PCIe 2.0 Base §4.3.4 : VRX-DIFF-PP-CC ≥ 120 mV, "
+               "TRX-TJ-CC ≤ 0,40 UI (largeur 0,60 UI à 10⁻¹²) ; recoupé "
+               "dans le guide de simulation PCIe de Microchip (tableau "
+               "« Specifications of the Received Signal », 5 Gb/s : 120 mV, "
+               "0,6 UI).",
+     "note": "Désaccentuation de l'émetteur −3,5 dB (−6 dB possible). La "
+             "largeur s'entend à 10⁻¹² : jugez-la sur le contour de taux "
+             "d'erreur quand la gigue est saisie.",
      "masque": {"type": "hexagone", "largeur_ui": 0.60, "plat_ui": 0.0,
                 "hauteur_v": 0.120},
      "emetteur": {"v_haut": 1.0, "v_bas": -1.0, "r_source": 100.0,
@@ -237,11 +283,23 @@ GABARITS = [
      "debit": 8e9, "mode": "diff",
      "lieu": "Derrière les broches du récepteur, après CTLE et DFE de "
              "référence.",
-     "fiabilite": "a_verifier",
-     "source": "Structure corroborée (CTLE à gain continu de −6 à −12 dB par "
-               "pas de 1 dB, puis DFE à une prise : notes Pericom AN359 / "
-               "AN377). Pôles 2 et 8 GHz, DFE ±30 mV, hauteur 25 mV et "
-               "largeur 0,3 UI NON recoupés.",
+     "fiabilite": "corrobore",
+     "ber": 1e-12,
+     # PCIe 3.0 Base §4.3.4.5 (oeil stresse du recepteur, 8 GT/s) : EH >=
+     # 25 mV et EW >= 0,3 UI a 1e-12, DERRIERE le CTLE et le DFE de
+     # reference. Recoupements 2026-10 : CTLE a deux poles fixes 2 et 8 GHz
+     # (fiche Tektronix des CTLE PCIe3/PCIe4), gain continu -6 a -12 dB par
+     # pas de 1 dB (Pericom AN359, TI DS80PCI800), DFE a une prise bornee a
+     # ±30 mV (brevet US 9 191 245, qui cite la norme), EH 25 mV / EW 0,3 UI
+     # (forum allaboutcircuits -- source secondaire, la plus faible des
+     # quatre ; la meme paire 15 mV / 0,3 UI se lit pour Gen 5 chez
+     # Tektronix).
+     "source": "PCIe 3.0 Base §4.3.4.5 : EH ≥ 25 mV, EW ≥ 0,3 UI à 10⁻¹² "
+               "après CTLE et DFE de référence. Pôles 2 et 8 GHz : fiche "
+               "Tektronix des CTLE PCIe3 ; gain continu −6 à −12 dB : "
+               "Pericom AN359, TI DS80PCI800 ; DFE ±30 mV : brevet "
+               "US 9 191 245 ; EH/EW : source secondaire (forum), cohérente "
+               "avec 15 mV / 0,3 UI cités pour Gen 5 par Tektronix.",
      "note": "Le gain continu du CTLE est choisi parmi les sept réglages pour "
              "ouvrir l'œil au mieux. Émetteur : préréglage P7 (pré-accentuation "
              "−0,1, désaccentuation −0,2).",
@@ -259,9 +317,17 @@ GABARITS = [
      "debit": 3.4e9, "mode": "diff",
      "lieu": "Au connecteur du récepteur (TP2).",
      "fiabilite": "a_verifier",
-     "source": "HDMI 1.4, masque du récepteur : 150 mV, 0,6 UI. Seule la "
-               "hauteur de 150 mV apparaît dans une note ST (AN5121), pour "
-               "une autre gamme de débit.",
+     # VERIFIE EN 2026-10 SANS SUCCES. Le masque du puits a TP2 est la
+     # figure 4-32 de HDMI 1.4 (§4.2.6), qu'aucune source publique ne
+     # reproduit. Ce qu'on trouve (ST AN5121, TI TMDS181) est le masque de
+     # la SOURCE au bout du cable de reference (TP2_EQ) de HDMI 2.0 : 0,6 UI
+     # et 335 mV a 3,4 Gb/s, 0,4 UI et 150 mV a 6 Gb/s. Ce n'est pas la meme
+     # exigence : on ne le recopie pas, et le gabarit reste « a verifier ».
+     "source": "HDMI 1.4 §4.2.6, figure 4-32 (masque du puits à TP2) : "
+               "150 mV, 0,6 UI, NON recoupés. Les seules valeurs publiques "
+               "(ST AN5121, TI TMDS181 : 0,6 UI / 335 mV à 3,4 Gb/s, "
+               "0,4 UI / 150 mV à 6 Gb/s) sont celles de la SOURCE au bout "
+               "du câble de référence en HDMI 2.0 — une autre exigence.",
      "note": "L'émetteur TMDS est une source de courant (10 mA) sans "
              "terminaison de départ : les réflexions qui reviennent ne sont "
              "pas absorbées côté émetteur.",
@@ -275,8 +341,16 @@ GABARITS = [
      "debit": 400e6, "mode": "diff",
      "lieu": "Aux broches du récepteur.",
      "fiabilite": "derive",
-     "source": "Seuil du récepteur ±100 mV (TIA/EIA-644). Largeur 0,5 UI "
-               "supposée : à remplacer par la fenêtre du récepteur réel.",
+     # LES VALEURS DU COMPOSANT, PAS SEULEMENT DE LA NORME : les recepteurs
+     # du commerce (SN65LVDS32, DS90LV028A) garantissent leur basculement a
+     # ±100 mV -- c'est le pire cas qu'on retient --, et leur fiche ne donne
+     # pas de fenetre setup/hold propre : elle appartient au deserialiseur
+     # qui suit. D'ou 0,5 UI, a remplacer par la sienne.
+     "source": "Seuil du récepteur ±100 mV (TIA/EIA-644), garanti tel quel "
+               "par les récepteurs courants (SN65LVDS32, DS90LV028A : "
+               "VIT ±100 mV au plus). Largeur 0,5 UI supposée : la fenêtre "
+               "est celle du désérialiseur qui suit, à reprendre de sa "
+               "fiche.",
      "note": "Driver à courant de 3,5 mA, terminaison 100 Ω au récepteur.",
      "masque": {"type": "hexagone", "largeur_ui": 0.50, "plat_ui": 0.20,
                 "hauteur_v": 0.200},
@@ -288,9 +362,12 @@ GABARITS = [
      "debit": 1e9, "mode": "diff",
      "lieu": "Aux broches du récepteur.",
      "fiabilite": "derive",
-     "source": "Seuils ±70 mV (VIDTH / VIDTL) : fiches Microchip et Intel "
-               "AN 754. Fenêtre setup + hold de 0,3 UI (0,15 + 0,15) non "
-               "recoupée.",
+     "source": "Seuils ±70 mV (VIDTH / VIDTL, D-PHY v1.2) : fiches "
+               "Microchip SAM9X7, Intel AN 754, TI TDA2 — c'est le pire cas "
+               "retenu ; un récepteur réel peut faire mieux (Efinix T55, "
+               "D-PHY v1.1 : VIDTH 40 mV au plus). Fenêtre setup + hold de "
+               "0,3 UI (TSETUP[RX] 0,15 + THOLD[RX] 0,15 UI, tableau des "
+               "temps données-horloge de D-PHY) non recoupée.",
      "note": "Émetteur HS terminé 50 Ω par fil, ±200 mV différentiel sur "
              "100 Ω.",
      "masque": {"type": "hexagone", "largeur_ui": 0.30, "plat_ui": 0.30,
@@ -303,11 +380,23 @@ GABARITS = [
      "nom": "SATA Gen 1 (1,5 Gb/s) — récepteur",
      "debit": 1.5e9, "mode": "diff",
      "lieu": "Aux broches du récepteur.",
-     "fiabilite": "a_verifier",
-     "source": "SATA : 325 mVppd minimum en Gen 1i ; largeur 0,4 UI "
-               "(TJ 0,6 UI). Non recoupé.",
+     "fiabilite": "corrobore",
+     "ber": 1e-12,
+     # SATA rev. 3.x §7.2 (recepteur, iSATA) : amplitude minimale 325 mVppd
+     # en Gen 1i. LARGEUR = 1 - TJ du signal de tolerance a la gigue du
+     # recepteur (§7.4.12/7.4.13). Recoupe : procedure de test SATA-IO
+     # (SyntheSys/BERTScope, « SATA_PHY_MOI ») -- « smallest bit of the lone
+     # bit pattern » 325 mV, gigue totale 0,51 UI. Avant 2026-10 : largeur
+     # 0,4 UI pour les trois et un plateau de 0,1 UI, ni l'une ni l'autre
+     # recoupes ; le losange (plateau nul) ne suppose rien de plus que les
+     # deux exigences.
+     "source": "SATA rev. 3.x : 325 mVppd minimum (Gen 1i) ; largeur "
+               "1 − TJ = 0,49 UI d'après la tolérance à la gigue du "
+               "récepteur. Recoupé dans la procédure de test SATA-IO "
+               "(SyntheSys/BERTScope) : bit isolé ≥ 325 mV, gigue totale "
+               "0,51 UI.",
      "note": "",
-     "masque": {"type": "hexagone", "largeur_ui": 0.40, "plat_ui": 0.10,
+     "masque": {"type": "hexagone", "largeur_ui": 0.49, "plat_ui": 0.0,
                 "hauteur_v": 0.325},
      "emetteur": {"v_haut": 0.5, "v_bas": -0.5, "r_source": 100.0,
                   "tr": 100e-12},
@@ -316,11 +405,23 @@ GABARITS = [
      "nom": "SATA Gen 2 (3 Gb/s) — récepteur",
      "debit": 3e9, "mode": "diff",
      "lieu": "Aux broches du récepteur.",
-     "fiabilite": "a_verifier",
-     "source": "SATA : 275 mVppd minimum en Gen 2i ; largeur 0,4 UI. Non "
-               "recoupé.",
+     "fiabilite": "corrobore",
+     "ber": 1e-12,
+     # SATA rev. 3.x §7.2 (recepteur, iSATA) : amplitude minimale 275 mVppd
+     # en Gen 2i. LARGEUR = 1 - TJ du signal de tolerance a la gigue du
+     # recepteur (§7.4.12/7.4.13). Recoupe : procedure de test SATA-IO
+     # (SyntheSys/BERTScope, « SATA_PHY_MOI ») -- « smallest bit of the lone
+     # bit pattern » 275 mV, gigue totale 0,57 UI. Avant 2026-10 : largeur
+     # 0,4 UI pour les trois et un plateau de 0,1 UI, ni l'une ni l'autre
+     # recoupes ; le losange (plateau nul) ne suppose rien de plus que les
+     # deux exigences.
+     "source": "SATA rev. 3.x : 275 mVppd minimum (Gen 2i) ; largeur "
+               "1 − TJ = 0,43 UI d'après la tolérance à la gigue du "
+               "récepteur. Recoupé dans la procédure de test SATA-IO "
+               "(SyntheSys/BERTScope) : bit isolé ≥ 275 mV, gigue totale "
+               "0,57 UI.",
      "note": "",
-     "masque": {"type": "hexagone", "largeur_ui": 0.40, "plat_ui": 0.10,
+     "masque": {"type": "hexagone", "largeur_ui": 0.43, "plat_ui": 0.0,
                 "hauteur_v": 0.275},
      "emetteur": {"v_haut": 0.5, "v_bas": -0.5, "r_source": 100.0,
                   "tr": 67e-12},
@@ -329,11 +430,25 @@ GABARITS = [
      "nom": "SATA Gen 3 (6 Gb/s) — récepteur",
      "debit": 6e9, "mode": "diff",
      "lieu": "Aux broches du récepteur.",
-     "fiabilite": "a_verifier",
-     "source": "SATA : 240 mVppd minimum en Gen 3 ; largeur 0,4 UI. Non "
-               "recoupé.",
+     "fiabilite": "corrobore",
+     "ber": 1e-12,
+     # SATA rev. 3.x §7.2 (recepteur, iSATA) : amplitude minimale 240 mVppd
+     # en Gen 3i. LARGEUR = 1 - TJ du signal de tolerance a la gigue du
+     # recepteur (§7.4.12/7.4.13). Recoupe : procedure de test SATA-IO
+     # (SyntheSys/BERTScope, « SATA_PHY_MOI ») -- « smallest bit of the lone
+     # bit pattern » 240 mV, gigue totale 0,57 UI. Avant 2026-10 : largeur
+     # 0,4 UI pour les trois et un plateau de 0,1 UI, ni l'une ni l'autre
+     # recoupes ; le losange (plateau nul) ne suppose rien de plus que les
+     # deux exigences.
+     # Un ECN propose (SATA-IO, ECN 050) d'abaisser ce minimum a 200 mV du
+     # cote du peripherique : son adoption n'a pas pu etre confirmee.
+     "source": "SATA rev. 3.x : 240 mVppd minimum (Gen 3i) ; largeur "
+               "1 − TJ = 0,43 UI d'après la tolérance à la gigue du "
+               "récepteur. Recoupé dans la procédure de test SATA-IO "
+               "(SyntheSys/BERTScope) : bit isolé ≥ 240 mV, gigue totale "
+               "0,57 UI.",
      "note": "",
-     "masque": {"type": "hexagone", "largeur_ui": 0.40, "plat_ui": 0.10,
+     "masque": {"type": "hexagone", "largeur_ui": 0.43, "plat_ui": 0.0,
                 "hauteur_v": 0.240},
      "emetteur": {"v_haut": 0.5, "v_bas": -0.5, "r_source": 100.0,
                   "tr": 40e-12},
@@ -619,6 +734,26 @@ def reponse_indicielle(freqs, h, h0, tr, n_fft_min):
     return dt, np.cumsum(impulsion)
 
 
+def filtrer_ctle(s, dt, spec):
+    """Une reponse a un echelon `s` (pas dt) passee par le CTLE `spec`.
+
+    Derivee, transformee, produit, retour, integrale : le CTLE est lineaire,
+    et c'est exact des que la fenetre contient sa constante de temps la plus
+    longue -- on la complete d'autant par la valeur finale."""
+    s = np.asarray(s, dtype=float)
+    if not spec:
+        return s
+    f_bas = min(float(spec.get("fz") or spec["fp1"]), float(spec["fp1"]))
+    queue = int(math.ceil(8.0 / (2 * math.pi * f_bas) / dt))
+    n = 1
+    while n < 2 * (len(s) + queue):
+        n *= 2
+    imp = np.diff(np.concatenate([[0.0], s, np.full(queue, s[-1])]))
+    f = np.fft.rfftfreq(n, dt)
+    sortie = np.fft.irfft(np.fft.rfft(imp, n) * ctle(f, spec), n)
+    return np.cumsum(sortie[:len(s) + queue])
+
+
 def _jauge(poly):
     """(centre, normales, distances) d'un polygone convexe.
 
@@ -702,6 +837,298 @@ def marge_pire(poly, taus, hauts, bas):
 
 
 # ==========================================================================
+# L'oeil statistique : gigue aleatoire, bruit, diaphonie bornee
+# --------------------------------------------------------------------------
+# LA QUESTION QUE LE PIRE CAS NE POSE PAS. L'oeil pire cas est la frontiere
+# qu'AUCUNE sequence ne franchit ; il ne dit pas combien de fois on s'en
+# approche. Une liaison se juge pourtant a un taux d'erreur (10^-12 pour
+# PCIe et SATA), et deux choses le fixent que la reponse a un bit ne porte
+# pas : la gigue de l'emetteur, qui deplace l'instant ou l'on lit, et le
+# bruit, qui deplace la tension lue.
+#
+# LA METHODE EST CELLE DES YEUX STATISTIQUES (StatEye, mode statistique de
+# l'IBIS-AMI), sans tirage au sort :
+#
+#   1. A CHAQUE PHASE, la tension lue pour un « 1 » est
+#          v_c + A c_0 + sum_k a_k A c_k        (a_k = ±1, independants)
+#      -- sa densite est le produit de convolution de deux Dirac par
+#      curseur. On la construit sur une grille de tensions, curseur apres
+#      curseur, dans le domaine des PROBABILITES (jamais negatives, d'ou des
+#      queues justes jusqu'a 10^-300 ; une transformee de Fourier
+#      plafonnerait au bruit d'arrondi, vers 10^-16).
+#   2. LE BRUIT GAUSSIEN DU RECEPTEUR (V rms) se convolue ensuite, et chaque
+#      AGRESSEUR borne y entre comme un curseur de plus : deux Dirac a ±A.
+#      C'est l'hypothese du pire cas borne -- l'agresseur bascule, il n'a
+#      pas de queue -- et c'est elle qui fait converger cet oeil vers le pire
+#      cas quand le taux vise descend.
+#   3. LA GIGUE (RJ gaussienne en UI rms, DJ en double Dirac crete a crete)
+#      melange les phases : lire a tau + J, c'est lire la densite de la
+#      phase tau + J. Les poids sont les probabilites de J sur chaque case
+#      de phase (1/64 UI), integrees exactement (erfc).
+#   4. Le taux d'erreur a (tau, v) vaut
+#          BER = 1/2 P(V1 < v) + 1/2 P(V0 > v)
+#      et, les donnees etant symetriques, V0 - v_c a la loi de -(V1 - v_c) :
+#      une seule densite suffit. Le CONTOUR a 10^-n est la frontiere
+#      BER = 10^-n ; la BAIGNOIRE est le BER au seuil, phase par phase.
+#
+# LA QUANTIFICATION ne s'additionne pas au pire endroit. Chaque curseur est
+# arrondi a la case, et l'erreur d'arrondi est REPORTEE sur le suivant (les
+# curseurs ranges du plus fort au plus faible) : l'extreme -- tous les bits
+# contre l'oeil, la ou se lisent les petits taux -- reste exact a une demi-
+# case pres, au lieu de cumuler une demi-case par curseur.
+#
+# CE QUE CE MODELE SUPPOSE, et le resultat le redit : des bits independants
+# et equiprobables (pas la sequence PRBS), une gigue rapportee a
+# l'echantillonneur -- celle de l'emetteur n'y est pas filtree par le canal,
+# ce qui est PRUDENT sur une liaison a pertes --, et une decision du DFE
+# toujours juste.
+# ==========================================================================
+
+NIVEAUX_BER = (1e-6, 1e-9, 1e-12, 1e-15)
+CASES_STAT = 2048
+# Ecarts-types gardes dans les queues gaussiennes : Q(8,5) = 9,5e-18, sous
+# le plus petit des niveaux traces.
+QUEUE_GAUSS = 8.5
+PLANCHER_BER = 1e-40
+# Phases de l'oeil statistique par phase affichee : voir `oeil_statistique`.
+SUR_ECHANTILLONNAGE = 4
+
+
+def q_gauss(x):
+    """La queue gaussienne Q(x) = P(N(0,1) > x)."""
+    return 0.5 * math.erfc(x / math.sqrt(2.0))
+
+
+def q_inverse(p):
+    """x tel que Q(x) = p, par dichotomie sur erfc (p entre 1e-300 et 0,5)."""
+    p = min(max(float(p), 1e-300), 0.5)
+    lo, hi = 0.0, 40.0
+    for _ in range(200):
+        mi = 0.5 * (lo + hi)
+        if q_gauss(mi) > p:
+            lo = mi
+        else:
+            hi = mi
+    return 0.5 * (lo + hi)
+
+
+def _masse_gauss(a, b):
+    """P(a < N(0,1) < b), juste dans les deux queues (erfc, jamais 1 - 1)."""
+    if a >= 0:
+        return q_gauss(a) - q_gauss(b)
+    if b <= 0:
+        return q_gauss(-b) - q_gauss(-a)
+    return 1.0 - q_gauss(b) - q_gauss(-a)
+
+
+def _noyau_gauss(sigma, pas):
+    """Le noyau d'un bruit gaussien sur des cases de largeur `pas`, ou None."""
+    if not sigma > 0:
+        return None
+    k = int(math.ceil(QUEUE_GAUSS * sigma / pas))
+    if k < 1:
+        return None
+    return np.array([_masse_gauss((i - 0.5) * pas / sigma,
+                                  (i + 0.5) * pas / sigma)
+                     for i in range(-k, k + 1)])
+
+
+def poids_gigue(rj_ui, dj_ui, spu, m_max):
+    """Les poids de la gigue sur les decalages de phase -m_max..m_max.
+
+    J = DJ (double Dirac a ±DJ/2) + RJ (gaussienne). Le poids du decalage m
+    est P(J dans [(m - 1/2)/spu, (m + 1/2)/spu]). Sans RJ, chaque Dirac se
+    partage entre les deux phases qui l'encadrent."""
+    m = np.arange(-m_max, m_max + 1)
+    w = np.zeros(len(m))
+    diracs = [-dj_ui / 2.0, dj_ui / 2.0] if dj_ui > 0 else [0.0]
+    for d in diracs:
+        part = 1.0 / len(diracs)
+        if rj_ui > 0:
+            for i, mm in enumerate(m):
+                w[i] += part * _masse_gauss(((mm - 0.5) / spu - d) / rj_ui,
+                                            ((mm + 0.5) / spu - d) / rj_ui)
+        else:
+            x = d * spu
+            k = int(math.floor(x))
+            f = x - k
+            for kk, pp in ((k, 1.0 - f), (k + 1, f)):
+                if -m_max <= kk <= m_max:
+                    w[kk + m_max] += part * pp
+    return w
+
+
+def _quantifier(principal, amplitudes, pas):
+    """(case du principal, decalages entiers) avec report de l'erreur.
+
+    L'extreme bas principal - sum |a| est rendu a une demi-case pres, quel
+    que soit le nombre de curseurs : chaque arrondi rattrape le precedent."""
+    x0 = principal / pas
+    f0 = math.floor(x0)
+    d = x0 - (f0 + 0.5)
+    q = []
+    for a in amplitudes:
+        x = a / pas
+        k = int(round(x - d))
+        k = max(k, 0)
+        d = d - x + k
+        q.append(k)
+    return int(f0), q
+
+
+def oeil_statistique(p_eq, i_s, spu, amp, prises, bornes=(), rj_ui=0.0,
+                     dj_ui=0.0, bruit_v=0.0, niveaux=NIVEAUX_BER,
+                     cases=CASES_STAT, sur=SUR_ECHANTILLONNAGE):
+    """L'oeil statistique autour de l'echantillonnage i_s. Voir plus haut.
+
+    `p_eq` : reponse a un bit (normalisee, excursion 2 amp), egalisee ;
+    `prises` : DFE (V) ; `bornes` : cretes des agresseurs (V) ; `rj_ui`,
+    `dj_ui` : gigue en UI ; `bruit_v` : bruit du recepteur en V rms.
+    Les tensions rendues sont relatives au seuil (u = v - v_c), a chacune
+    des `spu` phases de l'affichage.
+
+    LES PHASES SONT AFFINEES `sur` FOIS. Le melange de gigue pose chaque
+    croisement au milieu d'une case de phase : a 1/64 UI, c'est une demi-
+    case de biais sur la largeur, 0,15 en echelle Q pour une gigue de
+    0,05 UI rms -- un facteur deux sur le taux d'erreur. La reponse a un bit
+    est lisse a cette echelle : on l'interpole, et le biais tombe d'autant."""
+    spu_aff = spu
+    if sur > 1:
+        p_eq = np.interp(np.arange(len(p_eq) * sur) / float(sur),
+                         np.arange(len(p_eq)), p_eq)
+        i_s, spu = i_s * sur, spu * sur
+    ext = dj_ui / 2.0 + QUEUE_GAUSS * rj_ui
+    m_max = int(math.ceil(ext * spu - 1e-9)) if ext > 0 else 0
+    tronquee = m_max > spu // 2
+    m_max = min(m_max, spu // 2)
+    bornes = [abs(float(b)) for b in (bornes or ()) if abs(float(b)) > 0]
+
+    # -- les curseurs de chaque phase, et la plage des tensions ----------
+    phases = []
+    y_max = 0.0
+    for o_ in range(-spu // 2 - m_max, spu // 2 + m_max):
+        j = i_s + o_
+        if j < 0:
+            phases.append(None)
+            continue
+        k0, c = _curseurs(p_eq, j, spu)
+        principal = amp * float(c[k0])
+        reste = amp * np.delete(c, k0)
+        rangs = np.delete(np.arange(len(c)) - k0, k0)
+        for jj, dj in enumerate(prises or (), start=1):
+            idx = np.where(rangs == jj)[0]
+            if len(idx):
+                reste[idx[0]] -= dj
+        mags = sorted([float(x) for x in np.abs(reste)] + bornes,
+                      reverse=True)
+        phases.append((principal, mags))
+        y_max = max(y_max, abs(principal) + sum(mags))
+    y_max += QUEUE_GAUSS * max(bruit_v, 0.0)
+    y_max = max(y_max * 1.02, 1e-9)
+    n = int(cases) // 2 * 2
+    pas = 2.0 * y_max / n
+    noyau = _noyau_gauss(bruit_v, pas)
+
+    # -- la densite de chaque phase, puis sa fonction de repartition -----
+    rep = np.zeros((len(phases), n + 1))
+    for ip, ph in enumerate(phases):
+        if ph is None:
+            rep[ip, 1:] = 1.0                 # rien a lire : tout est faux
+            continue
+        principal, mags = ph
+        f0, qs = _quantifier(principal, mags, pas)
+        dens = np.zeros(n)
+        dens[min(max(f0 + n // 2, 0), n - 1)] = 1.0
+        for q in qs:
+            if q <= 0:
+                continue
+            if q >= n:
+                dens = 0.5 * dens
+                continue
+            nouv = np.zeros(n)
+            nouv[q:] += dens[:-q]
+            nouv[:-q] += dens[q:]
+            dens = 0.5 * nouv
+        if noyau is not None:
+            dens = np.convolve(dens, noyau, mode="same")
+        rep[ip, 1:] = np.cumsum(dens)
+
+    # -- la gigue melange les phases --------------------------------------
+    w = poids_gigue(rj_ui, dj_ui, spu, m_max)
+    mel = np.zeros((spu, n + 1))
+    for i, wi in enumerate(w):
+        if wi > 0:
+            mel += wi * rep[i:i + spu]
+    # Le taux d'erreur a la distance u du seuil : 1/2 (F(u) + F(-u)).
+    mi = n // 2
+    g = 0.5 * (mel[:, mi:] + mel[:, mi::-1])
+    g = np.maximum(g, 0.0)
+    u = pas * np.arange(mi + 1)
+    baignoire = g[:, 0]
+
+    def demi(b):
+        """La demi-ouverture u* (V) a chaque phase, ou None si fermee."""
+        sortie = []
+        lg = np.log10(np.maximum(g, 1e-300))
+        lb = math.log10(b)
+        for ip in range(spu):
+            if g[ip, 0] > b:
+                sortie.append(None)
+                continue
+            au_dela = np.nonzero(g[ip] > b)[0]
+            if not len(au_dela):
+                sortie.append(float(u[-1]))
+                continue
+            k = int(au_dela[0])
+            a0, a1 = lg[ip, k - 1], lg[ip, k]
+            f = (lb - a0) / (a1 - a0) if a1 > a0 else 0.0
+            sortie.append(float(u[k - 1] + min(max(f, 0.0), 1.0) * pas))
+        return sortie
+
+    def largeur(b):
+        """La largeur (UI) ou BER <= b au seuil, bords interpoles en log."""
+        c0 = spu // 2
+        if baignoire[c0] > b:
+            return 0.0
+        if np.all(baignoire <= b):
+            return 1.0
+        lb = math.log10(b)
+
+        def bord(sens):
+            k = 0
+            while k + 1 < spu and baignoire[(c0 + sens * (k + 1)) % spu] <= b:
+                k += 1
+            a0 = math.log10(max(baignoire[(c0 + sens * k) % spu], 1e-300))
+            a1 = math.log10(max(baignoire[(c0 + sens * (k + 1)) % spu],
+                                1e-300))
+            f = (lb - a0) / (a1 - a0) if a1 > a0 else 0.0
+            return k + min(max(f, 0.0), 1.0)
+        return min(1.0, (bord(1) + bord(-1)) / spu)
+
+    contours = []
+    for b in niveaux:
+        d = demi(b)
+        contours.append({"ber": float(b), "u": d,
+                         "hauteur": 2.0 * d[spu // 2]
+                         if d[spu // 2] is not None else 0.0,
+                         "largeur_ui": largeur(b)})
+    # La baignoire verticale a l'echantillonnage : BER en fonction de u.
+    pas_v = max(1, (mi + 1) // 200)
+    for c in contours:
+        c["u"] = c["u"][::sur]
+    return {
+        "contours": contours,
+        "baignoire": [max(float(x), PLANCHER_BER)
+                      for x in baignoire[::sur]],
+        "baignoire_v": {"u": [float(x) for x in u[::pas_v]],
+                        "ber": [max(float(x), PLANCHER_BER)
+                                for x in g[spu // 2, ::pas_v]]},
+        "pas_v": pas, "cases": n, "gigue_tronquee": bool(tronquee),
+        "phases": int(spu), "phases_affichees": int(spu_aff),
+    }
+
+
+# ==========================================================================
 # L'oeil, a partir d'une fonction de transfert
 # ==========================================================================
 
@@ -770,6 +1197,47 @@ def _params(o, g):
     p["dfe_max"] = _nombre(o.get("dfe_max"), dfe.get("max_v", 0.05))
     p["setup"] = _nombre(o.get("setup"), (g or {}).get("setup", 0.0))
     p["hold"] = _nombre(o.get("hold"), (g or {}).get("hold", 0.0))
+
+    # -- la gigue, le bruit, la diaphonie : TOUT EST FACULTATIF ----------
+    # Sans aucun de ces champs, l'oeil est celui d'avant, a l'octet pres :
+    # rien n'est calcule et rien n'est ajoute au resultat.
+    rj = _nombre(o.get("rj"), 0.0) / ui if o.get("rj") not in (None, "") \
+        else _nombre(o.get("rj_ui"), 0.0)
+    dj = _nombre(o.get("dj"), 0.0) / ui if o.get("dj") not in (None, "") \
+        else _nombre(o.get("dj_ui"), 0.0)
+    if rj < 0 or dj < 0 or _nombre(o.get("bruit_v"), 0.0) < 0:
+        raise ErreurOeil("Gigue ou bruit négatif.",
+                         "La gigue aléatoire est un écart-type, la gigue "
+                         "déterministe une excursion crête à crête : deux "
+                         "grandeurs positives.")
+    if dj >= 1.0:
+        raise ErreurOeil("Gigue déterministe de %.2f UI : l'œil est fermé "
+                         "avant tout calcul." % dj,
+                         "Elle se saisit crête à crête, en secondes.")
+    p["rj_ui"], p["dj_ui"] = rj, dj
+    p["bruit_v"] = max(0.0, _nombre(o.get("bruit_v"), 0.0))
+    ber = _nombre(o.get("ber_cible"), 0.0) or \
+        _nombre((g or {}).get("ber"), 0.0) or 1e-12
+    if not 1e-30 <= ber <= 1e-2:
+        raise ErreurOeil("Taux d'erreur visé hors de 10⁻³⁰ … 10⁻².")
+    p["ber_cible"] = ber
+    bornes = []
+    for i, a in enumerate(o.get("agresseurs") or []):
+        if not isinstance(a, dict):
+            continue
+        crete = _nombre(a.get("crete_v"), 0.0)
+        coef = _nombre(a.get("coef"), 0.0)
+        v = _nombre(a.get("v"), 0.0)
+        if not crete and coef and v:
+            crete = abs(coef) * abs(v)
+        if crete > 0:
+            bornes.append({"nom": str(a.get("nom") or "agresseur %d" % (i + 1)),
+                           "crete_v": abs(crete), "coef": abs(coef) or None,
+                           "v": abs(v) or None, "source": "saisi"})
+    p["bornes"] = bornes
+    p["stat"] = bool(o.get("statistique") or rj > 0 or dj > 0
+                     or p["bruit_v"] > 0 or bornes
+                     or o.get("agresseurs_auto"))
     return p
 
 
@@ -810,16 +1278,26 @@ def _ouverture(c, k0, amp, dfe_prises, dfe_max):
     return principal - isi, prises, isi
 
 
-def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None):
+def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None,
+         non_lineaire=None):
     """L'oeil complet a partir d'une cascade ABCD (ou d'un transfert H).
 
     `abcds_ou_h` : (N, 2, 2) ABCD -- on y ferme alors generateur et charge --,
     ou un vecteur H(f) deja ferme, accompagne de `h0`. C'est cette seconde
-    forme que les bancs emploient pour des canaux ideaux."""
+    forme que les bancs emploient pour des canaux ideaux.
+
+    `non_lineaire` : la liaison simulee dans le temps avec ses tampons IBIS
+    (voir `simuler_non_lineaire`). La reponse a un echelon et la forme
+    d'onde PRBS viennent alors de la simulation, et non de la superposition ;
+    le reste -- egaliseur, pire cas, oeil statistique, gabarit -- est le
+    meme, sur la reponse a un bit MOYENNE des deux fronts."""
     freqs = np.asarray(freqs, dtype=float)
     av = []
+    nl = non_lineaire
     arr = np.asarray(abcds_ou_h)
-    if arr.ndim == 3:
+    if nl is not None:
+        h, h0 = None, 1.0
+    elif arr.ndim == 3:
         h, h0 = transfert(arr, freqs, p["r_source"], p["r_charge"],
                           p["c_charge"])
     else:
@@ -834,14 +1312,21 @@ def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None):
     df = freqs[1] - freqs[0]
     fenetre = 1.0 / df
     t_h = fenetre / 2.0
+    if nl is not None:
+        t_h = len(nl["s"]) * nl["dt"]
 
     meilleur = None
     for spec in _candidats_ctle(p.get("ctle")):
-        hc = h * ctle(freqs, spec) if spec else h
         x0 = h0 * _gain_continu_ctle(spec)
-        n_min = int(math.ceil(fenetre / min(dt_e, tr / 8.0)))
-        dt, s = reponse_indicielle(freqs, hc, x0, tr, n_min)
-        n_h = int(t_h / dt)
+        if nl is not None:
+            dt = nl["dt"]
+            s = filtrer_ctle(nl["s"], dt, spec)
+            n_h = len(s)
+        else:
+            hc = h * ctle(freqs, spec) if spec else h
+            n_min = int(math.ceil(fenetre / min(dt_e, tr / 8.0)))
+            dt, s = reponse_indicielle(freqs, hc, x0, tr, n_min)
+            n_h = int(t_h / dt)
         s_h = s[:n_h]
         # Le pas de l'oeil : interpolation lineaire de la reponse fine.
         n_p = int(math.ceil((t_h + ui) / dt_e)) + 1
@@ -911,6 +1396,20 @@ def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None):
         av.append("La réponse déborde de la fenêtre de calcul et revient par "
                   "l'autre bout : l'œil est à prendre avec réserve.")
 
+    # -- la diaphonie bornee ---------------------------------------------
+    # CHAQUE AGRESSEUR AJOUTE SA CRETE AU PIRE CAS, avec son signe le plus
+    # defavorable et au meme instant que les autres : c'est la definition du
+    # pire cas, et la somme arithmetique est la seule qui en soit un. Le
+    # bruit est saisi A LA BROCHE ; derriere un CTLE il passe par le gain du
+    # CTLE dans la bande d'un front (jusqu'au genou 0,35 / tr), ce qui
+    # majore ce qu'un front d'agresseur y laisse.
+    agr = p.get("bornes") or []
+    xt_gain = 1.0
+    if agr and m["spec"]:
+        f_g = freqs[freqs <= max(0.35 / tr, freqs[0])]
+        xt_gain = float(np.max(np.abs(ctle(f_g, m["spec"]))))
+    xt_crete = xt_gain * sum(b["crete_v"] for b in agr)
+
     # -- l'oeil pire cas, phase par phase --------------------------------
     taus, hauts, bas_ = [], [], []
     for o_ in range(-spu // 2, spu // 2):
@@ -928,7 +1427,7 @@ def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None):
             idx = np.where(rangs == jj)[0]
             if len(idx):
                 reste[idx[0]] -= dj
-        isi = float(np.sum(np.abs(reste)))
+        isi = float(np.sum(np.abs(reste))) + xt_crete
         taus.append(o_ / spu)
         hauts.append(v_c + principal - isi)
         bas_.append(v_c - principal + isi)
@@ -940,7 +1439,7 @@ def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None):
     ouvert = [hh is not None and hh > v_c and bb < v_c
               for hh, bb in zip(hauts, bas_)]
     larg_pire = _largeur(ouvert, spu // 2) / spu
-    h_pire = 2.0 * m["ouv"]
+    h_pire = 2.0 * (m["ouv"] - xt_crete)
 
     # -- l'oeil PRBS, par superposition ----------------------------------
     ordre = {"prbs7": 7, "prbs9": 9, "prbs15": 15}.get(p["motif"])
@@ -959,7 +1458,16 @@ def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None):
     imp[::spu] = a
     pp = np.zeros(ns)
     pp[:len(p_eq)] = p_eq
-    y = v_c + amp * np.fft.irfft(np.fft.rfft(imp) * np.fft.rfft(pp), ns)
+    if nl is not None:
+        # LA FORME D'ONDE SIMULEE, et non la superposition : le tampon non
+        # lineaire ne la verifie pas. Elle est periodique (regime etabli),
+        # et le CTLE s'y applique donc en circulaire, exactement.
+        y = np.tile(nl["onde"](bits), rep)
+        if m["spec"]:
+            fy = np.fft.rfftfreq(ns, dt_e)
+            y = np.fft.irfft(np.fft.rfft(y) * ctle(fy, m["spec"]), ns)
+    else:
+        y = v_c + amp * np.fft.irfft(np.fft.rfft(imp) * np.fft.rfft(pp), ns)
     # LE DFE, sur la forme d'onde : la contre-reaction du bit n vaut
     # sum d_j a_(n-j) et tient toute l'UI centree sur son echantillonnage.
     if prises:
@@ -1017,6 +1525,63 @@ def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None):
             hors += int(np.sum(y < float(gab["v_min"])))
         mes_g["hors_limites"] = hors
 
+    # -- l'oeil statistique, s'il est demande -----------------------------
+    stat = None
+    if p.get("stat"):
+        niveaux = sorted(set(list(NIVEAUX_BER) + [p["ber_cible"]]),
+                         reverse=True)
+        st = oeil_statistique(p_eq, i_s, spu, amp, prises,
+                              [xt_gain * b["crete_v"] for b in agr],
+                              p["rj_ui"], p["dj_ui"], p["bruit_v"], niveaux)
+        contours = []
+        for c in st["contours"]:
+            d = c["u"]
+            # Deux UI affichees, comme le pire cas : la periode se repete.
+            d_aff = d[spu // 2:] + d + d[:spu // 2] + [d[spu // 2]]
+            contours.append({
+                "ber": c["ber"], "hauteur": c["hauteur"],
+                "largeur_ui": c["largeur_ui"],
+                "haut": [None if x is None else round(v_c + x, 6)
+                         for x in d_aff],
+                "bas": [None if x is None else round(v_c - x, 6)
+                        for x in d_aff]})
+        cible = [c for c in st["contours"] if c["ber"] == p["ber_cible"]][0]
+        mes_g["hauteur_ber"] = cible["hauteur"]
+        mes_g["largeur_ber_ui"] = cible["largeur_ui"]
+        mes_g["ber_cible"] = p["ber_cible"]
+        if poly and len(poly) >= 3:
+            d = cible["u"]
+            mes_g["marge_ber"] = marge_pire(
+                poly, taus, [None if x is None else v_c + x for x in d],
+                [None if x is None else v_c - x for x in d])
+        b_aff = st["baignoire"]
+        stat = {
+            "niveaux": [c["ber"] for c in contours],
+            "ber_cible": p["ber_cible"],
+            "tau": [round(t, 5) for t in tau_aff],
+            "contours": contours,
+            "baignoire": {"tau": [round(t, 5) for t in taus] + [0.5],
+                          "ber": b_aff + [b_aff[0]]},
+            "baignoire_v": {"v": [round(v_c + x, 6)
+                                  for x in st["baignoire_v"]["u"]],
+                            "ber": st["baignoire_v"]["ber"]},
+            "rj_ui": p["rj_ui"], "dj_ui": p["dj_ui"],
+            "rj_s": p["rj_ui"] * ui, "dj_s": p["dj_ui"] * ui,
+            "bruit_v": p["bruit_v"],
+            "pas_v": st["pas_v"], "cases": st["cases"],
+            "hypotheses": [
+                "Bits indépendants et équiprobables (et non la séquence "
+                "PRBS) ; la gigue est rapportée à l'échantillonneur — celle "
+                "de l'émetteur n'y est pas filtrée par le canal, ce qui est "
+                "prudent sur une liaison à pertes ; décisions du DFE "
+                "supposées justes ; chaque agresseur est un bruit borné à "
+                "±sa crête, comme au pire cas."],
+        }
+        if st["gigue_tronquee"]:
+            av.append("Gigue de plus d'une demi-UI à 10⁻¹⁷ : elle est "
+                      "tronquée à ±0,5 UI, et l'œil statistique est fermé "
+                      "bien avant.")
+
     # -- la densite ------------------------------------------------------
     bornes = [float(np.min(y)), float(np.max(y))]
     for t, v in poly:
@@ -1060,7 +1625,7 @@ def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None):
     if spec and spec.get("forme") == "pcie3":
         av.append("CTLE : gain continu retenu %.0f dB (le meilleur des "
                   "réglages essayés)." % spec["adc_db"])
-    return {
+    r = {
         "debit": p["debit"], "ui": ui, "tr": tr, "mode": p["mode"],
         "motif": p["motif"], "bits": int(nb),
         "seuil": v_c,
@@ -1080,8 +1645,9 @@ def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None):
             "principal": amp * float(p_eq[i_s]),
             "niveau_1": niveau_1, "niveau_0": niveau_0,
             "v_max_vu": float(np.max(y)), "v_min_vu": float(np.min(y)),
-            "retard": i_s * dt_e - 4.0 * tr / TR_SUR_SIGMA - ui / 2.0
-                      - p["ffe_principal"] * ui,
+            "retard": (i_s * dt_e - ui / 2.0 - nl["t50"]) if nl is not None
+            else (i_s * dt_e - 4.0 * tr / TR_SUR_SIGMA - ui / 2.0
+                  - p["ffe_principal"] * ui),
         }, **mes_g),
         "gabarit": g_out,
         "egalisation": {"ctle": spec, "dfe_v": prises,
@@ -1092,6 +1658,16 @@ def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None):
                    "h0": float(x0)},
         "avertissements": av,
     }
+    if stat is not None:
+        r["statistique"] = stat
+    if agr:
+        r["diaphonie"] = {
+            "agresseurs": agr, "gain_ctle": xt_gain,
+            "crete_totale_v": xt_crete,
+            "note": "Somme arithmétique des crêtes (pire cas), ramenée à "
+                    "l'échantillonneur. L'œil PRBS, lui, est sans "
+                    "diaphonie : la séquence des voisines n'est pas connue."}
+    return r
 
 
 def _largeur(ouvert, centre):
@@ -1139,6 +1715,344 @@ def _er_max(doc):
     return max(er) if er else 4.5
 
 
+# ==========================================================================
+# Les tampons IBIS : emetteur et recepteur non lineaires
+# --------------------------------------------------------------------------
+# QUAND UN FICHIER IBIS ARRIVE, la superposition ne vaut plus : un tampon
+# CMOS n'a pas la meme resistance a l'etat haut et a l'etat bas, et ses
+# diodes ecretent. La liaison se simule alors DANS LE TEMPS (`ibis.Liaison`) :
+# le canal en ondes de puissance -- sa cascade ABCD, charge lineaire du
+# recepteur comprise --, le tampon emetteur au bout gauche, les diodes du
+# recepteur au bout droit, et un Newton a chaque pas.
+#
+# DEUX SIMULATIONS, ET LE RESTE NE CHANGE PAS :
+#   · deux fronts isoles, un montant et un descendant, laisses s'etablir :
+#     leur moyenne normalisee est la REPONSE A UN ECHELON dont le pire cas,
+#     l'oeil statistique et l'egaliseur ont besoin (l'ecart entre les deux
+#     se rend : c'est ce que la linearisation neglige) ;
+#   · la sequence PRBS elle-meme, en regime etabli : c'est elle qui fait
+#     l'oeil PRBS et sa densite, sans aucune linearisation.
+#
+# EN DIFFERENTIEL, deux tampons simples en opposition ([Diff Pin]) : chacun
+# attaque le DEMI-CIRCUIT du mode impair (Z/2, terminaison R/2 vers le mode
+# commun), l'un avec la sequence, l'autre avec son inverse, et la tension
+# differentielle est leur difference. Le mode commun est tenu a sa valeur
+# continue : la conversion de mode qu'une dissymetrie des deux tampons
+# produirait n'est pas suivie.
+# ==========================================================================
+
+try:
+    import ibis
+except Exception as _exc_ibis:                         # noqa: BLE001
+    ibis = None
+
+# Pas de temps d'une simulation non lineaire, au plus : au-dela, quelques
+# dizaines de secondes de calcul.
+MAX_PAS_NL = 400000
+# Le lissage du canal, en fraction du front du tampon : voir `ibis`.
+LISSAGE_SUR_FRONT = 0.5
+
+
+def _charger_ibis(d, role):
+    """(fichier lu, [Model], Tampon) d'un champ `ibis_emetteur` ou
+    `ibis_recepteur` : {texte, fichier, modele, coin}."""
+    try:
+        lu = ibis.lire(d.get("texte") or "", str(d.get("fichier") or ""))
+    except ibis.ErreurIbis as exc:
+        raise ErreurOeil("IBIS de l'%s : %s" % (role, exc.message),
+                         exc.conseil)
+    nom = str(d.get("modele") or "")
+    modeles = lu["modeles"]
+    if nom and nom not in modeles:
+        raise ErreurOeil("IBIS de l'%s : pas de [Model] « %s » dans %s."
+                         % (role, nom, d.get("fichier") or "le fichier"),
+                         "Modèles présents : %s." % ", ".join(sorted(modeles)))
+    if not nom:
+        voulus = [m for m in modeles.values()
+                  if ibis.est_emetteur(m) == (role == "émetteur")]
+        nom = (voulus or list(modeles.values()))[0]["nom"]
+    m = modeles[nom]
+    coin = str(d.get("coin") or "typ").lower()
+    try:
+        t = ibis.Tampon(m, coin)
+    except ibis.ErreurIbis as exc:
+        raise ErreurOeil(exc.message, exc.conseil)
+    return lu, m, t
+
+
+def preparer_ibis(o, p):
+    """Le contexte des tampons IBIS de la requete, ou None s'il n'y en a pas.
+
+    Modifie `p` : la capacite du recepteur devient son C_comp, et un
+    emetteur IBIS n'a ni pre-accentuation ni front gaussien -- ses niveaux
+    et son front sont les siens."""
+    em_d = o.get("ibis_emetteur")
+    rx_d = o.get("ibis_recepteur")
+    em_d = em_d if isinstance(em_d, dict) and em_d.get("texte") else None
+    rx_d = rx_d if isinstance(rx_d, dict) and rx_d.get("texte") else None
+    if not (em_d or rx_d):
+        return None
+    if ibis is None:
+        raise ErreurOeil("Lecteur IBIS indisponible : %s" % _exc_ibis)
+    ctx = {"em": None, "m_em": None, "rx": None, "infos": {}}
+    dt0 = p["ui"] / ECHANTILLONS_UI / 8.0
+    if em_d:
+        lu, m, t = _charger_ibis(em_d, "émetteur")
+        if not ibis.est_emetteur(m):
+            raise ErreurOeil("Le [Model] « %s » est de type %s : ce n'est "
+                             "pas un émetteur." % (m["nom"], m["type"] or
+                                                   "inconnu"),
+                             "Choisissez un modèle Output, I/O ou 3-state.")
+        try:
+            cmd = ibis.commandes(m, t, dt0)
+        except ibis.ErreurIbis as exc:
+            raise ErreurOeil(exc.message, exc.conseil)
+        ctx.update(em=t, m_em=m)
+        tr_e = ibis.duree_front(cmd["montant"], dt0)
+        ctx["infos"]["emetteur"] = {
+            "fichier": lu["fichier"], "composant": lu["composant"],
+            "modele": m["nom"], "type": m["type"], "coin": t.coin,
+            "c_comp": t.c_comp, "commande": cmd["source"],
+            "front_10_90": tr_e,
+            "niveau_haut_vide": t.niveau(1.0, 0.0),
+            "niveau_bas_vide": t.niveau(0.0, 1.0),
+            "ignores": lu["ignores"]}
+        p["tr"] = tr_e
+        p["ffe"], p["ffe_principal"] = [1.0], 0
+    if rx_d:
+        lu, m, t = _charger_ibis(rx_d, "récepteur")
+        # LA CAPACITE D'ENTREE PART DANS LE CANAL, lineaire ; seules les
+        # diodes et les terminaisons restent au Newton. En differentiel,
+        # deux broches en serie : la capacite differentielle est la moitie.
+        p["c_charge"] = t.c_comp if p["mode"] == "simple" else t.c_comp / 2
+        nl = t.a_des_diodes() or t.g_gnd or t.g_pow
+        ctx["rx"] = t if nl else None
+        ctx["infos"]["recepteur"] = {
+            "fichier": lu["fichier"], "composant": lu["composant"],
+            "modele": m["nom"], "type": m["type"], "coin": t.coin,
+            "c_comp": t.c_comp, "diodes": bool(t.a_des_diodes()),
+            "vinl": t.vinl, "vinh": t.vinh, "ignores": lu["ignores"]}
+    ctx["temporel"] = ctx["em"] is not None or ctx["rx"] is not None
+    ctx["tr_e"] = p["tr"]
+    ctx["tr_lissage"] = LISSAGE_SUR_FRONT * p["tr"]
+    return ctx
+
+
+def _mode_commun(em, r_demi, v0):
+    """La tension de mode commun d'une paire de tampons en opposition : le
+    point fixe de la moyenne des deux niveaux, chacun charge par R/2 vers
+    elle."""
+    vcm = v0
+    for _ in range(40):
+        hi = em.niveau(1.0, 0.0, r_demi, vcm)
+        lo = em.niveau(0.0, 1.0, r_demi, vcm)
+        nouv = 0.5 * (hi + lo)
+        if abs(nouv - vcm) < 1e-9:
+            break
+        vcm = nouv
+    return vcm
+
+
+def simuler_non_lineaire(ctx, freqs, abcds, p, r0):
+    """La liaison simulee dans le temps : ce que `oeil(non_lineaire=...)` lit.
+
+    Rend {s, dt, onde, t50, v_haut, v_bas, infos} : la reponse moyenne a un
+    echelon (normalisee de 0 a 1, au pas dt), une fonction qui rend la forme
+    d'onde periodique d'une sequence (au pas ui/64), l'instant de mi-front
+    du tampon, et les niveaux etablis a la broche du recepteur."""
+    ui = p["ui"]
+    spu = ECHANTILLONS_UI
+    dt_e = ui / spu
+    freqs = np.asarray(freqs, dtype=float)
+    k = int(math.ceil(dt_e * 2.2 * freqs[-1]))
+    k = min(max(k, 1), 16)
+    dt = dt_e / k
+    diff = p["mode"] == "diff"
+    abcd = np.array(abcds, dtype=complex)
+    r_l, c_l = p["r_charge"], p["c_charge"]
+    if diff:
+        # Le demi-circuit du mode impair : V/2, meme courant.
+        abcd[:, 0, 1] /= 2.0
+        abcd[:, 1, 0] *= 2.0
+        r_l = r_l / 2.0
+        c_l = 2.0 * c_l
+        r0 = r0 / 2.0
+    g_l = (1.0 / r_l) if 0 < r_l < 1e9 else 0.0
+    y_l = g_l + 2j * math.pi * freqs * c_l
+    r_ligne = max(0.0, float(np.real(abcd[0, 0, 1])))
+    ch = abcd.copy()
+    ch[:, 0, 0] = abcd[:, 0, 0] + abcd[:, 0, 1] * y_l
+    ch[:, 1, 0] = abcd[:, 1, 0] + abcd[:, 1, 1] * y_l
+    s_f = ibis.s_depuis_abcd(ch, r0)
+    dc = np.array([[[1.0 + r_ligne * g_l, r_ligne], [g_l, 1.0]]],
+                  dtype=complex)
+    s_dc = [float(np.real(x[0])) for x in ibis.s_depuis_abcd(dc, r0)]
+    reps = [ibis.reponses_impulsionnelles(freqs, s_f[i], s_dc[i], dt, None,
+                                          ctx["tr_lissage"])[0]
+            for i in range(4)]
+    L = ibis._tronquer(reps)
+    reps = [h[:max(L, 2)].copy() for h in reps]
+
+    em = ctx["em"]
+    if em is not None:
+        cmd = ibis.commandes(ctx["m_em"], em, dt)
+        t50 = ibis.instant_mi_front(cmd["montant"], dt)
+    else:
+        # Seul le recepteur est IBIS : l'emetteur reste celui de Thevenin,
+        # passe au pas de temps (demi-emetteur en differentiel).
+        vh, vb, rs = p["v_haut"], p["v_bas"], p["r_source"]
+        if diff:
+            vh, vb, rs = vh / 2.0, vb / 2.0, rs / 2.0
+        em, cmd = ibis.tampon_lineaire(rs, vh, vb, p["tr"], dt)
+        t50 = 4.0 * p["tr"] / TR_SUR_SIGMA
+    v_ref = 0.0
+    if diff:
+        if ctx["em"] is not None:
+            v_ref = _mode_commun(em, (r_l if r_l > 0 else None),
+                                 0.5 * (em.v_pu + em.v_pd))
+        elif ctx["rx"] is not None:
+            v_ref = 0.5 * (ctx["rx"].v_pc + ctx["rx"].v_gc)
+    lia = ibis.Liaison(reps, r0, dt, em, cmd, ctx["rx"], v_ref)
+    pas_bit = k * spu
+
+    def courir(bits):
+        _, v2 = lia.simuler(bits, pas_bit, ui)
+        if diff:
+            _, v2n = lia.simuler([1 - b for b in bits], pas_bit, ui)
+            v2 = v2 - v2n
+        return v2
+
+    n_long = int(math.ceil(L * dt / ui)) + 4
+    n_long = max(n_long, int(math.ceil(len(cmd["montant"][0]) * dt / ui)) + 4)
+    if (2 + 2 * n_long) * pas_bit * (2 if diff else 1) > MAX_PAS_NL:
+        raise ErreurOeil("Simulation IBIS trop longue : la réponse dure %d "
+                         "bits à %d pas par bit." % (n_long, pas_bit),
+                         "Réduisez la longueur de la liaison ou le débit, ou "
+                         "retirez le modèle IBIS.")
+    v = courir([0, 0] + [1] * n_long + [0] * n_long)
+    i_r, i_f = 2 * pas_bit, (2 + n_long) * pas_bit
+    v_bas, v_haut = float(v[i_r - 1]), float(v[i_f - 1])
+    if not v_haut - v_bas > 1e-6:
+        raise ErreurOeil("Le tampon IBIS ne bascule pas : niveaux %.3g V et "
+                         "%.3g V au récepteur." % (v_bas, v_haut),
+                         "Vérifiez le modèle choisi (un Input ne pilote "
+                         "rien) et le coin.")
+    s_r = (v[i_r:i_f] - v_bas) / (v_haut - v_bas)
+    s_d = (v_haut - v[i_f:i_f + n_long * pas_bit]) / (v_haut - v_bas)
+    n = min(len(s_r), len(s_d))
+    s = 0.5 * (s_r[:n] + s_d[:n])
+    asym = float(np.max(np.abs(s_r[:n] - s_d[:n])))
+
+    def onde(bits):
+        bits = [int(b) for b in bits]
+        per = len(bits)
+        reps_ = int(math.ceil(n_long / float(per))) + 1
+        if (reps_ + 1) * per * pas_bit * (2 if diff else 1) > MAX_PAS_NL:
+            raise ErreurOeil("Simulation IBIS trop longue pour ce motif "
+                             "(%d bits, %d pas par bit)." % (per, pas_bit),
+                             "Prenez PRBS7, ou un débit plus faible.")
+        vv = courir(bits * (reps_ + 1))
+        return vv[reps_ * per * pas_bit::k][:per * spu]
+
+    infos = dict(ctx["infos"])
+    infos.update({"pas_s": dt, "pas_par_ui": pas_bit, "r0": r0,
+                  "lissage_s": ctx["tr_lissage"], "longueur_reponse": L,
+                  "asymetrie": asym, "v_haut": v_haut, "v_bas": v_bas,
+                  "mode_commun": v_ref if diff else None})
+    return {"s": s, "dt": dt, "onde": onde, "t50": t50, "v_haut": v_haut,
+            "v_bas": v_bas, "infos": infos}
+
+
+def agresseurs_du_couplage(couplage, p, o, partenaire=None, excursion=None):
+    """Les agresseurs bornes tires du couplage de `simulation_em`.
+
+    LE MEME CHIFFRE QUE L'ONGLET CROSSTALK. Chaque longement de la fiche de
+    couplage porte les modes pair et impair de la paire (victime, voisine) ;
+    on en tire Kb et Kf -- les memes que `crosstalk.coefficients_couple` --,
+    et le niveau 2 de `crosstalk.niveau2` rend le NEXT et le FEXT en
+    fraction de l'agresseur, sature ou non selon le front. Les morceaux d'une
+    meme voisine s'ajoutent, comme la-bas.
+
+    LE SENS. Une voisine qui emet dans le MEME sens que la victime lui
+    envoie son FEXT au recepteur ; en sens OPPOSE, c'est son NEXT. Sans le
+    savoir, on prend le plus grand des deux.
+
+    En differentiel, la partenaire n'est pas un agresseur, et le bruit pris
+    par UNE piste majore celui de la paire : l'autre piste en prend presque
+    autant, du meme signe, et le recepteur differentiel le retranche.
+    Rend (agresseurs, notes)."""
+    notes = []
+    sens = str(o.get("agresseurs_sens") or "inconnu")
+    paires = (couplage or {}).get("paires") or []
+    try:
+        import crosstalk
+    except Exception as exc:                           # noqa: BLE001
+        return [], ["Diaphonie des voisines indisponible : %s." % exc]
+    tr_a = _nombre(o.get("agresseurs_tr"), 0.0) or p["tr"]
+    v_a = _nombre(o.get("agresseurs_v"), 0.0) or (excursion or 0.0)
+    if not v_a > 0:
+        # L'EXCURSION DE LA VICTIME A SA CHARGE, faute de mieux : une voisine
+        # de la meme famille logique bascule autant qu'elle.
+        k = (p["r_charge"] / (p["r_charge"] + p["r_source"])
+             if 0 < p["r_charge"] < 1e9 else 1.0)
+        v_a = (p["v_haut"] - p["v_bas"]) * k
+    morceaux = {}
+    for f in paires:
+        voisin = str(f.get("net_voisin") or "")
+        if not voisin or (partenaire and voisin == partenaire):
+            continue
+        try:
+            zo, ze = float(f["z_impair"]), float(f["z_pair"])
+            eo, ee = float(f["eps_eff_impair"]), float(f["eps_eff_pair"])
+            lg = float(f.get("longueur") or 0.0)
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not (zo > 0 and ze > 0 and eo > 0 and ee > 0 and lg > 0):
+            continue
+        c_o, c_e = math.sqrt(eo) / (C_0 * zo), math.sqrt(ee) / (C_0 * ze)
+        l_o, l_e = zo * math.sqrt(eo) / C_0, ze * math.sqrt(ee) / C_0
+        k_c = (c_o - c_e) / (c_o + c_e)
+        k_l = (l_e - l_o) / (l_e + l_o)
+        td = lg * 1e-3 * math.sqrt(0.5 * (eo + ee)) / C_0
+        morceaux.setdefault(voisin, []).append(
+            (0.25 * (k_c + k_l), 0.5 * (k_l - k_c), td))
+    sortie = []
+    for voisin in sorted(morceaux):
+        n2 = crosstalk.niveau2(morceaux[voisin], tr_a)
+        nxt, fxt = abs(n2["next"]), abs(n2["fext"])
+        coef = {"meme": fxt, "oppose": nxt}.get(sens, max(nxt, fxt))
+        if coef <= 0:
+            continue
+        sortie.append({"nom": voisin, "coef": coef, "v": v_a,
+                       "crete_v": coef * v_a, "next": nxt, "fext": fxt,
+                       "sens": sens, "source": "couplage"})
+    if sortie:
+        notes.append(
+            "Diaphonie : %d voisine(s) reprise(s) du couplage (NEXT/FEXT du "
+            "niveau 2 de l'onglet Crosstalk, front %.3g ps, excursion %.3g V"
+            " %s)%s." % (len(sortie), tr_a * 1e12, v_a,
+                         "saisie" if _nombre(o.get("agresseurs_v"), 0.0) > 0
+                         else "supposée égale à celle de la victime",
+                         " ; en différentiel, le bruit d'une piste majore "
+                         "celui de la paire" if partenaire else ""))
+    else:
+        notes.append("Diaphonie demandée, mais aucune voisine ne longe la "
+                     "sélection sur la même couche : rien n'est ajouté.")
+    return sortie, notes
+
+
+def _r_reference(res, p):
+    """La resistance de reference des ondes : Z0 de la ligne (Z differentielle
+    en differentiel, le demi-circuit la divise). Elle ne change pas le
+    resultat, seulement la longueur des reponses impulsionnelles."""
+    if p["mode"] == "diff":
+        for f in ((res.get("couplage") or {}).get("paires") or []):
+            if f.get("differentielle") and f.get("z_diff"):
+                return float(f["z_diff"])
+        return float((res.get("s_diff") or {}).get("z_ref_diff") or 100.0)
+    return float((res.get("ligne") or {}).get("z0_moyen") or 50.0)
+
+
 def analyser(doc, journal=None):
     """Document de simulation + reglages de l'oeil -> l'oeil. Leve ErreurOeil."""
     if ERREUR_OEIL is not None:
@@ -1156,6 +2070,13 @@ def analyser(doc, journal=None):
         raise ErreurOeil("Gabarit « %s » inconnu." % gid,
                          "Rechargez la page : la liste vient du serveur.")
     p = _params(o, gab)
+    ctx = preparer_ibis(o, p)
+    temporel = bool(ctx and ctx["temporel"])
+    if temporel and p["motif"] == "prbs15":
+        raise ErreurOeil("PRBS15 et modèle IBIS : 32 767 bits à simuler pas "
+                         "à pas, c'est trop long.",
+                         "Prenez PRBS7 ou PRBS9 : le pire cas et l'œil "
+                         "statistique couvrent les longues suites.")
 
     ctl = p.get("ctle")
     tau = 0.0
@@ -1164,7 +2085,12 @@ def analyser(doc, journal=None):
         tau = 8.0 / (2 * math.pi * f_bas)
     tau += 10.0 * (p["r_source"] + 100.0) * p["c_charge"]
     retard_est = _longueur_mm(doc) * 1e-3 * math.sqrt(_er_max(doc)) / C_0
-    df, n, fenetre, pleine = grille(p["debit"], p["tr"], retard_est, tau)
+    # AVEC UN TAMPON IBIS, le haut de la grille suit le LISSAGE du canal --
+    # la moitie du front du tampon --, pas le front lui-meme : voir `ibis`.
+    tr_grille = ctx["tr_lissage"] if temporel else p["tr"]
+    if temporel:
+        tau += 4.0 * p["tr"]
+    df, n, fenetre, pleine = grille(p["debit"], tr_grille, retard_est, tau)
     freqs = df * np.arange(1, n + 1)
 
     d2 = dict(doc)
@@ -1196,8 +2122,14 @@ def analyser(doc, journal=None):
                              "sélection.",
                              "Sélectionnez les deux pistes de la paire, ou "
                              "nommez la Piste 2.")
+        nv, nc = int(sd.get("vias") or 0), int(sd.get("coudes") or 0)
         av.append("Différentiel : la cascade du mode impair porte les "
-                  "tronçons de la paire, mais pas ses vias ni ses coudes.")
+                  "tronçons de la paire%s." % (
+                      (", ses %d via(s) et %d coude(s), posés à l'identique "
+                       "sur les deux brins — la mutuelle entre les deux fûts "
+                       "est négligée, l'inductance du via est donc majorée"
+                       % (nv, nc)) if (nv or nc) else
+                      " ; elle n'a ni via ni coude"))
     else:
         abcds = res.get("abcd")
         if not abcds:
@@ -1206,11 +2138,59 @@ def analyser(doc, journal=None):
         av.append("Grille de fréquences plafonnée à %d points : la fenêtre de "
                   "calcul est raccourcie à %.3g ns." % (MAX_FREQS,
                                                         fenetre * 1e9))
-    r = oeil(freqs, abcds, p, gab, journal=journal)
+    nl = None
+    if temporel:
+        nl = simuler_non_lineaire(ctx, freqs, abcds, p, _r_reference(res, p))
+        p["v_haut"], p["v_bas"] = nl["v_haut"], nl["v_bas"]
+        if nl["infos"]["asymetrie"] > 0.05:
+            av.append("Les fronts montant et descendant du tampon diffèrent "
+                      "de %.0f %% : le pire cas et l'œil statistique "
+                      "prennent leur moyenne, l'œil PRBS les suit tels "
+                      "quels." % (100 * nl["infos"]["asymetrie"]))
+    if o.get("agresseurs_auto"):
+        part = ((res.get("s_diff") or {}).get("partenaire")
+                if p["mode"] == "diff" else None)
+        trouves, notes = agresseurs_du_couplage(
+            res.get("couplage"), p, o, part,
+            excursion=(nl["v_haut"] - nl["v_bas"]) if nl else None)
+        p["bornes"] = list(p["bornes"]) + trouves
+        av.extend(notes)
+    r = oeil(freqs, abcds, p, gab, journal=journal, non_lineaire=nl)
+    manque = []
+    if not (p.get("rj_ui") or p.get("dj_ui") or p.get("bruit_v")):
+        manque.append("sans gigue aléatoire ni bruit")
+    if not p.get("bornes"):
+        manque.append("sans diaphonie des voisines")
+    if ctx:
+        bouts = []
+        if ctx["em"] is not None:
+            bouts.append("émetteur IBIS")
+        else:
+            bouts.append("émetteur linéaire (Thévenin)")
+        if (ctx["infos"].get("recepteur") or {}).get("modele"):
+            bouts.append("récepteur IBIS (C_comp%s)" % (
+                " et diodes" if ctx["rx"] is not None else ""))
+        else:
+            bouts.append("récepteur linéaire")
+        quoi = " et ".join(bouts)
+        if temporel:
+            quoi += (", simulés dans le temps (pas %.3g ps, canal lissé par "
+                     "un front de %.3g ps ; boîtier R/L/C_pkg non compté)"
+                     % (nl["dt"] * 1e12, ctx["tr_lissage"] * 1e12))
+        r["ibis"] = nl["infos"] if nl else ctx["infos"]
+    else:
+        quoi = "Émetteur et récepteur linéaires (pas de modèle IBIS)"
     r["avertissements"] = av + r["avertissements"] + [
-        "Émetteur et récepteur linéaires (pas de modèle IBIS), sans gigue "
-        "aléatoire, sans diaphonie des voisines et sans condensateurs de "
-        "liaison : l'œil est celui que la piste seule laisse passer."]
+        "%s, %s, et sans condensateurs de liaison : l'œil est celui que la "
+        "piste seule laisse passer." % (
+            quoi[0].upper() + quoi[1:],
+            ", ".join(manque) if manque else "gigue et diaphonie comprises")]
+    if not p.get("stat"):
+        # Les reglages facultatifs ne s'ajoutent pas au resultat quand ils
+        # n'ont pas servi : sans eux, la reponse reste celle d'avant.
+        for cle in ("rj_ui", "dj_ui", "bruit_v", "ber_cible", "bornes",
+                    "stat"):
+            p.pop(cle, None)
     r.update({
         "format": FORMAT_RESULTAT, "version": VERSION,
         "net": doc.get("net") or "", "carte": doc.get("carte") or "",

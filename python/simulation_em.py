@@ -2,6 +2,23 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 4.4.0
+# Date: 2026-10-10
+# Explication: LES VIAS ET LES COUDES DE LA PAIRE ENTRENT DANS LA CASCADE
+#   DIFFERENTIELLE. Elle ne portait que les troncons : une paire qui change de
+#   couche rendait le meme Sdd -- et le meme oeil -- qu'une paire restee sur
+#   la sienne. Les modeles deja calcules pour la piste principale (pi de
+#   `_modele_transition` : L de boucle de Grover, C des antipads, moignons ;
+#   T de Gupta pour les coudes) sont poses au meme rang, sur les DEUX brins,
+#   et vus en mode impair [A, 2B ; C/2, D] comme en mode commun
+#   [A, B/2 ; 2C, D]. La traversee de cavite (chemin de RETOUR) n'est comptee
+#   qu'en mode commun ; la mutuelle entre les deux futs est negligee, ce qui
+#   majore l'inductance vue par le mode impair. `s_diff` dit combien de vias
+#   et de coudes il porte.
+# Fonctions ajoutees/modifiees : _abcd_deux_brins (nouvelle),
+#   _cascade_differentielle (+ modeles_via, coudes_par_troncon, z_trav),
+#   simuler (les lui passe)
+#
 # Version: 4.3.0
 # Date: 2026-10-09
 # Explication: LA GRILLE PEUT ETRE IMPOSEE. Le diagramme de l'oeil
@@ -667,7 +684,7 @@ except Exception as _exc:                              # noqa: BLE001
 
 FORMAT = "cao-sim-em-3"
 FORMAT_RESULTAT = "cao-sim-em-resultat-5"
-VERSION = "4.3.0"
+VERSION = "4.4.0"
 VERSION_MOTEURS = {
     "simulation_em": VERSION,
     "ligne_mom": getattr(tl, "VERSION", "2.5.0") if tl is not None else "indisponible",
@@ -5671,13 +5688,47 @@ def _couplage(couches, objets, doc, analyse, avertissements):
     }
 
 
-def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_diff, doc, analyse, avertissements, topo, garder_abcd=False):
+def _abcd_deux_brins(m, mode):
+    """La matrice ABCD d'un element pose a l'identique sur les DEUX brins de
+    la paire, vue en mode differentiel ou commun.
+
+    Deux quadripoles identiques et non couples, l'un sur chaque brin. En
+    differentiel, V_d = 2 V et I_d = I (convention de la cascade : Z_diff =
+    2 Z0) : l'impedance serie double, l'admittance en derivation est
+    divisee par deux -- [A, 2B ; C/2, D]. En commun, V_c = V et I_c = 2 I :
+    [A, B/2 ; 2C, D]."""
+    if mode == "diff":
+        return np.array([[m[0, 0], 2.0 * m[0, 1]],
+                         [0.5 * m[1, 0], m[1, 1]]], dtype=complex)
+    return np.array([[m[0, 0], 0.5 * m[0, 1]],
+                     [2.0 * m[1, 0], m[1, 1]]], dtype=complex)
+
+
+def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_diff, doc, analyse, avertissements, topo, garder_abcd=False,
+                            modeles_via=None, coudes_par_troncon=None,
+                            z_trav=None):
     """Calcule la cascade de paramètres S en mode mixte pour la paire différentielle :
     - Sdd : différentiel pur 2x2 (sur z_ref_diff, ex: 100 Ω ou 90 Ω)
     - Scc : mode commun pur 2x2 (sur z_ref_comm = z_ref_diff / 4.0, ex: 25 Ω)
     - Scd : conversion différentiel -> commun issue du déséquilibre / skew (ΔL)
     - touchstone_sdd : chaîne au format Touchstone .s2p différentiel
     - touchstone_scc : chaîne au format Touchstone .s2p mode commun
+
+    LES VIAS ET LES COUDES DE LA PAIRE (`modeles_via`, `coudes_par_troncon`,
+    ceux que la cascade simple a deja modelises sur la piste principale) se
+    posent au meme rang que dans la cascade simple, sur les DEUX brins : la
+    partenaire d'une paire change de couche au meme endroit, par un via de
+    meme dessin -- c'est ce que la symetrie de la paire suppose, et c'est
+    le cas de toute paire routee comme telle. Voir `_abcd_deux_brins`.
+
+    CE QUE LE VIA DEVIENT EN MODE IMPAIR. Son pi (L de boucle de Grover,
+    capacite des antipads et des pastilles, moignons a chaque bout) est
+    applique tel quel a chaque brin. Deux simplifications, dites dans le
+    resultat : (1) la mutuelle entre les deux futs, qui REDUIT l'inductance
+    vue par le mode impair, est negligee -- l'inductance est donc majoree,
+    et l'oeil un peu pessimiste ; (2) la traversee de la cavite entre plans,
+    chemin du courant de RETOUR, n'est comptee qu'en mode commun : en mode
+    impair les retours des deux brins sont opposes et s'annulent.
     """
     if not topo or not topo.get("cascadable") or not len(freqs):
         return None
@@ -5737,6 +5788,33 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
                 continue
             L_m = seg["longueur"] * 1e-3
             c = chaleur[i] if (i < len(chaleur) and chaleur[i]) else None
+
+            # LES DISCONTINUITES AVANT LE TRONCON, comme dans la cascade
+            # simple : le coude, puis le via.
+            if coudes_par_troncon and i in coudes_par_troncon:
+                m_c = tl.abcd_coude(seg["largeur"] * 1e-3,
+                                    max(seg.get("h", 0.0), 1e-9) * 1e-3,
+                                    seg.get("er", 4.3), f_flt,
+                                    coudes_par_troncon[i]["angle_deg"])
+                abcd_diff = abcd_diff @ _abcd_deux_brins(m_c, "diff")
+                abcd_comm = abcd_comm @ _abcd_deux_brins(m_c, "comm")
+            if modeles_via and i in modeles_via:
+                mv = modeles_via[i]
+                y_dep = _admittance_moignon(mv["moignon_depart"],
+                                            mv["percage"], mv["antipad"],
+                                            f_flt)
+                y_arr = _admittance_moignon(mv["moignon_arrivee"],
+                                            mv["percage"], mv["antipad"],
+                                            f_flt)
+                z_t = ((z_trav or {}).get(i) or {}).get(f)
+                if z_t is None:
+                    z_t = _impedance_traversee(mv["cavite"], f_flt)
+                abcd_diff = abcd_diff @ _abcd_deux_brins(
+                    tl.abcd_via_complet(mv["l"], mv["c"], f_flt, y_dep,
+                                        y_arr, 0.0), "diff")
+                abcd_comm = abcd_comm @ _abcd_deux_brins(
+                    tl.abcd_via_complet(mv["l"], mv["c"], f_flt, y_dep,
+                                        y_arr, z_t), "comm")
 
             if c and c.get("z_diff"):
                 z_diff_k = float(c["z_diff"])
@@ -5806,6 +5884,10 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
 
     sortie = {
         "partenaire": partenaire,
+        # CE QUE LA CASCADE DE LA PAIRE PORTE, au-dela des troncons : la page
+        # et l'oeil le disent, plutot que de le supposer.
+        "vias": len(modeles_via or {}),
+        "coudes": len(coudes_par_troncon or {}),
         "delta_l_mm": round(delta_l_mm, 4),
         "z_ref_diff": z_ref_diff,
         "z_ref_comm": z_ref_comm,
@@ -6263,7 +6345,10 @@ def simuler(doc, journal=None, garder_abcd=False, freqs_imposees=None):
     s_diff = _cascade_differentielle(couches, objets, segments, couplage,
                                      freqs, z_ref_diff, doc, analyse,
                                      avertissements, topo,
-                                     garder_abcd=garder_abcd)
+                                     garder_abcd=garder_abcd,
+                                     modeles_via=modeles_via,
+                                     coudes_par_troncon=coudes_par_troncon,
+                                     z_trav=z_trav)
 
     resultat = {
         "format": FORMAT_RESULTAT,

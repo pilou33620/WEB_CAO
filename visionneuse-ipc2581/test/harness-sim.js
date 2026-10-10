@@ -170,7 +170,11 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simDsCatalogue","simDsPreparer","simDsAppliquer","simDsGroupes","simDsNb",
   "simDsBorneDe","simDsReappliquerCapas","SIM_DS","simPDNAssistantActif",
   /* La simulation RF : la carte lue, décrite pour le panneau commun. */
-  "simRfProbleme","simRfClic","SIM_RF_ATTENTE","simRfPlateauIpc","simRfZ","simRfModele"];
+  "simRfProbleme","simRfClic","SIM_RF_ATTENTE","simRfPlateauIpc","simRfZ","simRfModele",
+  /* Le diagramme de l'œil : la saisie de la gigue, de la diaphonie et des
+     fichiers IBIS, et le rendu de l'œil statistique. */
+  "SIM_OEIL","simCorpsOeil","simRendreOeil","simOeilReglages",
+  "simOeilIbisModeles","simOeilBer"];
 
 /* Un seul `eval`, sur les trois fichiers concaténés : ils se voient l'un
    l'autre comme dans la page, où ils partagent la portée globale. Le "use
@@ -5835,6 +5839,81 @@ T("vérification de la carte : surfaces, contour, trous et broches partent aussi
     throw new Error("les broches placées, et leur net : "+JSON.stringify(u1));
   if(!d.pastilles.some(q=>q.x===X2&&q.y===Y&&q.n==="N$1"))
     throw new Error("la pastille porte son net");
+});
+
+/* ==========================================================================
+   Le diagramme de l'œil : ce qui part au serveur, et ce qui en revient
+   ========================================================================== */
+T("œil : sans gigue, sans diaphonie, sans IBIS, la requête est celle d'avant",()=>{
+  const o=simOeilReglages();
+  for(const k of ["rj","dj","bruit_v","ber_cible","agresseurs_auto",
+                  "ibis_emetteur","ibis_recepteur"])
+    if(k in o)throw new Error("champ facultatif envoyé à vide : "+k);
+});
+T("œil : la gigue, la diaphonie et le fichier IBIS partent quand ils sont saisis",()=>{
+  const s=SIM_OEIL.saisie, avant=JSON.stringify(s);
+  try{
+    s.rj=2e-12; s.xt=true; s.xtSens="meme"; s.ber=1e-15;
+    SIM_OEIL.ibis.em={fichier:"u1.ibs", texte:"[Model] OUT", modeles:[{nom:"OUT",type:"Output"}],
+                      modele:"OUT", coin:"max"};
+    const o=simOeilReglages();
+    if(o.rj!==2e-12||o.ber_cible!==1e-15||!o.agresseurs_auto||o.agresseurs_sens!=="meme")
+      throw new Error(JSON.stringify(o));
+    if(!o.ibis_emetteur||o.ibis_emetteur.coin!=="max"||o.ibis_emetteur.texte!=="[Model] OUT")
+      throw new Error("IBIS : "+JSON.stringify(o.ibis_emetteur));
+    if("dj" in o||"ibis_recepteur" in o)throw new Error("rien de plus : "+JSON.stringify(o));
+    const h=simCorpsOeil();
+    for(const id of ["simOeilRj","simOeilDj","simOeilBruit","simOeilBer","simOeilXt",
+                     "simOeilIbisMod_em","simOeilIbisCoin_em","simOeilIbis_rx"])
+      if(h.indexOf('id="'+id+'"')<0)throw new Error("champ absent : "+id);
+  }finally{
+    Object.assign(s,JSON.parse(avant)); SIM_OEIL.ibis.em=null;
+  }
+});
+T("œil : les [Model] d'un fichier IBIS se listent avec leur type",()=>{
+  const m=simOeilIbisModeles("[IBIS Ver] 5.0\n| [Model] COMMENTE\n[Model] OUT33\n"+
+    "Model_type I/O | tampon\n[Pullup]\n0 0\n[Model] IN33\nModel_type Input\n[End]\n");
+  if(m.length!==2||m[0].nom!=="OUT33"||m[0].type!=="I/O"||m[1].type!=="Input")
+    throw new Error(JSON.stringify(m));
+  if(simOeilBer(1e-12)!=="10⁻¹²")throw new Error(simOeilBer(1e-12));
+});
+T("œil : l'œil statistique, la diaphonie et l'IBIS se rendent",()=>{
+  const tau=[], h=[], b=[];
+  for(let i=0;i<=128;i++){tau.push(i/64-1);h.push(0.2);b.push(-0.2);}
+  const n=128*160;
+  SIM_OEIL.res={
+    debit:5e9, ui:2e-10, tr:4e-11, mode:"diff", motif:"prbs7", bits:127, seuil:0,
+    densite:{nx:128, ny:160, v_haut:0.5, v_bas:-0.5, comptes:new Array(n).fill(1), max:1},
+    pire_cas:{tau, haut:h, bas:b},
+    mesures:{hauteur_prbs:0.4, largeur_prbs_ui:0.9, hauteur_pire:0.38, largeur_pire_ui:0.85,
+             isi_pire:0.01, principal:0.2, niveau_1:0.2, niveau_0:-0.2, v_max_vu:0.3,
+             v_min_vu:-0.3, retard:1e-9, violations:0, marge:0.4, marge_pire:0.3,
+             hors_limites:0, hauteur_ber:0.3, largeur_ber_ui:0.6, ber_cible:1e-12,
+             marge_ber:-0.05},
+    gabarit:{id:"x", nom:"essai", fiabilite:"corrobore", fiabilite_texte:"", source:"",
+             polygone:[[-0.2,0],[0,0.05],[0.2,0],[0,-0.05]]},
+    egalisation:{ctle:null, dfe_v:[], ffe:[1], ffe_principal:0},
+    reponse_bit:{dt:1e-11, t0:-1e-10, v:[0,0.2,0]},
+    grille:{points:100, df:1e7, f_max:4e10, fenetre:1e-7, h0:1},
+    statistique:{niveaux:[1e-6,1e-12], ber_cible:1e-12, tau,
+      contours:[{ber:1e-6, hauteur:0.35, largeur_ui:0.7, haut:h, bas:b},
+                {ber:1e-12, hauteur:0.3, largeur_ui:0.6, haut:h.map(()=>null), bas:b}],
+      baignoire:{tau:tau.slice(32,97).map(t=>t), ber:tau.slice(32,97).map(()=>1e-20)},
+      baignoire_v:{v:[0,0.1], ber:[1e-20,1e-3]}, rj_ui:0.01, dj_ui:0, rj_s:2e-12, dj_s:0,
+      bruit_v:0, pas_v:1e-3, cases:2048, hypotheses:["bits indépendants"]},
+    diaphonie:{agresseurs:[{nom:"SCK", crete_v:0.01, coef:0.01, v:1}], gain_ctle:1,
+               crete_totale_v:0.01, note:""},
+    ibis:{emetteur:{modele:"OUT33", type:"I/O", coin:"typ", fichier:"u1.ibs", c_comp:3e-12,
+                    front_10_90:5e-10, commande:"[Ramp]"},
+          pas_s:1e-12, lissage_s:2e-11, v_haut:0.4, v_bas:-0.4, asymetrie:0.1},
+    avertissements:[], duree:1
+  };
+  try{
+    const html=simRendreOeil();
+    for(const t of ["simOeilContour","simOeilBaignoire","10⁻¹²","SCK","OUT33",
+                    "pas à 10⁻¹²","Simulation non linéaire"])
+      if(html.indexOf(t)<0)throw new Error("absent du rendu : "+t);
+  }finally{SIM_OEIL.res=null;}
 });
 
 (async()=>{
