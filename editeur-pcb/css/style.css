@@ -1064,6 +1064,12 @@
   .df-v{fill:none;stroke:rgba(63,160,234,.5);stroke-width:1;stroke-dasharray:4 3}
   .df-v.on,.df-c.on{fill:rgba(63,160,234,.08);stroke:#3fa0ea;stroke-width:1.5;stroke-dasharray:none}
   .df-fantome{fill:rgba(63,160,234,.12);stroke:#3fa0ea;stroke-width:1;stroke-dasharray:3 2}
+  /* l'aperçu du lâcher : les vues qui s'écarteraient, et la feuille pleine */
+  .df-ecart{fill:rgba(255,138,0,.08);stroke:#ff8a00;stroke-width:1.5;stroke-dasharray:5 3}
+  .df-ecart-f{fill:none;stroke:#ff8a00;stroke-width:1.5}
+  .df-ecart.plein,.df-ecart-f.plein{stroke:#e8443a}
+  .df-ecart.plein{fill:rgba(232,68,58,.10)}
+  .df-plein-t{font-family:var(--ui);font-size:3.4px;font-weight:600;fill:#e8443a}
   .df-el{fill:none;stroke:#3fa0ea;stroke-width:1;stroke-dasharray:3 2}
   .df-el.on{stroke-dasharray:none}
   .df-acc{fill:rgba(232,68,58,.15);stroke:#e8443a;stroke-width:1.5}

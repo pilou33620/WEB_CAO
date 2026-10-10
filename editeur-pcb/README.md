@@ -90,7 +90,9 @@ js/30-contraintes.js     gestionnaire de contraintes : mesures par net,
                          schéma qui en saisit aussi
 js/34-draftsman-vues.js  plans, ce qui se pose à la main : cotes accrochées
                          à la géométrie (par référence, orphelines en rouge),
-                         vues déplacées à la souris, vues de détail
+                         tolérances (par valeur pour chaînes et ordonnées),
+                         vues déplacées à la souris (aperçu de celles qui
+                         s'écartent), vues de détail
 js/32-rooms.js           rooms : les blocs fonctionnels du schéma encadrés
                          sur la carte, sélection d'un bloc par son étiquette
 js/31-topologie.js       forme du cuivre de chaque net (graphe des pistes,
@@ -1098,6 +1100,19 @@ Les écarts sont signés, dans l'unité de la cote (degrés pour un angle) ; un
 vrai texte : au PDF, `±0,10` ou `(12,00)` se cherchent ; au DXF, ils vont
 sur le calque `COTES` (± en `%%p`, ° en `%%d`).
 
+Une **chaîne** ou une **ordonnée** tolère aussi chaque valeur à part. Le
+volet commence alors par la liste **Valeur** : « Toutes les valeurs » règle
+la tolérance commune ; « Point 2 : 30,00 — trou de fixation n° 7 » règle
+celle de ce point, qui peut suivre la **commune** (le défaut), n'en avoir
+**aucune**, ou avoir la sienne — n'importe lequel des genres ci-dessus. Dans
+le document, c'est `tols`, aligné sur `pts` : `null` pour la commune,
+`{genre:"aucune"}`, ou une tolérance comme `tol`. Une valeur de chaîne prend
+la tolérance du point où elle aboutit, le plus loin dans le sens de la cote
+(le premier point n'en porte donc pas). Une liste de mauvaise longueur est
+écartée, une liste toute à `null` disparaît : une cote sans tolérance par
+valeur s'écrit et se relit comme avant. L'écran, le PDF et le DXF montrent
+chaque valeur avec la sienne.
+
 Une vue glissée garde sa place : le coin haut gauche de sa boîte, aimanté
 sur une grille de 2,5 mm, toujours ramené dans le cadre et sorti du
 cartouche. Lâchée sur d'autres vues, elle reste où on l'a posée et les vues
@@ -1107,6 +1122,19 @@ qu'on n'a jamais déplacées choisissent les premières. S'il n'y a plus de
 place, chacune prend celle qui recouvre le moins, et la barre d'outils le
 dit. Le tout est un seul pas d'historique. Sans place enregistrée, la
 disposition calculée ne change pas.
+
+**Pendant le glisser**, on voit ce que le lâcher fera, sans que rien ne soit
+écrit : chaque vue qui s'écarterait est dessinée en tirets orange à sa place
+future, une flèche depuis sa place actuelle ; s'il n'y a plus de place, ces
+vues passent en rouge et « Feuille pleine : … resterai(en)t recouverte(s) »
+s'affiche au-dessus de la vue glissée, comme dans la barre d'outils. `Échap`
+abandonne le geste et l'aperçu avec lui. C'est le même calcul que le lâcher
+(`dfDispositionRepousser`, sur une copie des réglages) : ce qu'on voit est
+exactement ce qui sera posé. Refaire la feuille coûte quelques dizaines de
+millisecondes ; le calcul ne se refait donc qu'au changement de position
+**aimantée** (tous les 2,5 mm), les positions déjà vues pendant le geste se
+gardent, et le calque ne se redessine qu'une fois par image
+(`requestAnimationFrame`).
 Une **vue de détail** redessine la vue mère à l'échelle choisie, découpée
 proprement à sa fenêtre (au plan de fabrication, les pastilles et les trous à
 leur vraie taille s'y ajoutent, pour coter un connecteur) ; la vue mère porte
@@ -1129,8 +1157,8 @@ Nouveau l'oublie, le cartouche reste) :
 dessin.cotes   [{id, vue:"fab/carte", type:"h"|"v"|"a"|"d"|"r",
                  a:<réf>, b:<réf> (pas pour d / r), dx, dy, tol?, memo},
                 {id, vue, type:"ang", s?:<réf>, a:<réf>, b:<réf>, dx, dy, tol?, memo},
-                {id, vue, type:"ch", sens:"h"|"v", pts:[<réf>…], dx, dy, tol?, memo},
-                {id, vue, type:"ord", sens:"h"|"v", o:<réf>, pts:[<réf>…], dx, dy, tol?, memo}]
+                {id, vue, type:"ch", sens:"h"|"v", pts:[<réf>…], tols?, dx, dy, tol?, memo},
+                {id, vue, type:"ord", sens:"h"|"v", o:<réf>, pts:[<réf>…], tols?, dx, dy, tol?, memo}]
 dessin.vues    {"fab/percage": {x, y}, "det/7": {x, y}, …}
 dessin.details [{id, lettre:"A", source:"fab/carte", forme:"cercle"|"rect",
                  x, y, r | w, h, echelle}]
@@ -1140,6 +1168,7 @@ dessin.details [{id, lettre:"A", source:"fab/carte", forme:"cercle"|"rect",
         {type:"contour", i, c?}  {type:"bord", i, t, c?}
         {type:"origine"}                      (origine des fichiers, gOrigin())
 tol   : {genre:"sym", sup}  {genre:"asym"|"lim", sup, inf}  {genre:"ref"|"base"}
+tols  : [tol | {genre:"aucune"} | null …]     (un par point de pts ; null : la tol commune)
 ```
 
 Une cote angulaire sans `s` prend deux arêtes : `a` et `b` sont alors des
