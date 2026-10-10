@@ -63,19 +63,38 @@ function simStackup(){
   const couches=[];
   for(let i=0;i<S.cu;i++){
     const L=S.cuL[i]||{};
-    couches.push({
+    const c={
       type:"copper", name:cuLabel(i,S.cu),
       thickness:cuT(i),
       role:rolePlane(layerRole(i))?"plane":"signal",
       net:L.net||""
-    });
+    };
+    /* LA RUGOSITÉ, EN MICROMÈTRES et la clé le dit : le serveur la passe à
+       `line_losses` (python/simulation_em.py, `_rugosite_couche`). Lisse, rien
+       ne part : le document reste celui d'avant. */
+    const rug=typeof cuRug==="function"?cuRug(i):null;
+    if(rug){
+      c.modele_rugosite=rug.m;
+      if(rug.m==="huray"){c.rayon_nodule_um=rug.a;c.rapport_surface=rug.sr;}
+      else c.rugosite_rms_um=rug.rms;
+    }
+    couches.push(c);
     if(i<diCount(S.cu)){
       const d=diAt(i);
       couches.push({type:"dielectric", name:d.mat||"FR-4",
                     thickness:d.t, epsilon_r:d.er, tan_delta:d.df});
     }
   }
-  return {layers:couches};
+  const out={layers:couches};
+  /* LES OPTIONS DE MODÈLE DE LA CARTE (`simModeles`) partent avec
+     l'empilage, et seulement quand elles s'écartent du défaut : l'empilage
+     voyage tel quel jusqu'à la RF et à l'œil, qui les reçoivent donc aussi. */
+  const m=typeof simModeles==="function"?simModeles():null;
+  if(m){
+    if(m.causal){out.dielectrique_causal=true;out.f_ref_dielectrique=m.fref;}
+    if(m.via!==SIM_VIA_DEFAUT)out.modele_via=m.via;
+  }
+  return out;
 }
 
 /* Les tronçons sélectionnés, dans l'ordre où la carte les porte — l'ordre

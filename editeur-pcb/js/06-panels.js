@@ -355,6 +355,7 @@ function buildStackup(){
     if(rc)
       h+='<div class="stkinfo"><b class="warn">Rôle douteux</b> : '+esc(rc.msg)+
          '.<br>'+esc(rc.hint)+'</div>';
+    h+=stkHtmlRugosite(sel.i);
   }else if(sel.kind==="di"){
     const d=diAt(sel.i);
     h+='<div class="prop two"><div><label>Type</label><select id="skK">'+
@@ -447,6 +448,7 @@ function buildStackup(){
              'sur le via, sous un BGA par exemple. C\'est aussi le plus cher.'
            : 'Le masque ne s\'ouvre pas sur les vias.'))+
      '</div>'+
+     stkHtmlModeles()+
      cpHtmlEmpilage();
 
   box.innerHTML=h;
@@ -532,6 +534,8 @@ function buildStackup(){
     bind("skMT",v=>{st.maskT=r4(clamp(v,0,1));});
     bind("skMEr",v=>{st.maskEr=clamp(v,1,20);});
   }
+  stkBindRugosite(bind,pick);
+  stkBindModeles(bind,pick);
   bind("skTarget",v=>{st.target=clamp(v,0.05,50);});
   pick("skFin",v=>{if(FINISHES.indexOf(v)>=0)st.finish=v;});
   /* le traitement des vias change le masque : il faut redessiner */
@@ -563,6 +567,87 @@ function buildStackup(){
     hint("Feuille d'empilage enregistrée dans empilage.txt.");
   };
   cpBrancherEmpilage();
+}
+/* ---------- rugosité du cuivre et modèles de simulation ----------
+   La rugosité se saisit sur la ligne de cuivre, comme son épaisseur : c'est
+   le feuillard qu'on commande. Le modèle (01-core.js, `rugNorm`) n'écrit rien
+   tant qu'elle est nulle. Les options de modèle valent pour toute la carte :
+   elles vivent sous la synthèse. */
+function stkHtmlRugosite(i){
+  const r=cuRug(i), m=r?r.m:"hammerstad";
+  const pre=RUG_PRESETS.find(p=>{
+    if(!r)return p.rms===0&&p.m==="hammerstad";
+    return p.m===r.m&&(r.m==="huray"?(p.a===r.a&&p.sr===r.sr):p.rms===r.rms);
+  });
+  let h='<div class="prop"><label>Rugosité du cuivre</label><select id="skRugP">'+
+    RUG_PRESETS.map(p=>'<option value="'+esc(p.id)+'"'+(pre===p?" selected":"")+'>'+
+      esc(p.n)+'</option>').join("")+
+    (pre?"":'<option value="" selected>Saisie : '+esc(rugLabel(r))+'</option>')+
+    '</select></div>'+
+    '<div class="prop two"><div><label>Modèle</label><select id="skRugM">'+
+    Object.keys(RUG_MODELES).map(k=>'<option value="'+k+'"'+(k===m?" selected":"")+'>'+
+      esc(RUG_MODELES[k])+'</option>').join("")+'</select></div>';
+  if(m==="huray")
+    h+=numProp("skRugA","Rayon des nodules (µm)",r?fmt(r.a,2):"0",0.05,0)+'</div>'+
+       '<div class="prop two">'+numProp("skRugSR","Rapport de surface SR",r?fmt(r.sr,2):"0",0.1,0)+
+       '<div></div></div>';
+  else
+    h+=numProp("skRugRms","Rugosité RMS Rq (µm)",r?fmt(r.rms,2):"0",0.05,0)+'</div>';
+  h+='<div class="stkinfo">'+
+     (r?'Comptée dans les pertes du cuivre de cette couche (simulation, RF, '+
+        'œil, diaphonie) : facteur '+
+        (m==="huray"?'de Huray, borné par 1 + 3/2 · SR.'
+                    :'de Hammerstad-Groiss, qui sature à 2 quand Rq dépasse '+
+                     'la profondeur de peau (0,66 µm à 10 GHz).')
+       :'Lisse : les pertes du cuivre sont celles d\'une surface plane. Un '+
+        'feuillard standard (Rq ≈ 2 µm) double presque la perte du cuivre '+
+        'à 10 GHz.')+'</div>';
+  return h;
+}
+function stkHtmlModeles(){
+  const m=simModeles();
+  return '<div class="cat">Modèles de simulation</div>'+
+    '<div class="prop"><label><input type="checkbox" id="skCausal"'+
+      (m.causal?" checked":"")+'> Diélectrique causal (Djordjevic-Sarkar)</label></div>'+
+    '<div class="prop two">'+
+      numProp("skFref","Fréquence de la fiche (GHz)",fmt(m.fref/1e9,3),0.1,0.001,!m.causal)+
+      '<div><label>Modèle de via</label><select id="skViaM">'+
+      Object.keys(SIM_MODELES_VIA).map(k=>'<option value="'+k+'"'+(k===m.via?" selected":"")+'>'+
+        esc(SIM_MODELES_VIA[k])+'</option>').join("")+'</select></div></div>'+
+    '<div class="stkinfo">'+
+      (m.causal?'Dk et Df sont lus comme les valeurs de la fiche à '+fmt(m.fref/1e9,3)+
+                ' GHz et prolongés de façon causale : Dk décroît avec la fréquence, '+
+                'et la vitesse de phase comme les pertes le suivent.'
+               :'Dk et Df constants sur toute la bande : simple, mais non causal — '+
+                'une réponse impulsionnelle (œil) en part légèrement de travers.')+
+      '<br>Via « auto » : réseau en π tant que le via est court devant la '+
+      'longueur d\'onde, ligne répartie au-delà ; les deux ont le même L et le même C.'+
+    '</div>';
+}
+function stkBindRugosite(bind,pick){
+  if(_stkSel.kind!=="cu")return;
+  const i=_stkSel.i;
+  pick("skRugP",v=>{
+    const p=RUG_PRESETS.find(q=>q.id===v);
+    if(p)setCuRug(i,p);
+  });
+  pick("skRugM",v=>{
+    const r=cuRug(i)||{};
+    /* changer de modèle repart d'un réglage usuel : un Rq ne se convertit
+       pas en nodules */
+    if(v==="huray"&&r.m!=="huray")setCuRug(i,RUG_PRESETS.find(p=>p.id==="hu-std"));
+    else if(v==="hammerstad"&&r.m!=="hammerstad")setCuRug(i,RUG_PRESETS.find(p=>p.id==="std"));
+  });
+  const r=()=>cuRug(i)||{};
+  bind("skRugRms",v=>{setCuRug(i,{m:"hammerstad",rms:v});});
+  bind("skRugA",v=>{setCuRug(i,{m:"huray",a:v,sr:r().sr||0});});
+  bind("skRugSR",v=>{setCuRug(i,{m:"huray",a:r().a||0,sr:v});});
+}
+function stkBindModeles(bind,pick){
+  const c=$("skCausal");
+  if(c)c.onchange=()=>{push();setSimModeles({causal:!!c.checked});touch();buildStackup();};
+  bind("skFref",v=>{if(v>0)setSimModeles({fref:clamp(v,0.001,1000)*1e9});});
+  pick("skViaM",v=>{if(SIM_MODELES_VIA[v])setSimModeles({via:v});});
 }
 /* ---------- contre-perçage (back-drill) ----------
    Les règles se saisissent ici, avec l'empilage qu'elles percent ; elles

@@ -284,7 +284,11 @@ function normStack(s,cu){
   const sc=Array.isArray(src.cu)?src.cu:[], sd=Array.isArray(src.di)?src.di:[];
   for(let i=0;i<cu;i++){
     const o=(sc[i]&&typeof sc[i]==="object")?sc[i]:{};
-    out.cu.push({t:dRange(o.t,def.cu[i].t,0.001,2)});
+    const c={t:dRange(o.t,def.cu[i].t,0.001,2)};
+    /* rugosité (01-core.js) : écrite seulement si elle compte */
+    const rug=rugNorm(o.rug);
+    if(rug)c.rug=rug;
+    out.cu.push(c);
   }
   for(let i=0;i<diCount(cu);i++){
     const o=(sd[i]&&typeof sd[i]==="object")?sd[i]:{};
@@ -300,6 +304,9 @@ function normStack(s,cu){
      un document qui n'en parle pas se relit à l'identique */
   const cp=cpNormRegles(src.cp,cu);
   if(cp.length)out.cp=cp;
+  /* options de modèle (diélectrique causal, modèle de via) : de même */
+  const sim=simModelesNorm(src.sim);
+  if(sim)out.sim=sim;
   return out;
 }
 function normClass(c,i){

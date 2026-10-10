@@ -307,6 +307,30 @@ une pastille sur le via (IPC-4761). Seul le premier ouvre le masque. Il
 remplace l'ancien booléen `tented`, que les fichiers antérieurs portent encore
 et que `normDoc` convertit à la lecture.
 
+### Rugosité du cuivre et modèles de simulation
+
+Une ligne de cuivre de la coupe porte aussi sa **rugosité** : le feuillard
+électrodéposé a des dents de l'ordre de la profondeur de peau dès le gigahertz,
+et la perte du cuivre en monte jusqu'à doubler. Une liste de réglages usuels —
+lisse, ED standard (Rq 2 µm), traité inversé (1 µm), VLP (0,6 µm), HVLP
+(0,3 µm), et deux jeux de Huray — puis le modèle (Hammerstad-Groiss sur Rq, ou
+Huray sur le rayon des nodules et leur rapport de surface) et ses valeurs, en
+micromètres. Sous la synthèse, **Modèles de simulation** : la case
+*diélectrique causal* (Djordjevic-Sarkar, Dk et Df lus à la fréquence de la
+fiche, 1 GHz par défaut) et le **modèle de via** (π, ligne, ou « auto », le
+défaut : π tant que le via est court devant λ).
+
+```
+stack.cu[i].rug   {m: "hammerstad", rms} | {m: "huray", a, sr}   µm, si non lisse
+stack.sim         {causal, fref (Hz), via}                       si hors défaut
+```
+
+Rien ne s'écrit tant que tout est au défaut : un document qui n'en parle pas se
+relit à l'identique. `simStackup()` (`js/19-simulation.js`) envoie la rugosité
+sur chaque couche de cuivre et les options sur l'empilage ; la simulation, la
+RF, l'œil et les pertes du crosstalk les lisent (voir
+[simulation-em.md](../docs/simulation-em.md#pertes-diélectrique-causal-via-en-ligne-simulation_em-500)).
+
 ### La nature d'un via se choisit, la portée suit
 
 `viaBuild()` dit ce qu'une portée **vaut** une fois la carte pressée. Le panneau

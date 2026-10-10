@@ -634,6 +634,14 @@ function stackResize(n){
   /* les règles de contre-perçage restent, leur couche à garder ramenée dans
      la nouvelle pile */
   if(old.cp&&old.cp.length)d.cp=cpNormRegles(old.cp,n);
+  /* la rugosité suit le cuivre comme son épaisseur — dessus et dessous ; les
+     options de simulation sont celles de la carte, elles restent */
+  if(old.cu.length){
+    if(old.cu[0].rug)d.cu[0].rug=Object.assign({},old.cu[0].rug);
+    const k=old.cu.length-1;
+    if(old.cu[k].rug)d.cu[d.cu.length-1].rug=Object.assign({},old.cu[k].rug);
+  }
+  if(old.sim)d.sim=Object.assign({},old.sim);
   S.stack=d;
   stackFit();
 }
@@ -641,7 +649,13 @@ function applyPreset(p){
   if(!p||p.n!==S.cu)return false;
   const st=S.stack;
   st.target=p.th;
-  for(let i=0;i<S.cu;i++)st.cu[i]={t:r4((p.cu[i]||35)/1000)};
+  /* un modèle d'usine fixe les épaisseurs ; la rugosité, traitement du
+     feuillard, n'en dépend pas et reste */
+  for(let i=0;i<S.cu;i++){
+    const rug=st.cu[i]&&st.cu[i].rug;
+    st.cu[i]={t:r4((p.cu[i]||35)/1000)};
+    if(rug)st.cu[i].rug=rug;
+  }
   for(let i=0;i<diCount(S.cu);i++)st.di[i]=diFrom(p.di[i]||p.di[p.di.length-1]);
   return true;
 }
@@ -668,6 +682,94 @@ function umLabel(t){return fmt(t*1000,(t*1000)<100?1:0)+" µm";}
 function ozLabel(t){
   const o=t/OZ, r=Math.round(o*2)/2;
   return (Math.abs(o-r)<0.06?fmt(r,r%1?1:0):fmt(o,2))+" oz";
+}
+
+/* ==========================================================================
+   Rugosité du cuivre et modèles de simulation
+   Le feuillard électrodéposé est rugueux : ses dents — un à deux micromètres
+   sur un cuivre standard — sont de l'ordre de la profondeur de peau dès le
+   gigahertz (2,1 µm à 1 GHz, 0,66 µm à 10 GHz), le courant suit le relief et
+   la perte du conducteur monte, jusqu'à doubler. Le solveur sait la compter
+   (`ligne_mom.facteur_rugosite`) ; il lui faut la rugosité de chaque cuivre.
+
+   `S.stack.cu[i].rug` = {m, rms, a, sr} : le modèle (« hammerstad » lit la
+   rugosité RMS Rq, « huray » le rayon des nodules et leur rapport de
+   surface), les longueurs EN MICROMÈTRES comme sur les fiches de cuivre.
+   Absente, rien ne change : K = 1, et le document ne l'écrit pas.
+
+   `S.stack.sim` = {causal, fref, via} : les choix de modèle de la carte, qui
+   voyagent avec l'empilage jusqu'à la simulation, la RF et l'œil. Absent,
+   le défaut : Dk et Df constants, via « auto » (π tant qu'il est court).
+   ========================================================================== */
+const RUG_MODELES={hammerstad:"Hammerstad-Groiss (Rq)",huray:"Huray (nodules)"};
+/* Les ordres de grandeur des fiches de feuillard (Rq ≈ Rz / 4 à 6) : standard
+   ED 1,5–2,5 µm, traité inversé ~1 µm, VLP 0,4–0,8, HVLP 0,1–0,4. Les deux
+   Huray donnent, à 10 GHz, ~70 % et ~15 % de perte de cuivre en plus — ce
+   que les fabricants annoncent pour ces deux classes. */
+const RUG_PRESETS=[
+  {id:"lisse",n:"Lisse — aucune rugosité",m:"hammerstad",rms:0},
+  {id:"std",n:"ED standard (STD) — Rq 2 µm",m:"hammerstad",rms:2},
+  {id:"rtf",n:"Traité inversé (RTF) — Rq 1 µm",m:"hammerstad",rms:1},
+  {id:"vlp",n:"VLP — Rq 0,6 µm",m:"hammerstad",rms:0.6},
+  {id:"hvlp",n:"HVLP — Rq 0,3 µm",m:"hammerstad",rms:0.3},
+  {id:"hu-std",n:"Huray · ED standard — a 0,5 µm, SR 1,5",m:"huray",a:0.5,sr:1.5},
+  {id:"hu-hvlp",n:"Huray · HVLP — a 0,3 µm, SR 0,6",m:"huray",a:0.3,sr:0.6}
+];
+const SIM_MODELES_VIA={pi:"π (C/2 – L – C/2)",ligne:"Ligne (barreau réparti)",
+                       auto:"Auto (ligne si le via est long devant λ)"};
+const SIM_FREF_DEFAUT=1e9;          // Hz : la fréquence des fiches de FR-4
+/* « auto », comme le serveur (`MODELE_VIA_DEFAUT`) : le π tant que le via est
+   court devant λ, au bit près, la ligne au-delà. */
+const SIM_VIA_DEFAUT="auto";
+/* Une rugosité lisible, ou null quand elle ne compte pas : c'est cette
+   fonction qui décide de ce qui s'écrit dans le document. */
+function rugNorm(o){
+  if(!o||typeof o!=="object")return null;
+  const n=(v,a,b)=>{const x=+v;return Number.isFinite(x)?clamp(x,a,b):0;};
+  const m=RUG_MODELES[o.m]?o.m:"hammerstad";
+  if(m==="huray"){
+    const a=n(o.a,0,50), sr=n(o.sr,0,20);
+    return (a>0&&sr>0)?{m:"huray",a:r4(a),sr:r4(sr)}:null;
+  }
+  const rms=n(o.rms,0,50);
+  return rms>0?{m:"hammerstad",rms:r4(rms)}:null;
+}
+function cuRug(i){
+  const c=S.stack&&S.stack.cu[i];
+  return c&&c.rug?rugNorm(c.rug):null;
+}
+/* poser (ou retirer, avec null) la rugosité d'un cuivre */
+function setCuRug(i,o){
+  const c=S.stack&&S.stack.cu[i];
+  if(!c)return;
+  const r=rugNorm(o);
+  if(r)c.rug=r;else delete c.rug;
+}
+function rugLabel(r){
+  if(!r)return "lisse";
+  return r.m==="huray"?"Huray a "+fmt(r.a,2)+" µm · SR "+fmt(r.sr,2)
+                      :"Rq "+fmt(r.rms,2)+" µm";
+}
+/* Les options de modèle, défauts compris. */
+function simModeles(){
+  const s=(S.stack&&S.stack.sim)||{};
+  return {causal:s.causal===true,
+          fref:(+s.fref>0)?+s.fref:SIM_FREF_DEFAUT,
+          via:SIM_MODELES_VIA[s.via]?s.via:SIM_VIA_DEFAUT};
+}
+/* Ce qui s'écrit : seulement ce qui s'écarte du défaut. */
+function simModelesNorm(o){
+  if(!o||typeof o!=="object")return null;
+  const out={};
+  if(o.causal===true)out.causal=true;
+  const f=+o.fref;
+  if(Number.isFinite(f)&&f>=1e6&&f<=1e12&&f!==SIM_FREF_DEFAUT)out.fref=f;
+  if(SIM_MODELES_VIA[o.via]&&o.via!==SIM_VIA_DEFAUT)out.via=o.via;
+  return Object.keys(out).length?out:null;
+}
+function setSimModeles(o){
+  const r=simModelesNorm(Object.assign({},simModeles(),o||{}));
+  if(r)S.stack.sim=r;else delete S.stack.sim;
 }
 
 /* ==========================================================================
