@@ -77,6 +77,9 @@ js/30-contraintes.js     gestionnaire de contraintes : mesures par net,
                          et l'isolation entre classes sont dans 01-core.js)
 ../commun/contraintes.js ce qu'est une contrainte de net, partagé avec le
                          schéma qui en saisit aussi
+js/34-draftsman-vues.js  plans, ce qui se pose à la main : cotes accrochées
+                         à la géométrie (par référence, orphelines en rouge),
+                         vues déplacées à la souris, vues de détail
 js/32-rooms.js           rooms : les blocs fonctionnels du schéma encadrés
                          sur la carte, sélection d'un bloc par son étiquette
 js/31-topologie.js       forme du cuivre de chaque net (graphe des pistes,
@@ -920,6 +923,40 @@ qui a été trouvé et où (« net · U1 · broche 5 · f. 2 »), les onglets co
 les résultats par feuille, et l'aperçu surligne les endroits. `Entrée` passe
 au résultat suivant, `Maj+Entrée` au précédent.
 
+### Cotes, vues et détails posés à la main
+
+Au-dessus de la feuille, une barre d'outils :
+
+| Outil | Geste |
+| --- | --- |
+| ↖ Sélection | glisser une vue (vue de la carte, tableau de perçage, coupe d'empilage, notes, nomenclature, détail…) ou une cote ; `Suppr` efface la cote ou le détail choisi, ou rend sa place calculée à la vue choisie |
+| ↔ ↕ ⤢ Cote horizontale, verticale, alignée | deux points accrochés, puis la ligne de cote |
+| Ø R Diamètre, rayon | un trou de fixation, un via ou une pastille percée, puis le texte |
+| ◯ ▭ Détail | sur une vue de la carte, un cercle (centre puis rayon) ou un rectangle (deux coins) ; l'échelle se choisit à côté (2:1 à 20:1) |
+| Replacer automatiquement | les vues de la feuille reviennent à la disposition calculée |
+
+Les points **s'aimantent** sur la géométrie : centre d'un trou de fixation ou
+d'un via, centre ou bord (gauche, droit, haut, bas) d'une pastille, sommet
+ou bord du contour et des découpes. Le nom du point visé s'affiche sous la
+souris. Une cote est enregistrée **par référence**, pas en coordonnées :
+déplacez le connecteur, la cote suit et sa valeur change. Si la référence
+disparaît (repère renommé, trou effacé), la cote ne devient pas fausse en
+silence : elle se dessine en **rouge et en tirets**, suivie de
+« (orpheline) », à la dernière place connue, au PDF comme à l'écran, et la
+colonne de gauche la liste ; un clic y mène. `Échap` défait le geste en
+cours, puis rend l'outil de sélection ; `Ctrl+Z` passe par l'historique de la
+carte.
+
+Une vue glissée garde sa place : le coin haut gauche de sa boîte, aimanté
+sur une grille de 2,5 mm, toujours ramené dans le cadre et sorti du
+cartouche. Sans place enregistrée, la disposition calculée ne change pas.
+Une **vue de détail** redessine la vue mère à l'échelle choisie, découpée
+proprement à sa fenêtre (au plan de fabrication, les pastilles et les trous à
+leur vraie taille s'y ajoutent, pour coter un connecteur) ; la vue mère porte
+le repère « A », le détail l'étiquette « DÉTAIL A — ÉCHELLE 5:1 ». Il se pose
+de lui-même à la première place libre de la feuille, puis se glisse comme
+les autres, et les cotes s'y posent aussi.
+
 ### Où vivent les réglages
 
 Dans le document, `dessin` : format, feuilles cochées, noms du cartouche,
@@ -927,6 +964,34 @@ notes. `normDoc` n'en fait qu'une copie — il tourne au démarrage, avant que
 `29-draftsman.js` soit chargé — et `dfCfg()` les borne à chaque usage. Une
 nouvelle carte les garde, comme les règles : ils décrivent qui dessine, pas la
 carte.
+
+Ce qui est posé à la main y est aussi, et part avec la carte (Fichier →
+Nouveau l'oublie, le cartouche reste) :
+
+```
+dessin.cotes   [{id, vue:"fab/carte", type:"h"|"v"|"a"|"d"|"r",
+                 a:<réf>, b:<réf> (pas pour d / r), dx, dy, memo}]
+dessin.vues    {"fab/percage": {x, y}, "det/7": {x, y}, …}
+dessin.details [{id, lettre:"A", source:"fab/carte", forme:"cercle"|"rect",
+                 x, y, r | w, h, echelle}]
+
+<réf> : {type:"trou", id}  {type:"via", id}
+        {type:"pastille", fp:"J1", pad:"3", ou:"c"|"g"|"d"|"h"|"b"}
+        {type:"contour", i, c?}  {type:"bord", i, t, c?}
+```
+
+Une **clé de vue** nomme la feuille puis la vue : `fab/carte`,
+`fab/percage`, `fab/fixation`, `fab/impedances`, `fab/empilage`,
+`fab/notes`, `asmT/carte`, `asmB/carte`, `bom/nomenclature`,
+`bom/nonmontes`, `cu0/carte`… ; `fab~1/notes` est la suite sur la feuille
+suivante, `det/7` le détail n° 7. `dx, dy` placent la ligne de cote (ou le
+texte d'un diamètre) en millimètres de feuille depuis le milieu des points
+mesurés ; `x, y` d'un détail et sa taille sont en millimètres de carte ; `c`
+est l'indice d'une découpe (absent pour le contour extérieur), `t` la
+position sur le côté `i → i+1`, `ou` le centre ou un bord de la pastille.
+`memo` garde la dernière mesure connue ({a, b, v}, en mm de carte) : c'est
+elle qui place une orpheline. `dfResoudre(réf)` donne le point d'une
+référence, `dfMesurer(cote)` sa valeur (null si elle est orpheline).
 
 ### Comment c'est fait
 
@@ -2915,10 +2980,14 @@ désactive au lieu de disparaître.
 - Gestionnaire de contraintes : le moignon d'un via se compte en épaisseur
   d'empilage (le contre-perçage n'est pas décrit) ; les contraintes de classe
   ne se saisissent que dans le PCB.
-- Plans (Draftsman) : les vues sont placées d'office et les cotes se limitent
-  à l'encombrement du contour ; ni cote posée à la main, ni vue de détail
-  agrandie, ni export DXF. Le texte est en Helvetica standard (non
-  embarquée) : un lecteur la remplace par une fonte équivalente.
+- Plans (Draftsman) : les cotes à la main sont linéaires (horizontale,
+  verticale, alignée), de diamètre ou de rayon — ni cote angulaire, ni cote
+  en chaîne ou depuis une origine commune, ni tolérance portée sur la
+  cote. Une vue déplacée
+  ne repousse pas les autres (elle peut les recouvrir), et une vue de détail
+  ne se pose que sur la feuille de sa vue mère. Ni export DXF. Le texte est
+  en Helvetica standard (non embarquée) : un lecteur la remplace par une
+  fonte équivalente.
 - Les **pistes** savent être circulaires (voir plus haut) ; les zones de
   cuivre, les coupes et le contour de carte restent des polygones. Le
   routeur ne pose pas d'arc : ils arrivent d'un fichier, et l'éditeur les
