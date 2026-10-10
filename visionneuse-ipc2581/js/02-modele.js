@@ -30,11 +30,12 @@ const V={
   parNet:[],            // net index -> {pistes, arcs, plans, pads, trous, …}
   parRef:null,          // repère -> composant (Map)
   parXY:null,           // position -> perçage (Map), voir mdlTrouEn
-  trous:{pth:null,npth:null},   // Path2D des perçages, métallisés ou non
+  trous:{pth:null,npth:null,cp:null},  // Path2D des perçages, métallisés ou non,
+                                       // et des contre-perçages (cercle du foret)
   bbox:null,            // {x1,y1,x2,y2} de la carte
   vue:{scale:1,ox:0,oy:0,flip:false},
   aff:{plans:true,pistes:true,pads:true,trous:true,textes:true,
-       composants:true,refs:false,contour:true,jsurf:false,maillage:false},
+       composants:true,refs:false,contour:true,jsurf:false,maillage:false,cp:true},
   net:-1,               // net mis en évidence, -1 = aucun
   /* Jusqu'où va cette mise en évidence. Un net traverse la carte : le montrer
      en entier répond à « où va ce signal », le montrer sur la seule couche
@@ -131,6 +132,23 @@ function mdlNetNom(i){
 function mdlCoucheNom(i){
   const c=V.couches[i];
   return c?c.nom:"";
+}
+/* LE CONTRE-PERÇAGE D'UN PERÇAGE (`cp` du modèle, ipc2581_json.py), noms de
+   couche résolus ; null s'il n'en a pas. Le fichier peut n'en dire qu'une
+   partie — une spec sans couche à ne pas couper, une face qui n'en est pas
+   une : `complet` dit si la face, la couche gardée et le moignon résiduel
+   sont connus, seule condition pour qu'il parte au serveur. */
+function mdlContrePercage(t){
+  const cp=t&&t.cp;
+  if(!cp||typeof cp!=="object")return null;
+  const o={cote:cp.cote==="dessus"||cp.cote==="dessous"?cp.cote:"",
+           depart:cp.de!=null?mdlCoucheNom(cp.de):"",
+           garde:cp.g!=null?mdlCoucheNom(cp.g):"",g:cp.g,
+           res:(typeof cp.res==="number"&&cp.res>=0)?cp.res:null,
+           d:cp.d>0?cp.d:0,prof:cp.prof>0?cp.prof:0,
+           spec:cp.spec||"",src:cp.src||""};
+  o.complet=!!(o.cote&&o.garde&&o.res!=null);
+  return o;
 }
 
 /* ==========================================================================
@@ -788,14 +806,22 @@ function mdlBoite(){
 function mdlChemins(){
   for(const c of V.couches)c.chemins=mdlCheminsDe(c);
   const m=V.modele;
-  V.trous.pth=new Path2D(); V.trous.npth=new Path2D();
-  V.trous.n=0;
+  V.trous.pth=new Path2D(); V.trous.npth=new Path2D(); V.trous.cp=new Path2D();
+  V.trous.n=0; V.trous.ncp=0;
   for(const t of m.percages){
     const r=(t.d||0)/2;
     if(r<=0)continue;
     const p=/NON/i.test(t.p||"")?V.trous.npth:V.trous.pth;
     p.moveTo(t.x+r,t.y); p.arc(t.x,t.y,r,0,2*Math.PI);
     V.trous.n++;
+    /* le contre-perçage : un cercle au diamètre du foret quand le fichier le
+       donne, sinon un peu au-delà du trou — on montre qu'il y en a un, on
+       n'invente pas sa cote */
+    if(t.cp){
+      const rc=t.cp.d>0?t.cp.d/2:r*1.6;
+      V.trous.cp.moveTo(t.x+rc,t.y); V.trous.cp.arc(t.x,t.y,rc,0,2*Math.PI);
+      V.trous.ncp++;
+    }
   }
   V.contour=null;
   if(m.contour&&m.contour.o&&m.contour.o.length>=6){

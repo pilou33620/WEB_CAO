@@ -495,13 +495,16 @@ traversant** (le message le dit). La longueur du moignon se juge face à
 Une broche traversante de composant n'est pas jugée. Une ligne par net, sur le
 pire via.
 
-Un via **contre-percé** (*back-drill*, règles de l'empilage de l'éditeur PCB)
+Un via **contre-percé** (*back-drill*, règles de l'empilage de l'éditeur PCB,
+ou spécification `<Backdrill>` d'un fichier IPC-2581 lue par la visionneuse)
 porte dans son perçage `cp` : `{cote: "dessous" | "dessus", garde: <couche de
 cuivre à ne pas couper>, res: <moignon résiduel, mm>}`. Le moignon de ce côté
 va alors de la couche empruntée à la pointe du foret (`res` sous ou sur la
 couche gardée), jamais plus loin qu'avant, et le message ajoute « contre-percé
 par dessous ». Un contre-perçage qui couperait une couche empruntée n'est pas
-appliqué ; sans `cp`, rien ne change.
+appliqué ; sans `cp`, rien ne change. Côté éditeur, une zone du net qui
+touche le fût compte comme couche empruntée : un contre-perçage qui la
+couperait est une faute au DRC, et ne part pas.
 
 **Corriger** : via borgne ou enterré, contre-perçage (*backdrill*), ou router le
 signal entre les couches extrêmes du perçage.

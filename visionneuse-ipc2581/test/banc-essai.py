@@ -853,6 +853,96 @@ T(u"une archive illisible est refusee",
   lambda: refus(b"PK\x03\x04 pas vraiment une archive", u"ZIP tronque"))
 
 
+# -- Le contre-percage (back-drill) ------------------------------------------
+# La carte vit dans un fichier a cote de ce banc (test/carte-contre-percage.xml,
+# suivi : .gitignore n'ecarte que les XML de la racine) parce que la
+# visionneuse et son banc JS la relisent aussi. Son en-tete dit ce qu'elle
+# porte : V1 contre-perce a la maniere de KiCad (<Spec><Backdrill> +
+# <SpecRef> du trou), V2 par un foret pose sur un calque de percage a part,
+# V3 sans rien, et un foret sans via.
+CP_XML = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "carte-contre-percage.xml"), "rb").read()
+
+
+def _cp_modele(data=CP_XML):
+    d = ipc2581_json.charger_octets(data, "cp.xml")
+    return d, ipc2581_json.design_en_dict(d, "cp.xml")
+
+
+def _cp_par_spec():
+    d, m = _cp_modele()
+    c = m["couches"]
+    v1 = m["percages"][0]["cp"]
+    egal([v1.get("src"), v1.get("spec"), v1.get("cote")], ["spec", "BD_1A", "dessous"],
+         u"provenance et face du contre-percage de V1")
+    egal([c[v1["de"]], c[v1["g"]]], ["BOTTOM", "IN1"],
+         u"face percee et couche a ne pas couper")
+    proche(v1["res"], 0.1, u"moignon residuel (MAX_STUB_LENGTH)")
+    # 0,8 + 0,035 + 0,2 + 0,035 sous IN1, moins le residuel
+    proche(v1["prof"], 1.07 - 0.1, u"profondeur comptee dans l'empilage")
+    vrai("d" not in v1, u"la spec ne donne pas le diametre du foret : %r" % v1)
+    vrai("cp" not in m["percages"][2], u"V3 n'est pas contre-perce")
+
+
+T(u"contre-percage : <Spec><Backdrill> pointee par le trou, comme KiCad",
+  _cp_par_spec)
+
+
+def _cp_par_foret():
+    d, m = _cp_modele()
+    # le foret n'est pas un trou de la carte : trois vias, aucun trou nu
+    egal(len(d.drills), 3, u"trous de la carte (les forets n'y entrent pas)")
+    vrai(not any("NON" in (t.plating or "").upper() for t in d.drills),
+         u"un foret est entre dans les trous : un via passerait pour non relie")
+    v2 = m["percages"][1]["cp"]
+    c = m["couches"]
+    egal([v2.get("src"), v2.get("cote"), c[v2["de"]], c[v2["g"]]],
+         ["calque", "dessous", "BOTTOM", "IN1"],
+         u"le Span BOTTOM -> IN2 du foret : la couche gardee est la suivante")
+    proche(v2["d"], 0.55, u"diametre du foret")
+    proche(v2["res"], 0.15, u"moignon residuel en microns, rendu en mm")
+    proche(v2["prof"], 1.07 - 0.15, u"profondeur")
+    egal([m["stats"]["contre_percages"], m["stats"]["contre_percages_orphelins"]],
+         [2, 1], u"comptes : deux vias contre-perces, un foret sans via")
+
+
+T(u"contre-percage : un foret a part rejoint son via, un foret seul est compte",
+  _cp_par_foret)
+
+
+def _cp_incomplet():
+    # sans MUST_NOT_CUT_LAYER, la couche gardee est inconnue : la fiche le
+    # dira, rien ne part au serveur
+    var = CP_XML.replace(b'<Backdrill type="MUST_NOT_CUT_LAYER">\n'
+                         b'     <Property layerOrGroupRef="IN1"/>\n'
+                         b'    </Backdrill>', b'', 1)
+    vrai(var != CP_XML, u"variante non construite")
+    _, m = _cp_modele(var)
+    v1 = m["percages"][0]["cp"]
+    vrai("g" not in v1 and "cote" not in v1 and "prof" not in v1,
+         u"une couche gardee a ete inventee : %r" % v1)
+    proche(v1["res"], 0.1, u"le residuel reste lu")
+    # une face qui n'en est pas une (IN2) : pas de cote
+    var2 = CP_XML.replace(b'<Property layerOrGroupRef="BOTTOM"/>',
+                          b'<Property layerOrGroupRef="IN2"/>', 1)
+    _, m2 = _cp_modele(var2)
+    vrai("cote" not in m2["percages"][0]["cp"], u"IN2 n'est pas une face")
+    # MAX_STUB_LENGTH en pouces
+    var3 = CP_XML.replace(b'value="0.1" unit="MM"', b'value="0.004" unit="INCH"', 1)
+    _, m3 = _cp_modele(var3)
+    proche(m3["percages"][0]["cp"]["res"], 0.1016, u"0,004 pouce en mm")
+
+
+T(u"contre-percage : couche gardee absente, face interne, unites", _cp_incomplet)
+
+
+T(u"contre-percage : la carte d'essai ordinaire n'en porte pas",
+  lambda: vrai(not any("cp" in p for p in MODELE["percages"])
+               and MODELE["stats"]["contre_percages"] == 0
+               and not getattr(DESIGN, "contre_percages_orphelins", []),
+               u"un contre-percage a ete invente"))
+
+
 # -- Un XML valide mais vide de carte -----------------------------------------
 def xml_sans_ecad():
     design = ipc2581_json.charger_octets(

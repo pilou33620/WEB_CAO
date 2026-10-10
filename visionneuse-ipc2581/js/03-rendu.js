@@ -275,8 +275,16 @@ function peindreTrous(c,dpr){
   c.strokeStyle="#5f656f";
   c.lineWidth=Math.max(0.4/V.vue.scale,0.02);
   c.stroke(V.trous.npth);                    // non métallisé : cerclé, pour le
-}                                            // distinguer d'un via au premier
+                                             // distinguer d'un via au premier
                                              // regard
+  /* le contre-perçage : un cercle orange, la couleur des avertissements de
+     fabrication — il se voit sur un plan de masse comme sur le substrat */
+  if(V.aff.cp&&V.trous.cp&&V.trous.ncp){
+    c.strokeStyle="#f59e0b";
+    c.lineWidth=Math.max(1.5/V.vue.scale,0.03);
+    c.stroke(V.trous.cp);
+  }
+}
 /* TOUT CE QUI EST RETENU, un morceau après l'autre. Un clic simple n'en met
    qu'un dans la liste et le dessin est celui d'avant ; Ctrl+clic en met
    plusieurs, et ils s'allument ensemble — c'est à cela qu'on voit qu'une ligne

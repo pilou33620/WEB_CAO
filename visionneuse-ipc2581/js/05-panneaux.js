@@ -50,6 +50,7 @@ const ELEMENTS=[
   ["pistes","Pistes","Les pistes et les arcs"],
   ["pads","Pastilles","Les pastilles des composants et les vias"],
   ["trous","Perçages","Les trous, métallisés ou non"],
+  ["cp","Contre-perçage","Les vias contre-percés (back-drill) : un cercle orange, au diamètre du foret quand le fichier le donne"],
   ["textes","Textes","Les textes du fichier (sérigraphie, repères)"],
   ["composants","Boîtiers","Le cadre de chaque composant"],
   ["refs","Repères","Le repère écrit dans le cadre du composant"]
@@ -103,6 +104,9 @@ function pnlInfos(){
     +l("Plans de cuivre",mdlEntier(s.plans))
     +l("Pastilles",mdlEntier(V.couches.reduce((n,c)=>n+c.pads.length,0)))
     +l("Perçages",mdlEntier(s.percages)+" ("+mdlEntier(s.percages_metallises)+" métallisés)")
+    +(s.contre_percages||s.contre_percages_orphelins
+      ?l("Contre-perçages",mdlEntier(s.contre_percages||0)+" via(s)"+
+         (s.contre_percages_orphelins?", "+mdlEntier(s.contre_percages_orphelins)+" foret(s) sans via":"")):"")
     +l("Textes",mdlEntier(s.textes))
     +"</table>";
 
@@ -615,6 +619,29 @@ function pnlSuppose(){
            "cote est un repli du lecteur (perçage + 0,3 mm), pas une valeur "+
            "lue.")+'">supposé</span>';
 }
+/* LE CONTRE-PERÇAGE D'UN VIA, tel que le fichier le déclare (`mdlContrePercage`) :
+   la face d'où le foret repasse, la couche à ne pas couper, le moignon
+   résiduel admis, et ce qui s'en déduit — la profondeur, comptée dans
+   l'empilage. Ce que le fichier tait se dit tu : une couche gardée absente ne
+   se devine pas, et le via ne part alors pas contre-percé au serveur. */
+function pnlContrePercage(t,l){
+  const cp=mdlContrePercage(t);
+  if(!cp)return "";
+  const mm=v=>String(Math.round(v*1000)/1000).replace(".",",")+" mm";
+  const face=cp.cote?(cp.cote==="dessous"?"depuis le dessous":"depuis le dessus")+
+    (cp.depart?" ("+mdlEsc(cp.depart)+")":""):
+    (cp.depart?"depuis "+mdlEsc(cp.depart)+", qui n'est pas une face":"face non déclarée");
+  return l("Contre-perçage",'<span class="val">'+face+"</span>")
+    +l("Ne pas couper",cp.garde?mdlEsc(cp.garde):'<span class="suppose">non déclarée</span>')
+    +l("Moignon résiduel",cp.res!=null?mm(cp.res):'<span class="suppose">non déclaré</span>')
+    +(cp.prof?l("Profondeur",mm(cp.prof)+" depuis la face"):"")
+    +(cp.d?l("Foret",mdlMes(cp.d)):"")
+    +l("Source",mdlEsc((cp.src==="calque"?"calque de perçage":"spécification")+
+                       (cp.spec?" "+cp.spec:"")))
+    +(cp.complet?"":l("Simulation","non transmis : "+
+                      (!cp.cote?"face inconnue":!cp.garde?"couche à ne pas couper inconnue":
+                       "moignon résiduel inconnu")));
+}
 /* CE QUI EST RETENU, QUAND IL Y EN A PLUS D'UN.
 
    POURQUOI CETTE FICHE EXISTE. Ctrl+clic construit une sélection à plusieurs
@@ -778,6 +805,7 @@ function pnlDetail(){
                      (ps.pad_sup?pnlSuppose():"")):"")
       +l("Définition",mdlEsc(t.ps||"—"))
       +l("Position",mdlNb(t.x)+" ; "+mdlNb(t.y)+" "+V.unite)
+      +pnlContrePercage(t,l)
       +"</table></div>";
   }
   if(s&&s.type==="pad"){
@@ -797,6 +825,7 @@ function pnlDetail(){
                      (ps.pad_sup?pnlSuppose():"")):"")
       +l("Définition",mdlEsc(s.ps||"—"))
       +l("Position",mdlNb(s.x)+" ; "+mdlNb(s.y)+" "+V.unite)
+      +(t?pnlContrePercage(t,l):"")
       +"</table></div>";
   }
   if(s&&s.type==="piste"){

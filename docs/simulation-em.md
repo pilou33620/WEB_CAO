@@ -415,8 +415,9 @@ chaque bout que le signal n'emprunte pas (`_moignons`, `python/simulation_em.py`
 la portée percée (`layer_from`, `layer_to`) moins les couches de départ et
 d'arrivée, en épaisseur d'empilage, avec sa résonance quart d'onde.
 
-Un via **contre-percé** (*back-drill*, règles de l'empilage de l'éditeur PCB)
-envoie en plus, dans sa fiche :
+Un via **contre-percé** (*back-drill*, règles de l'empilage de l'éditeur PCB,
+ou `<Spec><Backdrill>` d'un fichier IPC-2581 lu par la visionneuse) envoie en
+plus, dans sa fiche :
 
     "contre_percage": {"cote": "dessous" | "dessus",
                        "couche_garde": <indice d'empilage de la couche à ne pas couper>,
@@ -427,6 +428,11 @@ Le moignon de ce côté va alors de la couche empruntée à la pointe du foret �
 qu'avant ; sa fiche porte `contre_perce`, et `moignons.contre_percage` vaut
 `"applique"`. Un contre-perçage qui couperait une couche empruntée n'est pas
 compté (`"ignore"`, et un avertissement le dit). Sans le champ, rien ne change.
+L'éditeur compte parmi les couches empruntées celles où une **zone** du net
+touche le fût (liaison directe ou thermique, pas un dégagement) : un foret qui
+la couperait est une faute au DRC, et ce via ne part pas contre-percé. La
+visionneuse IPC-2581 n'envoie le champ qu'avec la **portée percée** déclarée
+par le fichier (`layer_from`, `layer_to`), sans laquelle rien ne se soustrait.
 La vérification de la carte lit la même chose dans le `cp` d'un perçage (voir
 [verification-carte.md](verification-carte.md#moignons-de-vias)).
 
