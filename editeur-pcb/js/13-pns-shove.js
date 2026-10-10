@@ -36,12 +36,31 @@
    toutes les pistes qui s'y rejoignent, lesquelles repartent aussitôt sur la
    pile. C'est `pushOrShoveVia`, et c'est la partie la plus fragile du PNS de
    KiCad comme d'ici — d'où les garde-fous, et le repli propre en cas d'échec.
+
+   Le budget d'un geste se compte en travail fait (examens d'isolation), et non
+   en millisecondes : la même poussée aboutit ou renonce de la même façon sur un
+   poste rapide, lent ou chargé. L'horloge ne reste qu'en garde-fou.
    ============================================================================= */
 
 const PNS_SHOVE_MAX=64;        // poussées d'un même geste : au-delà, on renonce
 const PNS_SHOVE_RANG=8;        // profondeur de propagation
 const PNS_SHOVE_REPRISE=3;     // fois qu'une même ligne accepte d'être repoussée
-const PNS_SHOVE_MS=25;         // budget de temps : le geste doit rester fluide
+/* Le budget d'un geste se compte en TRAVAIL, pas en temps. Un budget en
+   millisecondes rendait le shove dépendant de la machine : sur un poste chargé,
+   la même poussée renonçait (`cause:"temps"`) là où elle aboutissait au calme,
+   et le banc d'essai passait ou cassait selon la charge du moment. Le travail
+   se compte en examens d'isolation — un couple (objet gênant, segment examiné),
+   la requête à l'index du monde valant `PNS_SHOVE_INDEX` examens, ce qu'elle
+   coûte à peu près. Le plafond est choisi sur les cartes d'exemple : un geste
+   ordinaire en fait quelques centaines, la plus grosse poussée aboutie relevée
+   (un tracé qui écarte tout un faisceau) un peu moins de 50 000, à 0,3–0,5 µs
+   l'examen — environ 20 ms. Au-delà, la poussée renonce, ici comme ailleurs. */
+const PNS_SHOVE_TRAVAIL=60000; // examens d'isolation d'un même geste
+const PNS_SHOVE_INDEX=32;      // une requête à l'index, en examens
+/* L'horloge reste, en garde-fou des cas pathologiques seulement (une carte
+   géante où chaque examen coûte cher) : dix fois l'ancien budget, elle ne doit
+   jamais trancher un geste ordinaire, même sur une machine à genoux. */
+const PNS_SHOVE_MS=250;
 
 /* ==========================================================================
    Écarter une ligne
@@ -110,10 +129,12 @@ function pnsBoutsLibres(B,l,pts){
    qu'un tour existe, la **translation** en bloc, réservée aux lignes dont les
    deux bouts sont libres.
    Le tour s'essaie dans les deux sens ; on garde le plus court qui aboutisse,
-   reste à 45°, et ne sort pas de la carte. */
-function pnsShoveAside(B,line,gene){
+   reste à 45°, et ne sort pas de la carte.
+   `bud`, quand il est donné, reçoit le travail fait (`PNS_SHOVE_TRAVAIL`). */
+function pnsShoveAside(B,line,gene,bud){
   const genes=gene.hitems||pnsLineItems(gene);
   const conflit=pts=>{
+    if(bud)bud.n+=genes.length*Math.max(1,pts.length-1);
     for(const g of genes)
       for(const s of pnsSegs(pts))
         if(pnsGap(g,s,line.w)<pnsClr(g,line.net)-PNS_EPS)return g;
@@ -167,11 +188,12 @@ function pnsHullGroup(grp,net,w,mode){
    (`genes`) et les pastilles. Le reste du cuivre sera poussé à son tour.
    Un raccourci est gardé s'il est plus court, ou aussi long avec moins de
    coudes — entre deux points, tous les chemins à 45° sans retour en arrière
-   ont la même longueur. */
-function pnsTendre(B,line,pts,genes,hors){
+   ont la même longueur. Chaque raccourci examiné se compte dans `bud`. */
+function pnsTendre(B,line,pts,genes,hors,bud){
   const mode=cornerMode();
   const bad=q=>{
     if(!pnsIs45(q,mode)||!pnsSurCarte(q))return true;
+    if(bud)bud.n+=(genes.length+PNS_SHOVE_INDEX)*Math.max(1,q.length-1);
     for(const s of pnsSegs(q))
       for(const g of genes)
         if(pnsGap(g,s,line.w)<pnsClr(g,line.net)-PNS_EPS)return true;
@@ -410,11 +432,19 @@ function pnsShoveHeads(node,heads,skip,t0,opts){
   const lignes=[];                 // ce qui a bougé, prêt pour le dépôt
   const vias=[];
   const compte=new Map();          // items d'origine → nombre de reprises
+  /* Le travail fait, compté en examens d'isolation (`PNS_SHOVE_TRAVAIL`) : il
+     accompagne le résultat, réussi ou non, pour qui veut le mesurer. */
+  const bud={n:0};
+  const fin=r=>{r.travail=bud.n;return r;};
 
   for(let tour=0;tour<PNS_SHOVE_MAX;tour++){
-    if(debut!=null&&Date.now()-debut>PNS_SHOVE_MS)return {ok:false,cause:"temps"};
+    /* Le budget de travail d'abord : c'est lui qui décide, et il décide pareil
+       sur toutes les machines. L'horloge ne vient qu'après, en garde-fou. */
+    if(bud.n>PNS_SHOVE_TRAVAIL)return fin({ok:false,cause:"travail"});
+    if(debut!=null&&Date.now()-debut>PNS_SHOVE_MS)return fin({ok:false,cause:"temps"});
     const cur=pile[pile.length-1];
-    if(!cur)return {ok:true,node:B,lignes,vias,tete:teteItems};
+    if(!cur)return fin({ok:true,node:B,lignes,vias,tete:teteItems});
+    bud.n+=PNS_SHOVE_INDEX*(cur.hitems?cur.hitems.length:Math.max(1,cur.pts.length-1));
     /* Une tête ne pousse pas une autre tête : elles forment ensemble la
        géométrie qu'on essaie de poser, et se tiennent déjà à leur écart. Le
        cuivre poussé, lui, les voit toutes — sans quoi il reviendrait dedans. */
@@ -428,38 +458,38 @@ function pnsShoveHeads(node,heads,skip,t0,opts){
     if(!cur.fixe&&tetes.has(ob.it)){
       /* ... mais le cuivre poussé peut s'en écarter à nouveau : c'est lui qui
          bouge, de toutes les têtes à la fois cette fois-ci. */
-      if(!cur.rec||cur.reprises>=PNS_SHOVE_REPRISE)return {ok:false,cause:"tête"};
-      let neuf=pnsShoveAside(B,{l:cur.l,net:cur.net,w:cur.w,nets:cur.nets,pts:cur.pts},toutes);
-      if(!neuf)return {ok:false,cause:"tête"};
-      if(tendre)neuf=pnsTendre(B,cur,neuf,teteItems,new Set(cur.items));
+      if(!cur.rec||cur.reprises>=PNS_SHOVE_REPRISE)return fin({ok:false,cause:"tête"});
+      let neuf=pnsShoveAside(B,{l:cur.l,net:cur.net,w:cur.w,nets:cur.nets,pts:cur.pts},toutes,bud);
+      if(!neuf)return fin({ok:false,cause:"tête"});
+      if(tendre)neuf=pnsTendre(B,cur,neuf,teteItems,new Set(cur.items),bud);
       cur.items=pnsRelink(B,cur,neuf);
       cur.pts=neuf;cur.rec.pts=neuf;cur.rec.items=cur.items;cur.reprises++;
       continue;
     }
-    if(ob.it.k==="P")return {ok:false,cause:"pastille"};
+    if(ob.it.k==="P")return fin({ok:false,cause:"pastille"});
     /* Une piste circulaire ne se pousse pas : la pousser voudrait dire la
        rendre en segments droits, et l'arc serait perdu. Le tracé la contourne,
        comme il contourne une pastille. */
-    if(ob.it.arc)return {ok:false,cause:"courbe"};
-    if(cur.rang>=PNS_SHOVE_RANG)return {ok:false,cause:"profondeur"};
+    if(ob.it.arc)return fin({ok:false,cause:"courbe"});
+    if(cur.rang>=PNS_SHOVE_RANG)return fin({ok:false,cause:"profondeur"});
 
     if(ob.it.k==="V"){
       const via={item:ob.it};
-      if(!pnsShoveVia(B,via,cur,pile,cur.rang,lignes))return {ok:false,cause:"via"};
+      if(!pnsShoveVia(B,via,cur,pile,cur.rang,lignes))return fin({ok:false,cause:"via"});
       vias.push(via.deplace);
       continue;
     }
     /* Un segment : on assemble sa ligne entière — pousser un segment seul le
        détacherait de ses voisins — et on l'écarte de la ligne courante. */
     const L=B.assemble(ob.it);
-    if(L.pts.length<2)return {ok:false,cause:"assemblage"};
+    if(L.pts.length<2)return fin({ok:false,cause:"assemblage"});
     const vu=(compte.get(ob.it)||0)+1;
-    if(vu>PNS_SHOVE_REPRISE)return {ok:false,cause:"reprises"};
+    if(vu>PNS_SHOVE_REPRISE)return fin({ok:false,cause:"reprises"});
     for(const o of L.items)compte.set(o,vu);
-    let neufPts=pnsShoveAside(B,L,cur.fixe?toutes:cur);
-    if(!neufPts)return {ok:false,cause:"coincé"};
+    let neufPts=pnsShoveAside(B,L,cur.fixe?toutes:cur,bud);
+    if(!neufPts)return fin({ok:false,cause:"coincé"});
     if(tendre)neufPts=pnsTendre(B,L,neufPts,cur.fixe?teteItems:cur.items.concat(teteItems),
-                                new Set(L.items));
+                                new Set(L.items),bud);
     const orig=L.items.map(o=>o.src).filter(Boolean);
     const neufs=pnsRelink(B,L,neufPts);
     const rec={l:L.l,net:L.net,w:L.w,pts:neufPts,orig,items:neufs};
@@ -467,7 +497,7 @@ function pnsShoveHeads(node,heads,skip,t0,opts){
     pile.push({items:neufs,pts:neufPts,l:L.l,net:L.net,w:L.w,
                rang:cur.rang+1,reprises:vu,rec});
   }
-  return {ok:false,cause:"itérations"};
+  return fin({ok:false,cause:"itérations"});
 }
 
 /* Le premier objet qui serre l'un des objets de tête de trop près. */

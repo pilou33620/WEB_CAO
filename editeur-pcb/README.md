@@ -1860,6 +1860,30 @@ s'écarter n'existe que là ; le clic verse la branche dans la carte.
 Un traçé entier — les pistes posées **et** tout le cuivre qu'il a poussé — ne
 fait qu'un seul Ctrl+Z. Échap en cours de route remet tout en place de même.
 
+### Le budget d'un geste : du travail, pas des millisecondes
+
+Une poussée doit rester assez courte pour suivre la souris. Ce budget était
+autrefois de 25 ms d'horloge : sur un poste chargé, la même poussée renonçait
+(`cause:"temps"`) là où elle aboutissait au calme, et les essais du shove
+passaient ou cassaient selon la charge de la machine. Il se compte maintenant
+en **travail fait** — des examens d'isolation, un couple (objet gênant,
+segment examiné), une requête à l'index valant `PNS_SHOVE_INDEX` = 32 examens —
+et plafonne à `PNS_SHOVE_TRAVAIL` = 60 000 (`cause:"travail"` au-delà). Le
+résultat porte ce qu'il a coûté (`r.travail`).
+
+Le plafond vient des cartes d'exemple, chaque boîtier tiré dans six
+directions et des tracés lancés à travers toute la carte, sur chaque face :
+
+| Geste | Médiane | 9 sur 10 sous | Plus grosse poussée aboutie |
+|---|---|---|---|
+| boîtier tiré | ~400 | ~2 300 | ~1 100 |
+| tracé à travers la carte | ~400 | ~6 000 | ~50 000 (≈ 20 ms) |
+
+Un examen coûte de 0,3 à 0,5 µs : le plafond tient dans l'ancien budget sur un
+poste ordinaire, mais il décide pareil partout. L'horloge reste en garde-fou
+des seuls cas pathologiques (`PNS_SHOVE_MS` = 250 ms, dix fois l'ancien
+budget), qu'un geste ordinaire n'atteint pas même sur une machine à genoux.
+
 ### L'index spatial
 
 Le même nœud sert au tracé, au glissement et au DRC. Le contrôle comptait

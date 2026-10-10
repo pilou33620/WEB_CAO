@@ -155,7 +155,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "pnsNode","pnsBuild","pnsWorld","pnsInvalidate","pnsStamp","pnsHullOct",
   "PNS_D8","PNS_D4","pnsSupPad","pnsSupVia","pnsSupSeg","pnsPlaneMeet","pnsOct","pnsUnloop",
   "PNS_WALK_MAX","pnsSurCarte","pnsHullWalk","pnsWalkCross","pnsWalkSide","pnsWalkaround","routeSegsTo",
-  "PNS_SHOVE_MAX","PNS_SHOVE_RANG","pnsPushOut","pnsShoveAside","pnsRelink","pnsShoveVia",
+  "PNS_SHOVE_MAX","PNS_SHOVE_RANG","PNS_SHOVE_TRAVAIL","PNS_SHOVE_MS","pnsPushOut","pnsShoveAside","pnsRelink","pnsShoveVia",
   "pnsShove","pnsShoveHeads","pnsApply","pnsSlideOut","pnsBoutsLibres","crossN","ROUTE_MODES","routeMode","setRouteMode","pushSnap","drawShove",
   "placeVia","mkVia","viaObstacle","viaIsole","viaTrou","viaPaire","dpViaGap","holeClr","viaDrill","pnsItemVia","pnsPairGap","pnsWorld","pnsClr","pnsLineItems","pnsViaEscape","pnsViaSuites","pnsPointEscape","dpNets","dpLine","dpAxis","dpAxisDirect","dpPose",
   "PNS_OPT_WIN","pnsAnchors","pnsMergeTry","pnsOptimize","routeOptimizeTail","pnsEchardes","pnsDejog",
@@ -8763,6 +8763,55 @@ T("shove : Ctrl+Z et l'abandon remettent le cuivre poussé en place",()=>{
   undo();
   if(serialize()!==avant)
     throw new Error("Ctrl+Z devait défaire le tracé ET la poussée");
+});
+/* Le shove ne dépend pas de la vitesse de la machine : son budget se compte en
+   travail fait, pas en millisecondes. On rejoue les mêmes gestes avec une
+   horloge qui avance de 20 ms à chaque lecture — un poste à genoux, où
+   l'ancien budget de 25 ms renonçait dès la deuxième pile — et le résultat
+   doit être le même, au micron et à l'examen près. */
+function horlogeLente(fn){
+  const vrai=Date.now;let retard=0;
+  Date.now=()=>vrai()+(retard+=20);
+  try{return fn();}finally{Date.now=vrai;}
+}
+T("shove : le résultat ne dépend pas de la vitesse de la machine",()=>{
+  if(!(PNS_SHOVE_TRAVAIL>0)||!(PNS_SHOVE_MS>=250))
+    throw new Error("budget de travail, et horloge en simple garde-fou");
+  const propage=()=>{
+    plateau();
+    for(let k=0;k<3;k++)
+      S.tracks.push({l:0,net:"G"+k,w:0.3,x1:10,y1:20.3+k*0.6,x2:50,y2:20.3+k*0.6});
+    touch();
+    setMode("track");
+    startRoute(15,20,true);
+    S.route.net="SIG";S.route.w=0.3;
+    routeToPoint({x:45,y:20});
+    const sh=S.route.shove;
+    const r={bad:!!S.route.bad,travail:sh&&sh.travail,
+             lignes:sh?JSON.stringify(sh.lignes.map(L=>[L.net,L.pts])):null};
+    stepRoute();commitRoute();setMode("select");
+    r.doc=serialize();
+    return r;
+  };
+  const a=propage(), b=horlogeLente(propage);
+  if(a.bad||!a.lignes)throw new Error("au calme, la poussée devait aboutir");
+  if(!(a.travail>0&&a.travail<=PNS_SHOVE_TRAVAIL))
+    throw new Error("le travail fait accompagne le résultat : "+a.travail);
+  if(b.bad)throw new Error("horloge lente : le trajet devait passer quand même");
+  if(b.travail!==a.travail)throw new Error("travail "+a.travail+" au calme, "+b.travail+" horloge lente");
+  if(b.lignes!==a.lignes)throw new Error("les lignes poussées diffèrent selon l'horloge");
+  if(b.doc!==a.doc)throw new Error("la carte posée diffère selon l'horloge");
+  // le boîtier tiré sur une piste : même poussée, même carte
+  const boitier=()=>{
+    const {reg,f}=boitierSurPiste("shove");
+    // le cuivre et la place du boîtier ; les numéros d'objet, eux, changent à chaque essai
+    try{return JSON.stringify({tracks:S.tracks,vias:S.vias.map(v=>[v.x,v.y,v.net]),x:f.x,y:f.y});}
+    finally{undo();boitierFin(reg);}
+  };
+  const c=boitier(), d=horlogeLente(boitier);
+  if(!JSON.parse(c).tracks.some(t=>t.net==="X"&&(t.y1!==25||t.y2!==25)))
+    throw new Error("au calme, les pastilles devaient pousser la piste");
+  if(d!==c)throw new Error("boîtier tiré : le cuivre poussé diffère selon l'horloge");
 });
 T("shove : la conduite face à l'obstacle se règle et se range avec le document",()=>{
   plateau();
