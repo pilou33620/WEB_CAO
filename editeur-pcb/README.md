@@ -921,10 +921,21 @@ tenue, rouge sinon, gris pour un net non routé.
 | Onglet | Ce qu'on y voit et règle |
 | --- | --- |
 | Nets | classe (modifiable, aussi pour tous les nets cochés), longueur, délai (vias compris), vias, Z₀ ; impédance cible et tolérance, longueur min / max, vias max, couches permises. Une case vide hérite de la classe, dont la valeur s'affiche en grisé. Un clic sur le nom ferme la fenêtre et sélectionne son routage |
-| Classes | largeur, isolation, via, perçage (les règles de la fenêtre des règles, mêmes valeurs), et les contraintes électriques de la classe. Pour une impédance cible : la largeur qui la donne sur chaque couche de signal, d'après l'empilage, à appliquer d'un clic |
+| Classes | largeur, isolation, via, perçage (les règles de la fenêtre des règles, mêmes valeurs), **une largeur par couche** de signal, et les contraintes électriques de la classe. Pour une impédance cible : la largeur qui la donne sur chaque couche, d'après l'empilage, à poser d'un clic sur sa couche ou sur toutes |
 | Paires diff. | longueurs P et N, écart en mm et en ps, longueur découplée face à la règle |
 | Groupes d'appariement | des nets qui doivent avoir la même longueur ou le même délai, à une tolérance près, autour d'une référence (le plus long, ou un net choisi). Ce qui manque à chaque net est affiché ; un groupe se crée en cochant ses nets, ou depuis les pistes sélectionnées sur la carte |
 | Isolation entre classes | une matrice classe × classe : « Alimentation ↔ RF : 0,5 mm » |
+
+**Largeur par couche.** Une même impédance ne demande pas la même piste en
+microruban (dessus, dessous) et en triplaque (couches internes) : prise
+entre deux plans, la piste de 50 Ω est nettement plus fine. Une classe garde sa
+largeur générale et peut la préciser couche par couche (`wL` sur la classe,
+lue par `classWidth(net, couche)`) ; une couche sans réglage prend la largeur
+générale, si bien qu'une carte sans réglage ne change pas. Le routeur part
+avec la largeur de la couche active et en change au via ; chaque tronçon
+garde celle de sa couche. Le DRC juge une piste à la largeur de sa couche, et
+« aligner sur la classe » (panneau Propriétés) la suit. Quand le nombre de
+couches change, dessus et dessous gardent leur réglage, comme le cuivre.
 
 **Ce que la carte en fait** :
 
@@ -2829,9 +2840,9 @@ désactive au lieu de disparaître.
 - Une pastille est rectangulaire (coins adoucis ou angles droits), oblongue ou
   ronde, avec sa rotation propre. Pas de forme quelconque : ni pastille en
   polygone, ni plage thermique découpée, ni chanfrein.
-- Gestionnaire de contraintes : une classe n'a qu'une largeur, pas une par
-  couche ; les contraintes se saisissent dans le PCB, pas encore dans le
-  schéma ; pas de topologie (étoile, chaîne) ni de longueur de moignon.
+- Gestionnaire de contraintes : les contraintes se saisissent dans le PCB,
+  pas encore dans le schéma ; pas de topologie (étoile, chaîne) ni de
+  longueur de moignon.
 - Plans (Draftsman) : les vues sont placées d'office et les cotes se limitent
   à l'encombrement du contour ; ni cote posée à la main, ni vue de détail
   agrandie, ni export DXF. Le texte est en Helvetica standard (non

@@ -869,8 +869,20 @@ function drawRoute(c){
   drawShove(c);
   const col=layerColor(R.layer);
   c.lineCap="round";c.lineJoin="round";
-  c.globalAlpha=0.85;c.strokeStyle=col;c.lineWidth=R.w;
-  strokeRuns(c,R.done);               // d'un seul trait : sinon les coutures se voient
+  c.globalAlpha=0.85;
+  /* d'un seul trait par couche et par largeur : sinon les coutures se voient ;
+     un changement de couche peut changer la largeur (classWidth) */
+  const lots=new Map();
+  for(const s of R.done){
+    const k=s.l+"|"+(s.w!=null?s.w:R.w);
+    let v=lots.get(k);if(!v)lots.set(k,v=[]);v.push(s);
+  }
+  for(const [k,segs] of lots){
+    const p=k.split("|");
+    c.strokeStyle=layerColor(+p[0]);c.lineWidth=+p[1];
+    strokeRuns(c,segs);
+  }
+  c.strokeStyle=col;c.lineWidth=R.w;
   c.setLineDash([px(6),px(4)]);
   if(R.bad)c.strokeStyle=C_ERR;       // l'aperçu passe au rouge s'il ne respecte pas l'isolation
   strokeRuns(c,R.preview);

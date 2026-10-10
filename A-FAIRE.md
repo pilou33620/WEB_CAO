@@ -13,7 +13,7 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 700 essais a
 
 | Composant | Statut | Couverture / Bancs |
 | --- | --- | --- |
-| **Éditeur PCB** | En service | 867 essais (`editeur-pcb/test/harness.js`), dont 13 pour les plans (Draftsman) et 10 pour le gestionnaire de contraintes |
+| **Éditeur PCB** | En service | 871 essais (`editeur-pcb/test/harness.js`), dont 13 pour les plans (Draftsman) et 14 pour le gestionnaire de contraintes |
 | **Éditeur Schématique** | En service | 119 essais (`editeur-schematique/test/harness.js`) |
 | **Visionneuse IPC-2581** | En service | 186 essais (`harness-sim.js`) + 59 (`banc-essai.py`) |
 | **SI — Impédance & Vias (`ligne_mom` v2.5.0)** | En service (0,3 à 0,4 % vs étalons) | 199 cas (`python/test/banc-ligne-mom.py`) |
@@ -141,7 +141,8 @@ lib/
 
 - [x] **Gestionnaire de contraintes** (`editeur-pcb/js/30-contraintes.js`, modèle dans `01-core.js`, 10/10/2026) : tableur Nets / Classes / Paires / Groupes d'appariement / Isolation entre classes, mesure à côté de chaque contrainte (longueur, délai, vias, Z₀) ; contraintes de net ou héritées de la classe (Z cible et tolérance, longueur min / max, vias max, couches permises) ; largeur pour Z cible couche par couche ; groupes en longueur ou en délai, cible du serpentin ; matrice d'isolation classe × classe appliquée au routeur, au DRC, aux zones et aux Gerber ; écarts au DRC ; export CSV ; tableau des impédances contrôlées au plan de fabrication. La visionneuse IPC-2581 et `commun/` ne sont pas touchés. 10 essais (`harness.js`).
   - [ ] Saisie des contraintes dans le schéma (directives sur les nets), transmises au PCB par l'ECO.
-  - [ ] Largeur de classe par couche (le routeur prendrait celle de la couche active), topologie et longueur de moignon.
+  - [x] Largeur de classe par couche (`wL`, `classWidth`) : le routeur prend celle de la couche active et en change au via, le DRC et « aligner sur la classe » la suivent, la largeur pour Z cible se pose couche par couche ; report quand le nombre de couches change. 4 essais.
+  - [ ] Topologie (point à point, chaîne / daisy-chain, étoile, fly-by) et longueur de moignon (stub) par net ou par classe.
 
 ### Simulation SI (Signal Integrity)
 - [x] **Mode différentiel dans la cascade de paramètres S** :

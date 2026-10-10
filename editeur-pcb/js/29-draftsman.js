@@ -799,14 +799,17 @@ function dfImpedances(){
   for(const c of S.classes){
     const r=C.classes[c.name];
     if(!r||!r.z)continue;
+    /* la largeur de la classe sur chaque couche de signal (classWidth) :
+       c'est elle qui est dessinée, et que le fabricant ajuste à la cible */
     const ls=[];
     for(let l=0;l<S.cu;l++){
-      const w=cmLargeurPourZ(r.z,l);
-      if(w)ls.push("L"+(l+1)+" : "+fmt(w,3).replace(".",","));
+      if(typeof cmCoucheSignal==="function"&&!cmCoucheSignal(l))continue;
+      const w=c.wL&&c.wL[l]>0?c.wL[l]:c.w;
+      ls.push("L"+(l+1)+" : "+fmt(w,3).replace(".",","));
     }
     out.push({classe:c.name,
       z:fmt(r.z,1).replace(".",",")+" Ω ± "+fmt(r.zTol!=null?r.zTol:10,0)+" %",
-      largeurs:ls.length?ls.join(" ; "):"hors d'atteinte sur l'empilage",
+      largeurs:ls.length?ls.join(" ; "):"aucune couche de signal",
       nets:nets.filter(n=>className(n)===c.name).length});
   }
   return out;

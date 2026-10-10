@@ -764,6 +764,29 @@ function setCuCount(n,silent){
   };
   for(const t of S.tracks) t.l=clamp(map(t.l),0,n-1);
   for(const z of S.zones) z.l=clamp(map(z.l),0,n-1);
+  /* les réglages par couche suivent leur couche comme le cuivre : dessus et
+     dessous d'abord, les internes par rang ; une couche qui disparaît
+     emporte le sien */
+  if(old!==n){
+    const ordre=k=>k===0||k===old-1?0:1;
+    for(const c of S.classes){
+      if(!c.wL)continue;
+      const neuf={};
+      for(const k of Object.keys(c.wL).map(Number).filter(k=>k<old).sort((a,b)=>ordre(a)-ordre(b)||a-b)){
+        const j=k===0?0:(k===old-1?n-1:(k<n-1?k:-1));
+        if(j>=0&&neuf[j]==null)neuf[j]=c.wL[k];
+      }
+      if(Object.keys(neuf).length)c.wL=neuf;else delete c.wL;
+    }
+    const C=S.contraintes;
+    if(C)for(const tab of [C.classes,C.nets])
+      for(const k of Object.keys(tab||{})){
+        const r=tab[k];
+        if(!r||!Array.isArray(r.couches))continue;
+        const c=[...new Set(r.couches.filter(i=>i<old).map(i=>i===0?0:(i===old-1?n-1:(i<n-1?i:-1))).filter(i=>i>=0))].sort((a,b)=>a-b);
+        if(c.length)r.couches=c;else delete r.couches;
+      }
+  }
   for(const v of S.vias){
     v.a=clamp(map(v.a),0,n-1); v.b=clamp(map(v.b),0,n-1);
     if(v.a>v.b){const k=v.a;v.a=v.b;v.b=k;}
@@ -2160,7 +2183,18 @@ function setNetClass(net,name){
   if(!name||name===defClass().name)delete S.netClass[net];
   else S.netClass[net]=name;
 }
-function defaultWidth(net){return classOf(net).w;}
+/* LA LARGEUR D'UNE CLASSE SUR UNE COUCHE. Une classe a une largeur, `w`, et
+   peut la préciser couche par couche dans `wL` ({ "0": 0.37, "3": 0.37 }) :
+   une même impédance ne demande pas la même piste en microruban (dessus,
+   dessous) et en triplaque (couches internes). Une couche absente de `wL`
+   prend `w` — d'où, sans `wL`, exactement la largeur d'avant. `l` absent :
+   la largeur générale. */
+function classWidth(net,l){
+  const cl=classOf(net);
+  const v=(l!=null&&cl.wL)?+cl.wL[l]:NaN;
+  return v>0?v:cl.w;
+}
+function defaultWidth(net,l){return classWidth(net,l);}
 /* Le perçage réellement fait pour un via de cette classe : la cote demandée,
    sans jamais manger la rondelle au point de la faire disparaître. `mkVia` pose
    d'après cette formule ; tout ce qui a besoin de connaître le trou AVANT que le

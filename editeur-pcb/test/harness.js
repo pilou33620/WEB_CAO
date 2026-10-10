@@ -399,7 +399,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "cmNorm","cmCle","cmClrClasses","cmClrMax","cmMesures","cmRegleDe","cmVerifier","cmEvaluerGroupe",
   "cmManqueLongueur","cmLargeurPourZ","cmDrc","cmEdit","cmPoser","cmPoserPhysique","cmPoserMatrice",
   "cmNouveauGroupe","cmGroupeModifier","cmGroupeSupprimer","cmCsv","cmLignesNets","cmOuvrir","cmFermer",
-  "cmAppliquerLargeurZ","CM","CM_ONGLETS","className"];
+  "cmAppliquerLargeurZ","CM","CM_ONGLETS","className","classWidth","cmPoserLargeurCouche","normClass","routeVia"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -22142,8 +22142,15 @@ T("contraintes : largeur pour une impédance, couche par couche",()=>{
   if(plan!=null&&cmLargeurPourZ(50,plan)!==null)throw new Error("un plan ne porte pas de piste");
   const cl=className("RF_ANT");
   cmPoser("classes",cl,"z","50");
+  const w0=classOf("RF_ANT").w;
   const ww=cmAppliquerLargeurZ(cl,0);
-  if(Math.abs(classOf("RF_ANT").w-ww)>1e-9)throw new Error("largeur de classe non appliquée");
+  if(Math.abs(classWidth("RF_ANT",0)-ww)>1e-9)throw new Error("largeur de L1 non appliquée");
+  if(classOf("RF_ANT").w!==w0)throw new Error("la largeur générale de la classe ne bouge pas");
+  undo();
+  if(classOf("RF_ANT").wL)throw new Error("Ctrl+Z doit retirer la largeur par couche");
+  const toutes=cmAppliquerLargeurZ(cl);
+  const sig=[...Array(S.cu).keys()].filter(l=>!["gnd","pwr","shield"].includes(layerRole(l)));
+  if(Object.keys(toutes).length!==sig.length)throw new Error("une largeur par couche de signal : "+JSON.stringify(toutes));
   undo();
   cmRaz();
 });
@@ -22223,6 +22230,71 @@ T("contraintes : impédances contrôlées au plan de fabrication",()=>{
   if(!dfChercher(doc,"impedances controlees").length)throw new Error("tableau absent du plan");
   if(!dfChercher(doc,cl).some(h=>h.cat==="impedance"))throw new Error("classe absente du tableau");
   cmRaz();
+});
+
+T("largeur par couche : sans réglage, la largeur de la classe partout",()=>{
+  exCharger(1);
+  for(const c of S.classes)if(c.wL)throw new Error("une carte d'exemple n'a pas de largeur par couche");
+  for(let l=0;l<S.cu;l++)if(classWidth("SPI_CS",l)!==classOf("SPI_CS").w)throw new Error("L"+(l+1));
+  if(classWidth("SPI_CS")!==classOf("SPI_CS").w)throw new Error("sans couche : la largeur générale");
+});
+T("largeur par couche : lecture bornée, aller-retour neutre",()=>{
+  const c=normClass({name:"X",w:0.2,wL:{"0":0.37,"3":"0.12","9":0.01,"a":1,"-1":0.3,"2":99}},0);
+  if(JSON.stringify(c.wL)!=='{"0":0.37,"3":0.12}')throw new Error(JSON.stringify(c.wL));
+  if("wL" in normClass({name:"Y",w:0.2,wL:{"0":0}},0))throw new Error("une table vide ne s'écrit pas");
+  exCharger(1);
+  cmPoserLargeurCouche(className("SPI_CS"),3,"0,18");
+  const a=serialize();
+  loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("l'aller-retour change le document");
+  if(classWidth("SPI_CS",3)!==0.18||classWidth("SPI_CS",0)!==classOf("SPI_CS").w)throw new Error("largeur perdue");
+  if(cmPoserLargeurCouche(className("SPI_CS"),3,"0,01")!==false)throw new Error("0,01 mm doit être refusé");
+  cmPoserLargeurCouche(className("SPI_CS"),3,"");
+  if(classOf("SPI_CS").wL)throw new Error("vider la case rend la largeur de la classe");
+});
+T("largeur par couche : le routeur la prend, et en change au via",()=>{
+  setCuCount(4);
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];touch();
+  S.avoid=false;
+  const cl=defClass(), avant=cl.wL;
+  cl.wL={0:0.42,3:0.17};
+  try{
+    setMode("track");S.active=0;
+    startRoute(0,0,true);
+    if(S.route.w!==0.42)throw new Error("départ sur L1 : 0,42 attendu, "+S.route.w);
+    updateRoute(0,10);stepRoute();
+    routeToLayer(3);
+    if(S.route.w!==0.17)throw new Error("après le via vers L4 : 0,17 attendu, "+S.route.w);
+    updateRoute(10,10);stepRoute();
+    routeToLayer(1);
+    if(S.route.w!==cl.w)throw new Error("L2 sans réglage : la largeur de la classe, "+S.route.w);
+    updateRoute(10,20);stepRoute();
+    commitRoute();setMode("select");
+    const w=S.tracks.map(t=>t.l+":"+t.w).join(" ");
+    if(w!=="0:0.42 3:0.17 1:"+cl.w)throw new Error("chaque tronçon garde la largeur de sa couche : "+w);
+  }finally{cl.wL=avant;if(!avant)delete cl.wL;S.avoid=true;setCuCount(2);}
+});
+T("largeur par couche : DRC, alignement sur la classe, report des couches",()=>{
+  exCharger(1);
+  const t=S.tracks.find(x=>x.net==="SPI_CS"), cl=classOf("SPI_CS");
+  cmPoserLargeurCouche(cl.name,t.l,String(t.w+0.1));
+  runDrc();
+  const d=S.drc.filter(x=>/^Piste de .* de la classe /.test(x.msg)&&/ sur L\d/.test(x.msg));
+  if(!d.length)throw new Error("piste plus fine que la largeur de sa couche : défaut attendu");
+  applyClasses();
+  if(S.tracks.filter(x=>x.net==="SPI_CS"&&x.l===t.l).some(x=>Math.abs(x.w-cl.wL[t.l])>1e-9))
+    throw new Error("aligner sur la classe doit prendre la largeur de la couche");
+  if(S.tracks.filter(x=>x.net==="SPI_CS"&&x.l!==t.l).some(x=>Math.abs(x.w-cl.w)>1e-9))
+    throw new Error("les autres couches gardent la largeur de la classe");
+  /* 4 couches → 2 : dessus et dessous gardent leur réglage, les internes partent */
+  cl.wL={0:0.31,1:0.12,3:0.29};
+  cmPoser("nets","SPI_CS","couches","1,2,4");
+  setCuCount(2);
+  try{
+    if(JSON.stringify(cl.wL)!=='{"0":0.31,"1":0.29}')throw new Error("report des largeurs : "+JSON.stringify(cl.wL));
+    if(JSON.stringify(S.contraintes.nets.SPI_CS.couches)!=="[0,1]")
+      throw new Error("report des couches permises : "+JSON.stringify(S.contraintes.nets.SPI_CS.couches));
+  }finally{delete cl.wL;exCharger(1);}
 });
 
 (async()=>{

@@ -296,13 +296,32 @@ function cmGroupeSupprimer(id){
   cmEdit(C=>{C.groupes=C.groupes.filter(x=>x.id!==id);});
 }
 /* Largeur de la classe ← la largeur qui donne sa Z cible sur la couche `l`. */
+/* La largeur d'une classe sur UNE couche (`wL`, voir classWidth dans
+   01-core.js). Vide : la couche reprend la largeur générale de la classe. */
+function cmPoserLargeurCouche(classe,l,txt){
+  const c=S.classes.find(x=>x.name===classe);
+  const v=cmLire("w",txt);
+  if(!c||!Number.isInteger(+l)||+l<0||+l>=S.cu)return false;
+  if(v!=null&&!(v>=0.05&&v<=50))return false;
+  cmEdit(()=>{
+    const wL=Object.assign({},c.wL||{});
+    if(v==null)delete wL[+l];else wL[+l]=r3(v);
+    if(Object.keys(wL).length)c.wL=wL;else delete c.wL;
+  });
+  return true;
+}
+/* Largeur de la classe sur la couche `l` ← celle qui y donne sa Z cible.
+   `l` absent : toutes les couches de signal où la cible est atteignable, en
+   un seul pas d'historique. Rend la largeur posée (ou la liste), null sinon. */
 function cmAppliquerLargeurZ(classe,l){
-  const r=cmModele().classes[classe];
-  if(!r||!r.z)return null;
-  const w=cmLargeurPourZ(r.z,l);
-  if(!w)return null;
-  cmPoserPhysique(classe,"w",String(w));
-  return w;
+  const r=cmModele().classes[classe], c=S.classes.find(x=>x.name===classe);
+  if(!r||!r.z||!c)return null;
+  const couches=l==null?[...Array(S.cu).keys()]:[l];
+  const pose={};
+  for(const k of couches){const w=cmLargeurPourZ(r.z,k);if(w)pose[k]=w;}
+  if(!Object.keys(pose).length)return null;
+  cmEdit(()=>{c.wL=Object.assign({},c.wL||{},pose);});
+  return l==null?pose:pose[l];
 }
 
 /* ==========================================================================
@@ -391,6 +410,7 @@ function cmChangement(e){
   const p=d.cm.split(CM_SEP);
   if(p[0]==="net"||p[0]==="classe")cmPoser(p[0]==="net"?"nets":"classes",p[1],p[2],t.value);
   else if(p[0]==="phys"){if(!cmPoserPhysique(p[1],p[2],t.value))hint("Valeur refusée : un nombre positif, en mm.");}
+  else if(p[0]==="wl"){if(!cmPoserLargeurCouche(p[1],+p[2],t.value))hint("Largeur refusée : entre 0,05 et 50 mm, ou vide pour la largeur de la classe.");}
   else if(p[0]==="mat")cmPoserMatrice(p[1],p[2],t.value);
   else if(p[0]==="netclasse"){
     const net=p[1];
@@ -433,9 +453,15 @@ function cmClic(e){
   }
   else if(a==="largeurz"){
     const [cl,l]=v.split(CM_SEP);
-    const w=cmAppliquerLargeurZ(cl,+l);
-    hint(w?"Classe « "+cl+" » : largeur "+cmMm(w,3)+" mm, celle de sa Z cible sur "+cmNomCouche(+l)+".":
-           "Impédance cible hors d'atteinte sur "+cmNomCouche(+l)+".");
+    if(l==="*"){
+      const p=cmAppliquerLargeurZ(cl);
+      hint(p?"Classe « "+cl+" » : "+Object.keys(p).map(k=>cmNomCouche(+k)+" "+cmMm(p[k],3)).join(", ")+" mm, celles de sa Z cible.":
+             "Impédance cible hors d'atteinte sur toutes les couches.");
+    }else{
+      const w=cmAppliquerLargeurZ(cl,+l);
+      hint(w?"Classe « "+cl+" » : "+cmMm(w,3)+" mm sur "+cmNomCouche(+l)+", la largeur de sa Z cible.":
+             "Impédance cible hors d'atteinte sur "+cmNomCouche(+l)+".");
+    }
     cmRendreCorps();
   }else if(a==="grpcreer"){
     const nom=(document.getElementById("cmGrpNom")||{}).value||"";
@@ -558,7 +584,7 @@ function cmHtmlClasses(){
     'modifiées ici, elles le sont là-bas, et le routeur, le DRC et les zones les appliquent.</span><span class="cm-sp"></span>'+
     '<button type="button" class="tb" data-a="regles" data-v="cls">Règles…</button></div>';
   h+='<div class="cm-table-w"><table class="cm-table"><thead><tr><th>Classe</th><th class="n">Nets</th>'+
-    '<th>Largeur</th><th>Isolation</th><th>Via Ø</th><th>Perçage</th>'+
+    '<th>Largeur</th><th>Par couche</th><th>Isolation</th><th>Via Ø</th><th>Perçage</th>'+
     '<th>Z cible Ω</th><th>Tol. %</th><th>L min</th><th>L max</th><th>Vias max</th><th>Couches</th><th>Largeur pour Z cible</th></tr></thead><tbody>';
   for(const c of S.classes){
     const r=C.classes[c.name]||{};
@@ -570,13 +596,24 @@ function cmHtmlClasses(){
         if(!cmCoucheSignal(l))continue;            // un plan ne porte pas de piste
         const w=cmLargeurPourZ(r.z,l);
         cs.push(w?'<button type="button" class="cm-mini" data-a="largeurz" data-v="'+esc(c.name+CM_SEP+l)+
-          '" title="Prendre cette largeur pour la classe">'+cmNomCouche(l)+" "+cmMm(w,3)+'</button>':
+          '" title="Prendre cette largeur pour la classe sur '+cmNomCouche(l)+'">'+cmNomCouche(l)+" "+cmMm(w,3)+'</button>':
           '<span class="cm-nr" title="pas de plan de référence ou cible hors d\'atteinte">'+cmNomCouche(l)+' —</span>');
       }
+      if(cs.some(x=>/largeurz/.test(x)))cs.push('<button type="button" class="cm-mini" data-a="largeurz" data-v="'+
+        esc(c.name+CM_SEP+"*")+'" title="Prendre la largeur de la Z cible sur chaque couche de signal">→ toutes</button>');
       lz=cs.join(" ");
     }
+    /* la largeur propre à chaque couche de signal ; vide : celle de la classe */
+    const parCouche=[];
+    for(let l=0;l<S.cu;l++){
+      if(!cmCoucheSignal(l))continue;
+      const v=c.wL&&c.wL[l]>0?c.wL[l]:"";
+      parCouche.push('<span class="cm-wl">'+cmNomCouche(l)+" "+
+        cmChamp("wl"+CM_SEP+c.name+CM_SEP+l,v,c.w,"Largeur sur "+cmNomCouche(l)+", mm ; vide : "+cmMm(c.w,3)+" mm, celle de la classe")+'</span>');
+    }
     h+='<tr><td><b>'+esc(c.name)+'</b></td><td class="n">'+(parClasse.get(c.name)||0)+'</td>'+
-      '<td>'+cmChamp(ph("w"),c.w,"","Largeur de piste, mm")+'</td>'+
+      '<td>'+cmChamp(ph("w"),c.w,"","Largeur de piste, mm — sur les couches sans largeur propre")+'</td>'+
+      '<td class="cm-lz">'+parCouche.join(" ")+'</td>'+
       '<td>'+cmChamp(ph("clr"),c.clr,"","Isolation, mm")+'</td>'+
       '<td>'+cmChamp(ph("via"),c.via,"","Diamètre de via, mm")+'</td>'+
       '<td>'+cmChamp(ph("drill"),c.drill,"","Perçage de via, mm")+'</td>'+
@@ -589,7 +626,8 @@ function cmHtmlClasses(){
       '<td class="cm-lz">'+lz+'</td></tr>';
   }
   h+='</tbody></table></div><p class="cm-note">La largeur pour Z cible est calculée couche par couche d\'après l\'empilage '+
-    '(diélectrique et plans de référence), sur les couches de signal. Une classe n\'a qu\'une largeur : choisissez la couche où elle se route. '+
+    '(diélectrique et plans de référence), sur les couches de signal ; un clic la pose sur sa couche. Une largeur par couche l\'emporte sur '+
+    'la largeur de la classe : le routeur la prend en changeant de couche, le DRC la contrôle, « aligner sur la classe » la suit. '+
     'Les classes à impédance cible figurent au plan de fabrication (Fichier → Plans).</p>';
   return h;
 }

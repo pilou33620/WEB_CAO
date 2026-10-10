@@ -616,14 +616,14 @@ function runDrc(){
       }
   /* largeur, net manquant, débordement */
   for(const t of S.tracks){
-    const cl=classOf(t.net), m=trkMid(t);
+    const cl=classOf(t.net), m=trkMid(t), wc=classWidth(t.net,t.l);
     /* Une piste de paire différentielle est plus fine que sa classe par
        construction : c'est l'impédance qui décide de sa largeur, pas la classe
        de net. C'est la règle de paire qui la borne, et `dpDrc` le vérifie. */
-    if(t.w<cl.w-1e-6&&!(typeof dpOfNet==="function"&&dpOfNet(t.net)))
+    if(t.w<wc-1e-6&&!(typeof dpOfNet==="function"&&dpOfNet(t.net)))
       out.push({x:m.x,y:m.y,l:t.l,
-        msg:"Piste de "+fmt(t.w,3)+" mm sous les "+fmt(cl.w,2)+
-            " mm de la classe "+cl.name});
+        msg:"Piste de "+fmt(t.w,3)+" mm sous les "+fmt(wc,2)+
+            " mm de la classe "+cl.name+(cl.wL&&cl.wL[t.l]>0?" sur "+cuId(t.l,S.cu):"")});
     if(!t.net)
       out.push({x:m.x,y:m.y,l:t.l,msg:"Piste sans net"});
   }

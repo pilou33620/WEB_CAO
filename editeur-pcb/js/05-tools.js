@@ -301,7 +301,7 @@ function normStack(s,cu){
 function normClass(c,i){
   const src=(c&&typeof c==="object")?c:{};
   const via=dRange(src.via,0.8,0.2,20);
-  return {
+  const out={
     name:dStr(src.name,40).trim()||("Classe "+(i+1)),
     w:dRange(src.w,0.3,0.05,50),
     clr:dRange(src.clr,0.25,0.02,50),
@@ -310,6 +310,16 @@ function normClass(c,i){
        mais un perçage aberrant ne se replie pas sur 0.15000000000000002 */
     drill:dRange(src.drill,Math.min(0.4,via-0.1),0.05,r3(via-0.05))
   };
+  /* largeurs par couche (classWidth) : présentes seulement si l'une vaut */
+  if(src.wL&&typeof src.wL==="object"&&!Array.isArray(src.wL)){
+    const wL={};
+    for(const k of Object.keys(src.wL)){
+      const l=+k, v=+src.wL[k];
+      if(Number.isInteger(l)&&l>=0&&l<64&&Number.isFinite(v)&&v>=0.05&&v<=50)wL[l]=v;
+    }
+    if(Object.keys(wL).length)out.wL=wL;
+  }
+  return out;
 }
 /* ---------- paires différentielles et leurs règles ----------
    Une paire ne vaut que par ses deux nets : sans eux, ou s'ils sont les mêmes,
@@ -3060,7 +3070,7 @@ function routeTarget(x,y){
     S.hover={x:m.x,y:m.y};return m;
   }
   S.hover=null;
-  const w=S.route?S.route.w:defaultWidth(net);
+  const w=S.route?S.route.w:defaultWidth(net,l);
   // le point de départ sert d'ancre : depuis un centre de pastille hors grille,
   // le quadrillage seul ferait sortir la piste de travers dès le premier segment
   const a=S.route?S.route.pt:null;
@@ -3074,7 +3084,7 @@ function startRoute(x,y,exact){
   /* `snap` : l'état de la carte avant le geste. Le shove déplace du cuivre dès
      le premier clic ; sans cet instantané, ni l'abandon ni le Ctrl+Z ne
      sauraient le remettre en place. */
-  S.route={layer:S.active,net,w:defaultWidth(net),
+  S.route={layer:S.active,net,w:defaultWidth(net,S.active),
            pt:{x:t.x,y:t.y},done:[],vias:[],preview:[],flip:false,bad:false,pushed:false,
            shove:null,shoved:false,snap:serialize()};
   if(net)buildList();
@@ -3189,7 +3199,7 @@ function stepRoute(){
   const auto=!!R.contourne||!!R.shove;
   if(R.shove&&pnsApply(R.shove)){R.shoved=true;R.shove=null;refreshPanels();}
   const ajout=R.preview.length;
-  for(const s of R.preview)R.done.push(s);
+  for(const s of R.preview)R.done.push(s.w!=null?s:Object.assign({w:R.w},s));
   const last=R.preview[R.preview.length-1];
   R.pt={x:last.x2,y:last.y2};
   R.preview=[];
@@ -3222,6 +3232,9 @@ function routeToLayer(i){
   if(i===R.layer)return;
   if(!placeVia(R.pt.x,R.pt.y,R.net,Math.min(R.layer,i),Math.max(R.layer,i),true))return;
   R.layer=i;setActive(i);
+  /* la couche change, la largeur de la classe aussi (classWidth) : chaque
+     tronçon garde celle de sa couche */
+  R.w=defaultWidth(R.net,i);
 }
 /* Le via tel qu'il sera posé : diamètre et perçage de la classe du net, plage de
    couches ramenée à la carte entière quand elle est dégénérée. Séparé de la
@@ -3377,7 +3390,7 @@ function commitRoute(){
   let prev=null;
   const posed=[];
   for(const s of R.done){
-    const t={l:s.l,net:R.net,w:R.w,x1:r3(s.x1),y1:r3(s.y1),x2:r3(s.x2),y2:r3(s.y2)};
+    const t={l:s.l,net:R.net,w:s.w!=null?s.w:R.w,x1:r3(s.x1),y1:r3(s.y1),x2:r3(s.x2),y2:r3(s.y2)};
     // l'arrondi au micron peut avaler un segment : rien à poser, et un segment
     // de longueur nulle salit le .json comme le Gerber
     if(t.x1===t.x2&&t.y1===t.y2)continue;
@@ -3441,6 +3454,7 @@ function backRoute(){
   const s=R.done.pop();
   R.pt={x:s.x1,y:s.y1};
   if(R.layer!==s.l){R.layer=s.l;setActive(s.l);}
+  if(s.w!=null)R.w=s.w;
   draw();
 }
 

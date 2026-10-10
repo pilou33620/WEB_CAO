@@ -221,7 +221,7 @@ function applyClasses(){
   push();
   let nt=0,nv=0;
   for(const t of S.tracks){
-    const w=classOf(t.net).w;
+    const w=classWidth(t.net,t.l);
     if(Math.abs(t.w-w)>1e-6){t.w=w;nt++;}
   }
   for(const v of S.vias){
@@ -1626,8 +1626,8 @@ function propsTrack(box,t){
       '</select></div>'+
     '<div class="prop"><label>Classe du net</label><select id="tC">'+
       classOptionsHtml(cl.name)+'</select></div>'+
-    '<div class="empty" style="padding:6px 12px">Classe '+esc(cl.name)+' : '+fmt(cl.w,2)+
-      ' mm, isolation '+fmt(cl.clr,2)+' mm.<br>'+
+    '<div class="empty" style="padding:6px 12px">Classe '+esc(cl.name)+' : '+fmt(classWidth(t.net,t.l),2)+
+      ' mm'+(cl.wL&&cl.wL[t.l]>0?' sur '+esc(cuId(t.l,S.cu)):'')+', isolation '+fmt(cl.clr,2)+' mm.<br>'+
       'Tirez une extrémité pour la déplacer · Alt+glisser la détache du coude · '+
       'Alt+clic sur le segment y insère un point.</div>'+
     '<div class="prop"><div class="row">'+
@@ -1657,7 +1657,7 @@ function propsTrack(box,t){
   };
   $("tCls").onclick=()=>{
     push();
-    for(const o of S.tracks)if(o.net===t.net)o.w=classOf(t.net).w;
+    for(const o of S.tracks)if(o.net===t.net)o.w=classWidth(t.net,o.l);
     touch();refreshPanels();draw();
   };
   $("tSel").onclick=()=>selectNetRouting(t.net);
@@ -1706,7 +1706,7 @@ function propsTracks(box,list,vias){
   };
   mpBranche("msW",list,(t,v)=>{t.w=Math.max(0.05,v);},1);
   $("msCls").onclick=()=>{
-    push();list.forEach(t=>t.w=classOf(t.net).w);touch();refreshPanels();draw();
+    push();list.forEach(t=>t.w=classWidth(t.net,t.l));touch();refreshPanels();draw();
   };
   $("msDel").onclick=deleteSel;
   mpBrancher(box);
