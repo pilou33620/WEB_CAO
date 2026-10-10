@@ -792,8 +792,9 @@ R/V/C_fixture), et `[Rgnd]`/`[Rpower]`. Les conventions de la norme sont
 tenues : courant positif quand il **entre** par la broche, tensions de
 `[Pullup]` et `[POWER Clamp]` relatives à leur référence (V_ref − V_broche),
 suffixes T G M k m u n p f (M = méga, m = milli), « NA » renvoyant à typ.
-Le reste (`[Package]`, `[Pin]`, sélecteurs, AMI) est ignoré **et dit** ; le
-boîtier (R/L/C_pkg) n'entre pas dans le calcul.
+Depuis `ibis` 1.1.0, le boîtier et les broches sont lus aussi (voir plus
+bas) ; ce qui reste ignoré (sous-modèles, `[Model Spec]`, boîtiers décrits
+par sections) est **dit** dans le résultat.
 
 **Le tampon émetteur, dans le temps** : I_broche = Ku(t)·I_pu(V) + Kd(t)·I_pd(V)
 + I_pc(V) + I_gc(V) + C_comp·dV/dt. Les commandes Ku, Kd viennent des formes
@@ -822,11 +823,77 @@ le pire cas, l'œil statistique et l'égaliseur ont besoin (l'écart entre les
 deux est rendu et signalé au-delà de 5 %) ; et la **séquence PRBS** elle-même,
 en régime établi, qui fait l'œil PRBS sans aucune linéarisation (PRBS7 ou 9 :
 PRBS15 serait trop long pas à pas, et le pire cas couvre de toute façon les
-longues suites). En différentiel, deux tampons en opposition attaquent
-chacun le demi-circuit du mode impair, le mode commun tenu à sa valeur
-continue (point fixe des deux niveaux) — la conversion de mode d'une paire
-dissymétrique n'est pas suivie. Un récepteur IBIS sans diode n'est que son
-C_comp : le calcul reste alors linéaire.
+longues suites). Un récepteur IBIS sans diode n'est que son C_comp : le
+calcul reste alors linéaire.
+
+#### Le boîtier et les broches (`oeil` 2.1.0, `ibis` 1.1.0)
+
+**Ce qui est lu.** `[Package]` (R_pkg, L_pkg, C_pkg typ/min/max, la colonne
+suit le coin du tampon) est le boîtier moyen ; `[Pin]` donne, broche par
+broche, le signal, le modèle et R_pin/L_pin/C_pin, qui **priment** valeur par
+valeur (« NA » renvoie à `[Package]`) ; un `[Package Model]` qui renvoie à un
+`[Define Package Model]` du même fichier prime sur les deux — on en prend la
+**diagonale** (matrices pleine, en bande ou creuse) ; les mutuelles sont lues
+pour être **dites** (le plus fort couplage de la broche, k_L et k_C), pas
+comptées ; un boîtier décrit par sections (`Len=`) n'est pas lu, et
+`[Pin]`/`[Package]` le remplacent. `[Model Selector]` : une broche qui
+désigne un sélecteur prend le modèle choisi s'il en fait partie, le premier
+sinon. Les broches POWER, GND et NC sont refusées.
+
+**Où il se pose.** Topologie des simulateurs IBIS : C_comp au die, puis
+R_pkg et L_pkg en série, puis C_pkg à la broche. Le boîtier est **linéaire** :
+on le fond dans la cascade ABCD du canal, entre le die (où le tampon et
+C_comp restent au Newton) et la piste, côté émetteur (die → broche) et côté
+récepteur (broche → die, avant la charge R/C_comp). Rien n'est ajouté au pas
+de temps — ni inconnue, ni intégration —, et le boîtier passe par le même
+chemin que la piste (paramètres S, fenêtre, réponses impulsionnelles) ; le
+prix est que ses résonances au-delà du haut de la grille sont lissées comme
+le reste, ce qui ne touche pas les boîtiers usuels (L_pkg / R₀ et R₀·C_pkg
+sont bien plus longs que le lissage). Un boîtier nul ne touche pas la
+cascade : l'œil est celui d'avant, au bit près. `boitier: false` le retire.
+
+**Dans l'interface**, la liste des `[Pin]` (et, en différentiel, celle des
+`[Diff Pin]`) s'ajoute au choix du modèle ; choisir une broche choisit son
+modèle et son boîtier.
+
+#### La paire de tampons : deux brins, et le mode commun
+
+Le demi-circuit du mode impair supposait deux tampons parfaitement opposés.
+Depuis la 2.1.0, en différentiel avec un tampon IBIS (ou un `decalage_n`
+saisi), **chaque tampon attaque son brin**. La paire symétrique de
+`simulation_em` est donnée par ses deux modes, sans couplage entre eux : la
+cascade du mode impair (`abcd_dd`, V_d = V_p − V_n, I_d = (I_p − I_n)/2) et
+celle du mode commun, **reconstruite exactement des S_cc** que `s_diff` rend
+(V_c = (V_p + V_n)/2, I_c = I_p + I_n, sur Z_diff/4) — `simulation_em` n'est
+pas modifié. On les remet par brin (V = T_V·V_modes, I = T_I·I_modes : quatre
+accès, ondes de tension sur R₀ = Z_diff/2 par brin), et ce qui est propre à
+un brin s'y pose tel quel : boîtier de chaque broche, C_comp de chaque
+entrée, surlongueur d'un brin (le `delta_l_mm` de la paire, posé comme une
+ligne seule sur le brin inverse — le dessin ne dit pas lequel est le plus
+long). La terminaison du récepteur est la résistance différentielle et, au
+besoin, une impédance de mode commun (`r_charge_mc`, prise médiane ; 0 =
+flottante). Le pas de temps est celui de la ligne seule, avec quatre ondes
+entrantes : les deux bouts se résolvent à tour de rôle (deux Newton 2×2 en
+scalaires, jusqu'à ce que rien ne bouge), le Newton 4×4 en recours.
+
+**`[Diff Pin]`.** En différentiel, la broche choisie désigne une paire
+(broche, broche inverse, vdiff, tdelay typ/min/max) : chaque brin prend le
+modèle et le boîtier de **sa** broche ; sans broche, la première paire dont
+le modèle est celui choisi est prise d'office (et dit). Le brin inverse
+reçoit la séquence inverse **retardée de tdelay** (colonne du coin) ;
+`decalage_n` le remplace. Le vdiff du fichier du **récepteur** est son seuil :
+`marge_vdiff_prbs` et `marge_vdiff_pire` (demi-hauteur − vdiff), signalés
+quand ils sont négatifs ; à défaut, le `Rx_Receiver_Sensitivity` d'un .ami.
+Un coin ou un modèle différent pour le brin inverse : `coin_n`, `modele_n`.
+
+**Ce qui est rendu** (`mode_commun`) : le mode commun au récepteur (continu,
+crête à crête, crête, efficace), celui de l'émetteur, la **conversion**
+20·log(V_cm,cc / V_diff,cc), les 40 premiers bits du PRBS en courbe (mode
+commun et différentiel), les dissymétries trouvées, et — dès qu'il y en a —
+la hauteur d'œil brute (sans égaliseur, meilleure phase) de la paire réelle
+**et** de la même paire rendue symétrique (brin n = brin p, sans décalage) :
+c'est l'effet de la dissymétrie sur l'œil différentiel. Sans S_cc (paire
+sans cascade de mode commun), on retombe sur le demi-circuit, et on le dit.
 
 #### Les vias de la paire (`simulation_em` 4.4.0)
 
@@ -842,14 +909,38 @@ mutuelle entre les deux fûts est comptée** (voir « La mutuelle des fûts de l
 paire » plus bas) : L − M en mode impair, L + M en mode commun. `s_diff` dit
 combien de vias et de coudes il porte, et l'œil le répète.
 
+#### IBIS-AMI : le .ami lu, pas exécuté
+
+Un `[Algorithmic Model]` renvoie à une bibliothèque binaire du fabricant
+(.dll, .so) et à un fichier `.ami`. **La bibliothèque n'est pas exécutée** —
+du code natif venu d'un fichier téléversé n'est pas une option. Le renvoi est
+lu (plateforme, bibliothèque, .ami) et dit ; le `.ami`, chargé à côté du
+.ibs, est lu (`ibis.lire_ami`) : syntaxe en arbre à parenthèses, chaînes entre
+guillemets, paramètres réservés (`Reserved_Parameters`) et propres au modèle
+(`Model_Specific`), chacun avec son chemin, son Usage, son Type, sa valeur
+(Value, Default ou typ d'un Range), sa plage et sa liste. L'interface le
+montre. `ibis.proposer_egaliseur` en tire, **par des noms usuels et en le
+disant**, une proposition pour l'égaliseur de référence de l'œil : FFE des
+prises numérotées (−1, 0, 1… ou pre/main/post) ramenées à Σ|c| = 1 (refusée
+si ce sont des codes de réglage) ; DFE du nombre de prises et de leur plage ;
+CTLE d'une liste ou d'une plage de gains en dB (forme `pcie3`, **pôles
+supposés** fp1 = débit/4, fp2 = débit) ; RJ (Tx_Rj, Rx_Rj en quadrature), DJ
+(Tx_Dj, Tx_DCD, Rx_Dj, Rx_DCD), bruit (Rx_Noise), seuil
+(Rx_Receiver_Sensitivity). Avec `ami_regler`, la proposition est appliquée
+(la gigue et le bruit saisis l'emportent). Une FFE avec un émetteur IBIS se
+pose linéairement sur la forme d'onde simulée — c'est ce que fait le flot
+AMI sur la réponse du canal analogique. L'adaptation et la récupération
+d'horloge du modèle ne sont pas reproduites.
+
 **Hors du modèle**, et dit dans chaque résultat : condensateurs de liaison
-(couplage AC), boîtier des modèles IBIS, conversion de mode d'une paire de
-tampons dissymétriques.
+(couplage AC), mutuelles d'un `[Package Model]` (dites, pas comptées) et
+boîtiers par sections, exécution des modèles AMI, géométrie dissymétrique
+de la paire (les deux brins restent de même section dans la cascade).
 L'Ethernet cuivre (MLT-3, PAM-5) n'est pas binaire et n'a pas de gabarit.
 L'I²C (drain ouvert, front montant RC) n'a pas de gabarit non plus — mais son
 tampon IBIS se simule maintenant.
 
-**Étalons** ([python/test/banc-oeil.py](../python/test/banc-oeil.py), 36 cas) :
+**Étalons** ([python/test/banc-oeil.py](../python/test/banc-oeil.py), 45 cas) :
 la ligne adaptée sans pertes rend un œil parfait (demi-excursion, 1 UI, retard
 de la ligne) ; une ligne ouverte attaquée par 30 Ω rend l'œil pire cas du
 diagramme en treillis à 0,3 % près ; avec 10 Ω, l'œil fermé se dit fermé ; le
@@ -868,6 +959,17 @@ superposition de ses réponses à un échelon ; un récepteur IBIS sans diode
 rend l'œil de sa capacité ; des diodes franches tiennent le dépassement d'une
 ligne ouverte sous 0,55 V au-delà des rails ; deux vias traversants qui
 laissent des moignons de 2,6 mm ferment l'œil différentiel à 16 Gb/s.
+**2.1.0** : un boîtier nul rend l'œil d'avant au bit près ; L_pkg = 5 nH
+derrière 50 Ω ralentit le front selon la loi exponentielle-gaussienne
+(τ = L/(R_s + Z₀)) à 3 % près ; C_pkg = 2 pF à la broche d'un récepteur
+adapté renvoie l'écho −e^(−t/τ), τ = Z₀C/2, dont le creux simulé est le creux
+calculé à 3 % près ; `[Pin]` prime sur `[Package]` et la diagonale d'un
+`[Package Model]` sur les deux ; le tdelay de `[Diff Pin]` (40 ps) se mesure
+entre les deux brins du récepteur à 2 % près ; une paire symétrique n'a pas
+de mode commun (< 1 µV), décalée de 30 ps elle en a un de
+V_cc·erf(Δ/(2√2·σ)) à 2 % près ; une paire dessinée passe tout le chemin
+(S_cc → mode commun) ; un `.ami` d'exemple se lit et propose FFE, DFE, CTLE
+et gigue.
 
 ### RF — le S₂₁ d'un réseau entre deux ports
 
