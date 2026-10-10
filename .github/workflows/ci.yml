@@ -147,6 +147,22 @@ jobs:
           # hors CI jusqu'ici, il s'etait casse sans que rien ne le signale
           node editeur-pcb/test/banc-trois-ponts.js
 
+      - name: Éditeur PCB — export IPC-2581, relu par la chaîne de la visionneuse
+        run: |
+          # Le banc de l'éditeur, juste au-dessus, a écrit ses exports dans
+          # editeur-pcb/dist/essai-ipc2581/ : ils se relisent par le parseur de
+          # la visionneuse, comme le banc d'essai du parseur. Le XSD de l'IPC
+          # n'est pas dans le dépôt ; on prend la copie que KiCad garde pour ses
+          # propres essais. Injoignable, la validation XSD est sautée et le
+          # banc le dit -- le reste de l'aller-retour tourne quand même.
+          pip install --quiet lxml || true
+          if curl -fsSL -o /tmp/IPC-2581C.xsd https://gitlab.com/kicad/code/kicad/-/raw/master/qa/data/pcbnew/ipc2581/IPC-2581C.xsd; then
+            export IPC2581_XSD=/tmp/IPC-2581C.xsd
+          else
+            echo "::warning title=XSD IPC-2581 injoignable::validation XSD sautée"
+          fi
+          python editeur-pcb/test/banc-ipc2581-export.py
+
       - name: Éditeur schématique — assemblage puis banc d'essai
         run: |
           python editeur-schematique/outils/build-monofichier.py

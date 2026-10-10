@@ -425,7 +425,9 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "cmDepuisSchema","cmTousGroupes","cmResumeSchema","cmLireChamp","pcbAppliquerEco","pcbDetecterDisparitesEco","cmEcartSchema",
   /* rooms (32-rooms.js) */
   "roomsDepuisDoc","roomsListe","roomNomCourt","roomCouleur","roomAuLabel","roomEtiquette","roomsBasculer",
-  "roomsPeindre","roomsPeindreFond","roomsVisibles","ctx","profilEtat"];
+  "roomsPeindre","roomsPeindreFond","roomsVisibles","ctx","profilEtat",
+  /* export IPC-2581 (35-ipc2581-export.js) */
+  "ipc2581Document","ipc2581Fichier","exportIpc2581","ipcFonctionCuivre"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -24547,6 +24549,172 @@ T("empilage : la rugosité et les options partent au serveur, et se saisissent a
   S.tracks.pop();
   for(let i=0;i<S.cu;i++)setCuRug(i,null);
   delete S.stack.sim;touch();
+});
+
+/* ==========================================================================
+   Export IPC-2581 (35-ipc2581-export.js)
+   Les deux cartes d'exemple, et la seconde chargée de ce que les exemples
+   n'ont pas — contre-perçage, rugosité, composants dessous à angle
+   quelconque, pastilles chanfreinée, polygonale et oblongue, arc, découpe de
+   carte, trous NPTH, variante de montage. Chaque export est écrit dans
+   dist/essai-ipc2581/ avec ce que l'éditeur en attend ; c'est
+   test/banc-ipc2581-export.py qui les relit par la chaîne de la visionneuse
+   (ipc2581_parser.py → ipc2581_json.py) et les valide contre le XSD.
+   ========================================================================== */
+const IPC_DATE="2026-10-10T12:00:00Z";
+/* ce que l'éditeur attend de la relecture, dans le repère du fichier */
+function ipcAttendu(){
+  const o=gOrigin(), X=x=>r4(x-o.x), Y=y=>r4(o.y-y), n=S.cu;
+  const nomCu=i=>S.cuL[i].name;
+  const nets=new Set();
+  for(const t of S.tracks)if(t.net)nets.add(t.net);
+  for(const v of S.vias)if(v.net)nets.add(v.net);
+  for(const z of S.zones)if(z.net)nets.add(z.net);
+  const comps=S.fps.map(fp=>({ref:fp.ref,x:X(fp.x),y:Y(fp.y),r:r4((360-(fp.rot||0))%360),m:fp.side?1:0,
+    couche:nomCu(fp.side?n-1:0),val:fp.value||"",mpn:fp.csvMpn||"",pose:varEstMonte(fp,S.variantes.active||""),
+    pins:padsWorld(fp).map(q=>{if(q.net)nets.add(q.net);return {num:String(q.n),x:X(q.x),y:Y(q.y)};})}));
+  const pistes={}, arcs=[];
+  for(const t of S.tracks){
+    if(arcOf(t)){const m=trkMid(t);arcs.push({couche:nomCu(t.l),mid:[X(m.x),Y(m.y)],len:r4(trkLen(t))});}
+    else pistes[nomCu(t.l)]=(pistes[nomCu(t.l)]||0)+1;
+  }
+  const empilage=[{nom:"MASQUE_DESSUS",ep:S.stack.maskT,dk:S.stack.maskEr,type:"SOLDERMASK"}];
+  for(let i=0;i<n;i++){
+    empilage.push({nom:nomCu(i),ep:cuT(i),type:ipcFonctionCuivre(i)});
+    if(i<diCount(n)){const d=diAt(i);empilage.push({nom:"DIELECTRIQUE_"+(i+1),ep:d.t,dk:d.er,df:d.df,mat:d.mat});}
+  }
+  if(n>1)empilage.push({nom:"MASQUE_DESSOUS",ep:S.stack.maskT,dk:S.stack.maskEr,type:"SOLDERMASK"});
+  const rug={};
+  for(let i=0;i<n;i++){const r=cuRug(i);if(r&&r.m==="hammerstad")rug[nomCu(i)]=r.rms;}
+  /* les points témoins du remplissage : le centre de tout via et de toute
+     pastille d'un autre net est hors du cuivre de la zone, celui d'un via du
+     net est dedans */
+  const zones=[];
+  for(const z of S.zones){
+    const dedans=[], dehors=[], dans=p=>inPoly(p.x,p.y,z.pts)&&inPoly(p.x,p.y,boardPoly());
+    for(const v of S.vias)
+      if(z.l>=v.a&&z.l<=v.b&&dans(v))((v.net||"")===(z.net||"")?dedans:dehors).push([X(v.x),Y(v.y)]);
+    for(const fp of S.fps)for(const q of padsWorld(fp))
+      if(padLayers(fp,q).includes(z.l)&&dans(q)&&(q.net||"")!==(z.net||""))dehors.push([X(q.x),Y(q.y)]);
+    zones.push({couche:nomCu(z.l),net:z.net,dedans,dehors});
+  }
+  const trous={VIA:S.vias.length,PLATED:0,NONPLATED:(S.holes||[]).length};
+  for(const fp of S.fps)for(const q of padsOf(fp))if(q.drill>0)trous.PLATED++;
+  const textes=S.fps.filter(fp=>fp.silk!==false&&(!fp.side||n>1)).length+
+    (S.drawings||[]).filter(d=>d.shape==="text"&&(d.layer!=="silkB"||n>1)).length;
+  return {cuivres:S.cuL.map(L=>L.name),nets:[...nets].sort(),composants:comps,pistes,arcs,
+    vias:S.vias.length,trous,
+    /* les sommets de l'éditeur, et les arcs que dxfSegments y reconnaît :
+       un arc passe par les sommets, il ne s'écarte des cordes que de leur
+       flèche */
+    contour:{aire:r4(Math.abs(signedArea(boardPoly()))-boardCutouts().reduce((a,D)=>a+Math.abs(signedArea(D)),0)),
+             decoupes:boardCutouts().length,
+             bords:[boardPoly()].concat(boardCutouts()).map(P=>P.map(p=>[X(p.x),Y(p.y)])),
+             arcs:[boardPoly()].concat(boardCutouts()).reduce((a,P)=>
+               a+dxfSegments(P.map(p=>({x:X(p.x),y:Y(p.y)}))).filter(s=>s.t==="a").length,0)},
+    empilage,epaisseur:stackTotal(),rugosite:rug,zones,textes,
+    masque:[maskOpenings(0).length,n>1?maskOpenings(1).length:0],
+    pate:[pasteOpenings(0).length,n>1?pasteOpenings(1).length:0],
+    contre_percage:cpViasPerces().filter(c=>!c.faute).map(c=>({x:X(c.v.x),y:Y(c.v.y),cote:c.cote,
+      garde:nomCu(c.garde),res:c.res,diam:c.diam,prof:c.prof}))};
+}
+/* la seconde carte, chargée de ce qui manque aux exemples */
+/* la première carte aux coins arrondis, percée d'une découpe ronde : des
+   cordes de 5° et de 10°, que l'export rend en arcs */
+function ipcCarteArrondie(){
+  exCharger(0);
+  const b=S.board, r=4, P=[];
+  for(const [cx,cy,a0] of [[b.x+b.w-r,b.y+b.h-r,0],[b.x+r,b.y+b.h-r,90],[b.x+r,b.y+r,180],[b.x+b.w-r,b.y+r,270]])
+    for(let k=0;k<=18;k++){const a=(a0+5*k)*Math.PI/180;P.push({x:r4(cx+r*Math.cos(a)),y:r4(cy+r*Math.sin(a))});}
+  b.pts=P;
+  b.cutouts=[Array.from({length:36},(_,k)=>({x:r4(35+1.5*Math.cos(k*Math.PI/18)),y:r4(27+1.5*Math.sin(k*Math.PI/18))}))];
+  boardChanged();
+}
+function ipcCarteChargee(){
+  exCharger(1);
+  const r=cpAjouter({cote:"dessous",garde:1,res:0.15});
+  cmPoser("nets","GND","cp",r.id);
+  setCuRug(0,{m:"hammerstad",rms:2});
+  setCuRug(3,{m:"huray",a:0.5,sr:1.5});
+  const R=mkFp("R99","4k7","0603",2);
+  Object.assign(R,{x:62,y:27,rot:30,side:1,nets:{1:"SPI_CS",2:"GND"},csvMpn:"RC0603FR-074K7L",manufacturer:"Yageo"});
+  const U=mkFp("U98","PROTO","",3);
+  Object.assign(U,{x:10,y:36,rot:45,side:1,nets:{1:"SWDIO",2:"GND",3:"SWCLK"},
+    pads:[{n:1,x:-1.5,y:0,w:1,h:0.8,shape:"chamfer",chamfer:0.25,drill:0,rot:0},
+          {n:2,x:0,y:0.2,w:1,h:1,shape:"poly",pts:[{x:-0.4,y:-0.5},{x:0.5,y:-0.3},{x:0.3,y:0.5},{x:-0.5,y:0.4}],drill:0,rot:0},
+          {n:3,x:1.6,y:0,w:1.2,h:0.7,shape:"oval",drill:0,rot:90}]});
+  S.fps.push(R,U);
+  S.tracks.push({l:3,net:"SWDIO",w:0.25,x1:12,y1:40,x2:18,y2:40,ca:-1.4});
+  S.board.cutouts=[[{x:61,y:35},{x:64,y:35},{x:64,y:39},{x:61,y:39}]];
+  S.holes.push(mkHole(3,3,2.5),mkHole(63,3,2.5));
+  S.cuts.push({id:S.nextId++,l:1,pts:[{x:60,y:5},{x:64,y:5},{x:64,y:9},{x:60,y:9}]});
+  S.drawings.push({id:S.nextId++,shape:"text",type:"text",layer:"silkT",text:"WEB_CAO",x1:50,y1:5,x2:50,y2:5,
+                   size:1.5,height:1.5,rot:0,width:0.15});
+  S.variantes={liste:[{id:"v1",nom:"Lite"}],active:"v1"};
+  S.fps.find(f=>f.ref==="C5").nonMonte=["v1"];
+  touch();
+}
+T("IPC-2581 : les cartes d'exemple écrites pour le banc Python, contenu compté",()=>{
+  const avant=serialize();
+  const dir=path.join(__dirname,"..","dist","essai-ipc2581");
+  fs.mkdirSync(dir,{recursive:true});
+  try{
+    for(const [nom,prep] of [["exemple-0",()=>exCharger(0)],["exemple-1",()=>exCharger(1)],
+                             ["exemple-1-charge",ipcCarteChargee],["exemple-0-arrondi",ipcCarteArrondie]]){
+      prep();
+      const d=ipc2581Document({date:IPC_DATE}), s=d.stats;
+      const plats=S.tracks.filter(t=>!arcOf(t)).length;
+      if(s.composants!==S.fps.length||s.vias!==S.vias.length||s.pistes!==plats||s.arcs!==S.tracks.length-plats)
+        throw new Error(nom+" : "+JSON.stringify(s));
+      if(s.approx)throw new Error(nom+" : "+s.approx+" zone(s) au remplissage approché");
+      if(s.ilots<S.zones.length)throw new Error(nom+" : une zone sans cuivre");
+      if(d.xml.indexOf('<IPC-2581 revision="C" xmlns="http://webstds.ipc.org/2581">')<0)throw new Error("en-tête");
+      /* le même document, au même instant, donne le même fichier — et
+         l'export ne touche pas à la carte */
+      const doc=serialize();
+      if(ipc2581Document({date:IPC_DATE}).xml!==d.xml)throw new Error(nom+" : deux exports différents");
+      if(serialize()!==doc)throw new Error(nom+" : l'export a modifié la carte");
+      fs.writeFileSync(path.join(dir,nom+".xml"),d.xml);
+      fs.writeFileSync(path.join(dir,nom+".attendu.json"),JSON.stringify(ipcAttendu(),null,1));
+    }
+    /* ce que la carte chargée doit avoir écrit */
+    const x=fs.readFileSync(path.join(dir,"exemple-1-charge.xml"),"utf8");
+    for(const m of ['<Backdrill type="START_LAYER">','<Property layerOrGroupRef="Bottom"/>',
+                    '<Backdrill type="MUST_NOT_CUT_LAYER">','<Property layerOrGroupRef="Inner 1"/>',
+                    '<Property value="0.15" unit="MM"/>','<SpecRef id="BD_B_In1_150UM"/>',
+                    '<Conductor type="SURFACE_ROUGHNESS_UPFACING"','<Property value="2" unit="MICRON"/>',
+                    'name="HURAY_NODULE_RADIUS" value="0.5" unit="MICRON"','<Xform rotation="330" mirror="true"/>',
+                    '<RefDes name="C5" packageRef="0402" populate="false"','name="NOT_MOUNTED_IN" type="STRING" value="Lite"',
+                    '<Arc ','clockwise="false"','<Cutout>','platingStatus="NONPLATED"','<SurfaceFinish type="ENIG-N"',
+                    '<Span fromLayer="Top" toLayer="Bottom"/>','<Text textString="WEB_CAO"'])
+      if(x.indexOf(m)<0)throw new Error("absent de l'export : "+m);
+    if((x.match(/<SpecRef id="BD_B_In1_150UM"\/>/g)||[]).length!==17)
+      throw new Error("16 trous de via et leur calque de contre-perçage pointent la spec");
+    /* les coins arrondis et la découpe ronde : quatre quarts de cercle et
+       deux demi-cercles, au profil comme au calque du contour */
+    const y=fs.readFileSync(path.join(dir,"exemple-0-arrondi.xml"),"utf8");
+    const prof=y.slice(y.indexOf("<Profile>"),y.indexOf("</Profile>"));
+    if((prof.match(/<PolyStepCurve /g)||[]).length!==6||(y.match(/<PolyStepCurve /g)||[]).length!==12)
+      throw new Error("arcs du contour : "+(prof.match(/<PolyStepCurve /g)||[]).length);
+  }finally{loadDoc(JSON.parse(avant),true);}
+});
+T("IPC-2581 : dans fabrication.zip, annoncé par le LISEZ-MOI et le master drawing",()=>{
+  const avant=serialize();
+  try{
+    exCharger(0);
+    const files=buildFabFiles().files;
+    const f=files.find(g=>g.kind==="ipc2581");
+    if(!f||f.name!=="carte.xml"||!/^<\?xml version="1\.0" encoding="UTF-8"\?>/.test(f.text))
+      throw new Error("carte.xml absent : "+files.map(g=>g.name).join(" "));
+    const md=files.find(g=>/MASTER-DRAWING\.pdf$/.test(g.name));
+    if(files.indexOf(f)>files.indexOf(md)||Buffer.from(md.data).toString("latin1").indexOf("carte.xml")<0)
+      throw new Error("le master drawing doit annoncer carte.xml");
+    const lis=files.find(g=>g.name==="LISEZ-MOI.txt").text;
+    if(!/carte\.xml : IPC-2581 revision C/.test(lis))throw new Error("LISEZ-MOI muet sur l'IPC-2581");
+    /* le bouton du menu Fichier */
+    const e=exportIpc2581();
+    if(!e||e.name!=="carte.xml"||e.text.length<1000)throw new Error("bouton IPC-2581");
+  }finally{loadDoc(JSON.parse(avant),true);}
 });
 
 (async()=>{
