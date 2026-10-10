@@ -739,14 +739,13 @@ class Liaison(object):
         etat_bas = bits[0] == 0
         ku0, kd0 = self._k(etat_bas, None, 0.0)
         s_dc = [float(np.sum(h)) for h in self.s]
-        a1, a2 = self._newton(ku0, kd0, 0.0, 0.0, s_dc, 0.0, 0.0, None, None)
+        # Le continu : pas de C_comp (v_prec absent), les reponses sommees.
+        a1, a2 = self._newton(ku0, kd0, 0.0, 0.0, s_dc, None, None, None, None)
         A1 = np.empty(L - 1 + n_pas)
         A2 = np.empty(L - 1 + n_pas)
         A1[:L - 1], A2[:L - 1] = a1, a2
-        v1_prec = None
-        v2_prec = None
-        b1, b2 = self._b(a1, a2, s_dc, 0.0, 0.0, total=True)
-        v1_prec, v2_prec = a1 + b1, a2 + b2
+        v1_prec = a1 + s_dc[0] * a1 + s_dc[1] * a2
+        v2_prec = a2 + s_dc[2] * a1 + s_dc[3] * a2
         V1 = np.empty(n_pas)
         V2 = np.empty(n_pas)
         sens, t_front, ku_cour = None, 0.0, ku0
@@ -774,9 +773,6 @@ class Liaison(object):
             v1_prec, v2_prec = a1 + b1, a2 + b2
             V1[n], V2[n] = v1_prec + self.v_ref, v2_prec + self.v_ref
         return V1, V2
-
-    def _b(self, a1, a2, s, h1, h2, total=False):
-        return (s[0] * a1 + s[1] * a2 + h1, s[2] * a1 + s[3] * a2 + h2)
 
     def _newton(self, ku, kd, h1, h2, s, v1_prec, v2_prec, a1, a2):
         """Les ondes entrantes (a1, a2) qui satisfont les deux bouts."""
