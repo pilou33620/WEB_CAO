@@ -202,6 +202,57 @@ l'utilisateur d'une ouverture à l'autre** — un empilage se saisit une fois. L
 pied de page annonce dès l'import ce qui manque, et un lien sous le tableau
 oublie les valeurs saisies pour revenir à ce que dit le fichier.
 
+### Le contre-perçage (back-drill)
+
+Un via **contre-percé** porte, dans le fichier, la passe du foret qui retire
+après métallisation le bout de fût que le signal n'emprunte pas. IPC-2581
+(révision B et suivantes) la décrit par une `<Spec>` faite d'éléments
+`<Backdrill>`, un par grandeur, que le trou désigne par un `<SpecRef>` —
+c'est ce qu'écrit l'export IPC-2581 de KiCad :
+
+```xml
+<Spec name="BD_1A">
+ <Backdrill type="START_LAYER"><Property layerOrGroupRef="BOTTOM"/></Backdrill>
+ <Backdrill type="MUST_NOT_CUT_LAYER"><Property layerOrGroupRef="IN1"/></Backdrill>
+ <Backdrill type="MAX_STUB_LENGTH"><Property value="0.1" unit="MM"/></Backdrill>
+</Spec>
+…
+<Hole name="H1" diameter="0.3" platingStatus="VIA" x="10" y="10"><SpecRef id="BD_1A"/></Hole>
+```
+
+La face d'où le foret repasse, la couche à ne pas couper, le moignon résiduel
+admis. Ni la profondeur ni le diamètre du foret n'y sont : la profondeur se
+compte dans l'empilage (de la face jusqu'à la couche gardée, moins le moignon
+résiduel), le diamètre n'est connu que si le foret a son propre trou. C'est
+la seconde forme lue : un trou **non métallisé** sur un calque de perçage à
+part, dont le `<Span>` va de la face à la dernière couche retirée et qui
+porte la spec (sur le trou, son `<Set>` ou le calque) — ou un calque dont la
+`layerFunction` contient `BACKDRILL`. Ce trou-là est le **foret**, pas un via :
+il rejoint le via métallisé du même emplacement (son diamètre devient celui du
+foret, la couche gardée, faute de `MUST_NOT_CUT_LAYER`, la suivante vers
+l'intérieur) et n'entre pas dans les perçages de la carte — un trou nu posé
+sur le via le ferait passer pour non relié. Un foret sans via est compté à
+part.
+
+Le parseur (`ipc2581_parser.py`, 1.76) pose le résultat sur le perçage, et le
+modèle le transporte dans `percages[i].cp` : `cote` (« dessous » / « dessus »),
+`de` et `g` (rangs de la face et de la couche gardée), `res` (mm), `prof`
+(mm), `d` (diamètre du foret), `spec`, `src`. Dans la page :
+
+- **le dessin** : un cercle orange autour de chaque via contre-percé, au
+  diamètre du foret quand le fichier le donne (bouton *Contre-perçage* de la
+  rangée des natures d'objet) ;
+- **la fiche** du perçage, ou de la pastille du via : face, couche à ne pas
+  couper, moignon résiduel, profondeur, foret, provenance — et ce que le
+  fichier tait (« non déclarée ») ; l'en-tête *La carte* compte les vias
+  contre-percés et les forets sans via ;
+- **le serveur** le reçoit comme de l'éditeur PCB : `contre_percage` dans la
+  fiche du via pour la simulation SI/RF, **avec la portée percée** du fichier
+  (`layer_from`, `layer_to`) dont le moignon se soustrait, et `cp` du perçage
+  pour la vérification de la carte. Il ne part que complet — face, couche
+  gardée, moignon résiduel, et pour la simulation la portée déclarée — : sinon
+  la fiche dit pourquoi.
+
 | Geste | Effet |
 |---|---|
 | Glisser | Déplacer la carte |
@@ -658,7 +709,11 @@ Il porte sa propre carte d'essai, écrite dans le fichier : deux couches, une
 piste coudée de 20 + 10 mm, un via là où elle s'arrête, un Dk de 4,37 rangé
 dans une `<Spec>`. Un IPC-2581 réel pèse une dizaine de mégaoctets et n'a pas
 sa place dans l'historique ; une carte dont chaque valeur se vérifie à la main
-prouve davantage. C'est elle qui a montré que le lien composant → empreinte
+prouve davantage. Le contre-perçage a la sienne, à côté du banc
+([test/carte-contre-percage.xml](test/carte-contre-percage.xml), quatre
+couches, un via à la manière de KiCad, un via repassé par un foret à part, un
+foret sans via) : `banc-essai.py` la lit, et `harness-sim.js` vérifie ce qui
+part au serveur. C'est la carte d'essai qui a montré que le lien composant → empreinte
 suivait `part` au lieu de `packageRef` — sur la carte de référence, 282
 composants sur 285 ressortaient sans empreinte, donc sans broches, et la fiche
 d'un boîtier annonçait « 0 broche ».
@@ -730,3 +785,12 @@ d'une piste écrit le taux de couverture à côté du nom du plan — « Conduct
 pair-impair), ce qui est exact pour un plan et ses découpes. Deux plans qui se
 chevauchent sur la même couche — cas rare et déjà douteux dans le fichier —
 laisseraient un vide à leur intersection.
+
+**Le contre-perçage n'est lu que sous deux formes**, celles décrites plus haut :
+la `<Spec><Backdrill>` d'IPC-2581 (forme vérifiée sur le code de l'export de
+KiCad, pas sur le texte de la norme, que nous n'avons pas pu consulter), et
+le foret posé sur un calque de perçage à part. Un export qui n'écrirait la
+passe que dans le nom d'un calque n'est pas lu — rien n'est deviné d'après
+un nom. Seule la simulation d'un via **déclaré** contre-percé reçoit sa portée
+percée ; les autres vias partent comme avant, sans elle, et leur moignon
+reste « inconnu » côté serveur.

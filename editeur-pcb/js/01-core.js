@@ -739,14 +739,20 @@ function cpRegleVia(v){
   return r?{r,src:p.src}:null;
 }
 /* Les couches où le signal entre dans le via : celles des pistes que
-   `linkSync` (25-liens.js) accroche au via, et celle d'une pastille CMS du
-   net posée dessus. Une passe pour toute la carte, gardée tant qu'elle ne
-   change pas. */
-let cpCache={ver:-1,m:null};
+   `linkSync` (25-liens.js) accroche au via, celle d'une pastille CMS du net
+   posée dessus, et celles où une zone du net touche le fût — cuivre plein
+   autour du perçage, liaison directe ou thermique, comme la connectivité
+   (02-connectivity.js, `viaZones`) relie un via à une zone. Une zone qui ne
+   fait que passer, le via pris dans un dégagement ou une découpe, ne compte
+   pas. Une passe pour toute la carte, gardée tant qu'elle ne change pas — ni
+   la carte, ni le remplissage des zones, qu'une grande carte n'affine
+   qu'après coup. */
+let cpCache={ver:-1,m:null,c:null,z:null};
 function cpCouchesEmpruntees(v){
-  if(cpCache.ver!==S.ver||!cpCache.m){
+  const C=typeof conn==="function"&&S.zones.length?conn():null;
+  if(cpCache.ver!==S.ver||!cpCache.m||cpCache.c!==C){
     if(typeof linkSync==="function")linkSync();
-    const m=new Map();
+    const m=new Map(), z=new Map();
     const add=(id,l)=>{let s=m.get(id);if(!s)m.set(id,s=new Set());s.add(l);};
     for(const t of S.tracks)
       for(const e of [1,2]){const k=t["a"+e];if(k&&k.v!=null)add(k.v,t.l);}
@@ -767,9 +773,22 @@ function cpCouchesEmpruntees(v){
           add(w.id,l);
       }
     }
-    cpCache={ver:S.ver,m};
+    if(C&&C.viaZones)
+      for(const [w,ls] of C.viaZones){
+        if(w.id==null)continue;
+        for(const l of ls){
+          add(w.id,l);
+          let s=z.get(w.id);if(!s)z.set(w.id,s=new Set());s.add(l);
+        }
+      }
+    cpCache={ver:S.ver,m,c:C,z};
   }
   return cpCache.m.get(v.id)||new Set();
+}
+/* Parmi elles, celles qu'une zone apporte : le message de faute les nomme. */
+function cpCouchesZones(v){
+  cpCouchesEmpruntees(v);
+  return (cpCache.z&&cpCache.z.get(v.id))||new Set();
 }
 /* Le contre-perçage d'un via : null s'il n'en a pas, sinon de quel côté,
    jusqu'où et ce qu'il laisse. Les cotes se comptent depuis le dessus du
@@ -806,8 +825,10 @@ function cpVia(v){
   o.moignon=r4(Math.min(o.moignon0,Math.max(0,bas?pointe-zb(u):zh(u)-pointe)));
   const tranche=used.filter(l=>bas?l>g:l<g);
   const di=diAt(bas?g:g-1).t;
+  const parZone=cpCouchesZones(v);
   if(tranche.length)
-    o.faute="le foret couperait "+tranche.map(cpNomCouche).join(", ")+", où le signal entre";
+    o.faute="le foret couperait "+tranche.map(l=>cpNomCouche(l)+(parZone.has(l)?" (zone "+v.net+")":""))
+      .join(", ")+", où le signal entre";
   else if(r.res>=di)
     o.faute="moignon résiduel de "+fmt(r.res,2)+" mm pour "+fmt(di,3)+" mm de diélectrique "+
       (bas?"sous ":"sur ")+cpNomCouche(g)+" : "+cpNomCouche(bas?g+1:g-1)+" resterait reliée au fût";

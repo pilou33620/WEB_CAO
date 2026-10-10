@@ -73,6 +73,7 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simAccrocherViasIpc","simViaAuRaccordIpc","simKUnite",
   "simChainePistes","simBoutsPiste","simZPistes","simArcEnPolyligne",
   "simJonctionsIpc","simJoncCommuneIpc","SIM_RAYON_JONCTION_IPC","simViasIpc",
+  "simContrePercageIpc","simTrouAuPointIpc","mdlContrePercage",
   "mdlArc","mdlArcAngle","mdlArcLongueur","ltArc","ltNet","ltPiste",
   "simCheveluRes","simRetourCouleurRes","simRetourActifIpc",
   "simRetourTraceIpc",
@@ -5839,6 +5840,81 @@ T("vérification de la carte : surfaces, contour, trous et broches partent aussi
     throw new Error("les broches placées, et leur net : "+JSON.stringify(u1));
   if(!d.pastilles.some(q=>q.x===X2&&q.y===Y&&q.n==="N$1"))
     throw new Error("la pastille porte son net");
+});
+
+/* ==========================================================================
+   LE CONTRE-PERÇAGE PART COMME DEPUIS L'ÉDITEUR
+   --------------------------------------------------------------------------
+   Le modèle porte `cp` sur le perçage (ipc2581_json.py) : la face, la couche
+   à ne pas couper, le moignon résiduel. La simulation le reçoit dans la fiche
+   du via (`contre_percage`), AVEC la portée percée — sans elle le serveur ne
+   peut rien soustraire ; la vérification de la carte dans `percages[].cp`.
+   Ce qui manque au fichier ne part pas : ni portée, ni couche gardée.
+   ========================================================================== */
+function cpCarteIpc(trou){
+  const xm=xm0(), o=padTraversante(0.55);
+  const c=carte({
+    couches:["Top","In1","In2","Bottom"],
+    empilage:[
+      {nom:"Top",    seq:1, ep:0.035, type:"CONDUCTOR"},
+      {nom:"D1",     seq:2, ep:0.2,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
+      {nom:"In1",    seq:3, ep:0.035, type:"CONDUCTOR"},
+      {nom:"D2",     seq:4, ep:0.8,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
+      {nom:"In2",    seq:5, ep:0.035, type:"CONDUCTOR"},
+      {nom:"D3",     seq:6, ep:0.2,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
+      {nom:"Bottom", seq:7, ep:0.035, type:"CONDUCTOR"}
+    ],
+    percages:[Object.assign({x:xm, y:Y, d:0.25, n:0, p:"VIA"},trou||{})],
+    pads:o.pads, padstacks:o.padstacks
+  });
+  c.modele.pistes=[{c:0, n:0, w:W, p:[X1,Y, xm,Y]},
+                   {c:1, n:0, w:W, p:[xm,Y, X2,Y]}];
+  mdlCharger(c.modele);
+  ltPreparer();
+  V.net=0;
+  SIM.refCle=null; SIM.refAuto=true; SIM.ref=null;
+  return xm;
+}
+const CP_IPC={cote:"dessous", de:3, g:1, res:0.1, prof:0.97, spec:"BD_1A", src:"spec"};
+
+T("contre-perçage : la fiche du via part avec la portée percée et la passe du foret",()=>{
+  cpCarteIpc({sa:0, sb:3, cp:CP_IPC});
+  const c=mdlContrePercage(V.modele.percages[0]);
+  if(!c||!c.complet||c.depart!=="Bottom"||c.garde!=="In1")throw new Error(JSON.stringify(c));
+  const v=simSegments().envoi[1].via;
+  if(!v||v.layer_from!==0||v.layer_to!==6)throw new Error("portée percée : "+JSON.stringify(v));
+  if(JSON.stringify(v.contre_percage)!=='{"cote":"dessous","couche_garde":2,"moignon_residuel_mm":0.1}')
+    throw new Error("contre_percage : "+JSON.stringify(v.contre_percage));
+  /* la liste des vias du parcours : la portée percée remplace la supposée */
+  const L=simViasIpc();
+  if(L.length!==1||L[0].layer_from!==0||L[0].layer_to!==6||L[0].portee_supposee||
+     !L[0].contre_percage||L[0].contre_percage.couche_garde!==2)
+    throw new Error("simViasIpc : "+JSON.stringify(L.map(f=>[f.layer_from,f.layer_to,f.portee_supposee,f.contre_percage])));
+});
+
+T("contre-perçage : sans portée, sans couche gardée, ou sans contre-perçage, rien ne change",()=>{
+  /* sans portée déclarée : le serveur ne saurait pas d'où soustraire */
+  cpCarteIpc({cp:CP_IPC});
+  let v=simSegments().envoi[1].via;
+  if("contre_percage" in v||"layer_from" in v)throw new Error("sans portée : "+JSON.stringify(v));
+  /* sans couche à ne pas couper : la fiche le dit, rien ne part */
+  cpCarteIpc({sa:0, sb:3, cp:{de:3, res:0.1, spec:"BD_1A", src:"spec"}});
+  if(mdlContrePercage(V.modele.percages[0]).complet)throw new Error("incomplet");
+  v=simSegments().envoi[1].via;
+  if("contre_percage" in v||"layer_from" in v)throw new Error("incomplet : "+JSON.stringify(v));
+  if(SIM_IPC.carteEntiere().doc.percages[0].cp)throw new Error("incomplet, pas de cp à la vérification");
+  /* sans contre-perçage : la fiche d'avant, à l'identique */
+  cpCarteIpc({sa:0, sb:3});
+  v=simSegments().envoi[1].via;
+  if("contre_percage" in v||"layer_from" in v)throw new Error("sans contre-perçage : "+JSON.stringify(v));
+  if(mdlContrePercage(V.modele.percages[0])!==null)throw new Error("mdlContrePercage sans cp");
+});
+
+T("contre-perçage : la vérification de la carte le reçoit comme de l'éditeur",()=>{
+  cpCarteIpc({sa:0, sb:3, cp:CP_IPC});
+  const p=SIM_IPC.carteEntiere().doc.percages[0];
+  if(!p||p.de!=="Top"||p.a!=="Bottom"||JSON.stringify(p.cp)!=='{"cote":"dessous","garde":"In1","res":0.1}')
+    throw new Error(JSON.stringify(p));
 });
 
 /* ==========================================================================

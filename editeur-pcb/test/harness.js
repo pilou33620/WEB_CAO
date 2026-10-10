@@ -417,6 +417,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "topoGraphe","topoAnalyser","topoVerifier","topoResume","topoMoignonsVias","TOPO_FORMES","stackSpan","cuT",
   /* contre-perçage (01-core.js, 06-panels.js, 04-fabrication.js) */
   "cpNormRegles","cpRegles","cpRegle","cpRegleVia","cpVia","cpViasPerces","cpPaires","cpExcellon",
+  "cpGerberX2","cpCouchesEmpruntees","cpCouchesZones","zoneCuivreEn","viaCuivreZone","zoneSig","gXY",
   "cpAjouter","cpModifier","cpSupprimer","CP_SUR","cmHtmlTopologie",
   "cmDepuisSchema","cmTousGroupes","cmResumeSchema","cmLireChamp","pcbAppliquerEco","pcbDetecterDisparitesEco","cmEcartSchema",
   /* rooms (32-rooms.js) */
@@ -24178,6 +24179,104 @@ T("contre-perçage : fichier Excellon, LISEZ-MOI, empilage et plan de fabricatio
   if(!p||!p.cp||p.cp.garde!==cuLabel(1,4)||p.cp.res!==0.1)throw new Error(JSON.stringify(p));
   cpRaz();
   if("contre_percage" in simCotesVia(S.vias[0],10,0,0,1))throw new Error("sans règle, pas de champ");
+});
+
+/* Une zone du net sur une couche, autour du premier via de la carte des
+   moignons ; une découpe, ou la zone d'un autre net posée par-dessus, la
+   met en dégagement. La carte est posée à l'écart du bord : rasterisée (avec
+   « canvas »), la marge de bord rognerait le cuivre autour d'un via à y = 0. */
+function cpZone(net,l,x1,y1,x2,y2){
+  const z={id:S.nextId++,l,net,pts:[{x:x1,y:y1},{x:x2,y:y1},{x:x2,y:y2},{x:x1,y:y2}]};
+  S.zones.push(z);touch();return z;
+}
+T("contre-perçage : une zone du net touche le fût, le foret ne la coupe pas",()=>{
+  const bord=S.board;
+  try{
+    cpCarte();
+    S.board={x:-10,y:-10,w:50,h:20,pts:null};touch();
+    const r=cpAjouter({cote:"dessous",garde:1,res:0.1});
+    cmPoser("nets","SIG","cp",r.id);
+    if(cpVia(S.vias[0]).faute)throw new Error("sans zone, L2 gardée se perce : "+cpVia(S.vias[0]).faute);
+    /* une coulée SIG sur L3 autour du premier via : le signal y entre */
+    const z=cpZone("SIG",2,5,-3,15,3);
+    if(!cpCouchesZones(S.vias[0]).has(2)||cpCouchesZones(S.vias[1]).size)
+      throw new Error("couches de zone : "+[...cpCouchesZones(S.vias[0])]+" / "+[...cpCouchesZones(S.vias[1])]);
+    const f=cpVia(S.vias[0]);
+    if(!f||!/couperait L3 \(zone SIG\), où le signal entre/.test(f.faute))throw new Error("faute attendue : "+(f&&f.faute));
+    if(cpVia(S.vias[1]).faute)throw new Error("le second via n'est pas dans la zone");
+    runDrc();
+    if(!S.drc.some(d=>d.via===S.vias[0]&&/^Contre-perçage cp1 .*couperait L3 \(zone SIG\)/.test(d.msg)))
+      throw new Error("DRC : "+S.drc.map(d=>d.msg).filter(m=>/Contre/.test(m)).join(" | "));
+    if(drillFile().files.find(x=>/BACKDRILL/.test(x.name)).holes!==1)throw new Error("le via fautif part en fabrication");
+    /* « auto » garde alors L3, et le moignon se mesure depuis elle */
+    cpModifier(r.id,"garde",-1);
+    const a=cpVia(S.vias[0]);
+    if(!a||a.faute||a.garde!==2||Math.abs(a.moignon0-r4(stackSpan(2,3)-cuT(2)))>1e-9||Math.abs(a.moignon-0.1)>1e-9)
+      throw new Error(JSON.stringify(a&&{garde:a.garde,m0:a.moignon0,m:a.moignon,faute:a.faute}));
+    if(cpVia(S.vias[1]).garde!==1)throw new Error("le second via garde L2");
+    if(cpPaires().length!==2)throw new Error("deux passes : B→In1 et B→In2");
+    /* la même zone en dégagement : une découpe autour du via, sans effet */
+    cpModifier(r.id,"garde",1);
+    S.cuts.push({l:2,pts:[{x:9,y:-1},{x:11,y:-1},{x:11,y:1},{x:9,y:1}]});touch();
+    if(cpCouchesZones(S.vias[0]).size||cpVia(S.vias[0]).faute)
+      throw new Error("une découpe autour du via le met en dégagement : "+cpVia(S.vias[0]).faute);
+    S.cuts=[];touch();
+    if(!cpVia(S.vias[0]).faute)throw new Error("sans la découpe, la faute revient");
+    /* ou la zone d'un autre net posée par-dessus ; ou une zone qui ne touche pas le fût */
+    cpZone("GND",2,8,-2,12,2);
+    if(cpVia(S.vias[0]).faute)throw new Error("une zone GND par-dessus recouvre la coulée SIG");
+    S.zones=[z];z.pts=[{x:11,y:-3},{x:15,y:-3},{x:15,y:3},{x:11,y:3}];touch();
+    if(cpVia(S.vias[0]).faute)throw new Error("une zone qui passe à côté ne compte pas");
+    /* le remplissage du fichier : un trou autour du via est un dégagement */
+    z.pts=[{x:5,y:-3},{x:15,y:-3},{x:15,y:3},{x:5,y:3}];
+    z.fichier=true;z.sig=zoneSig(z.pts);z.trous=[[{x:9,y:-1},{x:11,y:-1},{x:11,y:1},{x:9,y:1}]];touch();
+    if(cpVia(S.vias[0]).faute)throw new Error("le trou du fichier autour du via est un dégagement");
+    z.trous=[];touch();
+    if(!cpVia(S.vias[0]).faute)throw new Error("plein autour du via, la zone compte");
+    /* une zone d'un autre net sous le via n'a jamais compté */
+    z.net="GND";touch();
+    if(cpVia(S.vias[0]).faute)throw new Error("une zone d'un autre net ne compte pas");
+  }finally{S.board=bord;S.zones=[];S.cuts=[];cpRaz();}
+});
+T("contre-perçage : fichier Gerber X2 à côté du .DRL, profondeur en champ",()=>{
+  cpCarte();
+  if(buildFabFiles().files.some(f=>/\.gbr$/.test(f.name)))throw new Error("pas de .gbr sans contre-perçage");
+  const r=cpAjouter({cote:"dessous",garde:-1,res:0.1});
+  cmPoser("nets","SIG","cp",r.id);
+  const B=buildFabFiles();
+  const x=B.files.find(f=>f.name==="carte-BACKDRILL-B-In1.gbr");
+  if(!x||x.kind!=="backdrill-x2"||x.holes!==2||x.tools!==1)throw new Error(JSON.stringify(B.files.map(f=>f.name)));
+  const prof=fmt(stackLam()-stackSpan(0,1)-0.1,3);
+  for(const t of ["%FSLAX46Y46*%","%MOMM*%","%TF.FileFunction,NonPlated,3,4,Blind,Drill*%","%TF.FilePolarity,Positive*%",
+                  "%TFBackDrill_StartLayer,4*%","%TFBackDrill_MustNotCutLayer,2*%","%TFBackDrill_MaxStubLengthMM,0.100*%",
+                  "%TA.AperFunction,BackDrill*%","%TABackDrill_DepthMM,"+prof+"*%","%ADD10C,0.5500*%","%TD*%","D10*","M02*"])
+    if(x.text.indexOf(t)<0)throw new Error("X2 sans « "+t+" » :\n"+x.text);
+  /* les deux vias, flashés dans le repère des Gerber */
+  if((x.text.match(/D03\*/g)||[]).length!==2||x.text.indexOf(gXY(10,0)+"D03*")<0)throw new Error("flashs :\n"+x.text);
+  /* l'attribut d'ouverture précède sa définition, et l'outil suit */
+  const L=x.text.split("\n");
+  if(L.indexOf("%TA.AperFunction,BackDrill*%")>L.indexOf("%ADD10C,0.5500*%")||L.indexOf("D10*")<L.indexOf("%TD*%"))
+    throw new Error("ordre des attributs :\n"+x.text);
+  if(/[^\x00-\x7f]/.test(x.text))throw new Error("pas d'accent dans un Gerber");
+  /* le .DRL ne change pas : même texte que `cpExcellon`, au tampon près */
+  const sansDate=t=>t.split("\n").filter(l=>!/^; \d{4}-\d\d-\d\dT/.test(l)).join("\n");
+  const drl=B.files.find(f=>f.name==="carte-BACKDRILL-B-In1.DRL");
+  if(!drl||sansDate(drl.text)!==sansDate(cpExcellon(cpPaires()[0]).text)||/TF\.|BackDrill_/.test(drl.text))
+    throw new Error("le .DRL a changé");
+  if(drillFile().files.some(f=>/\.gbr$/.test(f.name)))throw new Error("le .gbr n'entre pas dans les perçages du plan");
+  /* par-dessus, gardant L3 : couches 1 et 2 retirées */
+  cpModifier(r.id,"cote","dessus");cpModifier(r.id,"garde",2);
+  for(const t of S.tracks)t.l=t.l===1?2:3;
+  touch();
+  const y=cpGerberX2(cpPaires()[0]);
+  if(y.name!=="carte-BACKDRILL-F-In2.gbr"||y.text.indexOf("%TF.FileFunction,NonPlated,1,2,Blind,Drill*%")<0||
+     y.text.indexOf("%TFBackDrill_StartLayer,1*%")<0||y.text.indexOf("%TFBackDrill_MustNotCutLayer,3*%")<0)
+    throw new Error(y.name+"\n"+y.text);
+  const lis=buildFabFiles().files.find(f=>f.name==="LISEZ-MOI.txt").text;
+  for(const t of ["carte-BACKDRILL-F-In2.gbr : le meme contre-percage en Gerber X2","NonPlated,i,j,Blind,Drill",
+                  "BackDrill_MustNotCutLayer","n'exporte pas d'IPC-2581"])
+    if(lis.indexOf(t)<0)throw new Error("LISEZ-MOI sans « "+t+" »");
+  cpRaz();
 });
 
 /* ==========================================================================
