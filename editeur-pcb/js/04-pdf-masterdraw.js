@@ -495,6 +495,12 @@ function masterDrawingPdf(fabFiles){
   };
   const gFiles=(fabFiles||[]).filter(f=>/\.(GTL|GBL|GL\d+|GTS|GBS|GTP|GBP|GTO|GBO|GM1|GKO)$/.test(f.name));
   const dFiles=(fabFiles||[]).filter(f=>/\.(TXT|DRL)$/.test(f.name));
+  /* Le même contre-perçage en Gerber X2 (cpGerberX2, 04-fabrication.js) :
+     annoncé juste sous son Excellon, la paire de couches faisant le lien.
+     Libellé court : la ligne du tableau n'a la hauteur que d'une ligne. */
+  const xFiles=(fabFiles||[]).filter(f=>f.kind==="backdrill-x2");
+  const x2Desc=f=>"Back-drill Gerber X2 (depth as attribute), copper layer "+(f.de+1)+
+    ", must-not-cut layer "+(f.garde+1);
   const ipcF=(fabFiles||[]).find(f=>f.name.endsWith(".ipc"));
 
   tableHead();
@@ -503,9 +509,21 @@ function masterDrawingPdf(fabFiles){
     const ext=f.name.split(".").pop();
     tableRow(f.name,gerberDesc[ext]||"Gerber data",true,alt=!alt);
   }
-  for(const f of dFiles)
+  const xVus=new Set();
+  for(const f of dFiles){
     tableRow(f.name,drillDesc(f),true,alt=!alt);
+    if(f.kind!=="backdrill")continue;
+    for(const x of xFiles)if(!xVus.has(x)&&x.de===f.de&&x.garde===f.garde){
+      xVus.add(x);
+      tableRow(x.name,x2Desc(x),true,alt=!alt);
+    }
+  }
+  /* un X2 sans son Excellon (ne se produit pas aujourd'hui) reste annoncé */
+  for(const x of xFiles)if(!xVus.has(x))tableRow(x.name,x2Desc(x),true,alt=!alt);
   tableRow(fbase+".ipc","IPC-D-356 netlist (E-test / flying probe)",!!ipcF,alt=!alt);
+  /* l'IPC-2581 de 35-ipc2581-export.js, s'il est dans l'archive */
+  for(const f of (fabFiles||[]).filter(f=>f.kind==="ipc2581"))
+    tableRow(f.name,"IPC-2581 rev. C - complete board data (stackup, copper, drills, components, BOM), XML",true,alt=!alt);
   tableRow("positions.csv","Component positions (pick & place)",true,alt=!alt);
   tableRow("bom.csv","Bill of materials",true,alt=!alt);
   tableRow("EMPILAGE.txt","Stackup report",true,alt=!alt);

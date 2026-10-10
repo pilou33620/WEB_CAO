@@ -982,6 +982,42 @@ def rugosite_du_cuivre():
 T(u"la rugosite du cuivre se lit dans une <Spec> de conducteur", rugosite_du_cuivre)
 
 
+def place_du_texte_dans_features():
+    """Parseur 1.78 : le XSD (rev. C) pose la place d'un <Text> dans le
+    <Location> de son <Features> -- c'est ce qu'ecrit l'export de l'editeur
+    PCB. Elle n'etait lue que dans le <Text>, et le texte tombait en (0 ; 0).
+    Un <Location> dans le <Text> passe toujours devant."""
+    seri = CARTE.replace(
+        u"    <LayerFeature layerRef=\"Hole1-2\">",
+        u"""    <LayerFeature layerRef="Symbol-A">
+     <Set>
+      <Features>
+       <Location x="7.5" y="3.25"/>
+       <Text textString="U9" fontSize="1"/>
+      </Features>
+     </Set>
+     <Set>
+      <Features>
+       <Location x="9" y="9"/>
+       <Text textString="DEDANS" fontSize="1"><Location x="2" y="1"/></Text>
+      </Features>
+     </Set>
+    </LayerFeature>
+    <LayerFeature layerRef="Hole1-2">""", 1)
+    vrai(seri != CARTE, u"la carte variante n'a pas ete construite")
+    d = ipc2581_json.charger_octets(seri.encode("utf-8"), "place.xml")
+    par = {t.text: t.location for t in d.texts}
+    vrai("U9" in par and "DEDANS" in par, u"textes lus : %s" % sorted(par))
+    proche(par["U9"].x, 7.5, u"x pris dans <Features>")
+    proche(par["U9"].y, 3.25, u"y pris dans <Features>")
+    proche(par["DEDANS"].x, 2.0, u"le <Location> du <Text> passe devant (x)")
+    proche(par["DEDANS"].y, 1.0, u"le <Location> du <Text> passe devant (y)")
+
+
+T(u"la place d'un texte se lit aussi dans son <Features> (XSD rev. C)",
+  place_du_texte_dans_features)
+
+
 # =============================================================================
 print(u"-" * 62)
 if ECHECS:

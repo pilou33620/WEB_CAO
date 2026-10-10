@@ -234,7 +234,7 @@ l'intérieur) et n'entre pas dans les perçages de la carte — un trou nu posé
 sur le via le ferait passer pour non relié. Un foret sans via est compté à
 part.
 
-Le parseur (`ipc2581_parser.py`, 1.76) pose le résultat sur le perçage, et le
+Le parseur (`ipc2581_parser.py`, 1.76 et suivants) pose le résultat sur le perçage, et le
 modèle le transporte dans `percages[i].cp` : `cote` (« dessous » / « dessus »),
 `de` et `g` (rangs de la face et de la couche gardée), `res` (mm), `prof`
 (mm), `d` (diamètre du foret), `spec`, `src`. Dans la page :
@@ -252,6 +252,43 @@ modèle le transporte dans `percages[i].cp` : `cote` (« dessous » / « dessus 
   pour la vérification de la carte. Il ne part que complet — face, couche
   gardée, moignon résiduel, et pour la simulation la portée déclarée — : sinon
   la fiche dit pourquoi.
+
+### Les modèles de simulation de la carte
+
+Sous l'« Empilage du calcul » du panneau *La carte*, un bloc **Modèles de
+simulation** reprend les options du panneau d'empilage de l'éditeur PCB, avec
+les mêmes défauts et le même envoi (`stackup` du document, donc aussi la RF et
+l'œil) :
+
+| Option | Défaut | Ce qui part au serveur |
+|---|---|---|
+| Diélectrique causal (Djordjevic-Sarkar) | décoché | `dielectrique_causal` et `f_ref_dielectrique` |
+| Fréquence de la fiche | 1 GHz | avec le causal seulement |
+| Modèle de via : π, ligne, auto | auto | `modele_via` quand il n'est pas « auto » |
+| Portée percée de tous les vias déclarés | **décochée** | `layer_from` / `layer_to` de chaque via dont le fichier déclare la portée |
+
+Rien ne part quand une option est à son défaut : la requête reste celle
+d'avant. Les choix sont **gardés par fichier** dans le profil, sous
+`V.sur.sim[nom du fichier]` (`simModelesIpc`, `js/07-simulation.js`) :
+rouvrir la même carte les retrouve, une autre carte ne les hérite pas, et
+« Oublier les valeurs que j'ai saisies » de l'empilage ne les touche pas.
+
+**La portée percée de tous les vias.** Le serveur ne chiffre le moignon d'un
+via (`_moignons`) que s'il connaît sa portée percée : sans elle, un via
+traversant et un via borgne bien ajusté se ressemblent, et le moignon reste
+« inconnu ». Seuls les vias contre-percés l'envoyaient ; l'option l'envoie
+pour **tout** via dont le fichier déclare la portée (`sa` / `sb` du perçage,
+`simPorteeTrouIpc`), au raccord de la piste comme dans la liste des vias du
+parcours, où elle remplace la portée supposée. Une portée que le fichier ne
+déclare pas ne s'invente pas. **Elle est désactivée par défaut** : l'activer
+d'office changeait la fiche d'un via sans contre-perçage, ce qu'un essai du
+banc (`harness-sim.js`, « sans contre-perçage, la fiche d'avant, à
+l'identique ») interdit. Sur la carte d'essai
+([test/carte-contre-percage.xml](test/carte-contre-percage.xml)), elle fait
+chiffrer le moignon de V3 — traversant, emprunté de TOP à IN1 : 1,07 mm sous
+IN1, 193 fF, quart d'onde à 33,8 GHz — que le serveur laissait inconnu ;
+|S₂₁| de la ligne passe de −3,52 à −17,23 dB à 20 GHz, et de −1,22 à
+−2,34 dB à 5 GHz.
 
 | Geste | Effet |
 |---|---|
@@ -791,6 +828,8 @@ la `<Spec><Backdrill>` d'IPC-2581 (forme vérifiée sur le code de l'export de
 KiCad, pas sur le texte de la norme, que nous n'avons pas pu consulter), et
 le foret posé sur un calque de perçage à part. Un export qui n'écrirait la
 passe que dans le nom d'un calque n'est pas lu — rien n'est deviné d'après
-un nom. Seule la simulation d'un via **déclaré** contre-percé reçoit sa portée
-percée ; les autres vias partent comme avant, sans elle, et leur moignon
-reste « inconnu » côté serveur.
+un nom. Par défaut, seule la simulation d'un via **déclaré** contre-percé
+reçoit sa portée percée ; les autres vias partent comme avant, sans elle, et
+leur moignon reste « inconnu » côté serveur — sauf avec l'option « Portée
+percée de tous les vias déclarés » (voir *Les modèles de simulation de la
+carte*), et seulement quand le fichier déclare la portée.

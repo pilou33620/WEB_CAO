@@ -2,6 +2,47 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 5.2.0
+# Date: 2026-10-10
+# Explication: LE PLAN DE REFERENCE A SA PROPRE RUGOSITE. Une seule rugosite
+#   par section -- celle de la couche de la piste -- valait pour le ruban ET
+#   le plan, alors que `ligne_mom.line_losses` separe R_ruban et R_plan. La
+#   2.8.0 de ligne_mom prend `rugosite_plan=` ; `_rugosite_section` le lui
+#   passe, lu sur la couche du plan de reference (les deux plans d'une
+#   triplaque). Un plan qui ne declare rien prend celle de la piste, comme
+#   avant ; declaree egale, ou absente partout : rien de plus ne part, et le
+#   calcul est celui de la 5.0.1 au bit pres. Branche dans la cascade simple
+#   (le cache des sections, donc la RF qui passe par `simuler`), dans
+#   `rf_reseau` et `crosstalk` ; PAS dans `_cascade_differentielle`, qui garde
+#   la rugosite de la piste pour ses deux modes.
+# Fonctions ajoutees : _rugosite_section, _indice_plan.
+# Fonctions modifiees : simuler (la section la recoit), _rugosite_couche
+#   (docstring).
+#
+# Version: 5.1.0
+# Date: 2026-10-10
+# Explication: LA PAIRE DISSYMETRIQUE SE MET EN CASCADE BRIN PAR BRIN. La
+#   cascade differentielle supposait deux brins de meme section (modes pair
+#   et impair, diagonales moyennees), posait vias et coudes sur les deux, et
+#   ESTIMAIT Scd21 d'apres la surlongueur. Voir « LA PAIRE PAR BRIN » :
+#   quatre acces, ABCD 4 x 4 ; un troncon couple est la ligne a deux
+#   conducteurs de [L] et [C] 2 x 2 (la section de la carte de chaleur, qui
+#   les garde maintenant dans `matrices_paire`), decomposee en ses modes
+#   propres ; vias et coudes sur le brin qui les a ; la partenaire seule sur
+#   sa couche ; la surlongueur sur le brin LE PLUS LONG, nomme. Sdd, Scc, Scd
+#   et Sdc exacts par les modes mixtes. UNE PAIRE SYMETRIQUE RESTE AU BIT
+#   PRES CE QU'ELLE ETAIT (la cascade des deux modes sert) ; forcee a quatre
+#   acces, elle la rejoint a 1e-9 pres. `s_diff` porte en plus quatre_acces,
+#   dissymetrique, dissymetries, brin_long, brin_long_role, vias_brins (et
+#   s_dc, abcd_brins, abcd_cc selon le cas).
+# Fonctions ajoutees : _matrices_rangees, _par_brin, _bases_des_modes,
+#   _brins_des_modes, _modes_brins, _abcd_ligne_couplee, _s_brins,
+#   _modes_mixtes, _bout, _raccord, _angle, _coudes_brin, _ligne_seule,
+#   _abcd_ligne_seule, _brins_de_la_paire.
+# Fonctions modifiees : _section_locale (+ matrices), _sections_locales,
+#   _chaleur_scene (+ matrices_paire), _cascade_differentielle
+#   (+ quatre_acces).
+#
 # Version: 5.0.1
 # Date: 2026-10-10
 # Explication: LA DISPERSION N'EST PLUS COMPTEE DEUX FOIS DANS LA CASCADE.
@@ -733,7 +774,7 @@ except Exception as _exc:                              # noqa: BLE001
 
 FORMAT = "cao-sim-em-3"
 FORMAT_RESULTAT = "cao-sim-em-resultat-5"
-VERSION = "5.0.1"
+VERSION = "5.2.0"
 VERSION_MOTEURS = {
     "simulation_em": VERSION,
     "ligne_mom": getattr(tl, "VERSION", "2.5.0") if tl is not None else "indisponible",
@@ -5279,8 +5320,24 @@ def _section_locale(couches, scene, w_v, w_a, ecart, cote, t_r, cache):
                          if paire.get("eps_eff_pair") else None),
         "z0": float(r["lignes"][rangs[0]]["z0"]),
         "ecart": q,
+        # LES MATRICES [L] ET [C] DE LA PAIRE, rangees (selection, voisine)
+        # -- et non de gauche a droite comme le solveur les rend. C'est ce
+        # que la cascade a quatre acces lit pour une paire DISSYMETRIQUE
+        # (5.1.0) : les modes pair et impair n'en sont plus les modes propres.
+        "matrices": _matrices_rangees(r, rangs),
     }
     return cache[cle]
+
+
+def _matrices_rangees(r, rangs):
+    """{"l", "c"} 2 x 2 (H/m, F/m) d'une section a deux conducteurs, dans
+    l'ordre des ENTREES : la selection d'abord, la voisine ensuite."""
+    ip, i_n = rangs.get(0), rangs.get(1)
+    if ip is None or i_n is None:
+        return None
+    idx = (ip, i_n)
+    return {k: [[float(r[k][a][b]) for b in idx] for a in idx]
+            for k in ("l", "c")}
 
 
 def _sections_locales(parts, couches, scene, t_r, cache):
@@ -5303,7 +5360,8 @@ def _sections_locales(parts, couches, scene, t_r, cache):
         loc = _section_locale(couches, scene, e["w_v"], e["w_a"], e["ecart"],
                               e["cote"], t_r, cache)
         sortie[rang] = {"net": e["net"], "ecart": e["ecart"],
-                        "longueur": e["l"], "loc": loc or {}}
+                        "longueur": e["l"], "loc": loc or {},
+                        "w_v": e["w_v"], "w_a": e["w_a"]}
     return sortie
 
 
@@ -5376,6 +5434,12 @@ def _chaleur_scene(couches, scene, fiches, t_r, chaleur, cache):
                                  if loc.get("eps_eff_pair") else None)
             c["z_diff_net"] = net
             c["z_diff_declare"] = declare
+            # LA SECTION ENTIERE DE LA PAIRE, pour la cascade a quatre acces :
+            # [L] et [C] (selection, partenaire) et les deux largeurs.
+            if loc.get("matrices"):
+                c["matrices_paire"] = dict(loc["matrices"],
+                                           largeur_p=round(val["w_v"], 4),
+                                           largeur_n=round(val["w_a"], 4))
 
 
 def _partager_paire(doc, objets):
@@ -5826,7 +5890,9 @@ def _couplage(couches, objets, doc, analyse, avertissements):
 #     en regard. Ni celle d'une triplaque nettement decentree, que la formule
 #     de Wheeler 1978 suppose centree : la deduction rend mieux l'asymetrie.
 #   · RUGOSITE : par couche de cuivre, dans l'empilage. Zero par defaut, et
-#     zero rend K = 1 exactement.
+#     zero rend K = 1 exactement. Le ruban prend celle de sa couche, le plan
+#     de reference celle de la sienne quand elle la declare (5.1.0,
+#     `_rugosite_section`), celle de la piste sinon.
 #   · DIELECTRIQUE CAUSAL : dans l'empilage. Desactive par defaut. Il entre
 #     dans les pertes ET dans la vitesse de phase : er(f) fait eps_eff(f) a
 #     remplissage constant, et Z0 suit -- Z0.racine(eps_eff) ne depend que de
@@ -5867,10 +5933,9 @@ def _rugosite_couche(couches, indice):
     rayon_nodule_um. C'est l'unite dans laquelle les fiches de cuivre les
     donnent, et une rugosite en millimetres ne se relit pas.
 
-    LA RUGOSITE EST CELLE DE LA COUCHE DE LA PISTE, et elle vaut pour le plan
-    aussi : `line_losses` n'a qu'un facteur. Un plan d'un autre cuivre que la
-    piste est donc compte avec celui de la piste -- c'est ecrit, et c'est la
-    face de la piste qui porte l'essentiel du courant en microruban.
+    C'EST LA RUGOSITE D'UNE COUCHE, celle de la piste quand on l'appelle sur
+    la piste. Le plan de reference a la sienne depuis la 5.1.0 : voir
+    `_rugosite_section`, qui l'ajoute quand elle differe.
     """
     if not (0 <= int(indice) < len(couches)):
         return {}
@@ -5887,6 +5952,73 @@ def _rugosite_couche(couches, indice):
     if rms > 0:
         return {"modele_rugosite": "hammerstad", "rugosite_rms": rms * 1e-6}
     return {}
+
+
+# Les cles par lesquelles une couche DECLARE sa rugosite -- zero compris : un
+# plan qui ecrit « rugosite_rms_um: 0 » se dit lisse, un plan qui n'ecrit rien
+# ne dit rien.
+_CLES_RUGOSITE_DOC = ("modele_rugosite", "rugosite_rms_um", "rayon_nodule_um",
+                      "rapport_surface")
+
+
+def _indice_plan(couches, indice, nom, vers_le_haut):
+    """L'indice du plan de reference nomme `nom`, cherche depuis la piste dans
+    la direction ou `section_de_couche` l'a trouve. -1 sans nom ou sans
+    plan de ce nom : on ne devine pas lequel c'est."""
+    if not nom:
+        return -1
+    pas = -1 if vers_le_haut else 1
+    k = int(indice) + pas
+    while 0 <= k < len(couches):
+        c = couches[k] or {}
+        if c.get("type") == "copper" and c.get("role") == "plane" \
+                and (c.get("name") or "") == nom:
+            return k
+        k += pas
+    return -1
+
+
+def _rugosite_section(couches, indice, info):
+    """Les options de rugosite de `line_losses` pour une SECTION : celle de la
+    couche de la piste (`_rugosite_couche`), et celle de son ou ses plans de
+    reference quand elle en differe (`rugosite_plan`, ligne_mom 2.8.0).
+
+    LA RUGOSITE DU PLAN EST CELLE DE SA COUCHE. `line_losses` separe la
+    resistance du ruban de celle du plan ; jusqu'a la 5.0.1, un seul facteur
+    -- celui de la piste -- valait pour les deux. Un plan d'un autre
+    feuillard (un cuivre standard sous une piste en HVLP) etait donc compte
+    avec la rugosite de la piste.
+
+    UN PLAN QUI NE DECLARE RIEN PREND CELLE DE LA PISTE, comme avant : c'est le
+    meme feuillard dans la plupart des empilages, et c'est la regle qui garde
+    au bit pres tous les documents qui ne la donnent que pour la piste.
+    Declaree -- zero compris, `rugosite_rms_um: 0` dit un plan lisse --, elle
+    est la sienne. Les deux plans d'une triplaque partent ensemble, et
+    `line_losses` moyenne leurs facteurs. Un plan qu'on ne retrouve pas par
+    son nom garde celle de la piste.
+
+    EGALE A CELLE DE LA PISTE, ou non declaree : rien de plus ne part, et le
+    calcul est celui d'avant au bit pres.
+    """
+    kw = _rugosite_couche(couches, indice)
+    info = info if isinstance(info, dict) else {}
+    plans = []
+    for nom, haut in ((info.get("plan_haut"), True),
+                      (info.get("plan_bas"), False)):
+        if nom:
+            plans.append(_indice_plan(couches, indice, nom, haut))
+    if not plans:
+        return kw
+    propres = []
+    for k in plans:
+        c = (couches[k] or {}) if k >= 0 else {}
+        if k >= 0 and any(cle in c for cle in _CLES_RUGOSITE_DOC):
+            propres.append(_rugosite_couche(couches, k))
+        else:
+            propres.append(dict(kw))
+    if all(p == kw for p in propres):
+        return kw
+    return dict(kw, rugosite_plan=propres[0] if len(propres) == 1 else propres)
 
 
 def options_modele(doc):
@@ -6248,13 +6380,472 @@ def _abcd_deux_brins(m, mode):
                      [2.0 * m[1, 0], m[1, 1]]], dtype=complex)
 
 
+# --------------------------------------------------------------------------
+# LA PAIRE PAR BRIN : LA CASCADE A QUATRE ACCES (5.1.0)
+# --------------------------------------------------------------------------
+# LES MODES PAIR ET IMPAIR NE SONT LES MODES PROPRES QUE D'UNE PAIRE
+# SYMETRIQUE. Deux largeurs differentes, une masse coplanaire d'un seul
+# cote, un via sur un seul brin, un brin plus long que l'autre : le mode
+# impair ne reste plus impair en chemin, une part part en mode commun, et la
+# cascade des deux modes, chacun de son cote, ne sait pas le dire. La 5.0.x
+# moyennait les deux diagonales (`modes_paire`) et ESTIMAIT Scd21 d'apres la
+# surlongueur ; le Scd ne se mettait dans aucune autre case.
+#
+# LA PAIRE EST DONC MISE EN CASCADE BRIN PAR BRIN, quatre acces (1p, 1n, 2p,
+# 2n), matrices ABCD 4 x 4 en blocs 2 x 2 [[A, B], [C, D]] sur (p, n) --
+# la meme convention que `ibis.abcd_brins` :
+#   · un troncon couple : la ligne a DEUX conducteurs de [L] et [C] 2 x 2
+#     (la section de la carte de chaleur, `matrices_paire`), decomposee en
+#     ses deux modes propres (`_modes_brins`) -- l'un a composantes de signes
+#     opposes (« impair »), l'autre de meme signe (« pair ») ;
+#         A = Tv ch Tv^-1   B = Tv Zm sh Ti^-1
+#         C = Ti sh/Zm Tv^-1   D = Ti ch Ti^-1
+#     Tv les tensions modales, Ti = (Tv^T)^-1 les courants ;
+#   · un troncon que la partenaire ne longe pas : deux lignes seules, celle
+#     de la piste et -- quand la partenaire reste sur UNE autre couche --
+#     celle de la partenaire sur sa couche, a sa largeur ;
+#   · un via ou un coude : sur les deux brins quand la partenaire a le sien
+#     au meme raccord, sur un seul sinon (`_brins_de_la_paire`) ;
+#   · la surlongueur : une ligne seule sur le brin LE PLUS LONG -- celui que
+#     les longueurs designent, et non plus le brin N d'office --, posee cote
+#     recepteur (le dessin ne dit pas ou elle se loge).
+# Sdd, Scc, Sdc et Scd sortent des S 4 x 4 (R0 = Z_ref,diff / 2 par brin)
+# par la matrice des modes mixtes : Sdd sur Z_ref,diff, Scc sur Z_ref,diff/4,
+# comme avant.
+#
+# LES PERTES, MODE PAR MODE, comme la cascade des deux modes : celles du
+# mode impair a l'impedance PAR BRIN du mode impair (Z_d / 2), celles du
+# pair a la sienne (2 Z_c), a la largeur moyenne des deux brins. A la limite
+# symetrique, les modes propres sont exactement pair et impair et la cascade
+# rejoint celle des deux modes.
+#
+# UNE PAIRE SYMETRIQUE RESTE CE QU'ELLE ETAIT, AU BIT PRES : sans
+# dissymetrie (sous SEUIL_DISSYMETRIE sur les diagonales de [L] et [C],
+# sous DELTA_L_SYMETRIE_MM de surlongueur, vias et coudes sur les deux
+# brins), la sortie est celle de la cascade des deux modes, inchangee. La
+# cascade a quatre acces d'une paire symetrique la rejoint a 1e-9 pres
+# (banc) : chaque element y est pose par la meme transformation des modes.
+# --------------------------------------------------------------------------
+
+# Ecart relatif des deux diagonales de [L] ou de [C] au-dessus duquel une
+# section est dissymetrique. En dessous, la moyenne des diagonales
+# (`modes_paire`) est exacte au carre de l'ecart pres.
+SEUIL_DISSYMETRIE = 1e-3
+# Surlongueur (mm) en dessous de laquelle les deux brins sont egaux.
+DELTA_L_SYMETRIE_MM = 1e-3
+# Deux bouts de piste se raccordent a moins de cela (mm).
+TOLERANCE_RACCORD_MM = 0.01
+
+
+def _par_brin(m_p, m_n):
+    """La matrice 4 x 4 de deux quadripoles 2 x 2 poses chacun sur son brin,
+    sans couplage ; None vaut un fil."""
+    out = np.zeros((4, 4), dtype=complex)
+    for k, mm in enumerate((m_p, m_n)):
+        if mm is None:
+            out[k, k] = out[2 + k, 2 + k] = 1.0
+            continue
+        out[k, k], out[k, 2 + k] = mm[0, 0], mm[0, 1]
+        out[2 + k, k], out[2 + k, 2 + k] = mm[1, 0], mm[1, 1]
+    return out
+
+
+def _bases_des_modes():
+    """(TV, TI) : les brins depuis les modes (d, c) -- V_d = V_p - V_n,
+    I_d = (I_p - I_n)/2, V_c = (V_p + V_n)/2, I_c = I_p + I_n. TI est
+    (TV^T)^-1 : c'est ce qui fait de (d, c) un couple de bases modales."""
+    return (np.array([[0.5, 1.0], [-0.5, 1.0]]),
+            np.array([[1.0, 0.5], [-1.0, 0.5]]))
+
+
+def _brins_des_modes(m_d, m_c):
+    """La matrice 4 x 4 par brin d'un element SYMETRIQUE donne par ses deux
+    modes (2 x 2, differentiel et commun). La transformation de
+    `ibis.abcd_brins`, a une frequence."""
+    tv, ti = _bases_des_modes()
+    tvi, tii = np.linalg.inv(tv), np.linalg.inv(ti)
+    out = np.zeros((4, 4), dtype=complex)
+    for (r, c), (ga, dr) in (((0, 0), (tv, tvi)), ((0, 1), (tv, tii)),
+                             ((1, 0), (ti, tvi)), ((1, 1), (ti, tii))):
+        bloc = np.diag([m_d[r, c], m_c[r, c]]).astype(complex)
+        out[2 * r:2 * r + 2, 2 * c:2 * c + 2] = ga @ bloc @ dr
+    return out
+
+
+def _modes_brins(l_mat, c_mat):
+    """Les deux modes propres d'une section a deux conducteurs, [L] et [C]
+    (H/m, F/m) ranges (p, n) : {tv, ti, tvi, tii, zm, eps, z_brin}, les
+    modes ranges (impair, pair), ou None si la section ne s'y prete pas.
+
+    LA DECOMPOSITION PAR [L]^1/2 : [L]^1/2 [C] [L]^1/2 est symetrique, ses
+    vecteurs propres U sont orthogonaux meme quand les deux vitesses se
+    confondent, et Tv = [L]^1/2 U diagonalise [L][C]. En milieu homogene
+    (triplaque), les deux vitesses sont EGALES et toute base convient a la
+    propagation : on prend alors les vecteurs propres de [L], qui sont
+    impair et pair a la symetrie pres.
+
+    LA NORMALISATION : le mode impair a V_p - V_n = 1, le pair
+    (V_p + V_n)/2 = 1. Pour une paire symetrique, Tv est alors exactement
+    la base (d, c) de `_bases_des_modes`, Zm vaut (Z_diff, Z_commune), et
+    l'impedance PAR BRIN du mode (`z_brin`, celle des pertes) Z_impair et
+    Z_pair."""
+    lm_ = np.array(l_mat, dtype=float)
+    cm_ = np.array(c_mat, dtype=float)
+    w, q = np.linalg.eigh(lm_)
+    if not np.all(w > 0):
+        return None
+    ls = q @ np.diag(np.sqrt(w)) @ q.T
+    mu, u = np.linalg.eigh(ls @ cm_ @ ls)
+    if not np.all(mu > 0):
+        return None
+    tv = q.copy() if abs(mu[1] - mu[0]) <= 1e-9 * float(np.max(mu)) \
+        else ls @ u
+    prod = tv[0, :] * tv[1, :]
+    k_imp = int(np.argmin(prod))
+    k_pair = 1 - k_imp
+    if not (prod[k_imp] < 0.0 < prod[k_pair]):
+        return None
+    v_d = tv[:, k_imp] / (tv[0, k_imp] - tv[1, k_imp])
+    v_c = tv[:, k_pair] / (0.5 * (tv[0, k_pair] + tv[1, k_pair]))
+    tv = np.column_stack([v_d, v_c])
+    ti = np.linalg.inv(tv.T)
+    tvi, tii = np.linalg.inv(tv), tv.T.copy()
+    l_mod = np.diag(tvi @ lm_ @ ti)
+    c_mod = np.diag(tii @ cm_ @ tv)
+    if not (np.all(l_mod > 0) and np.all(c_mod > 0)):
+        return None
+    zm = np.sqrt(l_mod / c_mod)
+    return {"tv": tv, "ti": ti, "tvi": tvi, "tii": tii, "zm": zm,
+            "eps": tl.C_0 * tl.C_0 * l_mod * c_mod,
+            "z_brin": np.array([zm[0] / 2.0, 2.0 * zm[1]])}
+
+
+def _abcd_ligne_couplee(md, gammas, zm, longueur_m):
+    """La matrice 4 x 4 d'une ligne a deux conducteurs : modes `md`
+    (`_modes_brins`), constantes de propagation modales `gammas` et
+    impedances modales `zm` a cette frequence, longueur en metres."""
+    gl = np.asarray(gammas, dtype=complex) * longueur_m
+    ch, sh = np.cosh(gl), np.sinh(gl)
+    zm = np.asarray(zm, dtype=complex)
+    tv, ti, tvi, tii = md["tv"], md["ti"], md["tvi"], md["tii"]
+    out = np.zeros((4, 4), dtype=complex)
+    out[:2, :2] = tv @ np.diag(ch) @ tvi
+    out[:2, 2:] = tv @ np.diag(zm * sh) @ tii
+    out[2:, :2] = ti @ np.diag(sh / zm) @ tvi
+    out[2:, 2:] = ti @ np.diag(ch) @ tii
+    return out
+
+
+def _s_brins(m, r0):
+    """Les S 4 x 4 (acces 1p, 1n, 2p, 2n ; ondes sur R0 a chaque brin)
+    d'une matrice ABCD 4 x 4 -- `ibis.s_depuis_abcd_4`, a une frequence."""
+    a, b, c, d = m[:2, :2], m[:2, 2:], m[2:, :2], m[2:, 2:]
+    p, q = (a + r0 * c) / 2.0, (b + r0 * d) / 2.0
+    r, u = (a - r0 * c) / 2.0, (b - r0 * d) / 2.0
+    w = np.linalg.inv(p + q / r0)
+    s22 = -w @ (p - q / r0)
+    s = np.zeros((4, 4), dtype=complex)
+    s[:2, :2] = (r + u / r0) @ w
+    s[:2, 2:] = (r - u / r0) + (r + u / r0) @ s22
+    s[2:, :2] = w
+    s[2:, 2:] = s22
+    return s
+
+
+def _modes_mixtes(s4):
+    """(Sdd, Sdc, Scd, Scc) 2 x 2 des S 4 x 4 par brin : la matrice des
+    modes mixtes, d = (p - n)/racine 2, c = (p + n)/racine 2, a chaque
+    acces. Sdd est rapporte a 2 R0, Scc a R0 / 2."""
+    k = 1.0 / math.sqrt(2.0)
+    mm = k * np.array([[1.0, -1.0, 0.0, 0.0], [0.0, 0.0, 1.0, -1.0],
+                       [1.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 1.0]])
+    smm = mm @ s4 @ mm.T
+    return smm[:2, :2], smm[:2, 2:], smm[2:, :2], smm[2:, 2:]
+
+
+def _bout(o, cle):
+    a = o.get(cle)
+    if isinstance(a, (list, tuple)) and len(a) >= 2:
+        return (_nombre(a[0]), _nombre(a[1]))
+    return None
+
+
+def _raccord(a, b):
+    """Le point commun de deux bouts de piste consecutifs, et leurs deux
+    directions orientees dans le sens du parcours : (x, y, v1, v2), ou None
+    s'ils ne se touchent pas."""
+    pa = [_bout(a, "start"), _bout(a, "end")]
+    pb = [_bout(b, "start"), _bout(b, "end")]
+    if None in pa or None in pb:
+        return None
+    for ia in (1, 0):
+        for ib in (0, 1):
+            if math.hypot(pa[ia][0] - pb[ib][0], pa[ia][1] - pb[ib][1]) \
+                    <= TOLERANCE_RACCORD_MM:
+                v1 = (pa[ia][0] - pa[1 - ia][0], pa[ia][1] - pa[1 - ia][1])
+                v2 = (pb[1 - ib][0] - pb[ib][0], pb[1 - ib][1] - pb[ib][1])
+                return pa[ia][0], pa[ia][1], v1, v2
+    return None
+
+
+def _angle(v1, v2):
+    n1, n2 = math.hypot(*v1), math.hypot(*v2)
+    if not (n1 > 1e-9 and n2 > 1e-9):
+        return 0.0
+    c = max(-1.0, min(1.0, (v1[0] * v2[0] + v1[1] * v2[1]) / (n1 * n2)))
+    return math.degrees(math.acos(c))
+
+
+def _coudes_brin(objs):
+    """Les coudes d'un brin dont les bouts se suivent : [{x, y, angle_deg,
+    largeur}], ou None si la suite n'est pas une chaine -- on ne sait alors
+    pas ou sont ses coudes, et l'on suppose ceux de la piste."""
+    if len(objs) < 2:
+        return []
+    out = []
+    for a, b in zip(objs, objs[1:]):
+        r = _raccord(a, b)
+        if r is None:
+            return None
+        if int(_nombre(a.get("layer"), -1)) != int(_nombre(b.get("layer"), -1)):
+            continue
+        ang = _angle(r[2], r[3])
+        if ang >= ANGLE_COUDE_MINIMAL:
+            out.append({"x": r[0], "y": r[1], "angle_deg": round(ang, 1),
+                        "largeur": _nombre(b.get("width"), 0.0)})
+    return out
+
+
+def _ligne_seule(couches, couche, largeur_mm, ep_mm, cache):
+    """La section d'un brin SEUL sur sa couche (ni masse coplanaire ni
+    voisine) : {z0, eps, info, largeur, ep, couche}, en cache, ou None."""
+    cle = (int(couche), round(largeur_mm, 4), round(ep_mm, 4))
+    if cle not in cache:
+        cache[cle] = None
+        geo, info = section_de_couche(couches, int(couche), largeur_mm, ep_mm,
+                                      0.0, 0.0)
+        if geo is not None:
+            try:
+                r = tl.solve_line(geo)
+            except Exception:                           # noqa: BLE001
+                r = None
+            if r and r.get("z0", 0) > 0:
+                cache[cle] = {"z0": float(r["z0"]),
+                              "eps": float(r["eps_eff"]), "info": info,
+                              "largeur": largeur_mm, "ep": ep_mm,
+                              "couche": int(couche)}
+    return cache[cle]
+
+
+def _abcd_ligne_seule(ls, couches, f, opts, longueur_m):
+    """La matrice 2 x 2 d'une ligne seule (`_ligne_seule`) a la frequence f :
+    le calcul de la cascade simple (`_ligne_a`)."""
+    kw = dict(_geometrie_pertes(ls["info"]),
+              **_rugosite_couche(couches, ls["couche"]))
+    eps_f, z_f, a_c, a_d = _ligne_a(ls["z0"], ls["eps"], ls["info"], f,
+                                    ls["largeur"] * 1e-3, ls["ep"] * 1e-3,
+                                    kw, opts)
+    beta = 2 * math.pi * f * math.sqrt(eps_f) / tl.C_0
+    return tl.abcd_line(z_f, complex(a_c + a_d, beta), longueur_m)
+
+
+def _brins_de_la_paire(couches, objets, segments, chaleur, doc, partenaire,
+                       modeles_via, coudes_par_troncon, long_p, long_n):
+    """CE QUI DISTINGUE LES DEUX BRINS de la paire, troncon par troncon :
+    {vias, coudes, sections, seuls_n, brin_long, surlongueur_mm, largeur_n,
+     couche_n, dissymetries, notes}.
+
+    LA PARTENAIRE EST CE QUE LE DOCUMENT EN DIT (`voisinage`, son net). On
+    n'en tire que ce qui est sur :
+      · SES COUCHES, si chaque bout en porte une. Un via de la piste entre
+        les couches a et b n'a de vis-a-vis que si la partenaire a du
+        cuivre sur a ET sur b, ou un via dessine a moins de
+        ECART_VIAS_PAIRE_MAX ; sinon il est sur le brin P seul. Sans couche
+        connue, les deux brins ont le leur, comme avant ;
+      · SES COUDES, si ses bouts se suivent (`_coudes_brin`). Chacun se
+        range au coude de la piste le plus proche (a ECART_VIAS_PAIRE_MAX
+        pres), ou a son raccord le plus proche s'il n'a pas de vis-a-vis ;
+        un coude de la piste sans vis-a-vis reste sur P seul. Sans chaine,
+        ceux de la piste, sur les deux brins ;
+      · SA LONGUEUR : la plus longue des deux designe le brin qui porte la
+        surlongueur."""
+    voisinage = doc.get("voisinage") or []
+    objs_n = [v for v in voisinage
+              if str(v.get("net") or "") == str(partenaire or "\0")]
+    sortie = {"vias": {i: "deux" for i in (modeles_via or {})},
+              "coudes": {}, "sections": {}, "seuls_n": {},
+              "brin_long": None, "surlongueur_mm": 0.0,
+              "largeur_n": None, "couche_n": None,
+              "dissymetries": [], "notes": []}
+    for i, c in (coudes_par_troncon or {}).items():
+        seg = segments[i] if i < len(segments) else {}
+        sortie["coudes"][i] = {"p": c["angle_deg"], "n": c["angle_deg"],
+                               "largeur_n": seg.get("largeur", 0.2)}
+    dissym = sortie["dissymetries"]
+
+    largeurs_n = [_nombre(v.get("width"), 0.0) for v in objs_n
+                  if _nombre(v.get("width"), 0.0) > 0]
+    if largeurs_n:
+        sortie["largeur_n"] = max(set(largeurs_n), key=largeurs_n.count)
+
+    # -- les sections couplees ---------------------------------------------
+    n_sect = 0
+    for i, seg in enumerate(segments):
+        c = chaleur[i] if i < len(chaleur) else None
+        mp = (c or {}).get("matrices_paire")
+        if not (c and c.get("z_diff") and mp and seg.get("z0", 0) > 0):
+            continue
+        lm_, cm_ = mp["l"], mp["c"]
+
+        def ecart(m):
+            return abs(m[0][0] - m[1][1]) / max(abs(m[0][0]), abs(m[1][1]),
+                                                 1e-30)
+        if max(ecart(lm_), ecart(cm_)) <= SEUIL_DISSYMETRIE and \
+                abs(mp["largeur_p"] - mp["largeur_n"]) <= 1e-6:
+            continue
+        md = _modes_brins(lm_, cm_)
+        if md is None:
+            sortie["notes"].append(
+                "Tronçon %d : section de la paire sans modes propres "
+                "lisibles, moyennée comme une paire symétrique." % i)
+            continue
+        md["largeur"] = 0.5 * (mp["largeur_p"] + mp["largeur_n"])
+        sortie["sections"][i] = md
+        n_sect += 1
+        if sortie["largeur_n"] is None:
+            sortie["largeur_n"] = mp["largeur_n"]
+    if n_sect:
+        exemples = [i for i in sortie["sections"]]
+        mp = chaleur[exemples[0]]["matrices_paire"]
+        dissym.append("section dissymétrique sur %d tronçon(s) (largeurs "
+                      "%.3g / %.3g mm)" % (n_sect, mp["largeur_p"],
+                                           mp["largeur_n"]))
+
+    # -- les couches de la partenaire, et les vias ---------------------------
+    couches_n = set()
+    connu = bool(objs_n)
+    for v in objs_n:
+        k = int(_nombre(v.get("layer"), -1))
+        if k < 0:
+            connu = False
+            break
+        couches_n.add(k)
+    if connu and len(couches_n) == 1:
+        sortie["couche_n"] = next(iter(couches_n))
+    n_seul_p = 0
+    for i, mv in (modeles_via or {}).items():
+        if not connu or i < 1 or i >= len(objets):
+            continue
+        a = int(_nombre(objets[i - 1].get("layer"), -1))
+        b = int(_nombre(objets[i].get("layer"), -1))
+        if a in couches_n and b in couches_n:
+            continue
+        geo = mv.get("geo") or {}
+        if geo.get("a_position") and _via_de_la_partenaire(
+                doc, partenaire, geo["x_mm"], geo["y_mm"]) is not None:
+            continue
+        sortie["vias"][i] = "p"
+        n_seul_p += 1
+    if n_seul_p:
+        dissym.append("%d via(s) sur le brin %s seul" % (
+            n_seul_p, doc.get("net") or "P"))
+    # Les vias de la partenaire sans vis-a-vis : on les compte, sans les
+    # modeliser -- il faudrait sa section de part et d'autre.
+    if connu and len(couches_n) >= 2 and _coudes_brin(objs_n) is not None:
+        trans_n = sum(1 for a, b in zip(objs_n, objs_n[1:])
+                      if int(_nombre(a.get("layer"), -1))
+                      != int(_nombre(b.get("layer"), -1)))
+        n_deux = sum(1 for x in sortie["vias"].values() if x == "deux")
+        if trans_n > n_deux:
+            sortie["notes"].append(
+                "Le brin %s change %d fois de couche, la piste %d : ses "
+                "vias sans vis-à-vis ne sont pas modélisés." % (
+                    partenaire, trans_n, n_deux))
+
+    # -- les troncons que la partenaire ne longe pas -------------------------
+    if sortie["couche_n"] is not None:
+        cache = {}
+        for i, seg in enumerate(segments):
+            c = chaleur[i] if i < len(chaleur) else None
+            if seg.get("z0", 0) <= 0 or (c and c.get("z_diff")):
+                continue
+            if int(_nombre(seg.get("couche"), -1)) == sortie["couche_n"]:
+                continue
+            ls = _ligne_seule(couches, sortie["couche_n"],
+                              sortie["largeur_n"] or seg.get("largeur", 0.2),
+                              seg.get("cuivre", 0.035), cache)
+            if ls is not None:
+                sortie["seuls_n"][i] = ls
+        if sortie["seuls_n"]:
+            dissym.append("brin %s resté sur %s sur %d tronçon(s)" % (
+                partenaire, _nom_de_couche(couches, sortie["couche_n"]),
+                len(sortie["seuls_n"])))
+
+    # -- les coudes, brin par brin -------------------------------------------
+    coudes_n = _coudes_brin(objs_n) if objs_n else None
+    if coudes_n is not None and objs_n:
+        raccords = {}
+        for i in range(1, len(objets)):
+            r = _raccord(objets[i - 1], objets[i])
+            p = (r[0], r[1]) if r else _bout(objets[i], "start")
+            if p is not None:
+                raccords[i] = p
+        coudes = sortie["coudes"]
+        for i in coudes:
+            coudes[i]["n"] = None
+        libres = set(coudes)
+        n_seul_n = 0
+        for cn in coudes_n:
+            prets = sorted(
+                (math.hypot(raccords[i][0] - cn["x"], raccords[i][1] - cn["y"]), i)
+                for i in libres if i in raccords)
+            if prets and prets[0][0] <= ECART_VIAS_PAIRE_MAX:
+                i = prets[0][1]
+                libres.discard(i)
+                coudes[i].update(n=cn["angle_deg"],
+                                 largeur_n=cn["largeur"] or coudes[i]["largeur_n"])
+                continue
+            tous = sorted(
+                (math.hypot(p[0] - cn["x"], p[1] - cn["y"]), i)
+                for i, p in raccords.items()
+                if i not in coudes or coudes[i]["n"] is None)
+            i = tous[0][1] if tous else 0
+            e = coudes.setdefault(i, {"p": None, "n": None,
+                                      "largeur_n": cn["largeur"] or 0.2})
+            e["n"], e["largeur_n"] = cn["angle_deg"], cn["largeur"] or 0.2
+            libres.discard(i)
+            n_seul_n += 1
+        n_seul_pc = sum(1 for e in coudes.values()
+                        if e["p"] is not None and e["n"] is None)
+        if n_seul_pc or n_seul_n:
+            dissym.append("coudes sur un seul brin (%d sur %s, %d sur %s)" % (
+                n_seul_pc, doc.get("net") or "P", n_seul_n, partenaire))
+
+    # -- la surlongueur, sur le brin le plus long ----------------------------
+    if long_n > 0 and long_p > 0:
+        dl = long_p - long_n
+        if abs(dl) > DELTA_L_SYMETRIE_MM:
+            sortie["brin_long"] = "p" if dl > 0 else "n"
+            sortie["surlongueur_mm"] = abs(dl)
+            dissym.append("brin %s plus long de %.3g mm" % (
+                (doc.get("net") or "P") if dl > 0 else partenaire, abs(dl)))
+    return sortie
+
+
 def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_diff, doc, analyse, avertissements, topo, garder_abcd=False,
                             modeles_via=None, coudes_par_troncon=None,
-                            z_trav=None, opts=None):
+                            z_trav=None, opts=None, quatre_acces=None):
     """Calcule la cascade de paramètres S en mode mixte pour la paire différentielle :
     - Sdd : différentiel pur 2x2 (sur z_ref_diff, ex: 100 Ω ou 90 Ω)
     - Scc : mode commun pur 2x2 (sur z_ref_comm = z_ref_diff / 4.0, ex: 25 Ω)
     - Scd : conversion différentiel -> commun issue du déséquilibre / skew (ΔL)
+      -- EXACTE, avec Sdc, pour une paire dissymétrique (5.1.0, voir « LA
+      PAIRE PAR BRIN ») ; une estimation d'après la surlongueur sinon
+
+    `quatre_acces` : None (defaut) met la paire en cascade brin par brin
+    quand elle est dissymetrique (`_brins_de_la_paire`), et rend alors les
+    S de la cascade a quatre acces ; True le fait toujours (le banc compare
+    les deux cascades sur une paire symetrique), False jamais.
     - touchstone_sdd : chaîne au format Touchstone .s2p différentiel
     - touchstone_scc : chaîne au format Touchstone .s2p mode commun
 
@@ -6331,15 +6922,44 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
         if mut:
             mutuelles[i_v] = mut
 
+    # LES DEUX BRINS, ce qui les distingue : voir « LA PAIRE PAR BRIN ».
+    brins = _brins_de_la_paire(couches, objets, segments, chaleur, doc,
+                               partenaire, modeles_via, coudes_par_troncon,
+                               long_p, long_n)
+    dissymetrique = bool(brins["dissymetries"])
+    quatre = dissymetrique if quatre_acces is None else bool(quatre_acces)
+    r0_brin = z_ref_diff / 2.0
+    cache_seul = {}
+    surlong = None
+    if quatre and brins["brin_long"]:
+        # LA LIGNE SEULE DU BRIN LE PLUS LONG, celle de son dernier troncon.
+        der = [s for s in segments if s.get("z0", 0) > 0][-1]
+        if brins["brin_long"] == "n":
+            couche_l = (brins["couche_n"] if brins["couche_n"] is not None
+                        else der.get("couche", 0))
+            larg_l = brins["largeur_n"] or der.get("largeur", 0.2)
+        else:
+            couche_l, larg_l = der.get("couche", 0), der.get("largeur", 0.2)
+        surlong = _ligne_seule(couches, couche_l, larg_l,
+                               der.get("cuivre", 0.035), cache_seul)
+        if surlong is None:
+            avertissements.append(
+                "Surlongueur de la paire non modélisée : la section du brin "
+                "seul n'a pas pu être résolue.")
+
     matrices_sdd = []
     matrices_scc = []
     matrices_scd = []
+    matrices_sdc = []
     abcds_dd = []
+    abcds_cc = []
+    abcds_brins = []
 
     for f in freqs:
         f_flt = float(f)
         abcd_diff = np.eye(2, dtype=complex)
         abcd_comm = np.eye(2, dtype=complex)
+        m4 = np.eye(4, dtype=complex)
 
         for i, seg in enumerate(segments):
             if seg.get("z0", 0) <= 0:
@@ -6356,6 +6976,17 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
                                     coudes_par_troncon[i]["angle_deg"])
                 abcd_diff = abcd_diff @ _abcd_deux_brins(m_c, "diff")
                 abcd_comm = abcd_comm @ _abcd_deux_brins(m_c, "comm")
+            # PAR BRIN, chaque coude sur le brin qui l'a (`brins["coudes"]`).
+            ec = brins["coudes"].get(i) if quatre else None
+            if ec:
+                h_m = max(seg.get("h", 0.0), 1e-9) * 1e-3
+                m4 = m4 @ _par_brin(
+                    None if ec["p"] is None else tl.abcd_coude(
+                        seg["largeur"] * 1e-3, h_m, seg.get("er", 4.3), f_flt,
+                        ec["p"]),
+                    None if ec["n"] is None else tl.abcd_coude(
+                        ec["largeur_n"] * 1e-3, h_m, seg.get("er", 4.3), f_flt,
+                        ec["n"]))
             if modeles_via and i in modeles_via:
                 mv = modeles_via[i]
                 z_t = ((z_trav or {}).get(i) or {}).get(f)
@@ -6363,15 +6994,27 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
                     z_t = _impedance_traversee(mv["cavite"], f_flt)
                 mut = mutuelles.get(i) or {}
                 modele = mv.get("modele", "pi")
-                abcd_diff = abcd_diff @ _abcd_deux_brins(
+                v_dd = _abcd_deux_brins(
                     _abcd_via(mv, f_flt, 0.0, modele,
                               l_via=mv["l"] - mut.get("m_impair", 0.0),
                               c_via=mv["c"] + 2.0 * mut.get("c_m", 0.0)),
                     "diff")
-                abcd_comm = abcd_comm @ _abcd_deux_brins(
+                v_cc = _abcd_deux_brins(
                     _abcd_via(mv, f_flt, z_t, modele,
                               l_via=mv["l"] + mut.get("m_pair", 0.0)),
                     "comm")
+                abcd_diff = abcd_diff @ v_dd
+                abcd_comm = abcd_comm @ v_cc
+                if quatre:
+                    # LE VIA SUR LES DEUX BRINS, mutuelle des futs comprise,
+                    # par ses deux modes ; SUR LE BRIN P SEUL, le via de la
+                    # cascade simple -- traversee de cavite comprise, son
+                    # courant de retour n'a plus de vis-a-vis.
+                    if brins["vias"].get(i, "deux") == "deux":
+                        m4 = m4 @ _brins_des_modes(v_dd, v_cc)
+                    else:
+                        m4 = m4 @ _par_brin(_abcd_via(mv, f_flt, z_t, modele),
+                                            None)
 
             if c and c.get("z_diff"):
                 z_diff_k = float(c["z_diff"])
@@ -6422,22 +7065,70 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
                                [sh_even / z_comm_k, ch_even]], dtype=complex)
             abcd_comm = abcd_comm @ m_even
 
-        s_dd = tl.cascade_to_s(abcd_diff, z_ref_diff)
-        s_cc = tl.cascade_to_s(abcd_comm, z_ref_comm)
+            if not quatre:
+                continue
+            md = brins["sections"].get(i)
+            ls_n = brins["seuls_n"].get(i)
+            if md is not None:
+                # LA SECTION DISSYMETRIQUE, par ses deux modes propres : les
+                # pertes de chacun a son impedance par brin, a la largeur
+                # moyenne ; le dielectrique causal a remplissage constant.
+                w_moy = md["largeur"] * 1e-3
+                gam, zm = [], []
+                for k in (0, 1):
+                    z_b, e_k = float(md["z_brin"][k]), float(md["eps"][k])
+                    z_bf, e_f = z_b, e_k
+                    if er_f != float(seg.get("er", 4.3)):
+                        z_bf, e_f = _milieu_causal(z_b, e_k,
+                                                   float(seg.get("er", 4.3)),
+                                                   er_f)
+                    a_c, a_d = tl.line_losses(z_bf, e_f, w_moy, er, tand,
+                                              f_flt, ep_m, **kw)
+                    gam.append(a_c + a_d + 2j * math.pi * f_flt
+                               * math.sqrt(max(e_f, 1.0)) / tl.C_0)
+                    zm.append(float(md["zm"][k]) * z_bf / z_b)
+                m4 = m4 @ _abcd_ligne_couplee(md, gam, zm, L_m)
+            elif ls_n is not None:
+                # LA PARTENAIRE RESTEE SUR SA COUCHE : la piste seule d'un
+                # cote (le mode impair d'un troncon non couple EST la ligne
+                # seule), la partenaire seule de l'autre.
+                z_p = z_diff_k / 2.0
+                m4 = m4 @ _par_brin(
+                    np.array([[ch_odd, z_p * sh_odd], [sh_odd / z_p, ch_odd]],
+                             dtype=complex),
+                    _abcd_ligne_seule(ls_n, couches, f_flt, opts, L_m))
+            else:
+                m4 = m4 @ _brins_des_modes(m_odd, m_even)
 
-        eps_moy = float(segments[0].get("eps_eff", 4.0)) if segments else 4.0
-        delta_tau = (delta_l_mm * 1e-3 * math.sqrt(max(eps_moy, 1.0))) / tl.C_0
-        phi_skew = math.pi * f_flt * delta_tau
-        scd21_mag = abs(s_dd[1, 0]) * abs(math.sin(phi_skew))
-        scd21_mag = max(1e-7, min(1.0, scd21_mag))
-        s_cd = np.array([[1e-7, 1e-7],
-                         [scd21_mag, 1e-7]], dtype=complex)
+        if quatre:
+            # LA SURLONGUEUR, sur le brin le plus long, cote recepteur.
+            if surlong is not None:
+                lg = _abcd_ligne_seule(surlong, couches, f_flt, opts,
+                                       brins["surlongueur_mm"] * 1e-3)
+                m4 = m4 @ (_par_brin(lg, None) if brins["brin_long"] == "p"
+                           else _par_brin(None, lg))
+            s_dd, s_dc, s_cd, s_cc = _modes_mixtes(_s_brins(m4, r0_brin))
+            matrices_sdc.append(s_dc)
+            if garder_abcd:
+                abcds_brins.append(m4)
+        else:
+            s_dd = tl.cascade_to_s(abcd_diff, z_ref_diff)
+            s_cc = tl.cascade_to_s(abcd_comm, z_ref_comm)
+
+            eps_moy = float(segments[0].get("eps_eff", 4.0)) if segments else 4.0
+            delta_tau = (delta_l_mm * 1e-3 * math.sqrt(max(eps_moy, 1.0))) / tl.C_0
+            phi_skew = math.pi * f_flt * delta_tau
+            scd21_mag = abs(s_dd[1, 0]) * abs(math.sin(phi_skew))
+            scd21_mag = max(1e-7, min(1.0, scd21_mag))
+            s_cd = np.array([[1e-7, 1e-7],
+                             [scd21_mag, 1e-7]], dtype=complex)
 
         matrices_sdd.append(s_dd)
         matrices_scc.append(s_cc)
         matrices_scd.append(s_cd)
         if garder_abcd:
             abcds_dd.append(abcd_diff)
+            abcds_cc.append(abcd_comm)
 
     entete_sdd = [
         "WEB_CAO -- Parametres S differentiels purs (Sdd)",
@@ -6451,6 +7142,19 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
         "Impedance de reference mode commun : %.1f ohm" % z_ref_comm,
         "Skew mesure : %.3f mm" % delta_l_mm
     ]
+    if quatre:
+        for ent in (entete_sdd, entete_scc):
+            ent.append("Cascade a quatre acces, brin par brin (paire "
+                       "dissymetrique) : conversions de mode comprises")
+        avertissements.append(
+            "Paire dissymétrique (%s) : cascade à quatre accès, brin par "
+            "brin — Sdd, Scc, Scd et Sdc en sortent exacts." % "; ".join(
+                brins["dissymetries"] or ["forcée"]))
+    avertissements.extend(brins["notes"])
+    brin_long = None
+    if brins["brin_long"]:
+        brin_long = (doc.get("net") or "P") if brins["brin_long"] == "p" \
+            else partenaire
 
     sortie = {
         "partenaire": partenaire,
@@ -6477,11 +7181,33 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
         "s_cd": [[[float(v.real), float(v.imag)] for v in m.flatten()] for m in matrices_scd],
         "touchstone_sdd": touchstone(freqs, matrices_sdd, z_ref_diff, entete_sdd) if matrices_sdd else "",
         "touchstone_scc": touchstone(freqs, matrices_scc, z_ref_comm, entete_scc) if matrices_scc else "",
+        # LA PAIRE PAR BRIN (5.1.0) : si la cascade a quatre acces a servi,
+        # ce qui la rendait necessaire, et le brin le plus long (son net),
+        # que l'oeil n'a plus a supposer.
+        "quatre_acces": quatre,
+        "dissymetrique": dissymetrique,
+        "dissymetries": list(brins["dissymetries"]),
+        "brin_long": brin_long,
+        "brin_long_role": brins["brin_long"],
+        "vias_brins": {"deux": sum(1 for x in brins["vias"].values()
+                                   if x == "deux"),
+                       "p": sum(1 for x in brins["vias"].values()
+                                if x == "p")},
     }
+    if quatre:
+        sortie["s_dc"] = [[[float(v.real), float(v.imag)] for v in m.flatten()]
+                          for m in matrices_sdc]
     # LA MATRICE ABCD DU MODE DIFFERENTIEL, comme `garder_abcd` le fait pour
-    # la ligne seule : tableaux numpy, hors JSON, pour python/oeil.py.
+    # la ligne seule : tableaux numpy, hors JSON, pour python/oeil.py. Et
+    # celle du mode commun, et -- cascade a quatre acces -- celle de la paire
+    # par brin (4 x 4). Pour une paire dissymetrique, `abcd_dd` et `abcd_cc`
+    # sont ceux de la paire SYMETRISEE (diagonales moyennees, vias et coudes
+    # sur les deux brins, sans surlongueur) : la reference de l'oeil.
     if garder_abcd:
         sortie["abcd_dd"] = abcds_dd
+        sortie["abcd_cc"] = abcds_cc
+        if quatre:
+            sortie["abcd_brins"] = abcds_brins
     return sortie
 
 
@@ -6600,7 +7326,7 @@ def simuler(doc, journal=None, garder_abcd=False, freqs_imposees=None):
                     # sa couche. Voir `_geometrie_pertes`.
                     kw = dict(_geometrie_pertes(
                         info, coplanaire=int(r.get("cotes", 0)) > 0),
-                        **_rugosite_couche(couches, indice))
+                        **_rugosite_section(couches, indice, info))
                     eps_f, z_f, a_c, a_d = _ligne_a(
                         r["z0"], r["eps_eff"], info, fc, largeur * 1e-3,
                         ep * 1e-3, kw, opts)

@@ -74,6 +74,9 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simChainePistes","simBoutsPiste","simZPistes","simArcEnPolyligne",
   "simJonctionsIpc","simJoncCommuneIpc","SIM_RAYON_JONCTION_IPC","simViasIpc",
   "simContrePercageIpc","simTrouAuPointIpc","mdlContrePercage",
+  /* La portée percée de tous les vias, et les options de modèle de la carte. */
+  "simPorteeTrouIpc","simPorteeEnvoyeeIpc","simModelesIpc","simModelesIpcPoser",
+  "simModelesIpcNorm","simModelesIpcRelire","simModelesIpcForm","SIM_MODELES_VIA_IPC",
   "mdlArc","mdlArcAngle","mdlArcLongueur","ltArc","ltNet","ltPiste",
   "simCheveluRes","simRetourCouleurRes","simRetourActifIpc",
   "simRetourTraceIpc",
@@ -178,7 +181,9 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simOeilIbisModeles","simOeilBer",
   /* Œil 2.1.0 : les broches, les paires et le boîtier IBIS, le mode commun
      de la paire, le fichier .ami. */
-  "simOeilIbisBroches","simOeilBrocheValide"];
+  "simOeilIbisBroches","simOeilBrocheValide",
+  /* Œil 2.2.0 : le brin inverse, les mutuelles et les sections du boîtier. */
+  "simOeilBrocheTexte"];
 
 /* Un seul `eval`, sur les trois fichiers concaténés : ils se voient l'un
    l'autre comme dans la page, où ils partagent la portée globale. Le "use
@@ -4350,6 +4355,37 @@ T("SIM_IPC : paramètres S en mode mixte (Sdd, Scc, Scd) et rendu UI différenti
 
   SIM.modeDiffS = "sdd";
 });
+T("SIM_IPC : la paire dissymétrique dit son Scd exact et son brin le plus long (simulation_em 5.1.0)", () => {
+  const plat = v => [[v, 0], [1 - v, 0], [1 - v, 0], [v, 0]];
+  const res = {
+    net: "DIFF_P", freqs: [1e8, 1e9, 2e9], f_centre: 1e9,
+    ligne: { z0_moyen: 100, troncons: 1, longueur: 20 },
+    couplage: { paires: [{ net_voisin: "DIFF_N", differentielle: true, z_diff: 100 }] },
+    s_diff: {
+      partenaire: "DIFF_N", delta_l_mm: 3, z_ref_diff: 100.0, z_ref_comm: 25.0,
+      s_dd: [plat(0.05), plat(0.1), plat(0.15)], s_cc: [plat(0.4), plat(0.45), plat(0.5)],
+      s_cd: [plat(0.01), plat(0.02), plat(0.03)], s_dc: [plat(0.01), plat(0.02), plat(0.03)],
+      touchstone_sdd: "", touchstone_scc: "",
+      quatre_acces: true, dissymetries: ["brin DIFF_N plus long de 3 mm"], brin_long: "DIFF_N"
+    }
+  };
+  const avant = SIM.modeDiffS;
+  try {
+    SIM.modeDiffS = "scd";
+    const fiche = simFicheSDiff(res);
+    for (const t of ["quatre accès", "brin DIFF_N plus long de 3 mm", "<b>DIFF_N</b>"])
+      if (!fiche.includes(t)) throw new Error("absent de la fiche Scd : " + t);
+    if (fiche.includes("déséquilibre de longueur")) throw new Error("phrase de l'estimation sur un Scd exact");
+    SIM.modeDiffS = "sdd";
+    if (!simFicheSDiff(res).includes("brin par brin")) throw new Error("Sdd d'une paire dissymétrique muet");
+    /* La paire symétrique garde sa phrase. */
+    res.s_diff.quatre_acces = false;
+    SIM.modeDiffS = "scd";
+    const sym = simFicheSDiff(res);
+    if (!sym.includes("déséquilibre de longueur") || sym.includes("quatre accès"))
+      throw new Error("la fiche d'une paire symétrique a changé");
+  } finally { SIM.modeDiffS = avant; }
+});
 
 /* =============================================================================
    Classification des nets (PWR, GND, Signal) et Préréglages Simulation
@@ -5913,6 +5949,117 @@ T("contre-perçage : sans portée, sans couche gardée, ou sans contre-perçage,
   if(mdlContrePercage(V.modele.percages[0])!==null)throw new Error("mdlContrePercage sans cp");
 });
 
+/* ==========================================================================
+   LA PORTÉE PERCÉE DE TOUS LES VIAS DÉCLARÉS (option, désactivée)
+   --------------------------------------------------------------------------
+   Le serveur ne chiffre un moignon que s'il connaît la portée percée
+   (`_moignons`). Seuls les vias contre-percés l'envoyaient ; l'option
+   l'envoie pour tout via dont le fichier déclare la portée. Désactivée par
+   défaut : l'essai précédent (« sans contre-perçage, la fiche d'avant, à
+   l'identique ») le tient.
+   ========================================================================== */
+T("portée des vias : l'option envoie la portée déclarée, sans contre-perçage",()=>{
+  const sim=V.sur.sim;
+  try{
+    cpCarteIpc({sa:0, sb:3});
+    if(simModelesIpc().portees!==false)throw new Error("désactivée par défaut");
+    simModelesIpcPoser({portees:true});
+    if(!V.sur.sim||!V.sur.sim[V.fichier]||V.sur.sim[V.fichier].portees!==true)
+      throw new Error("gardée sous le nom du fichier : "+JSON.stringify(V.sur.sim));
+    let v=simSegments().envoi[1].via;
+    if(!v||v.layer_from!==0||v.layer_to!==6||"contre_percage" in v)throw new Error("raccord : "+JSON.stringify(v));
+    const L=simViasIpc();
+    if(L.length!==1||L[0].layer_from!==0||L[0].layer_to!==6||L[0].portee_supposee||"contre_percage" in L[0])
+      throw new Error("simViasIpc : "+JSON.stringify(L.map(f=>[f.layer_from,f.layer_to,f.portee_supposee])));
+    /* un contre-perçage incomplet : la portée part, la passe du foret non */
+    cpCarteIpc({sa:0, sb:3, cp:{de:3, res:0.1, spec:"BD_1A", src:"spec"}});
+    v=simSegments().envoi[1].via;
+    if(v.layer_from!==0||v.layer_to!==6||"contre_percage" in v)throw new Error("incomplet : "+JSON.stringify(v));
+    /* le contre-perçage complet ne change pas */
+    cpCarteIpc({sa:0, sb:3, cp:CP_IPC});
+    v=simSegments().envoi[1].via;
+    if(v.layer_from!==0||v.layer_to!==6||!v.contre_percage||v.contre_percage.couche_garde!==2)
+      throw new Error("contre-percé : "+JSON.stringify(v));
+    /* une portée que le fichier ne déclare pas ne s'invente pas */
+    cpCarteIpc({});
+    v=simSegments().envoi[1].via;
+    if("layer_from" in v)throw new Error("sans portée déclarée : "+JSON.stringify(v));
+    const L2=simViasIpc();
+    if(!L2[0].portee_supposee)throw new Error("la portée supposée reste supposée");
+    /* une portée sur une couche hors de l'empilage, ou d'une seule couche */
+    if(simPorteeTrouIpc({sa:0, sb:0})||simPorteeTrouIpc({sa:0, sb:9})||simPorteeTrouIpc({sa:1}))
+      throw new Error("portée incohérente");
+    /* un autre fichier ne l'hérite pas */
+    const f=V.fichier;
+    V.fichier="autre.xml";
+    if(simModelesIpc().portees)throw new Error("l'option suit le fichier");
+    V.fichier=f;
+    simModelesIpcPoser({portees:false});
+    if(V.sur.sim&&V.sur.sim[V.fichier])throw new Error("au défaut, rien ne s'écrit");
+  }finally{if(sim)V.sur.sim=sim;else delete V.sur.sim;}
+});
+
+/* ==========================================================================
+   LES OPTIONS DE MODÈLE : DIÉLECTRIQUE CAUSAL ET MODÈLE DE VIA
+   --------------------------------------------------------------------------
+   Mêmes choix, mêmes défauts et même envoi que le panneau d'empilage de
+   l'éditeur (`simStackup`, editeur-pcb/js/19-simulation.js) : rien par
+   défaut, `dielectrique_causal` + `f_ref_dielectrique` quand le
+   diélectrique est causal, `modele_via` quand il n'est pas « auto ».
+   ========================================================================== */
+T("options de modèle : défauts de l'éditeur, rien d'envoyé par défaut",()=>{
+  const sim=V.sur.sim;
+  try{
+    delete V.sur.sim;
+    cpCarteIpc({sa:0, sb:3});
+    const m=simModelesIpc();
+    if(JSON.stringify(m)!=='{"causal":false,"fref":1000000000,"via":"auto","portees":false}')
+      throw new Error(JSON.stringify(m));
+    const st=simStackupIpc();
+    for(const k of ["dielectrique_causal","f_ref_dielectrique","modele_via"])
+      if(k in st)throw new Error("envoyé par défaut : "+k);
+    if(Object.keys(st).join()!=="layers")throw new Error(Object.keys(st).join());
+  }finally{if(sim)V.sur.sim=sim;else delete V.sur.sim;}
+});
+T("options de modèle : causal, fréquence de fiche et modèle de via partent avec l'empilage",()=>{
+  const sim=V.sur.sim;
+  try{
+    delete V.sur.sim;
+    cpCarteIpc({sa:0, sb:3});
+    simModelesIpcPoser({causal:true});
+    let st=simStackupIpc();
+    if(st.dielectrique_causal!==true||st.f_ref_dielectrique!==1e9||"modele_via" in st)
+      throw new Error(JSON.stringify(st).slice(-120));
+    simModelesIpcPoser({fref:2.5e9, via:"pi"});
+    st=simStackupIpc();
+    if(st.f_ref_dielectrique!==2.5e9||st.modele_via!=="pi")throw new Error(JSON.stringify(st).slice(-120));
+    if(JSON.stringify(V.sur.sim[V.fichier])!=='{"causal":true,"fref":2500000000,"via":"pi"}')
+      throw new Error("gardé : "+JSON.stringify(V.sur.sim));
+    /* le document de simulation porte cet empilage-là */
+    const d=simDocIpc(null,0,{z0:50,f1:1e8,f2:5e9,points:11,fc:1e9,tr:0});
+    if(!d.doc||JSON.stringify(d.doc.stackup)!==JSON.stringify(st))
+      throw new Error("document : "+JSON.stringify(d.doc.stackup).slice(-120));
+    /* non causal : la fréquence ne part plus, mais reste gardée */
+    simModelesIpcPoser({causal:false, via:"ligne"});
+    st=simStackupIpc();
+    if("dielectrique_causal" in st||"f_ref_dielectrique" in st||st.modele_via!=="ligne")
+      throw new Error(JSON.stringify(st).slice(-120));
+    if(simModelesIpc().fref!==2.5e9)throw new Error("la fréquence de fiche est gardée");
+    /* le panneau : les choix cochés, la fréquence désactivée hors causal */
+    const h=simModelesIpcForm();
+    if(!/id="simViaMIpc"/.test(h)||!/<option value="ligne" selected>/.test(h)||
+       !/id="simFrefIpc" value="2,5" disabled/.test(h)||/id="simCausalIpc" checked/.test(h))
+      throw new Error(h);
+    /* relecture du profil : les valeurs hors norme tombent */
+    const r=simModelesIpcRelire({"a.xml":{causal:true,fref:-3,via:"x"},"b.xml":{via:"auto"},"c.xml":"x"});
+    if(JSON.stringify(r)!=='{"a.xml":{"causal":true}}')throw new Error(JSON.stringify(r));
+    if(simModelesIpcRelire([1,2])!==null||simModelesIpcRelire(null)!==null)throw new Error("relecture");
+    /* au défaut, plus rien n'est gardé pour ce fichier */
+    simModelesIpcPoser({via:"auto", fref:1e9});
+    if(V.sur.sim)throw new Error("tout au défaut : "+JSON.stringify(V.sur.sim));
+  }finally{if(sim)V.sur.sim=sim;else delete V.sur.sim;}
+});
+
 T("contre-perçage : la vérification de la carte le reçoit comme de l'éditeur",()=>{
   cpCarteIpc({sa:0, sb:3, cp:CP_IPC});
   const p=SIM_IPC.carteEntiere().doc.percages[0];
@@ -6044,6 +6191,45 @@ T("œil : la broche, la paire, le boîtier, le décalage et l'AMI partent quand 
   }finally{
     Object.assign(s,JSON.parse(avant)); SIM_OEIL.ibis.em=null;
   }
+});
+T("œil 2.2.0 : le modèle et le coin du brin inverse partent en différentiel, choisis",()=>{
+  const s=SIM_OEIL.saisie, avant=JSON.stringify(s);
+  try{
+    const f={fichier:"u1.ibs", texte:"[Model] OUT", modeles:[{nom:"OUT",type:"I/O"},{nom:"OUT2",type:"I/O"}],
+             modele:"OUT", coin:"typ", modeleN:"", coinN:"", broches:[], paires:[], broche:""};
+    SIM_OEIL.ibis.em=f;
+    s.mode="diff";
+    let o=simOeilReglages();
+    if("modele_n" in o.ibis_emetteur||"coin_n" in o.ibis_emetteur)
+      throw new Error("brin inverse envoyé sans choix : "+JSON.stringify(o.ibis_emetteur));
+    let h=simCorpsOeil();
+    for(const id of ["simOeilIbisModN_em","simOeilIbisCoinN_em"])
+      if(h.indexOf('id="'+id+'"')<0)throw new Error("champ absent : "+id);
+    f.modeleN="OUT2"; f.coinN="max";
+    o=simOeilReglages();
+    if(o.ibis_emetteur.modele_n!=="OUT2"||o.ibis_emetteur.coin_n!=="max")
+      throw new Error(JSON.stringify(o.ibis_emetteur));
+    /* Un modèle qui n'est pas dans le fichier ne part pas. */
+    f.modeleN="AUTRE";
+    if("modele_n" in simOeilReglages().ibis_emetteur)throw new Error("modèle N hors fichier envoyé");
+    /* En mode simple, ni le menu ni les champs. */
+    s.mode="simple";
+    o=simOeilReglages();
+    if("modele_n" in o.ibis_emetteur||"coin_n" in o.ibis_emetteur)
+      throw new Error("brin inverse envoyé en mode simple");
+    h=simCorpsOeil();
+    if(h.indexOf('id="simOeilIbisModN_em"')>=0)throw new Error("menu du brin inverse en mode simple");
+  }finally{
+    Object.assign(s,JSON.parse(avant)); SIM_OEIL.ibis.em=null;
+  }
+});
+T("œil 2.2.0 : les mutuelles de la paire et les sections du boîtier se disent",()=>{
+  const t=simOeilBrocheTexte({broche:"A1", inverse:"A2",
+    boitier:{r:0, l:3e-9, c:1.2e-12, source:"[Package Model] PKG (3 section(s))", sections:3},
+    boitier_n:{r:0, l:6e-9, c:1e-12, source:"[Package Model] PKG"},
+    mutuelle:{r:0, l:3e-9, c:3e-13, k_l:0.5, k_c:0.3, source:"[Package Model] PKG"}});
+  for(const x of ["en 3 sections","mutuelles de la paire","3,00 nH","0,30 pF"])
+    if(t.indexOf(x)<0)throw new Error("absent : "+x+" — "+t);
 });
 T("œil : le boîtier, le mode commun de la paire et l'AMI se rendent",()=>{
   const tau=[], h=[], b=[];

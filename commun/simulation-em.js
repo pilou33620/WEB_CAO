@@ -7830,10 +7830,20 @@ function simFicheSDiff(res){
   } else if(mode==="scc"){
     h+='<p class="simNote">· <b>Mode commun pur (Scc)</b> : normalisé sur Z<sub>ref,comm</sub> = Z<sub>ref,diff</sub> / 4 = '+simNb(zRefComm,1)+
        ' Ω. Les deux conducteurs sont excités en phase : mesure la sensibilité au bruit commun et la réflexion de mode commun.</p>';
+  } else if(mode==="scd"&&sd.quatre_acces){
+    /* LA PAIRE DISSYMÉTRIQUE (simulation_em 5.1.0) : Scd exact, de la
+       cascade à quatre accès — et ce qui le fait. */
+    h+='<p class="simNote">· <b>Conversion de mode CEM (Scd₂₁)</b>, exacte : la paire est mise en cascade brin par brin (quatre accès), '+
+       'et ses dissymétries convertissent le différentiel en commun — '+simEsc((sd.dissymetries||[]).join(" ; ")||"cascade forcée")+
+       (sd.brin_long?" ; brin le plus long : <b>"+simEsc(sd.brin_long)+"</b>":"")+
+       '. Un niveau supérieur à <b>−20 dB</b> constitue un risque accru de rayonnement électromagnétique parasite.</p>';
   } else if(mode==="scd"){
     h+='<p class="simNote">· <b>Conversion de mode CEM (Scd₂₁)</b> : mesure la proportion d\'énergie différentielle convertie en mode commun par le déséquilibre de longueur (skew ΔL = '+
        simNb(deltaL,3)+' mm). Un niveau supérieur à <b>−20 dB</b> constitue un risque accru de rayonnement électromagnétique parasite.</p>';
   }
+  if(sd.quatre_acces&&mode!=="scd")
+    h+='<p class="simNote">· Paire dissymétrique ('+simEsc((sd.dissymetries||[]).join(" ; "))+
+       ') : Sdd et Scc viennent de la cascade à quatre accès, brin par brin, conversions de mode comprises.</p>';
 
   h+='</div>';
   return h;
@@ -16822,7 +16832,7 @@ function simOeilAmiCharge(){
 }
 function simOeilCorpsIbis(){
   const ligne=(cle,role)=>{
-    const f=SIM_OEIL.ibis[cle];
+    const f=SIM_OEIL.ibis[cle], enDiff=simOeilMode()==="diff";
     let h='<span class="pnl-lbl">'+role+'</span>';
     if(!f)
       return h+'<button class="tb mini" id="simOeilIbis_'+cle+'" title="Charger un fichier .ibs : le tampon '+
@@ -16835,8 +16845,22 @@ function simOeilCorpsIbis(){
        "</select>"+
        '<select id="simOeilIbisCoin_'+cle+'" class="simUSel" title="Le coin du modèle : typ, min (faible, lent), max (fort, rapide)">'+
        ["typ","min","max"].map(c=>'<option value="'+c+'"'+(c===f.coin?" selected":"")+">"+c+"</option>").join("")+
-       "</select>"+
-       '<button class="simBtnClear" id="simOeilIbisX_'+cle+'" title="Retirer le modèle IBIS">✕</button>';
+       "</select>";
+    /* LE BRIN INVERSE (œil 2.2.0) : son modèle et son coin, quand ils ne
+       sont pas ceux du brin direct. « = P » ne part pas : le serveur prend
+       alors ceux du brin direct — ou, avec une paire de [Diff Pin], le
+       modèle de la broche inverse. */
+    if(enDiff)
+      h+='<select id="simOeilIbisModN_'+cle+'" class="simUSel" title="Le [Model] du brin inverse (N). « = P » : celui du brin direct, ou celui de la broche inverse d\'une paire de [Diff Pin] — un modèle choisi ici ne la remplace que dans son [Model Selector].">'+
+         '<option value=""'+(f.modeleN?"":" selected")+">N : = P</option>"+
+         f.modeles.map(m=>'<option value="'+simEsc(m.nom)+'"'+(m.nom===f.modeleN?" selected":"")+">N : "+
+           simEsc(m.nom)+"</option>").join("")+
+         "</select>"+
+         '<select id="simOeilIbisCoinN_'+cle+'" class="simUSel" title="Le coin du brin inverse (N) : un brin rapide contre un brin lent fait du mode commun. « = P » : celui du brin direct.">'+
+         '<option value=""'+(f.coinN?"":" selected")+">coin N : = P</option>"+
+         ["typ","min","max"].map(c=>'<option value="'+c+'"'+(c===f.coinN?" selected":"")+">coin N : "+c+"</option>").join("")+
+         "</select>";
+    h+='<button class="simBtnClear" id="simOeilIbisX_'+cle+'" title="Retirer le modèle IBIS">✕</button>';
     /* LA BROCHE : son modèle et son boîtier ([Pin]) ; en différentiel, la
        paire de [Diff Pin], chaque brin avec sa broche et le tdelay. */
     const diff=simOeilMode()==="diff", choix=simOeilBrocheValide(f);
@@ -16867,7 +16891,7 @@ function simOeilCorpsIbis(){
     h+='<div class="pnl-bar simBarF">';
     if(unFichier)
       h+=simXtCase("simOeilBoitier","boîtier",
-           "Compte le boîtier IBIS de chaque bout : R_pkg et L_pkg en série, C_pkg à la broche ([Package], [Pin] par broche, ou la diagonale d'un [Package Model]).");
+           "Compte le boîtier IBIS de chaque bout : R_pkg et L_pkg en série, C_pkg à la broche ([Package], [Pin] par broche, ou un [Package Model] : sa diagonale, ses sections en lignes, et en différentiel les mutuelles entre les deux broches de la paire).");
     if(diff)
       h+='<span class="pnl-lbl">Décalage N</span>'+
          simChamp("simOeilDecN","Retard du brin inverse sur le brin direct (ps). Vide : le tdelay de [Diff Pin]. Les deux brins sont alors simulés chacun avec son tampon, et le mode commun qui en sort est rendu.")+
@@ -16984,6 +17008,12 @@ function simOeilReglages(){
     o[champ]={texte:f.texte, fichier:f.fichier, modele:f.modele, coin:f.coin};
     const b=simOeilBrocheValide(f);
     if(b)o[champ].broche=b;
+    /* Le modèle et le coin du brin inverse, en différentiel, et s'ils sont
+       choisis : sinon le serveur prend ceux du brin direct. */
+    if(o.mode==="diff"){
+      if(f.modeleN&&f.modeles.some(m=>m.nom===f.modeleN))o[champ].modele_n=f.modeleN;
+      if(f.coinN)o[champ].coin_n=f.coinN;
+    }
     if(f.ami)o[champ].ami={texte:f.ami.texte, fichier:f.ami.fichier};
   }
   if(s.boitier===false&&(SIM_OEIL.ibis.em||SIM_OEIL.ibis.rx))o.boitier=false;
@@ -17050,6 +17080,12 @@ function simBrancherOeil(){
     pose("simOeilIbisCoin_"+cle,"onchange",function(){
       const f=SIM_OEIL.ibis[cle]; if(f)f.coin=this.value;
     });
+    pose("simOeilIbisModN_"+cle,"onchange",function(){
+      const f=SIM_OEIL.ibis[cle]; if(f)f.modeleN=this.value;
+    });
+    pose("simOeilIbisCoinN_"+cle,"onchange",function(){
+      const f=SIM_OEIL.ibis[cle]; if(f)f.coinN=this.value;
+    });
     /* La broche choisit aussi le modèle : celui de sa ligne [Pin]. */
     pose("simOeilIbisBroche_"+cle,"onchange",function(){
       const f=SIM_OEIL.ibis[cle];
@@ -17103,6 +17139,7 @@ function simBrancherOeil(){
       simOeilLire();
       const bp=simOeilIbisBroches(txt);
       SIM_OEIL.ibis[cle]={fichier:f.name, texte:txt, modeles, modele:voulu.nom, coin:"typ",
+                          modeleN:"", coinN:"",
                           broches:bp.broches, paires:bp.paires, broche:"",
                           amiAttendu:bp.ami, ami:null};
       SIM_OEIL.res=null; SIM_OEIL.err="";
@@ -17490,13 +17527,18 @@ function simRendreOeil(){
 
 /* La broche, la paire et le boîtier d'un bout IBIS, en une suite de mots. */
 function simOeilBrocheTexte(x){
-  const bt=b=>b?"R "+simNb(b.r,3)+" Ω, L "+simNb(b.l*1e9,2)+" nH, C "+simNb(b.c*1e12,2)+" pF ("+simEsc(b.source)+")":
+  const bt=b=>b?"R "+simNb(b.r,3)+" Ω, L "+simNb(b.l*1e9,2)+" nH, C "+simNb(b.c*1e12,2)+" pF ("+simEsc(b.source)+")"+
+                 (b.sections?" en "+b.sections+" section"+(b.sections>1?"s":""):""):
                  "aucun";
   let t="";
   if(x.broche)t+="<br><small>broche "+simEsc(x.broche)+(x.inverse?" / inverse "+simEsc(x.inverse):"")+
     (x.tdelay!=null?", tdelay "+simOeilT(x.tdelay):"")+(x.vdiff!=null?", vdiff ±"+simOeilV(x.vdiff):"")+"</small>";
   if("boitier" in x)t+="<br><small>boîtier : "+bt(x.boitier)+
     ("boitier_n" in x?" — brin inverse : "+bt(x.boitier_n):"")+"</small>";
+  /* LES MUTUELLES DE LA PAIRE (œil 2.2.0) : comptées entre les deux broches. */
+  if(x.mutuelle)t+="<br><small>mutuelles de la paire : L<sub>m</sub> "+simNb(x.mutuelle.l*1e9,2)+
+    " nH, C<sub>m</sub> "+simNb(x.mutuelle.c*1e12,2)+" pF (k<sub>L</sub> "+simNb(x.mutuelle.k_l,2)+
+    ", k<sub>C</sub> "+simNb(x.mutuelle.k_c,2)+")</small>";
   if(x.modele_n&&(x.modele_n!==x.modele||x.coin_n!==x.coin))
     t+="<br><small>brin inverse : "+simEsc(x.modele_n)+", coin "+simEsc(x.coin_n)+"</small>";
   return t;

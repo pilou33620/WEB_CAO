@@ -155,7 +155,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "pnsNode","pnsBuild","pnsWorld","pnsInvalidate","pnsStamp","pnsHullOct",
   "PNS_D8","PNS_D4","pnsSupPad","pnsSupVia","pnsSupSeg","pnsPlaneMeet","pnsOct","pnsUnloop",
   "PNS_WALK_MAX","pnsSurCarte","pnsHullWalk","pnsWalkCross","pnsWalkSide","pnsWalkaround","routeSegsTo",
-  "PNS_SHOVE_MAX","PNS_SHOVE_RANG","pnsPushOut","pnsShoveAside","pnsRelink","pnsShoveVia",
+  "PNS_SHOVE_MAX","PNS_SHOVE_RANG","PNS_SHOVE_TRAVAIL","PNS_SHOVE_MS","pnsPushOut","pnsShoveAside","pnsRelink","pnsShoveVia",
   "pnsShove","pnsShoveHeads","pnsApply","pnsSlideOut","pnsBoutsLibres","crossN","ROUTE_MODES","routeMode","setRouteMode","pushSnap","drawShove",
   "placeVia","mkVia","viaObstacle","viaIsole","viaTrou","viaPaire","dpViaGap","holeClr","viaDrill","pnsItemVia","pnsPairGap","pnsWorld","pnsClr","pnsLineItems","pnsViaEscape","pnsViaSuites","pnsPointEscape","dpNets","dpLine","dpAxis","dpAxisDirect","dpPose",
   "PNS_OPT_WIN","pnsAnchors","pnsMergeTry","pnsOptimize","routeOptimizeTail","pnsEchardes","pnsDejog",
@@ -408,6 +408,9 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* cote angulaire, chaînes, ordonnées, tolérances, vues qui s'écartent */
   "dfNormTol","dfAngle","dfTolerer","dfPoserVueRepousser","dfPlaceProche","dfValeurCote","dfEditerTolerance",
   "dfCoteEnCours","dfApercuCote","dfRendreListeCotes","DF_COTES","DF_TOL","dfBoitePts",
+  /* aperçu du lâcher d'une vue, tolérances par point d'une chaîne ou d'une ordonnée */
+  "dfDispositionRepousser","dfApercuVue","dfConsigne","dfNum","DF_APERCUS",
+  "dfNormTols","dfTolPoint","dfTolererPoint","dfHtmlTolerance",
   /* gestionnaire de contraintes (01-core.js pour le modèle, 30-contraintes.js) */
   "cmNorm","cmCle","cmClrClasses","cmClrMax","cmMesures","cmRegleDe","cmVerifier","cmEvaluerGroupe",
   "cmManqueLongueur","cmLargeurPourZ","cmDrc","cmEdit","cmPoser","cmPoserPhysique","cmPoserMatrice",
@@ -425,7 +428,9 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "cmDepuisSchema","cmTousGroupes","cmResumeSchema","cmLireChamp","pcbAppliquerEco","pcbDetecterDisparitesEco","cmEcartSchema",
   /* rooms (32-rooms.js) */
   "roomsDepuisDoc","roomsListe","roomNomCourt","roomCouleur","roomAuLabel","roomEtiquette","roomsBasculer",
-  "roomsPeindre","roomsPeindreFond","roomsVisibles","ctx","profilEtat"];
+  "roomsPeindre","roomsPeindreFond","roomsVisibles","ctx","profilEtat",
+  /* export IPC-2581 (35-ipc2581-export.js) */
+  "ipc2581Document","ipc2581Fichier","exportIpc2581","ipcFonctionCuivre"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -8763,6 +8768,55 @@ T("shove : Ctrl+Z et l'abandon remettent le cuivre poussé en place",()=>{
   undo();
   if(serialize()!==avant)
     throw new Error("Ctrl+Z devait défaire le tracé ET la poussée");
+});
+/* Le shove ne dépend pas de la vitesse de la machine : son budget se compte en
+   travail fait, pas en millisecondes. On rejoue les mêmes gestes avec une
+   horloge qui avance de 20 ms à chaque lecture — un poste à genoux, où
+   l'ancien budget de 25 ms renonçait dès la deuxième pile — et le résultat
+   doit être le même, au micron et à l'examen près. */
+function horlogeLente(fn){
+  const vrai=Date.now;let retard=0;
+  Date.now=()=>vrai()+(retard+=20);
+  try{return fn();}finally{Date.now=vrai;}
+}
+T("shove : le résultat ne dépend pas de la vitesse de la machine",()=>{
+  if(!(PNS_SHOVE_TRAVAIL>0)||!(PNS_SHOVE_MS>=250))
+    throw new Error("budget de travail, et horloge en simple garde-fou");
+  const propage=()=>{
+    plateau();
+    for(let k=0;k<3;k++)
+      S.tracks.push({l:0,net:"G"+k,w:0.3,x1:10,y1:20.3+k*0.6,x2:50,y2:20.3+k*0.6});
+    touch();
+    setMode("track");
+    startRoute(15,20,true);
+    S.route.net="SIG";S.route.w=0.3;
+    routeToPoint({x:45,y:20});
+    const sh=S.route.shove;
+    const r={bad:!!S.route.bad,travail:sh&&sh.travail,
+             lignes:sh?JSON.stringify(sh.lignes.map(L=>[L.net,L.pts])):null};
+    stepRoute();commitRoute();setMode("select");
+    r.doc=serialize();
+    return r;
+  };
+  const a=propage(), b=horlogeLente(propage);
+  if(a.bad||!a.lignes)throw new Error("au calme, la poussée devait aboutir");
+  if(!(a.travail>0&&a.travail<=PNS_SHOVE_TRAVAIL))
+    throw new Error("le travail fait accompagne le résultat : "+a.travail);
+  if(b.bad)throw new Error("horloge lente : le trajet devait passer quand même");
+  if(b.travail!==a.travail)throw new Error("travail "+a.travail+" au calme, "+b.travail+" horloge lente");
+  if(b.lignes!==a.lignes)throw new Error("les lignes poussées diffèrent selon l'horloge");
+  if(b.doc!==a.doc)throw new Error("la carte posée diffère selon l'horloge");
+  // le boîtier tiré sur une piste : même poussée, même carte
+  const boitier=()=>{
+    const {reg,f}=boitierSurPiste("shove");
+    // le cuivre et la place du boîtier ; les numéros d'objet, eux, changent à chaque essai
+    try{return JSON.stringify({tracks:S.tracks,vias:S.vias.map(v=>[v.x,v.y,v.net]),x:f.x,y:f.y});}
+    finally{undo();boitierFin(reg);}
+  };
+  const c=boitier(), d=horlogeLente(boitier);
+  if(!JSON.parse(c).tracks.some(t=>t.net==="X"&&(t.y1!==25||t.y2!==25)))
+    throw new Error("au calme, les pastilles devaient pousser la piste");
+  if(d!==c)throw new Error("boîtier tiré : le cuivre poussé diffère selon l'horloge");
 });
 T("shove : la conduite face à l'obstacle se règle et se range avec le document",()=>{
   plateau();
@@ -22926,6 +22980,190 @@ T("plans : une vue lâchée sur une autre la repousse vers la place libre la plu
   S.dessin=null;
 });
 
+/* Pendant le glisser d'une vue : ce que le lâcher fera, montré et jamais
+   écrit. On amène les notes sur le tableau de perçage, aimanté pile sur la
+   grille pour savoir quelle position aimantée on vise. */
+T("plans : glisser une vue montre celles qui s'écarteraient — calculé, rien d'écrit, Échap abandonne",()=>{
+  exCharger(1);
+  S.dessin=null;
+  dfOuvrirNeuf();
+  try{
+    DF.page=0;
+    let F=DF.doc.feuilles[0];
+    const bn=dfBoiteVue(F,F.vues.find(v=>v.cle==="fab/notes")), bp=dfBoiteVue(F,F.vues.find(v=>v.cle==="fab/percage"));
+    const avant=serialize(), G=DF_GRILLE;
+    dfChoisirOutil("sel");
+    const X0=(bn.x1+bn.x2)/2, Y0=(bn.y1+bn.y2)/2;
+    const saisir=()=>{
+      const h=dfClicFeuille(F,X0,Y0,1.5);
+      if(!h||h.cle!=="fab/notes")throw new Error("les notes doivent se saisir : "+JSON.stringify(h));
+    };
+    /* la souris qui amène le coin des notes en (x,y) */
+    const vers=(x,y)=>dfGlisser(X0+x-bn.x1,Y0+y-bn.y1);
+    const cx=Math.round(bp.x1/G)*G, cy=Math.round(bp.y1/G)*G;
+    saisir();
+    const n0=DF.nApercus;
+    vers(cx,cy);
+    const a=dfApercuVue(DF.glisse);
+    if(!a||a.repoussees.indexOf("fab/percage")<0)throw new Error("le perçage doit s'écarter : "+JSON.stringify(a&&a.repoussees));
+    if(DF.nApercus!==n0+1)throw new Error("un calcul pour une position aimantée, "+(DF.nApercus-n0));
+    /* calculé, pas appliqué */
+    if(serialize()!==avant||Object.keys(dfCfg().vues).length)throw new Error("le glisser ne doit rien écrire");
+    /* au calque : le perçage en tirets à sa place future, une flèche depuis sa place actuelle */
+    const e=a.ecarts.find(x=>x.cle==="fab/percage"), n=dfNum;
+    if(!e||!e.vers)throw new Error("place future du perçage : "+JSON.stringify(e));
+    const sur=document.getElementById("dfSur").innerHTML;
+    if(sur!==dfSurSvg(F))throw new Error("le calque affiché doit être l'aperçu");
+    if(sur.indexOf('<rect class="df-ecart" x="'+n(e.vers.x1)+'" y="'+n(e.vers.y1)+'"')<0)throw new Error("contour en tirets absent : "+sur.slice(0,400));
+    if(sur.indexOf('<line class="df-ecart-f" x1="'+n((bp.x1+bp.x2)/2)+'" y1="'+n((bp.y1+bp.y2)/2)+'"')<0)
+      throw new Error("la flèche doit partir de la place actuelle du perçage");
+    if(sur.indexOf("df-plein-t")>=0||sur.indexOf("ecart plein")>=0)throw new Error("il y avait de la place : pas de feuille pleine");
+    if(document.getElementById("dfMsg").textContent.indexOf("Tableau de perçage")<0||dfConsigne().indexOf("Échap")<0)
+      throw new Error("la consigne doit dire ce que le lâcher fera : "+dfConsigne());
+    /* le coût : la même position aimantée ne se recalcule pas, une position déjà vue non plus */
+    vers(cx+0.4,cy-0.3);dfSurSvg(F);
+    if(DF.nApercus!==n0+1)throw new Error("même position aimantée : rien à recalculer");
+    vers(cx+5*G,cy);
+    if(DF.nApercus!==n0+2)throw new Error("nouvelle position aimantée : un calcul");
+    vers(cx,cy);
+    if(DF.nApercus!==n0+2)throw new Error("position déjà vue pendant ce geste : gardée");
+    /* au plus une fois par image : dix mouvements, une image, un calcul — la dernière position */
+    const raf=global.requestAnimationFrame, file=[];
+    global.requestAnimationFrame=f=>{file.push(f);return file.length;};
+    let n1;
+    try{
+      n1=DF.nApercus;
+      for(let k=1;k<=10;k++)vers(cx+k*G,cy+G);
+      if(DF.nApercus!==n1)throw new Error("rien ne se calcule avant l'image");
+      if(file.length!==1)throw new Error("une seule image demandée, "+file.length);
+    }finally{global.requestAnimationFrame=raf;while(file.length)file.shift()(0);}
+    if(DF.nApercus!==n1+1)throw new Error("un seul calcul pour l'image, "+(DF.nApercus-n1));
+    if(dfApercuVue(DF.glisse)!==DF.glisse.apercus.get(Math.round((cx+10*G)/G)+"|"+Math.round((cy+G)/G)))
+      throw new Error("l'image montre la dernière position");
+    /* Échap : le geste s'abandonne, l'aperçu part avec lui, rien n'a bougé */
+    vers(cx,cy);
+    if(!dfOutilsTouche({key:"Escape",target:{tagName:"DIV"}})||DF.glisse)throw new Error("Échap doit abandonner le glisser");
+    if(document.getElementById("dfSur").innerHTML.indexOf("df-ecart")>=0)throw new Error("l'aperçu doit disparaître");
+    if(serialize()!==avant||Object.keys(dfCfg().vues).length)throw new Error("Échap ne doit rien laisser");
+    /* le même geste lâché fait exactement ce que l'aperçu montrait */
+    saisir();vers(cx,cy);
+    const b=dfApercuVue(DF.glisse);
+    if(!dfLacher())throw new Error("lâcher non retenu");
+    const cfg=dfCfg();
+    for(const x of b.ecarts)
+      if(!cfg.vues[x.cle]||cfg.vues[x.cle].x!==x.vers.x1||cfg.vues[x.cle].y!==x.vers.y1)
+        throw new Error(x.cle+" : l'aperçu montrait "+JSON.stringify(x.vers)+", le lâcher pose "+JSON.stringify(cfg.vues[x.cle]));
+    F=DF.doc.feuilles[0];
+    const bq=dfBoiteVue(F,F.vues.find(v=>v.cle==="fab/percage"));
+    if(Math.abs(bq.x1-e.vers.x1)>1e-6||Math.abs(bq.y1-e.vers.y1)>1e-6)throw new Error("le perçage n'est pas là où l'aperçu le montrait");
+    undo();
+    if(Object.keys(dfCfg().vues).length)throw new Error("Ctrl+Z doit tout rendre");
+  }finally{DF.sel=null;DF.glisse=null;dfFermer();S.dessin=null;}
+});
+/* Feuille pleine : un détail qui couvre presque tout le cadre, glissé. Les
+   autres vues n'ont plus où aller : l'aperçu le dit, en rouge, avant le
+   lâcher — et toujours sans rien écrire. */
+T("plans : glisser une vue sur une feuille pleine — l'aperçu le signale avant le lâcher",()=>{
+  exCharger(1);
+  S.dessin=null;
+  let F=dfFab(dfDocument());
+  const Z=dfZone(F), vc=F.vues.find(v=>v.cle==="fab/carte"), bc=dfBoiteVue(F,vc), k=10;
+  const centre=vc.V.inv((bc.x1+bc.x2)/2-vc.dx,(bc.y1+bc.y2)/2-vc.dy);
+  const id=dfAjouterDetail({source:"fab/carte",forme:"rect",x:centre.x,y:centre.y,
+                            w:(Z.x2-Z.x1)*0.8/k,h:(Z.y2-Z.y1)*0.8/k,echelle:k});
+  if(!id)throw new Error("détail non posé");
+  dfOuvrirNeuf();
+  try{
+    DF.page=0;
+    F=DF.doc.feuilles[0];
+    const bd=dfBoiteVue(F,F.vues.find(v=>v.cle==="det/"+id)), avant=serialize();
+    dfChoisirOutil("sel");
+    const h=dfClicFeuille(F,(bd.x1+bd.x2)/2,(bd.y1+bd.y2)/2,1.5);
+    if(!h||h.cle!=="det/"+id)throw new Error("le détail doit se saisir : "+JSON.stringify(h));
+    dfGlisser((bd.x1+bd.x2)/2+DF_GRILLE*2,(bd.y1+bd.y2)/2+DF_GRILLE*2);
+    const a=dfApercuVue(DF.glisse);
+    if(!a||!a.recouvertes.length)throw new Error("la feuille pleine doit se voir : "+JSON.stringify(a&&a.recouvertes));
+    const sur=document.getElementById("dfSur").innerHTML;
+    if(sur.indexOf('class="df-ecart plein"')<0||sur.indexOf("df-plein-t")<0||sur.indexOf("Feuille pleine")<0)
+      throw new Error("feuille pleine non montrée au calque");
+    if(dfConsigne().indexOf("Feuille pleine")<0)throw new Error("feuille pleine non dite : "+dfConsigne());
+    if(serialize()!==avant)throw new Error("le glisser ne doit rien écrire");
+    dfOutilsTouche({key:"Escape",target:{tagName:"DIV"}});
+    if(DF.glisse||serialize()!==avant)throw new Error("Échap ne doit rien laisser");
+  }finally{DF.sel=null;DF.glisse=null;dfFermer();S.dessin=null;}
+});
+/* Tolérances par point : une ordonnée et une chaîne de trois trous, la
+   tolérance commune ±0,10 et des valeurs à part. */
+T("plans : tolérance propre à chaque point d'une ordonnée et d'une chaîne — écran, PDF, DXF, aller-retour",()=>{
+  exCharger(1);
+  const o=gOrigin();
+  S.holes=[mkHole(o.x+10,o.y-5,3.2),mkHole(o.x+30,o.y-15,3.2),mkHole(o.x+45,o.y-25,3.2)];
+  S.dessin={fonte:false};                     // codage WinAnsi lisible tel quel
+  try{
+    const r=S.holes.map(h=>({type:"trou",id:h.id}));
+    const ord=dfAjouterCote({vue:"fab/carte",type:"ord",sens:"h",o:{type:"origine"},pts:r,dx:0,dy:9,
+      tol:{genre:"sym",sup:0.1},tols:[null,{genre:"asym",sup:0.05,inf:-0.02},{genre:"aucune"}]});
+    const ch=dfAjouterCote({vue:"fab/carte",type:"ch",sens:"h",pts:[r[2],r[0],r[1]],dx:0,dy:-14,
+      tol:{genre:"sym",sup:0.1}});
+    /* la chaîne : la valeur de 20 mm aboutit au deuxième trou (indice 2 dans pts) */
+    if(!dfTolererPoint(ch,2,{genre:"lim",sup:0.1,inf:-0.1}))throw new Error("tolérance de point refusée");
+    if(dfTolererPoint(ch,3,{genre:"sym",sup:0.1})!==false||dfTolererPoint(ch,0,{genre:"zz"})!==false)
+      throw new Error("point inexistant ou genre inconnu acceptés");
+    let c=dfCfg().cotes;
+    if(JSON.stringify(c[1].tols)!=='[null,null,{"genre":"lim","sup":0.1,"inf":-0.1}]')throw new Error("tols : "+JSON.stringify(c[1].tols));
+    if(dfTolPoint(c[0],0).sup!==0.1||dfTolPoint(c[0],1).genre!=="asym"||dfTolPoint(c[0],2)!==null)throw new Error("dfTolPoint");
+    /* à l'écran : la feuille, et son aperçu SVG */
+    const doc=dfDocument(), F=dfFab(doc), J=id=>JSON.stringify(dfTxtCote(F,id));
+    if(J(ord)!=='["0","10,00 ±0,10","30,00","+0,05","−0,02","45,00"]')throw new Error("ordonnée : "+J(ord));
+    if(J(ch)!=='["20,10","19,90","15,00 ±0,10"]')throw new Error("chaîne : "+J(ch));
+    const svg=dfSvg(F);
+    for(const s of ["10,00 ±0,10","+0,05","−0,02","20,10","19,90"])
+      if(svg.indexOf(">"+s+"<")<0)throw new Error("absent de l'aperçu SVG : "+s);
+    /* au PDF : du vrai texte, qui se cherche */
+    const pdf=dfLatin(dfPdfOctets(doc));
+    for(const s of ["(10,00 \\2610,10) Tj","(+0,05) Tj","(-0,02) Tj","(20,10) Tj","(19,90) Tj","(45,00) Tj"])
+      if(pdf.indexOf(s)<0)throw new Error("absent du PDF : "+s);
+    if(!dfChercher(doc,"+0,05").length||!dfChercher(doc,"19,90").length)throw new Error("la tolérance de point doit se chercher");
+    /* au DXF : calque COTES */
+    const D=dxfLu(dxfFeuilles([F]).octets), tx=D.ents.filter(x=>x.type==="TEXT"&&x.cal==="COTES").map(x=>x.s(1));
+    for(const s of ["10,00 %%p0,10","+0,05","-0,02","20,10","19,90","45,00","15,00 %%p0,10"])
+      if(tx.indexOf(s)<0)throw new Error("absent du calque COTES : "+s+" ("+tx.join(" | ")+")");
+    /* aller-retour : identique ; l'ancien format (sans tols) aussi */
+    loadDoc(JSON.parse(serialize()),true);
+    const a=serialize();
+    loadDoc(JSON.parse(a),true);
+    if(serialize()!==a)throw new Error("l'aller-retour change le document");
+    c=dfCfg().cotes;
+    if(JSON.stringify(c[0].tols)!=='[null,{"genre":"asym","sup":0.05,"inf":-0.02},{"genre":"aucune"}]'||!c[1].tols)
+      throw new Error("tols perdues au rechargement : "+JSON.stringify(c.map(k=>k.tols)));
+    const ancien={id:1,vue:"fab/carte",type:"ord",sens:"h",o:{type:"origine"},pts:r,dx:0,dy:9,tol:{genre:"sym",sup:0.1}};
+    if(JSON.stringify(dfNormCotes([ancien])[0])!==JSON.stringify(ancien))throw new Error("l'ancien format doit se relire à l'identique");
+    /* bornes : longueur fausse, tout à null, entrée absurde */
+    if(dfNormTols([null],2)!==null||dfNormTols([null,null],2)!==null)throw new Error("tols vides ou mal alignées gardées");
+    if(JSON.stringify(dfNormTols([{genre:"zz"},{genre:"ref"}],2))!=='[null,{"genre":"ref"}]')throw new Error("entrée absurde gardée");
+    /* rendre la valeur à la commune : tols disparaît quand tout est commun */
+    dfTolererPoint(ch,2,null);
+    if("tols" in dfCfg().cotes[1])throw new Error("tols doit disparaître");
+    /* le volet : choix de la valeur, puis sa tolérance */
+    dfOuvrirNeuf();
+    try{
+      DF.sel={genre:"cote",id:ord};DF.tolVal=null;
+      dfRendreListeCotes();
+      let h=document.getElementById("dfCotes").innerHTML;
+      if(h.indexOf('data-tol="val"')<0||h.indexOf("Toutes les valeurs (tolérance commune)")<0||h.indexOf("Point 3 : 45,00")<0)
+        throw new Error("choix de la valeur absent du volet");
+      DF.tolVal={id:ord,i:1};
+      dfRendreListeCotes();
+      h=document.getElementById("dfCotes").innerHTML;
+      if(h.indexOf('<option value="asym" selected>')<0||h.indexOf("commune (±0,10)")<0||h.indexOf('value="0,05"')<0)
+        throw new Error("tolérance du point 2 absente du volet");
+      DF.tolVal={id:ord,i:2};
+      dfRendreListeCotes();
+      if(document.getElementById("dfCotes").innerHTML.indexOf('<option value="aucune" selected>')<0)throw new Error("« aucune » du point 3");
+    }finally{DF.sel=null;DF.tolVal=null;dfFermer();}
+  }finally{S.holes=[];S.dessin=null;}
+});
+
 /* ==========================================================================
    Plans : export DXF et fonte embarquée (33-draftsman-export.js)
    ========================================================================== */
@@ -24396,6 +24634,32 @@ T("contre-perçage : fichier Gerber X2 à côté du .DRL, profondeur en champ",(
     if(lis.indexOf(t)<0)throw new Error("LISEZ-MOI sans « "+t+" »");
   cpRaz();
 });
+T("contre-perçage : le Master Drawing annonce le Gerber X2 sous son Excellon",()=>{
+  const bord=S.board;
+  cpCarte();
+  try{
+    if(mdTextes(mdPdf()).some(x=>/BACKDRILL/.test(x.s)))throw new Error("sans contre-perçage, rien d'annoncé");
+    const r=cpAjouter({cote:"dessous",garde:-1,res:0.1});
+    cmPoser("nets","SIG","cp",r.id);
+    const tx=mdTextes(mdPdf()).map(x=>x.s);
+    const iD=tx.indexOf("carte-BACKDRILL-B-In1.DRL"), iX=tx.indexOf("carte-BACKDRILL-B-In1.gbr");
+    if(iD<0||iX<0)throw new Error("fichiers annoncés : "+tx.filter(s=>/BACKDRILL/.test(s)).join(" | "));
+    const dX="Back-drill Gerber X2 (depth as attribute), copper layer 4, must-not-cut layer 2";
+    /* la ligne du X2 suit celle du .DRL (nom, puis libellé), sur une seule ligne */
+    if(tx[iD+1]!=="Back-drill Excellon file from copper layer 4, must-not-cut layer 2"||tx[iX-1]!=="X"||tx[iX+1]!==dX||iX!==iD+3)
+      throw new Error(JSON.stringify(tx.slice(iD-1,iX+3)));
+    /* deux passes (une coulée SIG sur L3 fait garder L3 au premier via) :
+       chacune son X2, chacun sous son Excellon */
+    S.board={x:-10,y:-10,w:50,h:20,pts:null};
+    cpZone("SIG",2,5,-3,15,3);
+    if(cpPaires().length!==2)throw new Error("deux passes attendues");
+    const ty=mdTextes(mdPdf()).map(x=>x.s), noms=ty.filter(s=>/^carte-BACKDRILL/.test(s));
+    if(noms.join()!=="carte-BACKDRILL-B-In1.DRL,carte-BACKDRILL-B-In1.gbr,carte-BACKDRILL-B-In2.DRL,carte-BACKDRILL-B-In2.gbr")
+      throw new Error(noms.join(" | "));
+    if(ty.indexOf("Back-drill Gerber X2 (depth as attribute), copper layer 4, must-not-cut layer 3")<0)
+      throw new Error("libellé de la seconde passe");
+  }finally{S.board=bord;S.zones=[];cpRaz();}
+});
 
 /* ==========================================================================
    Rooms : les blocs du schéma encadrés sur la carte (32-rooms.js)
@@ -24547,6 +24811,172 @@ T("empilage : la rugosité et les options partent au serveur, et se saisissent a
   S.tracks.pop();
   for(let i=0;i<S.cu;i++)setCuRug(i,null);
   delete S.stack.sim;touch();
+});
+
+/* ==========================================================================
+   Export IPC-2581 (35-ipc2581-export.js)
+   Les deux cartes d'exemple, et la seconde chargée de ce que les exemples
+   n'ont pas — contre-perçage, rugosité, composants dessous à angle
+   quelconque, pastilles chanfreinée, polygonale et oblongue, arc, découpe de
+   carte, trous NPTH, variante de montage. Chaque export est écrit dans
+   dist/essai-ipc2581/ avec ce que l'éditeur en attend ; c'est
+   test/banc-ipc2581-export.py qui les relit par la chaîne de la visionneuse
+   (ipc2581_parser.py → ipc2581_json.py) et les valide contre le XSD.
+   ========================================================================== */
+const IPC_DATE="2026-10-10T12:00:00Z";
+/* ce que l'éditeur attend de la relecture, dans le repère du fichier */
+function ipcAttendu(){
+  const o=gOrigin(), X=x=>r4(x-o.x), Y=y=>r4(o.y-y), n=S.cu;
+  const nomCu=i=>S.cuL[i].name;
+  const nets=new Set();
+  for(const t of S.tracks)if(t.net)nets.add(t.net);
+  for(const v of S.vias)if(v.net)nets.add(v.net);
+  for(const z of S.zones)if(z.net)nets.add(z.net);
+  const comps=S.fps.map(fp=>({ref:fp.ref,x:X(fp.x),y:Y(fp.y),r:r4((360-(fp.rot||0))%360),m:fp.side?1:0,
+    couche:nomCu(fp.side?n-1:0),val:fp.value||"",mpn:fp.csvMpn||"",pose:varEstMonte(fp,S.variantes.active||""),
+    pins:padsWorld(fp).map(q=>{if(q.net)nets.add(q.net);return {num:String(q.n),x:X(q.x),y:Y(q.y)};})}));
+  const pistes={}, arcs=[];
+  for(const t of S.tracks){
+    if(arcOf(t)){const m=trkMid(t);arcs.push({couche:nomCu(t.l),mid:[X(m.x),Y(m.y)],len:r4(trkLen(t))});}
+    else pistes[nomCu(t.l)]=(pistes[nomCu(t.l)]||0)+1;
+  }
+  const empilage=[{nom:"MASQUE_DESSUS",ep:S.stack.maskT,dk:S.stack.maskEr,type:"SOLDERMASK"}];
+  for(let i=0;i<n;i++){
+    empilage.push({nom:nomCu(i),ep:cuT(i),type:ipcFonctionCuivre(i)});
+    if(i<diCount(n)){const d=diAt(i);empilage.push({nom:"DIELECTRIQUE_"+(i+1),ep:d.t,dk:d.er,df:d.df,mat:d.mat});}
+  }
+  if(n>1)empilage.push({nom:"MASQUE_DESSOUS",ep:S.stack.maskT,dk:S.stack.maskEr,type:"SOLDERMASK"});
+  const rug={};
+  for(let i=0;i<n;i++){const r=cuRug(i);if(r&&r.m==="hammerstad")rug[nomCu(i)]=r.rms;}
+  /* les points témoins du remplissage : le centre de tout via et de toute
+     pastille d'un autre net est hors du cuivre de la zone, celui d'un via du
+     net est dedans */
+  const zones=[];
+  for(const z of S.zones){
+    const dedans=[], dehors=[], dans=p=>inPoly(p.x,p.y,z.pts)&&inPoly(p.x,p.y,boardPoly());
+    for(const v of S.vias)
+      if(z.l>=v.a&&z.l<=v.b&&dans(v))((v.net||"")===(z.net||"")?dedans:dehors).push([X(v.x),Y(v.y)]);
+    for(const fp of S.fps)for(const q of padsWorld(fp))
+      if(padLayers(fp,q).includes(z.l)&&dans(q)&&(q.net||"")!==(z.net||""))dehors.push([X(q.x),Y(q.y)]);
+    zones.push({couche:nomCu(z.l),net:z.net,dedans,dehors});
+  }
+  const trous={VIA:S.vias.length,PLATED:0,NONPLATED:(S.holes||[]).length};
+  for(const fp of S.fps)for(const q of padsOf(fp))if(q.drill>0)trous.PLATED++;
+  const textes=S.fps.filter(fp=>fp.silk!==false&&(!fp.side||n>1)).length+
+    (S.drawings||[]).filter(d=>d.shape==="text"&&(d.layer!=="silkB"||n>1)).length;
+  return {cuivres:S.cuL.map(L=>L.name),nets:[...nets].sort(),composants:comps,pistes,arcs,
+    vias:S.vias.length,trous,
+    /* les sommets de l'éditeur, et les arcs que dxfSegments y reconnaît :
+       un arc passe par les sommets, il ne s'écarte des cordes que de leur
+       flèche */
+    contour:{aire:r4(Math.abs(signedArea(boardPoly()))-boardCutouts().reduce((a,D)=>a+Math.abs(signedArea(D)),0)),
+             decoupes:boardCutouts().length,
+             bords:[boardPoly()].concat(boardCutouts()).map(P=>P.map(p=>[X(p.x),Y(p.y)])),
+             arcs:[boardPoly()].concat(boardCutouts()).reduce((a,P)=>
+               a+dxfSegments(P.map(p=>({x:X(p.x),y:Y(p.y)}))).filter(s=>s.t==="a").length,0)},
+    empilage,epaisseur:stackTotal(),rugosite:rug,zones,textes,
+    masque:[maskOpenings(0).length,n>1?maskOpenings(1).length:0],
+    pate:[pasteOpenings(0).length,n>1?pasteOpenings(1).length:0],
+    contre_percage:cpViasPerces().filter(c=>!c.faute).map(c=>({x:X(c.v.x),y:Y(c.v.y),cote:c.cote,
+      garde:nomCu(c.garde),res:c.res,diam:c.diam,prof:c.prof}))};
+}
+/* la seconde carte, chargée de ce qui manque aux exemples */
+/* la première carte aux coins arrondis, percée d'une découpe ronde : des
+   cordes de 5° et de 10°, que l'export rend en arcs */
+function ipcCarteArrondie(){
+  exCharger(0);
+  const b=S.board, r=4, P=[];
+  for(const [cx,cy,a0] of [[b.x+b.w-r,b.y+b.h-r,0],[b.x+r,b.y+b.h-r,90],[b.x+r,b.y+r,180],[b.x+b.w-r,b.y+r,270]])
+    for(let k=0;k<=18;k++){const a=(a0+5*k)*Math.PI/180;P.push({x:r4(cx+r*Math.cos(a)),y:r4(cy+r*Math.sin(a))});}
+  b.pts=P;
+  b.cutouts=[Array.from({length:36},(_,k)=>({x:r4(35+1.5*Math.cos(k*Math.PI/18)),y:r4(27+1.5*Math.sin(k*Math.PI/18))}))];
+  boardChanged();
+}
+function ipcCarteChargee(){
+  exCharger(1);
+  const r=cpAjouter({cote:"dessous",garde:1,res:0.15});
+  cmPoser("nets","GND","cp",r.id);
+  setCuRug(0,{m:"hammerstad",rms:2});
+  setCuRug(3,{m:"huray",a:0.5,sr:1.5});
+  const R=mkFp("R99","4k7","0603",2);
+  Object.assign(R,{x:62,y:27,rot:30,side:1,nets:{1:"SPI_CS",2:"GND"},csvMpn:"RC0603FR-074K7L",manufacturer:"Yageo"});
+  const U=mkFp("U98","PROTO","",3);
+  Object.assign(U,{x:10,y:36,rot:45,side:1,nets:{1:"SWDIO",2:"GND",3:"SWCLK"},
+    pads:[{n:1,x:-1.5,y:0,w:1,h:0.8,shape:"chamfer",chamfer:0.25,drill:0,rot:0},
+          {n:2,x:0,y:0.2,w:1,h:1,shape:"poly",pts:[{x:-0.4,y:-0.5},{x:0.5,y:-0.3},{x:0.3,y:0.5},{x:-0.5,y:0.4}],drill:0,rot:0},
+          {n:3,x:1.6,y:0,w:1.2,h:0.7,shape:"oval",drill:0,rot:90}]});
+  S.fps.push(R,U);
+  S.tracks.push({l:3,net:"SWDIO",w:0.25,x1:12,y1:40,x2:18,y2:40,ca:-1.4});
+  S.board.cutouts=[[{x:61,y:35},{x:64,y:35},{x:64,y:39},{x:61,y:39}]];
+  S.holes.push(mkHole(3,3,2.5),mkHole(63,3,2.5));
+  S.cuts.push({id:S.nextId++,l:1,pts:[{x:60,y:5},{x:64,y:5},{x:64,y:9},{x:60,y:9}]});
+  S.drawings.push({id:S.nextId++,shape:"text",type:"text",layer:"silkT",text:"WEB_CAO",x1:50,y1:5,x2:50,y2:5,
+                   size:1.5,height:1.5,rot:0,width:0.15});
+  S.variantes={liste:[{id:"v1",nom:"Lite"}],active:"v1"};
+  S.fps.find(f=>f.ref==="C5").nonMonte=["v1"];
+  touch();
+}
+T("IPC-2581 : les cartes d'exemple écrites pour le banc Python, contenu compté",()=>{
+  const avant=serialize();
+  const dir=path.join(__dirname,"..","dist","essai-ipc2581");
+  fs.mkdirSync(dir,{recursive:true});
+  try{
+    for(const [nom,prep] of [["exemple-0",()=>exCharger(0)],["exemple-1",()=>exCharger(1)],
+                             ["exemple-1-charge",ipcCarteChargee],["exemple-0-arrondi",ipcCarteArrondie]]){
+      prep();
+      const d=ipc2581Document({date:IPC_DATE}), s=d.stats;
+      const plats=S.tracks.filter(t=>!arcOf(t)).length;
+      if(s.composants!==S.fps.length||s.vias!==S.vias.length||s.pistes!==plats||s.arcs!==S.tracks.length-plats)
+        throw new Error(nom+" : "+JSON.stringify(s));
+      if(s.approx)throw new Error(nom+" : "+s.approx+" zone(s) au remplissage approché");
+      if(s.ilots<S.zones.length)throw new Error(nom+" : une zone sans cuivre");
+      if(d.xml.indexOf('<IPC-2581 revision="C" xmlns="http://webstds.ipc.org/2581">')<0)throw new Error("en-tête");
+      /* le même document, au même instant, donne le même fichier — et
+         l'export ne touche pas à la carte */
+      const doc=serialize();
+      if(ipc2581Document({date:IPC_DATE}).xml!==d.xml)throw new Error(nom+" : deux exports différents");
+      if(serialize()!==doc)throw new Error(nom+" : l'export a modifié la carte");
+      fs.writeFileSync(path.join(dir,nom+".xml"),d.xml);
+      fs.writeFileSync(path.join(dir,nom+".attendu.json"),JSON.stringify(ipcAttendu(),null,1));
+    }
+    /* ce que la carte chargée doit avoir écrit */
+    const x=fs.readFileSync(path.join(dir,"exemple-1-charge.xml"),"utf8");
+    for(const m of ['<Backdrill type="START_LAYER">','<Property layerOrGroupRef="Bottom"/>',
+                    '<Backdrill type="MUST_NOT_CUT_LAYER">','<Property layerOrGroupRef="Inner 1"/>',
+                    '<Property value="0.15" unit="MM"/>','<SpecRef id="BD_B_In1_150UM"/>',
+                    '<Conductor type="SURFACE_ROUGHNESS_UPFACING"','<Property value="2" unit="MICRON"/>',
+                    'name="HURAY_NODULE_RADIUS" value="0.5" unit="MICRON"','<Xform rotation="330" mirror="true"/>',
+                    '<RefDes name="C5" packageRef="0402" populate="false"','name="NOT_MOUNTED_IN" type="STRING" value="Lite"',
+                    '<Arc ','clockwise="false"','<Cutout>','platingStatus="NONPLATED"','<SurfaceFinish type="ENIG-N"',
+                    '<Span fromLayer="Top" toLayer="Bottom"/>','<Text textString="WEB_CAO"'])
+      if(x.indexOf(m)<0)throw new Error("absent de l'export : "+m);
+    if((x.match(/<SpecRef id="BD_B_In1_150UM"\/>/g)||[]).length!==17)
+      throw new Error("16 trous de via et leur calque de contre-perçage pointent la spec");
+    /* les coins arrondis et la découpe ronde : quatre quarts de cercle et
+       deux demi-cercles, au profil comme au calque du contour */
+    const y=fs.readFileSync(path.join(dir,"exemple-0-arrondi.xml"),"utf8");
+    const prof=y.slice(y.indexOf("<Profile>"),y.indexOf("</Profile>"));
+    if((prof.match(/<PolyStepCurve /g)||[]).length!==6||(y.match(/<PolyStepCurve /g)||[]).length!==12)
+      throw new Error("arcs du contour : "+(prof.match(/<PolyStepCurve /g)||[]).length);
+  }finally{loadDoc(JSON.parse(avant),true);}
+});
+T("IPC-2581 : dans fabrication.zip, annoncé par le LISEZ-MOI et le master drawing",()=>{
+  const avant=serialize();
+  try{
+    exCharger(0);
+    const files=buildFabFiles().files;
+    const f=files.find(g=>g.kind==="ipc2581");
+    if(!f||f.name!=="carte.xml"||!/^<\?xml version="1\.0" encoding="UTF-8"\?>/.test(f.text))
+      throw new Error("carte.xml absent : "+files.map(g=>g.name).join(" "));
+    const md=files.find(g=>/MASTER-DRAWING\.pdf$/.test(g.name));
+    if(files.indexOf(f)>files.indexOf(md)||Buffer.from(md.data).toString("latin1").indexOf("carte.xml")<0)
+      throw new Error("le master drawing doit annoncer carte.xml");
+    const lis=files.find(g=>g.name==="LISEZ-MOI.txt").text;
+    if(!/carte\.xml : IPC-2581 revision C/.test(lis))throw new Error("LISEZ-MOI muet sur l'IPC-2581");
+    /* le bouton du menu Fichier */
+    const e=exportIpc2581();
+    if(!e||e.name!=="carte.xml"||e.text.length<1000)throw new Error("bouton IPC-2581");
+  }finally{loadDoc(JSON.parse(avant),true);}
 });
 
 (async()=>{

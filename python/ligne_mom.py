@@ -2,6 +2,27 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.8.0
+# Date: 2026-10-10
+# Explication: LE PLAN A SA PROPRE RUGOSITE. `line_losses` separe depuis la
+#   2.7.0 la resistance du ruban (`R_ruban`) et celle du ou des plans
+#   (`R_plan`), mais n'avait qu'UN facteur de rugosite, pose sur les deux :
+#   un plan d'un autre feuillard que la piste -- un cuivre de plan standard
+#   sous une piste en HVLP, cas courant d'un empilage RF -- etait compte avec
+#   la rugosite de la piste. `rugosite_plan=` (parametre nomme optionnel) en
+#   donne une au plan : un dict des options de rugosite (`rugosite_rms`,
+#   `modele_rugosite`, `rayon_nodule`, `rapport_surface`), un dict vide pour
+#   un plan lisse, ou une liste de tels dicts -- les deux plans d'une
+#   triplaque, dont on prend la MOYENNE des facteurs (les deux plans portent
+#   la meme part du courant quand le ruban est centre ; hors du centre, c'est
+#   une approximation). Il ne touche QUE `R_plan`.
+#   None (defaut) : le plan prend le facteur du ruban, et le resultat est
+#   celui de la 2.7.0 au bit pres. Le detail porte `facteur_rugosite_plan`
+#   quand le parametre est donne.
+# Fonctions ajoutees : _facteur_rugosite_plan.
+# Fonctions modifiees : _pertes, line_losses, line_losses_detaillees (+
+#   rugosite_plan).
+#
 # Version: 2.7.0
 # Date: 2026-10-10
 # Explication: LES PERTES DU CONDUCTEUR COMPTENT ENFIN LE PLAN ET LES BORDS.
@@ -388,7 +409,7 @@ import math
 import numpy as np
 
 
-VERSION = "2.7.0"
+VERSION = "2.8.0"
 
 
 def etat():
@@ -1981,6 +2002,42 @@ def facteur_rugosite(freq, rugosite_rms=0.0, modele="hammerstad",
     return k
 
 
+# Les options de rugosite qu'un plan peut porter : celles de
+# `facteur_rugosite`, sous les noms de `line_losses`.
+_CLES_RUGOSITE = ("rugosite_rms", "modele_rugosite", "rayon_nodule",
+                  "rapport_surface")
+
+
+def _facteur_rugosite_plan(freq, rugosite_plan):
+    """Le facteur K du ou des plans de reference, ou None quand le plan n'a
+    pas de rugosite propre (il prend alors celui du ruban).
+
+    `rugosite_plan` : un dict d'options de rugosite (vide : plan lisse,
+    K = 1), ou une liste de tels dicts -- les deux plans d'une triplaque --,
+    dont on rend la MOYENNE des facteurs. Une cle inconnue est refusee : une
+    faute de frappe rendrait sinon un plan lisse sans rien dire.
+    """
+    if rugosite_plan is None:
+        return None
+    plans = ([rugosite_plan] if isinstance(rugosite_plan, dict)
+             else list(rugosite_plan))
+    if not plans:
+        return None
+    ks = []
+    for o in plans:
+        o = dict(o or {})
+        inconnues = sorted(set(o) - set(_CLES_RUGOSITE))
+        if inconnues:
+            raise ValueError("rugosite_plan : cle(s) inconnue(s) %s"
+                             % ", ".join(inconnues))
+        ks.append(facteur_rugosite(
+            freq, float(o.get("rugosite_rms", 0.0) or 0.0),
+            o.get("modele_rugosite") or "hammerstad",
+            float(o.get("rayon_nodule", 0.0) or 0.0),
+            float(o.get("rapport_surface", 0.0) or 0.0)))
+    return sum(ks) / len(ks)
+
+
 # ==========================================================================
 # LE DIELECTRIQUE CAUSAL : DJORDJEVIC-SARKAR
 # --------------------------------------------------------------------------
@@ -2042,7 +2099,7 @@ def djordjevic_sarkar(er_ref, tand_ref, f_ref, freqs, f1=1e3, f2=1e12):
 def _pertes(z0, eps_eff, largeur, epsilon_r, tan_delta, freq, epaisseur,
             hauteur, topologie, modele_conducteur, rugosite_rms,
             modele_rugosite, rayon_nodule, rapport_surface,
-            dielectrique_causal, f_ref_dielectrique):
+            dielectrique_causal, f_ref_dielectrique, rugosite_plan=None):
     """Le calcul commun a `line_losses` et `line_losses_detaillees`."""
     z0 = float(z0)
     eps_eff = float(eps_eff)
@@ -2067,6 +2124,11 @@ def _pertes(z0, eps_eff, largeur, epsilon_r, tan_delta, freq, epaisseur,
         raise ValueError("modele_conducteur inconnu : %r" % modele_conducteur)
     k_rug = facteur_rugosite(f, rugosite_rms, modele_rugosite, rayon_nodule,
                              rapport_surface)
+    # LE PLAN, AVEC LA SIENNE QUAND ON LA DONNE (2.8.0) ; sinon celle du
+    # ruban, et c'est le meme objet : le produit ne change pas d'un bit.
+    k_rug_plan = _facteur_rugosite_plan(f, rugosite_plan)
+    if k_rug_plan is None:
+        k_rug_plan = k_rug
 
     topo = _topologie_pertes(topologie, eps_eff, er)
     h = None
@@ -2099,7 +2161,7 @@ def _pertes(z0, eps_eff, largeur, epsilon_r, tan_delta, freq, epaisseur,
             source_h = "repli plaques paralleles"
         r_dc = 1.0 / (SIGMA_CU * w * t) if t > 0 else 0.0
         r_ruban = math.hypot(rs * k_rug * k_ruban, r_dc)
-        r_plan = rs * k_rug * k_plan
+        r_plan = rs * k_rug_plan * k_plan
 
     r_tot = r_ruban + r_plan
     alpha_c = r_tot / (2.0 * z0)
@@ -2115,7 +2177,7 @@ def _pertes(z0, eps_eff, largeur, epsilon_r, tan_delta, freq, epaisseur,
         / (eps_f * (er_f - 1.0)) if er_f > 1.0 else 1.0
     alpha_d = (np.pi * f * np.sqrt(eps_f) / C_0) * td_f * remplissage
 
-    return {"alpha_c": float(alpha_c), "alpha_d": float(alpha_d),
+    out = {"alpha_c": float(alpha_c), "alpha_d": float(alpha_d),
             "Rs": float(rs), "delta_peau": float(delta_peau),
             "R_ac_par_m": float(r_tot), "R_ruban": float(r_ruban),
             "R_plan": float(r_plan), "R_dc": float(r_dc),
@@ -2126,6 +2188,9 @@ def _pertes(z0, eps_eff, largeur, epsilon_r, tan_delta, freq, epaisseur,
             "facteur_rugosite": float(k_rug),
             "er_f": float(er_f), "tan_delta_f": float(td_f),
             "eps_eff_f": float(eps_f)}
+    if rugosite_plan is not None:
+        out["facteur_rugosite_plan"] = float(k_rug_plan)
+    return out
 
 
 def line_losses(z0, eps_eff, largeur, epsilon_r, tan_delta, freq,
@@ -2133,7 +2198,7 @@ def line_losses(z0, eps_eff, largeur, epsilon_r, tan_delta, freq,
                 modele_conducteur="wheeler", rugosite_rms=0.0,
                 modele_rugosite="hammerstad", rayon_nodule=0.0,
                 rapport_surface=0.0, dielectrique_causal=False,
-                f_ref_dielectrique=1e9):
+                f_ref_dielectrique=1e9, rugosite_plan=None):
     """Atténuation linéique, en nepers par mètre : (alpha_c, alpha_d). EN SI.
 
     CONDUCTEUR (2.7.0) : la règle de l'inductance incrémentale de Wheeler,
@@ -2152,6 +2217,11 @@ def line_losses(z0, eps_eff, largeur, epsilon_r, tan_delta, freq,
     RUGOSITÉ : facteur K de `facteur_rugosite` sur alpha_c. `rugosite_rms`
     (Hammerstad-Groiss) ou `rayon_nodule` + `rapport_surface` (Huray, avec
     modele_rugosite="huray"). Zéro par défaut : K = 1, rien ne change.
+    `rugosite_plan` (2.8.0) : la rugosité PROPRE du ou des plans de
+    référence, qui ne touche que R_plan -- un dict des mêmes options (vide :
+    plan lisse), ou une liste de dicts (les deux plans d'une triplaque, dont
+    on prend la moyenne des facteurs). None : le plan prend celle du ruban,
+    au bit près comme en 2.7.0.
 
     DIÉLECTRIQUE : alpha_d = (pi f racine(eps_eff) / c) tan_delta . q, q le
     facteur de remplissage. Avec `dielectrique_causal=True`, er et tan_delta
@@ -2164,7 +2234,7 @@ def line_losses(z0, eps_eff, largeur, epsilon_r, tan_delta, freq,
     d = _pertes(z0, eps_eff, largeur, epsilon_r, tan_delta, freq, epaisseur,
                 hauteur, topologie, modele_conducteur, rugosite_rms,
                 modele_rugosite, rayon_nodule, rapport_surface,
-                dielectrique_causal, f_ref_dielectrique)
+                dielectrique_causal, f_ref_dielectrique, rugosite_plan)
     return d["alpha_c"], d["alpha_d"]
 
 
@@ -2173,7 +2243,7 @@ def line_losses_detaillees(z0, eps_eff, largeur, epsilon_r, tan_delta, freq,
                            modele_conducteur="wheeler", rugosite_rms=0.0,
                            modele_rugosite="hammerstad", rayon_nodule=0.0,
                            rapport_surface=0.0, dielectrique_causal=False,
-                           f_ref_dielectrique=1e9):
+                           f_ref_dielectrique=1e9, rugosite_plan=None):
     """Atténuation détaillée avec toutes les composantes.
 
     Mêmes options nommées que `line_losses`. Retourne un dict avec :
@@ -2193,6 +2263,8 @@ def line_losses_detaillees(z0, eps_eff, largeur, epsilon_r, tan_delta, freq,
           (« donnee », « deduite », « repli plaques paralleles »)
         - facteur_rugosite
         - er_f, tan_delta_f, eps_eff_f : le diélectrique à cette fréquence
+    et, depuis la 2.8.0, quand `rugosite_plan` est donné :
+        - facteur_rugosite_plan : le K appliqué à R_plan
     """
     if not (freq > 0) or not (z0 > 0) or not (largeur > 0):
         return {"alpha_c": 0.0, "alpha_d": 0.0, "Rs": 0.0,
@@ -2201,7 +2273,7 @@ def line_losses_detaillees(z0, eps_eff, largeur, epsilon_r, tan_delta, freq,
     d = _pertes(z0, eps_eff, largeur, epsilon_r, tan_delta, freq, epaisseur,
                 hauteur, topologie, modele_conducteur, rugosite_rms,
                 modele_rugosite, rayon_nodule, rapport_surface,
-                dielectrique_causal, f_ref_dielectrique)
+                dielectrique_causal, f_ref_dielectrique, rugosite_plan)
     w = float(largeur)
     t = float(epaisseur)
     d["facteur_forme"] = float(2.0 * (w + t) / max(w * t, 1e-12))

@@ -557,6 +557,14 @@
 #   la hauteur deduite rend le courant resserre sur les aretes en regard.
 # Fonctions modifiees : alpha_genou (+ options_pertes), sections_couplees
 #   (qui les lui passe).
+#
+# Version: 4.3.0
+# Date: 2026-10-10
+# Explication: LE PLAN DE REFERENCE A SA PROPRE RUGOSITE dans les pertes au
+#   genou (`simulation_em._rugosite_section`, ligne_mom 2.8.0) : celle de sa
+#   couche quand elle la declare, celle de la piste sinon. Sans rugosite
+#   declaree sur le plan, le chiffre d'avant au bit pres.
+# Fonctions modifiees : sections_couplees.
 # ==========================================
 """Crosstalk Niveau 2 : le pic de bruit relatif, paire par paire.
 
@@ -680,7 +688,7 @@ except Exception as _exc:                              # noqa: BLE001
 
 FORMAT = "cao-crosstalk-1"
 FORMAT_RESULTAT = "cao-crosstalk-resultat-1"
-VERSION = "4.2.0"
+VERSION = "4.3.0"
 VERSION_MOTEURS = {
     "crosstalk": VERSION,
     "simulation_em": getattr(se, "VERSION", "4.2.0") if se is not None else "indisponible",
@@ -2402,7 +2410,7 @@ def sections_couplees(couches, parcours, retenus, refs, t_r, notes,
             opt_p = dict(se._geometrie_pertes(inf, couple=True)
                          if inf.get("topo") else {},
                          epaisseur=_nb(seg.get("epaisseur"), 0.035) * 1e-3,
-                         **se._rugosite_couche(couches, seg["couche"]))
+                         **se._rugosite_section(couches, seg["couche"], inf))
             alpha = alpha_genou(z0_a, eps[0] if len(eps) else 0.0,
                                 seg["largeur"], _nb(inf.get("er"), 0.0),
                                 _nb(inf.get("tan_delta"), 0.0), t_r, opt_p)

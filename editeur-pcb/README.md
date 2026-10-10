@@ -90,15 +90,25 @@ js/30-contraintes.js     gestionnaire de contraintes : mesures par net,
                          schéma qui en saisit aussi
 js/34-draftsman-vues.js  plans, ce qui se pose à la main : cotes accrochées
                          à la géométrie (par référence, orphelines en rouge),
-                         vues déplacées à la souris, vues de détail
+                         tolérances (par valeur pour chaînes et ordonnées),
+                         vues déplacées à la souris (aperçu de celles qui
+                         s'écartent), vues de détail
 js/32-rooms.js           rooms : les blocs fonctionnels du schéma encadrés
                          sur la carte, sélection d'un bloc par son étiquette
 js/31-topologie.js       forme du cuivre de chaque net (graphe des pistes,
                          vias et broches) : point à point, chaîne, étoile,
                          fly-by ; moignons de dérivation et de vias
+js/35-ipc2581-export.js  export IPC-2581 révision C : toute la carte en un
+                         XML (empilage, cuivre et nets, zones remplies,
+                         perçages et contre-perçage, composants, empreintes,
+                         nomenclature) ; voir « Export IPC-2581 »
 outils/build-monofichier.py assemble le tout dans dist/
 outils/fonte-plans.py    réduit Liberation Sans à la fonte des plans
 test/harness.js          banc d'essai sans navigateur
+test/banc-ipc2581-export.py  relit les exports IPC-2581 écrits par le banc
+                         d'essai par la chaîne de la visionneuse
+                         (python/ipc2581_parser.py → ipc2581_json.py),
+                         et les valide contre le XSD s'il est fourni
 ```
 
 Ces fichiers viennent du dossier partagé, à la racine du dépôt :
@@ -331,7 +341,10 @@ stack.sim         {causal, fref (Hz), via}                       si hors défaut
 Rien ne s'écrit tant que tout est au défaut : un document qui n'en parle pas se
 relit à l'identique. `simStackup()` (`js/19-simulation.js`) envoie la rugosité
 sur chaque couche de cuivre et les options sur l'empilage ; la simulation, la
-RF, l'œil et les pertes du crosstalk les lisent (voir
+RF, l'œil et les pertes du crosstalk les lisent. La rugosité d'une couche de
+**plan** vaut pour le plan quand une piste s'y réfère (`simulation_em` 5.1.0 :
+elle ne touche que la résistance du plan) ; un plan laissé « lisse » n'envoie
+rien et prend celle de la piste, comme avant (voir
 [simulation-em.md](../docs/simulation-em.md#pertes-diélectrique-causal-via-en-ligne-simulation_em-500)).
 
 ### La nature d'un via se choisit, la portée suit
@@ -454,10 +467,14 @@ nommés d'après les types `<Backdrill>` d'IPC-2581 :
     %TFBackDrill_MaxStubLengthMM,0.150*%  moignon résiduel admis
     %TABackDrill_DepthMM,1.234*%        profondeur de l'outil défini juste après
 
-Le LISEZ-MOI explique ce choix. L'éditeur **n'exporte pas d'IPC-2581** : le
-contre-perçage n'y est donc pas écrit (la visionneuse IPC-2581, elle, le lit).
-Le `.gbr` n'est pas listé par le master drawing (qui ne détaille que les
-Excellon).
+Le LISEZ-MOI explique ce choix. L'export IPC-2581 (voir « Export
+IPC-2581 ») écrit le même contre-perçage avec les vrais types de la norme :
+une `<Spec>` faite de `<Backdrill type="START_LAYER | MUST_NOT_CUT_LAYER |
+MAX_STUB_LENGTH">` pointée par le `<SpecRef>` du trou du via, et un calque de
+perçage par passe pour le foret. Le master drawing liste le `.gbr` dans ses
+fichiers, juste sous l'Excellon de la même passe (« Back-drill Gerber X2 (depth
+as attribute), copper layer 4, must-not-cut layer 2 ») ; il reste hors des
+perçages que détaille le plan de fabrication.
 
 ## Les règles de conception, et leurs figures
 
@@ -1098,6 +1115,19 @@ Les écarts sont signés, dans l'unité de la cote (degrés pour un angle) ; un
 vrai texte : au PDF, `±0,10` ou `(12,00)` se cherchent ; au DXF, ils vont
 sur le calque `COTES` (± en `%%p`, ° en `%%d`).
 
+Une **chaîne** ou une **ordonnée** tolère aussi chaque valeur à part. Le
+volet commence alors par la liste **Valeur** : « Toutes les valeurs » règle
+la tolérance commune ; « Point 2 : 30,00 — trou de fixation n° 7 » règle
+celle de ce point, qui peut suivre la **commune** (le défaut), n'en avoir
+**aucune**, ou avoir la sienne — n'importe lequel des genres ci-dessus. Dans
+le document, c'est `tols`, aligné sur `pts` : `null` pour la commune,
+`{genre:"aucune"}`, ou une tolérance comme `tol`. Une valeur de chaîne prend
+la tolérance du point où elle aboutit, le plus loin dans le sens de la cote
+(le premier point n'en porte donc pas). Une liste de mauvaise longueur est
+écartée, une liste toute à `null` disparaît : une cote sans tolérance par
+valeur s'écrit et se relit comme avant. L'écran, le PDF et le DXF montrent
+chaque valeur avec la sienne.
+
 Une vue glissée garde sa place : le coin haut gauche de sa boîte, aimanté
 sur une grille de 2,5 mm, toujours ramené dans le cadre et sorti du
 cartouche. Lâchée sur d'autres vues, elle reste où on l'a posée et les vues
@@ -1107,6 +1137,19 @@ qu'on n'a jamais déplacées choisissent les premières. S'il n'y a plus de
 place, chacune prend celle qui recouvre le moins, et la barre d'outils le
 dit. Le tout est un seul pas d'historique. Sans place enregistrée, la
 disposition calculée ne change pas.
+
+**Pendant le glisser**, on voit ce que le lâcher fera, sans que rien ne soit
+écrit : chaque vue qui s'écarterait est dessinée en tirets orange à sa place
+future, une flèche depuis sa place actuelle ; s'il n'y a plus de place, ces
+vues passent en rouge et « Feuille pleine : … resterai(en)t recouverte(s) »
+s'affiche au-dessus de la vue glissée, comme dans la barre d'outils. `Échap`
+abandonne le geste et l'aperçu avec lui. C'est le même calcul que le lâcher
+(`dfDispositionRepousser`, sur une copie des réglages) : ce qu'on voit est
+exactement ce qui sera posé. Refaire la feuille coûte quelques dizaines de
+millisecondes ; le calcul ne se refait donc qu'au changement de position
+**aimantée** (tous les 2,5 mm), les positions déjà vues pendant le geste se
+gardent, et le calque ne se redessine qu'une fois par image
+(`requestAnimationFrame`).
 Une **vue de détail** redessine la vue mère à l'échelle choisie, découpée
 proprement à sa fenêtre (au plan de fabrication, les pastilles et les trous à
 leur vraie taille s'y ajoutent, pour coter un connecteur) ; la vue mère porte
@@ -1129,8 +1172,8 @@ Nouveau l'oublie, le cartouche reste) :
 dessin.cotes   [{id, vue:"fab/carte", type:"h"|"v"|"a"|"d"|"r",
                  a:<réf>, b:<réf> (pas pour d / r), dx, dy, tol?, memo},
                 {id, vue, type:"ang", s?:<réf>, a:<réf>, b:<réf>, dx, dy, tol?, memo},
-                {id, vue, type:"ch", sens:"h"|"v", pts:[<réf>…], dx, dy, tol?, memo},
-                {id, vue, type:"ord", sens:"h"|"v", o:<réf>, pts:[<réf>…], dx, dy, tol?, memo}]
+                {id, vue, type:"ch", sens:"h"|"v", pts:[<réf>…], tols?, dx, dy, tol?, memo},
+                {id, vue, type:"ord", sens:"h"|"v", o:<réf>, pts:[<réf>…], tols?, dx, dy, tol?, memo}]
 dessin.vues    {"fab/percage": {x, y}, "det/7": {x, y}, …}
 dessin.details [{id, lettre:"A", source:"fab/carte", forme:"cercle"|"rect",
                  x, y, r | w, h, echelle}]
@@ -1140,6 +1183,7 @@ dessin.details [{id, lettre:"A", source:"fab/carte", forme:"cercle"|"rect",
         {type:"contour", i, c?}  {type:"bord", i, t, c?}
         {type:"origine"}                      (origine des fichiers, gOrigin())
 tol   : {genre:"sym", sup}  {genre:"asym"|"lim", sup, inf}  {genre:"ref"|"base"}
+tols  : [tol | {genre:"aucune"} | null …]     (un par point de pts ; null : la tol commune)
 ```
 
 Une cote angulaire sans `s` prend deux arêtes : `a` et `b` sont alors des
@@ -1288,6 +1332,91 @@ l'encadrer de `dfCalque(F,"NOM")` … `dfCalque(F)` ; un texte va sur le
 calque de sa catégorie (`cat`), le cadre et le cartouche se reconnaissent à
 leur place, et le reste va sur `DESSIN`. Le texte invisible du PDF n'y va
 pas : il sert la recherche du lecteur PDF, pas le modeleur.
+
+## Export IPC-2581
+
+**Fichier → IPC-2581 .xml** écrit toute la carte en un seul fichier XML,
+`<projet>.xml` (`carte.xml` sans projet) ; le même fichier part dans
+**Fabrication .zip**, annoncé par le Master Drawing et le LISEZ-MOI. Le code
+est dans `js/35-ipc2581-export.js` (`ipc2581Document`).
+
+**Révision C.** C'est la révision en vigueur (2020), celle qu'écrit KiCad par
+défaut, et son XSD est public. Tout ce qu'il nous faut — `<Backdrill>`, la
+rugosité en `<Conductor type="SURFACE_ROUGHNESS_UPFACING">`, les
+`<Dielectric>` — existe aussi en B ; la C ajoute la finition de surface
+(`<SurfaceFinish>`, codes de l'IPC-6012), le type de `<Step>` et l'état de
+l'empilage, et retire le niveau des `<FunctionMode>`.
+
+Ce qui part, section par section :
+
+| Section | Contenu |
+| --- | --- |
+| `Content` | rôle (`Proprietaire`), fonction `USERDEF` (fabrication, assemblage et nomenclature réunis), un `LayerRef` par calque, dictionnaires de traits (`LineDesc`) et de formes (`Circle`, `RectCenter`, `RectRound`, `Oval`, `Contour` pour les pastilles chanfreinées ou polygonales) |
+| `LogisticHeader`, `HistoryRecord` | émetteur, auteur et révision du dossier de projet, date |
+| `Bom` | une ligne par référence de commande (MPN, sinon valeur et boîtier) : repères, quantité, valeur, boîtier, MPN, fabricant en `Textual` ; `populate="false"` pour ce que la variante active ne pose pas |
+| `CadHeader` | une `<Spec>` par couche d'empilage — cuivre (conductivité, rugosité), diélectrique (matière, εr, tan δ, âme ou prépreg), masque (εr, couleur) —, la finition, et une par contre-perçage |
+| `Layer` | sérigraphie, pâte, masque, cuivres (`SIGNAL`, `MIXED` ou `PLANE` selon le rôle de couche), diélectriques, `CONTOUR` (`BOARD_OUTLINE`), un calque `DRILL` par portée avec son `<Span>` (borgnes et enterrés compris), `PERCAGE_NPTH`, un calque par passe de contre-perçage |
+| `Stackup` | la coupe, masque compris, épaisseur hors-tout |
+| `Step` | `PadStackDef` (pastilles et vias, perçage et forme par couche), `Profile` (contour et découpes), `Package` (une empreinte par géométrie : broches, forme, encombrement), `Component` (place, rotation, face, repère, valeur et MPN en `NonstandardAttribute`), `LogicalNet` (broche → net), `PhyNetGroup` (points de sonde des faces), et un `LayerFeature` par calque |
+
+Dans les `LayerFeature` : les pistes (`Line`) avec leur largeur, les arcs en
+`Arc`, les pastilles et les vias (`Pad` avec leur pile et leur broche), les
+**zones remplies** (`Contour` et ses `Cutout`), les traits et textes de
+sérigraphie (`UserSpecial` : les traits du Gerber, et le `Text` pour qu'un
+outil le lise), les ouvertures de masque et de pâte, les trous (`Hole`,
+`VIA` / `PLATED` / `NONPLATED`).
+
+**Le repère** est celui des Gerber du même dossier (`gOrigin`), en
+millimètres, Y vers le haut. Les rotations sont comptées dans le sens
+trigonométrique, comme le veut la norme — l'éditeur les compte dans le sens
+horaire, d'où 270° à l'écran pour 90° dans le fichier. Un composant posé
+dessous est un miroir en X puis une rotation (`<Xform mirror="true">`),
+l'ordre que suit la visionneuse ; le banc le vérifie broche par broche.
+
+**Les zones partent remplies.** Une zone de l'éditeur n'est qu'un contour :
+son cuivre se calcule au rendu, et le Gerber le dit en polarité négative.
+IPC-2581 veut le cuivre lui-même. `ipcRemplir` le calcule exactement comme
+`gerberCopper` le trace — la zone rognée à la carte moins sa marge et aux
+découpes, privée des découpes de zone, des trous du cuivre importé et du
+dégagement de tout cuivre d'un autre net, avec l'anneau et les bras de ses
+liaisons thermiques — mais en géométrie exacte, sans trame : toutes les
+arêtes sont coupées à leurs croisements, chaque tronçon qui sépare le dedans
+du dehors devient un bord, et les bords se rechaînent en îlots et en trous
+(`ipcBooleen`). Les cercles des dégagements partent en polygones
+**circonscrits** : un isolement exporté n'est jamais plus petit que la règle.
+Une géométrie dégénérée qui ne se refermerait pas donne la zone telle que
+dessinée et ses dégagements en `Cutout` (le banc d'essai exige qu'aucune
+zone d'exemple n'en arrive là).
+
+**Les arcs du contour sont gardés.** Le contour n'est qu'une liste de
+sommets ; les cordes égales d'un coin arrondi ou d'une carte ronde
+importés y sont reconnues par `dxfSegments`, comme pour le DXF, et partent en
+`PolyStepCurve` sur le cercle qui passe exactement par les sommets.
+
+Ce qui ne part pas : les règles de conception (classes, matrice), les paires
+différentielles et les contraintes, qui n'ont pas d'écriture que les outils
+de FAO reconnaissent ; la rugosité de Huray, qui n'a pas de type normalisé,
+part en `<Conductor type="OTHER">` commenté. Comme dans le Gerber, une zone
+ne se dégage pas autour d'un trou NPTH.
+
+**L'aller-retour.** `test/harness.js` écrit quatre exports dans
+`dist/essai-ipc2581/` — les deux cartes d'exemple, la seconde chargée de ce
+qui leur manque (contre-perçage, rugosité, composants dessous à 30° et 45°,
+pastilles chanfreinée, polygonale et oblongue, arc, découpe, trous NPTH,
+variante), la première aux coins arrondis percée d'une découpe ronde — et ce
+que l'éditeur en attend. `test/banc-ipc2581-export.py` les relit par la
+chaîne de la visionneuse et compare : composants (place, rotation, face,
+chaque broche sur sa pastille), nets, pistes et arcs, vias et trous, contour
+(aire au millième, arcs), couches et empilage, rugosité, contre-perçage,
+zones (le net raccordé, les autres dégagés), masque, pâte, nomenclature.
+
+    python3 outils/build-monofichier.py && node test/harness.js
+    python3 test/banc-ipc2581-export.py --xsd chemin/IPC-2581C.xsd
+
+Le XSD n'est pas dans le dépôt (il est à l'IPC) : KiCad en garde une copie,
+`qa/data/pcbnew/ipc2581/IPC-2581C.xsd`, que la CI télécharge. Sans `--xsd`
+(ou la variable `IPC2581_XSD`) ni `lxml`, la validation est sautée et le banc
+le dit.
 
 ## Gestionnaire de contraintes
 
@@ -1859,6 +1988,30 @@ s'écarter n'existe que là ; le clic verse la branche dans la carte.
 
 Un traçé entier — les pistes posées **et** tout le cuivre qu'il a poussé — ne
 fait qu'un seul Ctrl+Z. Échap en cours de route remet tout en place de même.
+
+### Le budget d'un geste : du travail, pas des millisecondes
+
+Une poussée doit rester assez courte pour suivre la souris. Ce budget était
+autrefois de 25 ms d'horloge : sur un poste chargé, la même poussée renonçait
+(`cause:"temps"`) là où elle aboutissait au calme, et les essais du shove
+passaient ou cassaient selon la charge de la machine. Il se compte maintenant
+en **travail fait** — des examens d'isolation, un couple (objet gênant,
+segment examiné), une requête à l'index valant `PNS_SHOVE_INDEX` = 32 examens —
+et plafonne à `PNS_SHOVE_TRAVAIL` = 60 000 (`cause:"travail"` au-delà). Le
+résultat porte ce qu'il a coûté (`r.travail`).
+
+Le plafond vient des cartes d'exemple, chaque boîtier tiré dans six
+directions et des tracés lancés à travers toute la carte, sur chaque face :
+
+| Geste | Médiane | 9 sur 10 sous | Plus grosse poussée aboutie |
+|---|---|---|---|
+| boîtier tiré | ~400 | ~2 300 | ~1 100 |
+| tracé à travers la carte | ~400 | ~6 000 | ~50 000 (≈ 20 ms) |
+
+Un examen coûte de 0,3 à 0,5 µs : le plafond tient dans l'ancien budget sur un
+poste ordinaire, mais il décide pareil partout. L'horloge reste en garde-fou
+des seuls cas pathologiques (`PNS_SHOVE_MS` = 250 ms, dix fois l'ancien
+budget), qu'un geste ordinaire n'atteint pas même sur une machine à genoux.
 
 ### L'index spatial
 

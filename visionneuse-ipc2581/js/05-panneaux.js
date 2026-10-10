@@ -234,6 +234,10 @@ function pnlEmpilageForm(){
   if(pnlSurcharges())
     h+='<div class="note"><span class="lien" id="ltRaz">Oublier les valeurs '
       +"que j'ai saisies</span> et revenir à ce que dit le fichier.</div>";
+  /* Les options de modèle de la carte — diélectrique causal, modèle de via,
+     portée des vias —, comme le panneau d'empilage de l'éditeur
+     (07-simulation.js, `simModelesIpcForm`). */
+  if(typeof simModelesIpcForm==="function")h+=simModelesIpcForm();
   return h;
 }
 function pnlSurcharges(){
@@ -257,9 +261,13 @@ function pnlEmpilageCabler(box){
       ltSurchargerRole(sel.dataset.ltRole, sel.value);
     };
   });
+  if(typeof simModelesIpcCabler==="function")simModelesIpcCabler(box);
   const raz=$("ltRaz");
   if(raz)raz.onclick=function(){
+    /* Les options de modèle ne viennent pas du fichier : elles restent. */
+    const sim=V.sur&&V.sur.sim;
     V.sur={cu:{},gap_t:{},gap_er:{},role:{}};
+    if(sim)V.sur.sim=sim;
     ltPreparer(); prefEcrire(); pnlInfos(); pnlDetail(); dessiner();
     hint("Empilage revenu à ce que dit le fichier.");
   };
