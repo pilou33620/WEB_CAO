@@ -395,6 +395,10 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* plans de fabrication et d'assemblage (29-draftsman.js) */
   "dfCfg","dfRegler","dfDocument","dfPdf","dfPdfOctets","dfChercher","dfSvg","dfWinAnsi","dfPdfLit",
   "dfLargeur","dfCouper","dfPercages","dfVue","dfOuvrir","dfFermer","dfExporter","DF_FORMATS","DF","dfImpedances",
+  /* export DXF et fonte embarquée (33-draftsman-export.js) */
+  "dxfCarte","dxfFeuilles","dxfFichiers","dxfSegments","dxfExporterCarte","dxfExporterFeuille","dfxCadre",
+  "dfCalque","dfFontePreparer","dffFonte","dffLire","dffBase64","dffGlyphes","DFF_CACHE","DF_FONTE_TTF","dfZone",
+  "dfLigne",
   /* gestionnaire de contraintes (01-core.js pour le modèle, 30-contraintes.js) */
   "cmNorm","cmCle","cmClrClasses","cmClrMax","cmMesures","cmRegleDe","cmVerifier","cmEvaluerGroupe",
   "cmManqueLongueur","cmLargeurPourZ","cmDrc","cmEdit","cmPoser","cmPoserPhysique","cmPoserMatrice",
@@ -21852,7 +21856,8 @@ function dfLatin(pdf){return Buffer.from(pdf).toString("latin1");}
 function dfToutes(){return {fab:true,asmT:true,asmB:true,bom:true,couches:true};}
 T("plans : PDF valide, chaque entrée de la table xref tombe sur son objet",()=>{
   exCharger(1);
-  S.dessin={feuilles:dfToutes()};
+  /* Helvetica en WinAnsi : la fonte embarquée a ses propres essais */
+  S.dessin={feuilles:dfToutes(),fonte:false};
   try{
     const doc=dfDocument();
     if(doc.feuilles.length!==1+1+1+S.cu)
@@ -21883,7 +21888,9 @@ T("plans : PDF valide, chaque entrée de la table xref tombe sur son objet",()=>
 });
 T("plans : le texte est du vrai texte — repères visibles, valeurs invisibles, accents",()=>{
   exCharger(1);
+  S.dessin={fonte:false};       // codage WinAnsi lisible tel quel ; la fonte embarquée plus bas
   const t=dfLatin(dfPdfOctets());
+  S.dessin=null;
   if(t.indexOf("(U1) Tj")<0)throw new Error("le repère U1 n'est pas écrit en texte");
   /* invisible : mode de rendu 3, la valeur posée sur le corps du composant */
   if(!/3 Tr [^\n]*\(C3 100n\) Tj/.test(t))throw new Error("valeur de C3 absente ou visible");
@@ -22056,6 +22063,342 @@ T("plans : aperçu SVG et fenêtre",()=>{
   try{
     if(!DF.doc||!DF.doc.feuilles.length)throw new Error("la fenêtre n'a rien construit");
   }finally{dfFermer();}
+});
+
+/* ==========================================================================
+   Plans : export DXF et fonte embarquée (33-draftsman-export.js)
+   ========================================================================== */
+/* Le DXF en entités : chaque « 0 » ouvre une entité, VERTEX et SEQEND sont
+   rangés sous leur POLYLINE. Les sections sont vérifiées dans l'ordre. */
+function dxfLu(octets){
+  const t=Buffer.from(octets).toString("latin1");
+  if(!t.endsWith("\r\n"))throw new Error("fin de ligne DXF attendue : CR LF");
+  const L=t.slice(0,-2).split("\r\n");
+  if(L.length%2)throw new Error("nombre impair de lignes : un code sans valeur");
+  const P=[];
+  for(let i=0;i<L.length;i+=2){
+    if(!/^ *\d+$/.test(L[i]))throw new Error("code de groupe illisible : « "+L[i]+" » ligne "+(i+1));
+    P.push([+L[i],L[i+1]]);
+  }
+  const sections=[], header={}, calques=[], ents=[];
+  let i=0;
+  while(i<P.length){
+    if(P[i][0]===0&&P[i][1]==="EOF"){sections.push("EOF");i++;continue;}
+    if(!(P[i][0]===0&&P[i][1]==="SECTION"&&P[i+1][0]===2))throw new Error("hors section : "+P[i]);
+    const nom=P[i+1][1];sections.push(nom);i+=2;
+    let cur=null, var_=null;
+    while(!(P[i][0]===0&&P[i][1]==="ENDSEC")){
+      const [c,v]=P[i];
+      if(nom==="HEADER"){if(c===9){var_=v;header[v]=[];}else if(var_)header[var_].push(v);}
+      if(nom==="TABLES"&&c===0&&v==="LAYER")calques.push(P[i+1][1]);
+      if(nom==="ENTITIES"){
+        if(c===0&&(v==="VERTEX"||v==="SEQEND")){cur={type:v,g:[],sous:true};ents[ents.length-1].pts=ents[ents.length-1].pts||[];
+          if(v==="VERTEX")ents[ents.length-1].pts.push(cur);}
+        else if(c===0){cur={type:v,g:[]};ents.push(cur);}
+        else cur.g.push([c,v]);
+      }
+      i++;
+    }
+    i++;
+  }
+  const lire=e=>{
+    e.cal=(e.g.find(x=>x[0]===8)||[])[1];
+    e.n=c=>+(e.g.find(x=>x[0]===c)||[0,NaN])[1];
+    e.s=c=>(e.g.find(x=>x[0]===c)||[0,""])[1];
+    for(const v of e.pts||[])lire(v);
+  };
+  ents.forEach(lire);
+  return {t,sections,header,calques,ents};
+}
+/* Le contour d'un calque est-il UNE boucle fermée de LINE et d'ARC ? */
+function dxfBoucle(ents,cal){
+  const el=ents.filter(e=>e.cal===cal&&(e.type==="LINE"||e.type==="ARC")).map(e=>{
+    if(e.type==="LINE")return [[e.n(10),e.n(20)],[e.n(11),e.n(21)]];
+    const c=[e.n(10),e.n(20)], r=e.n(40), a=e.n(50)*Math.PI/180, b=e.n(51)*Math.PI/180;
+    return [[c[0]+r*Math.cos(a),c[1]+r*Math.sin(a)],[c[0]+r*Math.cos(b),c[1]+r*Math.sin(b)]];
+  });
+  if(!el.length)return false;
+  const pres=(p,q)=>Math.hypot(p[0]-q[0],p[1]-q[1])<1e-4;
+  const vu=new Set([0]);
+  let bout=el[0][1];
+  while(!pres(bout,el[0][0])){
+    const k=el.findIndex((x,j)=>!vu.has(j)&&(pres(x[0],bout)||pres(x[1],bout)));
+    if(k<0)return false;
+    vu.add(k);bout=pres(el[k][0],bout)?el[k][1]:el[k][0];
+  }
+  return vu.size===el.length;
+}
+function dxfPlateau(P){S.board.pts=P;boardChanged();}
+function dxfRondRect(x1,y1,x2,y2,r,n){
+  const P=[];
+  for(const [cx,cy,a0] of [[x2-r,y1+r,-90],[x2-r,y2-r,0],[x1+r,y2-r,90],[x1+r,y1+r,180]])
+    for(let i=0;i<=n;i++){const a=(a0+90*i/n)*Math.PI/180;P.push({x:r3(cx+r*Math.cos(a)),y:r3(cy+r*Math.sin(a))});}
+  return P;
+}
+function dxfPolygone(cx,cy,r,n){
+  const P=[];
+  for(let i=0;i<n;i++){const a=2*Math.PI*i/n;P.push({x:r3(cx+r*Math.cos(a)),y:r3(cy+r*Math.sin(a))});}
+  return P;
+}
+T("plans DXF : carte 1:1 bien formée — sections, calques, un CIRCLE par trou, contour fermé",()=>{
+  exCharger(1);
+  S.holes=[mkHole(5,5,3.2)];
+  try{
+    const D=dxfLu(dxfCarte().octets);
+    if(D.sections.join(" ")!=="HEADER TABLES BLOCKS ENTITIES EOF")throw new Error("sections : "+D.sections.join(" "));
+    if(D.header.$ACADVER[0]!=="AC1009")throw new Error("R12 attendu : "+D.header.$ACADVER);
+    if(D.header.$INSUNITS[0]!=="4"||D.header.$MEASUREMENT[0]!=="1")throw new Error("unités : millimètres attendus");
+    for(const c of ["CONTOUR","TROUS_METALLISES","TROUS_NON_METALLISES","COMPOSANTS_DESSUS","REPERES_DESSUS","COTES","TABLEAU_PERCAGE"])
+      if(D.calques.indexOf(c)<0)throw new Error("calque "+c+" absent : "+D.calques.join(", "));
+    for(const e of D.ents)if(D.calques.indexOf(e.cal)<0)throw new Error("calque non déclaré : "+e.cal);
+    /* un CIRCLE par trou, pas un de plus ; le non métallisé à part */
+    const cer=D.ents.filter(e=>e.type==="CIRCLE");
+    if(cer.length!==drillFile().holes)throw new Error(cer.length+" CIRCLE pour "+drillFile().holes+" trous");
+    const np=cer.filter(e=>e.cal==="TROUS_NON_METALLISES");
+    if(np.length!==1||Math.abs(np[0].n(40)-1.6)>1e-9)throw new Error("trou de fixation : "+np.length);
+    /* au repère de l'Excellon : X = x − origine, Y vers le haut */
+    const o=gOrigin();
+    if(Math.abs(np[0].n(10)-(5-o.x))>1e-6||Math.abs(np[0].n(20)-(o.y-5))>1e-6)throw new Error("repère du trou faux");
+    if(!dxfBoucle(D.ents,"CONTOUR"))throw new Error("contour non fermé");
+    const u1=D.ents.find(e=>e.type==="TEXT"&&e.s(1)==="U1");
+    if(!u1||u1.cal!=="REPERES_DESSUS")throw new Error("repère U1 absent ou mal rangé");
+    const corps=D.ents.filter(e=>e.type==="POLYLINE"&&e.cal==="COMPOSANTS_DESSUS");
+    if(corps.length!==S.fps.length||corps.some(e=>e.n(70)!==1||e.pts.length!==4))throw new Error("un corps fermé de 4 sommets par composant");
+    if(!D.ents.some(e=>e.type==="TEXT"&&e.cal==="TABLEAU_PERCAGE"&&e.s(1)==="%%c fini (mm)"))throw new Error("en-tête du tableau de perçage (Ø en %%c)");
+  }finally{S.holes=[];}
+});
+T("plans DXF : arcs retrouvés — coins arrondis, carte ronde, l'octogone reste droit",()=>{
+  exCharger(1);
+  try{
+    dxfPlateau(dxfRondRect(10,10,70,50,5,8));
+    let D=dxfLu(dxfCarte().octets);
+    const arcs=D.ents.filter(e=>e.cal==="CONTOUR"&&e.type==="ARC"), lig=D.ents.filter(e=>e.cal==="CONTOUR"&&e.type==="LINE");
+    if(arcs.length!==4||lig.length!==4)throw new Error("4 ARC et 4 LINE attendus : "+arcs.length+" / "+lig.length);
+    for(const a of arcs){
+      const bal=((a.n(51)-a.n(50))%360+360)%360;
+      if(Math.abs(a.n(40)-5)>0.01||Math.abs(bal-90)>0.5)throw new Error("arc r="+a.n(40)+" sur "+bal+"°");
+    }
+    if(!dxfBoucle(D.ents,"CONTOUR"))throw new Error("contour arrondi non fermé");
+    /* une découpe ronde, elle aussi en arcs */
+    S.board.cutouts=[dxfPolygone(40,30,4,36)];
+    D=dxfLu(dxfCarte().octets);
+    if(D.ents.filter(e=>e.cal==="DECOUPES"&&e.type==="ARC").length!==2||!dxfBoucle(D.ents,"DECOUPES"))
+      throw new Error("découpe ronde : deux demi-arcs fermés attendus");
+    delete S.board.cutouts;
+    dxfPlateau(dxfPolygone(50,50,30,72));
+    D=dxfLu(dxfCarte().octets);
+    const ar=D.ents.filter(e=>e.cal==="CONTOUR"&&e.type==="ARC");
+    if(ar.length!==2||D.ents.some(e=>e.cal==="CONTOUR"&&e.type==="LINE"))throw new Error("carte ronde : 2 demi-arcs, "+ar.length);
+    if(Math.abs(ar[0].n(40)-30)>0.01||!dxfBoucle(D.ents,"CONTOUR"))throw new Error("carte ronde : rayon ou fermeture");
+    dxfPlateau(dxfPolygone(50,50,30,8));
+    D=dxfLu(dxfCarte().octets);
+    if(D.ents.filter(e=>e.cal==="CONTOUR"&&e.type==="LINE").length!==8||D.ents.some(e=>e.cal==="CONTOUR"&&e.type==="ARC"))
+      throw new Error("un octogone n'est pas un cercle");
+    if(dxfSegments([{x:0,y:0},{x:10,y:0},{x:10,y:10},{x:0,y:10}]).some(s=>s.t!=="l"))throw new Error("rectangle");
+  }finally{exCharger(1);}
+});
+T("plans DXF : la feuille entière — calques par repère, par catégorie et par place",()=>{
+  exCharger(1);
+  const doc=dfDocument();
+  const fab=doc.feuilles.filter(F=>F.genre==="fab");
+  const D=dxfLu(dxfFeuilles(fab).octets);
+  for(const c of ["CADRE","CARTOUCHE","CONTOUR","COTES","PERCAGE","TABLEAUX","NOTES","EMPILAGE"])
+    if(D.calques.indexOf(c)<0)throw new Error("calque "+c+" absent : "+D.calques.join(", "));
+  if(!dxfBoucle(D.ents,"CONTOUR"))throw new Error("contour de la vue non fermé");
+  const txt=D.ents.filter(e=>e.type==="TEXT");
+  const visibles=fab.reduce((a,F)=>a+F.items.filter(it=>it.t==="t"&&!it.cache&&String(it.s).trim()).length,0);
+  if(txt.length!==visibles)throw new Error(visibles+" textes visibles, "+txt.length+" TEXT : les invisibles restent au PDF");
+  if(!txt.some(e=>e.cal==="CARTOUCHE"&&e.s(1)==="Plan de fabrication"))throw new Error("titre du cartouche");
+  if(!txt.some(e=>e.cal==="COTES"&&/ mm$/.test(e.s(1))))throw new Error("cote hors tout");
+  if(!D.ents.some(e=>e.cal==="COTES"&&e.type==="SOLID"))throw new Error("flèches de cote pleines");
+  /* Windows-1252 : É en un octet ; ≥, hors du jeu, écrit comme en WinAnsi ;
+     ° en %%d, le code DXF */
+  if(D.t.indexOf("\xC9paisseur")<0)throw new Error("É de « Épaisseur » attendu en 0xC9");
+  if(D.t.indexOf("Tg >= 150 %%dC")<0)throw new Error("≥ et ° mal codés");
+  if(D.t.indexOf("\\U+")>=0)throw new Error("pas d'échappement \\U+ : tous les modeleurs ne le lisent pas");
+  /* assemblage : pastilles, corps, repères sur leur calque */
+  const A=dxfLu(dxfFeuilles([doc.feuilles.find(F=>F.genre==="asmT")]).octets);
+  for(const c of ["PASTILLES","COMPOSANTS","REPERES"])
+    if(!A.ents.some(e=>e.cal===c))throw new Error("assemblage : calque "+c+" vide");
+  /* ce qu'une autre fonction de dessin pose sous dfCalque() arrive sur son calque */
+  const F=doc.feuilles[0];
+  dfCalque(F,"COTES_MANUELLES");dfLigne(F,20,20,60,20,0.2);dfCalque(F);
+  const M=dxfLu(dxfFeuilles([F]).octets);
+  const l=M.ents.filter(e=>e.cal==="COTES_MANUELLES");
+  if(l.length!==1||l[0].type!=="LINE"||Math.abs(l[0].n(20)-(F.h-20))>1e-9)throw new Error("extension par dfCalque");
+});
+T("plans DXF : dans fabrication.zip, annoncés par le master drawing et le LISEZ-MOI",()=>{
+  exCharger(1);
+  const files=buildFabFiles().files;
+  const c=files.find(f=>/-CARTE\.dxf$/.test(f.name)), p=files.find(f=>/-PLAN-FABRICATION\.dxf$/.test(f.name));
+  if(!c||!p||!(c.data instanceof Uint8Array))throw new Error("DXF absents de l'archive : "+files.map(f=>f.name).join(" "));
+  const md=files.find(f=>/MASTER-DRAWING\.pdf$/.test(f.name));
+  if(dfLatin(md.data).indexOf(c.name)<0||dfLatin(md.data).indexOf(p.name)<0)throw new Error("le master drawing doit les annoncer");
+  if(files.indexOf(c)>files.indexOf(md))throw new Error("les DXF précèdent le master drawing qui les liste");
+  const lm=files.find(f=>f.name==="LISEZ-MOI.txt").text;
+  if(!/\.dxf \(AutoCAD R12/.test(lm)||lm.indexOf(c.name)<0)throw new Error("LISEZ-MOI muet sur les DXF");
+  S.dessin={feuilles:{fab:false,asmT:true}};
+  try{
+    const f2=buildFabFiles().files;
+    if(!f2.some(f=>/-CARTE\.dxf$/.test(f.name))||f2.some(f=>/-PLAN-FABRICATION\.dxf$/.test(f.name)))
+      throw new Error("sans plan de fabrication : la carte seule");
+  }finally{S.dessin=null;}
+  /* les boutons de la fenêtre */
+  dfOuvrir();
+  try{
+    if(!dxfExporterCarte().trous)throw new Error("export de la carte");
+    if(!dxfExporterFeuille())throw new Error("export de la feuille affichée");
+  }finally{dfFermer();}
+});
+
+/* Le texte d'un PDF tel qu'un lecteur le retrouve : chaque Tj décodé par la
+   /ToUnicode de sa fonte (hexadécimal) ou lu en WinAnsi (littéral). */
+function pdfObjet(t,id){
+  const i=t.indexOf("\n"+id+" 0 obj\n");
+  if(i<0)throw new Error("objet "+id+" absent");
+  const d=i+String(id).length+8, f=t.indexOf("\nendobj",d);
+  const corps=t.slice(d,f);
+  const m=/\/Length (\d+)[^\n]*\nstream\n/.exec(corps);
+  return {dict:corps.slice(0,corps.indexOf("\n")),flux:m?corps.substr(m.index+m[0].length,+m[1]):null};
+}
+function pdfTextes(pdf){
+  const t=dfLatin(pdf);
+  const res=/\/Font << \/F1 (\d+) 0 R \/F2 (\d+) 0 R >>/.exec(t);
+  const cartes={};
+  for(const [nom,id] of [["1",res[1]],["2",res[2]]]){
+    const o=pdfObjet(t,id), tu=/\/ToUnicode (\d+) 0 R/.exec(o.dict);
+    if(!tu)continue;
+    const m=new Map(), cm=Buffer.from(pdfObjet(t,tu[1]).flux,"latin1").toString("latin1");
+    for(const x of cm.matchAll(/<([0-9A-F]{4})> <([0-9A-F]+)>/g))
+      m.set(x[1],Buffer.from(x[2],"hex").swap16().toString("utf16le"));
+    cartes[nom]=m;
+  }
+  const out=[];
+  for(const x of t.matchAll(/BT \/F(\d) [^\n]*?(<[0-9A-F]*>|\((?:\\.|[^\\)])*\)) Tj ET/g)){
+    const s=x[2];
+    if(s[0]==="<"){
+      let o="";
+      for(let i=1;i+4<=s.length-1;i+=4){const u=cartes[x[1]].get(s.substr(i,4));if(u==null)throw new Error("CID "+s.substr(i,4)+" sans /ToUnicode");o+=u;}
+      out.push({f:x[1],s:o});
+    }else out.push({f:x[1],s:s.slice(1,-1)});
+  }
+  return out;
+}
+function pdfXrefJuste(t){
+  const sx=+(/startxref\n(\d+)\n%%EOF/.exec(t)||[])[1];
+  const m=/^xref\n0 (\d+)\n/.exec(t.slice(sx));
+  if(!m)throw new Error("table xref introuvable");
+  const lignes=t.slice(sx+m[0].length).split("\n");
+  for(let i=1;i<+m[1];i++){
+    const off=+lignes[i].slice(0,10);
+    if(!t.startsWith(i+" 0 obj\n",off))throw new Error("objet "+i+" : décalage "+off+" faux");
+  }
+  const re=/\/Length (\d+)[^>\n]*>>\nstream\n/g;let r;
+  while((r=re.exec(t))){
+    const fin=re.lastIndex+(+r[1]);
+    if(t.slice(fin,fin+10)!=="\nendstream")throw new Error("longueur de flux fausse");
+  }
+}
+const DF_NOTE_SYMB="Tolérance 10 kΩ ± 5 %, 4,7 µF, Tg ≥ 150 °C, ≤ 0,1 mm";
+T("plans PDF : fonte embarquée — FontFile2, CIDFontType2, ToUnicode, sous-ensemble",()=>{
+  exCharger(1);
+  S.dessin={notes:DF_NOTE_SYMB};
+  try{
+    if(dfCfg().fonte!==true)throw new Error("la fonte embarquée est l'option par défaut");
+    const pdf=dfPdfOctets(), t=dfLatin(pdf);
+    pdfXrefJuste(t);
+    for(const k of ["/FontFile2","/CIDFontType2","/ToUnicode","/Identity-H","/CIDToGIDMap /Identity","+PlansSans-Regular","+PlansSans-Bold"])
+      if(t.indexOf(k)<0)throw new Error(k+" absent");
+    if(t.indexOf("/WinAnsiEncoding")>=0)throw new Error("plus d'Helvetica quand les deux graisses sont embarquées");
+    if((t.match(/\/FontFile2 /g)||[]).length!==2)throw new Error("deux fontes : normale et grasse");
+    /* le sous-ensemble : bien plus petit que la fonte entière, et il a les
+       glyphes de chaque caractère employé */
+    const full=dffBase64(DF_FONTE_TTF.normal);
+    const re=/\/Length (\d+) \/Length1 \d+ >>\nstream\n/g;let r;const subs=[];
+    while((r=re.exec(t)))subs.push(Buffer.from(t.substr(re.lastIndex,+r[1]),"latin1"));
+    for(const b of subs)if(!(b.length<full.length*0.6))throw new Error("sous-ensemble de "+b.length+" octets pour "+full.length);
+    const Fo=dffLire(new Uint8Array(subs[0]));
+    if(Fo.ng>=dffFonte("normal").ng/2)throw new Error(Fo.ng+" glyphes gardés sur "+dffFonte("normal").ng);
+    const normaux=pdfTextes(pdf).filter(x=>x.f==="1").map(x=>x.s).join("");
+    for(const ch of new Set(normaux)){
+      const g=Fo.cmap.get(ch.codePointAt(0));
+      if(!g)throw new Error("« "+ch+" » sans glyphe dans le sous-ensemble");
+      if(ch.trim()&&Fo.loca[g+1]===Fo.loca[g])throw new Error("« "+ch+" » : glyphe vide");
+    }
+    for(const ch of "ΩµΩ±≥≤°É")if(normaux.indexOf(ch)>=0&&!Fo.cmap.get(ch.codePointAt(0)))throw new Error(ch);
+  }finally{S.dessin=null;}
+});
+T("plans PDF : le texte se retrouve par la /ToUnicode — accents, Ω, µ, ±, °, ≤, ≥, invisibles",()=>{
+  exCharger(1);
+  S.dessin={notes:DF_NOTE_SYMB};
+  try{
+    const tx=pdfTextes(dfPdfOctets()).map(x=>x.s);
+    const tout=tx.join("\n");
+    if(tout.indexOf(DF_NOTE_SYMB)<0)throw new Error("note aux symboles mal relue : "+tx.filter(s=>/Tol/.test(s)).join(" | "));
+    for(const s of ["U1","C3 100n","Épaisseur totale","Plan de fabrication","Tg ≥ "])
+      if(tout.indexOf(s)<0)throw new Error("« "+s+" » introuvable dans le texte extrait");
+    /* le centrage suit les vraies chasses : la largeur de « U1 » en PlansSans gras */
+    const FE=dfFontePreparer(dfDocument().feuilles);
+    if(Math.abs(FE.largeur("Wi",10,false)-dfLargeur("Wi",10,false))>1e-3)throw new Error("Liberation Sans doit avoir les chasses d'Helvetica");
+    /* sans la fonte, Ω redevient « Ohm » : c'est le codage WinAnsi */
+    S.dessin={notes:DF_NOTE_SYMB,fonte:false};
+    const h=pdfTextes(dfPdfOctets()).map(x=>x.s).join("\n");
+    if(h.indexOf("10 kOhm \\261 5 %")<0)throw new Error("repli WinAnsi : "+h.split("\n").filter(s=>/Tol/.test(s)));
+  }finally{S.dessin=null;}
+});
+T("plans PDF : repli sur Helvetica — option décochée, fonte absente, réglage gardé",()=>{
+  exCharger(1);
+  S.dessin={fonte:false};
+  try{
+    const t=dfLatin(dfPdfOctets());
+    if(t.indexOf("/FontFile2")>=0||t.indexOf("/WinAnsiEncoding")<0)throw new Error("décochée : Helvetica en WinAnsi");
+    S.dessin=null;
+    dfRegler("fonte",false);
+    const a=serialize();loadDoc(JSON.parse(a),true);
+    if(dfCfg().fonte!==false||serialize()!==a)throw new Error("le choix suit le document");
+    dfRegler("fonte",true);
+    /* la fonte qui ne se charge pas : le PDF sort quand même, en Helvetica */
+    const avant=DFF_CACHE.normal;
+    DFF_CACHE.normal=null;
+    try{
+      const t2=dfLatin(dfPdfOctets());
+      if(t2.indexOf("/FontFile2")>=0||t2.indexOf("/Helvetica")<0)throw new Error("fonte absente : repli attendu");
+      pdfXrefJuste(t2);
+    }finally{DFF_CACHE.normal=avant;}
+    /* un caractère que la fonte n'a pas : la substitution d'avant, puis « ? » */
+    const Fo=dffFonte("normal");
+    const g=dffGlyphes(Fo,"⌀✓ǎ日").map(x=>x.u).join("");
+    if(g!=="ØOKa?")throw new Error(g);
+  }finally{S.dessin=null;}
+});
+T("plans : vérification externe du PDF (pdftotext) et du DXF (ezdxf), si les outils sont là",()=>{
+  const cp=require("child_process"), os=require("os");
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),"plans-"));
+  try{
+    exCharger(1);
+    S.dessin={notes:DF_NOTE_SYMB};
+    const fpdf=path.join(dir,"plans.pdf"), fdxf=path.join(dir,"carte.dxf");
+    fs.writeFileSync(fpdf,dfPdfOctets());
+    fs.writeFileSync(fdxf,dxfCarte().octets);
+    S.dessin=null;
+    const p=cp.spawnSync("pdftotext",["-enc","UTF-8",fpdf,"-"],{encoding:"utf8"});
+    if(p.error)console.log("     (pdftotext absent : PDF non vérifié)");
+    else{
+      if(p.status!==0)throw new Error("pdftotext : "+p.stderr);
+      for(const s of ["10 kΩ","≥ 150","µF","U1","Épaisseur"])if(p.stdout.indexOf(s)<0)throw new Error("pdftotext ne retrouve pas « "+s+" »");
+      if(/Syntax Error|Error/.test(p.stderr))throw new Error("pdftotext : "+p.stderr);
+    }
+    const py="import sys,ezdxf\nd=ezdxf.readfile(sys.argv[1])\na=d.audit()\nm=d.modelspace()\n"+
+             "print(len(a.errors),len(m.query('CIRCLE')),len(m.query('ARC')),d.header.get('$INSUNITS'),d.dxfversion)";
+    const e=cp.spawnSync("python3",["-c",py,fdxf],{encoding:"utf8"});
+    if(e.error||/No module named/.test(e.stderr||""))console.log("     (ezdxf absent : DXF non vérifié)");
+    else{
+      if(e.status!==0)throw new Error("ezdxf : "+e.stderr);
+      const [err,cer,,u,v]=e.stdout.trim().split(" ");
+      exCharger(1);
+      if(+err!==0||+cer!==drillFile().holes||u!=="4"||v!=="AC1009")throw new Error("ezdxf : "+e.stdout);
+    }
+  }finally{S.dessin=null;fs.rmSync(dir,{recursive:true,force:true});}
 });
 
 /* ==========================================================================

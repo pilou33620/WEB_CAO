@@ -70,6 +70,7 @@ function dfCfg(){
     societe:txt(src.societe), auteur:txt(src.auteur),
     verifie:txt(src.verifie), approuve:txt(src.approuve),
     notes:txt(src.notes,4000),
+    fonte:typeof src.fonte==="boolean"?src.fonte:true,   // fonte embarquée (33-draftsman-export.js)
     feuilles:{fab:b("fab",true), asmT:b("asmT",true), asmB:b("asmB",true),
               bom:b("bom",true), couches:b("couches",false)}
   };
@@ -215,6 +216,10 @@ function dfTexte(F,s,x,y,pt,o){
   F.items.push({t:"t",s,x,y,pt,gras:!!o.gras,c:o.c==null?0:o.c,ancre:o.ancre||"g",
     rot:o.rot||0,cache:!!o.cache,cible:o.cible||null,cat:o.cat||"",lieu:o.lieu||""});
 }
+/* Calque nommé des objets qui suivent, jusqu'au dfCalque(F) qui le referme :
+   un repère dans la liste, que le PDF et l'aperçu ignorent et que l'export
+   DXF lit (33-draftsman-export.js). */
+function dfCalque(F,nom){F.items.push({t:"cal",nom:nom||null});}
 /* Boîte d'un texte sur la feuille, rotation comprise. */
 function dfBoiteTexte(it){
   const w=dfLargeur(it.s,it.pt,it.gras), h=it.pt*DF_PT;
@@ -241,7 +246,7 @@ function dfCouleur(c,trait){
 /* Le contenu d'une page. L'état graphique (épaisseur, couleurs, tirets)
    n'est réémis que lorsqu'il change : une couche de cuivre compte des
    milliers de pistes de même largeur. */
-function dfContenu(F){
+function dfContenu(F,FE){
   const H=F.h, L=["1 J 1 j"];
   const X=x=>dfNum(x/DF_PT), Y=y=>dfNum((H-y)/DF_PT);
   const st={lw:"",sc:"",fc:"",dash:false};
@@ -279,14 +284,14 @@ function dfContenu(F){
         X(x-r)+" "+Y(y-k)+" "+X(x-k)+" "+Y(y-r)+" "+X(x)+" "+Y(y-r)+" c "+
         X(x+k)+" "+Y(y-r)+" "+X(x+r)+" "+Y(y-k)+" "+X(x+r)+" "+Y(y)+" c h "+op);
     }else if(it.t==="t"){
-      const w=dfLargeur(it.s,it.pt,it.gras);
+      const w=FE?FE.largeur(it.s,it.pt,it.gras):dfLargeur(it.s,it.pt,it.gras);
       const dx=it.ancre==="m"?-w/2:(it.ancre==="d"?-w:0);
       const a=it.rot*Math.PI/180, ca=Math.cos(a), sa=Math.sin(a);
       const x0=it.x+dx*ca, y0=it.y-dx*sa;
       if(!it.cache)setF(it.c);
       L.push("BT /F"+(it.gras?2:1)+" "+dfNum(it.pt)+" Tf "+(it.cache?3:0)+" Tr "+
         dfNum(ca)+" "+dfNum(sa)+" "+dfNum(-sa)+" "+dfNum(ca)+" "+X(x0)+" "+Y(y0)+" Tm "+
-        dfPdfLit(it.s)+" Tj ET");
+        (FE?FE.chaine(it.s,it.gras):dfPdfLit(it.s))+" Tj ET");
     }
   }
   return L.join("\n")+"\n";
@@ -302,6 +307,9 @@ function dfPdf(feuilles,meta){
   const CAT=alloc(), PAGES=alloc(), F1=alloc(), F2=alloc(), RES=alloc(),
         INFO=alloc(), OUTL=alloc();
   const pageId=feuilles.map(()=>alloc()), contId=feuilles.map(()=>alloc());
+  /* fonte embarquée (33-draftsman-export.js) : sous-ensemble TrueType des
+     glyphes employés, Identity-H et /ToUnicode ; null → Helvetica, WinAnsi */
+  const FE=typeof dfFontePreparer==="function"?dfFontePreparer(feuilles):null;
 
   /* Signets : une entrée par feuille, et sous elle ses entrées propres. */
   const sig=[];
@@ -321,7 +329,7 @@ function dfPdf(feuilles,meta){
     off[id]=pos;
     emit(id+" 0 obj\n"+dict+"\n");
     if(stream!=null){
-      const b=enc.encode(stream);
+      const b=stream instanceof Uint8Array?stream:enc.encode(stream);
       emit("stream\n");chunks.push(b);pos+=b.length;emit("\nendstream\n");
     }
     emit("endobj\n");
@@ -331,8 +339,11 @@ function dfPdf(feuilles,meta){
   obj(CAT,"<< /Type /Catalog /Pages "+PAGES+" 0 R /Outlines "+OUTL+" 0 R"+
       " /PageMode /UseOutlines /Lang (fr-FR) /ViewerPreferences << /DisplayDocTitle true >> >>");
   obj(PAGES,"<< /Type /Pages /Kids ["+pageId.map(i=>i+" 0 R").join(" ")+"] /Count "+feuilles.length+" >>");
-  obj(F1,"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
-  obj(F2,"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>");
+  if(FE)FE.ecrire(F1,F2,alloc,obj);
+  else{
+    obj(F1,"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
+    obj(F2,"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>");
+  }
   obj(RES,"<< /Font << /F1 "+F1+" 0 R /F2 "+F2+" 0 R >> /ProcSet [/PDF /Text] >>");
   const d=new Date(), p2=v=>String(v).padStart(2,"0");
   const quand="D:"+d.getFullYear()+p2(d.getMonth()+1)+p2(d.getDate())+
@@ -358,7 +369,7 @@ function dfPdf(feuilles,meta){
       " /Count "+sig.length+" >>");
 
   feuilles.forEach((F,i)=>{
-    const contenu=dfContenu(F);
+    const contenu=dfContenu(F,FE);
     obj(contId[i],"<< /Length "+enc.encode(contenu).length+" >>",contenu);
     obj(pageId[i],"<< /Type /Page /Parent "+PAGES+" 0 R /MediaBox [0 0 "+
         dfNum(F.w/DF_PT)+" "+dfNum(F.h/DF_PT)+"] /Contents "+contId[i]+" 0 R /Resources "+RES+" 0 R >>");
@@ -525,8 +536,10 @@ function dfVue(box,face,marge){
   return {k,T,B,ox,oy,bw,bh,face,echelle:dfEchelleTxt(k)};
 }
 function dfContour(F,V,lw){
+  dfCalque(F,"CONTOUR");
   dfPoly(F,boardPoly().map(p=>V.T(p.x,p.y)),{ferme:true,lw:lw||0.35});
   for(const c of boardCutouts())dfPoly(F,c.map(p=>V.T(p.x,p.y)),{ferme:true,lw:lw||0.35});
+  dfCalque(F);
 }
 /* Le contour d'une pastille, en coordonnées monde : un polygone pour toutes
    les formes, le cercle compris (24 côtés, invisibles à l'échelle d'un plan). */
@@ -572,6 +585,7 @@ function dfFleche(F,x,y,dx,dy){
 /* Cote horizontale (sens "h") ou verticale ("v") entre deux points de la
    feuille, tirée à `d` mm du plus éloigné des deux. */
 function dfCote(F,p1,p2,sens,d,texte){
+  dfCalque(F,"COTES");
   if(sens==="h"){
     const y=Math.max(p1.y,p2.y)+d;
     dfLigne(F,p1.x,p1.y+1,p1.x,y+1.5,0.15);
@@ -587,6 +601,7 @@ function dfCote(F,p1,p2,sens,d,texte){
     dfFleche(F,x,p1.y,0,p1.y-p2.y);dfFleche(F,x,p2.y,0,p2.y-p1.y);
     dfTexte(F,texte,x-1,(p1.y+p2.y)/2,8,{ancre:"m",rot:90,cat:"cote"});
   }
+  dfCalque(F);
 }
 
 /* ==========================================================================
@@ -828,9 +843,11 @@ function dfFeuillesFab(ctx){
   /* perçages : un symbole par outil, de taille fixe sur la feuille */
   const groupes=dfPercages();
   const rs=clamp(V.k*0.35,0.7,1.3);
+  dfCalque(F,"PERCAGE");
   groupes.forEach((e,i)=>{
     for(const p of e.pts){const s=V.T(p.x,p.y);dfSymbole(F,i,s.x,s.y,rs);}
   });
+  dfCalque(F);
 
   /* cotes hors tout du contour et origine des fichiers */
   const P=boardPoly();
@@ -900,6 +917,7 @@ function dfFeuilleAsm(ctx,face){
   /* les pastilles d'abord, en gris léger : elles situent le corps. Le net de
      chacune est posé dessus en invisible : chercher « GND » ou « USB_DP »
      sur le plan d'assemblage montre les broches où il arrive. */
+  dfCalque(F,"PASTILLES");
   for(const fp of comps)
     for(const q of padsWorld(fp)){
       const pts=dfPadForme(q).map(p=>V.T(p.x,p.y));
@@ -911,7 +929,9 @@ function dfFeuilleAsm(ctx,face){
                  x2:Math.max(...pts.map(p=>p.x)),y2:Math.max(...pts.map(p=>p.y))}});
       }
     }
+  dfCalque(F);
 
+  dfCalque(F,"COMPOSANTS");
   for(const fp of comps){
     const monte=varEstMonte(fp,ctx.vid);
     const T=fpXform(fp), b=bodyOf(fp);
@@ -942,6 +962,7 @@ function dfFeuilleAsm(ctx,face){
       if(v)dfTexte(F,ref+" "+v,cx,cy,pt,{ancre:"m",cache:true,cible,cat});
     F.signets.push({titre:ref+(fp.value?" — "+fp.value:"")+(monte?"":" (NM)"),x:cx,y:cy});
   }
+  dfCalque(F);
   return F;
 }
 
@@ -1186,6 +1207,7 @@ function dfRendreCadre(){
       '</aside>'+
       '<main class="df-apercu"><div class="df-onglets" id="dfOnglets"></div><div class="df-feuille" id="dfFeuille"></div></main>'+
     '</div></div>';
+  if(typeof dfxCadre==="function")dfxCadre(m);      // DXF et fonte (33-draftsman-export.js)
 }
 let dfMinuterie=null;
 /* Les champs se reconstruisent à la frappe, mais pas à chaque lettre : une

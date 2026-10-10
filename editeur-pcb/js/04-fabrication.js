@@ -830,6 +830,10 @@ function fabReadme(files,dr){
   L.push("IPC-D-356 (carte.ipc) : netlist de test electrique (E-test / flying probe).");
   L.push("Sans ce fichier, le fabricant ne peut pas verifier la conformite");
   L.push("electrique de la gravure par rapport au schema.");
+  if(files.some(f=>/\.dxf$/i.test(f.name)))
+    L.push("Les .dxf (AutoCAD R12, millimetres) servent a la mecanique : -CARTE.dxf a",
+           "l'echelle 1:1 dans le repere des Gerber (contour, trous, composants),",
+           "-PLAN-FABRICATION.dxf la feuille du plan entiere.");
   L.push("positions.csv et bom.csv servent a l'assemblage : millimetres,");
   L.push("rotation en degres dans le sens antihoraire, meme origine que les");
   L.push("Gerber. Ils ne concernent pas le fabricant du circuit nu.");
@@ -989,6 +993,9 @@ function buildFabFiles(){
     const plans=dfPdfOctets();
     if(plans)files.push({name:fabBase()+"-PLANS.pdf",data:plans});
   }
+  /* les DXF pour la mécanique (33-draftsman-export.js) : la carte à 1:1, et
+     la feuille du plan de fabrication */
+  if(typeof dxfFichiers==="function")files.push(...dxfFichiers());
   const md=masterDrawingPdf(files);
   if(md)files.push({name:fabDocNum()+".pdf",data:md});
   files.push({name:"EMPILAGE.txt",text:stackReport()});
