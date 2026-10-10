@@ -73,6 +73,12 @@ js/28-placement-satellites.js  « Placement auto », second temps : découplage 
 js/29-draftsman.js       plans de fabrication et d'assemblage (Draftsman) :
                          feuilles cadrées et cartouchées, PDF au texte
                          cherchable, aperçu SVG et recherche dans la fenêtre
+js/33-draftsman-export.js  plans : export DXF (carte 1:1 pour la mécanique,
+                         feuille entière) et fonte TrueType embarquée en
+                         sous-ensemble dans le PDF
+js/fontes/plans-sans.js  la fonte PlansSans (Liberation Sans pré-réduite, en
+                         base64), produite par outils/fonte-plans.py ; sa
+                         licence OFL à côté, js/fontes/OFL-PlansSans.txt
 js/30-contraintes.js     gestionnaire de contraintes : mesures par net,
                          contraintes héritées ou propres, groupes
                          d'appariement, DRC, fenêtre en tableur (le modèle
@@ -85,6 +91,7 @@ js/31-topologie.js       forme du cuivre de chaque net (graphe des pistes,
                          vias et broches) : point à point, chaîne, étoile,
                          fly-by ; moignons de dérivation et de vias
 outils/build-monofichier.py assemble le tout dans dist/
+outils/fonte-plans.py    réduit Liberation Sans à la fonte des plans
 test/harness.js          banc d'essai sans navigateur
 ```
 
@@ -904,9 +911,13 @@ Tout le texte est du texte, jamais des traits : `Ctrl+F` dans n'importe quel
 lecteur PDF trouve un repère, une valeur, une note. Trois choix le
 garantissent :
 
-- les fontes sont en **WinAnsi**, pas en ASCII : « Épaisseur », « résistance »,
-  « ± », « µ », « Ø » s'écrivent et se cherchent. Ce que WinAnsi n'a pas
-  s'écrit comme un technicien l'écrirait (Ω → `Ohm`, ≥ → `>=`, εr → `er`) ;
+- la fonte est **embarquée** (option « Fonte embarquée », cochée par défaut,
+  voir plus bas) : chaque glyphe est codé par son numéro et une table
+  `/ToUnicode` dit quel caractère il porte, si bien que « Épaisseur », « Ω »,
+  « ≥ », « µ », « ± » s'affichent, se cherchent et se copient tels quels.
+  Décochée, ce sont les fontes standard en **WinAnsi** : les accents et
+  « ± », « µ », « Ø » passent encore, ce que WinAnsi n'a pas s'écrit comme
+  un technicien l'écrirait (Ω → `Ohm`, ≥ → `>=`, εr → `er`) ;
 - ce qui ne s'affiche pas est posé en **texte invisible** (mode de rendu 3,
   celui de la couche texte d'un document numérisé) : sur le corps de chaque
   composant, sa valeur, son boîtier, sa référence fabricant, son fabricant ;
@@ -940,6 +951,81 @@ sans dépendance, comme le Master Drawing : contenu non compressé, état
 graphique réémis seulement quand il change, table xref comptée en écrivant.
 La chasse des caractères vient de la table métrique d'Helvetica : c'est elle
 qui centre un repère sur son composant et coupe les colonnes des tableaux.
+
+### La fonte embarquée
+
+Helvetica n'est jamais embarquée : chaque lecteur la remplace par ce qu'il a,
+et le plan ne se ressemble pas d'un poste à l'autre. Le PDF des plans
+emporte donc sa fonte, **PlansSans** : Liberation Sans 2.x (licence SIL Open
+Font License 1.1), dont les chasses sont celles d'Arial, donc d'Helvetica —
+la mise en page ne bouge pas d'un trait. Elle arrive en deux temps :
+
+1. **À la construction**, `outils/fonte-plans.py` (Python sans module
+   externe) réduit les deux graisses de la fonte du système à ce qu'un plan
+   écrit — ASCII, Latin-1, Latin étendu A, ponctuation WinAnsi, grec,
+   flèches et symboles (± ° ≤ ≥ ≈ ≠ ∞ √ ‰…) : 432 caractères, le hinting et
+   les tables de mise en page retirés, 29 Ko par graisse au lieu de 410.
+   L'OFL interdit qu'une version modifiée porte les noms réservés
+   « Liberation » et « Arimo » : la fonte est renommée, son copyright et sa
+   licence restent dans sa table `name`, et `js/fontes/OFL-PlansSans.txt`
+   l'accompagne. Le résultat, `js/fontes/plans-sans.js` (80 Ko de base64),
+   se charge comme un script : la fonte est là depuis le disque, sans
+   serveur, et dans `dist/editeur-pcb.html`.
+2. **À chaque PDF**, `33-draftsman-export.js` ne garde que les glyphes que
+   les feuilles emploient (composants des glyphes composites compris) et
+   réécrit la fonte en JavaScript pur : `glyf` et `loca` réduits, `cmap`,
+   `hmtx`, `head`, `hhea`, `maxp`, `OS/2`, `name`, `post` minimal — 7 à 9 Ko
+   par graisse pour l'exemple. Le PDF la déclare en `CIDFontType2`, codage
+   `Identity-H`, avec sa `/ToUnicode`.
+
+Un caractère que la fonte n'a pas suit le chemin de WinAnsi (⌀ → Ø, ✓ → OK,
+lettre sans son accent, puis « ? »). Décochée — ou si la fonte ne se charge
+pas —, le PDF reprend Helvetica en WinAnsi, comme avant. Le choix est gardé
+dans le document (`dessin.fonte`).
+
+Pour changer de fonte ou de jeu de caractères : `python3 outils/fonte-plans.py
+[Regular.ttf Bold.ttf]`, puis reconstruire le monofichier.
+
+### Export DXF pour la mécanique
+
+Deux boutons dans la fenêtre, et deux fichiers dans **Fabrication .zip**
+(annoncés par le Master Drawing et le LISEZ-MOI) :
+
+| Fichier | Contenu |
+| --- | --- |
+| `<projet>-CARTE.dxf` (**DXF carte 1:1**) | la carte seule, à l'échelle 1:1, en millimètres, dans le repère des Gerber et de l'Excellon (même origine, Y vers le haut) : contour et découpes en `LINE` et `ARC`, un `CIRCLE` par trou au diamètre fini, encombrement (`POLYLINE` fermée, en tirets pour un non-monté) et repère (`TEXT`) de chaque composant, cotes hors tout, tableau de perçage à côté |
+| `<projet>-PLAN-FABRICATION.dxf` (**DXF feuille**, la feuille affichée) | la feuille entière : cadre, cartouche, vue cotée, symboles et tableaux, coupe, notes |
+
+Les calques : `CONTOUR`, `DECOUPES`, `TROUS_METALLISES`,
+`TROUS_NON_METALLISES`, `COMPOSANTS_DESSUS` / `_DESSOUS`, `REPERES_DESSUS` /
+`_DESSOUS`, `COTES`, `ORIGINE`, `TABLEAU_PERCAGE` pour la carte ; `CADRE`,
+`CARTOUCHE`, `CONTOUR`, `PERCAGE`, `COTES`, `PASTILLES`, `COMPOSANTS`,
+`REPERES`, `TABLEAUX`, `EMPILAGE`, `NOTES`, `TEXTES`, `DESSIN` pour la
+feuille.
+
+Le format est **AutoCAD R12** (`AC1009`), en ASCII : c'est la version que
+tout lit, des modeleurs (SolidWorks, Inventor, Fusion, FreeCAD) aux
+machines de découpe. R2000 n'apporterait que la `LWPOLYLINE`, au prix des
+poignées et de la section `OBJECTS` qu'un lecteur strict refuse au moindre
+écart. Les unités sont annoncées quand même (`$INSUNITS` = 4, millimètres ;
+`$MEASUREMENT` = 1) : un lecteur R12 les ignore, un lecteur récent ne
+demande plus l'unité. Le texte est en Windows-1252 — le jeu de WinAnsi,
+écrit de la même façon —, °, ± et Ø en `%%d`, `%%p`, `%%c`.
+
+Le contour de la carte n'est qu'une liste de sommets : un coin arrondi ou une
+carte ronde importés y sont des suites de cordes égales. L'export les
+reconnaît (cordes égales, tournant du même côté, 30° au plus chacune, sommets
+sur un même cercle) et les écrit en `ARC`, sur le cercle qui passe exactement
+par les sommets de part et d'autre : le contour reste fermé, et le modeleur
+reçoit un rayon au lieu de vingt facettes. Un octogone reste un octogone.
+
+La feuille est lue dans la même liste d'objets que le PDF et l'aperçu : tout
+ce qui s'y dessine passe dans le DXF. Pour ranger un nouveau dessin sur son
+calque (des cotes posées à la main, une vue de détail), il suffit de
+l'encadrer de `dfCalque(F,"NOM")` … `dfCalque(F)` ; un texte va sur le
+calque de sa catégorie (`cat`), le cadre et le cartouche se reconnaissent à
+leur place, et le reste va sur `DESSIN`. Le texte invisible du PDF n'y va
+pas : il sert la recherche du lecteur PDF, pas le modeleur.
 
 ## Gestionnaire de contraintes
 
