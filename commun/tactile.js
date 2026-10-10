@@ -139,9 +139,37 @@ function tactileInitialiser(opts){
     };
   }
 
+  tactileAntiSelection();
+
   if((opts.roulette || opts.hud) && opts.outil && opts.outil !== "accueil"){
     tactileRouletteBrancher(opts.outil);
   }
+}
+
+/* Le stylet ne sélectionne pas le texte de la page, mode tactile ou non : sur
+   iPad, Safari lit un appui long ou un glissé du crayon comme une sélection de
+   texte. En mode tactile, le doigt non plus. La souris garde la sienne, et les
+   champs de saisie restent sélectionnables par tous. */
+let TACTILE_POINTEUR = "";
+function tactileSaisissable(n){
+  const el = n && (n.nodeType === 1 ? n : n.parentElement);
+  return !!(el && el.closest && el.closest('input, textarea, [contenteditable]:not([contenteditable="false"])'));
+}
+function tactileAntiSelection(){
+  if(TACTILE_POINTEUR !== "" || typeof document.addEventListener !== "function") return;
+  TACTILE_POINTEUR = "?";
+  const bloque = ()=> TACTILE_POINTEUR === "pen" || (TACTILE_POINTEUR === "touch" && tactileEstActif());
+  document.addEventListener("pointerdown", e=>{
+    TACTILE_POINTEUR = e.pointerType || "?";
+    // une sélection déjà posée s'efface au toucher suivant hors des champs
+    if(bloque() && !tactileSaisissable(e.target) && !tactileSaisissable(document.activeElement)){
+      const s = window.getSelection ? window.getSelection() : null;
+      if(s && s.rangeCount && !s.isCollapsed) s.removeAllRanges();
+    }
+  }, true);
+  document.addEventListener("selectstart", e=>{
+    if(bloque() && !tactileSaisissable(e.target)) e.preventDefault();
+  }, true);
 }
 
 /* ==========================================================================

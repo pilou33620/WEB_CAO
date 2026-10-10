@@ -13,6 +13,24 @@ body.mode-tactile #cvBox {
   user-select: none;
 }
 
+/* 1 bis. Ni le stylet ni le doigt ne sélectionnent le texte de la page. Le
+   canevas seul ne suffit pas : sur iPad, un appui long du stylet sur la feuille
+   prend le texte voisin (onglets, panneaux, barre d'état) et pose les poignées
+   bleues de Safari d'un bout à l'autre de l'écran. Les champs de saisie gardent
+   leur sélection : sous iOS, un champ non sélectionnable ne se tape plus. */
+body.mode-tactile {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+body.mode-tactile input,
+body.mode-tactile textarea,
+body.mode-tactile [contenteditable]:not([contenteditable="false"]) {
+  -webkit-touch-callout: default;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 /* 2. Cibles tactiles confortables sur les barres d'outils et sélecteurs */
 body.mode-tactile header .tools {
   gap: 4px;
