@@ -432,7 +432,10 @@ L'éditeur compte parmi les couches empruntées celles où une **zone** du net
 touche le fût (liaison directe ou thermique, pas un dégagement) : un foret qui
 la couperait est une faute au DRC, et ce via ne part pas contre-percé. La
 visionneuse IPC-2581 n'envoie le champ qu'avec la **portée percée** déclarée
-par le fichier (`layer_from`, `layer_to`), sans laquelle rien ne se soustrait.
+par le fichier (`layer_from`, `layer_to`), sans laquelle rien ne se soustrait ;
+avec l'option « Portée percée de tous les vias déclarés » de son panneau
+(désactivée par défaut), elle envoie aussi la portée des vias qui ne sont pas
+contre-percés, et leur moignon est chiffré au lieu de rester « inconnu ».
 La vérification de la carte lit la même chose dans le `cp` d'un perçage (voir
 [verification-carte.md](verification-carte.md#moignons-de-vias)).
 
@@ -499,8 +502,13 @@ causal*, fréquence de la fiche, modèle de via). Le document n'écrit
 `stack.cu[i].rug` et `stack.sim` que s'ils s'écartent du défaut. **La
 visionneuse** lit la rugosité que le fichier IPC-2581 déclare
 (`<Conductor type="SURFACE_ROUGHNESS_UPFACING|DOWNFACING|TREATED">` d'une
-`<Spec>`, la plus forte des faces, parseur 1.76) ; elle n'a pas de saisie, ni
-des options de modèle — la plupart des exports n'en portent pas.
+`<Spec>`, la plus forte des faces, parseur 1.76) ; elle n'a pas de saisie de
+rugosité — la plupart des exports n'en portent pas. Les **options de modèle**
+(diélectrique causal, fréquence de la fiche, modèle de via) se saisissent dans
+son panneau *La carte*, sous « Empilage du calcul » → « Modèles de
+simulation », avec les mêmes défauts et le même envoi que l'éditeur ; elles
+sont gardées par fichier dans le profil (`simModelesIpc`,
+`visionneuse-ipc2581/js/07-simulation.js`).
 
 **Ce que cela change, mesuré** (microruban 0,58 mm sur 0,3 mm de FR-4,
 100 mm) : hauteur et topologie, 3,5355 → 3,5378 dB à 10 GHz (+0,07 %) ; sur

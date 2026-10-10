@@ -74,6 +74,9 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simChainePistes","simBoutsPiste","simZPistes","simArcEnPolyligne",
   "simJonctionsIpc","simJoncCommuneIpc","SIM_RAYON_JONCTION_IPC","simViasIpc",
   "simContrePercageIpc","simTrouAuPointIpc","mdlContrePercage",
+  /* La portée percée de tous les vias, et les options de modèle de la carte. */
+  "simPorteeTrouIpc","simPorteeEnvoyeeIpc","simModelesIpc","simModelesIpcPoser",
+  "simModelesIpcNorm","simModelesIpcRelire","simModelesIpcForm","SIM_MODELES_VIA_IPC",
   "mdlArc","mdlArcAngle","mdlArcLongueur","ltArc","ltNet","ltPiste",
   "simCheveluRes","simRetourCouleurRes","simRetourActifIpc",
   "simRetourTraceIpc",
@@ -5911,6 +5914,117 @@ T("contre-perçage : sans portée, sans couche gardée, ou sans contre-perçage,
   v=simSegments().envoi[1].via;
   if("contre_percage" in v||"layer_from" in v)throw new Error("sans contre-perçage : "+JSON.stringify(v));
   if(mdlContrePercage(V.modele.percages[0])!==null)throw new Error("mdlContrePercage sans cp");
+});
+
+/* ==========================================================================
+   LA PORTÉE PERCÉE DE TOUS LES VIAS DÉCLARÉS (option, désactivée)
+   --------------------------------------------------------------------------
+   Le serveur ne chiffre un moignon que s'il connaît la portée percée
+   (`_moignons`). Seuls les vias contre-percés l'envoyaient ; l'option
+   l'envoie pour tout via dont le fichier déclare la portée. Désactivée par
+   défaut : l'essai précédent (« sans contre-perçage, la fiche d'avant, à
+   l'identique ») le tient.
+   ========================================================================== */
+T("portée des vias : l'option envoie la portée déclarée, sans contre-perçage",()=>{
+  const sim=V.sur.sim;
+  try{
+    cpCarteIpc({sa:0, sb:3});
+    if(simModelesIpc().portees!==false)throw new Error("désactivée par défaut");
+    simModelesIpcPoser({portees:true});
+    if(!V.sur.sim||!V.sur.sim[V.fichier]||V.sur.sim[V.fichier].portees!==true)
+      throw new Error("gardée sous le nom du fichier : "+JSON.stringify(V.sur.sim));
+    let v=simSegments().envoi[1].via;
+    if(!v||v.layer_from!==0||v.layer_to!==6||"contre_percage" in v)throw new Error("raccord : "+JSON.stringify(v));
+    const L=simViasIpc();
+    if(L.length!==1||L[0].layer_from!==0||L[0].layer_to!==6||L[0].portee_supposee||"contre_percage" in L[0])
+      throw new Error("simViasIpc : "+JSON.stringify(L.map(f=>[f.layer_from,f.layer_to,f.portee_supposee])));
+    /* un contre-perçage incomplet : la portée part, la passe du foret non */
+    cpCarteIpc({sa:0, sb:3, cp:{de:3, res:0.1, spec:"BD_1A", src:"spec"}});
+    v=simSegments().envoi[1].via;
+    if(v.layer_from!==0||v.layer_to!==6||"contre_percage" in v)throw new Error("incomplet : "+JSON.stringify(v));
+    /* le contre-perçage complet ne change pas */
+    cpCarteIpc({sa:0, sb:3, cp:CP_IPC});
+    v=simSegments().envoi[1].via;
+    if(v.layer_from!==0||v.layer_to!==6||!v.contre_percage||v.contre_percage.couche_garde!==2)
+      throw new Error("contre-percé : "+JSON.stringify(v));
+    /* une portée que le fichier ne déclare pas ne s'invente pas */
+    cpCarteIpc({});
+    v=simSegments().envoi[1].via;
+    if("layer_from" in v)throw new Error("sans portée déclarée : "+JSON.stringify(v));
+    const L2=simViasIpc();
+    if(!L2[0].portee_supposee)throw new Error("la portée supposée reste supposée");
+    /* une portée sur une couche hors de l'empilage, ou d'une seule couche */
+    if(simPorteeTrouIpc({sa:0, sb:0})||simPorteeTrouIpc({sa:0, sb:9})||simPorteeTrouIpc({sa:1}))
+      throw new Error("portée incohérente");
+    /* un autre fichier ne l'hérite pas */
+    const f=V.fichier;
+    V.fichier="autre.xml";
+    if(simModelesIpc().portees)throw new Error("l'option suit le fichier");
+    V.fichier=f;
+    simModelesIpcPoser({portees:false});
+    if(V.sur.sim&&V.sur.sim[V.fichier])throw new Error("au défaut, rien ne s'écrit");
+  }finally{if(sim)V.sur.sim=sim;else delete V.sur.sim;}
+});
+
+/* ==========================================================================
+   LES OPTIONS DE MODÈLE : DIÉLECTRIQUE CAUSAL ET MODÈLE DE VIA
+   --------------------------------------------------------------------------
+   Mêmes choix, mêmes défauts et même envoi que le panneau d'empilage de
+   l'éditeur (`simStackup`, editeur-pcb/js/19-simulation.js) : rien par
+   défaut, `dielectrique_causal` + `f_ref_dielectrique` quand le
+   diélectrique est causal, `modele_via` quand il n'est pas « auto ».
+   ========================================================================== */
+T("options de modèle : défauts de l'éditeur, rien d'envoyé par défaut",()=>{
+  const sim=V.sur.sim;
+  try{
+    delete V.sur.sim;
+    cpCarteIpc({sa:0, sb:3});
+    const m=simModelesIpc();
+    if(JSON.stringify(m)!=='{"causal":false,"fref":1000000000,"via":"auto","portees":false}')
+      throw new Error(JSON.stringify(m));
+    const st=simStackupIpc();
+    for(const k of ["dielectrique_causal","f_ref_dielectrique","modele_via"])
+      if(k in st)throw new Error("envoyé par défaut : "+k);
+    if(Object.keys(st).join()!=="layers")throw new Error(Object.keys(st).join());
+  }finally{if(sim)V.sur.sim=sim;else delete V.sur.sim;}
+});
+T("options de modèle : causal, fréquence de fiche et modèle de via partent avec l'empilage",()=>{
+  const sim=V.sur.sim;
+  try{
+    delete V.sur.sim;
+    cpCarteIpc({sa:0, sb:3});
+    simModelesIpcPoser({causal:true});
+    let st=simStackupIpc();
+    if(st.dielectrique_causal!==true||st.f_ref_dielectrique!==1e9||"modele_via" in st)
+      throw new Error(JSON.stringify(st).slice(-120));
+    simModelesIpcPoser({fref:2.5e9, via:"pi"});
+    st=simStackupIpc();
+    if(st.f_ref_dielectrique!==2.5e9||st.modele_via!=="pi")throw new Error(JSON.stringify(st).slice(-120));
+    if(JSON.stringify(V.sur.sim[V.fichier])!=='{"causal":true,"fref":2500000000,"via":"pi"}')
+      throw new Error("gardé : "+JSON.stringify(V.sur.sim));
+    /* le document de simulation porte cet empilage-là */
+    const d=simDocIpc(null,0,{z0:50,f1:1e8,f2:5e9,points:11,fc:1e9,tr:0});
+    if(!d.doc||JSON.stringify(d.doc.stackup)!==JSON.stringify(st))
+      throw new Error("document : "+JSON.stringify(d.doc.stackup).slice(-120));
+    /* non causal : la fréquence ne part plus, mais reste gardée */
+    simModelesIpcPoser({causal:false, via:"ligne"});
+    st=simStackupIpc();
+    if("dielectrique_causal" in st||"f_ref_dielectrique" in st||st.modele_via!=="ligne")
+      throw new Error(JSON.stringify(st).slice(-120));
+    if(simModelesIpc().fref!==2.5e9)throw new Error("la fréquence de fiche est gardée");
+    /* le panneau : les choix cochés, la fréquence désactivée hors causal */
+    const h=simModelesIpcForm();
+    if(!/id="simViaMIpc"/.test(h)||!/<option value="ligne" selected>/.test(h)||
+       !/id="simFrefIpc" value="2,5" disabled/.test(h)||/id="simCausalIpc" checked/.test(h))
+      throw new Error(h);
+    /* relecture du profil : les valeurs hors norme tombent */
+    const r=simModelesIpcRelire({"a.xml":{causal:true,fref:-3,via:"x"},"b.xml":{via:"auto"},"c.xml":"x"});
+    if(JSON.stringify(r)!=='{"a.xml":{"causal":true}}')throw new Error(JSON.stringify(r));
+    if(simModelesIpcRelire([1,2])!==null||simModelesIpcRelire(null)!==null)throw new Error("relecture");
+    /* au défaut, plus rien n'est gardé pour ce fichier */
+    simModelesIpcPoser({via:"auto", fref:1e9});
+    if(V.sur.sim)throw new Error("tout au défaut : "+JSON.stringify(V.sur.sim));
+  }finally{if(sim)V.sur.sim=sim;else delete V.sur.sim;}
 });
 
 T("contre-perçage : la vérification de la carte le reçoit comme de l'éditeur",()=>{

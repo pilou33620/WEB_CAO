@@ -61,6 +61,12 @@ function prefSurcharges(){
       if(r==="plan"||r==="signal"||r==="gnd"||r==="pwr")V.sur.role[cle]=r;
     }
   }
+  /* Les options de modèle, fichier par fichier (07-simulation.js,
+     `simModelesIpc`) : relues par leur norme, ce qui n'en est pas tombe. */
+  if(typeof simModelesIpcRelire==="function"){
+    const sim=simModelesIpcRelire(p.sur.sim);
+    if(sim)V.sur.sim=sim;
+  }
 }
 function boutonsEtat(){
   const bt=function(id,on){
