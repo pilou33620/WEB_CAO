@@ -40,6 +40,11 @@
        signés, dans l'unité de la cote ; saisis dans la liste « Cotes et
        détails » ou au double-clic sur la cote. Chaque morceau est un vrai
        texte : il se cherche au PDF et part sur le calque COTES du DXF.
+       Une chaîne ou une ordonnée peut tolérer chaque valeur à part :
+       `tols`, aligné sur `pts` (null : la `tol` commune ; {genre:"aucune"} :
+       pas de tolérance pour ce point-là), choisi dans le même volet, valeur
+       par valeur. Une valeur de chaîne prend la tolérance du point où elle
+       aboutit, le plus loin dans le sens de la cote.
      · VUES À LA SOURIS. Chaque vue d'une feuille (carte cotée, tableau de
        perçage, coupe d'empilage, notes, nomenclature, assemblage…) se
        glisse ; sa position est celle du coin haut gauche de sa boîte,
@@ -47,8 +52,12 @@
        cartouche. Lâchée sur d'autres, elle garde sa place et ce qu'elle
        recouvre s'écarte vers la place libre la plus proche (les vues jamais
        déplacées d'abord) ; sans place libre, le recouvrement le plus petit,
-       et la fenêtre le dit. « Replacer automatiquement » rend la disposition
-       calculée.
+       et la fenêtre le dit. Pendant le glisser, ce que le lâcher ferait est
+       montré sans rien écrire : les vues qui s'écarteraient, en tirets à
+       leur place future, une flèche depuis leur place actuelle, et « feuille
+       pleine » s'il le faut — calculé une fois par position aimantée, et au
+       plus une fois par image ; Échap abandonne le tout. « Replacer
+       automatiquement » rend la disposition calculée.
      · VUES DE DÉTAIL. Un cercle ou un rectangle tracé sur une vue de la
        carte devient une vue agrandie à l'échelle choisie (2:1, 5:1, 10:1…),
        posée là où la feuille a de la place et déplaçable comme les autres ;
@@ -126,6 +135,22 @@ function dfNormTol(t){
   if(sup==null||inf==null)return null;
   return {genre:g,sup:Math.max(sup,inf),inf:Math.min(sup,inf)};
 }
+/* Les tolérances propres aux points d'une chaîne ou d'une ordonnée, alignées
+   sur `pts` : null, la tolérance commune `tol` ; {genre:"aucune"}, pas de
+   tolérance pour cette valeur, même quand la cote en porte une ; sinon une
+   tolérance comme `tol`. Une liste d'une autre longueur ne dirait plus quel
+   écart va à quel point : elle est écartée ; toute à null, elle ne dit rien
+   de plus que `tol`, et disparaît (l'ancien format se relit à l'identique). */
+function dfNormTols(src,n){
+  if(!Array.isArray(src)||src.length!==n)return null;
+  const out=src.map(t=>t&&t.genre==="aucune"?{genre:"aucune"}:dfNormTol(t));
+  return out.some(Boolean)?out:null;
+}
+/* La tolérance de la valeur que porte le point i, ou null. */
+function dfTolPoint(c,i){
+  const t=c.tols&&c.tols[i];
+  return t?(t.genre==="aucune"?null:t):(c.tol||null);
+}
 /* Une liste de références (chaîne, ordonnée) : une seule mal formée, et
    toute la liste est écartée — elle ne dirait plus ce qu'on a posé. */
 function dfNormRefs(src,min){
@@ -149,6 +174,8 @@ function dfNormCotes(src){
       o.sens=c.sens==="v"?"v":"h";
       if(org)o.o=org;
       o.pts=pts;
+      const tols=dfNormTols(c.tols,pts.length);
+      if(tols)o.tols=tols;
       if(m&&Array.isArray(m.pts)&&m.pts.length===pts.length){
         const mp=m.pts.map(p=>dfNormPt(p)), mo=t==="ord"?dfNormPt(m.o):null;
         if(mp.some(Boolean)||mo){memo={};if(mo)memo.o=mo;memo.pts=mp;}
@@ -621,37 +648,83 @@ function dfPlaceProche(F,w,h,x0,y0,obst){
   for(const b of obst)recouvre+=sur(b,best.x,best.y,0);
   return {x:best.x,y:best.y,recouvre};
 }
-/* Lâcher une vue : elle garde la place où on la pose, et les vues qu'elle
-   recouvre s'écartent vers la place libre la plus proche — d'abord celles
-   que personne n'a placées, qui prennent les meilleures places, puis celles
-   posées à la main. Sans place libre, la place qui recouvre le moins, et la
-   vue est signalée. Un seul pas d'historique : Ctrl+Z rend tout. Rend
-   {repoussees, recouvertes} (des clés de vue), null si la clé est mauvaise. */
+/* Ce que ferait le lâcher d'une vue en (x,y) : elle garde la place où on la
+   pose, et les vues qu'elle recouvre s'écartent vers la place libre la plus
+   proche — d'abord celles que personne n'a placées, qui prennent les
+   meilleures places, puis celles posées à la main. Sans place libre, la
+   place qui recouvre le moins, et la vue est signalée.
+   Le calcul se fait sur `c`, une copie des réglages (dfCfg) dont `c.vues`
+   reçoit les places nouvelles ; la feuille est refaite sur cette copie, et le
+   document, lui, n'est pas touché. C'est le même calcul pour le lâcher, qui
+   l'écrit, et pour l'aperçu du glisser, qui le montre : ce qu'on voit
+   pendant le geste est exactement ce que le lâcher fera.
+   Rend {repoussees, recouvertes} (des clés de vue), `boite` (la vue lâchée,
+   à sa place) et `ecarts` : pour chaque vue touchée {cle, de, vers,
+   recouvre} — sa boîte d'avant, celle d'après (null : aucune place, elle
+   reste où elle est) et l'aire encore recouverte, en mm². */
+function dfDispositionRepousser(c,cle,x,y){
+  c.vues[cle]={x:Math.round(x/DF_GRILLE)*DF_GRILLE,y:Math.round(y/DF_GRILLE)*DF_GRILLE};
+  const res={repoussees:[],recouvertes:[],ecarts:[],boite:null};
+  /* la feuille telle que la vue lâchée la laisse ; les mémoires des cotes
+     (dfRetenir) vont dans la copie */
+  const avant=S.dessin;
+  let doc;
+  S.dessin=c;
+  try{doc=dfDocument();}finally{S.dessin=avant;}
+  const F=doc.feuilles.find(G=>G.vues.some(v=>v.cle===cle));
+  const v=F&&F.vues.find(u=>u.cle===cle), bv=v&&dfBoiteVue(F,v);
+  if(!bv)return res;
+  res.boite=bv;
+  const aire=(a,b)=>Math.max(0,Math.min(a.x2,b.x2)-Math.max(a.x1,b.x1))*Math.max(0,Math.min(a.y2,b.y2)-Math.max(a.y1,b.y1));
+  const autres=F.vues.filter(u=>u!==v).map(u=>({u,b:dfBoiteVue(F,u)})).filter(o=>o.b);
+  const touchees=autres.filter(o=>aire(o.b,bv)>1e-6)
+    .sort((p,q)=>(c.vues[p.u.cle]?1:0)-(c.vues[q.u.cle]?1:0));
+  const obst=autres.filter(o=>touchees.indexOf(o)<0).map(o=>o.b).concat([bv]);
+  for(const o of touchees){
+    const w=o.b.x2-o.b.x1, h=o.b.y2-o.b.y1;
+    const p=dfPlaceProche(F,w,h,o.b.x1,o.b.y1,obst);
+    if(!p){
+      res.recouvertes.push(o.u.cle);
+      res.ecarts.push({cle:o.u.cle,de:o.b,vers:null,recouvre:aire(o.b,bv)});
+      continue;
+    }
+    c.vues[o.u.cle]={x:p.x,y:p.y};
+    const vers={x1:p.x,y1:p.y,x2:p.x+w,y2:p.y+h};
+    obst.push(vers);
+    res.repoussees.push(o.u.cle);
+    if(p.recouvre>1e-6)res.recouvertes.push(o.u.cle);
+    res.ecarts.push({cle:o.u.cle,de:o.b,vers,recouvre:p.recouvre});
+  }
+  return res;
+}
+/* Lâcher une vue : la disposition ci-dessus, écrite. Un seul pas
+   d'historique : Ctrl+Z rend tout. null si la clé est mauvaise. */
 function dfPoserVueRepousser(cle,x,y){
   if(!DF_CLE_RE.test(String(cle)))return null;
-  return dfEcrire(c=>{
-    c.vues[cle]={x:Math.round(x/DF_GRILLE)*DF_GRILLE,y:Math.round(y/DF_GRILLE)*DF_GRILLE};
-    const res={repoussees:[],recouvertes:[]};
-    S.dessin=c;                                  // la feuille telle que la vue lâchée la laisse
-    const F=dfDocument().feuilles.find(G=>G.vues.some(v=>v.cle===cle));
-    const v=F&&F.vues.find(u=>u.cle===cle), bv=v&&dfBoiteVue(F,v);
-    if(!bv)return res;
-    const aire=(a,b)=>Math.max(0,Math.min(a.x2,b.x2)-Math.max(a.x1,b.x1))*Math.max(0,Math.min(a.y2,b.y2)-Math.max(a.y1,b.y1));
-    const autres=F.vues.filter(u=>u!==v).map(u=>({u,b:dfBoiteVue(F,u)})).filter(o=>o.b);
-    const touchees=autres.filter(o=>aire(o.b,bv)>1e-6)
-      .sort((p,q)=>(c.vues[p.u.cle]?1:0)-(c.vues[q.u.cle]?1:0));
-    const obst=autres.filter(o=>touchees.indexOf(o)<0).map(o=>o.b).concat([bv]);
-    for(const o of touchees){
-      const w=o.b.x2-o.b.x1, h=o.b.y2-o.b.y1;
-      const p=dfPlaceProche(F,w,h,o.b.x1,o.b.y1,obst);
-      if(!p){res.recouvertes.push(o.u.cle);continue;}
-      c.vues[o.u.cle]={x:p.x,y:p.y};
-      obst.push({x1:p.x,y1:p.y,x2:p.x+w,y2:p.y+h});
-      res.repoussees.push(o.u.cle);
-      if(p.recouvre>1e-6)res.recouvertes.push(o.u.cle);
-    }
-    return res;
-  });
+  return dfEcrire(c=>dfDispositionRepousser(c,cle,x,y));
+}
+/* L'aperçu du lâcher d'une vue qu'on glisse : la disposition, calculée sur
+   une copie et jamais écrite. Refaire la feuille coûte quelques dizaines de
+   millisecondes ; ce calcul ne se refait donc que lorsque la position
+   AIMANTÉE change — tous les 2,5 mm, pas à chaque pixel — et les positions
+   déjà vues pendant ce geste se gardent (les DF_APERCUS dernières). Le rendu
+   du calque, lui, n'a lieu qu'une fois par image (dfRendreSurImage). null :
+   pas une vue, ou pas encore bougé assez pour que le lâcher fasse quelque
+   chose (le seuil de dfLacher). */
+const DF_APERCUS=32;
+function dfApercuVue(g){
+  if(!g||g.h.genre!=="vue"||Math.hypot(g.dx,g.dy)<0.3)return null;
+  const x=g.b.x1+g.dx, y=g.b.y1+g.dy;
+  const k=Math.round(x/DF_GRILLE)+"|"+Math.round(y/DF_GRILLE);
+  if(!g.apercus)g.apercus=new Map();
+  let a=g.apercus.get(k);
+  if(!a){
+    a=dfDispositionRepousser(dfCfg(),g.h.cle,x,y);
+    DF.nApercus++;
+    if(g.apercus.size>=DF_APERCUS)g.apercus.delete(g.apercus.keys().next().value);
+    g.apercus.set(k,a);
+  }
+  return a;
 }
 /* Après la mise en page calculée : les vues déplacées à la main, puis les
    vues de détail dont la vue mère est sur cette feuille. */
@@ -687,9 +760,11 @@ function dfDecimales(x,dec){
    d'un angle, écart symétrique, parenthèses d'une cote de référence),
    `haut` et `bas` deux lignes superposées (les deux écarts, ou les deux
    limites — alors sans `p`), `cadre` l'encadré d'une cote théoriquement
-   exacte, `fin` « (orpheline) » quand il y a des lignes superposées. */
-function dfValeurCote(c,v,orph){
-  const ang=c.type==="ang", dec=ang?1:2, t=c.tol;
+   exacte, `fin` « (orpheline) » quand il y a des lignes superposées.
+   `tol` : la tolérance d'une valeur de chaîne ou d'ordonnée (dfTolPoint) ;
+   absente, celle de la cote. */
+function dfValeurCote(c,v,orph,tol){
+  const ang=c.type==="ang", dec=ang?1:2, t=tol===undefined?c.tol:tol;
   const pre=c.type==="d"?"Ø":c.type==="r"?"R":"", suf=ang?"°":"";
   const n=(x,d)=>pre+dfNbTxt(x,d==null?dec:d)+suf;
   const ecart=x=>x?(x>0?"+":"−")+dfNbTxt(Math.abs(x),dec,true)+suf:"0";
@@ -880,7 +955,7 @@ function dfDessinerOrdonnees(F,c,m,P){
   const O=P(m.O), ligne=h?O.y+c.dy:O.x+c.dx;
   const le=q=>h?q.x:q.y, tr=q=>h?q.y:q.x, pt2=(a,b)=>h?{x:a,y:b}:{x:b,y:a};
   const liste=[{q:O,T:{p:"0"+(m.O.ok?"":" (orpheline)")},orph:!m.O.ok}]
-    .concat(m.val.map(s=>({q:P(s.p),T:dfValeurCote(c,s.v,s.orph),orph:s.orph})));
+    .concat(m.val.map(s=>({q:P(s.p),T:dfValeurCote(c,s.v,s.orph,dfTolPoint(c,s.p.i)),orph:s.orph})));
   liste.sort((a,b)=>le(a.q)-le(b.q));
   let prec=-Infinity;
   for(const e of liste){e.t=Math.max(le(e.q),prec+pas);prec=e.t;}
@@ -943,7 +1018,8 @@ function dfCoteSuite(F,V,c){
     for(const s of m.val){
       const A=P(s.p), B=P(s.q), M={x:(A.x+B.x)/2,y:(A.y+B.y)/2};
       const k={type:h?"h":"v",dx:h?0:ligne-M.x,dy:h?ligne-M.y:0,lieu:"cote en chaîne"};
-      dfDessinerCote(F,k,A,B,0,dfValeurCote(c,s.v,s.orph),s.orph);
+      // la valeur prend la tolérance du point où elle aboutit
+      dfDessinerCote(F,k,A,B,0,dfValeurCote(c,s.v,s.orph,dfTolPoint(c,s.q.i)),s.orph);
     }
   }else dfDessinerOrdonnees(F,c,m,P);
   dfCalque(F);
@@ -1191,7 +1267,7 @@ const DF_OUTILS=[
   ["detC","◯","Détail circulaire","le centre, puis le rayon"],
   ["detR","▭","Détail rectangulaire","deux coins opposés"]];
 Object.assign(DF,{outil:"sel",clics:[],sel:null,glisse:null,souris:null,survol:null,ech:5,acc:null,msg:"",
-  sens:"h",origFab:false});
+  sens:"h",origFab:false,tolVal:null,image:false,nApercus:0});
 
 /* Ce que l'outil attend du prochain clic : un point accroché ({diam?,
    bord?}, ou {suite} pour une chaîne ou une ordonnée, qui en prennent
@@ -1211,7 +1287,16 @@ function dfMinSuite(){return DF.outil==="ch"||!DF.origFab?2:1;}
 function dfConsigne(){
   const o=DF.outil, n=DF.clics.length;
   if(DF.msg)return DF.msg;
-  if(o==="sel")return "Glissez une vue (aimant 2,5 mm, les vues recouvertes s'écartent) ou une cote ; double-clic : tolérance ; Suppr efface la sélection.";
+  if(o==="sel"){
+    /* pendant le glisser d'une vue : ce que le lâcher fera (déjà calculé par le calque) */
+    const g=DF.glisse, a=g&&g.h.genre==="vue"&&Math.hypot(g.dx,g.dy)>=0.3&&dfApercuVue(g);
+    if(a&&a.recouvertes.length)
+      return "Feuille pleine : "+a.recouvertes.map(dfNomVue).join(", ")+" resterai(en)t recouverte(s) au lâcher. Échap : abandonner.";
+    if(a&&a.repoussees.length)
+      return "Au lâcher, "+a.repoussees.map(dfNomVue).join(", ")+" s'écarte(nt) — en tirets, leur place future. Échap : abandonner.";
+    if(g)return "Lâchez pour poser ; Échap : abandonner.";
+    return "Glissez une vue (aimant 2,5 mm, les vues recouvertes s'écartent) ou une cote ; double-clic : tolérance ; Suppr efface la sélection.";
+  }
   if(o==="d"||o==="r")return n?"Placez le texte de la cote.":"Cliquez un trou, un via ou une pastille percée.";
   if(o==="ang"){
     if(!n)return "Cliquez le sommet de l'angle, ou une première arête du contour (loin de ses sommets).";
@@ -1245,6 +1330,7 @@ function dfAccCache(){return DF.acc||(DF.acc=dfAccroches());}
    minuterie : la souris attend de voir ce qu'elle a posé). */
 function dfApresEdition(){
   DF.doc=dfDocument();DF.acc=null;
+  if(DF.glisse)DF.glisse.apercus=null;     // un Ctrl+Z en plein geste : l'aperçu se refait
   if(DF.page>=DF.doc.feuilles.length)DF.page=0;
   if(typeof document!=="undefined")dfChercherUi(true);
 }
@@ -1363,8 +1449,8 @@ function dfGlisser(X,Y){
   DF.souris={X,Y};
   const g=DF.glisse;
   if(!g&&DF.outil==="sel")return;          // survol en sélection : rien ne change
-  if(g){g.dx=X-g.X0;g.dy=Y-g.Y0;}
-  else if(DF.outil!=="sel"&&DF.outil!=="detC"&&DF.outil!=="detR"&&DF.doc&&DF.doc.feuilles[DF.page]){
+  if(g){g.dx=X-g.X0;g.dy=Y-g.Y0;dfRendreSurImage();return;}   // l'aperçu du lâcher suit, une fois par image
+  if(DF.outil!=="sel"&&DF.outil!=="detC"&&DF.outil!=="detR"&&DF.doc&&DF.doc.feuilles[DF.page]){
     const n=DF.clics.length, att=dfAttendu();
     const F=DF.doc.feuilles[DF.page], tol=DF.tol||2;
     DF.survol=att?dfAccrocher(F,X,Y,tol,{diam:att.diam,bord:att.bord,acc:dfAccCache(),vue:n?DF.clics[0].vue:null}):null;
@@ -1462,7 +1548,8 @@ function dfRendreOutils(){
    nombre de valeurs d'une chaîne ou d'une ordonnée. */
 function dfResumeCote(c){
   const m=dfMesurer(c);
-  if(c.type==="ch"||c.type==="ord")return m?m.val.length+" valeur(s)":"—";
+  if(c.type==="ch"||c.type==="ord")
+    return m?m.val.length+" valeur(s)"+(c.tols?", tolérances par valeur":""):"—";
   const v=m?m.v:c.memo?c.memo.v:null;
   if(v==null)return "—";
   const T=dfValeurCote(c,v,false);
@@ -1480,15 +1567,52 @@ function dfRefsTexte(c,perdues){
   if(c.s)return "sommet : "+dfRefTexte(c.s);
   return dfRefTexte(c.a)+(c.b?" → "+dfRefTexte(c.b):"");
 }
-/* La tolérance de la cote choisie : son genre, et ses écarts s'il en a. */
+/* Une tolérance en quelques signes, pour une liste : « ±0,10 »,
+   « +0,10 / −0,05 », « max +0,10 / min −0,05 »… */
+function dfTolResume(c,t){
+  if(!t)return "aucune";
+  const u=c.type==="ang"?"°":"", e=x=>(x<0?"−":"+")+dfNbTxt(Math.abs(x),c.type==="ang"?1:2,true)+u;
+  if(t.genre==="sym")return "±"+dfNbTxt(t.sup,c.type==="ang"?1:2,true)+u;
+  if(t.genre==="asym")return e(t.sup)+" / "+e(t.inf);
+  if(t.genre==="lim")return "max "+e(t.sup)+" / min "+e(t.inf);
+  return DF_TOL[t.genre];
+}
+/* La valeur dont on règle la tolérance, dans une chaîne ou une ordonnée :
+   l'indice du point, ou -1 pour la tolérance commune. Elle ne vaut que pour
+   la cote où on l'a choisie. */
+function dfTolValChoisie(c){
+  const t=DF.tolVal;
+  return (c.type==="ch"||c.type==="ord")&&t&&t.id===c.id&&t.i>=0&&t.i<c.pts.length?t.i:-1;
+}
+/* Les valeurs d'une chaîne ou d'une ordonnée, une par point, pour le choix du
+   volet : « Point 2 : 10,00 — J1.3 (centre) ». Le premier point d'une
+   chaîne n'aboutit à aucune valeur : il est dit « départ ». */
+function dfValeursPoints(c){
+  const m=dfMesurer(c), v=new Map();
+  if(m)for(const s of m.val)v.set(c.type==="ch"?s.q.i:s.p.i,s.v);
+  return c.pts.map((r,i)=>"Point "+(i+1)+" : "+(v.has(i)?dfNbTxt(v.get(i),2):c.type==="ch"?"départ":"—")+
+                         " — "+dfRefTexte(r));
+}
+/* La tolérance de la cote choisie : son genre, et ses écarts s'il en a. Une
+   chaîne ou une ordonnée choisit d'abord la valeur : toutes (la tolérance
+   commune), ou un point — qui suit la commune, n'en a aucune, ou a la
+   sienne. */
 function dfHtmlTolerance(c){
-  const t=c.tol||{}, g=t.genre||"", u=c.type==="ang"?"°":"mm";
+  const u=c.type==="ang"?"°":"mm", suite=c.type==="ch"||c.type==="ord", iv=dfTolValChoisie(c);
+  const propre=iv>=0&&c.tols?c.tols[iv]:null;
+  const t=iv>=0?(propre&&propre.genre!=="aucune"?propre:{}):(c.tol||{});
+  const g=iv>=0?(propre?propre.genre:""):(t.genre||"");
   const num=(k,lib,v)=>'<label class="df-champ df-tol-n"><span>'+esc(lib)+'</span><input type="text" inputmode="decimal" data-tol="'+k+
     '" value="'+(v==null?"":esc(String(v).replace(".",",")))+'" aria-label="'+esc(lib)+'"><i>'+u+'</i></label>';
+  const opt=(v,lib,on)=>'<option value="'+v+'"'+(on?" selected":"")+'>'+esc(lib)+'</option>';
   return '<div class="df-tol" id="dfTol"><div class="df-tol-t">'+esc(DF_COTES[c.type]+" — "+dfResumeCote(c))+'</div>'+
+    (suite?'<label class="df-champ"><span>Valeur</span><select class="tbsel" data-tol="val">'+
+      opt(-1,"Toutes les valeurs (tolérance commune)",iv<0)+
+      dfValeursPoints(c).map((lib,i)=>opt(i,lib,i===iv)).join("")+'</select></label>':"")+
     '<label class="df-champ"><span>Tolérance</span><select class="tbsel" data-tol="genre">'+
-      '<option value="">aucune</option>'+Object.keys(DF_TOL).map(k=>'<option value="'+k+'"'+(k===g?" selected":"")+'>'+
-      esc(DF_TOL[k])+'</option>').join("")+'</select></label>'+
+      (iv>=0?opt("","commune ("+dfTolResume(c,c.tol)+")",g==="")+opt("aucune","aucune",g==="aucune")
+            :opt("","aucune",g===""))+
+      Object.keys(DF_TOL).map(k=>opt(k,DF_TOL[k],k===g)).join("")+'</select></label>'+
     (g==="sym"?num("sup","Écart ±",t.sup):"")+
     (g==="asym"?num("sup","Écart supérieur",t.sup)+num("inf","Écart inférieur",t.inf):"")+
     (g==="lim"?num("sup","Max = valeur +",t.sup)+num("inf","Min = valeur +",t.inf):"")+'</div>';
@@ -1523,6 +1647,18 @@ function dfTolerer(id,tol){
   if(tol!=null&&!t)return false;
   return dfModifierCote(id,{tol:t||undefined});
 }
+/* La tolérance propre du point i d'une chaîne ou d'une ordonnée : null la
+   rend à la commune, {genre:"aucune"} l'en dispense. Faux : pas de telle
+   cote, pas de tel point, ou une tolérance qui ne tient pas debout. */
+function dfTolererPoint(id,i,tol){
+  const c=dfCfg().cotes.find(k=>k.id===id);
+  if(!c||!c.pts||!Number.isInteger(i)||i<0||i>=c.pts.length)return false;
+  const t=tol==null?null:tol.genre==="aucune"?{genre:"aucune"}:dfNormTol(tol);
+  if(tol!=null&&!t)return false;
+  const tols=c.tols?c.tols.slice():c.pts.map(()=>null);
+  tols[i]=t;
+  return dfModifierCote(id,{tols:tols.some(Boolean)?tols:undefined});
+}
 function dfTolUi(cle){
   const box=document.getElementById("dfTol");
   if(!box||!DF.sel||DF.sel.genre!=="cote")return;
@@ -1533,15 +1669,29 @@ function dfTolUi(cle){
     const v=i?String(i.value).trim().replace(",",".").replace("−","-"):"";
     return v!==""&&Number.isFinite(+v)?+v:null;
   };
-  const g=box.querySelector('[data-tol="genre"]').value, a=c.tol||{}, ang=c.type==="ang";
+  if(cle==="val"){
+    /* une autre valeur : le volet se refait sur sa tolérance, rien ne s'écrit */
+    const i=+box.querySelector('[data-tol="val"]').value;
+    DF.tolVal={id,i:Number.isInteger(i)?i:-1};
+    dfRendreListeCotes();
+    const r=document.querySelector('#dfTol [data-tol="val"]');
+    if(r&&r.focus)r.focus();
+    return;
+  }
+  const iv=dfTolValChoisie(c), propre=iv>=0&&c.tols?c.tols[iv]:null;
+  const g=box.querySelector('[data-tol="genre"]').value, ang=c.type==="ang";
+  /* un écart vide reprend celui d'avant : du point, sinon de la cote */
+  const a=propre&&propre.genre!=="aucune"?propre:(c.tol||{});
   let tol=null;
-  if(g){
+  if(g==="aucune")tol={genre:"aucune"};
+  else if(g){
     let sup=lu("sup"), inf=lu("inf");
     if(sup==null)sup=a.sup!=null?a.sup:(ang?0.5:0.1);
     if(inf==null)inf=a.inf!=null?a.inf:(ang?-0.5:-0.05);
     tol={genre:g,sup,inf};
   }
-  dfTolerer(id,tol);
+  if(iv>=0)dfTolererPoint(id,iv,tol);
+  else dfTolerer(id,tol&&tol.genre!=="aucune"?tol:null);
   dfApresEdition();
   const r=cle&&document.querySelector('#dfTol [data-tol="'+cle+'"]');
   if(r&&r.focus)r.focus();
@@ -1596,6 +1746,8 @@ function dfSurSvg(F){
       const w=g.b.x2-g.b.x1, h=g.b.y2-g.b.y1;
       const q=g.h.genre==="vue"?dfBorner(F,w,h,g.b.x1+g.dx,g.b.y1+g.dy):{x:g.b.x1+g.dx,y:g.b.y1+g.dy};
       o.push(rect({x1:q.x,y1:q.y,x2:q.x+w,y2:q.y+h},"df-fantome"));
+      const a=dfApercuVue(g);
+      if(a)o.push(dfApercuEcartsSvg(F,a,{x1:q.x,y1:q.y,x2:q.x+w,y2:q.y+h}));
     }
     return o.join("");
   }
@@ -1626,6 +1778,41 @@ function dfSurSvg(F){
     o.push('<text class="df-acc-t" x="'+n(DF.survol.x+1.8)+'" y="'+n(DF.survol.y-1.8)+'">'+esc(DF.survol.lib)+'</text>');
   }
   return o.join("");
+}
+/* Les vues que le lâcher écarterait (dfApercuVue) : chacune en tirets à sa
+   place future, une flèche depuis sa place actuelle ; celle qui resterait
+   recouverte, en rouge, et « Feuille pleine » au-dessus de la vue glissée
+   `bg`. La place actuelle est celle de la feuille affichée. */
+function dfApercuEcartsSvg(F,a,bg){
+  const n=dfNum, o=[];
+  const rect=(b,cl)=>'<rect class="'+cl+'" x="'+n(b.x1)+'" y="'+n(b.y1)+'" width="'+n(b.x2-b.x1)+'" height="'+n(b.y2-b.y1)+'"/>';
+  const centre=b=>({x:(b.x1+b.x2)/2,y:(b.y1+b.y2)/2});
+  for(const e of a.ecarts){
+    const v=F.vues.find(u=>u.cle===e.cle), de=(v&&dfBoiteVue(F,v))||e.de;
+    const plein=a.recouvertes.indexOf(e.cle)>=0?" plein":"";
+    if(!e.vers){o.push(rect(de,"df-ecart"+plein));continue;}
+    o.push(rect(e.vers,"df-ecart"+plein));
+    /* la flèche, d'un centre à l'autre, et sa pointe en deux traits */
+    const A=centre(de), B=centre(e.vers), L=Math.hypot(B.x-A.x,B.y-A.y);
+    if(L<0.5)continue;
+    const ux=(B.x-A.x)/L, uy=(B.y-A.y)/L, t=Math.min(5,L/3);
+    o.push('<line class="df-ecart-f'+plein+'" x1="'+n(A.x)+'" y1="'+n(A.y)+'" x2="'+n(B.x)+'" y2="'+n(B.y)+'"/>',
+           '<polyline class="df-ecart-f'+plein+'" points="'+n(B.x-ux*t-uy*t*0.45)+","+n(B.y-uy*t+ux*t*0.45)+" "+
+             n(B.x)+","+n(B.y)+" "+n(B.x-ux*t+uy*t*0.45)+","+n(B.y-uy*t-ux*t*0.45)+'"/>');
+  }
+  if(a.recouvertes.length)
+    o.push('<text class="df-plein-t" x="'+n(bg.x1)+'" y="'+n(Math.max(4,bg.y1-1.5))+'">Feuille pleine : '+
+      esc(a.recouvertes.map(dfNomVue).join(", "))+' resterai(en)t recouverte(s)</text>');
+  return o.join("");
+}
+/* Le calque redessiné au plus une fois par image : un glisser envoie bien
+   plus de mouvements de souris que l'écran n'en montre. Sans
+   requestAnimationFrame (banc d'essai), tout de suite. */
+function dfRendreSurImage(){
+  if(typeof requestAnimationFrame!=="function"){dfRendreSur();return;}
+  if(DF.image)return;
+  DF.image=true;
+  requestAnimationFrame(()=>{DF.image=false;dfRendreSur();});
 }
 function dfRendreSur(){
   if(typeof document==="undefined"||!DF.doc)return;

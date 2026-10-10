@@ -155,7 +155,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "pnsNode","pnsBuild","pnsWorld","pnsInvalidate","pnsStamp","pnsHullOct",
   "PNS_D8","PNS_D4","pnsSupPad","pnsSupVia","pnsSupSeg","pnsPlaneMeet","pnsOct","pnsUnloop",
   "PNS_WALK_MAX","pnsSurCarte","pnsHullWalk","pnsWalkCross","pnsWalkSide","pnsWalkaround","routeSegsTo",
-  "PNS_SHOVE_MAX","PNS_SHOVE_RANG","pnsPushOut","pnsShoveAside","pnsRelink","pnsShoveVia",
+  "PNS_SHOVE_MAX","PNS_SHOVE_RANG","PNS_SHOVE_TRAVAIL","PNS_SHOVE_MS","pnsPushOut","pnsShoveAside","pnsRelink","pnsShoveVia",
   "pnsShove","pnsShoveHeads","pnsApply","pnsSlideOut","pnsBoutsLibres","crossN","ROUTE_MODES","routeMode","setRouteMode","pushSnap","drawShove",
   "placeVia","mkVia","viaObstacle","viaIsole","viaTrou","viaPaire","dpViaGap","holeClr","viaDrill","pnsItemVia","pnsPairGap","pnsWorld","pnsClr","pnsLineItems","pnsViaEscape","pnsViaSuites","pnsPointEscape","dpNets","dpLine","dpAxis","dpAxisDirect","dpPose",
   "PNS_OPT_WIN","pnsAnchors","pnsMergeTry","pnsOptimize","routeOptimizeTail","pnsEchardes","pnsDejog",
@@ -408,6 +408,9 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* cote angulaire, chaînes, ordonnées, tolérances, vues qui s'écartent */
   "dfNormTol","dfAngle","dfTolerer","dfPoserVueRepousser","dfPlaceProche","dfValeurCote","dfEditerTolerance",
   "dfCoteEnCours","dfApercuCote","dfRendreListeCotes","DF_COTES","DF_TOL","dfBoitePts",
+  /* aperçu du lâcher d'une vue, tolérances par point d'une chaîne ou d'une ordonnée */
+  "dfDispositionRepousser","dfApercuVue","dfConsigne","dfNum","DF_APERCUS",
+  "dfNormTols","dfTolPoint","dfTolererPoint","dfHtmlTolerance",
   /* gestionnaire de contraintes (01-core.js pour le modèle, 30-contraintes.js) */
   "cmNorm","cmCle","cmClrClasses","cmClrMax","cmMesures","cmRegleDe","cmVerifier","cmEvaluerGroupe",
   "cmManqueLongueur","cmLargeurPourZ","cmDrc","cmEdit","cmPoser","cmPoserPhysique","cmPoserMatrice",
@@ -8765,6 +8768,55 @@ T("shove : Ctrl+Z et l'abandon remettent le cuivre poussé en place",()=>{
   undo();
   if(serialize()!==avant)
     throw new Error("Ctrl+Z devait défaire le tracé ET la poussée");
+});
+/* Le shove ne dépend pas de la vitesse de la machine : son budget se compte en
+   travail fait, pas en millisecondes. On rejoue les mêmes gestes avec une
+   horloge qui avance de 20 ms à chaque lecture — un poste à genoux, où
+   l'ancien budget de 25 ms renonçait dès la deuxième pile — et le résultat
+   doit être le même, au micron et à l'examen près. */
+function horlogeLente(fn){
+  const vrai=Date.now;let retard=0;
+  Date.now=()=>vrai()+(retard+=20);
+  try{return fn();}finally{Date.now=vrai;}
+}
+T("shove : le résultat ne dépend pas de la vitesse de la machine",()=>{
+  if(!(PNS_SHOVE_TRAVAIL>0)||!(PNS_SHOVE_MS>=250))
+    throw new Error("budget de travail, et horloge en simple garde-fou");
+  const propage=()=>{
+    plateau();
+    for(let k=0;k<3;k++)
+      S.tracks.push({l:0,net:"G"+k,w:0.3,x1:10,y1:20.3+k*0.6,x2:50,y2:20.3+k*0.6});
+    touch();
+    setMode("track");
+    startRoute(15,20,true);
+    S.route.net="SIG";S.route.w=0.3;
+    routeToPoint({x:45,y:20});
+    const sh=S.route.shove;
+    const r={bad:!!S.route.bad,travail:sh&&sh.travail,
+             lignes:sh?JSON.stringify(sh.lignes.map(L=>[L.net,L.pts])):null};
+    stepRoute();commitRoute();setMode("select");
+    r.doc=serialize();
+    return r;
+  };
+  const a=propage(), b=horlogeLente(propage);
+  if(a.bad||!a.lignes)throw new Error("au calme, la poussée devait aboutir");
+  if(!(a.travail>0&&a.travail<=PNS_SHOVE_TRAVAIL))
+    throw new Error("le travail fait accompagne le résultat : "+a.travail);
+  if(b.bad)throw new Error("horloge lente : le trajet devait passer quand même");
+  if(b.travail!==a.travail)throw new Error("travail "+a.travail+" au calme, "+b.travail+" horloge lente");
+  if(b.lignes!==a.lignes)throw new Error("les lignes poussées diffèrent selon l'horloge");
+  if(b.doc!==a.doc)throw new Error("la carte posée diffère selon l'horloge");
+  // le boîtier tiré sur une piste : même poussée, même carte
+  const boitier=()=>{
+    const {reg,f}=boitierSurPiste("shove");
+    // le cuivre et la place du boîtier ; les numéros d'objet, eux, changent à chaque essai
+    try{return JSON.stringify({tracks:S.tracks,vias:S.vias.map(v=>[v.x,v.y,v.net]),x:f.x,y:f.y});}
+    finally{undo();boitierFin(reg);}
+  };
+  const c=boitier(), d=horlogeLente(boitier);
+  if(!JSON.parse(c).tracks.some(t=>t.net==="X"&&(t.y1!==25||t.y2!==25)))
+    throw new Error("au calme, les pastilles devaient pousser la piste");
+  if(d!==c)throw new Error("boîtier tiré : le cuivre poussé diffère selon l'horloge");
 });
 T("shove : la conduite face à l'obstacle se règle et se range avec le document",()=>{
   plateau();
@@ -22926,6 +22978,190 @@ T("plans : une vue lâchée sur une autre la repousse vers la place libre la plu
   if(!p||!(p.recouvre>0))throw new Error("une feuille pleine doit le signaler : "+JSON.stringify(p));
   if(dfPlaceProche(F,F.w,F.h,0,0,[])!==null)throw new Error("une boîte plus grande que le cadre n'a pas de place");
   S.dessin=null;
+});
+
+/* Pendant le glisser d'une vue : ce que le lâcher fera, montré et jamais
+   écrit. On amène les notes sur le tableau de perçage, aimanté pile sur la
+   grille pour savoir quelle position aimantée on vise. */
+T("plans : glisser une vue montre celles qui s'écarteraient — calculé, rien d'écrit, Échap abandonne",()=>{
+  exCharger(1);
+  S.dessin=null;
+  dfOuvrirNeuf();
+  try{
+    DF.page=0;
+    let F=DF.doc.feuilles[0];
+    const bn=dfBoiteVue(F,F.vues.find(v=>v.cle==="fab/notes")), bp=dfBoiteVue(F,F.vues.find(v=>v.cle==="fab/percage"));
+    const avant=serialize(), G=DF_GRILLE;
+    dfChoisirOutil("sel");
+    const X0=(bn.x1+bn.x2)/2, Y0=(bn.y1+bn.y2)/2;
+    const saisir=()=>{
+      const h=dfClicFeuille(F,X0,Y0,1.5);
+      if(!h||h.cle!=="fab/notes")throw new Error("les notes doivent se saisir : "+JSON.stringify(h));
+    };
+    /* la souris qui amène le coin des notes en (x,y) */
+    const vers=(x,y)=>dfGlisser(X0+x-bn.x1,Y0+y-bn.y1);
+    const cx=Math.round(bp.x1/G)*G, cy=Math.round(bp.y1/G)*G;
+    saisir();
+    const n0=DF.nApercus;
+    vers(cx,cy);
+    const a=dfApercuVue(DF.glisse);
+    if(!a||a.repoussees.indexOf("fab/percage")<0)throw new Error("le perçage doit s'écarter : "+JSON.stringify(a&&a.repoussees));
+    if(DF.nApercus!==n0+1)throw new Error("un calcul pour une position aimantée, "+(DF.nApercus-n0));
+    /* calculé, pas appliqué */
+    if(serialize()!==avant||Object.keys(dfCfg().vues).length)throw new Error("le glisser ne doit rien écrire");
+    /* au calque : le perçage en tirets à sa place future, une flèche depuis sa place actuelle */
+    const e=a.ecarts.find(x=>x.cle==="fab/percage"), n=dfNum;
+    if(!e||!e.vers)throw new Error("place future du perçage : "+JSON.stringify(e));
+    const sur=document.getElementById("dfSur").innerHTML;
+    if(sur!==dfSurSvg(F))throw new Error("le calque affiché doit être l'aperçu");
+    if(sur.indexOf('<rect class="df-ecart" x="'+n(e.vers.x1)+'" y="'+n(e.vers.y1)+'"')<0)throw new Error("contour en tirets absent : "+sur.slice(0,400));
+    if(sur.indexOf('<line class="df-ecart-f" x1="'+n((bp.x1+bp.x2)/2)+'" y1="'+n((bp.y1+bp.y2)/2)+'"')<0)
+      throw new Error("la flèche doit partir de la place actuelle du perçage");
+    if(sur.indexOf("df-plein-t")>=0||sur.indexOf("ecart plein")>=0)throw new Error("il y avait de la place : pas de feuille pleine");
+    if(document.getElementById("dfMsg").textContent.indexOf("Tableau de perçage")<0||dfConsigne().indexOf("Échap")<0)
+      throw new Error("la consigne doit dire ce que le lâcher fera : "+dfConsigne());
+    /* le coût : la même position aimantée ne se recalcule pas, une position déjà vue non plus */
+    vers(cx+0.4,cy-0.3);dfSurSvg(F);
+    if(DF.nApercus!==n0+1)throw new Error("même position aimantée : rien à recalculer");
+    vers(cx+5*G,cy);
+    if(DF.nApercus!==n0+2)throw new Error("nouvelle position aimantée : un calcul");
+    vers(cx,cy);
+    if(DF.nApercus!==n0+2)throw new Error("position déjà vue pendant ce geste : gardée");
+    /* au plus une fois par image : dix mouvements, une image, un calcul — la dernière position */
+    const raf=global.requestAnimationFrame, file=[];
+    global.requestAnimationFrame=f=>{file.push(f);return file.length;};
+    let n1;
+    try{
+      n1=DF.nApercus;
+      for(let k=1;k<=10;k++)vers(cx+k*G,cy+G);
+      if(DF.nApercus!==n1)throw new Error("rien ne se calcule avant l'image");
+      if(file.length!==1)throw new Error("une seule image demandée, "+file.length);
+    }finally{global.requestAnimationFrame=raf;while(file.length)file.shift()(0);}
+    if(DF.nApercus!==n1+1)throw new Error("un seul calcul pour l'image, "+(DF.nApercus-n1));
+    if(dfApercuVue(DF.glisse)!==DF.glisse.apercus.get(Math.round((cx+10*G)/G)+"|"+Math.round((cy+G)/G)))
+      throw new Error("l'image montre la dernière position");
+    /* Échap : le geste s'abandonne, l'aperçu part avec lui, rien n'a bougé */
+    vers(cx,cy);
+    if(!dfOutilsTouche({key:"Escape",target:{tagName:"DIV"}})||DF.glisse)throw new Error("Échap doit abandonner le glisser");
+    if(document.getElementById("dfSur").innerHTML.indexOf("df-ecart")>=0)throw new Error("l'aperçu doit disparaître");
+    if(serialize()!==avant||Object.keys(dfCfg().vues).length)throw new Error("Échap ne doit rien laisser");
+    /* le même geste lâché fait exactement ce que l'aperçu montrait */
+    saisir();vers(cx,cy);
+    const b=dfApercuVue(DF.glisse);
+    if(!dfLacher())throw new Error("lâcher non retenu");
+    const cfg=dfCfg();
+    for(const x of b.ecarts)
+      if(!cfg.vues[x.cle]||cfg.vues[x.cle].x!==x.vers.x1||cfg.vues[x.cle].y!==x.vers.y1)
+        throw new Error(x.cle+" : l'aperçu montrait "+JSON.stringify(x.vers)+", le lâcher pose "+JSON.stringify(cfg.vues[x.cle]));
+    F=DF.doc.feuilles[0];
+    const bq=dfBoiteVue(F,F.vues.find(v=>v.cle==="fab/percage"));
+    if(Math.abs(bq.x1-e.vers.x1)>1e-6||Math.abs(bq.y1-e.vers.y1)>1e-6)throw new Error("le perçage n'est pas là où l'aperçu le montrait");
+    undo();
+    if(Object.keys(dfCfg().vues).length)throw new Error("Ctrl+Z doit tout rendre");
+  }finally{DF.sel=null;DF.glisse=null;dfFermer();S.dessin=null;}
+});
+/* Feuille pleine : un détail qui couvre presque tout le cadre, glissé. Les
+   autres vues n'ont plus où aller : l'aperçu le dit, en rouge, avant le
+   lâcher — et toujours sans rien écrire. */
+T("plans : glisser une vue sur une feuille pleine — l'aperçu le signale avant le lâcher",()=>{
+  exCharger(1);
+  S.dessin=null;
+  let F=dfFab(dfDocument());
+  const Z=dfZone(F), vc=F.vues.find(v=>v.cle==="fab/carte"), bc=dfBoiteVue(F,vc), k=10;
+  const centre=vc.V.inv((bc.x1+bc.x2)/2-vc.dx,(bc.y1+bc.y2)/2-vc.dy);
+  const id=dfAjouterDetail({source:"fab/carte",forme:"rect",x:centre.x,y:centre.y,
+                            w:(Z.x2-Z.x1)*0.8/k,h:(Z.y2-Z.y1)*0.8/k,echelle:k});
+  if(!id)throw new Error("détail non posé");
+  dfOuvrirNeuf();
+  try{
+    DF.page=0;
+    F=DF.doc.feuilles[0];
+    const bd=dfBoiteVue(F,F.vues.find(v=>v.cle==="det/"+id)), avant=serialize();
+    dfChoisirOutil("sel");
+    const h=dfClicFeuille(F,(bd.x1+bd.x2)/2,(bd.y1+bd.y2)/2,1.5);
+    if(!h||h.cle!=="det/"+id)throw new Error("le détail doit se saisir : "+JSON.stringify(h));
+    dfGlisser((bd.x1+bd.x2)/2+DF_GRILLE*2,(bd.y1+bd.y2)/2+DF_GRILLE*2);
+    const a=dfApercuVue(DF.glisse);
+    if(!a||!a.recouvertes.length)throw new Error("la feuille pleine doit se voir : "+JSON.stringify(a&&a.recouvertes));
+    const sur=document.getElementById("dfSur").innerHTML;
+    if(sur.indexOf('class="df-ecart plein"')<0||sur.indexOf("df-plein-t")<0||sur.indexOf("Feuille pleine")<0)
+      throw new Error("feuille pleine non montrée au calque");
+    if(dfConsigne().indexOf("Feuille pleine")<0)throw new Error("feuille pleine non dite : "+dfConsigne());
+    if(serialize()!==avant)throw new Error("le glisser ne doit rien écrire");
+    dfOutilsTouche({key:"Escape",target:{tagName:"DIV"}});
+    if(DF.glisse||serialize()!==avant)throw new Error("Échap ne doit rien laisser");
+  }finally{DF.sel=null;DF.glisse=null;dfFermer();S.dessin=null;}
+});
+/* Tolérances par point : une ordonnée et une chaîne de trois trous, la
+   tolérance commune ±0,10 et des valeurs à part. */
+T("plans : tolérance propre à chaque point d'une ordonnée et d'une chaîne — écran, PDF, DXF, aller-retour",()=>{
+  exCharger(1);
+  const o=gOrigin();
+  S.holes=[mkHole(o.x+10,o.y-5,3.2),mkHole(o.x+30,o.y-15,3.2),mkHole(o.x+45,o.y-25,3.2)];
+  S.dessin={fonte:false};                     // codage WinAnsi lisible tel quel
+  try{
+    const r=S.holes.map(h=>({type:"trou",id:h.id}));
+    const ord=dfAjouterCote({vue:"fab/carte",type:"ord",sens:"h",o:{type:"origine"},pts:r,dx:0,dy:9,
+      tol:{genre:"sym",sup:0.1},tols:[null,{genre:"asym",sup:0.05,inf:-0.02},{genre:"aucune"}]});
+    const ch=dfAjouterCote({vue:"fab/carte",type:"ch",sens:"h",pts:[r[2],r[0],r[1]],dx:0,dy:-14,
+      tol:{genre:"sym",sup:0.1}});
+    /* la chaîne : la valeur de 20 mm aboutit au deuxième trou (indice 2 dans pts) */
+    if(!dfTolererPoint(ch,2,{genre:"lim",sup:0.1,inf:-0.1}))throw new Error("tolérance de point refusée");
+    if(dfTolererPoint(ch,3,{genre:"sym",sup:0.1})!==false||dfTolererPoint(ch,0,{genre:"zz"})!==false)
+      throw new Error("point inexistant ou genre inconnu acceptés");
+    let c=dfCfg().cotes;
+    if(JSON.stringify(c[1].tols)!=='[null,null,{"genre":"lim","sup":0.1,"inf":-0.1}]')throw new Error("tols : "+JSON.stringify(c[1].tols));
+    if(dfTolPoint(c[0],0).sup!==0.1||dfTolPoint(c[0],1).genre!=="asym"||dfTolPoint(c[0],2)!==null)throw new Error("dfTolPoint");
+    /* à l'écran : la feuille, et son aperçu SVG */
+    const doc=dfDocument(), F=dfFab(doc), J=id=>JSON.stringify(dfTxtCote(F,id));
+    if(J(ord)!=='["0","10,00 ±0,10","30,00","+0,05","−0,02","45,00"]')throw new Error("ordonnée : "+J(ord));
+    if(J(ch)!=='["20,10","19,90","15,00 ±0,10"]')throw new Error("chaîne : "+J(ch));
+    const svg=dfSvg(F);
+    for(const s of ["10,00 ±0,10","+0,05","−0,02","20,10","19,90"])
+      if(svg.indexOf(">"+s+"<")<0)throw new Error("absent de l'aperçu SVG : "+s);
+    /* au PDF : du vrai texte, qui se cherche */
+    const pdf=dfLatin(dfPdfOctets(doc));
+    for(const s of ["(10,00 \\2610,10) Tj","(+0,05) Tj","(-0,02) Tj","(20,10) Tj","(19,90) Tj","(45,00) Tj"])
+      if(pdf.indexOf(s)<0)throw new Error("absent du PDF : "+s);
+    if(!dfChercher(doc,"+0,05").length||!dfChercher(doc,"19,90").length)throw new Error("la tolérance de point doit se chercher");
+    /* au DXF : calque COTES */
+    const D=dxfLu(dxfFeuilles([F]).octets), tx=D.ents.filter(x=>x.type==="TEXT"&&x.cal==="COTES").map(x=>x.s(1));
+    for(const s of ["10,00 %%p0,10","+0,05","-0,02","20,10","19,90","45,00","15,00 %%p0,10"])
+      if(tx.indexOf(s)<0)throw new Error("absent du calque COTES : "+s+" ("+tx.join(" | ")+")");
+    /* aller-retour : identique ; l'ancien format (sans tols) aussi */
+    loadDoc(JSON.parse(serialize()),true);
+    const a=serialize();
+    loadDoc(JSON.parse(a),true);
+    if(serialize()!==a)throw new Error("l'aller-retour change le document");
+    c=dfCfg().cotes;
+    if(JSON.stringify(c[0].tols)!=='[null,{"genre":"asym","sup":0.05,"inf":-0.02},{"genre":"aucune"}]'||!c[1].tols)
+      throw new Error("tols perdues au rechargement : "+JSON.stringify(c.map(k=>k.tols)));
+    const ancien={id:1,vue:"fab/carte",type:"ord",sens:"h",o:{type:"origine"},pts:r,dx:0,dy:9,tol:{genre:"sym",sup:0.1}};
+    if(JSON.stringify(dfNormCotes([ancien])[0])!==JSON.stringify(ancien))throw new Error("l'ancien format doit se relire à l'identique");
+    /* bornes : longueur fausse, tout à null, entrée absurde */
+    if(dfNormTols([null],2)!==null||dfNormTols([null,null],2)!==null)throw new Error("tols vides ou mal alignées gardées");
+    if(JSON.stringify(dfNormTols([{genre:"zz"},{genre:"ref"}],2))!=='[null,{"genre":"ref"}]')throw new Error("entrée absurde gardée");
+    /* rendre la valeur à la commune : tols disparaît quand tout est commun */
+    dfTolererPoint(ch,2,null);
+    if("tols" in dfCfg().cotes[1])throw new Error("tols doit disparaître");
+    /* le volet : choix de la valeur, puis sa tolérance */
+    dfOuvrirNeuf();
+    try{
+      DF.sel={genre:"cote",id:ord};DF.tolVal=null;
+      dfRendreListeCotes();
+      let h=document.getElementById("dfCotes").innerHTML;
+      if(h.indexOf('data-tol="val"')<0||h.indexOf("Toutes les valeurs (tolérance commune)")<0||h.indexOf("Point 3 : 45,00")<0)
+        throw new Error("choix de la valeur absent du volet");
+      DF.tolVal={id:ord,i:1};
+      dfRendreListeCotes();
+      h=document.getElementById("dfCotes").innerHTML;
+      if(h.indexOf('<option value="asym" selected>')<0||h.indexOf("commune (±0,10)")<0||h.indexOf('value="0,05"')<0)
+        throw new Error("tolérance du point 2 absente du volet");
+      DF.tolVal={id:ord,i:2};
+      dfRendreListeCotes();
+      if(document.getElementById("dfCotes").innerHTML.indexOf('<option value="aucune" selected>')<0)throw new Error("« aucune » du point 3");
+    }finally{DF.sel=null;DF.tolVal=null;dfFermer();}
+  }finally{S.holes=[];S.dessin=null;}
 });
 
 /* ==========================================================================
