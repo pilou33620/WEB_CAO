@@ -103,6 +103,11 @@ function simStackupIpc(){
        donc le défaut grave — sur la foi d'un nom inventé. On le déclare, pour
        que la fiche puisse le dire plutôt que de l'affirmer. */
     if(simNetPlanSupposeIpc(netPlan)) c.net_suppose = true;
+    /* LA RUGOSITÉ DU FEUILLARD, quand le fichier la déclare (micromètres,
+       Rq) : le serveur la passe à `line_losses` (Hammerstad-Groiss). Sans
+       elle, rien ne part et le cuivre est lisse — l'IPC-2581 de la plupart
+       des outils ne la porte pas. */
+    if(cu.rug > 0){c.modele_rugosite = "hammerstad"; c.rugosite_rms_um = cu.rug;}
     couches.push(c);
     const g=LT.gap[k];
     if(g)couches.push({
@@ -638,6 +643,28 @@ const SIM_COULOIR=2.0;          // mm ; largeur du couloir, depuis le bord du cu
    ========================================================================== */
 const SIM_TOL_VIA_IPC = 0.02;           /* mm — la tolérance de raccord du serveur */
 
+/* LE CONTRE-PERÇAGE D'UN TROU, AU FORMAT DU SERVEUR — le même que l'éditeur
+   PCB (`simCotesVia`, editeur-pcb/js/19-simulation.js) : la face, la couche à
+   ne pas couper (rang d'empilage, comme `layer_from`) et le moignon résiduel.
+   `_moignons` (python/simulation_em.py) y arrête le moignon de ce côté.
+
+   IL PART AVEC LA PORTÉE PERCÉE, ET SEULEMENT AVEC ELLE. Le serveur soustrait
+   le moignon de la portée percée ; sans elle il ne peut rien conclure, et un
+   contre-perçage envoyé seul serait ignoré sans que rien ne le dise. La portée
+   vient du fichier (`sa` / `sb`) : sans portée déclarée, ou sans couche à ne
+   pas couper, ou si une couche n'est pas dans l'empilage de calcul, rien ne
+   part — la fiche du perçage le dit. Rend {layer_from, layer_to,
+   contre_percage} ou null. */
+function simContrePercageIpc(t){
+  const cp = (typeof mdlContrePercage === "function") ? mdlContrePercage(t) : null;
+  if(!cp || !cp.complet || t.sa == null || t.sb == null) return null;
+  const a = simCuDe(t.sa), b = simCuDe(t.sb), g = simCuDe(cp.g);
+  if(a < 0 || b < 0 || g < 0 || a === b) return null;
+  return {layer_from: simRangCu(Math.min(a, b)), layer_to: simRangCu(Math.max(a, b)),
+          contre_percage: {cote: cp.cote, couche_garde: simRangCu(g),
+                           moignon_residuel_mm: cp.res}};
+}
+
 function simViaAuRaccordIpc(N, x, y, cuA, cuB){
   if(!N) return null;
   const k = simKUnite();
@@ -677,6 +704,9 @@ function simViaAuRaccordIpc(N, x, y, cuA, cuB){
       fiche.pad_diameter = pastille;
       if(sup) fiche.pad_diameter_supposee = true;
     }
+    /* contre-percé : sa portée percée et la passe du foret partent avec lui */
+    const cp = simContrePercageIpc(t);
+    if(cp) Object.assign(fiche, cp);
     return fiche;
   }
 
@@ -1355,6 +1385,15 @@ function simCuivreDuNetIpc(coucheIdx, net){
   return {plein: plein, vide: []};
 }
 
+/* Le trou métallisé du net au point (x, y), en mm, ou null. */
+function simTrouAuPointIpc(N, x, y){
+  const k = simKUnite();
+  for(const t of ((N && N.trous) || []))
+    if(!/NON/i.test(t.p || "") && Math.abs(t.x * k - x) <= SIM_TOL_VIA_IPC &&
+       Math.abs(t.y * k - y) <= SIM_TOL_VIA_IPC) return t;
+  return null;
+}
+
 function simViasIpc(N){
   if(!N) N = V.parNet ? V.parNet[V.net] : null;
   if(!N) return [];
@@ -1420,6 +1459,16 @@ function simViasIpc(N){
        ON N'ENVOIE DONC QUE CE QU'ON A. Rien pour la pastille inconnue — le
        serveur reprend son repli et le DIT ; la pastille du fichier quand elle
        existe ; et celle que le lecteur a devinée, marquée comme telle. */
+    /* LE VIA CONTRE-PERCÉ PART AVEC SA PORTÉE PERCÉE, celle du fichier, à la
+       place de la portée supposée : c'est d'elle que le serveur soustrait le
+       moignon, et le contre-perçage n'a de sens que contre elle. Une portée
+       percée plus courte que le saut serait une incohérence : on la laisse. */
+    const tcp = simTrouAuPointIpc(N, v.x, v.y);
+    const cpv = tcp ? simContrePercageIpc(tcp) : null;
+    if(cpv && cpv.layer_from <= fiche.layer_from && cpv.layer_to >= fiche.layer_to){
+      Object.assign(fiche, cpv);
+      delete fiche.portee_supposee;
+    }
     if(v.perce && v.percage > 0){
       fiche.drill_diameter = v.percage;
       if(v.pastille > 0){
@@ -5522,6 +5571,11 @@ const SIM_IPC={
       if(/NON/i.test(t.p||""))continue;
       const f={x:t.x,y:t.y,d:t.d||0,n:mdlNetNom(t.n)};
       if(t.sa!=null&&t.sb!=null){f.de=mdlCoucheNom(t.sa);f.a=mdlCoucheNom(t.sb);}
+      /* contre-perçage : la face repercée, la couche à ne pas couper et le
+         moignon résiduel, comme l'éditeur PCB — la règle des moignons de
+         vias (python/analyse_carte.py) y arrête le moignon de ce côté */
+      const cp=mdlContrePercage(t);
+      if(cp&&cp.complet)f.cp={cote:cp.cote,garde:cp.garde,res:cp.res};
       percages.push(f);
     }
     const plans=[];

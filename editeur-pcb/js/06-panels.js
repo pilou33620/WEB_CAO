@@ -355,6 +355,7 @@ function buildStackup(){
     if(rc)
       h+='<div class="stkinfo"><b class="warn">Rôle douteux</b> : '+esc(rc.msg)+
          '.<br>'+esc(rc.hint)+'</div>';
+    h+=stkHtmlRugosite(sel.i);
   }else if(sel.kind==="di"){
     const d=diAt(sel.i);
     h+='<div class="prop two"><div><label>Type</label><select id="skK">'+
@@ -446,7 +447,9 @@ function buildStackup(){
            ? 'Bouchés puis plaqués : c\'est ce qui permet de poser une pastille '+
              'sur le via, sous un BGA par exemple. C\'est aussi le plus cher.'
            : 'Le masque ne s\'ouvre pas sur les vias.'))+
-     '</div>';
+     '</div>'+
+     stkHtmlModeles()+
+     cpHtmlEmpilage();
 
   box.innerHTML=h;
 
@@ -531,6 +534,8 @@ function buildStackup(){
     bind("skMT",v=>{st.maskT=r4(clamp(v,0,1));});
     bind("skMEr",v=>{st.maskEr=clamp(v,1,20);});
   }
+  stkBindRugosite(bind,pick);
+  stkBindModeles(bind,pick);
   bind("skTarget",v=>{st.target=clamp(v,0.05,50);});
   pick("skFin",v=>{if(FINISHES.indexOf(v)>=0)st.finish=v;});
   /* le traitement des vias change le masque : il faut redessiner */
@@ -560,6 +565,192 @@ function buildStackup(){
   if(rep)rep.onclick=()=>{
     dl(new Blob([stackReport()],{type:"text/plain"}),"empilage.txt");
     hint("Feuille d'empilage enregistrée dans empilage.txt.");
+  };
+  cpBrancherEmpilage();
+}
+/* ---------- rugosité du cuivre et modèles de simulation ----------
+   La rugosité se saisit sur la ligne de cuivre, comme son épaisseur : c'est
+   le feuillard qu'on commande. Le modèle (01-core.js, `rugNorm`) n'écrit rien
+   tant qu'elle est nulle. Les options de modèle valent pour toute la carte :
+   elles vivent sous la synthèse. */
+function stkHtmlRugosite(i){
+  const r=cuRug(i), m=r?r.m:"hammerstad";
+  const pre=RUG_PRESETS.find(p=>{
+    if(!r)return p.rms===0&&p.m==="hammerstad";
+    return p.m===r.m&&(r.m==="huray"?(p.a===r.a&&p.sr===r.sr):p.rms===r.rms);
+  });
+  let h='<div class="prop"><label>Rugosité du cuivre</label><select id="skRugP">'+
+    RUG_PRESETS.map(p=>'<option value="'+esc(p.id)+'"'+(pre===p?" selected":"")+'>'+
+      esc(p.n)+'</option>').join("")+
+    (pre?"":'<option value="" selected>Saisie : '+esc(rugLabel(r))+'</option>')+
+    '</select></div>'+
+    '<div class="prop two"><div><label>Modèle</label><select id="skRugM">'+
+    Object.keys(RUG_MODELES).map(k=>'<option value="'+k+'"'+(k===m?" selected":"")+'>'+
+      esc(RUG_MODELES[k])+'</option>').join("")+'</select></div>';
+  if(m==="huray")
+    h+=numProp("skRugA","Rayon des nodules (µm)",r?fmt(r.a,2):"0",0.05,0)+'</div>'+
+       '<div class="prop two">'+numProp("skRugSR","Rapport de surface SR",r?fmt(r.sr,2):"0",0.1,0)+
+       '<div></div></div>';
+  else
+    h+=numProp("skRugRms","Rugosité RMS Rq (µm)",r?fmt(r.rms,2):"0",0.05,0)+'</div>';
+  h+='<div class="stkinfo">'+
+     (r?'Comptée dans les pertes du cuivre de cette couche (simulation, RF, '+
+        'œil, diaphonie) : facteur '+
+        (m==="huray"?'de Huray, borné par 1 + 3/2 · SR.'
+                    :'de Hammerstad-Groiss, qui sature à 2 quand Rq dépasse '+
+                     'la profondeur de peau (0,66 µm à 10 GHz).')
+       :'Lisse : les pertes du cuivre sont celles d\'une surface plane. Un '+
+        'feuillard standard (Rq ≈ 2 µm) double presque la perte du cuivre '+
+        'à 10 GHz.')+'</div>';
+  return h;
+}
+function stkHtmlModeles(){
+  const m=simModeles();
+  return '<div class="cat">Modèles de simulation</div>'+
+    '<div class="prop"><label><input type="checkbox" id="skCausal"'+
+      (m.causal?" checked":"")+'> Diélectrique causal (Djordjevic-Sarkar)</label></div>'+
+    '<div class="prop two">'+
+      numProp("skFref","Fréquence de la fiche (GHz)",fmt(m.fref/1e9,3),0.1,0.001,!m.causal)+
+      '<div><label>Modèle de via</label><select id="skViaM">'+
+      Object.keys(SIM_MODELES_VIA).map(k=>'<option value="'+k+'"'+(k===m.via?" selected":"")+'>'+
+        esc(SIM_MODELES_VIA[k])+'</option>').join("")+'</select></div></div>'+
+    '<div class="stkinfo">'+
+      (m.causal?'Dk et Df sont lus comme les valeurs de la fiche à '+fmt(m.fref/1e9,3)+
+                ' GHz et prolongés de façon causale : Dk décroît avec la fréquence, '+
+                'et la vitesse de phase comme les pertes le suivent.'
+               :'Dk et Df constants sur toute la bande : simple, mais non causal — '+
+                'une réponse impulsionnelle (œil) en part légèrement de travers.')+
+      '<br>Via « auto » : réseau en π tant que le via est court devant la '+
+      'longueur d\'onde, ligne répartie au-delà ; les deux ont le même L et le même C.'+
+    '</div>';
+}
+function stkBindRugosite(bind,pick){
+  if(_stkSel.kind!=="cu")return;
+  const i=_stkSel.i;
+  pick("skRugP",v=>{
+    const p=RUG_PRESETS.find(q=>q.id===v);
+    if(p)setCuRug(i,p);
+  });
+  pick("skRugM",v=>{
+    const r=cuRug(i)||{};
+    /* changer de modèle repart d'un réglage usuel : un Rq ne se convertit
+       pas en nodules */
+    if(v==="huray"&&r.m!=="huray")setCuRug(i,RUG_PRESETS.find(p=>p.id==="hu-std"));
+    else if(v==="hammerstad"&&r.m!=="hammerstad")setCuRug(i,RUG_PRESETS.find(p=>p.id==="std"));
+  });
+  const r=()=>cuRug(i)||{};
+  bind("skRugRms",v=>{setCuRug(i,{m:"hammerstad",rms:v});});
+  bind("skRugA",v=>{setCuRug(i,{m:"huray",a:v,sr:r().sr||0});});
+  bind("skRugSR",v=>{setCuRug(i,{m:"huray",a:r().a||0,sr:v});});
+}
+function stkBindModeles(bind,pick){
+  const c=$("skCausal");
+  if(c)c.onchange=()=>{push();setSimModeles({causal:!!c.checked});touch();buildStackup();};
+  bind("skFref",v=>{if(v>0)setSimModeles({fref:clamp(v,0.001,1000)*1e9});});
+  pick("skViaM",v=>{if(SIM_MODELES_VIA[v])setSimModeles({via:v});});
+}
+/* ---------- contre-perçage (back-drill) ----------
+   Les règles se saisissent ici, avec l'empilage qu'elles percent ; elles
+   s'appliquent ensuite à un via (panneau Propriétés), à un net ou à une
+   classe (gestionnaire de contraintes, onglet « Topologie et moignons »).
+   Le modèle est dans 01-core.js (`cpVia`). */
+function cpAjouter(o){
+  o=o||{};
+  if(!S.stack.cp)S.stack.cp=[];
+  let k=1;while(S.stack.cp.some(r=>r.id==="cp"+k))k++;
+  const r=cpNormRegles([Object.assign({id:"cp"+k,cote:"dessous",garde:-1},o)],S.cu)[0];
+  r.id="cp"+k;
+  S.stack.cp.push(r);
+  touch();
+  return r;
+}
+function cpModifier(id,cle,val){
+  const L=S.stack.cp||[], i=L.findIndex(r=>r.id===id);
+  if(i<0)return null;
+  const o=Object.assign({},L[i]);
+  o[cle]=val;
+  /* changer de face : la couche à garder d'une face ne vaut rien pour l'autre */
+  if(cle==="cote"&&val!==L[i].cote)o.garde=-1;
+  L[i]=cpNormRegles([o],S.cu)[0];
+  L[i].id=id;
+  touch();
+  return L[i];
+}
+/* Une règle retirée ne laisse personne la viser : vias, nets et classes qui
+   la nommaient reviennent à l'héritage. */
+function cpSupprimer(id){
+  const L=S.stack.cp||[];
+  if(!L.some(r=>r.id===id))return false;
+  S.stack.cp=L.filter(r=>r.id!==id);
+  if(!S.stack.cp.length)delete S.stack.cp;
+  for(const v of S.vias)if(v.cp===id)delete v.cp;
+  const C=S.contraintes||{};
+  for(const t of [C.classes,C.nets])
+    for(const nom in (t||{}))
+      if(t[nom].cp===id){delete t[nom].cp;if(!Object.keys(t[nom]).length)delete t[nom];}
+  touch();
+  return true;
+}
+/* les couches qu'une règle peut garder : pas la face d'où l'on repasse */
+function cpGardesPossibles(cote){
+  const out=[];
+  for(let i=0;i<S.cu;i++)if(cote==="dessous"?i<S.cu-1:i>0)out.push(i);
+  return out;
+}
+function cpHtmlEmpilage(){
+  if(S.cu<2)return "";
+  const L=cpRegles(), perces=cpViasPerces();
+  let h='<div class="cat">Contre-perçage (back-drill)</div>';
+  L.forEach((r,i)=>{
+    const ces=perces.filter(c=>c.regle.id===r.id), f=ces.filter(c=>c.faute).length;
+    h+='<div class="prop two"><div><label>'+esc(r.id)+' · face percée</label><select id="skCpC'+i+'">'+
+       Object.keys(CP_COTES).map(k=>'<option value="'+k+'"'+(k===r.cote?" selected":"")+'>'+
+         esc(CP_COTES[k])+'</option>').join("")+'</select></div>'+
+       '<div><label>Couche à ne pas couper</label><select id="skCpG'+i+'">'+
+       '<option value="-1"'+(r.garde<0?" selected":"")+'>auto — la dernière empruntée</option>'+
+       cpGardesPossibles(r.cote).map(l=>'<option value="'+l+'"'+(l===r.garde?" selected":"")+'>'+
+         esc(cpNomCouche(l)+" "+((S.cuL[l]&&S.cuL[l].name)||cuLabel(l,S.cu)))+'</option>').join("")+
+       '</select></div></div>'+
+       '<div class="prop two">'+numProp("skCpS"+i,"Surperçage (mm)",fmt(r.sur,2),0.05,0)+
+       numProp("skCpR"+i,"Moignon résiduel admis (mm)",fmt(r.res,2),0.05,0)+'</div>'+
+       '<div class="stkinfo">'+(ces.length
+         ? '<b>'+ces.length+'</b> via(s) contre-percé(s), foret Ø perçage + '+fmt(r.sur,2)+' mm'+
+           (f?' — dont <b class="warn">'+f+'</b> impossible(s) : le DRC dit pourquoi.':'.')
+         : 'Aucun via ne la prend encore : choisissez-la sur un via, un net ou une classe.')+
+       ' <button class="tb" id="skCpX'+i+'">Supprimer '+esc(r.id)+'</button></div>';
+  });
+  h+='<div class="prop"><div class="row"><button class="tb" id="skCpAdd" title="Une règle de '+
+     'contre-perçage : la face d\'où l\'on repasse, la couche à garder, le surperçage et le moignon '+
+     'résiduel admis.">Nouvelle règle de contre-perçage</button></div></div>'+
+     '<div class="stkinfo">Le contre-perçage repasse un foret plus gros dans un via métallisé, '+
+     'depuis une face, et s\'arrête avant la couche à ne pas couper : le moignon du via tombe au '+
+     'moignon résiduel (0,1 à 0,25 mm d\'usage). Une règle vaut pour un via (Propriétés), un net ou '+
+     'une classe (Contraintes → Topologie et moignons). Les moignons, la simulation et la '+
+     'vérification de la carte en tiennent compte ; un fichier de perçage par paire de couches '+
+     '(…-BACKDRILL-B-In2.DRL) part dans l\'archive de fabrication, et le plan de fabrication les cote.</div>';
+  return h;
+}
+function cpBrancherEmpilage(){
+  const fini=msg=>{refreshPanels();draw();if(msg)hint(msg);};
+  cpRegles().forEach((r,i)=>{
+    const id=r.id;
+    const sur=(k,cle,lire)=>{const el=$(k+i);if(el)el.onchange=()=>{
+      const v=lire(el.value);
+      if(v==null){buildStackup();return;}
+      push();cpModifier(id,cle,v);fini();
+    };};
+    sur("skCpC","cote",v=>CP_COTES[v]?v:null);
+    sur("skCpG","garde",v=>Number.isFinite(+v)?+v:null);
+    const n=v=>{const x=parseFloat(String(v).replace(",","."));return Number.isFinite(x)&&x>=0?x:null;};
+    sur("skCpS","sur",n);
+    sur("skCpR","res",n);
+    const x=$("skCpX"+i);
+    if(x)x.onclick=()=>{push();cpSupprimer(id);fini("Règle de contre-perçage "+id+" retirée.");};
+  });
+  const add=$("skCpAdd");
+  if(add)add.onclick=()=>{
+    push();const r=cpAjouter();
+    fini("Règle "+r.id+" : "+cpLibelle(r)+". Choisissez-la sur un via, un net ou une classe.");
   };
 }
 /* buildStackup() suit le mouvement : les rôles de couche et les zones changent
@@ -1740,6 +1931,7 @@ function propsVia(box,v){
         rel.map(f=>opt(String(f.id),"toujours "+f.ref)).join("")+
         opt("0","jamais (via libre)")+'</select></div>';
     })()+
+    cpHtmlVia(v)+
     /* l'empilage physique donne la longueur réellement percée : un via borgne
        s'arrête en route, et c'est elle qui décide du rapport d'aspect */
     '<div class="empty" style="padding:6px 12px">'+
@@ -1779,6 +1971,33 @@ function propsVia(box,v){
     if(x==="auto")delete v.lie;else v.lie=+x;
     touch();refreshPanels();draw();
   };
+  if($("vCp"))$("vCp").onchange=()=>{
+    push();
+    const x=$("vCp").value;
+    if(x)v.cp=x;else delete v.cp;
+    touch();refreshPanels();draw();
+  };
+}
+/* Le contre-perçage d'un via : la règle qu'il prend (la sienne, sinon celle
+   de son net ou de sa classe), et ce qu'elle fait de son moignon. Rien tant
+   que l'empilage n'a pas de règle. */
+function cpHtmlVia(v){
+  const L=cpRegles();
+  if(!L.length)return "";
+  const h=cpRegleVia(Object.assign({},v,{cp:undefined}));
+  const cur=v.cp||"";
+  const opt=(val,txt)=>'<option value="'+esc(val)+'"'+(cur===val?" selected":"")+'>'+esc(txt)+'</option>';
+  const c=cpVia(v);
+  return '<div class="prop"><label>Contre-perçage</label><select id="vCp">'+
+    opt("","hérité — "+(h?h.r.id+" ("+h.src+")":"aucun"))+
+    L.map(r=>opt(r.id,cpLibelle(r))).join("")+
+    opt("non","aucun, même si le net ou la classe en demande un")+'</select></div>'+
+    (c?'<div class="empty" style="padding:6px 12px">'+
+       (c.faute?'<span class="warn">Contre-perçage impossible : '+esc(c.faute)+'.</span>'
+        :esc("Contre-percé "+CP_COTES[c.cote]+" jusque "+(c.cote==="dessous"?"sous ":"sur ")+
+             cpNomCouche(c.garde)+" : foret Ø "+fmt(c.diam,2)+" mm, "+fmt(c.prof,3)+
+             " mm de profondeur, moignon "+fmt(c.moignon,3)+" mm au lieu de "+fmt(c.moignon0,3)+" mm."))+
+       '</div>':"");
 }
 
 /* ==========================================================================

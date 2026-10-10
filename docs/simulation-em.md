@@ -408,6 +408,116 @@ l'espacement mesuré), `.json` (le problème, rejouable), **rapport** texte
 hypothèses) et, pour toute la carte, le `.csv` de toutes les paires.
 
 
+### Le moignon d'un via, et son contre-perçage
+
+Le via d'une transition est un π L-C, avec un **moignon** en dérivation à
+chaque bout que le signal n'emprunte pas (`_moignons`, `python/simulation_em.py`) :
+la portée percée (`layer_from`, `layer_to`) moins les couches de départ et
+d'arrivée, en épaisseur d'empilage, avec sa résonance quart d'onde.
+
+Un via **contre-percé** (*back-drill*, règles de l'empilage de l'éditeur PCB,
+ou `<Spec><Backdrill>` d'un fichier IPC-2581 lu par la visionneuse) envoie en
+plus, dans sa fiche :
+
+    "contre_percage": {"cote": "dessous" | "dessus",
+                       "couche_garde": <indice d'empilage de la couche à ne pas couper>,
+                       "moignon_residuel_mm": 0.15}
+
+Le moignon de ce côté va alors de la couche empruntée à la pointe du foret —
+`moignon_residuel_mm` sous (ou sur) la couche gardée —, jamais plus loin
+qu'avant ; sa fiche porte `contre_perce`, et `moignons.contre_percage` vaut
+`"applique"`. Un contre-perçage qui couperait une couche empruntée n'est pas
+compté (`"ignore"`, et un avertissement le dit). Sans le champ, rien ne change.
+L'éditeur compte parmi les couches empruntées celles où une **zone** du net
+touche le fût (liaison directe ou thermique, pas un dégagement) : un foret qui
+la couperait est une faute au DRC, et ce via ne part pas contre-percé. La
+visionneuse IPC-2581 n'envoie le champ qu'avec la **portée percée** déclarée
+par le fichier (`layer_from`, `layer_to`), sans laquelle rien ne se soustrait.
+La vérification de la carte lit la même chose dans le `cp` d'un perçage (voir
+[verification-carte.md](verification-carte.md#moignons-de-vias)).
+
+
+### Pertes, diélectrique causal, via en ligne (`simulation_em` 5.0.0)
+
+`ligne_mom` 2.7.0 sait la hauteur, la topologie, la rugosité et le
+diélectrique causal (`line_losses`), et poser le via en tronçon de ligne
+(`abcd_via_ligne`). La 5.0.0 de `simulation_em` les branche : cascade simple,
+cascade différentielle (donc l'**œil**, qui passe par `simuler`), **RF**
+(`rf_reseau` 1.6.0 : branches par `simuler`, sections couplées et piste de
+masse en direct) et pertes au genou du **crosstalk** (`crosstalk` 4.2.0).
+
+| Option | Où elle se règle | Défaut | Ce qu'elle change |
+| --- | --- | --- | --- |
+| Hauteur et topologie | lues dans la section | **active** | `topologie` toujours ; `hauteur` (h au plan, ou b entre plans) pour le ruban seul — pas pour une section coplanaire, un mode de paire ou une triplaque décentrée de plus de 20 %, où la hauteur *déduite* rend mieux le courant resserré |
+| Rugosité du cuivre | empilage, par couche | lisse (K = 1) | facteur K sur α_c : Hammerstad-Groiss (Rq) ou Huray (rayon des nodules, rapport de surface) |
+| Diélectrique causal | empilage | désactivé | Djordjevic-Sarkar calé sur la fiche à f_ref (1 GHz) : εr(f) dans les pertes **et** dans ε_eff et Z₀ (remplissage constant), donc dans la vitesse de phase |
+| Modèle de via | empilage | **« auto »** | « π », « ligne » (barreau réparti) ou « auto » : ligne quand la phase du via au haut de la bande dépasse 0,3 rad |
+
+Ce que l'empilage envoyé porte en plus (le document reste `cao-sim-em-3`) :
+
+    "stackup": {"layers": [
+                  {"type": "copper", …,
+                   "modele_rugosite": "hammerstad" | "huray",
+                   "rugosite_rms_um": 1.0,              // Hammerstad
+                   "rayon_nodule_um": 0.5, "rapport_surface": 1.5}, // Huray
+                  …],
+                "dielectrique_causal": true,
+                "f_ref_dielectrique": 1e9,              // Hz
+                "modele_via": "pi" | "ligne" | "auto"}
+
+`analyse` peut porter les trois dernières clés pour un « et si » qui ne touche
+pas à la carte. Le résultat dit ce qui a servi (`modeles`), chaque transition
+son modèle (`modelise.modele_via`, `phase_via_rad`), et le `.s2p` le note dans
+son en-tête quand une option s'écarte du défaut. **Une seule rugosité par
+section** : celle de la couche de la piste, comptée aussi pour le plan.
+
+**L'éditeur PCB** les saisit dans le panneau *Empilage physique* : sur une
+ligne de cuivre, « Rugosité du cuivre » (réglages usuels : lisse, ED standard
+Rq 2 µm, traité inversé Rq 1 µm, VLP 0,6 µm, HVLP 0,3 µm, et deux jeux de
+Huray), et sous la synthèse, « Modèles de simulation » (case *diélectrique
+causal*, fréquence de la fiche, modèle de via). Le document n'écrit
+`stack.cu[i].rug` et `stack.sim` que s'ils s'écartent du défaut. **La
+visionneuse** lit la rugosité que le fichier IPC-2581 déclare
+(`<Conductor type="SURFACE_ROUGHNESS_UPFACING|DOWNFACING|TREATED">` d'une
+`<Spec>`, la plus forte des faces, parseur 1.76) ; elle n'a pas de saisie, ni
+des options de modèle — la plupart des exports n'en portent pas.
+
+**Ce que cela change, mesuré** (microruban 0,58 mm sur 0,3 mm de FR-4,
+100 mm) : hauteur et topologie, 3,5355 → 3,5378 dB à 10 GHz (+0,07 %) ; sur
+une triplaque centrée de 0,47 mm, 4,764 → 4,778 dB (+0,3 %) ; un microruban
+couvert, +0,6 %. Rugosité, perte totale (diélectrique compris) multipliée par
+1,02 (Rq 0,3 µm) à 1,11 (Rq 2 µm) à 10 GHz. Causal, fiche à 1 GHz : à
+10 GHz ε_eff 3,438 → 3,345 et Z₀ 47,56 → 48,21 Ω. Via de 1,34 mm, 0,25 mm
+dans 0,8 mm d'antipad : le π à 0,002 dB près à 1 GHz (résistance du barreau), |S₂₁| −7,19 →
+−6,56 dB à 40 GHz.
+
+#### La mutuelle des fûts de la paire
+
+En mode impair les deux fûts portent des courants opposés : l'inductance vue
+par brin est L − M, d'autant plus basse qu'ils sont proches. Elle se calcule
+par l'énergie, comme `inductance_boucle_vias` : les deux fûts et les vias de
+masse retenus (ceux du via principal, **renvoyés par symétrie** pour la
+partenaire), inductances partielles de Grover, courants de retour qui
+minimisent l'énergie ; sans retour, M est exactement la mutuelle partielle des
+deux fûts. Le mode commun prend L + M. La capacité mutuelle (ligne bifilaire,
+écrantée par les plans en exp(−π s / b)) ajoute 2 C_m par brin en mode
+impair. L'écart des fûts : le via de la partenaire trouvé dans le document
+(`vias` ou le voisinage), sinon l'écart de la paire, jamais moins que
+l'antipad (`s_diff.vias_mutuelle[].ecart_source`).
+
+Mesuré (via traversant de 0,3 mm, 4 couches, sans via de masse,
+L = 0,534 nH) : L_impair 0,294 nH à 0,6 mm d'écart, 0,373 à 1 mm, 0,464 à
+2,5 mm ; C_m 7,2 / 1,0 / 0,002 fF.
+
+**Étalons** ([banc-ligne-mom.py](../python/test/banc-ligne-mom.py)) : la
+rugosité multiplie l'α_c de la cascade par le K attendu (Hammerstad et Huray,
+à 0,3 % près) ; le causal rend la fiche à f_ref au bit près et
+(β/β₀)² = εr(f)/εr en triplaque, paire comprise ; le via en ligne rejoint le π
+à 10 MHz (réactances à 10⁻⁵), garde moignon et contre-perçage, et « auto »
+rend le π au bit près sous le seuil ; la mutuelle baisse L_impair quand les
+fûts se rapprochent et vaut Grover sans retour. RF : [banc-rf.py](../python/test/banc-rf.py).
+
+
 ### Lire la courbe
 
 Deux traces : **S₁₁** (ce que le port d'entrée réfléchit) et **S₂₁** (ce qui
@@ -541,9 +651,11 @@ aucune trace n'a le droit d'entrer.
 dispersion, pertes, coudes, vias, moignons), mais sur une grille régulière de
 plusieurs centaines à quelques milliers de fréquences (`freqs_imposees`). En
 mode différentiel, c'est la cascade du mode impair de la paire
-(`s_diff["abcd_dd"]`). `python/oeil.py` n'ajoute que ce qui l'entoure :
+(`s_diff["abcd_dd"]`), ses vias et ses coudes compris (voir plus bas).
+`python/oeil.py` (2.0.0) n'ajoute que ce qui l'entoure :
 
-1. **l'émetteur**, générateur de Thévenin linéaire : tension à vide, résistance
+1. **l'émetteur**, générateur de Thévenin linéaire (ou tampon IBIS, voir plus
+   bas) : tension à vide, résistance
    de sortie, front gaussien de temps de montée tᵣ (10–90 %) et, au besoin, une
    pré-accentuation (FFE) ;
 2. **le récepteur** : résistance de terminaison (vide = haute impédance) et
@@ -587,9 +699,23 @@ affichée à côté du verdict, parce que les normes sont payantes :
 
 | Fiabilité | Sens | Gabarits |
 | :--- | :--- | :--- |
-| recoupé | valeurs retrouvées dans une source publique (fiche de fabricant, note d'application), pas dans la norme elle-même | USB 2.0 HS Template 1, USB 3.x Gen 1 (après CTLE), PCIe Gen 1, SGMII |
-| à vérifier | valeurs de la norme non recoupées | USB 2.0 HS extrémité, PCIe Gen 2 et Gen 3, HDMI 1.4, SATA Gen 1 à 3 |
+| recoupé | valeurs retrouvées dans une source publique (fiche de fabricant, note d'application, procédure de test), pas dans la norme elle-même | USB 2.0 HS Template 1, USB 3.x Gen 1 (après CTLE), PCIe Gen 1, Gen 2 et Gen 3 (après CTLE et DFE de référence), SATA Gen 1 à 3, SGMII |
+| à vérifier | valeurs de la norme non recoupées : aucune source publique ne les reproduit | USB 2.0 HS extrémité (Template 2), HDMI 1.4 (TP2) |
 | dérivé | pas de gabarit officiel : seuils VIL/VIH du récepteur et sa fenêtre setup/hold | LVDS, MIPI D-PHY HS, SPI 3,3 V et 1,8 V, QSPI, SD High Speed, eMMC HS |
+
+**La vérification d'octobre 2026.** PCIe Gen 2 (120 mV, 0,60 UI à 10⁻¹²)
+et Gen 3 (25 mV, 0,3 UI derrière le CTLE à pôles 2 et 8 GHz, gain continu
+−6 à −12 dB, et le DFE à une prise bornée à ±30 mV) sont recoupés ; leurs
+valeurs n'ont pas bougé. SATA garde ses hauteurs (325, 275, 240 mVppd) et sa
+largeur passe de 0,4 UI à 1 − TJ de la tolérance à la gigue du récepteur :
+0,49 UI en Gen 1, 0,43 UI en Gen 2 et 3, en losange. USB 2.0 extrémité et
+HDMI 1.4 restent « à vérifier » : les seules valeurs publiques trouvées pour
+HDMI sont celles de la source HDMI 2.0 au bout du câble de référence, une
+autre exigence, qu'on ne recopie pas. Les gabarits PCIe et SATA portent aussi
+leur taux d'erreur (10⁻¹²) : c'est sur ce contour de l'œil statistique qu'ils
+se jugent quand la gigue est saisie. Les gabarits dérivés citent maintenant le
+composant réel (récepteurs LVDS SN65LVDS32 / DS90LV028A à ±100 mV, D-PHY à
+±70 mV en v1.2 et 40 mV chez Efinix en v1.1).
 
 Un gabarit au **connecteur** (USB 2.0 Template 1) se juge à la broche du
 connecteur : c'est le bon point quand la piste va du PHY au connecteur. Les
@@ -599,20 +725,251 @@ VIH pendant la fenêtre setup/hold du récepteur, avec les limites de tension
 absolues. L'œil y est centré au mieux, et le décalage entre donnée et horloge
 reste l'affaire de l'onglet *Bus synchrone*.
 
-**Hors du modèle**, et dit dans chaque résultat : émetteur et récepteur non
-linéaires (IBIS), gigue aléatoire, diaphonie des voisines, condensateurs de
-liaison, et en différentiel les vias et coudes de la paire (la cascade du mode
-impair ne porte que ses tronçons). L'Ethernet cuivre (MLT-3, PAM-5) n'est pas
-binaire et n'a pas de gabarit. L'I²C (drain ouvert, front montant RC) n'est pas
-linéaire et n'en a pas non plus.
+#### L'œil statistique — gigue, bruit, taux d'erreur (`oeil` 2.0.0)
 
-**Étalons** ([python/test/banc-oeil.py](../python/test/banc-oeil.py)) : la
-ligne adaptée sans pertes rend un œil parfait (demi-excursion, 1 UI, retard
+Le pire cas dit la frontière qu'**aucune** séquence ne franchit ; il ne dit pas
+combien de fois on s'en approche. Or une liaison se juge à un **taux
+d'erreur** (10⁻¹² pour PCIe et SATA), et deux choses le fixent que la réponse
+à un bit ne porte pas : la gigue de l'émetteur, qui déplace l'instant de
+lecture, et le bruit, qui déplace la tension lue. Dès qu'on saisit une gigue
+aléatoire (RJ, ps rms), une gigue déterministe (DJ, ps crête à crête, en
+double Dirac), un bruit de récepteur (mV rms) ou la diaphonie, le serveur
+ajoute l'**œil statistique** — sans tirage au sort :
+
+1. à chaque phase, la tension lue pour un « 1 » vaut v_c + A·c₀ + Σ aₖ·A·cₖ
+   (aₖ = ±1 indépendants) ; sa densité est le produit de convolution de deux
+   Dirac par curseur, construit sur une grille de 2 048 cases **dans le
+   domaine des probabilités** — jamais négatives, d'où des queues justes
+   jusqu'à 10⁻³⁰⁰, là où une transformée de Fourier plafonnerait vers 10⁻¹⁶.
+   L'erreur d'arrondi de chaque curseur est **reportée sur le suivant** :
+   l'extrême (tous les bits contre l'œil), là où se lisent les petits taux,
+   reste exact à une demi-case près ;
+2. le bruit gaussien s'y convolue, et chaque agresseur borné entre comme un
+   curseur de plus (deux Dirac à ±sa crête) ;
+3. la gigue mélange les phases, avec les probabilités exactes (erfc) de
+   chaque case de phase — affinée quatre fois, 1/256 UI, pour que le
+   croisement ne soit pas biaisé d'une demi-case ;
+4. le taux d'erreur à (τ, v) est ½ P(V₁ < v) + ½ P(V₀ > v) ; les **contours**
+   10⁻⁶, 10⁻⁹, 10⁻¹², 10⁻¹⁵ (et le taux visé) se tracent sur l'œil, la
+   **baignoire** (taux au seuil, phase par phase, en échelle logarithmique)
+   en dessous, et le gabarit se juge **aussi** sur le contour du taux visé —
+   c'est là que les gabarits PCIe et SATA, qui portent leur 10⁻¹², ont un
+   sens.
+
+Hypothèses, rendues avec le résultat : bits indépendants et équiprobables (pas
+la séquence PRBS), gigue rapportée à l'échantillonneur (celle de l'émetteur n'y
+est pas filtrée par le canal — prudent sur une liaison à pertes), décisions
+du DFE justes.
+
+**La diaphonie, bornée.** Chaque agresseur ajoute sa crête au pire cas, avec
+son signe le plus défavorable et au même instant que les autres (somme
+arithmétique : la seule qui soit un pire cas), et entre dans l'œil
+statistique comme ±sa crête. Les agresseurs se saisissent (`agresseurs` :
+crête en volts, ou coefficient × excursion), ou se **reprennent du couplage**
+(`agresseurs_auto`) : chaque voisine de la fiche de couplage de
+`simulation_em` donne ses modes pair et impair, d'où Kb et Kf — les mêmes que
+`crosstalk.coefficients_couple` —, et le **niveau 2** de `crosstalk.py` rend
+le NEXT et le FEXT, saturés ou non selon le front. Une voisine qui émet dans
+le même sens que la victime lui envoie son FEXT, en sens opposé son NEXT ;
+sans le savoir on prend le plus grand. L'excursion de l'agresseur est, faute
+de mieux, celle de la victime à sa charge. Derrière un CTLE, la crête passe
+par le gain crête du CTLE sous le genou du front. En différentiel, la
+partenaire n'est jamais un agresseur, et le bruit d'une piste majore celui de
+la paire. L'œil PRBS, lui, reste sans diaphonie : la séquence des voisines
+n'est pas connue.
+
+**Sans aucun de ces réglages, rien ne change** : la requête et la réponse sont
+celles de la 1.0.0, au chiffre près (c'est un cas du banc).
+
+#### Les modèles IBIS — émetteur et récepteur non linéaires
+
+`python/ibis.py` lit un fichier `.ibs` (ANSI/EIA-656) : de chaque `[Model]`,
+`Model_type`, `C_comp` (typ/min/max), `Vinl`/`Vinh`, les références
+(`[Voltage Range]`, `[Pullup Reference]`…), les quatre courbes V-I
+(`[Pullup]`, `[Pulldown]`, `[GND Clamp]`, `[POWER Clamp]`), `[Ramp]`, autant de
+`[Rising Waveform]` / `[Falling Waveform]` qu'il y en a (charge d'essai
+R/V/C_fixture), et `[Rgnd]`/`[Rpower]`. Les conventions de la norme sont
+tenues : courant positif quand il **entre** par la broche, tensions de
+`[Pullup]` et `[POWER Clamp]` relatives à leur référence (V_ref − V_broche),
+suffixes T G M k m u n p f (M = méga, m = milli), « NA » renvoyant à typ.
+Depuis `ibis` 1.1.0, le boîtier et les broches sont lus aussi (voir plus
+bas) ; ce qui reste ignoré (sous-modèles, `[Model Spec]`, boîtiers décrits
+par sections) est **dit** dans le résultat.
+
+**Le tampon émetteur, dans le temps** : I_broche = Ku(t)·I_pu(V) + Kd(t)·I_pd(V)
++ I_pc(V) + I_gc(V) + C_comp·dV/dt. Les commandes Ku, Kd viennent des formes
+d'onde : deux par front (deux charges d'essai), deux équations à chaque
+instant ; une seule, Kd = 1 − Ku ; aucune, `[Ramp]` et un Ku linéaire — la plus
+pauvre des trois, dite dans le résultat. Un front qui en interrompt un autre
+repart de la commande où le premier s'est arrêté.
+
+**La liaison se simule pas à pas.** Le canal est écrit en ondes de puissance
+sur une résistance de référence R₀ (le Z₀ de la ligne) : ses quatre
+paramètres S — la cascade ABCD de `simulation_em`, charge linéaire du
+récepteur comprise (R, C_comp) — deviennent des réponses impulsionnelles, et
+à chaque pas l'histoire est connue ; il reste deux équations à deux inconnues
+(les ondes entrantes), celles des bouts — tampon d'un côté, diodes du
+récepteur de l'autre —, qu'un Newton résout. Le passage en temporel demande
+une bande bornée : les S sont multipliés par une fenêtre gaussienne qui
+revient à lisser chaque trajet par un front de la **moitié** de celui du
+tampon (le haut de la grille suit ce lissage), **sauf la réflexion
+instantanée** de l'entrée, lue à ce qui déborde avant t = 0 et remise en
+Dirac — lissée, elle serait non causale et la boucle tampon-canal ne la
+verrait plus au bon instant.
+
+Deux simulations, et le reste ne change pas : deux **fronts isolés** (montant
+et descendant), dont la moyenne normalisée est la réponse à un échelon dont
+le pire cas, l'œil statistique et l'égaliseur ont besoin (l'écart entre les
+deux est rendu et signalé au-delà de 5 %) ; et la **séquence PRBS** elle-même,
+en régime établi, qui fait l'œil PRBS sans aucune linéarisation (PRBS7 ou 9 :
+PRBS15 serait trop long pas à pas, et le pire cas couvre de toute façon les
+longues suites). Un récepteur IBIS sans diode n'est que son C_comp : le
+calcul reste alors linéaire.
+
+#### Le boîtier et les broches (`oeil` 2.1.0, `ibis` 1.1.0)
+
+**Ce qui est lu.** `[Package]` (R_pkg, L_pkg, C_pkg typ/min/max, la colonne
+suit le coin du tampon) est le boîtier moyen ; `[Pin]` donne, broche par
+broche, le signal, le modèle et R_pin/L_pin/C_pin, qui **priment** valeur par
+valeur (« NA » renvoie à `[Package]`) ; un `[Package Model]` qui renvoie à un
+`[Define Package Model]` du même fichier prime sur les deux — on en prend la
+**diagonale** (matrices pleine, en bande ou creuse) ; les mutuelles sont lues
+pour être **dites** (le plus fort couplage de la broche, k_L et k_C), pas
+comptées ; un boîtier décrit par sections (`Len=`) n'est pas lu, et
+`[Pin]`/`[Package]` le remplacent. `[Model Selector]` : une broche qui
+désigne un sélecteur prend le modèle choisi s'il en fait partie, le premier
+sinon. Les broches POWER, GND et NC sont refusées.
+
+**Où il se pose.** Topologie des simulateurs IBIS : C_comp au die, puis
+R_pkg et L_pkg en série, puis C_pkg à la broche. Le boîtier est **linéaire** :
+on le fond dans la cascade ABCD du canal, entre le die (où le tampon et
+C_comp restent au Newton) et la piste, côté émetteur (die → broche) et côté
+récepteur (broche → die, avant la charge R/C_comp). Rien n'est ajouté au pas
+de temps — ni inconnue, ni intégration —, et le boîtier passe par le même
+chemin que la piste (paramètres S, fenêtre, réponses impulsionnelles) ; le
+prix est que ses résonances au-delà du haut de la grille sont lissées comme
+le reste, ce qui ne touche pas les boîtiers usuels (L_pkg / R₀ et R₀·C_pkg
+sont bien plus longs que le lissage). Un boîtier nul ne touche pas la
+cascade : l'œil est celui d'avant, au bit près. `boitier: false` le retire.
+
+**Dans l'interface**, la liste des `[Pin]` (et, en différentiel, celle des
+`[Diff Pin]`) s'ajoute au choix du modèle ; choisir une broche choisit son
+modèle et son boîtier.
+
+#### La paire de tampons : deux brins, et le mode commun
+
+Le demi-circuit du mode impair supposait deux tampons parfaitement opposés.
+Depuis la 2.1.0, en différentiel avec un tampon IBIS (ou un `decalage_n`
+saisi), **chaque tampon attaque son brin**. La paire symétrique de
+`simulation_em` est donnée par ses deux modes, sans couplage entre eux : la
+cascade du mode impair (`abcd_dd`, V_d = V_p − V_n, I_d = (I_p − I_n)/2) et
+celle du mode commun, **reconstruite exactement des S_cc** que `s_diff` rend
+(V_c = (V_p + V_n)/2, I_c = I_p + I_n, sur Z_diff/4) — `simulation_em` n'est
+pas modifié. On les remet par brin (V = T_V·V_modes, I = T_I·I_modes : quatre
+accès, ondes de tension sur R₀ = Z_diff/2 par brin), et ce qui est propre à
+un brin s'y pose tel quel : boîtier de chaque broche, C_comp de chaque
+entrée, surlongueur d'un brin (le `delta_l_mm` de la paire, posé comme une
+ligne seule sur le brin inverse — le dessin ne dit pas lequel est le plus
+long). La terminaison du récepteur est la résistance différentielle et, au
+besoin, une impédance de mode commun (`r_charge_mc`, prise médiane ; 0 =
+flottante). Le pas de temps est celui de la ligne seule, avec quatre ondes
+entrantes : les deux bouts se résolvent à tour de rôle (deux Newton 2×2 en
+scalaires, jusqu'à ce que rien ne bouge), le Newton 4×4 en recours.
+
+**`[Diff Pin]`.** En différentiel, la broche choisie désigne une paire
+(broche, broche inverse, vdiff, tdelay typ/min/max) : chaque brin prend le
+modèle et le boîtier de **sa** broche ; sans broche, la première paire dont
+le modèle est celui choisi est prise d'office (et dit). Le brin inverse
+reçoit la séquence inverse **retardée de tdelay** (colonne du coin) ;
+`decalage_n` le remplace. Le vdiff du fichier du **récepteur** est son seuil :
+`marge_vdiff_prbs` et `marge_vdiff_pire` (demi-hauteur − vdiff), signalés
+quand ils sont négatifs ; à défaut, le `Rx_Receiver_Sensitivity` d'un .ami.
+Un coin ou un modèle différent pour le brin inverse : `coin_n`, `modele_n`.
+
+**Ce qui est rendu** (`mode_commun`) : le mode commun au récepteur (continu,
+crête à crête, crête, efficace), celui de l'émetteur, la **conversion**
+20·log(V_cm,cc / V_diff,cc), les 40 premiers bits du PRBS en courbe (mode
+commun et différentiel), les dissymétries trouvées, et — dès qu'il y en a —
+la hauteur d'œil brute (sans égaliseur, meilleure phase) de la paire réelle
+**et** de la même paire rendue symétrique (brin n = brin p, sans décalage) :
+c'est l'effet de la dissymétrie sur l'œil différentiel. Sans S_cc (paire
+sans cascade de mode commun), on retombe sur le demi-circuit, et on le dit.
+
+#### Les vias de la paire (`simulation_em` 4.4.0)
+
+La cascade différentielle ne portait que les tronçons : une paire qui change
+de couche rendait le même S_dd — et le même œil — qu'une paire restée sur la
+sienne. Les modèles déjà calculés pour la piste principale (le π du via : L
+de boucle de Grover, C des antipads et des pastilles, moignons à chaque bout ;
+le T de Gupta des coudes) sont maintenant posés au même rang, **sur les deux
+brins** : en mode impair [A, 2B ; C/2, D], en mode commun [A, B/2 ; 2C, D].
+La traversée de cavité (chemin du retour) n'est comptée qu'en mode commun —
+en mode impair les retours des deux brins s'annulent. **Depuis la 5.0.0, la
+mutuelle entre les deux fûts est comptée** (voir « La mutuelle des fûts de la
+paire » plus bas) : L − M en mode impair, L + M en mode commun. `s_diff` dit
+combien de vias et de coudes il porte, et l'œil le répète.
+
+#### IBIS-AMI : le .ami lu, pas exécuté
+
+Un `[Algorithmic Model]` renvoie à une bibliothèque binaire du fabricant
+(.dll, .so) et à un fichier `.ami`. **La bibliothèque n'est pas exécutée** —
+du code natif venu d'un fichier téléversé n'est pas une option. Le renvoi est
+lu (plateforme, bibliothèque, .ami) et dit ; le `.ami`, chargé à côté du
+.ibs, est lu (`ibis.lire_ami`) : syntaxe en arbre à parenthèses, chaînes entre
+guillemets, paramètres réservés (`Reserved_Parameters`) et propres au modèle
+(`Model_Specific`), chacun avec son chemin, son Usage, son Type, sa valeur
+(Value, Default ou typ d'un Range), sa plage et sa liste. L'interface le
+montre. `ibis.proposer_egaliseur` en tire, **par des noms usuels et en le
+disant**, une proposition pour l'égaliseur de référence de l'œil : FFE des
+prises numérotées (−1, 0, 1… ou pre/main/post) ramenées à Σ|c| = 1 (refusée
+si ce sont des codes de réglage) ; DFE du nombre de prises et de leur plage ;
+CTLE d'une liste ou d'une plage de gains en dB (forme `pcie3`, **pôles
+supposés** fp1 = débit/4, fp2 = débit) ; RJ (Tx_Rj, Rx_Rj en quadrature), DJ
+(Tx_Dj, Tx_DCD, Rx_Dj, Rx_DCD), bruit (Rx_Noise), seuil
+(Rx_Receiver_Sensitivity). Avec `ami_regler`, la proposition est appliquée
+(la gigue et le bruit saisis l'emportent). Une FFE avec un émetteur IBIS se
+pose linéairement sur la forme d'onde simulée — c'est ce que fait le flot
+AMI sur la réponse du canal analogique. L'adaptation et la récupération
+d'horloge du modèle ne sont pas reproduites.
+
+**Hors du modèle**, et dit dans chaque résultat : condensateurs de liaison
+(couplage AC), mutuelles d'un `[Package Model]` (dites, pas comptées) et
+boîtiers par sections, exécution des modèles AMI, géométrie dissymétrique
+de la paire (les deux brins restent de même section dans la cascade).
+L'Ethernet cuivre (MLT-3, PAM-5) n'est pas binaire et n'a pas de gabarit.
+L'I²C (drain ouvert, front montant RC) n'a pas de gabarit non plus — mais son
+tampon IBIS se simule maintenant.
+
+**Étalons** ([python/test/banc-oeil.py](../python/test/banc-oeil.py), 45 cas) :
+la ligne adaptée sans pertes rend un œil parfait (demi-excursion, 1 UI, retard
 de la ligne) ; une ligne ouverte attaquée par 30 Ω rend l'œil pire cas du
 diagramme en treillis à 0,3 % près ; avec 10 Ω, l'œil fermé se dit fermé ; le
 pire cas n'est jamais plus ouvert que le PRBS, ni en hauteur ni en marge ; un
 CTLE, une FFE ou un DFE ouvrent un œil fermé par les pertes ; la grille imposée
-rend la même cascade que la grille de la page.
+rend la même cascade que la grille de la page. **2.0.0** : sous RJ seule,
+l'œil se ferme de σ·Q⁻¹(2·BER) de chaque côté à 0,004 UI près, et sous
+DJ + RJ de DJ + 2σ·Q⁻¹(4·BER) (double Dirac) ; un bruit gaussien ferme
+l'ouverture de σ·Q⁻¹(2·BER) à deux cases près ; l'œil statistique du treillis
+de Bewley **est** le pire cas dès 10⁻⁶ ; un agresseur de crête A ferme le
+pire cas d'exactement 2A ; les voisines reprises du couplage portent le NEXT
+et le FEXT de `crosstalk.niveau2` ; un tampon IBIS aux courbes droites et au
+front gaussien rend l'œil du générateur de Thévenin à 1 % près (front composé
+avec le lissage), et sa forme d'onde PRBS simulée est, au pas près, la
+superposition de ses réponses à un échelon ; un récepteur IBIS sans diode
+rend l'œil de sa capacité ; des diodes franches tiennent le dépassement d'une
+ligne ouverte sous 0,55 V au-delà des rails ; deux vias traversants qui
+laissent des moignons de 2,6 mm ferment l'œil différentiel à 16 Gb/s.
+**2.1.0** : un boîtier nul rend l'œil d'avant au bit près ; L_pkg = 5 nH
+derrière 50 Ω ralentit le front selon la loi exponentielle-gaussienne
+(τ = L/(R_s + Z₀)) à 3 % près ; C_pkg = 2 pF à la broche d'un récepteur
+adapté renvoie l'écho −e^(−t/τ), τ = Z₀C/2, dont le creux simulé est le creux
+calculé à 3 % près ; `[Pin]` prime sur `[Package]` et la diagonale d'un
+`[Package Model]` sur les deux ; le tdelay de `[Diff Pin]` (40 ps) se mesure
+entre les deux brins du récepteur à 2 % près ; une paire symétrique n'a pas
+de mode commun (< 1 µV), décalée de 30 ps elle en a un de
+V_cc·erf(Δ/(2√2·σ)) à 2 % près ; une paire dessinée passe tout le chemin
+(S_cc → mode commun) ; un `.ami` d'exemple se lit et propose FFE, DFE, CTLE
+et gigue.
 
 ### RF — le S₂₁ d'un réseau entre deux ports
 

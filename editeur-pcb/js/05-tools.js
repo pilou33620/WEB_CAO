@@ -284,7 +284,11 @@ function normStack(s,cu){
   const sc=Array.isArray(src.cu)?src.cu:[], sd=Array.isArray(src.di)?src.di:[];
   for(let i=0;i<cu;i++){
     const o=(sc[i]&&typeof sc[i]==="object")?sc[i]:{};
-    out.cu.push({t:dRange(o.t,def.cu[i].t,0.001,2)});
+    const c={t:dRange(o.t,def.cu[i].t,0.001,2)};
+    /* rugosité (01-core.js) : écrite seulement si elle compte */
+    const rug=rugNorm(o.rug);
+    if(rug)c.rug=rug;
+    out.cu.push(c);
   }
   for(let i=0;i<diCount(cu);i++){
     const o=(sd[i]&&typeof sd[i]==="object")?sd[i]:{};
@@ -296,6 +300,13 @@ function normStack(s,cu){
                  df:dRange(o.df,d.df,0,1),
                  mat:dStr(o.mat,40).trim()||d.mat});
   }
+  /* règles de contre-perçage (01-core.js) : écrites seulement s'il y en a,
+     un document qui n'en parle pas se relit à l'identique */
+  const cp=cpNormRegles(src.cp,cu);
+  if(cp.length)out.cp=cp;
+  /* options de modèle (diélectrique causal, modèle de via) : de même */
+  const sim=simModelesNorm(src.sim);
+  if(sim)out.sim=sim;
   return out;
 }
 function normClass(c,i){
@@ -470,6 +481,9 @@ function normVia(v,cu){
   // marqué à la main : 0 = libre, sinon le boîtier qu'il suit (`25-liens.js`)
   const lie=+v.lie;
   if(v.lie!=null&&Number.isInteger(lie)&&lie>=0&&lie<=Number.MAX_SAFE_INTEGER)out.lie=lie;
+  // contre-perçage imposé au via : une règle de l'empilage, ou « non » (01-core.js)
+  const cp=cmLireCp(v.cp);
+  if(cp)out.cp=cp;
   return out;
 }
 function normZone(z,cu,i){
@@ -1501,9 +1515,13 @@ function followMoved(){
       seen.add(t);
       const P0={x,y}, hid=holder(t,en,x,y);
       out.p0fp.set(P0,hid);
-      if(etch!=="arracher"&&(isArc(t)||mode==="free"||etch==="etirer")){
+      if(etch!=="arracher"&&(isArc(t)||mode==="free")){
         out.rubber.push({t,e:en,P0});out.own.add(t);continue;
       }
+      /* « étirer » : seule la piste qui va vers ce qui reste s'étire ; celle
+         tendue entre deux points qui bougent (deux membres d'un groupe, un
+         composant et son via) part en bloc, comme dans les autres conduites */
+      const etire=etch==="etirer";
       // de coude en coude jusqu'à ce qui tient la piste
       const list=[t];
       let cur=t, ce=en, end="fixe";
@@ -1531,6 +1549,10 @@ function followMoved(){
             if((Math.abs(v.x-x)<EPS_J&&Math.abs(v.y-y)<EPS_J)||(Math.abs(v.x-Fz.x)<EPS_J&&Math.abs(v.y-Fz.y)<EPS_J))
               for(const o of list)out.rigidVia.add(o);
         continue;
+      }
+      if(etire){
+        for(let k=1;k<list.length;k++)seen.delete(list[k]);
+        out.rubber.push({t,e:en,P0});out.own.add(t);continue;
       }
       if(etch==="arracher"){
         if(end==="sel")for(let k=1;k<list.length;k++)seen.delete(list[k]);
@@ -1931,8 +1953,9 @@ function beginMove(){
   drag.follow=fol;
   drag.trk=[...S.sel.tracks].map(t=>({t,x1:t.x1,y1:t.y1,x2:t.x2,y2:t.y2}));
   // une piste tendue entre deux points qui bougent part en bloc, comme la sélection
-  for(const t of fol.rigid)drag.trk.push({t,x1:t.x1,y1:t.y1,x2:t.x2,y2:t.y2});
-  drag.via=[...S.sel.vias].map(v=>({v,x:v.x,y:v.y}));
+  // (sa couche et celle des vias : un groupe retourné les passe en miroir, `27-groupes.js`)
+  for(const t of fol.rigid)drag.trk.push({t,x1:t.x1,y1:t.y1,x2:t.x2,y2:t.y2,l:t.l,ca:t.ca});
+  drag.via=[...S.sel.vias].map(v=>({v,x:v.x,y:v.y,a:v.a,b:v.b}));
   drag.joints=moveJoints(fol.keys);
   const fps=[...S.sel.fps].map(fpById).filter(Boolean);
   fol.skip=new Set([...movedTracks(),...S.sel.vias,...fps]);
@@ -2539,9 +2562,12 @@ const PCB_CLIP_KEY="pcbedit.clipboard";
 let PCB_CLIP=null;
 function pcbClipContent(){
   if(!selCount())return null;
+  linkSync();
+  // un groupe copié entier : son cuivre interne vient avec lui (`27-groupes.js`)
+  const gc=groupesCopie();
   const fps=S.fps.filter(f=>S.sel.fps.has(f.id));
-  const tracks=S.tracks.filter(t=>S.sel.tracks.has(t));
-  const vias=S.vias.filter(v=>S.sel.vias.has(v));
+  const tracks=S.tracks.filter(t=>S.sel.tracks.has(t)||gc.tracks.has(t));
+  const vias=S.vias.filter(v=>S.sel.vias.has(v)||gc.vias.has(v));
   const zones=S.zones.filter(z=>S.sel.zones.has(z));
   const cuts=S.cuts.filter(c=>S.sel.cuts.has(c));
   const drawings=selDrawingsPcb();
@@ -2562,11 +2588,24 @@ function pcbClipContent(){
     delete c.id;delete c.auto;      // une copie est un tracé à la main
     return c;
   };
+  /* les liens des bouts, et le boîtier d'un via marqué, en RANG dans la copie
+     (`fi`, `vi`) : le collage les fait viser les copies ; ce qui n'est pas
+     copié perd son lien, que la géométrie refera */
+  const fi=new Map(fps.map((f,i)=>[f.id,i])), vi=new Map(vias.map((v,i)=>[v.id,i]));
+  const lien=a=>!a?null:a.f!=null?(fi.has(a.f)?{fi:fi.get(a.f),p:a.p}:null)
+                                 :(vi.has(a.v)?{vi:vi.get(a.v)}:null);
   return {
     fps:fps.map(f=>{const c=cp(f);c.x=r3(c.x-x);c.y=r3(c.y-y);delete c.id;return c;}),
     tracks:tracks.map(t=>{const c=cp(t);
-      c.x1=r3(c.x1-x);c.y1=r3(c.y1-y);c.x2=r3(c.x2-x);c.y2=r3(c.y2-y);return c;}),
-    vias:vias.map(v=>{const c=cp(v);c.x=r3(c.x-x);c.y=r3(c.y-y);return c;}),
+      c.x1=r3(c.x1-x);c.y1=r3(c.y1-y);c.x2=r3(c.x2-x);c.y2=r3(c.y2-y);
+      for(const k of ["a1","a2"]){const a=lien(t[k]);if(a)c[k]=a;else delete c[k];}
+      return c;}),
+    vias:vias.map(v=>{const c=cp(v);c.x=r3(c.x-x);c.y=r3(c.y-y);delete c.id;
+      if(fi.has(v.lie)){c.lieI=fi.get(v.lie);delete c.lie;}
+      return c;}),
+    // les groupes copiés entiers, en rangs : ils renaissent au collage
+    groupes:gc.gs.map(g=>({nom:g.nom,fps:g.fps.map(id=>fi.get(id)),
+                           vias:g.vias.map(id=>vi.get(id)).filter(i=>i!=null)})),
     zones:zones.map(poly), cuts:cuts.map(poly),
     holes:holes.map(h=>({d:h.d,x:r3(h.x-x),y:r3(h.y-y),locked:h.locked})),
     drawings:drawings.map(d=>({
@@ -2614,7 +2653,13 @@ function copySelPcb(){
        " via(s) copiés — Ctrl+V colle sous le pointeur.");
   return true;
 }
-function cutSelPcb(){if(copySelPcb())deleteSel();}
+function cutSelPcb(){
+  // couper un groupe emporte aussi le cuivre interne que la copie a pris
+  const gc=groupesCopie();
+  if(!copySelPcb())return;
+  gc.tracks.forEach(t=>S.sel.tracks.add(t));gc.vias.forEach(v=>S.sel.vias.add(v));
+  deleteSel();
+}
 function pasteClipPcb(){
   const c=pcbGetClip();
   if(!c||typeof c!=="object"){hint("Presse-papier vide : copiez d'abord une sélection (Ctrl+C).");return;}
@@ -2626,26 +2671,37 @@ function pasteClipPcb(){
   clearSel();
   let dropped=0;
   const used=new Set(S.fps.map(f=>f.ref));
-  for(const src of arr(c.fps)){
+  // les copies par rang dans le presse-papier : liens, marquages et groupes les visent
+  const nf=[], nv=[];
+  for(const [i,src] of arr(c.fps).entries()){
     const f=normFp(src,0);
     if(!f){dropped++;continue;}
     f.id=S.nextId++;
     f.x=r3(f.x+bx);f.y=r3(f.y+by);
     f.ref=freeFpRef(f.ref,used);used.add(f.ref);
-    S.fps.push(f);S.sel.fps.add(f.id);
+    S.fps.push(f);S.sel.fps.add(f.id);nf[i]=f;
+  }
+  for(const [i,src] of arr(c.vias).entries()){
+    const v=normVia(src,S.cu);
+    if(!v){dropped++;continue;}
+    v.x=r3(v.x+bx);v.y=r3(v.y+by);
+    v.id=S.nextId++;
+    if(Number.isInteger(src.lieI)&&nf[src.lieI])v.lie=nf[src.lieI].id;
+    S.vias.push(v);S.sel.vias.add(v);nv[i]=v;
   }
   for(const src of arr(c.tracks)){
     const t=normTrack(src,S.cu);
     if(!t){dropped++;continue;}
     t.x1=r3(t.x1+bx);t.y1=r3(t.y1+by);t.x2=r3(t.x2+bx);t.y2=r3(t.y2+by);
+    for(const k of ["a1","a2"]){
+      const a=src[k], n=!a?null:Number.isInteger(a.fi)&&nf[a.fi]?linkNorm({f:nf[a.fi].id,p:a.p})
+                              :Number.isInteger(a.vi)&&nv[a.vi]?{v:nv[a.vi].id}:null;
+      if(n)t[k]=n;
+    }
     S.tracks.push(t);S.sel.tracks.add(t);
   }
-  for(const src of arr(c.vias)){
-    const v=normVia(src,S.cu);
-    if(!v){dropped++;continue;}
-    v.x=r3(v.x+bx);v.y=r3(v.y+by);
-    S.vias.push(v);S.sel.vias.add(v);
-  }
+  // les groupes copiés entiers : un nouveau groupe par groupe (`27-groupes.js`)
+  const ng=groupesColler(c.groupes,nf,nv);
   for(const src of arr(c.zones)){
     const z=normZone(src,S.cu,0);
     if(!z){dropped++;continue;}
@@ -2681,7 +2737,8 @@ function pasteClipPcb(){
   zoneCache.clear();
   touch();refreshPanels();draw();
   hint(S.sel.fps.size+" empreinte(s), "+S.sel.tracks.size+" piste(s), "+
-       S.sel.vias.size+" via(s) collés."+(dropped?" "+dropped+" élément(s) ignoré(s).":""));
+       S.sel.vias.size+" via(s) collés"+(ng?", en "+ng+" nouveau(x) groupe(s)":"")+"."+
+       (dropped?" "+dropped+" élément(s) ignoré(s).":""));
 }
 function rotateSel(){
   const list=[...S.sel.fps];
@@ -2733,10 +2790,13 @@ function flipSel(){
   const list=[...S.sel.fps];
   const drw=selDrawingsPcb();
   if(!list.length&&!drw.length)return;
+  // en plein glissement, comme R : le geste continue (`27-groupes.js`)
+  if(dragRetourner())return;
   push();
-  transformFps(list,()=>{
-    for(const id of list){const f=fpById(id);if(f)f.side=f.side?0:1;}
-  });
+  /* chaque boîtier sur place ; un groupe entier en miroir autour de son axe,
+     son cuivre interne sur la couche miroir (`fpsRetourner`, `groupeCouches`) */
+  const mir={ids:null};
+  transformFps(list,()=>{mir.ids=fpsRetourner(list);},{miroir:mir});
   for(const d of drw){d.layer=d.layer==="silkB"?"silkT":"silkB";}
   touch();refreshPanels();draw();
 }

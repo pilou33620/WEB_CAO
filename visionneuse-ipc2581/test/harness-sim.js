@@ -73,6 +73,7 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simAccrocherViasIpc","simViaAuRaccordIpc","simKUnite",
   "simChainePistes","simBoutsPiste","simZPistes","simArcEnPolyligne",
   "simJonctionsIpc","simJoncCommuneIpc","SIM_RAYON_JONCTION_IPC","simViasIpc",
+  "simContrePercageIpc","simTrouAuPointIpc","mdlContrePercage",
   "mdlArc","mdlArcAngle","mdlArcLongueur","ltArc","ltNet","ltPiste",
   "simCheveluRes","simRetourCouleurRes","simRetourActifIpc",
   "simRetourTraceIpc",
@@ -170,7 +171,14 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simDsCatalogue","simDsPreparer","simDsAppliquer","simDsGroupes","simDsNb",
   "simDsBorneDe","simDsReappliquerCapas","SIM_DS","simPDNAssistantActif",
   /* La simulation RF : la carte lue, décrite pour le panneau commun. */
-  "simRfProbleme","simRfClic","SIM_RF_ATTENTE","simRfPlateauIpc","simRfZ","simRfModele"];
+  "simRfProbleme","simRfClic","SIM_RF_ATTENTE","simRfPlateauIpc","simRfZ","simRfModele",
+  /* Le diagramme de l'œil : la saisie de la gigue, de la diaphonie et des
+     fichiers IBIS, et le rendu de l'œil statistique. */
+  "SIM_OEIL","simCorpsOeil","simRendreOeil","simOeilReglages",
+  "simOeilIbisModeles","simOeilBer",
+  /* Œil 2.1.0 : les broches, les paires et le boîtier IBIS, le mode commun
+     de la paire, le fichier .ami. */
+  "simOeilIbisBroches","simOeilBrocheValide"];
 
 /* Un seul `eval`, sur les trois fichiers concaténés : ils se voient l'un
    l'autre comme dans la page, où ils partagent la portée globale. Le "use
@@ -5835,6 +5843,265 @@ T("vérification de la carte : surfaces, contour, trous et broches partent aussi
     throw new Error("les broches placées, et leur net : "+JSON.stringify(u1));
   if(!d.pastilles.some(q=>q.x===X2&&q.y===Y&&q.n==="N$1"))
     throw new Error("la pastille porte son net");
+});
+
+/* ==========================================================================
+   LE CONTRE-PERÇAGE PART COMME DEPUIS L'ÉDITEUR
+   --------------------------------------------------------------------------
+   Le modèle porte `cp` sur le perçage (ipc2581_json.py) : la face, la couche
+   à ne pas couper, le moignon résiduel. La simulation le reçoit dans la fiche
+   du via (`contre_percage`), AVEC la portée percée — sans elle le serveur ne
+   peut rien soustraire ; la vérification de la carte dans `percages[].cp`.
+   Ce qui manque au fichier ne part pas : ni portée, ni couche gardée.
+   ========================================================================== */
+function cpCarteIpc(trou){
+  const xm=xm0(), o=padTraversante(0.55);
+  const c=carte({
+    couches:["Top","In1","In2","Bottom"],
+    empilage:[
+      {nom:"Top",    seq:1, ep:0.035, type:"CONDUCTOR"},
+      {nom:"D1",     seq:2, ep:0.2,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
+      {nom:"In1",    seq:3, ep:0.035, type:"CONDUCTOR"},
+      {nom:"D2",     seq:4, ep:0.8,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
+      {nom:"In2",    seq:5, ep:0.035, type:"CONDUCTOR"},
+      {nom:"D3",     seq:6, ep:0.2,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
+      {nom:"Bottom", seq:7, ep:0.035, type:"CONDUCTOR"}
+    ],
+    percages:[Object.assign({x:xm, y:Y, d:0.25, n:0, p:"VIA"},trou||{})],
+    pads:o.pads, padstacks:o.padstacks
+  });
+  c.modele.pistes=[{c:0, n:0, w:W, p:[X1,Y, xm,Y]},
+                   {c:1, n:0, w:W, p:[xm,Y, X2,Y]}];
+  mdlCharger(c.modele);
+  ltPreparer();
+  V.net=0;
+  SIM.refCle=null; SIM.refAuto=true; SIM.ref=null;
+  return xm;
+}
+const CP_IPC={cote:"dessous", de:3, g:1, res:0.1, prof:0.97, spec:"BD_1A", src:"spec"};
+
+T("contre-perçage : la fiche du via part avec la portée percée et la passe du foret",()=>{
+  cpCarteIpc({sa:0, sb:3, cp:CP_IPC});
+  const c=mdlContrePercage(V.modele.percages[0]);
+  if(!c||!c.complet||c.depart!=="Bottom"||c.garde!=="In1")throw new Error(JSON.stringify(c));
+  const v=simSegments().envoi[1].via;
+  if(!v||v.layer_from!==0||v.layer_to!==6)throw new Error("portée percée : "+JSON.stringify(v));
+  if(JSON.stringify(v.contre_percage)!=='{"cote":"dessous","couche_garde":2,"moignon_residuel_mm":0.1}')
+    throw new Error("contre_percage : "+JSON.stringify(v.contre_percage));
+  /* la liste des vias du parcours : la portée percée remplace la supposée */
+  const L=simViasIpc();
+  if(L.length!==1||L[0].layer_from!==0||L[0].layer_to!==6||L[0].portee_supposee||
+     !L[0].contre_percage||L[0].contre_percage.couche_garde!==2)
+    throw new Error("simViasIpc : "+JSON.stringify(L.map(f=>[f.layer_from,f.layer_to,f.portee_supposee,f.contre_percage])));
+});
+
+T("contre-perçage : sans portée, sans couche gardée, ou sans contre-perçage, rien ne change",()=>{
+  /* sans portée déclarée : le serveur ne saurait pas d'où soustraire */
+  cpCarteIpc({cp:CP_IPC});
+  let v=simSegments().envoi[1].via;
+  if("contre_percage" in v||"layer_from" in v)throw new Error("sans portée : "+JSON.stringify(v));
+  /* sans couche à ne pas couper : la fiche le dit, rien ne part */
+  cpCarteIpc({sa:0, sb:3, cp:{de:3, res:0.1, spec:"BD_1A", src:"spec"}});
+  if(mdlContrePercage(V.modele.percages[0]).complet)throw new Error("incomplet");
+  v=simSegments().envoi[1].via;
+  if("contre_percage" in v||"layer_from" in v)throw new Error("incomplet : "+JSON.stringify(v));
+  if(SIM_IPC.carteEntiere().doc.percages[0].cp)throw new Error("incomplet, pas de cp à la vérification");
+  /* sans contre-perçage : la fiche d'avant, à l'identique */
+  cpCarteIpc({sa:0, sb:3});
+  v=simSegments().envoi[1].via;
+  if("contre_percage" in v||"layer_from" in v)throw new Error("sans contre-perçage : "+JSON.stringify(v));
+  if(mdlContrePercage(V.modele.percages[0])!==null)throw new Error("mdlContrePercage sans cp");
+});
+
+T("contre-perçage : la vérification de la carte le reçoit comme de l'éditeur",()=>{
+  cpCarteIpc({sa:0, sb:3, cp:CP_IPC});
+  const p=SIM_IPC.carteEntiere().doc.percages[0];
+  if(!p||p.de!=="Top"||p.a!=="Bottom"||JSON.stringify(p.cp)!=='{"cote":"dessous","garde":"In1","res":0.1}')
+    throw new Error(JSON.stringify(p));
+});
+
+/* ==========================================================================
+   Le diagramme de l'œil : ce qui part au serveur, et ce qui en revient
+   ========================================================================== */
+T("œil : sans gigue, sans diaphonie, sans IBIS, la requête est celle d'avant",()=>{
+  const o=simOeilReglages();
+  for(const k of ["rj","dj","bruit_v","ber_cible","agresseurs_auto",
+                  "ibis_emetteur","ibis_recepteur"])
+    if(k in o)throw new Error("champ facultatif envoyé à vide : "+k);
+});
+T("œil : la gigue, la diaphonie et le fichier IBIS partent quand ils sont saisis",()=>{
+  const s=SIM_OEIL.saisie, avant=JSON.stringify(s);
+  try{
+    s.rj=2e-12; s.xt=true; s.xtSens="meme"; s.ber=1e-15;
+    SIM_OEIL.ibis.em={fichier:"u1.ibs", texte:"[Model] OUT", modeles:[{nom:"OUT",type:"Output"}],
+                      modele:"OUT", coin:"max"};
+    const o=simOeilReglages();
+    if(o.rj!==2e-12||o.ber_cible!==1e-15||!o.agresseurs_auto||o.agresseurs_sens!=="meme")
+      throw new Error(JSON.stringify(o));
+    if(!o.ibis_emetteur||o.ibis_emetteur.coin!=="max"||o.ibis_emetteur.texte!=="[Model] OUT")
+      throw new Error("IBIS : "+JSON.stringify(o.ibis_emetteur));
+    if("dj" in o||"ibis_recepteur" in o)throw new Error("rien de plus : "+JSON.stringify(o));
+    const h=simCorpsOeil();
+    for(const id of ["simOeilRj","simOeilDj","simOeilBruit","simOeilBer","simOeilXt",
+                     "simOeilIbisMod_em","simOeilIbisCoin_em","simOeilIbis_rx"])
+      if(h.indexOf('id="'+id+'"')<0)throw new Error("champ absent : "+id);
+  }finally{
+    Object.assign(s,JSON.parse(avant)); SIM_OEIL.ibis.em=null;
+  }
+});
+T("œil : les [Model] d'un fichier IBIS se listent avec leur type",()=>{
+  const m=simOeilIbisModeles("[IBIS Ver] 5.0\n| [Model] COMMENTE\n[Model] OUT33\n"+
+    "Model_type I/O | tampon\n[Pullup]\n0 0\n[Model] IN33\nModel_type Input\n[End]\n");
+  if(m.length!==2||m[0].nom!=="OUT33"||m[0].type!=="I/O"||m[1].type!=="Input")
+    throw new Error(JSON.stringify(m));
+  if(simOeilBer(1e-12)!=="10⁻¹²")throw new Error(simOeilBer(1e-12));
+});
+T("œil : l'œil statistique, la diaphonie et l'IBIS se rendent",()=>{
+  const tau=[], h=[], b=[];
+  for(let i=0;i<=128;i++){tau.push(i/64-1);h.push(0.2);b.push(-0.2);}
+  const n=128*160;
+  SIM_OEIL.res={
+    debit:5e9, ui:2e-10, tr:4e-11, mode:"diff", motif:"prbs7", bits:127, seuil:0,
+    densite:{nx:128, ny:160, v_haut:0.5, v_bas:-0.5, comptes:new Array(n).fill(1), max:1},
+    pire_cas:{tau, haut:h, bas:b},
+    mesures:{hauteur_prbs:0.4, largeur_prbs_ui:0.9, hauteur_pire:0.38, largeur_pire_ui:0.85,
+             isi_pire:0.01, principal:0.2, niveau_1:0.2, niveau_0:-0.2, v_max_vu:0.3,
+             v_min_vu:-0.3, retard:1e-9, violations:0, marge:0.4, marge_pire:0.3,
+             hors_limites:0, hauteur_ber:0.3, largeur_ber_ui:0.6, ber_cible:1e-12,
+             marge_ber:-0.05},
+    gabarit:{id:"x", nom:"essai", fiabilite:"corrobore", fiabilite_texte:"", source:"",
+             polygone:[[-0.2,0],[0,0.05],[0.2,0],[0,-0.05]]},
+    egalisation:{ctle:null, dfe_v:[], ffe:[1], ffe_principal:0},
+    reponse_bit:{dt:1e-11, t0:-1e-10, v:[0,0.2,0]},
+    grille:{points:100, df:1e7, f_max:4e10, fenetre:1e-7, h0:1},
+    statistique:{niveaux:[1e-6,1e-12], ber_cible:1e-12, tau,
+      contours:[{ber:1e-6, hauteur:0.35, largeur_ui:0.7, haut:h, bas:b},
+                {ber:1e-12, hauteur:0.3, largeur_ui:0.6, haut:h.map(()=>null), bas:b}],
+      baignoire:{tau:tau.slice(32,97).map(t=>t), ber:tau.slice(32,97).map(()=>1e-20)},
+      baignoire_v:{v:[0,0.1], ber:[1e-20,1e-3]}, rj_ui:0.01, dj_ui:0, rj_s:2e-12, dj_s:0,
+      bruit_v:0, pas_v:1e-3, cases:2048, hypotheses:["bits indépendants"]},
+    diaphonie:{agresseurs:[{nom:"SCK", crete_v:0.01, coef:0.01, v:1}], gain_ctle:1,
+               crete_totale_v:0.01, note:""},
+    ibis:{emetteur:{modele:"OUT33", type:"I/O", coin:"typ", fichier:"u1.ibs", c_comp:3e-12,
+                    front_10_90:5e-10, commande:"[Ramp]"},
+          pas_s:1e-12, lissage_s:2e-11, v_haut:0.4, v_bas:-0.4, asymetrie:0.1},
+    avertissements:[], duree:1
+  };
+  try{
+    const html=simRendreOeil();
+    for(const t of ["simOeilContour","simOeilBaignoire","10⁻¹²","SCK","OUT33",
+                    "pas à 10⁻¹²","Simulation non linéaire"])
+      if(html.indexOf(t)<0)throw new Error("absent du rendu : "+t);
+  }finally{SIM_OEIL.res=null;}
+});
+T("œil : sans broche, boîtier, décalage ni AMI, rien de plus ne part",()=>{
+  const s=SIM_OEIL.saisie, avant=JSON.stringify(s);
+  try{
+    s.mode="diff";
+    const o=simOeilReglages();
+    for(const k of ["boitier","decalage_n","r_charge_mc","ami_regler"])
+      if(k in o)throw new Error("champ facultatif envoyé à vide : "+k);
+  }finally{Object.assign(s,JSON.parse(avant));}
+});
+T("œil : les [Pin] et les [Diff Pin] d'un fichier IBIS se listent",()=>{
+  const b=simOeilIbisBroches("[Component] U1\n[Pin] signal_name model_name R_pin L_pin C_pin\n"+
+    "A1 DP OUT 0.1 2nH 0.5pF | broche\nA2 DN OUT\nA3 VCC POWER\n"+
+    "[Diff Pin] inv_pin vdiff tdelay_typ tdelay_min tdelay_max\nA1 A2 0.1 40ps NA NA\n"+
+    "[Model] OUT\n[Algorithmic Model]\nExecutable Linux_gcc_x86_64 tx.so tx.ami\n"+
+    "[End Algorithmic Model]\n[End]\n");
+  if(b.broches.length!==3||b.broches[0].modele!=="OUT"||b.broches[2].modele!=="POWER")
+    throw new Error(JSON.stringify(b.broches));
+  if(b.paires.length!==1||b.paires[0].inverse!=="A2"||b.paires[0].tdelay!=="40ps")
+    throw new Error(JSON.stringify(b.paires));
+  if(!b.ami)throw new Error("[Algorithmic Model] non vu");
+});
+T("œil : la broche, la paire, le boîtier, le décalage et l'AMI partent quand ils sont choisis",()=>{
+  const s=SIM_OEIL.saisie, avant=JSON.stringify(s);
+  try{
+    const f={fichier:"u1.ibs", texte:"[Model] OUT", modeles:[{nom:"OUT",type:"I/O"}],
+             modele:"OUT", coin:"typ", broches:[{nom:"A1",signal:"DP",modele:"OUT"},
+             {nom:"A2",signal:"DN",modele:"OUT"},{nom:"A3",signal:"VCC",modele:"POWER"}],
+             paires:[{broche:"A1",inverse:"A2",vdiff:"0.1",tdelay:"40ps"}], broche:"A2",
+             amiAttendu:true, ami:{fichier:"tx.ami", texte:"(tx)"}};
+    SIM_OEIL.ibis.em=f;
+    s.mode="simple";
+    let o=simOeilReglages();
+    if(o.ibis_emetteur.broche!=="A2"||o.ibis_emetteur.ami.fichier!=="tx.ami")
+      throw new Error(JSON.stringify(o.ibis_emetteur));
+    /* En différentiel, A2 n'est pas la broche d'une paire : elle ne part pas. */
+    s.mode="diff"; s.decN=30e-12; s.rmc=25; s.boitier=false; s.amiRegler=true;
+    o=simOeilReglages();
+    if("broche" in o.ibis_emetteur)throw new Error("broche hors paire : "+o.ibis_emetteur.broche);
+    if(o.decalage_n!==30e-12||o.r_charge_mc!==25||o.boitier!==false||!o.ami_regler)
+      throw new Error(JSON.stringify(o));
+    f.broche="A1";
+    if(simOeilReglages().ibis_emetteur.broche!=="A1")throw new Error("paire A1/A2");
+    const h=simCorpsOeil();
+    for(const id of ["simOeilIbisBroche_em","simOeilAmiX_em","simOeilBoitier","simOeilDecN",
+                     "simOeilRmc","simOeilAmiRegler","simOeilAmiFichier"])
+      if(h.indexOf('id="'+id+'"')<0)throw new Error("champ absent : "+id);
+    if(h.indexOf("A1/A2")<0)throw new Error("la paire n'est pas proposée");
+  }finally{
+    Object.assign(s,JSON.parse(avant)); SIM_OEIL.ibis.em=null;
+  }
+});
+T("œil : le boîtier, le mode commun de la paire et l'AMI se rendent",()=>{
+  const tau=[], h=[], b=[];
+  for(let i=0;i<=128;i++){tau.push(i/64-1);h.push(0.2);b.push(-0.2);}
+  SIM_OEIL.res={
+    debit:1e9, ui:1e-9, tr:1e-10, mode:"diff", motif:"prbs7", bits:127, seuil:0,
+    densite:{nx:128, ny:160, v_haut:0.5, v_bas:-0.5, comptes:new Array(128*160).fill(1), max:1},
+    pire_cas:{tau, haut:h, bas:b},
+    mesures:{hauteur_prbs:0.4, largeur_prbs_ui:0.9, hauteur_pire:0.38, largeur_pire_ui:0.85,
+             isi_pire:0.01, principal:0.2, niveau_1:0.2, niveau_0:-0.2, v_max_vu:0.3,
+             v_min_vu:-0.3, retard:1e-9, vdiff:0.1, marge_vdiff_prbs:0.1, marge_vdiff_pire:0.09},
+    gabarit:null, egalisation:{ctle:null, dfe_v:[], ffe:[1], ffe_principal:0},
+    reponse_bit:{dt:1e-11, t0:-1e-10, v:[0,0.2,0]},
+    grille:{points:100, df:1e7, f_max:4e10, fenetre:1e-7, h0:1},
+    ibis:{emetteur:{modele:"OUT", type:"I/O", coin:"typ", fichier:"u1.ibs", c_comp:1e-12,
+                    front_10_90:1e-10, commande:"x", broche:"A1", inverse:"A2", tdelay:4e-11,
+                    boitier:{r:0.1, l:2e-9, c:5e-13, source:"[Pin]"},
+                    boitier_n:{r:0.2, l:8e-9, c:1e-12, source:"[Package]"},
+                    modele_n:"OUT", coin_n:"typ"},
+          pas_s:1e-12, lissage_s:2e-11, v_haut:0.4, v_bas:-0.4, asymetrie:0.01, deux_brins:true},
+    mode_commun:{continu:0.5, crete_crete:0.08, crete:0.04, rms:0.01, conversion_db:-20,
+                 emetteur:{continu:0.5, crete_crete:0.05},
+                 courbe:{dt_ui:0.0625, v:[0.5,0.52,0.48,0.5], v_diff:[-0.4,0,0.4,0.4]},
+                 hauteur_brute:0.39, hauteur_symetrique:0.41,
+                 asymetries:["brin inverse décalé de 40 ps"]},
+    ami:{emetteur:{fichier:"tx.ami", modele:"tx", description:"", tronque:false,
+                   parametres:[{chemin:"Model_Specific/TX_FFE/Tap/-1", groupe:"specifique",
+                                usage:"In", type:"Float", forme:"range", valeur:-0.1,
+                                plage:[-0.25,0], liste:null, description:""}]},
+         recepteur:null, renvois:[{bout:"émetteur", modele:"OUT", plateforme:"Linux",
+                                   bibliotheque:"tx.so", fichier_ami:"tx.ami"}],
+         propositions:{notes:["FFE : 3 prises"]}, applique:[],
+         note:"Le modèle AMI lui-même n'est PAS exécuté."},
+    avertissements:[], duree:1
+  };
+  try{
+    const html=simRendreOeil();
+    for(const t of ["broche A1 / inverse A2","8,00 nH","Mode commun (récepteur)","simOeilMcTrace",
+                    "paire symétrique","décalé de 40 ps","IBIS-AMI","TX_FFE/Tap/-1","tx.so",
+                    "PAS exécuté","Seuil du récepteur","deux brins"])
+      if(html.indexOf(t)<0)throw new Error("absent du rendu : "+t);
+  }finally{SIM_OEIL.res=null;}
+});
+
+T("la rugosité que le fichier déclare part au serveur, et seulement elle",()=>{
+  carte();
+  let pile=simStackupIpc().layers.filter(c=>c.type==="copper");
+  if(pile.some(c=>"rugosite_rms_um" in c||"modele_rugosite" in c))
+    throw new Error("un cuivre lisse envoie une rugosité");
+  carte({empilage:[
+    {nom:"Top",    seq:1, ep:0.035, type:"CONDUCTOR", rug:1.6},
+    {nom:"Coeur",  seq:2, ep:0.2,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
+    {nom:"Bottom", seq:3, ep:0.035, type:"PLANE"}]});
+  pile=simStackupIpc().layers.filter(c=>c.type==="copper");
+  if(pile[0].rugosite_rms_um!==1.6||pile[0].modele_rugosite!=="hammerstad")
+    throw new Error("rugosité du dessus : "+JSON.stringify(pile[0]));
+  if("rugosite_rms_um" in pile[1])throw new Error("le plan n'en déclare pas");
+  carte();
 });
 
 (async()=>{

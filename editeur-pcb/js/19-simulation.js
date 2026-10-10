@@ -63,19 +63,38 @@ function simStackup(){
   const couches=[];
   for(let i=0;i<S.cu;i++){
     const L=S.cuL[i]||{};
-    couches.push({
+    const c={
       type:"copper", name:cuLabel(i,S.cu),
       thickness:cuT(i),
       role:rolePlane(layerRole(i))?"plane":"signal",
       net:L.net||""
-    });
+    };
+    /* LA RUGOSITÉ, EN MICROMÈTRES et la clé le dit : le serveur la passe à
+       `line_losses` (python/simulation_em.py, `_rugosite_couche`). Lisse, rien
+       ne part : le document reste celui d'avant. */
+    const rug=typeof cuRug==="function"?cuRug(i):null;
+    if(rug){
+      c.modele_rugosite=rug.m;
+      if(rug.m==="huray"){c.rayon_nodule_um=rug.a;c.rapport_surface=rug.sr;}
+      else c.rugosite_rms_um=rug.rms;
+    }
+    couches.push(c);
     if(i<diCount(S.cu)){
       const d=diAt(i);
       couches.push({type:"dielectric", name:d.mat||"FR-4",
                     thickness:d.t, epsilon_r:d.er, tan_delta:d.df});
     }
   }
-  return {layers:couches};
+  const out={layers:couches};
+  /* LES OPTIONS DE MODÈLE DE LA CARTE (`simModeles`) partent avec
+     l'empilage, et seulement quand elles s'écartent du défaut : l'empilage
+     voyage tel quel jusqu'à la RF et à l'œil, qui les reçoivent donc aussi. */
+  const m=typeof simModeles==="function"?simModeles():null;
+  if(m){
+    if(m.causal){out.dielectrique_causal=true;out.f_ref_dielectrique=m.fref;}
+    if(m.via!==SIM_VIA_DEFAUT)out.modele_via=m.via;
+  }
+  return out;
 }
 
 /* Les tronçons sélectionnés, dans l'ordre où la carte les porte — l'ordre
@@ -810,6 +829,16 @@ function simCotesVia(v, x, y, cuA, cuB){
     out.net = v.net || "";
     out.layer_from = simCuIndex(Math.min(v.a, v.b));
     out.layer_to = simCuIndex(Math.max(v.a, v.b));
+    /* LE CONTRE-PERÇAGE RACCOURCIT LE MOIGNON, et le serveur ne peut pas le
+       deviner : la portée percée reste L1–L4, c'est le foret repassé depuis
+       une face qui en retire le bout. On envoie la face, la couche à ne pas
+       couper (indice d'empilage, comme `layer_from`) et le moignon résiduel ;
+       `_moignons` (python/simulation_em.py) y arrête le moignon de ce côté.
+       Un contre-perçage fautif ne part pas : il ne se ferait pas tel quel. */
+    const cp = typeof cpVia === "function" ? cpVia(v) : null;
+    if(cp && !cp.faute)
+      out.contre_percage = {cote: cp.cote, couche_garde: simCuIndex(cp.garde),
+                            moignon_residuel_mm: cp.res};
     const anti = simAntipadVia(v);
     if(anti){
       out.antipad_diameter = anti.min;
@@ -5244,7 +5273,13 @@ const SIM_PCB={
     }
     for(const v of S.vias){
       for(let l=v.a;l<=v.b;l++)pastilles.push({x:v.x,y:v.y,r:v.d/2,c:nom(l),n:v.net||""});
-      percages.push({x:v.x,y:v.y,d:v.drill,n:v.net||"",de:nom(v.a),a:nom(v.b)});
+      const t={x:v.x,y:v.y,d:v.drill,n:v.net||"",de:nom(v.a),a:nom(v.b)};
+      /* contre-perçage (01-core.js) : la face repercée, la couche à ne pas
+         couper et le moignon résiduel — la règle des moignons de vias y
+         arrête le moignon de ce côté */
+      const cp=typeof cpVia==="function"?cpVia(v):null;
+      if(cp&&!cp.faute)t.cp={cote:cp.cote,garde:nom(cp.garde),res:cp.res};
+      percages.push(t);
     }
     const plat=pts=>pts.flatMap(p=>[p.x,p.y]);
     const gelule=(x1,y1,x2,y2,r)=>{        // une piste droite élargie, 8 côtés

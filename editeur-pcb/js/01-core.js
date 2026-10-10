@@ -631,6 +631,17 @@ function stackResize(n){
     d.cu[0].t=old.cu[0].t;
     d.cu[d.cu.length-1].t=old.cu[old.cu.length-1].t;
   }
+  /* les règles de contre-perçage restent, leur couche à garder ramenée dans
+     la nouvelle pile */
+  if(old.cp&&old.cp.length)d.cp=cpNormRegles(old.cp,n);
+  /* la rugosité suit le cuivre comme son épaisseur — dessus et dessous ; les
+     options de simulation sont celles de la carte, elles restent */
+  if(old.cu.length){
+    if(old.cu[0].rug)d.cu[0].rug=Object.assign({},old.cu[0].rug);
+    const k=old.cu.length-1;
+    if(old.cu[k].rug)d.cu[d.cu.length-1].rug=Object.assign({},old.cu[k].rug);
+  }
+  if(old.sim)d.sim=Object.assign({},old.sim);
   S.stack=d;
   stackFit();
 }
@@ -638,7 +649,13 @@ function applyPreset(p){
   if(!p||p.n!==S.cu)return false;
   const st=S.stack;
   st.target=p.th;
-  for(let i=0;i<S.cu;i++)st.cu[i]={t:r4((p.cu[i]||35)/1000)};
+  /* un modèle d'usine fixe les épaisseurs ; la rugosité, traitement du
+     feuillard, n'en dépend pas et reste */
+  for(let i=0;i<S.cu;i++){
+    const rug=st.cu[i]&&st.cu[i].rug;
+    st.cu[i]={t:r4((p.cu[i]||35)/1000)};
+    if(rug)st.cu[i].rug=rug;
+  }
   for(let i=0;i<diCount(S.cu);i++)st.di[i]=diFrom(p.di[i]||p.di[p.di.length-1]);
   return true;
 }
@@ -665,6 +682,284 @@ function umLabel(t){return fmt(t*1000,(t*1000)<100?1:0)+" µm";}
 function ozLabel(t){
   const o=t/OZ, r=Math.round(o*2)/2;
   return (Math.abs(o-r)<0.06?fmt(r,r%1?1:0):fmt(o,2))+" oz";
+}
+
+/* ==========================================================================
+   Rugosité du cuivre et modèles de simulation
+   Le feuillard électrodéposé est rugueux : ses dents — un à deux micromètres
+   sur un cuivre standard — sont de l'ordre de la profondeur de peau dès le
+   gigahertz (2,1 µm à 1 GHz, 0,66 µm à 10 GHz), le courant suit le relief et
+   la perte du conducteur monte, jusqu'à doubler. Le solveur sait la compter
+   (`ligne_mom.facteur_rugosite`) ; il lui faut la rugosité de chaque cuivre.
+
+   `S.stack.cu[i].rug` = {m, rms, a, sr} : le modèle (« hammerstad » lit la
+   rugosité RMS Rq, « huray » le rayon des nodules et leur rapport de
+   surface), les longueurs EN MICROMÈTRES comme sur les fiches de cuivre.
+   Absente, rien ne change : K = 1, et le document ne l'écrit pas.
+
+   `S.stack.sim` = {causal, fref, via} : les choix de modèle de la carte, qui
+   voyagent avec l'empilage jusqu'à la simulation, la RF et l'œil. Absent,
+   le défaut : Dk et Df constants, via « auto » (π tant qu'il est court).
+   ========================================================================== */
+const RUG_MODELES={hammerstad:"Hammerstad-Groiss (Rq)",huray:"Huray (nodules)"};
+/* Les ordres de grandeur des fiches de feuillard (Rq ≈ Rz / 4 à 6) : standard
+   ED 1,5–2,5 µm, traité inversé ~1 µm, VLP 0,4–0,8, HVLP 0,1–0,4. Les deux
+   Huray donnent, à 10 GHz, ~70 % et ~15 % de perte de cuivre en plus — ce
+   que les fabricants annoncent pour ces deux classes. */
+const RUG_PRESETS=[
+  {id:"lisse",n:"Lisse — aucune rugosité",m:"hammerstad",rms:0},
+  {id:"std",n:"ED standard (STD) — Rq 2 µm",m:"hammerstad",rms:2},
+  {id:"rtf",n:"Traité inversé (RTF) — Rq 1 µm",m:"hammerstad",rms:1},
+  {id:"vlp",n:"VLP — Rq 0,6 µm",m:"hammerstad",rms:0.6},
+  {id:"hvlp",n:"HVLP — Rq 0,3 µm",m:"hammerstad",rms:0.3},
+  {id:"hu-std",n:"Huray · ED standard — a 0,5 µm, SR 1,5",m:"huray",a:0.5,sr:1.5},
+  {id:"hu-hvlp",n:"Huray · HVLP — a 0,3 µm, SR 0,6",m:"huray",a:0.3,sr:0.6}
+];
+const SIM_MODELES_VIA={pi:"π (C/2 – L – C/2)",ligne:"Ligne (barreau réparti)",
+                       auto:"Auto (ligne si le via est long devant λ)"};
+const SIM_FREF_DEFAUT=1e9;          // Hz : la fréquence des fiches de FR-4
+/* « auto », comme le serveur (`MODELE_VIA_DEFAUT`) : le π tant que le via est
+   court devant λ, au bit près, la ligne au-delà. */
+const SIM_VIA_DEFAUT="auto";
+/* Une rugosité lisible, ou null quand elle ne compte pas : c'est cette
+   fonction qui décide de ce qui s'écrit dans le document. */
+function rugNorm(o){
+  if(!o||typeof o!=="object")return null;
+  const n=(v,a,b)=>{const x=+v;return Number.isFinite(x)?clamp(x,a,b):0;};
+  const m=RUG_MODELES[o.m]?o.m:"hammerstad";
+  if(m==="huray"){
+    const a=n(o.a,0,50), sr=n(o.sr,0,20);
+    return (a>0&&sr>0)?{m:"huray",a:r4(a),sr:r4(sr)}:null;
+  }
+  const rms=n(o.rms,0,50);
+  return rms>0?{m:"hammerstad",rms:r4(rms)}:null;
+}
+function cuRug(i){
+  const c=S.stack&&S.stack.cu[i];
+  return c&&c.rug?rugNorm(c.rug):null;
+}
+/* poser (ou retirer, avec null) la rugosité d'un cuivre */
+function setCuRug(i,o){
+  const c=S.stack&&S.stack.cu[i];
+  if(!c)return;
+  const r=rugNorm(o);
+  if(r)c.rug=r;else delete c.rug;
+}
+function rugLabel(r){
+  if(!r)return "lisse";
+  return r.m==="huray"?"Huray a "+fmt(r.a,2)+" µm · SR "+fmt(r.sr,2)
+                      :"Rq "+fmt(r.rms,2)+" µm";
+}
+/* Les options de modèle, défauts compris. */
+function simModeles(){
+  const s=(S.stack&&S.stack.sim)||{};
+  return {causal:s.causal===true,
+          fref:(+s.fref>0)?+s.fref:SIM_FREF_DEFAUT,
+          via:SIM_MODELES_VIA[s.via]?s.via:SIM_VIA_DEFAUT};
+}
+/* Ce qui s'écrit : seulement ce qui s'écarte du défaut. */
+function simModelesNorm(o){
+  if(!o||typeof o!=="object")return null;
+  const out={};
+  if(o.causal===true)out.causal=true;
+  const f=+o.fref;
+  if(Number.isFinite(f)&&f>=1e6&&f<=1e12&&f!==SIM_FREF_DEFAUT)out.fref=f;
+  if(SIM_MODELES_VIA[o.via]&&o.via!==SIM_VIA_DEFAUT)out.via=o.via;
+  return Object.keys(out).length?out:null;
+}
+function setSimModeles(o){
+  const r=simModelesNorm(Object.assign({},simModeles(),o||{}));
+  if(r)S.stack.sim=r;else delete S.stack.sim;
+}
+
+/* ==========================================================================
+   Contre-perçage (back-drill)
+   Un via traversant dont le signal n'emprunte que L1 → L3 laisse pendre le
+   fût de L3 jusqu'au dessous : un moignon, qui charge la ligne et résonne au
+   quart d'onde. Le contre-perçage le retire une fois le trou métallisé : un
+   foret un peu plus gros repasse depuis une face, à profondeur contrôlée, et
+   s'arrête juste avant la couche à ne pas couper (« must-not-cut layer ») —
+   il ne reste qu'un moignon résiduel, de 0,1 à 0,25 mm selon la tolérance de
+   profondeur du fabricant.
+
+   Les règles vivent dans l'empilage (`S.stack.cp`), parce que c'est le
+   fabricant qui perce : de quelle face on repasse, la couche à garder (ou
+   « auto » : la dernière couche où le signal entre, via par via), de combien
+   le foret dépasse le perçage du via (surperçage) et le moignon résiduel
+   admis. Une règle s'applique à un via, à un net ou à une classe : le via
+   d'abord (panneau Propriétés, `v.cp`), puis le net, puis sa classe (champ
+   `cp` du gestionnaire de contraintes) ; « non » arrête l'héritage.
+
+     {id:"cp1", cote:"dessous"|"dessus", garde:k (0 … n−1) ou −1 (auto),
+      sur:0,25 (mm), res:0,15 (mm)}
+
+   Sans règle, rien ne change : `cpVia` rend null, et chaque calcul de
+   moignon — topologie, DRC, simulation, vérification de la carte — rend ce
+   qu'il rendait.
+   ========================================================================== */
+const CP_SUR=0.25, CP_RES=0.15;     // mm : surperçage et moignon résiduel d'usage
+const CP_COTES={dessous:"depuis le dessous",dessus:"depuis le dessus"};
+function cpNormRegles(src,cu){
+  const out=[], ids=new Set();
+  const num=(v,d,a,b)=>{const x=+v;return v!=null&&v!==""&&Number.isFinite(x)?clamp(x,a,b):d;};
+  for(const o of (Array.isArray(src)?src:[]).slice(0,64)){
+    if(!o||typeof o!=="object")continue;
+    let id=String(o.id==null?"":o.id).trim();
+    if(!/^[A-Za-z0-9_-]{1,24}$/.test(id)||id==="non"||ids.has(id)){
+      let k=1;while(ids.has("cp"+k))k++;id="cp"+k;
+    }
+    ids.add(id);
+    const cote=o.cote==="dessus"?"dessus":"dessous";
+    let g=Math.round(+o.garde);
+    /* la couche à garder ne peut pas être la face d'où l'on repasse */
+    if(o.garde==null||o.garde===""||!Number.isFinite(g)||g<0)g=-1;
+    else g=cote==="dessous"?clamp(g,0,Math.max(0,cu-2)):clamp(g,Math.min(1,cu-1),cu-1);
+    out.push({id,cote,garde:g,sur:r3(num(o.sur,CP_SUR,0,2)),res:r3(num(o.res,CP_RES,0,1))});
+  }
+  return out;
+}
+function cpRegles(){return (S.stack&&S.stack.cp)||[];}
+function cpRegle(id){return cpRegles().find(r=>r.id===id)||null;}
+function cpNomCouche(i){return "L"+(i+1);}
+/* la couche dans le nom d'un fichier, comme KiCad : F, B, In1, In2… */
+function cpCoucheFichier(i){return i===0?"F":(i===S.cu-1?"B":"In"+i);}
+function cpLibelle(r){
+  return r.id+" · "+CP_COTES[r.cote]+", "+(r.garde<0?"garde la dernière couche empruntée":
+    "garde "+cpNomCouche(r.garde))+" · Ø +"+fmt(r.sur,2)+" · moignon "+fmt(r.res,2)+" mm";
+}
+/* La règle qui vaut pour un via, et d'où elle vient. */
+function cpRegleVia(v){
+  if(!v||!cpRegles().length||v.cp==="non")return null;
+  if(v.cp){const r=cpRegle(v.cp);if(r)return {r,src:"via"};}
+  if(!v.net)return null;
+  const C=S.contraintes||{}, cl=classOf(v.net).name;
+  const de=(t,src)=>t&&t.cp?{x:t.cp,src}:null;
+  const p=de((C.nets||{})[v.net],"net")||de(((C.schema||{}).nets||{})[v.net],"schéma")||
+          de((C.classes||{})[cl],"classe");
+  if(!p||p.x==="non")return null;
+  const r=cpRegle(p.x);
+  return r?{r,src:p.src}:null;
+}
+/* Les couches où le signal entre dans le via : celles des pistes que
+   `linkSync` (25-liens.js) accroche au via, celle d'une pastille CMS du net
+   posée dessus, et celles où une zone du net touche le fût — cuivre plein
+   autour du perçage, liaison directe ou thermique, comme la connectivité
+   (02-connectivity.js, `viaZones`) relie un via à une zone. Une zone qui ne
+   fait que passer, le via pris dans un dégagement ou une découpe, ne compte
+   pas. Une passe pour toute la carte, gardée tant qu'elle ne change pas — ni
+   la carte, ni le remplissage des zones, qu'une grande carte n'affine
+   qu'après coup. */
+let cpCache={ver:-1,m:null,c:null,z:null};
+function cpCouchesEmpruntees(v){
+  const C=typeof conn==="function"&&S.zones.length?conn():null;
+  if(cpCache.ver!==S.ver||!cpCache.m||cpCache.c!==C){
+    if(typeof linkSync==="function")linkSync();
+    const m=new Map(), z=new Map();
+    const add=(id,l)=>{let s=m.get(id);if(!s)m.set(id,s=new Set());s.add(l);};
+    for(const t of S.tracks)
+      for(const e of [1,2]){const k=t["a"+e];if(k&&k.v!=null)add(k.v,t.l);}
+    const parNet=new Map();
+    for(const fp of S.fps)
+      for(const q of padsWorld(fp)){
+        if(q.drill>0||!q.net)continue;
+        if(!parNet.has(q.net))parNet.set(q.net,[]);
+        parNet.get(q.net).push({fp,q});
+      }
+    for(const w of S.vias){
+      if(!w.net||w.id==null)continue;
+      for(const p of parNet.get(w.net)||[]){
+        const l=padLayers(p.fp,p.q)[0];
+        if(l<Math.min(w.a,w.b)||l>Math.max(w.a,w.b))continue;
+        if(typeof padHolds==="function"?padHolds(p.fp,p.q,l,w.x,w.y)
+                                       :dist(w.x,w.y,p.q.x,p.q.y)<Math.min(p.q.w,p.q.h)/2)
+          add(w.id,l);
+      }
+    }
+    if(C&&C.viaZones)
+      for(const [w,ls] of C.viaZones){
+        if(w.id==null)continue;
+        for(const l of ls){
+          add(w.id,l);
+          let s=z.get(w.id);if(!s)z.set(w.id,s=new Set());s.add(l);
+        }
+      }
+    cpCache={ver:S.ver,m,c:C,z};
+  }
+  return cpCache.m.get(v.id)||new Set();
+}
+/* Parmi elles, celles qu'une zone apporte : le message de faute les nomme. */
+function cpCouchesZones(v){
+  cpCouchesEmpruntees(v);
+  return (cpCache.z&&cpCache.z.get(v.id))||new Set();
+}
+/* Le contre-perçage d'un via : null s'il n'en a pas, sinon de quel côté,
+   jusqu'où et ce qu'il laisse. Les cotes se comptent depuis le dessus du
+   stratifié nu, comme `stackSpan` ; le moignon, comme dans 31-topologie.js,
+   du dessous (ou du dessus) du cuivre emprunté jusqu'au bout du fût.
+     garde    la couche à ne pas couper (résolue quand la règle dit « auto »)
+     diam     diamètre du foret : perçage du via + surperçage
+     prof     profondeur depuis la face percée
+     coupees  les couches que le foret traverse
+     moignon0 le moignon de ce côté sans contre-perçage ; moignon, ce qu'il en reste
+     faute    pourquoi ce perçage ne peut pas se faire tel quel ("" sinon) —
+              les calculs de moignon gardent alors le moignon entier */
+function cpVia(v){
+  const R=cpRegleVia(v);
+  if(!R)return null;
+  const r=R.r, n=S.cu, a=Math.min(v.a,v.b), b=Math.max(v.a,v.b), bas=r.cote==="dessous";
+  if(bas?b!==n-1:a!==0)return null;          // le via n'atteint pas la face d'où l'on repasse
+  const used=[...cpCouchesEmpruntees(v)].filter(l=>l>=a&&l<=b);
+  let g=r.garde;
+  if(g<0){
+    if(!used.length)return null;             // via de couture ou en l'air : rien à garder
+    g=bas?Math.max(...used):Math.min(...used);
+  }
+  g=clamp(g,a,b);
+  if(bas?g>=b:g<=a)return null;              // le signal sort sur la face même : pas de moignon
+  const zh=i=>stackSpan(0,i)-cuT(i), zb=i=>stackSpan(0,i);     // dessus, dessous du cuivre i
+  const pointe=bas?zb(g)+r.res:zh(g)-r.res;
+  const o={v,regle:r,src:R.src,cote:r.cote,garde:g,auto:r.garde<0,
+           diam:r3(v.drill+r.sur),res:r.res,
+           prof:r4(bas?stackLam()-pointe:pointe),coupees:[],faute:""};
+  for(let i=bas?g+1:a;i<=(bas?b:g-1);i++)o.coupees.push(i);
+  const u=used.length?(bas?Math.max(...used):Math.min(...used)):g;
+  o.moignon0=r4(Math.max(0,bas?stackSpan(u,b)-cuT(u):stackSpan(a,u)-cuT(u)));
+  o.moignon=r4(Math.min(o.moignon0,Math.max(0,bas?pointe-zb(u):zh(u)-pointe)));
+  const tranche=used.filter(l=>bas?l>g:l<g);
+  const di=diAt(bas?g:g-1).t;
+  const parZone=cpCouchesZones(v);
+  if(tranche.length)
+    o.faute="le foret couperait "+tranche.map(l=>cpNomCouche(l)+(parZone.has(l)?" (zone "+v.net+")":""))
+      .join(", ")+", où le signal entre";
+  else if(r.res>=di)
+    o.faute="moignon résiduel de "+fmt(r.res,2)+" mm pour "+fmt(di,3)+" mm de diélectrique "+
+      (bas?"sous ":"sur ")+cpNomCouche(g)+" : "+cpNomCouche(bas?g+1:g-1)+" resterait reliée au fût";
+  else if(!(o.prof>0))o.faute="profondeur nulle";
+  return o;
+}
+/* Tous les vias contre-percés de la carte, fautifs compris. */
+function cpViasPerces(){
+  if(!cpRegles().length)return [];
+  const out=[];
+  for(const v of S.vias){const c=cpVia(v);if(c)out.push(c);}
+  return out;
+}
+/* Les passes de fabrication : une par face et par couche à garder, comme
+   KiCad et Altium sortent leurs fichiers ; dans chacune, un outil par
+   diamètre et par profondeur. Les vias fautifs n'y vont pas. */
+function cpPaires(){
+  const g=new Map();
+  for(const c of cpViasPerces()){
+    if(c.faute)continue;
+    const k=c.cote+"|"+c.garde;
+    let e=g.get(k);
+    if(!e)g.set(k,e={cote:c.cote,garde:c.garde,outils:new Map(),n:0,res:0});
+    const ko=fmt(c.diam,3)+"|"+fmt(c.prof,3);
+    if(!e.outils.has(ko))e.outils.set(ko,{diam:c.diam,prof:c.prof,res:c.res,pts:[]});
+    e.outils.get(ko).pts.push({x:c.v.x,y:c.v.y});
+    e.n++;e.res=Math.max(e.res,c.res);
+  }
+  return [...g.values()].sort((p,q)=>(p.cote<q.cote?-1:p.cote>q.cote?1:0)||(p.garde-q.garde));
 }
 
 /* ==========================================================================

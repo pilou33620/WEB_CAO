@@ -227,6 +227,8 @@ function transformFps(ids,mutate,opts){
       const A=mv({x:o.x1,y:o.y1},k), B=mv({x:o.x2,y:o.y2},k);
       o.t.x1=A.x;o.t.y1=A.y;o.t.x2=B.x;o.t.y2=B.y;
     }
+    // un groupe en miroir : son cuivre passe sur la couche miroir (`27-groupes.js`)
+    if(opts&&opts.miroir&&opts.miroir.ids)groupeCouches(opts.miroir.ids,false);
     applyFollow(F,0,0,false);
     const sh=F.shove;
     S.dragShove=null;
@@ -572,12 +574,14 @@ function dragRotFix(alt){
     const P=mv({x:o.x,y:o.y},drag.fanout.get(o.v));
     o.v.x=P.x;o.v.y=P.y;
   }
+  // un groupe retourné (F) : la couche miroir pour son cuivre (`27-groupes.js`)
+  if(drag.mir)groupeCouches(drag.mir,alt);
 }
 function dragRotate(sens){
   if(typeof drag==="undefined"||!drag||!drag.move||!S.sel.fps.size)return false;
   if(!drag.moved){push();drag.moved=true;beginMove();}
   fpsTourner([...S.sel.fps],sens);
-  drag.rotN=(drag.rotN||0)+sens;
+  (drag.gestes||(drag.gestes=[])).push(sens);
   drag.rot=true;
   dragRotFix();
   applyJoints(drag.joints,drag.dx,drag.dy,false);
@@ -614,21 +618,28 @@ function dragSelRestore(st){
 }
 /* Rejouer le geste en cours sous une autre conduite : retour à l'instantané
    d'avant le geste (celui que `push` a pris au premier mouvement), même
-   sélection, puis le même chemin — décalage et quarts de tour. */
+   sélection, puis le même chemin — décalage, quarts de tour, retournements. */
 function dragRestart(){
   if(!drag||!drag.move||!drag.moved||!S.undo.length)return;
-  const st=drag.selSnap, dx=drag.dx, dy=drag.dy, rn=drag.rotN||0, mx=drag.x, my=drag.y;
+  const st=drag.selSnap, dx=drag.dx, dy=drag.dy, mx=drag.x, my=drag.y;
   if(drag.follow)S.dragShove=null;
   loadDoc(JSON.parse(S.undo[S.undo.length-1]),true);
   dragSelRestore(st);
-  drag.dx=0;drag.dy=0;drag.rot=false;
+  drag.dx=0;drag.dy=0;drag.rot=false;drag.mir=null;
   beginMove();
   if(dx||dy)dragMoveBy(dx,dy,false);
   drag.x=mx;drag.y=my;
-  if(rn%4){
-    for(let i=0;i<Math.abs(rn);i++)fpsTourner([...S.sel.fps],Math.sign(rn));
-    drag.rotN=rn;
-    drag.rot=true;
+  /* quarts de tour et retournements (F, `27-groupes.js`) dans leur ordre : le
+     miroir d'un groupe ne commute pas avec un quart de tour */
+  let rn=0;
+  const tourner=()=>{
+    for(let i=0;i<Math.abs(rn%4);i++)fpsTourner([...S.sel.fps],Math.sign(rn));
+    if(rn%4)drag.rot=true;
+    rn=0;
+  };
+  for(const g of (drag.gestes||[]))if(g==="F"){tourner();dragRetournerPas();}else rn+=g;
+  tourner();
+  if(drag.rot){
     dragRotFix();
     applyJoints(drag.joints,drag.dx,drag.dy,false);
     applyFollow(drag.follow,drag.dx,drag.dy,false);

@@ -2471,10 +2471,43 @@ def _graphe_topo(segs):
 # garde sous λ/20 au genou (λ/10 pour condamner) -- il résonne alors cinq fois
 # plus haut que le genou. La portée percée vient du document (`de`, `a` d'un
 # perçage) ; absente, le via est SUPPOSÉ traversant, et le message le dit.
+# Un via CONTRE-PERCÉ (`cp` du perçage : face, couche gardée, moignon
+# résiduel) ne garde de ce côté que le bout entre la couche empruntée et la
+# pointe du foret (`_contre_percage`) ; sans `cp`, rien ne change.
 # Les couches empruntées : celles où une piste du net arrive dans le via. Une
 # broche traversante de composant n'est pas un via de routage : pas jugée.
 # Une ligne par net, sur le pire via.
 # ==========================================================================
+
+def _contre_percage(cp, rang, couches, z, vlo, vhi, ulo, uhi):
+    """Le bout de perçage qu'un contre-perçage laisse, ou None.
+
+    `cp` vient du perçage : {cote : "dessous" | "dessus", garde : le nom de la
+    couche de cuivre à ne pas couper, res : le moignon résiduel en mm}. Le
+    foret repassé s'arrête à `res` sous (ou sur) la couche gardée : le moignon
+    de ce côté va de la couche empruntée à sa pointe, jamais plus loin
+    qu'avant. Rend (0 pour le haut, 1 pour le bas ; (L, i1, i2)) comme
+    `bouts_`. Un contre-perçage qui couperait une couche empruntée, ou dont la
+    couche n'est pas dans l'empilage, n'est pas appliqué : sans lui, rien ne
+    change."""
+    if not isinstance(cp, dict):
+        return None
+    g = rang.get(cp.get("garde"))
+    try:
+        res = max(0.0, float(cp.get("res") or 0))
+    except (TypeError, ValueError):
+        return None
+    if g is None:
+        return None
+    demi = float(couches[g].get("thickness") or 0) / 2
+    if cp.get("cote") == "dessous" and uhi <= g < vhi:
+        pointe = min(z[g] + demi + res, z[vhi])
+        return 1, (max(0.0, min(z[vhi] - z[uhi], pointe - z[uhi])), uhi, min(g + 1, vhi))
+    if cp.get("cote") == "dessus" and vlo < g <= ulo:
+        pointe = max(z[g] - demi - res, z[vlo])
+        return 0, (max(0.0, min(z[ulo] - z[vlo], z[ulo] - pointe)), max(g - 1, vlo), ulo)
+    return None
+
 
 def moignons_vias(doc, couches, reg, unite, troncons):
     rang = _rangs(couches)
@@ -2517,6 +2550,9 @@ def moignons_vias(doc, couches, reg, unite, troncons):
         vlo, vhi = (cu[0], cu[-1]) if suppose else sorted((de, a))
         ulo, uhi = min(pris), max(pris)
         bouts_ = [(z[ulo] - z[vlo], vlo, ulo), (z[vhi] - z[uhi], uhi, vhi)]
+        perce = _contre_percage(t.get("cp"), rang, couches, z, vlo, vhi, ulo, uhi)
+        if perce:
+            bouts_[perce[0]] = perce[1]
         L, i1, i2 = max(bouts_)
         if L <= 0.05:
             continue
@@ -2536,7 +2572,9 @@ def moignons_vias(doc, couches, reg, unite, troncons):
              "msg": "Moignon de %.2f mm (%s → %s inemprunté), résonance au quart d'onde à %s%s"
                     % (L, couches[i1].get("name"), couches[i2].get("name"), _hz(f_res),
                        " ; perçage supposé traversant (portée absente du document)"
-                       if suppose else "")}
+                       if suppose else "")
+                    + (" ; contre-percé par %s" % ("dessous" if perce[0] else "dessus")
+                       if perce else "")}
         poids = (("ok", "vigilance", "critique").index(sev), L)
         p0 = pires.get(n)
         if p0 is None:

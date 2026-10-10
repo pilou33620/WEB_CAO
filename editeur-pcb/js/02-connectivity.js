@@ -86,6 +86,14 @@ function zoneMask(l,net){
     if(S.zones.indexOf(z)<S.zones.indexOf(zs[0]))continue;
     c.beginPath();zonePath(c,z);c.fill("evenodd");
   }
+  /* les découpes de zone retirent le cuivre, comme à l'écran (`zoneCanvas`) :
+     un via posé dans une découpe n'est pas relié au plan qui l'entoure */
+  for(const ct of S.cuts){
+    if(ct.l!==l||ct.pts.length<3)continue;
+    c.beginPath();c.moveTo(ct.pts[0].x,ct.pts[0].y);
+    for(let k=1;k<ct.pts.length;k++)c.lineTo(ct.pts[k].x,ct.pts[k].y);
+    c.closePath();c.fill();
+  }
   c.strokeStyle="#000";c.fillStyle="#000";c.lineCap="round";c.lineJoin="round";
   for(const t of S.tracks){
     if(t.l!==l||t.net===net)continue;
@@ -256,6 +264,12 @@ function computeConn(exact){
      de cuivre qui le touche vraiment. Un faisceau de pistes qui coupe un plan
      en deux le sépare donc bel et bien en deux nets distincts. */
   const zoneIslands=[];
+  /* Les couches où un via touche le cuivre d'une zone de son net : le
+     contre-perçage (01-core.js, `cpCouchesEmpruntees`) les compte comme des
+     couches où le signal entre. Relevé ici, avec ce qui relie le via à la
+     zone, pour qu'un via et le DRC ne voient jamais deux cuivres différents. */
+  const viaZones=new Map();
+  const viaZone=(v,l)=>{let s=viaZones.get(v);if(!s)viaZones.set(v,s=new Set());s.add(l);};
   for(const g of zoneGroups()){
     const M=exact?zoneMask(g.l,g.net):null;
     const seen=new Set();
@@ -269,7 +283,10 @@ function computeConn(exact){
       for(const p of padNodes)
         if(p.q.net===g.net&&p.layers.includes(g.l)&&g.zs.some(z=>inPoly(p.q.x,p.q.y,z.pts)))uni(p.k,zk);
       S.vias.forEach((v,i)=>{
-        if(v.net===g.net&&g.l>=v.a&&g.l<=v.b&&g.zs.some(z=>inPoly(v.x,v.y,z.pts)))uni("V"+i,zk);
+        if(v.net===g.net&&g.l>=v.a&&g.l<=v.b&&g.zs.some(z=>inPoly(v.x,v.y,z.pts))){
+          uni("V"+i,zk);
+          if(viaCuivreZone(v,g.l,g.net))viaZone(v,g.l);
+        }
       });
       S.tracks.forEach((t,i)=>{
         if(t.l===g.l&&t.net===g.net&&
@@ -286,7 +303,9 @@ function computeConn(exact){
     }
     S.vias.forEach((v,i)=>{
       if(v.net!==g.net||g.l<v.a||g.l>v.b)return;
-      link("V"+i,maskLabels(M,v.x,v.y,v.drill/2+0.25,0));
+      const labs=maskLabels(M,v.x,v.y,v.drill/2+0.25,0);
+      link("V"+i,labs);
+      if(labs.length)viaZone(v,g.l);
     });
     S.tracks.forEach((t,i)=>{
       if(t.l!==g.l||t.net!==g.net)return;
@@ -335,8 +354,33 @@ function computeConn(exact){
       }
     }
   }
-  return {find,rats,nets,unrouted,padNodes,near,zoneIslands,
+  return {find,rats,nets,unrouted,padNodes,near,zoneIslands,viaZones,
           approx:!exact&&zoneGroups().length>0};
+}
+/* Le cuivre d'une zone du net `net` au point (x, y) de la couche l, sans
+   rasterisation : la zone du dessus à cet endroit (l'ordre de peinture), hors
+   des découpes et des trous d'une zone au cuivre du fichier. C'est le repli
+   de `computeConn` quand le remplissage n'est pas calculé. */
+function zoneCuivreEn(l,net,x,y){
+  const z=zoneAt(l,x,y);
+  if(!z||(z.net||"")!==net)return false;
+  if(S.cuts.some(c=>c.l===l&&c.pts.length>2&&inPoly(x,y,c.pts)))return false;
+  if(zoneFichier(z)&&Array.isArray(z.trous)&&
+     z.trous.some(t=>t&&t.length>=3&&inPoly(x,y,t)))return false;
+  return true;
+}
+/* Un via touche-t-il le cuivre de la zone, sans rasterisation ? Mêmes points
+   que `maskLabels` : le centre, et une couronne juste au-delà du perçage — là
+   où une liaison directe ou les bras d'une liaison thermique rejoignent le
+   plan. Un via pris dans un dégagement n'en touche aucun. */
+function viaCuivreZone(v,l,net){
+  if(zoneCuivreEn(l,net,v.x,v.y))return true;
+  const r=v.drill/2+0.25;
+  for(let k=0;k<8;k++){
+    const a=k*Math.PI/4;
+    if(zoneCuivreEn(l,net,v.x+Math.cos(a)*r,v.y+Math.sin(a)*r))return true;
+  }
+  return false;
 }
 function netAtPoint(x,y,layer){
   for(const fp of S.fps)
@@ -739,6 +783,13 @@ function runDrc(){
       out.push({info:true,via:v,x:v.x,y:v.y,l:v.a,
         msg:"Via "+cuId(v.a,S.cu)+" → "+cuId(v.b,S.cu)+" : "+b.why});
   }
+  /* le contre-perçage qui ne peut pas se faire tel quel : il couperait le
+     signal, ou laisserait une couche reliée au fût (01-core.js, `cpVia`) */
+  if(typeof cpViasPerces==="function")
+    for(const c of cpViasPerces())
+      if(c.faute)out.push({via:c.v,x:c.v.x,y:c.v.y,l:c.garde,
+        msg:"Contre-perçage "+c.regle.id+" du via "+(c.v.net||"sans net")+" ("+CP_COTES[c.cote]+
+            ", "+cpNomCouche(c.garde)+" gardée) : "+c.faute});
   /* les pastilles traversantes se regroupent par diamètre de perçage : une
      entrée par trou noierait la liste sur un connecteur */
   const byDrill=new Map();

@@ -391,10 +391,23 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simRfZ","simRfExclure","simRfImporter","simRfOublierModele","simRfBroche",
   "simRfValeurSI","trkAt","simRfMasque",
   /* les liens des bouts de piste, et la transformation des boîtiers */
-  "transformFps","linkSync","fpXformInv","groupeEtendreSel","pcbAppliquerDefEmpreinte","padDist","updateRoute","hitTest",
+  "transformFps","linkSync","fpXformInv","groupeEtendreSel","groupeCadre","groupeCuivre","pcbAppliquerDefEmpreinte","padDist","updateRoute","hitTest",
   /* plans de fabrication et d'assemblage (29-draftsman.js) */
   "dfCfg","dfRegler","dfDocument","dfPdf","dfPdfOctets","dfChercher","dfSvg","dfWinAnsi","dfPdfLit",
   "dfLargeur","dfCouper","dfPercages","dfVue","dfOuvrir","dfFermer","dfExporter","DF_FORMATS","DF","dfImpedances",
+  /* export DXF et fonte embarquée (33-draftsman-export.js) */
+  "dxfCarte","dxfFeuilles","dxfFichiers","dxfSegments","dxfExporterCarte","dxfExporterFeuille","dfxCadre",
+  "dfCalque","dfFontePreparer","dffFonte","dffLire","dffBase64","dffGlyphes","DFF_CACHE","DF_FONTE_TTF","dfZone",
+  "dfLigne",
+  /* cotes à la main, vues à la souris, détails (34-draftsman-vues.js) */
+  "dfNormCotes","dfNormVues","dfNormDetails","dfResoudre","dfMesurer","dfAccroches","dfAccrocher",
+  "dfAjouterCote","dfModifierCote","dfSupprimerCote","dfDeplacerCote","dfAjouterDetail","dfSupprimerDetail",
+  "dfPlacerVue","dfReplacer","dfBoiteVue","dfBoiteItems","dfVersFeuille","dfDansPoly","dfCoupeLigne",
+  "dfCoupePoly","dfClicFeuille","dfGlisser","dfLacher","dfToucher","dfChoisirOutil","dfOutilsTouche","dfSurSvg",
+  "dfOublierCarte","DF_ROUGE","DF_GRILLE",
+  /* cote angulaire, chaînes, ordonnées, tolérances, vues qui s'écartent */
+  "dfNormTol","dfAngle","dfTolerer","dfPoserVueRepousser","dfPlaceProche","dfValeurCote","dfEditerTolerance",
+  "dfCoteEnCours","dfApercuCote","dfRendreListeCotes","DF_COTES","DF_TOL","dfBoitePts",
   /* gestionnaire de contraintes (01-core.js pour le modèle, 30-contraintes.js) */
   "cmNorm","cmCle","cmClrClasses","cmClrMax","cmMesures","cmRegleDe","cmVerifier","cmEvaluerGroupe",
   "cmManqueLongueur","cmLargeurPourZ","cmDrc","cmEdit","cmPoser","cmPoserPhysique","cmPoserMatrice",
@@ -402,6 +415,13 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "cmAppliquerLargeurZ","CM","CM_ONGLETS","className","classWidth","cmPoserLargeurCouche","normClass","routeVia",
   /* topologie et moignons (31-topologie.js) */
   "topoGraphe","topoAnalyser","topoVerifier","topoResume","topoMoignonsVias","TOPO_FORMES","stackSpan","cuT",
+  /* contre-perçage (01-core.js, 06-panels.js, 04-fabrication.js) */
+  "cpNormRegles","cpRegles","cpRegle","cpRegleVia","cpVia","cpViasPerces","cpPaires","cpExcellon",
+  "cpGerberX2","cpCouchesEmpruntees","cpCouchesZones","zoneCuivreEn","viaCuivreZone","zoneSig","gXY",
+  "cpAjouter","cpModifier","cpSupprimer","CP_SUR","cmHtmlTopologie",
+  /* rugosité du cuivre et options de modèle de la simulation (01-core.js) */
+  "rugNorm","cuRug","setCuRug","rugLabel","RUG_PRESETS","RUG_MODELES",
+  "simModeles","simModelesNorm","setSimModeles","SIM_MODELES_VIA","SIM_VIA_DEFAUT",
   "cmDepuisSchema","cmTousGroupes","cmResumeSchema","cmLireChamp","pcbAppliquerEco","pcbDetecterDisparitesEco","cmEcartSchema",
   /* rooms (32-rooms.js) */
   "roomsDepuisDoc","roomsListe","roomNomCourt","roomCouleur","roomAuLabel","roomEtiquette","roomsBasculer",
@@ -1979,6 +1999,243 @@ T("groupes : enregistrés, relus ; un membre effacé les défait ; Ctrl+Maj+G di
     if(S.groupes.length!==0)throw new Error("Ctrl+Maj+G dissout le groupe");
   }finally{suiviFin(D.reg);}
 });
+/* Retourner un groupe (F) : le miroir du groupe entier autour de l'axe
+   vertical de son cadre. Une puce tournée d'un quart de tour, une capa à 30°,
+   la piste coudée entre elles, le via de masse du groupe, et une piste qui
+   sort vers un via lointain. */
+function miroirDecor(){
+  const reg=suiviDecor();
+  const U=mkFp("U1","","SOIC-8",8);U.x=10;U.y=20;U.rot=90;
+  const C=mkFp("C1","100n","0603",2);C.x=18;C.y=24;C.rot=30;
+  S.fps.push(U,C);touch();
+  const pad=(f,n)=>padsWorld(f).find(q=>String(q.n)===String(n));
+  const u8=pad(U,8), u1=pad(U,1), c1=pad(C,1), c2=pad(C,2);
+  const gv={x:c2.x+2,y:c2.y+4,d:0.6,drill:0.3,a:0,b:S.cu-1,net:"GND"};
+  const loin={x:u1.x-10,y:u1.y,d:0.6,drill:0.3,a:0,b:S.cu-1,net:"S"};
+  S.vias.push(gv,loin);
+  const m={x:(u8.x+c1.x)/2,y:u8.y};
+  S.tracks.push({l:0,net:"N",w:0.3,x1:u8.x,y1:u8.y,x2:m.x,y2:m.y},
+                {l:0,net:"N",w:0.3,x1:m.x,y1:m.y,x2:c1.x,y2:c1.y},
+                {l:0,net:"GND",w:0.3,x1:c2.x,y1:c2.y,x2:gv.x,y2:gv.y},
+                {l:0,net:"S",w:0.3,x1:u1.x,y1:u1.y,x2:loin.x,y2:loin.y});
+  touch();
+  clearSel();S.sel.fps.add(U.id);S.sel.fps.add(C.id);S.sel.vias.add(gv);
+  key("g",{ctrlKey:true});
+  clearSel();
+  return {reg,U,C,pad,gv,loin};
+}
+// l'état de chaque boîtier et de ses pastilles, en coordonnées monde
+function miroirReleve(fps){
+  return fps.map(f=>({id:f.id,ref:f.ref,x:f.x,y:f.y,rot:f.rot||0,side:f.side||0,
+    ps:padsWorld(f).map(q=>({n:q.n,x:q.x,y:q.y,c:Math.cos(q.rot),s:Math.sin(q.rot)}))}));
+}
+function miroirVerifie(R,cx){
+  for(const o of R){
+    const f=fpById(o.id), r=((-o.rot%360)+360)%360;
+    if((f.side||0)===o.side)throw new Error(o.ref+" doit changer de face");
+    if(Math.abs(f.x-(2*cx-o.x))>2e-3||Math.abs(f.y-o.y)>2e-3)
+      throw new Error(o.ref+" : place hors miroir "+f.x+","+f.y+" (axe x="+cx+")");
+    if(Math.abs(f.rot-r)>1e-3)throw new Error(o.ref+" : rotation "+f.rot+" au lieu de "+r);
+    const ps=padsWorld(f);
+    for(const q0 of o.ps){
+      const q=ps.find(p=>p.n===q0.n);
+      if(Math.abs(q.x-(2*cx-q0.x))>2e-3||Math.abs(q.y-q0.y)>2e-3)
+        throw new Error(o.ref+"."+q0.n+" : pastille hors miroir "+q.x+","+q.y);
+      if(Math.abs(Math.cos(q.rot)-q0.c)>1e-9||Math.abs(Math.sin(q.rot)+q0.s)>1e-9)
+        throw new Error(o.ref+"."+q0.n+" : l'orientation de la pastille n'est pas le miroir");
+    }
+  }
+}
+// les bouts des pistes d'un net, éventuellement passés au miroir ; comparés au micron près
+function miroirBouts(net,cx){
+  const k=(x,y)=>({x:cx==null?x:2*cx-x,y});
+  return S.tracks.filter(t=>t.net===net).flatMap(t=>[k(t.x1,t.y1),k(t.x2,t.y2)]);
+}
+function memesBouts(a,b){
+  const pris=new Set();
+  return a.length===b.length&&a.every(p=>{
+    const i=b.findIndex((q,j)=>!pris.has(j)&&Math.abs(p.x-q.x)<2e-3&&Math.abs(p.y-q.y)<2e-3);
+    pris.add(i);
+    return i>=0;
+  });
+}
+T("groupes : F retourne le groupe en miroir de son axe, cuivre interne sur la couche miroir",()=>{
+  const D=miroirDecor();
+  try{
+    S.sel.fps.add(D.U.id);groupeEtendreSel();
+    const b=groupeCadre(S.groupes[0]), cx=(b.x1+b.x2)/2;
+    const R=miroirReleve([D.U,D.C]), N=miroirBouts("N",cx), G=miroirBouts("GND",cx), N0=miroirBouts("N");
+    const g0={x:D.gv.x,y:D.gv.y};
+    flipSel();
+    miroirVerifie(R,cx);
+    if(Math.abs(D.gv.x-(2*cx-g0.x))>2e-3||Math.abs(D.gv.y-g0.y)>2e-3)
+      throw new Error("le via du groupe passe au miroir : "+D.gv.x+","+D.gv.y);
+    const fond=S.cu-1;
+    for(const t of S.tracks.filter(t=>t.net==="N"||t.net==="GND"))
+      if(t.l!==fond)throw new Error("la piste interne passe sur la couche miroir : "+t.l);
+    if(!memesBouts(miroirBouts("N"),N)||!memesBouts(miroirBouts("GND"),G))
+      throw new Error("les pistes internes sont le miroir de celles d'avant");
+    // la piste qui sort suit la broche, et reste sur sa couche : jugée, marquée à re-router
+    const u1=D.pad(D.U,1);
+    relie("S",{x:u1.x,y:u1.y},{x:D.loin.x,y:D.loin.y});
+    if(!S.aRerouter.some(g=>/changé de face/.test(g.msg)))
+      throw new Error("la piste sortante, restée dessus, est marquée : "+JSON.stringify(S.aRerouter.map(g=>g.msg)));
+    // un seul Ctrl+Z défait le geste
+    undo();
+    const U=fpById(D.U.id), C=fpById(D.C.id);
+    if(U.side||U.rot!==90||U.x!==10||C.side||C.rot!==30||C.x!==18)
+      throw new Error("Ctrl+Z rend le groupe : "+[U.side,U.rot,U.x,C.side,C.rot,C.x].join(","));
+    if(S.tracks.some(t=>t.l!==0))throw new Error("Ctrl+Z rend les pistes à leur couche");
+    // deux miroirs : retour au point de départ
+    clearSel();S.sel.fps.add(U.id);groupeEtendreSel();
+    flipSel();flipSel();
+    if(Math.abs(U.x-10)>2e-3||Math.abs(C.x-18)>2e-3||U.side||C.side||U.rot!==90||C.rot!==30)
+      throw new Error("deux F rendent le groupe : "+[U.x,C.x,U.side,C.side,U.rot,C.rot].join(","));
+    if(S.tracks.some(t=>t.l!==0)||!memesBouts(miroirBouts("N"),N0))
+      throw new Error("deux F rendent les pistes");
+    undo();
+  }finally{undo();undo();suiviFin(D.reg);}
+});
+/* Composant hors groupe : il se retourne sur place, rotation gardée, comme
+   avant les groupes. */
+T("F sur un composant seul : retourné sur place, rotation et place inchangées",()=>{
+  const reg=suiviDecor();
+  const C=mkFp("C1","","0603",2);C.x=20;C.y=20;C.rot=90;S.fps.push(C);touch();
+  const p1=padsWorld(C).find(q=>q.n===1);
+  clearSel();S.sel.fps.add(C.id);
+  try{
+    flipSel();
+    if(C.side!==1||C.rot!==90||C.x!==20||C.y!==20)
+      throw new Error("sur place : "+[C.side,C.rot,C.x,C.y].join(","));
+    // dessous, le repère local est en miroir : la pastille 1 passe de l'autre côté du centre
+    const q1=padsWorld(C).find(q=>q.n===1);
+    if(Math.abs(q1.x-p1.x)>2e-3||Math.abs((q1.y-20)+(p1.y-20))>2e-3)
+      throw new Error("pastille 1 : "+q1.x+","+q1.y+" (avant "+p1.x+","+p1.y+")");
+  }finally{undo();suiviFin(reg);}
+});
+T("groupes : F en plein glissement, le miroir du groupe ; Maj+Espace le rejoue, un Ctrl+Z le défait",()=>{
+  const D=miroirDecor();
+  const avant=S.moveEtch;
+  try{
+    S.moveEtch="glisser";
+    const p=prise(D.C);
+    fire("pointerdown",sc(p.x,p.y));
+    fire("pointermove",sc(p.x+1,p.y+2));
+    if(!S.sel.fps.has(D.U.id))throw new Error("le clic sur la capa prend le groupe");
+    const b=groupeCadre(S.groupes[0]), cx=(b.x1+b.x2)/2;
+    const R=miroirReleve([D.U,D.C]), N=miroirBouts("N",cx);
+    key("f");
+    miroirVerifie(R,cx);
+    if(!memesBouts(miroirBouts("N"),N))throw new Error("la piste interne part au miroir avec le groupe");
+    // une autre conduite : le geste repart de l'état d'avant, décalage et F rejoués
+    key(" ",{shiftKey:true});
+    miroirVerifie(R,cx);
+    fire("pointerup",sc(p.x+1,p.y+2));
+    miroirVerifie(R,cx);
+    const fond=S.cu-1, gv=S.vias.find(v=>v.net==="GND");
+    for(const t of S.tracks.filter(t=>t.net==="N"||t.net==="GND"))
+      if(t.l!==fond)throw new Error("la piste interne passe sur la couche miroir : "+t.l);
+    const c2=padsWorld(fpById(D.C.id)).find(q=>q.n===2);
+    relie("GND",{x:c2.x,y:c2.y},{x:gv.x,y:gv.y});
+    undo();
+    const U=fpById(D.U.id), C=fpById(D.C.id);
+    if(U.side||U.x!==10||U.y!==20||C.side||C.rot!==30)
+      throw new Error("un seul Ctrl+Z défait glissement et miroir : "+[U.side,U.x,U.y,C.side,C.rot].join(","));
+  }finally{S.moveEtch=avant;undo();suiviFin(D.reg);}
+});
+/* « étirer » n'étire que ce qui va vers le reste de la carte : la piste tendue
+   entre deux membres d'un groupe part en bloc, sinon R ou F la décrochait du via. */
+T("étirer : la piste entre deux membres d'un groupe part en bloc, R et F compris",()=>{
+  const D=miroirDecor();
+  const avant=S.moveEtch;
+  const relies=()=>{
+    const C=fpById(D.C.id), U=fpById(D.U.id), gv=S.vias.find(v=>v.net==="GND");
+    relie("GND",D.pad(C,2),gv);relie("N",D.pad(U,8),D.pad(C,1));
+  };
+  try{
+    S.moveEtch="etirer";
+    clearSel();S.sel.fps.add(D.C.id);groupeEtendreSel();
+    rotateSel();
+    relies();
+    flipSel();
+    relies();
+    if(S.tracks.some(t=>t.net!=="S"&&t.l!==S.cu-1))throw new Error("le cuivre interne passe dessous, même en « étirer »");
+  }finally{S.moveEtch=avant;undo();undo();undo();suiviFin(D.reg);}
+});
+T("groupes : F sur 4 couches, In1 ↔ In2, le via borgne passe de l'autre côté",()=>{
+  const cu0=S.cu;
+  setCuCount(4);
+  const reg=suiviDecor();
+  try{
+    const A=mkFp("R1","","",2);A.style="row";A.pitch=2.54;A.x=10;A.y=10;
+    const B=mkFp("R2","","",2);B.style="row";B.pitch=2.54;B.x=20;B.y=10;B.rot=90;
+    S.fps.push(A,B);touch();
+    const a2=padsWorld(A).find(q=>q.n===2), b1=padsWorld(B).find(q=>q.n===1), b2=padsWorld(B).find(q=>q.n===2);
+    const bv={x:b2.x+3,y:b2.y,d:0.6,drill:0.3,a:0,b:1,net:"M"};
+    const ti={l:1,net:"N",w:0.3,x1:a2.x,y1:a2.y,x2:b1.x,y2:b1.y};
+    const tb={l:0,net:"M",w:0.3,x1:b2.x,y1:b2.y,x2:bv.x,y2:bv.y};
+    S.vias.push(bv);S.tracks.push(ti,tb);touch();
+    clearSel();S.sel.fps.add(A.id);S.sel.fps.add(B.id);S.sel.vias.add(bv);
+    key("g",{ctrlKey:true});
+    flipSel();
+    if(ti.l!==2)throw new Error("In1 passe en In2 : "+ti.l);
+    if(tb.l!==3)throw new Error("F.Cu passe en B.Cu : "+tb.l);
+    if(bv.a!==2||bv.b!==3)throw new Error("le via borgne L1–L2 devient L3–L4 : "+bv.a+"–"+bv.b);
+    if(B.rot!==270||!A.side||!B.side)throw new Error("R2 à 90° passe à 270°, dessous : "+B.rot);
+    const n2=padsWorld(B).find(q=>q.n===2);
+    relie("M",{x:n2.x,y:n2.y},{x:bv.x,y:bv.y});
+    if(S.aRerouter.length)throw new Error("rien à re-router : "+S.aRerouter.map(g=>g.msg));
+    undo();undo();
+  }finally{setCuCount(cu0);suiviFin(reg);}
+});
+/* Copier-coller un groupe : un nouveau groupe, avec son cuivre interne. Dans
+   le décor du découplage, la puce, la capa et le via de masse forment le
+   groupe ; la piste vers le via d'alimentation en sort. */
+T("groupes : copier-coller donne un nouveau groupe, pistes internes copiées et liées aux copies",()=>{
+  const D=decouplage();
+  try{
+    clearSel();S.sel.fps.add(D.X.id);S.sel.fps.add(D.C.id);S.sel.vias.add(D.gnd);
+    key("g",{ctrlKey:true});
+    // la sélection ne nomme que les composants : le via et les pistes du groupe viennent d'eux-mêmes
+    clearSel();S.sel.fps.add(D.X.id);S.sel.fps.add(D.C.id);
+    const nf=S.fps.length, nt=S.tracks.length, nv=S.vias.length;
+    if(!copySelPcb())throw new Error("copie refusée");
+    S.mouse={x:60,y:60};
+    pasteClipPcb();
+    if(S.fps.length!==nf+2)throw new Error("deux composants collés : "+(S.fps.length-nf));
+    if(S.vias.length!==nv+1)throw new Error("le via du groupe vient, pas celui d'alimentation : "+(S.vias.length-nv));
+    if(S.tracks.length!==nt+2)throw new Error("puce → capa et capa → masse viennent, pas la piste qui sort : "+(S.tracks.length-nt));
+    const X2=S.fps.find(f=>S.sel.fps.has(f.id)&&f.pins===8), C2=S.fps.find(f=>S.sel.fps.has(f.id)&&f.pins===2);
+    const v2=S.vias.find(v=>S.sel.vias.has(v));
+    const g=S.groupes.find(g=>g.nom==="G1 (copie)");
+    if(S.groupes.length!==2||!g)throw new Error("un nouveau groupe « G1 (copie) » : "+S.groupes.map(g=>g.nom));
+    if(g.fps.length!==2||g.fps.indexOf(X2.id)<0||g.fps.indexOf(C2.id)<0||g.vias[0]!==v2.id)
+      throw new Error("le nouveau groupe tient les copies : "+JSON.stringify(g));
+    if(v2.id===D.gnd.id)throw new Error("le via collé a son propre identifiant");
+    // les liens des bouts visent les copies
+    const tx=[...S.sel.tracks].find(t=>t.net==="+3V3"), tg=[...S.sel.tracks].find(t=>t.net==="GND");
+    const vu=a=>a?(a.v!=null?"v"+a.v:a.f+"."+a.p):"-";
+    if(vu(tx.a1)!==X2.id+".8"||vu(tx.a2)!==C2.id+".1")throw new Error("puce → capa : "+vu(tx.a1)+" "+vu(tx.a2));
+    if(vu(tg.a1)!==C2.id+".2"||vu(tg.a2)!=="v"+v2.id)throw new Error("capa → masse : "+vu(tg.a1)+" "+vu(tg.a2));
+    const p=n=>padsWorld(n[0]).find(q=>q.n===n[1]);
+    relie("+3V3",p([X2,8]),p([C2,1]));relie("GND",p([C2,2]),v2);
+    // la copie se déplace d'un bloc, comme l'original
+    clearSel();S.sel.fps.add(C2.id);groupeEtendreSel();
+    if(!S.sel.fps.has(X2.id)||!S.sel.vias.has(v2))throw new Error("un clic sur la copie prend le nouveau groupe");
+    // un second collage : « G1 (copie 2) »
+    clearSel();S.sel.fps.add(D.X.id);groupeEtendreSel();
+    copySelPcb();S.mouse={x:60,y:90};pasteClipPcb();
+    if(!S.groupes.some(g=>g.nom==="G1 (copie 2)"))throw new Error("second collage : "+S.groupes.map(g=>g.nom));
+    undo();undo();
+    if(S.groupes.length!==1||S.fps.length!==nf)throw new Error("Ctrl+Z retire copies et groupes");
+    // couper le groupe emporte son cuivre interne, pas la piste qui sort
+    clearSel();S.sel.fps.add(D.C.id);groupeEtendreSel();
+    cutSelPcb();
+    if(S.fps.length!==nf-2||S.tracks.length!==nt-2||S.tracks[0].net!=="+3V3")
+      throw new Error("Ctrl+X : "+S.fps.length+" composant(s), "+S.tracks.length+" piste(s)");
+    undo();
+  }finally{undo();suiviFin(D.reg);}
+});
 /* Les vias de sortie : le via de masse au pied de la capa part avec elle. */
 function sortieDecor(){
   const D=decouplage();
@@ -3208,8 +3465,10 @@ T("master drawing PDF",()=>{
   while((si=bin.indexOf("SHEET: ",si))>=0){sheets++;si++;}
   if(sheets!==count)
     throw new Error(count+" cartouche(s) attendu(s), "+sheets);
-  if(bin.indexOf("/BaseFont /Helvetica-Bold")<0)
-    throw new Error("fonte Helvetica-Bold absente");
+  /* la graisse : Helvetica-Bold, ou la grasse embarquée (fichier compris) */
+  if(bin.indexOf("/BaseFont /Helvetica-Bold")<0&&
+     !(bin.indexOf("/FontFile2 ")>=0&&/\/BaseFont \/[A-Z]{6}\+PlansSans-Bold /.test(bin)))
+    throw new Error("fonte grasse absente : ni Helvetica-Bold, ni PlansSans-Bold embarquée");
   if(bin.indexOf("/Contents ")<0)throw new Error("référence /Contents absente");
 });
 T("fichier de placement positions.csv",()=>{
@@ -21852,7 +22111,8 @@ function dfLatin(pdf){return Buffer.from(pdf).toString("latin1");}
 function dfToutes(){return {fab:true,asmT:true,asmB:true,bom:true,couches:true};}
 T("plans : PDF valide, chaque entrée de la table xref tombe sur son objet",()=>{
   exCharger(1);
-  S.dessin={feuilles:dfToutes()};
+  /* Helvetica en WinAnsi : la fonte embarquée a ses propres essais */
+  S.dessin={feuilles:dfToutes(),fonte:false};
   try{
     const doc=dfDocument();
     if(doc.feuilles.length!==1+1+1+S.cu)
@@ -21883,7 +22143,9 @@ T("plans : PDF valide, chaque entrée de la table xref tombe sur son objet",()=>
 });
 T("plans : le texte est du vrai texte — repères visibles, valeurs invisibles, accents",()=>{
   exCharger(1);
+  S.dessin={fonte:false};       // codage WinAnsi lisible tel quel ; la fonte embarquée plus bas
   const t=dfLatin(dfPdfOctets());
+  S.dessin=null;
   if(t.indexOf("(U1) Tj")<0)throw new Error("le repère U1 n'est pas écrit en texte");
   /* invisible : mode de rendu 3, la valeur posée sur le corps du composant */
   if(!/3 Tr [^\n]*\(C3 100n\) Tj/.test(t))throw new Error("valeur de C3 absente ou visible");
@@ -22056,6 +22318,1322 @@ T("plans : aperçu SVG et fenêtre",()=>{
   try{
     if(!DF.doc||!DF.doc.feuilles.length)throw new Error("la fenêtre n'a rien construit");
   }finally{dfFermer();}
+});
+
+/* ---------- cotes à la main, vues à la souris, détails (34-draftsman-vues.js) ---------- */
+/* Les textes de cote posés à la main sur une feuille (pas les cotes hors
+   tout calculées : leur `lieu` est vide). */
+function dfCotesTxt(F){return F.items.filter(it=>it.t==="t"&&it.cat==="cote"&&it.lieu).map(it=>it.s);}
+function dfFab(doc){return doc.feuilles.find(f=>f.genre==="fab");}
+function dfCoin(){
+  const P=boardPoly();
+  return {x:Math.min(...P.map(p=>p.x)),y:Math.min(...P.map(p=>p.y))};
+}
+T("plans : cote accrochée à une pastille — elle suit le composant et se met à jour",()=>{
+  exCharger(1);
+  const j=S.fps.find(f=>f.ref==="J2"), q=padsWorld(j).find(p=>String(p.n)==="1");
+  S.holes=[mkHole(q.x-10,q.y,3.2)];
+  const h=S.holes[0];
+  try{
+    const id=dfAjouterCote({vue:"fab/carte",type:"h",a:{type:"trou",id:h.id},
+                            b:{type:"pastille",fp:"J2",pad:"1",ou:"c"},dx:0,dy:-8});
+    if(!id)throw new Error("cote refusée");
+    let F=dfFab(dfDocument());
+    if(JSON.stringify(dfCotesTxt(F))!=='["10,00"]')throw new Error("10,00 attendu : "+dfCotesTxt(F));
+    const e0=F.cotes.find(c=>c.id===id);
+    if(!e0||e0.orph)throw new Error("la cote doit être tenue");
+    /* le connecteur bouge de 2,5 mm vers la droite : la cote suit */
+    const b0=dfBoiteItems(F,e0.i0,e0.i1);
+    j.x+=2.5;
+    F=dfFab(dfDocument());
+    if(JSON.stringify(dfCotesTxt(F))!=='["12,50"]')throw new Error("12,50 attendu : "+dfCotesTxt(F));
+    const e1=F.cotes.find(c=>c.id===id), b1=dfBoiteItems(F,e1.i0,e1.i1);
+    const V=F.vues.find(v=>v.cle==="fab/carte").V;
+    if(Math.abs((b1.x2-b0.x2)-2.5*V.k)>0.05)throw new Error("la ligne de cote n'a pas suivi la pastille");
+    /* bord gauche de la même pastille : à gauche du centre, à sa hauteur */
+    const g=dfResoudre({type:"pastille",fp:"J2",pad:"1",ou:"g"}), c=dfResoudre({type:"pastille",fp:"J2",pad:"1",ou:"c"});
+    if(!(g&&c&&g.x<c.x&&Math.abs(g.y-c.y)<1e-9))throw new Error("bord gauche de pastille mal résolu");
+    if(!(c.d>0))throw new Error("une pastille percée a un diamètre");
+  }finally{S.holes=[];}
+});
+T("plans : cote orpheline — rouge, signalée, jamais fausse en silence",()=>{
+  exCharger(1);
+  const j=S.fps.find(f=>f.ref==="J2");
+  S.holes=[mkHole(dfCoin().x+4,dfCoin().y+4,3.2)];
+  const h=S.holes[0];
+  try{
+    const ia=dfAjouterCote({vue:"asmT/carte",type:"a",a:{type:"pastille",fp:"J2",pad:"2",ou:"c"},
+                            b:{type:"contour",i:0},dx:3,dy:3});
+    const id=dfAjouterCote({vue:"fab/carte",type:"d",a:{type:"trou",id:h.id},dx:6,dy:-6});
+    let doc=dfDocument();
+    const asm=doc.feuilles.find(f=>f.genre==="asmT"), fab=dfFab(doc);
+    if(asm.cotes.some(c=>c.orph)||fab.cotes.some(c=>c.orph))throw new Error("rien d'orphelin au départ");
+    if(dfCotesTxt(fab).indexOf("Ø3,20")<0)throw new Error("cote de diamètre : "+dfCotesTxt(fab));
+    /* le repère renommé, le trou effacé : deux orphelines */
+    j.ref="J99";S.holes=[];
+    doc=dfDocument();
+    const a2=doc.feuilles.find(f=>f.genre==="asmT"), f2=dfFab(doc);
+    const oa=a2.cotes.find(c=>c.id===ia), of=f2.cotes.find(c=>c.id===id);
+    if(!oa||!oa.orph||!of||!of.orph)throw new Error("les deux cotes doivent être orphelines");
+    const t=a2.items.slice(oa.i0,oa.i1).find(it=>it.t==="t");
+    if(!t||!/\(orpheline\)$/.test(t.s))throw new Error("texte de l'orpheline : "+(t&&t.s));
+    if(JSON.stringify(t.c)!==JSON.stringify(DF_ROUGE))throw new Error("une orpheline s'écrit en rouge");
+    if(!a2.items.slice(oa.i0,oa.i1).some(it=>it.t==="p"&&it.tirets))throw new Error("une orpheline se trace en tirets");
+    if(!dfChercher(doc,"orpheline").length)throw new Error("l'orpheline doit se chercher");
+    /* codage WinAnsi, lisible tel quel : la fonte embarquée a ses propres essais */
+    const fo=S.dessin.fonte;S.dessin.fonte=false;
+    try{if(dfLatin(dfPdfOctets(doc)).indexOf("\\(orpheline\\)")<0)throw new Error("l'orpheline doit figurer au PDF");}
+    finally{S.dessin.fonte=fo;}
+    /* le repère revenu, la cote reprend sa place et sa valeur */
+    j.ref="J2";
+    const a3=dfDocument().feuilles.find(f=>f.genre==="asmT");
+    if(a3.cotes.find(c=>c.id===ia).orph)throw new Error("la référence revenue, la cote doit revivre");
+  }finally{S.holes=[];}
+});
+T("plans : cotes, positions de vues et détails — aller-retour du document, bornes",()=>{
+  exCharger(1);
+  const c0=dfCoin();
+  dfAjouterCote({vue:"fab/carte",type:"v",a:{type:"contour",i:0},b:{type:"bord",i:1,t:0.5},dx:-5,dy:0});
+  dfAjouterCote({vue:"asmT/carte",type:"h",a:{type:"pastille",fp:"J2",pad:"1",ou:"g"},
+                 b:{type:"pastille",fp:"J2",pad:"4",ou:"d"},dx:0,dy:6});
+  dfPlacerVue("fab/notes",31.2,42.6);
+  const did=dfAjouterDetail({source:"fab/carte",forme:"rect",x:c0.x+5,y:c0.y+5,w:8,h:6,echelle:4});
+  if(!did)throw new Error("détail refusé");
+  dfPlacerVue("det/"+did,40,150);
+  const a=serialize();
+  loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("l'aller-retour change le document");
+  const c=dfCfg();
+  if(c.cotes.length!==2||c.details.length!==1||!c.vues["fab/notes"]||!c.vues["det/"+did])
+    throw new Error("perdu au rechargement : "+JSON.stringify(c));
+  if(c.vues["fab/notes"].x!==30||c.vues["fab/notes"].y!==42.5)throw new Error("position non aimantée : "+JSON.stringify(c.vues["fab/notes"]));
+  if(c.details[0].lettre!=="A"||c.details[0].echelle!==4)throw new Error("détail : "+JSON.stringify(c.details[0]));
+  if(c.cotes[1].b.ou!=="d"||c.cotes[0].b.type!=="bord")throw new Error("références mal relues");
+  /* ce qui ne tient pas debout est écarté, pas cru */
+  S.dessin={cotes:[{id:1,vue:"fab/carte",type:"x",a:{type:"trou",id:1},b:{type:"trou",id:2}},
+                   {id:2,vue:"fab/carte",type:"h",a:{type:"trou",id:"z"},b:{type:"trou",id:2}},
+                   {id:3,vue:"<script>",type:"h",a:{type:"trou",id:1},b:{type:"trou",id:2}},
+                   {id:4,vue:"fab/carte",type:"d",a:{type:"trou",id:1},dx:"9e9"},
+                   {id:4,vue:"fab/carte",type:"d",a:{type:"trou",id:1}}],
+            vues:{"fab/carte":{x:"a",y:1},"asmT/carte":{x:12,y:20},"x y":{x:1,y:1}},
+            details:[{id:1,source:"det/2",x:0,y:0},{id:2,source:"fab/carte",x:1,y:2,r:-4,lettre:"a"},
+                     {id:3,source:"fab/carte",x:1,y:2,forme:"rect",lettre:"A"}]};
+  const n=dfCfg();
+  if(n.cotes.length!==1||n.cotes[0].id!==4||n.cotes[0].dx!==1000)throw new Error("cotes : "+JSON.stringify(n.cotes));
+  if(JSON.stringify(n.vues)!=='{"asmT/carte":{"x":12,"y":20}}')throw new Error("vues : "+JSON.stringify(n.vues));
+  if(n.details.length!==2||n.details[0].r!==0.2||n.details[1].lettre!=="B")
+    throw new Error("détails : "+JSON.stringify(n.details));
+  /* une carte neuve n'hérite pas des cotes de l'ancienne ; le cartouche reste */
+  S.dessin={societe:"ACME",cotes:[{id:1,vue:"fab/carte",type:"d",a:{type:"trou",id:1}}],vues:{"fab/notes":{x:1,y:1}}};
+  const conf=global.confirm;global.confirm=()=>true;
+  try{newDoc();}finally{global.confirm=conf;}
+  const z=dfCfg();
+  if(z.cotes.length||Object.keys(z.vues).length||z.societe!=="ACME")throw new Error("nouvelle carte : "+JSON.stringify(z));
+  S.dessin=null;
+});
+T("plans : vue déplacée — aimantée, gardée dans le cadre et hors du cartouche",()=>{
+  exCharger(1);
+  const avant=JSON.stringify(dfDocument().feuilles.map(F=>F.items));
+  dfPlacerVue("asmT/carte",-80,9999);
+  dfPlacerVue("fab/percage",30.3,41.2);
+  dfPlacerVue("bom/nomenclature",9999,9999);
+  const doc=dfDocument();
+  for(const [g,cle] of [["asmT","asmT/carte"],["fab","fab/percage"],["bom","bom/nomenclature"]]){
+    const F=doc.feuilles.find(f=>f.genre===g), v=F.vues.find(v=>v.cle===cle);
+    if(!v||!v.place)throw new Error(cle+" n'a pas été posée");
+    const b=dfBoiteVue(F,v), Z=dfZone(F), C=Z.cart;
+    /* un tableau pleine largeur déborde de la demi-épaisseur de son trait */
+    if(b.x1<Z.x1-1e-6||b.y1<Z.y1-1e-6||b.x2>Z.x2+0.5||b.y2>Z.y2+0.5)
+      throw new Error(cle+" sort du cadre : "+JSON.stringify(b));
+    if(b.x1<C.x+C.w&&b.x2>C.x&&b.y1<C.y+C.h&&b.y2>C.y)throw new Error(cle+" recouvre le cartouche");
+  }
+  const F=dfFab(doc), b=dfBoiteVue(F,F.vues.find(v=>v.cle==="fab/percage"));
+  if(Math.abs(b.x1-30)>1e-6||Math.abs(b.y1-40)>1e-6)throw new Error("aimant de 2,5 mm : "+b.x1+", "+b.y1);
+  /* la recherche suit la vue : U1 surligné sur la vue déplacée */
+  const asm=doc.feuilles.findIndex(f=>f.genre==="asmT"), A=doc.feuilles[asm];
+  const bv=dfBoiteVue(A,A.vues.find(v=>v.cle==="asmT/carte"));
+  const u1=dfChercher(doc,"u1").find(h=>h.p===asm&&h.cat==="repere");
+  if(!u1||u1.box.x1<bv.x1||u1.box.x2>bv.x2||u1.box.y1<bv.y1||u1.box.y2>bv.y2)throw new Error("U1 n'a pas suivi sa vue");
+  if(!A.signets.every(s=>s.x>=bv.x1&&s.x<=bv.x2&&s.y>=bv.y1&&s.y<=bv.y2))throw new Error("signets restés en place");
+  /* replacer : exactement la disposition calculée */
+  dfReplacer();
+  if(JSON.stringify(dfDocument().feuilles.map(F=>F.items))!==avant)throw new Error("« replacer » ne rend pas la disposition calculée");
+  S.dessin=null;
+});
+T("plans : vue de détail — échelle, découpe à la fenêtre, repère et cotes",()=>{
+  exCharger(1);
+  const c0=dfCoin(), cx=c0.x+2, cy=c0.y+2;
+  S.holes=[mkHole(cx-1.5,cy,1),mkHole(cx+2.5,cy,1)];
+  try{
+    const id=dfAjouterDetail({source:"fab/carte",forme:"cercle",x:cx,y:cy,r:5,echelle:5});
+    let doc=dfDocument(), F=dfFab(doc);
+    const v=F.vues.find(v=>v.cle==="det/"+id);
+    if(!v)throw new Error("détail absent du plan de fabrication");
+    const it=F.items.slice(v.i0,v.i1);
+    if(!it.some(t=>t.t==="t"&&t.s==="DÉTAIL A — ÉCHELLE 5:1"))throw new Error("étiquette du détail absente");
+    const mere=F.vues.find(u=>u.cle==="fab/carte");
+    if(!F.items.slice(mere.i0,mere.i1).some(t=>t.t==="t"&&t.s==="A"&&t.cat==="detail"))throw new Error("repère A absent de la vue mère");
+    /* les trous à leur vraie taille, à l'échelle 5:1 : Ø1 → r 2,5 ; 4 mm → 20 mm */
+    const P=(x,y)=>{const p=v.V.T(x,y);return {x:p.x+v.dx,y:p.y+v.dy};};
+    const trous=it.filter(c=>c.t==="c"&&Math.abs(c.r-2.5)<1e-9);
+    if(trous.length!==2)throw new Error(trous.length+" trou(s) à 5:1");
+    if(Math.abs(Math.hypot(trous[1].x-trous[0].x,trous[1].y-trous[0].y)-20)>1e-6)throw new Error("échelle fausse");
+    /* découpe : rien ne dépasse la fenêtre (rayon 25 mm), et le contour de
+       carte, coupé, s'arrête sur son bord */
+    const O=P(cx,cy);
+    let surBord=0;
+    for(const x of it){
+      if(x.t==="p")for(const pts of x.sp)for(const p of pts){
+        const r=Math.hypot(p.x-O.x,p.y-O.y);
+        if(r>25+x.lw/2+1e-6)throw new Error("objet hors de la fenêtre : r = "+r);
+        if(Math.abs(r-25)<0.05)surBord++;
+      }
+    }
+    if(surBord<2)throw new Error("le contour n'est pas coupé à la fenêtre");
+    const Z=dfZone(F), b=dfBoiteVue(F,v), C=Z.cart;
+    if(b.x1<Z.x1-1e-6||b.x2>Z.x2+1e-6||b.y1<Z.y1-1e-6||b.y2>Z.y2+1e-6)throw new Error("détail hors du cadre");
+    if(b.x1<C.x+C.w&&b.x2>C.x&&b.y1<C.y+C.h&&b.y2>C.y)throw new Error("détail sur le cartouche");
+    /* une cote sur le détail : la valeur réelle, une longueur de feuille ×5 */
+    const cid=dfAjouterCote({vue:"det/"+id,type:"h",a:{type:"trou",id:S.holes[0].id},
+                             b:{type:"trou",id:S.holes[1].id},dx:0,dy:-14});
+    F=dfFab(dfDocument());
+    const e=F.cotes.find(c=>c.id===cid), cote=F.items.slice(e.i0,e.i1);
+    const t=cote.find(x=>x.t==="t");
+    if(!t||t.s!=="4,00")throw new Error("cote du détail : "+(t&&t.s));
+    const ligne=cote.filter(x=>x.t==="p"&&x.sp[0].length===2&&Math.abs(x.sp[0][0].y-x.sp[0][1].y)<1e-9&&Math.abs(x.lw-0.18)<1e-9);
+    if(!ligne.length||Math.abs(Math.abs(ligne[0].sp[0][1].x-ligne[0].sp[0][0].x)-20)>1e-6)throw new Error("ligne de cote du détail : 20 mm attendus");
+    /* le détail effacé emporte ses cotes */
+    dfSupprimerDetail(id);
+    if(dfCfg().cotes.length||dfCfg().details.length)throw new Error("le détail doit partir avec ses cotes");
+  }finally{S.holes=[];S.dessin=null;}
+});
+T("plans : PDF toujours produit — cotes, vues déplacées, détails, toutes feuilles",()=>{
+  exCharger(1);
+  S.dessin={feuilles:dfToutes(),fonte:false};   // codage WinAnsi lisible tel quel
+  const c0=dfCoin();
+  dfAjouterCote({vue:"fab/carte",type:"h",a:{type:"contour",i:0},b:{type:"contour",i:1},dx:0,dy:-20});
+  dfAjouterCote({vue:"cu0/carte",type:"v",a:{type:"pastille",fp:"J2",pad:"1",ou:"c"},b:{type:"pastille",fp:"J2",pad:"4",ou:"c"},dx:-8,dy:0});
+  dfAjouterCote({vue:"asmT/carte",type:"r",a:{type:"pastille",fp:"J2",pad:"1",ou:"c"},dx:5,dy:-5});
+  /* une orpheline : son trou effacé après la pose */
+  S.holes=[mkHole(c0.x+3,c0.y+3,2)];
+  dfAjouterCote({vue:"asmT/carte",type:"h",a:{type:"trou",id:S.holes[0].id},b:{type:"contour",i:0},dx:0,dy:5});
+  S.holes=[];
+  dfAjouterDetail({source:"asmT/carte",forme:"rect",x:c0.x+6,y:c0.y+6,w:10,h:8,echelle:3});
+  dfAjouterDetail({source:"cu0/carte",forme:"cercle",x:c0.x+10,y:c0.y+10,r:4,echelle:10});
+  dfPlacerVue("fab/empilage",20,150);
+  try{
+    const doc=dfDocument();
+    const t=dfLatin(dfPdfOctets(doc));
+    if(!t.startsWith("%PDF-1.4")||!/%%EOF\n$/.test(t))throw new Error("PDF mal formé");
+    const sx=+(/startxref\n(\d+)\n%%EOF/.exec(t)||[])[1];
+    const n=+/^xref\n0 (\d+)\n/.exec(t.slice(sx))[1];
+    const lignes=t.slice(sx).split("\n").slice(2);
+    for(let i=1;i<n;i++)if(!t.startsWith(i+" 0 obj\n",+lignes[i].slice(0,10)))throw new Error("xref fausse, objet "+i);
+    if(t.indexOf("(D\\311TAIL A \\227 \\311CHELLE 3:1) Tj")<0)throw new Error("étiquette du détail A absente du PDF");
+    if(t.indexOf("(D\\311TAIL B \\227 \\311CHELLE 10:1) Tj")<0)throw new Error("étiquette du détail B absente du PDF");
+    if(!/\(R0,\d\d\) Tj/.test(t))throw new Error("cote de rayon absente du PDF");
+    if(t.indexOf("\\(orpheline\\)")<0)throw new Error("cote orpheline absente du PDF");
+    if(t.indexOf("0.82 0.08 0.08 rg")<0)throw new Error("l'orpheline doit être rouge au PDF");
+    if(doc.feuilles.length!==1+1+1+S.cu)throw new Error("feuilles : "+doc.feuilles.length);
+  }finally{S.dessin=null;}
+});
+T("plans : outils de la fenêtre — cote posée à la souris, glissée, effacée, annulée",()=>{
+  exCharger(1);
+  const c0=dfCoin();
+  S.holes=[mkHole(c0.x+5,c0.y+5,3.2),mkHole(c0.x+25,c0.y+5,3.2)];
+  dfOuvrir();
+  try{
+    DF.page=0;
+    let F=DF.doc.feuilles[0];
+    const v=F.vues.find(v=>v.cle==="fab/carte"), P=dfVersFeuille(v);
+    const a=P(S.holes[0].x,S.holes[0].y), b=P(S.holes[1].x,S.holes[1].y);
+    dfChoisirOutil("h");
+    dfClicFeuille(F,a.x+0.3,a.y-0.2,1.5);
+    dfClicFeuille(F,b.x-0.2,b.y+0.3,1.5);
+    if(DF.clics.length!==2)throw new Error("deux points accrochés attendus");
+    const id=dfClicFeuille(F,(a.x+b.x)/2,a.y-12,1.5);
+    let c=dfCfg().cotes;
+    if(!id||c.length!==1||c[0].a.type!=="trou"||c[0].b.id!==S.holes[1].id)throw new Error("cote : "+JSON.stringify(c));
+    F=DF.doc.feuilles[0];
+    if(dfCotesTxt(F).indexOf("20,00")<0)throw new Error("valeur posée : "+dfCotesTxt(F));
+    /* sélection, glisser de 5 mm vers le haut */
+    dfChoisirOutil("sel");
+    const e=F.cotes.find(x=>x.id===id), t=F.items.slice(e.i0,e.i1).find(x=>x.t==="t");
+    const h=dfClicFeuille(F,t.x,t.y-1,1.5);
+    if(!h||h.genre!=="cote"||h.id!==id)throw new Error("la cote doit se choisir au clic : "+JSON.stringify(h));
+    if(dfSurSvg(F).indexOf('class="df-c on"')<0)throw new Error("sélection non montrée");
+    dfGlisser(t.x,t.y-6);
+    if(!dfLacher())throw new Error("glisser non retenu");
+    c=dfCfg().cotes;
+    if(Math.abs(c[0].dy-(-12-5))>1e-6)throw new Error("cote non déplacée : "+c[0].dy);
+    /* Suppr efface, Ctrl+Z rend */
+    DF.sel={genre:"cote",id};
+    if(!dfOutilsTouche({key:"Delete",target:{tagName:"DIV"}})||dfCfg().cotes.length)throw new Error("Suppr n'efface pas la cote");
+    dfOutilsTouche({key:"z",ctrlKey:true,target:{tagName:"DIV"}});
+    if(dfCfg().cotes.length!==1)throw new Error("Ctrl+Z ne rend pas la cote");
+    /* un détail tracé à la souris : centre puis rayon */
+    dfChoisirOutil("detC");
+    F=DF.doc.feuilles[0];
+    const v2=F.vues.find(v=>v.cle==="fab/carte"), P2=dfVersFeuille(v2);
+    const o=P2(c0.x+5,c0.y+5), r=P2(c0.x+8,c0.y+5);
+    dfClicFeuille(F,o.x,o.y,1.5);
+    const did=dfClicFeuille(F,r.x,r.y,1.5);
+    const d=dfCfg().details[0];
+    if(!did||!d||Math.abs(d.r-3)>1e-6||Math.abs(d.x-(c0.x+5))>1e-6||d.echelle!==DF.ech)throw new Error("détail : "+JSON.stringify(d));
+    /* une vue glissée : la position est enregistrée, aimantée */
+    F=DF.doc.feuilles[0];
+    const vd=F.vues.find(v=>v.cle==="det/"+did), bd=dfBoiteVue(F,vd);
+    dfClicFeuille(F,(bd.x1+bd.x2)/2,(bd.y1+bd.y2)/2,1.5);
+    if(!DF.sel||DF.sel.cle!=="det/"+did)throw new Error("le détail doit se choisir : "+JSON.stringify(DF.sel));
+    dfGlisser((bd.x1+bd.x2)/2+10.4,(bd.y1+bd.y2)/2+3.1);
+    dfLacher();
+    const p=dfCfg().vues["det/"+did];
+    if(!p||p.x%DF_GRILLE||p.y%DF_GRILLE)throw new Error("position du détail : "+JSON.stringify(p));
+    /* Échap : d'abord le geste en cours, puis l'outil, et la fenêtre reste ouverte */
+    dfChoisirOutil("v");
+    dfClicFeuille(F,a.x,a.y,1.5);
+    if(!dfOutilsTouche({key:"Escape",target:{tagName:"DIV"}})||DF.clics.length)throw new Error("Échap doit défaire le clic");
+    if(!dfOutilsTouche({key:"Escape",target:{tagName:"DIV"}})||DF.outil!=="sel")throw new Error("Échap doit rendre la sélection");
+    if(dfOutilsTouche({key:"Delete",target:{tagName:"INPUT"}}))throw new Error("Suppr dans un champ reste au champ");
+  }finally{dfChoisirOutil("sel");DF.sel=null;dfFermer();S.holes=[];S.dessin=null;}
+});
+
+/* ---------- cote angulaire, chaînes, ordonnées, tolérances, vues qui s'écartent ---------- */
+/* Les textes d'une cote posée, dans l'ordre où elle les dessine. */
+function dfTxtCote(F,id){
+  const e=F.cotes.find(c=>c.id===id);
+  if(!e)throw new Error("cote "+id+" absente de la feuille");
+  return F.items.slice(e.i0,e.i1).filter(it=>it.t==="t").map(it=>it.s);
+}
+/* La fenêtre ouverte sur la carte du moment : sans feuilles ni accroches
+   d'un essai précédent (la fenêtre les refait d'ordinaire après 180 ms). */
+function dfOuvrirNeuf(){DF.doc=null;DF.acc=null;dfOuvrir();}
+/* Un trapèze connu : le côté 3 (du sommet 3 au sommet 0) monte à 45° du
+   côté 0 ; la droite du côté 1 coupe celle du côté 3 à 45° aussi. */
+function dfTrapeze(){
+  const c=dfCoin(), x=c.x, y=c.y;
+  dxfPlateau([{x,y},{x:x+40,y},{x:x+40,y:y+20},{x:x+20,y:y+20}]);
+  return {x,y};
+}
+T("plans : cote angulaire — trois points ou deux arêtes, valeur exacte, elle suit le contour",()=>{
+  exCharger(1);
+  const o=dfTrapeze();
+  try{
+    const i3=dfAjouterCote({vue:"fab/carte",type:"ang",s:{type:"contour",i:0},a:{type:"contour",i:1},
+                            b:{type:"contour",i:3},dx:12,dy:5});
+    const i2=dfAjouterCote({vue:"fab/carte",type:"ang",a:{type:"bord",i:1,t:0.5},b:{type:"bord",i:3,t:0.5},dx:-4,dy:-9});
+    if(!i3||!i2)throw new Error("cote angulaire refusée");
+    const c=dfCfg().cotes;
+    if(Math.abs(dfMesurer(c[0]).v-45)>1e-9)throw new Error("trois points : "+dfMesurer(c[0]).v+"° au lieu de 45°");
+    const g=dfAngle(c[1]);
+    if(!g||Math.abs(g.v-45)>1e-9||Math.abs(g.s.x-(o.x+40))>1e-9||Math.abs(g.s.y-(o.y+40))>1e-9)
+      throw new Error("deux arêtes : sommet et angle faux "+JSON.stringify(g&&{s:g.s,v:g.v}));
+    let F=dfFab(dfDocument());
+    if(JSON.stringify(dfTxtCote(F,i3))!=='["45,0°"]'||JSON.stringify(dfTxtCote(F,i2))!=='["45,0°"]')
+      throw new Error("valeurs : "+dfTxtCote(F,i3)+" / "+dfTxtCote(F,i2));
+    /* l'arc : centré au sommet, du rayon où on l'a posé (13 mm de feuille) */
+    const v=F.vues.find(v=>v.cle==="fab/carte"), S0=dfVersFeuille(v)(o.x,o.y), e=F.cotes.find(k=>k.id===i3);
+    const arc=F.items.slice(e.i0,e.i1).find(it=>it.t==="p"&&it.sp[0].length>8);
+    if(!arc||arc.sp[0].some(p=>Math.abs(Math.hypot(p.x-S0.x,p.y-S0.y)-13)>1e-6))throw new Error("arc mal placé");
+    if(F.items.slice(e.i0,e.i1).filter(it=>it.t==="p"&&it.plein!=null).length!==2)throw new Error("deux flèches attendues");
+    /* sur le calque COTES du DXF, le degré en %%d */
+    const D=dxfLu(dxfFeuilles([F]).octets);
+    if(D.ents.filter(x=>x.type==="TEXT"&&x.cal==="COTES"&&x.s(1)==="45,0%%d").length!==2)throw new Error("angle absent du calque COTES");
+    /* posée dans l'angle opposé par le sommet : l'arc y passe, même valeur */
+    const io=dfAjouterCote({vue:"fab/carte",type:"ang",s:{type:"contour",i:0},a:{type:"contour",i:1},b:{type:"contour",i:3},dx:-8,dy:-3});
+    F=dfFab(dfDocument());
+    const eo=F.cotes.find(k=>k.id===io), bis={x:Math.cos(Math.PI/8),y:Math.sin(Math.PI/8)};
+    const arcO=F.items.slice(eo.i0,eo.i1).find(it=>it.t==="p"&&it.sp[0].length>8);
+    if(dfTxtCote(F,io)[0]!=="45,0°"||arcO.sp[0].some(p=>(p.x-S0.x)*bis.x+(p.y-S0.y)*bis.y>-1e-6))throw new Error("angle opposé par le sommet");
+    dfSupprimerCote(io);
+    /* le sommet 3 glisse : les deux cotes suivent */
+    S.board.pts[3]={x:o.x+10,y:o.y+20};boardChanged();
+    F=dfFab(dfDocument());
+    if(dfTxtCote(F,i3)[0]!=="63,4°")throw new Error("après déplacement : "+dfTxtCote(F,i3));
+    /* un sommet en moins : la cote de trois points devient orpheline, l'autre
+       tient toujours (côté 3 → côté 2 renuméroté : on vérifie qu'elle se
+       mesure encore, sans rien en dire de plus) */
+    dxfPlateau([{x:o.x,y:o.y},{x:o.x+40,y:o.y},{x:o.x+40,y:o.y+20}]);
+    F=dfFab(dfDocument());
+    const t=dfTxtCote(F,i3);
+    if(!F.cotes.find(k=>k.id===i3).orph||t[0]!=="63,4° (orpheline)")throw new Error("orpheline : "+t);
+    /* deux arêtes parallèles : pas de sommet, rien à coter */
+    dfTrapeze();
+    if(dfAngle({a:{type:"bord",i:0,t:0.5},b:{type:"bord",i:2,t:0.5}}))throw new Error("arêtes parallèles acceptées");
+  }finally{S.dessin=null;}
+});
+T("plans : cote angulaire posée à la souris — sommet et deux points, puis deux arêtes",()=>{
+  exCharger(1);
+  const o=dfTrapeze();
+  dfOuvrirNeuf();
+  try{
+    DF.page=0;
+    let F=DF.doc.feuilles[0];
+    const P=dfVersFeuille(F.vues.find(v=>v.cle==="fab/carte"));
+    const s=P(o.x,o.y), a=P(o.x+40,o.y), b=P(o.x+20,o.y+20);
+    dfChoisirOutil("ang");
+    dfClicFeuille(F,s.x+0.2,s.y-0.2,1.5);dfClicFeuille(F,a.x,a.y,1.5);dfClicFeuille(F,b.x,b.y,1.5);
+    if(DF.clics.length!==3)throw new Error("trois points accrochés attendus : "+DF.clics.length);
+    if(dfSurSvg(F).indexOf("df-el on")<0)throw new Error("l'arc doit se voir avant d'être posé");
+    const id=dfClicFeuille(F,s.x+15,s.y+4,1.5);
+    const c=dfCfg().cotes.find(k=>k.id===id);
+    if(!c||c.type!=="ang"||c.s.type!=="contour"||c.s.i!==0||c.a.i!==1||c.b.i!==3||c.b.type!=="contour"||Math.abs(c.dx-15)>1e-6)throw new Error("cote : "+JSON.stringify(c));
+    /* deux arêtes : cliquées loin de leurs sommets */
+    F=DF.doc.feuilles[0];
+    const m0=P(o.x+30,o.y), m3=P(o.x+5,o.y+5), m2=P(o.x+30,o.y+20);
+    dfChoisirOutil("ang");
+    dfClicFeuille(F,m0.x,m0.y+0.3,1.5);
+    if(!DF.clics.length||DF.clics[0].ref.type!=="bord")throw new Error("la première arête n'est pas prise : "+DF.msg);
+    dfClicFeuille(F,m2.x,m2.y,1.5);
+    if(DF.clics.length!==1)throw new Error("une arête parallèle doit être refusée");
+    dfClicFeuille(F,m3.x,m3.y,1.5);
+    const id2=dfClicFeuille(F,s.x+12,s.y+6,1.5);
+    const c2=dfCfg().cotes.find(k=>k.id===id2);
+    if(!c2||c2.s||c2.a.type!=="bord"||c2.b.i!==3)throw new Error("cote sur arêtes : "+JSON.stringify(c2));
+    if(dfTxtCote(DF.doc.feuilles[0],id2)[0]!=="45,0°")throw new Error("valeur : "+dfTxtCote(DF.doc.feuilles[0],id2));
+  }finally{dfChoisirOutil("sel");DF.sel=null;dfFermer();S.dessin=null;}
+});
+T("plans : cotes en chaîne — une seule ligne, elles suivent le composant, une référence perdue n'en touche qu'une",()=>{
+  exCharger(1);
+  const j=S.fps.find(f=>f.ref==="J2"), q=padsWorld(j).find(p=>String(p.n)==="1");
+  S.holes=[mkHole(q.x-10,q.y+1,3.2),mkHole(q.x+25,q.y-1,3.2)];
+  const [h0,h1]=S.holes;
+  try{
+    /* posés dans le désordre : la chaîne range ses points dans le sens coté */
+    const id=dfAjouterCote({vue:"fab/carte",type:"ch",sens:"h",dx:0,dy:-12,
+      pts:[{type:"trou",id:h1.id},{type:"trou",id:h0.id},{type:"pastille",fp:"J2",pad:"1",ou:"c"}]});
+    if(!id)throw new Error("chaîne refusée");
+    let F=dfFab(dfDocument());
+    if(JSON.stringify(dfTxtCote(F,id))!=='["10,00","25,00"]')throw new Error("valeurs : "+dfTxtCote(F,id));
+    const lignes=F2=>{const e=F2.cotes.find(k=>k.id===id);
+      return F2.items.slice(e.i0,e.i1).filter(it=>it.t==="p"&&Math.abs(it.lw-0.18)<1e-9&&it.sp[0].length===2);};
+    const L=lignes(F);
+    if(L.length!==2||Math.abs(L[0].sp[0][0].y-L[1].sp[0][0].y)>1e-9)throw new Error("les cotes d'une chaîne s'alignent sur une ligne");
+    /* le connecteur bouge de 2,5 mm : les deux valeurs suivent */
+    j.x+=2.5;
+    F=dfFab(dfDocument());
+    if(JSON.stringify(dfTxtCote(F,id))!=='["12,50","22,50"]')throw new Error("après déplacement : "+dfTxtCote(F,id));
+    /* le second trou effacé : sa cote seule devient orpheline, à sa dernière place */
+    S.holes=[h0];
+    F=dfFab(dfDocument());
+    const e=F.cotes.find(k=>k.id===id), t=F.items.slice(e.i0,e.i1).filter(it=>it.t==="t");
+    if(e.orph!==1)throw new Error("une seule valeur orpheline attendue : "+e.orph);
+    if(t[0].s!=="12,50"||t[0].c!==0||t[1].s!=="22,50 (orpheline)"||JSON.stringify(t[1].c)!==JSON.stringify(DF_ROUGE))
+      throw new Error("chaîne à moitié orpheline : "+t.map(x=>x.s+" "+JSON.stringify(x.c)));
+  }finally{S.holes=[];S.dessin=null;}
+});
+T("plans : cotes en chaîne posées à la souris — points, puis un clic hors accroche",()=>{
+  exCharger(1);
+  const c0=dfCoin();
+  S.holes=[mkHole(c0.x+5,c0.y+5,3.2),mkHole(c0.x+15,c0.y+5.5,3.2),mkHole(c0.x+32,c0.y+4.5,3.2)];
+  dfOuvrirNeuf();
+  try{
+    DF.page=0;
+    const F=DF.doc.feuilles[0], v=F.vues.find(v=>v.cle==="fab/carte"), P=dfVersFeuille(v), b=dfBoiteVue(F,v);
+    dfChoisirOutil("ch");DF.sens="h";
+    for(const h of S.holes){const p=P(h.x,h.y);dfClicFeuille(F,p.x+0.2,p.y+0.1,1.5);}
+    if(DF.clics.length!==3)throw new Error("trois points attendus : "+DF.clics.length+" "+DF.msg);
+    const p0=P(S.holes[0].x,S.holes[0].y);
+    /* l'aperçu suit la souris, puis la ligne se pose au-dessus de la carte */
+    DF.souris={X:p0.x,Y:b.y1-6};
+    if(dfSurSvg(F).indexOf("df-el-t")<0)throw new Error("l'aperçu doit montrer les valeurs");
+    const id=dfClicFeuille(F,p0.x,b.y1-6,1.5);
+    const c=dfCfg().cotes.find(k=>k.id===id);
+    if(!c||c.type!=="ch"||c.pts.length!==3||c.sens!=="h"||Math.abs(c.dy-(b.y1-6-p0.y))>1e-6)throw new Error("chaîne : "+JSON.stringify(c));
+    if(JSON.stringify(dfTxtCote(DF.doc.feuilles[0],id))!=='["10,00","17,00"]')throw new Error("valeurs : "+dfTxtCote(DF.doc.feuilles[0],id));
+    /* Entrée clôt la chaîne à la souris */
+    dfChoisirOutil("ch");DF.sens="v";
+    const F2=DF.doc.feuilles[0];
+    for(const h of S.holes.slice(0,2)){const p=P(h.x,h.y);dfClicFeuille(F2,p.x,p.y,1.5);}
+    DF.souris={X:b.x1-8,Y:p0.y};
+    if(!dfOutilsTouche({key:"Enter",target:{tagName:"DIV"}}))throw new Error("Entrée doit poser la chaîne");
+    const c2=dfCfg().cotes[1];
+    if(!c2||c2.sens!=="v"||dfTxtCote(DF.doc.feuilles[0],c2.id)[0]!=="0,50")throw new Error("chaîne verticale : "+JSON.stringify(c2));
+  }finally{dfChoisirOutil("sel");DF.sel=null;DF.sens="h";dfFermer();S.holes=[];S.dessin=null;}
+});
+T("plans : cotes d'ordonnée — depuis l'origine des fichiers de fabrication, ou d'un point accroché",()=>{
+  exCharger(1);
+  const o=gOrigin();
+  S.holes=[mkHole(o.x+10,o.y-5,3.2),mkHole(o.x+30,o.y-15,3.2)];
+  const fo=S.fabOrigin, so=S.origin;
+  try{
+    const ref=S.holes.map(h=>({type:"trou",id:h.id}));
+    const ix=dfAjouterCote({vue:"fab/carte",type:"ord",sens:"h",o:{type:"origine"},pts:ref,dx:0,dy:9});
+    const iy=dfAjouterCote({vue:"fab/carte",type:"ord",sens:"v",o:{type:"origine"},pts:ref,dx:-9,dy:0});
+    let F=dfFab(dfDocument());
+    if(JSON.stringify(dfTxtCote(F,ix))!=='["0","10,00","30,00"]')throw new Error("abscisses : "+dfTxtCote(F,ix));
+    /* Y vers le haut, comme les Gerber : le trou le plus haut a la plus grande ordonnée */
+    if(JSON.stringify(dfTxtCote(F,iy))!=='["15,00","5,00","0"]')throw new Error("ordonnées : "+dfTxtCote(F,iy));
+    /* les abscisses se lisent debout, au bout de lignes de rappel verticales */
+    const e=F.cotes.find(k=>k.id===ix), it=F.items.slice(e.i0,e.i1);
+    if(!it.filter(x=>x.t==="t").every(x=>x.rot===90))throw new Error("abscisses : texte debout attendu");
+    if(it.filter(x=>x.t==="p").length!==3)throw new Error("une ligne de rappel par valeur");
+    /* l'origine des fichiers passe à l'origine utilisateur : les cotes suivent */
+    S.origin={x:o.x+10,y:o.y-5};S.fabOrigin=true;
+    F=dfFab(dfDocument());
+    if(JSON.stringify(dfTxtCote(F,ix))!=='["0","0,00","20,00"]')throw new Error("depuis l'origine utilisateur : "+dfTxtCote(F,ix));
+    S.fabOrigin=fo;S.origin=so;
+    /* origine accrochée : le premier trou ; le second perdu devient seul orphelin */
+    const io=dfAjouterCote({vue:"fab/carte",type:"ord",sens:"h",o:ref[0],pts:[ref[1]],dx:0,dy:-20});
+    F=dfFab(dfDocument());
+    if(JSON.stringify(dfTxtCote(F,io))!=='["0","20,00"]')throw new Error("origine accrochée : "+dfTxtCote(F,io));
+    S.holes=[S.holes[0]];
+    F=dfFab(dfDocument());
+    if(F.cotes.find(k=>k.id===io).orph!==1||dfTxtCote(F,io)[1]!=="20,00 (orpheline)")throw new Error("orpheline : "+dfTxtCote(F,io));
+    /* à la souris : origine des fichiers, deux points, un clic hors accroche */
+    S.holes=[mkHole(o.x+10,o.y-5,3.2),mkHole(o.x+30,o.y-15,3.2)];
+    dfOuvrirNeuf();
+    try{
+      DF.page=0;
+      const G=DF.doc.feuilles[0], v=G.vues.find(v=>v.cle==="fab/carte"), P=dfVersFeuille(v), b=dfBoiteVue(G,v);
+      dfChoisirOutil("ord");DF.origFab=true;DF.sens="h";
+      for(const h of S.holes){const p=P(h.x,h.y);dfClicFeuille(G,p.x,p.y,1.5);}
+      const id=dfClicFeuille(G,P(o.x,o.y).x,b.y2+6,1.5);
+      const c=dfCfg().cotes.find(k=>k.id===id);
+      if(!c||c.type!=="ord"||c.o.type!=="origine"||c.pts.length!==2)throw new Error("ordonnée à la souris : "+JSON.stringify(c));
+      if(JSON.stringify(dfTxtCote(DF.doc.feuilles[0],id))!=='["0","10,00","30,00"]')throw new Error("valeurs : "+dfTxtCote(DF.doc.feuilles[0],id));
+    }finally{dfChoisirOutil("sel");DF.sel=null;DF.origFab=false;dfFermer();}
+  }finally{S.fabOrigin=fo;S.origin=so;S.holes=[];S.dessin=null;}
+});
+T("plans : tolérances portées sur la cote — écran, PDF cherchable, calque COTES du DXF",()=>{
+  exCharger(1);
+  const c0=dfCoin();
+  S.holes=[mkHole(c0.x+5,c0.y+5,3.2),mkHole(c0.x+15,c0.y+5,3.2)];
+  S.dessin={fonte:false};                     // codage WinAnsi lisible tel quel
+  const a={type:"trou",id:S.holes[0].id}, b={type:"trou",id:S.holes[1].id};
+  try{
+    const poser=(tol,dy)=>dfAjouterCote({vue:"fab/carte",type:"h",a,b,dx:0,dy,tol});
+    const sym=poser({genre:"sym",sup:-0.1},-6), asym=poser({genre:"asym",sup:0.1,inf:-0.05},-12),
+          lim=poser({genre:"lim",sup:-0.05,inf:0.1},-18), ref=poser({genre:"ref"},-24),
+          base=poser({genre:"base"},-30), fin=poser({genre:"sym",sup:0.005},-36);
+    const ang=dfAjouterCote({vue:"fab/carte",type:"d",a,dx:6,dy:6,tol:{genre:"asym",sup:0.1,inf:0}});
+    const c=dfCfg().cotes;
+    if(c[0].tol.sup!==0.1||c[2].tol.sup!==0.1||c[2].tol.inf!==-0.05)throw new Error("écarts mal rangés : "+JSON.stringify(c.map(k=>k.tol)));
+    const doc=dfDocument(), F=dfFab(doc), J=id=>JSON.stringify(dfTxtCote(F,id));
+    if(J(sym)!=='["10,00 ±0,10"]')throw new Error("symétrique : "+J(sym));
+    if(J(asym)!=='["10,00","+0,10","−0,05"]')throw new Error("asymétrique : "+J(asym));
+    if(J(lim)!=='["10,10","9,95"]')throw new Error("limites : "+J(lim));
+    if(J(ref)!=='["(10,00)"]')throw new Error("référence : "+J(ref));
+    if(J(base)!=='["10,00"]')throw new Error("exacte : "+J(base));
+    if(J(fin)!=='["10,00 ±0,005"]')throw new Error("écart fin : "+J(fin));
+    if(J(ang)!=='["Ø3,20","+0,10","0"]')throw new Error("diamètre tolérancé : "+J(ang));
+    /* les écarts superposés : plus petits, l'un au-dessus de l'autre */
+    const e=F.cotes.find(k=>k.id===asym), t=F.items.slice(e.i0,e.i1).filter(x=>x.t==="t");
+    if(!(t[1].pt<t[0].pt&&t[1].y<t[2].y&&t[1].x===t[2].x))throw new Error("écarts mal superposés");
+    /* la cote exacte est encadrée : un rectangle fermé autour de sa valeur */
+    const eb=F.cotes.find(k=>k.id===base), tb=F.items.slice(eb.i0,eb.i1);
+    const cadre=tb.find(x=>x.t==="p"&&x.ferme&&x.plein==null), bt=dfBoiteItems(F,eb.i0,eb.i1);
+    const tx=tb.find(x=>x.t==="t"), bx=cadre&&dfBoitePts(cadre.sp[0]);
+    if(!cadre||!(bx.x1<tx.x&&bx.x2>tx.x+dfLargeur("10,00",tx.pt)&&bx.y1<tx.y&&bx.y2>tx.y)||!bt)throw new Error("cadre de la cote exacte");
+    /* au PDF : du vrai texte, qui se cherche */
+    const pdf=dfLatin(dfPdfOctets(doc));
+    for(const s of ["(10,00 \\2610,10) Tj","(+0,10) Tj","(-0,05) Tj","(10,10) Tj","(9,95) Tj","(\\(10,00\\)) Tj","(\\3303,20) Tj"])
+      if(pdf.indexOf(s)<0)throw new Error("absent du PDF : "+s);
+    if(!dfChercher(doc,"±0,10").length||!dfChercher(doc,"(10,00)").length)throw new Error("la tolérance doit se chercher");
+    /* au DXF : sur le calque COTES, ± en %%p */
+    const D=dxfLu(dxfFeuilles([F]).octets), tx2=D.ents.filter(x=>x.type==="TEXT"&&x.cal==="COTES").map(x=>x.s(1));
+    for(const s of ["10,00 %%p0,10","+0,10","-0,05","10,10","9,95","(10,00)"])
+      if(tx2.indexOf(s)<0)throw new Error("absent du calque COTES : "+s+" ("+tx2.join(" | ")+")");
+    /* saisie : changer, effacer, refuser l'absurde */
+    if(!dfTolerer(sym,{genre:"asym",sup:0.2,inf:-0.1})||dfCfg().cotes[0].tol.genre!=="asym")throw new Error("tolérance non modifiée");
+    if(dfTolerer(sym,{genre:"zz"})!==false)throw new Error("genre inconnu accepté");
+    dfTolerer(sym,null);
+    if("tol" in dfCfg().cotes[0])throw new Error("tolérance non effacée");
+    /* un angle se tolère en degrés */
+    if(dfValeurCote({type:"ang",tol:{genre:"sym",sup:0.5}},45,false).p!=="45,0° ±0,5°")throw new Error("angle tolérancé");
+    if(dfValeurCote({type:"ang",tol:{genre:"lim",sup:0.25,inf:-0.25}},45,false).haut!=="45,25°")throw new Error("limites d'angle");
+  }finally{S.holes=[];S.dessin=null;}
+});
+T("plans : tolérance saisie dans la liste ou au double-clic sur la cote",()=>{
+  exCharger(1);
+  const c0=dfCoin();
+  S.holes=[mkHole(c0.x+5,c0.y+5,3.2),mkHole(c0.x+15,c0.y+5,3.2)];
+  const id=dfAjouterCote({vue:"fab/carte",type:"h",a:{type:"trou",id:S.holes[0].id},b:{type:"trou",id:S.holes[1].id},dx:0,dy:-8});
+  dfOuvrirNeuf();
+  try{
+    if(!dfEditerTolerance(id))throw new Error("le double-clic doit ouvrir la tolérance");
+    if(!DF.sel||DF.sel.id!==id)throw new Error("la cote doit être choisie");
+    const liste=document.getElementById("dfCotes").innerHTML;
+    if(liste.indexOf('data-tol="genre"')<0||liste.indexOf("df-cote-l on")<0)throw new Error("volet de tolérance absent");
+  }finally{DF.sel=null;dfFermer();S.holes=[];S.dessin=null;}
+});
+T("plans : cotes nouvelles — aller-retour du document, bornes",()=>{
+  exCharger(1);
+  const o=dfTrapeze();
+  S.holes=[mkHole(o.x+5,o.y+5,3.2),mkHole(o.x+15,o.y+5,3.2)];
+  const r=S.holes.map(h=>({type:"trou",id:h.id}));
+  try{
+    dfAjouterCote({vue:"fab/carte",type:"ang",s:{type:"contour",i:0},a:{type:"contour",i:1},b:{type:"bord",i:3,t:0.25},dx:9,dy:3,
+                   tol:{genre:"sym",sup:0.5}});
+    dfAjouterCote({vue:"fab/carte",type:"ang",a:{type:"bord",i:1,t:0.5},b:{type:"bord",i:3,t:0.5},dx:2,dy:2,tol:{genre:"base"}});
+    dfAjouterCote({vue:"asmT/carte",type:"ch",sens:"v",pts:[r[0],r[1],{type:"contour",i:0}],dx:-7,dy:0,tol:{genre:"lim",sup:0.1,inf:-0.1}});
+    dfAjouterCote({vue:"fab/carte",type:"ord",sens:"h",o:{type:"origine"},pts:r,dx:0,dy:5,tol:{genre:"ref"}});
+    dfDocument();                                  // les mémoires se remplissent au dessin
+    loadDoc(JSON.parse(serialize()),true);         // un trou neuf perd au premier passage ses champs par défaut
+    const a=serialize();
+    loadDoc(JSON.parse(a),true);
+    if(serialize()!==a)throw new Error("l'aller-retour change le document : "+firstDiff(JSON.parse(a),JSON.parse(serialize()),""));
+    const c=dfCfg().cotes;
+    if(c.length!==4||c[0].s.type!=="contour"||c[1].s||c[2].pts.length!==3||c[2].sens!=="v"||c[3].o.type!=="origine")
+      throw new Error("perdu au rechargement : "+JSON.stringify(c));
+    if(c[0].tol.sup!==0.5||c[1].tol.genre!=="base"||c[2].tol.inf!==-0.1||c[3].tol.genre!=="ref")throw new Error("tolérances perdues");
+    if(!c[2].memo||c[2].memo.pts.length!==3||!c[3].memo.o||!c[0].memo||c[0].memo.v!==45)throw new Error("mémoires : "+JSON.stringify(c.map(k=>k.memo)));
+    /* ce qui ne tient pas debout est écarté */
+    S.dessin={cotes:[
+      {id:1,vue:"fab/carte",type:"ch",sens:"h",pts:[r[0]]},                           // une chaîne d'un point
+      {id:2,vue:"fab/carte",type:"ord",sens:"h",pts:[r[0]]},                          // une ordonnée sans origine
+      {id:3,vue:"fab/carte",type:"ang",a:r[0],b:r[1]},                                // un angle sans sommet ni arêtes
+      {id:4,vue:"fab/carte",type:"ch",sens:"x",pts:[r[0],{type:"trou",id:"q"}]},      // une référence mal formée
+      {id:5,vue:"fab/carte",type:"ang",s:{type:"zz"},a:r[0],b:r[1]},                  // un sommet mal formé
+      {id:6,vue:"fab/carte",type:"h",a:r[0],b:r[1],tol:{genre:"asym",sup:0.1}},       // un écart manquant
+      {id:7,vue:"fab/carte",type:"ch",sens:"x",pts:[r[0],r[1]],tol:{genre:"sym",sup:"-0,2"}}]};
+    const n=dfCfg().cotes;
+    if(n.length!==2||n[0].id!==6||"tol" in n[0]||n[1].sens!=="h"||"tol" in n[1])throw new Error("bornes : "+JSON.stringify(n));
+    if(JSON.stringify(dfNormTol({genre:"lim",sup:-0.1,inf:0.2}))!=='{"genre":"lim","sup":0.2,"inf":-0.1}')throw new Error("limites inversées");
+  }finally{S.holes=[];S.dessin=null;}
+});
+T("plans : une vue lâchée sur une autre la repousse vers la place libre la plus proche",()=>{
+  exCharger(1);
+  const avant=JSON.stringify(dfDocument().feuilles.map(F=>F.items));
+  let F=dfFab(dfDocument());
+  const cles=F.vues.map(v=>v.cle);
+  const vn=F.vues.find(v=>v.cle==="fab/notes"), vp=F.vues.find(v=>v.cle==="fab/percage");
+  if(!vn||!vp)throw new Error("vues attendues sur le plan de fabrication : "+cles);
+  const bp=dfBoiteVue(F,vp);
+  const r=dfPoserVueRepousser("fab/notes",bp.x1,bp.y1);
+  if(!r||r.repoussees.indexOf("fab/percage")<0)throw new Error("le tableau de perçage doit s'écarter : "+JSON.stringify(r));
+  if(r.recouvertes.length)throw new Error("il y avait de la place : "+JSON.stringify(r));
+  const cfg=dfCfg();
+  if(!cfg.vues["fab/notes"]||!cfg.vues["fab/percage"])throw new Error("positions non enregistrées");
+  F=dfFab(dfDocument());
+  const Z=dfZone(F), C=Z.cart, b=k=>dfBoiteVue(F,F.vues.find(v=>v.cle===k));
+  const aire=(p,q)=>Math.max(0,Math.min(p.x2,q.x2)-Math.max(p.x1,q.x1))*Math.max(0,Math.min(p.y2,q.y2)-Math.max(p.y1,q.y1));
+  const bn=b("fab/notes");
+  /* à l'aimant et au cadre près */
+  if(Math.abs(bn.x1-bp.x1)>DF_GRILLE||Math.abs(bn.y1-bp.y1)>DF_GRILLE)throw new Error("la vue lâchée doit rester où on l'a posée");
+  for(const v of F.vues)if(v.cle!=="fab/notes"&&aire(dfBoiteVue(F,v),bn)>1e-6)throw new Error(v.cle+" recouvre encore les notes");
+  const bq=b("fab/percage");
+  if(bq.x1<Z.x1-1e-6||bq.y1<Z.y1-1e-6||bq.x2>Z.x2+0.5||bq.y2>Z.y2+0.5)throw new Error("perçage hors du cadre");
+  if(aire(bq,{x1:C.x,y1:C.y,x2:C.x+C.w,y2:C.y+C.h})>0)throw new Error("perçage sur le cartouche");
+  /* un seul pas d'historique */
+  undo();
+  if(Object.keys(dfCfg().vues).length)throw new Error("Ctrl+Z doit tout rendre");
+  if(JSON.stringify(dfDocument().feuilles.map(F=>F.items))!==avant)throw new Error("la disposition calculée a changé");
+  /* sans place libre : la moins recouvrante, et elle le dit */
+  const p=dfPlaceProche(F,60,40,100,100,[{x1:0,y1:0,x2:F.w,y2:F.h}]);
+  if(!p||!(p.recouvre>0))throw new Error("une feuille pleine doit le signaler : "+JSON.stringify(p));
+  if(dfPlaceProche(F,F.w,F.h,0,0,[])!==null)throw new Error("une boîte plus grande que le cadre n'a pas de place");
+  S.dessin=null;
+});
+
+/* ==========================================================================
+   Plans : export DXF et fonte embarquée (33-draftsman-export.js)
+   ========================================================================== */
+/* Le DXF en entités : chaque « 0 » ouvre une entité, VERTEX et SEQEND sont
+   rangés sous leur POLYLINE. Les sections sont vérifiées dans l'ordre. */
+function dxfLu(octets){
+  const t=Buffer.from(octets).toString("latin1");
+  if(!t.endsWith("\r\n"))throw new Error("fin de ligne DXF attendue : CR LF");
+  const L=t.slice(0,-2).split("\r\n");
+  if(L.length%2)throw new Error("nombre impair de lignes : un code sans valeur");
+  const P=[];
+  for(let i=0;i<L.length;i+=2){
+    if(!/^ *\d+$/.test(L[i]))throw new Error("code de groupe illisible : « "+L[i]+" » ligne "+(i+1));
+    P.push([+L[i],L[i+1]]);
+  }
+  const sections=[], header={}, calques=[], ents=[];
+  let i=0;
+  while(i<P.length){
+    if(P[i][0]===0&&P[i][1]==="EOF"){sections.push("EOF");i++;continue;}
+    if(!(P[i][0]===0&&P[i][1]==="SECTION"&&P[i+1][0]===2))throw new Error("hors section : "+P[i]);
+    const nom=P[i+1][1];sections.push(nom);i+=2;
+    let cur=null, var_=null;
+    while(!(P[i][0]===0&&P[i][1]==="ENDSEC")){
+      const [c,v]=P[i];
+      if(nom==="HEADER"){if(c===9){var_=v;header[v]=[];}else if(var_)header[var_].push(v);}
+      if(nom==="TABLES"&&c===0&&v==="LAYER")calques.push(P[i+1][1]);
+      if(nom==="ENTITIES"){
+        if(c===0&&(v==="VERTEX"||v==="SEQEND")){cur={type:v,g:[],sous:true};ents[ents.length-1].pts=ents[ents.length-1].pts||[];
+          if(v==="VERTEX")ents[ents.length-1].pts.push(cur);}
+        else if(c===0){cur={type:v,g:[]};ents.push(cur);}
+        else cur.g.push([c,v]);
+      }
+      i++;
+    }
+    i++;
+  }
+  const lire=e=>{
+    e.cal=(e.g.find(x=>x[0]===8)||[])[1];
+    e.n=c=>+(e.g.find(x=>x[0]===c)||[0,NaN])[1];
+    e.s=c=>(e.g.find(x=>x[0]===c)||[0,""])[1];
+    for(const v of e.pts||[])lire(v);
+  };
+  ents.forEach(lire);
+  return {t,sections,header,calques,ents};
+}
+/* Le contour d'un calque est-il UNE boucle fermée de LINE et d'ARC ? */
+function dxfBoucle(ents,cal){
+  const el=ents.filter(e=>e.cal===cal&&(e.type==="LINE"||e.type==="ARC")).map(e=>{
+    if(e.type==="LINE")return [[e.n(10),e.n(20)],[e.n(11),e.n(21)]];
+    const c=[e.n(10),e.n(20)], r=e.n(40), a=e.n(50)*Math.PI/180, b=e.n(51)*Math.PI/180;
+    return [[c[0]+r*Math.cos(a),c[1]+r*Math.sin(a)],[c[0]+r*Math.cos(b),c[1]+r*Math.sin(b)]];
+  });
+  if(!el.length)return false;
+  const pres=(p,q)=>Math.hypot(p[0]-q[0],p[1]-q[1])<1e-4;
+  const vu=new Set([0]);
+  let bout=el[0][1];
+  while(!pres(bout,el[0][0])){
+    const k=el.findIndex((x,j)=>!vu.has(j)&&(pres(x[0],bout)||pres(x[1],bout)));
+    if(k<0)return false;
+    vu.add(k);bout=pres(el[k][0],bout)?el[k][1]:el[k][0];
+  }
+  return vu.size===el.length;
+}
+function dxfPlateau(P){S.board.pts=P;boardChanged();}
+function dxfRondRect(x1,y1,x2,y2,r,n){
+  const P=[];
+  for(const [cx,cy,a0] of [[x2-r,y1+r,-90],[x2-r,y2-r,0],[x1+r,y2-r,90],[x1+r,y1+r,180]])
+    for(let i=0;i<=n;i++){const a=(a0+90*i/n)*Math.PI/180;P.push({x:r3(cx+r*Math.cos(a)),y:r3(cy+r*Math.sin(a))});}
+  return P;
+}
+function dxfPolygone(cx,cy,r,n){
+  const P=[];
+  for(let i=0;i<n;i++){const a=2*Math.PI*i/n;P.push({x:r3(cx+r*Math.cos(a)),y:r3(cy+r*Math.sin(a))});}
+  return P;
+}
+T("plans DXF : carte 1:1 bien formée — sections, calques, un CIRCLE par trou, contour fermé",()=>{
+  exCharger(1);
+  S.holes=[mkHole(5,5,3.2)];
+  try{
+    const D=dxfLu(dxfCarte().octets);
+    if(D.sections.join(" ")!=="HEADER TABLES BLOCKS ENTITIES EOF")throw new Error("sections : "+D.sections.join(" "));
+    if(D.header.$ACADVER[0]!=="AC1009")throw new Error("R12 attendu : "+D.header.$ACADVER);
+    if(D.header.$INSUNITS[0]!=="4"||D.header.$MEASUREMENT[0]!=="1")throw new Error("unités : millimètres attendus");
+    for(const c of ["CONTOUR","TROUS_METALLISES","TROUS_NON_METALLISES","COMPOSANTS_DESSUS","REPERES_DESSUS","COTES","TABLEAU_PERCAGE"])
+      if(D.calques.indexOf(c)<0)throw new Error("calque "+c+" absent : "+D.calques.join(", "));
+    for(const e of D.ents)if(D.calques.indexOf(e.cal)<0)throw new Error("calque non déclaré : "+e.cal);
+    /* un CIRCLE par trou, pas un de plus ; le non métallisé à part */
+    const cer=D.ents.filter(e=>e.type==="CIRCLE");
+    if(cer.length!==drillFile().holes)throw new Error(cer.length+" CIRCLE pour "+drillFile().holes+" trous");
+    const np=cer.filter(e=>e.cal==="TROUS_NON_METALLISES");
+    if(np.length!==1||Math.abs(np[0].n(40)-1.6)>1e-9)throw new Error("trou de fixation : "+np.length);
+    /* au repère de l'Excellon : X = x − origine, Y vers le haut */
+    const o=gOrigin();
+    if(Math.abs(np[0].n(10)-(5-o.x))>1e-6||Math.abs(np[0].n(20)-(o.y-5))>1e-6)throw new Error("repère du trou faux");
+    if(!dxfBoucle(D.ents,"CONTOUR"))throw new Error("contour non fermé");
+    const u1=D.ents.find(e=>e.type==="TEXT"&&e.s(1)==="U1");
+    if(!u1||u1.cal!=="REPERES_DESSUS")throw new Error("repère U1 absent ou mal rangé");
+    const corps=D.ents.filter(e=>e.type==="POLYLINE"&&e.cal==="COMPOSANTS_DESSUS");
+    if(corps.length!==S.fps.length||corps.some(e=>e.n(70)!==1||e.pts.length!==4))throw new Error("un corps fermé de 4 sommets par composant");
+    if(!D.ents.some(e=>e.type==="TEXT"&&e.cal==="TABLEAU_PERCAGE"&&e.s(1)==="%%c fini (mm)"))throw new Error("en-tête du tableau de perçage (Ø en %%c)");
+  }finally{S.holes=[];}
+});
+T("plans DXF : arcs retrouvés — coins arrondis, carte ronde, l'octogone reste droit",()=>{
+  exCharger(1);
+  try{
+    dxfPlateau(dxfRondRect(10,10,70,50,5,8));
+    let D=dxfLu(dxfCarte().octets);
+    const arcs=D.ents.filter(e=>e.cal==="CONTOUR"&&e.type==="ARC"), lig=D.ents.filter(e=>e.cal==="CONTOUR"&&e.type==="LINE");
+    if(arcs.length!==4||lig.length!==4)throw new Error("4 ARC et 4 LINE attendus : "+arcs.length+" / "+lig.length);
+    for(const a of arcs){
+      const bal=((a.n(51)-a.n(50))%360+360)%360;
+      if(Math.abs(a.n(40)-5)>0.01||Math.abs(bal-90)>0.5)throw new Error("arc r="+a.n(40)+" sur "+bal+"°");
+    }
+    if(!dxfBoucle(D.ents,"CONTOUR"))throw new Error("contour arrondi non fermé");
+    /* une découpe ronde, elle aussi en arcs */
+    S.board.cutouts=[dxfPolygone(40,30,4,36)];
+    D=dxfLu(dxfCarte().octets);
+    if(D.ents.filter(e=>e.cal==="DECOUPES"&&e.type==="ARC").length!==2||!dxfBoucle(D.ents,"DECOUPES"))
+      throw new Error("découpe ronde : deux demi-arcs fermés attendus");
+    delete S.board.cutouts;
+    dxfPlateau(dxfPolygone(50,50,30,72));
+    D=dxfLu(dxfCarte().octets);
+    const ar=D.ents.filter(e=>e.cal==="CONTOUR"&&e.type==="ARC");
+    if(ar.length!==2||D.ents.some(e=>e.cal==="CONTOUR"&&e.type==="LINE"))throw new Error("carte ronde : 2 demi-arcs, "+ar.length);
+    if(Math.abs(ar[0].n(40)-30)>0.01||!dxfBoucle(D.ents,"CONTOUR"))throw new Error("carte ronde : rayon ou fermeture");
+    dxfPlateau(dxfPolygone(50,50,30,8));
+    D=dxfLu(dxfCarte().octets);
+    if(D.ents.filter(e=>e.cal==="CONTOUR"&&e.type==="LINE").length!==8||D.ents.some(e=>e.cal==="CONTOUR"&&e.type==="ARC"))
+      throw new Error("un octogone n'est pas un cercle");
+    if(dxfSegments([{x:0,y:0},{x:10,y:0},{x:10,y:10},{x:0,y:10}]).some(s=>s.t!=="l"))throw new Error("rectangle");
+  }finally{exCharger(1);}
+});
+T("plans DXF : la feuille entière — calques par repère, par catégorie et par place",()=>{
+  exCharger(1);
+  const doc=dfDocument();
+  const fab=doc.feuilles.filter(F=>F.genre==="fab");
+  const D=dxfLu(dxfFeuilles(fab).octets);
+  for(const c of ["CADRE","CARTOUCHE","CONTOUR","COTES","PERCAGE","TABLEAUX","NOTES","EMPILAGE"])
+    if(D.calques.indexOf(c)<0)throw new Error("calque "+c+" absent : "+D.calques.join(", "));
+  if(!dxfBoucle(D.ents,"CONTOUR"))throw new Error("contour de la vue non fermé");
+  const txt=D.ents.filter(e=>e.type==="TEXT");
+  const visibles=fab.reduce((a,F)=>a+F.items.filter(it=>it.t==="t"&&!it.cache&&String(it.s).trim()).length,0);
+  if(txt.length!==visibles)throw new Error(visibles+" textes visibles, "+txt.length+" TEXT : les invisibles restent au PDF");
+  if(!txt.some(e=>e.cal==="CARTOUCHE"&&e.s(1)==="Plan de fabrication"))throw new Error("titre du cartouche");
+  if(!txt.some(e=>e.cal==="COTES"&&/ mm$/.test(e.s(1))))throw new Error("cote hors tout");
+  if(!D.ents.some(e=>e.cal==="COTES"&&e.type==="SOLID"))throw new Error("flèches de cote pleines");
+  /* Windows-1252 : É en un octet ; ≥, hors du jeu, écrit comme en WinAnsi ;
+     ° en %%d, le code DXF */
+  if(D.t.indexOf("\xC9paisseur")<0)throw new Error("É de « Épaisseur » attendu en 0xC9");
+  if(D.t.indexOf("Tg >= 150 %%dC")<0)throw new Error("≥ et ° mal codés");
+  if(D.t.indexOf("\\U+")>=0)throw new Error("pas d'échappement \\U+ : tous les modeleurs ne le lisent pas");
+  /* assemblage : pastilles, corps, repères sur leur calque */
+  const A=dxfLu(dxfFeuilles([doc.feuilles.find(F=>F.genre==="asmT")]).octets);
+  for(const c of ["PASTILLES","COMPOSANTS","REPERES"])
+    if(!A.ents.some(e=>e.cal===c))throw new Error("assemblage : calque "+c+" vide");
+  /* ce qu'une autre fonction de dessin pose sous dfCalque() arrive sur son calque */
+  const F=doc.feuilles[0];
+  dfCalque(F,"COTES_MANUELLES");dfLigne(F,20,20,60,20,0.2);dfCalque(F);
+  const M=dxfLu(dxfFeuilles([F]).octets);
+  const l=M.ents.filter(e=>e.cal==="COTES_MANUELLES");
+  if(l.length!==1||l[0].type!=="LINE"||Math.abs(l[0].n(20)-(F.h-20))>1e-9)throw new Error("extension par dfCalque");
+});
+T("plans DXF : dans fabrication.zip, annoncés par le master drawing et le LISEZ-MOI",()=>{
+  exCharger(1);
+  const files=buildFabFiles().files;
+  const c=files.find(f=>/-CARTE\.dxf$/.test(f.name)), p=files.find(f=>/-PLAN-FABRICATION\.dxf$/.test(f.name));
+  if(!c||!p||!(c.data instanceof Uint8Array))throw new Error("DXF absents de l'archive : "+files.map(f=>f.name).join(" "));
+  const md=files.find(f=>/MASTER-DRAWING\.pdf$/.test(f.name));
+  if(dfLatin(md.data).indexOf(c.name)<0||dfLatin(md.data).indexOf(p.name)<0)throw new Error("le master drawing doit les annoncer");
+  if(files.indexOf(c)>files.indexOf(md))throw new Error("les DXF précèdent le master drawing qui les liste");
+  const lm=files.find(f=>f.name==="LISEZ-MOI.txt").text;
+  if(!/\.dxf \(AutoCAD R12/.test(lm)||lm.indexOf(c.name)<0)throw new Error("LISEZ-MOI muet sur les DXF");
+  S.dessin={feuilles:{fab:false,asmT:true}};
+  try{
+    const f2=buildFabFiles().files;
+    if(!f2.some(f=>/-CARTE\.dxf$/.test(f.name))||f2.some(f=>/-PLAN-FABRICATION\.dxf$/.test(f.name)))
+      throw new Error("sans plan de fabrication : la carte seule");
+  }finally{S.dessin=null;}
+  /* les boutons de la fenêtre */
+  dfOuvrir();
+  try{
+    if(!dxfExporterCarte().trous)throw new Error("export de la carte");
+    if(!dxfExporterFeuille())throw new Error("export de la feuille affichée");
+  }finally{dfFermer();}
+});
+
+/* Le texte d'un PDF tel qu'un lecteur le retrouve : chaque Tj décodé par la
+   /ToUnicode de sa fonte (hexadécimal) ou lu en WinAnsi (littéral). */
+function pdfObjet(t,id){
+  const i=t.indexOf("\n"+id+" 0 obj\n");
+  if(i<0)throw new Error("objet "+id+" absent");
+  const d=i+String(id).length+8, f=t.indexOf("\nendobj",d);
+  const corps=t.slice(d,f);
+  const m=/\/Length (\d+)[^\n]*\nstream\n/.exec(corps);
+  return {dict:corps.slice(0,corps.indexOf("\n")),flux:m?corps.substr(m.index+m[0].length,+m[1]):null};
+}
+function pdfTextes(pdf){
+  const t=dfLatin(pdf);
+  const res=/\/Font << \/F1 (\d+) 0 R \/F2 (\d+) 0 R >>/.exec(t);
+  const cartes={};
+  for(const [nom,id] of [["1",res[1]],["2",res[2]]]){
+    const o=pdfObjet(t,id), tu=/\/ToUnicode (\d+) 0 R/.exec(o.dict);
+    if(!tu)continue;
+    const m=new Map(), cm=Buffer.from(pdfObjet(t,tu[1]).flux,"latin1").toString("latin1");
+    for(const x of cm.matchAll(/<([0-9A-F]{4})> <([0-9A-F]+)>/g))
+      m.set(x[1],Buffer.from(x[2],"hex").swap16().toString("utf16le"));
+    cartes[nom]=m;
+  }
+  const out=[];
+  for(const x of t.matchAll(/BT \/F(\d) [^\n]*?(<[0-9A-F]*>|\((?:\\.|[^\\)])*\)) Tj ET/g)){
+    const s=x[2];
+    if(s[0]==="<"){
+      let o="";
+      for(let i=1;i+4<=s.length-1;i+=4){const u=cartes[x[1]].get(s.substr(i,4));if(u==null)throw new Error("CID "+s.substr(i,4)+" sans /ToUnicode");o+=u;}
+      out.push({f:x[1],s:o});
+    }else out.push({f:x[1],s:s.slice(1,-1)});
+  }
+  return out;
+}
+function pdfXrefJuste(t){
+  const sx=+(/startxref\n(\d+)\n%%EOF/.exec(t)||[])[1];
+  const m=/^xref\n0 (\d+)\n/.exec(t.slice(sx));
+  if(!m)throw new Error("table xref introuvable");
+  const lignes=t.slice(sx+m[0].length).split("\n");
+  for(let i=1;i<+m[1];i++){
+    const off=+lignes[i].slice(0,10);
+    if(!t.startsWith(i+" 0 obj\n",off))throw new Error("objet "+i+" : décalage "+off+" faux");
+  }
+  const re=/\/Length (\d+)[^>\n]*>>\nstream\n/g;let r;
+  while((r=re.exec(t))){
+    const fin=re.lastIndex+(+r[1]);
+    if(t.slice(fin,fin+10)!=="\nendstream")throw new Error("longueur de flux fausse");
+  }
+}
+const DF_NOTE_SYMB="Tolérance 10 kΩ ± 5 %, 4,7 µF, Tg ≥ 150 °C, ≤ 0,1 mm";
+T("plans PDF : fonte embarquée — FontFile2, CIDFontType2, ToUnicode, sous-ensemble",()=>{
+  exCharger(1);
+  S.dessin={notes:DF_NOTE_SYMB};
+  try{
+    if(dfCfg().fonte!==true)throw new Error("la fonte embarquée est l'option par défaut");
+    const pdf=dfPdfOctets(), t=dfLatin(pdf);
+    pdfXrefJuste(t);
+    for(const k of ["/FontFile2","/CIDFontType2","/ToUnicode","/Identity-H","/CIDToGIDMap /Identity","+PlansSans-Regular","+PlansSans-Bold"])
+      if(t.indexOf(k)<0)throw new Error(k+" absent");
+    if(t.indexOf("/WinAnsiEncoding")>=0)throw new Error("plus d'Helvetica quand les deux graisses sont embarquées");
+    if((t.match(/\/FontFile2 /g)||[]).length!==2)throw new Error("deux fontes : normale et grasse");
+    /* le sous-ensemble : bien plus petit que la fonte entière, et il a les
+       glyphes de chaque caractère employé */
+    const full=dffBase64(DF_FONTE_TTF.normal);
+    const re=/\/Length (\d+) \/Length1 \d+ >>\nstream\n/g;let r;const subs=[];
+    while((r=re.exec(t)))subs.push(Buffer.from(t.substr(re.lastIndex,+r[1]),"latin1"));
+    for(const b of subs)if(!(b.length<full.length*0.6))throw new Error("sous-ensemble de "+b.length+" octets pour "+full.length);
+    const Fo=dffLire(new Uint8Array(subs[0]));
+    if(Fo.ng>=dffFonte("normal").ng/2)throw new Error(Fo.ng+" glyphes gardés sur "+dffFonte("normal").ng);
+    const normaux=pdfTextes(pdf).filter(x=>x.f==="1").map(x=>x.s).join("");
+    for(const ch of new Set(normaux)){
+      const g=Fo.cmap.get(ch.codePointAt(0));
+      if(!g)throw new Error("« "+ch+" » sans glyphe dans le sous-ensemble");
+      if(ch.trim()&&Fo.loca[g+1]===Fo.loca[g])throw new Error("« "+ch+" » : glyphe vide");
+    }
+    for(const ch of "ΩµΩ±≥≤°É")if(normaux.indexOf(ch)>=0&&!Fo.cmap.get(ch.codePointAt(0)))throw new Error(ch);
+  }finally{S.dessin=null;}
+});
+T("plans PDF : le texte se retrouve par la /ToUnicode — accents, Ω, µ, ±, °, ≤, ≥, invisibles",()=>{
+  exCharger(1);
+  S.dessin={notes:DF_NOTE_SYMB};
+  try{
+    const tx=pdfTextes(dfPdfOctets()).map(x=>x.s);
+    const tout=tx.join("\n");
+    if(tout.indexOf(DF_NOTE_SYMB)<0)throw new Error("note aux symboles mal relue : "+tx.filter(s=>/Tol/.test(s)).join(" | "));
+    for(const s of ["U1","C3 100n","Épaisseur totale","Plan de fabrication","Tg ≥ "])
+      if(tout.indexOf(s)<0)throw new Error("« "+s+" » introuvable dans le texte extrait");
+    /* le centrage suit les vraies chasses : la largeur de « U1 » en PlansSans gras */
+    const FE=dfFontePreparer(dfDocument().feuilles);
+    if(Math.abs(FE.largeur("Wi",10,false)-dfLargeur("Wi",10,false))>1e-3)throw new Error("Liberation Sans doit avoir les chasses d'Helvetica");
+    /* sans la fonte, Ω redevient « Ohm » : c'est le codage WinAnsi */
+    S.dessin={notes:DF_NOTE_SYMB,fonte:false};
+    const h=pdfTextes(dfPdfOctets()).map(x=>x.s).join("\n");
+    if(h.indexOf("10 kOhm \\261 5 %")<0)throw new Error("repli WinAnsi : "+h.split("\n").filter(s=>/Tol/.test(s)));
+  }finally{S.dessin=null;}
+});
+T("plans PDF : repli sur Helvetica — option décochée, fonte absente, réglage gardé",()=>{
+  exCharger(1);
+  S.dessin={fonte:false};
+  try{
+    const t=dfLatin(dfPdfOctets());
+    if(t.indexOf("/FontFile2")>=0||t.indexOf("/WinAnsiEncoding")<0)throw new Error("décochée : Helvetica en WinAnsi");
+    S.dessin=null;
+    dfRegler("fonte",false);
+    const a=serialize();loadDoc(JSON.parse(a),true);
+    if(dfCfg().fonte!==false||serialize()!==a)throw new Error("le choix suit le document");
+    dfRegler("fonte",true);
+    /* la fonte qui ne se charge pas : le PDF sort quand même, en Helvetica */
+    const avant=DFF_CACHE.normal;
+    DFF_CACHE.normal=null;
+    try{
+      const t2=dfLatin(dfPdfOctets());
+      if(t2.indexOf("/FontFile2")>=0||t2.indexOf("/Helvetica")<0)throw new Error("fonte absente : repli attendu");
+      pdfXrefJuste(t2);
+    }finally{DFF_CACHE.normal=avant;}
+    /* un caractère que la fonte n'a pas : la substitution d'avant, puis « ? » */
+    const Fo=dffFonte("normal");
+    const g=dffGlyphes(Fo,"⌀✓ǎ日").map(x=>x.u).join("");
+    if(g!=="ØOKa?")throw new Error(g);
+  }finally{S.dessin=null;}
+});
+T("plans : vérification externe du PDF (pdftotext) et du DXF (ezdxf), si les outils sont là",()=>{
+  const cp=require("child_process"), os=require("os");
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),"plans-"));
+  try{
+    exCharger(1);
+    S.dessin={notes:DF_NOTE_SYMB};
+    const fpdf=path.join(dir,"plans.pdf"), fdxf=path.join(dir,"carte.dxf");
+    fs.writeFileSync(fpdf,dfPdfOctets());
+    fs.writeFileSync(fdxf,dxfCarte().octets);
+    S.dessin=null;
+    const p=cp.spawnSync("pdftotext",["-enc","UTF-8",fpdf,"-"],{encoding:"utf8"});
+    if(p.error)console.log("     (pdftotext absent : PDF non vérifié)");
+    else{
+      if(p.status!==0)throw new Error("pdftotext : "+p.stderr);
+      for(const s of ["10 kΩ","≥ 150","µF","U1","Épaisseur"])if(p.stdout.indexOf(s)<0)throw new Error("pdftotext ne retrouve pas « "+s+" »");
+      if(/Syntax Error|Error/.test(p.stderr))throw new Error("pdftotext : "+p.stderr);
+    }
+    const py="import sys,ezdxf\nd=ezdxf.readfile(sys.argv[1])\na=d.audit()\nm=d.modelspace()\n"+
+             "print(len(a.errors),len(m.query('CIRCLE')),len(m.query('ARC')),d.header.get('$INSUNITS'),d.dxfversion)";
+    const e=cp.spawnSync("python3",["-c",py,fdxf],{encoding:"utf8"});
+    if(e.error||/No module named/.test(e.stderr||""))console.log("     (ezdxf absent : DXF non vérifié)");
+    else{
+      if(e.status!==0)throw new Error("ezdxf : "+e.stderr);
+      const [err,cer,,u,v]=e.stdout.trim().split(" ");
+      exCharger(1);
+      if(+err!==0||+cer!==drillFile().holes||u!=="4"||v!=="AC1009")throw new Error("ezdxf : "+e.stdout);
+    }
+  }finally{S.dessin=null;fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+/* ==========================================================================
+   Master Drawing : la fonte des plans, en TrueType simple (04-pdf-masterdraw.js,
+   33-draftsman-export.js)
+   ========================================================================== */
+function mdPdf(){return buildFabFiles().files.find(f=>/-MASTER-DRAWING\.pdf$/.test(f.name)).data;}
+/* Le texte du Master Drawing tel qu'un lecteur le retrouve : chaque littéral
+   décodé par la /ToUnicode d'un octet de sa fonte, ou lu tel quel (WinAnsi). */
+function mdTextes(pdf){
+  const t=dfLatin(pdf);
+  const res=/\/Font << \/F1 (\d+) 0 R \/F2 (\d+) 0 R/.exec(t);
+  const cartes={};
+  for(const [nom,id] of [["1",res[1]],["2",res[2]]]){
+    const tu=/\/ToUnicode (\d+) 0 R/.exec(pdfObjet(t,id).dict);
+    if(!tu)continue;
+    const m=new Map();
+    for(const x of pdfObjet(t,tu[1]).flux.matchAll(/<([0-9A-F]{2})> <((?:[0-9A-F]{4})+)>/g))
+      m.set(parseInt(x[1],16),Buffer.from(x[2],"hex").swap16().toString("utf16le"));
+    cartes[nom]=m;
+  }
+  const out=[];
+  for(const x of t.matchAll(/BT \/F(\d) [^\n]*? Td (\((?:\\[0-7]{3}|\\.|[^\\)])*\)) Tj ET/g)){
+    const o=x[2].slice(1,-1).replace(/\\([0-7]{3}|.)/g,(a,b)=>b.length===3?String.fromCharCode(parseInt(b,8)):b);
+    let s="";
+    for(const c of o){
+      if(!cartes[x[1]]){s+=c;continue;}
+      const u=cartes[x[1]].get(c.charCodeAt(0));
+      if(u==null)throw new Error("code "+c.charCodeAt(0)+" sans /ToUnicode");
+      s+=u;
+    }
+    out.push({f:x[1],s});
+  }
+  return out;
+}
+/* Un sous-ensemble de fonte simple : sa cmap (1,0) de format 6, code d'un
+   octet → glyphe, et si un glyphe est vide (loca longue). */
+function mdCmap6(u8){
+  const dv=new DataView(u8.buffer,u8.byteOffset,u8.byteLength), tab={};
+  for(let i=0;i<dv.getUint16(4);i++)
+    tab[String.fromCharCode(...u8.subarray(12+16*i,16+16*i))]=dv.getUint32(12+16*i+8);
+  const C=tab.cmap, vide=g=>dv.getUint32(tab.loca+4*g+4)===dv.getUint32(tab.loca+4*g);
+  if(dv.getInt16(tab.head+50)!==1)throw new Error("loca longue attendue");
+  for(let i=0;i<dv.getUint16(C+2);i++){
+    const o=C+dv.getUint32(C+8+8*i);
+    if(dv.getUint16(C+4+8*i)===1&&dv.getUint16(C+6+8*i)===0&&dv.getUint16(o)===6){
+      const a=dv.getUint16(o+6), c6=new Map();
+      for(let k=0;k<dv.getUint16(o+8);k++)c6.set(a+k,dv.getUint16(o+10+2*k));
+      return {c6,vide};
+    }
+  }
+  throw new Error("pas de cmap (1,0) de format 6");
+}
+T("master drawing : fonte embarquée — FontFile2, ToUnicode, accents et symboles retrouvés",()=>{
+  exCharger(1);
+  S.dessin=null;
+  projOuvrir("Éclairage 10 kΩ");
+  try{
+    if(dfCfg().fonte!==true)throw new Error("la fonte embarquée est l'option par défaut");
+    const pdf=mdPdf(), t=dfLatin(pdf);
+    pdfXrefJuste(t);
+    for(const k of ["/Subtype /TrueType","/ToUnicode","+PlansSans-Regular","+PlansSans-Bold"])
+      if(t.indexOf(k)<0)throw new Error(k+" absent");
+    if((t.match(/\/FontFile2 /g)||[]).length!==2)throw new Error("deux fontes embarquées : normale et grasse");
+    if(t.indexOf("/Helvetica")>=0)throw new Error("aucune fonte substituée quand la fonte est embarquée");
+    if(!/\/FontDescriptor \/FontName \/[A-Z]{6}\+PlansSans-Regular \/Flags 4 /.test(t))throw new Error("fonte simple symbolique (Flags 4)");
+    /* le contenu reste lisible en clair : l'ASCII garde son code */
+    if(t.indexOf("(SHEET: 1 / ")<0||t.indexOf("(REV: A)")<0)throw new Error("le contenu ASCII doit se lire tel quel");
+    /* le texte retrouvé : accents, Ω, µ, ±, °, ≥, ε */
+    const tx=mdTextes(pdf), tout=tx.map(x=>x.s).join("\n");
+    for(const s of ["TITLE: Éclairage 10 kΩ-PCB-MASTER-DRAWING","≥ 100 V","≥ 20 µm","(±10%)","150 °C","εr 4.30","118–236 µin (3–6 µm)"])
+      if(tout.indexOf(s)<0)throw new Error("« "+s+" » introuvable dans le texte extrait");
+    /* le sous-ensemble : petit, et chaque code a son glyphe dessiné */
+    const re=/\/Length (\d+) \/Length1 \d+ >>\nstream\n/g;let r;const subs=[];
+    while((r=re.exec(t)))subs.push(new Uint8Array(Buffer.from(t.substr(re.lastIndex,+r[1]),"latin1")));
+    const full=dffBase64(DF_FONTE_TTF.normal);
+    if(subs.length!==2||subs.some(b=>!(b.length<full.length*0.5)))throw new Error("sous-ensembles : "+subs.map(b=>b.length));
+    const {c6,vide}=mdCmap6(subs[0]);
+    const normaux=tx.filter(x=>x.f==="1").map(x=>x.s).join("");
+    const tu=new Map();
+    const id=/\/Font << \/F1 (\d+) 0 R/.exec(t)[1];
+    for(const x of pdfObjet(t,/\/ToUnicode (\d+) 0 R/.exec(pdfObjet(t,id).dict)[1]).flux.matchAll(/<([0-9A-F]{2})> <((?:[0-9A-F]{4})+)>/g))
+      tu.set(Buffer.from(x[2],"hex").swap16().toString("utf16le"),parseInt(x[1],16));
+    for(const ch of new Set(normaux)){
+      const g=c6.get(tu.get(ch));
+      if(!g)throw new Error("« "+ch+" » sans glyphe dans le sous-ensemble");
+      if(ch.trim()&&vide(g))throw new Error("« "+ch+" » : glyphe vide");
+    }
+  }finally{projFermer();S.dessin=null;}
+});
+T("master drawing : repli sur Helvetica en WinAnsi — option décochée, fonte absente",()=>{
+  exCharger(1);
+  projOuvrir("Éclairage 10 kΩ");
+  S.dessin={fonte:false};
+  try{
+    const t=dfLatin(mdPdf());
+    pdfXrefJuste(t);
+    if(t.indexOf("/FontFile2")>=0)throw new Error("décochée : rien d'embarqué");
+    for(const k of ["/BaseFont /Helvetica /Encoding /WinAnsiEncoding","/BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding"])
+      if(t.indexOf(k)<0)throw new Error(k+" absent");
+    /* WinAnsi : É et ± en un octet, Ω en « Ohm », ≥ en « >= » */
+    for(const s of ["TITLE: \\311clairage 10 kOhm-PCB","(\\26110%)",">= 100 V","150 \\260C"])
+      if(t.indexOf(s)<0)throw new Error("« "+s+" » attendu en WinAnsi");
+    /* la fonte qui ne se charge pas : Helvetica aussi, même cochée */
+    S.dessin=null;
+    const avant=DFF_CACHE.gras;
+    DFF_CACHE.gras=null;
+    try{
+      const t2=dfLatin(mdPdf());
+      pdfXrefJuste(t2);
+      if(t2.indexOf("/FontFile2")>=0||t2.indexOf("/BaseFont /Helvetica-Bold")<0)throw new Error("fonte absente : repli attendu");
+    }finally{DFF_CACHE.gras=avant;}
+  }finally{projFermer();S.dessin=null;}
+});
+/* Les pages du Master Drawing, dans l'ordre : leur flux et leurs textes, avec
+   position (mm depuis le haut, comme la mise en page) et largeur exacte, lue
+   dans les /Widths de la fonte embarquée. */
+function mdPages(pdf){
+  const t=dfLatin(pdf), mm=v=>v*25.4/72;
+  const res=/\/Font << \/F1 (\d+) 0 R \/F2 (\d+) 0 R/.exec(t);
+  const larg={};
+  for(const [nom,id] of [["1",res[1]],["2",res[2]]]){
+    const d=pdfObjet(t,id).dict, fc=/\/FirstChar (\d+)/.exec(d), w=/\/Widths \[([^\]]*)\]/.exec(d);
+    if(!fc||!w)throw new Error("fonte F"+nom+" sans /Widths : la fonte embarquée est attendue");
+    larg[nom]={c0:+fc[1],w:w[1].trim().split(/\s+/).map(Number)};
+  }
+  const kids=/\/Type \/Pages \/Kids \[([^\]]*)\]/.exec(t)[1].match(/\d+(?= 0 R)/g);
+  return kids.map(id=>{
+    const flux=pdfObjet(t,/\/Contents (\d+) 0 R/.exec(pdfObjet(t,id).dict)[1]).flux;
+    const textes=[];
+    for(const l of flux.split("\n")){
+      const m=/^BT \/F(\d) ([\d.]+) Tf [\d.]+ g ([\d.-]+) ([\d.-]+) Td \((.*)\) Tj ET$/.exec(l);
+      if(!m)continue;
+      const s=m[5].replace(/\\([0-7]{3}|.)/g,(a,b)=>b.length===3?String.fromCharCode(parseInt(b,8)):b);
+      const L=larg[m[1]], pt=+m[2];
+      let w=0;
+      for(const c of s)w+=L.w[c.charCodeAt(0)-L.c0]||0;
+      const x=mm(+m[3]), y=297-mm(+m[4]);
+      textes.push({f:m[1],pt,s,x,y,w:mm(w/1000*pt),
+        b:{x1:x,x2:x+mm(w/1000*pt),y1:y-mm(0.9*pt),y2:y+mm(0.22*pt)}});
+    }
+    return {flux,textes};
+  });
+}
+const mdDisjointes=(a,b)=>a.x2<=b.x1||b.x2<=a.x1||a.y2<=b.y1||b.y2<=a.y1;
+/* La boîte, en mm depuis le haut, des coordonnées des lignes `lignes` du flux. */
+function mdBoite(lignes){
+  const b={x1:Infinity,y1:Infinity,x2:-Infinity,y2:-Infinity};
+  for(const l of lignes){
+    /* « x y m », « x1 y1 x2 y2 x3 y3 c », « x y m x y l S » : des couples */
+    const n=l.trim().split(/\s+/).filter(x=>/^-?\d+(\.\d+)?$/.test(x)).map(Number);
+    for(let i=0;i+1<n.length;i+=2){
+      const x=n[i]*25.4/72, y=297-n[i+1]*25.4/72;
+      b.x1=Math.min(b.x1,x);b.x2=Math.max(b.x2,x);b.y1=Math.min(b.y1,y);b.y2=Math.max(b.y2,y);
+    }
+  }
+  return b;
+}
+T("master drawing : épaisseurs de l'empilage en millimètres, cuivre et vernis compris",()=>{
+  exCharger(1);
+  S.dessin=null;
+  const P=mdPages(mdPdf()).find(p=>p.textes.some(x=>x.s==="Stackup table:   Unit = Millimeter"));
+  if(!P)throw new Error("page de l'empilage introuvable");
+  /* la colonne « Thickness » : x = marge + 7 + 31 + 24 + 62 + 2 mm */
+  const col=P.textes.filter(x=>Math.abs(x.x-(16+7+31+24+62+2))<0.2&&/^\d+\.\d+ mm$/.test(x.s));
+  const total=col.filter(x=>x.f==="2"), cel=col.filter(x=>x.f==="1").map(x=>parseFloat(x.s));
+  if(total.length!==1||total[0].s!==fmt(stackTotal(),3)+" mm")throw new Error("total : "+total.map(x=>x.s));
+  if(cel.length!==S.cu+(S.cu-1)+2)throw new Error(cel.length+" épaisseurs pour "+S.cu+" cuivres");
+  /* l'unité juste : chaque couche plus mince que la carte, et la somme fait l'empilage */
+  if(cel.some(v=>!(v>0&&v<stackTotal())))throw new Error("une épaisseur dépasse la carte : "+cel.join(" "));
+  const somme=cel.reduce((a,v)=>a+v,0), att=stackLam()+2*S.stack.maskT;
+  if(Math.abs(somme-att)>5e-4)throw new Error("somme "+somme+" mm pour "+att+" mm");
+  for(let i=0;i<S.cu;i++){
+    const s=fmt(cuT(i),4).replace(/0$/,"")+" mm";
+    if(!col.some(x=>x.s===s))throw new Error("cuivre L"+(i+1)+" : « "+s+" » attendu");
+  }
+  if(!col.some(x=>x.s===fmt(S.stack.maskT,4).replace(/0$/,"")+" mm"))throw new Error("vernis en mm");
+  if(P.textes.some(x=>/^\d{2,}\.\d{3} mm$/.test(x.s)&&parseFloat(x.s)>=10))throw new Error("une épaisseur en µm écrite « mm »");
+});
+T("master drawing : le contour de carte dans son cadre, au-dessus du cartouche",()=>{
+  for(const [w,h] of [[0,0],[30,80]]){
+    exCharger(1);
+    S.dessin=null;
+    if(w){S.board={x:0,y:0,w,h,pts:null};boardChanged();}
+    try{
+      const P=mdPages(mdPdf()).find(p=>p.textes.some(x=>x.s==="BOARD OUTLINE DRAWING"));
+      if(!P)throw new Error("page du contour introuvable");
+      const L=P.flux.split("\n");
+      const i=L.indexOf("q 0.6 G 0.5 w"), j=L.indexOf("Q",i);
+      if(i<0||j<0)throw new Error("tracé du contour introuvable");
+      const C=mdBoite(L.slice(i+1,j));
+      const rect=re=>{const n=re.split(" ").slice(-6,-2).map(Number).map(v=>v*25.4/72);
+        return {x1:n[0],x2:n[0]+n[2],y2:297-n[1],y1:297-n[1]-n[3]};};
+      const cad=L.filter(l=>/ 0\.400 w .* re S$/.test(l)).map(rect).find(r=>Math.abs(r.x2-r.x1-110)<0.01);
+      const car=L.filter(l=>/ 0\.500 w .* re S$/.test(l)).map(rect).find(r=>Math.abs(r.x2-r.x1-178)<0.01);
+      if(!cad||!car)throw new Error("cadre ou cartouche introuvable");
+      const e=0.01;
+      if(C.x1<cad.x1-e||C.x2>cad.x2+e||C.y1<cad.y1-e||C.y2>cad.y2+e)
+        throw new Error("contour hors du cadre : "+JSON.stringify(C)+" dans "+JSON.stringify(cad));
+      if(!(C.y2<car.y1&&cad.y2<car.y1))throw new Error("le contour descend sur le cartouche");
+      /* à l'échelle, centré : marges égales, proportions de la carte */
+      const B=boardPoly(), bw=Math.max(...B.map(p=>p.x))-Math.min(...B.map(p=>p.x)), bh=Math.max(...B.map(p=>p.y))-Math.min(...B.map(p=>p.y));
+      if(Math.abs((C.x2-C.x1)/(C.y2-C.y1)-bw/bh)>2e-3)throw new Error("proportions faussées");
+      if(Math.abs((C.x1-cad.x1)-(cad.x2-C.x2))>0.01||Math.abs((C.y1-cad.y1)-(cad.y2-C.y2))>0.01)throw new Error("contour décentré");
+      /* les cotes ne croisent pas leurs traits d'attache */
+      const hT=P.textes.find(x=>x.s===fmt(bh,2)+" mm"), wT=P.textes.find(x=>x.s===fmt(bw,2)+" mm");
+      if(!hT||!wT||hT.b.x2>cad.x1-1.5||wT.b.y1<cad.y2+1.5)throw new Error("cote sur son trait d'attache");
+    }finally{exCharger(1);}
+  }
+});
+T("master drawing : le schéma de l'anneau ne touche aucun texte de la page 1",()=>{
+  exCharger(1);
+  S.dessin=null;
+  const P=mdPages(mdPdf())[0], L=P.flux.split("\n");
+  const cer=[];
+  for(let i=0;i<L.length;i++)if(L[i]==="0.500 G 0.4 w")cer.push(mdBoite(L.slice(i+1,i+6)));
+  if(cer.length!==2)throw new Error("deux cercles attendus, "+cer.length);
+  const lab=P.textes.find(x=>x.s==="Annular ring");
+  if(!lab)throw new Error("légende du schéma absente");
+  const S1={x1:Math.min(cer[0].x1,lab.b.x1),x2:Math.max(cer[0].x2,lab.b.x2),y1:Math.min(cer[0].y1,lab.b.y1),y2:Math.max(cer[0].y2,lab.b.y2)};
+  const autres=P.textes.filter(x=>x!==lab);
+  const touche=autres.filter(x=>!mdDisjointes(x.b,S1));
+  if(touche.length)throw new Error("le schéma touche « "+touche.map(x=>x.s).join(" », « ")+" »");
+  /* dans la section « Pattern », avant « Surface details » */
+  const yP=autres.find(x=>x.s==="PATTERN").y, yS=autres.find(x=>x.s==="SURFACE DETAILS").y;
+  if(!(S1.y1>yP&&S1.y2<yS-4))throw new Error("schéma hors de sa section");
+  const via=autres.find(x=>x.s.startsWith("Via protection"));
+  if(!(S1.x2<via.b.x1))throw new Error("le schéma doit rester à gauche de la colonne de droite");
+});
+T("master drawing : vérification externe (pdffonts, pdftotext, pypdf), si les outils sont là",()=>{
+  const cp=require("child_process"), os=require("os");
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),"md-"));
+  try{
+    exCharger(1);
+    projOuvrir("Éclairage 10 kΩ");
+    const f=path.join(dir,"md.pdf");
+    try{fs.writeFileSync(f,mdPdf());}finally{projFermer();}
+    const pf=cp.spawnSync("pdffonts",[f],{encoding:"utf8"});
+    if(pf.error)console.log("     (pdffonts absent)");
+    else{
+      const l=pf.stdout.trim().split("\n").slice(2);
+      if(l.length!==2||l.some(x=>!/PlansSans-(Regular|Bold) +TrueType .* yes yes yes /.test(x)))throw new Error("pdffonts : "+pf.stdout);
+    }
+    const p=cp.spawnSync("pdftotext",["-enc","UTF-8",f,"-"],{encoding:"utf8"});
+    if(p.error)console.log("     (pdftotext absent)");
+    else{
+      if(p.status!==0||/Error/.test(p.stderr))throw new Error("pdftotext : "+p.stderr);
+      for(const s of ["Éclairage 10 kΩ","≥ 100 V","µm","±10%","150 °C","SHEET: 1 /"])
+        if(p.stdout.indexOf(s)<0)throw new Error("pdftotext ne retrouve pas « "+s+" »");
+    }
+    const py="import sys\nfrom pypdf import PdfReader\nr=PdfReader(sys.argv[1],strict=True)\n"+
+             "sys.stdout.buffer.write('\\n'.join(p.extract_text() for p in r.pages).encode('utf-8'))";
+    const e=cp.spawnSync("python3",["-c",py,f],{encoding:"utf8"});
+    if(e.error||/No module named/.test(e.stderr||""))console.log("     (pypdf absent)");
+    else{
+      if(e.status!==0)throw new Error("pypdf : "+e.stderr);
+      for(const s of ["Éclairage 10 kΩ","≥ 20 µm","εr"])if(e.stdout.indexOf(s)<0)throw new Error("pypdf ne retrouve pas « "+s+" »");
+    }
+  }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+/* ==========================================================================
+   DXF de la carte : un calque par outil de perçage (33-draftsman-export.js)
+   ========================================================================== */
+/* La couleur de chaque calque, lue dans la table LAYER. */
+function dxfCouleurs(t){
+  const m=new Map();
+  for(const x of t.matchAll(/\r\n  0\r\nLAYER\r\n  2\r\n([^\r]*)\r\n 70\r\n0\r\n 62\r\n(\d+)\r\n/g))m.set(x[1],+x[2]);
+  return m;
+}
+T("plans DXF : un calque par outil — POINT par trou, couleur par diamètre, cercles gardés",()=>{
+  exCharger(1);
+  S.holes=[mkHole(5,5,3.2),mkHole(60,5,3.2),mkHole(5,38,2.5)];
+  try{
+    const r=dxfCarte(), D=dxfLu(r.octets);
+    /* ce que la carte perce, outil par outil ; le Ø à deux décimales, trois
+       s'il le faut (le 0,864 de l'exemple), « _ » pour la virgule */
+    const att=new Map(), plus=(k,n)=>att.set(k,(att.get(k)||0)+(n||1));
+    const dm=d=>{const s=d.toFixed(3);return (s.endsWith("0")?s.slice(0,-1):s).replace(".","_");};
+    for(const fp of S.fps)for(const q of padsWorld(fp))if(q.drill>0)plus("TROUS_PTH_"+dm(q.drill));
+    for(const v of S.vias)if(v.drill>0)plus("VIAS_"+(Math.min(v.a,v.b)===0&&Math.max(v.a,v.b)===S.cu-1?"":"L"+(Math.min(v.a,v.b)+1)+"-L"+(Math.max(v.a,v.b)+1)+"_")+dm(v.drill));
+    if(!att.has("TROUS_PTH_0_864"))throw new Error("l'exemple devait avoir un perçage de 0,864");
+    plus("TROUS_NPTH_3_20",2);plus("TROUS_NPTH_2_50");
+    const pts=new Map();
+    for(const e of D.ents)if(e.type==="POINT")pts.set(e.cal,(pts.get(e.cal)||0)+1);
+    if(JSON.stringify([...att].sort())!==JSON.stringify([...pts].sort()))
+      throw new Error("POINT par calque : "+JSON.stringify([...pts].sort())+" pour "+JSON.stringify([...att].sort()));
+    if(att.size<4)throw new Error("l'exemple doit avoir plusieurs outils : "+[...att.keys()]);
+    for(const c of pts.keys()){
+      if(!/^[A-Z0-9$_-]{1,31}$/.test(c))throw new Error("nom de calque refusé par R12 : "+c);
+      if(D.calques.indexOf(c)<0)throw new Error("calque non déclaré : "+c);
+    }
+    /* chaque POINT est au centre d'un CIRCLE du calque historique, du bon diamètre */
+    const cer=D.ents.filter(e=>e.type==="CIRCLE");
+    for(const e of D.ents.filter(e=>e.type==="POINT")){
+      const d=e.cal.replace(/^.*_(\d+_\d+)$/,"$1");
+      const hist=/^TROUS_NPTH/.test(e.cal)?"TROUS_NON_METALLISES":"TROUS_METALLISES";
+      if(!cer.some(c=>c.cal===hist&&Math.abs(c.n(10)-e.n(10))<1e-6&&Math.abs(c.n(20)-e.n(20))<1e-6&&dm(c.n(40)*2)===d))
+        throw new Error("POINT de "+e.cal+" sans son cercle sur "+hist);
+    }
+    /* les cercles par diamètre : autant que de POINT de ce diamètre */
+    const parD=new Map();
+    for(const [c,n] of pts){const d=c.replace(/^.*_(\d+_\d+)$/,"$1");parD.set(d,(parD.get(d)||0)+n);}
+    for(const [d,n] of parD){
+      const k=cer.filter(c=>dm(c.n(40)*2)===d).length;
+      if(k!==n)throw new Error(n+" trous de "+d+", "+k+" CIRCLE");
+    }
+    /* une couleur par diamètre, distincte d'un diamètre à l'autre */
+    const col=dxfCouleurs(D.t), parCouleur=new Map();
+    for(const c of pts.keys()){
+      const d=c.replace(/^.*_(\d+_\d+)$/,"$1"), k=col.get(c);
+      if(!k||k===7)throw new Error("couleur du calque "+c+" : "+k);
+      if(parCouleur.has(k)&&parCouleur.get(k)!==d)throw new Error("même couleur pour "+d+" et "+parCouleur.get(k));
+      parCouleur.set(k,d);
+    }
+    if(col.get("TROUS_METALLISES")!==1||col.get("TROUS_NON_METALLISES")!==3)throw new Error("couleurs des calques historiques changées");
+    if(D.header.$PDMODE[0]!=="3")throw new Error("POINT en croix ($PDMODE 3)");
+    if(r.outils.length!==pts.size)throw new Error("outils rendus : "+r.outils.length);
+    /* la feuille du plan n'a pas de calque d'outil */
+    const F=dxfLu(dxfFeuilles(dfDocument().feuilles.filter(F=>F.genre==="fab")).octets);
+    if(F.ents.some(e=>e.type==="POINT")||F.header.$PDMODE)throw new Error("la feuille ne change pas");
+  }finally{S.holes=[];}
+});
+T("plans DXF : contre-perçage sur son calque, CONTRE_PERCAGE_<face>_<Ø>",()=>{
+  cpCarte();
+  try{
+    let D=dxfLu(dxfCarte().octets);
+    if(D.calques.some(c=>/^CONTRE_PERCAGE/.test(c)))throw new Error("sans règle, pas de calque de contre-perçage");
+    const r=cpAjouter({cote:"dessous",garde:-1,res:0.1});
+    cmPoser("classes",className("SIG"),"cp",r.id);
+    const c=cpVia(S.vias[0]);
+    if(!c||c.faute||c.diam!==0.55)throw new Error("contre-perçage attendu, foret de 0,55");
+    D=dxfLu(dxfCarte().octets);
+    const cal="CONTRE_PERCAGE_DESSOUS_0_55";
+    const cer=D.ents.filter(e=>e.cal===cal&&e.type==="CIRCLE"), pt=D.ents.filter(e=>e.cal===cal&&e.type==="POINT");
+    if(cer.length!==2||pt.length!==2)throw new Error(cal+" : "+cer.length+" CIRCLE, "+pt.length+" POINT");
+    if(cer.some(e=>Math.abs(e.n(40)-0.275)>1e-9))throw new Error("le cercle a le Ø du foret");
+    const o=gOrigin();
+    if(!cer.some(e=>Math.abs(e.n(10)-(S.vias[0].x-o.x))<1e-6&&Math.abs(e.n(20)-(o.y-S.vias[0].y))<1e-6))throw new Error("au repère de l'Excellon");
+    /* les vias eux-mêmes restent sur leurs calques : cercle historique, outil */
+    if(D.ents.filter(e=>e.cal==="TROUS_METALLISES"&&e.type==="CIRCLE"&&Math.abs(e.n(40)-0.15)<1e-9).length!==2||
+       D.ents.filter(e=>e.cal==="VIAS_0_30"&&e.type==="POINT").length!==2)throw new Error("les vias percés à 0,30 restent où ils sont");
+    /* par-dessus */
+    cpModifier(r.id,"cote","dessus");
+    for(const t of S.tracks)t.l=t.l===1?2:3;
+    touch();
+    D=dxfLu(dxfCarte().octets);
+    if(D.ents.filter(e=>e.cal==="CONTRE_PERCAGE_DESSUS_0_55"&&e.type==="CIRCLE").length!==2)
+      throw new Error("depuis le dessus : "+D.calques.filter(c=>/CONTRE/.test(c)));
+  }finally{cpRaz();exCharger(1);}
+});
+T("plans DXF : calques par outil relus par ezdxf, si l'outil est là",()=>{
+  const cp=require("child_process"), os=require("os");
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),"dxf-"));
+  try{
+    exCharger(1);
+    S.holes=[mkHole(5,5,3.2)];
+    const f=path.join(dir,"carte.dxf"), r=dxfCarte();
+    S.holes=[];
+    fs.writeFileSync(f,r.octets);
+    const py="import sys,ezdxf\nd=ezdxf.readfile(sys.argv[1])\na=d.audit()\nm=d.modelspace()\n"+
+             "print(len(a.errors))\n"+
+             "for l in sorted({e.dxf.layer for e in m.query('POINT')}):print(l,len(m.query('POINT[layer==\"'+l+'\"]')),d.layers.get(l).color)";
+    const e=cp.spawnSync("python3",["-c",py,f],{encoding:"utf8"});
+    if(e.error||/No module named/.test(e.stderr||""))console.log("     (ezdxf absent : DXF non vérifié)");
+    else{
+      if(e.status!==0)throw new Error("ezdxf : "+e.stderr);
+      const l=e.stdout.trim().split("\n");
+      if(l[0]!=="0")throw new Error("ezdxf : erreurs d'audit "+l[0]);
+      const lu=l.slice(1).map(x=>x.split(" "));
+      if(JSON.stringify(lu.map(x=>[x[0],+x[1]]))!==JSON.stringify(r.outils.map(o=>[o.cal,o.n])))
+        throw new Error("ezdxf relit "+l.slice(1).join(" ; "));
+    }
+  }finally{S.holes=[];fs.rmSync(dir,{recursive:true,force:true});}
 });
 
 /* ==========================================================================
@@ -22557,6 +24135,269 @@ T("contraintes du schéma : l'ECO et la fenêtre les reprennent",()=>{
 });
 
 /* ==========================================================================
+   Contre-perçage (back-drill) : règles de l'empilage, moignon résiduel,
+   perçage de fabrication et plan (01-core.js, 04-fabrication.js, 29-draftsman.js)
+   ========================================================================== */
+function cpRaz(){if(S.stack)delete S.stack.cp;cmRaz();touch();}
+/* la carte des moignons de via : 4 couches, deux vias traversants que le
+   signal n'emprunte que de L1 à L2 — chacun laisse L2 → L4 pendre */
+function cpCarte(){
+  topoCarte();cpRaz();
+  const a=topoFp("U1",0,0,"SIG"), b=topoFp("U2",30,0,"SIG");
+  S.vias.push({x:10,y:0,d:0.6,drill:0.3,a:0,b:3,net:"SIG"},{x:20,y:0,d:0.6,drill:0.3,a:0,b:3,net:"SIG"});
+  topoPiste("SIG",a,{x:10,y:0},0);topoPiste("SIG",{x:10,y:0},{x:20,y:0},1);topoPiste("SIG",{x:20,y:0},b,0);
+  topoFin();
+}
+const cpMsgsVia=()=>topoMsgs("SIG").filter(x=>/^moignon de via/.test(x));
+T("contre-perçage : moignon résiduel, règle de classe, de net ou de via, DRC",()=>{
+  cpCarte();
+  cmPoser("nets","SIG","viaStubMax","0,2");
+  if(cpMsgsVia().length!==2)throw new Error("sans contre-perçage, deux moignons : "+topoMsgs("SIG"));
+  const r=cpAjouter({cote:"dessous",garde:-1,res:0.1});
+  if(r.id!=="cp1"||r.sur!==CP_SUR||r.garde!==-1)throw new Error(JSON.stringify(r));
+  if(cpVia(S.vias[0])||cpMsgsVia().length!==2)throw new Error("une règle que personne ne prend ne change rien");
+  /* la classe la prend : la couche gardée est la dernière empruntée, L2 */
+  cmPoser("classes",className("SIG"),"cp","cp1");
+  const c=cpVia(S.vias[0]);
+  if(!c||c.src!=="classe"||c.cote!=="dessous"||c.garde!==1||!c.auto||c.faute)throw new Error(JSON.stringify(c&&{src:c.src,garde:c.garde,faute:c.faute}));
+  if(Math.abs(c.moignon-0.1)>1e-9||Math.abs(c.moignon0-r4(stackSpan(1,3)-cuT(1)))>1e-9)
+    throw new Error("moignon "+c.moignon+" (avant "+c.moignon0+")");
+  if(Math.abs(c.prof-r4(stackLam()-stackSpan(0,1)-0.1))>1e-9||c.diam!==0.55||c.coupees.join()!=="2,3")
+    throw new Error("profondeur "+c.prof+", foret "+c.diam+", couches "+c.coupees);
+  const T=topoAnalyser("SIG");
+  if(T.moignonsVias.length!==2||T.moignonsVias.some(m=>Math.abs(m.len-0.1)>1e-9||!/contre-percé jusque sous L2/.test(m.txt)))
+    throw new Error(JSON.stringify(T.moignonsVias.map(m=>[m.len,m.txt])));
+  if(cpMsgsVia().length)throw new Error("le moignon résiduel tient sous 0,2 mm : "+cpMsgsVia());
+  /* le via d'abord : « non » lui rend son moignon */
+  S.vias[1].cp="non";touch();
+  if(cpVia(S.vias[1])||cpMsgsVia().length!==1)throw new Error("via sans contre-perçage : "+cpMsgsVia());
+  /* le net passe devant la classe ; le via devant le net */
+  cmPoser("nets","SIG","cp","non");
+  if(cpVia(S.vias[0])||cpMsgsVia().length!==2)throw new Error("« non » sur le net");
+  S.vias[1].cp="cp1";touch();
+  if(!cpVia(S.vias[1])||cpVia(S.vias[1]).src!=="via"||cpMsgsVia().length!==1)throw new Error("règle du via");
+  if(cmRegleDe("SIG").cp.v!=="non"||cmRegleDe("SIG").cp.src!=="net")throw new Error("cmRegleDe : cp");
+  /* une couche gardée trop haute couperait le signal : faute au DRC, moignon entier */
+  cmPoser("nets","SIG","cp","");
+  const g=cpAjouter({cote:"dessous",garde:0});
+  S.vias[0].cp=g.id;touch();
+  const f=cpVia(S.vias[0]);
+  if(!f||!/couperait L2/.test(f.faute))throw new Error("faute attendue : "+JSON.stringify(f&&f.faute));
+  if(Math.abs(topoAnalyser("SIG").moignonsVias.find(m=>m.v===S.vias[0]).len-r3(stackSpan(1,3)-cuT(1)))>1e-9)
+    throw new Error("un contre-perçage fautif ne retire rien");
+  runDrc();
+  if(!S.drc.some(d=>d.via===S.vias[0]&&/^Contre-perçage cp2 .*couperait L2/.test(d.msg)))
+    throw new Error("DRC : "+S.drc.map(d=>d.msg).filter(m=>/Contre/.test(m)).join(" | "));
+  /* un moignon admis plus épais que le diélectrique laisse la couche suivante reliée */
+  cpModifier(g.id,"garde",2);cpModifier(g.id,"res",0.5);
+  if(!/L4 resterait reliée/.test(cpVia(S.vias[0]).faute))throw new Error(cpVia(S.vias[0]).faute);
+  /* par-dessus : un via que le signal n'emprunte que de L3 à L4 */
+  cpModifier(g.id,"cote","dessus");
+  if(cpRegle(g.id).garde!==-1)throw new Error("changer de face remet la couche gardée en auto");
+  for(const t of S.tracks)t.l=t.l===1?2:3;
+  touch();
+  const h=cpVia(S.vias[0]);
+  if(!h||h.cote!=="dessus"||h.garde!==2||h.faute||Math.abs(h.prof-r4(stackSpan(0,2)-cuT(2)-0.5))>1e-9)
+    throw new Error(JSON.stringify(h&&{garde:h.garde,prof:h.prof,faute:h.faute}));
+  /* le panneau du via le dit */
+  clearSel();S.sel.vias.add(S.vias[0]);buildProps();
+  if(!/Contre-perçage/.test($("props").innerHTML)||!/Contre-percé depuis le dessus jusque sur L3/.test($("props").innerHTML))
+    throw new Error("panneau du via");
+  clearSel();
+  cpRaz();
+  if(cpVia(S.vias[0]))throw new Error("sans règle, plus de contre-perçage");
+});
+T("contre-perçage : enregistré dans l'empilage, aller-retour, règle retirée",()=>{
+  cpCarte();
+  loadDoc(JSON.parse(serialize()),true);          // la carte d'essai, une fois relue
+  const vide=serialize();
+  if(/"cp"/.test(vide))throw new Error("un document sans contre-perçage n'en écrit rien");
+  loadDoc(JSON.parse(vide),true);
+  if(serialize()!==vide)throw new Error("aller-retour sans contre-perçage : "+firstDiff(JSON.parse(vide),JSON.parse(serialize()),""));
+  const r=cpAjouter({cote:"dessous",garde:1,sur:0.2,res:0.15});
+  cmPoser("classes",className("SIG"),"cp",r.id);
+  S.vias[1].cp="non";touch();
+  const a=serialize();
+  loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("l'aller-retour change le document");
+  if(!S.stack.cp||S.stack.cp[0].garde!==1||S.stack.cp[0].sur!==0.2||S.vias[1].cp!=="non"||
+     S.contraintes.classes[className("SIG")].cp!==r.id)throw new Error("règles perdues");
+  /* lecture bornée : identifiants uniques, couche gardée dans la pile, cotes bornées */
+  const n=cpNormRegles([{id:"cp1",cote:"dessus",garde:0,sur:9,res:-1},{id:"cp1",garde:12},{id:"non"},
+                        {id:"x y",cote:"?",garde:"auto"},null],4);
+  if(JSON.stringify(n.map(x=>[x.id,x.cote,x.garde,x.sur,x.res]))!==
+     '[["cp1","dessus",1,2,0],["cp2","dessous",2,0.25,0.15],["cp3","dessous",-1,0.25,0.15],["cp4","dessous",-1,0.25,0.15]]')
+    throw new Error(JSON.stringify(n));
+  if(cmNorm({nets:{A:{cp:"cp<1>"},B:{cp:" non "}}}).nets.A||cmNorm({nets:{B:{cp:" non "}}}).nets.B.cp!=="non")
+    throw new Error("contrainte cp bornée");
+  /* plus de couches : la règle reste, sa couche gardée dans la nouvelle pile */
+  setCuCount(6);
+  if(!S.stack.cp||S.stack.cp[0].garde!==1)throw new Error("règle perdue au changement de couches");
+  setCuCount(4);
+  /* l'empilage physique la montre et la saisit */
+  buildStackup();
+  if(!/Contre-perçage \(back-drill\)/.test($("stk").innerHTML)||!/skCpG0/.test($("stk").innerHTML))
+    throw new Error("panneau d'empilage");
+  cmOuvrir("topologie");
+  const ht=cmHtmlTopologie();
+  if(!/Contre-perçage<\/th>/.test(ht)||ht.indexOf('<option value="'+r.id+'" selected>'+r.id)<0)
+    throw new Error("colonne du gestionnaire");
+  cmFermer();
+  if(!/;Contre-perçage;État;/.test(cmCsv())||!new RegExp("\\nSIG;[^\\n]*;"+r.id+";").test(cmCsv()))
+    throw new Error("CSV : "+cmCsv().split("\n").filter(l=>/^SIG;|^Net;/.test(l)).join(" / "));
+  /* retirée, plus personne ne la vise */
+  cpSupprimer(r.id);
+  if(S.stack.cp||S.contraintes.classes[className("SIG")]||S.vias[1].cp!=="non")
+    throw new Error("une règle retirée laisse des références");
+  cpRaz();
+});
+T("contre-perçage : fichier Excellon, LISEZ-MOI, empilage et plan de fabrication",()=>{
+  cpCarte();
+  const avant=drillFile().files.map(f=>f.name).join();
+  if(/BACKDRILL/.test(avant))throw new Error("pas de fichier sans contre-perçage");
+  if(dfChercher(dfDocument(),"back-drill").length)throw new Error("pas de tableau sans contre-perçage");
+  const r=cpAjouter({cote:"dessous",garde:-1,res:0.1});
+  cmPoser("nets","SIG","cp",r.id);
+  const d=drillFile();
+  const f=d.files.find(x=>/BACKDRILL/.test(x.name));
+  if(!f||f.name!=="carte-BACKDRILL-B-In1.DRL"||f.kind!=="backdrill"||f.holes!==2||f.tools!==1)
+    throw new Error(JSON.stringify(d.files.map(x=>[x.name,x.holes])));
+  const prof=fmt(stackLam()-stackSpan(0,1)-0.1,3);
+  for(const s of ["M48","METRIC,TZ","couche a ne pas couper (must-not-cut) : L2 (In1)","face percee : L4 (B)",
+                  "couches retirees du fut : L3-L4","T1C0.550","; T1 : profondeur "+prof+" mm","X10.000","T0","M30"])
+    if(f.text.indexOf(s)<0)throw new Error("Excellon sans « "+s+" » :\n"+f.text);
+  if(/[^\x00-\x7f]/.test(f.text))throw new Error("pas d'accent dans un Excellon");
+  if(d.files.find(x=>x.name==="carte-1-4.TXT").holes!==2)throw new Error("le perçage d'origine reste");
+  /* un contre-perçage fautif ne part pas en fabrication */
+  S.vias[1].cp=cpAjouter({cote:"dessous",garde:0}).id;touch();
+  if(drillFile().files.find(x=>/BACKDRILL/.test(x.name)).holes!==1)throw new Error("le via fautif part en fabrication");
+  delete S.vias[1].cp;touch();
+  const B=buildFabFiles();
+  if(!B.files.some(x=>x.name==="carte-BACKDRILL-B-In1.DRL"))throw new Error("absent de fabrication.zip");
+  const lis=B.files.find(x=>x.name==="LISEZ-MOI.txt").text;
+  if(!/carte-BACKDRILL-B-In1\.DRL : CONTRE-PERCAGE \(back-drill\) depuis L4, ne pas couper L2/.test(lis))
+    throw new Error("LISEZ-MOI");
+  if(!/Contre-percage \(back-drill\), regles :/.test(stackReport())||!/couche a ne pas couper L2 : 2 via\(s\)/.test(stackReport()))
+    throw new Error("feuille d'empilage :\n"+stackReport());
+  /* le plan : le tableau, la coupe, la note */
+  const doc=dfDocument();
+  if(!dfChercher(doc,"contre-percage (back-drill)").length)throw new Error("tableau absent du plan");
+  const lig=dfChercher(doc,"In1 (L2)");
+  if(!lig.some(h=>h.cat==="percage"))throw new Error("ligne du tableau : "+JSON.stringify(lig));
+  if(!dfChercher(doc,fmt(stackLam()-stackSpan(0,1)-0.1,3).replace(".",",")).some(h=>h.cat==="percage"))
+    throw new Error("profondeur absente du tableau");
+  if(!dfChercher(doc,"B→In1").some(h=>h.cat==="empilage"))throw new Error("passe absente de la coupe");
+  if(!dfChercher(doc,"BACKDRILL-*.DRL").some(h=>h.cat==="note"))throw new Error("note de fabrication");
+  /* la simulation et la vérification de la carte reçoivent le contre-perçage */
+  const cv=simCotesVia(S.vias[0],10,0,0,1);
+  if(!cv.contre_percage||cv.contre_percage.cote!=="dessous"||cv.contre_percage.couche_garde!==simCuIndex(1)||
+     cv.contre_percage.moignon_residuel_mm!==0.1)throw new Error(JSON.stringify(cv.contre_percage));
+  const ce=SIM_PCB.carteEntiere().doc;
+  const p=(ce.percages||[]).find(t=>t.x===10&&t.y===0);
+  if(!p||!p.cp||p.cp.garde!==cuLabel(1,4)||p.cp.res!==0.1)throw new Error(JSON.stringify(p));
+  cpRaz();
+  if("contre_percage" in simCotesVia(S.vias[0],10,0,0,1))throw new Error("sans règle, pas de champ");
+});
+
+/* Une zone du net sur une couche, autour du premier via de la carte des
+   moignons ; une découpe, ou la zone d'un autre net posée par-dessus, la
+   met en dégagement. La carte est posée à l'écart du bord : rasterisée (avec
+   « canvas »), la marge de bord rognerait le cuivre autour d'un via à y = 0. */
+function cpZone(net,l,x1,y1,x2,y2){
+  const z={id:S.nextId++,l,net,pts:[{x:x1,y:y1},{x:x2,y:y1},{x:x2,y:y2},{x:x1,y:y2}]};
+  S.zones.push(z);touch();return z;
+}
+T("contre-perçage : une zone du net touche le fût, le foret ne la coupe pas",()=>{
+  const bord=S.board;
+  try{
+    cpCarte();
+    S.board={x:-10,y:-10,w:50,h:20,pts:null};touch();
+    const r=cpAjouter({cote:"dessous",garde:1,res:0.1});
+    cmPoser("nets","SIG","cp",r.id);
+    if(cpVia(S.vias[0]).faute)throw new Error("sans zone, L2 gardée se perce : "+cpVia(S.vias[0]).faute);
+    /* une coulée SIG sur L3 autour du premier via : le signal y entre */
+    const z=cpZone("SIG",2,5,-3,15,3);
+    if(!cpCouchesZones(S.vias[0]).has(2)||cpCouchesZones(S.vias[1]).size)
+      throw new Error("couches de zone : "+[...cpCouchesZones(S.vias[0])]+" / "+[...cpCouchesZones(S.vias[1])]);
+    const f=cpVia(S.vias[0]);
+    if(!f||!/couperait L3 \(zone SIG\), où le signal entre/.test(f.faute))throw new Error("faute attendue : "+(f&&f.faute));
+    if(cpVia(S.vias[1]).faute)throw new Error("le second via n'est pas dans la zone");
+    runDrc();
+    if(!S.drc.some(d=>d.via===S.vias[0]&&/^Contre-perçage cp1 .*couperait L3 \(zone SIG\)/.test(d.msg)))
+      throw new Error("DRC : "+S.drc.map(d=>d.msg).filter(m=>/Contre/.test(m)).join(" | "));
+    if(drillFile().files.find(x=>/BACKDRILL/.test(x.name)).holes!==1)throw new Error("le via fautif part en fabrication");
+    /* « auto » garde alors L3, et le moignon se mesure depuis elle */
+    cpModifier(r.id,"garde",-1);
+    const a=cpVia(S.vias[0]);
+    if(!a||a.faute||a.garde!==2||Math.abs(a.moignon0-r4(stackSpan(2,3)-cuT(2)))>1e-9||Math.abs(a.moignon-0.1)>1e-9)
+      throw new Error(JSON.stringify(a&&{garde:a.garde,m0:a.moignon0,m:a.moignon,faute:a.faute}));
+    if(cpVia(S.vias[1]).garde!==1)throw new Error("le second via garde L2");
+    if(cpPaires().length!==2)throw new Error("deux passes : B→In1 et B→In2");
+    /* la même zone en dégagement : une découpe autour du via, sans effet */
+    cpModifier(r.id,"garde",1);
+    S.cuts.push({l:2,pts:[{x:9,y:-1},{x:11,y:-1},{x:11,y:1},{x:9,y:1}]});touch();
+    if(cpCouchesZones(S.vias[0]).size||cpVia(S.vias[0]).faute)
+      throw new Error("une découpe autour du via le met en dégagement : "+cpVia(S.vias[0]).faute);
+    S.cuts=[];touch();
+    if(!cpVia(S.vias[0]).faute)throw new Error("sans la découpe, la faute revient");
+    /* ou la zone d'un autre net posée par-dessus ; ou une zone qui ne touche pas le fût */
+    cpZone("GND",2,8,-2,12,2);
+    if(cpVia(S.vias[0]).faute)throw new Error("une zone GND par-dessus recouvre la coulée SIG");
+    S.zones=[z];z.pts=[{x:11,y:-3},{x:15,y:-3},{x:15,y:3},{x:11,y:3}];touch();
+    if(cpVia(S.vias[0]).faute)throw new Error("une zone qui passe à côté ne compte pas");
+    /* le remplissage du fichier : un trou autour du via est un dégagement */
+    z.pts=[{x:5,y:-3},{x:15,y:-3},{x:15,y:3},{x:5,y:3}];
+    z.fichier=true;z.sig=zoneSig(z.pts);z.trous=[[{x:9,y:-1},{x:11,y:-1},{x:11,y:1},{x:9,y:1}]];touch();
+    if(cpVia(S.vias[0]).faute)throw new Error("le trou du fichier autour du via est un dégagement");
+    z.trous=[];touch();
+    if(!cpVia(S.vias[0]).faute)throw new Error("plein autour du via, la zone compte");
+    /* une zone d'un autre net sous le via n'a jamais compté */
+    z.net="GND";touch();
+    if(cpVia(S.vias[0]).faute)throw new Error("une zone d'un autre net ne compte pas");
+  }finally{S.board=bord;S.zones=[];S.cuts=[];cpRaz();}
+});
+T("contre-perçage : fichier Gerber X2 à côté du .DRL, profondeur en champ",()=>{
+  cpCarte();
+  if(buildFabFiles().files.some(f=>/\.gbr$/.test(f.name)))throw new Error("pas de .gbr sans contre-perçage");
+  const r=cpAjouter({cote:"dessous",garde:-1,res:0.1});
+  cmPoser("nets","SIG","cp",r.id);
+  const B=buildFabFiles();
+  const x=B.files.find(f=>f.name==="carte-BACKDRILL-B-In1.gbr");
+  if(!x||x.kind!=="backdrill-x2"||x.holes!==2||x.tools!==1)throw new Error(JSON.stringify(B.files.map(f=>f.name)));
+  const prof=fmt(stackLam()-stackSpan(0,1)-0.1,3);
+  for(const t of ["%FSLAX46Y46*%","%MOMM*%","%TF.FileFunction,NonPlated,3,4,Blind,Drill*%","%TF.FilePolarity,Positive*%",
+                  "%TFBackDrill_StartLayer,4*%","%TFBackDrill_MustNotCutLayer,2*%","%TFBackDrill_MaxStubLengthMM,0.100*%",
+                  "%TA.AperFunction,BackDrill*%","%TABackDrill_DepthMM,"+prof+"*%","%ADD10C,0.5500*%","%TD*%","D10*","M02*"])
+    if(x.text.indexOf(t)<0)throw new Error("X2 sans « "+t+" » :\n"+x.text);
+  /* les deux vias, flashés dans le repère des Gerber */
+  if((x.text.match(/D03\*/g)||[]).length!==2||x.text.indexOf(gXY(10,0)+"D03*")<0)throw new Error("flashs :\n"+x.text);
+  /* l'attribut d'ouverture précède sa définition, et l'outil suit */
+  const L=x.text.split("\n");
+  if(L.indexOf("%TA.AperFunction,BackDrill*%")>L.indexOf("%ADD10C,0.5500*%")||L.indexOf("D10*")<L.indexOf("%TD*%"))
+    throw new Error("ordre des attributs :\n"+x.text);
+  if(/[^\x00-\x7f]/.test(x.text))throw new Error("pas d'accent dans un Gerber");
+  /* le .DRL ne change pas : même texte que `cpExcellon`, au tampon près */
+  const sansDate=t=>t.split("\n").filter(l=>!/^; \d{4}-\d\d-\d\dT/.test(l)).join("\n");
+  const drl=B.files.find(f=>f.name==="carte-BACKDRILL-B-In1.DRL");
+  if(!drl||sansDate(drl.text)!==sansDate(cpExcellon(cpPaires()[0]).text)||/TF\.|BackDrill_/.test(drl.text))
+    throw new Error("le .DRL a changé");
+  if(drillFile().files.some(f=>/\.gbr$/.test(f.name)))throw new Error("le .gbr n'entre pas dans les perçages du plan");
+  /* par-dessus, gardant L3 : couches 1 et 2 retirées */
+  cpModifier(r.id,"cote","dessus");cpModifier(r.id,"garde",2);
+  for(const t of S.tracks)t.l=t.l===1?2:3;
+  touch();
+  const y=cpGerberX2(cpPaires()[0]);
+  if(y.name!=="carte-BACKDRILL-F-In2.gbr"||y.text.indexOf("%TF.FileFunction,NonPlated,1,2,Blind,Drill*%")<0||
+     y.text.indexOf("%TFBackDrill_StartLayer,1*%")<0||y.text.indexOf("%TFBackDrill_MustNotCutLayer,3*%")<0)
+    throw new Error(y.name+"\n"+y.text);
+  const lis=buildFabFiles().files.find(f=>f.name==="LISEZ-MOI.txt").text;
+  for(const t of ["carte-BACKDRILL-F-In2.gbr : le meme contre-percage en Gerber X2","NonPlated,i,j,Blind,Drill",
+                  "BackDrill_MustNotCutLayer","n'exporte pas d'IPC-2581"])
+    if(lis.indexOf(t)<0)throw new Error("LISEZ-MOI sans « "+t+" »");
+  cpRaz();
+});
+
+/* ==========================================================================
    Rooms : les blocs du schéma encadrés sur la carte (32-rooms.js)
    ========================================================================== */
 function roomsDocEssai(){
@@ -22610,6 +24451,102 @@ T("rooms : sans schéma, les zones de l'analyse « Motifs & Blocs » ; sans rien
     const L=roomsListe();
     if(!z.length&&L.length)throw new Error("ni schéma ni analyse : aucune room");
   }finally{S.schDoc=avant;touch();}
+});
+T("empilage : rugosité et options de modèle — lecture bornée, aller-retour, couches",()=>{
+  setCuCount(4);applyPreset(presetsFor(4)[0]);
+  for(let i=0;i<S.cu;i++)setCuRug(i,null);
+  delete S.stack.sim;touch();
+  /* un document qui n'en parle pas n'en écrit rien, et se relit à l'identique */
+  const vide=serialize();
+  if(/"rug"|"sim"/.test(vide))throw new Error("un empilage lisse écrit une rugosité");
+  loadDoc(JSON.parse(vide),true);
+  if(serialize()!==vide)throw new Error("aller-retour lisse : "+firstDiff(JSON.parse(vide),JSON.parse(serialize()),""));
+  /* lecture bornée */
+  if(rugNorm({rms:0})!==null||rugNorm({rms:-1})!==null||rugNorm({m:"huray",a:1})!==null||rugNorm("x")!==null)
+    throw new Error("une rugosité nulle ou incomplète doit disparaître");
+  if(rugNorm({rms:99}).rms!==50||rugNorm({m:"?",rms:1}).m!=="hammerstad")throw new Error("bornes");
+  if(JSON.stringify(rugNorm({m:"huray",a:0.5,sr:1.5,rms:3}))!=='{"m":"huray","a":0.5,"sr":1.5}')
+    throw new Error("Huray garde ses deux paramètres et rien d'autre");
+  if(simModelesNorm({causal:false,fref:1e9,via:SIM_VIA_DEFAUT})!==null)throw new Error("défauts écrits");
+  if(JSON.stringify(simModelesNorm({causal:true,fref:2e9,via:"pi"}))!=='{"causal":true,"fref":2000000000,"via":"pi"}')
+    throw new Error(JSON.stringify(simModelesNorm({causal:true,fref:2e9,via:"pi"})));
+  if(simModelesNorm({causal:"oui",fref:-3,via:"bof"})!==null)throw new Error("options illisibles acceptées");
+  /* saisies, puis aller-retour */
+  setCuRug(0,{m:"hammerstad",rms:2});
+  setCuRug(3,{m:"huray",a:0.5,sr:1.5});
+  setSimModeles({causal:true,fref:2e9,via:"ligne"});
+  touch();
+  const a=serialize();
+  loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("aller-retour : "+firstDiff(JSON.parse(a),JSON.parse(serialize()),""));
+  if(cuRug(0).rms!==2||cuRug(3).m!=="huray"||cuRug(1)!==null)throw new Error("rugosités perdues");
+  const m=simModeles();
+  if(!m.causal||m.fref!==2e9||m.via!=="ligne")throw new Error(JSON.stringify(m));
+  /* un document trafiqué se relit borné */
+  const t=JSON.parse(a);
+  t.stack.cu[1].rug={m:"huray",a:"x",sr:2};t.stack.sim={via:"rien",fref:"vite"};
+  loadDoc(t,true);
+  if(cuRug(1)!==null||S.stack.sim)throw new Error("lecture non bornée : "+JSON.stringify(S.stack.sim));
+  loadDoc(JSON.parse(a),true);
+  /* un modèle d'usine garde la rugosité, un autre compte de couches les faces */
+  applyPreset(presetsFor(4)[0]);
+  if(!cuRug(0)||!cuRug(3))throw new Error("le modèle d'usine efface la rugosité");
+  setCuCount(6);
+  if(!cuRug(0)||cuRug(5).m!=="huray"||!simModeles().causal)throw new Error("perdu au changement de couches");
+  setCuCount(4);
+});
+T("empilage : la rugosité et les options partent au serveur, et se saisissent au panneau",()=>{
+  setCuCount(4);applyPreset(presetsFor(4)[0]);
+  for(let i=0;i<S.cu;i++)setCuRug(i,null);
+  delete S.stack.sim;touch();
+  /* lisse et par défaut : l'empilage envoyé est celui d'avant */
+  let st=simStackup();
+  if(st.layers.some(c=>"rugosite_rms_um" in c||"modele_rugosite" in c)||
+     "dielectrique_causal" in st||"modele_via" in st)
+    throw new Error("défauts envoyés : "+JSON.stringify(st).slice(0,200));
+  /* la saisie au panneau : le cuivre du dessus, un réglage usuel */
+  stkPick("cu",0);
+  const h=$("stk").innerHTML;
+  if(!/Rugosité du cuivre/.test(h)||!/skRugP/.test(h)||!/Modèles de simulation/.test(h)||!/skCausal/.test(h))
+    throw new Error("panneau d'empilage sans rugosité ni options");
+  $("skRugP").value="vlp";$("skRugP").onchange();
+  if(!cuRug(0)||cuRug(0).rms!==0.6)throw new Error("réglage usuel non repris : "+JSON.stringify(cuRug(0)));
+  undo();
+  if(cuRug(0))throw new Error("l'annulation garde la rugosité");
+  buildStackup();
+  $("skRugRms").value="1.25";$("skRugRms").onchange();
+  if(cuRug(0).rms!==1.25)throw new Error("Rq non repris");
+  buildStackup();
+  $("skRugM").value="huray";$("skRugM").onchange();
+  if(cuRug(0).m!=="huray"||!(cuRug(0).a>0))throw new Error("passage à Huray");
+  buildStackup();
+  $("skRugSR").value="2";$("skRugSR").onchange();
+  if(cuRug(0).sr!==2||!(cuRug(0).a>0))throw new Error("SR non repris");
+  buildStackup();
+  $("skCausal").checked=true;$("skCausal").onchange();
+  if(!simModeles().causal)throw new Error("case causale");
+  buildStackup();
+  $("skFref").value="2.5";$("skFref").onchange();
+  $("skViaM").value="pi";$("skViaM").onchange();
+  if(simModeles().fref!==2.5e9||simModeles().via!=="pi")throw new Error(JSON.stringify(simModeles()));
+  /* ce qui part au serveur, dans les unités qu'il lit */
+  setCuRug(2,{m:"hammerstad",rms:0.3});
+  st=simStackup();
+  const c0=st.layers[simCuIndex(0)], c2=st.layers[simCuIndex(2)], c1=st.layers[simCuIndex(1)];
+  if(c0.modele_rugosite!=="huray"||c0.rayon_nodule_um!==cuRug(0).a||c0.rapport_surface!==2||"rugosite_rms_um" in c0)
+    throw new Error("Huray envoyé : "+JSON.stringify(c0));
+  if(c2.modele_rugosite!=="hammerstad"||c2.rugosite_rms_um!==0.3)throw new Error("Rq envoyé : "+JSON.stringify(c2));
+  if("modele_rugosite" in c1)throw new Error("un cuivre lisse envoie une rugosité");
+  if(st.dielectrique_causal!==true||st.f_ref_dielectrique!==2.5e9||st.modele_via!=="pi")
+    throw new Error("options envoyées : "+JSON.stringify(st).slice(-120));
+  /* et c'est bien cet empilage que porte le document de simulation */
+  S.tracks.push({l:0,net:"RUG",w:0.3,x1:2,y1:2,x2:12,y2:2});touch();
+  const p=simDocPcb([S.tracks[S.tracks.length-1]],{z0:50,f1:1e8,f2:5e9,points:11,fc:1e9,tr:0});
+  if(!p.doc||JSON.stringify(p.doc.stackup)!==JSON.stringify(st))
+    throw new Error("document de simulation : "+(p.erreur||JSON.stringify(p.doc&&p.doc.stackup).slice(0,160)));
+  S.tracks.pop();
+  for(let i=0;i<S.cu;i++)setCuRug(i,null);
+  delete S.stack.sim;touch();
 });
 
 (async()=>{

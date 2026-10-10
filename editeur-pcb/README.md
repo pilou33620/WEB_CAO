@@ -26,6 +26,8 @@ js/02-connectivity.js    union-find, îlots de cuivre, chevelu, DRC, netlist, pl
 js/03-render.js          canevas, ordre des couches, remplissage des zones, calques
 js/04-fabrication.js     masque et pâte, Gerber RS-274X, Excellon, feuille
                          d'empilage, archive ZIP
+js/04-pdf-masterdraw.js  Master Drawing PDF (pages IPC du dossier de
+                         fabrication), fonte des plans embarquée
 js/05-tools.js           historique, sélection, tracé, zones, contour, souris, clavier
 js/06-panels.js          onglets de couches, listes, règles, propriétés
                          (objet seul et groupes de sélection), empilage physique
@@ -65,24 +67,37 @@ js/20-placement-score.js panneau Qualité de placement & rotation assistée :
 js/26-variantes.js       variantes de montage reprises du schéma : choix de la
                          variante, empreintes non montées barrées, bom.csv et
                          positions.csv sans elles
-js/27-groupes.js         groupes (Unions) : composants et vias déplacés d'une pièce
+js/27-groupes.js         groupes (Unions) : composants et vias déplacés d'une pièce,
+                         retournés en miroir du groupe entier, copiés-collés en
+                         nouveau groupe avec leur cuivre interne
 js/28-placement-satellites.js  « Placement auto », second temps : découplage et
                          composants série posés contre leur broche
 js/29-draftsman.js       plans de fabrication et d'assemblage (Draftsman) :
                          feuilles cadrées et cartouchées, PDF au texte
                          cherchable, aperçu SVG et recherche dans la fenêtre
+js/33-draftsman-export.js  plans : export DXF (carte 1:1 pour la mécanique,
+                         feuille entière, un calque par outil de perçage) et
+                         fonte TrueType embarquée en sous-ensemble dans le PDF
+                         des plans et dans le Master Drawing
+js/fontes/plans-sans.js  la fonte PlansSans (Liberation Sans pré-réduite, en
+                         base64), produite par outils/fonte-plans.py ; sa
+                         licence OFL à côté, js/fontes/OFL-PlansSans.txt
 js/30-contraintes.js     gestionnaire de contraintes : mesures par net,
                          contraintes héritées ou propres, groupes
                          d'appariement, DRC, fenêtre en tableur (le modèle
                          et l'isolation entre classes sont dans 01-core.js)
 ../commun/contraintes.js ce qu'est une contrainte de net, partagé avec le
                          schéma qui en saisit aussi
+js/34-draftsman-vues.js  plans, ce qui se pose à la main : cotes accrochées
+                         à la géométrie (par référence, orphelines en rouge),
+                         vues déplacées à la souris, vues de détail
 js/32-rooms.js           rooms : les blocs fonctionnels du schéma encadrés
                          sur la carte, sélection d'un bloc par son étiquette
 js/31-topologie.js       forme du cuivre de chaque net (graphe des pistes,
                          vias et broches) : point à point, chaîne, étoile,
                          fly-by ; moignons de dérivation et de vias
 outils/build-monofichier.py assemble le tout dans dist/
+outils/fonte-plans.py    réduit Liberation Sans à la fonte des plans
 test/harness.js          banc d'essai sans navigateur
 ```
 
@@ -295,6 +310,30 @@ une pastille sur le via (IPC-4761). Seul le premier ouvre le masque. Il
 remplace l'ancien booléen `tented`, que les fichiers antérieurs portent encore
 et que `normDoc` convertit à la lecture.
 
+### Rugosité du cuivre et modèles de simulation
+
+Une ligne de cuivre de la coupe porte aussi sa **rugosité** : le feuillard
+électrodéposé a des dents de l'ordre de la profondeur de peau dès le gigahertz,
+et la perte du cuivre en monte jusqu'à doubler. Une liste de réglages usuels —
+lisse, ED standard (Rq 2 µm), traité inversé (1 µm), VLP (0,6 µm), HVLP
+(0,3 µm), et deux jeux de Huray — puis le modèle (Hammerstad-Groiss sur Rq, ou
+Huray sur le rayon des nodules et leur rapport de surface) et ses valeurs, en
+micromètres. Sous la synthèse, **Modèles de simulation** : la case
+*diélectrique causal* (Djordjevic-Sarkar, Dk et Df lus à la fréquence de la
+fiche, 1 GHz par défaut) et le **modèle de via** (π, ligne, ou « auto », le
+défaut : π tant que le via est court devant λ).
+
+```
+stack.cu[i].rug   {m: "hammerstad", rms} | {m: "huray", a, sr}   µm, si non lisse
+stack.sim         {causal, fref (Hz), via}                       si hors défaut
+```
+
+Rien ne s'écrit tant que tout est au défaut : un document qui n'en parle pas se
+relit à l'identique. `simStackup()` (`js/19-simulation.js`) envoie la rugosité
+sur chaque couche de cuivre et les options sur l'empilage ; la simulation, la
+RF, l'œil et les pertes du crosstalk les lisent (voir
+[simulation-em.md](../docs/simulation-em.md#pertes-diélectrique-causal-via-en-ligne-simulation_em-500)).
+
 ### La nature d'un via se choisit, la portée suit
 
 `viaBuild()` dit ce qu'une portée **vaut** une fois la carte pressée. Le panneau
@@ -342,6 +381,83 @@ d'outils — et le master drawing les liste avec la même portée. Celle-ci
 **voyage avec le fichier** (`a`, `b`, `kind`) au lieu d'être relue dans son
 nom : le nom commence par celui du projet, et « carte 2 » y aurait glissé son
 chiffre.
+
+### Contre-perçage (back-drill)
+
+Un traversant que le signal n'emprunte que de L1 à L3 laisse pendre le fût
+jusqu'au dessous : un **moignon**, qui charge la ligne et résonne au quart
+d'onde. Le contre-perçage le retire après métallisation — un foret un peu plus
+gros repasse depuis une face et s'arrête avant la **couche à ne pas couper**,
+en laissant un **moignon résiduel** (0,1 à 0,25 mm).
+
+Les règles se décrivent dans l'**empilage physique**, section *Contre-perçage*
+(`S.stack.cp`, `js/01-core.js`) : la face d'où l'on repasse, la couche gardée
+(ou *auto* : la dernière couche où le signal entre, via par via), le
+surperçage (foret = perçage du via + 0,25 mm d'usage) et le moignon résiduel
+admis (0,15 mm d'usage). Une règle s'applique à un **via** (panneau
+Propriétés), à un **net** ou à une **classe** (gestionnaire de contraintes,
+onglet *Topologie et moignons*, champ `cp`) ; le via passe devant le net, le
+net devant la classe, et « aucun » arrête l'héritage. Enregistré dans le
+document :
+
+    stack.cp   [{id:"cp1", cote:"dessous"|"dessus", garde:2 (indice de couche, −1 = auto),
+                 sur:0.25, res:0.15}]
+    vias[i].cp "cp1" | "non"
+    contraintes.classes[nom].cp, contraintes.nets[nom].cp   "cp1" | "non"
+
+`cpVia(v)` dit pour un via s'il est contre-percé, de quel côté, la couche
+gardée, le diamètre du foret, la profondeur depuis la face, les couches
+coupées, le moignon avant et après — ou pourquoi ce perçage ne peut pas se
+faire (il couperait une couche où le signal entre ; un moignon admis plus
+épais que le diélectrique laisserait la couche suivante reliée : faute au DRC,
+et le moignon reste entier).
+
+Le signal entre dans le via sur les couches de ses **pistes**, d'une
+**pastille CMS** du net posée dessus, et d'une **zone de cuivre** (plan,
+coulée) du net qui touche le fût : cuivre plein autour du perçage, liaison
+directe ou thermique — exactement ce qui relie le via à la zone pour la
+connectivité (`viaZones` de `conn()`, `js/02-connectivity.js` : le remplissage
+rasterisé quand il est calculé, sinon la zone du dessus au droit du via, hors
+découpes et trous d'une zone au cuivre du fichier). Une coulée SIG sur L3
+interdit donc de couper L3 (« le foret couperait L3 (zone SIG), où le signal
+entre » au DRC), la couche *auto* devient L3 et le moignon se mesure depuis
+elle. Un via pris dans un **dégagement** — découpe de zone, zone d'un autre
+net posée par-dessus, trou du remplissage du fichier — ou une zone qui ne fait
+que passer à côté n'y comptent pas. Les **moignons de via** de la topologie, la
+simulation SI/RF (`contre_percage` de la fiche de via) et la vérification de
+la carte (`cp` d'un perçage) comptent le moignon résiduel.
+
+En fabrication, **un Excellon par paire de couches**, comme KiCad et Altium :
+`carte-BACKDRILL-B-In2.DRL` repasse par-dessous jusqu'à In2 gardée ; l'en-tête
+dit la face, la couche à ne pas couper, les couches retirées et la profondeur
+de chaque outil, en commentaire (Excellon n'a pas de champ de profondeur que
+tous les outils CAM lisent). Le LISEZ-MOI, la feuille d'empilage et le master
+drawing les annoncent ; le plan de fabrication (Draftsman) porte leurs
+symboles, un tableau (foret, face, couche gardée, profondeur, moignon admis,
+nombre), la passe sur la coupe d'empilage et une note.
+
+À côté de chaque `.DRL`, inchangé, la même passe part en **Gerber X2**
+(`carte-BACKDRILL-B-In2.gbr`, `cpGerberX2`, `js/04-fabrication.js`), où la
+profondeur est un **champ**. La spécification Gerber d'Ucamco n'a pas de
+fonction de fichier propre au contre-perçage : un perçage se déclare
+`Plated` / `NonPlated` avec sa paire de couches et `PTH`, `NPTH`, `Blind` ou
+`Buried`. Elle a en revanche la fonction d'ouverture `.AperFunction,BackDrill`.
+Le fichier s'écrit donc comme chez KiCad : `%TF.FileFunction,NonPlated,3,4,Blind,Drill*%`
+(les couches que le foret retire, face comprise, couche gardée exclue, comptées
+de 1) et `%TA.AperFunction,BackDrill*%` sur chaque outil. La profondeur et la
+couche à ne pas couper n'ont pas d'attribut normalisé : elles partent en
+**attributs utilisateur** (sans point devant, comme la norme le réserve),
+nommés d'après les types `<Backdrill>` d'IPC-2581 :
+
+    %TFBackDrill_StartLayer,4*%         face percée
+    %TFBackDrill_MustNotCutLayer,2*%    couche à ne pas couper
+    %TFBackDrill_MaxStubLengthMM,0.150*%  moignon résiduel admis
+    %TABackDrill_DepthMM,1.234*%        profondeur de l'outil défini juste après
+
+Le LISEZ-MOI explique ce choix. L'éditeur **n'exporte pas d'IPC-2581** : le
+contre-perçage n'y est donc pas écrit (la visionneuse IPC-2581, elle, le lit).
+Le `.gbr` n'est pas listé par le master drawing (qui ne détaille que les
+Excellon).
 
 ## Les règles de conception, et leurs figures
 
@@ -902,9 +1018,13 @@ Tout le texte est du texte, jamais des traits : `Ctrl+F` dans n'importe quel
 lecteur PDF trouve un repère, une valeur, une note. Trois choix le
 garantissent :
 
-- les fontes sont en **WinAnsi**, pas en ASCII : « Épaisseur », « résistance »,
-  « ± », « µ », « Ø » s'écrivent et se cherchent. Ce que WinAnsi n'a pas
-  s'écrit comme un technicien l'écrirait (Ω → `Ohm`, ≥ → `>=`, εr → `er`) ;
+- la fonte est **embarquée** (option « Fonte embarquée », cochée par défaut,
+  voir plus bas) : chaque glyphe est codé par son numéro et une table
+  `/ToUnicode` dit quel caractère il porte, si bien que « Épaisseur », « Ω »,
+  « ≥ », « µ », « ± » s'affichent, se cherchent et se copient tels quels.
+  Décochée, ce sont les fontes standard en **WinAnsi** : les accents et
+  « ± », « µ », « Ø » passent encore, ce que WinAnsi n'a pas s'écrit comme
+  un technicien l'écrirait (Ω → `Ohm`, ≥ → `>=`, εr → `er`) ;
 - ce qui ne s'affiche pas est posé en **texte invisible** (mode de rendu 3,
   celui de la couche texte d'un document numérisé) : sur le corps de chaque
   composant, sa valeur, son boîtier, sa référence fabricant, son fabricant ;
@@ -920,6 +1040,80 @@ qui a été trouvé et où (« net · U1 · broche 5 · f. 2 »), les onglets co
 les résultats par feuille, et l'aperçu surligne les endroits. `Entrée` passe
 au résultat suivant, `Maj+Entrée` au précédent.
 
+### Cotes, vues et détails posés à la main
+
+Au-dessus de la feuille, une barre d'outils :
+
+| Outil | Geste |
+| --- | --- |
+| ↖ Sélection | glisser une vue (vue de la carte, tableau de perçage, coupe d'empilage, notes, nomenclature, détail…) ou une cote ; double-clic sur une cote : sa tolérance ; `Suppr` efface la cote ou le détail choisi, ou rend sa place calculée à la vue choisie |
+| ↔ ↕ ⤢ Cote horizontale, verticale, alignée | deux points accrochés, puis la ligne de cote |
+| Ø R Diamètre, rayon | un trou de fixation, un via ou une pastille percée, puis le texte |
+| ∠ Cote angulaire | le sommet puis un point sur chaque côté, ou deux arêtes du contour (cliquées loin de leurs sommets) ; puis l'arc |
+| ⊢⊣ Cotes en chaîne | des points accrochés, puis un clic hors accroche (ou `Entrée`, à la souris) pour la ligne commune ; sens horizontal ou vertical à côté |
+| ⌖ Cotes d'ordonnée | l'origine (premier point cliqué, ou l'origine des fichiers de fabrication), des points, puis un clic hors accroche (ou `Entrée`) pour la ligne |
+| ◯ ▭ Détail | sur une vue de la carte, un cercle (centre puis rayon) ou un rectangle (deux coins) ; l'échelle se choisit à côté (2:1 à 20:1) |
+| Replacer automatiquement | les vues de la feuille reviennent à la disposition calculée |
+
+Les points **s'aimantent** sur la géométrie : centre d'un trou de fixation ou
+d'un via, centre ou bord (gauche, droit, haut, bas) d'une pastille, sommet
+ou bord du contour et des découpes. Le nom du point visé s'affiche sous la
+souris. Une cote est enregistrée **par référence**, pas en coordonnées :
+déplacez le connecteur, la cote suit et sa valeur change. Si la référence
+disparaît (repère renommé, trou effacé), la cote ne devient pas fausse en
+silence : elle se dessine en **rouge et en tirets**, suivie de
+« (orpheline) », à la dernière place connue, au PDF comme à l'écran, et la
+colonne de gauche la liste ; un clic y mène. `Échap` défait le geste en
+cours, puis rend l'outil de sélection ; `Ctrl+Z` passe par l'historique de la
+carte.
+
+La **cote angulaire** mesure entre 0 et 180° (« 45,0° »). Sur deux arêtes,
+le sommet est l'intersection de leurs droites — il peut tomber hors de la
+carte — et chaque côté va vers le point cliqué ; deux arêtes parallèles
+sont refusées. L'arc se pose à la souris, centré au sommet : dans l'angle,
+dans l'angle opposé par le sommet (c'est ainsi qu'on cote l'angle extérieur
+d'un coin, les côtés prolongés au-delà), ou ailleurs, prolongé jusqu'au
+texte. Une **chaîne** cote ses points de proche en proche, rangés dans le
+sens coté, sur une seule ligne ; une **ordonnée** cote chacun par sa distance
+signée à l'origine, Y vers le haut comme dans les Gerber, l'origine marquée
+« 0 » et les lignes de rappel coudées quand deux valeurs ne tiennent pas
+côte à côte. L'une et l'autre ne sont qu'une cote, mais un point perdu ne
+rend orpheline que la valeur qui en dépend.
+
+Une cote choisie (un clic, ou un **double-clic** qui ouvre directement sa
+saisie) montre sa **tolérance** dans la colonne de gauche, où toutes les
+cotes sont listées :
+
+| Tolérance | Rendu |
+| --- | --- |
+| ± symétrique | `12,00 ±0,10` |
+| + / − écarts | `12,00` suivi de `+0,10` sur `−0,05`, plus petits, superposés |
+| limites max / min | `12,10` sur `11,95` |
+| ( ) de référence | `(12,00)` |
+| ▭ théoriquement exacte | `12,00` encadré |
+
+Les écarts sont signés, dans l'unité de la cote (degrés pour un angle) ; un
+écart fin garde ses décimales (`±0,005`). Les limites sont « valeur +
+écart » : elles suivent la géométrie comme la valeur. Chaque morceau est un
+vrai texte : au PDF, `±0,10` ou `(12,00)` se cherchent ; au DXF, ils vont
+sur le calque `COTES` (± en `%%p`, ° en `%%d`).
+
+Une vue glissée garde sa place : le coin haut gauche de sa boîte, aimanté
+sur une grille de 2,5 mm, toujours ramené dans le cadre et sorti du
+cartouche. Lâchée sur d'autres vues, elle reste où on l'a posée et les vues
+qu'elle recouvre **s'écartent** vers la place libre la plus proche, à 2 mm
+au moins de leurs voisines, dans le cadre et hors du cartouche — celles
+qu'on n'a jamais déplacées choisissent les premières. S'il n'y a plus de
+place, chacune prend celle qui recouvre le moins, et la barre d'outils le
+dit. Le tout est un seul pas d'historique. Sans place enregistrée, la
+disposition calculée ne change pas.
+Une **vue de détail** redessine la vue mère à l'échelle choisie, découpée
+proprement à sa fenêtre (au plan de fabrication, les pastilles et les trous à
+leur vraie taille s'y ajoutent, pour coter un connecteur) ; la vue mère porte
+le repère « A », le détail l'étiquette « DÉTAIL A — ÉCHELLE 5:1 ». Il se pose
+de lui-même à la première place libre de la feuille, puis se glisse comme
+les autres, et les cotes s'y posent aussi.
+
 ### Où vivent les réglages
 
 Dans le document, `dessin` : format, feuilles cochées, noms du cartouche,
@@ -927,6 +1121,49 @@ notes. `normDoc` n'en fait qu'une copie — il tourne au démarrage, avant que
 `29-draftsman.js` soit chargé — et `dfCfg()` les borne à chaque usage. Une
 nouvelle carte les garde, comme les règles : ils décrivent qui dessine, pas la
 carte.
+
+Ce qui est posé à la main y est aussi, et part avec la carte (Fichier →
+Nouveau l'oublie, le cartouche reste) :
+
+```
+dessin.cotes   [{id, vue:"fab/carte", type:"h"|"v"|"a"|"d"|"r",
+                 a:<réf>, b:<réf> (pas pour d / r), dx, dy, tol?, memo},
+                {id, vue, type:"ang", s?:<réf>, a:<réf>, b:<réf>, dx, dy, tol?, memo},
+                {id, vue, type:"ch", sens:"h"|"v", pts:[<réf>…], dx, dy, tol?, memo},
+                {id, vue, type:"ord", sens:"h"|"v", o:<réf>, pts:[<réf>…], dx, dy, tol?, memo}]
+dessin.vues    {"fab/percage": {x, y}, "det/7": {x, y}, …}
+dessin.details [{id, lettre:"A", source:"fab/carte", forme:"cercle"|"rect",
+                 x, y, r | w, h, echelle}]
+
+<réf> : {type:"trou", id}  {type:"via", id}
+        {type:"pastille", fp:"J1", pad:"3", ou:"c"|"g"|"d"|"h"|"b"}
+        {type:"contour", i, c?}  {type:"bord", i, t, c?}
+        {type:"origine"}                      (origine des fichiers, gOrigin())
+tol   : {genre:"sym", sup}  {genre:"asym"|"lim", sup, inf}  {genre:"ref"|"base"}
+```
+
+Une cote angulaire sans `s` prend deux arêtes : `a` et `b` sont alors des
+références `bord`. Pour elle, `dx, dy` placent l'arc depuis le sommet ;
+pour une chaîne, la ligne commune passe à `dy` (sens h) ou `dx` (sens v)
+du premier point ; pour une ordonnée, de l'origine. Une chaîne a de 2 à 60
+points, une ordonnée de 1 à 60 ; une seule référence mal formée écarte la
+cote entière. `memo` d'un angle : `{s, a, b, v}` ; d'une chaîne :
+`{pts:[{x,y}|null…]}` ; d'une ordonnée : `{o, pts}` — un point jamais vu
+vaut `null`. `sup` et `inf` d'une tolérance sont des écarts signés
+(`inf ≤ sup`, rangés à la lecture).
+
+Une **clé de vue** nomme la feuille puis la vue : `fab/carte`,
+`fab/percage`, `fab/fixation`, `fab/impedances`, `fab/empilage`,
+`fab/notes`, `asmT/carte`, `asmB/carte`, `bom/nomenclature`,
+`bom/nonmontes`, `cu0/carte`… ; `fab~1/notes` est la suite sur la feuille
+suivante, `det/7` le détail n° 7. `dx, dy` placent la ligne de cote (ou le
+texte d'un diamètre) en millimètres de feuille depuis le milieu des points
+mesurés ; `x, y` d'un détail et sa taille sont en millimètres de carte ; `c`
+est l'indice d'une découpe (absent pour le contour extérieur), `t` la
+position sur le côté `i → i+1`, `ou` le centre ou un bord de la pastille.
+`memo` garde la dernière mesure connue ({a, b, v}, en mm de carte) : c'est
+elle qui place une orpheline. `dfResoudre(réf)` donne le point d'une
+référence, `dfMesurer(cote)` sa valeur (null si elle est orpheline).
 
 ### Comment c'est fait
 
@@ -938,6 +1175,119 @@ sans dépendance, comme le Master Drawing : contenu non compressé, état
 graphique réémis seulement quand il change, table xref comptée en écrivant.
 La chasse des caractères vient de la table métrique d'Helvetica : c'est elle
 qui centre un repère sur son composant et coupe les colonnes des tableaux.
+
+### La fonte embarquée
+
+Helvetica n'est jamais embarquée : chaque lecteur la remplace par ce qu'il a,
+et le plan ne se ressemble pas d'un poste à l'autre. Le PDF des plans
+emporte donc sa fonte, **PlansSans** : Liberation Sans 2.x (licence SIL Open
+Font License 1.1), dont les chasses sont celles d'Arial, donc d'Helvetica —
+la mise en page ne bouge pas d'un trait. Elle arrive en deux temps :
+
+1. **À la construction**, `outils/fonte-plans.py` (Python sans module
+   externe) réduit les deux graisses de la fonte du système à ce qu'un plan
+   écrit — ASCII, Latin-1, Latin étendu A, ponctuation WinAnsi, grec,
+   flèches et symboles (± ° ≤ ≥ ≈ ≠ ∞ √ ‰…) : 432 caractères, le hinting et
+   les tables de mise en page retirés, 29 Ko par graisse au lieu de 410.
+   L'OFL interdit qu'une version modifiée porte les noms réservés
+   « Liberation » et « Arimo » : la fonte est renommée, son copyright et sa
+   licence restent dans sa table `name`, et `js/fontes/OFL-PlansSans.txt`
+   l'accompagne. Le résultat, `js/fontes/plans-sans.js` (80 Ko de base64),
+   se charge comme un script : la fonte est là depuis le disque, sans
+   serveur, et dans `dist/editeur-pcb.html`.
+2. **À chaque PDF**, `33-draftsman-export.js` ne garde que les glyphes que
+   les feuilles emploient (composants des glyphes composites compris) et
+   réécrit la fonte en JavaScript pur : `glyf` et `loca` réduits, `cmap`,
+   `hmtx`, `head`, `hhea`, `maxp`, `OS/2`, `name`, `post` minimal — 7 à 9 Ko
+   par graisse pour l'exemple. Le PDF la déclare en `CIDFontType2`, codage
+   `Identity-H`, avec sa `/ToUnicode`.
+
+Un caractère que la fonte n'a pas suit le chemin de WinAnsi (⌀ → Ø, ✓ → OK,
+lettre sans son accent, puis « ? »). Décochée — ou si la fonte ne se charge
+pas —, le PDF reprend Helvetica en WinAnsi, comme avant. Le choix est gardé
+dans le document (`dessin.fonte`).
+
+**Le Master Drawing** (`04-pdf-masterdraw.js`, dans **Fabrication .zip**)
+emporte la même fonte, par le même sous-ensembleur et sous la même option.
+Il était en Helvetica sans accents (« 35 um », « +/-10% », « >= 100V ») ; il
+écrit maintenant « 35 µm », « ±10% », « ≥ 100 V », « 150 °C », « εr », et le
+nom du projet avec ses accents — le tout cherchable et copiable. Mais ici en
+**TrueType simple**, un octet par caractère : l'ASCII garde son propre code,
+les autres caractères prennent les codes libres (159 par graisse, au-delà
+« ? »), la fonte est déclarée symbolique et sa `cmap` (1,0) et (3,0) dit quel
+glyphe porte quel code, la `/ToUnicode` quel caractère. Le contenu des pages
+se relit donc en clair (« SHEET: 1 / 3 », « REV: B », les noms de fichiers
+annoncés) : un `grep` ou un `diff` entre deux révisions le lisent. Les chasses
+sont celles d'Helvetica : aucune ligne ne bouge, seuls « — » et « °C » sont un
+peu plus larges que les « - » et « C » d'avant, dans des cases qui ont la
+place. Option décochée, ou fonte absente : Helvetica en WinAnsi, accents
+compris (Ω → `Ohm`, ≥ → `>=`).
+
+Pour changer de fonte ou de jeu de caractères : `python3 outils/fonte-plans.py
+[Regular.ttf Bold.ttf]`, puis reconstruire le monofichier.
+
+### Export DXF pour la mécanique
+
+Deux boutons dans la fenêtre, et deux fichiers dans **Fabrication .zip**
+(annoncés par le Master Drawing et le LISEZ-MOI) :
+
+| Fichier | Contenu |
+| --- | --- |
+| `<projet>-CARTE.dxf` (**DXF carte 1:1**) | la carte seule, à l'échelle 1:1, en millimètres, dans le repère des Gerber et de l'Excellon (même origine, Y vers le haut) : contour et découpes en `LINE` et `ARC`, un `CIRCLE` par trou au diamètre fini, un calque par outil de perçage (un `POINT` par trou), encombrement (`POLYLINE` fermée, en tirets pour un non-monté) et repère (`TEXT`) de chaque composant, cotes hors tout, tableau de perçage à côté |
+| `<projet>-PLAN-FABRICATION.dxf` (**DXF feuille**, la feuille affichée) | la feuille entière : cadre, cartouche, vue cotée, symboles et tableaux, coupe, notes |
+
+Les calques : `CONTOUR`, `DECOUPES`, `TROUS_METALLISES`,
+`TROUS_NON_METALLISES`, `COMPOSANTS_DESSUS` / `_DESSOUS`, `REPERES_DESSUS` /
+`_DESSOUS`, `COTES`, `ORIGINE`, `TABLEAU_PERCAGE` pour la carte ; `CADRE`,
+`CARTOUCHE`, `CONTOUR`, `PERCAGE`, `COTES`, `PASTILLES`, `COMPOSANTS`,
+`REPERES`, `TABLEAUX`, `EMPILAGE`, `NOTES`, `TEXTES`, `DESSIN` pour la
+feuille.
+
+**Les trous de la carte, par outil.** Les cercles restent sur les calques
+historiques `TROUS_METALLISES` et `TROUS_NON_METALLISES`, un par trou : un
+lecteur qui s'y attend les retrouve. Chaque outil a en plus son calque, avec
+un `POINT` au centre de chacun de ses trous — les positions que l'assistant
+de perçage d'un modeleur ou une FAO de perçage attend, et de quoi choisir les
+trous d'un diamètre d'un clic :
+
+| Calque | Trous |
+| --- | --- |
+| `TROUS_PTH_<Ø>` | pastilles traversantes, métallisées |
+| `TROUS_NPTH_<Ø>` | trous de fixation, non métallisés |
+| `VIAS_<Ø>`, `VIAS_L1-L2_<Ø>` | vias traversants ; borgnes et enterrés, par portée |
+| `CONTRE_PERCAGE_<DESSUS\|DESSOUS>_<Ø>` | contre-perçage, au Ø du foret, depuis la face indiquée — avec aussi le `CIRCLE` du foret |
+
+Le Ø s'écrit `0_30` (deux décimales, trois s'il le faut : `0_864`) : R12
+n'admet dans un nom de calque que lettres, chiffres, `$`, `-` et `_`. Chaque
+diamètre a sa couleur (table `LAYER`), la même pour tous les calques de ce
+diamètre, et les `POINT` s'affichent en petite croix (`$PDMODE` 3,
+`$PDSIZE` 0,2 mm). Pourquoi ne pas remplacer les deux calques historiques :
+un lecteur qui les attend les perdrait ; pourquoi pas des `CIRCLE` par
+diamètre en plus : chaque trou serait compté deux fois.
+
+Le format est **AutoCAD R12** (`AC1009`), en ASCII : c'est la version que
+tout lit, des modeleurs (SolidWorks, Inventor, Fusion, FreeCAD) aux
+machines de découpe. R2000 n'apporterait que la `LWPOLYLINE`, au prix des
+poignées et de la section `OBJECTS` qu'un lecteur strict refuse au moindre
+écart. Les unités sont annoncées quand même (`$INSUNITS` = 4, millimètres ;
+`$MEASUREMENT` = 1) : un lecteur R12 les ignore, un lecteur récent ne
+demande plus l'unité. Le texte est en Windows-1252 — le jeu de WinAnsi,
+écrit de la même façon —, °, ± et Ø en `%%d`, `%%p`, `%%c`.
+
+Le contour de la carte n'est qu'une liste de sommets : un coin arrondi ou une
+carte ronde importés y sont des suites de cordes égales. L'export les
+reconnaît (cordes égales, tournant du même côté, 30° au plus chacune, sommets
+sur un même cercle) et les écrit en `ARC`, sur le cercle qui passe exactement
+par les sommets de part et d'autre : le contour reste fermé, et le modeleur
+reçoit un rayon au lieu de vingt facettes. Un octogone reste un octogone.
+
+La feuille est lue dans la même liste d'objets que le PDF et l'aperçu : tout
+ce qui s'y dessine passe dans le DXF. Pour ranger un nouveau dessin sur son
+calque (des cotes posées à la main, une vue de détail), il suffit de
+l'encadrer de `dfCalque(F,"NOM")` … `dfCalque(F)` ; un texte va sur le
+calque de sa catégorie (`cat`), le cadre et le cartouche se reconnaissent à
+leur place, et le reste va sur `DESSIN`. Le texte invisible du PDF n'y va
+pas : il sert la recherche du lecteur PDF, pas le modeleur.
 
 ## Gestionnaire de contraintes
 
@@ -993,7 +1343,8 @@ le tient. On en tire :
 | Étoile | un centre ; les branches de même longueur à la tolérance près (1 mm sans réglage), sauf celle de la source (premier repère de l'ordre) |
 | Fly-by | ce que demande une chaîne, et la terminaison au bout opposé à la source : une résistance `R…`, ou le dernier repère de l'ordre |
 | Moignon max | chaque dérivation et chaque bout libre ; 0 interdit tout moignon. Les branches d'une étoile n'en sont pas |
-| Moignon de via max | chaque via du net ; le message propose un via borgne ou un contre-perçage |
+| Moignon de via max | chaque via du net, contre-perçage déduit ; le message propose un via borgne ou un contre-perçage |
+| Contre-perçage | la règle de l'empilage que prennent les vias du net (voir [Contre-perçage](#contre-perçage-back-drill)) |
 
 Un net qui porte une zone de cuivre (un plan) n'est pas jugé ; un net dont
 une broche n'est pas encore reliée l'est pour information seulement.
@@ -1341,7 +1692,26 @@ repères sont refaits pour rester uniques (`R12` → `R13`), les nets des
 pastilles, pistes et vias sont gardés — dupliquer un découplage avec son
 routage n'aurait pas de sens si la copie se retrouvait en l'air. Ce qui sort du
 presse-papier repasse par `normFp` / `normTrack` / `normVia` / `normZone`, les
-mêmes normalisations que la lecture d'un fichier.
+mêmes normalisations que la lecture d'un fichier. Les liens des bouts de piste
+(`a1`/`a2`) et le boîtier d'un via marqué sont rangés en **rang dans la copie** :
+collés, ils visent les copies, et chaque via collé reçoit son identifiant.
+
+Un **groupe** copié entier (`js/27-groupes.js`) se colle en nouveau groupe
+(« G1 (copie) », puis « G1 (copie 2) »…), avec son **cuivre interne** même s'il
+n'était pas sélectionné : les pistes qui vont d'un membre à un autre, et les
+vias libres qu'elles traversent. Une piste qui aboutit à un composant hors du
+groupe, ou qui pend d'un seul membre, reste où elle est. `Ctrl+X` emporte ce
+cuivre interne avec le groupe.
+
+**F** sur un groupe le retourne **en miroir du groupe entier**, autour de l'axe
+vertical du centre de son cadre — à l'arrêt comme en plein glissement, comme
+**R**. Chaque composant change de face, sa place est symétrisée et sa rotation
+change de signe (θ → −θ, la convention de `fpXform` : chaque pastille tombe
+alors exactement au miroir de sa place). Les vias du groupe et la piste tendue
+entre ses membres passent au miroir et sur la **couche miroir** (F.Cu ↔ B.Cu,
+In1 ↔ In(n) ; un via borgne L1–L2 devient L(n−1)–L(n)) ; les pistes qui sortent
+suivent à 45° et sont jugées au relâchement. Un seul `Ctrl+Z` défait le geste.
+Un composant hors groupe se retourne toujours sur place, rotation gardée.
 
 Ctrl servant désormais à la sélection, les gestes de géométrie sont passés sur
 **Alt** : `Alt+clic` insère un point sur une piste sélectionnée ou un sommet sur
@@ -2913,12 +3283,16 @@ désactive au lieu de disparaître.
   ronde, avec sa rotation propre. Pas de forme quelconque : ni pastille en
   polygone, ni plage thermique découpée, ni chanfrein.
 - Gestionnaire de contraintes : le moignon d'un via se compte en épaisseur
-  d'empilage (le contre-perçage n'est pas décrit) ; les contraintes de classe
+  d'empilage, contre-perçage déduit ; les contraintes de classe
   ne se saisissent que dans le PCB.
-- Plans (Draftsman) : les vues sont placées d'office et les cotes se limitent
-  à l'encombrement du contour ; ni cote posée à la main, ni vue de détail
-  agrandie, ni export DXF. Le texte est en Helvetica standard (non
-  embarquée) : un lecteur la remplace par une fonte équivalente.
+- Plans (Draftsman) : les cotes à la main sont linéaires (horizontale,
+  verticale, alignée), de diamètre ou de rayon — ni cote angulaire, ni cote
+  en chaîne ou depuis une origine commune, ni tolérance portée sur la
+  cote. Une vue déplacée
+  ne repousse pas les autres (elle peut les recouvrir), et une vue de détail
+  ne se pose que sur la feuille de sa vue mère. Ni export DXF. Le texte est
+  en Helvetica standard (non embarquée) : un lecteur la remplace par une
+  fonte équivalente.
 - Les **pistes** savent être circulaires (voir plus haut) ; les zones de
   cuivre, les coupes et le contour de carte restent des polygones. Le
   routeur ne pose pas d'arc : ils arrivent d'un fichier, et l'éditeur les
