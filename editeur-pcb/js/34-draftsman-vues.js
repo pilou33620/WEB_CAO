@@ -13,6 +13,7 @@
            {type:"trou", id}          {type:"via", id}
            {type:"pastille", fp:"J1", pad:"3", ou:"c"|"g"|"d"|"h"|"b"}
            {type:"contour", i, c?}    {type:"bord", i, t, c?}
+           {type:"origine"}           (l'origine des fichiers, gOrigin())
        (`c` : l'indice d'une découpe, absent pour le contour extérieur ; `ou` :
        centre, ou bord gauche / droit / haut / bas de la pastille ; `t` : la
        position sur le côté i → i+1). Le connecteur déplacé, la cote suit et
@@ -20,11 +21,34 @@
        la cote n'est pas fausse en silence : elle se dessine en ROUGE, en
        tirets, « (orpheline) », à la dernière place connue (`memo`), et la
        fenêtre la liste.
+     · COTE ANGULAIRE. Le sommet puis un point sur chaque côté (`s`, `a`,
+       `b`), ou deux arêtes du contour (`a`, `b` de type « bord », le sommet
+       à leur intersection, chaque côté vers le point cliqué) ; l'arc se pose
+       à la souris, centré au sommet, dans l'angle, dans l'angle opposé par le
+       sommet (l'angle extérieur d'un coin), ou prolongé jusqu'au texte.
+       Valeur en degrés, « 45,0° ».
+     · CHAÎNES ET ORDONNÉES. Une chaîne (`ch`) : des points dans un sens
+       (h ou v), cotés de proche en proche sur une même ligne ; une
+       ordonnée (`ord`) : une origine `o` — un point accroché ou l'origine
+       des fichiers de fabrication — et chaque point coté par sa distance à
+       elle, Y vers le haut comme les Gerber. Une seule cote enregistrée,
+       `pts` par référence ; un point perdu ne rend orpheline que la valeur
+       qui en dépend, les autres restent justes et noires.
+     · TOLÉRANCES. `tol` : symétrique (± 0,10), écarts (+0,10 / −0,05
+       superposés), limites (les deux valeurs, max sur min), cote de
+       référence « (12,00) », cote théoriquement exacte encadrée. Écarts
+       signés, dans l'unité de la cote ; saisis dans la liste « Cotes et
+       détails » ou au double-clic sur la cote. Chaque morceau est un vrai
+       texte : il se cherche au PDF et part sur le calque COTES du DXF.
      · VUES À LA SOURIS. Chaque vue d'une feuille (carte cotée, tableau de
        perçage, coupe d'empilage, notes, nomenclature, assemblage…) se
        glisse ; sa position est celle du coin haut gauche de sa boîte,
        aimantée sur une grille de 2,5 mm, gardée dans le cadre et hors du
-       cartouche. « Replacer automatiquement » rend la disposition calculée.
+       cartouche. Lâchée sur d'autres, elle garde sa place et ce qu'elle
+       recouvre s'écarte vers la place libre la plus proche (les vues jamais
+       déplacées d'abord) ; sans place libre, le recouvrement le plus petit,
+       et la fenêtre le dit. « Replacer automatiquement » rend la disposition
+       calculée.
      · VUES DE DÉTAIL. Un cercle ou un rectangle tracé sur une vue de la
        carte devient une vue agrandie à l'échelle choisie (2:1, 5:1, 10:1…),
        posée là où la feuille a de la place et déplaçable comme les autres ;
@@ -42,7 +66,15 @@
 const DF_GRILLE=2.5;                      // aimant des vues, en mm de feuille
 const DF_ROUGE=[0.82,0.08,0.08];          // cote orpheline
 const DF_ECH_DETAIL=[2,3,4,5,10,20];
-const DF_COTES={h:"Cote horizontale",v:"Cote verticale",a:"Cote alignée",d:"Diamètre",r:"Rayon"};
+const DF_COTES={h:"Cote horizontale",v:"Cote verticale",a:"Cote alignée",d:"Diamètre",r:"Rayon",
+  ang:"Cote angulaire",ch:"Cotes en chaîne",ord:"Cotes d'ordonnée"};
+/* Ce que la cote porte en plus de sa valeur : un écart symétrique, deux
+   écarts, deux limites, ou rien de chiffré mais une forme — entre
+   parenthèses (cote de référence, pour information) ou encadrée (cote
+   théoriquement exacte, que le cadre de tolérance géométrique borne). */
+const DF_TOL={sym:"± symétrique",asym:"+ / − écarts",lim:"limites max / min",
+  ref:"( ) de référence",base:"▭ théoriquement exacte"};
+const DF_MAX_SUITE=60;                    // points d'une chaîne ou d'une ordonnée
 const DF_NOMS_VUES={carte:"Vue de la carte",percage:"Tableau de perçage",fixation:"Trous de fixation",
   impedances:"Impédances contrôlées",empilage:"Coupe d'empilage",notes:"Notes de fabrication",
   nomenclature:"Nomenclature",nonmontes:"Non montés",detail:"Vue de détail"};
@@ -56,6 +88,7 @@ function dfNb(v,min,max,def){const n=+v;return v!=null&&v!==""&&Number.isFinite(
 function dfNormRef(r){
   if(!r||typeof r!=="object")return null;
   const t=r.type;
+  if(t==="origine")return {type:t};          // l'origine des fichiers de fabrication, gOrigin()
   if(t==="trou"||t==="via"){
     const id=dfEnt(r.id,1,Number.MAX_SAFE_INTEGER);
     return id==null?null:{type:t,id};
@@ -81,25 +114,73 @@ function dfNormPt(p,avecD){
   if(avecD&&Number.isFinite(+p.d)&&+p.d>0)o.d=+p.d;
   return o;
 }
+/* La tolérance portée par une cote, ou null. Les écarts sont signés, dans
+   l'unité de la cote (mm, ou degrés pour un angle) : une limite se lit donc
+   « valeur + écart », et suit la géométrie comme la valeur. */
+function dfNormTol(t){
+  if(!t||typeof t!=="object"||!Object.prototype.hasOwnProperty.call(DF_TOL,t.genre))return null;
+  const g=t.genre;
+  if(g==="ref"||g==="base")return {genre:g};
+  const sup=dfNb(t.sup,-1000,1000,null), inf=dfNb(t.inf,-1000,1000,null);
+  if(g==="sym")return sup?{genre:g,sup:Math.abs(sup)}:null;
+  if(sup==null||inf==null)return null;
+  return {genre:g,sup:Math.max(sup,inf),inf:Math.min(sup,inf)};
+}
+/* Une liste de références (chaîne, ordonnée) : une seule mal formée, et
+   toute la liste est écartée — elle ne dirait plus ce qu'on a posé. */
+function dfNormRefs(src,min){
+  if(!Array.isArray(src)||src.length<min||src.length>DF_MAX_SUITE)return null;
+  const out=src.map(dfNormRef);
+  return out.every(Boolean)?out:null;
+}
 function dfNormCotes(src){
   const out=[], vus=new Set();
   for(const c of (Array.isArray(src)?src:[]).slice(0,500)){
     if(!c||typeof c!=="object"||!Object.prototype.hasOwnProperty.call(DF_COTES,c.type))continue;
     const id=dfEnt(c.id,1,1e9);
     if(id==null||vus.has(id)||typeof c.vue!=="string"||!DF_CLE_RE.test(c.vue))continue;
-    const deux=c.type!=="d"&&c.type!=="r";
-    const a=dfNormRef(c.a), b=deux?dfNormRef(c.b):null;
-    if(!a||(deux&&!b))continue;
-    vus.add(id);
-    const o={id,vue:c.vue,type:c.type,a};
-    if(b)o.b=b;
-    o.dx=dfNb(c.dx,-1000,1000,0);o.dy=dfNb(c.dy,-1000,1000,0);
-    /* la dernière place connue : de quoi dessiner encore une orpheline */
-    const m=c.memo;
-    if(m&&typeof m==="object"&&Number.isFinite(+m.v)){
-      const ma=dfNormPt(m.a,true), mb=deux?dfNormPt(m.b):null;
-      if(ma&&(!deux||mb)&&(deux||ma.d))o.memo=deux?{a:ma,b:mb,v:+m.v}:{a:ma,v:+m.v};
+    const t=c.type, o={id,vue:c.vue,type:t}, m=c.memo&&typeof c.memo==="object"?c.memo:null;
+    let memo=null;
+    if(t==="ch"||t==="ord"){
+      /* une suite de points dans un sens, et pour l'ordonnée son origine ;
+         la mémoire garde chaque point ({x,y}, ou null s'il n'a jamais été vu) */
+      const pts=dfNormRefs(c.pts,t==="ch"?2:1), org=t==="ord"?dfNormRef(c.o):null;
+      if(!pts||(t==="ord"&&!org))continue;
+      o.sens=c.sens==="v"?"v":"h";
+      if(org)o.o=org;
+      o.pts=pts;
+      if(m&&Array.isArray(m.pts)&&m.pts.length===pts.length){
+        const mp=m.pts.map(p=>dfNormPt(p)), mo=t==="ord"?dfNormPt(m.o):null;
+        if(mp.some(Boolean)||mo){memo={};if(mo)memo.o=mo;memo.pts=mp;}
+      }
+    }else if(t==="ang"){
+      /* trois points (le sommet, puis un point sur chaque côté), ou deux
+         arêtes du contour dont le sommet est l'intersection */
+      const s=c.s!=null?dfNormRef(c.s):null, a=dfNormRef(c.a), b=dfNormRef(c.b);
+      if(!a||!b||(c.s!=null&&!s)||(!s&&(a.type!=="bord"||b.type!=="bord")))continue;
+      if(s)o.s=s;
+      o.a=a;o.b=b;
+      if(m&&Number.isFinite(+m.v)){
+        const ms=dfNormPt(m.s), ma=dfNormPt(m.a), mb=dfNormPt(m.b);
+        if(ms&&ma&&mb)memo={s:ms,a:ma,b:mb,v:+m.v};
+      }
+    }else{
+      const deux=t!=="d"&&t!=="r";
+      const a=dfNormRef(c.a), b=deux?dfNormRef(c.b):null;
+      if(!a||(deux&&!b))continue;
+      o.a=a;
+      if(b)o.b=b;
+      /* la dernière place connue : de quoi dessiner encore une orpheline */
+      if(m&&Number.isFinite(+m.v)){
+        const ma=dfNormPt(m.a,true), mb=deux?dfNormPt(m.b):null;
+        if(ma&&(!deux||mb)&&(deux||ma.d))memo=deux?{a:ma,b:mb,v:+m.v}:{a:ma,v:+m.v};
+      }
     }
+    vus.add(id);
+    o.dx=dfNb(c.dx,-1000,1000,0);o.dy=dfNb(c.dy,-1000,1000,0);
+    const tol=dfNormTol(c.tol);
+    if(tol)o.tol=tol;
+    if(memo)o.memo=memo;
     out.push(o);
   }
   return out;
@@ -254,6 +335,10 @@ function dfBoitePts(pts){
    quand il y en a un ; null si la référence ne mène plus à rien. */
 function dfResoudre(ref){
   if(!ref)return null;
+  if(ref.type==="origine"){
+    const o=typeof gOrigin==="function"?gOrigin():null;
+    return o&&Number.isFinite(o.x)&&Number.isFinite(o.y)?{x:o.x,y:o.y}:null;
+  }
   if(ref.type==="trou"){
     const h=(S.holes||[]).find(h=>h.id===ref.id);
     return h?{x:h.x,y:h.y,d:h.d}:null;
@@ -283,6 +368,7 @@ function dfResoudre(ref){
 function dfRefTexte(ref){
   if(!ref)return "?";
   const OU={c:"centre",g:"bord gauche",d:"bord droit",h:"bord haut",b:"bord bas"};
+  if(ref.type==="origine")return "origine des fichiers de fabrication";
   if(ref.type==="trou")return "trou de fixation n° "+ref.id;
   if(ref.type==="via")return "via n° "+ref.id;
   if(ref.type==="pastille")return ref.fp+"."+ref.pad+" ("+OU[ref.ou]+")";
@@ -292,15 +378,97 @@ function dfRefTexte(ref){
 /* La mesure d'une cote, ou null si elle est orpheline. `memo` en garde la
    trace, arrondie au dix-millième. */
 function dfMesurer(c){
+  if(c.type==="ch"||c.type==="ord")return dfMesurerSuite(c);
+  const q=x=>Math.round(x*1e4)/1e4;
+  if(c.type==="ang"){
+    const g=dfAngle(c);
+    if(!g)return null;
+    const Q=p=>({x:q(p.x),y:q(p.y)});
+    g.memo={s:Q(g.s),a:Q(g.a),b:Q(g.b),v:q(g.v)};
+    return g;
+  }
   const diam=c.type==="d"||c.type==="r";
   const a=dfResoudre(c.a), b=diam?null:dfResoudre(c.b);
   if(!a||(!diam&&!b)||(diam&&!(a.d>0)))return null;
   const v=c.type==="h"?Math.abs(b.x-a.x):c.type==="v"?Math.abs(b.y-a.y):
           c.type==="a"?Math.hypot(b.x-a.x,b.y-a.y):c.type==="d"?a.d:a.d/2;
-  const q=x=>Math.round(x*1e4)/1e4;
   const memo=diam?{a:{x:q(a.x),y:q(a.y),d:q(a.d)},v:q(v)}
                  :{a:{x:q(a.x),y:q(a.y)},b:{x:q(b.x),y:q(b.y)},v:q(v)};
   return {a,b,v,memo};
+}
+/* Une arête du contour visée par une référence « bord » : ses extrémités
+   `p`, `q` et le point `m` cliqué dessus. */
+function dfArete(ref){
+  if(!ref||ref.type!=="bord")return null;
+  const P=dfPolyRef(ref);
+  if(!P||ref.i>=P.length)return null;
+  const a=P[ref.i], b=P[(ref.i+1)%P.length];
+  if(Math.hypot(b.x-a.x,b.y-a.y)<1e-9)return null;
+  return {p:a,q:b,m:{x:a.x+(b.x-a.x)*ref.t,y:a.y+(b.y-a.y)*ref.t}};
+}
+/* L'angle d'une cote angulaire, en mm de carte : le sommet `s`, un point
+   `a` et un point `b` sur chacun de ses côtés, la valeur `v` en degrés (0 à
+   180) ; pour deux arêtes, leurs extrémités `ea`, `eb`. null : une
+   référence perdue, ou deux arêtes parallèles (pas de sommet). */
+function dfAngle(c){
+  let s,a,b,ea=null,eb=null;
+  if(c.s){
+    s=dfResoudre(c.s);a=dfResoudre(c.a);b=dfResoudre(c.b);
+    if(!s||!a||!b)return null;
+  }else{
+    ea=dfArete(c.a);eb=dfArete(c.b);
+    if(!ea||!eb)return null;
+    const ux=ea.q.x-ea.p.x, uy=ea.q.y-ea.p.y, vx=eb.q.x-eb.p.x, vy=eb.q.y-eb.p.y;
+    const det=ux*vy-uy*vx;
+    if(Math.abs(det)<1e-9*Math.hypot(ux,uy)*Math.hypot(vx,vy))return null;
+    const t=((eb.p.x-ea.p.x)*vy-(eb.p.y-ea.p.y)*vx)/det;
+    s={x:ea.p.x+ux*t,y:ea.p.y+uy*t};
+    /* chaque côté part du sommet vers le point cliqué sur l'arête ; cliqué
+       sur le sommet même, vers l'extrémité la plus lointaine */
+    const d=p=>Math.hypot(p.x-s.x,p.y-s.y), loin=e=>d(e.p)>d(e.q)?e.p:e.q;
+    a=d(ea.m)>1e-6?ea.m:loin(ea);
+    b=d(eb.m)>1e-6?eb.m:loin(eb);
+  }
+  const ux=a.x-s.x, uy=a.y-s.y, vx=b.x-s.x, vy=b.y-s.y;
+  if(Math.hypot(ux,uy)<1e-9||Math.hypot(vx,vy)<1e-9)return null;
+  const v=Math.abs(Math.atan2(ux*vy-uy*vx,ux*vx+uy*vy))*180/Math.PI;
+  return {s,a,b,v,ea,eb};
+}
+/* Une chaîne ou une ordonnée. Chaque point est tenu (sa position) ou perdu
+   (sa dernière place connue, `ok` faux) ; puis les valeurs `val` : pour une
+   chaîne, l'écart entre deux points voisins, rangés dans le sens de la cote
+   — un point qui en dépasse un autre change l'ordre, pas le sens ; pour une
+   ordonnée, la distance signée de chaque point à l'origine, Y vers le haut
+   comme dans les fichiers de fabrication. Une valeur est orpheline dès
+   qu'un de ses deux points est perdu ; les autres restent justes. null :
+   rien n'est placé, pas même en mémoire. */
+function dfMesurerSuite(c){
+  const ancien=c.memo||{}, mp=Array.isArray(ancien.pts)?ancien.pts:[];
+  const pts=[];
+  c.pts.forEach((r,i)=>{
+    const p=dfResoudre(r);
+    if(p)pts.push({i,x:p.x,y:p.y,ok:true});
+    else if(mp[i])pts.push({i,x:mp[i].x,y:mp[i].y,ok:false});
+  });
+  let O=null;
+  if(c.type==="ord"){
+    const p=dfResoudre(c.o);
+    O=p?{x:p.x,y:p.y,ok:true}:(ancien.o?{x:ancien.o.x,y:ancien.o.y,ok:false}:null);
+    if(!O)return null;
+  }else if(!pts.length)return null;
+  const q=x=>Math.round(x*1e4)/1e4, Q=p=>({x:q(p.x),y:q(p.y)}), h=c.sens==="h";
+  const memo={};
+  if(O)memo.o=Q(O);
+  memo.pts=c.pts.map((r,i)=>{const p=pts.find(k=>k.i===i);return p?Q(p):null;});
+  const val=[];
+  if(c.type==="ch"){
+    const tri=pts.slice().sort((p,k)=>h?p.x-k.x:p.y-k.y);
+    for(let k=0;k+1<tri.length;k++){
+      const p=tri[k], n=tri[k+1];
+      val.push({p,q:n,v:Math.abs(h?n.x-p.x:n.y-p.y),orph:!p.ok||!n.ok});
+    }
+  }else for(const p of pts)val.push({p,v:h?p.x-O.x:O.y-p.y,orph:!p.ok||!O.ok});
+  return {O,pts,val,norph:val.filter(x=>x.orph).length+(O&&!O.ok&&!val.length?1:0),memo};
 }
 /* Ranger la dernière place connue dans le document lui-même (et non dans la
    copie bornée de dfCfg) : si la référence disparaît plus tard, l'orpheline
@@ -428,6 +596,63 @@ function dfPlaceLibre(F,w,h,v){
     }
   return best||dfBorner(F,w,h,Z.x1,Z.y1);
 }
+/* La place la plus proche de (x0,y0) pour une boîte w × h, sur la grille,
+   dans le cadre, hors du cartouche (et de la ligne de variante au-dessus),
+   à DF_ECART mm au moins des boîtes `obst`. Sans place libre, celle qui les
+   recouvre le moins, puis la plus proche. Rend {x, y, recouvre} — ce qui
+   reste recouvert, en mm² — ou null si la boîte ne tient pas dans le cadre. */
+const DF_ECART=2;
+function dfPlaceProche(F,w,h,x0,y0,obst){
+  const Z=dfZone(F), C=Z.cart, G=DF_GRILLE, mg=DF_ECART;
+  const cart={x1:C.x-mg,y1:C.y-4,x2:C.x+C.w,y2:C.y+C.h};
+  const sur=(b,x,y,m)=>Math.max(0,Math.min(x+w+m,b.x2)-Math.max(x-m,b.x1))*
+                       Math.max(0,Math.min(y+h+m,b.y2)-Math.max(y-m,b.y1));
+  let best=null;
+  for(let y=Math.ceil(Z.y1/G-1e-9)*G;y+h<=Z.y2+1e-9;y+=G)
+    for(let x=Math.ceil(Z.x1/G-1e-9)*G;x+w<=Z.x2+1e-9;x+=G){
+      if(sur(cart,x,y,0)>0)continue;
+      let r=0;
+      for(const b of obst)r+=sur(b,x,y,mg);
+      const d=Math.hypot(x-x0,y-y0);
+      if(!best||r<best.r-1e-9||(r<=best.r+1e-9&&d<best.d))best={x,y,r,d};
+    }
+  if(!best)return null;
+  let recouvre=0;
+  for(const b of obst)recouvre+=sur(b,best.x,best.y,0);
+  return {x:best.x,y:best.y,recouvre};
+}
+/* Lâcher une vue : elle garde la place où on la pose, et les vues qu'elle
+   recouvre s'écartent vers la place libre la plus proche — d'abord celles
+   que personne n'a placées, qui prennent les meilleures places, puis celles
+   posées à la main. Sans place libre, la place qui recouvre le moins, et la
+   vue est signalée. Un seul pas d'historique : Ctrl+Z rend tout. Rend
+   {repoussees, recouvertes} (des clés de vue), null si la clé est mauvaise. */
+function dfPoserVueRepousser(cle,x,y){
+  if(!DF_CLE_RE.test(String(cle)))return null;
+  return dfEcrire(c=>{
+    c.vues[cle]={x:Math.round(x/DF_GRILLE)*DF_GRILLE,y:Math.round(y/DF_GRILLE)*DF_GRILLE};
+    const res={repoussees:[],recouvertes:[]};
+    S.dessin=c;                                  // la feuille telle que la vue lâchée la laisse
+    const F=dfDocument().feuilles.find(G=>G.vues.some(v=>v.cle===cle));
+    const v=F&&F.vues.find(u=>u.cle===cle), bv=v&&dfBoiteVue(F,v);
+    if(!bv)return res;
+    const aire=(a,b)=>Math.max(0,Math.min(a.x2,b.x2)-Math.max(a.x1,b.x1))*Math.max(0,Math.min(a.y2,b.y2)-Math.max(a.y1,b.y1));
+    const autres=F.vues.filter(u=>u!==v).map(u=>({u,b:dfBoiteVue(F,u)})).filter(o=>o.b);
+    const touchees=autres.filter(o=>aire(o.b,bv)>1e-6)
+      .sort((p,q)=>(c.vues[p.u.cle]?1:0)-(c.vues[q.u.cle]?1:0));
+    const obst=autres.filter(o=>touchees.indexOf(o)<0).map(o=>o.b).concat([bv]);
+    for(const o of touchees){
+      const w=o.b.x2-o.b.x1, h=o.b.y2-o.b.y1;
+      const p=dfPlaceProche(F,w,h,o.b.x1,o.b.y1,obst);
+      if(!p){res.recouvertes.push(o.u.cle);continue;}
+      c.vues[o.u.cle]={x:p.x,y:p.y};
+      obst.push({x1:p.x,y1:p.y,x2:p.x+w,y2:p.y+h});
+      res.repoussees.push(o.u.cle);
+      if(p.recouvre>1e-6)res.recouvertes.push(o.u.cle);
+    }
+    return res;
+  });
+}
 /* Après la mise en page calculée : les vues déplacées à la main, puis les
    vues de détail dont la vue mère est sur cette feuille. */
 function dfAgencer(F,ctx){
@@ -443,6 +668,87 @@ function dfAgencer(F,ctx){
    Dessin des cotes posées à la main
    ========================================================================== */
 function dfMm(v){return fmt(v,2).replace(".",",");}
+/* Un nombre de cote : la virgule, `dec` décimales ; `etendre` en ajoute
+   jusqu'à quatre quand l'écart saisi en a (±0,005 ne s'écrit pas ±0,01).
+   Le signe moins est le vrai (−), que WinAnsi rend par un tiret. */
+function dfNbTxt(v,dec,etendre){
+  let d=dec;
+  if(etendre)while(d<4&&Math.abs(Math.round(v*10**d)-v*10**d)>1e-6)d++;
+  let s=fmt(v,d);
+  if(/^-0\.?0*$/.test(s))s=s.slice(1);
+  return s.replace(".",",").replace("-","−");
+}
+function dfDecimales(x,dec){
+  let d=dec;
+  while(d<4&&Math.abs(Math.round(x*10**d)-x*10**d)>1e-6)d++;
+  return d;
+}
+/* Le texte d'une cote, en morceaux : `p` la valeur (préfixe Ø ou R, « ° »
+   d'un angle, écart symétrique, parenthèses d'une cote de référence),
+   `haut` et `bas` deux lignes superposées (les deux écarts, ou les deux
+   limites — alors sans `p`), `cadre` l'encadré d'une cote théoriquement
+   exacte, `fin` « (orpheline) » quand il y a des lignes superposées. */
+function dfValeurCote(c,v,orph){
+  const ang=c.type==="ang", dec=ang?1:2, t=c.tol;
+  const pre=c.type==="d"?"Ø":c.type==="r"?"R":"", suf=ang?"°":"";
+  const n=(x,d)=>pre+dfNbTxt(x,d==null?dec:d)+suf;
+  const ecart=x=>x?(x>0?"+":"−")+dfNbTxt(Math.abs(x),dec,true)+suf:"0";
+  const T={p:n(v)};
+  if(t){
+    if(t.genre==="sym")T.p+=" ±"+dfNbTxt(t.sup,dec,true)+suf;
+    else if(t.genre==="asym"){T.haut=ecart(t.sup);T.bas=ecart(t.inf);}
+    else if(t.genre==="lim"){
+      const d=Math.max(dfDecimales(t.sup,dec),dfDecimales(t.inf,dec));
+      T.p="";T.haut=n(v+t.sup,d);T.bas=n(v+t.inf,d);
+    }
+    else if(t.genre==="ref")T.p="("+T.p+")";
+    else T.cadre=true;
+  }
+  if(orph){if(T.haut!=null)T.fin="(orpheline)";else T.p+=" (orpheline)";}
+  return T;
+}
+const DF_PILE=0.72;                       // corps des écarts superposés, en part du corps
+function dfLargeurCote(T,pt){
+  const pe=pt*(T.p?DF_PILE:0.85);
+  const wp=T.p?dfLargeur(T.p,pt):0, wf=T.fin?dfLargeur(T.fin,pt):0;
+  const ws=T.haut!=null?Math.max(dfLargeur(T.haut,pe),dfLargeur(T.bas,pe)):0;
+  return {pe,wp,ws,wf,w:wp+(wp&&ws?0.6:0)+ws+(wf?0.6+wf:0)+(T.cadre?1.2:0)};
+}
+/* Le texte d'une cote posé comme un seul texte : ancre g / m / d sur la
+   ligne de base en (x,y), rotation `o.rot`. Chaque morceau est un vrai
+   texte, qui se cherche au PDF (« ±0,10 », « (12,00) ») et part sur le
+   calque COTES du DXF ; le cadre d'une cote exacte est un trait. Rend la
+   largeur. */
+function dfTexteCote(F,T,x,y,pt,o){
+  const L=dfLargeurCote(T,pt), rot=o.rot||0, a=rot*Math.PI/180, H=pt*DF_PT;
+  /* un seul morceau : un seul texte, ancré tel quel (le DXF garde sa justification) */
+  if(T.haut==null&&!T.cadre&&!T.fin){dfTexte(F,T.p,x,y,pt,Object.assign({},o,{rot}));return L.w;}
+  const ux=Math.cos(a), uy=-Math.sin(a), hx=-Math.sin(a), hy=-Math.cos(a);
+  const P=(s,v)=>({x:x+ux*s+hx*v,y:y+uy*s+hy*v});
+  const pose=(t,s,v,p)=>{const q=P(s,v);dfTexte(F,t,q.x,q.y,p,Object.assign({},o,{ancre:"g",rot}));};
+  let s=o.ancre==="m"?-L.w/2:o.ancre==="d"?-L.w:0;
+  if(T.cadre){
+    dfPoly(F,[P(s,-0.25*H-0.4),P(s+L.w,-0.25*H-0.4),P(s+L.w,0.8*H+0.4),P(s,0.8*H+0.4)],
+           {ferme:true,lw:0.18,trait:o.c,tirets:!!o.tirets});
+    s+=0.6;
+  }
+  if(T.p){pose(T.p,s,0,pt);s+=L.wp+(L.ws?0.6:0);}
+  if(T.haut!=null){
+    const lim=!T.p;
+    pose(T.haut,s,(lim?0.95:0.55)*H,L.pe);
+    pose(T.bas,s,(lim?0:-0.1)*H,L.pe);
+    s+=L.ws;
+  }
+  if(T.fin)pose(T.fin,s+0.6,0,pt);
+  return L.w;
+}
+/* Ligne d'attache de P vers Q : 1 mm d'écart à la pièce, 1,5 mm au-delà de
+   la cote. */
+function dfAttache(F,P,Q,col,orph){
+  const vx=Q.x-P.x, vy=Q.y-P.y, L=Math.hypot(vx,vy);
+  if(L<1.2)return;
+  dfLigne(F,P.x+vx/L,P.y+vy/L,Q.x+vx/L*1.5,Q.y+vy/L*1.5,0.15,col,orph);
+}
 /* Géométrie d'une cote linéaire sur la feuille. A, B : les points mesurés ;
    (dx,dy) : où l'on a posé la ligne, depuis leur milieu. La ligne est
    perpendiculaire à l'offset normal, le texte glisse le long d'elle. */
@@ -462,35 +768,32 @@ function dfCoteGeom(type,A,B,dx,dy){
           C:{x:(A2.x+B2.x)/2+u.x*le,y:(A2.y+B2.y)/2+u.y*le}};
 }
 /* A, B : points de la feuille ; `rp` : rayon du trou sur la feuille (cote
-   de diamètre ou de rayon, B absent). Une orpheline : rouge, en tirets. */
-function dfDessinerCote(F,c,A,B,rp,txt,orph){
+   de diamètre ou de rayon, B absent) ; `T` : le texte (dfValeurCote). Une
+   orpheline : rouge, en tirets. `c.lieu` remplace le nom du type dans la
+   liste des résultats (une chaîne se dessine en cotes horizontales). */
+function dfDessinerCote(F,c,A,B,rp,T,orph){
   const col=orph?DF_ROUGE:0, pt=7.5;
-  const o={c:col,cat:"cote",lieu:orph?"cote orpheline":DF_COTES[c.type].toLowerCase()};
+  const o={c:col,cat:"cote",lieu:orph?"cote orpheline":(c.lieu||DF_COTES[c.type].toLowerCase()),tirets:orph};
+  const w=dfLargeurCote(T,pt).w;
   if(c.type==="d"||c.type==="r"){
     /* une ligne de rappel, la flèche sur le bord du trou, le texte sur un
        palier horizontal */
     const L=Math.hypot(c.dx,c.dy), u=L>1e-6?{x:c.dx/L,y:c.dy/L}:{x:0.7071,y:-0.7071};
-    const T=L>rp+1?{x:A.x+c.dx,y:A.y+c.dy}:{x:A.x+u.x*(rp+4),y:A.y+u.y*(rp+4)};
+    const P=L>rp+1?{x:A.x+c.dx,y:A.y+c.dy}:{x:A.x+u.x*(rp+4),y:A.y+u.y*(rp+4)};
     const E={x:A.x+u.x*rp,y:A.y+u.y*rp};
-    dfLigne(F,E.x,E.y,T.x,T.y,0.18,col,orph);
+    dfLigne(F,E.x,E.y,P.x,P.y,0.18,col,orph);
     dfFleche(F,E.x,E.y,-u.x,-u.y,col);
-    const sg=u.x>=0?1:-1, w=dfLargeur(txt,pt);
-    dfLigne(F,T.x,T.y,T.x+sg*(w+1.2),T.y,0.18,col,orph);
-    dfTexte(F,txt,T.x+sg*0.6,T.y-0.8,pt,Object.assign({ancre:sg>0?"g":"d"},o));
+    const sg=u.x>=0?1:-1;
+    dfLigne(F,P.x,P.y,P.x+sg*(w+1.2),P.y,0.18,col,orph);
+    dfTexteCote(F,T,P.x+sg*0.6,P.y-0.8,pt,Object.assign({ancre:sg>0?"g":"d"},o));
     return;
   }
   const g=dfCoteGeom(c.type,A,B,c.dx,c.dy), A2=g.A2, B2=g.B2, u=g.u;
-  /* lignes d'attache : 1 mm d'écart à la pièce, 1,5 mm au-delà de la cote */
-  const attache=(P,Q)=>{
-    const vx=Q.x-P.x, vy=Q.y-P.y, L=Math.hypot(vx,vy);
-    if(L<1.2)return;
-    dfLigne(F,P.x+vx/L,P.y+vy/L,Q.x+vx/L*1.5,Q.y+vy/L*1.5,0.15,col,orph);
-  };
-  attache(A,A2);attache(B,B2);
+  dfAttache(F,A,A2,col,orph);dfAttache(F,B,B2,col,orph);
   /* abscisses le long de u, depuis A2 : la ligne va de A2 à B2, prolongée
      jusqu'au texte s'il a été poussé dehors */
   const sB=(B2.x-A2.x)*u.x+(B2.y-A2.y)*u.y, sC=(g.C.x-A2.x)*u.x+(g.C.y-A2.y)*u.y;
-  const w=dfLargeur(txt,pt), span=Math.abs(sB);
+  const span=Math.abs(sB);
   let s1=Math.min(0,sB), s2=Math.max(0,sB);
   if(span<5){s1-=3;s2+=3;}                       // flèches dehors : elles ne tiennent pas
   if(Math.abs(c.dx*u.x+c.dy*u.y)>0.01){s1=Math.min(s1,sC-w/2-0.5);s2=Math.max(s2,sC+w/2+0.5);}
@@ -502,27 +805,149 @@ function dfDessinerCote(F,c,A,B,rp,txt,orph){
     dfFleche(F,A2.x,A2.y,k*(A2.x-B2.x),k*(A2.y-B2.y),col);
     dfFleche(F,B2.x,B2.y,k*(B2.x-A2.x),k*(B2.y-A2.y),col);
   }
-  dfTexte(F,txt,g.C.x+g.haut.x,g.C.y+g.haut.y,pt,Object.assign({ancre:"m",rot:g.rot},o));
+  dfTexteCote(F,T,g.C.x+g.haut.x,g.C.y+g.haut.y,pt,Object.assign({ancre:"m",rot:g.rot},o));
+}
+/* Une cote angulaire sur la feuille. `g` : le sommet S, un point A et B
+   sur chaque côté, et pour deux arêtes leurs extrémités (`ea`, `eb`). L'arc
+   est centré au sommet, de rayon |(dx,dy)| ; la valeur se pose dans la
+   direction de (dx,dy). Cette direction dans l'angle opposé par le sommet :
+   l'arc y passe (l'angle extérieur d'un coin de carte se cote ainsi) ;
+   ailleurs hors de l'angle, l'arc se prolonge jusqu'à elle — comme la ligne
+   d'une cote linéaire jusqu'au texte poussé dehors. Les lignes d'attache
+   prolongent les côtés jusqu'à l'arc ; une arête que l'arc coupe déjà n'en
+   a pas besoin. */
+function dfDessinerAngle(F,c,g,T,orph){
+  const col=orph?DF_ROUGE:0, pt=7.5, H=pt*DF_PT, S_=g.S, TAU=2*Math.PI;
+  const o={c:col,cat:"cote",lieu:orph?"cote orpheline":"cote angulaire",tirets:orph};
+  const ta=Math.atan2(g.A.y-S_.y,g.A.x-S_.x);
+  let d=Math.atan2(g.B.y-S_.y,g.B.x-S_.x)-ta;
+  while(d>Math.PI)d-=TAU;
+  while(d<=-Math.PI)d+=TAU;
+  const sg=d<0?-1:1, D=Math.abs(d);
+  let R=Math.hypot(c.dx,c.dy);
+  const phi=R>1e-6?Math.atan2(c.dy,c.dx):ta+d/2;
+  if(R<2)R=8;
+  /* l'arc en abscisse angulaire `r` depuis le côté A, dans le sens de B ;
+     posé dans l'angle opposé par le sommet (même valeur), il y passe tout
+     entier, et les côtés se prolongent au-delà du sommet */
+  let rt=((sg*(phi-ta))%TAU+TAU)%TAU, oppose=0;
+  if(rt>=Math.PI&&rt<=Math.PI+D){oppose=Math.PI;rt-=Math.PI;}
+  const th=r=>ta+oppose+sg*r, P=r=>({x:S_.x+R*Math.cos(th(r)),y:S_.y+R*Math.sin(th(r))});
+  const tg=r=>({x:-sg*Math.sin(th(r)),y:sg*Math.cos(th(r))});
+  const w=dfLargeurCote(T,pt).w, marge=(w/2+0.5)/R;
+  let r1=0, r2=D;
+  if(D*R<5){r1-=3/R;r2+=3/R;}                     // flèches dehors : elles ne tiennent pas
+  if(rt>D){
+    if(rt-D<=TAU-rt)r2=Math.max(r2,rt+marge);
+    else{rt-=TAU;r1=Math.min(r1,rt-marge);}
+  }
+  const n=Math.max(8,Math.ceil((r2-r1)/(Math.PI/48))), arc=[];
+  for(let i=0;i<=n;i++)arc.push(P(r1+(r2-r1)*i/n));
+  dfPoly(F,arc,{lw:0.18,trait:col,tirets:orph});
+  /* attaches : de la pièce à l'arc, le long de chaque côté */
+  const QA=P(0), QB=P(D);
+  const attache=(pt0,e,Q)=>{
+    if(e){
+      const vx=e[1].x-e[0].x, vy=e[1].y-e[0].y;
+      const t=((Q.x-e[0].x)*vx+(Q.y-e[0].y)*vy)/(vx*vx+vy*vy);
+      if(t>=-1e-6&&t<=1+1e-6)return;               // l'arc tombe sur l'arête
+      pt0=t<0?e[0]:e[1];
+    }else if((Q.x-S_.x)*(pt0.x-S_.x)+(Q.y-S_.y)*(pt0.y-S_.y)<0)pt0=S_;   // au-delà du sommet
+    dfAttache(F,pt0,Q,col,orph);
+  };
+  attache(g.A,g.ea,QA);attache(g.B,g.eb,QB);
+  if(D>1e-6){
+    const k=D*R<5?-1:1, ta0=tg(0), tb=tg(D);
+    dfFleche(F,QA.x,QA.y,-k*ta0.x,-k*ta0.y,col);
+    dfFleche(F,QB.x,QB.y,k*tb.x,k*tb.y,col);
+  }
+  /* la valeur, tangente à l'arc et lisible, toujours du côté extérieur */
+  const Q=P(rt), u=tg(rt);
+  let rot=Math.atan2(-u.y,u.x)*180/Math.PI;
+  if(rot<=-90)rot+=180;else if(rot>90)rot-=180;
+  const ar=rot*Math.PI/180, haut={x:-Math.sin(ar),y:-Math.cos(ar)};
+  const rad={x:Math.cos(th(rt)),y:Math.sin(th(rt))};
+  const dedans=haut.x*rad.x+haut.y*rad.y<0;
+  const e=1+(dedans?0.8*H:0);
+  dfTexteCote(F,T,Q.x+rad.x*e,Q.y+rad.y*e,pt,Object.assign({ancre:"m",rot},o));
+}
+/* Cotes d'ordonnée : de chaque point, une ligne de rappel perpendiculaire
+   au sens coté jusqu'à la ligne commune, et la valeur au bout ; l'origine
+   porte « 0 ». Deux valeurs trop proches pour tenir côte à côte : la ligne
+   de rappel fait un crochet, comme sur un plan dessiné à la main. */
+function dfDessinerOrdonnees(F,c,m,P){
+  const h=c.sens==="h", pt=7.5, H=pt*DF_PT, pas=H*1.25;
+  const O=P(m.O), ligne=h?O.y+c.dy:O.x+c.dx;
+  const le=q=>h?q.x:q.y, tr=q=>h?q.y:q.x, pt2=(a,b)=>h?{x:a,y:b}:{x:b,y:a};
+  const liste=[{q:O,T:{p:"0"+(m.O.ok?"":" (orpheline)")},orph:!m.O.ok}]
+    .concat(m.val.map(s=>({q:P(s.p),T:dfValeurCote(c,s.v,s.orph),orph:s.orph})));
+  liste.sort((a,b)=>le(a.q)-le(b.q));
+  let prec=-Infinity;
+  for(const e of liste){e.t=Math.max(le(e.q),prec+pas);prec=e.t;}
+  for(const e of liste){
+    const col=e.orph?DF_ROUGE:0, a=le(e.q), b=tr(e.q), dist=ligne-b, sg=dist>=0?1:-1;
+    const o={c:col,cat:"cote",lieu:e.orph?"cote orpheline":"cote d'ordonnée",tirets:e.orph};
+    const pts=[pt2(a,Math.abs(dist)>1.2?b+sg:b)];
+    if(Math.abs(e.t-a)>1e-6){
+      const k=Math.abs(dist)>4?ligne-sg*2.5:b+dist/2;
+      pts.push(pt2(a,k),pt2(e.t,ligne));
+    }else pts.push(pt2(a,ligne));
+    if(Math.hypot(pts[pts.length-1].x-pts[0].x,pts[pts.length-1].y-pts[0].y)>1e-6)
+      dfPoly(F,pts,{lw:0.15,trait:col,tirets:e.orph});
+    /* la valeur dans le prolongement : debout pour une abscisse */
+    const base=e.t+0.36*H;
+    if(h)dfTexteCote(F,e.T,base,ligne+sg*0.8,pt,Object.assign({ancre:sg>0?"d":"g",rot:90},o));
+    else dfTexteCote(F,e.T,ligne+sg*0.8,base,pt,Object.assign({ancre:sg>0?"g":"d"},o));
+  }
 }
 /* Les cotes d'une vue (clé `cle`), sous sa transformation V. Chacune est
    notée dans `F.cotes` avec sa plage d'objets : la fenêtre la retrouve sous
-   la souris, et la liste des orphelines en part. */
+   la souris, et la liste des orphelines en part (`orph` : vrai, ou pour
+   une chaîne et une ordonnée le nombre de valeurs orphelines). */
 function dfCotesVue(F,V,cle,cfg){
   for(const c of cfg.cotes){
     if(c.vue!==cle)continue;
-    const i0=F.items.length, diam=c.type==="d"||c.type==="r";
-    const m=dfMesurer(c);
-    if(m)dfRetenir(c.id,m.memo);
-    const src=m?{a:m.a,b:m.b,v:m.v}:c.memo, orph=!m;
-    if(src){
-      const A=V.T(src.a.x,src.a.y), B=diam?null:V.T(src.b.x,src.b.y);
-      const txt=(c.type==="d"?"Ø":c.type==="r"?"R":"")+dfMm(src.v)+(orph?" (orpheline)":"");
-      dfCalque(F,"COTES");                          // calque du DXF (33-draftsman-export.js)
-      dfDessinerCote(F,c,A,B,diam?src.a.d/2*V.k:0,txt,orph);
-      dfCalque(F);
-    }
+    const i0=F.items.length;
+    const orph=c.type==="ch"||c.type==="ord"?dfCoteSuite(F,V,c):dfCoteSimple(F,V,c);
     F.cotes.push({id:c.id,vue:cle,i0,i1:F.items.length,orph});
   }
+}
+/* Linéaire, diamètre, rayon, angle : une valeur, orpheline ou non. */
+function dfCoteSimple(F,V,c){
+  const diam=c.type==="d"||c.type==="r", ang=c.type==="ang";
+  const m=dfMesurer(c);
+  if(m)dfRetenir(c.id,m.memo);
+  const src=m||c.memo, orph=!m;
+  if(!src)return orph;
+  const P=p=>V.T(p.x,p.y), T=dfValeurCote(c,src.v,orph);
+  dfCalque(F,"COTES");                          // calque du DXF (33-draftsman-export.js)
+  if(ang){
+    const g={S:P(src.s),A:P(src.a),B:P(src.b)};
+    if(m&&m.ea){g.ea=[P(m.ea.p),P(m.ea.q)];g.eb=[P(m.eb.p),P(m.eb.q)];}
+    dfDessinerAngle(F,c,g,T,orph);
+  }else dfDessinerCote(F,c,P(src.a),diam?null:P(src.b),diam?src.a.d/2*V.k:0,T,orph);
+  dfCalque(F);
+  return orph;
+}
+/* Chaîne ou ordonnée : chaque valeur se dessine seule, rouge si l'un de ses
+   points est perdu. La ligne commune d'une chaîne passe à (dx, dy) du
+   premier point posé ; celle d'une ordonnée, de l'origine. */
+function dfCoteSuite(F,V,c){
+  const m=dfMesurer(c);
+  if(!m)return 1;
+  dfRetenir(c.id,m.memo);
+  const P=p=>V.T(p.x,p.y), h=c.sens==="h";
+  dfCalque(F,"COTES");
+  if(c.type==="ch"){
+    const B0=P(m.pts.find(p=>p.i===0)||m.pts[0]), ligne=h?B0.y+c.dy:B0.x+c.dx;
+    for(const s of m.val){
+      const A=P(s.p), B=P(s.q), M={x:(A.x+B.x)/2,y:(A.y+B.y)/2};
+      const k={type:h?"h":"v",dx:h?0:ligne-M.x,dy:h?ligne-M.y:0,lieu:"cote en chaîne"};
+      dfDessinerCote(F,k,A,B,0,dfValeurCote(c,s.v,s.orph),s.orph);
+    }
+  }else dfDessinerOrdonnees(F,c,m,P);
+  dfCalque(F);
+  return m.norph;
 }
 /* Le repère d'un détail sur sa vue mère : la zone agrandie et sa lettre. */
 function dfRepereDetail(F,V,d){
@@ -682,8 +1107,9 @@ function dfVueSous(F,X,Y,avecDetails,tol){
 }
 /* Le point d'accroche le plus proche de (X,Y) à moins de `tol` : d'abord les
    points (trous, vias, pastilles, sommets), à défaut un bord du contour.
-   `o.diam` : les trous seuls ; `o.vue` : rester dans cette vue ; `o.acc` :
-   la liste déjà calculée. Rend {vue, ref, x, y, lib, d} ou null. */
+   `o.diam` : les trous seuls ; `o.bord` : les bords seuls (arête d'une cote
+   angulaire) ; `o.vue` : rester dans cette vue ; `o.acc` : la liste déjà
+   calculée. Rend {vue, ref, x, y, lib, d} ou null. */
 function dfAccrocher(F,X,Y,tol,o){
   o=o||{};
   let vue=dfVueSous(F,X,Y,true,tol);
@@ -692,7 +1118,7 @@ function dfAccrocher(F,X,Y,tol,o){
   const P=dfVersFeuille(vue);
   const dedans=p=>!vue.W||dfDansPoly(vue.W,{x:p.x-vue.dx,y:p.y-vue.dy});
   let best=null, bd=tol;
-  for(const c of (o.acc||dfAccroches())){
+  for(const c of (o.bord?[]:(o.acc||dfAccroches()))){
     if(o.diam&&!(c.d>0))continue;
     const p=P(c.x,c.y), d=Math.hypot(p.x-X,p.y-Y);
     if(d<bd&&dedans(p)){bd=d;best={ref:c.ref,x:p.x,y:p.y,lib:c.lib,d:c.d};}
@@ -753,21 +1179,51 @@ function dfToucher(F,X,Y,tol){
    Fenêtre : les outils de la feuille
    ========================================================================== */
 const DF_OUTILS=[
-  ["sel","↖","Sélection","glisser une vue ou une cote ; Suppr efface la cote ou le détail choisi, ou replace la vue"],
+  ["sel","↖","Sélection","glisser une vue ou une cote ; double-clic sur une cote : sa tolérance ; Suppr efface la cote ou le détail choisi, ou replace la vue"],
   ["h","↔","Cote horizontale","deux points accrochés, puis la ligne"],
   ["v","↕","Cote verticale","deux points accrochés, puis la ligne"],
   ["a","⤢","Cote alignée","deux points accrochés, puis la ligne"],
   ["d","Ø","Diamètre","un trou, un via ou une pastille percée, puis le texte"],
   ["r","R","Rayon","un trou, un via ou une pastille percée, puis le texte"],
+  ["ang","∠","Cote angulaire","le sommet puis un point sur chaque côté, ou deux arêtes du contour ; puis l'arc"],
+  ["ch","⊢⊣","Cotes en chaîne","des points accrochés, puis un clic hors accroche (ou Entrée) pour la ligne ; sens choisi à côté"],
+  ["ord","⌖","Cotes d'ordonnée","l'origine (ou celle des fichiers de fabrication), des points, puis un clic hors accroche (ou Entrée) pour la ligne"],
   ["detC","◯","Détail circulaire","le centre, puis le rayon"],
   ["detR","▭","Détail rectangulaire","deux coins opposés"]];
-Object.assign(DF,{outil:"sel",clics:[],sel:null,glisse:null,souris:null,survol:null,ech:5,acc:null,msg:""});
+Object.assign(DF,{outil:"sel",clics:[],sel:null,glisse:null,souris:null,survol:null,ech:5,acc:null,msg:"",
+  sens:"h",origFab:false});
+
+/* Ce que l'outil attend du prochain clic : un point accroché ({diam?,
+   bord?}, ou {suite} pour une chaîne ou une ordonnée, qui en prennent
+   autant qu'on veut), ou null pour une place (ligne, arc, texte). */
+function dfAttendu(){
+  const o=DF.outil, n=DF.clics.length;
+  if(o==="d"||o==="r")return n<1?{diam:true}:null;
+  if(o==="h"||o==="v"||o==="a")return n<2?{}:null;
+  if(o==="ang")return n&&DF.clics[0].ref.type==="bord"?(n<2?{bord:true}:null):(n<3?{}:null);
+  if(o==="ch"||o==="ord")return {suite:true};
+  return null;
+}
+/* Points qu'il faut à une chaîne (deux) ou à une ordonnée (l'origine et un
+   point, ou un point quand l'origine est celle des fichiers). */
+function dfMinSuite(){return DF.outil==="ch"||!DF.origFab?2:1;}
 
 function dfConsigne(){
   const o=DF.outil, n=DF.clics.length;
   if(DF.msg)return DF.msg;
-  if(o==="sel")return "Glissez une vue (aimant 2,5 mm, gardée dans le cadre) ou une cote ; Suppr efface la sélection.";
+  if(o==="sel")return "Glissez une vue (aimant 2,5 mm, les vues recouvertes s'écartent) ou une cote ; double-clic : tolérance ; Suppr efface la sélection.";
   if(o==="d"||o==="r")return n?"Placez le texte de la cote.":"Cliquez un trou, un via ou une pastille percée.";
+  if(o==="ang"){
+    if(!n)return "Cliquez le sommet de l'angle, ou une première arête du contour (loin de ses sommets).";
+    if(DF.clics[0].ref.type==="bord")return n<2?"Cliquez la seconde arête.":"Placez l'arc de cote.";
+    return ["","Un point sur le premier côté.","Un point sur le second côté.","Placez l'arc de cote."][Math.min(n,3)];
+  }
+  if(o==="ch"||o==="ord"){
+    const sens=DF.sens==="v"?"verticale":"horizontale";
+    if(o==="ord"&&!DF.origFab&&!n)return "Cliquez l'origine des cotes d'ordonnée ("+sens+"s).";
+    if(n<dfMinSuite())return (o==="ch"?"Chaîne "+sens:"Ordonnées "+sens+"s")+" : cliquez un point à coter.";
+    return "Point suivant, ou un clic hors accroche (Entrée : à la souris) pour placer la ligne.";
+  }
   if(o==="detC")return n?"Cliquez pour fixer le rayon.":"Cliquez le centre de la zone à agrandir, sur une vue de la carte.";
   if(o==="detR")return n?"Cliquez le coin opposé.":"Cliquez un coin de la zone à agrandir, sur une vue de la carte.";
   return ["Premier point : centre de trou ou de via, centre ou bord de pastille, sommet ou bord du contour.",
@@ -801,8 +1257,9 @@ function dfClicFeuille(F,X,Y,tol){
   if(DF.clicsP!==DF.page)DF.clics=[];     // un geste ne passe pas d'une feuille à l'autre
   DF.clicsP=DF.page;
   if(o==="sel"){
-    const h=dfToucher(F,X,Y,tol);
+    const h=dfToucher(F,X,Y,tol), avant=JSON.stringify(DF.sel);
     DF.sel=h;
+    if(JSON.stringify(h)!==avant)dfRendreListeCotes();   // la tolérance de la cote choisie
     let b=null;
     if(h&&h.genre==="vue"){const v=F.vues.find(v=>v.cle===h.cle);b=v&&dfBoiteVue(F,v);}
     else if(h){const c=F.cotes.find(c=>c.id===h.id);b=c&&dfBoiteItems(F,c.i0,c.i1);}
@@ -830,19 +1287,74 @@ function dfClicFeuille(F,X,Y,tol){
     dfApresEdition();
     return id;
   }
-  const diam=o==="d"||o==="r", n=DF.clics.length;
-  if(n<(diam?1:2)){
-    const acc=dfAccrocher(F,X,Y,tol,{diam,acc:dfAccCache(),vue:n?DF.clics[0].vue:null});
-    if(!acc){dfDire(diam?"Pas de trou ici.":"Pas de point d'accroche ici.");return null;}
-    if(n&&Math.hypot(acc.x-DF.clics[0].x,acc.y-DF.clics[0].y)<1e-6){dfDire("Choisissez un autre point.");return null;}
+  const att=dfAttendu(), n=DF.clics.length;
+  if(att){
+    const acc=dfAccrocher(F,X,Y,tol,{diam:att.diam,bord:att.bord,acc:dfAccCache(),vue:n?DF.clics[0].vue:null});
+    const pris=acc&&DF.clics.some(k=>Math.hypot(acc.x-k.x,acc.y-k.y)<1e-6);
+    if(att.suite){
+      /* chaîne, ordonnée : un point de plus, ou — hors accroche — la ligne */
+      if(acc&&!pris){DF.clics.push(acc);dfRendreSur();return null;}
+      if(acc){dfDire("Ce point est déjà coté.");return null;}
+      if(n<dfMinSuite()){dfDire("Pas de point d'accroche ici.");return null;}
+      return dfFinirCote(F,X,Y);
+    }
+    if(!acc){dfDire(att.diam?"Pas de trou ici.":att.bord?"Pas d'arête du contour ici.":"Pas de point d'accroche ici.");return null;}
+    if(pris){dfDire("Choisissez un autre point.");return null;}
+    if(att.bord){
+      const k=DF.clics[0].ref, r=acc.ref;
+      if(r.i===k.i&&r.c===k.c){dfDire("Choisissez une autre arête.");return null;}
+      if(!dfAngle({a:k,b:r})){dfDire("Arêtes parallèles : pas d'angle à coter.");return null;}
+    }
     DF.clics.push(acc);
     dfRendreSur();
     return null;
   }
+  if(o==="ang")return dfFinirCote(F,X,Y);
+  const diam=o==="d"||o==="r";
   const A=DF.clics[0], B=diam?null:DF.clics[1];
   const M=B?{x:(A.x+B.x)/2,y:(A.y+B.y)/2}:A;
   DF.clics=[];
   const id=dfAjouterCote({vue:A.vue,type:o,a:A.ref,b:B?B.ref:undefined,dx:X-M.x,dy:Y-M.y});
+  DF.sel=id?{genre:"cote",id}:null;
+  dfApresEdition();
+  return id;
+}
+/* La cote angulaire, la chaîne ou l'ordonnée que forment les clics en cours
+   avec une place (X,Y) : ce que le clic suivant posera, et ce que le calque
+   montre d'ici là. null : pas encore assez de points, ou pas d'angle. */
+function dfCoteEnCours(F,X,Y){
+  const k=DF.clics, o=DF.outil;
+  if(!k.length)return null;
+  const v=F.vues.find(u=>u.cle===k[0].vue&&u.V);
+  if(!v)return null;
+  const P=dfVersFeuille(v), vue=k[0].vue;
+  if(o==="ang"){
+    const ar=k[0].ref.type==="bord";
+    if(k.length<(ar?2:3))return null;
+    const c=ar?{vue,type:"ang",a:k[0].ref,b:k[1].ref}:{vue,type:"ang",s:k[0].ref,a:k[1].ref,b:k[2].ref};
+    const g=dfAngle(c);
+    if(!g)return null;
+    const S_=P(g.s.x,g.s.y);
+    return Object.assign(c,{dx:X-S_.x,dy:Y-S_.y});
+  }
+  if(o!=="ch"&&o!=="ord")return null;
+  if(k.length<dfMinSuite())return null;
+  const h=DF.sens!=="v";
+  let base, c;
+  if(o==="ch"){base=k[0];c={vue,type:"ch",pts:k.map(x=>x.ref)};}
+  else if(DF.origFab){
+    const g=dfResoudre({type:"origine"});
+    if(!g)return null;
+    base=P(g.x,g.y);c={vue,type:"ord",o:{type:"origine"},pts:k.map(x=>x.ref)};
+  }else{base=k[0];c={vue,type:"ord",o:k[0].ref,pts:k.slice(1).map(x=>x.ref)};}
+  /* la ligne commune passe par la souris : en y pour un sens horizontal */
+  return Object.assign(c,{sens:h?"h":"v",dx:h?0:X-base.x,dy:h?Y-base.y:0});
+}
+function dfFinirCote(F,X,Y){
+  const ang=DF.outil==="ang", c=dfCoteEnCours(F,X,Y);
+  DF.clics=[];
+  if(!c){dfDire(ang?"Angle nul : choisissez d'autres points.":"Pas assez de points.");dfRendreSur();return null;}
+  const id=dfAjouterCote(c);
   DF.sel=id?{genre:"cote",id}:null;
   dfApresEdition();
   return id;
@@ -853,21 +1365,31 @@ function dfGlisser(X,Y){
   if(!g&&DF.outil==="sel")return;          // survol en sélection : rien ne change
   if(g){g.dx=X-g.X0;g.dy=Y-g.Y0;}
   else if(DF.outil!=="sel"&&DF.outil!=="detC"&&DF.outil!=="detR"&&DF.doc&&DF.doc.feuilles[DF.page]){
-    const n=DF.clics.length, diam=DF.outil==="d"||DF.outil==="r";
+    const n=DF.clics.length, att=dfAttendu();
     const F=DF.doc.feuilles[DF.page], tol=DF.tol||2;
-    DF.survol=n<(diam?1:2)?dfAccrocher(F,X,Y,tol,{diam,acc:dfAccCache(),vue:n?DF.clics[0].vue:null}):null;
+    DF.survol=att?dfAccrocher(F,X,Y,tol,{diam:att.diam,bord:att.bord,acc:dfAccCache(),vue:n?DF.clics[0].vue:null}):null;
   }
   dfRendreSur();
 }
-/* Fin d'un glisser : la vue ou la cote est enregistrée à sa nouvelle place. */
+/* Fin d'un glisser : la vue ou la cote est enregistrée à sa nouvelle place ;
+   les vues que la vue lâchée recouvre s'écartent. */
 function dfLacher(){
   const g=DF.glisse;
   DF.glisse=null;
   if(!g||Math.hypot(g.dx,g.dy)<0.3){dfRendreSur();return false;}
-  if(g.h.genre==="vue")dfPlacerVue(g.h.cle,g.b.x1+g.dx,g.b.y1+g.dy);
+  let r=null;
+  if(g.h.genre==="vue")r=dfPoserVueRepousser(g.h.cle,g.b.x1+g.dx,g.b.y1+g.dy);
   else dfDeplacerCote(g.h.id,g.dx,g.dy);
   dfApresEdition();
+  if(r&&r.recouvertes.length)
+    dfDire("Pas de place libre pour "+r.recouvertes.map(dfNomVue).join(", ")+" : recouvrement réduit au plus petit.");
+  else if(r&&r.repoussees.length)
+    dfDire(r.repoussees.map(dfNomVue).join(", ")+" écartée(s) pour faire place.");
   return true;
+}
+function dfNomVue(cle){
+  const nom=String(cle).split("/")[1]||"";
+  return "« "+(/^det\//.test(cle)?DF_NOMS_VUES.detail:(DF_NOMS_VUES[nom]||cle))+" »";
 }
 /* Suppr : une cote ou un détail s'effacent ; une vue déplacée revient à sa
    place calculée. */
@@ -901,6 +1423,11 @@ function dfOutilsTouche(e){
     return false;
   }
   if((e.key==="Delete"||e.key==="Backspace")&&DF.sel)return dfSupprimerSel();
+  /* Entrée : une chaîne ou une ordonnée se clôt, sa ligne à la souris */
+  if(e.key==="Enter"&&(DF.outil==="ch"||DF.outil==="ord")&&DF.clics.length>=dfMinSuite()&&DF.souris&&DF.doc){
+    const F=DF.doc.feuilles[DF.page];
+    if(F){dfFinirCote(F,DF.souris.X,DF.souris.Y);return true;}
+  }
   if((e.ctrlKey||e.metaKey)&&!e.altKey&&/^[zy]$/i.test(e.key||"")){
     if(/y/i.test(e.key)||e.shiftKey){if(typeof redo==="function")redo();}
     else if(typeof undo==="function")undo();
@@ -914,33 +1441,137 @@ function dfOutilsTouche(e){
 /* ---------- rendu : barre d'outils, calque, liste ---------- */
 function dfRendreOutils(){
   if(typeof document==="undefined")return;
-  const el=document.getElementById("dfOutils");
+  const el=document.getElementById("dfOutils"), o=DF.outil;
+  const opt=(v,lib,on)=>'<option value="'+v+'"'+(on?" selected":"")+'>'+esc(lib)+'</option>';
   if(el)
-    el.innerHTML=DF_OUTILS.map(([k,ic,lib,aide])=>'<button type="button" class="df-outil'+(DF.outil===k?" on":"")+
+    el.innerHTML=DF_OUTILS.map(([k,ic,lib,aide])=>'<button type="button" class="df-outil'+(o===k?" on":"")+
         '" data-outil="'+k+'" title="'+esc(lib+" : "+aide)+'" aria-label="'+esc(lib)+'">'+ic+'</button>').join("")+
       '<select class="tbsel df-ech" data-op="ech" title="Échelle des vues de détail">'+
-        DF_ECH_DETAIL.map(e=>'<option value="'+e+'"'+(e===DF.ech?" selected":"")+'>'+dfEchelleTxt(e)+'</option>').join("")+'</select>'+
+        DF_ECH_DETAIL.map(e=>opt(e,dfEchelleTxt(e),e===DF.ech)).join("")+'</select>'+
+      (o==="ch"||o==="ord"?'<select class="tbsel df-ech" data-op="sens" title="Sens des cotes : horizontales (abscisses) ou verticales (ordonnées)">'+
+        opt("h","Sens horizontal (X)",DF.sens!=="v")+opt("v","Sens vertical (Y)",DF.sens==="v")+'</select>':"")+
+      (o==="ord"?'<select class="tbsel df-ech" data-op="orig" title="Origine des cotes d\'ordonnée">'+
+        opt("0","Origine : premier point cliqué",!DF.origFab)+opt("1","Origine des fichiers de fabrication",DF.origFab)+'</select>':"")+
       '<button type="button" class="tb" data-op="replacer" title="Revenir à la disposition calculée pour les vues de cette feuille">Replacer automatiquement</button>'+
       '<span class="df-msg" id="dfMsg">'+esc(dfConsigne())+'</span>';
   const f=document.getElementById("dfFeuille");
-  if(f&&f.dataset)f.dataset.outil=DF.outil;
+  if(f&&f.dataset)f.dataset.outil=o;
   dfRendreListeCotes();
+}
+/* Ce que vaut une cote, en une ligne : sa valeur et sa tolérance, ou le
+   nombre de valeurs d'une chaîne ou d'une ordonnée. */
+function dfResumeCote(c){
+  const m=dfMesurer(c);
+  if(c.type==="ch"||c.type==="ord")return m?m.val.length+" valeur(s)":"—";
+  const v=m?m.v:c.memo?c.memo.v:null;
+  if(v==null)return "—";
+  const T=dfValeurCote(c,v,false);
+  return (T.cadre?"▭ ":"")+[T.p,T.haut,T.bas].filter(Boolean).join(" ");
+}
+/* Les références d'une cote ; `perdues` : celles qui ne mènent plus à rien. */
+function dfRefsTexte(c,perdues){
+  const refs=[c.o,c.s,c.a,c.b].concat(c.pts||[]).filter(Boolean);
+  if(perdues){
+    const L=refs.filter(r=>!dfResoudre(r)).map(dfRefTexte);
+    return L.length?L.join(", "):(c.type==="ang"?"plus de sommet : arêtes parallèles":"");
+  }
+  if(c.type==="ch")return c.pts.length+" points, "+(c.sens==="v"?"sens vertical":"sens horizontal");
+  if(c.type==="ord")return "origine : "+dfRefTexte(c.o)+", "+c.pts.length+" point(s)";
+  if(c.s)return "sommet : "+dfRefTexte(c.s);
+  return dfRefTexte(c.a)+(c.b?" → "+dfRefTexte(c.b):"");
+}
+/* La tolérance de la cote choisie : son genre, et ses écarts s'il en a. */
+function dfHtmlTolerance(c){
+  const t=c.tol||{}, g=t.genre||"", u=c.type==="ang"?"°":"mm";
+  const num=(k,lib,v)=>'<label class="df-champ df-tol-n"><span>'+esc(lib)+'</span><input type="text" inputmode="decimal" data-tol="'+k+
+    '" value="'+(v==null?"":esc(String(v).replace(".",",")))+'" aria-label="'+esc(lib)+'"><i>'+u+'</i></label>';
+  return '<div class="df-tol" id="dfTol"><div class="df-tol-t">'+esc(DF_COTES[c.type]+" — "+dfResumeCote(c))+'</div>'+
+    '<label class="df-champ"><span>Tolérance</span><select class="tbsel" data-tol="genre">'+
+      '<option value="">aucune</option>'+Object.keys(DF_TOL).map(k=>'<option value="'+k+'"'+(k===g?" selected":"")+'>'+
+      esc(DF_TOL[k])+'</option>').join("")+'</select></label>'+
+    (g==="sym"?num("sup","Écart ±",t.sup):"")+
+    (g==="asym"?num("sup","Écart supérieur",t.sup)+num("inf","Écart inférieur",t.inf):"")+
+    (g==="lim"?num("sup","Max = valeur +",t.sup)+num("inf","Min = valeur +",t.inf):"")+'</div>';
 }
 function dfRendreListeCotes(){
   const el=typeof document!=="undefined"&&document.getElementById("dfCotes");
   if(!el||!DF.doc)return;
-  const cfg=dfCfg(), orph=[];
-  DF.doc.feuilles.forEach((F,p)=>{for(const c of F.cotes)if(c.orph)orph.push({id:c.id,p});});
+  const cfg=dfCfg(), ou=new Map();
+  DF.doc.feuilles.forEach((F,p)=>{for(const c of F.cotes)if(!ou.has(c.id))ou.set(c.id,{p,orph:c.orph});});
   const nv=Object.keys(cfg.vues).length;
+  const s=DF.sel&&DF.sel.genre==="cote"?cfg.cotes.find(c=>c.id===DF.sel.id):null;
   el.innerHTML='<p class="df-vide">'+cfg.cotes.length+' cote(s), '+cfg.details.length+' détail(s)'+
-      (nv?', '+nv+' vue(s) déplacée(s)':"")+'. Outils au-dessus de la feuille.</p>'+
-    orph.map(o=>{
-      const c=cfg.cotes.find(x=>x.id===o.id);
-      if(!c)return "";
-      return '<button type="button" class="df-orph" data-op="orph" data-id="'+o.id+'" data-p="'+o.p+'"><b>⚠ '+
-        esc(DF_COTES[c.type])+' orpheline — f. '+(o.p+1)+'</b><span>'+
-        esc(dfRefTexte(c.a)+(c.b?" → "+dfRefTexte(c.b):""))+'</span></button>';
+      (nv?', '+nv+' vue(s) déplacée(s)':"")+'. Outils au-dessus de la feuille ; double-clic sur une cote : sa tolérance.</p>'+
+    (s?dfHtmlTolerance(s):"")+
+    cfg.cotes.map(c=>{
+      const w=ou.get(c.id);
+      if(!w)return "";                           // sur une feuille décochée
+      const on=s&&s.id===c.id?" on":"", att='" data-id="'+c.id+'" data-p="'+w.p+'"><b>';
+      if(w.orph)
+        return '<button type="button" class="df-orph'+on+'" data-op="orph'+att+'⚠ '+esc(DF_COTES[c.type])+
+          (w.orph===true?' orpheline':' : '+w.orph+' orpheline(s)')+' — f. '+(w.p+1)+'</b><span>'+
+          esc(dfRefsTexte(c,true))+'</span></button>';
+      return '<button type="button" class="df-cote-l'+on+'" data-op="cote'+att+esc(DF_COTES[c.type]+" — "+dfResumeCote(c))+
+        '</b><span>'+esc(dfRefsTexte(c)+" · f. "+(w.p+1))+'</span></button>';
     }).join("");
+}
+/* La saisie de la tolérance (liste ou double-clic) : le genre et les écarts
+   lus dans le volet, un écart vide prend la valeur d'avant ou ±0,1 mm
+   (±0,5° pour un angle). */
+function dfTolerer(id,tol){
+  const t=tol==null?null:dfNormTol(tol);
+  if(tol!=null&&!t)return false;
+  return dfModifierCote(id,{tol:t||undefined});
+}
+function dfTolUi(cle){
+  const box=document.getElementById("dfTol");
+  if(!box||!DF.sel||DF.sel.genre!=="cote")return;
+  const id=DF.sel.id, c=dfCfg().cotes.find(x=>x.id===id);
+  if(!c)return;
+  const lu=k=>{
+    const i=box.querySelector('[data-tol="'+k+'"]');
+    const v=i?String(i.value).trim().replace(",",".").replace("−","-"):"";
+    return v!==""&&Number.isFinite(+v)?+v:null;
+  };
+  const g=box.querySelector('[data-tol="genre"]').value, a=c.tol||{}, ang=c.type==="ang";
+  let tol=null;
+  if(g){
+    let sup=lu("sup"), inf=lu("inf");
+    if(sup==null)sup=a.sup!=null?a.sup:(ang?0.5:0.1);
+    if(inf==null)inf=a.inf!=null?a.inf:(ang?-0.5:-0.05);
+    tol={genre:g,sup,inf};
+  }
+  dfTolerer(id,tol);
+  dfApresEdition();
+  const r=cle&&document.querySelector('#dfTol [data-tol="'+cle+'"]');
+  if(r&&r.focus)r.focus();
+}
+/* Double-clic sur une cote : la sélectionner et ouvrir sa tolérance. */
+function dfEditerTolerance(id){
+  DF.outil="sel";DF.clics=[];DF.glisse=null;DF.sel={genre:"cote",id};
+  dfRendreOutils();dfRendreSur();
+  const s=typeof document!=="undefined"&&document.querySelector&&document.querySelector('#dfTol [data-tol="genre"]');
+  if(s&&s.focus)s.focus();
+  return dfCfg().cotes.some(k=>k.id===id);
+}
+/* L'aperçu d'une cote en cours de pose : la vraie cote, dessinée à part
+   sur une feuille vide, puis recopiée en traits du calque. */
+function dfApercuCote(F,c){
+  const v=F.vues.find(u=>u.cle===c.vue&&u.V), k=dfNormCotes([Object.assign({},c,{id:1})])[0];
+  if(!v||!k)return "";
+  k.id=-1;                                     // rien à retenir dans le document
+  const G={items:[],cotes:[]}, n=dfNum, o=[];
+  if(k.type==="ch"||k.type==="ord")dfCoteSuite(G,v.V,k);else dfCoteSimple(G,v.V,k);
+  const X=x=>n(x+v.dx), Y=y=>n(y+v.dy);
+  for(const it of G.items){
+    if(it.t==="p")for(const pts of it.sp)
+      o.push('<polyline class="df-el on" points="'+pts.map(p=>X(p.x)+","+Y(p.y)).join(" ")+'"/>');
+    else if(it.t==="t")
+      o.push('<text class="df-el-t" x="'+X(it.x)+'" y="'+Y(it.y)+'" font-size="'+n(it.pt*DF_PT)+'" text-anchor="'+
+        (it.ancre==="m"?"middle":it.ancre==="d"?"end":"start")+'"'+
+        (it.rot?' transform="rotate('+n(-it.rot)+" "+X(it.x)+" "+Y(it.y)+')"':"")+'>'+esc(it.s)+'</text>');
+  }
+  return o.join("");
 }
 /* Le calque : cadres des vues et sélection en mode sélection ; accroche,
    points cliqués et élastique pour les autres outils. */
@@ -969,13 +1600,21 @@ function dfSurSvg(F){
     return o.join("");
   }
   for(const c of DF.clics)if(c.x!=null)o.push(point(c));
-  const A=DF.clics[0], P=DF.survol||M;
+  const A=DF.clics[0], P=DF.survol||M, suite=DF.outil==="ch"||DF.outil==="ord";
+  const pm=P&&(P.X!=null?{x:P.X,y:P.Y}:P);
   if(DF.outil==="detC"&&A&&M)
     o.push('<circle class="df-el" cx="'+n(A.X)+'" cy="'+n(A.Y)+'" r="'+n(Math.hypot(M.X-A.X,M.Y-A.Y))+'"/>');
   else if(DF.outil==="detR"&&A&&M)
     o.push(rect({x1:Math.min(A.X,M.X),y1:Math.min(A.Y,M.Y),x2:Math.max(A.X,M.X),y2:Math.max(A.Y,M.Y)},"df-el"));
-  else if(A&&P){
-    const pm=P.X!=null?{x:P.X,y:P.Y}:P;
+  else if(DF.outil==="ang"||suite){
+    /* la cote telle que le clic suivant la posera, sinon les côtés de l'angle */
+    const c=M&&dfCoteEnCours(F,M.X,M.Y);
+    if(c&&!(suite&&DF.survol))o.push(dfApercuCote(F,c));
+    else if(DF.outil==="ang"&&A&&A.ref.type!=="bord"){
+      for(const k of DF.clics.slice(1))o.push(ligne(A,k));
+      if(pm&&dfAttendu())o.push(ligne(A,pm));
+    }
+  }else if(A&&P){
     if(DF.clics.length===2&&M){
       const B=DF.clics[1], Mi={x:(A.x+B.x)/2,y:(A.y+B.y)/2};
       const ge=dfCoteGeom(DF.outil,A,B,M.X-Mi.x,M.Y-Mi.y);
@@ -1012,14 +1651,22 @@ function dfBrancherOutils(m){
     if(b.dataset.outil){dfChoisirOutil(b.dataset.outil);return;}
     const op=b.dataset.op;
     if(op==="replacer")dfReplacerFeuille();
-    else if(op==="orph"){
+    else if(op==="orph"||op==="cote"){
       DF.page=+b.dataset.p;DF.outil="sel";DF.clics=[];DF.sel={genre:"cote",id:+b.dataset.id};
       dfRendreApercu();
     }
   });
   m.addEventListener("change",e=>{
-    const t=e.target;
-    if(t.dataset&&t.dataset.op==="ech")DF.ech=+t.value||5;
+    const t=e.target, d=t.dataset||{};
+    if(d.op==="ech")DF.ech=+t.value||5;
+    else if(d.op==="sens"){DF.sens=t.value==="v"?"v":"h";DF.msg="";dfRendreSur();}
+    else if(d.op==="orig"){DF.origFab=t.value==="1";DF.clics=[];DF.msg="";dfRendreSur();}
+    else if(d.tol)dfTolUi(d.tol);
+  });
+  m.addEventListener("dblclick",e=>{
+    if(DF.outil!=="sel"||!e.target.closest||!e.target.closest("#dfFeuille"))return;
+    const P=dfPointFeuille(e), h=P&&dfToucher(P.F,P.X,P.Y,P.tol);
+    if(h&&h.genre==="cote"){e.preventDefault();dfEditerTolerance(h.id);}
   });
   m.addEventListener("pointerdown",e=>{
     if(e.button!==0||!e.target.closest||!e.target.closest("#dfFeuille"))return;

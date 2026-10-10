@@ -986,9 +986,12 @@ Au-dessus de la feuille, une barre d'outils :
 
 | Outil | Geste |
 | --- | --- |
-| ↖ Sélection | glisser une vue (vue de la carte, tableau de perçage, coupe d'empilage, notes, nomenclature, détail…) ou une cote ; `Suppr` efface la cote ou le détail choisi, ou rend sa place calculée à la vue choisie |
+| ↖ Sélection | glisser une vue (vue de la carte, tableau de perçage, coupe d'empilage, notes, nomenclature, détail…) ou une cote ; double-clic sur une cote : sa tolérance ; `Suppr` efface la cote ou le détail choisi, ou rend sa place calculée à la vue choisie |
 | ↔ ↕ ⤢ Cote horizontale, verticale, alignée | deux points accrochés, puis la ligne de cote |
 | Ø R Diamètre, rayon | un trou de fixation, un via ou une pastille percée, puis le texte |
+| ∠ Cote angulaire | le sommet puis un point sur chaque côté, ou deux arêtes du contour (cliquées loin de leurs sommets) ; puis l'arc |
+| ⊢⊣ Cotes en chaîne | des points accrochés, puis un clic hors accroche (ou `Entrée`, à la souris) pour la ligne commune ; sens horizontal ou vertical à côté |
+| ⌖ Cotes d'ordonnée | l'origine (premier point cliqué, ou l'origine des fichiers de fabrication), des points, puis un clic hors accroche (ou `Entrée`) pour la ligne |
 | ◯ ▭ Détail | sur une vue de la carte, un cercle (centre puis rayon) ou un rectangle (deux coins) ; l'échelle se choisit à côté (2:1 à 20:1) |
 | Replacer automatiquement | les vues de la feuille reviennent à la disposition calculée |
 
@@ -1004,9 +1007,46 @@ colonne de gauche la liste ; un clic y mène. `Échap` défait le geste en
 cours, puis rend l'outil de sélection ; `Ctrl+Z` passe par l'historique de la
 carte.
 
+La **cote angulaire** mesure entre 0 et 180° (« 45,0° »). Sur deux arêtes,
+le sommet est l'intersection de leurs droites — il peut tomber hors de la
+carte — et chaque côté va vers le point cliqué ; deux arêtes parallèles
+sont refusées. L'arc se pose à la souris, centré au sommet : dans l'angle,
+dans l'angle opposé par le sommet (c'est ainsi qu'on cote l'angle extérieur
+d'un coin, les côtés prolongés au-delà), ou ailleurs, prolongé jusqu'au
+texte. Une **chaîne** cote ses points de proche en proche, rangés dans le
+sens coté, sur une seule ligne ; une **ordonnée** cote chacun par sa distance
+signée à l'origine, Y vers le haut comme dans les Gerber, l'origine marquée
+« 0 » et les lignes de rappel coudées quand deux valeurs ne tiennent pas
+côte à côte. L'une et l'autre ne sont qu'une cote, mais un point perdu ne
+rend orpheline que la valeur qui en dépend.
+
+Une cote choisie (un clic, ou un **double-clic** qui ouvre directement sa
+saisie) montre sa **tolérance** dans la colonne de gauche, où toutes les
+cotes sont listées :
+
+| Tolérance | Rendu |
+| --- | --- |
+| ± symétrique | `12,00 ±0,10` |
+| + / − écarts | `12,00` suivi de `+0,10` sur `−0,05`, plus petits, superposés |
+| limites max / min | `12,10` sur `11,95` |
+| ( ) de référence | `(12,00)` |
+| ▭ théoriquement exacte | `12,00` encadré |
+
+Les écarts sont signés, dans l'unité de la cote (degrés pour un angle) ; un
+écart fin garde ses décimales (`±0,005`). Les limites sont « valeur +
+écart » : elles suivent la géométrie comme la valeur. Chaque morceau est un
+vrai texte : au PDF, `±0,10` ou `(12,00)` se cherchent ; au DXF, ils vont
+sur le calque `COTES` (± en `%%p`, ° en `%%d`).
+
 Une vue glissée garde sa place : le coin haut gauche de sa boîte, aimanté
 sur une grille de 2,5 mm, toujours ramené dans le cadre et sorti du
-cartouche. Sans place enregistrée, la disposition calculée ne change pas.
+cartouche. Lâchée sur d'autres vues, elle reste où on l'a posée et les vues
+qu'elle recouvre **s'écartent** vers la place libre la plus proche, à 2 mm
+au moins de leurs voisines, dans le cadre et hors du cartouche — celles
+qu'on n'a jamais déplacées choisissent les premières. S'il n'y a plus de
+place, chacune prend celle qui recouvre le moins, et la barre d'outils le
+dit. Le tout est un seul pas d'historique. Sans place enregistrée, la
+disposition calculée ne change pas.
 Une **vue de détail** redessine la vue mère à l'échelle choisie, découpée
 proprement à sa fenêtre (au plan de fabrication, les pastilles et les trous à
 leur vraie taille s'y ajoutent, pour coter un connecteur) ; la vue mère porte
@@ -1027,7 +1067,10 @@ Nouveau l'oublie, le cartouche reste) :
 
 ```
 dessin.cotes   [{id, vue:"fab/carte", type:"h"|"v"|"a"|"d"|"r",
-                 a:<réf>, b:<réf> (pas pour d / r), dx, dy, memo}]
+                 a:<réf>, b:<réf> (pas pour d / r), dx, dy, tol?, memo},
+                {id, vue, type:"ang", s?:<réf>, a:<réf>, b:<réf>, dx, dy, tol?, memo},
+                {id, vue, type:"ch", sens:"h"|"v", pts:[<réf>…], dx, dy, tol?, memo},
+                {id, vue, type:"ord", sens:"h"|"v", o:<réf>, pts:[<réf>…], dx, dy, tol?, memo}]
 dessin.vues    {"fab/percage": {x, y}, "det/7": {x, y}, …}
 dessin.details [{id, lettre:"A", source:"fab/carte", forme:"cercle"|"rect",
                  x, y, r | w, h, echelle}]
@@ -1035,7 +1078,19 @@ dessin.details [{id, lettre:"A", source:"fab/carte", forme:"cercle"|"rect",
 <réf> : {type:"trou", id}  {type:"via", id}
         {type:"pastille", fp:"J1", pad:"3", ou:"c"|"g"|"d"|"h"|"b"}
         {type:"contour", i, c?}  {type:"bord", i, t, c?}
+        {type:"origine"}                      (origine des fichiers, gOrigin())
+tol   : {genre:"sym", sup}  {genre:"asym"|"lim", sup, inf}  {genre:"ref"|"base"}
 ```
+
+Une cote angulaire sans `s` prend deux arêtes : `a` et `b` sont alors des
+références `bord`. Pour elle, `dx, dy` placent l'arc depuis le sommet ;
+pour une chaîne, la ligne commune passe à `dy` (sens h) ou `dx` (sens v)
+du premier point ; pour une ordonnée, de l'origine. Une chaîne a de 2 à 60
+points, une ordonnée de 1 à 60 ; une seule référence mal formée écarte la
+cote entière. `memo` d'un angle : `{s, a, b, v}` ; d'une chaîne :
+`{pts:[{x,y}|null…]}` ; d'une ordonnée : `{o, pts}` — un point jamais vu
+vaut `null`. `sup` et `inf` d'une tolérance sont des écarts signés
+(`inf ≤ sup`, rangés à la lecture).
 
 Une **clé de vue** nomme la feuille puis la vue : `fab/carte`,
 `fab/percage`, `fab/fixation`, `fab/impedances`, `fab/empilage`,
