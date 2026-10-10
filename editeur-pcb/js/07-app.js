@@ -445,6 +445,10 @@ function newDoc(){
   push();
   S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.holes=[];S.drawings=[];S.drc=[];S.drcRun=false;S.hlNet=null;
   S.dpPairs=[];S.dp=null;   // les règles restent : elles décrivent un métier, pas une carte
+  /* contraintes : celles des classes et la matrice restent (un métier),
+     celles des nets et les groupes d'appariement partent avec la carte */
+  S.contraintes=cmNorm({classes:S.contraintes&&S.contraintes.classes,
+                        matrice:S.contraintes&&S.contraintes.matrice});   // schéma compris : il sera relu
   S.variantes={liste:[],active:""};
   PCB_FICHIER="";
   clearSel();zoneCache.clear();touch();

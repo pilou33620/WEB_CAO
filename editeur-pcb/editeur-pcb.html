@@ -49,6 +49,7 @@
           <div class="mnu-h">Exporter</div>
           <button data-ic="🖼" class="tb" id="bPng">Exporter .png</button>
           <button data-ic="🏭" class="tb" id="bFab">Fabrication .zip</button>
+          <button data-ic="📐" class="tb" id="bPlans" title="Draftsman : plan de fabrication coté, carte de perçage, coupe d'empilage, plans d'assemblage dessus / dessous, nomenclature. PDF au texte cherchable (repères, valeurs, références, nets)">Plans (Draftsman)…</button>
           <button data-ic="◫" class="tb" id="bVariantes" title="Variante de montage : quelles empreintes sont posées (bom.csv, positions.csv). Les variantes se créent dans le schéma.">Variante de montage…</button>
         </div>
       </div>
@@ -101,6 +102,7 @@
           <button data-ic="⋰" data-bascule class="tb" id="bRats">Chevelu <kbd>N</kbd></button>
           <button data-ic="◐" data-bascule class="tb" id="bView">Vue : dessus <kbd>Y</kbd></button>
           <button data-ic="◑" data-bascule class="tb" id="bContrast">Contraste : atténué <kbd>H</kbd></button>
+          <button data-ic="▢" data-bascule class="tb on" id="bRooms" title="Rooms : les blocs fonctionnels du schéma (zones étiquetées) encadrés sur la carte, comme les rooms d'Altium. Un clic sur l'étiquette prend le bloc entier.">Rooms : affichées</button>
           <div class="mnu-s"></div>
           <button data-ic="⤢" class="tb" id="bFit">Recadrer</button>
           <button data-ic="▤" class="tb" id="bWs">Espace de travail ▾</button>
@@ -118,6 +120,7 @@
           <button data-ic="◎" class="tb" id="bPlacementScore" title="Qualité de placement : chevelu minimal HPWL, découplage et congestion">Score Placement</button>
           <div class="mnu-h">Règles</div>
           <button data-ic="📐" class="tb" id="bRules" title="Règles et contraintes de conception : classes de net, isolations, largeurs, vias, perçages, paires différentielles, fabrication — chaque règle avec sa figure cotée">Règles…</button>
+          <button data-ic="⊞" class="tb" id="bContraintes" title="Gestionnaire de contraintes : net par net, ce qui est exigé (classe, impédance, longueur, vias, couches, groupes d'appariement, isolation entre classes) et ce qui est mesuré">Gestionnaire de contraintes…</button>
           <button data-ic="🏭" class="tb" id="bMfgCaps" title="Capabilités Fabricant (JLCPCB...) et Règles de conception (Min / Typique / Max)">Capabilités & Règles…</button>
           <div class="mnu-h">Analyser</div>
           <button data-ic="〰" class="tb" id="bSim" title="Simulation électromagnétique d'un net : paramètres S par la méthode des moments quasi-statique sur la section droite de la piste, puis mise en cascade. Le calcul a lieu sur le serveur (python web_CAO.py).">Simulation EM…</button>
@@ -366,6 +369,7 @@
 <script src="../commun/simulation-em.js"></script>
 <script src="../commun/simulation-datasheet.js"></script>
 <script src="../commun/variantes.js"></script>
+<script src="../commun/contraintes.js"></script>
 <script src="js/00-espace-config.js"></script>
 <script src="js/01-core.js"></script>
 <script src="js/02-connectivity.js"></script>
@@ -396,6 +400,10 @@
 <script src="js/26-variantes.js"></script>
 <script src="js/27-groupes.js"></script>
 <script src="js/28-placement-satellites.js"></script>
+<script src="js/29-draftsman.js"></script>
+<script src="js/30-contraintes.js"></script>
+<script src="js/31-topologie.js"></script>
+<script src="js/32-rooms.js"></script>
 <script src="../commun/explorateur-lib.js"></script>
 <script src="../commun/workspace.js"></script>
 <script src="../commun/ia-assistant.js"></script>

@@ -70,7 +70,9 @@ identiques pour l'éditeur PCB :
 | `js/25-brochage.js` | 405 | Brochage par référence : broche du symbole → patte de l'empreinte (`el.pinMap`), parties d'un composant multiple (`U3A`, `U3B`), choix de la référence, contrôle du brochage |
 | `../commun/brochage.js` | 152 | Lecture de la colonne « Brochage » de `LIB_composants.csv`, partagée avec Gestion LIB |
 | `js/26-variantes.js` | 330 | Variantes de montage : fenêtre des variantes, choix dans la nomenclature, section du panneau Propriétés, non-montés barrés sur la feuille |
+| `js/27-contraintes.js` | 290 | Contraintes de nets pour le PCB : fenêtre (Outils → Contraintes de nets…), section du panneau Propriétés d'un net, groupes d'appariement |
 | `../commun/variantes.js` | 160 | Le modèle des variantes de montage, partagé avec le PCB — **chargé avant `js/`** |
+| `../commun/contraintes.js` | 97 | Ce qu'est une contrainte de net et un groupe d'appariement, et comment se lit une saisie : les mêmes bornes que le PCB — **chargé avant `js/`** |
 | `../commun/reperage.js` | 294 | Chercher un repère, mesurer une distance — le geste, partagé avec l'éditeur PCB et paramétré par l'adaptateur de `21-reperage.js` |
 | `../commun/profils.js` | 555 | Profils utilisateur : qui travaille, ses panneaux, ses réglages, ses derniers documents — **chargé en premier**, avant l'espace de travail qui l'interroge |
 | `../commun/session.js` | 362 | Session d'onglet : le schéma part et revient quand on passe au PCB ou à la recherche, et porte le cross-probing entre les deux — **chargé en premier** |
@@ -397,6 +399,38 @@ distingue *montré*, *ce repère n'y est pas*, *aucun onglet ouvert sur le PCB*,
 et *ce navigateur ne partage rien entre onglets*. En `file://`, deux onglets
 n'ont pas la même origine et le canal n'existe pas : le bouton se désactive au
 lieu de disparaître.
+
+## Contraintes de nets pour le PCB
+
+C'est au schéma qu'on sait ce qu'un net doit tenir. **Outils → Contraintes de
+nets…** (ou « Contraintes du net… » dans le panneau Propriétés d'un net nommé)
+ouvre un tableau des nets nommés du document, où l'on saisit, net par net :
+
+- l'impédance cible et sa tolérance, la longueur min / max, les vias max, les
+  couches permises (« 1,4 ») ;
+- la topologie (point à point, chaîne, étoile, fly-by) et l'ordre des repères
+  le long du net (« U1, U4, U5 », le premier est la source) ;
+- le moignon admis, le moignon de via admis, la tolérance d'une étoile ;
+- et, en bas, des **groupes d'appariement** : des nets à égaliser en longueur
+  (mm) ou en délai (ps), autour du plus long ou d'un net de référence.
+
+La classe du net se choisit dans la même ligne. Le panneau Propriétés d'un net
+résume ce qui est réglé (« 50 Ω ± 5 % · L ≤ 40 mm · chaîne R1→R2 »).
+
+Les contraintes vivent dans le document (`contraintes` : `nets` et
+`groupes`), s'enregistrent et s'annulent avec lui, et partent au PCB avec lui :
+l'export **⇉ PCB**, l'**ECO** (une ligne « Contraintes » dans sa liste) et
+l'ouverture du **gestionnaire de contraintes** du PCB les reprennent. Le PCB les
+garde à part et les marque « sch » : un champ réglé dans le PCB passe devant
+celui du schéma. Les contraintes de classe, l'isolation entre classes et les
+largeurs restent au PCB, qui connaît l'empilage. Les bornes sont celles du PCB
+(`commun/contraintes.js`, partagé) : une valeur hors bornes est écartée à la
+saisie comme à la lecture.
+
+Seuls les nets nommés sont listés : un nom automatique (`N$12`) change d'une
+netlist à l'autre et ne désigne rien de stable au PCB. Les contraintes d'un net
+renommé ou supprimé ne sont pas effacées d'office : la fenêtre les montre
+« à revoir », avec de quoi les effacer.
 
 ## Deux règles à respecter
 

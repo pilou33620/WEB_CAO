@@ -196,6 +196,9 @@ function loadDoc(o, keepPage){
   /* variantes de montage : un composant ne garde que celles que le document
      déclare -- une variante supprimée à la main ne le laisse pas « non monté » */
   S.variantes=varNorm(o.variantes);
+  /* contraintes de nets pour le PCB : les bornes de commun/contraintes.js */
+  S.contraintes={nets:cmNormNets(o.contraintes&&o.contraintes.nets),
+                 groupes:cmNormGroupes(o.contraintes&&o.contraintes.groupes)};
   for(const p of S.pages) for(const c of p.comps){
     if(!c.nonMonte)continue;
     const nm=varNormNonMonte(c.nonMonte,S.variantes);

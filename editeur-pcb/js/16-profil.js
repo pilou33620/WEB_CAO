@@ -41,7 +41,7 @@ var PCB_PROFIL_PRET=false;
    précédent : sans elles, changer d'utilisateur replacerait les panneaux mais
    laisserait la barre d'outils telle quelle. */
 const PCB_PROFIL_USINE={grille:0.1,accroche:true,antiCollision:true,
-                        vue:"dessus",contraste:1,liste:"nets",nonRoutes:false};
+                        vue:"dessus",contraste:1,liste:"nets",nonRoutes:false,rooms:true};
 
 function profilEtat(){
   return {
@@ -50,6 +50,7 @@ function profilEtat(){
     antiCollision:!!S.avoid,
     vue:S.flip?"dessous":"dessus",
     contraste:S.contrast,
+    rooms:S.voirRooms!==false,
     /* « drc » est un résultat de contrôle, pas une habitude : on ne rouvre pas
        l'éditeur sur une liste d'erreurs qui n'ont pas encore été cherchées. */
     liste:(S.listTab==="drc")?"nets":S.listTab,
@@ -92,6 +93,11 @@ function profilAppliquer(garderVue){
   }
   if(!garderVue&&(p.vue==="dessus"||p.vue==="dessous"))setFlip(p.vue==="dessous");
   if([0,1,2].indexOf(+p.contraste)>=0)setContrast(+p.contraste);
+  /* les rooms (32-rooms.js, chargé après ce fichier : il lira S.voirRooms) */
+  if(typeof p.rooms==="boolean"){
+    S.voirRooms=p.rooms;
+    if(typeof roomsBouton==="function")roomsBouton();
+  }
   if(p.liste==="nets"||p.liste==="comps")profilListe(p.liste);
   if(typeof p.nonRoutes==="boolean"){
     S.onlyUnrouted=!!p.nonRoutes;

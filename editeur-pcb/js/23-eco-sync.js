@@ -253,6 +253,7 @@ function pcbDetecterDisparitesEco(schData) {
       valeurs: [],
       nets: [],
       suppressions: [],
+      contraintes: [],
       schSource: (schData && schData.sourceNom) || "Indisponible",
       disponible: false,
       impactRoutage: { pistesModifiees: 0, conflitsDirects: 0, pistesTotales: Array.isArray(S.tracks) ? S.tracks.length : 0 }
@@ -265,6 +266,7 @@ function pcbDetecterDisparitesEco(schData) {
   const valeurs = [];
   const nets = [];
   const suppressions = [];
+  const contraintes = [];
 
   const fpsMap = new Map(S.fps.map(f => [f.ref, f]));
   let nbPistesConnecteesModifiees = 0;
@@ -398,6 +400,26 @@ function pcbDetecterDisparitesEco(schData) {
     }
   }
 
+  // 3. Contraintes de nets saisies dans le schéma (30-contraintes.js) : une
+  //    seule ligne, qui dit combien de nets et de groupes changent
+  if (schData.schDoc && typeof cmEcartSchema === "function") {
+    const d = cmEcartSchema(schData.schDoc);
+    if (d) {
+      const item = {
+        id: "cm_schema",
+        type: "CONTRAINTES",
+        categorie: "Contraintes de nets",
+        resume: d,
+        doc: schData.schDoc,
+        tracksCount: 0,
+        hasConflict: false,
+        active: true
+      };
+      items.push(item);
+      contraintes.push(item);
+    }
+  }
+
   const rapport = {
     total: items.length,
     items: items,
@@ -406,6 +428,7 @@ function pcbDetecterDisparitesEco(schData) {
     valeurs: valeurs,
     nets: nets,
     suppressions: suppressions,
+    contraintes: contraintes,
     schSource: schData.sourceNom || "Schéma",
     disponible: true,
     impactRoutage: {
@@ -451,11 +474,16 @@ function pcbAppliquerEco(items, options) {
   let nbValeurs = 0;
   let nbNets = 0;
   let nbSuppressions = 0;
+  let nbContraintes = 0;
 
   for (const item of items) {
     if (!item || !item.active) continue;
 
     switch (item.type) {
+      case "CONTRAINTES": {
+        if (typeof cmDepuisSchema === "function" && cmDepuisSchema(item.doc, true)) nbContraintes++;
+        break;
+      }
       case "AJOUT": {
         if (!fpsMap.has(item.ref) && typeof mkFp === "function") {
           const pins = Math.max(1, item.pins || 2);
@@ -576,7 +604,7 @@ function pcbAppliquerEco(items, options) {
     setTimeout(() => pcbVerifierEtNotifierPinout(false), 100);
   }
 
-  const totalAppliques = nbAjouts + nbBoitiers + nbValeurs + nbNets + nbSuppressions;
+  const totalAppliques = nbAjouts + nbBoitiers + nbValeurs + nbNets + nbSuppressions + nbContraintes;
   return {
     succes: true,
     nbAppliques: totalAppliques,
@@ -585,6 +613,7 @@ function pcbAppliquerEco(items, options) {
     valeurs: nbValeurs,
     nets: nbNets,
     suppressions: nbSuppressions,
+    contraintes: nbContraintes,
     pistesConservees: Array.isArray(S.tracks) ? S.tracks.length : 0,
     pistesSupprimees: tracksToDelete.size
   };
@@ -673,6 +702,7 @@ function pcbOuvrirFenetreEco(source) {
     else if (it.type === "NET") { badgeColor = "#f59e0b"; badgeText = "⚡ NETLIST"; }
     else if (it.type === "VALEUR") { badgeColor = "#a855f7"; badgeText = "✏️ VALEUR"; }
     else if (it.type === "SUPPRESSION") { badgeColor = "#ef4444"; badgeText = "🗑️ ABSENT"; }
+    else if (it.type === "CONTRAINTES") { badgeColor = "#14b8a6"; badgeText = "⊞ CONTRAINTES"; }
 
     /* Tout ce qui vient du schéma importé (repère, valeur, boîtier, nets)
        passe par e() : un fichier reçu ne doit pas pouvoir injecter de HTML. */
@@ -688,6 +718,8 @@ function pcbOuvrirFenetreEco(source) {
       detailDesc = `Broche <b>${e(it.ref)}.${e(it.pin)}</b> : net <span style="color:#f87171">${e(it.oldNet || "(non câblé)")}</span> ➔ <b style="color:#4ade80">${e(it.newNet || "(en l'air)")}</b>`;
     } else if (it.type === "SUPPRESSION") {
       detailDesc = `Composant <b>${e(it.ref)}</b> (${e(it.value || it.pkg)}) présent sur le PCB mais retiré du schéma`;
+    } else if (it.type === "CONTRAINTES") {
+      detailDesc = `Contraintes de nets saisies dans le schéma : ${e(it.resume)} — un champ réglé dans le PCB garde la main`;
     }
 
     let routingBadge = "";
@@ -736,6 +768,7 @@ function pcbOuvrirFenetreEco(source) {
         '<label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" id="ecoFiltreNets" checked> Nets (' + rapport.nets.length + ')</label>' +
         '<label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" id="ecoFiltreValeurs" checked> Valeurs (' + rapport.valeurs.length + ')</label>' +
         '<label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" id="ecoFiltreSuppr"> Absents (' + rapport.suppressions.length + ')</label>' +
+        (rapport.contraintes && rapport.contraintes.length ? '<label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" id="ecoFiltreContraintes" checked> Contraintes (1)</label>' : '') +
       '</div>' +
 
       // Liste des disparités défilable
@@ -810,6 +843,8 @@ function pcbOuvrirFenetreEco(source) {
   if (fVl) fVl.onchange = function() { basculerCategorie("VALEUR", this.checked); };
   const fSp = document.getElementById("ecoFiltreSuppr");
   if (fSp) fSp.onchange = function() { basculerCategorie("SUPPRESSION", this.checked); };
+  const fCm = document.getElementById("ecoFiltreContraintes");
+  if (fCm) fCm.onchange = function() { basculerCategorie("CONTRAINTES", this.checked); };
 
   // Tout cocher / Décocher
   const bAll = document.getElementById("bEcoSelectAll");
@@ -1055,11 +1090,17 @@ async function pcbExportDepuisSchema(dem) {
     pcbDefinirSchema(Object.assign({}, etat.doc, {netlist: nl}));
   const res = importNetlist(nl, false);
   if (!res || res.err) return false;          // importNetlist l'a dit
+  /* les contraintes du schéma suivent, dans le pas d'historique de l'import */
+  let cmSch = false;
+  if (etat.doc && typeof cmDepuisSchema === "function") {
+    try { cmSch = cmDepuisSchema(etat.doc, true); } catch (_) {}
+  }
   const bilan = [
     res.added ? res.added + " empreinte(s) créée(s)" : "",
     res.repkg ? res.repkg + " boîtier(s) changé(s)" : "",
     res.nets + " net(s)",
-    (res.conflicts && res.conflicts.length) ? "⚠️ " + res.conflicts.length + " pastille(s) routée(s) en conflit" : ""
+    (res.conflicts && res.conflicts.length) ? "⚠️ " + res.conflicts.length + " pastille(s) routée(s) en conflit" : "",
+    cmSch && typeof cmResumeSchema === "function" ? "contraintes du schéma : " + cmResumeSchema() : ""
   ].filter(Boolean).join(", ");
   // 5. la carte, écrite en local dans le projet
   if (typeof projdLie === "function" && projdLie() && typeof saveJsonProjet === "function") {

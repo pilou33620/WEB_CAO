@@ -111,7 +111,7 @@ function pnsItemsTrack(t){
 function pnsMaxClr(){
   let m=0;
   for(const c of S.classes){const v=+c.clr;if(Number.isFinite(v)&&v>m)m=v;}
-  return Math.max(m,matMax());
+  return Math.max(m,matMax(),cmClrMax());
 }
 /* La nature d'un item au sens de la matrice des règles : une pastille percée
    est une pastille traversante, une pastille pleine une pastille CMS. Le

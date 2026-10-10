@@ -937,6 +937,7 @@ function pcbApplyMfgProfileToProject(profileId, options){
       S.classes.forEach(c => {
         let mod = false;
         if(c.w < minW){ c.w = minW; mod = true; }
+        if(c.wL) for(const k of Object.keys(c.wL)) if(c.wL[k] < minW){ c.wL[k] = minW; mod = true; }
         if(c.clr < minClr){ c.clr = minClr; mod = true; }
         if(c.drill < minDrill){ c.drill = minDrill; mod = true; }
         if(c.via < minViaDia){ c.via = minViaDia; mod = true; }

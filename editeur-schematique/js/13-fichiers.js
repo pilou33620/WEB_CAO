@@ -31,7 +31,8 @@ function schFile(suffixe, repli){
 function schDocCourant(){
   storeCurrent();
   const nl=(typeof netlistText==="function")?netlistText():null;
-  const doc={format:"schemedit-2",pages:S.pages,page:S.page,netClasses:S.netClasses,variantes:S.variantes,netlist:nl};
+  const doc={format:"schemedit-2",pages:S.pages,page:S.page,netClasses:S.netClasses,variantes:S.variantes,
+             contraintes:S.contraintes,netlist:nl};
   if(typeof sessDiffuserSchemaModif==="function")sessDiffuserSchemaModif({netlist:nl});
   return doc;
 }

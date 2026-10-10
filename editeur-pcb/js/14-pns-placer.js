@@ -178,7 +178,7 @@ function routeOptimizeTail(R,ajout){
   // gagné : plus court, ou moins d'échardes (pnsDejog peut rallonger un peu)
   if(pnsLen(opt)>=pnsLen(pts)-1e-6&&pnsEchardes(opt,R.w)>=pnsEchardes(pts,R.w))return false;
   R.done.length=i;
-  for(const s of pnsSegs(opt))R.done.push(Object.assign({l:R.layer},s));
+  for(const s of pnsSegs(opt))R.done.push(Object.assign({l:R.layer,w:R.w},s));
   const f=opt[opt.length-1];
   R.pt={x:f.x,y:f.y};
   return true;

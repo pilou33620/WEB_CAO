@@ -391,7 +391,21 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simRfZ","simRfExclure","simRfImporter","simRfOublierModele","simRfBroche",
   "simRfValeurSI","trkAt","simRfMasque",
   /* les liens des bouts de piste, et la transformation des boîtiers */
-  "transformFps","linkSync","fpXformInv","groupeEtendreSel","pcbAppliquerDefEmpreinte","padDist","updateRoute","hitTest"];
+  "transformFps","linkSync","fpXformInv","groupeEtendreSel","pcbAppliquerDefEmpreinte","padDist","updateRoute","hitTest",
+  /* plans de fabrication et d'assemblage (29-draftsman.js) */
+  "dfCfg","dfRegler","dfDocument","dfPdf","dfPdfOctets","dfChercher","dfSvg","dfWinAnsi","dfPdfLit",
+  "dfLargeur","dfCouper","dfPercages","dfVue","dfOuvrir","dfFermer","dfExporter","DF_FORMATS","DF","dfImpedances",
+  /* gestionnaire de contraintes (01-core.js pour le modèle, 30-contraintes.js) */
+  "cmNorm","cmCle","cmClrClasses","cmClrMax","cmMesures","cmRegleDe","cmVerifier","cmEvaluerGroupe",
+  "cmManqueLongueur","cmLargeurPourZ","cmDrc","cmEdit","cmPoser","cmPoserPhysique","cmPoserMatrice",
+  "cmNouveauGroupe","cmGroupeModifier","cmGroupeSupprimer","cmCsv","cmLignesNets","cmOuvrir","cmFermer",
+  "cmAppliquerLargeurZ","CM","CM_ONGLETS","className","classWidth","cmPoserLargeurCouche","normClass","routeVia",
+  /* topologie et moignons (31-topologie.js) */
+  "topoGraphe","topoAnalyser","topoVerifier","topoResume","topoMoignonsVias","TOPO_FORMES","stackSpan","cuT",
+  "cmDepuisSchema","cmTousGroupes","cmResumeSchema","cmLireChamp","pcbAppliquerEco","pcbDetecterDisparitesEco","cmEcartSchema",
+  /* rooms (32-rooms.js) */
+  "roomsDepuisDoc","roomsListe","roomNomCourt","roomCouleur","roomAuLabel","roomEtiquette","roomsBasculer",
+  "roomsPeindre","roomsPeindreFond","roomsVisibles","ctx","profilEtat"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -21827,6 +21841,775 @@ TA("export du schéma : sans netlist dans la session, rien ne bouge",async()=>{
     if(JSON.stringify(S.fps.map(f=>[f.ref,f.pkg,f.x,f.y]))!==avant)
       throw new Error("la carte ne devait pas changer");
   }finally{carteVide();}
+});
+
+/* ==========================================================================
+   Plans de fabrication et d'assemblage (29-draftsman.js)
+   ========================================================================== */
+/* Le PDF en chaîne latin1 : un octet, un caractère — les décalages de la
+   table xref se vérifient directement dessus. */
+function dfLatin(pdf){return Buffer.from(pdf).toString("latin1");}
+function dfToutes(){return {fab:true,asmT:true,asmB:true,bom:true,couches:true};}
+T("plans : PDF valide, chaque entrée de la table xref tombe sur son objet",()=>{
+  exCharger(1);
+  S.dessin={feuilles:dfToutes()};
+  try{
+    const doc=dfDocument();
+    if(doc.feuilles.length!==1+1+1+S.cu)
+      throw new Error("fabrication, assemblage dessus, nomenclature et "+S.cu+" couches attendus : "+
+                      doc.feuilles.map(f=>f.titre).join(" | "));
+    const t=dfLatin(dfPdfOctets(doc));
+    if(!t.startsWith("%PDF-1.4"))throw new Error("signature");
+    if(!/%%EOF\n$/.test(t))throw new Error("fin de fichier");
+    const sx=+(/startxref\n(\d+)\n%%EOF/.exec(t)||[])[1];
+    if(t.slice(sx,sx+5)!=="xref\n")throw new Error("startxref ne pointe pas sur la table");
+    const m=/^xref\n0 (\d+)\n/.exec(t.slice(sx));
+    const n=+m[1];
+    const lignes=t.slice(sx+m[0].length).split("\n");
+    for(let i=1;i<n;i++){
+      const off=+lignes[i].slice(0,10);
+      if(!t.startsWith(i+" 0 obj\n",off))throw new Error("objet "+i+" : décalage "+off+" faux");
+    }
+    /* chaque flux annonce sa vraie longueur */
+    const re=/<< \/Length (\d+) >>\nstream\n/g;let r,k=0;
+    while((r=re.exec(t))){
+      const fin=re.lastIndex+(+r[1]);
+      if(t.slice(fin,fin+10)!=="\nendstream")throw new Error("longueur de flux fausse");
+      k++;
+    }
+    if(k!==doc.feuilles.length)throw new Error(k+" flux pour "+doc.feuilles.length+" feuilles");
+    if(t.indexOf("/WinAnsiEncoding")<0)throw new Error("fontes sans codage WinAnsi : les accents ne se chercheraient pas");
+  }finally{S.dessin=null;}
+});
+T("plans : le texte est du vrai texte — repères visibles, valeurs invisibles, accents",()=>{
+  exCharger(1);
+  const t=dfLatin(dfPdfOctets());
+  if(t.indexOf("(U1) Tj")<0)throw new Error("le repère U1 n'est pas écrit en texte");
+  /* invisible : mode de rendu 3, la valeur posée sur le corps du composant */
+  if(!/3 Tr [^\n]*\(C3 100n\) Tj/.test(t))throw new Error("valeur de C3 absente ou visible");
+  if(!/0 Tr [^\n]*\(U1\) Tj/.test(t))throw new Error("le repère doit rester visible (mode 0)");
+  /* « Épaisseur » : É = 0xC9 en WinAnsi, octal 311 */
+  if(t.indexOf("\\311paisseur")<0)throw new Error("accent perdu dans « Épaisseur »");
+  if(/\(Carte\) Tj/.test(t)===false)throw new Error("nom du projet absent du cartouche");
+});
+T("plans : codage WinAnsi et ce qui n'y entre pas",()=>{
+  const c=dfWinAnsi("é€Ω≥µ");
+  const att=[0xE9,0x80,0x4F,0x68,0x6D,0x3E,0x3D,0xB5];
+  if(JSON.stringify(c)!==JSON.stringify(att))throw new Error(JSON.stringify(c));
+  if(dfPdfLit("a(b)\\c")!=="(a\\(b\\)\\\\c)")throw new Error(dfPdfLit("a(b)\\c"));
+  if(dfPdfLit("ő")!=="(o)")throw new Error("lettre hors Latin-1 : "+dfPdfLit("ő"));
+  if(dfPdfLit("日")!=="(?)")throw new Error("idéogramme : "+dfPdfLit("日"));
+});
+T("plans : coupe des lignes à la largeur de la colonne",()=>{
+  const l=dfCouper("C1, C2, C3, C4, C5, C6, C7, C8, C9, C10, C11, C12, C13, C14",20,7);
+  if(l.length<3)throw new Error("trop peu de lignes : "+JSON.stringify(l));
+  for(const x of l)if(dfLargeur(x,7)>20+1e-9)throw new Error("« "+x+" » dépasse");
+  const m=dfCouper("RÉFÉRENCEFABRICANTTRÈSLONGUESANSESPACE",15,7);
+  for(const x of m)if(dfLargeur(x,7)>15+1e-9)throw new Error("mot coupé trop large : "+x);
+  if(m.join("")!=="RÉFÉRENCEFABRICANTTRÈSLONGUESANSESPACE")throw new Error("lettres perdues");
+});
+T("plans : recherche — repère, valeur, net, sans accents ni casse",()=>{
+  exCharger(1);
+  const doc=dfDocument();
+  const asm=doc.feuilles.findIndex(f=>f.genre==="asmT");
+  const u1=dfChercher(doc,"u1").filter(h=>h.p===asm);
+  if(u1.length!==1||u1[0].cat!=="repere")throw new Error("U1 sur l'assemblage : "+JSON.stringify(u1));
+  const fp=S.fps.find(f=>f.ref==="U1");
+  const b=u1[0].box;
+  if(!(b.x2-b.x1>3&&b.y2-b.y1>3))throw new Error("la cible doit être le corps de U1, pas son texte");
+  const val=dfChercher(doc,"100N").filter(h=>h.p===asm);
+  const n100=S.fps.filter(f=>f.value==="100n"&&!f.side).length;
+  if(val.length!==n100)throw new Error(n100+" condensateurs de 100n, "+val.length+" trouvés");
+  const gnd=dfChercher(doc,"gnd").filter(h=>h.p===asm&&h.cat==="net");
+  if(!gnd.length||!/broche/.test(gnd[0].lieu))throw new Error("le net GND n'est pas cherchable sur l'assemblage");
+  if(!dfChercher(doc,"epaisseur").some(h=>/Épaisseur/.test(h.s)))throw new Error("la recherche doit ignorer les accents");
+  if(dfChercher(doc,"   ").length)throw new Error("une recherche vide ne trouve rien");
+  if(!fp)throw new Error("U1 absent de l'exemple");
+});
+T("plans : signets — une entrée par feuille, une par composant de l'assemblage",()=>{
+  exCharger(1);
+  const doc=dfDocument();
+  const t=dfLatin(dfPdf(doc.feuilles,doc.meta));
+  const dest=(t.match(/\/Dest \[/g)||[]).length;
+  const attendus=doc.feuilles.length+S.fps.filter(f=>!f.side).length;
+  if(dest!==attendus)throw new Error(attendus+" signets attendus, "+dest);
+  if(t.indexOf("/PageMode /UseOutlines")<0)throw new Error("les signets doivent s'ouvrir avec le document");
+  /* les titres de signets en UTF-16 : « Assemblage — face dessus » garde son tiret long */
+  const h=Buffer.from("﻿2. Assemblage — face dessus","utf16le").swap16().toString("hex").toUpperCase();
+  if(t.indexOf("<"+h+">")<0)throw new Error("titre de signet UTF-16 introuvable");
+});
+T("plans : tableau de perçage — autant de trous que les fichiers Excellon",()=>{
+  exCharger(1);
+  const g=dfPercages();
+  const n=g.reduce((a,e)=>a+e.pts.length,0);
+  if(n!==drillFile().holes)throw new Error(n+" trous au plan, "+drillFile().holes+" à l'Excellon");
+  const vias=g.filter(e=>e.usages.has("vias"));
+  if(!vias.length||vias.some(e=>!e.plaque))throw new Error("vias métallisés attendus");
+  S.holes=[mkHole(5,5,3.2)];
+  try{
+    const g2=dfPercages(), np=g2.find(e=>!e.plaque);
+    if(!np||np.pts.length!==1||Math.abs(np.d-3.2)>1e-9)throw new Error("trou de fixation absent : "+JSON.stringify(np));
+    const doc=dfDocument();
+    if(!dfChercher(doc,"fixation").length)throw new Error("le tableau des trous de fixation manque");
+  }finally{S.holes=[];}
+});
+T("plans : variante — non montés en tirets, hors nomenclature",()=>{
+  exCharger(1);
+  const c3=S.fps.find(f=>f.ref==="C3");
+  S.variantes={liste:[{id:"eco",nom:"Économique"}],active:"eco"};
+  c3.nonMonte=["eco"];
+  try{
+    const doc=dfDocument();
+    const asm=doc.feuilles.find(f=>f.genre==="asmT");
+    const nm=asm.items.find(it=>it.t==="t"&&it.s==="NM");
+    if(!nm)throw new Error("marque NM absente");
+    if(!asm.items.some(it=>it.t==="p"&&it.tirets))throw new Error("corps du non-monté sans tirets");
+    const bom=doc.feuilles.find(f=>f.genre==="bom");
+    /* le tableau (cat « bom ») ne porte plus C3 ; la liste des non-montés, si */
+    const refs=bom.items.filter(it=>it.t==="t"&&it.cat==="bom").map(it=>it.s).join(" | ");
+    if(/\bC3\b/.test(refs))throw new Error("C3 encore dans la nomenclature : "+refs);
+    if(!bom.items.some(it=>it.t==="t"&&/non montés dans la variante « économique »/i.test(it.s)))
+      throw new Error("titre des non-montés absent");
+    if(!bom.items.some(it=>it.t==="t"&&it.cat==="note"&&/\bC3\b/.test(it.s)))
+      throw new Error("C3 absent de la liste des non-montés");
+    const cart=doc.feuilles[0].items.find(it=>it.t==="t"&&/^Variante de montage : Économique$/.test(it.s));
+    if(!cart)throw new Error("la variante doit figurer près du cartouche");
+  }finally{delete c3.nonMonte;S.variantes={liste:[],active:""};}
+});
+T("plans : face dessous — feuille propre, vue en miroir",()=>{
+  exCharger(1);
+  const fp=S.fps.find(f=>f.ref==="U2");
+  fp.side=1;
+  try{
+    const doc=dfDocument();
+    const B=doc.feuilles.find(f=>f.genre==="asmB");
+    if(!B)throw new Error("feuille d'assemblage dessous absente");
+    if(B.signets.length!==1||!/^U2/.test(B.signets[0].titre))throw new Error("U2 seul attendu dessous");
+    const T0=doc.feuilles.find(f=>f.genre==="asmT");
+    if(T0.signets.some(s=>/^U2/.test(s.titre)))throw new Error("U2 ne doit plus être dessus");
+    /* miroir : le composant le plus à gauche dessus est le plus à droite dessous */
+    const box={x:0,y:0,w:200,h:150};
+    const V0=dfVue(box,0,5), V1=dfVue(box,1,5);
+    const a=V0.T(fp.x,fp.y), b=V1.T(fp.x,fp.y);
+    if(Math.abs((a.x-box.w/2)+(b.x-box.w/2))>1e-6||Math.abs(a.y-b.y)>1e-6)
+      throw new Error("la vue de dessous n'est pas le miroir de celle de dessus");
+  }finally{fp.side=0;}
+});
+T("plans : couches de cuivre — le nom des nets se cherche sur chaque couche",()=>{
+  exCharger(1);
+  S.dessin={feuilles:{fab:false,asmT:false,asmB:false,bom:false,couches:true}};
+  try{
+    const doc=dfDocument();
+    if(doc.feuilles.length!==S.cu)throw new Error(S.cu+" feuilles attendues, "+doc.feuilles.length);
+    const t=S.tracks.find(x=>x.net);
+    const h=dfChercher(doc,t.net).filter(x=>x.cat==="net");
+    if(!h.some(x=>x.p===t.l))throw new Error("net "+t.net+" introuvable sur sa couche L"+(t.l+1));
+  }finally{S.dessin=null;}
+});
+T("plans : réglages dans le document, bornés, aller-retour neutre",()=>{
+  exCharger(1);
+  S.dessin={format:"Z9",auteur:"x".repeat(500),feuilles:{bom:"oui",couches:true}};
+  const c=dfCfg();
+  if(c.format!=="A3")throw new Error("format inconnu : A3 attendu");
+  if(c.auteur.length!==120)throw new Error("champ non borné");
+  if(c.feuilles.bom!==true||c.feuilles.couches!==true)throw new Error("feuilles mal lues");
+  dfRegler("format","A4");dfRegler("asmT",false);dfRegler("societe","ACME Électronique");
+  if(S.dessin.format!=="A4"||S.dessin.feuilles.asmT!==false)throw new Error("réglage non retenu");
+  const a=serialize();
+  loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("l'aller-retour change le document");
+  if(dfCfg().societe!=="ACME Électronique")throw new Error("société perdue au rechargement");
+  const doc=dfDocument();
+  if(doc.feuilles[0].w!==DF_FORMATS.A4.w)throw new Error("format A4 non appliqué");
+  if(doc.feuilles.some(f=>f.genre==="asmT"))throw new Error("feuille décochée encore produite");
+  S.dessin=null;
+});
+T("plans : dans le dossier de fabrication, annoncés par le master drawing",()=>{
+  exCharger(1);
+  const files=buildFabFiles().files;
+  const plans=files.find(f=>/-PLANS\.pdf$/.test(f.name));
+  if(!plans||!(plans.data instanceof Uint8Array))throw new Error("plans absents de l'archive");
+  const md=files.find(f=>/MASTER-DRAWING\.pdf$/.test(f.name));
+  if(dfLatin(md.data).indexOf(plans.name)<0)throw new Error("le master drawing n'annonce pas "+plans.name);
+  const ip=files.indexOf(plans), im=files.indexOf(md);
+  if(ip>im)throw new Error("les plans doivent précéder le master drawing qui les liste");
+  /* aucune feuille : ni fichier, ni annonce */
+  S.dessin={feuilles:{fab:false,asmT:false,asmB:false,bom:false,couches:false}};
+  try{
+    if(dfPdfOctets()!==null)throw new Error("sans feuille, pas de PDF");
+    const f2=buildFabFiles().files;
+    if(f2.some(f=>/-PLANS\.pdf$/.test(f.name)))throw new Error("PDF vide dans l'archive");
+    const md2=dfLatin(f2.find(f=>/MASTER-DRAWING\.pdf$/.test(f.name)).data);
+    if(md2.indexOf("-PLANS.pdf")>=0)throw new Error("le master drawing annonce des plans absents");
+  }finally{S.dessin=null;}
+});
+T("plans : aperçu SVG et fenêtre",()=>{
+  exCharger(1);
+  const doc=dfDocument();
+  const asm=doc.feuilles.find(f=>f.genre==="asmT");
+  const svg=dfSvg(asm,[{x1:1,y1:1,x2:5,y2:5,actif:true}]);
+  if(!/^<svg [^>]*viewBox="0 0 420 297"/.test(svg))throw new Error("cadre A3 attendu");
+  if(svg.indexOf(">U1</text>")<0)throw new Error("repère absent de l'aperçu");
+  if(/>C3 100n</.test(svg))throw new Error("un texte invisible ne se peint pas dans l'aperçu");
+  if(svg.indexOf('class="df-hit on"')<0)throw new Error("surlignage absent");
+  dfOuvrir();
+  try{
+    if(!DF.doc||!DF.doc.feuilles.length)throw new Error("la fenêtre n'a rien construit");
+  }finally{dfFermer();}
+});
+
+/* ==========================================================================
+   Gestionnaire de contraintes (01-core.js : modèle ; 30-contraintes.js)
+   ========================================================================== */
+function cmRaz(){S.contraintes=cmNorm(null);}
+function cmMsgs(){runDrc();return S.drc.filter(d=>/^(Contrainte|Groupe) /.test(d.msg));}
+T("contraintes : vides, rien ne change — isolation, DRC, routeur",()=>{
+  exCharger(1);cmRaz();
+  const a="+3V3", b="USB_DP";
+  const attendu=Math.max(classOf(a).clr,classOf(b).clr);
+  if(clrPair(a,b)!==attendu)throw new Error("clrPair a changé : "+clrPair(a,b));
+  if(clrK(a,b,"trk","trk")!==Math.max(attendu,matGet("trk","trk")))throw new Error("clrK a changé");
+  if(cmClrMax()!==0||cmClrClasses(a,b)!==0)throw new Error("matrice vide : 0 attendu");
+  if(cmMsgs().length)throw new Error("aucun défaut de contrainte attendu sur une carte sans contrainte");
+});
+T("contraintes : lecture bornée, aller-retour neutre",()=>{
+  const n=cmNorm({classes:{Rapide:{z:"50",zTol:-3,lMax:1e9,viasMax:2.6,couches:[0,"3",99,-1,0]}},
+    nets:{X:{},Y:"n'importe quoi",Z:{lMin:5}},matrice:{"B|A":0.3,"C|D":-1,"E":2,"F|G":"x"},
+    groupes:[{nom:"G",nets:["N1","N1","N2"],mode:"ps",tol:"abc",ref:"inconnu"},{nom:"",nets:["a"]},
+             {id:"g1",nom:"H",nets:["N3"]},{id:"g1",nom:"I",nets:["N4"]}]});
+  const r=n.classes.Rapide;
+  if(r.z!==50||r.zTol!==undefined||r.lMax!==undefined||r.viasMax!==3||JSON.stringify(r.couches)!=="[0,3]")
+    throw new Error("règle de classe mal bornée : "+JSON.stringify(r));
+  if(Object.keys(n.nets).join()!=="Z")throw new Error("règles de net vides gardées : "+JSON.stringify(n.nets));
+  if(JSON.stringify(n.matrice)!=='{"A|B":0.3}')throw new Error("matrice : "+JSON.stringify(n.matrice));
+  if(n.groupes.length!==3)throw new Error("groupes : "+JSON.stringify(n.groupes));
+  const g=n.groupes[0];
+  if(g.nets.join()!=="N1,N2"||g.mode!=="ps"||g.tol!==10||g.ref!=="")throw new Error("groupe : "+JSON.stringify(g));
+  if(n.groupes[1].id===n.groupes[2].id)throw new Error("identifiants de groupe en double");
+  exCharger(1);
+  S.contraintes=n;
+  const a=serialize();
+  loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("l'aller-retour change le document");
+  cmRaz();
+});
+T("contraintes : le net l'emporte sur sa classe, la classe sur le défaut",()=>{
+  exCharger(1);cmRaz();
+  const net="SPI_CS", cl=className(net);
+  cmPoser("classes",cl,"lMax","30");
+  let r=cmRegleDe(net);
+  if(!r.lMax||r.lMax.v!==30||r.lMax.src!=="classe")throw new Error("héritage de classe : "+JSON.stringify(r.lMax));
+  if(r.zTol.v!==10||r.zTol.src!=="défaut")throw new Error("tolérance par défaut : "+JSON.stringify(r.zTol));
+  cmPoser("nets",net,"lMax","60");
+  r=cmRegleDe(net);
+  if(r.lMax.v!==60||r.lMax.src!=="net")throw new Error("le net doit l'emporter : "+JSON.stringify(r.lMax));
+  cmPoser("nets",net,"lMax","");
+  if(cmRegleDe(net).lMax.src!=="classe")throw new Error("vider le champ rend la classe");
+  cmRaz();
+});
+T("contraintes : longueur, vias, couches au DRC ; un net non routé n'est pas jugé",()=>{
+  exCharger(1);cmRaz();
+  const M=cmMesures(), m=M.get("SPI_CS");
+  if(!(m.len>40))throw new Error("SPI_CS routé sur plus de 40 mm attendu : "+m.len);
+  cmPoser("nets","SPI_CS","lMax",String(Math.floor(m.len-1)));
+  cmPoser("nets","GND","viasMax","1");
+  const l=m.couches[0];
+  cmPoser("nets","SPI_CS","couches",String(((l+1)%S.cu)+1));
+  const d=cmMsgs().map(x=>x.msg);
+  if(!d.some(x=>/^Contrainte SPI_CS : longueur .* au-delà du maximum/.test(x)))throw new Error("longueur max : "+d.join(" | "));
+  if(!d.some(x=>/^Contrainte GND : \d+ via\(s\) pour 1 admis/.test(x)))throw new Error("vias max : "+d.join(" | "));
+  if(!d.some(x=>/^Contrainte SPI_CS : routé sur L\d/.test(x)))throw new Error("couches : "+d.join(" | "));
+  /* même contrainte sur un net sans cuivre : rien */
+  const save=S.tracks;
+  S.tracks=S.tracks.filter(t=>t.net!=="SPI_CS");touch();
+  if(cmMsgs().some(x=>/SPI_CS/.test(x.msg)))throw new Error("un net non routé ne se juge pas");
+  S.tracks=save;touch();
+  cmRaz();
+});
+T("contraintes : impédance cible, tenue ou non",()=>{
+  exCharger(1);cmRaz();
+  const m=cmMesures().get("RF_ANT");
+  if(m.z0min==null)throw new Error("Z₀ de RF_ANT non calculée");
+  const cl=className("RF_ANT");
+  cmPoser("classes",cl,"z",String(Math.round(m.z0min)));
+  if(cmVerifier("RF_ANT",m,cmRegleDe("RF_ANT")).length)throw new Error("Z tenue : aucun écart attendu");
+  cmPoser("classes",cl,"z",String(Math.round(m.z0min*2)));
+  const f=cmVerifier("RF_ANT",cmMesures().get("RF_ANT"),cmRegleDe("RF_ANT"));
+  if(f.length!==1||f[0].cle!=="z"||f[0].info)throw new Error("Z hors tolérance : "+JSON.stringify(f));
+  cmRaz();
+});
+T("contraintes : largeur pour une impédance, couche par couche",()=>{
+  exCharger(1);cmRaz();
+  const w=cmLargeurPourZ(50,0);
+  if(!(w>0.05&&w<3))throw new Error("largeur 50 Ω en L1 : "+w);
+  const z=ltZ0(dpStripGeom(0),w);
+  if(Math.abs(z-50)>0.2)throw new Error("la largeur trouvée donne "+z+" Ω");
+  const plan=[...Array(S.cu).keys()].find(l=>["gnd","pwr","shield"].includes(layerRole(l)));
+  if(plan!=null&&cmLargeurPourZ(50,plan)!==null)throw new Error("un plan ne porte pas de piste");
+  const cl=className("RF_ANT");
+  cmPoser("classes",cl,"z","50");
+  const w0=classOf("RF_ANT").w;
+  const ww=cmAppliquerLargeurZ(cl,0);
+  if(Math.abs(classWidth("RF_ANT",0)-ww)>1e-9)throw new Error("largeur de L1 non appliquée");
+  if(classOf("RF_ANT").w!==w0)throw new Error("la largeur générale de la classe ne bouge pas");
+  undo();
+  if(classOf("RF_ANT").wL)throw new Error("Ctrl+Z doit retirer la largeur par couche");
+  const toutes=cmAppliquerLargeurZ(cl);
+  const sig=[...Array(S.cu).keys()].filter(l=>!["gnd","pwr","shield"].includes(layerRole(l)));
+  if(Object.keys(toutes).length!==sig.length)throw new Error("une largeur par couche de signal : "+JSON.stringify(toutes));
+  undo();
+  cmRaz();
+});
+T("contraintes : isolation entre classes — routeur et DRC, paire intacte, Ctrl+Z",()=>{
+  exCharger(1);cmRaz();
+  const a="+3V3", b="SPI_CS", ca=className(a), cb=className(b);
+  const avant=clrPair(a,b), mx=maxClr();
+  cmPoserMatrice(ca,cb,"0,9");
+  if(clrPair(a,b)!==0.9||clrK(a,b,"trk","via")<0.9)throw new Error("matrice non appliquée : "+clrPair(a,b));
+  if(clrPair(b,a)!==0.9)throw new Error("la case vaut dans les deux sens");
+  if(maxClr()<0.9||pnsMaxClr()<0.9)throw new Error("la marge d'interrogation doit l'inclure");
+  /* les deux nets d'une paire différentielle gardent l'écart de leur règle */
+  const p=S.dpPairs[0];
+  const gap=clrPair(p.p,p.n);
+  cmPoserMatrice(className(p.p),className(p.n),"2");
+  if(clrPair(p.p,p.n)!==gap)throw new Error("la paire perd son écart : "+clrPair(p.p,p.n));
+  undo();undo();
+  if(clrPair(a,b)!==avant||maxClr()!==mx)throw new Error("Ctrl+Z ne rend pas l'isolation d'avant");
+  cmRaz();
+});
+T("contraintes : groupe d'appariement — cible, tolérance, serpentin",()=>{
+  exCharger(1);cmRaz();
+  const g=cmNouveauGroupe("SPI",["SPI_CS","SPI_MISO","SPI_MOSI","SPI_SCK"],"mm",1);
+  const M=cmMesures();
+  const e=cmEvaluerGroupe(g);
+  const plusLong=["SPI_CS","SPI_MISO","SPI_MOSI","SPI_SCK"].reduce((x,y)=>M.get(y).len>M.get(x).len?y:x);
+  if(e.refNet!==plusLong||Math.abs(e.cible-M.get(plusLong).len)>1e-9)throw new Error("cible : le plus long attendu");
+  const court=e.membres.find(x=>x.net==="SPI_SCK");
+  if(court.ok)throw new Error("SPI_SCK est hors tolérance");
+  const manque=cmManqueLongueur("SPI_SCK");
+  if(Math.abs(manque-(M.get(plusLong).len-M.get("SPI_SCK").len))>1e-3)throw new Error("serpentin : "+manque);
+  if(cmManqueLongueur(plusLong)!==null)throw new Error("la référence n'a rien à ajouter");
+  if(!cmMsgs().some(x=>/^Groupe SPI : SPI_SCK à -/.test(x.msg)))throw new Error("DRC du groupe absent");
+  /* une paire différentielle garde la priorité au serpentin */
+  const t=S.tracks.find(x=>x.net===S.dpPairs[0].p);
+  if(!dpSkewForTrack(t))throw new Error("la paire doit rester la première cible");
+  /* référence choisie, et en délai */
+  cmGroupeModifier(g.id,x=>{x.ref="SPI_MOSI";x.mode="ps";x.tol=5;});
+  const e2=cmEvaluerGroupe(cmNorm(S.contraintes).groupes[0]);
+  if(e2.refNet!=="SPI_MOSI"||Math.abs(e2.cible-M.get("SPI_MOSI").ps)>1e-6)throw new Error("référence en délai : "+e2.refNet);
+  /* tolérance large : tout tient */
+  cmGroupeModifier(g.id,x=>{x.mode="mm";x.tol=100;});
+  if(cmMsgs().some(x=>/^Groupe /.test(x.msg)))throw new Error("tolérance de 100 mm : rien à signaler");
+  cmGroupeSupprimer(g.id);
+  if(S.contraintes.groupes.length)throw new Error("groupe non supprimé");
+  cmRaz();
+});
+T("contraintes : règles physiques des classes, nouvelle carte, CSV, fenêtre",()=>{
+  exCharger(1);cmRaz();
+  const cl=S.classes[0].name, w0=S.classes[0].w;
+  if(cmPoserPhysique(cl,"w","abc")!==false||S.classes[0].w!==w0)throw new Error("valeur refusée attendue");
+  if(!cmPoserPhysique(cl,"w","0,33")||S.classes[0].w!==0.33)throw new Error("largeur non posée");
+  undo();
+  if(S.classes[0].w!==w0)throw new Error("Ctrl+Z sur la largeur");
+  cmPoser("classes",cl,"z","55");
+  cmPoserMatrice(S.classes[0].name,S.classes[1].name,"0.5");
+  cmPoser("nets","SPI_CS","lMax","10");
+  cmNouveauGroupe("X",["SPI_CS","SPI_SCK"],"mm",1);
+  const csv=cmCsv();
+  if(!/^Net;Classe;Longueur/.test(csv)||!/\nSPI_CS;[^\n]*;faute;/.test(csv))throw new Error("CSV : "+csv.slice(0,300));
+  const conf=global.confirm;global.confirm=()=>true;
+  try{newDoc();}finally{global.confirm=conf;}
+  if(!S.contraintes.classes[cl]||!Object.keys(S.contraintes.matrice).length)throw new Error("une carte neuve garde les classes et la matrice");
+  if(Object.keys(S.contraintes.nets).length||S.contraintes.groupes.length)throw new Error("une carte neuve perd nets et groupes");
+  exCharger(1);cmRaz();
+  for(const [o] of CM_ONGLETS){cmOuvrir(o);}
+  cmFermer();
+});
+T("contraintes : impédances contrôlées au plan de fabrication",()=>{
+  exCharger(1);cmRaz();
+  if(dfImpedances().length)throw new Error("sans Z cible, pas de tableau");
+  const cl=className("RF_ANT");
+  cmPoser("classes",cl,"z","50");
+  const imp=dfImpedances();
+  if(imp.length!==1||imp[0].classe!==cl||!/L1 : /.test(imp[0].largeurs))throw new Error(JSON.stringify(imp));
+  const doc=dfDocument();
+  if(!dfChercher(doc,"impedances controlees").length)throw new Error("tableau absent du plan");
+  if(!dfChercher(doc,cl).some(h=>h.cat==="impedance"))throw new Error("classe absente du tableau");
+  cmRaz();
+});
+
+T("largeur par couche : sans réglage, la largeur de la classe partout",()=>{
+  exCharger(1);
+  for(const c of S.classes)if(c.wL)throw new Error("une carte d'exemple n'a pas de largeur par couche");
+  for(let l=0;l<S.cu;l++)if(classWidth("SPI_CS",l)!==classOf("SPI_CS").w)throw new Error("L"+(l+1));
+  if(classWidth("SPI_CS")!==classOf("SPI_CS").w)throw new Error("sans couche : la largeur générale");
+});
+T("largeur par couche : lecture bornée, aller-retour neutre",()=>{
+  const c=normClass({name:"X",w:0.2,wL:{"0":0.37,"3":"0.12","9":0.01,"a":1,"-1":0.3,"2":99}},0);
+  if(JSON.stringify(c.wL)!=='{"0":0.37,"3":0.12}')throw new Error(JSON.stringify(c.wL));
+  if("wL" in normClass({name:"Y",w:0.2,wL:{"0":0}},0))throw new Error("une table vide ne s'écrit pas");
+  exCharger(1);
+  cmPoserLargeurCouche(className("SPI_CS"),3,"0,18");
+  const a=serialize();
+  loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("l'aller-retour change le document");
+  if(classWidth("SPI_CS",3)!==0.18||classWidth("SPI_CS",0)!==classOf("SPI_CS").w)throw new Error("largeur perdue");
+  if(cmPoserLargeurCouche(className("SPI_CS"),3,"0,01")!==false)throw new Error("0,01 mm doit être refusé");
+  cmPoserLargeurCouche(className("SPI_CS"),3,"");
+  if(classOf("SPI_CS").wL)throw new Error("vider la case rend la largeur de la classe");
+});
+T("largeur par couche : le routeur la prend, et en change au via",()=>{
+  setCuCount(4);
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];touch();
+  S.avoid=false;
+  const cl=defClass(), avant=cl.wL;
+  cl.wL={0:0.42,3:0.17};
+  try{
+    setMode("track");S.active=0;
+    startRoute(0,0,true);
+    if(S.route.w!==0.42)throw new Error("départ sur L1 : 0,42 attendu, "+S.route.w);
+    updateRoute(0,10);stepRoute();
+    routeToLayer(3);
+    if(S.route.w!==0.17)throw new Error("après le via vers L4 : 0,17 attendu, "+S.route.w);
+    updateRoute(10,10);stepRoute();
+    routeToLayer(1);
+    if(S.route.w!==cl.w)throw new Error("L2 sans réglage : la largeur de la classe, "+S.route.w);
+    updateRoute(10,20);stepRoute();
+    commitRoute();setMode("select");
+    const w=S.tracks.map(t=>t.l+":"+t.w).join(" ");
+    if(w!=="0:0.42 3:0.17 1:"+cl.w)throw new Error("chaque tronçon garde la largeur de sa couche : "+w);
+  }finally{cl.wL=avant;if(!avant)delete cl.wL;S.avoid=true;setCuCount(2);}
+});
+T("largeur par couche : DRC, alignement sur la classe, report des couches",()=>{
+  exCharger(1);
+  const t=S.tracks.find(x=>x.net==="SPI_CS"), cl=classOf("SPI_CS");
+  cmPoserLargeurCouche(cl.name,t.l,String(t.w+0.1));
+  runDrc();
+  const d=S.drc.filter(x=>/^Piste de .* de la classe /.test(x.msg)&&/ sur L\d/.test(x.msg));
+  if(!d.length)throw new Error("piste plus fine que la largeur de sa couche : défaut attendu");
+  applyClasses();
+  if(S.tracks.filter(x=>x.net==="SPI_CS"&&x.l===t.l).some(x=>Math.abs(x.w-cl.wL[t.l])>1e-9))
+    throw new Error("aligner sur la classe doit prendre la largeur de la couche");
+  if(S.tracks.filter(x=>x.net==="SPI_CS"&&x.l!==t.l).some(x=>Math.abs(x.w-cl.w)>1e-9))
+    throw new Error("les autres couches gardent la largeur de la classe");
+  /* 4 couches → 2 : dessus et dessous gardent leur réglage, les internes partent */
+  cl.wL={0:0.31,1:0.12,3:0.29};
+  cmPoser("nets","SPI_CS","couches","1,2,4");
+  setCuCount(2);
+  try{
+    if(JSON.stringify(cl.wL)!=='{"0":0.31,"1":0.29}')throw new Error("report des largeurs : "+JSON.stringify(cl.wL));
+    if(JSON.stringify(S.contraintes.nets.SPI_CS.couches)!=="[0,1]")
+      throw new Error("report des couches permises : "+JSON.stringify(S.contraintes.nets.SPI_CS.couches));
+  }finally{delete cl.wL;exCharger(1);}
+});
+
+/* ==========================================================================
+   Topologie et moignons (31-topologie.js) — cartes construites pour l'essai
+   ========================================================================== */
+/* Une carte quatre couches vide, et de quoi y poser des boîtiers deux pattes
+   (patte 1 sur `net`) et des pistes d'un point à l'autre. */
+function topoCarte(){
+  setCuCount(4);carteVide();S.holes=[];S.dpPairs=[];cmRaz();
+}
+function topoFp(ref,x,y,net){
+  const fp=mkFp(ref,"","0603",2);
+  fp.x=x;fp.y=y;fp.nets={1:net,2:"AUTRE_"+ref};
+  S.fps.push(fp);
+  return padsWorld(fp).find(q=>q.n===1);
+}
+function topoPiste(net,a,b,l){
+  S.tracks.push({l:l||0,net,w:0.2,x1:r3(a.x),y1:r3(a.y),x2:r3(b.x),y2:r3(b.y)});
+}
+function topoFin(){touch();}
+function topoMsgs(net){return cmVerifier(net,cmMesures().get(net),cmRegleDe(net)).map(f=>f.msg);}
+T("topologie : chaîne, son ordre, et l'ordre imposé",()=>{
+  topoCarte();
+  const a=topoFp("U1",0,0,"BUS"), b=topoFp("U2",20,0,"BUS"), c=topoFp("U3",40,0,"BUS");
+  topoPiste("BUS",a,b);topoPiste("BUS",b,c);topoFin();
+  const T=topoAnalyser("BUS");
+  if(T.forme!=="chaîne"||T.ordre.join(">")!=="U1>U2>U3")throw new Error(T.forme+" "+T.ordre.join(">"));
+  cmPoser("nets","BUS","topo","chaine");
+  cmPoser("nets","BUS","ordre","U1, U2, U3");
+  if(topoMsgs("BUS").length)throw new Error("chaîne dans l'ordre : rien à dire — "+topoMsgs("BUS"));
+  cmPoser("nets","BUS","ordre","U3 > U2 > U1");
+  if(topoMsgs("BUS").length)throw new Error("l'ordre se lit dans les deux sens");
+  cmPoser("nets","BUS","ordre","U1 → U3 → U2");
+  const m=topoMsgs("BUS");
+  if(!m.some(x=>/^ordre U1 → U2 → U3 le long du cuivre, attendu U1 → U3 → U2/.test(x)))throw new Error(m.join(" | "));
+  runDrc();
+  if(!S.drc.some(d=>/^Contrainte BUS : ordre /.test(d.msg)))throw new Error("l'ordre doit partir au DRC");
+});
+T("topologie : dérivation — chaîne refusée, moignon mesuré, point de test nommé",()=>{
+  topoCarte();
+  const a=topoFp("U1",0,0,"BUS"), c=topoFp("U3",40,0,"BUS");
+  const b=topoFp("U2",20,-4,"BUS"), tp=topoFp("TP1",30,3,"BUS");
+  topoPiste("BUS",a,c);                                   // le tronc, d'un trait
+  topoPiste("BUS",{x:20,y:a.y},b);                        // en T au milieu, vers U2
+  topoPiste("BUS",{x:30,y:a.y},tp);                       // en T, vers le point de test
+  topoFin();
+  const T=topoAnalyser("BUS");
+  const mU2=T.moignons.find(m=>m.ref==="U2"), mTP=T.moignons.find(m=>m.ref==="TP1");
+  if(!mU2||Math.abs(mU2.len-r3(dist(20,a.y,b.x,b.y)))>1e-6)
+    throw new Error("moignon vers U2 : "+T.moignons.map(m=>m.broche+" "+m.len).join(", "));
+  if(!mTP||!mTP.tp)throw new Error("point de test non reconnu");
+  if(T.ordre.join(">")!=="U1>U2>TP1>U3")throw new Error("ordre avec dérivations : "+T.ordre.join(">"));
+  cmPoser("nets","BUS","topo","chaine");
+  if(!topoMsgs("BUS").some(x=>/^chaîne attendue : U2\.1 pend sur /.test(x)))throw new Error(topoMsgs("BUS").join(" | "));
+  cmPoser("nets","BUS","stubMax","2");
+  const m=topoMsgs("BUS");
+  if(!m.some(x=>/^moignon de [\d,]+ mm vers U2\.1, 2,00 mm admis/.test(x)))throw new Error(m.join(" | "));
+  if(!m.some(x=>/vers TP1\.1 \(point de test\)/.test(x)))throw new Error("point de test : "+m.join(" | "));
+  if(m.some(x=>/pend sur/.test(x)))throw new Error("avec un moignon max, un seul message par dérivation");
+  cmPoser("nets","BUS","stubMax","10");
+  if(topoMsgs("BUS").length)throw new Error("moignons sous 10 mm : rien à dire");
+});
+T("topologie : étoile — branches égales ou non, source exclue, centre sur une broche",()=>{
+  topoCarte();
+  const C={x:50,y:50};
+  const a=topoFp("U1",50,30,"CLK"), b=topoFp("U2",70,50,"CLK"), c=topoFp("U3",50,72,"CLK");
+  for(const p of [a,b,c])topoPiste("CLK",C,p);
+  topoFin();
+  const T=topoAnalyser("CLK");
+  if(T.forme!=="étoile"||T.branches.length!==3)throw new Error(T.forme+" "+JSON.stringify(T.branches));
+  cmPoser("nets","CLK","topo","etoile");
+  const m=topoMsgs("CLK");
+  if(!m.some(x=>/^branches de l'étoile inégales : U3\.1 /.test(x)))throw new Error(m.join(" | "));
+  cmPoser("nets","CLK","etoileTol","5");
+  if(topoMsgs("CLK").length)throw new Error("tolérance de 5 mm : rien à dire");
+  /* U1 et U2 : 20,0 et 19,2 mm (la patte 1 est décalée du centre du boîtier),
+     U3 : 22 mm — la source, dont la branche ne compte pas */
+  cmPoser("nets","CLK","etoileTol","1");
+  cmPoser("nets","CLK","ordre","U3");
+  if(topoMsgs("CLK").length)throw new Error("la branche de la source ne compte pas : "+topoMsgs("CLK"));
+  /* une chaîne n'est pas une étoile */
+  cmPoser("nets","CLK","topo","chaine");cmPoser("nets","CLK","ordre","");
+  if(!topoMsgs("CLK").some(x=>/^chaîne attendue, le cuivre fait une étoile/.test(x)))throw new Error(topoMsgs("CLK").join(" | "));
+  /* le pilote au centre : trois pistes partent de sa broche */
+  topoCarte();
+  const s=topoFp("U9",0,0,"CK2");
+  for(const [r,x,y] of [["U1",10,0],["U2",0,10],["U3",-10,0]])topoPiste("CK2",s,topoFp(r,x,y,"CK2"));
+  topoFin();
+  if(topoAnalyser("CK2").forme!=="étoile")throw new Error("pilote au centre : "+topoAnalyser("CK2").forme);
+});
+T("topologie : point à point, fly-by et terminaison",()=>{
+  topoCarte();
+  const a=topoFp("U1",0,0,"N1"), b=topoFp("U2",20,0,"N1"), c=topoFp("U3",40,0,"N1");
+  topoPiste("N1",a,b);topoPiste("N1",b,c);topoFin();
+  cmPoser("nets","N1","topo","p2p");
+  if(!topoMsgs("N1").some(x=>/^point à point attendu, le net relie 3 broches/.test(x)))throw new Error(topoMsgs("N1").join(" | "));
+  /* fly-by : la résistance de terminaison au bout opposé */
+  topoCarte();
+  const u1=topoFp("U1",0,0,"A0"), d0=topoFp("U2",20,0,"A0"), d1=topoFp("U3",40,0,"A0"), rt=topoFp("R1",60,0,"A0");
+  topoPiste("A0",u1,d0);topoPiste("A0",d0,d1);topoPiste("A0",d1,rt);topoFin();
+  cmPoser("nets","A0","topo","flyby");
+  if(topoMsgs("A0").length)throw new Error("fly-by terminé : "+topoMsgs("A0").join(" | "));
+  topoCarte();
+  const v1=topoFp("U1",0,0,"A0"), r1=topoFp("R1",20,0,"A0"), w1=topoFp("U2",40,0,"A0"), w2=topoFp("U3",60,0,"A0");
+  topoPiste("A0",v1,r1);topoPiste("A0",r1,w1);topoPiste("A0",w1,w2);topoFin();
+  cmPoser("nets","A0","topo","flyby");
+  if(!topoMsgs("A0").some(x=>/^fly-by : une résistance de terminaison doit être au bout de la ligne/.test(x)))
+    throw new Error(topoMsgs("A0").join(" | "));
+  cmPoser("nets","A0","ordre","U1,R1,U2,U3");           // l'ordre dit qui termine : U3
+  if(topoMsgs("A0").length)throw new Error("terminaison donnée par l'ordre : "+topoMsgs("A0").join(" | "));
+});
+T("topologie : moignon de via et bout de piste libre",()=>{
+  topoCarte();
+  const a=topoFp("U1",0,0,"SIG"), b=topoFp("U2",30,0,"SIG");
+  S.vias.push({x:10,y:0,d:0.6,drill:0.3,a:0,b:3,net:"SIG"},{x:20,y:0,d:0.6,drill:0.3,a:0,b:3,net:"SIG"});
+  topoPiste("SIG",a,{x:10,y:0},0);topoPiste("SIG",{x:10,y:0},{x:20,y:0},1);topoPiste("SIG",{x:20,y:0},b,0);
+  topoFin();
+  const T=topoAnalyser("SIG");
+  if(T.forme!=="point à point")throw new Error("le passage par L2 reste point à point : "+T.forme);
+  const attendu=stackSpan(1,3)-cuT(1);
+  if(T.moignonsVias.length!==2||Math.abs(T.moignonsVias[0].len-r3(attendu))>1e-6)
+    throw new Error("moignon L2→L4 attendu "+attendu+" : "+JSON.stringify(T.moignonsVias.map(v=>v.len)));
+  cmPoser("nets","SIG","viaStubMax","0,2");
+  const m=topoMsgs("SIG");
+  if(m.filter(x=>/^moignon de via de [\d,]+ mm \(via L1→L2 percé L1–L4\)/.test(x)).length!==2)throw new Error(m.join(" | "));
+  /* un via borgne L1–L2 n'a pas de moignon */
+  for(const v of S.vias)v.b=1;
+  topoFin();
+  if(topoAnalyser("SIG").moignonsVias.length)throw new Error("via borgne : pas de moignon");
+  /* bout libre : une piste qui part de U1 et ne mène nulle part */
+  topoPiste("SIG",a,{x:a.x,y:a.y+3},0);topoFin();
+  cmPoser("nets","SIG","stubMax","1");
+  if(!topoMsgs("SIG").some(x=>/^bout de piste libre de 3,00 mm/.test(x)))throw new Error(topoMsgs("SIG").join(" | "));
+});
+T("topologie : boucle, plan, routage incomplet, contrainte de classe",()=>{
+  topoCarte();
+  const a=topoFp("U1",0,0,"L"), b=topoFp("U2",20,0,"L");
+  topoPiste("L",a,b);topoPiste("L",a,{x:10,y:8});topoPiste("L",{x:10,y:8},b);topoFin();
+  cmPoser("nets","L","topo","p2p");
+  if(topoAnalyser("L").forme!=="maillé"||!topoMsgs("L").some(x=>/le cuivre forme une boucle/.test(x)))
+    throw new Error(topoAnalyser("L").forme+" "+topoMsgs("L").join(" | "));
+  /* un net à plan n'est pas jugé */
+  S.zones.push({id:S.nextId++,l:1,net:"L",pts:[{x:-5,y:-5},{x:25,y:-5},{x:25,y:10},{x:-5,y:10}]});topoFin();
+  if(topoAnalyser("L").forme!=="plan"||topoMsgs("L").length)throw new Error("plan : non jugé");
+  /* une broche pas encore reliée : signalée pour information */
+  topoCarte();
+  const c=topoFp("U1",0,0,"M"), d=topoFp("U2",20,0,"M");topoFp("U3",40,0,"M");
+  topoPiste("M",c,d);topoFin();
+  cmPoser("classes",className("M"),"topo","chaine");
+  const f=topoVerifier("M",cmRegleDe("M"));
+  if(f.length!==1||!f[0].info||!/U3\.1 pas encore relié/.test(f[0].msg))throw new Error(JSON.stringify(f));
+  if(cmRegleDe("M").topo.src!=="classe")throw new Error("la topologie vient de la classe");
+  cmRaz();setCuCount(2);
+});
+T("topologie : réglages bornés, aller-retour, onglet de la fenêtre",()=>{
+  const n=cmNorm({nets:{X:{topo:"spirale",ordre:["U1"," ","U2",3],stubMax:0,viaStubMax:500,etoileTol:"2"}}});
+  const r=n.nets.X;
+  if(r.topo!==undefined||JSON.stringify(r.ordre)!=='["U1","U2","3"]'||r.stubMax!==0||r.viaStubMax!==undefined||r.etoileTol!==2)
+    throw new Error(JSON.stringify(r));
+  exCharger(1);cmRaz();
+  cmPoser("nets","SPI_CS","topo","p2p");cmPoser("nets","SPI_CS","ordre","U1,U2");cmPoser("classes","Défaut","stubMax","1,5");
+  const a=serialize();
+  loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("l'aller-retour change le document");
+  if(topoMsgs("SPI_CS").length)throw new Error("SPI_CS est point à point sur l'exemple : "+topoMsgs("SPI_CS"));
+  cmOuvrir("topologie");cmFermer();
+  cmRaz();
+});
+
+T("topologie : une piste qui traverse une pastille du net s'y raccorde",()=>{
+  topoCarte();
+  const a=topoFp("U1",0,0,"BUS"), c=topoFp("U3",40,0,"BUS");
+  const b=topoFp("U2",20.8,0,"BUS");                     // patte 1 de U2 en (20, 0) : sur le trajet
+  topoPiste("BUS",a,c);topoFin();                        // une seule piste, de U1 à U3, sans arrêt sur U2
+  const T=topoAnalyser("BUS");
+  if(T.forme!=="chaîne"||T.ordre.join(">")!=="U1>U2>U3")throw new Error(T.forme+" "+T.ordre.join(">"));
+  if(T.moignons.length)throw new Error("U2 est sur le chemin : pas de moignon — "+T.moignons.map(m=>m.broche).join(" "));
+  cmPoser("nets","BUS","topo","chaine");cmPoser("nets","BUS","ordre","U1,U2,U3");
+  if(topoMsgs("BUS").length)throw new Error(topoMsgs("BUS").join(" | "));
+  /* une piste qui passe à côté, sans toucher la pastille, ne s'y raccorde pas */
+  S.fps.find(f=>f.ref==="U2").y=3;topoFin();
+  if(topoAnalyser("BUS").forme!=="incomplet")throw new Error("pastille à 3 mm : non reliée, "+topoAnalyser("BUS").forme);
+  if(b.n!==1)throw new Error("patte");
+  cmRaz();setCuCount(2);
+});
+T("contraintes du schéma : reprises à part, le PCB garde le dernier mot",()=>{
+  exCharger(1);cmRaz();
+  const doc={format:"schemedit-2",pages:[],contraintes:{
+    nets:{SPI_CS:{lMax:10,topo:"p2p"},SPI_SCK:{z:"abc",viasMax:0}},
+    groupes:[{id:"g1",nom:"SPI",nets:["SPI_CS","SPI_SCK","SPI_MOSI"],mode:"mm",tol:1}]}};
+  if(!cmDepuisSchema(doc))throw new Error("première reprise : changement attendu");
+  if(cmDepuisSchema(doc))throw new Error("même document : rien ne change");
+  /* Ctrl+Z défait la reprise, et la reprise se refait */
+  undo();
+  if(Object.keys(S.contraintes.schema.nets).length)throw new Error("Ctrl+Z doit défaire la reprise");
+  cmDepuisSchema(doc);
+  const C=S.contraintes;
+  if(JSON.stringify(C.schema.nets.SPI_SCK)!=='{"viasMax":0}')throw new Error("bornes du schéma : "+JSON.stringify(C.schema.nets));
+  if(Object.keys(C.nets).length||C.groupes.length)throw new Error("rien n'est recopié dans les réglages du PCB");
+  let r=cmRegleDe("SPI_CS");
+  if(r.lMax.src!=="schéma"||r.lMax.v!==10||r.topo.v!=="p2p")throw new Error(JSON.stringify(r.lMax));
+  const m=cmVerifier("SPI_CS",cmMesures().get("SPI_CS"),r).map(f=>f.msg);
+  if(!m.some(x=>/longueur .* au-delà du maximum de 10,00 mm \(schéma\)/.test(x)))throw new Error(m.join(" | "));
+  /* le PCB passe devant ; vidé, le schéma revient */
+  cmPoser("nets","SPI_CS","lMax","100");
+  r=cmRegleDe("SPI_CS");
+  if(r.lMax.src!=="net"||r.lMax.v!==100)throw new Error("le réglage du PCB doit l'emporter");
+  if(r.topo.src!=="schéma")throw new Error("les autres champs restent ceux du schéma");
+  cmPoser("nets","SPI_CS","lMax","");
+  if(cmRegleDe("SPI_CS").lMax.src!=="schéma")throw new Error("vidé : le schéma revient");
+  /* les groupes du schéma : évalués, au DRC, en lecture seule */
+  const g=cmTousGroupes();
+  if(g.length!==1||!g[0].schema||g[0].id!=="s:g1")throw new Error(JSON.stringify(g));
+  runDrc();
+  if(!S.drc.some(d=>/^Groupe SPI : /.test(d.msg)))throw new Error("groupe du schéma absent du DRC");
+  if(cmManqueLongueur("SPI_SCK")==null)throw new Error("le serpentin suit aussi les groupes du schéma");
+  /* aller-retour du document */
+  cmDepuisSchema(doc);
+  const a=serialize();loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("aller-retour");
+  if(cmResumeSchema()!=="2 net(s), 1 groupe(s)")throw new Error(cmResumeSchema());
+  cmRaz();
+});
+T("contraintes du schéma : l'ECO et la fenêtre les reprennent",()=>{
+  exCharger(1);cmRaz();
+  const avant=S.schDoc;
+  S.schDoc={format:"schemedit-2",pages:[],contraintes:{nets:{USB_DP:{z:90}},groupes:[]}};
+  try{
+    cmOuvrir("nets");cmFermer();
+    if(!S.contraintes.schema.nets.USB_DP)throw new Error("l'ouverture du gestionnaire doit relire le schéma");
+    /* l'ECO : une ligne « contraintes » quand seules elles changent, appliquée
+       si elle reste cochée, et rien d'autre ne bouge */
+    const doc2={format:"schemedit-2",pages:[],contraintes:{nets:{USB_DM:{z:90}},groupes:[]}};
+    /* le schéma tel que la carte : seules les contraintes diffèrent */
+    const pinNet=new Map();
+    for(const f of S.fps)for(const q of padsOf(f))if(q.net)pinNet.set(f.ref+"."+q.n,q.net);
+    const sch=d=>({disponible:true,comps:new Map(S.fps.map(f=>[f.ref,{ref:f.ref,value:f.value,pkg:f.pkg,pins:f.pins}])),
+                   pinNet,schDoc:d,sourceNom:"essai"});
+    const R=pcbDetecterDisparitesEco(sch(doc2));
+    if(R.items.some(x=>x.type!=="CONTRAINTES"))
+      throw new Error("le schéma d'essai devait coller à la carte : "+R.items.map(x=>x.type+" "+(x.ref||"")).join(", "));
+    const it=R.items.find(x=>x.type==="CONTRAINTES");
+    if(!it||!/2 net\(s\) modifié\(s\)/.test(it.resume))throw new Error("ligne ECO : "+JSON.stringify(it&&it.resume));
+    const decoche=R.items.map(x=>Object.assign({},x,{active:x.type!=="CONTRAINTES"&&x.active}));
+    pcbAppliquerEco(decoche,{});
+    if(S.contraintes.schema.nets.USB_DM)throw new Error("décochée, la ligne ne s'applique pas");
+    const r=pcbAppliquerEco(R.items.filter(x=>x.type==="CONTRAINTES"),{});
+    if(!r.succes||r.contraintes!==1||!S.contraintes.schema.nets.USB_DM||S.contraintes.schema.nets.USB_DP)
+      throw new Error("l'ECO doit reprendre les contraintes du schéma : "+JSON.stringify(S.contraintes.schema.nets));
+    if(pcbDetecterDisparitesEco(sch(doc2)).items.some(x=>x.type==="CONTRAINTES"))
+      throw new Error("une fois reprises, plus de ligne");
+    if(cmLireChamp("ordre","U1 → U4 > U5")+""!=="U1,U4,U5")throw new Error("lecture commune de l'ordre");
+  }finally{S.schDoc=avant;cmRaz();}
+});
+
+/* ==========================================================================
+   Rooms : les blocs du schéma encadrés sur la carte (32-rooms.js)
+   ========================================================================== */
+function roomsDocEssai(){
+  return {format:"schemedit-2",pages:[{name:"Hiérarchie",comps:[],drawings:[]},
+    {name:"F1",comps:[{ref:"U1",x:50,y:50},{ref:"C3",x:60,y:40},{ref:"U2",x:500,y:50},{ref:"J1",x:900,y:900}],
+     drawings:[{id:1,shape:"rect",label:"Clignoteur · astable 1,5 Hz",color:"#60a5fa",x1:0,y1:0,x2:200,y2:200},
+               {id:2,shape:"rect",label:"Étage 1",color:"javascript:alert(1)",x1:400,y1:0,x2:600,y2:200},
+               {id:3,shape:"line",label:"pas une zone",x1:0,y1:0,x2:10,y2:10},
+               {id:4,shape:"rect",label:"Vide",x1:2000,y1:2000,x2:2100,y2:2100}]}]};
+}
+T("rooms : lues dans le document du schéma, composant par son centre",()=>{
+  const z=roomsDepuisDoc(roomsDocEssai());
+  if(z.length!==3)throw new Error("trois rectangles étiquetés attendus : "+z.map(x=>x.label).join(" | "));
+  if(z[0].refs.join()!=="U1,C3"||z[1].refs.join()!=="U2"||z[2].refs.length)throw new Error(JSON.stringify(z.map(x=>x.refs)));
+  if(roomNomCourt("Clignoteur TLC555 · D1 témoin")!=="Clignoteur TLC555")throw new Error("nom court");
+  if(roomCouleur("javascript:alert(1)")!=="#f59e0b"||roomCouleur("#60A5FA")!=="#60A5FA")throw new Error("couleur non filtrée");
+});
+T("rooms : une région autour des empreintes du bloc, qui suit le placement",()=>{
+  exCharger(1);
+  const avant=S.schDoc;
+  S.schDoc=roomsDocEssai();touch();
+  try{
+    const L=roomsListe();
+    if(L.length!==2)throw new Error("une room par bloc qui a des empreintes sur la carte (le bloc vide n'en a pas) : "+L.length);
+    const r=L[0], u1=S.fps.find(f=>f.ref==="U1"), b=fpBBox(u1);
+    if(r.nom!=="Clignoteur"||r.fps.length!==2)throw new Error(r.nom+" "+r.fps.length);
+    if(!(r.x1<=b.x1&&r.y1<=b.y1&&r.x2>=b.x2&&r.y2>=b.y2))throw new Error("la room doit contenir U1");
+    if(L[1].couleur!=="#f59e0b")throw new Error("couleur douteuse : repli");
+    const x0=r.x1;
+    u1.x-=200;touch();
+    if(!(roomsListe()[0].x1<x0-100))throw new Error("la room suit le boîtier déplacé");
+    u1.x+=200;touch();
+    /* masquées : rien ne se peint, l'étiquette ne prend rien */
+    roomsBasculer(false);
+    if(roomsVisibles()||profilEtat().rooms!==false)throw new Error("masquer, et le profil le retient");
+    const e=roomEtiquette(ctx,roomsListe()[0]);
+    if(roomAuLabel((e.x1+e.x2)/2,(e.y1+e.y2)/2))throw new Error("masquées, les étiquettes ne se cliquent pas");
+    roomsBasculer(true);
+    const e2=roomEtiquette(ctx,roomsListe()[0]);
+    const R=roomAuLabel((e2.x1+e2.x2)/2,(e2.y1+e2.y2)/2);
+    if(!R||R.nom!=="Clignoteur")throw new Error("clic sur l'étiquette");
+    roomsPeindreFond(ctx);roomsPeindre(ctx);
+  }finally{S.schDoc=avant;touch();}
+});
+T("rooms : sans schéma, les zones de l'analyse « Motifs & Blocs » ; sans rien, aucune",()=>{
+  exCharger(1);
+  const avant=S.schDoc;
+  S.schDoc={format:"schemedit-2",pages:[]};touch();
+  try{
+    const z=BLOC_PLACEMENT.getZones();
+    const L=roomsListe();
+    if(!z.length&&L.length)throw new Error("ni schéma ni analyse : aucune room");
+  }finally{S.schDoc=avant;touch();}
 });
 
 (async()=>{

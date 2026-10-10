@@ -68,6 +68,20 @@ js/26-variantes.js       variantes de montage reprises du schéma : choix de la
 js/27-groupes.js         groupes (Unions) : composants et vias déplacés d'une pièce
 js/28-placement-satellites.js  « Placement auto », second temps : découplage et
                          composants série posés contre leur broche
+js/29-draftsman.js       plans de fabrication et d'assemblage (Draftsman) :
+                         feuilles cadrées et cartouchées, PDF au texte
+                         cherchable, aperçu SVG et recherche dans la fenêtre
+js/30-contraintes.js     gestionnaire de contraintes : mesures par net,
+                         contraintes héritées ou propres, groupes
+                         d'appariement, DRC, fenêtre en tableur (le modèle
+                         et l'isolation entre classes sont dans 01-core.js)
+../commun/contraintes.js ce qu'est une contrainte de net, partagé avec le
+                         schéma qui en saisit aussi
+js/32-rooms.js           rooms : les blocs fonctionnels du schéma encadrés
+                         sur la carte, sélection d'un bloc par son étiquette
+js/31-topologie.js       forme du cuivre de chaque net (graphe des pistes,
+                         vias et broches) : point à point, chaîne, étoile,
+                         fly-by ; moignons de dérivation et de vias
 outils/build-monofichier.py assemble le tout dans dist/
 test/harness.js          banc d'essai sans navigateur
 ```
@@ -818,6 +832,27 @@ Ne bougent pas : les points de test (`TP…`), qui se placent à la main. Les
 connecteurs (`J…`) ne sont ni satellites ni circuits d'accueil. Les textes de
 sérigraphie ne comptent pas dans l'encombrement : ils restent à reprendre.
 
+## Rooms : les blocs du schéma sur la carte
+
+Chaque bloc fonctionnel du schéma — un rectangle étiqueté (« Étage 1 · ampli
+non inverseur ×215 ») — apparaît sur la carte comme une **room**, à la manière
+d'Altium : un cadre à coins arrondis autour de toutes ses empreintes, un fond
+à peine teinté (sous le cuivre), et un onglet à son nom court (ce qui précède
+le premier « · ») dans sa couleur.
+
+- **Un clic sur l'étiquette prend le bloc entier** : il glisse d'une pièce,
+  R le tourne, Ctrl ou Maj l'ajoute à la sélection.
+- La room **suit ses composants** : elle se resserre quand on les rapproche,
+  et deux rooms qui se chevauchent disent deux blocs mêlés.
+- **Affichage → Rooms** les montre ou les cache ; le réglage est celui du
+  profil, comme la grille.
+
+Les blocs se lisent dans le **document du schéma** (session de l'onglet ou
+dossier du projet) : un composant appartient à une zone si son centre est
+dedans, la règle de l'éditeur schématique. À défaut, ce sont les zones de
+l'analyse « Motifs & Blocs ». Les rooms remplacent les pastilles de couleur
+posées au coin de chaque empreinte. Rien n'est gravé ni exporté.
+
 ## Variantes de montage (BOM)
 
 Les variantes se créent dans le **schéma** (Fichier → Variantes de montage…) :
@@ -839,6 +874,167 @@ un assembleur ne commande ni ne place un composant DNP. Le cuivre, lui, ne
 change pas — pastilles, masque et pâte restent ceux de la carte complète. Le
 `LISEZ-MOI.txt` de l'archive nomme la variante et liste les DNP, et l'archive
 prend son nom (`…-fabrication-Lite.zip`).
+
+## Plans de fabrication et d'assemblage (Draftsman)
+
+**Fichier → Plans (Draftsman)…** ouvre une fenêtre à deux volets : à gauche
+les réglages et les résultats de recherche, à droite la feuille. Le bouton
+**Exporter PDF** télécharge `<projet>-PLANS.pdf`, et le même fichier part
+dans **Fabrication .zip**, où le Master Drawing l'annonce avec son contenu.
+
+| Feuille | Ce qu'elle porte |
+| --- | --- |
+| Plan de fabrication | vue de dessus à une échelle normalisée (2:1, 1:1, 1:2…), contour et découpes, cotes hors tout, origine des fichiers ; un symbole de perçage par outil (diamètre, métallisation, portée) et son tableau ; trous de fixation avec leurs coordonnées ; coupe d'empilage dessinée ; notes de fabrication tirées de la carte (matériau, Tg, épaisseur, finition, vernis, vias, test électrique) puis celles qu'on ajoute |
+| Assemblage dessus / dessous | corps des composants, pastilles en gris, point de broche 1, repère centré et tourné selon le boîtier ; non-montés de la variante active en tirets, marqués NM. Dessous, la vue est en miroir : la carte retournée, comme le monteur la voit |
+| Nomenclature | groupée par valeur, boîtier et référence fabricant : quantité, repères, fabricant, face ; non-montés listés à part |
+| Couches de cuivre (option) | une feuille par couche : pistes, arcs, pastilles, vias, zones |
+
+Chaque feuille a son cadre, ses repères de zones (1, 2, 3… / A, B, C…) et un
+cartouche : société, projet, titre, dessiné / vérifié / approuvé, date, n° de
+document (`<projet>-PLANS`), révision (celle du projet), échelle, format,
+feuille n / N. Les formats sont A4, A3 (par défaut) et A2 paysage. Une
+colonne trop longue (beaucoup d'outils, une longue nomenclature) continue sur
+une feuille « (suite) », l'en-tête de tableau répété.
+
+### Un PDF qui se cherche
+
+Tout le texte est du texte, jamais des traits : `Ctrl+F` dans n'importe quel
+lecteur PDF trouve un repère, une valeur, une note. Trois choix le
+garantissent :
+
+- les fontes sont en **WinAnsi**, pas en ASCII : « Épaisseur », « résistance »,
+  « ± », « µ », « Ø » s'écrivent et se cherchent. Ce que WinAnsi n'a pas
+  s'écrit comme un technicien l'écrirait (Ω → `Ohm`, ≥ → `>=`, εr → `er`) ;
+- ce qui ne s'affiche pas est posé en **texte invisible** (mode de rendu 3,
+  celui de la couche texte d'un document numérisé) : sur le corps de chaque
+  composant, sa valeur, son boîtier, sa référence fabricant, son fabricant ;
+  sur chaque pastille, son net ; sur les feuilles de cuivre, le nom de chaque
+  net sur sa plus longue piste. Chercher `100nF` surligne les condensateurs
+  **à leur place sur le plan**, chercher `GND` les broches où arrive la masse ;
+- des **signets** : une entrée par feuille et, sous chaque assemblage, une
+  entrée par composant qui mène à lui.
+
+La fenêtre cherche de la même façon, dans le même texte (invisibles compris),
+sans tenir compte des accents ni de la casse : la liste des résultats dit ce
+qui a été trouvé et où (« net · U1 · broche 5 · f. 2 »), les onglets comptent
+les résultats par feuille, et l'aperçu surligne les endroits. `Entrée` passe
+au résultat suivant, `Maj+Entrée` au précédent.
+
+### Où vivent les réglages
+
+Dans le document, `dessin` : format, feuilles cochées, noms du cartouche,
+notes. `normDoc` n'en fait qu'une copie — il tourne au démarrage, avant que
+`29-draftsman.js` soit chargé — et `dfCfg()` les borne à chaque usage. Une
+nouvelle carte les garde, comme les règles : ils décrivent qui dessine, pas la
+carte.
+
+### Comment c'est fait
+
+Une feuille est une liste d'objets en millimètres, Y vers le bas : traits et
+polygones, cercles, textes (taille en points, ancrage, rotation, invisible
+ou non, zone à surligner). Deux sorties la lisent, `dfPdf()` et `dfSvg()` :
+l'aperçu est donc exactement ce qui s'imprime. Le PDF est écrit à la main,
+sans dépendance, comme le Master Drawing : contenu non compressé, état
+graphique réémis seulement quand il change, table xref comptée en écrivant.
+La chasse des caractères vient de la table métrique d'Helvetica : c'est elle
+qui centre un repère sur son composant et coupe les colonnes des tableaux.
+
+## Gestionnaire de contraintes
+
+**Outils → Gestionnaire de contraintes…** rassemble en tableur ce qui était
+réparti entre la fenêtre des règles, le panneau des paires et le serpentin,
+et met à côté de chaque contrainte la valeur **mesurée** : vert si elle est
+tenue, rouge sinon, gris pour un net non routé.
+
+| Onglet | Ce qu'on y voit et règle |
+| --- | --- |
+| Nets | classe (modifiable, aussi pour tous les nets cochés), longueur, délai (vias compris), vias, Z₀ ; impédance cible et tolérance, longueur min / max, vias max, couches permises. Une case vide hérite de la classe, dont la valeur s'affiche en grisé. Un clic sur le nom ferme la fenêtre et sélectionne son routage |
+| Classes | largeur, isolation, via, perçage (les règles de la fenêtre des règles, mêmes valeurs), **une largeur par couche** de signal, et les contraintes électriques de la classe. Pour une impédance cible : la largeur qui la donne sur chaque couche, d'après l'empilage, à poser d'un clic sur sa couche ou sur toutes |
+| Paires diff. | longueurs P et N, écart en mm et en ps, longueur découplée face à la règle |
+| Groupes d'appariement | des nets qui doivent avoir la même longueur ou le même délai, à une tolérance près, autour d'une référence (le plus long, ou un net choisi). Ce qui manque à chaque net est affiché ; un groupe se crée en cochant ses nets, ou depuis les pistes sélectionnées sur la carte |
+| Topologie et moignons | la forme lue sur le cuivre de chaque net, l'ordre des repères le long du cuivre, le plus long moignon et le plus long moignon de via ; la topologie exigée, l'ordre imposé, les moignons admis — par classe ou par net |
+| Isolation entre classes | une matrice classe × classe : « Alimentation ↔ RF : 0,5 mm » |
+
+**Largeur par couche.** Une même impédance ne demande pas la même piste en
+microruban (dessus, dessous) et en triplaque (couches internes) : prise
+entre deux plans, la piste de 50 Ω est nettement plus fine. Une classe garde sa
+largeur générale et peut la préciser couche par couche (`wL` sur la classe,
+lue par `classWidth(net, couche)`) ; une couche sans réglage prend la largeur
+générale, si bien qu'une carte sans réglage ne change pas. Le routeur part
+avec la largeur de la couche active et en change au via ; chaque tronçon
+garde celle de sa couche. Le DRC juge une piste à la largeur de sa couche, et
+« aligner sur la classe » (panneau Propriétés) la suit. Quand le nombre de
+couches change, dessus et dessous gardent leur réglage, comme le cuivre.
+
+**Topologie et moignons** (`31-topologie.js`). Le cuivre d'un net est lu
+comme un graphe : ses broches, ses vias et les jonctions de pistes (une
+jonction en T coupe la piste qu'elle touche, comme une piste qui traverse une
+pastille du net sans s'y arrêter), reliés par les pistes avec
+leur longueur. Le bout d'une piste se rattache à ce que `linkSync` dit qui
+le tient. On en tire :
+
+- la **forme** : point à point, chaîne, chaîne à dérivations courtes, étoile
+  (un centre, une broche au bout de chaque branche — le centre peut être la
+  broche du pilote), arbre, maillé (une boucle), incomplet, plan ;
+- le **tronc** : le plus long chemin entre deux broches, ou celui qui part
+  de la source quand l'ordre imposé la donne ; l'**ordre** des repères le
+  long de ce tronc, dérivations comprises ;
+- les **moignons** : la distance de chaque broche hors du tronc jusqu'à lui
+  (un point de test `TP…` est nommé comme tel), et les bouts de piste qui
+  ne mènent à aucune broche ;
+- les **moignons de via** : la part du fût au-delà de la plus haute et de la
+  plus basse couche où le signal entre et sort, en épaisseur d'empilage (un
+  traversant qui relie L1 à L2 d'une quatre couches laisse L2 → L4).
+
+| Contrainte | Ce qui est contrôlé |
+| --- | --- |
+| Point à point | deux broches exactement, un seul chemin |
+| Chaîne | pas d'étoile ni de boucle ; aucune dérivation au-delà du moignon admis (1 mm sans réglage) ; l'ordre imposé, lu dans un sens ou dans l'autre |
+| Étoile | un centre ; les branches de même longueur à la tolérance près (1 mm sans réglage), sauf celle de la source (premier repère de l'ordre) |
+| Fly-by | ce que demande une chaîne, et la terminaison au bout opposé à la source : une résistance `R…`, ou le dernier repère de l'ordre |
+| Moignon max | chaque dérivation et chaque bout libre ; 0 interdit tout moignon. Les branches d'une étoile n'en sont pas |
+| Moignon de via max | chaque via du net ; le message propose un via borgne ou un contre-perçage |
+
+Un net qui porte une zone de cuivre (un plan) n'est pas jugé ; un net dont
+une broche n'est pas encore reliée l'est pour information seulement.
+
+**Ce que la carte en fait** :
+
+- le **DRC** liste chaque écart : `Contrainte SPI_CS : longueur 45,00 mm, au-delà du maximum de 30,00 mm (classe Défaut)`,
+  `Groupe SPI : SPI_SCK à -28,63 mm de SPI_CS, tolérance ± 1,00 mm` ;
+- l'**isolation entre classes** entre dans `clrPair` / `clrK` : le routeur, le
+  DRC, le remplissage des zones et les Gerber l'appliquent. C'est un minimum
+  qui s'ajoute aux classes et à la matrice des natures, comme elle : une
+  matrice vide ne change rien. Les deux nets d'une paire différentielle
+  gardent l'écart de leur règle ;
+- le **serpentin**, posé sur un net d'un groupe, prend pour cible ce qui lui
+  manque (en délai, converti avec le retard par millimètre du net). La paire
+  différentielle garde la priorité ;
+- les **plans** (Draftsman) reprennent les classes à impédance cible dans un
+  tableau « Impédances contrôlées » du plan de fabrication.
+
+Les longueurs, délais et Z₀ sont ceux de `ltLine` : formules de ligne
+(Hammerstad, Wheeler, IPC-2141A) sur l'empilage. L'audit par la méthode des
+moments reste dans **Simulation EM**. **⬇ CSV** exporte le tableau des nets.
+
+**Contraintes saisies dans le schéma.** Le schéma saisit lui aussi des
+contraintes de net et des groupes d'appariement (Outils → Contraintes de
+nets…). Le PCB les reprend de son document — à l'ouverture de cette fenêtre,
+par l'ECO (une ligne « ⊞ CONTRAINTES », cochée par défaut) et à l'export
+« ⇉ PCB » — et les garde à part, dans `contraintes.schema`, sans les recopier
+dans les siennes. Pour chaque champ d'un net : le réglage du PCB, sinon celui
+du schéma, sinon celui de la classe ; la source est dite (« (schéma) » au
+DRC, marque « sch » et valeur en grisé dans le tableau). Les groupes du schéma
+sont évalués, contrôlés et suivis par le serpentin comme ceux du PCB, et se
+modifient dans le schéma. Chaque reprise s'annule par Ctrl+Z.
+
+Les contraintes sont dans le document, `contraintes`, bornées à la lecture
+(`cmNorm`, sur les règles communes de `commun/contraintes.js`). Une nouvelle carte garde celles des classes et la matrice (un
+métier, comme les règles) et perd celles des nets et les groupes.
+
+Ce module ne touche à rien de ce qui est partagé avec la visionneuse
+IPC-2581 : ses natures de nets, ses Z₀ par classe et ses porteuses vivent
+dans `commun/simulation-em.js` et l'audit du serveur, inchangés.
 
 ## Sélection multiple et presse-papier
 
@@ -2716,9 +2912,13 @@ désactive au lieu de disparaître.
 - Une pastille est rectangulaire (coins adoucis ou angles droits), oblongue ou
   ronde, avec sa rotation propre. Pas de forme quelconque : ni pastille en
   polygone, ni plage thermique découpée, ni chanfrein.
-- Ni trous non métallisés, ni texte de sérigraphie libre. Une pastille sans net
-  fait office de pastille libre, mais elle appartient toujours à une
-  empreinte.
+- Gestionnaire de contraintes : le moignon d'un via se compte en épaisseur
+  d'empilage (le contre-perçage n'est pas décrit) ; les contraintes de classe
+  ne se saisissent que dans le PCB.
+- Plans (Draftsman) : les vues sont placées d'office et les cotes se limitent
+  à l'encombrement du contour ; ni cote posée à la main, ni vue de détail
+  agrandie, ni export DXF. Le texte est en Helvetica standard (non
+  embarquée) : un lecteur la remplace par une fonte équivalente.
 - Les **pistes** savent être circulaires (voir plus haut) ; les zones de
   cuivre, les coupes et le contour de carte restent des polygones. Le
   routeur ne pose pas d'arc : ils arrivent d'un fichier, et l'éditeur les
@@ -2743,8 +2943,6 @@ désactive au lieu de disparaître.
   le microruban, ni triplaque asymétrique : le plan le plus proche décide, et la
   formule la suppose centrée. Le couplage entre deux pistes voisines n'est pris
   en compte que pour une paire différentielle déclarée.
-- Pas de serpentin d'appariement de longueur : l'écart entre les deux pistes
-  d'une paire est mesuré et signalé, jamais corrigé.
 - Le contrôle des vias borgnes et enterrés suppose un pressage unique. Un
   empilage à laminage séquentiel est signalé comme tel, mais sa séquence ne se
   décrit pas : il n'y a qu'une liste de diélectriques, pas de sous-ensembles.

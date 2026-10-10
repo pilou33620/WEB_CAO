@@ -869,8 +869,20 @@ function drawRoute(c){
   drawShove(c);
   const col=layerColor(R.layer);
   c.lineCap="round";c.lineJoin="round";
-  c.globalAlpha=0.85;c.strokeStyle=col;c.lineWidth=R.w;
-  strokeRuns(c,R.done);               // d'un seul trait : sinon les coutures se voient
+  c.globalAlpha=0.85;
+  /* d'un seul trait par couche et par largeur : sinon les coutures se voient ;
+     un changement de couche peut changer la largeur (classWidth) */
+  const lots=new Map();
+  for(const s of R.done){
+    const k=s.l+"|"+(s.w!=null?s.w:R.w);
+    let v=lots.get(k);if(!v)lots.set(k,v=[]);v.push(s);
+  }
+  for(const [k,segs] of lots){
+    const p=k.split("|");
+    c.strokeStyle=layerColor(+p[0]);c.lineWidth=+p[1];
+    strokeRuns(c,segs);
+  }
+  c.strokeStyle=col;c.lineWidth=R.w;
   c.setLineDash([px(6),px(4)]);
   if(R.bad)c.strokeStyle=C_ERR;       // l'aperçu passe au rouge s'il ne respecte pas l'isolation
   strokeRuns(c,R.preview);
@@ -991,6 +1003,8 @@ function paint(c,dpr,w,h,noGrid){
   // après le substrat, avant le cuivre : la grille se voit là où l'on travaille
   if(!noGrid){c.save();c.setTransform(dpr,0,0,dpr,0,0);drawGrid(c,w/dpr,h/dpr);c.restore();}
   drawBoard(c);
+  /* le fond des rooms : sous le cuivre (32-rooms.js) */
+  if(!noGrid&&typeof roomsPeindreFond==="function")roomsPeindreFond(c);
 
   drawVias(c);                                 // cuivre : sous les pistes
   drawThruPads(c);
@@ -1091,8 +1105,10 @@ function paint(c,dpr,w,h,noGrid){
   if(!noGrid&&typeof rpMesTrace==="function")rpMesTrace(c,dpr);
   if(!noGrid&&typeof rpPhareTrace==="function")rpPhareTrace(c,dpr);
   /* Badges visuels et color-coding des blocs et zones fonctionnels (Rooms) */
-  if(!noGrid&&typeof BLOC_PLACEMENT!=="undefined"&&BLOC_PLACEMENT.peindreBadgesZones)
-    BLOC_PLACEMENT.peindreBadgesZones(c,dpr);
+  /* Les blocs fonctionnels du schéma, encadrés comme les rooms d'Altium
+     (32-rooms.js) : le cadre et l'étiquette, par-dessus. Ils remplacent les
+     pastilles de couleur de 22-bloc-placement.js. */
+  if(!noGrid&&typeof roomsPeindre==="function")roomsPeindre(c);
   c.setTransform(1,0,0,1,0,0);
 }
 function draw(){

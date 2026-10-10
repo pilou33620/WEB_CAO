@@ -13,8 +13,8 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 700 essais a
 
 | Composant | Statut | Couverture / Bancs |
 | --- | --- | --- |
-| **Éditeur PCB** | En service | 836 essais (`editeur-pcb/test/harness.js`) |
-| **Éditeur Schématique** | En service | 119 essais (`editeur-schematique/test/harness.js`) |
+| **Éditeur PCB** | En service | 884 essais (`editeur-pcb/test/harness.js`), dont 13 pour les plans (Draftsman) et 24 pour le gestionnaire de contraintes et la topologie |
+| **Éditeur Schématique** | En service | 155 essais (`editeur-schematique/test/harness.js`), dont 3 pour les contraintes de nets |
 | **Visionneuse IPC-2581** | En service | 186 essais (`harness-sim.js`) + 59 (`banc-essai.py`) |
 | **SI — Impédance & Vias (`ligne_mom` v2.5.0)** | En service (0,3 à 0,4 % vs étalons) | 199 cas (`python/test/banc-ligne-mom.py`) |
 | **SI — Z différentielle (`solve_multiline`)** | En service (< 3 % vs Garg-Bahl) | inclus dans les 199 cas |
@@ -132,6 +132,21 @@ lib/
 - [x] **Groupes** (les « Unions » d'Altium, `editeur-pcb/js/27-groupes.js`) : Ctrl+G groupe les composants et vias sélectionnés, Ctrl+Maj+G dissout ; un clic (ou le lasso) sur un membre prend le groupe entier, Ctrl+clic le retire entier ; glissement, R (à l'arrêt comme en glissant), cotes saisies emportent tout, les vias du groupe à toute distance ; les pistes entre membres partent en bloc, celles qui sortent suivent à 45°. Le panneau Propriétés d'un composant montre son groupe (renommer, dissoudre), la carte l'encadre quand il est sélectionné. Enregistré dans le document ; un groupe sans composant ou réduit à un membre disparaît.
   - [ ] Retournement (F) d'un groupe : aujourd'hui chaque composant se retourne sur place ; un miroir du groupe entier demande de revoir le retournement d'un composant tourné (rot à corriger avec la face).
   - [ ] Copier-coller d'un groupe : les copies ne sont pas regroupées, et les pistes internes ne viennent que si elles sont sélectionnées.
+
+- [x] **Plans de fabrication et d'assemblage (Draftsman)** (`editeur-pcb/js/29-draftsman.js`, 10/10/2026) : feuilles A4 / A3 / A2 avec cadre, repères de zones et cartouche ; plan de fabrication (vue cotée, symboles et tableau de perçage, trous de fixation, coupe d'empilage, notes), assemblage dessus / dessous (dessous en miroir, non-montés de la variante en tirets), nomenclature, couches de cuivre en option. PDF au **texte cherchable** (WinAnsi, accents compris ; valeurs, boîtiers, références fabricant et nets en texte invisible à leur place ; signets par feuille et par composant), dans `fabrication.zip` et annoncé par le Master Drawing. Recherche et surlignage dans la fenêtre. 13 essais (`harness.js`).
+  - [ ] Cotes posées à la main, accrochées à la géométrie (trous de fixation, connecteurs), et vues placées à la souris.
+  - [ ] Vue de détail agrandie.
+  - [x] Tableau des impédances contrôlées au plan de fabrication (classes à Z cible du gestionnaire de contraintes).
+  - [ ] Export DXF pour la mécanique ; fonte embarquée (sous-ensemble TTF) pour un rendu identique partout.
+
+- [x] **Gestionnaire de contraintes** (`editeur-pcb/js/30-contraintes.js`, modèle dans `01-core.js`, 10/10/2026) : tableur Nets / Classes / Paires / Groupes d'appariement / Isolation entre classes, mesure à côté de chaque contrainte (longueur, délai, vias, Z₀) ; contraintes de net ou héritées de la classe (Z cible et tolérance, longueur min / max, vias max, couches permises) ; largeur pour Z cible couche par couche ; groupes en longueur ou en délai, cible du serpentin ; matrice d'isolation classe × classe appliquée au routeur, au DRC, aux zones et aux Gerber ; écarts au DRC ; export CSV ; tableau des impédances contrôlées au plan de fabrication. La visionneuse IPC-2581 et `commun/` ne sont pas touchés. 10 essais (`harness.js`).
+  - [x] Saisie des contraintes dans le schéma (`editeur-schematique/js/27-contraintes.js`, règles communes `commun/contraintes.js`) : tableau des nets nommés, groupes d'appariement, section du panneau Propriétés ; reprises par le PCB à l'ouverture du gestionnaire, par l'ECO (ligne « Contraintes ») et à l'export ⇉ PCB, gardées à part (`contraintes.schema`), le PCB passant devant champ par champ. 3 essais schéma, 3 essais PCB.
+  - [x] Topologie : une piste qui traverse une pastille du net sans s'y arrêter s'y raccorde.
+  - [x] Largeur de classe par couche (`wL`, `classWidth`) : le routeur prend celle de la couche active et en change au via, le DRC et « aligner sur la classe » la suivent, la largeur pour Z cible se pose couche par couche ; report quand le nombre de couches change. 4 essais.
+  - [x] Topologie (point à point, chaîne avec ordre imposé, étoile à branches égales, fly-by terminé) et moignons (dérivation, point de test, bout libre, moignon de via) par net ou par classe (`editeur-pcb/js/31-topologie.js`) ; onglet « Topologie et moignons », DRC, CSV. 7 essais sur cartes construites.
+  - [ ] Contre-perçage (back-drill) décrit dans l'empilage, pour retirer le moignon de via du calcul et le porter au plan de fabrication.
+
+- [x] **Rooms** (`editeur-pcb/js/32-rooms.js`) : les blocs du schéma (zones étiquetées) encadrés sur la carte comme les rooms d'Altium — cadre, fond teinté, étiquette ; un clic sur l'étiquette prend le bloc ; Affichage → Rooms ; lus dans le document du schéma (session ou projet), à défaut dans l'analyse « Motifs & Blocs ». Remplacent les pastilles de couleur. 3 essais.
 
 ### Simulation SI (Signal Integrity)
 - [x] **Mode différentiel dans la cascade de paramètres S** :

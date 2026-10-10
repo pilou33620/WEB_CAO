@@ -983,6 +983,12 @@ function buildFabFiles(){
   /* Le Master Drawing PDF : trois pages IPC (PCB Details, Files, Stack-up).
      Pur JS, zero dépendance. On passe la liste déjà construite pour éviter
      une récursion buildFabFiles → masterDrawingPdf → buildFabFiles. */
+  /* Les plans (29-draftsman.js) avant le Master Drawing : celui-ci les
+     annonce dans sa liste de fichiers. */
+  if(typeof dfPdfOctets==="function"){
+    const plans=dfPdfOctets();
+    if(plans)files.push({name:fabBase()+"-PLANS.pdf",data:plans});
+  }
   const md=masterDrawingPdf(files);
   if(md)files.push({name:fabDocNum()+".pdf",data:md});
   files.push({name:"EMPILAGE.txt",text:stackReport()});

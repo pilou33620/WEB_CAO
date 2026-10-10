@@ -706,6 +706,9 @@ const S = {
   netBruyants:[],             // nœuds de découpage venus du schéma (voir autoClass)
   variantes:{liste:[],active:""},   // variantes de montage, copiées du schéma (26-variantes.js)
   groupes:[],                       // blocs composants + vias déplacés d'une pièce (27-groupes.js)
+  dessin:null,                      // réglages des plans : format, feuilles, cartouche (29-draftsman.js)
+  voirRooms:true,                   // affichage des rooms (32-rooms.js) — réglage du profil, pas du document
+  contraintes:{classes:{},nets:{},matrice:{},groupes:[],schema:{nets:{},groupes:[]}},  // gestionnaire de contraintes (30-contraintes.js)
   dpRules:[],                 // règles de paire ; vide = la règle d'usine
   scale:5, ox:0, oy:0,
   grid:0.1, showGrid:true, flip:false, contrast:1,   // pas d'accrochage au démarrage
@@ -762,6 +765,29 @@ function setCuCount(n,silent){
   };
   for(const t of S.tracks) t.l=clamp(map(t.l),0,n-1);
   for(const z of S.zones) z.l=clamp(map(z.l),0,n-1);
+  /* les réglages par couche suivent leur couche comme le cuivre : dessus et
+     dessous d'abord, les internes par rang ; une couche qui disparaît
+     emporte le sien */
+  if(old!==n){
+    const ordre=k=>k===0||k===old-1?0:1;
+    for(const c of S.classes){
+      if(!c.wL)continue;
+      const neuf={};
+      for(const k of Object.keys(c.wL).map(Number).filter(k=>k<old).sort((a,b)=>ordre(a)-ordre(b)||a-b)){
+        const j=k===0?0:(k===old-1?n-1:(k<n-1?k:-1));
+        if(j>=0&&neuf[j]==null)neuf[j]=c.wL[k];
+      }
+      if(Object.keys(neuf).length)c.wL=neuf;else delete c.wL;
+    }
+    const C=S.contraintes;
+    if(C)for(const tab of [C.classes,C.nets])
+      for(const k of Object.keys(tab||{})){
+        const r=tab[k];
+        if(!r||!Array.isArray(r.couches))continue;
+        const c=[...new Set(r.couches.filter(i=>i<old).map(i=>i===0?0:(i===old-1?n-1:(i<n-1?i:-1))).filter(i=>i>=0))].sort((a,b)=>a-b);
+        if(c.length)r.couches=c;else delete r.couches;
+      }
+  }
   for(const v of S.vias){
     v.a=clamp(map(v.a),0,n-1); v.b=clamp(map(v.b),0,n-1);
     if(v.a>v.b){const k=v.a;v.a=v.b;v.b=k;}
@@ -2158,7 +2184,18 @@ function setNetClass(net,name){
   if(!name||name===defClass().name)delete S.netClass[net];
   else S.netClass[net]=name;
 }
-function defaultWidth(net){return classOf(net).w;}
+/* LA LARGEUR D'UNE CLASSE SUR UNE COUCHE. Une classe a une largeur, `w`, et
+   peut la préciser couche par couche dans `wL` ({ "0": 0.37, "3": 0.37 }) :
+   une même impédance ne demande pas la même piste en microruban (dessus,
+   dessous) et en triplaque (couches internes). Une couche absente de `wL`
+   prend `w` — d'où, sans `wL`, exactement la largeur d'avant. `l` absent :
+   la largeur générale. */
+function classWidth(net,l){
+  const cl=classOf(net);
+  const v=(l!=null&&cl.wL)?+cl.wL[l]:NaN;
+  return v>0?v:cl.w;
+}
+function defaultWidth(net,l){return classWidth(net,l);}
 /* Le perçage réellement fait pour un via de cette classe : la cote demandée,
    sans jamais manger la rondelle au point de la faire disparaître. `mkVia` pose
    d'après cette formule ; tout ce qui a besoin de connaître le trou AVANT que le
@@ -2252,11 +2289,61 @@ function dpGapPair(a,b){
   }
   return null;
 }
-/* Isolation entre deux nets : la plus exigeante des deux classes l'emporte. */
+/* ---------- les contraintes du gestionnaire (30-contraintes.js) ----------
+   Le modèle vit ici, avec les classes qu'il complète, parce que `normDoc` le
+   lit au démarrage et que l'isolation entre classes entre dans `clrPair` : les
+   deux tournent avant que le module du gestionnaire soit chargé.
+
+   Une contrainte de net ou de classe : impédance cible et sa tolérance (%),
+   longueur min / max (mm), nombre de vias max, couches permises. La matrice
+   donne une isolation entre DEUX classes (« Alimentation | RF » : 0,5 mm) —
+   un minimum qui s'ajoute aux classes, comme la matrice des natures : vide,
+   le contrôle et le routeur rendent exactement ce qu'ils rendaient. Les
+   groupes d'appariement égalisent des longueurs ou des délais. */
+/* `cmNormRegle` et `cmNormGroupes` : commun/contraintes.js, partagés avec le
+   schéma, qui saisit lui aussi des contraintes de net. */
+function cmCle(a,b){a=String(a);b=String(b);return a<b?a+"|"+b:b+"|"+a;}
+function cmNorm(src){
+  const s=(src&&typeof src==="object"&&!Array.isArray(src))?src:{};
+  const out={classes:cmNormNets(s.classes),nets:cmNormNets(s.nets),matrice:{},groupes:[]};
+  const mx=s.matrice;
+  if(mx&&typeof mx==="object"&&!Array.isArray(mx))
+    for(const k of Object.keys(mx)){
+      const p=String(k).split("|"), v=+mx[k];
+      if(p.length===2&&p[0]&&p[1]&&Number.isFinite(v)&&v>0&&v<=50)out.matrice[cmCle(p[0],p[1])]=v;
+    }
+  out.groupes=cmNormGroupes(s.groupes);
+  /* ce que le schéma a saisi : ses contraintes de net et ses groupes, gardés
+     à part — le PCB les lit sans les recopier dans les siens, et un réglage
+     fait dans le PCB passe devant (cmRegleDe, 30-contraintes.js) */
+  const sc=(s.schema&&typeof s.schema==="object"&&!Array.isArray(s.schema))?s.schema:{};
+  out.schema={nets:cmNormNets(sc.nets),groupes:cmNormGroupes(sc.groupes)};
+  return out;
+}
+/* L'isolation que la matrice des classes impose entre les nets a et b ; 0 si
+   la case est vide. Appelée par le contrôle et le routeur pour chaque paire
+   d'objets voisins : une matrice vide sort tout de suite. */
+function cmClrClasses(a,b){
+  const m=S.contraintes&&S.contraintes.matrice;
+  if(!m)return 0;
+  for(const _ in m){
+    const v=m[cmCle(classOf(a).name,classOf(b).name)];
+    return v>0?v:0;
+  }
+  return 0;
+}
+function cmClrMax(){
+  const m=S.contraintes&&S.contraintes.matrice;
+  let x=0;
+  if(m)for(const k in m){const v=+m[k];if(v>x)x=v;}
+  return x;
+}
+/* Isolation entre deux nets : la plus exigeante des deux classes l'emporte,
+   et la case de la matrice des classes si elle exige davantage. */
 function clrPair(a,b){
   const g=dpGapPair(a,b);
   if(g!=null)return g;
-  return Math.max(classOf(a).clr,classOf(b).clr);
+  return Math.max(classOf(a).clr,classOf(b).clr,cmClrClasses(a,b));
 }
 /* La même, natures comprises : c'est celle-ci que le contrôle, le routeur et
    les zones de cuivre appliquent. `ka` et `kb` disent de quoi il s'agit —
@@ -2264,12 +2351,12 @@ function clrPair(a,b){
 function clrK(a,b,ka,kb){
   const g=dpGapPair(a,b);
   if(g!=null)return g;
-  return Math.max(classOf(a).clr,classOf(b).clr,matGet(ka,kb));
+  return Math.max(classOf(a).clr,classOf(b).clr,matGet(ka,kb),cmClrClasses(a,b));
 }
 function maxClr(){
   let m=0;
   for(const c of S.classes)m=Math.max(m,c.clr);
-  return Math.max(m||FALLBACK_CLASS.clr,matMax());
+  return Math.max(m||FALLBACK_CLASS.clr,matMax(),cmClrMax());
 }
 /* Classes que le schéma sait proposer, et les règles d'une classe créée pour
    l'occasion. « Lent » n'en a pas : c'est la classe par défaut. `re` retrouve
