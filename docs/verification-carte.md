@@ -495,7 +495,15 @@ traversant** (le message le dit). La longueur du moignon se juge face à
 Une broche traversante de composant n'est pas jugée. Une ligne par net, sur le
 pire via.
 
-**Corriger** : via borgne ou enterré, rétroperçage (*backdrill*), ou router le
+Un via **contre-percé** (*back-drill*, règles de l'empilage de l'éditeur PCB)
+porte dans son perçage `cp` : `{cote: "dessous" | "dessus", garde: <couche de
+cuivre à ne pas couper>, res: <moignon résiduel, mm>}`. Le moignon de ce côté
+va alors de la couche empruntée à la pointe du foret (`res` sous ou sur la
+couche gardée), jamais plus loin qu'avant, et le message ajoute « contre-percé
+par dessous ». Un contre-perçage qui couperait une couche empruntée n'est pas
+appliqué ; sans `cp`, rien ne change.
+
+**Corriger** : via borgne ou enterré, contre-perçage (*backdrill*), ou router le
 signal entre les couches extrêmes du perçage.
 
 ### Branches en T
@@ -729,7 +737,7 @@ Le document `cao-analyse-carte-1` porte, dans les unités de l'outil
 (`unite_mm`) : les pistes et arcs des couches de cuivre, les pastilles
 **placées** {x, y, r (rayon inscrit), R (demi-longueur), c, n}, les surfaces
 `plans` [{c, n, o, t, isolement}], le `contour` {o, t}, les `percages`
-[{x, y, d, n, de, a}], les `composants` [{ref, c, val, pkg, broches [{x, y, n, pin}]}],
+[{x, y, d, n, de, a, cp (contre-perçage, facultatif)}], les `composants` [{ref, c, val, pkg, broches [{x, y, n, pin}]}],
 l'empilage, les fiches de via de chaque net de signal (même format que
 Current Return Path), la nature de chaque net, les nœuds bruyants, les paires
 différentielles, la masse de référence, les `courants` par rail (facultatif)

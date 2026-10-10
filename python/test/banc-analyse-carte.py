@@ -689,6 +689,23 @@ def test_nouvelles_regles():
     k = de(analyser_document(dict(doc, percages=[{"x": 10, "y": 10, "d": 0.3, "n": "CLK",
                                                   "de": "Top", "a": "In3"}])), "moignon_via")
     assert k == [], k
+    # percé de Top à Bot mais CONTRE-PERCÉ par-dessous jusque sous In3 : il ne
+    # reste que le moignon résiduel, sous λ/20
+    perce = {"x": 10, "y": 10, "d": 0.3, "n": "CLK", "de": "Top", "a": "Bot"}
+    k = de(analyser_document(dict(doc, percages=[dict(perce, cp={"cote": "dessous",
+                                  "garde": "In3", "res": 0.1})])), "moignon_via")
+    assert k == [], k
+    # un contre-perçage qui couperait In3 (garder L2) ne retire rien ; sans
+    # lui, le constat est celui d'avant, au caractère près
+    k0 = de(analyser_document(dict(doc, percages=[perce])), "moignon_via")
+    k = de(analyser_document(dict(doc, percages=[dict(perce, cp={"cote": "dessous",
+                                  "garde": "L2", "res": 0.1})])), "moignon_via")
+    assert k0 and k == k0, (k0, k)
+    # un résiduel de 2 mm (plus que le moignon) ne l'allonge pas
+    k = de(analyser_document(dict(doc, percages=[dict(perce, cp={"cote": "dessous",
+                                  "garde": "In3", "res": 2.0})])), "moignon_via")
+    assert k and k[0]["msg"].split(" mm")[0] == k0[0]["msg"].split(" mm")[0] and \
+        "contre-percé" in k[0]["msg"], (k0, k)
     # une broche traversante n'est pas un via de routage
     comp = [{"ref": "J1", "c": "Top", "broches": [{"x": 10, "y": 10, "n": "CLK", "pin": "1"}]}]
     k = de(analyser_document(dict(doc, composants=comp,

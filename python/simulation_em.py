@@ -2483,6 +2483,8 @@ def _modele_transition(trans, objets, segments, couches, z_bornes, refs_nets,
         "depart": _fiche_moignon(moignons["depart"], d_percage, d_antipad, fc),
         "arrivee": _fiche_moignon(moignons["arrivee"], d_percage, d_antipad, fc),
     }
+    if moignons.get("contre_percage"):
+        trans["moignons"]["contre_percage"] = moignons["contre_percage"]
     y_dep = _admittance_moignon(moignons["depart"], d_percage, d_antipad, fc)
     y_arr = _admittance_moignon(moignons["arrivee"], d_percage, d_antipad, fc)
 
@@ -2764,6 +2766,17 @@ def _moignons(trans, via, couches, z_bornes):
     Chaque moignon est rattache au NOEUD dont il pend : celui du depart quand
     il est du cote de la couche de depart, celui de l'arrivee sinon. Les
     intervertir change |S11| sans changer |S21|, donc se voit mal.
+
+    LE CONTRE-PERCAGE ARRETE LE MOIGNON DE SON COTE. La portee percee reste
+    celle du via -- c'est un foret plus gros, repasse apres metallisation
+    depuis une face, qui retire le bout du fut. La page l'envoie dans
+    `via["contre_percage"]` : la face (`cote`, "dessous" ou "dessus"), la
+    couche de cuivre a ne pas couper (`couche_garde`, indice d'empilage comme
+    `layer_from`) et le moignon residuel (`moignon_residuel_mm`) laisse entre
+    elle et la pointe du foret. Le moignon de ce cote va alors de la couche
+    empruntee a la pointe, et jamais plus loin qu'avant. Un contre-percage qui
+    couperait une couche empruntee n'est pas applique, et la fiche le dit
+    (`contre_percage` : "ignore"). Sans le champ, rien ne change.
     """
     a_portee = (via.get("layer_from") is not None
                 and via.get("layer_to") is not None)
@@ -2808,12 +2821,35 @@ def _moignons(trans, via, couches, z_bornes):
     haut = (_bout(vlo, ulo, _z(vlo), _z(ulo)) if ulo > vlo else None)
     bas = (_bout(uhi, vhi, _z(uhi + 1), _z(vhi + 1)) if vhi > uhi else None)
 
+    etat_cp = None
+    cp = via.get("contre_percage")
+    if isinstance(cp, dict):
+        g = int(_nombre(cp.get("couche_garde"), -1))
+        res = max(0.0, _nombre(cp.get("moignon_residuel_mm"), 0.0))
+        if cp.get("cote") == "dessous" and bas and uhi <= g < vhi:
+            # la pointe sous la couche gardee : son dessous, plus le residuel
+            pointe = min(_z(g + 1) + res, _z(vhi + 1))
+            bas = _bout(uhi, g + 1, _z(uhi + 1), pointe)
+            etat_cp = "applique"
+        elif cp.get("cote") == "dessus" and haut and vlo < g <= ulo:
+            pointe = max(_z(g) - res, _z(vlo))
+            haut = _bout(g - 1, ulo, pointe, _z(ulo))
+            etat_cp = "applique"
+        else:
+            etat_cp = "ignore"
+        m = bas if cp.get("cote") == "dessous" else haut
+        if m and etat_cp == "applique":
+            m["contre_perce"] = True
+
     # Lequel pend au noeud d'entree ? Celui du cote de la couche de DEPART.
     if dep <= arr:
         depart, arrivee = haut, bas
     else:
         depart, arrivee = bas, haut
-    return {"connu": True, "depart": depart, "arrivee": arrivee}
+    out = {"connu": True, "depart": depart, "arrivee": arrivee}
+    if etat_cp:
+        out["contre_percage"] = etat_cp
+    return out
 
 
 def _admittance_moignon(m, d_percage, d_antipad, freq):
@@ -2851,6 +2887,7 @@ def _fiche_moignon(m, d_percage, d_antipad, fc):
         "capacite_fF": round(y.imag / omega * 1e15, 2) if omega > 0 else 0.0,
         "impedance_ohm": round(1.0 / abs(y), 1) if abs(y) > 1e-12 else None,
         "couches": m["couches"],
+        **({"contre_perce": True} if m.get("contre_perce") else {}),
     }
 
 
@@ -3426,6 +3463,11 @@ def _avertir_retour(transitions, f_fin=0.0):
                 " résonne à %.2f GHz : à cette fréquence il court-circuite la"
                 " liaison. Un via enterré ou un contre-perçage l'enlèvent."
                 % (t["troncon"], f["longueur_mm"], f["resonance_hz"] / 1e9))
+        if mo.get("contre_percage") == "ignore":
+            out.append(
+                "Le contre-perçage du via du tronçon %d couperait une couche"
+                " où passe le signal : il n'est pas compté, le moignon reste"
+                " entier." % t["troncon"])
         if mo.get("incoherent"):
             out.append(
                 "Le via du tronçon %d est percé sur une portée plus courte que"

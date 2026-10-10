@@ -402,6 +402,9 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "cmAppliquerLargeurZ","CM","CM_ONGLETS","className","classWidth","cmPoserLargeurCouche","normClass","routeVia",
   /* topologie et moignons (31-topologie.js) */
   "topoGraphe","topoAnalyser","topoVerifier","topoResume","topoMoignonsVias","TOPO_FORMES","stackSpan","cuT",
+  /* contre-perçage (01-core.js, 06-panels.js, 04-fabrication.js) */
+  "cpNormRegles","cpRegles","cpRegle","cpRegleVia","cpVia","cpViasPerces","cpPaires","cpExcellon",
+  "cpAjouter","cpModifier","cpSupprimer","CP_SUR","cmHtmlTopologie",
   "cmDepuisSchema","cmTousGroupes","cmResumeSchema","cmLireChamp","pcbAppliquerEco","pcbDetecterDisparitesEco","cmEcartSchema",
   /* rooms (32-rooms.js) */
   "roomsDepuisDoc","roomsListe","roomNomCourt","roomCouleur","roomAuLabel","roomEtiquette","roomsBasculer",
@@ -22554,6 +22557,171 @@ T("contraintes du schéma : l'ECO et la fenêtre les reprennent",()=>{
       throw new Error("une fois reprises, plus de ligne");
     if(cmLireChamp("ordre","U1 → U4 > U5")+""!=="U1,U4,U5")throw new Error("lecture commune de l'ordre");
   }finally{S.schDoc=avant;cmRaz();}
+});
+
+/* ==========================================================================
+   Contre-perçage (back-drill) : règles de l'empilage, moignon résiduel,
+   perçage de fabrication et plan (01-core.js, 04-fabrication.js, 29-draftsman.js)
+   ========================================================================== */
+function cpRaz(){if(S.stack)delete S.stack.cp;cmRaz();touch();}
+/* la carte des moignons de via : 4 couches, deux vias traversants que le
+   signal n'emprunte que de L1 à L2 — chacun laisse L2 → L4 pendre */
+function cpCarte(){
+  topoCarte();cpRaz();
+  const a=topoFp("U1",0,0,"SIG"), b=topoFp("U2",30,0,"SIG");
+  S.vias.push({x:10,y:0,d:0.6,drill:0.3,a:0,b:3,net:"SIG"},{x:20,y:0,d:0.6,drill:0.3,a:0,b:3,net:"SIG"});
+  topoPiste("SIG",a,{x:10,y:0},0);topoPiste("SIG",{x:10,y:0},{x:20,y:0},1);topoPiste("SIG",{x:20,y:0},b,0);
+  topoFin();
+}
+const cpMsgsVia=()=>topoMsgs("SIG").filter(x=>/^moignon de via/.test(x));
+T("contre-perçage : moignon résiduel, règle de classe, de net ou de via, DRC",()=>{
+  cpCarte();
+  cmPoser("nets","SIG","viaStubMax","0,2");
+  if(cpMsgsVia().length!==2)throw new Error("sans contre-perçage, deux moignons : "+topoMsgs("SIG"));
+  const r=cpAjouter({cote:"dessous",garde:-1,res:0.1});
+  if(r.id!=="cp1"||r.sur!==CP_SUR||r.garde!==-1)throw new Error(JSON.stringify(r));
+  if(cpVia(S.vias[0])||cpMsgsVia().length!==2)throw new Error("une règle que personne ne prend ne change rien");
+  /* la classe la prend : la couche gardée est la dernière empruntée, L2 */
+  cmPoser("classes",className("SIG"),"cp","cp1");
+  const c=cpVia(S.vias[0]);
+  if(!c||c.src!=="classe"||c.cote!=="dessous"||c.garde!==1||!c.auto||c.faute)throw new Error(JSON.stringify(c&&{src:c.src,garde:c.garde,faute:c.faute}));
+  if(Math.abs(c.moignon-0.1)>1e-9||Math.abs(c.moignon0-r4(stackSpan(1,3)-cuT(1)))>1e-9)
+    throw new Error("moignon "+c.moignon+" (avant "+c.moignon0+")");
+  if(Math.abs(c.prof-r4(stackLam()-stackSpan(0,1)-0.1))>1e-9||c.diam!==0.55||c.coupees.join()!=="2,3")
+    throw new Error("profondeur "+c.prof+", foret "+c.diam+", couches "+c.coupees);
+  const T=topoAnalyser("SIG");
+  if(T.moignonsVias.length!==2||T.moignonsVias.some(m=>Math.abs(m.len-0.1)>1e-9||!/contre-percé jusque sous L2/.test(m.txt)))
+    throw new Error(JSON.stringify(T.moignonsVias.map(m=>[m.len,m.txt])));
+  if(cpMsgsVia().length)throw new Error("le moignon résiduel tient sous 0,2 mm : "+cpMsgsVia());
+  /* le via d'abord : « non » lui rend son moignon */
+  S.vias[1].cp="non";touch();
+  if(cpVia(S.vias[1])||cpMsgsVia().length!==1)throw new Error("via sans contre-perçage : "+cpMsgsVia());
+  /* le net passe devant la classe ; le via devant le net */
+  cmPoser("nets","SIG","cp","non");
+  if(cpVia(S.vias[0])||cpMsgsVia().length!==2)throw new Error("« non » sur le net");
+  S.vias[1].cp="cp1";touch();
+  if(!cpVia(S.vias[1])||cpVia(S.vias[1]).src!=="via"||cpMsgsVia().length!==1)throw new Error("règle du via");
+  if(cmRegleDe("SIG").cp.v!=="non"||cmRegleDe("SIG").cp.src!=="net")throw new Error("cmRegleDe : cp");
+  /* une couche gardée trop haute couperait le signal : faute au DRC, moignon entier */
+  cmPoser("nets","SIG","cp","");
+  const g=cpAjouter({cote:"dessous",garde:0});
+  S.vias[0].cp=g.id;touch();
+  const f=cpVia(S.vias[0]);
+  if(!f||!/couperait L2/.test(f.faute))throw new Error("faute attendue : "+JSON.stringify(f&&f.faute));
+  if(Math.abs(topoAnalyser("SIG").moignonsVias.find(m=>m.v===S.vias[0]).len-r3(stackSpan(1,3)-cuT(1)))>1e-9)
+    throw new Error("un contre-perçage fautif ne retire rien");
+  runDrc();
+  if(!S.drc.some(d=>d.via===S.vias[0]&&/^Contre-perçage cp2 .*couperait L2/.test(d.msg)))
+    throw new Error("DRC : "+S.drc.map(d=>d.msg).filter(m=>/Contre/.test(m)).join(" | "));
+  /* un moignon admis plus épais que le diélectrique laisse la couche suivante reliée */
+  cpModifier(g.id,"garde",2);cpModifier(g.id,"res",0.5);
+  if(!/L4 resterait reliée/.test(cpVia(S.vias[0]).faute))throw new Error(cpVia(S.vias[0]).faute);
+  /* par-dessus : un via que le signal n'emprunte que de L3 à L4 */
+  cpModifier(g.id,"cote","dessus");
+  if(cpRegle(g.id).garde!==-1)throw new Error("changer de face remet la couche gardée en auto");
+  for(const t of S.tracks)t.l=t.l===1?2:3;
+  touch();
+  const h=cpVia(S.vias[0]);
+  if(!h||h.cote!=="dessus"||h.garde!==2||h.faute||Math.abs(h.prof-r4(stackSpan(0,2)-cuT(2)-0.5))>1e-9)
+    throw new Error(JSON.stringify(h&&{garde:h.garde,prof:h.prof,faute:h.faute}));
+  /* le panneau du via le dit */
+  clearSel();S.sel.vias.add(S.vias[0]);buildProps();
+  if(!/Contre-perçage/.test($("props").innerHTML)||!/Contre-percé depuis le dessus jusque sur L3/.test($("props").innerHTML))
+    throw new Error("panneau du via");
+  clearSel();
+  cpRaz();
+  if(cpVia(S.vias[0]))throw new Error("sans règle, plus de contre-perçage");
+});
+T("contre-perçage : enregistré dans l'empilage, aller-retour, règle retirée",()=>{
+  cpCarte();
+  loadDoc(JSON.parse(serialize()),true);          // la carte d'essai, une fois relue
+  const vide=serialize();
+  if(/"cp"/.test(vide))throw new Error("un document sans contre-perçage n'en écrit rien");
+  loadDoc(JSON.parse(vide),true);
+  if(serialize()!==vide)throw new Error("aller-retour sans contre-perçage : "+firstDiff(JSON.parse(vide),JSON.parse(serialize()),""));
+  const r=cpAjouter({cote:"dessous",garde:1,sur:0.2,res:0.15});
+  cmPoser("classes",className("SIG"),"cp",r.id);
+  S.vias[1].cp="non";touch();
+  const a=serialize();
+  loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("l'aller-retour change le document");
+  if(!S.stack.cp||S.stack.cp[0].garde!==1||S.stack.cp[0].sur!==0.2||S.vias[1].cp!=="non"||
+     S.contraintes.classes[className("SIG")].cp!==r.id)throw new Error("règles perdues");
+  /* lecture bornée : identifiants uniques, couche gardée dans la pile, cotes bornées */
+  const n=cpNormRegles([{id:"cp1",cote:"dessus",garde:0,sur:9,res:-1},{id:"cp1",garde:12},{id:"non"},
+                        {id:"x y",cote:"?",garde:"auto"},null],4);
+  if(JSON.stringify(n.map(x=>[x.id,x.cote,x.garde,x.sur,x.res]))!==
+     '[["cp1","dessus",1,2,0],["cp2","dessous",2,0.25,0.15],["cp3","dessous",-1,0.25,0.15],["cp4","dessous",-1,0.25,0.15]]')
+    throw new Error(JSON.stringify(n));
+  if(cmNorm({nets:{A:{cp:"cp<1>"},B:{cp:" non "}}}).nets.A||cmNorm({nets:{B:{cp:" non "}}}).nets.B.cp!=="non")
+    throw new Error("contrainte cp bornée");
+  /* plus de couches : la règle reste, sa couche gardée dans la nouvelle pile */
+  setCuCount(6);
+  if(!S.stack.cp||S.stack.cp[0].garde!==1)throw new Error("règle perdue au changement de couches");
+  setCuCount(4);
+  /* l'empilage physique la montre et la saisit */
+  buildStackup();
+  if(!/Contre-perçage \(back-drill\)/.test($("stk").innerHTML)||!/skCpG0/.test($("stk").innerHTML))
+    throw new Error("panneau d'empilage");
+  cmOuvrir("topologie");
+  const ht=cmHtmlTopologie();
+  if(!/Contre-perçage<\/th>/.test(ht)||ht.indexOf('<option value="'+r.id+'" selected>'+r.id)<0)
+    throw new Error("colonne du gestionnaire");
+  cmFermer();
+  if(!/;Contre-perçage;État;/.test(cmCsv())||!new RegExp("\\nSIG;[^\\n]*;"+r.id+";").test(cmCsv()))
+    throw new Error("CSV : "+cmCsv().split("\n").filter(l=>/^SIG;|^Net;/.test(l)).join(" / "));
+  /* retirée, plus personne ne la vise */
+  cpSupprimer(r.id);
+  if(S.stack.cp||S.contraintes.classes[className("SIG")]||S.vias[1].cp!=="non")
+    throw new Error("une règle retirée laisse des références");
+  cpRaz();
+});
+T("contre-perçage : fichier Excellon, LISEZ-MOI, empilage et plan de fabrication",()=>{
+  cpCarte();
+  const avant=drillFile().files.map(f=>f.name).join();
+  if(/BACKDRILL/.test(avant))throw new Error("pas de fichier sans contre-perçage");
+  if(dfChercher(dfDocument(),"back-drill").length)throw new Error("pas de tableau sans contre-perçage");
+  const r=cpAjouter({cote:"dessous",garde:-1,res:0.1});
+  cmPoser("nets","SIG","cp",r.id);
+  const d=drillFile();
+  const f=d.files.find(x=>/BACKDRILL/.test(x.name));
+  if(!f||f.name!=="carte-BACKDRILL-B-In1.DRL"||f.kind!=="backdrill"||f.holes!==2||f.tools!==1)
+    throw new Error(JSON.stringify(d.files.map(x=>[x.name,x.holes])));
+  const prof=fmt(stackLam()-stackSpan(0,1)-0.1,3);
+  for(const s of ["M48","METRIC,TZ","couche a ne pas couper (must-not-cut) : L2 (In1)","face percee : L4 (B)",
+                  "couches retirees du fut : L3-L4","T1C0.550","; T1 : profondeur "+prof+" mm","X10.000","T0","M30"])
+    if(f.text.indexOf(s)<0)throw new Error("Excellon sans « "+s+" » :\n"+f.text);
+  if(/[^\x00-\x7f]/.test(f.text))throw new Error("pas d'accent dans un Excellon");
+  if(d.files.find(x=>x.name==="carte-1-4.TXT").holes!==2)throw new Error("le perçage d'origine reste");
+  /* un contre-perçage fautif ne part pas en fabrication */
+  S.vias[1].cp=cpAjouter({cote:"dessous",garde:0}).id;touch();
+  if(drillFile().files.find(x=>/BACKDRILL/.test(x.name)).holes!==1)throw new Error("le via fautif part en fabrication");
+  delete S.vias[1].cp;touch();
+  const B=buildFabFiles();
+  if(!B.files.some(x=>x.name==="carte-BACKDRILL-B-In1.DRL"))throw new Error("absent de fabrication.zip");
+  const lis=B.files.find(x=>x.name==="LISEZ-MOI.txt").text;
+  if(!/carte-BACKDRILL-B-In1\.DRL : CONTRE-PERCAGE \(back-drill\) depuis L4, ne pas couper L2/.test(lis))
+    throw new Error("LISEZ-MOI");
+  if(!/Contre-percage \(back-drill\), regles :/.test(stackReport())||!/couche a ne pas couper L2 : 2 via\(s\)/.test(stackReport()))
+    throw new Error("feuille d'empilage :\n"+stackReport());
+  /* le plan : le tableau, la coupe, la note */
+  const doc=dfDocument();
+  if(!dfChercher(doc,"contre-percage (back-drill)").length)throw new Error("tableau absent du plan");
+  const lig=dfChercher(doc,"In1 (L2)");
+  if(!lig.some(h=>h.cat==="percage"))throw new Error("ligne du tableau : "+JSON.stringify(lig));
+  if(!dfChercher(doc,fmt(stackLam()-stackSpan(0,1)-0.1,3).replace(".",",")).some(h=>h.cat==="percage"))
+    throw new Error("profondeur absente du tableau");
+  if(!dfChercher(doc,"B→In1").some(h=>h.cat==="empilage"))throw new Error("passe absente de la coupe");
+  if(!dfChercher(doc,"BACKDRILL-*.DRL").some(h=>h.cat==="note"))throw new Error("note de fabrication");
+  /* la simulation et la vérification de la carte reçoivent le contre-perçage */
+  const cv=simCotesVia(S.vias[0],10,0,0,1);
+  if(!cv.contre_percage||cv.contre_percage.cote!=="dessous"||cv.contre_percage.couche_garde!==simCuIndex(1)||
+     cv.contre_percage.moignon_residuel_mm!==0.1)throw new Error(JSON.stringify(cv.contre_percage));
+  const ce=SIM_PCB.carteEntiere().doc;
+  const p=(ce.percages||[]).find(t=>t.x===10&&t.y===0);
+  if(!p||!p.cp||p.cp.garde!==cuLabel(1,4)||p.cp.res!==0.1)throw new Error(JSON.stringify(p));
+  cpRaz();
+  if("contre_percage" in simCotesVia(S.vias[0],10,0,0,1))throw new Error("sans règle, pas de champ");
 });
 
 /* ==========================================================================

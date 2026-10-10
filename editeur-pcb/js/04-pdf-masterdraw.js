@@ -420,12 +420,14 @@ function masterDrawingPdf(fabFiles){
      son nom : celui-ci commence par le nom du projet, chiffres compris. */
   const drillDesc=f=>{
     if(f.kind==="npth")return "Non-plated through hole (NPTH) Excellon drill file";
+    if(f.kind==="backdrill")return "Back-drill Excellon file from copper layer "+(f.de+1)+
+      ", must-not-cut layer "+(f.garde+1);
     const a=f.a|0, b=(f.b==null?S.cu-1:f.b);
     const kind=f.kind==="blind"?"Blind":f.kind==="buried"?"Buried":"Through hole";
     return kind+" Excellon drill file (plated), copper layer "+(a+1)+" to "+(b+1);
   };
   const gFiles=(fabFiles||[]).filter(f=>/\.(GTL|GBL|GL\d+|GTS|GBS|GTP|GBP|GTO|GBO|GM1|GKO)$/.test(f.name));
-  const dFiles=(fabFiles||[]).filter(f=>/\.TXT$/.test(f.name));
+  const dFiles=(fabFiles||[]).filter(f=>/\.(TXT|DRL)$/.test(f.name));
   const ipcF=(fabFiles||[]).find(f=>f.name.endsWith(".ipc"));
 
   tableHead();

@@ -691,11 +691,50 @@ function drillFile(){
     files.push({name:fabBase()+"-NPTH.TXT", a:0, b:S.cu-1, kind:"npth", npth:true,
                  ...buildOne("percage non metallise (NPTH)", npthHoles)});
   }
+  /* Contre-perçages (01-core.js) : un fichier par face et par couche à ne
+     pas couper, après les perçages métallisés qu'ils repassent. */
+  for(const p of cpPaires())files.push(cpExcellon(p));
 
   /* Stats agrégées pour le résumé */
   const totalTools=files.reduce((a,f)=>a+f.tools,0);
   const totalHoles=files.reduce((a,f)=>a+f.holes,0);
   return {files, tools:totalTools, holes:totalHoles};
+}
+/* Le fichier d'un contre-perçage (back-drill). Comme KiCad et Altium, un
+   fichier par paire de couches : la face d'où l'on repasse et la couche à ne
+   pas couper, dans le nom (`carte-BACKDRILL-B-In2.DRL` : par-dessous,
+   jusqu'à In2 gardée — L3 d'une quatre couches) et en tête, en commentaire,
+   avec la profondeur de chaque outil. Excellon n'a pas de champ de
+   profondeur que tous les outils CAM lisent : c'est le commentaire, et le
+   tableau du plan de fabrication, qui la portent. Les diamètres sont ceux du
+   foret — perçage du via + surperçage. */
+function cpExcellon(p){
+  const n=S.cu, de=p.cote==="dessous"?n-1:0;
+  const outils=[...p.outils.values()].sort((a,b)=>(a.diam-b.diam)||(a.prof-b.prof));
+  const c1=p.cote==="dessous"?p.garde+2:1, c2=p.cote==="dessous"?n:p.garde;
+  const L=["M48","; Editeur PCB - contre-percage (back-drill) "+noAcc(CP_COTES[p.cote]),
+    "; face percee : "+cpNomCouche(de)+" ("+cpCoucheFichier(de)+")",
+    "; couche a ne pas couper (must-not-cut) : "+cpNomCouche(p.garde)+" ("+cpCoucheFichier(p.garde)+")",
+    "; couches retirees du fut : L"+Math.min(c1,c2)+(c1!==c2?"-L"+Math.max(c1,c2):""),
+    "; moignon residuel admis : "+fmt(p.res,3)+" mm sous la couche gardee",
+    "; epaisseur du stratifie "+fmt(stackLam(),3)+" mm",
+    "; "+new Date().toISOString(),"METRIC,TZ"];
+  outils.forEach((t,i)=>{
+    L.push("; T"+(i+1)+" : profondeur "+fmt(t.prof,3)+" mm depuis la face "+cpCoucheFichier(de)+
+           ", "+t.pts.length+" trou(s)");
+    L.push("T"+(i+1)+"C"+fmt(t.diam,3));
+  });
+  L.push("%","G90","G05");
+  const o=gOrigin();
+  outils.forEach((t,i)=>{
+    L.push("T"+(i+1));
+    for(const q of t.pts)L.push("X"+fmt(q.x-o.x,3)+"Y"+fmt(o.y-q.y,3));
+  });
+  L.push("T0","M30");
+  return {name:fabBase()+"-BACKDRILL-"+cpCoucheFichier(de)+"-"+cpCoucheFichier(p.garde)+".DRL",
+          text:L.join("\n")+"\n",kind:"backdrill",cote:p.cote,de:de,garde:p.garde,
+          a:Math.min(de,p.garde),b:Math.max(de,p.garde),
+          tools:outils.length,holes:p.n,prof:outils.map(t=>t.prof)};
 }
 /* ==========================================================================
    Feuille d'empilage
@@ -743,6 +782,18 @@ function stackReport(){
     for(const v of S.vias){
       const b=viaBuild(v.a,v.b);
       if(!b.ok)L.push("  "+cuId(v.a,S.cu)+" vers "+cuId(v.b,S.cu)+" : "+noAcc(b.why));
+    }
+  }
+  /* le contre-perçage se commande avec l'empilage : la profondeur se compte
+     dans ses épaisseurs */
+  if(cpRegles().length){
+    L.push("Contre-percage (back-drill), regles :");
+    for(const r of cpRegles())L.push("  "+noAcc(cpLibelle(r)));
+    for(const p of cpPaires()){
+      const de=p.cote==="dessous"?S.cu-1:0;
+      L.push("  depuis "+cpNomCouche(de)+", couche a ne pas couper "+cpNomCouche(p.garde)+" : "+
+             p.n+" via(s), profondeur "+[...p.outils.values()].map(t=>fmt(t.prof,3)).join(" / ")+
+             " mm, moignon residuel "+fmt(p.res,3)+" mm.");
     }
   }
   L.push("");
@@ -817,10 +868,17 @@ function fabReadme(files,dr){
   /* Un dossier peut porter trois .TXT : sans legende, le fabricant ne sait pas
      lequel s'arrete en route. Les couches se comptent a partir de 1. */
   L.push("Un fichier de percage par portee, couches numerotees a partir de 1 :");
-  for(const f of dr.files)
+  for(const f of dr.files){
+    if(f.kind==="backdrill"){
+      L.push("  "+f.name+" : CONTRE-PERCAGE (back-drill) depuis "+cpNomCouche(f.de)+
+             ", ne pas couper "+cpNomCouche(f.garde)+", profondeur "+
+             f.prof.map(x=>fmt(x,3)).join(" / ")+" mm, "+f.holes+" trou(s), "+f.tools+" outil(s).");
+      continue;
+    }
     L.push("  "+f.name+" : percage "+
            (f.kind==="npth"?"non metallise (NPTH)":(f.kind==="blind"?"borgne":f.kind==="buried"?"enterre":"traversant"))+
            (f.kind==="npth"?"":" L"+(f.a+1)+"-L"+(f.b+1))+", "+f.holes+" trou(s), "+f.tools+" outil(s).");
+  }
   L.push("Board Outline (carte.GM1) : Mechanical Layer 1, PROFIL DE DECOUPE.");
   L.push("C'est ce fichier qui definit le detourage de la carte. Il porte");
   L.push("l'attribut Gerber X2 << Profile,NP >> (bord non metallise).");

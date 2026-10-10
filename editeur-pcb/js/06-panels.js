@@ -446,7 +446,8 @@ function buildStackup(){
            ? 'Bouchés puis plaqués : c\'est ce qui permet de poser une pastille '+
              'sur le via, sous un BGA par exemple. C\'est aussi le plus cher.'
            : 'Le masque ne s\'ouvre pas sur les vias.'))+
-     '</div>';
+     '</div>'+
+     cpHtmlEmpilage();
 
   box.innerHTML=h;
 
@@ -560,6 +561,111 @@ function buildStackup(){
   if(rep)rep.onclick=()=>{
     dl(new Blob([stackReport()],{type:"text/plain"}),"empilage.txt");
     hint("Feuille d'empilage enregistrée dans empilage.txt.");
+  };
+  cpBrancherEmpilage();
+}
+/* ---------- contre-perçage (back-drill) ----------
+   Les règles se saisissent ici, avec l'empilage qu'elles percent ; elles
+   s'appliquent ensuite à un via (panneau Propriétés), à un net ou à une
+   classe (gestionnaire de contraintes, onglet « Topologie et moignons »).
+   Le modèle est dans 01-core.js (`cpVia`). */
+function cpAjouter(o){
+  o=o||{};
+  if(!S.stack.cp)S.stack.cp=[];
+  let k=1;while(S.stack.cp.some(r=>r.id==="cp"+k))k++;
+  const r=cpNormRegles([Object.assign({id:"cp"+k,cote:"dessous",garde:-1},o)],S.cu)[0];
+  r.id="cp"+k;
+  S.stack.cp.push(r);
+  touch();
+  return r;
+}
+function cpModifier(id,cle,val){
+  const L=S.stack.cp||[], i=L.findIndex(r=>r.id===id);
+  if(i<0)return null;
+  const o=Object.assign({},L[i]);
+  o[cle]=val;
+  /* changer de face : la couche à garder d'une face ne vaut rien pour l'autre */
+  if(cle==="cote"&&val!==L[i].cote)o.garde=-1;
+  L[i]=cpNormRegles([o],S.cu)[0];
+  L[i].id=id;
+  touch();
+  return L[i];
+}
+/* Une règle retirée ne laisse personne la viser : vias, nets et classes qui
+   la nommaient reviennent à l'héritage. */
+function cpSupprimer(id){
+  const L=S.stack.cp||[];
+  if(!L.some(r=>r.id===id))return false;
+  S.stack.cp=L.filter(r=>r.id!==id);
+  if(!S.stack.cp.length)delete S.stack.cp;
+  for(const v of S.vias)if(v.cp===id)delete v.cp;
+  const C=S.contraintes||{};
+  for(const t of [C.classes,C.nets])
+    for(const nom in (t||{}))
+      if(t[nom].cp===id){delete t[nom].cp;if(!Object.keys(t[nom]).length)delete t[nom];}
+  touch();
+  return true;
+}
+/* les couches qu'une règle peut garder : pas la face d'où l'on repasse */
+function cpGardesPossibles(cote){
+  const out=[];
+  for(let i=0;i<S.cu;i++)if(cote==="dessous"?i<S.cu-1:i>0)out.push(i);
+  return out;
+}
+function cpHtmlEmpilage(){
+  if(S.cu<2)return "";
+  const L=cpRegles(), perces=cpViasPerces();
+  let h='<div class="cat">Contre-perçage (back-drill)</div>';
+  L.forEach((r,i)=>{
+    const ces=perces.filter(c=>c.regle.id===r.id), f=ces.filter(c=>c.faute).length;
+    h+='<div class="prop two"><div><label>'+esc(r.id)+' · face percée</label><select id="skCpC'+i+'">'+
+       Object.keys(CP_COTES).map(k=>'<option value="'+k+'"'+(k===r.cote?" selected":"")+'>'+
+         esc(CP_COTES[k])+'</option>').join("")+'</select></div>'+
+       '<div><label>Couche à ne pas couper</label><select id="skCpG'+i+'">'+
+       '<option value="-1"'+(r.garde<0?" selected":"")+'>auto — la dernière empruntée</option>'+
+       cpGardesPossibles(r.cote).map(l=>'<option value="'+l+'"'+(l===r.garde?" selected":"")+'>'+
+         esc(cpNomCouche(l)+" "+((S.cuL[l]&&S.cuL[l].name)||cuLabel(l,S.cu)))+'</option>').join("")+
+       '</select></div></div>'+
+       '<div class="prop two">'+numProp("skCpS"+i,"Surperçage (mm)",fmt(r.sur,2),0.05,0)+
+       numProp("skCpR"+i,"Moignon résiduel admis (mm)",fmt(r.res,2),0.05,0)+'</div>'+
+       '<div class="stkinfo">'+(ces.length
+         ? '<b>'+ces.length+'</b> via(s) contre-percé(s), foret Ø perçage + '+fmt(r.sur,2)+' mm'+
+           (f?' — dont <b class="warn">'+f+'</b> impossible(s) : le DRC dit pourquoi.':'.')
+         : 'Aucun via ne la prend encore : choisissez-la sur un via, un net ou une classe.')+
+       ' <button class="tb" id="skCpX'+i+'">Supprimer '+esc(r.id)+'</button></div>';
+  });
+  h+='<div class="prop"><div class="row"><button class="tb" id="skCpAdd" title="Une règle de '+
+     'contre-perçage : la face d\'où l\'on repasse, la couche à garder, le surperçage et le moignon '+
+     'résiduel admis.">Nouvelle règle de contre-perçage</button></div></div>'+
+     '<div class="stkinfo">Le contre-perçage repasse un foret plus gros dans un via métallisé, '+
+     'depuis une face, et s\'arrête avant la couche à ne pas couper : le moignon du via tombe au '+
+     'moignon résiduel (0,1 à 0,25 mm d\'usage). Une règle vaut pour un via (Propriétés), un net ou '+
+     'une classe (Contraintes → Topologie et moignons). Les moignons, la simulation et la '+
+     'vérification de la carte en tiennent compte ; un fichier de perçage par paire de couches '+
+     '(…-BACKDRILL-B-In2.DRL) part dans l\'archive de fabrication, et le plan de fabrication les cote.</div>';
+  return h;
+}
+function cpBrancherEmpilage(){
+  const fini=msg=>{refreshPanels();draw();if(msg)hint(msg);};
+  cpRegles().forEach((r,i)=>{
+    const id=r.id;
+    const sur=(k,cle,lire)=>{const el=$(k+i);if(el)el.onchange=()=>{
+      const v=lire(el.value);
+      if(v==null){buildStackup();return;}
+      push();cpModifier(id,cle,v);fini();
+    };};
+    sur("skCpC","cote",v=>CP_COTES[v]?v:null);
+    sur("skCpG","garde",v=>Number.isFinite(+v)?+v:null);
+    const n=v=>{const x=parseFloat(String(v).replace(",","."));return Number.isFinite(x)&&x>=0?x:null;};
+    sur("skCpS","sur",n);
+    sur("skCpR","res",n);
+    const x=$("skCpX"+i);
+    if(x)x.onclick=()=>{push();cpSupprimer(id);fini("Règle de contre-perçage "+id+" retirée.");};
+  });
+  const add=$("skCpAdd");
+  if(add)add.onclick=()=>{
+    push();const r=cpAjouter();
+    fini("Règle "+r.id+" : "+cpLibelle(r)+". Choisissez-la sur un via, un net ou une classe.");
   };
 }
 /* buildStackup() suit le mouvement : les rôles de couche et les zones changent
@@ -1740,6 +1846,7 @@ function propsVia(box,v){
         rel.map(f=>opt(String(f.id),"toujours "+f.ref)).join("")+
         opt("0","jamais (via libre)")+'</select></div>';
     })()+
+    cpHtmlVia(v)+
     /* l'empilage physique donne la longueur réellement percée : un via borgne
        s'arrête en route, et c'est elle qui décide du rapport d'aspect */
     '<div class="empty" style="padding:6px 12px">'+
@@ -1779,6 +1886,33 @@ function propsVia(box,v){
     if(x==="auto")delete v.lie;else v.lie=+x;
     touch();refreshPanels();draw();
   };
+  if($("vCp"))$("vCp").onchange=()=>{
+    push();
+    const x=$("vCp").value;
+    if(x)v.cp=x;else delete v.cp;
+    touch();refreshPanels();draw();
+  };
+}
+/* Le contre-perçage d'un via : la règle qu'il prend (la sienne, sinon celle
+   de son net ou de sa classe), et ce qu'elle fait de son moignon. Rien tant
+   que l'empilage n'a pas de règle. */
+function cpHtmlVia(v){
+  const L=cpRegles();
+  if(!L.length)return "";
+  const h=cpRegleVia(Object.assign({},v,{cp:undefined}));
+  const cur=v.cp||"";
+  const opt=(val,txt)=>'<option value="'+esc(val)+'"'+(cur===val?" selected":"")+'>'+esc(txt)+'</option>';
+  const c=cpVia(v);
+  return '<div class="prop"><label>Contre-perçage</label><select id="vCp">'+
+    opt("","hérité — "+(h?h.r.id+" ("+h.src+")":"aucun"))+
+    L.map(r=>opt(r.id,cpLibelle(r))).join("")+
+    opt("non","aucun, même si le net ou la classe en demande un")+'</select></div>'+
+    (c?'<div class="empty" style="padding:6px 12px">'+
+       (c.faute?'<span class="warn">Contre-perçage impossible : '+esc(c.faute)+'.</span>'
+        :esc("Contre-percé "+CP_COTES[c.cote]+" jusque "+(c.cote==="dessous"?"sous ":"sur ")+
+             cpNomCouche(c.garde)+" : foret Ø "+fmt(c.diam,2)+" mm, "+fmt(c.prof,3)+
+             " mm de profondeur, moignon "+fmt(c.moignon,3)+" mm au lieu de "+fmt(c.moignon0,3)+" mm."))+
+       '</div>':"");
 }
 
 /* ==========================================================================
