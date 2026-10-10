@@ -65,7 +65,9 @@ js/20-placement-score.js panneau Qualité de placement & rotation assistée :
 js/26-variantes.js       variantes de montage reprises du schéma : choix de la
                          variante, empreintes non montées barrées, bom.csv et
                          positions.csv sans elles
-js/27-groupes.js         groupes (Unions) : composants et vias déplacés d'une pièce
+js/27-groupes.js         groupes (Unions) : composants et vias déplacés d'une pièce,
+                         retournés en miroir du groupe entier, copiés-collés en
+                         nouveau groupe avec leur cuivre interne
 js/28-placement-satellites.js  « Placement auto », second temps : découplage et
                          composants série posés contre leur broche
 js/29-draftsman.js       plans de fabrication et d'assemblage (Draftsman) :
@@ -1341,7 +1343,26 @@ repères sont refaits pour rester uniques (`R12` → `R13`), les nets des
 pastilles, pistes et vias sont gardés — dupliquer un découplage avec son
 routage n'aurait pas de sens si la copie se retrouvait en l'air. Ce qui sort du
 presse-papier repasse par `normFp` / `normTrack` / `normVia` / `normZone`, les
-mêmes normalisations que la lecture d'un fichier.
+mêmes normalisations que la lecture d'un fichier. Les liens des bouts de piste
+(`a1`/`a2`) et le boîtier d'un via marqué sont rangés en **rang dans la copie** :
+collés, ils visent les copies, et chaque via collé reçoit son identifiant.
+
+Un **groupe** copié entier (`js/27-groupes.js`) se colle en nouveau groupe
+(« G1 (copie) », puis « G1 (copie 2) »…), avec son **cuivre interne** même s'il
+n'était pas sélectionné : les pistes qui vont d'un membre à un autre, et les
+vias libres qu'elles traversent. Une piste qui aboutit à un composant hors du
+groupe, ou qui pend d'un seul membre, reste où elle est. `Ctrl+X` emporte ce
+cuivre interne avec le groupe.
+
+**F** sur un groupe le retourne **en miroir du groupe entier**, autour de l'axe
+vertical du centre de son cadre — à l'arrêt comme en plein glissement, comme
+**R**. Chaque composant change de face, sa place est symétrisée et sa rotation
+change de signe (θ → −θ, la convention de `fpXform` : chaque pastille tombe
+alors exactement au miroir de sa place). Les vias du groupe et la piste tendue
+entre ses membres passent au miroir et sur la **couche miroir** (F.Cu ↔ B.Cu,
+In1 ↔ In(n) ; un via borgne L1–L2 devient L(n−1)–L(n)) ; les pistes qui sortent
+suivent à 45° et sont jugées au relâchement. Un seul `Ctrl+Z` défait le geste.
+Un composant hors groupe se retourne toujours sur place, rotation gardée.
 
 Ctrl servant désormais à la sélection, les gestes de géométrie sont passés sur
 **Alt** : `Alt+clic` insère un point sur une piste sélectionnée ou un sommet sur

@@ -391,7 +391,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simRfZ","simRfExclure","simRfImporter","simRfOublierModele","simRfBroche",
   "simRfValeurSI","trkAt","simRfMasque",
   /* les liens des bouts de piste, et la transformation des boîtiers */
-  "transformFps","linkSync","fpXformInv","groupeEtendreSel","pcbAppliquerDefEmpreinte","padDist","updateRoute","hitTest",
+  "transformFps","linkSync","fpXformInv","groupeEtendreSel","groupeCadre","groupeCuivre","pcbAppliquerDefEmpreinte","padDist","updateRoute","hitTest",
   /* plans de fabrication et d'assemblage (29-draftsman.js) */
   "dfCfg","dfRegler","dfDocument","dfPdf","dfPdfOctets","dfChercher","dfSvg","dfWinAnsi","dfPdfLit",
   "dfLargeur","dfCouper","dfPercages","dfVue","dfOuvrir","dfFermer","dfExporter","DF_FORMATS","DF","dfImpedances",
@@ -1978,6 +1978,243 @@ T("groupes : enregistrés, relus ; un membre effacé les défait ; Ctrl+Maj+G di
     key("g",{ctrlKey:true,shiftKey:true});
     if(S.groupes.length!==0)throw new Error("Ctrl+Maj+G dissout le groupe");
   }finally{suiviFin(D.reg);}
+});
+/* Retourner un groupe (F) : le miroir du groupe entier autour de l'axe
+   vertical de son cadre. Une puce tournée d'un quart de tour, une capa à 30°,
+   la piste coudée entre elles, le via de masse du groupe, et une piste qui
+   sort vers un via lointain. */
+function miroirDecor(){
+  const reg=suiviDecor();
+  const U=mkFp("U1","","SOIC-8",8);U.x=10;U.y=20;U.rot=90;
+  const C=mkFp("C1","100n","0603",2);C.x=18;C.y=24;C.rot=30;
+  S.fps.push(U,C);touch();
+  const pad=(f,n)=>padsWorld(f).find(q=>String(q.n)===String(n));
+  const u8=pad(U,8), u1=pad(U,1), c1=pad(C,1), c2=pad(C,2);
+  const gv={x:c2.x+2,y:c2.y+4,d:0.6,drill:0.3,a:0,b:S.cu-1,net:"GND"};
+  const loin={x:u1.x-10,y:u1.y,d:0.6,drill:0.3,a:0,b:S.cu-1,net:"S"};
+  S.vias.push(gv,loin);
+  const m={x:(u8.x+c1.x)/2,y:u8.y};
+  S.tracks.push({l:0,net:"N",w:0.3,x1:u8.x,y1:u8.y,x2:m.x,y2:m.y},
+                {l:0,net:"N",w:0.3,x1:m.x,y1:m.y,x2:c1.x,y2:c1.y},
+                {l:0,net:"GND",w:0.3,x1:c2.x,y1:c2.y,x2:gv.x,y2:gv.y},
+                {l:0,net:"S",w:0.3,x1:u1.x,y1:u1.y,x2:loin.x,y2:loin.y});
+  touch();
+  clearSel();S.sel.fps.add(U.id);S.sel.fps.add(C.id);S.sel.vias.add(gv);
+  key("g",{ctrlKey:true});
+  clearSel();
+  return {reg,U,C,pad,gv,loin};
+}
+// l'état de chaque boîtier et de ses pastilles, en coordonnées monde
+function miroirReleve(fps){
+  return fps.map(f=>({id:f.id,ref:f.ref,x:f.x,y:f.y,rot:f.rot||0,side:f.side||0,
+    ps:padsWorld(f).map(q=>({n:q.n,x:q.x,y:q.y,c:Math.cos(q.rot),s:Math.sin(q.rot)}))}));
+}
+function miroirVerifie(R,cx){
+  for(const o of R){
+    const f=fpById(o.id), r=((-o.rot%360)+360)%360;
+    if((f.side||0)===o.side)throw new Error(o.ref+" doit changer de face");
+    if(Math.abs(f.x-(2*cx-o.x))>2e-3||Math.abs(f.y-o.y)>2e-3)
+      throw new Error(o.ref+" : place hors miroir "+f.x+","+f.y+" (axe x="+cx+")");
+    if(Math.abs(f.rot-r)>1e-3)throw new Error(o.ref+" : rotation "+f.rot+" au lieu de "+r);
+    const ps=padsWorld(f);
+    for(const q0 of o.ps){
+      const q=ps.find(p=>p.n===q0.n);
+      if(Math.abs(q.x-(2*cx-q0.x))>2e-3||Math.abs(q.y-q0.y)>2e-3)
+        throw new Error(o.ref+"."+q0.n+" : pastille hors miroir "+q.x+","+q.y);
+      if(Math.abs(Math.cos(q.rot)-q0.c)>1e-9||Math.abs(Math.sin(q.rot)+q0.s)>1e-9)
+        throw new Error(o.ref+"."+q0.n+" : l'orientation de la pastille n'est pas le miroir");
+    }
+  }
+}
+// les bouts des pistes d'un net, éventuellement passés au miroir ; comparés au micron près
+function miroirBouts(net,cx){
+  const k=(x,y)=>({x:cx==null?x:2*cx-x,y});
+  return S.tracks.filter(t=>t.net===net).flatMap(t=>[k(t.x1,t.y1),k(t.x2,t.y2)]);
+}
+function memesBouts(a,b){
+  const pris=new Set();
+  return a.length===b.length&&a.every(p=>{
+    const i=b.findIndex((q,j)=>!pris.has(j)&&Math.abs(p.x-q.x)<2e-3&&Math.abs(p.y-q.y)<2e-3);
+    pris.add(i);
+    return i>=0;
+  });
+}
+T("groupes : F retourne le groupe en miroir de son axe, cuivre interne sur la couche miroir",()=>{
+  const D=miroirDecor();
+  try{
+    S.sel.fps.add(D.U.id);groupeEtendreSel();
+    const b=groupeCadre(S.groupes[0]), cx=(b.x1+b.x2)/2;
+    const R=miroirReleve([D.U,D.C]), N=miroirBouts("N",cx), G=miroirBouts("GND",cx), N0=miroirBouts("N");
+    const g0={x:D.gv.x,y:D.gv.y};
+    flipSel();
+    miroirVerifie(R,cx);
+    if(Math.abs(D.gv.x-(2*cx-g0.x))>2e-3||Math.abs(D.gv.y-g0.y)>2e-3)
+      throw new Error("le via du groupe passe au miroir : "+D.gv.x+","+D.gv.y);
+    const fond=S.cu-1;
+    for(const t of S.tracks.filter(t=>t.net==="N"||t.net==="GND"))
+      if(t.l!==fond)throw new Error("la piste interne passe sur la couche miroir : "+t.l);
+    if(!memesBouts(miroirBouts("N"),N)||!memesBouts(miroirBouts("GND"),G))
+      throw new Error("les pistes internes sont le miroir de celles d'avant");
+    // la piste qui sort suit la broche, et reste sur sa couche : jugée, marquée à re-router
+    const u1=D.pad(D.U,1);
+    relie("S",{x:u1.x,y:u1.y},{x:D.loin.x,y:D.loin.y});
+    if(!S.aRerouter.some(g=>/changé de face/.test(g.msg)))
+      throw new Error("la piste sortante, restée dessus, est marquée : "+JSON.stringify(S.aRerouter.map(g=>g.msg)));
+    // un seul Ctrl+Z défait le geste
+    undo();
+    const U=fpById(D.U.id), C=fpById(D.C.id);
+    if(U.side||U.rot!==90||U.x!==10||C.side||C.rot!==30||C.x!==18)
+      throw new Error("Ctrl+Z rend le groupe : "+[U.side,U.rot,U.x,C.side,C.rot,C.x].join(","));
+    if(S.tracks.some(t=>t.l!==0))throw new Error("Ctrl+Z rend les pistes à leur couche");
+    // deux miroirs : retour au point de départ
+    clearSel();S.sel.fps.add(U.id);groupeEtendreSel();
+    flipSel();flipSel();
+    if(Math.abs(U.x-10)>2e-3||Math.abs(C.x-18)>2e-3||U.side||C.side||U.rot!==90||C.rot!==30)
+      throw new Error("deux F rendent le groupe : "+[U.x,C.x,U.side,C.side,U.rot,C.rot].join(","));
+    if(S.tracks.some(t=>t.l!==0)||!memesBouts(miroirBouts("N"),N0))
+      throw new Error("deux F rendent les pistes");
+    undo();
+  }finally{undo();undo();suiviFin(D.reg);}
+});
+/* Composant hors groupe : il se retourne sur place, rotation gardée, comme
+   avant les groupes. */
+T("F sur un composant seul : retourné sur place, rotation et place inchangées",()=>{
+  const reg=suiviDecor();
+  const C=mkFp("C1","","0603",2);C.x=20;C.y=20;C.rot=90;S.fps.push(C);touch();
+  const p1=padsWorld(C).find(q=>q.n===1);
+  clearSel();S.sel.fps.add(C.id);
+  try{
+    flipSel();
+    if(C.side!==1||C.rot!==90||C.x!==20||C.y!==20)
+      throw new Error("sur place : "+[C.side,C.rot,C.x,C.y].join(","));
+    // dessous, le repère local est en miroir : la pastille 1 passe de l'autre côté du centre
+    const q1=padsWorld(C).find(q=>q.n===1);
+    if(Math.abs(q1.x-p1.x)>2e-3||Math.abs((q1.y-20)+(p1.y-20))>2e-3)
+      throw new Error("pastille 1 : "+q1.x+","+q1.y+" (avant "+p1.x+","+p1.y+")");
+  }finally{undo();suiviFin(reg);}
+});
+T("groupes : F en plein glissement, le miroir du groupe ; Maj+Espace le rejoue, un Ctrl+Z le défait",()=>{
+  const D=miroirDecor();
+  const avant=S.moveEtch;
+  try{
+    S.moveEtch="glisser";
+    const p=prise(D.C);
+    fire("pointerdown",sc(p.x,p.y));
+    fire("pointermove",sc(p.x+1,p.y+2));
+    if(!S.sel.fps.has(D.U.id))throw new Error("le clic sur la capa prend le groupe");
+    const b=groupeCadre(S.groupes[0]), cx=(b.x1+b.x2)/2;
+    const R=miroirReleve([D.U,D.C]), N=miroirBouts("N",cx);
+    key("f");
+    miroirVerifie(R,cx);
+    if(!memesBouts(miroirBouts("N"),N))throw new Error("la piste interne part au miroir avec le groupe");
+    // une autre conduite : le geste repart de l'état d'avant, décalage et F rejoués
+    key(" ",{shiftKey:true});
+    miroirVerifie(R,cx);
+    fire("pointerup",sc(p.x+1,p.y+2));
+    miroirVerifie(R,cx);
+    const fond=S.cu-1, gv=S.vias.find(v=>v.net==="GND");
+    for(const t of S.tracks.filter(t=>t.net==="N"||t.net==="GND"))
+      if(t.l!==fond)throw new Error("la piste interne passe sur la couche miroir : "+t.l);
+    const c2=padsWorld(fpById(D.C.id)).find(q=>q.n===2);
+    relie("GND",{x:c2.x,y:c2.y},{x:gv.x,y:gv.y});
+    undo();
+    const U=fpById(D.U.id), C=fpById(D.C.id);
+    if(U.side||U.x!==10||U.y!==20||C.side||C.rot!==30)
+      throw new Error("un seul Ctrl+Z défait glissement et miroir : "+[U.side,U.x,U.y,C.side,C.rot].join(","));
+  }finally{S.moveEtch=avant;undo();suiviFin(D.reg);}
+});
+/* « étirer » n'étire que ce qui va vers le reste de la carte : la piste tendue
+   entre deux membres d'un groupe part en bloc, sinon R ou F la décrochait du via. */
+T("étirer : la piste entre deux membres d'un groupe part en bloc, R et F compris",()=>{
+  const D=miroirDecor();
+  const avant=S.moveEtch;
+  const relies=()=>{
+    const C=fpById(D.C.id), U=fpById(D.U.id), gv=S.vias.find(v=>v.net==="GND");
+    relie("GND",D.pad(C,2),gv);relie("N",D.pad(U,8),D.pad(C,1));
+  };
+  try{
+    S.moveEtch="etirer";
+    clearSel();S.sel.fps.add(D.C.id);groupeEtendreSel();
+    rotateSel();
+    relies();
+    flipSel();
+    relies();
+    if(S.tracks.some(t=>t.net!=="S"&&t.l!==S.cu-1))throw new Error("le cuivre interne passe dessous, même en « étirer »");
+  }finally{S.moveEtch=avant;undo();undo();undo();suiviFin(D.reg);}
+});
+T("groupes : F sur 4 couches, In1 ↔ In2, le via borgne passe de l'autre côté",()=>{
+  const cu0=S.cu;
+  setCuCount(4);
+  const reg=suiviDecor();
+  try{
+    const A=mkFp("R1","","",2);A.style="row";A.pitch=2.54;A.x=10;A.y=10;
+    const B=mkFp("R2","","",2);B.style="row";B.pitch=2.54;B.x=20;B.y=10;B.rot=90;
+    S.fps.push(A,B);touch();
+    const a2=padsWorld(A).find(q=>q.n===2), b1=padsWorld(B).find(q=>q.n===1), b2=padsWorld(B).find(q=>q.n===2);
+    const bv={x:b2.x+3,y:b2.y,d:0.6,drill:0.3,a:0,b:1,net:"M"};
+    const ti={l:1,net:"N",w:0.3,x1:a2.x,y1:a2.y,x2:b1.x,y2:b1.y};
+    const tb={l:0,net:"M",w:0.3,x1:b2.x,y1:b2.y,x2:bv.x,y2:bv.y};
+    S.vias.push(bv);S.tracks.push(ti,tb);touch();
+    clearSel();S.sel.fps.add(A.id);S.sel.fps.add(B.id);S.sel.vias.add(bv);
+    key("g",{ctrlKey:true});
+    flipSel();
+    if(ti.l!==2)throw new Error("In1 passe en In2 : "+ti.l);
+    if(tb.l!==3)throw new Error("F.Cu passe en B.Cu : "+tb.l);
+    if(bv.a!==2||bv.b!==3)throw new Error("le via borgne L1–L2 devient L3–L4 : "+bv.a+"–"+bv.b);
+    if(B.rot!==270||!A.side||!B.side)throw new Error("R2 à 90° passe à 270°, dessous : "+B.rot);
+    const n2=padsWorld(B).find(q=>q.n===2);
+    relie("M",{x:n2.x,y:n2.y},{x:bv.x,y:bv.y});
+    if(S.aRerouter.length)throw new Error("rien à re-router : "+S.aRerouter.map(g=>g.msg));
+    undo();undo();
+  }finally{setCuCount(cu0);suiviFin(reg);}
+});
+/* Copier-coller un groupe : un nouveau groupe, avec son cuivre interne. Dans
+   le décor du découplage, la puce, la capa et le via de masse forment le
+   groupe ; la piste vers le via d'alimentation en sort. */
+T("groupes : copier-coller donne un nouveau groupe, pistes internes copiées et liées aux copies",()=>{
+  const D=decouplage();
+  try{
+    clearSel();S.sel.fps.add(D.X.id);S.sel.fps.add(D.C.id);S.sel.vias.add(D.gnd);
+    key("g",{ctrlKey:true});
+    // la sélection ne nomme que les composants : le via et les pistes du groupe viennent d'eux-mêmes
+    clearSel();S.sel.fps.add(D.X.id);S.sel.fps.add(D.C.id);
+    const nf=S.fps.length, nt=S.tracks.length, nv=S.vias.length;
+    if(!copySelPcb())throw new Error("copie refusée");
+    S.mouse={x:60,y:60};
+    pasteClipPcb();
+    if(S.fps.length!==nf+2)throw new Error("deux composants collés : "+(S.fps.length-nf));
+    if(S.vias.length!==nv+1)throw new Error("le via du groupe vient, pas celui d'alimentation : "+(S.vias.length-nv));
+    if(S.tracks.length!==nt+2)throw new Error("puce → capa et capa → masse viennent, pas la piste qui sort : "+(S.tracks.length-nt));
+    const X2=S.fps.find(f=>S.sel.fps.has(f.id)&&f.pins===8), C2=S.fps.find(f=>S.sel.fps.has(f.id)&&f.pins===2);
+    const v2=S.vias.find(v=>S.sel.vias.has(v));
+    const g=S.groupes.find(g=>g.nom==="G1 (copie)");
+    if(S.groupes.length!==2||!g)throw new Error("un nouveau groupe « G1 (copie) » : "+S.groupes.map(g=>g.nom));
+    if(g.fps.length!==2||g.fps.indexOf(X2.id)<0||g.fps.indexOf(C2.id)<0||g.vias[0]!==v2.id)
+      throw new Error("le nouveau groupe tient les copies : "+JSON.stringify(g));
+    if(v2.id===D.gnd.id)throw new Error("le via collé a son propre identifiant");
+    // les liens des bouts visent les copies
+    const tx=[...S.sel.tracks].find(t=>t.net==="+3V3"), tg=[...S.sel.tracks].find(t=>t.net==="GND");
+    const vu=a=>a?(a.v!=null?"v"+a.v:a.f+"."+a.p):"-";
+    if(vu(tx.a1)!==X2.id+".8"||vu(tx.a2)!==C2.id+".1")throw new Error("puce → capa : "+vu(tx.a1)+" "+vu(tx.a2));
+    if(vu(tg.a1)!==C2.id+".2"||vu(tg.a2)!=="v"+v2.id)throw new Error("capa → masse : "+vu(tg.a1)+" "+vu(tg.a2));
+    const p=n=>padsWorld(n[0]).find(q=>q.n===n[1]);
+    relie("+3V3",p([X2,8]),p([C2,1]));relie("GND",p([C2,2]),v2);
+    // la copie se déplace d'un bloc, comme l'original
+    clearSel();S.sel.fps.add(C2.id);groupeEtendreSel();
+    if(!S.sel.fps.has(X2.id)||!S.sel.vias.has(v2))throw new Error("un clic sur la copie prend le nouveau groupe");
+    // un second collage : « G1 (copie 2) »
+    clearSel();S.sel.fps.add(D.X.id);groupeEtendreSel();
+    copySelPcb();S.mouse={x:60,y:90};pasteClipPcb();
+    if(!S.groupes.some(g=>g.nom==="G1 (copie 2)"))throw new Error("second collage : "+S.groupes.map(g=>g.nom));
+    undo();undo();
+    if(S.groupes.length!==1||S.fps.length!==nf)throw new Error("Ctrl+Z retire copies et groupes");
+    // couper le groupe emporte son cuivre interne, pas la piste qui sort
+    clearSel();S.sel.fps.add(D.C.id);groupeEtendreSel();
+    cutSelPcb();
+    if(S.fps.length!==nf-2||S.tracks.length!==nt-2||S.tracks[0].net!=="+3V3")
+      throw new Error("Ctrl+X : "+S.fps.length+" composant(s), "+S.tracks.length+" piste(s)");
+    undo();
+  }finally{undo();suiviFin(D.reg);}
 });
 /* Les vias de sortie : le via de masse au pied de la capa part avec elle. */
 function sortieDecor(){
