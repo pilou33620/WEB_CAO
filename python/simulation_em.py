@@ -2,6 +2,17 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 5.0.1
+# Date: 2026-10-10
+# Explication: LA DISPERSION N'EST PLUS COMPTEE DEUX FOIS DANS LA CASCADE.
+#   Le cache des sections gardait en « eps_eff » la permittivite effective
+#   DEJA DISPERSEE (Getsinger au point central), et la cascade la repassait a
+#   Getsinger a chaque frequence avec le Z0 statique : en microruban,
+#   eps_eff(f) montait trop, et avec lui le retard et la desadaptation, d'autant
+#   plus que f s'eloignait du point central. Le cache garde maintenant aussi
+#   « eps_eff_statique », que la cascade emploie. La triplaque n'etait pas
+#   touchee (pas de Getsinger). Defaut anterieur a la 5.0.0.
+#
 # Version: 5.0.0
 # Date: 2026-10-10
 # Explication: LES OPTIONS DE ligne_mom 2.7.0 SONT BRANCHEES, ET LA MUTUELLE
@@ -32,8 +43,7 @@
 #   s'ecarte du defaut. Le format d'entree reste « cao-sim-em-3 » : les cles
 #   sont facultatives, et sans elles le calcul ne change que par le point 1
 #   (et le point 4 au-dela du seuil).
-#   RESTE (non corrige ici, signale) : la cascade passe a Getsinger le Z0
-#   STATIQUE avec l'eps_eff DEJA DISPERSE au point central.
+#   (La double dispersion signalee ici est corrigee en 5.0.1.)
 # Fonctions ajoutees : options_modele, _rugosite_couche, _dielectrique,
 #   _milieu_causal, _geometrie_pertes, _ligne_a, _abcd_via,
 #   _modele_via_resolu, _via_de_la_partenaire, _inductances_paire_vias,
@@ -723,7 +733,7 @@ except Exception as _exc:                              # noqa: BLE001
 
 FORMAT = "cao-sim-em-3"
 FORMAT_RESULTAT = "cao-sim-em-resultat-5"
-VERSION = "5.0.0"
+VERSION = "5.0.1"
 VERSION_MOTEURS = {
     "simulation_em": VERSION,
     "ligne_mom": getattr(tl, "VERSION", "2.5.0") if tl is not None else "indisponible",
@@ -6595,6 +6605,7 @@ def simuler(doc, journal=None, garder_abcd=False, freqs_imposees=None):
                         r["z0"], r["eps_eff"], info, fc, largeur * 1e-3,
                         ep * 1e-3, kw, opts)
                     cache[cle] = {"z0": z_f, "z0_statique": r["z0"],
+                                  "eps_eff_statique": r["eps_eff"],
                                   "kw_pertes": kw,
                                   "eps_eff": eps_f, "alpha": a_c + a_d,
                                   "alpha_c": a_c, "alpha_d": a_d,
@@ -6810,8 +6821,11 @@ def simuler(doc, journal=None, garder_abcd=False, freqs_imposees=None):
             # 35 um -- d'un facteur 4 sur du 9 um sous la profondeur de peau.
             # LES OPTIONS DE LA SECTION PARTENT AUSSI, pour la meme raison :
             # `_ligne_a` est le calcul du point central, frequence en plus.
+            # LE COUPLE STATIQUE, l'un et l'autre : « eps_eff » du cache est
+            # deja disperse au point central, et Getsinger le redispersait
+            # (dispersion comptee deux fois, decalage croissant avec f).
             eps_f, z_f, a_c, a_d = _ligne_a(
-                c["z0_statique"], c["eps_eff"], info, float(f),
+                c["z0_statique"], c["eps_eff_statique"], info, float(f),
                 seg["largeur"] * 1e-3, ep * 1e-3, c["kw_pertes"], opts)
             beta = 2 * math.pi * float(f) * math.sqrt(eps_f) / tl.C_0
 

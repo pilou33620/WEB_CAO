@@ -5801,6 +5801,29 @@ T("la mutuelle des futs de la paire : plus proches, L impair plus bas",
   la_mutuelle_des_futs_baisse_l_impair)
 
 
+
+def la_cascade_ne_disperse_qu_une_fois():
+    """simulation_em 5.0.1 : en microruban, la cascade a la frequence du point
+    central rend la phase de la permittivite effective du TABLEAU (Getsinger
+    une fois). Avant, elle redispersait l'eps_eff deja disperse : beta trop
+    grand, d'autant plus que f est haute. 4 mm : beta l reste sous pi a
+    10 GHz, ou arccosh se lit sans ambiguite."""
+    lg, fc = 0.004, 1e9
+    for f in (fc, 10e9):
+        d = _doc_via([_piste(0, 0, lg * 1e3, 0, 2, largeur=0.3)],
+                     couches=[dict(c) for c in _FACE_SEULE], fc=f)
+        r = _se.simuler(d, garder_abcd=True, freqs_imposees=[f])
+        seg = r["segments"][0]
+        beta = _gamma(r["abcd"][0], lg).imag
+        eps_cascade = (beta * _tl.C_0 / (2 * np.pi * f)) ** 2
+        proche(eps_cascade, seg["eps_eff"], 1e-3,
+               "eps_eff de la cascade a %.0f GHz contre le tableau" % (f / 1e9))
+
+
+T("la cascade ne disperse le microruban qu'une fois (Getsinger)",
+  la_cascade_ne_disperse_qu_une_fois)
+
+
 print("\n" + "-" * 62)
 print("  %d cas, %s" % (ok + ko, "tous passes" if not ko else "%d en echec" % ko))
 sys.exit(1 if ko else 0)
