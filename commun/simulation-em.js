@@ -16527,10 +16527,23 @@ const SIM_OEIL={
      « haute impédance ». */
   saisie:{mode:"simple", debit:100e6, tr:1e-9, vh:3.3, vb:0, rs:40, rl:0,
           cl:5e-12, motif:"prbs7", egaliseur:true, ffe:"", dfe:0,
-          setup:0, hold:0},
+          setup:0, hold:0,
+          /* LA GIGUE, LE BRUIT, LA DIAPHONIE : à zéro, rien ne part et l'œil
+             est celui d'avant. rj en s rms, dj en s crête à crête, bruit en
+             V rms. */
+          rj:0, dj:0, bruit:0, ber:1e-12, xt:false, xtSens:"inconnu"},
+  /* LES FICHIERS IBIS, lus dans la page et envoyés EN TEXTE avec la
+     requête : le serveur ne garde rien. {fichier, texte, modeles, modele,
+     coin}, ou null. */
+  ibis:{em:null, rx:null},
   u:{debit:"Mb/s", tr:"ns"},
   res:null, err:"", occupe:false, doc:null, notes:[]
 };
+const SIM_OEIL_BERS=[1e-6,1e-9,1e-12,1e-15];
+const SIM_OEIL_SENS=[
+  {cle:"inconnu", nom:"sens inconnu (le pire)"},
+  {cle:"meme", nom:"même sens (FEXT)"},
+  {cle:"oppose", nom:"sens opposé (NEXT)"}];
 const SIM_OEIL_UNITES_DEBIT=[{cle:"Mb/s",f:1e6},{cle:"Gb/s",f:1e9}];
 const SIM_OEIL_FIAB={
   corrobore:{nom:"recoupé", cls:"simBadgeOk"},
@@ -16590,6 +16603,7 @@ function simOeilAppliquerGabarit(id){
   s.dfe=((g.egaliseur||{}).dfe||{}).prises||0;
   s.egaliseur=true;
   s.setup=g.setup||0; s.hold=g.hold||0;
+  s.ber=g.ber||1e-12;
   SIM_OEIL.u.debit=g.debit>=1e9?"Gb/s":"Mb/s";
   SIM_OEIL.u.tr=(em.tr||0)<1e-9?"ps":"ns";
 }
@@ -16696,11 +16710,95 @@ function simCorpsOeil(){
          simChamp("simOeilHold","Temps de hold du récepteur, après l'échantillonnage")+
          '<span class="simU">ns</span>'+
        "</div>";
+  h+=simOeilCorpsStat()+simOeilCorpsIbis();
   h+='<div class="pnl-bar simBarFixe">'+
        '<button class="tb mini on" id="simOeilGo" title="Calculer l\'œil de la sélection">▶ Calculer</button>'+
        '<button class="tb mini" id="simOeilCsv" title="Les mesures, l\'œil pire cas et la réponse à un bit">.csv</button>'+
      "</div>";
   return h;
+}
+
+/* LA GIGUE, LE BRUIT ET LA DIAPHONIE. Tout à zéro, rien ne part : l'œil
+   reste celui de la superposition et du pire cas. Dès qu'une valeur est
+   saisie, le serveur ajoute l'œil STATISTIQUE — contours de taux d'erreur
+   et baignoire —, et c'est sur le contour du taux visé que le gabarit se
+   juge aussi. */
+function simOeilCorpsStat(){
+  const s=SIM_OEIL.saisie;
+  return '<div class="pnl-bar simBarF">'+
+      '<span class="pnl-lbl">Gigue</span>'+
+      '<span class="pnl-lbl">RJ</span>'+
+      simChamp("simOeilRj","Gigue aléatoire de l'émetteur, écart-type (ps rms). Gaussienne : c'est elle qui ferme l'œil à mesure que le taux d'erreur visé descend.")+
+      '<span class="simU">ps rms</span>'+
+      '<span class="pnl-lbl">DJ</span>'+
+      simChamp("simOeilDj","Gigue déterministe, crête à crête (ps), en double Dirac : la gigue bornée de l'émetteur (DCD, gigue périodique) que l'interférence entre bits ne compte pas déjà.")+
+      '<span class="simU">ps c-c</span>'+
+      '<span class="pnl-lbl">Bruit</span>'+
+      simChamp("simOeilBruit","Bruit gaussien du récepteur, ramené à l'échantillonneur (mV rms).")+
+      '<span class="simU">mV rms</span>'+
+      '<span class="pnl-lbl">BER</span>'+
+      '<select id="simOeilBer" class="simUSel" title="Taux d\'erreur visé : le contour sur lequel le gabarit se juge (10⁻¹² pour PCIe et SATA).">'+
+        SIM_OEIL_BERS.map(b=>'<option value="'+b+'"'+(Math.abs(Math.log10(b)-Math.log10(s.ber))<0.01?" selected":"")+">"+simOeilBer(b)+"</option>").join("")+
+      "</select>"+
+    "</div>"+
+    '<div class="pnl-bar simBarF">'+
+      '<span class="pnl-lbl">Diaphonie</span>'+
+      simXtCase("simOeilXt","voisines de la sélection",
+        "Chaque voisine qui longe la piste sur sa couche devient un agresseur borné : son NEXT ou son FEXT (niveau 2 de l'onglet Crosstalk) fois l'excursion de la victime, ajouté au pire cas et à l'œil statistique.")+
+      '<select id="simOeilXtSens" class="simUSel" title="Le sens dans lequel les voisines émettent : même sens que la victime, c\'est leur FEXT qui arrive au récepteur ; sens opposé, leur NEXT.">'+
+        SIM_OEIL_SENS.map(x=>'<option value="'+x.cle+'"'+(s.xtSens===x.cle?" selected":"")+">"+simEsc(x.nom)+"</option>").join("")+
+      "</select>"+
+    "</div>";
+}
+/* 10⁻¹² plutôt que 1e-12 : c'est ainsi qu'une norme l'écrit. */
+function simOeilBer(b){
+  if(!(b>0))return "—";
+  const e=Math.round(Math.log10(b)), sup="⁰¹²³⁴⁵⁶⁷⁸⁹";
+  const ch=String(Math.abs(e)).split("").map(c=>sup[+c]).join("");
+  return "10"+(e<0?"⁻":"")+ch;
+}
+
+/* LES MODÈLES IBIS. Le fichier est lu ICI (FileReader), sa liste de [Model]
+   tirée d'une lecture légère pour le menu, et le texte entier part avec la
+   requête : c'est le serveur (`python/ibis.py`) qui le lit pour de bon et
+   qui refuse, avec la ligne fautive, ce qu'il ne comprend pas. */
+function simOeilIbisModeles(txt){
+  const out=[];
+  let cour=null;
+  for(const brute of String(txt||"").split(/\r?\n/)){
+    const l=brute.replace(/\|.*$/,"").trim();
+    const m=/^\[model\]\s+(\S+)/i.exec(l);
+    if(m){cour={nom:m[1], type:""}; out.push(cour); continue;}
+    if(/^\[/.test(l)&&!/^\[(pullup|pulldown|gnd clamp|power clamp|ramp|rising waveform|falling waveform|voltage range|pullup reference|pulldown reference|power clamp reference|gnd clamp reference)/i.test(l))
+      cour=null;
+    const t=/^model_type\s+(\S+)/i.exec(l);
+    if(t&&cour)cour.type=t[1];
+  }
+  return out;
+}
+function simOeilCorpsIbis(){
+  const ligne=(cle,role)=>{
+    const f=SIM_OEIL.ibis[cle];
+    let h='<span class="pnl-lbl">'+role+'</span>';
+    if(!f)
+      return h+'<button class="tb mini" id="simOeilIbis_'+cle+'" title="Charger un fichier .ibs : le tampon '+
+        (cle==="em"?"émetteur remplace le générateur de Thévenin":"récepteur apporte sa capacité C_comp et ses diodes")+
+        '">fichier .ibs…</button>';
+    h+='<span class="simU" title="'+simEsc(f.fichier)+'">'+simEsc(f.fichier)+"</span>"+
+       '<select id="simOeilIbisMod_'+cle+'" class="simUSel" title="Le [Model] du fichier">'+
+       f.modeles.map(m=>'<option value="'+simEsc(m.nom)+'"'+(m.nom===f.modele?" selected":"")+">"+
+         simEsc(m.nom)+(m.type?" ("+simEsc(m.type)+")":"")+"</option>").join("")+
+       "</select>"+
+       '<select id="simOeilIbisCoin_'+cle+'" class="simUSel" title="Le coin du modèle : typ, min (faible, lent), max (fort, rapide)">'+
+       ["typ","min","max"].map(c=>'<option value="'+c+'"'+(c===f.coin?" selected":"")+">"+c+"</option>").join("")+
+       "</select>"+
+       '<button class="simBtnClear" id="simOeilIbisX_'+cle+'" title="Retirer le modèle IBIS">✕</button>';
+    return h;
+  };
+  return '<div class="pnl-bar simBarF">'+
+      '<span class="pnl-lbl">IBIS</span>'+ligne("em","émetteur")+ligne("rx","récepteur")+
+    "</div>"+
+    '<input type="file" id="simOeilIbisFichier" style="display:none" accept=".ibs,.ibis,.txt">';
 }
 
 function simOeilEcrire(){
@@ -16716,6 +16814,11 @@ function simOeilEcrire(){
   pose("simOeilDfe",String(s.dfe||0));
   pose("simOeilSetup",simNbLibre(s.setup*1e9));
   pose("simOeilHold",simNbLibre(s.hold*1e9));
+  pose("simOeilRj",s.rj>0?simNbLibre(s.rj*1e12):"");
+  pose("simOeilDj",s.dj>0?simNbLibre(s.dj*1e12):"");
+  pose("simOeilBruit",s.bruit>0?simNbLibre(s.bruit*1e3):"");
+  const xt=simEl("simOeilXt");
+  if(xt)xt.checked=!!s.xt;
   const eg=simEl("simOeilEg");
   if(eg)eg.checked=!!s.egaliseur;
   simOeilAmplitude();
@@ -16744,6 +16847,12 @@ function simOeilLire(){
   const su=lu("simOeilSetup",s.setup*1e9,0); if(simEl("simOeilSetup"))s.setup=su==null?0:su*1e-9;
   const ho=lu("simOeilHold",s.hold*1e9,0); if(simEl("simOeilHold"))s.hold=ho==null?0:ho*1e-9;
   const eg=simEl("simOeilEg"); if(eg)s.egaliseur=!!eg.checked;
+  const rj=lu("simOeilRj",s.rj*1e12,0); s.rj=rj==null?0:rj*1e-12;
+  const dj=lu("simOeilDj",s.dj*1e12,0); s.dj=dj==null?0:dj*1e-12;
+  const br=lu("simOeilBruit",s.bruit*1e3,0); s.bruit=br==null?0:br*1e-3;
+  const ber=simEl("simOeilBer"); if(ber)s.ber=parseFloat(ber.value)||1e-12;
+  const xt=simEl("simOeilXt"); if(xt)s.xt=!!xt.checked;
+  const sens=simEl("simOeilXtSens"); if(sens)s.xtSens=sens.value;
   return s;
 }
 /* Ce qui arrive à la charge en continu : le pont diviseur Rs / RL. C'est le
@@ -16768,6 +16877,17 @@ function simOeilReglages(){
   if(c)o.ffe=c.split(/[\s;]+/).filter(Boolean).map(x=>parseFloat(x.replace(",",".")));
   else o.ffe=[1];
   if(g&&g.masque&&g.masque.type==="seuils"){o.setup=s.setup; o.hold=s.hold;}
+  /* LE FACULTATIF NE PART QUE S'IL EST SAISI : sans lui, la requête est
+     celle d'avant, et la réponse aussi. */
+  if(s.rj>0)o.rj=s.rj;
+  if(s.dj>0)o.dj=s.dj;
+  if(s.bruit>0)o.bruit_v=s.bruit;
+  if(s.rj>0||s.dj>0||s.bruit>0||s.xt)o.ber_cible=s.ber;
+  if(s.xt){o.agresseurs_auto=true; o.agresseurs_sens=s.xtSens;}
+  for(const [cle,champ] of [["em","ibis_emetteur"],["rx","ibis_recepteur"]]){
+    const f=SIM_OEIL.ibis[cle];
+    if(f)o[champ]={texte:f.texte, fichier:f.fichier, modele:f.modele, coin:f.coin};
+  }
   return o;
 }
 
@@ -16801,6 +16921,51 @@ function simBrancherOeil(){
     pose(id,"oninput",function(){simOeilLire();simOeilAmplitude();});
   pose("simOeilGo","onclick",simOeilGo);
   pose("simOeilCsv","onclick",simOeilExportCsv);
+  pose("simOeilBer","onchange",function(){SIM_OEIL.saisie.ber=parseFloat(this.value)||1e-12;});
+  pose("simOeilXtSens","onchange",function(){SIM_OEIL.saisie.xtSens=this.value;});
+  pose("simOeilXt","onchange",function(){SIM_OEIL.saisie.xt=!!this.checked;});
+  /* UN SEUL SÉLECTEUR DE FICHIER pour les deux bouts : `cible` dit lequel
+     on charge. */
+  let cible=null;
+  for(const cle of ["em","rx"]){
+    pose("simOeilIbis_"+cle,"onclick",function(){
+      cible=cle;
+      const fi=simEl("simOeilIbisFichier");
+      if(fi)fi.click();
+    });
+    pose("simOeilIbisX_"+cle,"onclick",function(){
+      simOeilLire(); SIM_OEIL.ibis[cle]=null; SIM_OEIL.res=null; simPoser();
+    });
+    pose("simOeilIbisMod_"+cle,"onchange",function(){
+      const f=SIM_OEIL.ibis[cle]; if(f)f.modele=this.value;
+    });
+    pose("simOeilIbisCoin_"+cle,"onchange",function(){
+      const f=SIM_OEIL.ibis[cle]; if(f)f.coin=this.value;
+    });
+  }
+  pose("simOeilIbisFichier","onchange",function(){
+    const f=this.files&&this.files[0], cle=cible;
+    this.value="";
+    if(!f||!cle)return;
+    const lr=new FileReader();
+    lr.onload=()=>{
+      const txt=String(lr.result||"");
+      const modeles=simOeilIbisModeles(txt);
+      if(!modeles.length){
+        SIM_OEIL.err="« "+f.name+" » n'a aucun [Model] : est-ce bien un fichier IBIS ?";
+        simRendre();
+        return;
+      }
+      /* Le modèle proposé : un émetteur pour l'émetteur, une entrée pour le
+         récepteur, le premier sinon. */
+      const voulu=modeles.find(m=>cle==="rx"?/^input/i.test(m.type):!/^input/i.test(m.type))||modeles[0];
+      simOeilLire();
+      SIM_OEIL.ibis[cle]={fichier:f.name, texte:txt, modeles, modele:voulu.nom, coin:"typ"};
+      SIM_OEIL.res=null; SIM_OEIL.err="";
+      simPoser();
+    };
+    lr.readAsText(f);
+  });
   if(simOeilMode()==="diff"){
     simDiffPistesBrancher(function(){simRendre();});
     simDiffSuivreSelection();
@@ -16885,6 +17050,10 @@ function simOeilVerdict(r){
         ' <span>'+(n?n+" échantillon(s) dans le masque":"")+
         (n&&hors?", ":"")+(hors?hors+" hors des limites hautes et basses":"")+
         " · marge "+simNb(100*m.marge,0)+" %</span></p>";
+    if(m.marge_ber!=null&&m.marge_ber<0)
+      return '<p class="simVerdict limite">Gabarit respecté en PRBS, pas à '+
+        simOeilBer(m.ber_cible)+' <span>marge PRBS '+simNb(100*m.marge,0)+
+        " %, à "+simOeilBer(m.ber_cible)+" "+simNb(100*m.marge_ber,0)+" %</span></p>";
     if(m.marge_pire<0)
       return '<p class="simVerdict limite">Gabarit respecté en PRBS, pas au pire cas'+
         ' <span>marge PRBS '+simNb(100*m.marge,0)+" %, pire cas "+
@@ -16981,6 +17150,21 @@ function simOeilFigure(r){
     }
     if(dd)svg+='<path class="simOeilPire" d="'+dd+'"/>';
   }
+  /* LES CONTOURS DE TAUX D'ERREUR, du plus ouvert au plus fermé : là où
+     l'œil statistique laisse 10⁻⁶, 10⁻⁹… erreurs par bit. */
+  const st=r.statistique;
+  if(st)st.contours.forEach((c,k)=>{
+    for(const cle of ["haut","bas"]){
+      let dd="", leve=true;
+      for(let i=0;i<st.tau.length;i++){
+        const v=c[cle][i];
+        if(v==null||v<lo||v>hi){leve=true;continue;}
+        dd+=(leve?"M":"L")+simXY(X(st.tau[i]))+" "+simXY(Y(v));
+        leve=false;
+      }
+      if(dd)svg+='<path class="simOeilContour c'+Math.min(k,4)+'" d="'+dd+'"/>';
+    }
+  });
   /* Le gabarit, au centre, et ses limites hautes et basses. */
   const g=r.gabarit;
   if(g&&g.polygone&&g.polygone.length){
@@ -16996,8 +17180,45 @@ function simOeilFigure(r){
     '<p class="simLeg simNote">'+
       '<span class="simOeilLegD"></span> densité des traces (PRBS, échelle log) · '+
       '<span class="simOeilLegP"></span> œil pire cas · '+
+      (st?'<span class="simOeilLegC"></span> contours '+st.contours.map(c=>simOeilBer(c.ber)).join(", ")+" · ":"")+
       (g&&g.polygone&&g.polygone.length?'<span class="simOeilLegM"></span> gabarit · ':"")+
       '<span class="simOeilLegS"></span> seuil</p>';
+}
+/* LA BAIGNOIRE : le taux d'erreur au seuil, phase par phase, en échelle
+   logarithmique. Le fond de la cuve est la largeur d'œil à ce taux. */
+function simOeilBaignoire(r){
+  const st=r.statistique, b=st.baignoire;
+  const W=simLargeurTrace(), H=170, mg={g:58,d:12,h:10,b:30};
+  const lmin=-18, lmax=0;
+  const X=t=>mg.g+(W-mg.g-mg.d)*(t+0.5);
+  const Y=v=>{const l=Math.max(lmin,Math.min(lmax,Math.log10(Math.max(v,1e-40))));
+              return mg.h+(H-mg.h-mg.b)*(lmax-l)/(lmax-lmin);};
+  let svg='<svg class="simCourbe simOeil simOeilBain" viewBox="0 0 '+W+' '+H+'" '+
+          'preserveAspectRatio="xMidYMid meet" role="img" '+
+          'aria-label="Baignoire : taux d\'erreur en fonction de la phase">';
+  for(let l=lmin;l<=lmax;l+=3){
+    const y=Y(Math.pow(10,l));
+    svg+='<line class="simGrille" x1="'+mg.g+'" y1="'+simXY(y)+'" x2="'+(W-mg.d)+'" y2="'+simXY(y)+'"/>'+
+         '<text class="simCote" x="'+(mg.g-6)+'" y="'+simXY(y+3.5)+'" text-anchor="end">'+
+         (l===0?"1":simOeilBer(Math.pow(10,l)))+"</text>";
+  }
+  for(const t of [-0.5,-0.25,0,0.25,0.5]){
+    const x=X(t);
+    svg+='<line class="simGrille" x1="'+simXY(x)+'" y1="'+mg.h+'" x2="'+simXY(x)+'" y2="'+(H-mg.b)+'"/>'+
+         '<text class="simCote" x="'+simXY(x)+'" y="'+(H-mg.b+13)+'" text-anchor="middle">'+
+         (t===0?"0":simNb(t,2))+" UI</text>";
+  }
+  const yc=Y(st.ber_cible);
+  svg+='<line class="simOeilLimite" x1="'+mg.g+'" y1="'+simXY(yc)+'" x2="'+(W-mg.d)+'" y2="'+simXY(yc)+'"/>';
+  let dd="";
+  for(let i=0;i<b.tau.length;i++)
+    dd+=(i?"L":"M")+simXY(X(b.tau[i]))+" "+simXY(Y(b.ber[i]));
+  svg+='<path class="simOeilBaignoire" d="'+dd+'"/>';
+  return svg+"</svg>"+
+    '<p class="simLeg simNote">Baignoire : taux d\'erreur au seuil, phase par phase · '+
+    '<span class="simOeilLegM"></span> taux visé '+simOeilBer(st.ber_cible)+
+    " — largeur "+simNb(r.mesures.largeur_ber_ui,2)+" UI<br><small>"+
+    simEsc((st.hypotheses||[]).join(" "))+"</small></p>";
 }
 function simOeilPas(brut){
   const p=Math.pow(10,Math.floor(Math.log10(Math.max(brut,1e-12))));
@@ -17044,10 +17265,17 @@ function simRendreOeil(){
   if(g&&g.polygone&&g.polygone.length)
     lignes.push(["Marge sur le gabarit", simNb(100*m.marge,0)+" %",
                  simNb(100*m.marge_pire,0)+" %"]);
+  const st=r.statistique;
+  if(st){
+    lignes[0].push(simOeilV(m.hauteur_ber));
+    lignes[1].push(simNb(m.largeur_ber_ui,2)+" UI ("+simOeilT(m.largeur_ber_ui*ui)+")");
+    if(lignes[2])lignes[2].push(m.marge_ber!=null?simNb(100*m.marge_ber,0)+" %":"—");
+  }
   h+='<table class="simTab"><tr><th></th><th>PRBS ('+simEsc(r.motif.toUpperCase())+
-     ")</th><th>pire cas</th></tr>"+
-     lignes.map(l=>"<tr><td>"+l[0]+"</td><td>"+l[1]+"</td><td>"+l[2]+"</td></tr>").join("")+
+     ")</th><th>pire cas</th>"+(st?"<th>à "+simOeilBer(m.ber_cible)+"</th>":"")+"</tr>"+
+     lignes.map(l=>"<tr>"+l.map((x,i)=>"<td>"+x+"</td>").join("")+"</tr>").join("")+
      "</table>";
+  if(st)h+=simOeilBaignoire(r);
   const det=[
     ["Débit", simNb(r.debit/(r.debit>=1e9?1e9:1e6),3)+(r.debit>=1e9?" Gb/s":" Mb/s")+
               " — UI "+simOeilT(ui)],
@@ -17063,6 +17291,33 @@ function simRendreOeil(){
   if(r.ligne)det.push(["Ligne (Z₀ d'une piste seule)", "Z₀ "+simNb(r.ligne.z0_min,1)+"–"+simNb(r.ligne.z0_max,1)+
                        " Ω, "+simNb(r.ligne.longueur,1)+" mm"+
                        (r.partenaire?" — paire avec « "+simEsc(r.partenaire)+" »":"")]);
+  if(st){
+    const gg=[];
+    if(st.rj_s>0)gg.push("RJ "+simOeilT(st.rj_s)+" rms ("+simNb(st.rj_ui,3)+" UI)");
+    if(st.dj_s>0)gg.push("DJ "+simOeilT(st.dj_s)+" c-c");
+    if(st.bruit_v>0)gg.push("bruit "+simOeilV(st.bruit_v)+" rms");
+    det.push(["Œil statistique", (gg.length?gg.join(", "):"sans gigue ni bruit")+
+              " — contours "+st.contours.map(c=>simOeilBer(c.ber)+" : "+simOeilV(c.hauteur)+
+              " × "+simNb(c.largeur_ui,2)+" UI").join(" ; ")]);
+  }
+  const xt=r.diaphonie;
+  if(xt)det.push(["Diaphonie (bornée)", xt.agresseurs.map(a=>simEsc(a.nom)+" "+simOeilV(a.crete_v)+
+      (a.coef?" ("+simNb(100*a.coef,2)+" % de "+simOeilV(a.v)+")":"")).join(", ")+
+      " — total "+simOeilV(xt.crete_totale_v)+(xt.gain_ctle&&xt.gain_ctle!==1?" après CTLE":"")]);
+  const ib=r.ibis;
+  if(ib){
+    for(const [cle,nom] of [["emetteur","Émetteur IBIS"],["recepteur","Récepteur IBIS"]]){
+      const x=ib[cle];
+      if(!x)continue;
+      det.push([nom, simEsc(x.modele)+(x.type?" ("+simEsc(x.type)+")":"")+", coin "+simEsc(x.coin)+
+        (x.fichier?" — "+simEsc(x.fichier):"")+", C_comp "+simNb((x.c_comp||0)*1e12,2)+" pF"+
+        (x.front_10_90?", front "+simOeilT(x.front_10_90)+" ("+simEsc(x.commande)+")":"")+
+        (cle==="recepteur"?(x.diodes?", diodes comprises":", sans diode"):"")]);
+    }
+    if(ib.pas_s)det.push(["Simulation non linéaire", "pas "+simOeilT(ib.pas_s)+", canal lissé par "+
+      simOeilT(ib.lissage_s)+", niveaux "+simOeilV(ib.v_bas)+" / "+simOeilV(ib.v_haut)+
+      ", écart montée/descente "+simNb(100*ib.asymetrie,1)+" %"]);
+  }
   det.push(["Calcul", r.grille.points+" fréquences jusqu'à "+simFreq(r.grille.f_max)+
             ", fenêtre "+simOeilT(r.grille.fenetre)+", "+r.bits+" bits, "+
             simNb(r.duree,1)+" s"]);
@@ -17088,6 +17343,13 @@ function simOeilExportCsv(){
   l.push("","# oeil pire cas","tau_ui;haut_v;bas_v");
   const pc=r.pire_cas;
   for(let i=0;i<pc.tau.length;i++)l.push([n(pc.tau[i]),n(pc.haut[i]),n(pc.bas[i])].join(";"));
+  const st=r.statistique;
+  if(st){
+    l.push("","# oeil statistique : baignoire au seuil","tau_ui;ber");
+    st.baignoire.tau.forEach((t,i)=>l.push(n(t)+";"+String(st.baignoire.ber[i])));
+    l.push("","# contours de taux d'erreur","tau_ui;"+st.contours.map(c=>"haut_"+c.ber+";bas_"+c.ber).join(";"));
+    st.tau.forEach((t,i)=>l.push([n(t)].concat(...st.contours.map(c=>[n(c.haut[i]),n(c.bas[i])])).join(";")));
+  }
   l.push("","# reponse a un bit (excursion pleine)","t_s;v");
   const rb=r.reponse_bit;
   rb.v.forEach((v,i)=>l.push(n(rb.t0+i*rb.dt)+";"+n(v)));
