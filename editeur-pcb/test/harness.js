@@ -23072,6 +23072,121 @@ T("master drawing : vérification externe (pdffonts, pdftotext, pypdf), si les o
 });
 
 /* ==========================================================================
+   DXF de la carte : un calque par outil de perçage (33-draftsman-export.js)
+   ========================================================================== */
+/* La couleur de chaque calque, lue dans la table LAYER. */
+function dxfCouleurs(t){
+  const m=new Map();
+  for(const x of t.matchAll(/\r\n  0\r\nLAYER\r\n  2\r\n([^\r]*)\r\n 70\r\n0\r\n 62\r\n(\d+)\r\n/g))m.set(x[1],+x[2]);
+  return m;
+}
+T("plans DXF : un calque par outil — POINT par trou, couleur par diamètre, cercles gardés",()=>{
+  exCharger(1);
+  S.holes=[mkHole(5,5,3.2),mkHole(60,5,3.2),mkHole(5,38,2.5)];
+  try{
+    const r=dxfCarte(), D=dxfLu(r.octets);
+    /* ce que la carte perce, outil par outil ; le Ø à deux décimales, trois
+       s'il le faut (le 0,864 de l'exemple), « _ » pour la virgule */
+    const att=new Map(), plus=(k,n)=>att.set(k,(att.get(k)||0)+(n||1));
+    const dm=d=>{const s=d.toFixed(3);return (s.endsWith("0")?s.slice(0,-1):s).replace(".","_");};
+    for(const fp of S.fps)for(const q of padsWorld(fp))if(q.drill>0)plus("TROUS_PTH_"+dm(q.drill));
+    for(const v of S.vias)if(v.drill>0)plus("VIAS_"+(Math.min(v.a,v.b)===0&&Math.max(v.a,v.b)===S.cu-1?"":"L"+(Math.min(v.a,v.b)+1)+"-L"+(Math.max(v.a,v.b)+1)+"_")+dm(v.drill));
+    if(!att.has("TROUS_PTH_0_864"))throw new Error("l'exemple devait avoir un perçage de 0,864");
+    plus("TROUS_NPTH_3_20",2);plus("TROUS_NPTH_2_50");
+    const pts=new Map();
+    for(const e of D.ents)if(e.type==="POINT")pts.set(e.cal,(pts.get(e.cal)||0)+1);
+    if(JSON.stringify([...att].sort())!==JSON.stringify([...pts].sort()))
+      throw new Error("POINT par calque : "+JSON.stringify([...pts].sort())+" pour "+JSON.stringify([...att].sort()));
+    if(att.size<4)throw new Error("l'exemple doit avoir plusieurs outils : "+[...att.keys()]);
+    for(const c of pts.keys()){
+      if(!/^[A-Z0-9$_-]{1,31}$/.test(c))throw new Error("nom de calque refusé par R12 : "+c);
+      if(D.calques.indexOf(c)<0)throw new Error("calque non déclaré : "+c);
+    }
+    /* chaque POINT est au centre d'un CIRCLE du calque historique, du bon diamètre */
+    const cer=D.ents.filter(e=>e.type==="CIRCLE");
+    for(const e of D.ents.filter(e=>e.type==="POINT")){
+      const d=e.cal.replace(/^.*_(\d+_\d+)$/,"$1");
+      const hist=/^TROUS_NPTH/.test(e.cal)?"TROUS_NON_METALLISES":"TROUS_METALLISES";
+      if(!cer.some(c=>c.cal===hist&&Math.abs(c.n(10)-e.n(10))<1e-6&&Math.abs(c.n(20)-e.n(20))<1e-6&&dm(c.n(40)*2)===d))
+        throw new Error("POINT de "+e.cal+" sans son cercle sur "+hist);
+    }
+    /* les cercles par diamètre : autant que de POINT de ce diamètre */
+    const parD=new Map();
+    for(const [c,n] of pts){const d=c.replace(/^.*_(\d+_\d+)$/,"$1");parD.set(d,(parD.get(d)||0)+n);}
+    for(const [d,n] of parD){
+      const k=cer.filter(c=>dm(c.n(40)*2)===d).length;
+      if(k!==n)throw new Error(n+" trous de "+d+", "+k+" CIRCLE");
+    }
+    /* une couleur par diamètre, distincte d'un diamètre à l'autre */
+    const col=dxfCouleurs(D.t), parCouleur=new Map();
+    for(const c of pts.keys()){
+      const d=c.replace(/^.*_(\d+_\d+)$/,"$1"), k=col.get(c);
+      if(!k||k===7)throw new Error("couleur du calque "+c+" : "+k);
+      if(parCouleur.has(k)&&parCouleur.get(k)!==d)throw new Error("même couleur pour "+d+" et "+parCouleur.get(k));
+      parCouleur.set(k,d);
+    }
+    if(col.get("TROUS_METALLISES")!==1||col.get("TROUS_NON_METALLISES")!==3)throw new Error("couleurs des calques historiques changées");
+    if(D.header.$PDMODE[0]!=="3")throw new Error("POINT en croix ($PDMODE 3)");
+    if(r.outils.length!==pts.size)throw new Error("outils rendus : "+r.outils.length);
+    /* la feuille du plan n'a pas de calque d'outil */
+    const F=dxfLu(dxfFeuilles(dfDocument().feuilles.filter(F=>F.genre==="fab")).octets);
+    if(F.ents.some(e=>e.type==="POINT")||F.header.$PDMODE)throw new Error("la feuille ne change pas");
+  }finally{S.holes=[];}
+});
+T("plans DXF : contre-perçage sur son calque, CONTRE_PERCAGE_<face>_<Ø>",()=>{
+  cpCarte();
+  try{
+    let D=dxfLu(dxfCarte().octets);
+    if(D.calques.some(c=>/^CONTRE_PERCAGE/.test(c)))throw new Error("sans règle, pas de calque de contre-perçage");
+    const r=cpAjouter({cote:"dessous",garde:-1,res:0.1});
+    cmPoser("classes",className("SIG"),"cp",r.id);
+    const c=cpVia(S.vias[0]);
+    if(!c||c.faute||c.diam!==0.55)throw new Error("contre-perçage attendu, foret de 0,55");
+    D=dxfLu(dxfCarte().octets);
+    const cal="CONTRE_PERCAGE_DESSOUS_0_55";
+    const cer=D.ents.filter(e=>e.cal===cal&&e.type==="CIRCLE"), pt=D.ents.filter(e=>e.cal===cal&&e.type==="POINT");
+    if(cer.length!==2||pt.length!==2)throw new Error(cal+" : "+cer.length+" CIRCLE, "+pt.length+" POINT");
+    if(cer.some(e=>Math.abs(e.n(40)-0.275)>1e-9))throw new Error("le cercle a le Ø du foret");
+    const o=gOrigin();
+    if(!cer.some(e=>Math.abs(e.n(10)-(S.vias[0].x-o.x))<1e-6&&Math.abs(e.n(20)-(o.y-S.vias[0].y))<1e-6))throw new Error("au repère de l'Excellon");
+    /* les vias eux-mêmes restent sur leurs calques : cercle historique, outil */
+    if(D.ents.filter(e=>e.cal==="TROUS_METALLISES"&&e.type==="CIRCLE"&&Math.abs(e.n(40)-0.15)<1e-9).length!==2||
+       D.ents.filter(e=>e.cal==="VIAS_0_30"&&e.type==="POINT").length!==2)throw new Error("les vias percés à 0,30 restent où ils sont");
+    /* par-dessus */
+    cpModifier(r.id,"cote","dessus");
+    for(const t of S.tracks)t.l=t.l===1?2:3;
+    touch();
+    D=dxfLu(dxfCarte().octets);
+    if(D.ents.filter(e=>e.cal==="CONTRE_PERCAGE_DESSUS_0_55"&&e.type==="CIRCLE").length!==2)
+      throw new Error("depuis le dessus : "+D.calques.filter(c=>/CONTRE/.test(c)));
+  }finally{cpRaz();exCharger(1);}
+});
+T("plans DXF : calques par outil relus par ezdxf, si l'outil est là",()=>{
+  const cp=require("child_process"), os=require("os");
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),"dxf-"));
+  try{
+    exCharger(1);
+    S.holes=[mkHole(5,5,3.2)];
+    const f=path.join(dir,"carte.dxf"), r=dxfCarte();
+    S.holes=[];
+    fs.writeFileSync(f,r.octets);
+    const py="import sys,ezdxf\nd=ezdxf.readfile(sys.argv[1])\na=d.audit()\nm=d.modelspace()\n"+
+             "print(len(a.errors))\n"+
+             "for l in sorted({e.dxf.layer for e in m.query('POINT')}):print(l,len(m.query('POINT[layer==\"'+l+'\"]')),d.layers.get(l).color)";
+    const e=cp.spawnSync("python3",["-c",py,f],{encoding:"utf8"});
+    if(e.error||/No module named/.test(e.stderr||""))console.log("     (ezdxf absent : DXF non vérifié)");
+    else{
+      if(e.status!==0)throw new Error("ezdxf : "+e.stderr);
+      const l=e.stdout.trim().split("\n");
+      if(l[0]!=="0")throw new Error("ezdxf : erreurs d'audit "+l[0]);
+      const lu=l.slice(1).map(x=>x.split(" "));
+      if(JSON.stringify(lu.map(x=>[x[0],+x[1]]))!==JSON.stringify(r.outils.map(o=>[o.cal,o.n])))
+        throw new Error("ezdxf relit "+l.slice(1).join(" ; "));
+    }
+  }finally{S.holes=[];fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+/* ==========================================================================
    Gestionnaire de contraintes (01-core.js : modèle ; 30-contraintes.js)
    ========================================================================== */
 function cmRaz(){S.contraintes=cmNorm(null);}

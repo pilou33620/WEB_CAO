@@ -10,8 +10,11 @@
         · la CARTE SEULE, à l'échelle 1:1, en millimètres, dans le repère des
           Gerber et de l'Excellon (même origine, Y vers le haut) : contour,
           découpes, trous (un CIRCLE par trou, métallisés et non métallisés
-          sur deux calques), encombrement et repère de chaque composant (une
-          face par calque), cotes hors tout, tableau de perçage à côté ;
+          sur deux calques), un calque par outil de perçage (TROUS_PTH_0_80,
+          TROUS_NPTH_3_20, VIAS_0_30, CONTRE_PERCAGE_DESSOUS_0_55…) avec un
+          POINT au centre de chaque trou, encombrement et repère de chaque
+          composant (une face par calque), cotes hors tout, tableau de
+          perçage à côté ;
         · la FEUILLE du plan entière (cadre, cartouche, vue cotée, tableaux,
           notes), lue dans la liste d'objets de la feuille — la même que
           lisent le PDF et l'aperçu SVG. Tout ce que 29-draftsman.js dessine
@@ -34,6 +37,17 @@
       le WinAnsi du PDF, ce qui n'y entre pas écrit de la même façon (Ω →
       Ohm, ≥ → >=) ; °, ± et Ø en %%d, %%p et %%c, les codes que tout
       lecteur DXF connaît.
+
+      Les trous, deux fois : les CIRCLE sur les calques historiques
+      TROUS_METALLISES et TROUS_NON_METALLISES (qui les lit les y retrouve),
+      et, sur un calque par outil, un POINT par trou — la position que
+      l'assistant de perçage d'un modeleur ou une FAO de perçage attend, et
+      de quoi choisir les trous d'un diamètre d'un clic. Remplacer les deux
+      calques historiques aurait cassé les lecteurs qui s'y attendent ;
+      doubler les CIRCLE aurait compté chaque trou deux fois. Le diamètre du
+      nom s'écrit « 0_30 » : R12 refuse le point dans un nom de calque. Une
+      couleur par diamètre ; le contre-perçage, qu'aucun calque historique
+      ne porte, a aussi le CIRCLE de son foret.
 
       Le modèle de la carte ne garde que des sommets. Un arc importé (coin
       arrondi, carte ronde) y est une suite de cordes égales : dxfSegments()
@@ -101,7 +115,7 @@ const DXF_CAT={zone:"CADRE",cartouche:"CARTOUCHE",cote:"COTES",repere:"REPERES",
 const DXF_CAPS=0.716;
 
 function dxfNouveau(){
-  return {calques:new Set(),e:[],x1:Infinity,y1:Infinity,x2:-Infinity,y2:-Infinity,
+  return {calques:new Set(),couleurs:new Map(),e:[],x1:Infinity,y1:Infinity,x2:-Infinity,y2:-Infinity,
           n:{LINE:0,ARC:0,CIRCLE:0,POLYLINE:0,TEXT:0,SOLID:0}};
 }
 function dxfNum(v){
@@ -194,6 +208,9 @@ function dxfOctets(D){
   g(9,"$LUPREC");g(70,3);
   g(9,"$INSUNITS");g(70,4);
   g(9,"$MEASUREMENT");g(70,1);
+  /* les POINT des calques d'outil : une croix de 0,2 mm au centre du trou,
+     au lieu d'un pixel qu'on ne voit pas */
+  if(D.n.POINT){g(9,"$PDMODE");g(70,3);g(9,"$PDSIZE");g(40,0.2);}
   g(0,"ENDSEC");
 
   g(0,"SECTION");g(2,"TABLES");
@@ -204,7 +221,7 @@ function dxfOctets(D){
   const cals=[...D.calques].sort();
   g(0,"TABLE");g(2,"LAYER");g(70,cals.length+1);
   g(0,"LAYER");g(2,"0");g(70,0);g(62,7);g(6,"CONTINUOUS");
-  for(const c of cals){g(0,"LAYER");g(2,c);g(70,0);g(62,DXF_CALQUES[c]||7);g(6,"CONTINUOUS");}
+  for(const c of cals){g(0,"LAYER");g(2,c);g(70,0);g(62,D.couleurs.get(c)||DXF_CALQUES[c]||7);g(6,"CONTINUOUS");}
   g(0,"ENDTAB");
   /* STANDARD pour la forme, PLANS pour les textes : Arial, dont les chasses
      sont celles d'Helvetica — les colonnes des tableaux restent justes. */
@@ -367,6 +384,7 @@ function dxfCarte(){
       dxfCercle(D,e.plaque?"TROUS_METALLISES":"TROUS_NON_METALLISES",P(p.x,p.y),e.d/2);
       trous++;
     }
+  const outils=dxfOutils(D,P);
 
   /* encombrement et repère : le corps de chaque composant, une face par
      calque ; les non-montés de la variante active en tirets */
@@ -422,7 +440,65 @@ function dxfCarte(){
   }
   dxfTexte(D,"TABLEAU_PERCAGE","Millimètres, échelle 1:1, origine des fichiers Gerber et Excellon, vue de dessus.",
            {x:tx,y:yb-4},2,0,"g");
-  return {octets:dxfOctets(D),D,trous};
+  return {octets:dxfOctets(D),D,trous,outils};
+}
+/* Le diamètre dans un nom de calque : deux décimales, trois s'il le faut
+   (0,254), et « _ » pour la virgule — R12 n'admet dans un nom que lettres,
+   chiffres, « $ », « - » et « _ » : « 0.30 » y serait refusé. */
+function dxfDiam(d){
+  let s=(+d).toFixed(3);
+  if(s.endsWith("0"))s=s.slice(0,-1);
+  return s.replace(".","_");
+}
+/* Couleurs AutoCAD (ACI) des calques d'outil, une par diamètre, du plus
+   petit au plus grand : franches d'abord, puis des teintes intermédiaires ;
+   ni le blanc (7) du contour, ni les gris. */
+const DXF_TEINTES=[1,3,5,2,6,4,30,140,210,50,90,170,240,110,190,20,70,150,230,130];
+/* Les calques par outil. Les CIRCLE restent sur les calques historiques
+   (TROUS_METALLISES, TROUS_NON_METALLISES), un par trou : qui s'y attend
+   les retrouve. Chaque outil a en plus son calque, avec un POINT au centre
+   de chacun de ses trous — la position que l'assistant de perçage d'un
+   modeleur ou une FAO de perçage prend pour poser un trou :
+     TROUS_PTH_<Ø>                  pastilles traversantes, métallisées
+     TROUS_NPTH_<Ø>                 trous de fixation, non métallisés
+     VIAS_<Ø>, VIAS_L1-L2_<Ø>       vias traversants, puis borgnes et enterrés
+                                    par portée (un outil par passe)
+     CONTRE_PERCAGE_<face>_<Ø>      contre-perçage (cpPaires, 01-core.js),
+                                    au Ø du foret, face d'où l'on repasse ;
+                                    ici aussi le CIRCLE du foret, qu'aucun
+                                    calque historique ne porte
+   Rend [{cal, d, n}], dans l'ordre des calques. */
+function dxfOutils(D,P){
+  const cal=new Map();
+  const poser=(nom,d,x,y)=>{
+    let e=cal.get(nom);
+    if(!e)cal.set(nom,e={cal:nom,d,n:0});
+    e.n++;
+    const p=P(x,y);
+    dxfEtendre(D,p.x,p.y);
+    dxfEnt(D,"POINT",nom,[10,p.x,20,p.y,30,0]);
+    return p;
+  };
+  for(const fp of S.fps)
+    for(const q of padsWorld(fp))
+      if(q.drill>0)poser("TROUS_PTH_"+dxfDiam(q.drill),q.drill,q.x,q.y);
+  for(const v of S.vias){
+    if(!(v.drill>0))continue;
+    const a=Math.min(v.a,v.b), b=Math.max(v.a,v.b);
+    poser("VIAS_"+(a===0&&b===S.cu-1?"":"L"+(a+1)+"-L"+(b+1)+"_")+dxfDiam(v.drill),v.drill,v.x,v.y);
+  }
+  for(const h of (S.holes||[]))
+    if(h.d>0)poser("TROUS_NPTH_"+dxfDiam(h.d),h.d,h.x,h.y);
+  if(typeof cpPaires==="function")
+    for(const pa of cpPaires())
+      for(const o of pa.outils.values()){
+        const nom="CONTRE_PERCAGE_"+(pa.cote==="dessus"?"DESSUS":"DESSOUS")+"_"+dxfDiam(o.diam);
+        for(const q of o.pts)dxfCercle(D,nom,poser(nom,o.diam,q.x,q.y),o.diam/2);
+      }
+  /* une couleur par diamètre */
+  const ds=[...new Set([...cal.values()].map(e=>dxfDiam(e.d)))].sort((u,v)=>parseFloat(u.replace("_","."))-parseFloat(v.replace("_",".")));
+  for(const e of cal.values())D.couleurs.set(e.cal,DXF_TEINTES[ds.indexOf(dxfDiam(e.d))%DXF_TEINTES.length]);
+  return [...cal.values()].sort((u,v)=>u.cal<v.cal?-1:u.cal>v.cal?1:0);
 }
 
 /* ==========================================================================
@@ -508,7 +584,7 @@ function dxfExporterCarte(){
   const r=dxfCarte();
   dl(new Blob([r.octets],{type:"image/vnd.dxf"}),pcbFile("-CARTE.dxf","carte.dxf"));
   hint("DXF de la carte à l'échelle 1:1 : contour ("+(r.D.n.ARC?r.D.n.ARC+" arc(s), ":"")+
-       "mm, origine des Gerber), "+r.trous+" trou(s), "+S.fps.length+" composant(s).");
+       "mm, origine des Gerber), "+r.trous+" trou(s) sur "+r.outils.length+" calque(s) d'outil, "+S.fps.length+" composant(s).");
   return r;
 }
 function dxfExporterFeuille(){

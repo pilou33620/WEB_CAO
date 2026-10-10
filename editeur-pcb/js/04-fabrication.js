@@ -891,7 +891,12 @@ function fabReadme(files,dr){
   if(files.some(f=>/\.dxf$/i.test(f.name)))
     L.push("Les .dxf (AutoCAD R12, millimetres) servent a la mecanique : -CARTE.dxf a",
            "l'echelle 1:1 dans le repere des Gerber (contour, trous, composants),",
-           "-PLAN-FABRICATION.dxf la feuille du plan entiere.");
+           "-PLAN-FABRICATION.dxf la feuille du plan entiere.",
+           "Dans -CARTE.dxf, les cercles des trous restent sur les calques",
+           "TROUS_METALLISES et TROUS_NON_METALLISES ; chaque outil a en plus son",
+           "calque (TROUS_PTH_0_80, TROUS_NPTH_3_20, VIAS_0_30, contre-percage",
+           "CONTRE_PERCAGE_DESSOUS_0_55...), avec un POINT au centre de chaque",
+           "trou : les positions de percage, un diametre par calque.");
   L.push("positions.csv et bom.csv servent a l'assemblage : millimetres,");
   L.push("rotation en degres dans le sens antihoraire, meme origine que les");
   L.push("Gerber. Ils ne concernent pas le fabricant du circuit nu.");

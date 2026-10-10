@@ -76,9 +76,9 @@ js/29-draftsman.js       plans de fabrication et d'assemblage (Draftsman) :
                          feuilles cadrées et cartouchées, PDF au texte
                          cherchable, aperçu SVG et recherche dans la fenêtre
 js/33-draftsman-export.js  plans : export DXF (carte 1:1 pour la mécanique,
-                         feuille entière) et fonte TrueType embarquée en
-                         sous-ensemble dans le PDF des plans et dans le
-                         Master Drawing
+                         feuille entière, un calque par outil de perçage) et
+                         fonte TrueType embarquée en sous-ensemble dans le PDF
+                         des plans et dans le Master Drawing
 js/fontes/plans-sans.js  la fonte PlansSans (Liberation Sans pré-réduite, en
                          base64), produite par outils/fonte-plans.py ; sa
                          licence OFL à côté, js/fontes/OFL-PlansSans.txt
@@ -1118,7 +1118,7 @@ Deux boutons dans la fenêtre, et deux fichiers dans **Fabrication .zip**
 
 | Fichier | Contenu |
 | --- | --- |
-| `<projet>-CARTE.dxf` (**DXF carte 1:1**) | la carte seule, à l'échelle 1:1, en millimètres, dans le repère des Gerber et de l'Excellon (même origine, Y vers le haut) : contour et découpes en `LINE` et `ARC`, un `CIRCLE` par trou au diamètre fini, encombrement (`POLYLINE` fermée, en tirets pour un non-monté) et repère (`TEXT`) de chaque composant, cotes hors tout, tableau de perçage à côté |
+| `<projet>-CARTE.dxf` (**DXF carte 1:1**) | la carte seule, à l'échelle 1:1, en millimètres, dans le repère des Gerber et de l'Excellon (même origine, Y vers le haut) : contour et découpes en `LINE` et `ARC`, un `CIRCLE` par trou au diamètre fini, un calque par outil de perçage (un `POINT` par trou), encombrement (`POLYLINE` fermée, en tirets pour un non-monté) et repère (`TEXT`) de chaque composant, cotes hors tout, tableau de perçage à côté |
 | `<projet>-PLAN-FABRICATION.dxf` (**DXF feuille**, la feuille affichée) | la feuille entière : cadre, cartouche, vue cotée, symboles et tableaux, coupe, notes |
 
 Les calques : `CONTOUR`, `DECOUPES`, `TROUS_METALLISES`,
@@ -1127,6 +1127,28 @@ Les calques : `CONTOUR`, `DECOUPES`, `TROUS_METALLISES`,
 `CARTOUCHE`, `CONTOUR`, `PERCAGE`, `COTES`, `PASTILLES`, `COMPOSANTS`,
 `REPERES`, `TABLEAUX`, `EMPILAGE`, `NOTES`, `TEXTES`, `DESSIN` pour la
 feuille.
+
+**Les trous de la carte, par outil.** Les cercles restent sur les calques
+historiques `TROUS_METALLISES` et `TROUS_NON_METALLISES`, un par trou : un
+lecteur qui s'y attend les retrouve. Chaque outil a en plus son calque, avec
+un `POINT` au centre de chacun de ses trous — les positions que l'assistant
+de perçage d'un modeleur ou une FAO de perçage attend, et de quoi choisir les
+trous d'un diamètre d'un clic :
+
+| Calque | Trous |
+| --- | --- |
+| `TROUS_PTH_<Ø>` | pastilles traversantes, métallisées |
+| `TROUS_NPTH_<Ø>` | trous de fixation, non métallisés |
+| `VIAS_<Ø>`, `VIAS_L1-L2_<Ø>` | vias traversants ; borgnes et enterrés, par portée |
+| `CONTRE_PERCAGE_<DESSUS\|DESSOUS>_<Ø>` | contre-perçage, au Ø du foret, depuis la face indiquée — avec aussi le `CIRCLE` du foret |
+
+Le Ø s'écrit `0_30` (deux décimales, trois s'il le faut : `0_864`) : R12
+n'admet dans un nom de calque que lettres, chiffres, `$`, `-` et `_`. Chaque
+diamètre a sa couleur (table `LAYER`), la même pour tous les calques de ce
+diamètre, et les `POINT` s'affichent en petite croix (`$PDMODE` 3,
+`$PDSIZE` 0,2 mm). Pourquoi ne pas remplacer les deux calques historiques :
+un lecteur qui les attend les perdrait ; pourquoi pas des `CIRCLE` par
+diamètre en plus : chaque trou serait compté deux fois.
 
 Le format est **AutoCAD R12** (`AC1009`), en ASCII : c'est la version que
 tout lit, des modeleurs (SolidWorks, Inventor, Fusion, FreeCAD) aux
