@@ -73,13 +73,18 @@ def prevoir(n, t_r):
     couples = [c for c in res.get("couples", [])
                if c.get("victime") == "XT%d_V" % n]
     notes = [a for a in res.get("avertissements", [])
-             if "NON CALCUL" in a or "garde" in a]
+             if "NON CALCUL" in a or "garde" in a
+             or "IMPÉDANCE COMMUNE" in a or "SANS terme" in a]
     if not couples:
         return None, notes
     c = couples[0]
     return {"next": c["next"], "fext": c["fext"], "kb": c["kb"],
             "kf": c["kf"], "td_ps": c["td_ps"],
-            "statut": c["statut"]}, notes
+            "statut": c["statut"],
+            # LE TERME DE FENTE (crosstalk 4.5.0, impedance commune d'Ott),
+            # et le chiffre des lignes seules : c'est leur ecart que le cas 4
+            # doit confirmer ou infirmer.
+            "fente": c.get("fente"), "lignes": c.get("lignes")}, notes
 
 
 def lire_releves():
@@ -126,7 +131,7 @@ def tableau_previsions(fronts):
     print("  " + "-" * (len(entete) - 2))
     for n, titre in CAS.items():
         ligne = "  %d    %-38s" % (n, titre)
-        notes = []
+        notes, fente = [], None
         for t in fronts:
             p, nt = prevoir(n, t * 1e-9)
             notes = nt or notes
@@ -135,7 +140,23 @@ def tableau_previsions(fronts):
             else:
                 ligne += " | %s %s" % (pc(p["next"]).strip().rjust(5),
                                        pc(p["fext"]).strip().rjust(6))
+                # Au front le plus proche de 1 ns, celui de l'estimation d'Ott
+                # dans A-FAIRE.md.
+                if p.get("fente") and (fente is None
+                                       or abs(t - 1.0) < abs(fente[0] - 1.0)):
+                    fente = (t, p)
         print(ligne)
+        if fente:
+            # LA PART DE LA FENTE, A PART : le niveau 2 des lignes seules et
+            # le terme d'impedance commune (Ott) qui s'y ajoute, avec sa
+            # fourchette, au dernier front du tableau.
+            t, p = fente
+            print("         + dont fente du plan (impedance commune, Ott) a %.1f ns :"
+                  " +%s NEXT / FEXT, fourchette %s a %s ; lignes seules %s / %s"
+                  % (t, pc(p["fente"]["next"]).strip(),
+                     pc(p["fente"]["next_fourchette"][0]).strip(),
+                     pc(p["fente"]["next_fourchette"][1]).strip(),
+                     pc(p["lignes"]["next"]).strip(), pc(p["lignes"]["fext"]).strip()))
         for a in notes[:2]:
             print("         ! " + a[:150] + ("..." if len(a) > 150 else ""))
     print("\n  (chaque case : NEXT puis FEXT)")

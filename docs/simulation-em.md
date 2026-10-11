@@ -225,7 +225,10 @@ Ce qu'il ne voit pas, et le panneau le dit sous chaque résultat :
   deux pistes se **partagent** ce retour : le couplage par **impédance
   commune** qui en résulte n'est pas un terme que ce modèle chiffre mal, c'est
   un terme qu'il ne **contient pas** — l'écart n'est donc pas borné par ce
-  calcul, et l'outil ne le chiffre pas. Trois garde-fous, parce que ce cas rendait
+  calcul. Depuis `crosstalk` 4.5.0, l'onglet *Crosstalk* l'**estime à part**
+  par le modèle d'Ott quand la page a mesuré les détours du retour autour de
+  la fente et que tous les plans sont coupés (voir *L'impédance commune d'une
+  fente du plan*, plus bas) ; l'onglet *Impédance* ne le chiffre pas. Trois garde-fous, parce que ce cas rendait
   auparavant un couplage **exactement nul** sans un mot — le pire résultat que
   cet outil puisse produire, puisqu'il ressemble en tout point à une bonne
   nouvelle : une **fente sondée qui tombe sur un longement** lève une réserve
@@ -331,6 +334,74 @@ NEXT saturé presque inchangé ; à 100 ps, jusqu'à −45 % sur les longs
 longements. Elles comptent donc pour les fronts raides et les liaisons
 longues, à peine pour le reste.
 
+#### L'impédance commune d'une fente du plan (Ott, `crosstalk` 4.5.0)
+
+La section droite suppose un plan de retour **continu**. Là où il est fendu,
+le courant de retour contourne la fente par ses deux bouts, et ce détour n'est
+dans aucune des matrices [C] et [L]. Quand l'agresseur **et** la victime
+franchissent la même fente, leurs deux retours empruntent le **même cuivre** :
+c'est un couplage par **impédance commune**, et il se chiffre à part, puis
+s'**ajoute** au niveau 2 des lignes couplées.
+
+**Ce que la page mesure** (`simXtFentes`, `simXtFentesIpc`, même mesure que
+le RF) : au milieu de chaque fente sondée sous le parcours, les détours
+**d1** (à gauche du sens de marche, le côté +1 de la couture) et **d2** (à
+droite) jusqu'où le plan se referme sur la ligne de la piste, 30 mm au plus
+(`borne` : plan coupé de bord à bord) ; la largeur de la fente ; et `retour`,
+les plans qui **ferment encore** le retour sous la fente. Le serveur lit
+l'entraxe S agresseur ↔ victime au franchissement dans le profil d'espacement,
+et le Z₀ de l'agresseur dans le bloc.
+
+**La dérivation.** Ott (*EMC Engineering*, 2009) donne pour une fente de
+longueur D franchie en son milieu par une piste de largeur W la self
+`L = μ₀/2π · D · ln(D/W)`. Un détour d d'un seul côté est la moitié d'une
+boucle de 2d : `L_d = μ₀/π · 2d · ln(2d/W)`, et les deux détours sont en
+**parallèle** — la forme même de `rf_reseau.z_fente`. Le flux du retour de
+l'agresseur que la boucle de la victime embrasse s'intègre de S (la piste
+victime) à 2d (le bout de la fente) : la **mutuelle** a la même forme avec
+l'entraxe à la place de W, `M = μ₀/π · 2d · ln(2d/S)` par détour, en
+parallèle, et `M ≤ L_d`. La f.é.m. `M·dI/dt` induite dans la boucle de la
+victime se partage entre ses deux bouts adaptés (2Z₀ en série) :
+
+| grandeur | formule |
+| --- | --- |
+| self d'un détour | `L_d = μ₀/π · 2d · ln(2d/W)`, les deux en parallèle |
+| mutuelle | `M = μ₀/π · 2d · ln(2d/S)`, idem ; `M ≤ L_d` |
+| terme, aux deux bouts | `NEXT_f = +M / (2·Z₀·t_r)`, `FEXT_f = −M / (2·Z₀·t_r)`, en fraction de l'échelon |
+| lissage par la self | `× (1 − e^(−t_r/τ))`, `τ = L_d / 2Z₀` : le terme ne dépasse jamais `M / L_d` |
+| fourchette | basse : `ln(2d / (S + W + 2H))` (retour étalé sur W + 2H) ; haute : `M = L_d` (retours confondus) |
+| résonance (option C) | chaque détour `× |tan(βd) / βd|`, `β` au genou 0,35/t_r dans la permittivité moyenne autour du plan, perte Q ≈ 50 |
+
+Sur le cas 4 du banc de mesure (fente de ±10 mm coupant les trois plans,
+pistes de 0,35 mm à 1,4 mm d'axe à axe, 50 Ω) : `L_d ≈ 16 nH`, `M ≈ 11 nH`,
+soit **≈ 11 % à chaque bout à 1 ns** (fourchette 9 à 17 %), ≈ 2 % à 5 ns —
+contre 0,9 % pour les lignes couplées seules. La résonance ne pèse qu'aux
+fronts sous ~300 ps : la fente de 20 mm résonne vers 3,5 GHz dans le FR-4
+(× 1,01 à 1 ns, × 30 à 100 ps), et la fiche dit quand elle a compté.
+
+**Comment il entre dans la fiche.** Le NEXT prend le plus fort des termes de
+fente (deux fentes renvoient leur impulsion à des instants différents), le
+FEXT les somme (tout arrive ensemble au bout lointain) ; les deux s'ajoutent
+en module au couplage des lignes, en phase — le pire cas, comme la somme des
+agresseurs. Le couple porte `fente` (terme, fourchette, résonance, détail par
+fente) et `lignes` (le chiffre des lignes seules) ; le statut DRC juge le
+total, la **carte locale** porte le pic à l'abscisse de la fente, et une
+hypothèse donne la dérivation. La règle *diaphonie* de la vérification de
+carte applique le même terme, en lisant les fentes dans l'image des plans sous
+la portion de l'agresseur en regard de la victime.
+
+**Limites, dites dans la fiche.** Une fente droite, franchie à peu près
+perpendiculairement ; **tous** les plans de retour coupés — une fente qui
+laisse un plan intact dessous (le cas 4b du banc : fente sur L2 seule, L3
+intact) **n'a pas** ce terme : le retour change de plan au lieu de contourner,
+c'est la section retombée sur ce plan qui est rendue, et la fiche le signale
+comme ce que la mesure doit départager ; pistes à plat (une victime
+superposée ne porte pas le terme) ; une fente qui s'arrête avant la victime,
+de son côté, n'a pas de retour commun. Une page qui n'envoie pas d1 / d2
+garde la réserve grave d'avant : le terme est alors **absent** et le niveau
+rendu un plancher. C'est un ordre de grandeur, pas une forme d'onde ; le
+maillage PEEC du plan (option B d'`A-FAIRE.md`) attend la mesure du cas 4.
+
 #### La somme des agresseurs
 
 Une victime longée par **plusieurs** agresseurs reçoit leur bruit à tous. La
@@ -434,7 +505,9 @@ fentes du plan sous le parcours et les changements de couche sans via de masse
 est posé **flottant** dans la coupe — il ne blinde pas, il transfère. Un bloc
 dont la section n'est pas résoluble (plan absent) n'est **pas** compté comme
 découplé : la voisine est dite *non calculée*, et le niveau rendu est un
-plancher.
+plancher. La seule exception à ce « à côté » est la **fente franchie par les
+deux pistes** : son impédance commune (Ott) entre dans le niveau de la paire,
+parce que la page a mesuré le détour et que la section ne le contient pas.
 
 #### Sorties
 
@@ -683,7 +756,7 @@ nom (LNA_EN pris pour du RF) se voit là.
 | Règle | Ce qu'elle juge | Comment |
 | :--- | :--- | :--- |
 | chemins de retour | chaque via de signal qui change de plan de référence | Même moteur que Current Return Path (`simulation_em`) : plans et leur net au droit du via, vias de masse retenus, inductance de boucle, traversée de cavité quand les plans sont de nets différents — par le modèle modal de la PI (`ligne_mom.cavite_modale` : modes TM, queue inductive, complément de Schur) dès que la page envoie `cavite_rect` et `ponts_carte`, le via au port 0 et chaque pont de la carte (direct, ou chaîne de 0 Ω `ponts_indirects`) à sa position ; et, quand elle envoie aussi `cavite_grille` (le recouvrement balayé en cellules de 0,5 mm), sur sa FORME RÉELLE (`ligne_mom.cavite_grille` : réseau L-C de la paire de plans, modes propres par scipy, queue inductive exacte, correction de Peaceman ; pas choisi selon la taille (`simPasGrille`, 0,25 à 1 mm) et contrôle de convergence au pas double ; bords extérieurs avec leur capacité de débordement (Hammerstad) et leur rayonnement, sommé de façon cohérente sur la sphère par paquets de faces de 2 mm, qui donne le Q de rayonnement de chaque mode et une estimation CISPR 32 du champ que la cavité rayonne (`_rayonnement_cavite`, cavité seule) ; les îlots du recouvrement reliés à la cavité par la self équivalente du réseau multicouche de leurs deux nets (`simReseauNets` côté page, `_liens_par_reseau` côté serveur : plans lus par couverture, pistes, perçages ; 1 nH/mm à défaut), chaque îlot relié aux points où le courant le quitte vraiment (jusqu'à quatre liens), sa self de boucle comptée en PEEC le long du chemin (selfs partielles et mutuelles de Neumann, l'aller et le retour de signes opposés ; la plus petite de la PEEC et de la somme, toutes deux majorantes), et la fourchette du pic quand le via est sur un îlot, du couplage parfait (√L_A − √L_B)² à aucun couplage L_A + L_B. Les envois gros partent en gzip, la grille d'une cavité une seule fois (`simCorpsJson`). Les ponts portent les parasites de la PI (`simPDNParasitesCapa`, `simPDNInductanceMontage`). Toutes les fréquences se résolvent d'un coup (`impedance_traversee_vec`) ; les vias hors parcours chiffrent leur traversée. Le modèle localisé, avec son pont supposé au rayon, n'est plus qu'un repli. Verdict : le pire de la réflexion \|Γ\| = \|Z\| / \|Z + 2Z₀\| (5 % / 10 %) et de la distance du retour face à λ/20 dans le diélectrique (λ/10 pour condamner). Le message donne le front le plus raide que le via supporte |
-| diaphonie | chaque couple de pistes voisines de nets différents, même couche ou couches voisines superposées | Niveau 2 : section à deux conducteurs résolue par la méthode des moments à l'écart réel ; k_total = ½(Cm/C11 + Lm/L11), NEXT = min(Kb max, Σ Kb·2T_d/t_r), FEXT = \|Σ Kf·T_d\| / t_r sous le **t_r global** ; vert < 3 %, orange (vigilance) jusqu'à 7 %, rouge (critique) au-delà, NEXT et FEXT chacun leur statut. Hors jeu : la masse, les alimentations (sauf un nœud de découpage), les deux moitiés d'une paire différentielle |
+| diaphonie | chaque couple de pistes voisines de nets différents, même couche ou couches voisines superposées | Niveau 2 : section à deux conducteurs résolue par la méthode des moments à l'écart réel ; k_total = ½(Cm/C11 + Lm/L11), NEXT = min(Kb max, Σ Kb·2T_d/t_r), FEXT = \|Σ Kf·T_d\| / t_r sous le **t_r global** ; vert < 3 %, orange (vigilance) jusqu'à 7 %, rouge (critique) au-delà, NEXT et FEXT chacun leur statut. Une fente du plan franchie par les deux pistes, tous les plans coupés (image des plans sous la portion en regard, détours d1 / d2 le long de la normale), ajoute l'impédance commune d'Ott, avec sa fourchette (`crosstalk.impedance_commune_fente`). Hors jeu : la masse, les alimentations (sauf un nœud de découpage), les deux moitiés d'une paire différentielle |
 | impédance | chaque net de signal | Chaque section (couche, largeur, écarts à la masse coplanaire mesurés dans le cuivre de la couche) par `solve_line` : Z₀, v, C' ; R, L, C, T_d du net. Chaque tronçon réfléchit \|Z − Z_réf\| / (Z + Z_réf) · min(1, 2T_d / t_r), Z_réf la cible pour Horloge, Rapide, RF, l'impédance dominante du net sinon (5 % / 10 %) |
 | fentes | chaque piste de signal au-dessus d'un vide de son plan de référence | Détours d1, d2 le long de la normale (30 mm au plus), impédance de fente d'Ott (`rf_reseau.z_fente`), \|Γ\| comme un via ; dégagement du propre via exclu ; une ligne par net et par plan |
 | couture | chaque cavité entre deux couches d'une même masse | Plus grand trou sans via par transformée de distance (`scipy.ndimage`), pas équivalent √2 · d_max face à λ/20 au genou du front le plus rapide de la carte (λ/10 pour condamner) |

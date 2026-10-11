@@ -3170,6 +3170,69 @@ T("une fente FINE du plan (0,3 mm) est vue, avec sa largeur et sa position",()=>
                     JSON.stringify(g));
 });
 
+T("la fente part avec ses détours d1 / d2, sa largeur et les plans qui ferment le retour",()=>{
+  /* LE PLAN DU DESSOUS, PLEIN, FENDU EN TRAVERS DE LA PISTE : 2 mm de large
+     (x de X1+19 à X1+21), de 8 mm sous la piste à 12 mm au-dessus. Le retour
+     la contourne par le haut — 12 mm, à GAUCHE du sens de marche (+y pour
+     une piste qui va vers +x) : d1 — ou par le bas, 8 mm : d2. C'est ce que
+     le serveur ne peut pas mesurer, et dont son terme d'impédance commune
+     (Ott, crosstalk 4.5.0) a besoin. */
+  const morceaux=[planDessous(rect(2,2,X1+19,38)), planDessous(rect(X1+21,2,58,38)),
+                  planDessous(rect(X1+19,2,X1+21,Y-8)),
+                  planDessous(rect(X1+19,Y+12,X1+21,38))];
+  carte({plans:morceaux});
+  let f=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  if(!f||f.length!==1)
+    throw new Error("une fente attendue : "+JSON.stringify(f));
+  let t=f[0];
+  if(Math.abs(t.s-19)>1.0)
+    throw new Error("la fente commence vers 19 mm : "+JSON.stringify(t));
+  if(!(Math.abs(t.d1-12)<=1.0))
+    throw new Error("d1 — à gauche du sens de marche, vers +y — vaut 12 mm : "+
+                    JSON.stringify(t));
+  if(!(Math.abs(t.d2-8)<=1.0))
+    throw new Error("d2 — à droite, vers −y — vaut 8 mm : "+JSON.stringify(t));
+  if(!(t.largeur>=1.5&&t.largeur<=3.0))
+    throw new Error("la fente fait 2 mm de large, au pas de sonde près : "+
+                    JSON.stringify(t));
+  if(t.borne)throw new Error("le plan se referme des deux côtés : pas de plafond");
+  if(!Array.isArray(t.retour)||t.retour.length)
+    throw new Error("aucun plan ne ferme le retour sous la fente : "+
+                    JSON.stringify(t.retour));
+  if(Math.abs(t.x-(X1+20))>1.0||Math.abs(t.y-Y)>0.1)
+    throw new Error("le franchissement est au milieu de la fente, en mm : "+
+                    JSON.stringify(t));
+  /* UN SECOND PLAN PLEIN DERRIÈRE (Pwr) : il FERME le retour, et `retour`
+     le nomme — le serveur n'appliquera pas le terme (cas 4b du banc : fente
+     sur un plan, l'autre intact). Seul le plan fendu manque. */
+  const empilage=[
+    {nom:"Top",  seq:1, ep:0.035, type:"CONDUCTOR"},
+    {nom:"D1",   seq:2, ep:0.2,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
+    {nom:"Gnd",  seq:3, ep:0.035, type:"PLANE"},
+    {nom:"D2",   seq:4, ep:0.2,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
+    {nom:"Pwr",  seq:5, ep:0.035, type:"PLANE"}
+  ];
+  carte({empilage:empilage, couches:["Top","Gnd","Pwr"],
+         plans:morceaux.concat([{c:2, n:2, g:[{o:rect(2,2,58,38), t:[]}]}])});
+  f=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  if(!f||f.length!==1)throw new Error("la fente doit rester vue");
+  if(f[0].retour.join()!=="Pwr")
+    throw new Error("le plan plein du dessous ferme le retour : "+
+                    JSON.stringify(f[0].retour));
+  if(f[0].plans.join()!=="Gnd")
+    throw new Error("seul le plan fendu manque : "+JSON.stringify(f[0].plans));
+  if(!(Math.abs(f[0].d1-12)<=1.0&&Math.abs(f[0].d2-8)<=1.0))
+    throw new Error("les détours ne changent pas : "+JSON.stringify(f[0]));
+  /* ET LE SENS DE MARCHE : la même piste dessinée à rebours échange d1 et
+     d2 — gauche et droite se définissent dans le sens du parcours, comme le
+     côté de la couture que le serveur lit. */
+  carte({plans:morceaux, piste:{p:[X2,Y, X1,Y]}});
+  f=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  if(!f||f.length!==1)throw new Error("la fente doit être vue à rebours aussi");
+  if(!(Math.abs(f[0].d1-8)<=1.0&&Math.abs(f[0].d2-12)<=1.0))
+    throw new Error("à rebours, d1 et d2 s'échangent : "+JSON.stringify(f[0]));
+});
+
 T("sous une découpe, le plan de repli est sondé lui aussi",()=>{
   /* LE CAS DE DESIGN1 : le plan le plus proche est découpé sous la piste, et
      le serveur retombe sur le plan SUIVANT de l'empilage. Si celui-ci n'a pas

@@ -617,6 +617,55 @@
 #   (+ porteuse_rf), candidats_geometriques (tolerance, motif « proche du
 #   seuil »), analyser (reserve RF, avertissement des ecartes proches),
 #   _hypotheses (tete).
+# Version: 4.5.0
+# Date: 2026-10-11
+# Explication: LA FENTE DU PLAN DE REFERENCE AJOUTE ENFIN QUELQUE CHOSE AU
+#   COUPLAGE. Une fente franchie par l'agresseur ET la victime etait detectee,
+#   avertie, et n'ajoutait RIEN : le NEXT / FEXT restait celui des lignes
+#   couplees, et la fiche se contentait d'ecrire que le terme manquait. Sur
+#   le cas 4 du banc de mesure (fente de +-10 mm coupant les trois plans,
+#   entraxe 1,4 mm), l'estimation d'Ott donne environ 10 % a chaque bout de
+#   la victime a 1 ns, contre 0,9 % calcule : le terme absent etait DIX FOIS
+#   le terme rendu.
+#
+#   LE MODELE (option A de A-FAIRE.md) : le courant de retour contourne la
+#   fente par ses deux bouts ; chaque detour d est une self L_d = mu0/pi .
+#   2d . ln(2d/W) (Ott, EMC Engineering 2009 : L = mu0/2pi . D ln(D/W) pour
+#   une fente de longueur D = 2d franchie en son milieu), et les deux detours
+#   sont en parallele -- la forme meme de `rf_reseau.z_fente`. Le retour de la
+#   victime emprunte le meme cuivre : la mutuelle M a la meme forme, avec
+#   l'ENTRAXE S au franchissement a la place de W. La f.e.m. M.dI/dt induite
+#   dans la boucle de la victime se partage entre ses deux bouts adaptes :
+#   +M/(2 Z0 t_r) en NEXT, -M/(2 Z0 t_r) en FEXT, en fraction de l'agresseur.
+#   La self du detour limite elle-meme la pente du courant (tau = L_d / 2 Z0) :
+#   le terme est lisse par (1 - exp(-t_r/tau)) et ne depasse jamais M/L_d.
+#
+#   LA FOURCHETTE, parce que le logarithme ne sait pas ou passe le courant :
+#   mutuelle HAUTE M = L_d (les deux retours confondus, l'option E), BASSE
+#   avec l'entraxe compte du bord d'un courant de retour etale sur W + 2H.
+#   La fiche rend la valeur centrale et les deux bornes.
+#
+#   LA RESONANCE DE LA FENTE (option C) : chaque detour est un troncon de
+#   fente court-circuite, tan(beta d)/(beta d) au genou 0,35/t_r avec la
+#   perte Q = 50 de `z_fente` ; elle ne compte que sous ~300 ps (une fente
+#   de 20 mm resonne vers 4 GHz), et la fiche dit quand elle a pese.
+#
+#   CE QUE LA PAGE DOIT ENVOYER, et qu'elle seule peut mesurer : les detours
+#   d1 (a gauche du sens de marche, cote +1 de la couture) et d2 (a droite),
+#   la largeur de la fente, et `retour` -- les plans qui FERMENT encore le
+#   retour sous la fente. Un retour qui reste (cas 4b du banc : fente sur L2
+#   seule, L3 intact) n'applique PAS ce terme : le calcul reste celui de la
+#   section retombee sur L3, et la fiche le signale -- c'est l'objet de la
+#   mesure a venir. Une page qui n'envoie pas d1 / d2 garde la reserve grave
+#   d'avant, mot pour mot.
+#
+#   LIMITES, dites dans la fiche : fente droite, franchie a peu pres
+#   perpendiculairement, tous les plans de retour coupes ; les pistes a plat
+#   seulement (une victime superposee ne porte pas le terme).
+# Fonctions ajoutees : self_detour, facteur_resonance, impedance_commune_fente,
+#   ajouter_fentes_niveau2, eps_autour_plan, termes_fentes. Fonctions
+#   modifiees : sections_couplees (+ z0 par bloc), analyser, _lire_couples
+#   (+ fentes_termes, carte locale), _hypotheses.
 # ==========================================
 """Crosstalk Niveau 2 : le pic de bruit relatif, paire par paire.
 
@@ -709,12 +758,22 @@ LE DOCUMENT D'ENTREE, format « cao-crosstalk-1 », en MILLIMETRES :
                 tr_classes {classe: s}, seuil_orange, seuil_rouge (fractions)
     couture     {"positions": [{"s": mm le long du parcours, "cote": +-1}]}
     fentes      [{"s": mm, "longueur": mm, "plans": [nom de couche, ...],
-                  "quoi": texte}]
+                  "quoi": texte,
+                  -- depuis la 4.5.0, ce que la page mesure au franchissement :
+                  "d1": mm, "d2": mm   les detours du retour, a gauche (+1,
+                                       comme le cote de la couture) et a
+                                       droite du sens de marche,
+                  "largeur": mm        la largeur de la fente le long de la piste,
+                  "borne": bool        un detour plafonne (plan coupe de bord a bord),
+                  "retour": [noms]     les plans qui FERMENT encore le retour
+                                       sous la fente ; vide = tous coupes,
+                  "x", "y": mm         le point du franchissement}]
     vias_masse  [{x, y, a, b}]             les vias de masse a portee
 
 LE RESULTAT, format « cao-crosstalk-resultat-1 » : voir `analyser`.
 """
 
+import cmath
 import math
 import os
 import sys
@@ -743,7 +802,7 @@ except Exception as _exc:                              # noqa: BLE001
 
 FORMAT = "cao-crosstalk-1"
 FORMAT_RESULTAT = "cao-crosstalk-resultat-1"
-VERSION = "4.4.1"
+VERSION = "4.5.0"
 VERSION_MOTEURS = {
     "crosstalk": VERSION,
     "simulation_em": getattr(se, "VERSION", "4.2.0") if se is not None else "indisponible",
@@ -2246,6 +2305,337 @@ def _texte_frequence(f):
         if f >= seuil:
             return ("%.3g %s" % (f / seuil, unite)).replace(".", ",")
     return ("%.3g Hz" % f).replace(".", ",")
+# ==========================================================================
+# L'IMPEDANCE COMMUNE D'UNE FENTE DU PLAN DE REFERENCE (Ott)
+# --------------------------------------------------------------------------
+# LA SECTION DROITE SUPPOSE UN PLAN CONTINU : la ou il est fendu, le courant
+# de retour fait le tour de la fente par ses deux bouts, et ce detour n'est
+# dans aucune des matrices [C] et [L]. Quand l'agresseur ET la victime
+# franchissent la meme fente, leurs deux retours empruntent le MEME cuivre :
+# c'est un couplage par impedance commune, et il se chiffre a part.
+#
+# LE DETOUR EST UNE SELF (Ott, EMC Engineering, 2009, fentes du plan) :
+# L = mu0/2pi . D . ln(D/W) pour une fente de longueur D franchie en son
+# milieu par une piste de largeur W ; pour un detour d d'un seul cote, c'est
+# la moitie d'une boucle de 2d, L_d = mu0/pi . 2d . ln(2d/W), et les deux
+# detours sont en parallele -- exactement la forme de `rf_reseau.z_fente`,
+# pour que l'onglet RF et l'onglet Crosstalk designent la meme physique.
+#
+# LA MUTUELLE A LA MEME FORME, l'entraxe S remplacant W : le flux du retour
+# de l'agresseur que la boucle de la victime embrasse s'integre de S (la
+# piste victime) a 2d (le bout de la fente). M <= L_d par construction, et
+# M = L_d quand les deux retours sont confondus.
+#
+# LA F.E.M. M . dI/dt induite dans la boucle de la victime se partage entre
+# ses deux bouts adaptes (2 Z0 en serie) : +M/(2 Z0 t_r) renvoye vers la
+# source (NEXT), -M/(2 Z0 t_r) vers la charge (FEXT), en fraction de
+# l'echelon unitaire de l'agresseur. La self du detour, en serie dans la
+# boucle de l'agresseur (2 Z0), limite elle-meme la pente du courant : la
+# rampe de t_r est lissee par tau = L_d / 2 Z0, d'ou le facteur
+# (1 - exp(-t_r / tau)) -- le terme ne depasse jamais M / L_d, la part du
+# retour de l'agresseur que la victime partage.
+#
+# LA FOURCHETTE. Le logarithme ne sait pas ou passe exactement le courant.
+# Mutuelle HAUTE : M = L_d, les deux retours confondus (c'est l'option E,
+# la borne). Mutuelle BASSE : l'entraxe compte depuis le bord d'un courant
+# de retour etale sur W + 2H sous un microruban, ln(2d / (S + W + 2H)).
+# La valeur centrale est celle d'Ott, S d'axe a axe.
+#
+# LA RESONANCE (option C). Chaque detour est un troncon de fente
+# court-circuite au bout : sa self vaut L_d . tan(beta d)/(beta d) a la
+# frequence f, beta dans la permittivite moyenne des deux faces du plan, avec
+# la perte Q = 50 de `z_fente` qui tient lieu de son rayonnement. Au genou du
+# front, 0,35 / t_r, elle ne pese que sous ~300 ps : une fente de 20 mm dans
+# du FR-4 resonne vers 4 GHz. La fiche dit quand elle a compte.
+#
+# LIMITES, et elles sont dites : une fente droite, franchie a peu pres
+# perpendiculairement, TOUS les plans de retour coupes. Une fente qui laisse
+# un plan intact dessous (cas 4b du banc) n'applique pas ce terme : le
+# retour change de plan au lieu de contourner, et c'est la section retombee
+# sur ce plan qui est rendue -- la mesure dira lequel a raison.
+# ==========================================================================
+
+MU_0 = 4e-7 * math.pi
+# La perte qui tient lieu du rayonnement de la fente -- la meme que
+# `rf_reseau.FENTE_Q`, pour que les deux onglets resonnent au meme endroit.
+FENTE_Q = 50.0
+# Le plafond du detour que la page mesure (un plan coupe de bord a bord), le
+# meme que `SIM_RF_FENTE_MAX` et `analyse_carte.FENTE_MAX_MM`.
+FENTE_MAX = 30.0
+# Au-dela de ce facteur, la resonance a PESE sur le chiffre et la fiche le dit.
+FENTE_RESONANCE_SENSIBLE = 1.05
+
+
+def self_detour(d_mm, w_mm):
+    """La self d'un detour de d mm du courant de retour, en henrys :
+    L_d = mu0/pi . 2d . ln(2d / W) (Ott), pour un courant de largeur W.
+    Nulle quand le detour n'est pas plus long que la largeur."""
+    d = float(d_mm) * 1e-3
+    w = max(float(w_mm), 1e-6) * 1e-3
+    if d <= 0 or 2.0 * d <= w:
+        return 0.0
+    return MU_0 / math.pi * 2.0 * d * math.log(2.0 * d / w)
+
+
+def facteur_resonance(d_mm, eps_r, f):
+    """|tan(x) / x|, x = beta.d.(1 - j/2Q) : ce qu'un detour de d mm, troncon
+    de fente court-circuite au bout, vaut EN PLUS de sa self a la frequence f
+    (Hz). 1 au continu ; ~2Q/pi au quart d'onde."""
+    if not (f > 0 and d_mm > 0):
+        return 1.0
+    beta = 2.0 * math.pi * f * math.sqrt(max(float(eps_r), 1.0)) / C_0
+    x = complex(beta * float(d_mm) * 1e-3, 0.0) * complex(1.0, -0.5 / FENTE_Q)
+    if abs(x) < 1e-9:
+        return 1.0
+    return abs(cmath.tan(x) / x)
+
+
+def eps_autour_plan(couches, indice):
+    """La permittivite moyenne des deux dielectriques qui bordent la couche
+    `indice` (1 pour l'air) : c'est dans ce milieu que la fente resonne.
+    Meme lecture que `rf_reseau._eps_plan`."""
+    ers = []
+    for k in (int(indice) - 1, int(indice) + 1):
+        if 0 <= k < len(couches) and couches[k].get("type") == "dielectric":
+            ers.append(_nb(couches[k].get("epsilon_r"), 4.3))
+        else:
+            ers.append(1.0)
+    return 0.5 * sum(ers)
+
+
+def impedance_commune_fente(d1, d2, w_a, entraxe, t_r, z0=50.0, hauteur=0.0,
+                            w_v=None, eps_plan=1.0, resonance=True,
+                            borne=False):
+    """Le terme de couplage par IMPEDANCE COMMUNE d'une fente franchie par
+    l'agresseur et la victime -- voir le cartouche ci-dessus.
+
+    d1, d2    les detours du retour de chaque cote du franchissement, en mm ;
+    w_a       la largeur de l'agresseur (mm), celle du courant d'Ott ;
+    entraxe   la distance d'axe a axe des deux pistes au franchissement (mm) ;
+    t_r       le front (s) ; z0 l'impedance des lignes (ohm) ;
+    hauteur   la hauteur de l'agresseur a son plan (mm), pour la borne basse ;
+    w_v       la largeur de la victime (mm ; celle de l'agresseur a defaut) ;
+    eps_plan  la permittivite autour du plan coupe, pour la resonance ;
+    borne     un detour plafonne par la page (plan coupe de bord a bord).
+
+    Rend un dictionnaire : les selfs en nH (L_d, M, et M basse / haute), le
+    NEXT et le FEXT du terme (fractions, egaux en module), leur fourchette,
+    le lissage par la self du detour et ce que la resonance a pese.
+    """
+    t_r = float(t_r) if t_r and t_r > 0 else TR_DEFAUT
+    z0 = float(z0) if z0 and z0 > 0 else 50.0
+    w_a = max(float(w_a), 1e-3)
+    w_v = float(w_v) if w_v and w_v > 0 else w_a
+    # UN ENTRAXE SOUS LA LARGEUR DE L'AGRESSEUR : les deux retours sont
+    # confondus, et la mutuelle vaut la self. Le logarithme s'arrete la.
+    s = max(float(entraxe), w_a)
+    f_genou = 0.35 / t_r
+    w_retour = w_a + 2.0 * max(float(hauteur), 0.0)
+    detours = []
+    for d in (float(d1), float(d2)):
+        r = facteur_resonance(d, eps_plan, f_genou) if resonance else 1.0
+        l_d = self_detour(d, w_a)
+        detours.append({"d": round(d, 3), "facteur": round(r, 4),
+                        "l": l_d * r,
+                        "m": min(self_detour(d, s), l_d) * r,
+                        "m_bas": min(self_detour(d, s + w_retour), l_d) * r,
+                        "m_haut": l_d * r})
+
+    def parallele(cle):
+        """Les deux detours en parallele ; un detour nul court-circuite."""
+        a, b = detours[0][cle], detours[1][cle]
+        if a <= 0 or b <= 0:
+            return 0.0
+        return a * b / (a + b)
+
+    l_d = parallele("l")
+    m, m_bas, m_haut = parallele("m"), parallele("m_bas"), parallele("m_haut")
+    # LA SELF DU DETOUR LISSE LA PENTE : tau = L_d / 2 Z0 dans la boucle de
+    # l'agresseur. Sans ce facteur, un front de 100 ps sur un detour de 10 mm
+    # rendrait un terme de 100 %, ce qui ne veut rien dire ; avec lui, il
+    # tend vers M / L_d, la part du retour que la victime partage.
+    tau = l_d / (2.0 * z0) if l_d > 0 else 0.0
+    lissage = (1.0 - math.exp(-t_r / tau)) if tau > 0 else 1.0
+
+    def niveau(mutuelle):
+        return mutuelle / (2.0 * z0 * t_r) * lissage
+
+    nxt = niveau(m)
+    bas, haut = niveau(m_bas), niveau(m_haut)
+    facteur = max(x["facteur"] for x in detours)
+    quart = [C_0 / (4.0 * x["d"] * 1e-3 * math.sqrt(max(float(eps_plan), 1.0)))
+             for x in detours if x["d"] > 0]
+    return {
+        "d1": detours[0]["d"], "d2": detours[1]["d"], "borne": bool(borne),
+        "largeur_agresseur": round(w_a, 4), "largeur_victime": round(w_v, 4),
+        "entraxe": round(s, 4), "hauteur": round(float(hauteur), 4),
+        "z0": round(z0, 2), "t_r": t_r,
+        "ld_nh": round(1e9 * l_d, 3), "m_nh": round(1e9 * m, 3),
+        "m_bas_nh": round(1e9 * m_bas, 3), "m_haut_nh": round(1e9 * m_haut, 3),
+        "k": round(m / l_d, 4) if l_d > 0 else 0.0,
+        "tau_ps": round(1e12 * tau, 2), "lissage": round(lissage, 4),
+        # LE TERME : +NEXT et -FEXT, le meme module aux deux bouts.
+        "next": round(nxt, 6), "fext": round(nxt, 6),
+        "next_pc": round(100.0 * nxt, 3), "fext_pc": round(100.0 * nxt, 3),
+        "fourchette": [round(bas, 6), round(haut, 6)],
+        "fourchette_pc": [round(100.0 * bas, 3), round(100.0 * haut, 3)],
+        "resonance": {"appliquee": bool(resonance), "facteur": round(facteur, 4),
+                      "sensible": bool(resonance
+                                       and facteur > FENTE_RESONANCE_SENSIBLE),
+                      "f_genou": f_genou,
+                      "f_quart_onde": min(quart) if quart else 0.0,
+                      "eps_plan": round(float(eps_plan), 3)},
+        "methode": "impédance commune du retour (Ott) : L_d = μ0/π·2d·ln(2d/W),"
+                   " M de même forme avec l'entraxe, deux détours en parallèle,"
+                   " f.é.m. M·dI/dt partagée en +NEXT / −FEXT, lissée par"
+                   " τ = L_d/2Z0 ; fourchette entre M basse (S + W + 2H) et"
+                   " M = L_d"}
+
+
+def ajouter_fentes_niveau2(n2, termes, orange=SEUIL_ORANGE, rouge=SEUIL_ROUGE):
+    """Le diagnostic `niveau2` d'une paire, complete des termes de fente.
+
+    LE NEXT PREND LE PLUS FORT DES TERMES : deux fentes a des abscisses
+    differentes renvoient leur impulsion au bout proche a des instants
+    differents, elles ne s'additionnent pas. LE FEXT LES SOMME : le bruit
+    avant co-propage avec l'agresseur, et tout arrive ensemble au bout
+    lointain. Les deux s'ajoutent en module a ceux des lignes couplees -- en
+    phase, le pire cas, comme la somme des agresseurs. `lignes` garde le
+    chiffre des lignes seules ; `fente` porte le terme et sa fourchette.
+    """
+    if not termes:
+        return n2
+    out = dict(n2)
+    out["lignes"] = {k: n2[k] for k in ("next", "fext", "next_pc", "fext_pc",
+                                        "next_db", "fext_db", "statut_next",
+                                        "statut_fext", "statut") if k in n2}
+    n_f = max(float(t["next"]) for t in termes)
+    f_f = sum(float(t["fext"]) for t in termes)
+    n_bas = max(float(t["fourchette"][0]) for t in termes)
+    n_haut = max(float(t["fourchette"][1]) for t in termes)
+    f_bas = sum(float(t["fourchette"][0]) for t in termes)
+    f_haut = sum(float(t["fourchette"][1]) for t in termes)
+    nxt = float(n2["next"]) + n_f
+    fxt = float(n2["fext"]) + f_f
+    s_n, s_f = statut(nxt, orange, rouge), statut(fxt, orange, rouge)
+    out.update({
+        "next": round(nxt, 6), "next_pc": round(100.0 * nxt, 3),
+        "next_db": round(_db(nxt), 2),
+        "fext": round(fxt, 6), "fext_pc": round(100.0 * fxt, 3),
+        "fext_db": round(_db(fxt), 2),
+        "next_fourchette": [round(float(n2["next"]) + n_bas, 6),
+                            round(float(n2["next"]) + n_haut, 6)],
+        "fext_fourchette": [round(float(n2["fext"]) + f_bas, 6),
+                            round(float(n2["fext"]) + f_haut, 6)],
+        "statut_next": s_n, "statut_fext": s_f,
+        "statut": pire_statut([s_n, s_f]),
+        "fente": {"nombre": len(termes),
+                  "next": round(n_f, 6), "fext": round(f_f, 6),
+                  "next_pc": round(100.0 * n_f, 3),
+                  "fext_pc": round(100.0 * f_f, 3),
+                  "next_fourchette": [round(n_bas, 6), round(n_haut, 6)],
+                  "fext_fourchette": [round(f_bas, 6), round(f_haut, 6)],
+                  "statut": pire_statut([statut(n_f, orange, rouge),
+                                         statut(f_f, orange, rouge)]),
+                  "resonance_sensible": any(
+                      (t.get("resonance") or {}).get("sensible")
+                      for t in termes),
+                  "detail": list(termes)}})
+    return out
+
+
+def termes_fentes(doc, couches, parcours, retenus, blocs, t_r, notes):
+    """Les termes d'impedance commune, victime par victime, d'apres les
+    fentes que la page a MESUREES (d1 / d2). Rend ({net: [termes]}, signales).
+
+    `signales` porte ce qui n'a PAS ete chiffre, et pourquoi -- une fente
+    sans detour mesure (page anterieure), un plan qui ferme encore le retour
+    (cas 4b), une victime que la fente n'atteint pas -- pour que la fiche le
+    dise a la place d'un silence.
+    """
+    termes, signales = {}, []
+    for f in (doc.get("fentes") or []):
+        if not isinstance(f, dict) or f.get("d1") is None or f.get("d2") is None:
+            continue
+        s0 = _nb(f.get("s"))
+        s1 = s0 + max(_nb(f.get("longueur"), 0.0), 0.1)
+        milieu = 0.5 * (s0 + s1)
+        d1, d2 = _nb(f.get("d1")), _nb(f.get("d2"))
+        borne = bool(f.get("borne"))
+        plans = [str(x) for x in (f.get("plans") or ()) if x]
+        seg = next((p for p in parcours
+                    if p["s0"] - TOL_BORNE <= milieu <= p["s1"] + TOL_BORNE),
+                   None)
+        if seg is None:
+            continue
+        # LES PLANS QUI FERMENT ENCORE LE RETOUR. La page les nomme ; une
+        # page qui ne le fait pas les deduit de l'empilage, PRUDEMMENT : tout
+        # plan declare que la fente ne coupe pas est tenu pour un retour --
+        # le terme ne s'applique alors que si la page dit TOUS les plans
+        # coupes.
+        if f.get("retour") is not None:
+            retour = [str(x) for x in (f.get("retour") or ()) if x]
+        else:
+            retour = sorted(set(str(c.get("name")) for c in couches
+                                if c.get("type") == "copper"
+                                and c.get("role") == "plane" and c.get("name"))
+                            - set(plans))
+        if retour:
+            signales.append({"s0": round(s0, 3), "s1": round(s1, 3),
+                             "cause": "retour",
+                             "texte": "un plan ferme encore le retour sous la"
+                                      " fente (%s) : le courant change de plan"
+                                      " au lieu de la contourner, et c'est la"
+                                      " section retombée sur ce plan qui est"
+                                      " rendue, sans terme d'impédance commune"
+                                      % ", ".join("« %s »" % n for n in retour)})
+            continue
+        bloc = next((b for b in (blocs or ())
+                     if _nb(b["s0"]) - TOL_BORNE <= milieu
+                     <= _nb(b["s1"]) + TOL_BORNE), None)
+        z0 = _nb((bloc or {}).get("z0"), 0.0) or 50.0
+        hauteur = se._hauteur_de_couche(couches, seg["couche"], seg["largeur"],
+                                        seg["epaisseur"])
+        indice_plan = next((k for k, c in enumerate(couches)
+                            if c.get("name") in plans), None)
+        eps_plan = (eps_autour_plan(couches, indice_plan)
+                    if indice_plan is not None else 1.0)
+        for c in retenus:
+            it = next((i for i in (c.get("intervalles") or ())
+                       if min(float(i["s1"]), s1) - max(float(i["s0"]), s0)
+                       > TOL_BORNE), None)
+            if it is None:
+                continue
+            entraxe = abs(_nb(it.get("x")))
+            # `x` EST SIGNE : negatif a gauche du sens de marche (cote +1,
+            # celui de d1), positif a droite (d2) -- la convention de la
+            # couture, que la page suit pour les detours.
+            cote = 1 if _nb(it.get("x")) < 0 else -1
+            d_cote = d1 if cote > 0 else d2
+            if entraxe > d_cote + TOL_BORNE and not borne:
+                signales.append({"s0": round(s0, 3), "s1": round(s1, 3),
+                                 "victime": c["net"], "cause": "hors fente",
+                                 "texte": "la fente s'arrête à %.1f mm du côté"
+                                          " de « %s », qui passe à %.2f mm :"
+                                          " elle ne la franchit pas, pas"
+                                          " d'impédance commune"
+                                          % (d_cote, c["net"], entraxe)})
+                continue
+            terme = impedance_commune_fente(
+                d1, d2, seg["largeur"], entraxe, t_r, z0, hauteur,
+                c.get("largeur"), eps_plan, True, borne)
+            terme.update({"s0": round(s0, 3), "s1": round(s1, 3),
+                          "victime": c["net"], "plans": plans,
+                          "largeur_fente": round(_nb(f.get("largeur"),
+                                                     s1 - s0), 3)})
+            termes.setdefault(c["net"], []).append(terme)
+    if termes:
+        notes.append(
+            "Z0 de l'agresseur pris dans le bloc du franchissement pour le"
+            " terme de fente (%s Ω)."
+            % ", ".join(sorted(set("%.0f" % t["z0"] for ts in termes.values()
+                                   for t in ts))))
+    return termes, signales
 
 
 def geometrie_superposee(couches, i, j):
@@ -2540,9 +2930,11 @@ def sections_couplees(couches, parcours, retenus, refs, t_r, notes,
         # l'agresseur : Z0 et eps_eff de sa diagonale, eps_r et tan delta de
         # sa couche. Seulement si on les a demandees.
         alpha = 0.0
+        # LE Z0 DE L'AGRESSEUR SUR CE BLOC, de sa diagonale : le terme de
+        # fente (4.5.0) en a besoin au franchissement, pertes ou non.
+        c00, l00 = float(c_g[0, 0]), float(l_g[0, 0])
+        z0_a = math.sqrt(l00 / c00) if c00 > 0 and l00 > 0 else 0.0
         if pertes and not drapeau:
-            c00, l00 = float(c_g[0, 0]), float(l_g[0, 0])
-            z0_a = math.sqrt(l00 / c00) if c00 > 0 and l00 > 0 else 0.0
             _geo, inf = se.section_de_couche(couches, seg["couche"],
                                              seg["largeur"], seg["epaisseur"],
                                              0.0, None,
@@ -2562,7 +2954,7 @@ def sections_couplees(couches, parcours, retenus, refs, t_r, notes,
         blocs.append({"s0": round(a, 4), "s1": round(b, 4),
                       "voisines": [p["net"] for p in presents],
                       "couplage": coef, "couplage_agresseurs": coef_agr,
-                      "alpha": alpha,
+                      "alpha": alpha, "z0": round(z0_a, 3),
                       "gardes": [g["net"] for g in gardes_bloc] if presents
                       else []})
 
@@ -3724,26 +4116,89 @@ def analyser(doc, journal=None):
                ", ".join("%.1f mm à %s" % (b0["longueur"], b0["cote"])
                          for b0 in bords_nus)))
     # LE PLAN QUI MANQUE SOUS LE LONGEMENT : la section droite quasi-TEM
-    # SUPPOSE un plan de retour continu sous les deux pistes.
+    # SUPPOSE un plan de retour continu sous les deux pistes. Depuis la
+    # 4.5.0, une fente dont la page a MESURE les detours ajoute le terme
+    # d'impedance commune d'Ott ; celle qu'elle n'a pas mesuree, ou qu'un plan
+    # referme encore dessous, garde la reserve d'avant.
+    fentes_termes, fentes_signalees = termes_fentes(
+        doc, couches, parcours, retenus, infos.get("blocs"), t_r, notes)
+    base["fentes"] = {
+        "chiffrees": sum(len(v) for v in fentes_termes.values()),
+        "signalees": fentes_signalees}
+
+    def chiffree(f):
+        """Cette fente sur ce longement a-t-elle son terme ?"""
+        return any(min(t["s1"], f["s1"]) - max(t["s0"], f["s0"]) > TOL_BORNE
+                   for t in fentes_termes.get(f["victime"], ()))
+
     fentes_sur = _fentes_sur_longement(masse, retenus)
-    if fentes_sur:
+    fentes_muettes = [f for f in fentes_sur if not chiffree(f)]
+    if fentes_termes:
+        for net, ts in fentes_termes.items():
+            t = max(ts, key=lambda x: x["next"])
+            avert.append(
+                "FENTE DU PLAN FRANCHIE PAR « %s » ET « %s » : le courant de"
+                " retour des deux la contourne par le même cuivre (détours de"
+                " %.1f et %.1f mm%s, entraxe %.2f mm). Ce couplage par"
+                " IMPÉDANCE COMMUNE est chiffré par le modèle d'Ott : self du"
+                " détour %.1f nH, mutuelle %.1f nH (fourchette %.1f à %.1f nH),"
+                " soit %+.2f %% en NEXT et autant en FEXT à t_r = %s"
+                " (fourchette %.2f à %.2f %%), AJOUTÉS au couplage des lignes."
+                "%s%s Limites : fente droite franchie à peu près"
+                " perpendiculairement, tous les plans de retour coupés —"
+                " c'est un ordre de grandeur, pas une forme d'onde."
+                % (principal, net, t["d1"], t["d2"],
+                   " — plan coupé de bord à bord, détour plafonné à %.0f mm"
+                   % FENTE_MAX if t["borne"] else "",
+                   t["entraxe"], t["ld_nh"], t["m_nh"], t["m_bas_nh"],
+                   t["m_haut_nh"], t["next_pc"], _texte_duree(t_r),
+                   t["fourchette_pc"][0], t["fourchette_pc"][1],
+                   (" La self du détour (τ = %.0f ps) lisse la pente du"
+                    " courant et borne le terme à M/L_d = %.0f %%."
+                    % (t["tau_ps"], 100.0 * t["k"])) if t["lissage"] < 0.95
+                   else "",
+                   (" La RÉSONANCE de la fente a pesé (× %.2f au genou de"
+                    " %.2f GHz, quart d'onde vers %.2f GHz, Q ≈ %.0f) : sous"
+                    " 300 ps, la fente est une antenne autant qu'un détour."
+                    % (t["resonance"]["facteur"], 1e-9 * t["resonance"]["f_genou"],
+                       1e-9 * t["resonance"]["f_quart_onde"], FENTE_Q))
+                   if t["resonance"]["sensible"] else ""))
+        if muet > 0:
+            avert.append(
+                "Le bloc sous la fente n'a pas de section résolue (aucun plan"
+                " dessous) : le couplage des LIGNES y vaut zéro, et c'est le"
+                " terme d'impédance commune ci-dessus qui en tient lieu sur"
+                " cette plage.")
+    for sg in fentes_signalees:
+        if sg["cause"] == "retour":
+            avert.append(
+                "FENTE SOUS LE LONGEMENT de %.2f mm à partir de %.2f mm, SANS"
+                " terme d'impédance commune : %s. C'est ce que le cas 4b du"
+                " banc de mesure doit départager." % (sg["s1"] - sg["s0"],
+                                                      sg["s0"], sg["texte"]))
+        else:
+            notes.append("Fente de %.2f mm à partir de %.2f mm : %s."
+                         % (sg["s1"] - sg["s0"], sg["s0"], sg["texte"]))
+    if fentes_muettes:
         _grave(
             avert, graves,
             "plan de référence absent sous %.2f mm de longement : le couplage"
             " rendu est un plancher"
-            % sum(f["longueur"] for f in fentes_sur),
+            % sum(f["longueur"] for f in fentes_muettes),
             "PLAN DE RÉFÉRENCE ABSENT SOUS LE LONGEMENT, sur %s. La section"
             " droite SUPPOSE un plan de retour continu sous les deux pistes :"
             " c'est de lui que sortent [C] et [L]. Là où le plan est percé ou"
             " absent, le courant de retour fait un détour, et les deux pistes"
             " se partagent ce retour : le couplage par IMPÉDANCE COMMUNE qui"
-            " en résulte est un terme que ce modèle ne contient PAS. CE QUE LE"
-            " TABLEAU REND EST UN PLANCHER SUR CES PLAGES, et un statut vert"
-            " n'y est pas un verdict. Un plan continu sous un longement coûte"
-            " moins qu'un écartement de pistes."
-            % "; ".join("%.2f mm à partir de %.2f mm (« %s »)"
-                        % (f["longueur"], f["s0"], f["victime"])
-                        for f in fentes_sur))
+            " en résulte est un terme que ce modèle ne contient PAS%s. CE QUE"
+            " LE TABLEAU REND EST UN PLANCHER SUR CES PLAGES, et un statut"
+            " vert n'y est pas un verdict. Un plan continu sous un longement"
+            " coûte moins qu'un écartement de pistes."
+            % ("; ".join("%.2f mm à partir de %.2f mm (« %s »)"
+                         % (f["longueur"], f["s0"], f["victime"])
+                         for f in fentes_muettes),
+               " ici — la page n'a pas envoyé les détours d1 / d2 de cette"
+               " fente, ou un plan la referme encore dessous"))
 
     # UNE VOISINE QUI LONGE DES DEUX FACONS -- a plat sur une portion,
     # superposee sur une autre, parce que l'AGRESSEUR change de couche. La
@@ -3762,7 +4217,7 @@ def analyser(doc, journal=None):
                    c.get("longueur_verticale", 0.0)))
     _avertir_masse(masse, avert, graves)
     _lire_couples(base, infos, retenus, couches, axe, espacements, masse,
-                  reglages, t_r, notes, avert, graves)
+                  reglages, t_r, notes, avert, graves, fentes_termes)
     base["avertissements"] = avert + notes
     base["hypotheses"] = _hypotheses(reglages, masse, seuils, base)
     _journaliser(journal, base)
@@ -3885,13 +4340,19 @@ def _raison_non_calcule(etat):
 
 
 def _lire_couples(base, infos, retenus, couches, axe, espacements, masse,
-                  reglages, t_r, notes, avert, graves):
+                  reglages, t_r, notes, avert, graves, fentes_termes=None):
     """Le niveau 2, paire par paire, et la carte locale du NEXT.
 
     LA RESOLUTION EST CELLE DU DECOUPAGE, et elle est honnete sans reserve :
     aucune transformee n'est en jeu. Le profil est constant par bloc et EXACT
     entre deux bornes ; la seule chose qui limite la lecture est la grille
     d'affichage.
+
+    `fentes_termes` (4.5.0) : {net: [termes]} de `termes_fentes`, les
+    impedances communes des fentes que la victime franchit avec l'agresseur.
+    Ils s'ajoutent au niveau 2 de la paire (`ajouter_fentes_niveau2`) et se
+    posent sur la carte locale a l'abscisse de la fente -- le pic LOCALISE
+    que la reserve annoncait depuis la 3.0.0 sans jamais le chiffrer.
     """
     blocs = infos.get("blocs") or []
     principal = base["principal"]
@@ -3964,6 +4425,13 @@ def _lire_couples(base, infos, retenus, couches, axe, espacements, masse,
             # UNE VOISINE QUI NE FAIT QUE SE SUPERPOSER A MAINTENANT UN CHIFFRE.
             etat = dict(etat, non_calcule=False)
         n2 = niveau2(morceaux, t_r, orange, rouge, att_fext)
+        # LES FENTES FRANCHIES PAR LES DEUX : le terme d'impedance commune
+        # s'ajoute ici, et `lignes` garde le chiffre des lignes seules.
+        termes_f = (fentes_termes or {}).get(net) or []
+        n2 = ajouter_fentes_niveau2(n2, termes_f, orange, rouge)
+        if termes_f:
+            # UNE VICTIME QUE SEULE LA FENTE COUPLE A UN CHIFFRE, ELLE AUSSI.
+            etat = dict(etat, non_calcule=False)
         niveau = max(n2["next"], n2["fext"])
         # LES AUTRES AGRESSEURS SELECTIONNES, et leur SOMME vers cette
         # victime : arithmetique (pire cas, en phase) ou quadratique.
@@ -4002,6 +4470,15 @@ def _lire_couples(base, infos, retenus, couches, axe, espacements, masse,
         td_tout = td_plat + sum(m[2] for m in sup)
         facteur = min(1.0, 2.0 * td_tout / t_r) if t_r > 0 else 1.0
         local = kb_loc * facteur
+        # LE PIC DE LA FENTE, A SON ABSCISSE : le terme d'impedance commune
+        # est LOCALISE la ou le retour fait le tour, et c'est exactement ce
+        # que la carte locale est faite pour montrer. Il s'ajoute au NEXT
+        # local sur la plage de la fente -- au moins un echantillon.
+        for t in termes_f:
+            dans = (axe >= t["s0"] - TOL_BORNE) & (axe <= t["s1"] + TOL_BORNE)
+            if not dans.any() and axe.size:
+                dans[int(np.argmin(np.abs(axe - 0.5 * (t["s0"] + t["s1"]))))] = True
+            local[dans] += float(t["next"])
         local_max = float(local.max()) if local.size else 0.0
         couple = {
             "agresseur": principal, "victime": net, "role": v["role"],
@@ -4228,15 +4705,36 @@ def _hypotheses(reglages, masse, seuils, base):
         " peuvent y être dépassés ; (2) le modèle de couplage faible ignore"
         " la dispersion, les pertes, les coudes et les vias → un ordre de"
         " grandeur fidèle, pas une forme d'onde ; (3) le PLAN DE RETOUR EST"
-        " SUPPOSÉ CONTINU sous les deux pistes : là où il est percé, fendu ou"
-        " absent, le couplage par impédance commune est un terme ABSENT du"
-        " modèle → OPTIMISTE ; (4) les contrôles de plan de masse ne voient"
+        " SUPPOSÉ CONTINU sous les deux pistes dans [C] et [L] : une fente"
+        " franchie par les deux, dont la page a mesuré les détours d1 / d2 et"
+        " dont TOUS les plans sont coupés, ajoute le terme d'impédance commune"
+        " d'Ott (M·dI/dt partagé en +NEXT / −FEXT, avec sa fourchette) ; une"
+        " fente sans détour mesuré, ou qu'un plan referme encore dessous,"
+        " n'ajoute rien → OPTIMISTE là ; (4) les contrôles de plan de masse ne voient"
         " que ce que la page envoie → OPTIMISTE sur une carte muette sur sa"
         " couture ; (5) plusieurs agresseurs d'une même victime ne sont pas"
         " additionnés ici, la vérification de carte les somme au pire en"
         " phase. Sur une carte mal cousue ou mal référencée, ce qui est"
         " affiché est donc un PLANCHER.",
     ]
+    if any(c.get("fente") for c in (base.get("couples") or ())):
+        h.insert(-1,
+                 "L'IMPÉDANCE COMMUNE D'UNE FENTE (Ott) : chaque détour d du"
+                 " courant de retour est une self L_d = μ0/π·2d·ln(2d/W), la"
+                 " mutuelle M a la même forme avec l'entraxe S des deux pistes"
+                 " au franchissement, les deux détours sont en parallèle ; la"
+                 " f.é.m. M·dI/dt se partage entre les deux bouts adaptés de la"
+                 " victime : +M/(2·Z0·t_r) en NEXT, −M/(2·Z0·t_r) en FEXT,"
+                 " lissée par τ = L_d/2Z0 (le terme ne dépasse pas M/L_d)."
+                 " FOURCHETTE : M basse avec l'entraxe compté depuis le bord"
+                 " d'un retour étalé sur W + 2H, M haute = L_d (les deux"
+                 " retours confondus). RÉSONANCE : tan(βd)/βd au genou"
+                 " 0,35/t_r, Q ≈ %.0f, qui ne pèse que sous ~300 ps. Le terme"
+                 " s'AJOUTE en module au couplage des lignes (plus fort des"
+                 " termes en NEXT, somme en FEXT) ; `lignes` garde le chiffre"
+                 " des lignes seules. Validité : fente droite, franchie à peu"
+                 " près perpendiculairement, tous les plans de retour coupés."
+                 % FENTE_Q)
     return h
 
 

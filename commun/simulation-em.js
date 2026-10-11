@@ -169,11 +169,19 @@
                                   Sans eux on ne connaît que le pire trou par
                                   tronçon, et la zone à risque est alors le
                                   tronçon entier
-                       fentes     [{s, longueur, quoi}]     les discontinuités
-                                  du plan de référence sous le parcours. Ne pas
-                                  envoyer le champ DU TOUT quand on n'a pas su
-                                  sonder : une liste vide se lit « rien à
-                                  signaler », ce qui est le contraire
+                       fentes     [{s, longueur, plans, quoi,
+                                    d1, d2, largeur, borne, retour, x, y}]
+                                  les discontinuités du plan de référence
+                                  sous le parcours. Ne pas envoyer le champ
+                                  DU TOUT quand on n'a pas su sonder : une
+                                  liste vide se lit « rien à signaler », ce
+                                  qui est le contraire. d1 / d2 : les détours
+                                  du retour à gauche (+1, comme la couture) et
+                                  à droite du sens de marche, en mm ; retour :
+                                  les plans qui ferment encore le retour sous
+                                  la fente (vide : tous coupés). C'est avec eux
+                                  que le serveur chiffre l'impédance commune
+                                  d'une fente franchie par les deux pistes
                        vias_masse [{x, y, a, b}]            de quoi juger les
                                   changements de couche
 
@@ -9356,7 +9364,12 @@ function simXtCarteFiche(){
     h+='<tr class="simXtLigneCarte" data-xtpaire="'+x.i+'" title="'+
        simEsc("Centrer la vue sur cette paire")+'"><td><b>'+
        simEsc(p.victime)+"</b> ← "+simEsc(p.agresseur)+
-       (p.superposee?' <span class="simTag">superposées</span>':"")+"</td>"+
+       (p.superposee?' <span class="simTag">superposées</span>':"")+
+       (p.fente?' <span class="simTag" title="'+simEsc("fente du plan franchie "+
+         "par les deux : +"+simXtPct(p.fente.next)+" % NEXT / FEXT par impédance "+
+         "commune (Ott), fourchette "+simXtPct(p.fente.next_fourchette[0])+" à "+
+         simXtPct(p.fente.next_fourchette[1])+" % ; lignes seules NEXT "+
+         simXtPct((p.lignes||{}).next)+" %")+'">fente</span>':"")+"</td>"+
        "<td>"+simEsc(p.couche||"")+"</td>"+
        "<td>"+simNb(p.longueur,1)+" mm</td>"+
        "<td>"+simNb(p.ecart,3)+" mm</td>"+
@@ -9638,6 +9651,16 @@ function simXtTableauCouples(r){
        "<td>"+(c.rang||"")+"</td><td><b>"+simEsc(c.victime)+"</b>"+
        (c.superposee?' <span class="simTag">superposée '+
                      simNb(c.longueur_superposee,1)+" mm</span>":"")+
+       /* LE TERME DE FENTE, DIT À PART : le niveau de la paire le contient,
+          et la fiche doit pouvoir dire d'où il vient — et sa fourchette. */
+       (c.fente?' <span class="simTag" title="'+simEsc("impédance commune"+
+         " d'une fente du plan franchie par les deux (Ott) : +"+
+         simXtPct(c.fente.next)+" % en NEXT comme en FEXT, fourchette "+
+         simXtPct(c.fente.next_fourchette[0])+" à "+
+         simXtPct(c.fente.next_fourchette[1])+" % ; lignes seules : NEXT "+
+         simXtPct((c.lignes||{}).next)+" %, FEXT "+simXtPct((c.lignes||{}).fext)+
+         " %"+(c.fente.resonance_sensible?" ; la résonance de la fente a pesé":""))+
+         '">fente +'+simXtPct(c.fente.next)+" %</span>":"")+
        (c.confirmee?"":' <span class="simXtSeuilBout">sous le seuil</span>')+
        "</td>"+
        "<td>"+simXtPct(c.k_total)+" %</td>"+
@@ -10764,7 +10787,13 @@ function simXtRapportTexte(r){
       "   T_d "+simNb(c.td_ps||0,1)+" ps   "+simNb(c.longement,1)+" mm à "+
       simNb(c.distance,3)+" mm"+
       (c.superposee?"   dont "+simNb(c.longueur_superposee,1)+
-                    " mm superposés":""));
+                    " mm superposés":"")+
+      (c.fente?"   dont fente du plan (impédance commune, Ott) : +"+
+               simXtPct(c.fente.next)+" % NEXT / FEXT, fourchette "+
+               simXtPct(c.fente.next_fourchette[0])+" à "+
+               simXtPct(c.fente.next_fourchette[1])+" %, lignes seules NEXT "+
+               simXtPct((c.lignes||{}).next)+" % FEXT "+
+               simXtPct((c.lignes||{}).fext)+" %":""));
   }
   if((r.actions||[]).length){
     t(""); t("À FAIRE");

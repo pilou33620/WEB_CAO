@@ -16481,6 +16481,68 @@ T("une fente FINE du plan (0,3 mm) est vue, avec sa largeur et sa position",()=>
   S.cuts=[]; touch();
 });
 
+T("la fente part avec ses détours d1 / d2, sa largeur et les plans qui ferment le retour",()=>{
+  simXtBancCarte([]);
+  /* UN PLAN PLEIN, FENDU EN TRAVERS DE LA PISTE : 2 mm de large (x de 29 à
+     31), de 8 mm sous la piste à 12 mm au-dessus. Le courant de retour la
+     contourne par le haut — 12 mm, à GAUCHE du sens de marche (+y pour une
+     piste qui va vers +x) : c'est d1 — ou par le bas, 8 mm : d2. C'est la
+     mesure dont le serveur a besoin pour chiffrer l'impédance commune (Ott,
+     crosstalk 4.5.0), et il ne peut pas la faire lui-même. */
+  const plan=1;
+  const z=(x1,y1,x2,y2)=>({l:plan, net:"GND",
+    pts:[{x:x1,y:y1},{x:x2,y:y1},{x:x2,y:y2},{x:x1,y:y2}]});
+  const morceaux=[z(0,0,SIM_X1+19,40), z(SIM_X1+21,0,60,40),
+                  z(SIM_X1+19,0,SIM_X1+21,SIM_Y-8), z(SIM_X1+19,SIM_Y+12,SIM_X1+21,40)];
+  S.zones=morceaux.slice(); touch();
+  let f=simXtFentes(simXtParcours(simSegments(null)),simRefSet());
+  if(!f||f.length!==1)
+    throw new Error("une fente attendue : "+JSON.stringify(f));
+  let t=f[0];
+  if(Math.abs(t.s-19)>1.0)
+    throw new Error("la fente commence vers 19 mm : "+JSON.stringify(t));
+  if(!(Math.abs(t.d1-12)<=1.0))
+    throw new Error("d1 — à gauche du sens de marche, vers +y — vaut 12 mm : "+
+                    JSON.stringify(t));
+  if(!(Math.abs(t.d2-8)<=1.0))
+    throw new Error("d2 — à droite, vers −y — vaut 8 mm : "+JSON.stringify(t));
+  if(!(t.largeur>=1.5&&t.largeur<=3.0))
+    throw new Error("la fente fait 2 mm de large, au pas de sonde près : "+
+                    JSON.stringify(t));
+  if(t.borne)throw new Error("le plan se referme des deux côtés : pas de plafond");
+  if(!Array.isArray(t.retour)||t.retour.length)
+    throw new Error("aucun plan ne ferme le retour sous la fente : "+
+                    JSON.stringify(t.retour));
+  if(Math.abs(t.x-(SIM_X1+20))>1.0||Math.abs(t.y-SIM_Y)>0.1)
+    throw new Error("le franchissement est au milieu de la fente : "+
+                    JSON.stringify(t));
+  /* UN SECOND PLAN PLEIN DERRIÈRE : il FERME le retour, et `retour` le
+     nomme — le serveur n'appliquera pas le terme (le cas 4b du banc : fente
+     sur L2 seule, L3 intact). Seul le plan fendu manque. */
+  S.zones.push({l:2, net:"GND",
+                pts:[{x:0,y:0},{x:60,y:0},{x:60,y:40},{x:0,y:40}]});
+  touch();
+  f=simXtFentes(simXtParcours(simSegments(null)),simRefSet());
+  if(!f||f.length!==1)throw new Error("la fente doit rester vue");
+  if(f[0].retour.length!==1||f[0].retour[0]!==cuLabel(2,S.cu))
+    throw new Error("le plan plein du dessous ferme le retour : "+
+                    JSON.stringify(f[0].retour));
+  if(f[0].plans.length!==1)
+    throw new Error("seul le plan fendu manque : "+JSON.stringify(f[0].plans));
+  if(!(Math.abs(f[0].d1-12)<=1.0&&Math.abs(f[0].d2-8)<=1.0))
+    throw new Error("les détours ne changent pas : "+JSON.stringify(f[0]));
+  /* ET LE SENS DE MARCHE : la même piste dessinée à rebours échange d1 et
+     d2 — gauche et droite se définissent dans le sens du parcours, comme le
+     côté de la couture que le serveur lit. */
+  S.zones=morceaux.slice();
+  const trk=S.tracks[S.tracks.length-1];
+  trk.x1=SIM_X2; trk.x2=SIM_X1; touch();
+  f=simXtFentes(simXtParcours(simSegments(null)),simRefSet());
+  if(!f||f.length!==1)throw new Error("la fente doit être vue à rebours aussi");
+  if(!(Math.abs(f[0].d1-8)<=1.0&&Math.abs(f[0].d2-12)<=1.0))
+    throw new Error("à rebours, d1 et d2 s'échangent : "+JSON.stringify(f[0]));
+});
+
 T("le voisinage du crosstalk voit les couches adjacentes, pas celui de la diaphonie",()=>{
   simXtBancCarte([]);
   /* UNE VOISINE SUR LA COUCHE D'À CÔTÉ. La section droite de l'onglet
