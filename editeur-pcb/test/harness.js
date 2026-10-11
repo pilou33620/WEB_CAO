@@ -16438,6 +16438,49 @@ T("une fente du plan sous le parcours est trouvée et localisée",()=>{
                     JSON.stringify(rien));
 });
 
+T("une fente FINE du plan (0,3 mm) est vue, avec sa largeur et sa position",()=>{
+  simXtBancCarte([]);
+  /* LA FENTE DU CAS 4 DE LA CARTE D'ESSAI DU BANC CROSSTALK, en plus fin :
+     0,3 mm, soit moins d'un pas de sonde (0,5 mm). La sonde à pas seule la
+     manquait une fois sur deux, et la jetait toujours (« moins de 1,5 pas ») ;
+     ses deux arêtes la bornent maintenant exactement. */
+  const plan=1;
+  const bande=(x1,x2)=>({l:plan, net:"GND",
+    pts:[{x:x1,y:SIM_Y-5},{x:x2,y:SIM_Y-5},{x:x2,y:SIM_Y+5},{x:x1,y:SIM_Y+5}]});
+  S.zones=[bande(0,SIM_X1+10), bande(SIM_X1+10.3,60)];
+  touch();
+  const f=simXtFentes(simXtParcours(simSegments(null)),simRefSet());
+  if(!f||f.length!==1)
+    throw new Error("une fente de 0,3 mm doit être vue, une seule : "+
+                    JSON.stringify(f));
+  if(Math.abs(f[0].s-10)>0.01)
+    throw new Error("elle commence à 10 mm, au bord du plan : "+
+                    JSON.stringify(f[0]));
+  if(Math.abs(f[0].longueur-0.3)>0.01)
+    throw new Error("elle fait 0,3 mm, mesurée sur ses bords : "+
+                    JSON.stringify(f[0]));
+  /* Le plan de repli (Inner 2, sans zone sur cette carte) est nommé lui
+     aussi : c'est la règle de « sous une découpe, le plan de repli est sondé ». */
+  if(!f[0].plans||f[0].plans.indexOf("Inner 1")<0||!f[0].quoi)
+    throw new Error("la fente nomme son plan : "+JSON.stringify(f[0]));
+  /* ET LA FENTE LARGE GARDE SES BORDS EXACTS : 10 mm pile, et non « à un pas
+     près ». */
+  S.zones=[bande(0,SIM_X1+10), bande(SIM_X1+20,60)]; touch();
+  const g=simXtFentes(simXtParcours(simSegments(null)),simRefSet());
+  if(!g||g.length!==1||Math.abs(g[0].s-10)>0.01||Math.abs(g[0].longueur-10)>0.01)
+    throw new Error("la fente de 10 mm est bornée par ses arêtes : "+
+                    JSON.stringify(g));
+  /* UNE DÉCOUPE (S.cuts) DE 0,2 MM dans un plan plein est une fente aussi. */
+  S.zones=[bande(0,60)];
+  S.cuts=[{l:plan, pts:[{x:SIM_X1+25,y:SIM_Y-5},{x:SIM_X1+25.2,y:SIM_Y-5},
+                        {x:SIM_X1+25.2,y:SIM_Y+5},{x:SIM_X1+25,y:SIM_Y+5}]}];
+  touch();
+  const c=simXtFentes(simXtParcours(simSegments(null)),simRefSet());
+  if(!c||c.length!==1||Math.abs(c[0].s-25)>0.01||Math.abs(c[0].longueur-0.2)>0.01)
+    throw new Error("une découpe de 0,2 mm est une fente : "+JSON.stringify(c));
+  S.cuts=[]; touch();
+});
+
 T("le voisinage du crosstalk voit les couches adjacentes, pas celui de la diaphonie",()=>{
   simXtBancCarte([]);
   /* UNE VOISINE SUR LA COUCHE D'À CÔTÉ. La section droite de l'onglet

@@ -395,6 +395,92 @@ def test_diaphonie():
     print("[PASS] test_diaphonie")
 
 
+def test_diaphonie_garde_seuil_front_rf():
+    """Les constats de la carte d'essai du banc crosstalk, côté « toute la carte »."""
+    import crosstalk as ct
+    nat = {"A": "Rapide", "V": "Rapide", "GND": "Masse"}
+    paires = lambda res: res["bilan"]["diaphonie"]["paires"]
+    # LA PISTE DE GARDE ENTRE DANS LA SECTION (cas 3 contre cas 2 : 0,58 % au
+    # lieu de 0,90 % de NEXT à 1 ns sur la carte d'essai). Ici : agresseur,
+    # garde à mi-chemin, victime à S = 0,8 mm (seuil = 5 H = 1 mm), garde cousue
+    # tous les 5 mm.
+    vias = [{"x": float(x), "y": 0.5, "d": 0.5, "n": "GND"} for x in range(0, 101, 5)]
+    sans = analyser(regles=["diaphonie"], natures=nat,
+                    pistes=[droite("A", 0.0), droite("V", 1.0)])
+    avec = analyser(regles=["diaphonie"], natures=nat, percages=vias,
+                    pistes=[droite("A", 0.0), droite("GND", 0.5), droite("V", 1.0)])
+    ps, pa = paires(sans)[0], paires(avec)[0]
+    assert ps["gardes"] == [] and pa["gardes"] == ["GND"] and pa["gardes_flottantes"] == [], (ps, pa)
+    assert pa["next"] < 0.8 * ps["next"] and pa["fext"] < 0.8 * ps["fext"], (pa, ps)
+    assert avec["bilan"]["diaphonie"]["gardes_posees"] == ["GND"]
+    # ET C'EST LE MÊME CHIFFRE QUE « ANALYSER LA PISTE » sur la même géométrie.
+    def obj(net, y, couture):
+        return {"type": "track", "start": [0.0, y], "end": [100.0, y], "length": 100.0,
+                "width": 0.2, "layer": 0, "net": net, "copper_thickness": 0.035,
+                "gap_left": 0, "gap_right": 0, "couture_left": couture, "couture_right": couture}
+    xt = ct.analyser({"format": "cao-crosstalk-1", "carte": "banc", "agresseurs": ["A"],
+                      "stackup": empilage(), "geometry": {"objects": [obj("A", 0.0, 100.0)]},
+                      "voisinage": [obj("GND", 0.5, 5.0), obj("V", 1.0, 100.0)],
+                      "reference_nets": ["GND"], "natures": {"A": "Rapide"},
+                      # le seuil 3W de l'analyse de piste vaut 0,6 mm ici, celui
+                      # de la carte 5 H = 1,0 mm : on l'ouvre pour voir la même victime
+                      "reglages": {"t_r": 1e-9, "distance_max": 1.0}})
+    cv = [c for c in xt["couples"] if c["victime"] == "V"][0]
+    assert xt["etape0"]["gardes"] == ["GND"], xt["etape0"]["gardes"]
+    assert abs(cv["next"] / pa["next"] - 1) < 0.03 and abs(cv["fext"] / pa["fext"] - 1) < 0.03, \
+        (cv["next"], pa["next"], cv["fext"], pa["fext"])
+    # UNE GARDE SANS VIAS FLOTTE : elle transfère, le NEXT ne tombe plus.
+    flot = analyser(regles=["diaphonie"], natures=nat,
+                    pistes=[droite("A", 0.0), droite("GND", 0.5), droite("V", 1.0)])
+    pf = paires(flot)[0]
+    assert pf["gardes_flottantes"] == ["GND"] and pf["next"] >= ps["next"], (pf, ps)
+    # Serré (S = 0,3 mm) pour franchir le seuil orange : le constat nomme la
+    # garde, et dit qu'elle flotte.
+    k = de(analyser(natures={"A": "Rapide", "V": "Lent", "GND": "Masse"},
+                    pistes=[droite("A", 0.0, w=0.3), droite("GND", 0.3, w=0.1),
+                            droite("V", 0.6, w=0.3)]), "diaphonie")
+    assert k and "FLOTTANTE" in k[0]["msg"] and "« GND »" in k[0]["msg"], k
+    # UNE VOISINE DE SIGNAL intercalée est posée avec le couple, et nommée.
+    tri = analyser(regles=["diaphonie"], natures={"A": "Rapide", "V": "Rapide", "X": "Lent"},
+                   pistes=[droite("A", 0.0), droite("X", 0.5), droite("V", 1.0)])
+    pav = [p for p in paires(tri) if {p["victime"], p["agresseur"]} == {"A", "V"}][0]
+    assert pav["voisines"] == ["X"] and pav["next"] < ps["next"], (pav, ps)
+    # S = 3W PILE SUR LE SEUIL : retenu. Le seuil est max(5 H, 3 max(W, H)) =
+    # 1,0 mm ici ; l'égalité et 2 % au-dessus sont dedans ; à 1,3 × le seuil le
+    # couple est écarté MAIS NOMMÉ ; à 2 × il est simplement loin.
+    egal = analyser(regles=["diaphonie"], natures=nat,
+                    pistes=[droite("A", 0.0), droite("V", 1.2)])
+    assert paires(egal) and abs(paires(egal)[0]["ecart"] - 1.0) < 1e-6, paires(egal)
+    assert paires(analyser(regles=["diaphonie"], natures=nat,
+                           pistes=[droite("A", 0.0), droite("V", 1.22)]))
+    loin = analyser(regles=["diaphonie"], natures=nat,
+                    pistes=[droite("A", 0.0), droite("V", 1.5)])
+    assert not paires(loin), paires(loin)
+    e = loin["bilan"]["diaphonie"]["ecartes_proches"]
+    assert len(e) == 1 and e[0]["nets"] == ["A", "V"] and abs(e[0]["ecart"] - 1.3) < 1e-6 \
+        and abs(e[0]["seuil"] - 1.0) < 1e-6 and e[0]["couche"] == "Top", e
+    assert any("écarté(s) par la présélection" in n and "A ↔ V" in n for n in loin["notes"]), \
+        loin["notes"]
+    tres = analyser(regles=["diaphonie"], natures=nat,
+                    pistes=[droite("A", 0.0), droite("V", 2.2)])
+    assert not paires(tres) and tres["bilan"]["diaphonie"]["ecartes_proches"] == [], tres["bilan"]
+    assert not any("présélection" in n for n in tres["notes"]), tres["notes"]
+    # LE FRONT IMPOSÉ PAR LA CLASSE RF EST DIT : une note, et `front_rf` au
+    # bilan ; une porteuse (de la carte, ou du net) le tait.
+    rf = analyser(pistes=[droite("ANT", 0.0)], natures={"ANT": "RF"})
+    assert any("IMPOSÉ par la classe RF" in n and "ANT" in n for n in rf["notes"]), rf["notes"]
+    assert rf["bilan"]["front_rf"] == {"nets": ["ANT"], "t_r": 1e-10, "porteuse_rf": None}
+    por = analyser(pistes=[droite("ANT", 0.0)], natures={"ANT": "RF"},
+                   reglages={"porteuse_rf": 868e6})
+    assert "front_rf" not in por["bilan"] and not any("imposé" in n for n in por["notes"])
+    net = analyser(pistes=[droite("ANT", 0.0)], natures={"ANT": "RF"},
+                   reglages={"porteuses": {"ANT": 2.4e9}})
+    assert "front_rf" not in net["bilan"]
+    assert "front_rf" not in analyser(pistes=[droite("CLK", 0.0)],
+                                      natures={"CLK": "Horloge"})["bilan"]
+    print("[PASS] test_diaphonie_garde_seuil_front_rf")
+
+
 def test_document_sans_empilage():
     res = analyser_document({"format": "cao-analyse-carte-1", "pistes": []})
     assert res["constats"] == [] and any("empilage" in n for n in res["notes"]), res
@@ -845,6 +931,7 @@ if __name__ == "__main__":
     test_retour_gnd_vers_alim()
     test_retour_cavite_modale()
     test_diaphonie()
+    test_diaphonie_garde_seuil_front_rf()
     test_document_sans_empilage()
     test_empilage()
     test_impedance()

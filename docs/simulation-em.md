@@ -370,12 +370,32 @@ lequel elle se produit), le longement, l'écart et la couche.
   3W/3H) puis la **confirmation** (étape 0b : pire du NEXT et du FEXT au-dessus
   de −40 dB) restent deux tableaux distincts, pour distinguer une piste *loin*
   d'une piste *proche et blindée*. La fiche donne le tableau niveau 2 et la
-  **carte locale**.
+  **carte locale**. Le seuil de distance (3 × max(W, H)) retient l'**égalité**
+  et 2 % au-dessus (les arrondis d'export : un couple dessiné à S = 3W est
+  chiffré) ; une voisine écartée à moins de 1,5 × le seuil est **nommée**, dans
+  sa fiche et dans un avertissement (« écartée par la présélection (S = … ≥
+  seuil …) »), avec le geste qui la chiffre (ouvrir la distance max).
 - **Toute la carte** (`python/analyse_carte.py`, règle `diaphonie`) : chaque
   paire de pistes voisines de la carte, sous le `t_r` global, avec les mêmes
-  formules et les mêmes seuils. Le tableau montre d'office les paires orange et
-  rouges (une case affiche aussi les vertes) ; un clic sur une ligne centre la
-  vue sur la paire.
+  formules et les mêmes seuils — et la **même section** : une piste de garde ou
+  une voisine qui longe le couple sur la même couche est posée avec lui (garde
+  cousue à 0 V, non cousue flottante), comme dans l'analyse de piste. Le
+  tableau montre d'office les paires orange et rouges (une case affiche aussi
+  les vertes) ; un clic sur une ligne centre la vue sur la paire.
+
+**Le front d'un net RF.** Sans front saisi, la classe RF impose 100 ps — le
+plus raide de la table —, et le FEXT, qui varie comme 1/t_r, vaut dix fois
+celui d'un front de 1 ns. La fiche le dit en **réserve**, en tête des
+hypothèses et en alerte à côté du t_r : saisir le front réel, ou régler la
+**porteuse RF** du panneau de vérification (t_r = 0,35 / f, envoyée avec les
+réglages).
+
+**Les fentes du plan sous le parcours** sont sondées à pas de 0,5 mm, et en
+plus **sur les arêtes** des zones, découpes et contours de plan que le parcours
+coupe (une sonde de chaque côté de chaque arête) : une fente est bornée par ses
+arêtes, à sa largeur et sa position exactes, même sous 0,5 mm (une fente de
+0,2 mm est vue). Le filtre « au moins deux pas » ne s'applique plus qu'aux
+trous qu'aucune arête ne borne.
 
 #### La coloration sur le layout
 

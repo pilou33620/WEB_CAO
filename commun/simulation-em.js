@@ -8833,6 +8833,10 @@ function simXtReglages(){
   return {
     t_r:s.tr>0?s.tr:0,
     tr_classes:Object.assign({},(SIM_CARTE.reglages||{}).tr||{}),
+    /* LA PORTEUSE RF DU PANNEAU DE VÉRIFICATION, en hertz : un agresseur de
+       classe RF sans front saisi se juge alors à t_r = 0,35 / f au lieu du
+       front de sa classe (100 ps), et la fiche le dit. */
+    porteuse_rf:Math.max(0,+((SIM_CARTE.reglages||{}).porteuse)||0),
     seuil_orange:seuils.orange, seuil_rouge:seuils.rouge,
     pertes:!!SIM_CARTE.reglages.xt_pertes,
     somme:SIM_CARTE.reglages.xt_somme==="rss"?"rss":"pire",
@@ -9471,6 +9475,12 @@ function simXtResume(r){
      simEsc(simDureeXt(r.t_r))+"</b> ("+simEsc(r.source_tr||"")+") · "+
      "vert &lt; "+simNb(100*seuils.orange,1)+" % ≤ orange ≤ "+
      simNb(100*seuils.rouge,1)+" % &lt; rouge · "+simXtCalculDit(r)+"</p>";
+  /* LE FRONT QUE PERSONNE N'A SAISI, DIT EN ALERTE : la classe RF impose
+     100 ps — le plus raide de la table — et le FEXT, qui varie comme 1/t_r,
+     sort dix fois celui d'un front de 1 ns. C'est la même alerte que les
+     autres réserves de la fiche (le serveur la met dans `graves`), répétée
+     ici, à côté du t_r, pour qu'on ne la cherche pas. */
+  h+=simXtFrontImpose(r);
   const somme=(r.couples||[]).filter(c=>c.somme)[0];
   if(somme){
     const S=somme.somme, st=simXtStatuts(somme).somme;
@@ -9529,6 +9539,23 @@ function simXtResume(r){
      "sinon ; FEXT = |K<sub>f</sub>|·T<sub>d</sub>/t<sub>r</sub>, T<sub>d</sub> "+
      "sommé bloc par bloc le long du couplage.</p>";
   return h+"</div>";
+}
+
+/* LE FRONT IMPOSÉ PAR LA CLASSE RF, OU DÉDUIT DE LA PORTEUSE : `front_impose`
+   du serveur (crosstalk 4.4.1). Rien quand le front est saisi ou vient d'une
+   autre classe ; une ALERTE quand c'est la classe qui l'impose, une simple
+   note quand la porteuse du panneau l'a donné. */
+function simXtFrontImpose(r){
+  const fi=r&&r.front_impose;
+  if(!fi)return "";
+  if(fi.porteuse_rf==null)
+    return '<p class="simXtAlerte"><b>'+
+           simEsc(fi.titre||("t_r = "+simDureeXt(fi.t_r)+" imposé par la classe "+
+                             (fi.classe||"RF")+" — saisissez un front ou une "+
+                             "porteuse pour affiner"))+
+           "</b> — le FEXT varie comme 1/t<sub>r</sub> : ce chiffre est "+
+           "celui du front de la classe, pas du signal.</p>";
+  return '<p class="simNote">· '+simEsc(fi.titre||"")+"</p>";
 }
 
 /* CE QUI CHANGE LA LECTURE, EN UNE LIGNE, la version longue repliée. */
@@ -10701,6 +10728,9 @@ function simXtRapportTexte(r){
   t("Longueur du parcours : "+simNb(r.longueur,2)+" mm");
   t("Hypothèses           : échelon unitaire (100 %), lignes adaptées");
   t("Temps de montée      : "+simDureeXt(r.t_r)+" — "+(r.source_tr||""));
+  if(r.front_impose&&r.front_impose.porteuse_rf==null)
+    t("ATTENTION            : "+(r.front_impose.titre||
+      "t_r imposé par la classe RF — saisissez un front ou une porteuse"));
   t("Seuils DRC           : vert < "+simNb(100*seuils.orange,1)+
     " % ≤ orange ≤ "+simNb(100*seuils.rouge,1)+" % < rouge");
   t("Calcul               : "+simXtCalculDit(r));

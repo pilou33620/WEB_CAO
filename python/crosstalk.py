@@ -593,6 +593,30 @@
 # Fonctions modifiees : _ligne_seule (+ ecarts), _matrices_bloc (+ sans_plan),
 #   sections_couplees (+ longueur_sans_plan, pertes), analyser (texte de la
 #   reserve « aucun plan »).
+#
+# Version: 4.4.1
+# Date: 2026-10-11
+# Explication: TROIS CONSTATS DE LA CARTE D'ESSAI DU BANC CROSSTALK
+#   (bancs-mesure/crosstalk), corriges ici ; le quatrieme -- la garde ignoree
+#   par la regle « diaphonie » de toute la carte -- l'est dans `analyse_carte`.
+#
+#   S = 3W TOMBAIT PILE SUR LE SEUIL 3 x max(W, H), et le couple etait ecarte
+#   sans chiffre : l'egalite est RETENUE, avec une tolerance de 2 %
+#   (TOLERANCE_SEUIL) pour les arrondis d'export. Un couple ecarte a moins de
+#   1,5 x le seuil (PRESELECTION_PROCHE) le dit explicitement -- « ecarte par
+#   la preselection (S = ... >= seuil ...) » -- dans sa fiche ET dans un
+#   avertissement de la fiche, avec le geste qui le chiffre.
+#
+#   LA CLASSE RF IMPOSAIT t_r = 100 ps SANS LE DIRE ASSEZ FORT quand aucun
+#   front n'etait saisi : le FEXT du cas 1 sortait a 18 % sans qu'on sache
+#   pourquoi. C'est maintenant une RESERVE (graves), en tete des hypotheses,
+#   et `front_impose` porte le detail pour la page. Une porteuse RF reglee
+#   (`porteuse_rf`, celle du panneau de verification) remplace ce front par
+#   0,35 / f, comme `analyse_carte`.
+# Fonctions modifiees : _reglages (+ porteuse_rf), front_de_classe
+#   (+ porteuse_rf), candidats_geometriques (tolerance, motif « proche du
+#   seuil »), analyser (reserve RF, avertissement des ecartes proches),
+#   _hypotheses (tete).
 # ==========================================
 """Crosstalk Niveau 2 : le pic de bruit relatif, paire par paire.
 
@@ -608,7 +632,10 @@ LES HYPOTHESES DE DEPART.
   * Tension normalisee : l'agresseur fait un echelon UNITAIRE (1 V, 100 %).
   * Temps de montee de reference t_r : SAISI pour l'analyse, ou deduit de la
     classe du net agresseur (Horloge 2 ns, Rapide 1 ns, RF 100 ps, ... -- les
-    memes fronts que la verification de carte, reglables la-bas).
+    memes fronts que la verification de carte, reglables la-bas). Un
+    agresseur RF sans front saisi se juge a la porteuse RF du panneau si elle
+    est reglee (t_r = 0,35 / f) ; sinon le front de la classe s'impose, et la
+    fiche le dit en RESERVE (`front_impose`).
   * Lignes adaptees a leurs deux bouts sur leur Z0 : on evalue le couplage
     direct, sans allers-retours de reflexions.
 
@@ -716,7 +743,7 @@ except Exception as _exc:                              # noqa: BLE001
 
 FORMAT = "cao-crosstalk-1"
 FORMAT_RESULTAT = "cao-crosstalk-resultat-1"
-VERSION = "4.4.0"
+VERSION = "4.4.1"
 VERSION_MOTEURS = {
     "crosstalk": VERSION,
     "simulation_em": getattr(se, "VERSION", "4.2.0") if se is not None else "indisponible",
@@ -741,6 +768,18 @@ MAX_CORPS = 4 * 1024 * 1024
 # bien au-dela de trois fois sa largeur. On prend le PLUS GRAND des deux : le
 # seuil doit MAJORER, et c'est la confirmation qui fait le tri.
 DISTANCE_AUTO = 3.0
+# L'EGALITE EST RETENUE, ET UN PEU AU-DELA. Un couple dessine a S = 3W tombe
+# PILE sur le seuil 3 x max(W, H) quand la hauteur au plan est plus petite que
+# la largeur -- c'est le cas de la carte d'essai du banc crosstalk (S = 1,05 mm,
+# seuil 1,05 mm) --, et une comparaison stricte l'ecartait sans un chiffre, a
+# la merci d'un arrondi d'export au micron. Deux pour cent au-dessus du seuil
+# sont donc encore DEDANS : la regle des 3W est une regle de dessin, pas une
+# marche d'escalier.
+TOLERANCE_SEUIL = 0.02
+# UN COUPLE ECARTE A MOINS DE 1,5 x LE SEUIL EST DIT EXPLICITEMENT -- avec son
+# ecart, le seuil, et le geste qui le chiffre (ouvrir « distance max »). Au-dela,
+# il est loin, et la fiche se contente de sa distance.
+PRESELECTION_PROCHE = 1.5
 
 # -- NIVEAU 2 ---------------------------------------------------------------
 # Le front de reference quand rien d'autre ne le donne : 1 ns, la majorite
@@ -764,6 +803,8 @@ DEFAUTS = {
     # -- le niveau 2
     "t_r": 0.0,                 # s ; 0 = deduit de la classe de l'agresseur
     "tr_classes": {},           # {classe: s} -- les fronts du panneau carte
+    "porteuse_rf": 0.0,         # Hz ; > 0 : un agresseur de classe RF se juge
+                                # a sa porteuse, t_r = 0,35 / f (analyse_carte)
     "seuil_orange": SEUIL_ORANGE,
     "seuil_rouge": SEUIL_ROUGE,
     "pertes": False,            # R et G au genou du front : voir alpha_genou
@@ -1393,11 +1434,15 @@ def candidats_geometriques(parcours, voisinage, couches, reglages, refs,
         # FLOTTANTE sinon, et c'est `simulation_em._poser_section` qui tranche
         # avec le meme critere que partout ailleurs (lambda/10 au genou).
         c["garde_active"] = False
+        # L'EGALITE AVEC LE SEUIL EST DEDANS, et deux pour cent au-dessus
+        # aussi : voir TOLERANCE_SEUIL. Un couple a S = 3W, c'est-a-dire PILE
+        # sur le seuil des 3W, etait ecarte sans chiffre.
+        dedans = c["distance"] <= distance_max * (1.0 + TOLERANCE_SEUIL) + 1e-9
+        c["proche_du_seuil"] = False
         if c["net"] in refs:
             c["retenu"] = False
             c["garde_active"] = bool(c["type"] == "latéral"
-                                     and c["intervalles"]
-                                     and c["distance"] <= distance_max)
+                                     and c["intervalles"] and dedans)
             c["raison"] = (
                 "net de référence : garde POSÉE dans la section (elle prend"
                 " du champ), sans port — ce n'est pas une victime"
@@ -1406,13 +1451,23 @@ def candidats_geometriques(parcours, voisinage, couches, reglages, refs,
                 + ("" if c["type"] == "latéral" else
                    " — et sur une autre couche, la section droite ne sait pas"
                    " la poser")
-                + ("" if c["distance"] <= distance_max else
+                + ("" if dedans else
                    " — et à %.3f mm, au-delà du seuil de %.3f mm"
                    % (c["distance"], distance_max)))
-        elif c["distance"] > distance_max:
+        elif not dedans:
             c["retenu"] = False
-            c["raison"] = ("à %.3f mm, au-delà du seuil de %.3f mm : vue mais"
-                           " non simulée" % (c["distance"], distance_max))
+            # A MOINS DE 1,5 x LE SEUIL, ON LE DIT EN TOUTES LETTRES, avec le
+            # geste qui chiffre : c'est un couple que l'utilisateur a
+            # probablement dessine EXPRES a cette distance-la.
+            c["proche_du_seuil"] = c["distance"] < (PRESELECTION_PROCHE
+                                                    * distance_max)
+            c["raison"] = (
+                "écartée par la présélection (S = %.3f mm ≥ seuil %.3f mm) :"
+                " vue mais NON CHIFFRÉE" % (c["distance"], distance_max)
+                + (" — à moins de %g × le seuil : ouvrez la « distance max »"
+                   " (≥ %.2f mm) pour l'avoir au tableau"
+                   % (PRESELECTION_PROCHE, c["distance"])
+                   if c["proche_du_seuil"] else ""))
         elif c["blinde"]:
             c["retenu"] = False
             c["raison"] = "un plan de référence sépare les deux couches"
@@ -1429,6 +1484,9 @@ def candidats_geometriques(parcours, voisinage, couches, reglages, refs,
     # quand le reseau est plein.
     candidats.sort(key=lambda c: (not c["retenu"], c["distance"]))
     seuils = {"distance_max": round(distance_max, 4), "source": source_d,
+              # L'EGALITE ET DEUX POUR CENT AU-DESSUS SONT RETENUS : la page
+              # peut le dire a cote du seuil.
+              "tolerance": TOLERANCE_SEUIL,
               "hauteur": round(hauteur, 4),
               "hauteur_min": round(hauteur_mini, 4),
               # LES COUCHES DU PARCOURS QUI N'ONT PAS DE PLAN, NOMMEES. C'est
@@ -2153,22 +2211,41 @@ def somme_agresseurs(niveaux, mode="pire"):
     return sum(v)
 
 
-def front_de_classe(classe, tr_classes=None):
+def front_de_classe(classe, tr_classes=None, porteuse_rf=0.0):
     """(t_r, source) du front d'un net de cette classe.
 
     Les fronts du panneau de verification passent devant ceux d'origine ;
     une classe sans front -- masse, alimentation, inconnue -- se juge comme
     « Lent », comme dans `analyse_carte`.
+
+    UN NET RF A UNE PORTEUSE AVANT D'AVOIR UN FRONT. Quand `porteuse_rf` est
+    donnee, la classe « RF » se juge a t_r = 0,35 / f -- la meme regle que
+    `analyse_carte._reglages` --, et la source le dit. Sans elle, c'est le
+    front de la classe (100 ps) qui s'impose, et c'est `analyser` qui le fait
+    remarquer : un FEXT dix fois plus grand qu'a 1 ns ne doit pas sortir sans
+    un mot.
     """
     fronts = dict(TR_CLASSES)
     fronts.update(tr_classes or {})
     c = str(classe or "")
     if c not in fronts:
         c = "Lent"
+    f = _nb(porteuse_rf, 0.0)
+    if c == "RF" and f > 0:
+        return 0.35 / f, ("déduit de la porteuse RF %s : t_r = 0,35 / f"
+                          % _texte_frequence(f))
     t_r = _nb(fronts.get(c), 0.0)
     if not (t_r > 0):
         return TR_DEFAUT, "front de référence (1 ns)"
     return t_r, "déduit de la classe « %s »" % c
+
+
+def _texte_frequence(f):
+    """Une frequence lisible : « 868 MHz », « 2,4 GHz », « 13,6 MHz »."""
+    for seuil, unite in ((1e9, "GHz"), (1e6, "MHz"), (1e3, "kHz")):
+        if f >= seuil:
+            return ("%.3g %s" % (f / seuil, unite)).replace(".", ",")
+    return ("%.3g Hz" % f).replace(".", ",")
 
 
 def geometrie_superposee(couches, i, j):
@@ -3162,6 +3239,10 @@ def _reglages(doc):
     r["tr_classes"] = (dict((str(k), _nb(v, 0.0)) for k, v in classes.items()
                             if _nb(v, 0.0) > 0)
                        if isinstance(classes, dict) else {})
+    # LA PORTEUSE RF, celle du panneau de verification : un agresseur de
+    # classe RF se juge alors a 0,35 / f plutot qu'au front de sa classe.
+    # Negative ou absente, il n'y en a pas.
+    r["porteuse_rf"] = max(0.0, _nb(r.get("porteuse_rf"), 0.0))
     # LES SEUILS DRC, EN FRACTIONS : orange <= rouge, tous deux dans ]0 ; 1[.
     orange = _nb(r.get("seuil_orange"), SEUIL_ORANGE)
     rouge = _nb(r.get("seuil_rouge"), SEUIL_ROUGE)
@@ -3452,14 +3533,77 @@ def analyser(doc, journal=None):
     # les fronts du panneau de verification. C'est le meme pour le NEXT, le
     # FEXT et le seuil de couture.
     classe = str((doc.get("natures") or {}).get(principal) or "")
+    front_impose = None
     if reglages["t_r"] > 0:
         t_r, source_tr = reglages["t_r"], "saisi"
     elif classe:
-        t_r, source_tr = front_de_classe(classe, reglages["tr_classes"])
+        t_r, source_tr = front_de_classe(classe, reglages["tr_classes"],
+                                         reglages["porteuse_rf"])
+        # LA CLASSE RF IMPOSE 100 ps, ET ELLE LE DIT FORT. Un net nomme « RF »
+        # -- a tort ou a raison : « RST_RF », « LNA_EN » -- sans front saisi
+        # ni porteuse reglee se juge sous le front le plus raide de la table,
+        # et le FEXT, qui varie comme 1/t_r, sort DIX FOIS celui d'un front
+        # de 1 ns. Sur la carte d'essai du banc crosstalk, le cas 1 rendait
+        # 18 % de FEXT sans qu'on sache d'ou venait le front. C'est donc une
+        # RESERVE -- le resultat est « sous reserve » tant que le front n'est
+        # pas celui du signal reel --, en tete des hypotheses, et la page a de
+        # quoi l'afficher (`front_impose`).
+        if classe == "RF" and not (reglages["porteuse_rf"] > 0):
+            front_impose = {
+                "classe": classe, "t_r": t_r, "porteuse_rf": None,
+                "titre": "t_r = %s imposé par la classe RF — saisissez un"
+                         " front ou une porteuse pour affiner"
+                         % _texte_duree(t_r),
+                "texte": "FRONT IMPOSÉ PAR LA CLASSE : aucun front n'est"
+                         " saisi, et « %s » est de classe RF, dont le front"
+                         " de référence vaut %s (le plus raide de la table"
+                         " des classes). Tout le NEXT non saturé et tout le"
+                         " FEXT en dépendent — le FEXT varie comme 1/t_r, et"
+                         " vaut ici dix fois celui d'un front de 1 ns."
+                         " Saisissez le front réel du signal (celui du"
+                         " générateur ou de l'émetteur), ou réglez la"
+                         " porteuse RF dans le panneau de vérification :"
+                         " l'agresseur sera alors jugé à t_r = 0,35 / f."
+                         % (principal, _texte_duree(t_r))}
+            _grave(avert, graves, front_impose["titre"], front_impose["texte"])
+        elif classe == "RF":
+            front_impose = {
+                "classe": classe, "t_r": t_r,
+                "porteuse_rf": reglages["porteuse_rf"],
+                "titre": "t_r = %s déduit de la porteuse RF (%s)"
+                         % (_texte_duree(t_r),
+                            _texte_frequence(reglages["porteuse_rf"])),
+                "texte": ""}
+            notes.append(
+                "Aucun front saisi : « %s » est de classe RF et la porteuse"
+                " RF du panneau vaut %s, donc t_r = 0,35 / f = %s. Saisissez"
+                " un front si le signal réel est une impulsion plutôt qu'une"
+                " porteuse."
+                % (principal, _texte_frequence(reglages["porteuse_rf"]),
+                   _texte_duree(t_r)))
     else:
         t_r, source_tr = TR_DEFAUT, ("front de référence (1 ns) — la classe"
                                      " du net n'est pas connue")
     analyse = {"temps_montee": t_r, "source_tr": source_tr}
+    # LES COUPLES ECARTES A MOINS DE 1,5 x LE SEUIL, DITS DANS LA FICHE et non
+    # seulement dans la ligne du tableau : un couple dessine a S = 3,5 W qui
+    # disparait du resultat se lit « rien ne couple », et c'est faux -- il n'a
+    # pas ete chiffre. Le motif de chaque fiche est repris ici en une phrase,
+    # avec le geste.
+    proches = [c for c in candidats if c.get("proche_du_seuil")]
+    etape0["ecartes_proches"] = [
+        {"net": c["net"], "distance": c["distance"],
+         "seuil": seuils["distance_max"]} for c in proches]
+    if proches:
+        avert.append(
+            "%d voisine(s) ÉCARTÉE(S) PAR LA PRÉSÉLECTION à moins de %g × le"
+            " seuil de %.3f mm, donc NON CHIFFRÉE(S) : %s. Ce n'est pas un"
+            " couplage nul — ouvrez la « distance max » (≥ %.2f mm) pour les"
+            " avoir au tableau."
+            % (len(proches), PRESELECTION_PROCHE, seuils["distance_max"],
+               ", ".join("« %s » à S = %.3f mm" % (c["net"], c["distance"])
+                         for c in proches),
+               max(c["distance"] for c in proches)))
 
     masse = controle_masse(doc, parcours, analyse)
     base = {"format": FORMAT_RESULTAT, "carte": str(doc.get("carte") or ""),
@@ -3468,6 +3612,10 @@ def analyser(doc, journal=None):
             "agresseurs": nets_agresseurs, "principal": principal,
             "classe": classe,
             "t_r": t_r, "source_tr": source_tr,
+            # LE FRONT VENU DE LA CLASSE RF, OU DE LA PORTEUSE : None quand le
+            # front est saisi ou vient d'une autre classe. La page l'affiche
+            # a cote du t_r, en alerte quand c'est la classe qui l'impose.
+            "front_impose": front_impose,
             "seuils": {"orange": reglages["seuil_orange"],
                        "rouge": reglages["seuil_rouge"],
                        "confirmation_db": reglages["seuil_db"]},
@@ -3992,7 +4140,27 @@ def _hypotheses(reglages, masse, seuils, base):
     RASSEMBLE et donne leur SENS -- de quel cote penche ce qui reste dehors.
     """
     base = base or {}
-    h = [
+    # LE FRONT IMPOSE PAR LA CLASSE RF OUVRE LA LISTE : c'est l'hypothese qui
+    # pese le plus sur le chiffre, et celle que l'utilisateur n'a pas choisie.
+    fi = base.get("front_impose") or {}
+    tete = []
+    if fi and fi.get("porteuse_rf") is None:
+        tete.append(
+            "FRONT IMPOSÉ PAR LA CLASSE RF : t_r = %s n'a PAS été saisi, il"
+            " vient de la classe « RF » de l'agresseur (le front le plus raide"
+            " de la table des classes). Le FEXT varie comme 1/t_r et le NEXT"
+            " non saturé aussi : saisissez le front réel du signal, ou réglez"
+            " une porteuse RF (t_r = 0,35 / f) dans le panneau de"
+            " vérification, pour affiner." % _texte_duree(_nb(fi.get("t_r"),
+                                                             TR_DEFAUT)))
+    elif fi:
+        tete.append(
+            "FRONT DÉDUIT DE LA PORTEUSE RF : aucun front saisi, l'agresseur"
+            " est de classe RF et la porteuse du panneau vaut %s, donc"
+            " t_r = 0,35 / f = %s." % (_texte_frequence(fi["porteuse_rf"]),
+                                      _texte_duree(_nb(fi.get("t_r"),
+                                                       TR_DEFAUT))))
+    h = tete + [
         "NIVEAU 2, SCAN NORMALISÉ : l'agresseur fait un échelon UNITAIRE (1 V,"
         " 100 %%), sous un front t_r = %s (%s), et les lignes sont supposées"
         " ADAPTÉES à leurs deux bouts sur leur Z0 — on évalue le couplage"
@@ -4018,9 +4186,13 @@ def _hypotheses(reglages, masse, seuils, base):
         " deux. Une piste absente du résultat est soit LOIN (écartée en 0a,"
         " avec sa distance), soit PROCHE ET DÉCOUPLÉE (écartée en 0b, avec son"
         " niveau) : ce sont deux situations de dessin opposées.",
-        "Le seuil de distance de l'étape 0a vaut %.3f mm, %s ; la longueur de"
-        " parallélisme minimale est %s. Les deux MAJORENT volontairement."
+        "Le seuil de distance de l'étape 0a vaut %.3f mm, %s ; l'ÉGALITÉ est"
+        " retenue, et %g %% au-dessus aussi (les arrondis d'export) ; une"
+        " voisine écartée à moins de %g × le seuil est nommée, avec son écart."
+        " La longueur de parallélisme minimale est %s. Les deux MAJORENT"
+        " volontairement."
         % (seuils.get("distance_max", 0.0), seuils.get("source", ""),
+           100.0 * TOLERANCE_SEUIL, PRESELECTION_PROCHE,
            seuils.get("longueur_min_source", "")),
         "Le seuil de confirmation est de %.1f dB, sur le pire du NEXT et du"
         " FEXT. Une piste sous ce niveau reste au tableau, avec son niveau :"

@@ -316,6 +316,63 @@ T("l'etape 0a ecarte avec la distance et la longueur mesurees",
   la_preselection_mesure_ce_qu_elle_ecarte)
 
 
+def le_seuil_des_3w_retient_l_egalite_et_nomme_ce_qu_il_ecarte():
+    """S = 3W tombe PILE sur le seuil 3 x max(W, H) : RETENU, et chiffre.
+
+    C'EST LE CAS 2 DE LA CARTE D'ESSAI DU BANC CROSSTALK (S = 3W = 1,05 mm,
+    seuil 1,05 mm) : « Analyser la piste » l'ecartait sans chiffre, sauf a
+    ouvrir la distance max. L'egalite est dedans, et deux pour cent au-dessus
+    aussi -- les arrondis d'export. Un couple ecarte a moins de 1,5 x le seuil
+    le DIT, avec son ecart et le geste ; un couple loin est ecarte avec le
+    seuil nomme, comme avant.
+    """
+    # Le seuil deduit, lu plutot que suppose : 3 x max(W = 0,25, H = 0,2).
+    seuil = ct.analyser(doc_essai([]))["etape0"]["seuils"]["distance_max"]
+    assert abs(seuil - 3 * 0.25) < 1e-6, "seuil attendu 3W = 0,75 mm : %s" % seuil
+    w = 0.25
+
+    def cas(s):
+        res = ct.analyser(doc_essai([pis(0, w + s, 40, w + s, "VIC")]))
+        fiche = [c for c in res["etape0"]["candidats"] if c["net"] == "VIC"][0]
+        return res, fiche
+    # S = 3W EXACTEMENT : retenu, chiffre.
+    res, f = cas(seuil)
+    assert f["retenu"] and abs(f["distance"] - seuil) < 1e-6, f
+    assert res["couples"] and res["couples"][0]["next"] > 0, res["couples"]
+    assert not res["preselection_vide"]
+    # S = 3,02 W : encore dedans (tolerance de 2 %).
+    res, f = cas(seuil * 1.02)
+    assert f["retenu"] and res["couples"], f
+    # S = 3,3 W : ecarte, A MOINS DE 1,5 x LE SEUIL -- la fiche et la carte le
+    # disent explicitement, avec le geste.
+    res, f = cas(seuil * 1.3)
+    assert not f["retenu"] and f["proche_du_seuil"], f
+    assert "écartée par la présélection" in f["raison"] and "seuil" in f["raison"], f["raison"]
+    assert "distance max" in f["raison"], f["raison"]
+    assert res["etape0"]["ecartes_proches"] == [
+        {"net": "VIC", "distance": f["distance"], "seuil": seuil}], res["etape0"]["ecartes_proches"]
+    assert any("ÉCARTÉE" in a and "VIC" in a for a in res["avertissements"]), \
+        res["avertissements"]
+    assert res["preselection_vide"]
+    # S = 5W : ecarte avec le motif, mais loin -- pas « proche du seuil ».
+    res, f = cas(5 * w)
+    assert not f["retenu"] and not f["proche_du_seuil"], f
+    assert f["raison"].startswith("écartée par la présélection (S = 1.250 mm ≥ seuil 0.750 mm)"), \
+        f["raison"]
+    assert res["etape0"]["ecartes_proches"] == [], res["etape0"]["ecartes_proches"]
+    assert not any("ÉCARTÉE" in a for a in res["avertissements"])
+    # Une garde PILE sur le seuil est posee elle aussi.
+    res = ct.analyser(doc_essai([pis(0, w + seuil, 40, w + seuil, "GND"),
+                                 pis(0, w + seuil + 1.0, 40, w + seuil + 1.0, "VIC")]))
+    assert res["etape0"]["gardes"] == ["GND"], res["etape0"]["gardes"]
+    # Et la fiche dit la regle.
+    assert any("ÉGALITÉ" in h and "2 %" in h for h in res["hypotheses"]), res["hypotheses"]
+
+
+T("S = 3W, pile sur le seuil, est retenu et chiffre ; l'ecarte de peu est nomme",
+  le_seuil_des_3w_retient_l_egalite_et_nomme_ce_qu_il_ecarte)
+
+
 def la_confirmation_ecarte_avec_le_niveau():
     """Une piste presente en 0a et sous le seuil en 0b garde son niveau.
 
@@ -1767,6 +1824,59 @@ def le_front_se_deduit_de_la_classe_ou_se_saisit():
 
 T("le front se deduit de la classe du net, ou se saisit",
   le_front_se_deduit_de_la_classe_ou_se_saisit)
+
+
+def le_front_impose_par_la_classe_rf_se_dit_fort():
+    """La classe RF impose 100 ps quand rien n'est saisi, ET LA FICHE LE CRIE.
+
+    SUR LA CARTE D'ESSAI DU BANC CROSSTALK, les nets XT* classes RF sortaient
+    un FEXT de 18 % au cas 1 sans qu'on sache d'ou venait le front : « deduit
+    de la classe » au milieu d'une ligne de methode. C'est maintenant une
+    RESERVE (graves), la premiere des hypotheses, et un bloc `front_impose`
+    que la page affiche en alerte. Saisi, ou venu d'une autre classe, RIEN de
+    tout cela ; une porteuse RF reglee le remplace par 0,35 / f.
+    """
+    vois = [pis(0, 0.45, 40, 0.45, "VIC")]
+    titres = lambda res: [g["titre"] for g in res["graves"]]
+    doc = doc_essai(vois, t_r=0)
+    doc["natures"] = {"CLK": "RF"}
+    res = ct.analyser(doc)
+    assert res["t_r"] == 1e-10 and "RF" in res["source_tr"], (res["t_r"], res["source_tr"])
+    fi = res["front_impose"]
+    assert fi and fi["classe"] == "RF" and fi["porteuse_rf"] is None, fi
+    assert "imposé par la classe RF" in fi["titre"] and "porteuse" in fi["titre"], fi
+    assert any("imposé par la classe RF" in t for t in titres(res)), titres(res)
+    assert res["hypotheses"][0].startswith("FRONT IMPOSÉ PAR LA CLASSE RF"), \
+        res["hypotheses"][0]
+    # SAISI : plus rien, la fiche commence par le niveau 2.
+    doc = doc_essai(vois, t_r=200e-12)
+    doc["natures"] = {"CLK": "RF"}
+    res = ct.analyser(doc)
+    assert res["front_impose"] is None and res["source_tr"] == "saisi", res["source_tr"]
+    assert not any("classe RF" in t for t in titres(res)), titres(res)
+    assert res["hypotheses"][0].startswith("NIVEAU 2"), res["hypotheses"][0]
+    # UNE AUTRE CLASSE SANS FRONT : deduit, mais pas une reserve.
+    doc = doc_essai(vois, t_r=0)
+    doc["natures"] = {"CLK": "Horloge"}
+    res = ct.analyser(doc)
+    assert res["front_impose"] is None and not any("classe" in t for t in titres(res))
+    # UNE PORTEUSE RF REGLEE : t_r = 0,35 / f, une note, pas de reserve.
+    doc = doc_essai(vois, t_r=0, porteuse_rf=868e6)
+    doc["natures"] = {"CLK": "RF"}
+    res = ct.analyser(doc)
+    assert abs(res["t_r"] - 0.35 / 868e6) < 1e-15 and "porteuse" in res["source_tr"], \
+        (res["t_r"], res["source_tr"])
+    assert res["front_impose"]["porteuse_rf"] == 868e6, res["front_impose"]
+    assert not any("imposé" in t for t in titres(res)), titres(res)
+    assert res["hypotheses"][0].startswith("FRONT DÉDUIT DE LA PORTEUSE RF"), \
+        res["hypotheses"][0]
+    # Et `front_de_classe` seule, la meme regle.
+    assert ct.front_de_classe("RF", None, 2.4e9)[0] == 0.35 / 2.4e9
+    assert ct.front_de_classe("Horloge", None, 2.4e9)[0] == 2e-9
+
+
+T("la classe RF impose 100 ps, et la fiche le dit en tete ; saisi, rien",
+  le_front_impose_par_la_classe_rf_se_dit_fort)
 
 
 def les_seuils_drc_se_reglent_et_le_statut_suit():

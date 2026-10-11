@@ -4002,6 +4002,8 @@ function simDocDiffIpc(piste1, piste2, opts){
    ========================================================================== */
 const SIM_XT_PAS_IPC=0.5;         /* mm — le pas de sonde du plan de référence */
 const SIM_XT_SONDES_MAX_IPC=2000; /* au-delà, on grossit le pas plutôt que d'inonder */
+const SIM_XT_EPS_IPC=0.002;       /* mm — la sonde posée de part et d'autre d'une arête */
+const SIM_XT_FENTE_MIN_IPC=0.1;   /* mm — une fente mesurée sur ses bords vaut au moins ça */
 
 /* Le parcours, plage par plage, avec son abscisse curviligne cumulée.
 
@@ -4490,12 +4492,68 @@ function simXtNusIpc(cotes,x,y,idx){
    sans fente, c'est un plan qu'on ne voit pas. Rendre une liste vide ferait
    écrire « aucune zone de vigilance » sous un contrôle qui n'a jamais eu
    lieu. */
+/* LES ARÊTES DU CUIVRE D'UNE COUCHE DE PLAN, tous nets (le cuivre d'un autre
+   net est un trou du retour), contours extérieurs et trous : des segments
+   [x1, y1, x2, y2, boîte…] en unités FICHIER. C'est là, et seulement là, que
+   la présence de cuivre sous le parcours peut changer. */
+function simXtAretesIpc(coucheIdx){
+  const out=[];
+  const pousse=pts=>{
+    const n=pts.length/2;
+    for(let i=0,j=n-1;i<n;j=i++){
+      const x1=pts[2*j], y1=pts[2*j+1], x2=pts[2*i], y2=pts[2*i+1];
+      out.push([x1,y1,x2,y2,
+                Math.min(x1,x2),Math.min(y1,y2),Math.max(x1,x2),Math.max(y1,y2)]);
+    }
+  };
+  for(const ct of simXtContoursIpc(coucheIdx,null)){
+    pousse(ct.o);
+    for(const t of ct.t)pousse(t);
+  }
+  return out;
+}
+
+/* Le paramètre t ∈ [0 ; 1] du point où la corde (x1,y1)→(x2,y2) coupe l'arête
+   `a` (le format de `simXtAretesIpc`), ou -1 si elle ne la coupe pas. */
+function simXtCoupeIpc(x1,y1,x2,y2,a){
+  if(Math.max(x1,x2)<a[4]||Math.min(x1,x2)>a[6]||
+     Math.max(y1,y2)<a[5]||Math.min(y1,y2)>a[7])return -1;
+  const dx=x2-x1, dy=y2-y1, ex=a[2]-a[0], ey=a[3]-a[1];
+  const den=dx*ey-dy*ex;
+  if(Math.abs(den)<1e-12)return -1;
+  const fx=a[0]-x1, fy=a[1]-y1;
+  const t=(fx*ey-fy*ex)/den, u=(fx*dy-fy*dx)/den;
+  if(t<-1e-9||t>1+1e-9||u<-1e-9||u>1+1e-9)return -1;
+  return Math.max(0,Math.min(1,t));
+}
+
+/* LES FENTES FINES SONT VUES PAR LEURS BORDS — même correctif que `simXtFentes`
+   dans l'éditeur, et pour la même carte d'essai (banc crosstalk) : la sonde à
+   pas de 0,5 mm jetait tout trou plus court que 1,5 pas, et une fente de
+   0,75 mm passait inaperçue. On garde les sondes à pas, et l'on pose en plus,
+   sur chaque corde du parcours, une sonde de chaque côté de chaque arête de
+   plan qu'elle coupe : une fente est alors bornée par ses deux arêtes, à sa
+   largeur et à sa position exactes. Le filtre « deux pas » ne s'applique plus
+   qu'aux trous qu'aucune arête ne borne. */
 function simXtFentesIpc(par,idx){
   if(!par.total||!LT.pret)return null;
   const pas=Math.max(SIM_XT_PAS_IPC,par.total/SIM_XT_SONDES_MAX_IPC);
+  /* L'epsilon est en millimètres ; les cordes sont en unités du fichier. */
+  const k=simKUnite();
+  const epsU=SIM_XT_EPS_IPC/(k>0?k:1);
   let sondable=false;
   const trous=[];
   let courant=null;
+  const aretesDe=new Map();
+  const aretes=c=>{
+    if(!aretesDe.has(c))aretesDe.set(c,simXtAretesIpc(c));
+    return aretesDe.get(c);
+  };
+  /* TOUTES LES ABSCISSES D'ARÊTE COUPÉES (mm), pour recaler les bouts d'un
+     trou qu'une sonde à pas aurait ouvert ou fermé PILE sur l'arête — le point
+     sur le bord d'un contour est « dedans » ou « dehors » au hasard du lancer
+     de rayon, et c'est l'arête qui a raison. */
+  const bords=[];
   for(const e of par.liste){
     const o=e.o;
     const cu=simCuDe(o.coucheIdx);
@@ -4509,29 +4567,89 @@ function simXtFentesIpc(par,idx){
     const n=Math.max(1,Math.round(e.longueur/pas));
     const a=Math.min(o.u1,o.u2), b=Math.max(o.u1,o.u2);
     const cotes=simXtCotesIpc(cu);
-    for(let j=0;j<=n;j++){
-      const f=j/n;
+    /* LES SONDES À PAS, en fractions `f` du parcours de la plage — plus les
+       SOMMETS de la polyligne qui tombent dedans : une corde qui couperait un
+       coude lirait les arêtes à côté du cuivre. */
+    const fs=[];
+    for(let j=0;j<=n;j++)fs.push(j/n);
+    const total=o.cum[o.cum.length-1]||0;
+    if(total>0&&b>a)
+      for(const c of o.cum){
+        const u=c/total;
+        if(u>a+1e-9&&u<b-1e-9)fs.push(o.retourne?(b-u)/(b-a):(u-a)/(b-a));
+      }
+    fs.sort((p,q)=>p-q);
+    const pts=[];
+    for(const f of fs){
+      if(pts.length&&f-pts[pts.length-1].f<1e-9)continue;
       const u=o.retourne?(b-(b-a)*f):(a+(b-a)*f);
-      const p=simSurPoly(o.piste.p,o.cum,u);
-      const s=e.s0+f*e.longueur;
+      pts.push({f:f, s:e.s0+f*e.longueur, p:simSurPoly(o.piste.p,o.cum,u)});
+    }
+    const sondes=pts.map(q=>({s:q.s, x:q.p.x, y:q.p.y, bord:null}));
+    /* PUIS LES ARÊTES, de toutes les couches de plan des deux côtés : chaque
+       bord coupé reçoit une sonde juste avant et une juste après, `bord`
+       portant l'abscisse exacte de l'arête, en millimètres. */
+    const couches=cotes[0].concat(cotes[1]).filter(c=>simXtContoursIpc(c,null).length);
+    for(let j=0;j+1<pts.length;j++){
+      const A=pts[j], B=pts[j+1], ds=B.s-A.s;
+      if(!(ds>0))continue;
+      const dx=B.p.x-A.p.x, dy=B.p.y-A.p.y, lc=Math.hypot(dx,dy)||1e-12;
+      const ex=dx/lc*epsU, ey=dy/lc*epsU;
+      const ts=[];
+      for(const c of couches)
+        for(const ar of aretes(c)){
+          const t=simXtCoupeIpc(A.p.x,A.p.y,B.p.x,B.p.y,ar);
+          if(t>=0)ts.push(t);
+        }
+      ts.sort((p,q)=>p-q);
+      let prec=-1;
+      for(const t of ts){
+        if(prec>=0&&t-prec<1e-6)continue;
+        prec=t;
+        const s=A.s+t*ds, x=A.p.x+dx*t, y=A.p.y+dy*t;
+        bords.push(s);
+        sondes.push({s:s-SIM_XT_EPS_IPC, x:x-ex, y:y-ey, bord:s});
+        sondes.push({s:s+SIM_XT_EPS_IPC, x:x+ex, y:y+ey, bord:s});
+      }
+    }
+    sondes.sort((p,q)=>p.s-q.s);
+    for(const q of sondes){
+      const s=q.s;
       /* UN SEUL PLAN PERCÉ SUFFIT À OUVRIR LA BOUCLE, et on note lequel. */
-      const nus=simXtNusIpc(cotes,p.x,p.y,idx);
+      const nus=simXtNusIpc(cotes,q.x,q.y,idx);
+      /* La sonde d'APRÈS une arête ouvre une fente exactement sur l'arête ;
+         celle d'AVANT la referme exactement dessus. */
+      const apres=q.bord!=null&&q.s>q.bord, avant=q.bord!=null&&q.s<q.bord;
       if(!nus.length){
         if(courant){trous.push(courant);courant=null;}
       }else if(courant&&s-courant.fin<=pas*1.5){
-        courant.fin=s;
+        courant.fin=avant?q.bord:s;
+        courant.finExacte=avant;
         for(const c of nus)if(courant.plans.indexOf(c)<0)courant.plans.push(c);
       }else{
         if(courant)trous.push(courant);
-        courant={debut:s, fin:s, plans:nus.slice()};
+        courant={debut:apres?q.bord:s, fin:avant?q.bord:s, plans:nus.slice(),
+                 debutExact:apres, finExacte:avant};
       }
     }
   }
   if(courant)trous.push(courant);
   if(!sondable)return null;
-  /* UN SEUL POINT SANS CUIVRE N'EST PAS UNE FENTE : c'est le pas de sonde qui
-     tombe dans un dégagement d'antipad. On garde ce qui dure au moins deux
-     pas — en deçà, on inonderait la carte de marques que rien ne justifie. */
+  /* UN BOUT DE TROU À MOINS DE DEUX EPSILON D'UNE ARÊTE EST SUR L'ARÊTE. */
+  const recaler=v=>{
+    for(const b of bords)if(Math.abs(b-v)<=2*SIM_XT_EPS_IPC+1e-9)return b;
+    return null;
+  };
+  for(const t of trous){
+    let b;
+    if(!t.debutExact&&(b=recaler(t.debut))!=null){t.debut=b;t.debutExact=true;}
+    if(!t.finExacte&&(b=recaler(t.fin))!=null){t.fin=b;t.finExacte=true;}
+  }
+  /* UN SEUL POINT SANS CUIVRE N'EST PAS UNE FENTE quand rien ne le borne :
+     c'est le pas de sonde qui tombe dans un dégagement. On garde ce qui dure
+     au moins deux pas — en deçà, on inonderait la carte de marques que rien ne
+     justifie. UNE FENTE BORNÉE PAR SES DEUX ARÊTES est gardée dès
+     SIM_XT_FENTE_MIN_IPC : sa largeur est mesurée, pas devinée. */
   const r3=x=>Math.round(x*1000)/1000;
   /* `plans` PART À CÔTÉ DE `quoi`, et ce n'est pas un doublon : `quoi` est une
      phrase, faite pour être lue, et le serveur ne doit pas avoir à l'analyser
@@ -4539,7 +4657,9 @@ function simXtFentesIpc(par,idx){
      qu'il retire de l'empilage sur les blocs concernés, pour que la section y
      soit résolue sans une référence qui n'y est pas. Un nom lu dans une phrase
      se serait décollé de la phrase au premier remaniement. */
-  return trous.filter(t=>t.fin-t.debut>=pas*1.5)
+  return trous.filter(t=>(t.debutExact&&t.finExacte)
+                         ? t.fin-t.debut>=SIM_XT_FENTE_MIN_IPC
+                         : t.fin-t.debut>=pas*1.5)
     .map(t=>({s:r3(t.debut), longueur:r3(t.fin-t.debut),
               plans:t.plans.map(simXtNomCoucheIpc).filter(Boolean),
               quoi:(t.plans.length>1

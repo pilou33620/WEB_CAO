@@ -3134,6 +3134,39 @@ T("une fente du plan sous le parcours est trouvée et localisée",()=>{
                     JSON.stringify(rien));
 });
 
+T("une fente FINE du plan (0,3 mm) est vue, avec sa largeur et sa position",()=>{
+  /* LA FENTE DU CAS 4 DE LA CARTE D'ESSAI DU BANC CROSSTALK, en plus fin :
+     0,3 mm, soit moins d'un pas de sonde (0,5 mm). La sonde à pas seule la
+     manquait une fois sur deux, et la jetait toujours (« moins de 1,5 pas ») ;
+     ses deux arêtes la bornent maintenant exactement. */
+  carte({plans:[planDessous(rect(2,2,X1+10,38)),
+                planDessous(rect(X1+10.3,2,58,38))]});
+  const f=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  if(!f||f.length!==1)
+    throw new Error("une fente de 0,3 mm doit être vue, une seule : "+
+                    JSON.stringify(f));
+  if(Math.abs(f[0].s-10)>0.01)
+    throw new Error("elle commence à 10 mm, au bord du plan : "+
+                    JSON.stringify(f[0]));
+  if(Math.abs(f[0].longueur-0.3)>0.01)
+    throw new Error("elle fait 0,3 mm, mesurée sur ses bords : "+
+                    JSON.stringify(f[0]));
+  if(!f[0].plans||f[0].plans.length!==1||!f[0].quoi)
+    throw new Error("la fente nomme son plan : "+JSON.stringify(f[0]));
+  /* UN TROU DE 0,2 MM dans un plan plein est une fente aussi. */
+  carte({plans:[planDessous(rect(2,2,58,38),[rect(X1+25,5,X1+25.2,35)])]});
+  const c=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  if(!c||c.length!==1||Math.abs(c[0].s-25)>0.01||Math.abs(c[0].longueur-0.2)>0.01)
+    throw new Error("un trou de 0,2 mm est une fente : "+JSON.stringify(c));
+  /* ET LA FENTE LARGE GARDE SES BORDS EXACTS : 10 mm pile. */
+  carte({plans:[planDessous(rect(2,2,X1+10,38)),
+                planDessous(rect(X1+20,2,58,38))]});
+  const g=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  if(!g||g.length!==1||Math.abs(g[0].s-10)>0.01||Math.abs(g[0].longueur-10)>0.01)
+    throw new Error("la fente de 10 mm est bornée par ses arêtes : "+
+                    JSON.stringify(g));
+});
+
 T("sous une découpe, le plan de repli est sondé lui aussi",()=>{
   /* LE CAS DE DESIGN1 : le plan le plus proche est découpé sous la piste, et
      le serveur retombe sur le plan SUIVANT de l'empilage. Si celui-ci n'a pas
