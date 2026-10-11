@@ -395,6 +395,52 @@ def test_diaphonie():
     print("[PASS] test_diaphonie")
 
 
+def test_diaphonie_fente():
+    """La règle diaphonie compte l'impédance commune d'une fente du plan que
+    l'agresseur et la victime franchissent ensemble (Ott, crosstalk 4.5.0) --
+    le même terme que « Analyser la piste » --, et pas quand un plan reste
+    dessous (cas 4b du banc)."""
+    pistes = [droite("CLK", 0.0, w=0.35), droite("DATA", 1.2, w=0.35)]
+    nat = {"CLK": "Rapide", "DATA": "Rapide", "GND": "Masse"}
+
+    def plan(c, trous):
+        return {"c": c, "n": "GND", "o": carre(-10, -20, 110, 20), "t": trous}
+    fente = [carre(49, -10, 51, 10)]           # 2 mm de large, ±10 mm, en travers des deux
+    sans = analyser(pistes=pistes, natures=nat, plans=[plan("L2", []), plan("L3", [])])
+    avec = analyser(pistes=pistes, natures=nat, plans=[plan("L2", fente), plan("L3", fente)])
+    ps, pa = sans["bilan"]["diaphonie"]["paires"][0], avec["bilan"]["diaphonie"]["paires"][0]
+    assert "fente" not in ps and pa.get("fente"), (ps.get("fente"), pa.get("fente"))
+    assert sans["bilan"]["diaphonie"]["fentes_communes"] == 0
+    assert avec["bilan"]["diaphonie"]["fentes_communes"] == 2          # les deux sens
+    # LE TERME S'AJOUTE AUX LIGNES SEULES, qui restent le chiffre d'avant ;
+    # l'ordre de grandeur est celui du cas 4 : une dizaine de pour-cent.
+    assert abs(pa["lignes"]["next"] - ps["next"]) < 1e-9, (pa["lignes"], ps["next"])
+    assert 0.08 < pa["fente"]["next"] < 0.14, pa["fente"]
+    assert abs(pa["next"] - (ps["next"] + pa["fente"]["next"])) < 1e-6, pa["next"]
+    assert pa["next_fourchette"][0] <= pa["next"] <= pa["next_fourchette"][1]
+    assert pa["statut"] == "rouge" and ps["statut"] == "vert", (pa["statut"], ps["statut"])
+    t = pa["fente"]["detail"][0]
+    assert 9.0 < t["d1"] < 11.0 and 9.0 < t["d2"] < 11.0, t
+    assert abs(t["entraxe"] - 1.2) < 0.05, t["entraxe"]
+    k = de(avec, "diaphonie")
+    assert len(k) == 1 and "impédance commune" in k[0]["msg"] and "Ott" in k[0]["msg"], k
+    assert k[0]["severite"] == "critique", k
+    # UN PLAN QUI RESTE DESSOUS (L3 intact) : pas de terme, et une note qui
+    # nomme le cas 4b.
+    part = analyser(pistes=pistes, natures=nat, plans=[plan("L2", fente), plan("L3", [])])
+    pp = part["bilan"]["diaphonie"]["paires"][0]
+    assert "fente" not in pp and abs(pp["next"] - ps["next"]) < 1e-9, pp
+    assert part["bilan"]["diaphonie"]["fentes_communes"] == 0
+    assert any("SANS terme d'impédance commune" in n and "4b" in n for n in part["notes"]), \
+        part["notes"]
+    # UNE FENTE QUI N'ATTEINT PAS LA VICTIME : la victime à +1,2 mm, la fente
+    # s'arrête à 0,8 mm de ce côté-là.
+    courte = [carre(49, -10, 51, 0.8)]
+    loin = analyser(pistes=pistes, natures=nat, plans=[plan("L2", courte), plan("L3", courte)])
+    assert loin["bilan"]["diaphonie"]["fentes_communes"] == 0, loin["bilan"]["diaphonie"]
+    print("[PASS] test_diaphonie_fente")
+
+
 def test_document_sans_empilage():
     res = analyser_document({"format": "cao-analyse-carte-1", "pistes": []})
     assert res["constats"] == [] and any("empilage" in n for n in res["notes"]), res
@@ -845,6 +891,7 @@ if __name__ == "__main__":
     test_retour_gnd_vers_alim()
     test_retour_cavite_modale()
     test_diaphonie()
+    test_diaphonie_fente()
     test_document_sans_empilage()
     test_empilage()
     test_impedance()

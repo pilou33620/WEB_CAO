@@ -3247,7 +3247,7 @@ function simXtCotes(l){
    la masse est cherchée d'abord, puis n'importe quel cuivre sur une couche
    qui ne porte pas de masse — un plan d'alimentation fait référence —, et une
    couche sans cuivre ici n'en est pas une. */
-function simXtNus(cotes,x,y,refs){
+function simXtNus(cotes,x,y,refs,retour){
   const nus=[];
   for(const cote of cotes){
     for(let k=0;k<cote.length;k++){
@@ -3255,16 +3255,63 @@ function simXtNus(cotes,x,y,refs){
       const zones=S.zones.filter(z=>z.l===i&&z.pts&&z.pts.length>=3);
       if(k===0&&!zones.length)break;
       const masse=zones.some(z=>!refs||!refs.size||refs.has(z.net));
+      /* `retour`, quand on le donne, reçoit le plan qui FERME le retour de
+         ce côté — celui sur lequel la descente s'arrête parce qu'il porte du
+         cuivre ici. Vide au bout des deux côtés : tous les plans manquent. */
       if(masse||k===0){
-        if(simXtZoneMasse(i,x,y,refs))break;
+        if(simXtZoneMasse(i,x,y,refs)){if(retour)retour.push(i);break;}
         nus.push(i);
         continue;
       }
-      if(simZoneEn(i,x,y))break;
+      if(simZoneEn(i,x,y)){if(retour)retour.push(i);break;}
       nus.push(i);
     }
   }
   return nus;
+}
+
+/* LES DÉTOURS DU COURANT DE RETOUR AUTOUR D'UNE FENTE — ce que le serveur ne
+   peut pas mesurer, et dont son terme d'impédance commune (Ott, `crosstalk`
+   4.5.0) a besoin. Au milieu de la fente, on avance le long de la NORMALE à
+   la piste, par pas de sonde, jusqu'à ce que le plan se referme sur la ligne
+   de la piste — c'est-à-dire qu'aucun plan ne manque plus sur toute la
+   largeur de la fente : c'est le chemin que le retour doit faire. Même
+   mesure que celle du RF (`fentes.push({… d1, d2 …})` du module commun),
+   au pas du crosstalk.
+
+   d1 EST À GAUCHE DU SENS DE MARCHE, d2 à droite — le côté +1 de la couture,
+   et c'est la convention que le serveur lit pour savoir de quel côté passe
+   la victime. 30 mm au plus, et `borne` le dit : un plan coupé de bord à
+   bord n'a pas de détour, le retour y passe par des condensateurs ou des
+   coutures que ce calcul ne voit pas. `retour` nomme les plans qui FERMENT
+   encore le retour sous la fente ; vide, tous sont coupés, et c'est la
+   condition du modèle — un plan qui reste dessous (fente sur L2 seule, L3
+   intact) n'a pas de terme, le serveur le dit. */
+const SIM_XT_FENTE_MAX=30;      /* mm — plafond du détour, celui du RF (SIM_RF_FENTE_MAX) */
+function simXtDetours(t,pas,refs){
+  const m=t.ech[(t.ech.length-1)>>1];
+  const tg=simTangente(m.trk,m.u);
+  const ux=tg.x*m.sens, uy=tg.y*m.sens;
+  const largeur=t.fin-t.debut+pas;
+  const demi=largeur/2+m.w/2, nq=Math.max(2,Math.ceil(2*demi/SIM_XT_PAS));
+  const ouvert=(cx,cy)=>{
+    for(let q=0;q<=nq;q++){
+      const d=-demi+2*demi*q/nq;
+      if(simXtNus(m.cotes,cx+d*ux,cy+d*uy,refs).length)return true;
+    }
+    return false;
+  };
+  const detour=sg=>{
+    for(let d=SIM_XT_PAS;d<=SIM_XT_FENTE_MAX;d+=SIM_XT_PAS)
+      if(!ouvert(m.x-sg*d*uy,m.y+sg*d*ux))return {d:d,borne:false};
+    return {d:SIM_XT_FENTE_MAX,borne:true};
+  };
+  const a=detour(1), b=detour(-1);
+  const retour=[];
+  simXtNus(m.cotes,m.x,m.y,refs,retour);
+  return {d1:r3(a.d), d2:r3(b.d), largeur:r3(largeur), borne:a.borne||b.borne,
+          retour:retour.map(i=>cuLabel(i,S.cu)).filter(Boolean),
+          x:r3(m.x), y:r3(m.y)};
 }
 
 /* Les discontinuités du plan sous le parcours, en intervalles d'abscisse.
@@ -3293,6 +3340,10 @@ function simXtFentes(par,refs){
     sondable=true;
     const cotes=simXtCotes(e.o.l);
     const n=Math.max(1,Math.round(e.longueur/pas));
+    /* LE SENS DE MARCHE, `ua` → `ub` : un tronçon parcouru à rebours a sa
+       tangente retournée, et avec elle gauche et droite — les détours d1 / d2
+       se mesurent dans le sens du parcours, comme le côté de la couture. */
+    const sens=(e.o.ub>=e.o.ua)?1:-1;
     for(let k=0;k<=n;k++){
       const f=k/n;
       const u=e.o.ua+(e.o.ub-e.o.ua)*f;
@@ -3302,14 +3353,19 @@ function simXtFentes(par,refs){
          geste, et sur une triplaque la fiche doit pouvoir le dire. */
       const nus=simXtNus(cotes,p.x,p.y,refs);
       const s=e.s0+f*e.longueur;
+      /* LA SONDE GARDE SON POINT : c'est au milieu de la fente que les
+         détours se mesurent (`simXtDetours`). */
+      const ech={x:p.x, y:p.y, trk:e.o.trk, u:u, sens:sens,
+                 w:e.o.trk.w||0, cotes:cotes};
       if(!nus.length){
         if(courant){trous.push(courant);courant=null;}
       }else if(courant&&s-courant.fin<=pas*1.5){
         courant.fin=s;
+        courant.ech.push(ech);
         for(const i of nus)if(courant.plans.indexOf(i)<0)courant.plans.push(i);
       }else{
         if(courant)trous.push(courant);
-        courant={debut:s, fin:s, plans:nus.slice()};
+        courant={debut:s, fin:s, plans:nus.slice(), ech:[ech]};
       }
     }
   }
@@ -3323,15 +3379,18 @@ function simXtFentes(par,refs){
      sans une référence qui n'y est pas. Il ne doit pas avoir à extraire un nom
      de couche d'une phrase pour cela — et `cuLabel` est déjà le nom que
      l'empilage envoie, donc celui que `section_de_couche` compare. */
+  /* ET LES DÉTOURS d1 / d2, la largeur, les plans qui ferment encore le
+     retour : ce que le terme d'impédance commune du serveur demande. */
   return trous.filter(t=>t.fin-t.debut>=pas*1.5)
-    .map(t=>({s:r3(t.debut), longueur:r3(t.fin-t.debut),
+    .map(t=>Object.assign({s:r3(t.debut), longueur:r3(t.fin-t.debut),
               plans:t.plans.map(i=>cuLabel(i,S.cu)).filter(Boolean),
               quoi:(t.plans.length>1
                       ? "les plans de référence "+t.plans.map(i=>cuLabel(i,S.cu)).join(" / ")+
                         " n'ont pas de cuivre de retour"
                       : "le plan de référence "+cuLabel(t.plans[0],S.cu)+
                         " n'a pas de cuivre de retour")+
-                   " sous le parcours sur "+r3(t.fin-t.debut)+" mm"}));
+                   " sous le parcours sur "+r3(t.fin-t.debut)+" mm"},
+              simXtDetours(t,pas,refs)));
 }
 
 /* Y a-t-il du cuivre DE MASSE sur cette couche, en ce point ? Le cuivre d'un
