@@ -1354,10 +1354,10 @@ Ce qui part, section par section :
 | `Content` | rôle (`Proprietaire`), fonction `USERDEF` (fabrication, assemblage et nomenclature réunis), un `LayerRef` par calque, dictionnaires de traits (`LineDesc`) et de formes (`Circle`, `RectCenter`, `RectRound`, `Oval`, `Contour` pour les pastilles chanfreinées ou polygonales) |
 | `LogisticHeader`, `HistoryRecord` | émetteur, auteur et révision du dossier de projet, date |
 | `Bom` | une ligne par référence de commande (MPN, sinon valeur et boîtier) : repères, quantité, valeur, boîtier, MPN, fabricant en `Textual` ; `populate="false"` pour ce que la variante active ne pose pas |
-| `CadHeader` | une `<Spec>` par couche d'empilage — cuivre (conductivité, rugosité), diélectrique (matière, εr, tan δ, âme ou prépreg), masque (εr, couleur) —, la finition, et une par contre-perçage |
+| `CadHeader` | une `<Spec>` par couche d'empilage — cuivre (conductivité, rugosité), diélectrique (matière, εr, tan δ, âme ou prépreg), masque (εr, couleur) —, la finition, une par contre-perçage ; et les **règles** : une `<Spec>` par classe de nets (`CLASSE_*`), par net contraint (`CONTRAINTE_*`), par paire différentielle (`PAIRE_*`), par groupe d'appariement (`APPARIEMENT_*`), plus `ISOLATION_CLASSES` pour la matrice — voir ci-dessous |
 | `Layer` | sérigraphie, pâte, masque, cuivres (`SIGNAL`, `MIXED` ou `PLANE` selon le rôle de couche), diélectriques, `CONTOUR` (`BOARD_OUTLINE`), un calque `DRILL` par portée avec son `<Span>` (borgnes et enterrés compris), `PERCAGE_NPTH`, un calque par passe de contre-perçage |
 | `Stackup` | la coupe, masque compris, épaisseur hors-tout |
-| `Step` | `PadStackDef` (pastilles et vias, perçage et forme par couche), `Profile` (contour et découpes), `Package` (une empreinte par géométrie : broches, forme, encombrement), `Component` (place, rotation, face, repère, valeur et MPN en `NonstandardAttribute`), `LogicalNet` (broche → net), `PhyNetGroup` (points de sonde des faces), et un `LayerFeature` par calque |
+| `Step` | `PadStackDef` (pastilles et vias, perçage et forme par couche), `Profile` (contour et découpes), `Package` (une empreinte par géométrie : broches, forme, encombrement), `Component` (place, rotation, face, repère, valeur et MPN en `NonstandardAttribute`), `LogicalNet` (broche → net, `netClass` de la norme, `netPair`, classe et paire de l'éditeur en `NonstandardAttribute`, `SpecRef` vers ses règles), `PhyNetGroup` (points de sonde des faces), et un `LayerFeature` par calque (`Set netPair` pour le cuivre d'une paire) |
 
 Dans les `LayerFeature` : les pistes (`Line`) avec leur largeur, les arcs en
 `Arc`, les pastilles et les vias (`Pad` avec leur pile et leur broche), les
@@ -1393,22 +1393,48 @@ sommets ; les cordes égales d'un coin arrondi ou d'une carte ronde
 importés y sont reconnues par `dxfSegments`, comme pour le DXF, et partent en
 `PolyStepCurve` sur le cercle qui passe exactement par les sommets.
 
-Ce qui ne part pas : les règles de conception (classes, matrice), les paires
-différentielles et les contraintes, qui n'ont pas d'écriture que les outils
-de FAO reconnaissent ; la rugosité de Huray, qui n'a pas de type normalisé,
-part en `<Conductor type="OTHER">` commenté. Comme dans le Gerber, une zone
-ne se dégage pas autour d'un trou NPTH.
+**Les règles partent aussi** — classes de nets, paires différentielles,
+contraintes du gestionnaire — avec les seuls éléments que le XSD leur
+réserve, rien d'inventé :
+
+| Élément | Ce qu'il porte |
+| --- | --- |
+| `<LogicalNet netClass netPair>` | `netClass` est l'énumération de la norme (`GROUND`, `POWER`, `CLK`, `SIGNAL`), trop pauvre pour nommer une classe ; `netPair` nomme le net d'en face de la paire |
+| `<NonstandardAttribute>` du net | `NET_CLASS` (le nom de la classe de l'éditeur), `DIFF_PAIR` (le nom de la paire), `DIFF_PAIR_POLARITY` (`P` ou `N`) — la place que la norme donne à ce qu'elle n'énumère pas |
+| `<SpecRef>` du net | ses règles : `CLASSE_<classe>`, `CONTRAINTE_<net>`, `PAIRE_<paire>`, `APPARIEMENT_<groupe>` |
+| `<Spec>` de règle | un `<General type="ELECTRICAL">` dont les `<Property>` nommées disent la règle, en millimètres : `TRACE_WIDTH` (générale, et par couche avec `layerOrGroupRef`), `CLEARANCE`, `VIA_DIAMETER`, `VIA_DRILL`, `MIN_LENGTH`, `MAX_LENGTH`, `MAX_VIAS`, `ALLOWED_LAYER`, `TOPOLOGY`, `PIN_ORDER`, `MAX_STUB_LENGTH`, `MAX_VIA_STUB_LENGTH`, `STAR_TOLERANCE`, `BACKDRILL_RULE` ; pour une paire `NET_P`, `NET_N`, `RULE`, `GAP`, `MAX_UNCOUPLED_LENGTH`, largeur et écart préférés avec leurs bornes en `tolPlus` / `tolMinus` ; pour un groupe `MATCH_MODE` (`LENGTH` / `DELAY`), `MATCH_TOLERANCE` (mm, ou `text="ps"`), `REFERENCE_NET`, `MEMBER` ; pour la matrice une `CLEARANCE` par case, la clé `A|B` en texte |
+| `<Impedance value tolPlus tolMinus tolPercent>` | l'impédance cible (classe, net ou paire), l'élément normalisé, avec sa structure de ligne sur chaque couche de signal qui a un plan : `<SingleEnded>` ou `<EdgeCoupled>` (`STRIPLINE_SYMMETRIC` / `_ASYMMETRIC`, `MICROSTRIP_MASK_COVERED` / `_EMBEDDED`), `LineWidth`, `Spacing`, `RefPlane` |
+| `<Set netPair>` | chaque jeu de cuivre d'un net apparié nomme sa partenaire |
+
+Le lecteur de la visionneuse (`python/ipc2581_parser.py` 1.79,
+`ipc2581_json.py` → `regles`) les relit : une carte exportée puis rouverte
+dans la visionneuse retrouve ses classes et ses paires sans reclassement, la
+correction à la main restant possible.
+
+**La rugosité de Huray** n'a pas de type normalisé ; elle part sous le type
+normalisé de la rugosité, `<Conductor type="SURFACE_ROUGHNESS_UPFACING">`, en
+`<Property>` nommées `HURAY_NODULE_RADIUS` (`MICRON`) et `HURAY_SURFACE_RATIO`,
+sans Rq de substitution — le `comment` le dit. Hammerstad garde sa
+`<Property value unit>`.
+
+Ce qui ne part pas : la stratégie de remplissage (seul le résultat compte
+pour le fabricant). Comme dans le Gerber, une zone ne se dégage pas autour
+d'un trou NPTH.
 
 **L'aller-retour.** `test/harness.js` écrit quatre exports dans
 `dist/essai-ipc2581/` — les deux cartes d'exemple, la seconde chargée de ce
-qui leur manque (contre-perçage, rugosité, composants dessous à 30° et 45°,
-pastilles chanfreinée, polygonale et oblongue, arc, découpe, trous NPTH,
-variante), la première aux coins arrondis percée d'une découpe ronde — et ce
-que l'éditeur en attend. `test/banc-ipc2581-export.py` les relit par la
-chaîne de la visionneuse et compare : composants (place, rotation, face,
-chaque broche sur sa pastille), nets, pistes et arcs, vias et trous, contour
-(aire au millième, arcs), couches et empilage, rugosité, contre-perçage,
-zones (le net raccordé, les autres dégagés), masque, pâte, nomenclature.
+qui leur manque (contre-perçage, rugosité Rq et Huray, composants dessous à
+30° et 45°, pastilles chanfreinée, polygonale et oblongue, arc, découpe,
+trous NPTH, variante, impédance cible de classe, contraintes de net, groupe
+d'appariement, matrice d'isolation), la première aux coins arrondis percée
+d'une découpe ronde — et ce que l'éditeur en attend.
+`test/banc-ipc2581-export.py` les relit par la chaîne de la visionneuse et
+compare : composants (place, rotation, face, chaque broche sur sa pastille),
+nets, pistes et arcs, vias et trous, contour (aire au millième, arcs),
+couches et empilage, rugosité (Rq, Huray), contre-perçage, zones (le net
+raccordé, les autres dégagés), masque, pâte, nomenclature, et les règles
+(classe de chaque net, règles des classes, contraintes, paires, groupes,
+matrice).
 
     python3 outils/build-monofichier.py && node test/harness.js
     python3 test/banc-ipc2581-export.py --xsd chemin/IPC-2581C.xsd

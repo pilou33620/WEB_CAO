@@ -162,6 +162,9 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "mdlDetecterClasseNet","mdlDetecterTensionNet","mdlAutoDetecterClassesNets",
   "mdlAppliquerClassesNets","mdlNetClasse","mdlNetPoserClasse",
   "mdlNetPoserNature","MDL_NATURES_SIGNAL",
+  /* Les règles que le fichier porte (parseur 1.79) : classes, paires. */
+  "mdlRegles","mdlClasseFichier","mdlPaireFichier","mdlNatureDeClasse","simPairesFichierIpc",
+  "simDiffPartenaireNom",
   "simAppliquerPrereglagesClassesNets","SIM_PDN",
   /* Le solveur d'impédance du PDN : le moteur est dans
      commun/simulation-em.js, partagé avec l'éditeur PCB, mais la
@@ -6287,6 +6290,88 @@ T("la rugosité que le fichier déclare part au serveur, et seulement elle",()=>
   if(pile[0].rugosite_rms_um!==1.6||pile[0].modele_rugosite!=="hammerstad")
     throw new Error("rugosité du dessus : "+JSON.stringify(pile[0]));
   if("rugosite_rms_um" in pile[1])throw new Error("le plan n'en déclare pas");
+  carte();
+});
+
+/* ==========================================================================
+   Les règles que le fichier porte (regles, parseur 1.79) : le classement de
+   l'éditeur qui a écrit la carte passe devant la détection, jamais devant un
+   choix fait ici ; ses paires partent au serveur et désignent la partenaire ;
+   sa rugosité de Huray part avec ses deux paramètres.
+   ========================================================================== */
+T("les classes du fichier classent les nets avant la détection, la main garde le dernier mot",()=>{
+  V.modele={
+    nets:["GND","XIN","USB_DP","RF_ANT","SPI_CS","VBAT_SENSE","+5V"],
+    regles:{classes:{GND:"Alimentation",XIN:"Horloge",USB_DP:"Rapide",RF_ANT:"Impédance 50Ω",
+                     SPI_CS:"Défaut",VBAT_SENSE:"Analogique","+5V":"Rapide"},
+            paires:[],contraintes:{},groupes:[],matrice:{}},
+    /* la détection dirait autre chose : elle ne doit plus parler */
+    natures_nets:{classes:{SPI_CS:"Horloge",XIN:"Lent"},raisons:{SPI_CS:"Motif"}},
+    pistes:[],arcs:[],plans:[],pads:[],textes:[],composants:[],percages:[]
+  };
+  V.parNet=V.modele.nets.map((nom,i)=>({i,nom,pistes:[],arcs:[],plans:[],pads:[],trous:[],longueur:1,couches:new Set([0])}));
+  mdlAutoDetecterClassesNets(null,null);
+  const nat=V.parNet.map(n=>n.nature).join(",");
+  /* GND rangé dans « Alimentation » reste une masse (le nom passe devant,
+     comme dans l'éditeur) ; +5V en « Rapide » reste une alimentation ;
+     « Impédance 50Ω » est RF ; « Défaut » est Lent, malgré la détection */
+  if(nat!=="Masse,Horloge,Rapide,RF,Lent,Analogique,Alimentation")throw new Error("natures : "+nat);
+  if(V.parNet[0].classe!=="gnd"||V.parNet[6].classe!=="pwr")throw new Error("familles : "+V.parNet.map(n=>n.classe).join(","));
+  if(!/Classe « Horloge » du fichier/.test(V.parNet[1].natureRaison))throw new Error("raison : "+V.parNet[1].natureRaison);
+  if(!/Classe « Alimentation » du fichier/.test(V.parNet[0].autoRaison))throw new Error("raison GND : "+V.parNet[0].autoRaison);
+  if(mdlClasseFichier("XIN")!=="Horloge"||mdlClasseFichier("INCONNU")!=="")throw new Error("mdlClasseFichier");
+  if(mdlNatureDeClasse("USB")!=="Lent"||mdlNatureDeClasse("")!=="")throw new Error("une classe inconnue est Lent, aucune classe ne dit rien");
+  /* la main garde le dernier mot, et survit à une nouvelle détection */
+  mdlNetPoserNature(4,"RF");
+  mdlAutoDetecterClassesNets(null,V.modele.netClasses);
+  if(V.parNet[4].nature!=="RF"||!V.parNet[4].natureManuelle)throw new Error("choix manuel perdu");
+  mdlNetPoserClasse(2,"pwr");
+  if(V.parNet[2].classe!=="pwr")throw new Error("reclassement manuel refusé");
+  /* sans règles dans le fichier, rien ne change : la détection reprend */
+  delete V.modele.regles;
+  mdlAutoDetecterClassesNets(null,null);
+  if(V.parNet[4].nature!=="RF"||V.parNet[1].nature!=="Lent")throw new Error("sans règles : "+V.parNet.map(n=>n.nature).join(","));
+});
+
+T("les paires du fichier partent au serveur devant celles devinées, et nomment la partenaire",()=>{
+  const c=carte({nets:["LVDS_P","GND","LVDS_N","AUTRE_P","AUTRE_N"],
+                 pistes:[{c:0,n:0,w:W,p:[X1,Y,X2,Y]},{c:0,n:2,w:W,p:[X1,Y+1,X2,Y+1]},
+                         {c:0,n:3,w:W,p:[X1,Y+5,X2,Y+5]},{c:0,n:4,w:W,p:[X1,Y+6,X2,Y+6]}]});
+  V.modele.regles={classes:{},paires:[{nom:"LVDS",p:"LVDS_P",n:"LVDS_N",zdiff:100},
+                                      {nom:"FANTOME",p:"LVDS_P",n:"ABSENT"}],
+                   contraintes:{},groupes:[],matrice:{}};
+  /* le serveur devine AUTRE_P / AUTRE_N, et redirait LVDS_P avec GND : la
+     seconde tombe, LVDS_P étant déjà apparié par le fichier */
+  V.modele.natures_nets={classes:{},paires:[["LVDS_P","GND"],["AUTRE_P","AUTRE_N"]]};
+  const pf=simPairesFichierIpc();
+  if(JSON.stringify(pf)!==JSON.stringify([{nom:"LVDS",p:"LVDS_P",n:"LVDS_N"}]))
+    throw new Error("paires du fichier : "+JSON.stringify(pf));
+  const r=SIM_IPC.carteEntiere();
+  if(JSON.stringify(r.doc.paires)!==JSON.stringify([["LVDS_P","LVDS_N"],["AUTRE_P","AUTRE_N"]]))
+    throw new Error("paires envoyées : "+JSON.stringify(r.doc.paires));
+  /* la partenaire : celle du fichier, avant toute devinette sur le nom */
+  if(SIM_IPC.partenaire("LVDS_N")!=="LVDS_P"||SIM_IPC.partenaire("GND")!=="")throw new Error("partenaire");
+  const p=mdlPaireFichier("LVDS_N");
+  if(!p||p.mate!=="LVDS_P"||p.nom!=="LVDS"||p.zdiff!==100)throw new Error("mdlPaireFichier : "+JSON.stringify(p));
+  const garde=SIM_ED; global.SIM_ED=SIM_IPC;
+  try{
+    V.modele.regles.paires[0]={nom:"LVDS",p:"LVDS_P",n:"GND"};   // le fichier a le dernier mot sur le nom
+    if(simDiffPartenaireNom("LVDS_P")!=="GND")throw new Error("le fichier doit passer devant le nom");
+    delete V.modele.regles;
+    if(simDiffPartenaireNom("LVDS_P")!=="LVDS_N")throw new Error("sans fichier, le nom décide");
+  }finally{global.SIM_ED=garde;}
+  carte();
+});
+
+T("la rugosité de Huray du fichier part au serveur avec ses deux paramètres",()=>{
+  carte({empilage:[
+    {nom:"Top",    seq:1, ep:0.035, type:"CONDUCTOR", rug_huray:{a:0.5,sr:1.5}},
+    {nom:"Coeur",  seq:2, ep:0.2,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
+    {nom:"Bottom", seq:3, ep:0.035, type:"PLANE", rug:1.6}]});
+  const pile=simStackupIpc().layers.filter(c=>c.type==="copper");
+  if(pile[0].modele_rugosite!=="huray"||pile[0].rayon_nodule_um!==0.5||pile[0].rapport_surface!==1.5||"rugosite_rms_um" in pile[0])
+    throw new Error("Huray du dessus : "+JSON.stringify(pile[0]));
+  if(pile[1].modele_rugosite!=="hammerstad"||pile[1].rugosite_rms_um!==1.6)throw new Error("Rq du plan : "+JSON.stringify(pile[1]));
   carte();
 });
 

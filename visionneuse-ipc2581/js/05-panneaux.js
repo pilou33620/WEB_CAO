@@ -779,9 +779,20 @@ function pnlDetail(){
       +'<button class="seg-btn'+(cl==="pwr"?" on pwr":"")+'" data-set-classe="pwr" title="Classer en alimentation (PWR)">PWR</button>'
       +'<button class="seg-btn'+(cl==="signal"?" on sig":"")+'" data-set-classe="signal" title="Classer en signal">Signal</button>'
       +'</span>';
+    /* ce que le fichier dit du net (regles, parseur 1.79) : la classe de
+       l'éditeur qui l'a écrit, et sa paire différentielle — la partenaire
+       se rejoint d'un clic */
+    const cf=(typeof mdlClasseFichier==="function")?mdlClasseFichier(n.nom):"";
+    const pf=(typeof mdlPaireFichier==="function")?mdlPaireFichier(n.nom):null;
+    const rangMate=pf?V.parNet.findIndex(x=>x&&x.nom===pf.mate):-1;
+    const paire=pf?('<span class="val">'+mdlEsc(pf.nom||"")+"</span> · "+(n.nom===pf.p?"P":"N")+" ↔ "
+      +(rangMate>=0?'<span class="lien" data-vnet="'+rangMate+'">'+mdlEsc(pf.mate)+"</span>":mdlEsc(pf.mate))
+      +(pf.zdiff?" · "+mdlNb(pf.zdiff,0)+" Ω":"")):"";
     h+='<div class="fiche"><h3>Net</h3><table>'
       +l("Nom",badge+'<span class="val">'+mdlEsc(n.nom)+"</span>")
       +l("Classification",selClasse+pnlSelNature(n,"data-set-nature"))
+      +(cf?l("Classe (fichier)",'<span class="val">'+mdlEsc(cf)+"</span>"):"")
+      +(paire?l("Paire diff.",paire):"")
       +l("Longueur",mdlMes(n.longueur,2))
       +l("Pistes",n.pistes.length+(n.arcs.length?" + "+n.arcs.length+" arc(s)":""))
       +l("Pastilles",n.pads.length)

@@ -108,6 +108,11 @@ function simStackupIpc(){
        elle, rien ne part et le cuivre est lisse — l'IPC-2581 de la plupart
        des outils ne la porte pas. */
     if(cu.rug > 0){c.modele_rugosite = "hammerstad"; c.rugosite_rms_um = cu.rug;}
+    /* Huray (parseur 1.79) : les deux paramètres du modèle, comme l'éditeur
+       PCB les écrit dans son propre document de simulation. */
+    else if(cu.rugHuray&&cu.rugHuray.a>0&&cu.rugHuray.sr>0){
+      c.modele_rugosite="huray"; c.rayon_nodule_um=cu.rugHuray.a; c.rapport_surface=cu.rugHuray.sr;
+    }
     couches.push(c);
     const g=LT.gap[k];
     if(g)couches.push({
@@ -3698,6 +3703,15 @@ function simVoisinageIpc(envoi,objets,adjacentes,refus){
    de l'adaptateur soit le même des deux côtés, et pour qu'il y ait un endroit
    où brancher la déclaration le jour où le format la donne. */
 function simPairesIpc(){return [];}
+/* Les paires différentielles que le FICHIER déclare (regles.paires, parseur
+   1.79), restreintes aux nets que la carte a vraiment : [{nom, p, n}]. */
+function simPairesFichierIpc(){
+  const r=(typeof mdlRegles==="function")?mdlRegles():null;
+  if(!r||!Array.isArray(r.paires))return [];
+  const noms=new Set((V.parNet||[]).map(n=>n&&n.nom).filter(Boolean));
+  return r.paires.filter(p=>p&&p.p&&p.n&&p.p!==p.n&&noms.has(p.p)&&noms.has(p.n))
+                 .map(p=>({nom:p.nom||p.p,p:p.p,n:p.n}));
+}
 
 function simDocIpc(liste,netIdx,opts,seul){
   if(!V.modele)
@@ -5779,12 +5793,27 @@ const SIM_IPC={
         }
       }finally{V.net=garde.net; SIM_CHAINE_IPC=garde.chaine;}
     }
+    /* les paires différentielles : celles que le fichier déclare d'abord
+       (regles, parseur 1.79 — c'est l'éditeur qui les a nommées), puis
+       celles que le serveur a devinées sur les noms, sans redire un net */
+    const paires=[], dansPaire=new Set();
+    for(const p of simPairesFichierIpc()){paires.push([p.p,p.n]);dansPaire.add(p.p);dansPaire.add(p.n);}
+    for(const p of (nn.paires||[]))
+      if(Array.isArray(p)&&p.length===2&&!dansPaire.has(p[0])&&!dansPaire.has(p[1])){
+        paires.push(p);dansPaire.add(p[0]);dansPaire.add(p[1]);
+      }
     return {doc:{unite_mm:simKUnite(),pistes,arcs,pastilles,plans,contour,
                  percages,composants,
                  stackup:LT.pret?simStackupIpc():null, vias, natures,
-                 bruyants:nn.bruyants||[], paires:nn.paires||[],
+                 bruyants:nn.bruyants||[], paires,
                  reference_nets:simRefListe()},
             parDefaut};
+  },
+  /* Le net d'en face d'une paire que le fichier déclare : le panneau commun
+     (simDiffPartenaireNom) le demande avant de deviner sur le nom. */
+  partenaire:function(nom){
+    const p=(typeof mdlPaireFichier==="function")?mdlPaireFichier(nom):null;
+    return p?p.mate:"";
   },
   /* Extraction physique du temps de vol pour l'analyse de bus synchrone (supporte les XNets / nets composés "NET1 + NET2") */
   busNetFlight:function(netName){
