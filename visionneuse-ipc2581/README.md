@@ -303,6 +303,29 @@ IN1, 193 fF, quart d'onde à 33,8 GHz — que le serveur laissait inconnu ;
 | `O` | Ouvrir un fichier |
 | `Échap` | Ne plus rien sélectionner |
 
+### Les règles que le fichier porte (classes, paires)
+
+Un IPC-2581 écrit par l'éditeur PCB de ce dépôt — ou par tout outil qui suit
+la même forme : `<LogicalNet netClass netPair>`, `<NonstandardAttribute>`
+`NET_CLASS` / `DIFF_PAIR`, `<SpecRef>` vers des `<Spec>` de règles — nomme la
+**classe** de chaque net et ses **paires différentielles**. Le lecteur
+(`python/ipc2581_parser.py` 1.79) les rend dans `regles`, et la page s'en
+sert comme **classement initial** : la nature d'un net (Horloge, Rapide, RF,
+Analogique, Antenne, Lent) vient d'abord de sa classe dans le fichier — les
+mêmes motifs de nom que l'éditeur, « Impédance 50Ω » est RF, « Défaut » est
+Lent —, et seulement ensuite de la détection du serveur. Un nom de masse ou de
+tension passe devant la classe, comme dans l'éditeur (GND rangé dans
+« Alimentation » reste une masse). La main garde le dernier mot : un choix
+fait dans la fiche ou la modale de classification l'emporte, et il est
+mémorisé par fichier comme avant.
+
+La fiche d'un net dit sa **classe du fichier** et sa **paire** (nom, polarité
+P ou N, partenaire cliquable, Z différentielle cible). Les paires du fichier
+partent au serveur devant celles devinées sur les noms, et l'onglet « Z
+différentielle » prend la partenaire déclarée avant toute devinette. La
+rugosité de **Huray** d'un cuivre (`HURAY_NODULE_RADIUS`,
+`HURAY_SURFACE_RATIO`) part aux pertes avec ses deux paramètres.
+
 ## Simuler : l'impédance, peinte sur la carte
 
 Le panneau **« Simulation EM »** — bouton du même nom dans la barre d'outils —

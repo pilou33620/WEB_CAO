@@ -598,6 +598,44 @@ def _portion(v, a):
     return [x1 + ux * lo, y1 + uy * lo, x1 + ux * hi, y1 + uy * hi]
 
 
+def _decalage(a, b):
+    """Le décalage SIGNÉ, en mm, de l'axe du tronçon `b` par rapport à l'axe
+    de `a` : positif à gauche du sens de parcours de `a`, négatif à droite,
+    mesuré au milieu de `b`. C'est lui qui pose une voisine du BON CÔTÉ dans
+    la section, et une garde ENTRE les deux pistes plutôt qu'au-delà."""
+    _, ax1, ay1, ax2, ay2, _wa = a
+    _, bx1, by1, bx2, by2, _wb = b
+    dx, dy = ax2 - ax1, ay2 - ay1
+    L = math.hypot(dx, dy) or 1e-12
+    ux, uy = dx / L, dy / L
+    mx, my = (bx1 + bx2) / 2 - ax1, (by1 + by2) / 2 - ay1
+    return -uy * mx + ux * my
+
+
+def _trou_couture(c, vias, longement=None):
+    """Le plus grand trou de couture le long du tronçon `c`, en mm : l'écart
+    entre deux vias consécutifs de son net à portée de son cuivre (2 mm, le
+    couloir de la page), bouts du tronçon compris. Sans via, la longueur du
+    tronçon : une garde que rien ne tient au plan ne tient rien."""
+    _, x1, y1, x2, y2, w = c
+    dx, dy = x2 - x1, y2 - y1
+    L = math.hypot(dx, dy)
+    if L <= 0:
+        return 0.0
+    ux, uy = dx / L, dy / L
+    pos = []
+    for vx, vy in vias:
+        t = (vx - x1) * ux + (vy - y1) * uy
+        d = abs(-uy * (vx - x1) + ux * (vy - y1))
+        if -1e-6 <= t <= L + 1e-6 and d <= w / 2 + 2.0:
+            pos.append(min(L, max(0.0, t)))
+    if not pos:
+        return L
+    pos.sort()
+    bornes = [0.0] + pos + [L]
+    return max(b - a for a, b in zip(bornes, bornes[1:]))
+
+
 def _kb_larges_faces(h_v, h_a, x_lat, w_v, w_a):
     """Kb de deux pistes de couches voisines, sans plan entre elles, au-dessus
     du même plan de référence : méthode des images en milieu homogène (Kf
@@ -613,9 +651,19 @@ def _kb_larges_faces(h_v, h_a, x_lat, w_v, w_a):
     return max(0.0, min(1.0, lm / math.sqrt(lv * la))) / 2
 
 
-def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
+def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None, surf=None):
     """Chaque couple de pistes voisines de nets différents : combien la
     victime reçoit de l'agresseur, à la cadence de l'agresseur.
+
+    LES FENTES DU PLAN FRANCHIES PAR LES DEUX (avec `surf`, l'image du cuivre
+    des plans) : là où l'agresseur et la victime passent ensemble au-dessus
+    d'un vide de leur plan de référence, et qu'aucun autre plan ne ferme le
+    retour dessous, le détour commun du courant de retour ajoute le terme
+    d'impédance commune d'Ott (`crosstalk.impedance_commune_fente` : self du
+    détour, mutuelle à l'entraxe, deux détours en parallèle, f.é.m. partagée
+    en +NEXT / −FEXT, fourchette et résonance) -- le même que « Analyser la
+    piste ». Un plan qui reste dessous (fente sur un seul plan) ne l'applique
+    pas : c'est noté, pas chiffré.
 
     SUR LA MÊME COUCHE, LA SECTION EST RÉSOLUE, PAS ESTIMÉE : Kb et Kf sortent
     des matrices [L] et [C] de la section à deux conducteurs, par la méthode
@@ -664,8 +712,87 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
         return _longement(a, b) if la >= lb else _longement(b, a)
 
     cache, couples, larges = {}, defaultdict(list), defaultdict(list)
-    bilan = {"couples": 0, "sections": 0, "couples_larges_faces": 0}
-    sans_plan = []
+    bilan = {"couples": 0, "sections": 0, "couples_larges_faces": 0,
+             "fentes_communes": 0}
+    sans_plan, hauteurs = [], {}
+    # LES COUPLES ECARTES A MOINS DE 1,5 x LE SEUIL, par (nets, couche) : le
+    # plus proche de leurs longements. Ils ne sont pas chiffres, et le rapport
+    # le DIT -- un couple dessine a S = 3,5 W qui disparait du tableau se lit
+    # « rien ne couple », ce qui est faux.
+    ecartes_proches = {}
+    # LES VIAS DE CHAQUE NET, EN MM : c'est avec eux qu'une piste de garde est
+    # jugee COUSUE (posee a zero volt) ou FLOTTANTE (posee isolee, elle
+    # transfere) -- le meme critere lambda/10 au genou que l'analyse de piste.
+    vias_net = defaultdict(list)
+    for t in doc.get("percages") or ():
+        try:
+            vias_net[str(t.get("n") or "")].append((float(t["x"]) * unite,
+                                                    float(t["y"]) * unite))
+        except (KeyError, TypeError, ValueError):
+            continue
+    couture_max = se._couture_max(reg["xt_tr"])
+
+    def intercales(segs, grille, case, ka, kb_, smax):
+        """Les conducteurs INTERCALES OU VOISINS d'un couple (segs[ka], segs[kb_])
+        sur la meme couche, poses dans la section du couple.
+
+        C'EST LE MEME CHEMIN QUE L'ANALYSE DE PISTE. `crosstalk._matrices_bloc`
+        pose dans UNE section tout ce qui longe l'agresseur : les victimes, et
+        les pistes de garde. Ici la section n'avait que les deux pistes du
+        couple, et `joue` ecarte la masse : une piste de garde routee entre les
+        deux -- le cas 3 de la carte d'essai du banc crosstalk -- ne changeait
+        rien au chiffre (0,90 % au lieu de 0,58 % de NEXT a 1 ns), alors que
+        l'analyse de la meme piste la voyait. On ramasse donc tout troncon d'un
+        AUTRE net qui longe le couple sur au moins la moitie de son longement,
+        dans la fenetre laterale du seuil de part et d'autre : une garde (classe
+        Masse ou net de reference) est posee a zero volt si elle est cousue au
+        pas lambda/10 du front global, FLOTTANTE sinon ; une voisine de signal
+        est posee avec son propre port, comme la aussi.
+
+        Rend une liste de (x signe depuis l'axe de segs[ka], largeur, garde,
+        flottant, net), la plus proche d'abord, quatre au plus.
+        """
+        a, b = segs[ka], segs[kb_]
+        ref = a if math.hypot(a[3] - a[1], a[4] - a[2]) >= \
+            math.hypot(b[3] - b[1], b[4] - b[2]) else b
+        lg_ab = _longement(ref, b if ref is a else a)
+        if not lg_ab:
+            return []
+        x_b = _decalage(a, b)
+        lo, hi = min(0.0, x_b), max(0.0, x_b)
+        cand = set()
+        for sg in (a, b):
+            for cle in _cases(case, sg[1], sg[2], sg[3], sg[4], smax + sg[5]):
+                cand.update(grille.get(cle, ()))
+        out = []
+        for k in cand:
+            if k in (ka, kb_):
+                continue
+            c = segs[k]
+            if c[0] in (a[0], b[0]) or not c[0]:
+                continue
+            lg_c = _longement(ref, c) if math.hypot(
+                ref[3] - ref[1], ref[4] - ref[2]) >= math.hypot(
+                c[3] - c[1], c[4] - c[2]) else _longement(c, ref)
+            if not lg_c or lg_c[0] < 0.5 * lg_ab[0]:
+                continue
+            x_c = _decalage(a, c)
+            if not (lo - smax <= x_c <= hi + smax):
+                continue
+            # UN CONDUCTEUR QUI CHEVAUCHE L'UN DES DEUX N'EST PAS POSABLE :
+            # cuivre en double, ou dessin incoherent. On passe.
+            if (abs(x_c) <= (a[5] + c[5]) / 2 + 1e-6
+                    or abs(x_c - x_b) <= (b[5] + c[5]) / 2 + 1e-6):
+                continue
+            garde = _classe(doc, c[0]) == "Masse"
+            flottant = False
+            if garde:
+                trou = _trou_couture(c, vias_net.get(c[0], ()), lg_ab)
+                flottant = bool(couture_max > 0 and trou > couture_max)
+            out.append((x_c, c[5], garde, flottant, c[0]))
+        out.sort(key=lambda e: abs(e[0]))
+        # LE MEME PLAFOND QUE LE SOLVEUR, moins les deux pistes du couple.
+        return out[:min(4, tl.MAX_CONDUCTEURS - 2)]
 
     def deux_niveaux(h_v, h_a, x_lat, w_v, w_a, b_mm):
         """Kb de la victime, rubans à leurs hauteurs (mm) ; None hors budget."""
@@ -688,11 +815,22 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
         if not h > 0:
             sans_plan.append(str(couches[i].get("name")))
             continue
-        smax = 5 * h
-        case = max(1.0, 2 * smax)
+        # LE SEUIL DE PRÉSÉLECTION : cinq hauteurs au plan, ou la règle des 3W
+        # de l'analyse de piste (3 × max(W, H)) quand elle porte plus loin --
+        # les deux outils doivent voir les mêmes couples --, l'ÉGALITÉ retenue
+        # et 2 % au-dessus aussi (crosstalk.TOLERANCE_SEUIL) : un couple dessiné
+        # à S = 3W tombait PILE sur le seuil et sortait du tableau sans un
+        # chiffre. La grille regarde jusqu'à 1,5 × le seuil : les couples
+        # écartés de peu sont NOMMÉS dans le bilan, avec leur écart.
+        hauteurs[i] = h
+        w_max = max(sg[5] for sg in segs)
+        seuil = max(5 * h, xt.DISTANCE_AUTO * max(w_max, h))
+        smax = seuil * (1 + xt.TOLERANCE_SEUIL) + 1e-9
+        portee = xt.PRESELECTION_PROCHE * seuil
+        case = max(1.0, 2 * portee)
         grille = defaultdict(list)
         for k, sg in enumerate(segs):
-            for cle in _cases(case, sg[1], sg[2], sg[3], sg[4], smax + sg[5]):
+            for cle in _cases(case, sg[1], sg[2], sg[3], sg[4], portee + sg[5]):
                 grille[cle].append(k)
         vus = set()
         for cellule in grille.values():
@@ -706,13 +844,43 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
                     if a[0] == b[0] or frozenset((a[0], b[0])) in paires:
                         continue
                     lg = face(a, b)
-                    if not lg or lg[0] < 0.05 or not (0 < lg[1] <= smax):
+                    if not lg or lg[0] < 0.05 or not lg[1] > 0:
                         continue
-                    for v_, g_ in ((a, b), (b, a)):
-                        if joue(v_[0], False) and joue(g_[0], True):
-                            couples[(v_[0], g_[0], i)].append(
-                                (lg[0], lg[1], v_[5], g_[5], lg[2],
-                                 _portion(v_, g_)))
+                    sens = [(v_, g_) for v_, g_ in ((a, b), (b, a))
+                            if joue(v_[0], False) and joue(g_[0], True)]
+                    if not sens:
+                        continue
+                    if lg[1] > smax:
+                        if lg[1] < portee:
+                            cle_e = (frozenset((a[0], b[0])), i)
+                            e = ecartes_proches.get(cle_e)
+                            if e is None or lg[1] < e["ecart"]:
+                                ecartes_proches[cle_e] = {
+                                    "nets": sorted((a[0], b[0])),
+                                    "couche": str(couches[i].get("name")),
+                                    "ecart": round(lg[1], 4),
+                                    "seuil": round(seuil, 4),
+                                    "longueur": round(lg[0], 3),
+                                    "x": lg[2][0] / unite, "y": lg[2][1] / unite}
+                        continue
+                    # CE QUI LONGE LE COUPLE ENTRE DANS SA SECTION -- gardes et
+                    # voisines --, repéré depuis l'axe de `a` puis ramené au
+                    # repère de la section : la victime en x = 0, l'agresseur
+                    # en x = −d (c'est la convention de `section`).
+                    extras = intercales(segs, grille, case, ka, kb_, smax)
+                    x_b = _decalage(a, b)
+                    for v_, g_ in sens:
+                        x_g, dx = (x_b, 0.0) if v_ is a else (-x_b, -x_b)
+                        sg_ = -1.0 if x_g > 0 else 1.0
+                        ex = tuple((round(sg_ * (x + dx), 4), round(w, 4),
+                                    garde, flottant, net)
+                                   for x, w, garde, flottant, net in extras)
+                        # LA PORTION DE L'AGRESSEUR EN REGARD part aussi : c'est
+                        # le long d'elle qu'on cherche les fentes du plan que les
+                        # deux franchissent.
+                        couples[(v_[0], g_[0], i)].append(
+                            (lg[0], lg[1], v_[5], g_[5], lg[2],
+                             _portion(v_, g_), ex, _portion(g_, v_)))
 
     # LARGES FACES : deux couches de cuivre consécutives, ni l'une ni l'autre
     # plan, jugées au-dessus du plan de référence le plus proche des deux.
@@ -771,13 +939,20 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
                                  if reg["xt_pertes"] else 0.0)
                         larges[(v_[0], g_[0], nom)].append(
                             (lg[0], x_lat, kb, 0.0, lg[0] * 1e-3 / v, lg[2], quoi,
-                             _portion(v_, g_), alpha))
+                             _portion(v_, g_), alpha, ()))
     if sans_plan:
         notes.append("Diaphonie non calculée sur %s : pas de plan de référence dans"
                      " l'empilage." % ", ".join(sorted(set(sans_plan))))
 
-    def section(i, w_v, w_a, s):
-        cle = (i, round(w_v, 3), round(w_a, 3), round(s, 2))
+    def section(i, w_v, w_a, s, extras=()):
+        """(Kb, Kf, v, alpha) de la section : la victime en x = 0, l'agresseur
+        en x = −d, et les `extras` -- (x signé, largeur, garde, flottant, net)
+        -- posés avec eux, une garde cousue à zéro volt (`masse`), une garde
+        non cousue isolée (`flottant`), une voisine de signal avec son port. Le
+        net ne fait pas partie de la clef : deux gardes homonymes ou non se
+        résolvent pareil."""
+        cle = (i, round(w_v, 3), round(w_a, 3), round(s, 2),
+               tuple(e[:4] for e in extras))
         if cle not in cache:
             if len(cache) >= SECTIONS_MAX:
                 return None
@@ -790,6 +965,10 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
                 geo["conducteurs"] = [
                     {"w": w_v * 1e-3, "x": 0.0, "masse": False},
                     {"w": w_a * 1e-3, "x": -((w_v + w_a) / 2 + s) * 1e-3, "masse": False}]
+                geo["conducteurs"] += [
+                    {"w": e[1] * 1e-3, "x": e[0] * 1e-3,
+                     "masse": bool(e[2] and not e[3]), "flottant": bool(e[3])}
+                    for e in extras]
                 try:
                     r = tl.solve_multiline(geo)
                     rg = {e: m for m, e in enumerate(r["ordre"])}
@@ -840,21 +1019,111 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
                  "statut_next": n2["statut_next"],
                  "statut_fext": n2["statut_fext"]}]
 
-    # (victime, agresseur, couche) -> ([(L, écart, Kb, Kf, Td, point)], larges faces ?)
-    tous = {}
+    # (victime, agresseur, couche) -> ([(L, écart, Kb, Kf, Td, point, quoi,
+    # portion victime, alpha, portion agresseur, w_v, w_a)], larges faces ?)
+    tous, couche_de = {}, {}
     for (nv, na, i), morceaux in couples.items():
         vals = []
-        for L, s, w_v, w_a, pt, portion in morceaux:
-            sec = section(i, w_v, w_a, s)
+        for L, s, w_v, w_a, pt, portion, ex, portion_a in morceaux:
+            sec = section(i, w_v, w_a, s, ex)
             if sec is None:
                 perdus += 1
                 continue
             vals.append((L, s, sec[0], sec[1], L * 1e-3 / sec[2], pt, None,
-                         portion, sec[3]))
+                         portion, sec[3], ex, portion_a, w_v, w_a))
         if vals:
-            tous[(nv, na, str(couches[i].get("name")))] = (vals, False)
+            cle = (nv, na, str(couches[i].get("name")))
+            tous[cle] = (vals, False)
+            couche_de[cle] = i
     for cle, vals in larges.items():
         tous[cle] = (vals, True)
+
+    # LES FENTES DU PLAN FRANCHIES PAR LES DEUX PISTES D'UN COUPLE. Même
+    # lecture du cuivre que la règle « fente » (l'image des plans pas à pas,
+    # les détours d1 et d2 le long de la normale, 30 mm au plus), mais ici on
+    # ne cherche que sous la portion de l'agresseur EN REGARD de la victime :
+    # une fente ailleurs est l'affaire de la règle « fente », pas du couplage.
+    plans_tous = [k for k, c in enumerate(couches)
+                  if c.get("type") == "copper" and c.get("role") == "plane"
+                  and surf is not None and c.get("name") in surf.images]
+    fentes_partielles = []
+
+    def termes_fente(i, nv, na, vals):
+        """Les termes d'impédance commune (Ott) des fentes que l'agresseur et
+        la victime franchissent ensemble sur la couche i ; rien quand un plan
+        ferme encore le retour dessous (noté dans `fentes_partielles`)."""
+        if surf is None:
+            return []
+        refs = [p for p in _plans_voisins(couches, i)
+                if couches[p].get("name") in surf.images]
+        if not refs:
+            return []
+        np_, pas = surf.np, surf.pas
+        marche = np_.arange(1, int(FENTE_MAX_MM / pas) + 1) * pas
+        out, vus = [], set()
+        for x in vals:
+            if len(x) < 13 or not x[10]:
+                continue
+            ax1, ay1, ax2, ay2 = x[10]
+            w_v, w_a = float(x[11]), float(x[12])
+            L = math.hypot(ax2 - ax1, ay2 - ay1)
+            if L < pas:
+                continue
+            ux, uy = (ax2 - ax1) / L, (ay2 - ay1) / L
+            m = max(1, int(L / pas))
+            s_ = (np_.arange(m) + 0.5) / m * L
+            px, py = ax1 + ux * s_, ay1 + uy * s_
+            # DE QUEL CÔTÉ PASSE LA VICTIME : +1 à gauche du sens de marche
+            # de l'agresseur (le côté de d1), −1 à droite (d2) -- la même
+            # convention que `crosstalk` et que la couture de la page.
+            vx, vy = 0.5 * (x[7][0] + x[7][2]), 0.5 * (x[7][1] + x[7][3])
+            cote = 1 if (-uy) * (vx - ax1) + ux * (vy - ay1) >= 0 else -1
+            entraxe = float(x[1]) + (w_a + w_v) / 2.0
+            for p in refs:
+                nomp = couches[p].get("name")
+                vide = surf.lire(nomp, px, py) == 0
+                if not vide.any():
+                    continue
+                bords_ = np_.diff(np_.concatenate(([0], vide.astype(np_.int8), [0])))
+                for a, b in zip(np_.nonzero(bords_ == 1)[0], np_.nonzero(bords_ == -1)[0]):
+                    k = (a + b - 1) // 2
+                    xm, ym = float(px[k]), float(py[k])
+                    cle = (p, round(xm), round(ym))
+                    if cle in vus:
+                        continue
+                    vus.add(cle)
+                    ds = []
+                    for sg in (1, -1):
+                        hit = np_.nonzero(surf.lire(nomp, xm - sg * uy * marche,
+                                                    ym + sg * ux * marche) != 0)[0]
+                        ds.append(float(marche[hit[0]]) if hit.size else FENTE_MAX_MM)
+                    d1, d2 = ds
+                    # UN TROU PLUS PETIT QUE DEUX LARGEURS DE PISTE -- un
+                    # antipad -- ne détourne rien qui compte (même règle que
+                    # le RF).
+                    if max(d1, d2) < 2 * max(w_a, w_v):
+                        continue
+                    # UN AUTRE PLAN INTACT SOUS LA FENTE FERME LE RETOUR : le
+                    # courant change de plan au lieu de contourner, le terme
+                    # ne vaut pas (cas 4b du banc). On le note.
+                    intacts = [str(couches[q].get("name")) for q in plans_tous
+                               if q != p and surf.lire(couches[q].get("name"), xm, ym)[0] != 0]
+                    if intacts:
+                        fentes_partielles.append((nv, na, str(nomp), intacts[0]))
+                        continue
+                    # LA FENTE DOIT ALLER JUSQU'À LA VICTIME, de son côté.
+                    d_cote = d1 if cote > 0 else d2
+                    if entraxe > d_cote and d_cote < FENTE_MAX_MM:
+                        continue
+                    t = xt.impedance_commune_fente(
+                        d1, d2, w_a, entraxe, t_r, _z0(reg, _classe(doc, na)),
+                        hauteurs.get(i, 0.0), w_v, xt.eps_autour_plan(couches, p),
+                        True, min(ds) >= FENTE_MAX_MM)
+                    t.update({"x": xm / unite, "y": ym / unite, "plan": str(nomp),
+                              "largeur_fente": round((b - a) * L / m, 3),
+                              "victime": nv})
+                    out.append(t)
+        return out
 
     # UN COUPLE, UNE LIGNE : A ← B et B ← A sont le même longement. On garde
     # le sens le plus grave et l'on dit que l'autre est signalé aussi.
@@ -864,14 +1133,38 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
         bilan["couples_larges_faces" if large else "couples"] += 1
         m_n2, att_f = morceaux_n2(vals)
         n2 = xt.niveau2(m_n2, t_r, orange, rouge, att_f)
+        termes = [] if large else termes_fente(couche_de[(nv, na, c)], nv, na, vals)
+        if termes:
+            n2 = xt.ajouter_fentes_niveau2(n2, termes, orange, rouge)
+            bilan["fentes_communes"] += 1
         freqs = colonne(n2)
         long_ = max(vals, key=lambda x: x[0])
         par_victime[nv].append((na, n2, long_[5], c))
         sev = sev_de[n2["statut"]]
+        # CE QUI A ÉTÉ POSÉ DANS LA SECTION AVEC LE COUPLE : les gardes (et
+        # celles qui flottent), les voisines de signal. Sans cette ligne, la
+        # chute -- ou la MONTÉE -- de couplage qu'elles provoquent serait un
+        # chiffre sans cause.
+        gardes_c = sorted({e[4] for x in vals for e in x[9] if e[2]})
+        flottantes = sorted({e[4] for x in vals for e in x[9] if e[2] and e[3]})
+        voisines = sorted({e[4] for x in vals for e in x[9] if not e[2]})
+        dans_section = ""
+        if gardes_c:
+            etat_g = ((" (FLOTTANTE%s, non cousue au pas de %.1f mm : elle transfère)"
+                       % ("S" if len(flottantes) > 1 else "", couture_max))
+                      if flottantes else " (cousue, à 0 V)")
+            dans_section += " ; garde%s « %s » dans la section%s" % (
+                "s" if len(gardes_c) > 1 else "", " », « ".join(gardes_c), etat_g)
+        if voisines:
+            dans_section += " ; voisine%s « %s » posée%s avec le couple" % (
+                "s" if len(voisines) > 1 else "", " », « ".join(voisines),
+                "s" if len(voisines) > 1 else "")
         # LE TUPLE DE DIAGNOSTIC DE LA PAIRE, vert compris : c'est le tableau
         # « toute la carte » du panneau Crosstalk.
         paire = {"victime": nv, "agresseur": na, "couche": c,
                  "superposee": large,
+                 "gardes": gardes_c, "gardes_flottantes": flottantes,
+                 "voisines": voisines,
                  "longueur": round(sum(x[0] for x in vals), 3),
                  "ecart": round(min(x[1] for x in vals), 4),
                  "x": long_[5][0] / unite, "y": long_[5][1] / unite,
@@ -885,6 +1178,13 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
                  # au statut de la paire.
                  "traits": [[round(c_ / unite, 4) for c_ in x[7]]
                             for x in vals if x[7]][:200]}
+        if termes:
+            # LE TERME DE FENTE À PART, et le chiffre des lignes seules : la
+            # fiche doit pouvoir dire d'où vient le niveau.
+            paire["fente"] = n2["fente"]
+            paire["lignes"] = n2["lignes"]
+            paire["next_fourchette"] = n2["next_fourchette"]
+            paire["fext_fourchette"] = n2["fext_fourchette"]
         cle_p = (frozenset((nv, na)), c)
         avant = paires_vues.get(cle_p)
         if avant is None or max(paire["next"], paire["fext"]) > \
@@ -895,14 +1195,28 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
         chiffres = ("k_total %.1f %%, NEXT %.2f %% (%s), FEXT %.2f %% (%s)"
                     % (100 * n2["k_total"], 100 * n2["next"], n2["statut_next"],
                        100 * n2["fext"], n2["statut_fext"]))
+        if termes:
+            t0 = max(termes, key=lambda t: t["next"])
+            chiffres += (" ; dont fente du plan %s franchie par les deux : +%.2f %% en"
+                         " NEXT comme en FEXT par impédance commune (Ott, fourchette"
+                         " %.2f à %.2f %%, détours %.1f / %.1f mm, lignes seules"
+                         " NEXT %.2f %% FEXT %.2f %%)%s"
+                         % (t0["plan"], 100 * n2["fente"]["next"],
+                            100 * n2["fente"]["next_fourchette"][0],
+                            100 * n2["fente"]["next_fourchette"][1],
+                            t0["d1"], t0["d2"], 100 * n2["lignes"]["next"],
+                            100 * n2["lignes"]["fext"],
+                            " — la résonance de la fente a pesé"
+                            if n2["fente"]["resonance_sensible"] else ""))
         if large:
             msg = ("Depuis %s, couche voisine : %.1f mm superposés, décalage mini %.3f mm"
                    " d'axe à axe, %s (%s)"
                    % (na, sum(x[0] for x in vals), min(x[1] for x in vals), chiffres,
                       " ; ".join(sorted({x[6] for x in vals}))))
         else:
-            msg = ("Depuis %s : %.1f mm en regard, écart mini %.3f mm, %s"
-                   % (na, sum(x[0] for x in vals), min(x[1] for x in vals), chiffres))
+            msg = ("Depuis %s : %.1f mm en regard, écart mini %.3f mm, %s%s"
+                   % (na, sum(x[0] for x in vals), min(x[1] for x in vals), chiffres,
+                      dans_section))
         k = {"regle": "diaphonie", "severite": sev, "frequences": freqs,
              "x": long_[5][0] / unite, "y": long_[5][1] / unite, "c": c, "n": nv, "msg": msg}
         cle = (frozenset((nv, na)), c)
@@ -920,6 +1234,25 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
     bilan["paires_total"] = len(paires_vues)
     bilan["t_r"] = t_r
     bilan["seuils"] = {"orange": orange, "rouge": rouge}
+    # LES COUPLES ÉCARTÉS DE PEU PAR LA PRÉSÉLECTION, NOMMÉS : « rien au
+    # tableau » ne doit pas se lire « rien ne couple ». La tolérance et la
+    # portée sont celles de l'analyse de piste.
+    bilan["ecartes_proches"] = sorted(ecartes_proches.values(),
+                                      key=lambda e: e["ecart"])[:PAIRES_MAX]
+    bilan["tolerance_seuil"] = xt.TOLERANCE_SEUIL
+    bilan["gardes_posees"] = sorted({g for p in paires_vues.values() for g in p["gardes"]})
+    if ecartes_proches:
+        tete = sorted(ecartes_proches.values(), key=lambda e: e["ecart"])[:4]
+        notes.append(
+            "Diaphonie : %d couple(s) écarté(s) par la présélection à moins de %g × le"
+            " seuil (3 × max(W, H) ou 5 H), donc NON chiffré(s) — ce n'est pas un couplage"
+            " nul : %s%s. L'analyse de la piste (onglet Crosstalk, « distance max ») les"
+            " chiffre."
+            % (len(ecartes_proches), xt.PRESELECTION_PROCHE,
+               ", ".join("%s ↔ %s à S = %.3f mm (seuil %.3f mm, %s)"
+                         % (e["nets"][0], e["nets"][1], e["ecart"], e["seuil"], e["couche"])
+                         for e in tete),
+               "…" if len(ecartes_proches) > len(tete) else ""))
 
     # LA SOMME DES AGRESSEURS D'UNE VICTIME : ce qu'aucun ne fait seul. NEXT
     # et FEXT se somment chacun de leur côté — arithmétiquement (« pire », en
@@ -960,6 +1293,15 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
     if perdus:
         notes.append("%d longement(s) sans section résolue (plafond de %d résolutions"
                      " ou section impossible) : non comptés." % (perdus, SECTIONS_MAX))
+    if fentes_partielles:
+        vus_p = sorted(set(fentes_partielles))
+        notes.append("Diaphonie : fente du plan %s sous %d longement(s) (%s) SANS terme"
+                     " d'impédance commune : un autre plan reste dessous et porte le"
+                     " retour ; c'est la section sur le plan déclaré qui est rendue."
+                     " C'est le cas 4b du banc de mesure, à départager par la mesure."
+                     % (", ".join(sorted(set(p[2] for p in vus_p))), len(vus_p),
+                        ", ".join("%s ← %s (%s intact)" % (p[0], p[1], p[3])
+                                  for p in vus_p[:4]) + ("…" if len(vus_p) > 4 else "")))
     return out, bilan
 
 
@@ -2915,6 +3257,24 @@ def analyser_document(doc):
                      if voulue(k["regle"])]
                     if not regles or regles & angulaires else [])
         reg = _reglages(doc)
+        # LE FRONT IMPOSÉ PAR LA CLASSE RF, DIT EN TÊTE. Un net classé RF sans
+        # porteuse -- ni celle de la carte, ni la sienne -- se juge au front de
+        # sa classe, 100 ps d'office : le plus raide de la table, et un
+        # classement par le nom (« RST_RF », « LNA_EN ») l'impose à des nets
+        # qui n'ont rien de RF. Le rapport le dit, et nomme le geste.
+        rf_sans_porteuse = sorted(n for n, c in (doc.get("natures") or {}).items()
+                                  if c == "RF" and not _porteuse(reg, "RF", n))
+        if rf_sans_porteuse:
+            tr_rf = reg["tr"]["RF"]
+            notes.append(
+                "Front IMPOSÉ par la classe RF (t_r = %s, genou %s) pour %s : aucune"
+                " porteuse n'est saisie. Saisissez la porteuse RF du panneau (t_r = 0,35 / f),"
+                " ou celle du net, pour affiner — et vérifiez que ces nets sont bien de la RF."
+                % (("%.3g ps" % (tr_rf * 1e12)) if tr_rf < 1e-9 else ("%.3g ns" % (tr_rf * 1e9)),
+                   _hz(0.35 / tr_rf),
+                   ", ".join(rf_sans_porteuse[:6])
+                   + ("…" if len(rf_sans_porteuse) > 6 else "")))
+            bilan["front_rf"] = {"nets": rf_sans_porteuse, "t_r": tr_rf, "porteuse_rf": None}
         couches = (doc.get("stackup") or {}).get("layers") or []
         troncons = _troncons(doc, unite)
         surf = _surfaces(doc, unite, notes)
@@ -2938,7 +3298,7 @@ def analyser_document(doc):
                 etapes += [
                     ("retour", lambda: retours(doc, couches, reg, unite, notes, se)),
                     ("diaphonie", lambda: diaphonie(doc, couches, reg, unite, notes, se, xt,
-                                                     troncons)),
+                                                     troncons, surf)),
                     ("impedance", lambda: impedances(doc, couches, reg, unite, notes, se, troncons,
                                                      surf)),
                     ("bord", lambda: bords(doc, couches, reg, unite, notes, se, troncons, surf)),

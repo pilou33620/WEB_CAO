@@ -1054,10 +1054,13 @@ function ltPreparer(){
          (<Conductor type="SURFACE_ROUGHNESS_…"> d'une <Spec>) : la
          simulation la passe aux pertes du cuivre. */
       const rug=parseFloat(e.rug);
+      /* Huray (parseur 1.79) : rayon des nodules (µm) et rapport de
+         surface, à part du Rq ; le serveur connaît les deux modèles. */
+      const hu=e.rug_huray&&e.rug_huray.a>0&&e.rug_huray.sr>0?{a:+e.rug_huray.a,sr:+e.rug_huray.sr}:null;
       return {nom:e.nom, genre:genre, cuivre:genre==="cuivre",
               ep:(e.ep||0)*k, er:isFinite(dk)&&dk>0?dk:0,
               df:isFinite(df)&&df>0?df:0,
-              rug:isFinite(rug)&&rug>0?rug:0,
+              rug:isFinite(rug)&&rug>0?rug:0, rugHuray:hu,
               type:e.type||"", couche:c?c.i:-1};
     });
 
@@ -1071,7 +1074,7 @@ function ltPreparer(){
     LT.cu.push({nom:e.nom, rang:rang, couche:e.couche,
                 ep:saisi||e.ep||LT_EP_CU,
                 epSrc:saisi?"saisi":(e.ep?"fichier":""),
-                rug:e.rug||0});
+                rug:e.rug||0, rugHuray:e.rugHuray||null});
   });
 
   /* Un intervalle par couple de conducteurs voisins : l'épaisseur de
@@ -1450,6 +1453,27 @@ function mdlDetecterClasseNet(netObj, classesIpc, capGndNetSet){
 
   const tension=mdlDetecterTensionNet(nom);
 
+  // 0. La classe de l'éditeur que le fichier porte (regles, parseur 1.79) :
+  //    Masse ou Alimentation changent la famille, le reste est un signal.
+  //    Comme dans l'éditeur (simNaturePcb), un NOM de masse ou
+  //    d'alimentation passe devant la classe : GND rangé dans
+  //    « Alimentation » reste une masse.
+  const cf=mdlClasseFichier(nom), nf=mdlNatureDeClasse(cf);
+  if(nf){
+    const epure=nom.replace(/[\s_-]/g,"");
+    const nomMasse=MDL_GND_RE.test(nom)||MDL_GND_RE.test(epure)||/^(0v|vss|gnd)$/i.test(epure);
+    /* un nom de tension (+5V, 3V3, -12V) ; un net qui ne fait que contenir
+       « vbat » (VBAT_SENSE) garde la classe que l'éditeur lui a donnée —
+       c'est la règle de l'éditeur (isPower), pas la devinette large */
+    const nomAlim=!nomMasse&&/^(\+|-)?\d+(\.\d+)?v\d*$/i.test(epure);
+    if(nf==="Masse"||nomMasse)
+      return {classe:"gnd", autoDetecte:true, autoRaison:"Classe « "+cf+" » du fichier"+(nomMasse?" (nom de masse)":""), tensionNominale:null};
+    if(nf==="Alimentation"||nomAlim)
+      return {classe:"pwr", autoDetecte:true, autoRaison:"Classe « "+cf+" » du fichier"+(nomAlim?" (nom d'alimentation)":""), tensionNominale:tension};
+    if(nf!=="Lent")
+      return {classe:"signal", autoDetecte:true, autoRaison:"Classe « "+cf+" » du fichier", tensionNominale:null};
+  }
+
   // 1. Spécification explicite IPC-2581 si présente
   if(classesIpc&&classesIpc[nom]){
     const c=String(classesIpc[nom]).trim().toUpperCase();
@@ -1619,6 +1643,44 @@ function mdlNetPoserClasse(i,classe){
    ========================================================================== */
 const MDL_NATURES_SIGNAL=["Horloge","Rapide","RF","Analogique","Antenne","Lent"];
 
+/* ---------- les règles que le fichier porte ----------
+   Un IPC-2581 écrit par l'éditeur PCB (ou tout outil qui suit la même
+   forme) nomme la classe de chaque net et ses paires différentielles : le
+   serveur les relit (`regles`, parseur 1.79). C'est le classement de la
+   personne qui a dessiné la carte, et il passe DEVANT la détection, qui
+   n'est qu'une supposition — mais pas devant un choix fait ici à la main. */
+function mdlRegles(){
+  const r=V.modele&&V.modele.regles;
+  return (r&&typeof r==="object")?r:null;
+}
+/* La classe de l'éditeur pour un net, ou "" si le fichier n'en dit rien. */
+function mdlClasseFichier(nom){
+  const r=mdlRegles();
+  return (r&&r.classes&&nom&&r.classes[nom])?String(r.classes[nom]):"";
+}
+/* La paire différentielle d'un net, d'après le fichier : {nom, p, n, mate},
+   ou null. Un net n'est que dans une paire à la fois. */
+function mdlPaireFichier(nom){
+  const r=mdlRegles();
+  if(!r||!Array.isArray(r.paires)||!nom)return null;
+  for(const p of r.paires)
+    if(p&&(p.p===nom||p.n===nom))return Object.assign({mate:p.p===nom?p.n:p.p},p);
+  return null;
+}
+/* La nature que le nom d'une classe de l'éditeur PCB désigne : les mêmes
+   motifs que les siens (SCH_CLASSES, 01-core.js, et simNaturePcb) — une
+   classe « Impédance 50Ω » est RF, « Défaut » ou un nom inconnu est Lent.
+   Masse et Alimentation en font partie : elles changent la famille. */
+const MDL_CLASSES_NATURE=[["Masse",/masse|gnd|ground/i],["Alimentation",/aliment|power/i],
+  ["Horloge",/horloge|clock/i],["Rapide",/rapide|fast/i],["RF",/^rf\b|imp[ée]dance/i],
+  ["Analogique",/analog/i],["Antenne",/antenn/i]];
+function mdlNatureDeClasse(classe){
+  const c=String(classe||"");
+  if(!c)return "";
+  const k=MDL_CLASSES_NATURE.find(x=>x[1].test(c));
+  return k?k[0]:"Lent";
+}
+
 function mdlPoserNature(n){
   if(n.classe==="gnd"){n.nature="Masse";n.natureRaison="";n.natureManuelle=false;return;}
   if(n.classe==="pwr"){n.nature="Alimentation";n.natureRaison="";n.natureManuelle=false;return;}
@@ -1626,9 +1688,14 @@ function mdlPoserNature(n){
   if(MDL_NATURES_SIGNAL.indexOf(man)>=0){
     n.nature=man;n.natureRaison="Choix manuel";n.natureManuelle=true;return;
   }
+  n.natureManuelle=false;
+  /* la classe du fichier d'abord : c'est l'éditeur qui parle */
+  const cf=mdlClasseFichier(n.nom), nf=mdlNatureDeClasse(cf);
+  if(MDL_NATURES_SIGNAL.indexOf(nf)>=0){
+    n.nature=nf;n.natureRaison="Classe « "+cf+" » du fichier";return;
+  }
   const nat=(V.modele&&V.modele.natures_nets)||{};
   const c=(nat.classes||{})[n.nom];
-  n.natureManuelle=false;
   if(MDL_NATURES_SIGNAL.indexOf(c)>=0){
     n.nature=c;n.natureRaison=(nat.raisons||{})[n.nom]||"";
   }else{

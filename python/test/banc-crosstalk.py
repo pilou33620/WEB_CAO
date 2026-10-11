@@ -316,6 +316,63 @@ T("l'etape 0a ecarte avec la distance et la longueur mesurees",
   la_preselection_mesure_ce_qu_elle_ecarte)
 
 
+def le_seuil_des_3w_retient_l_egalite_et_nomme_ce_qu_il_ecarte():
+    """S = 3W tombe PILE sur le seuil 3 x max(W, H) : RETENU, et chiffre.
+
+    C'EST LE CAS 2 DE LA CARTE D'ESSAI DU BANC CROSSTALK (S = 3W = 1,05 mm,
+    seuil 1,05 mm) : « Analyser la piste » l'ecartait sans chiffre, sauf a
+    ouvrir la distance max. L'egalite est dedans, et deux pour cent au-dessus
+    aussi -- les arrondis d'export. Un couple ecarte a moins de 1,5 x le seuil
+    le DIT, avec son ecart et le geste ; un couple loin est ecarte avec le
+    seuil nomme, comme avant.
+    """
+    # Le seuil deduit, lu plutot que suppose : 3 x max(W = 0,25, H = 0,2).
+    seuil = ct.analyser(doc_essai([]))["etape0"]["seuils"]["distance_max"]
+    assert abs(seuil - 3 * 0.25) < 1e-6, "seuil attendu 3W = 0,75 mm : %s" % seuil
+    w = 0.25
+
+    def cas(s):
+        res = ct.analyser(doc_essai([pis(0, w + s, 40, w + s, "VIC")]))
+        fiche = [c for c in res["etape0"]["candidats"] if c["net"] == "VIC"][0]
+        return res, fiche
+    # S = 3W EXACTEMENT : retenu, chiffre.
+    res, f = cas(seuil)
+    assert f["retenu"] and abs(f["distance"] - seuil) < 1e-6, f
+    assert res["couples"] and res["couples"][0]["next"] > 0, res["couples"]
+    assert not res["preselection_vide"]
+    # S = 3,02 W : encore dedans (tolerance de 2 %).
+    res, f = cas(seuil * 1.02)
+    assert f["retenu"] and res["couples"], f
+    # S = 3,3 W : ecarte, A MOINS DE 1,5 x LE SEUIL -- la fiche et la carte le
+    # disent explicitement, avec le geste.
+    res, f = cas(seuil * 1.3)
+    assert not f["retenu"] and f["proche_du_seuil"], f
+    assert "écartée par la présélection" in f["raison"] and "seuil" in f["raison"], f["raison"]
+    assert "distance max" in f["raison"], f["raison"]
+    assert res["etape0"]["ecartes_proches"] == [
+        {"net": "VIC", "distance": f["distance"], "seuil": seuil}], res["etape0"]["ecartes_proches"]
+    assert any("ÉCARTÉE" in a and "VIC" in a for a in res["avertissements"]), \
+        res["avertissements"]
+    assert res["preselection_vide"]
+    # S = 5W : ecarte avec le motif, mais loin -- pas « proche du seuil ».
+    res, f = cas(5 * w)
+    assert not f["retenu"] and not f["proche_du_seuil"], f
+    assert f["raison"].startswith("écartée par la présélection (S = 1.250 mm ≥ seuil 0.750 mm)"), \
+        f["raison"]
+    assert res["etape0"]["ecartes_proches"] == [], res["etape0"]["ecartes_proches"]
+    assert not any("ÉCARTÉE" in a for a in res["avertissements"])
+    # Une garde PILE sur le seuil est posee elle aussi.
+    res = ct.analyser(doc_essai([pis(0, w + seuil, 40, w + seuil, "GND"),
+                                 pis(0, w + seuil + 1.0, 40, w + seuil + 1.0, "VIC")]))
+    assert res["etape0"]["gardes"] == ["GND"], res["etape0"]["gardes"]
+    # Et la fiche dit la regle.
+    assert any("ÉGALITÉ" in h and "2 %" in h for h in res["hypotheses"]), res["hypotheses"]
+
+
+T("S = 3W, pile sur le seuil, est retenu et chiffre ; l'ecarte de peu est nomme",
+  le_seuil_des_3w_retient_l_egalite_et_nomme_ce_qu_il_ecarte)
+
+
 def la_confirmation_ecarte_avec_le_niveau():
     """Une piste presente en 0a et sous le seuil en 0b garde son niveau.
 
@@ -1482,6 +1539,239 @@ T("une fente sous le longement change le couplage, et le dit quand elle"
   une_fente_change_le_couplage_et_ne_le_laisse_pas_identique)
 
 
+# ==========================================================================
+# L'IMPEDANCE COMMUNE D'UNE FENTE (Ott), 4.5.0 : le cas 4 du banc de mesure
+# --------------------------------------------------------------------------
+# Fente de +-10 mm coupant tous les plans, pistes de 0,35 mm a 1,4 mm d'axe
+# a axe, 50 ohm : l'estimation faite a la main dans A-FAIRE.md donne une self
+# de detour d'environ 16 nH, une mutuelle d'environ 11 nH, soit ~10 % a chaque
+# bout de la victime a 1 ns et ~2 % a 5 ns -- contre 0,9 % pour les lignes
+# couplees seules. C'est l'ordre de grandeur que le terme doit retrouver.
+# ==========================================================================
+
+def fente_mesuree(s, longueur, plans, d1, d2, retour=(), borne=False):
+    """Une fente telle que la page l'envoie depuis la 4.5.0 : avec ses
+    detours, sa largeur et les plans qui ferment encore le retour."""
+    return {"s": s, "longueur": longueur, "plans": list(plans),
+            "quoi": "le plan n'a pas de cuivre de retour sous le parcours",
+            "d1": d1, "d2": d2, "largeur": longueur, "borne": borne,
+            "retour": list(retour)}
+
+
+def l_impedance_commune_retrouve_l_estimation_de_ott():
+    """Le terme, a la main, sur le cas 4 : L_d ~ 16 nH, M ~ 11 nH, ~10 % a
+    1 ns, ~2 % a 5 ns -- et la fourchette l'encadre."""
+    t = ct.impedance_commune_fente(10.0, 10.0, 0.35, 1.4, 1e-9, 50.0, 0.21,
+                                   0.35, 4.5)
+    # LA SELF DU DETOUR : deux demi-boucles de 2d en parallele redonnent la
+    # formule d'Ott pour la fente entiere, L = mu0/2pi . D . ln(D/W), D = 2d.
+    l_ott = 1e9 * 2e-7 * 0.020 * math.log(0.020 / 0.00035)
+    assert abs(t["ld_nh"] / l_ott - 1.0) < 0.02, (t["ld_nh"], l_ott)
+    assert 15.0 < t["ld_nh"] < 17.5, t["ld_nh"]
+    assert 10.0 < t["m_nh"] < 11.5, t["m_nh"]
+    # ~10 % A CHAQUE BOUT A 1 NS, le meme module en NEXT et en FEXT.
+    assert 0.095 < t["next"] < 0.115, t["next"]
+    assert t["fext"] == t["next"], (t["fext"], t["next"])
+    # LA FOURCHETTE ENCADRE LA VALEUR CENTRALE, et sa borne haute est M = L_d.
+    bas, haut = t["fourchette"]
+    assert bas < t["next"] < haut, (bas, t["next"], haut)
+    assert abs(t["m_haut_nh"] - t["ld_nh"]) < 1e-6, (t["m_haut_nh"], t["ld_nh"])
+    assert 0.5 < t["k"] < 1.0, t["k"]
+    # A 5 NS : cinq fois moins, ~2 %.
+    t5 = ct.impedance_commune_fente(10.0, 10.0, 0.35, 1.4, 5e-9, 50.0, 0.21,
+                                    0.35, 4.5)
+    assert 0.019 < t5["next"] < 0.023, t5["next"]
+    assert abs(t5["next"] * 5.0 / t["next"] - 1.0) < 0.02, (t5["next"], t["next"])
+    # DEUX RETOURS CONFONDUS (entraxe sous la largeur) : la mutuelle vaut la
+    # self, le terme est a sa borne haute.
+    tc = ct.impedance_commune_fente(10.0, 10.0, 0.35, 0.1, 1e-9, 50.0, 0.21)
+    assert abs(tc["m_nh"] - tc["ld_nh"]) < 1e-6, (tc["m_nh"], tc["ld_nh"])
+    # UN DETOUR NUL COURT-CIRCUITE : pas de fente, pas de terme.
+    assert ct.impedance_commune_fente(0.0, 10.0, 0.35, 1.4, 1e-9)["next"] == 0.0
+    # UN FRONT TRES RAIDE NE FAIT PAS EXPLOSER LE TERME : la self du detour
+    # lisse la pente, et le terme reste sous M / L_d.
+    tr = ct.impedance_commune_fente(10.0, 10.0, 0.35, 1.4, 20e-12, 50.0, 0.21,
+                                    0.35, 1.0)
+    assert tr["next"] <= tr["k"] + 1e-9, (tr["next"], tr["k"])
+
+
+T("l'impedance commune d'une fente retrouve l'estimation d'Ott du cas 4"
+  " (~16 nH, ~11 nH, ~10 % a 1 ns, ~2 % a 5 ns)",
+  l_impedance_commune_retrouve_l_estimation_de_ott)
+
+
+def une_fente_franchie_par_les_deux_ajoute_le_terme_d_ott():
+    """De bout en bout : la fente mesuree par la page (d1 / d2, tous les
+    plans coupes) AJOUTE son terme au niveau 2, le dit, et pose son pic sur
+    la carte locale. La reserve grave « terme absent » disparait."""
+    def lancer(fentes, t_r=1e-9):
+        d = doc_essai([pis(0, 0.45, 40, 0.45, "VIC")], t_r=t_r)
+        d["fentes"] = fentes
+        return ct.analyser(d)
+
+    def couple(res):
+        return next(c for c in res["couples"] if c["victime"] == "VIC")
+
+    muette = lancer([{"s": 19.0, "longueur": 2.0, "plans": ["GND"],
+                      "quoi": "pas de cuivre de masse sous le parcours"}])
+    chiffree = lancer([fente_mesuree(19.0, 2.0, ["GND"], 10.0, 10.0)])
+    cm, cc = couple(muette), couple(chiffree)
+    assert "fente" not in cm and cc.get("fente"), (cm.get("fente"), cc.get("fente"))
+    # LE TERME EST CELUI DE LA FORMULE, a l'entraxe de la paire (0,45 mm) et
+    # au Z0 de l'agresseur sur son bloc.
+    t = cc["fente"]["detail"][0]
+    direct = ct.impedance_commune_fente(10.0, 10.0, 0.25, 0.45, 1e-9, t["z0"],
+                                        t["hauteur"], 0.25,
+                                        t["resonance"]["eps_plan"])
+    assert abs(t["next"] / direct["next"] - 1.0) < 1e-6, (t["next"], direct["next"])
+    assert t["next"] > 0.05, t["next"]
+    # IL S'AJOUTE : les lignes seules sont le chiffre d'avant, le total les
+    # depasse du terme, en NEXT comme en FEXT.
+    assert abs(cc["lignes"]["next"] - cm["next"]) < 1e-9, (cc["lignes"], cm["next"])
+    assert abs(cc["next"] - (cm["next"] + cc["fente"]["next"])) < 1e-6, cc["next"]
+    assert abs(cc["fext"] - (cm["fext"] + cc["fente"]["fext"])) < 1e-6, cc["fext"]
+    bas, haut = cc["next_fourchette"]
+    assert bas <= cc["next"] <= haut and haut > bas, cc["next_fourchette"]
+    # LE PIC DE LA CARTE LOCALE TOMBE SUR LA FENTE, vers 20 mm.
+    x_pic, v_pic = pic(chiffree, "VIC", "next")
+    assert 18.5 <= x_pic <= 21.5, x_pic
+    assert v_pic > pic(muette, "VIC", "next")[1] + 0.5 * t["next"], (v_pic, t["next"])
+    # LA FICHE LE DIT, et la reserve « terme absent » ne s'applique plus.
+    assert any("IMPÉDANCE COMMUNE est chiffré" in a
+               for a in chiffree["avertissements"]), chiffree["avertissements"]
+    titres = " | ".join(g["titre"] for g in chiffree["graves"])
+    assert "plan de référence absent sous" not in titres, titres
+    titres_m = " | ".join(g["titre"] for g in muette["graves"])
+    assert "plan de référence absent sous" in titres_m, titres_m
+    assert chiffree["fentes"]["chiffrees"] == 1 and not chiffree["fentes"]["signalees"]
+    assert any("Ott" in h for h in chiffree["hypotheses"])
+    # LE STATUT SUIT LE TOTAL : un terme de plus de 7 % rend la paire rouge.
+    assert cc["statut"] == "rouge" and cm["statut"] != "rouge", (cc["statut"], cm["statut"])
+
+
+T("une fente franchie par les deux ajoute le terme d'Ott au niveau 2, le dit,"
+  " et pose son pic sur la carte",
+  une_fente_franchie_par_les_deux_ajoute_le_terme_d_ott)
+
+
+def une_fente_qui_n_atteint_pas_la_victime_n_ajoute_rien():
+    """Le terme ne vaut que si la victime FRANCHIT la fente : une fente qui
+    s'arrete avant elle, de son cote, n'a pas de retour commun. Et c'est le
+    cote qui compte -- d1 a gauche du sens de marche, d2 a droite."""
+    def lancer(d1, d2):
+        # La victime a +0,45 mm : a GAUCHE d'un agresseur qui va vers +x.
+        d = doc_essai([pis(0, 0.45, 40, 0.45, "VIC")], t_r=1e-9)
+        d["fentes"] = [fente_mesuree(19.0, 2.0, ["GND"], d1, d2)]
+        return ct.analyser(d)
+
+    courte = lancer(0.3, 10.0)
+    c = next(x for x in courte["couples"] if x["victime"] == "VIC")
+    assert "fente" not in c, c.get("fente")
+    assert courte["fentes"]["chiffrees"] == 0
+    assert [s for s in courte["fentes"]["signalees"] if s["cause"] == "hors fente"], \
+        courte["fentes"]["signalees"]
+    # LA RESERVE D'AVANT RESTE : le terme n'a pas ete chiffre.
+    assert "plan de référence absent sous" in " | ".join(
+        g["titre"] for g in courte["graves"])
+    # LE MEME DETOUR COURT DE L'AUTRE COTE ne gene pas : la fente va jusqu'a
+    # la victime a gauche.
+    longue = lancer(10.0, 0.3)
+    c2 = next(x for x in longue["couples"] if x["victime"] == "VIC")
+    assert c2.get("fente"), "la fente franchie a gauche doit avoir son terme"
+    assert longue["fentes"]["chiffrees"] == 1
+
+
+T("une fente qui n'atteint pas la victime n'ajoute rien, et c'est le cote"
+  " qui en decide", une_fente_qui_n_atteint_pas_la_victime_n_ajoute_rien)
+
+
+def une_fente_sur_un_seul_plan_garde_le_calcul_sur_l_autre():
+    """Le cas 4b du banc : la fente coupe le plan proche, le lointain reste.
+    Le retour change de plan au lieu de contourner : PAS de terme d'Ott, le
+    calcul de la 3.3.0 (section retombee sur l'autre plan) est garde, et la
+    fiche le signale comme ce que la mesure doit departager."""
+    deux = {"layers": [
+        {"type": "copper", "name": "Top", "thickness": 0.035, "role": "signal"},
+        {"type": "dielectric", "name": "prepreg", "thickness": 0.2,
+         "epsilon_r": 4.3, "tan_delta": 0.02},
+        {"type": "copper", "name": "GND1", "thickness": 0.035,
+         "role": "plane", "net": "GND"},
+        {"type": "dielectric", "name": "coeur", "thickness": 1.0,
+         "epsilon_r": 4.3, "tan_delta": 0.02},
+        {"type": "copper", "name": "GND2", "thickness": 0.035,
+         "role": "plane", "net": "GND"},
+    ]}
+
+    def lancer(fente):
+        d = doc_essai([pis(0, 0.45, 40, 0.45, "VIC")], t_r=1e-9)
+        d["stackup"] = deux
+        d["fentes"] = [fente]
+        return ct.analyser(d)
+
+    def couple(res):
+        return next(c for c in res["couples"] if c["victime"] == "VIC")
+
+    avant = couple(lancer({"s": 10.0, "longueur": 20.0, "plans": ["GND1"],
+                           "quoi": "GND1 n'a pas de cuivre de retour"}))
+    res = lancer(fente_mesuree(10.0, 20.0, ["GND1"], 10.0, 10.0, retour=["GND2"]))
+    c = couple(res)
+    assert "fente" not in c, c.get("fente")
+    assert abs(c["next"] - avant["next"]) < 1e-9, (c["next"], avant["next"])
+    assert [s for s in res["fentes"]["signalees"] if s["cause"] == "retour"]
+    txt = " | ".join(res["avertissements"])
+    assert "SANS terme d'impédance commune" in txt and "GND2" in txt, txt
+    # UNE PAGE QUI NE NOMME PAS `retour` : il se deduit de l'empilage, et le
+    # verdict est le meme.
+    res2 = lancer(dict(fente_mesuree(10.0, 20.0, ["GND1"], 10.0, 10.0), retour=None))
+    assert "fente" not in couple(res2)
+    assert [s for s in res2["fentes"]["signalees"] if s["cause"] == "retour"]
+    # ET LES DEUX PLANS COUPES : le terme vaut.
+    res3 = lancer(fente_mesuree(10.0, 20.0, ["GND1", "GND2"], 10.0, 10.0))
+    assert couple(res3).get("fente"), "tous les plans coupes : le terme vaut"
+
+
+T("une fente sur un seul plan garde le calcul sur l'autre, sans terme, et"
+  " le dit (cas 4b)", une_fente_sur_un_seul_plan_garde_le_calcul_sur_l_autre)
+
+
+def la_resonance_de_la_fente_ne_compte_que_sous_300_ps():
+    """Option C : tan(beta d)/(beta d) au genou du front, Q ~ 50. Negligeable
+    a 1 ns, sensible a 100 ps -- une fente de 20 mm dans du FR-4 resonne vers
+    3,5 GHz."""
+    lent = ct.impedance_commune_fente(10.0, 10.0, 0.35, 1.4, 1e-9, 50.0, 0.21,
+                                      0.35, 4.5)
+    assert lent["resonance"]["facteur"] < 1.05, lent["resonance"]
+    assert not lent["resonance"]["sensible"]
+    sans = ct.impedance_commune_fente(10.0, 10.0, 0.35, 1.4, 1e-9, 50.0, 0.21,
+                                      0.35, 4.5, resonance=False)
+    assert abs(lent["next"] / sans["next"] - 1.0) < 0.02, (lent["next"], sans["next"])
+    f_q = lent["resonance"]["f_quart_onde"]
+    assert 3.2e9 < f_q < 3.8e9, f_q
+    raide = ct.impedance_commune_fente(10.0, 10.0, 0.35, 1.4, 100e-12, 50.0,
+                                       0.21, 0.35, 4.5)
+    assert raide["resonance"]["facteur"] > 2.0, raide["resonance"]
+    assert raide["resonance"]["sensible"]
+    raide_sans = ct.impedance_commune_fente(10.0, 10.0, 0.35, 1.4, 100e-12,
+                                            50.0, 0.21, 0.35, 4.5,
+                                            resonance=False)
+    assert raide["next"] > raide_sans["next"], (raide["next"], raide_sans["next"])
+    # LE FACTEUR LUI-MEME : 1 au continu, borne par la perte au quart d'onde.
+    assert ct.facteur_resonance(10.0, 4.5, 0.0) == 1.0
+    pic_r = ct.facteur_resonance(10.0, 4.5, f_q)
+    assert 10.0 < pic_r < 2 * ct.FENTE_Q, pic_r
+    # ET DE BOUT EN BOUT, la fiche dit quand elle a pese.
+    d = doc_essai([pis(0, 0.45, 40, 0.45, "VIC")], t_r=100e-12)
+    d["fentes"] = [fente_mesuree(19.0, 2.0, ["GND"], 10.0, 10.0)]
+    res = ct.analyser(d)
+    c = next(x for x in res["couples"] if x["victime"] == "VIC")
+    assert c["fente"]["resonance_sensible"]
+    assert any("RÉSONANCE de la fente a pesé" in a for a in res["avertissements"])
+
+
+T("la resonance de la fente (option C) est negligeable a 1 ns et sensible a"
+  " 100 ps", la_resonance_de_la_fente_ne_compte_que_sous_300_ps)
+
+
 def les_deux_coefficients_ne_dependent_que_de_la_geometrie():
     """Kb et Kf sortent de [C] et [L] seules -- et le milieu homogene le prouve.
 
@@ -1767,6 +2057,59 @@ def le_front_se_deduit_de_la_classe_ou_se_saisit():
 
 T("le front se deduit de la classe du net, ou se saisit",
   le_front_se_deduit_de_la_classe_ou_se_saisit)
+
+
+def le_front_impose_par_la_classe_rf_se_dit_fort():
+    """La classe RF impose 100 ps quand rien n'est saisi, ET LA FICHE LE CRIE.
+
+    SUR LA CARTE D'ESSAI DU BANC CROSSTALK, les nets XT* classes RF sortaient
+    un FEXT de 18 % au cas 1 sans qu'on sache d'ou venait le front : « deduit
+    de la classe » au milieu d'une ligne de methode. C'est maintenant une
+    RESERVE (graves), la premiere des hypotheses, et un bloc `front_impose`
+    que la page affiche en alerte. Saisi, ou venu d'une autre classe, RIEN de
+    tout cela ; une porteuse RF reglee le remplace par 0,35 / f.
+    """
+    vois = [pis(0, 0.45, 40, 0.45, "VIC")]
+    titres = lambda res: [g["titre"] for g in res["graves"]]
+    doc = doc_essai(vois, t_r=0)
+    doc["natures"] = {"CLK": "RF"}
+    res = ct.analyser(doc)
+    assert res["t_r"] == 1e-10 and "RF" in res["source_tr"], (res["t_r"], res["source_tr"])
+    fi = res["front_impose"]
+    assert fi and fi["classe"] == "RF" and fi["porteuse_rf"] is None, fi
+    assert "imposé par la classe RF" in fi["titre"] and "porteuse" in fi["titre"], fi
+    assert any("imposé par la classe RF" in t for t in titres(res)), titres(res)
+    assert res["hypotheses"][0].startswith("FRONT IMPOSÉ PAR LA CLASSE RF"), \
+        res["hypotheses"][0]
+    # SAISI : plus rien, la fiche commence par le niveau 2.
+    doc = doc_essai(vois, t_r=200e-12)
+    doc["natures"] = {"CLK": "RF"}
+    res = ct.analyser(doc)
+    assert res["front_impose"] is None and res["source_tr"] == "saisi", res["source_tr"]
+    assert not any("classe RF" in t for t in titres(res)), titres(res)
+    assert res["hypotheses"][0].startswith("NIVEAU 2"), res["hypotheses"][0]
+    # UNE AUTRE CLASSE SANS FRONT : deduit, mais pas une reserve.
+    doc = doc_essai(vois, t_r=0)
+    doc["natures"] = {"CLK": "Horloge"}
+    res = ct.analyser(doc)
+    assert res["front_impose"] is None and not any("classe" in t for t in titres(res))
+    # UNE PORTEUSE RF REGLEE : t_r = 0,35 / f, une note, pas de reserve.
+    doc = doc_essai(vois, t_r=0, porteuse_rf=868e6)
+    doc["natures"] = {"CLK": "RF"}
+    res = ct.analyser(doc)
+    assert abs(res["t_r"] - 0.35 / 868e6) < 1e-15 and "porteuse" in res["source_tr"], \
+        (res["t_r"], res["source_tr"])
+    assert res["front_impose"]["porteuse_rf"] == 868e6, res["front_impose"]
+    assert not any("imposé" in t for t in titres(res)), titres(res)
+    assert res["hypotheses"][0].startswith("FRONT DÉDUIT DE LA PORTEUSE RF"), \
+        res["hypotheses"][0]
+    # Et `front_de_classe` seule, la meme regle.
+    assert ct.front_de_classe("RF", None, 2.4e9)[0] == 0.35 / 2.4e9
+    assert ct.front_de_classe("Horloge", None, 2.4e9)[0] == 2e-9
+
+
+T("la classe RF impose 100 ps, et la fiche le dit en tete ; saisi, rien",
+  le_front_impose_par_la_classe_rf_se_dit_fort)
 
 
 def les_seuils_drc_se_reglent_et_le_statut_suit():

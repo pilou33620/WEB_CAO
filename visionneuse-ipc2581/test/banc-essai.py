@@ -1019,6 +1019,209 @@ T(u"la place d'un texte se lit aussi dans son <Features> (XSD rev. C)",
 
 
 # =============================================================================
+# Parseur 1.79 : les regles de l'outil de CAO -- classes de nets, paires
+# differentielles, contraintes, groupes, matrice -- et la rugosite de Huray,
+# dans la forme qu'ecrit l'export de l'editeur PCB (35-ipc2581-export.js) et
+# que le XSD rev. C admet : netPair et <NonstandardAttribute> sur le
+# <LogicalNet>, <SpecRef> vers des <Spec> de <General type="ELECTRICAL">
+# a <Property> nommees et <Impedance>.
+# =============================================================================
+SPECS_REGLES = u"""<Spec name="CLASSE_Rapide">
+    <General type="ELECTRICAL">
+     <Property name="NET_CLASS" text="Rapide"/>
+     <Property name="TRACE_WIDTH" value="0.25" unit="MM"/>
+     <Property name="TRACE_WIDTH" value="250" unit="MICRON" layerOrGroupRef="Conductor-1"/>
+     <Property name="CLEARANCE" value="0.2" unit="MM"/>
+     <Property name="VIA_DIAMETER" value="0.6" unit="MM"/>
+     <Property name="VIA_DRILL" value="0.3" unit="MM"/>
+     <Property name="MAX_LENGTH" value="40" unit="MM"/>
+     <Property name="ALLOWED_LAYER" layerOrGroupRef="Conductor-1"/>
+     <Property name="TOPOLOGY" text="DAISY_CHAIN"/>
+    </General>
+    <Impedance value="50" tolPlus="10" tolMinus="10" tolPercent="true">
+     <SingleEnded structure="MICROSTRIP_MASK_COVERED">
+      <LineWidth value="0.25" unit="MM"/><RefPlane layerOrGroupRef="Conductor-2"/>
+     </SingleEnded>
+    </Impedance>
+   </Spec>
+   <Spec name="CLASSE_Sans_net">
+    <General type="ELECTRICAL"><Property name="NET_CLASS" text="Sans net"/>
+     <Property name="TRACE_WIDTH" value="0.5" unit="MM"/></General>
+   </Spec>
+   <Spec name="CONTRAINTE_SIG_A">
+    <General type="ELECTRICAL">
+     <Property name="NET" text="SIG_A"/>
+     <Property name="MAX_VIAS" value="2"/>
+     <Property name="MIN_LENGTH" value="0.5" unit="INCH"/>
+     <Property name="BACKDRILL_RULE" text="cp1"/>
+    </General>
+    <Impedance value="55" tolPlus="5.5" tolMinus="5.5"/>
+   </Spec>
+   <Spec name="PAIRE_USB">
+    <General type="ELECTRICAL">
+     <Property name="DIFF_PAIR" text="USB"/>
+     <Property name="NET_P" text="SIG_A"/>
+     <Property name="NET_N" text="SIG_B"/>
+     <Property name="TRACE_WIDTH" value="0.25" unit="MM" tolPlus="0.1" tolMinus="0.05"/>
+     <Property name="GAP" value="0.15" unit="MM" tolPlus="0.25" tolMinus="0.02"/>
+     <Property name="MAX_UNCOUPLED_LENGTH" value="12.7" unit="MM"/>
+    </General>
+    <Impedance value="90" tolPlus="10" tolMinus="10" tolPercent="true">
+     <EdgeCoupled structure="MICROSTRIP_MASK_COVERED">
+      <LineWidth value="0.25" unit="MM"/><Spacing value="0.15" unit="MM"/>
+      <RefPlane layerOrGroupRef="Conductor-2"/>
+     </EdgeCoupled>
+    </Impedance>
+   </Spec>
+   <Spec name="APPARIEMENT_SPI">
+    <General type="ELECTRICAL">
+     <Property name="MATCH_GROUP" text="SPI"/>
+     <Property name="MATCH_MODE" text="DELAY"/>
+     <Property name="MATCH_TOLERANCE" value="10" text="ps"/>
+     <Property name="REFERENCE_NET" text="SIG_A"/>
+     <Property name="MEMBER" text="SIG_A"/>
+     <Property name="MEMBER" text="SANS_BROCHE"/>
+    </General>
+   </Spec>
+   <Spec name="ISOLATION_CLASSES">
+    <General type="ELECTRICAL">
+     <Property name="CLEARANCE" text="Alimentation|Rapide" value="0.5" unit="MM"/>
+    </General>
+   </Spec>
+  </CadHeader>"""
+
+NETS_REGLES = u"""<LogicalNet name="SIG_A" netClass="SIGNAL" netPair="SIG_B">
+     <NonstandardAttribute name="NET_CLASS" type="STRING" value="Rapide"/>
+     <NonstandardAttribute name="DIFF_PAIR" type="STRING" value="USB"/>
+     <NonstandardAttribute name="DIFF_PAIR_POLARITY" type="STRING" value="P"/>
+     <PinRef componentRef="R1" pin="1"/>
+     <SpecRef id="CLASSE_Rapide"/>
+     <SpecRef id="CONTRAINTE_SIG_A"/>
+     <SpecRef id="PAIRE_USB"/>
+     <SpecRef id="APPARIEMENT_SPI"/>
+    </LogicalNet>
+    <LogicalNet name="SIG_B" netClass="SIGNAL" netPair="SIG_A">
+     <NonstandardAttribute name="NET_CLASS" type="STRING" value="Rapide"/>
+     <NonstandardAttribute name="DIFF_PAIR" type="STRING" value="USB"/>
+     <NonstandardAttribute name="DIFF_PAIR_POLARITY" type="STRING" value="N"/>
+     <PinRef componentRef="R1" pin="2"/>
+     <SpecRef id="CLASSE_Rapide"/>
+     <SpecRef id="PAIRE_USB"/>
+    </LogicalNet>
+    <LogicalNet name="GND" netClass="GROUND">
+     <NonstandardAttribute name="NET_CLASS" type="STRING" value="Alimentation"/>
+     <PinRef componentRef="R1" pin="2"/>
+    </LogicalNet>"""
+
+
+def carte_avec_regles():
+    xml = CARTE.replace(u"</CadHeader>", SPECS_REGLES, 1)
+    debut = xml.index(u'<LogicalNet name="SIG_A"')
+    fin = xml.index(u'<LogicalNet name="GND" netClass="GROUND"/>') + len(u'<LogicalNet name="GND" netClass="GROUND"/>')
+    xml = xml[:debut] + NETS_REGLES + xml[fin:]
+    vrai(xml != CARTE, u"la carte a regles n'a pas ete construite")
+    return ipc2581_json.ipc2581_en_dict(xml.encode("utf-8"), "regles.xml")
+
+
+REGLES = {}
+
+
+def regles_lues():
+    REGLES.update(carte_avec_regles()["regles"])
+    R = REGLES
+    egal(R["classes"], {"SIG_A": "Rapide", "SIG_B": "Rapide", "GND": "Alimentation"},
+         u"classe de l'editeur par net (NET_CLASS)")
+    c = R["regles_classes"]["Rapide"]
+    egal(c["w"], 0.25, u"largeur")
+    egal(c["wL"], {"Conductor-1": 0.25}, u"largeur par couche, 250 microns en mm")
+    egal((c["clr"], c["via"], c["drill"]), (0.2, 0.6, 0.3), u"isolement, via, percage")
+    egal((c["lMax"], c["couches"], c["topo"]), (40.0, ["Conductor-1"], "chaine"), u"contraintes de classe")
+    egal((c["z"], c["zTol"]), (50.0, 10.0), u"impedance cible et tolerance (%)")
+    vrai("Sans net" in R["regles_classes"], u"une classe sans net est gardee quand meme")
+    egal(R["regles_classes"]["Sans net"], {"w": 0.5}, u"regle de la classe sans net")
+
+
+T(u"regles : la classe de chaque net et les regles des classes se lisent", regles_lues)
+
+
+def contraintes_du_net():
+    c = REGLES["contraintes"]["SIG_A"]
+    egal(c["viasMax"], 2.0, u"vias max")
+    proche(c["lMin"], 12.7, u"longueur min, un demi-pouce en mm")
+    egal(c["cp"], "cp1", u"regle de contre-percage")
+    egal(c["z"], 55.0, u"impedance cible du net")
+    proche(c["zTol"], 10.0, u"tolerance absolue (5,5 ohms) ramenee en %")
+    vrai("SIG_B" not in REGLES["contraintes"], u"un net sans spec propre n'a pas de contrainte inventee")
+
+
+T(u"regles : les contraintes propres a un net, unites converties", contraintes_du_net)
+
+
+def paires_lues():
+    p = REGLES["paires"]
+    egal(len(p), 1, u"une paire")
+    p = p[0]
+    egal((p["nom"], p["p"], p["n"]), ("USB", "SIG_A", "SIG_B"), u"nom et polarites (netPair + DIFF_PAIR_POLARITY)")
+    egal((p["w"], p["wMin"], p["wMax"]), (0.25, 0.2, 0.35), u"largeur et ses bornes")
+    egal((p["gap"], p["gapMin"], p["gapMax"]), (0.15, 0.13, 0.4), u"ecart et ses bornes")
+    egal((p["maxDecouple"], p["zdiff"], p["zTol"]), (12.7, 90.0, 10.0), u"decouple, Zdiff, tolerance")
+
+
+T(u"regles : la paire differentielle, ses bornes et sa Zdiff", paires_lues)
+
+
+def groupes_et_matrice():
+    g = REGLES["groupes"]
+    egal(len(g), 1, u"un groupe")
+    egal((g[0]["nom"], g[0]["mode"], g[0]["tol"], g[0]["ref"]), ("SPI", "ps", 10.0, "SIG_A"), u"groupe en delai")
+    egal(g[0]["nets"], ["SIG_A", "SANS_BROCHE"], u"les membres, meme sans <LogicalNet>")
+    egal(REGLES["matrice"], {"Alimentation|Rapide": 0.5}, u"matrice d'isolement")
+    # une carte sans regle rend des tables vides, pas une absence de cle
+    egal(MODELE["regles"], {"classes": {}, "regles_classes": {}, "paires": [],
+                            "contraintes": {}, "groupes": [], "matrice": {}},
+         u"regles vides sur la carte nue")
+
+
+T(u"regles : groupe d'appariement et matrice ; tables vides sans regles", groupes_et_matrice)
+
+
+def netpair_seul():
+    """Un fichier qui ne porte que netPair (sans attributs hors norme ni
+    spec) donne quand meme la paire, le premier net lu en P."""
+    xml = CARTE.replace(u'<LogicalNet name="SIG_A" netClass="SIGNAL">',
+                        u'<LogicalNet name="SIG_A" netClass="SIGNAL" netPair="GND">', 1)
+    m = ipc2581_json.ipc2581_en_dict(xml.encode("utf-8"), "netpair.xml")
+    egal([(p["nom"], p["p"], p["n"]) for p in m["regles"]["paires"]], [("SIG_A", "SIG_A", "GND")],
+         u"paire par netPair seul, nommee d'apres son net P")
+
+
+T(u"regles : netPair seul suffit a declarer une paire", netpair_seul)
+
+
+def rugosite_huray():
+    """Parseur 1.79 : <Conductor type="SURFACE_ROUGHNESS_UPFACING"> aux
+    <Property> nommees HURAY_NODULE_RADIUS / HURAY_SURFACE_RATIO -- la forme
+    de l'export de l'editeur PCB. Elle part en « rug_huray », pas en Rq."""
+    spec = (u'<Spec name="Cu-1_Huray">'
+            u'<Conductor type="SURFACE_ROUGHNESS_UPFACING" comment="Modele de Huray">'
+            u'<Property name="HURAY_NODULE_RADIUS" value="0.0005" unit="MM"/>'
+            u'<Property name="HURAY_SURFACE_RATIO" value="1.5"/></Conductor>'
+            u'</Spec>\n  </CadHeader>')
+    xml = CARTE.replace(u"</CadHeader>", spec, 1).replace(
+        u'<StackupLayer layerOrGroupRef="Conductor-1" thickness="0.035" sequence="1"/>',
+        u'<StackupLayer layerOrGroupRef="Conductor-1" thickness="0.035" sequence="1">'
+        u'<SpecRef id="Cu-1_Huray"/></StackupLayer>')
+    m = ipc2581_json.ipc2581_en_dict(xml.encode("utf-8"), "huray.xml")
+    e = {x["nom"]: x for x in m["empilage"]}
+    egal(e["Conductor-1"].get("rug_huray"), {"a": 0.5, "sr": 1.5}, u"Huray : rayon en micrometres, rapport")
+    vrai("rug" not in e["Conductor-1"], u"le rayon des nodules n'est pas pris pour un Rq")
+    vrai("rug_huray" not in e["Conductor-2"], u"Huray invente sur l'autre cuivre")
+
+
+T(u"la rugosite de Huray se lit a part du Rq", rugosite_huray)
+
+
+# =============================================================================
 print(u"-" * 62)
 if ECHECS:
     print(u"%d cas, %d ECHEC(S)" % (len(CAS), len(ECHECS)))

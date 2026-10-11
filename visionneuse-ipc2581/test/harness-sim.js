@@ -162,6 +162,9 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "mdlDetecterClasseNet","mdlDetecterTensionNet","mdlAutoDetecterClassesNets",
   "mdlAppliquerClassesNets","mdlNetClasse","mdlNetPoserClasse",
   "mdlNetPoserNature","MDL_NATURES_SIGNAL",
+  /* Les règles que le fichier porte (parseur 1.79) : classes, paires. */
+  "mdlRegles","mdlClasseFichier","mdlPaireFichier","mdlNatureDeClasse","simPairesFichierIpc",
+  "simDiffPartenaireNom",
   "simAppliquerPrereglagesClassesNets","SIM_PDN",
   /* Le solveur d'impédance du PDN : le moteur est dans
      commun/simulation-em.js, partagé avec l'éditeur PCB, mais la
@@ -3132,6 +3135,102 @@ T("une fente du plan sous le parcours est trouvée et localisée",()=>{
   if(rien===null||rien.length)
     throw new Error("un plan continu n'a pas de fente : "+
                     JSON.stringify(rien));
+});
+
+T("une fente FINE du plan (0,3 mm) est vue, avec sa largeur et sa position",()=>{
+  /* LA FENTE DU CAS 4 DE LA CARTE D'ESSAI DU BANC CROSSTALK, en plus fin :
+     0,3 mm, soit moins d'un pas de sonde (0,5 mm). La sonde à pas seule la
+     manquait une fois sur deux, et la jetait toujours (« moins de 1,5 pas ») ;
+     ses deux arêtes la bornent maintenant exactement. */
+  carte({plans:[planDessous(rect(2,2,X1+10,38)),
+                planDessous(rect(X1+10.3,2,58,38))]});
+  const f=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  if(!f||f.length!==1)
+    throw new Error("une fente de 0,3 mm doit être vue, une seule : "+
+                    JSON.stringify(f));
+  if(Math.abs(f[0].s-10)>0.01)
+    throw new Error("elle commence à 10 mm, au bord du plan : "+
+                    JSON.stringify(f[0]));
+  if(Math.abs(f[0].longueur-0.3)>0.01)
+    throw new Error("elle fait 0,3 mm, mesurée sur ses bords : "+
+                    JSON.stringify(f[0]));
+  if(!f[0].plans||f[0].plans.length!==1||!f[0].quoi)
+    throw new Error("la fente nomme son plan : "+JSON.stringify(f[0]));
+  /* UN TROU DE 0,2 MM dans un plan plein est une fente aussi. */
+  carte({plans:[planDessous(rect(2,2,58,38),[rect(X1+25,5,X1+25.2,35)])]});
+  const c=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  if(!c||c.length!==1||Math.abs(c[0].s-25)>0.01||Math.abs(c[0].longueur-0.2)>0.01)
+    throw new Error("un trou de 0,2 mm est une fente : "+JSON.stringify(c));
+  /* ET LA FENTE LARGE GARDE SES BORDS EXACTS : 10 mm pile. */
+  carte({plans:[planDessous(rect(2,2,X1+10,38)),
+                planDessous(rect(X1+20,2,58,38))]});
+  const g=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  if(!g||g.length!==1||Math.abs(g[0].s-10)>0.01||Math.abs(g[0].longueur-10)>0.01)
+    throw new Error("la fente de 10 mm est bornée par ses arêtes : "+
+                    JSON.stringify(g));
+});
+
+T("la fente part avec ses détours d1 / d2, sa largeur et les plans qui ferment le retour",()=>{
+  /* LE PLAN DU DESSOUS, PLEIN, FENDU EN TRAVERS DE LA PISTE : 2 mm de large
+     (x de X1+19 à X1+21), de 8 mm sous la piste à 12 mm au-dessus. Le retour
+     la contourne par le haut — 12 mm, à GAUCHE du sens de marche (+y pour
+     une piste qui va vers +x) : d1 — ou par le bas, 8 mm : d2. C'est ce que
+     le serveur ne peut pas mesurer, et dont son terme d'impédance commune
+     (Ott, crosstalk 4.5.0) a besoin. */
+  const morceaux=[planDessous(rect(2,2,X1+19,38)), planDessous(rect(X1+21,2,58,38)),
+                  planDessous(rect(X1+19,2,X1+21,Y-8)),
+                  planDessous(rect(X1+19,Y+12,X1+21,38))];
+  carte({plans:morceaux});
+  let f=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  if(!f||f.length!==1)
+    throw new Error("une fente attendue : "+JSON.stringify(f));
+  let t=f[0];
+  if(Math.abs(t.s-19)>1.0)
+    throw new Error("la fente commence vers 19 mm : "+JSON.stringify(t));
+  if(!(Math.abs(t.d1-12)<=1.0))
+    throw new Error("d1 — à gauche du sens de marche, vers +y — vaut 12 mm : "+
+                    JSON.stringify(t));
+  if(!(Math.abs(t.d2-8)<=1.0))
+    throw new Error("d2 — à droite, vers −y — vaut 8 mm : "+JSON.stringify(t));
+  if(!(t.largeur>=1.5&&t.largeur<=3.0))
+    throw new Error("la fente fait 2 mm de large, au pas de sonde près : "+
+                    JSON.stringify(t));
+  if(t.borne)throw new Error("le plan se referme des deux côtés : pas de plafond");
+  if(!Array.isArray(t.retour)||t.retour.length)
+    throw new Error("aucun plan ne ferme le retour sous la fente : "+
+                    JSON.stringify(t.retour));
+  if(Math.abs(t.x-(X1+20))>1.0||Math.abs(t.y-Y)>0.1)
+    throw new Error("le franchissement est au milieu de la fente, en mm : "+
+                    JSON.stringify(t));
+  /* UN SECOND PLAN PLEIN DERRIÈRE (Pwr) : il FERME le retour, et `retour`
+     le nomme — le serveur n'appliquera pas le terme (cas 4b du banc : fente
+     sur un plan, l'autre intact). Seul le plan fendu manque. */
+  const empilage=[
+    {nom:"Top",  seq:1, ep:0.035, type:"CONDUCTOR"},
+    {nom:"D1",   seq:2, ep:0.2,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
+    {nom:"Gnd",  seq:3, ep:0.035, type:"PLANE"},
+    {nom:"D2",   seq:4, ep:0.2,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
+    {nom:"Pwr",  seq:5, ep:0.035, type:"PLANE"}
+  ];
+  carte({empilage:empilage, couches:["Top","Gnd","Pwr"],
+         plans:morceaux.concat([{c:2, n:2, g:[{o:rect(2,2,58,38), t:[]}]}])});
+  f=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  if(!f||f.length!==1)throw new Error("la fente doit rester vue");
+  if(f[0].retour.join()!=="Pwr")
+    throw new Error("le plan plein du dessous ferme le retour : "+
+                    JSON.stringify(f[0].retour));
+  if(f[0].plans.join()!=="Gnd")
+    throw new Error("seul le plan fendu manque : "+JSON.stringify(f[0].plans));
+  if(!(Math.abs(f[0].d1-12)<=1.0&&Math.abs(f[0].d2-8)<=1.0))
+    throw new Error("les détours ne changent pas : "+JSON.stringify(f[0]));
+  /* ET LE SENS DE MARCHE : la même piste dessinée à rebours échange d1 et
+     d2 — gauche et droite se définissent dans le sens du parcours, comme le
+     côté de la couture que le serveur lit. */
+  carte({plans:morceaux, piste:{p:[X2,Y, X1,Y]}});
+  f=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  if(!f||f.length!==1)throw new Error("la fente doit être vue à rebours aussi");
+  if(!(Math.abs(f[0].d1-8)<=1.0&&Math.abs(f[0].d2-12)<=1.0))
+    throw new Error("à rebours, d1 et d2 s'échangent : "+JSON.stringify(f[0]));
 });
 
 T("sous une découpe, le plan de repli est sondé lui aussi",()=>{
@@ -6287,6 +6386,88 @@ T("la rugosité que le fichier déclare part au serveur, et seulement elle",()=>
   if(pile[0].rugosite_rms_um!==1.6||pile[0].modele_rugosite!=="hammerstad")
     throw new Error("rugosité du dessus : "+JSON.stringify(pile[0]));
   if("rugosite_rms_um" in pile[1])throw new Error("le plan n'en déclare pas");
+  carte();
+});
+
+/* ==========================================================================
+   Les règles que le fichier porte (regles, parseur 1.79) : le classement de
+   l'éditeur qui a écrit la carte passe devant la détection, jamais devant un
+   choix fait ici ; ses paires partent au serveur et désignent la partenaire ;
+   sa rugosité de Huray part avec ses deux paramètres.
+   ========================================================================== */
+T("les classes du fichier classent les nets avant la détection, la main garde le dernier mot",()=>{
+  V.modele={
+    nets:["GND","XIN","USB_DP","RF_ANT","SPI_CS","VBAT_SENSE","+5V"],
+    regles:{classes:{GND:"Alimentation",XIN:"Horloge",USB_DP:"Rapide",RF_ANT:"Impédance 50Ω",
+                     SPI_CS:"Défaut",VBAT_SENSE:"Analogique","+5V":"Rapide"},
+            paires:[],contraintes:{},groupes:[],matrice:{}},
+    /* la détection dirait autre chose : elle ne doit plus parler */
+    natures_nets:{classes:{SPI_CS:"Horloge",XIN:"Lent"},raisons:{SPI_CS:"Motif"}},
+    pistes:[],arcs:[],plans:[],pads:[],textes:[],composants:[],percages:[]
+  };
+  V.parNet=V.modele.nets.map((nom,i)=>({i,nom,pistes:[],arcs:[],plans:[],pads:[],trous:[],longueur:1,couches:new Set([0])}));
+  mdlAutoDetecterClassesNets(null,null);
+  const nat=V.parNet.map(n=>n.nature).join(",");
+  /* GND rangé dans « Alimentation » reste une masse (le nom passe devant,
+     comme dans l'éditeur) ; +5V en « Rapide » reste une alimentation ;
+     « Impédance 50Ω » est RF ; « Défaut » est Lent, malgré la détection */
+  if(nat!=="Masse,Horloge,Rapide,RF,Lent,Analogique,Alimentation")throw new Error("natures : "+nat);
+  if(V.parNet[0].classe!=="gnd"||V.parNet[6].classe!=="pwr")throw new Error("familles : "+V.parNet.map(n=>n.classe).join(","));
+  if(!/Classe « Horloge » du fichier/.test(V.parNet[1].natureRaison))throw new Error("raison : "+V.parNet[1].natureRaison);
+  if(!/Classe « Alimentation » du fichier/.test(V.parNet[0].autoRaison))throw new Error("raison GND : "+V.parNet[0].autoRaison);
+  if(mdlClasseFichier("XIN")!=="Horloge"||mdlClasseFichier("INCONNU")!=="")throw new Error("mdlClasseFichier");
+  if(mdlNatureDeClasse("USB")!=="Lent"||mdlNatureDeClasse("")!=="")throw new Error("une classe inconnue est Lent, aucune classe ne dit rien");
+  /* la main garde le dernier mot, et survit à une nouvelle détection */
+  mdlNetPoserNature(4,"RF");
+  mdlAutoDetecterClassesNets(null,V.modele.netClasses);
+  if(V.parNet[4].nature!=="RF"||!V.parNet[4].natureManuelle)throw new Error("choix manuel perdu");
+  mdlNetPoserClasse(2,"pwr");
+  if(V.parNet[2].classe!=="pwr")throw new Error("reclassement manuel refusé");
+  /* sans règles dans le fichier, rien ne change : la détection reprend */
+  delete V.modele.regles;
+  mdlAutoDetecterClassesNets(null,null);
+  if(V.parNet[4].nature!=="RF"||V.parNet[1].nature!=="Lent")throw new Error("sans règles : "+V.parNet.map(n=>n.nature).join(","));
+});
+
+T("les paires du fichier partent au serveur devant celles devinées, et nomment la partenaire",()=>{
+  const c=carte({nets:["LVDS_P","GND","LVDS_N","AUTRE_P","AUTRE_N"],
+                 pistes:[{c:0,n:0,w:W,p:[X1,Y,X2,Y]},{c:0,n:2,w:W,p:[X1,Y+1,X2,Y+1]},
+                         {c:0,n:3,w:W,p:[X1,Y+5,X2,Y+5]},{c:0,n:4,w:W,p:[X1,Y+6,X2,Y+6]}]});
+  V.modele.regles={classes:{},paires:[{nom:"LVDS",p:"LVDS_P",n:"LVDS_N",zdiff:100},
+                                      {nom:"FANTOME",p:"LVDS_P",n:"ABSENT"}],
+                   contraintes:{},groupes:[],matrice:{}};
+  /* le serveur devine AUTRE_P / AUTRE_N, et redirait LVDS_P avec GND : la
+     seconde tombe, LVDS_P étant déjà apparié par le fichier */
+  V.modele.natures_nets={classes:{},paires:[["LVDS_P","GND"],["AUTRE_P","AUTRE_N"]]};
+  const pf=simPairesFichierIpc();
+  if(JSON.stringify(pf)!==JSON.stringify([{nom:"LVDS",p:"LVDS_P",n:"LVDS_N"}]))
+    throw new Error("paires du fichier : "+JSON.stringify(pf));
+  const r=SIM_IPC.carteEntiere();
+  if(JSON.stringify(r.doc.paires)!==JSON.stringify([["LVDS_P","LVDS_N"],["AUTRE_P","AUTRE_N"]]))
+    throw new Error("paires envoyées : "+JSON.stringify(r.doc.paires));
+  /* la partenaire : celle du fichier, avant toute devinette sur le nom */
+  if(SIM_IPC.partenaire("LVDS_N")!=="LVDS_P"||SIM_IPC.partenaire("GND")!=="")throw new Error("partenaire");
+  const p=mdlPaireFichier("LVDS_N");
+  if(!p||p.mate!=="LVDS_P"||p.nom!=="LVDS"||p.zdiff!==100)throw new Error("mdlPaireFichier : "+JSON.stringify(p));
+  const garde=SIM_ED; global.SIM_ED=SIM_IPC;
+  try{
+    V.modele.regles.paires[0]={nom:"LVDS",p:"LVDS_P",n:"GND"};   // le fichier a le dernier mot sur le nom
+    if(simDiffPartenaireNom("LVDS_P")!=="GND")throw new Error("le fichier doit passer devant le nom");
+    delete V.modele.regles;
+    if(simDiffPartenaireNom("LVDS_P")!=="LVDS_N")throw new Error("sans fichier, le nom décide");
+  }finally{global.SIM_ED=garde;}
+  carte();
+});
+
+T("la rugosité de Huray du fichier part au serveur avec ses deux paramètres",()=>{
+  carte({empilage:[
+    {nom:"Top",    seq:1, ep:0.035, type:"CONDUCTOR", rug_huray:{a:0.5,sr:1.5}},
+    {nom:"Coeur",  seq:2, ep:0.2,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
+    {nom:"Bottom", seq:3, ep:0.035, type:"PLANE", rug:1.6}]});
+  const pile=simStackupIpc().layers.filter(c=>c.type==="copper");
+  if(pile[0].modele_rugosite!=="huray"||pile[0].rayon_nodule_um!==0.5||pile[0].rapport_surface!==1.5||"rugosite_rms_um" in pile[0])
+    throw new Error("Huray du dessus : "+JSON.stringify(pile[0]));
+  if(pile[1].modele_rugosite!=="hammerstad"||pile[1].rugosite_rms_um!==1.6)throw new Error("Rq du plan : "+JSON.stringify(pile[1]));
   carte();
 });
 

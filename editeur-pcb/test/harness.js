@@ -16438,6 +16438,111 @@ T("une fente du plan sous le parcours est trouvée et localisée",()=>{
                     JSON.stringify(rien));
 });
 
+T("une fente FINE du plan (0,3 mm) est vue, avec sa largeur et sa position",()=>{
+  simXtBancCarte([]);
+  /* LA FENTE DU CAS 4 DE LA CARTE D'ESSAI DU BANC CROSSTALK, en plus fin :
+     0,3 mm, soit moins d'un pas de sonde (0,5 mm). La sonde à pas seule la
+     manquait une fois sur deux, et la jetait toujours (« moins de 1,5 pas ») ;
+     ses deux arêtes la bornent maintenant exactement. */
+  const plan=1;
+  const bande=(x1,x2)=>({l:plan, net:"GND",
+    pts:[{x:x1,y:SIM_Y-5},{x:x2,y:SIM_Y-5},{x:x2,y:SIM_Y+5},{x:x1,y:SIM_Y+5}]});
+  S.zones=[bande(0,SIM_X1+10), bande(SIM_X1+10.3,60)];
+  touch();
+  const f=simXtFentes(simXtParcours(simSegments(null)),simRefSet());
+  if(!f||f.length!==1)
+    throw new Error("une fente de 0,3 mm doit être vue, une seule : "+
+                    JSON.stringify(f));
+  if(Math.abs(f[0].s-10)>0.01)
+    throw new Error("elle commence à 10 mm, au bord du plan : "+
+                    JSON.stringify(f[0]));
+  if(Math.abs(f[0].longueur-0.3)>0.01)
+    throw new Error("elle fait 0,3 mm, mesurée sur ses bords : "+
+                    JSON.stringify(f[0]));
+  /* Le plan de repli (Inner 2, sans zone sur cette carte) est nommé lui
+     aussi : c'est la règle de « sous une découpe, le plan de repli est sondé ». */
+  if(!f[0].plans||f[0].plans.indexOf("Inner 1")<0||!f[0].quoi)
+    throw new Error("la fente nomme son plan : "+JSON.stringify(f[0]));
+  /* ET LA FENTE LARGE GARDE SES BORDS EXACTS : 10 mm pile, et non « à un pas
+     près ». */
+  S.zones=[bande(0,SIM_X1+10), bande(SIM_X1+20,60)]; touch();
+  const g=simXtFentes(simXtParcours(simSegments(null)),simRefSet());
+  if(!g||g.length!==1||Math.abs(g[0].s-10)>0.01||Math.abs(g[0].longueur-10)>0.01)
+    throw new Error("la fente de 10 mm est bornée par ses arêtes : "+
+                    JSON.stringify(g));
+  /* UNE DÉCOUPE (S.cuts) DE 0,2 MM dans un plan plein est une fente aussi. */
+  S.zones=[bande(0,60)];
+  S.cuts=[{l:plan, pts:[{x:SIM_X1+25,y:SIM_Y-5},{x:SIM_X1+25.2,y:SIM_Y-5},
+                        {x:SIM_X1+25.2,y:SIM_Y+5},{x:SIM_X1+25,y:SIM_Y+5}]}];
+  touch();
+  const c=simXtFentes(simXtParcours(simSegments(null)),simRefSet());
+  if(!c||c.length!==1||Math.abs(c[0].s-25)>0.01||Math.abs(c[0].longueur-0.2)>0.01)
+    throw new Error("une découpe de 0,2 mm est une fente : "+JSON.stringify(c));
+  S.cuts=[]; touch();
+});
+
+T("la fente part avec ses détours d1 / d2, sa largeur et les plans qui ferment le retour",()=>{
+  simXtBancCarte([]);
+  /* UN PLAN PLEIN, FENDU EN TRAVERS DE LA PISTE : 2 mm de large (x de 29 à
+     31), de 8 mm sous la piste à 12 mm au-dessus. Le courant de retour la
+     contourne par le haut — 12 mm, à GAUCHE du sens de marche (+y pour une
+     piste qui va vers +x) : c'est d1 — ou par le bas, 8 mm : d2. C'est la
+     mesure dont le serveur a besoin pour chiffrer l'impédance commune (Ott,
+     crosstalk 4.5.0), et il ne peut pas la faire lui-même. */
+  const plan=1;
+  const z=(x1,y1,x2,y2)=>({l:plan, net:"GND",
+    pts:[{x:x1,y:y1},{x:x2,y:y1},{x:x2,y:y2},{x:x1,y:y2}]});
+  const morceaux=[z(0,0,SIM_X1+19,40), z(SIM_X1+21,0,60,40),
+                  z(SIM_X1+19,0,SIM_X1+21,SIM_Y-8), z(SIM_X1+19,SIM_Y+12,SIM_X1+21,40)];
+  S.zones=morceaux.slice(); touch();
+  let f=simXtFentes(simXtParcours(simSegments(null)),simRefSet());
+  if(!f||f.length!==1)
+    throw new Error("une fente attendue : "+JSON.stringify(f));
+  let t=f[0];
+  if(Math.abs(t.s-19)>1.0)
+    throw new Error("la fente commence vers 19 mm : "+JSON.stringify(t));
+  if(!(Math.abs(t.d1-12)<=1.0))
+    throw new Error("d1 — à gauche du sens de marche, vers +y — vaut 12 mm : "+
+                    JSON.stringify(t));
+  if(!(Math.abs(t.d2-8)<=1.0))
+    throw new Error("d2 — à droite, vers −y — vaut 8 mm : "+JSON.stringify(t));
+  if(!(t.largeur>=1.5&&t.largeur<=3.0))
+    throw new Error("la fente fait 2 mm de large, au pas de sonde près : "+
+                    JSON.stringify(t));
+  if(t.borne)throw new Error("le plan se referme des deux côtés : pas de plafond");
+  if(!Array.isArray(t.retour)||t.retour.length)
+    throw new Error("aucun plan ne ferme le retour sous la fente : "+
+                    JSON.stringify(t.retour));
+  if(Math.abs(t.x-(SIM_X1+20))>1.0||Math.abs(t.y-SIM_Y)>0.1)
+    throw new Error("le franchissement est au milieu de la fente : "+
+                    JSON.stringify(t));
+  /* UN SECOND PLAN PLEIN DERRIÈRE : il FERME le retour, et `retour` le
+     nomme — le serveur n'appliquera pas le terme (le cas 4b du banc : fente
+     sur L2 seule, L3 intact). Seul le plan fendu manque. */
+  S.zones.push({l:2, net:"GND",
+                pts:[{x:0,y:0},{x:60,y:0},{x:60,y:40},{x:0,y:40}]});
+  touch();
+  f=simXtFentes(simXtParcours(simSegments(null)),simRefSet());
+  if(!f||f.length!==1)throw new Error("la fente doit rester vue");
+  if(f[0].retour.length!==1||f[0].retour[0]!==cuLabel(2,S.cu))
+    throw new Error("le plan plein du dessous ferme le retour : "+
+                    JSON.stringify(f[0].retour));
+  if(f[0].plans.length!==1)
+    throw new Error("seul le plan fendu manque : "+JSON.stringify(f[0].plans));
+  if(!(Math.abs(f[0].d1-12)<=1.0&&Math.abs(f[0].d2-8)<=1.0))
+    throw new Error("les détours ne changent pas : "+JSON.stringify(f[0]));
+  /* ET LE SENS DE MARCHE : la même piste dessinée à rebours échange d1 et
+     d2 — gauche et droite se définissent dans le sens du parcours, comme le
+     côté de la couture que le serveur lit. */
+  S.zones=morceaux.slice();
+  const trk=S.tracks[S.tracks.length-1];
+  trk.x1=SIM_X2; trk.x2=SIM_X1; touch();
+  f=simXtFentes(simXtParcours(simSegments(null)),simRefSet());
+  if(!f||f.length!==1)throw new Error("la fente doit être vue à rebours aussi");
+  if(!(Math.abs(f[0].d1-8)<=1.0&&Math.abs(f[0].d2-12)<=1.0))
+    throw new Error("à rebours, d1 et d2 s'échangent : "+JSON.stringify(f[0]));
+});
+
 T("le voisinage du crosstalk voit les couches adjacentes, pas celui de la diaphonie",()=>{
   simXtBancCarte([]);
   /* UNE VOISINE SUR LA COUCHE D'À CÔTÉ. La section droite de l'onglet
@@ -24813,6 +24918,50 @@ T("empilage : la rugosité et les options partent au serveur, et se saisissent a
   delete S.stack.sim;touch();
 });
 
+T("empilage : un plan lisse DÉCLARÉ part comme Rq = 0 sous une piste rugueuse",()=>{
+  /* Sans déclaration, le serveur prête au plan la rugosité de la piste
+     (simulation_em `_rugosite_section`). Le réglage « Lisse déclaré » écrit
+     {m:"hammerstad", rms:0, decl:true} dans le document et envoie
+     rugosite_rms_um: 0 — la déclaration que le serveur lit. Une rugosité
+     nulle non déclarée reste invisible, comme avant. */
+  setCuCount(4);applyPreset(presetsFor(4)[0]);
+  for(let i=0;i<S.cu;i++)setCuRug(i,null);
+  delete S.stack.sim;touch();
+  const decl=RUG_PRESETS.find(p=>p.id==="lisse-decl");
+  if(!decl||decl.rms!==0||decl.decl!==true)throw new Error("réglage « lisse déclaré » absent");
+  if(rugNorm({m:"hammerstad",rms:0})!==null)throw new Error("une rugosité nulle non déclarée doit disparaître");
+  if(JSON.stringify(rugNorm(decl))!=='{"m":"hammerstad","rms":0,"decl":true}')
+    throw new Error("lisse déclaré mal normalisé : "+JSON.stringify(rugNorm(decl)));
+  if(rugNorm({m:"hammerstad",rms:0.5,decl:true}).decl)throw new Error("une rugosité non nulle n'est pas « déclarée lisse »");
+  if(rugLabel(rugNorm(decl))!=="lisse (déclaré)")throw new Error(rugLabel(rugNorm(decl)));
+  /* piste rugueuse sur le dessus, plan déclaré lisse dessous */
+  setCuRug(0,{m:"hammerstad",rms:2});
+  setCuRug(1,decl);
+  touch();
+  const st=simStackup();
+  const c0=st.layers[simCuIndex(0)], c1=st.layers[simCuIndex(1)], c2=st.layers[simCuIndex(2)];
+  if(c0.rugosite_rms_um!==2)throw new Error("piste : "+JSON.stringify(c0));
+  if(c1.modele_rugosite!=="hammerstad"||c1.rugosite_rms_um!==0)throw new Error("plan déclaré lisse : "+JSON.stringify(c1));
+  if("rugosite_rms_um" in c2||"modele_rugosite" in c2)throw new Error("un plan muet envoie une rugosité : "+JSON.stringify(c2));
+  /* aller-retour du document, et le panneau le montre */
+  const a=serialize();
+  loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("aller-retour : "+firstDiff(JSON.parse(a),JSON.parse(serialize()),""));
+  if(!cuRug(1)||cuRug(1).decl!==true||cuRug(1).rms!==0)throw new Error("déclaration perdue : "+JSON.stringify(cuRug(1)));
+  stkPick("cu",1);
+  const h=$("stk").innerHTML;
+  if(!/Lisse déclaré/.test(h)||!/<option value="lisse-decl" selected/.test(h))throw new Error("panneau sans « Lisse déclaré » choisi");
+  stkPick("cu",2);
+  if(!/<option value="lisse" selected/.test($("stk").innerHTML))throw new Error("un plan muet doit se lire « Lisse »");
+  /* le choix au panneau */
+  $("skRugP").value="lisse-decl";$("skRugP").onchange();
+  if(!cuRug(2)||cuRug(2).decl!==true)throw new Error("choix au panneau non repris : "+JSON.stringify(cuRug(2)));
+  undo();
+  if(cuRug(2))throw new Error("l'annulation garde la déclaration");
+  for(let i=0;i<S.cu;i++)setCuRug(i,null);
+  touch();
+});
+
 /* ==========================================================================
    Export IPC-2581 (35-ipc2581-export.js)
    Les deux cartes d'exemple, et la seconde chargée de ce que les exemples
@@ -24846,8 +24995,43 @@ function ipcAttendu(){
     if(i<diCount(n)){const d=diAt(i);empilage.push({nom:"DIELECTRIQUE_"+(i+1),ep:d.t,dk:d.er,df:d.df,mat:d.mat});}
   }
   if(n>1)empilage.push({nom:"MASQUE_DESSOUS",ep:S.stack.maskT,dk:S.stack.maskEr,type:"SOLDERMASK"});
-  const rug={};
-  for(let i=0;i<n;i++){const r=cuRug(i);if(r&&r.m==="hammerstad")rug[nomCu(i)]=r.rms;}
+  const rug={}, huray={};
+  for(let i=0;i<n;i++){
+    const r=cuRug(i);
+    if(r&&r.m==="hammerstad")rug[nomCu(i)]=r.rms;
+    if(r&&r.m==="huray")huray[nomCu(i)]={a:r.a,sr:r.sr};
+  }
+  /* les règles que le fichier doit rendre : la classe de chaque net qui a
+     une broche (seul un net à broche a un <LogicalNet>), les règles de
+     toutes les classes, les contraintes propres aux nets, les paires, les
+     groupes et la matrice — les couches par leur nom, les cotes en mm */
+  const C=S.contraintes||{classes:{},nets:{},matrice:{},groupes:[],schema:{nets:{}}};
+  const avecBroche=new Set();
+  for(const fp of S.fps)for(const q of padsWorld(fp))if(q.net)avecBroche.add(q.net);
+  const regleNoms=r=>{const o=Object.assign({},r);if(o.couches)o.couches=o.couches.map(nomCu);return o;};
+  const regles={classes:{},regles_classes:{},contraintes:{},paires:[],groupes:[],matrice:Object.assign({},C.matrice||{})};
+  for(const nm of avecBroche)regles.classes[nm]=className(nm);
+  for(const c of S.classes){
+    const r=regleNoms((C.classes||{})[c.name]||{});
+    const o=Object.assign({w:c.w,clr:c.clr,via:c.via,drill:viaDrill(c)},r);
+    if(c.wL){o.wL={};for(const l of Object.keys(c.wL))if(+l<n&&c.wL[l]>0)o.wL[nomCu(+l)]=c.wL[l];}
+    if(o.z&&o.zTol==null)o.zTol=10;
+    regles.regles_classes[c.name]=o;
+  }
+  for(const nm of nets){
+    const r=Object.assign({},((C.schema||{}).nets||{})[nm]||{},(C.nets||{})[nm]||{});
+    if(!Object.keys(r).length)continue;
+    const o=regleNoms(r);
+    if(o.z&&o.zTol==null)o.zTol=10;
+    regles.contraintes[nm]=o;
+  }
+  for(const p of S.dpPairs){
+    if(!nets.has(p.p)&&!nets.has(p.n))continue;
+    const rule=dpRuleFor(p), prof=rule.useImp?dpProfile(rule.imp):null;
+    regles.paires.push({nom:p.name,p:p.p,n:p.n,zdiff:prof?prof.z:null});
+  }
+  for(const g of cmTousGroupes())
+    if(g.nets.some(x=>nets.has(x)))regles.groupes.push({nom:g.nom,mode:g.mode,tol:g.tol,ref:g.ref||"",nets:g.nets.slice()});
   /* les points témoins du remplissage : le centre de tout via et de toute
      pastille d'un autre net est hors du cuivre de la zone, celui d'un via du
      net est dedans */
@@ -24874,7 +25058,7 @@ function ipcAttendu(){
              bords:[boardPoly()].concat(boardCutouts()).map(P=>P.map(p=>[X(p.x),Y(p.y)])),
              arcs:[boardPoly()].concat(boardCutouts()).reduce((a,P)=>
                a+dxfSegments(P.map(p=>({x:X(p.x),y:Y(p.y)}))).filter(s=>s.t==="a").length,0)},
-    empilage,epaisseur:stackTotal(),rugosite:rug,zones,textes,
+    empilage,epaisseur:stackTotal(),rugosite:rug,rugosite_huray:huray,regles,zones,textes,
     masque:[maskOpenings(0).length,n>1?maskOpenings(1).length:0],
     pate:[pasteOpenings(0).length,n>1?pasteOpenings(1).length:0],
     contre_percage:cpViasPerces().filter(c=>!c.faute).map(c=>({x:X(c.v.x),y:Y(c.v.y),cote:c.cote,
@@ -24914,6 +25098,17 @@ function ipcCarteChargee(){
                    size:1.5,height:1.5,rot:0,width:0.15});
   S.variantes={liste:[{id:"v1",nom:"Lite"}],active:"v1"};
   S.fps.find(f=>f.ref==="C5").nonMonte=["v1"];
+  /* les règles du gestionnaire de contraintes : une impédance cible de
+     classe, une longueur max de classe, des contraintes propres à un net
+     (longueur, vias, couches permises), un groupe d'appariement, une case
+     de la matrice d'isolation — la paire USB vient de l'exemple */
+  cmPoser("classes","Impédance 50Ω","z","50");
+  cmPoser("classes","Horloge","lMax","40");
+  cmPoser("nets","SPI_CS","lMax","60");
+  cmPoser("nets","SPI_CS","viasMax","2");
+  cmPoser("nets","SPI_CS","couches","1, 4");
+  cmNouveauGroupe("SPI",["SPI_MOSI","SPI_MISO"],"mm",0.5);
+  cmPoserMatrice("Alimentation","Rapide","0,5");
   touch();
 }
 T("IPC-2581 : les cartes d'exemple écrites pour le banc Python, contenu compté",()=>{
@@ -24958,6 +25153,57 @@ T("IPC-2581 : les cartes d'exemple écrites pour le banc Python, contenu compté
     const prof=y.slice(y.indexOf("<Profile>"),y.indexOf("</Profile>"));
     if((prof.match(/<PolyStepCurve /g)||[]).length!==6||(y.match(/<PolyStepCurve /g)||[]).length!==12)
       throw new Error("arcs du contour : "+(prof.match(/<PolyStepCurve /g)||[]).length);
+  }finally{loadDoc(JSON.parse(avant),true);}
+});
+T("IPC-2581 : classes, paires et contraintes écrites avec les éléments du XSD (netPair, SpecRef, Impedance)",()=>{
+  const avant=serialize();
+  try{
+    ipcCarteChargee();
+    const d=ipc2581Document({date:IPC_DATE}), x=d.xml, s=d.stats;
+    if(s.classes!==S.classes.length||s.paires!==1||s.contraintes!==2||s.groupes!==1)
+      throw new Error("stats : "+JSON.stringify(s));
+    for(const m of [
+      /* le net : la nature de la norme, la partenaire, la classe et la paire hors norme, ses règles */
+      '<LogicalNet name="USB_DP" netClass="SIGNAL" netPair="USB_DM">',
+      '<NonstandardAttribute name="NET_CLASS" type="STRING" value="Rapide"/>',
+      '<NonstandardAttribute name="DIFF_PAIR" type="STRING" value="USB"/>',
+      '<NonstandardAttribute name="DIFF_PAIR_POLARITY" type="STRING" value="P"/>',
+      '<NonstandardAttribute name="DIFF_PAIR_POLARITY" type="STRING" value="N"/>',
+      '<SpecRef id="CLASSE_Rapide"/>','<SpecRef id="PAIRE_USB"/>','<SpecRef id="CONTRAINTE_SPI_CS"/>',
+      '<SpecRef id="APPARIEMENT_SPI"/>','<LogicalNet name="SPI_SCK" netClass="CLK">',
+      /* le cuivre d'un net apparié nomme sa partenaire */
+      '<Set net="USB_DP" netPair="USB_DM">',
+      /* la classe : règles physiques, longueur max, impédance cible par couche de signal */
+      '<Spec name="CLASSE_Impédance 50Ω">','<Property name="NET_CLASS" text="Impédance 50Ω"/>',
+      '<Property name="TRACE_WIDTH" value="0.38" unit="MM"/>','<Property name="CLEARANCE" value="0.25" unit="MM"/>',
+      '<Property name="VIA_DIAMETER" value="0.8" unit="MM"/>','<Property name="VIA_DRILL" value="0.4" unit="MM"/>',
+      '<Impedance value="50" tolPlus="10" tolMinus="10" tolPercent="true" comment="Impedance cible de la classe Impédance 50Ω - couche Top">',
+      '<SingleEnded structure="MICROSTRIP_MASK_COVERED">','<LineWidth value="0.38" unit="MM"/>','<RefPlane layerOrGroupRef="Inner 1"/>',
+      '<Property name="MAX_LENGTH" value="40" unit="MM"/>',
+      /* le net contraint */
+      '<Spec name="CONTRAINTE_SPI_CS">','<Property name="NET" text="SPI_CS"/>','<Property name="MAX_LENGTH" value="60" unit="MM"/>',
+      '<Property name="MAX_VIAS" value="2"/>','<Property name="ALLOWED_LAYER" layerOrGroupRef="Top"/>',
+      '<Property name="ALLOWED_LAYER" layerOrGroupRef="Bottom"/>','<Property name="BACKDRILL_RULE" text="',
+      /* la paire : ses bornes et son impédance différentielle couplée */
+      '<Spec name="PAIRE_USB">','<Property name="NET_P" text="USB_DP"/>','<Property name="NET_N" text="USB_DM"/>',
+      '<Property name="TRACE_WIDTH" value="0.25" unit="MM" tolPlus="0.1" tolMinus="0.05"/>',
+      '<Property name="GAP" value="0.15" unit="MM" tolPlus="0.25" tolMinus="0.02"/>',
+      '<Property name="MAX_UNCOUPLED_LENGTH" value="12.7" unit="MM"/>',
+      '<Impedance value="90" tolPlus="10" tolMinus="10" tolPercent="true" comment="Impedance differentielle cible, profil D90 - couche Bottom">',
+      '<EdgeCoupled structure="MICROSTRIP_MASK_COVERED">','<Spacing value="0.15" unit="MM"/>','<RefPlane layerOrGroupRef="Inner 2"/>',
+      /* le groupe et la matrice */
+      '<Spec name="APPARIEMENT_SPI">','<Property name="MATCH_MODE" text="LENGTH"/>','<Property name="MATCH_TOLERANCE" value="0.5" unit="MM"/>',
+      '<Property name="MEMBER" text="SPI_MOSI"/>','<Property name="MEMBER" text="SPI_MISO"/>',
+      '<Spec name="ISOLATION_CLASSES">','<Property name="CLEARANCE" text="Alimentation|Rapide" value="0.5" unit="MM"/>',
+      /* Huray sous le type normalisé de la rugosité, en propriétés nommées */
+      '<Conductor type="SURFACE_ROUGHNESS_UPFACING" comment="Modele de Huray',
+      '<Property name="HURAY_NODULE_RADIUS" value="0.5" unit="MICRON"/>','<Property name="HURAY_SURFACE_RATIO" value="1.5"/>'])
+      if(x.indexOf(m)<0)throw new Error("absent de l'export : "+m);
+    if(x.indexOf('type="OTHER"')>=0)throw new Error("un type OTHER subsiste");
+    /* un net sans paire n'écrit pas de netPair ; une classe sans Z n'écrit pas d'Impedance */
+    if(/<LogicalNet name="GND"[^>]*netPair/.test(x))throw new Error("GND n'a pas de partenaire");
+    const cl=x.slice(x.indexOf('<Spec name="CLASSE_Rapide">'),x.indexOf("</Spec>",x.indexOf('<Spec name="CLASSE_Rapide">')));
+    if(cl.indexOf("<Impedance")>=0)throw new Error("Rapide n'a pas d'impédance cible");
   }finally{loadDoc(JSON.parse(avant),true);}
 });
 T("IPC-2581 : dans fabrication.zip, annoncé par le LISEZ-MOI et le master drawing",()=>{

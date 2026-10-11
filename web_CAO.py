@@ -2,6 +2,15 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.22.0
+# Date: 2026-10-11
+# Explication: /api/oeil passe a `oeil.analyser` les dossiers sous lesquels
+#   une bibliotheque IBIS-AMI designee par la requete peut etre executee
+#   (oeil 2.3.0, ibis 1.3.0) : la LIB active et les racines de projets
+#   declarees, et rien d'autre. Le contrat de la route ne change pas.
+# Fonctions modifiees :
+# - CustomHandler._oeil_lancer
+#
 # Version: 2.21.0
 # Date: 2026-10-10
 # Explication: /api/oeil a son propre plafond de corps, MAX_OEIL (celui de
@@ -2787,8 +2796,16 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             raise ErreurIPC(503, "Diagramme de l'œil indisponible : %s"
                                  % ERREUR_OEIL)
         doc = self._lire_document(MAX_OEIL)
+        # UNE BIBLIOTHEQUE AMI ne s'execute que depuis la LIB ou une racine
+        # de projets declaree (oeil 2.3.0, `ibis.chemin_bibliotheque_ami`) :
+        # c'est ici que le serveur dit lesquelles.
         try:
-            return oeil.analyser(doc, journal=sys.stderr.write)
+            racines = [dossier_lib()] + list(racines_projets())
+        except Exception:                               # noqa: BLE001
+            racines = []
+        try:
+            return oeil.analyser(doc, journal=sys.stderr.write,
+                                 racines_ami=racines)
         except oeil.ErreurOeil as exc:
             detail = exc.message
             if exc.conseil:
