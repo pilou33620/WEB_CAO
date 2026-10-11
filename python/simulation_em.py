@@ -2,6 +2,18 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 5.3.0
+# Date: 2026-10-11
+# Explication: `section_de_couche` SAIT POSER UNE PISTE SANS PLAN, quand on le
+#   lui demande (`sans_plan`). Une couche EXTERIEURE qu'aucun plan ne
+#   reference se resout alors en coplanaire sans plan : le stratifie entier
+#   dans l'air, la masse arrosee de la couche pour retour. Une couche interne
+#   sans plan reste refusee -- du stratifie des deux cotes n'est pas une
+#   plaque dans l'air. Sans le drapeau, rien ne change : seul le crosstalk le
+#   passe.
+# Fonctions ajoutees/modifiees : _section_sans_plan (nouvelle) ;
+#   section_de_couche, _hauteur_de_couche (+ `sans_plan`).
+#
 # Version: 5.2.0
 # Date: 2026-10-10
 # Explication: LE PLAN DE REFERENCE A SA PROPRE RUGOSITE. Une seule rugosite
@@ -774,7 +786,7 @@ except Exception as _exc:                              # noqa: BLE001
 
 FORMAT = "cao-sim-em-3"
 FORMAT_RESULTAT = "cao-sim-em-resultat-5"
-VERSION = "5.2.0"
+VERSION = "5.3.0"
 VERSION_MOTEURS = {
     "simulation_em": VERSION,
     "ligne_mom": getattr(tl, "VERSION", "2.5.0") if tl is not None else "indisponible",
@@ -911,7 +923,8 @@ def _couverture(couches, indice, vers_le_bas):
 
 
 def section_de_couche(couches, indice, largeur_mm, epaisseur_mm,
-                      ecart_g_mm=0.0, ecart_d_mm=None, plans_ignores=()):
+                      ecart_g_mm=0.0, ecart_d_mm=None, plans_ignores=(),
+                      sans_plan=False):
     """La section droite d'une piste, en METRES, pour `solve_line`.
 
     `plans_ignores` PORTE LES PLANS QUI N'EN SONT PAS ICI. L'empilage est
@@ -936,6 +949,14 @@ def section_de_couche(couches, indice, largeur_mm, epaisseur_mm,
     l'unique `ecart_mm` d'avant la 2.3.0. Un cote a zero et l'autre non, c'est
     la piste qui longe une decoupe -- et la prendre pour symetrique fait tomber
     Z0 deux fois trop.
+
+    `sans_plan` OUVRE LE CAS DE LA CARTE SANS PLAN. Faute de plan en face, la
+    piste d'une couche EXTERIEURE se resout alors en ligne coplanaire sans plan
+    dessous (`kind` « sans_plan » de `ligne_mom`) : le stratifie entier, de
+    l'air des deux cotes, et la masse arrosee de la meme couche pour retour.
+    C'est a l'appelant de fournir ce retour -- les ecarts, ou des pistes de
+    garde --, et c'est le solveur qui refuse s'il n'y en a aucun. Facultatif et
+    faux par defaut : les autres onglets gardent leur refus.
 
     Rend (geometrie, description) ou (None, raison) quand il n'y a pas de ligne
     a calculer -- pas de plan de reference, couche inconnue.
@@ -1000,6 +1021,8 @@ def section_de_couche(couches, indice, largeur_mm, epaisseur_mm,
                  "dissym": abs(t_haut - t_bas) / max(t_haut, t_bas, 1e-9)})
 
     proche = haut if haut >= 0 else bas
+    if proche < 0 and sans_plan:
+        return _section_sans_plan(couches, indice, w, t, e_g, e_d, nus)
     if proche < 0:
         if nus:
             return None, ("aucun plan de reference EN FACE DE CE TRONCON : le"
@@ -1080,6 +1103,57 @@ def section_de_couche(couches, indice, largeur_mm, epaisseur_mm,
         }
 
     return geo_micro, info_micro
+
+
+def _section_sans_plan(couches, indice, w, t, e_g, e_d, nus):
+    """La section d'une piste EXTERIEURE qu'aucun plan ne reference.
+
+    LE STRATIFIE ENTIER FAIT LA PLAQUE : tout le dielectrique entre la piste
+    et l'autre face, moyenne a l'epaisseur, les couches de cuivre traversees
+    comptant pour rien -- ce sont des couches de signal, ou des plans absents
+    sous ce troncon. Le vernis du cote de la piste n'est pas modelise : la
+    Green en images ne connait qu'une plaque dans l'air, et la description le
+    dit.
+
+    UNE COUCHE INTERNE SANS PLAN EST REFUSEE : du stratifie des deux cotes,
+    ce n'est plus une plaque dans l'air, et la poser comme telle donnerait un
+    eps_eff faux sans que rien ne le montre.
+    """
+    cuivre = [i for i, c in enumerate(couches) if c.get("type") == "copper"]
+    if indice == cuivre[0]:
+        bout = len(couches)
+        tranche = range(indice + 1, bout)
+    elif indice == cuivre[-1]:
+        tranche = range(0, indice)
+    else:
+        return None, ("couche interne sans plan de reference : du stratifie"
+                      " des deux cotes, ce que la ligne sans plan ne modelise"
+                      " pas")
+    h = s_er = s_df = 0.0
+    for i in tranche:
+        c = couches[i]
+        if c.get("type") != "dielectric":
+            continue
+        e = _nombre(c.get("thickness"))
+        # Le vernis de L'AUTRE face fait partie de la plaque ; celui de la
+        # face de la piste est de l'autre cote et n'est pas dans `tranche`.
+        if e <= 0:
+            continue
+        h += e
+        s_er += e * _nombre(c.get("epsilon_r"), 4.3)
+        s_df += e * _nombre(c.get("tan_delta"), 0.02)
+    if not (h > 0):
+        return None, "carte sans plan et sans stratifie : pas de section"
+    er, df = s_er / h, s_df / h
+    geo = {"kind": "sans_plan", "w": w, "t": t, "h": h * 1e-3,
+           "epsilon_r": er, "tan_delta": df,
+           "ecart_g": e_g * 1e-3, "ecart_d": e_d * 1e-3}
+    info = {"topo": "sans_plan", "ref": 0, "h": h * 1e-3, "b": 0.0,
+            "er": er, "tan_delta": df, "couverture": 0.0,
+            "ecart_g": e_g, "ecart_d": e_d, "plan_haut": "", "plan_bas": "",
+            "dissym": 0.0, "exterieur": True, "vernis_ignore": True,
+            "plans_absents": sorted(nus)}
+    return geo, info
 
 
 def _masque_exterieur(couches, indice, vers_le_bas):
@@ -5232,7 +5306,8 @@ def _fiche_longement(scene, poses, pose, rangs, r, declarees):
 MAX_SECTIONS_LOCALES = 24       # resolutions de section locales par calcul
 PAS_ECART_LOCAL = 0.005         # mm ; le pas auquel les ecarts se regroupent
 
-def _hauteur_de_couche(couches, indice, largeur, epaisseur, plans_ignores=()):
+def _hauteur_de_couche(couches, indice, largeur, epaisseur, plans_ignores=(),
+                       sans_plan=False):
     """La hauteur au plan de reference d'une couche, en mm ; 0 si elle n'en a
     pas.
 
@@ -5245,9 +5320,12 @@ def _hauteur_de_couche(couches, indice, largeur, epaisseur, plans_ignores=()):
     et la section doivent designer LE MEME plan. Les donner a lire a deux plans
     differents ferait poser les conducteurs a une hauteur, et les resoudre a
     une autre.
+
+    `sans_plan` SUIT AUSSI `section_de_couche` : la hauteur rendue est alors
+    l'epaisseur de la plaque, ce qui sert a l'elargissement du cuivre epais.
     """
     geo, info = section_de_couche(couches, indice, largeur, epaisseur, 0.0, 0.0,
-                                  plans_ignores)
+                                  plans_ignores, sans_plan)
     # `section_de_couche` decrit une section en METRES, et son `h` aussi :
     # c'est le seul chiffre de cette page qui ne soit pas en millimetres, et le
     # melanger a des largeurs en millimetres donne un logarithme negatif, donc

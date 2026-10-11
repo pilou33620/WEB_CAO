@@ -2,6 +2,10 @@
 # Une ligne par configuration ; laisser vide ce qui n'est pas encore releve.
 # Les virgules decimales sont acceptees. Puis : python python/test/banc-usimmics.py
 cas;S_mm;Z_even;Z_odd;eps_even;eps_odd
+cas1;0.2;;;;
+cas1;0.35;;;;
+cas1;0.7;;;;
+cas1;1.05;;;;
 cas2;0.2;;;;
 cas2;0.35;;;;
 cas2;0.7;;;;

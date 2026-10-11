@@ -2,6 +2,23 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.9.0
+# Date: 2026-10-11
+# Explication: SANS PLAN. Une piste qu'aucun plan ne reference, bordee de
+#   masse sur sa propre couche, est une ligne coplanaire sans plan dessous :
+#   kind « sans_plan ». La fonction de Green d'une plaque de dielectrique dans
+#   l'air se developpe EXACTEMENT en images de meme signe, a 2nh, de poids
+#   (1+K).K^(2n-1) : chaque panneau s'integre en forme fermee, sans
+#   quadrature. La reference est fixee par la neutralite de la section --
+#   une inconnue de potentiel, une equation de charge, comme le conducteur
+#   flottant --, ce qui rend la masse coplanaire (ou une garde) obligatoire :
+#   sans elle, refus. Contre la transformation conforme (ligne seule et modes
+#   pair/impair d'une paire), 0,35 % au pire ; contre les capacites
+#   partielles sur plaque finie, 1 %.
+# Fonctions ajoutees : NoyauSansPlan, _sans_plan, _resoudre, _etendue,
+#   _n_plan ; modifiees : _milieu, _matrice, capacitance,
+#   capacitance_coplanaire, capacitance_matrice.
+#
 # Version: 2.8.0
 # Date: 2026-10-10
 # Explication: LE PLAN A SA PROPRE RUGOSITE. `line_losses` separe depuis la
@@ -409,7 +426,7 @@ import math
 import numpy as np
 
 
-VERSION = "2.8.0"
+VERSION = "2.9.0"
 
 
 def etat():
@@ -603,6 +620,127 @@ def green_spectral_strip(beta, y0, b, epsilon_r):
 
 
 # ==========================================================================
+# SANS PLAN : le stratifie seul, de l'air des deux cotes
+# --------------------------------------------------------------------------
+# UNE CARTE DEUX COUCHES SANS PLAN n'est pas une carte sans reference : le
+# retour passe par le cuivre de masse ARROSE SUR LA MEME COUCHE, de part et
+# d'autre des pistes -- c'est une ligne coplanaire sans plan dessous. Il n'y a
+# alors rien sous le stratifie, et la fonction de Green est celle d'une charge
+# posee sur une plaque de dielectrique d'epaisseur h, dans l'air :
+#
+#     G(beta) = 1 / (eps0 beta [1 + er (1 + er.t)/(er + t)])     t = th(beta h)
+#
+# ELLE SE DEVELOPPE EN IMAGES, ET LA SERIE EST EXACTE. Avec e = exp(-2 beta h)
+# et K = (er - 1)/(er + 1), le crochet se reecrit
+#
+#     G = [1 + sum_n (1+K).K^(2n-1).e^n] / (eps0 (er+1) beta)
+#
+# et chaque e^n / beta a une transformee spatiale connue : une ligne de charge
+# image a 2nh SOUS la face, de meme signe, de poids (1+K).K^(2n-1). Le noyau
+# spatial est donc une somme de logarithmes, et chaque panneau s'integre EN
+# FORME FERMEE -- ni quadrature spectrale, ni terme extrait : la matrice est
+# exacte a la troncature de la serie pres, qui decroit en K^2n.
+#
+# LA CHARGE TOTALE EST NULLE, ET C'EST CE QUI DEFINIT LA REFERENCE. Sans plan,
+# le potentiel d'une charge de ligne croit comme ln(r) jusqu'a l'infini : il
+# n'a de sens que si la section entiere est NEUTRE -- tout ce que porte le
+# signal revient par la masse. On ajoute donc une inconnue, le potentiel V0
+# de l'infini, et une equation, la somme des charges nulle. C'est ce qui rend
+# la masse coplanaire OBLIGATOIRE : sans elle, rien ne porte le retour et la
+# matrice de capacite n'a pas de reference -- `capacitance_matrice` refuse.
+# ==========================================================================
+
+class NoyauSansPlan:
+    """Le noyau d'une plaque de dielectrique sans plan, en images.
+
+    Ce n'est pas une fonction de beta comme les autres noyaux : `_matrice` le
+    reconnait et lui demande directement la matrice des potentiels, qu'il
+    sait ecrire en forme fermee.
+    """
+
+    # La serie s'arrete quand le poids de l'image passe sous ce seuil : a
+    # er = 10, K^2 = 0,67 et il faut une soixantaine d'images ; a er = 4,3,
+    # une trentaine.
+    SEUIL_IMAGES = 1e-12
+
+    def __init__(self, h, epsilon_r):
+        if not (h > 0):
+            raise ValueError("sans plan : epaisseur de stratifie nulle")
+        self.h = float(h)
+        self.epsilon_r = float(epsilon_r)
+        k = (self.epsilon_r - 1.0) / (self.epsilon_r + 1.0)
+        poids, n = [], 1
+        while k > 0 and n < 2000:
+            c = (1.0 + k) * k ** (2 * n - 1)
+            if c < self.SEUIL_IMAGES:
+                break
+            poids.append((2.0 * n * self.h, c))
+            n += 1
+        self.images = poids
+
+    def matrice(self, centres, largeurs):
+        """A[m,k] = potentiel au centre de m sous une densite unite sur k."""
+        d = centres[:, None] - centres[None, :]
+        lo = d - largeurs[None, :] / 2.0
+        hi = d + largeurs[None, :] / 2.0
+
+        def p_log(u):
+            au = np.abs(u)
+            sur = au < 1e-300
+            return np.where(sur, 0.0, u - u * np.log(np.where(sur, 1.0, au)))
+
+        def p_image(u, a):
+            # ∫ -ln(u²+a²)/2 du, le signe de la source : l'image est de MEME
+            # signe que la charge, a l'inverse de celle d'un plan de masse.
+            return -(0.5 * u * np.log(u * u + a * a) - u
+                     + a * np.arctan(u / a))
+
+        total = p_log(hi) - p_log(lo)
+        for a, c in self.images:
+            total = total + c * (p_image(hi, a) - p_image(lo, a))
+        return total / (np.pi * EPSILON_0 * (self.epsilon_r + 1.0))
+
+
+def _sans_plan(green):
+    return isinstance(green, NoyauSansPlan)
+
+
+def _resoudre(mat, seconds, largeurs, green, flottants=()):
+    """Les charges des panneaux sous chaque second membre.
+
+    DEUX CONTRAINTES PEUVENT S'AJOUTER AU SYSTEME, et elles s'ecrivent de la
+    meme facon -- une inconnue de potentiel, une equation de charge :
+      · un conducteur FLOTTANT : son potentiel est libre, sa charge nulle ;
+      · la section SANS PLAN : le potentiel de l'infini est libre, la charge
+        de toute la section est nulle (voir `NoyauSansPlan`).
+    Sans l'une ni l'autre, c'est `np.linalg.solve` tel quel.
+    """
+    seconds = np.asarray(seconds, dtype=float)
+    une_colonne = seconds.ndim == 1
+    if une_colonne:
+        seconds = seconds[:, None]
+    n_p = mat.shape[0]
+    blocs = [(debut, taille) for debut, taille in flottants]
+    neutre = _sans_plan(green)
+    n_x = len(blocs) + (1 if neutre else 0)
+    if not n_x:
+        q = np.linalg.solve(mat, seconds)
+    else:
+        a = np.zeros((n_p + n_x, n_p + n_x))
+        a[:n_p, :n_p] = mat
+        for j, (debut, taille) in enumerate(blocs):
+            a[debut:debut + taille, n_p + j] = -1.0
+            a[n_p + j, debut:debut + taille] = largeurs[debut:debut + taille]
+        if neutre:
+            a[:n_p, -1] = 1.0
+            a[-1, :n_p] = largeurs
+        b = np.zeros((n_p + n_x, seconds.shape[1]))
+        b[:n_p, :] = seconds
+        q = np.linalg.solve(a, b)[:n_p, :]
+    return q[:, 0] if une_colonne else q
+
+
+# ==========================================================================
 # La matrice des potentiels
 # --------------------------------------------------------------------------
 # A[m,k] est le potentiel au centre du panneau m dû au panneau k portant une
@@ -703,6 +841,8 @@ def _quadrature(distance_plan, echelles, n_quadrature, beta_max):
 def _matrice(centres, largeurs, green, distance_plan, epsilon_moyen,
              n_quadrature=N_QUADRATURE, beta_max=BETA_MAX, echelles=None):
     """La matrice des potentiels, terme extrait + reste spectral."""
+    if _sans_plan(green):
+        return green.matrice(centres, largeurs)
     betas, poids = _quadrature(distance_plan, echelles, n_quadrature, beta_max)
 
     g = green(betas)
@@ -772,6 +912,9 @@ def _panneaux(largeur, n=N_PANNEAUX):
 def capacitance(largeur, green, distance_plan, epsilon_moyen,
                 n=N_PANNEAUX, n_quadrature=N_QUADRATURE, echelles=None):
     """Capacité linéique du ruban, en farads par mètre."""
+    if _sans_plan(green):
+        raise ValueError("sans plan et sans masse coplanaire : aucun"
+                         " conducteur ne porte le retour")
     centres, largeurs = _panneaux(largeur, n)
     a = _matrice(centres, largeurs, green, distance_plan, epsilon_moyen,
                  n_quadrature, echelles=echelles)
@@ -816,6 +959,27 @@ def capacitance(largeur, green, distance_plan, epsilon_moyen,
 # faudrait borner quelque part.
 # ==========================================================================
 
+def _etendue(green, distance_plan, demi_groupe):
+    """Jusqu'ou poser la masse coplanaire, de chaque cote.
+
+    SOUS UN PLAN, sa charge s'eteint en quelques hauteurs de dielectrique.
+    SANS PLAN, rien ne la borne que la masse elle-meme : la densite ne decroit
+    plus qu'en 1/x^2, et c'est la taille du GROUPE qui commande -- pas
+    l'epaisseur du stratifie : sur une plaque epaisse, l'etendre a dix
+    epaisseurs elargissait les premiers panneaux au-dela de l'ecart lui-meme.
+    Quarante fois le demi-groupe tiennent la ligne coplanaire exacte
+    (transformation conforme) a quelques dixiemes de pour cent -- voir le banc.
+    """
+    if _sans_plan(green):
+        return 40.0 * demi_groupe
+    return max(20.0 * distance_plan, 10.0 * demi_groupe)
+
+
+def _n_plan(green, n):
+    """Le nombre de panneaux de chaque bande de masse coplanaire."""
+    return max(120, n) if _sans_plan(green) else max(40, n // 2)
+
+
 def capacitance_coplanaire(largeur, ecart_g, ecart_d, green, distance_plan,
                            epsilon_moyen, n=N_PANNEAUX,
                            n_quadrature=N_QUADRATURE, echelles=None,
@@ -834,10 +998,9 @@ def capacitance_coplanaire(largeur, ecart_g, ecart_d, green, distance_plan,
         return capacitance(largeur, green, distance_plan, epsilon_moyen,
                            n, n_quadrature, echelles)
     if etendue is None:
-        etendue = max(20.0 * distance_plan,
-                      10.0 * (largeur / 2.0 + max(g, d)))
+        etendue = _etendue(green, distance_plan, largeur / 2.0 + max(g, d))
     if n_plan is None:
-        n_plan = max(40, n // 2)
+        n_plan = _n_plan(green, n)
 
     # On empile de gauche à droite : masse de gauche s'il y en a, le ruban, puis
     # masse de droite s'il y en a. `debut` retient où commence le ruban dans la
@@ -867,7 +1030,7 @@ def capacitance_coplanaire(largeur, ecart_g, ecart_d, green, distance_plan,
     ech = tuple(echelles or ()) + tuple(e for e in (g, d) if e > 0)
     mat = _matrice(centres, largeurs, green, distance_plan, epsilon_moyen,
                    n_quadrature, echelles=ech)
-    q = np.linalg.solve(mat, tension)
+    q = _resoudre(mat, tension, largeurs, green)
     # La charge du RUBAN seul : c'est elle que le volt appliqué a fait monter.
     return float(np.sum(q[debut:debut + n] * ws))
 
@@ -910,6 +1073,25 @@ def _milieu(geometry):
             "g_diel": lambda be: green_spectral_strip(be, y0, b, epsilon_r),
             "g_vide": lambda be: green_spectral_strip(be, y0, b, 1.0),
             "echelles": (y0, b - y0),
+            "couvert": False,
+            "masque": None,
+        }
+
+    if kind == "sans_plan":
+        # PAS DE PLAN : le stratifie d'epaisseur h, de l'air dessus et
+        # dessous, et la masse coplanaire pour seul retour. Ni couverture ni
+        # vernis : la Green en images ne connait qu'une plaque.
+        h = float(geometry.get("h", 0.0))
+        if not (h > 0):
+            raise ValueError("sans plan : epaisseur de stratifie nulle")
+        return {
+            "kind": "sans_plan",
+            "distance": h,
+            "eps_moyen": EPSILON_0 * (1.0 + epsilon_r) / 2.0,
+            "eps_vide": EPSILON_0,
+            "g_diel": NoyauSansPlan(h, epsilon_r),
+            "g_vide": NoyauSansPlan(h, 1.0),
+            "echelles": (h,),
             "couvert": False,
             "masque": None,
         }
@@ -1243,10 +1425,10 @@ def capacitance_matrice(conducteurs, ecart_g, ecart_d, green, distance_plan,
     gauche = conducteurs[0]["x"] - conducteurs[0]["w"] / 2.0
     droite = conducteurs[-1]["x"] + conducteurs[-1]["w"] / 2.0
     if etendue is None:
-        etendue = max(20.0 * distance_plan,
-                      10.0 * ((droite - gauche) / 2.0 + max(g, d)))
+        etendue = _etendue(green, distance_plan,
+                           (droite - gauche) / 2.0 + max(g, d))
     if n_plan is None:
-        n_plan = max(40, n // 2)
+        n_plan = _n_plan(green, n)
 
     blocs_c, blocs_w, tranches, flottants = [], [], [], []
     rang = 0
@@ -1295,33 +1477,30 @@ def capacitance_matrice(conducteurs, ecart_g, ecart_d, green, distance_plan,
     if not n_c:
         raise ValueError("tous les conducteurs sont a la masse")
     n_p = centres.size
+    # SANS PLAN, LA MASSE EST CE QUI PORTE LE RETOUR, et il en faut : une
+    # bande coplanaire d'un cote au moins, ou une piste de garde tenue a zero.
+    # Sans elle, la section neutre n'a pas de reference et [C] serait
+    # singuliere -- on le dit plutot que de rendre une matrice sans sens.
+    if _sans_plan(green) and not (g > 0 or d > 0 or any(
+            c.get("masse") for c in conducteurs)):
+        raise ValueError("sans plan et sans masse coplanaire : aucun"
+                         " conducteur ne porte le retour")
 
-    if flottants:
-        # LE SYSTEME AUGMENTE D'UN CONDUCTEUR FLOTTANT, et c'est exact -- pas
-        # une correction. Un cuivre isole n'a ni potentiel impose ni charge
-        # libre : c'est l'INVERSE d'une garde. On ajoute donc une inconnue par
-        # flottant, son potentiel phi, et une equation, sa charge totale nulle :
-        #
-        #     sum_k A[m,k] q_k - phi_f = 0   pour chaque panneau m du flottant
-        #     sum_{k dans f} w_k q_k   = 0   sa charge totale
-        #
-        # Le reste du systeme ne bouge pas. C'est la meme discretisation, la
-        # meme fonction de Green, et le meme cout a un rang pres.
-        n_f = len(flottants)
-        a = np.zeros((n_p + n_f, n_p + n_f))
-        a[:n_p, :n_p] = mat
-        for j, (debut, taille) in enumerate(flottants):
-            a[debut:debut + taille, n_p + j] = -1.0
-            a[n_p + j, debut:debut + taille] = largeurs[debut:debut + taille]
-        tension = np.zeros((n_p + n_f, n_c))
-        for j, (debut, taille) in enumerate(tranches):
-            tension[debut:debut + taille, j] = 1.0
-        charges = np.linalg.solve(a, tension)[:n_p, :]
-    else:
-        tension = np.zeros((n_p, n_c))
-        for j, (debut, taille) in enumerate(tranches):
-            tension[debut:debut + taille, j] = 1.0
-        charges = np.linalg.solve(mat, tension)
+    # LE SYSTEME AUGMENTE D'UN CONDUCTEUR FLOTTANT, et c'est exact -- pas
+    # une correction. Un cuivre isole n'a ni potentiel impose ni charge
+    # libre : c'est l'INVERSE d'une garde. On ajoute donc une inconnue par
+    # flottant, son potentiel phi, et une equation, sa charge totale nulle :
+    #
+    #     sum_k A[m,k] q_k - phi_f = 0   pour chaque panneau m du flottant
+    #     sum_{k dans f} w_k q_k   = 0   sa charge totale
+    #
+    # Le reste du systeme ne bouge pas. C'est la meme discretisation, la
+    # meme fonction de Green, et le meme cout a un rang pres. La section sans
+    # plan s'ajoute de la meme facon -- voir `_resoudre`.
+    tension = np.zeros((n_p, n_c))
+    for j, (debut, taille) in enumerate(tranches):
+        tension[debut:debut + taille, j] = 1.0
+    charges = _resoudre(mat, tension, largeurs, green, flottants)
 
     c = np.empty((n_c, n_c))
     for i, (debut, taille) in enumerate(tranches):

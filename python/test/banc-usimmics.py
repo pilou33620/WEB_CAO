@@ -8,7 +8,8 @@ A QUOI IL SERT. Valider le moteur de crosstalk (python/crosstalk.py, qui
 s'appuie sur python/ligne_mom.py) contre un outil EXTERIEUR, avec trois
 configurations qu'on rencontre sur une carte FR-4 :
 
-  · CAS 1 -- agresseur + victime, AUCUN plan, ni dessous ni sur les cotes ;
+  · CAS 1 -- agresseur + victime, PAS DE PLAN dessous, la masse arrosee sur
+    la meme couche pour seul retour (carte deux couches) ;
   · CAS 2 -- agresseur + victime, plan de masse DESSOUS (microruban couple) ;
   · CAS 3 -- agresseur + victime, plan DESSOUS et masse SUR LES COTES
     (ligne coplanaire couplee avec plan dessous).
@@ -26,11 +27,11 @@ fonction de l'outil (`crosstalk.coefficients_couple`). Seules les ENTREES
 different : un ecart ne peut venir que du calcul de la section, pas de la
 formule de Kb ou de Kf.
 
-LE CAS 1 N'A PAS DE CHIFFRE, ET C'EST CE QU'ON VERIFIE. Sans aucun conducteur
-de reference, il n'y a pas de ligne quasi-TEM a deux conducteurs « agresseur /
-victime » : la tension de la victime n'est definie que par rapport a un
-retour, et c'est ce retour qui fixe le couplage. uSimmics n'a pas de
-structure pour ce cas ; l'outil doit REFUSER en le disant, jamais rendre un
+LE CAS 1 SANS AUCUNE MASSE N'A PAS DE CHIFFRE, ET C'EST CE QU'ON VERIFIE EN
+PLUS. Sans aucun conducteur de reference, il n'y a pas de ligne quasi-TEM
+« agresseur / victime » : la tension de la victime n'est definie que par
+rapport a un retour, et c'est ce retour qui fixe le couplage. uSimmics n'a pas
+de structure pour ce cas ; l'outil doit REFUSER en le disant, jamais rendre un
 couplage nul (un zero qu'on n'a pas mesure ressemble a un zero).
 """
 
@@ -85,19 +86,25 @@ EMPILAGE_PLAN = [
      "epsilon_r": ER, "tan_delta": TAN_D},
     {"type": "copper", "name": "Bottom", "thickness": T, "role": "signal"},
 ]
-# Le cas 1 : la meme carte en 2 couches, sans plan nulle part.
+# Le cas 1 : une carte 2 couches de 1,6 mm, sans plan nulle part.
+H_SANS_PLAN = 1.6   # mm
 EMPILAGE_SANS_PLAN = [
     {"type": "copper", "name": "Top", "thickness": T, "role": "signal"},
-    {"type": "dielectric", "name": "FR-4", "thickness": 1.6,
+    {"type": "dielectric", "name": "FR-4", "thickness": H_SANS_PLAN,
      "epsilon_r": ER, "tan_delta": TAN_D},
     {"type": "copper", "name": "Bottom", "thickness": T, "role": "signal"},
 ]
 
 CAS = {
+    "cas1": {"titre": "PAS de plan dessous, masse sur les cotes (2 couches)",
+             "usimmics": "Coupled Coplanar Waveguide (SANS « Backside »)",
+             "g": G, "empilage": EMPILAGE_SANS_PLAN, "h": H_SANS_PLAN},
     "cas2": {"titre": "plan dessous, pas de masse sur les cotes",
-             "usimmics": "Coupled Microstrip", "g": 0.0},
+             "usimmics": "Coupled Microstrip", "g": 0.0,
+             "empilage": EMPILAGE_PLAN, "h": H},
     "cas3": {"titre": "plan dessous ET masse sur les cotes",
-             "usimmics": "Coupled Coplanar Waveguide with Backside", "g": G},
+             "usimmics": "Coupled Coplanar Waveguide with Backside", "g": G,
+             "empilage": EMPILAGE_PLAN, "h": H},
 }
 
 
@@ -110,7 +117,10 @@ def section(empilage, s, g, vernis=False):
     section_de_couche (empilage -> geometrie), puis solve_multiline."""
     couches = list(empilage) if vernis else [SANS_VERNIS] + list(empilage)
     haut = 0 if vernis else 1
-    geo, raison = se.section_de_couche(couches, haut, W, T, g, g)
+    # `sans_plan` : le meme drapeau que crosstalk.py. Sous un plan il ne
+    # change rien ; sans plan, il ouvre la coplanaire sans plan dessous.
+    geo, raison = se.section_de_couche(couches, haut, W, T, g, g,
+                                       sans_plan=True)
     if geo is None:
         return None, raison
     geo = dict(geo)
@@ -211,39 +221,45 @@ print("""
 REGLAGES COMMUNS DANS uSimmics (Transmission Line Calculator)
   Frequency  : 10 MHz   (l'outil est quasi statique : pas de dispersion)
   er = %.1f   tan d = %.2f   Resistivity = 1.72e-8   mu_r = 1
-  Roughness = 0 um   T = %.0f um   H = %.2f mm
+  Roughness = 0 um   T = %.0f um
+  H = %.2f mm (cas 1 : %.2f mm, toute la carte 2 couches)
   W = %.2f mm   L = %.0f mm (sans effet sur Z et eps_eff)"""
-      % (ER, TAN_D, T * 1000, H, W, LONGUEUR))
+      % (ER, TAN_D, T * 1000, H, H_SANS_PLAN, W, LONGUEUR))
 
 releves = lire_releves()
 ok = ko = manquants = 0
 
-# -- CAS 1 -----------------------------------------------------------------
+# -- GARDE-FOU : ni plan, ni masse ----------------------------------------
 print("\n" + "-" * 72)
-print("CAS 1 -- aucun plan, ni dessous ni sur les cotes (carte 2 couches)")
+print("GARDE-FOU -- ni plan, ni masse sur les cotes : rien ne porte le retour")
 print("-" * 72)
-mats, raison = section(EMPILAGE_SANS_PLAN, ECARTS[0], 0.0, vernis=True)
+try:
+    mats, raison = section(EMPILAGE_SANS_PLAN, ECARTS[0], 0.0)
+    if mats is not None:
+        grandeurs_outil(mats)
+except ValueError as exc:
+    mats, raison = None, str(exc)
 if mats is None and raison:
     ok += 1
     print("  ok  l'outil REFUSE de calculer, et dit pourquoi :")
     print("      « %s »" % raison)
 else:
     ko += 1
-    print("  KO  l'outil a rendu une section sans plan de reference")
-print("  uSimmics : pas de structure a saisir (pas de reference = pas de"
+    print("  KO  l'outil a rendu une section sans aucune reference")
+print("  uSimmics : pas de structure a saisir (pas de retour = pas de"
       " couplage defini).")
 
-# -- CAS 2 et 3 ------------------------------------------------------------
+# -- LES TROIS CAS ---------------------------------------------------------
 for nom, cas in CAS.items():
     print("\n" + "-" * 72)
     print("%s -- %s" % (nom.upper().replace("CAS", "CAS "), cas["titre"]))
     print("  uSimmics : « %s »" % cas["usimmics"])
-    if cas["g"]:
-        print("             G = %.2f mm (piste -> masse laterale, des deux"
-              " cotes)" % cas["g"])
+    print("             H = %.2f mm" % cas["h"]
+          + ("   G = %.2f mm (piste -> masse laterale, des deux cotes)"
+             % cas["g"] if cas["g"] else ""))
     print("-" * 72)
     for s in ECARTS:
-        mats, raison = section(EMPILAGE_PLAN, s, cas["g"])
+        mats, raison = section(cas["empilage"], s, cas["g"])
         if mats is None:
             ko += 1
             print("  KO  S = %.2f mm : section non calculable (%s)"
@@ -259,7 +275,9 @@ for nom, cas in CAS.items():
         print("               -> sur %.0f mm, front %.1f ns : NEXT %.2f %%,"
               " FEXT %.2f %%" % (LONGUEUR, T_MONTEE * 1e9, 100 * n_out,
                                  100 * f_out))
-        mv, _ = section(EMPILAGE_PLAN, s, cas["g"], vernis=True)
+        # Sans plan, le vernis n'est pas modelise : rien a montrer.
+        mv = (section(cas["empilage"], s, cas["g"], vernis=True)[0]
+              if nom != "cas1" else None)
         if mv is not None:
             v = grandeurs_outil(mv)
             print("               (avec vernis 25 um : Kb %.3f %%, Kf %+.4f"
