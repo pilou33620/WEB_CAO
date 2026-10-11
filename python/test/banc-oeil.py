@@ -401,8 +401,10 @@ def les_refus():
 
 def les_gabarits_verifies_disent_leur_source():
     """SATA : la largeur est 1 - TJ de la tolerance du recepteur, en
-    losange ; PCIe 2 et 3 sont recoupes et se jugent a 10^-12 ; ce qui n'a
-    pas pu l'etre (USB 2.0 extremite, HDMI 1.4) le reste, et le DIT."""
+    losange ; PCIe 2 et 3 sont recoupes et se jugent a 10^-12 ; USB 2.0
+    extremite (Template 2) est recoupe sur la specification publique
+    (2.3.0) ; HDMI 1.4, dont la norme n'est diffusee que sous accord, est
+    DERIVE et le dit. Plus aucun gabarit n'est « a verifier »."""
     for gid, larg, h in (("sata-gen1", 0.49, 0.325), ("sata-gen2", 0.43, 0.275),
                          ("sata-gen3", 0.43, 0.240)):
         g = oeil.gabarit(gid)
@@ -418,10 +420,14 @@ def les_gabarits_verifies_disent_leur_source():
     proche(oeil.gabarit("pcie-gen3")["masque"]["hauteur_v"], 0.025, 1e-12,
            "PCIe 3 : 25 mV")
     assert oeil.gabarit("pcie-gen3")["egaliseur"]["dfe"]["max_v"] == 0.030
-    for gid in ("usb2-hs-recepteur", "hdmi14-tmds"):
-        g = oeil.gabarit(gid)
-        assert g["fiabilite"] == "a_verifier", gid
-        assert "NON recoup" in g["source"] + g["note"], gid
+    g = oeil.gabarit("usb2-hs-recepteur")
+    assert g["fiabilite"] == "corrobore" and "figure 7-15" in g["source"]
+    assert g["masque"]["points"] == [[-0.375, 0.0], [-0.15, 0.175],
+                                     [0.15, 0.175], [0.375, 0.0],
+                                     [0.15, -0.175], [-0.15, -0.175]]
+    g = oeil.gabarit("hdmi14-tmds")
+    assert g["fiabilite"] == "derive" and "DÉRIVÉ" in g["source"], g["source"]
+    assert not [x["id"] for x in oeil.GABARITS if x["fiabilite"] == "a_verifier"]
 
 
 # =============================================================================
@@ -1721,6 +1727,366 @@ def un_boitier_par_sections_est_une_ligne():
     loc = adaptee.replace("Len = 10 L=0.25n C=0.1p", "Len = 0 L=2.5n C=1p")
     _, r2, _ = front(_ibis_boitier(entete, sigma=10e-12, suite=loc))
     assert r2 > 1.3 * r1, (r2, r1)
+
+
+# =============================================================================
+# 2.3.0 -- la rugosite du plan dans la paire, le couplage AC, l'execution AMI
+# =============================================================================
+
+def _pile_rugueuse(piste_um, plan_um=None):
+    """L'empilage a quatre couches, la piste du dessus rugueuse (Rq en um),
+    et le plan GND qui declare -- ou non -- la sienne (0 : lisse)."""
+    p = [dict(c) for c in QUATRE]
+    p[0]["rugosite_rms_um"] = piste_um
+    if plan_um is not None:
+        p[2]["rugosite_rms_um"] = plan_um
+    return p
+
+
+def la_rugosite_du_plan_entre_dans_la_cascade_de_la_paire():
+    """`simulation_em` 5.4.0 : la cascade differentielle lit la rugosite du
+    plan de reference comme la cascade simple. Un plan qui ne declare rien
+    prend celle de la piste -- Sdd, Scc (et Scd a quatre acces) sont ceux
+    d'avant AU BIT PRES, c'est le cas de non-regression ; un plan lisse
+    declare sous une piste a Rq 1 um perd moins, pour la paire symetrique
+    (deux modes) comme pour la paire dissymetrique (quatre acces), et l'oeil
+    s'ouvre d'autant."""
+    f = np.linspace(1e9, 20e9, 8)
+
+    def sdd(pile, n_long=20.0):
+        d = _doc([_brin(0, 20, 0, "P")], {}, [_brin(0, n_long, 0.35, "N")],
+                 [("P", "N")])
+        d.pop("oeil")
+        d["stackup"]["layers"] = pile
+        return se.simuler(d, garder_abcd=True, freqs_imposees=f)["s_diff"]
+    for n_long in (20.0, 24.0):
+        muet = sdd(_pile_rugueuse(1.0), n_long)
+        egal = sdd(_pile_rugueuse(1.0, 1.0), n_long)
+        lisse = sdd(_pile_rugueuse(1.0, 0.0), n_long)
+        assert muet["quatre_acces"] == (n_long > 20.0)
+        for cle in ("s_dd", "s_cc", "s_cd"):
+            assert muet[cle] == egal[cle], \
+                "%s : un plan qui declare la rugosite de la piste change la " \
+                "paire (%s)" % (cle, "quatre acces" if n_long > 20 else
+                                "deux modes")
+        s_r = np.abs(_plats(muet["s_dd"])[:, 2])
+        s_l = np.abs(_plats(lisse["s_dd"])[:, 2])
+        assert np.all(s_l > s_r), (s_l, s_r)
+        assert 20 * math.log10(s_l[-1] / s_r[-1]) > 0.03
+    o = {"debit": 10e9, "tr": 20e-12, "v_haut": 1.0, "v_bas": -1.0,
+         "r_source": 100.0, "r_charge": 100.0, "c_charge": 0.0,
+         "mode": "diff"}
+
+    def oeil_de(pile):
+        d = _doc([_brin(0, 20, 0, "P")], dict(o), [_brin(0, 20, 0.35, "N")],
+                 [("P", "N")])
+        d["stackup"]["layers"] = pile
+        return oeil.analyser(d)["mesures"]["hauteur_pire"]
+    assert oeil_de(_pile_rugueuse(1.0, 0.0)) > oeil_de(_pile_rugueuse(1.0))
+
+
+def les_condensateurs_de_liaison_coupent_le_continu():
+    """Le couplage AC (2.3.0). Sur une ligne ideale adaptee, |H| avec les
+    condensateurs rapporte a |H| sans eux passe a -3 dB a
+    f_c = 1 / (2 pi C (Z_tx + Z_rx)) ; en differentiel la boucle voit C/2.
+    Sans condensateur declare (ou C = 0), l'oeil est celui d'avant au bit
+    pres et le resultat n'en parle pas. Le continu de l'IFFT est
+    `resistance_continu_ac` : R_tot (exp(T_w / tau) - 1), T_w / C quand
+    tau >> T_w, infini quand la fenetre couvre la decharge."""
+    o = {"debit": 1e9, "tr": 50e-12, "v_haut": 1.0, "v_bas": 0.0,
+         "r_source": 50.0, "r_charge": 50.0, "c_charge": 0.0,
+         "couplage_ac": {"c": 1e-9}}
+    p = oeil._params(o, None)
+    ca = p["couplage_ac"]
+    proche(ca["f_c"], 1.0 / (2 * math.pi * 1e-9 * 100.0), 1e-12, "f_c")
+    proche(ca["tau"], 1e-9 * 100.0, 1e-12, "tau")
+    assert ca["esl"] == 0.0 and ca["position"] == "emetteur"
+    f = np.logspace(5, 9, 400)
+    m = oeil.ligne_ideale(f, 50.0, 1e-9)
+    m2, _, _ = oeil.poser_couplage_ac(ca, f, m, None, None, "simple")
+    h, _ = oeil.transfert(m2, f, 50.0, 50.0, 0.0)
+    hb, _ = oeil.transfert(m, f, 50.0, 50.0, 0.0)
+    rap = np.abs(h) / np.abs(hb)
+    i = int(np.argmin(np.abs(rap - 1.0 / math.sqrt(2.0))))
+    proche(f[i], ca["f_c"], 0.01, "coupure a -3 dB")
+    assert rap[-1] > 0.999 and rap[0] < 0.1
+    # en differentiel : C/2 dans la boucle, et l'ESL du boitier
+    pd_ = oeil._params(dict(o, mode="diff", v_bas=-1.0, r_source=100.0,
+                            r_charge=100.0,
+                            couplage_ac={"c": 1e-9, "boitier": "0402"}), None)
+    proche(pd_["couplage_ac"]["f_c"], 1.0 / (2 * math.pi * 0.5e-9 * 200.0),
+           1e-12, "f_c differentiel")
+    assert pd_["couplage_ac"]["esl"] == oeil.ESL_BOITIERS["0402"]
+    # la resistance du continu
+    proche(oeil.resistance_continu_ac(1e-9, 100.0, 1e-9), 1e-9 / 1e-9, 0.01,
+           "R_x = T_w / C quand tau >> T_w")
+    assert oeil.resistance_continu_ac(1e-9, 100.0, 100e-6) >= 1e12
+    # sans condensateur : rien ne change, rien de plus
+    base = {"debit": 1e9, "tr": 50e-12, "v_haut": 1.0, "v_bas": 0.0,
+            "r_source": 50.0, "r_charge": 50.0, "c_charge": 0.0}
+    d = _doc([_piste(0, 0, 20, 0, "SIG", 0.35)], dict(base))
+    r0 = oeil.analyser(d)
+    r00 = oeil.analyser(_doc([_piste(0, 0, 20, 0, "SIG", 0.35)],
+                             dict(base, couplage_ac={"c": 0})))
+    for cle in ("mesures", "pire_cas", "densite", "reponse_bit", "seuil"):
+        assert r0[cle] == r00[cle], cle
+    assert "couplage_ac" not in r0 and "couplage_ac" not in r0["parametres"]
+    assert any("sans condensateurs de liaison" in a
+               for a in r0["avertissements"])
+    for mauvais in ({"c": 2.0}, {"c": 1e-9, "position": "milieu"}):
+        try:
+            oeil._params(dict(base, couplage_ac=mauvais), None)
+        except oeil.ErreurOeil:
+            pass
+        else:
+            raise AssertionError("couplage accepte : %r" % mauvais)
+
+
+def le_couplage_ac_fait_deriver_les_longues_suites():
+    """Le droop. A 100 Mb/s, 1 nF dans 100 ohms : tau = 100 ns, 10 % par
+    bit. La fenetre couvre six tau, le continu de l'IFFT est exact : la
+    reponse a un echelon -- le motif 1111... -- derive en exp(-t / tau) a
+    1 % pres sur 32 bits, et le bit qui suit une longue suite de zeros
+    (0000...1) part du niveau fausse. L'oeil PRBS15 (suites de 15) se ferme
+    devant celui d'avant, le pire cas (toute la memoire) plus encore, et le
+    resultat le dit. Fenetre plus courte que tau (10 Gb/s, 100 nF) : le
+    continu corrige rend la derive de la fenetre a 2 % pres, et le
+    resultat dit que la fenetre ne couvre pas la decharge."""
+    b2 = {"debit": 100e6, "tr": 1e-9, "v_haut": 1.0, "v_bas": 0.0,
+          "r_source": 50.0, "r_charge": 50.0, "c_charge": 0.0,
+          "motif": "prbs15"}
+    piste = [_piste(0, 0, 20, 0, "SIG", 0.35)]
+    r0 = oeil.analyser(_doc(piste, dict(b2)))
+    r1 = oeil.analyser(_doc(piste, dict(b2, couplage_ac={
+        "c": 1e-9, "position": "recepteur"})))
+    ca = r1["couplage_ac"]
+    assert ca["fenetre_couvre"] is True and ca["position"] == "recepteur"
+    proche(ca["droop_par_ui"], 1.0 - math.exp(-10e-9 / 100e-9), 1e-9,
+           "droop par bit")
+    assert r1["mesures"]["hauteur_prbs"] < 0.5 * r0["mesures"]["hauteur_prbs"]
+    assert r1["mesures"]["hauteur_pire"] < r1["mesures"]["hauteur_prbs"]
+    # l'oeil reste centre sur le niveau SANS derive (la grille, plus longue
+    # de trois tau, deplace le continu extrapole de la ligne d'un rien)
+    proche(r1["seuil"], r0["seuil"], 1e-3, "seuil de l'oeil couple")
+    assert any("droop" in a and "1 nF" in a for a in r1["avertissements"])
+    # le motif 1111...0000 : la reponse a un echelon, sur la grille de l'oeil
+    p = oeil._params(dict(b2, couplage_ac={"c": 1e-9}), None)
+    tau = p["couplage_ac"]["tau"]
+    df, n, fen, pleine = oeil.grille(100e6, 1e-9, 0.1e-9, 3 * tau)
+    assert pleine and fen >= 6 * tau
+    f = df * np.arange(1, n + 1)
+    m, _, _ = oeil.poser_couplage_ac(p["couplage_ac"], f,
+                                     oeil.ligne_ideale(f, 50.0, 0.1e-9),
+                                     None, None, "simple")
+    h, h0 = oeil.transfert(m, f, 50.0, 50.0, 0.0)
+    h0b = oeil.continu_couplage_ac(p["couplage_ac"], m, f, 50.0, 50.0, 0.0)
+    assert h0b < 0.01 * h0, (h0, h0b)
+    dt, s = oeil.reponse_indicielle(f, h, h0b, 1e-9, 4096)
+    ui = 10e-9
+    t0 = 0.1e-9 + 2 * ui
+
+    def a(t):
+        return float(s[int(round(t / dt))])
+    for k in (8, 16, 32):
+        # l'ecart se juge a l'amplitude : le niveau derive devient petit
+        ecart = abs(a(t0 + k * ui) / a(t0) - math.exp(-k * ui / tau))
+        assert ecart < 0.005, ("droop du motif 1111 apres %d bits : %.4f "
+                               "contre %.4f" % (k, a(t0 + k * ui) / a(t0),
+                                                math.exp(-k * ui / tau)))
+    # 1111...0000 : apres 32 bits a 1, la suite de 0 part de a(t0 + 32 UI)
+    # et redescend SOUS le niveau bas de a(t0 + 32 UI) - a(t0) (la reponse
+    # est lineaire : la descente est l'echelon renverse, derive compris)
+    assert a(t0 + 32 * ui) - a(t0) < -0.2 * a(t0)
+    # fenetre plus courte que tau : le continu corrige
+    df, n, fen, pleine = oeil.grille(10e9, 20e-12, 1e-9, 3 * 10e-6)
+    assert not pleine
+    f = df * np.arange(1, n + 1)
+    ca2 = oeil.couplage_ac({"c": 100e-9}, {"mode": "simple", "r_charge": 50.0,
+                                           "r_source": 50.0})
+    m, _, _ = oeil.poser_couplage_ac(ca2, f, oeil.ligne_ideale(f, 50.0, 1e-9),
+                                     None, None, "simple")
+    h, h0 = oeil.transfert(m, f, 50.0, 50.0, 0.0)
+    h0b = oeil.continu_couplage_ac(ca2, m, f, 50.0, 50.0, 0.0)
+    proche(h0b, h0 * math.exp(-fen / ca2["tau"]), 1e-6, "continu de la fenetre")
+    dt, s = oeil.reponse_indicielle(f, h, h0b, 20e-12, 4096)
+    th = fen / 2.0
+    proche(s[int(th / dt) - 1] / s[int(3e-9 / dt)],
+           math.exp(-(th - 3e-9) / ca2["tau"]), 0.02, "derive dans la fenetre")
+    r2 = oeil.analyser(_doc(piste, {"debit": 10e9, "tr": 20e-12, "v_haut": 1.0,
+                                    "v_bas": 0.0, "r_source": 50.0,
+                                    "r_charge": 50.0, "c_charge": 0.0,
+                                    "couplage_ac": {"c": 100e-9}}))
+    assert r2["couplage_ac"]["fenetre_couvre"] is False
+    assert any("ne couvre pas" in a for a in r2["avertissements"])
+
+
+def _modele_ami_compile():
+    """La bibliotheque AMI d'essai (python/test/ami_test/ami_ffe.c), compilee
+    a la volee dans un dossier temporaire : (dossier, texte du .ami), ou
+    None sans compilateur."""
+    import shutil
+    import subprocess
+    import tempfile
+    cc = shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+    if not cc:
+        return None
+    src = os.path.join(RACINE, "python", "test", "ami_test")
+    d = tempfile.mkdtemp(prefix="ami_essai_")
+    try:
+        subprocess.check_call([cc, "-shared", "-fPIC", "-O1", "-o",
+                               os.path.join(d, "ami_ffe.so"),
+                               os.path.join(src, "ami_ffe.c")],
+                              stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    with open(os.path.join(src, "ami_ffe.ami"), encoding="utf-8") as fh:
+        return d, fh.read()
+
+
+def la_chaine_de_parametres_ami_s_ecrit_et_se_relit():
+    """`parametres_ami_in` : les parametres In et InOut, valeur par defaut,
+    sans les branches Reserved_Parameters / Model_Specific, surcharges par
+    le nom de la feuille ou le chemin, les inconnues dites ; les Out et Info
+    n'y vont pas. `lire_parametres_ami` relit ce qu'un modele rend, chaines
+    comprises. `reserve_ami` lit les booleens de la norme."""
+    with open(os.path.join(RACINE, "python", "test", "ami_test",
+                           "ami_ffe.ami"), encoding="utf-8") as fh:
+        a = ibis.lire_ami(fh.read(), "ami_ffe.ami")
+    txt, appl, ign = ibis.parametres_ami_in(a)
+    assert txt == "(ffe_test (c0 0.7) (c1 -0.3) (echec 0))", txt
+    txt, appl, ign = ibis.parametres_ami_in(a, {"c1": -0.2, "zz": 1,
+                                                "Model_Specific/echec": 1})
+    assert txt == "(ffe_test (c0 0.7) (c1 -0.2) (echec 1))", txt
+    assert appl == ["c1", "echec"] and ign == ["zz"], (appl, ign)
+    lu = ibis.lire_parametres_ami(
+        '(ffe_test (c0 0.7) (c1 -0.3) (taps 2) (B (x "a b") (y True)))')
+    assert lu == {"c0": 0.7, "c1": -0.3, "taps": 2.0, "B/x": "a b",
+                  "B/y": "True"}, lu
+    assert ibis.lire_parametres_ami("") == {} and \
+        ibis.lire_parametres_ami("(a (b") == {}
+    assert ibis.reserve_ami(a, "Init_Returns_Impulse") is True
+    assert ibis.reserve_ami(a, "GetWave_Exists") is True
+    assert ibis.reserve_ami(a, "Ignore_Bits") == 4
+    assert ibis.reserve_ami(a, "Absent", "d") == "d"
+    # un arbre a branches : le chemin est garde, les mots de groupe non
+    tx = ibis.lire_ami("""(tx (Reserved_Parameters
+        (AMI_Version (Usage Info) (Type String) (Value "7.0"))
+        (Tx_Rj (Usage Info) (Type Float) (Value 1e-12)))
+      (Model_Specific (TX_FFE (Tap (-1 (Usage In) (Type Float) (Range -0.1 -0.3 0))
+                                    (0 (Usage InOut) (Type Float) (Range 0.7 0.5 1))))
+                      (Swing (Usage In) (Type String) (List "0.8V" "1V"))))""")
+    txt, _, _ = ibis.parametres_ami_in(tx, {"TX_FFE/Tap/-1": -0.2})
+    assert txt == '(tx (TX_FFE (Tap (-1 -0.2) (0 0.7))) (Swing "0.8V"))', txt
+    # la bibliotheque : seulement sous une racine, seulement un .so/.dll
+    for brut, rac in (("x.so", []), ("http://a/b.so", ["/tmp"]),
+                      ("fichier.txt", ["/tmp"]), ("", ["/tmp"]),
+                      ("/etc/hostname", ["/etc"])):
+        try:
+            ibis.chemin_bibliotheque_ami(brut, rac)
+        except ibis.ErreurIbis:
+            pass
+        else:
+            raise AssertionError("bibliotheque acceptee : %r" % brut)
+
+
+def le_modele_ami_execute_concorde_avec_la_ffe_interne():
+    """L'execution AMI (oeil 2.3.0, ibis 1.3.0) sur le modele d'essai
+    compile a la volee -- une FFE a deux coefficients. Identite (c0 = 1,
+    c1 = 0) au recepteur, par AMI_Init puis AMI_GetWave : l'oeil d'avant a
+    1e-6 pres. FFE 0,7 / -0,3 a l'emetteur par AMI_Init : l'oeil de la FFE
+    interne de reference a 1e-4 pres, les parametres Out relus, la FFE de
+    reference effacee ; une surcharge (c1 = -0,2) passe dans la chaine et
+    change l'oeil comme la FFE interne ; la meme FFE au recepteur par
+    GetWave (par blocs, avec Ignore_Bits) rend le meme oeil. Les replis :
+    fichier absent, URL, aucune racine, AMI_Init qui rend 0 -- un
+    avertissement, l'oeil d'avant, jamais une exception. Saute proprement
+    sans compilateur C."""
+    compile_ = _modele_ami_compile()
+    if compile_ is None:
+        print("        (pas de compilateur C : execution AMI non essayee)")
+        return
+    d, ami_txt = compile_
+    base = {"debit": 2e9, "tr": 50e-12, "v_haut": 1.0, "v_bas": -1.0,
+            "r_source": 100.0, "r_charge": 100.0, "c_charge": 0.0,
+            "mode": "diff"}
+
+    def doc(oe):
+        return _doc([_brin(0, 60, 0, "P")], oe, [_brin(0, 60, 0.35, "N")],
+                    [("P", "N")])
+
+    def ami(lib, **par):
+        a = {"texte": ami_txt, "fichier": "ami_ffe.ami", "bibliotheque": lib}
+        if par:
+            a["parametres"] = par
+        return {"ami": a}
+    r0 = oeil.analyser(doc(dict(base)))
+    rf = oeil.analyser(doc(dict(base, ffe=[0.7, -0.3], ffe_principal=0)))
+    rf2 = oeil.analyser(doc(dict(base, ffe=[0.7, -0.2], ffe_principal=0)))
+    m0, mf, mf2 = r0["mesures"], rf["mesures"], rf2["mesures"]
+    assert mf["hauteur_prbs"] < 0.5 * m0["hauteur_prbs"]
+    # l'identite, par Init et GetWave
+    rid = oeil.analyser(doc(dict(base, ibis_recepteur=ami(
+        "ami_ffe.so", c0=1, c1=0))), racines_ami=[d])
+    ex = rid["ami"]["execution"]["recepteur"]
+    assert ex["chargee"] and ex["init"] and ex["getwave"], ex
+    assert ex["parametres_out"] == {"c0": 1.0, "c1": 0.0, "taps": 2.0}, ex
+    assert ex["parametres_in"] == "(ffe_test (c0 1) (c1 0) (echec 0))", ex
+    assert "64 ech./bit" in ex["message"]
+    for cle in ("hauteur_prbs", "hauteur_pire", "retard"):
+        proche(rid["mesures"][cle], m0[cle], 1e-6, "identite : " + cle)
+    assert rid["mesures"]["largeur_prbs_ui"] == m0["largeur_prbs_ui"]
+    assert any("exécuté(s) : récepteur" in a for a in rid["avertissements"])
+    assert rid["ami"]["execution_ok"] == ["recepteur"]
+    # la FFE a l'emetteur, par AMI_Init
+    rtx = oeil.analyser(doc(dict(base, ibis_emetteur=ami("ami_ffe.so"))),
+                        racines_ami=[d])
+    proche(rtx["mesures"]["hauteur_prbs"], mf["hauteur_prbs"], 1e-4,
+           "FFE AMI emetteur : hauteur PRBS")
+    proche(rtx["mesures"]["hauteur_pire"], mf["hauteur_pire"], 1e-4,
+           "FFE AMI emetteur : pire cas")
+    assert rtx["egalisation"]["ffe"] == [1.0]
+    assert rtx["ami"]["execution"]["emetteur"]["parametres_out"]["taps"] == 2.0
+    # une surcharge passe dans la chaine
+    rtx2 = oeil.analyser(doc(dict(base, ibis_emetteur=ami("ami_ffe.so",
+                                                            c1=-0.2))),
+                         racines_ami=[d])
+    assert "(c1 -0.2)" in rtx2["ami"]["execution"]["emetteur"]["parametres_in"]
+    proche(rtx2["mesures"]["hauteur_prbs"], mf2["hauteur_prbs"], 1e-4,
+           "surcharge c1")
+    # la meme FFE au recepteur, par GetWave : lineaire, meme oeil
+    rrx = oeil.analyser(doc(dict(base, ibis_recepteur=ami("ami_ffe.so"))),
+                        racines_ami=[d])
+    proche(rrx["mesures"]["hauteur_prbs"], mf["hauteur_prbs"], 1e-4,
+           "FFE AMI recepteur (GetWave) : hauteur PRBS")
+    proche(rrx["mesures"]["hauteur_pire"], mf["hauteur_pire"], 1e-4,
+           "FFE AMI recepteur (Init) : pire cas")
+    assert rrx["ami"]["horloges"]["n"] == 0
+    assert any("GetWave" in a for a in rrx["avertissements"])
+    # les replis
+    for lib, rac, par, attendu in (
+            ("absent.so", [d], {}, "introuvable"),
+            ("http://exemple/x.so", [d], {}, "invalide"),
+            ("ami_ffe.so", None, {}, "Aucun dossier"),
+            ("ami_ffe.so", [d], {"echec": 1}, "a échoué")):
+        r = oeil.analyser(doc(dict(base, ibis_recepteur=ami(lib, **par))),
+                          racines_ami=rac)
+        ex = r["ami"]["execution"]["recepteur"]
+        assert not ex["init"], (lib, ex)
+        assert r["mesures"]["hauteur_prbs"] == m0["hauteur_prbs"], lib
+        assert any(attendu in a and "repli" in a
+                   for a in r["avertissements"]), (lib, r["avertissements"])
+        assert not r["ami"].get("execution_ok"), lib
+    # une bibliotheque sans AMI_Init n'est pas un modele
+    import ctypes.util
+    libm = ctypes.util.find_library("m")
+    if libm and os.path.isabs(libm) and libm.endswith(".so"):
+        try:
+            ibis.ModeleAmi(libm)
+        except ibis.ErreurIbis as exc:
+            assert "AMI_Init" in exc.message
+        else:
+            raise AssertionError("libm prise pour un modele AMI")
 
 
 for nom, fn in list(globals().items()):

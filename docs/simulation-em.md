@@ -501,11 +501,20 @@ avant (même feuillard dans la plupart des empilages) ; déclarée — zéro
 compris, `"rugosite_rms_um": 0` dit un plan lisse —, c'est la sienne. Égale à
 celle de la piste ou absente : rien de plus ne part, et le calcul est celui
 d'avant au bit près. Branché dans la cascade simple (donc la RF qui passe par
-`simuler`), `rf_reseau` 1.7.0 et `crosstalk` 4.3.0 ; **pas dans la cascade
-différentielle** (l'œil), qui garde la rugosité de la piste pour ses deux
-modes. L'éditeur n'a rien à saisir de plus : la rugosité de chaque cuivre
-(`stack.cu[i].rug`) part déjà, celle du plan comprise ; un plan « lisse » n'y
-envoie rien, et prend donc celle de la piste. Mesuré (microruban 0,58 mm sur
+`simuler`), `rf_reseau` 1.7.0 et `crosstalk` 4.3.0 et, depuis
+`simulation_em` **5.4.0**, dans la **cascade différentielle** (l'œil) : chaque
+tronçon de la paire lit la rugosité de son plan pour le mode impair, le mode
+commun et la section dissymétrique brin par brin, la partenaire restée sur
+sa couche et la surlongueur aussi (`_abcd_ligne_seule`) ; les vias et les
+coudes n'ont pas de résistance de surface à corriger. Une paire dont le plan
+ne déclare rien est celle d'avant au bit près (cas du banc de l'œil) ; un
+plan lisse déclaré sous une piste à Rq 1 µm perd moins, et l'œil s'ouvre
+d'autant. L'éditeur envoie la rugosité de chaque cuivre (`stack.cu[i].rug`),
+celle du plan comprise ; un plan qui n'écrit rien prend celle de la piste.
+Pour déclarer un **plan lisse sous une piste rugueuse**, le panneau
+*Empilage physique* a le réglage « Lisse déclaré » (`{m:"hammerstad", rms:0,
+decl:true}` dans le document, `rugosite_rms_um: 0` envoyé) ; « Lisse » tout
+seul reste muet, comme avant. Mesuré (microruban 0,58 mm sur
 0,3 mm de FR-4, 100 mm, 10 GHz ; le plan porte 25 % de R) : piste HVLP
 (Rq 0,3 µm) sur plan ED standard (Rq 2 µm), α_c 4,83 → 5,61 dB/m et perte
 totale 3,496 → 3,574 dB, là où l'ancien calcul comptait le plan en HVLP.
@@ -746,19 +755,31 @@ affichée à côté du verdict, parce que les normes sont payantes :
 
 | Fiabilité | Sens | Gabarits |
 | :--- | :--- | :--- |
-| recoupé | valeurs retrouvées dans une source publique (fiche de fabricant, note d'application, procédure de test), pas dans la norme elle-même | USB 2.0 HS Template 1, USB 3.x Gen 1 (après CTLE), PCIe Gen 1, Gen 2 et Gen 3 (après CTLE et DFE de référence), SATA Gen 1 à 3, SGMII |
-| à vérifier | valeurs de la norme non recoupées : aucune source publique ne les reproduit | USB 2.0 HS extrémité (Template 2), HDMI 1.4 (TP2) |
-| dérivé | pas de gabarit officiel : seuils VIL/VIH du récepteur et sa fenêtre setup/hold | LVDS, MIPI D-PHY HS, SPI 3,3 V et 1,8 V, QSPI, SD High Speed, eMMC HS |
+| recoupé | valeurs retrouvées dans une source publique (fiche de fabricant, note d'application, procédure de test, ou la spécification elle-même quand elle est publique) | USB 2.0 HS Template 1 et Template 2 (extrémité), USB 3.x Gen 1 (après CTLE), PCIe Gen 1, Gen 2 et Gen 3 (après CTLE et DFE de référence), SATA Gen 1 à 3, SGMII |
+| à vérifier | valeurs de la norme non recoupées : aucune source publique ne les reproduit | — (plus aucun depuis `oeil` 2.3.0) |
+| dérivé | gabarit non officiel : seuils du récepteur (VIL/VIH, sensibilité) et sa fenêtre setup/hold, ou — norme diffusée sous accord — la forme usuelle de son masque | LVDS, MIPI D-PHY HS, SPI 3,3 V et 1,8 V, QSPI, SD High Speed, eMMC HS, HDMI 1.4 (TP2) |
 
 **La vérification d'octobre 2026.** PCIe Gen 2 (120 mV, 0,60 UI à 10⁻¹²)
 et Gen 3 (25 mV, 0,3 UI derrière le CTLE à pôles 2 et 8 GHz, gain continu
 −6 à −12 dB, et le DFE à une prise bornée à ±30 mV) sont recoupés ; leurs
 valeurs n'ont pas bougé. SATA garde ses hauteurs (325, 275, 240 mVppd) et sa
 largeur passe de 0,4 UI à 1 − TJ de la tolérance à la gigue du récepteur :
-0,49 UI en Gen 1, 0,43 UI en Gen 2 et 3, en losange. USB 2.0 extrémité et
-HDMI 1.4 restent « à vérifier » : les seules valeurs publiques trouvées pour
-HDMI sont celles de la source HDMI 2.0 au bout du câble de référence, une
-autre exigence, qu'on ne recopie pas. Les gabarits PCIe et SATA portent aussi
+0,49 UI en Gen 1, 0,43 UI en Gen 2 et 3, en losange. **USB 2.0 extrémité
+(Template 2)** passe « recoupé » en `oeil` 2.3.0 : la spécification USB 2.0
+est publique (usb.org), et ses six points (figure 7-15 : 0 mV à 12,5 et
+87,5 % UI, ±175 mV de 35 à 65 % UI, limites ±525 / ±475 mV) sont ceux du
+code — concordance établie de mémoire et avec les gabarits « far end » des
+logiciels de conformité, le document n'ayant pas été relu ici ; la fiche le
+dit. Le Template 1 n'a pas été retouché (ses points 2 et 3 sont à 37,5 et
+62,5 % UI dans le code ; une lecture de la figure 7-14 pourrait les placer à
+32,5 et 67,5 %, à vérifier dans le document). **HDMI 1.4** passe « dérivé » :
+sa spécification et sa procédure de conformité ne sont diffusées qu'aux
+adoptants, les points de TP2 ne seront dans aucune source publique ; le
+gabarit garde la forme usuelle d'un masque de puits TMDS (0,6 UI, plateau
+0,2 UI) et la sensibilité minimale d'un récepteur TMDS (150 mV), et ne vaut
+pas un verdict de conformité. Les seules valeurs publiques (source HDMI 2.0
+au bout du câble de référence) sont une autre exigence, qu'on ne recopie pas.
+Les gabarits PCIe et SATA portent aussi
 leur taux d'erreur (10⁻¹²) : c'est sur ce contour de l'œil statistique qu'ils
 se jugent quand la gigue est saisie. Les gabarits dérivés citent maintenant le
 composant réel (récepteurs LVDS SN65LVDS32 / DS90LV028A à ±100 mV, D-PHY à
@@ -1055,12 +1076,45 @@ par tronçon (la surlongueur n'est qu'au bout) ; un brin sur une autre couche
 que la piste sur un tronçon couplé n'est pas couplé ; le coude de la
 partenaire prend la hauteur et la permittivité de la piste.
 
-#### IBIS-AMI : le .ami lu, pas exécuté
+#### Les condensateurs de liaison — couplage AC (`oeil` 2.3.0)
+
+Un condensateur en **série sur chaque brin**, entre l'émetteur (et son
+boîtier) et la piste — ou entre la piste et le récepteur, au choix —, avec
+son ESR et l'ESL de son boîtier (0201 … 1206, de 0,25 à 1 nH, ou saisie) :
+Z = ESR + jωL + 1/(jωC), posé dans la cascade du canal (simple, les deux
+modes de la paire — 2Z en mode impair, Z/2 en mode commun —, et la paire par
+brin à quatre accès), avant que les boîtiers IBIS ne l'encadrent. Le document
+porte `oeil.couplage_ac {c, esr, esl, boitier, position}` ; absent, rien ne
+change (au bit près, cas du banc) et le résultat le dit.
+
+Ce que cela fait : une **coupure basse** f_c = 1/(2π·C_x·(R_tx + R_rx)), C_x
+le condensateur vu par la boucle (C en simple, C/2 en différentiel : les deux
+brins en série), et le **droop** — une longue suite de bits identiques se
+décharge dans R_tx + R_rx avec τ = C_x·(R_tx + R_rx), chaque bit dérive de
+1 − e^(−UI/τ), et le bit qui suit part d'un niveau faussé. Le pire cas (PDA)
+le compte sur toute la mémoire de la fenêtre, l'œil PRBS sur ses plus longues
+suites (7, 9 ou 15 bits). La fenêtre de calcul s'allonge de trois τ de chaque
+côté pour couvrir la décharge ; au-delà du plafond de la grille (8 192 points),
+elle est plus courte que τ et **la case du continu de l'IFFT est corrigée** :
+poser H(0) = 0 forcerait la réponse à revenir à zéro dans la fenêtre
+(repliement de la décharge), on y met donc l'intégrale de la réponse sur la
+fenêtre, h₀·e^(−T_w/τ), en remplaçant le condensateur au continu seulement
+par R_x = R_tot·(e^(T_w/τ) − 1) — T_w/C quand τ ≫ T_w, infini quand la
+fenêtre couvre la décharge. Les cases k ≥ 1 sont exactes ; l'erreur restante
+est du second ordre (≈ 2 % de l'amplitude au pire, quand T_w ≈ τ, et le
+résultat dit alors que le droop n'est compté que sur les bits de la fenêtre).
+L'œil reste centré sur le niveau sans dérive (la polarisation du récepteur) ;
+sans terminaison, rien ne décharge et le condensateur fait un pont diviseur
+avec C_L. Le même continu corrigé sert aux tampons IBIS simulés dans le temps
+(la boucle se ferme sur 2 R₀) et à la paire par brin. La fiche
+`couplage_ac` du résultat donne f_c, τ, le droop par bit et sur la mémoire du
+pire cas, et si la fenêtre couvre la décharge.
+
+#### IBIS-AMI : le .ami lu, et le modèle exécuté (`oeil` 2.3.0, `ibis` 1.3.0)
 
 Un `[Algorithmic Model]` renvoie à une bibliothèque binaire du fabricant
-(.dll, .so) et à un fichier `.ami`. **La bibliothèque n'est pas exécutée** —
-du code natif venu d'un fichier téléversé n'est pas une option. Le renvoi est
-lu (plateforme, bibliothèque, .ami) et dit ; le `.ami`, chargé à côté du
+(.dll, .so) et à un fichier `.ami`. Le renvoi est lu (plateforme,
+bibliothèque, .ami) et dit ; le `.ami`, chargé à côté du
 .ibs, est lu (`ibis.lire_ami`) : syntaxe en arbre à parenthèses, chaînes entre
 guillemets, paramètres réservés (`Reserved_Parameters`) et propres au modèle
 (`Model_Specific`), chacun avec son chemin, son Usage, son Type, sa valeur
@@ -1075,12 +1129,81 @@ supposés** fp1 = débit/4, fp2 = débit) ; RJ (Tx_Rj, Rx_Rj en quadrature), DJ
 (Rx_Receiver_Sensitivity). Avec `ami_regler`, la proposition est appliquée
 (la gigue et le bruit saisis l'emportent). Une FFE avec un émetteur IBIS se
 pose linéairement sur la forme d'onde simulée — c'est ce que fait le flot
-AMI sur la réponse du canal analogique. L'adaptation et la récupération
-d'horloge du modèle ne sont pas reproduites.
+AMI sur la réponse du canal analogique. C'est le **repli** quand le modèle ne
+s'exécute pas.
 
-**Hors du modèle**, et dit dans chaque résultat : condensateurs de liaison
-(couplage AC), mutuelles d'un `[Package Model]` hors de la paire (dites, pas
-comptées) et mutuelles entre sections, exécution des modèles AMI.
+**L'exécution du modèle** (`ibis.ModeleAmi`, par ctypes, IBIS 7.x section
+10). Elle ne se fait que si l'utilisateur **désigne la bibliothèque**
+(`ami.bibliotheque`, champ de l'interface : un chemin relatif à la LIB ou à
+une racine de projets déclarée du serveur, que `web_CAO` passe à
+`oeil.analyser(racines_ami=…)`) ; `ibis.chemin_bibliotheque_ami` la résout par
+realpath sous ces dossiers, refuse tout le reste (URL, autre dossier, autre
+extension que .so/.dll/.dylib), et rien n'est jamais chargé depuis le texte
+de la requête. Les trois fonctions de la norme sont liées :
+
+    long AMI_Init(double *impulse_matrix, long row_size, long aggressors,
+                  double sample_interval, double bit_time,
+                  char *AMI_parameters_in, char **AMI_parameters_out,
+                  void **AMI_memory_handle, char **msg);
+    long AMI_GetWave(double *wave, long wave_size, double *clock_times,
+                     char **AMI_parameters_out, void *AMI_memory);
+    long AMI_Close(void *AMI_memory);
+
+**L'ordre d'exécution, émetteur puis récepteur**, celui des flots de
+référence de la norme (§10.4) :
+
+1. la réponse impulsionnelle du **canal analogique** est celle que l'œil a
+   déjà : la réponse à un échelon du transfert générateur → broche (boîtiers,
+   condensateurs de liaison compris ; avec des tampons IBIS simulés dans le
+   temps, la réponse moyenne des deux fronts), rééchantillonnée au pas de
+   l'œil (UI/64, donc `bit_time/sample_interval` entier), dérivée et mise en
+   **volts par seconde** pour une excursion pleine de l'émetteur (Σ h·Δt est
+   la réponse à un échelon de pleine excursion, en volts) ;
+2. **AMI_Init de l'émetteur** la modifie en place s'il a
+   `Init_Returns_Impulse` (sinon elle reste telle quelle et c'est dit :
+   l'AMI_GetWave de l'émetteur n'est pas reproduit) ; la FFE de référence
+   saisie est alors ignorée, le modèle fait la sienne ;
+3. le **canal** : la forme d'onde PRBS au récepteur est la superposition de
+   cette impulsion égalisée — la liaison est linéaire à cet endroit, c'est
+   l'hypothèse du flot AMI lui-même ;
+4. **AMI_Init du récepteur** sur l'impulsion de l'étape 2 : l'impulsion rendue
+   fait la réponse à un bit du **pire cas** et de l'œil statistique ; puis,
+   s'il a `GetWave_Exists`, **AMI_GetWave par blocs** de 256 bits sur la forme
+   d'onde de l'étape 3 — `Ignore_Bits` de mise en route, puis une période
+   entière du motif gardée : c'est l'**œil PRBS**. Sans GetWave, l'œil PRBS
+   est la superposition de l'impulsion rendue par Init ; quand les deux
+   existent, l'impulsion d'Init du récepteur ne sert pas à la forme d'onde,
+   comme la norme le prévoit. Le CTLE et le DFE de référence s'effacent
+   devant un récepteur qui s'exécute ;
+5. **AMI_Close** des deux. Les instants d'horloge rendus (`clock_times`,
+   terminés par −1) sont comptés et montrés (phase moyenne) ; l'instant
+   d'échantillonnage de l'œil reste le milieu du pire cas.
+
+**Le format des paramètres.** `AMI_parameters_in` est
+`(modèle (feuille valeur) (branche (feuille valeur)) …)` : la racine est le
+nom du modèle, les branches celles du `.ami` **sans** les mots
+`Reserved_Parameters` et `Model_Specific`, et seuls les paramètres d'Usage
+`In` et `InOut` y vont, avec leur valeur par défaut (`Value`, `Default`, ou le
+typ d'un `Range`) ; chaînes entre guillemets, booléens `True`/`False`, entiers
+sans décimale. L'utilisateur les **surcharge** (`ami.parametres`, champ
+« nom=valeur … » de l'interface) par le nom de la feuille (`c1=-0.2`) ou par
+son chemin (`TX_FFE/Tap/-1=-0.1`) ; une surcharge qui ne désigne rien est
+dite, pas devinée. Ce que le modèle rend (`AMI_parameters_out`, Usage `Out`
+et `InOut`) se relit dans la même syntaxe (`ibis.lire_parametres_ami`) et va
+dans la fiche `ami.execution` du résultat, avec `msg`, bout par bout :
+chargée, Init, GetWave, et la raison d'un repli.
+
+**Tout échec est un avertissement et un repli** sur l'égaliseur de référence
+(celui d'aujourd'hui, réglé d'après le `.ami` si demandé), jamais une
+exception : fichier absent ou hors des dossiers autorisés, URL, bibliothèque
+d'une autre architecture (une .dll sous Linux), sans `AMI_Init`, `AMI_Init`
+qui rend 0 (son message est rendu), impulsion non finie. Un `AMI_GetWave` qui
+échoue en cours de motif, lui, refuse l'œil avec le message du modèle.
+
+**Hors du modèle**, et dit dans chaque résultat : mutuelles d'un
+`[Package Model]` hors de la paire (dites, pas comptées) et mutuelles entre
+sections, AMI_GetWave de l'émetteur, horloge du modèle imposée à
+l'échantillonnage, via sur le brin N seul.
 L'Ethernet cuivre (MLT-3, PAM-5) n'est pas binaire et n'a pas de gabarit.
 L'I²C (drain ouvert, front montant RC) n'a pas de gabarit non plus — mais son
 tampon IBIS se simule maintenant.
@@ -1131,6 +1254,23 @@ boîtier couplé est exactement les deux boîtiers. Des sections se lisent
 (totaux, dérivation) ; une section de longueur ℓ rejoint le modèle localisé
 de mêmes totaux comme ℓ ; une section adaptée de 50 ps retarde le front de
 50 ps à 3 % près sans l'adoucir, là où le modèle localisé le ralentit.
+**2.3.0** (55 cas) : la cascade de la paire rend Sdd, Scc et Scd au bit près
+quand le plan déclare la rugosité de la piste, deux modes et quatre accès, et
+un plan lisse déclaré perd moins et ouvre l'œil ; les condensateurs de
+liaison rendent |H|/|H_sans| = −3 dB à f_c = 1/(2π·C·(Z_tx + Z_rx)) à 1 %
+près (C/2 en différentiel), rien ne change sans eux (au bit près, et le
+résultat n'en parle pas), R_x = T_w/C quand τ ≫ T_w ; à 100 Mb/s avec 1 nF
+dans 100 Ω le motif 1111… dérive en e^(−t/τ) à 0,5 % de l'amplitude près sur 32 bits et l'œil
+PRBS15 se ferme de plus de moitié ; fenêtre plus courte que τ, le continu
+corrigé rend la dérive de la fenêtre à 2 % près et le résultat le dit ; la
+chaîne `AMI_parameters_in` s'écrit et se relit, et une bibliothèque hors des
+dossiers autorisés, une URL ou un fichier qui n'en est pas sont refusés ; le
+modèle AMI d'essai (`python/test/ami_test/ami_ffe.c`, FFE à deux coefficients,
+compilé par `cc -shared -fPIC` à la volée, sauté sans compilateur) rend
+l'identité à 10⁻⁶ près par Init et GetWave, la FFE 0,7/−0,3 de l'œil à 10⁻⁴
+près à l'émetteur (Init) comme au récepteur (GetWave par blocs), relit ses
+paramètres Out et une surcharge, et chaque repli (absent, URL, aucune racine,
+Init qui rend 0) rend l'œil d'avant avec son avertissement.
 
 ### RF — le S₂₁ d'un réseau entre deux ports
 

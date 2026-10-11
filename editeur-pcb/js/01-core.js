@@ -697,6 +697,14 @@ function ozLabel(t){
    surface), les longueurs EN MICROMÈTRES comme sur les fiches de cuivre.
    Absente, rien ne change : K = 1, et le document ne l'écrit pas.
 
+   LE PLAN LISSE DÉCLARÉ : {m:"hammerstad", rms:0, decl:true}. Un cuivre qui
+   n'écrit rien est lisse pour SES pistes, mais quand il sert de plan de
+   référence à une piste rugueuse, le serveur lui prête la rugosité de la
+   piste (`simulation_em._rugosite_section` : « un plan qui ne déclare rien
+   prend celle de la piste »). Déclarer le plan lisse envoie
+   `rugosite_rms_um: 0`, et le plan est compté lisse sous la piste rugueuse
+   — simulation, RF, diaphonie et paire (œil) compris.
+
    `S.stack.sim` = {causal, fref, via} : les choix de modèle de la carte, qui
    voyagent avec l'empilage jusqu'à la simulation, la RF et l'œil. Absent,
    le défaut : Dk et Df constants, via « auto » (π tant qu'il est court).
@@ -708,6 +716,7 @@ const RUG_MODELES={hammerstad:"Hammerstad-Groiss (Rq)",huray:"Huray (nodules)"};
    que les fabricants annoncent pour ces deux classes. */
 const RUG_PRESETS=[
   {id:"lisse",n:"Lisse — aucune rugosité",m:"hammerstad",rms:0},
+  {id:"lisse-decl",n:"Lisse déclaré — plan lisse sous une piste rugueuse",m:"hammerstad",rms:0,decl:true},
   {id:"std",n:"ED standard (STD) — Rq 2 µm",m:"hammerstad",rms:2},
   {id:"rtf",n:"Traité inversé (RTF) — Rq 1 µm",m:"hammerstad",rms:1},
   {id:"vlp",n:"VLP — Rq 0,6 µm",m:"hammerstad",rms:0.6},
@@ -732,7 +741,9 @@ function rugNorm(o){
     return (a>0&&sr>0)?{m:"huray",a:r4(a),sr:r4(sr)}:null;
   }
   const rms=n(o.rms,0,50);
-  return rms>0?{m:"hammerstad",rms:r4(rms)}:null;
+  if(rms>0)return {m:"hammerstad",rms:r4(rms)};
+  /* nulle : rien — sauf déclarée telle (plan lisse sous une piste rugueuse) */
+  return o.decl===true?{m:"hammerstad",rms:0,decl:true}:null;
 }
 function cuRug(i){
   const c=S.stack&&S.stack.cu[i];
@@ -747,6 +758,7 @@ function setCuRug(i,o){
 }
 function rugLabel(r){
   if(!r)return "lisse";
+  if(r.decl)return "lisse (déclaré)";
   return r.m==="huray"?"Huray a "+fmt(r.a,2)+" µm · SR "+fmt(r.sr,2)
                       :"Rq "+fmt(r.rms,2)+" µm";
 }
