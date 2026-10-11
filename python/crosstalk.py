@@ -513,6 +513,26 @@
 #   3 ns.
 # Fonctions modifiees : _lire_couples_simple (+ kb_2td_ps, t_sature_ps,
 #   rang_kb ; tri par kb_2td_ps).
+#
+# Version: 3.7.0
+# Date: 2026-10-11
+# Explication: LA CARTE SANS PLAN SE CALCULE QUAND LA MASSE EST ARROSEE SUR
+#   LA COUCHE. Une carte deux couches sans plan n'est pas une carte sans
+#   retour : le courant revient par le cuivre de masse de la meme couche, de
+#   part et d'autre des pistes. La section y etait declaree non calculable et
+#   le couplage sortait au plancher -- sur exactement les cartes ou il est le
+#   plus fort. Elle se resout desormais en ligne coplanaire SANS PLAN
+#   (`ligne_mom`, kind « sans_plan »), et la fiche le dit.
+#
+#   LA COUTURE N'Y EST PAS EXIGEE. Le critere de couture dit si le cuivre
+#   lateral est tenu au potentiel du PLAN ; sans plan, ce cuivre EST la
+#   reference, et l'annuler faute de vias retirait le seul retour.
+#
+#   SANS MASSE NON PLUS, RIEN NE CHANGE : le solveur refuse, la raison remonte,
+#   et le couplage reste « non calcule » avec sa reserve grave.
+# Fonctions modifiees : _ligne_seule (+ ecarts), _tan_delta, _matrices_bloc
+#   (+ sans_plan), reseau_synthetise (+ longueur_sans_plan), bande_deduite,
+#   analyser (texte de la reserve « aucun plan »).
 # ==========================================
 """Crosstalk : ou le couplage se fabrique LE LONG des pistes, et non en moyenne.
 
@@ -689,7 +709,7 @@ except Exception as _exc:                              # noqa: BLE001
 
 FORMAT = "cao-crosstalk-1"
 FORMAT_RESULTAT = "cao-crosstalk-resultat-1"
-VERSION = "3.6.0"
+VERSION = "3.7.0"
 VERSION_MOTEURS = {
     "crosstalk": VERSION,
     "simulation_em": getattr(se, "VERSION", "4.2.0") if se is not None else "indisponible",
@@ -1085,8 +1105,10 @@ def bande_deduite(parcours, retenus, couches, reglages, cache,
 
     # -- la vitesse, d'une seule section resolue (et mise en cache)
     seg = parcours[0]
-    _c, _l, eps, _r = _ligne_seule(couches, seg["couche"], seg["largeur"],
-                                   seg["epaisseur"], cache)
+    _c, _l, eps, _r = _ligne_seule(
+        couches, seg["couche"], seg["largeur"], seg["epaisseur"], cache, (),
+        _nb(seg["obj"].get("gap_left"), _nb(seg["obj"].get("gap"), 0.0)),
+        _nb(seg["obj"].get("gap_right"), _nb(seg["obj"].get("gap"), 0.0)))
     if eps > 0:
         vitesse, source_v = C_0 / math.sqrt(eps), "section résolue"
     else:
@@ -2177,7 +2199,8 @@ def decouper(parcours, retenus, notes, fentes=()):
     return propres
 
 
-def _ligne_seule(couches, couche, largeur, epaisseur, cache, plans_nus=()):
+def _ligne_seule(couches, couche, largeur, epaisseur, cache, plans_nus=(),
+                 ecart_g=0.0, ecart_d=0.0):
     """(C, L, eps_eff) d'un conducteur qui ne longe rien dans ce bloc.
 
     SANS MASSE COPLANAIRE : le conducteur est ici hors de tout groupe, et
@@ -2185,13 +2208,24 @@ def _ligne_seule(couches, couche, largeur, epaisseur, cache, plans_nus=()):
     pour lui. On le pose donc en ligne nue, ce qui majore legerement son Z0 --
     et cela ne touche que son RETARD PROPRE, pas le couplage, qui est nul dans
     ce bloc par construction.
+
+    SAUF SANS PLAN, ou la masse coplanaire est le SEUL retour : sans elle il
+    n'y a pas de ligne du tout. L'appelant passe alors les ecarts qu'il
+    connait -- ceux de la selection, pour l'agresseur --, et la piste se
+    resout en coplanaire sans plan. Sous un plan, les ecarts sont ignores et
+    rien ne change.
     """
     nus = tuple(sorted(plans_nus or ()))
-    cle = ("seule", couche, round(largeur, 6), round(epaisseur, 6), nus)
+    eg, ed = round(_nb(ecart_g, 0.0), 5), round(_nb(ecart_d, 0.0), 5)
+    cle = ("seule", couche, round(largeur, 6), round(epaisseur, 6), nus,
+           eg, ed)
     if cle in cache:
         return cache[cle]
     geo, info = se.section_de_couche(couches, couche, largeur, epaisseur,
                                      0.0, None, nus)
+    if geo is None and (eg > 0 or ed > 0):
+        geo, info = se.section_de_couche(couches, couche, largeur, epaisseur,
+                                         eg, ed, nus, sans_plan=True)
     if geo is None:
         cache[cle] = (None, None, 0.0, info)
         return cache[cle]
@@ -2220,14 +2254,14 @@ def _tan_delta(couches, couche, largeur, epaisseur, cache, plans_nus=()):
     if cle in cache:
         return cache[cle]
     _geo, info = se.section_de_couche(couches, couche, largeur, epaisseur,
-                                      0.0, None, nus)
+                                      0.0, None, nus, sans_plan=True)
     cache[cle] = (_nb(info.get("tan_delta"), 0.0)
                   if isinstance(info, dict) else 0.0)
     return cache[cle]
 
 
 def _matrices_bloc(couches, seg, presents, conducteurs, refs, couture_max,
-                   cache, ecartes, gardes=(), plans_nus=()):
+                   cache, ecartes, gardes=(), plans_nus=(), sans_plan=None):
     """[C] et [L] globales d'un bloc (F/m, H/m), plus eps_eff par conducteur.
 
     `conducteurs` est la liste GLOBALE, dans l'ordre des ports du reseau :
@@ -2262,6 +2296,13 @@ def _matrices_bloc(couches, seg, presents, conducteurs, refs, couture_max,
     dessine, et elle annonce « aucun couplage » la ou l'on ne sait pas
     calculer. C'est le faux negatif le plus grave que ce module puisse
     produire, et il etait muet.
+
+    SANS PLAN EN FACE DE CE BLOC -- carte deux couches, ou plan absent sous ce
+    troncon --, la section se resout en COPLANAIRE SANS PLAN : la masse arrosee
+    de la meme couche, et les gardes, portent seules le retour. La couture n'y
+    est pas exigee : il n'y a pas de plan a coudre, et ce cuivre est la
+    reference elle-meme. `sans_plan`, une liste, recoit alors un drapeau ; le
+    solveur refuse -- et la raison remonte -- s'il n'y a aucune masse.
     """
     n = len(conducteurs)
     c_g = np.zeros((n, n))
@@ -2273,13 +2314,22 @@ def _matrices_bloc(couches, seg, presents, conducteurs, refs, couture_max,
     # calcul qui durcit ses hypotheses en silence n'est pas verifiable.
     bords = []
 
+    nus = tuple(sorted(plans_nus or ()))
+    gap_g = _nb(seg["obj"].get("gap_left"), _nb(seg["obj"].get("gap"), 0.0))
+    gap_d = _nb(seg["obj"].get("gap_right"), _nb(seg["obj"].get("gap"), 0.0))
+    # Y A-T-IL UN PLAN EN FACE DE CE BLOC ? C'est de la geometrie pure -- le
+    # solveur n'est pas appele quand on ne donne pas `sans_plan`.
+    plan_ici = se.section_de_couche(couches, seg["couche"], seg["largeur"],
+                                    seg["epaisseur"], 0.0, 0.0,
+                                    nus)[0] is not None
+    if not plan_ici:
+        couture_max = 0.0
+
     if presents:
         scene = {"net": conducteurs[0]["net"], "largeur": seg["largeur"],
                  "epaisseur": seg["epaisseur"],
-                 "gap_g": _nb(seg["obj"].get("gap_left"),
-                              _nb(seg["obj"].get("gap"), 0.0)),
-                 "gap_d": _nb(seg["obj"].get("gap_right"),
-                              _nb(seg["obj"].get("gap"), 0.0)),
+                 "gap_g": gap_g,
+                 "gap_d": gap_d,
                  "net_masse": (sorted(refs)[0] if len(refs) == 1 else "masse"),
                  "couture_g": _nb(seg["obj"].get("couture_left"), 0.0),
                  "couture_d": _nb(seg["obj"].get("couture_right"), 0.0),
@@ -2300,9 +2350,9 @@ def _matrices_bloc(couches, seg, presents, conducteurs, refs, couture_max,
                        "couture": p.get("couture", 0.0)}
                       for p in list(presents) + list(gardes)],
                      key=lambda v: abs(v["x"]))}
-        nus = tuple(sorted(plans_nus or ()))
         hauteur = se._hauteur_de_couche(couches, seg["couche"], seg["largeur"],
-                                        seg["epaisseur"], nus)
+                                        seg["epaisseur"], nus,
+                                        sans_plan=True)
         poses, hors = se._poser_section(scene, hauteur, couture_max)
         for e in hors:
             ecartes.setdefault(e["net"], e["raison"])
@@ -2328,7 +2378,7 @@ def _matrices_bloc(couches, seg, presents, conducteurs, refs, couture_max,
         if r is None:
             geo, _info = se.section_de_couche(couches, seg["couche"],
                                               seg["largeur"], seg["epaisseur"],
-                                              e_g, e_d, nus)
+                                              e_g, e_d, nus, sans_plan=True)
             if geo is None:
                 # ET ON LE DIT. Cette branche etait la seule du module a
                 # renoncer SANS UN MOT : le bloc repartait en lignes isolees,
@@ -2354,6 +2404,8 @@ def _matrices_bloc(couches, seg, presents, conducteurs, refs, couture_max,
                 except Exception as exc:               # noqa: BLE001
                     r = cache[cle] = None
                     ecartes.setdefault("_section", str(exc))
+        if r is not None and not plan_ici and sans_plan is not None:
+            sans_plan.append(True)
         if r is not None:
             # DE L'ORDRE D'ENTREE A L'ORDRE DES PORTS. `solve_multiline` range
             # ses rubans de gauche a droite et rend `ordre` pour retrouver
@@ -2381,9 +2433,12 @@ def _matrices_bloc(couches, seg, presents, conducteurs, refs, couture_max,
     for g, cond in enumerate(conducteurs):
         if g in couples:
             continue
+        # L'AGRESSEUR SEUL GARDE SES ECARTS : ce sont les siens, mesures le
+        # long de ce troncon. Ils ne servent que sans plan, ou ils sont le
+        # seul retour -- voir `_ligne_seule`.
         c_ii, l_ii, eps_ii, raison = _ligne_seule(
             couches, cond["couche"], cond["largeur"], cond["epaisseur"], cache,
-            plans_nus)
+            plans_nus, *((gap_g, gap_d) if g == 0 else (0.0, 0.0)))
         if c_ii is None:
             # UN CONDUCTEUR QU'ON NE SAIT PAS POSER SEUL -- une couche sans
             # plan de reference -- ne peut pas etre un fil : on lui donne la
@@ -2579,6 +2634,7 @@ def reseau_synthetise(couches, parcours, retenus, refs, analyse, reglages,
     retards = [[0.0] for _ in range(n)]
     blocs, muets, tan_deltas = [], [], set()
     etats_gardes, etats_bords = {}, {}
+    longueur_sans_plan = 0.0
     for a, b in zip(bornes, bornes[1:]):
         milieu = 0.5 * (a + b)
         seg = None
@@ -2625,9 +2681,12 @@ def reseau_synthetise(couches, parcours, retenus, refs, analyse, reglages,
             if z0 - TOL_BORNE <= milieu <= z1 + TOL_BORNE:
                 plans_nus.update(noms)
         nus_vus.update(plans_nus)
+        drapeau = []
         c_g, l_g, eps, couples_bloc, bords_bloc = _matrices_bloc(
             couches, seg, presents, conducteurs, refs, couture_max, cache,
-            ecartes, gardes_bloc, plans_nus)
+            ecartes, gardes_bloc, plans_nus, drapeau)
+        if drapeau:
+            longueur_sans_plan += b - a
         for bd in bords_bloc:
             etat = etats_bords.setdefault(
                 bd["cote"], {"cote": bd["cote"], "longueur": 0.0,
@@ -2662,7 +2721,10 @@ def reseau_synthetise(couches, parcours, retenus, refs, analyse, reglages,
                 etat["longueur"] += b - a
                 etat["couture"] = max(etat["couture"],
                                       _nb(g.get("couture"), 0.0))
-                if couture_max > 0 and _nb(g.get("couture"), 0.0) > couture_max:
+                # SANS PLAN, UNE GARDE NE FLOTTE PAS : il n'y a rien a coudre,
+                # et `_matrices_bloc` l'a tenue a la masse.
+                if (couture_max > 0 and not drapeau
+                        and _nb(g.get("couture"), 0.0) > couture_max):
                     etat["longueur_flottante"] += b - a
         abscisses.append(b)
         for g in range(n):
@@ -2704,6 +2766,14 @@ def reseau_synthetise(couches, parcours, retenus, refs, analyse, reglages,
             " deux portions de même dessin mais dont l'une survole une"
             " découpe ne rendent plus le même couplage."
             % ", ".join("« %s »" % n for n in sorted(nus_vus)))
+    if longueur_sans_plan > 0:
+        notes.append(
+            "Sans plan de référence sur %.1f mm de longement : la section y a"
+            " été résolue en ligne coplanaire SANS PLAN — le stratifié entier"
+            " dans l'air, et la masse arrosée de la même couche (ou les pistes"
+            " de garde) pour seul retour. La couture n'y est pas exigée : il"
+            " n'y a pas de plan à coudre. Le vernis n'y est pas modélisé."
+            % longueur_sans_plan)
     z0 = _nb(reglages.get("z0"), DEFAUTS["z0"]) or DEFAUTS["z0"]
     s_mat = None if sans_bande else s_depuis_chaine(phi, z0)
     for net, raison in ecartes.items():
@@ -2740,6 +2810,7 @@ def reseau_synthetise(couches, parcours, retenus, refs, analyse, reglages,
              "longueur_non_couplee": round(
                  sum(b0 - a0 for a0, b0, _n in muets), 3),
              "raison_section": ecartes.get("_section", ""),
+             "longueur_sans_plan": round(longueur_sans_plan, 3),
              "longueur": parcours[-1]["s1"]}
     return freqs, s_mat, z0, infos
 
@@ -4335,19 +4406,37 @@ def analyser(doc, journal=None):
     # nécessaire et un couplage qui ressortait au plancher.
     if not (_nb(seuils.get("hauteur"), 0.0) > 0):
         _sans = seuils.get("couches_sans_plan") or []
-        _grave(
-            avert, graves,
-            "aucun plan de référence sous « %s » dans l'empilage" % principal,
-            "AUCUN PLAN DE RÉFÉRENCE SOUS « %s » : %s n'a pas de"
-            " plan dans l'empilage déclaré. Tout ce qui suit le suppose — le"
-            " seuil de distance se déduit de la hauteur au plan, et [C] et [L]"
-            " sortent d'une section droite qui n'existe pas sans référence."
+        # LA MASSE ARROSEE DE LA COUCHE CHANGE LA SUITE, pas le constat. Avec
+        # elle, la section se resout en coplanaire SANS PLAN et le couplage
+        # sort ; sans elle, rien ne porte le retour et il tombe au plancher.
+        # Le titre est le meme -- l'absence de plan reste un defaut de dessin
+        # pour un net rapide --, la consequence annoncee ne l'est pas.
+        arrose = any(_nb(t.get("obj", {}).get("gap_left"),
+                         _nb(t.get("obj", {}).get("gap"), 0.0)) > 0
+                     or _nb(t.get("obj", {}).get("gap_right"),
+                            _nb(t.get("obj", {}).get("gap"), 0.0)) > 0
+                     for t in parcours)
+        suite = (
+            " Le seuil de présélection a donc été porté au maximum du"
+            " voisinage plutôt que réduit à trois largeurs de piste. La masse"
+            " arrosée de la même couche porte seule le retour : la section est"
+            " résolue en ligne coplanaire SANS PLAN, et le couplage qui en"
+            " sort est sensiblement plus fort que sous un plan. Le chemin de"
+            " retour réel dépend de la continuité de cette masse sur tout le"
+            " parcours." if arrose else
             " Le seuil de présélection a donc été porté au maximum du"
             " voisinage plutôt que réduit à trois largeurs de piste, et le"
             " couplage, lui, ne pourra pas être calculé sur les blocs"
             " concernés : il ressortira au plancher, ce qui n'est PAS une"
             " mesure de découplage. Vérifiez l'empilage, ou le rôle des"
-            " couches de plan."
+            " couches de plan, ou arrosez la masse sur la couche.")
+        _grave(
+            avert, graves,
+            "aucun plan de référence sous « %s » dans l'empilage" % principal,
+            ("AUCUN PLAN DE RÉFÉRENCE SOUS « %s » : %s n'a pas de"
+             " plan dans l'empilage déclaré. Le seuil de distance se déduit de"
+             " la hauteur au plan, et [C] et [L] d'une section droite qui"
+             " demande une référence." + suite)
             % (principal,
                ("la couche « %s »" % _sans[0]) if len(_sans) == 1 else
                ("les couches %s" % ", ".join("« %s »" % n for n in _sans))

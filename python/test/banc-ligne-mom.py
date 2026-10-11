@@ -5167,6 +5167,167 @@ T("un moignon double sur deux couches n'est pas une derivation",
   un_moignon_double_sur_deux_couches_n_est_pas_une_derivation)
 
 
+# ==========================================================================
+print("\nSans plan : ligne coplanaire dans l'air, contre la transformation"
+      " conforme")
+# ==========================================================================
+#
+# LA LIGNE COPLANAIRE SANS PLAN A UNE SOLUTION EXACTE, et pas seulement pour
+# un ruban : en ruban mince, masses semi-infinies, la transformation conforme
+# donne la capacite d'une ligne seule ET des deux modes d'une paire. Dans l'air
+# c'est exact ; sur un stratifie infiniment epais aussi, au facteur (er+1)/2
+# pres -- la moitie du champ dans chaque milieu. C'est ce qui juge le noyau en
+# images ET la condition de charge totale nulle, qui sont les deux nouveautes.
+#
+# LA PAIRE SE RAMENE A UNE LIGNE PAR z -> z^2. Le plan de symetrie x = 0 se
+# replie sur le demi-axe negatif : mur electrique (mode impair) -> une masse
+# de -inf a 0 ; mur magnetique (mode pair) -> rien, la symetrie haut/bas
+# l'assure d'elle-meme. Il reste un ruban et une ou deux masses alignes, dont
+# la capacite par demi-plan est eps0.K(k)/K(k'), k^2 le birapport des bords.
+
+def _k_sur_kp(k):
+    from scipy.special import ellipk
+    return ellipk(k * k) / ellipk(1.0 - k * k)
+
+
+def _cpw_exacte(w, g):
+    """Capacite d'une coplanaire mince dans l'air, masses semi-infinies."""
+    return 4.0 * EPSILON_0 * _k_sur_kp((w / 2.0) / (w / 2.0 + g))
+
+
+def _paire_cpw_exacte(w, s, g):
+    """(C pair, C impair) par ruban, paire coplanaire mince dans l'air."""
+    x2, x3, x4 = (s / 2.0) ** 2, (s / 2.0 + w) ** 2, (s / 2.0 + w + g) ** 2
+    k_i = np.sqrt((x3 - x2) * x4 / ((x4 - x2) * x3))
+    k_p = np.sqrt((x3 - x2) / (x4 - x2))
+    return 2.0 * EPSILON_0 * _k_sur_kp(k_p), 2.0 * EPSILON_0 * _k_sur_kp(k_i)
+
+
+def sans_plan_une_ligne_contre_l_exacte():
+    for w, g in ((0.35e-3, 0.3e-3), (1e-3, 0.2e-3), (0.2e-3, 1e-3)):
+        ref = _cpw_exacte(w, g)
+        for er, h in ((1.0, 1.6e-3), (4.3, 1.0)):
+            r = solve_line({"kind": "sans_plan", "w": w, "t": 0.0, "h": h,
+                            "epsilon_r": er, "ecart_g": g, "ecart_d": g})
+            attendu = ref * (er + 1.0) / 2.0
+            assert abs(r["c"] / attendu - 1) < 5e-3, (
+                "w=%g g=%g er=%g : C %.4g contre %.4g exact"
+                % (w, g, er, r["c"], attendu))
+
+
+T("sans plan : ligne seule contre la transformation conforme (0,5 %)",
+  sans_plan_une_ligne_contre_l_exacte)
+
+
+def sans_plan_une_paire_contre_l_exacte():
+    for w, s_, g in ((0.35e-3, 0.2e-3, 0.3e-3), (0.35e-3, 0.7e-3, 0.3e-3),
+                     (0.2e-3, 0.15e-3, 0.5e-3)):
+        cp, ci = _paire_cpw_exacte(w, s_, g)
+        x = (w + s_) / 2.0
+        for er, h in ((1.0, 1.6e-3), (4.3, 1.0)):
+            r = _tl.solve_multiline({
+                "kind": "sans_plan", "h": h, "t": 0.0, "epsilon_r": er,
+                "ecart_g": g, "ecart_d": g,
+                "conducteurs": [{"w": w, "x": -x}, {"w": w, "x": x}]})
+            c = np.array(r["c"])
+            f = (er + 1.0) / 2.0
+            assert abs((c[0, 0] + c[0, 1]) / (cp * f) - 1) < 5e-3, \
+                ("mode pair", w, s_, g, er)
+            assert abs((c[0, 0] - c[0, 1]) / (ci * f) - 1) < 5e-3, \
+                ("mode impair", w, s_, g, er)
+
+
+T("sans plan : modes pair et impair d'une paire contre l'exacte (0,5 %)",
+  sans_plan_une_paire_contre_l_exacte)
+
+
+def sans_plan_plaque_finie_contre_les_capacites_partielles():
+    """Plaque finie : la formule des capacites partielles, a 1 %.
+
+    Ce n'est plus une solution exacte -- c'est la formule de reference des
+    calculateurs de lignes (Wen, Ghione) --, mais elle encadre la plaque
+    finie, entre l'air (h -> 0) et le demi-espace (h -> inf).
+
+    ELLE NE VAUT QUE SUR UNE PLAQUE PLUS EPAISSE QUE LA LIGNE. A h = b (bord
+    de la masse), elle sous-estime eps_eff de 2 % -- le noyau en images, lui,
+    ne bouge pas de 1e-5 quand on double les panneaux, et il est exact aux
+    deux limites. Les cas sont donc pris a h > b.
+    """
+    from scipy.special import ellipk
+    for w, g, h, er in ((0.35e-3, 0.3e-3, 1.6e-3, 4.3),
+                        (1e-3, 0.5e-3, 1e-3, 9.8),
+                        (0.2e-3, 0.2e-3, 0.8e-3, 4.3)):
+        a, b = w / 2.0, w / 2.0 + g
+        k1 = np.sinh(np.pi * a / (2 * h)) / np.sinh(np.pi * b / (2 * h))
+        e_ref = 1.0 + (er - 1.0) / 2.0 * _k_sur_kp(k1) / _k_sur_kp(a / b)
+        r = solve_line({"kind": "sans_plan", "w": w, "t": 0.0, "h": h,
+                        "epsilon_r": er, "ecart_g": g, "ecart_d": g})
+        assert abs(r["eps_eff"] / e_ref - 1) < 0.01, (w, g, h, er,
+                                                      r["eps_eff"], e_ref)
+        assert 1.0 < r["eps_eff"] < (er + 1.0) / 2.0, r["eps_eff"]
+    del ellipk
+
+
+T("sans plan : plaque finie contre les capacites partielles (1 %)",
+  sans_plan_plaque_finie_contre_les_capacites_partielles)
+
+
+def sans_plan_et_sans_masse_rien_ne_porte_le_retour():
+    """Ni plan, ni masse coplanaire, ni garde : refus, jamais un chiffre."""
+    for appel in (
+            lambda: solve_line({"kind": "sans_plan", "w": 0.35e-3, "t": 0.0,
+                                "h": 1.6e-3, "epsilon_r": 4.3}),
+            lambda: _tl.solve_multiline({
+                "kind": "sans_plan", "h": 1.6e-3, "t": 0.0, "epsilon_r": 4.3,
+                "conducteurs": [{"w": 0.35e-3, "x": -0.3e-3},
+                                {"w": 0.35e-3, "x": 0.3e-3}]})):
+        try:
+            appel()
+        except ValueError as exc:
+            assert "retour" in str(exc), exc
+        else:
+            raise AssertionError("une section sans reference a ete resolue")
+    # UNE PISTE DE GARDE SUFFIT : c'est un conducteur a zero volt.
+    r = _tl.solve_multiline({
+        "kind": "sans_plan", "h": 1.6e-3, "t": 0.0, "epsilon_r": 4.3,
+        "conducteurs": [{"w": 0.35e-3, "x": -0.3e-3},
+                        {"w": 0.35e-3, "x": 0.3e-3},
+                        {"w": 0.5e-3, "x": 1.2e-3, "masse": True}]})
+    assert r["n"] == 2 and r["lignes"][0]["z0"] > 0, r["lignes"]
+
+
+T("sans plan et sans masse : refus ; une garde suffit a porter le retour",
+  sans_plan_et_sans_masse_rien_ne_porte_le_retour)
+
+
+def sans_plan_n_a_que_la_couche_exterieure():
+    """`section_de_couche` : la plaque est le stratifie entier, et une couche
+    interne sans plan est refusee plutot que posee dans l'air."""
+    couches = [
+        {"type": "copper", "name": "Top", "thickness": 0.035},
+        {"type": "dielectric", "name": "a", "thickness": 0.6,
+         "epsilon_r": 4.0},
+        {"type": "copper", "name": "In1", "thickness": 0.035},
+        {"type": "dielectric", "name": "b", "thickness": 1.0,
+         "epsilon_r": 4.6},
+        {"type": "copper", "name": "Bot", "thickness": 0.035},
+    ]
+    geo, info = _se.section_de_couche(couches, 0, 0.3, 0.035, 0.3, 0.3,
+                                      sans_plan=True)
+    assert geo["kind"] == "sans_plan" and abs(geo["h"] - 1.6e-3) < 1e-12
+    assert abs(geo["epsilon_r"] - (0.6 * 4.0 + 1.0 * 4.6) / 1.6) < 1e-12
+    geo, raison = _se.section_de_couche(couches, 2, 0.3, 0.035, 0.3, 0.3,
+                                        sans_plan=True)
+    assert geo is None and "interne" in raison, raison
+    # SANS LE DRAPEAU, RIEN NE CHANGE : les autres onglets gardent leur refus.
+    geo, _r = _se.section_de_couche(couches, 0, 0.3, 0.035, 0.3, 0.3)
+    assert geo is None
+
+
+T("sans plan : la plaque est le stratifie entier, couche externe seule",
+  sans_plan_n_a_que_la_couche_exterieure)
+
+
 print("\n" + "-" * 62)
 print("  %d cas, %s" % (ok + ko, "tous passes" if not ko else "%d en echec" % ko))
 sys.exit(1 if ko else 0)

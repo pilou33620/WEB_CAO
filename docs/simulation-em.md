@@ -277,6 +277,19 @@ Chaque bloc
 de la cascade est une portion où l'ensemble des voisines et leurs écarts ne
 changent pas — c'est ce découpage qui donne à la carte sa structure spatiale.
 
+**Sans plan, la masse arrosée de la couche porte le retour.** Sur une carte
+deux couches sans plan, le courant revient par le cuivre de masse arrosé de
+part et d'autre des pistes, sur leur propre couche. La section se résout alors
+en **ligne coplanaire sans plan dessous** (`ligne_mom`, kind `sans_plan`) : le
+stratifié entier dans l'air, dont la fonction de Green se développe exactement
+en images, et une section électriquement neutre — tout ce que porte le signal
+revient par la masse. La couture n'y est pas exigée : il n'y a pas de plan à
+coudre, et ce cuivre est la référence elle-même. Validé contre la
+transformation conforme (ligne seule, modes pair et impair d'une paire) à
+0,35 %. **Sans masse arrosée non plus**, rien ne porte le retour : le couplage
+reste *non calculé*, avec sa réserve grave, et jamais un zéro. Le vernis n'est
+pas modélisé dans ce cas, et une couche *interne* sans plan reste refusée.
+
 **Aucun fichier de paramètres S n'est accepté en entrée, et ce retrait est
 délibéré.** Un `.sNp` importé apportait une physique qu'on ne sait pas calculer
 — pertes conductrices, coudes, transitions de via —, mais il apportait surtout
@@ -769,7 +782,7 @@ n'additionne pas ses victimes. La seule somme offerte est celle de plusieurs
 agresseurs **en phase** vers une victime — le cas d'un bus qui commute d'un
 bloc — et elle ne se fait que sur demande explicite.
 
-65 cas au banc Python ([python/test/banc-crosstalk.py](../python/test/banc-crosstalk.py)),
+67 cas au banc Python ([python/test/banc-crosstalk.py](../python/test/banc-crosstalk.py)),
 49 au banc de l'éditeur : la ligne adaptée contre `S₁₁ = 0` et
 `S₂₁ = exp(−jβL)` à la précision machine, la cascade contre la ligne entière,
 **le pic de NEXT qui tombe là où le longement commence** — c'est le seul cas qui

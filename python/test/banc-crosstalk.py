@@ -1720,6 +1720,11 @@ def le_couplage_non_calcule_ne_se_lit_plus_comme_un_couplage_nul():
     ne distingue « elles ne couplent pas » de « on n'a pas su calculer ». Or
     c'est justement le cas ou le couplage reel EXPLOSE, faute de chemin de
     retour court.
+
+    DEPUIS LA LIGNE COPLANAIRE SANS PLAN, ce cas exige AUSSI l'absence de
+    masse arrosee sur la couche : avec elle, la section se resout (voir le cas
+    suivant). Les ecarts de l'agresseur sont donc mis a zero -- rien ne porte
+    le retour, et c'est le solveur qui le dit.
     """
     sans_plan = {"layers": [
         {"type": "copper", "name": "Top", "thickness": 0.035,
@@ -1731,6 +1736,8 @@ def le_couplage_non_calcule_ne_se_lit_plus_comme_un_couplage_nul():
     ]}
     doc = doc_essai([pis(0, 0.45, 40, 0.45, "VIC")])
     doc["stackup"] = sans_plan
+    for o in doc["geometry"]["objects"]:
+        o["gap_left"] = o["gap_right"] = 0.0
     res = ct.analyser(doc)
     assert res["etape0"]["retenus"] == ["VIC"], res["etape0"]["retenus"]
     assert not res["couples"][0]["confirmee"], \
@@ -1746,6 +1753,56 @@ def le_couplage_non_calcule_ne_se_lit_plus_comme_un_couplage_nul():
 
 T("le couplage non calcule ne se lit plus comme un couplage nul",
   le_couplage_non_calcule_ne_se_lit_plus_comme_un_couplage_nul)
+
+
+def sans_plan_la_masse_de_la_couche_porte_le_retour():
+    """Carte deux couches, masse arrosee sur la couche : le couplage SE CALCULE.
+
+    C'EST LE CAS ORDINAIRE D'UNE CARTE SANS PLAN : le retour passe par le
+    cuivre de masse de la meme couche, de part et d'autre des pistes. La
+    section est alors une ligne coplanaire SANS PLAN dessous, et elle se
+    resout. Trois choses se verifient :
+      · le couple est CONFIRME, avec un niveau -- pas un plancher ;
+      · le Kb du bloc est celui de `ligne_mom` sur la meme section : la
+        cascade ne retranche ni n'ajoute rien a la section droite ;
+      · la fiche DIT que la section a ete resolue sans plan.
+    """
+    sans_plan = {"layers": [
+        {"type": "copper", "name": "Top", "thickness": 0.035,
+         "role": "signal"},
+        {"type": "dielectric", "name": "FR-4", "thickness": 1.6,
+         "epsilon_r": 4.3, "tan_delta": 0.02},
+        {"type": "copper", "name": "Bottom", "thickness": 0.035,
+         "role": "signal"},
+    ]}
+    doc = doc_essai([pis(0, 0.45, 40, 0.45, "VIC")])
+    doc["stackup"] = sans_plan
+    res = ct.analyser(doc)
+    couple = [c for c in res["couples"] if c["victime"] == "VIC"][0]
+    assert couple["confirmee"] and couple["next_db"] > -40.0, couple
+    assert [a for a in res["avertissements"] if "SANS PLAN" in a], \
+        res["avertissements"]
+    titres = " | ".join(g["titre"] for g in res["graves"])
+    assert "NON CALCULÉ" not in titres, titres
+
+    # LE MEME KB QUE LA SECTION DROITE. La selection (0,25 mm) a ses masses a
+    # 0,5 mm de cuivre a cuivre ; la victime, centree a 0,45 mm, borde le
+    # groupe a droite -- l'ecart du groupe y est de 0,05 mm.
+    geo, _ = ct.se.section_de_couche(sans_plan["layers"], 0, 0.25, 0.035,
+                                     0.5, 0.05, sans_plan=True)
+    geo = dict(geo)
+    geo["conducteurs"] = [{"w": 0.25e-3, "x": 0.0},
+                          {"w": 0.25e-3, "x": 0.45e-3}]
+    r = tl.solve_multiline(geo)
+    kb_ref, _kf = ct.coefficients_couple(r["c"], r["l"], 0, 1)
+    doc["mode"] = "simple"
+    simple = ct.analyser(doc)
+    kb = [c["kb_max"] for c in simple["couples"] if c["victime"] == "VIC"]
+    assert kb and abs(kb[0] / kb_ref - 1) < 1e-3, (kb, kb_ref)
+
+
+T("sans plan, la masse de la couche porte le retour et le couplage se calcule",
+  sans_plan_la_masse_de_la_couche_porte_le_retour)
 
 
 def sans_plan_le_seuil_de_distance_s_ouvre_au_lieu_de_se_fermer():
@@ -2602,10 +2659,26 @@ def une_fente_change_le_couplage_et_ne_le_laisse_pas_identique():
         "la reference descendue d'un etage doit COUPLER PLUS : %.2f dB au lieu"
         " de %.2f dB" % (perce, plein))
 
-    # (2) UN SEUL PLAN, PERCE : il ne reste aucune reference. Le bloc n'est pas
-    # calculable, et cela se dit -- ce n'est pas un couplage nul.
-    nu = lancer(STACK, [{"s": 0.0, "longueur": 40.0, "plans": ["GND"],
-                         "quoi": "le plan GND n'a pas de cuivre de retour"}])
+    # (2) UN SEUL PLAN, PERCE, MAIS LA MASSE ARROSEE DE LA COUCHE RESTE : la
+    # section retombe sur la coplanaire SANS PLAN -- plus loin de toute
+    # reference, donc plus couplee que sur le plan plein -- et le dit.
+    perce_seul = [{"s": 0.0, "longueur": 40.0, "plans": ["GND"],
+                   "quoi": "le plan GND n'a pas de cuivre de retour"}]
+    cpw = lancer(STACK, perce_seul)
+    assert next_db(cpw) > plein, (
+        "sans plan, la masse coplanaire seule doit coupler PLUS : %.2f dB"
+        " contre %.2f dB" % (next_db(cpw), plein))
+    assert [a for a in cpw["avertissements"] if "SANS PLAN" in a], \
+        cpw["avertissements"]
+
+    # (2 bis) ET SANS MASSE ARROSEE NON PLUS : il ne reste aucune reference.
+    # Le bloc n'est pas calculable, et cela se dit -- ce n'est pas un
+    # couplage nul.
+    d = doc_essai([pis(0, 0.5, 40, 0.5, "VICT")])
+    d["fentes"] = perce_seul
+    for o in d["geometry"]["objects"]:
+        o["gap_left"] = o["gap_right"] = 0.0
+    nu = ct.analyser(d)
     assert next_db(nu) < -100.0, (
         "sans aucune reference, le couplage ne peut pas etre calcule : %.2f dB"
         % next_db(nu))
