@@ -130,6 +130,7 @@ editeur-schematique/     editeur-pcb/     gestion-lib/
 recherche-composants/    visionneuse-ipc2581/
 commun/                  Code partagé : panneaux, projets, profils, tactile, variantes de montage, IA, simulation
 python/                  Solveurs (MoM, diaphonie, DC, RF), parseur IPC-2581, bancs d'essai
+bancs-mesure/            Cartes d'essai à fabriquer et comparaison simulation / mesure (crosstalk)
 profils/                 Profils utilisateurs et fabricants
 docs/                    Guides de simulation et historique de développement
 screen/                  Captures et animations
