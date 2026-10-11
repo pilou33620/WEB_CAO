@@ -298,12 +298,37 @@ def cas_export(nom):
     T(u"%s : meme empilage (epaisseurs, er, tan d, matieres)" % nom, empilage)
 
     def rugosite():
+        huray = A.get("rugosite_huray", {})
         for e in M["empilage"]:
             if e["nom"] in A["rugosite"]:
                 proche(e.get("rug"), A["rugosite"][e["nom"]], e["nom"] + u" rugosite")
             else:
                 vrai("rug" not in e, e["nom"] + u" : rugosite inventee")
-    T(u"%s : rugosite du cuivre retrouvee" % nom, rugosite)
+            if e["nom"] in huray:
+                # Huray : les deux parametres, et pas de Rq de substitution
+                h = e.get("rug_huray") or {}
+                proche(h.get("a"), huray[e["nom"]]["a"], e["nom"] + u" rayon des nodules (um)")
+                proche(h.get("sr"), huray[e["nom"]]["sr"], e["nom"] + u" rapport de surface")
+            else:
+                vrai("rug_huray" not in e, e["nom"] + u" : Huray invente")
+    T(u"%s : rugosite du cuivre retrouvee (Rq, et Huray a part)" % nom, rugosite)
+
+    def regles():
+        # ce que la visionneuse reprend tel quel : la classe de chaque net a
+        # broche, les regles des classes, les contraintes des nets, les
+        # paires, les groupes et la matrice -- par NOM de net et de couche
+        R, a = M["regles"], A["regles"]
+        egal(R["classes"], a["classes"], u"classe de chaque net")
+        egal(R["regles_classes"], a["regles_classes"], u"regles des classes")
+        egal(R["contraintes"], a["contraintes"], u"contraintes propres aux nets")
+        egal([{k: p.get(k) for k in ("nom", "p", "n", "zdiff")} for p in R["paires"]],
+             a["paires"], u"paires differentielles")
+        egal(R["groupes"], a["groupes"], u"groupes d'appariement")
+        egal(R["matrice"], a["matrice"], u"matrice d'isolation")
+        # la classe de la norme reste lue a cote
+        for n, c in a["classes"].items():
+            vrai(M["classes_nets"].get(n), u"%s sans netClass" % n)
+    T(u"%s : classes, paires et contraintes retrouvees a la relecture" % nom, regles)
 
     def contre_percage():
         egal(st["contre_percages"], len(A["contre_percage"]), u"vias contre-perces")

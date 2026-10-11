@@ -7356,6 +7356,13 @@ function simCorpsDiff(){
 
 function simDiffPartenaireNom(nom){
   if(!nom)return "";
+  /* l'outil hôte sait parfois la réponse — la paire déclarée dans le
+     document (éditeur PCB) ou dans le fichier lu (visionneuse IPC-2581) —,
+     et elle passe devant toute devinette sur le nom */
+  if(SIM_ED&&typeof SIM_ED.partenaire==="function"){
+    const p=SIM_ED.partenaire(nom);
+    if(p&&p!==nom)return String(p);
+  }
   const allNets=(SIM_ED&&typeof SIM_ED.listeNets==="function")?SIM_ED.listeNets():[];
   const set=new Set(allNets.map(n=>String(n).trim()));
   const s=String(nom).trim();

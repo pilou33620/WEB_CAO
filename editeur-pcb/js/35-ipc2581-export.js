@@ -62,17 +62,52 @@
    dessous est miroir en X puis tourné (`mirror="true"`), l'ordre que suit la
    visionneuse.
 
+   LES RÈGLES PARTENT AUSSI — classes de nets, paires différentielles,
+   contraintes du gestionnaire (30-contraintes.js) —, et avec les seuls
+   éléments que le XSD leur réserve ; rien n'est inventé :
+     <LogicalNet netClass netPair>  netClass est l'énumération de la norme
+                     (GROUND, POWER, CLK, SIGNAL), trop pauvre pour nommer une
+                     classe de l'éditeur ; netPair nomme le net d'en face de
+                     la paire. Le nom de la classe, celui de la paire et la
+                     polarité (P ou N) vont en <NonstandardAttribute>
+                     NET_CLASS, DIFF_PAIR, DIFF_PAIR_POLARITY — la place que
+                     la norme donne à ce qu'elle n'énumère pas. Le net pointe
+                     ses règles par des <SpecRef>.
+     <Set netPair>   chaque jeu de cuivre d'un net apparié nomme sa partenaire.
+     <Spec>          une par classe (CLASSE_*), par net contraint
+                     (CONTRAINTE_*), par paire (PAIRE_*), par groupe
+                     d'appariement (APPARIEMENT_*), plus ISOLATION_CLASSES
+                     pour la matrice classe × classe. Chacune porte un
+                     <General type="ELECTRICAL"> dont les <Property> nommées
+                     (TRACE_WIDTH, CLEARANCE, VIA_DIAMETER, VIA_DRILL,
+                     MIN_LENGTH, MAX_LENGTH, MAX_VIAS, ALLOWED_LAYER,
+                     TOPOLOGY, PIN_ORDER, MAX_STUB_LENGTH,
+                     MAX_VIA_STUB_LENGTH, STAR_TOLERANCE, BACKDRILL_RULE ;
+                     GAP et MAX_UNCOUPLED_LENGTH pour une paire ; MATCH_MODE,
+                     MATCH_TOLERANCE, REFERENCE_NET, MEMBER pour un groupe)
+                     disent la règle, en millimètres ; une largeur ou un écart
+                     de paire porte ses bornes en tolPlus / tolMinus. Une
+                     impédance cible part en <Impedance value tolPlus
+                     tolMinus tolPercent>, l'élément normalisé, avec sa
+                     structure de ligne (<SingleEnded> ou <EdgeCoupled> :
+                     largeur, écart, plans de référence, STRIPLINE_* ou
+                     MICROSTRIP_*) sur chaque couche de signal qui a un plan.
+   C'est ce que relit python/ipc2581_parser.py (1.79) : la visionneuse
+   retrouve ses classes et ses paires sans reclasser.
+
+   LA RUGOSITÉ DE HURAY n'a pas de type normalisé ; elle part sous le type
+   normalisé de la rugosité, <Conductor type="SURFACE_ROUGHNESS_UPFACING">,
+   en <Property> NOMMÉES — HURAY_NODULE_RADIUS (MICRON) et
+   HURAY_SURFACE_RATIO —, sans Rq de substitution : un lecteur qui ne connaît
+   pas Huray voit une rugosité déclarée dont il ne lit pas la valeur, et le
+   `comment` lui dit pourquoi. Hammerstad garde sa <Property value unit>.
+
    CE QUI NE PART PAS : la stratégie de remplissage (seul le résultat compte
-   pour le fabricant), les règles de conception (classes, matrice), les
-   paires différentielles et les contraintes, qui n'ont pas d'écriture
-   reconnue par les outils de FAO ; les formes de rugosité de Huray, qui
-   n'ont pas de type normalisé, partent en <Conductor type="OTHER"> commenté.
-   Comme le Gerber, une zone ne se dégage pas autour d'un trou NPTH.
+   pour le fabricant). Comme le Gerber, une zone ne se dégage pas autour d'un
+   trou NPTH.
 
    À LA RELECTURE : un <Text> se place par la <Location> de son <Features>,
-   la seule place que le XSD lui laisse ; python/ipc2581_parser.py (1.77) ne
-   lit la position que DANS le <Text>, et pose donc ces textes en (0 ; 0).
-   Leurs traits, eux, sont bien placés.
+   la seule place que le XSD lui laisse ; le lecteur la lit depuis sa 1.78.
    ========================================================================== */
 
 const IPC2581_REV="C";
@@ -501,7 +536,8 @@ function ipc2581Document(opts){
   const base=fabBase(), STEP=ipcNom(base,"CARTE"), BOM=ipcNom(base+"_BOM","BOM");
   const date=opts.date||new Date().toISOString().replace(/\.\d+Z$/,"Z");
   const stats={composants:0,nets:0,pistes:0,arcs:0,vias:0,trous:0,trousNpth:0,
-               pastillesPercees:0,zones:0,ilots:0,approx:0,contrePercages:0,arcsContour:0};
+               pastillesPercees:0,zones:0,ilots:0,approx:0,contrePercages:0,arcsContour:0,
+               classes:0,paires:0,contraintes:0,groupes:0};
 
   /* ---------- dictionnaires : traits et formes ---------- */
   const traits=new Map(), formes=new Map(), dicoT=[], dicoF=[];
@@ -626,8 +662,9 @@ function ipc2581Document(opts){
              ["Conductor",[["type","CONDUCTIVITY"]],[prop([["value","58000000"],["unit","SIEMENS/M"]])]]];
     const rug=cuRug(i);
     if(rug&&rug.m==="huray")
-      k.push(["Conductor",[["type","OTHER"],["comment","Rugosite de Huray : rayon des nodules a = "+ipcN(rug.a)+
-              " um, rapport de surface SR = "+ipcN(rug.sr)]],
+      k.push(["Conductor",[["type","SURFACE_ROUGHNESS_UPFACING"],
+              ["comment","Modele de Huray (nodules) : rayon a = "+ipcN(rug.a)+" um, rapport de surface SR = "+
+                         ipcN(rug.sr)+" ; pas de Rq equivalent"]],
               [prop([["name","HURAY_NODULE_RADIUS"],["value",ipcN(rug.a)],["unit","MICRON"]]),
                prop([["name","HURAY_SURFACE_RATIO"],["value",ipcN(rug.sr)]])]]);
     else if(rug)
@@ -749,6 +786,167 @@ function ipc2581Document(opts){
       }
   }
 
+  /* ---------- les nets de la carte ---------- */
+  const tousNets=new Set();
+  for(const t of S.tracks)if(t.net)tousNets.add(t.net);
+  for(const v of S.vias)if(v.net)tousNets.add(v.net);
+  for(const z of S.zones)if(z.net&&z.pts&&z.pts.length>=3)tousNets.add(z.net);
+  for(const nm of parNet.keys())tousNets.add(nm);
+  stats.nets=tousNets.size;
+
+  /* ---------- règles : classes, contraintes, paires, groupes, matrice ----------
+     Une <Spec> par règle, dans le CadHeader avec celles de l'empilage ; les
+     nets les pointent par <SpecRef>. Les noms sont uniques et sans
+     deux-points (qualifiedNameType), comme ceux des nets. */
+  const uniqSpec=ipcUnique();
+  for(const s of specs)uniqSpec(s[1][0][1]);
+  const C=(typeof cmModele==="function")?cmModele():(S.contraintes||{classes:{},nets:{},matrice:{},groupes:[],schema:{nets:{},groupes:[]}});
+  const ZTOL=typeof CM_ZTOL==="number"?CM_ZTOL:10;
+  const nombre=(nom,v,unite,extra)=>prop([["name",nom],["value",ipcN(v)],["unit",unite||null]].concat(extra||[]));
+  const texte_=(nom,t)=>prop([["name",nom],["text",String(t)]]);
+  /* les contraintes du gestionnaire, en <Property> ; les mêmes clés que
+     commun/contraintes.js (cmNormRegle), nommées en clair */
+  const TOPOS={p2p:"POINT_TO_POINT",chaine:"DAISY_CHAIN",etoile:"STAR",flyby:"FLY_BY"};
+  const propsRegle=r=>{
+    const P=[];
+    if(r.lMin!=null)P.push(nombre("MIN_LENGTH",r.lMin,"MM"));
+    if(r.lMax!=null)P.push(nombre("MAX_LENGTH",r.lMax,"MM"));
+    if(r.viasMax!=null)P.push(nombre("MAX_VIAS",r.viasMax));
+    for(const l of (r.couches||[]))if(l<n)P.push(prop([["name","ALLOWED_LAYER"],["layerOrGroupRef",cuN[l]]]));
+    if(r.topo&&TOPOS[r.topo])P.push(texte_("TOPOLOGY",TOPOS[r.topo]));
+    if(r.ordre&&r.ordre.length)P.push(texte_("PIN_ORDER",r.ordre.join(" ")));
+    if(r.stubMax!=null)P.push(nombre("MAX_STUB_LENGTH",r.stubMax,"MM"));
+    if(r.viaStubMax!=null)P.push(nombre("MAX_VIA_STUB_LENGTH",r.viaStubMax,"MM"));
+    if(r.etoileTol!=null)P.push(nombre("STAR_TOLERANCE",r.etoileTol,"MM"));
+    if(r.cp)P.push(texte_("BACKDRILL_RULE",r.cp));
+    return P;
+  };
+  /* L'impédance cible, l'élément normalisé : une <Impedance> par couche de
+     signal qui a un plan de référence, avec la structure de la ligne
+     (triplaque ou microruban), la largeur dessinée — et l'écart pour une
+     paire —, et les plans. Sans aucun plan, la cible seule. */
+  const coucheSignal=l=>{try{return !rolePlane(layerRole(l));}catch(_){return true;}};
+  const plansDe=l=>{
+    let up=null,dn=null;
+    for(let k=l-1;k>=0;k--)if(dpIsPlane(k)){up=k;break;}
+    for(let k=l+1;k<n;k++)if(dpIsPlane(k)){dn=k;break;}
+    return {up,dn};
+  };
+  const structure=(l,up,dn)=>{
+    if(up!=null&&dn!=null){
+      const a=dpDiBetween(up,l), c=dpDiBetween(l,dn);
+      return Math.abs(a.t-c.t)<1e-6?"STRIPLINE_SYMMETRIC":"STRIPLINE_ASYMMETRIC";
+    }
+    return (l===0||l===n-1)?"MICROSTRIP_MASK_COVERED":"MICROSTRIP_EMBEDDED";
+  };
+  const impedance=(z,tol,largeur,ecart,com)=>{
+    const out=[], a=[["value",ipcN(z)],["tolPlus",ipcN(tol)],["tolMinus",ipcN(tol)],["tolPercent","true"]];
+    for(let l=0;l<n;l++){
+      if(!coucheSignal(l))continue;
+      const {up,dn}=plansDe(l);
+      if(up==null&&dn==null)continue;
+      const refs=[up,dn].filter(k=>k!=null).map(k=>["RefPlane",[["layerOrGroupRef",cuN[k]]]]);
+      const lw=["LineWidth",[["value",ipcN(largeur(l))],["unit","MM"]]];
+      const ligne=ecart?["EdgeCoupled",[["structure",structure(l,up,dn)]],
+                          [lw,["Spacing",[["value",ipcN(ecart(l))],["unit","MM"]]]].concat(refs)]
+                       :["SingleEnded",[["structure",structure(l,up,dn)]],[lw].concat(refs)];
+      out.push(["Impedance",a.concat([["comment",com+" - couche "+cuN[l]]]),[ligne]]);
+    }
+    if(!out.length)out.push(["Impedance",a.concat([["comment",com]])]);
+    return out;
+  };
+  /* les classes : règles physiques et contraintes, largeur couche par couche */
+  const specClasse=new Map();
+  for(const c of S.classes){
+    const r=(C.classes||{})[c.name]||{}, nom=uniqSpec("CLASSE_"+ipcNom(c.name,"CLASSE"));
+    specClasse.set(c.name,nom);
+    const wDe=l=>(c.wL&&c.wL[l]>0)?c.wL[l]:c.w;
+    const k=[texte_("NET_CLASS",c.name),nombre("TRACE_WIDTH",c.w,"MM")];
+    for(const l of Object.keys(c.wL||{}).map(Number).sort((a,b)=>a-b))
+      if(l<n&&c.wL[l]>0)k.push(nombre("TRACE_WIDTH",c.wL[l],"MM",[["layerOrGroupRef",cuN[l]]]));
+    k.push(nombre("CLEARANCE",c.clr,"MM"),nombre("VIA_DIAMETER",c.via,"MM"),nombre("VIA_DRILL",viaDrill(c),"MM"));
+    k.push(...propsRegle(r));
+    const spec=[["General",[["type","ELECTRICAL"],["comment","Classe de nets de l'editeur PCB : regles physiques et contraintes"]],k]];
+    if(r.z)spec.push(...impedance(r.z,r.zTol!=null?r.zTol:ZTOL,wDe,null,"Impedance cible de la classe "+ipcNom(c.name,"")));
+    specs.push(["Spec",[["name",nom]],spec]);
+    stats.classes++;
+  }
+  /* les contraintes propres à un net : celles du PCB devant celles du schéma,
+     comme les lit le gestionnaire (cmRegleDe) ; la classe reste à part */
+  const specNet=new Map();
+  for(const nm of [...tousNets].sort()){
+    const rn=Object.assign({},((C.schema||{}).nets||{})[nm]||{},(C.nets||{})[nm]||{});
+    if(!Object.keys(rn).length)continue;
+    const nom=uniqSpec("CONTRAINTE_"+ipcNom(nm,"NET"));
+    specNet.set(nm,nom);
+    const spec=[["General",[["type","ELECTRICAL"],["comment","Contraintes propres au net, devant celles de sa classe"]],
+                 [texte_("NET",nm)].concat(propsRegle(rn))]];
+    if(rn.z)spec.push(...impedance(rn.z,rn.zTol!=null?rn.zTol:ZTOL,l=>classWidth(nm,l),null,"Impedance cible du net "+ipcNom(nm,"")));
+    specs.push(["Spec",[["name",nom]],spec]);
+    stats.contraintes++;
+  }
+  /* les paires différentielles : les deux nets, la règle qui les régit
+     (largeur et écart préférés entre leurs bornes, découplé admis) et, si la
+     règle vise un profil, l'impédance différentielle cible */
+  const specPaire=new Map(), paireDe=new Map();     // net -> {pair, pol, mate}
+  for(const pair of (S.dpPairs||[])){
+    if(!tousNets.has(pair.p)&&!tousNets.has(pair.n))continue;
+    const rule=dpRuleFor(pair), v=l=>dpValues(rule,l), g=v(0);
+    const nom=uniqSpec("PAIRE_"+ipcNom(pair.name,"PAIRE"));
+    specPaire.set(pair.name,nom);
+    paireDe.set(pair.p,{pair,pol:"P",mate:pair.n});
+    paireDe.set(pair.n,{pair,pol:"N",mate:pair.p});
+    const bornes=(x,lo,hi)=>[["tolPlus",ipcN(Math.max(0,hi-x))],["tolMinus",ipcN(Math.max(0,x-lo))]];
+    const k=[texte_("DIFF_PAIR",pair.name),texte_("NET_P",pair.p),texte_("NET_N",pair.n),texte_("RULE",rule.name||""),
+             nombre("TRACE_WIDTH",g.prefW,"MM",bornes(g.prefW,g.minW,g.maxW)),
+             nombre("GAP",g.prefGap,"MM",bornes(g.prefGap,g.minGap,g.maxGap)),
+             nombre("MAX_UNCOUPLED_LENGTH",g.maxUncoupled,"MM")];
+    if(!rule.allLayers&&rule.layers)
+      for(const l of Object.keys(rule.layers).map(Number).sort((a,b)=>a-b)){
+        if(!(l<n))continue;
+        const o=v(l);
+        k.push(nombre("TRACE_WIDTH",o.prefW,"MM",bornes(o.prefW,o.minW,o.maxW).concat([["layerOrGroupRef",cuN[l]]])),
+               nombre("GAP",o.prefGap,"MM",bornes(o.prefGap,o.minGap,o.maxGap).concat([["layerOrGroupRef",cuN[l]]])));
+      }
+    const spec=[["General",[["type","ELECTRICAL"],["comment","Paire differentielle de l'editeur PCB et sa regle"+
+                 (rule.comment?" : "+rule.comment:"")]],k]];
+    const prof=rule.useImp&&typeof dpProfile==="function"?dpProfile(rule.imp):null;
+    if(prof){
+      const rz=Object.assign({},((C.schema||{}).nets||{})[pair.p]||{},(C.nets||{})[pair.p]||{});
+      spec.push(...impedance(prof.z,rz.zTol!=null?rz.zTol:ZTOL,l=>v(l).prefW,l=>v(l).prefGap,
+                             "Impedance differentielle cible, profil "+prof.id));
+    }
+    specs.push(["Spec",[["name",nom]],spec]);
+    stats.paires++;
+  }
+  /* les groupes d'appariement : longueur ou délai à tenir dans une
+     tolérance ; les membres y sont nommés, un net sans broche n'ayant pas de
+     <LogicalNet> d'où pointer la spec */
+  const specGroupe=new Map();                       // id -> nom de spec
+  const groupes=(typeof cmTousGroupes==="function")?cmTousGroupes():(C.groupes||[]);
+  for(const g of groupes){
+    if(!g.nets.some(nm=>tousNets.has(nm)))continue;
+    const nom=uniqSpec("APPARIEMENT_"+ipcNom(g.nom,"GROUPE"));
+    specGroupe.set(g.id,nom);
+    const k=[texte_("MATCH_GROUP",g.nom),texte_("MATCH_MODE",g.mode==="ps"?"DELAY":"LENGTH"),
+             g.mode==="ps"?prop([["name","MATCH_TOLERANCE"],["value",ipcN(g.tol)],["text","ps"]])
+                          :nombre("MATCH_TOLERANCE",g.tol,"MM")];
+    if(g.ref)k.push(texte_("REFERENCE_NET",g.ref));
+    for(const nm of g.nets)k.push(texte_("MEMBER",nm));
+    specs.push(["Spec",[["name",nom]],[["General",[["type","ELECTRICAL"],
+      ["comment",g.mode==="ps"?"Groupe d'appariement en delai (tolerance en picosecondes)":"Groupe d'appariement en longueur"]],k]]]);
+    stats.groupes++;
+  }
+  /* la matrice d'isolation entre classes : une <Property> par case, la
+     clé « A|B » de l'éditeur en texte */
+  const matrice=Object.keys(C.matrice||{}).sort();
+  if(matrice.length)
+    specs.push(["Spec",[["name",uniqSpec("ISOLATION_CLASSES")]],[["General",[["type","ELECTRICAL"],
+      ["comment","Isolement minimal entre deux classes de nets (A|B)"]],
+      matrice.map(cle=>prop([["name","CLEARANCE"],["text",cle],["value",ipcN(C.matrice[cle])],["unit","MM"]]))]]]);
+  /* le net d'en face d'un net apparié, au nom du fichier */
+  const netPair=nm=>{const p=nm&&paireDe.get(nm);return p?net(p.mate):null;};
+
   /* ---------- le contenu des couches ---------- */
   const lf=new Map();           // nom de couche -> Map(cle de Set -> {attrs, kids})
   const set=(couche,cle,attrs)=>{
@@ -782,7 +980,7 @@ function ipc2581Document(opts){
   /* le cuivre */
   for(const t of S.tracks){
     const nt=net(t.net), A=arcOf(t);
-    const k=set(cuN[t.l],"P|"+(nt||""),[["net",nt]]);
+    const k=set(cuN[t.l],"P|"+(nt||""),[["net",nt],["netPair",netPair(t.net)]]);
     if(A){
       k.push(["Features",[],[["Arc",[["startX",X(t.x1)],["startY",Y(t.y1)],["endX",X(t.x2)],["endY",Y(t.y2)],
         ["centerX",X(A.cx)],["centerY",Y(A.cy)],["clockwise",t.ca>0?"true":"false"]],[trait(t.w)]]]]);
@@ -798,7 +996,7 @@ function ipc2581Document(opts){
       const nt=net(q.net), ps=pilePastille(fp,q);
       for(const l of padCuLayers(fp,q)){
         const qc=padSurCouche(q,l)||q;
-        set(cuN[l],"T|"+(nt||""),[["net",nt],["padUsage","TERMINATION"]]).push(["Pad",[["padstackDefRef",ps]],
+        set(cuN[l],"T|"+(nt||""),[["net",nt],["netPair",netPair(q.net)],["padUsage","TERMINATION"]]).push(["Pad",[["padstackDefRef",ps]],
           [xform(-qc.rot*180/Math.PI),["Location",[["x",X(q.x)],["y",Y(q.y)]]],formePastille(qc,0),
            ["PinRef",[["componentRef",ref],["pin",ipcNom(String(q.n),"1")]]]]]);
       }
@@ -807,7 +1005,7 @@ function ipc2581Document(opts){
   for(const v of S.vias){
     const nt=net(v.net), ps=pileVia(v), f=formePastille({shape:"circ",w:v.d,h:v.d},0);
     for(let l=v.a;l<=v.b;l++)
-      set(cuN[l],"V|"+(nt||""),[["net",nt],["padUsage","VIA"]]).push(["Pad",[["padstackDefRef",ps]],
+      set(cuN[l],"V|"+(nt||""),[["net",nt],["netPair",netPair(v.net)],["padUsage","VIA"]]).push(["Pad",[["padstackDefRef",ps]],
         [["Location",[["x",X(v.x)],["y",Y(v.y)]]],f]]);
   }
   for(const z of S.zones){
@@ -816,7 +1014,7 @@ function ipc2581Document(opts){
     stats.zones++;
     if(r.approx)stats.approx++;
     for(const il of r.ilots){
-      set(cuN[z.l],"Z|"+(nt||""),[["net",nt]]).push(["Features",[],[contour(il.o,il.t)]]);
+      set(cuN[z.l],"Z|"+(nt||""),[["net",nt],["netPair",netPair(z.net)]]).push(["Features",[],[contour(il.o,il.t)]]);
       stats.ilots++;
     }
   }
@@ -916,17 +1114,23 @@ function ipc2581Document(opts){
     stats.contrePercages+=e.vias.length;
   }
 
-  /* ---------- nets logiques et physiques ---------- */
-  const tousNets=new Set();
-  for(const t of S.tracks)if(t.net)tousNets.add(t.net);
-  for(const v of S.vias)if(v.net)tousNets.add(v.net);
-  for(const z of S.zones)if(z.net&&z.pts&&z.pts.length>=3)tousNets.add(z.net);
-  for(const nm of parNet.keys())tousNets.add(nm);
-  stats.nets=tousNets.size;
+  /* ---------- nets logiques et physiques ----------
+     Un <LogicalNet> par net qui a une broche : sa nature de la norme, sa
+     partenaire de paire, puis — dans l'ordre que le XSD impose — les
+     attributs hors norme (classe, paire, polarité), les broches, et les
+     <SpecRef> de ses règles : classe, contraintes du net, paire, groupes. */
+  const nsa=(nom,val)=>["NonstandardAttribute",[["name",nom],["type","STRING"],["value",val]]];
   const logiques=[];
-  for(const [nm,L] of parNet)
-    logiques.push(["LogicalNet",[["name",net(nm)],["netClass",ipcClasseNet(nm)]],
-      L.map(([ref,pin])=>["PinRef",[["componentRef",ref],["pin",pin]]])]);
+  for(const [nm,L] of parNet){
+    const pr=paireDe.get(nm), cl=classOf(nm).name;
+    const k=[nsa("NET_CLASS",cl)];
+    if(pr)k.push(nsa("DIFF_PAIR",pr.pair.name),nsa("DIFF_PAIR_POLARITY",pr.pol));
+    for(const [ref,pin] of L)k.push(["PinRef",[["componentRef",ref],["pin",pin]]]);
+    const refs=[specClasse.get(cl),specNet.get(nm),pr?specPaire.get(pr.pair.name):null]
+      .concat(groupes.filter(g=>g.nets.indexOf(nm)>=0).map(g=>specGroupe.get(g.id)));
+    for(const id of refs)if(id)k.push(["SpecRef",[["id",id]]]);
+    logiques.push(["LogicalNet",[["name",net(nm)],["netClass",ipcClasseNet(nm)],["netPair",netPair(nm)]],k]);
+  }
   /* les points qu'une sonde atteint : pastilles et vias des faces */
   const points=new Map(), ouvert=(l,q)=>!q||(l===0||l===n-1);
   const tente=viaTented();
@@ -1050,7 +1254,9 @@ function exportIpc2581(){
   dl(new Blob([f.text],{type:"application/xml"}),f.name);
   const s=f.stats;
   hint(f.name+" (IPC-2581 révision "+IPC2581_REV+") — "+s.composants+" composant(s), "+s.nets+" net(s), "+
-       (s.pistes+s.arcs)+" piste(s), "+s.vias+" via(s), "+s.trous+" trou(s), "+s.ilots+" îlot(s) de zone"+
+       (s.pistes+s.arcs)+" piste(s), "+s.vias+" via(s), "+s.trous+" trou(s), "+s.ilots+" îlot(s) de zone, "+
+       s.classes+" classe(s)"+(s.paires?", "+s.paires+" paire(s)":"")+
+       (s.contraintes?", "+s.contraintes+" net(s) contraint(s)":"")+
        (s.approx?" — "+s.approx+" zone(s) au remplissage approché":"")+".");
   return f;
 }

@@ -24889,8 +24889,43 @@ function ipcAttendu(){
     if(i<diCount(n)){const d=diAt(i);empilage.push({nom:"DIELECTRIQUE_"+(i+1),ep:d.t,dk:d.er,df:d.df,mat:d.mat});}
   }
   if(n>1)empilage.push({nom:"MASQUE_DESSOUS",ep:S.stack.maskT,dk:S.stack.maskEr,type:"SOLDERMASK"});
-  const rug={};
-  for(let i=0;i<n;i++){const r=cuRug(i);if(r&&r.m==="hammerstad")rug[nomCu(i)]=r.rms;}
+  const rug={}, huray={};
+  for(let i=0;i<n;i++){
+    const r=cuRug(i);
+    if(r&&r.m==="hammerstad")rug[nomCu(i)]=r.rms;
+    if(r&&r.m==="huray")huray[nomCu(i)]={a:r.a,sr:r.sr};
+  }
+  /* les règles que le fichier doit rendre : la classe de chaque net qui a
+     une broche (seul un net à broche a un <LogicalNet>), les règles de
+     toutes les classes, les contraintes propres aux nets, les paires, les
+     groupes et la matrice — les couches par leur nom, les cotes en mm */
+  const C=S.contraintes||{classes:{},nets:{},matrice:{},groupes:[],schema:{nets:{}}};
+  const avecBroche=new Set();
+  for(const fp of S.fps)for(const q of padsWorld(fp))if(q.net)avecBroche.add(q.net);
+  const regleNoms=r=>{const o=Object.assign({},r);if(o.couches)o.couches=o.couches.map(nomCu);return o;};
+  const regles={classes:{},regles_classes:{},contraintes:{},paires:[],groupes:[],matrice:Object.assign({},C.matrice||{})};
+  for(const nm of avecBroche)regles.classes[nm]=className(nm);
+  for(const c of S.classes){
+    const r=regleNoms((C.classes||{})[c.name]||{});
+    const o=Object.assign({w:c.w,clr:c.clr,via:c.via,drill:viaDrill(c)},r);
+    if(c.wL){o.wL={};for(const l of Object.keys(c.wL))if(+l<n&&c.wL[l]>0)o.wL[nomCu(+l)]=c.wL[l];}
+    if(o.z&&o.zTol==null)o.zTol=10;
+    regles.regles_classes[c.name]=o;
+  }
+  for(const nm of nets){
+    const r=Object.assign({},((C.schema||{}).nets||{})[nm]||{},(C.nets||{})[nm]||{});
+    if(!Object.keys(r).length)continue;
+    const o=regleNoms(r);
+    if(o.z&&o.zTol==null)o.zTol=10;
+    regles.contraintes[nm]=o;
+  }
+  for(const p of S.dpPairs){
+    if(!nets.has(p.p)&&!nets.has(p.n))continue;
+    const rule=dpRuleFor(p), prof=rule.useImp?dpProfile(rule.imp):null;
+    regles.paires.push({nom:p.name,p:p.p,n:p.n,zdiff:prof?prof.z:null});
+  }
+  for(const g of cmTousGroupes())
+    if(g.nets.some(x=>nets.has(x)))regles.groupes.push({nom:g.nom,mode:g.mode,tol:g.tol,ref:g.ref||"",nets:g.nets.slice()});
   /* les points témoins du remplissage : le centre de tout via et de toute
      pastille d'un autre net est hors du cuivre de la zone, celui d'un via du
      net est dedans */
@@ -24917,7 +24952,7 @@ function ipcAttendu(){
              bords:[boardPoly()].concat(boardCutouts()).map(P=>P.map(p=>[X(p.x),Y(p.y)])),
              arcs:[boardPoly()].concat(boardCutouts()).reduce((a,P)=>
                a+dxfSegments(P.map(p=>({x:X(p.x),y:Y(p.y)}))).filter(s=>s.t==="a").length,0)},
-    empilage,epaisseur:stackTotal(),rugosite:rug,zones,textes,
+    empilage,epaisseur:stackTotal(),rugosite:rug,rugosite_huray:huray,regles,zones,textes,
     masque:[maskOpenings(0).length,n>1?maskOpenings(1).length:0],
     pate:[pasteOpenings(0).length,n>1?pasteOpenings(1).length:0],
     contre_percage:cpViasPerces().filter(c=>!c.faute).map(c=>({x:X(c.v.x),y:Y(c.v.y),cote:c.cote,
@@ -24957,6 +24992,17 @@ function ipcCarteChargee(){
                    size:1.5,height:1.5,rot:0,width:0.15});
   S.variantes={liste:[{id:"v1",nom:"Lite"}],active:"v1"};
   S.fps.find(f=>f.ref==="C5").nonMonte=["v1"];
+  /* les règles du gestionnaire de contraintes : une impédance cible de
+     classe, une longueur max de classe, des contraintes propres à un net
+     (longueur, vias, couches permises), un groupe d'appariement, une case
+     de la matrice d'isolation — la paire USB vient de l'exemple */
+  cmPoser("classes","Impédance 50Ω","z","50");
+  cmPoser("classes","Horloge","lMax","40");
+  cmPoser("nets","SPI_CS","lMax","60");
+  cmPoser("nets","SPI_CS","viasMax","2");
+  cmPoser("nets","SPI_CS","couches","1, 4");
+  cmNouveauGroupe("SPI",["SPI_MOSI","SPI_MISO"],"mm",0.5);
+  cmPoserMatrice("Alimentation","Rapide","0,5");
   touch();
 }
 T("IPC-2581 : les cartes d'exemple écrites pour le banc Python, contenu compté",()=>{
@@ -25001,6 +25047,57 @@ T("IPC-2581 : les cartes d'exemple écrites pour le banc Python, contenu compté
     const prof=y.slice(y.indexOf("<Profile>"),y.indexOf("</Profile>"));
     if((prof.match(/<PolyStepCurve /g)||[]).length!==6||(y.match(/<PolyStepCurve /g)||[]).length!==12)
       throw new Error("arcs du contour : "+(prof.match(/<PolyStepCurve /g)||[]).length);
+  }finally{loadDoc(JSON.parse(avant),true);}
+});
+T("IPC-2581 : classes, paires et contraintes écrites avec les éléments du XSD (netPair, SpecRef, Impedance)",()=>{
+  const avant=serialize();
+  try{
+    ipcCarteChargee();
+    const d=ipc2581Document({date:IPC_DATE}), x=d.xml, s=d.stats;
+    if(s.classes!==S.classes.length||s.paires!==1||s.contraintes!==2||s.groupes!==1)
+      throw new Error("stats : "+JSON.stringify(s));
+    for(const m of [
+      /* le net : la nature de la norme, la partenaire, la classe et la paire hors norme, ses règles */
+      '<LogicalNet name="USB_DP" netClass="SIGNAL" netPair="USB_DM">',
+      '<NonstandardAttribute name="NET_CLASS" type="STRING" value="Rapide"/>',
+      '<NonstandardAttribute name="DIFF_PAIR" type="STRING" value="USB"/>',
+      '<NonstandardAttribute name="DIFF_PAIR_POLARITY" type="STRING" value="P"/>',
+      '<NonstandardAttribute name="DIFF_PAIR_POLARITY" type="STRING" value="N"/>',
+      '<SpecRef id="CLASSE_Rapide"/>','<SpecRef id="PAIRE_USB"/>','<SpecRef id="CONTRAINTE_SPI_CS"/>',
+      '<SpecRef id="APPARIEMENT_SPI"/>','<LogicalNet name="SPI_SCK" netClass="CLK">',
+      /* le cuivre d'un net apparié nomme sa partenaire */
+      '<Set net="USB_DP" netPair="USB_DM">',
+      /* la classe : règles physiques, longueur max, impédance cible par couche de signal */
+      '<Spec name="CLASSE_Impédance 50Ω">','<Property name="NET_CLASS" text="Impédance 50Ω"/>',
+      '<Property name="TRACE_WIDTH" value="0.38" unit="MM"/>','<Property name="CLEARANCE" value="0.25" unit="MM"/>',
+      '<Property name="VIA_DIAMETER" value="0.8" unit="MM"/>','<Property name="VIA_DRILL" value="0.4" unit="MM"/>',
+      '<Impedance value="50" tolPlus="10" tolMinus="10" tolPercent="true" comment="Impedance cible de la classe Impédance 50Ω - couche Top">',
+      '<SingleEnded structure="MICROSTRIP_MASK_COVERED">','<LineWidth value="0.38" unit="MM"/>','<RefPlane layerOrGroupRef="Inner 1"/>',
+      '<Property name="MAX_LENGTH" value="40" unit="MM"/>',
+      /* le net contraint */
+      '<Spec name="CONTRAINTE_SPI_CS">','<Property name="NET" text="SPI_CS"/>','<Property name="MAX_LENGTH" value="60" unit="MM"/>',
+      '<Property name="MAX_VIAS" value="2"/>','<Property name="ALLOWED_LAYER" layerOrGroupRef="Top"/>',
+      '<Property name="ALLOWED_LAYER" layerOrGroupRef="Bottom"/>','<Property name="BACKDRILL_RULE" text="',
+      /* la paire : ses bornes et son impédance différentielle couplée */
+      '<Spec name="PAIRE_USB">','<Property name="NET_P" text="USB_DP"/>','<Property name="NET_N" text="USB_DM"/>',
+      '<Property name="TRACE_WIDTH" value="0.25" unit="MM" tolPlus="0.1" tolMinus="0.05"/>',
+      '<Property name="GAP" value="0.15" unit="MM" tolPlus="0.25" tolMinus="0.02"/>',
+      '<Property name="MAX_UNCOUPLED_LENGTH" value="12.7" unit="MM"/>',
+      '<Impedance value="90" tolPlus="10" tolMinus="10" tolPercent="true" comment="Impedance differentielle cible, profil D90 - couche Bottom">',
+      '<EdgeCoupled structure="MICROSTRIP_MASK_COVERED">','<Spacing value="0.15" unit="MM"/>','<RefPlane layerOrGroupRef="Inner 2"/>',
+      /* le groupe et la matrice */
+      '<Spec name="APPARIEMENT_SPI">','<Property name="MATCH_MODE" text="LENGTH"/>','<Property name="MATCH_TOLERANCE" value="0.5" unit="MM"/>',
+      '<Property name="MEMBER" text="SPI_MOSI"/>','<Property name="MEMBER" text="SPI_MISO"/>',
+      '<Spec name="ISOLATION_CLASSES">','<Property name="CLEARANCE" text="Alimentation|Rapide" value="0.5" unit="MM"/>',
+      /* Huray sous le type normalisé de la rugosité, en propriétés nommées */
+      '<Conductor type="SURFACE_ROUGHNESS_UPFACING" comment="Modele de Huray',
+      '<Property name="HURAY_NODULE_RADIUS" value="0.5" unit="MICRON"/>','<Property name="HURAY_SURFACE_RATIO" value="1.5"/>'])
+      if(x.indexOf(m)<0)throw new Error("absent de l'export : "+m);
+    if(x.indexOf('type="OTHER"')>=0)throw new Error("un type OTHER subsiste");
+    /* un net sans paire n'écrit pas de netPair ; une classe sans Z n'écrit pas d'Impedance */
+    if(/<LogicalNet name="GND"[^>]*netPair/.test(x))throw new Error("GND n'a pas de partenaire");
+    const cl=x.slice(x.indexOf('<Spec name="CLASSE_Rapide">'),x.indexOf("</Spec>",x.indexOf('<Spec name="CLASSE_Rapide">')));
+    if(cl.indexOf("<Impedance")>=0)throw new Error("Rapide n'a pas d'impédance cible");
   }finally{loadDoc(JSON.parse(avant),true);}
 });
 T("IPC-2581 : dans fabrication.zip, annoncé par le LISEZ-MOI et le master drawing",()=>{
