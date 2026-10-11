@@ -349,9 +349,15 @@ bords des versements.
 ### Diaphonie
 
 Pour chaque couple de pistes de nets différents, **sur la même couche**, qui
-se font face à moins de cinq fois la hauteur au plan — les arcs comptent, en
-cordes de 5° — : la section à deux conducteurs est **résolue par la méthode
-des moments** à l'écart réel (pas une formule), d'où Kb et Kf. Puis, au
+se font face à moins du seuil max(5 H, 3 × max(W, H)) — l'**égalité** est
+retenue, et 2 % au-dessus (un couple dessiné à S = 3W est chiffré) ; les arcs
+comptent, en cordes de 5° — : la section est **résolue par la méthode des
+moments** à l'écart réel (pas une formule), d'où Kb et Kf. **Tout ce qui longe
+le couple sur la même couche entre dans sa section** : une piste de garde
+(classe Masse ou net de référence) est posée à 0 V si ses vias la cousent au
+pas λ/10 du front global, **flottante** sinon (elle transfère, le couplage
+remonte) ; une voisine de signal est posée avec son port. C'est la même
+section que l'onglet Crosstalk, et le même chiffre. Puis, au
 **niveau 2** — un échelon unitaire, des lignes adaptées, et le **t_r global**
 de la carte (1 ns par défaut) :
 
@@ -394,9 +400,20 @@ Le moteur est celui de l'onglet **Crosstalk** : même section MoM
 fait tourner cette règle seule et en montre le tableau, paire par paire ; le
 t_r global et les deux seuils se règlent indifféremment ici ou là-bas.
 
-Hors jeu : la masse (ni victime ni agresseur), les alimentations (sauf un nœud
-de découpage, qui agresse), et les deux moitiés d'une **paire
+Hors jeu : la masse (ni victime ni agresseur — mais une piste de masse qui
+longe un couple est posée dans sa section, voir plus haut), les alimentations
+(sauf un nœud de découpage, qui agresse), et les deux moitiés d'une **paire
 différentielle**, couplées exprès.
+
+Un couple écarté par la présélection **à moins de 1,5 × le seuil** n'est pas
+chiffré, mais il est **nommé** : une note du rapport et `bilan.diaphonie.ecartes_proches`
+donnent les nets, l'écart et le seuil — « rien au tableau » ne doit pas se
+lire « rien ne couple ». L'onglet Crosstalk (distance max) le chiffre.
+
+Les nets classés **RF** sans porteuse — ni celle de la carte, ni la leur —
+sont jugés au front de leur classe, 100 ps d'office : une note en tête du
+rapport les nomme (`bilan.front_rf`), parce qu'un classement par le nom
+(`RST_RF`, `LNA_EN`) impose ce front à des nets qui n'ont rien de RF.
 
 **Corriger** : écarter (règle des 3W), raccourcir le longement, rapprocher la
 piste de son plan (diélectrique plus mince), glisser une garde de masse ou un

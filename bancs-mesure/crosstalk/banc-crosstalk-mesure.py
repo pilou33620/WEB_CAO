@@ -54,9 +54,10 @@ CAS = {
     5: "S = 3W + fente de 2 mm dans L2 seule (4b)",
 }
 FRONTS_NS = (0.5, 1.0, 2.5, 5.0, 10.0)
-# La presélection geometrique de l'outil s'arrete a 3 x max(W, H) = 1,05 mm :
-# le cas S = 3W tombe pile dessus et serait ecarte. Le banc veut un chiffre
-# pour chaque cas, on ouvre donc la fenetre.
+# La presélection geometrique de l'outil s'arrete a 3 x max(W, H) = 1,05 mm.
+# Le cas S = 3W tombe pile dessus : il etait ecarte avant crosstalk 4.4.1, qui
+# retient l'egalite (et 2 % au-dessus). Le banc garde la fenetre ouverte pour
+# voir aussi les voisines plus lointaines (gardes, lignes d'etalonnage).
 DISTANCE_MAX = 3.0
 
 
