@@ -282,6 +282,22 @@ la paire (`ligne_mom.section_deux_niveaux`), milieu homogène donc Kf nul —,
 comptées dans le NEXT de la paire, et placées sur la carte locale à l'abscisse
 où la victime passe sous (ou sur) l'agresseur.
 
+**Sans plan, la masse arrosée de la couche porte le retour.** Sur une carte
+deux couches sans plan, le courant revient par le cuivre de masse arrosé de
+part et d'autre des pistes, sur leur propre couche. La section se résout alors
+en **ligne coplanaire sans plan dessous** (`ligne_mom`, kind `sans_plan`) : le
+stratifié entier dans l'air, dont la fonction de Green se développe exactement
+en images, et une section électriquement neutre — tout ce que porte le signal
+revient par la masse. La couture n'y est pas exigée : il n'y a pas de plan à
+coudre, et ce cuivre est la référence elle-même. Validé contre la
+transformation conforme (ligne seule, modes pair et impair d'une paire) à
+0,35 %. **Sans masse arrosée non plus**, rien ne porte le retour : le couplage
+reste *non calculé*, avec sa réserve grave, et jamais un zéro. Le vernis n'est
+pas modélisé dans ce cas, une couche *interne* sans plan reste refusée, et les
+pertes R, G au genou ne sont pas calculées sur ces blocs (couplage majoré, la
+fiche le dit). Le même cas sert quand une **fente** ôte l'unique plan sous le
+longement : la section retombe sur la masse coplanaire seule, plus couplée.
+
 #### Les formules
 
 | grandeur | formule |
