@@ -24918,6 +24918,50 @@ T("empilage : la rugosité et les options partent au serveur, et se saisissent a
   delete S.stack.sim;touch();
 });
 
+T("empilage : un plan lisse DÉCLARÉ part comme Rq = 0 sous une piste rugueuse",()=>{
+  /* Sans déclaration, le serveur prête au plan la rugosité de la piste
+     (simulation_em `_rugosite_section`). Le réglage « Lisse déclaré » écrit
+     {m:"hammerstad", rms:0, decl:true} dans le document et envoie
+     rugosite_rms_um: 0 — la déclaration que le serveur lit. Une rugosité
+     nulle non déclarée reste invisible, comme avant. */
+  setCuCount(4);applyPreset(presetsFor(4)[0]);
+  for(let i=0;i<S.cu;i++)setCuRug(i,null);
+  delete S.stack.sim;touch();
+  const decl=RUG_PRESETS.find(p=>p.id==="lisse-decl");
+  if(!decl||decl.rms!==0||decl.decl!==true)throw new Error("réglage « lisse déclaré » absent");
+  if(rugNorm({m:"hammerstad",rms:0})!==null)throw new Error("une rugosité nulle non déclarée doit disparaître");
+  if(JSON.stringify(rugNorm(decl))!=='{"m":"hammerstad","rms":0,"decl":true}')
+    throw new Error("lisse déclaré mal normalisé : "+JSON.stringify(rugNorm(decl)));
+  if(rugNorm({m:"hammerstad",rms:0.5,decl:true}).decl)throw new Error("une rugosité non nulle n'est pas « déclarée lisse »");
+  if(rugLabel(rugNorm(decl))!=="lisse (déclaré)")throw new Error(rugLabel(rugNorm(decl)));
+  /* piste rugueuse sur le dessus, plan déclaré lisse dessous */
+  setCuRug(0,{m:"hammerstad",rms:2});
+  setCuRug(1,decl);
+  touch();
+  const st=simStackup();
+  const c0=st.layers[simCuIndex(0)], c1=st.layers[simCuIndex(1)], c2=st.layers[simCuIndex(2)];
+  if(c0.rugosite_rms_um!==2)throw new Error("piste : "+JSON.stringify(c0));
+  if(c1.modele_rugosite!=="hammerstad"||c1.rugosite_rms_um!==0)throw new Error("plan déclaré lisse : "+JSON.stringify(c1));
+  if("rugosite_rms_um" in c2||"modele_rugosite" in c2)throw new Error("un plan muet envoie une rugosité : "+JSON.stringify(c2));
+  /* aller-retour du document, et le panneau le montre */
+  const a=serialize();
+  loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("aller-retour : "+firstDiff(JSON.parse(a),JSON.parse(serialize()),""));
+  if(!cuRug(1)||cuRug(1).decl!==true||cuRug(1).rms!==0)throw new Error("déclaration perdue : "+JSON.stringify(cuRug(1)));
+  stkPick("cu",1);
+  const h=$("stk").innerHTML;
+  if(!/Lisse déclaré/.test(h)||!/<option value="lisse-decl" selected/.test(h))throw new Error("panneau sans « Lisse déclaré » choisi");
+  stkPick("cu",2);
+  if(!/<option value="lisse" selected/.test($("stk").innerHTML))throw new Error("un plan muet doit se lire « Lisse »");
+  /* le choix au panneau */
+  $("skRugP").value="lisse-decl";$("skRugP").onchange();
+  if(!cuRug(2)||cuRug(2).decl!==true)throw new Error("choix au panneau non repris : "+JSON.stringify(cuRug(2)));
+  undo();
+  if(cuRug(2))throw new Error("l'annulation garde la déclaration");
+  for(let i=0;i<S.cu;i++)setCuRug(i,null);
+  touch();
+});
+
 /* ==========================================================================
    Export IPC-2581 (35-ipc2581-export.js)
    Les deux cartes d'exemple, et la seconde chargée de ce que les exemples

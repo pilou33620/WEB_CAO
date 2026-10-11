@@ -16612,7 +16612,12 @@ const SIM_OEIL={
              (par défaut), le retard du brin inverse en s (0 : celui de
              [Diff Pin]), l'impédance de mode commun du récepteur (0 :
              flottante), et le réglage de l'égaliseur d'après le .ami. */
-          boitier:true, decN:0, rmc:0, amiRegler:false},
+          boitier:true, decN:0, rmc:0, amiRegler:false,
+          /* LES CONDENSATEURS DE LIAISON (œil 2.3.0) : C par brin en F (0 :
+             aucun, rien ne part), boîtier CMS (son ESL par défaut), ESL en
+             H (−1 : celle du boîtier), ESR en Ω, côté émetteur ou
+             récepteur. */
+          acC:0, acBoitier:"", acEsl:-1, acEsr:0, acPos:"emetteur"},
   /* LES FICHIERS IBIS, lus dans la page et envoyés EN TEXTE avec la
      requête : le serveur ne garde rien. {fichier, texte, modeles, modele,
      coin, broches, paires, broche, amiAttendu, ami {fichier, texte}}, ou
@@ -16627,6 +16632,12 @@ const SIM_OEIL_SENS=[
   {cle:"meme", nom:"même sens (FEXT)"},
   {cle:"oppose", nom:"sens opposé (NEXT)"}];
 const SIM_OEIL_UNITES_DEBIT=[{cle:"Mb/s",f:1e6},{cle:"Gb/s",f:1e9}];
+/* Les boîtiers CMS des condensateurs de liaison : le serveur connaît leur
+   ESL montée (`oeil.ESL_BOITIERS`) ; ici seulement la liste. */
+const SIM_OEIL_BOITIERS_AC=["0201","0402","0603","0805","1206"];
+const SIM_OEIL_POS_AC=[
+  {cle:"emetteur", nom:"côté émetteur"},
+  {cle:"recepteur", nom:"côté récepteur"}];
 const SIM_OEIL_FIAB={
   corrobore:{nom:"recoupé", cls:"simBadgeOk"},
   a_verifier:{nom:"à vérifier", cls:"simBadgeAlerte"},
@@ -16792,7 +16803,7 @@ function simCorpsOeil(){
          simChamp("simOeilHold","Temps de hold du récepteur, après l'échantillonnage")+
          '<span class="simU">ns</span>'+
        "</div>";
-  h+=simOeilCorpsStat()+simOeilCorpsIbis();
+  h+=simOeilCorpsStat()+simOeilCorpsAc()+simOeilCorpsIbis();
   h+='<div class="pnl-bar simBarFixe">'+
        '<button class="tb mini on" id="simOeilGo" title="Calculer l\'œil de la sélection">▶ Calculer</button>'+
        '<button class="tb mini" id="simOeilCsv" title="Les mesures, l\'œil pire cas et la réponse à un bit">.csv</button>'+
@@ -16832,6 +16843,33 @@ function simOeilCorpsStat(){
       "</select>"+
     "</div>";
 }
+/* LES CONDENSATEURS DE LIAISON (couplage AC). Vide, rien ne part et l'œil
+   est celui d'avant. Saisis, le serveur pose un condensateur en série sur
+   chaque brin (ESR, ESL du boîtier, C) côté émetteur ou récepteur : coupure
+   basse, et droop sur les longues suites de bits — que le pire cas compte
+   sur toute sa mémoire. */
+function simOeilCorpsAc(){
+  const s=SIM_OEIL.saisie;
+  return '<div class="pnl-bar simBarF">'+
+      '<span class="pnl-lbl">Liaison</span>'+
+      '<span class="pnl-lbl">C</span>'+
+      simChamp("simOeilAcC","Condensateur de liaison en série sur chaque brin (nF). Vide : aucun — l'émetteur attaque la piste en continu.")+
+      '<span class="simU">nF</span>'+
+      '<select id="simOeilAcBoitier" class="simUSel" title="Boîtier CMS du condensateur : fixe son inductance série (ESL) par défaut, de 0,25 nH (0201) à 1 nH (1206).">'+
+        '<option value=""'+(s.acBoitier?"":" selected")+'>boîtier…</option>'+
+        SIM_OEIL_BOITIERS_AC.map(b=>'<option value="'+b+'"'+(s.acBoitier===b?" selected":"")+">"+b+"</option>").join("")+
+      "</select>"+
+      '<span class="pnl-lbl">ESL</span>'+
+      simChamp("simOeilAcEsl","Inductance série du condensateur monté (nH). Vide : celle du boîtier choisi, 0 sans boîtier.")+
+      '<span class="simU">nH</span>'+
+      '<span class="pnl-lbl">ESR</span>'+
+      simChamp("simOeilAcEsr","Résistance série du condensateur (Ω). Vide : 0.")+
+      '<span class="simU">Ω</span>'+
+      '<select id="simOeilAcPos" class="simUSel" title="Où les condensateurs sont posés : entre l\'émetteur (et son boîtier) et la piste, ou entre la piste et le récepteur.">'+
+        SIM_OEIL_POS_AC.map(x=>'<option value="'+x.cle+'"'+(s.acPos===x.cle?" selected":"")+">"+simEsc(x.nom)+"</option>").join("")+
+      "</select>"+
+    "</div>";
+}
 /* 10⁻¹² plutôt que 1e-12 : c'est ainsi qu'une norme l'écrit. */
 function simOeilBer(b){
   if(!(b>0))return "—";
@@ -16865,6 +16903,7 @@ function simOeilIbisModeles(txt){
 function simOeilIbisBroches(txt){
   const broches=[], paires=[];
   let sec="", ami=false;
+  const amiLibs=[];
   for(const brute of String(txt||"").split(/\r?\n/)){
     const l=brute.replace(/\|.*$/,"").trim();
     if(!l)continue;
@@ -16878,8 +16917,12 @@ function simOeilIbisBroches(txt){
     if(sec==="pin"&&c.length>=3)broches.push({nom:c[0], signal:c[1], modele:c[2]});
     else if(sec==="diff pin"&&c.length>=2)
       paires.push({broche:c[0], inverse:c[1], vdiff:c[2]||"", tdelay:c[3]||""});
+    /* « Executable <plateforme> <bibliothèque> <.ami> » : le nom de la
+       bibliothèque, pour aider à la désigner (œil 2.3.0) */
+    else if(sec==="algorithmic model"&&/^executable$/i.test(c[0])&&c.length>=4)
+      amiLibs.push({plateforme:c[1], bibliotheque:c[2], ami:c[3]});
   }
-  return {broches, paires, ami};
+  return {broches, paires, ami, amiLibs};
 }
 /* Les broches qui ont un tampon : ni alimentation ni broche libre. */
 function simOeilBrochesSignal(f){
@@ -16940,12 +16983,18 @@ function simOeilCorpsIbis(){
          '<option value=""'+(choix?"":" selected")+">"+(diff?"paire…":"broche…")+" (boîtier moyen)</option>"+
          opts.map(o=>'<option value="'+simEsc(o.v)+'"'+(o.v===choix?" selected":"")+">"+simEsc(o.t)+"</option>").join("")+
          "</select>";
-    /* L'AMI : le .ami se lit et se montre ; la bibliothèque, jamais. */
-    if(f.ami)
-      h+='<span class="simU" title="Fichier .ami lu (paramètres) — le modèle AMI n\'est pas exécuté">AMI '+simEsc(f.ami.fichier)+"</span>"+
-         '<button class="simBtnClear" id="simOeilAmiX_'+cle+'" title="Retirer le fichier .ami">✕</button>';
+    /* L'AMI : le .ami se lit et se montre ; la bibliothèque (œil 2.3.0)
+       s'exécute seulement si l'on la DÉSIGNE, par son chemin dans la LIB ou
+       le projet du serveur — jamais depuis le navigateur ni une URL. */
+    if(f.ami){
+      const libs=(f.amiLibs||[]).map(x=>x.plateforme+" : "+x.bibliotheque).join(" ; ");
+      h+='<span class="simU" title="Fichier .ami lu (paramètres)">AMI '+simEsc(f.ami.fichier)+"</span>"+
+         '<button class="simBtnClear" id="simOeilAmiX_'+cle+'" title="Retirer le fichier .ami">✕</button>'+
+         '<input id="simOeilAmiLib_'+cle+'" type="text" spellcheck="false" class="simChamp simTxt" placeholder="bibliothèque .so/.dll (chemin dans la LIB)" value="'+simEsc(f.ami.bibliotheque||"")+'" title="Pour EXÉCUTER le modèle AMI : le chemin de sa bibliothèque (.so sous Linux, .dll sous Windows), relatif à la LIB ou à un dossier de projets du serveur. Vide : le modèle n\'est pas exécuté, l\'égaliseur de référence sert.'+(libs?" Le .ibs déclare : "+simEsc(libs):"")+'">'+
+         '<input id="simOeilAmiPar_'+cle+'" type="text" spellcheck="false" class="simChamp simTxt" placeholder="paramètres : nom=valeur …" value="'+simEsc(f.ami.parametres||"")+'" title="Surcharges des paramètres In/InOut passés au modèle (AMI_parameters_in), « nom=valeur » séparés par des espaces, le nom étant celui de la feuille ou son chemin (TX_FFE/Tap/-1=-0.1). Vide : les valeurs par défaut du .ami.">';
+    }
     else if(f.amiAttendu)
-      h+='<button class="tb mini" id="simOeilAmi_'+cle+'" title="Le modèle déclare un [Algorithmic Model] : chargez son fichier .ami pour en lire les paramètres (FFE, DFE, CTLE, gigue). La bibliothèque du fabricant n\'est pas exécutée.">fichier .ami…</button>';
+      h+='<button class="tb mini" id="simOeilAmi_'+cle+'" title="Le modèle déclare un [Algorithmic Model] : chargez son fichier .ami pour en lire les paramètres (FFE, DFE, CTLE, gigue), puis désignez sa bibliothèque pour l\'exécuter.">fichier .ami…</button>';
     return h;
   };
   const s=SIM_OEIL.saisie, diff=simOeilMode()==="diff";
@@ -16997,6 +17046,9 @@ function simOeilEcrire(){
   if(eg)eg.checked=!!s.egaliseur;
   pose("simOeilDecN",s.decN?simNbLibre(s.decN*1e12):"");
   pose("simOeilRmc",s.rmc>0?simNbLibre(s.rmc):"");
+  pose("simOeilAcC",s.acC>0?simNbLibre(s.acC*1e9):"");
+  pose("simOeilAcEsl",s.acEsl>=0?simNbLibre(s.acEsl*1e9):"");
+  pose("simOeilAcEsr",s.acEsr>0?simNbLibre(s.acEsr):"");
   const bt=simEl("simOeilBoitier");
   if(bt)bt.checked=s.boitier!==false;
   const ar=simEl("simOeilAmiRegler");
@@ -17035,6 +17087,12 @@ function simOeilLire(){
   const sens=simEl("simOeilXtSens"); if(sens)s.xtSens=sens.value;
   if(simEl("simOeilDecN")){const d=lu("simOeilDecN",s.decN*1e12); s.decN=d==null?0:d*1e-12;}
   const rm=lu("simOeilRmc",s.rmc,0); if(simEl("simOeilRmc"))s.rmc=rm==null?0:rm;
+  /* les condensateurs de liaison : vide = aucun ; ESL vide = celle du boîtier */
+  const ac=lu("simOeilAcC",s.acC*1e9,0); if(simEl("simOeilAcC"))s.acC=ac==null?0:ac*1e-9;
+  const esl=lu("simOeilAcEsl",s.acEsl*1e9,0); if(simEl("simOeilAcEsl"))s.acEsl=esl==null?-1:esl*1e-9;
+  const esr=lu("simOeilAcEsr",s.acEsr,0); if(simEl("simOeilAcEsr"))s.acEsr=esr==null?0:esr;
+  const ab=simEl("simOeilAcBoitier"); if(ab)s.acBoitier=ab.value;
+  const ap=simEl("simOeilAcPos"); if(ap)s.acPos=ap.value;
   const bt=simEl("simOeilBoitier"); if(bt)s.boitier=!!bt.checked;
   const ar=simEl("simOeilAmiRegler"); if(ar)s.amiRegler=!!ar.checked;
   return s;
@@ -17068,6 +17126,14 @@ function simOeilReglages(){
   if(s.bruit>0)o.bruit_v=s.bruit;
   if(s.rj>0||s.dj>0||s.bruit>0||s.xt)o.ber_cible=s.ber;
   if(s.xt){o.agresseurs_auto=true; o.agresseurs_sens=s.xtSens;}
+  /* LES CONDENSATEURS DE LIAISON (œil 2.3.0) : C saisi, et rien d'autre
+     que ce qui l'est — le serveur prend l'ESL du boîtier et un ESR nul. */
+  if(s.acC>0){
+    o.couplage_ac={c:s.acC, position:s.acPos||"emetteur"};
+    if(s.acBoitier)o.couplage_ac.boitier=s.acBoitier;
+    if(s.acEsl>=0)o.couplage_ac.esl=s.acEsl;
+    if(s.acEsr>0)o.couplage_ac.esr=s.acEsr;
+  }
   for(const [cle,champ] of [["em","ibis_emetteur"],["rx","ibis_recepteur"]]){
     const f=SIM_OEIL.ibis[cle];
     if(!f)continue;
@@ -17080,7 +17146,15 @@ function simOeilReglages(){
       if(f.modeleN&&f.modeles.some(m=>m.nom===f.modeleN))o[champ].modele_n=f.modeleN;
       if(f.coinN)o[champ].coin_n=f.coinN;
     }
-    if(f.ami)o[champ].ami={texte:f.ami.texte, fichier:f.ami.fichier};
+    if(f.ami){
+      o[champ].ami={texte:f.ami.texte, fichier:f.ami.fichier};
+      /* L'EXÉCUTION (œil 2.3.0) : la bibliothèque désignée et les
+         surcharges « nom=valeur », en objet ; rien de désigné, rien ne
+         part et le modèle n'est pas exécuté. */
+      if(f.ami.bibliotheque)o[champ].ami.bibliotheque=f.ami.bibliotheque;
+      const par=simOeilAmiParametres_(f.ami.parametres);
+      if(par)o[champ].ami.parametres=par;
+    }
   }
   if(s.boitier===false&&(SIM_OEIL.ibis.em||SIM_OEIL.ibis.rx))o.boitier=false;
   if(o.mode==="diff"){
@@ -17128,6 +17202,10 @@ function simBrancherOeil(){
   pose("simOeilAmiRegler","onchange",function(){SIM_OEIL.saisie.amiRegler=!!this.checked;});
   pose("simOeilDecN","oninput",function(){simOeilLire();});
   pose("simOeilRmc","oninput",function(){simOeilLire();});
+  for(const id of ["simOeilAcC","simOeilAcEsl","simOeilAcEsr"])
+    pose(id,"oninput",function(){simOeilLire();});
+  pose("simOeilAcBoitier","onchange",function(){simOeilLire();});
+  pose("simOeilAcPos","onchange",function(){simOeilLire();});
   /* UN SEUL SÉLECTEUR DE FICHIER pour les deux bouts : `cible` dit lequel
      on charge. */
   let cible=null;
@@ -17171,6 +17249,14 @@ function simBrancherOeil(){
       const f=SIM_OEIL.ibis[cle];
       simOeilLire(); if(f)f.ami=null; simPoser();
     });
+    /* la bibliothèque à exécuter et ses surcharges : du texte, gardé tel
+       quel ; c'est le serveur qui juge le chemin et les paramètres */
+    pose("simOeilAmiLib_"+cle,"oninput",function(){
+      const f=SIM_OEIL.ibis[cle]; if(f&&f.ami)f.ami.bibliotheque=String(this.value).trim();
+    });
+    pose("simOeilAmiPar_"+cle,"oninput",function(){
+      const f=SIM_OEIL.ibis[cle]; if(f&&f.ami)f.ami.parametres=String(this.value);
+    });
   }
   pose("simOeilAmiFichier","onchange",function(){
     const fi=this.files&&this.files[0], cle=cible;
@@ -17207,7 +17293,7 @@ function simBrancherOeil(){
       SIM_OEIL.ibis[cle]={fichier:f.name, texte:txt, modeles, modele:voulu.nom, coin:"typ",
                           modeleN:"", coinN:"",
                           broches:bp.broches, paires:bp.paires, broche:"",
-                          amiAttendu:bp.ami, ami:null};
+                          amiAttendu:bp.ami, amiLibs:bp.amiLibs||[], ami:null};
       SIM_OEIL.res=null; SIM_OEIL.err="";
       simPoser();
     };
@@ -17577,6 +17663,15 @@ function simRendreOeil(){
                                           "<br><small>brins identiques</small>")+
     (mc.hauteur_symetrique!=null?"<br><small>œil brut (sans égaliseur) "+simOeilV(mc.hauteur_brute)+
       " — paire symétrique "+simOeilV(mc.hauteur_symetrique)+"</small>":"")]);
+  /* LES CONDENSATEURS DE LIAISON (œil 2.3.0) : coupure basse, constante de
+     temps, droop par bit et sur la mémoire du pire cas. */
+  const ac=r.couplage_ac;
+  if(ac)det.push(["Couplage AC", simNb(ac.c*1e9,3)+" nF par brin, ESL "+simNb(ac.esl*1e9,2)+" nH, ESR "+
+    simNb(ac.esr,2)+" Ω, "+(ac.position==="recepteur"?"côté récepteur":"côté émetteur")+
+    (ac.f_c!=null?"<br><small>coupure basse "+simFreq(ac.f_c)+", τ = "+simOeilT(ac.tau)+
+      " ; droop "+simNb(100*ac.droop_par_ui,2)+" % par bit, "+simNb(100*ac.droop_fenetre,1)+" % sur les "+
+      ac.bits_memoire+" bits de mémoire du pire cas"+(ac.fenetre_couvre?"":" (fenêtre plus courte que la décharge)")+"</small>":
+      "<br><small>sans terminaison : pont diviseur avec C<sub>L</sub>, pas de décharge</small>")]);
   const am=r.ami;
   if(am)det.push(["IBIS-AMI", simOeilAmiTexte(am)]);
   det.push(["Calcul", r.grille.points+" fréquences jusqu'à "+simFreq(r.grille.f_max)+
@@ -17609,8 +17704,23 @@ function simOeilBrocheTexte(x){
     t+="<br><small>brin inverse : "+simEsc(x.modele_n)+", coin "+simEsc(x.coin_n)+"</small>";
   return t;
 }
+/* « c0=0.7 c1=-0.3 TX_FFE/Tap/-1=-0.1 » -> {c0:0.7, ...} ; les nombres en
+   nombres, le reste en texte ; null si rien. */
+function simOeilAmiParametres_(txt){
+  const out={}; let n=0;
+  for(const mot of String(txt||"").split(/[\s;,]+/)){
+    const i=mot.indexOf("=");
+    if(i<=0)continue;
+    const k=mot.slice(0,i).trim(), v=mot.slice(i+1).trim();
+    if(!k)continue;
+    const x=parseFloat(v.replace(",","."));
+    out[k]=(v!==""&&isFinite(x)&&/^[-+0-9.,eE]+$/.test(v))?x:v;
+    n++;
+  }
+  return n?out:null;
+}
 /* L'AMI en une ligne : ce qui a été lu, ce qui est proposé, ce qui est
-   appliqué — et qu'il n'est pas exécuté. */
+   appliqué — et s'il est exécuté (œil 2.3.0), ce que l'exécution a rendu. */
 function simOeilAmiTexte(am){
   const lus=[am.emetteur,am.recepteur].filter(Boolean)
     .map(a=>simEsc(a.fichier||a.modele)+" ("+a.parametres.length+" paramètres)");
@@ -17623,6 +17733,23 @@ function simOeilAmiTexte(am){
     t+="<br><small>"+p.notes.map(simEsc).join("<br>")+"</small>";
   t+="<br><small>"+(am.applique&&am.applique.length?"appliqué : "+simEsc(am.applique.join(", ")):
                    "proposé, non appliqué (cochez « régler l'égaliseur d'après l'AMI »)")+"</small>";
+  /* L'EXÉCUTION, bout par bout : chargée, AMI_Init, GetWave, le message du
+     modèle, ses paramètres Out, et la raison d'un repli. */
+  const ex=am.execution||{};
+  for(const [cle,nom] of [["emetteur","émetteur"],["recepteur","récepteur"]]){
+    const e=ex[cle];
+    if(!e)continue;
+    const outs=Object.keys(e.parametres_out||{}).map(k=>k+" = "+simEsc(String(e.parametres_out[k]))).join(", ");
+    t+="<br><small>"+nom+" : "+simEsc(e.bibliotheque)+" — "+
+       (!e.chargee?"non chargée":e.init===false?"AMI_Init en échec":e.init?"AMI_Init ok"+
+         (e.init_returns_impulse===false?" (impulsion non modifiée)":"")+(e.getwave?", AMI_GetWave par blocs":", sans GetWave"):"non exécutée")+
+       (e.message?" · « "+simEsc(e.message)+" »":"")+(e.note?" · "+simEsc(e.note):"")+
+       (outs?"<br>paramètres Out : "+outs:"")+
+       (e.surcharges_ignorees&&e.surcharges_ignorees.length?"<br>surcharges ignorées : "+simEsc(e.surcharges_ignorees.join(", ")):"")+
+       "</small>";
+  }
+  if(am.horloges&&am.horloges.n)t+="<br><small>"+am.horloges.n+" instants d'horloge rendus par le récepteur"+
+    (am.horloges.phase_ui!=null?", phase moyenne "+simNb(am.horloges.phase_ui,3)+" UI":"")+" — l'œil garde son propre instant d'échantillonnage</small>";
   return t+"<br><small><b>"+simEsc(am.note)+"</b></small>";
 }
 /* Les paramètres lus du .ami, repliés : chemin, valeur, plage. */

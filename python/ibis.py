@@ -35,7 +35,12 @@ et dit dans le resultat.
 
 LE FICHIER .AMI d'un modele IBIS-AMI se lit aussi (`lire_ami`) : l'arbre de
 ses parametres, et ce qu'ils proposent pour un egaliseur de reference
-(`proposer_egaliseur`). La bibliotheque du fabricant n'est PAS executee.
+(`proposer_egaliseur`). DEPUIS LA 1.3.0, LA BIBLIOTHEQUE DU FABRICANT
+S'EXECUTE (`ModeleAmi`, par ctypes : AMI_Init, AMI_GetWave, AMI_Close selon
+IBIS 7.x), la chaine de parametres se construit du .ami
+(`parametres_ami_in`) et se relit (`lire_parametres_ami`) -- seulement
+depuis un fichier que l'utilisateur designe sous un dossier autorise
+(`chemin_bibliotheque_ami`). Voir « IBIS-AMI : l'execution du modele ».
 
 LA PAIRE (1.1.0) : deux tampons sur les deux brins d'une paire couplee,
 remise par brin depuis ses deux modes -- voir `LiaisonPaire`.
@@ -72,7 +77,7 @@ try:
 except Exception:                                      # noqa: BLE001
     np = None
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 COINS = {"typ": 0, "min": 1, "max": 2}
 SUFFIXES = {"T": 1e12, "G": 1e9, "M": 1e6, "k": 1e3, "m": 1e-3, "u": 1e-6,
             "n": 1e-9, "p": 1e-12, "f": 1e-15}
@@ -833,17 +838,19 @@ def abcd_boitier(freqs, bt, sens):
 # ==========================================================================
 # IBIS-AMI : le fichier .ami
 # --------------------------------------------------------------------------
-# LE MODELE AMI N'EST PAS EXECUTE ICI. Un [Algorithmic Model] renvoie a une
-# bibliotheque binaire du fabricant (.dll, .so) -- son egaliseur, sa
-# recuperation d'horloge, ses algorithmes d'adaptation -- et a un fichier
-# .ami, texte, qui en decrit les PARAMETRES : ceux que la norme reserve
-# (AMI_Version, Init_Returns_Impulse, Tx_Rj, Rx_Noise...) et ceux propres
-# au modele (Model_Specific : prises de FFE, de DFE, gains de CTLE...).
-# Executer du code natif venu d'un fichier televerse n'est pas une option.
+# Un [Algorithmic Model] renvoie a une bibliotheque binaire du fabricant
+# (.dll, .so) -- son egaliseur, sa recuperation d'horloge, ses algorithmes
+# d'adaptation -- et a un fichier .ami, texte, qui en decrit les PARAMETRES :
+# ceux que la norme reserve (AMI_Version, Init_Returns_Impulse, Tx_Rj,
+# Rx_Noise...) et ceux propres au modele (Model_Specific : prises de FFE, de
+# DFE, gains de CTLE...). Executer du code natif venu d'un fichier televerse
+# n'est pas une option : la bibliotheque ne s'execute (1.3.0, plus bas) que
+# depuis un fichier designe sur le disque du serveur.
 # On LIT donc le .ami -- syntaxe en arbre, a parentheses --, on le montre,
 # et l'on en tire, quand ils sont lisibles, de quoi REGLER L'EGALISEUR DE
 # REFERENCE de l'oeil (FFE, DFE, CTLE) et sa gigue : c'est une proposition
-# fondee sur des noms de parametres usuels, pas le comportement du modele.
+# fondee sur des noms de parametres usuels, pas le comportement du modele --
+# le repli quand le modele ne s'execute pas.
 # ==========================================================================
 
 MAX_AMI = 2 * 1024 * 1024
@@ -1183,6 +1190,314 @@ def proposer_egaliseur(ami_tx=None, ami_rx=None, debit=1e9):
     if sens:
         prop["sensibilite"] = abs(sens)
     return prop
+
+
+# ==========================================================================
+# IBIS-AMI : l'execution du modele (1.3.0)
+# --------------------------------------------------------------------------
+# LA BIBLIOTHEQUE DU FABRICANT S'EXECUTE, par ctypes, selon la norme IBIS 7.x
+# (section 10, « Algorithmic Modeling Interface ») :
+#
+#   long AMI_Init(double *impulse_matrix, long row_size, long aggressors,
+#                 double sample_interval, double bit_time,
+#                 char *AMI_parameters_in, char **AMI_parameters_out,
+#                 void **AMI_memory_handle, char **msg);
+#   long AMI_GetWave(double *wave, long wave_size, double *clock_times,
+#                    char **AMI_parameters_out, void *AMI_memory);
+#   long AMI_Close(void *AMI_memory);
+#
+# AMI_Init recoit la reponse impulsionnelle du canal analogique (une colonne
+# par agresseur, aucun ici : row_size echantillons, EN VOLTS PAR SECONDE --
+# sum h . dt est la reponse a un echelon de pleine excursion de l'emetteur,
+# en volts), la MODIFIE EN PLACE si le modele a Init_Returns_Impulse, et rend
+# un pointeur de memoire qu'AMI_GetWave et AMI_Close recevront. AMI_GetWave
+# recoit une forme d'onde (volts, au meme pas) qu'il modifie en place, par
+# blocs successifs -- l'etat (egaliseur adaptatif, recuperation d'horloge)
+# vit dans la memoire du modele --, et ecrit les instants d'horloge qu'il a
+# recuperes dans clock_times (termine par -1). Les deux rendent 1 quand tout
+# va bien, 0 sinon ; les chaines qu'ils rendent appartiennent au modele et
+# sont copiees aussitot.
+#
+# LA CHAINE DE PARAMETRES (AMI_parameters_in) : « (modele (feuille valeur)
+# (branche (feuille valeur)) ...) » -- la racine est le nom du modele, les
+# branches sont celles du .ami SANS les mots Reserved_Parameters et
+# Model_Specific, et seuls les parametres d'Usage In et InOut y vont, avec
+# leur valeur par defaut (`lire_ami` : Value, Default, ou typ d'un Range)
+# que l'utilisateur peut surcharger par le chemin ou le nom de la feuille.
+# Les chaines sont entre guillemets, les booleens True / False. Ce que le
+# modele rend (Usage Out, InOut) s'ecrit dans la meme syntaxe et se relit
+# (`lire_parametres_ami`).
+#
+# CE QUI EST EXECUTE, ET D'OU. Seul un fichier que l'utilisateur designe,
+# sous un des dossiers autorises par le serveur (la LIB, les racines de
+# projets), par son chemin relatif -- `chemin_bibliotheque_ami` le verifie
+# par realpath, comme les projets --, et seulement une bibliotheque
+# (.so, .dll, .dylib). Rien n'est charge depuis une URL ni depuis le texte
+# d'une requete : du code natif venu du navigateur n'est pas une option.
+# Un fichier d'une autre architecture, absent ou sans les fonctions se
+# refuse par ErreurIbis, que l'oeil tourne en avertissement et en repli sur
+# l'egaliseur de reference.
+# ==========================================================================
+
+import ctypes
+import os
+
+EXTENSIONS_AMI = (".so", ".dll", ".dylib")
+
+
+def chemin_bibliotheque_ami(brut, racines):
+    """Le chemin absolu de la bibliotheque AMI designee par `brut`, sous une
+    des `racines` autorisees (le verdict se fonde sur realpath), ou leve
+    ErreurIbis. Un chemin absolu est accepte s'il tombe sous une racine."""
+    brut = str(brut or "").strip().strip('"')
+    if not brut:
+        raise ErreurIbis("Aucune bibliothèque AMI désignée.")
+    if len(brut) > 400 or "\x00" in brut or "://" in brut:
+        raise ErreurIbis("Chemin de bibliothèque AMI invalide.",
+                         "Un chemin de fichier sous la LIB ou le projet, pas "
+                         "une URL.")
+    if os.path.splitext(brut)[1].lower() not in EXTENSIONS_AMI:
+        raise ErreurIbis("« %s » n'est pas une bibliothèque (.so, .dll, "
+                         ".dylib)." % os.path.basename(brut))
+    racines = [r for r in (racines or []) if r]
+    if not racines:
+        raise ErreurIbis("Aucun dossier autorisé pour les bibliothèques AMI.",
+                         "Le serveur n'exécute un modèle que depuis la LIB "
+                         "ou un dossier de projets déclaré.")
+    for racine in racines:
+        vraie = os.path.realpath(racine)
+        cible = os.path.realpath(brut if os.path.isabs(brut)
+                                 else os.path.join(racine, brut))
+        if cible == vraie or not cible.startswith(vraie + os.sep):
+            continue
+        if os.path.isfile(cible):
+            return cible
+    raise ErreurIbis("Bibliothèque AMI « %s » introuvable sous les dossiers "
+                     "autorisés (LIB, projets)." % brut,
+                     "Déposez le fichier du fabricant dans la LIB ou le "
+                     "projet, et désignez-le par son chemin relatif.")
+
+
+def _texte_ami(v):
+    """Une valeur en syntaxe AMI : nombre tel quel, booleen True/False,
+    chaine entre guillemets."""
+    if isinstance(v, bool):
+        return "True" if v else "False"
+    if isinstance(v, (int, float)):
+        # un entier s'ecrit sans decimale (un Type Integer lu « 0 » reste
+        # « 0 »), un reel tel que Python le relit
+        return "%d" % v if float(v).is_integer() and abs(v) < 1e15 \
+            else repr(float(v))
+    s = str(v)
+    if s in ("True", "False"):
+        return s
+    try:
+        float(s)
+        return s
+    except ValueError:
+        return '"%s"' % s.replace('"', "'")
+
+
+def parametres_ami_in(ami, surcharges=None, nom=None):
+    """La chaine AMI_parameters_in d'un .ami lu (`lire_ami`) : les
+    parametres In et InOut avec leur valeur par defaut, `surcharges`
+    {chemin ou nom de feuille: valeur} par-dessus. Rend (chaine, surcharges
+    appliquees, surcharges ignorees)."""
+    arbre = {}
+    appliques, ignores = [], []
+    surcharges = dict(surcharges or {})
+    valeurs = {}
+    for p in (ami or {}).get("parametres") or []:
+        if str(p.get("usage") or "").lower() not in ("in", "inout"):
+            continue
+        morceaux = p["chemin"].split("/")
+        if morceaux and morceaux[0].lower() in ("reserved_parameters",
+                                                "model_specific"):
+            morceaux = morceaux[1:]
+        if not morceaux:
+            continue
+        v = p.get("valeur")
+        if v is None:
+            continue
+        valeurs[tuple(morceaux)] = v
+    for cle, v in surcharges.items():
+        cle = str(cle).strip().strip("/")
+        chemin = tuple(cle.split("/"))
+        if chemin and chemin[0].lower() in ("reserved_parameters",
+                                            "model_specific"):
+            chemin = chemin[1:]
+        cibles = [c for c in valeurs if c == chemin] or \
+            [c for c in valeurs if c[-1] == cle]
+        if len(cibles) == 1:
+            valeurs[cibles[0]] = v
+            appliques.append("/".join(cibles[0]))
+        else:
+            ignores.append(cle)
+    for chemin, v in valeurs.items():
+        d = arbre
+        for m in chemin[:-1]:
+            d = d.setdefault(m, {})
+        if isinstance(d, dict):
+            d[chemin[-1]] = v
+
+    def ecrire(d):
+        out = []
+        for k, v in d.items():
+            out.append("(%s %s)" % (k, ecrire(v) if isinstance(v, dict)
+                                    else _texte_ami(v)))
+        return " ".join(out)
+    racine = nom or (ami or {}).get("modele") or "modele"
+    return "(%s %s)" % (racine, ecrire(arbre)), appliques, ignores
+
+
+def lire_parametres_ami(texte):
+    """Ce qu'un modele rend dans AMI_parameters_out : {chemin: valeur}, les
+    feuilles de l'arbre « (modele (branche (feuille valeur))) », sans le nom
+    du modele. Un texte vide ou mal forme rend {}."""
+    texte = (texte or "").strip()
+    if not texte:
+        return {}
+    pile, racines = [], []
+    try:
+        for j in _jetons_ami(texte):
+            if j == "(":
+                pile.append([])
+            elif j == ")":
+                if not pile:
+                    return {}
+                fini = pile.pop()
+                (pile[-1] if pile else racines).append(fini)
+            elif pile:
+                pile[-1].append(j)
+    except ErreurIbis:
+        return {}
+    if pile or not racines:
+        return {}
+    out = {}
+
+    def parcourir(n, chemin):
+        if not n["enfants"]:
+            if chemin and n["valeurs"]:
+                vals = [(_num(v) if _num(v) is not None else str(v))
+                        for v in n["valeurs"]]
+                out["/".join(chemin)] = vals[0] if len(vals) == 1 else vals
+            return
+        for e in n["enfants"]:
+            parcourir(e, chemin + [e["nom"]])
+    racine = _noeud(racines[0])
+    for e in racine["enfants"]:
+        parcourir(e, [e["nom"]])
+    return out
+
+
+class ModeleAmi(object):
+    """Une bibliotheque AMI chargee : `init`, `getwave`, `fermer`.
+
+    Le tableau passe a `init` est MODIFIE EN PLACE par le modele, comme la
+    norme le veut ; on lui donne une copie contigue en double et on la
+    garde tant que le modele vit."""
+
+    def __init__(self, chemin):
+        self.chemin = chemin
+        self.memoire = None
+        self._garde = None
+        try:
+            self.lib = ctypes.CDLL(chemin)
+        except OSError as exc:
+            raise ErreurIbis("La bibliothèque AMI « %s » ne se charge pas : "
+                             "%s" % (os.path.basename(chemin), exc),
+                             "Architecture ou système différent de celui "
+                             "du serveur (une .dll ne se charge pas sous "
+                             "Linux, une bibliothèque 32 bits sous un Python "
+                             "64 bits), ou dépendances absentes.")
+        try:
+            self.lib.AMI_Init.argtypes = [
+                ctypes.POINTER(ctypes.c_double), ctypes.c_long, ctypes.c_long,
+                ctypes.c_double, ctypes.c_double, ctypes.c_char_p,
+                ctypes.POINTER(ctypes.c_char_p), ctypes.POINTER(ctypes.c_void_p),
+                ctypes.POINTER(ctypes.c_char_p)]
+            self.lib.AMI_Init.restype = ctypes.c_long
+        except AttributeError:
+            raise ErreurIbis("La bibliothèque « %s » n'a pas de fonction "
+                             "AMI_Init : ce n'est pas un modèle AMI."
+                             % os.path.basename(chemin))
+        self.getwave_existe = hasattr(self.lib, "AMI_GetWave")
+        if self.getwave_existe:
+            self.lib.AMI_GetWave.argtypes = [
+                ctypes.POINTER(ctypes.c_double), ctypes.c_long,
+                ctypes.POINTER(ctypes.c_double),
+                ctypes.POINTER(ctypes.c_char_p), ctypes.c_void_p]
+            self.lib.AMI_GetWave.restype = ctypes.c_long
+        self.close_existe = hasattr(self.lib, "AMI_Close")
+        if self.close_existe:
+            self.lib.AMI_Close.argtypes = [ctypes.c_void_p]
+            self.lib.AMI_Close.restype = ctypes.c_long
+
+    @staticmethod
+    def _chaine(c):
+        v = c.value
+        return v.decode("utf-8", "replace") if v else ""
+
+    def init(self, impulsion, dt, bit_time, parametres_in):
+        """AMI_Init : (ok, impulsion rendue, parametres_out, message)."""
+        # UNE COPIE, toujours : le modele ecrit dans le tableau, et
+        # `ascontiguousarray` rendrait l'original s'il est deja contigu.
+        imp = np.array(impulsion, dtype=float, copy=True, order="C")
+        self._garde = imp
+        p_out, msg, mem = ctypes.c_char_p(), ctypes.c_char_p(), ctypes.c_void_p()
+        ret = self.lib.AMI_Init(
+            imp.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+            ctypes.c_long(len(imp)), ctypes.c_long(0), ctypes.c_double(dt),
+            ctypes.c_double(bit_time),
+            ctypes.c_char_p(str(parametres_in).encode("utf-8")),
+            ctypes.byref(p_out), ctypes.byref(mem), ctypes.byref(msg))
+        self.memoire = mem
+        return int(ret) == 1, imp.copy(), self._chaine(p_out), self._chaine(msg)
+
+    def getwave(self, onde, echantillons_par_bit):
+        """AMI_GetWave sur un bloc : (ok, onde rendue, instants d'horloge,
+        parametres_out)."""
+        if not self.getwave_existe:
+            raise ErreurIbis("Le modèle n'a pas d'AMI_GetWave.")
+        w = np.array(onde, dtype=float, copy=True, order="C")
+        n_h = len(w) // max(1, int(echantillons_par_bit)) + 2
+        horloges = np.full(n_h, -1.0)
+        p_out = ctypes.c_char_p()
+        ret = self.lib.AMI_GetWave(
+            w.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+            ctypes.c_long(len(w)),
+            horloges.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+            ctypes.byref(p_out), self.memoire)
+        return int(ret) == 1, w, horloges[horloges >= 0.0], self._chaine(p_out)
+
+    def fermer(self):
+        if self.memoire is not None and self.close_existe:
+            try:
+                self.lib.AMI_Close(self.memoire)
+            finally:
+                self.memoire = None
+
+    def __del__(self):
+        try:
+            self.fermer()
+        except Exception:                               # noqa: BLE001
+            pass
+
+
+def reserve_ami(ami, nom, defaut=None):
+    """La valeur d'un parametre reserve du .ami (Init_Returns_Impulse,
+    GetWave_Exists, Ignore_Bits...), booleens compris, ou `defaut`."""
+    p = ((ami or {}).get("reserves") or {}).get(nom)
+    v = p.get("valeur") if p else None
+    if v is None:
+        return defaut
+    if isinstance(v, str):
+        if v.strip().lower() in ("true", "1"):
+            return True
+        if v.strip().lower() in ("false", "0"):
+            return False
+        return v
+    return v
 
 
 def resume(lu):

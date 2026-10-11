@@ -576,8 +576,10 @@ function buildStackup(){
 function stkHtmlRugosite(i){
   const r=cuRug(i), m=r?r.m:"hammerstad";
   const pre=RUG_PRESETS.find(p=>{
-    if(!r)return p.rms===0&&p.m==="hammerstad";
-    return p.m===r.m&&(r.m==="huray"?(p.a===r.a&&p.sr===r.sr):p.rms===r.rms);
+    if(!r)return p.rms===0&&p.m==="hammerstad"&&!p.decl;
+    /* le plan lisse DÉCLARÉ a son réglage à lui (01-core.js) */
+    if(r.decl)return p.decl===true;
+    return !p.decl&&p.m===r.m&&(r.m==="huray"?(p.a===r.a&&p.sr===r.sr):p.rms===r.rms);
   });
   let h='<div class="prop"><label>Rugosité du cuivre</label><select id="skRugP">'+
     RUG_PRESETS.map(p=>'<option value="'+esc(p.id)+'"'+(pre===p?" selected":"")+'>'+
@@ -594,14 +596,19 @@ function stkHtmlRugosite(i){
   else
     h+=numProp("skRugRms","Rugosité RMS Rq (µm)",r?fmt(r.rms,2):"0",0.05,0)+'</div>';
   h+='<div class="stkinfo">'+
-     (r?'Comptée dans les pertes du cuivre de cette couche (simulation, RF, '+
+     (r&&r.decl?'Lisse déclaré : ce cuivre est compté lisse même quand il sert de '+
+        'plan de référence à une piste rugueuse (sans déclaration, le plan '+
+        'prend la rugosité de la piste). Le document envoie Rq = 0.'
+      :r?'Comptée dans les pertes du cuivre de cette couche (simulation, RF, '+
         'œil, diaphonie) : facteur '+
         (m==="huray"?'de Huray, borné par 1 + 3/2 · SR.'
                     :'de Hammerstad-Groiss, qui sature à 2 quand Rq dépasse '+
                      'la profondeur de peau (0,66 µm à 10 GHz).')
        :'Lisse : les pertes du cuivre sont celles d\'une surface plane. Un '+
         'feuillard standard (Rq ≈ 2 µm) double presque la perte du cuivre '+
-        'à 10 GHz.')+'</div>';
+        'à 10 GHz. Sous une piste rugueuse, un plan qui ne déclare rien '+
+        'prend la rugosité de la piste : choisissez « Lisse déclaré » pour '+
+        'qu\'il reste lisse.')+'</div>';
   return h;
 }
 function stkHtmlModeles(){

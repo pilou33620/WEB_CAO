@@ -2,6 +2,23 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 5.4.0
+# Date: 2026-10-11
+# Explication: LA RUGOSITE PROPRE DU PLAN ENTRE DANS LA CASCADE
+#   DIFFERENTIELLE. La 5.2.0 l'avait branchee dans la cascade simple
+#   seulement ; la paire -- donc l'oeil -- gardait la rugosite de la piste
+#   pour ses deux modes et ses quatre acces. `_cascade_differentielle` lit
+#   maintenant `_rugosite_section` sur chaque troncon (le plan de reference
+#   que `simuler` a note dans le segment, `plan_haut` / `plan_bas`), pour le
+#   mode impair, le mode commun et la section dissymetrique brin par brin ;
+#   `_abcd_ligne_seule` (partenaire restee sur sa couche, surlongueur) la
+#   lit sur la section du brin seul. Les vias et les coudes n'ont pas de
+#   rugosite a prendre : leur modele ne porte pas de resistance de surface.
+#   UN PLAN QUI NE DECLARE RIEN PREND CELLE DE LA PISTE : la paire est celle
+#   de la 5.3.0 au bit pres (cas du banc de l'oeil) ; un plan lisse declare
+#   sous une piste rugueuse perd moins.
+# Fonctions modifiees : _cascade_differentielle, _abcd_ligne_seule.
+#
 # Version: 5.3.0
 # Date: 2026-10-11
 # Explication: `section_de_couche` SAIT POSER UNE PISTE SANS PLAN, quand on le
@@ -786,7 +803,7 @@ except Exception as _exc:                              # noqa: BLE001
 
 FORMAT = "cao-sim-em-3"
 FORMAT_RESULTAT = "cao-sim-em-resultat-5"
-VERSION = "5.3.0"
+VERSION = "5.4.0"
 VERSION_MOTEURS = {
     "simulation_em": VERSION,
     "ligne_mom": getattr(tl, "VERSION", "2.5.0") if tl is not None else "indisponible",
@@ -6717,9 +6734,10 @@ def _ligne_seule(couches, couche, largeur_mm, ep_mm, cache):
 
 def _abcd_ligne_seule(ls, couches, f, opts, longueur_m):
     """La matrice 2 x 2 d'une ligne seule (`_ligne_seule`) a la frequence f :
-    le calcul de la cascade simple (`_ligne_a`)."""
+    le calcul de la cascade simple (`_ligne_a`), rugosite propre du plan
+    comprise (`_rugosite_section`, 5.4.0)."""
     kw = dict(_geometrie_pertes(ls["info"]),
-              **_rugosite_couche(couches, ls["couche"]))
+              **_rugosite_section(couches, ls["couche"], ls["info"]))
     eps_f, z_f, a_c, a_d = _ligne_a(ls["z0"], ls["eps"], ls["info"], f,
                                     ls["largeur"] * 1e-3, ls["ep"] * 1e-3,
                                     kw, opts)
@@ -6947,6 +6965,12 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
     `opts` (`options_modele`) : le dielectrique causal fait er(f) dans les
     pertes ET dans les eps_eff des deux modes, a remplissage constant ; le
     modele de via est celui que la cascade simple a resolu (`mv["modele"]`).
+
+    LA RUGOSITE DU PLAN DE REFERENCE (5.4.0) : chaque troncon lit
+    `_rugosite_section` sur sa couche et ses plans (`plan_haut`, `plan_bas`
+    du segment), pour les deux modes et la section dissymetrique ; la ligne
+    seule d'un brin (`_abcd_ligne_seule`) aussi. Plan muet : celle de la
+    piste, et la paire d'avant au bit pres.
     """
     opts = opts or {}
     if not topo or not topo.get("cascadable") or not len(freqs):
@@ -7114,8 +7138,15 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
             # et la rugosite de la couche -- pas la hauteur, un mode de paire
             # n'est pas le ruban seul (`_geometrie_pertes`). Et le
             # dielectrique causal, dans les pertes ET dans les deux eps_eff.
+            # LA RUGOSITE PROPRE DU PLAN (5.4.0) : lue sur la couche du plan
+            # de reference du troncon, comme dans la cascade simple
+            # (`_rugosite_section`) ; un plan qui ne declare rien prend celle
+            # de la piste, et la paire est celle d'avant au bit pres.
             kw = dict(_geometrie_pertes({"topo": seg.get("topo")}, couple=True),
-                      **_rugosite_couche(couches, int(_nombre(seg.get("couche"), -1))))
+                      **_rugosite_section(
+                          couches, int(_nombre(seg.get("couche"), -1)),
+                          {"plan_haut": seg.get("plan_haut"),
+                           "plan_bas": seg.get("plan_bas")}))
             er_f, tand_f = _dielectrique(er, tand, f_flt, opts)
             if er_f != er:
                 z_odd_f, eps_odd = _milieu_causal(z_diff_k / 2.0, eps_odd, er, er_f)

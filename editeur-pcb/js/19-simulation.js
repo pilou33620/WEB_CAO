@@ -71,7 +71,10 @@ function simStackup(){
     };
     /* LA RUGOSITÉ, EN MICROMÈTRES et la clé le dit : le serveur la passe à
        `line_losses` (python/simulation_em.py, `_rugosite_couche`). Lisse, rien
-       ne part : le document reste celui d'avant. */
+       ne part : le document reste celui d'avant. Un plan LISSE DÉCLARÉ
+       (`rug.decl`, 01-core.js) part avec `rugosite_rms_um: 0` : c'est la
+       déclaration que `_rugosite_section` lit pour ne pas lui prêter la
+       rugosité de la piste qu'il référence. */
     const rug=typeof cuRug==="function"?cuRug(i):null;
     if(rug){
       c.modele_rugosite=rug.m;
