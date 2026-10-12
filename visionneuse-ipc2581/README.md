@@ -265,9 +265,9 @@ l'œil) :
 | Diélectrique causal (Djordjevic-Sarkar) | décoché | `dielectrique_causal` et `f_ref_dielectrique` |
 | Fréquence de la fiche | 1 GHz | avec le causal seulement |
 | Modèle de via : π, ligne, auto | auto | `modele_via` quand il n'est pas « auto » |
-| Portée percée de tous les vias déclarés | **décochée** | `layer_from` / `layer_to` de chaque via dont le fichier déclare la portée |
+| Portée percée de tous les vias déclarés | **cochée** | `layer_from` / `layer_to` de chaque via dont le fichier déclare la portée |
 
-Rien ne part quand une option est à son défaut : la requête reste celle
+Les trois premières à leur défaut, rien ne part : la requête reste celle
 d'avant. Les choix sont **gardés par fichier** dans le profil, sous
 `V.sur.sim[nom du fichier]` (`simModelesIpc`, `js/07-simulation.js`) :
 rouvrir la même carte les retrouve, une autre carte ne les hérite pas, et
@@ -280,10 +280,12 @@ traversant et un via borgne bien ajusté se ressemblent, et le moignon reste
 pour **tout** via dont le fichier déclare la portée (`sa` / `sb` du perçage,
 `simPorteeTrouIpc`), au raccord de la piste comme dans la liste des vias du
 parcours, où elle remplace la portée supposée. Une portée que le fichier ne
-déclare pas ne s'invente pas. **Elle est désactivée par défaut** : l'activer
-d'office changeait la fiche d'un via sans contre-perçage, ce qu'un essai du
+déclare pas ne s'invente pas. **Elle est activée par défaut** depuis le
+12/10/2026 (elle était décochée) : la portée déclarée est une donnée du
+fichier, au même titre que celle du contre-perçage. Décochée, la fiche d'un
+via sans contre-perçage redevient celle d'avant, à l'identique — l'essai du
 banc (`harness-sim.js`, « sans contre-perçage, la fiche d'avant, à
-l'identique ») interdit. Sur la carte d'essai
+l'identique ») le tient, option décochée. Sur la carte d'essai
 ([test/carte-contre-percage.xml](test/carte-contre-percage.xml)), elle fait
 chiffrer le moignon de V3 — traversant, emprunté de TOP à IN1 : 1,07 mm sous
 IN1, 193 fF, quart d'onde à 33,8 GHz — que le serveur laissait inconnu ;
@@ -309,7 +311,7 @@ Un IPC-2581 écrit par l'éditeur PCB de ce dépôt — ou par tout outil qui su
 la même forme : `<LogicalNet netClass netPair>`, `<NonstandardAttribute>`
 `NET_CLASS` / `DIFF_PAIR`, `<SpecRef>` vers des `<Spec>` de règles — nomme la
 **classe** de chaque net et ses **paires différentielles**. Le lecteur
-(`python/ipc2581_parser.py` 1.79) les rend dans `regles`, et la page s'en
+(`python/ipc2581_parser.py` 1.80) les rend dans `regles`, et la page s'en
 sert comme **classement initial** : la nature d'un net (Horloge, Rapide, RF,
 Analogique, Antenne, Lent) vient d'abord de sa classe dans le fichier — les
 mêmes motifs de nom que l'éditeur, « Impédance 50Ω » est RF, « Défaut » est

@@ -149,7 +149,7 @@ function simStackupIpc(){
      · MODÈLE DE VIA, « auto » : le π tant que le via est court devant λ, la
        ligne répartie au-delà ;
    et une option propre à la visionneuse :
-     · LA PORTÉE PERCÉE DE TOUS LES VIAS DÉCLARÉS, désactivée : voir
+     · LA PORTÉE PERCÉE DE TOUS LES VIAS DÉCLARÉS, activée : voir
        `simPorteeTrouIpc`.
 
    GARDÉES PAR FICHIER, dans le profil comme les valeurs d'empilage saisies
@@ -173,7 +173,7 @@ function simModelesIpcNorm(o){
   const f=+o.fref;
   if(Number.isFinite(f)&&f>=1e6&&f<=1e12&&f!==SIM_FREF_DEFAUT_IPC)out.fref=f;
   if(SIM_MODELES_VIA_IPC[o.via]&&o.via!==SIM_VIA_DEFAUT_IPC)out.via=o.via;
-  if(o.portees===true)out.portees=true;
+  if(o.portees===false)out.portees=false;
   return Object.keys(out).length?out:null;
 }
 /* Les options de la carte ouverte, défauts compris. */
@@ -182,7 +182,7 @@ function simModelesIpc(){
   return {causal:t.causal===true,
           fref:(+t.fref>0)?+t.fref:SIM_FREF_DEFAUT_IPC,
           via:SIM_MODELES_VIA_IPC[t.via]?t.via:SIM_VIA_DEFAUT_IPC,
-          portees:t.portees===true};
+          portees:t.portees!==false};
 }
 /* Poser une ou plusieurs options de la carte ouverte, et les garder. */
 function simModelesIpcPoser(o){
@@ -811,8 +811,10 @@ function simContrePercageIpc(t){
    apparence dans le reste du document. Le contre-perçage l'envoie toujours
    (`simContrePercageIpc`) ; pour les AUTRES vias déclarés, c'est l'option
    « portée percée de tous les vias » (`simModelesIpc().portees`) qui décide.
-   ELLE EST DÉSACTIVÉE PAR DÉFAUT : la fiche d'un via sans contre-perçage
-   reste alors celle d'avant, à l'identique — un essai du banc le vérifie. */
+   ELLE EST ACTIVÉE PAR DÉFAUT (désactivée jusqu'au 12/10/2026) : la portée
+   déclarée est une donnée du fichier, comme celle du contre-perçage. La
+   décocher rend la fiche d'avant, à l'identique — un essai du banc le
+   vérifie. */
 function simPorteeTrouIpc(t){
   if(!t || t.sa == null || t.sb == null) return null;
   const a = simCuDe(t.sa), b = simCuDe(t.sb);

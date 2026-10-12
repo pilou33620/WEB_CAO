@@ -1037,6 +1037,8 @@ SPECS_REGLES = u"""<Spec name="CLASSE_Rapide">
      <Property name="MAX_LENGTH" value="40" unit="MM"/>
      <Property name="ALLOWED_LAYER" layerOrGroupRef="Conductor-1"/>
      <Property name="TOPOLOGY" text="DAISY_CHAIN"/>
+     <Property name="MEMBER" text="SANS_BROCHE"/>
+     <Property name="MEMBER" text="GND"/>
     </General>
     <Impedance value="50" tolPlus="10" tolMinus="10" tolPercent="true">
      <SingleEnded structure="MICROSTRIP_MASK_COVERED">
@@ -1129,8 +1131,10 @@ REGLES = {}
 def regles_lues():
     REGLES.update(carte_avec_regles()["regles"])
     R = REGLES
-    egal(R["classes"], {"SIG_A": "Rapide", "SIG_B": "Rapide", "GND": "Alimentation"},
-         u"classe de l'editeur par net (NET_CLASS)")
+    egal(R["classes"], {"SIG_A": "Rapide", "SIG_B": "Rapide", "GND": "Alimentation",
+                        "SANS_BROCHE": "Rapide"},
+         u"classe de l'editeur par net (NET_CLASS ; MEMBER de la classe pour un net "
+         u"sans broche, le NET_CLASS du <LogicalNet> devant)")
     c = R["regles_classes"]["Rapide"]
     egal(c["w"], 0.25, u"largeur")
     egal(c["wL"], {"Conductor-1": 0.25}, u"largeur par couche, 250 microns en mm")

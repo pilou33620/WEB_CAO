@@ -13,9 +13,9 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 700 essais a
 
 | Composant | Statut | Couverture / Bancs |
 | --- | --- | --- |
-| **Éditeur PCB** | En service | 941 essais (`editeur-pcb/test/harness.js`), dont 43 pour les plans (Draftsman), 24 pour le gestionnaire de contraintes et la topologie, 3 pour l'export IPC-2581 (+ 60 cas d'aller-retour, `banc-ipc2581-export.py`) |
+| **Éditeur PCB** | En service | 942 essais (`editeur-pcb/test/harness.js`), dont 44 pour les plans (Draftsman), 24 pour le gestionnaire de contraintes et la topologie, 3 pour l'export IPC-2581 (+ 60 cas d'aller-retour, `banc-ipc2581-export.py`) |
 | **Éditeur Schématique** | En service | 155 essais (`editeur-schematique/test/harness.js`), dont 3 pour les contraintes de nets |
-| **Visionneuse IPC-2581** (lecteur `ipc2581_parser` 1.79, `ipc2581_json` 1.1.0) | En service | 209 essais (`harness-sim.js`) + 71 (`banc-essai.py`) |
+| **Visionneuse IPC-2581** (lecteur `ipc2581_parser` 1.80, `ipc2581_json` 1.1.0) | En service | 209 essais (`harness-sim.js`) + 71 (`banc-essai.py`) |
 | **SI — Impédance & Vias (`ligne_mom` v2.9.0)** | En service (0,3 à 0,4 % vs étalons ; pertes conducteur par l'inductance incrémentale de Wheeler, ruban + plan(s) + bords ; rugosité Hammerstad / Huray, diélectrique causal Djordjevic-Sarkar, via en ligne — branchés dans la cascade) | 236 cas (`python/test/banc-ligne-mom.py`) |
 | **SI — Z différentielle (`solve_multiline`)** | En service (< 3 % vs Garg-Bahl) | inclus dans les 199 cas |
 | **SI — Crosstalk niveau 2 (`crosstalk` v4.5.0)** | En service (scan normalisé : k_total, NEXT et FEXT en % et dB, statut vert / orange / rouge, piste sélectionnée — t_r saisi ou déduit de la classe — ou toute la carte sous un t_r global ; pistes superposées résolues ; pertes R, G au genou du front en option ; carte sans plan avec masse arrosée sur la couche ; somme des agresseurs en phase ou quadratique ; **fente du plan franchie par les deux pistes : impédance commune du détour (Ott) avec fourchette et résonance, la page mesurant d1 / d2 et les plans qui ferment le retour** — dans « Analyser la piste » et dans la règle *diaphonie* de toute la carte ; coloration au statut DRC sur le layout ; l'analyse électrique est retirée ; S = 3W pile sur le seuil retenu, couples écartés de peu nommés, front RF imposé signalé) | 49 cas (`python/test/banc-crosstalk.py`), dont la triplaque exacte (Cohn), les formules du niveau 2 et l'estimation d'Ott du cas 4 du banc de mesure |
@@ -101,11 +101,6 @@ suivante.
 
 ### Rugosité
 - [ ] **Visionneuse : déclarer un plan lisse** sous une piste rugueuse (un `<Spec>` à 0 µm n'y est pas distingué d'une absence) ; l'éditeur le fait depuis `simulation_em` 5.4.0 (« Lisse déclaré »).
-
-### Éditeur PCB, export et visionneuse
-- [ ] **Export IPC-2581 : net sans broche** — pas de `<LogicalNet>` (le XSD exige un `<PinRef>`), sa classe ne part donc pas ; ses contraintes partent en `CONTRAINTE_<net>`.
-- [ ] **Visionneuse : « portée percée de tous les vias »** — l'option existe mais reste désactivée par défaut (l'activer demande de réviser un essai existant).
-- [ ] **Plans (Draftsman)** : l'aperçu refait tout le document à chaque position aimantée (ne refaire que la feuille suffirait).
 
 ### Contenu de la LIB (données, pas code)
 - [ ] **93 références semi-conducteurs sans brochage** — à saisir sur datasheet dans Gestion LIB, jamais deviné (liste détaillée dans *Éditeur schématique* ci-dessous).
@@ -209,7 +204,7 @@ bancs automatiques en CI sont listés dans l'*État des lieux*.
   - [x] Une vue lâchée sur d'autres les écarte vers la place libre la plus proche (grille 2,5 mm, cadre, hors cartouche ; recouvrement minimal signalé si la feuille est pleine), un seul Ctrl+Z.
   - [x] Master Drawing : épaisseurs d'empilage en mm (cuivre et vernis affichés en µm sous l'étiquette « mm »), contour de carte centré dans son cadre au-dessus du cartouche, schéma de l'anneau dégagé du texte. 3 essais.
   - [x] Aperçu au glisser des vues qui vont s'écarter (tirets orange à leur place future, flèche ; rouge et « Feuille pleine » sinon), le lâcher pose exactement l'aperçu, Échap annule ; tolérance propre à chaque point d'une chaîne ou d'une cote d'ordonnée (`tols`), écran, PDF et DXF.
-  - [ ] Plans : l'aperçu refait tout le document à chaque position aimantée (ne refaire que la feuille suffirait). → *Reste à faire — fonctionnalités*.
+  - [x] Plans : l'aperçu du glisser ne refait plus que la feuille de la vue (12/10/2026) — `dfDocument(genre)`, le genre lu dans la clé par `dfGenreVue` (suite ôtée, vue mère d'un détail) ; même disposition que le document entier, le lâcher passe par le même calcul. 1 essai.
   - [x] Tableau des impédances contrôlées au plan de fabrication (classes à Z cible du gestionnaire de contraintes).
   - [x] Export DXF pour la mécanique (`editeur-pcb/js/33-draftsman-export.js`) : R12 (AC1009) en mm ; carte seule à 1:1 dans le repère des Gerber (contour et découpes en LINE/ARC, arcs facettés retrouvés, un CIRCLE par trou métallisé / non métallisé, encombrement et repères par face, cotes, tableau de perçage) et feuille entière lue dans la liste d'objets (calques par `dfCalque`, catégorie ou place) ; boutons dans la fenêtre, `-CARTE.dxf` et `-PLAN-FABRICATION.dxf` dans `fabrication.zip`.
   - [x] Fonte embarquée : PlansSans (Liberation Sans OFL, pré-réduite par `outils/fonte-plans.py`, 80 Ko dans `js/fontes/plans-sans.js`), sous-ensemble des glyphes employés à chaque PDF, CIDFontType2 / Identity-H / ToUnicode (Ω, ≤, ≥ cherchables) ; option cochée par défaut, repli Helvetica. 8 essais (`harness.js`), vérifiés par pdftotext, pypdf et ezdxf.
@@ -228,7 +223,9 @@ bancs automatiques en CI sont listés dans l'*État des lieux*.
   - [x] Le Master Drawing liste le Gerber X2 du contre-perçage sous son Excellon.
   - [x] **Export IPC-2581 révision C** de l'éditeur (`editeur-pcb/js/35-ipc2581-export.js`) : empilage (εr, tan δ, rugosité), couches et portées de perçage, contour, empreintes, composants, nets, pistes, arcs, vias, zones remplies, sérigraphie, nomenclature et variante, contre-perçage en `<Spec><Backdrill>` ; bouton du menu Fichier et `<projet>.xml` dans `fabrication.zip`. Aller-retour par la chaîne de la visionneuse (`editeur-pcb/test/banc-ipc2581-export.py`, en CI) et conformité au XSD IPC-2581C. Lecteur 1.78 : la place d'un `<Text>` lue dans son `<Features>` (XSD).
   - [x] **Export IPC-2581 : classes, paires différentielles et contraintes** (11/10/2026) : `<LogicalNet netClass netPair>` + `<NonstandardAttribute>` NET_CLASS / DIFF_PAIR / DIFF_PAIR_POLARITY + `<SpecRef>` ; une `<Spec>` par classe, net contraint, paire, groupe d'appariement et pour la matrice (`<General type="ELECTRICAL">` à `<Property>` nommées, `<Impedance>` normalisée avec `<SingleEnded>` / `<EdgeCoupled>` par couche de signal) ; `<Set netPair>`. Rugosité de Huray sous `SURFACE_ROUGHNESS_UPFACING` en propriétés nommées (plus de type OTHER). Lecteur 1.79 (`regles`, `rug_huray`) ; la visionneuse reprend classes et paires du fichier comme classement initial (devant la détection, derrière la main), nomme la partenaire d'une paire et envoie Huray au serveur. Conformité XSD IPC-2581C vérifiée. À recopier dans WEB_ANTENNA : `python/ipc2581_parser.py`.
-  - [ ] Visionneuse : l'option « portée percée de tous les vias » existe mais reste désactivée ; export IPC-2581 : un net sans broche n'a pas de `<LogicalNet>`. → *Reste à faire — fonctionnalités*. Validation sur de vrais exports Altium / Allegro (contre-perçage, règles) → *Bancs de test et validations externes*.
+  - [x] Export IPC-2581 : la classe d'un net sans broche part (12/10/2026) — pas de `<LogicalNet>` (le XSD y exige un `<PinRef>`), la `<Spec>` de sa classe le nomme en `<Property name="MEMBER">` ; lecteur 1.80 (`_ranger_regle`), le `NET_CLASS` d'un `<LogicalNet>` restant devant. Essais `harness.js`, `banc-ipc2581-export.py` (aller-retour), `banc-essai.py`. À recopier dans WEB_ANTENNA : `python/ipc2581_parser.py`.
+  - [x] Visionneuse : « portée percée de tous les vias déclarés » activée par défaut (12/10/2026) ; décochée, la fiche d'avant revient à l'identique (essai révisé, `harness-sim.js`).
+  - Validation sur de vrais exports Altium / Allegro (contre-perçage, règles) → *Bancs de test et validations externes*.
 
 - [x] **Rooms** (`editeur-pcb/js/32-rooms.js`) : les blocs du schéma (zones étiquetées) encadrés sur la carte comme les rooms d'Altium — cadre, fond teinté, étiquette ; un clic sur l'étiquette prend le bloc ; Affichage → Rooms ; lus dans le document du schéma (session ou projet), à défaut dans l'analyse « Motifs & Blocs ». Remplacent les pastilles de couleur. 3 essais.
 

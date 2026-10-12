@@ -409,7 +409,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "dfNormTol","dfAngle","dfTolerer","dfPoserVueRepousser","dfPlaceProche","dfValeurCote","dfEditerTolerance",
   "dfCoteEnCours","dfApercuCote","dfRendreListeCotes","DF_COTES","DF_TOL","dfBoitePts",
   /* aperçu du lâcher d'une vue, tolérances par point d'une chaîne ou d'une ordonnée */
-  "dfDispositionRepousser","dfApercuVue","dfConsigne","dfNum","DF_APERCUS",
+  "dfDispositionRepousser","dfApercuVue","dfConsigne","dfNum","DF_APERCUS","dfGenreVue",
   "dfNormTols","dfTolPoint","dfTolererPoint","dfHtmlTolerance",
   /* gestionnaire de contraintes (01-core.js pour le modèle, 30-contraintes.js) */
   "cmNorm","cmCle","cmClrClasses","cmClrMax","cmMesures","cmRegleDe","cmVerifier","cmEvaluerGroupe",
@@ -23165,6 +23165,36 @@ T("plans : glisser une vue montre celles qui s'écarteraient — calculé, rien 
     if(Object.keys(dfCfg().vues).length)throw new Error("Ctrl+Z doit tout rendre");
   }finally{DF.sel=null;DF.glisse=null;dfFermer();S.dessin=null;}
 });
+/* L'aperçu ne refait que la feuille de la vue glissée : le genre se lit dans
+   la clé (suite ôtée, vue mère d'un détail), et la feuille refaite seule a
+   les mêmes vues, aux mêmes places, que dans le document entier. */
+T("plans : l'aperçu du glisser ne refait que la feuille de la vue",()=>{
+  exCharger(1);
+  S.dessin=null;
+  try{
+    dfRegler("couches",true);
+    const did=dfAjouterDetail({source:"asmT/carte",forme:"rect",x:20,y:20,w:8,h:6,echelle:3});
+    const c=dfCfg();
+    const g={"fab/notes":"fab","fab~1/notes":"fab","asmT/carte":"asmT","bom~2/bom":"bom",
+             "cu2/carte":"cu2","det/999":null,"":null};
+    g["det/"+did]="asmT";
+    for(const k of Object.keys(g))
+      if(dfGenreVue(c,k)!==g[k])throw new Error(k+" → "+dfGenreVue(c,k)+", attendu "+g[k]);
+    const tout=dfDocument(), boites=F=>JSON.stringify(F.vues.map(v=>[v.cle,dfBoiteVue(F,v)]));
+    for(const genre of ["fab","asmT","cu1"]){
+      const part=dfDocument(genre).feuilles, ref=tout.feuilles.filter(F=>F.genre===genre);
+      if(!part.length||part.length!==ref.length||part.some(F=>F.genre!==genre))
+        throw new Error(genre+" : "+part.map(F=>F.genre)+" contre "+ref.length+" feuille(s)");
+      if(part.length>=tout.feuilles.length)throw new Error(genre+" : le document entier a été refait");
+      part.forEach((F,i)=>{if(boites(F)!==boites(ref[i]))throw new Error(genre+" : vues déplacées "+boites(F)+" contre "+boites(ref[i]));});
+    }
+    /* la disposition d'un glisser sur l'assemblage : le détail y est, rien d'écrit */
+    const avant=serialize();
+    const r=dfDispositionRepousser(dfCfg(),"det/"+did,30,40);
+    if(!r.boite)throw new Error("la vue de détail doit se retrouver sur sa feuille");
+    if(serialize()!==avant)throw new Error("la disposition ne doit rien écrire");
+  }finally{S.dessin=null;}
+});
 /* Feuille pleine : un détail qui couvre presque tout le cadre, glissé. Les
    autres vues n'ont plus où aller : l'aperçu le dit, en rouge, avant le
    lâcher — et toujours sans rien écrire. */
@@ -25001,16 +25031,19 @@ function ipcAttendu(){
     if(r&&r.m==="hammerstad")rug[nomCu(i)]=r.rms;
     if(r&&r.m==="huray")huray[nomCu(i)]={a:r.a,sr:r.sr};
   }
-  /* les règles que le fichier doit rendre : la classe de chaque net qui a
-     une broche (seul un net à broche a un <LogicalNet>), les règles de
-     toutes les classes, les contraintes propres aux nets, les paires, les
-     groupes et la matrice — les couches par leur nom, les cotes en mm */
+  /* les règles que le fichier doit rendre : la classe de chaque net — par
+     son <LogicalNet>, ou nommé dans sa classe s'il n'a pas de broche —, les
+     règles de toutes les classes, les contraintes propres aux nets, les
+     paires, les groupes et la matrice — les couches par leur nom, les cotes
+     en mm. `avec_broche` : les nets qui ont un <LogicalNet>, donc un
+     netClass de la norme. */
   const C=S.contraintes||{classes:{},nets:{},matrice:{},groupes:[],schema:{nets:{}}};
   const avecBroche=new Set();
   for(const fp of S.fps)for(const q of padsWorld(fp))if(q.net)avecBroche.add(q.net);
   const regleNoms=r=>{const o=Object.assign({},r);if(o.couches)o.couches=o.couches.map(nomCu);return o;};
   const regles={classes:{},regles_classes:{},contraintes:{},paires:[],groupes:[],matrice:Object.assign({},C.matrice||{})};
-  for(const nm of avecBroche)regles.classes[nm]=className(nm);
+  for(const nm of nets)regles.classes[nm]=className(nm);
+  regles.avec_broche=[...avecBroche].sort();
   for(const c of S.classes){
     const r=regleNoms((C.classes||{})[c.name]||{});
     const o=Object.assign({w:c.w,clr:c.clr,via:c.via,drill:viaDrill(c)},r);
@@ -25091,6 +25124,10 @@ function ipcCarteChargee(){
           {n:3,x:1.6,y:0,w:1.2,h:0.7,shape:"oval",drill:0,rot:90}]});
   S.fps.push(R,U);
   S.tracks.push({l:3,net:"SWDIO",w:0.25,x1:12,y1:40,x2:18,y2:40,ca:-1.4});
+  /* un net sans broche, rangé dans une classe : pas de <LogicalNet>, la
+     classe le nomme */
+  S.tracks.push({l:3,net:"FIL_SANS_BROCHE",w:0.25,x1:12,y1:43,x2:18,y2:43});
+  setNetClass("FIL_SANS_BROCHE","Rapide");
   S.board.cutouts=[[{x:61,y:35},{x:64,y:35},{x:64,y:39},{x:61,y:39}]];
   S.holes.push(mkHole(3,3,2.5),mkHole(63,3,2.5));
   S.cuts.push({id:S.nextId++,l:1,pts:[{x:60,y:5},{x:64,y:5},{x:64,y:9},{x:60,y:9}]});
@@ -25204,6 +25241,13 @@ T("IPC-2581 : classes, paires et contraintes écrites avec les éléments du XSD
     if(/<LogicalNet name="GND"[^>]*netPair/.test(x))throw new Error("GND n'a pas de partenaire");
     const cl=x.slice(x.indexOf('<Spec name="CLASSE_Rapide">'),x.indexOf("</Spec>",x.indexOf('<Spec name="CLASSE_Rapide">')));
     if(cl.indexOf("<Impedance")>=0)throw new Error("Rapide n'a pas d'impédance cible");
+    /* un net sans broche : pas de <LogicalNet>, sa classe le nomme, et elle seule */
+    if(x.indexOf('<LogicalNet name="FIL_SANS_BROCHE"')>=0)throw new Error("<LogicalNet> sans <PinRef>");
+    if(cl.indexOf('<Property name="MEMBER" text="FIL_SANS_BROCHE"/>')<0)
+      throw new Error("la classe ne nomme pas son net sans broche");
+    if((x.match(/<Property name="MEMBER" text="FIL_SANS_BROCHE"\/>/g)||[]).length!==1)
+      throw new Error("le net sans broche nommé ailleurs que dans sa classe");
+    if(/<Property name="MEMBER" text="SPI_CS"\/>/.test(x))throw new Error("un net à broche nommé dans sa classe");
   }finally{loadDoc(JSON.parse(avant),true);}
 });
 T("IPC-2581 : dans fabrication.zip, annoncé par le LISEZ-MOI et le master drawing",()=>{

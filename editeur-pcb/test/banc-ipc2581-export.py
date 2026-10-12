@@ -314,8 +314,8 @@ def cas_export(nom):
     T(u"%s : rugosite du cuivre retrouvee (Rq, et Huray a part)" % nom, rugosite)
 
     def regles():
-        # ce que la visionneuse reprend tel quel : la classe de chaque net a
-        # broche, les regles des classes, les contraintes des nets, les
+        # ce que la visionneuse reprend tel quel : la classe de chaque net
+        # (nomme dans sa classe s'il n'a pas de broche), les regles des classes, les contraintes des nets, les
         # paires, les groupes et la matrice -- par NOM de net et de couche
         R, a = M["regles"], A["regles"]
         egal(R["classes"], a["classes"], u"classe de chaque net")
@@ -325,8 +325,8 @@ def cas_export(nom):
              a["paires"], u"paires differentielles")
         egal(R["groupes"], a["groupes"], u"groupes d'appariement")
         egal(R["matrice"], a["matrice"], u"matrice d'isolation")
-        # la classe de la norme reste lue a cote
-        for n, c in a["classes"].items():
+        # la classe de la norme reste lue a cote, pour les nets a broche
+        for n in a.get("avec_broche", a["classes"]):
             vrai(M["classes_nets"].get(n), u"%s sans netClass" % n)
     T(u"%s : classes, paires et contraintes retrouvees a la relecture" % nom, regles)
 

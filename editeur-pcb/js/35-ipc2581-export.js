@@ -84,7 +84,8 @@
                      TOPOLOGY, PIN_ORDER, MAX_STUB_LENGTH,
                      MAX_VIA_STUB_LENGTH, STAR_TOLERANCE, BACKDRILL_RULE ;
                      GAP et MAX_UNCOUPLED_LENGTH pour une paire ; MATCH_MODE,
-                     MATCH_TOLERANCE, REFERENCE_NET, MEMBER pour un groupe)
+                     MATCH_TOLERANCE, REFERENCE_NET, MEMBER pour un groupe ;
+                     MEMBER aussi dans une classe, pour ses nets sans broche)
                      disent la règle, en millimètres ; une largeur ou un écart
                      de paire porte ses bornes en tolPlus / tolMinus. Une
                      impédance cible part en <Impedance value tolPlus
@@ -92,7 +93,7 @@
                      structure de ligne (<SingleEnded> ou <EdgeCoupled> :
                      largeur, écart, plans de référence, STRIPLINE_* ou
                      MICROSTRIP_*) sur chaque couche de signal qui a un plan.
-   C'est ce que relit python/ipc2581_parser.py (1.79) : la visionneuse
+   C'est ce que relit python/ipc2581_parser.py (1.80) : la visionneuse
    retrouve ses classes et ses paires sans reclasser.
 
    LA RUGOSITÉ DE HURAY n'a pas de type normalisé ; elle part sous le type
@@ -855,8 +856,12 @@ function ipc2581Document(opts){
     if(!out.length)out.push(["Impedance",a.concat([["comment",com]])]);
     return out;
   };
-  /* les classes : règles physiques et contraintes, largeur couche par couche */
+  /* les classes : règles physiques et contraintes, largeur couche par couche.
+     Un net sans broche n'a pas de <LogicalNet> (le XSD y exige un <PinRef>) :
+     sa classe le nomme en MEMBER, comme un groupe d'appariement nomme les
+     siens, sous son nom dans le fichier. */
   const specClasse=new Map();
+  const sansBroche=[...tousNets].filter(nm=>!parNet.has(nm)).sort();
   for(const c of S.classes){
     const r=(C.classes||{})[c.name]||{}, nom=uniqSpec("CLASSE_"+ipcNom(c.name,"CLASSE"));
     specClasse.set(c.name,nom);
@@ -866,6 +871,7 @@ function ipc2581Document(opts){
       if(l<n&&c.wL[l]>0)k.push(nombre("TRACE_WIDTH",c.wL[l],"MM",[["layerOrGroupRef",cuN[l]]]));
     k.push(nombre("CLEARANCE",c.clr,"MM"),nombre("VIA_DIAMETER",c.via,"MM"),nombre("VIA_DRILL",viaDrill(c),"MM"));
     k.push(...propsRegle(r));
+    for(const nm of sansBroche)if(classOf(nm).name===c.name)k.push(texte_("MEMBER",net(nm)));
     const spec=[["General",[["type","ELECTRICAL"],["comment","Classe de nets de l'editeur PCB : regles physiques et contraintes"]],k]];
     if(r.z)spec.push(...impedance(r.z,r.zTol!=null?r.zTol:ZTOL,wDe,null,"Impedance cible de la classe "+ipcNom(c.name,"")));
     specs.push(["Spec",[["name",nom]],spec]);

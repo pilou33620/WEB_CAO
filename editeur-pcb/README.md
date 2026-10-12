@@ -1145,8 +1145,10 @@ vues passent en rouge et « Feuille pleine : … resterai(en)t recouverte(s) »
 s'affiche au-dessus de la vue glissée, comme dans la barre d'outils. `Échap`
 abandonne le geste et l'aperçu avec lui. C'est le même calcul que le lâcher
 (`dfDispositionRepousser`, sur une copie des réglages) : ce qu'on voit est
-exactement ce qui sera posé. Refaire la feuille coûte quelques dizaines de
-millisecondes ; le calcul ne se refait donc qu'au changement de position
+exactement ce qui sera posé. Seule la feuille de la vue glissée est refaite
+(`dfDocument(genre)`, le genre lu dans la clé de la vue par `dfGenreVue`, la
+vue mère pour un détail), pas tout le document ; elle coûte quelques
+dizaines de millisecondes, et le calcul ne se refait donc qu'au changement de position
 **aimantée** (tous les 2,5 mm), les positions déjà vues pendant le geste se
 gardent, et le calque ne se redessine qu'une fois par image
 (`requestAnimationFrame`).
@@ -1402,11 +1404,11 @@ réserve, rien d'inventé :
 | `<LogicalNet netClass netPair>` | `netClass` est l'énumération de la norme (`GROUND`, `POWER`, `CLK`, `SIGNAL`), trop pauvre pour nommer une classe ; `netPair` nomme le net d'en face de la paire |
 | `<NonstandardAttribute>` du net | `NET_CLASS` (le nom de la classe de l'éditeur), `DIFF_PAIR` (le nom de la paire), `DIFF_PAIR_POLARITY` (`P` ou `N`) — la place que la norme donne à ce qu'elle n'énumère pas |
 | `<SpecRef>` du net | ses règles : `CLASSE_<classe>`, `CONTRAINTE_<net>`, `PAIRE_<paire>`, `APPARIEMENT_<groupe>` |
-| `<Spec>` de règle | un `<General type="ELECTRICAL">` dont les `<Property>` nommées disent la règle, en millimètres : `TRACE_WIDTH` (générale, et par couche avec `layerOrGroupRef`), `CLEARANCE`, `VIA_DIAMETER`, `VIA_DRILL`, `MIN_LENGTH`, `MAX_LENGTH`, `MAX_VIAS`, `ALLOWED_LAYER`, `TOPOLOGY`, `PIN_ORDER`, `MAX_STUB_LENGTH`, `MAX_VIA_STUB_LENGTH`, `STAR_TOLERANCE`, `BACKDRILL_RULE` ; pour une paire `NET_P`, `NET_N`, `RULE`, `GAP`, `MAX_UNCOUPLED_LENGTH`, largeur et écart préférés avec leurs bornes en `tolPlus` / `tolMinus` ; pour un groupe `MATCH_MODE` (`LENGTH` / `DELAY`), `MATCH_TOLERANCE` (mm, ou `text="ps"`), `REFERENCE_NET`, `MEMBER` ; pour la matrice une `CLEARANCE` par case, la clé `A|B` en texte |
+| `<Spec>` de règle | un `<General type="ELECTRICAL">` dont les `<Property>` nommées disent la règle, en millimètres : `TRACE_WIDTH` (générale, et par couche avec `layerOrGroupRef`), `CLEARANCE`, `VIA_DIAMETER`, `VIA_DRILL`, `MIN_LENGTH`, `MAX_LENGTH`, `MAX_VIAS`, `ALLOWED_LAYER`, `TOPOLOGY`, `PIN_ORDER`, `MAX_STUB_LENGTH`, `MAX_VIA_STUB_LENGTH`, `STAR_TOLERANCE`, `BACKDRILL_RULE` ; pour une paire `NET_P`, `NET_N`, `RULE`, `GAP`, `MAX_UNCOUPLED_LENGTH`, largeur et écart préférés avec leurs bornes en `tolPlus` / `tolMinus` ; pour un groupe `MATCH_MODE` (`LENGTH` / `DELAY`), `MATCH_TOLERANCE` (mm, ou `text="ps"`), `REFERENCE_NET`, `MEMBER` ; pour une classe, `MEMBER` nomme ses nets **sans broche** (un tel net n'a pas de `<LogicalNet>`, le XSD y exigeant un `<PinRef>`) ; pour la matrice une `CLEARANCE` par case, la clé `A|B` en texte |
 | `<Impedance value tolPlus tolMinus tolPercent>` | l'impédance cible (classe, net ou paire), l'élément normalisé, avec sa structure de ligne sur chaque couche de signal qui a un plan : `<SingleEnded>` ou `<EdgeCoupled>` (`STRIPLINE_SYMMETRIC` / `_ASYMMETRIC`, `MICROSTRIP_MASK_COVERED` / `_EMBEDDED`), `LineWidth`, `Spacing`, `RefPlane` |
 | `<Set netPair>` | chaque jeu de cuivre d'un net apparié nomme sa partenaire |
 
-Le lecteur de la visionneuse (`python/ipc2581_parser.py` 1.79,
+Le lecteur de la visionneuse (`python/ipc2581_parser.py` 1.80,
 `ipc2581_json.py` → `regles`) les relit : une carte exportée puis rouverte
 dans la visionneuse retrouve ses classes et ses paires sans reclassement, la
 correction à la main restant possible.

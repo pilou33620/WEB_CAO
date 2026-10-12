@@ -55,8 +55,9 @@
        et la fenêtre le dit. Pendant le glisser, ce que le lâcher ferait est
        montré sans rien écrire : les vues qui s'écarteraient, en tirets à
        leur place future, une flèche depuis leur place actuelle, et « feuille
-       pleine » s'il le faut — calculé une fois par position aimantée, et au
-       plus une fois par image ; Échap abandonne le tout. « Replacer
+       pleine » s'il le faut — calculé une fois par position aimantée, sur
+       la seule feuille de la vue, et au plus une fois par image ; Échap
+       abandonne le tout. « Replacer
        automatiquement » rend la disposition calculée.
      · VUES DE DÉTAIL. Un cercle ou un rectangle tracé sur une vue de la
        carte devient une vue agrandie à l'échelle choisie (2:1, 5:1, 10:1…),
@@ -662,15 +663,29 @@ function dfPlaceProche(F,w,h,x0,y0,obst){
    à sa place) et `ecarts` : pour chaque vue touchée {cle, de, vers,
    recouvre} — sa boîte d'avant, celle d'après (null : aucune place, elle
    reste où elle est) et l'aire encore recouverte, en mm². */
+/* Le genre de la feuille qui porte la vue `cle` (dfCleVue) : le début de la
+   clé, suite ôtée (« fab~1/notes » → « fab ») ; pour un détail, celui de
+   sa vue mère. null si la clé ne mène à rien de connu. */
+function dfGenreVue(c,cle){
+  let k=String(cle||"");
+  for(let n=0;n<4&&k.startsWith("det/");n++){
+    const d=(c.details||[]).find(x=>"det/"+x.id===k);
+    if(!d)return null;
+    k=String(d.source||"");
+  }
+  const g=k.split("/")[0].replace(/~\d+$/,"");
+  return g&&!g.startsWith("det")?g:null;
+}
 function dfDispositionRepousser(c,cle,x,y){
   c.vues[cle]={x:Math.round(x/DF_GRILLE)*DF_GRILLE,y:Math.round(y/DF_GRILLE)*DF_GRILLE};
   const res={repoussees:[],recouvertes:[],ecarts:[],boite:null};
-  /* la feuille telle que la vue lâchée la laisse ; les mémoires des cotes
-     (dfRetenir) vont dans la copie */
+  /* la feuille telle que la vue lâchée la laisse — elle seule, pas tout le
+     document (dfGenreVue ; une clé inconnue refait tout) ; les mémoires des
+     cotes (dfRetenir) vont dans la copie */
   const avant=S.dessin;
   let doc;
   S.dessin=c;
-  try{doc=dfDocument();}finally{S.dessin=avant;}
+  try{doc=dfDocument(dfGenreVue(c,cle)||undefined);}finally{S.dessin=avant;}
   const F=doc.feuilles.find(G=>G.vues.some(v=>v.cle===cle));
   const v=F&&F.vues.find(u=>u.cle===cle), bv=v&&dfBoiteVue(F,v);
   if(!bv)return res;
@@ -704,10 +719,10 @@ function dfPoserVueRepousser(cle,x,y){
   return dfEcrire(c=>dfDispositionRepousser(c,cle,x,y));
 }
 /* L'aperçu du lâcher d'une vue qu'on glisse : la disposition, calculée sur
-   une copie et jamais écrite. Refaire la feuille coûte quelques dizaines de
-   millisecondes ; ce calcul ne se refait donc que lorsque la position
-   AIMANTÉE change — tous les 2,5 mm, pas à chaque pixel — et les positions
-   déjà vues pendant ce geste se gardent (les DF_APERCUS dernières). Le rendu
+   une copie et jamais écrite. Refaire la feuille — elle seule, pas tout le
+   document — coûte quelques dizaines de millisecondes ; ce calcul ne se
+   refait donc que lorsque la position AIMANTÉE change — tous les 2,5 mm,
+   pas à chaque pixel — et les positions déjà vues pendant ce geste se gardent (les DF_APERCUS dernières). Le rendu
    du calque, lui, n'a lieu qu'une fois par image (dfRendreSurImage). null :
    pas une vue, ou pas encore bougé assez pour que le lâcher fasse quelque
    chose (le seuil de dfLacher). */

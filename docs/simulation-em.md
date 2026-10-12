@@ -543,7 +543,7 @@ la couperait est une faute au DRC, et ce via ne part pas contre-percé. La
 visionneuse IPC-2581 n'envoie le champ qu'avec la **portée percée** déclarée
 par le fichier (`layer_from`, `layer_to`), sans laquelle rien ne se soustrait ;
 avec l'option « Portée percée de tous les vias déclarés » de son panneau
-(désactivée par défaut), elle envoie aussi la portée des vias qui ne sont pas
+(activée par défaut depuis le 12/10/2026), elle envoie aussi la portée des vias qui ne sont pas
 contre-percés, et leur moignon est chiffré au lieu de rester « inconnu ».
 La vérification de la carte lit la même chose dans le `cp` d'un perçage (voir
 [verification-carte.md](verification-carte.md#moignons-de-vias)).

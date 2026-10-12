@@ -1201,13 +1201,18 @@ function dfContexte(){
           projet:pcbProjNom()||"Carte",docNum:fabBase()+"-PLANS",rev,
           date:new Date().toISOString().slice(0,10)};
 }
-function dfDocument(){
-  const ctx=dfContexte(), f=ctx.cfg.feuilles, feuilles=[];
-  if(f.fab)feuilles.push(...dfFeuillesFab(ctx));
-  if(f.asmT)feuilles.push(dfFeuilleAsm(ctx,0));
-  if(f.asmB&&S.fps.some(fp=>fp.side))feuilles.push(dfFeuilleAsm(ctx,1));
-  if(f.bom)feuilles.push(...dfFeuillesBom(ctx));
-  if(f.couches)for(let i=0;i<S.cu;i++)feuilles.push(dfFeuilleCouche(ctx,i));
+/* `genre` (« fab », « asmT », « bom », « cu2 »…) : ne refaire que les
+   feuilles de ce genre, suites comprises. C'est ce que demande la
+   disposition d'une vue qu'on glisse (dfDispositionRepousser), qui ne lit
+   que sa feuille ; les numéros « feuille n / N » d'un tel document partiel
+   ne valent rien, il ne se montre ni ne s'imprime. */
+function dfDocument(genre){
+  const ctx=dfContexte(), f=ctx.cfg.feuilles, feuilles=[], g=k=>!genre||genre===k;
+  if(f.fab&&g("fab"))feuilles.push(...dfFeuillesFab(ctx));
+  if(f.asmT&&g("asmT"))feuilles.push(dfFeuilleAsm(ctx,0));
+  if(f.asmB&&g("asmB")&&S.fps.some(fp=>fp.side))feuilles.push(dfFeuilleAsm(ctx,1));
+  if(f.bom&&g("bom"))feuilles.push(...dfFeuillesBom(ctx));
+  if(f.couches)for(let i=0;i<S.cu;i++)if(g("cu"+i))feuilles.push(dfFeuilleCouche(ctx,i));
   /* vues déplacées à la main, puis vues de détail (34-draftsman-vues.js) */
   feuilles.forEach(F=>dfAgencer(F,ctx));
   feuilles.forEach((F,i)=>dfCadre(F,ctx,i+1,feuilles.length));

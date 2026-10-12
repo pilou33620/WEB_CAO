@@ -6031,40 +6031,45 @@ T("contre-perçage : la fiche du via part avec la portée percée et la passe du
 });
 
 T("contre-perçage : sans portée, sans couche gardée, ou sans contre-perçage, rien ne change",()=>{
-  /* sans portée déclarée : le serveur ne saurait pas d'où soustraire */
-  cpCarteIpc({cp:CP_IPC});
-  let v=simSegments().envoi[1].via;
-  if("contre_percage" in v||"layer_from" in v)throw new Error("sans portée : "+JSON.stringify(v));
-  /* sans couche à ne pas couper : la fiche le dit, rien ne part */
-  cpCarteIpc({sa:0, sb:3, cp:{de:3, res:0.1, spec:"BD_1A", src:"spec"}});
-  if(mdlContrePercage(V.modele.percages[0]).complet)throw new Error("incomplet");
-  v=simSegments().envoi[1].via;
-  if("contre_percage" in v||"layer_from" in v)throw new Error("incomplet : "+JSON.stringify(v));
-  if(SIM_IPC.carteEntiere().doc.percages[0].cp)throw new Error("incomplet, pas de cp à la vérification");
-  /* sans contre-perçage : la fiche d'avant, à l'identique */
-  cpCarteIpc({sa:0, sb:3});
-  v=simSegments().envoi[1].via;
-  if("contre_percage" in v||"layer_from" in v)throw new Error("sans contre-perçage : "+JSON.stringify(v));
-  if(mdlContrePercage(V.modele.percages[0])!==null)throw new Error("mdlContrePercage sans cp");
+  /* l'option « portée percée de tous les vias » décochée : seul le
+     contre-perçage décide ici (l'option a son essai plus bas) */
+  const sim=V.sur.sim;
+  try{
+    simModelesIpcPoser({portees:false});
+    /* sans portée déclarée : le serveur ne saurait pas d'où soustraire */
+    cpCarteIpc({cp:CP_IPC});
+    let v=simSegments().envoi[1].via;
+    if("contre_percage" in v||"layer_from" in v)throw new Error("sans portée : "+JSON.stringify(v));
+    /* sans couche à ne pas couper : la fiche le dit, rien ne part */
+    cpCarteIpc({sa:0, sb:3, cp:{de:3, res:0.1, spec:"BD_1A", src:"spec"}});
+    if(mdlContrePercage(V.modele.percages[0]).complet)throw new Error("incomplet");
+    v=simSegments().envoi[1].via;
+    if("contre_percage" in v||"layer_from" in v)throw new Error("incomplet : "+JSON.stringify(v));
+    if(SIM_IPC.carteEntiere().doc.percages[0].cp)throw new Error("incomplet, pas de cp à la vérification");
+    /* sans contre-perçage : la fiche d'avant, à l'identique */
+    cpCarteIpc({sa:0, sb:3});
+    v=simSegments().envoi[1].via;
+    if("contre_percage" in v||"layer_from" in v)throw new Error("sans contre-perçage : "+JSON.stringify(v));
+    if(mdlContrePercage(V.modele.percages[0])!==null)throw new Error("mdlContrePercage sans cp");
+  }finally{if(sim)V.sur.sim=sim;else delete V.sur.sim;}
 });
 
 /* ==========================================================================
-   LA PORTÉE PERCÉE DE TOUS LES VIAS DÉCLARÉS (option, désactivée)
+   LA PORTÉE PERCÉE DE TOUS LES VIAS DÉCLARÉS (option, activée)
    --------------------------------------------------------------------------
    Le serveur ne chiffre un moignon que s'il connaît la portée percée
    (`_moignons`). Seuls les vias contre-percés l'envoyaient ; l'option
-   l'envoie pour tout via dont le fichier déclare la portée. Désactivée par
-   défaut : l'essai précédent (« sans contre-perçage, la fiche d'avant, à
-   l'identique ») le tient.
+   l'envoie pour tout via dont le fichier déclare la portée. Activée par
+   défaut depuis le 12/10/2026 ; décochée, la fiche d'avant revient, à
+   l'identique (essai précédent).
    ========================================================================== */
 T("portée des vias : l'option envoie la portée déclarée, sans contre-perçage",()=>{
   const sim=V.sur.sim;
   try{
+    delete V.sur.sim;
     cpCarteIpc({sa:0, sb:3});
-    if(simModelesIpc().portees!==false)throw new Error("désactivée par défaut");
-    simModelesIpcPoser({portees:true});
-    if(!V.sur.sim||!V.sur.sim[V.fichier]||V.sur.sim[V.fichier].portees!==true)
-      throw new Error("gardée sous le nom du fichier : "+JSON.stringify(V.sur.sim));
+    if(simModelesIpc().portees!==true)throw new Error("activée par défaut");
+    if(V.sur.sim&&V.sur.sim[V.fichier])throw new Error("au défaut, rien ne s'écrit");
     let v=simSegments().envoi[1].via;
     if(!v||v.layer_from!==0||v.layer_to!==6||"contre_percage" in v)throw new Error("raccord : "+JSON.stringify(v));
     const L=simViasIpc();
@@ -6088,12 +6093,16 @@ T("portée des vias : l'option envoie la portée déclarée, sans contre-perçag
     /* une portée sur une couche hors de l'empilage, ou d'une seule couche */
     if(simPorteeTrouIpc({sa:0, sb:0})||simPorteeTrouIpc({sa:0, sb:9})||simPorteeTrouIpc({sa:1}))
       throw new Error("portée incohérente");
-    /* un autre fichier ne l'hérite pas */
+    /* décochée : gardée sous le nom du fichier, et un autre fichier ne
+       l'hérite pas */
+    simModelesIpcPoser({portees:false});
+    if(!V.sur.sim||!V.sur.sim[V.fichier]||V.sur.sim[V.fichier].portees!==false)
+      throw new Error("gardée sous le nom du fichier : "+JSON.stringify(V.sur.sim));
     const f=V.fichier;
     V.fichier="autre.xml";
-    if(simModelesIpc().portees)throw new Error("l'option suit le fichier");
+    if(!simModelesIpc().portees)throw new Error("l'option suit le fichier");
     V.fichier=f;
-    simModelesIpcPoser({portees:false});
+    simModelesIpcPoser({portees:true});
     if(V.sur.sim&&V.sur.sim[V.fichier])throw new Error("au défaut, rien ne s'écrit");
   }finally{if(sim)V.sur.sim=sim;else delete V.sur.sim;}
 });
@@ -6112,7 +6121,7 @@ T("options de modèle : défauts de l'éditeur, rien d'envoyé par défaut",()=>
     delete V.sur.sim;
     cpCarteIpc({sa:0, sb:3});
     const m=simModelesIpc();
-    if(JSON.stringify(m)!=='{"causal":false,"fref":1000000000,"via":"auto","portees":false}')
+    if(JSON.stringify(m)!=='{"causal":false,"fref":1000000000,"via":"auto","portees":true}')
       throw new Error(JSON.stringify(m));
     const st=simStackupIpc();
     for(const k of ["dielectrique_causal","f_ref_dielectrique","modele_via"])
