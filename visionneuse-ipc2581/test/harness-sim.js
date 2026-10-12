@@ -6397,6 +6397,21 @@ T("la rugosité que le fichier déclare part au serveur, et seulement elle",()=>
   if("rugosite_rms_um" in pile[1])throw new Error("le plan n'en déclare pas");
   carte();
 });
+/* Le plan DÉCLARÉ lisse (« rug »: 0, ipc2581_json 1.2.0) part avec
+   `rugosite_rms_um: 0`, comme le « Lisse déclaré » de l'éditeur : le
+   serveur ne lui prête plus la rugosité de la piste. */
+T("un plan déclaré lisse dans le fichier part avec rugosite_rms_um: 0",()=>{
+  carte({empilage:[
+    {nom:"Top",    seq:1, ep:0.035, type:"CONDUCTOR", rug:1.6},
+    {nom:"Coeur",  seq:2, ep:0.2,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
+    {nom:"Bottom", seq:3, ep:0.035, type:"PLANE", rug:0}]});
+  const pile=simStackupIpc().layers.filter(c=>c.type==="copper");
+  if(pile[0].rugosite_rms_um!==1.6)throw new Error("rugosité de la piste : "+JSON.stringify(pile[0]));
+  if(pile[1].modele_rugosite!=="hammerstad"||pile[1].rugosite_rms_um!==0)
+    throw new Error("plan lisse déclaré : "+JSON.stringify(pile[1]));
+  if(!LT.cu[1].rugDecl||LT.cu[0].rugDecl)throw new Error("déclaration : "+JSON.stringify(LT.cu.map(c=>c.rugDecl)));
+  carte();
+});
 
 /* ==========================================================================
    Les règles que le fichier porte (regles, parseur 1.79) : le classement de

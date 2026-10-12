@@ -113,6 +113,11 @@ function simStackupIpc(){
     else if(cu.rugHuray&&cu.rugHuray.a>0&&cu.rugHuray.sr>0){
       c.modele_rugosite="huray"; c.rayon_nodule_um=cu.rugHuray.a; c.rapport_surface=cu.rugHuray.sr;
     }
+    /* LE CUIVRE DÉCLARÉ LISSE (0 écrit dans le fichier, `rugDecl`) part avec
+       `rugosite_rms_um: 0`, comme le « Lisse déclaré » de l'éditeur : sous
+       une piste rugueuse, `_rugosite_section` (simulation_em) le compte
+       lisse au lieu de lui prêter la rugosité de la piste. */
+    else if(cu.rugDecl){c.modele_rugosite = "hammerstad"; c.rugosite_rms_um = 0;}
     couches.push(c);
     const g=LT.gap[k];
     if(g)couches.push({

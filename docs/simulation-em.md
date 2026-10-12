@@ -607,7 +607,9 @@ celle du plan comprise ; un plan qui n'écrit rien prend celle de la piste.
 Pour déclarer un **plan lisse sous une piste rugueuse**, le panneau
 *Empilage physique* a le réglage « Lisse déclaré » (`{m:"hammerstad", rms:0,
 decl:true}` dans le document, `rugosite_rms_um: 0` envoyé) ; « Lisse » tout
-seul reste muet, comme avant. Mesuré (microruban 0,58 mm sur
+seul reste muet, comme avant. La visionneuse IPC-2581 le relit : une
+`<Spec>` qui écrit une rugosité de 0 (ce qu'exporte « Lisse déclaré ») part
+elle aussi avec `rugosite_rms_um: 0`. Mesuré (microruban 0,58 mm sur
 0,3 mm de FR-4, 100 mm, 10 GHz ; le plan porte 25 % de R) : piste HVLP
 (Rq 0,3 µm) sur plan ED standard (Rq 2 µm), α_c 4,83 → 5,61 dB/m et perte
 totale 3,496 → 3,574 dB, là où l'ancien calcul comptait le plan en HVLP.

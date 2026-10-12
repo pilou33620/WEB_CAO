@@ -326,7 +326,12 @@ P ou N, partenaire cliquable, Z différentielle cible). Les paires du fichier
 partent au serveur devant celles devinées sur les noms, et l'onglet « Z
 différentielle » prend la partenaire déclarée avant toute devinette. La
 rugosité de **Huray** d'un cuivre (`HURAY_NODULE_RADIUS`,
-`HURAY_SURFACE_RATIO`) part aux pertes avec ses deux paramètres.
+`HURAY_SURFACE_RATIO`) part aux pertes avec ses deux paramètres. Un cuivre
+dont la `<Spec>` écrit une rugosité de **0** (le « Lisse déclaré » de
+l'éditeur) est un plan **déclaré lisse**, plus confondu avec un cuivre qui ne
+dit rien (lecteur 1.81, `ipc2581_json` 1.2.0 : `"rug": 0`) : il part avec
+`rugosite_rms_um: 0`, et sous une piste rugueuse le serveur le compte lisse
+au lieu de lui prêter la rugosité de la piste.
 
 ## Simuler : l'impédance, peinte sur la carte
 

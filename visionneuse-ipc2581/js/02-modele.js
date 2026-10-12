@@ -1057,10 +1057,15 @@ function ltPreparer(){
       /* Huray (parseur 1.79) : rayon des nodules (µm) et rapport de
          surface, à part du Rq ; le serveur connaît les deux modèles. */
       const hu=e.rug_huray&&e.rug_huray.a>0&&e.rug_huray.sr>0?{a:+e.rug_huray.a,sr:+e.rug_huray.sr}:null;
+      /* 0 écrit (ipc2581_json 1.2.0) : un cuivre DÉCLARÉ lisse — le « Lisse
+         déclaré » de l'éditeur, un plan lisse sous une piste rugueuse. Le
+         serveur ne lui prête alors pas la rugosité de la piste. Absent, le
+         fichier ne dit rien. */
+      const rugDecl=e.rug!=null&&e.rug!==""&&rug===0;
       return {nom:e.nom, genre:genre, cuivre:genre==="cuivre",
               ep:(e.ep||0)*k, er:isFinite(dk)&&dk>0?dk:0,
               df:isFinite(df)&&df>0?df:0,
-              rug:isFinite(rug)&&rug>0?rug:0, rugHuray:hu,
+              rug:isFinite(rug)&&rug>0?rug:0, rugHuray:hu, rugDecl:rugDecl,
               type:e.type||"", couche:c?c.i:-1};
     });
 
@@ -1074,7 +1079,7 @@ function ltPreparer(){
     LT.cu.push({nom:e.nom, rang:rang, couche:e.couche,
                 ep:saisi||e.ep||LT_EP_CU,
                 epSrc:saisi?"saisi":(e.ep?"fichier":""),
-                rug:e.rug||0, rugHuray:e.rugHuray||null});
+                rug:e.rug||0, rugHuray:e.rugHuray||null, rugDecl:!!e.rugDecl});
   });
 
   /* Un intervalle par couple de conducteurs voisins : l'épaisseur de

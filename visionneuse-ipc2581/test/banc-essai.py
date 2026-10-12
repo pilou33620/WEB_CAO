@@ -1225,6 +1225,36 @@ def rugosite_huray():
 T(u"la rugosite de Huray se lit a part du Rq", rugosite_huray)
 
 
+def rugosite_lisse_declaree():
+    """Parseur 1.81, ipc2581_json 1.2.0 : une rugosite de 0 ecrite (le
+    « Lisse declare » de l'editeur PCB) part en « rug »: 0, distincte d'une
+    absence ; une face rugueuse de la meme spec reste devant."""
+    spec = (u'<Spec name="Cu-1_Mixte">'
+            u'<Conductor type="SURFACE_ROUGHNESS_UPFACING"><Property value="0" unit="MICRON"/></Conductor>'
+            u'<Conductor type="SURFACE_ROUGHNESS_DOWNFACING"><Property value="1.6" unit="MICRON"/></Conductor>'
+            u'</Spec>'
+            u'<Spec name="Cu-2_Lisse">'
+            u'<Conductor type="SURFACE_ROUGHNESS_UPFACING"><Property value="0" unit="MICRON"/></Conductor>'
+            u'</Spec>\n  </CadHeader>')
+    xml = CARTE.replace(u"</CadHeader>", spec, 1)
+    for i in (1, 2):
+        nom = u"Cu-1_Mixte" if i == 1 else u"Cu-2_Lisse"
+        xml = xml.replace(
+            u'<StackupLayer layerOrGroupRef="Conductor-%d" thickness="0.035" sequence="%d"/>' % (i, 2 * i - 1),
+            u'<StackupLayer layerOrGroupRef="Conductor-%d" thickness="0.035" sequence="%d">'
+            u'<SpecRef id="%s"/></StackupLayer>' % (i, 2 * i - 1, nom))
+    vrai(u"Cu-2_Lisse\"/></StackupLayer>" in xml, u"la carte d'essai n'a pas ete construite")
+    m = ipc2581_json.ipc2581_en_dict(xml.encode("utf-8"), "lisse.xml")
+    e = {x["nom"]: x for x in m["empilage"]}
+    proche(e["Conductor-1"].get("rug"), 1.6, u"la face rugueuse l'emporte sur le 0")
+    vrai("rug" in e["Conductor-2"], u"un cuivre declare lisse doit ecrire « rug »")
+    egal(e["Conductor-2"]["rug"], 0, u"lisse declare : 0")
+    vrai(all("rug" not in x for x in MODELE["empilage"]), u"une carte muette reste muette")
+
+
+T(u"un cuivre declare lisse (0) se distingue d'une rugosite absente", rugosite_lisse_declaree)
+
+
 # =============================================================================
 print(u"-" * 62)
 if ECHECS:

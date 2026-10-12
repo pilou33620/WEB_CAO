@@ -25115,6 +25115,7 @@ function ipcCarteChargee(){
   cmPoser("nets","GND","cp",r.id);
   setCuRug(0,{m:"hammerstad",rms:2});
   setCuRug(3,{m:"huray",a:0.5,sr:1.5});
+  setCuRug(1,{m:"hammerstad",rms:0,decl:true});     // plan déclaré lisse : « rug »: 0 à la relecture
   const R=mkFp("R99","4k7","0603",2);
   Object.assign(R,{x:62,y:27,rot:30,side:1,nets:{1:"SPI_CS",2:"GND"},csvMpn:"RC0603FR-074K7L",manufacturer:"Yageo"});
   const U=mkFp("U98","PROTO","",3);
