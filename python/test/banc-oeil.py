@@ -1452,7 +1452,7 @@ def une_paire_symetrique_rejoint_la_cascade_des_deux_modes():
     res, frc = _cascade_et_forcee(d, f)
     sd = res["s_diff"]
     assert not sd["quatre_acces"] and frc["quatre_acces"], sd["dissymetries"]
-    assert sd["vias"] == 1 and frc["vias_brins"] == {"deux": 1, "p": 0}
+    assert sd["vias"] == 1 and frc["vias_brins"] == {"deux": 1, "p": 0, "n": 0}
     for cle in ("s_dd", "s_cc"):
         e = np.max(np.abs(_plats(sd[cle]) - _plats(frc[cle])))
         assert e < 1e-9, (cle, e)
@@ -1537,7 +1537,7 @@ def une_paire_dissymetrique_convertit_ses_modes():
     d = _doc(p_, {}, n_, [("P", "N")])
     d["stackup"]["layers"] = SIX
     sd = se.simuler(d, garder_abcd=True, freqs_imposees=f)["s_diff"]
-    assert sd["vias_brins"] == {"deux": 0, "p": 2}, sd["vias_brins"]
+    assert sd["vias_brins"] == {"deux": 0, "p": 2, "n": 0}, sd["vias_brins"]
     assert any("seul" in x for x in sd["dissymetries"]), sd["dissymetries"]
     est = np.abs(_s21_seul(p_, f, SIX) - _s21_seul(n_, f, SIX)) / 2.0
     vu = np.abs(_plats(sd["s_cd"])[:, 2])
@@ -1545,6 +1545,134 @@ def une_paire_dissymetrique_convertit_ses_modes():
         if e > 0.01:
             proche(v, e, 0.03, "Scd21 des vias d'un seul brin")
     assert np.max(vu) > 0.2
+
+
+def un_via_sur_le_brin_n_seul_est_modelise():
+    """L'image du cas « vias sur un seul brin » : c'est la PARTENAIRE qui
+    plonge par deux vias, la piste reste sur TOP. Jusqu'a la 5.4.0 ses vias
+    etaient comptes et dits, pas poses ; ils le sont sur le brin N seul
+    (`vias_brins["n"]`), et le Scd21 est ce que les deux brins seuls disent,
+    |S21_P - S21_N| / 2, a 3 % -- la meme exigence que pour P. Les vias de N
+    sont ceux de la piste quand elle en a de memes couches ; sans via sur la
+    piste, un barreau seul, plancher, dit dans les notes."""
+    f = np.linspace(1e8, 2e10, 12)
+    ecart = 1.2
+    p_ = [_brin(0, 21, 0, "P", 0.2, 0)]
+    n_ = [_brin(0, 10, ecart, "N", 0.2, 0),
+          _brin(10, 11, ecart, "N", 0.2, 4, VIA_TRAVERSANT),
+          _brin(11, 21, ecart, "N", 0.2, 0, VIA_TRAVERSANT)]
+    d = _doc(p_, {}, n_, [("P", "N")])
+    d["stackup"]["layers"] = SIX
+    res = se.simuler(d, garder_abcd=True, freqs_imposees=f)
+    sd = res["s_diff"]
+    assert sd["quatre_acces"], sd["dissymetries"]
+    assert sd["vias_brins"]["n"] == 2, sd["vias_brins"]
+    assert any("plancher" in a for a in res["avertissements"]), \
+        res["avertissements"]
+    # avec un via de memes couches sur la piste, ailleurs : son modele
+    p2 = [_brin(0, 2, 0, "P", 0.2, 0), _brin(2, 3, 0, "P", 0.2, 4,
+                                             VIA_TRAVERSANT),
+          _brin(3, 21, 0, "P", 0.2, 0, VIA_TRAVERSANT)]
+    n2 = [_brin(0, 2, ecart, "N", 0.2, 0),
+          _brin(2, 3, ecart, "N", 0.2, 4, VIA_TRAVERSANT),
+          _brin(3, 14, ecart, "N", 0.2, 0, VIA_TRAVERSANT),
+          _brin(14, 15, ecart, "N", 0.2, 4, VIA_TRAVERSANT),
+          _brin(15, 21, ecart, "N", 0.2, 0, VIA_TRAVERSANT)]
+    d2 = _doc(p2, {}, n2, [("P", "N")])
+    d2["stackup"]["layers"] = SIX
+    r2 = se.simuler(d2, garder_abcd=True, freqs_imposees=f)
+    assert r2["s_diff"]["vias_brins"]["n"] == 2, r2["s_diff"]["vias_brins"]
+    assert r2["s_diff"]["vias_brins"]["deux"] == 2, r2["s_diff"]["vias_brins"]
+    assert any("mêmes couches" in a for a in r2["avertissements"])
+    # le plancher (self partielle seule) chiffre moins que le vrai via :
+    # le Scd reste du bon ordre, sans pretendre a la precision
+    est = np.abs(_s21_seul(p_, f, SIX) - _s21_seul(n_, f, SIX)) / 2.0
+    vu = np.abs(_plats(sd["s_cd"])[:, 2])
+    assert np.max(vu) > 0.05, vu
+    assert np.max(vu) < 1.5 * np.max(est) + 0.02, (np.max(vu), np.max(est))
+
+    # LE MIROIR : les deux brins plongent ensemble a 2-3 mm, puis UN seul
+    # replonge a 10-11 mm -- P dans un cas, N dans l'autre. Le via de N est
+    # celui de la piste (memes couches, retourne a la remontee), pose a son
+    # abscisse : |Scd21| est le meme a 5 % pres, et chacun suit l'estimation
+    # des deux brins seuls comme le fait P.
+    def chaine(net, y, plonge):
+        o = [_brin(0, 2, y, net, 0.2, 0),
+             _brin(2, 3, y, net, 0.2, 4, VIA_TRAVERSANT),
+             _brin(3, 10, y, net, 0.2, 0, VIA_TRAVERSANT)]
+        if plonge:
+            return o + [_brin(10, 11, y, net, 0.2, 4, VIA_TRAVERSANT),
+                        _brin(11, 21, y, net, 0.2, 0, VIA_TRAVERSANT)]
+        return o + [_brin(10, 21, y, net, 0.2, 0)]
+    scd = {}
+    for qui in ("p", "n"):
+        p_, n_ = chaine("P", 0, qui == "p"), chaine("N", ecart, qui == "n")
+        d3 = _doc(p_, {}, n_, [("P", "N")])
+        d3["stackup"]["layers"] = SIX
+        sd3 = se.simuler(d3, garder_abcd=True, freqs_imposees=f)["s_diff"]
+        vb = sd3["vias_brins"]
+        assert vb[qui] == 2 and vb["deux"] == 2, (qui, vb)
+        scd[qui] = np.abs(_plats(sd3["s_cd"])[:, 2])
+        est = np.abs(_s21_seul(p_, f, SIX) - _s21_seul(n_, f, SIX)) / 2.0
+        for v, e in zip(scd[qui], est):
+            if e > 0.1:
+                proche(v, e, 0.12, "Scd21, via du brin %s seul" % qui.upper())
+    for v_n, v_p in zip(scd["n"], scd["p"]):
+        if v_p > 0.05:
+            proche(v_n, v_p, 0.05, "Scd21 miroir (N contre P)")
+
+
+def des_brins_superposes_couplent_en_large_face():
+    """La partenaire AU-DESSOUS de la piste, sur la couche voisine, sans plan
+    entre les deux : jusqu'a la 5.4.0 chacun etait seul sur sa couche. Ils
+    couplent en large face (`ligne_mom.section_deux_niveaux`) :
+      · deux brins egaux, symetriques autour du milieu des deux plans : les
+        modes propres sont exactement impair et pair, le Scd reste nul
+        (< 1e-6) et Sdd21 a le retard de la triplaque (milieu homogene) ;
+      · Z_diff de la large face est en dessous de deux lignes seules ;
+      · un plan entre les deux couches les separe : chacun seul, comme
+        avant ;
+      · decales de 0,3 mm, ils couplent moins (Z_diff remonte)."""
+    pile = [_cu("TOP", "signal"), _di("PP", 0.2, 4.2), _cu("GND", "plane"),
+            _di("C1", 0.25, 4.0), _cu("IN1", "signal"),
+            _di("C2", 0.2, 4.0), _cu("IN2", "signal"),
+            _di("C3", 0.25, 4.0), _cu("PWR", "plane"),
+            _di("PP2", 0.2, 4.2), _cu("BOT", "signal")]
+    f = np.linspace(1e8, 1e10, 8)
+
+    def paire(dy, plan_entre=False):
+        pl = [dict(c) for c in pile]
+        if plan_entre:
+            pl = pl[:5] + [_di("C2a", 0.1, 4.0), _cu("MID", "plane"),
+                           _di("C2b", 0.1, 4.0)] + pl[6:]
+        n_couche = 8 if plan_entre else 6
+        d = _doc([_brin(0, 25, 0, "P", 0.15, 4)], {},
+                 [_brin(0, 25, dy, "N", 0.15, n_couche)], [("P", "N")])
+        d["stackup"]["layers"] = pl
+        return se.simuler(d, garder_abcd=True, freqs_imposees=f)
+    r = paire(0.0)
+    sd = r["s_diff"]
+    assert sd["quatre_acces"], sd["dissymetries"]
+    assert len(sd["superposees"]) == 1, sd
+    sp = sd["superposees"][0]
+    assert sp["decalage_mm"] < 1e-6 and abs(sp["recouvrement_mm"] - 25) < 1e-6
+    assert np.max(np.abs(_plats(sd["s_cd"]))) < 1e-6, \
+        np.max(np.abs(_plats(sd["s_cd"])))
+    z_seul = r["segments"][0]["z0"]
+    assert sp["z_diff"] < 2.0 * z_seul, (sp["z_diff"], z_seul)
+    # le retard du mode impair : milieu homogene, er = 4,0
+    s21 = _plats(sd["s_dd"])[:, 2]
+    ph = np.unwrap(np.angle(s21))
+    tau = -(ph[-1] - ph[0]) / (2 * math.pi * (f[-1] - f[0]))
+    proche(tau, 25e-3 * math.sqrt(4.0) / oeil.C_0, 0.02, "retard de la paire")
+    # un plan entre les deux : chacun seul
+    r_sep = paire(0.0, plan_entre=True)
+    assert not r_sep["s_diff"]["superposees"], r_sep["s_diff"]["superposees"]
+    # decales : moins couples
+    r_dec = paire(0.3)
+    sp_d = r_dec["s_diff"]["superposees"][0]
+    assert abs(sp_d["decalage_mm"] - 0.3) < 1e-6
+    assert sp_d["z_diff"] > sp["z_diff"], (sp_d["z_diff"], sp["z_diff"])
 
 
 def l_oeil_d_une_paire_dissymetrique():
@@ -1654,6 +1782,113 @@ def la_mutuelle_du_boitier_ouvre_l_oeil_differentiel():
             "texte": t, "broche": "A1"}))
         fronts.append(_dix_quatre_vingt_dix(nl["s"], nl["dt"]))
     assert fronts[0] < 0.9 * fronts[1], fronts
+
+
+VOISINES = """[Define Package Model] PKG_V
+[Number Of Pins] 4
+[Pin Numbers]
+A1
+A2
+B1
+G1
+[Model Data]
+[Inductance Matrix] Full_matrix
+[Row] 1
+6nH 3nH 1.5nH 2nH
+[Row] 2
+6nH 0.5nH 2nH
+[Row] 3
+5nH 0nH
+[Row] 4
+4nH
+[Capacitance Matrix] Full_matrix
+[Row] 1
+1pF -0.3pF -0.2pF 0pF
+[Row] 2
+1pF 0pF 0pF
+[Row] 3
+1pF 0pF
+[Row] 4
+1pF
+[End Model Data]
+[End Package Model]
+"""
+
+
+def les_mutuelles_hors_de_la_paire_sont_comptees():
+    """Le boitier de la paire A1/A2 couple a deux VOISINES : B1 (un signal,
+    au repos, ferme sur 50 ohms aux deux bouts) et G1 (une masse, en
+    court-circuit). Jusqu'a la 2.3.0, leurs mutuelles etaient dites
+    « ignorées ». Elles sont comptees (`ibis.abcd_boitier_couple`) :
+      · voisines ouvertes, c'est exactement le boitier de la paire couplee
+        (`abcd_boitier_paire`, mutuelle de la paire seule) ;
+      · une seule broche et une voisine en court-circuit, sans resistance :
+        L_eff = L - M^2 / L_v, a 1e-6 ;
+      · par l'oeil : la note les dit, le mode impair devient celui du
+        boitier couple, `boitier_voisins: false` rend celui d'avant.
+    Un boitier par sections n'a pas de mutuelles (BIRD 54) : rien n'y change."""
+    entete = ("[Pin] signal_name model_name R_pin L_pin C_pin\n"
+              "A1 DP LIN\nA2 DN LIN\nB1 SIG LIN\nG1 GND GND\n"
+              "[Diff Pin] inv_pin vdiff tdelay_typ tdelay_min tdelay_max\n"
+              "A1 A2 0.1V 0 0 0\n[Package Model] PKG_V\n")
+    txt = _ibis_boitier(entete, sigma=10e-12, suite=VOISINES)
+    lu = ibis.lire(txt, complet=True)
+    cpl = ibis.voisins_boitier(lu, ["A1", "A2"])
+    assert cpl["voisines"] == ["B1", "G1"] or \
+        sorted(cpl["voisines"]) == ["B1", "G1"], cpl["voisines"]
+    assert cpl["genres"] == {"B1": "signal", "G1": "court"}, cpl["genres"]
+    f = np.linspace(1e8, 1e10, 20)
+    # voisines ouvertes, couplees en self seulement (en capacite, une
+    # voisine ouverte est un conducteur FLOTTANT, qui change la capacite
+    # vue -- C - C_m^2 / C_v -- et c'est juste) : aucun courant n'y passe,
+    # c'est la paire couplee d'avant, exactement
+    ouv = dict(cpl, genres={"B1": "ouvert", "G1": "ouvert"},
+               mutuelles=dict(cpl["mutuelles"], c={
+                   k: v for k, v in cpl["mutuelles"]["c"].items()
+                   if set(k) == {"A1", "A2"}}))
+    bt = ibis.boitier_broche(lu, "A1")
+    mut = ibis.mutuelle_paire(lu, "A1", "A2")
+    for sens in ("emission", "reception"):
+        m_c = ibis.abcd_boitier_couple(f, ouv, sens)
+        m_p = ibis.abcd_boitier_paire(f, bt, bt, mut, sens)
+        e = np.max(np.abs(m_c - m_p)) / np.max(np.abs(m_p))
+        assert e < 1e-9, (sens, e)
+    # une broche, la masse en court-circuit : L - M^2 / L_v
+    seul = ibis.voisins_boitier(lu, ["A1"])
+    seul = dict(seul, conducteurs=["A1", "G1"], voisines=["G1"])
+    m1 = ibis.abcd_boitier_couple(f, seul, "emission")
+    l_eff = 6e-9 - (2e-9) ** 2 / 4e-9
+    attendu = ibis.abcd_boitier(f, {"r": 0.0, "l": l_eff, "c": 1e-12},
+                                "emission")
+    e = np.max(np.abs(m1 - attendu) / np.abs(attendu))
+    assert e < 1e-5, e
+    # par l'oeil
+    o = {"debit": 2e9, "mode": "diff", "r_charge": 100.0, "c_charge": 0.0,
+         "ibis_emetteur": {"texte": txt, "broche": "A1"}}
+    p = oeil._params(o, None)
+    ctx = oeil.preparer_ibis(o, p)
+    assert ctx["cpl_em"] is not None
+    assert any("voisine(s) comptées" in x and "G1" in x
+               for x in ctx["notes"]), ctx["notes"]
+    assert not any("ignorées" in x for x in ctx["notes"]), ctx["notes"]
+    m_v, note = oeil.appliquer_boitiers(ctx, f, oeil.ligne_ideale(f, 100.0,
+                                                                  0.0), "diff")
+    assert "voisines" in note, note
+    o2 = dict(o, boitier_voisins=False)
+    p2 = oeil._params(o2, None)
+    ctx2 = oeil.preparer_ibis(o2, p2)
+    assert ctx2["cpl_em"] is None
+    assert any("ignorées" in x for x in ctx2["notes"]), ctx2["notes"]
+    m_a, _ = oeil.appliquer_boitiers(ctx2, f, oeil.ligne_ideale(f, 100.0,
+                                                                0.0), "diff")
+    # les voisines baissent la self vue (la masse en court-circuit) : le
+    # boitier couple laisse passer plus haut
+    t_v = np.abs(oeil.transfert(m_v, f, 100.0, 100.0, 0.0)[0])
+    t_a = np.abs(oeil.transfert(m_a, f, 100.0, 100.0, 0.0)[0])
+    assert t_v[-1] > t_a[-1], (t_v[-1], t_a[-1])
+    # l'oeil complet, brin par brin, se calcule avec elles
+    nl, ctx3, _ = _paire_ideale(o)
+    assert ctx3["cpl_em"] is not None and nl["s"][-1] > 0.5
 
 
 SECTIONS = """[Define Package Model] PKG_S
@@ -1850,8 +2085,9 @@ def le_couplage_ac_fait_deriver_les_longues_suites():
     (0000...1) part du niveau fausse. L'oeil PRBS15 (suites de 15) se ferme
     devant celui d'avant, le pire cas (toute la memoire) plus encore, et le
     resultat le dit. Fenetre plus courte que tau (10 Gb/s, 100 nF) : le
-    continu corrige rend la derive de la fenetre a 2 % pres, et le
-    resultat dit que la fenetre ne couvre pas la decharge."""
+    pole lent separe (2.4.0) rend la derive de la fenetre a 1e-3 pres, et
+    le resultat dit que la fenetre ne couvre pas la decharge ; fenetre de
+    l'ordre de tau, la ou la case corrigee se trompait de 4 % : 1e-3."""
     b2 = {"debit": 100e6, "tr": 1e-9, "v_haut": 1.0, "v_bas": 0.0,
           "r_source": 50.0, "r_charge": 50.0, "c_charge": 0.0,
           "motif": "prbs15"}
@@ -1908,16 +2144,81 @@ def le_couplage_ac_fait_deriver_les_longues_suites():
     h, h0 = oeil.transfert(m, f, 50.0, 50.0, 0.0)
     h0b = oeil.continu_couplage_ac(ca2, m, f, 50.0, 50.0, 0.0)
     proche(h0b, h0 * math.exp(-fen / ca2["tau"]), 1e-6, "continu de la fenetre")
-    dt, s = oeil.reponse_indicielle(f, h, h0b, 20e-12, 4096)
+    _, lent = oeil._continu_ac_simple(ca2, m, f, {"r_source": 50.0,
+                                                 "r_charge": 50.0,
+                                                 "c_charge": 0.0})
+    proche(lent["tau"], ca2["tau"], 0.01, "tau de la boucle (ligne comprise)")
+    dt, s = oeil.reponse_indicielle_ac(f, h, lent["h0"], 20e-12, 4096,
+                                       lent["tau"])
     th = fen / 2.0
     proche(s[int(th / dt) - 1] / s[int(3e-9 / dt)],
-           math.exp(-(th - 3e-9) / ca2["tau"]), 0.02, "derive dans la fenetre")
+           math.exp(-(th - 3e-9) / lent["tau"]), 1e-3, "derive dans la fenetre")
+    # fenetre de l'ordre de tau (1 Gb/s, 2 nF : T_w / tau ~ 1,3)
+    ca3 = oeil.couplage_ac({"c": 2e-9}, {"mode": "simple", "r_charge": 50.0,
+                                         "r_source": 50.0})
+    df, n, fen, _ = oeil.grille(1e9, 50e-12, 0.5e-9, 3 * ca3["tau"])
+    f = df * np.arange(1, n + 1)
+    m, _, _ = oeil.poser_couplage_ac(ca3, f, oeil.ligne_ideale(f, 50.0, 0.5e-9),
+                                     None, None, "simple")
+    h, h0 = oeil.transfert(m, f, 50.0, 50.0, 0.0)
+    _, lent = oeil._continu_ac_simple(ca3, m, f, {"r_source": 50.0,
+                                                 "r_charge": 50.0,
+                                                 "c_charge": 0.0})
+    assert 0.5 < fen / lent["tau"] < 3.0, fen / lent["tau"]
+    dt, s = oeil.reponse_indicielle_ac(f, h, lent["h0"], 50e-12, 4096,
+                                       lent["tau"])
+    t0 = 1e-9
+    for t in np.linspace(2e-9, 0.98 * fen / 2.0, 6):
+        ecart = abs(s[int(t / dt)] / s[int(t0 / dt)]
+                    - math.exp(-(t - t0) / lent["tau"]))
+        assert ecart < 1e-3, ("fenetre ~ tau : %.2e a %.3g ns"
+                              % (ecart, t * 1e9))
     r2 = oeil.analyser(_doc(piste, {"debit": 10e9, "tr": 20e-12, "v_haut": 1.0,
                                     "v_bas": 0.0, "r_source": 50.0,
                                     "r_charge": 50.0, "c_charge": 0.0,
                                     "couplage_ac": {"c": 100e-9}}))
     assert r2["couplage_ac"]["fenetre_couvre"] is False
     assert any("ne couvre pas" in a for a in r2["avertissements"])
+
+
+def le_couplage_ac_de_la_paire_par_brin():
+    """La paire par brin (cascade a quatre acces) porte les memes
+    condensateurs que le mode impair : terminee, son pole lent est celui
+    du mode impair (C/2 dans R_s + R_L, lignes comprises) et sa reponse a
+    un echelon est celle de `transfert` a 1e-3 pres ; sans terminaison,
+    sa case du continu est le pont diviseur C_x / (C_x + C_L), comme en
+    simple -- elle valait h0 avant la 2.4.0."""
+    o = {"debit": 1e9, "tr": 50e-12, "r_source": 100.0, "r_charge": 100.0,
+         "c_charge": 0.0, "mode": "diff", "couplage_ac": {"c": 2e-9}}
+    p = oeil._params(o, None)
+    ca = p["couplage_ac"]
+    df, n, fen, _ = oeil.grille(1e9, 50e-12, 0.5e-9, 3 * ca["tau"])
+    f = df * np.arange(1, n + 1)
+    m_dd = oeil.ligne_ideale(f, 100.0, 0.5e-9, 0.5)
+    m_cc = oeil.ligne_ideale(f, 30.0, 0.5e-9, 0.5)
+    m4 = ibis.abcd_brins(m_dd, m_cc)
+    m_dd, _, m4 = oeil.poser_couplage_ac(ca, f, m_dd, None, m4, "diff")
+    bins = {}
+    h4, h04, _ = oeil.transfert_paire(None, f, m4, p, continu=bins)
+    _, lent = oeil._continu_ac_simple(ca, m_dd, f, p)
+    proche(bins["lent"]["tau"], lent["tau"], 1e-3, "tau de la paire par brin")
+    dt, s4 = oeil.reponse_indicielle_ac(f, h4, bins["lent"]["h0"], 50e-12,
+                                        4096, bins["lent"]["tau"])
+    h2, _ = oeil.transfert(m_dd, f, 100.0, 100.0, 0.0)
+    dt2, s2 = oeil.reponse_indicielle_ac(f, h2, lent["h0"], 50e-12, 4096,
+                                         lent["tau"])
+    for t in np.linspace(2e-9, 0.98 * fen / 2.0, 5):
+        assert abs(s4[int(t / dt)] - s2[int(t / dt2)]) < 1e-3, t
+    # sans terminaison : le pont diviseur, en simple comme par brin
+    p2 = oeil._params(dict(o, r_charge=0.0, c_charge=1e-12), None)
+    bins = {}
+    _, h0n, _ = oeil.transfert_paire(None, f, m4, p2, continu=bins)
+    cx = p2["couplage_ac"]["c_x"]
+    proche(bins["bin"], h0n * cx / (cx + 1e-12), 1e-9, "pont diviseur")
+    assert "lent" not in bins
+    proche(oeil.continu_couplage_ac(p2["couplage_ac"], m_dd, f, 100.0, 0.0,
+                                    1e-12), cx / (cx + 1e-12), 1e-9,
+           "pont diviseur en simple")
 
 
 def _modele_ami_compile():
@@ -1942,6 +2243,233 @@ def _modele_ami_compile():
         return None
     with open(os.path.join(src, "ami_ffe.ami"), encoding="utf-8") as fh:
         return d, fh.read()
+
+
+class _FauxAmi(object):
+    """Un modele AMI ECRIT EN PYTHON, a l'interface de `ibis.ModeleAmi` :
+    ce que fait python/test/ami_test/ami_ffe.c -- une FFE a deux
+    coefficients, dans AMI_Init et AMI_GetWave --, plus deux choses que la
+    bibliotheque compilee n'essaie pas sur un poste sans compilateur :
+      (gw_seul 1)   AMI_Init rend l'impulsion telle quelle, la FFE n'est
+                    que dans GetWave (un emetteur « GetWave seul ») ;
+      (horloge x)   GetWave rend un instant d'horloge par bit, tel que
+                    l'echantillon (instant + bit / 2) tombe a x UI du debut
+                    de chaque bit ;
+      (gigue g)     ces instants alternent de +-g UI.
+    Il permet d'essayer le flot de l'oeil (`executer_ami`) partout."""
+
+    def __init__(self, chemin):
+        self.chemin = chemin
+        self.getwave_existe = True
+        self.p = {}
+
+    @staticmethod
+    def _val(txt, nom, defaut):
+        import re
+        m = re.search(r"\(%s ([-+0-9.eE]+)\)" % nom, txt or "")
+        return float(m.group(1)) if m else defaut
+
+    def init(self, impulsion, dt, bit_time, parametres_in):
+        t = parametres_in
+        if self._val(t, "echec", 0) > 0.5:
+            return False, np.array(impulsion), "", "echec demande"
+        self.c0, self.c1 = self._val(t, "c0", 1.0), self._val(t, "c1", 0.0)
+        self.gw_seul = self._val(t, "gw_seul", 0) > 0.5
+        self.horloge = self._val(t, "horloge", -1.0)
+        self.gigue = self._val(t, "gigue", 0.0)
+        self.n = max(1, int(round(bit_time / dt)))
+        self.dt, self.ui = dt, bit_time
+        self.memoire = np.zeros(self.n)
+        self.k = 0                          # echantillons deja vus
+        x = np.array(impulsion, dtype=float)
+        if not self.gw_seul:
+            avant = np.concatenate([np.zeros(self.n), x[:-self.n]])
+            x = self.c0 * x + self.c1 * avant
+        return True, x, "(faux (c0 %g) (c1 %g))" % (self.c0, self.c1), "faux"
+
+    def getwave(self, onde, spb):
+        x = np.array(onde, dtype=float)
+        avant = np.concatenate([self.memoire, x])[:len(x)]
+        y = self.c0 * x + self.c1 * avant
+        self.memoire = np.concatenate([self.memoire, x])[-self.n:]
+        h = []
+        if self.horloge >= 0:
+            b0 = int(math.ceil(self.k / float(spb)))
+            b1 = (self.k + len(x)) // spb
+            for b in range(b0, b1):
+                g = self.gigue if b % 2 else -self.gigue
+                h.append((b + self.horloge + g - 0.5) * self.ui)
+        self.k += len(x)
+        h = [v for v in h if v >= 0.0]
+        return True, y, np.array(h), ""
+
+    def fermer(self):
+        pass
+
+
+def _avec_faux_ami(fn):
+    """`fn()` avec `_FauxAmi` a la place de la bibliotheque compilee."""
+    garde = (ibis.ModeleAmi, ibis.chemin_bibliotheque_ami)
+    ibis.ModeleAmi = _FauxAmi
+    ibis.chemin_bibliotheque_ami = lambda brut, racines: "/faux/" + str(brut)
+    try:
+        return fn()
+    finally:
+        ibis.ModeleAmi, ibis.chemin_bibliotheque_ami = garde
+
+
+FAUX_AMI = """(faux
+  (Reserved_Parameters
+    (AMI_Version (Usage Info) (Type String) (Value "7.0"))
+    (Init_Returns_Impulse (Usage Info) (Type Boolean) (Value True))
+    (GetWave_Exists (Usage Info) (Type Boolean) (Value True))
+    (Ignore_Bits (Usage Info) (Type Integer) (Value 4)))
+  (Model_Specific
+    (c0 (Usage In) (Type Float) (Range 1 0 1))
+    (c1 (Usage In) (Type Float) (Range 0 -1 1))
+    (gw_seul (Usage In) (Type Integer) (Value 0))
+    (horloge (Usage In) (Type Float) (Value -1))
+    (gigue (Usage In) (Type Float) (Value 0))))"""
+
+
+def _faux(**par):
+    return {"ami": {"texte": FAUX_AMI, "fichier": "faux.ami",
+                    "bibliotheque": "faux.so", "parametres": par}}
+
+
+def l_ami_getwave_de_l_emetteur_fait_la_forme_d_onde():
+    """L'AMI_GetWave de l'EMETTEUR (oeil 2.4.0) : il n'etait pas joue, seul
+    AMI_Init l'etait. Un emetteur dont la FFE n'est QUE dans GetWave (son
+    AMI_Init rend l'impulsion telle quelle) : l'oeil PRBS -- le flot
+    temporel -- est celui de la FFE de reference a 1e-4, le pire cas -- le
+    flot statistique, par AMI_Init -- celui sans FFE. La meme FFE dans
+    Init ET GetWave : les deux sont ceux de la FFE. Un recepteur sans
+    GetWave derriere lui : son egaliseur est initialise une seconde fois
+    sur le canal brut."""
+    base = {"debit": 2e9, "tr": 50e-12, "v_haut": 1.0, "v_bas": -1.0,
+            "r_source": 100.0, "r_charge": 100.0, "c_charge": 0.0,
+            "mode": "diff"}
+
+    def doc(oe):
+        return _doc([_brin(0, 60, 0, "P")], oe, [_brin(0, 60, 0.35, "N")],
+                    [("P", "N")])
+    r0 = oeil.analyser(doc(dict(base)))
+    rf = oeil.analyser(doc(dict(base, ffe=[0.7, -0.3], ffe_principal=0)))
+
+    def essai():
+        gw = oeil.analyser(doc(dict(base, ibis_emetteur=_faux(
+            c0=0.7, c1=-0.3, gw_seul=1))), racines_ami=["/faux"])
+        ex = gw["ami"]["execution"]["emetteur"]
+        assert ex["init"] and ex["getwave"], ex
+        assert any("AMI_GetWave de l'émetteur" in a
+                   for a in gw["avertissements"]), gw["avertissements"]
+        # (a 2e-3 : la phase d'echantillonnage se choisit sur le flot
+        # statistique, ici sans FFE, et tombe un peu a cote de la sienne)
+        proche(gw["mesures"]["hauteur_prbs"], rf["mesures"]["hauteur_prbs"],
+               2e-3, "GetWave seul : oeil PRBS de la FFE")
+        assert gw["mesures"]["hauteur_prbs"] < 0.8 * \
+            r0["mesures"]["hauteur_prbs"], "la FFE de GetWave doit compter"
+        proche(gw["mesures"]["hauteur_pire"], r0["mesures"]["hauteur_pire"],
+               1e-4, "GetWave seul : pire cas sans FFE (AMI_Init identite)")
+        les2 = oeil.analyser(doc(dict(base, ibis_emetteur=_faux(
+            c0=0.7, c1=-0.3))), racines_ami=["/faux"])
+        for k in ("hauteur_prbs", "hauteur_pire"):
+            proche(les2["mesures"][k], rf["mesures"][k], 1e-4,
+                   "Init et GetWave : " + k)
+        # un recepteur a Init seul derriere l'emetteur a GetWave
+        txt_rx = FAUX_AMI.replace("(GetWave_Exists (Usage Info) (Type "
+                                  "Boolean) (Value True))",
+                                  "(GetWave_Exists (Usage Info) (Type "
+                                  "Boolean) (Value False))")
+        rx = {"ami": {"texte": txt_rx, "fichier": "rx.ami",
+                      "bibliotheque": "rx.so", "parametres": {}}}
+        r2 = oeil.analyser(doc(dict(base, ibis_emetteur=_faux(
+            c0=0.7, c1=-0.3, gw_seul=1), ibis_recepteur=rx)),
+            racines_ami=["/faux"])
+        proche(r2["mesures"]["hauteur_prbs"], rf["mesures"]["hauteur_prbs"],
+               2e-3, "Rx Init seul derriere Tx GetWave")
+        assert not any("Seconde initialisation" in a
+                       for a in r2["avertissements"]), r2["avertissements"]
+    _avec_faux_ami(essai)
+
+
+def l_horloge_recuperee_par_l_ami_fixe_l_echantillonnage():
+    """L'horloge recuperee par le recepteur AMI (oeil 2.4.0) : lue et
+    montree jusqu'ici, elle FIXE desormais l'echantillonnage (IBIS : chaque
+    instant + bit / 2). Recepteur identite :
+      · horloge a la phase que l'outil prenait : l'oeil d'avant, a 1e-6 ;
+      · decalee d'un quart d'UI : la fiche le dit (0,25 UI), l'oeil PRBS
+        lu la se ferme, le pire cas aussi ;
+      · une gigue alternee de +-0,1 UI : 0,1 UI rms, 0,2 crete a crete, et
+        l'oeil PRBS plus ferme qu'a gigue nulle."""
+    base = {"debit": 2e9, "tr": 50e-12, "v_haut": 1.0, "v_bas": -1.0,
+            "r_source": 100.0, "r_charge": 100.0, "c_charge": 0.0,
+            "mode": "diff"}
+
+    def doc(oe):
+        return _doc([_brin(0, 60, 0, "P")], oe, [_brin(0, 60, 0.35, "N")],
+                    [("P", "N")])
+
+    def essai():
+        ref = oeil.analyser(doc(dict(base, ibis_recepteur=_faux())),
+                            racines_ami=["/faux"])
+        assert "horloge_ami" not in ref
+        import json
+        json.dumps(ref)
+        ui = 1.0 / 2e9
+        t50 = 4.0 * 50e-12 / oeil.TR_SUR_SIGMA
+        phi = ((ref["mesures"]["retard"] + ui / 2.0 + t50) / ui) % 1.0
+        r = oeil.analyser(doc(dict(base, ibis_recepteur=_faux(horloge=phi))),
+                          racines_ami=["/faux"])
+        h = r["horloge_ami"]
+        assert h["imposee"] and abs(h["decalage_ui"]) < 1.0 / 64 + 1e-9, h
+        assert h["gigue_rms_ui"] < 1e-9 and h["ticks"] >= 127, h
+        for k in ("hauteur_prbs", "hauteur_pire"):
+            proche(r["mesures"][k], ref["mesures"][k], 1e-6, "a sa phase : " + k)
+        rq = oeil.analyser(doc(dict(base, ibis_recepteur=_faux(
+            horloge=(phi + 0.25) % 1.0))), racines_ami=["/faux"])
+        hq = rq["horloge_ami"]
+        import json
+        json.dumps(rq)          # le resultat part en JSON, instants exclus
+        assert "instants" not in rq["ami"]["horloges"]
+        assert rq["ami"]["horloges"]["imposee"]
+        assert abs(hq["decalage_ui"] - 0.25) < 1.0 / 64 + 1e-9, hq
+        assert rq["mesures"]["hauteur_prbs"] < ref["mesures"]["hauteur_prbs"]
+        assert rq["mesures"]["hauteur_pire"] < ref["mesures"]["hauteur_pire"]
+        assert any("Horloge récupérée" in a for a in rq["avertissements"])
+        rg = oeil.analyser(doc(dict(base, ibis_recepteur=_faux(
+            horloge=phi, gigue=0.1))), racines_ami=["/faux"])
+        hg = rg["horloge_ami"]
+        proche(hg["gigue_rms_ui"], 0.1, 0.05, "gigue rms")
+        proche(hg["gigue_cc_ui"], 0.2, 0.05, "gigue crete a crete")
+        assert rg["mesures"]["hauteur_prbs"] < r["mesures"]["hauteur_prbs"]
+    _avec_faux_ami(essai)
+
+
+def l_ami_lit_la_forme_d_onde_des_tampons_ibis():
+    """AMI sur un canal IBIS NON LINEAIRE (oeil 2.4.0) : le GetWave du
+    recepteur recevait la forme d'onde du canal LINEARISE (la reponse
+    moyenne des deux fronts) ; il recoit celle que les tampons simules dans
+    le temps donnent a la broche. Tampon CMOS aux fronts dissymetriques,
+    ligne ouverte : un recepteur AMI identite rend l'oeil PRBS des tampons
+    seuls a 1e-6, et la note dit le flot."""
+    o = {"debit": 25e6, "r_charge": 0.0, "c_charge": 5e-12, "motif": "prbs7",
+         "ibis_emetteur": {"texte": CMOS33, "modele": "OUT33"}}
+
+    def doc(oe):
+        return _doc([_piste(0, 0, 40, 0, "SIG")], oe)
+    r0 = oeil.analyser(doc(dict(o)))
+
+    def essai():
+        r = oeil.analyser(doc(dict(o, ibis_recepteur=_faux())),
+                          racines_ami=["/faux"])
+        assert r["ami"]["execution"]["recepteur"]["getwave"]
+        assert any("tampons IBIS simulés" in a for a in r["avertissements"])
+        proche(r["mesures"]["hauteur_prbs"], r0["mesures"]["hauteur_prbs"],
+               1e-6, "identite sur la forme d'onde des tampons")
+        proche(r["mesures"]["v_max_vu"], r0["mesures"]["v_max_vu"], 1e-6,
+               "depassement des tampons")
+    _avec_faux_ami(essai)
 
 
 def la_chaine_de_parametres_ami_s_ecrit_et_se_relit():

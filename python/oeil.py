@@ -92,10 +92,36 @@ DEPUIS LA 2.3.0, toujours FACULTATIF :
    17. la rugosite propre du plan de reference dans la cascade de la paire
        (`simulation_em` 5.4.0) : l'oeil differentiel la suit.
 
-CE QUI N'EST PAS LA, et se dit dans chaque resultat : les mutuelles d'un
-[Package Model] hors de la paire et entre sections (lues, dites, pas
-comptees), l'AMI_GetWave de l'emetteur, l'horloge recuperee par le modele
-(lue, pas imposee), le via sur le brin N seul.
+DEPUIS LA 2.4.0, ce qui restait dit et pas compte l'est :
+   18. les MUTUELLES du [Package Model] vers les broches VOISINES
+       (`ibis.abcd_boitier_couple`) : voisines au repos, fermees sur
+       `r_voisin` (50 ohms) aux deux bouts -- alimentations et masses en
+       court-circuit, NC ouvertes -- et eliminees ; `boitier_voisins: false`
+       rend le boitier d'avant. Un boitier PAR SECTIONS n'a pas de
+       mutuelles : [Number Of Sections] et les matrices s'excluent (BIRD 54) ;
+   19. l'AMI_GETWAVE DE L'EMETTEUR : la stimulation (+-0,5 par bit) passe
+       par lui, puis par le canal brut ; un recepteur a AMI_Init seul
+       derriere lui est initialise une seconde fois sur le canal brut ;
+   20. l'HORLOGE RECUPEREE par le recepteur AMI FIXE l'echantillonnage
+       (instant + bit / 2, BIRD 214) : phase moyenne pour le pire cas et
+       l'oeil statistique, chaque bit de l'oeil PRBS a son instant -- voir
+       « L'HORLOGE RECUPEREE » dans `oeil` ;
+   21. l'AMI SUR DES TAMPONS IBIS SIMULES DANS LE TEMPS : le GetWave du
+       recepteur recoit la forme d'onde NON LINEAIRE de la broche,
+       l'egalisation de l'emetteur ajoutee par le canal linearise (la
+       norme suppose le canal analogique lineaire ; ce qui ne l'est pas
+       reste dans la forme d'onde) ;
+   22. le via sur le brin N seul et les brins superposes sur deux couches
+       (`simulation_em` 5.5.0), dans la cascade a quatre acces ;
+   23. les condensateurs de liaison : le pole lent SEPARE dans les
+       chemins lineaires (decharge exacte quelle que soit la fenetre), le
+       pont diviseur de la paire par brin sans terminaison.
+
+CE QUI N'EST PAS LA, et se dit dans chaque resultat : un recepteur AMI a
+AMI_Init seul sur des tampons non lineaires egalise la part lineaire de la
+forme d'onde, pas ce que les tampons y ajoutent ; un Tx AMI ne pilote pas
+le tampon IBIS lui-meme (multi-niveaux), son egalisation passe par le canal
+linearise.
 Les gabarits portent chacun leur FIABILITE : les normes sont payantes, et
 une valeur qui n'a pas pu etre recoupee le dit.
 
@@ -151,7 +177,7 @@ except Exception as _exc:                              # noqa: BLE001
     np = se = None
     ERREUR_OEIL = _exc
 
-VERSION = "2.3.0"
+VERSION = "2.4.0"
 FORMAT_RESULTAT = "cao-oeil-resultat-1"
 # UN FICHIER IBIS VOYAGE DANS LA REQUETE, en texte : quelques megaoctets pour
 # les plus gros composants, deux fois si l'emetteur et le recepteur en ont
@@ -774,6 +800,46 @@ def continu_couplage_ac(ca, abcds, freqs, r_source, r_charge, c_charge):
     return 1.0 / (1.0 + (r_ligne + r_x + r_source) * g_l)
 
 
+def _continu_ac_simple(ca, abcds, freqs, p):
+    """(h0_bin, lent) d'une cascade simple (ou du mode impair) qui porte des
+    condensateurs de liaison : `lent` {h0, tau} quand une terminaison les
+    decharge -- le pole lent, separe exactement par
+    `reponse_indicielle_ac` --, sinon la case du pont diviseur
+    (`continu_couplage_ac`). (None, None) sans condensateur."""
+    if not ca:
+        return None, None
+    h0_bin = continu_couplage_ac(ca, abcds, freqs, p["r_source"],
+                                 p["r_charge"], p["c_charge"])
+    if not (0 < p["r_charge"] < 1e9):
+        return h0_bin, None
+    b = np.asarray(abcds, dtype=complex)[:, 0, 1]
+    r_ligne = max(0.0, float(np.real(b[0]))) if len(b) else 0.0
+    r_tot = r_ligne + p["r_source"] + p["r_charge"]
+    _, h0 = transfert(np.asarray(abcds, dtype=complex)[:1], freqs[:1],
+                      p["r_source"], p["r_charge"], p["c_charge"])
+    return h0_bin, {"h0": float(h0), "tau": ca["c_x"] * r_tot}
+
+
+def reponse_indicielle_ac(freqs, h, h0, tr, n_fft_min, tau):
+    """`reponse_indicielle` d'un transfert qui porte le POLE LENT des
+    condensateurs de liaison (voir « LES CONDENSATEURS DE LIAISON »), sa
+    decharge comptee EXACTEMENT, quelle que soit la fenetre.
+
+    Au-dessous des frequences de la ligne, le canal n'est que la boucle
+    R_tot et C_x : H = h0 s tau / (1 + s tau) = h0 - h0 / (1 + s tau), h0
+    son continu SANS condensateur. Le terme -h0 / (1 + s tau) est le seul
+    qui deborde la fenetre ; on le retire du spectre -- ce qui reste n'a
+    plus de pole lent, sa case du continu vaut h0 et l'IFFT ne replie
+    rien -- et l'on rajoute sa reponse a un echelon, connue :
+    -h0 (1 - exp(-t / tau)), au retard du front gaussien."""
+    w = 2.0 * math.pi * np.asarray(freqs, dtype=float)
+    lent = -h0 / (1.0 + 1j * w * tau)
+    dt, s = reponse_indicielle(freqs, np.asarray(h) - lent, h0, tr,
+                               n_fft_min)
+    t = np.arange(len(s)) * dt - 4.0 * tr / TR_SUR_SIGMA
+    return dt, s - h0 * (1.0 - np.exp(-np.maximum(t, 0.0) / tau))
+
+
 def ligne_ideale(freqs, z0, retard, pertes_db_ghz=0.0):
     """La matrice ABCD d'une ligne uniforme, pour les bancs et les essais.
 
@@ -816,8 +882,21 @@ def ligne_ideale(freqs, z0, retard, pertes_db_ghz=0.0):
 # R_x = R_tot (exp(T_w / tau) - 1) -- T_w / C quand tau >> T_w : la tension
 # moyenne d'un condensateur charge par I pendant T_w --, R_tot la resistance
 # de la boucle de decharge. Les cases k >= 1 sont exactes ; l'erreur restante
-# est du second ordre en T_w / tau. Quand tau << T_w, R_x -> infini et le
-# continu vaut 0, exactement ce que H(0) dit.
+# est du second ordre en T_w / tau (jusqu'a ~4 % quand T_w ~ tau). Quand
+# tau << T_w, R_x -> infini et le continu vaut 0, exactement ce que H(0) dit.
+#
+# LE POLE LENT SEPARE (2.4.0), pour tous les chemins lineaires -- simple,
+# paire par brin, reponse que lit l'AMI. Au-dessous des frequences de la
+# ligne, le canal n'est que la boucle : H = h0 - h0 / (1 + s tau). On retire
+# ce terme du spectre, ce qui reste n'a plus de pole lent et ne replie rien,
+# et l'on rajoute sa reponse a un echelon, connue, -h0 (1 - exp(-t / tau)) :
+# la decharge est EXACTE quelle que soit la fenetre (4e-4 quand T_w ~ tau,
+# contre 4e-2 par la case corrigee) -- `reponse_indicielle_ac`. La case
+# corrigee ne sert plus qu'aux tampons IBIS simules dans le temps, dont les
+# reponses sont bornees a la fenetre : une decharge plus longue n'y tient
+# pas, et le resultat le dit. Sans terminaison, rien ne decharge : le
+# condensateur et C_L font un pont diviseur, en simple comme pour la paire
+# par brin.
 # ==========================================================================
 
 # L'inductance serie (ESL) montee des boitiers CMS usuels, EN HENRYS -- ce
@@ -1575,7 +1654,7 @@ def _ouverture(c, k0, amp, dfe_prises, dfe_max):
 
 
 def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None,
-         non_lineaire=None, h0_bin=None):
+         non_lineaire=None, h0_bin=None, lent=None):
     """L'oeil complet a partir d'une cascade ABCD (ou d'un transfert H).
 
     `abcds_ou_h` : (N, 2, 2) ABCD -- on y ferme alors generateur et charge --,
@@ -1591,8 +1670,11 @@ def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None,
     1 sinon.
 
     `h0_bin` : la case du continu de l'IFFT quand elle differe de `h0` --
-    des condensateurs de liaison (`continu_couplage_ac`) : l'oeil reste
-    centre sur `h0`, la reponse derive vers `h0_bin`."""
+    des condensateurs de liaison sans terminaison (`continu_couplage_ac`,
+    le pont diviseur) : l'oeil reste centre sur `h0`, la reponse derive
+    vers `h0_bin`. `lent` {h0, tau} : leur POLE LENT quand une terminaison
+    les decharge -- la decharge est alors comptee exactement
+    (`reponse_indicielle_ac`), et `h0_bin` ne sert plus."""
     freqs = np.asarray(freqs, dtype=float)
     av = []
     nl = non_lineaire
@@ -1603,9 +1685,8 @@ def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None,
     elif arr.ndim == 3:
         h, h0 = transfert(arr, freqs, p["r_source"], p["r_charge"],
                           p["c_charge"])
-        if ca and h0_bin is None:
-            h0_bin = continu_couplage_ac(ca, arr, freqs, p["r_source"],
-                                         p["r_charge"], p["c_charge"])
+        if ca and h0_bin is None and lent is None:
+            h0_bin, lent = _continu_ac_simple(ca, arr, freqs, p)
     else:
         h = arr.astype(complex)
         if h0 is None:
@@ -1633,9 +1714,14 @@ def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None,
         else:
             hc = h * ctle(freqs, spec) if spec else h
             n_min = int(math.ceil(fenetre / min(dt_e, tr / 8.0)))
-            dt, s = reponse_indicielle(freqs, hc,
-                                       h0_bin * _gain_continu_ctle(spec),
-                                       tr, n_min)
+            if lent:
+                dt, s = reponse_indicielle_ac(
+                    freqs, hc, lent["h0"] * _gain_continu_ctle(spec), tr,
+                    n_min, lent["tau"])
+            else:
+                dt, s = reponse_indicielle(freqs, hc,
+                                           h0_bin * _gain_continu_ctle(spec),
+                                           tr, n_min)
             n_h = int(t_h / dt)
         s_h = s[:n_h]
         # Le pas de l'oeil : interpolation lineaire de la reponse fine.
@@ -1696,6 +1782,38 @@ def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None,
     s, dt, n_h, x0 = m["s"], m["dt"], m["n_h"], m["x0"]
     p_eq, i_pk, o_s, prises = m["p_eq"], m["i_pk"], m["o"], m["prises"]
     i_s = i_pk + o_s
+
+    ordre = {"prbs7": 7, "prbs9": 9, "prbs15": 15}.get(p["motif"])
+    if ordre is None:
+        raise ErreurOeil("Motif « %s » inconnu." % p["motif"],
+                         "Choisissez PRBS7, PRBS9 ou PRBS15.")
+    bits = prbs(ordre)
+    # LA FORME D'ONDE SIMULEE, une periode du motif : demandee ici, avant
+    # l'echantillonnage, parce qu'un recepteur AMI y rend son horloge.
+    onde_nl = None if nl is None else np.asarray(nl["onde"](bits),
+                                                  dtype=float)
+    # -- L'HORLOGE RECUPEREE (2.4.0) --------------------------------------
+    # Un recepteur AMI dont l'AMI_GetWave rend ses instants d'horloge FIXE
+    # l'echantillonnage, comme dans le circuit : la phase de l'oeil est leur
+    # phase moyenne (et non plus le centre que l'outil choisit), le pire cas
+    # et l'oeil statistique s'y lisent, et chaque bit de l'oeil PRBS est lu
+    # a SON instant -- la gigue de la recuperation d'horloge comprise.
+    cdr = None
+    hz = ((nl or {}).get("ami") or {}).get("horloges") or {}
+    if hz.get("instants") is not None and len(hz["instants"]):
+        inst = np.asarray(hz["instants"], dtype=float)
+        phase = (np.angle(np.mean(np.exp(2j * math.pi * inst / spu)))
+                 / (2 * math.pi) * spu) % spu
+        d = ((phase - i_s) + spu / 2.0) % spu - spu / 2.0
+        if i_pk + o_s + int(round(d)) >= 0:
+            o_s += int(round(d))
+            i_s = i_pk + o_s
+            k0, c = _curseurs(p_eq, i_s, spu)
+            ouv, prises, isi = _ouverture(c, k0, amp, p["dfe_prises"],
+                                          p["dfe_max"])
+            m = dict(m, ouv=ouv, prises=prises, isi=isi, o=o_s)
+            cdr = {"instants": inst, "phase_ui": phase / spu,
+                   "decalage_ui": round(d) / spu}
     v_c = v_mil * x0
     echelle = max(float(np.max(np.abs(s[:n_h]))), 1e-12)
     # Avec des condensateurs de liaison qui se dechargent, la reponse DOIT
@@ -1755,11 +1873,6 @@ def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None,
     h_pire = 2.0 * (m["ouv"] - xt_crete)
 
     # -- l'oeil PRBS, par superposition ----------------------------------
-    ordre = {"prbs7": 7, "prbs9": 9, "prbs15": 15}.get(p["motif"])
-    if ordre is None:
-        raise ErreurOeil("Motif « %s » inconnu." % p["motif"],
-                         "Choisissez PRBS7, PRBS9 ou PRBS15.")
-    bits = prbs(ordre)
     per = len(bits)
     # La convolution circulaire est exacte des que la periode emise couvre la
     # reponse a un bit : une repetition de plus ne doublerait que la memoire.
@@ -1775,7 +1888,7 @@ def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None,
         # LA FORME D'ONDE SIMULEE, et non la superposition : le tampon non
         # lineaire ne la verifie pas. Elle est periodique (regime etabli),
         # et le CTLE s'y applique donc en circulaire, exactement.
-        y = np.tile(nl["onde"](bits), rep)
+        y = np.tile(onde_nl, rep)
         if len(p["ffe"]) > 1 or p["ffe"][0] != 1.0:
             # LA FFE SUR LA FORME D'ONDE SIMULEE, comme le flot IBIS-AMI la
             # pose sur la reponse du canal analogique : lineairement, la
@@ -1816,6 +1929,25 @@ def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None,
     h_prbs = h_phase[spu // 2]
     larg_prbs = _largeur(ouvert_prbs, spu // 2) / spu
     v_ech = y[(idx_bits + i_s) % ns]
+    if cdr is not None:
+        # chaque bit a l'instant de l'horloge recuperee qui le lit
+        x = cdr["instants"]
+        rang_b = np.round((x - i_s) / spu).astype(int)
+        ecart = x - (rang_b * spu + i_s)
+        dev = np.zeros(per)
+        dev[rang_b % per] = ecart
+        v_ech = y[(idx_bits + i_s + np.round(np.tile(dev, rep)).astype(int))
+                  % ns]
+        h_prbs = float(np.min(v_ech[uns]) - np.max(v_ech[~uns]))
+        cdr.update({"ticks": int(len(x)),
+                    "gigue_rms_ui": float(np.std(ecart)) / spu,
+                    "gigue_cc_ui": float(np.ptp(ecart)) / spu})
+        av.append("Horloge récupérée par le modèle AMI du récepteur, "
+                  "imposée à l'échantillonnage : phase %.3f UI (%+.3f UI du "
+                  "centre que l'outil aurait pris), gigue %.3f UI rms, "
+                  "%.3f UI crête à crête sur %d instants."
+                  % (cdr["phase_ui"], cdr["decalage_ui"],
+                     cdr["gigue_rms_ui"], cdr["gigue_cc_ui"], cdr["ticks"]))
     niveau_1 = float(np.mean(v_ech[uns]))
     niveau_0 = float(np.mean(v_ech[~uns]))
 
@@ -1984,6 +2116,9 @@ def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None,
     }
     if stat is not None:
         r["statistique"] = stat
+    if cdr is not None:
+        r["horloge_ami"] = {k: v for k, v in cdr.items() if k != "instants"}
+        r["horloge_ami"]["imposee"] = True
     if agr:
         r["diaphonie"] = {
             "agresseurs": agr, "gain_ctle": xt_gain,
@@ -2118,7 +2253,8 @@ def _tampon(lu, nom, coin, role):
     return m, t
 
 
-def _charger_ibis(d, role, diff=False, boitier=True):
+def _charger_ibis(d, role, diff=False, boitier=True, voisins=True,
+                  r_voisin=50.0):
     """Un bout de la liaison, d'un champ `ibis_emetteur` ou `ibis_recepteur`
     {texte, fichier, modele, coin, broche, modele_n, coin_n} :
     {lu, m, t, m_n, t_n, bt, bt_n, broche, inverse, paire, notes}.
@@ -2189,7 +2325,7 @@ def _charger_ibis(d, role, diff=False, boitier=True):
     m_n = t_n = None
     if diff:
         m_n, t_n = _tampon(lu, nom_n or m["nom"], coin_n, role)
-    bt = bt_n = mut = None
+    bt = bt_n = mut = cpl = None
     if boitier:
         # LES MUTUELLES DE LA PAIRE (2.2.0) : entre la broche et son
         # inverse, elles se comptent ; les autres se disent.
@@ -2211,9 +2347,33 @@ def _charger_ibis(d, role, diff=False, boitier=True):
                             mut["k_c"]))
         bt = None if ibis.boitier_nul(bt) else bt
         bt_n = None if ibis.boitier_nul(bt_n) else bt_n
+        # LES MUTUELLES HORS DE LA PAIRE (2.4.0, `ibis.voisins_boitier`) :
+        # les voisines du [Package Model], au repos, fermees aux deux bouts
+        # et eliminees. Elles remplacent la note « ignorées ».
+        if broche and voisins:
+            cpl = ibis.voisins_boitier(
+                lu, [broche, inverse] if diff and inverse else [broche])
+            if cpl is not None:
+                cpl["r_voisin"] = r_voisin
+                notes[:] = [x for x in notes
+                            if not x.startswith("Mutuelles du [Package Model]")]
+                courts = [x for x in cpl["voisines"]
+                          if cpl["genres"][x] == "court"]
+                notes.append(
+                    "%s : mutuelles du [Package Model] %s vers %d broche(s) "
+                    "voisine(s) comptées (%s ; couplage le plus fort k = "
+                    "%.2f), voisines au repos fermées sur %.0f Ω aux deux "
+                    "bouts%s." % (
+                        role, cpl["nom"], len(cpl["voisines"]),
+                        ", ".join(cpl["voisines"][:6])
+                        + (", …" if len(cpl["voisines"]) > 6 else ""),
+                        cpl["k_max"], r_voisin,
+                        (", alimentations et masses (%s) en court-circuit"
+                         % ", ".join(courts[:4])) if courts else ""))
     return {"lu": lu, "m": m, "t": t, "m_n": m_n, "t_n": t_n, "bt": bt,
             "bt_n": bt_n, "broche": broche, "inverse": inverse,
-            "paire": paire, "notes": notes, "coin": coin, "mut": mut}
+            "paire": paire, "notes": notes, "coin": coin, "mut": mut,
+            "cpl": cpl}
 
 
 def _infos_boitier(bt):
@@ -2256,15 +2416,20 @@ def preparer_ibis(o, p):
                          "UI." % (dec * 1e12),
                          "Il se saisit en secondes, plus petit qu'un bit.")
     avec_bt = o.get("boitier", True) not in (False, 0, "0", "false", "non")
+    avec_v = o.get("boitier_voisins", True) not in (False, 0, "0", "false",
+                                                    "non")
+    r_voisin = _nombre(o.get("r_voisin"), 50.0)
+    if not r_voisin > 0:
+        r_voisin = 50.0
     ctx = {"em": None, "m_em": None, "em_n": None, "m_em_n": None,
            "m_rx": None, "rx": None, "rx_n": None, "c_rx": None,
            "bt_em": (None, None), "bt_rx": (None, None), "decalage": 0.0, "vdiff": None,
-           "mut_em": None, "mut_rx": None,
+           "mut_em": None, "mut_rx": None, "cpl_em": None, "cpl_rx": None,
            "infos": {}, "notes": [], "boitier": avec_bt,
            "r_mc": max(0.0, _nombre(o.get("r_charge_mc"), 0.0))}
     dt0 = p["ui"] / ECHANTILLONS_UI / 8.0
     if em_d:
-        b = _charger_ibis(em_d, "émetteur", diff, avec_bt)
+        b = _charger_ibis(em_d, "émetteur", diff, avec_bt, avec_v, r_voisin)
         m, t = b["m"], b["t"]
         for mm in (m, b["m_n"]):
             if mm is not None and not ibis.est_emetteur(mm):
@@ -2280,7 +2445,8 @@ def preparer_ibis(o, p):
         except ibis.ErreurIbis as exc:
             raise ErreurOeil(exc.message, exc.conseil)
         ctx.update(em=t, m_em=m, em_n=b["t_n"], m_em_n=b["m_n"],
-                   bt_em=(b["bt"], b["bt_n"]), mut_em=b["mut"])
+                   bt_em=(b["bt"], b["bt_n"]), mut_em=b["mut"],
+                   cpl_em=b["cpl"])
         ctx["notes"].extend(b["notes"])
         if b["paire"] is not None:
             ctx["decalage"] = float(b["paire"]["tdelay"][ibis.COINS[t.coin]])
@@ -2306,7 +2472,7 @@ def preparer_ibis(o, p):
         p["tr"] = tr_e
         p["ffe"], p["ffe_principal"] = [1.0], 0
     if rx_d:
-        b = _charger_ibis(rx_d, "récepteur", diff, avec_bt)
+        b = _charger_ibis(rx_d, "récepteur", diff, avec_bt, avec_v, r_voisin)
         m, t, t_n = b["m"], b["t"], b["t_n"]
         ctx["m_rx"] = m
         # LA CAPACITE D'ENTREE PART DANS LE CANAL, lineaire ; seules les
@@ -2324,6 +2490,7 @@ def preparer_ibis(o, p):
                 ctx[cle] = tt
         ctx["bt_rx"] = (b["bt"], b["bt_n"])
         ctx["mut_rx"] = b["mut"]
+        ctx["cpl_rx"] = b["cpl"]
         ctx["notes"].extend(b["notes"])
         if b["paire"] is not None and b["paire"]["vdiff"]:
             ctx["vdiff"] = abs(float(b["paire"]["vdiff"]))
@@ -2401,6 +2568,7 @@ def appliquer_boitiers(ctx, freqs, abcds, mode="simple"):
     m = np.array(abcds, dtype=complex)
     touche = mutuelle = False
     moyenne = ""
+    voisins = False
     for cle, sens, actif, cle_m in (
             ("bt_em", "emission", ctx["em"] is not None, "mut_em"),
             ("bt_rx", "reception", True, "mut_rx")):
@@ -2408,7 +2576,15 @@ def appliquer_boitiers(ctx, freqs, abcds, mode="simple"):
         if not actif or (a is None and b is None):
             continue
         mb = None
-        if mode == "diff":
+        cpl = ctx.get("cpl" + cle_m[3:])
+        if cpl is not None and (mode == "diff") == (cpl["victimes"] == 2):
+            # LE BOITIER COUPLE A SES VOISINES (2.4.0) : en simple tel quel,
+            # en differentiel par son mode impair
+            mc = ibis.abcd_boitier_couple(freqs, cpl, sens, cpl["r_voisin"])
+            mb = ibis.mode_impair_couple(mc) if mode == "diff" else mc
+            voisins = True
+            mutuelle = mutuelle or mode == "diff"
+        elif mode == "diff":
             sa, sb = (a or {}).get("sections"), (b or {}).get("sections")
             if sa and sa == sb:
                 m1 = ibis.abcd_boitier(freqs, a, sens)
@@ -2435,9 +2611,10 @@ def appliquer_boitiers(ctx, freqs, abcds, mode="simple"):
         touche = True
     if not touche:
         return abcds, ""
-    return m, ("boîtiers comptés (R/L_pkg en série, C_pkg à la broche%s)%s"
+    return m, ("boîtiers comptés (R/L_pkg en série, C_pkg à la broche%s%s)%s"
                % (", mutuelles de la paire comprises" if mutuelle else "",
-                  moyenne))
+                  ", mutuelles vers les broches voisines comprises"
+                  if voisins else "", moyenne))
 
 
 def abcd_depuis_s(s_plats, z_ref):
@@ -2622,10 +2799,19 @@ def simuler_non_lineaire(ctx, freqs, abcds, p, r0):
             "liaison": lia}
 
 
-def _boitiers_brin(freqs, bt, mut, sens):
+def _boitiers_brin(freqs, bt, mut, sens, cpl=None, symetrique=False):
     """(N, 4, 4) : les boitiers des deux broches (bt_p, bt_n), poses chacun
     sur son brin -- et couples par les mutuelles de la paire s'il y en a
-    (`ibis.abcd_boitier_paire`)."""
+    (`ibis.abcd_boitier_paire`), ou, avec des voisines couplees (`cpl`,
+    2.4.0), le boitier couple a elles (`ibis.abcd_boitier_couple`) --
+    symetrise pour la reference symetrique : la moyenne de lui et de son
+    image, brins echanges."""
+    if cpl is not None and cpl["victimes"] == 2:
+        m = ibis.abcd_boitier_couple(freqs, cpl, sens, cpl["r_voisin"])
+        if symetrique:
+            pm = np.array([1, 0, 3, 2])
+            m = 0.5 * (m + m[:, pm][:, :, pm])
+        return m
     if mut:
         return ibis.abcd_boitier_paire(freqs, bt[0], bt[1], mut, sens)
     return ibis.abcd_par_brin(ibis.abcd_boitier(freqs, bt[0], sens),
@@ -2687,18 +2873,23 @@ def _poser_boitiers_brins(ctx, freqs, m, m0, symetrique=False,
     zero = np.array([0.0])
     bt_e, bt_r = ctx["bt_em"], ctx["bt_rx"]
     mut_e, mut_r = ctx.get("mut_em"), ctx.get("mut_rx")
+    cpl_e, cpl_r = ctx.get("cpl_em"), ctx.get("cpl_rx")
     if symetrique:
         bt_e, bt_r = (bt_e[0], bt_e[0]), (bt_r[0], bt_r[0])
     compte = False
-    if ctx["em"] is not None and (bt_e[0] or bt_e[1] or mut_e):
-        m = _boitiers_brin(freqs, bt_e, mut_e, "emission") @ m
-        m0 = _boitiers_brin(zero, bt_e, mut_e, "emission") @ m0
+    if ctx["em"] is not None and (bt_e[0] or bt_e[1] or mut_e or cpl_e):
+        m = _boitiers_brin(freqs, bt_e, mut_e, "emission", cpl_e,
+                           symetrique) @ m
+        m0 = _boitiers_brin(zero, bt_e, mut_e, "emission", cpl_e,
+                            symetrique) @ m0
         compte = True
     if avant_reception is not None:
         m = m @ avant_reception
-    if bt_r[0] or bt_r[1] or mut_r:
-        m = m @ _boitiers_brin(freqs, bt_r, mut_r, "reception")
-        m0 = m0 @ _boitiers_brin(zero, bt_r, mut_r, "reception")
+    if bt_r[0] or bt_r[1] or mut_r or cpl_r:
+        m = m @ _boitiers_brin(freqs, bt_r, mut_r, "reception", cpl_r,
+                               symetrique)
+        m0 = m0 @ _boitiers_brin(zero, bt_r, mut_r, "reception", cpl_r,
+                                 symetrique)
         compte = True
     return m, m0, compte
 
@@ -2717,9 +2908,12 @@ def transfert_paire(ctx, freqs, m_brins, p, continu=None):
     impair, exactement.
 
     `continu` : un dictionnaire, s'il est donne, recoit `bin` -- la case du
-    continu de l'IFFT quand la paire porte des condensateurs de liaison
-    (`_continu_couplage_ac` : la boucle de decharge est R_s + R_L et les
-    deux brins ; sans terminaison, rien ne decharge et la case est h0)."""
+    continu de l'IFFT -- et, quand la paire porte des condensateurs de
+    liaison qu'une terminaison decharge, `lent` {h0, tau} : leur pole lent,
+    la boucle R_s + R_L et les deux brins en serie (C/2), que
+    `reponse_indicielle_ac` compte exactement. Sans terminaison, rien ne
+    decharge : la case est le pont diviseur C_x / (C_x + C_L), comme en
+    simple."""
     freqs = np.asarray(freqs, dtype=float)
     m = np.array(m_brins, dtype=complex)
     m0 = _continu_brins(m)
@@ -2739,11 +2933,12 @@ def transfert_paire(ctx, freqs, m_brins, p, continu=None):
     h0 = float(np.real(h_de(m0, np.array([0.0]))[0]))
     if continu is not None:
         continu["bin"] = h0
-        if p.get("couplage_ac") and 0 < p["r_charge"] < 1e9:
-            m0b = _continu_couplage_ac(m0.copy(), p["couplage_ac"], freqs,
-                                       float(p["r_source"])
-                                       + float(p["r_charge"]))
-            continu["bin"] = float(np.real(h_de(m0b, np.array([0.0]))[0]))
+        ca = p.get("couplage_ac")
+        if ca and 0 < p["r_charge"] < 1e9:
+            r_tot = float(np.real(m0[0, 0, 2]) + np.real(m0[0, 1, 3]))                 + float(p["r_source"]) + float(p["r_charge"])
+            continu["lent"] = {"h0": h0, "tau": 0.5 * ca["c"] * r_tot}
+        elif ca and p["c_charge"] > 0:
+            continu["bin"] = h0 * ca["c_x"] / (ca["c_x"] + p["c_charge"])
     return h, h0, ("boîtiers comptés brin par brin" if compte else "")
 
 
@@ -3064,10 +3259,11 @@ BITS_PAR_BLOC_AMI = 256
 MAX_PERIODES_AMI = 64
 
 
-def _echelon_canal(freqs, canal, h0, h0_bin, p, nl):
+def _echelon_canal(freqs, canal, h0, h0_bin, p, nl, lent=None):
     """La reponse a un echelon du canal analogique, au pas UI / 64 et sur la
     demi-fenetre : (dt_e, s). Normalisee a un echelon unite de l'emetteur
-    (le continu sans condensateur vaut h0)."""
+    (le continu sans condensateur vaut h0). Les condensateurs de liaison
+    comme dans `oeil` : `lent`, ou la case `h0_bin`."""
     ui = p["ui"]
     dt_e = ui / ECHANTILLONS_UI
     if nl is not None:
@@ -3078,6 +3274,9 @@ def _echelon_canal(freqs, canal, h0, h0_bin, p, nl):
         if arr.ndim == 3:
             h, h0 = transfert(arr, freqs, p["r_source"], p["r_charge"],
                               p["c_charge"])
+            if p.get("couplage_ac") and h0_bin is None and lent is None:
+                h0_bin, lent = _continu_ac_simple(p["couplage_ac"], arr,
+                                                  freqs, p)
         else:
             h = arr.astype(complex)
         if h0_bin is None:
@@ -3085,7 +3284,11 @@ def _echelon_canal(freqs, canal, h0, h0_bin, p, nl):
         df = freqs[1] - freqs[0]
         t_h = 0.5 / df
         n_min = int(math.ceil(1.0 / df / min(dt_e, p["tr"] / 8.0)))
-        dt, s_src = reponse_indicielle(freqs, h, h0_bin, p["tr"], n_min)
+        if lent:
+            dt, s_src = reponse_indicielle_ac(freqs, h, lent["h0"], p["tr"],
+                                              n_min, lent["tau"])
+        else:
+            dt, s_src = reponse_indicielle(freqs, h, h0_bin, p["tr"], n_min)
     n_e = int(t_h / dt_e)
     t_e = np.arange(n_e) * dt_e
     s = np.interp(t_e, np.arange(len(s_src)) * dt, s_src, left=0.0,
@@ -3119,7 +3322,8 @@ def _onde_lineaire(bits, p_bit, spu, amp, v_c):
     return y[:per * spu], y
 
 
-def executer_ami(ami, p, freqs, canal, h0, h0_bin, nl, racines, notes):
+def executer_ami(ami, p, freqs, canal, h0, h0_bin, nl, racines, notes,
+                 lent=None):
     """Les modeles AMI designes, executes (voir l'en-tete) : rend ce que
     `oeil(non_lineaire=...)` lit -- ou `nl` inchange si rien n'a pu
     s'executer -- et remplit `ami["execution"]`. Les echecs vont dans
@@ -3131,6 +3335,7 @@ def executer_ami(ami, p, freqs, canal, h0, h0_bin, nl, racines, notes):
     ui, spu = p["ui"], ECHANTILLONS_UI
     fiche = {}
     modeles = {}
+    chemins = {}
     for bout in ("emetteur", "recepteur"):
         if bout not in biblios:
             continue
@@ -3148,6 +3353,7 @@ def executer_ami(ami, p, freqs, canal, h0, h0_bin, nl, racines, notes):
                     "pas de paramètres à passer au modèle." % qui)
             chemin = ibis.chemin_bibliotheque_ami(b["chemin"], racines)
             modeles[bout] = ibis.ModeleAmi(chemin)
+            chemins[bout] = chemin
             f["chargee"] = True
             f["getwave"] = modeles[bout].getwave_existe
         except ibis.ErreurIbis as exc:
@@ -3160,9 +3366,10 @@ def executer_ami(ami, p, freqs, canal, h0, h0_bin, nl, racines, notes):
 
     amp = (p["v_haut"] - p["v_bas"]) / 2.0
     v_mil = (p["v_haut"] + p["v_bas"]) / 2.0
-    dt_e, s_canal = _echelon_canal(freqs, canal, h0, h0_bin, p, nl)
+    dt_e, s_canal = _echelon_canal(freqs, canal, h0, h0_bin, p, nl, lent)
     x0 = float(nl.get("x0", 1.0)) if nl is not None else (
         h0 if h0 is not None else float(s_canal[-1]))
+    s_brut = s_canal
     ffe_appliquee = False
     if "emetteur" not in modeles and (len(p["ffe"]) > 1 or p["ffe"][0] != 1.0):
         # La FFE de reference de l'emetteur, posee ici puisque l'oeil ne la
@@ -3209,17 +3416,27 @@ def executer_ami(ami, p, freqs, canal, h0, h0_bin, nl, racines, notes):
             return imp
         return rendu
 
+    tx = None
     if "emetteur" in modeles:
         imp_tx = lancer("emetteur", impulsion)
         if "emetteur" in modeles:
             if (len(p["ffe"]) > 1 or p["ffe"][0] != 1.0):
                 notes.append("Émetteur AMI exécuté : la FFE de référence "
                              "saisie est ignorée, le modèle fait la sienne.")
-            if not fiche["emetteur"]["init_returns_impulse"]:
-                notes.append("Émetteur AMI sans Init_Returns_Impulse : son "
-                             "AMI_GetWave n'est pas reproduit, l'émetteur "
-                             "est pris linéaire sur l'impulsion du canal.")
-            modeles["emetteur"].fermer()
+            # L'AMI_GETWAVE DE L'EMETTEUR (2.4.0) : il fait la forme d'onde
+            # du flot temporel (voir plus bas) ; sans lui, l'emetteur est
+            # pris lineaire sur son impulsion.
+            tx = modeles["emetteur"]
+            tx_gw = tx.getwave_existe and bool(ibis.reserve_ami(
+                lus["emetteur"], "GetWave_Exists", True))
+            fiche["emetteur"]["getwave"] = tx_gw
+            if not tx_gw:
+                if not fiche["emetteur"]["init_returns_impulse"]:
+                    notes.append("Émetteur AMI sans Init_Returns_Impulse ni "
+                                 "AMI_GetWave : il est pris linéaire sur "
+                                 "l'impulsion du canal.")
+                tx.fermer()
+                tx = None
     imp_rx = imp_tx
     rx = None
     if "recepteur" in modeles:
@@ -3245,45 +3462,123 @@ def executer_ami(ami, p, freqs, canal, h0, h0_bin, nl, racines, notes):
         fiche["recepteur"]["getwave"] = getwave
     ignore = int(_nombre(ibis.reserve_ami(lus["recepteur"], "Ignore_Bits", 0)
                          if rx is not None else 0, 0))
+    ignore_tx = int(_nombre(ibis.reserve_ami(lus["emetteur"], "Ignore_Bits",
+                                             0) if tx is not None else 0, 0))
+    s_b = np.asarray(s_brut, dtype=float)
+    p_brut = s_b - np.concatenate([np.zeros(spu), s_b[:-spu]])
+    # LE RECEPTEUR SANS GETWAVE, DERRIERE UN EMETTEUR A GETWAVE : son
+    # egaliseur seul, sur le canal BRUT -- une seconde instance, initialisee
+    # sur l'impulsion du canal sans l'emetteur (c'est elle que la forme
+    # d'onde de l'emetteur traverse). A defaut, celle du flot statistique.
+    imp_rx_brut = imp_rx
+    if tx is not None and rx is not None and not getwave:
+        try:
+            rx2 = ibis.ModeleAmi(chemins["recepteur"])
+            ok2, rendu2, _, msg2 = rx2.init(
+                impulsion, dt_e, ui, fiche["recepteur"]["parametres_in"])
+            rx2.fermer()
+            if ok2 and np.all(np.isfinite(rendu2)) and \
+                    fiche["recepteur"]["init_returns_impulse"]:
+                imp_rx_brut = rendu2
+            else:
+                raise ValueError(msg2 or "AMI_Init a rendu 0")
+        except Exception as exc:                        # noqa: BLE001
+            notes.append("Seconde initialisation du récepteur AMI sur le "
+                         "canal brut impossible (%s) : l'égaliseur de "
+                         "l'émetteur y est compté deux fois." % exc)
+    nl_ibis = nl if (nl is not None and callable(nl.get("onde"))) else None
 
-    def onde(bits):
-        bits = [int(b) for b in bits]
-        per = len(bits)
-        if not getwave:
-            y, _ = _onde_lineaire(bits, p_rx, spu, amp, v_c)
-            return y
-        # LA MISE EN ROUTE : Ignore_Bits, puis une periode gardee ; la
-        # forme d'onde est periodique, on la fait tourner par blocs.
-        n_per = min(MAX_PERIODES_AMI, int(math.ceil(ignore / float(per))) + 2)
-        y1, _ = _onde_lineaire(bits, p_tx, spu, amp, v_in)
-        y = np.tile(y1, n_per)
+    def _circulaire(w, g):
+        """La forme d'onde periodique `w` passee par la reponse `g` (au pas
+        dt_e) : la reponse repliee sur la periode, en convolution
+        circulaire -- le regime etabli."""
+        n = len(w)
+        gp = np.zeros(n)
+        g = np.asarray(g, dtype=float)
+        for k in range(0, len(g), n):
+            gp[:min(n, len(g) - k)] += g[k:k + n]
+        return np.fft.irfft(np.fft.rfft(w) * np.fft.rfft(gp), n) * dt_e
+
+    def _flot(m, x, qui):
+        """AMI_GetWave de `m` sur le flot `x`, par blocs : (sortie,
+        instants d'horloge depuis le debut du flot)."""
         bloc = BITS_PAR_BLOC_AMI * spu
-        sortie = np.empty_like(y)
+        sortie = np.empty_like(x)
         hor = []
-        for i in range(0, len(y), bloc):
+        nom = "de l'émetteur" if qui == "emetteur" else "du récepteur"
+        for i in range(0, len(x), bloc):
             try:
-                ok, w, h, p_out = rx.getwave(y[i:i + bloc], spu)
+                ok, w, h, p_out = m.getwave(x[i:i + bloc], spu)
             except Exception as exc:                    # noqa: BLE001
-                raise ErreurOeil("AMI_GetWave du récepteur a levé %s : %s"
-                                 % (type(exc).__name__, exc),
+                raise ErreurOeil("AMI_GetWave %s a levé %s : %s"
+                                 % (nom, type(exc).__name__, exc),
                                  "Vérifiez la bibliothèque et ses "
                                  "paramètres.")
             if not ok:
-                raise ErreurOeil("AMI_GetWave du récepteur a rendu 0 "
-                                 "(échec) sur un bloc.",
+                raise ErreurOeil("AMI_GetWave %s a rendu 0 (échec) sur un "
+                                 "bloc." % nom,
                                  "Vérifiez les paramètres du modèle.")
             sortie[i:i + len(w)] = w
-            hor.extend(float(x) for x in h)
+            hor.extend(float(t) for t in h)
             if p_out:
-                fiche["recepteur"]["parametres_out"].update(
+                fiche[qui]["parametres_out"].update(
                     ibis.lire_parametres_ami(p_out))
+        return sortie, hor
+
+    def onde(bits):
+        """LE FLOT TEMPOREL, une periode du motif `bits` en regime etabli :
+          1. a la broche du recepteur : l'emetteur -- son AMI_GetWave sur la
+             stimulation (+-0,5 par bit) passe par le canal brut, ou son
+             impulsion (AMI_Init, ou la FFE de reference) en superposition ;
+          2. avec des tampons IBIS simules dans le temps (`nl`), la forme
+             d'onde NON LINEAIRE de la broche, et l'egalisation de
+             l'emetteur ajoutee par le canal linearise : la norme suppose
+             le canal analogique lineaire, et ce qui ne l'est pas -- les
+             tampons -- reste dans la forme d'onde, intact ;
+          3. le recepteur : son AMI_GetWave sur cette forme d'onde, par
+             blocs, apres Ignore_Bits -- et les instants de son horloge
+             recuperee ; sans GetWave, son impulsion (AMI_Init)."""
+        bits = [int(b) for b in bits]
+        per = len(bits)
+        n_l = per * spu
+        n_per = min(MAX_PERIODES_AMI,
+                    int(math.ceil(max(ignore, ignore_tx) / float(per))) + 2)
+        stim = np.repeat(np.asarray(bits, dtype=float) - 0.5, spu)
+        w = None
+        if tx is not None:
+            w, _ = _flot(tx, np.tile(stim, n_per), "emetteur")
+            w = w[-n_l:]
+            pin = v_in + _circulaire(w, impulsion)
+        else:
+            pin, _ = _onde_lineaire(bits, p_tx, spu, amp, v_in)
+        # ce que les tampons font de plus que le canal lineaire
+        corr = 0.0
+        if nl_ibis is not None:
+            plat, _ = _onde_lineaire(bits, p_brut, spu, amp, v_in)
+            corr = np.asarray(nl_ibis["onde"](bits), dtype=float)[:n_l] - plat
+            pin = pin + corr
+        if rx is None:
+            return pin
+        if not getwave:
+            if w is not None:
+                out = v_c + _circulaire(w, imp_rx_brut)
+            else:
+                out, _ = _onde_lineaire(bits, p_rx, spu, amp, v_c)
+            return out + corr
+        sortie, hor = _flot(rx, np.tile(pin, n_per), "recepteur")
         horloges["n"] = len(hor)
         if hor:
-            # La phase moyenne de l'horloge recuperee, dans l'UI : lue,
-            # montree, pas imposee a l'oeil.
-            ph = (np.asarray(hor) / ui) % 1.0
-            horloges["phase_ui"] = float(np.mean(ph))
-        return sortie[-per * spu:]
+            # L'ECHANTILLONNAGE DE L'HORLOGE RECUPEREE (IBIS, BIRD 214) :
+            # chaque instant + bit_time / 2, compte depuis le debut du flot.
+            # Ceux de la periode gardee, en echantillons depuis son debut :
+            # l'oeil les impose (`oeil`, « L'HORLOGE RECUPEREE »).
+            t = np.asarray(hor) + 0.5 * ui - (n_per - 1) * per * ui
+            t = t[(t >= 0.0) & (t < per * ui)]
+            horloges["instants"] = t / dt_e
+            horloges["phase_ui"] = float(
+                (np.angle(np.mean(np.exp(2j * math.pi * np.asarray(hor)
+                                         / ui))) / (2 * math.pi)) % 1.0)
+        return sortie[-n_l:]
 
     infos = dict(nl["infos"]) if nl is not None else {}
     infos.update({"asymetrie": infos.get("asymetrie", 0.0), "ami": True,
@@ -3303,11 +3598,22 @@ def executer_ami(ami, p, freqs, canal, h0, h0_bin, nl, racines, notes):
                          "référence sont retirés, le modèle égalise lui-même.")
         p["ctle"], p["dfe_prises"] = None, 0
     ami["execution"] = fiche
+    flots = []
+    if tx is not None:
+        flots.append("AMI_GetWave de l'émetteur sur la stimulation, puis le "
+                     "canal brut")
+    if getwave:
+        flots.append("AMI_GetWave du récepteur par blocs de %d bits"
+                     % BITS_PAR_BLOC_AMI)
+    if nl_ibis is not None:
+        flots.append("sur la forme d'onde des tampons IBIS simulés dans le "
+                     "temps, l'égalisation ajoutée par le canal linéarisé")
     notes.append("Modèle(s) AMI exécuté(s) : %s — %s." % (
         " et ".join("émetteur" if x == "emetteur" else "récepteur"
                     for x in executes),
-        "AMI_Init puis AMI_GetWave par blocs de %d bits pour le récepteur"
-        % BITS_PAR_BLOC_AMI if getwave else "AMI_Init seul (impulsion)"))
+        ("AMI_Init, puis " + " ; ".join(flots)) if flots
+        else "AMI_Init seul (impulsion)"))
+    sortie["ami"]["tx"] = tx
     return sortie
 
 
@@ -3573,7 +3879,7 @@ def analyser(doc, journal=None, racines_ami=None):
                                                     m_brins, p["mode"])
         info_ac = _fiche_couplage_ac(ca, p, fenetre, av)
     note_bt = ""
-    canal, h0_canal, h0_bin = abcds, None, None
+    canal, h0_canal, h0_bin, lent = abcds, None, None, None
     mut = bool(ctx and (ctx.get("mut_em") or ctx.get("mut_rx")))
     if m_brins is not None and not (temporel and abcd_cc is not None):
         # LA PAIRE DISSYMETRIQUE EN LINEAIRE : le transfert differentiel
@@ -3582,6 +3888,7 @@ def analyser(doc, journal=None, racines_ami=None):
         canal, h0_canal, note_bt = transfert_paire(ctx, freqs, m_brins, p,
                                                    continu=bins)
         h0_bin = bins["bin"] if ca else None
+        lent = bins.get("lent")
         if note_bt and mut:
             note_bt += ", mutuelles de la paire comprises"
     elif abcd_cc is None:
@@ -3624,13 +3931,14 @@ def analyser(doc, journal=None, racines_ami=None):
     # tampons, avant l'oeil, qui lit alors leur reponse (voir `executer_ami`).
     if ami is not None and ami.get("_biblios"):
         nl = executer_ami(ami, p, freqs, canal, h0_canal, h0_bin, nl,
-                          racines_ami, av)
+                          racines_ami, av, lent)
     try:
         r = oeil(freqs, canal, p, gab, h0=h0_canal, journal=journal,
-                 non_lineaire=nl, h0_bin=h0_bin)
+                 non_lineaire=nl, h0_bin=h0_bin, lent=lent)
     finally:
-        if nl is not None and nl.get("ami") and nl["ami"].get("rx"):
-            nl["ami"]["rx"].fermer()
+        for bout in ("rx", "tx"):
+            if nl is not None and nl.get("ami") and nl["ami"].get(bout):
+                nl["ami"][bout].fermer()
     manque = []
     if not (p.get("rj_ui") or p.get("dj_ui") or p.get("bruit_v")):
         manque.append("sans gigue aléatoire ni bruit")
@@ -3680,7 +3988,12 @@ def analyser(doc, journal=None, racines_ami=None):
         r["ami"] = ami
         ex = ami.get("execution") or {}
         if nl is not None and nl.get("ami"):
-            r["ami"]["horloges"] = nl["ami"]["horloges"]
+            # les instants eux-memes restent ici : un tableau par bit
+            r["ami"]["horloges"] = {
+                k: v for k, v in nl["ami"]["horloges"].items()
+                if k != "instants"}
+            if r.get("horloge_ami"):
+                r["ami"]["horloges"].update(r["horloge_ami"])
             ami["execution_ok"] = [b for b, f in ex.items() if f.get("init")]
         if ami["renvois"] and not (ami["emetteur"] or ami["recepteur"]):
             av.append("Le modèle déclare un [Algorithmic Model] (%s) : "

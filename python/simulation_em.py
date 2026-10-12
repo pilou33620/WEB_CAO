@@ -2,6 +2,30 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 5.5.0
+# Date: 2026-10-12
+# Explication: LA PAIRE PAR BRIN VOIT CE QUE LA PARTENAIRE FAIT SEULE.
+#   1. LE VIA SUR LE BRIN N SEUL : chaque changement de couche de la
+#      partenaire sans via de la piste a ECART_VIAS_PAIRE_MAX est pose sur
+#      N seul, A SON ABSCISSE le long du troncon (`_abscisse_sur_la_piste`),
+#      avec le modele du via de la piste de memes couches -- retourne s'il
+#      est traverse dans l'autre sens (`_retourner_via`) --, sinon ramene a
+#      sa hauteur, sinon un barreau seul (plancher, dit) : `_via_du_brin_n`.
+#      Il etait compte et dit, pas pose. Le cas miroir de « vias sur P
+#      seul » rend le meme |Scd21| a 5 % pres. `vias_brins["n"]`.
+#   2. LES BRINS SUPERPOSES : une partenaire restee sur une autre couche,
+#      sans plan entre les deux, qui passe au-dessus ou au-dessous de la
+#      piste, la couple en LARGE FACE -- `ligne_mom.section_deux_niveaux`,
+#      decalage lateral compris, sur la longueur de recouvrement ; chacun
+#      etait seul sur sa couche. `s_diff["superposees"]`.
+#   3. UNE PAIRE DECLAREE (`doc["paires"]`) dont la partenaire ne longe la
+#      piste nulle part a plat est reconnue : le couplage a plat ne la voit
+#      pas, la declaration la nomme.
+#   Une paire sans l'un ni l'autre reste celle de la 5.4.0 au bit pres.
+# Fonctions ajoutees : _via_du_brin_n, _retourner_via,
+#   _abscisse_sur_la_piste.
+# Fonctions modifiees : _brins_de_la_paire, _cascade_differentielle.
+#
 # Version: 5.4.0
 # Date: 2026-10-11
 # Explication: LA RUGOSITE PROPRE DU PLAN ENTRE DANS LA CASCADE
@@ -803,7 +827,7 @@ except Exception as _exc:                              # noqa: BLE001
 
 FORMAT = "cao-sim-em-3"
 FORMAT_RESULTAT = "cao-sim-em-resultat-5"
-VERSION = "5.4.0"
+VERSION = "5.5.0"
 VERSION_MOTEURS = {
     "simulation_em": VERSION,
     "ligne_mom": getattr(tl, "VERSION", "2.5.0") if tl is not None else "indisponible",
@@ -6745,11 +6769,97 @@ def _abcd_ligne_seule(ls, couches, f, opts, longueur_m):
     return tl.abcd_line(z_f, complex(a_c + a_d, beta), longueur_m)
 
 
+def _abscisse_sur_la_piste(objets, segments, x, y):
+    """(troncon, abscisse en mm depuis son debut) du point de la piste le plus
+    proche de (x, y) : la ou poser un via du brin N seul. Projete sur l'axe
+    de chaque troncon cascade, borne a ses deux bouts."""
+    meilleur = (float("inf"), 0, 0.0)
+    for i, o in enumerate(objets):
+        if i >= len(segments) or segments[i].get("z0", 0) <= 0:
+            continue
+        a, b = _bout(o, "start"), _bout(o, "end")
+        if a is None or b is None:
+            continue
+        ux, uy = b[0] - a[0], b[1] - a[1]
+        lg = math.hypot(ux, uy)
+        t = 0.0 if lg < 1e-12 else max(0.0, min(lg, ((x - a[0]) * ux
+                                                     + (y - a[1]) * uy) / lg))
+        px, py = (a[0] + ux * t / lg, a[1] + uy * t / lg) if lg > 1e-12             else a
+        d = math.hypot(x - px, y - py)
+        if d < meilleur[0] - 1e-9:
+            # l'abscisse rapportee a la longueur que la cascade emploie
+            k = segments[i].get("longueur", lg) / lg if lg > 1e-12 else 0.0
+            meilleur = (d, i, t * k)
+    return meilleur[1], meilleur[2]
+
+
+def _retourner_via(mv):
+    """Le meme via traverse dans l'autre sens : moignons et pastilles de
+    depart et d'arrivee echanges."""
+    lg = dict(mv.get("ligne") or {})
+    if lg:
+        lg["c_depart"], lg["c_arrivee"] = (lg.get("c_arrivee", 0.0),
+                                           lg.get("c_depart", 0.0))
+    return dict(mv, moignon_depart=mv.get("moignon_arrivee"),
+                moignon_arrivee=mv.get("moignon_depart"), ligne=lg)
+
+
+def _via_du_brin_n(vias_piste, couches, a, b):
+    """LE VIA D'UN CHANGEMENT DE COUCHE DU BRIN N SEUL (5.5.0) : (mv, note).
+
+    Le document ne dessine pas le via de la partenaire avec ses retours et sa
+    cavite ; la piste, si. On prend donc le modele d'un via de la piste :
+      · DE MEMES COUCHES, tel quel -- c'est le meme dessin, a cote --,
+        retourne s'il est traverse dans l'autre sens (`_retourner_via`) ;
+      · sinon celui dont la hauteur traversee est la plus proche, son L et la
+        part repartie de son C ramenes a la hauteur du via de N (les
+        pastilles restent), sans moignon -- ses moignons sont ceux d'autres
+        couches ;
+      · sans via sur la piste, un barreau seul : la self partielle de Grover
+        d'un percage de 0,3 mm sur la hauteur traversee, sans capacite --
+        un PLANCHER, dit comme tel.
+    `vias_piste` : [(mv, couche de depart, couche d'arrivee)] de la piste."""
+    lo, hi = sorted((int(a), int(b)))
+    h_n = _hauteur_via(couches, lo, hi)
+    proche = None
+    for mv, a_p, b_p in vias_piste:
+        if (a_p, b_p) == (int(a), int(b)):
+            return dict(mv), "celui de la piste, mêmes couches"
+    for mv, a_p, b_p in vias_piste:
+        if (b_p, a_p) == (int(a), int(b)):
+            return _retourner_via(mv), "celui de la piste, mêmes couches"
+    for mv, _, _ in vias_piste:
+        g = mv.get("geo") or {}
+        h_p = _hauteur_via(couches, g.get("lo", 0), g.get("hi", 0))
+        if h_p > 0 and (proche is None or abs(h_p - h_n) < proche[0]):
+            proche = (abs(h_p - h_n), mv, h_p)
+    if proche is not None and h_n > 0:
+        mv, h_p = proche[1], proche[2]
+        k = h_n / h_p
+        lg = dict(mv.get("ligne") or {})
+        c_pastilles = lg.get("c_depart", 0.0) + lg.get("c_arrivee", 0.0)
+        if lg:
+            lg["longueur"] = lg.get("longueur", 0.0) * k
+        return (dict(mv, l=mv["l"] * k,
+                     c=c_pastilles + (mv["c"] - c_pastilles) * k,
+                     moignon_depart=None, moignon_arrivee=None, ligne=lg),
+                "celui de la piste ramené à %.3g mm de hauteur" % h_n)
+    d_m = 0.3e-3
+    l_v = tl.inductance_partielle_propre(0.0, max(h_n, 1e-3) * 1e-3,
+                                         d_m / 2.0) if h_n > 0 else 0.0
+    return ({"l": l_v, "c": 0.0, "moignon_depart": None,
+             "moignon_arrivee": None, "percage": 0.3, "antipad": 0.6,
+             "cavite": None, "ligne": {}, "modele": "pi",
+             "geo": {"lo": lo, "hi": hi}},
+            "barreau seul (self partielle, plancher), la piste n'ayant pas "
+            "de via à reprendre")
+
+
 def _brins_de_la_paire(couches, objets, segments, chaleur, doc, partenaire,
                        modeles_via, coudes_par_troncon, long_p, long_n):
     """CE QUI DISTINGUE LES DEUX BRINS de la paire, troncon par troncon :
-    {vias, coudes, sections, seuls_n, brin_long, surlongueur_mm, largeur_n,
-     couche_n, dissymetries, notes}.
+    {vias, vias_n, coudes, sections, seuls_n, superposees, brin_long,
+     surlongueur_mm, largeur_n, couche_n, dissymetries, notes}.
 
     LA PARTENAIRE EST CE QUE LE DOCUMENT EN DIT (`voisinage`, son net). On
     n'en tire que ce qui est sur :
@@ -6764,11 +6874,22 @@ def _brins_de_la_paire(couches, objets, segments, chaleur, doc, partenaire,
         un coude de la piste sans vis-a-vis reste sur P seul. Sans chaine,
         ceux de la piste, sur les deux brins ;
       · SA LONGUEUR : la plus longue des deux designe le brin qui porte la
-        surlongueur."""
+        surlongueur ;
+      · SES PROPRES CHANGEMENTS DE COUCHE (5.5.0) : un via de la partenaire
+        sans via de la piste a ECART_VIAS_PAIRE_MAX est un via sur le brin N
+        SEUL (`vias_n`), pose au raccord de la piste le plus proche, avec le
+        modele de `_via_du_brin_n` ; un via de la piste « sur les deux » que
+        plus aucun via de la partenaire n'accompagne passe sur P seul ;
+      · SA COUCHE, AU-DESSUS OU AU-DESSOUS (5.5.0) : une partenaire restee
+        sur une autre couche sans plan entre les deux, et qui passe au-dessus
+        de la piste, la COUPLE en large face (`superposees`) -- la section a
+        deux niveaux de `ligne_mom.section_deux_niveaux`, decalage lateral
+        compris, sur la longueur de recouvrement."""
     voisinage = doc.get("voisinage") or []
     objs_n = [v for v in voisinage
               if str(v.get("net") or "") == str(partenaire or "\0")]
     sortie = {"vias": {i: "deux" for i in (modeles_via or {})},
+              "vias_n": {}, "superposees": {},
               "coudes": {}, "sections": {}, "seuls_n": {},
               "brin_long": None, "surlongueur_mm": 0.0,
               "largeur_n": None, "couche_n": None,
@@ -6845,18 +6966,54 @@ def _brins_de_la_paire(couches, objets, segments, chaleur, doc, partenaire,
     if n_seul_p:
         dissym.append("%d via(s) sur le brin %s seul" % (
             n_seul_p, doc.get("net") or "P"))
-    # Les vias de la partenaire sans vis-a-vis : on les compte, sans les
-    # modeliser -- il faudrait sa section de part et d'autre.
+    # LES VIAS DE LA PARTENAIRE SANS VIS-A-VIS (5.5.0) : chaque changement
+    # de couche de sa chaine, apparie au via « sur les deux » de la piste le
+    # plus proche (a ECART_VIAS_PAIRE_MAX) ; les autres sont sur N seul, au
+    # raccord de la piste le plus proche, et un via « sur les deux » reste
+    # sans partenaire passe sur P seul -- celui de N est ailleurs.
+    raccords = {}
+    for i in range(1, len(objets)):
+        r = _raccord(objets[i - 1], objets[i])
+        pt = (r[0], r[1]) if r else _bout(objets[i], "start")
+        if pt is not None:
+            raccords[i] = pt
+    vias_piste = [(mv, int(_nombre(objets[i - 1].get("layer"), -1)),
+                   int(_nombre(objets[i].get("layer"), -1)))
+                  for i, mv in sorted((modeles_via or {}).items())
+                  if 1 <= i < len(objets)]
     if connu and len(couches_n) >= 2 and _coudes_brin(objs_n) is not None:
-        trans_n = sum(1 for a, b in zip(objs_n, objs_n[1:])
-                      if int(_nombre(a.get("layer"), -1))
-                      != int(_nombre(b.get("layer"), -1)))
-        n_deux = sum(1 for x in sortie["vias"].values() if x == "deux")
-        if trans_n > n_deux:
+        libres = set(i for i, x in sortie["vias"].items() if x == "deux")
+        n_seul_n = 0
+        for a_o, b_o in zip(objs_n, objs_n[1:]):
+            ca_ = int(_nombre(a_o.get("layer"), -1))
+            cb_ = int(_nombre(b_o.get("layer"), -1))
+            if ca_ == cb_:
+                continue
+            r = _raccord(a_o, b_o)
+            if r is None:
+                continue
+            prets = sorted((math.hypot(raccords[i][0] - r[0],
+                                       raccords[i][1] - r[1]), i)
+                           for i in libres if i in raccords)
+            if prets and prets[0][0] <= ECART_VIAS_PAIRE_MAX:
+                libres.discard(prets[0][1])
+                continue
+            i, t_mm = _abscisse_sur_la_piste(objets, segments, r[0], r[1])
+            mv_n, note = _via_du_brin_n(vias_piste, couches, ca_, cb_)
+            sortie["vias_n"].setdefault(i, []).append((t_mm, mv_n))
+            n_seul_n += 1
             sortie["notes"].append(
-                "Le brin %s change %d fois de couche, la piste %d : ses "
-                "vias sans vis-à-vis ne sont pas modélisés." % (
-                    partenaire, trans_n, n_deux))
+                "Via du brin %s seul (%s → %s) : modèle %s." % (
+                    partenaire, _nom_de_couche(couches, ca_),
+                    _nom_de_couche(couches, cb_), note))
+        for i in libres:
+            sortie["vias"][i] = "p"
+        if libres:
+            dissym.append("%d via(s) sur le brin %s seul" % (
+                len(libres), doc.get("net") or "P"))
+        if n_seul_n:
+            dissym.append("%d via(s) sur le brin %s seul" % (n_seul_n,
+                                                             partenaire))
 
     # -- les troncons que la partenaire ne longe pas -------------------------
     if sortie["couche_n"] is not None:
@@ -6876,6 +7033,62 @@ def _brins_de_la_paire(couches, objets, segments, chaleur, doc, partenaire,
             dissym.append("brin %s resté sur %s sur %d tronçon(s)" % (
                 partenaire, _nom_de_couche(couches, sortie["couche_n"]),
                 len(sortie["seuls_n"])))
+        # LA PARTENAIRE AU-DESSUS OU AU-DESSOUS (5.5.0) : sans plan entre les
+        # deux couches, deux pistes qui se recouvrent en projection couplent
+        # en large face -- souvent PLUS qu'a plat. La section a deux niveaux
+        # (milieu homogene, la permittivite moyenne entre les plans qui
+        # encadrent la paire) en donne [L] et [C], decalage lateral compris.
+        import crosstalk as xt
+        cn = sortie["couche_n"]
+        n_sup = 0
+        for i in sorted(sortie["seuls_n"]):
+            seg = segments[i]
+            k = int(_nombre(seg.get("couche"), -1))
+            if k < 0 or i >= len(objets) or _plan_entre(couches, k, cn):
+                continue
+            meilleur = None
+            for o in objs_n:
+                if int(_nombre(o.get("layer"), -1)) != cn:
+                    continue
+                sup = _superposition(objets[i], o)
+                if sup and (meilleur is None or sup[0] > meilleur[0]):
+                    meilleur = sup
+            geo = xt.geometrie_superposee(couches, k, cn) if meilleur else None
+            if geo is None:
+                continue
+            h_lo, h_hi, b_mm, er_m = geo
+            h_p, h_n = (h_lo, h_hi) if k < cn else (h_hi, h_lo)
+            w_p = float(seg.get("largeur", 0.2))
+            w_n = float(sortie["largeur_n"] or w_p)
+            try:
+                r = tl.section_deux_niveaux(
+                    [{"x": 0.0, "y": h_p * 1e-3, "w": w_p * 1e-3},
+                     {"x": meilleur[1] * 1e-3, "y": h_n * 1e-3,
+                      "w": w_n * 1e-3}],
+                    b=b_mm * 1e-3 if b_mm else None, epsilon_r=er_m)
+                md = _modes_brins(r["l"], r["c"])
+            except Exception as exc:                    # noqa: BLE001
+                md = None
+                sortie["notes"].append(
+                    "Tronçon %d : brins superposés non résolus (%s), laissés "
+                    "seuls chacun sur sa couche." % (i, exc))
+            if md is None:
+                continue
+            md["largeur"] = 0.5 * (w_p + w_n)
+            sortie["superposees"][i] = {
+                "md": md, "recouvrement_mm": min(meilleur[0],
+                                                 seg.get("longueur", 0.0)),
+                "decalage_mm": meilleur[1], "homogene": b_mm is not None}
+            n_sup += 1
+        if n_sup:
+            dissym.append("brins %s et %s superposés sur %d tronçon(s), "
+                          "couplés en large face" % (
+                              doc.get("net") or "P", partenaire, n_sup))
+            if any(not x["homogene"] for x in sortie["superposees"].values()):
+                sortie["notes"].append(
+                    "Brins superposés sous un seul plan : la section à deux "
+                    "niveaux est résolue en milieu homogène (sans l'air du "
+                    "dessus) — couplage approché.")
 
     # -- les coudes, brin par brin -------------------------------------------
     coudes_n = _coudes_brin(objs_n) if objs_n else None
@@ -6990,6 +7203,21 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
             if c and c.get("z_diff_net"):
                 partenaire = c["z_diff_net"]
                 break
+    if partenaire is None:
+        # UNE PAIRE DECLAREE (5.5.0) dont la partenaire n'est longee a plat
+        # nulle part -- elle passe au-dessus ou au-dessous, sur une autre
+        # couche : le couplage a plat ne l'a pas vue, la declaration la
+        # nomme, et le voisinage dit ou elle est.
+        net = str(doc.get("net") or "")
+        presents = set(str(v.get("net") or "")
+                       for v in (doc.get("voisinage") or []))
+        for pr in (doc.get("paires") or []):
+            pr = [str(x) for x in (pr or [])][:2]
+            if len(pr) == 2 and net in pr:
+                autre = pr[1] if pr[0] == net else pr[0]
+                if autre and autre != net and autre in presents:
+                    partenaire = autre
+                    break
 
     mode_force = bool(doc.get("mode_diff") or (analyse or {}).get("mode_diff"))
     if not partenaire and not mode_force:
@@ -7178,9 +7406,11 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
                 continue
             md = brins["sections"].get(i)
             ls_n = brins["seuls_n"].get(i)
-            if md is not None:
-                # LA SECTION DISSYMETRIQUE, par ses deux modes propres : les
-                # pertes de chacun a son impedance par brin, a la largeur
+            sup = brins["superposees"].get(i)
+
+            def couplee(md, longueur):
+                # LA SECTION A DEUX CONDUCTEURS, par ses deux modes propres :
+                # les pertes de chacun a son impedance par brin, a la largeur
                 # moyenne ; le dielectrique causal a remplissage constant.
                 w_moy = md["largeur"] * 1e-3
                 gam, zm = [], []
@@ -7196,18 +7426,61 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
                     gam.append(a_c + a_d + 2j * math.pi * f_flt
                                * math.sqrt(max(e_f, 1.0)) / tl.C_0)
                     zm.append(float(md["zm"][k]) * z_bf / z_b)
-                m4 = m4 @ _abcd_ligne_couplee(md, gam, zm, L_m)
-            elif ls_n is not None:
-                # LA PARTENAIRE RESTEE SUR SA COUCHE : la piste seule d'un
-                # cote (le mode impair d'un troncon non couple EST la ligne
-                # seule), la partenaire seule de l'autre.
+                return _abcd_ligne_couplee(md, gam, zm, longueur)
+
+            def seuls(longueur):
+                # la piste seule d'un cote (le mode impair d'un troncon non
+                # couple EST la ligne seule), la partenaire seule de l'autre
                 z_p = z_diff_k / 2.0
-                m4 = m4 @ _par_brin(
-                    np.array([[ch_odd, z_p * sh_odd], [sh_odd / z_p, ch_odd]],
+                ch_, sh_ = np.cosh(gamma_odd * longueur), \
+                    np.sinh(gamma_odd * longueur)
+                return _par_brin(
+                    np.array([[ch_, z_p * sh_], [sh_ / z_p, ch_]],
                              dtype=complex),
-                    _abcd_ligne_seule(ls_n, couches, f_flt, opts, L_m))
-            else:
-                m4 = m4 @ _brins_des_modes(m_odd, m_even)
+                    _abcd_ligne_seule(ls_n, couches, f_flt, opts, longueur))
+            def modes(longueur):
+                out = []
+                for g_, z_ in ((gamma_odd, z_diff_k), (gamma_even, z_comm_k)):
+                    ch_, sh_ = np.cosh(g_ * longueur), np.sinh(g_ * longueur)
+                    out.append(np.array([[ch_, z_ * sh_], [sh_ / z_, ch_]],
+                                        dtype=complex))
+                return _brins_des_modes(*out)
+
+            def bloc(longueur):
+                # UNE PORTION DU TRONCON, de `longueur` metres.
+                if md is not None:
+                    return couplee(md, longueur)
+                if sup is not None:
+                    # LES BRINS SUPERPOSES (5.5.0) : couples en large face
+                    # sur leur recouvrement -- la meme part de chaque
+                    # portion --, seuls chacun sur sa couche au-dela.
+                    l_ov = longueur * min(1.0, sup["recouvrement_mm"] * 1e-3
+                                          / max(L_m, 1e-12))
+                    m_ = couplee(sup["md"], l_ov)
+                    if longueur - l_ov > 1e-12:
+                        m_ = m_ @ seuls(longueur - l_ov)
+                    return m_
+                if ls_n is not None:
+                    # LA PARTENAIRE RESTEE SUR SA COUCHE, un plan entre les
+                    # deux ou sans recouvrement : chacun seul.
+                    return seuls(longueur)
+                return modes(longueur)
+            # LES VIAS DU BRIN N SEUL (5.5.0), a leur abscisse le long du
+            # troncon : la portion d'avant, le via -- traversee de cavite
+            # comprise quand le modele repris en a une --, la suite.
+            fait = 0.0
+            for t_mm, mv_n in sorted(brins["vias_n"].get(i) or [],
+                                     key=lambda x: x[0]):
+                t = min(max(t_mm * 1e-3, fait), L_m)
+                if t - fait > 1e-12:
+                    m4 = m4 @ bloc(t - fait)
+                z_tn = (_impedance_traversee(mv_n["cavite"], f_flt)
+                        if mv_n.get("cavite") else 0.0)
+                m4 = m4 @ _par_brin(None, _abcd_via(
+                    mv_n, f_flt, z_tn, mv_n.get("modele", "pi")))
+                fait = t
+            if L_m - fait > 1e-12 or fait == 0.0:
+                m4 = m4 @ bloc(L_m - fait)
 
         if quatre:
             # LA SURLONGUEUR, sur le brin le plus long, cote recepteur.
@@ -7301,7 +7574,14 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
         "vias_brins": {"deux": sum(1 for x in brins["vias"].values()
                                    if x == "deux"),
                        "p": sum(1 for x in brins["vias"].values()
-                                if x == "p")},
+                                if x == "p"),
+                       "n": sum(len(x) for x in brins["vias_n"].values())},
+        "superposees": [
+            {"troncon": i, "recouvrement_mm": round(x["recouvrement_mm"], 4),
+             "decalage_mm": round(x["decalage_mm"], 4),
+             "z_diff": round(float(x["md"]["zm"][0]), 3),
+             "z_commune": round(float(x["md"]["zm"][1]), 3)}
+            for i, x in sorted(brins["superposees"].items())],
     }
     if quatre:
         sortie["s_dc"] = [[[float(v.real), float(v.imag)] for v in m.flatten()]

@@ -1166,10 +1166,30 @@ dissymétries de la paire (« paire : … ») ; la référence symétrique est l
 paire symétrisée. Le résultat porte `paire_brins` (dissymétries, brin le
 plus long, surlongueur, vias).
 
+**Le via sur le brin N seul et les brins superposés (`simulation_em` 5.5.0).**
+Un changement de couche de la partenaire sans via de la piste à 3 mm est un
+via sur **N seul**, posé à son abscisse le long du tronçon de la piste (le
+tronçon est coupé là), avec le modèle du via de la piste de mêmes couches —
+retourné, moignons et pastilles échangés, s'il est traversé dans l'autre
+sens —, sinon ramené à sa hauteur, sinon un barreau seul (self partielle,
+plancher, dit). Le cas miroir de « vias sur P seul » rend le même |Scd21| à
+5 % près ; `vias_brins` compte `deux`, `p` et `n`. Une partenaire restée sur
+une autre couche **sans plan entre les deux**, qui passe au-dessus ou
+au-dessous de la piste, la couple **en large face** : la section à deux
+niveaux de `ligne_mom.section_deux_niveaux` (milieu homogène entre les plans
+qui encadrent la paire, décalage latéral compris), sur la longueur de
+recouvrement, chacun seul au-delà. Deux brins égaux symétriques autour du
+milieu des plans gardent un Scd nul et le retard de la triplaque ;
+`s_diff["superposees"]` donne Z_diff et Z_commune de chaque tronçon. Une
+paire déclarée (`paires`) dont la partenaire ne longe la piste nulle part à
+plat est reconnue par sa déclaration.
+
 **Les limites.** Les deux brins couplés ont la longueur de la piste tronçon
-par tronçon (la surlongueur n'est qu'au bout) ; un brin sur une autre couche
-que la piste sur un tronçon couplé n'est pas couplé ; le coude de la
-partenaire prend la hauteur et la permittivité de la piste.
+par tronçon (la surlongueur n'est qu'au bout) ; une partenaire qui change de
+couche plusieurs fois est couplée à plat entre ses vias ; deux brins
+superposés sous un seul plan sont résolus en milieu homogène (sans l'air du
+dessus), et c'est dit ; le coude de la partenaire prend la hauteur et la
+permittivité de la piste.
 
 #### Les condensateurs de liaison — couplage AC (`oeil` 2.3.0)
 
@@ -1196,8 +1216,16 @@ poser H(0) = 0 forcerait la réponse à revenir à zéro dans la fenêtre
 fenêtre, h₀·e^(−T_w/τ), en remplaçant le condensateur au continu seulement
 par R_x = R_tot·(e^(T_w/τ) − 1) — T_w/C quand τ ≫ T_w, infini quand la
 fenêtre couvre la décharge. Les cases k ≥ 1 sont exactes ; l'erreur restante
-est du second ordre (≈ 2 % de l'amplitude au pire, quand T_w ≈ τ, et le
-résultat dit alors que le droop n'est compté que sur les bits de la fenêtre).
+est du second ordre (≈ 4 % quand T_w ≈ τ). **Depuis la 2.4.0, les chemins
+linéaires** (simple, paire par brin, réponse que lit l'AMI) **séparent le pôle
+lent** : sous les fréquences de la ligne, le canal n'est que la boucle,
+H = h₀ − h₀/(1 + sτ) ; ce terme est retiré du spectre (le reste ne replie
+plus rien) et sa réponse à un échelon, −h₀(1 − e^(−t/τ)), rajoutée : la
+décharge est **exacte** quelle que soit la fenêtre (4·10⁻⁴ quand T_w ≈ τ).
+La case corrigée ne sert plus qu'aux tampons IBIS simulés dans le temps, dont
+les réponses sont bornées à la fenêtre ; le résultat dit alors que le droop
+n'est compté que sur les bits de la fenêtre. Sans terminaison, la paire par
+brin a maintenant son pont diviseur C/(C + C_L), comme le mode simple.
 L'œil reste centré sur le niveau sans dérive (la polarisation du récepteur) ;
 sans terminaison, rien ne décharge et le condensateur fait un pont diviseur
 avec C_L. Le même continu corrigé sert aux tampons IBIS simulés dans le temps
@@ -1255,12 +1283,17 @@ référence de la norme (§10.4) :
    **volts par seconde** pour une excursion pleine de l'émetteur (Σ h·Δt est
    la réponse à un échelon de pleine excursion, en volts) ;
 2. **AMI_Init de l'émetteur** la modifie en place s'il a
-   `Init_Returns_Impulse` (sinon elle reste telle quelle et c'est dit :
-   l'AMI_GetWave de l'émetteur n'est pas reproduit) ; la FFE de référence
-   saisie est alors ignorée, le modèle fait la sienne ;
-3. le **canal** : la forme d'onde PRBS au récepteur est la superposition de
-   cette impulsion égalisée — la liaison est linéaire à cet endroit, c'est
-   l'hypothèse du flot AMI lui-même ;
+   `Init_Returns_Impulse` ; la FFE de référence saisie est alors ignorée, le
+   modèle fait la sienne ;
+3. le **canal** : la forme d'onde PRBS à la broche du récepteur. **Depuis la
+   2.4.0, un émetteur à `GetWave_Exists` la fait** : la stimulation (±0,5 par
+   bit) passe par son AMI_GetWave, par blocs, puis par le canal **brut** (la
+   norme : l'impulsion d'Init de l'émetteur ne sert pas à la forme d'onde) ;
+   sans GetWave, c'est la superposition de l'impulsion égalisée. **Avec des
+   tampons IBIS simulés dans le temps**, c'est la forme d'onde **non
+   linéaire** de la broche, et l'égalisation de l'émetteur s'y ajoute par le
+   canal linéarisé — la norme suppose le canal analogique linéaire, ce qui ne
+   l'est pas (les tampons) reste dans la forme d'onde ;
 4. **AMI_Init du récepteur** sur l'impulsion de l'étape 2 : l'impulsion rendue
    fait la réponse à un bit du **pire cas** et de l'œil statistique ; puis,
    s'il a `GetWave_Exists`, **AMI_GetWave par blocs** de 256 bits sur la forme
@@ -1269,10 +1302,17 @@ référence de la norme (§10.4) :
    est la superposition de l'impulsion rendue par Init ; quand les deux
    existent, l'impulsion d'Init du récepteur ne sert pas à la forme d'onde,
    comme la norme le prévoit. Le CTLE et le DFE de référence s'effacent
-   devant un récepteur qui s'exécute ;
-5. **AMI_Close** des deux. Les instants d'horloge rendus (`clock_times`,
-   terminés par −1) sont comptés et montrés (phase moyenne) ; l'instant
-   d'échantillonnage de l'œil reste le milieu du pire cas.
+   devant un récepteur qui s'exécute. Un récepteur **sans** GetWave derrière
+   un émetteur à GetWave est initialisé une seconde fois, sur le canal brut :
+   c'est son égaliseur seul que la forme d'onde de l'émetteur traverse ;
+5. **AMI_Close** des deux. **L'horloge récupérée fixe l'échantillonnage**
+   (2.4.0) : chaque instant rendu (`clock_times`, terminés par −1, comptés
+   depuis le début du flot) + bit/2 est un échantillon (BIRD 214). Leur phase
+   moyenne devient celle du pire cas et de l'œil statistique (au lieu du
+   milieu que l'outil choisit), et chaque bit de l'œil PRBS est lu à son
+   instant — la gigue de la récupération d'horloge comprise. Le résultat
+   porte `horloge_ami` (phase, écart au centre de l'outil, gigue rms et crête
+   à crête, nombre d'instants).
 
 **Le format des paramètres.** `AMI_parameters_in` est
 `(modèle (feuille valeur) (branche (feuille valeur)) …)` : la racine est le
@@ -1295,15 +1335,32 @@ d'une autre architecture (une .dll sous Linux), sans `AMI_Init`, `AMI_Init`
 qui rend 0 (son message est rendu), impulsion non finie. Un `AMI_GetWave` qui
 échoue en cours de motif, lui, refuse l'œil avec le message du modèle.
 
-**Hors du modèle**, et dit dans chaque résultat : mutuelles d'un
-`[Package Model]` hors de la paire (dites, pas comptées) et mutuelles entre
-sections, AMI_GetWave de l'émetteur, horloge du modèle imposée à
-l'échantillonnage, via sur le brin N seul.
+**Les mutuelles vers les broches voisines (`ibis` 1.4.0).** Une broche du
+`[Package Model]` couple à ses voisines, pas seulement à l'inverse de sa
+paire. Elles ne sont pas dans la liaison : au repos, fermées à chaque bout
+sur 50 Ω (`r_voisin` ; une alimentation ou une masse en court-circuit, une NC
+ouverte), elles renvoient dans les mutuelles ce qu'elles portent. Le boîtier
+de toutes les broches couplées (R + jωL pleines en série, jωC de Maxwell à la
+broche) est mis en admittances, chaque voisine reçoit sa terminaison, puis
+elle est éliminée (réduction de Kron) : il reste l'ABCD des broches de la
+liaison (`ibis.abcd_boitier_couple`), en simple tel quel, en différentiel
+brin par brin ou par son mode impair. Une voisine ouverte couplée en self
+seule ne change rien (étalon : la paire couplée d'avant à 10⁻⁹) ; une masse
+en court-circuit retire M²/L_v à la self (10⁻⁵). La case « voisines » de la
+page (`boitier_voisins: false`) rend le boîtier d'avant. **Un boîtier par
+sections n'a pas de mutuelles** : `[Number Of Sections]` et les matrices de
+`[Model Data]` s'excluent dans la norme (BIRD 54).
+
+**Hors du modèle**, et dit dans chaque résultat : un récepteur AMI à
+AMI_Init seul sur des tampons non linéaires n'égalise que la part linéaire
+de la forme d'onde ; un émetteur AMI ne pilote pas le tampon IBIS lui-même
+(un tampon IBIS n'a que deux états), son égalisation passe par le canal
+linéarisé.
 L'Ethernet cuivre (MLT-3, PAM-5) n'est pas binaire et n'a pas de gabarit.
 L'I²C (drain ouvert, front montant RC) n'a pas de gabarit non plus — mais son
 tampon IBIS se simule maintenant.
 
-**Étalons** ([python/test/banc-oeil.py](../python/test/banc-oeil.py), 50 cas) :
+**Étalons** ([python/test/banc-oeil.py](../python/test/banc-oeil.py), 62 cas) :
 la ligne adaptée sans pertes rend un œil parfait (demi-excursion, 1 UI, retard
 de la ligne) ; une ligne ouverte attaquée par 30 Ω rend l'œil pire cas du
 diagramme en treillis à 0,3 % près ; avec 10 Ω, l'œil fermé se dit fermé ; le

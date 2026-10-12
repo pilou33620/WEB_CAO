@@ -17006,7 +17006,9 @@ function simOeilCorpsIbis(){
     h+='<div class="pnl-bar simBarF">';
     if(unFichier)
       h+=simXtCase("simOeilBoitier","boîtier",
-           "Compte le boîtier IBIS de chaque bout : R_pkg et L_pkg en série, C_pkg à la broche ([Package], [Pin] par broche, ou un [Package Model] : sa diagonale, ses sections en lignes, et en différentiel les mutuelles entre les deux broches de la paire).");
+           "Compte le boîtier IBIS de chaque bout : R_pkg et L_pkg en série, C_pkg à la broche ([Package], [Pin] par broche, ou un [Package Model] : sa diagonale, ses sections en lignes, et en différentiel les mutuelles entre les deux broches de la paire).")+
+         simXtCase("simOeilVoisins","voisines",
+           "Compte aussi les mutuelles du [Package Model] vers les broches VOISINES : au repos, fermées sur 50 Ω aux deux bouts (alimentations et masses en court-circuit, NC ouvertes), puis éliminées du réseau. Décochée : seules les mutuelles de la paire comptent, comme avant.");
     if(diff)
       h+='<span class="pnl-lbl">Décalage N</span>'+
          simChamp("simOeilDecN","Retard du brin inverse sur le brin direct (ps). Vide : le tdelay de [Diff Pin]. Les deux brins sont alors simulés chacun avec son tampon, et le mode commun qui en sort est rendu.")+
@@ -17051,6 +17053,8 @@ function simOeilEcrire(){
   pose("simOeilAcEsr",s.acEsr>0?simNbLibre(s.acEsr):"");
   const bt=simEl("simOeilBoitier");
   if(bt)bt.checked=s.boitier!==false;
+  const bv=simEl("simOeilVoisins");
+  if(bv)bv.checked=s.voisins!==false;
   const ar=simEl("simOeilAmiRegler");
   if(ar)ar.checked=!!s.amiRegler;
   simOeilAmplitude();
@@ -17094,6 +17098,7 @@ function simOeilLire(){
   const ab=simEl("simOeilAcBoitier"); if(ab)s.acBoitier=ab.value;
   const ap=simEl("simOeilAcPos"); if(ap)s.acPos=ap.value;
   const bt=simEl("simOeilBoitier"); if(bt)s.boitier=!!bt.checked;
+  const bv=simEl("simOeilVoisins"); if(bv)s.voisins=!!bv.checked;
   const ar=simEl("simOeilAmiRegler"); if(ar)s.amiRegler=!!ar.checked;
   return s;
 }
@@ -17157,6 +17162,7 @@ function simOeilReglages(){
     }
   }
   if(s.boitier===false&&(SIM_OEIL.ibis.em||SIM_OEIL.ibis.rx))o.boitier=false;
+  if(s.voisins===false&&(SIM_OEIL.ibis.em||SIM_OEIL.ibis.rx))o.boitier_voisins=false;
   if(o.mode==="diff"){
     if(s.decN)o.decalage_n=s.decN;
     if(s.rmc>0)o.r_charge_mc=s.rmc;
@@ -17199,6 +17205,7 @@ function simBrancherOeil(){
   pose("simOeilXtSens","onchange",function(){SIM_OEIL.saisie.xtSens=this.value;});
   pose("simOeilXt","onchange",function(){SIM_OEIL.saisie.xt=!!this.checked;});
   pose("simOeilBoitier","onchange",function(){SIM_OEIL.saisie.boitier=!!this.checked;});
+  pose("simOeilVoisins","onchange",function(){SIM_OEIL.saisie.voisins=!!this.checked;});
   pose("simOeilAmiRegler","onchange",function(){SIM_OEIL.saisie.amiRegler=!!this.checked;});
   pose("simOeilDecN","oninput",function(){simOeilLire();});
   pose("simOeilRmc","oninput",function(){simOeilLire();});
@@ -17749,7 +17756,10 @@ function simOeilAmiTexte(am){
        "</small>";
   }
   if(am.horloges&&am.horloges.n)t+="<br><small>"+am.horloges.n+" instants d'horloge rendus par le récepteur"+
-    (am.horloges.phase_ui!=null?", phase moyenne "+simNb(am.horloges.phase_ui,3)+" UI":"")+" — l'œil garde son propre instant d'échantillonnage</small>";
+    (am.horloges.phase_ui!=null?", phase moyenne "+simNb(am.horloges.phase_ui,3)+" UI":"")+
+    (am.horloges.imposee?" — imposés à l'échantillonnage de l'œil ("+simNb(am.horloges.decalage_ui,3)+
+       " UI du centre que l'outil aurait pris, gigue "+simNb(am.horloges.gigue_rms_ui,3)+" UI rms)"
+     :" — l'œil garde son propre instant d'échantillonnage")+"</small>";
   return t+"<br><small><b>"+simEsc(am.note)+"</b></small>";
 }
 /* Les paramètres lus du .ami, repliés : chemin, valeur, plage. */

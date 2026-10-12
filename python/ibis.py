@@ -25,7 +25,9 @@ CE QUI EST LU, de chaque [Model] :
 Et, en lecture complete (1.1.0, `lire(..., complet=True)`), le BOITIER ET
 LES BROCHES : [Package], [Pin], [Diff Pin], [Model Selector],
 [Package Model] -> [Define Package Model] (diagonale des matrices ; les
-mutuelles sont dites, pas comptees), le renvoi [Algorithmic Model] -- voir
+mutuelles de la paire comptees depuis la 1.2.0, celles vers les broches
+voisines depuis la 1.4.0 -- `voisins_boitier`, `abcd_boitier_couple`), le
+renvoi [Algorithmic Model] -- voir
 « Le boitier et les broches ». Depuis la 1.2.0, les BOITIERS PAR SECTIONS
 (Len= dans [Pin Numbers], Fork/Endfork) se lisent et se mettent en cascade
 de lignes (`abcd_sections`), et les mutuelles entre les deux broches d'une
@@ -77,7 +79,7 @@ try:
 except Exception:                                      # noqa: BLE001
     np = None
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 COINS = {"typ": 0, "min": 1, "max": 2}
 SUFFIXES = {"T": 1e12, "G": 1e9, "M": 1e6, "k": 1e3, "m": 1e-3, "u": 1e-6,
             "n": 1e-9, "p": 1e-12, "f": 1e-15}
@@ -764,6 +766,161 @@ def mutuelle_paire(lu, a, b):
     return {"r": vals["r"], "l": vals["l"], "c": abs(vals["c"]),
             "k_l": kc["l"], "k_c": kc["c"],
             "source": "[Package Model] " + nom}
+
+
+# --------------------------------------------------------------------------
+# LES MUTUELLES HORS DE LA PAIRE (1.4.0)
+# --------------------------------------------------------------------------
+# Une broche du [Package Model] couple a ses VOISINES, pas seulement a
+# l'inverse de sa paire. Celles-ci ne sont pas dans la liaison : elles sont
+# AU REPOS, fermees a chaque bout -- sur leur tampon cote die, sur leur piste
+# cote carte --, et ce qu'elles font a la broche est ce qu'elles renvoient
+# dans ses mutuelles : en serie, Z - Z_m^2 / (Z_v + terminaisons) ; a la
+# broche, la capacite de Maxwell entiere (diagonale), dont la part vers les
+# voisines tenues au repos retourne a la masse par elles.
+#
+# LE CALCUL : le boitier de TOUTES les broches couplees, R + jwL en serie
+# (matrices pleines) et jwC a la broche (Maxwell : hors diagonale -|C_ij|),
+# en ABCD 2N x 2N, passe en admittances ; chaque voisine recoit sa
+# terminaison aux deux bouts, puis elle est ELIMINEE (reduction de Kron) --
+# il ne reste que les broches de la liaison, et l'ABCD 2m x 2m qu'on pose
+# a la place du boitier. Une voisine POWER ou GND est un court-circuit
+# (alimentation decouplee), une NC est ouverte ; les autres sont fermees sur
+# `r_voisin` (50 ohms par defaut, ce qu'on ne connait pas mieux).
+#
+# CE QUI N'EXISTE PAS : les mutuelles d'un boitier PAR SECTIONS. [Number Of
+# Sections] et [Model Data] (les matrices) s'excluent dans la norme (BIRD 54) :
+# une broche decrite par sections n'est couplee a rien.
+# --------------------------------------------------------------------------
+
+def voisins_boitier(lu, victimes):
+    """Les broches du [Package Model] couplees aux broches `victimes` de la
+    liaison : {nom, conducteurs (victimes puis voisines), genres {broche:
+    "signal" | "court" | "ouvert"}, diag, mutuelles, k_max}, ou None --
+    pas de modele de boitier, une victime absente ou decrite par sections,
+    ou aucune voisine couplee."""
+    nom = lu.get("modele_boitier") or ""
+    mb = (lu.get("modeles_boitier") or {}).get(nom)
+    victimes = [v for v in victimes if v]
+    if mb is None or not victimes or any(v not in mb["broches"]
+                                         for v in victimes):
+        return None
+    sec = mb.get("sections_broche") or {}
+    if any(sec.get(v) for v in victimes):
+        return None
+    voisines = []
+    for lettre in ("l", "c", "r"):
+        for (i, j), val in mb["mutuelles"][lettre].items():
+            if not val:
+                continue
+            for a, b in ((i, j), (j, i)):
+                if a in victimes and b not in victimes and b not in voisines \
+                        and b in mb["broches"] and not sec.get(b):
+                    voisines.append(b)
+    if not voisines:
+        return None
+    genres = {}
+    for b in voisines:
+        m = str(((lu.get("broches") or {}).get(b) or {}).get("modele")
+                or "").upper()
+        genres[b] = ("court" if m in ("POWER", "GND") else
+                     "ouvert" if m == "NC" else "signal")
+    k_max = 0.0
+    for v in victimes:
+        kc = couplage_boitier(mb, v)
+        for b in voisines:
+            kb = couplage_boitier(mb, v, b)
+            k_max = max(k_max, kb["l"], kb["c"])
+    return {"nom": nom, "conducteurs": list(victimes) + voisines,
+            "victimes": len(victimes), "voisines": voisines,
+            "genres": genres, "diag": mb["diag"], "mutuelles": mb["mutuelles"],
+            "k_max": k_max}
+
+
+def _matrice_boitier(cpl, lettre):
+    """La matrice N x N d'une grandeur (r, l, c) des conducteurs couples."""
+    cond = cpl["conducteurs"]
+    n = len(cond)
+    m = np.zeros((n, n))
+    for a in range(n):
+        m[a, a] = float(cpl["diag"][lettre].get(cond[a]) or 0.0)
+        for b in range(n):
+            if a == b:
+                continue
+            v = cpl["mutuelles"][lettre].get((cond[a], cond[b]))
+            if v is None:
+                v = cpl["mutuelles"][lettre].get((cond[b], cond[a]))
+            if v:
+                # Maxwell : la capacite de couplage est hors diagonale, en
+                # negatif ; des fichiers l'ecrivent positive
+                m[a, b] = -abs(float(v)) if lettre == "c" else float(v)
+    return m
+
+
+def abcd_boitier_couple(freqs, cpl, sens, r_voisin=50.0):
+    """L'ABCD (N, 2m, 2m) -- blocs [[A, B], [C, D]] sur les m broches de la
+    liaison -- de leur boitier couple a ses voisines au repos, celles-ci
+    fermees et eliminees (voir l'en-tete). Meme topologie et meme `sens` que
+    `abcd_boitier` ; m = 2 rend le boitier de la paire par brin (p, n)."""
+    w = np.maximum(2 * math.pi * np.asarray(freqs, dtype=float),
+                   2 * math.pi * 1.0)
+    rm, lm, cm = (_matrice_boitier(cpl, k) for k in ("r", "l", "c"))
+    n = len(cpl["conducteurs"])
+    # une broche sans self dans le fichier : un plancher, pour que la
+    # matrice serie s'inverse
+    for a in range(n):
+        lm[a, a] = max(lm[a, a], 1e-13)
+    m_ = cpl["victimes"]
+    un = np.eye(n)
+    out = np.zeros((len(w), 2 * m_, 2 * m_), dtype=complex)
+    y_t = np.zeros(n)
+    for k, b in enumerate(cpl["conducteurs"][m_:], start=m_):
+        g = cpl["genres"].get(b, "signal")
+        y_t[k] = 1e6 if g == "court" else (0.0 if g == "ouvert"
+                                           else 1.0 / max(r_voisin, 1e-6))
+    v_idx = list(range(m_)) + list(range(n, n + m_))
+    x_idx = list(range(m_, n)) + list(range(n + m_, 2 * n))
+    for q, wq in enumerate(w):
+        z = rm + 1j * wq * lm
+        y = 1j * wq * cm
+        serie = np.block([[un, z], [np.zeros((n, n)), un]])
+        derive = np.block([[un, np.zeros((n, n))], [y, un]])
+        m = serie @ derive if sens == "emission" else derive @ serie
+        a, b, c, d = m[:n, :n], m[:n, n:], m[n:, :n], m[n:, n:]
+        bi = np.linalg.inv(b)
+        # les admittances, courants entrants aux deux bouts
+        yy = np.block([[d @ bi, c - d @ bi @ a], [-bi, bi @ a]])
+        for k in range(m_, n):
+            yy[k, k] += y_t[k]
+            yy[n + k, n + k] += y_t[k]
+        yvv = yy[np.ix_(v_idx, v_idx)]
+        yvx = yy[np.ix_(v_idx, x_idx)]
+        yxv = yy[np.ix_(x_idx, v_idx)]
+        yxx = yy[np.ix_(x_idx, x_idx)]
+        yr = yvv - yvx @ np.linalg.solve(yxx, yxv)
+        y11, y12 = yr[:m_, :m_], yr[:m_, m_:]
+        y21, y22 = yr[m_:, :m_], yr[m_:, m_:]
+        y21i = np.linalg.inv(y21)
+        aa = -y21i @ y22
+        bb = -y21i
+        out[q, :m_, :m_] = aa
+        out[q, :m_, m_:] = bb
+        out[q, m_:, :m_] = y11 @ aa + y12
+        out[q, m_:, m_:] = y11 @ bb
+    return out
+
+
+def mode_impair_couple(m4):
+    """Le mode impair (N, 2, 2) d'un boitier couple par brin (N, 4, 4) :
+    V_d = V_p - V_n, I_d = (I_p - I_n) / 2, la moyenne des deux brins quand
+    les voisines les traitent differemment."""
+    m4 = np.asarray(m4)
+    out = np.zeros((len(m4), 2, 2), dtype=complex)
+    for r, c, k in ((0, 0, 0.5), (0, 1, 1.0), (1, 0, 0.25), (1, 1, 0.5)):
+        bl = m4[:, 2 * r:2 * r + 2, 2 * c:2 * c + 2]
+        out[:, r, c] = k * (bl[:, 0, 0] - bl[:, 0, 1] - bl[:, 1, 0]
+                            + bl[:, 1, 1])
+    return out
 
 
 def boitier_nul(bt):
