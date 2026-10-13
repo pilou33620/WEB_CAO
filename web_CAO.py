@@ -3009,10 +3009,19 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if analyse_carte is None:
             raise ErreurIPC(503, "Analyse de carte indisponible : %s" % ERREUR_ANALYSE)
         doc = self._lire_document(MAX_ANALYSE)
+        # la ligne de la requete ne sort qu'a la reponse : dire qu'on calcule
+        pistes = doc.get("pistes") if isinstance(doc, dict) else None
+        sys.stderr.write("  Verification de la carte : %d piste(s), analyse en cours...\n"
+                         % (len(pistes) if isinstance(pistes, list) else 0))
+        debut = datetime.datetime.now()
         try:
-            return analyse_carte.analyser_document(doc)
+            res = analyse_carte.analyser_document(doc)
         except analyse_carte.ErreurAnalyse as exc:
             raise ErreurIPC(422, str(exc))
+        sys.stderr.write("  Verification de la carte : %d constat(s) en %.1f s\n"
+                         % (len(res.get("constats") or []),
+                            (datetime.datetime.now() - debut).total_seconds()))
+        return res
 
     def _ipc_api(self, action):
         """Execute action() et traduit les refus en JSON {"detail": ...}.
