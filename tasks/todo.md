@@ -132,9 +132,9 @@ fichier est chargé par :
   essai suffit.
 
 **Critères d'acceptation**
-- [ ] Le panneau montre les sept lignes ; Z_diff est vide (« — ») pour les classes d'avant (critère 7).
-- [ ] `simCarteReglagesDoc` envoie `zdiff_classes` et `z0_classes` d'interface.
-- [ ] Des réglages mémorisés sans ces clés se chargent complétés, et les valeurs saisies sont gardées.
+- [x] Le panneau montre les sept lignes ; Z_diff est vide (« — ») pour les classes d'avant (critère 7).
+- [x] `simCarteReglagesDoc` envoie `zdiff_classes` et `z0_classes` d'interface.
+- [x] Des réglages mémorisés sans ces clés se chargent complétés, et les valeurs saisies sont gardées.
 
 **Vérification :** `JS_PCB` et `JS_VIS` verts.
 
@@ -150,9 +150,9 @@ fichier est chargé par :
   `autoClass`).
 
 **Critères d'acceptation**
-- [ ] Le menu du schéma propose les sept interfaces (critère 1).
-- [ ] Une classe « ETH 100 » posée dans le schéma arrive telle quelle dans `S.netClass` du PCB.
-- [ ] Un schéma rouvert garde la classe d'interface (`15-import.js`).
+- [x] Le menu du schéma propose les sept interfaces (critère 1).
+- [x] Une classe « ETH 100 » posée dans le schéma arrive telle quelle dans `S.netClass` du PCB.
+- [x] Un schéma rouvert garde la classe d'interface (`15-import.js`).
 
 **Vérification :** `JS_SCH` vert, avec l'essai de passage.
 
@@ -167,8 +167,8 @@ fichier est chargé par :
 - Le choix est mémorisé dans `netNatures` et part dans `natures`.
 
 **Critères d'acceptation**
-- [ ] La nature d'interface se choisit, est mémorisée par fichier et part vers le serveur (critère 1).
-- [ ] Une classe « USB HS » lue dans un IPC-2581 donne la nature « USB HS », pas « Lent ».
+- [x] La nature d'interface se choisit, est mémorisée par fichier et part vers le serveur (critère 1).
+- [x] Une classe « USB HS » lue dans un IPC-2581 donne la nature « USB HS », pas « Lent ».
 
 **Vérification :** `JS_VIS` vert.
 

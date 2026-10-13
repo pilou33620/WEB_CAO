@@ -338,7 +338,8 @@ function pnlNets(){
   }
 }
 
-/* Menu de nature d'un net signal (Horloge, Rapide, RF, Analogique, Antenne, Lent) ;
+/* Menu de nature d'un net signal (Horloge, Rapide, RF, Analogique, Antenne, une
+   classe d'interface — USB, Ethernet, LVDS, CAN, RS-485 —, Lent) ;
    rien pour une masse ou une alimentation, dont la nature suit la famille. */
 function pnlSelNature(n,attr){
   if((n.classe||"signal")!=="signal")return "";

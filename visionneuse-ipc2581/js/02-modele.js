@@ -1642,11 +1642,13 @@ function mdlNetPoserClasse(i,classe){
    Nature d'un net : celle de l'éditeur PCB, plus fine que la famille
    GND / PWR / Signal qui règle les préréglages de simulation. Masse et
    Alimentation suivent la famille ; un signal est Horloge, Rapide, RF,
-   Analogique, Antenne ou Lent (défaut). La suggestion vient du serveur (natures_nets,
-   même moteur que la schématique) ; un choix manuel est gardé à part, dans
+   Analogique, Antenne, une classe d'interface (posée à la main) ou Lent
+   (défaut). La suggestion vient du serveur (natures_nets, même moteur que
+   la schématique) ; un choix manuel est gardé à part, dans
    V.modele.netNatures, et part avec l'export .json.
    ========================================================================== */
-const MDL_NATURES_SIGNAL=["Horloge","Rapide","RF","Analogique","Antenne","Lent"];
+const MDL_NATURES_SIGNAL=["Horloge","Rapide","RF","Analogique","Antenne",
+                          ...Object.keys(CLASSES_INTERFACE),"Lent"];
 
 /* ---------- les règles que le fichier porte ----------
    Un IPC-2581 écrit par l'éditeur PCB (ou tout outil qui suit la même
@@ -1682,6 +1684,10 @@ const MDL_CLASSES_NATURE=[["Masse",/masse|gnd|ground/i],["Alimentation",/aliment
 function mdlNatureDeClasse(classe){
   const c=String(classe||"");
   if(!c)return "";
+  /* une classe d'interface d'abord, sous son nom exact : le serveur la juge
+     à son front (commun/classes-interface.js) */
+  const itf=Object.keys(CLASSES_INTERFACE).find(k=>k.toLowerCase()===c.toLowerCase());
+  if(itf)return itf;
   const k=MDL_CLASSES_NATURE.find(x=>x[1].test(c));
   return k?k[0]:"Lent";
 }

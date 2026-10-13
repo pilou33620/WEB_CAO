@@ -6479,6 +6479,28 @@ T("les classes du fichier classent les nets avant la détection, la main garde l
   if(V.parNet[4].nature!=="RF"||V.parNet[1].nature!=="Lent")throw new Error("sans règles : "+V.parNet.map(n=>n.nature).join(","));
 });
 
+T("classes d'interface : la nature se choisit, revient avec le fichier, part au serveur",()=>{
+  for(const k in CLASSES_INTERFACE)
+    if(MDL_NATURES_SIGNAL.indexOf(k)<0)throw new Error("nature "+k+" absente du menu");
+  // une classe d'interface écrite par l'éditeur PCB : son nom exact, pas « Lent »
+  if(mdlNatureDeClasse("usb hs")!=="USB HS"||mdlNatureDeClasse("ETH 100")!=="ETH 100")
+    throw new Error("classe du fichier : "+mdlNatureDeClasse("usb hs")+", "+mdlNatureDeClasse("ETH 100"));
+  if(mdlNatureDeClasse("Rapide")!=="Rapide")throw new Error("Rapide : "+mdlNatureDeClasse("Rapide"));
+  carte({pistes:[{c:0,n:0,w:W,p:[X1,Y,X2,Y]}]});
+  const fichier=V.fichier;
+  V.fichier="eth.xml";
+  try{
+    mdlNetPoserNature(0,"ETH 100");
+    if(V.parNet[0].nature!=="ETH 100"||!V.parNet[0].natureManuelle)throw new Error("nature : "+V.parNet[0].nature);
+    const mem=JSON.parse(localStorage.getItem("cao.visionneuse.nets.v1.eth.xml")||"null");
+    if(!mem||mem.natures["N$1"]!=="ETH 100")throw new Error("mémoire du fichier : "+JSON.stringify(mem));
+    if(SIM_IPC.carteEntiere().doc.natures["N$1"]!=="ETH 100")
+      throw new Error("envoyée : "+JSON.stringify(SIM_IPC.carteEntiere().doc.natures));
+  }finally{
+    localStorage.removeItem("cao.visionneuse.nets.v1.eth.xml");
+    V.fichier=fichier;
+  }
+});
 T("les paires du fichier partent au serveur devant celles devinées, et nomment la partenaire",()=>{
   const c=carte({nets:["LVDS_P","GND","LVDS_N","AUTRE_P","AUTRE_N"],
                  pistes:[{c:0,n:0,w:W,p:[X1,Y,X2,Y]},{c:0,n:2,w:W,p:[X1,Y+1,X2,Y+1]},
