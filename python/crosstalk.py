@@ -3107,8 +3107,16 @@ def peec_fente(scene, f):
     n_plans = max(1, len(scene["plans"]))
     for g, s_max in PEEC_CROISSANCES:
         eu, ev = _maillage_peec(scene, g, s_max)
-        if 2 * (eu.size - 1) * (ev.size - 1) * n_plans <= PEEC_BRANCHES_MAX:
+        n_b = 2 * (eu.size - 1) * (ev.size - 1) * n_plans
+        if n_b <= PEEC_BRANCHES_MAX:
             break
+    else:
+        # MEME LA CROISSANCE LA PLUS LACHE DEPASSE LE BUDGET : on refuse. La
+        # resoudre quand meme, c'etait une matrice dense de n_b^2 (24 000
+        # branches : 4,6 Go) et des minutes par fente -- vingt minutes
+        # d'audit sur une carte reelle. Les appelants passent alors a Ott.
+        raise ValueError("maillage trop fin : %d branches, budget %d"
+                         % (n_b, PEEC_BRANCHES_MAX))
     r = _resoudre_peec(scene, f, g, s_max)
     if r is None:
         return None

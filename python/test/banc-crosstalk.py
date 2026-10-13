@@ -26,6 +26,7 @@ Le style est celui des autres bancs du depot (python/test/banc-ligne-mom.py) :
 pas de pytest, un decompte a la fin, un code de retour.
 """
 
+import json
 import math
 import os
 import sys
@@ -1856,6 +1857,16 @@ def une_fente_avec_son_image_est_resolue_et_ott_l_encadre():
     finally:
         ct.PEEC_BRANCHES_MAX = ancien
     assert abs(t_fin["ld_nh"] / t["ld_nh"] - 1.0) < 0.05, (t_fin["ld_nh"], t["ld_nh"])
+    # HORS BUDGET MEME AU MAILLAGE LE PLUS LACHE : Ott, et c'est dit -- pas
+    # une matrice de plusieurs Go (fentes de Leko : vingt minutes d'audit).
+    try:
+        ct.PEEC_BRANCHES_MAX = 10
+        res_b = ct.analyser(d)
+    finally:
+        ct.PEEC_BRANCHES_MAX = ancien
+    _c, t_b = le_terme(res_b)
+    assert t_b and t_b["modele"] != "B", t_b
+    assert "maillage trop fin" in json.dumps(res_b, ensure_ascii=False), res_b
 
 
 T("une fente avec son image est resolue (option B, PEEC) et Ott l'encadre",

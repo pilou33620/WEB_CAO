@@ -6579,9 +6579,9 @@ async function simCarteGo(){
   simRendre();
   try{
     /* Laisser le navigateur peindre la barre de progression : carteEntiere()
-       est synchrone et gèle la page, le clic semblait sans effet. */
-    await new Promise(r=>typeof requestAnimationFrame==="function"?
-      requestAnimationFrame(()=>setTimeout(r)):setTimeout(r));
+       est synchrone et gèle la page, le clic semblait sans effet. Un délai,
+       pas requestAnimationFrame : un onglet caché n'en rend jamais. */
+    await new Promise(r=>setTimeout(r,50));
     if(!SIM_ED||typeof SIM_ED.carteEntiere!=="function")
       throw new Error("Cet outil ne sait pas encore décrire sa carte entière.");
     const c=SIM_ED.carteEntiere();

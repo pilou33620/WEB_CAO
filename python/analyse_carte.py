@@ -42,6 +42,7 @@ Deux portes d'entrée :
 
 import math
 import re
+import sys
 import time
 from collections import defaultdict
 
@@ -228,6 +229,12 @@ PAIRES_MAX = 3000        # paires rendues au tableau « toute la carte »
 GAMMA_VIGILANCE, GAMMA_CRITIQUE = 0.05, 0.10
 C0 = 299792458.0
 SECTIONS_MAX = 3000      # résolutions MoM de la diaphonie, cache compris
+# LE MAILLAGE DES SECTIONS DE LA DIAPHONIE, ALLÉGÉ : la moitié des panneaux et
+# des points de quadrature de `ligne_mom`. Une carte réelle en demande plus de
+# mille (Leko : 1 744, 8 min au maillage plein, 2 min 30 ici) ; l'écart sur Kb
+# reste sous 0,5 %, loin des seuils de 3 et 7 %. Le panneau Crosstalk garde le
+# maillage plein sur la piste qu'on y analyse.
+SECTION_PANNEAUX, SECTION_QUADRATURE = 60, 150
 ANGLE_PARALLELE = math.radians(10)
 
 
@@ -987,7 +994,8 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None, surf=None)
                      "masse": bool(e[2] and not e[3]), "flottant": bool(e[3])}
                     for e in extras]
                 try:
-                    r = tl.solve_multiline(geo)
+                    r = tl.solve_multiline(geo, n=SECTION_PANNEAUX,
+                                           n_quadrature=SECTION_QUADRATURE)
                     rg = {e: m for m, e in enumerate(r["ordre"])}
                     kb, kf = xt.coefficients_couple(r["c"], r["l"], rg[0], rg[1])
                     eps = max(float(r["lignes"][rg[0]]["eps_eff"]), 1.0)
@@ -3412,6 +3420,7 @@ def analyser_document(doc):
         troncons = _troncons(doc, unite)
         surf = _surfaces(doc, unite, notes)
         durees["angles et surfaces"] = time.perf_counter() - t0
+        sys.stderr.write("    angles et surfaces... %.1f s\n" % durees["angles et surfaces"])
         etapes = [("orphelin", lambda: orphelins(doc, reg, unite, couches, surf, troncons)),
                   ("quartz", lambda: quartz(doc, couches, unite, troncons, surf)),
                   ("esd", lambda: esd(doc, unite)),
@@ -3449,9 +3458,14 @@ def analyser_document(doc):
         for regle, etape in etapes:
             if not voulue(regle):
                 continue
+            # dans le terminal du serveur, au fil de l'eau : l'etape qui traine
+            # se voit pendant le calcul, pas seulement dans le rapport final
+            sys.stderr.write("    %s..." % regle)
+            sys.stderr.flush()
             t0 = time.perf_counter()
             k, b = etape()
             durees[regle] = time.perf_counter() - t0
+            sys.stderr.write(" %.1f s\n" % durees[regle])
             constats += k
             if b:
                 bilan[regle] = b
