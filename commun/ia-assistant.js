@@ -583,10 +583,10 @@
             x2: Math.round(t.x2 * 100) / 100,
             y2: Math.round(t.y2 * 100) / 100,
             w: t.w,
-            layer: t.layer
+            couche: nomCouchePcb(t.l)
           });
           if (t.w) parNet[netNom].largeursMm.add(t.w);
-          if (t.layer != null) parNet[netNom].couches.add(t.layer);
+          if (t.l != null) parNet[netNom].couches.add(nomCouchePcb(t.l));
         });
 
         const listeNets = Object.values(parNet).map(n => ({
@@ -604,7 +604,7 @@
 
         let viasSel = [];
         if (S.sel && S.sel.vias && S.sel.vias.size > 0) {
-          viasSel = Array.from(S.sel.vias).map(v => ({ x: v.x, y: v.y, net: v.net, drill: v.drill, pad: v.pad }));
+          viasSel = Array.from(S.sel.vias).map(v => ({ x: v.x, y: v.y, net: v.net, drill: v.drill, pad: v.d, de: nomCouchePcb(v.a), a: nomCouchePcb(v.b) }));
         }
 
         let ecartEstime = null;
@@ -652,8 +652,8 @@
           ref: f.ref || "Fp",
           val: f.val || f.value || "",
           package: f.pkg || f.package || "",
-          layer: f.layer != null ? f.layer : 0,
-          padsCount: (f.pads || []).length
+          face: f.side ? "dessous" : "dessus",
+          padsCount: (typeof padsOf === "function") ? padsOf(f).length : (f.pads || []).length
         }));
         return {
           type: "pcb_fps",
