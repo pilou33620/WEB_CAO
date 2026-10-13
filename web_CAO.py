@@ -444,6 +444,7 @@ import json
 import os
 import posixpath
 import re
+import select
 import shutil
 import socket
 import socketserver
@@ -3028,15 +3029,44 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
         Troisieme jumeau de _api, pour la meme raison que _profil_api : un
         import IPC-2581 ne depend ni de pcbparts.dev ni des dossiers de projet.
+
+        Tout echec s'ecrit aussi dans le terminal, avec son code : la page
+        l'affiche, mais celui qui surveille le serveur ne la voit pas. Une page
+        fermee en plein calcul sort en 499 (le code de nginx pour « client
+        parti ») : on ne le sait qu'en voulant repondre, donc a la fin.
         """
+        debut = datetime.datetime.now()
+        route = self._route()
         try:
-            self._envoyer_json(action())
+            charge, code = action(), 200
         except ErreurIPC as exc:
             self.close_connection = True    # le corps n'a peut-etre pas ete lu
-            self._envoyer_json({"detail": exc.message}, exc.code)
+            charge, code = {"detail": exc.message}, exc.code
+            sys.stderr.write("  ERREUR %d %s : %s\n" % (code, route, exc.message))
         except Exception as exc:                       # noqa: BLE001
             self.close_connection = True
-            self._envoyer_json({"detail": self._detail_interne(exc)}, 500)
+            charge, code = {"detail": self._detail_interne(exc)}, 500
+            sys.stderr.write("  ERREUR 500 %s : %s\n" % (route, charge["detail"]))
+        try:
+            # une petite reponse part sans erreur vers une page deja fermee
+            if self._client_parti():
+                raise ConnectionAbortedError
+            self._envoyer_json(charge, code)
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            self.close_connection = True
+            sys.stderr.write("  ERREUR 499 %s : la page s'est fermee avant la"
+                             " reponse (%.1f s de calcul perdues)\n"
+                             % (route, (datetime.datetime.now() - debut).total_seconds()))
+
+    def _client_parti(self):
+        """Vrai si le navigateur a ferme la connexion : elle est lisible mais
+        vide (ou rompue). Un navigateur n'envoie rien d'autre en attendant
+        la reponse."""
+        try:
+            lisible = select.select([self.connection], [], [], 0)[0]
+            return bool(lisible) and not self.connection.recv(1, socket.MSG_PEEK)
+        except OSError:
+            return True
 
     # -- cle IA locale ----------------------------------------------------
     def _ia_cle_api(self):

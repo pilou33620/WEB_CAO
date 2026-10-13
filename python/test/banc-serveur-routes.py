@@ -130,6 +130,31 @@ def test_routes():
         assert res.status == 400 and "gzip" in json.loads(res.read().decode("utf-8"))["detail"]
         print("[PASS] GET/POST /api/analyse-carte")
 
+        # 4c. Les echecs d'un calcul s'ecrivent dans le terminal avec leur
+        # code ; une page fermee en plein calcul sort en 499
+        import io, socket
+        vrai_err, sys.stderr = sys.stderr, io.StringIO()
+        vrai_analyser = web_CAO.analyse_carte.analyser_document
+        try:
+            conn.request("POST", "/api/analyse-carte", body=b'{"format": "autre"}',
+                         headers={"Content-Type": "application/json"})
+            conn.getresponse().read()
+            web_CAO.analyse_carte.analyser_document = lambda d: (time.sleep(0.5), vrai_analyser(d))[1]
+            corps = json.dumps(doc).encode("utf-8")
+            s = socket.create_connection(("127.0.0.1", port))
+            s.sendall(b"POST /api/analyse-carte HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                      b"Content-Type: application/json\r\nContent-Length: %d\r\n\r\n"
+                      % len(corps) + corps)
+            s.close()                       # la page se ferme pendant le calcul
+            time.sleep(1.5)
+            journal = sys.stderr.getvalue()
+        finally:
+            web_CAO.analyse_carte.analyser_document = vrai_analyser
+            sys.stderr = vrai_err
+        assert "ERREUR 422 /api/analyse-carte" in journal, journal
+        assert "ERREUR 499 /api/analyse-carte" in journal, journal
+        print("[PASS] erreurs de calcul et page fermee : codes dans le terminal")
+
         # 5. POST /api/datasheet/telecharger
         payload_ds_inv = json.dumps({"url": "ftp://invalide", "mpn": "TEST"}).encode("utf-8")
         
