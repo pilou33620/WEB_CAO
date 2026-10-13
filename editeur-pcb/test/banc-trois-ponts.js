@@ -30,6 +30,9 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 
+// 0. La table commune des classes d'interface, que 01-core.js lit au chargement
+vm.runInThisContext(fs.readFileSync(path.join(__dirname, "../../commun/classes-interface.js"), "utf-8"));
+
 // 1. Charger 01-core.js
 const coreCode = fs.readFileSync(path.join(__dirname, "../js/01-core.js"), "utf-8");
 vm.runInThisContext(coreCode);
