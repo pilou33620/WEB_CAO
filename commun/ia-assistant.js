@@ -475,6 +475,10 @@
         "Données techniques (JSON) :\n```json\n" + JSON.stringify(donnees.json, null, 2) + "\n```\n\n" +
         "Question : Donne ton avis d'expert sur ce tracé selon les critères industriels IPC (continuité, estimation d'impédance, pertes et transitions).";
 
+    } else if (donnees.type === "rapport_simulation") {
+      // Le rapport de commun/simulation-rapport.js : autonome, question comprise.
+      prompt = donnees.texte;
+
     } else if (donnees.type === "ipc_comp") {
       prompt = 
         "Inspecte ce composant issu du fichier IPC-2581 :\n" +

@@ -18185,6 +18185,15 @@ function simOnglets(){
          "Replier les réglages pour laisser la place aux résultats. Le calcul "+
          "ne bouge pas, et la rangée des boutons reste : on relance sans "+
          "déplier.")+'">'+simXtTexteRepli()+"</button>";
+  /* LE RAPPORT, au même endroit et pour la même raison : il vaut pour toutes
+     les analyses. Il vit dans commun/simulation-rapport.js — une page qui ne
+     le charge pas n'a pas le bouton. */
+  if(simCalculable()&&typeof simRapOuvrir==="function")
+    h+='<button class="simOnglet mini" id="simRapport" title="'+simEsc(
+         "Générer le rapport complet de cette simulation : la piste, "+
+         "l'empilage, les réglages, les résultats et le diagnostic — à "+
+         "copier, imprimer en PDF ou enregistrer en .html.")+
+       '">📋 Rapport</button>';
   h+="</div>";
   return h;
 }
@@ -18224,6 +18233,8 @@ function simPoser(){
        replier ne change pas la largeur, donc il n'y a rien à refaire. */
   };
   simPlierAppliquer();
+  const rap=simEl("simRapport");
+  if(rap&&typeof simRapOuvrir==="function")rap.onclick=simRapOuvrir;
   if(simCalculable()&&simAnalyse().brancher)simAnalyse().brancher();
   simRendre();
 }
