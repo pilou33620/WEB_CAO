@@ -6100,6 +6100,10 @@ const SIM_CARTE={res:null,err:"",occupe:false,actif:-1,unite:1,parDefaut:[],natu
             /* Z₀ visée par classe, en Ω ; 0 : celle de la carte. Une classe
                qui en reçoit une se juge face à elle (z0_classes). */
             z0c:{Horloge:0,Rapide:0,RF:0,Analogique:0},
+            /* Z_diff visée par classe d'interface, en Ω : celle de sa norme.
+               Seule une valeur changée part (zdiff_classes) ; sinon le
+               serveur prend la même, dans sa table. */
+            zdc:{},
             /* Du TEXTE, tel que saisi : « NFC=13,56 MHz ; LORA=868 MHz »,
                « VCC=0,5 ; 3V3=1,2 A ». Lu à l'envoi par simCarteParNet. */
             porteuses:"", courants:""},
@@ -6107,6 +6111,16 @@ const SIM_CARTE={res:null,err:"",occupe:false,actif:-1,unite:1,parDefaut:[],natu
           tr:{Horloge:"ns",Rapide:"ns",RF:"ps",Analogique:"ns",Lent:"ns","Découpage":"ns"},
           cadences:{Horloge:"MHz",Rapide:"MHz",RF:"GHz",Analogique:"MHz",Lent:"MHz","Découpage":"MHz"},
           porteuse:"MHz"}};
+/* LES CLASSES D'INTERFACE (commun/classes-interface.js) : une ligne chacune,
+   à son front, sa cadence et la Z_diff de sa norme ; Z₀ vide, la norme n'en
+   fixe pas. Le serveur ne retient que celles qu'un net de la carte porte. */
+for(const k in CLASSES_INTERFACE){
+  const i=CLASSES_INTERFACE[k], r=SIM_CARTE.reglages, u=SIM_CARTE.unites;
+  r.tr[k]=i.tr; r.cadences[k]=i.cadence; r.z0c[k]=0; r.zdc[k]=i.zdiff;
+  u.tr[k]=i.tr<1e-9?"ps":"ns"; u.cadences[k]="MHz";
+}
+/* L'id d'un champ de classe : « USB HS » porte une espace. */
+function simCarteIdClasse(k){return k.replace(/\s/g,"_");}
 /* Dans l'ordre du rapport à gravité égale. `unite` : la valeur jugée à
    la cadence de la classe est un rapport à cette longueur (sinon, un pourcentage). */
 const SIM_CARTE_REGLES={
@@ -6333,6 +6347,9 @@ function simCarteReglagesDoc(){
   for(const k in r.z0c)if(r.z0c[k]>0)z0c[k]=r.z0c[k];
   const p=simCarteParNet(r.porteuses,SIM_UNITES,"MHz");
   if(Object.keys(z0c).length)d.z0_classes=z0c;
+  const zdc={};
+  for(const k in r.zdc)if(r.zdc[k]>0&&r.zdc[k]!==(CLASSES_INTERFACE[k]||{}).zdiff)zdc[k]=r.zdc[k];
+  if(Object.keys(zdc).length)d.zdiff_classes=zdc;
   if(Object.keys(p).length)d.porteuses=p;
   return d;
 }
@@ -6408,22 +6425,29 @@ function simCorpsCarte(){
             Lent:"GPIO, LED, bouton, reset, I2C, UART ; tout net non classé",
             "Découpage":"nœud SW d'un buck ou d'un boost (détecté seul)"};
   let classes="";
-  for(const k in r.tr)
-    classes+='<tr><td>'+simEsc(k)+'</td><td>'+
-      champU("simCarteTr"+k,"Le front de montée d'un net de classe « "+k+
+  for(const k in r.tr){
+    const id=simCarteIdClasse(k), itf=CLASSES_INTERFACE[k];
+    classes+='<tr><td'+(itf?' title="'+simEsc(itf.nom)+'"':'')+'>'+simEsc(k)+'</td><td>'+
+      champU("simCarteTr"+id,"Le front de montée d'un net de classe « "+k+
              " » : celui de la techno qui le pilote, borné par 10 % de la "+
              "période de sa cadence.","ce front",
              SIM_UNITES_TR)+'</td><td>'+
-      champU("simCarteCad"+k,"La cadence maximale d'un net de classe « "+k+
+      champU("simCarteCad"+id,"La cadence maximale d'un net de classe « "+k+
              " » (une horloge à 50 MHz, un I2C sous 1 MHz) : ses règles s'y "+
              "jugent, et son front n'est jamais plus long que 10 % de sa "+
              "période.","cette cadence")+'</td><td>'+
-      (k in r.z0c?champ("simCarteZ0c"+k,"La Z₀ visée pour un net de classe « "+k+
+      (k in r.z0c?champ("simCarteZ0c"+id,"La Z₀ visée pour un net de classe « "+k+
             " » : son impédance se juge face à elle, la réflexion de ses vias "+
-            "et de ses fentes aussi. Vide : le Z₀ de la carte"+(k==="Analogique"?
-            " — et un net Analogique sans cible ne se compare qu'à lui-même":"")+
-            ".","Ω"):'<span class="simU">—</span>')+'</td>'+
-      '<td class="simEx">'+simEsc(EX[k]||"")+'</td></tr>';
+            "et de ses fentes aussi. Vide : "+(itf?"aucune — sa norme ne fixe "+
+            "que la Z_diff, et un brin ne se compare qu'à lui-même":"le Z₀ de la carte"+
+            (k==="Analogique"?" — et un net Analogique sans cible ne se compare "+
+            "qu'à lui-même":""))+".","Ω"):'<span class="simU">—</span>')+'</td><td>'+
+      (k in r.zdc?champ("simCarteZdc"+id,"La Z_diff visée pour une paire de "+
+            "classe « "+k+" », celle de sa norme : la règle des paires "+
+            "différentielles la juge face à elle, et non face à la Z_diff de "+
+            "la carte.","Ω"):'<span class="simU">—</span>')+'</td>'+
+      '<td class="simEx">'+simEsc(itf?itf.nom:EX[k]||"")+'</td></tr>';
+  }
   return '<div class="pnl-bar simBarFixe">'+
     '<button class="tb mini on" id="simCarteGo" title="Juger toutes les '+
       'pistes de la carte, tous nets confondus">▶ Vérifier la carte</button>'+
@@ -6457,6 +6481,7 @@ function simCorpsCarte(){
     '<th title="Le temps de montée de la techno qui pilote la classe">Front de montée</th>'+
     '<th title="La cadence que la classe ne dépasse jamais : ses règles s\'y jugent">Cadence max</th>'+
     '<th title="L\'impédance visée ; vide : le Z₀ des lignes">Z₀ visée</th>'+
+    '<th title="La Z_diff visée par une paire d\'interface ; — : la Z_diff de la carte">Z_diff visée</th>'+
     '<th>Exemples de nets</th>'+
   '</tr>'+classes+'</table></div>'+
   '<div class="pnl-bar simCarteAvert" id="simCarteAvert" style="display:none"></div>'+
@@ -6547,13 +6572,15 @@ function simBrancherCarte(){
     simCarteReglagesGarder();
   });
   lie("simCarteZdiff",()=>r.zdiff,v=>{r.zdiff=v;});
-  for(const k in r.tr)lieU("simCarteTr"+k,SIM_UNITES_TR,()=>u.tr[k],c=>{u.tr[k]=c;},
+  const id=simCarteIdClasse;
+  for(const k in r.tr)lieU("simCarteTr"+id(k),SIM_UNITES_TR,()=>u.tr[k],c=>{u.tr[k]=c;},
                           ()=>r.tr[k],v=>{r.tr[k]=v;});
-  for(const k in r.cadences)lieU("simCarteCad"+k,SIM_UNITES,()=>u.cadences[k],
+  for(const k in r.cadences)lieU("simCarteCad"+id(k),SIM_UNITES,()=>u.cadences[k],
                           c=>{u.cadences[k]=c;},()=>r.cadences[k],v=>{r.cadences[k]=v;});
   lieU("simCartePorteuse",SIM_UNITES,()=>u.porteuse,c=>{u.porteuse=c;},
        ()=>r.porteuse,v=>{r.porteuse=v;},"aucune");
-  for(const k in r.z0c)lie("simCarteZ0c"+k,()=>r.z0c[k],v=>{r.z0c[k]=v;},"Z₀");
+  for(const k in r.z0c)lie("simCarteZ0c"+id(k),()=>r.z0c[k],v=>{r.z0c[k]=v;},"Z₀");
+  for(const k in r.zdc)lie("simCarteZdc"+id(k),()=>r.zdc[k],v=>{r.zdc[k]=v;});
   simCarteAvertEcrire();
   for(const [id,cle] of [["simCartePorteuses","porteuses"],["simCarteCourants","courants"]]){
     const e=simEl(id);

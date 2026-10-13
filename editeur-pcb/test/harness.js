@@ -18067,6 +18067,43 @@ T("Vérification de la carte : les réglages partent en unités du serveur",()=>
       throw new Error(k+" : la cadence écrase le front par défaut");
 });
 
+T("Vérification de la carte : une ligne par classe d'interface, sa Z_diff, ses réglages mémorisés",()=>{
+  const r=SIM_CARTE.reglages, garde=JSON.stringify(r), carte=SIM_PCB.carte;
+  SIM_PCB.carte=()=>"USB.pcb";
+  try{
+    for(const k in CLASSES_INTERFACE){
+      const i=CLASSES_INTERFACE[k];
+      if(r.tr[k]!==i.tr||r.cadences[k]!==i.cadence||r.z0c[k]!==0||r.zdc[k]!==i.zdiff)
+        throw new Error(k+" : "+JSON.stringify([r.tr[k],r.cadences[k],r.z0c[k],r.zdc[k]]));
+    }
+    // une ligne par interface, avec un champ Z_diff ; « — » pour les classes d'origine
+    const h=simCorpsCarte();
+    for(const id of ["simCarteTrUSB_HS","simCarteCadETH_100","simCarteZ0cRS-485","simCarteZdcCAN"])
+      if(h.indexOf('id="'+id+'"')<0)throw new Error("champ "+id+" absent du panneau");
+    if(h.indexOf('id="simCarteZdcRapide"')>=0)throw new Error("Z_diff de classe pour Rapide");
+    if(h.indexOf("Ethernet 100BASE-TX")<0)throw new Error("nom long de l'interface absent");
+    // rien de changé : ni Z₀ ni Z_diff d'interface ne partent, le serveur a la norme
+    let d=simCarteReglagesDoc();
+    if("z0_classes" in d||"zdiff_classes" in d)throw new Error("envoyés vides : "+JSON.stringify(d));
+    r.zdc["ETH 100"]=95; r.z0c["USB HS"]=45;
+    d=simCarteReglagesDoc();
+    if(JSON.stringify(d.zdiff_classes)!=='{"ETH 100":95}'||d.z0_classes["USB HS"]!==45)
+      throw new Error("saisis : "+JSON.stringify(d));
+    if(d.tr["USB HS"]!==5e-10||d.cadences["CAN"]!==5e5)throw new Error("fronts : "+JSON.stringify(d.tr));
+    // des réglages mémorisés AVANT les interfaces se complètent, sans rien perdre
+    localStorage.setItem("cao.carte.reglages.v1.USB.pcb",
+      JSON.stringify({reglages:{tr:{Lent:2e-8},z0c:{Rapide:90}},unites:{tr:{Lent:"ns"}}}));
+    SIM_CARTE.carteReglee=undefined; simCarteReglagesCharger();
+    if(r.tr.Lent!==2e-8||r.z0c.Rapide!==90||r.tr["USB HS"]!==5e-10||r.zdc["ETH 100"]!==100||
+       SIM_CARTE.unites.tr["USB HS"]!=="ps")
+      throw new Error("complétés : "+JSON.stringify(r)+" "+JSON.stringify(SIM_CARTE.unites.tr));
+  }finally{
+    SIM_PCB.carte=carte;
+    localStorage.removeItem("cao.carte.reglages.v1.USB.pcb");
+    SIM_CARTE.carteReglee=undefined;
+    Object.assign(r,JSON.parse(garde));
+  }
+});
 T("Vérification de la carte : Z₀ par classe, porteuses par net, courants par rail",()=>{
   const r=SIM_CARTE.reglages, garde=JSON.stringify(r), bornes=SIM_DCB.bornes;
   try{

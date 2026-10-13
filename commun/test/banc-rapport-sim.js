@@ -14,7 +14,7 @@ const fs=require("fs"), path=require("path");
 require(path.join(__dirname,"dom-stub.js")).install({panels:{}, canvasId:"cv"});
 
 const C=path.join(__dirname,"..");
-const code=["simulation-em.js","simulation-rapport.js"]
+const code=["classes-interface.js","simulation-em.js","simulation-rapport.js"]
   .map(f=>fs.readFileSync(path.join(C,f),"utf8").replace(/^"use strict";\s*$/m,""))
   .join("\n;\n");
 /* Le "use strict" de chaque fichier est retiré, et ce banc n'en a pas : en
