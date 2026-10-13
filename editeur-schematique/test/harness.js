@@ -144,7 +144,7 @@ const EXPOSE=[
   "schCmNetsNommes","schCmOrphelins","schCmResumeNet","schCmOuvrir","schCmFermer","SCM",
   "cmNormNets","cmNormGroupes","cmLireChamp","schDocCourant","restore",
   /* classes d'interface (commun/classes-interface.js) */
-  "CLASSES_INTERFACE","familleClasse","loadDoc"
+  "CLASSES_INTERFACE","familleClasse","titreClasse","loadDoc"
 ];
 /* les noms absents du bundle sont ignorés : le banc d'essai reste utilisable
    même si un module est renommé, les essais concernés échoueront tout seuls */
@@ -3008,7 +3008,7 @@ T("classes de net : choisies dans la liste des nets, publiées au PCB même sans
   S.netAll=false;setListTab("nets");
   const box=document.getElementById("bom");
   const h=box.innerHTML;
-  for(const k of NET_CLASSES)if(h.indexOf("<option>"+k+"</option>")<0)throw new Error("classe "+k+" absente");
+  for(const k of NET_CLASSES)if(h.indexOf("<option"+titreClasse(k)+">"+k+"</option>")<0)throw new Error("classe "+k+" absente");
   if(h.indexOf('data-netcls="PIR_S"')<0||h.indexOf("Auto · Alimentation")<0)
     throw new Error("menu de classe absent de la liste des nets");
   dom.session.clear();
@@ -3041,7 +3041,8 @@ T("classes d'interface : au menu du schéma, gardées dans le document et publi�
   S.netClasses={};dom.session.clear();
   const h=netClassSelect("PIR_S");
   for(const k in CLASSES_INTERFACE)
-    if(h.indexOf("<option>"+k+"</option>")<0)throw new Error("interface "+k+" absente du menu");
+    if(h.indexOf('<option title="'+CLASSES_INTERFACE[k].nom+'">'+k+"</option>")<0)
+      throw new Error("interface "+k+" absente du menu, ou sans son nom long :\n"+h);
   SCHEMA_PATTERNS.poserClasse("PIR_S","ETH 100");
   try{
     if(S.netClasses.PIR_S!=="ETH 100")throw new Error("classe non gardée : "+S.netClasses.PIR_S);

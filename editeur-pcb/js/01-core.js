@@ -2723,10 +2723,10 @@ function classesAProposer(){
 }
 function classOptionsHtml(courante){
   const neuves=classesAProposer();
-  return S.classes.map(x=>'<option'+(x.name===courante?" selected":"")+'>'+esc(x.name)+
+  return S.classes.map(x=>'<option'+(x.name===courante?" selected":"")+titreClasse(x.name)+'>'+esc(x.name)+
       '</option>').join("")+
     (neuves.length?'<optgroup label="Nouvelle classe">'+
-      neuves.map(k=>'<option value="'+esc(k)+'">'+esc(k)+' +</option>').join("")+
+      neuves.map(k=>'<option value="'+esc(k)+'"'+titreClasse(k)+'>'+esc(k)+' +</option>').join("")+
       '</optgroup>':"");
 }
 /* Rattache un net à une classe donnée par son nom, en créant au besoin celle

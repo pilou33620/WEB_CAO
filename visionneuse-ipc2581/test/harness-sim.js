@@ -189,7 +189,7 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   /* Œil 2.2.0 : le brin inverse, les mutuelles et les sections du boîtier. */
   "simOeilBrocheTexte",
   /* classes d'interface (commun/classes-interface.js) */
-  "CLASSES_INTERFACE","familleClasse"];
+  "CLASSES_INTERFACE","familleClasse","titreClasse"];
 
 /* Un seul `eval`, sur les fichiers concaténés : ils se voient l'un
    l'autre comme dans la page, où ils partagent la portée globale. Le "use
@@ -6482,6 +6482,8 @@ T("les classes du fichier classent les nets avant la détection, la main garde l
 T("classes d'interface : la nature se choisit, revient avec le fichier, part au serveur",()=>{
   for(const k in CLASSES_INTERFACE)
     if(MDL_NATURES_SIGNAL.indexOf(k)<0)throw new Error("nature "+k+" absente du menu");
+  if(titreClasse("CAN")!==' title="CAN (ISO 11898)"'||titreClasse("Rapide")!=="")
+    throw new Error("info-bulle : "+titreClasse("CAN")+" / "+titreClasse("Rapide"));
   // une classe d'interface écrite par l'éditeur PCB : son nom exact, pas « Lent »
   if(mdlNatureDeClasse("usb hs")!=="USB HS"||mdlNatureDeClasse("ETH 100")!=="ETH 100")
     throw new Error("classe du fichier : "+mdlNatureDeClasse("usb hs")+", "+mdlNatureDeClasse("ETH 100"));

@@ -201,7 +201,7 @@ var SCHEMA_PATTERNS = (function() {
                 </div>
                 <select data-net="${esc(n)}" aria-label="Classe du net ${esc(n)}" style="font-size:11px;flex:none;">
                   <option value="">Auto (${esc(auto)})</option>
-                  ${NET_CLASSES.map(c => `<option${man[n] === c ? " selected" : ""}>${c}</option>`).join("")}
+                  ${NET_CLASSES.map(c => `<option${man[n] === c ? " selected" : ""}${titreClasse(c)}>${c}</option>`).join("")}
                 </select>
               </div>`;
           }).join("")}

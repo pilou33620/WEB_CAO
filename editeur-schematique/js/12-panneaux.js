@@ -848,7 +848,7 @@ function netClassSelect(nom){
   return '<select class="netcls'+(man?" man":"")+'" data-netcls="'+esc(nom)+'" title="'+esc(tip)+'"'+
     ' aria-label="Classe du net '+esc(nom)+'">'+
     '<option value="">Auto · '+esc(auto.classe)+'</option>'+
-    NET_CLASSES.map(c=>'<option'+(man===c?" selected":"")+'>'+c+'</option>').join("")+
+    NET_CLASSES.map(c=>'<option'+(man===c?" selected":"")+titreClasse(c)+'>'+c+'</option>').join("")+
     '</select>';
 }
 function setNetClassSch(nom,classe){

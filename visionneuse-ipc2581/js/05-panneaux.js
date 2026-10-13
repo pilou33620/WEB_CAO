@@ -346,7 +346,7 @@ function pnlSelNature(n,attr){
   return '<select class="ltRoleSelect'+(n.natureManuelle?" saisi":"")+'" '+attr+'="'+n.i+'"'
     +' title="Nature du signal, comme dans l’éditeur PCB'+(n.natureRaison?" — "+mdlEsc(n.natureRaison):"")+'">'
     +MDL_NATURES_SIGNAL.map(function(c){
-      return '<option'+(n.nature===c?" selected":"")+'>'+c+'</option>';
+      return '<option'+(n.nature===c?" selected":"")+titreClasse(c)+'>'+c+'</option>';
     }).join("")+'</select>';
 }
 

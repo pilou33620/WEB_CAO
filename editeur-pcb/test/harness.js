@@ -4341,11 +4341,14 @@ T("classes d'interface : au menu, créées aux règles de leur famille, vues par
   const h=classOptionsHtml("Défaut");
   for(const k in CLASSES_INTERFACE)
     if(h.indexOf('value="'+k+'"')<0)throw new Error("interface "+k+" absente du menu :\n"+h);
+  if(h.indexOf('title="Ethernet 100BASE-TX"')<0)throw new Error("nom long absent du menu :\n"+h);
   // USB HS prend les règles de Rapide, CAN celles de la classe par défaut
   const usb=poserClasseNet("N$1","USB HS"), can=poserClasseNet("N$2","CAN");
   if(usb.name!=="USB HS"||usb.w!==0.25||usb.clr!==0.25)throw new Error("USB HS : "+JSON.stringify(usb));
   if(can.name!=="CAN"||can.w!==defClass().w)throw new Error("CAN : "+JSON.stringify(can));
   if(/value="USB HS"/.test(classOptionsHtml("USB HS")))throw new Error("USB HS proposée deux fois");
+  if(classOptionsHtml("USB HS").indexOf('<option selected title="USB 2.0 High Speed">USB HS</option>')<0)
+    throw new Error("nom long absent de la classe de la carte");
   // la vérification de la carte reçoit le nom de l'interface, pas « Lent »
   if(simNaturePcb("N$1")!=="USB HS"||simNaturePcb("N$2")!=="CAN")
     throw new Error("natures : "+simNaturePcb("N$1")+", "+simNaturePcb("N$2"));

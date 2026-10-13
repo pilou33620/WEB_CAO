@@ -27,3 +27,9 @@ function familleClasse(c){
   const i=Object.prototype.hasOwnProperty.call(CLASSES_INTERFACE,c)?CLASSES_INTERFACE[c]:null;
   return i?i.famille:c;
 }
+/* L'info-bulle d'une option de menu : le nom long d'une interface
+   (« Ethernet 100BASE-TX » pour ETH 100), rien pour une autre classe. */
+function titreClasse(c){
+  const i=Object.prototype.hasOwnProperty.call(CLASSES_INTERFACE,c)?CLASSES_INTERFACE[c]:null;
+  return i?' title="'+i.nom.replace(/&/g,"&amp;").replace(/"/g,"&quot;")+'"':"";
+}
