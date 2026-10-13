@@ -901,6 +901,33 @@ TR_DEFAUT = 1e-9
 # la page envoie ceux du panneau de verification quand on les a regles.
 TR_CLASSES = {"Horloge": 2e-9, "Rapide": 1e-9, "RF": 1e-10,
               "Analogique": 1e-7, "Lent": 1e-8, "Découpage": 5e-9}
+# UNE CLASSE D'INTERFACE APPARTIENT A UNE FAMILLE : la famille (une classe
+# ci-dessus) decide des regles, l'interface donne son front, sa cadence (Hz)
+# et la Z_diff de sa norme. Pas de Z0 de brin : la norme n'en fixe pas, le
+# panneau peut en donner une (`z0_classes`). Meme table dans
+# commun/classes-interface.js.
+INTERFACES = {
+    "USB FS": {"nom": "USB 2.0 Full Speed", "famille": "Lent",
+               "tr": 4e-9, "cadence": 6e6, "zdiff": 90.0},
+    "USB HS": {"nom": "USB 2.0 High Speed", "famille": "Rapide",
+               "tr": 5e-10, "cadence": 2.4e8, "zdiff": 90.0},
+    "ETH 100": {"nom": "Ethernet 100BASE-TX", "famille": "Rapide",
+                "tr": 3e-9, "cadence": 3.125e7, "zdiff": 100.0},
+    "ETH 1000": {"nom": "Ethernet 1000BASE-T", "famille": "Rapide",
+                 "tr": 2e-9, "cadence": 6.25e7, "zdiff": 100.0},
+    "LVDS": {"nom": "LVDS (TIA-644)", "famille": "Rapide",
+             "tr": 3e-10, "cadence": 3.3e8, "zdiff": 100.0},
+    "CAN": {"nom": "CAN (ISO 11898)", "famille": "Lent",
+            "tr": 5e-8, "cadence": 5e5, "zdiff": 120.0},
+    "RS-485": {"nom": "RS-485 (TIA-485)", "famille": "Lent",
+               "tr": 2e-8, "cadence": 5e6, "zdiff": 120.0},
+}
+
+
+def famille(classe):
+    """La classe d'origine qui decide des regles : celle de l'interface, la
+    classe elle-meme sinon."""
+    return INTERFACES.get(classe, {}).get("famille", classe)
 # LES SEUILS DRC, en fraction de l'agresseur : vert dessous, rouge au-dela.
 SEUIL_ORANGE = 0.03
 SEUIL_ROUGE = 0.07
@@ -2338,6 +2365,7 @@ def front_de_classe(classe, tr_classes=None, porteuse_rf=0.0):
     un mot.
     """
     fronts = dict(TR_CLASSES)
+    fronts.update((k, i["tr"]) for k, i in INTERFACES.items())
     fronts.update(tr_classes or {})
     c = str(classe or "")
     if c not in fronts:

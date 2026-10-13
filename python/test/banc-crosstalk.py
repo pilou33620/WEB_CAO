@@ -2608,6 +2608,26 @@ T("deux niveaux : Cohn en triplaque, le fil fin a distance",
   deux_niveaux_tient_cohn_et_rejoint_le_fil_fin)
 
 
+def une_classe_d_interface_a_son_front_et_sa_famille():
+    """Une classe d'interface (USB HS, CAN...) porte son front ; elle ne tombe
+    plus sur « Lent ». Le panneau passe encore devant la table, et la
+    famille range l'interface dans une classe d'origine."""
+    assert ct.front_de_classe("USB HS") == (5e-10, "déduit de la classe « USB HS »")
+    assert ct.front_de_classe("ETH 100")[0] == 3e-9
+    assert ct.front_de_classe("USB HS", {"USB HS": 7e-10})[0] == 7e-10
+    assert ct.front_de_classe("inconnue")[0] == ct.TR_CLASSES["Lent"]
+    assert ct.famille("CAN") == "Lent" and ct.famille("USB HS") == "Rapide"
+    assert ct.famille("Rapide") == "Rapide" and ct.famille("inconnue") == "inconnue"
+    assert len(ct.INTERFACES) == 7
+    for nom, i in ct.INTERFACES.items():
+        assert i["famille"] in ct.TR_CLASSES and i["tr"] > 0 and i["zdiff"] > 0, nom
+        assert "z0" not in i, nom                     # la norme ne fixe qu'une Z_diff
+
+
+T("classes d'interface : front de la table, famille d'origine",
+  une_classe_d_interface_a_son_front_et_sa_famille)
+
+
 print("\n" + "-" * 62)
 print("  %d cas, %s" % (ok + ko, "tous passes" if not ko
                         else "%d en echec" % ko))
