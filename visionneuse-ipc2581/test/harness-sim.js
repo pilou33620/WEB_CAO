@@ -3202,6 +3202,18 @@ T("la fente part avec ses détours d1 / d2, sa largeur et les plans qui ferment 
   if(Math.abs(t.x-(X1+20))>1.0||Math.abs(t.y-Y)>0.1)
     throw new Error("le franchissement est au milieu de la fente, en mm : "+
                     JSON.stringify(t));
+  /* ET L'IMAGE DU PLAN (option B du serveur, crosstalk 4.6.0), en mm : sur
+     l'axe de la piste un trou de 2 mm exact, les arêtes de quatre contours
+     jointifs n'y font pas de bord ; au-delà du bout de la fente, plein. */
+  const im=t.maillage;
+  if(!im||im.plans.length!==1||im.plans[0].nom!==t.plans[0])
+    throw new Error("l'image porte le plan fendu : "+JSON.stringify(im&&im.plans.map(p=>p.nom)));
+  const ligne=v=>im.plans[0].lignes[Math.round((v-im.v0)/im.pas)];
+  const axe=ligne(0);
+  if(axe.length!==4||Math.abs(axe[1]+1)>0.01||Math.abs(axe[2]-1)>0.01)
+    throw new Error("sur l'axe, un trou de 2 mm exact : "+JSON.stringify(axe));
+  if(ligne(14).length!==2)
+    throw new Error("au-delà du bout de la fente, le plan est plein : "+JSON.stringify(ligne(14)));
   /* UN SECOND PLAN PLEIN DERRIÈRE (Pwr) : il FERME le retour, et `retour`
      le nomme — le serveur n'appliquera pas le terme (cas 4b du banc : fente
      sur un plan, l'autre intact). Seul le plan fendu manque. */
@@ -3223,6 +3235,12 @@ T("la fente part avec ses détours d1 / d2, sa largeur et les plans qui ferment 
     throw new Error("seul le plan fendu manque : "+JSON.stringify(f[0].plans));
   if(!(Math.abs(f[0].d1-12)<=1.0&&Math.abs(f[0].d2-8)<=1.0))
     throw new Error("les détours ne changent pas : "+JSON.stringify(f[0]));
+  /* L'image porte le plan fendu, puis le plein qui ferme le retour. */
+  const im2=f[0].maillage;
+  if(!im2||im2.plans.map(p=>p.nom).join()!=="Gnd,Pwr"||
+     im2.plans[1].lignes.some(l=>l.length!==2))
+    throw new Error("le plan fendu puis le plan plein : "+
+                    JSON.stringify(im2&&im2.plans.map(p=>[p.nom,p.lignes[0]])));
   /* ET LE SENS DE MARCHE : la même piste dessinée à rebours échange d1 et
      d2 — gauche et droite se définissent dans le sens du parcours, comme le
      côté de la couture que le serveur lit. */

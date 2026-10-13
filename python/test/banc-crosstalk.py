@@ -1772,6 +1772,219 @@ T("la resonance de la fente (option C) est negligeable a 1 ns et sensible a"
   " 100 ps", la_resonance_de_la_fente_ne_compte_que_sous_300_ps)
 
 
+def image_plans(cx, cy, U, V, pas, plans, vias=(), ux=1.0, uy=0.0):
+    """L'image que la page envoie depuis la 4.6.0 (`maillage`) : pour chaque
+    plan, des lignes a v constant portant les bords de leurs plages de cuivre
+    en u -- ici sondees a 10 um, la page les coupe aux aretes exactes."""
+    us = np.arange(-U, U + 1e-9, 0.01)
+    vs = np.arange(-V + pas / 2.0, V, pas)
+    out = []
+    for nom, cuivre in plans.items():
+        lignes = []
+        for v in vs:
+            d = cuivre(us, np.full_like(us, v))
+            bords = [round(float(us[0]), 3)] if d[0] else []
+            for i in np.nonzero(d[1:] != d[:-1])[0]:
+                bords.append(round(0.5 * float(us[i] + us[i + 1]), 3))
+            if d[-1]:
+                bords.append(round(float(us[-1]), 3))
+            lignes.append(bords)
+        out.append({"nom": nom, "lignes": lignes})
+    return {"x": cx, "y": cy, "ux": ux, "uy": uy, "U": U, "V": V,
+            "v0": float(vs[0]), "pas": pas, "plans": out, "vias": list(vias)}
+
+
+def fente_droite(u, v, larg=2.0, d=10.0):
+    """Du cuivre partout, sauf la fente du cas 4 : 2 mm le long de la piste,
+    +-10 mm en travers."""
+    return ~((np.abs(u) < larg / 2.0) & (np.abs(v) < d))
+
+
+PLEIN = (lambda u, v: np.ones(np.shape(u), bool))
+
+DEUX_PLANS = {"layers": [
+    {"type": "copper", "name": "Top", "thickness": 0.035, "role": "signal"},
+    {"type": "dielectric", "name": "prepreg", "thickness": 0.2,
+     "epsilon_r": 4.3, "tan_delta": 0.02},
+    {"type": "copper", "name": "GND1", "thickness": 0.035,
+     "role": "plane", "net": "GND"},
+    {"type": "dielectric", "name": "coeur", "thickness": 1.0,
+     "epsilon_r": 4.3, "tan_delta": 0.02},
+    {"type": "copper", "name": "GND2", "thickness": 0.035,
+     "role": "plane", "net": "GND"},
+]}
+
+
+def fente_imagee(plans, retour=(), vias=(), coupes=("GND",), U=15.0):
+    """La fente du cas 4 sous l'agresseur a 20 mm, avec son image."""
+    f = fente_mesuree(19.0, 2.0, list(coupes), 10.0, 10.0, retour=retour)
+    f["maillage"] = image_plans(20.0, 0.0, U, U, 0.1, plans, vias)
+    return f
+
+
+def le_terme(res, net="VIC"):
+    c = next(x for x in res["couples"] if x["victime"] == net)
+    return c, (c.get("fente") or {}).get("detail", [None])[0]
+
+
+def une_fente_avec_son_image_est_resolue_et_ott_l_encadre():
+    """Option B : la page envoie l'image du plan autour du franchissement, le
+    serveur y RESOUT le courant de retour (PEEC). Sur la fente etroite du
+    cas 4 (2 mm), le detour vaut ~4,5 nH et non 16 : les deux bords portent
+    des courants opposes qui se compensent. Le terme d'Ott reste dans la
+    fourchette, dont il tient la borne haute."""
+    d = doc_essai([pis(0, 0.45, 40, 0.45, "VIC")], t_r=1e-9)
+    d["fentes"] = [fente_imagee({"GND": fente_droite})]
+    res = ct.analyser(d)
+    c, t = le_terme(res)
+    assert t and t["modele"] == "B", t
+    assert 3.0 < t["ld_nh"] < 6.0 and 0 < t["m_nh"] <= t["ld_nh"], t
+    assert 0.01 < t["next"] < t["ott"]["next_pc"] / 100.0, t
+    assert t["fourchette"][0] <= t["next"] and \
+        t["fourchette"][1] >= t["ott"]["fourchette_pc"][1] / 100.0 - 1e-4, t
+    # IL S'AJOUTE AUX LIGNES, comme le terme d'Ott, et la fiche le dit.
+    assert abs(c["next"] - (c["lignes"]["next"] + c["fente"]["next"])) < 1e-6
+    assert any("RÉSOLU" in a for a in res["avertissements"]), res["avertissements"]
+    assert "plan de référence absent sous" not in " | ".join(
+        g["titre"] for g in res["graves"])
+    # CONVERGE : deux fois plus de mailles ne change pas le detour de 5 %.
+    t_fin = None
+    ancien = ct.PEEC_BRANCHES_MAX
+    try:
+        ct.PEEC_BRANCHES_MAX = 2 * ancien
+        _c, t_fin = le_terme(ct.analyser(d))
+    finally:
+        ct.PEEC_BRANCHES_MAX = ancien
+    assert abs(t_fin["ld_nh"] / t["ld_nh"] - 1.0) < 0.05, (t_fin["ld_nh"], t["ld_nh"])
+
+
+T("une fente avec son image est resolue (option B, PEEC) et Ott l'encadre",
+  une_fente_avec_son_image_est_resolue_et_ott_l_encadre)
+
+
+def le_cas_4b_avec_son_image_a_son_terme_et_les_vias_le_reduisent():
+    """La fente sur GND1 seul, GND2 intact dessous : Ott ne sait pas, le PEEC
+    si -- une part du retour passe par GND2 (couplage des deux plans et
+    capacite de la cavite), le terme existe et reste sous celui de la fente
+    qui coupe tout. Deux vias de masse a 2 mm de la fente le reduisent
+    encore."""
+    def lancer(fente):
+        d = doc_essai([pis(0, 0.45, 40, 0.45, "VIC")], t_r=1e-9)
+        d["stackup"] = DEUX_PLANS
+        d["fentes"] = [fente]
+        return ct.analyser(d)
+    tout = le_terme(lancer(fente_imagee({"GND1": fente_droite,
+                                         "GND2": fente_droite},
+                                        coupes=("GND1", "GND2"))))[1]
+    res = lancer(fente_imagee({"GND1": fente_droite, "GND2": PLEIN},
+                              retour=["GND2"], coupes=("GND1",)))
+    _c, t = le_terme(res)
+    assert t and t["modele"] == "B" and t["retour"] == ["GND2"], t
+    assert "ott" not in t, t
+    assert 0 < t["next"] < tout["next"], (t["next"], tout["next"])
+    assert not [s for s in res["fentes"]["signalees"] if s["cause"] == "retour"]
+    assert any("GND2" in a and "RÉSOLU" in a for a in res["avertissements"])
+    vias = [{"u": -3.0, "v": 0.2, "d": 0.3}, {"u": 3.0, "v": 0.2, "d": 0.3}]
+    tv = le_terme(lancer(fente_imagee({"GND1": fente_droite, "GND2": PLEIN},
+                                      retour=["GND2"], vias=vias,
+                                      coupes=("GND1",))))[1]
+    assert tv["ld_nh"] < 0.8 * t["ld_nh"] and tv["next"] < t["next"], (tv, t)
+
+
+T("le cas 4b avec son image a son terme (retour par l'autre plan), et les"
+  " vias de masse le reduisent",
+  le_cas_4b_avec_son_image_a_son_terme_et_les_vias_le_reduisent)
+
+
+def la_victime_est_prise_dans_son_cuivre_pas_dans_le_profil():
+    """Les limites de l'option A, levees : la victime est lue dans son
+    propre cuivre au franchissement (pas dans l'entraxe du profil), une
+    fente en biais se resout, et une victime superposee sur la couche
+    voisine porte le terme."""
+    def terme(voisinage, plans=None, stack=None, net="VIC"):
+        d = doc_essai(voisinage, t_r=1e-9)
+        if stack:
+            d["stackup"] = stack
+        d["fentes"] = [fente_imagee(plans or {"GND": fente_droite})]
+        return le_terme(ct.analyser(d), net)[1]
+    droite = terme([pis(0, 0.45, 40, 0.45, "VIC")])
+    # LA VICTIME S'ECARTE A 6 MM AU DROIT DE LA FENTE, et revient : le profil
+    # garde 0,45 mm de part et d'autre, le cuivre passe loin.
+    ecart = terme([pis(0, 0.45, 16, 0.45, "VIC"), pis(16, 0.45, 17, 6.0, "VIC"),
+                   pis(17, 6.0, 23, 6.0, "VIC"), pis(23, 6.0, 24, 0.45, "VIC"),
+                   pis(24, 0.45, 40, 0.45, "VIC")])
+    assert ecart is not None and ecart["m_nh"] < 0.8 * droite["m_nh"], (ecart, droite)
+    # UNE FENTE EN BIAIS (45 degres) : plus longue sous la piste, resolue.
+    biais = terme([pis(0, 0.45, 40, 0.45, "VIC")],
+                  {"GND": lambda u, v: ~((np.abs(u - v) < 1.4) & (np.abs(v) < 10.0))})
+    assert biais and biais["modele"] == "B" and biais["next"] > 0, biais
+    assert abs(biais["ld_nh"] / droite["ld_nh"] - 1.0) > 0.02, (biais, droite)
+    # UNE VICTIME SUPERPOSEE, sur la couche du dessous sans plan entre les
+    # deux : la fente du plan commun la couple aussi.
+    sup = {"layers": [
+        {"type": "copper", "name": "Top", "thickness": 0.035, "role": "signal"},
+        {"type": "dielectric", "name": "d1", "thickness": 0.1, "epsilon_r": 4.3},
+        {"type": "copper", "name": "In1", "thickness": 0.035, "role": "signal"},
+        {"type": "dielectric", "name": "d2", "thickness": 0.1, "epsilon_r": 4.3},
+        {"type": "copper", "name": "GND", "thickness": 0.035, "role": "plane",
+         "net": "GND"},
+    ]}
+    t_sup = terme([pis(0, 0.2, 40, 0.2, "VIC", couche=2)], stack=sup)
+    assert t_sup and t_sup["modele"] == "B" and t_sup["next"] > 0, t_sup
+
+
+T("la victime est prise dans son cuivre, une fente en biais se resout, une"
+  " victime superposee porte le terme",
+  la_victime_est_prise_dans_son_cuivre_pas_dans_le_profil)
+
+
+def au_dela_du_budget_ott_reprend_et_le_dit():
+    """Le PEEC coute quelques secondes : au-dela de PEEC_FENTES_MAX fentes,
+    le modele d'Ott d'avant, et la fiche le note."""
+    d = doc_essai([pis(0, 0.45, 40, 0.45, "VIC")], t_r=1e-9)
+    d["fentes"] = [fente_imagee({"GND": fente_droite})]
+    ancien = ct.PEEC_FENTES_MAX
+    try:
+        ct.PEEC_FENTES_MAX = 0
+        res = ct.analyser(d)
+    finally:
+        ct.PEEC_FENTES_MAX = ancien
+    _c, t = le_terme(res)
+    assert t and t["modele"] == "A", t
+    assert [s for s in res["fentes"]["signalees"] if s["cause"] == "budget"]
+
+
+T("au-dela du budget de fentes resolues, Ott reprend et le dit",
+  au_dela_du_budget_ott_reprend_et_le_dit)
+
+
+def le_peec_seul_retrouve_la_ligne_et_reste_reciproque():
+    """Le solveur nu : sans fente, la self de boucle d'une piste de 0,3 mm a
+    0,2 mm de son plan est celle du microruban dans l'air (~0,35 nH/mm), et
+    la mutuelle de deux pistes est la meme dans les deux sens."""
+    scene = {"U": 15.0, "V": 15.0, "s_min": 0.12, "cles_u": [-1.0, 1.0],
+             "cles_v": [0.0, 1.4, -10.0, 10.0],
+             "plans": [{"nom": "P", "z": 0.0, "dedans": fente_droite}],
+             "eps": [], "vias": [],
+             "pistes": [{"pieces": [(-15.0, 0.0, 15.0, 0.0, -0.2, 0.3)]},
+                        {"pieces": [(-15.0, 1.4, 15.0, 1.4, -0.2, 0.3)]}]}
+    eu, ev = ct._maillage_peec(scene, 1.5, 4.0)
+    r = ct._resoudre_peec(scene, 0.35e9, 1.5, 4.0)
+    w = 2 * math.pi * 0.35e9
+    # LA SELF PROPRE DE LA PISTE (barre de 30 mm, 0,3 mm) n'est pas dans Z :
+    # elle s'ajoute ici pour retrouver la boucle.
+    g = 0.2231 * 0.3e-3
+    l_t = 2e-7 * 0.030 * (math.log(2 * 0.030 / g) - 1.0)
+    l_boucle = l_t + r["plein"][0][0].imag / w
+    assert 0.30e-9 < l_boucle / 30.0 < 0.45e-9, l_boucle / 30.0
+    m01, m10 = r["vide"][0][1], r["vide"][1][0]
+    assert abs(m01 - m10) / abs(m01) < 0.02, (m01, m10)
+
+
+T("le PEEC seul retrouve la self du microruban et reste reciproque",
+  le_peec_seul_retrouve_la_ligne_et_reste_reciproque)
+
+
 def les_deux_coefficients_ne_dependent_que_de_la_geometrie():
     """Kb et Kf sortent de [C] et [L] seules -- et le milieu homogene le prouve.
 

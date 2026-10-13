@@ -356,7 +356,12 @@ moments** à l'écart réel (pas une formule), d'où Kb et Kf. **Tout ce qui lon
 le couple sur la même couche entre dans sa section** : une piste de garde
 (classe Masse ou net de référence) est posée à 0 V si ses vias la cousent au
 pas λ/10 du front global, **flottante** sinon (elle transfère, le couplage
-remonte) ; une voisine de signal est posée avec son port. C'est la même
+remonte) — un document qui ne porte **aucun** perçage n'a pas mesuré la
+couture : la garde y est supposée tenue, comme dans l'onglet Crosstalk, et une
+note le dit ; une voisine de signal est posée avec son port. Une **fente** du
+plan franchie par les deux pistes ajoute son impédance commune, le courant de
+retour résolu sur l'image des plans (plan intact dessous, vias de masse et
+victime sur la couche voisine compris ; Ott au-delà de six résolutions). C'est la même
 section que l'onglet Crosstalk, et le même chiffre. Puis, au
 **niveau 2** — un échelon unitaire, des lignes adaptées, et le **t_r global**
 de la carte (1 ns par défaut) :

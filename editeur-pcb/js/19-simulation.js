@@ -3354,7 +3354,39 @@ function simXtDetours(t,pas,refs){
   simXtNus(m.cotes,m.x,m.y,refs,retour);
   return {d1:r3(a.d), d2:r3(b.d), largeur:r3(largeur), borne:a.borne||b.borne,
           retour:retour.map(i=>cuLabel(i,S.cu)).filter(Boolean),
-          x:r3(m.x), y:r3(m.y)};
+          x:r3(m.x), y:r3(m.y), maillage:simXtImagePlans(m,a.d,b.d,refs)};
+}
+
+/* L'IMAGE DES PLANS AUTOUR DU FRANCHISSEMENT, pour l'option B du serveur
+   (`simXtImageFente`, commun) : de chaque côté de la couche, du plan le plus
+   proche au premier qui a du cuivre ici — celui qui ferme encore le retour —,
+   deux au plus, avec la règle de `simXtNus` (le plus proche ne compte que sa
+   masse ; au-delà, la masse d'abord, sinon tout cuivre). Et les vias de masse,
+   avec les plans qu'ils traversent. */
+function simXtImagePlans(m,d1,d2,refs){
+  const plans=[];
+  for(const cote of m.cotes){
+    for(let q=0;q<cote.length&&q<2;q++){
+      const i=cote[q];
+      const zones=S.zones.filter(z=>z.l===i&&z.pts&&z.pts.length>=3);
+      if(!zones.length){if(q===0)break;continue;}
+      const masse=zones.some(z=>!refs||!refs.size||refs.has(z.net));
+      const cuivre=(masse||q===0)?((x,y)=>simXtZoneMasse(i,x,y,refs))
+                                 :((x,y)=>simZoneEn(i,x,y));
+      plans.push({nom:cuLabel(i,S.cu), aretes:simXtAretes(i), cuivre:cuivre});
+      if(cuivre(m.x,m.y))break;
+    }
+  }
+  if(!plans.length)return null;
+  const vias=[];
+  for(const v of S.vias){
+    if(!refs||!refs.size||!refs.has(v.net))continue;
+    const couches=[];
+    for(let i=Math.min(v.a,v.b);i<=Math.max(v.a,v.b);i++)couches.push(cuLabel(i,S.cu));
+    vias.push({x:v.x, y:v.y, d:v.d||0.3, couches:couches});
+  }
+  return simXtImageFente({x:m.x, y:m.y, ux:m.ux, uy:m.uy, d1:d1, d2:d2, k:1,
+                          plans:plans, vias:vias, coupe:simXtCoupe});
 }
 
 /* Les discontinuités du plan sous le parcours, en intervalles d'abscisse.

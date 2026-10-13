@@ -16516,6 +16516,25 @@ T("la fente part avec ses détours d1 / d2, sa largeur et les plans qui ferment 
   if(Math.abs(t.x-(SIM_X1+20))>1.0||Math.abs(t.y-SIM_Y)>0.1)
     throw new Error("le franchissement est au milieu de la fente : "+
                     JSON.stringify(t));
+  /* ET L'IMAGE DU PLAN (option B du serveur, crosstalk 4.6.0) : une fenêtre
+     de max(d1, d2) + 5 mm de demi-côté autour du franchissement, des lignes à
+     v constant coupées aux arêtes exactes. Sur l'axe de la piste, la fente
+     fait un trou de 2 mm centré ; à v = +14 mm, au-delà de son bout (+12),
+     le plan est plein. */
+  const im=t.maillage;
+  if(!im||!im.plans||im.plans.length!==1||im.plans[0].nom!=="Inner 1")
+    throw new Error("l'image porte le plan fendu : "+JSON.stringify(im&&im.plans&&im.plans.map(p=>p.nom)));
+  if(Math.abs(im.V-17)>1.1||im.U!==im.V||Math.abs(im.ux-1)>1e-9)
+    throw new Error("fenêtre de 17 mm, le long de la piste : "+JSON.stringify([im.U,im.V,im.ux,im.uy]));
+  const ligne=v=>im.plans[0].lignes[Math.round((v-im.v0)/im.pas)];
+  const axe=ligne(0);
+  if(axe.length!==4||Math.abs(axe[1]+1)>0.01||Math.abs(axe[2]-1)>0.01||
+     Math.abs(axe[0]+im.U)>0.01||Math.abs(axe[3]-im.U)>0.01)
+    throw new Error("sur l'axe, du cuivre de part et d'autre d'un trou de 2 mm exact : "+
+                    JSON.stringify(axe));
+  const haut=ligne(14);
+  if(haut.length!==2)
+    throw new Error("au-delà du bout de la fente, le plan est plein : "+JSON.stringify(haut));
   /* UN SECOND PLAN PLEIN DERRIÈRE : il FERME le retour, et `retour` le
      nomme — le serveur n'appliquera pas le terme (le cas 4b du banc : fente
      sur L2 seule, L3 intact). Seul le plan fendu manque. */
@@ -16531,6 +16550,13 @@ T("la fente part avec ses détours d1 / d2, sa largeur et les plans qui ferment 
     throw new Error("seul le plan fendu manque : "+JSON.stringify(f[0].plans));
   if(!(Math.abs(f[0].d1-12)<=1.0&&Math.abs(f[0].d2-8)<=1.0))
     throw new Error("les détours ne changent pas : "+JSON.stringify(f[0]));
+  /* L'IMAGE PORTE LES DEUX PLANS : le fendu, et le plein qui ferme le
+     retour — c'est par lui que le serveur fera passer une part du courant. */
+  const im2=f[0].maillage;
+  if(!im2||im2.plans.map(p=>p.nom).join("|")!=="Inner 1|"+cuLabel(2,S.cu)||
+     im2.plans[1].lignes.some(l=>l.length!==2))
+    throw new Error("le plan fendu puis le plan plein : "+
+                    JSON.stringify(im2&&im2.plans.map(p=>[p.nom,p.lignes[0]])));
   /* ET LE SENS DE MARCHE : la même piste dessinée à rebours échange d1 et
      d2 — gauche et droite se définissent dans le sens du parcours, comme le
      côté de la couture que le serveur lit. */

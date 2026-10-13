@@ -429,14 +429,27 @@ def test_diaphonie_garde_seuil_front_rf():
     assert xt["etape0"]["gardes"] == ["GND"], xt["etape0"]["gardes"]
     assert abs(cv["next"] / pa["next"] - 1) < 0.03 and abs(cv["fext"] / pa["fext"] - 1) < 0.03, \
         (cv["next"], pa["next"], cv["fext"], pa["fext"])
-    # UNE GARDE SANS VIAS FLOTTE : elle transfère, le NEXT ne tombe plus.
-    flot = analyser(regles=["diaphonie"], natures=nat,
+    # UNE GARDE SANS VIAS FLOTTE quand le document porte des perçages (un via
+    # de masse loin d'elle) : la couture est mesurée, elle transfère, le NEXT
+    # ne tombe plus.
+    loin = [{"x": 50.0, "y": 20.0, "d": 0.5, "n": "GND"}]
+    flot = analyser(regles=["diaphonie"], natures=nat, percages=loin,
                     pistes=[droite("A", 0.0), droite("GND", 0.5), droite("V", 1.0)])
     pf = paires(flot)[0]
     assert pf["gardes_flottantes"] == ["GND"] and pf["next"] >= ps["next"], (pf, ps)
+    assert "gardes_couture_supposee" not in flot["bilan"]["diaphonie"]
+    # SANS AUCUN PERÇAGE, la couture n'est pas mesurée : la garde est supposée
+    # tenue, comme « Analyser la piste » le fait d'une couture nulle, et c'est
+    # dit (A-FAIRE : harmoniser les deux).
+    muet = analyser(regles=["diaphonie"], natures=nat,
+                    pistes=[droite("A", 0.0), droite("GND", 0.5), droite("V", 1.0)])
+    pm = paires(muet)[0]
+    assert pm["gardes_flottantes"] == [] and abs(pm["next"] / pa["next"] - 1) < 1e-6, (pm, pa)
+    assert muet["bilan"]["diaphonie"]["gardes_couture_supposee"] == ["GND"]
+    assert any("supposée cousue" in n for n in muet["notes"]), muet["notes"]
     # Serré (S = 0,3 mm) pour franchir le seuil orange : le constat nomme la
     # garde, et dit qu'elle flotte.
-    k = de(analyser(natures={"A": "Rapide", "V": "Lent", "GND": "Masse"},
+    k = de(analyser(natures={"A": "Rapide", "V": "Lent", "GND": "Masse"}, percages=loin,
                     pistes=[droite("A", 0.0, w=0.3), droite("GND", 0.3, w=0.1),
                             droite("V", 0.6, w=0.3)]), "diaphonie")
     assert k and "FLOTTANTE" in k[0]["msg"] and "« GND »" in k[0]["msg"], k
@@ -481,9 +494,10 @@ def test_diaphonie_garde_seuil_front_rf():
     print("[PASS] test_diaphonie_garde_seuil_front_rf")
 def test_diaphonie_fente():
     """La règle diaphonie compte l'impédance commune d'une fente du plan que
-    l'agresseur et la victime franchissent ensemble (Ott, crosstalk 4.5.0) --
-    le même terme que « Analyser la piste » --, et pas quand un plan reste
-    dessous (cas 4b du banc)."""
+    l'agresseur et la victime franchissent ensemble : le courant de retour
+    RÉSOLU sur l'image des plans (option B, PEEC, crosstalk 4.6.0) -- le même
+    terme que « Analyser la piste » --, plan intact dessous (cas 4b) et
+    victime sur la couche voisine compris ; Ott en repli et en fourchette."""
     pistes = [droite("CLK", 0.0, w=0.35), droite("DATA", 1.2, w=0.35)]
     nat = {"CLK": "Rapide", "DATA": "Rapide", "GND": "Masse"}
 
@@ -496,32 +510,58 @@ def test_diaphonie_fente():
     assert "fente" not in ps and pa.get("fente"), (ps.get("fente"), pa.get("fente"))
     assert sans["bilan"]["diaphonie"]["fentes_communes"] == 0
     assert avec["bilan"]["diaphonie"]["fentes_communes"] == 2          # les deux sens
-    # LE TERME S'AJOUTE AUX LIGNES SEULES, qui restent le chiffre d'avant ;
-    # l'ordre de grandeur est celui du cas 4 : une dizaine de pour-cent.
-    assert abs(pa["lignes"]["next"] - ps["next"]) < 1e-9, (pa["lignes"], ps["next"])
-    assert 0.08 < pa["fente"]["next"] < 0.14, pa["fente"]
-    assert abs(pa["next"] - (ps["next"] + pa["fente"]["next"])) < 1e-6, pa["next"]
-    assert pa["next_fourchette"][0] <= pa["next"] <= pa["next_fourchette"][1]
-    assert pa["statut"] == "rouge" and ps["statut"] == "vert", (pa["statut"], ps["statut"])
+    # LE TERME S'AJOUTE AUX LIGNES SEULES, qui restent le chiffre d'avant. Le
+    # retour résolu d'une fente ÉTROITE (2 mm) est bien sous Ott : les deux
+    # bords portent des courants opposés qui se compensent (4,3 nH de détour
+    # contre 16 nH) -- quelques pour-cent au lieu d'une dizaine.
     t = pa["fente"]["detail"][0]
+    assert t["modele"] == "B", t
+    assert 3.0 < t["ld_nh"] < 6.0 and 0 < t["m_nh"] <= t["ld_nh"], t
+    assert 0.02 < pa["fente"]["next"] < 0.06, pa["fente"]
+    assert abs(pa["lignes"]["next"] - ps["next"]) < 1e-9, (pa["lignes"], ps["next"])
+    assert abs(pa["next"] - (ps["next"] + pa["fente"]["next"])) < 1e-6, pa["next"]
+    # LA FOURCHETTE ENCADRE LES DEUX MODÈLES : Ott (tous les plans coupés, fente
+    # droite) en tient la borne haute.
+    assert 0.08 < t["ott"]["next_pc"] / 100 < 0.14, t["ott"]
+    assert t["fourchette"][0] <= t["next"] < t["ott"]["next_pc"] / 100 <= t["fourchette"][1], t
+    assert pa["next_fourchette"][0] <= pa["next"] <= pa["next_fourchette"][1]
+    assert pa["statut"] in ("orange", "rouge") and ps["statut"] == "vert", (pa["statut"], ps["statut"])
     assert 9.0 < t["d1"] < 11.0 and 9.0 < t["d2"] < 11.0, t
     assert abs(t["entraxe"] - 1.2) < 0.05, t["entraxe"]
     k = de(avec, "diaphonie")
-    assert len(k) == 1 and "impédance commune" in k[0]["msg"] and "Ott" in k[0]["msg"], k
-    assert k[0]["severite"] == "critique", k
-    # UN PLAN QUI RESTE DESSOUS (L3 intact) : pas de terme, et une note qui
-    # nomme le cas 4b.
+    assert len(k) == 1 and "impédance commune" in k[0]["msg"] and "résolu" in k[0]["msg"], k
+    # UN PLAN QUI RESTE DESSOUS (L3 intact, cas 4b) : le retour y passe en
+    # partie, le terme est chiffré quand même -- plus petit -- et la ligne le
+    # dit.
     part = analyser(pistes=pistes, natures=nat, plans=[plan("L2", fente), plan("L3", [])])
     pp = part["bilan"]["diaphonie"]["paires"][0]
-    assert "fente" not in pp and abs(pp["next"] - ps["next"]) < 1e-9, pp
-    assert part["bilan"]["diaphonie"]["fentes_communes"] == 0
-    assert any("SANS terme d'impédance commune" in n and "4b" in n for n in part["notes"]), \
-        part["notes"]
-    # UNE FENTE QUI N'ATTEINT PAS LA VICTIME : la victime à +1,2 mm, la fente
-    # s'arrête à 0,8 mm de ce côté-là.
+    tp = pp["fente"]["detail"][0]
+    assert tp["modele"] == "B" and tp["retour"] == ["L3"] and "ott" not in tp, tp
+    assert 0 < pp["fente"]["next"] < pa["fente"]["next"], (pp["fente"], pa["fente"])
+    assert part["bilan"]["diaphonie"]["fentes_communes"] == 2
+    assert not any("SANS terme d'impédance commune" in n for n in part["notes"]), part["notes"]
+    # UNE FENTE QUI S'ARRÊTE AVANT LA VICTIME (à 0,8 mm de ce côté, la victime
+    # à 1,2 mm) : la victime ne la franchit pas, son terme résolu est bien
+    # plus petit que celui de la fente entière.
     courte = [carre(49, -10, 51, 0.8)]
     loin = analyser(pistes=pistes, natures=nat, plans=[plan("L2", courte), plan("L3", courte)])
-    assert loin["bilan"]["diaphonie"]["fentes_communes"] == 0, loin["bilan"]["diaphonie"]
+    pl = loin["bilan"]["diaphonie"]["paires"][0]
+    assert pl.get("fente") is None or pl["fente"]["next"] < 0.5 * pa["fente"]["next"], pl
+    # UNE VICTIME SUR LA COUCHE VOISINE (larges faces, sans plan entre les
+    # deux) porte maintenant le terme : seul le PEEC sait le chiffrer.
+    st = {"layers": [{"type": "copper", "name": "Top", "role": "signal", "thickness": 0.035},
+                     {"type": "dielectric", "name": "d1", "thickness": 0.1, "epsilon_r": 4.3},
+                     {"type": "copper", "name": "In1", "role": "signal", "thickness": 0.035},
+                     {"type": "dielectric", "name": "d2", "thickness": 0.1, "epsilon_r": 4.3},
+                     {"type": "copper", "name": "L2", "role": "plane", "net": "GND",
+                      "thickness": 0.035}]}
+    sup = analyser_document({"format": "cao-analyse-carte-1", "unite_mm": 1, "stackup": st,
+                             "pistes": [droite("CLK", 0.0, w=0.35),
+                                        droite("DATA", 0.3, c="In1", w=0.35)],
+                             "natures": nat, "plans": [plan("L2", fente)]})
+    psup = sup["bilan"]["diaphonie"]["paires"][0]
+    assert psup["superposee"] and psup.get("fente"), psup
+    assert psup["fente"]["detail"][0]["modele"] == "B", psup["fente"]
     print("[PASS] test_diaphonie_fente")
 
 

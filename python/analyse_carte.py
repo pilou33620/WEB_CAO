@@ -712,6 +712,7 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None, surf=None)
         return _longement(a, b) if la >= lb else _longement(b, a)
 
     cache, couples, larges = {}, defaultdict(list), defaultdict(list)
+    couche_larges = {}
     bilan = {"couples": 0, "sections": 0, "couples_larges_faces": 0,
              "fentes_communes": 0}
     sans_plan, hauteurs = [], {}
@@ -731,6 +732,15 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None, surf=None)
         except (KeyError, TypeError, ValueError):
             continue
     couture_max = se._couture_max(reg["xt_tr"])
+    # UN DOCUMENT SANS AUCUN PERCAGE N'A PAS MESURE LA COUTURE : la garde y
+    # est supposee TENUE, comme `crosstalk` le fait d'une couture qui vaut 0
+    # (`simulation_em._couture` : « on suppose tenu ce qu'on ne sait pas »).
+    # La declarer flottante faute de vias, c'etait juger sur une absence de
+    # donnee -- et les deux analyses rendaient deux chiffres pour la meme
+    # garde. C'est dit dans les notes. Un document qui porte des percages,
+    # mais aucun sur la garde, la laisse flottante : la, c'est mesure.
+    couture_lue = bool(doc.get("percages"))
+    gardes_supposees = set()
 
     def intercales(segs, grille, case, ka, kb_, smax):
         """Les conducteurs INTERCALES OU VOISINS d'un couple (segs[ka], segs[kb_])
@@ -786,7 +796,9 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None, surf=None)
                 continue
             garde = _classe(doc, c[0]) == "Masse"
             flottant = False
-            if garde:
+            if garde and not couture_lue:
+                gardes_supposees.add(c[0])
+            elif garde:
                 trou = _trou_couture(c, vias_net.get(c[0], ()), lg_ab)
                 flottant = bool(couture_max > 0 and trou > couture_max)
             out.append((x_c, c[5], garde, flottant, c[0]))
@@ -937,9 +949,14 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None, surf=None)
                         alpha = (xt.alpha_genou(reg["z0"], er_ij, v_[5], er_ij,
                                                 tand_ij, reg["xt_tr"])
                                  if reg["xt_pertes"] else 0.0)
+                        # LA PORTION DE L'AGRESSEUR EN REGARD, ET SA COUCHE :
+                        # une fente du plan sous les deux se cherche le long
+                        # d'elle, comme pour un couple à plat.
                         larges[(v_[0], g_[0], nom)].append(
                             (lg[0], x_lat, kb, 0.0, lg[0] * 1e-3 / v, lg[2], quoi,
-                             _portion(v_, g_), alpha, ()))
+                             _portion(v_, g_), alpha, (), _portion(g_, v_),
+                             v_[5], g_[5]))
+                        couche_larges[(v_[0], g_[0], nom)] = j if g_ is b else i
     if sans_plan:
         notes.append("Diaphonie non calculée sur %s : pas de plan de référence dans"
                      " l'empilage." % ", ".join(sorted(set(sans_plan))))
@@ -1037,6 +1054,7 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None, surf=None)
             couche_de[cle] = i
     for cle, vals in larges.items():
         tous[cle] = (vals, True)
+        couche_de[cle] = couche_larges[cle]
 
     # LES FENTES DU PLAN FRANCHIES PAR LES DEUX PISTES D'UN COUPLE. Même
     # lecture du cuivre que la règle « fente » (l'image des plans pas à pas,
@@ -1047,11 +1065,90 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None, surf=None)
                   if c.get("type") == "copper" and c.get("role") == "plane"
                   and surf is not None and c.get("name") in surf.images]
     fentes_partielles = []
+    # L'OPTION B (`crosstalk.peec_fente`) : le courant de retour RÉSOLU sur
+    # l'image des plans autour du franchissement, plan intact dessous et vias
+    # de masse compris. Quelques secondes par fente : au-delà du budget, le
+    # modèle d'Ott d'avant, et c'est noté.
+    peec_cache, peec_budget = {}, [xt.PEEC_FENTES_MAX]
+    masses = set(str(x) for x in (doc.get("reference_nets") or ()))
+    vias_masse = []
+    for t in doc.get("percages") or ():
+        n = str(t.get("n") or "")
+        if n and (n in masses or _classe(doc, n) == "Masse"):
+            try:
+                vias_masse.append((float(t["x"]) * unite, float(t["y"]) * unite,
+                                   float(t.get("d") or 0.3) * unite))
+            except (KeyError, TypeError, ValueError):
+                continue
+    par_net = defaultdict(list)
+    for n, c, x1, y1, x2, y2, w in troncons:
+        if rang.get(c) is not None and w > 0:
+            par_net[str(n or "")].append((x1, y1, x2, y2, w, rang[c]))
 
-    def termes_fente(i, nv, na, vals):
-        """Les termes d'impédance commune (Ott) des fentes que l'agresseur et
-        la victime franchissent ensemble sur la couche i ; rien quand un plan
-        ferme encore le retour dessous (noté dans `fentes_partielles`)."""
+    def resoudre_fente(i, xm, ym, ux, uy, d1, d2, na, nv):
+        """Le PEEC du franchissement : rend le résultat de
+        `crosstalk.peec_fente` vu de l'agresseur na (victime nv), ou None.
+
+        UNE RÉSOLUTION PAR COUPLE ET PAR FENTE, pas par sens : la mutuelle
+        est réciproque, et la self du détour de chacun sort de la même
+        factorisation. Le sens inverse franchit la même fente à l'entraxe
+        près -- on la reconnaît à 3 mm."""
+        def vue(r, ordre):
+            if r is None or ordre == (na, nv):
+                return r
+            return dict(r, ld=r["selfs"][1] or 0.0, m=[r["mutuelles"][0][1]])
+        for (x0, y0, paire), (r, ordre) in peec_cache.items():
+            if paire == frozenset((na, nv)) and math.hypot(xm - x0, ym - y0) < 3.0:
+                return vue(r, ordre)
+        cle = (xm, ym, frozenset((na, nv)))
+        peec_cache[cle] = (None, (na, nv))
+        if peec_budget[0] <= 0:
+            bilan["fentes_ott_budget"] = bilan.get("fentes_ott_budget", 0) + 1
+            return None
+        peec_budget[0] -= 1
+        V = min(FENTE_MAX_MM, max(d1, d2)) + 5.0
+        # LES PLANS DE CHAQUE CÔTÉ DE LA COUCHE, du plus proche au plus
+        # lointain, jusqu'au premier qui a du cuivre au franchissement (celui
+        # qui ferme encore le retour) ; deux au plus de chaque côté.
+        noms = []
+        for cote in (sorted((q for q in plans_tous if q < i), reverse=True),
+                     sorted(q for q in plans_tous if q > i)):
+            for q in cote[:2]:
+                nm = couches[q].get("name")
+                noms.append(nm)
+                if surf.lire(nm, xm, ym)[0] != 0:
+                    break
+        if not noms:
+            return None
+
+        def dedans(nm):
+            return lambda u, v: surf.lire(nm, xm + u * ux - v * uy,
+                                          ym + u * uy + v * ux) != 0
+        plans = [{"nom": nm, "dedans": dedans(nm)} for nm in noms]
+        vias = []
+        for vx, vy, d in vias_masse:
+            u = (vx - xm) * ux + (vy - ym) * uy
+            v = -(vx - xm) * uy + (vy - ym) * ux
+            if abs(u) <= V and abs(v) <= V:
+                vias.append((u, v, d, None))
+        try:
+            scene, retenues, _r = xt.scene_plans(
+                xm, ym, ux, uy, V, V, plans, vias, couches, par_net.get(na, []),
+                [(nv, par_net.get(nv, []))])
+            if scene is not None and nv in retenues:
+                peec_cache[cle] = (xt.peec_fente(scene, 0.35 / t_r), (na, nv))
+        except Exception as exc:                        # noqa: BLE001
+            notes.append("Diaphonie : fente sous %s ← %s non résolue (%s) ;"
+                         " modèle d'Ott." % (nv, na, exc))
+        return peec_cache[cle][0]
+
+    def termes_fente(i, nv, na, vals, large=False):
+        """Les termes d'impédance commune des fentes que l'agresseur (couche
+        i) et la victime franchissent ensemble : le retour RÉSOLU (PEEC) tant
+        que le budget le permet, le modèle d'Ott sinon -- et rien quand un
+        plan ferme encore le retour dessous (noté dans `fentes_partielles`)
+        ou que la victime est sur une autre couche (`large`), deux cas que
+        seul le PEEC sait chiffrer."""
         if surf is None:
             return []
         refs = [p for p in _plans_voisins(couches, i)
@@ -1078,7 +1175,7 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None, surf=None)
             # convention que `crosstalk` et que la couture de la page.
             vx, vy = 0.5 * (x[7][0] + x[7][2]), 0.5 * (x[7][1] + x[7][3])
             cote = 1 if (-uy) * (vx - ax1) + ux * (vy - ay1) >= 0 else -1
-            entraxe = float(x[1]) + (w_a + w_v) / 2.0
+            entraxe = float(x[1]) + (0.0 if large else (w_a + w_v) / 2.0)
             for p in refs:
                 nomp = couches[p].get("name")
                 vide = surf.lire(nomp, px, py) == 0
@@ -1104,24 +1201,42 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None, surf=None)
                     if max(d1, d2) < 2 * max(w_a, w_v):
                         continue
                     # UN AUTRE PLAN INTACT SOUS LA FENTE FERME LE RETOUR : le
-                    # courant change de plan au lieu de contourner, le terme
-                    # ne vaut pas (cas 4b du banc). On le note.
+                    # courant change de plan au lieu de contourner (cas 4b du
+                    # banc). Le modèle d'Ott ne vaut pas ; le PEEC, si.
                     intacts = [str(couches[q].get("name")) for q in plans_tous
                                if q != p and surf.lire(couches[q].get("name"), xm, ym)[0] != 0]
-                    if intacts:
-                        fentes_partielles.append((nv, na, str(nomp), intacts[0]))
-                        continue
                     # LA FENTE DOIT ALLER JUSQU'À LA VICTIME, de son côté.
                     d_cote = d1 if cote > 0 else d2
-                    if entraxe > d_cote and d_cote < FENTE_MAX_MM:
+                    atteint = not (entraxe > d_cote and d_cote < FENTE_MAX_MM)
+                    z0 = _z0(reg, _classe(doc, na))
+
+                    def ott(resonance=True):
+                        return xt.impedance_commune_fente(
+                            d1, d2, w_a, entraxe, t_r, z0, hauteurs.get(i, 0.0),
+                            w_v, xt.eps_autour_plan(couches, p), resonance,
+                            min(ds) >= FENTE_MAX_MM)
+                    lieu = {"x": xm / unite, "y": ym / unite, "plan": str(nomp),
+                            "largeur_fente": round((b - a) * L / m, 3),
+                            "victime": nv, "d1": d1, "d2": d2,
+                            "entraxe": round(entraxe, 4)}
+                    r = resoudre_fente(i, xm, ym, ux, uy, d1, d2, na, nv)
+                    if r is not None and r["m"][0] is not None:
+                        a_ = ott() if (atteint and not intacts and not large) else None
+                        b_ = ott(False) if a_ else None
+                        t = xt.terme_peec(
+                            r, 0, t_r, z0, a_,
+                            a_["ld_nh"] / b_["ld_nh"] if a_ and b_["ld_nh"] > 0
+                            else 1.0)
+                        t.update(lieu, retour=intacts)
+                        out.append(t)
                         continue
-                    t = xt.impedance_commune_fente(
-                        d1, d2, w_a, entraxe, t_r, _z0(reg, _classe(doc, na)),
-                        hauteurs.get(i, 0.0), w_v, xt.eps_autour_plan(couches, p),
-                        True, min(ds) >= FENTE_MAX_MM)
-                    t.update({"x": xm / unite, "y": ym / unite, "plan": str(nomp),
-                              "largeur_fente": round((b - a) * L / m, 3),
-                              "victime": nv})
+                    if intacts and not large:
+                        fentes_partielles.append((nv, na, str(nomp), intacts[0]))
+                        continue
+                    if intacts or large or not atteint:
+                        continue
+                    t = ott()
+                    t.update(lieu, modele="A")
                     out.append(t)
         return out
 
@@ -1133,7 +1248,7 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None, surf=None)
         bilan["couples_larges_faces" if large else "couples"] += 1
         m_n2, att_f = morceaux_n2(vals)
         n2 = xt.niveau2(m_n2, t_r, orange, rouge, att_f)
-        termes = [] if large else termes_fente(couche_de[(nv, na, c)], nv, na, vals)
+        termes = termes_fente(couche_de[(nv, na, c)], nv, na, vals, large)
         if termes:
             n2 = xt.ajouter_fentes_niveau2(n2, termes, orange, rouge)
             bilan["fentes_communes"] += 1
@@ -1198,10 +1313,14 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None, surf=None)
         if termes:
             t0 = max(termes, key=lambda t: t["next"])
             chiffres += (" ; dont fente du plan %s franchie par les deux : +%.2f %% en"
-                         " NEXT comme en FEXT par impédance commune (Ott, fourchette"
+                         " NEXT comme en FEXT par impédance commune (%s, fourchette"
                          " %.2f à %.2f %%, détours %.1f / %.1f mm, lignes seules"
                          " NEXT %.2f %% FEXT %.2f %%)%s"
                          % (t0["plan"], 100 * n2["fente"]["next"],
+                            ("retour résolu sur l'image des plans" + (
+                                ", qui passe aussi par %s" % " / ".join(t0["retour"])
+                                if t0.get("retour") else ""))
+                            if t0.get("modele") == "B" else "Ott",
                             100 * n2["fente"]["next_fourchette"][0],
                             100 * n2["fente"]["next_fourchette"][1],
                             t0["d1"], t0["d2"], 100 * n2["lignes"]["next"],
@@ -1287,6 +1406,20 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None, surf=None)
                                x[1]["next"], x[1]["fext"])) for x in top[:4]),
                               "…" if len(top) > 4 else "", 100 * s_next, 100 * s_fext)})
     bilan["sommes"] = sorted(sommes, key=lambda x: -max(x["next"], x["fext"]))
+    if bilan.get("fentes_ott_budget"):
+        notes.append("Diaphonie : %d franchissement(s) de fente au-delà des %d que"
+                     " l'on résout (PEEC, quelques secondes chacun) : modèle"
+                     " d'Ott pour ceux-là, ou rien si un plan reste dessous."
+                     % (bilan["fentes_ott_budget"], xt.PEEC_FENTES_MAX))
+    if gardes_supposees:
+        bilan["gardes_couture_supposee"] = sorted(gardes_supposees)
+        notes.append("Diaphonie : garde%s %s supposée%s cousue%s — le document ne"
+                     " porte aucun perçage, la couture n'est pas mesurée (même"
+                     " règle que « Analyser la piste »)."
+                     % ("s" if len(gardes_supposees) > 1 else "",
+                        ", ".join("« %s »" % g for g in sorted(gardes_supposees)),
+                        "s" if len(gardes_supposees) > 1 else "",
+                        "s" if len(gardes_supposees) > 1 else ""))
     bilan["somme_mode"] = mode
     bilan["pertes"] = reg["xt_pertes"]
     bilan["sections"] = sum(1 for c in cache.values() if c)

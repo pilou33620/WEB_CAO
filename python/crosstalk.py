@@ -666,6 +666,48 @@
 #   ajouter_fentes_niveau2, eps_autour_plan, termes_fentes. Fonctions
 #   modifiees : sections_couplees (+ z0 par bloc), analyser, _lire_couples
 #   (+ fentes_termes, carte locale), _hypotheses.
+#
+# Version: 4.6.0
+# Date: 2026-10-12
+# Explication: OPTION B -- LE COURANT DE RETOUR RESOLU AUTOUR DE LA FENTE.
+#   Le modele d'Ott (4.5.0) suppose une fente droite, franchie a angle droit,
+#   tous les plans coupes, des pistes a plat, et lit l'entraxe dans le profil
+#   d'espacement. La page envoie maintenant, avec chaque fente, l'IMAGE du
+#   cuivre des plans autour du franchissement (`maillage` : lignes a v
+#   constant coupees aux aretes exactes, de chaque cote jusqu'au premier plan
+#   qui ferme le retour, et les vias de masse). Le serveur y pose un maillage
+#   gradue et resout le retour en PEEC quasi statique au genou 0,35 / t_r :
+#   selfs et mutuelles partielles de rubans minces (distance moyenne
+#   geometrique exacte), capacite entre plans en regard, frontiere absorbante
+#   de la cavite, vias en branches verticales ; l'agresseur et chaque victime
+#   sont pris dans LEUR cuivre (chaine la plus longue dans la fenetre, toute
+#   couche). Deux resolutions -- le cuivre reel, les plans pleins -- et leur
+#   difference donne L_d et M, qui entrent dans la formule du terme d'Ott.
+#
+#   CE QUE CELA CHANGE SUR LE CAS 4 (fente de 2 mm, +-10 mm) : 4,4 nH de
+#   detour et non 16,8 -- les deux bords d'une fente etroite portent des
+#   courants opposes qui se compensent, ce que la formule ignore ; une fente
+#   de 10 mm de large remonte a 12 nH. Le terme passe d'environ 7 % a 2 %
+#   (t_r = 1 ns, entraxe 0,45 mm) ; Ott reste dans la fourchette, dont il
+#   tient la borne haute. LE CAS 4B (fente sur un plan, l'autre intact) a
+#   enfin un terme : une part du retour passe par l'autre plan (2,8 nH au lieu
+#   de 4,5) ; des vias de masse pres de la fente le reduisent encore.
+#
+#   LES LIMITES DE L'OPTION A, levees pour une fente imagee : forme et angle
+#   quelconques, plans partiellement coupes, victime superposee (couche
+#   voisine), entraxe lu dans le cuivre de la victime au franchissement.
+#   Restent : le quasi statique (la resonance de la fente seule reprend le
+#   facteur de l'option C quand tous les plans sont coupes), la cavite sans
+#   fin hors de la fenetre, la finesse du maillage (3000 branches).
+#
+#   COUT : 1 a 4 s par fente. Les six plus grandes (PEEC_FENTES_MAX) sont
+#   resolues, les autres prennent Ott, et la fiche le dit. Sans image (page
+#   anterieure), rien ne change.
+# Fonctions ajoutees : _ln_gmd, _m_barres, _bords_maille, _decouper,
+#   _maillage_peec, _resoudre_peec, peec_fente, _z_couche, _eps_entre,
+#   dedans_lignes, _coupe_fenetre, chaine_piste, scene_fente, scene_plans,
+#   terme_peec. Fonctions modifiees : termes_fentes (+ voisinage, option B),
+#   ajouter_fentes_niveau2 (+ modele), analyser (texte de la fente resolue).
 # ==========================================
 """Crosstalk Niveau 2 : le pic de bruit relatif, paire par paire.
 
@@ -767,7 +809,18 @@ LE DOCUMENT D'ENTREE, format « cao-crosstalk-1 », en MILLIMETRES :
                   "borne": bool        un detour plafonne (plan coupe de bord a bord),
                   "retour": [noms]     les plans qui FERMENT encore le retour
                                        sous la fente ; vide = tous coupes,
-                  "x", "y": mm         le point du franchissement}]
+                  "x", "y": mm         le point du franchissement,
+                  -- depuis la 4.6.0, l'image des plans (option B) :
+                  "maillage": {"x", "y", "ux", "uy",  centre (mm) et sens de
+                                                      marche de la piste,
+                               "U", "V",              demi-cotes de la fenetre,
+                               "v0", "pas",           la ligne k est a
+                                                      v = v0 + k.pas (v a
+                                                      gauche du sens de marche),
+                               "plans": [{"nom", "lignes": [[u0, u1, ...]]}],
+                                                      bords des plages de
+                                                      cuivre en u, par ligne,
+                               "vias": [{"u", "v", "d", "couches"}]}}]
     vias_masse  [{x, y, a, b}]             les vias de masse a portee
 
 LE RESULTAT, format « cao-crosstalk-resultat-1 » : voir `analyser`.
@@ -802,7 +855,7 @@ except Exception as _exc:                              # noqa: BLE001
 
 FORMAT = "cao-crosstalk-1"
 FORMAT_RESULTAT = "cao-crosstalk-resultat-1"
-VERSION = "4.5.0"
+VERSION = "4.6.0"
 VERSION_MOTEURS = {
     "crosstalk": VERSION,
     "simulation_em": getattr(se, "VERSION", "4.2.0") if se is not None else "indisponible",
@@ -2530,6 +2583,9 @@ def ajouter_fentes_niveau2(n2, termes, orange=SEUIL_ORANGE, rouge=SEUIL_ROUGE):
         "statut_next": s_n, "statut_fext": s_f,
         "statut": pire_statut([s_n, s_f]),
         "fente": {"nombre": len(termes),
+                  # B des qu'un terme a ete RESOLU (PEEC), A s'il n'y a qu'Ott
+                  "modele": ("B" if any(t.get("modele") == "B" for t in termes)
+                             else "A"),
                   "next": round(n_f, 6), "fext": round(f_f, 6),
                   "next_pc": round(100.0 * n_f, 3),
                   "fext_pc": round(100.0 * f_f, 3),
@@ -2544,18 +2600,36 @@ def ajouter_fentes_niveau2(n2, termes, orange=SEUIL_ORANGE, rouge=SEUIL_ROUGE):
     return out
 
 
-def termes_fentes(doc, couches, parcours, retenus, blocs, t_r, notes):
+def termes_fentes(doc, couches, parcours, retenus, blocs, t_r, notes,
+                  voisinage=()):
     """Les termes d'impedance commune, victime par victime, d'apres les
-    fentes que la page a MESUREES (d1 / d2). Rend ({net: [termes]}, signales).
+    fentes que la page a MESUREES. Rend ({net: [termes]}, signales).
+
+    UNE FENTE QUI ARRIVE AVEC SON IMAGE (`maillage`, depuis la 4.6.0) EST
+    RESOLUE (option B, `peec_fente`) : toute forme, tout angle, un plan qui
+    reste dessous, des vias, une victime sur une autre couche -- les
+    victimes sont prises dans leur propre cuivre, pas dans le profil
+    d'espacement. Sans image (page anterieure, budget epuise), le modele
+    d'Ott d'avant (option A) avec d1 / d2.
 
     `signales` porte ce qui n'a PAS ete chiffre, et pourquoi -- une fente
-    sans detour mesure (page anterieure), un plan qui ferme encore le retour
-    (cas 4b), une victime que la fente n'atteint pas -- pour que la fiche le
+    sans detour mesure ni image, un plan qui ferme encore le retour sans
+    image, une victime que la fente n'atteint pas -- pour que la fiche le
     dise a la place d'un silence.
     """
     termes, signales = {}, []
+    # LE BUDGET VA AUX PLUS GRANDES FENTES, pas aux premieres du parcours :
+    # un degagement d'antipad ne doit pas prendre la place d'une vraie fente.
+    imagees = [f for f in (doc.get("fentes") or [])
+               if isinstance(f, dict) and isinstance(f.get("maillage"), dict)]
+    imagees.sort(key=lambda f: -(max(_nb(f.get("d1")), _nb(f.get("d2")))
+                                 + _nb(f.get("longueur"))))
+    elues = set(id(f) for f in imagees[:PEEC_FENTES_MAX])
     for f in (doc.get("fentes") or []):
-        if not isinstance(f, dict) or f.get("d1") is None or f.get("d2") is None:
+        if not isinstance(f, dict):
+            continue
+        image = f.get("maillage") if isinstance(f.get("maillage"), dict) else None
+        if image is None and (f.get("d1") is None or f.get("d2") is None):
             continue
         s0 = _nb(f.get("s"))
         s1 = s0 + max(_nb(f.get("longueur"), 0.0), 0.1)
@@ -2580,16 +2654,6 @@ def termes_fentes(doc, couches, parcours, retenus, blocs, t_r, notes):
                                 if c.get("type") == "copper"
                                 and c.get("role") == "plane" and c.get("name"))
                             - set(plans))
-        if retour:
-            signales.append({"s0": round(s0, 3), "s1": round(s1, 3),
-                             "cause": "retour",
-                             "texte": "un plan ferme encore le retour sous la"
-                                      " fente (%s) : le courant change de plan"
-                                      " au lieu de la contourner, et c'est la"
-                                      " section retombée sur ce plan qui est"
-                                      " rendue, sans terme d'impédance commune"
-                                      % ", ".join("« %s »" % n for n in retour)})
-            continue
         bloc = next((b for b in (blocs or ())
                      if _nb(b["s0"]) - TOL_BORNE <= milieu
                      <= _nb(b["s1"]) + TOL_BORNE), None)
@@ -2600,10 +2664,87 @@ def termes_fentes(doc, couches, parcours, retenus, blocs, t_r, notes):
                             if c.get("name") in plans), None)
         eps_plan = (eps_autour_plan(couches, indice_plan)
                     if indice_plan is not None else 1.0)
+
+        def ott(c, entraxe, resonance=True):
+            """Le terme d'Ott de la victime c, ou None quand il ne vaut pas."""
+            if retour or f.get("d1") is None or f.get("d2") is None:
+                return None
+            return impedance_commune_fente(
+                d1, d2, seg["largeur"], entraxe, t_r, z0, hauteur,
+                c.get("largeur"), eps_plan, resonance, borne)
+
+        def intervalle(c):
+            return next((i for i in (c.get("intervalles") or ())
+                         if min(float(i["s1"]), s1) - max(float(i["s0"]), s0)
+                         > TOL_BORNE), None)
+
+        if image is not None and id(f) in elues:
+            def troncons(objets):
+                out = []
+                for o in objets:
+                    b = se._extremites(o)
+                    if b is not None:
+                        out.append((b[0][0], b[0][1], b[1][0], b[1][1],
+                                    _nb(o.get("width"), 0.1),
+                                    int(_nb(o.get("layer"), 0))))
+                return out
+            agr = troncons([p["obj"] for p in parcours])
+            vict = [(c["net"], troncons([o for o in voisinage
+                                         if str(o.get("net") or "") == c["net"]]))
+                    for c in retenus]
+            scene, noms, raison = scene_fente(image, couches, agr, vict)
+            r = None
+            if scene is not None:
+                try:
+                    r = peec_fente(scene, 0.35 / (t_r or TR_DEFAUT))
+                except Exception as exc:                # noqa: BLE001
+                    raison = "résolution refusée (%s)" % exc
+            if r is not None:
+                for i, net in enumerate(noms):
+                    if r["m"][i] is None:
+                        continue
+                    c = next(x for x in retenus if x["net"] == net)
+                    it = intervalle(c)
+                    a = b = None
+                    if it is not None:
+                        e = abs(_nb(it.get("x")))
+                        a, b = ott(c, e), ott(c, e, False)
+                    facteur = (a["ld_nh"] / b["ld_nh"]
+                               if a and b and b["ld_nh"] > 0 else 1.0)
+                    terme = terme_peec(r, i, t_r, z0, a, facteur)
+                    terme.update({
+                        "s0": round(s0, 3), "s1": round(s1, 3), "victime": net,
+                        "plans": plans, "retour": retour, "borne": borne,
+                        "d1": round(d1, 3), "d2": round(d2, 3),
+                        "entraxe": round(abs(_nb(it.get("x"))), 4) if it else None,
+                        "largeur_fente": round(_nb(f.get("largeur"), s1 - s0), 3)})
+                    termes.setdefault(net, []).append(terme)
+                continue
+            signales.append({"s0": round(s0, 3), "s1": round(s1, 3),
+                             "cause": "image",
+                             "texte": "l'image du plan n'a pas pu être"
+                                      " résolue (%s) : modèle d'Ott à la"
+                                      " place" % (raison or "rien à mailler")})
+        elif image is not None:
+            signales.append({"s0": round(s0, 3), "s1": round(s1, 3),
+                             "cause": "budget",
+                             "texte": "plus de %d fentes à résoudre : celle-ci"
+                                      " prend le modèle d'Ott"
+                                      % PEEC_FENTES_MAX})
+        if f.get("d1") is None or f.get("d2") is None:
+            continue
+        if retour:
+            signales.append({"s0": round(s0, 3), "s1": round(s1, 3),
+                             "cause": "retour",
+                             "texte": "un plan ferme encore le retour sous la"
+                                      " fente (%s) : le courant change de plan"
+                                      " au lieu de la contourner, et c'est la"
+                                      " section retombée sur ce plan qui est"
+                                      " rendue, sans terme d'impédance commune"
+                                      % ", ".join("« %s »" % n for n in retour)})
+            continue
         for c in retenus:
-            it = next((i for i in (c.get("intervalles") or ())
-                       if min(float(i["s1"]), s1) - max(float(i["s0"]), s0)
-                       > TOL_BORNE), None)
+            it = intervalle(c)
             if it is None:
                 continue
             entraxe = abs(_nb(it.get("x")))
@@ -2621,10 +2762,8 @@ def termes_fentes(doc, couches, parcours, retenus, blocs, t_r, notes):
                                           " d'impédance commune"
                                           % (d_cote, c["net"], entraxe)})
                 continue
-            terme = impedance_commune_fente(
-                d1, d2, seg["largeur"], entraxe, t_r, z0, hauteur,
-                c.get("largeur"), eps_plan, True, borne)
-            terme.update({"s0": round(s0, 3), "s1": round(s1, 3),
+            terme = ott(c, entraxe)
+            terme.update({"modele": "A", "s0": round(s0, 3), "s1": round(s1, 3),
                           "victime": c["net"], "plans": plans,
                           "largeur_fente": round(_nb(f.get("largeur"),
                                                      s1 - s0), 3)})
@@ -2636,6 +2775,630 @@ def termes_fentes(doc, couches, parcours, retenus, blocs, t_r, notes):
             % ", ".join(sorted(set("%.0f" % t["z0"] for ts in termes.values()
                                    for t in ts))))
     return termes, signales
+
+
+# ==========================================================================
+# OPTION B : LE COURANT DE RETOUR RESOLU AUTOUR DE LA FENTE (PEEC)
+# --------------------------------------------------------------------------
+# LE MODELE D'OTT SUPPOSE CE QU'IL NE SAIT PAS : ou passe le courant. Une
+# fente droite, franchie a angle droit, tous les plans coupes -- le detour
+# est alors un demi-tour de boucle, et le logarithme le chiffre. Une fente en
+# L, franchie en biais, un plan intact dessous (le cas 4b du banc), des vias
+# qui relient les plans pres de la fente, une victime sur une autre couche :
+# rien de cela n'a de formule.
+#
+# ON RESOUT DONC LE PLAN. La page envoie l'image exacte du cuivre des plans
+# autour du franchissement (lignes a pas fin, bords de cuivre exacts le long
+# de la piste) et les vias de masse ; on y pose un maillage gradue -- fin
+# pres des pistes et des bords de fente, large au loin --, chaque maille
+# portant un courant en u et en v. Selfs et mutuelles partielles de rubans
+# minces (Neumann, distance moyenne geometrique exacte de deux rubans), la
+# piste agresseur en filament au-dessus, le retour injecte sous ses deux
+# bouts de fenetre. Entre deux plans, la capacite de chaque maille en regard,
+# et au bord de la fenetre une conductance qui laisse partir l'onde de la
+# cavite (frontiere absorbante : une carte grande devant la fenetre). Un via
+# de masse est une branche verticale.
+#
+# AU GENOU DU FRONT, 0,35 / t_r, on resout (PEEC quasi statique, sans
+# resistance : le courant s'y repartit par les selfs) et l'on lit la
+# tension de la boucle de l'agresseur et celle, a vide, de chaque victime.
+# On resout DEUX FOIS : avec le cuivre tel qu'il est, puis avec les plans
+# pleins dans la fenetre ; la difference est ce que la fente ajoute -- la
+# self du detour L_d et la mutuelle M qui remplacent celles d'Ott dans la
+# meme formule du terme (f.e.m. M.dI/dt partagee en +NEXT / -FEXT, lissee par
+# tau = L_d / 2 Z0). Tout vide du plan dans la fenetre y est compte.
+#
+# LIMITES, dites : quasi statique (la piste n'est pas une ligne a l'echelle
+# de la fenetre, la resonance de la fente seule n'y est pas -- le facteur de
+# l'option C s'y applique quand tous les plans sont coupes) ; la cavite hors
+# fenetre est sans fin ; le maillage borne la finesse (budget de branches).
+# ==========================================================================
+
+PEEC_BRANCHES_MAX = 3000    # branches de courant, tous plans : la memoire
+PEEC_CROISSANCES = ((1.35, 3.0), (1.5, 4.0), (1.7, 6.0), (2.0, 8.0),
+                    (2.6, 12.0))
+PEEC_REG = 1e-18            # F : chaque noeud a la terre lointaine
+ETA_0 = 376.730313668
+EPS_0 = 8.8541878128e-12
+
+
+def _ln_gmd(a, b, d, h):
+    """ln de la distance moyenne geometrique de deux rubans minces de largeurs
+    a et b, d'axes decales de d dans leur plan et de h hors de leur plan
+    (memes unites). Forme exacte : double integrale de ln r sur les deux
+    largeurs ; au loin, ln de la distance des axes."""
+    a, b, d, h = np.broadcast_arrays(*(np.asarray(x, float) for x in (a, b, d, h)))
+
+    def f2(x):
+        r2 = x * x + h * h
+        return (0.5 * (x * x - h * h) * np.log(np.maximum(r2, 1e-300))
+                - 1.5 * x * x + 2.0 * h * x * np.arctan2(x, h))
+    s, t = 0.5 * (a + b), 0.5 * (a - b)
+    r2 = d * d + h * h
+    loin = r2 > 25.0 * np.maximum(a, b) ** 2
+    with np.errstate(all="ignore"):
+        pres = (f2(d + s) - f2(d - t) - f2(d + t) + f2(d - s)) / (2.0 * a * b)
+    return np.where(loin, 0.5 * np.log(np.maximum(r2, 1e-300)), pres)
+
+
+def _m_barres(a1, b1, a2, b2, ln_g):
+    """Mutuelle partielle (H) de deux barres paralleles [a1, b1] et [a2, b2]
+    sur leur axe (m), a la distance moyenne geometrique exp(ln_g)."""
+    g = np.exp(ln_g)
+
+    def G(x):
+        return x * np.arcsinh(x / g) - np.sqrt(x * x + g * g)
+    return MU_0 / (4.0 * math.pi) * (G(b1 - a2) - G(a1 - a2)
+                                     - G(b1 - b2) + G(a1 - b2))
+
+
+def _bords_maille(lo, hi, cles, s_min, g, s_max):
+    """Les bords des mailles de lo a hi (mm) : s_min aux cles, une croissance
+    geometrique g au-dela, s_max au plus. Les cles sont des bords."""
+    cles = sorted(c for c in cles if lo < c < hi)
+    ref = np.array(cles or [0.5 * (lo + hi)])
+    bords, x = [lo], lo
+    while x < hi - 1e-9:
+        x = min(hi, x + min(s_max, s_min + (g - 1.0)
+                            * float(np.min(np.abs(ref - x)))))
+        bords.append(x)
+    tous = sorted(set(bords) | set(cles))
+    out = [tous[0]]
+    for x in tous[1:]:
+        if x - out[-1] < 0.3 * s_min:
+            if x in cles and out[-1] not in cles and len(out) > 1:
+                out[-1] = x
+            continue
+        out.append(x)
+    if out[-1] < hi - 1e-9:
+        out.append(hi)
+    return np.array(out)
+
+
+def _decouper(pieces, eu, ev):
+    """Les morceaux de piste (u0, v0, u1, v1, z, w), coupes aux bords des
+    mailles : chaque morceau tient dans une maille."""
+    out = []
+    for u0, v0, u1, v1, z, w in pieces:
+        ts = {0.0, 1.0}
+        for e, a, b in ((eu, u0, u1), (ev, v0, v1)):
+            if abs(b - a) > 1e-12:
+                for x in e:
+                    t = (x - a) / (b - a)
+                    if 0.0 < t < 1.0:
+                        ts.add(t)
+        ts = sorted(ts)
+        for ta, tb in zip(ts, ts[1:]):
+            if tb - ta > 1e-9:
+                out.append((u0 + (u1 - u0) * ta, v0 + (v1 - v0) * ta,
+                            u0 + (u1 - u0) * tb, v0 + (v1 - v0) * tb, z, w))
+    return out
+
+
+def _maillage_peec(scene, g, s_max):
+    """Le maillage gradue de la fenetre : bords en u et en v (mm)."""
+    return (_bords_maille(-scene["U"], scene["U"], scene["cles_u"],
+                          scene["s_min"], g, s_max),
+            _bords_maille(-scene["V"], scene["V"], scene["cles_v"],
+                          scene["s_min"], g, s_max))
+
+
+def _resoudre_peec(scene, f, g, s_max):
+    """La matrice des impedances de boucle des pistes (Z[j][k] : la tension
+    a vide dans la boucle j pour 1 A dans la boucle k), avec le cuivre tel
+    qu'il est (`vide`) puis avec les plans pleins (`plein`). Les branches du
+    premier sont un sous-ensemble de celles du second : les selfs partielles
+    se calculent une fois, et chaque piste est excitee a son tour sur la
+    meme factorisation."""
+    eu, ev = _maillage_peec(scene, g, s_max)
+    cu, cv = 0.5 * (eu[1:] + eu[:-1]), 0.5 * (ev[1:] + ev[:-1])
+    du, dv = np.diff(eu), np.diff(ev)
+    nu, nv = cu.size, cv.size
+    plans = scene["plans"]
+    if not plans:
+        return None
+    gu, gv = np.meshgrid(cu, cv, indexing="ij")
+    pas_t = max(0.02, 0.4 * scene["s_min"])
+    masques = [np.asarray(p["dedans"](gu.ravel(), gv.ravel()), bool).reshape(nu, nv)
+               for p in plans]
+    cell = nu * nv
+    noeud = [k * cell + np.arange(cell).reshape(nu, nv) for k in range(len(plans))]
+    n_n = cell * len(plans)
+
+    def continu(p, axe, i, j):
+        """Le cuivre est-il continu d'un centre a l'autre (sondes fines) ?"""
+        if not i.size:
+            return np.zeros(0, bool)
+        if axe == 0:
+            a, b, c = cu[i], cu[i + 1], cv[j]
+        else:
+            a, b, c = cv[j], cv[j + 1], cu[i]
+        n = np.maximum(2, np.ceil((b - a) / pas_t).astype(int) + 1)
+        rep = np.repeat(np.arange(i.size), n)
+        k = np.arange(n.sum()) - np.repeat(np.cumsum(n) - n, n)
+        x = a[rep] + (b - a)[rep] * k / (n[rep] - 1)
+        ok = (plans[p]["dedans"](x, c[rep]) if axe == 0
+              else plans[p]["dedans"](c[rep], x))
+        return np.logical_and.reduceat(np.asarray(ok, bool),
+                                       np.concatenate(([0], np.cumsum(n)[:-1])))
+
+    # LES BRANCHES DU PLAN PLEIN : (debut, fin, transverse, largeur, z, de, a,
+    # presente dans le cuivre reel)
+    br = {0: [], 1: []}
+    for p, pl in enumerate(plans):
+        idx, m = noeud[p], masques[p]
+        ii, jj = np.nonzero(np.ones((nu - 1, nv), bool))
+        ok = m[ii, jj] & m[ii + 1, jj]
+        ok[ok] = continu(p, 0, ii[ok], jj[ok])
+        br[0].append(np.column_stack([cu[ii], cu[ii + 1], cv[jj], dv[jj],
+                                      np.full(ii.size, pl["z"]),
+                                      idx[ii, jj], idx[ii + 1, jj], ok]))
+        ii, jj = np.nonzero(np.ones((nu, nv - 1), bool))
+        ok = m[ii, jj] & m[ii, jj + 1]
+        ok[ok] = continu(p, 1, ii[ok], jj[ok])
+        br[1].append(np.column_stack([cv[jj], cv[jj + 1], cu[ii], du[ii],
+                                      np.full(ii.size, pl["z"]),
+                                      idx[ii, jj], idx[ii, jj + 1], ok]))
+    br = {k: np.concatenate(v) for k, v in br.items()}
+    vias = []
+    for (vu, vv_, r, sur) in scene.get("vias") or ():
+        i = int(np.clip(np.searchsorted(eu, vu) - 1, 0, nu - 1))
+        j = int(np.clip(np.searchsorted(ev, vv_) - 1, 0, nv - 1))
+        sur = sorted(set(sur))
+        for pa, pb in zip(sur, sur[1:]):
+            vias.append((vu, vv_, r, plans[pa]["z"], plans[pb]["z"],
+                         noeud[pa][i, j], noeud[pb][i, j],
+                         bool(masques[pa][i, j] and masques[pb][i, j])))
+    mm = 1e-3
+    n_b = br[0].shape[0] + br[1].shape[0] + len(vias)
+    L = np.zeros((n_b, n_b))
+    deb, blocs = 0, {}
+    for ax in (0, 1):
+        b, n = br[ax], br[ax].shape[0]
+        ln_g = _ln_gmd(b[:, 3][:, None] * mm, b[:, 3][None, :] * mm,
+                       (b[:, 2][:, None] - b[:, 2][None, :]) * mm,
+                       np.abs(b[:, 4][:, None] - b[:, 4][None, :]) * mm)
+        L[deb:deb + n, deb:deb + n] = _m_barres(
+            b[:, 0][:, None] * mm, b[:, 1][:, None] * mm,
+            b[:, 0][None, :] * mm, b[:, 1][None, :] * mm, ln_g)
+        blocs[ax] = (deb, n)
+        deb += n
+    if vias:
+        va = np.array([v[:5] for v in vias], float)
+        dist = np.hypot(va[:, 0][:, None] - va[:, 0][None, :],
+                        va[:, 1][:, None] - va[:, 1][None, :])
+        ln_g = np.log(np.maximum(dist, va[:, 2][:, None]) * mm)
+        z0, z1 = np.minimum(va[:, 3], va[:, 4]), np.maximum(va[:, 3], va[:, 4])
+        L[deb:, deb:] = _m_barres(z0[:, None] * mm, z1[:, None] * mm,
+                                  z0[None, :] * mm, z1[None, :] * mm, ln_g)
+    de = np.concatenate([br[0][:, 5], br[1][:, 5], [v[5] for v in vias]]).astype(int)
+    a_ = np.concatenate([br[0][:, 6], br[1][:, 6], [v[6] for v in vias]]).astype(int)
+    reel_b = np.concatenate([br[0][:, 7], br[1][:, 7],
+                             [v[7] for v in vias]]).astype(bool)
+    A = np.zeros((n_n, n_b))
+    A[de, np.arange(n_b)] = 1.0
+    A[a_, np.arange(n_b)] = -1.0
+    reel_n = np.concatenate([m.ravel() for m in masques])
+
+    # LES PISTES : leur mutuelle avec chaque branche
+    mps = []
+    for piste in scene["pistes"]:
+        mp = np.zeros(n_b)
+        for (u0, v0, u1, v1, z, w) in _decouper(piste["pieces"], eu, ev):
+            for ax in (0, 1):
+                d0, n = blocs[ax]
+                b = br[ax]
+                lo, hi = (u0, u1) if ax == 0 else (v0, v1)
+                if abs(hi - lo) < 1e-12:
+                    continue
+                sg = 1.0 if hi > lo else -1.0
+                lo, hi = min(lo, hi), max(lo, hi)
+                tr = 0.5 * (v0 + v1) if ax == 0 else 0.5 * (u0 + u1)
+                ln_g = _ln_gmd(w * mm, b[:, 3] * mm, (tr - b[:, 2]) * mm,
+                               np.abs(z - b[:, 4]) * mm)
+                mp[d0:d0 + n] += sg * _m_barres(lo * mm, hi * mm, b[:, 0] * mm,
+                                                b[:, 1] * mm, ln_g)
+        mps.append(mp)
+
+    def bout(piste, fin, reel):
+        """Le noeud du plan de retour sous un bout de piste ; le plus proche
+        qui porte du cuivre quand il n'y en a pas dessous."""
+        q = piste["pieces"][-1 if fin else 0]
+        u, v, z = (q[2], q[3], q[4]) if fin else (q[0], q[1], q[4])
+        p = int(np.argmin([abs(pl["z"] - z) for pl in plans]))
+        m = masques[p] if reel else np.ones((nu, nv), bool)
+        ii, jj = np.nonzero(m)
+        if not ii.size:
+            return -1
+        k = np.argmin((cu[ii] - u) ** 2 + (cv[jj] - v) ** 2)
+        return int(noeud[p][ii[k], jj[k]])
+
+    w = 2.0 * math.pi * f
+    aire = np.outer(du, dv) * mm * mm
+    bord = np.zeros((nu, nv))
+    bord[0, :] += dv * mm
+    bord[-1, :] += dv * mm
+    bord[:, 0] += du * mm
+    bord[:, -1] += du * mm
+
+    def resoudre(reel):
+        sb = reel_b if reel else np.ones(n_b, bool)
+        sn = reel_n if reel else np.ones(n_n, bool)
+        bouts = [(bout(p, False, reel), bout(p, True, reel)) for p in scene["pistes"]]
+        s_, e_ = bouts[0]
+        if s_ < 0 or e_ < 0 or s_ == e_:
+            return None
+        P = len(bouts)
+        # LA CAPACITE DE CHAQUE MAILLE EN REGARD ENTRE PLANS VOISINS, ET AU
+        # BORD DE LA FENETRE L'ONDE DE LA CAVITE QUI S'EN VA.
+        Y = np.zeros((n_n, n_n), complex)
+        Y[np.diag_indices(n_n)] += 1j * w * PEEC_REG
+        for p in range(len(plans) - 1):
+            h = abs(plans[p + 1]["z"] - plans[p]["z"]) * mm
+            er = scene["eps"][p]
+            k = ((masques[p] & masques[p + 1]) if reel
+                 else np.ones((nu, nv), bool))
+            yv = (1j * w * EPS_0 * er * aire[k] / h
+                  + bord[k] * math.sqrt(er) / (ETA_0 * h))
+            ia, ib = noeud[p][k], noeud[p + 1][k]
+            Y[ia, ia] += yv
+            Y[ib, ib] += yv
+            Y[ia, ib] -= yv
+            Y[ib, ia] -= yv
+        Ab = A[np.ix_(sn, sb)]
+        X = np.linalg.solve(L[np.ix_(sb, sb)],
+                            np.column_stack([Ab.T] + [m[sb] for m in mps]))
+        n = int(sn.sum())
+        S = (Ab @ X[:, :n]) / (1j * w) + Y[np.ix_(sn, sn)]
+        loc = -np.ones(n_n, int)
+        loc[sn] = np.arange(n)
+        rhs = (Ab @ X[:, n:]).astype(complex)
+        for k, (a0, a1) in enumerate(bouts):
+            if a0 >= 0 and a1 >= 0:
+                rhs[loc[a1], k] += 1.0
+                rhs[loc[a0], k] -= 1.0
+        garde = np.ones(n, bool)
+        garde[loc[s_]] = False
+        phi = np.zeros((n, P), complex)
+        phi[garde] = np.linalg.solve(S[np.ix_(garde, garde)], rhs[garde])
+        I = X[:, :n] @ phi / (1j * w) - X[:, n:]
+        Z = [[None] * P for _ in range(P)]
+        for k, (b0, b1) in enumerate(bouts):
+            if b0 < 0 or b1 < 0:
+                continue
+            for j, (a0, a1) in enumerate(bouts):
+                if a0 >= 0 and a1 >= 0:
+                    Z[j][k] = (1j * w * (mps[j][sb] @ I[:, k])
+                               + phi[loc[a1], k] - phi[loc[a0], k])
+        return Z
+
+    vide = resoudre(True)
+    plein = resoudre(False)
+    if vide is None or plein is None:
+        return None
+    return {"vide": vide, "plein": plein, "branches": int(reel_b.sum()),
+            "mailles": (nu, nv)}
+
+
+def peec_fente(scene, f):
+    """L'option B : ce que les vides des plans dans la fenetre ajoutent a la
+    boucle de l'agresseur (L_d) et a la mutuelle vers chaque victime (M), en
+    H, au genou f. Rend None si rien n'est maillable."""
+    n_plans = max(1, len(scene["plans"]))
+    for g, s_max in PEEC_CROISSANCES:
+        eu, ev = _maillage_peec(scene, g, s_max)
+        if 2 * (eu.size - 1) * (ev.size - 1) * n_plans <= PEEC_BRANCHES_MAX:
+            break
+    r = _resoudre_peec(scene, f, g, s_max)
+    if r is None:
+        return None
+    w = 2.0 * math.pi * f
+    P = len(r["vide"])
+    # CE QUE LES VIDES AJOUTENT, piste par piste : la diagonale est la self
+    # du detour de chaque boucle, le reste la mutuelle -- reciproque, on
+    # moyenne les deux sens pour que l'arrondi du maillage n'en fasse pas deux.
+    dz = [[None if (r["vide"][j][k] is None or r["plein"][j][k] is None)
+           else abs(r["vide"][j][k] - r["plein"][j][k]) / w
+           for k in range(P)] for j in range(P)]
+    for j in range(P):
+        for k in range(j + 1, P):
+            if dz[j][k] is not None and dz[k][j] is not None:
+                dz[j][k] = dz[k][j] = 0.5 * (dz[j][k] + dz[k][j])
+    return {"ld": dz[0][0] or 0.0, "m": [dz[j][0] for j in range(1, P)],
+            "selfs": [dz[j][j] for j in range(P)], "mutuelles": dz,
+            "mailles": r["mailles"], "branches": r["branches"],
+            "croissance": g, "pas_max": s_max}
+
+
+# -- La scene de l'option B : de ce que la page envoie au maillage ----------
+
+PEEC_FENTES_MAX = 6         # fentes resolues par analyse ; au-dela, Ott
+
+
+def _z_couche(couches, k):
+    """La cote (mm, vers le bas depuis le dessus de la carte) du milieu de la
+    couche k de l'empilage."""
+    k = int(k)
+    return (sum(_nb(c.get("thickness"), 0.0) for c in couches[:k])
+            + _nb(couches[k].get("thickness"), 0.035) / 2.0)
+
+
+def _eps_entre(couches, a, b):
+    """La permittivite moyenne des dielectriques entre les couches a et b."""
+    lo, hi = sorted((int(a), int(b)))
+    ers = [_nb(c.get("epsilon_r"), 0.0) for c in couches[lo + 1:hi]
+           if c.get("type") == "dielectric" and _nb(c.get("epsilon_r"), 0.0) > 0]
+    return sum(ers) / len(ers) if ers else 4.3
+
+
+def dedans_lignes(v0, pas, lignes):
+    """« Du cuivre ici ? » pour un plan envoye en LIGNES : la ligne k est a
+    v = v0 + k.pas, et porte les bords [u0, u1, u2, u3, ...] de ses plages de
+    cuivre en u (mm, triees). Un point tombe dans une plage quand le nombre
+    de bords a sa gauche est impair."""
+    v0, pas = float(v0), max(float(pas), 1e-6)
+    lignes = [np.asarray(l, float) for l in lignes]
+
+    def dedans(u, v):
+        u, v = np.asarray(u, float), np.asarray(v, float)
+        out = np.zeros(u.shape, bool)
+        if not lignes:
+            return out
+        k = np.clip(np.rint((v - v0) / pas).astype(int), 0, len(lignes) - 1)
+        for r in np.unique(k):
+            l = lignes[r]
+            if l.size:
+                sel = k == r
+                out[sel] = np.searchsorted(l, u[sel], side="right") % 2 == 1
+        return out
+    return dedans
+
+
+def _coupe_fenetre(u0, v0, u1, v1, U, V):
+    """Le segment coupe a la fenetre [-U, U] x [-V, V] (Liang-Barsky), ou
+    None."""
+    t0, t1 = 0.0, 1.0
+    du, dv = u1 - u0, v1 - v0
+    for p, q in ((-du, u0 + U), (du, U - u0), (-dv, v0 + V), (dv, V - v0)):
+        if abs(p) < 1e-15:
+            if q < 0:
+                return None
+            continue
+        r = q / p
+        if p < 0:
+            t0 = max(t0, r)
+        else:
+            t1 = min(t1, r)
+        if t0 > t1:
+            return None
+    if t1 - t0 < 1e-9:
+        return None
+    return (u0 + du * t0, v0 + dv * t0, u0 + du * t1, v0 + dv * t1)
+
+
+def chaine_piste(segments, tol=0.02):
+    """Le plus long chemin d'une piste dans la fenetre, en morceaux
+    (u0, v0, u1, v1, z, w) mis bout a bout et orientes vers les u
+    croissants : c'est lui qui porte le courant de la boucle, d'un bout de
+    fenetre a l'autre. Un bout pendant (une derivation) ne porte rien."""
+    segs = [s for s in segments if math.hypot(s[2] - s[0], s[3] - s[1]) > 1e-6]
+    if not segs:
+        return []
+    bouts = []
+    for s in segs:
+        bouts.append(((s[0], s[1]), (s[2], s[3])))
+
+    def proches(p, q):
+        return abs(p[0] - q[0]) <= tol and abs(p[1] - q[1]) <= tol
+    voisins = {(i, e): [(j, f) for j in range(len(segs)) if j != i
+                        for f in (0, 1) if proches(bouts[i][e], bouts[j][f])]
+               for i in range(len(segs)) for e in (0, 1)}
+    longueur = [math.hypot(s[2] - s[0], s[3] - s[1]) for s in segs]
+    meilleur = ([], 0.0)
+
+    def explorer(chemin, vus, total, i, e_sortie, budget=[4000]):
+        nonlocal meilleur
+        budget[0] -= 1
+        if total > meilleur[1]:
+            meilleur = (list(chemin), total)
+        if budget[0] <= 0:
+            return
+        for j, f in voisins[(i, e_sortie)]:
+            if j in vus:
+                continue
+            chemin.append((j, f))
+            vus.add(j)
+            explorer(chemin, vus, total + longueur[j], j, 1 - f)
+            vus.discard(j)
+            chemin.pop()
+
+    for i in range(len(segs)):
+        for e in (0, 1):
+            if not voisins[(i, e)]:
+                explorer([(i, e)], {i}, longueur[i], i, 1 - e)
+    if not meilleur[0]:
+        explorer([(0, 0)], {0}, longueur[0], 0, 1)
+    out = []
+    for i, e in meilleur[0]:
+        u0, v0, u1, v1, z, w = segs[i]
+        out.append((u0, v0, u1, v1, z, w) if e == 0 else (u1, v1, u0, v0, z, w))
+    if sum(p[2] - p[0] for p in out) < 0:
+        out = [(u1, v1, u0, v0, z, w) for (u0, v0, u1, v1, z, w) in reversed(out)]
+    return out
+
+
+def scene_fente(maillage, couches, agresseur, victimes):
+    """La scene du PEEC d'une fente, d'apres l'image que la page a envoyee
+    (`maillage`) et le cuivre des pistes (listes de (x1, y1, x2, y2, largeur,
+    couche) en mm, repere de la carte). Rend (scene, noms des victimes
+    retenues, notes) ou (None, [], raison)."""
+    try:
+        cx, cy = float(maillage["x"]), float(maillage["y"])
+        ux, uy = float(maillage["ux"]), float(maillage["uy"])
+        U, V = float(maillage["U"]), float(maillage["V"])
+        v0, pas = float(maillage["v0"]), float(maillage["pas"])
+    except (KeyError, TypeError, ValueError):
+        return None, [], "image du plan incomplète"
+    n = math.hypot(ux, uy)
+    if not (n > 0 and U > 0 and V > 0 and pas > 0):
+        return None, [], "image du plan incomplète"
+    plans = [{"nom": str(p.get("nom")),
+              "dedans": dedans_lignes(v0, pas, p["lignes"])}
+             for p in maillage.get("plans") or ()
+             if isinstance(p.get("lignes"), list)]
+    vias = []
+    for v in maillage.get("vias") or ():
+        try:
+            vias.append((float(v["u"]), float(v["v"]), _nb(v.get("d"), 0.3),
+                         v.get("couches")))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return scene_plans(cx, cy, ux / n, uy / n, U, V, plans, vias, couches,
+                       agresseur, victimes)
+
+
+def scene_plans(cx, cy, ux, uy, U, V, plans, vias_l, couches, agresseur,
+                victimes):
+    """La scene du PEEC autour du point (cx, cy) de la carte, l'agresseur
+    allant selon (ux, uy) : les plans {nom, dedans(u, v)} dans ce repere
+    (v a gauche du sens de marche), les vias de masse (u, v, d, [noms de
+    plans] ou None pour tous), et le cuivre des pistes (x1, y1, x2, y2,
+    largeur, couche). Rend (scene, noms des victimes retenues, raison)."""
+    rang = {str(c.get("name")): k for k, c in enumerate(couches)}
+    plans = [dict(p, k=rang[p["nom"]], z=_z_couche(couches, rang[p["nom"]]))
+             for p in plans if p["nom"] in rang]
+    if not plans:
+        return None, [], "aucun plan de l'image dans l'empilage"
+    plans.sort(key=lambda p: p["z"])
+
+    def local(x, y):
+        return ((x - cx) * ux + (y - cy) * uy, -(x - cx) * uy + (y - cy) * ux)
+
+    def pieces(troncons):
+        segs = []
+        for (x1, y1, x2, y2, w, k) in troncons:
+            a, b = local(x1, y1), local(x2, y2)
+            c = _coupe_fenetre(a[0], a[1], b[0], b[1], U, V)
+            if c is not None:
+                segs.append(c + (_z_couche(couches, k), max(float(w), 0.01)))
+        return chaine_piste(segs)
+
+    agr = pieces(agresseur)
+    if not agr:
+        return None, [], "l'agresseur ne traverse pas l'image"
+    pistes, noms = [{"pieces": agr}], []
+    for nom, tr in victimes:
+        p = pieces(tr)
+        if p:
+            pistes.append({"pieces": p})
+            noms.append(nom)
+    vias = []
+    noms_plans = [p["nom"] for p in plans]
+    for vu, vv, d, sur in vias_l:
+        idx = [i for i, nm in enumerate(noms_plans) if sur is None or nm in sur]
+        if len(idx) >= 2 and abs(vu) <= U and abs(vv) <= V:
+            vias.append((vu, vv, max(float(d), 0.05) / 2.0, idx))
+    # LES CLES DU MAILLAGE : ou il doit etre fin. Les bords de cuivre que
+    # l'agresseur franchit (en u), son axe, celui des victimes, les bouts de
+    # la fente et les vias (en v).
+    z_a, w_a = agr[0][4], agr[0][5]
+    h_a = min(abs(p["z"] - z_a) for p in plans)
+    s_min = min(0.25, max(0.05, 0.5 * min(w_a, max(h_a, 0.05))))
+    pas_t = max(0.02, 0.4 * s_min)
+    us = np.arange(-U, U + pas_t, pas_t)
+    cles_u, cles_v = [], [0.0]
+    for p in plans:
+        d = p["dedans"](us, np.zeros_like(us))
+        for i in np.nonzero(d[1:] != d[:-1])[0]:
+            cles_u.append(round(0.5 * (us[i] + us[i + 1]), 4))
+            if not d[i + 1]:
+                # LE BOUT DE LA FENTE, de part et d'autre de la piste.
+                fin = np.nonzero(d[i + 1:])[0]
+                um = 0.5 * (us[i + 1] + us[i + 1 + (fin[0] if fin.size else 0)])
+                vs = np.arange(-V, V + pas_t, pas_t)
+                dv_ = p["dedans"](np.full_like(vs, um), vs)
+                for j in np.nonzero(dv_[1:] != dv_[:-1])[0]:
+                    cles_v.append(round(0.5 * (vs[j] + vs[j + 1]), 4))
+    for pi in pistes[1:]:
+        q = min(pi["pieces"], key=lambda q: abs(0.5 * (q[0] + q[2])))
+        cles_v.append(round(0.5 * (q[1] + q[3]), 4))
+    for v in vias:
+        cles_u.append(v[0])
+        cles_v.append(v[1])
+    scene = {"U": U, "V": V, "s_min": s_min, "plans": plans,
+             "eps": [_eps_entre(couches, plans[i]["k"], plans[i + 1]["k"])
+                     for i in range(len(plans) - 1)],
+             "vias": vias, "pistes": pistes,
+             "cles_u": sorted(set(cles_u)), "cles_v": sorted(set(cles_v))}
+    return scene, noms, ""
+
+
+def terme_peec(r, i, t_r, z0, ott=None, facteur=1.0):
+    """Le terme de la victime i (0 = la premiere) d'une resolution PEEC, au
+    format de `impedance_commune_fente` : la meme formule, avec la self du
+    detour et la mutuelle RESOLUES au lieu d'estimees. `ott`, quand le modele
+    d'Ott s'applique aussi (tous les plans coupes), donne sa fourchette, qui
+    encadre alors les deux modeles, et `facteur` la resonance de la fente
+    (option C) que le quasi statique ne voit pas."""
+    t_r = float(t_r) if t_r and t_r > 0 else TR_DEFAUT
+    z0 = float(z0) if z0 and z0 > 0 else 50.0
+    l_d, m = float(r["ld"]), float(r["m"][i] or 0.0)
+    reso = (ott or {}).get("resonance") or {}
+    l_d, m = l_d * facteur, m * facteur
+    m = min(m, l_d) if l_d > 0 else 0.0
+    tau = l_d / (2.0 * z0) if l_d > 0 else 0.0
+    lissage = (1.0 - math.exp(-t_r / tau)) if tau > 0 else 1.0
+    nxt = m / (2.0 * z0 * t_r) * lissage
+    bas, haut = nxt, nxt
+    if ott:
+        bas, haut = min(nxt, ott["fourchette"][0]), max(nxt, ott["fourchette"][1])
+    out = {
+        "modele": "B", "z0": round(z0, 2), "t_r": t_r,
+        "ld_nh": round(1e9 * l_d, 3), "m_nh": round(1e9 * m, 3),
+        "k": round(m / l_d, 4) if l_d > 0 else 0.0,
+        "tau_ps": round(1e12 * tau, 2), "lissage": round(lissage, 4),
+        "next": round(nxt, 6), "fext": round(nxt, 6),
+        "next_pc": round(100.0 * nxt, 3), "fext_pc": round(100.0 * nxt, 3),
+        "fourchette": [round(bas, 6), round(haut, 6)],
+        "fourchette_pc": [round(100.0 * bas, 3), round(100.0 * haut, 3)],
+        "resonance": {"appliquee": bool(ott),
+                      "facteur": round(facteur, 4),
+                      "sensible": facteur > FENTE_RESONANCE_SENSIBLE,
+                      "f_genou": 0.35 / t_r,
+                      "f_quart_onde": reso.get("f_quart_onde", 0.0),
+                      "eps_plan": reso.get("eps_plan", 1.0)},
+        "maillage": {"mailles": list(r["mailles"]), "branches": r["branches"],
+                     "croissance": r["croissance"], "pas_max_mm": r["pas_max"]},
+        "methode": "courant de retour résolu autour de la fente (PEEC quasi"
+                   " statique au genou 0,35/t_r : selfs partielles des mailles"
+                   " des plans, capacité entre plans, vias de masse) ; L_d et M"
+                   " = ce que les vides ajoutent aux plans pleins ; f.é.m."
+                   " M·dI/dt partagée en +NEXT / −FEXT, lissée par"
+                   " τ = L_d/2Z0"}
+    if ott:
+        out["ott"] = {k: ott[k] for k in ("ld_nh", "m_nh", "next_pc",
+                                          "fourchette_pc")}
+    return out
 
 
 def geometrie_superposee(couches, i, j):
@@ -4121,7 +4884,8 @@ def analyser(doc, journal=None):
     # d'impedance commune d'Ott ; celle qu'elle n'a pas mesuree, ou qu'un plan
     # referme encore dessous, garde la reserve d'avant.
     fentes_termes, fentes_signalees = termes_fentes(
-        doc, couches, parcours, retenus, infos.get("blocs"), t_r, notes)
+        doc, couches, parcours, retenus, infos.get("blocs"), t_r, notes,
+        voisinage)
     base["fentes"] = {
         "chiffrees": sum(len(v) for v in fentes_termes.values()),
         "signalees": fentes_signalees}
@@ -4136,6 +4900,40 @@ def analyser(doc, journal=None):
     if fentes_termes:
         for net, ts in fentes_termes.items():
             t = max(ts, key=lambda x: x["next"])
+            if t.get("modele") == "B":
+                o = t.get("ott")
+                avert.append(
+                    "FENTE DU PLAN SOUS « %s » ET « %s » : le courant de retour"
+                    " des deux y a été RÉSOLU (maillage de %d × %d mailles, %d"
+                    " branches%s%s). Ce que les vides ajoutent aux plans"
+                    " pleins : self du détour %.2f nH, mutuelle %.2f nH, soit"
+                    " %+.2f %% en NEXT et autant en FEXT à t_r = %s, AJOUTÉS au"
+                    " couplage des lignes.%s%s%s Limites : quasi statique au"
+                    " genou, cavité sans fin hors de l'image, finesse bornée"
+                    " par le maillage — un ordre de grandeur, pas une forme"
+                    " d'onde."
+                    % (principal, net, t["maillage"]["mailles"][0],
+                       t["maillage"]["mailles"][1], t["maillage"]["branches"],
+                       " ; le retour passe aussi par %s"
+                       % ", ".join("« %s »" % n for n in t["retour"])
+                       if t.get("retour") else "",
+                       " ; plan coupé de bord à bord dans l'image"
+                       if t.get("borne") else "",
+                       t["ld_nh"], t["m_nh"], t["next_pc"], _texte_duree(t_r),
+                       (" Le modèle d'Ott, qui suppose tous les plans coupés et"
+                        " une fente droite, donnerait %.2f nH de mutuelle et"
+                        " %+.2f %% (fourchette %.2f à %.2f %%) : la fourchette"
+                        " rendue encadre les deux modèles."
+                        % (o["m_nh"], o["next_pc"], o["fourchette_pc"][0],
+                           o["fourchette_pc"][1])) if o else "",
+                       (" La self du détour (τ = %.0f ps) lisse la pente du"
+                        " courant et borne le terme à M/L_d = %.0f %%."
+                        % (t["tau_ps"], 100.0 * t["k"])) if t["lissage"] < 0.95
+                       else "",
+                       (" La RÉSONANCE de la fente a pesé (× %.2f au genou)."
+                        % t["resonance"]["facteur"])
+                       if t["resonance"]["sensible"] else ""))
+                continue
             avert.append(
                 "FENTE DU PLAN FRANCHIE PAR « %s » ET « %s » : le courant de"
                 " retour des deux la contourne par le même cuivre (détours de"
@@ -4706,18 +5504,36 @@ def _hypotheses(reglages, masse, seuils, base):
         " la dispersion, les pertes, les coudes et les vias → un ordre de"
         " grandeur fidèle, pas une forme d'onde ; (3) le PLAN DE RETOUR EST"
         " SUPPOSÉ CONTINU sous les deux pistes dans [C] et [L] : une fente"
-        " franchie par les deux, dont la page a mesuré les détours d1 / d2 et"
-        " dont TOUS les plans sont coupés, ajoute le terme d'impédance commune"
-        " d'Ott (M·dI/dt partagé en +NEXT / −FEXT, avec sa fourchette) ; une"
-        " fente sans détour mesuré, ou qu'un plan referme encore dessous,"
-        " n'ajoute rien → OPTIMISTE là ; (4) les contrôles de plan de masse ne voient"
+        " que la page envoie avec l'image des plans ajoute le terme"
+        " d'impédance commune du retour RÉSOLU (PEEC), plan intact dessous et"
+        " vias compris ; sans image, celui d'Ott si tous les plans sont"
+        " coupés ; une fente sans détour ni image, ou qu'un plan referme"
+        " encore dessous sans image, n'ajoute rien → OPTIMISTE là ; (4) les contrôles de plan de masse ne voient"
         " que ce que la page envoie → OPTIMISTE sur une carte muette sur sa"
         " couture ; (5) plusieurs agresseurs d'une même victime ne sont pas"
         " additionnés ici, la vérification de carte les somme au pire en"
         " phase. Sur une carte mal cousue ou mal référencée, ce qui est"
         " affiché est donc un PLANCHER.",
     ]
-    if any(c.get("fente") for c in (base.get("couples") or ())):
+    if any((c.get("fente") or {}).get("modele") == "B"
+           for c in (base.get("couples") or ())):
+        h.insert(-1,
+                 "LE RETOUR RÉSOLU AUTOUR D'UNE FENTE (PEEC) : l'image des"
+                 " plans que la page envoie est maillée (fin près des pistes et"
+                 " des bords, large au loin) ; chaque maille porte un courant,"
+                 " selfs et mutuelles partielles de rubans minces, capacité entre"
+                 " plans en regard, onde de la cavité qui s'en va au bord de la"
+                 " fenêtre, vias de masse en branches verticales ; l'agresseur et"
+                 " la victime sont pris dans leur cuivre. Résolu au genou"
+                 " 0,35/t_r, deux fois — le cuivre réel, les plans pleins — : la"
+                 " différence donne la self du détour L_d et la mutuelle M, qui"
+                 " entrent dans la même formule que celle d'Ott (+M/(2·Z0·t_r)"
+                 " en NEXT, −M/(2·Z0·t_r) en FEXT, lissée par τ = L_d/2Z0). La"
+                 " FOURCHETTE encadre ce chiffre et celui d'Ott quand Ott"
+                 " s'applique (tous les plans coupés). Limites : quasi statique,"
+                 " cavité sans fin hors de la fenêtre, finesse du maillage.")
+    if any((c.get("fente") or {}).get("modele") == "A"
+           for c in (base.get("couples") or ())):
         h.insert(-1,
                  "L'IMPÉDANCE COMMUNE D'UNE FENTE (Ott) : chaque détour d du"
                  " courant de retour est une self L_d = μ0/π·2d·ln(2d/W), la"

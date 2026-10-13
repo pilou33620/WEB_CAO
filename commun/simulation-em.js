@@ -9367,7 +9367,7 @@ function simXtCarteFiche(){
        (p.superposee?' <span class="simTag">superposées</span>':"")+
        (p.fente?' <span class="simTag" title="'+simEsc("fente du plan franchie "+
          "par les deux : +"+simXtPct(p.fente.next)+" % NEXT / FEXT par impédance "+
-         "commune (Ott), fourchette "+simXtPct(p.fente.next_fourchette[0])+" à "+
+         "commune ("+simXtModeleFente(p.fente)+"), fourchette "+simXtPct(p.fente.next_fourchette[0])+" à "+
          simXtPct(p.fente.next_fourchette[1])+" % ; lignes seules NEXT "+
          simXtPct((p.lignes||{}).next)+" %")+'">fente</span>':"")+"</td>"+
        "<td>"+simEsc(p.couche||"")+"</td>"+
@@ -9654,7 +9654,7 @@ function simXtTableauCouples(r){
        /* LE TERME DE FENTE, DIT À PART : le niveau de la paire le contient,
           et la fiche doit pouvoir dire d'où il vient — et sa fourchette. */
        (c.fente?' <span class="simTag" title="'+simEsc("impédance commune"+
-         " d'une fente du plan franchie par les deux (Ott) : +"+
+         " d'une fente du plan franchie par les deux ("+simXtModeleFente(c.fente)+") : +"+
          simXtPct(c.fente.next)+" % en NEXT comme en FEXT, fourchette "+
          simXtPct(c.fente.next_fourchette[0])+" à "+
          simXtPct(c.fente.next_fourchette[1])+" % ; lignes seules : NEXT "+
@@ -9770,6 +9770,81 @@ function simXtFiches(r){
     f.visible=(dit===true)?false:((dit===false)?true:(f.confirmee||!uneConf));
   }
   return ordre;
+}
+
+/* L'IMAGE DU CUIVRE DES PLANS AUTOUR D'UNE FENTE — ce que l'option B du
+   serveur (`crosstalk` 4.6.0, `peec_fente`) maille pour y RÉSOUDRE le courant
+   de retour : une fente de toute forme, franchie sous tout angle, un plan qui
+   reste dessous, des vias de masse. Les détours d1 / d2 ne suffisent plus.
+
+   Une fenêtre carrée centrée sur le franchissement, u le long de la piste
+   (sens de marche), v à sa gauche (le côté de d1), de demi-côté
+   min(30, max(d1, d2)) + 5 mm. Pour chaque plan, des LIGNES à v constant :
+   chacune coupée aux arêtes du cuivre qu'elle croise — les bords sont donc
+   EXACTS le long de la piste, quelle que soit la finesse de la fente —, et
+   chaque plage entre deux arêtes jugée par son milieu. Une ligne porte les
+   bords de ses plages de cuivre en u, en mm : [u0, u1, u2, u3…].
+
+   Les deux pages appellent ceci avec leurs propres outils, dans leur unité
+   (`k` mm par unité) : `plans` = [{nom, aretes : [[x1,y1,x2,y2,boîte…]],
+   cuivre(x, y)}], `vias` = [{x, y, d (mm), couches : [noms] ou null}],
+   `coupe` = leur intersection corde / arête (`simXtCoupe`). */
+const SIM_XT_IMAGE_LIGNES=500;   /* lignes en travers de la fenêtre, au plus */
+const SIM_XT_IMAGE_MARGE=5;      /* mm autour des détours */
+const SIM_XT_IMAGE_DETOUR_MAX=30;/* mm — le plafond des détours (SIM_XT_FENTE_MAX) */
+function simXtImageFente(o){
+  const k=o.k>0?o.k:1;
+  const V=Math.min(SIM_XT_IMAGE_DETOUR_MAX,Math.max(o.d1||0,o.d2||0))+SIM_XT_IMAGE_MARGE;
+  const U=V;
+  const pas=Math.max(0.05,2*V/SIM_XT_IMAGE_LIGNES);
+  const ux=o.ux, uy=o.uy, nx=-uy, ny=ux;
+  const r3=x=>Math.round(x*1000)/1000;
+  /* La boîte de la fenêtre, pour ne garder que les arêtes qui y passent. */
+  const R=Math.SQRT2*V/k;
+  const bx1=o.x-R, by1=o.y-R, bx2=o.x+R, by2=o.y+R;
+  const n=Math.round(2*V/pas);
+  const plans=[];
+  for(const p of o.plans){
+    const ar=p.aretes.filter(a=>!(a[6]<bx1||a[4]>bx2||a[7]<by1||a[5]>by2));
+    const lignes=[];
+    for(let j=0;j<n;j++){
+      const v=-V+pas/2+j*pas;
+      const ax=o.x+(-U*ux+v*nx)/k, ay=o.y+(-U*uy+v*ny)/k;
+      const bx=o.x+(U*ux+v*nx)/k,  by=o.y+(U*uy+v*ny)/k;
+      const ts=[0,1];
+      for(const a of ar){
+        const t=o.coupe(ax,ay,bx,by,a);
+        if(t>0&&t<1)ts.push(t);
+      }
+      ts.sort((p_,q)=>p_-q);
+      const bords=[];
+      let dedans=false;
+      for(let i=0;i+1<ts.length;i++){
+        if(ts[i+1]-ts[i]<1e-9)continue;
+        const tm=(ts[i]+ts[i+1])/2;
+        const c=!!p.cuivre(ax+(bx-ax)*tm,ay+(by-ay)*tm);
+        if(c!==dedans){bords.push(r3(-U+2*U*ts[i]));dedans=c;}
+      }
+      if(dedans)bords.push(r3(U));
+      lignes.push(bords);
+    }
+    plans.push({nom:p.nom, lignes:lignes});
+  }
+  const vias=[];
+  for(const v of (o.vias||[])){
+    const dx=(v.x-o.x)*k, dy=(v.y-o.y)*k;
+    const vu=dx*ux+dy*uy, vv=dx*nx+dy*ny;
+    if(Math.abs(vu)<=U&&Math.abs(vv)<=V)
+      vias.push({u:r3(vu), v:r3(vv), d:r3(v.d||0.3), couches:v.couches||null});
+  }
+  return {x:r3(o.x*k), y:r3(o.y*k), ux:ux, uy:uy, U:U, V:V,
+          v0:r3(-V+pas/2), pas:pas, plans:plans, vias:vias};
+}
+
+/* LE MODÈLE D'UN TERME DE FENTE, en clair : résolu sur l'image des plans
+   (option B) ou estimé par la formule d'Ott (option A). */
+function simXtModeleFente(f){
+  return (f&&f.modele==="B")?"retour résolu sur l'image des plans":"Ott";
 }
 
 /* UN POURCENTAGE QUI NE S'ARRONDIT PAS À ZÉRO : le nombre de décimales suit
@@ -10788,7 +10863,7 @@ function simXtRapportTexte(r){
       simNb(c.distance,3)+" mm"+
       (c.superposee?"   dont "+simNb(c.longueur_superposee,1)+
                     " mm superposés":"")+
-      (c.fente?"   dont fente du plan (impédance commune, Ott) : +"+
+      (c.fente?"   dont fente du plan (impédance commune, "+simXtModeleFente(c.fente)+") : +"+
                simXtPct(c.fente.next)+" % NEXT / FEXT, fourchette "+
                simXtPct(c.fente.next_fourchette[0])+" à "+
                simXtPct(c.fente.next_fourchette[1])+" %, lignes seules NEXT "+

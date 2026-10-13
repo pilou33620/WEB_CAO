@@ -81,7 +81,8 @@ def prevoir(n, t_r):
     return {"next": c["next"], "fext": c["fext"], "kb": c["kb"],
             "kf": c["kf"], "td_ps": c["td_ps"],
             "statut": c["statut"],
-            # LE TERME DE FENTE (crosstalk 4.5.0, impedance commune d'Ott),
+            # LE TERME DE FENTE (crosstalk 4.5.0 : Ott ; 4.6.0 : retour
+            # resolu sur l'image des plans, option B),
             # et le chiffre des lignes seules : c'est leur ecart que le cas 4
             # doit confirmer ou infirmer.
             "fente": c.get("fente"), "lignes": c.get("lignes")}, notes
@@ -148,12 +149,13 @@ def tableau_previsions(fronts):
         print(ligne)
         if fente:
             # LA PART DE LA FENTE, A PART : le niveau 2 des lignes seules et
-            # le terme d'impedance commune (Ott) qui s'y ajoute, avec sa
+            # le terme d'impedance commune (resolu, ou Ott) qui s'y ajoute, avec sa
             # fourchette, au dernier front du tableau.
             t, p = fente
-            print("         + dont fente du plan (impedance commune, Ott) a %.1f ns :"
+            print("         + dont fente du plan (impedance commune, %s) a %.1f ns :"
                   " +%s NEXT / FEXT, fourchette %s a %s ; lignes seules %s / %s"
-                  % (t, pc(p["fente"]["next"]).strip(),
+                  % ("retour resolu" if p["fente"].get("modele") == "B" else "Ott",
+                     t, pc(p["fente"]["next"]).strip(),
                      pc(p["fente"]["next_fourchette"][0]).strip(),
                      pc(p["fente"]["next_fourchette"][1]).strip(),
                      pc(p["lignes"]["next"]).strip(), pc(p["lignes"]["fext"]).strip()))

@@ -58,8 +58,8 @@ Le projet correspondant (carte prête à ouvrir, notes de fabrication) est dans 
 | **1** | microruban couplé, **S = W** = 0,35 mm | un couplage fort, bien mesurable | les trois sources d'accord, à l'εr près |
 | **2** | microruban couplé, **S = 3W** = 1,05 mm | la règle des 3W, la sensibilité à l'écart | idem, à un niveau 5 fois plus bas |
 | **3** | S = 3W, **piste de garde** de 0,35 mm au milieu, cousue tous les 5 mm | l'efficacité d'une garde | **cas 3 contre cas 2 = effet de la garde seule** |
-| **4** | S = 3W, **fente de 2 mm** dans L2, L3 et Bottom, en travers des deux pistes au milieu du couplage | le couplage par le chemin de retour (impédance commune) | **cas 4 contre cas 2 = effet de la fente seule**. Le calcul 2D ne le voit pas ; depuis `crosstalk` 4.5.0, WEB_CAO y ajoute l'**impédance commune du détour** (Ott) : ≈ +11 % à 1 ns, fourchette 9 à 17 % |
-| **4b** (repère J5x) | S = 3W, **la même fente de 2 mm, sur L2 seulement** ; L3 et Bottom restent pleins | le cas le plus courant : un plan découpé, un autre dessous. Le courant de retour change de plan au lieu de contourner la fente | **cas 4b contre cas 4** : détour contre report sur l'autre plan. WEB_CAO chiffre le 4b par le report du retour sur L3 (section plus éloignée, sans terme de détour) et le 4 par le terme d'Ott |
+| **4** | S = 3W, **fente de 2 mm** dans L2, L3 et Bottom, en travers des deux pistes au milieu du couplage | le couplage par le chemin de retour (impédance commune) | **cas 4 contre cas 2 = effet de la fente seule**. Le calcul 2D ne le voit pas ; depuis `crosstalk` 4.6.0, WEB_CAO y ajoute l'**impédance commune du détour, le courant de retour résolu sur l'image des plans** (PEEC) : ≈ +3,7 % à 1 ns ; le modèle d'Ott (4.5.0, ≈ +11 %) tient la borne haute de la fourchette, 3,7 à 16,7 % |
+| **4b** (repère J5x) | S = 3W, **la même fente de 2 mm, sur L2 seulement** ; L3 et Bottom restent pleins | le cas le plus courant : un plan découpé, un autre dessous. Le courant de retour change de plan au lieu de contourner la fente | **cas 4b contre cas 4** : détour contre report sur l'autre plan. depuis `crosstalk` 4.6.0, WEB_CAO résout le retour dans les deux cas : le 4b a son terme de détour (≈ +1 % à 1 ns), plus petit que celui du 4 parce qu'une part du retour passe par L3 |
 
 Plus deux lignes d'étalonnage, de même largeur et avec les mêmes embases :
 - **CAL_LONG** (J91 → J92, 126,50 mm) et **CAL_COURT** (J93 → J94, sur le bord du haut, 57,18 mm). La différence de longueur vaut **69,32 mm**. La différence de leurs retards mesurés donne l'**εr effectif réel**, connecteurs et câbles retranchés : `εeff = (c · Δt / 69,32 mm)²`. WEB_CAO attend environ 3,4, soit Δt ≈ 425 ps.
@@ -73,10 +73,12 @@ Plus deux lignes d'étalonnage, de même largeur et avec les mêmes embases :
 | 1 | 4,44 / 3,64 | 4,44 / 1,82 | 2,20 / 0,73 | 1,10 / 0,36 | 0,55 / 0,18 |
 | 2 | 0,90 / 1,41 | 0,90 / 0,70 | 0,45 / 0,28 | 0,22 / 0,14 | 0,11 / 0,07 |
 | 3 | 0,58 / 0,86 | 0,58 / 0,43 | 0,29 / 0,17 | 0,14 / 0,09 | 0,07 / 0,04 |
-| 4 | 22,25 / 22,73 | 11,87 / 11,66 | 4,81 / 4,64 | 2,40 / 2,32 | 1,20 / 1,16 |
-| 4b | 2,68 / 1,45 | 1,34 / 0,72 | 0,54 / 0,29 | 0,27 / 0,14 | 0,13 / 0,07 |
+| 4 | 8,43 / 8,91 | 4,56 / 4,35 | 1,89 / 1,73 | 0,95 / 0,86 | 0,47 / 0,43 |
+| 4b | 4,61 / 3,38 | 2,31 / 1,69 | 0,92 / 0,68 | 0,46 / 0,34 | 0,23 / 0,17 |
 
-Le cas 4 est la somme des lignes couplées (celles du cas 2, 0,90 / 0,69 à 1 ns) et du **terme d'impédance commune de la fente** (`crosstalk` 4.5.0, modèle d'Ott) : la page mesure les détours du courant de retour autour de la fente (11 et 9,5 mm ici, au pas de sonde de 0,5 mm), le serveur en tire la self du détour (≈ 17 nH), la mutuelle à l'entraxe de 1,4 mm (≈ 11 nH) et la f.é.m. partagée entre les deux bouts de la victime : **+10,97 % en NEXT comme en FEXT à 1 ns, fourchette 9,2 à 16,7 %** (mutuelle basse à haute), inversement proportionnel au front. La résonance de la fente (quart d'onde vers 3,5 GHz) ne pèse qu'aux fronts sous 300 ps. Pour le 4b, L3 ferme le retour sous la fente : pas de terme, la section retombe sur L3.
+Le cas 4 est la somme des lignes couplées (celles du cas 2, 0,90 / 0,69 à 1 ns) et du **terme d'impédance commune de la fente**. Depuis `crosstalk` 4.6.0 (option B), la page envoie l'image du cuivre des plans autour du franchissement, et le serveur y **résout** le courant de retour (PEEC quasi statique au genou du front : selfs partielles des mailles, capacité entre plans, vias de masse) : self du détour ≈ 4,3 nH, d'où **+3,66 % en NEXT comme en FEXT à 1 ns**, inversement proportionnel au front. Le modèle d'Ott de la 4.5.0 (self ≈ 17 nH, +10,97 %, fourchette 9,2 à 16,7 %) suppose un détour en demi-boucle ; sur une fente étroite, les deux bords portent des courants opposés qui se compensent, et il surestime d'un facteur trois. Il reste la **borne haute de la fourchette (3,7 à 16,7 %)** : la mesure départagera les deux modèles. Pour le **4b**, une part du retour passe par L3 (couplage des deux plans, capacité de la cavité, vias de masse voisins) : le terme existe, **+0,97 % à 1 ns**, et s'ajoute aux lignes calculées sur L3.
+
+L'image des plans des cas 4 et 4b (`docs-sim/cas4.json`, `cas5.json`) a été calculée depuis les zones et les découpes de la carte, avec la règle de la page (cuivre de masse moins découpes), faute de Playwright sur le poste ; `exporter-docs-sim.js` la produit d'elle-même au prochain export.
 
 Avec 1 V sur l'agresseur, 0,1 % fait 1 mV. Les cas 2 à 4 demandent donc de **moyenner** (voir plus bas), et un front lent les fait vite descendre sous le plancher.
 
@@ -153,8 +155,8 @@ Ordre de lecture conseillé :
 2. **le cas 0** : le plancher ;
 3. **les cas 1 et 2** : le moteur MoM et les formules du niveau 2. Les trois sources doivent s'accorder à 1 ou 2 dB près ;
 4. **le cas 3 contre le cas 2** : ce que la garde retire. WEB_CAO prévoit −3,8 dB ;
-5. **le cas 4 contre le cas 2** : ce que la fente ajoute. WEB_CAO prévoit environ **+11 % à 1 ns** par l'impédance commune du détour (Ott, fourchette 9 à 17 %) : c'est ce chiffre, et sa fourchette, que la mesure doit confirmer ou infirmer. Un écart de plus de 3 dB appelle le maillage PEEC du plan (option B d'`A-FAIRE.md`).
-6. **le cas 4b contre le cas 4** : fente sur un seul plan contre sur les trois. WEB_CAO prévoit pour le 4b environ +50 % de NEXT à 1 ns sur le cas 2 : c'est le Kb local de la portion où le retour passe sur L3 (10 % sur 2 mm), pris comme borne par le niveau 2, **sans** terme de détour (L3 ferme le retour) -- à confronter à la mesure, pas une valeur établie. Si le 4b mesure autant que le 4, le report sur l'autre plan ne suffit pas et le détour compte aussi avec un plan dessous.
+5. **le cas 4 contre le cas 2** : ce que la fente ajoute. WEB_CAO prévoit **+3,7 % à 1 ns** par le retour résolu (option B, PEEC), et Ott **+11 %** : la fourchette va de l'un à l'autre. C'est ce que la mesure doit trancher ; un écart de plus de 3 dB aux deux appelle la référence pleine onde (option D d'`A-FAIRE.md`).
+6. **le cas 4b contre le cas 4** : fente sur un seul plan contre sur les trois. WEB_CAO prévoit pour le 4b 2,31 % de NEXT à 1 ns : le Kb local de la portion où le retour passe sur L3 (1,34 %) **et**, depuis `crosstalk` 4.6.0, le terme du détour résolu avec L3 dessous (+0,97 %), environ quatre fois plus petit que celui du 4. Si le 4b mesure autant que le 4, L3 ne ferme pas le retour aussi bien que le modèle le dit.
 
 ---
 

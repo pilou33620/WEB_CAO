@@ -4555,7 +4555,41 @@ function simXtDetoursIpc(t,pas,idx){
   const r3=x=>Math.round(x*1000)/1000;
   return {d1:r3(a.d), d2:r3(b.d), largeur:r3(largeur), borne:a.borne||b.borne,
           retour:retour.map(simXtNomCoucheIpc).filter(Boolean),
-          x:r3(m.x*k), y:r3(m.y*k)};
+          x:r3(m.x*k), y:r3(m.y*k), maillage:simXtImagePlansIpc(m,a.d,b.d,idx)};
+}
+
+/* L'IMAGE DES PLANS AUTOUR DU FRANCHISSEMENT, pour l'option B du serveur
+   (`simXtImageFente`, commun) — même choix des plans que l'éditeur
+   (`simXtImagePlans`) et même règle que `simXtNusIpc` : de chaque côté, du
+   plus proche au premier qui a du cuivre ici, deux au plus. Les vias de masse
+   sont les trous métallisés de ses nets, traversants. */
+function simXtImagePlansIpc(m,d1,d2,idx){
+  const k=simKUnite();
+  const plans=[];
+  for(const cote of m.cotes){
+    for(let q=0;q<cote.length&&q<2;q++){
+      const c=cote[q];
+      const masse=simXtContoursIpc(c,idx).length>0;
+      if(!masse&&q===0)break;
+      /* Au-delà du plus proche, sans masse : tout cuivre, lu dans les
+         contours seuls — le repli de `simNetPlanEnIpc` au droit des vias
+         comblerait une fente étroite. */
+      const cuivre=masse?((x,y)=>simXtZoneMasseIpc(c,x,y,idx))
+                        :((x,y)=>simXtZoneMasseIpc(c,x,y,null));
+      plans.push({nom:simXtNomCoucheIpc(c), aretes:simXtAretesIpc(c), cuivre:cuivre});
+      if(cuivre(m.x,m.y))break;
+    }
+  }
+  if(!plans.length)return null;
+  const vias=[];
+  if(idx&&idx.size&&V.parNet)
+    for(const n of V.parNet){
+      if(!n||!idx.has(n.i))continue;
+      for(const t of (n.trous||[]))
+        if(!/NON/i.test(t.p||""))vias.push({x:t.x, y:t.y, d:(t.d||0.3/k)*k, couches:null});
+    }
+  return simXtImageFente({x:m.x, y:m.y, ux:m.tx, uy:m.ty, d1:d1, d2:d2, k:k,
+                          plans:plans, vias:vias, coupe:simXtCoupeIpc});
 }
 
 /* Les discontinuités du plan sous le parcours, en intervalles d'abscisse.
