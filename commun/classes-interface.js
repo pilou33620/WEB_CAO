@@ -14,9 +14,9 @@
    ============================================================================= */
 const CLASSES_INTERFACE={
   "USB FS":{"nom":"USB 2.0 Full Speed","famille":"Lent","tr":4e-9,"cadence":6e6,"zdiff":90.0},
-  "USB HS":{"nom":"USB 2.0 High Speed","famille":"Rapide","tr":5e-10,"cadence":2.4e8,"zdiff":90.0},
+  "USB HS":{"nom":"USB 2.0 High Speed","famille":"Rapide","tr":5e-10,"cadence":2e8,"zdiff":90.0},
   "ETH 100":{"nom":"Ethernet 100BASE-TX","famille":"Rapide","tr":3e-9,"cadence":3.125e7,"zdiff":100.0},
-  "ETH 1000":{"nom":"Ethernet 1000BASE-T","famille":"Rapide","tr":2e-9,"cadence":6.25e7,"zdiff":100.0},
+  "ETH 1000":{"nom":"Ethernet 1000BASE-T","famille":"Rapide","tr":2e-9,"cadence":5e7,"zdiff":100.0},
   "LVDS":{"nom":"LVDS (TIA-644)","famille":"Rapide","tr":3e-10,"cadence":3.3e8,"zdiff":100.0},
   "CAN":{"nom":"CAN (ISO 11898)","famille":"Lent","tr":5e-8,"cadence":5e5,"zdiff":120.0},
   "RS-485":{"nom":"RS-485 (TIA-485)","famille":"Lent","tr":2e-8,"cadence":5e6,"zdiff":120.0}

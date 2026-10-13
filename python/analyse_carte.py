@@ -255,7 +255,7 @@ def _reglages(doc):
     # UNE INTERFACE N'ENTRE DANS LES RÉGLAGES QUE SI UN NET LA PORTE : le
     # rapport les recopie, et une carte sans interface doit rendre celui
     # d'avant à l'identique, quoi que la page envoie.
-    utilisees = set((doc.get("natures") or {}).values()) & set(INTERFACES)
+    utilisees = {_classe(doc, n) for n in (doc.get("natures") or {})} & set(INTERFACES)
     garde = lambda k: k not in INTERFACES or k in utilisees      # noqa: E731
     tr = dict(TR_CLASSES, **{k: INTERFACES[k]["tr"] for k in utilisees})
     for k, v in (r.get("tr") or {}).items():
@@ -2735,7 +2735,10 @@ def paires_diff(doc, couches, reg, unite, notes, se, troncons, surf=None):
     for p, q in paires:
         if not (longueur[p] and longueur[q]):
             continue
-        zt = (reg.get("zdiff_classes") or {}).get(_classe(doc, p), reg["zdiff"])
+        # un brin reclassé à la main, l'autre resté Lent : la cible est celle
+        # de l'interface, quel que soit l'ordre de la paire
+        zdc = reg.get("zdiff_classes") or {}
+        zt = next((zdc[c] for c in (_classe(doc, p), _classe(doc, q)) if c in zdc), reg["zdiff"])
         bilan["paires"] += 1
         pieces, couple, bancal = [], 0.0, 0.0        # (Z, L, v, couplé ?)
         for i in sorted({i for (n, i) in par if n in (p, q)}):

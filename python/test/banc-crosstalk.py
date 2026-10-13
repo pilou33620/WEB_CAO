@@ -2614,7 +2614,10 @@ def une_classe_d_interface_a_son_front_et_sa_famille():
     famille range l'interface dans une classe d'origine."""
     assert ct.front_de_classe("USB HS") == (5e-10, "déduit de la classe « USB HS »")
     assert ct.front_de_classe("ETH 100")[0] == 3e-9
-    assert ct.front_de_classe("USB HS", {"USB HS": 7e-10})[0] == 7e-10
+    assert ct.front_de_classe("USB HS", {"USB HS": 3e-10})[0] == 3e-10
+    # borné par 10 % de la période de sa cadence, comme `analyse_carte` : un
+    # front saisi plus lent que 0,1 / 200 MHz retombe à 500 ps
+    assert ct.front_de_classe("USB HS", {"USB HS": 7e-10})[0] == 0.1 / 2e8
     assert ct.front_de_classe("inconnue")[0] == ct.TR_CLASSES["Lent"]
     assert ct.famille("CAN") == "Lent" and ct.famille("USB HS") == "Rapide"
     assert ct.famille("Rapide") == "Rapide" and ct.famille("inconnue") == "inconnue"

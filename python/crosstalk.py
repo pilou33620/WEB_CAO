@@ -910,11 +910,11 @@ INTERFACES = {
     "USB FS": {"nom": "USB 2.0 Full Speed", "famille": "Lent",
                "tr": 4e-9, "cadence": 6e6, "zdiff": 90.0},
     "USB HS": {"nom": "USB 2.0 High Speed", "famille": "Rapide",
-               "tr": 5e-10, "cadence": 2.4e8, "zdiff": 90.0},
+               "tr": 5e-10, "cadence": 2e8, "zdiff": 90.0},
     "ETH 100": {"nom": "Ethernet 100BASE-TX", "famille": "Rapide",
                 "tr": 3e-9, "cadence": 3.125e7, "zdiff": 100.0},
     "ETH 1000": {"nom": "Ethernet 1000BASE-T", "famille": "Rapide",
-                 "tr": 2e-9, "cadence": 6.25e7, "zdiff": 100.0},
+                 "tr": 2e-9, "cadence": 5e7, "zdiff": 100.0},
     "LVDS": {"nom": "LVDS (TIA-644)", "famille": "Rapide",
              "tr": 3e-10, "cadence": 3.3e8, "zdiff": 100.0},
     "CAN": {"nom": "CAN (ISO 11898)", "famille": "Lent",
@@ -2377,6 +2377,10 @@ def front_de_classe(classe, tr_classes=None, porteuse_rf=0.0):
     t_r = _nb(fronts.get(c), 0.0)
     if not (t_r > 0):
         return TR_DEFAUT, "front de référence (1 ns)"
+    # UNE INTERFACE EST BORNEE PAR SA CADENCE, comme dans `analyse_carte`
+    # (tr_effectif) : un front saisi trop lent pour sa cadence y est ramene.
+    if c in INTERFACES:
+        t_r = min(t_r, 0.1 / INTERFACES[c]["cadence"])
     return t_r, "déduit de la classe « %s »" % c
 
 

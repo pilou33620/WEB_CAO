@@ -32,9 +32,9 @@ d'info-bulle.
 | Classe | Nom long | Famille | t_r | Cadence | Z_diff | Source |
 |---|---|---|---|---|---|---|
 | USB FS | USB 2.0 Full Speed | Lent | 4 ns | 6 MHz | 90 Ω | USB 2.0 §7.1 : 4–20 ns ; 12 Mb/s |
-| USB HS | USB 2.0 High Speed | Rapide | 500 ps | 240 MHz | 90 Ω | USB 2.0 : t_r ≥ 500 ps ; 480 Mb/s |
+| USB HS | USB 2.0 High Speed | Rapide | 500 ps | 200 MHz | 90 Ω | USB 2.0 : t_r ≥ 500 ps ; 480 Mb/s |
 | ETH 100 | Ethernet 100BASE-TX | Rapide | 3 ns | 31,25 MHz | 100 Ω | ANSI X3.263 : 3–5 ns ; MLT-3 à 125 Mbd |
-| ETH 1000 | Ethernet 1000BASE-T | Rapide | 2 ns | 62,5 MHz | 100 Ω | PAM-5 à 125 Mbd |
+| ETH 1000 | Ethernet 1000BASE-T | Rapide | 2 ns | 50 MHz | 100 Ω | PAM-5 à 125 Mbd |
 | LVDS | LVDS (TIA-644) | Rapide | 300 ps | 330 MHz | 100 Ω | TIA-644 : 655 Mb/s |
 | CAN | CAN (ISO 11898) | Lent | 50 ns | 0,5 MHz | 120 Ω | ISO 11898 : 1 Mb/s |
 | RS-485 | RS-485 (TIA-485) | Lent | 20 ns | 5 MHz | 120 Ω | TIA-485 : 10 Mb/s |
@@ -45,10 +45,12 @@ si le panneau lui en donne une (`z0_classes`) ; sinon, la règle
 d'impédance le compare à sa propre impédance dominante, comme une classe
 Analogique sans cible.
 
-**Front jugé.** Le serveur prend min(t_r, 0,1 / cadence). L'USB HS est
-donc jugé à 417 ps, et non à 500 ps, et le 1000BASE-T à 1,6 ns, et non à
-2 ns. C'est plus sévère que la norme, sans danger, et réglable dans le
-panneau.
+**Front jugé.** Le serveur prend min(t_r, 0,1 / cadence). Pour qu'un net
+soit jugé au front de sa norme, la cadence par défaut vaut au plus
+0,1 / t_r, comme pour les classes d'origine (un essai du banc PCB y
+veille). C'est pourquoi l'USB HS est à 200 MHz et non à 240 MHz, son
+fondamental, et le 1000BASE-T à 50 MHz et non à 62,5 MHz. Décidé le
+13/10/2026.
 
 ## Comportement attendu (critères d'acceptation)
 

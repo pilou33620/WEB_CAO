@@ -1028,7 +1028,7 @@ def test_classes_d_interface():
     base = dict(vias=[via(retour_hors_rayon_mm=30.0)], pistes=[droite("CLK", 0.0)],
                 natures={"CLK": "Rapide"})
     assert rapport(**base) == rapport(reglages={
-        "tr": {"USB HS": 5e-10}, "cadences": {"USB HS": 2.4e8},
+        "tr": {"USB HS": 5e-10}, "cadences": {"USB HS": 2e8},
         "z0_classes": {"ETH 100": 50.0}, "zdiff_classes": {"USB HS": 90.0}}, **base)
     # ETH 100 (3 ns) : son via à 30 mm tient, là où « Rapide » (1 ns) le condamne
     eth = dict(vias=[via(retour_hors_rayon_mm=30.0)], natures={"CLK": "ETH 100"})
@@ -1039,9 +1039,9 @@ def test_classes_d_interface():
     assert "USB HS" not in res["reglages"]["tr"], res["reglages"]["tr"]
     # le panneau passe devant la table : ETH 100 réglé à 0,1 ns est condamné
     assert de(analyser(reglages={"tr": {"ETH 100": 1e-10}}, **eth), "retour")
-    # USB HS est jugé à min(500 ps, 0,1 / 240 MHz) et compte comme rapide
+    # USB HS est jugé à son front de norme (500 ps) et compte comme rapide
     k = de(analyser(vias=eth["vias"], natures={"CLK": "USB HS"}), "retour")
-    assert k and abs(k[0]["frequences"][0]["tr"] - 0.1 / 2.4e8) < 1e-15, k
+    assert k and abs(k[0]["frequences"][0]["tr"] - 5e-10) < 1e-15, k
     deux = empilage_de(("Top", "signal"), ("Bot", "signal"), di=1.5)
     k = de(analyser(stackup=deux, pistes=[droite("D", 0.0)], natures={"D": "USB HS"}),
            "empilage")
@@ -1059,11 +1059,12 @@ def test_classes_d_interface():
                                                {"x": 3, "y": 0, "n": "GND"}]}
     res = analyser(composants=[u, c], natures={"SIGN8": "CAN", "GND": "Masse"})
     assert any("U3.8 (SIGN8)" in n for n in res["notes"]), res["notes"]
-    # Z_DIFF PAR CLASSE : deux paires de 90 Ω sur la même carte (entraxe
-    # 0,32 mm, 300 mm : assez long pour que le front de 3 ns les voie). L'USB
-    # tient sa cible de 90 Ω, l'Ethernet est signalé face à 100 Ω
-    paires = dict(pistes=[droite("U_P", 0.0, x2=300.0), droite("U_N", 0.32, x2=300.0),
-                          droite("E_P", 10.0, x2=300.0), droite("E_N", 10.32, x2=300.0)],
+    # Z_DIFF PAR CLASSE : deux paires de 84 Ω sur la même carte (entraxe
+    # 0,30 mm, 300 mm : assez long pour que le front de 3 ns les voie). L'USB
+    # tient sa cible de 90 Ω (|Γ| ≈ 0,034), l'Ethernet est signalé face à
+    # 100 Ω (|Γ| ≈ 0,087) : chacun loin du seuil de 0,05
+    paires = dict(pistes=[droite("U_P", 0.0, x2=300.0), droite("U_N", 0.30, x2=300.0),
+                          droite("E_P", 10.0, x2=300.0), droite("E_N", 10.30, x2=300.0)],
                   paires=[["U_P", "U_N"], ["E_P", "E_N"]],
                   natures={"U_P": "USB HS", "U_N": "USB HS", "E_P": "ETH 100", "E_N": "ETH 100"})
     res = analyser(**paires)
@@ -1072,6 +1073,16 @@ def test_classes_d_interface():
     assert res["reglages"]["zdiff_classes"] == {"USB HS": 90.0, "ETH 100": 100.0}, res["reglages"]
     # le panneau passe devant la norme
     assert de(analyser(reglages={"zdiff_classes": {"ETH 100": 90.0}}, **paires), "paire") == []
+    # un brin reclassé à la main, l'autre resté Lent : la cible est celle de
+    # l'interface, quel que soit l'ordre de la paire
+    for nat in ({"U_P": "Lent", "U_N": "USB HS"}, {"U_P": "USB HS", "U_N": "Lent"}):
+        k = de(analyser(pistes=paires["pistes"][:2], paires=[["U_P", "U_N"]], natures=nat),
+               "paire")
+        assert k == [], (nat, k)
+    # une interface portée par un net forcé ailleurs (nœud de découpage)
+    # n'entre pas dans les réglages
+    r = analyser(natures={"SW": "USB HS"}, bruyants=["SW"])["reglages"]
+    assert "USB HS" not in r["tr"] and "zdiff_classes" not in r, r
     print("[PASS] test_classes_d_interface")
 
 
