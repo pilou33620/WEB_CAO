@@ -4337,6 +4337,7 @@ T("paires du schéma : créées entre nets rapides, une seule fois",()=>{
 T("classes d'interface : au menu, créées aux règles de leur famille, vues par la vérification",()=>{
   S.netClass={};S.netClassAuto={};S.dpPairs=[];S.dpSchema=[];
   importNetlist(NET,true);
+  const classes=JSON.stringify(S.classes);
   S.classes=S.classes.filter(c=>c.name==="Défaut");
   const h=classOptionsHtml("Défaut");
   for(const k in CLASSES_INTERFACE)
@@ -4367,6 +4368,7 @@ T("classes d'interface : au menu, créées aux règles de leur famille, vues par
     bc.close();
     sessionStorage.removeItem("web_cao_netclasses");sessionStorage.removeItem("web_cao_paires_diff");
     S.netClassAuto={};S.dpSchema=[];S.dpPairs=[];S.netClass={};
+    S.classes=JSON.parse(classes);
   }
 });
 T("import : deux classes de même nom sont distinguées",()=>{
@@ -18072,6 +18074,7 @@ T("Vérification de la carte : les réglages partent en unités du serveur",()=>
 
 T("Vérification de la carte : une ligne par classe d'interface, sa Z_diff, ses réglages mémorisés",()=>{
   const r=SIM_CARTE.reglages, garde=JSON.stringify(r), carte=SIM_PCB.carte;
+  const unites=JSON.stringify(SIM_CARTE.unites);
   SIM_PCB.carte=()=>"USB.pcb";
   try{
     for(const k in CLASSES_INTERFACE){
@@ -18105,6 +18108,7 @@ T("Vérification de la carte : une ligne par classe d'interface, sa Z_diff, ses 
     localStorage.removeItem("cao.carte.reglages.v1.USB.pcb");
     SIM_CARTE.carteReglee=undefined;
     Object.assign(r,JSON.parse(garde));
+    Object.assign(SIM_CARTE.unites,JSON.parse(unites));
   }
 });
 T("Vérification de la carte : Z₀ par classe, porteuses par net, courants par rail",()=>{

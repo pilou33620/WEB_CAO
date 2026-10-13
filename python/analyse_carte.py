@@ -250,6 +250,20 @@ def _pire(verdicts):
     return next((s for s in ("critique", "vigilance") if s in verdicts), "ok")
 
 
+def _table(r, cle):
+    """Un réglage {classe ou net: valeur}. Une autre forme vient d'un client
+    forgé : refusée par un message, pas par une erreur 500."""
+    d = r.get(cle) or {}
+    if not isinstance(d, dict):
+        raise ErreurAnalyse("Réglage « %s » mal formé : un objet {nom: valeur} est attendu." % cle)
+    return d
+
+
+def _positif(v):
+    """Une valeur saisie utilisable : > 0 et FINIE (« inf » jugerait en NaN)."""
+    return bool(v) and 0 < float(v) < math.inf
+
+
 def _reglages(doc):
     r = doc.get("reglages") or {}
     # UNE INTERFACE N'ENTRE DANS LES RÉGLAGES QUE SI UN NET LA PORTE : le
@@ -258,12 +272,12 @@ def _reglages(doc):
     utilisees = {_classe(doc, n) for n in (doc.get("natures") or {})} & set(INTERFACES)
     garde = lambda k: k not in INTERFACES or k in utilisees      # noqa: E731
     tr = dict(TR_CLASSES, **{k: INTERFACES[k]["tr"] for k in utilisees})
-    for k, v in (r.get("tr") or {}).items():
-        if float(v) > 0 and garde(str(k)):
+    for k, v in _table(r, "tr").items():
+        if _positif(v) and garde(str(k)):
             tr[str(k)] = float(v)
     cadences = dict(CADENCES, **{k: INTERFACES[k]["cadence"] for k in utilisees})
-    for k, v in (r.get("cadences") or {}).items():  # 0 ou vide : le défaut
-        if v and float(v) > 0 and garde(str(k)):
+    for k, v in _table(r, "cadences").items():  # 0 ou vide : le défaut
+        if _positif(v) and garde(str(k)):
             cadences[str(k)] = float(v)
     # UNE PORTEUSE RF : les nets RF se jugent à leur porteuse, pas au genou
     # d'un front. Elle devient le front RF (0,35 / f), sans borne de période.
@@ -295,15 +309,15 @@ def _reglages(doc):
     # vidéo à 75 Ω et une RF à 50 Ω sur la même carte. Clés absentes du
     # rapport quand rien n'est donné : le rapport d'avant, à l'identique.
     for cle in ("z0_classes", "porteuses"):
-        d = {str(k): float(v) for k, v in (r.get(cle) or {}).items() if v and float(v) > 0
+        d = {str(k): float(v) for k, v in _table(r, cle).items() if _positif(v)
              and (cle == "porteuses" or garde(str(k)))}     # porteuses : par NET
         if d:
             out[cle] = d
     # LA Z_DIFF D'UNE INTERFACE, celle de sa norme : USB à 90 Ω et Ethernet à
     # 100 Ω sur la même carte. Le panneau passe devant, comme z0_classes.
     zd = {k: INTERFACES[k]["zdiff"] for k in utilisees}
-    zd.update((str(k), float(v)) for k, v in (r.get("zdiff_classes") or {}).items()
-              if v and float(v) > 0 and garde(str(k)))
+    zd.update((str(k), float(v)) for k, v in _table(r, "zdiff_classes").items()
+              if _positif(v) and garde(str(k)))
     if zd:
         out["zdiff_classes"] = zd
     return out

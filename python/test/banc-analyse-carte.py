@@ -1083,6 +1083,17 @@ def test_classes_d_interface():
     # n'entre pas dans les réglages
     r = analyser(natures={"SW": "USB HS"}, bruyants=["SW"])["reglages"]
     assert "USB HS" not in r["tr"] and "zdiff_classes" not in r, r
+    # UN DOCUMENT FORGÉ : une table en liste est refusée (pas une erreur 500),
+    # une valeur infinie est ignorée (pas un verdict NaN en silence)
+    for cle in ("tr", "cadences", "z0_classes", "porteuses", "zdiff_classes"):
+        try:
+            analyser(reglages={cle: [90]})
+            assert False, cle
+        except ErreurAnalyse as e:
+            assert cle in str(e), e
+    r = analyser(natures={"P": "USB HS"},
+                 reglages={"zdiff_classes": {"USB HS": "inf"}, "tr": {"Lent": "inf"}})["reglages"]
+    assert r["zdiff_classes"] == {"USB HS": 90.0} and r["tr"]["Lent"] == 1e-8, r
     print("[PASS] test_classes_d_interface")
 
 

@@ -6429,6 +6429,10 @@ function simCorpsCarte(){
   let classes="";
   for(const k in r.tr){
     const id=simCarteIdClasse(k), itf=CLASSES_INTERFACE[k];
+    const vide=itf?"aucune — sa norme ne fixe que la Z_diff, et un brin ne se "+
+                   "compare qu'à lui-même":
+               "le Z₀ de la carte"+(k==="Analogique"?" — et un net Analogique sans "+
+                                     "cible ne se compare qu'à lui-même":"");
     classes+='<tr><td'+(itf?' title="'+simEsc(itf.nom)+'"':'')+'>'+simEsc(k)+'</td><td>'+
       champU("simCarteTr"+id,"Le front de montée d'un net de classe « "+k+
              " » : celui de la techno qui le pilote, borné par 10 % de la "+
@@ -6440,10 +6444,7 @@ function simCorpsCarte(){
              "période.","cette cadence")+'</td><td>'+
       (k in r.z0c?champ("simCarteZ0c"+id,"La Z₀ visée pour un net de classe « "+k+
             " » : son impédance se juge face à elle, la réflexion de ses vias "+
-            "et de ses fentes aussi. Vide : "+(itf?"aucune — sa norme ne fixe "+
-            "que la Z_diff, et un brin ne se compare qu'à lui-même":"le Z₀ de la carte"+
-            (k==="Analogique"?" — et un net Analogique sans cible ne se compare "+
-            "qu'à lui-même":""))+".","Ω"):'<span class="simU">—</span>')+'</td><td>'+
+            "et de ses fentes aussi. Vide : "+vide+".","Ω"):'<span class="simU">—</span>')+'</td><td>'+
       (k in r.zdc?champ("simCarteZdc"+id,"La Z_diff visée pour une paire de "+
             "classe « "+k+" », celle de sa norme : la règle des paires "+
             "différentielles la juge face à elle, et non face à la Z_diff de "+
@@ -6574,15 +6575,16 @@ function simBrancherCarte(){
     simCarteReglagesGarder();
   });
   lie("simCarteZdiff",()=>r.zdiff,v=>{r.zdiff=v;});
-  const id=simCarteIdClasse;
-  for(const k in r.tr)lieU("simCarteTr"+id(k),SIM_UNITES_TR,()=>u.tr[k],c=>{u.tr[k]=c;},
+  for(const k in r.tr)lieU("simCarteTr"+simCarteIdClasse(k),SIM_UNITES_TR,()=>u.tr[k],c=>{u.tr[k]=c;},
                           ()=>r.tr[k],v=>{r.tr[k]=v;});
-  for(const k in r.cadences)lieU("simCarteCad"+id(k),SIM_UNITES,()=>u.cadences[k],
+  for(const k in r.cadences)lieU("simCarteCad"+simCarteIdClasse(k),SIM_UNITES,()=>u.cadences[k],
                           c=>{u.cadences[k]=c;},()=>r.cadences[k],v=>{r.cadences[k]=v;});
   lieU("simCartePorteuse",SIM_UNITES,()=>u.porteuse,c=>{u.porteuse=c;},
        ()=>r.porteuse,v=>{r.porteuse=v;},"aucune");
-  for(const k in r.z0c)lie("simCarteZ0c"+id(k),()=>r.z0c[k],v=>{r.z0c[k]=v;},"Z₀");
-  for(const k in r.zdc)lie("simCarteZdc"+id(k),()=>r.zdc[k],v=>{r.zdc[k]=v;});
+  for(const k in r.z0c)lie("simCarteZ0c"+simCarteIdClasse(k),()=>r.z0c[k],v=>{r.z0c[k]=v;},"Z₀");
+  /* vidé, le champ revient à la Z_diff de la norme */
+  for(const k in r.zdc)lie("simCarteZdc"+simCarteIdClasse(k),()=>r.zdc[k],
+                           v=>{r.zdc[k]=v||CLASSES_INTERFACE[k].zdiff;},"norme");
   simCarteAvertEcrire();
   for(const [id,cle] of [["simCartePorteuses","porteuses"],["simCarteCourants","courants"]]){
     const e=simEl(id);
