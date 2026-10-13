@@ -64,6 +64,7 @@
   }
   let _historique = [];         // Messages de la session en cours
   let _enAttente = false;       // Requête en cours
+  let _etape = "";              // Ce que l'assistant consulte pendant l'attente (outils de lecture)
   let _inclureContexte = true;  // Transmettre l'état CAO courant
   let _domConstruit = false;
   let _questionEnAttente = "";  // Question préparée depuis le menu contextuel
@@ -92,6 +93,9 @@
     const resume = [];
 
     try {
+      const projet = (typeof projNom === "function") ? projNom() : "";
+      resume.push(projet ? ("Projet ouvert : « " + projet + " ».") : "Aucun projet ouvert.");
+
       if (outil === "schema" && typeof S !== "undefined" && S) {
         resume.push("Outil actif : Éditeur Schématique Web CAO.");
         if (Array.isArray(S.pages)) {
@@ -160,35 +164,49 @@
           if (selComps.length > 0) resume.push("\nÉléments actuellement sélectionnés : " + selComps.join(", "));
         }
       } else if (outil === "pcb" && typeof S !== "undefined" && S) {
+        /* LE RÉSUMÉ, PAS LE DÉTAIL : le détail se demande par les outils de
+           lecture (OUTILS_PCB), et seulement quand la question en a besoin. */
         resume.push("Outil actif : Éditeur PCB Web CAO.");
         if (S.board) {
-          resume.push("Dimensions carte : " + (Math.round((S.board.w || 0) * 10) / 10) + " × " + (Math.round((S.board.h || 0) * 10) / 10) + " mm.");
+          resume.push("Dimensions carte : " + (Math.round((S.board.w || 0) * 10) / 10) + " × " + (Math.round((S.board.h || 0) * 10) / 10) + " mm" + (S.board.pts ? " (contour libre)" : "") + ".");
         }
-        if (Array.isArray(S.layers)) {
-          const cu = S.layers.filter(l => l && l.cu);
-          resume.push("Empilage cuivre : " + cu.length + " couche(s).");
+        if (S.cu) {
+          resume.push("Empilage : " + S.cu + " couche(s) cuivre" + (typeof stackTotal === "function" ? (", " + stackTotal() + " mm au total") : "") + ".");
         }
-        const fpsArr = Array.isArray(S.fps) ? S.fps : (Array.isArray(S.fp) ? S.fp : []);
-        if (fpsArr.length > 0) {
-          const fpList = fpsArr.map(f => (f.ref || "Fp") + ((f.val || f.value) ? (" [" + (f.val || f.value) + "]") : "") + ((f.pkg || f.package) ? (" (" + (f.pkg || f.package) + ")") : ""));
-          resume.push("\nComposants posés sur le PCB (" + fpsArr.length + ") :\n  * " + fpList.slice(0, 40).join("\n  * ") + (fpsArr.length > 40 ? ("\n  * ... (" + (fpsArr.length - 40) + " autres)") : ""));
-        }
-        if (Array.isArray(S.tracks)) {
-          resume.push("\nRoutage : " + S.tracks.length + " segments de piste" + (Array.isArray(S.vias) ? (", " + S.vias.length + " vias") : "") + ".");
+        const nets = (typeof netTable === "function") ? netTable() : [];
+        const cx = (typeof conn === "function") ? conn() : null;
+        const aRouter = cx ? [...cx.nets.values()].filter(n => n.miss > 0).length : 0;
+        resume.push("Composants : " + (S.fps || []).length + ". Nets : " + nets.length + (aRouter ? (", dont " + aRouter + " pas entièrement routé(s)") : "") + ".");
+        resume.push("Routage : " + (S.tracks || []).length + " segments de piste, " + (S.vias || []).length + " vias, " + (S.zones || []).length + " zones de cuivre.");
+        if (S.drcRun && Array.isArray(S.drc)) {
+          const erreurs = S.drc.filter(d => !d.info).length;
+          resume.push("DRC : " + erreurs + " erreur(s), " + (S.drc.length - erreurs) + " remarque(s).");
+        } else {
+          resume.push("DRC : pas encore lancé.");
         }
         if (S.activeNet || S.hlNet) {
           resume.push("Net actif sélectionné : " + (S.activeNet || S.hlNet) + ".");
         }
-      } else if (outil === "ipc2581" && typeof V !== "undefined" && V) {
-        resume.push("Outil actif : Visionneuse IPC-2581 Web CAO.");
-        if (V.fichier) resume.push("Fichier IPC-2581 : " + V.fichier + ".");
-        if (Array.isArray(V.couches)) resume.push("Couches : " + V.couches.length + ".");
-        if (Array.isArray(V.parNet)) resume.push("Nets électriques : " + V.parNet.length + ".");
-        if (V.comp) resume.push("Composant inspecté : " + V.comp + ".");
-        if (V.net >= 0 && Array.isArray(V.modele && V.modele.nets)) {
-          const netObj = V.modele.nets[V.net];
-          if (netObj && netObj.nom) resume.push("Net inspecté : " + netObj.nom + ".");
+        if (S.sel && S.sel.fps && S.sel.fps.size) {
+          const refs = (S.fps || []).filter(f => S.sel.fps.has(f.id) || S.sel.fps.has(f)).map(f => f.ref);
+          if (refs.length) resume.push("Composants sélectionnés : " + refs.slice(0, 20).join(", ") + (refs.length > 20 ? " …" : "") + ".");
         }
+      } else if (outil === "ipc2581" && typeof V !== "undefined" && V) {
+        resume.push("Outil actif : Visionneuse IPC-2581 Web CAO (lecture seule : la carte se regarde, elle ne se modifie pas).");
+        if (V.modele) {
+          const m = V.modele, u = V.unite || "mm", r = x => Math.round(x * 1000) / 1000;
+          resume.push("Fichier IPC-2581 : " + (V.fichier || "sans nom") + ", unité du document : " + u + ".");
+          if (V.bbox) resume.push("Encombrement : " + r(V.bbox.x2 - V.bbox.x1) + " × " + r(V.bbox.y2 - V.bbox.y1) + " " + u + (m.epaisseur ? (", épaisseur " + m.epaisseur + " " + u) : "") + ".");
+          resume.push("Couches cuivre : " + (V.couches || []).filter(c => c.cuivre).length + ". Composants : " + (m.composants || []).length + ". Nets : " + (V.parNet || []).filter(n => n.nom).length + ".");
+        } else {
+          resume.push("Aucun fichier IPC-2581 ouvert.");
+        }
+        if (V.comp) resume.push("Composant inspecté : " + V.comp + ".");
+        if (V.net >= 0 && V.parNet && V.parNet[V.net]) resume.push("Net inspecté : " + V.parNet[V.net].nom + ".");
+      }
+      if (outil !== "schema") {
+        const sims = simAvecResultat();
+        if (sims.length) resume.push("Simulations avec un résultat : " + sims.join(", ") + ".");
       }
     } catch (e) {
       console.warn("Contexte CAO non disponible :", e);
@@ -196,6 +214,318 @@
 
     return resume.length > 0 ? resume.join("\n") : "Outil CAO électronique Web.";
   }
+
+  /* ===========================================================================
+     LES OUTILS DE LECTURE
+     ---------------------------------------------------------------------------
+     Le contexte joint à la question n'est qu'un résumé. Le détail — un net, un
+     composant, l'empilage, une partie d'un rapport de simulation —, l'assistant
+     le demande lui-même par un bloc ```outil, et la page ne lui rend que ce
+     qu'il a demandé. Les réponses des outils servent à la question en cours et
+     ne restent PAS dans l'historique : une conversation de vingt questions ne
+     traîne pas vingt netlists à chaque envoi.
+
+     Un bloc ```outil plutôt que les « function calls » de l'API : il passe par
+     n'importe quel modèle (Gemma comme Gemini), comme les blocs ```action.
+     =========================================================================== */
+  const OUTIL_MAX = 12000;   // caractères rendus par un appel
+  const OUTIL_TOURS = 4;     // allers-retours au plus pour une question
+
+  // ponytail: filtre = sous-chaîne sans casse, pas de regex ; suffit pour « USB », « U1 », « 0402 »
+  function contient(filtre, ...champs) {
+    if (!filtre) return true;
+    const f = String(filtre).toLowerCase();
+    return champs.some(c => String(c == null ? "" : c).toLowerCase().includes(f));
+  }
+
+  function borner(lignes, max, quoi) {
+    return lignes.length <= max ? lignes
+      : lignes.slice(0, max).concat("... (" + (lignes.length - max) + " " + quoi + " de plus : précise le filtre)");
+  }
+
+  const mm = x => Math.round(x * 1000) / 1000;
+
+  /* ---------- Éditeur PCB (S, 01-core.js) ---------- */
+  const nomCouchePcb = i => ((S.cuL && S.cuL[i]) || {}).name || ("couche " + i);
+
+  const OUTILS_PCB = {
+    empilage: {
+      desc: "couches cuivre et diélectriques du dessus vers le dessous (épaisseur, εr, tan δ, plans), finition",
+      fn: () => {
+        const L = ["Empilage : " + S.cu + " couche(s) cuivre, " + stackTotal() + " mm au total" +
+                   (S.stack && S.stack.finish ? (", finition " + S.stack.finish) : "") + " :"];
+        for (let i = 0; i < S.cu; i++) {
+          const c = (S.cuL && S.cuL[i]) || {};
+          L.push("- " + nomCouchePcb(i) + " : cuivre " + Math.round(cuT(i) * 1000) + " µm" + (c.plane ? (", plan" + (c.net ? (" " + c.net) : "")) : ""));
+          if (i < S.cu - 1) {
+            const d = diAt(i);
+            L.push("- " + d.k + " " + d.mat + " : " + d.t + " mm, εr " + d.er + ", tan δ " + d.df);
+          }
+        }
+        return L;
+      }
+    },
+    classes: {
+      desc: "classes de nets et leurs règles, règles de conception de la carte, paires différentielles",
+      fn: () => {
+        const L = ["Classes de nets :"].concat(S.classes.map(c =>
+          "- " + c.name + " : piste " + c.w + " mm, isolement " + c.clr + " mm, via " + c.via + " / perçage " + c.drill + " mm"));
+        const R = S.rule || {};
+        L.push("Règles : bord de carte " + R.edge + " mm, perçage mini " + R.hole + " mm, masque " + R.mask + " mm, angle " + R.corner + ", profil fabricant " + R.mfgProfile + ".");
+        if ((S.dpPairs || []).length) L.push("Paires différentielles : " + S.dpPairs.map(p => p.name + " (" + p.p + " / " + p.n + ")").join(", ") + ".");
+        return L;
+      }
+    },
+    composants: {
+      args: '"filtre":"U"',
+      desc: "liste des composants (repère, valeur, boîtier, face, position) ; filtre facultatif sur repère, valeur ou boîtier",
+      fn: a => {
+        const L = S.fps.filter(f => contient(a.filtre, f.ref, f.value, f.pkg)).map(f =>
+          "- " + f.ref + (f.value ? (" = " + f.value) : "") + (f.pkg ? (" (" + f.pkg + ")") : "") +
+          ", " + (f.side ? "dessous" : "dessus") + ", x " + mm(f.x) + " y " + mm(f.y) + " mm, rotation " + (f.rot || 0) + "°");
+        return L.length ? borner(L, 150, "composants") : ["Aucun composant ne correspond."];
+      }
+    },
+    composant: {
+      args: '"ref":"U1"',
+      desc: "un composant : valeur, boîtier, position, et le net de chaque broche",
+      fn: a => {
+        const f = S.fps.find(x => String(x.ref).toLowerCase() === String(a.ref || "").toLowerCase());
+        if (!f) return ["Composant « " + a.ref + " » introuvable : demande la liste avec l'outil « composants »."];
+        const L = [f.ref + (f.value ? (" = " + f.value) : "") + (f.pkg ? (" (" + f.pkg + ")") : "") + ", face " + (f.side ? "dessous" : "dessus") +
+                   ", x " + mm(f.x) + " y " + mm(f.y) + " mm, rotation " + (f.rot || 0) + "°."];
+        const pads = padsOf(f);
+        L.push("Broches (" + pads.length + ") :");
+        return L.concat(borner(pads.map(q => "- " + q.n + " → " + (q.net || "non connectée")), 200, "broches"));
+      }
+    },
+    nets: {
+      args: '"filtre":"USB","a_router":true',
+      desc: "liste des nets (classe, nombre de broches, état du routage) ; filtre et a_router facultatifs",
+      fn: a => {
+        const cx = conn();
+        const L = [];
+        for (const n of netTable()) {
+          const info = cx.nets.get(n.name);
+          const miss = info ? info.miss : 0;
+          if (!contient(a.filtre, n.name) || (a.a_router && !miss)) continue;
+          L.push("- " + n.name + " [" + classOf(n.name).name + "] : " + n.nodes.length + " broches, " + (miss ? (miss + " liaison(s) à router") : "routé"));
+        }
+        return L.length ? borner(L, 150, "nets") : ["Aucun net ne correspond."];
+      }
+    },
+    net: {
+      args: '"nom":"USB_DP"',
+      desc: "un net : classe et règles, broches reliées, longueur et largeurs de piste par couche, vias, zones, paire",
+      fn: a => {
+        const nom = String(a.nom || "").toLowerCase();
+        const row = netTable().find(n => String(n.name).toLowerCase() === nom);
+        if (!row) return ["Net « " + a.nom + " » introuvable : demande la liste avec l'outil « nets »."];
+        const cl = classOf(row.name), info = conn().nets.get(row.name);
+        const L = ["Net " + row.name + ", classe " + cl.name + " : piste " + cl.w + " mm, isolement " + cl.clr + " mm, via " + cl.via + " / " + cl.drill + " mm.",
+                   "État : " + (info && info.miss ? (info.miss + " liaison(s) à router") : "routé") + ".",
+                   "Broches (" + row.nodes.length + ") : " + row.nodes.slice(0, 200).map(n => n.ref + "." + n.pin).join(", ") + (row.nodes.length > 200 ? " …" : "")];
+        const parCouche = new Map();
+        for (const t of S.tracks) {
+          if (t.net !== row.name) continue;
+          const e = parCouche.get(t.l) || { mm: 0, n: 0, w: new Set() };
+          e.mm += Math.hypot(t.x2 - t.x1, t.y2 - t.y1); e.n++; e.w.add(t.w);
+          parCouche.set(t.l, e);
+        }
+        let total = 0;
+        for (const [l, e] of parCouche) {
+          total += e.mm;
+          L.push("Pistes sur " + nomCouchePcb(l) + " : " + mm(e.mm) + " mm en " + e.n + " segment(s), largeur(s) " + [...e.w].join(" / ") + " mm.");
+        }
+        L.push("Longueur de piste totale : " + mm(total) + " mm. Vias : " + S.vias.filter(v => v.net === row.name).length + ".");
+        const zones = S.zones.filter(z => z.net === row.name).map(z => nomCouchePcb(z.l));
+        if (zones.length) L.push("Zones de cuivre sur : " + zones.join(", ") + ".");
+        const paires = (S.dpPairs || []).filter(p => p.p === row.name || p.n === row.name);
+        if (paires.length) L.push("Paire différentielle : " + paires.map(p => p.name + " (" + p.p + " / " + p.n + ")").join(", ") + ".");
+        return L;
+      }
+    },
+    drc: {
+      desc: "les erreurs puis les remarques du dernier DRC, avec leur position",
+      fn: () => {
+        if (!S.drcRun) return ["Le DRC n'a pas encore été lancé : propose à l'utilisateur de le lancer."];
+        const tri = S.drc.filter(d => !d.info).concat(S.drc.filter(d => d.info));
+        return tri.length ? borner(tri.map(d => "- " + (d.info ? "[remarque] " : "[erreur] ") + d.msg + " (x " + mm(d.x) + ", y " + mm(d.y) + ")"), 80, "lignes")
+                          : ["DRC propre : aucune erreur."];
+      }
+    }
+  };
+
+  /* ---------- Visionneuse IPC-2581 (V, 02-modele.js) ---------- */
+  const nomNetIpc = i => (V.parNet[i] || {}).nom || "sans net";
+
+  const OUTILS_IPC = {
+    empilage: {
+      desc: "couches physiques dans l'ordre du fichier (nature, épaisseur, matière, εr, tan δ)",
+      fn: () => {
+        const e = V.modele.empilage || [], u = V.unite || "mm";
+        return e.length ? e.map(x => "- " + x.nom + " : " + (x.type || "?") + (x.ep ? (", " + x.ep + " " + u) : "") + (x.mat ? (", " + x.mat) : "") +
+                                     (x.dk ? (", εr " + x.dk) : "") + (x.df ? (", tan δ " + x.df) : ""))
+                        : ["Le fichier ne déclare pas d'empilage."];
+      }
+    },
+    composants: {
+      args: '"filtre":"U"',
+      desc: "liste des composants (repère, valeur, boîtier, référence, couche) ; filtre facultatif",
+      fn: a => {
+        const L = (V.modele.composants || []).filter(c => contient(a.filtre, c.ref, c.val, c.pkg, c.part)).map(c =>
+          "- " + c.ref + (c.val ? (" = " + c.val) : "") + (c.pkg ? (" (" + c.pkg + ")") : "") + (c.part ? (", " + c.part) : "") +
+          ", " + ((V.couches[c.c] || {}).nom || "?"));
+        return L.length ? borner(L, 150, "composants") : ["Aucun composant ne correspond."];
+      }
+    },
+    composant: {
+      args: '"ref":"U1"',
+      desc: "un composant : valeur, boîtier, référence, position, et le net de chaque broche",
+      fn: a => {
+        const c = (V.modele.composants || []).find(x => String(x.ref).toLowerCase() === String(a.ref || "").toLowerCase());
+        if (!c) return ["Composant « " + a.ref + " » introuvable : demande la liste avec l'outil « composants »."];
+        const L = [c.ref + (c.val ? (" = " + c.val) : "") + (c.pkg ? (" (" + c.pkg + ")") : "") + (c.part ? (", " + c.part) : "") + (c.type ? (", type " + c.type) : "") +
+                   ", couche " + ((V.couches[c.c] || {}).nom || "?") + ", x " + c.x + " y " + c.y + ", rotation " + c.r + "°."];
+        const b = c.pins || [];
+        L.push("Broches (" + b.length + ") :");
+        return L.concat(borner(b.map(p => "- " + p.num + " → " + (p.n != null ? nomNetIpc(p.n) : "non connectée")), 200, "broches"));
+      }
+    },
+    nets: {
+      args: '"filtre":"USB"',
+      desc: "liste des nets (classe, longueur de piste, nombre de couches) ; filtre facultatif",
+      fn: a => {
+        const u = V.unite || "mm";
+        const L = V.parNet.filter(n => n.nom && contient(a.filtre, n.nom)).map(n =>
+          "- " + n.nom + " [" + n.classe + "] : " + (n.longueur > 0 ? (mm(n.longueur) + " " + u + " de pistes") : "sans piste") + ", " + n.couches.size + " couche(s)");
+        return L.length ? borner(L, 150, "nets") : ["Aucun net ne correspond."];
+      }
+    },
+    net: {
+      args: '"nom":"USB_DP"',
+      desc: "un net : classe, longueur, couches, nombre de pistes, plans, pastilles et perçages, broches reliées",
+      fn: a => {
+        const nom = String(a.nom || "").toLowerCase();
+        const n = V.parNet.find(x => String(x.nom).toLowerCase() === nom);
+        if (!n) return ["Net « " + a.nom + " » introuvable : demande la liste avec l'outil « nets »."];
+        const broches = [];
+        for (const c of V.modele.composants || [])
+          for (const p of c.pins || []) if (p.n === n.i) broches.push(c.ref + "." + p.num);
+        return ["Net " + n.nom + ", classe " + n.classe + (n.tensionNominale != null ? (", " + n.tensionNominale + " V") : "") + ".",
+                "Longueur de piste : " + mm(n.longueur) + " " + (V.unite || "mm") + ", sur " + [...n.couches].map(i => (V.couches[i] || {}).nom).join(", ") + ".",
+                "Objets : " + n.pistes.length + " pistes, " + n.arcs.length + " arcs, " + n.plans.length + " plans, " + n.pads.length + " pastilles, " + n.trous.length + " perçages.",
+                "Broches (" + broches.length + ") : " + broches.slice(0, 200).join(", ") + (broches.length > 200 ? " …" : "")];
+      }
+    }
+  };
+
+  /* ---------- Simulations (commun/simulation-rapport.js) ----------
+     Le rapport complet n'existe que pour l'analyse AFFICHÉE : sa fiche est
+     dans la page. Les autres ne rendent que leurs chiffres clés et leur JSON. */
+  const SIM_PARTIES = {
+    methode: /^Ce que calcule/, chiffres: /^Chiffres clés/, diagnostics: /^Diagnostics/,
+    piste: /^La piste/, bornes: /^Bornes/, reglages: /^Réglages/,
+    resultats: /^Résultats détaillés/, texte: /^Rapport texte/, json: /^Données brutes/
+  };
+
+  function simRapportsDispo() { return typeof SIM_RAP_ETAT !== "undefined" && typeof SIM !== "undefined"; }
+
+  function simEtat(k) {
+    try { return SIM_RAP_ETAT[k](); } catch (e) { return {}; }
+  }
+  function simNom(k) { return (typeof SIM_ANALYSES !== "undefined" && SIM_ANALYSES[k] && SIM_ANALYSES[k].nom) || k; }
+  function simKpis(k, res) {
+    try { return (SIM_RAP_KPI[k] ? SIM_RAP_KPI[k](res) : []).map(x => x.lbl + " : " + x.val); } catch (e) { return []; }
+  }
+  function simAvecResultat() {
+    if (!simRapportsDispo()) return [];
+    return Object.keys(SIM_RAP_ETAT).filter(k => simEtat(k).res).map(k => simNom(k) + " (« " + k + " »)");
+  }
+
+  const OUTILS_SIM = {
+    simulations: {
+      desc: "les analyses de simulation, celles qui ont un résultat et leurs chiffres clés",
+      fn: () => Object.keys(SIM_RAP_ETAT).map(k => {
+        const res = simEtat(k).res;
+        return "- " + k + " (" + simNom(k) + ")" + (k === SIM.analyse ? " [affichée]" : "") + " : " +
+               (res ? ("résultat disponible. " + simKpis(k, res).slice(0, 4).join(" ; ")) : "pas de résultat");
+      })
+    },
+    simulation: {
+      args: '"analyse":"crosstalk","partie":"chiffres"',
+      desc: "une partie du rapport d'une simulation. « partie » vaut : chiffres, diagnostics, methode, piste, bornes, reglages, resultats, texte ou json (données brutes, volumineuses : en dernier recours). Commence par chiffres et diagnostics",
+      fn: a => {
+        const k = a.analyse || SIM.analyse;
+        if (!SIM_RAP_ETAT[k]) return ["Analyse « " + k + " » inconnue. Analyses : " + Object.keys(SIM_RAP_ETAT).join(", ") + "."];
+        const partie = a.partie || "chiffres";
+        if (k === SIM.analyse && typeof simRapCollecter === "function") {
+          const sections = simRapMarkdown(simRapCollecter()).split(/\n(?=## )/);
+          const motif = SIM_PARTIES[partie];
+          const s = motif && sections.find(x => motif.test(x.replace(/^## \d+\. /, "")));
+          return [s || ("La partie « " + partie + " » n'existe pas dans ce rapport. Parties : " + Object.keys(SIM_PARTIES).join(", ") + ".")];
+        }
+        const res = simEtat(k).res;
+        if (!res) return ["La simulation « " + simNom(k) + " » n'a pas de résultat."];
+        if (partie === "json") return ["```json", simRapJson(res), "```"];
+        if (partie === "methode" && SIM_RAP_GUIDE[k]) return [SIM_RAP_GUIDE[k].methode, "Critères : " + SIM_RAP_GUIDE[k].criteres, "Limites : " + SIM_RAP_GUIDE[k].limites];
+        const L = simKpis(k, res).map(x => "- " + x);
+        L.push("(« " + simNom(k) + " » n'est pas l'analyse affichée : seuls ses chiffres clés, sa méthode et son JSON sont lisibles. " +
+               "Pour le reste, demande à l'utilisateur de l'afficher dans le panneau Simulation.)");
+        return L;
+      }
+    }
+  };
+
+  /* Les outils de l'éditeur ouvert. L'éditeur schématique n'en a pas : son
+     contexte, une feuille à la fois, reste complet. */
+  function outilsLecture() {
+    if (!_inclureContexte) return {};
+    const outil = detecterOutil();
+    let o = {};
+    if (outil === "pcb" && typeof S !== "undefined" && S && typeof netTable === "function") o = Object.assign({}, OUTILS_PCB);
+    else if (outil === "ipc2581" && typeof V !== "undefined" && V && V.modele) o = Object.assign({}, OUTILS_IPC);
+    if (outil !== "schema" && simRapportsDispo()) Object.assign(o, OUTILS_SIM);
+    return o;
+  }
+
+  function consigneOutils(outils) {
+    const noms = Object.keys(outils);
+    if (!noms.length) return "";
+    return "\n\nOUTILS DE LECTURE. Le contexte joint à la question n'est qu'un RÉSUMÉ. Quand la réponse demande un détail " +
+      "(un net, un composant, l'empilage, une simulation…), DEMANDE-LE avant de répondre : écris seulement un ou plusieurs blocs, sans autre texte :\n" +
+      "```outil\n{\"outil\":\"net\",\"nom\":\"USB_DP\"}\n```\n" +
+      "La page te renvoie les données, puis tu réponds. Ne demande que ce dont la question a besoin, du plus ciblé au plus large ; " +
+      "n'invente jamais une donnée que tu peux demander. Au plus " + OUTIL_TOURS + " allers-retours. Outils disponibles :\n" +
+      noms.map(n => "- " + n + (outils[n].args ? (" {" + outils[n].args + "}") : "") + " : " + outils[n].desc).join("\n");
+  }
+
+  /* Les blocs ```outil d'une réponse, exécutés. Rend null s'il n'y en a pas. */
+  function executerOutils(texte, outils) {
+    const blocs = [...texte.matchAll(/```outil\s*\n([\s\S]*?)```/g)];
+    if (!blocs.length) return null;
+    return blocs.slice(0, 8).map(b => {
+      let a;
+      try { a = JSON.parse(b[1]); } catch (e) { return { titre: "?", texte: "Bloc illisible : JSON attendu, par exemple {\"outil\":\"nets\"}." }; }
+      const o = outils[a.outil];
+      const titre = a.outil + (a.nom || a.ref || a.filtre || a.analyse ? (" " + (a.nom || a.ref || a.filtre || a.analyse)) : "") + (a.partie ? (" · " + a.partie) : "");
+      if (!o) return { titre: titre, texte: "Outil « " + a.outil + " » inconnu. Outils : " + Object.keys(outils).join(", ") + "." };
+      let t;
+      try { t = [].concat(o.fn(a)).join("\n"); } catch (e) { t = "Échec de l'outil : " + e.message; }
+      if (t.length > OUTIL_MAX) t = t.slice(0, OUTIL_MAX) + "\n... (tronqué à " + OUTIL_MAX + " caractères : demande plus ciblé)";
+      return { titre: titre, texte: t };
+    });
+  }
+
+  /* Ce que l'assistant doit savoir de la suite avant toute question, quel que
+     soit l'éditeur ouvert. */
+  const CONTEXTE_SUITE =
+    "CONTEXTE : WEB_CAO fait partie de WEB·SUITE, trois outils web locaux lancés depuis un même lanceur :\n" +
+    "- WEB_CAO : éditeur schématique, éditeur PCB (routage Push & Shove, DRC, classes de nets, paires différentielles), bibliothèque de composants, visionneuse IPC-2581, simulations SI / PI / RF ;\n" +
+    "- WEB_ANTENNA : simulation d'antennes PCB (openEMS, FDTD) à partir d'une carte IPC-2581 exportée par WEB_CAO, ou dessinée sur place ;\n" +
+    "- WEB_3D : visionneuse 3D (STEP, IGES, STL), mesure et assemblage de cartes.\n" +
+    "Un projet regroupe le schéma (-SCH), le circuit imprimé (-PCB) et la carte de fabrication (-IPC) ; lancé depuis WEB·SUITE, il vit dans PROJETS/CAO/<projet>, synchronisé sur GitHub ; la bibliothèque commune est dans PROJETS/LIB_CAO.\n" +
+    "Quand une question dépasse l'outil ouvert (rayonnement d'une antenne, encombrement mécanique), dis quel outil de la suite y répond.\n\n";
 
   /* ---------- Suggestions rapides selon l'outil ---------- */
   const SUGGESTIONS = {
@@ -1506,9 +1836,11 @@
         (confModele(_modele).thinkingLevel === "high"
           ? " réfléchit et analyse votre question technique..."
           : " analyse votre question technique...");
-      loading.innerHTML = 
+      loading.innerHTML =
         '<div class="ia-dots"><span class="ia-dot"></span><span class="ia-dot"></span><span class="ia-dot"></span></div>' +
-        '<span>' + txtAttente + '</span>';
+        '<span></span>';
+      // textContent : l'étape reprend des noms demandés par le modèle
+      loading.lastChild.textContent = _etape ? ("🔎 Consulte : " + _etape + "…") : txtAttente;
       cont.appendChild(loading);
     }
 
@@ -1675,6 +2007,7 @@
     });
 
     _enAttente = true;
+    _etape = "";
     rendreMessages();
 
     // Masquer bannière d'erreur précédente
@@ -1682,8 +2015,9 @@
     if (errBanner) errBanner.hidden = true;
 
     // Construction du prompt et contexte
-    let promptSysteme = 
+    let promptSysteme =
       "Tu es l'ingénieur électronicien d'élite de la suite Web CAO (Éditeur Schématique, Éditeur PCB, Visionneuse industrielle IPC-2581).\n" +
+      CONTEXTE_SUITE +
       "EXIGENCE ABSOLUE ET STRICTE : Tu réponds EXCLUSIVEMENT EN FRANÇAIS. Ne produis AUCUN mot, AUCUN méta-commentaire, AUCUN plan en anglais (bannis tout 'Role:', 'Constraint:', 'Task:', 'Context:', 'Components:', 'Netlist:'). Commence immédiatement par ta réponse technique en français avec clarté, concision et rigueur.\n\n" +
       "ACTIONS INTERACTIVES SUR LE PROJET :\n" +
       "Lorsque tu calcules ou préconises des valeurs numériques concrètes pour des composants de schéma (ex: R1, R2, C1 dans un montage NE555, un filtre RC, un pont diviseur de tension, etc.) ou une largeur de piste PCB (norme IPC-2152 selon courant et échauffement), AJOUTE TOUJOURS à la fin de ton explication un bloc d'action exécutable au format JSON strict balisé avec ```action :\n" +
@@ -1728,6 +2062,8 @@
       const ctx = extraireContexteCao();
       contexteProjetTexte = "DONNÉES DU PROJET EN COURS DANS L'ÉDITEUR :\n" + ctx;
     }
+    const outils = outilsLecture();
+    promptSysteme += consigneOutils(outils);
 
     /* -------------------------------------------------------------------------
        Préparation de la requête Google AI Studio.
@@ -1782,12 +2118,6 @@
       genConfig.thinkingConfig = { thinkingLevel: conf.thinkingLevel };
     }
 
-    const corps = {
-      contents: contents,
-      systemInstruction: { parts: [{ text: promptSysteme }] },
-      generationConfig: genConfig
-    };
-
     const appelerApi = async (body) => {
       return await fetch(url, {
         method: "POST",
@@ -1797,7 +2127,19 @@
       });
     };
 
-    try {
+    /* Un appel au modèle, avec ses secours : un réessai sur 500 / 503, et le
+       repli sans `systemInstruction` si le modèle la refuse (HTTP 400) — repli
+       gardé pour les tours suivants de la même question. */
+    let sansSysteme = false;
+    const demander = async (conv) => {
+      const avecConsigne = () => {
+        const alt = JSON.parse(JSON.stringify(conv));
+        const partTexte = alt.length && alt[0].role === "user" && alt[0].parts.find(p => typeof p.text === "string");
+        if (partTexte) partTexte.text = promptSysteme + "\n\n" + partTexte.text;
+        return { contents: alt, generationConfig: genConfig };
+      };
+      const corps = sansSysteme ? avecConsigne()
+        : { contents: conv, systemInstruction: { parts: [{ text: promptSysteme }] }, generationConfig: genConfig };
       let rep = await appelerApi(corps);
 
       /* RÉESSAI UNIQUE SUR 500 / 503. Ces codes sont transitoires côté Google —
@@ -1810,16 +2152,9 @@
       }
 
       // Secours de repli si le modèle refuse `systemInstruction` (HTTP 400)
-      if (rep.status === 400 && corps.systemInstruction) {
-        const altContents = JSON.parse(JSON.stringify(contents));
-        if (altContents.length > 0 && altContents[0].role === "user") {
-          const partTexte = altContents[0].parts.find(p => typeof p.text === "string");
-          if (partTexte) partTexte.text = promptSysteme + "\n\n" + partTexte.text;
-        }
-        rep = await appelerApi({
-          contents: altContents,
-          generationConfig: genConfig
-        });
+      if (rep.status === 400 && !sansSysteme) {
+        sansSysteme = true;
+        rep = await appelerApi(avecConsigne());
       }
 
       if (!rep.ok) {
@@ -1830,13 +2165,37 @@
       }
 
       const donnees = await rep.json();
-      let texteReponse = "";
+      let texte = "";
       if (donnees.candidates && donnees.candidates[0] && donnees.candidates[0].content && donnees.candidates[0].content.parts) {
         // Filtrer les parties de pensée interne (thought: true) si renvoyées par l'API
         let partsUtiles = donnees.candidates[0].content.parts.filter(p => !p.thought);
         if (partsUtiles.length === 0) partsUtiles = donnees.candidates[0].content.parts;
-        texteReponse = partsUtiles.map(p => p.text || "").join("");
+        texte = partsUtiles.map(p => p.text || "").join("");
       }
+      return texte;
+    };
+
+    try {
+      /* LA BOUCLE DES OUTILS DE LECTURE. Tant que le modèle demande des
+         données par des blocs ```outil, la page les lui rend et il reprend.
+         Ces tours ne vivent que dans `conv` : l'historique ne garde que la
+         question et la réponse finale, avec la liste de ce qui a été lu. */
+      const conv = contents.slice();
+      const consultes = [];
+      let texteReponse = await demander(conv);
+      for (let tour = 1; tour <= OUTIL_TOURS; tour++) {
+        const resultats = executerOutils(texteReponse, outils);
+        if (!resultats) break;
+        resultats.forEach(r => consultes.push(r.titre));
+        _etape = resultats.map(r => r.titre).join(" · ");
+        rendreMessages();
+        conv.push({ role: "model", parts: [{ text: texteReponse }] });
+        conv.push({ role: "user", parts: [{ text: "RÉSULTATS DES OUTILS :\n\n" +
+          resultats.map(r => "### " + r.titre + "\n" + r.texte).join("\n\n") +
+          (tour === OUTIL_TOURS ? "\n\nDERNIER TOUR : réponds maintenant avec ces données, sans nouveau bloc outil." : "") }] });
+        texteReponse = await demander(conv);
+      }
+      texteReponse = texteReponse.replace(/```outil\s*\n[\s\S]*?```/g, "").trim();
 
       if (!texteReponse) {
         texteReponse = "*(Aucune réponse textuelle reçue du modèle)*";
@@ -1847,6 +2206,7 @@
          texte inchangé dès que le premier paragraphe est déjà du français
          légitime, donc elle ne coûte rien quand il n'y a rien à retirer. */
       texteReponse = nettoyerReponseGemma(texteReponse);
+      if (consultes.length) texteReponse = "*🔎 Consulté : " + [...new Set(consultes)].join(" · ") + "*\n\n" + texteReponse;
 
       _historique.push({
         role: "model",
@@ -1893,6 +2253,7 @@
       }
     } finally {
       _enAttente = false;
+      _etape = "";
       rendreMessages();
     }
   }
@@ -1965,6 +2326,8 @@
   window.iaCacherMenuContextuel = iaCacherMenuContextuel;
   window.iaLancerAnalyseSelection = iaLancerAnalyseSelection;
   window.iaPurgerCle = iaPurgerCle;
+  window.iaContexte = extraireContexteCao;   // ce qui part avec chaque question, comme dans WEB_ANTENNA
+  window.iaOutils = outilsLecture;           // les outils de lecture de l'éditeur ouvert (console, bancs)
   window.iaExecuterAction = iaExecuterAction;
 
   /* ---------- Liaison automatique au chargement ---------- */

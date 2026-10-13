@@ -14,4 +14,16 @@ assert.ok(!h.includes("<img"), "texte autour du bloc non echappe : " + h);
 assert.ok(h.includes("ia-code-block") && h.includes("$&#39;"), "bloc de code perdu ou altere : " + h);
 h = c.formaterMarkdown("**gras** <script>alert(1)</script>");
 assert.ok(h.includes("<b>gras</b>") && !h.includes("<script"), "paragraphe : " + h);
+
+// Les outils de lecture : un bloc ```outil est exécuté, un outil inconnu ou un
+// JSON illisible est dit au modèle, une réponse sans bloc ne déclenche rien.
+vm.runInContext("const OUTIL_MAX = 50;" + extraire("executerOutils"), c);
+const outils = { net: { fn: a => ["net " + a.nom] }, long: { fn: () => "x".repeat(80) } };
+const r = c.executerOutils("Je regarde.\n```outil\n{\"outil\":\"net\",\"nom\":\"GND\"}\n```\n" +
+  "```outil\n{\"outil\":\"meteo\"}\n```\n```outil\npas du json\n```\n```outil\n{\"outil\":\"long\"}\n```", outils);
+assert.strictEqual(r.length, 4, JSON.stringify(r));
+assert.deepStrictEqual([r[0].titre, r[0].texte], ["net GND", "net GND"]);
+assert.ok(r[1].texte.includes("inconnu") && r[2].texte.includes("illisible"), JSON.stringify(r));
+assert.ok(r[3].texte.includes("tronqué"), "réponse trop longue non tronquée : " + r[3].texte);
+assert.strictEqual(c.executerOutils("Réponse sans bloc.", outils), null);
 console.log("ok");
