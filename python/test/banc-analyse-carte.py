@@ -1029,7 +1029,7 @@ def test_classes_d_interface():
                 natures={"CLK": "Rapide"})
     assert rapport(**base) == rapport(reglages={
         "tr": {"USB HS": 5e-10}, "cadences": {"USB HS": 2.4e8},
-        "z0_classes": {"ETH 100": 50.0}}, **base)
+        "z0_classes": {"ETH 100": 50.0}, "zdiff_classes": {"USB HS": 90.0}}, **base)
     # ETH 100 (3 ns) : son via à 30 mm tient, là où « Rapide » (1 ns) le condamne
     eth = dict(vias=[via(retour_hors_rayon_mm=30.0)], natures={"CLK": "ETH 100"})
     assert de(analyser(vias=eth["vias"], natures={"CLK": "Rapide"}), "retour")
@@ -1059,6 +1059,19 @@ def test_classes_d_interface():
                                                {"x": 3, "y": 0, "n": "GND"}]}
     res = analyser(composants=[u, c], natures={"SIGN8": "CAN", "GND": "Masse"})
     assert any("U3.8 (SIGN8)" in n for n in res["notes"]), res["notes"]
+    # Z_DIFF PAR CLASSE : deux paires de 90 Ω sur la même carte (entraxe
+    # 0,32 mm, 300 mm : assez long pour que le front de 3 ns les voie). L'USB
+    # tient sa cible de 90 Ω, l'Ethernet est signalé face à 100 Ω
+    paires = dict(pistes=[droite("U_P", 0.0, x2=300.0), droite("U_N", 0.32, x2=300.0),
+                          droite("E_P", 10.0, x2=300.0), droite("E_N", 10.32, x2=300.0)],
+                  paires=[["U_P", "U_N"], ["E_P", "E_N"]],
+                  natures={"U_P": "USB HS", "U_N": "USB HS", "E_P": "ETH 100", "E_N": "ETH 100"})
+    res = analyser(**paires)
+    k = de(res, "paire")
+    assert [x["n"] for x in k] == ["E_P"] and "cible 100 Ω" in k[0]["msg"], k
+    assert res["reglages"]["zdiff_classes"] == {"USB HS": 90.0, "ETH 100": 100.0}, res["reglages"]
+    # le panneau passe devant la norme
+    assert de(analyser(reglages={"zdiff_classes": {"ETH 100": 90.0}}, **paires), "paire") == []
     print("[PASS] test_classes_d_interface")
 
 

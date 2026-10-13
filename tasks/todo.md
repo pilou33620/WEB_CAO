@@ -66,16 +66,16 @@ JSON que sans ce `tr` étendu.
   `reg["zdiff"]`.
 
 **Critères d'acceptation**
-- [ ] Une paire USB à 90 Ω est jugée correcte face à 90 Ω (critère 4).
-- [ ] Sur la même carte, une paire ETH à 90 Ω est signalée face à 100 Ω.
-- [ ] Une paire de classe ordinaire garde la `zdiff` de la carte, sans `zdiff_classes` dans le rapport.
+- [x] Une paire USB à 90 Ω est jugée correcte face à 90 Ω (critère 4).
+- [x] Sur la même carte, une paire ETH à 90 Ω est signalée face à 100 Ω.
+- [x] Une paire de classe ordinaire garde la `zdiff` de la carte, sans `zdiff_classes` dans le rapport.
 
 **Vérification :** `PY_AC` et `PY_SRV` verts.
 
 **Dépendances :** T2. **Fichiers :** `python/analyse_carte.py`, `python/test/banc-analyse-carte.py`. **Taille :** S.
 
 ## Point d'étape 1
-- [ ] `PY_AC`, `PY_XT`, `PY_SRV` et `COMP` verts
+- [x] `PY_AC`, `PY_XT`, `PY_SRV` et `COMP` verts
 - [ ] Le cas TRD1_N n'est plus condamné
 - [ ] Relecture humaine, puis un commit par tâche
 

@@ -299,6 +299,13 @@ def _reglages(doc):
              and (cle == "porteuses" or garde(str(k)))}     # porteuses : par NET
         if d:
             out[cle] = d
+    # LA Z_DIFF D'UNE INTERFACE, celle de sa norme : USB à 90 Ω et Ethernet à
+    # 100 Ω sur la même carte. Le panneau passe devant, comme z0_classes.
+    zd = {k: INTERFACES[k]["zdiff"] for k in utilisees}
+    zd.update((str(k), float(v)) for k, v in (r.get("zdiff_classes") or {}).items()
+              if v and float(v) > 0 and garde(str(k)))
+    if zd:
+        out["zdiff_classes"] = zd
     return out
 
 
@@ -2724,10 +2731,11 @@ def paires_diff(doc, couches, reg, unite, notes, se, troncons, surf=None):
                 rate += 1
         return lg[0] * rate / m
 
-    out, bilan, zt = [], {"paires": 0}, reg["zdiff"]
+    out, bilan = [], {"paires": 0}
     for p, q in paires:
         if not (longueur[p] and longueur[q]):
             continue
+        zt = (reg.get("zdiff_classes") or {}).get(_classe(doc, p), reg["zdiff"])
         bilan["paires"] += 1
         pieces, couple, bancal = [], 0.0, 0.0        # (Z, L, v, couplé ?)
         for i in sorted({i for (n, i) in par if n in (p, q)}):
@@ -2765,7 +2773,7 @@ def paires_diff(doc, couches, reg, unite, notes, se, troncons, surf=None):
 
         db = bancal * 1e-3 / v_ref
 
-        def juge(f_eval, tr, P=pieces, dt=dt, db=db):
+        def juge(f_eval, tr, P=pieces, dt=dt, db=db, zt=zt):
             g = max(abs(z - zt) / (z + zt) * min(1.0, 2 * L * 1e-3 / v / tr) for z, L, v, _ in P)
             sk, mc = dt / tr, db / tr
             v = _pire([_gamma(g)] + ["critique" if x > 0.2 else "vigilance" if x > 0.1 else "ok"
