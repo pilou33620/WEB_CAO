@@ -432,7 +432,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* export IPC-2581 (35-ipc2581-export.js) */
   "ipc2581Document","ipc2581Fichier","exportIpc2581","ipcFonctionCuivre",
   /* classes d'interface (commun/classes-interface.js) */
-  "CLASSES_INTERFACE","familleClasse"];
+  "CLASSES_INTERFACE","familleClasse","simNaturePcb"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -4333,6 +4333,38 @@ T("paires du schéma : créées entre nets rapides, une seule fois",()=>{
   bc.close();
   sessionStorage.removeItem("web_cao_netclasses");sessionStorage.removeItem("web_cao_paires_diff");
   S.netClassAuto={};S.dpSchema=[];S.netClass={};
+});
+T("classes d'interface : au menu, créées aux règles de leur famille, vues par la vérification",()=>{
+  S.netClass={};S.netClassAuto={};S.dpPairs=[];S.dpSchema=[];
+  importNetlist(NET,true);
+  S.classes=S.classes.filter(c=>c.name==="Défaut");
+  const h=classOptionsHtml("Défaut");
+  for(const k in CLASSES_INTERFACE)
+    if(h.indexOf('value="'+k+'"')<0)throw new Error("interface "+k+" absente du menu :\n"+h);
+  // USB HS prend les règles de Rapide, CAN celles de la classe par défaut
+  const usb=poserClasseNet("N$1","USB HS"), can=poserClasseNet("N$2","CAN");
+  if(usb.name!=="USB HS"||usb.w!==0.25||usb.clr!==0.25)throw new Error("USB HS : "+JSON.stringify(usb));
+  if(can.name!=="CAN"||can.w!==defClass().w)throw new Error("CAN : "+JSON.stringify(can));
+  if(/value="USB HS"/.test(classOptionsHtml("USB HS")))throw new Error("USB HS proposée deux fois");
+  // la vérification de la carte reçoit le nom de l'interface, pas « Lent »
+  if(simNaturePcb("N$1")!=="USB HS"||simNaturePcb("N$2")!=="CAN")
+    throw new Error("natures : "+simNaturePcb("N$1")+", "+simNaturePcb("N$2"));
+  poserClasseNet("N$2","Rapide");
+  if(simNaturePcb("N$2")!=="Rapide")throw new Error("Rapide : "+simNaturePcb("N$2"));
+  // une paire du schéma : oui entre deux USB HS (famille rapide), non entre deux CAN
+  S.netClass={};S.netClassAuto={};
+  const bc=new BroadcastChannel("web_cao_patterns_sync");
+  const envoyer=cl=>bc.postMessage({type:"netclasses_updated",classes:cl,paires:[["N$1","N$2"]]});
+  try{
+    envoyer({"N$1":"CAN","N$2":"CAN"});
+    if(S.dpPairs.length)throw new Error("paire créée entre nets CAN");
+    envoyer({"N$1":"USB HS","N$2":"USB HS"});
+    if(S.dpPairs.length!==1)throw new Error("paire USB HS attendue : "+JSON.stringify(S.dpPairs));
+  }finally{
+    bc.close();
+    sessionStorage.removeItem("web_cao_netclasses");sessionStorage.removeItem("web_cao_paires_diff");
+    S.netClassAuto={};S.dpSchema=[];S.dpPairs=[];S.netClass={};
+  }
 });
 T("import : deux classes de même nom sont distinguées",()=>{
   const doc=JSON.parse(serialize());

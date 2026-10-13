@@ -89,7 +89,7 @@ distincts, sauf T6 et T8 qui partagent le panneau.
 
 ### Phase 2 : pages
 - [x] T4 : `commun/classes-interface.js`, chargé par les trois pages et les trois bancs
-- [ ] T5 : PCB : menu de classe, `simNaturePcb`, `autoPairs`
+- [x] T5 : PCB : menu de classe, `simNaturePcb`, `autoPairs`
 - [ ] T6 : le panneau de vérification : une ligne par interface, Z_diff, envoi, réglages mémorisés
 - [ ] T7 : le schéma : menu de classe et passage au PCB
 - [ ] T8 : la visionneuse : nature d'interface, mémoire par fichier, envoi

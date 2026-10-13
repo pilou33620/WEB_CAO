@@ -3142,7 +3142,9 @@ function simNaturePcb(n){
   if(GND_RE.test(n))return "Masse";
   if(isPower(n))return "Alimentation";
   const c=S.netClass[n]||"";
-  return ["Masse","Alimentation","Horloge","Rapide","RF","Analogique","Antenne"]
+  /* une interface d'abord, sous son nom exact : le serveur la juge à son front */
+  return [...Object.keys(CLASSES_INTERFACE),"Masse","Alimentation","Horloge","Rapide","RF",
+          "Analogique","Antenne"]
     .find(k=>c&&SCH_CLASSES[k].re.test(c))||"Lent";
 }
 

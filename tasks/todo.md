@@ -113,9 +113,9 @@ fichier est chargé par :
 - `autoPairs` teste la famille (critère 8).
 
 **Critères d'acceptation**
-- [ ] Les sept interfaces apparaissent dans le menu ; une fois choisie, l'interface est créée avec la largeur de sa famille (critère 1).
-- [ ] `simNaturePcb` rend le nom exact pour chacun des sept noms, et rend toujours la même chose pour les classes d'avant.
-- [ ] `autoPairs` crée une paire « USB HS » / « USB HS » et refuse une paire CAN / CAN.
+- [x] Les sept interfaces apparaissent dans le menu ; une fois choisie, l'interface est créée avec la largeur de sa famille (critère 1).
+- [x] `simNaturePcb` rend le nom exact pour chacun des sept noms, et rend toujours la même chose pour les classes d'avant.
+- [x] `autoPairs` crée une paire « USB HS » / « USB HS » et refuse une paire CAN / CAN.
 
 **Vérification :** `JS_PCB` vert, avec les essais ajoutés.
 

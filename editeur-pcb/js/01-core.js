@@ -2680,6 +2680,14 @@ const SCH_CLASSES={
   // une antenne rayonne : la vérification de la carte ne la juge qu'en fabrication
   Antenne:     {re:/antenn/i,              w:0.3, clr:0.5, via:0.8,drill:0.4}
 };
+/* LES CLASSES D'INTERFACE (commun/classes-interface.js) prennent les règles
+   de leur famille — une famille Lent, celles de la classe par défaut (sans
+   `w`) — et ne se retrouvent que sous leur nom exact. */
+for(const k in CLASSES_INTERFACE){
+  const f=SCH_CLASSES[CLASSES_INTERFACE[k].famille];
+  SCH_CLASSES[k]=Object.assign({re:new RegExp("^"+k.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"$","i")},
+    f&&{w:f.w,clr:f.clr,via:f.via,drill:f.drill});
+}
 function rfW50(){
   try{
     const g=dpStripGeom(0);
@@ -2697,7 +2705,8 @@ function schClass(nom){
   const autres=S.classes.slice(1);
   let c=autres.find(x=>x.name.toLowerCase()===nom.toLowerCase())||autres.find(x=>k.re.test(x.name));
   if(!c){
-    c={name:nom,w:k.w||rfW50(),clr:k.clr,via:k.via,drill:k.drill};
+    const r="w" in k?k:defClass();
+    c={name:nom,w:r.w||rfW50(),clr:r.clr,via:r.via,drill:r.drill};
     S.classes.push(c);
   }
   return c;
@@ -2804,12 +2813,13 @@ function autoPairs(){
   if(!Array.isArray(paires)||!classes||typeof classes!=="object")return 0;
   if(!Array.isArray(S.dpSchema))S.dpSchema=[];
   const nets=new Set(netTable().map(x=>x.name)), vite=/^(Rapide|Horloge|RF)$/;
+  const rapide=c=>vite.test(familleClasse(c||""));   // une interface : sa famille
   let k=0;
   for(const pr of paires){
     if(!Array.isArray(pr)||pr.length!==2)continue;
     const p=String(pr[0]),n=String(pr[1]),cle=p+"|"+n;
     if(S.dpSchema.indexOf(cle)>=0||!nets.has(p)||!nets.has(n))continue;
-    if(!vite.test(classes[p]||"")||!vite.test(classes[n]||""))continue;
+    if(!rapide(classes[p])||!rapide(classes[n]))continue;
     S.dpSchema.push(cle);
     if(dpOfNet(p)||dpOfNet(n))continue;          // déjà dans une paire
     const m=dpMatch(p,n);
