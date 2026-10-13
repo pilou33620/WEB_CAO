@@ -556,12 +556,43 @@ def retours(doc, couches, reg, unite, notes, se):
                 if fo:
                     resonance += " ; sur un îlot du recouvrement, entre %s et %s selon son lien" % (
                         _hz(min(fo["f_bas"], fo["f_haut"])), _hz(max(fo["f_bas"], fo["f_haut"])))
-        tient = (" ; tient des fronts jusqu'à %.2g ns" % (max(limites) * 1e9)
-                 if limites else "")
+        # CE QUI A JUGÉ, ET QUOI FAIRE : le verdict tient au front supposé de
+        # la classe ; un front réel plus lent que la limite l'annule.
+        f0 = freqs[0]
+        hyp = ("jugé à la porteuse %s" % _hz(f0["porteuse"]) if f0.get("porteuse") else
+               "jugé au front de %.2g ns de la classe %s" % (f0["tr"] * 1e9, _classe(doc, net)))
+        tient = (" ; sans risque si le front réel est plus lent que %.2g ns"
+                 % (max(limites) * 1e9) if limites else "")
+        ref_a = (r.get("nets_depart") or ["la masse"])[0]
+        ref_b = (r.get("nets_arrivee") or [ref_a])[0]
+        remede = (" Remède : un condensateur %s–%s près du via, ou une couche qui garde %s."
+                  % (ref_a, ref_b, ref_a) if r["nets_differents"] else
+                  " Remède : un via de %s plus près de celui-ci." % ref_a)
         out.append(dict(base, severite=sev, frequences=freqs,
-                        msg="Référence %s, %s, L = %.2f nH%s%s"
-                            % (plans, chemin, l_via * 1e9, resonance, tient)))
+                        msg="Référence %s, %s, L = %.2f nH%s ; %s%s.%s%s"
+                            % (plans, chemin, l_via * 1e9, resonance, hyp, tient,
+                               remede, _note_paire(doc, net, x, y, unite))))
     return out, bilan
+
+
+def _note_paire(doc, net, x, y, unite):
+    """Un via d'une paire différentielle dont le via jumeau est à côté : le
+    retour différentiel passe par le jumeau, seul le mode commun traverse les
+    plans. Le verdict n'en tient pas compte ; on le dit."""
+    jumeau = next((str(b if str(a) == net else a) for a, b in
+                   (pr for pr in doc.get("paires") or () if len(pr) == 2)
+                   if net in (str(a), str(b))), None)
+    if jumeau is None:
+        return ""
+    d = min((math.hypot(float(w["x"]) / unite - x, float(w["y"]) / unite - y)
+             for w in doc.get("vias") or () if str(w.get("net") or "") == jumeau),
+            default=None)
+    # ponytail: 3 mm fixe pour « à côté » ; à régler sur l'écart des paires si besoin
+    if d is None or d > 3.0:
+        return ""
+    return (" Paire différentielle : le retour différentiel passe par le via de %s"
+            " à %.2f mm, seul le mode commun traverse les plans — verdict pessimiste."
+            % (jumeau, d))
 
 
 def _longement(a, b):

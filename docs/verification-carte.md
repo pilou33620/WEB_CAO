@@ -289,6 +289,13 @@ côtés. Si c'est le même plan, le retour suit : rien à dire. S'il change :
 | pas de cuivre de plan au droit du via | rien | critique d'office |
 | net des plans inconnu | ? | vigilance : l'empilage ne dit pas si un via de masse suffit |
 
+Quand il chiffre, le message finit par ce qui a jugé — le front de la classe,
+ou la porteuse —, le front réel au-delà duquel il n'y a plus de risque, et le
+remède (condensateur entre les deux plans, ou via de masse plus près). Un via
+de paire différentielle dont le jumeau est à moins de 3 mm le signale : le
+retour différentiel passe par le jumeau, seul le mode commun traverse les
+plans, le verdict est pessimiste (il n'est pas abaissé).
+
 Le verdict est le **pire de deux critères** :
 
 - la **réflexion** que le via cause sur la ligne, |Γ| = |Z| / |Z + 2 Z₀|

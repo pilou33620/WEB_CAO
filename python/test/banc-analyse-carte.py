@@ -167,7 +167,8 @@ def test_retour_meme_masse():
     assert len(k) == 1 and [f["verdict"] for f in k[0]["frequences"]] == ["vigilance"], k
     assert [(f["f"], round(f["tr"] * 1e9, 3)) for f in k[0]["frequences"]] == [(1e8, 1)]
     assert 1 < k[0]["frequences"][0]["d_sur_lambda20"] < 2, k[0]["frequences"]
-    assert "30.00 mm" in k[0]["msg"] and "tient des fronts" in k[0]["msg"], k[0]["msg"]
+    assert "30.00 mm" in k[0]["msg"] and "plus lent que" in k[0]["msg"], k[0]["msg"]
+    assert "un via de GND plus près" in k[0]["msg"], k[0]["msg"]
     # un front RF de 0,1 ns (genou 3,5 GHz, λ/20 ≈ 2 mm) condamne
     k = de(analyser(vias=[via(retour_hors_rayon_mm=30.0)], natures={"CLK": "RF"}), "retour")
     assert [f["verdict"] for f in k[0]["frequences"]] == ["critique"], k
@@ -202,6 +203,17 @@ def test_retour_gnd_vers_alim():
     g = lambda k: [f["valeur"] for f in k[0]["frequences"]] if k else [0]
     assert all(a < b for a, b in zip(g(kp), g(kl))), (g(kp), g(kl))
     assert not kp or "C5" in kp[0]["msg"], kp
+    # le message dit l'hypothèse qui juge et le remède
+    m = kl[0]["msg"]
+    assert "front de 1 ns de la classe Rapide" in m and "condensateur GND–3V3" in m, m
+    assert "Paire différentielle" not in m, m
+    # une paire dont le via jumeau est à 0,8 mm : le message le signale
+    paire = analyser(net_l3="3V3", natures={"CLK": "Rapide"}, paires=[["CLK", "CLK_N"]],
+                     vias=[via(retours=[masse(10.8)], ponts=[], ponts_rayon_mm=10.0,
+                               aire_plans_mm2=1000.0, er_plans=4.3),
+                           via("CLK_N", y=10.8)])
+    m = [k for k in de(paire, "retour") if k["n"] == "CLK"][0]["msg"]
+    assert "via de CLK_N à 0.80 mm" in m, m
     print("[PASS] test_retour_gnd_vers_alim")
 
 
