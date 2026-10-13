@@ -52,6 +52,7 @@ global.Path2D=function(){this.pts=[];};
    sont pas chargés : ils branchent l'interface, et ce banc ne clique pas. */
 const RACINE=path.join(__dirname,"..");
 const FICHIERS=[
+  path.join(RACINE,"..","commun","classes-interface.js"),
   path.join(RACINE,"js","02-modele.js"),
   path.join(RACINE,"..","commun","simulation-em.js"),
   path.join(RACINE,"..","commun","simulation-datasheet.js"),
@@ -186,9 +187,11 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
      de la paire, le fichier .ami. */
   "simOeilIbisBroches","simOeilBrocheValide",
   /* Œil 2.2.0 : le brin inverse, les mutuelles et les sections du boîtier. */
-  "simOeilBrocheTexte"];
+  "simOeilBrocheTexte",
+  /* classes d'interface (commun/classes-interface.js) */
+  "CLASSES_INTERFACE","familleClasse"];
 
-/* Un seul `eval`, sur les trois fichiers concaténés : ils se voient l'un
+/* Un seul `eval`, sur les fichiers concaténés : ils se voient l'un
    l'autre comme dans la page, où ils partagent la portée globale. Le "use
    strict" de chacun est retiré — en mode strict, `eval` créerait une portée
    propre et rien ne sortirait. */
@@ -277,6 +280,11 @@ function plan(n,o,trous){return {c:0, n:n, g:[{o:o, t:trous||[]}]};}
 
 console.log("— banc d'essai : masse coplanaire, visionneuse IPC-2581 —");
 
+T("classes d'interface : la table commune est chargée",()=>{
+  if(Object.keys(CLASSES_INTERFACE).length!==7)throw new Error("7 interfaces attendues");
+  if(familleClasse("USB HS")!=="Rapide"||familleClasse("CAN")!=="Lent"||familleClasse("RF")!=="RF")
+    throw new Error("famille d'une classe");
+});
 T("le modèle de laboratoire se charge et l'empilage est prêt",()=>{
   carte();
   if(!LT.pret)throw new Error("LT devrait être prêt");

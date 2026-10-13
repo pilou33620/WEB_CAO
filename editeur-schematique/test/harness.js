@@ -142,7 +142,9 @@ const EXPOSE=[
   /* contraintes de nets pour le PCB (commun/contraintes.js, 27-contraintes.js) */
   "schCmModele","schCmPoser","schCmGroupeCreer","schCmGroupeModifier","schCmGroupeSupprimer",
   "schCmNetsNommes","schCmOrphelins","schCmResumeNet","schCmOuvrir","schCmFermer","SCM",
-  "cmNormNets","cmNormGroupes","cmLireChamp","schDocCourant","restore"
+  "cmNormNets","cmNormGroupes","cmLireChamp","schDocCourant","restore",
+  /* classes d'interface (commun/classes-interface.js) */
+  "CLASSES_INTERFACE","familleClasse"
 ];
 /* les noms absents du bundle sont ignorés : le banc d'essai reste utilisable
    même si un module est renommé, les essais concernés échoueront tout seuls */
@@ -191,6 +193,11 @@ console.log("— banc d'essai éditeur schématique —");
 /* ==========================================================================
    Découpe automatique des fils (07-connectivite.js)
    ========================================================================== */
+T("classes d'interface : la table commune est chargée",()=>{
+  if(Object.keys(CLASSES_INTERFACE).length!==7)throw new Error("7 interfaces attendues");
+  if(familleClasse("USB HS")!=="Rapide"||familleClasse("CAN")!=="Lent"||familleClasse("RF")!=="RF")
+    throw new Error("famille d'une classe");
+});
 T("extrémités relevées sans doublon",()=>{
   const ws=[W(0,0,4,0),W(4,0,4,4)];
   const pts=endpointList(ws);

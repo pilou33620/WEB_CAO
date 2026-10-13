@@ -430,7 +430,9 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "roomsDepuisDoc","roomsListe","roomNomCourt","roomCouleur","roomAuLabel","roomEtiquette","roomsBasculer",
   "roomsPeindre","roomsPeindreFond","roomsVisibles","ctx","profilEtat",
   /* export IPC-2581 (35-ipc2581-export.js) */
-  "ipc2581Document","ipc2581Fichier","exportIpc2581","ipcFonctionCuivre"];
+  "ipc2581Document","ipc2581Fichier","exportIpc2581","ipcFonctionCuivre",
+  /* classes d'interface (commun/classes-interface.js) */
+  "CLASSES_INTERFACE","familleClasse"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -539,6 +541,11 @@ function T(name,fn){
 const T_ASYNC=[];
 function TA(name,fn){T_ASYNC.push([name,fn]);}
 console.log("— banc d'essai éditeur PCB —");
+T("classes d'interface : la table commune est chargée",()=>{
+  if(Object.keys(CLASSES_INTERFACE).length!==7)throw new Error("7 interfaces attendues");
+  if(familleClasse("USB HS")!=="Rapide"||familleClasse("CAN")!=="Lent"||familleClasse("RF")!=="RF")
+    throw new Error("famille d'une classe");
+});
 T("import netlist",()=>{
   importNetlist(NET,false);
   if(S.fps.length!==4)throw new Error("4 empreintes attendues, "+S.fps.length);

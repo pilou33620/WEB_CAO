@@ -2628,6 +2628,23 @@ T("classes d'interface : front de la table, famille d'origine",
   une_classe_d_interface_a_son_front_et_sa_famille)
 
 
+def la_table_des_pages_est_celle_du_serveur():
+    """commun/classes-interface.js porte la MEME table que `INTERFACES`, en
+    JSON, et les trois pages la chargent : deux copies qui divergent en
+    silence jugeraient un net autrement selon l'outil."""
+    src = open(os.path.join(RACINE, "commun", "classes-interface.js"), encoding="utf-8").read()
+    table = json.loads(src.split("const CLASSES_INTERFACE=", 1)[1].split(";\n", 1)[0])
+    assert table == ct.INTERFACES, (table, ct.INTERFACES)
+    for page in ("editeur-pcb/editeur-pcb.html", "editeur-schematique/editeur-schematique.html",
+                 "visionneuse-ipc2581/visionneuse-ipc2581.html"):
+        html = open(os.path.join(RACINE, page), encoding="utf-8").read()
+        assert '<script src="../commun/classes-interface.js"></script>' in html, page
+
+
+T("classes d'interface : la table des pages est celle du serveur",
+  la_table_des_pages_est_celle_du_serveur)
+
+
 print("\n" + "-" * 62)
 print("  %d cas, %s" % (ok + ko, "tous passes" if not ko
                         else "%d en echec" % ko))

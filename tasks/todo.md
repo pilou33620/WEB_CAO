@@ -93,9 +93,9 @@ fichier est chargé par :
 - les trois bancs JS.
 
 **Critères d'acceptation**
-- [ ] Les trois pages et les trois bancs chargent le fichier.
-- [ ] Les bundles de `monofichier.py` le contiennent.
-- [ ] Un essai compare la table JS à la table Python (un banc Python relit le fichier JS, ou un JSON commun s'il est plus simple) : les deux ne peuvent pas diverger en silence.
+- [x] Les trois pages et les trois bancs chargent le fichier.
+- [x] Les bundles de `monofichier.py` le contiennent.
+- [x] Un essai compare la table JS à la table Python (un banc Python relit le fichier JS, ou un JSON commun s'il est plus simple) : les deux ne peuvent pas diverger en silence.
 
 **Vérification :** `JS_PCB`, `JS_SCH`, `JS_VIS` et `PY_AC` verts ; le bundle se construit.
 
