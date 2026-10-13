@@ -144,7 +144,7 @@ const EXPOSE=[
   "schCmNetsNommes","schCmOrphelins","schCmResumeNet","schCmOuvrir","schCmFermer","SCM",
   "cmNormNets","cmNormGroupes","cmLireChamp","schDocCourant","restore",
   /* classes d'interface (commun/classes-interface.js) */
-  "CLASSES_INTERFACE","familleClasse"
+  "CLASSES_INTERFACE","familleClasse","loadDoc"
 ];
 /* les noms absents du bundle sont ignorés : le banc d'essai reste utilisable
    même si un module est renommé, les essais concernés échoueront tout seuls */
@@ -3034,6 +3034,24 @@ T("classes de net : choisies dans la liste des nets, publiées au PCB même sans
   }finally{
     localStorage.removeItem("web_cao_netclasses."+projNom());
     projFermer();
+    S.netClasses={};dom.session.clear();
+  }
+});
+T("classes d'interface : au menu du schéma, gardées dans le document et publiées au PCB",()=>{
+  S.netClasses={};dom.session.clear();
+  const h=netClassSelect("PIR_S");
+  for(const k in CLASSES_INTERFACE)
+    if(h.indexOf("<option>"+k+"</option>")<0)throw new Error("interface "+k+" absente du menu");
+  SCHEMA_PATTERNS.poserClasse("PIR_S","ETH 100");
+  try{
+    if(S.netClasses.PIR_S!=="ETH 100")throw new Error("classe non gardée : "+S.netClasses.PIR_S);
+    // le PCB la lit ici (schemaPublie → autoClass) et la crée aux règles de Rapide
+    const pub=JSON.parse(sessionStorage.getItem("web_cao_netclasses")||"null");
+    if(!pub||pub.PIR_S!=="ETH 100")throw new Error("publication au PCB : "+JSON.stringify(pub));
+    // un schéma rouvert la garde
+    loadDoc(JSON.parse(serialize()));
+    if(S.netClasses.PIR_S!=="ETH 100")throw new Error("perdue à la réouverture : "+JSON.stringify(S.netClasses));
+  }finally{
     S.netClasses={};dom.session.clear();
   }
 });

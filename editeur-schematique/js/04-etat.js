@@ -27,8 +27,10 @@ const S={
   contraintes:{nets:{},groupes:[]},// contraintes de nets pour le PCB (27-contraintes.js)
   variantes:{liste:[],active:""}  // variantes de montage (commun/variantes.js)
 };
-// classes de net proposées au routage ; un net absent de S.netClasses suit l'analyse
-const NET_CLASSES=["Masse","Alimentation","Horloge","Rapide","RF","Analogique","Antenne","Lent"];
+// classes de net proposées au routage ; un net absent de S.netClasses suit l'analyse.
+// Les classes d'interface (commun/classes-interface.js) se posent à la main : jamais devinées.
+const NET_CLASSES=["Masse","Alimentation","Horloge","Rapide","RF","Analogique","Antenne",
+                   ...Object.keys(CLASSES_INTERFACE),"Lent"];
 const HIST_MAX=60;
 // toute modification des fils invalide le cache des jonctions
 function touchWires(){S.wireVer++;}
