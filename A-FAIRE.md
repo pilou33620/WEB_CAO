@@ -309,6 +309,7 @@ au genou 0,35 / t_r.
 - [x] **Courant par rail** saisi dans le panneau (ou repris de l'onglet Chute DC) pour la règle de courant.
 - [x] Couplage entre couches voisines **résolu** (MoM à conducteurs sur deux niveaux, `ligne_mom.section_deux_niveaux`) au lieu de la méthode des images.
 - [x] Éditeur : liaisons thermiques et rognage au bord dans les zones envoyées.
+- [ ] **Classes d'interface** (USB FS / HS, Ethernet 100BASE-TX / 1000BASE-T, LVDS, CAN / RS-485…) : chacune porte son front, sa cadence et sa cible (Z₀, Z_diff), et se range dans une famille existante (Rapide, Lent…) pour savoir quelles règles s'appliquent. Constat d'origine : TRD1_N (Ethernet 100BASE-TX, fronts 3–5 ns) classé Rapide, jugé à 1 ns, condamné par la règle de retour alors qu'il tient jusqu'à 2,7 ns. Aujourd'hui, une seule Z_diff par carte et un seul front par classe : USB à 90 Ω et Ethernet à 100 Ω ne cohabitent pas. Le backend accepte déjà des clés de classe libres (`_reglages` : `tr`, `cadences`, `z0_classes`) ; restent `RAPIDES` / `CLASSES_Z`, une Z_diff par classe, et le menu de classe des trois outils. Attribution à la main, sans toucher aux heuristiques de noms.
 
 ### Simulation PI (Power Integrity)
 - [x] **Impédance fréquentielle du PDN ($Z(\omega)$)** :
