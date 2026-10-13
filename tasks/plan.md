@@ -79,7 +79,7 @@ distincts, sauf T6 et T8 qui partagent le panneau.
 
 ### Phase 1 : serveur
 - [x] T1 : la table `INTERFACES`, `famille()` et `front_de_classe` (crosstalk)
-- [ ] T2 : `analyse_carte` juge une interface à son front, selon sa famille, avec un rapport identique sans interface
+- [x] T2 : `analyse_carte` juge une interface à son front, selon sa famille, avec un rapport identique sans interface
 - [ ] T3 : la Z_diff par classe pour les paires (`zdiff_classes`)
 
 ### Point d'étape 1

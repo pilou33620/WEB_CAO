@@ -48,10 +48,10 @@ interface, dont la page envoie un `tr` étendu, doit donner le même rapport
 JSON que sans ce `tr` étendu.
 
 **Critères d'acceptation**
-- [ ] Le rapport d'une carte sans classe d'interface est identique octet pour octet, même quand `reglages.tr` contient des clés d'interface (critère 7).
-- [ ] Un net « ETH 100 » est jugé à 3 ns et n'est pas condamné par la règle `retour`, là où « Rapide » le condamne (critère 2).
-- [ ] USB HS compte comme rapide pour le retour, et CAN compte comme Lent dans le découplage (critère 3).
-- [ ] Une interface sans Z₀ saisie ne tient aucune Z₀. Avec une Z₀ dans `z0_classes`, elle se juge face à elle (critère 5, D6).
+- [x] Le rapport d'une carte sans classe d'interface est identique octet pour octet, même quand `reglages.tr` contient des clés d'interface (critère 7).
+- [x] Un net « ETH 100 » est jugé à 3 ns et n'est pas condamné par la règle `retour`, là où « Rapide » le condamne (critère 2).
+- [x] USB HS compte comme rapide pour le retour, et CAN compte comme Lent dans le découplage (critère 3).
+- [x] Une interface sans Z₀ saisie ne tient aucune Z₀. Avec une Z₀ dans `z0_classes`, elle se juge face à elle (critère 5, D6).
 
 **Vérification :** `PY_AC` vert, avec les trois cas ; `COMP` propre.
 

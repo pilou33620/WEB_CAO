@@ -48,6 +48,8 @@ from collections import defaultdict
 
 import numpy as np
 
+from crosstalk import INTERFACES, famille
+
 TOL_DEG = 1.0     # un 90° dessiné sur des coordonnées arrondies au µm s'en écarte de quelques dixièmes
 EPS_MM = 1e-3     # deux bouts à moins d'un micron sont le même point
 CASE_MM = 2.0     # maille de la grille de voisinage
@@ -250,13 +252,18 @@ def _pire(verdicts):
 
 def _reglages(doc):
     r = doc.get("reglages") or {}
-    tr = dict(TR_CLASSES)
+    # UNE INTERFACE N'ENTRE DANS LES RÉGLAGES QUE SI UN NET LA PORTE : le
+    # rapport les recopie, et une carte sans interface doit rendre celui
+    # d'avant à l'identique, quoi que la page envoie.
+    utilisees = set((doc.get("natures") or {}).values()) & set(INTERFACES)
+    garde = lambda k: k not in INTERFACES or k in utilisees      # noqa: E731
+    tr = dict(TR_CLASSES, **{k: INTERFACES[k]["tr"] for k in utilisees})
     for k, v in (r.get("tr") or {}).items():
-        if float(v) > 0:
+        if float(v) > 0 and garde(str(k)):
             tr[str(k)] = float(v)
-    cadences = dict(CADENCES)
+    cadences = dict(CADENCES, **{k: INTERFACES[k]["cadence"] for k in utilisees})
     for k, v in (r.get("cadences") or {}).items():  # 0 ou vide : le défaut
-        if v and float(v) > 0:
+        if v and float(v) > 0 and garde(str(k)):
             cadences[str(k)] = float(v)
     # UNE PORTEUSE RF : les nets RF se jugent à leur porteuse, pas au genou
     # d'un front. Elle devient le front RF (0,35 / f), sans borne de période.
@@ -288,7 +295,8 @@ def _reglages(doc):
     # vidéo à 75 Ω et une RF à 50 Ω sur la même carte. Clés absentes du
     # rapport quand rien n'est donné : le rapport d'avant, à l'identique.
     for cle in ("z0_classes", "porteuses"):
-        d = {str(k): float(v) for k, v in (r.get(cle) or {}).items() if v and float(v) > 0}
+        d = {str(k): float(v) for k, v in (r.get(cle) or {}).items() if v and float(v) > 0
+             and (cle == "porteuses" or garde(str(k)))}     # porteuses : par NET
         if d:
             out[cle] = d
     return out
@@ -302,8 +310,11 @@ def _z0(reg, classe):
 
 def _tient_z(reg, classe):
     """La classe tient-elle une impédance ? Horloge, Rapide, RF d'office, et
-    toute classe à laquelle le panneau donne une cible."""
-    return classe in CLASSES_Z or classe in (reg.get("z0_classes") or {})
+    toute classe à laquelle le panneau donne une cible. Une interface n'en
+    tient que si on lui en donne une : sa norme ne fixe que la Z_diff."""
+    if classe in (reg.get("z0_classes") or {}):
+        return True
+    return classe in CLASSES_Z
 
 
 def _classe(doc, net):
@@ -1709,7 +1720,7 @@ def empilage(doc, couches):
                     "c": c, "n": None, "frequences": [], "msg": msg})
 
     def compte(i):
-        rapides = sorted(n for n in nets[i] if _classe(doc, n) in RAPIDES)
+        rapides = sorted(n for n in nets[i] if famille(_classe(doc, n)) in RAPIDES)
         txt = "%d net%s de signal" % (len(nets[i]), "s" if len(nets[i]) > 1 else "")
         if rapides:
             txt += ", dont %d rapide%s (%s%s)" % (len(rapides), "s" if len(rapides) > 1 else "",
@@ -2373,7 +2384,7 @@ def decouplages(doc, couches, reg, unite, notes, troncons=(), se=None):
                 alims[n].append(b)
             elif _signal(doc, n):
                 signaux.add(n)
-                if n in vers_masse and _classe(doc, n) in ("Analogique", "Lent"):
+                if n in vers_masse and famille(_classe(doc, n)) in ("Analogique", "Lent"):
                     suspects.append("%s.%s (%s)" % (ref, b.get("pin", "?"), n))
         if not alims:
             continue

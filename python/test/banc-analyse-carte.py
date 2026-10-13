@@ -1016,6 +1016,52 @@ def test_cibles_par_classe_et_par_net():
     print("[PASS] test_cibles_par_classe_et_par_net")
 
 
+def test_classes_d_interface():
+    import json
+
+    def rapport(**k):
+        r = analyser(**k)
+        r.pop("durees_s", None)
+        return json.dumps(r, sort_keys=True)
+    # SANS NET D'INTERFACE, LE RAPPORT D'AVANT À L'OCTET PRÈS, même quand la
+    # page envoie les fronts, cadences et cibles des interfaces
+    base = dict(vias=[via(retour_hors_rayon_mm=30.0)], pistes=[droite("CLK", 0.0)],
+                natures={"CLK": "Rapide"})
+    assert rapport(**base) == rapport(reglages={
+        "tr": {"USB HS": 5e-10}, "cadences": {"USB HS": 2.4e8},
+        "z0_classes": {"ETH 100": 50.0}}, **base)
+    # ETH 100 (3 ns) : son via à 30 mm tient, là où « Rapide » (1 ns) le condamne
+    eth = dict(vias=[via(retour_hors_rayon_mm=30.0)], natures={"CLK": "ETH 100"})
+    assert de(analyser(vias=eth["vias"], natures={"CLK": "Rapide"}), "retour")
+    res = analyser(**eth)
+    assert de(res, "retour") == [], de(res, "retour")
+    assert res["reglages"]["tr"]["ETH 100"] == 3e-9, res["reglages"]["tr"]
+    assert "USB HS" not in res["reglages"]["tr"], res["reglages"]["tr"]
+    # le panneau passe devant la table : ETH 100 réglé à 0,1 ns est condamné
+    assert de(analyser(reglages={"tr": {"ETH 100": 1e-10}}, **eth), "retour")
+    # USB HS est jugé à min(500 ps, 0,1 / 240 MHz) et compte comme rapide
+    k = de(analyser(vias=eth["vias"], natures={"CLK": "USB HS"}), "retour")
+    assert k and abs(k[0]["frequences"][0]["tr"] - 0.1 / 2.4e8) < 1e-15, k
+    deux = empilage_de(("Top", "signal"), ("Bot", "signal"), di=1.5)
+    k = de(analyser(stackup=deux, pistes=[droite("D", 0.0)], natures={"D": "USB HS"}),
+           "empilage")
+    assert any(x["c"] == "Top" and "dont 1 rapide (D)" in x["msg"] for x in k), k
+    # PAS DE Z₀ DE BRIN : un ETH 100 à 0,1 mm ne se compare qu'à lui-même,
+    # sauf si le panneau lui donne une cible
+    fin = dict(pistes=[droite("ETH", 0.0, w=0.1)], natures={"ETH": "ETH 100"})
+    assert de(analyser(**fin), "impedance") == []
+    k = de(analyser(reglages={"z0_classes": {"ETH 100": 50.0}}, **fin), "impedance")
+    assert k and "cible 50 Ω" in k[0]["msg"], k
+    # CAN compte comme Lent : un rail automatique classé CAN est montré
+    u = {"ref": "U3", "c": "Top", "broches": [{"x": 0, "y": 0, "n": "SIGN8", "pin": "8"},
+                                               {"x": 1, "y": 0, "n": "GND", "pin": "4"}]}
+    c = {"ref": "C9", "c": "Top", "broches": [{"x": 2, "y": 0, "n": "SIGN8"},
+                                               {"x": 3, "y": 0, "n": "GND"}]}
+    res = analyser(composants=[u, c], natures={"SIGN8": "CAN", "GND": "Masse"})
+    assert any("U3.8 (SIGN8)" in n for n in res["notes"]), res["notes"]
+    print("[PASS] test_classes_d_interface")
+
+
 if __name__ == "__main__":
     test_coudes()
     test_jonctions()
@@ -1041,4 +1087,5 @@ if __name__ == "__main__":
     test_antenne_porteuse_rails()
     test_nouvelles_regles()
     test_cibles_par_classe_et_par_net()
+    test_classes_d_interface()
     print("\n TOUS LES TESTS DE ANALYSE_CARTE SONT VALIDÉS AVEC SUCCÈS.")
