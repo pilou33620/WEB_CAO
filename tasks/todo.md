@@ -175,8 +175,8 @@ fichier est chargé par :
 **Dépendances :** T4 et T6. **Fichiers :** `visionneuse-ipc2581/js/02-modele.js`, `visionneuse-ipc2581/test/harness-sim.js`. **Taille :** S.
 
 ## Point d'étape 2
-- [ ] Les sept commandes de la spec sont vertes
-- [ ] Les bundles monofichiers se construisent
+- [x] Les sept commandes de la spec sont vertes
+- [x] Les bundles monofichiers se construisent
 - [ ] Vérification à la main : la carte TRD1_N, classée « ETH 100 » dans la visionneuse puis dans le PCB, n'est plus condamnée par la règle `retour`
 - [ ] Relecture humaine
 
@@ -194,8 +194,8 @@ fichier est chargé par :
   aux classes d'interface.
 
 **Critères d'acceptation**
-- [ ] A-FAIRE.md est à jour.
-- [ ] Les aides du panneau sont justes.
+- [x] A-FAIRE.md est à jour.
+- [x] Les aides du panneau sont justes.
 
 **Vérification :** relecture ; `JS_PCB` vert.
 

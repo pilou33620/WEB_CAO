@@ -100,7 +100,7 @@ distincts, sauf T6 et T8 qui partagent le panneau.
 - [ ] Vérification à la main dans le navigateur (carte TRD1_N)
 
 ### Phase 3 : finition
-- [ ] T9 : A-FAIRE.md, l'État des lieux et les aides du panneau
+- [x] T9 : A-FAIRE.md, l'État des lieux et les aides du panneau
 
 ### Point d'étape final
 - [ ] Les critères 1 à 8 de la spec sont tenus et couverts

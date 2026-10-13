@@ -6186,7 +6186,9 @@ const SIM_CARTE_REGLES={
   paire:{titre:"Paires différentielles",
         pourquoi:"Z_diff résolue à l'écart réel le long de la paire, masse "+
                  "coplanaire comprise, les morceaux découplés comptés pour "+
-                 "2 Z₀, face à la cible ; l'écart de longueur et le plan de "+
+                 "2 Z₀, face à la cible — la Z_diff de la norme pour une "+
+                 "classe d'interface (USB 90 Ω, Ethernet 100 Ω), celle de la "+
+                 "carte sinon ; l'écart de longueur et le plan de "+
                  "référence présent sous une seule moitié, en temps face au "+
                  "front (ils font du mode commun) ; des vias en nombre "+
                  "différent sur P et N."},
@@ -6419,7 +6421,7 @@ function simCorpsCarte(){
   const r=SIM_CARTE.reglages;
   /* Ce qu'on range dans chaque classe : l'aide de la dernière colonne. */
   const EX={Horloge:"oscillateur, CLK, MCLK, XIN/XOUT d'un quartz",
-            Rapide:"USB D+/D−, Ethernet, DDR, HDMI, LVDS",
+            Rapide:"DDR, HDMI, SDIO ; USB, Ethernet et LVDS ont leur classe d'interface",
             RF:"antenne LoRa 868 MHz, Wi-Fi/BLE 2,4 GHz, vers un SMA",
             Analogique:"entrée d'ADC, capteur, référence, audio",
             Lent:"GPIO, LED, bouton, reset, I2C, UART ; tout net non classé",
