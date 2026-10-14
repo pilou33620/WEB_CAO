@@ -2681,8 +2681,9 @@ const SCH_CLASSES={
   Antenne:     {re:/antenn/i,              w:0.3, clr:0.5, via:0.8,drill:0.4}
 };
 /* LES CLASSES D'INTERFACE (commun/classes-interface.js) prennent les règles
-   de leur famille — une famille Lent, celles de la classe par défaut (sans
-   `w`) — et ne se retrouvent que sous leur nom exact. */
+   de leur famille — celles de la classe de la famille si la carte l'a (voir
+   schClass), sinon celles-ci ; une famille Lent, celles de la classe par
+   défaut (sans `w`) — et ne se retrouvent que sous leur nom exact. */
 for(const k in CLASSES_INTERFACE){
   const f=SCH_CLASSES[CLASSES_INTERFACE[k].famille];
   SCH_CLASSES[k]=Object.assign({re:new RegExp("^"+k.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"$","i")},
@@ -2703,9 +2704,12 @@ function schClass(nom){
   const k=SCH_CLASSES[nom];
   if(!k)return null;
   const autres=S.classes.slice(1);
-  let c=autres.find(x=>x.name.toLowerCase()===nom.toLowerCase())||autres.find(x=>k.re.test(x.name));
+  const surCarte=(n,r)=>autres.find(x=>x.name.toLowerCase()===n.toLowerCase())||autres.find(x=>r.re.test(x.name));
+  let c=surCarte(nom,k);
   if(!c){
-    const r="w" in k?k:defClass();
+    // une interface prend les règles de la classe de sa famille que la carte a réglée
+    const fam=familleClasse(nom), kf=fam!==nom&&SCH_CLASSES[fam];
+    const r=(kf&&surCarte(fam,kf))||("w" in k?k:defClass());
     c={name:nom,w:r.w||rfW50(),clr:r.clr,via:r.via,drill:r.drill};
     S.classes.push(c);
   }
@@ -2804,7 +2808,8 @@ function autoClass(){
 /* Les paires différentielles trouvées par le schéma — y compris par les noms
    de broches, sur des nets « $BN… » que la détection par nom ne voit pas —
    deviennent des paires de la carte. Seulement entre nets rapides (Rapide,
-   Horloge, RF) : les entrées + et - d'un AOP ne se routent pas en paire 90 Ω.
+   Horloge, RF) ou d'une même interface (USB FS, CAN, RS-485 sont de famille
+   Lent) : les entrées + et - d'un AOP ne se routent pas en paire 90 Ω.
    S.dpSchema retient les paires déjà proposées : une paire supprimée à la
    main ne revient pas à la synchro suivante. Renvoie le nombre de paires créées. */
 function autoPairs(){
@@ -2819,7 +2824,8 @@ function autoPairs(){
     if(!Array.isArray(pr)||pr.length!==2)continue;
     const p=String(pr[0]),n=String(pr[1]),cle=p+"|"+n;
     if(S.dpSchema.indexOf(cle)>=0||!nets.has(p)||!nets.has(n))continue;
-    if(!rapide(classes[p])||!rapide(classes[n]))continue;
+    const memeInterface=classes[p]===classes[n]&&Object.prototype.hasOwnProperty.call(CLASSES_INTERFACE,classes[p]);
+    if(!memeInterface&&(!rapide(classes[p])||!rapide(classes[n])))continue;
     S.dpSchema.push(cle);
     if(dpOfNet(p)||dpOfNet(n))continue;          // déjà dans une paire
     const m=dpMatch(p,n);

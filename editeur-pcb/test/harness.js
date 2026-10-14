@@ -4347,6 +4347,13 @@ T("classes d'interface : au menu, créées aux règles de leur famille, vues par
   const usb=poserClasseNet("N$1","USB HS"), can=poserClasseNet("N$2","CAN");
   if(usb.name!=="USB HS"||usb.w!==0.25||usb.clr!==0.25)throw new Error("USB HS : "+JSON.stringify(usb));
   if(can.name!=="CAN"||can.w!==defClass().w)throw new Error("CAN : "+JSON.stringify(can));
+  // une classe Rapide réglée sur la carte passe devant la table
+  S.classes.push({name:"Rapide",w:0.15,clr:0.3,via:0.7,drill:0.35});
+  const lvds=poserClasseNet("N$3","LVDS");
+  if(lvds.w!==0.15||lvds.clr!==0.3||lvds.via!==0.7||lvds.drill!==0.35)
+    throw new Error("LVDS : "+JSON.stringify(lvds));
+  const rs=poserClasseNet("N$4","RS-485");      // famille Lent : la classe par défaut, pas Rapide
+  if(rs.w!==defClass().w||rs.clr!==defClass().clr)throw new Error("RS-485 : "+JSON.stringify(rs));
   if(/value="USB HS"/.test(classOptionsHtml("USB HS")))throw new Error("USB HS proposée deux fois");
   if(classOptionsHtml("USB HS").indexOf('<option selected title="USB 2.0 High Speed">USB HS</option>')<0)
     throw new Error("nom long absent de la classe de la carte");
@@ -4355,13 +4362,17 @@ T("classes d'interface : au menu, créées aux règles de leur famille, vues par
     throw new Error("natures : "+simNaturePcb("N$1")+", "+simNaturePcb("N$2"));
   poserClasseNet("N$2","Rapide");
   if(simNaturePcb("N$2")!=="Rapide")throw new Error("Rapide : "+simNaturePcb("N$2"));
-  // une paire du schéma : oui entre deux USB HS (famille rapide), non entre deux CAN
+  // une paire du schéma : oui entre deux USB HS (famille rapide) et entre deux
+  // CAN (même interface, famille lente), non entre deux interfaces lentes différentes
   S.netClass={};S.netClassAuto={};
   const bc=new BroadcastChannel("web_cao_patterns_sync");
   const envoyer=cl=>bc.postMessage({type:"netclasses_updated",classes:cl,paires:[["N$1","N$2"]]});
   try{
+    envoyer({"N$1":"CAN","N$2":"RS-485"});
+    if(S.dpPairs.length)throw new Error("paire créée entre CAN et RS-485");
     envoyer({"N$1":"CAN","N$2":"CAN"});
-    if(S.dpPairs.length)throw new Error("paire créée entre nets CAN");
+    if(S.dpPairs.length!==1)throw new Error("paire CAN attendue : "+JSON.stringify(S.dpPairs));
+    S.dpPairs=[];S.dpSchema=[];
     envoyer({"N$1":"USB HS","N$2":"USB HS"});
     if(S.dpPairs.length!==1)throw new Error("paire USB HS attendue : "+JSON.stringify(S.dpPairs));
   }finally{
