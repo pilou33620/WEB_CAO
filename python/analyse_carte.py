@@ -2491,6 +2491,10 @@ def decouplages(doc, couches, reg, unite, notes, troncons=(), se=None):
     return out, bilan
 
 
+def _s(t):
+    return "%.3g ps" % (t * 1e12) if t < 1e-9 else "%.3g ns" % (t * 1e9)
+
+
 def _hz(f):
     return ("%.3g GHz" % (f / 1e9) if f >= 1e9 else "%.3g MHz" % (f / 1e6) if f >= 1e6
             else "%.3g kHz" % (f / 1e3))
@@ -3478,11 +3482,22 @@ def analyser_document(doc):
                 "Front IMPOSÉ par la classe RF (t_r = %s, genou %s) pour %s : aucune"
                 " porteuse n'est saisie. Saisissez la porteuse RF du panneau (t_r = 0,35 / f),"
                 " ou celle du net, pour affiner — et vérifiez que ces nets sont bien de la RF."
-                % (("%.3g ps" % (tr_rf * 1e12)) if tr_rf < 1e-9 else ("%.3g ns" % (tr_rf * 1e9)),
-                   _hz(0.35 / tr_rf),
+                % (_s(tr_rf), _hz(0.35 / tr_rf),
                    ", ".join(rf_sans_porteuse[:6])
                    + ("…" if len(rf_sans_porteuse) > 6 else "")))
             bilan["front_rf"] = {"nets": rf_sans_porteuse, "t_r": tr_rf, "porteuse_rf": None}
+        # UNE CLASSE QUI PORTE LE NOM D'UNE INTERFACE EST JUGÉE COMME ELLE : une
+        # carte d'avant les interfaces où une classe s'appelait déjà « CAN » ou
+        # « LVDS » change de verdict. Le rapport dit sous quoi chacune est jugée.
+        for k in INTERFACES:
+            if k not in reg["tr"]:
+                continue
+            notes.append(
+                "Classe « %s » jugée comme l'interface %s : famille %s, front %s,"
+                " Z_diff %g Ω. Si ce nom ne désigne pas cette interface sur votre"
+                " carte, renommez la classe."
+                % (k, INTERFACES[k]["nom"], famille(k), _s(reg["tr"][k]),
+                   reg.get("zdiff_classes", {}).get(k, INTERFACES[k]["zdiff"])))
         couches = (doc.get("stackup") or {}).get("layers") or []
         troncons = _troncons(doc, unite)
         surf = _surfaces(doc, unite, notes)

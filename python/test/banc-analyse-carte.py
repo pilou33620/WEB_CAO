@@ -1035,6 +1035,12 @@ def test_classes_d_interface():
     assert de(analyser(vias=eth["vias"], natures={"CLK": "Rapide"}), "retour")
     res = analyser(**eth)
     assert de(res, "retour") == [], de(res, "retour")
+    # le rapport dit sous quoi la classe est jugée : une carte ancienne a pu
+    # appeler une classe « ETH 100 » sans penser à l'interface
+    assert ("Classe « ETH 100 » jugée comme l'interface Ethernet 100BASE-TX : famille"
+            " Rapide, front 3 ns, Z_diff 100 Ω.") in " ".join(res["notes"]), res["notes"]
+    assert not any("jugée comme l'interface" in n
+                   for n in analyser(vias=eth["vias"], natures={"CLK": "Rapide"})["notes"])
     assert res["reglages"]["tr"]["ETH 100"] == 3e-9, res["reglages"]["tr"]
     assert "USB HS" not in res["reglages"]["tr"], res["reglages"]["tr"]
     # le panneau passe devant la table : ETH 100 réglé à 0,1 ns est condamné
