@@ -89,7 +89,7 @@ suivante.
 Rien en cours : l'option B, les limites de l'option A et la garde de la règle *diaphonie* sont faites (13/10/2026, détail dans *Backlog par domaine → Simulation SI*).
 
 ### Contenu de la LIB (données, pas code)
-- [ ] **93 références semi-conducteurs sans brochage** — à saisir sur datasheet dans Gestion LIB, jamais deviné (liste détaillée dans *Éditeur schématique* ci-dessous).
+- [ ] **Brochages : 5 références restent** (relevé du 15/10/2026, détail dans *Éditeur schématique* ci-dessous). Les 93 du 10/10 se rangeaient en 71 sur le symbole `ic` — broche n sur patte n, juste par construction, rien à saisir — et 22 sur un symbole à broches nommées, dont 18 saisis sur datasheet.
 
 ### En attente d'un vrai besoin — export vers eCADSTAR (étudié le 14/10/2026, mis de côté)
 - [ ] **Export projet complet vers eCADSTAR 2026** (schéma + PCB + lien des bibliothèques). Seul chemin officiel qui garde schéma, PCB et bibliothèque : écrire des archives CADSTAR `.csa` (schéma) et `.cpa` (PCB), reprises par l'outil de migration CADSTAR → eCADSTAR (installé). Format non documenté par Zuken, décrypté par l'importeur CADSTAR de KiCad. eCADSTAR n'importe ni l'IPC-2581 ni KiCad ; IDF/Gerber ne donnent qu'un PCB sans lien avec le schéma. À valider d'abord : une petite carte `.cpa` d'essai acceptée par la migration.
@@ -146,16 +146,12 @@ bancs automatiques en CI sont listés dans l'*État des lieux*.
   - [x] **Contrôle** : alimentation (V+, VCC, VDD…) sur la masse, masse sur un rail, V− sur un rail positif ; patte partagée reliée à deux nets ; partie posée deux fois ou non posée (entrées en l'air) ; broche absente du brochage de la référence.
   - [x] **Remplir la colonne `Brochage` de la LIB** — « 🔄 Auto-associer » de Gestion LIB la complète là où le brochage est certain, sans jamais remplacer une saisie : transistors bipolaires SOT-23 / SOT-323 `B=1,E=2,C=3`, MOSFET SOT-23 `G=1,S=2,D=3`, OPA369 (SC70-5) `OUT=1,V-=2,IN+=3,IN-=4,V+=5`, LM78L05 (SO-8) `OUT=1,GND=2/3/6/7,IN=8,NC=4/5`, LP2980 (SOT-23-5) `IN=1/3,GND=2,OUT=5,NC=4` (ON/OFF relié à l'entrée). Fait sur la LIB actuelle (43 références avec brochage ; « Auto-associer » rejoué le 10/10/2026 : 0 modification en attente).
   - [x] **LIB corrigée (dépôt WEB_SUITE_PROJETS, fusionnée dans `main` le 08/10/2026)** : colonne `Brochage` sur 43 références ; six MOSFET canal P passés sur `pmos.json` ; LMC7215 sur `opamp.json` (SOT-23-5) ; BGA7L1 sur `ic.json` ; empreinte `SC-70-5.json` créée pour l'OPA369 ; `TO-252.json` renumérotée JEDEC (languette = 2) et LP2950CDT `IN=1,GND=2,OUT=3` ; diodes deux pattes selon IPC, patte 1 = cathode (`A=2,K=1`), diodes simples en SOT-23 `A=1,K=3,NC=2` ; 1PS76SB40 en SOD-323, BC858CW en SOT-323, BAT54 en SOT-23 ; MPN de BAS16 corrigé ; ajout de `AOP_MCP6001T-I/OT`.
-  - [ ] **Reste sans brochage** (résumé dans *Reste à faire — fonctionnalités*, « Contenu de la LIB ») (93 références semi-conducteurs de la LIB, relevé du 10/10/2026 ; à saisir sur datasheet dans Gestion LIB, jamais deviné) :
-    - diodes doubles / Schottky SOT-23 : BAV99, BAV199, BAR43, BAR43C, RB411DT146 ;
-    - réseaux ESD / TVS : 824001, ESDA6V1W5, NUP2201MR6T1G, PESD5V0S2UQ, RCLAMP0582BQ, SM712-02HTG (×2), SR05, SRV05-4 ;
-    - discrets : DTC144EKA (numérique), FDS9934C et DMC2400UV (MOSFET doubles), LED RVB KRTBLSLPS1, ZXCT1009, capteurs Hall A3212 / CT8132 / LF22214 ;
-    - régulateurs / alimentations : TPS78230, R1180Q (×2), LD39050, XC6231 (sans empreinte), BD9E302, MCP1603, MCP1501, MAX6018, TPS61094 ;
-    - circuits intégrés : OPA363, M24M02, M95P08, PCF8563, MAX3222, TS3A24157, STSAFE-A110, USB2513B, capteurs (BMP390L, ENS210, SCD41, SGP40, SHT40, SHTC3, STTS22H, VL53L1CX, ZMOD4410/4510, IIS2MDC, ISM330DLC, FXAS21002) ;
-    - MCU : EFR32 / EFM32 / STM32 / MSP430 / RL78 / LPC1758 ; modules RF et cellulaires : SX1261, SX1272, BC660K, SARA-N310, SIM7600, ST87M01, LR2012, BGX220P22, WT12, AS179, BGA7L1, SKY13446, NTP53321, ST25DV16K ; transformateurs 750317161 / B78304 / B78416.
-- [x] **Une broche sur plusieurs pattes** : `OUT=2/4` (languette d'un SOT-223 : AMS1117 `GND=1,OUT=2/4,IN=3` ; masses multiples d'un QFN). La netlist écrit chaque patte dans le net ; saisie aussi à la main (« 2/4 » dans la colonne Patte).
-- [x] **Netlist : nom de boîtier tronqué à 40 caractères** — limite commune `PKG_MAX` = 120 (`03-boitiers.js`), à la relecture du schéma comme dans les champs.
-- [x] **Import de netlist au PCB : appliquer l'empreinte de la LIB** quand le boîtier en a une (`fpLibPourBoitier` : nom exact, même clé `pkgKey`, chemin de catalogue réduit à son fichier) ; si la LIB n'est pas encore lue, le fichier `lib_empreinte_pcb/<boîtier>.json` est demandé au serveur.
+  - [x] **Brochage de 18 semi-conducteurs** (15/10/2026, relevés sur les datasheets des fabricants, dépôt WEB_SUITE_PROJETS) : BAV99, BAV199, BAR43C, FDS9934C, DMC2400UV en deux parties ; BAR43, RB411D, DTC144EKA ; régulateurs LD39050, R1180Q (×2), TPS78230, XC6231 — EN / CE relié à l'entrée, comme le LP2980 ; TVS PESD5V0S2UQ, RClamp0582BQ, SM712 (×2), ESDA6V1W5, une partie par ligne. Les 71 références sur le symbole `ic` (MCU, capteurs, modules RF…) n'en ont pas besoin. Au passage, un conflit `git stash` enregistré par le commit « maj » de la LIB a été résolu.
+  - [ ] **Reste** :
+    - réseaux ESD à broche VCC (824001, NUP2201MR6, SR05, SRV05-4) : le symbole `tvs_diode` (A, K) ne peut pas porter la VCC ni plus d'une ligne par patte de masse — les passer sur `ic` ;
+    - LED RVB KRTBLSLPS1 : OSRAM nomme les pastilles (A1–A3, C1–C3) sans les numéroter ; à fixer avec son empreinte, qui manque ;
+    - FDS9934C et DMC2400UV : la partie canal P est dessinée avec le symbole `nmos` (brochage juste, dessin faux) ;
+    - XC6231A332PR-G : c'est un SOT-89-5 (5 pattes), la LIB dit 7.
 
 ### Éditeur PCB
 - [x] **Gestionnaire d'empreintes de bibliothèque** : prévisualisation visuelle pop-up, filtrage et affectation directe des empreintes sur la carte (`commun/explorateur-lib.js`).
