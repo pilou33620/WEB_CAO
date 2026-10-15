@@ -111,8 +111,9 @@ esd_array:{n:"Réseau ESD",cat:"Semi-conducteurs",p:"U",v:"USBLC6",pk:"ci",pkg:"
        L(c,-40,-20,-25,-20);L(c,-40,0,-25,0);L(c,-40,20,-25,20);
        L(c,40,-20,25,-20);L(c,40,0,25,0);L(c,40,20,25,20);
        TXT(c,"ESD",0,-8,11,C_TXT);TXT(c,"ARRAY",0,8,8,"#93c5fd");}},
-/* RÉSEAUX ESD À RAIL : diodes d'aiguillage vers VCC et GND, une TVS entre
-   les deux (824001, SRV05-4, NUP2201, SR05). Broches nommées : la colonne
+/* RÉSEAUX ESD À RAIL (824001, SRV05-4, NUP2201, SR05) : diodes d'aiguillage
+   de chaque ligne vers VCC et GND, et une TVS entre les deux — seule la TVS
+   est dessinée. Broches nommées : la colonne
    « Brochage » de la LIB dit où chacune tombe. */
 esd_rail4:{n:"Réseau ESD 4 lignes",cat:"Semi-conducteurs",p:"U",v:"SRV05-4",pk:"ci",pkg:"SOT-23-6",
   ext:[-40,-60,40,60],pins:[[-40,-20],[-40,20],[40,-20],[40,20],[0,-60],[0,60]],

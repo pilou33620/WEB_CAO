@@ -78,7 +78,7 @@ function annotBox(el,size,padX,padY,fallback){
    l'envers et une rotation de 180° les met la tête en bas. */
 let _symT=null;
 /* TVS d'un réseau ESD, verticale entre VCC (cathode) et GND */
-function ESDTVS(c){L(c,0,-40,0,-8);L(c,0,8,0,40);P(c,[[-7,8],[7,8],[0,-6]],"#ffffff");
+function ESDTVS(c){L(c,0,-40,0,-8);L(c,0,8,0,40);P(c,[[-7,8],[7,8],[0,-6]],C_TXT);
   L(c,-7,-6,7,-6);L(c,-7,-6,-9,-3);L(c,7,-6,9,-9);}
 function TXT(c,t,x,y,size,col,align){
   c.save();c.fillStyle=col||C_TXT;
