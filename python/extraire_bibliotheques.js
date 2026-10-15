@@ -1095,6 +1095,8 @@ function devinerEmpreintePCB(pkgRaw, prefixRaw, descRaw) {
   if (clean.includes("SOD323") || clean.includes("SOD-323")) return "SOD-323.json";
   if (clean.includes("SOD523") || clean.includes("SOD-523")) return "SOD-523.json";
 
+  if (clean.includes("SOT563") || clean.includes("SOT-563")) return "SOT-563.json";
+  if (clean.includes("SOT143") || clean.includes("SOT-143")) return "SOT-143.json";
   if (clean.includes("SOT236") || clean.includes("SOT-23-6") || clean.includes("TSOP6") || clean.includes("TSOP-6")) return "SOT-23-6.json";
   if (clean.includes("SOT235") || clean.includes("SOT-23-5") || clean.includes("SOT3235L")) return "SOT-23-5.json";
   if (clean.includes("SOT23") || clean.includes("SOT-23")) return "SOT-23.json";

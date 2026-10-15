@@ -472,6 +472,7 @@ const AUTO_PCB_BOITIERS = [
   // SC-70 à 5 et 6 pattes avant le SC-70 à 3 : « SC705 » contient « SC70 »
   [["SC705", "SOT353"], "SC-70-5.json"], [["SC706", "SOT363"], "SC-70-6.json"],
   [["SOT323", "SC70"], "SC-70.json"],
+  [["SOT563"], "SOT-563.json"], [["SOT143"], "SOT-143.json"],
   [["SOT236"], "SOT-23-6.json"], [["SOT235"], "SOT-23-5.json"],
   [["SOT223"], "SOT-223.json"], [["SOT895"], "SOT-89-5.json"], [["SOT89"], "SOT-89.json"], [["SOT23"], "SOT-23.json"],
   [["TO252", "DPAK"], "TO-252.json"], [["TO263", "D2PAK"], "TO-263.json"],
