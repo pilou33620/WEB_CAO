@@ -13585,6 +13585,13 @@ function simPDNResoudreComplexe(A, b, n) {
   return x;
 }
 
+/* Le composant est-il posé ? L'adaptateur le dit (case « non monté » de la
+   fiche composant) ; la liste de condensateurs du PDN est gardée d'un calcul à
+   l'autre, d'où ce second filtre au moment du calcul. */
+function simEstMonte(ref) {
+  return !ref || !SIM_ED || typeof SIM_ED.estMonte !== "function" || SIM_ED.estMonte(ref) !== false;
+}
+
 function simPDNActualiserComposants(force) {
   if (SIM_ED && typeof SIM_ED.pdnCondensateurs === "function") {
     const caps = SIM_ED.pdnCondensateurs(SIM_PDN.rail);
@@ -13666,7 +13673,7 @@ function simCalculerPDN() {
     ? simPDNCalculerModesCavite(aMm, bMm, SIM_PDN.planEpaisseurUm, er, tanD, fMax)
     : [];
 
-  const capas = (SIM_PDN.condensateurs || []).filter(c => c.actif !== false && c.cap > 0);
+  const capas = (SIM_PDN.condensateurs || []).filter(c => c.actif !== false && c.cap > 0 && simEstMonte(c.ref));
 
   /* LES PORTS DE LA CAVITÉ. Une paire de plans n'est pas un nœud unique : c'est
      un réseau à (1 + n) ports, le point observé et un port par condensateur, aux
@@ -14230,7 +14237,7 @@ function simPDNGenererHeatmapCavite(r, modeStr, W, H) {
   }
 
   // Condensateurs réels
-  const capas = (SIM_PDN.condensateurs || []).filter(c => c.actif !== false);
+  const capas = (SIM_PDN.condensateurs || []).filter(c => c.actif !== false && simEstMonte(c.ref));
   for (const cp of capas) {
     let posX = cp.x != null ? cp.x : (cp.id === 1 ? aMm * 0.15 : (cp.id === 2 ? aMm * 0.4 : (cp.id === 3 ? aMm * 0.5 : (cp.id === 4 ? aMm * 0.75 : aMm * 0.9))));
     let posY = cp.y != null ? cp.y : (cp.id === 1 ? bMm * 0.2 : (cp.id === 2 ? bMm * 0.45 : (cp.id === 3 ? bMm * 0.5 : (cp.id === 4 ? bMm * 0.6 : bMm * 0.85))));
@@ -14707,7 +14714,7 @@ function simRendrePDN() {
       '</div>';
 
   // Capacitors Table
-  const capas = SIM_PDN.condensateurs || [];
+  const capas = (SIM_PDN.condensateurs || []).filter(c => simEstMonte(c.ref));
   html += '<div style="margin-top:12px">' +
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
       '<span style="font-size:11px;font-weight:600;color:var(--txt)">Condensateurs de découplage du rail (' + capas.length + ')</span>' +

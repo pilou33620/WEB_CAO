@@ -723,6 +723,9 @@ function mdlCharger(modele,nomFichier){
      de fichier (mdlMemoriserNets). Un .json exporté porte le sien, qui passe
      devant. On ne reprend plus les classes du fichier PRÉCÉDENT (V.netClasses) :
      deux cartes qui partagent un nom de net n'ont rien d'autre en commun. */
+  // un .json exporté porte sa liste (repères seulement), sinon la mémoire du navigateur
+  modele.nonMontes=Array.isArray(modele.nonMontes)
+    ?modele.nonMontes.filter(r=>typeof r==="string"):mdlMemoireNonMontes();
   const mem=modele.netClasses?null:mdlMemoireNets();
   if(mem&&mem.natures&&!modele.netNatures)modele.netNatures=mem.natures;
   mdlAutoDetecterClassesNets(modele.classes_nets, modele.netClasses || (mem&&mem.classes) || null);
@@ -747,6 +750,37 @@ function mdlMemoriserNets(){
     if(!Object.keys(classes).length&&!Object.keys(natures).length)
       localStorage.removeItem(mdlCleMemoireNets());
     else localStorage.setItem(mdlCleMemoireNets(),JSON.stringify({classes,natures}));
+  }catch(_){}
+}
+
+/* LES COMPOSANTS NON MONTÉS : toutes les simulations les ignorent — leurs
+   pastilles restent, c'est du cuivre, mais la pièce elle-même n'existe pas.
+   Une liste de repères dans V.modele.nonMontes, qui part avec l'export .json,
+   et mémorisée par nom de fichier dans ce navigateur comme les nets. */
+function mdlCleNonMontes(){ return "cao.visionneuse.nonmontes.v1."+(V.fichier||""); }
+function mdlMemoireNonMontes(){
+  try{
+    const l=JSON.parse(localStorage.getItem(mdlCleNonMontes())||"[]");
+    return Array.isArray(l)?l.filter(r=>typeof r==="string"):[];
+  }catch(_){ return []; }
+}
+/* Le repère est-il monté ? Vrai pour tout ce que la liste ne nomme pas. */
+function mdlMonte(ref){
+  const l=V.modele&&V.modele.nonMontes;
+  return !(Array.isArray(l)&&l.indexOf(String(ref))>=0);
+}
+/* Les composants que les simulations voient. */
+function mdlComposantsMontes(){
+  return ((V.modele&&V.modele.composants)||[]).filter(c=>c&&mdlMonte(c.ref));
+}
+function mdlPoserMonte(ref,monte){
+  if(!V.modele||!ref)return;
+  const l=(Array.isArray(V.modele.nonMontes)?V.modele.nonMontes:[]).filter(r=>r!==ref);
+  if(!monte)l.push(ref);
+  V.modele.nonMontes=l;
+  try{
+    if(l.length)localStorage.setItem(mdlCleNonMontes(),JSON.stringify(l));
+    else localStorage.removeItem(mdlCleNonMontes());
   }catch(_){}
 }
 

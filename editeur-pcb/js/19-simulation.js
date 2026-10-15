@@ -52,6 +52,12 @@
       décide si le cuivre latéral est vraiment un plan de retour.
    ========================================================================== */
 
+/* LES EMPREINTES QUE LES SIMULATIONS VOIENT : ni cochées « non monté » dans
+   leurs propriétés, ni absentes de la variante de montage active. Leurs
+   pastilles restent — c'est du cuivre —, seule la pièce disparaît. */
+function simFpMonte(fp){ return !!fp&&!fp.simNonMonte&&pcbVarMonte(fp); }
+function simFpsMontes(){ return (S.fps||[]).filter(simFpMonte); }
+
 /* Le cuivre de rang `i` occupe la place `2i` dans l'empilage envoyé : un
    conducteur, un diélectrique, un conducteur… */
 function simCuIndex(i){return 2*clamp(i,0,S.cu-1);}
@@ -756,7 +762,7 @@ function simPontsPlans(cuA, cuB, x, y, extraOut){
 
   const out = [];
   let dHorsPontMin = Infinity, refHorsPontMin = "";
-  for(const fp of S.fps){
+  for(const fp of simFpsMontes()){
     const pads = padsOf(fp);
     if(pads.length !== 2) continue;
     const nets = new Set(pads.map(q => String(q.net || "").trim())
@@ -801,7 +807,7 @@ function simPontsPlans(cuA, cuB, x, y, extraOut){
     const ep = (i, j) => { let t = 0; for(let g = i; g < j; g++) t += diAt(g).t || 0; return t; };
     const h = plans.length ? {haut: ep(0, Math.min(...plans)),
                               bas: ep(Math.max(...plans), S.cu - 1)} : undefined;
-    extraOut.carte = simPontsCarte(S.fps.map(fp => ({fp: fp, pads: padsOf(fp)}))
+    extraOut.carte = simPontsCarte(simFpsMontes().map(fp => ({fp: fp, pads: padsOf(fp)}))
       .filter(o => o.pads.length === 2)
       .map(o => ({ref: o.fp.ref, x: o.fp.x, y: o.fp.y, val: o.fp.value,
                   nets: o.pads.map(q => String(q.net || "").trim()),
@@ -4323,7 +4329,7 @@ function pcbNetComposants(net){
   if(!net||typeof S==="undefined"||!Array.isArray(S.fps))
     return {sources, charges, resistances, ics, autres};
 
-  for(const fp of S.fps){
+  for(const fp of simFpsMontes()){
     const c=schMap.get(fp.ref)||{ref:fp.ref, value:fp.value, pkg:fp.pkg, type:"comp"};
     const sp=pcbSpecsComposant(c);
     const padsAll=padsWorld(fp);
@@ -4561,6 +4567,12 @@ function simEstResistancePcb(ref, val, type){
 }
 
 const SIM_PCB={
+  /* Un composant coché « non monté » sort de toutes les simulations. */
+  estMonte:function(ref){
+    const fp=(S.fps||[]).find(f=>f.ref===ref);
+    return !fp||simFpMonte(fp);
+  },
+
   outil:"editeur-pcb",
 
   /* Le projet d'abord, sinon le fichier ouvert (PCB_FICHIER, 07-app.js) :
@@ -4658,7 +4670,7 @@ const SIM_PCB={
     }
     if(!nA||!nB)return null;
     const schM=pcbComposantsSchema();
-    for(const fp of S.fps){
+    for(const fp of simFpsMontes()){
       const pads=padsWorld(fp);
       const hasA=pads.some(q=>q.net===nA||(fp.nets&&fp.nets[q.n]===nA));
       const hasB=pads.some(q=>q.net===nB||(fp.nets&&fp.nets[q.n]===nB));
@@ -4696,7 +4708,7 @@ const SIM_PCB={
       if(S.curNet&&!isGnd(S.curNet)) rails.add(S.curNet);
 
       if(Array.isArray(S.fps)){
-        for(const fp of S.fps){
+        for(const fp of simFpsMontes()){
           const isCapa=fp.type==="capacitor"||/^[cC]/i.test(fp.ref)||/[pnum]F/i.test(fp.value);
           if(!isCapa) continue;
           const pads=padsWorld(fp);
@@ -4766,7 +4778,7 @@ const SIM_PCB={
     const schMap=typeof pcbComposantsSchema==="function"?pcbComposantsSchema():new Map();
     const res=[];
     let idx=1;
-    for(const fp of S.fps){
+    for(const fp of simFpsMontes()){
       const sch=schMap.get(fp.ref)||{};
       const pads=padsWorld(fp);
       /* Pas de type par défaut : `{type:"capacitor"}` en tête de l'assemblage
@@ -4865,7 +4877,7 @@ const SIM_PCB={
     const cav=this.pdnCavitePlans(net);
     const cible=String(net).trim().toLowerCase();
     const comps=[];
-    for(const fp of S.fps){
+    for(const fp of simFpsMontes()){
       const pads=padsWorld(fp);
       const nets=pads.map(q=>q.net||(fp.nets&&fp.nets[q.n])).filter(Boolean);
       if(!nets.some(n=>String(n).trim().toLowerCase()===cible)||!nets.some(simPDNEstMasse)) continue;
@@ -5123,7 +5135,7 @@ const SIM_PCB={
     }
     if(!net&&S.fps&&S.fps.length){
       const schM=pcbComposantsSchema();
-      for(const fp of S.fps){
+      for(const fp of simFpsMontes()){
         const c=schM.get(fp.ref);
         if(c&&(c.type==="regulator"||c.type==="vcc"||/^(VR|REG)/i.test(c.ref))){
           for(const q of padsWorld(fp)){
@@ -5484,7 +5496,8 @@ const SIM_PCB={
         if(q.drill>0)percages.push({x:q.x,y:q.y,d:q.drill,n:q.net||""});
         broches.push({x:q.x,y:q.y,n:q.net||"",pin:String(q.n)});
       }
-      composants.push({ref:fp.ref,c:nom(fp.side?S.cu-1:0),broches,
+      // un non-monté garde ses pastilles et ses perçages, pas sa pièce
+      if(simFpMonte(fp))composants.push({ref:fp.ref,c:nom(fp.side?S.cu-1:0),broches,
                        val:fp.value||"",pkg:fp.pkg||""});
     }
     for(const v of S.vias){
@@ -5707,7 +5720,7 @@ const SIM_PCB={
     const isPassiveRef=r=>/^(R|RN|RP|RA|RES|RS|L|FB|C)/i.test(r||"");
 
     let fallback=null;
-    for(const fp of S.fps){
+    for(const fp of simFpsMontes()){
       if(!fp) continue;
       const ref = fp.ref || ("U" + fp.id);
       const pn = simFpPadsNets(fp);
@@ -5769,7 +5782,7 @@ const SIM_PCB={
 
   listeComposants:function(){
     if(typeof S==="undefined"||!Array.isArray(S.fps)) return [];
-    return S.fps.map(fp=>({
+    return simFpsMontes().map(fp=>({
       ref: fp.ref||("U"+fp.id),
       val: fp.value||fp.pkg||"",
       pkg: fp.pkg||""
@@ -5780,7 +5793,7 @@ const SIM_PCB={
     if(typeof S==="undefined"||!Array.isArray(S.fps)||!ref1||!ref2) return [];
     const fp1=S.fps.find(f=>(f.ref===ref1||("U"+f.id)===ref1));
     const fp2=S.fps.find(f=>(f.ref===ref2||("U"+f.id)===ref2));
-    if(!fp1||!fp2) return [];
+    if(!simFpMonte(fp1)||!simFpMonte(fp2)) return [];
     const isPwr=n=>/^(GND|VCC|\+?3V3|\+?5V|\+?1V[0-9]|\+?2V[0-9]|VDD|VSS|VIN|VBAT)$/i.test(n);
     const s1=simFpNetSet(fp1), s2=simFpNetSet(fp2);
     const common=[];
@@ -5793,7 +5806,7 @@ const SIM_PCB={
     }
 
     // 2. Nets chaînés via un composant passif série
-    for(const fp of S.fps){
+    for(const fp of simFpsMontes()){
       if(fp===fp1||fp===fp2) continue;
       const ref = fp.ref || ("U" + fp.id);
       const pn = simFpPadsNets(fp);
@@ -5835,7 +5848,7 @@ const SIM_PCB={
     if(typeof S==="undefined"||!Array.isArray(S.fps)) return [];
     const isPwr=n=>/^(GND|VCC|\+?3V3|\+?5V|\+?1V[0-9]|\+?2V[0-9]|VDD|VSS|VIN|VBAT)$/i.test(n);
     const bridges=[];
-    for(const fp of S.fps){
+    for(const fp of simFpsMontes()){
       const ref = fp.ref || ("U" + fp.id);
       const pn = simFpPadsNets(fp);
       const fNets=[...new Set(pn.map(p=>p.net).filter(n=>n&&!isPwr(n)))];
@@ -5949,7 +5962,7 @@ function simRfEstMasse(n){
 function simRfPlateauPcb(){
   const sch=(typeof pcbComposantsSchema==="function")?pcbComposantsSchema()
                                                      :new Map();
-  const composants=S.fps.map(fp=>{
+  const composants=simFpsMontes().map(fp=>{
     const c=sch.get(fp.ref)||{};
     return {ref:fp.ref, valeur:fp.value||c.value||"",
             type:String(c.type||fp.type||""),

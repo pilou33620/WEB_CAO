@@ -1465,6 +1465,10 @@ function propsFp(box,fp){
       'title="Contour du boîtier, point de broche 1 et repère imprimés d\'office. Coupée quand '+
       'la sérigraphie de l\'empreinte est dessinée à part, dans les dessins.">'+
       '<input type="checkbox" id="pSilk"'+(fp.silk===false?"":" checked")+'> Sérigraphie automatique</label></div>'+
+    '<div class="prop"><label style="display:flex;align-items:center;gap:6px;cursor:pointer" '+
+      'title="La pièce est absente de la carte : toutes les simulations l\'ignorent. Ses pastilles '+
+      'restent, c\'est du cuivre. Ne change ni bom.csv ni positions.csv : pour la fabrication, ce sont les variantes.">'+
+      '<input type="checkbox" id="pSimNM"'+(fp.simNonMonte?" checked":"")+'> Non monté (ignoré par les simulations)</label></div>'+
     '<div class="cat">Broches et nets</div><table class="bom"><tbody>';
   for(const q of ps){
     let pinSchName = "";
@@ -1506,6 +1510,8 @@ function propsFp(box,fp){
   upd("pY",fpPose(v=>fp.y=wyu(v)),true);
   upd("pRot",fpPose(v=>fp.rot=+v),true);
   if($("pSilk"))$("pSilk").onchange=e=>{push();if(e.target.checked)delete fp.silk;else fp.silk=false;
+    touch();refreshPanels();draw();};
+  if($("pSimNM"))$("pSimNM").onchange=e=>{push();if(e.target.checked)fp.simNonMonte=true;else delete fp.simNonMonte;
     touch();refreshPanels();draw();};
   const ap=$("pPkgApply");
   if(ap)ap.onclick=e=>{

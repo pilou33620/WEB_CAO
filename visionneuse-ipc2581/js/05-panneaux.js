@@ -589,7 +589,8 @@ function pnlComps(){
       +"<b>"+mdlEsc(c.ref)+"</b>"
       +(c.val?"<em>"+mdlEsc(c.val)+"</em>":"")
       +'<span class="cpt">'+mdlEsc(c.pkg||"")
-      +(cu&&cu.dessous?" · dessous":"")+"</span></button>";
+      +(cu&&cu.dessous?" · dessous":"")
+      +(mdlMonte(c.ref)?"":" · non monté")+"</span></button>";
   }).join("")
   +(liste.length>vus.length
      ? '<div class="rien">… et '+mdlEntier(liste.length-vus.length)
@@ -729,7 +730,11 @@ function pnlDetail(){
       +l("Rotation",mdlNb(comp.r,1)+"°"+(comp.m?" · miroir":""))
       +l("Broches",(comp.pins?comp.pins.length:0)+" ("
         +(comp.pads?comp.pads.length:0)+" pastilles)")
-      +"</table>";
+      +"</table>"
+      +'<label class="nonMonte" title="La pièce est absente de la carte : toutes '
+      +'les simulations l\'ignorent. Ses pastilles restent, c\'est du cuivre.">'
+      +'<input type="checkbox" data-nonmonte="'+mdlEsc(comp.ref)+'"'
+      +(mdlMonte(comp.ref)?"":" checked")+"> Non monté (ignoré par les simulations)</label>";
     if(comp.props&&typeof comp.props==="object"){
       const cles=Object.keys(comp.props).filter(function(k){
         const ku=k.toUpperCase();
@@ -890,6 +895,12 @@ function pnlDetail(){
     b.onclick=function(ev){
       const i=+b.dataset.vnet;
       if(i>=0)choisirNet(i,ev.ctrlKey||ev.metaKey);
+    };
+  });
+  box.querySelectorAll("[data-nonmonte]").forEach(function(cb){
+    cb.onchange=function(){
+      mdlPoserMonte(cb.dataset.nonmonte,!cb.checked);
+      pnlComps(); pnlDetail(); dessiner();
     };
   });
   box.querySelectorAll("[data-vsel]").forEach(function(b){

@@ -432,6 +432,7 @@ function normFp(f,i){
   /* sérigraphie automatique (contour, point, repère) coupée : une carte
      importée apporte la sienne. Absent = coupée jamais, comme avant. */
   if(f.silk===false)out.silk=false;
+  if(f.simNonMonte===true)out.simNonMonte=true;   // ignorée par les simulations (19-simulation.js)
   if(f.mark===false)out.mark=false;
   else if(f.mark&&typeof f.mark==="object"){
     const mx=+f.mark.x, my=+f.mark.y;

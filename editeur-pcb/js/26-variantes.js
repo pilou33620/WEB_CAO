@@ -56,12 +56,11 @@ function pcbVarChoisir(id){
   refreshPanels();draw();
 }
 
-/* Les empreintes non montées de la variante active : voilées et barrées. */
+/* Les empreintes non montées -- de la variante active, ou cochées « non monté »
+   pour les simulations (simFpMonte) : voilées et barrées. */
 function pcbVarDessiner(c){
-  const vid=pcbVarActive();
-  if(!vid)return;
   for(const fp of S.fps){
-    if(varEstMonte(fp,vid))continue;
+    if(simFpMonte(fp))continue;
     const b=fpBBox(fp), w=b.x2-b.x1, h=b.y2-b.y1;
     c.save();
     c.fillStyle="rgba(10,11,13,.55)";

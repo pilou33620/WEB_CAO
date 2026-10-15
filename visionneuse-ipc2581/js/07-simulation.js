@@ -1370,7 +1370,7 @@ function simPontsPlansIpc(cuA, cuB, x, y){
   const out = [];
   let vus = 0, deuxBornes = 0;
   let dHorsPontMin = Infinity, refHorsPontMin = "";
-  for(const comp of (V.modele.composants || [])){
+  for(const comp of mdlComposantsMontes()){
     vus++;
     if(simNbBornesIpc(comp) !== 2) continue;
     deuxBornes++;
@@ -1408,7 +1408,7 @@ function simPontsPlansIpc(cuA, cuB, x, y){
   const ep = (i, j) => { let t = 0; for(let g = i; g < j; g++) t += (LT.gap[g] || {}).t || 0; return t; };
   const h = plans.length ? {haut: ep(0, Math.min(...plans)),
                             bas: ep(Math.max(...plans), LT.cu.length - 1)} : undefined;
-  const carte = simPontsCarte((V.modele.composants || [])
+  const carte = simPontsCarte(mdlComposantsMontes()
     .filter(c => simNbBornesIpc(c) === 2)
     .map(c => {
       const props = c.props || {};
@@ -5191,7 +5191,21 @@ function simEstResistanceIpc(ref, val, type){
   return false;
 }
 
+/* Les composants montés, en paires [repère, composant] : ce que lisent les
+   méthodes du bus. Un non-monté (mdlMonte) n'y paraît pas. */
+function simIpcEntrees(){
+  if(typeof V==="undefined"||!V) return [];
+  let entries = [];
+  if(V.parRef instanceof Map) entries = [...V.parRef.entries()];
+  else if(V.parRef && typeof V.parRef === "object") entries = Object.entries(V.parRef);
+  else if(V.modele && Array.isArray(V.modele.composants)) entries = V.modele.composants.map(c => [c.ref, c]);
+  return entries.filter(([ref]) => mdlMonte(ref));
+}
+
 const SIM_IPC={
+  /* Un composant coché « non monté » sort de toutes les simulations. */
+  estMonte:function(ref){ return mdlMonte(ref); },
+
   outil:"visionneuse-ipc2581",
 
   carte:function(){
@@ -5991,7 +6005,7 @@ const SIM_IPC={
     const ct=V.modele.contour;
     const contour=ct&&ct.o&&ct.o.length>=6?{o:ct.o,t:ct.t||[]}:null;
     const composants=[];
-    for(const cp of V.modele.composants||[]){
+    for(const cp of mdlComposantsMontes()){
       const broches=[];
       for(const b of (cp.pins&&cp.pins.length?cp.pins:(cp.pads||[]))){
         const p=mdlPlacer(b.x,b.y,cp.x,cp.y,cp.r,!!cp.m);
@@ -6139,14 +6153,7 @@ const SIM_IPC={
     const cleanTargetUpper = cleanTarget.toUpperCase();
     const isPassiveRef=r=>/^(R|RN|RP|RA|RES|RS|L|FB|C)/i.test(r||"");
 
-    let entries = [];
-    if(V.parRef instanceof Map){
-      entries = [...V.parRef.entries()];
-    }else if(V.parRef && typeof V.parRef === "object"){
-      entries = Object.entries(V.parRef);
-    }else if(V.modele && Array.isArray(V.modele.composants)){
-      entries = V.modele.composants.map(c => [c.ref, c]);
-    }
+    const entries = simIpcEntrees();
 
     let fallback=null;
     for(const [ref, comp] of entries){
@@ -6207,10 +6214,7 @@ const SIM_IPC={
 
   listeComposants:function(){
     if(typeof V==="undefined"||!V) return [];
-    let entries = [];
-    if(V.parRef instanceof Map) entries = [...V.parRef.entries()];
-    else if(V.parRef && typeof V.parRef === "object") entries = Object.entries(V.parRef);
-    else if(V.modele && Array.isArray(V.modele.composants)) entries = V.modele.composants.map(c => [c.ref, c]);
+    const entries = simIpcEntrees();
 
     const comps=[];
     for(const [ref, comp] of entries){
@@ -6235,7 +6239,7 @@ const SIM_IPC={
       c1 = V.modele.composants.find(c => c.ref === ref1);
       c2 = V.modele.composants.find(c => c.ref === ref2);
     }
-    if(!c1||!c2) return [];
+    if(!c1||!c2||!mdlMonte(ref1)||!mdlMonte(ref2)) return [];
 
     const isPwr=n=>/^(GND|VCC|\+?3V3|\+?5V|\+?1V[0-9]|\+?2V[0-9]|VDD|VSS|VIN|VBAT)$/i.test(n);
     const s1 = new Set(simIpcCompNets(c1).allNets);
@@ -6250,10 +6254,7 @@ const SIM_IPC={
     }
 
     // 2. Nets chaînés via un composant passif série
-    let entries = [];
-    if(V.parRef instanceof Map) entries = [...V.parRef.entries()];
-    else if(V.parRef && typeof V.parRef === "object") entries = Object.entries(V.parRef);
-    else if(V.modele && Array.isArray(V.modele.composants)) entries = V.modele.composants.map(c => [c.ref, c]);
+    const entries = simIpcEntrees();
 
     for(const [ref, comp] of entries){
       if(ref===ref1||ref===ref2) continue;
@@ -6278,10 +6279,7 @@ const SIM_IPC={
 
   listeLiaisonsSeries:function(){
     if(typeof V==="undefined"||!V) return [];
-    let entries = [];
-    if(V.parRef instanceof Map) entries = [...V.parRef.entries()];
-    else if(V.parRef && typeof V.parRef === "object") entries = Object.entries(V.parRef);
-    else if(V.modele && Array.isArray(V.modele.composants)) entries = V.modele.composants.map(c => [c.ref, c]);
+    const entries = simIpcEntrees();
 
     const bridges=[];
     for(const [ref, comp] of entries){
@@ -6388,7 +6386,7 @@ const SIM_IPC={
 
       // 2. Détection via les condensateurs de découplage reliés à la masse
       if(V.modele && Array.isArray(V.modele.composants)){
-        for(const comp of V.modele.composants){
+        for(const comp of mdlComposantsMontes()){
           const ref = comp.ref || "";
           const isCapa = /^[cC]/i.test(ref) || /cap/i.test(comp.type || "") || /cap/i.test(comp.part || "") || /[pnum]F/i.test(comp.val || "");
           if(!isCapa) continue;
@@ -6457,7 +6455,7 @@ const SIM_IPC={
 
     const res = [];
     let idx = 1;
-    for(const comp of V.modele.composants){
+    for(const comp of mdlComposantsMontes()){
       const ref = comp.ref || "";
       const nbBroches = simNbBornesIpc(comp);
       const val = comp.val || comp.valeur || comp.value || "";
@@ -6526,7 +6524,7 @@ const SIM_IPC={
     const k = (V.unite === "in") ? 25.4 : 1;
     const cav = this.pdnCavitePlans(net);
     const comps = [];
-    for(const comp of V.modele.composants){
+    for(const comp of mdlComposantsMontes()){
       const bn = simBornesNetsIpc(comp);
       let hasNet = false, hasGnd = false;
       bn.forEach(n => {
@@ -6663,7 +6661,7 @@ function simRfPlateauIpc(){
                     "« Empilage du calcul »."};
   const k=simKUnite();
   const parComp=new Map(), composants=[];
-  for(const comp of (V.modele.composants||[])){
+  for(const comp of mdlComposantsMontes()){
     const props=comp.props||{};
     const c={ref:comp.ref, valeur:simIpcValeurComp(comp).rawVal,
              type:String(comp.type||""),
@@ -6724,7 +6722,8 @@ function simRfPlateauIpc(){
   const cuPlan=(simStackupIpc().layers||[]).filter(c=>c.type==="copper")
                  .map(c=>c.role==="plane");
   return {
-    composants:composants,
+    // les pseudo-composants nés des noms de pastille « C420.2 » passent aussi le filtre
+    composants:composants.filter(c=>mdlMonte(c.ref)),
     nets:()=>(V.parNet||[]).map(o=>o&&o.nom).filter(Boolean),
     pistesDu:n=>{
       const N=simRfNetIpc(n);

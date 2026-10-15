@@ -8006,6 +8006,38 @@ T("simulation EM - Bus numérique : détection automatique d'une résistance 560
     throw new Error("Le résultat du calcul du bus doit intégrer le retard RC de la résistance de 560Ω : " + JSON.stringify(SIM_BUS.result));
   }
 });
+T("simulation EM : une empreinte « non monté » sort des simulations, ses pastilles restent", () => {
+  carteVide();
+  S.fps = [
+    { id: 20, ref: "R1", value: "560 ohm", pkg: "0402", style: "chip", pins: 2, nets: { 1: "MOSI", 2: "MOSI_R" }, pads: [
+      { n: 1, net: "MOSI",   x: 15, y: 0, w: 0.6, h: 0.6, shape: "rect", drill: 0 },
+      { n: 2, net: "MOSI_R", x: 16, y: 0, w: 0.6, h: 0.6, shape: "rect", drill: 0 }
+    ] }
+  ];
+  S.tracks = [{ id: 701, net: "MOSI", l: 0, w: 0.2, x1: 0, y1: 0, x2: 15, y2: 0 }];
+  const r1 = S.fps[0];
+  try{
+    if(!SIM_PCB.trouverPontSerie("MOSI")) throw new Error("monté, le pont doit être vu");
+    r1.simNonMonte = true;
+    if(SIM_PCB.trouverPontSerie("MOSI")) throw new Error("un non-monté ne fait pas de pont série");
+    if(SIM_PCB.listeComposants().length) throw new Error("un non-monté sort de la liste du bus");
+    if(SIM_PCB.estMonte("R1") !== false || SIM_PCB.estMonte("X9") !== true) throw new Error("estMonte");
+    const carte = SIM_PCB.carteEntiere();
+    if(carte.composants && carte.composants.some(c => c.ref === "R1")) throw new Error("analyse de carte : R1 doit sortir");
+    if(carte.pastilles && !carte.pastilles.length) throw new Error("analyse de carte : les pastilles restent");
+    // la case survit à l'enregistrement
+    const doc = normDoc(JSON.parse(JSON.stringify(docObj())));
+    if(doc.fps[0].simNonMonte !== true) throw new Error("simNonMonte perdu à la relecture");
+    delete r1.simNonMonte;
+    if(!SIM_PCB.trouverPontSerie("MOSI")) throw new Error("décochée, le pont revient");
+    // non monté dans la variante active : sorti lui aussi
+    S.variantes = {liste: [{id: "v1", nom: "Lite"}], active: "v1"};
+    r1.nonMonte = ["v1"];
+    if(SIM_PCB.trouverPontSerie("MOSI")) throw new Error("non monté dans la variante active : hors simulation");
+  }finally{
+    delete r1.simNonMonte; delete r1.nonMonte; S.variantes = {liste: [], active: ""};
+  }
+});
 
 
 /* ==========================================================================

@@ -62,7 +62,7 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simSaisie","simPorts","SIM_FORMAT",
   "V","LT","ltAire","ltPreparer","LT_SEUIL_PLAN","mdlLongueur",
   "mdlNetNom","mdlNb","mdlCharger","mdlCouches","mdlPlansDans",
-  "mdlCheminsNet","mdlMevTout",
+  "mdlCheminsNet","mdlMevTout","mdlMonte","mdlPoserMonte","simEstMonte",
   "SIM","SIM_IPC","simRefSet","simRefListe","simRefCandidats","simInit",
   "SIM_BUS","simCorpsBus","simBrancherBus","simRendreBus","simBusCalculer","SIM_BUS_PRESETS",
   "simBusActiverRSerie","simBusDesactiverRSerie","simBusChangerNet","simBusChangerRSerieVal","simBusChangerNetAval","simBusResoudreNetAvecPont","SIM_ED",
@@ -4282,6 +4282,33 @@ T("SIM_BUS dans visionneuse IPC-2581 : détection pont série 560Ω et calcul RC
   V.parRef = null;
   V.couches = null;
   LT.pret = false;
+});
+
+T("composant non monté : hors du bus et du PDN, retenu par fichier dans ce navigateur", function(){
+  carte({nets: ["MOSI", "SPI_SIGN004101", "GND"]});
+  V.unite = "mm"; V.fichier = "dnp.xml";
+  const compR1 = {ref: "R1", valeur: "560 ohm", package: "0402", pads: [{n: 0}, {n: 1}]};
+  V.parRef = new Map([["R1", compR1]]);
+  V.modele.composants = [compR1];
+  V.parNet[0].pistes = [{ c: 0, w: 0.2, p: [0, 0, 15, 0] }]; V.parNet[0].arcs = [];
+  V.parNet[1].pistes = [{ c: 0, w: 0.2, p: [16, 0, 30, 0] }]; V.parNet[1].arcs = [];
+  const cle = "cao.visionneuse.nonmontes.v1.dnp.xml";
+  const garde = SIM_ED; global.SIM_ED = SIM_IPC;
+  try{
+    if(!SIM_IPC.trouverPontSerie("MOSI")) throw new Error("monté, le pont doit être vu");
+    mdlPoserMonte("R1", false);
+    if(SIM_IPC.trouverPontSerie("MOSI")) throw new Error("un non-monté ne fait pas de pont série");
+    if(SIM_IPC.listeComposants().length) throw new Error("un non-monté sort de la liste du bus");
+    if(SIM_IPC.listeLiaisonsSeries().length) throw new Error("un non-monté sort des liaisons séries");
+    if(simEstMonte("R1") || !simEstMonte("C9")) throw new Error("simEstMonte suit la case");
+    if(localStorage.getItem(cle) !== '["R1"]') throw new Error("mémoire : " + localStorage.getItem(cle));
+    mdlPoserMonte("R1", true);
+    if(localStorage.getItem(cle) !== null) throw new Error("décochée, la mémoire s'efface");
+    if(!SIM_IPC.trouverPontSerie("MOSI")) throw new Error("décoché, le pont revient");
+  }finally{
+    global.SIM_ED = garde; localStorage.removeItem(cle);
+    V.parNet = null; V.parRef = null; V.couches = null; LT.pret = false;
+  }
 });
 
 T("SIM_BUS dans visionneuse IPC-2581 : détection pont série avec comp.pins (sans pad.n) et comp.val", function(){

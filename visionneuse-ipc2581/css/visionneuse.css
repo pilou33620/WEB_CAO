@@ -138,6 +138,7 @@ main{flex:1;display:flex;min-height:0}
 /* Une cote que le lecteur a devinee faute de padstack declare. En italique et
    attenuee : elle accompagne le chiffre sans le disputer, et elle doit se
    distinguer au coup d'oeil d'une valeur lue dans le fichier. */
+.fiche label.nonMonte{display:flex;align-items:center;gap:6px;margin-top:6px;cursor:pointer}
 .fiche .suppose{font-style:italic;opacity:.68;font-size:.85em;cursor:help}
 .fiche h3{margin:0 0 6px;font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;
   text-transform:uppercase;color:var(--yellow);font-weight:400}
