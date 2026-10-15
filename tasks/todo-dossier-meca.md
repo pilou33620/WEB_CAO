@@ -77,8 +77,8 @@ hauteurs, composants sans hauteur). La case « Plan mécanique » vient dans
 ### T5 : vues de face et de côté
 La carte en coupe à son épaisseur, chaque composant en pavé de sa hauteur
 au-dessus ou en dessous, et la hauteur maximale de chaque face cotée.
-- [ ] La vue de face montre le composant le plus haut à sa hauteur (cote présente, valeur juste)
-- [ ] Un composant sans hauteur est dessiné en pointillés à 0, et cité dans le tableau
+- [x] La vue de face montre le composant le plus haut à sa hauteur (cote présente, valeur juste)
+- [x] Un composant sans hauteur est dessiné en pointillés à 0, et cité dans le tableau
 - Vérifier : `BUILD && JS_PCB`
 - Fichiers : `commun/dossier-meca.js`, `editeur-pcb/test/harness.js`
 - Dépend de : T4

@@ -177,13 +177,56 @@ function mecaDonnees(entree,lib,reglages,info){
 }
 
 /* ==========================================================================
+   Vues de face et de côté : la carte en coupe à son épaisseur, chaque
+   composant en pavé de sa hauteur, dessus ou dessous ; un composant de
+   hauteur inconnue reste un trait en tirets à la surface.
+   ========================================================================== */
+function mecaElevations(F,J,k,TG,B,xCote,yFace){
+  const ep=J.carte.epaisseur||0, hD=J.hauteur_max.dessus, hB=J.hauteur_max.dessous;
+  const E=J.carte.encombrement;
+  const z0f=yFace+hD*k;                       // face : Z = 0 sur la feuille
+  const Fz=(x,z)=>({x:TG(x,0).x,y:z0f-z*k});
+  const zmin=-ep-hB;
+  const Cz=(y,z)=>({x:xCote+(z-zmin)*k,y:TG(0,y).y});   // côté : Z vers la droite
+  const pave=(G,a,b,o)=>dfPoly(F,[G(a[0],a[1]),G(b[0],a[1]),G(b[0],b[1]),G(a[0],b[1])],o);
+  const zs=c=>c.hauteur==null?(c.face==="dessus"?[0,0]:[-ep,-ep])
+             :(c.face==="dessus"?[0,c.hauteur]:[-ep-c.hauteur,-ep]);
+  const vues=[["VUE_FACE",Fz,c=>c.corps.map(p=>p[0]),[E.x1,E.x2]],
+              ["VUE_COTE",Cz,c=>c.corps.map(p=>p[1]),[E.y1,E.y2]]];
+  for(const [nom,G,axe,bornes] of vues){
+    dfCalque(F,nom+"_CARTE");
+    pave(G,[bornes[0],-ep],[bornes[1],0],{ferme:true,lw:0.35,plein:0.85});
+    dfCalque(F,nom+"_COMPOSANTS");
+    for(const c of J.composants){
+      const a=axe(c), z=zs(c);
+      pave(G,[Math.min(...a),z[0]],[Math.max(...a),z[1]],
+        {ferme:true,lw:c.ouverture?0.25:0.15,trait:c.ouverture?MECA_OUV:0.3,
+         plein:c.ouverture?MECA_OUV_FOND:null,tirets:c.hauteur==null||!c.monte});
+    }
+    dfCalque(F);
+  }
+  /* titres, cotes des hauteurs et repère des Z */
+  const fg=Fz(E.x1,0), fd=Fz(E.x2,0), cb=Cz(E.y1,zmin);
+  dfTexte(F,"VUE DE FACE (depuis le bord S) — Z vers le haut",fg.x,yFace-7,8,{gras:true,cat:"titre"});
+  dfTexte(F,"VUE DE CÔTÉ (depuis le bord E)",xCote,TG(0,E.y2).y-11,8,{gras:true,cat:"titre"});
+  dfTexte(F,"Z vers la droite",xCote,TG(0,E.y2).y-7,6.5,{c:0.3,cat:"titre"});
+  dfCote(F,Fz(E.x1,-ep),fg,"v",6,mecaFr(ep));
+  if(hD>0)dfCote(F,fg,Fz(E.x1,hD),"v",14,mecaFr(hD));
+  if(hB>0)dfCote(F,Fz(E.x1,-ep-hB),Fz(E.x1,-ep),"v",14,mecaFr(hB));
+  dfCote(F,cb,Cz(E.y1,hD),"h",8,mecaFr(ep+hD+hB));
+  dfTexte(F,"dessus",fd.x+2,fd.y-1,6,{c:0.4,cat:"titre"});
+  dfTexte(F,"dessous",fd.x+2,fd.y+ep*k+2.5,6,{c:0.4,cat:"titre"});
+}
+
+/* ==========================================================================
    La feuille « Plan mécanique » — dessinée depuis le JSON, avec les
    primitives des plans de l'éditeur (29-draftsman.js) : ce qu'on donne à
    l'IA est exactement ce qui est dessiné.
    --------------------------------------------------------------------------
-   À gauche, vue de dessus et, dessous, vues de face (depuis le bord S) et de
-   côté (depuis le bord E), toutes trois à la même échelle normalisée ; à
-   droite, les tableaux. `monde` (éditeur seulement) : {vers, depuis} entre
+   À gauche, la vue de dessus ; sous elle, alignée en X, la vue de face
+   (depuis le bord S, Z vers le haut) ; à sa droite, alignée en Y, la vue de
+   côté (depuis le bord E, Z vers la droite). Toutes trois à la même échelle
+   normalisée. À droite de la feuille, les tableaux. `monde` (éditeur seulement) : {vers, depuis} entre
    le repère de l'éditeur et celui des Gerber ; il donne à la vue de dessus la
    transformation qu'attendent les cotes posées à la main (34-draftsman-vues.js).
    ========================================================================== */
@@ -205,9 +248,8 @@ function mecaFeuilles(J,ctx,monde){
   const bw=Math.max(B.x2-B.x1,1e-3), bh=Math.max(B.y2-B.y1,1e-3);
   const ep=C.epaisseur||0, hD=J.hauteur_max.dessus, hB=J.hauteur_max.dessous;
   const bz=Math.max(ep+hD+hB,1);
-  /* une seule échelle pour les trois vues : dessus en haut, face et côté
-     côte à côte en dessous (marges : cotes et titres) */
-  const kmax=Math.max(1e-3,Math.min((W-30)/bw,(W-60)/(bw+bh),(H-70)/(bh+bz)));
+  /* une seule échelle pour les trois vues ; marges : cotes et titres */
+  const kmax=Math.max(1e-3,Math.min((W-62)/(bw+bz),(H-62)/(bh+bz)));
   const k=DF_ECHELLES.find(e=>e<=kmax)||kmax, ech=dfEchelleTxt(k);
   F.echelle=ech;
   const ox=Z.x1+22, oy=Z.y1+16;
@@ -274,6 +316,7 @@ function mecaFeuilles(J,ctx,monde){
   const cle=dfCleVue(F,"carte");
   if(ctx.cfg&&Array.isArray(ctx.cfg.cotes)&&typeof dfAnnoter==="function")dfAnnoter(F,V,cle,ctx);
   dfVueFin(F,m,cle,"carte",{V});
+  mecaElevations(F,J,k,TG,B,ox+bw*k+24,oy+bh*k+22);
 
   /* ---- colonne de droite ---- */
   const blocs=[dfBlocTitre("Carte"),...dfTableau([{t:"Grandeur",p:60},{t:"mm",p:30,a:"d"}],[

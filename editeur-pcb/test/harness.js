@@ -25652,6 +25652,41 @@ T("plan mécanique : une cote posée à la main sur la vue suit la géométrie",
   }finally{S.dessin=null;exCharger(1);}
 });
 
+/* ---------- vues de face et de côté ---------- */
+/* les polygones d'un calque de la feuille */
+function mecaCalque(F,nom){
+  const out=[];let dans=false;
+  for(const it of F.items){
+    if(it.t==="cal"){dans=it.nom===nom;continue;}
+    if(dans&&it.t==="p")out.push(it);
+  }
+  return out;
+}
+T("plan mécanique : vue de face, le plus haut composant coté à sa hauteur, l'épaisseur aussi",()=>{
+  exCharger(1);
+  const garde=window.CSV_LIB;
+  window.CSV_LIB=[{"Part Name":"CONN_Embase_SMA_CI_Bord_de_carte","Maximun Height":"9.5"}];
+  try{
+    const F=mecaDoc().feuilles[0];
+    const cotes=F.items.filter(it=>it.t==="t"&&it.cat==="cote").map(it=>it.s);
+    if(cotes.indexOf("9,50")<0)throw new Error("hauteur max 9,50 non cotée : "+cotes.join(" | "));
+    if(cotes.indexOf(fmt(stackTotal(),2).replace(".",","))<0)throw new Error("épaisseur non cotée : "+cotes.join(" | "));
+    if(!dfChercher({feuilles:[F]},"VUE DE FACE").length||!dfChercher({feuilles:[F]},"VUE DE CÔTÉ").length)
+      throw new Error("titres des vues");
+  }finally{window.CSV_LIB=garde;S.dessin=null;}
+});
+T("plan mécanique : chaque composant a son pavé dans les deux vues, l'inconnu en tirets",()=>{
+  exCharger(1);
+  const F=mecaDoc().feuilles[0], n=mecaDossier().composants.length;
+  try{
+    for(const nom of ["VUE_FACE","VUE_COTE"]){
+      const p=mecaCalque(F,nom+"_COMPOSANTS");
+      if(p.length!==n)throw new Error(nom+" : "+p.length+" pavés pour "+n+" composants");
+      if(!p.every(it=>it.tirets))throw new Error(nom+" : sans LIB, tous les pavés sont en tirets");
+    }
+  }finally{S.dessin=null;}
+});
+
 (async()=>{
   for(const [name,fn] of T_ASYNC){
     try{await fn();console.log("  ok  "+name);ok++;}
