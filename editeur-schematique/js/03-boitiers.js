@@ -36,7 +36,7 @@ const PKG_BASES=[
   {b:"SOD-323",fam:"Diodes de puissance / cylindriques",kinds:["diode","passif"],flat:true,pinCount:2,note:"CMS compact 2 broches"},
   {b:"SOD-523",fam:"Diodes de puissance / cylindriques",kinds:["diode","passif"],flat:true,pinCount:2,note:"CMS ultra-compact 2 broches"},
   {b:"SOT-23",fam:"Petits boîtiers CMS",kinds:["transistor","regulateur","ci","diode"],pins:[3,5,6,8]},
-  {b:"SOT-89",fam:"Petits boîtiers CMS",kinds:["transistor","regulateur"],pins:[3,4]},
+  {b:"SOT-89",fam:"Petits boîtiers CMS",kinds:["transistor","regulateur"],pins:[3,4,5]},
   {b:"SOT-223",fam:"Petits boîtiers CMS",kinds:["transistor","regulateur"],pins:[4],
    note:"régulateurs de tension"},
   {b:"TO-252 (DPAK)",fam:"Puissance CMS",kinds:["transistor","regulateur","diode"],pins:[3,5]},
