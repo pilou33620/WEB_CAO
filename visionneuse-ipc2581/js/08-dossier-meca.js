@@ -49,7 +49,10 @@ function mecaEntreeIpc(m){
                   metallise:!npth.some(t=>pres({x:t.x*k,y:t.y*k},q))});
     }
     const props=c.props||{};
-    const o={id:c.ref,ref:c.ref,face:(L?(L.dessous&&!L.dessus):!!c.m)?"dessous":"dessus",
+    /* la face par la couche de cuivre ; une couche d'assemblage ou de
+       sérigraphie ne le dit pas : le miroir alors */
+    const dessous=L&&(L.dessus||L.dessous)?(L.dessous&&!L.dessus):!!c.m;
+    const o={id:c.ref,ref:c.ref,face:dessous?"dessous":"dessus",
       x:c.x*k,y:c.y*k,rot:c.r||0,corps,part_name:props.PART_NAME||"",mpn:props.MPN||c.part||"",
       pkg:c.pkg||"",val:c.val||"",monte:mdlMonte(c.ref),trous};
     if(estime)o.corps_estime=true;
@@ -57,9 +60,15 @@ function mecaEntreeIpc(m){
     return o;
   });
   /* un NPTH libre est un trou de fixation ; dans le corps d'un composant, il
-     est à lui (plot de centrage d'un connecteur) */
-  const trous=npth.map(t=>({x:t.x*k,y:t.y*k,d:t.d*k,metallise:false}))
-    .filter(t=>!composants.some(c=>mecaDedans(t,c.corps)));
+     est à lui (plot de centrage d'un connecteur, trou d'une empreinte de
+     fixation sans pastille) — s'il n'y est pas déjà comme pastille percée */
+  const trous=[];
+  for(const t0 of npth){
+    const t={x:t0.x*k,y:t0.y*k,d:t0.d*k,metallise:false};
+    const c=composants.find(c=>mecaDedans(t,c.corps));
+    if(!c)trous.push(t);
+    else if(!c.trous.some(q=>pres(q,t)))c.trous.push(t);
+  }
   return {contour:pts(ct.o),decoupes:(ct.t||[]).map(pts),epaisseur:ep>0?ep:null,trous,composants};
 }
 
@@ -101,7 +110,7 @@ function mecaIpcFichiers(){
 /* La LIB du serveur, une fois ; sans serveur (un .json rouvert), on s'en
    passe et on le dit : restent les hauteurs du fichier et la saisie. */
 function mecaIpcLib(){
-  if(MECA_IPC.lib)return Promise.resolve(MECA_IPC.lib);
+  if(MECA_IPC.lib&&!MECA_IPC.libKo)return Promise.resolve(MECA_IPC.lib);
   return Promise.resolve().then(()=>fetch("/api/lib/composants")).then(r=>r.ok?r.json():null)
     .then(d=>{MECA_IPC.lib=d&&Array.isArray(d.composants)?d.composants:[];MECA_IPC.libKo=!(d&&d.composants);})
     .catch(()=>{MECA_IPC.lib=[];MECA_IPC.libKo=true;});
@@ -128,7 +137,7 @@ function mecaIpcRendre(){
     J.composants.map(c=>{
       const ph=c.source_hauteur==="saisie"||c.hauteur==null?"?":mecaFr(c.hauteur)+" ("+c.source_hauteur+")";
       return '<tr><td>'+e(c.ref)+'</td><td><input type="number" min="0" max="100" step="0.01" data-meca-h="'+e(c.ref)+
-        '" value="'+(r.h[c.ref]!=null?r.h[c.ref]:"")+'" placeholder="'+e(ph)+'" aria-label="Hauteur de '+e(c.ref)+'"></td>'+
+        '" value="'+(mecaPropre(r.h,c.ref)!=null?r.h[c.ref]:"")+'" placeholder="'+e(ph)+'" aria-label="Hauteur de '+e(c.ref)+'"></td>'+
         '<td><input type="checkbox" data-meca-ouv="'+e(c.ref)+'"'+(c.ouverture?" checked":"")+
         ' aria-label="Ouverture pour '+e(c.ref)+'"></td></tr>';
     }).join("");
@@ -140,6 +149,7 @@ function mecaOuvrir(){
   if(!m){
     m=document.createElement("div");
     m.id="modaleMeca";m.className="modal-overlay";
+    m.tabIndex=-1;                   // le focus reste dans la fenêtre : Échap, et pas les raccourcis de la carte
     m.setAttribute("role","dialog");m.setAttribute("aria-modal","true");m.setAttribute("aria-label","Dossier mécanique");
     m.innerHTML='<div class="modal-box meca-box"><header class="modal-head"><div>'+
       '<h3>Dossier mécanique</h3><small id="mecaEtat"></small></div><div class="meca-actions">'+
@@ -173,6 +183,7 @@ function mecaOuvrir(){
     });
   }
   m.hidden=false;
+  if(m.focus)m.focus();
   mecaIpcLib().then(mecaIpcRendre);
 }
 (function(){

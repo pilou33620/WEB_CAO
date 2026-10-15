@@ -25521,7 +25521,20 @@ T("dossier méca : sans hauteur, null, « inconnue » et un avertissement",()=>{
   const j=mecaDonnees(mecaEntree(),MECA_LIB,{});
   const r=mecaComp(j,"R1");
   if(r.hauteur!==null||r.source_hauteur!=="inconnue")throw new Error(JSON.stringify(r));
-  if(!j.avertissements.some(a=>/^R1 /.test(a)))throw new Error(j.avertissements.join(" | "));
+  if(!j.avertissements.some(a=>/^Hauteur inconnue.* : R1$/.test(a)))throw new Error(j.avertissements.join(" | "));
+});
+T("dossier méca : une seule note pour tous les composants sans hauteur, liste tronquée",()=>{
+  const e=mecaEntree();
+  for(let i=0;i<40;i++)e.composants.push({id:100+i,ref:"C"+(i+1),face:"dessus",x:5,y:5,rot:0,
+    corps:mecaRect(4,4,6,6),part_name:"",mpn:"",pkg:"0402",val:"",monte:true,trous:[]});
+  const a=mecaDonnees(e,MECA_LIB,{}).avertissements.filter(t=>/^Hauteur inconnue/.test(t));
+  if(a.length!==1||!/41 composant\(s\)/.test(a[0])||!/\(\+11\)$/.test(a[0]))throw new Error(a.join(" | "));
+});
+T("dossier méca : un repère « constructor » ne lit pas le prototype des réglages",()=>{
+  const e=mecaEntree();
+  e.composants.find(c=>c.ref==="R1").id="constructor";
+  const r=mecaDonnees(e,MECA_LIB,{h:{},ouv:{}}).composants.find(c=>c.ref==="R1");
+  if(r.source_hauteur!=="inconnue"||r.ouverture!==null)throw new Error(JSON.stringify(r));
 });
 T("dossier méca : une saisie hors bornes est ignorée",()=>{
   for(const v of [-1,0,1e9,"abc",NaN,null]){
@@ -25639,6 +25652,7 @@ T("plan mécanique : la feuille sort au PDF, cotes hors tout et trou de fixation
     for(const q of ["66,00 mm","42,00 mm","H1","Ø 3,20"])
       if(!dfChercher(doc,q).length)throw new Error("« "+q+" » introuvable");
     if(!F.vues.some(v=>v.cle==="meca/carte"&&v.V))throw new Error("vue meca/carte non déclarée");
+    if(!F.vues.some(v=>v.cle==="meca/elevations"))throw new Error("vues de face et de gauche non déclarées");
     const t=Buffer.from(dfPdfOctets(doc)).toString("latin1");
     if(!t.startsWith("%PDF")||!/%%EOF\n$/.test(t))throw new Error("PDF");
   }finally{S.dessin=null;exCharger(1);}
@@ -25686,7 +25700,7 @@ T("plan mécanique : vue de face, le plus haut composant coté à sa hauteur, l'
     const cotes=F.items.filter(it=>it.t==="t"&&it.cat==="cote").map(it=>it.s);
     if(cotes.indexOf("9,50")<0)throw new Error("hauteur max 9,50 non cotée : "+cotes.join(" | "));
     if(cotes.indexOf(fmt(stackTotal(),2).replace(".",","))<0)throw new Error("épaisseur non cotée : "+cotes.join(" | "));
-    if(!dfChercher({feuilles:[F]},"VUE DE FACE").length||!dfChercher({feuilles:[F]},"VUE DE CÔTÉ").length)
+    if(!dfChercher({feuilles:[F]},"VUE DE FACE").length||!dfChercher({feuilles:[F]},"VUE DE GAUCHE").length)
       throw new Error("titres des vues");
   }finally{window.CSV_LIB=garde;S.dessin=null;}
 });

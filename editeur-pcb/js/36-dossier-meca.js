@@ -82,7 +82,7 @@ function mecaRendreReglages(m){
     J.composants.map(c=>{
       const fp=parRef.get(c.ref);
       if(!fp)return "";
-      const saisie=cfg.meca.h[fp.id];
+      const saisie=mecaPropre(cfg.meca.h,fp.id);
       const ph=c.source_hauteur==="saisie"||c.hauteur==null?"?":mecaFr(c.hauteur)+" ("+c.source_hauteur+")";
       return '<tr><td>'+esc(c.ref)+'</td><td><input type="number" min="0" max="100" step="0.01" data-meca-h="'+fp.id+
         '" value="'+(saisie!=null?saisie:"")+'" placeholder="'+esc(ph)+'" aria-label="Hauteur de '+esc(c.ref)+'"></td>'+

@@ -6637,7 +6637,25 @@ T("dossier méca, visionneuse : face, corps placé, hauteur du fichier, corps es
   if(Math.min(...xs)!==0||Math.max(...xs)!==4||Math.min(...ys)!==17||Math.max(...ys)!==23)throw new Error("corps J1 "+JSON.stringify(J1.corps));
   if(!J1.ouverture||J1.ouverture.type!=="bord"||J1.ouverture.bord!=="O")throw new Error("ouverture J1 "+JSON.stringify(J1.ouverture));
   if(U1.face!=="dessous"||!U1.corps_estime)throw new Error("U1 : "+JSON.stringify(U1));
-  if(!j.avertissements.some(a=>/^U1 : encombrement estimé/.test(a)))throw new Error(j.avertissements.join(" | "));
+  if(!j.avertissements.some(a=>/^Encombrement estimé.* : U1$/.test(a)))throw new Error(j.avertissements.join(" | "));
+});
+T("dossier méca, visionneuse : le NPTH d'une empreinte de fixation sans pastille reste sa fixation",()=>{
+  carte({composants:[{ref:"MH1",pkg:"MountingHole",c:0,x:30,y:20,r:0,m:0,pads:[],
+    pins:[{num:"1",x:-2,y:-2},{num:"2",x:2,y:2}],props:{},part:"",val:""}],
+    percages:[{x:30,y:20,d:3.2,p:"NON_PLATED"}]});
+  try{
+    const j=mecaDonnees(mecaEntreeIpc(V.modele),[],{});
+    if(j.fixations.length!==1||j.fixations[0].id!=="MH1"||j.fixations[0].metallise)throw new Error(JSON.stringify(j.fixations));
+    if(j.composants.some(c=>c.ref==="MH1"))throw new Error("MH1 compté comme composant");
+  }finally{carte();}
+});
+T("dossier méca, visionneuse : posé sur une couche qui n'est pas du cuivre, la face vient du miroir",()=>{
+  carte({couches:["Top","Bottom","Assembly-Bottom"],composants:[{ref:"U5",pkg:"SOIC8",c:2,x:30,y:20,r:0,m:1,pads:[],
+    pins:[{num:"1",x:-2,y:-1}],props:{},part:"",val:""}]});
+  try{
+    const U5=mecaDonnees(mecaEntreeIpc(V.modele),[],{}).composants.find(c=>c.ref==="U5");
+    if(U5.face!=="dessous")throw new Error(JSON.stringify(U5));
+  }finally{carte();}
 });
 T("dossier méca, visionneuse : un repère non monté le reste dans le dossier",()=>{
   carteMeca();

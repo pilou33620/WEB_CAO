@@ -1294,6 +1294,16 @@ def boitier_muet():
 T(u"un boitier sans hauteur ni contour reste muet", boitier_muet)
 
 
+def hauteur_non_finie():
+    xml = CARTE.replace(u'<Package name="R0603" type="CHIP" height="0.45">',
+                        u'<Package name="R0603" type="CHIP" height="1e400">')
+    c = _r1(ipc2581_json.ipc2581_en_dict(xml.encode("utf-8"), "inf.xml"))
+    vrai("hauteur" not in c, u"une hauteur non finie est ignoree, et la lecture va au bout")
+
+
+T(u"une hauteur non finie (1e400) ne fait pas tomber la lecture", hauteur_non_finie)
+
+
 # =============================================================================
 print(u"-" * 62)
 if ECHECS:

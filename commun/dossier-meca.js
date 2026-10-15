@@ -53,6 +53,9 @@ function mecaNormReglages(src,cles){
   return out;
 }
 
+/* une clé PROPRE de l'objet : un repère « constructor » ne lit pas le prototype */
+function mecaPropre(o,k){return Object.prototype.hasOwnProperty.call(o,k)?o[k]:undefined;}
+
 /* ---------- distances au contour ---------- */
 function mecaDistSeg(p,a,b){
   const dx=b.x-a.x, dy=b.y-a.y, l=dx*dx+dy*dy;
@@ -133,23 +136,20 @@ function mecaDonnees(entree,lib,reglages,info){
     fixations.push(fixation(id,t));
   }
 
-  const composants=[];
+  const composants=[], sansH=[], estimes=[];
   for(const c of comps){
     if(estFixation(c))continue;
     const ref=String(c.ref||"?"), face=c.face==="dessous"?"dessous":"dessus";
     const corps=Array.isArray(c.corps)?c.corps:[];
-    let h=mecaHauteur(saisieH[c.id]), src="saisie";
+    let h=mecaHauteur(mecaPropre(saisieH,c.id)), src="saisie";
     if(h==null){h=mecaHauteur(c.hauteur_fichier);src="fichier";}
     if(h==null){h=parNom.get(cle(c.part_name))||parMpn.get(cle(c.mpn))||null;src="lib";}
-    if(h==null){
-      src="inconnue";
-      avert.push(ref+" : hauteur inconnue (absente de la LIB et du fichier, non saisie)");
-    }
-    if(c.corps_estime)avert.push(ref+" : encombrement estimé d'après les pastilles (pas de contour de boîtier dans le fichier)");
+    if(h==null){src="inconnue";sansH.push(ref);}
+    if(c.corps_estime)estimes.push(ref);
 
     const auto=MECA_CONNECTEUR.test(ref)||MECA_ORGANE.test(ref)||
                (/^D\d/i.test(ref)&&/LED/i.test([c.val,c.pkg,c.part_name].join(" ")));
-    const veut=typeof saisieO[c.id]==="boolean"?saisieO[c.id]:auto;
+    const o0=mecaPropre(saisieO,c.id), veut=typeof o0==="boolean"?o0:auto;
     let ouverture=null;
     if(veut){
       const pb=mecaBordProche(corps,contour);
@@ -169,6 +169,13 @@ function mecaDonnees(entree,lib,reglages,info){
     composants.push(o);
   }
 
+  /* une note par cas, pas une par composant : une carte de mille composants
+     sans LIB ne doit pas remplir soixante feuilles (le détail est au JSON) */
+  const liste=l=>l.slice(0,30).join(", ")+(l.length>30?" (+"+(l.length-30)+")":"");
+  if(sansH.length)avert.push("Hauteur inconnue (absente de la LIB et du fichier, non saisie), "+
+    sansH.length+" composant(s) : "+liste(sansH));
+  if(estimes.length)avert.push("Encombrement estimé d'après les pastilles (pas de contour de boîtier dans le fichier), "+
+    estimes.length+" composant(s) : "+liste(estimes));
   const hmax=f=>composants.reduce((m,c)=>c.face===f&&c.hauteur!=null?Math.max(m,c.hauteur):m,0);
   const dessus=hmax("dessus"), dessous=hmax("dessous");
   const B=mecaBoite(contour);
@@ -211,6 +218,7 @@ function mecaElevations(F,J,k,TG,B,xCote,yFace){
     dfCalque(F,nom+"_COMPOSANTS");
     for(const c of J.composants){
       const a=axe(c), z=zs(c);
+      if(!a.length)continue;
       pave(G,[Math.min(...a),z[0]],[Math.max(...a),z[1]],
         {ferme:true,lw:c.ouverture?0.25:0.15,trait:c.ouverture?MECA_OUV:0.3,
          plein:c.ouverture?MECA_OUV_FOND:null,tirets:c.hauteur==null||!c.monte});
@@ -220,7 +228,7 @@ function mecaElevations(F,J,k,TG,B,xCote,yFace){
   /* titres, cotes des hauteurs et repère des Z */
   const fg=Fz(E.x1,0), fd=Fz(E.x2,0), cb=Cz(E.y1,zmin);
   dfTexte(F,"VUE DE FACE (depuis le bord S) — Z vers le haut",fg.x,yFace-7,8,{gras:true,cat:"titre"});
-  dfTexte(F,"VUE DE CÔTÉ (depuis le bord E)",xCote,TG(0,E.y2).y-11,8,{gras:true,cat:"titre"});
+  dfTexte(F,"VUE DE GAUCHE (depuis le bord O)",xCote,TG(0,E.y2).y-11,8,{gras:true,cat:"titre"});
   dfTexte(F,"Z vers la droite",xCote,TG(0,E.y2).y-7,6.5,{c:0.3,cat:"titre"});
   dfCote(F,Fz(E.x1,-ep),fg,"v",6,mecaFr(ep));
   if(hD>0)dfCote(F,fg,Fz(E.x1,hD),"v",14,mecaFr(hD));
@@ -237,7 +245,8 @@ function mecaElevations(F,J,k,TG,B,xCote,yFace){
    --------------------------------------------------------------------------
    À gauche, la vue de dessus ; sous elle, alignée en X, la vue de face
    (depuis le bord S, Z vers le haut) ; à sa droite, alignée en Y, la vue de
-   côté (depuis le bord E, Z vers la droite). Toutes trois à la même échelle
+   gauche (depuis le bord O, Z vers la droite : la vue de côté se place du
+   côté opposé à celui d'où l'on regarde, comme en projection européenne). Toutes trois à la même échelle
    normalisée. À droite de la feuille, les tableaux. `monde` (éditeur seulement) : {vers, depuis} entre
    le repère de l'éditeur et celui des Gerber ; il donne à la vue de dessus la
    transformation qu'attendent les cotes posées à la main (34-draftsman-vues.js).
@@ -328,7 +337,11 @@ function mecaFeuilles(J,ctx,monde){
   const cle=dfCleVue(F,"carte");
   if(ctx.cfg&&Array.isArray(ctx.cfg.cotes)&&typeof dfAnnoter==="function")dfAnnoter(F,V,cle,ctx);
   dfVueFin(F,m,cle,"carte",{V});
+  /* vues de face et de gauche : une vue de la feuille, que le replacement
+     automatique connaît (34-draftsman-vues.js) */
+  const me=dfVueDebut(F);
   mecaElevations(F,J,k,TG,B,ox+bw*k+24,oy+bh*k+22);
+  dfVueFin(F,me,dfCleVue(F,"elevations"),"elevations");
 
   /* ---- colonne de droite ---- */
   const blocs=[dfBlocTitre("Carte"),...dfTableau([{t:"Grandeur",p:60},{t:"mm",p:30,a:"d"}],[
