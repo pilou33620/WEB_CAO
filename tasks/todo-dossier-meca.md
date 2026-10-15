@@ -32,16 +32,16 @@ Fixations (hypothèse 4), hauteurs (saisie > fichier > LIB par Part Name puis
 par référence fabricant), ouvertures (hypothèse 5), hauteur maximale par
 face, non-montés gardés, avertissements. Le format `web_cao-meca-1` est
 celui de la spec.
-- [ ] Essais de la spec n° 2, 3 et 4 sur une entrée écrite à la main
-- [ ] Un composant sans hauteur donne `null`, `"inconnue"` et un avertissement
-- [ ] `JSON.parse(JSON.stringify(json))` redonne le même objet (aucun `NaN` ni `Infinity`)
+- [x] Essais de la spec n° 2, 3 et 4 sur une entrée écrite à la main
+- [x] Un composant sans hauteur donne `null`, `"inconnue"` et un avertissement
+- [x] `JSON.parse(JSON.stringify(json))` redonne le même objet (aucun `NaN` ni `Infinity`)
 - Vérifier : `BUILD && JS_PCB`
 - Fichiers : `commun/dossier-meca.js` (nouveau), `editeur-pcb/editeur-pcb.html`, `editeur-pcb/test/harness.js`
 - Taille : M
 
 ### Point de contrôle 1
-- [ ] `JS_PCB` et `JS_VIS` passent
-- [ ] Le résultat de T1 est connu et la parade notée dans le plan
+- [x] `JS_PCB` et `JS_VIS` passent
+- [x] Le résultat de T1 est connu et la parade notée dans le plan
 
 ## Phase 2 : éditeur de bout en bout
 

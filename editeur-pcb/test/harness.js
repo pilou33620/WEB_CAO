@@ -399,6 +399,8 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "dxfCarte","dxfFeuilles","dxfFichiers","dxfSegments","dxfExporterCarte","dxfExporterFeuille","dfxCadre",
   "dfCalque","dfFontePreparer","dffFonte","dffLire","dffBase64","dffGlyphes","DFF_CACHE","DF_FONTE_TTF","dfZone",
   "dfLigne",
+  /* dossier mécanique (commun/dossier-meca.js) */
+  "mecaDonnees",
   /* cotes à la main, vues à la souris, détails (34-draftsman-vues.js) */
   "dfNormCotes","dfNormVues","dfNormDetails","dfResoudre","dfMesurer","dfAccroches","dfAccrocher",
   "dfAjouterCote","dfModifierCote","dfSupprimerCote","dfDeplacerCote","dfAjouterDetail","dfSupprimerDetail",
@@ -25420,6 +25422,137 @@ T("IPC-2581 : dans fabrication.zip, annoncé par le LISEZ-MOI et le master drawi
     const e=exportIpc2581();
     if(!e||e.name!=="carte.xml"||e.text.length<1000)throw new Error("bouton IPC-2581");
   }finally{loadDoc(JSON.parse(avant),true);}
+});
+
+/* ==========================================================================
+   Dossier mécanique : le calcul commun (commun/dossier-meca.js)
+   --------------------------------------------------------------------------
+   Une entrée neutre écrite à la main : carte 44 × 30, repère des Gerber
+   (Y vers le haut), épaisseur 1,6.
+   ========================================================================== */
+function mecaRect(x1,y1,x2,y2){return [{x:x1,y:y1},{x:x2,y:y1},{x:x2,y:y2},{x:x1,y:y2}];}
+function mecaEntree(){
+  return {
+    contour:mecaRect(0,0,44,30), decoupes:[], epaisseur:1.6,
+    trous:[{x:3.5,y:3.5,d:3.2,metallise:false}],
+    composants:[
+      /* USB au bord S, qui déborde de 0,5 mm */
+      {id:1,ref:"J1",face:"dessus",x:22,y:2,rot:0,corps:mecaRect(18,-0.5,26,4.5),
+       part_name:"USB_MICRO_B",mpn:"10118194-0001LF",pkg:"USB-MICRO-B",val:"",monte:true,trous:[]},
+      /* connecteur au milieu de la carte : par le couvercle */
+      {id:2,ref:"J2",face:"dessus",x:22,y:15,rot:0,corps:mecaRect(19,13,25,17),
+       part_name:"",mpn:"HDR-2X5",pkg:"HDR-2X5",val:"",monte:true,trous:[]},
+      /* LED loin du bord */
+      {id:3,ref:"D1",face:"dessus",x:30,y:20,rot:0,corps:mecaRect(29.5,19.6,30.5,20.4),
+       part_name:"LED_0603_VERTE",mpn:"",pkg:"0603",val:"LED verte",monte:true,trous:[]},
+      /* résistance du dessous, sans hauteur nulle part */
+      {id:4,ref:"R1",face:"dessous",x:10,y:20,rot:0,corps:mecaRect(9.2,19.6,10.8,20.4),
+       part_name:"R0603_INCONNUE",mpn:"",pkg:"0603",val:"1k",monte:true,trous:[]},
+      /* non-monté, hauteur venue du fichier */
+      {id:5,ref:"U2",face:"dessous",x:30,y:8,rot:0,corps:mecaRect(28,6,32,10),
+       part_name:"",mpn:"",pkg:"SOIC-8",val:"",hauteur_fichier:1.75,monte:false,trous:[]},
+      /* trou de fixation métallisé, en empreinte */
+      {id:6,ref:"MH1",face:"dessus",x:40.5,y:26.5,rot:0,corps:mecaRect(37.5,23.5,43.5,29.5),
+       part_name:"",mpn:"",pkg:"MountingHole_3.2mm",val:"",monte:true,
+       trous:[{x:40.5,y:26.5,d:3.2,metallise:true,pad:6}]}
+    ]};
+}
+const MECA_LIB=[
+  {"Part Name":"USB_MICRO_B","Part Number":"","manufacturer part Number":"","Maximun Height":"2.95000"},
+  {"Part Name":"AUTRE","Part Number":"HDR-2X5","manufacturer part Number":"","Maximun Height":"8.5"},
+  {"Part Name":"LED_0603_VERTE","Part Number":"","manufacturer part Number":"","Maximun Height":"0.80000"},
+  {"Part Name":"SOIC8","Part Number":"","manufacturer part Number":"","Maximun Height":"xx"}];
+function mecaComp(j,ref){
+  const c=j.composants.find(k=>k.ref===ref);
+  if(!c)throw new Error(ref+" absent des composants");
+  return c;
+}
+T("dossier méca : la carte, son épaisseur et son format",()=>{
+  const j=mecaDonnees(mecaEntree(),MECA_LIB,{},{projet:"Essai",revision:"B",date:"2026-10-15"});
+  if(j.format!=="web_cao-meca-1"||j.projet!=="Essai"||j.revision!=="B")throw new Error("en-tête : "+JSON.stringify([j.format,j.projet,j.revision]));
+  const e=j.carte.encombrement;
+  if(e.x1!==0||e.y1!==0||e.x2!==44||e.y2!==30)throw new Error("encombrement "+JSON.stringify(e));
+  if(j.carte.epaisseur!==1.6)throw new Error("épaisseur "+j.carte.epaisseur);
+  if(JSON.stringify(j.carte.contour[1])!=="[44,0]")throw new Error("contour en [x, y] : "+JSON.stringify(j.carte.contour));
+});
+T("dossier méca : un trou non métallisé et une empreinte MH1 sont deux fixations",()=>{
+  const j=mecaDonnees(mecaEntree(),[],{});
+  if(j.fixations.length!==2)throw new Error(JSON.stringify(j.fixations));
+  const h=j.fixations.find(f=>!f.metallise), m=j.fixations.find(f=>f.id==="MH1");
+  if(!h||h.id!=="H1"||h.d!==3.2||h.d_degagement!==5.2)throw new Error("trou libre : "+JSON.stringify(h));
+  if(!m||!m.metallise||m.d_degagement!==6||m.x!==40.5)throw new Error("MH1 : "+JSON.stringify(m));
+  if(j.composants.some(c=>c.ref==="MH1"))throw new Error("une fixation n'est pas un composant");
+});
+T("dossier méca : un trou libre ne prend pas le nom d'une empreinte de fixation",()=>{
+  const e=mecaEntree();
+  e.composants.find(c=>c.ref==="MH1").ref="H1";
+  const ids=mecaDonnees(e,[],{}).fixations.map(f=>f.id).sort();
+  if(ids.join()!=="H1,H2")throw new Error(ids.join());
+});
+T("dossier méca : hauteur par Part Name, puis référence fabricant ; la saisie l'emporte",()=>{
+  const j=mecaDonnees(mecaEntree(),MECA_LIB,{h:{3:1.2}});
+  const u=mecaComp(j,"J1"), h=mecaComp(j,"J2"), d=mecaComp(j,"D1");
+  if(u.hauteur!==2.95||u.source_hauteur!=="lib")throw new Error("J1 : "+u.hauteur+" "+u.source_hauteur);
+  if(h.hauteur!==8.5||h.source_hauteur!=="lib")throw new Error("J2 par Part Number : "+h.hauteur);
+  if(d.hauteur!==1.2||d.source_hauteur!=="saisie")throw new Error("D1 saisie : "+d.hauteur+" "+d.source_hauteur);
+});
+T("dossier méca : la hauteur du fichier passe avant la LIB",()=>{
+  const e=mecaEntree();
+  e.composants.find(c=>c.ref==="J1").hauteur_fichier=3.3;
+  const u=mecaComp(mecaDonnees(e,MECA_LIB,{}),"J1");
+  if(u.hauteur!==3.3||u.source_hauteur!=="fichier")throw new Error(u.hauteur+" "+u.source_hauteur);
+});
+T("dossier méca : sans hauteur, null, « inconnue » et un avertissement",()=>{
+  const j=mecaDonnees(mecaEntree(),MECA_LIB,{});
+  const r=mecaComp(j,"R1");
+  if(r.hauteur!==null||r.source_hauteur!=="inconnue")throw new Error(JSON.stringify(r));
+  if(!j.avertissements.some(a=>/^R1 /.test(a)))throw new Error(j.avertissements.join(" | "));
+});
+T("dossier méca : une saisie hors bornes est ignorée",()=>{
+  for(const v of [-1,0,1e9,"abc",NaN,null]){
+    const d=mecaComp(mecaDonnees(mecaEntree(),MECA_LIB,{h:{3:v}}),"D1");
+    if(d.source_hauteur!=="lib"||d.hauteur!==0.8)throw new Error(String(v)+" : "+d.hauteur+" "+d.source_hauteur);
+  }
+});
+T("dossier méca : le connecteur au bord est une ouverture de bord, avec sa plage",()=>{
+  const o=mecaComp(mecaDonnees(mecaEntree(),MECA_LIB,{}),"J1").ouverture;
+  if(!o||o.type!=="bord"||o.bord!=="S"||o.debut!==18||o.fin!==26||o.z_min!==0||o.z_max!==2.95)
+    throw new Error(JSON.stringify(o));
+});
+T("dossier méca : un connecteur au milieu et une LED s'ouvrent sur leur face, pas une résistance",()=>{
+  const j=mecaDonnees(mecaEntree(),MECA_LIB,{});
+  const h=mecaComp(j,"J2").ouverture, d=mecaComp(j,"D1").ouverture;
+  if(!h||h.type!=="face"||h.face!=="dessus")throw new Error("J2 : "+JSON.stringify(h));
+  if(!d||d.type!=="face"||d.face!=="dessus")throw new Error("D1 : "+JSON.stringify(d));
+  if(mecaComp(j,"R1").ouverture!==null)throw new Error("R1 n'a pas d'ouverture");
+});
+T("dossier méca : la case retire une ouverture et en ajoute une",()=>{
+  const j=mecaDonnees(mecaEntree(),MECA_LIB,{ouv:{1:false,4:true}});
+  if(mecaComp(j,"J1").ouverture!==null)throw new Error("J1 décoché");
+  const r=mecaComp(j,"R1").ouverture;
+  if(!r||r.type!=="face"||r.face!=="dessous")throw new Error("R1 coché : "+JSON.stringify(r));
+});
+T("dossier méca : l'ouverture d'un composant du dessous descend sous la carte",()=>{
+  const e=mecaEntree();
+  Object.assign(e.composants.find(c=>c.ref==="J1"),{face:"dessous"});
+  const o=mecaComp(mecaDonnees(e,MECA_LIB,{}),"J1").ouverture;
+  if(o.z_max!==-1.6||o.z_min!==-4.55)throw new Error(JSON.stringify(o));
+});
+T("dossier méca : un non-monté reste, marqué, et compte dans la hauteur maximale",()=>{
+  const j=mecaDonnees(mecaEntree(),MECA_LIB,{});
+  const u=mecaComp(j,"U2");
+  if(u.monte!==false||u.hauteur!==1.75)throw new Error(JSON.stringify(u));
+  const m=j.hauteur_max;
+  if(m.dessus!==8.5||m.dessous!==1.75||m.total!==11.85)throw new Error(JSON.stringify(m));
+});
+T("dossier méca : le JSON se relit à l'identique",()=>{
+  const j=mecaDonnees(mecaEntree(),MECA_LIB,{});
+  const t=JSON.stringify(j);
+  if(/NaN|Infinity/.test(t))throw new Error("valeur non finie");
+  if(JSON.stringify(JSON.parse(t))!==t)throw new Error("aller-retour");
+  const e=mecaEntree();e.epaisseur=null;
+  const k=mecaDonnees(e,[],{});
+  if(k.carte.epaisseur!==null||!k.avertissements.some(a=>/paisseur/.test(a)))throw new Error("épaisseur inconnue : "+JSON.stringify(k.carte));
 });
 
 (async()=>{
