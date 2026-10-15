@@ -86,7 +86,9 @@ function dfCfg(){
     feuilles:{fab:b("fab",true), asmT:b("asmT",true), asmB:b("asmB",true),
               bom:b("bom",true), couches:b("couches",false), meca:b("meca",false)},
     /* posés à la main (34-draftsman-vues.js) */
-    cotes:dfNormCotes(src.cotes), vues:dfNormVues(src.vues), details:dfNormDetails(src.details)
+    cotes:dfNormCotes(src.cotes), vues:dfNormVues(src.vues), details:dfNormDetails(src.details),
+    /* hauteurs et ouvertures du dossier méca (commun/dossier-meca.js) */
+    meca:mecaNormReglages(src.meca,S.fps.map(fp=>fp.id))
   };
 }
 function dfRegler(cle,val){

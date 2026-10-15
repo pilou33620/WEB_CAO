@@ -41,6 +41,18 @@ function mecaHauteur(v){
   return Number.isFinite(h)&&h>0&&h<=MECA_H_MAX?h:null;
 }
 
+/* Les réglages posés à la main, relus d'un fichier : seules les clés connues
+   (`cles` : identifiants d'empreinte ou repères), des hauteurs lisibles et
+   des cases booléennes passent. */
+function mecaNormReglages(src,cles){
+  const ok=new Set((cles||[]).map(String)), out={h:{},ouv:{}};
+  const s=(src&&typeof src==="object"&&!Array.isArray(src))?src:{};
+  const h=(s.h&&typeof s.h==="object")?s.h:{}, o=(s.ouv&&typeof s.ouv==="object")?s.ouv:{};
+  for(const k of Object.keys(h)){const v=mecaHauteur(h[k]);if(ok.has(k)&&v!=null)out.h[k]=v;}
+  for(const k of Object.keys(o))if(ok.has(k)&&typeof o[k]==="boolean")out.ouv[k]=o[k];
+  return out;
+}
+
 /* ---------- distances au contour ---------- */
 function mecaDistSeg(p,a,b){
   const dx=b.x-a.x, dy=b.y-a.y, l=dx*dx+dy*dy;

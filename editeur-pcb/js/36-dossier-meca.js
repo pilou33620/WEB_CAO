@@ -40,13 +40,14 @@ function mecaMonde(){
 function mecaDossier(){
   const c=dfContexte();
   const lib=(typeof window!=="undefined"&&Array.isArray(window.CSV_LIB))?window.CSV_LIB:[];
-  return mecaDonnees(mecaEntreeEditeur(),lib,(S.dessin&&S.dessin.meca)||{},
+  return mecaDonnees(mecaEntreeEditeur(),lib,c.cfg.meca,
                      {projet:c.projet,revision:c.rev,date:c.date});
 }
 
 /* ---------- export ---------- */
 function mecaFichiersEditeur(){
   const ctx=dfContexte(), J=mecaDossier();
+  ctx.docNum=fabBase()+"-MECA";            // document à part, pas une feuille des plans
   return mecaFichiers(J,mecaPlan(J,ctx,mecaMonde()),fabBase(),ctx.cfg.fonte);
 }
 function mecaExporter(){
@@ -57,16 +58,66 @@ function mecaExporter(){
        J.composants.filter(c=>c.ouverture).length+" ouverture(s)"+
        (n?", "+n+" composant(s) sans hauteur (voir les notes du plan)":"")+".");
 }
-/* Appelé à la fin de dfRendreCadre() : le bouton du zip après ceux du DXF. */
+/* ---------- réglages posés à la main ----------
+   `champ` "h" : hauteur saisie (vide = celle de la LIB ou du fichier) ;
+   "ouv" : la case ouverture. Bornés par `dfCfg` comme le reste des plans. */
+function mecaRegler(id,champ,val){
+  const c=dfCfg(), k=String(id);
+  if(champ==="h"){if(val===""||val==null)delete c.meca.h[k];else c.meca.h[k]=val;}
+  else if(champ==="ouv")c.meca.ouv[k]=!!val;
+  S.dessin=c;
+  S.dessin=dfCfg();          // la valeur saisie repasse par les bornes
+  S.dirty=true;
+}
+/* Le tableau des composants, sous les réglages des plans, quand la feuille
+   est cochée : la hauteur retenue en grisé, la case de l'ouverture. */
+function mecaRendreReglages(m){
+  const z=m.querySelector("#mecaRegl");
+  if(!z)return;
+  const cfg=dfCfg();
+  if(!cfg.feuilles.meca){z.innerHTML="";return;}
+  const J=mecaDossier(), parRef=new Map(S.fps.map(fp=>[fp.ref,fp]));
+  z.innerHTML='<div class="df-h">Dossier méca : hauteurs (mm) et ouvertures</div>'+
+    '<table class="df-meca"><tr><th>Repère</th><th>Hauteur</th><th title="Ouverture dans le boîtier">Ouv.</th></tr>'+
+    J.composants.map(c=>{
+      const fp=parRef.get(c.ref);
+      if(!fp)return "";
+      const saisie=cfg.meca.h[fp.id];
+      const ph=c.source_hauteur==="saisie"||c.hauteur==null?"?":mecaFr(c.hauteur)+" ("+c.source_hauteur+")";
+      return '<tr><td>'+esc(c.ref)+'</td><td><input type="number" min="0" max="100" step="0.01" data-meca-h="'+fp.id+
+        '" value="'+(saisie!=null?saisie:"")+'" placeholder="'+esc(ph)+'" aria-label="Hauteur de '+esc(c.ref)+'"></td>'+
+        '<td><input type="checkbox" data-meca-ouv="'+fp.id+'"'+(c.ouverture?" checked":"")+
+        ' aria-label="Ouverture pour '+esc(c.ref)+'"></td></tr>';
+    }).join("")+'</table>';
+}
+/* Appelé à la fin de dfRendreCadre() : le bouton du zip après ceux du DXF,
+   et la place du tableau. La fenêtre refait son HTML à chaque fois ; ses
+   écouteurs, eux, ne se posent qu'une fois. */
 function mecaCadre(m){
-  if(!m||!m.querySelector||m.querySelector("[data-meca]"))return;
+  if(!m||!m.querySelector)return;
   const ap=m.querySelector('[data-dxf="feuille"]')||m.querySelector('[data-a="pdf"]');
-  if(!ap||!ap.insertAdjacentHTML)return;
-  ap.insertAdjacentHTML("afterend",'<button class="tb" type="button" data-meca="zip" '+
-    'title="Dossier pour concevoir le boîtier : plan mécanique (PDF), données (JSON) et carte à 1:1 (DXF)">'+
-    '⬇ Dossier méca .zip</button>');
+  if(ap&&ap.insertAdjacentHTML&&!m.querySelector("[data-meca]"))
+    ap.insertAdjacentHTML("afterend",'<button class="tb" type="button" data-meca="zip" '+
+      'title="Dossier pour concevoir le boîtier : plan mécanique (PDF), données (JSON) et carte à 1:1 (DXF)">'+
+      '⬇ Dossier méca .zip</button>');
+  const cotes=m.querySelector("#dfCotes");
+  if(cotes&&cotes.insertAdjacentHTML&&!m.querySelector("#mecaRegl"))
+    cotes.insertAdjacentHTML("afterend",'<div id="mecaRegl"></div>');
+  mecaRendreReglages(m);
+  if(m.mecaBranche)return;
+  m.mecaBranche=true;
   m.addEventListener("click",e=>{
     const b=e.target&&e.target.closest&&e.target.closest('[data-meca="zip"]');
     if(b)mecaExporter();
+  });
+  m.addEventListener("input",e=>{
+    const t=e.target;
+    if(t&&t.dataset&&t.dataset.mecaH!=null){mecaRegler(t.dataset.mecaH,"h",t.value);dfReconstruire();}
+  });
+  m.addEventListener("change",e=>{
+    const t=e.target;
+    if(!t||!t.dataset)return;
+    if(t.dataset.mecaOuv!=null){mecaRegler(t.dataset.mecaOuv,"ouv",t.checked);dfReconstruire();}
+    else if(t.dataset.feuille==="meca")mecaRendreReglages(m);
   });
 }

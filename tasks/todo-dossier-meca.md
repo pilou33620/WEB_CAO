@@ -93,7 +93,7 @@ Le code est déplacé tel quel. La balise est ajoutée avant `04-fabrication.js`
 - Taille : XS
 
 ### Point de contrôle 2
-- [ ] `JS_PCB` passe ; la feuille s'affiche dans la fenêtre Plans (contrôle à la main)
+- [x] `JS_PCB` passe ; la feuille s'affiche dans la fenêtre Plans (contrôle à la main)
 
 ### T7 : DXF, zip et bouton « Dossier méca .zip »
 `mecaDxf(json)` donne la carte à 1:1 : contour par `dxfContour`, découpes,
@@ -115,18 +115,18 @@ tableau des composants : repère, hauteur (champ, avec la valeur de la LIB en
 grisé), case « ouverture ». Les valeurs vont dans `S.dessin.meca`, bornées
 par `dfCfg` : hauteur entre 0 et 100 mm, identifiants existants seulement.
 La LIB vient de `pcbChargerCsvLib()`.
-- [ ] Une hauteur saisie l'emporte et donne `source_hauteur: "saisie"`
-- [ ] La case retire ou ajoute une ouverture ; le choix survit à `serialize` → `loadDoc`
-- [ ] Une valeur invalide (texte, négative, `1e9`) est refusée sans casser le document
+- [x] Une hauteur saisie l'emporte et donne `source_hauteur: "saisie"`
+- [x] La case retire ou ajoute une ouverture ; le choix survit à `serialize` → `loadDoc`
+- [x] Une valeur invalide (texte, négative, `1e9`) est refusée sans casser le document
 - Vérifier : `BUILD && JS_PCB` ; contrôle à la main dans le navigateur
 - Fichiers : `editeur-pcb/js/29-draftsman.js`, `editeur-pcb/js/36-dossier-meca.js`, `editeur-pcb/css/…` (si besoin), `editeur-pcb/test/harness.js`
 - Dépend de : T7
 - Taille : M
 
 ### Point de contrôle 3 : éditeur terminé
-- [ ] Critères 1 à 4 tenus sur la carte d'exemple
-- [ ] Contrôle à la main : ouvrir Plans, cocher la case, télécharger le zip, ouvrir le PDF et importer le DXF
-- [ ] Relecture humaine avant la visionneuse
+- [x] Critères 1 à 4 tenus sur la carte d'exemple
+- [~] Contrôle à la main : fenêtre Plans vue dans Chromium (case, tableau, bouton, aperçu), PDF rendu et relu (pdftoppm), JSON et DXF relus ; reste à faire par l'utilisateur : le téléchargement réel du zip et l'import du DXF dans une CAO méca
+- [ ] Relecture humaine avant la visionneuse (`/build auto` validé : relecture à la fin)
 
 ## Phase 3 : visionneuse
 

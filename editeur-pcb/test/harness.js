@@ -401,7 +401,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "dfLigne",
   /* dossier mécanique (commun/dossier-meca.js) */
   "mecaDonnees","mecaEntreeEditeur","mecaDossier","stackTotal","exCharger","mecaFeuilles",
-  "mecaDxf","mecaFichiers","mecaFichiersEditeur",
+  "mecaDxf","mecaFichiers","mecaFichiersEditeur","mecaRegler","mecaNormReglages",
   /* cotes à la main, vues à la souris, détails (34-draftsman-vues.js) */
   "dfNormCotes","dfNormVues","dfNormDetails","dfResoudre","dfMesurer","dfAccroches","dfAccrocher",
   "dfAjouterCote","dfModifierCote","dfSupprimerCote","dfDeplacerCote","dfAjouterDetail","dfSupprimerDetail",
@@ -25708,6 +25708,10 @@ T("dossier méca : le zip a le PDF, le JSON et le DXF, au nom de la carte",()=>{
     const noms=f.map(x=>x.name).join();
     if(noms!==[base+"-PLAN-MECA.pdf",base+"-MECA.json",base+"-MECA.dxf"].join())throw new Error(noms);
     if(!Buffer.from(f[0].data).toString("latin1").startsWith("%PDF"))throw new Error("PDF");
+    S.dessin={fonte:false};           // Helvetica en WinAnsi : le texte se lit dans le PDF
+    if(!Buffer.from(mecaFichiersEditeur()[0].data).toString("latin1").includes("("+base+"-MECA)"))
+      throw new Error("le cartouche porte le n° de document du dossier méca");
+    S.dessin=null;
     const j=JSON.parse(f[1].text);
     if(j.format!=="web_cao-meca-1"||j.fixations.length!==1)throw new Error("JSON : "+f[1].text.slice(0,120));
     if(JSON.stringify(j)!==JSON.stringify(mecaDossier()))throw new Error("le JSON compacté ne se relit pas à l'identique");
@@ -25729,6 +25733,50 @@ T("dossier méca : le DXF a un cercle par fixation, les corps par face et par ha
     if(!e.some(x=>x.calque==="CORPS_DESSUS_H_INCONNUE"))throw new Error("calque des hauteurs inconnues absent");
     if(!e.some(x=>x.calque==="CONTOUR"))throw new Error("contour");
   }finally{window.CSV_LIB=garde;exCharger(1);}
+});
+
+/* ---------- réglages posés à la main ---------- */
+T("dossier méca : une hauteur saisie l'emporte, et la case retire une ouverture",()=>{
+  exCharger(1);
+  S.dessin=null;
+  const J1=S.fps.find(f=>f.ref==="J1"), U=S.fps.find(f=>/^U/.test(f.ref));
+  try{
+    mecaRegler(U.id,"h","2,4");
+    mecaRegler(J1.id,"ouv",false);
+    const j=mecaDossier(), u=j.composants.find(c=>c.ref===U.ref);
+    if(u.hauteur!==2.4||u.source_hauteur!=="saisie")throw new Error(U.ref+" : "+u.hauteur+" "+u.source_hauteur);
+    if(j.composants.find(c=>c.ref==="J1").ouverture!==null)throw new Error("J1 décoché garde son ouverture");
+    mecaRegler(U.id,"h","");
+    if(mecaDossier().composants.find(c=>c.ref===U.ref).source_hauteur==="saisie")throw new Error("champ vidé : la saisie doit tomber");
+  }finally{S.dessin=null;}
+});
+T("dossier méca : les réglages suivent la carte à l'enregistrement",()=>{
+  exCharger(1);
+  S.dessin=null;
+  const J1=S.fps.find(f=>f.ref==="J1"), id=J1.id;
+  mecaRegler(id,"ouv",false);mecaRegler(id,"h",3.1);
+  const txt=serialize();
+  exCharger(0);
+  loadDoc(JSON.parse(txt));
+  try{
+    const c=mecaDossier().composants.find(k=>k.ref==="J1");
+    if(c.ouverture!==null||c.hauteur!==3.1)throw new Error(JSON.stringify(c));
+  }finally{S.dessin=null;exCharger(1);}
+});
+T("dossier méca : une saisie invalide est refusée, un document abîmé ne casse rien",()=>{
+  exCharger(1);
+  S.dessin=null;
+  const id=S.fps[0].id;
+  for(const v of ["abc",-1,1e9,"NaN"]){
+    mecaRegler(id,"h",v);
+    if(Object.keys(dfCfg().meca.h).length)throw new Error(String(v)+" accepté : "+JSON.stringify(dfCfg().meca));
+  }
+  S.dessin={meca:{h:{999999:5,[id]:"x","__proto__":3},ouv:"faux"}};
+  const m=dfCfg().meca;
+  if(JSON.stringify(m)!=='{"h":{},"ouv":{}}')throw new Error(JSON.stringify(m));
+  S.dessin={meca:[1,2]};
+  if(!mecaDossier().composants.length)throw new Error("dossier vide");
+  S.dessin=null;
 });
 
 (async()=>{
