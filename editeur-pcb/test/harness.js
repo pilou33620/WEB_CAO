@@ -25166,7 +25166,9 @@ function ipcAttendu(){
   for(const t of S.tracks)if(t.net)nets.add(t.net);
   for(const v of S.vias)if(v.net)nets.add(v.net);
   for(const z of S.zones)if(z.net)nets.add(z.net);
+  const haut=new Map(mecaDossier().composants.map(c=>[c.ref,c.hauteur]));
   const comps=S.fps.map(fp=>({ref:fp.ref,x:X(fp.x),y:Y(fp.y),r:r4((360-(fp.rot||0))%360),m:fp.side?1:0,
+    h:haut.get(fp.ref)==null?null:haut.get(fp.ref),
     couche:nomCu(fp.side?n-1:0),val:fp.value||"",mpn:fp.csvMpn||"",pose:varEstMonte(fp,S.variantes.active||""),
     pins:padsWorld(fp).map(q=>{if(q.net)nets.add(q.net);return {num:String(q.n),x:X(q.x),y:Y(q.y)};})}));
   const pistes={}, arcs=[];
@@ -25302,6 +25304,12 @@ function ipcCarteChargee(){
   cmPoser("nets","SPI_CS","couches","1, 4");
   cmNouveauGroupe("SPI",["SPI_MOSI","SPI_MISO"],"mm",0.5);
   cmPoserMatrice("Alimentation","Rapide","0,5");
+  /* hauteurs du dossier méca : deux empreintes de même géométrie, deux
+     hauteurs — deux <Package> */
+  const parPkg={};
+  for(const fp of S.fps)(parPkg[fp.pkg]=parPkg[fp.pkg]||[]).push(fp);
+  const deux=Object.values(parPkg).find(l=>l.length>=2);
+  mecaRegler(deux[0].id,"h",0.5);mecaRegler(deux[1].id,"h",0.8);
   touch();
 }
 T("IPC-2581 : les cartes d'exemple écrites pour le banc Python, contenu compté",()=>{
@@ -25338,6 +25346,9 @@ T("IPC-2581 : les cartes d'exemple écrites pour le banc Python, contenu compté
                     '<Arc ','clockwise="false"','<Cutout>','platingStatus="NONPLATED"','<SurfaceFinish type="ENIG-N"',
                     '<Span fromLayer="Top" toLayer="Bottom"/>','<Text textString="WEB_CAO"'])
       if(x.indexOf(m)<0)throw new Error("absent de l'export : "+m);
+    /* dossier méca : la hauteur de chaque boîtier, un <Package> par hauteur */
+    for(const h of ["0.5","0.8"])
+      if(!new RegExp('<Package [^>]*height="'+h+'"').test(x))throw new Error("<Package height=\""+h+"\"> absent");
     if((x.match(/<SpecRef id="BD_B_In1_150UM"\/>/g)||[]).length!==17)
       throw new Error("16 trous de via et leur calque de contre-perçage pointent la spec");
     /* les coins arrondis et la découpe ronde : quatre quarts de cercle et

@@ -199,7 +199,11 @@ def cas_export(nom):
             egal(c["val"], a["val"], a["ref"] + u" valeur")
             if a["mpn"]:
                 egal(c["part"], a["mpn"], a["ref"] + u" MPN")
-    T(u"%s : composants -- place, rotation, face, valeur, MPN" % nom, composants)
+            if a.get("h") is not None:
+                proche(c.get("hauteur", 0), a["h"], a["ref"] + u" hauteur (dossier meca)", 1e-6)
+            else:
+                vrai("hauteur" not in c, a["ref"] + u" : hauteur inventee")
+    T(u"%s : composants -- place, rotation, face, valeur, MPN, hauteur" % nom, composants)
 
     def broches():
         # la broche de l'empreinte, posee par le composant, tombe sur la

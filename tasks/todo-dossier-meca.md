@@ -143,8 +143,8 @@ porte pas.
 ### T10 : l'export IPC de l'éditeur écrit la hauteur
 `height` du `<Package>` quand la hauteur est connue (saisie ou LIB). On
 réutilise la recherche de T2/T3.
-- [ ] Un export suivi d'une relecture par la chaîne de la visionneuse redonne la hauteur
-- [ ] Sans hauteur connue, l'attribut est absent (le XSD le permet)
+- [x] Un export suivi d'une relecture par la chaîne de la visionneuse redonne la hauteur
+- [x] Sans hauteur connue, l'attribut est absent (le XSD le permet ; XSD absent du poste : validation non rejouée)
 - Vérifier : `BUILD && JS_PCB && PY_EXP`
 - Fichiers : `editeur-pcb/js/35-ipc2581-export.js`, `editeur-pcb/test/banc-ipc2581-export.py`
 - Dépend de : T3, T9

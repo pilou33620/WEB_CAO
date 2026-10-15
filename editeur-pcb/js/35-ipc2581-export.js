@@ -739,13 +739,17 @@ function ipc2581Document(opts){
   const vid=(S.variantes&&S.variantes.active)||"";
   const lignes=new Map();        // nomenclature : référence de commande -> ligne
   const parNet=new Map();        // net -> [[ref, broche]]
+  /* hauteur de chaque boîtier, celle du dossier méca (saisie, sinon LIB) :
+     <Package height>, que la visionneuse relit */
+  const haut=new Map(typeof mecaDossier==="function"?mecaDossier().composants.map(c=>[c.ref,c.hauteur]):[]);
   for(const fp of S.fps){
     const ref=uniqRef(ipcNom(fp.ref,"CMP"));
     refDe.set(fp,ref);
-    const ps=padsOf(fp), body=bodyOf(fp);
-    /* une empreinte par géométrie : deux 0603 identiques partagent la leur */
+    const ps=padsOf(fp), body=bodyOf(fp), h=haut.get(fp.ref)||null;
+    /* une empreinte par géométrie et par hauteur : deux 0603 identiques
+       partagent la leur */
     const sig=JSON.stringify([ps.map(q=>[q.n,q.x,q.y,q.w,q.h,q.shape,q.drill,q.rot,q.pts||0,q.chamfer||0,
-                                         q.chamferCorners||0,q.parCouche||0]),body]);
+                                         q.chamferCorners||0,q.parCouche||0]),body,h]);
     if(!pkgDe.has(sig)){
       const nom=uniqPkg(ipcNom(fp.pkg,"EMPREINTE"));
       pkgDe.set(sig,nom);
@@ -761,7 +765,7 @@ function ipc2581Document(opts){
       const B=[{x:body.x1,y:body.y1},{x:body.x2,y:body.y1},{x:body.x2,y:body.y2},{x:body.x1,y:body.y2}];
       const un=ps.some(q=>q.n===1);
       paquets.push(["Package",[["name",nom],["type",ipcTypeBoitier(fp)],["pinOne",un?"1":null],
-        ["pinOneOrientation",ipcBroche1(fp,ps)]],
+        ["pinOneOrientation",ipcBroche1(fp,ps)],["height",h==null?null:ipcN(h)]],
         [["Outline",[],[["Polygon",[],poly(B,null,true)],trait(0.15)]]].concat(broches)]);
     }
     const pkg=pkgDe.get(sig);
