@@ -401,6 +401,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "dfLigne",
   /* dossier mécanique (commun/dossier-meca.js) */
   "mecaDonnees","mecaEntreeEditeur","mecaDossier","stackTotal","exCharger","mecaFeuilles",
+  "mecaDxf","mecaFichiers","mecaFichiersEditeur",
   /* cotes à la main, vues à la souris, détails (34-draftsman-vues.js) */
   "dfNormCotes","dfNormVues","dfNormDetails","dfResoudre","dfMesurer","dfAccroches","dfAccrocher",
   "dfAjouterCote","dfModifierCote","dfSupprimerCote","dfDeplacerCote","dfAjouterDetail","dfSupprimerDetail",
@@ -25685,6 +25686,49 @@ T("plan mécanique : chaque composant a son pavé dans les deux vues, l'inconnu 
       if(!p.every(it=>it.tirets))throw new Error(nom+" : sans LIB, tous les pavés sont en tirets");
     }
   }finally{S.dessin=null;}
+});
+
+/* ---------- DXF et zip du dossier ---------- */
+/* les entités d'un DXF R12 : [{type, calque}] */
+function mecaEntites(t){
+  const l=t.split(/\r?\n/).map(x=>x.trim()), out=[];
+  const i0=l.indexOf("ENTITIES");
+  for(let i=i0+1;i<l.length-1;i+=2){
+    if(l[i]==="0"&&l[i+1]!=="ENDSEC"&&l[i+1]!=="EOF"&&l[i+1]!=="VERTEX"&&l[i+1]!=="SEQEND")out.push({type:l[i+1],calque:null,i:i+1});
+    else if(l[i]==="8"&&out.length&&out[out.length-1].calque==null)out[out.length-1].calque=l[i+1];
+    if(l[i]==="0"&&l[i+1]==="ENDSEC"&&i>i0)break;
+  }
+  return out;
+}
+T("dossier méca : le zip a le PDF, le JSON et le DXF, au nom de la carte",()=>{
+  exCharger(1);
+  S.holes=[mkHole(S.board.x+4,S.board.y+4,3.2)];
+  try{
+    const f=mecaFichiersEditeur(), base=fabBase();
+    const noms=f.map(x=>x.name).join();
+    if(noms!==[base+"-PLAN-MECA.pdf",base+"-MECA.json",base+"-MECA.dxf"].join())throw new Error(noms);
+    if(!Buffer.from(f[0].data).toString("latin1").startsWith("%PDF"))throw new Error("PDF");
+    const j=JSON.parse(f[1].text);
+    if(j.format!=="web_cao-meca-1"||j.fixations.length!==1)throw new Error("JSON : "+f[1].text.slice(0,120));
+    if(JSON.stringify(j)!==JSON.stringify(mecaDossier()))throw new Error("le JSON compacté ne se relit pas à l'identique");
+    if(!/\[-?[\d.]+, -?[\d.]+\]/.test(f[1].text))throw new Error("points non compactés");
+    if(!zipBlob(f))throw new Error("archive non produite");
+  }finally{exCharger(1);}
+});
+T("dossier méca : le DXF a un cercle par fixation, les corps par face et par hauteur",()=>{
+  exCharger(1);
+  S.holes=[mkHole(S.board.x+4,S.board.y+4,3.2),mkHole(S.board.x+20,S.board.y+4,2.5)];
+  const garde=window.CSV_LIB;
+  window.CSV_LIB=[{"Part Name":"CONN_Embase_SMA_CI_Bord_de_carte","Maximun Height":"9.5"}];
+  try{
+    const J=mecaDossier();
+    const e=mecaEntites(Buffer.from(mecaDxf(J)).toString("latin1"));
+    const fix=e.filter(x=>x.type==="CIRCLE"&&x.calque==="FIXATIONS");
+    if(fix.length!==2)throw new Error(fix.length+" cercles de fixation");
+    if(!e.some(x=>x.calque==="CORPS_DESSUS_H9_50"))throw new Error("calque du SMA à 9,50 absent : "+[...new Set(e.map(x=>x.calque))].join());
+    if(!e.some(x=>x.calque==="CORPS_DESSUS_H_INCONNUE"))throw new Error("calque des hauteurs inconnues absent");
+    if(!e.some(x=>x.calque==="CONTOUR"))throw new Error("contour");
+  }finally{window.CSV_LIB=garde;exCharger(1);}
 });
 
 (async()=>{

@@ -101,9 +101,9 @@ un CIRCLE par trou, corps par face, hauteur dans le nom du calque, cotes hors
 tout. `mecaZip(json, feuille, base)` donne `<base>-MECA.zip`, qui contient
 le PDF, le JSON et le DXF. Le bouton se place à côté des boutons DXF
 (`dfxCadre`).
-- [ ] Le zip contient `-PLAN-MECA.pdf`, `-MECA.json` et `-MECA.dxf` ; le JSON se relit
-- [ ] Le DXF a un CIRCLE par trou et les calques `CORPS_DESSUS_…` / `CORPS_DESSOUS_…`
-- [ ] Le `-CARTE.dxf` et `fabrication.zip` sont inchangés
+- [x] Le zip contient `-PLAN-MECA.pdf`, `-MECA.json` et `-MECA.dxf` ; le JSON se relit
+- [x] Le DXF a un CIRCLE par trou et les calques `CORPS_DESSUS_…` / `CORPS_DESSOUS_…` (plus un cercle de dégagement par fixation, calque `DEGAGEMENTS`)
+- [x] Le `-CARTE.dxf` et `fabrication.zip` sont inchangés
 - Vérifier : `BUILD && JS_PCB`
 - Fichiers : `commun/dossier-meca.js`, `editeur-pcb/js/36-dossier-meca.js`, `editeur-pcb/js/33-draftsman-export.js`, `editeur-pcb/test/harness.js`
 - Dépend de : T5, T6

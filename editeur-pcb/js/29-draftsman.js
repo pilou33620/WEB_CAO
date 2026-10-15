@@ -1348,6 +1348,7 @@ function dfRendreCadre(){
         '<div class="df-feuille" id="dfFeuille" tabindex="-1"></div></main>'+
     '</div></div>';
   if(typeof dfxCadre==="function")dfxCadre(m);      // DXF et fonte (33-draftsman-export.js)
+  if(typeof mecaCadre==="function")mecaCadre(m);    // dossier méca (36-dossier-meca.js)
 }
 let dfMinuterie=null;
 /* Les champs se reconstruisent à la frappe, mais pas à chaque lettre : une

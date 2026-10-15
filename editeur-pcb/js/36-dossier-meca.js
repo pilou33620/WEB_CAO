@@ -43,3 +43,30 @@ function mecaDossier(){
   return mecaDonnees(mecaEntreeEditeur(),lib,(S.dessin&&S.dessin.meca)||{},
                      {projet:c.projet,revision:c.rev,date:c.date});
 }
+
+/* ---------- export ---------- */
+function mecaFichiersEditeur(){
+  const ctx=dfContexte(), J=mecaDossier();
+  return mecaFichiers(J,mecaPlan(J,ctx,mecaMonde()),fabBase(),ctx.cfg.fonte);
+}
+function mecaExporter(){
+  const f=mecaFichiersEditeur(), J=JSON.parse(f[1].text), nom=pcbFile("-MECA.zip","meca.zip");
+  dl(zipBlob(f),nom);
+  const n=J.composants.filter(c=>c.hauteur==null).length;
+  hint("Dossier mécanique "+nom+" : plan PDF, JSON et DXF 1:1 — "+J.fixations.length+" fixation(s), "+
+       J.composants.filter(c=>c.ouverture).length+" ouverture(s)"+
+       (n?", "+n+" composant(s) sans hauteur (voir les notes du plan)":"")+".");
+}
+/* Appelé à la fin de dfRendreCadre() : le bouton du zip après ceux du DXF. */
+function mecaCadre(m){
+  if(!m||!m.querySelector||m.querySelector("[data-meca]"))return;
+  const ap=m.querySelector('[data-dxf="feuille"]')||m.querySelector('[data-a="pdf"]');
+  if(!ap||!ap.insertAdjacentHTML)return;
+  ap.insertAdjacentHTML("afterend",'<button class="tb" type="button" data-meca="zip" '+
+    'title="Dossier pour concevoir le boîtier : plan mécanique (PDF), données (JSON) et carte à 1:1 (DXF)">'+
+    '⬇ Dossier méca .zip</button>');
+  m.addEventListener("click",e=>{
+    const b=e.target&&e.target.closest&&e.target.closest('[data-meca="zip"]');
+    if(b)mecaExporter();
+  });
+}
