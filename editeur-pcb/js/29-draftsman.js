@@ -59,7 +59,8 @@ const DF_FEUILLES=[
   ["asmT",   "Assemblage — face dessus"],
   ["asmB",   "Assemblage — face dessous"],
   ["bom",    "Nomenclature"],
-  ["couches","Couches de cuivre"]];
+  ["couches","Couches de cuivre"],
+  ["meca",   "Plan mécanique"]];
 const DF_PT=25.4/72;                 // un point typographique, en mm
 const DF_CADRE=10;                   // cadre extérieur, depuis le bord
 const DF_BANDE=5;                    // bande des repères de zones
@@ -83,7 +84,7 @@ function dfCfg(){
     notes:txt(src.notes,4000),
     fonte:typeof src.fonte==="boolean"?src.fonte:true,   // fonte embarquée (33-draftsman-export.js)
     feuilles:{fab:b("fab",true), asmT:b("asmT",true), asmB:b("asmB",true),
-              bom:b("bom",true), couches:b("couches",false)},
+              bom:b("bom",true), couches:b("couches",false), meca:b("meca",false)},
     /* posés à la main (34-draftsman-vues.js) */
     cotes:dfNormCotes(src.cotes), vues:dfNormVues(src.vues), details:dfNormDetails(src.details)
   };
@@ -1213,6 +1214,8 @@ function dfDocument(genre){
   if(f.asmB&&g("asmB")&&S.fps.some(fp=>fp.side))feuilles.push(dfFeuilleAsm(ctx,1));
   if(f.bom&&g("bom"))feuilles.push(...dfFeuillesBom(ctx));
   if(f.couches)for(let i=0;i<S.cu;i++)if(g("cu"+i))feuilles.push(dfFeuilleCouche(ctx,i));
+  /* dossier mécanique (commun/dossier-meca.js, 36-dossier-meca.js) */
+  if(f.meca&&g("meca"))feuilles.push(...mecaFeuilles(mecaDossier(),ctx,mecaMonde()));
   /* vues déplacées à la main, puis vues de détail (34-draftsman-vues.js) */
   feuilles.forEach(F=>dfAgencer(F,ctx));
   feuilles.forEach((F,i)=>dfCadre(F,ctx,i+1,feuilles.length));

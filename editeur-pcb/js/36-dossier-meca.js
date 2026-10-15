@@ -29,6 +29,12 @@ function mecaEntreeEditeur(){
           .map(q=>Object.assign(P(q),{d:q.drill,metallise:true,pad:Math.max(q.w||0,q.h||0)}))});
     })};
 }
+/* Entre le repère de l'éditeur (Y vers le bas) et celui des Gerber : la vue
+   de dessus de la feuille en a besoin pour les cotes posées à la main. */
+function mecaMonde(){
+  const o=gOrigin();
+  return {vers:(x,y)=>({x:x-o.x,y:o.y-y}),depuis:(x,y)=>({x:x+o.x,y:o.y-y})};
+}
 /* Le dossier de la carte ouverte : LIB chargée (`CSV_LIB`, 21-lib-sync.js),
    réglages posés à la main (`S.dessin.meca`), cartouche des plans. */
 function mecaDossier(){

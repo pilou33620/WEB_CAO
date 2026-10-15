@@ -66,9 +66,9 @@ et dessous en tirets, ouvertures en couleur, NM), les cotes hors tout, les
 cotes en ordonnée des fixations et les tableaux (fixations, ouvertures,
 hauteurs, composants sans hauteur). La case « Plan mécanique » vient dans
 `DF_FEUILLES` et dans `dfCfg`, décochée par défaut, et `dfDocument` l'ajoute.
-- [ ] La feuille sort au PDF avec son cadre et son cartouche ; « 66,00 mm » et « H1 » s'y trouvent par `dfChercher`
-- [ ] Case décochée : le PDF des plans est inchangé ; les 44 essais Draftsman passent
-- [ ] Les cotes manuelles se posent sur la vue (`F.vues` déclarée)
+- [x] La feuille sort au PDF avec son cadre et son cartouche ; « 66,00 mm » et « H1 » s'y trouvent par `dfChercher`
+- [x] Case décochée : le PDF des plans est inchangé ; les 44 essais Draftsman passent
+- [x] Les cotes manuelles se posent sur la vue (`F.vues` déclarée)
 - Vérifier : `BUILD && JS_PCB`
 - Fichiers : `commun/dossier-meca.js`, `editeur-pcb/js/29-draftsman.js`, `editeur-pcb/test/harness.js`
 - Dépend de : T3

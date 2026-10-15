@@ -400,7 +400,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "dfCalque","dfFontePreparer","dffFonte","dffLire","dffBase64","dffGlyphes","DFF_CACHE","DF_FONTE_TTF","dfZone",
   "dfLigne",
   /* dossier mécanique (commun/dossier-meca.js) */
-  "mecaDonnees","mecaEntreeEditeur","mecaDossier","stackTotal","exCharger",
+  "mecaDonnees","mecaEntreeEditeur","mecaDossier","stackTotal","exCharger","mecaFeuilles",
   /* cotes à la main, vues à la souris, détails (34-draftsman-vues.js) */
   "dfNormCotes","dfNormVues","dfNormDetails","dfResoudre","dfMesurer","dfAccroches","dfAccrocher",
   "dfAjouterCote","dfModifierCote","dfSupprimerCote","dfDeplacerCote","dfAjouterDetail","dfSupprimerDetail",
@@ -25601,6 +25601,55 @@ T("dossier méca, éditeur : un composant retourné passe dessous, corps dans le
   if(Math.abs(r.corps[0][0]-(q.x-o.x))>1e-3||Math.abs(r.corps[0][1]-(o.y-q.y))>1e-3)
     throw new Error("corps "+JSON.stringify(r.corps[0])+" ≠ "+JSON.stringify([q.x-o.x,o.y-q.y]));
   exCharger(1);
+});
+
+/* ---------- la feuille « Plan mécanique » (commun/dossier-meca.js) ---------- */
+function mecaDoc(){
+  S.dessin={feuilles:{fab:false,asmT:false,asmB:false,bom:false,couches:false,meca:true},fonte:false};
+  return dfDocument();
+}
+T("plan mécanique : décoché par défaut, les plans ne changent pas",()=>{
+  exCharger(1);
+  S.dessin=null;
+  if(dfCfg().feuilles.meca!==false)throw new Error("la feuille doit être décochée par défaut");
+  if(dfDocument().feuilles.some(F=>F.genre==="meca"))throw new Error("feuille méca sans qu'on l'ait demandée");
+});
+T("plan mécanique : la feuille sort au PDF, cotes hors tout et trou de fixation cherchables",()=>{
+  exCharger(1);
+  S.holes=[mkHole(S.board.x+4,S.board.y+4,3.2)];
+  const doc=mecaDoc(), F=doc.feuilles[0];
+  try{
+    if(!F||F.genre!=="meca")throw new Error("feuilles : "+doc.feuilles.map(f=>f.genre).join());
+    if(!F.items.some(it=>it.t==="t"&&it.cat==="cartouche"&&it.s==="Plan mécanique"))throw new Error("pas de cartouche");
+    for(const q of ["66,00 mm","42,00 mm","H1","Ø 3,20"])
+      if(!dfChercher(doc,q).length)throw new Error("« "+q+" » introuvable");
+    if(!F.vues.some(v=>v.cle==="meca/carte"&&v.V))throw new Error("vue meca/carte non déclarée");
+    const t=Buffer.from(dfPdfOctets(doc)).toString("latin1");
+    if(!t.startsWith("%PDF")||!/%%EOF\n$/.test(t))throw new Error("PDF");
+  }finally{S.dessin=null;exCharger(1);}
+});
+T("plan mécanique : une ouverture se repère, un composant sans hauteur est cité",()=>{
+  exCharger(1);
+  const doc=mecaDoc();
+  try{
+    if(!dfChercher(doc,"Ouvertures").length)throw new Error("tableau des ouvertures absent");
+    const J1=dfChercher(doc,"J1").filter(h=>!h.cache);
+    if(!J1.length)throw new Error("J1 (connecteur) non repéré");
+    if(!dfChercher(doc,"hauteur inconnue").length)throw new Error("sans LIB, les hauteurs inconnues doivent être citées");
+  }finally{S.dessin=null;}
+});
+T("plan mécanique : une cote posée à la main sur la vue suit la géométrie",()=>{
+  exCharger(1);
+  const j=S.fps.find(f=>f.ref==="J2"), q=padsWorld(j).find(p=>String(p.n)==="1");
+  S.holes=[mkHole(q.x-10,q.y,3.2)];
+  mecaDoc();
+  try{
+    const id=dfAjouterCote({vue:"meca/carte",type:"h",a:{type:"trou",id:S.holes[0].id},
+                            b:{type:"pastille",fp:"J2",pad:"1",ou:"c"},dx:0,dy:-8});
+    if(!id)throw new Error("cote refusée");
+    const F=dfDocument().feuilles.find(f=>f.genre==="meca");
+    if(JSON.stringify(dfCotesTxt(F))!=='["10,00"]')throw new Error("10,00 attendu : "+dfCotesTxt(F));
+  }finally{S.dessin=null;exCharger(1);}
 });
 
 (async()=>{

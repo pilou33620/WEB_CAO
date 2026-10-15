@@ -175,3 +175,129 @@ function mecaDonnees(entree,lib,reglages,info){
     avertissements:avert
   };
 }
+
+/* ==========================================================================
+   La feuille « Plan mécanique » — dessinée depuis le JSON, avec les
+   primitives des plans de l'éditeur (29-draftsman.js) : ce qu'on donne à
+   l'IA est exactement ce qui est dessiné.
+   --------------------------------------------------------------------------
+   À gauche, vue de dessus et, dessous, vues de face (depuis le bord S) et de
+   côté (depuis le bord E), toutes trois à la même échelle normalisée ; à
+   droite, les tableaux. `monde` (éditeur seulement) : {vers, depuis} entre
+   le repère de l'éditeur et celui des Gerber ; il donne à la vue de dessus la
+   transformation qu'attendent les cotes posées à la main (34-draftsman-vues.js).
+   ========================================================================== */
+const MECA_OUV=[0.85,0.15,0.1];        // rouge des ouvertures
+const MECA_OUV_FOND=[1,0.86,0.82];
+
+function mecaFr(v){return v==null?"—":fmt(v,2).replace(".",",");}
+function mecaOuvTxt(o){
+  if(!o)return "";
+  return o.type==="bord"?"bord "+o.bord:"face "+o.face;
+}
+function mecaFeuilles(J,ctx,monde){
+  const F=dfNouvelle(ctx,"Plan mécanique","meca");
+  const Z=dfZone(F), colW=Z.cart.w, colX=Z.x2-colW;
+  const W=colX-8-Z.x1, H=Z.y2-Z.y1-10;
+  const C=J.carte, B={x1:C.encombrement.x1,y1:C.encombrement.y1,x2:C.encombrement.x2,y2:C.encombrement.y2};
+  for(const c of J.composants)for(const p of c.corps){
+    B.x1=Math.min(B.x1,p[0]);B.x2=Math.max(B.x2,p[0]);B.y1=Math.min(B.y1,p[1]);B.y2=Math.max(B.y2,p[1]);}
+  const bw=Math.max(B.x2-B.x1,1e-3), bh=Math.max(B.y2-B.y1,1e-3);
+  const ep=C.epaisseur||0, hD=J.hauteur_max.dessus, hB=J.hauteur_max.dessous;
+  const bz=Math.max(ep+hD+hB,1);
+  /* une seule échelle pour les trois vues : dessus en haut, face et côté
+     côte à côte en dessous (marges : cotes et titres) */
+  const kmax=Math.max(1e-3,Math.min((W-30)/bw,(W-60)/(bw+bh),(H-70)/(bh+bz)));
+  const k=DF_ECHELLES.find(e=>e<=kmax)||kmax, ech=dfEchelleTxt(k);
+  F.echelle=ech;
+  const ox=Z.x1+22, oy=Z.y1+16;
+  const TG=(x,y)=>({x:ox+(x-B.x1)*k,y:oy+(B.y2-y)*k});
+  const P=p=>TG(p[0],p[1]);
+
+  /* ---- vue de dessus ---- */
+  dfTexte(F,"VUE DE DESSUS — ÉCHELLE "+ech,Z.x1,Z.y1+5,9,{gras:true,cat:"titre"});
+  const m=dfVueDebut(F);
+  dfCalque(F,"CONTOUR");
+  dfPoly(F,C.contour.map(P),{ferme:true,lw:0.45});
+  for(const d of C.decoupes)dfPoly(F,d.map(P),{ferme:true,lw:0.35});
+  dfCalque(F,"COMPOSANTS");
+  for(const c of J.composants){
+    const pts=c.corps.map(P);
+    if(pts.length<3)continue;
+    const o={ferme:true,lw:c.ouverture?0.3:0.18,tirets:c.face==="dessous"||!c.monte,
+             trait:c.ouverture?MECA_OUV:0.25};
+    if(c.ouverture)o.plein=MECA_OUV_FOND;
+    dfPoly(F,pts,o);
+    const cx=pts.reduce((a,p)=>a+p.x,0)/pts.length, cy=pts.reduce((a,p)=>a+p.y,0)/pts.length;
+    const lieu=c.ref+" · "+c.face+(c.hauteur!=null?" · h "+mecaFr(c.hauteur)+" mm":"");
+    if(c.ouverture)dfTexte(F,c.ref,cx,cy+1,6.5,{ancre:"m",gras:true,c:MECA_OUV,cat:"repere",lieu});
+    else dfTexte(F,c.ref,cx,cy,5,{ancre:"m",cache:true,cat:"repere",lieu});
+    if(!c.monte)dfTexte(F,"NM",cx,cy+3.2,5,{ancre:"m",c:0.4,cat:"repere"});
+  }
+  dfCalque(F,"FIXATIONS");
+  for(const f of J.fixations){
+    const s=TG(f.x,f.y);
+    dfCercle(F,s.x,s.y,f.d/2*k,{lw:0.25});
+    dfCercle(F,s.x,s.y,f.d_degagement/2*k,{lw:0.12,trait:0.45});
+    dfLigne(F,s.x-1.5,s.y,s.x+1.5,s.y,0.12);dfLigne(F,s.x,s.y-1.5,s.x,s.y+1.5,0.12);
+    dfTexte(F,f.id+"  Ø "+mecaFr(f.d),s.x+f.d_degagement/2*k+1,s.y-1,6.5,{cat:"percage",lieu:f.id});
+  }
+  dfCalque(F);
+  /* cotes hors tout, et cotes en ordonnée des fixations depuis l'origine */
+  const E=C.encombrement, bg=TG(E.x1,E.y1), bd=TG(E.x2,E.y1), hg=TG(E.x1,E.y2);
+  dfCote(F,bg,bd,"h",9,mecaFr(E.x2-E.x1)+" mm");
+  dfCote(F,hg,bg,"v",12,mecaFr(E.y2-E.y1)+" mm");
+  dfCalque(F,"COTES");
+  const vusX=new Set(), vusY=new Set();
+  for(const f of J.fixations){
+    const s=TG(f.x,f.y);
+    if(!vusX.has(f.x)){vusX.add(f.x);
+      dfLigne(F,s.x,s.y,s.x,bg.y+4,0.1,0.45,true);
+      dfTexte(F,mecaFr(f.x),s.x+0.9,bg.y+4.5,6,{rot:90,ancre:"d",cat:"cote"});}
+    if(!vusY.has(f.y)){vusY.add(f.y);
+      dfLigne(F,s.x,s.y,hg.x-4,s.y,0.1,0.45,true);
+      dfTexte(F,mecaFr(f.y),hg.x-4.5,s.y+0.9,6,{ancre:"d",cat:"cote"});}
+  }
+  const so=TG(0,0);
+  if(so.x>=ox-2&&so.x<=ox+bw*k+2&&so.y>=oy-2&&so.y<=oy+bh*k+2){
+    dfCercle(F,so.x,so.y,1.1,{lw:0.2});
+    dfTexte(F,"0,0",so.x+1.6,so.y+3.4,6,{c:0.25,cat:"cote"});
+  }
+  dfCalque(F);
+  /* la vue se déclare ; dans l'éditeur, en repère de l'éditeur, pour les
+     cotes posées à la main */
+  const V={k,echelle:ech,T:TG,inv:(X,Y)=>({x:B.x1+(X-ox)/k,y:B.y2-(Y-oy)/k})};
+  if(monde){
+    V.T=(x,y)=>{const g=monde.vers(x,y);return TG(g.x,g.y);};
+    V.inv=(X,Y)=>{const g={x:B.x1+(X-ox)/k,y:B.y2-(Y-oy)/k};return monde.depuis(g.x,g.y);};
+  }
+  const cle=dfCleVue(F,"carte");
+  if(ctx.cfg&&Array.isArray(ctx.cfg.cotes)&&typeof dfAnnoter==="function")dfAnnoter(F,V,cle,ctx);
+  dfVueFin(F,m,cle,"carte",{V});
+
+  /* ---- colonne de droite ---- */
+  const blocs=[dfBlocTitre("Carte"),...dfTableau([{t:"Grandeur",p:60},{t:"mm",p:30,a:"d"}],[
+    ["Encombrement du contour (X × Y)",mecaFr(E.x2-E.x1)+" × "+mecaFr(E.y2-E.y1)],
+    ["Épaisseur de la carte",mecaFr(C.epaisseur)],
+    ["Plus haut composant, face dessus",mecaFr(hD)],
+    ["Plus haut composant, face dessous",mecaFr(hB)],
+    ["Hauteur totale (dessous + carte + dessus)",mecaFr(J.hauteur_max.total)]],{cat:"tableau"})];
+  if(J.fixations.length)blocs.push(dfBlocEspace(4),dfBlocTitre("Trous de fixation"),
+    ...dfTableau([{t:"N°",p:12,a:"m"},{t:"X",p:16,a:"d"},{t:"Y",p:16,a:"d"},{t:"Ø",p:13,a:"d"},
+                  {t:"Métallisé",p:16,a:"m"},{t:"Ø dégagement",p:21,a:"d"}],
+      J.fixations.map(f=>[f.id,mecaFr(f.x),mecaFr(f.y),mecaFr(f.d),f.metallise?"Oui":"Non",mecaFr(f.d_degagement)]),
+      {cat:"percage"}));
+  const ouv=J.composants.filter(c=>c.ouverture);
+  blocs.push(dfBlocEspace(4),dfBlocTitre("Ouvertures dans le boîtier"));
+  if(ouv.length)blocs.push(...dfTableau([{t:"Repère",p:16},{t:"Où",p:18},{t:"De",p:13,a:"d"},{t:"À",p:13,a:"d"},
+                                         {t:"Z min",p:14,a:"d"},{t:"Z max",p:14,a:"d"}],
+    ouv.map(c=>{const o=c.ouverture;
+      return o.type==="bord"?[c.ref,mecaOuvTxt(o),mecaFr(o.debut),mecaFr(o.fin),mecaFr(o.z_min),mecaFr(o.z_max)]
+                            :[c.ref,mecaOuvTxt(o),"","","",""];}),{cat:"repere"}));
+  else blocs.push(...dfBlocParagraphes([{texte:"Aucune.",retrait:1}]));
+  const notes=["Repère : "+J.repere,"De / À : position le long du bord (X pour N et S, Y pour E et O). "+
+               "Ouverture de face : au-dessus (ou au-dessous) du corps dessiné."].concat(J.avertissements);
+  blocs.push(dfBlocEspace(4),dfBlocTitre("Notes"),
+    ...dfBlocParagraphes(notes.map((t,i)=>({num:(i+1)+".",texte:t,retrait:6}))));
+  return dfFlux(ctx,F,{x:colX,y:Z.y1,w:colW,bas:Z.cart.y-4},blocs,"Plan mécanique","meca");
+}
