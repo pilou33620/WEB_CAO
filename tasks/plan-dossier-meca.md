@@ -74,7 +74,7 @@ T10 export IPC : height ──────┤ (T10 dépend de T3 pour la hauteur
 
 | Risque | Impact | Parade |
 |---|---|---|
-| Le PDF du Draftsman relit `dfCfg()` → `S.dessin` (fonte embarquée) : `S` n'existe pas dans la visionneuse | Haut | T1 le montre d'abord. Parade prévue : un `S` minimal (`{dessin:{}}`) posé par la visionneuse, ou un paramètre de fonte passé à `dfPdf` ; à choisir selon ce que T1 trouve |
+| Le PDF du Draftsman relit `dfCfg()` → `S.dessin` (fonte embarquée) : `S` n'existe pas dans la visionneuse | Haut | **Réglé en T1** : `dfPdf(feuilles, {fonte:true})` ; aucun `S` dans la visionneuse. T1 le montre d'abord. Parade prévue : un `S` minimal (`{dessin:{}}`) posé par la visionneuse, ou un paramètre de fonte passé à `dfPdf` ; à choisir selon ce que T1 trouve |
 | `fmt` / `clamp` sont des `const` de `01-core.js`, absents de la visionneuse | Moyen | Définis dans `08-dossier-meca.js` de la visionneuse seulement (pas de collision : la visionneuse n'en a pas, vérifié) |
 | Le déplacement du zip change `fabrication.zip` | Moyen | Code déplacé tel quel ; les essais zip existants (`crc32`, BOM, contenu) doivent passer sans retouche |
 | Corps d'empreinte faux pour certains connecteurs (le corps n'est que le rectangle `bodyOf`) | Moyen | C'est déjà ce que montrent le DXF et l'assemblage ; on l'accepte et on le dit dans le JSON (`repere`) |

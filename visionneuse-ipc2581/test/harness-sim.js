@@ -56,7 +56,14 @@ const FICHIERS=[
   path.join(RACINE,"js","02-modele.js"),
   path.join(RACINE,"..","commun","simulation-em.js"),
   path.join(RACINE,"..","commun","simulation-datasheet.js"),
-  path.join(RACINE,"js","07-simulation.js")
+  path.join(RACINE,"js","07-simulation.js"),
+  /* dossier méca : la visionneuse emprunte les sorties PDF / DXF des plans
+     de l'éditeur (fonte, Draftsman, export, vues) */
+  path.join(RACINE,"..","editeur-pcb","js","fontes","plans-sans.js"),
+  path.join(RACINE,"..","editeur-pcb","js","29-draftsman.js"),
+  path.join(RACINE,"..","editeur-pcb","js","33-draftsman-export.js"),
+  path.join(RACINE,"..","editeur-pcb","js","34-draftsman-vues.js"),
+  path.join(RACINE,"js","08-dossier-meca.js")
 ];
 const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simSaisie","simPorts","SIM_FORMAT",
@@ -189,7 +196,9 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   /* Œil 2.2.0 : le brin inverse, les mutuelles et les sections du boîtier. */
   "simOeilBrocheTexte",
   /* classes d'interface (commun/classes-interface.js) */
-  "CLASSES_INTERFACE","familleClasse","titreClasse"];
+  "CLASSES_INTERFACE","familleClasse","titreClasse",
+  /* sorties empruntées au Draftsman de l'éditeur */
+  "dfNouvelle","dfTexte","dfCadre","dfPdf","dxfNouveau","dxfContour","dxfOctets"];
 
 /* Un seul `eval`, sur les fichiers concaténés : ils se voient l'un
    l'autre comme dans la page, où ils partagent la portée globale. Le "use
@@ -6570,6 +6579,28 @@ T("la rugosité de Huray du fichier part au serveur avec ses deux paramètres",(
     throw new Error("Huray du dessus : "+JSON.stringify(pile[0]));
   if(pile[1].modele_rugosite!=="hammerstad"||pile[1].rugosite_rms_um!==1.6)throw new Error("Rq du plan : "+JSON.stringify(pile[1]));
   carte();
+});
+
+/* ==========================================================================
+   Dossier méca : les sorties du Draftsman, sans l'éditeur
+   ========================================================================== */
+T("le Draftsman de l'éditeur sort un PDF à fonte embarquée dans la visionneuse",()=>{
+  const ctx={cfg:{format:"A4",societe:"",auteur:"",verifie:"",approuve:""},
+             projet:"Essai",docNum:"ESSAI-MECA",rev:"A",date:"2026-10-15",variante:""};
+  const F=dfNouvelle(ctx,"Plan mécanique","meca");
+  dfTexte(F,"Épaisseur 1,6 mm",30,30,10);
+  dfCadre(F,ctx,1,1);
+  const pdf=new TextDecoder("latin1").decode(dfPdf([F],{fonte:true}));
+  if(!pdf.startsWith("%PDF"))throw new Error("pas un PDF");
+  if(!pdf.includes("/FontFile2"))throw new Error("la fonte n'est pas embarquée");
+});
+T("le DXF du Draftsman se fait sans l'éditeur, arcs du contour retrouvés",()=>{
+  const D=dxfNouveau(), P=[];
+  for(let i=0;i<=8;i++){const a=Math.PI/2*i/8;P.push({x:10+5*Math.cos(a),y:10+5*Math.sin(a)});}
+  P.push({x:0,y:15},{x:0,y:0},{x:15,y:0});
+  dxfContour(D,"CONTOUR",P);
+  const t=new TextDecoder().decode(dxfOctets(D));
+  if(!t.includes("CONTOUR")||!t.includes("ARC"))throw new Error("contour ou arc absent");
 });
 
 (async()=>{

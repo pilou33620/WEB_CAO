@@ -323,7 +323,7 @@ function dfPdf(feuilles,meta){
   const pageId=feuilles.map(()=>alloc()), contId=feuilles.map(()=>alloc());
   /* fonte embarquée (33-draftsman-export.js) : sous-ensemble TrueType des
      glyphes employés, Identity-H et /ToUnicode ; null → Helvetica, WinAnsi */
-  const FE=typeof dfFontePreparer==="function"?dfFontePreparer(feuilles):null;
+  const FE=typeof dfFontePreparer==="function"?dfFontePreparer(feuilles,meta.fonte):null;
 
   /* Signets : une entrée par feuille, et sous elle ses entrées propres. */
   const sig=[];

@@ -19,9 +19,10 @@ Bancs :
 Charger `fontes/plans-sans.js`, `29-draftsman.js` et `33-draftsman-export.js`
 dans le banc de la visionneuse, sans le reste de l'éditeur. Sortir le PDF
 d'une feuille vide et un DXF minimal.
-- [ ] `dfNouvelle` + `dfCadre` + `dfPdf` donnent un PDF commençant par `%PDF`, fonte embarquée comprise
-- [ ] `dxfNouveau` + `dxfContour` + `dxfOctets` donnent un DXF
-- [ ] Ce qui manque (`S`, `fmt`, `clamp`, autre) est listé et la parade choisie (voir le risque n° 1 du plan)
+- [x] `dfNouvelle` + `dfCadre` + `dfPdf` donnent un PDF commençant par `%PDF`, fonte embarquée comprise
+- [x] `dxfNouveau` + `dxfContour` + `dxfOctets` donnent un DXF
+- [x] Ce qui manque (`S`, `fmt`, `clamp`, autre) est listé et la parade choisie (voir le risque n° 1 du plan)
+  → Manquaient `clamp`/`fmt` (posés par `08-dossier-meca.js`) et `dfCfg().fonte` dans `dfFontePreparer` : `dfPdf` le lit désormais dans `meta.fonte` s'il est donné. Pas de `S` global (`commun/ia-assistant.js` s'en sert pour reconnaître l'outil).
 - Vérifier : `JS_VIS`
 - Fichiers : `visionneuse-ipc2581/test/harness-sim.js`
 - Taille : S

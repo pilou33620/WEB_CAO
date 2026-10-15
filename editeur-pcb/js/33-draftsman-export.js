@@ -949,8 +949,10 @@ function dffNom(st){return "PlansSans-"+(st==="gras"?"Bold":"Regular");}
 /* Préparation, appelée par dfPdf() avant d'écrire : les glyphes de chaque
    style, le sous-ensemble, et de quoi coder le texte et écrire les objets.
    null quand l'option est décochée ou la fonte absente : Helvetica alors. */
-function dfFontePreparer(feuilles){
-  if(!dfCfg().fonte)return null;
+/* `fonte` : le choix de qui appelle ; à défaut, le réglage des plans. La
+   visionneuse, qui n'a pas de réglages de plans (pas de `S`), le passe. */
+function dfFontePreparer(feuilles,fonte){
+  if(!(fonte!=null?fonte:dfCfg().fonte))return null;
   const textes=[];
   for(const F of feuilles)for(const it of F.items)if(it.t==="t")textes.push(it);
   const styles=dffStyles(textes);
