@@ -179,6 +179,6 @@ réutilise la recherche de T2/T3.
 
 ### Point de contrôle 4 : fini
 - [ ] Les critères 1 à 6 sont tenus (critère 6 : donner le JSON de la carte d'exemple à une IA et contrôler sa réponse à la main)
-- [ ] `editeur-pcb/README.md`, `visionneuse-ipc2581/README.md` et `A-FAIRE.md` sont à jour
+- [x] `editeur-pcb/README.md`, `visionneuse-ipc2581/README.md` et `A-FAIRE.md` sont à jour
 - [ ] `/review` est passé
 - [ ] Proposer la mise à jour du graphe (`/graphify`)

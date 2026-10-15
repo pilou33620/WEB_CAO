@@ -102,6 +102,9 @@ js/35-ipc2581-export.js  export IPC-2581 révision C : toute la carte en un
                          XML (empilage, cuivre et nets, zones remplies,
                          perçages et contre-perçage, composants, empreintes,
                          nomenclature) ; voir « Export IPC-2581 »
+js/36-dossier-meca.js    dossier mécanique : l'entrée tirée de la carte, le
+                         tableau des hauteurs et des ouvertures, le zip ;
+                         voir « Dossier mécanique »
 outils/build-monofichier.py assemble le tout dans dist/
 outils/fonte-plans.py    réduit Liberation Sans à la fonte des plans
 test/harness.js          banc d'essai sans navigateur
@@ -131,6 +134,10 @@ Ces fichiers viennent du dossier partagé, à la racine du dépôt :
                          courbe, exports — paramétré par l'adaptateur de
                          js/19-simulation.js. La visionneuse IPC-2581 charge
                          exactement le même
+../commun/dossier-meca.js  dossier mécanique : le calcul, la feuille « Plan
+                         mécanique » et le DXF, communs avec la visionneuse
+../commun/zip.js         archive ZIP sans compression (crc32, zipBlob) :
+                         fabrication.zip, dossier méca
 ../commun/test/dom-stub.js  DOM minimal du banc d'essai
 ../commun/outils/monofichier.py  mécanique d'assemblage
 ```
@@ -1334,6 +1341,46 @@ l'encadrer de `dfCalque(F,"NOM")` … `dfCalque(F)` ; un texte va sur le
 calque de sa catégorie (`cat`), le cadre et le cartouche se reconnaissent à
 leur place, et le reste va sur `DESSIN`. Le texte invisible du PDF n'y va
 pas : il sert la recherche du lecteur PDF, pas le modeleur.
+
+## Dossier mécanique
+
+Ce qu'il faut à un mécanicien — ou à une IA — pour dessiner le boîtier de la
+carte. Dans **Plans (Draftsman)**, la case **Plan mécanique** ajoute la
+feuille aux plans (décochée par défaut : le PDF des plans ne change pas), et
+le bouton **⬇ Dossier méca .zip** télécharge `<projet>-MECA.zip` :
+
+| Fichier | Contenu |
+| --- | --- |
+| `-PLAN-MECA.pdf` | vue de dessus cotée (hors tout, trous de fixation en ordonnée depuis l'origine), vue de face (depuis le bord S) et de côté (depuis le bord E) avec chaque composant en pavé à sa hauteur ; tableaux : carte, fixations, ouvertures ; notes et composants sans hauteur |
+| `-MECA.json` | les mêmes données pour une IA ou un script (format `web_cao-meca-1`, décrit dans `SPEC-dossier-meca.md`) |
+| `-MECA.dxf` | la carte à 1:1 : contour (arcs retrouvés), découpes, fixations et dégagements, corps sur un calque par face et par hauteur (`CORPS_DESSUS_H9_50`), ouvertures |
+
+Repère : celui des Gerber (origine `gOrigin`, Y vers le haut, vue de dessus) ;
+Z = 0 sur la face dessus, la face dessous à −épaisseur. Le corps d'un
+composant est le rectangle de son empreinte (`bodyOf`).
+
+- **Hauteur** : saisie dans le tableau de la fenêtre, sinon « Maximun Height »
+  de la LIB (par Part Name, puis par référence fabricant). Sans l'une ni
+  l'autre, le composant est cité dans les notes et dessiné en tirets.
+- **Fixation** : un trou non métallisé, ou une empreinte `H…` / `MH…` ou dont
+  le boîtier dit « MOUNT » / « TROU », à une seule pastille percée. Ø de
+  dégagement : la pastille, sinon le trou + 2 mm.
+- **Ouverture** : proposée pour tout connecteur (`J`, `P`, `CN`, `USB`, `X`)
+  et pour `SW`, `LED`, `DS`, `BT` et les `D` de LED ; sur le bord quand le
+  corps est à moins de 2 mm du contour, sinon sur sa face. La case du tableau
+  la retire ou en ajoute une.
+- **Non-montés** de la variante : gardés, en tirets et « NM », comptés dans
+  la hauteur maximale.
+
+Les réglages vont dans le document, `dessin.meca` :
+
+```
+dessin.meca   {h:{<id d'empreinte>:mm}, ouv:{<id d'empreinte>:true|false}}
+```
+
+bornés par `dfCfg` (`mecaNormReglages` : identifiants existants, hauteur de 0
+à 100 mm). L'export IPC-2581 écrit la hauteur connue en `<Package height>`.
+La visionneuse IPC-2581 donne le même dossier depuis un fichier IPC.
 
 ## Export IPC-2581
 

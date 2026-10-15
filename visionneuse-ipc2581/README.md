@@ -731,6 +731,29 @@ piste. Ce n'est pas une modélisation, c'est un contrôle : ses limites sont dan
 ici : un perçage IPC-2581 ne dit pas sa plage de couches, donc un via borgne qui
 n'atteint pas le plan de référence compte quand même comme une couture.
 
+## Dossier mécanique
+
+Le bouton **Dossier méca** ouvre le même dossier que l'éditeur PCB : le plan
+mécanique en PDF, le JSON pour une IA et la carte à 1:1 en DXF, dans
+`<carte>-MECA.zip` (voir « Dossier mécanique » dans `editeur-pcb/README.md`).
+La fenêtre montre la feuille et le tableau des composants : hauteur (saisie,
+sinon celle du fichier, sinon celle de la LIB servie par `/api/lib/composants`)
+et case d'ouverture. Les réglages vont dans le modèle (`meca`), donc dans
+« Exporter .json ».
+
+Ce que le fichier doit porter, et ce qui se passe sinon :
+
+- **`<Package height>`** : la hauteur. Sans elle, la LIB ou la saisie ; hors
+  serveur, la fenêtre le dit.
+- **`<Package><Outline>`** : le corps. Sans lui, la boîte des pastilles, et le
+  dossier le signale (un connecteur déborde souvent de ses pastilles).
+- **Trous NON_PLATED** : les fixations ; ceux qui tombent dans le corps d'un
+  composant sont à lui (plots de centrage).
+
+Le calcul et la feuille sont `commun/dossier-meca.js` ; les sorties PDF et DXF
+sont celles des plans de l'éditeur (`editeur-pcb/js/29`, `33`, `34` et la
+fonte), chargées telles quelles, avec `commun/zip.js`.
+
 ## La carte dans le projet
 
 Un projet est un dossier, et ce dossier porte le schéma, le circuit imprimé et
@@ -787,8 +810,9 @@ d'un boîtier annonçait « 0 broche ».
 
 ## Limites connues
 
-**Pas de contour de boîtier.** IPC-2581 décrit les broches d'une empreinte, pas
-la silhouette du composant. Le cadre affiché est donc celui de ses pastilles :
+**Pas de contour de boîtier à l'écran.** IPC-2581 décrit les broches d'une
+empreinte ; la silhouette (`<Outline>`) est facultative, et seul le dossier
+mécanique la lit. Le cadre affiché est donc celui de ses pastilles :
 un connecteur dont toutes les broches sont sur une rangée apparaît comme une
 bande, ce qui est fidèle aux données mais pas au boîtier.
 
