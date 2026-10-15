@@ -51,9 +51,9 @@ l'épaisseur (`stackTotal`), les trous (`S.holes`, pastilles percées des
 empreintes de fixation), les corps (`bodyOf` + `fpXform`), la face, Part
 Name / MPN et l'état monté (`varEstMonte`). Tout est exprimé dans le repère
 des Gerber (`gOrigin`, Y vers le haut), comme `dxfCarte`.
-- [ ] Sur la carte d'exemple : contour 44 × 30, épaisseur = `stackTotal()`
-- [ ] Un trou NPTH et une empreinte `MH1` (une pastille percée) deviennent deux fixations, avec Ø et Ø de dégagement
-- [ ] Un composant du dessous a `face: "dessous"` et son corps au bon endroit (même repère que le DXF)
+- [x] Sur l'exemple 2 : contour 66 × 42, épaisseur = `stackTotal()`
+- [x] Un trou NPTH et une empreinte `MH1` (une pastille percée) deviennent deux fixations, avec Ø et Ø de dégagement
+- [x] Un composant du dessous a `face: "dessous"` et son corps au bon endroit (même repère que le DXF)
 - Vérifier : `BUILD && JS_PCB`
 - Fichiers : `editeur-pcb/js/36-dossier-meca.js` (nouveau), `editeur-pcb/editeur-pcb.html`, `editeur-pcb/test/harness.js`
 - Dépend de : T2
@@ -66,7 +66,7 @@ et dessous en tirets, ouvertures en couleur, NM), les cotes hors tout, les
 cotes en ordonnée des fixations et les tableaux (fixations, ouvertures,
 hauteurs, composants sans hauteur). La case « Plan mécanique » vient dans
 `DF_FEUILLES` et dans `dfCfg`, décochée par défaut, et `dfDocument` l'ajoute.
-- [ ] La feuille sort au PDF avec son cadre et son cartouche ; « 44,00 mm » et « H1 » s'y trouvent par `dfChercher`
+- [ ] La feuille sort au PDF avec son cadre et son cartouche ; « 66,00 mm » et « H1 » s'y trouvent par `dfChercher`
 - [ ] Case décochée : le PDF des plans est inchangé ; les 44 essais Draftsman passent
 - [ ] Les cotes manuelles se posent sur la vue (`F.vues` déclarée)
 - Vérifier : `BUILD && JS_PCB`

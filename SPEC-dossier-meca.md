@@ -292,7 +292,7 @@ JSON de ce banc (face, NPTH, `corps_estime`).
 1. **Éditeur.** Dans Plans (Draftsman), la case « Plan mécanique » ajoute la
    feuille ; le bouton « Dossier méca .zip » télécharge `<projet>-MECA.zip`
    avec le PDF, le JSON et le DXF.
-2. Sur la carte d'exemple 44 × 30 mm : cotes hors tout 44 et 30, épaisseur de
+2. Sur l'exemple 2 de l'éditeur (66 × 42 mm) : cotes hors tout 66 et 42, épaisseur de
    l'empilage, chaque trou de fixation coté en X et Y avec son Ø.
 3. Chaque composant monté a sa hauteur, ou figure parmi les avertissements ;
    la hauteur maximale par face est juste.

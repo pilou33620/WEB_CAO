@@ -400,7 +400,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "dfCalque","dfFontePreparer","dffFonte","dffLire","dffBase64","dffGlyphes","DFF_CACHE","DF_FONTE_TTF","dfZone",
   "dfLigne",
   /* dossier mécanique (commun/dossier-meca.js) */
-  "mecaDonnees",
+  "mecaDonnees","mecaEntreeEditeur","mecaDossier","stackTotal","exCharger",
   /* cotes à la main, vues à la souris, détails (34-draftsman-vues.js) */
   "dfNormCotes","dfNormVues","dfNormDetails","dfResoudre","dfMesurer","dfAccroches","dfAccrocher",
   "dfAjouterCote","dfModifierCote","dfSupprimerCote","dfDeplacerCote","dfAjouterDetail","dfSupprimerDetail",
@@ -25553,6 +25553,54 @@ T("dossier méca : le JSON se relit à l'identique",()=>{
   const e=mecaEntree();e.epaisseur=null;
   const k=mecaDonnees(e,[],{});
   if(k.carte.epaisseur!==null||!k.avertissements.some(a=>/paisseur/.test(a)))throw new Error("épaisseur inconnue : "+JSON.stringify(k.carte));
+});
+
+/* ---------- l'entrée tirée de la carte de l'éditeur (36-dossier-meca.js) ---------- */
+T("dossier méca, éditeur : contour et épaisseur de l'exemple 2 dans le repère des Gerber",()=>{
+  exCharger(1);
+  const E=mecaEntreeEditeur(), j=mecaDonnees(E,[],{});
+  const e=j.carte.encombrement;
+  if(Math.abs(e.x2-e.x1-66)>1e-6||Math.abs(e.y2-e.y1-42)>1e-6)throw new Error("66 × 42 attendus : "+JSON.stringify(e));
+  const o=gOrigin();
+  if(Math.abs(e.x1-(S.board.x-o.x))>1e-6||Math.abs(e.y1-(o.y-S.board.y-S.board.h))>1e-6)
+    throw new Error("repère : "+JSON.stringify(e));
+  if(Math.abs(j.carte.epaisseur-stackTotal())>1e-3)throw new Error("épaisseur "+j.carte.epaisseur+" ≠ "+stackTotal());
+});
+T("dossier méca, éditeur : un NPTH et une empreinte MH1 deviennent deux fixations",()=>{
+  exCharger(1);
+  const o=gOrigin();
+  S.holes=[{id:900,x:S.board.x+3,y:S.board.y+3,d:3.2}];
+  const fp=mkFp("MH1","","MountingHole_3.2mm",1);
+  fp.x=S.board.x+S.board.w-4;fp.y=S.board.y+4;
+  fp.pads=[{n:"1",x:0,y:0,w:6,h:6,shape:"round",drill:3.2}];
+  S.fps.push(fp);
+  const f=mecaDonnees(mecaEntreeEditeur(),[],{}).fixations;
+  const h=f.find(k=>k.id==="H1"), m=f.find(k=>k.id==="MH1");
+  if(!h||h.metallise||Math.abs(h.x-3-(S.board.x-o.x))>1e-6||h.d_degagement!==5.2)throw new Error("H1 : "+JSON.stringify(h));
+  if(!m||!m.metallise||m.d!==3.2||m.d_degagement!==6||Math.abs(m.y-(o.y-fp.y))>1e-6)throw new Error("MH1 : "+JSON.stringify(m));
+  exCharger(1);
+});
+T("dossier méca, éditeur : le connecteur USB, au milieu sur sa face, contre le bord gauche sur le bord O",()=>{
+  exCharger(1);
+  const J1=S.fps.find(f=>f.ref==="J1");
+  const oj=()=>mecaDossier().composants.find(c=>c.ref==="J1").ouverture;
+  if(!oj()||oj().type!=="face")throw new Error("à 7 mm du bord : "+JSON.stringify(oj()));
+  J1.x=S.board.x+0.5;
+  if(!oj()||oj().type!=="bord"||oj().bord!=="O")throw new Error("contre le bord : "+JSON.stringify(oj()));
+  exCharger(1);
+});
+T("dossier méca, éditeur : un composant retourné passe dessous, corps dans le repère du DXF",()=>{
+  exCharger(1);
+  const fp=S.fps.find(f=>!/^(J|P|CN|USB|X|SW|LED|DS|BT)\d/i.test(f.ref)&&!f.side);
+  fp.side=1;
+  const j=mecaDossier();
+  const r=j.composants.find(c=>c.ref===fp.ref);
+  if(r.face!=="dessous")throw new Error(fp.ref+" : "+r.face);
+  /* le corps, dans le repère du DXF : même transformation que dxfCarte */
+  const T=fpXform(fp), b=bodyOf(fp), o=gOrigin(), q=T(b.x1,b.y1);
+  if(Math.abs(r.corps[0][0]-(q.x-o.x))>1e-3||Math.abs(r.corps[0][1]-(o.y-q.y))>1e-3)
+    throw new Error("corps "+JSON.stringify(r.corps[0])+" ≠ "+JSON.stringify([q.x-o.x,o.y-q.y]));
+  exCharger(1);
 });
 
 (async()=>{
