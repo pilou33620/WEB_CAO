@@ -201,7 +201,7 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   /* sorties empruntées au Draftsman de l'éditeur */
   "dfNouvelle","dfTexte","dfCadre","dfPdf","dxfNouveau","dxfContour","dxfOctets",
   /* dossier méca */
-  "mecaDonnees","mecaEntreeIpc"];
+  "mecaDonnees","mecaEntreeIpc","mecaIpcDossier","mecaIpcRegler","mecaIpcFichiers","MECA_IPC","mecaPlan","mecaIpcCtx","dfSvg","mecaIpcLib"];
 
 /* Un seul `eval`, sur les fichiers concaténés : ils se voient l'un
    l'autre comme dans la page, où ils partagent la portée globale. Le "use
@@ -6687,6 +6687,52 @@ T("dossier méca, visionneuse : sur un export de l'éditeur, les mêmes trous, c
           throw new Error(n+" "+a.ref+" ouverture "+JSON.stringify(oc)+" ≠ "+JSON.stringify(oa));
       }
     }
+  }finally{carte();}
+});
+
+/* ---------- dossier méca : réglages et fichiers de la visionneuse ---------- */
+T("dossier méca, visionneuse : la saisie va dans le modèle (export .json), bornée",()=>{
+  carteMeca();
+  try{
+    mecaIpcRegler("U1","h","1,75");
+    mecaIpcRegler("J1","ouv",false);
+    mecaIpcRegler("J1","h","1e9");
+    mecaIpcRegler("ZZ9","h","2");
+    if(JSON.stringify(V.modele.meca)!=='{"h":{"U1":1.75},"ouv":{"J1":false}}')throw new Error(JSON.stringify(V.modele.meca));
+    const j=mecaIpcDossier();
+    const U1=j.composants.find(c=>c.ref==="U1"), J1=j.composants.find(c=>c.ref==="J1");
+    if(U1.hauteur!==1.75||U1.source_hauteur!=="saisie"||J1.ouverture!==null)throw new Error(JSON.stringify([U1,J1]));
+    V.modele.meca={h:{U1:"x"},ouv:"faux"};
+    if(mecaIpcDossier().composants.find(c=>c.ref==="U1").source_hauteur!=="inconnue")throw new Error("réglage abîmé accepté");
+  }finally{carte();}
+});
+T("dossier méca, visionneuse : la hauteur de la LIB, puis le zip à trois fichiers",()=>{
+  carteMeca();
+  const garde=MECA_IPC.lib;
+  MECA_IPC.lib=[{"Part Name":"","Part Number":"LM358","Maximun Height":"1.75"}];
+  try{
+    const U1=mecaIpcDossier().composants.find(c=>c.ref==="U1");
+    if(U1.hauteur!==1.75||U1.source_hauteur!=="lib")throw new Error(JSON.stringify(U1));
+    const f=mecaIpcFichiers();
+    if(f.map(x=>x.name.replace(/^.*-/,"")).join()!=="MECA.pdf,MECA.json,MECA.dxf")throw new Error(f.map(x=>x.name).join());
+    if(!new TextDecoder("latin1").decode(f[0].data).startsWith("%PDF"))throw new Error("PDF");
+    if(JSON.parse(f[1].text).format!=="web_cao-meca-1")throw new Error("JSON");
+  }finally{MECA_IPC.lib=garde;carte();}
+});
+TA("dossier méca, visionneuse : sans serveur, pas de LIB, et la fenêtre le dit",async()=>{
+  const garde=global.fetch, lib=MECA_IPC.lib;
+  global.fetch=()=>{throw new Error("hors serveur");};
+  MECA_IPC.lib=null;
+  try{
+    await mecaIpcLib();
+    if(!MECA_IPC.libKo||!Array.isArray(MECA_IPC.lib)||MECA_IPC.lib.length)throw new Error(JSON.stringify(MECA_IPC));
+  }finally{global.fetch=garde;MECA_IPC.lib=lib;MECA_IPC.libKo=false;}
+});
+T("dossier méca, visionneuse : l'aperçu SVG de la feuille se dessine",()=>{
+  carteMeca();
+  try{
+    const svg=mecaPlan(mecaIpcDossier(),mecaIpcCtx(),null).map(F=>dfSvg(F)).join("");
+    if(!/^<svg/.test(svg)||svg.indexOf("Plan mécanique")<0)throw new Error(svg.slice(0,120));
   }finally{carte();}
 });
 

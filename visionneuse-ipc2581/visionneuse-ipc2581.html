@@ -31,6 +31,7 @@
     <button class="tb on" id="bOuvrir" title="Choisir un fichier IPC-2581 (.xml, .cvg) ou son archive .zip">📂 Ouvrir un fichier…</button>
     <button class="tb" id="bJson" title="Enregistrer le modèle traduit : il se rouvre ici sans serveur">Exporter .json</button>
     <button class="tb" id="bPng" title="Image de ce qui est affiché">Exporter .png</button>
+    <button class="tb" id="bMeca" title="Dossier pour concevoir le boîtier : plan mécanique coté (PDF), données pour une IA (JSON), carte à 1:1 (DXF)">Dossier méca</button>
     <div class="sep"></div>
     <button class="tb" id="bFit" title="Voir toute la carte">Ajuster <kbd>F</kbd></button>
     <button class="tb" id="bFlip" title="Regarder la carte par en dessous"><span id="bFlipTxt">Dessous</span> <kbd>B</kbd></button>
@@ -323,6 +324,14 @@
 <script src="../commun/simulation-datasheet.js"></script>
 <script src="js/06-demarrage.js"></script>
 <script src="js/07-simulation.js"></script>
+<!-- dossier méca : le calcul commun, et les sorties PDF / DXF des plans de l'éditeur -->
+<script src="../commun/zip.js"></script>
+<script src="../editeur-pcb/js/29-draftsman.js"></script>
+<script src="../editeur-pcb/js/fontes/plans-sans.js"></script>
+<script src="../editeur-pcb/js/33-draftsman-export.js"></script>
+<script src="../editeur-pcb/js/34-draftsman-vues.js"></script>
+<script src="../commun/dossier-meca.js"></script>
+<script src="js/08-dossier-meca.js"></script>
 <script src="../commun/workspace.js"></script>
 <script src="../commun/ia-assistant.js"></script>
 <script src="../commun/tactile.js"></script>

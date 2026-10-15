@@ -11,6 +11,7 @@
 /* les mêmes que 01-core.js de l'éditeur, que la visionneuse ne charge pas */
 const clamp=(v,a,b)=>v<a?a:(v>b?b:v);
 const fmt=(v,n)=>Number(v).toFixed(n==null?2:n);
+const esc=mdlEsc;          // l'aperçu SVG des plans (dfSvg) échappe ses textes
 
 /* L'entrée neutre du dossier (commun/dossier-meca.js) tirée du modèle lu. Le
    fichier est déjà dans le repère des Gerber (Y vers le haut, son origine) ;
@@ -61,3 +62,120 @@ function mecaEntreeIpc(m){
     .filter(t=>!composants.some(c=>mecaDedans(t,c.corps)));
   return {contour:pts(ct.o),decoupes:(ct.t||[]).map(pts),epaisseur:ep>0?ep:null,trous,composants};
 }
+
+/* ==========================================================================
+   Fenêtre « Dossier méca »
+   --------------------------------------------------------------------------
+   Le tableau des composants (hauteur saisie, case d'ouverture), l'aperçu de
+   la feuille et le zip. Les réglages vont dans le modèle, `V.modele.meca`
+   (clé : le repère), donc dans « Exporter .json » comme les natures de nets.
+   ========================================================================== */
+const MECA_IPC={lib:null,libKo:false,minuterie:null};
+
+function mecaIpcBase(){
+  return typeof nomBase==="function"?nomBase():((V.fichier||"carte").replace(/\.[^.]+$/,"")||"carte");
+}
+function mecaIpcReglages(){
+  V.modele.meca=mecaNormReglages(V.modele.meca,(V.modele.composants||[]).map(c=>c.ref));
+  return V.modele.meca;
+}
+function mecaIpcRegler(ref,champ,val){
+  const r=mecaIpcReglages();
+  if(champ==="h"){if(val===""||val==null)delete r.h[ref];else r.h[ref]=val;}
+  else if(champ==="ouv")r.ouv[ref]=!!val;
+  mecaIpcReglages();                 // la valeur saisie repasse par les bornes
+}
+function mecaIpcDossier(){
+  return mecaDonnees(mecaEntreeIpc(V.modele),MECA_IPC.lib||[],mecaIpcReglages(),
+    {projet:mecaIpcBase(),revision:"",date:new Date().toISOString().slice(0,10)});
+}
+function mecaIpcCtx(){
+  const b=mecaIpcBase();
+  return {cfg:{format:"A3",societe:"",auteur:"",verifie:"",approuve:""},
+          projet:b,docNum:b+"-MECA",rev:"—",date:new Date().toISOString().slice(0,10),variante:""};
+}
+function mecaIpcFichiers(){
+  const J=mecaIpcDossier();
+  return mecaFichiers(J,mecaPlan(J,mecaIpcCtx(),null),mecaIpcBase(),true);
+}
+/* La LIB du serveur, une fois ; sans serveur (un .json rouvert), on s'en
+   passe et on le dit : restent les hauteurs du fichier et la saisie. */
+function mecaIpcLib(){
+  if(MECA_IPC.lib)return Promise.resolve(MECA_IPC.lib);
+  return Promise.resolve().then(()=>fetch("/api/lib/composants")).then(r=>r.ok?r.json():null)
+    .then(d=>{MECA_IPC.lib=d&&Array.isArray(d.composants)?d.composants:[];MECA_IPC.libKo=!(d&&d.composants);})
+    .catch(()=>{MECA_IPC.lib=[];MECA_IPC.libKo=true;});
+}
+function mecaIpcFermer(){
+  const m=document.getElementById("modaleMeca");
+  if(m)m.hidden=true;
+}
+function mecaIpcApercu(){
+  const z=document.getElementById("mecaApercu");
+  if(!z)return;
+  const J=mecaIpcDossier(), F=mecaPlan(J,mecaIpcCtx(),null);
+  z.innerHTML=F.map(f=>dfSvg(f)).join("");
+  const n=J.composants.filter(c=>c.hauteur==null).length;
+  document.getElementById("mecaEtat").textContent=J.fixations.length+" fixation(s) · "+
+    J.composants.filter(c=>c.ouverture).length+" ouverture(s) · "+
+    (n?n+" composant(s) sans hauteur":"toutes les hauteurs connues")+
+    (MECA_IPC.libKo?" · LIB indisponible (hors serveur) : hauteurs du fichier et saisies seulement":"");
+}
+function mecaIpcRendre(){
+  const J=mecaIpcDossier(), r=mecaIpcReglages(), e=mdlEsc;
+  document.getElementById("mecaTable").innerHTML=
+    '<tr><th>Repère</th><th>Hauteur (mm)</th><th title="Ouverture dans le boîtier">Ouv.</th></tr>'+
+    J.composants.map(c=>{
+      const ph=c.source_hauteur==="saisie"||c.hauteur==null?"?":mecaFr(c.hauteur)+" ("+c.source_hauteur+")";
+      return '<tr><td>'+e(c.ref)+'</td><td><input type="number" min="0" max="100" step="0.01" data-meca-h="'+e(c.ref)+
+        '" value="'+(r.h[c.ref]!=null?r.h[c.ref]:"")+'" placeholder="'+e(ph)+'" aria-label="Hauteur de '+e(c.ref)+'"></td>'+
+        '<td><input type="checkbox" data-meca-ouv="'+e(c.ref)+'"'+(c.ouverture?" checked":"")+
+        ' aria-label="Ouverture pour '+e(c.ref)+'"></td></tr>';
+    }).join("");
+  mecaIpcApercu();
+}
+function mecaOuvrir(){
+  if(!V.modele){hint("Aucune carte ouverte : pas de dossier méca.");return;}
+  let m=document.getElementById("modaleMeca");
+  if(!m){
+    m=document.createElement("div");
+    m.id="modaleMeca";m.className="modal-overlay";
+    m.setAttribute("role","dialog");m.setAttribute("aria-modal","true");m.setAttribute("aria-label","Dossier mécanique");
+    m.innerHTML='<div class="modal-box meca-box"><header class="modal-head"><div>'+
+      '<h3>Dossier mécanique</h3><small id="mecaEtat"></small></div><div class="meca-actions">'+
+      '<button class="tb on" type="button" data-a="zip" title="Plan mécanique (PDF), données (JSON) et carte à 1:1 (DXF), pour concevoir le boîtier">⬇ Télécharger .zip</button>'+
+      '<button class="pnl-btn" type="button" data-a="fermer" title="Fermer (Échap)">✕</button></div></header>'+
+      '<div class="modal-body meca-corps"><aside class="meca-cfg"><table class="meca-table" id="mecaTable"></table></aside>'+
+      '<main class="meca-apercu" id="mecaApercu"></main></div></div>';
+    document.body.appendChild(m);
+    m.addEventListener("pointerdown",ev=>{if(ev.target===m)mecaIpcFermer();});
+    m.addEventListener("keydown",ev=>{if(ev.key==="Escape"){ev.stopPropagation();mecaIpcFermer();}});
+    m.addEventListener("click",ev=>{
+      const b=ev.target.closest&&ev.target.closest("[data-a]");
+      if(!b)return;
+      if(b.dataset.a==="fermer")mecaIpcFermer();
+      else if(b.dataset.a==="zip"){
+        const nom=mecaIpcBase()+"-MECA.zip";
+        telecharger(zipBlob(mecaIpcFichiers()),nom);
+        hint("Dossier mécanique "+nom+" : plan PDF, JSON et DXF 1:1.");
+      }
+    });
+    m.addEventListener("input",ev=>{
+      const t=ev.target;
+      if(!t.dataset||t.dataset.mecaH==null)return;
+      mecaIpcRegler(t.dataset.mecaH,"h",t.value);
+      clearTimeout(MECA_IPC.minuterie);
+      MECA_IPC.minuterie=setTimeout(mecaIpcApercu,250);
+    });
+    m.addEventListener("change",ev=>{
+      const t=ev.target;
+      if(t.dataset&&t.dataset.mecaOuv!=null){mecaIpcRegler(t.dataset.mecaOuv,"ouv",t.checked);mecaIpcApercu();}
+    });
+  }
+  m.hidden=false;
+  mecaIpcLib().then(mecaIpcRendre);
+}
+(function(){
+  const b=typeof document!=="undefined"&&document.getElementById&&document.getElementById("bMeca");
+  if(b)b.onclick=mecaOuvrir;
+})();

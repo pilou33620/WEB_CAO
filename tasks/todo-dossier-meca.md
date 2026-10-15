@@ -169,9 +169,9 @@ réutilise la recherche de T2/T3.
 - Les balises : `commun/zip.js`, la fonte, 29, 33, `commun/dossier-meca.js`, `08-dossier-meca.js`, avec la parade de T1.
 - Un bouton dans la barre ouvre une fenêtre avec le tableau des composants (hauteur, case), l'aperçu `dfSvg` de la feuille et « Télécharger .zip ».
 - La LIB vient de `GET /api/lib/composants`. Les réglages vont dans `V.modele.meca`, donc dans `-IPC.json`.
-- [ ] Sur un IPC exporté par l'éditeur, le zip a les mêmes trous, corps et hauteurs que celui de l'éditeur (critère 5)
-- [ ] Sans serveur (`.json` rouvert), la fenêtre marche avec les hauteurs du fichier et le dit
-- [ ] Les réglages survivent à « Exporter .json » puis réouverture
+- [x] Sur un IPC exporté par l'éditeur, le zip a les mêmes trous, corps et hauteurs que celui de l'éditeur (critère 5) — essai chaîné de T11, et fenêtre vue dans Chromium sur `exemple-1-charge`
+- [x] Sans serveur (`.json` rouvert), la fenêtre marche avec les hauteurs du fichier et le dit
+- [~] Les réglages survivent à « Exporter .json » puis réouverture : `V.modele.meca` n'est pas retiré par `modeleTexte` et se relit borné ; pas d'essai automatique (06-demarrage.js hors du banc)
 - Vérifier : `JS_VIS` ; contrôle à la main dans le navigateur
 - Fichiers : `visionneuse-ipc2581/visionneuse-ipc2581.html`, `visionneuse-ipc2581/js/08-dossier-meca.js`, `visionneuse-ipc2581/css/…`
 - Dépend de : T1, T7, T11
