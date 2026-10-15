@@ -111,6 +111,32 @@ esd_array:{n:"Réseau ESD",cat:"Semi-conducteurs",p:"U",v:"USBLC6",pk:"ci",pkg:"
        L(c,-40,-20,-25,-20);L(c,-40,0,-25,0);L(c,-40,20,-25,20);
        L(c,40,-20,25,-20);L(c,40,0,25,0);L(c,40,20,25,20);
        TXT(c,"ESD",0,-8,11,C_TXT);TXT(c,"ARRAY",0,8,8,"#93c5fd");}},
+/* RÉSEAUX ESD À RAIL : diodes d'aiguillage vers VCC et GND, une TVS entre
+   les deux (824001, SRV05-4, NUP2201, SR05). Broches nommées : la colonne
+   « Brochage » de la LIB dit où chacune tombe. */
+esd_rail4:{n:"Réseau ESD 4 lignes",cat:"Semi-conducteurs",p:"U",v:"SRV05-4",pk:"ci",pkg:"SOT-23-6",
+  ext:[-40,-60,40,60],pins:[[-40,-20],[-40,20],[40,-20],[40,20],[0,-60],[0,60]],
+  pn:["IO1","IO2","IO3","IO4","VCC","GND"],
+  d(c){RR(c,-25,-40,50,80,4,C_FILL);
+       L(c,-40,-20,-25,-20);L(c,-40,20,-25,20);L(c,40,-20,25,-20);L(c,40,20,25,20);
+       L(c,0,-60,0,-40);L(c,0,40,0,60);ESDTVS(c);
+       TXT(c,"IO1",-15,-20,6,C_TXT);TXT(c,"IO2",-15,20,6,C_TXT);
+       TXT(c,"IO3",15,-20,6,C_TXT);TXT(c,"IO4",15,20,6,C_TXT);
+       TXT(c,"VCC",13,-33,6,C_TXT);TXT(c,"GND",13,33,6,C_TXT);}},
+esd_rail2:{n:"Réseau ESD 2 lignes",cat:"Semi-conducteurs",p:"U",v:"SR05",pk:"ci",pkg:"SOT-23-6",
+  ext:[-40,-60,40,60],pins:[[-40,0],[40,0],[0,-60],[0,60]],
+  pn:["IO1","IO2","VCC","GND"],
+  d(c){RR(c,-25,-40,50,80,4,C_FILL);
+       L(c,-40,0,-25,0);L(c,40,0,25,0);L(c,0,-60,0,-40);L(c,0,40,0,60);ESDTVS(c);
+       TXT(c,"IO1",-15,0,6,C_TXT);TXT(c,"IO2",15,0,6,C_TXT);
+       TXT(c,"VCC",13,-33,6,C_TXT);TXT(c,"GND",13,33,6,C_TXT);}},
+/* PAIRE COMPLÉMENTAIRE N + P dans un boîtier (FDS9934C, DMC2400UV) : dessinée
+   comme sur leurs datasheets, Q1 canal N à gauche, Q2 canal P à droite. */
+mos_np:{n:"MOSFET N + P",cat:"Semi-conducteurs",p:"Q",v:"DMC2400UV",pk:"transistor",pkg:"SOT-23-6",
+  ext:[-80,-40,80,40],pins:[[-80,0],[-20,40],[-20,-40],[20,0],[80,-40],[80,40]],
+  pn:["G1","S1","D1","G2","S2","D2"],
+  d(c){c.save();c.translate(-40,0);LIB.nmos.d(c);c.restore();
+       c.save();c.translate(60,0);LIB.pmos.d(c);c.restore();}},
 /* ---------------- intégrés ---------------- */
 opamp:{n:"AOP",cat:"Intégrés",p:"U",v:"LM358",pk:"ci",pkg:"SOIC-8",pins:[[-40,-20],[-40,20],[60,0],[0,-40],[0,40]],pn:["IN-","IN+","OUT","V+","V-"],
   d(c){L(c,-40,-20,-20,-20);L(c,-40,20,-20,20);L(c,40,0,60,0);

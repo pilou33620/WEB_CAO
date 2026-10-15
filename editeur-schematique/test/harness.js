@@ -2063,6 +2063,9 @@ T("nouveaux symboles schématiques : AOP 5 broches, TVS, ESD, USB, Barrettes, Fe
     { type: "ferrite_bead", expPins: 2, expPkg: "0805", expP: "FB" },
     { type: "tvs_diode", expPins: 2, expPkg: "SOD-323", expP: "D" },
     { type: "esd_array", expPins: 6, expPkg: "SOT-23-6", expP: "U" },
+    { type: "esd_rail4", expPins: 6, expPkg: "SOT-23-6", expP: "U" },
+    { type: "esd_rail2", expPins: 4, expPkg: "SOT-23-6", expP: "U" },
+    { type: "mos_np", expPins: 6, expPkg: "SOT-23-6", expP: "Q" },
     { type: "usb_c_pwr", expPins: 5, expPkg: "USB-C-6P", expP: "J" },
     { type: "usb_c", expPins: 8, expPkg: "USB-C-16P", expP: "J" },
     { type: "usb_micro", expPins: 6, expPkg: "MICRO-USB-B", expP: "J" },
@@ -2099,6 +2102,19 @@ T("nouveaux symboles schématiques : AOP 5 broches, TVS, ESD, USB, Barrettes, Fe
   if(!fam127) throw new Error("Famille Barrettes 1,27 mm absente");
   const b4 = fam127.bases.find(b => b.base.b === "HEADER-1.27-1x4");
   if(!b4 || !b4.fit) throw new Error("HEADER-1.27-1x4 devrait être 'fit' pour header_1x4");
+});
+
+T("symboles à broches nommées : le brochage de la LIB les place (FDS9934C, SR05)",()=>{
+  sheet([],[]);
+  const q=addComp("mos_np",100,100); q.pkg="SOIC-8";
+  brDepuisLib(q,{"Brochage":"G1=2,S1=1,D1=7/8,G2=4,S2=3,D2=5/6"},true);
+  const vu=[0,1,2,3,4,5].map(i=>brPattes(q,i).join("/")).join(" ");
+  if(vu!=="2 1 7/8 4 3 5/6")throw new Error("FDS9934C : "+vu);
+  if(brControles().some(x=>x.id===q.id&&x.niveau==="erreur"))
+    throw new Error("FDS9934C signalé : "+JSON.stringify(brControles()));
+  const u=addComp("esd_rail2",300,100); u.pkg="SOT-143";
+  brDepuisLib(u,{"Brochage":"IO1=2,IO2=3,VCC=4,GND=1"},true);
+  if([0,1,2,3].map(i=>brPatte(u,i)).join()!=="2,3,4,1")throw new Error("SR05 : "+u.pinMap);
 });
 
 T("Gestion LIB : association complète du composant (Part Name, symbole, empreinte PCB, netlist)", () => {
