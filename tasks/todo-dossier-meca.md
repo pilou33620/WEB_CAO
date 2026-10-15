@@ -86,8 +86,8 @@ au-dessus ou en dessous, et la hauteur maximale de chaque face cotée.
 
 ### T6 : `crc32` / `zipBlob` déplacés dans `commun/zip.js`
 Le code est déplacé tel quel. La balise est ajoutée avant `04-fabrication.js`.
-- [ ] Les essais zip existants passent sans retouche (`crc32("123456789")`, marque d'ordre des CSV, contenu)
-- [ ] `fabrication.zip` contient les mêmes fichiers qu'avant
+- [x] Les essais zip existants passent sans retouche (`crc32("123456789")`, marque d'ordre des CSV, contenu)
+- [x] `fabrication.zip` contient les mêmes fichiers qu'avant
 - Vérifier : `BUILD && JS_PCB`
 - Fichiers : `commun/zip.js` (nouveau), `editeur-pcb/js/04-fabrication.js`, `editeur-pcb/editeur-pcb.html`
 - Taille : XS
