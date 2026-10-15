@@ -25334,6 +25334,9 @@ T("IPC-2581 : les cartes d'exemple écrites pour le banc Python, contenu compté
       if(serialize()!==doc)throw new Error(nom+" : l'export a modifié la carte");
       fs.writeFileSync(path.join(dir,nom+".xml"),d.xml);
       fs.writeFileSync(path.join(dir,nom+".attendu.json"),JSON.stringify(ipcAttendu(),null,1));
+      /* le dossier méca de l'éditeur, que la visionneuse doit retrouver
+         (visionneuse-ipc2581/test/harness-sim.js) */
+      fs.writeFileSync(path.join(dir,nom+".meca.json"),JSON.stringify(mecaDossier()));
     }
     /* ce que la carte chargée doit avoir écrit */
     const x=fs.readFileSync(path.join(dir,"exemple-1-charge.xml"),"utf8");

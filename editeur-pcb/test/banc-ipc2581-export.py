@@ -181,6 +181,10 @@ def cas_export(nom):
         SAUTES.append(u"%s : XSD non fourni (--xsd ou IPC2581_XSD)" % nom)
 
     M = ipc2581_json.ipc2581_en_dict(octets, nom + ".xml")
+    # le modele relu, pour le banc de la visionneuse (dossier meca : le meme
+    # dossier que l'editeur, harness-sim.js)
+    with open(os.path.join(DOSSIER, nom + ".modele.json"), "w", encoding="utf-8") as f:
+        json.dump(M, f)
     couches, nets, st = M["couches"], M["nets"], M["stats"]
     fonction = {c: i["f"] for c, i in M["calques"].items()}
     cuivre = [c for c in couches if RE_CUIVRE.search(fonction.get(c, ""))]

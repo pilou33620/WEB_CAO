@@ -157,8 +157,9 @@ réutilise la recherche de T2/T3.
 - La face se lit par `calques`.
 - Le corps vient de `corps`, sinon de la boîte des pastilles avec `corps_estime`.
 - La hauteur vient de `hauteur`, avec `part`, `props.PART_NAME` et `props.MPN`.
-- [ ] Sur le JSON du banc de T9 : face, NPTH, `corps_estime`, épaisseur de repli
-- [ ] Le même composant donne, à 0,01 mm près, le même corps que dans l'éditeur (export IPC de la carte d'exemple)
+- [x] Sur une carte de laboratoire : face, NPTH (libre ou plot de boîtier), `corps_estime`, épaisseur de repli, non-monté
+- [x] Le même composant donne, à 0,01 mm près, le même corps que dans l'éditeur (export IPC de la carte d'exemple)
+  → Sur les 4 exports de banc : mêmes fixations, faces, corps, hauteurs, ouvertures. Chaîne `BUILD && JS_PCB && PY_EXP && JS_VIS`. Les non-montés ne passent pas (la chaîne IPC ne lit pas `populate`).
 - Vérifier : `JS_VIS`
 - Fichiers : `visionneuse-ipc2581/js/08-dossier-meca.js` (nouveau), `visionneuse-ipc2581/test/harness-sim.js`
 - Dépend de : T2, T9

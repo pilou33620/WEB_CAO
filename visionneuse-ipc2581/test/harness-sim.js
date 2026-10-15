@@ -63,6 +63,7 @@ const FICHIERS=[
   path.join(RACINE,"..","editeur-pcb","js","29-draftsman.js"),
   path.join(RACINE,"..","editeur-pcb","js","33-draftsman-export.js"),
   path.join(RACINE,"..","editeur-pcb","js","34-draftsman-vues.js"),
+  path.join(RACINE,"..","commun","dossier-meca.js"),
   path.join(RACINE,"js","08-dossier-meca.js")
 ];
 const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
@@ -198,7 +199,9 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   /* classes d'interface (commun/classes-interface.js) */
   "CLASSES_INTERFACE","familleClasse","titreClasse",
   /* sorties empruntées au Draftsman de l'éditeur */
-  "dfNouvelle","dfTexte","dfCadre","dfPdf","dxfNouveau","dxfContour","dxfOctets"];
+  "dfNouvelle","dfTexte","dfCadre","dfPdf","dxfNouveau","dxfContour","dxfOctets",
+  /* dossier méca */
+  "mecaDonnees","mecaEntreeIpc"];
 
 /* Un seul `eval`, sur les fichiers concaténés : ils se voient l'un
    l'autre comme dans la page, où ils partagent la portée globale. Le "use
@@ -6601,6 +6604,90 @@ T("le DXF du Draftsman se fait sans l'éditeur, arcs du contour retrouvés",()=>
   dxfContour(D,"CONTOUR",P);
   const t=new TextDecoder().decode(dxfOctets(D));
   if(!t.includes("CONTOUR")||!t.includes("ARC"))throw new Error("contour ou arc absent");
+});
+
+/* ---------- dossier méca : l'entrée tirée du modèle IPC-2581 ---------- */
+function carteMeca(){
+  return carte({composants:[
+    /* USB au bord gauche, corps donné par le fichier, avec un plot NPTH */
+    {ref:"J1",pkg:"USB",c:0,x:2,y:20,r:0,m:0,pads:[],pins:[{num:"1",x:0,y:0}],
+     corps:[-2,-3, 2,-3, 2,3, -2,3, -2,-3],hauteur:3.1,props:{PART_NAME:"USB_B"},part:"",val:""},
+    /* SOIC dessous, sans contour de boîtier */
+    {ref:"U1",pkg:"SOIC8",c:1,x:30,y:20,r:90,m:1,pads:[],
+     pins:[{num:"1",x:-2.5,y:-1},{num:"8",x:2.5,y:1}],props:{MPN:"LM358"},part:"LM358",val:""}],
+    percages:[{x:5,y:5,d:3.2,p:"NON_PLATED"},{x:3,y:20,d:0.8,p:"NON_PLATED"},{x:10,y:10,d:0.3,p:"PLATED"}]});
+}
+T("dossier méca, visionneuse : épaisseur de l'empilage quand le fichier ne la donne pas",()=>{
+  carteMeca();
+  const e=mecaEntreeIpc(V.modele);
+  if(Math.abs(e.epaisseur-0.27)>1e-9)throw new Error("épaisseur "+e.epaisseur);
+  if(e.contour.length<4||e.contour[1].x!==60)throw new Error("contour "+JSON.stringify(e.contour));
+});
+T("dossier méca, visionneuse : un NPTH libre est une fixation, celui d'un boîtier non",()=>{
+  carteMeca();
+  const j=mecaDonnees(mecaEntreeIpc(V.modele),[],{});
+  if(j.fixations.length!==1||j.fixations[0].x!==5||j.fixations[0].d!==3.2)throw new Error(JSON.stringify(j.fixations));
+});
+T("dossier méca, visionneuse : face, corps placé, hauteur du fichier, corps estimé",()=>{
+  carteMeca();
+  const j=mecaDonnees(mecaEntreeIpc(V.modele),[],{});
+  const J1=j.composants.find(c=>c.ref==="J1"), U1=j.composants.find(c=>c.ref==="U1");
+  if(J1.face!=="dessus"||J1.hauteur!==3.1||J1.source_hauteur!=="fichier")throw new Error("J1 : "+JSON.stringify(J1));
+  const xs=J1.corps.map(p=>p[0]), ys=J1.corps.map(p=>p[1]);
+  if(Math.min(...xs)!==0||Math.max(...xs)!==4||Math.min(...ys)!==17||Math.max(...ys)!==23)throw new Error("corps J1 "+JSON.stringify(J1.corps));
+  if(!J1.ouverture||J1.ouverture.type!=="bord"||J1.ouverture.bord!=="O")throw new Error("ouverture J1 "+JSON.stringify(J1.ouverture));
+  if(U1.face!=="dessous"||!U1.corps_estime)throw new Error("U1 : "+JSON.stringify(U1));
+  if(!j.avertissements.some(a=>/^U1 : encombrement estimé/.test(a)))throw new Error(j.avertissements.join(" | "));
+});
+T("dossier méca, visionneuse : un repère non monté le reste dans le dossier",()=>{
+  carteMeca();
+  mdlPoserMonte("U1",false);
+  try{
+    const U1=mecaDonnees(mecaEntreeIpc(V.modele),[],{}).composants.find(c=>c.ref==="U1");
+    if(U1.monte!==false)throw new Error(JSON.stringify(U1));
+  }finally{
+    mdlPoserMonte("U1",true);    // la liste est mémorisée par fichier (localStorage)
+    carte();                     // les essais asynchrones partent de la carte par défaut
+  }
+});
+
+/* Le même dossier que l'éditeur : ses exports IPC-2581 de banc, relus par la
+   chaîne Python (editeur-pcb/test/banc-ipc2581-export.py écrit le modèle,
+   le banc de l'éditeur le dossier attendu). Sans eux, l'essai le dit. */
+T("dossier méca, visionneuse : sur un export de l'éditeur, les mêmes trous, corps, hauteurs et ouvertures",()=>{
+  const dir=path.join(RACINE,"..","editeur-pcb","dist","essai-ipc2581");
+  const noms=fs.existsSync(dir)?fs.readdirSync(dir).filter(f=>f.endsWith(".modele.json")).map(f=>f.slice(0,-12))
+    .filter(n=>fs.existsSync(path.join(dir,n+".meca.json"))):[];
+  if(!noms.length){console.log("      (sauté : lancer le banc de l'éditeur puis banc-ipc2581-export.py)");return;}
+  const pres=(a,b,q)=>{if(Math.abs(a-b)>0.01)throw new Error(q+" : "+a+" ≠ "+b);};
+  const boite=P=>[Math.min(...P.map(p=>p[0])),Math.min(...P.map(p=>p[1])),Math.max(...P.map(p=>p[0])),Math.max(...P.map(p=>p[1]))];
+  try{
+    for(const n of noms){
+      const A=JSON.parse(fs.readFileSync(path.join(dir,n+".meca.json"),"utf8"));
+      mdlCharger(JSON.parse(fs.readFileSync(path.join(dir,n+".modele.json"),"utf8")),n+".xml");
+      const J=mecaDonnees(mecaEntreeIpc(V.modele),[],{});
+      pres(J.carte.epaisseur,A.carte.epaisseur,n+" épaisseur");
+      const tri=l=>l.slice().sort((a,b)=>a.x-b.x||a.y-b.y);
+      const fa=tri(A.fixations), fj=tri(J.fixations);
+      if(fa.length!==fj.length)throw new Error(n+" : "+fj.length+" fixations pour "+fa.length);
+      fa.forEach((f,i)=>{pres(fj[i].x,f.x,n+" "+f.id+" x");pres(fj[i].y,f.y,n+" "+f.id+" y");pres(fj[i].d,f.d,n+" "+f.id+" Ø");});
+      const parRef=new Map(J.composants.map(c=>[c.ref,c]));
+      if(J.composants.length!==A.composants.length)throw new Error(n+" : "+J.composants.length+" composants pour "+A.composants.length);
+      for(const a of A.composants){
+        const c=parRef.get(a.ref);
+        if(!c)throw new Error(n+" : "+a.ref+" absent");
+        if(c.face!==a.face)throw new Error(n+" "+a.ref+" face "+c.face);
+        const bc=boite(c.corps), ba=boite(a.corps);
+        bc.forEach((v,i)=>pres(v,ba[i],n+" "+a.ref+" corps"));
+        if(c.corps_estime)throw new Error(n+" "+a.ref+" : corps estimé alors que l'export l'écrit");
+        if((c.hauteur==null)!==(a.hauteur==null)||(a.hauteur!=null&&Math.abs(c.hauteur-a.hauteur)>1e-6))
+          throw new Error(n+" "+a.ref+" hauteur "+c.hauteur+" ≠ "+a.hauteur);
+        const oa=a.ouverture, oc=c.ouverture;
+        if(!!oa!==!!oc||(oa&&(oa.type!==oc.type||oa.bord!==oc.bord||oa.face!==oc.face)))
+          throw new Error(n+" "+a.ref+" ouverture "+JSON.stringify(oc)+" ≠ "+JSON.stringify(oa));
+      }
+    }
+  }finally{carte();}
 });
 
 (async()=>{
