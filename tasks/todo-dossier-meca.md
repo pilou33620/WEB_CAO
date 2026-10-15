@@ -134,8 +134,8 @@ La LIB vient de `pcbChargerCsvLib()`.
 `<Package><Outline><Polygon>` donne `corps`, et l'attribut `height` du
 `<Package>` donne `hauteur`. Les clés sont absentes quand le fichier ne les
 porte pas.
-- [ ] Une carte d'essai avec `height` et `<Outline>` donne `hauteur` et `corps` par composant, dans le repère de la carte (rotation et miroir appliqués comme pour les pastilles)
-- [ ] Sans eux, rien ne change dans le modèle (les essais existants passent)
+- [x] Une carte d'essai avec `height` et `<Outline>` donne `hauteur` et `corps` par composant, en coordonnées du boîtier comme les broches (la visionneuse les place, T11) ; recopié dans WEB_ANTENNA (CI)
+- [x] Sans eux, rien ne change dans le modèle (les essais existants passent)
 - Vérifier : `PY_VIS && COMP`
 - Fichiers : `python/ipc2581_data.py`, `python/ipc2581_parser.py`, `python/ipc2581_json.py`, `visionneuse-ipc2581/test/banc-essai.py`
 - Taille : M

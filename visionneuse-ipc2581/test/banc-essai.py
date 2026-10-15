@@ -1255,6 +1255,45 @@ def rugosite_lisse_declaree():
 T(u"un cuivre declare lisse (0) se distingue d'une rugosite absente", rugosite_lisse_declaree)
 
 
+# -- Dossier mecanique : corps et hauteur du boitier ---------------------------
+def _r1(m):
+    return next(c for c in m["composants"] if c["ref"] == "R1")
+
+
+def hauteur_du_boitier():
+    proche(_r1(MODELE).get("hauteur", 0), 0.45, u"hauteur du <Package height>")
+    vrai("corps" not in _r1(MODELE), u"sans <Outline>, pas de corps invente")
+
+
+T(u"la hauteur du boitier vient de <Package height>", hauteur_du_boitier)
+
+
+def corps_du_boitier():
+    contour = (u'<Outline><Polygon><PolyBegin x="-1.6" y="-0.8"/>'
+               u'<PolyStepSegment x="1.6" y="-0.8"/><PolyStepSegment x="1.6" y="0.8"/>'
+               u'<PolyStepSegment x="-1.6" y="0.8"/><PolyStepSegment x="-1.6" y="-0.8"/>'
+               u'</Polygon><LineDesc lineWidth="0.1"/></Outline>')
+    xml = CARTE.replace(u'<Package name="R0603" type="CHIP" height="0.45">',
+                        u'<Package name="R0603" type="CHIP" height="0.45">' + contour)
+    vrai(contour in xml, u"la carte d'essai n'a pas ete construite")
+    c = _r1(ipc2581_json.ipc2581_en_dict(xml.encode("utf-8"), "corps.xml"))
+    egal(c.get("corps"), [-1.6, -0.8, 1.6, -0.8, 1.6, 0.8, -1.6, 0.8, -1.6, -0.8],
+         u"corps en coordonnees du boitier, comme les broches")
+
+
+T(u"le corps du boitier vient de <Package><Outline>", corps_du_boitier)
+
+
+def boitier_muet():
+    xml = CARTE.replace(u'<Package name="R0603" type="CHIP" height="0.45">',
+                        u'<Package name="R0603" type="CHIP">')
+    c = _r1(ipc2581_json.ipc2581_en_dict(xml.encode("utf-8"), "muet.xml"))
+    vrai("hauteur" not in c and "corps" not in c, u"un boitier muet n'ajoute aucune cle : %r" % sorted(c))
+
+
+T(u"un boitier sans hauteur ni contour reste muet", boitier_muet)
+
+
 # =============================================================================
 print(u"-" * 62)
 if ECHECS:
