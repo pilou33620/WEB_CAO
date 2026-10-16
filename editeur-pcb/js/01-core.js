@@ -1795,6 +1795,7 @@ function padClone(q){
   if(q.thermalGap!=null)out.thermalGap=Math.max(0,r4(q.thermalGap));
   const nom=padNom(q.nom);
   if(nom)out.nom=nom;
+  if(q.slot>out.drill&&out.drill>0)out.slot=r4(q.slot);
   /* masque et pâte propres à la pastille (carte importée) */
   if(q.mask!=null&&isFinite(q.mask))out.mask=r4(q.mask);
   if(q.noMask)out.noMask=true;
@@ -2278,6 +2279,7 @@ function padsWorld(fp){
     if(q.pts)o.pts=fp.side?q.pts.map(p=>({x:-p.x,y:p.y})):q.pts;
     if(q.chamfer!=null)o.chamfer=q.chamfer;
     if(q.chamferCorners)o.chamferCorners=q.chamferCorners;
+    if(q.slot)o.slot=q.slot;
     for(const k of ["thermalSpokes","thermalAngle","thermalWidth","thermalGap",
                     "mask","noMask","paste","noPaste","parCouche"])
       if(q[k]!=null)o[k]=q[k];
@@ -2301,9 +2303,25 @@ function trousMonde(){
   for(const fp of S.fps){
     if(!fp.holes||!fp.holes.length)continue;
     const T=fpXform(fp);
-    fp.holes.forEach((h,i)=>{const c=T(h.x,h.y);out.push({x:r3(c.x),y:r3(c.y),d:h.d,fp,i});});
+    const a=fp.rot||0, m=fp.side?-1:1;
+    fp.holes.forEach((h,i)=>{
+      const c=T(h.x,h.y), o={x:r3(c.x),y:r3(c.y),d:h.d,fp,i};
+      if(h.w>h.d){o.w=h.w;o.rot=padRot(a+m*(h.rot||0));}   // l'angle tourne et passe au miroir comme une pastille
+      out.push(o);
+    });
   }
   return out;
+}
+/* Axe d'un perçage, en coordonnées monde : ses deux bouts et sa largeur.
+   Pastille de padsWorld (rot en radians, fente `slot` le long du grand côté)
+   ou trou de trousMonde / S.holes (rot en degrés, longueur `w`). Un perçage
+   rond rend deux bouts confondus : chaque lecteur garde alors son calcul. */
+function axePercage(o){
+  let d,L,ang;
+  if(o.drill!=null){d=o.drill;L=o.slot||0;ang=(o.rot||0)+(o.h>o.w?Math.PI/2:0);}
+  else{d=o.d;L=o.w||0;ang=(o.rot||0)*Math.PI/180;}
+  const k=L>d?(L-d)/2:0, dx=k*Math.cos(ang), dy=k*Math.sin(ang);
+  return {x1:o.x-dx,y1:o.y-dy,x2:o.x+dx,y2:o.y+dy,d};
 }
 function padLayers(fp,pad){
   if(pad.drill>0){const L=[];for(let i=0;i<S.cu;i++)L.push(i);return L;}

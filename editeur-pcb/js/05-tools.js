@@ -174,6 +174,8 @@ function dPads(a){
        qui porte le net, le nom n'est qu'une étiquette qui l'accompagne */
     const nom=padNom(q.nom);
     if(nom)o.nom=nom;
+    /* perçage oblong : longueur hors tout, plus grande que la largeur (drill) */
+    if(o.drill>0&&+q.slot>o.drill)o.slot=r4(dRange(q.slot,o.drill,o.drill,200));
     if(q.mask!=null&&isFinite(+q.mask))o.mask=r4(clamp(+q.mask,-5,5));
     if(q.noMask)o.noMask=true;
     if(q.paste!=null&&isFinite(+q.paste))o.paste=r4(clamp(+q.paste,-5,5));
@@ -215,9 +217,19 @@ function dHoles(a){
     if(!h||typeof h!=="object")continue;
     const x=+h.x, y=+h.y;
     if(!Number.isFinite(x)||!Number.isFinite(y))continue;
-    out.push({x:clamp(r4(x),-COORD,COORD), y:clamp(r4(y),-COORD,COORD), d:r4(dRange(h.d,3.2,0.4,30.0))});
+    const o={x:clamp(r4(x),-COORD,COORD), y:clamp(r4(y),-COORD,COORD), d:r4(dRange(h.d,3.2,0.4,30.0))};
+    trouOblong(h,o);
+    out.push(o);
   }
   return out.length?out:null;
+}
+/* Trou oblong : `w` longueur hors tout (plus grande que la largeur `d`),
+   `rot` angle de la longueur en degrés. Sinon le trou reste rond, sans clé. */
+function trouOblong(h,o){
+  if(!(+h.w>o.d))return;
+  o.w=r4(dRange(h.w,o.d,o.d,60));
+  const r=padRot(h.rot);
+  if(r)o.rot=r;
 }
 /* rectangle de sérigraphie imposé : quatre nombres, ordonnés, non dégénéré */
 function dBody(b){
@@ -619,6 +631,7 @@ function normHole(h,i){
     y:r4(y),
     d:r4(d)
   };
+  trouOblong(h,out);
   if(h.locked)out.locked=true;
   return out;
 }

@@ -169,7 +169,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* empreintes dessinees a la main et bibliotheque personnelle */
   "fpFree","padClone","fpAutoBody","fpFreeze","fpGeneric","fpSyncPins",
   "fpMovePad","fpSetPad","fpAddPad","fpDelPad","fpSetPins","fpSetBody",
-  "dPads","dHoles","trousMonde","fpTrousDe","drawHoles","dBody","fpDefOf","normFpDef","fpApplyDef","fpLibAll","fpLibWrite",
+  "dPads","dHoles","trousMonde","fpTrousDe","axePercage","drawHoles","dBody","fpDefOf","normFpDef","fpApplyDef","fpLibAll","fpLibWrite",
   "fpLibNames","fpLibGet","fpLibPut","fpLibDel","fpLibFile","fpLibParse",
   "fpLibMerge","FPLIB_KEY","FPLIB_FORMAT",
   "FPLIB","FPLIB_FICHIER","fpLibCharger","fpLibFichier","fpLibPourBoitier",
@@ -6165,6 +6165,42 @@ T("trous NPTH : îlots, IPC-2581 et ECO suivent le dégagement et l'empreinte (r
     pcbAppliquerEco([{type:"BOITIER",active:true,ref:"J1",newPkg:"RJ45-ECO",newPins:2}]);
     if(JSON.stringify(j.holes)!==JSON.stringify([{x:0,y:3,d:3.25}]))throw new Error("ECO boîtier : trous "+JSON.stringify(j.holes));
   }finally{PCB_LIB_CACHE.delete(pkgKey("RJ45-ECO"));loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);}
+});
+T("perçages oblongs : lus, gardés, passés au monde (M2-1)",()=>{
+  loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);clearSel();
+  const memeAxe=(a,p,q,msg)=>{
+    const ok=(u,v)=>Math.abs(u[0]-v[0])<1e-6&&Math.abs(u[1]-v[1])<1e-6;
+    const A=[a.x1,a.y1],B=[a.x2,a.y2];
+    if(!((ok(A,p)&&ok(B,q))||(ok(A,q)&&ok(B,p))))throw new Error(msg+" : "+JSON.stringify(a));
+  };
+  const def=normFpDef({name:"FENTE",pins:1,style:"row",
+    pads:[{n:1,x:0,y:0,w:2,h:1,shape:"oval",drill:0.6,slot:1.6},{n:2,x:5,y:0,w:1,h:1,shape:"circ",drill:0.6,slot:0.5}],
+    holes:[{x:0,y:3,d:1,w:3,rot:30},{x:0,y:-3,d:1,w:0.8}]});
+  if(def.pads[0].slot!==1.6)throw new Error("slot perdu à la lecture");
+  if("slot" in def.pads[1])throw new Error("slot plus court que le perçage : la pastille reste ronde");
+  if(def.holes[0].w!==3||def.holes[0].rot!==30)throw new Error("trou oblong perdu : "+JSON.stringify(def.holes[0]));
+  if("w" in def.holes[1]||"rot" in def.holes[1])throw new Error("w ≤ d : le trou reste rond, sans clé");
+  if(padClone(def.pads[0]).slot!==1.6)throw new Error("padClone perd la fente");
+  const fp=mkFp("J1","","FENTE",2);fp.x=0;fp.y=0;fpApplyDef(fp,def);S.fps.push(fp);touch();
+  memeAxe(axePercage(padsWorld(fp)[0]),[-0.5,0],[0.5,0],"fente à 0°");
+  const rond=axePercage(padsWorld(fp)[1]);
+  if(rond.x1!==rond.x2||rond.y1!==rond.y2||rond.d!==0.6)throw new Error("perçage rond : un point : "+JSON.stringify(rond));
+  fp.rot=90;touch();
+  memeAxe(axePercage(padsWorld(fp)[0]),[0,-0.5],[0,0.5],"fente à 90°");
+  /* trou oblong d'empreinte : rot local 30°, empreinte en (40 ; 30) à 90° → 120°, face dessous → 60° */
+  fp.x=40;fp.y=30;touch();
+  const bout=deg=>{const a=deg*Math.PI/180;return [[37+Math.cos(a),30+Math.sin(a)],[37-Math.cos(a),30-Math.sin(a)]];};
+  let t=trousMonde().find(h=>h.fp===fp&&h.i===0);
+  memeAxe(axePercage(t),...bout(120),"trou oblong, face dessus à 90°");
+  fp.side=1;touch();
+  t=trousMonde().find(h=>h.fp===fp&&h.i===0);
+  memeAxe(axePercage(t),...bout(60),"trou oblong, face dessous à 90°");
+  /* trou de carte oblong : aller-retour du document */
+  S.holes=[normHole({x:10,y:10,d:1.2,w:4,rot:45},0)];
+  const relu=normDoc(JSON.parse(JSON.stringify(docObj()))).holes[0];
+  if(relu.w!==4||relu.rot!==45)throw new Error("trou de carte oblong relu : "+JSON.stringify(relu));
+  if("w" in normHole({x:1,y:1,d:3.2},0))throw new Error("trou de carte rond : aucune clé w");
+  loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);
 });
 T("bibliothèque : lecture défensive et fusion des noms",()=>{
   fpLibRaz();

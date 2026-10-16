@@ -19,11 +19,11 @@ Bancs :
 - `dHoles` et `normHole` gardent `w` (s'il dépasse `d`) et `rot`.
 - `trousMonde` passe `rot` au monde.
 - `axePercage` rend l'axe de perçage d'une pastille ou d'un trou.
-- [ ] Pastille 2,0 × 1,0, `drill` 0,6, `slot` 1,6, à 0° : axe de ±0,5 en x ; même pastille tournée de 90° : axe en y
-- [ ] Trou d'empreinte `{d:1, w:3, rot:0}` sur une empreinte à 90° puis face dessous : extrémités attendues
-- [ ] Trou de carte oblong : aller-retour `docObj` → `normDoc`
-- [ ] Rond (`slot` absent, `w ≤ d`) : axe aux deux points confondus, aucune clé ajoutée
-- [ ] `BUILD` puis `JS_PCB` passent
+- [x] Pastille 2,0 × 1,0, `drill` 0,6, `slot` 1,6, à 0° : axe de ±0,5 en x ; même pastille tournée de 90° : axe en y
+- [x] Trou d'empreinte `{d:1, w:3, rot:0}` sur une empreinte à 90° puis face dessous : extrémités attendues
+- [x] Trou de carte oblong : aller-retour `docObj` → `normDoc`
+- [x] Rond (`slot` absent, `w ≤ d`) : axe aux deux points confondus, aucune clé ajoutée
+- [x] `BUILD` puis `JS_PCB` passent
 
 ## Phase 2 : bout en bout
 

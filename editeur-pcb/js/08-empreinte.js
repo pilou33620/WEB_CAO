@@ -32,7 +32,7 @@ function fpDefOf(fp,name){
     const b=bodyOf(fp);
     def.body={x1:r4(b.x1),y1:r4(b.y1),x2:r4(b.x2),y2:r4(b.y2)};
   }
-  if(fp.holes&&fp.holes.length)def.holes=fp.holes.map(h=>({x:h.x,y:h.y,d:h.d}));
+  if(fp.holes&&fp.holes.length)def.holes=fp.holes.map(h=>({...h}));
   return def;
 }
 /* Lecture défensive : une définition peut venir d'un fichier écrit à la main,
@@ -78,7 +78,7 @@ function fpApplyDef(fp,def){
   }
   /* les trous NPTH sont la forme de l'empreinte, comme ses pastilles : ils
      viennent avec la définition et partent avec elle */
-  if(d.holes)fp.holes=d.holes.map(h=>({x:h.x,y:h.y,d:h.d}));
+  if(d.holes)fp.holes=d.holes.map(h=>({...h}));
   else delete fp.holes;
   /* une broche câblée ne doit jamais se retrouver sans pastille */
   const w=fpWiredPins(fp);
