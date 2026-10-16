@@ -59,10 +59,10 @@ Bancs :
 ## Phase 3 : Gestion LIB
 
 ### T6 : saisir et dessiner les fentes (M2-2, Gestion LIB)
-- [ ] Tableau des pastilles : colonne Fente ; tableau des trous : colonnes L et Rot
-- [ ] Le moteur dessine la fente de la pastille et le trou oblong (y vers le bas)
-- [ ] Champs numériques forcés en nombre (garde de `banc-repere-pcb.js`)
-- [ ] `JS_LIB` passe
+- [x] Tableau des pastilles : colonne Fente ; tableau des trous : colonnes L et Rot
+- [x] Le moteur dessine la fente de la pastille et le trou oblong (y vers le bas)
+- [x] Champs numériques forcés en nombre (garde de `banc-repere-pcb.js`)
+- [x] `JS_LIB` passe
 
 ## Phase 4 : clôture
 

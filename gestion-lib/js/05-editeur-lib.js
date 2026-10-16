@@ -1199,6 +1199,7 @@ function remplirElementsEditeur() {
             </select>
           </td>
           <td><input type="number" step="0.1" data-field="drill" value="${+(p.drill || 0) || 0}"></td>
+          <td><input type="number" step="0.1" data-field="slot" value="${+(p.slot || 0) || 0}" title="Fente : longueur hors tout du perçage oblong (0 = rond)"></td>
           <td style="width:30px; text-align:center;">
             <button class="tb mini" style="color:var(--red); padding:1px 5px;" onclick="editeurSupprimerPad(${idx})" title="Supprimer">✕</button>
           </td>
@@ -1222,6 +1223,7 @@ function remplirElementsEditeur() {
               <th>H</th>
               <th>Forme</th>
               <th>Perçage</th>
+              <th title="Longueur hors tout d'un perçage oblong, le long du grand côté (0 = rond)">Fente</th>
               <th></th>
             </tr>
           </thead>
@@ -1234,12 +1236,14 @@ function remplirElementsEditeur() {
         <button class="tb mini" onclick="editeurChangerOutil('trou')" title="Poser un trou au clic sur le plan">⊕ Poser un trou</button>
       </div>
       <table class="editable-items-table">
-        <thead><tr><th>X</th><th>Y</th><th>Ø</th><th></th></tr></thead>
+        <thead><tr><th>X</th><th>Y</th><th>Ø</th><th title="Longueur hors tout d'un trou oblong (0 = rond)">L</th><th title="Angle de la longueur, en degrés">Rot</th><th></th></tr></thead>
         <tbody id="tbodyTrousEditeur">${(data.holes || []).map((t, idx) => `
           <tr data-idx="${idx}">
             <td><input type="number" step="0.05" data-field="x" value="${+t.x || 0}"></td>
             <td><input type="number" step="0.05" data-field="y" value="${+t.y || 0}"></td>
             <td><input type="number" step="0.05" min="0.4" max="30" data-field="d" value="${+t.d || 3.2}"></td>
+            <td><input type="number" step="0.05" min="0" data-field="w" value="${+t.w || 0}"></td>
+            <td><input type="number" step="15" data-field="rot" value="${+t.rot || 0}"></td>
             <td style="width:30px; text-align:center;">
               <button class="tb mini" style="color:var(--red); padding:1px 5px;" onclick="editeurSupprimerTrou(${idx})" title="Supprimer">✕</button>
             </td>

@@ -49,6 +49,16 @@ for (const nom of ["editeurSnap", "editeurPointerDown"])
 assert.ok(g.editeurPointerDown({ button: 0, clientX: 0, clientY: 0 }), "le clic de l'outil Trou est pris");
 const t = g.EDITEUR_LIB.data.holes[1];
 assert.ok(t && Math.abs(t.x - 1.05) < 1e-9 && Math.abs(t.y + 2) < 1e-9 && t.d === 2.5, "trou pose sur la grille, au diametre du precedent : " + JSON.stringify(t));
+// 3 bis. Fentes : la pastille 2,4 x 1,2 a fente 1,8 x 0,6 dessine deux demi-cercles
+// de rayon 0,3 a +-0,6 de son centre ; le trou oblong w 3 x d 1 aussi, a +-1
+const arcs2 = [];
+const ctx3 = new Proxy({}, { get: (_, k) => k === "arc" ? (x, y, rr) => arcs2.push([x, y, rr]) : () => {}, set: () => true });
+r.fp = { pads: [{ n: 1, x: 0, y: 0, w: 2.4, h: 1.2, shape: "oval", drill: 0.6, slot: 1.8 }], holes: [{ x: 5, y: 0, d: 1, w: 3, rot: 0 }] };
+r._drawPads(ctx3);
+const z = r.zoom, pres = (x, rr) => arcs2.some(a => Math.abs(a[0] - x) < 1e-9 && Math.abs(a[2] - rr) < 1e-9);
+assert.ok(pres(0.6 * z, 0.3 * z) && pres(-0.6 * z, 0.3 * z), "fente de pastille dessinee : " + JSON.stringify(arcs2));
+arcs2.length = 0; r._drawHoles(ctx3);
+assert.ok(pres(1 * z, 0.5 * z) && pres(-1 * z, 0.5 * z), "trou oblong dessine : " + JSON.stringify(arcs2));
 // 4. Un champ numerique ne recoit jamais une valeur du fichier telle quelle : un
 // JSON (ou une reponse de l'assistant) qui porterait '"><img onerror=...>' dans x
 // en ferait du HTML. Forcee en nombre (+) ou passee par n() de l'editeur.

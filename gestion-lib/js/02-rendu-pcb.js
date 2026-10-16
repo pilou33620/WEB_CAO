@@ -17,6 +17,19 @@ const PCB_COLORS = {
   selection: "#38bdf8"
 };
 
+// Gélule centrée sur l'origine : deux demi-cercles de rayon r à ±k, le long
+// de x (ou de y si `vertical`) — le contour d'un perçage oblong
+function gelule(ctx, k, r, vertical) {
+  if (vertical) {
+    ctx.arc(0, -k, r, Math.PI, 2 * Math.PI);
+    ctx.arc(0, k, r, 0, Math.PI);
+  } else {
+    ctx.arc(k, 0, r, -Math.PI / 2, Math.PI / 2);
+    ctx.arc(-k, 0, r, Math.PI / 2, (3 * Math.PI) / 2);
+  }
+  ctx.closePath();
+}
+
 class PcbRenderer {
   constructor(canvas) {
     this.canvas = canvas;
@@ -272,10 +285,16 @@ class PcbRenderer {
     for (const t of this.fp.holes) {
       const r = ((t.d || 3.2) / 2) * z;
       ctx.fillStyle = PCB_COLORS.drill;
-      ctx.beginPath(); ctx.arc(t.x * z, t.y * z, r, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = PCB_COLORS.silk;
       ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.arc(t.x * z, t.y * z, r, 0, Math.PI * 2); ctx.stroke();
+      if (t.w > t.d) {               // trou oblong : longueur w, angle rot (degrés)
+        ctx.save(); ctx.translate(t.x * z, t.y * z); ctx.rotate(((t.rot || 0) * Math.PI) / 180);
+        for (const f of ["fill", "stroke"]) { ctx.beginPath(); gelule(ctx, ((t.w - t.d) / 2) * z, r, false); ctx[f](); }
+        ctx.restore();
+      } else {
+        ctx.beginPath(); ctx.arc(t.x * z, t.y * z, r, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(t.x * z, t.y * z, r, 0, Math.PI * 2); ctx.stroke();
+      }
       const c = Math.min(r, 6);
       ctx.beginPath();
       ctx.moveTo(t.x * z - c, t.y * z); ctx.lineTo(t.x * z + c, t.y * z);
@@ -316,12 +335,13 @@ class PcbRenderer {
         ctx.fillRect(-pw / 2, -ph / 2, pw, ph);
       }
 
-      // Perçage si traversant
+      // Perçage si traversant : rond, ou fente le long du grand côté
       if (isThru) {
         const dr = (q.drill * z) / 2;
         ctx.fillStyle = PCB_COLORS.drill;
         ctx.beginPath();
-        ctx.arc(0, 0, dr, 0, Math.PI * 2);
+        if (q.slot > q.drill) gelule(ctx, ((q.slot - q.drill) / 2) * z, dr, q.h > q.w);
+        else ctx.arc(0, 0, dr, 0, Math.PI * 2);
         ctx.fill();
       }
 
