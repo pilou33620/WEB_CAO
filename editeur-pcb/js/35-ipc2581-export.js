@@ -542,7 +542,7 @@ function ipc2581Document(opts){
   const n=S.cu, cuN=ipcNomsCuivre();
   const base=fabBase(), STEP=ipcNom(base,"CARTE"), BOM=ipcNom(base+"_BOM","BOM");
   const date=opts.date||new Date().toISOString().replace(/\.\d+Z$/,"Z");
-  const stats={composants:0,nets:0,pistes:0,arcs:0,vias:0,trous:0,trousNpth:0,
+  const stats={composants:0,nets:0,pistes:0,arcs:0,vias:0,trous:0,trousNpth:0,fentes:0,
                pastillesPercees:0,zones:0,ilots:0,approx:0,contrePercages:0,arcsContour:0,
                classes:0,paires:0,contraintes:0,groupes:0};
 
@@ -1089,15 +1089,33 @@ function ipc2581Document(opts){
     percer(a,b,"V|"+(nt||"")+"|"+ps,[["net",nt],["padUsage","VIA"],["geometry",ps]],H(v.drill,"VIA",v.x,v.y,cpVias.get(v)));
     stats.vias++;stats.trous++;
   }
+  /* Une fente ne se décrit pas en <Hole> : elle va, comme chez KiCad
+     (pcb_io_ipc2581.cpp, addSlotCavity), dans un <SlotCavity> d'un calque
+     ROUT — position, angle de la grande longueur, Oval longueur × largeur */
+  const fentes=[];
+  let fente=1;
+  const slot=(o,L,plaque,nt)=>{
+    const ax=axePercage(o), r=rotNorme(Math.atan2(ax.y2-ax.y1,ax.x2-ax.x1));
+    fentes.push(["Set",[["net",nt||null]],[["SlotCavity",[["name","SLOT"+(fente++)],["platingStatus",plaque?"PLATED":"NONPLATED"],
+      ["plusTol","0"],["minusTol","0"]],[["Location",[["x",X(o.x)],["y",Y(o.y)]]],xform(r,false),
+      ["Oval",[["width",ipcN(L)],["height",ipcN(ax.d)]]]].filter(Boolean)]]]);
+    stats.fentes++;stats.trous++;
+  };
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
       if(!(q.drill>0))continue;
       const nt=net(q.net), ps=pilePastille(fp,q);
+      stats.pastillesPercees++;
+      if(q.slot>q.drill){slot(q,q.slot,true,nt);continue;}
       percer(0,n-1,"T|"+(nt||"")+"|"+ps,[["net",nt],["padUsage","TERMINATION"],["geometry",ps]],H(q.drill,"PLATED",q.x,q.y));
-      stats.pastillesPercees++;stats.trous++;
+      stats.trous++;
     }
   const npth=[];
-  for(const h of trousMonde())if(h.d>0){npth.push(H(h.d,"NONPLATED",h.x,h.y));stats.trousNpth++;stats.trous++;}
+  for(const h of trousMonde())if(h.d>0){
+    stats.trousNpth++;
+    if(h.w>h.d){slot(h,h.w,false,"");continue;}
+    npth.push(H(h.d,"NONPLATED",h.x,h.y));stats.trous++;
+  }
   const calquesPercage=[], lfPercage=[];
   for(const [k,M] of [...percages].sort((p,q)=>{
       const a=p[0].split("-").map(Number), b=q[0].split("-").map(Number);
@@ -1111,6 +1129,11 @@ function ipc2581Document(opts){
     calquesPercage.push(["Layer",[["name","PERCAGE_NPTH"],["layerFunction","DRILL"],["side","ALL"],["polarity","POSITIVE"]],
       [["Span",[["fromLayer",cuN[0]],["toLayer",cuN[n-1]]]]]]);
     lfPercage.push(["LayerFeature",[["layerRef","PERCAGE_NPTH"]],[["Set",[],npth]]]);
+  }
+  if(fentes.length){
+    calquesPercage.push(["Layer",[["name","FENTES"],["layerFunction","ROUT"],["side","ALL"],["polarity","POSITIVE"]],
+      [["Span",[["fromLayer",cuN[0]],["toLayer",cuN[n-1]]]]]]);
+    lfPercage.push(["LayerFeature",[["layerRef","FENTES"]],fentes]);
   }
   /* le contre-perçage : un calque par passe, le foret au diamètre du via
      plus le surperçage, le <Span> de la face à la dernière couche retirée

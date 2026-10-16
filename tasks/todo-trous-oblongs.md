@@ -48,11 +48,12 @@ Bancs :
 - [x] `JS_PCB` passe
 
 ### T5 : IPC-2581 SlotCavity (M2-5)
-- [ ] Calque `…SLOT` (fonction `ROUT`), `SlotCavity` `PLATED` / `NONPLATED` avec `Location`, `Xform` et `Oval` (width ≥ height)
-- [ ] La fente ne sort plus en `Hole` rond
-- [ ] `PY_EXP` passe, avec la validation XSD
-- [ ] Carte sans fente : IPC-2581 identique au bit près
-- [ ] `JS_PCB` passe
+- [x] Calque `…SLOT` (fonction `ROUT`), `SlotCavity` `PLATED` / `NONPLATED` avec `Location`, `Xform` et `Oval` (width ≥ height)
+- [x] La fente ne sort plus en `Hole` rond
+- [x] `PY_EXP` passe, avec la validation XSD
+  → nouvelle carte d'essai `exemple-1-fentes` (sans dossier méca : la visionneuse ne lit pas encore SlotCavity) ; 75 cas, 5 exports conformes à IPC-2581C.xsd (copie KiCad, hors dépôt) ; visionneuse 226 essais
+- [x] Carte sans fente : IPC-2581 identique au bit près
+- [x] `JS_PCB` passe
 **Point de contrôle 2**
 
 ## Phase 3 : Gestion LIB

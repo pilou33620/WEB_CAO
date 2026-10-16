@@ -6251,6 +6251,26 @@ T("perçages oblongs : dessinés en vraie forme, dégagés dans les zones (M2-2,
     if(iO===iR)throw new Error("IPC-2581 : le dégagement de la fente doit différer de celui du rond");
   }finally{loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);}
 });
+T("perçages oblongs : IPC-2581C en SlotCavity, sur un calque ROUT (M2-5)",()=>{
+  loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);clearSel();
+  try{
+    const date={date:"2026-10-16T00:00:00Z"};
+    const fp=mkFp("J1","","FENTE",1);fp.x=40;fp.y=30;S.fps.push(fp);
+    fpApplyDef(fp,{name:"FENTE",pins:1,style:"row",pads:[{n:1,x:0,y:0,w:2.4,h:1.2,shape:"oval",drill:0.6,slot:1.8}]});
+    fp.nets={1:"GND"};
+    S.holes=[normHole({x:20,y:20,d:1,w:3,rot:90},0)];touch();
+    const d=ipc2581Document(date), x=d.xml;
+    if(!/<Layer name="FENTES" layerFunction="ROUT"/.test(x))throw new Error("calque ROUT des fentes absent");
+    const sc=x.match(/<SlotCavity [^>]*>[\s\S]*?<\/SlotCavity>/g)||[];
+    if(sc.length!==2)throw new Error(sc.length+" SlotCavity pour 2 fentes");
+    const pl=sc.find(s=>/platingStatus="PLATED"/.test(s)), np=sc.find(s=>/platingStatus="NONPLATED"/.test(s));
+    if(!pl||!/<Oval width="1\.8" height="0\.6"/.test(pl))throw new Error("fente métallisée : "+pl);
+    if(!np||!/<Oval width="3" height="1"/.test(np)||!/<Xform rotation="270"|<Xform rotation="90"/.test(np))throw new Error("fente NPTH : "+np);
+    if(!/<Location /.test(np))throw new Error("SlotCavity sans Location");
+    if(/<Hole [^>]*diameter="0\.6"/.test(x))throw new Error("la fente ne doit plus sortir en Hole rond");
+    if(d.stats.fentes!==2)throw new Error("stats.fentes : "+d.stats.fentes);
+  }finally{loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);}
+});
 T("bibliothèque : lecture défensive et fusion des noms",()=>{
   fpLibRaz();
   if(!fpLibParse("ceci n'est pas du json").err)
@@ -25601,8 +25621,9 @@ function ipcAttendu(){
       if(padLayers(fp,q).includes(z.l)&&dans(q)&&(q.net||"")!==(z.net||""))dehors.push([X(q.x),Y(q.y)]);
     zones.push({couche:nomCu(z.l),net:z.net,dedans,dehors});
   }
-  const trous={VIA:S.vias.length,PLATED:0,NONPLATED:(S.holes||[]).length};
-  for(const fp of S.fps)for(const q of padsOf(fp))if(q.drill>0)trous.PLATED++;
+  /* les fentes partent en <SlotCavity>, que le lecteur de la visionneuse ne lit pas encore */
+  const trous={VIA:S.vias.length,PLATED:0,NONPLATED:trousMonde().filter(h=>h.d>0&&!(h.w>h.d)).length};
+  for(const fp of S.fps)for(const q of padsOf(fp))if(q.drill>0&&!(q.slot>q.drill))trous.PLATED++;
   const textes=S.fps.filter(fp=>fp.silk!==false&&(!fp.side||n>1)).length+
     (S.drawings||[]).filter(d=>d.shape==="text"&&(d.layer!=="silkB"||n>1)).length;
   return {cuivres:S.cuL.map(L=>L.name),nets:[...nets].sort(),composants:comps,pistes,arcs,
@@ -25624,6 +25645,15 @@ function ipcAttendu(){
 /* la seconde carte, chargée de ce qui manque aux exemples */
 /* la première carte aux coins arrondis, percée d'une découpe ronde : des
    cordes de 5° et de 10°, que l'export rend en arcs */
+/* la carte chargée, plus une pastille à fente et un trou NPTH oblong : ce
+   que le XSD doit accepter en <SlotCavity> (calque ROUT) */
+function ipcCarteFentes(){
+  ipcCarteChargee();
+  const fp=mkFp("J9","USB-C","FENTE",1);fp.x=30;fp.y=12;S.fps.push(fp);
+  fpApplyDef(fp,{name:"FENTE",pins:1,style:"row",pads:[{n:1,x:0,y:0,w:2.4,h:1.2,shape:"oval",drill:0.6,slot:1.8}]});
+  S.holes.push(normHole({x:12,y:12,d:1,w:3,rot:90},0));
+  touch();
+}
 function ipcCarteArrondie(){
   exCharger(0);
   const b=S.board, r=4, P=[];
@@ -25685,7 +25715,8 @@ T("IPC-2581 : les cartes d'exemple écrites pour le banc Python, contenu compté
   fs.mkdirSync(dir,{recursive:true});
   try{
     for(const [nom,prep] of [["exemple-0",()=>exCharger(0)],["exemple-1",()=>exCharger(1)],
-                             ["exemple-1-charge",ipcCarteChargee],["exemple-0-arrondi",ipcCarteArrondie]]){
+                             ["exemple-1-charge",ipcCarteChargee],["exemple-0-arrondi",ipcCarteArrondie],
+                             ["exemple-1-fentes",ipcCarteFentes]]){
       prep();
       const d=ipc2581Document({date:IPC_DATE}), s=d.stats;
       const plats=S.tracks.filter(t=>!arcOf(t)).length;
@@ -25703,7 +25734,8 @@ T("IPC-2581 : les cartes d'exemple écrites pour le banc Python, contenu compté
       fs.writeFileSync(path.join(dir,nom+".attendu.json"),JSON.stringify(ipcAttendu(),null,1));
       /* le dossier méca de l'éditeur, que la visionneuse doit retrouver
          (visionneuse-ipc2581/test/harness-sim.js) */
-      fs.writeFileSync(path.join(dir,nom+".meca.json"),JSON.stringify(mecaDossier()));
+      if(nom!=="exemple-1-fentes")   // la visionneuse ne lit pas encore les fentes : pas de comparaison méca
+        fs.writeFileSync(path.join(dir,nom+".meca.json"),JSON.stringify(mecaDossier()));
     }
     /* ce que la carte chargée doit avoir écrit */
     const x=fs.readFileSync(path.join(dir,"exemple-1-charge.xml"),"utf8");
