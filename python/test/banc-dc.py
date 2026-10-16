@@ -23,6 +23,7 @@ import sys
 RACINE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(RACINE, "python"))
 
+import dc_solver as ds                                       # noqa: E402
 from dc_solver import (ErreurDC, RESISTIVITE_CUIVRE,          # noqa: E402
                        resoudre_dc, resoudre_document, carte_chaleur, etat)
 
@@ -1474,6 +1475,26 @@ essai("un plan large ne chauffe pas", cas_un_plan_large_ne_chauffe_pas)
 essai("le pire point porte ses coordonnees", cas_le_pire_point_est_localise)
 essai("le modele thermique se nomme, et nomme son successeur",
       cas_le_modele_thermique_se_nomme)
+
+
+def cas_le_maillage_vectorise_est_le_maillage_pur():
+    """Le test vectorise (numpy) des cases dans un polygone rend exactement les
+    cases du test point par point, sommets sur la trame compris."""
+    import random
+    rnd = random.Random(7)
+    for _ in range(20):
+        n = rnd.randint(3, 12)
+        sommets = [(rnd.choice([rnd.uniform(0, 5), round(rnd.uniform(0, 5), 1)]),
+                    rnd.choice([rnd.uniform(0, 5), round(rnd.uniform(0, 5), 1)]))
+                   for _ in range(n)]
+        vect = ds._cases_dedans(sommets, 0.0, 0.0, 0.1, 0, 52, 0, 52)
+        pur = [(ix, iy) for ix in range(53) for iy in range(53)
+               if ds._dans_polygone(ix * 0.1, iy * 0.1, sommets)]
+        assert vect == pur, (sommets, len(vect), len(pur))
+
+
+essai("le maillage vectorise donne les memes cases que le test point par point",
+      cas_le_maillage_vectorise_est_le_maillage_pur)
 
 print("\n" + "-" * 62)
 if ECHECS:

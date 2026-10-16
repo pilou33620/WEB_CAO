@@ -297,6 +297,12 @@ def test_diaphonie():
     assert de(analyser(pistes=[droite("SW", 0.0), droite("DATA", 0.4)],
                        natures={"SW": "Alimentation"}, bruyants=["SW"],
                        reglages={"xt_tr": 1e-9}), "diaphonie")
+    # ... mais n'est jamais victime : à côté d'une horloge, la ligne est sur
+    # l'horloge (« depuis SW »), pas sur le nœud de découpage
+    swv = de(analyser(pistes=[droite("SW", 0.0), droite("CLK", 0.4)],
+                      natures={"SW": "Alimentation", "CLK": "Horloge"}, bruyants=["SW"]),
+             "diaphonie")
+    assert swv and all(x.get("n") != "SW" for x in swv), swv
     vcc = analyser(pistes=[droite("VCC", 0.0), droite("DATA", 0.4)],
                    natures={"VCC": "Alimentation"})
     assert vcc["bilan"]["diaphonie"]["couples"] == 0 and de(vcc, "diaphonie") == []

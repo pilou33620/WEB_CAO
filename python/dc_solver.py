@@ -155,6 +155,29 @@ def _dans_polygone(x, y, sommets):
     return dedans
 
 
+def _cases_dedans(sommets, x0, y0, pas, i0, i1, j0, j1):
+    """Les cases (ix, iy) de la fenetre dont le centre est dans le polygone,
+    ix puis iy croissants. Avec numpy, le test est vectorise sur la fenetre --
+    meme parite, meme formule que `_dans_polygone` : un plan de 1000 sommets
+    au pas de 0,5 mm prenait 22 s en Python pur."""
+    if np is None:
+        return [(ix, iy) for ix in range(i0, i1 + 1) for iy in range(j0, j1 + 1)
+                if _dans_polygone(x0 + ix * pas, y0 + iy * pas, sommets)]
+    x = (x0 + np.arange(i0, i1 + 1) * pas)[:, None]
+    y = (y0 + np.arange(j0, j1 + 1) * pas)[None, :]
+    dedans = np.zeros((i1 - i0 + 1, j1 - j0 + 1), dtype=bool)
+    n = len(sommets)
+    j = n - 1
+    for i in range(n):
+        xi, yi = sommets[i]
+        xj, yj = sommets[j]
+        if yj != yi:
+            dedans ^= (((yi > y) != (yj > y))
+                       & (x < xi + ((y - yi) / (yj - yi)) * (xj - xi)))
+        j = i
+    return [(int(a) + i0, int(b) + j0) for a, b in np.argwhere(dedans)]
+
+
 def _boite(polygones):
     xs = [v[0] for p in polygones for v in p["sommets"]]
     ys = [v[1] for p in polygones for v in p["sommets"]]
@@ -245,17 +268,13 @@ def mailler(polygones, pas):
         i1 = min(nx - 1, int((max(sx) - x0) / pas) + 1)
         j0 = max(0, int((min(sy) - y0) / pas) - 1)
         j1 = min(ny - 1, int((max(sy) - y0) / pas) + 1)
-        for ix in range(i0, i1 + 1):
-            x = x0 + ix * pas
-            for iy in range(j0, j1 + 1):
-                y = y0 + iy * pas
-                if _dans_polygone(x, y, sommets):
-                    if p.get("trou"):
-                        cases.pop((p["couche"], ix, iy), None)
-                    else:
-                        cases[(p["couche"], ix, iy)] = (p["net"],
-                                                        p["epaisseur"])
-                        p["carreaux"] = p.get("carreaux", 0) + 1
+        for ix, iy in _cases_dedans(sommets, x0, y0, pas, i0, i1, j0, j1):
+            if p.get("trou"):
+                cases.pop((p["couche"], ix, iy), None)
+            else:
+                cases[(p["couche"], ix, iy)] = (p["net"],
+                                                p["epaisseur"])
+                p["carreaux"] = p.get("carreaux", 0) + 1
 
     if not cases:
         raise ErreurDC(
@@ -368,14 +387,35 @@ def _noeuds_du_point(maillage, point, defaut_rayon=None, portee=None):
         return (coords[i][2] == couche
                 and (net is None or nets[i] == net))
 
+    index, pas = maillage["index"], maillage["pas"]
+    ox, oy = maillage["origine"]
+    nx, ny = maillage["taille"]
+
+    def fenetre(xa, ya, xb, yb):
+        """Les noeuds eligibles des seules cases de la trame qui couvrent
+        [xa, xb] x [ya, yb], par l'index. Parcourir TOUS les noeuds a chaque
+        plot coutait 0,3 s par appel a 200 000 noeuds, deux appels par via :
+        cinq minutes pour 500 vias."""
+        i0 = max(0, int(math.floor((xa - ox) / pas)) - 1)
+        i1 = min(nx - 1, int(math.ceil((xb - ox) / pas)) + 1)
+        j0 = max(0, int(math.floor((ya - oy) / pas)) - 1)
+        j1 = min(ny - 1, int(math.ceil((yb - oy) / pas)) + 1)
+        out = []
+        for ix in range(i0, i1 + 1):
+            for iy in range(j0, j1 + 1):
+                i = index.get((couche, ix, iy))
+                if i is not None and (net is None or nets[i] == net):
+                    out.append(i)
+        return out
+
     boite = point.get("boite") or point.get("box")
     if boite and len(boite) >= 4:
         x0, y0, x1, y1 = (float(boite[0]), float(boite[1]),
                           float(boite[2]), float(boite[3]))
         x0, x1 = min(x0, x1), max(x0, x1)
         y0, y1 = min(y0, y1), max(y0, y1)
-        out = [i for i in range(len(coords)) if eligible(i)
-               and x0 <= coords[i][0] <= x1 and y0 <= coords[i][1] <= y1]
+        out = sorted(i for i in fenetre(x0, y0, x1, y1)
+                     if x0 <= coords[i][0] <= x1 and y0 <= coords[i][1] <= y1)
         if out:
             return out
     else:
@@ -385,16 +425,22 @@ def _noeuds_du_point(maillage, point, defaut_rayon=None, portee=None):
         if r <= 0:
             r = maillage["pas"] * 0.75  # le carreau le plus proche, et lui seul
         r2 = r * r
-        out = [i for i in range(len(coords)) if eligible(i)
-               and (coords[i][0] - x) ** 2 + (coords[i][1] - y) ** 2 <= r2]
+        out = sorted(i for i in fenetre(x - r, y - r, x + r, y + r)
+                     if (coords[i][0] - x) ** 2 + (coords[i][1] - y) ** 2 <= r2)
         if out:
             return out
 
-    candidats = [(i, (coords[i][0] - x) ** 2 + (coords[i][1] - y) ** 2)
-                 for i in range(len(coords)) if eligible(i)]
+    if portee is not None:
+        g = float(portee)
+        pool = fenetre(x - g, y - g, x + g, y + g)
+    else:
+        pool = [i for i in range(len(coords)) if eligible(i)]
+    candidats = [(i, (coords[i][0] - x) ** 2 + (coords[i][1] - y) ** 2) for i in pool]
     if not candidats:
         return []
-    plus_proche, d2 = min(candidats, key=lambda t: t[1])
+    # a distance egale, le plus petit indice : le choix d'avant, quel que soit
+    # l'ordre de la fenetre
+    plus_proche, d2 = min(candidats, key=lambda t: (t[1], t[0]))
     if portee is not None and d2 > float(portee) ** 2:
         return []
     return [plus_proche]

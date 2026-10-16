@@ -48,7 +48,7 @@ from collections import defaultdict
 
 import numpy as np
 
-from crosstalk import INTERFACES, famille
+from crosstalk import INTERFACES, TR_CLASSES, famille
 
 TOL_DEG = 1.0     # un 90° dessiné sur des coordonnées arrondies au µm s'en écarte de quelques dixièmes
 EPS_MM = 1e-3     # deux bouts à moins d'un micron sont le même point
@@ -209,10 +209,9 @@ def angles(pistes, arcs=(), pastilles=(), unite_mm=1.0, tol_deg=TOL_DEG):
 # pas de la carte : un I2C ne monte pas à 100 MHz, une horloge si.
 # ==========================================================================
 
-# Le front de chaque classe, en secondes. Des défauts, modifiables dans le
-# panneau ; « Découpage » est celui d'un nœud SW de hacheur (nets_bruyants).
-TR_CLASSES = {"Horloge": 2e-9, "Rapide": 1e-9, "RF": 1e-10,
-              "Analogique": 1e-7, "Lent": 1e-8, "Découpage": 5e-9}
+# Le front de chaque classe, en secondes : la table de crosstalk.py (une
+# seule copie). Des défauts, modifiables dans le panneau ; « Découpage » est
+# celui d'un nœud SW de hacheur (nets_bruyants).
 # La cadence maximale de chaque classe, en Hz : une horloge à 50 MHz, un bus
 # rapide à 100 MHz, un I2C ou un SPI sous 10 MHz, un hacheur à 2 MHz. Toutes
 # restent sous 0,1 / t_r du front par défaut : à défauts égaux, c'est le
@@ -773,8 +772,11 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None, surf=None)
 
     def joue(n, agresse):
         c = _classe(doc, n)
-        return (bool(n) and not _SANS_NET.match(n) and c not in ("Masse", ANTENNE)
-                and (c != "Alimentation" or agresse and c == "Découpage"))
+        # un noeud de decoupage agresse, mais n'est jamais victime (la
+        # seconde moitie de l'ancienne condition ne pouvait pas etre vraie)
+        return (bool(n) and not _SANS_NET.match(n)
+                and c not in ("Masse", ANTENNE, "Alimentation")
+                and (agresse or c != "Découpage"))
 
     def face(a, b):
         la = math.hypot(a[3] - a[1], a[4] - a[2])

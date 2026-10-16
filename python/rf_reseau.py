@@ -195,6 +195,12 @@ def lire_touchstone(texte, nom="", n_ports=None):
                 ordre_21_12 = "21_12" in reste
             elif cle == "reference":
                 refs = [_nombre(x, 50.0) for x in reste.split()]
+            elif cle == "matrix format" and reste.strip().lower() != "full":
+                # Upper / Lower : n(n+1)/2 valeurs par frequence. Lues comme
+                # n^2, la frequence suivante devenait un parametre S, sans erreur.
+                raise ErreurRF("%s : matrice « %s » non prise en charge."
+                               % (nom or "Touchstone", reste.strip()),
+                               "Réexportez le modèle en matrice pleine (Full).")
             elif cle == "end":
                 break
             continue
@@ -794,19 +800,6 @@ def capacite_surface(couches, s, cache):
         if lr:
             c -= lr["c"] * _nombre(rec.get("longueur")) * 1e-3
     return max(c, 0.0), eps
-
-
-def _dans_poly(x, y, p):
-    dedans = False
-    n = len(p) // 2
-    j = n - 1
-    for i in range(n):
-        xi, yi, xj, yj = p[2 * i], p[2 * i + 1], p[2 * j], p[2 * j + 1]
-        if (yi > y) != (yj > y) and \
-                x < (xj - xi) * (y - yi) / ((yj - yi) or 1e-300) + xi:
-            dedans = not dedans
-        j = i
-    return dedans
 
 
 def r_peau(f, ep_mm):

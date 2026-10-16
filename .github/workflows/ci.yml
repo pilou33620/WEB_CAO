@@ -116,6 +116,9 @@ jobs:
           node gestion-lib/test/banc-ia-xss.js
           node commun/test/banc-ia-markdown.js
 
+      - name: Rapport de simulation (Markdown) — banc d'essai
+        run: node commun/test/banc-rapport-sim.js
+
       - name: Mise à jour automatique GitHub — banc d'essai
         run: python python/test/banc-maj-github.py
 

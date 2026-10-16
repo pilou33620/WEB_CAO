@@ -1519,7 +1519,7 @@ function simReseauNetsIpc(grille, plans, nets){
       .filter(p => p.c === LT.cu[cu].couche && p.n === idx(net))
       .map(p => ({w: (p.w || 0.2) * k, p: p.p})),
     vias: net => (V.modele.percages || [])
-      .filter(t => t.n === idx(net) && t.p === "PLATED")
+      .filter(t => t.n === idx(net) && (t.p === "PLATED" || t.p === "VIA"))   // un trou VIA est métallisé
       .map(t => {
         /* la portée de ses pastilles ; un trou métallisé qui n'en déclare
            aucune (P01x291 : la plupart) traverse tout le cuivre */

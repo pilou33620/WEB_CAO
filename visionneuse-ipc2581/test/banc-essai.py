@@ -1304,6 +1304,47 @@ def hauteur_non_finie():
 T(u"une hauteur non finie (1e400) ne fait pas tomber la lecture", hauteur_non_finie)
 
 
+def trou_via_metallise():
+    xml = CARTE.replace(u'platingStatus="PLATED"', u'platingStatus="VIA"')
+    d = ipc2581_json.ipc2581_en_dict(xml.encode("utf-8"), "via.xml")
+    egal(d["stats"]["percages_metallises"], 1, u"un trou VIA est metallise")
+    egal(d["percages"][0]["p"], "VIA", u"le JSON garde VIA (vias et trous de pastille)")
+
+
+T(u"platingStatus=\"VIA\" compte comme un trou metallise", trou_via_metallise)
+
+
+def cercle_complet():
+    import math
+    import xml.etree.ElementTree as ET
+    from ipc2581_parser import IPC2581Parser
+    poly = ET.fromstring(u'<Polygon><PolyBegin x="1" y="0"/>'
+                         u'<PolyStepCurve x="1" y="0" centerX="0" centerY="0"'
+                         u' clockwise="false"/></Polygon>')
+    pts = IPC2581Parser("x.xml")._parse_polygon(poly)
+    aire = abs(sum(a.x * b.y - b.x * a.y for a, b in zip(pts, pts[1:] + pts[:1]))) / 2
+    proche(aire, math.pi, u"aire d'un cercle de rayon 1 (fin = debut)", tol=0.01)
+
+
+T(u"un PolyStepCurve qui revient a son debut est un cercle, pas un point", cercle_complet)
+
+
+def touchstone_triangulaire_refuse():
+    import rf_reseau
+    texte = (u"[Version] 2.0\n# GHz S RI R 50\n[Number of Ports] 3\n"
+             u"[Matrix Format] Upper\n[Network Data]\n"
+             u"1 0 0 0 0 0 0 0 0 0 0 0 0\n2 0 0 0 0 0 0 0 0 0 0 0 0\n[End]\n")
+    try:
+        rf_reseau.lire_touchstone(texte, "x.s3p")
+    except rf_reseau.ErreurRF as exc:
+        vrai(u"Upper" in exc.message, exc.message)
+    else:
+        raise AssertionError(u"une matrice Upper ne doit pas se lire comme Full")
+
+
+T(u"un .sNp en matrice Upper est refuse au lieu d'etre mal lu", touchstone_triangulaire_refuse)
+
+
 # =============================================================================
 print(u"-" * 62)
 if ECHECS:

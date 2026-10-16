@@ -897,8 +897,8 @@ PRESELECTION_PROCHE = 1.5
 # Le front de reference quand rien d'autre ne le donne : 1 ns, la majorite
 # des fronts rapides du numerique moderne.
 TR_DEFAUT = 1e-9
-# LES FRONTS PAR CLASSE DE NET, les memes que `analyse_carte.TR_CLASSES` --
-# la page envoie ceux du panneau de verification quand on les a regles.
+# LES FRONTS PAR CLASSE DE NET, repris par analyse_carte -- la page envoie
+# ceux du panneau de verification quand on les a regles.
 TR_CLASSES = {"Horloge": 2e-9, "Rapide": 1e-9, "RF": 1e-10,
               "Analogique": 1e-7, "Lent": 1e-8, "Découpage": 5e-9}
 # UNE CLASSE D'INTERFACE APPARTIENT A UNE FAMILLE : la famille (une classe
