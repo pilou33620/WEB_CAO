@@ -79,8 +79,9 @@ JSON et à l'enregistrement.
 ### T8 : dégagement des trous dans les zones (D4 = oui)
 `zoneCanvas` dégage chaque trou de `trousMonde()`, à l'écartement de la
 classe du net de la zone. Un contrôle trou ↔ zone s'ajoute.
-- [ ] Un trou dans une zone de masse y fait un dégagement de Ø + 2 × écartement
-- [ ] `JS_PCB` passe
+- [x] Un trou dans une zone de masse y fait un dégagement de Ø + 2 × écartement
+- [x] `JS_PCB` passe
+  → pas de contrôle trou ↔ zone à part : la zone dégage toujours le trou (écran et Gerber), il ne trouverait rien
 
 ### T7 : documentation et commit
 - [ ] `A-FAIRE.md` et l'*État des lieux* mis à jour

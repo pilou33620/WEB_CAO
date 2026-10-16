@@ -356,6 +356,14 @@ function gerberCopper(i){
       if(z===v.net)gFlash(body,A,A.get("C,"+fmt(v.drill,4)),v.x,v.y);
       else gFlash(body,A,A.get("C,"+fmt(v.d+2*clrK(z,v.net,"cu","via"),4)),v.x,v.y);
     }
+    /* trou NPTH (carte ou empreinte) : la zone s'en écarte de l'écartement de
+       sa classe — le foret ne doit pas mordre le cuivre ni le laisser à vif */
+    for(const h of trousMonde()){
+      let z=zn(h.x,h.y);
+      if(z===null)z=zoneEtrangereProche(zs,"",(a,b)=>segDist(h.x,h.y,a.x,a.y,b.x,b.y),q=>h.d/2+classOf(q.net).clr);
+      if(z===null)continue;
+      gFlash(body,A,A.get("C,"+fmt(h.d+2*classOf(z).clr,4)),h.x,h.y);
+    }
     const thermals=[];
     for(const fp of S.fps)
       for(const q of padsWorld(fp)){

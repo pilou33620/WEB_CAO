@@ -186,6 +186,9 @@ function zoneCanvas(i){
     c.arc(v.x,v.y,same?v.drill/2:v.d/2+clrK(zoneNetAt(i,v.x,v.y),v.net,"cu","via"),0,Math.PI*2);
     c.fill();
   }
+  for(const h of trousMonde()){       // trou NPTH : dégagé à l'écartement de la zone (comme au Gerber)
+    c.beginPath();c.arc(h.x,h.y,h.d/2+clr,0,Math.PI*2);c.fill();
+  }
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
       if(!padLayers(fp,q).includes(i))continue;

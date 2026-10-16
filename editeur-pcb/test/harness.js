@@ -6094,6 +6094,22 @@ T("trous NPTH d'empreinte : contrôlés comme des trous de carte (M1-5)",()=>{
   if(!pres("Trous NPTH qui se recouvrent",30,33))throw new Error("trou d'empreinte sur un trou de carte : recouvrement non signalé");
   loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);
 });
+T("trous NPTH : la zone de cuivre les dégage, trou de carte comme trou d'empreinte (D4)",()=>{
+  loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);clearSel();
+  S.zones=[{id:S.nextId++,l:0,net:"GND",pts:[{x:5,y:5},{x:60,y:5},{x:60,y:50},{x:5,y:50}]}];touch();
+  const clr=classOf("GND").clr, ap=d=>"C,"+fmt(d+2*clr,4);
+  if(gerberCopper(0).indexOf(ap(3.25))>=0)throw new Error("aucun trou : aucun dégagement attendu");
+  const fp=mkFp("J1","","J",1);fp.x=30;fp.y=25;fp.holes=[{x:0,y:0,d:3.25}];S.fps.push(fp);
+  S.holes=[mkHole(15,15,2.2)];touch();
+  try{
+    const g=gerberCopper(0);
+    if(g.indexOf(ap(3.25))<0)throw new Error("trou d'empreinte non dégagé dans la zone :\n"+g.slice(0,600));
+    if(g.indexOf(ap(2.2))<0)throw new Error("trou de carte non dégagé dans la zone");
+    /* un trou hors de toute zone ne dégage rien */
+    S.zones=[];touch();
+    if(gerberCopper(0).indexOf(ap(3.25))>=0)throw new Error("sans zone, pas de dégagement");
+  }finally{loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);}
+});
 T("bibliothèque : lecture défensive et fusion des noms",()=>{
   fpLibRaz();
   if(!fpLibParse("ceci n'est pas du json").err)
