@@ -28,11 +28,11 @@ Bancs :
 ## Phase 2 : bout en bout
 
 ### T2 : Excellon G85, tableau de perçage, DXF (M2-3)
-- [ ] Pastille oblongue : ligne `X..Y..G85X..Y..` dans le fichier traversant, outil = largeur
-- [ ] Trou NPTH oblong : ligne G85 dans `-NPTH.TXT`
-- [ ] Tableau de perçage et DXF : autant d'entrées que l'Excellon, et la fente dite oblongue (largeur × longueur)
-- [ ] Carte sans fente : Excellon identique au bit près
-- [ ] `JS_PCB` passe
+- [x] Pastille oblongue : ligne `X..Y..G85X..Y..` dans le fichier traversant, outil = largeur
+- [x] Trou NPTH oblong : ligne G85 dans `-NPTH.TXT`
+- [x] Tableau de perçage et DXF : autant d'entrées que l'Excellon, et la fente dite oblongue (largeur × longueur)
+- [x] Carte sans fente : Excellon identique au bit près
+- [x] `JS_PCB` passe
 **Point de contrôle 1**
 
 ### T3 : contrôles et audit fabricant (M2-4)

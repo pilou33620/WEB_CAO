@@ -733,19 +733,22 @@ function dfBlocParagraphes(lignes,pt){
    passe : ce sont deux lignes du tableau. */
 function dfPercages(){
   const g=new Map();
-  const ajout=(d,x,y,plaque,usage,a,b)=>{
-    const key=fmt(d,3)+"|"+(plaque?1:0)+"|"+a+"-"+b;
+  /* une fente se range à part du rond de même largeur : `L` est sa longueur */
+  const ajout=(d,x,y,plaque,usage,a,b,o)=>{
+    const ax=o?axePercage(o):null, L=ax&&(ax.x1!==ax.x2||ax.y1!==ax.y2)?(o.slot||o.w):0;
+    const key=fmt(d,3)+"|"+(plaque?1:0)+"|"+a+"-"+b+(L?"|"+fmt(L,3):"");
     let e=g.get(key);
     if(!e)g.set(key,e={d,plaque,usages:new Set(),a,b,pts:[]});
-    e.usages.add(usage);e.pts.push({x,y});
+    if(L)e.L=L;
+    e.usages.add(usage);e.pts.push(L?{x,y,ax}:{x,y});
   };
   for(const fp of S.fps)
     for(const q of padsWorld(fp))
-      if(q.drill>0)ajout(q.drill,q.x,q.y,true,"pastilles",0,S.cu-1);
+      if(q.drill>0)ajout(q.drill,q.x,q.y,true,"pastilles",0,S.cu-1,q);
   for(const v of S.vias)
     if(v.drill>0)ajout(v.drill,v.x,v.y,true,"vias",Math.min(v.a,v.b),Math.max(v.a,v.b));
   for(const h of trousMonde())
-    if(h.d>0)ajout(h.d,h.x,h.y,false,"fixation",0,S.cu-1);
+    if(h.d>0)ajout(h.d,h.x,h.y,false,"fixation",0,S.cu-1,h);
   return [...g.values()].sort((u,v)=>(v.plaque-u.plaque)||(u.d-v.d)||(u.a-v.a)||(u.b-v.b));
 }
 const DF_SYMBOLES=["croix","x","carre","triangle","losange","rond","plus","nabla","hexagone","carrex"];
@@ -977,7 +980,7 @@ function dfFeuillesFab(ctx){
 
   /* colonne de droite : tableaux, coupe, notes */
   const blocs=[dfBlocTitre("Tableau de perçage")];
-  const lignes=groupes.map(e=>["",fmt(e.d,2).replace(".",","),String(e.pts.length),
+  const lignes=groupes.map(e=>["",(fmt(e.d,2)+(e.L?" × "+fmt(e.L,2)+" oblong":"")).replace(/\./g,","),String(e.pts.length),
     e.plaque?"Oui":"Non",dfPortee(e),[...e.usages].join(", ")]);
   lignes.push(["","Total",String(groupes.reduce((a,e)=>a+e.pts.length,0)),"","",""]);
   blocs.push(...dfTableau([{t:"Symb.",p:9,a:"m"},{t:"Ø fini (mm)",p:16,a:"d"},{t:"Qté",p:10,a:"d"},

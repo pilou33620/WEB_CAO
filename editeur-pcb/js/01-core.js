@@ -2312,6 +2312,14 @@ function trousMonde(){
   }
   return out;
 }
+/* Contour d'un perçage oblong (axe de axePercage) : deux demi-cercles de
+   douze pas reliés par les côtés, en coordonnées monde */
+function contourOblong(ax){
+  const r=ax.d/2, t=Math.atan2(ax.y2-ax.y1,ax.x2-ax.x1), P=[];
+  for(let k=0;k<=12;k++){const a=t+Math.PI/2+Math.PI*k/12;P.push({x:ax.x1+r*Math.cos(a),y:ax.y1+r*Math.sin(a)});}
+  for(let k=0;k<=12;k++){const a=t-Math.PI/2+Math.PI*k/12;P.push({x:ax.x2+r*Math.cos(a),y:ax.y2+r*Math.sin(a)});}
+  return P;
+}
 /* Axe d'un perçage, en coordonnées monde : ses deux bouts et sa largeur.
    Pastille de padsWorld (rot en radians, fente `slot` le long du grand côté)
    ou trou de trousMonde / S.holes (rot en degrés, longueur `w`). Un perçage

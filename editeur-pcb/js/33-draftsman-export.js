@@ -381,7 +381,9 @@ function dxfCarte(){
   let trous=0;
   for(const e of groupes)
     for(const p of e.pts){
-      dxfCercle(D,e.plaque?"TROUS_METALLISES":"TROUS_NON_METALLISES",P(p.x,p.y),e.d/2);
+      const cal=e.plaque?"TROUS_METALLISES":"TROUS_NON_METALLISES";
+      if(p.ax)dxfPoly(D,cal,contourOblong(p.ax).map(q=>P(q.x,q.y)),true);   // fente : son contour
+      else dxfCercle(D,cal,P(p.x,p.y),e.d/2);
       trous++;
     }
   const outils=dxfOutils(D,P);

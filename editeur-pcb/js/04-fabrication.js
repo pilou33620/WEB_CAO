@@ -654,15 +654,22 @@ function ipcNetlist(){
    La portée voyage AVEC le fichier (`a`, `b`, `kind`) : le master drawing et le
    LISEZ-MOI la lisent là plutôt que de la relire dans le nom, qui commence par
    celui du projet — « carte 2 » y aurait glissé son chiffre. */
+/* Entrée Excellon d'un perçage : son centre s'il est rond, ses deux bouts
+   s'il est oblong (ligne G85) */
+function entreePercage(o){
+  const a=axePercage(o);
+  if(a.x1===a.x2&&a.y1===a.y2)return {drill:a.d,x:o.x,y:o.y};
+  return {drill:a.d,x:a.x1,y:a.y1,x2:a.x2,y2:a.y2};
+}
 function drillFile(){
   /* Construit le contenu d'un fichier Excellon pour la liste de trous donnée.
-     holes : [{drill, x, y}] */
+     holes : [{drill, x, y, x2?, y2?}] — avec x2, y2 : perçage oblong, en G85 */
   const buildOne=(name,holes)=>{
     const tools=new Map();
-    for(const {drill:d,x,y} of holes){
+    for(const {drill:d,x,y,x2,y2} of holes){
       const k=fmt(d,3);
       if(!tools.has(k))tools.set(k,[]);
-      tools.get(k).push({x,y});
+      tools.get(k).push(x2!=null?{x,y,x2,y2}:{x,y});
     }
     const keys=[...tools.keys()].sort((a,b)=>parseFloat(a)-parseFloat(b));
     const out=["M48","; Editeur PCB - "+name,
@@ -674,7 +681,8 @@ function drillFile(){
     keys.forEach((k,i)=>{
       out.push("T"+(i+1));
       for(const p of tools.get(k))
-        out.push("X"+fmt(p.x-o.x,3)+"Y"+fmt(o.y-p.y,3));
+        out.push("X"+fmt(p.x-o.x,3)+"Y"+fmt(o.y-p.y,3)+
+                 (p.x2!=null?"G85X"+fmt(p.x2-o.x,3)+"Y"+fmt(o.y-p.y2,3):""));
     });
     out.push("T0","M30");
     return {text:out.join("\n")+"\n",
@@ -688,7 +696,7 @@ function drillFile(){
   const padDrills=[];
   for(const fp of S.fps){
     for(const q of padsWorld(fp)){
-      if(q.drill>0)padDrills.push({drill:q.drill,x:q.x,y:q.y});
+      if(q.drill>0)padDrills.push(entreePercage(q));
     }
   }
 
@@ -730,7 +738,7 @@ function drillFile(){
   /* Trous non métallisés (NPTH) autonomes : fichier Excellon séparé sans métallisation */
   const npthHoles=[];
   for(const h of trousMonde()){
-    if(h.d>0)npthHoles.push({drill:h.d,x:h.x,y:h.y});
+    if(h.d>0)npthHoles.push(entreePercage(h));
   }
   if(npthHoles.length){
     files.push({name:fabBase()+"-NPTH.TXT", a:0, b:S.cu-1, kind:"npth", npth:true,

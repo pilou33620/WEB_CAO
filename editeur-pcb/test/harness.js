@@ -22824,6 +22824,29 @@ T("trous NPTH d'empreinte : IPC-2581, plans et dossier méca (M1-4)",()=>{
   }finally{delete fp.holes;touch();}
   if(ipc2581Document(date).xml!==avant.xml)throw new Error("sans trou d'empreinte, l'IPC-2581 doit rester le même");
 });
+T("perçages oblongs : G85 dans l'Excellon, à part au tableau de perçage, contour au DXF (M2-3)",()=>{
+  exCharger(1);
+  const avant=drillFile();
+  const fp=S.fps[0], sauve=JSON.stringify({pads:fp.pads,holes:fp.holes,style:fp.style,pins:fp.pins,pitch:fp.pitch,span:fp.span,body:fp.body});
+  const nBefore=avant.holes;
+  fpApplyDef(fp,{name:"FENTE",pins:1,style:"row",pads:[{n:1,x:0,y:0,w:2.4,h:1.2,shape:"oval",drill:0.6,slot:1.8}],
+    holes:[{x:0,y:3,d:1,w:3,rot:0}]});touch();
+  try{
+    const r=drillFile(), o=gOrigin(), q=padsWorld(fp)[0], a=axePercage(q), h=axePercage(trousMonde().find(t=>t.fp===fp));
+    const pth=r.files.find(f=>f.kind!=="npth"&&f.text.indexOf("G85")>=0);
+    const g85=(u)=>"X"+fmt(u.x1-o.x,3)+"Y"+fmt(o.y-u.y1,3)+"G85X"+fmt(u.x2-o.x,3)+"Y"+fmt(o.y-u.y2,3);
+    if(!pth||pth.text.indexOf(g85(a))<0)throw new Error("fente métallisée absente du fichier traversant :\n"+(pth?pth.text:"aucun G85"));
+    const npth=r.files.find(f=>f.kind==="npth");
+    if(!npth||npth.text.indexOf(g85(h))<0)throw new Error("trou NPTH oblong absent de -NPTH.TXT :\n"+(npth&&npth.text));
+    const g=dfPercages(), n=g.reduce((s,e)=>s+e.pts.length,0);
+    if(n!==r.holes)throw new Error(n+" trous au plan, "+r.holes+" à l'Excellon");
+    if(!g.some(e=>e.plaque&&Math.abs(e.d-0.6)<1e-9&&Math.abs(e.L-1.8)<1e-9))throw new Error("fente métallisée non distinguée au tableau de perçage");
+    const D=dxfLu(dxfCarte().octets);
+    const cer=D.ents.filter(e=>e.type==="CIRCLE").length, ob=D.ents.filter(e=>e.type==="POLYLINE"&&/^TROUS_/.test(e.cal)).length;
+    if(ob!==2||cer+ob!==r.holes)throw new Error("DXF : "+cer+" CIRCLE + "+ob+" contours oblongs pour "+r.holes+" trous");
+  }finally{const s=JSON.parse(sauve);Object.assign(fp,s);for(const k of ["pads","holes","body"])if(!(k in s))delete fp[k];touch();}
+  if(drillFile().holes!==nBefore)throw new Error("carte rendue : même nombre de trous qu'avant");
+});
 T("plans : variante — non montés en tirets, hors nomenclature",()=>{
   exCharger(1);
   const c3=S.fps.find(f=>f.ref==="C3");
