@@ -100,6 +100,10 @@ function initApp() {
 
   /* Ctrl+S : l'éditeur d'empreinte ou de symbole s'il est ouvert, le
      catalogue sinon (la roulette tactile passe aussi par là). */
+  // catalogue modifié et pas enregistré : le navigateur demande avant de quitter
+  window.addEventListener("beforeunload", e => {
+    if (LIB_STATE.sale) { e.preventDefault(); e.returnValue = ""; }
+  });
   window.addEventListener("keydown", e => {
     if (!((e.ctrlKey || e.metaKey) && !e.altKey && String(e.key).toLowerCase() === "s")) return;
     e.preventDefault();
@@ -900,7 +904,7 @@ function afficherToast(msg, type = "info") {
 }
 
 function escapeHtml(s) {
-  return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 /* ---------- Modale de sélection des colonnes ---------- */

@@ -256,7 +256,7 @@ function schVarMajCompte(){
 function schVarRendreTable(){
   const m=schVarModele();
   const comps=schVarFiltrer(schVarComposants().slice()
-    .sort((a,b)=>String(a.ref||"").localeCompare(String(b.ref||""),"fr",{numeric:true})));
+    .sort((a,b)=>triFr(String(a.ref||""),String(b.ref||""))));
   const box=document.getElementById("varTable");
   if(!m.liste.length){
     box.innerHTML='<div class="empty">Ajoutez une variante (à gauche) : chaque composant y est d\'abord monté, '+

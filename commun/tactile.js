@@ -659,7 +659,6 @@ function tactileRouletteFermer(){
   if(TR.el){ TR.el.className = ""; TR.el.innerHTML = ""; }
   trBoutonMaj();
 }
-function tactileRouletteOuverte(){ return !!TR.roue; }
 function trMajBouton(){
   const r = TR.roue; if(!r || !TR.el) return;
   let nom = TR_CTX_NOM[r.cible.ctx];

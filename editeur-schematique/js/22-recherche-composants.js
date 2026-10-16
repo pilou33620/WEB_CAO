@@ -254,7 +254,7 @@ function crFmtEntier(n) {
 
 function crFmtPrix(p, devise) {
   if (p === null || p === undefined || isNaN(p)) return "—";
-  const d = devise || "$";
+  const d = crEsc(devise || "$");   // la devise vient du JSON du distributeur, posée en HTML
   return Number(p).toFixed(4).replace(/\.?0+$/, "") + " " + d;
 }
 

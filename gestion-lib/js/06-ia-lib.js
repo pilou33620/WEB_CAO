@@ -65,12 +65,7 @@ async function initIaLib() {
       majPilluleCle();
     }
   } catch (_) {
-    // Si route non dispo, repli sur sessionStorage
-    const stocke = sessionStorage.getItem("cao_ia_cle");
-    if (stocke) {
-      IA_LIB.cleApi = stocke;
-      majPilluleCle();
-    }
+    // route indisponible : la clé se saisit (gardée en mémoire vive seulement)
   }
 
   // Écouteur sur le sélecteur de modèle
@@ -142,16 +137,14 @@ function majPilluleCle() {
 
 function demanderCleApi() {
   const saisie = prompt(
-    "Veuillez saisir votre clé d'API Google AI Studio (Gemini / Gemma) :\n(Elle sera conservée uniquement pour cette session de navigation)",
+    "Veuillez saisir votre clé d'API Google AI Studio (Gemini / Gemma) :\n(Elle reste en mémoire vive : fermer ou recharger la page l'efface)",
     IA_LIB.cleApi || ""
   );
   if (saisie !== null) {
     IA_LIB.cleApi = saisie.trim();
     if (IA_LIB.cleApi) {
-      sessionStorage.setItem("cao_ia_cle", IA_LIB.cleApi);
-      afficherToast("Clé API Google AI Studio enregistrée pour cette session", "success");
+      afficherToast("Clé API Google AI Studio gardée en mémoire pour cette page", "success");
     } else {
-      sessionStorage.removeItem("cao_ia_cle");
       afficherToast("Clé API effacée", "info");
     }
     majPilluleCle();

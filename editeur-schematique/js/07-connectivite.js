@@ -377,7 +377,7 @@ function computeNets(comps,wires){
   function net(k){
     const r=find(k);
     let n=groups.get(r);
-    if(!n){n={id:r,name:"",names:[],named:false,src:0,conflict:false,global:false,
+    if(!n){n={id:r,name:"",names:[],globals:[],named:false,src:0,conflict:false,global:false,
               isBus:String(r).startsWith("bus:"),
               nodes:[],powers:[],wires:[],pts:[]};groups.set(r,n);}
     return n;
@@ -409,6 +409,7 @@ function computeNets(comps,wires){
   for(const cl of claims){
     const n=net(cl.k);
     if(!n.names.some(x=>x.toUpperCase()===cl.name.toUpperCase()))n.names.push(cl.name);
+    if(cl.global&&!n.globals.includes(cl.name.toUpperCase()))n.globals.push(cl.name.toUpperCase());
     if(cl.prio>n.src){n.src=cl.prio;n.name=cl.name;n.global=!!cl.global;}
   }
 
@@ -508,13 +509,27 @@ function docNets(){
   const groups=[], byName=new Map();
   for(const sh of sheets){
     for(const n of sh.nets.list){
-      const gk=n.global?n.name.toUpperCase():null;
-      let g=gk?byName.get(gk):null;
-      if(!g){
-        g={name:n.name,global:!!gk,members:[],pages:[],nodes:[],conflict:false};
-        if(gk)byName.set(gk,g);
-        groups.push(g);
+      /* tous les noms globaux du net le rattachent, pas seulement le gagnant :
+         GND + étiquette globale AGND sur la feuille 1 et AGND seul sur la
+         feuille 2 font un seul net. Deux groupes déjà formés qu'un net relie
+         fusionnent. */
+      const gks=n.globals&&n.globals.length?n.globals:(n.global?[n.name.toUpperCase()]:[]);
+      let g=null;
+      for(const k of gks){
+        const h=byName.get(k);
+        if(!h||h===g)continue;
+        if(!g){g=h;continue;}
+        g.members.push(...h.members);g.nodes.push(...h.nodes);
+        for(const pg of h.pages)if(!g.pages.includes(pg))g.pages.push(pg);
+        g.conflict=true;
+        groups.splice(groups.indexOf(h),1);
+        for(const [kk,vv] of byName)if(vv===h)byName.set(kk,g);
       }
+      if(!g){
+        g={name:n.name,global:gks.length>0,members:[],pages:[],nodes:[],conflict:false};
+        groups.push(g);
+      }else if(g.name.toUpperCase()!==n.name.toUpperCase())g.conflict=true;
+      for(const k of gks)byName.set(k,g);
       g.members.push({page:sh.page,net:n});
       if(!g.pages.includes(sh.page))g.pages.push(sh.page);
       g.conflict=g.conflict||n.conflict;
@@ -522,13 +537,14 @@ function docNets(){
     }
   }
   groups.sort((a,b)=>(a.global!==b.global?(a.global?-1:1)
-    :String(a.name).localeCompare(String(b.name),"fr",{numeric:true})));
+    :triFr(String(a.name),String(b.name))));
   _docCache={sheets,groups};_docSig=sig;
   return _docCache;
 }
 function docGroupOf(net){
   if(!net||!net.global)return null;
-  return docNets().groups.find(g=>g.global&&g.name.toUpperCase()===net.name.toUpperCase())||null;
+  return docNets().groups.find(g=>g.global&&(g.members.some(m=>m.net===net)||
+    g.name.toUpperCase()===net.name.toUpperCase()))||null;
 }
 function sheetList(pages){return pages.map(i=>"f"+(i+1)).join(", ");}
 function netAt(x,y){return nets().byPoint.get(key(x,y))||null;}

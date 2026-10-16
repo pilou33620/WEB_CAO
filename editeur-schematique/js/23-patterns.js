@@ -174,7 +174,7 @@ var SCHEMA_PATTERNS = (function() {
 
   function htmlClassesNets(data) {
     const noms = Object.keys(_derniersNets).filter(n => n && _derniersNets[n].length)
-      .sort((a, b) => a.localeCompare(b, "fr", { numeric: true }));
+      .sort((a, b) => triFr(a,b));
     if (!noms.length) return "";
     const why = (data && data.raisons_classes) || {};
     const man = S.netClasses || {};

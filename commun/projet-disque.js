@@ -574,12 +574,6 @@ function projdSuiteDispo(){
   return projdGithubTester().then(function(e){ return e.suite; });
 }
 function projdSuite(){ return !!(PROJD_GH && PROJD_GH.suite); }
-function projdGithubDispo(){
-  return projdGithubTester().then(function(e){ return e.disponible; });
-}
-function projdGithubPossible(){
-  return !!(PROJD_GH && PROJD_GH.disponible) && PROJD.mode === "serveur";
-}
 /* Envoie PROJETS sur GitHub. Poste neuf (git sans nom ni e-mail) : on les
    demande une fois, le lanceur les range dans la config du depot PROJETS. */
 function projdGithubEnvoyer(message){
@@ -803,21 +797,6 @@ function projdGithubBouton(id, action, idSave){
   projdSuiteDispo().then(peindre);
 }
 
-/* Reecrit le fichier projet (revision, auteur, notes, date de modification). */
-function projdMajFichier(champs){
-  if(!projdLie()) return Promise.reject(new Error("Aucun dossier de projet"));
-  const f = Object.assign({}, PROJD.fichier||projdNeuf(projNom()), champs||{});
-  f.format = PROJD_FORMAT;
-  f.modifie = new Date().toISOString();
-  const suite = (PROJD.mode === "serveur")
-    ? projdApi("PUT","/api/projet",{chemin:PROJD.chemin},f)
-    : projdEcrireFichierHandle(PROJD_HANDLE,PROJD_FICHIER,f);
-  return suite.then(function(){
-    PROJD.fichier = f;
-    try{ projSignaler(); }catch(_){}
-    return f;
-  });
-}
 /* Detache sans rien effacer sur le disque : les fichiers restent, c'est le lien
    qui se defait. */
 function projdDetacher(){

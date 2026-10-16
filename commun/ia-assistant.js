@@ -1168,8 +1168,7 @@
       }
       return;
     }
-    _cleApi = val; // Mémorisé dans la variable RAM et synchronisé dans la session
-    try { sessionStorage.setItem("cao_ia_cle", val); } catch (_) {}
+    _cleApi = val; // en mémoire vive seulement, comme l'annoncent l'en-tête et l'aide
     input.value = ""; // Vider immédiatement le champ HTML
     basculerVersChat();
 
@@ -1216,7 +1215,7 @@
   /* ---------- Purge de la clé ---------- */
   function iaPurgerCle() {
     _cleApi = "";
-    try { sessionStorage.removeItem("cao_ia_cle"); } catch (_) {}
+    try { sessionStorage.removeItem("cao_ia_cle"); } catch (_) {}   // reliquat des versions qui l'y gardaient
     _historique = [];
     _questionEnAttente = "";
     _pieces = [];
@@ -1430,11 +1429,9 @@
             }
           }
 
-          // Si non trouvé par référence exacte et qu'il y a des composants sélectionnés
-          if (!comp && S.sel && S.sel.size > 0) {
-            const selComps = S.comps.filter(c => S.sel.has(c.id));
-            comp = selComps.find(c => (c.ref || "").toUpperCase().startsWith(refCible.slice(0, 1).toUpperCase()));
-          }
+          /* Pas de repli sur « un composant sélectionné de même lettre » :
+             R5 introuvable modifiait R1, puis R6 l'écrasait, et le bouton
+             annonçait deux composants mis à jour. Un repère absent est ignoré. */
 
           if (comp) {
             const def = (typeof defOf === "function") ? defOf(comp.type) : null;
@@ -2280,13 +2277,10 @@
     if (btn) btn.classList.add("on");
 
     if (!_cleApi) {
-      // 1. Tenter depuis la session courante
-      try {
-        const stocke = sessionStorage.getItem("cao_ia_cle");
-        if (stocke) _cleApi = stocke;
-      } catch (_) {}
-
-      // 2. Tenter depuis le serveur local (/api/ia/cle)
+      /* Pas de reprise depuis sessionStorage : la clé y survivait à la
+         fermeture du volet et au rechargement, contre la « purge
+         automatique » promise. Le serveur local la fournit, lui. */
+      // Tenter depuis le serveur local (/api/ia/cle)
       if (!_cleApi) {
         try {
           const resp = await fetch("/api/ia/cle");

@@ -117,7 +117,7 @@ Lancé par [WEB·SUITE](https://github.com/pilou33620/WEB_SUITE), WEB_CAO n'enre
 - **Enregistrer** (`Ctrl+S`, menu Fichier ou roulette tactile) et **Exporter vers le PCB** (bouton **⇉ PCB** du schéma) écrivent **en local**, sans rien envoyer sur GitHub. L'export écrit le schéma, ouvre l'Éditeur PCB, y applique la netlist (empreintes nouvelles, boîtiers changés, valeurs, nets ; placement et routage gardés) et écrit la carte : de quoi faire une retouche de dernière minute sans commit ;
 - **☁ Sauvegarder le projet → GitHub** (`Ctrl+Maj+S`, menu Fichier) enregistre le document ouvert puis le lanceur envoie tout le projet sur GitHub en un seul commit (commit + push).
 
-La visionneuse IPC-2581 enregistre sa carte puis l'envoie directement. La Gestion LIB fait de même avec `PROJETS/LIB_CAO` : chaque enregistrement (catalogue, empreinte, symbole, suppression) part sur GitHub, et la LIB ne se déplace plus depuis l'accueil. Pas de téléchargement, ni de dossier pris ailleurs : sans projet ouvert, l'éditeur demande dans quel projet ranger le document (existant ou nouveau). Cela vaut sur le PC du lanceur comme depuis une tablette reliée à un Raspberry Pi (voir le README de WEB·SUITE pour le jeton du mode réseau).
+La visionneuse IPC-2581 enregistre sa carte puis l'envoie directement. La Gestion LIB fait de même avec `PROJETS/LIB_CAO` : chaque enregistrement (catalogue, empreinte, symbole) part sur GitHub, et la LIB ne se déplace plus depuis l'accueil. Pas de téléchargement, ni de dossier pris ailleurs : sans projet ouvert, l'éditeur demande dans quel projet ranger le document (existant ou nouveau). Cela vaut sur le PC du lanceur comme depuis une tablette reliée à un Raspberry Pi (voir le README de WEB·SUITE pour le jeton du mode réseau).
 
 </details>
 

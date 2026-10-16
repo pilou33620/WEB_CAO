@@ -167,7 +167,8 @@ function afficherModaleEditeur() {
   const typeLabel = isPcb ? "Empreinte PCB" : "Symbole Schématique";
   const titre = (EDITEUR_LIB.estNouveau ? "Création de : " : "Édition de : ") + EDITEUR_LIB.nomFichier;
 
-  document.getElementById("editeurModalTitre").innerHTML = `<span>${icon} ${typeLabel}</span> — <small style="color:var(--txt-dim);">${titre}</small>`;
+  // le nom vient de l'adresse (?nom=), d'une cellule du catalogue ou de l'IA : échappé
+  document.getElementById("editeurModalTitre").innerHTML = `<span>${icon} ${typeLabel}</span> — <small style="color:var(--txt-dim);">${escapeHtml(titre)}</small>`;
   const inpNom = document.getElementById("editeurNomFichier");
   if (inpNom) inpNom.value = EDITEUR_LIB.nomFichier;
 

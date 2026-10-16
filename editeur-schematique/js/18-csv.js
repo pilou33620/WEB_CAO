@@ -35,8 +35,29 @@ function parseCSVLine(text) {
     return result;
 }
 
+// Lignes logiques du CSV : un champ entre guillemets peut contenir un saut de
+// ligne (telechargerCsv en écrit), et le BOM d'un fichier enregistré par Excel
+// collait au premier en-tête (« \uFEFFPart Name » introuvable).
+function csvLignes(text) {
+  text = String(text || "").replace(/^\uFEFF/, "");
+  const out = [];
+  let cur = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"') q = !q;
+    if (!q && (c === "\n" || c === "\r")) {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      out.push(cur); cur = "";
+      continue;
+    }
+    cur += c;
+  }
+  out.push(cur);
+  return out;
+}
+
 function loadCSVFromString(text, filename) {
-    const lines = text.split(/\r?\n/).filter(l => l.trim() !== "");
+    const lines = csvLignes(text).filter(l => l.trim() !== "");
     if (lines.length === 0) return;
     const headers = parseCSVLine(lines[0]).map(h => h.trim());
     const data = [];

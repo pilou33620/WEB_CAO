@@ -117,4 +117,16 @@ assert(symMcu.pinCount === 48, "Nombre de broches du symbole = 48");
 assert(Array.isArray(symMcu.pins) && symMcu.pins.length === 48, "Tableau de 48 broches généré");
 assert(Array.isArray(symMcu.primitives) && symMcu.primitives.length >= 1, "Primitives géométriques présentes");
 
+// 6. Lecture du catalogue CSV (01-donnees.js) : BOM d'Excel, champ sur deux lignes
+const sbCsv = { console, localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+  document: sandbox.document, window: { location: { search: "" } }, fetch: sandbox.fetch };
+vm.createContext(sbCsv);
+vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "js", "01-donnees.js"), "utf8"), sbCsv);
+vm.runInContext("initialiserColonnesVisibles = () => {}", sbCsv);
+vm.runInContext("parserCsvBrut", sbCsv)('﻿Part Name;Description\r\nR1;"ligne 1\r\nligne 2"\r\nC1;ok\r\n');
+const etatCsv = vm.runInContext("LIB_STATE", sbCsv);
+assert(etatCsv.colonnes[0] === "Part Name", "Le BOM d'Excel ne colle plus au premier en-tête");
+assert(etatCsv.composants.length === 2 && etatCsv.composants[0].Description === "ligne 1\r\nligne 2",
+  "Un champ entre guillemets sur deux lignes reste un seul composant");
+
 console.log("\nRésultat : " + passedTests + "/" + totalTests + " tests réussis avec succès !");

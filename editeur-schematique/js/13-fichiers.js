@@ -211,8 +211,8 @@ function nlCol(v,n){
   return t+" ".repeat(Math.max(2,n-t.length));
 }
 function byRef(a,b){
-  return String(a.ref).localeCompare(String(b.ref),"fr",{numeric:true})||
-    String(nlPad(a)).localeCompare(String(nlPad(b)),"fr",{numeric:true});
+  return triFr(String(a.ref),String(b.ref))||
+    triFr(String(nlPad(a)),String(nlPad(b)));
 }
 /* Patte écrite dans la netlist : celle de l'empreinte (25-brochage.js). */
 function nlPad(nd){return nd.pad==null?nd.pin:nd.pad;}
@@ -275,11 +275,27 @@ function netlistText(horodatage){
   for(const g of D.groups)for(const nd of g.nodes)relies.add(nd.ref+"."+nlPad(nd));
   const globals=D.groups.filter(g=>g.global&&!g.isBus&&!g.members[0].net.isBus);
   const multi=S.pages.length>1;
+  /* Le PCB fusionne les sections NET de même nom : les noms automatiques
+     (N$1…) repartent à 1 sur chaque feuille, et une étiquette locale peut
+     porter le nom d'une autre feuille. Un nom écrit plus d'une fois prend
+     donc le numéro de sa feuille, sinon deux nets distincts deviennent un
+     court-circuit sur la carte. Les « " » coupaient le nom à la lecture. */
+  const nlNom=n=>String(n==null?"":n).replace(/"/g,"_");
+  const occurrences=new Map();
+  for(const g of D.groups){
+    if(g.isBus||g.members[0].net.isBus)continue;
+    const k=nlNom(g.name);
+    occurrences.set(k,(occurrences.get(k)||0)+1);
+  }
+  const nomLocal=g=>{
+    const k=nlNom(g.name);
+    return occurrences.get(k)>1?k+"_f"+(g.pages[0]+1):k;
+  };
   if(globals.length){
     out.push("=== Nets globaux (masses, alimentations, étiquettes globales) ===");
     for(const g of globals){
       out.push("");
-      out.push('NET "'+g.name+'"   ; '+(g.pages.length>1?"feuilles ":"feuille ")+
+      out.push('NET "'+nlNom(g.name)+'"   ; '+(g.pages.length>1?"feuilles ":"feuille ")+
         g.pages.map(i=>i+1).join(", ")+(g.conflict?"   ; conflit de noms":""));
       const nodes=nlUniques(g.nodes.slice().sort(byRef));
       if(!nodes.length)out.push("    ; aucun composant raccordé");
@@ -296,7 +312,7 @@ function netlistText(horodatage){
     for(const g of locals){
       const n=g.members[0].net;
       out.push("");
-      out.push('NET "'+g.name+'"'+
+      out.push('NET "'+nomLocal(g)+'"'+
         (n.conflict?"   ; conflit de noms : "+n.names.join(" / "):"")+
         (n.named?"":"   ; nom attribué automatiquement"));
       const nodes=nlUniques(g.nodes.slice().sort(byRef));
@@ -420,7 +436,7 @@ function bomRows(variante){
     }
   });
   rows.sort((a,b)=>(a.page-b.page)||
-    String(a.ref).localeCompare(String(b.ref),"fr",{numeric:true}));
+    triFr(String(a.ref),String(b.ref)));
   return rows;
 }
 /* Corps du CSV, sans marque d'ordre ni écriture disque : testable tel quel.
@@ -447,7 +463,7 @@ function bomCsvText(variante){
   for(const g of [...groups.values()].sort((a,b)=>b.refs.length-a.refs.length))
     out.push([g.refs.length, g.type, g.value, g.pkg, g.fpPcb, g.csvPartName, g.mpn, g.manufacturer, g.lcsc, g.refs.join(" ")].map(csvCell).join(";"));
   const nm=rows.filter(r=>!r.monte).map(r=>String(r.ref))
-    .sort((a,b)=>a.localeCompare(b,"fr",{numeric:true}));
+    .sort((a,b)=>triFr(a,b));
   out.push("","Variante;"+csvCell(varNom(S.variantes,vid)),
            "Composants montés;"+(rows.length-nm.length),
            "Non montés (DNP);"+nm.length+(nm.length?";"+csvCell(nm.join(" ")):""));

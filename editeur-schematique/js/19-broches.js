@@ -421,7 +421,6 @@ function peUp(){if(PE.drag){PE.drag=null;}}
    complet des broches avec noms, positions et nets connectés pour tout composant.
    ============================================================================= */
 const CE = {open: false, el: null, pushed: false};
-function ceIsOpen(){ return CE.open; }
 function ceEl(id){ return document.getElementById(id); }
 function cePush(){ if(!CE.pushed){ push(); CE.pushed = true; } }
 

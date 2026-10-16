@@ -156,10 +156,3 @@ function brochagePattes(lu) {
     }
   return [...s].sort((a, b) => String(a).localeCompare(String(b), "fr", { numeric: true }));
 }
-
-/* Texte court pour un aperçu : « OUT→1 IN-→2 … ». */
-function brochageResume(partie) {
-  if (!partie) return "";
-  return Object.entries(partie.broches).map(([b, n]) => b + "→" + n).join("  ") +
-    (partie.nc.length ? "  NC→" + partie.nc.join("/") : "");
-}

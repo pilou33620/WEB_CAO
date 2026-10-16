@@ -14,11 +14,14 @@ function schTousLesComposants() {
   const list = [];
   if (typeof S !== "undefined") {
     if (Array.isArray(S.pages) && S.pages.length > 0) {
-      for (const p of S.pages) {
-        if (Array.isArray(p.comps)) {
-          for (const c of p.comps) list.push(c);
+      /* la feuille active vit dans S.comps (supprimer un composant en fait
+         un nouveau tableau) ; S.pages[S.page].comps peut être l'ancien */
+      S.pages.forEach((p, i) => {
+        const comps = (i === S.page) ? S.comps : p.comps;
+        if (Array.isArray(comps)) {
+          for (const c of comps) list.push(c);
         }
-      }
+      });
     } else if (Array.isArray(S.comps)) {
       for (const c of S.comps) list.push(c);
     }

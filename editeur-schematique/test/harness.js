@@ -1322,6 +1322,32 @@ T("recherche : le repère tapé en entier passe devant ses homonymes plus longs"
   if(res.length<3)throw new Error("3 résultats attendus, "+res.length);
   if(res[0].cle!=="R1")throw new Error("premier résultat : "+res[0].cle);
 });
+T("netlist multi-feuilles : deux N$1 de feuilles différentes restent deux nets",()=>{
+  const mk=(r1,r2)=>{
+    const a=C("resistor",0,0,{ref:r1,value:"1k",pkg:"0603"}), b=C("resistor",10,0,{ref:r2,value:"1k",pkg:"0603"});
+    const pa=allPins(a), pb=allPins(b), pg=newPage("f");
+    pg.comps=[a,b];pg.wires=[{x1:pa[1].x,y1:pa[1].y,x2:pb[0].x,y2:pb[0].y}];
+    return pg;
+  };
+  S.pages=[mk("R1","R2"),mk("R3","R4")];loadPage(0);touchWires();
+  const txt=netlistText("x");
+  const noms=(txt.match(/^NET "[^"]*"/gm)||[]);
+  if(new Set(noms).size!==noms.length)throw new Error("noms de net en double (le PCB les fusionne) :\n"+noms.join("\n"));
+  if(!/NET "N\$1_f1"/.test(txt)||!/NET "N\$1_f2"/.test(txt))throw new Error("suffixe de feuille attendu :\n"+txt);
+});
+T("netlist multi-feuilles : un deuxième nom global relie les feuilles",()=>{
+  // feuille 1 : R1.2 sur GND et l'étiquette globale AGND ; feuille 2 : R2.2 sur AGND
+  const r1=C("resistor",0,0,{ref:"R1",value:"1k",pkg:"0603"}), g=C("gnd",0,6,{value:"GND"}), l=C("gport",6,6,{value:"AGND"});
+  const p=allPins(r1), pg=allPins(g), pl=allPins(l);
+  const s1=newPage("a");s1.comps=[r1,g,l];
+  s1.wires=[{x1:p[1].x,y1:p[1].y,x2:pg[0].x,y2:pg[0].y},{x1:pg[0].x,y1:pg[0].y,x2:pl[0].x,y2:pl[0].y}];
+  const r2=C("resistor",0,0,{ref:"R2",value:"1k",pkg:"0603"}), l2=C("gport",0,6,{value:"AGND"});
+  const q=allPins(r2), ql=allPins(l2);
+  const s2=newPage("b");s2.comps=[r2,l2];s2.wires=[{x1:q[1].x,y1:q[1].y,x2:ql[0].x,y2:ql[0].y}];
+  S.pages=[s1,s2];loadPage(0);touchWires();
+  const grp=docNets().groups.filter(x=>x.nodes.some(n=>n.ref==="R1"&&n.pin===2)||x.nodes.some(n=>n.ref==="R2"&&n.pin===2));
+  if(grp.length!==1)throw new Error("R1.2 et R2.2 doivent être sur un seul net, "+grp.length+" groupes");
+});
 T("recherche : un composant d'une autre feuille fait changer de feuille",()=>{
   const p1=newPage("f1"), p2=newPage("f2");
   p1.comps=[C("resistor",0,0,{ref:"R1"})];p1.wires=[];

@@ -87,8 +87,8 @@ function schCmNetsNommes(){
     e.nodes+=g.nodes.length;
   }
   return [...parNom.values()].map(e=>({name:e.name,nodes:e.nodes,
-      refs:[...e.refs].sort((a,b)=>String(a).localeCompare(String(b),"fr",{numeric:true}))}))
-    .sort((a,b)=>String(a.name).localeCompare(String(b.name),"fr",{numeric:true}));
+      refs:[...e.refs].sort((a,b)=>triFr(String(a),String(b)))}))
+    .sort((a,b)=>triFr(String(a.name),String(b.name)));
 }
 /* Les contraintes dont le net n'existe plus (renommé, supprimé) : dites, pas
    effacées d'office — un renommage se rattrape. */

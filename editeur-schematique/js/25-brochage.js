@@ -140,7 +140,7 @@ function brCandidats(el) {
   const sym = String(el.type || "").toLowerCase();
   const out = lib.filter(it => brSymboleDe(it) === sym);
   return out.sort((a, b) => (brColonne(b) ? 1 : 0) - (brColonne(a) ? 1 : 0) ||
-    String(a["Part Name"] || "").localeCompare(String(b["Part Name"] || ""), "fr", { numeric: true }));
+    triFr(String(a["Part Name"] || ""),String(b["Part Name"] || "")));
 }
 /* Le badge « Référence à choisir » : un symbole générique qui a des
    références dans la LIB et à qui on n'en a pas encore donné. */

@@ -16,7 +16,7 @@ function netBlock(net){
   const srcTxt = net.global?"symbole global (alimentation ou étiquette globale)"
                           :"étiquette de net";
   const nodes = net.nodes.slice()
-    .sort((a,b)=>String(a.ref).localeCompare(String(b.ref),"fr",{numeric:true}))
+    .sort((a,b)=>triFr(String(a.ref),String(b.ref)))
     .map(n=>n.ref+"."+(n.pad==null?n.pin:n.pad)+(n.label?" ("+n.label+")":""));
   const aw=net.anchorWire||null;
   const hidden=!!(aw&&aw.lblHide), moved=!!(aw&&aw.lblOff);
@@ -935,7 +935,7 @@ function buildNets(){
   // nets nommés d'abord, puis les anonymes dans l'ordre de numérotation
   const list=N.list.slice().sort((a,b)=>
     (a.named!==b.named) ? (a.named?-1:1)
-    : String(a.name).localeCompare(String(b.name),"fr",{numeric:true}));
+    : triFr(String(a.name),String(b.name)));
   let html='<table class="bom"><thead><tr><th>Net</th><th>Classe</th>'+
            '<th style="text-align:right">Nœuds</th></tr></thead><tbody>';
   for(const n of list){
@@ -991,7 +991,7 @@ function buildBom(){
   const vid=(S.variantes&&S.variantes.active)||"";
   const nNm=vid?list.filter(x=>!varEstMonte(x.c,vid)).length:0;
   // String() : un fichier importé peut porter un repère absent, localeCompare planterait
-  list.sort((a,b)=>String(a.c.ref||"").localeCompare(String(b.c.ref||""),"fr",{numeric:true}));
+  list.sort((a,b)=>triFr(String(a.c.ref||""),String(b.c.ref||"")));
   let html=(vid?'<div class="var-resume">Variante « '+esc(varNom(S.variantes,vid))+' » : '+
              (list.length-nNm)+' monté(s), <b>'+nNm+' non monté(s)</b></div>':'')+
            '<table class="bom"><thead><tr><th>Rep.</th><th>Composant</th>'+

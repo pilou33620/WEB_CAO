@@ -20,6 +20,10 @@ const C_TXT     = "#ffffff";
 const C_SEL     = "#8af0ff";
 const C_GLOB    = "#2a7d74";        // remplissage des étiquettes globales
 const HANDLE    = 4.5;              // demi-côté des poignées de fil, en pixels écran
+/* Tri français « naturel » (R2 avant R10). Un seul Intl.Collator : appeler
+   localeCompare(…, "fr", {numeric:true}) à chaque comparaison en recrée un, et
+   un schéma de 5 000 composants passait 13 s à trier ses nets. */
+const triFr = new Intl.Collator("fr", {numeric:true}).compare;
 
 /* ==========================================================================
    Helpers de dessin (coordonnées locales du composant)

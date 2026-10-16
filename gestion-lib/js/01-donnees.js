@@ -103,19 +103,6 @@ async function apiPost(url, data) {
   return await resp.json();
 }
 
-async function apiDelete(url) {
-  const resp = await fetch(url, { method: "DELETE" });
-  if (!resp.ok) {
-    let err = "Erreur HTTP " + resp.status;
-    try {
-      const j = await resp.json();
-      if (j.detail) err = j.detail;
-    } catch (_) {}
-    throw new Error(err);
-  }
-  return await resp.json();
-}
-
 // Chargement complet initial
 async function chargerDonneesBibliotheque() {
   try {
@@ -194,8 +181,29 @@ function parseCSVLine(text) {
   return result;
 }
 
+// Lignes logiques du CSV : un champ entre guillemets peut contenir un saut de
+// ligne (telechargerCsv en écrit), et le BOM d'un fichier enregistré par Excel
+// collait au premier en-tête (« \uFEFFPart Name » introuvable).
+function csvLignes(text) {
+  text = String(text || "").replace(/^\uFEFF/, "");
+  const out = [];
+  let cur = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"') q = !q;
+    if (!q && (c === "\n" || c === "\r")) {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      out.push(cur); cur = "";
+      continue;
+    }
+    cur += c;
+  }
+  out.push(cur);
+  return out;
+}
+
 function parserCsvBrut(csvText) {
-  const lines = csvText.split(/\r?\n/).filter(l => l.trim().length > 0);
+  const lines = csvLignes(csvText).filter(l => l.trim().length > 0);
   if (lines.length < 2) return;
   const headers = parseCSVLine(lines[0]).map(h => h.trim());
   
@@ -303,33 +311,6 @@ async function sauvegarderFichierLib(type, nom, dataOuContenu) {
       nom: nom,
       data: dataOuContenu,
       action: "sauvegarde"
-    });
-  }
-
-  return res;
-}
-
-// Suppression d'un fichier d'empreinte ou symbole
-async function supprimerFichierLib(type, nom) {
-  if (!type || !nom) throw new Error("Type et nom de fichier requis");
-  const res = await apiDelete(`/api/lib/fichier?type=${encodeURIComponent(type)}&nom=${encodeURIComponent(nom)}`);
-  libSuiteNoter("suppression de " + nom);
-
-  // Nettoyer cache
-  const cle = `${type}:${nom}`;
-  LIB_STATE.cacheFichiers.delete(cle);
-
-  // Retirer de la liste
-  if (Array.isArray(LIB_STATE.fichiers[type])) {
-    LIB_STATE.fichiers[type] = LIB_STATE.fichiers[type].filter(f => f !== nom);
-  }
-
-  if (typeof sessDiffuserLibModif === "function") {
-    sessDiffuserLibModif({
-      genre: "fichier",
-      typeFichier: type,
-      nom: nom,
-      action: "suppression"
     });
   }
 
