@@ -1461,6 +1461,7 @@ function pcbAppliquerDefEmpreinteBrut(fp, pkgName, def){
       fp.nets[n] = net;
     }
     if(def.body) fp.body = {...def.body};
+    fpTrousDe(fp, def);
     fpSyncPins(fp);
     return true;
   }
@@ -1512,6 +1513,7 @@ function pkgGeom(pkg,pinsHint){
       };
       if(Array.isArray(libDef.pads))g.pads=libDef.pads.map(padClone);
       if(libDef.body)g.body={...libDef.body};
+      if(libDef.holes)g.holes=libDef.holes;
       return g;
   }
 
@@ -1577,6 +1579,7 @@ function applyPkgGeomBrut(fp){
   if(!g)return false;
   if(fpFree(fp)&&!g.pads)return false;
   fp.style=g.style;fp.pitch=g.pitch;fp.span=g.span;fp.pins=g.pins;
+  fpTrousDe(fp,g);
   if(g.pads){
     fp.pads=g.pads.map(padClone);
     if(g.body)fp.body={...g.body};
@@ -1600,6 +1603,7 @@ function mkFp(ref,value,pkg,pins){
     fp.lib=g.pkg;
     fpSyncPins(fp);
   }
+  if(g.holes)fpTrousDe(fp,g);
   return fp;
 }
 function mkHole(x,y,d){
@@ -1986,7 +1990,7 @@ function fpFreeze(fp){
 function fpGeneric(fp){
   if(!fpFree(fp)&&!fp.body)return false;
   const brut=()=>{
-    delete fp.pads;delete fp.body;
+    delete fp.pads;delete fp.body;delete fp.holes;
     if(!applyPkgGeomBrut(fp)){
       const g=fpGeomFor(fp.pkg,fp.pins);
       fp.style=g.style;fp.pitch=g.pitch;fp.span=g.span;
@@ -2284,6 +2288,13 @@ function padsWorld(fp){
    sans trou d'empreinte sort donc exactement comme avant), puis ceux des
    empreintes, passés au monde comme leurs pastilles. Un trou d'empreinte
    garde son origine (fp, i) : il ne se sélectionne pas, il suit l'empreinte. */
+/* Les trous d'une définition (LIB, table, fichier) remplacent ceux de
+   l'empreinte : ils font partie de sa forme, ils viennent et partent avec
+   elle. Relus comme tout ce qui vient d'un fichier. */
+function fpTrousDe(fp,def){
+  const h=dHoles(def&&def.holes);
+  if(h)fp.holes=h;else delete fp.holes;
+}
 function trousMonde(){
   const out=(S.holes||[]).slice();
   for(const fp of S.fps){

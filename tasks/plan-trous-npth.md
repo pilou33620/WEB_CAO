@@ -21,7 +21,7 @@ placement. M1 ne pose donc pas de nouveau tuyau. Il fait trois choses :
 
 | Où | Constat | Conséquence |
 |---|---|---|
-| `08-empreinte.js` `fpApplyDef` | seule porte d'application d'une empreinte : import de netlist (`02-connectivity.js` l. 1019, 1045), mise à jour LIB et menu (`07-app.js` l. 899) | recopier `holes` ici couvre tous les chemins, la mise à jour depuis la LIB comprise (critère M1-6) |
+| `08-empreinte.js` `fpApplyDef` | seule porte d'application d'une empreinte : import de netlist (`02-connectivity.js` l. 1019, 1045), mise à jour LIB et menu (`07-app.js` l. 899) | **relevé faux, corrigé à la revue** : la LIB du serveur passe par `pcbAppliquerDefEmpreinteBrut` et par `pkgGeom` (cache LIB → `mkFp`, `applyPkgGeomBrut`), `fpApplyDef` ne sert qu'à la bibliothèque locale ; `fpTrousDe` couvre tous ces chemins, et `fpGeneric` / l'import de netlist retirent les trous quand la forme est refaite |
 | `05-tools.js` `normFp` / `docObj` | `docObj` enregistre `S.fps` tel quel ; `normFp` relit champ par champ | `normFp` doit relire `holes`, sinon le trou se perd à la réouverture |
 | `05-tools.js` `normHole` | bornes Ø 0,4 à 30 mm, `id` obligatoire | `dHoles` reprend les bornes, sans `id` (un trou d'empreinte n'est pas sélectionnable) |
 | `01-core.js` `fpXform` | translation + rotation + miroir face dessous, déjà utilisé par `padsWorld` | `trousMonde()` l'emploie tel quel |

@@ -1055,6 +1055,7 @@ function applyNetlist(txt,dropMissing){
             if(fp.lib){delete fp.pads;delete fp.body;delete fp.lib;}
             const g=fpGeomFor(meta.pkg,pins);
             fp.style=g.style;fp.pitch=g.pitch;fp.span=g.span;fp.pins=g.pins;
+            fpTrousDe(fp,g);
             if(g.pads){
               fp.pads=g.pads.map(padClone);
               if(g.body)fp.body={...g.body};

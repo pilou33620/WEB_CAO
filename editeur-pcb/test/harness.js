@@ -169,7 +169,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* empreintes dessinees a la main et bibliotheque personnelle */
   "fpFree","padClone","fpAutoBody","fpFreeze","fpGeneric","fpSyncPins",
   "fpMovePad","fpSetPad","fpAddPad","fpDelPad","fpSetPins","fpSetBody",
-  "dPads","dHoles","trousMonde","drawHoles","dBody","fpDefOf","normFpDef","fpApplyDef","fpLibAll","fpLibWrite",
+  "dPads","dHoles","trousMonde","fpTrousDe","drawHoles","dBody","fpDefOf","normFpDef","fpApplyDef","fpLibAll","fpLibWrite",
   "fpLibNames","fpLibGet","fpLibPut","fpLibDel","fpLibFile","fpLibParse",
   "fpLibMerge","FPLIB_KEY","FPLIB_FORMAT",
   "FPLIB","FPLIB_FICHIER","fpLibCharger","fpLibFichier","fpLibPourBoitier",
@@ -6109,6 +6109,34 @@ T("trous NPTH : la zone de cuivre les dégage, trou de carte comme trou d'emprei
     S.zones=[];touch();
     if(gerberCopper(0).indexOf(ap(3.25))>=0)throw new Error("sans zone, pas de dégagement");
   }finally{loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);}
+});
+T("trous NPTH d'empreinte : suivent l'empreinte de la LIB par tous les chemins, et partent avec elle",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.holes=[];clearSel();touch();
+  const def={name:"RJ45-ESSAI",pins:2,style:"row",pads:[
+    {n:1,x:-1,y:0,w:1.5,h:1.5,shape:"sharp",drill:0.9},{n:2,x:1,y:0,w:1.5,h:1.5,shape:"circ",drill:0.9}],
+    holes:[{x:-5.7,y:3.05,d:3.25},{x:"?",y:0,d:1}]};
+  const attendu=JSON.stringify([{x:-5.7,y:3.05,d:3.25}]);
+  PCB_LIB_CACHE.set(pkgKey("RJ45-ESSAI"),def);
+  try{
+    /* application d'une empreinte de la LIB (import, explorateur, mise à jour) */
+    const a=mkFp("J1","","SOIC-8",8);S.fps.push(a);
+    pcbAppliquerDefEmpreinte(a,"RJ45-ESSAI",def);
+    if(JSON.stringify(a.holes)!==attendu)throw new Error("pcbAppliquerDefEmpreinte : "+JSON.stringify(a.holes));
+    /* boîtier tiré du cache de la LIB (mkFp, changement de boîtier) */
+    const b=mkFp("J2","","RJ45-ESSAI",2);
+    if(JSON.stringify(b.holes)!==attendu)throw new Error("mkFp depuis la LIB : "+JSON.stringify(b.holes));
+    /* vers un boîtier calculé sans pastilles, la forme dessinée reste — ses trous aussi */
+    b.pkg="SOIC-8";applyPkgGeom(b);
+    if(JSON.stringify(b.holes)!==attendu)throw new Error("forme gardée : ses trous devaient rester");
+    /* vers un boîtier qui refait les pastilles, la forme change : les trous partent */
+    b.pkg="SOT-23";applyPkgGeom(b);
+    if("holes" in b)throw new Error("changement de boîtier : les trous de l'ancienne empreinte devaient partir");
+    const c=mkFp("J3","","RJ45-ESSAI",2);S.fps.push(c);c.pkg="BOITIER-INCONNU";
+    fpGeneric(c);
+    if("holes" in c)throw new Error("retour au générique : les trous devaient partir");
+    pcbAppliquerDefEmpreinte(a,"SOIC-NU",{name:"SOIC-NU",pins:8,style:"sop",pads:[{n:1,x:0,y:0,w:1,h:1,shape:"rect",drill:0}]});
+    if("holes" in a)throw new Error("une empreinte LIB sans trous retire les anciens");
+  }finally{PCB_LIB_CACHE.delete(pkgKey("RJ45-ESSAI"));S.fps=[];touch();}
 });
 T("bibliothèque : lecture défensive et fusion des noms",()=>{
   fpLibRaz();
