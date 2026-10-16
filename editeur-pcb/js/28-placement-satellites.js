@@ -135,7 +135,7 @@ function placerSatellites(){
   const candSet=new Set(cands);
   /* boîtes occupées : tout sauf les satellites possibles, qu'on soulève */
   const obst=S.fps.filter(fp=>!candSet.has(fp)).map(fpBBox);
-  for(const h of (S.holes||[]))obst.push(holeBBox(h));
+  for(const h of trousMonde())if(!h.fp||!candSet.has(h.fp))obst.push(holeBBox(h));   // un satellite soulevé emporte ses trous
   /* pastilles par net (positions des circuits, fixes pendant l'opération) */
   const parNet=new Map();
   for(const fp of S.fps)

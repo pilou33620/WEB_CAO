@@ -1138,9 +1138,7 @@ function pcbAuditBoardAgainstMfg(profile){
   
   // 8. Trous NPTH (non métallisés)
   let minNpth = Infinity;
-  if(Array.isArray(S.holes)){
-    for(const h of S.holes) if(h.d > 0 && h.d < minNpth) minNpth = h.d;
-  }
+  for(const h of trousMonde()) if(h.d > 0 && h.d < minNpth) minNpth = h.d;
   const reqNpth = (p.drilling?.minNpthHole) || 0.50;
   if(minNpth !== Infinity){
     items.push({

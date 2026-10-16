@@ -38,9 +38,9 @@ fichier NPTH.
 ### T3 : dessin, placement, capacités (M1-4)
 `drawHoles` (`03-render.js`), obstacles du placement
 (`28-placement-satellites.js`), plus petit NPTH (`24-pcb-capabilities.js`).
-- [ ] Un trou d'empreinte se dessine (le banc relève l'appel de dessin ou la liste dessinée)
-- [ ] Un trou d'empreinte de Ø 0,45 mm est jugé sous le minimum NPTH du fabricant
-- [ ] `JS_PCB` passe
+- [x] Un trou d'empreinte se dessine (le banc relève l'appel de dessin ou la liste dessinée)
+- [x] Un trou d'empreinte de Ø 0,45 mm est jugé sous le minimum NPTH du fabricant
+- [x] `JS_PCB` passe
 
 ### T4 : contrôles (M1-5)
 `02-connectivity.js` lit `trousMonde()`. Une pastille de la même empreinte

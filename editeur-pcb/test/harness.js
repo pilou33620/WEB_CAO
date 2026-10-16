@@ -169,7 +169,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* empreintes dessinees a la main et bibliotheque personnelle */
   "fpFree","padClone","fpAutoBody","fpFreeze","fpGeneric","fpSyncPins",
   "fpMovePad","fpSetPad","fpAddPad","fpDelPad","fpSetPins","fpSetBody",
-  "dPads","dHoles","trousMonde","dBody","fpDefOf","normFpDef","fpApplyDef","fpLibAll","fpLibWrite",
+  "dPads","dHoles","trousMonde","drawHoles","dBody","fpDefOf","normFpDef","fpApplyDef","fpLibAll","fpLibWrite",
   "fpLibNames","fpLibGet","fpLibPut","fpLibDel","fpLibFile","fpLibParse",
   "fpLibMerge","FPLIB_KEY","FPLIB_FORMAT",
   "FPLIB","FPLIB_FICHIER","fpLibCharger","fpLibFichier","fpLibPourBoitier",
@@ -6056,6 +6056,18 @@ T("trous NPTH d'empreinte : en coordonnées monde et dans le fichier NPTH (M1-3,
   if(sansDate(drillFile().files.find(f=>f.kind==="npth").text)!==sansDate(npth0))
     throw new Error("sans trou d'empreinte, le fichier NPTH doit rester le même");
   S.holes=[];touch();
+});
+T("trous NPTH d'empreinte : dessinés et jugés face au fabricant (M1-4)",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.holes=[];clearSel();
+  const fp=mkFp("H1","","MECA",1);fp.x=12;fp.y=8;fp.holes=[{x:1,y:0,d:0.45}];S.fps.push(fp);touch();
+  const arcs=[];
+  const c=new Proxy({},{get:(_,k)=>k==="arc"?(x,y,r)=>arcs.push([x,y,r]):()=>{},set:()=>true});
+  drawHoles(c);
+  if(!arcs.some(a=>Math.abs(a[0]-13)<1e-9&&Math.abs(a[1]-8)<1e-9&&Math.abs(a[2]-0.225)<1e-9))
+    throw new Error("trou d'empreinte non dessiné à sa place monde : "+JSON.stringify(arcs));
+  const it=pcbAuditBoardAgainstMfg(pcbGetMfgProfile("jlcpcb")).find(i=>i.label==="Trou NPTH min");
+  if(!it||it.ok||it.val!=="0.45 mm")throw new Error("Ø 0,45 d'empreinte devait être jugé trop petit : "+JSON.stringify(it));
+  S.fps=[];touch();
 });
 T("bibliothèque : lecture défensive et fusion des noms",()=>{
   fpLibRaz();

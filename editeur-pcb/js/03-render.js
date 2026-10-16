@@ -972,8 +972,7 @@ function drawHover(c){
   c.beginPath();c.arc(h.x,h.y,px(7),0,Math.PI*2);c.stroke();
 }
 function drawHoles(c){
-  if(!S.holes)return;
-  for(const h of S.holes){
+  for(const h of trousMonde()){
     const r=h.d/2;
     c.fillStyle=C_BG;
     c.beginPath();c.arc(h.x,h.y,r,0,Math.PI*2);c.fill();
