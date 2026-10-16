@@ -49,4 +49,9 @@ for (const nom of ["editeurSnap", "editeurPointerDown"])
 assert.ok(g.editeurPointerDown({ button: 0, clientX: 0, clientY: 0 }), "le clic de l'outil Trou est pris");
 const t = g.EDITEUR_LIB.data.holes[1];
 assert.ok(t && Math.abs(t.x - 1.05) < 1e-9 && Math.abs(t.y + 2) < 1e-9 && t.d === 2.5, "trou pose sur la grille, au diametre du precedent : " + JSON.stringify(t));
+// 4. Un champ numerique ne recoit jamais une valeur du fichier telle quelle : un
+// JSON (ou une reponse de l'assistant) qui porterait '"><img onerror=...>' dans x
+// en ferait du HTML. Forcee en nombre (+) ou passee par n() de l'editeur.
+const bruts = src.split("\n").filter(l => /type="number"/.test(l) && /value="\$\{(?!\+|n\()/.test(l));
+assert.ok(!bruts.length, "valeur injectee brute dans un champ numerique :\n" + bruts.join("\n"));
 console.log("ok repere y vers le bas");

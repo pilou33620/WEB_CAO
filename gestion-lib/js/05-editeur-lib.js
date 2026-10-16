@@ -1019,11 +1019,11 @@ function remplirFormulaireEditeur() {
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
           <div class="form-group">
             <label>Pitch / Pas (mm)</label>
-            <input type="number" step="0.01" id="edFpPitch" value="${data.pitch || 0}">
+            <input type="number" step="0.01" id="edFpPitch" value="${+(data.pitch || 0) || 0}">
           </div>
           <div class="form-group">
             <label>Nombre de broches</label>
-            <input type="number" id="edFpPins" value="${data.pins || (data.pads ? data.pads.length : 0)}">
+            <input type="number" id="edFpPins" value="${+(data.pins || (data.pads ? data.pads.length : 0)) || 0}">
           </div>
         </div>
         <div class="form-group">
@@ -1033,10 +1033,10 @@ function remplirFormulaireEditeur() {
         <div style="border-top:1px solid var(--border); padding-top:10px;">
           <label style="font-weight:600; font-size:11.5px; color:var(--txt);">Corps sérigraphie (mm)</label>
           <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:6px; margin-top:6px;">
-            <div class="form-group"><label>X1</label><input type="number" step="0.05" id="edBodyX1" value="${data.body ? data.body.x1 : -1}"></div>
-            <div class="form-group"><label>Y1</label><input type="number" step="0.05" id="edBodyY1" value="${data.body ? data.body.y1 : -1}"></div>
-            <div class="form-group"><label>X2</label><input type="number" step="0.05" id="edBodyX2" value="${data.body ? data.body.x2 : 1}"></div>
-            <div class="form-group"><label>Y2</label><input type="number" step="0.05" id="edBodyY2" value="${data.body ? data.body.y2 : 1}"></div>
+            <div class="form-group"><label>X1</label><input type="number" step="0.05" id="edBodyX1" value="${+(data.body ? data.body.x1 : -1) || 0}"></div>
+            <div class="form-group"><label>Y1</label><input type="number" step="0.05" id="edBodyY1" value="${+(data.body ? data.body.y1 : -1) || 0}"></div>
+            <div class="form-group"><label>X2</label><input type="number" step="0.05" id="edBodyX2" value="${+(data.body ? data.body.x2 : 1) || 0}"></div>
+            <div class="form-group"><label>Y2</label><input type="number" step="0.05" id="edBodyY2" value="${+(data.body ? data.body.y2 : 1) || 0}"></div>
           </div>
           <button class="tb mini" style="margin-top:6px;" onclick="editeurAjusterCorpsAuto()">⊡ Calculer d'après les pastilles</button>
         </div>
@@ -1187,10 +1187,10 @@ function remplirElementsEditeur() {
       rowsHtml += `
         <tr data-idx="${idx}">
           <td style="width:38px;"><input type="text" data-field="n" value="${escapeHtml(p.n)}" style="text-align:center;"></td>
-          <td><input type="number" step="0.05" data-field="x" value="${p.x}"></td>
-          <td><input type="number" step="0.05" data-field="y" value="${p.y}"></td>
-          <td><input type="number" step="0.05" data-field="w" value="${p.w || 1}"></td>
-          <td><input type="number" step="0.05" data-field="h" value="${p.h || 1}"></td>
+          <td><input type="number" step="0.05" data-field="x" value="${+(p.x) || 0}"></td>
+          <td><input type="number" step="0.05" data-field="y" value="${+(p.y) || 0}"></td>
+          <td><input type="number" step="0.05" data-field="w" value="${+(p.w || 1) || 0}"></td>
+          <td><input type="number" step="0.05" data-field="h" value="${+(p.h || 1) || 0}"></td>
           <td style="width:55px;">
             <select data-field="shape">
               <option value="rect" ${p.shape === 'rect' ? 'selected' : ''}>Rect</option>
@@ -1198,7 +1198,7 @@ function remplirElementsEditeur() {
               <option value="oval" ${p.shape === 'oval' ? 'selected' : ''}>Ovale</option>
             </select>
           </td>
-          <td><input type="number" step="0.1" data-field="drill" value="${p.drill || 0}"></td>
+          <td><input type="number" step="0.1" data-field="drill" value="${+(p.drill || 0) || 0}"></td>
           <td style="width:30px; text-align:center;">
             <button class="tb mini" style="color:var(--red); padding:1px 5px;" onclick="editeurSupprimerPad(${idx})" title="Supprimer">✕</button>
           </td>
@@ -1237,9 +1237,9 @@ function remplirElementsEditeur() {
         <thead><tr><th>X</th><th>Y</th><th>Ø</th><th></th></tr></thead>
         <tbody id="tbodyTrousEditeur">${(data.holes || []).map((t, idx) => `
           <tr data-idx="${idx}">
-            <td><input type="number" step="0.05" data-field="x" value="${t.x}"></td>
-            <td><input type="number" step="0.05" data-field="y" value="${t.y}"></td>
-            <td><input type="number" step="0.05" min="0.4" max="30" data-field="d" value="${t.d}"></td>
+            <td><input type="number" step="0.05" data-field="x" value="${+t.x || 0}"></td>
+            <td><input type="number" step="0.05" data-field="y" value="${+t.y || 0}"></td>
+            <td><input type="number" step="0.05" min="0.4" max="30" data-field="d" value="${+t.d || 0}"></td>
             <td style="width:30px; text-align:center;">
               <button class="tb mini" style="color:var(--red); padding:1px 5px;" onclick="editeurSupprimerTrou(${idx})" title="Supprimer">✕</button>
             </td>
@@ -1312,8 +1312,8 @@ function remplirElementsEditeur() {
       rowsHtml += `
         <tr data-idx="${idx}">
           <td style="width:45px;"><input type="text" data-field="n" value="${escapeHtml(pn)}" style="text-align:center;"></td>
-          <td><input type="number" step="5" data-field="x" value="${px}"></td>
-          <td><input type="number" step="5" data-field="y" value="${py}"></td>
+          <td><input type="number" step="5" data-field="x" value="${+(px) || 0}"></td>
+          <td><input type="number" step="5" data-field="y" value="${+(py) || 0}"></td>
           <td style="width:30px; text-align:center;">
             <button class="tb mini" style="color:var(--red); padding:1px 5px;" onclick="editeurSupprimerPin(${idx})" title="Supprimer">✕</button>
           </td>
@@ -1459,11 +1459,11 @@ function remplirTraitsEditeur() {
       rowsHtml += `
         <tr data-idx="${idx}">
           <td style="width:30px; text-align:center; color:var(--txt-dim); font-size:11px;">#${idx + 1}</td>
-          <td><input type="number" step="0.05" data-field="x1" value="${l.x1 !== undefined ? l.x1 : 0}"></td>
-          <td><input type="number" step="0.05" data-field="y1" value="${l.y1 !== undefined ? l.y1 : 0}"></td>
-          <td><input type="number" step="0.05" data-field="x2" value="${l.x2 !== undefined ? l.x2 : 0}"></td>
-          <td><input type="number" step="0.05" data-field="y2" value="${l.y2 !== undefined ? l.y2 : 0}"></td>
-          <td style="width:55px;"><input type="number" step="0.02" data-field="width" value="${l.width || 0.15}"></td>
+          <td><input type="number" step="0.05" data-field="x1" value="${+(l.x1 !== undefined ? l.x1 : 0) || 0}"></td>
+          <td><input type="number" step="0.05" data-field="y1" value="${+(l.y1 !== undefined ? l.y1 : 0) || 0}"></td>
+          <td><input type="number" step="0.05" data-field="x2" value="${+(l.x2 !== undefined ? l.x2 : 0) || 0}"></td>
+          <td><input type="number" step="0.05" data-field="y2" value="${+(l.y2 !== undefined ? l.y2 : 0) || 0}"></td>
+          <td style="width:55px;"><input type="number" step="0.02" data-field="width" value="${+(l.width || 0.15) || 0}"></td>
           <td style="width:30px; text-align:center;">
             <button class="tb mini" style="color:var(--red); padding:1px 5px;" onclick="editeurSupprimerLigne(${idx})" title="Supprimer">✕</button>
           </td>
@@ -1535,11 +1535,11 @@ function remplirTraitsEditeur() {
       rowsHtml += `
         <tr data-realidx="${item.realIdx}">
           <td style="width:30px; text-align:center; color:var(--txt-dim); font-size:11px;">#${displayIdx + 1}</td>
-          <td><input type="number" step="5" data-field="x1" value="${p.x1 !== undefined ? p.x1 : 0}"></td>
-          <td><input type="number" step="5" data-field="y1" value="${p.y1 !== undefined ? p.y1 : 0}"></td>
-          <td><input type="number" step="5" data-field="x2" value="${p.x2 !== undefined ? p.x2 : 0}"></td>
-          <td><input type="number" step="5" data-field="y2" value="${p.y2 !== undefined ? p.y2 : 0}"></td>
-          <td style="width:55px;"><input type="number" step="0.5" data-field="width" value="${p.width || 2.5}"></td>
+          <td><input type="number" step="5" data-field="x1" value="${+(p.x1 !== undefined ? p.x1 : 0) || 0}"></td>
+          <td><input type="number" step="5" data-field="y1" value="${+(p.y1 !== undefined ? p.y1 : 0) || 0}"></td>
+          <td><input type="number" step="5" data-field="x2" value="${+(p.x2 !== undefined ? p.x2 : 0) || 0}"></td>
+          <td><input type="number" step="5" data-field="y2" value="${+(p.y2 !== undefined ? p.y2 : 0) || 0}"></td>
+          <td style="width:55px;"><input type="number" step="0.5" data-field="width" value="${+(p.width || 2.5) || 0}"></td>
           <td style="width:30px; text-align:center;">
             <button class="tb mini" style="color:var(--red); padding:1px 5px;" onclick="editeurSupprimerLigne(${item.realIdx})" title="Supprimer">✕</button>
           </td>
