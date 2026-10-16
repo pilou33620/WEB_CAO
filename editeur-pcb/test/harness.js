@@ -6069,6 +6069,31 @@ T("trous NPTH d'empreinte : dessinés et jugés face au fabricant (M1-4)",()=>{
   if(!it||it.ok||it.val!=="0.45 mm")throw new Error("Ø 0,45 d'empreinte devait être jugé trop petit : "+JSON.stringify(it));
   S.fps=[];touch();
 });
+T("trous NPTH d'empreinte : contrôlés comme des trous de carte (M1-5)",()=>{
+  loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);clearSel();
+  const def={name:"J essai",pins:2,style:"row",pads:[
+    {n:1,x:-1,y:0,w:1.5,h:1.5,shape:"sharp",drill:0.9},{n:2,x:1,y:0,w:1.5,h:1.5,shape:"circ",drill:0.9}]};
+  const fp=mkFp("J1","","J",2);fp.x=30;fp.y=30;S.fps.push(fp);
+  fpApplyDef(fp,Object.assign({},def,{holes:[{x:0,y:3,d:1},{x:-1,y:1.35,d:1}]}));touch();
+  const pres=(mot,x,y)=>runDrc().some(e=>e.msg&&e.msg.indexOf(mot)>=0&&Math.abs(e.x-x)<1.5&&Math.abs(e.y-y)<1.5);
+  /* le trou (-1 ; 1,35) est à 0,1 mm de la pastille 1 de sa propre empreinte : voulu par la fiche */
+  if(pres("trou NPTH",29,31.35)||pres("Trou NPTH",29,31.35))throw new Error("trou à 0,1 mm d'une pastille de sa propre empreinte : ne doit pas être signalé");
+  S.tracks.push({l:0,x1:25,y1:33.7,x2:35,y2:33.7,w:0.25,net:"VCC"});touch();
+  if(!pres("Cuivre trop proche du trou NPTH",30,33))throw new Error("piste trop près d'un trou d'empreinte non signalée");
+  S.tracks=[];
+  const voisin=mkFp("J2","","J",2);voisin.x=31;voisin.y=34.1;S.fps.push(voisin);
+  fpApplyDef(voisin,def);touch();
+  if(!pres("trop proche du trou NPTH",30,33))throw new Error("pastille d'une autre empreinte trop près non signalée");
+  S.fps.pop();
+  /* recouvrement d'une pastille de sa propre empreinte : toujours une faute */
+  fpApplyDef(fp,Object.assign({},def,{holes:[{x:-1,y:1.0,d:1}]}));touch();
+  if(!pres("trop proche du trou NPTH",29,31))throw new Error("trou qui recouvre une pastille de son empreinte : doit être signalé");
+  /* posé sur un trou de carte : recouvrement */
+  fpApplyDef(fp,Object.assign({},def,{holes:[{x:0,y:3,d:1}]}));
+  S.holes=[mkHole(30,33,1)];touch();
+  if(!pres("Trous NPTH qui se recouvrent",30,33))throw new Error("trou d'empreinte sur un trou de carte : recouvrement non signalé");
+  loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);
+});
 T("bibliothèque : lecture défensive et fusion des noms",()=>{
   fpLibRaz();
   if(!fpLibParse("ceci n'est pas du json").err)

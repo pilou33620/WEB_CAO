@@ -605,15 +605,21 @@ function runDrc(){
   for(const v of S.vias)
     if(!inBoard(v.x,v.y,S.rule.edge))
       out.push({x:v.x,y:v.y,l:v.a,msg:"Via hors du contour de carte"});
-  if(S.holes){
+  /* trous de carte et trous d'empreinte, contrôlés de la même façon. Une
+     pastille de l'empreinte qui porte le trou peut en être plus près que
+     l'écartement — la fiche l'a voulu (couronne d'une entretoise, pattes d'un
+     connecteur) — mais jamais le recouvrir */
+  const trous=trousMonde();
+  const sienne=(h,p,e)=>h.fp&&h.fp===p.fp&&e>=-1e-6;
+  if(trous.length){
     const hcl=S.rule.hole||0.25;
-    for(const h of S.holes){
+    for(const h of trous){
       if(!inBoard(h.x,h.y,h.d/2+S.rule.edge))
         out.push({x:h.x,y:h.y,msg:"Trou NPTH Ø"+fmt(h.d,2)+" hors du contour de carte ou trop près du bord"});
     }
-    for(let i=0;i<S.holes.length;i++){
-      for(let j=i+1;j<S.holes.length;j++){
-        const h1=S.holes[i], h2=S.holes[j];
+    for(let i=0;i<trous.length;i++){
+      for(let j=i+1;j<trous.length;j++){
+        const h1=trous[i], h2=trous[j];
         const e=dist(h1.x,h1.y,h2.x,h2.y)-h1.d/2-h2.d/2;
         if(e<hcl-1e-6){
           out.push({x:(h1.x+h2.x)/2,y:(h1.y+h2.y)/2,
@@ -623,7 +629,7 @@ function runDrc(){
         }
       }
     }
-    for(const h of S.holes){
+    for(const h of trous){
       for(const v of S.vias){
         const e=dist(h.x,h.y,v.x,v.y)-h.d/2-v.drill/2;
         if(e<hcl-1e-6){
@@ -632,18 +638,18 @@ function runDrc(){
         }
       }
     }
-    for(const h of S.holes){
+    for(const h of trous){
       for(const p of pads){
         if(p.q.drill>0){
           const e=dist(h.x,h.y,p.q.x,p.q.y)-h.d/2-p.q.drill/2;
-          if(e<hcl-1e-6){
+          if(e<hcl-1e-6&&!sienne(h,p,e)){
             out.push({x:(h.x+p.q.x)/2,y:(h.y+p.q.y)/2,
               msg:"Trou NPTH Ø"+fmt(h.d,2)+" trop proche du perçage de "+p.tag+" ("+fmt(Math.max(0,e),3)+" mm, min "+fmt(hcl,3)+" mm)"});
           }
         }
       }
     }
-    for(const h of S.holes){
+    for(const h of trous){
       for(const t of S.tracks){
         const clr=(classOf(t.net)&&classOf(t.net).clr)||0.25;
         const e=trkDist(h.x,h.y,t)-t.w/2-h.d/2;
@@ -655,7 +661,7 @@ function runDrc(){
       for(const p of pads){
         const clr=(classOf(p.q.net)&&classOf(p.q.net).clr)||0.25;
         const e=padDist(h.x,h.y,p.q)-h.d/2;
-        if(e<clr-1e-6){
+        if(e<clr-1e-6&&!sienne(h,p,e)){
           out.push({x:h.x,y:h.y,l:p.layers[0],
             msg:"Pastille "+p.tag+" trop proche du trou NPTH Ø"+fmt(h.d,2)+" ("+fmt(Math.max(0,e),3)+" mm, min "+fmt(clr,3)+" mm)"});
         }

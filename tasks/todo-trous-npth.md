@@ -45,11 +45,11 @@ fichier NPTH.
 ### T4 : contrôles (M1-5)
 `02-connectivity.js` lit `trousMonde()`. Une pastille de la même empreinte
 n'est pas signalée en deçà de l'écartement ; un recouvrement l'est toujours.
-- [ ] Trou d'empreinte trop près d'une piste d'un autre net : signalé
-- [ ] Trou d'empreinte trop près d'une pastille d'une autre empreinte : signalé
-- [ ] Trou d'empreinte à 0,1 mm d'une pastille de sa propre empreinte : non signalé ; s'il la recouvre : signalé
-- [ ] Trou d'empreinte posé sur un trou de carte : recouvrement signalé
-- [ ] `JS_PCB` passe
+- [x] Trou d'empreinte trop près d'une piste d'un autre net : signalé
+- [x] Trou d'empreinte trop près d'une pastille d'une autre empreinte : signalé
+- [x] Trou d'empreinte à 0,1 mm d'une pastille de sa propre empreinte : non signalé ; s'il la recouvre : signalé
+- [x] Trou d'empreinte posé sur un trou de carte : recouvrement signalé
+- [x] `JS_PCB` passe
 
 ### T5 : IPC-2581, Draftsman, dossier méca (M1-4)
 `35-ipc2581-export.js`, `29-draftsman.js`, `33-draftsman-export.js`,
