@@ -195,6 +195,11 @@ function ipcEnveloppe(P){
   return lo.concat(hi);
 }
 /* Un segment épaissi de r, bouts ronds — la gélule d'un trait. */
+/* Perçage dans le cuivre, élargi de `grow` : cercle, ou gélule de la fente */
+function ipcPercage(o,grow){
+  const ax=axePercage(o), r=ax.d/2+grow;
+  return ax.x1===ax.x2&&ax.y1===ax.y2?ipcCercle(o.x,o.y,r,true):ipcGelule(ax.x1,ax.y1,ax.x2,ax.y2,r);
+}
 function ipcGelule(x1,y1,x2,y2,r){
   return ipcEnveloppe(ipcCercle(x1,y1,r,true).concat(ipcCercle(x2,y2,r,true)));
 }
@@ -421,7 +426,7 @@ function ipcRemplir(z){
     if(i<v.a||i>v.b||(v.net||"")===zn)continue;
     prendre(moins,ipcCercle(v.x,v.y,v.d/2+clrK(zn,v.net,"cu","via"),true));
   }
-  for(const h of trousMonde())prendre(moins,ipcCercle(h.x,h.y,h.d/2+classOf(zn).clr,true));
+  for(const h of trousMonde())prendre(moins,ipcPercage(h,classOf(zn).clr));
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
       if(!padLayers(fp,q).includes(i))continue;
@@ -429,12 +434,12 @@ function ipcRemplir(z){
       if(meme&&fichier)continue;                    // raccordée par le fichier
       const qc=padSurCouche(q,i);
       if(!qc){
-        if(q.drill>0)prendre(moins,ipcCercle(q.x,q.y,q.drill/2+clrK(zn,q.net,"cu","th"),true));
+        if(q.drill>0)prendre(moins,ipcPercage(q,clrK(zn,q.net,"cu","th")));
         continue;
       }
       if(!meme){
         prendre(moins,ipcPastilleDegagee(qc,clrK(zn,q.net,"cu",q.drill>0?"th":"smd")));
-        if(q.drill>0)prendre(moins,ipcCercle(q.x,q.y,q.drill/2+clrK(zn,q.net,"cu","th"),true));
+        if(q.drill>0)prendre(moins,ipcPercage(q,clrK(zn,q.net,"cu","th")));
         continue;
       }
       /* liaison thermique : l'anneau de l'isolement de la zone, et ses bras */

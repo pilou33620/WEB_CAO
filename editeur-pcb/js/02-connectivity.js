@@ -106,7 +106,7 @@ function zoneMask(l,net){
     c.arc(v.x,v.y,v.net===net?v.drill/2:v.d/2+clrK(net,v.net,"cu","via"),0,Math.PI*2);
     c.fill();
   }
-  for(const h of trousMonde()){c.beginPath();c.arc(h.x,h.y,h.d/2+clr,0,Math.PI*2);c.fill();}
+  for(const h of trousMonde()){c.beginPath();cheminPercage(c,h,clr);c.fill();}
   const thermals=[];
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
@@ -114,12 +114,12 @@ function zoneMask(l,net){
       if(q.net===net&&zoneFichier(zoneAt(l,q.x,q.y)))continue;   // raccordée par le fichier
       const qc=padSurCouche(q,l);
       if(!qc){
-        if(q.drill>0){c.beginPath();c.arc(q.x,q.y,q.drill/2+clrK(net,q.net,"cu","th"),0,Math.PI*2);c.fill();}
+        if(q.drill>0){c.beginPath();cheminPercage(c,q,clrK(net,q.net,"cu","th"));c.fill();}
         continue;
       }
       padFill(c,qc,q.net===net?clr:clrK(net,q.net,"cu",q.drill>0?"th":"smd"));
       if(q.net===net)thermals.push(q);
-      else if(q.drill>0){c.beginPath();c.arc(q.x,q.y,q.drill/2+clr,0,Math.PI*2);c.fill();}
+      else if(q.drill>0){c.beginPath();cheminPercage(c,q,clr);c.fill();}
     }
   c.globalCompositeOperation="source-over";
   c.fillStyle="#fff";
@@ -132,7 +132,7 @@ function zoneMask(l,net){
     c.restore();
     if(q.drill>0){
       c.save();c.globalCompositeOperation="destination-out";
-      c.beginPath();c.arc(q.x,q.y,q.drill/2,0,Math.PI*2);c.fill();c.restore();
+      c.beginPath();cheminPercage(c,q);c.fill();c.restore();
     }
   }
   let img;

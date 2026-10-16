@@ -6232,6 +6232,25 @@ T("perçages oblongs : contrôlés sur leur vraie forme, et face au fabricant (M
   if(pcbAuditBoardAgainstMfg(pcbGetMfgProfile("jlcpcb")).some(i=>/[Ff]ente/.test(i.label)))
     throw new Error("sans fente, l'audit ne gagne aucun poste");
 });
+T("perçages oblongs : dessinés en vraie forme, dégagés dans les zones (M2-2, M2-4)",()=>{
+  loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);clearSel();
+  try{
+    /* dessin : la fente NPTH de 28 à 32 en x se trace jusqu'à ses bouts */
+    S.holes=[normHole({x:30,y:30,d:1,w:5,rot:0},0)];touch();
+    const pts=[];
+    const c=new Proxy({},{get:(_,k)=>k==="moveTo"||k==="lineTo"?(x,y)=>pts.push([x,y]):()=>{},set:()=>true});
+    drawHoles(c);
+    if(!pts.some(p=>Math.abs(p[0]-32.5)<1e-6)||!pts.some(p=>Math.abs(p[0]-27.5)<1e-6))
+      throw new Error("fente dessinée sans ses bouts : "+JSON.stringify(pts.slice(0,6)));
+    /* zone : la fente se dégage en trait (D01), pas en simple éclair ; l'IPC-2581 aussi change */
+    S.zones=[{id:S.nextId++,l:0,net:"GND",pts:[{x:5,y:5},{x:60,y:5},{x:60,y:50},{x:5,y:50}]}];touch();
+    const date={date:"2026-10-16T00:00:00Z"}, gO=gerberCopper(0), iO=ipc2581Document(date).xml;
+    S.holes=[normHole({x:30,y:30,d:1},0)];touch();
+    const gR=gerberCopper(0), iR=ipc2581Document(date).xml, d01=s=>(s.match(/D01\*/g)||[]).length;
+    if(d01(gO)!==d01(gR)+1)throw new Error("Gerber : la fente doit se dégager par un trait ("+d01(gO)+" D01 contre "+d01(gR)+")");
+    if(iO===iR)throw new Error("IPC-2581 : le dégagement de la fente doit différer de celui du rond");
+  }finally{loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);}
+});
 T("bibliothèque : lecture défensive et fusion des noms",()=>{
   fpLibRaz();
   if(!fpLibParse("ceci n'est pas du json").err)

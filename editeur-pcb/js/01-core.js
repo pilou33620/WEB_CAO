@@ -2320,6 +2320,14 @@ function contourOblong(ax){
   for(let k=0;k<=12;k++){const a=t-Math.PI/2+Math.PI*k/12;P.push({x:ax.x2+r*Math.cos(a),y:ax.y2+r*Math.sin(a)});}
   return P;
 }
+/* Contour d'un perçage sur un canevas, élargi de `grow` : cercle pour un
+   rond (le tracé d'avant), contour oblong pour une fente */
+function cheminPercage(c,o,grow){
+  const ax=axePercage(o), g=grow||0;
+  if(ax.x1===ax.x2&&ax.y1===ax.y2){c.arc(o.x,o.y,ax.d/2+g,0,Math.PI*2);return;}
+  const P=contourOblong({...ax,d:ax.d+2*g});
+  c.moveTo(P[0].x,P[0].y);for(let k=1;k<P.length;k++)c.lineTo(P[k].x,P[k].y);c.closePath();
+}
 /* Axe d'un perçage, en coordonnées monde : ses deux bouts et sa largeur.
    Pastille de padsWorld (rot en radians, fente `slot` le long du grand côté)
    ou trou de trousMonde / S.holes (rot en degrés, longueur `w`). Un perçage

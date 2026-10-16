@@ -187,7 +187,7 @@ function zoneCanvas(i){
     c.fill();
   }
   for(const h of trousMonde()){       // trou NPTH : dégagé à l'écartement de la zone (comme au Gerber)
-    c.beginPath();c.arc(h.x,h.y,h.d/2+clr,0,Math.PI*2);c.fill();
+    c.beginPath();cheminPercage(c,h,clr);c.fill();
   }
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
@@ -196,17 +196,17 @@ function zoneCanvas(i){
       /* zone au cuivre du fichier : la pastille de son net y est déjà raccordée
          comme le fabricant l'a voulu — seul le trou se perce */
       if(same&&zoneFichier(zoneAt(i,q.x,q.y))){
-        if(q.drill>0){c.beginPath();c.arc(q.x,q.y,q.drill/2,0,Math.PI*2);c.fill();}
+        if(q.drill>0){c.beginPath();cheminPercage(c,q);c.fill();}
         continue;
       }
       const qc=padSurCouche(q,i);
       if(!qc){                         // pas de cuivre sur cette couche : le trou seul
-        if(q.drill>0){c.beginPath();c.arc(q.x,q.y,q.drill/2+clrK(zoneNetAt(i,q.x,q.y),q.net,"cu","th"),0,Math.PI*2);c.fill();}
+        if(q.drill>0){c.beginPath();cheminPercage(c,q,clrK(zoneNetAt(i,q.x,q.y),q.net,"cu","th"));c.fill();}
         continue;
       }
       padFill(c,qc,same?clr:clrK(zoneNetAt(i,q.x,q.y),q.net,"cu",q.drill>0?"th":"smd"));
       if(same)thermals.push(q);
-      else if(q.drill>0){c.beginPath();c.arc(q.x,q.y,q.drill/2+clr,0,Math.PI*2);c.fill();}
+      else if(q.drill>0){c.beginPath();cheminPercage(c,q,clr);c.fill();}
     }
   /* liaisons thermiques : quatre bras par défaut, ou configuration personnalisée */
   c.globalCompositeOperation="source-over";
@@ -226,7 +226,7 @@ function zoneCanvas(i){
     c.restore();
     if(q.drill>0){
       c.save();c.globalCompositeOperation="destination-out";
-      c.beginPath();c.arc(q.x,q.y,q.drill/2,0,Math.PI*2);c.fill();c.restore();
+      c.beginPath();cheminPercage(c,q);c.fill();c.restore();
     }
   }
   const rec={ver:S.ver,res,cvs:o,x:x1,y:y1,w:W/res,h:H/res};
@@ -452,7 +452,7 @@ function drawThruMarks(c){
       c.globalAlpha=netAlpha(q.net);
       padOutline(c,q,C_THRU,px(1.2));
       c.fillStyle=C_DRILL;
-      c.beginPath();c.arc(q.x,q.y,q.drill/2,0,Math.PI*2);c.fill();
+      c.beginPath();cheminPercage(c,q);c.fill();
     }
   c.globalAlpha=1;
 }
@@ -978,10 +978,10 @@ function drawHoles(c){
   for(const h of trousMonde()){
     const r=h.d/2;
     c.fillStyle=C_BG;
-    c.beginPath();c.arc(h.x,h.y,r,0,Math.PI*2);c.fill();
+    c.beginPath();cheminPercage(c,h);c.fill();
     c.strokeStyle="#8da2b5";
     c.lineWidth=px(1.2);
-    c.beginPath();c.arc(h.x,h.y,r,0,Math.PI*2);c.stroke();
+    c.beginPath();cheminPercage(c,h);c.stroke();
     const cr=Math.min(r,Math.max(px(3),0.8));
     c.beginPath();
     c.moveTo(h.x-cr,h.y);c.lineTo(h.x+cr,h.y);

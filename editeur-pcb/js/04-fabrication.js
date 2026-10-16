@@ -248,6 +248,13 @@ function gSeg(body,A,x1,y1,x2,y2,w){
    le mode multi-quadrant attend, et il faut le déclarer, la norme ne fixant
    pas le mode d'arc au démarrage. On revient en G01 derrière : tout ce qui
    suit est de nouveau du trait droit. */
+/* Perçage dans le cuivre, élargi de `grow` : un éclair rond comme avant, ou
+   le trait de l'axe de la fente à la largeur voulue */
+function gPercage(body,A,o,grow){
+  const ax=axePercage(o);
+  if(ax.x1===ax.x2&&ax.y1===ax.y2)gFlash(body,A,A.get("C,"+fmt(ax.d+2*grow,4)),o.x,o.y);
+  else gTrk(body,A,ax,ax.d+2*grow);
+}
 function gTrk(body,A,t,w){
   const arc=arcOf(t);
   if(!arc){gSeg(body,A,t.x1,t.y1,t.x2,t.y2,w);return;}
@@ -362,7 +369,7 @@ function gerberCopper(i){
       let z=zn(h.x,h.y);
       if(z===null)z=zoneEtrangereProche(zs,"",(a,b)=>segDist(h.x,h.y,a.x,a.y,b.x,b.y),q=>h.d/2+classOf(q.net).clr);
       if(z===null)continue;
-      gFlash(body,A,A.get("C,"+fmt(h.d+2*classOf(z).clr,4)),h.x,h.y);
+      gPercage(body,A,h,classOf(z).clr);
     }
     const thermals=[];
     for(const fp of S.fps)
@@ -376,14 +383,14 @@ function gerberCopper(i){
         if(same&&zoneFichier(zoneAt(i,q.x,q.y)))continue;   // raccordée par le fichier
         const qc=padSurCouche(q,i);
         if(!qc){                       // pas de cuivre ici : le trou seul se dégage
-          if(q.drill>0)gFlash(body,A,A.get("C,"+fmt(q.drill+2*clrK(z,q.net,"cu","th"),4)),q.x,q.y);
+          if(q.drill>0)gPercage(body,A,q,clrK(z,q.net,"cu","th"));
           continue;
         }
         gPad(body,A,qc,same?classOf(z).clr:
           clrK(z,q.net,"cu",q.drill>0?"th":"smd"));
         if(same)thermals.push(q);
         else if(q.drill>0)
-          gFlash(body,A,A.get("C,"+fmt(q.drill+2*clrK(z,q.net,"cu","th"),4)),q.x,q.y);
+          gPercage(body,A,q,clrK(z,q.net,"cu","th"));
       }
     body.push("%LPD*%");
     for(const q of thermals){          // liaisons thermiques (personnalisées ou 4 bras par défaut)
@@ -398,7 +405,7 @@ function gerberCopper(i){
       }
       if(q.drill>0){
         body.push("%LPC*%");
-        gFlash(body,A,A.get("C,"+fmt(q.drill,4)),q.x,q.y);
+        gPercage(body,A,q,0);
         body.push("%LPD*%");
       }
     }
