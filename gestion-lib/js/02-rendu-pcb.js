@@ -121,6 +121,13 @@ class PcbRenderer {
         y2 = Math.max(y2, p.y + ph);
       }
     }
+    if (Array.isArray(this.fp.holes)) {
+      for (const t of this.fp.holes) {
+        const r = (t.d || 1) / 2;
+        x1 = Math.min(x1, t.x - r); y1 = Math.min(y1, t.y - r);
+        x2 = Math.max(x2, t.x + r); y2 = Math.max(y2, t.y + r);
+      }
+    }
     if (Array.isArray(this.fp.lines)) {
       for (const l of this.fp.lines) {
         if (l.x1 !== undefined) x1 = Math.min(x1, l.x1);
@@ -170,6 +177,7 @@ class PcbRenderer {
     if (this.fp) {
       this._drawSilkscreen(ctx);
       this._drawPads(ctx);
+      this._drawHoles(ctx);
     }
 
     ctx.restore();
@@ -254,6 +262,25 @@ class PcbRenderer {
         ctx.lineTo(l.x2 * z, l.y2 * z);
         ctx.stroke();
       }
+    }
+  }
+
+  // Trous non métallisés : percés sans cuivre, cerclés et marqués d'une croix
+  _drawHoles(ctx) {
+    const z = this.zoom;
+    if (!Array.isArray(this.fp.holes)) return;
+    for (const t of this.fp.holes) {
+      const r = ((t.d || 1) / 2) * z;
+      ctx.fillStyle = PCB_COLORS.drill;
+      ctx.beginPath(); ctx.arc(t.x * z, t.y * z, r, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = PCB_COLORS.silk;
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(t.x * z, t.y * z, r, 0, Math.PI * 2); ctx.stroke();
+      const c = Math.min(r, 6);
+      ctx.beginPath();
+      ctx.moveTo(t.x * z - c, t.y * z); ctx.lineTo(t.x * z + c, t.y * z);
+      ctx.moveTo(t.x * z, t.y * z - c); ctx.lineTo(t.x * z, t.y * z + c);
+      ctx.stroke();
     }
   }
 

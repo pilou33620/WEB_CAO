@@ -354,7 +354,9 @@ function editeurChangerOutil(outil) {
   const btnPan = document.getElementById("btnOutilPan");
   const btnMove = document.getElementById("btnOutilDeplacer");
   const btnLine = document.getElementById("btnOutilLigne");
+  const btnTrou = document.getElementById("btnOutilTrou");
 
+  if (btnTrou) btnTrou.classList.toggle("active", outil === "trou");
   if (btnPan) btnPan.classList.toggle("active", outil === "pan");
   if (btnMove) btnMove.classList.toggle("active", outil === "move");
   if (btnLine) btnLine.classList.toggle("active", outil === "line");
@@ -362,7 +364,7 @@ function editeurChangerOutil(outil) {
   const canvas = document.getElementById("canvasEditeurLib");
   if (canvas) {
     if (outil === "pan") canvas.style.cursor = "grab";
-    else if (outil === "line") canvas.style.cursor = "crosshair";
+    else if (outil === "line" || outil === "trou") canvas.style.cursor = "crosshair";
     else canvas.style.cursor = "default";
   }
 
@@ -371,6 +373,8 @@ function editeurChangerOutil(outil) {
     editeurAfficherInfoCanvas(isPcb
       ? "Mode Déplacement : Glissez une pastille (pad) pour changer sa position avec magnétisme"
       : "Mode Déplacement : Glissez une broche (pin) pour changer sa position sur la grille");
+  } else if (outil === "trou") {
+    editeurAfficherInfoCanvas("Mode Trou : Cliquez pour poser un trou non métallisé (centrage, fixation) ; diamètre et position dans l'onglet Éléments");
   } else if (outil === "line") {
     editeurAfficherInfoCanvas(isPcb
       ? "Mode Trait : Cliquez pour le départ du trait sérigraphie, puis cliquez pour la fin (Échap pour annuler)"
@@ -546,6 +550,22 @@ function editeurPointerDown(e) {
       EDITEUR_LIB.renderer.render();
     }
     return false;
+  }
+
+  // Trou NPTH : posé sur la grille, au diamètre du dernier trou (3,2 mm au premier)
+  if (tool === "trou" && isPcb) {
+    const w = EDITEUR_LIB.renderer.screenToWorld(e.clientX, e.clientY);
+    editeurHistoriquePush();
+    if (!Array.isArray(EDITEUR_LIB.data.holes)) EDITEUR_LIB.data.holes = [];
+    const prec = EDITEUR_LIB.data.holes[EDITEUR_LIB.data.holes.length - 1];
+    EDITEUR_LIB.data.holes.push({
+      x: parseFloat(editeurSnap(w.x, EDITEUR_LIB.grilleMm).toFixed(3)),
+      y: parseFloat(editeurSnap(w.y, EDITEUR_LIB.grilleMm).toFixed(3)),
+      d: prec ? prec.d : 3.2
+    });
+    remplirElementsEditeur();
+    EDITEUR_LIB.renderer.render();
+    return true;
   }
 
   if (tool === "line") {
@@ -1209,8 +1229,40 @@ function remplirElementsEditeur() {
         </table>
       </div>
       <div id="editeurPadDetail" style="margin-top:10px;"></div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin:12px 0 8px;">
+        <span style="font-weight:600; font-size:12px;">Trous non métallisés (${(data.holes || []).length})</span>
+        <button class="tb mini" onclick="editeurChangerOutil('trou')" title="Poser un trou au clic sur le plan">⊕ Poser un trou</button>
+      </div>
+      <table class="editable-items-table">
+        <thead><tr><th>X</th><th>Y</th><th>Ø</th><th></th></tr></thead>
+        <tbody id="tbodyTrousEditeur">${(data.holes || []).map((t, idx) => `
+          <tr data-idx="${idx}">
+            <td><input type="number" step="0.05" data-field="x" value="${t.x}"></td>
+            <td><input type="number" step="0.05" data-field="y" value="${t.y}"></td>
+            <td><input type="number" step="0.05" min="0.4" max="30" data-field="d" value="${t.d}"></td>
+            <td style="width:30px; text-align:center;">
+              <button class="tb mini" style="color:var(--red); padding:1px 5px;" onclick="editeurSupprimerTrou(${idx})" title="Supprimer">✕</button>
+            </td>
+          </tr>`).join("")}</tbody>
+      </table>
     `;
     rendreDetailPad();
+    const tbodyTrous = document.getElementById("tbodyTrousEditeur");
+    if (tbodyTrous) {
+      tbodyTrous.querySelectorAll("input").forEach(inp => {
+        inp.addEventListener("focus", () => { editeurInputSessionPushed = false; });
+        inp.addEventListener("input", e => {
+          editeurInputBeforeChange();
+          const idx = parseInt(e.target.closest("tr").getAttribute("data-idx"), 10);
+          const t = EDITEUR_LIB.data.holes && EDITEUR_LIB.data.holes[idx];
+          const v = parseFloat(e.target.value);
+          if (!t || !Number.isFinite(v)) return;
+          // le Ø suit les bornes de l'éditeur PCB (0,4 à 30 mm), qui le ramènerait sinon à la lecture
+          t[e.target.getAttribute("data-field")] = e.target.getAttribute("data-field") === "d" ? Math.min(30, Math.max(0.4, v)) : v;
+          if (EDITEUR_LIB.renderer) EDITEUR_LIB.renderer.render();
+        });
+      });
+    }
 
     // Écouteurs inputs pads
     const tbody = document.getElementById("tbodyPadsEditeur");
@@ -1357,6 +1409,15 @@ function editeurSupprimerPad(idx) {
   EDITEUR_LIB.data.pads.splice(idx, 1);
   EDITEUR_LIB.data.pins = EDITEUR_LIB.data.pads.length;
   if (EDITEUR_LIB.selectionIndex === idx) EDITEUR_LIB.selectionIndex = -1;
+  remplirElementsEditeur();
+  if (EDITEUR_LIB.renderer) EDITEUR_LIB.renderer.render();
+}
+
+function editeurSupprimerTrou(idx) {
+  if (!Array.isArray(EDITEUR_LIB.data.holes)) return;
+  editeurHistoriquePush();
+  EDITEUR_LIB.data.holes.splice(idx, 1);
+  if (!EDITEUR_LIB.data.holes.length) delete EDITEUR_LIB.data.holes;
   remplirElementsEditeur();
   if (EDITEUR_LIB.renderer) EDITEUR_LIB.renderer.render();
 }

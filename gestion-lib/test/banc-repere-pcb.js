@@ -34,4 +34,19 @@ for (const nom of ["editeurGenererSoic", "editeurGenererDip"]) {
   assert.ok(b(n / 2).y > 0 && b(n / 2 + 1).x > 0 && b(n / 2 + 1).y > 0 && b(n).y < 0,
     nom + " : sens antihoraire vu de dessus");
 }
+// 3. Trous NPTH : dessinés dans le même repère, posés au clic par l'outil Trou
+const arcs = [];
+const ctx2 = new Proxy({}, { get: (_, k) => k === "arc" ? (x, y, rr) => arcs.push([x, y, rr]) : () => {}, set: () => true });
+r.fp = { pads: [], holes: [{ x: 1, y: -2, d: 1.2 }] };
+r._drawHoles(ctx2);
+assert.ok(arcs.some(a => a[0] > 0 && a[1] < 0 && Math.abs(a[2] - 0.6 * r.zoom) < 1e-9), "trou en (1 ; -2) : a droite, au-dessus de l'axe");
+const g = { EDITEUR_LIB: { actif: true, type: "pcb", outilActif: "trou", grilleMm: 0.05, data: { pads: [], holes: [{ x: 0, y: 0, d: 2.5 }] },
+  renderer: { screenToWorld: () => ({ x: 1.03, y: -2.01 }), render: () => {} } } };
+for (const f of ["editeurHistoriquePush", "remplirElementsEditeur"]) g[f] = () => {};
+vm.createContext(g);
+for (const nom of ["editeurSnap", "editeurPointerDown"])
+  vm.runInContext(src.match(new RegExp("function " + nom + "\\([^)]*\\)[\\s\\S]*?\\n}\\n"))[0], g);
+assert.ok(g.editeurPointerDown({ button: 0, clientX: 0, clientY: 0 }), "le clic de l'outil Trou est pris");
+const t = g.EDITEUR_LIB.data.holes[1];
+assert.ok(t && Math.abs(t.x - 1.05) < 1e-9 && Math.abs(t.y + 2) < 1e-9 && t.d === 2.5, "trou pose sur la grille, au diametre du precedent : " + JSON.stringify(t));
 console.log("ok repere y vers le bas");

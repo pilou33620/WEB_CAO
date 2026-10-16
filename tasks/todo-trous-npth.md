@@ -68,10 +68,11 @@ sur `S.holes` (D3).
 `02-rendu-pcb.js` dessine `holes`. `05-editeur-lib.js` ajoute l'outil
 « Trou » (poser, déplacer, supprimer, diamètre) et garde `holes` dans la vue
 JSON et à l'enregistrement.
-- [ ] `banc-repere-pcb.js` : un trou en (1, -2) est dessiné au-dessus de l'axe et à droite de l'origine
-- [ ] Un clic de l'outil Trou à un point écran donne un trou à la position monde attendue
-- [ ] Enregistrer puis relire une empreinte garde ses trous (banc ou essai manuel décrit)
-- [ ] `JS_LIB` et `PY_LIB` passent
+- [x] `banc-repere-pcb.js` : un trou en (1, -2) est dessiné au-dessus de l'axe et à droite de l'origine
+- [x] Un clic de l'outil Trou à un point écran donne un trou à la position monde attendue
+- [x] Enregistrer puis relire une empreinte garde ses trous (banc ou essai manuel décrit)
+  → l'enregistrement et la vue JSON écrivent `EDITEUR_LIB.data` entier : `holes` passe sans code. Déplacement : par le tableau (X, Y), pas encore au glisser
+- [x] `JS_LIB` et `PY_LIB` passent
 
 ## Phase 4 : clôture
 
