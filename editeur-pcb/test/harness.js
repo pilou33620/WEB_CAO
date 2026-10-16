@@ -22432,11 +22432,17 @@ T("déplacer un boîtier hors grille pose son centre sur la grille",()=>{
 T("empreintes : toutes centrées sur leur origine (LIB et boîtiers intégrés)",()=>{
   const noms=new Set(PCB_LIB_DEFAUT.filter(n=>typeof n==="string"));
   const dir=path.join(__dirname,"..","..","..","PROJETS","LIB_CAO","lib_empreinte_pcb");
-  if(fs.existsSync(dir))for(const f of fs.readdirSync(dir))if(/\.json$/.test(f))noms.add(f.replace(/\.json$/,""));
+  /* le nombre de broches vient du fichier : un nom de pièce (« Molex-22-05-3051 »)
+     finit par une référence, pas par un brochage */
+  const broches=new Map();
+  if(fs.existsSync(dir))for(const f of fs.readdirSync(dir))if(/\.json$/.test(f)){
+    const n=f.replace(/\.json$/,"");noms.add(n);
+    try{const p=JSON.parse(fs.readFileSync(path.join(dir,f),"utf8")).pins;if(Number.isInteger(p))broches.set(n,p);}catch(_){}
+  }
   const faux=[];
   for(const n of noms){
     const m=/(\d+)$/.exec(n);
-    const fp=mkFp("X1","",n,m?+m[1]:2);fp.x=0;fp.y=0;fp.rot=0;
+    const fp=mkFp("X1","",n,broches.get(n)||(m?+m[1]:2));fp.x=0;fp.y=0;fp.rot=0;
     const b=fpBBox(fp);
     if(Math.abs((b.x1+b.x2)/2)>0.01||Math.abs((b.y1+b.y2)/2)>0.01)faux.push(n);
   }
