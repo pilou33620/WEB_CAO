@@ -116,6 +116,9 @@ jobs:
           node gestion-lib/test/banc-ia-xss.js
           node commun/test/banc-ia-markdown.js
 
+      - name: Gestion LIB — repère des empreintes (y vers le bas, comme l'éditeur PCB)
+        run: node gestion-lib/test/banc-repere-pcb.js
+
       - name: Rapport de simulation (Markdown) — banc d'essai
         run: node commun/test/banc-rapport-sim.js
 

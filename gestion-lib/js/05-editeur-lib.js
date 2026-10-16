@@ -748,7 +748,7 @@ function editeurOverlayDraw(ctx, w, h) {
 
       ctx.save();
       ctx.translate(s.x, s.y);
-      if (isPcb && elem.rot) ctx.rotate((-elem.rot * Math.PI) / 180);
+      if (isPcb && elem.rot) ctx.rotate((elem.rot * Math.PI) / 180);
 
       const pw = isPcb ? (elem.w || 1) * EDITEUR_LIB.renderer.zoom : 20;
       const ph = isPcb ? (elem.h || 1) * EDITEUR_LIB.renderer.zoom : 20;
@@ -1649,14 +1649,14 @@ function editeurGenererDip() {
 
   const nSide = Math.floor(pins / 2);
   const pads = [];
-  const startY = ((nSide - 1) * pitch) / 2;
+  const startY = ((nSide - 1) * pitch) / 2; // y vers le bas : broche 1 en haut à gauche
 
   // Rangée gauche (pins 1 à nSide)
   for (let i = 0; i < nSide; i++) {
     pads.push({
       n: i + 1,
       x: -rowSpan / 2,
-      y: startY - i * pitch,
+      y: -startY + i * pitch,
       w: 1.5,
       h: 1.5,
       shape: i === 0 ? "rect" : "circ",
@@ -1669,7 +1669,7 @@ function editeurGenererDip() {
     pads.push({
       n: nSide + 1 + i,
       x: rowSpan / 2,
-      y: -startY + i * pitch,
+      y: startY - i * pitch,
       w: 1.5,
       h: 1.5,
       shape: "circ",
@@ -1707,7 +1707,7 @@ function editeurGenererSoic() {
     pads.push({
       n: i + 1,
       x: -span / 2,
-      y: startY - i * pitch,
+      y: -startY + i * pitch,
       w: padW,
       h: padH,
       shape: "rect",
@@ -1719,7 +1719,7 @@ function editeurGenererSoic() {
     pads.push({
       n: nSide + 1 + i,
       x: span / 2,
-      y: -startY + i * pitch,
+      y: startY - i * pitch,
       w: padW,
       h: padH,
       shape: "rect",
@@ -1751,7 +1751,7 @@ function editeurGenererHeader() {
     pads.push({
       n: i + 1,
       x: 0,
-      y: startY - i * pitch,
+      y: -startY + i * pitch,
       w: 1.7,
       h: 1.7,
       shape: i === 0 ? "rect" : "circ",

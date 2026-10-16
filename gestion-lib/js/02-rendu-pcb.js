@@ -40,14 +40,14 @@ class PcbRenderer {
     const sx = clientX - r.left;
     const sy = clientY - r.top;
     const xMm = (sx - this.panX) / this.zoom;
-    const yMm = -(sy - this.panY) / this.zoom;
+    const yMm = (sy - this.panY) / this.zoom;
     return { x: xMm, y: yMm, sx, sy };
   }
 
   worldToScreen(xMm, yMm) {
     return {
       x: this.panX + xMm * this.zoom,
-      y: this.panY - yMm * this.zoom
+      y: this.panY + yMm * this.zoom
     };
   }
 
@@ -137,7 +137,7 @@ class PcbRenderer {
     const zoomY = h / spanY;
     this.zoom = Math.max(5, Math.min(120, Math.min(zoomX, zoomY)));
     this.panX = w / 2 - ((x1 + x2) / 2) * this.zoom;
-    this.panY = h / 2 + ((y1 + y2) / 2) * this.zoom;
+    this.panY = h / 2 - ((y1 + y2) / 2) * this.zoom;
 
     this.render();
   }
@@ -161,7 +161,7 @@ class PcbRenderer {
     ctx.fillRect(0, 0, w, h);
 
     // Transformation mm -> pixels écran
-    // Y inversé pour avoir les ordonnées usuelles de CAO
+    // Vue de dessus, y vers le bas : le repère de l'éditeur PCB et de la LIB
     ctx.translate(this.panX, this.panY);
 
     this._drawGrid(ctx, w, h);
@@ -192,8 +192,8 @@ class PcbRenderer {
 
     const leftMm = -this.panX / z;
     const rightMm = (w - this.panX) / z;
-    const topMm = (this.panY - h) / z;
-    const bottomMm = this.panY / z;
+    const topMm = -this.panY / z;
+    const bottomMm = (h - this.panY) / z;
 
     ctx.fillStyle = PCB_COLORS.grid;
     const startX = Math.floor(leftMm / step) * step;
@@ -201,7 +201,7 @@ class PcbRenderer {
 
     for (let x = startX; x <= rightMm; x += step) {
       for (let y = startY; y <= bottomMm; y += step) {
-        ctx.fillRect(x * z - 0.5, -y * z - 0.5, 1, 1);
+        ctx.fillRect(x * z - 0.5, y * z - 0.5, 1, 1);
       }
     }
   }
@@ -232,7 +232,7 @@ class PcbRenderer {
 
     if (b) {
       const bx = b.x1 * z;
-      const by = -b.y2 * z;
+      const by = b.y1 * z;
       const bw = (b.x2 - b.x1) * z;
       const bh = (b.y2 - b.y1) * z;
 
@@ -250,8 +250,8 @@ class PcbRenderer {
       for (const l of fp.lines) {
         ctx.lineWidth = Math.max(1, (l.width || 0.15) * z);
         ctx.beginPath();
-        ctx.moveTo(l.x1 * z, -l.y1 * z);
-        ctx.lineTo(l.x2 * z, -l.y2 * z);
+        ctx.moveTo(l.x1 * z, l.y1 * z);
+        ctx.lineTo(l.x2 * z, l.y2 * z);
         ctx.stroke();
       }
     }
@@ -264,14 +264,14 @@ class PcbRenderer {
 
     for (const q of fp.pads) {
       const px = q.x * z;
-      const py = -q.y * z;
+      const py = q.y * z;
       const pw = (q.w || 1) * z;
       const ph = (q.h || 1) * z;
       const isThru = (q.drill || 0) > 0;
 
       ctx.save();
       ctx.translate(px, py);
-      if (q.rot) ctx.rotate((-q.rot * Math.PI) / 180);
+      if (q.rot) ctx.rotate((q.rot * Math.PI) / 180);
 
       // Cuivre
       ctx.fillStyle = isThru ? PCB_COLORS.copperThru : PCB_COLORS.copperSmd;

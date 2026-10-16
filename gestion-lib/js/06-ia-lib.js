@@ -192,17 +192,17 @@ async function envoyerPromptIa(textePrompt = null) {
   const promptSysteme = `Tu es l'expert d'élite en bibliothèques de composants électroniques et CAO Web (normes IPC-7351B pour les empreintes PCB, IEC 60617 / IEEE 315 pour les symboles schématiques, catalogue de pièces électroniques).
 DIRECTIVES STRICTES :
 1. Réponds toujours en français, avec concision, rigueur et professionnalisme.
-2. Lorsque l'utilisateur demande de générer ou corriger une empreinte PCB, fournis TOUJOURS un bloc balisé \`\`\`action:pcb contenant le JSON conforme au format "pcbfp-1" :
+2. Lorsque l'utilisateur demande de générer ou corriger une empreinte PCB, fournis TOUJOURS un bloc balisé \`\`\`action:pcb contenant le JSON conforme au format "pcbfp-1" (cotes en mm, vue de dessus, origine au centre du corps, axe y VERS LE BAS : broche 1 en haut à gauche, numérotation dans le sens antihoraire) :
 \`\`\`action:pcb
 {
   "format": "pcbfp-1",
   "name": "NOM_BOITIER",
   "pkg": "TYPE_BOITIER",
   "pins": 8,
-  "style": "smd",
+  "style": "sop",
   "pitch": 1.27,
   "pads": [
-    {"n": 1, "x": -2.7, "y": 1.905, "w": 1.5, "h": 0.6, "shape": "rect", "drill": 0, "rot": 0}
+    {"n": 1, "x": -2.7, "y": -1.905, "w": 1.5, "h": 0.6, "shape": "rect", "drill": 0, "rot": 0}
   ],
   "body": {"x1": -2.0, "y1": -2.5, "x2": 2.0, "y2": 2.5},
   "description": "Description concise de l'empreinte"
