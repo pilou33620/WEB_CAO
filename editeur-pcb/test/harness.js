@@ -169,7 +169,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* empreintes dessinees a la main et bibliotheque personnelle */
   "fpFree","padClone","fpAutoBody","fpFreeze","fpGeneric","fpSyncPins",
   "fpMovePad","fpSetPad","fpAddPad","fpDelPad","fpSetPins","fpSetBody",
-  "dPads","dBody","fpDefOf","normFpDef","fpApplyDef","fpLibAll","fpLibWrite",
+  "dPads","dHoles","dBody","fpDefOf","normFpDef","fpApplyDef","fpLibAll","fpLibWrite",
   "fpLibNames","fpLibGet","fpLibPut","fpLibDel","fpLibFile","fpLibParse",
   "fpLibMerge","FPLIB_KEY","FPLIB_FORMAT",
   "FPLIB","FPLIB_FICHIER","fpLibCharger","fpLibFichier","fpLibPourBoitier",
@@ -6006,6 +6006,29 @@ T("bibliothèque : enregistrer, relire, appliquer",()=>{
   if(cible.style!=="chip")throw new Error("style attendu chip : "+cible.style);
   if(cible.pins<8)throw new Error("les broches câblées font plancher : "+cible.pins);
   fpLibRaz();
+});
+T("trous NPTH d'empreinte : lus, posés sur la carte, relus (M1-1, M1-2)",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.holes=[];clearSel();touch();
+  const def=normFpDef({name:"RJ45 essai",pins:2,style:"row",pads:[
+    {n:1,x:-1,y:0,w:1.5,h:1.5,shape:"sharp",drill:0.9},{n:2,x:1,y:0,w:1.5,h:1.5,shape:"circ",drill:0.9}],
+    holes:[{x:-5.7,y:3.05,d:3.25},{x:5.7,y:3.05,d:3.25},{x:"?",y:0,d:1},null,{x:0,y:-4,d:99}]});
+  if(!def.holes||def.holes.length!==3)throw new Error("trois trous exploitables attendus : "+JSON.stringify(def.holes));
+  if(def.holes[2].d!==30)throw new Error("Ø hors bornes non ramené : "+def.holes[2].d);
+  const fp=mkFp("J1","","RJ45",2);fp.x=40;fp.y=30;S.fps.push(fp);
+  if(!fpApplyDef(fp,def))throw new Error("application refusée");
+  if(JSON.stringify(fp.holes)!==JSON.stringify([{x:-5.7,y:3.05,d:3.25},{x:5.7,y:3.05,d:3.25},{x:0,y:-4,d:30}]))
+    throw new Error("trous posés : "+JSON.stringify(fp.holes));
+  if(JSON.stringify(fpDefOf(fp,"RJ45 relu").holes)!==JSON.stringify(fp.holes))
+    throw new Error("fpDefOf doit écrire les trous");
+  const relu=normDoc(JSON.parse(JSON.stringify(docObj())));
+  if(JSON.stringify(relu.fps[0].holes)!==JSON.stringify(fp.holes))
+    throw new Error("aller-retour du fichier de carte : "+JSON.stringify(relu.fps[0].holes));
+  /* une définition sans trous retire ceux de l'empreinte, et ne laisse aucune clé */
+  if(!fpApplyDef(fp,normFpDef({name:"RJ45 nu",pins:2,style:"row"})))throw new Error("seconde application refusée");
+  if("holes" in fp)throw new Error("les trous devaient partir avec l'ancienne définition");
+  const sans=normFpDef({name:"SOIC",pins:8,style:"sop"});
+  if("holes" in sans)throw new Error("une définition sans trous ne doit pas gagner de clé holes");
+  S.fps=[];touch();
 });
 T("bibliothèque : lecture défensive et fusion des noms",()=>{
   fpLibRaz();

@@ -205,6 +205,20 @@ function dPads(a){
   }
   return out;
 }
+/* trous NPTH d'une empreinte : mêmes bornes qu'un trou de carte (normHole),
+   sans identifiant — un trou d'empreinte suit l'empreinte, il ne se
+   sélectionne pas seul */
+function dHoles(a){
+  if(!Array.isArray(a))return null;
+  const out=[];
+  for(const h of a){
+    if(!h||typeof h!=="object")continue;
+    const x=+h.x, y=+h.y;
+    if(!Number.isFinite(x)||!Number.isFinite(y))continue;
+    out.push({x:clamp(r4(x),-COORD,COORD), y:clamp(r4(y),-COORD,COORD), d:r4(dRange(h.d,3.2,0.4,30.0))});
+  }
+  return out.length?out:null;
+}
 /* rectangle de sérigraphie imposé : quatre nombres, ordonnés, non dégénéré */
 function dBody(b){
   if(!b||typeof b!=="object")return null;
@@ -424,6 +438,8 @@ function normFp(f,i){
   }
   const body=dBody(f.body);
   if(body)out.body=body;
+  const holes=dHoles(f.holes);
+  if(holes)out.holes=holes;
   /* pastilles venues de la LIB à l'import de netlist, et pas d'un dessin :
      un changement de boîtier au schéma peut les refaire (applyNetlist) */
   if(out.pads&&f.lib)out.lib=dStr(f.lib,80);

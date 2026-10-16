@@ -32,6 +32,7 @@ function fpDefOf(fp,name){
     const b=bodyOf(fp);
     def.body={x1:r4(b.x1),y1:r4(b.y1),x2:r4(b.x2),y2:r4(b.y2)};
   }
+  if(fp.holes&&fp.holes.length)def.holes=fp.holes.map(h=>({x:h.x,y:h.y,d:h.d}));
   return def;
 }
 /* Lecture défensive : une définition peut venir d'un fichier écrit à la main,
@@ -54,6 +55,8 @@ function normFpDef(d){
   }
   const body=dBody(d.body);
   if(body)out.body=body;
+  const holes=dHoles(d.holes);
+  if(holes)out.holes=holes;
   return out;
 }
 /* Pose d'une définition sur une empreinte de la carte. Le repère, la valeur,
@@ -73,6 +76,10 @@ function fpApplyDef(fp,def){
   }else{
     delete fp.pads;delete fp.body;
   }
+  /* les trous NPTH sont la forme de l'empreinte, comme ses pastilles : ils
+     viennent avec la définition et partent avec elle */
+  if(d.holes)fp.holes=d.holes.map(h=>({x:h.x,y:h.y,d:h.d}));
+  else delete fp.holes;
   /* une broche câblée ne doit jamais se retrouver sans pastille */
   const w=fpWiredPins(fp);
   if(w>fp.pins)fpSetPins(fp,w);

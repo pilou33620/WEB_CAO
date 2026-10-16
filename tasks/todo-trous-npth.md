@@ -18,11 +18,11 @@ Bancs :
 `dHoles` dans `05-tools.js` (bornes de `normHole`, pas d'`id`). Dans
 `08-empreinte.js`, `normFpDef`, `fpDefOf` et `fpApplyDef` portent `holes`.
 `normFp` les relit dans le fichier de carte.
-- [ ] Une définition avec deux trous, appliquée à une empreinte de la carte, lui donne ces deux trous ; une définition sans trous retire ceux de l'empreinte
-- [ ] Aller-retour `docObj` → `normDoc` : les trous de l'empreinte reviennent identiques
-- [ ] Une entrée illisible est ignorée, un Ø hors bornes est ramené dans 0,4-30 mm
-- [ ] Une définition sans `holes` donne la même empreinte qu'avant (objet identique)
-- [ ] `BUILD` puis `JS_PCB` passent
+- [x] Une définition avec deux trous, appliquée à une empreinte de la carte, lui donne ces deux trous ; une définition sans trous retire ceux de l'empreinte
+- [x] Aller-retour `docObj` → `normDoc` : les trous de l'empreinte reviennent identiques
+- [x] Une entrée illisible est ignorée, un Ø hors bornes est ramené dans 0,4-30 mm
+- [x] Une définition sans `holes` donne la même empreinte qu'avant (objet identique)
+- [x] `BUILD` puis `JS_PCB` passent
 
 ## Phase 2 : éditeur PCB de bout en bout
 
