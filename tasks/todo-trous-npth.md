@@ -84,7 +84,9 @@ classe du net de la zone. Un contrôle trou ↔ zone s'ajoute.
   → pas de contrôle trou ↔ zone à part : la zone dégage toujours le trou (écran et Gerber), il ne trouverait rien
 
 ### T7 : documentation et commit
-- [ ] `A-FAIRE.md` et l'*État des lieux* mis à jour
-- [ ] Tous les bancs passent (`BUILD`, `JS_PCB`, `JS_LIB`, `PY_LIB`, `COMP`)
-- [ ] Revue (`/review`) de toutes les modifications de M1
-- [ ] Commit, puis la proposition de mise à jour du graphe graphify de WEB_CAO
+- [x] `A-FAIRE.md` et l'*État des lieux* mis à jour
+- [x] Tous les bancs passent (`BUILD`, `JS_PCB`, `JS_LIB`, `PY_LIB`, `COMP`)
+- [x] Revue (`/review`) de toutes les modifications de M1
+- [x] Commit, puis la proposition de mise à jour du graphe graphify de WEB_CAO
+
+  → revue complète (relecteur indépendant + relecture) : 2 défauts trouvés à la revue et corrigés (`e83dc0b` chemins de la LIB, `2435f49` valeurs brutes injectées), puis 5 constats importants corrigés (IPC-2581 et îlots sans dégagement, dossier méca contre le contrat commun, ECO « boîtier », exemption trop large sur l'écart entre perçages) ; suggestions restantes dans `A-FAIRE.md`.

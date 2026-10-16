@@ -13,7 +13,7 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 700 essais a
 
 | Composant | Statut | Couverture / Bancs |
 | --- | --- | --- |
-| **Éditeur PCB** | En service | 976 essais (`editeur-pcb/test/harness.js`), dont 44 pour les plans (Draftsman), 30 pour le dossier mécanique, 24 pour le gestionnaire de contraintes et la topologie, 3 pour l'export IPC-2581 (+ 60 cas d'aller-retour, `banc-ipc2581-export.py`) |
+| **Éditeur PCB** | En service | 988 essais (`editeur-pcb/test/harness.js`, relevé du 16/10/2026), dont 44 pour les plans (Draftsman), 30 pour le dossier mécanique, 24 pour le gestionnaire de contraintes et la topologie, 3 pour l'export IPC-2581 (+ 60 cas d'aller-retour, `banc-ipc2581-export.py`) |
 | **Éditeur Schématique** | En service | 157 essais (`editeur-schematique/test/harness.js`), dont 3 pour les contraintes de nets |
 | **Visionneuse IPC-2581** (lecteur `ipc2581_parser` 1.82, `ipc2581_json` 1.3.0) | En service | 226 essais (`harness-sim.js`), dont 13 pour le dossier mécanique + 76 (`banc-essai.py`) |
 | **SI — Impédance & Vias (`ligne_mom` v2.9.0)** | En service (0,3 à 0,4 % vs étalons ; pertes conducteur par l'inductance incrémentale de Wheeler, ruban + plan(s) + bords ; rugosité Hammerstad / Huray, diélectrique causal Djordjevic-Sarkar, via en ligne — branchés dans la cascade) | 236 cas (`python/test/banc-ligne-mom.py`) |
@@ -31,7 +31,7 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 700 essais a
 | **Moteur 2,5D pleine onde (`mom_solver`)** | Archivé dans branche `archive/mom-solver-25d` (recentrage sur 2D instantané) | Préservé dans l'historique Git |
 | **Support Android / Termux** | Abandonné volontairement (ajouté le 17/09, retiré au commit suivant) | — |
 | **Passerelle MCP, profils, cross-probing** | En service | `web_CAO.py`, `commun/session.js` |
-| **Gestion LIB — catalogue, recherche, import JLCPCB / LCSC** | En service | 27 + 65 essais (`gestion-lib/test/banc-catalogue.js`, `banc-import-jlc.js`) ; routes LIB : 16 cas (`banc-lib-routes.py`) |
+| **Gestion LIB — catalogue, recherche, import JLCPCB / LCSC** | En service | 27 + 65 essais (`gestion-lib/test/banc-catalogue.js`, `banc-import-jlc.js`) ; repère et trous des empreintes (`banc-repere-pcb.js`) ; routes LIB : 16 cas (`banc-lib-routes.py`) |
 
 ### Corrections du 24/09/2026 (révélées par l'extension des bancs scoring et motifs)
 - [x] **Motifs** : la tension d'un LDO se lisait aussi dans le repère (`U5` + `AMS1117-3.3` → 5 V, `U12` → 12 V) ; elle ne se lit plus que dans la valeur.
@@ -101,7 +101,23 @@ L'audit complet a corrigé les défauts et retiré le code mort ; ces doublons, 
 ### Simulation SI — crosstalk
 Rien en cours : l'option B, les limites de l'option A et la garde de la règle *diaphonie* sont faites (13/10/2026, détail dans *Backlog par domaine → Simulation SI*).
 
+### Trous dans les empreintes (`SPEC-trous-npth.md`, 16/10/2026)
+- [x] **M1 — trous ronds NPTH dans l'empreinte** (`holes` de pcbfp-1, `trousMonde()`) : voir *Éditeur PCB* ci-dessous.
+- [ ] **M2 — perçages oblongs** : pastille métallisée oblongue (`slot`), trou NPTH oblong, Excellon G85, contrôles contre l'oblong et face aux `slots.*` des fabricants, IPC-2581.
+- [ ] **M3 — LIB** : reporter dans `holes` les trous que 20 empreintes décrivent en texte, pattes oblongues du TE 2305018-2, empreintes MECA-LOC (une empreinte faite seulement de trous).
+- [ ] Accrocher une cote du Draftsman à un trou d'empreinte (référence empreinte + rang) : laissé hors de M1 (D3).
+- [ ] Gestion LIB : déplacer un trou au glisser et l'effacer avec Suppr (aujourd'hui tableau X / Y et bouton ✕).
+- [ ] Relevés de la revue M1 laissés pour plus tard :
+  - le routeur (PNS) ignore les trous NPTH comme obstacles, comme il ignorait déjà `S.holes` : seul le DRC le dit après coup ;
+  - `fpBBox` / `fpLocalBox` ignorent les trous : placement par blocs, score et `arrange` peuvent poser un composant sur un plot qui dépasse du corps (seul `placerSatellites` les compte) ;
+  - le miroir `FPLIB` n'est pas relu après une modification dans la Gestion LIB (`21-lib-sync.js` ne vide que `PCB_LIB_CACHE`) : défaut antérieur, pastilles comprises ;
+  - à l'écran, `zoneCanvas` dégage à l'écartement de la première zone de la couche, le Gerber à celui de la zone qui contient l'objet : défaut antérieur, déjà vrai pour les pastilles ;
+  - au Gerber, un trou proche d'une zone SANS net (mais hors d'elle) n'y est pas dégagé ;
+  - l'essai « empreintes toutes centrées » contrôle la géométrie calculée pour chaque nom, pas celle des fichiers de la LIB : beaucoup d'empreintes de connecteur suivent l'origine de leur fiche, il faudra décider si la règle s'applique à elles ;
+  - le tableau de perçage range les plots de centrage d'un connecteur sous « fixation ».
+
 ### Contenu de la LIB (données, pas code)
+- [x] **Empreintes PCB** (16/10/2026) : 208 composants associés, 167 empreintes nouvelles d'après les fiches (land pattern, pad thermique, pattes de fixation) ; restent sans empreinte les antennes, selfs et modules maison, méca non électrique, piles, Testpoint_HFS_810 et CONN_BatteryHolder_TypeC/D.
 - [x] **Brochages de la LIB** (10–15/10/2026) : toutes les références sur un symbole à broches nommées ont leur brochage, relevé sur datasheet (détail dans *Éditeur schématique* ci-dessous).
 
 ### Simulation RF — S21 TX de la carte P01x274 (U400 → antenne, étudié le 15/10/2026, en attente des réponses)
@@ -176,6 +192,7 @@ bancs automatiques en CI sont listés dans l'*État des lieux*.
 ### Éditeur PCB
 - [x] **Gestionnaire d'empreintes de bibliothèque** : prévisualisation visuelle pop-up, filtrage et affectation directe des empreintes sur la carte (`commun/explorateur-lib.js`).
 - [x] **Éléments mécaniques et graphiques secondaires** :
+  - **Trous NPTH portés par l'empreinte** (16/10/2026) : champ `holes` de pcbfp-1 (Gestion LIB : outil Trou et tableau X / Y / Ø), recopié sur la carte avec l'empreinte et mis à jour avec elle depuis la LIB ; `trousMonde()` réunit trous de carte et trous d'empreinte (rotation, face dessous) pour le dessin, les contrôles (une pastille de la même empreinte peut être plus près que l'écartement, jamais recouvrir), l'Excellon NPTH, l'IPC-2581, le Draftsman, le DXF, le dossier méca, le placement et l'audit fabricant. Les zones de cuivre dégagent désormais tous les trous NPTH (écran, îlots, Gerber, IPC-2581) ; au dossier méca, les trous d'une empreinte vont chez son composant (contrat de `commun/dossier-meca.js`). 9 essais.
   - **Trous non métallisés (NPTH) autonomes** : gestion dédiée `S.holes`, perçages mécaniques sans pastille cuivre, réticule et diamètre visuels, inspecteur avec raccourcis M2/M2.5/M3/M4, vérification DRC (distance bord de carte, trou-à-trou, cuivre-NPTH) et génération séparée du fichier de perçage Excellon non plaqué `*-NPTH.TXT`.
   - **Outil texte libre de sérigraphie** : support du texte libre sur `F.SilkS` et `B.SilkS`, rotation angulaire, miroir bottom automatique, fonte vectorielle et inclusion dans les calques Gerber sérigraphie (`.GTO`/`.GBO`).
 - [x] **Synchronisation Schéma ↔ PCB (ECO)** :
