@@ -1091,7 +1091,7 @@ function ipc2581Document(opts){
       stats.pastillesPercees++;stats.trous++;
     }
   const npth=[];
-  for(const h of (S.holes||[]))if(h.d>0){npth.push(H(h.d,"NONPLATED",h.x,h.y));stats.trousNpth++;stats.trous++;}
+  for(const h of trousMonde())if(h.d>0){npth.push(H(h.d,"NONPLATED",h.x,h.y));stats.trousNpth++;stats.trous++;}
   const calquesPercage=[], lfPercage=[];
   for(const [k,M] of [...percages].sort((p,q)=>{
       const a=p[0].split("-").map(Number), b=q[0].split("-").map(Number);

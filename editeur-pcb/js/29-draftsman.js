@@ -744,7 +744,7 @@ function dfPercages(){
       if(q.drill>0)ajout(q.drill,q.x,q.y,true,"pastilles",0,S.cu-1);
   for(const v of S.vias)
     if(v.drill>0)ajout(v.drill,v.x,v.y,true,"vias",Math.min(v.a,v.b),Math.max(v.a,v.b));
-  for(const h of (S.holes||[]))
+  for(const h of trousMonde())
     if(h.d>0)ajout(h.d,h.x,h.y,false,"fixation",0,S.cu-1);
   return [...g.values()].sort((u,v)=>(v.plaque-u.plaque)||(u.d-v.d)||(u.a-v.a)||(u.b-v.b));
 }
@@ -969,7 +969,7 @@ function dfFeuillesFab(ctx){
     dfLigne(F,so.x-2,so.y,so.x+2,so.y,0.2);dfLigne(F,so.x,so.y-2,so.x,so.y+2,0.2);
     dfTexte(F,"0,0",so.x+1.6,so.y+3.4,6,{c:0.25,cat:"cote"});
   }
-  const npth=(S.holes||[]).filter(h=>h.d>0);
+  const npth=trousMonde().filter(h=>h.d>0);
   npth.forEach((h,i)=>{const s=V.T(h.x,h.y);dfTexte(F,"H"+(i+1),s.x+2.2,s.y-2,6.5,{c:0.2,cat:"percage"});});
   /* cotes posées à la main et repères des détails, puis la vue est close */
   dfAnnoter(F,V,dfCleVue(F,"carte"),ctx);

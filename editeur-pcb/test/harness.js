@@ -22695,6 +22695,23 @@ T("plans : tableau de perçage — autant de trous que les fichiers Excellon",()
     if(!dfChercher(doc,"fixation").length)throw new Error("le tableau des trous de fixation manque");
   }finally{S.holes=[];}
 });
+T("trous NPTH d'empreinte : IPC-2581, plans et dossier méca (M1-4)",()=>{
+  exCharger(1);
+  const date={date:"2026-10-16T00:00:00Z"}, avant=ipc2581Document(date);
+  const fp=S.fps[0];fp.holes=[{x:0,y:0,d:2.5}];touch();
+  try{
+    const g=dfPercages(), n=g.reduce((a,e)=>a+e.pts.length,0);
+    if(n!==drillFile().holes)throw new Error(n+" trous au plan, "+drillFile().holes+" à l'Excellon");
+    if(!g.some(e=>!e.plaque&&Math.abs(e.d-2.5)<1e-9))throw new Error("trou d'empreinte absent du tableau de perçage");
+    const D=dxfLu(dxfCarte().octets), cer=D.ents.filter(e=>e.type==="CIRCLE");
+    if(cer.length!==drillFile().holes)throw new Error(cer.length+" CIRCLE pour "+drillFile().holes+" trous");
+    const apres=ipc2581Document(date);
+    if(apres.stats.trousNpth!==avant.stats.trousNpth+1)throw new Error("IPC-2581 : trou d'empreinte non compté NONPLATED");
+    const m=mecaEntreeEditeur().trous.filter(t=>Math.abs(t.d-2.5)<1e-9);
+    if(m.length!==1||m[0].metallise!==false)throw new Error("dossier méca : "+JSON.stringify(m));
+  }finally{delete fp.holes;touch();}
+  if(ipc2581Document(date).xml!==avant.xml)throw new Error("sans trou d'empreinte, l'IPC-2581 doit rester le même");
+});
 T("plans : variante — non montés en tirets, hors nomenclature",()=>{
   exCharger(1);
   const c3=S.fps.find(f=>f.ref==="C3");

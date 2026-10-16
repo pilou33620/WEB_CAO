@@ -487,7 +487,7 @@ function dxfOutils(D,P){
     const a=Math.min(v.a,v.b), b=Math.max(v.a,v.b);
     poser("VIAS_"+(a===0&&b===S.cu-1?"":"L"+(a+1)+"-L"+(b+1)+"_")+dxfDiam(v.drill),v.drill,v.x,v.y);
   }
-  for(const h of (S.holes||[]))
+  for(const h of trousMonde())
     if(h.d>0)poser("TROUS_NPTH_"+dxfDiam(h.d),h.d,h.x,h.y);
   if(typeof cpPaires==="function")
     for(const pa of cpPaires())

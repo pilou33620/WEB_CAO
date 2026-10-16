@@ -55,11 +55,11 @@ n'est pas signalée en deçà de l'écartement ; un recouvrement l'est toujours.
 `35-ipc2581-export.js`, `29-draftsman.js`, `33-draftsman-export.js`,
 `36-dossier-meca.js` lisent `trousMonde()`. Les accroches de cote restent
 sur `S.holes` (D3).
-- [ ] IPC-2581 : les trous d'empreinte sont `NONPLATED` et `stats.trousNpth` les compte
-- [ ] Tableau de perçage et DXF Draftsman : les trous d'empreinte y sont, sous le diamètre attendu
-- [ ] Dossier méca : `trous` contient les trous d'empreinte, `metallise:false`
-- [ ] Carte sans trou d'empreinte : IPC-2581 identique au bit près
-- [ ] `BUILD` puis `JS_PCB` passent
+- [x] IPC-2581 : les trous d'empreinte sont `NONPLATED` et `stats.trousNpth` les compte
+- [x] Tableau de perçage et DXF Draftsman : les trous d'empreinte y sont, sous le diamètre attendu
+- [x] Dossier méca : `trous` contient les trous d'empreinte, `metallise:false`
+- [x] Carte sans trou d'empreinte : IPC-2581 identique au bit près
+- [x] `BUILD` puis `JS_PCB` passent
 **Point de contrôle 2 : revue de T1 à T5**
 
 ## Phase 3 : Gestion LIB

@@ -15,7 +15,7 @@ function mecaEntreeEditeur(){
     contour:boardPoly().map(P),
     decoupes:boardCutouts().map(c=>c.map(P)),
     epaisseur:stackTotal(),
-    trous:(S.holes||[]).filter(h=>h.d>0).map(h=>Object.assign(P(h),{d:h.d,metallise:false})),
+    trous:trousMonde().filter(h=>h.d>0).map(h=>Object.assign(P(h),{d:h.d,metallise:false})),
     composants:S.fps.map(fp=>{
       const T=fpXform(fp), b=bodyOf(fp);
       return Object.assign(P(fp),{
