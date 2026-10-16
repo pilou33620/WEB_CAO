@@ -620,7 +620,7 @@ function dfxCadre(m){
   });
   m.addEventListener("change",e=>{
     const t=e.target;
-    if(t&&t.dataset&&t.dataset.dxf==="fonte")dfRegler("fonte",!!t.checked);
+    if(t&&t.dataset&&t.dataset.dxf==="fonte"){push();dfRegler("fonte",!!t.checked);}
   });
 }
 

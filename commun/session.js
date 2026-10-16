@@ -76,7 +76,12 @@ function sessEcrire(outil, etat){
   let txt;
   try{ txt = JSON.stringify({v:1, t:Date.now(), etat:etat}); }
   catch(_){ return false; }              // structure circulaire : on renonce
-  if(!txt || txt.length > SESS_MAX) return false;
+  if(!txt || txt.length > SESS_MAX){
+    /* trop gros : comme au quota dépassé, l'ancienne copie est effacée — au
+       retour, elle aurait remplacé sans prévenir tout le travail récent */
+    try{ s.removeItem(SESS_CLE + outil); }catch(_){}
+    return false;
+  }
   try{ s.setItem(SESS_CLE + outil, txt); return true; }
   catch(_){
     /* quota dépassé : l'ancien état est devenu faux, mieux vaut plus rien

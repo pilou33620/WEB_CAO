@@ -58,7 +58,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "clrPair","applyClasses","jointAt","splitTrack","netTracks","selectNetRouting",
   "deleteNetRouting","autoClass","classOptionsHtml","poserClasseNet","schemaPublie","listNets","mkFp","w2s","runDrc","padsOf",
   "buildFabFiles","gerberCopper","gerberMask","gerberPaste","gerberSilk",
-  "gerberEdge","gerberOutline","ipcNetlist","masterDrawingPdf","noAcc",
+  "gerberEdge","gerberOutline","ipcNetlist","ipc317","masterDrawingPdf","noAcc",
   "drillFile","maskOpenings","pasteOpenings","textStrokes","crc32","zipBlob","exportFab",
   "positionsCsvText","bomPcbCsvText","pcbCsvCell","fabReadme",
   /* variantes de montage (commun/variantes.js + 26-variantes.js) */
@@ -103,7 +103,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "worstAspect","applyPreset","presetsFor","diCount","cuT","diAt","maskFaces",
   "stackAsym","asymLabel","viaBuild","viaCensus","aspectOf","viaTented",
   "VIA_FINISH","roleCheck","ASPECT_WARN","ASPECT_MAX",
-  "umLabel","ozLabel","buildStackup","stackReport","padLayers","segPadDist",
+  "umLabel","ozLabel","buildStackup","stackReport","padLayers","segPadDist","padPadDist",
   "normStack","stkPick","CU_ROLES","CU_ROLE_SHORT","rolePlane",
   "layerRole","roleLabel","setLayerRole","coherentRole","roleFromPlane",
   "roleNet","STACK_PRESETS","FINISHES","MASK_COLORS","DI_KIND","OZ","r1","r2","r3","r4",
@@ -171,15 +171,15 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "fpMovePad","fpSetPad","fpAddPad","fpDelPad","fpSetPins","fpSetBody",
   "dPads","dBody","fpDefOf","normFpDef","fpApplyDef","fpLibAll","fpLibWrite",
   "fpLibNames","fpLibGet","fpLibPut","fpLibDel","fpLibFile","fpLibParse",
-  "fpLibMerge","feOverlap","FPLIB_KEY","FPLIB_FORMAT","FE","feIsOpen","feClose",
+  "fpLibMerge","FPLIB_KEY","FPLIB_FORMAT",
   "FPLIB","FPLIB_FICHIER","fpLibCharger","fpLibFichier","fpLibPourBoitier",
   /* formes de pastille, rotation, origine de l'empreinte */
   "PAD_SHAPES","padShape","padRadius","padRot","padHalf","padDist","padOpening",
   "fpLocalBox","fpMoveOrigin","fpOffCenter","fpIsCentered","fpCenterOrigin",
-  "apSet","apForPad","fePad","netAtPoint","padCuLayers","pnsItemsPad","aplatClick","closeAplat","selDecoupes","deleteSel","hitTest","selectHit","brocheNum","parseNetlist","applyNetlist","padSurCouche","maskOpenings","pasteOpenings","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","UNDO_BUDGET","rotChoix","padNom",
+  "apSet","apForPad","netAtPoint","padCuLayers","pnsItemsPad","aplatClick","closeAplat","selDecoupes","deleteSel","hitTest","selectHit","brocheNum","parseNetlist","applyNetlist","padSurCouche","maskOpenings","pasteOpenings","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","UNDO_BUDGET","rotChoix","padNom",
   /* repère de broche 1 */
   "MARK_D","PASSIF_REF","fpMarkWanted","fpMarkAuto","fpMark","fpSetMark",
-  "fpMoveMark","fpSetMarkD","fpXform","feZoom","feRefit","feReattach",
+  "fpMoveMark","fpSetMarkD","fpXform",
   /* matrice des natures de cuivre et éditeur de règles */
   "DRC_KINDS","DRC_ORDER","DRC_KIND_NAME","matKey","matHas","matGet","matSet",
   "matMax","matEff","clrK","dpGapPair","dMat","pnsKind","pnsClrPair",
@@ -3451,6 +3451,18 @@ T("netlist IPC-D-356",()=>{
     }
   }
   if(txt.indexOf("999")<0)throw new Error("fin 999 absente");
+  /* colonnes IPC-D-356A et dixièmes de mil : un point à 10 mm de l'origine
+     s'écrit +003937 (et non +000394, millièmes de pouce) */
+  const o=gOrigin();
+  const r=ipc317("GND","U1","4",0.8,true,[0,1],o.x+10,o.y-25.4);
+  if(r.length!==57)throw new Error("317 : 57 colonnes attendues, "+r.length+" « "+r+" »");
+  if(r.slice(20,26)!=="U1    "||r[26]!=="-"||r.slice(27,31)!=="4   ")
+    throw new Error("repère/broche mal placés : « "+r+" »");
+  if(r.slice(32,38)!=="D0315P")throw new Error("trou 0,8 mm = D0315P attendu : « "+r.slice(32,38)+" »");
+  if(r.slice(41,49)!=="X+003937"||r.slice(49,57)!=="Y+010000")
+    throw new Error("X/Y en 0,0001 pouce attendus : « "+r.slice(41)+" »");
+  const smd=ipc317("GND","R1","1",0,true,[0],o.x,o.y);
+  if(!smd.startsWith("327")||smd.slice(38,41)!=="A01")throw new Error("pastille CMS : 327 / A01 attendus : « "+smd+" »");
 });
 T("master drawing PDF",()=>{
   const {files}=buildFabFiles();
@@ -3701,6 +3713,44 @@ T("le contour pilote zones, DRC et Gerber",()=>{
   // l'entaille de la région extérieure referme bien le contour
   if((g.match(/G36\*/g)||[]).length<2)throw new Error("région de rognage absente");
   S.cuL[0].plane=false;syncAutoZones();
+});
+T("Gerber : piste d'un autre net qui entre dans une zone, dégagée",()=>{
+  const sv=serialize();
+  S.zones=[{id:S.nextId++,l:0,net:"GND",pts:[{x:1,y:1},{x:15,y:1},{x:15,y:29},{x:1,y:29}]}];
+  S.tracks=[];S.vias=[];
+  const lpc=g=>{const a=g.indexOf("%LPC*%");const b=g.indexOf("%LPD*%",a);
+    return (g.slice(a,b<0?g.length:b).match(/D01\*/g)||[]).length;};
+  const vide=lpc(gerberCopper(0));
+  // milieu de la piste (x=20) hors de la zone, début (x=5) dedans
+  S.tracks=[{id:S.nextId++,l:0,net:"N$1",x1:5,y1:15,x2:35,y2:15,w:0.25}];
+  if(lpc(gerberCopper(0))<=vide)throw new Error("la piste N$1 doit être dégagée dans la zone GND");
+  // la même piste au net de la zone : rien à dégager
+  S.tracks[0].net="GND";
+  if(lpc(gerberCopper(0))!==vide)throw new Error("piste du net de la zone : pas de dégagement");
+  loadDoc(JSON.parse(sv),true);
+});
+T("netlist : boîtier changé, les pistes suivent les pastilles",()=>{
+  const sv=serialize();
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];
+  importNetlist(NET,false);
+  const r1=S.fps.find(f=>f.ref==="R1"), p=padsWorld(r1);
+  S.tracks.push({id:S.nextId++,l:0,net:r1.nets[1],w:0.3,x1:p[0].x,y1:p[0].y,x2:p[0].x-10,y2:p[0].y});
+  S.tracks.push({id:S.nextId++,l:0,net:r1.nets[2],w:0.3,x1:p[1].x,y1:p[1].y,x2:p[1].x+10,y2:p[1].y});
+  importNetlist(NET.replace("R1      10k               0603","R1      10k               2512"),false);
+  const r=S.fps.find(f=>f.ref==="R1");
+  if(r.pkg!=="2512")throw new Error("boîtier non appliqué : "+r.pkg);
+  for(const q of padsWorld(r))
+    if(!S.tracks.some(t=>padDist(t.x1,t.y1,q)<=0.02||padDist(t.x2,t.y2,q)<=0.02))
+      throw new Error("pastille "+q.n+" de R1 : plus aucune piste ne la touche");
+  loadDoc(JSON.parse(sv),true);
+});
+T("DRC : pastille posée sur une piste longue, pastilles allongées proches",()=>{
+  const t={x1:0,y1:10,x2:100,y2:10,w:0.2};
+  const q={x:51.04,y:10,w:0.4,h:0.4,rot:0,shape:"rect"};
+  if(segPadDist(t,q)>0)throw new Error("pastille sur la piste : écart "+segPadDist(t,q)+" au lieu de ≤ 0");
+  const a={x:0,y:0,w:2,h:0.5,rot:0,shape:"rect"}, b={x:2.1,y:0,w:2,h:0.5,rot:0,shape:"rect"};
+  const d=padPadDist(a,b);
+  if(Math.abs(d-0.1)>1e-6)throw new Error("deux pastilles 2×0,5 à 0,10 mm : "+d);
 });
 T("redimensionner et revenir au rectangle",()=>{
   const before=S.board.pts.map(p=>({x:p.x,y:p.y}));
@@ -5821,7 +5871,7 @@ T("contour de sérigraphie imposé puis rendu au calcul",()=>{
   fpSetBody(fp,null);
   if(JSON.stringify(bodyOf(fp))!==auto)throw new Error("le calcul devait reprendre la main");
 });
-T("pastilles superposées : la fenêtre les montre, le DRC les compte",()=>{
+T("pastilles superposées : le DRC les compte",()=>{
   S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
   const fp=mkFp("U1","","",2);
   fp.x=40;fp.y=30;fp.nets={1:"GND",2:"+5V"};
@@ -5830,8 +5880,6 @@ T("pastilles superposées : la fenêtre les montre, le DRC les compte",()=>{
   fpSetPad(fp,1,"x",padsOf(fp)[0].x);                // la pastille 2 sur la 1
   fpSetPad(fp,1,"y",padsOf(fp)[0].y);
   touch();
-  const bad=feOverlap(padsOf(fp));
-  if(bad.size!==2)throw new Error("les deux pastilles devaient être signalées");
   if(!runDrc().some(e=>/superpos/.test(e.msg)))
     throw new Error("deux nets superposés sont un court-circuit : le DRC doit le dire");
   /* mêmes pastilles, même net : c'est un choix de dessin, pas un défaut */
@@ -5889,21 +5937,6 @@ T("empreinte dessinée : ni le boîtier ni la netlist ne la refont",()=>{
 /* =============================================================================
    Bibliothèque d'empreintes
    ============================================================================= */
-T("fenêtre d'empreinte ouverte : le clavier de la carte se tait",()=>{
-  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
-  const fp=mkFp("U1","","DIP-8",8);
-  fp.x=20;fp.y=15;S.fps.push(fp);S.sel.fps.add(fp.id);touch();
-  FE.open=true;FE.fp=fp;                    /* la fenêtre elle-même a besoin du DOM */
-  key("Delete");
-  if(S.fps.length!==1)throw new Error("Suppr ne doit pas effacer l'empreinte en cours d'édition");
-  key("r");
-  if(fp.rot!==0)throw new Error("R ne doit pas faire pivoter la carte sous la fenêtre");
-  key("Escape");
-  if(feIsOpen())throw new Error("Échap devait fermer la fenêtre");
-  key("Delete");
-  if(S.fps.length!==0)throw new Error("fenêtre fermée : le clavier reprend la main");
-});
-
 function fpLibRaz(){for(const k of Object.keys(FPLIB))delete FPLIB[k];}
 /* La LIB du serveur, simulée : liste, lecture, écriture et effacement de
    lib_empreinte_pcb/. Une entrée illisible et un ancien stockage du
@@ -8297,6 +8330,10 @@ T("session : un état qui déborde ne laisse pas de carte périmée derrière lu
   if(sessTient(gros))throw new Error("cet état devait être jugé trop gros");
   if(sessEcrire("pcb",gros))throw new Error("il ne devait pas être écrit");
   if(sessLire("pcb"))throw new Error("rien ne doit rester en session");
+  /* une copie plus ancienne, plus petite, ne survit pas à l'état trop gros */
+  if(!sessEcrire("pcb",{doc:{ancien:true}}))throw new Error("petit état non écrit");
+  sessEcrire("pcb",gros);
+  if(sessLire("pcb"))throw new Error("l'ancienne copie aurait remplacé le travail récent");
   /* quota atteint pendant l'écriture : l'état précédent, devenu faux, s'en va */
   dom.session.setItem(SESS_CLE+"pcb",JSON.stringify({v:1,t:1,etat:{doc:{}}}));
   const vrai=dom.session.setItem;

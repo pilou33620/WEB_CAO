@@ -91,6 +91,13 @@ function dfCfg(){
     meca:mecaNormReglages(src.meca,S.fps.map(fp=>fp.id))
   };
 }
+/* Une étape d'annulation par champ édité, pas par touche : la première
+   frappe dans un champ prend l'instantané, le « change » (champ quitté) clôt
+   la saisie. Sans elle, un Ctrl+Z sur un déplacement effaçait aussi les notes
+   tapées après, sans retour possible. */
+function dfAnnulable(champ){
+  if(DF.saisie!==champ){push();DF.saisie=champ;}
+}
 function dfRegler(cle,val){
   const c=dfCfg();
   if(Object.prototype.hasOwnProperty.call(c.feuilles,cle))c.feuilles[cle]=!!val;
@@ -201,12 +208,6 @@ function dfNouvelle(ctx,titre,genre){
 function dfPoly(F,pts,o){
   o=o||{};
   F.items.push({t:"p",sp:[pts],ferme:!!o.ferme,lw:o.lw||0.25,
-    trait:o.trait===undefined?0:o.trait,plein:o.plein==null?null:o.plein,
-    tirets:!!o.tirets,eo:!!o.eo});
-}
-function dfChemins(F,sp,o){
-  o=o||{};
-  F.items.push({t:"p",sp,ferme:true,lw:o.lw||0.25,
     trait:o.trait===undefined?0:o.trait,plein:o.plein==null?null:o.plein,
     tirets:!!o.tirets,eo:!!o.eo});
 }
@@ -1288,11 +1289,12 @@ function dfOuvrir(){
     m.addEventListener("input",e=>{
       const t=e.target;
       if(t.id==="dfQ"){DF.q=t.value;dfChercherUi();return;}
-      if(t.dataset&&t.dataset.cfg){dfRegler(t.dataset.cfg,t.value);dfReconstruire();}
+      if(t.dataset&&t.dataset.cfg){dfAnnulable(t);dfRegler(t.dataset.cfg,t.value);dfReconstruire();}
     });
     m.addEventListener("change",e=>{
       const t=e.target;
-      if(t.dataset&&t.dataset.feuille){dfRegler(t.dataset.feuille,t.checked);DF.page=0;dfReconstruire();}
+      DF.saisie=null;
+      if(t.dataset&&t.dataset.feuille){push();dfRegler(t.dataset.feuille,t.checked);DF.page=0;dfReconstruire();}
     });
     m.addEventListener("click",e=>{
       const b=e.target.closest&&e.target.closest("[data-a]");

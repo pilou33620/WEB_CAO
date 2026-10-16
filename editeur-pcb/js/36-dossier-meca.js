@@ -112,12 +112,13 @@ function mecaCadre(m){
   });
   m.addEventListener("input",e=>{
     const t=e.target;
-    if(t&&t.dataset&&t.dataset.mecaH!=null){mecaRegler(t.dataset.mecaH,"h",t.value);dfReconstruire();}
+    if(t&&t.dataset&&t.dataset.mecaH!=null){dfAnnulable(t);mecaRegler(t.dataset.mecaH,"h",t.value);dfReconstruire();}
   });
   m.addEventListener("change",e=>{
     const t=e.target;
     if(!t||!t.dataset)return;
-    if(t.dataset.mecaOuv!=null){mecaRegler(t.dataset.mecaOuv,"ouv",t.checked);dfReconstruire();}
+    DF.saisie=null;
+    if(t.dataset.mecaOuv!=null){push();mecaRegler(t.dataset.mecaOuv,"ouv",t.checked);dfReconstruire();}
     else if(t.dataset.feuille==="meca")mecaRendreReglages(m);
   });
 }

@@ -181,6 +181,10 @@ const AM_RECT="%AMRRECT*\n21,1,$1,$2,0,0,$3*%";
    bouts. Les décalages des disques sont calculés ici et passés en paramètres —
    une macro Gerber ne sait pas prendre un cosinus. */
 const AM_OBR="%AMOBR*\n21,1,$1,$2,0,0,$5*\n1,1,$2,$3,$4*\n1,1,$2,-$3,-$4*%";
+/* Rectangle à coins arrondis tourné : deux rectangles en croix et un disque
+   à chaque coin, centres des disques calculés ici (tournés de $10). */
+const AM_RRND="%AMRRND*\n21,1,$1,$2,0,0,$10*\n21,1,$3,$4,0,0,$10*\n"+
+  "1,1,$5,$6,$7*\n1,1,$5,-$6,-$7*\n1,1,$5,$8,$9*\n1,1,$5,-$8,-$9*%";
 function apForPad(A,q,grow){
   const g=grow||0;
   if(q.shape==="circ")return A.get("C,"+fmt(Math.max(0.01,Math.max(q.w,q.h)+2*g),4));
@@ -199,17 +203,31 @@ function apForPad(A,q,grow){
     return A.get("OBR,"+fmt(w,4)+"X"+fmt(h,4)+"X"+fmt(d*Math.cos(a),4)+
                  "X"+fmt(d*Math.sin(a),4)+"X"+deg,AM_OBR);
   }
+  /* « rect » est le rectangle adouci de l'écran, des plans et de l'IPC-2581
+     (rayon padRadius) ; seul « sharp » a des coins vifs. Le Gerber les
+     sortait tous deux à coins vifs : deux cuivres différents dans un dossier. */
+  const r=q.shape==="rect"?Math.min(padRadius("rect",w,h),w/2,h/2):0;
+  if(r>1e-4){
+    const a=deg*Math.PI/180, ca=Math.cos(a), sa=Math.sin(a);
+    const dx=w/2-r, dy=h/2-r;
+    const n=v=>fmt(Math.abs(v)<5e-5?0:v,4);
+    return A.get("RRND,"+[w,h-2*r,w-2*r,h,2*r,
+      dx*ca-dy*sa,dx*sa+dy*ca,dx*ca+dy*sa,dx*sa-dy*ca].map(n).join("X")+"X"+deg,AM_RRND);
+  }
   if(deg===0||deg===180)return A.get("R,"+fmt(w,4)+"X"+fmt(h,4));
   if(deg===90||deg===270)return A.get("R,"+fmt(h,4)+"X"+fmt(w,4));
   return A.get("RRECT,"+fmt(w,4)+"X"+fmt(h,4)+"X"+deg,AM_RECT);
 }
-function gHeader(fn){
+/* `pol` : "Negative" pour le masque, qui dessine les OUVERTURES (l'absence
+   de vernis), comme le veut la spécification X2 ; une FAO qui lit l'attribut
+   inverserait sinon le masque. */
+function gHeader(fn,pol){
   return ["G04 Editeur PCB - "+fn+"*",
           "%FSLAX46Y46*%","%MOMM*%",
           "%TF.GenerationSoftware,Editeur PCB,HTML,1.2*%",
           "%TF.CreationDate,"+new Date().toISOString()+"*%",
           "%TF.FileFunction,"+fn+"*%",
-          "%TF.FilePolarity,Positive*%",
+          "%TF.FilePolarity,"+(pol||"Positive")+"*%",
           "%LPD*%","G01*"];
 }
 function gAssemble(head,A,body){
@@ -280,8 +298,18 @@ function gOutside(body,A,x1,y1,x2,y2){
         gSeg(body,A,D[j].x,D[j].y,D[i].x,D[i].y,2*m);
   }
 }
-function gRect(body,x1,y1,x2,y2){
-  gRegion(body,[{x:x1,y:y1},{x:x2,y:y1},{x:x2,y:y2},{x:x1,y:y2}]);
+/* La zone d'un autre net qu'un objet touche sans la recouvrir par son
+   milieu : un bord de la zone à moins de `marge(z)` de l'objet (`ecart`
+   mesure l'objet contre une arête). Tester le seul milieu laissait en plein
+   cuivre une piste qui entre dans un plan partiel : court-circuit gravé. */
+function zoneEtrangereProche(zs,net,ecart,marge){
+  for(const z of zs){
+    if((z.net||"")===(net||""))continue;
+    const P=z.pts, lim=marge(z);
+    for(let k=0,j=P.length-1;k<P.length;j=k++)
+      if(ecart(P[j],P[k])<lim)return z.net;
+  }
+  return null;
 }
 /* Le cuivre d'une couche reprend l'ordre exact du rendu : la zone, puis les
    dégagements en polarité négative, puis le cuivre par-dessus. */
@@ -309,15 +337,21 @@ function gerberCopper(i){
       if(zoneFichier(z)&&Array.isArray(z.trous))
         for(const t of z.trous)if(t&&t.length>=3)gRegion(body,t);
     const zn=(x,y)=>{const z=zoneAt(i,x,y);return z?z.net:null;};
+    const seg=(a,b)=>({x1:a.x,y1:a.y,x2:b.x,y2:b.y});
     for(const t of S.tracks){
       if(t.l!==i)continue;
-      const m=trkMid(t), z=zn(m.x,m.y);
+      const m=trkMid(t);
+      let z=zn(m.x,m.y);
+      if(z===null)z=zoneEtrangereProche(zs,t.net,(a,b)=>segSegDist(t,seg(a,b)),
+        q=>t.w/2+clrK(q.net,t.net,"cu","trk"));
       if(z===null||z===t.net)continue;
       gTrk(body,A,t,t.w+2*clrK(z,t.net,"cu","trk"));
     }
     for(const v of S.vias){
       if(i<v.a||i>v.b)continue;
-      const z=zn(v.x,v.y);
+      let z=zn(v.x,v.y);
+      if(z===null)z=zoneEtrangereProche(zs,v.net,(a,b)=>segDist(v.x,v.y,a.x,a.y,b.x,b.y),
+        q=>v.d/2+clrK(q.net,v.net,"cu","via"));
       if(z===null)continue;
       if(z===v.net)gFlash(body,A,A.get("C,"+fmt(v.drill,4)),v.x,v.y);
       else gFlash(body,A,A.get("C,"+fmt(v.d+2*clrK(z,v.net,"cu","via"),4)),v.x,v.y);
@@ -326,7 +360,9 @@ function gerberCopper(i){
     for(const fp of S.fps)
       for(const q of padsWorld(fp)){
         if(!padLayers(fp,q).includes(i))continue;
-        const z=zn(q.x,q.y);
+        let z=zn(q.x,q.y);
+        if(z===null)z=zoneEtrangereProche(zs,q.net,(a,b)=>segPadDist(Object.assign(seg(a,b),{w:0}),q),
+          o=>clrK(o.net,q.net,"cu",q.drill>0?"th":"smd"));
         if(z===null)continue;
         const same=(z===q.net&&q.net);
         if(same&&zoneFichier(zoneAt(i,q.x,q.y)))continue;   // raccordée par le fichier
@@ -375,7 +411,7 @@ function gerberCopper(i){
 function gerberMask(side){
   const A=apSet(), body=[];
   for(const o of maskOpenings(side))gPad(body,A,o.q,o.grow);
-  return gAssemble(gHeader("Soldermask,"+(side?"Bot":"Top")),A,body);
+  return gAssemble(gHeader("Soldermask,"+(side?"Bot":"Top"),"Negative"),A,body);
 }
 function gerberPaste(side){
   const A=apSet(), body=[];
@@ -493,23 +529,25 @@ function gerberEdge(){
    occupe une position imposée, et un champ décalé d'un caractère fait un
    fichier illisible. D'où pad() partout plutôt qu'une concaténation libre.
 
-   Enregistrement 317 (point de test) :
-     col 1-3    "317"
+   Enregistrement 317 (trou métallisé) ou 327 (pastille CMS), colonnes de
+   l'IPC-D-356A (celles du rédacteur de KiCad) :
+     col 1-3    "317" ou "327"
      col 4-17   nom du net, 14 caractères
      col 18-20  "   "
-     col 21-26  repère du composant  (-XXXXX)
-     col 27-31  numéro de broche     (-YYYY)
-     col 32     drapeau de trou métallisé : "A" traversant, blanc sinon
-     col 33-38  diamètre du trou     (Dnnnnn), en 0,0001 pouce
-     col 39     "P" plaqué, "U" non plaqué
-     col 40-42  accès aux couches    (Ann) : A00 = toutes, A01 = dessus…
-     col 43-49  X                    (X±nnnnnn), en 0,0001 pouce
-     col 50-56  Y                    (Y±nnnnnn)
+     col 21-26  repère du composant, 6 caractères
+     col 27     "-" s'il y a une broche
+     col 28-31  numéro de broche, 4 caractères
+     col 32     blanc (pas de point milieu)
+     col 33-38  trou : "D" + diamètre sur 4 chiffres + "P"/"U", blanc sinon
+     col 39-41  accès aux couches (Ann) : A00 = toutes, A01 = dessus,
+                Ann = numéro de la couche du dessous
+     col 42-49  X                    (X±nnnnnn), en 0,0001 pouce
+     col 50-57  Y                    (Y±nnnnnn)
    Les unités du format sont impériales : tout ce qui sort d'ici est converti
    depuis le millimètre, et l'origine est celle des Gerber pour que les deux
    se superposent chez le fabricant.
    ========================================================================== */
-const IPC_MM=1/0.0254;                 // mm vers 0,0001 pouce
+const IPC_MM=1/0.00254;                // mm vers 0,0001 pouce (393,7 par mm)
 function ipcNum(mm,digits){
   const v=Math.round(Math.abs(mm)*IPC_MM);
   return String(v).padStart(digits,"0").slice(-digits);
@@ -530,20 +568,21 @@ function ipcName(net){
    C'est ce qui permet au testeur de choisir ses aiguilles. */
 function ipcAccess(layers){
   if(layers.length>=S.cu&&S.cu>1)return "A00";
-  return layers.indexOf(0)>=0?"A01":"A02";
+  return layers.indexOf(0)>=0?"A01":"A"+String(S.cu).padStart(2,"0");
 }
 /* Un enregistrement 317, champs à leur colonne. `pin` vide pour un via : le
    format admet un point de test qui n'appartient à aucun composant. */
 function ipc317(net,ref,pin,drill,plated,layers,x,y){
   const o=gOrigin();
-  let s="317";
+  const aPin=pin!==""&&pin!=null;
+  let s=drill>0?"317":"327";
   s+=ipcName(net).padEnd(14," ");
   s+="   ";
-  s+=(ref?"-"+noAcc(String(ref)).toUpperCase().slice(0,5).padEnd(5," "):"      ");
-  s+=(pin!==""&&pin!=null?"-"+String(pin).slice(0,4).padEnd(4," "):"     ");
-  s+=(drill>0&&layers.length>=S.cu&&S.cu>1?"A":" ");
-  s+=(drill>0?"D"+ipcNum(drill,5):"      ");
-  s+=(drill>0?(plated?"P":"U"):" ");
+  s+=(ref?noAcc(String(ref)).toUpperCase().slice(0,6):"").padEnd(6," ");
+  s+=aPin?"-":" ";
+  s+=(aPin?String(pin).slice(0,4):"").padEnd(4," ");
+  s+=" ";
+  s+=drill>0?"D"+ipcNum(drill,4)+(plated?"P":"U"):"      ";
   s+=ipcAccess(layers);
   s+="X"+ipcCoord(x-o.x);
   s+="Y"+ipcCoord(o.y-y);       // le Y du format monte, celui du document descend
@@ -961,8 +1000,9 @@ function fabReadme(files,dr){
            "CONTRE_PERCAGE_DESSOUS_0_55...), avec un POINT au centre de chaque",
            "trou : les positions de percage, un diametre par calque.");
   L.push("positions.csv et bom.csv servent a l'assemblage : millimetres,");
-  L.push("rotation en degres dans le sens antihoraire, meme origine que les");
-  L.push("Gerber. Ils ne concernent pas le fabricant du circuit nu.");
+  L.push("rotation en degres dans le sens horaire (convention JLCPCB), de");
+  L.push("0 a 360, meme origine que les Gerber. Ils ne concernent pas le");
+  L.push("fabricant du circuit nu.");
   {
     const vid=(S.variantes&&S.variantes.active)||"";
     const nm=varReperesNonMontes(S.fps,vid);
@@ -1022,7 +1062,7 @@ function positionsCsvText(){
   for(const fp of fabFpsMontes()){
     const x=fmt(fp.x-o.x,4);
     const y=fmt(o.y-fp.y,4);   // Y Gerber monte, le document descend
-    const rot=fp.rot||0;
+    const rot=padRot(fp.rot||0);   // -90 ou 450 saisis au panneau sortent en 270 / 90
     const side=fp.side?"Bottom":"Top";
     rows.push([
       fp.ref,

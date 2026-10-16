@@ -698,8 +698,22 @@ function reMfgTabs(activeTab){
 }
 
 /* Rendu HTML structuré des spécifications détaillées d'un fabricant */
+/* Copie du profil dont chaque texte est échappé : le profil vient d'un JSON
+   importé (puis de localStorage), et ses champs partent tels quels dans le
+   HTML ci-dessous — « <img onerror=…> » dans une finition s'y exécutait. */
+function reEscProfil(o){
+  if(typeof o==="string")return esc(o);
+  if(Array.isArray(o))return o.map(reEscProfil);
+  if(o&&typeof o==="object"){
+    const r={};
+    for(const k of Object.keys(o))r[k]=reEscProfil(o[k]);
+    return r;
+  }
+  return o;
+}
 function reMfgSpecsHtml(p){
   if(!p) return "";
+  p = reEscProfil(p);
   const gen = p.general || {};
   const dim = p.dimensions || {};
   const cop = p.copper || {};

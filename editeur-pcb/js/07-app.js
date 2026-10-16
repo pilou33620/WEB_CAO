@@ -162,9 +162,9 @@ function openNetlistConflictDialog(conflicts){
   for(const c of conflicts){
     const nTrk=(c.tracks&&c.tracks.length)||1;
     itemsHtml+='<li style="margin-bottom:8px;line-height:1.4">'+
-      'Pastille <b>'+(c.ref||"?")+'.'+c.pin+'</b> : '+
-      'était sur <span style="color:#f87171;font-weight:bold">'+(c.oldNet||"?")+'</span>, '+
-      'devient <span style="color:#4ade80;font-weight:bold">'+(c.newNet||"?")+'</span> '+
+      'Pastille <b>'+esc(c.ref||"?")+'.'+esc(c.pin)+'</b> : '+
+      'était sur <span style="color:#f87171;font-weight:bold">'+esc(c.oldNet||"?")+'</span>, '+
+      'devient <span style="color:#4ade80;font-weight:bold">'+esc(c.newNet||"?")+'</span> '+
       '<span style="color:var(--txt-dim);font-size:11.5px">('+nTrk+' piste(s) connectée(s))</span>'+
       '</li>';
   }

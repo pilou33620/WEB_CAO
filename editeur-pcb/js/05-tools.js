@@ -410,6 +410,8 @@ function normFp(f,i){
   if(f.csvPartName)out.csvPartName=dStr(f.csvPartName,100);
   if(f.csvMpn)out.csvMpn=dStr(f.csvMpn,100);
   if(f.manufacturer)out.manufacturer=dStr(f.manufacturer,100);
+  // posés depuis le catalogue (07-app.js) : perdus au premier Ctrl+Z ou rechargement
+  for(const k of ["mpn","description","spice"])if(f[k])out[k]=dStr(f[k],240);
   /* empreinte dessinée à la main : la liste de pastilles l'emporte sur les
      cotes, et le brochage se relit dessus — un fichier retouché qui annonce
      deux broches pour huit pastilles ne doit pas perdre six nets */
@@ -4859,31 +4861,6 @@ document.addEventListener("keydown",e=>{
       e.preventDefault();
       (k==="y"||e.shiftKey)?redo():undo();
       reSync();
-      return;
-    }
-    return;
-  }
-  /* Fenêtre d'empreinte ouverte : elle prend Échap pour se fermer, et rien
-     d'autre ne doit agir sur la carte pendant ce temps — Suppr y effacerait
-     une empreinte qu'on est en train de dessiner, et annuler remplacerait
-     l'empreinte sous les mains de la fenêtre. */
-  if(typeof feIsOpen==="function"&&feIsOpen()){
-    if(k==="escape"){e.preventDefault();feClose();return;}
-    /* Annuler et rétablir traversent : c'est dans la fenêtre qu'on vient de se
-       tromper, et y renoncer en la fermant d'abord n'aurait aucun sens.
-       loadDoc() remplace les empreintes de la carte, celle de la fenêtre
-       comprise : feReattach() la reprend par son identifiant. */
-    if((e.ctrlKey||e.metaKey)&&(k==="z"||k==="y")){
-      e.preventDefault();
-      (k==="y"||e.shiftKey)?redo():undo();
-      feReattach();
-      return;
-    }
-    /* `R` tourne la pastille sélectionnée, comme il tourne une empreinte sur
-       la carte : le même geste, un cran plus bas. */
-    if(k==="r"&&!e.ctrlKey&&!e.metaKey&&!e.altKey){
-      e.preventDefault();
-      feRotatePad(e.shiftKey?-90:90);
       return;
     }
     return;

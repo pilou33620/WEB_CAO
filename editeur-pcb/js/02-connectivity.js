@@ -440,14 +440,48 @@ function segSegDist(a,b){
     segDist(b.x1,b.y1,a.x1,a.y1,a.x2,a.y2),
     segDist(b.x2,b.y2,a.x1,a.y1,a.x2,a.y2));
 }
+/* Écart piste/pastille. Droite : exact, bouts contre la pastille et bords
+   de la pastille contre l'axe (un croisement vaut 0). Les 48 échantillons
+   d'avant laissaient passer une pastille posée entre deux d'entre eux sur une
+   piste longue. Arc : échantillonné au quart du petit côté de la pastille. */
 function segPadDist(t,q){
-  const n=Math.min(48,Math.max(2,Math.ceil(trkLen(t)/0.3)));
-  let best=1e9;
-  for(let i=0;i<=n;i++){
-    const p=trkAt(t,i/n);
-    best=Math.min(best,padDist(p.x,p.y,q));
+  let best;
+  if(!arcOf(t)){
+    best=Math.min(padDist(t.x1,t.y1,q),padDist(t.x2,t.y2,q));
+    const P=padWorldPts(q);
+    for(let i=0;i<P.length&&best>0;i++){
+      const a=P[i], b=P[(i+1)%P.length];
+      best=Math.min(best,segSegDist(t,{x1:a.x,y1:a.y,x2:b.x,y2:b.y}));
+    }
+  }else{
+    const n=Math.max(2,Math.ceil(trkLen(t)/Math.max(0.02,Math.min(q.w,q.h)/4)));
+    best=1e9;
+    for(let i=0;i<=n;i++){
+      const p=trkAt(t,i/n);
+      best=Math.min(best,padDist(p.x,p.y,q));
+    }
   }
   return best-t.w/2;
+}
+/* Écart cuivre à cuivre entre deux pastilles : sommets de chacune contre
+   l'autre, et bords qui se croisent. Mesurer du centre de l'une, moins son
+   demi petit côté, rendait 0,85 mm pour deux pastilles 2×0,5 bout à bout
+   écartées de 0,10 mm. */
+function padPadDist(a,b){
+  const A=padWorldPts(a), B=padWorldPts(b);
+  // le centre de l'une dans l'autre : deux pastilles confondues ont leurs
+  // sommets sur le bord de l'autre (écart 0), pas dedans
+  let best=Math.min(padDist(a.x,a.y,b),padDist(b.x,b.y,a));
+  for(const p of A)best=Math.min(best,padDist(p.x,p.y,b));
+  for(const p of B)best=Math.min(best,padDist(p.x,p.y,a));
+  if(best>0)
+    for(let i=0;i<A.length;i++)
+      for(let j=0;j<B.length;j++){
+        const a1=A[i],a2=A[(i+1)%A.length],b1=B[j],b2=B[(j+1)%B.length];
+        // bords qui se croisent : les cuivres se recouvrent (profondeur non mesurée)
+        if(segCross({x1:a1.x,y1:a1.y,x2:a2.x,y2:a2.y},{x1:b1.x,y1:b1.y,x2:b2.x,y2:b2.y}))return -1e-3;
+      }
+  return best;
 }
 function inBoard(x,y,m){
   const P=boardPoly();
@@ -653,7 +687,7 @@ function runDrc(){
       for(let j=i+1;j<g.length;j++){
         const a=g[i], b=g[j];
         if(!(a.q.net&&b.q.net&&a.q.net!==b.q.net))continue;
-        if(padDist(a.q.x,a.q.y,b.q)-Math.min(a.q.w,a.q.h)/2<-1e-6)
+        if(padPadDist(a.q,b.q)<-1e-6)
           out.push({x:(a.q.x+b.q.x)/2,y:(a.q.y+b.q.y)/2,l:a.layers[0],
             msg:"Pastilles superposées : "+a.tag+" / "+b.tag+
                 " ("+a.q.net+" / "+b.q.net+")"});
@@ -1003,23 +1037,28 @@ function applyNetlist(txt,dropMissing){
            au calcul d'un clic. */
         /* dessinée à la main : pastilles explicites qui ne viennent pas de
            la LIB. Celles que la LIB a posées se refont comme les autres. */
-        const dessin=fpFree(fp)&&!fp.lib;
-        const lib=dessin?null:libPour(meta.pkg);
-        if(lib&&fpApplyDef(fp,lib)){
-          fp.lib=lib.name;
-          libFp.push(fp);repkg.push(fp);
-        }else if(!dessin){
-          if(fp.lib){delete fp.pads;delete fp.body;delete fp.lib;}
-          const g=fpGeomFor(meta.pkg,pins);
-          fp.style=g.style;fp.pitch=g.pitch;fp.span=g.span;fp.pins=g.pins;
-          if(g.pads){
-            fp.pads=g.pads.map(padClone);
-            if(g.body)fp.body={...g.body};
-            fp.lib=g.pkg;
-            fpSyncPins(fp);
+        /* fpReshape, comme la fenêtre ECO : les pistes suivent les
+           pastilles déplacées, au lieu de rester à l'ancienne place */
+        const refaire=()=>{
+          const dessin=fpFree(fp)&&!fp.lib;
+          const lib=dessin?null:libPour(meta.pkg);
+          if(lib&&fpApplyDef(fp,lib)){
+            fp.lib=lib.name;
+            libFp.push(fp);repkg.push(fp);
+          }else if(!dessin){
+            if(fp.lib){delete fp.pads;delete fp.body;delete fp.lib;}
+            const g=fpGeomFor(meta.pkg,pins);
+            fp.style=g.style;fp.pitch=g.pitch;fp.span=g.span;fp.pins=g.pins;
+            if(g.pads){
+              fp.pads=g.pads.map(padClone);
+              if(g.body)fp.body={...g.body};
+              fp.lib=g.pkg;
+              fpSyncPins(fp);
+            }
+            repkg.push(fp);
           }
-          repkg.push(fp);
-        }
+        };
+        if(typeof fpReshape==="function")fpReshape(fp,refaire);else refaire();
       }
       kept.push(fp);
       if(pins>fp.pins)fpSetPins(fp,pins);

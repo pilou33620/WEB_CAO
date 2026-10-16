@@ -16,6 +16,13 @@ var PLACEMENT_SCORE = (function() {
   let _patternsCache = null;
   let _chargementEnCours = false;
 
+  /* Couleur de zone venue du schéma (via /api/schema/patterns) : posée dans un
+     attribut style, elle n'est admise qu'en #rgb(a) — un « red"><img …> »
+     sortait de l'attribut. */
+  function psCouleur(c) {
+    return /^#[0-9a-f]{3,8}$/i.test(String(c || "")) ? c : "var(--blue)";
+  }
+
   /* ---------- Préparation du document PCB ---------- */
   function construireDocumentPcb() {
     if (typeof S === "undefined" || !S || !Array.isArray(S.fps)) return null;
@@ -441,10 +448,10 @@ var PLACEMENT_SCORE = (function() {
             </div>
             <div style="display:flex;flex-direction:column;gap:6px;">
               ${_patternsCache.motifs.map((m, idx) => `
-                <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-left:4px solid ${m.color || 'var(--blue)'};padding:6px 8px;border-radius:4px;display:flex;flex-direction:column;gap:5px;">
+                <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-left:4px solid ${psCouleur(m.color)};padding:6px 8px;border-radius:4px;display:flex;flex-direction:column;gap:5px;">
                   <div style="display:flex;justify-content:space-between;align-items:center;">
                     <div style="display:flex;align-items:center;gap:6px;min-width:0;">
-                      <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${m.color || 'var(--blue)'};flex-shrink:0;"></span>
+                      <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${psCouleur(m.color)};flex-shrink:0;"></span>
                       <span style="font-weight:600;color:var(--txt);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(m.label || m.nom || m.type)}</span>
                       ${m.is_user_zone ? `<span style="font-size:9px;background:rgba(59,130,246,0.2);color:var(--blue);padding:1px 4px;border-radius:3px;font-weight:600;flex-shrink:0;">Zone</span>` : ''}
                     </div>

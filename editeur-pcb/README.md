@@ -32,7 +32,7 @@ js/05-tools.js           historique, sélection, tracé, zones, contour, souris,
 js/06-panels.js          onglets de couches, listes, règles, propriétés
                          (objet seul et groupes de sélection), empilage physique
 js/07-app.js             fichiers, câblage des boutons, initialisation
-js/08-empreinte.js       fenêtre d'édition d'empreinte, bibliothèque personnelle
+js/08-empreinte.js       bibliothèque d'empreintes (le dessin se fait dans la Gestion LIB)
 js/09-diffpair.js        paires différentielles : règles, tracé couplé, impédance
 js/10-pns-geom.js        routeur : enveloppes convexes, polylignes, trame 45°
 js/11-pns-node.js        routeur : modèle du monde, index spatial, branches
@@ -161,9 +161,8 @@ moment où ils s'exécutent. La règle pratique :
    scripts en fin de `<body>`.
 5. `05-tools` pose les écouteurs sur `cv` : il vient donc après `03-render`.
 6. `07-app` appelle `init()` en dernière ligne, quand tout est défini.
-7. `08-empreinte` ne s'exécute pas au chargement : il ne déclare que la
-   fenêtre d'empreinte et la bibliothèque, appelées au clic. Il vient donc
-   après `07-app`, comme `19-broches.js` côté schématique.
+7. `08-empreinte` ne déclare que la bibliothèque d'empreintes, dont il lance
+   la lecture depuis le serveur. Il vient après `07-app`.
 8. `09-diffpair` vient après `07-app` pour la même raison — son panneau et son
    outil ne servent qu'au clic — mais il a besoin d'un premier affichage : sa
    dernière ligne appelle `buildDiffPairs()` elle-même. L'appeler depuis
@@ -689,15 +688,16 @@ millimètre : de quoi router juste, pas de quoi remplacer la fiche du fabricant.
 Sur un boîtier à quatre côtés, la broche 1 est en haut à gauche et la
 numérotation tourne dans le sens trigonométrique, comme sur le boîtier réel.
 
-## Dessiner une empreinte à la main, l'enregistrer, la réutiliser
+## Empreintes : dessin dans la Gestion LIB, modèle sur la carte
 
 Le boîtier nommé couvre le cas courant, pas tous les cas : une languette de
 DPAK, une pastille thermique de QFN, un connecteur maison, un brochage relevé
-sur une fiche. Le bouton *Modifier l'empreinte…* du panneau *Propriétés* ouvre
-une fenêtre où l'empreinte se voit — pastilles, numéros, contour de
-sérigraphie, origine, point de repère — et se règle pastille par pastille
-(`js/08-empreinte.js`). C'est la fenêtre de brochage du schématique
-(`19-broches.js`), transposée au cuivre, et la mécanique est la même.
+sur une fiche. Le bouton *Ouvrir dans Gestion LIB* du panneau *Propriétés*
+ouvre l'éditeur d'empreintes de la Gestion LIB, où l'empreinte se dessine et
+s'enregistre dans la LIB ; *Recharger depuis la LIB* la rapporte sur la
+carte. L'ancienne fenêtre d'édition intégrée, que plus rien n'ouvrait, a été
+retirée : `js/08-empreinte.js` ne garde que la bibliothèque. Ce qui suit
+décrit le modèle d'empreinte de la carte.
 
 **Deux états, un seul basculement.** Une empreinte reste *calculée* tant que
 ses trois cotes suffisent : style, pas, écartement. Le premier geste manuel —
@@ -709,15 +709,6 @@ cuivre : les pastilles calculées sont recopiées telles quelles, contour compri
 dessin manuel décalerait le routage déjà posé. *Revenir au calcul* rend la main
 au boîtier ; c'est un geste explicite, et `Ctrl+Z` le rattrape.
 
-**Ce qui se règle sur une pastille** : le numéro de broche, le centre, la
-largeur, la hauteur, la rotation, la forme et le perçage. Un perçage non nul
-fait la pastille traversante — elle apparaît alors sur toutes les couches, part
-au fichier de perçage, et reste plus étroite que la pastille, sinon il n'en
-resterait pas de cuivre. *Appliquer à toutes* recopie dimensions, forme et
-perçage sur les autres pastilles ; *Carré* recopie la largeur sur la hauteur.
-Le contour de sérigraphie se saisit en largeur et hauteur autour du centre, ou
-se rend au calcul automatique.
-
 **Quatre formes, un seul paramètre** (`PAD_SHAPES`, `padRadius`) : le rayon des
 coins.
 
@@ -727,9 +718,6 @@ coins.
 | Rectangle (angles droits) | nul | pastille franche, et **carré** quand la hauteur égale la largeur |
 | Oblong (bouts ronds) | moitié du petit côté | traversant à souder à la vague, pastille de connecteur |
 | Rond | — | perçage, bille de BGA |
-
-Un carré n'est pas une forme de plus : c'est un rectangle dont les deux côtés
-sont égaux, d'où le bouton *Carré* plutôt qu'une cinquième entrée dans la liste.
 
 La **rotation** est propre à chaque pastille, en degrés, dans le repère de
 l'empreinte ; elle s'ajoute à celle de l'empreinte entière et s'inverse quand
@@ -755,14 +743,6 @@ glisse à la souris ou on le décale au clavier ; le cuivre ne bouge pas d'un
 micron pour autant — les pastilles reculent exactement de ce que `fp.x`/`fp.y`
 avancent (`fpMoveOrigin`).
 
-**À la fermeture de la fenêtre, l'origine revient au centre du composant**
-(`fpCenterOrigin`). Une poignée restée sur un coin, ou pire à côté de la pièce,
-se saisit là où on ne la cherche pas, fait pivoter l'empreinte autour du vide
-et envoie le repère de sérigraphie hors du contour. Le recentrage est donc
-systématique, et il est annoncé dans le pied de page. Une empreinte calculée est
-centrée par construction : elle n'est pas figée pour rien au passage
-(`fpIsCentered` tranche avant tout).
-
 **Le repère de broche 1 est un point de sérigraphie**, et rien d'autre :
 `fp.mark`, un disque en coordonnées locales, avec son diamètre (0,4 mm par
 défaut). Ce qui s'affiche est exactement ce qui sortira sur le film — l'écran
@@ -780,39 +760,8 @@ sens, composant par composant, et **ce choix est écrit dans le document**
 (`fp.mark=false` pour un retrait) — sans quoi la règle automatique le déferait
 à la relecture.
 
-**Les gestes sont ceux de la carte.** Une pastille — comme l'origine ou le
-point de repère — se prend et se maintient pour la déplacer ; un clic dans le
-vide ne fait rien. Le déplacement applique le **décalage** entre deux positions
-accrochées à la grille, exactement comme le déplacement d'une empreinte sur la
-carte : ce qu'on tient ne saute pas sous le pointeur, une pastille se prend par
-son bord et garde son écart au curseur, et une cote qui ne tombe pas sur la
-grille — un pas de 0,65 mm — n'y est pas ramenée de force. `Alt` relâche
-l'accrochage, `R` tourne la pastille sélectionnée d'un quart de tour et
-`Maj+R` dans l'autre sens : le même raccourci qu'`R` sur la carte, un cran plus
-bas.
-
-**Zoom et déplacement de la vue.** Le cadrage suit l'empreinte tant qu'on n'y
-touche pas. La molette zoome autour du pointeur, les boutons `+` et `−` de
-l'en-tête autour du centre, `⤢` (ou un double-clic sur le dessin) recadre. La
-vue se déplace au bouton du milieu ou avec `Maj` enfoncée. Le facteur est
-affiché dans l'en-tête, dans la même unité que le pied de page de la carte.
-
-Pendant un geste, le cadrage automatique se tait et reprend au relâcher : sans
-cela il se recalculait à chaque millimètre parcouru, le dessin glissait sous le
-pointeur et ce qu'on tenait dérivait. Déplacer l'origine demande la même
-précaution en sens inverse — le repère local recule, donc la vue avance
-d'autant (`feOriginMove`) : à l'écran le cuivre ne bouge pas, ce qui est la
-vérité de l'opération, et seule la croix suit le pointeur.
-
-**Annuler et rétablir traversent la fenêtre** : `Ctrl+Z` et `Ctrl+Y` y agissent
-sur la carte comme ailleurs. Annuler recharge le document et remplace les
-empreintes : la fenêtre reprend la sienne par son identifiant (`feReattach`),
-ou se ferme si elle a disparu. La fenêtre de brochage du schématique fait de
-même (`peReattach`).
-
-**Deux pastilles superposées** sont cerclées de rouge dans la fenêtre. Ce n'est
-pas interdit — une traversante peut recouvrir une plage — mais si elles portent
-deux nets différents, c'est un court-circuit, et le DRC le signale. Le contrôle
+**Deux pastilles superposées** ne sont pas interdites — une traversante peut
+recouvrir une plage — mais si elles portent deux nets différents, c'est un court-circuit, et le DRC le signale. Le contrôle
 ne compare pas l'isolation *entre pastilles d'une même empreinte* : un QFN au
 pas de 0,5 mm n'a pas 0,25 mm entre ses plages, et ce n'est pas un défaut de la
 carte. Seul le recouvrement franc est repris.
@@ -824,30 +773,12 @@ ne sert plus qu'à la nomenclature, le panneau le dit. Une broche câblée
 au-delà du dessin reçoit malgré tout sa pastille — rien de ce que porte la
 netlist ne peut rester sans cuivre.
 
-**La bibliothèque personnelle**, au bas de la fenêtre :
-
-- *Enregistrer* range l'empreinte sous un nom, dans le stockage du navigateur
-  (clé `pcbedit.empreintes.v1`). Une empreinte calculée s'enregistre aussi :
-  seules ses cotes sont retenues, et elle se recalculera à l'arrivée.
-- *Appliquer* pose une empreinte enregistrée sur le composant en cours. Seule
-  la forme change : le repère, la valeur, le boîtier, la position, la face, la
-  rotation et les nets appartiennent à la carte et n'y touchent pas.
-- *Exporter .json* écrit `empreintes.json` (`{"format":"pcbfp-1",
-  "footprints":[…]}`), *Importer .json…* le relit. C'est ce qui emporte une
-  empreinte sur une autre machine ou dans un autre projet — le stockage du
-  navigateur, lui, ne suit pas. Un nom déjà pris par une empreinte *différente*
-  n'est jamais écrasé en silence : la nouvelle reçoit un suffixe, et la fenêtre
-  le dit. Le même fichier importé deux fois ne fait qu'une entrée.
-
 Tout ce qui entre — fichier, stockage du navigateur — passe par `normFpDef()`,
 aussi défensif que `normFp()` : une pastille sans centre exploitable est
 écartée, une liste vide rend l'empreinte au calcul, un contenu illisible est
 ignoré sans rien casser.
 
-L'accrochage de la fenêtre reprend le pas de grille de la carte, pour qu'une
-pastille tombe sur la trame des pistes qui viendront la rejoindre ; `Alt` le
-relâche, pour les cotes qui ne tombent pas dessus (un pas de 0,65 mm, par
-exemple). Les pastilles dessinées et le contour imposé sont enregistrés dans le
+Les pastilles dessinées et le contour imposé sont enregistrés dans le
 `.json` de la carte (`fp.pads`, `fp.body`) et font l'aller-retour sans perte —
 même essai de neutralité que le reste du document. « Sans perte » vaut pour
 tout ce que porte une pastille : les sommets d'un polygone (`pts`), le

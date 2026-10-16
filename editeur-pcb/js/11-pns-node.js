@@ -150,8 +150,7 @@ function pnsGap(it,s,w){
   return segSegDist({x1:s.x1,y1:s.y1,x2:s.x2,y2:s.y2},it.seg)-it.w/2-w/2;
 }
 /* Le même écart entre deux items quelconques : six combinaisons, toutes
-   reprises du DRC à l'identique — y compris l'approximation pastille/pastille,
-   qui mesure du centre de l'une au cuivre de l'autre. Le routeur ne peut pas
+   reprises du DRC à l'identique. Le routeur ne peut pas
    être plus fin que le contrôle sans se mettre à poser du cuivre que le
    contrôle refusera. */
 function pnsPairGap(a,b){
@@ -160,7 +159,7 @@ function pnsPairGap(a,b){
   if(a.k==="V"&&b.k==="V")return dist(a.v.x,a.v.y,b.v.x,b.v.y)-a.v.d/2-b.v.d/2;
   if(a.k==="V")return padDist(a.v.x,a.v.y,b.q)-a.v.d/2;
   if(b.k==="V")return padDist(b.v.x,b.v.y,a.q)-b.v.d/2;
-  return padDist(a.q.x,a.q.y,b.q)-Math.min(a.q.w,a.q.h)/2;
+  return padPadDist(a.q,b.q);
 }
 /* De combien, et dans quel sens, un point doit s'écarter d'un item pour qu'une
    piste de largeur `w` y tienne son isolation. Rend `null` quand il n'y a rien
