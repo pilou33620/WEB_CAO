@@ -144,9 +144,10 @@ Un nouveau champ facultatif `holes`, à côté de `pads` :
    - Wurth-9774030151R, Wurth-9774040360R ;
    - Yamaichi-IC51-0484-806, Trou-metalise-1.3mm-O3.6x1.8.
 2. TE-2305018-2 retrouve ses pattes oblongues de la fiche.
-3. Empreintes MECA-LOC (Ø 1,5 / 2,0 / 2,1 / 2,5 / 2,6 / 2,7 / 3,2 mm),
-   associées dans `LIB_composants.csv`. Une empreinte faite seulement de
-   trous doit donc être acceptée (zéro pastille).
+3. ~~Empreintes MECA-LOC~~ — **abandonné le 16/10/2026** : une empreinte
+   sans pastille toucherait le brochage, la netlist, la nomenclature et le
+   placement. Un trou de locating se pose comme trou de carte (outil Trou
+   NPTH de l'éditeur PCB) ; les MECA-LOC restent sans empreinte au catalogue.
 
 ## Tech stack
 

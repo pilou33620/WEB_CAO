@@ -110,7 +110,7 @@ Rien en cours : l'option B, les limites de l'option A et la garde de la règle *
   - Draftsman : le détail du plan et les feuilles cuivre dessinent la fente en cercle ; DXF : calques `TROUS_PTH_<Ø>` / `TROUS_NPTH_<Ø>` mêlent fente et rond de même largeur (POINT au centre) ;
   - le DRC ne borne pas `slot` par la pastille (l'audit, lui, signale l'anneau) ; contrôle au bord de carte sur les deux bouts seulement (encoche concave entre les deux non vue) ;
   - panneau Propriétés d'un trou de carte : pas de champ L / Rot (un trou oblong de carte ne vient que d'un fichier).
-- [ ] **M3 — LIB** : reporter dans `holes` les trous que 20 empreintes décrivent en texte, pattes oblongues du TE 2305018-2, empreintes MECA-LOC (une empreinte faite seulement de trous).
+- [x] **M3 — LIB** (16/10/2026, PROJETS) : les trous de 13 empreintes revérifiés sur fiche et passés dans `holes`, pattes oblongues du TE 2305018-2 en `slot`. Les MECA-LOC ne deviennent pas des empreintes : un trou de locating se pose comme trou de carte (décision du 16/10/2026). Doutes laissés tels quels : trou Ø2,03 du MPD-BA2AAPC (plan rév. H) trop juste pour la vis 2-56 qu'il recommande ; vue du « Mounting Detail » du Keystone 1067 ; numérotation Amphenol 10132797 et broche 1 du Yamaichi.
 - [ ] Accrocher une cote du Draftsman à un trou d'empreinte (référence empreinte + rang) : laissé hors de M1 (D3).
 - [ ] Gestion LIB : déplacer un trou au glisser et l'effacer avec Suppr (aujourd'hui tableau X / Y et bouton ✕).
 - [ ] Relevés de la revue M1 laissés pour plus tard :
