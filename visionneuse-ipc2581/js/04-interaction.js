@@ -491,8 +491,6 @@ document.addEventListener("keydown",function(e){
 
 function basculer(cle,bouton){
   V.aff[cle]=!V.aff[cle];
-  if(cle==="jsurf"&&typeof simBasculerJsurf==="function")simBasculerJsurf(V.aff.jsurf);
-  if(cle==="maillage"&&typeof simBasculerMaillage==="function")simBasculerMaillage(V.aff.maillage);
   const b=bouton?document.getElementById(bouton):null;
   if(b)b.classList.toggle("on",!!V.aff[cle]);
   pnlElements();

@@ -317,7 +317,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
      carte, le profil d'espacement et son recoupement -- plus les trois
      mesures que seule la page peut faire : les positions de couture, les
      fentes du plan, les vias de masse. */
-  "SIM_XT","SIM_XT_ROUTE","SIM_XT_FORMAT",
+  "SIM_XT","SIM_XT_ROUTE","SIM_XT_FORMAT","SIM_RF","simOublierPerimes","simRevision",
   "simBrancherCrosstalk","simXtSaisieEcrire","simXtGo","simRepeindre",
   "simCorpsCrosstalk","simRendreCrosstalk","simXtReglages",
   "simXtStatut","simXtStatuts","simXtSeuils","simXtPireStatut",
@@ -17029,6 +17029,17 @@ T("un outil qui ne sait pas décrire de crosstalk le dit, et dit quoi lui manque
   }
 });
 
+T("simulation : un résultat de toute la carte part quand la carte change",()=>{
+  if(simRevision()===undefined)throw new Error("l'éditeur doit donner une révision de la carte");
+  SIM_RF.res={essai:1}; SIM_RF.rev=simRevision(); SIM_RF.err="";
+  simOublierPerimes();
+  if(!SIM_RF.res)throw new Error("carte inchangée : le résultat reste");
+  touch();
+  simOublierPerimes();
+  if(SIM_RF.res)throw new Error("carte modifiée : l'ancien résultat RF ne doit plus se peindre");
+  if(!/relancez/.test(SIM_RF.err))throw new Error("le panneau doit dire pourquoi : "+SIM_RF.err);
+  SIM_RF.err="";
+});
 T("lancer une analyse de crosstalk redemande un dessin du cuivre",()=>{
   /* CE QUI ÉTAIT FAUX, ET QUI SE LISAIT COMME UN RÉSULTAT. `simRendre` réécrit
      la FICHE ; la chaleur peinte le long des victimes, les plages à risque et
@@ -22002,6 +22013,31 @@ function carteRf(){
   return {u1,l1,c1,j1,P};
 }
 const RF_ANALYSE={f_debut:2e9,f_fin:3e9,points:11,f_centre:2.44e9};
+TA("simulation : la réponse d'une sélection quittée pendant le calcul est jetée",async()=>{
+  const avantFetch=global.fetch, avantPb=SIM_PCB.problemeCrosstalk;
+  const avant={ouvert:SIM.ouvert, analyse:SIM.analyse, suivre:SIM.suivre};
+  let lacher;
+  const attente=new Promise(r=>{lacher=r;});
+  const rep=o=>({ok:true,status:200,json:()=>Promise.resolve(o),
+                 text:()=>Promise.resolve(JSON.stringify(o))});
+  global.fetch=url=>String(url).indexOf(SIM_XT_ROUTE)>=0
+    ? attente.then(()=>rep({etape0:{ancienne:true}}))
+    : Promise.resolve(rep({dispo:true}));
+  SIM_PCB.problemeCrosstalk=()=>({doc:{}});
+  try{
+    SIM.ouvert=true; SIM.analyse="crosstalk"; SIM.suivre=false;
+    SIM_XT.occupe=false; SIM_XT.res=null; SIM_XT.err="";
+    const calcul=simXtGo();
+    await new Promise(r=>setTimeout(r,0));
+    simRafraichir(true);          // la sélection change pendant que le serveur calcule
+    lacher();
+    await calcul;
+    if(SIM_XT.res)throw new Error("la réponse de l'ancienne sélection s'est posée sur la nouvelle");
+  }finally{
+    global.fetch=avantFetch; SIM_PCB.problemeCrosstalk=avantPb;
+    Object.assign(SIM,avant); SIM_XT.res=null; SIM_XT.err=""; SIM_XT.occupe=false;
+  }
+});
 TA("simulation RF : le réseau suit le cuivre, de la puce au connecteur",async ()=>{
   carteRf();
   const r=await simRfProbleme({analyse:RF_ANALYSE});

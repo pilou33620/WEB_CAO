@@ -35,7 +35,7 @@ const V={
   bbox:null,            // {x1,y1,x2,y2} de la carte
   vue:{scale:1,ox:0,oy:0,flip:false},
   aff:{plans:true,pistes:true,pads:true,trous:true,textes:true,
-       composants:true,refs:false,contour:true,jsurf:false,maillage:false,cp:true},
+       composants:true,refs:false,contour:true,cp:true},
   net:-1,               // net mis en évidence, -1 = aucun
   /* Jusqu'où va cette mise en évidence. Un net traverse la carte : le montrer
      en entier répond à « où va ce signal », le montrer sur la seule couche
@@ -112,6 +112,8 @@ function mdlGenre(nom,entree){
 /* ==========================================================================
    Petites conversions
    ========================================================================== */
+/* Millimètres par unité du fichier. */
+function mdlK(){ return V.unite==="in"?25.4:V.unite==="µm"?0.001:1; }
 function mdlEsc(s){
   return String(s==null?"":s).replace(/[&<>"'`]/g,ch=>
     ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;","`":"&#96;"}[ch]));
@@ -120,7 +122,7 @@ function mdlEsc(s){
    que le micron reste visible sans noyer la valeur sous les zéros. */
 function mdlNb(v,dec){
   if(v==null||isNaN(v))return "—";
-  const d=(dec==null)?(V.unite==="in"?4:3):dec;
+  const d=(dec==null)?(V.unite==="in"?4:V.unite==="µm"?0:3):dec;
   return Number(v).toFixed(d).replace(/\.?0+$/,"").replace(".",",")||"0";
 }
 function mdlMes(v,dec){ return mdlNb(v,dec)+" "+V.unite; }
@@ -507,7 +509,7 @@ function mdlChainePistesMemeCouche(piste0){
   const arcs=(n.arcs||[]).filter(a=>a.c===piste0.c);
   if(cands.length<=1&&!arcs.length)return cands.length?cands:[piste0];
 
-  const tol=(/INCH/i.test(V.unite||"")?0.02/25.4:0.02);
+  const tol=0.02/mdlK();     // 0,02 mm (le test /INCH/ sur V.unite = "in" ne prenait jamais)
 
   const boutsMap=new Map();
   for(const p of cands){
@@ -630,7 +632,9 @@ function selRefs(){
 function mdlCharger(modele,nomFichier){
   V.modele=modele;
   V.fichier=nomFichier||modele.fichier||"carte";
-  V.unite=/INCH/i.test(modele.unites||"")?"in":"mm";
+  // MICRON est une unité permise de l'IPC-2581 : lue comme des mm, la carte
+  // sortait mille fois trop grande
+  V.unite=/INCH/i.test(modele.unites||"")?"in":/MICRON/i.test(modele.unites||"")?"µm":"mm";
   V.couches=mdlCouches(modele);
   V.net=-1; V.comp=""; V.survol=null; V.mev=mdlMevTout(); V.sel=[];
   MDL_FORMES.clear();
@@ -800,7 +804,7 @@ function mdlBoiteComp(comp){
   }
   for(const p of (comp.pins||[]))voir(p.x,p.y,0.2);
   if(!isFinite(x1)){                       // ni pastille ni broche connue
-    const d=(V.unite==="in")?0.02:0.5;
+    const d=0.5/mdlK();
     return {x1:comp.x-d,y1:comp.y-d,x2:comp.x+d,y2:comp.y+d};
   }
   return {x1:x1,y1:y1,x2:x2,y2:y2};
@@ -1067,7 +1071,7 @@ function ltSaisi(quoi,cle){
 /* Dresse l'empilage de calcul. Refait à chaque chargement et à chaque valeur
    saisie : il ne coûte qu'un parcours de l'empilage et des plans. */
 function ltPreparer(){
-  const m=V.modele, k=(V.unite==="in")?25.4:1;      // tout en millimètres
+  const m=V.modele, k=mdlK();      // tout en millimètres
   const parNom=new Map();
   for(const c of V.couches)parNom.set(c.nom,c);
 
@@ -1362,7 +1366,7 @@ function ltZ0(g,w){
 function ltPiste(piste,coucheIdx){
   const g=ltGeom(coucheIdx==null?piste.c:coucheIdx);
   if(!g)return null;
-  const k=(V.unite==="in")?25.4:1;
+  const k=mdlK();
   const w=(piste.w||0)*k, len=mdlLongueur(piste.p)*k;
   const eeff=ltEeff(g,w), z0=ltZ0(g,w);
   const tpd=len*Math.sqrt(eeff)/LT_C0;
@@ -1378,7 +1382,7 @@ function ltPiste(piste,coucheIdx){
 function ltArc(arc,coucheIdx){
   const g=ltGeom(coucheIdx==null?arc.c:coucheIdx);
   if(!g)return null;
-  const k=(V.unite==="in")?25.4:1;
+  const k=mdlK();
   const w=(arc.w||0)*k, len=mdlArcLongueur(arc)*k;
   const eeff=ltEeff(g,w), z0=ltZ0(g,w);
   const tpd=len*Math.sqrt(eeff)/LT_C0;
@@ -1404,7 +1408,7 @@ function ltArc(arc,coucheIdx){
 function ltNet(i){
   const n=V.parNet[i];
   if(!n||(!n.pistes.length&&!n.arcs.length))return null;
-  const k=(V.unite==="in")?25.4:1;
+  const k=mdlK();
   const morceaux=new Map();
   const out={len:0, tpd:0, c:0, ind:0, pistes:0, arcs:0,
              z0min:Infinity, z0max:0, z0moy:0, lenZ0:0,

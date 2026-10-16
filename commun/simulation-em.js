@@ -2516,6 +2516,7 @@ async function simDCLancer(){
        refuse qu'un « tous les trous sont supposés traversants » explique le
        refus. */
     SIM.dcNotes=(probleme.notes||[]).slice();
+    const rev=simRevision();
     SIM.resDC=await simDCCalculer({
       format:SIM_DC_FORMAT,
       polygones:probleme.polygones||[],
@@ -2533,6 +2534,7 @@ async function simDCLancer(){
       ? simDCConstruireImages(SIM.resDC,SIM_ED.canevasHorsEcran,SIM.dcQuoi)
       : null;
     SIM.dcIndex=simDCIndexer(SIM.resDC);
+    SIM.dcRev=rev;
     SIM.dcSonde=null;
     if(SIM_ED.peindreDC)SIM_ED.peindreDC(SIM.resDC);
     if(SIM_ED.redessiner)SIM_ED.redessiner();
@@ -2552,6 +2554,7 @@ async function simDCLancer(){
    motif et ce qu'il faut changer. Rendre le corps brut afficherait une page
    d'erreur HTTP à la place de la phrase utile. */
 async function simDCCalculer(doc){
+  await simConnecter();     // comme les autres analyses : le serveur trouvé, ou son refus expliqué
   const rep=await fetch((SIM_BASE||"")+SIM_DC_ROUTE,{
     method:"POST",
     headers:{"Content-Type":"application/json"},
@@ -3114,22 +3117,6 @@ async function simErreur(rep){
   return detail||("HTTP "+rep.status);
 }
 
-function simMoteurBar(){
-  return "";
-}
-
-function simBrancherMoteur(){}
-
-function simMoteurChanger(m){
-  SIM.moteur = "2d";
-}
-
-function simMajBoutonsMoteur(){}
-
-async function simSonder25d(){
-  return false;
-}
-
 async function simConnecter(){
   if(SIM_ETAT)return SIM_ETAT;
   const essais=[];
@@ -3144,7 +3131,6 @@ async function simConnecter(){
         continue;
       }
       SIM_BASE=base; SIM_ETAT=j;
-      simSonder25d();
       return SIM_ETAT;
     }catch(e){
       essais.push((base||"cette page")+" : "+(e.message||"injoignable"));
@@ -4247,7 +4233,12 @@ function simPontsCarte(comps, nA, nB, h){
     const [p, q] = c.nets;
     if(!p || !q || p === q) continue;
     const a = nA.has(p) || nA.has(q), b = nB.has(p) || nB.has(q);
-    const f = simPDNParseFarads(c.val);
+    /* une résistance ou une self ne joint pas deux plans en HF (sauf la
+       résistance de liaison ≤ 1 Ω, traitée plus bas) ; leur valeur n'est pas
+       une capacité */
+    const rl = /^(R|L|FB)/i.test(c.ref || "");
+    const f = rl ? 0 : simValeurFarads(c.val);
+    if(a && b && rl && !(/^R/i.test(c.ref || "") && simOhms(c.val) <= 1)) continue;
     if(a && b){
       const o = {x: c.x, y: c.y, repere: c.ref || ""};
       if(f) o.capacite_F = f;
@@ -4258,7 +4249,7 @@ function simPontsCarte(comps, nA, nB, h){
   const vers = (net, face) => caps
     .filter(c => c.nets.includes(net) && (face.has(c.nets[0]) || face.has(c.nets[1])))
     .map(c => parasites(c, {x: c.x, y: c.y, repere: c.ref || "",
-                             capacite_F: simPDNParseFarads(c.val)}));
+                             capacite_F: simValeurFarads(c.val)}));
   const descendre = (net, face, vus, etage) => {
     const out = [];
     if(etage > 3) return out;
@@ -5391,14 +5382,11 @@ function simRetourNotes(vias){
               ? '<span style="color:#e8564a; font-weight:700;">dépassement de ' + simNb(-margeCispr, 1) + ' dB de la norme CISPR 32 Classe B</span>'
               : 'marge CISPR 32 Classe B : +' + simNb(margeCispr != null ? margeCispr : 40 - eMax, 1) + ' dB');
         } else {
-          const f_mhz = Math.min(fKnee, 1e9) / 1e6;
-          const e_approx = 1.316e-14 * (f_mhz * f_mhz) * (sBoucle * 1e-6) * diA * (1.0 / 3.0);
-          const e_db = 20 * Math.log10(Math.max(e_approx, 1e-12) / 1e-6);
-          const m_db = 40.0 - e_db;
-          cemTxt = 'champ max estimé E<sub>max</sub> &approx; <b>' + simNb(e_db, 1) + ' dB&mu;V/m</b> à 3 m — ' +
-            (m_db < 0
-              ? '<span style="color:#e8564a; font-weight:700;">dépassement de ' + simNb(-m_db, 1) + ' dB de la norme CISPR 32 Classe B</span>'
-              : 'marge CISPR 32 Classe B : +' + simNb(m_db, 1) + ' dB');
+          /* Pas de champ rendu par le serveur : on ne chiffre pas. L'estimation
+             de repli prenait la fréquence en MHz dans une formule en Hz (champ
+             10¹² fois trop faible) et annonçait « marge +160 dB » à une carte
+             hors norme. */
+          cemTxt = 'champ rayonné non chiffré (le serveur ne l\'a pas calculé pour ce via)';
         }
 
         const f0Sig = (vImp.f0_hz || resHF.f_centre || 0);
@@ -6237,6 +6225,7 @@ const SIM_CARTE_REGLES={
    les réglages et les dérogations d'une carte, et la révision de référence.
    Rien d'autre ne s'y garde, et tout se relit sans : un navigateur privé
    repart de zéro. */
+let SIM_CARTE_TRI=null;                  // le tri du rapport, voir simCarteTri
 function simCarteStock(cle,val){
   try{
     if(val===undefined)return JSON.parse(localStorage.getItem(cle)||"null");
@@ -6624,6 +6613,8 @@ async function simCarteGo(){
         /* Les courants saisis passent devant ceux que l'outil enverrait. */
         Object.keys(simCarteCourants()).length?
           {courants:Object.assign({},c.doc.courants||{},simCarteCourants())}:{}));
+    await simConnecter();
+    const rev=simRevision();
     const rep=await fetch((SIM_BASE||"")+SIM_CARTE_ROUTE,{
       method:"POST", headers:envoi.headers, body:envoi.body
     });
@@ -6632,7 +6623,7 @@ async function simCarteGo(){
     if(!rep.ok)
       throw new Error((corps&&corps.detail)||
                       ("Le serveur a refusé l'analyse ("+rep.status+")."));
-    SIM_CARTE.res=corps;
+    SIM_CARTE.res=corps; SIM_CARTE.rev=rev;
     SIM_CARTE.unite=+c.doc.unite_mm||1;
     SIM_CARTE.parDefaut=(c.parDefaut||[]).slice().sort();
     SIM_CARTE.natures=c.doc.natures||{};
@@ -6791,7 +6782,24 @@ function simCarteMeta(res){
 }
 /* Les constats d'un rapport, rangés : sur les nets, acceptés (dérogations),
    marquages sans net. Et la comparaison à la référence. */
+/* Gardé tant que le rapport, la carte et le stockage (dérogations, référence)
+   ne bougent pas : la peinture le redemandait à chaque redessin — relire le
+   stockage, une clé par constat —, 130 ms par image à 5 000 constats sur le
+   Pi, pendant le zoom et le déplacement. */
 function simCarteTri(){
+  const nom=simCarteNomCarte(), res=SIM_CARTE.res;
+  // le stockage brut fait partie de la clé : un autre onglet peut y écrire
+  const brut=[SIM_CARTE_DEROG+nom,SIM_CARTE_REF].map(k=>{
+    try{return localStorage.getItem(k)||"";}catch(e){return "";}
+  }).join("\u0000");
+  const n=res&&res.constats?res.constats.length:0;
+  const c=SIM_CARTE_TRI;
+  if(c&&c.res===res&&c.n===n&&c.nom===nom&&c.brut===brut&&c.unite===SIM_CARTE.unite)return c.T;
+  const T=simCarteTriCalcul();
+  SIM_CARTE_TRI={res,n,nom,brut,unite:SIM_CARTE.unite,T};
+  return T;
+}
+function simCarteTriCalcul(){
   const res=SIM_CARTE.res, derog=simCarteDerogations(), ref=simCarteReference();
   const signal=[], acceptes=[], marquages=[], vus=new Set();
   res.constats.forEach((k,i)=>{
@@ -6912,9 +6920,9 @@ function simCarteTrace(c,dpr,w2s){
      exceptés —, le plus grave par-dessus. */
   if(SIM_CARTE.tout){
     const T=simCarteTri();
+    const rang={info:0,vigilance:1,critique:2};
     const ids=T.signal.slice().sort((a,b)=>
-      ["info","vigilance","critique"].indexOf(r.constats[a].severite)-
-      ["info","vigilance","critique"].indexOf(r.constats[b].severite));
+      (rang[r.constats[a].severite]||0)-(rang[r.constats[b].severite]||0));
     c.save();
     c.setTransform(dpr||1,0,0,dpr||1,0,0);
     c.lineWidth=2;
@@ -8647,17 +8655,6 @@ function simZPeindreCurseur(c,dpr,w2e){
   c.restore();
 }
 
-/* Les trois boutons du bas, communs aux onglets qui résolvent une section.
-   */
-function simCorpsLancer(){
-  return '<div class="pnl-bar simBarFixe">'+
-    '<button class="tb mini on" id="simGo" title="Calculer la sélection">▶ Calculer</button>'+
-    '<button class="tb mini" id="simJson" title="Le problème lui-même : il se donne au solveur en ligne de commande">.json</button>'+
-    '<label class="simSuivre" title="Recalculer à chaque changement de sélection"><input type="checkbox" id="simAuto"> suivre</label>'+
-  '</div>';
-}
-
-
 /* ==========================================================================
    CROSSTALK — NIVEAU 2, LE SCAN NORMALISÉ
    --------------------------------------------------------------------------
@@ -9223,17 +9220,19 @@ async function simXtGo(){
   simXtSaisie();
   const p=simXtProbleme();
   if(!p){simRendre();simRepeindre();return;}
+  const gen=SIM_GEN;
   SIM_XT.occupe=true; simProgresDemarrer(); simRendre();
   try{
     const res=await simXtLancer(p.doc);
-    SIM_XT.res=res; SIM_XT.doc=p.doc; SIM_XT.portee=p.portee||"";
+    if(gen===SIM_GEN){SIM_XT.res=res; SIM_XT.doc=p.doc; SIM_XT.portee=p.portee||"";}
   }catch(e){
-    SIM_XT.err=e.message||String(e);
+    if(gen===SIM_GEN)SIM_XT.err=e.message||String(e);
   }finally{
     SIM_XT.occupe=false;
     simProgresFini();
     simRendre(); simRepeindre();
     simXtTrDire();
+    if(gen!==SIM_GEN)simApresPerime();
   }
 }
 
@@ -9253,6 +9252,7 @@ async function simXtCarteGo(){
   try{
     if(!SIM_ED||typeof SIM_ED.carteEntiere!=="function")
       throw new Error("Cet outil ne sait pas encore décrire sa carte entière.");
+    const rev=simRevision();
     const c=SIM_ED.carteEntiere();
     if(!c||c.erreur)
       throw new Error(((c&&c.erreur)||"Rien à analyser.")+
@@ -9270,7 +9270,7 @@ async function simXtCarteGo(){
     if(!rep.ok)
       throw new Error((corps&&corps.detail)||
                       ("Le serveur a refusé l'analyse ("+rep.status+")."));
-    C.res=corps;
+    C.res=corps; C.rev=rev;
     C.unite=+c.doc.unite_mm||1;
   }catch(e){
     C.res=null;
@@ -11194,23 +11194,6 @@ function simCorpsBus(){
   return h;
 }
 
-function simBusRendreComposants(){
-  const c1Sel=simEl("simBusComp1");
-  const c2Sel=simEl("simBusComp2");
-  if(!c1Sel||!c2Sel) return;
-  const comps=(SIM_ED&&typeof SIM_ED.listeComposants==="function")?SIM_ED.listeComposants():[];
-
-  let h1='<option value="">Composant 1…</option>';
-  let h2='<option value="">Composant 2…</option>';
-  for(const c of comps){
-    const desc=c.ref+(c.val?' ('+c.val+')':'');
-    h1+='<option value="'+simEsc(c.ref)+'"'+(c.ref===SIM_BUS.comp1?' selected':'')+'>'+simEsc(desc)+'</option>';
-    h2+='<option value="'+simEsc(c.ref)+'"'+(c.ref===SIM_BUS.comp2?' selected':'')+'>'+simEsc(desc)+'</option>';
-  }
-  c1Sel.innerHTML=h1;
-  c2Sel.innerHTML=h2;
-}
-
 function simBusClassifierNets(nets, proto){
   const clocks=[], datas=[];
   const p=proto||"spi";
@@ -12661,20 +12644,23 @@ function simPDNFormatZ(z) {
   return (z / 1e6).toFixed(2) + " MΩ";
 }
 
-function simPDNParseFarads(txt) {
-  if (!txt) return 0;
-  const s = String(txt).trim().replace(",", ".");
-  const m = s.match(/^(\d+(?:\.\d+)?)\s*([pnuµmkM]?)[Ff]?$/);
-  if (!m) return 0;
-  const val = parseFloat(m[1]);
-  const pfx = m[2];
-  if (pfx === "p") return val * 1e-12;
-  if (pfx === "n") return val * 1e-9;
-  if (pfx === "u" || pfx === "µ") return val * 1e-6;
-  if (pfx === "m") return val * 1e-3;
-  if (pfx === "k") return val * 1e3;
-  if (pfx === "M") return val * 1e6;
-  return val;
+/* La valeur d'un condensateur en FARADS, lue dans le champ valeur. UNE
+   lecture pour l'éditeur, la visionneuse et le PDN : il y en avait trois, qui
+   lisaient « 4.7uF/16V » 0 ici et 4,7 µF là, et « 10k » (une résistance)
+   10 000 F — une résistance devenait un découplage parfait entre deux plans.
+   On prend le premier mot qui est une capacité (« 10V 1uF » → 1 µF), notation
+   « 4n7 » comprise. Sans préfixe, « 100 » n'est pas cent farads : c'est une
+   valeur qu'on ne sait pas lire, et le serveur a son repli annoncé. */
+function simValeurFarads(txt){
+  const mult = {p:1e-12, n:1e-9, u:1e-6, "µ":1e-6, m:1e-3};
+  for(const mot of String(txt || "").trim().split(/[\s\/;_]+/)){
+    const m = mot.match(/^(\d+(?:[.,]\d+)?)(p|n|u|µ|m)(\d*)F?$/i);
+    if(!m) continue;
+    const ent = m[1].replace(",", ".");
+    const v = parseFloat(m[3] && ent.indexOf(".") < 0 ? ent + "." + m[3] : ent);
+    if(isFinite(v) && v > 0) return v * mult[m[2].toLowerCase()];
+  }
+  return 0;
 }
 
 /* ==========================================================================
@@ -12739,7 +12725,7 @@ function simPDNParasitesCapa(o) {
   const dict = SIM_PARASITES_MURATA || null;
   let hit = null;
   if (dict) for (const k of cles) { if (dict[k]) { hit = dict[k]; break; } }
-  const valeur = (typeof simValeurFarads === "function") ? simValeurFarads(o.val) : simPDNParseFarads(o.val);
+  const valeur = simValeurFarads(o.val);
   const cap = (hit && hit.c) || o.cap || valeur || 100e-9;
   const texte = [o.pkg, o.ref, o.partName].join(" ");
   const d = simPDNParasitesDefaut(texte, cap, cles.join(" "));
@@ -16359,6 +16345,8 @@ async function simRfGo(){
       SIM_RF.err=p.erreur+(p.conseil?"\n"+p.conseil:"");
       return;
     }
+    await simConnecter();
+    const rev=simRevision();
     const rep=await fetch((SIM_BASE||"")+SIM_RF_ROUTE,{
       method:"POST", headers:{"Content-Type":"application/json"},
       body:JSON.stringify(p.doc)});
@@ -16367,7 +16355,7 @@ async function simRfGo(){
     if(!rep.ok)
       throw new Error((corps&&corps.detail)||
                       ("Le serveur a refusé le calcul ("+rep.status+")."));
-    SIM_RF.res=corps;
+    SIM_RF.res=corps; SIM_RF.rev=rev;
   }catch(e){
     SIM_RF.res=null;
     SIM_RF.err=(e&&e.message)||String(e);
@@ -17451,6 +17439,7 @@ async function simOeilGo(){
       "l'œil porte sur le premier (« "+(p.titre||p.doc.net||"lot 1")+" »).");
   const doc=p.doc;
   doc.oeil=simOeilReglages();
+  const gen=SIM_GEN;
   SIM_OEIL.occupe=true;
   simProgresDemarrer();
   simRendre();
@@ -17462,6 +17451,7 @@ async function simOeilGo(){
     if(!rep.ok)throw new Error(await simErreur(rep));
     const res=await rep.json();
     if(!res||!res.densite)throw new Error("Réponse inattendue du serveur.");
+    if(gen!==SIM_GEN)return;               // sélection changée : réponse jetée (finally relance)
     SIM_OEIL.res=res; SIM_OEIL.doc=doc;
     if(SIM_ED&&SIM_ED.astuce){
       const m=res.mesures;
@@ -17470,11 +17460,12 @@ async function simOeilGo(){
                     (res.gabarit?(m.violations?" — gabarit violé":" — gabarit respecté"):"")+".");
     }
   }catch(e){
-    SIM_OEIL.err=e.message||String(e);
+    if(gen===SIM_GEN)SIM_OEIL.err=e.message||String(e);
   }finally{
     SIM_OEIL.occupe=false;
     simProgresFini();
     simRendre();
+    if(gen!==SIM_GEN)simApresPerime();
   }
 }
 
@@ -18260,7 +18251,6 @@ function simPoser(){
     b.onclick=function(){simAllerFamille(this.getAttribute("data-fam"));};
   if(onglets)for(const b of onglets.querySelectorAll("[data-ana]"))
     b.onclick=function(){simAllerAnalyse(this.getAttribute("data-ana"));};
-  simBrancherMoteur();
   const pl=simEl("simPlier");
   if(pl)pl.onclick=function(){
     SIM.plie=!SIM.plie;
@@ -18311,7 +18301,6 @@ function simCorpsImpedance(){
      remplit à part (`simRefEcrire`) parce qu'elle dépend de la carte ouverte, et
      que ce corps-là est posé une fois pour toutes. */
   '<div class="pnl-bar simRefBar" id="simRefBar"></div>'+
-  simMoteurBar()+
   '<div class="pnl-bar">'+
     '<span class="pnl-lbl">Cible</span>'+
     simChamp("simZCible","Impédance visée pour la piste sélectionnée")+
@@ -18771,7 +18760,7 @@ function simRendreImpedance(){
    comme le reflet. Un seul endroit le fait, sinon un lot survit à la sélection
    qui l'a produit et la carte peint des couleurs qui ne sont plus à personne. */
 function simOublierRes(){
-  SIM.res=null; SIM.maillage=null; SIM.objets=[]; SIM.lots=[]; SIM.lotActif=0; SIM.lotsAttendus=0;
+  SIM.res=null; SIM.objets=[]; SIM.lots=[]; SIM.lotActif=0; SIM.lotsAttendus=0;
 }
 
 /* Les lots à peindre. Un résultat sans lot — il n'y en a plus, mais un banc
@@ -18809,15 +18798,15 @@ function simLotsSontPaireDiff(){
    les réécrire tous les deux, et de les tenir d'accord ensuite. */
 function simPourChaqueLot(fn){
   const lots=simLotsPeints();
-  const res0=SIM.res, obj0=SIM.objets, doc0=SIM.doc, mail0=SIM.maillage;
+  const res0=SIM.res, obj0=SIM.objets, doc0=SIM.doc;
   try{
     /* LE DOCUMENT SUIT, ET IL LE FAUT : la carte des voisines lit sa géométrie
        dans `SIM.doc.voisinage`, et chaque lot a le sien. Sans ce reflet-là, le
        lot 3 peindrait ses couleurs sur le voisinage du lot 1. */
     for(const l of lots){
-      SIM.res=l.res; SIM.maillage=(l.res&&l.res.maillage)||null; SIM.objets=l.objets; SIM.doc=l.doc||doc0; fn(l);
+      SIM.res=l.res; SIM.objets=l.objets; SIM.doc=l.doc||doc0; fn(l);
     }
-  }finally{SIM.res=res0; SIM.maillage=mail0; SIM.objets=obj0; SIM.doc=doc0;}
+  }finally{SIM.res=res0; SIM.objets=obj0; SIM.doc=doc0;}
 }
 
 /* Le lot actif, reflété dans l'état que tout le reste lit. */
@@ -18825,7 +18814,7 @@ function simLotMirroir(i){
   const l=SIM.lots[i];
   if(!l)return false;
   SIM.lotActif=i;
-  SIM.res=l.res; SIM.maillage=(l.res&&l.res.maillage)||null; SIM.objets=l.objets; SIM.doc=l.doc;
+  SIM.res=l.res; SIM.objets=l.objets; SIM.doc=l.doc;
   SIM.portee=l.portee||""; SIM.notes=l.notes||[];
   SIM.couture=l.couture||null; SIM.voisins=l.voisins||[];
   SIM.err=l.err||"";
@@ -19070,6 +19059,7 @@ async function simGo(){
   simOublierRes(); SIM.err="";
   const P=simProblemes();
   if(!P){simRendre();simRepeindre();return;}
+  const gen=SIM_GEN; let perime=false;
   SIM.occupe=true; SIM.lotsAttendus=P.length;
   simProgresDemarrer(P.length>1?(P.length+" morceau(x)"):"");
   simRendre(); simRepeindre();
@@ -19112,6 +19102,7 @@ async function simGo(){
            attachée à SA ligne du tableau. */
         lot.err=e.message||String(e);
       }
+      if(gen!==SIM_GEN){perime=true;return;}   // sélection changée pendant le calcul
       /* Le premier lot calculable devient le lot actif : la fiche s'ouvre sur
          quelque chose plutôt que sur une erreur, même si le lot 1 a échoué. */
       const bon=SIM.lots.findIndex(l=>l.res);
@@ -19140,10 +19131,11 @@ async function simGo(){
     }
   }catch(e){
     SIM.err=e.message||String(e);
-    SIM.res=null; SIM.maillage=null; SIM.objets=[]; SIM.lots=[];
+    SIM.res=null; SIM.objets=[]; SIM.lots=[];
   }finally{
     SIM.occupe=false; SIM.lotsAttendus=0; simProgresFini();
     simRendre(); simRepeindre();
+    if(perime)simApresPerime();
   }
 }
 
@@ -19317,7 +19309,6 @@ function simInit(adaptateur,conteneur,options){
   SIM_SORTIE_PNL=sortie?(o.panneau||null):null;
   SIM.ouvert=true;
   simPoser();
-  simSonder25d();
   return true;
 }
 
@@ -19327,7 +19318,6 @@ function simInit(adaptateur,conteneur,options){
    Les valeurs, elles, vivent dans `SIM.saisie` : elles survivent au va-et-vient
    entre les onglets, ce qui est bien le moindre. */
 function simBrancherImpedance(){
-  simBrancherMoteur();
   simSaisieEcrire();
   simRefEcrire();
   const pose=(id,quoi,fn)=>{const e=simEl(id);if(e)e[quoi]=fn;};
@@ -19375,11 +19365,41 @@ function simBrancherImpedance(){
    rafraîchissement de panneaux, lui-même suivi d'un redessin. Vrai, on ne
    redemande pas de dessin — celui qui suit lira l'état de toute façon. */
 let SIM_MINUTEUR=null;
+/* Génération de la sélection : chaque rafraîchissement l'avance. Un calcul
+   la note avant d'attendre le serveur et jette sa réponse si elle a changé —
+   sinon la réponse de l'ancienne sélection, arrivée après l'oubli, se posait
+   sur la nouvelle (Z₀ d'un net affiché pour un autre). */
+let SIM_GEN=0;
+/* Révision de la carte que rend l'outil (compteur de modifications de
+   l'éditeur, modèle chargé de la visionneuse) ; undefined s'il n'en dit rien. */
+function simRevision(){
+  return (SIM_ED&&typeof SIM_ED.revision==="function")?SIM_ED.revision():undefined;
+}
+/* Les résultats qui ne dépendent pas de la sélection (chute DC, RF, diaphonie
+   de toute la carte, vérification) portent la révision de la carte calculée.
+   Carte modifiée ou autre carte ouverte : ils partent, avec un mot, au lieu
+   de peindre l'ancienne carte de tension sur le cuivre déplacé. */
+function simOublierPerimes(){
+  const rev=simRevision();
+  if(rev===undefined)return;
+  const dire="La carte a changé depuis le calcul : relancez-le.";
+  if(SIM.resDC&&SIM.dcRev!==rev){simDCOublier();SIM.erreurDC=dire;}
+  if(SIM_RF.res&&SIM_RF.rev!==rev){SIM_RF.res=null;SIM_RF.err=dire;}
+  if(SIM_XT.carte.res&&SIM_XT.carte.rev!==rev){SIM_XT.carte.res=null;SIM_XT.carte.err=dire;}
+  if(SIM_CARTE.res&&SIM_CARTE.rev!==rev){SIM_CARTE.res=null;SIM_CARTE.err=dire;}
+}
+/* Fin d'un calcul dont la sélection a changé en route : en mode « suivre »,
+   on relance pour la nouvelle (le relancement avait été sauté, calcul en cours). */
+function simApresPerime(){
+  if(SIM.suivre)simRafraichir(true);
+}
 function simRafraichir(garderCarte){
   /* Une famille sans analyse n'a rien à rafraîchir, et surtout rien à relancer
      en mode « suivre » : le panneau ne doit pas parler au serveur pendant qu'on
      regarde un onglet qui ne calcule pas. */
   if(!SIM.ouvert||!simCalculable())return;
+  SIM_GEN++;
+  simOublierPerimes();
   /* Un résultat porte sur UNE sélection. Dès qu'elle change, il ne vaut plus
      rien : on l'efface, plutôt que de peindre l'impédance d'une piste sur une
      autre. */
@@ -19455,39 +19475,4 @@ function simRafraichir(garderCarte){
   if(!relancer)return;
   if(SIM_MINUTEUR)clearTimeout(SIM_MINUTEUR);
   SIM_MINUTEUR=setTimeout(function(){SIM_MINUTEUR=null;relancer();},180);
-}
-
-/* ==========================================================================
-   Visualisation graphique du maillage 2.5D (Wireframe MoM / RWG)
-   Superposition sur la carte PCB des triangles RWG générés par mom_solver,
-   pour visualiser la discrétisation, les vias de ports et les vias internes.
-   Activation sans encombrement de l'interface :
-     - Commande DevTools / console : simVoirMaillage(true/false)
-     - Raccourci clavier global : Ctrl+Alt+M (ou Cmd+Alt+M)
-   ========================================================================== */
-
-function simMaillageActif(){
-  return false;
-}
-
-function simSyncAffichage(){
-  if(typeof document==="undefined")return;
-  const dcJ=document.getElementById("simBtnDCCourant");
-  if(dcJ)dcJ.classList.toggle("on",SIM.dcQuoi==="densite");
-}
-
-function simBasculerMaillage(){ return false; }
-function simBasculerJsurf(){ return false; }
-
-if(typeof window!=="undefined"){
-  window.simVoirMaillage=simBasculerMaillage;
-  window.simMaillage=simBasculerMaillage;
-  window.simVoirJsurf=simBasculerJsurf;
-  window.simJsurf=simBasculerJsurf;
-  window.simSyncAffichage=simSyncAffichage;
-}
-
-function simMaillageTrace(c,dpr){}
-if(typeof window!=="undefined"){
-  window.simMaillageTrace=simMaillageTrace;
 }

@@ -17,7 +17,7 @@ const esc=mdlEsc;          // l'aperçu SVG des plans (dfSvg) échappe ses texte
    fichier est déjà dans le repère des Gerber (Y vers le haut, son origine) ;
    tout passe en millimètres. */
 function mecaEntreeIpc(m){
-  const k=/INCH/i.test(m.unites||"")?25.4:1;
+  const k=/INCH/i.test(m.unites||"")?25.4:/MICRON/i.test(m.unites||"")?0.001:1;
   const pts=o=>{const P=[];for(let i=0;i+1<(o||[]).length;i+=2)P.push({x:o[i]*k,y:o[i+1]*k});return P;};
   const ct=m.contour||{};
   let ep=(+m.epaisseur||0)*k;

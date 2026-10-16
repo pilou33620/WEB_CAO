@@ -192,7 +192,6 @@ function peindre(c,dpr,W,H){
      et n'existe que tant que l'une d'elles peint. */
   if(typeof simVoile==="function")simVoile(c,W,H);
   if(typeof simZTrace==="function")simZTrace(c,dpr);
-  if(typeof simMaillageTrace==="function")simMaillageTrace(c,dpr);
   /* La carte de POTENTIEL (chute DC). Elle ne s'affiche jamais en même
      temps que celle des impédances : `simDCActif()` exige l'onglet DC,
      `simZActif()` l'onglet Impédance. La couche montrée est celle de la
@@ -388,7 +387,7 @@ function peindreComposants(c,dpr){
    celle d'une sérigraphie courante, et le zoom fait le reste. */
 function peindreTextes(c,dpr){
   if(!V.aff.textes)return;
-  const h=(V.unite==="in")?0.05:1.2;         // hauteur de référence
+  const h=1.2/mdlK();                        // hauteur de référence : 1,2 mm
   const px=h*V.vue.scale;
   if(px<5)return;                            // illisible : autant ne rien mettre
   const f=fenetre(h*4);

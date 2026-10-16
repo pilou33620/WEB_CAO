@@ -38,7 +38,7 @@
    ============================================================================= */
 
 /* Facteur de conversion vers le millimètre : le fichier commande. */
-function simKUnite(){return (V.unite==="in")?25.4:1;}
+function simKUnite(){return mdlK();}
 
 /* Le conducteur `k` de l'empilage de calcul occupe la place `2k` dans
    l'empilage envoyé — un conducteur, un intervalle, un conducteur. Même
@@ -1149,21 +1149,8 @@ function simRetoursIpc(x, y, cuMax){
    d'un via de signal. */
 const SIM_RAYON_PONT_IPC = 10.0;
 
-/* La valeur d'un condensateur, en FARADS, lue dans le champ `val` du composant.
-
-   MÊME LECTURE QUE `simValeurFarads` côté éditeur. Sans préfixe, un « 100 »
-   seul n'est pas cent farads : c'est une valeur qu'on ne sait pas lire, et
-   l'inventer serait pire que de l'ignorer — le serveur a son repli annoncé. */
-function simValeurFaradsIpc(txt){
-  const m = /([0-9]+(?:[.,][0-9]+)?)\s*([pnuµm]?)F?/i.exec(String(txt || ""));
-  if(!m) return 0;
-  const v = parseFloat(m[1].replace(",", "."));
-  if(!isFinite(v) || v <= 0) return 0;
-  const mult = {p:1e-12, n:1e-9, u:1e-6, "µ":1e-6, m:1e-3};
-  const k = (m[2] || "").toLowerCase();
-  if(!k) return 0;
-  return v * (mult[k] || 0);
-}
+/* La valeur d'un condensateur : simValeurFarads (commun/simulation-em.js),
+   la même lecture que l'éditeur. */
 
 /* CE QUI JOINT DEUX PLANS DE NETS DIFFÉRENTS près d'un via : un condensateur de
    découplage, et rien d'autre.
@@ -1395,7 +1382,7 @@ function simPontsPlansIpc(cuA, cuB, x, y){
        branche, pas son inductance : un 100 nF vaut 1,6 Ω à 1 MHz là où son ESL
        n'en vaut que 0,02. IPC-2581 la porte dans `val` quand le fabricant l'a
        exportée ; le serveur suppose 100 nF sinon, et le dit. */
-    const cap = simValeurFaradsIpc(comp.val);
+    const cap = simValeurFarads(comp.val);
     if(cap) pont.capacite_F = cap;
     out.push(pont);
   }
@@ -4205,6 +4192,24 @@ function simNetDuConducteurIpc(cu){
    mesure : la zone de cuivre qui CONTIENT le point, trous compris.
 
    `x` et `y` sont dans l'UNITÉ DU FICHIER, comme les contours. */
+/* Point dans un contour [x0,y0,x1,y1,…], boîte englobante d'abord (gardée par
+   contour). La sonde ci-dessous teste 24 points contre CHAQUE trou du plan :
+   sans ce premier tri, un plan à 3 000 antipads coûtait 127 ms par via et par
+   couche sur le Pi. */
+const SIM_BOITES = new WeakMap();
+function simDansContourVite(t, x, y){
+  let b = SIM_BOITES.get(t);
+  if(!b){
+    b = [Infinity, Infinity, -Infinity, -Infinity];
+    for(let i = 0; i + 1 < t.length; i += 2){
+      if(t[i] < b[0]) b[0] = t[i]; if(t[i] > b[2]) b[2] = t[i];
+      if(t[i + 1] < b[1]) b[1] = t[i + 1]; if(t[i + 1] > b[3]) b[3] = t[i + 1];
+    }
+    SIM_BOITES.set(t, b);
+  }
+  if(x < b[0] || x > b[2] || y < b[1] || y > b[3]) return false;
+  return simXtDansContourIpc(t, x, y);
+}
 function simNetPlanEnIpc(coucheIdx, x, y){
   const c = V.couches[coucheIdx];
   if(!c || !c.plans || !c.plans.length) return "";
@@ -4213,10 +4218,10 @@ function simNetPlanEnIpc(coucheIdx, x, y){
   for(const pl of c.plans){
     for(const ct of (pl.g || [])){
       if(!ct.o || ct.o.length < 6) continue;
-      if(!simXtDansContourIpc(ct.o, x, y)) continue;
+      if(!simDansContourVite(ct.o, x, y)) continue;
       let trou = false;
       for(const t of (ct.t || []))
-        if(t && t.length >= 6 && simXtDansContourIpc(t, x, y)){trou = true; break;}
+        if(t && t.length >= 6 && simDansContourVite(t, x, y)){trou = true; break;}
       if(!trou) return mdlNetNom(pl.n == null ? -1 : pl.n);
     }
   }
@@ -4243,11 +4248,11 @@ function simNetPlanEnIpc(coucheIdx, x, y){
          le cuivre doit couvrir PLUS de la moitié du cercle extérieur (6 sur
          8) : un via posé au bord du plan, ou dans la fente entre deux
          versements, n'en voit que la moitié et reste « sans cuivre ». */
-      const dedans = simXtDansContourIpc(ct.o, x, y);
+      const dedans = simDansContourVite(ct.o, x, y);
 
       let trouAntipad = false;
       if(dedans) for(const t of (ct.t || [])){
-        if(t && t.length >= 6 && simXtDansContourIpc(t, x, y)){
+        if(t && t.length >= 6 && simDansContourVite(t, x, y)){
           let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
           for(let i = 0; i < t.length; i += 2){
             const px = t[i], py = t[i + 1];
@@ -4265,10 +4270,10 @@ function simNetPlanEnIpc(coucheIdx, x, y){
         for(let a = 0; a < 8; a++){
           const ang = a * Math.PI / 4;
           const sx = x + r * Math.cos(ang), sy = y + r * Math.sin(ang);
-          if(!simXtDansContourIpc(ct.o, sx, sy)) continue;
+          if(!simDansContourVite(ct.o, sx, sy)) continue;
           let dedansTrou = false;
           for(const t of (ct.t || [])){
-            if(t && t.length >= 6 && simXtDansContourIpc(t, sx, sy)){
+            if(t && t.length >= 6 && simDansContourVite(t, sx, sy)){
               dedansTrou = true;
               break;
             }
@@ -5203,6 +5208,8 @@ function simIpcEntrees(){
 }
 
 const SIM_IPC={
+  /* Révision : la carte chargée elle-même (une autre carte, un autre objet). */
+  revision:function(){ return V.modele; },
   /* Un composant coché « non monté » sort de toutes les simulations. */
   estMonte:function(ref){ return mdlMonte(ref); },
 
@@ -6443,7 +6450,7 @@ const SIM_IPC={
   pdnCondensateurs:function(net){
     if(!net || typeof V === "undefined" || !V || !V.modele || !Array.isArray(V.modele.composants)) return [];
     const isTargetNet = n => n && String(n).trim().toLowerCase() === String(net).trim().toLowerCase();
-    const k = (V.unite === "in") ? 25.4 : 1;
+    const k = mdlK();
     /* LE REPÈRE DE LA CAVITÉ, pas celui du fichier. `pdnCavitePlans` rend une
        TAILLE et l'ORIGINE, en mm, de la paire de plans retenue — le contour de
        la carte quand il n'y en a pas —, alors qu'un IPC-2581 place volontiers
@@ -6478,7 +6485,7 @@ const SIM_IPC={
         ref: ref, val: rawVal, pkg: pkg,
         mpn: comp.mpn || comp.part || comp["Part Number"] || props["Part Number"] || props.MPN || "",
         partName: props["Part Name"] || "",
-        cap: simValeurFaradsIpc(rawVal) || 0
+        cap: simValeurFarads(rawVal) || 0
       });
       const hMm = cav.trouve ? (simFaceDessousIpc(comp) ? cav.hBasMm : cav.hHautMm) : undefined;
       const lMount = simPDNInductanceMontage(pkg, hMm);
@@ -6521,7 +6528,7 @@ const SIM_IPC={
   pdnPointObserve:function(net){
     if(!net || typeof V === "undefined" || !V || !V.modele || !Array.isArray(V.modele.composants)) return null;
     const cible = String(net).trim().toLowerCase();
-    const k = (V.unite === "in") ? 25.4 : 1;
+    const k = mdlK();
     const cav = this.pdnCavitePlans(net);
     const comps = [];
     for(const comp of mdlComposantsMontes()){
@@ -6550,7 +6557,7 @@ const SIM_IPC={
      `trouve:false` et la raison ; la taille et l'origine retombent sur la boîte
      de la carte. Tout est rendu en millimètres. */
   pdnCavitePlans:function(net){
-    const k = (typeof V !== "undefined" && V.unite === "in") ? 25.4 : 1;
+    const k = (typeof V !== "undefined" && V.unite) ? mdlK() : 1;
     const repli = {surfaceCm2: 25.0, epaisseurUm: 100.0, er: 4.3, tanD: 0.02,
                    dimXmm: 50.0, dimYmm: 50.0, x0Mm: 0, y0Mm: 0};
     if(typeof V !== "undefined" && V.bbox){

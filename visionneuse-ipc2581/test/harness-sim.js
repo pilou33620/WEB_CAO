@@ -92,7 +92,7 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simRetoursIpc","SIM_RAYON_RETOUR_IPC","SIM_RAYON_RETOUR_OPTIMAL_IPC",
   /* Les découplages qui joignent deux plans de nets différents : c'est par
      eux que le retour passe quand aucun via de masse ne peut refermer. */
-  "simPontsPlansIpc","simValeurFaradsIpc","simCaviteIpc","simAireEnRegardIpc","simPontsCarte","simOhms","simReseauNets","simPasGrille","simLignesCuivre",
+  "simPontsPlansIpc","simValeurFarads","simCaviteIpc","simAireEnRegardIpc","simPontsCarte","simOhms","simReseauNets","simPasGrille","simLignesCuivre",
   "simBornesNetsIpc","simNbBornesIpc","simPlansCuDeIpc",
   "simNetPlanEnIpc","simPlansNetsEnIpc","simPlansJointsEnIpc",
   "simPlansSansCuivreIpc",
@@ -3739,13 +3739,15 @@ T("les découplages qui joignent deux plans partent avec le via",()=>{
   /* 4. LA LECTURE DES VALEURS. Sans préfixe, « 100 » seul n'est pas cent
      farads : c'est une valeur qu'on ne sait pas lire, et l'inventer serait
      pire que de l'ignorer — le serveur a son repli, annoncé. */
-  if(simValeurFaradsIpc("100nF")!==1e-7&&Math.abs(simValeurFaradsIpc("100nF")-1e-7)>1e-12)
-    throw new Error("100nF");
-  if(Math.abs(simValeurFaradsIpc("4u7")-4e-6)>1e-12&&simValeurFaradsIpc("4u7")!==0)
-    throw new Error("4u7 doit se lire 4 µF ou pas du tout, pas autre chose");
-  if(simValeurFaradsIpc("100")!==0)
+  const proche=(a,b)=>Math.abs(a-b)<=b*1e-9;
+  if(!proche(simValeurFarads("100nF"),1e-7))throw new Error("100nF");
+  if(!proche(simValeurFarads("4u7"),4.7e-6))throw new Error("4u7 : 4,7 µF (notation RKM)");
+  if(!proche(simValeurFarads("4.7uF/16V"),4.7e-6))throw new Error("4.7uF/16V : la tension ne gêne pas");
+  if(!proche(simValeurFarads("10V 1uF"),1e-6))throw new Error("10V 1uF : le premier mot qui est une capacité");
+  if(simValeurFarads("10k")!==0)throw new Error("10k est une résistance, pas 10 000 F");
+  if(simValeurFarads("100")!==0)
     throw new Error("une valeur sans préfixe ne se devine pas");
-  if(simValeurFaradsIpc("")!==0||simValeurFaradsIpc(null)!==0)
+  if(simValeurFarads("")!==0||simValeurFarads(null)!==0)
     throw new Error("une valeur absente ne se devine pas non plus");
 
   /* 7. UNE DÉDUCTION NE S'ANNONCE PAS COMME UNE LECTURE — et les deux lecteurs

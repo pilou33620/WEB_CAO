@@ -250,10 +250,10 @@ function simDsCapasVisees(e) {
     return capas.filter(c => String(c.mpn || "").trim().toUpperCase() === m);
   }
   if (e.valeur) {
-    const v = simPDNParseFarads(e.valeur);
+    const v = simValeurFarads(e.valeur);
     if (!(v > 0)) return [];
     const pkg = String(e.boitier || "").trim();
-    return capas.filter(c => Math.abs((c.cap || simPDNParseFarads(c.val)) - v) <= v * 0.02 &&
+    return capas.filter(c => Math.abs((c.cap || simValeurFarads(c.val)) - v) <= v * 0.02 &&
                              (!pkg || String(c.pkg || "").indexOf(pkg) >= 0));
   }
   return [];

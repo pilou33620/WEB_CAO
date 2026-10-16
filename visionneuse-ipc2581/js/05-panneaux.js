@@ -69,7 +69,7 @@ function pnlElements(){
 /* Trois de ces réglages ont aussi leur bouton dans l'entête, avec un raccourci
    clavier : c'est le même état, il faut donc que le même geste rafraîchisse
    les deux. */
-const BOUTON_AFF={refs:"bRefs",trous:"bTrous",plans:"bPlans",jsurf:"bJsurf",maillage:"bMaillage"};
+const BOUTON_AFF={refs:"bRefs",trous:"bTrous",plans:"bPlans"};
 
 function pnlCouchesToutes(valeur,cuivreSeul){
   for(const c of V.couches)
@@ -90,7 +90,7 @@ function pnlInfos(){
   const l=function(a,v){return "<tr><td>"+a+"</td><td>"+v+"</td></tr>";};
   let h='<div class="fiche"><h3>Fichier</h3><table>'
     +l("Nom",'<span class="val">'+mdlEsc(V.fichier)+"</span>")
-    +l("Unités",m.unites||"—")
+    +l("Unités",mdlEsc(m.unites||"—"))
     +l("Dimensions",mdlNb(b.x2-b.x1)+" × "+mdlNb(b.y2-b.y1)+" "+V.unite)
     +l("Épaisseur",m.epaisseur?mdlMes(m.epaisseur):"—")
     +l("Origine",mdlNb(b.x1)+" ; "+mdlNb(b.y1))

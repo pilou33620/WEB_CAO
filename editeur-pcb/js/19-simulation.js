@@ -548,19 +548,7 @@ function simAntipadVia(v){
    entre GND et PWR peut être une ferrite ou une résistance de terminaison ;
    leur donner d'office 100 nF les ferait passer pour du découplage. Sans
    valeur lisible, on laisse le serveur poser son repli, qui est annoncé. */
-function simValeurFarads(txt){
-  const m = String(txt || "").trim()
-    .match(/^([\d]+(?:[.,][\d]+)?)\s*(p|n|u|µ|m)?F?$/i);
-  if(!m) return 0;
-  const v = parseFloat(m[1].replace(",", "."));
-  if(!isFinite(v) || v <= 0) return 0;
-  const mult = {p:1e-12, n:1e-9, u:1e-6, "µ":1e-6, m:1e-3};
-  const k = (m[2] || "").toLowerCase();
-  /* Sans préfixe, un « 100 » seul n'est pas 100 farads : c'est une valeur
-     qu'on ne sait pas lire, et l'inventer serait pire que l'ignorer. */
-  if(!k) return 0;
-  return v * (mult[k] || 0);
-}
+/* simValeurFarads : commun/simulation-em.js (une lecture pour tous les outils). */
 
 /* Le rayon de recherche d'un pont entre deux plans, en millimètres. Bien plus
    large que celui des vias de masse : un découplage est posé au pied d'un
@@ -4567,6 +4555,9 @@ function simEstResistancePcb(ref, val, type){
 }
 
 const SIM_PCB={
+  /* Révision de la carte : avance à chaque modification (touch). Les résultats
+     de toute la carte la retiennent et partent quand elle change. */
+  revision:function(){ return S.ver; },
   /* Un composant coché « non monté » sort de toutes les simulations. */
   estMonte:function(ref){
     const fp=(S.fps||[]).find(f=>f.ref===ref);
