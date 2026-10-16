@@ -169,7 +169,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* empreintes dessinees a la main et bibliotheque personnelle */
   "fpFree","padClone","fpAutoBody","fpFreeze","fpGeneric","fpSyncPins",
   "fpMovePad","fpSetPad","fpAddPad","fpDelPad","fpSetPins","fpSetBody",
-  "dPads","dHoles","dBody","fpDefOf","normFpDef","fpApplyDef","fpLibAll","fpLibWrite",
+  "dPads","dHoles","trousMonde","dBody","fpDefOf","normFpDef","fpApplyDef","fpLibAll","fpLibWrite",
   "fpLibNames","fpLibGet","fpLibPut","fpLibDel","fpLibFile","fpLibParse",
   "fpLibMerge","FPLIB_KEY","FPLIB_FORMAT",
   "FPLIB","FPLIB_FICHIER","fpLibCharger","fpLibFichier","fpLibPourBoitier",
@@ -6029,6 +6029,33 @@ T("trous NPTH d'empreinte : lus, posés sur la carte, relus (M1-1, M1-2)",()=>{
   const sans=normFpDef({name:"SOIC",pins:8,style:"sop"});
   if("holes" in sans)throw new Error("une définition sans trous ne doit pas gagner de clé holes");
   S.fps=[];touch();
+});
+T("trous NPTH d'empreinte : en coordonnées monde et dans le fichier NPTH (M1-3, M1-4)",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();
+  const carte=mkHole(20,20,3.2);S.holes=[carte];touch();
+  /* sans trou d'empreinte : la liste est S.holes, mêmes objets, même ordre */
+  const seuls=trousMonde();
+  if(seuls.length!==1||seuls[0]!==carte)throw new Error("S.holes seul attendu tel quel");
+  const npth0=drillFile().files.find(f=>f.kind==="npth").text;
+  const fp=mkFp("J1","","RJ45",2);fp.x=40;fp.y=30;fp.rot=90;
+  fp.holes=[{x:-5.7,y:3.05,d:3.25}];S.fps.push(fp);touch();
+  const w=trousMonde();
+  if(w.length!==2||w[0]!==carte)throw new Error("le trou de carte d'abord : "+JSON.stringify(w));
+  const t=w[1];
+  if(t.fp!==fp||t.i!==0||t.d!==3.25)throw new Error("origine du trou d'empreinte perdue");
+  if(Math.abs(t.x-36.95)>1e-9||Math.abs(t.y-24.3)>1e-9)throw new Error("face dessus, 90° : "+t.x+", "+t.y);
+  fp.side=1;touch();
+  const u=trousMonde()[1];
+  if(Math.abs(u.x-36.95)>1e-9||Math.abs(u.y-35.7)>1e-9)throw new Error("face dessous, 90° : "+u.x+", "+u.y);
+  const o=gOrigin(), npth=drillFile().files.find(f=>f.kind==="npth").text;
+  if(npth.indexOf("T2C3.250")<0||npth.indexOf("X"+fmt(36.95-o.x,3)+"Y"+fmt(o.y-35.7,3))<0)
+    throw new Error("trou d'empreinte absent du fichier NPTH :\n"+npth);
+  /* et la carte rendue à son état d'avant sort le même fichier, à la date près */
+  S.fps=[];touch();
+  const sansDate=s=>s.replace(/^; \d{4}-.*$/m,"");
+  if(sansDate(drillFile().files.find(f=>f.kind==="npth").text)!==sansDate(npth0))
+    throw new Error("sans trou d'empreinte, le fichier NPTH doit rester le même");
+  S.holes=[];touch();
 });
 T("bibliothèque : lecture défensive et fusion des noms",()=>{
   fpLibRaz();

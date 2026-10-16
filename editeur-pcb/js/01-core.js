@@ -2279,6 +2279,20 @@ function padsWorld(fp){
     return o;
   });
 }
+/* Tous les trous NPTH de la carte, en coordonnées monde : ceux posés sur la
+   carte (S.holes, les mêmes objets, d'abord et dans leur ordre — une carte
+   sans trou d'empreinte sort donc exactement comme avant), puis ceux des
+   empreintes, passés au monde comme leurs pastilles. Un trou d'empreinte
+   garde son origine (fp, i) : il ne se sélectionne pas, il suit l'empreinte. */
+function trousMonde(){
+  const out=(S.holes||[]).slice();
+  for(const fp of S.fps){
+    if(!fp.holes||!fp.holes.length)continue;
+    const T=fpXform(fp);
+    fp.holes.forEach((h,i)=>{const c=T(h.x,h.y);out.push({x:r3(c.x),y:r3(c.y),d:h.d,fp,i});});
+  }
+  return out;
+}
 function padLayers(fp,pad){
   if(pad.drill>0){const L=[];for(let i=0;i<S.cu;i++)L.push(i);return L;}
   return [fp.side?S.cu-1:0];

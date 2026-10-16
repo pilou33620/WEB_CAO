@@ -29,10 +29,10 @@ Bancs :
 ### T2 : `trousMonde()` et fichier NPTH (M1-3, M1-4 Excellon)
 `trousMonde()` dans `01-core.js`. `04-fabrication.js` l'emploie pour le
 fichier NPTH.
-- [ ] Empreinte à trous posée à (x, y), tournée de 90°, puis passée sur la face dessous : coordonnées monde attendues dans les deux cas
-- [ ] Les trous sortent dans `-NPTH.TXT`, aux coordonnées attendues
-- [ ] Carte du banc sans trou d'empreinte : Excellon identique au bit près avant et après
-- [ ] `BUILD` puis `JS_PCB` passent
+- [x] Empreinte à trous posée à (x, y), tournée de 90°, puis passée sur la face dessous : coordonnées monde attendues dans les deux cas
+- [x] Les trous sortent dans `-NPTH.TXT`, aux coordonnées attendues
+- [x] Carte du banc sans trou d'empreinte : Excellon identique au bit près avant et après
+- [x] `BUILD` puis `JS_PCB` passent
 **Point de contrôle 1**
 
 ### T3 : dessin, placement, capacités (M1-4)

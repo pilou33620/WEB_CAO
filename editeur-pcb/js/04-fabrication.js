@@ -721,10 +721,8 @@ function drillFile(){
 
   /* Trous non métallisés (NPTH) autonomes : fichier Excellon séparé sans métallisation */
   const npthHoles=[];
-  if(S.holes&&S.holes.length){
-    for(const h of S.holes){
-      if(h.d>0)npthHoles.push({drill:h.d,x:h.x,y:h.y});
-    }
+  for(const h of trousMonde()){
+    if(h.d>0)npthHoles.push({drill:h.d,x:h.x,y:h.y});
   }
   if(npthHoles.length){
     files.push({name:fabBase()+"-NPTH.TXT", a:0, b:S.cu-1, kind:"npth", npth:true,
