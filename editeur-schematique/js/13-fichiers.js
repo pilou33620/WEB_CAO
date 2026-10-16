@@ -112,9 +112,11 @@ function saveJsonClassique(doc){
 /* Écrit dans le dossier du projet. `repli` : en cas d'échec, télécharger à la
    place (jamais en mode WEB_SUITE, où rien ne s'enregistre hors du projet). */
 function saveJsonProjet(doc,repli){
+  /* propre AVANT l'écriture : une modification faite pendant qu'elle part
+     remet S.dirty à vrai, et le succès ne doit pas l'effacer */
+  S.dirty=false;
   return projdDocEcrire("schema",doc).then(function(nom){
-    S.dirty=false;
-    clearBackup();
+    if(!S.dirty)clearBackup();          // modifié pendant l'écriture : la copie de secours reste
     if(typeof profNoterDocument==="function")profNoterDocument("schema",nom);
     document.getElementById("fHint").textContent=
       "Document enregistré dans le dossier du projet ("+nom+").";
@@ -122,6 +124,8 @@ function saveJsonProjet(doc,repli){
       projdAvis("ok","Schéma enregistré dans le projet",nom+" · "+projdQuand(Date.now()));
     return true;
   }).catch(function(e){
+    S.dirty=true;
+    if(e.annule){document.getElementById("fHint").textContent=e.message; return false;}
     /* Rien n'est sauvé : on le dit, puis on retombe sur le téléchargement
        s'il est permis. */
     if(!repli){

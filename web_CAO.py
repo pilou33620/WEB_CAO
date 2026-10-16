@@ -633,7 +633,11 @@ def _deplier_grilles(doc):
             g = o.get("cavite_grille")
             if isinstance(g, str):
                 o["cavite_grille"] = table.get(g)
-            pile.extend(v for v in o.values() if isinstance(v, (dict, list)))
+            # pas de descente dans la grille : partagee par tous les vias, on
+            # la reparcourait a chaque via, et une grille qui se cite elle-meme
+            # bouclait sans fin
+            pile.extend(v for k, v in o.items()
+                        if k != "cavite_grille" and isinstance(v, (dict, list)))
         elif isinstance(o, list):
             pile.extend(v for v in o if isinstance(v, (dict, list)))
     return doc
@@ -802,7 +806,9 @@ def ecrire_texte_atomique(chemin, texte):
     tronque. newline="" : l'appelant pose lui-meme ses fins de ligne (csv
     ecrit deja \\r\\n ; en mode texte Windows elles devenaient \\r\\r\\n).
     """
-    temp = chemin + ".tmp"
+    # un nom par fil : deux requetes simultanees (un fil chacune) ecrivaient
+    # dans le meme .tmp et le rename posait un melange des deux
+    temp = "%s.%d-%d.tmp" % (chemin, os.getpid(), threading.get_ident())
     try:
         with open(temp, "w", encoding="utf-8", newline="") as f:
             f.write(texte)
@@ -1104,6 +1110,10 @@ class ErreurProjet(Exception):
         self.message = message
 
 
+# controle de date + ecriture d'un document de projet, d'un seul tenant
+VERROU_DOCS = threading.Lock()
+
+
 def mtime_ms(chemin):
     """Date de derniere ecriture d'un fichier, en ms depuis l'epoque (0 s'il manque)."""
     try:
@@ -1314,7 +1324,9 @@ def _verifier_ip_publique(ip_str):
     mappee = getattr(ip, "ipv4_mapped", None)
     if mappee is not None:
         ip = mappee
-    if (ip.is_loopback or ip.is_private or ip.is_link_local or
+    # is_global : 100.64.0.0/10 (CGNAT, Tailscale) n'est ni « private » ni
+    # « reserved » pour Python, et passait
+    if (not ip.is_global or ip.is_loopback or ip.is_private or ip.is_link_local or
             ip.is_reserved or ip.is_multicast or ip.is_unspecified):
         raise ValueError("Acces refuse a l'adresse privee ou locale (%s)" % ip_str)
 
@@ -1401,23 +1413,6 @@ class _SecRedirectHandler(urllib.request.HTTPRedirectHandler):
         _valider_url_telechargement(newurl)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
-
-
-def hote_sans_port(entete):
-    """En-tete Host -> nom d'hote seul, en minuscules.
-
-    « [::1]:8000 » -> « ::1 », « 127.0.0.1:8000 » -> « 127.0.0.1 ». Un simple
-    split(":") coupait une adresse IPv6 a son premier deux-points : il restait
-    « [ », vide une fois les crochets otes, et le controle anti-rebinding
-    etait saute pour tout Host commencant par un crochet.
-    """
-    h = str(entete or "").strip()
-    if h.startswith("["):
-        fin = h.find("]")
-        return h[1:fin].lower() if fin > 0 else ""
-    if h.count(":") == 1:
-        h = h.split(":", 1)[0]
-    return h.lower()
 
 
 def get_local_ip():
@@ -1716,6 +1711,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
     HIDDEN = ('.git', '.github', '.gitignore', '.venv', '__pycache__', '.env',
               'profils', 'api_key_free_ia_studio.txt', 'LIB_composants.csv',
               'mom_solver.log', 'config_lib.json')
+    HIDDEN_MIN = tuple(h.lower() for h in HIDDEN)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=ROOT, **kwargs)
@@ -1723,24 +1719,10 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
     def parse_request(self):
         if not super().parse_request():
             return False
-        # Protection DNS Rebinding : validation de l'en-tete Host
-        entete_host = (self.headers.get("Host") or "").strip()
-        hote_brut = hote_sans_port(entete_host)
-        if entete_host:
-            hotes_permis = {"localhost", "127.0.0.1", "::1"}
-            try:
-                srv_ip = self.server.server_address[0]
-                if srv_ip:
-                    hotes_permis.add(str(srv_ip).split("%")[0].strip("[]"))
-            except (AttributeError, IndexError):
-                pass
-            loc_ip = get_local_ip()
-            if loc_ip:
-                hotes_permis.add(loc_ip)
-            if hote_brut.lower() not in hotes_permis:
-                self.send_error(403, "Host non autorise (protection DNS Rebinding)")
-                return False
-        # Puis le code d'appairage, exige de tout autre appareil que ce poste
+        # Host (parade au DNS rebinding) puis code d'appairage : tous deux dans
+        # GARDE.filtrer. Le controle d'ici n'acceptait qu'UNE adresse du poste
+        # (get_local_ip) : un Pi a deux adresses, son IPv6, son nom .local ou
+        # son adresse Tailscale recevaient 403.
         return GARDE.filtrer(self)
 
     def end_headers(self):
@@ -1797,7 +1779,10 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                 return True        # remontee hors du depot
             base = lib
         rel = os.path.relpath(real, base)
-        parts = [p for p in rel.split(os.sep) if p not in ('.', '..')]
+        # en minuscules : sur macOS (et tout disque insensible a la casse),
+        # /API_KEY_free_ia_studio.txt ou /Projets/ designent les memes
+        # fichiers et passaient les regles ci-dessous
+        parts = [p.lower() for p in rel.split(os.sep) if p not in ('.', '..')]
         # Si l'ecoute n'est pas locale, le dossier des projets n'est pas servi statiquement
         if not PROJETS_OUVERT and parts and parts[0] == PROJETS:
             return True
@@ -1809,7 +1794,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             parts = parts[2:]
         # « : » : un flux NTFS (config_lib.json::$DATA) designe le meme
         # fichier sous un nom qui echappait a toutes les regles ci-dessous
-        return any(part in self.HIDDEN or part.startswith('.') or ':' in part or
+        return any(part in self.HIDDEN_MIN or part.startswith('.') or ':' in part or
                    part.startswith('api_key') or part.endswith('.key') or
                    part.endswith('.py') or part.endswith('.pyc') or
                    part.endswith('.log')
@@ -1927,10 +1912,18 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         except Exception as exc:                       # noqa: BLE001
             self._envoyer_json({"detail": self._detail_interne(exc)}, 500)
 
+    def _taille_corps(self):
+        """Content-Length de la requete ; ValueError s'il est illisible ou
+        negatif (rfile.read(-1) lirait jusqu'a la fermeture, sans plafond)."""
+        taille = int(self.headers.get("Content-Length") or 0)
+        if taille < 0:
+            raise ValueError("Content-Length negatif")
+        return taille
+
     def _lire_json(self):
         """Corps de la requete, ou leve ErreurPasserelle."""
         try:
-            taille = int(self.headers.get("Content-Length") or 0)
+            taille = self._taille_corps()
         except ValueError:
             raise passerelle_mcp.ErreurPasserelle(400, "Content-Length invalide")
         if taille > MAX_CORPS:
@@ -1969,7 +1962,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
     def _profil_corps(self):
         try:
-            taille = int(self.headers.get("Content-Length") or 0)
+            taille = self._taille_corps()
         except ValueError:
             raise ErreurProfil(400, "Content-Length invalide")
         if taille > MAX_PROFIL:
@@ -2027,18 +2020,11 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             raise ErreurProfil(500, "Dossier profils/ impossible a creer : %s" % exc)
         charge["nom"] = nom
         chemin = os.path.join(dos, nom + ".json")
-        temp = chemin + ".tmp"
         # ecriture en deux temps : une coupure de courant au mauvais moment
         # laisse l'ancien profil entier plutot qu'un fichier a moitie ecrit
         try:
-            with open(temp, "w", encoding="utf-8") as f:
-                f.write(json.dumps(charge, ensure_ascii=False, indent=1))
-            os.replace(temp, chemin)
+            ecrire_texte_atomique(chemin, json.dumps(charge, ensure_ascii=False, indent=1))
         except OSError as exc:
-            try:
-                os.remove(temp)
-            except OSError:
-                pass
             raise ErreurProfil(500, "Profil non enregistre : %s" % exc)
         return {"ok": True, "nom": nom, "t": charge.get("t", 0)}
 
@@ -2105,7 +2091,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
     def _projet_corps(self):
         try:
-            taille = int(self.headers.get("Content-Length") or 0)
+            taille = self._taille_corps()
         except ValueError:
             raise ErreurProjet(400, "Content-Length invalide")
         if taille > MAX_PROJET:
@@ -2131,19 +2117,12 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             os.makedirs(os.path.dirname(chemin), exist_ok=True)
         except OSError as exc:
             raise ErreurProjet(500, "Dossier impossible a creer : %s" % exc)
-        temp = chemin + ".tmp"
         # ecriture en deux temps, comme pour les profils : une coupure de
         # courant laisse l'ancien fichier entier plutot qu'un fichier a
         # moitie ecrit -- et un schema a moitie ecrit, c'est du travail perdu
         try:
-            with open(temp, "w", encoding="utf-8") as flux:
-                flux.write(json.dumps(charge, ensure_ascii=False, indent=1))
-            os.replace(temp, chemin)
+            ecrire_texte_atomique(chemin, json.dumps(charge, ensure_ascii=False, indent=1))
         except OSError as exc:
-            try:
-                os.remove(temp)
-            except OSError:
-                pass
             raise ErreurProjet(500, "%s : non enregistre (%s)" % (quoi, exc))
 
     def _projet_charge(self, dossier):
@@ -2364,7 +2343,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                                          lire=True)
         return {"document": self._projet_fichier_lire(chemin,
                                                       "Le document %s" % outil),
-                "fichier": os.path.basename(chemin)}
+                "fichier": os.path.basename(chemin), "modifie": mtime_ms(chemin)}
 
     def _projet_doc_ecrire(self):
         charge = self._projet_corps()
@@ -2375,9 +2354,18 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         # le fichier projet est l'ancre : sans lui, ce dossier n'est pas un
         # projet et on n'y ecrit pas de document
         chemin = self._projet_doc_chemin(dossier, outil, self._projet_charge(dossier))
-        self._projet_fichier_ecrire(chemin, charge, "Le document %s" % outil)
-        return {"ok": True, "fichier": os.path.basename(chemin),
-                "modifie": mtime_ms(chemin)}
+        # `modifie` : la date du fichier que la page a lu ou ecrit en dernier.
+        # Si le fichier a change depuis (autre onglet, tablette, export vers
+        # le PCB), 409 : la page demande avant d'ecraser. Sans parametre,
+        # ecriture forcee (« ecraser quand meme »).
+        vu = (self._projet_params().get("modifie") or [""])[0]
+        with VERROU_DOCS:
+            if vu.isdigit() and lisible(chemin) and mtime_ms(chemin) != int(vu):
+                raise ErreurProjet(409, "Le document %s a ete modifie ailleurs depuis"
+                                        " sa lecture" % outil)
+            self._projet_fichier_ecrire(chemin, charge, "Le document %s" % outil)
+            return {"ok": True, "fichier": os.path.basename(chemin),
+                    "modifie": mtime_ms(chemin)}
 
     # -- bibliotheques CAO (LIB) -------------------------------------------
     def _lire_json_lib(self):
@@ -2389,7 +2377,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         pouvoir dire non.
         """
         try:
-            taille = int(self.headers.get("Content-Length") or 0)
+            taille = self._taille_corps()
         except ValueError:
             raise ErreurLib(400, "Content-Length invalide")
         if taille > MAX_LIB:
@@ -2661,7 +2649,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             raise ErreurIPC(503, "Parseur IPC-2581 indisponible : %s"
                                  % ERREUR_IPC2581)
         try:
-            taille = int(self.headers.get("Content-Length") or 0)
+            taille = self._taille_corps()
         except ValueError:
             raise ErreurIPC(400, "Content-Length invalide")
         if taille <= 0:
@@ -2823,7 +2811,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
     def _lire_document(self, plafond):
         """Le corps de la requete, en dict. Refuse vide, trop gros, illisible."""
         try:
-            taille = int(self.headers.get("Content-Length") or 0)
+            taille = self._taille_corps()
         except ValueError:
             raise ErreurIPC(400, "Content-Length invalide")
         if taille <= 0:
@@ -2947,7 +2935,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if pcb_scoring is None:
             raise ErreurIPC(503, "Scoring PCB indisponible : %s" % ERREUR_SCORING)
         try:
-            taille = int(self.headers.get("Content-Length") or 0)
+            taille = self._taille_corps()
         except ValueError:
             raise ErreurIPC(400, "Content-Length invalide")
         if taille <= 0:
@@ -2980,7 +2968,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if pattern_recognition is None:
             raise ErreurIPC(503, "Reconnaissance de motifs indisponible : %s" % ERREUR_PATTERNS)
         try:
-            taille = int(self.headers.get("Content-Length") or 0)
+            taille = self._taille_corps()
         except ValueError:
             raise ErreurIPC(400, "Content-Length invalide")
         if taille <= 0:
@@ -3108,7 +3096,11 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
     def _datasheet_telecharger(self):
         self._projet_garde(reseau=False)
-        taille = int(self.headers.get("Content-Length") or 0)
+        try:
+            taille = self._taille_corps()
+        except ValueError:
+            self._envoyer_json({"detail": "Content-Length invalide"}, 400)
+            return
         if taille > MAX_CORPS:
             self._envoyer_json({"detail": "Requete trop grande"}, 413)
             return
@@ -3897,10 +3889,16 @@ def verifier_et_appliquer_maj(dossier_racine=None):
     # --ff-only : on n'applique que la suite exacte de ce qu'on a. Un historique
     # distant reecrit (force-push) ou divergent est refuse, jamais fusionne en
     # silence dans le code qu'on va executer.
-    pull = subprocess.run(
-        ["git", "pull", "--ff-only"],
-        cwd=racine, capture_output=True, text=True, timeout=30, env=env_git
-    )
+    # Un pull trop long (reseau lent, carte SD) levait TimeoutExpired : le
+    # serveur ne demarrait pas et la reserve n'etait jamais reappliquee.
+    try:
+        pull = subprocess.run(
+            ["git", "pull", "--ff-only"],
+            cwd=racine, capture_output=True, text=True, timeout=120, env=env_git
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        pull = subprocess.CompletedProcess(["git", "pull"], 1, "",
+                                           "git pull interrompu (%s)" % exc)
 
     if stashed:
         print("  Restauration des modifications locales...")
@@ -4001,7 +3999,15 @@ def main(argv=None):
         ROOT = os.path.abspath(os.path.expanduser(args.dossier))
         DOSSIER_IMPOSE = True
     if args.verifier_maj and os.environ.get("WEB_CAO_DEJA_MAJ") != "1":
-        if verifier_et_appliquer_maj(ROOT):
+        # la mise a jour est un plus : son echec, quel qu'il soit, ne doit
+        # jamais empecher l'outil de demarrer
+        try:
+            maj = verifier_et_appliquer_maj(ROOT)
+        except Exception as exc:
+            print("[!] Mise a jour impossible (%s) : poursuite avec la version"
+                  " actuelle." % exc)
+            maj = False
+        if maj:
             redemarrer_application(argv)
     if args.lib:
         global DOSSIER_LIB_IMPOSE

@@ -49,6 +49,7 @@ let PROJD = {mode:"", chemin:"", fichier:null, documents:null};
 let PROJD_HANDLE = null;                 // FileSystemDirectoryHandle, si mode "dossier"
 let PROJD_ATTENTE = null;                // dossier retrouve, mais pas encore autorise
 let PROJD_SRV;                           // undefined = pas encore teste
+const PROJD_VU = {};                     // outil -> date (ms) du fichier lu ou ecrit par cette page
 
 /* ==========================================================================
    Etat, lecture synchrone
@@ -316,6 +317,7 @@ async function projdSonderDossier(h, fichier){
 function projdAdopter(mode, chemin, fichier, documents){
   PROJD = {mode:mode, chemin:chemin||"", fichier:fichier||null,
            documents:documents||null};
+  for(const k in PROJD_VU) delete PROJD_VU[k];   // dates de l'ancien projet
   const nom = fichier && fichier.nom;
   if(nom){
     if(typeof projOuvrir === "function") projOuvrir(nom, chemin, mode);
@@ -489,7 +491,7 @@ function projdDocLire(outil){
   if(!projdLie() || !nom) return Promise.resolve(null);
   if(PROJD.mode === "serveur")
     return projdApi("GET","/api/projet/doc",{chemin:PROJD.chemin, doc:outil})
-      .then(function(r){ return r.document||null; })
+      .then(function(r){ PROJD_VU[outil] = r.modifie || 0; return r.document||null; })
       .catch(function(e){ if(e.code === 404) return null; throw e; });
   if(!PROJD_HANDLE) return Promise.resolve(null);
   return projdLireFichierHandle(PROJD_HANDLE,nom).catch(function(){ return null; });
@@ -506,9 +508,26 @@ function projdDocEcrire(outil, obj){
     try{ projSignaler(); }catch(_){}
     return f||nom;
   }
-  if(PROJD.mode === "serveur")
-    return projdApi("PUT","/api/projet/doc",{chemin:PROJD.chemin, doc:outil}, obj)
-      .then(function(r){ return note(r.fichier, r.modifie); });
+  if(PROJD.mode === "serveur"){
+    const ecrire = function(vu){
+      return projdApi("PUT","/api/projet/doc",{chemin:PROJD.chemin, doc:outil, modifie:vu}, obj)
+        .then(function(r){ PROJD_VU[outil] = r.modifie || 0; return note(r.fichier, r.modifie); });
+    };
+    /* 409 : le fichier a change depuis que cette page l'a lu ou ecrit (autre
+       onglet, tablette, export vers le PCB). On demande avant d'ecraser. */
+    return ecrire(PROJD_VU[outil] || undefined).catch(function(e){
+      if(e.code !== 409) throw e;
+      const ok = typeof confirm === "function" && confirm(
+        "Ce document a été modifié ailleurs (autre onglet, autre appareil ou export) "+
+        "depuis que vous l'avez ouvert.\n\nÉcraser quand même avec la version de cette page ?");
+      if(!ok){
+        const n = new Error("Enregistrement annulé : le document a été modifié ailleurs");
+        n.annule = true;                 // choix de l'utilisateur : pas de repli en téléchargement
+        throw n;
+      }
+      return ecrire(undefined);
+    });
+  }
   if(!PROJD_HANDLE) return Promise.reject(new Error("Dossier plus accessible"));
   return projdHandleAutorise(PROJD_HANDLE,true).then(function(ok){
     if(!ok) throw new Error("Acces au dossier refuse");

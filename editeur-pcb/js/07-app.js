@@ -50,14 +50,18 @@ function saveJsonClassique(doc){
 /* Écrit dans le dossier du projet. `repli` : en cas d'échec, télécharger à la
    place (jamais en mode WEB_SUITE, où rien ne s'enregistre hors du projet). */
 function saveJsonProjet(doc,repli){
+  /* propre AVANT l'écriture : une modification faite pendant qu'elle part
+     remet S.dirty à vrai, et le succès ne doit pas l'effacer */
+  S.dirty=false;
   return projdDocEcrire("pcb",doc).then(function(nom){
-    S.dirty=false;
     if(typeof profNoterDocument==="function")profNoterDocument("pcb",nom);
     hint("Carte enregistrée dans le dossier du projet ("+nom+").");
     if(typeof projdAvis==="function")
       projdAvis("ok","Carte enregistrée dans le projet",nom+" · "+projdQuand(Date.now()));
     return true;
   }).catch(function(e){
+    S.dirty=true;
+    if(e.annule){hint(e.message); return false;}
     /* On ne fait pas semblant : si l'écriture échoue, le travail n'est pas
        sauvé, et on le dit avant de proposer le téléchargement s'il est permis. */
     if(!repli){

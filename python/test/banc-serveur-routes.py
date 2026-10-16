@@ -437,11 +437,12 @@ def test_routes():
 
         # 24. Host IPv6 : « [::1]:port » est accepte, un Host entre crochets
         # quelconque ne contourne plus le controle (il etait coupe a « [ »).
-        assert web_CAO.hote_sans_port("[::1]:8000") == "::1"
-        assert web_CAO.hote_sans_port("127.0.0.1:8000") == "127.0.0.1"
-        assert web_CAO.hote_sans_port("LocalHost") == "localhost"
+        # Toute IP du poste est acceptee (un Pi a plusieurs adresses), un nom
+        # quelconque non.
         for hote, attendu in (("[::1]:%d" % port, 200), ("[evil]:80", 403),
-                              ("[", 403)):
+                              ("[", 403), ("LocalHost:%d" % port, 200),
+                              ("192.168.1.30:%d" % port, 200),
+                              ("evil.example:%d" % port, 403)):
             c6 = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
             try:
                 c6.request("GET", "/api/pcb/score-placement", headers={"Host": hote})
@@ -678,6 +679,86 @@ def test_routes():
         os.utime(os.path.join(dossier, "projet.cao.json"), (1, 1))   # fichier projet ancien
         assert web_CAO.derniere_sauvegarde(dossier) == ecrit
         print("[PASS] Projet : heure de la derniere sauvegarde (document, dossier)")
+
+        # 35. Ecriture conditionnelle : la date vue par la page est fausse (le
+        # fichier a change ailleurs) -> 409 ; la bonne date ou pas de date -> 200.
+        url = "/api/projet/doc?doc=schema&chemin=" + _up.quote(dossier)
+        for vu, attendu in ((ecrit - 5000, 409), (ecrit, 200), (None, 200)):
+            conn.request("PUT", url + ("&modifie=%d" % vu if vu is not None else ""),
+                         body=b'{"a": 2}', headers={"Content-Type": "application/json"})
+            res = conn.getresponse()
+            rep = json.loads(res.read().decode("utf-8"))
+            assert res.status == attendu, (vu, res.status, rep)
+        print("[PASS] Projet : document modifie ailleurs -> 409, sinon ecrit")
+
+        # 36. Deux ecritures simultanees du meme document : le fichier reste
+        # du JSON entier (un .tmp commun melangeait les deux).
+        gros = [json.dumps({"k": "x" * 400000}).encode(), json.dumps({"k": "y" * 300000}).encode()]
+        erreurs = []
+
+        def ecrire(corps):
+            c = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+            try:
+                c.request("PUT", url, body=corps, headers={"Content-Type": "application/json"})
+                r = c.getresponse()
+                r.read()
+                if r.status != 200:
+                    erreurs.append(r.status)
+            finally:
+                c.close()
+        for _ in range(15):
+            fils = [threading.Thread(target=ecrire, args=(g,)) for g in gros]
+            for f in fils:
+                f.start()
+            for f in fils:
+                f.join()
+            with open(os.path.join(dossier, "carte-SCH.json"), encoding="utf-8") as f:
+                assert json.load(f)["k"][0] in "xy"
+        assert not erreurs, erreurs
+        assert not [n for n in os.listdir(dossier) if n.endswith(".tmp")]
+        print("[PASS] Projet : ecritures simultanees, fichier toujours entier")
+
+        # 37. Une grille de cavite qui se cite elle-meme ne bloque plus le serveur.
+        doc = web_CAO._deplier_grilles({"cavites_grilles": {"a": {"cavite_grille": "a"}},
+                                        "v": {"cavite_grille": "a"}})
+        assert doc["v"]["cavite_grille"] == {"cavite_grille": "a"}
+        print("[PASS] Grilles de cavite : pas de boucle sur une grille qui se cite")
+
+        # 38. Content-Length negatif : 400, pas de lecture sans fin.
+        import socket
+        s = socket.create_connection(("127.0.0.1", port), timeout=5)
+        try:
+            s.sendall(b"PUT /api/profil?nom=neg HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                      b"Content-Type: application/json\r\nContent-Length: -1\r\n\r\n")
+            ligne = s.recv(64)                  # avant : aucune reponse, fil bloque
+            assert b" 400 " in ligne.split(b"\r\n")[0], ligne
+        finally:
+            s.close()
+        assert not os.path.exists(os.path.join(web_CAO.dossier_profils(), "neg.json"))
+        print("[PASS] Content-Length negatif refuse")
+
+        # 39. Fichiers caches insensibles a la casse (disques macOS / Windows).
+        h = web_CAO.CustomHandler.__new__(web_CAO.CustomHandler)
+        for nom in ("API_KEY_free_ia_studio.txt", "Profils/x.json", "LIB_COMPOSANTS.CSV"):
+            assert h._hidden(os.path.join(web_CAO.ROOT, nom)), nom
+        print("[PASS] Fichiers caches : casse ignoree")
+
+        # 40. Appairage : la pause double a chaque code brule d'affilee, plafond
+        # 1 h, et repart de 60 s apres un succes.
+        import appairage
+        a = appairage.Appairage(afficher=lambda t: None)
+        pauses = []
+        for _ in range(8):
+            a.bloque = 0.0
+            a.preparer()
+            for _ in range(a.ESSAIS):
+                ok, _msg = a.essayer("x")
+            pauses.append(round(a.bloque - time.monotonic()))
+        assert pauses[:3] == [60, 120, 240] and pauses[-1] == 3600, pauses
+        a.bloque = 0.0
+        a.preparer()
+        assert a.essayer(a.code)[0] and a.grilles == 0
+        print("[PASS] Appairage : pause doublee a chaque code brule (60 s -> 1 h)")
 
     finally:
         conn.close()
