@@ -6085,6 +6085,10 @@ T("trous NPTH d'empreinte : contrôlés comme des trous de carte (M1-5)",()=>{
   fpApplyDef(voisin,def);touch();
   if(!pres("trop proche du trou NPTH",30,33))throw new Error("pastille d'une autre empreinte trop près non signalée");
   S.fps.pop();
+  /* l'écart entre perçages est une contrainte de fabrication, pas un choix de la
+     fiche : un trou à 0,1 mm du perçage d'une broche de sa propre empreinte reste signalé */
+  fpApplyDef(fp,Object.assign({},def,{holes:[{x:-1,y:1.05,d:1.1}]}));touch();
+  if(!pres("trop proche du perçage",29,31))throw new Error("perçage à perçage dans la même empreinte : doit rester signalé");
   /* recouvrement d'une pastille de sa propre empreinte : toujours une faute */
   fpApplyDef(fp,Object.assign({},def,{holes:[{x:-1,y:1.0,d:1}]}));touch();
   if(!pres("trop proche du trou NPTH",29,31))throw new Error("trou qui recouvre une pastille de son empreinte : doit être signalé");
@@ -6137,6 +6141,30 @@ T("trous NPTH d'empreinte : suivent l'empreinte de la LIB par tous les chemins, 
     pcbAppliquerDefEmpreinte(a,"SOIC-NU",{name:"SOIC-NU",pins:8,style:"sop",pads:[{n:1,x:0,y:0,w:1,h:1,shape:"rect",drill:0}]});
     if("holes" in a)throw new Error("une empreinte LIB sans trous retire les anciens");
   }finally{PCB_LIB_CACHE.delete(pkgKey("RJ45-ESSAI"));S.fps=[];touch();}
+});
+T("trous NPTH : îlots, IPC-2581 et ECO suivent le dégagement et l'empreinte (revue M1)",()=>{
+  loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);clearSel();
+  const smd={name:"PAD-ESSAI",pins:1,style:"chip",pads:[{n:1,x:0,y:0,w:1,h:1,shape:"rect",drill:0}]};
+  for(const [r,x] of [["P1",10],["P2",40]]){const p=mkFp(r,"","PAD",1);p.x=x;p.y=22;fpApplyDef(p,smd);p.nets={1:"GND"};S.fps.push(p);}
+  S.zones=[{id:S.nextId++,l:0,net:"GND",pts:[{x:5,y:20},{x:45,y:20},{x:45,y:24},{x:5,y:24}]}];touch();
+  const ilots=()=>runDrc().some(e=>e.msg&&/Zone GND .* îlots/.test(e.msg));
+  /* le masque des îlots demande un vrai canevas (module canvas de Node) */
+  if(realCanvas&&ilots())throw new Error("bande pleine : un seul îlot attendu");
+  const date={date:"2026-10-16T00:00:00Z"}, x0=ipc2581Document(date).xml;
+  S.holes=[mkHole(25,22,4.4)];touch();   // dégagement 4,9 mm : coupe franchement la bande de 4 mm
+  try{
+    if(realCanvas&&!ilots())throw new Error("le dégagement du trou coupe la bande : deux îlots attendus");
+    if(ipc2581Document(date).xml===x0)throw new Error("IPC-2581 : la zone doit se dégager autour du trou, comme au Gerber");
+  }finally{S.holes=[];S.zones=[];touch();}
+  /* ECO « boîtier » : une empreinte calculée qui passe à un boîtier de la LIB en prend les trous */
+  const def={name:"RJ45-ECO",pins:2,style:"row",pads:[{n:1,x:-1,y:0,w:1.5,h:1.5,shape:"sharp",drill:0.9},
+    {n:2,x:1,y:0,w:1.5,h:1.5,shape:"circ",drill:0.9}],holes:[{x:0,y:3,d:3.25}]};
+  PCB_LIB_CACHE.set(pkgKey("RJ45-ECO"),def);
+  try{
+    const j=mkFp("J1","","HDR",2);j.x=30;j.y=40;S.fps.push(j);touch();
+    pcbAppliquerEco([{type:"BOITIER",active:true,ref:"J1",newPkg:"RJ45-ECO",newPins:2}]);
+    if(JSON.stringify(j.holes)!==JSON.stringify([{x:0,y:3,d:3.25}]))throw new Error("ECO boîtier : trous "+JSON.stringify(j.holes));
+  }finally{PCB_LIB_CACHE.delete(pkgKey("RJ45-ECO"));loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);}
 });
 T("bibliothèque : lecture défensive et fusion des noms",()=>{
   fpLibRaz();
@@ -22751,8 +22779,12 @@ T("trous NPTH d'empreinte : IPC-2581, plans et dossier méca (M1-4)",()=>{
     if(cer.length!==drillFile().holes)throw new Error(cer.length+" CIRCLE pour "+drillFile().holes+" trous");
     const apres=ipc2581Document(date);
     if(apres.stats.trousNpth!==avant.stats.trousNpth+1)throw new Error("IPC-2581 : trou d'empreinte non compté NONPLATED");
-    const m=mecaEntreeEditeur().trous.filter(t=>Math.abs(t.d-2.5)<1e-9);
-    if(m.length!==1||m[0].metallise!==false)throw new Error("dossier méca : "+JSON.stringify(m));
+    /* contrat de commun/dossier-meca.js : `trous` = trous libres (hors empreinte),
+       ceux d'une empreinte vont chez son composant, comme dans la visionneuse */
+    const E=mecaEntreeEditeur();
+    if(E.trous.some(t=>Math.abs(t.d-2.5)<1e-9))throw new Error("dossier méca : trou d'empreinte compté comme fixation");
+    const m=E.composants.find(c=>c.id===fp.id).trous.filter(t=>Math.abs(t.d-2.5)<1e-9);
+    if(m.length!==1||m[0].metallise!==false)throw new Error("dossier méca, trous du composant : "+JSON.stringify(m));
   }finally{delete fp.holes;touch();}
   if(ipc2581Document(date).xml!==avant.xml)throw new Error("sans trou d'empreinte, l'IPC-2581 doit rester le même");
 });

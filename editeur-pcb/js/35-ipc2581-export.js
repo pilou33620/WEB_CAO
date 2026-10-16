@@ -104,8 +104,8 @@
    `comment` lui dit pourquoi. Hammerstad garde sa <Property value unit>.
 
    CE QUI NE PART PAS : la stratégie de remplissage (seul le résultat compte
-   pour le fabricant). Comme le Gerber, une zone ne se dégage pas autour d'un
-   trou NPTH.
+   pour le fabricant). Comme au Gerber, une zone se dégage autour de chaque
+   trou NPTH (carte et empreinte) à l'écartement de sa classe.
 
    À LA RELECTURE : un <Text> se place par la <Location> de son <Features>,
    la seule place que le XSD lui laisse ; le lecteur la lit depuis sa 1.78.
@@ -421,6 +421,7 @@ function ipcRemplir(z){
     if(i<v.a||i>v.b||(v.net||"")===zn)continue;
     prendre(moins,ipcCercle(v.x,v.y,v.d/2+clrK(zn,v.net,"cu","via"),true));
   }
+  for(const h of trousMonde())prendre(moins,ipcCercle(h.x,h.y,h.d/2+classOf(zn).clr,true));
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
       if(!padLayers(fp,q).includes(i))continue;

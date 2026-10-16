@@ -2219,6 +2219,7 @@ function fpMoveOrigin(fp,lx,ly){
      reste, sinon il sauterait sur la sérigraphie */
   const m=fp.mark;
   if(m&&typeof m==="object"){m.x=r4(m.x-dx);m.y=r4(m.y-dy);}
+  for(const h of fp.holes||[]){h.x=r4(h.x-dx);h.y=r4(h.y-dy);}
   fp.x=r3(c.x);fp.y=r3(c.y);
   return true;
 }
@@ -2283,11 +2284,6 @@ function padsWorld(fp){
     return o;
   });
 }
-/* Tous les trous NPTH de la carte, en coordonnées monde : ceux posés sur la
-   carte (S.holes, les mêmes objets, d'abord et dans leur ordre — une carte
-   sans trou d'empreinte sort donc exactement comme avant), puis ceux des
-   empreintes, passés au monde comme leurs pastilles. Un trou d'empreinte
-   garde son origine (fp, i) : il ne se sélectionne pas, il suit l'empreinte. */
 /* Les trous d'une définition (LIB, table, fichier) remplacent ceux de
    l'empreinte : ils font partie de sa forme, ils viennent et partent avec
    elle. Relus comme tout ce qui vient d'un fichier. */
@@ -2295,6 +2291,11 @@ function fpTrousDe(fp,def){
   const h=dHoles(def&&def.holes);
   if(h)fp.holes=h;else delete fp.holes;
 }
+/* Tous les trous NPTH de la carte, en coordonnées monde : ceux posés sur la
+   carte (S.holes, les mêmes objets, d'abord et dans leur ordre — une carte
+   sans trou d'empreinte sort donc exactement comme avant), puis ceux des
+   empreintes, passés au monde comme leurs pastilles. Un trou d'empreinte
+   garde son origine (fp, i) : il ne se sélectionne pas, il suit l'empreinte. */
 function trousMonde(){
   const out=(S.holes||[]).slice();
   for(const fp of S.fps){

@@ -123,7 +123,7 @@ class PcbRenderer {
     }
     if (Array.isArray(this.fp.holes)) {
       for (const t of this.fp.holes) {
-        const r = (t.d || 1) / 2;
+        const r = (t.d || 3.2) / 2;
         x1 = Math.min(x1, t.x - r); y1 = Math.min(y1, t.y - r);
         x2 = Math.max(x2, t.x + r); y2 = Math.max(y2, t.y + r);
       }
@@ -270,7 +270,7 @@ class PcbRenderer {
     const z = this.zoom;
     if (!Array.isArray(this.fp.holes)) return;
     for (const t of this.fp.holes) {
-      const r = ((t.d || 1) / 2) * z;
+      const r = ((t.d || 3.2) / 2) * z;
       ctx.fillStyle = PCB_COLORS.drill;
       ctx.beginPath(); ctx.arc(t.x * z, t.y * z, r, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = PCB_COLORS.silk;

@@ -15,7 +15,9 @@ function mecaEntreeEditeur(){
     contour:boardPoly().map(P),
     decoupes:boardCutouts().map(c=>c.map(P)),
     epaisseur:stackTotal(),
-    trous:trousMonde().filter(h=>h.d>0).map(h=>Object.assign(P(h),{d:h.d,metallise:false})),
+    /* trous libres seuls (contrat de commun/dossier-meca.js) : ceux d'une
+       empreinte vont chez son composant, comme dans la visionneuse */
+    trous:trousMonde().filter(h=>!h.fp&&h.d>0).map(h=>Object.assign(P(h),{d:h.d,metallise:false})),
     composants:S.fps.map(fp=>{
       const T=fpXform(fp), b=bodyOf(fp);
       return Object.assign(P(fp),{
@@ -26,7 +28,8 @@ function mecaEntreeEditeur(){
         monte:typeof varEstMonte!=="function"||varEstMonte(fp,vid),
         /* pastilles percées : métallisées, comme au tableau de perçage */
         trous:padsWorld(fp).filter(q=>q.drill>0)
-          .map(q=>Object.assign(P(q),{d:q.drill,metallise:true,pad:Math.max(q.w||0,q.h||0)}))});
+          .map(q=>Object.assign(P(q),{d:q.drill,metallise:true,pad:Math.max(q.w||0,q.h||0)}))
+          .concat((fp.holes||[]).map(h=>Object.assign(P(T(h.x,h.y)),{d:h.d,metallise:false})))});
     })};
 }
 /* Entre le repère de l'éditeur (Y vers le bas) et celui des Gerber : la vue

@@ -1239,7 +1239,7 @@ function remplirElementsEditeur() {
           <tr data-idx="${idx}">
             <td><input type="number" step="0.05" data-field="x" value="${+t.x || 0}"></td>
             <td><input type="number" step="0.05" data-field="y" value="${+t.y || 0}"></td>
-            <td><input type="number" step="0.05" min="0.4" max="30" data-field="d" value="${+t.d || 0}"></td>
+            <td><input type="number" step="0.05" min="0.4" max="30" data-field="d" value="${+t.d || 3.2}"></td>
             <td style="width:30px; text-align:center;">
               <button class="tb mini" style="color:var(--red); padding:1px 5px;" onclick="editeurSupprimerTrou(${idx})" title="Supprimer">✕</button>
             </td>
@@ -1740,6 +1740,7 @@ function editeurGenererDip() {
   }
 
   EDITEUR_LIB.data.pads = pads;
+  delete EDITEUR_LIB.data.holes; // une empreinte générée repart de zéro : les trous de la précédente n'y ont pas leur place
   EDITEUR_LIB.data.pins = pins;
   EDITEUR_LIB.data.style = "dip";
   EDITEUR_LIB.data.pitch = pitch;
@@ -1790,6 +1791,7 @@ function editeurGenererSoic() {
   }
 
   EDITEUR_LIB.data.pads = pads;
+  delete EDITEUR_LIB.data.holes; // une empreinte générée repart de zéro : les trous de la précédente n'y ont pas leur place
   EDITEUR_LIB.data.pins = pins;
   EDITEUR_LIB.data.style = "soic";
   EDITEUR_LIB.data.pitch = pitch;
@@ -1822,6 +1824,7 @@ function editeurGenererHeader() {
   }
 
   EDITEUR_LIB.data.pads = pads;
+  delete EDITEUR_LIB.data.holes; // une empreinte générée repart de zéro : les trous de la précédente n'y ont pas leur place
   EDITEUR_LIB.data.pins = pins;
   EDITEUR_LIB.data.style = "header";
   EDITEUR_LIB.data.pitch = pitch;

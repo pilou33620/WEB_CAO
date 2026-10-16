@@ -510,6 +510,7 @@ function pcbAppliquerEco(items, options) {
             fp.pitch = g.pitch;
             fp.span = g.span;
             fp.pins = g.pins;
+            if (typeof fpTrousDe === "function") fpTrousDe(fp, g);
             if (g.pads && typeof padClone === "function") {
               fp.pads = g.pads.map(padClone);
               if (g.body) fp.body = { ...g.body };

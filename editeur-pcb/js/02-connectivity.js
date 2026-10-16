@@ -106,6 +106,7 @@ function zoneMask(l,net){
     c.arc(v.x,v.y,v.net===net?v.drill/2:v.d/2+clrK(net,v.net,"cu","via"),0,Math.PI*2);
     c.fill();
   }
+  for(const h of trousMonde()){c.beginPath();c.arc(h.x,h.y,h.d/2+clr,0,Math.PI*2);c.fill();}
   const thermals=[];
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
@@ -642,7 +643,7 @@ function runDrc(){
       for(const p of pads){
         if(p.q.drill>0){
           const e=dist(h.x,h.y,p.q.x,p.q.y)-h.d/2-p.q.drill/2;
-          if(e<hcl-1e-6&&!sienne(h,p,e)){
+          if(e<hcl-1e-6){
             out.push({x:(h.x+p.q.x)/2,y:(h.y+p.q.y)/2,
               msg:"Trou NPTH Ø"+fmt(h.d,2)+" trop proche du perçage de "+p.tag+" ("+fmt(Math.max(0,e),3)+" mm, min "+fmt(hcl,3)+" mm)"});
           }
