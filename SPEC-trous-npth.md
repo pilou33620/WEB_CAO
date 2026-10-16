@@ -89,8 +89,11 @@ Un nouveau champ facultatif `holes`, à côté de `pads` :
    L'édition, la sélection et la suppression restent réservées à `S.holes`.
    Un trou d'empreinte bouge avec son empreinte.
 5. **Contrôles.** Un trou d'empreinte est contrôlé comme un trou de carte :
-   - bord de carte, trou à trou, via, perçage de pastille et piste ;
-   - plus cuivre et zones des autres nets, déjà couverts pour `S.holes`.
+   - bord de carte, trou à trou, via, perçage de pastille, piste et
+     pastille, comme pour `S.holes` ;
+   - les zones de cuivre ne dégagent aujourd'hui aucun trou NPTH, et aucun
+     contrôle ne les compare. C'est un défaut existant, traité à part (plan,
+     décision D4).
 
    Seul ajout : un trou d'empreinte contre une pastille **de la même
    empreinte** n'est pas signalé en deçà de l'écartement, si la fiche l'a
