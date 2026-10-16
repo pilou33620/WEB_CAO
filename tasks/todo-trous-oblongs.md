@@ -36,10 +36,11 @@ Bancs :
 **Point de contrôle 1**
 
 ### T3 : contrôles et audit fabricant (M2-4)
-- [ ] Piste qui frôle le bout d'une fente NPTH (signalée) alors qu'elle est loin de son centre
-- [ ] Deux perçages : distance entre axes moins demi-largeurs
-- [ ] Audit : largeur de fente métallisée sous `platedMinW_*`, NPTH sous `nonPlatedMinW`, allongement sous `platedLengthOverWidthMin`, anneau dans le grand sens
-- [ ] `JS_PCB` passe
+- [x] Piste qui frôle le bout d'une fente NPTH (signalée) alors qu'elle est loin de son centre
+- [x] Deux perçages : distance entre axes moins demi-largeurs
+  → via ↔ fente de pastille : toujours couvert d'abord par l'isolation (l'anneau entoure la fente) ; le calcul sur l'axe est en place, l'essai vérifie l'isolation
+- [x] Audit : largeur de fente métallisée sous `platedMinW_*`, NPTH sous `nonPlatedMinW`, allongement sous `platedLengthOverWidthMin`, anneau dans le grand sens
+- [x] `JS_PCB` passe
 
 ### T4 : dessin et dégagements (M2-2)
 - [ ] La fente se dessine en vraie forme (pastille et trou)

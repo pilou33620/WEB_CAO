@@ -6202,6 +6202,36 @@ T("perçages oblongs : lus, gardés, passés au monde (M2-1)",()=>{
   if("w" in normHole({x:1,y:1,d:3.2},0))throw new Error("trou de carte rond : aucune clé w");
   loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);
 });
+T("perçages oblongs : contrôlés sur leur vraie forme, et face au fabricant (M2-4)",()=>{
+  loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);clearSel();
+  const pres=(mot,x,y,r)=>runDrc().some(e=>e.msg&&e.msg.indexOf(mot)>=0&&Math.abs(e.x-x)<(r||2)&&Math.abs(e.y-y)<(r||2));
+  try{
+  /* fente NPTH de 28 à 32 en x : loin de son centre, près de son bout */
+  S.holes=[normHole({x:30,y:30,d:1,w:5,rot:0},0)];
+  S.tracks=[{l:0,x1:32.6,y1:25,x2:32.6,y2:35,w:0.25,net:"VCC"}];touch();
+  if(!pres("Cuivre trop proche du trou NPTH",30,30,3))throw new Error("piste au bout de la fente NPTH non signalée");
+  S.tracks=[];
+  S.vias=[{x:32.8,y:30,d:0.6,drill:0.3,a:0,b:1,net:"VCC"}];touch();
+  if(!pres("trop proche du perçage de via",31,30,3))throw new Error("via au bout de la fente NPTH non signalé");
+  S.vias=[];S.holes=[];
+  /* fente métallisée de pastille : axe de 49,1 à 50,9 */
+  const fp=mkFp("J1","","FENTE",1);fp.x=50;fp.y=30;S.fps.push(fp);
+  fpApplyDef(fp,{name:"FENTE",pins:1,style:"row",pads:[{n:1,x:0,y:0,w:3,h:1.2,shape:"oval",drill:0.6,slot:2.4}]});
+  /* un via près du bout de la fente touche d'abord l'anneau de cuivre : c'est
+     l'isolation qui le signale, le trou à trou n'est jamais seul en cause */
+  S.vias=[{x:51.45,y:30,d:0.5,drill:0.3,a:0,b:1,net:""}];touch();
+  if(!pres("Isolation via/pastille",51.45,30,1))throw new Error("via sur l'anneau d'une fente : isolation non signalée");
+  S.vias=[];touch();
+  /* audit : largeur, allongement, anneau de la fente métallisée ; largeur de la fente NPTH */
+  fpApplyDef(fp,{name:"FENTE",pins:1,style:"row",pads:[{n:1,x:0,y:0,w:1.0,h:0.9,shape:"oval",drill:0.4,slot:0.7}]});
+  S.holes=[normHole({x:20,y:20,d:0.8,w:2.5,rot:90},0)];touch();
+  const A=pcbAuditBoardAgainstMfg(pcbGetMfgProfile("jlcpcb")), it=l=>A.find(i=>i.label===l);
+  for(const l of ["Fente métallisée min","Allongement des fentes métallisées","Anneau des fentes min","Fente NPTH min"])
+    if(!it(l)||it(l).ok)throw new Error("audit : « "+l+" » devait être en défaut : "+JSON.stringify(it(l)));
+  }finally{loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);}
+  if(pcbAuditBoardAgainstMfg(pcbGetMfgProfile("jlcpcb")).some(i=>/[Ff]ente/.test(i.label)))
+    throw new Error("sans fente, l'audit ne gagne aucun poste");
+});
 T("bibliothèque : lecture défensive et fusion des noms",()=>{
   fpLibRaz();
   if(!fpLibParse("ceci n'est pas du json").err)

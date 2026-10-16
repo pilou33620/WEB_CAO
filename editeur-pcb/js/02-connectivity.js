@@ -433,6 +433,17 @@ function segCross(a,b){
   const t=(ex*d4-ey*d3)/den, u=(ex*d2-ey*d1)/den;
   return t>=0&&t<=1&&u>=0&&u<=1;
 }
+/* Axe d'un perçage contre l'axe d'une piste. Rond : comme avant, du centre ;
+   fente sur une piste droite : de segment à segment ; sur un arc : l'axe
+   échantillonné au dixième de millimètre. */
+function distAxePiste(a,t){
+  if(a.x1===a.x2&&a.y1===a.y2)return trkDist(a.x1,a.y1,t);
+  if(!arcOf(t))return segSegDist(a,t);
+  const n=Math.max(2,Math.ceil(dist(a.x1,a.y1,a.x2,a.y2)/0.1));
+  let best=1e9;
+  for(let i=0;i<=n;i++)best=Math.min(best,trkDist(a.x1+(a.x2-a.x1)*i/n,a.y1+(a.y2-a.y1)*i/n,t));
+  return best;
+}
 function segSegDist(a,b){
   if(segCross(a,b))return 0;
   return Math.min(
@@ -591,7 +602,9 @@ function runDrc(){
       else if(b.k==="P"&&b.q.drill>0){d=b.q.drill;cx=b.q.x;cy=b.q.y;
         qui="un via et la pastille "+b.fp.ref+"."+b.q.n;}
       else continue;
-      const e=dist(a.v.x,a.v.y,cx,cy)-a.v.drill/2-d/2;
+      /* une fente se mesure sur son axe ; un rond, de centre à centre comme avant */
+      const ax=b.k==="P"&&b.q.slot?axePercage(b.q):null;
+      const e=(ax?segDist(a.v.x,a.v.y,ax.x1,ax.y1,ax.x2,ax.y2):dist(a.v.x,a.v.y,cx,cy))-a.v.drill/2-d/2;
       if(e>=hcl-1e-6)continue;
       out.push({via:a.v,x:(a.v.x+cx)/2,y:(a.v.y+cy)/2,l:a.l0,
         msg:dist(a.v.x,a.v.y,cx,cy)<1e-6
@@ -614,14 +627,17 @@ function runDrc(){
   const sienne=(h,p,e)=>h.fp&&h.fp===p.fp&&e>=-1e-6;
   if(trous.length){
     const hcl=S.rule.hole||0.25;
+    const axes=new Map(trous.map(h=>[h,axePercage(h)]));
+    const rond=a=>a.x1===a.x2&&a.y1===a.y2;
     for(const h of trous){
-      if(!inBoard(h.x,h.y,h.d/2+S.rule.edge))
+      const a=axes.get(h);
+      if(!inBoard(a.x1,a.y1,h.d/2+S.rule.edge)||!inBoard(a.x2,a.y2,h.d/2+S.rule.edge))
         out.push({x:h.x,y:h.y,msg:"Trou NPTH Ø"+fmt(h.d,2)+" hors du contour de carte ou trop près du bord"});
     }
     for(let i=0;i<trous.length;i++){
       for(let j=i+1;j<trous.length;j++){
-        const h1=trous[i], h2=trous[j];
-        const e=dist(h1.x,h1.y,h2.x,h2.y)-h1.d/2-h2.d/2;
+        const h1=trous[i], h2=trous[j], a1=axes.get(h1), a2=axes.get(h2);
+        const e=(rond(a1)&&rond(a2)?dist(h1.x,h1.y,h2.x,h2.y):segSegDist(a1,a2))-h1.d/2-h2.d/2;
         if(e<hcl-1e-6){
           out.push({x:(h1.x+h2.x)/2,y:(h1.y+h2.y)/2,
             msg:e<-1e-6
@@ -632,7 +648,8 @@ function runDrc(){
     }
     for(const h of trous){
       for(const v of S.vias){
-        const e=dist(h.x,h.y,v.x,v.y)-h.d/2-v.drill/2;
+        const a=axes.get(h);
+        const e=(rond(a)?dist(h.x,h.y,v.x,v.y):segDist(v.x,v.y,a.x1,a.y1,a.x2,a.y2))-h.d/2-v.drill/2;
         if(e<hcl-1e-6){
           out.push({x:(h.x+v.x)/2,y:(h.y+v.y)/2,
             msg:"Trou NPTH Ø"+fmt(h.d,2)+" trop proche du perçage de via ("+fmt(Math.max(0,e),3)+" mm, min "+fmt(hcl,3)+" mm)"});
@@ -642,7 +659,8 @@ function runDrc(){
     for(const h of trous){
       for(const p of pads){
         if(p.q.drill>0){
-          const e=dist(h.x,h.y,p.q.x,p.q.y)-h.d/2-p.q.drill/2;
+          const a=axes.get(h), b=axePercage(p.q);
+          const e=(rond(a)&&rond(b)?dist(h.x,h.y,p.q.x,p.q.y):segSegDist(a,b))-h.d/2-p.q.drill/2;
           if(e<hcl-1e-6){
             out.push({x:(h.x+p.q.x)/2,y:(h.y+p.q.y)/2,
               msg:"Trou NPTH Ø"+fmt(h.d,2)+" trop proche du perçage de "+p.tag+" ("+fmt(Math.max(0,e),3)+" mm, min "+fmt(hcl,3)+" mm)"});
@@ -653,7 +671,7 @@ function runDrc(){
     for(const h of trous){
       for(const t of S.tracks){
         const clr=(classOf(t.net)&&classOf(t.net).clr)||0.25;
-        const e=trkDist(h.x,h.y,t)-t.w/2-h.d/2;
+        const e=distAxePiste(axes.get(h),t)-t.w/2-h.d/2;
         if(e<clr-1e-6){
           out.push({x:h.x,y:h.y,l:t.l,
             msg:"Cuivre trop proche du trou NPTH Ø"+fmt(h.d,2)+" (piste "+(t.net||"sans net")+" à "+fmt(Math.max(0,e),3)+" mm, min "+fmt(clr,3)+" mm)"});
@@ -661,7 +679,8 @@ function runDrc(){
       }
       for(const p of pads){
         const clr=(classOf(p.q.net)&&classOf(p.q.net).clr)||0.25;
-        const e=padDist(h.x,h.y,p.q)-h.d/2;
+        const a=axes.get(h);
+        const e=rond(a)?padDist(h.x,h.y,p.q)-h.d/2:segPadDist({...a,w:a.d},p.q);
         if(e<clr-1e-6&&!sienne(h,p,e)){
           out.push({x:h.x,y:h.y,l:p.layers[0],
             msg:"Pastille "+p.tag+" trop proche du trou NPTH Ø"+fmt(h.d,2)+" ("+fmt(Math.max(0,e),3)+" mm, min "+fmt(clr,3)+" mm)"});

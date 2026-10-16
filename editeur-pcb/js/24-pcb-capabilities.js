@@ -1151,6 +1151,29 @@ function pcbAuditBoardAgainstMfg(profile){
     });
   }
   
+  // 8 bis. Fentes (perçages oblongs) : seulement si la carte en a — une carte
+  // sans fente garde son audit à l'identique
+  const fs=p.drilling?.slots||{};
+  let minFente=Infinity, minAllong=Infinity, minAnneauF=Infinity, minFenteNp=Infinity;
+  for(const fp of S.fps||[])
+    for(const q of padsWorld(fp)){
+      if(!(q.drill>0&&q.slot>q.drill))continue;
+      minFente=Math.min(minFente,q.drill);
+      minAllong=Math.min(minAllong,q.slot/q.drill);
+      const L=Math.max(q.w,q.h), l=Math.min(q.w,q.h);
+      minAnneauF=Math.min(minAnneauF,(L-q.slot)/2,(l-q.drill)/2);
+    }
+  for(const h of trousMonde())if(h.w>h.d)minFenteNp=Math.min(minFenteNp,h.d);
+  const poste=(label,v,req,cmp,msg)=>{
+    if(v===Infinity||!(req>0))return;
+    const ok=v>=req-1e-6;
+    items.push({cat:"Perçage",label,val:v.toFixed(2)+cmp,limit:"≥ "+req.toFixed(2)+cmp,ok,msg:ok?"Conforme":msg});
+  };
+  poste("Fente métallisée min",minFente,cu>2?(fs.platedMinW_multilayer||fs.platedMinW_2layer):fs.platedMinW_2layer," mm","Fente métallisée plus étroite que la fraise minimale du fabricant");
+  poste("Allongement des fentes métallisées",minAllong,fs.platedLengthOverWidthMin,"","Fente trop courte pour sa largeur : le fabricant la percerait ronde");
+  poste("Anneau des fentes min",minAnneauF,reqRing," mm","Couronne trop fine autour de la fente (dans un sens ou l'autre)");
+  poste("Fente NPTH min",minFenteNp,fs.nonPlatedMinW," mm","Fente non métallisée plus étroite que la fraise minimale du fabricant");
+
   // 9. Marge au contour
   const edge = (S.rule && S.rule.edge) || 0.4;
   const reqEdge = (p.outline?.routed?.copperClearance) || 0.20;
