@@ -67,7 +67,9 @@ Bancs :
 ## Phase 4 : clôture
 
 ### T7 : documentation, revue, commit
-- [ ] `A-FAIRE.md` à jour
-- [ ] Tous les bancs passent (`BUILD`, `JS_PCB`, `JS_LIB`, `PY_EXP`, `COMP`)
-- [ ] Revue complète (relecteur indépendant), constats traités
-- [ ] Commit, push, graphe graphify mis à jour
+- [x] `A-FAIRE.md` à jour
+- [x] Tous les bancs passent (`BUILD`, `JS_PCB`, `JS_LIB`, `PY_EXP`, `COMP`)
+- [x] Revue complète (relecteur indépendant), constats traités
+- [x] Commit, push, graphe graphify mis à jour
+
+  → revue indépendante : 3 défauts réels (Gerber à cheval sur une zone, fente sur couche sans cuivre, presse-papier / rotation) et l'écart du dossier méca corrigés ; suggestions restantes dans `A-FAIRE.md`.

@@ -103,7 +103,13 @@ Rien en cours : l'option B, les limites de l'option A et la garde de la règle *
 
 ### Trous dans les empreintes (`SPEC-trous-npth.md`, 16/10/2026)
 - [x] **M1 — trous ronds NPTH dans l'empreinte** (`holes` de pcbfp-1, `trousMonde()`) : voir *Éditeur PCB* ci-dessous.
-- [ ] **M2 — perçages oblongs** : pastille métallisée oblongue (`slot`), trou NPTH oblong, Excellon G85, contrôles contre l'oblong et face aux `slots.*` des fabricants, IPC-2581.
+- [x] **M2 — perçages oblongs** (16/10/2026) : pastille à fente (`slot`), trou NPTH oblong (`w`, `rot`, carte et empreinte) ; `axePercage` pour l'Excellon (G85), le tableau de perçage, le DXF, le dessin, les dégagements (écran, îlots, Gerber, IPC-2581), le DRC (y compris la fente sur une couche sans cuivre) et l'audit fabricant (`drilling.slots`) ; IPC-2581C en `SlotCavity` (calque ROUT) comme KiCad, conforme au XSD ; Gestion LIB (colonnes Fente, L, Rot). 8 essais + carte d'essai `exemple-1-fentes`.
+- [ ] Suites de M2 laissées pour plus tard :
+  - la visionneuse ne lit pas encore `SlotCavity` : une fente d'un fichier IPC-2581 n'y apparaît pas ;
+  - IPC-D-356 : la fente garde sa largeur (le format ne connaît pas les fentes) ;
+  - Draftsman : le détail du plan et les feuilles cuivre dessinent la fente en cercle ; DXF : calques `TROUS_PTH_<Ø>` / `TROUS_NPTH_<Ø>` mêlent fente et rond de même largeur (POINT au centre) ;
+  - le DRC ne borne pas `slot` par la pastille (l'audit, lui, signale l'anneau) ; contrôle au bord de carte sur les deux bouts seulement (encoche concave entre les deux non vue) ;
+  - panneau Propriétés d'un trou de carte : pas de champ L / Rot (un trou oblong de carte ne vient que d'un fichier).
 - [ ] **M3 — LIB** : reporter dans `holes` les trous que 20 empreintes décrivent en texte, pattes oblongues du TE 2305018-2, empreintes MECA-LOC (une empreinte faite seulement de trous).
 - [ ] Accrocher une cote du Draftsman à un trou d'empreinte (référence empreinte + rang) : laissé hors de M1 (D3).
 - [ ] Gestion LIB : déplacer un trou au glisser et l'effacer avec Suppr (aujourd'hui tableau X / Y et bouton ✕).
