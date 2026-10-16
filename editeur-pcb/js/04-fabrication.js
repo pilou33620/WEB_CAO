@@ -238,6 +238,13 @@ function gSeg(body,A,x1,y1,x2,y2,w){
   body.push(gXY(x1,y1)+"D02*");
   body.push(gXY(x2,y2)+"D01*");
 }
+/* Perçage dans le cuivre, élargi de `grow` : un éclair rond comme avant, ou
+   le trait de l'axe de la fente à la largeur voulue */
+function gPercage(body,A,o,grow){
+  const ax=axePercage(o);
+  if(ax.x1===ax.x2&&ax.y1===ax.y2)gFlash(body,A,A.get("C,"+fmt(ax.d+2*grow,4)),o.x,o.y);
+  else gTrk(body,A,ax,ax.d+2*grow);
+}
 /* Une piste, droite ou circulaire. L'arc sort en arc — le Gerber sait le dire
    depuis toujours (G02/G03, mode multi-quadrant G75) — et non en escalier de
    cordes : le fabricant lit un cercle rond là où une découpe lui aurait donné
@@ -248,13 +255,6 @@ function gSeg(body,A,x1,y1,x2,y2,w){
    le mode multi-quadrant attend, et il faut le déclarer, la norme ne fixant
    pas le mode d'arc au démarrage. On revient en G01 derrière : tout ce qui
    suit est de nouveau du trait droit. */
-/* Perçage dans le cuivre, élargi de `grow` : un éclair rond comme avant, ou
-   le trait de l'axe de la fente à la largeur voulue */
-function gPercage(body,A,o,grow){
-  const ax=axePercage(o);
-  if(ax.x1===ax.x2&&ax.y1===ax.y2)gFlash(body,A,A.get("C,"+fmt(ax.d+2*grow,4)),o.x,o.y);
-  else gTrk(body,A,ax,ax.d+2*grow);
-}
 function gTrk(body,A,t,w){
   const arc=arcOf(t);
   if(!arc){gSeg(body,A,t.x1,t.y1,t.x2,t.y2,w);return;}
@@ -366,8 +366,11 @@ function gerberCopper(i){
     /* trou NPTH (carte ou empreinte) : la zone s'en écarte de l'écartement de
        sa classe — le foret ne doit pas mordre le cuivre ni le laisser à vif */
     for(const h of trousMonde()){
+      const ax=axePercage(h);
       let z=zn(h.x,h.y);
-      if(z===null)z=zoneEtrangereProche(zs,"",(a,b)=>segDist(h.x,h.y,a.x,a.y,b.x,b.y),q=>h.d/2+classOf(q.net).clr);
+      if(z===null)z=zn(ax.x1,ax.y1);
+      if(z===null)z=zn(ax.x2,ax.y2);
+      if(z===null)z=zoneEtrangereProche(zs,"",(a,b)=>segSegDist(ax,{x1:a.x,y1:a.y,x2:b.x,y2:b.y}),q=>h.d/2+classOf(q.net).clr);
       if(z===null)continue;
       gPercage(body,A,h,classOf(z).clr);
     }

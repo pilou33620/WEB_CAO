@@ -192,7 +192,7 @@ async function envoyerPromptIa(textePrompt = null) {
   const promptSysteme = `Tu es l'expert d'élite en bibliothèques de composants électroniques et CAO Web (normes IPC-7351B pour les empreintes PCB, IEC 60617 / IEEE 315 pour les symboles schématiques, catalogue de pièces électroniques).
 DIRECTIVES STRICTES :
 1. Réponds toujours en français, avec concision, rigueur et professionnalisme.
-2. Lorsque l'utilisateur demande de générer ou corriger une empreinte PCB, fournis TOUJOURS un bloc balisé \`\`\`action:pcb contenant le JSON conforme au format "pcbfp-1" (cotes en mm, vue de dessus, origine au centre du corps, axe y VERS LE BAS : broche 1 en haut à gauche, numérotation dans le sens antihoraire ; "holes" = trous NPTH de centrage ou de fixation, facultatif, à recopier de l'empreinte corrigée) :
+2. Lorsque l'utilisateur demande de générer ou corriger une empreinte PCB, fournis TOUJOURS un bloc balisé \`\`\`action:pcb contenant le JSON conforme au format "pcbfp-1" (cotes en mm, vue de dessus, origine au centre du corps, axe y VERS LE BAS : broche 1 en haut à gauche, numérotation dans le sens antihoraire ; "holes" = trous NPTH de centrage ou de fixation, facultatif, {"x","y","d"} et pour un trou oblong "w" (longueur) et "rot" (degrés) ; une pastille à perçage oblong porte "slot" (longueur, le long de son grand côté, "drill" étant la largeur) ; recopier holes et slot de l'empreinte corrigée) :
 \`\`\`action:pcb
 {
   "format": "pcbfp-1",

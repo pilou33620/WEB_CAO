@@ -1262,7 +1262,9 @@ function remplirElementsEditeur() {
           const v = parseFloat(e.target.value);
           if (!t || !Number.isFinite(v)) return;
           // le Ø suit les bornes de l'éditeur PCB (0,4 à 30 mm), qui le ramènerait sinon à la lecture
-          t[e.target.getAttribute("data-field")] = e.target.getAttribute("data-field") === "d" ? Math.min(30, Math.max(0.4, v)) : v;
+          const fld = e.target.getAttribute("data-field");
+          t[fld] = fld === "d" ? Math.min(30, Math.max(0.4, v)) : v;
+          if ((fld === "w" || fld === "rot") && !v) delete t[fld];   // 0 = trou rond / sans angle
           if (EDITEUR_LIB.renderer) EDITEUR_LIB.renderer.render();
         });
       });
@@ -1280,6 +1282,7 @@ function remplirElementsEditeur() {
           const val = (fld === "n" || fld === "shape") ? e.target.value : (parseFloat(e.target.value) || 0);
           if (EDITEUR_LIB.data.pads[idx]) {
             EDITEUR_LIB.data.pads[idx][fld] = val;
+            if (fld === "slot" && !(val > 0)) delete EDITEUR_LIB.data.pads[idx].slot;   // 0 = perçage rond
             if (EDITEUR_LIB.renderer) EDITEUR_LIB.renderer.render();
           }
         });

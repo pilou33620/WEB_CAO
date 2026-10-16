@@ -6271,6 +6271,37 @@ T("perçages oblongs : IPC-2581C en SlotCavity, sur un calque ROUT (M2-5)",()=>{
     if(d.stats.fentes!==2)throw new Error("stats.fentes : "+d.stats.fentes);
   }finally{loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);}
 });
+T("perçages oblongs : constats de la revue M2 (zone à cheval, couche sans cuivre, presse-papier, rotation, méca)",()=>{
+  loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);clearSel();
+  try{
+    /* fente NPTH de 27 à 33 en x, zone qui commence à 31,5 : le Gerber doit dégager le bout */
+    S.zones=[{id:S.nextId++,l:0,net:"GND",pts:[{x:31.5,y:5},{x:60,y:5},{x:60,y:50},{x:31.5,y:50}]}];touch();
+    const d01=s=>(s.match(/D01\*/g)||[]).length, sans=d01(gerberCopper(0));
+    S.holes=[normHole({x:30,y:30,d:1,w:6,rot:0},0)];touch();
+    if(d01(gerberCopper(0))!==sans+1)throw new Error("fente à cheval sur le bord de zone : non dégagée au Gerber");
+    /* boîte d'un trou oblong : jusqu'à ses bouts (placement) */
+    const b=holeBBox(S.holes[0]);
+    if(Math.abs(b.x1-27)>1e-9||Math.abs(b.x2-33)>1e-9)throw new Error("holeBBox d'une fente : "+JSON.stringify(b));
+    /* presse-papier et rotation d'un trou de carte oblong */
+    clearSel();S.sel.holes=new Set([S.holes[0].id]);
+    copySelPcb();S.mouse={x:50,y:50};pasteClipPcb();
+    const c=S.holes[1];
+    if(!c||c.w!==6)throw new Error("collé : la fente devient ronde : "+JSON.stringify(c));
+    clearSel();S.sel.holes=new Set([S.holes[0].id]);rotateSel();
+    if(S.holes[0].rot!==90)throw new Error("rotation d'un trou oblong seul : rot "+S.holes[0].rot);
+    /* dossier méca : longueur et angle (repère des Gerber, Y vers le haut) */
+    const t=mecaEntreeEditeur().trous.find(h=>h.d===1);
+    if(!t||t.l!==6||t.rot!==270)throw new Error("dossier méca : "+JSON.stringify(t));
+  }finally{loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);}
+  /* routeur / contrôle : là où la pastille n'a pas de cuivre (couche interne), reste la FENTE */
+  loadDoc({cu:4,holes:[],tracks:[],vias:[],fps:[]},true);clearSel();
+  try{
+    const fp=mkFp("J1","","FENTE",1);fp.x=50;fp.y=30;S.fps.push(fp);
+    fpApplyDef(fp,{name:"FENTE",pins:1,style:"row",pads:[{n:1,x:0,y:0,w:4,h:1.6,shape:"oval",drill:0.8,slot:3.4,parCouche:{int:{shape:"aucune"}}}]});
+    S.tracks=[{l:1,x1:51,y1:20,x2:51,y2:40,w:0.25,net:"VCC"}];touch();
+    if(!runDrc().some(e=>e.msg&&/J1\.1/.test(e.msg)))throw new Error("piste interne dans la fente : non signalée");
+  }finally{loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);}
+});
 T("bibliothèque : lecture défensive et fusion des noms",()=>{
   fpLibRaz();
   if(!fpLibParse("ceci n'est pas du json").err)

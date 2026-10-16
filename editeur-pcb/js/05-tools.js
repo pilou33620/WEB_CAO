@@ -897,8 +897,8 @@ function hitTest(x,y,e){
     if(layerAlpha(v.a)>0&&dist(x,y,v.x,v.y)<=v.d/2+tol)return {via:v};
   if(S.holes){
     for(let i=S.holes.length-1;i>=0;i--){
-      const h=S.holes[i];
-      if(dist(x,y,h.x,h.y)<=h.d/2+tol)return {hole:h};
+      const h=S.holes[i], a=axePercage(h);
+      if(segDist(x,y,a.x1,a.y1,a.x2,a.y2)<=h.d/2+tol)return {hole:h};
     }
   }
   for(const t of S.tracks)
@@ -2639,7 +2639,7 @@ function pcbClipContent(){
     groupes:gc.gs.map(g=>({nom:g.nom,fps:g.fps.map(id=>fi.get(id)),
                            vias:g.vias.map(id=>vi.get(id)).filter(i=>i!=null)})),
     zones:zones.map(poly), cuts:cuts.map(poly),
-    holes:holes.map(h=>({d:h.d,x:r3(h.x-x),y:r3(h.y-y),locked:h.locked})),
+    holes:holes.map(h=>({d:h.d,w:h.w,rot:h.rot,x:r3(h.x-x),y:r3(h.y-y),locked:h.locked})),
     drawings:drawings.map(d=>({
       layer:d.layer,
       shape:d.shape,
@@ -2806,6 +2806,7 @@ function rotateSel(){
       }
     }
   }
+  for(const h of hls)if(!h.locked&&h.w>h.d)h.rot=padRot((h.rot||0)+90);   // la fente tourne avec la sélection
   if(hls.length>1){
     let cx=0, cy=0;
     for(const h of hls){cx+=h.x; cy+=h.y;}

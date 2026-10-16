@@ -194,12 +194,12 @@ function ipcEnveloppe(P){
   hi.pop();lo.pop();
   return lo.concat(hi);
 }
-/* Un segment épaissi de r, bouts ronds — la gélule d'un trait. */
 /* Perçage dans le cuivre, élargi de `grow` : cercle, ou gélule de la fente */
 function ipcPercage(o,grow){
   const ax=axePercage(o), r=ax.d/2+grow;
   return ax.x1===ax.x2&&ax.y1===ax.y2?ipcCercle(o.x,o.y,r,true):ipcGelule(ax.x1,ax.y1,ax.x2,ax.y2,r);
 }
+/* Un segment épaissi de r, bouts ronds — la gélule d'un trait. */
 function ipcGelule(x1,y1,x2,y2,r){
   return ipcEnveloppe(ipcCercle(x1,y1,r,true).concat(ipcCercle(x2,y2,r,true)));
 }

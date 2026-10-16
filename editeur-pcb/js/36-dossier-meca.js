@@ -8,6 +8,13 @@
    comme `dxfCarte`.
    ========================================================================== */
 
+/* champs facultatifs d'une fente pour le dossier méca : longueur hors tout
+   et angle de la longueur dans le repère des Gerber (Y vers le haut) */
+function fenteMeca(o){
+  const ax=axePercage(o);
+  if(ax.x1===ax.x2&&ax.y1===ax.y2)return {};
+  return {l:o.slot||o.w,rot:padRot(-Math.atan2(ax.y2-ax.y1,ax.x2-ax.x1)*180/Math.PI)};
+}
 function mecaEntreeEditeur(){
   const o=gOrigin(), P=p=>({x:p.x-o.x,y:o.y-p.y});
   const vid=(S.variantes&&S.variantes.active)||"";
@@ -17,7 +24,7 @@ function mecaEntreeEditeur(){
     epaisseur:stackTotal(),
     /* trous libres seuls (contrat de commun/dossier-meca.js) : ceux d'une
        empreinte vont chez son composant, comme dans la visionneuse */
-    trous:trousMonde().filter(h=>!h.fp&&h.d>0).map(h=>Object.assign(P(h),{d:h.d,metallise:false})),
+    trous:trousMonde().filter(h=>!h.fp&&h.d>0).map(h=>Object.assign(P(h),{d:h.d,metallise:false},fenteMeca(h))),
     composants:S.fps.map(fp=>{
       const T=fpXform(fp), b=bodyOf(fp);
       return Object.assign(P(fp),{
@@ -28,8 +35,8 @@ function mecaEntreeEditeur(){
         monte:typeof varEstMonte!=="function"||varEstMonte(fp,vid),
         /* pastilles percées : métallisées, comme au tableau de perçage */
         trous:padsWorld(fp).filter(q=>q.drill>0)
-          .map(q=>Object.assign(P(q),{d:q.drill,metallise:true,pad:Math.max(q.w||0,q.h||0)}))
-          .concat((fp.holes||[]).map(h=>Object.assign(P(T(h.x,h.y)),{d:h.d,metallise:false})))});
+          .map(q=>Object.assign(P(q),{d:q.drill,metallise:true,pad:Math.max(q.w||0,q.h||0)},fenteMeca(q)))
+          .concat(trousMonde().filter(h=>h.fp===fp).map(h=>Object.assign(P(h),{d:h.d,metallise:false},fenteMeca(h))))});
     })};
 }
 /* Entre le repère de l'éditeur (Y vers le bas) et celui des Gerber : la vue

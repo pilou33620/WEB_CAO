@@ -994,7 +994,7 @@ function dfFeuillesFab(ctx){
     blocs.push(dfBlocEspace(4),...dfVueBlocs("fixation",[dfBlocTitre("Trous de fixation (non métallisés)"),
       ...dfTableau([{t:"N°",p:10,a:"m"},{t:"X (mm)",p:25,a:"d"},{t:"Y (mm)",p:25,a:"d"},{t:"Ø (mm)",p:20,a:"d"}],
       npth.map((h,i)=>["H"+(i+1),fmt(h.x-o.x,3).replace(".",","),fmt(o.y-h.y,3).replace(".",","),
-                       fmt(h.d,2).replace(".",",")]),{cat:"percage"})]));
+                       (fmt(h.d,2)+(h.w>h.d?" × "+fmt(h.w,2)+" oblong":"")).replace(/\./g,",")]),{cat:"percage"})]));
   }
   /* les classes à impédance cible du gestionnaire de contraintes
      (30-contraintes.js) : la largeur qui la donne, couche par couche */

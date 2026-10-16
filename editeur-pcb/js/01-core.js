@@ -1610,8 +1610,8 @@ function mkHole(x,y,d){
   return {id:S.nextId++, x:r3(x||0), y:r3(y||0), d:r3(d||3.2), locked:false};
 }
 function holeBBox(h){
-  const r=(h&&h.d?h.d:3.2)/2;
-  return {x1:h.x-r, y1:h.y-r, x2:h.x+r, y2:h.y+r};
+  const r=(h&&h.d?h.d:3.2)/2, a=h&&h.w>h.d?axePercage(h):{x1:h.x,y1:h.y,x2:h.x,y2:h.y};   // une fente : jusqu'à ses bouts
+  return {x1:Math.min(a.x1,a.x2)-r, y1:Math.min(a.y1,a.y2)-r, x2:Math.max(a.x1,a.x2)+r, y2:Math.max(a.y1,a.y2)+r};
 }
 /* pastilles en coordonnées locales, dans l'ordre des numéros de broche */
 /* --------------------------------------------------------------------------
@@ -2331,7 +2331,8 @@ function cheminPercage(c,o,grow){
 /* Axe d'un perçage, en coordonnées monde : ses deux bouts et sa largeur.
    Pastille de padsWorld (rot en radians, fente `slot` le long du grand côté)
    ou trou de trousMonde / S.holes (rot en degrés, longueur `w`). Un perçage
-   rond rend deux bouts confondus : chaque lecteur garde alors son calcul. */
+   rond rend deux bouts confondus : chaque lecteur garde alors son calcul.
+   Pastille et trou se distinguent par `drill` : un via n'a rien à y faire. */
 function axePercage(o){
   let d,L,ang;
   if(o.drill!=null){d=o.drill;L=o.slot||0;ang=(o.rot||0)+(o.h>o.w?Math.PI/2:0);}

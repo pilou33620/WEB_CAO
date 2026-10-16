@@ -63,7 +63,9 @@ function pnsItemsPad(fp,q){
   for(let l=1;l<=S.cu;l++){
     if(l<S.cu&&cle(l)===cle(l0))continue;
     const c=padSurCouche(q,l0);
-    const g=c||Object.assign({},q,{shape:"circ",w:q.drill,h:q.drill,trouSeul:true});
+    /* la fente reste une fente : oblong de longueur slot, le long du grand côté */
+    const L=q.slot>q.drill?q.slot:q.drill, long=q.h>q.w;
+    const g=c||Object.assign({},q,{shape:L>q.drill?"oval":"circ",w:long?q.drill:L,h:long?L:q.drill,trouSeul:true});
     if(!c){delete g.pts;delete g.chamfer;}
     const it=pnsItemPad(fp,q,g,l0,l-1);
     if(!c)it.trouSeul=true;
