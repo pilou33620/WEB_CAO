@@ -312,6 +312,7 @@ function editeurRedo() {
 }
 
 function editeurRestaurerApresHistorique() {
+  EDITEUR_LIB.trouSel = -1;            // annuler / rétablir : les rangs des trous ne valent plus
   if (EDITEUR_LIB.renderer) {
     if (EDITEUR_LIB.type === "pcb") {
       EDITEUR_LIB.renderer.setFootprint(EDITEUR_LIB.data);
@@ -537,6 +538,7 @@ function editeurPointerDown(e) {
   if (tool === "move") {
     const hitIdx = isPcb ? editeurHitPad(e.clientX, e.clientY) : editeurHitPin(e.clientX, e.clientY);
     if (hitIdx >= 0) {
+      EDITEUR_LIB.trouSel = -1;
       EDITEUR_LIB.selectionIndex = hitIdx;
       const elem = isPcb ? EDITEUR_LIB.data.pads[hitIdx] : EDITEUR_LIB.data.pins[hitIdx];
       const origX = isPcb ? elem.x : (elem.x !== undefined ? elem.x : (elem[0] || 0));
@@ -707,7 +709,9 @@ function editeurPointerUp(e) {
 
   if (EDITEUR_LIB.drag) {
     try { EDITEUR_LIB.renderer.canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+    const trouGlisse = EDITEUR_LIB.drag.trou != null && EDITEUR_LIB.drag.hasMoved;
     EDITEUR_LIB.drag = null;
+    if (trouGlisse) remplirElementsEditeur();   // la table des trous suit
     EDITEUR_LIB.renderer.canvas.style.cursor = EDITEUR_LIB.survolIndex >= 0 ? "grab" : "default";
     EDITEUR_LIB.renderer.render();
     return true;
@@ -774,6 +778,18 @@ function editeurFinaliserLigne(x2, y2) {
 function editeurOverlayDraw(ctx, w, h) {
   if (!EDITEUR_LIB.renderer || !EDITEUR_LIB.data) return;
   const isPcb = EDITEUR_LIB.type === "pcb";
+
+  // 0. Le trou sélectionné (Suppr l'efface) : cerclé de la couleur de sélection
+  const tSel = isPcb && Array.isArray(EDITEUR_LIB.data.holes) ? EDITEUR_LIB.data.holes[EDITEUR_LIB.trouSel] : null;
+  if (tSel) {
+    const s = EDITEUR_LIB.renderer.worldToScreen(tSel.x, tSel.y);
+    ctx.save();
+    ctx.strokeStyle = "#38bdf8"; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, Math.max(10, (Math.max(tSel.w || 0, tSel.d || 1) * EDITEUR_LIB.renderer.zoom) / 2 + 5), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
 
   // 1. Halo au survol (hover)
   if (EDITEUR_LIB.survolIndex >= 0 && EDITEUR_LIB.survolIndex !== EDITEUR_LIB.selectionIndex) {
@@ -1459,6 +1475,7 @@ function editeurSupprimerPad(idx) {
 
 function editeurSupprimerTrou(idx) {
   if (!Array.isArray(EDITEUR_LIB.data.holes)) return;
+  EDITEUR_LIB.trouSel = -1;
   editeurHistoriquePush();
   EDITEUR_LIB.data.holes.splice(idx, 1);
   if (!EDITEUR_LIB.data.holes.length) delete EDITEUR_LIB.data.holes;

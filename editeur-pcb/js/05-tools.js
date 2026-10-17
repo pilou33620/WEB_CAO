@@ -1783,6 +1783,7 @@ function followWorld(F){
   const N=F.base.branch(), chain=new Set();
   for(const c of F.chains)for(const t of c.trk)chain.add(t);
   for(const fp of F.fps)for(const q of padsWorld(fp))for(const it of pnsItemsPad(fp,q))N.add(it);
+  for(const fp of F.fps)for(const h of trousDe(fp))if(h.d>0)N.add(pnsItemTrou(h));   // ses trous la suivent
   for(const v of F.vias)N.add(pnsItemVia(v));
   for(const t of F.mobile)
     if(!chain.has(t)&&dist(t.x1,t.y1,t.x2,t.y2)>1e-9)
@@ -1918,7 +1919,8 @@ function followShove(F){
       heads.push({l:t.l,net:t.net,w:t.w,pts:[{x:s.x1,y:s.y1},{x:s.x2,y:s.y2}]});
   }
   // un boîtier est UNE tête : ses pastilles poussent ensemble
-  for(const fp of F.fps)heads.push({items:padsWorld(fp).flatMap(q=>pnsItemsPad(fp,q)),group:true});
+  for(const fp of F.fps)heads.push({items:padsWorld(fp).flatMap(q=>pnsItemsPad(fp,q))
+    .concat(trousDe(fp).filter(h=>h.d>0).map(pnsItemTrou)),group:true});
   for(const v of F.vias)heads.push({item:pnsItemVia(v)});
   const r=pnsShoveHeads(F.base,heads,null,Date.now(),{tendre:true});
   if(!r||!r.ok)return null;
@@ -3406,10 +3408,13 @@ function viaTrou(v,skip){
     let d=0,cx=0,cy=0,qui="";
     if(it.k==="V"){d=it.v.drill;cx=it.v.x;cy=it.v.y;
       qui="d'un autre via"+(it.net?" ("+it.net+")":"");}
+    else if(it.npth){d=it.src.d;qui="d'un trou NPTH";}
     else if(it.k==="P"&&it.q.drill>0){d=it.q.drill;cx=it.q.x;cy=it.q.y;
       qui="du perçage de "+it.fp.ref+"."+it.q.n;}
     else continue;
-    const e=dist(v.x,v.y,cx,cy)-v.drill/2-d/2;
+    /* un trou NPTH (rond ou fente) se mesure sur son axe */
+    const ax=it.npth?axePercage(it.src):null;
+    const e=(ax?segDist(v.x,v.y,ax.x1,ax.y1,ax.x2,ax.y2):dist(v.x,v.y,cx,cy))-v.drill/2-d/2;
     if(e>=h-1e-6)continue;
     if(!pire||e<pire.e)pire={e:e,qui:qui};
   }

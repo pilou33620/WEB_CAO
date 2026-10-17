@@ -1898,7 +1898,8 @@ class IPC2581Parser:
             # LES FENTES (<SlotCavity>, calque ROUT) : Location au centre,
             # Xform pour l'angle, Oval longueur x largeur (width >= height
             # dans la norme ; si l'on a l'inverse, la longueur tourne de 90°).
-            # Une autre forme que l'Oval se lit par sa boite, faute de mieux.
+            # Une autre forme que l'Oval (un <Outline>) n'est pas lue : la fente
+            # est alors absente, comme avant que les SlotCavity soient lus.
             for fente in item_set.findall(self._tag("SlotCavity")):
                 loc_node = fente.find(self._tag("Location"))
                 if loc_node is None:

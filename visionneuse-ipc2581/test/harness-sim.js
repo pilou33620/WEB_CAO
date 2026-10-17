@@ -6718,8 +6718,11 @@ T("fentes : lues dans le SlotCavity, dessinées et au dossier méca",()=>{
   try{
     mdlCharger(JSON.parse(fs.readFileSync(f,"utf8")),"exemple-1-fentes.xml");
     const fe=V.modele.percages.filter(t=>t.l>t.d);
-    if(fe.length!==2)throw new Error(fe.length+" fentes relues pour 2");
+    if(fe.length!==3)throw new Error(fe.length+" fentes relues pour 3");
     const np=fe.find(t=>/NON/i.test(t.p)), pl=fe.find(t=>!/NON/i.test(t.p));
+    /* la fente oblique : 30° à l'écran de l'éditeur (y vers le bas) = 330° dans le sens de la norme */
+    const ob=fe.find(t=>/NON/i.test(t.p)&&Math.abs(t.r-330)<1e-6);
+    if(!ob)throw new Error("fente oblique : angle 330 attendu, vus "+fe.map(t=>t.r).join(", "));
     if(!np||Math.abs(np.l-3)>1e-6||Math.abs(np.d-1)>1e-6)throw new Error("fente NPTH : "+JSON.stringify(np));
     if(!pl||Math.abs(pl.l-1.8)>1e-6||Math.abs(pl.d-0.6)>1e-6)throw new Error("fente métallisée : "+JSON.stringify(pl));
     const E=mecaEntreeIpc(V.modele), t=E.trous.find(h=>h.l);

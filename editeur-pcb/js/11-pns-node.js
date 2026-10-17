@@ -143,10 +143,17 @@ function pnsKind(it){
    `kind` — une piste par défaut, ce que le routeur pose. C'est le seul endroit
    du moteur où les classes de net et la matrice entrent en jeu ; le reste ne
    connaît que des polygones. */
-function pnsClr(it,net,kind){return clrK(net,it.net,kind||"trk",pnsKind(it));}
+function pnsClr(it,net,kind){
+  if(it&&it.npth)return classOf(net).clr;   // un trou : la classe du cuivre, comme le bloc NPTH du contrôle
+  return clrK(net,it.net,kind||"trk",pnsKind(it));
+}
 /* L'isolation exigée entre deux items quelconques : les deux natures viennent
    de l'index. C'est la mesure du contrôle DRC. */
-function pnsClrPair(a,b){return clrK(a.net,b.net,pnsKind(a),pnsKind(b));}
+function pnsClrPair(a,b){
+  if(a.npth)return classOf(b.net).clr;     // un trou : la classe du cuivre d'en face, comme le bloc NPTH du contrôle
+  if(b.npth)return classOf(a.net).clr;
+  return clrK(a.net,b.net,pnsKind(a),pnsKind(b));
+}
 /* L'enveloppe d'un item, vue par une piste de largeur `w` sur ce net : la forme
    gonflée de l'isolation, de la demi-largeur de la piste et d'un micron de
    marge, ramenée à l'octogone aligné sur les huit sens du tracé. C'est ce

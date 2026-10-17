@@ -235,7 +235,7 @@ function fpLibCharger(){
    par la Gestion LIB : le miroir FPLIB ne garde pas l'ancienne forme. */
 function fpLibRelire(nom){
   if(typeof fetch!=="function"||!nom)return Promise.resolve(false);
-  const cle=pkgKey(nom), present=Object.keys(FPLIB).find(n=>n===nom||pkgKey(n)===cle);
+  const cle=pkgKey(nom), present=Object.keys(FPLIB).find(n=>n===nom||pkgKey(n)===cle||pkgKey(FPLIB[n].pkg)===cle);
   const fichier=(present&&FPLIB_FICHIER[present])||(String(nom).replace(/\.json$/i,"")+".json");
   return fetch("/api/lib/fichier?type=pcb&nom="+encodeURIComponent(fichier))
     .then(r=>r.text().then(t=>{if(!r.ok)throw new Error("erreur "+r.status);return JSON.parse(t);}))

@@ -160,7 +160,7 @@ function zoneCanvas(i){
   /* dégagements : tout ce qui n'appartient pas à la zone qui le recouvre */
   /* l'écartement est celui de la zone qui recouvre l'objet, comme au Gerber :
      une couche peut porter des zones de classes différentes */
-  const thermals=[], clrIci=(x,y)=>classOf(zoneNetAt(i,x,y)).clr;
+  const thermals=[];
   const sameNet=(x,y,net)=>{
     const z=zoneAt(i,x,y);
     return !!(z&&net&&z.net===net);
@@ -188,8 +188,10 @@ function zoneCanvas(i){
     c.arc(v.x,v.y,same?v.drill/2:v.d/2+clrK(zoneNetAt(i,v.x,v.y),v.net,"cu","via"),0,Math.PI*2);
     c.fill();
   }
-  for(const h of trousMonde()){       // trou NPTH : dégagé à l'écartement de la zone (comme au Gerber)
-    c.beginPath();cheminPercage(c,h,clrIci(h.x,h.y));c.fill();
+  for(const h of trousMonde()){       // trou NPTH : la zone choisie comme au Gerber (zoneDuTrou)
+    const z=zoneDuTrou(i,h,zs);
+    if(z===null)continue;
+    c.beginPath();cheminPercage(c,h,classOf(z).clr);c.fill();
   }
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){

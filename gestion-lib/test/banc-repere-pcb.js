@@ -78,6 +78,13 @@ assert.ok(pres(1 * z, 0.5 * z) && pres(-1 * z, 0.5 * z), "trou oblong dessine : 
   assert.ok(Math.abs(tr.x - 3.1) < 1e-9 && Math.abs(tr.y - 4.05) < 1e-9, "trou glisse sur la grille : " + JSON.stringify(tr));
   assert.ok(g2.editeurSupprimerSelection(), "Suppr pris");
   assert.ok(!g2.EDITEUR_LIB.data.holes, "trou efface : " + JSON.stringify(g2.EDITEUR_LIB.data));
+  // un clic sur une pastille retire la selection du trou : Suppr ne l'efface plus en cache
+  g2.EDITEUR_LIB.data.holes = [{ x: 2, y: 1, d: 1 }];
+  g2.editeurPointerDown({ button: 0, clientX: 121, clientY: 110, pointerId: 1 });
+  g2.EDITEUR_LIB.drag = null;
+  g2.editeurPointerDown({ button: 0, clientX: 50, clientY: 100, pointerId: 1 });   // la pastille en (-5 ; 0)
+  assert.strictEqual(g2.EDITEUR_LIB.trouSel, -1, "clic sur une pastille : plus de trou selectionne");
+  assert.ok(!g2.editeurSupprimerSelection() && g2.EDITEUR_LIB.data.holes.length === 1, "Suppr n'efface pas un trou non selectionne");
 }
 // 4. Un champ numerique ne recoit jamais une valeur du fichier telle quelle : un
 // JSON (ou une reponse de l'assistant) qui porterait '"><img onerror=...>' dans x

@@ -605,6 +605,7 @@ function runDrc(){
     if(a.k!=="V"||!(a.v.drill>0))continue;
     const r=a.v.d/2+hcl;
     for(const b of N.query(a.l0,a.l1,a.v.x-r,a.v.y-r,a.v.x+r,a.v.y+r)){
+      if(b.npth)continue;                 // un trou NPTH : jugé par son bloc, sur son axe
       if(b===a||!neuf(a,b))continue;
       let d=0,cx=0,cy=0,qui="";
       if(b.k==="V"){d=b.v.drill;cx=b.v.x;cy=b.v.y;

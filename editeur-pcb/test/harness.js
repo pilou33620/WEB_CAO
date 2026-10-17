@@ -169,7 +169,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* empreintes dessinees a la main et bibliotheque personnelle */
   "fpFree","padClone","fpAutoBody","fpFreeze","fpGeneric","fpSyncPins",
   "fpMovePad","fpSetPad","fpAddPad","fpDelPad","fpSetPins","fpSetBody",
-  "dPads","dHoles","trousMonde","fpTrousDe","axePercage","drawHoles","dBody","fpDefOf","normFpDef","fpApplyDef","fpLibAll","fpLibWrite",
+  "dPads","dHoles","trousMonde","fpTrousDe","axePercage","followBase","followWorld","fpLibRelire","pcbSurModifLib","drawHoles","dBody","fpDefOf","normFpDef","fpApplyDef","fpLibAll","fpLibWrite",
   "fpLibNames","fpLibGet","fpLibPut","fpLibDel","fpLibFile","fpLibParse",
   "fpLibMerge","FPLIB_KEY","FPLIB_FORMAT",
   "FPLIB","FPLIB_FICHIER","fpLibCharger","fpLibFichier","fpLibPourBoitier",
@@ -6419,6 +6419,69 @@ T("panneau d'un trou de carte : longueur et angle d'une fente (points ouverts, T
     $("pHoleL").onchange(ev("1"));            // L ≤ Ø : le trou redevient rond
     if("w" in S.holes[0]||"rot" in S.holes[0])throw new Error("L ≤ Ø : trou rond, sans clé : "+JSON.stringify(S.holes[0]));
   }finally{loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);}
+});
+T("trous NPTH : constats de la revue des points ouverts (via, règle commune, glisser, écran à cheval)",()=>{
+  loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);clearSel();
+  try{
+    const msgs=()=>runDrc().map(e=>e.msg||"");
+    /* 1. via près d'un trou de carte : un seul message, sans « pastille trou NPTH » */
+    S.holes=[mkHole(30,30,3.2)];S.vias=[{x:31.9,y:30,d:0.6,drill:0.3,a:0,b:1,net:"VCC"}];touch();
+    let m=msgs();
+    if(m.some(x=>/pastille trou NPTH|trou NPTH\.0/.test(x)))throw new Error("faux libellé de pastille : "+m.join(" | "));
+    if(m.filter(x=>/Trou à trou|trop proche du perçage de via/.test(x)).length!==1)throw new Error("via près du trou : un seul message attendu : "+m.join(" | "));
+    const pose={x:31.9,y:30,d:0.6,drill:0.3,a:0,b:1,net:"VCC"};   // un via qu'on pose : pas encore sur la carte
+    S.vias=[];touch();
+    if(!/trou NPTH/.test(viaTrou(pose)))throw new Error("pose du via : le trou doit être nommé : "+viaTrou(pose));
+    /* … et au bout d'une fente de 7 mm (de 26,5 à 33,5) */
+    S.holes=[normHole({x:30,y:30,d:1,w:7,rot:0},0)];touch();
+    // via à 0,05 mm du bout de la fente (perçage de 33,55 à 33,85)
+    if(!viaTrou({x:33.7,y:30,d:0.6,drill:0.3,a:0,b:1,net:"VCC"}))throw new Error("via au bout d'une fente : la pose doit buter");
+    /* 2. une seule règle : classe « Fin » à 0,15 mm, piste à 0,20 mm du trou → ni le DRC ni le routeur ne refusent */
+    S.classes.push({name:"Fin",w:0.15,clr:0.15,via:0.6,drill:0.3});setNetClass("SIGF","Fin");
+    S.holes=[mkHole(30,30,2)];touch();
+    const y=30+1+0.20+0.075;   // bord du trou + 0,20 + demi-largeur de piste
+    S.tracks=[{l:0,x1:20,y1:y,x2:40,y2:y,w:0.15,net:"SIGF"}];touch();
+    if(msgs().some(x=>/trou NPTH/.test(x)))throw new Error("DRC : 0,20 mm ≥ 0,15 mm, rien à signaler");
+    S.tracks=[];touch();
+    if(pnsWorld().firstObstacle({l:0,net:"SIGF",w:0.15,pts:[{x:20,y},{x:40,y}]}))throw new Error("routeur plus sévère que le DRC autour du trou");
+    /* 3. glisser d'une empreinte : ses trous restent des obstacles */
+    S.holes=[];
+    const fp=mkFp("J1","","J",1);fp.x=60;fp.y=30;S.fps.push(fp);
+    fpApplyDef(fp,{name:"J",pins:1,style:"row",pads:[{n:1,x:0,y:-6,w:1.5,h:1.5,shape:"circ",drill:0.8}],holes:[{x:0,y:0,d:3}]});touch();
+    const F={fps:[fp],vias:[],mobile:[],chains:[]};F.base=followBase(F);
+    if(!followWorld(F).firstObstacle({l:0,net:"SIG",w:0.3,pts:[{x:50,y:30},{x:70,y:30}]}))throw new Error("pendant le glisser, le trou de l'empreinte a disparu");
+  }finally{loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);}
+  /* 4. écran : trou au centre 0,5 mm hors d'une zone HV, comme au Gerber */
+  loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);
+  const avantCE=document.createElement;
+  try{
+    S.classes.push({name:"HV",w:0.5,clr:1.0,via:0.8,drill:0.4});setNetClass("HT","HV");
+    S.zones=[{id:S.nextId++,l:0,net:"HT",pts:[{x:35,y:5},{x:60,y:5},{x:60,y:50},{x:35,y:50}]}];
+    S.holes=[mkHole(34.5,30,2)];touch();
+    const arcs=[];
+    const ctx=new Proxy({},{get:(_,k)=>k==="arc"?(x,y,r)=>arcs.push([x,y,r]):k==="getImageData"?undefined:()=>{},set:()=>true});
+    document.createElement=tg=>tg==="canvas"?{width:0,height:0,getContext:()=>ctx}:avantCE.call(document,tg);
+    zoneCache.clear();zoneCanvas(0);
+    const a=arcs.find(a=>Math.abs(a[0]-34.5)<1e-9&&Math.abs(a[1]-30)<1e-9);
+    if(!a||Math.abs(a[2]-2)>1e-9)throw new Error("trou à cheval sur une zone HV : rayon "+(a&&a[2])+" au lieu de 2");
+  }finally{document.createElement=avantCE;zoneCache.clear();loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);}
+});
+TA("mise à jour LIB : la Gestion LIB signale une empreinte absente de la carte, FPLIB la relit quand même (revue)",async()=>{
+  fpLibRaz();
+  const avant=global.fetch;
+  const neuf={format:"pcbfp-1",name:"RJ45-LIB",pkg:"RJ45-X",pins:1,style:"row",
+    pads:[{n:1,x:0,y:0,w:1.5,h:1.5,shape:"circ",drill:0.9}],holes:[{x:0,y:3,d:3.25}]};
+  const rep=o=>Promise.resolve({ok:true,status:200,text:()=>Promise.resolve(JSON.stringify(o))});
+  global.fetch=(url,opt)=>String(url).startsWith("/api/lib/")?rep({data:neuf}):avant(url,opt);
+  try{
+    /* entrée dont le nom diffère du boîtier : retrouvée par le boîtier */
+    FPLIB["RJ45-LIB"]=normFpDef({name:"RJ45-LIB",pkg:"RJ45-X",pins:1,style:"row"});FPLIB_FICHIER["RJ45-LIB"]="RJ45-LIB.json";
+    S.fps=[];touch();
+    pcbSurModifLib({typeFichier:"pcb",nom:"RJ45-X.json"});   // ce que le canal de session appelle
+    await PCB_LIB_ALERTE.relu;
+    const d=fpLibPourBoitier("RJ45-X");
+    if(!d||!d.holes)throw new Error("FPLIB non relu pour une empreinte absente de la carte : "+JSON.stringify(d));
+  }finally{global.fetch=avant;fpLibRaz();}
 });
 T("bibliothèque : lecture défensive et fusion des noms",()=>{
   fpLibRaz();
@@ -25816,6 +25879,7 @@ function ipcCarteFentes(){
   const fp=mkFp("J9","USB-C","FENTE",1);fp.x=30;fp.y=12;S.fps.push(fp);
   fpApplyDef(fp,{name:"FENTE",pins:1,style:"row",pads:[{n:1,x:0,y:0,w:2.4,h:1.2,shape:"oval",drill:0.6,slot:1.8}]});
   S.holes.push(normHole({x:12,y:12,d:1,w:3,rot:90},0));
+  S.holes.push(normHole({x:18,y:8,d:1,w:3,rot:30},0));   // fente oblique : piège à erreur de signe d'angle
   touch();
 }
 function ipcCarteArrondie(){

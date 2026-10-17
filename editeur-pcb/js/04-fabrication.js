@@ -309,9 +309,23 @@ function gOutside(body,A,x1,y1,x2,y2){
    milieu : un bord de la zone à moins de `marge(z)` de l'objet (`ecart`
    mesure l'objet contre une arête). Tester le seul milieu laissait en plein
    cuivre une piste qui entre dans un plan partiel : court-circuit gravé. */
+/* La zone qu'un trou NPTH dégage sur la couche i : celle sous son centre,
+   sinon sous un bout de sa fente, sinon la plus proche à moins de son
+   écartement — un trou n'a pas de net, toute zone compte, celle sans net
+   aussi. L'écran (zoneCanvas) et le Gerber jugent ainsi pareil. Rend le net
+   de la zone, ou null. */
+const TOUS_LES_NETS={};      // zoneEtrangereProche : n'exclure aucune zone
+function zoneDuTrou(i,h,zs){
+  const ax=axePercage(h), zn=(x,y)=>{const z=zoneAt(i,x,y);return z?(z.net||""):null;};
+  let z=zn(h.x,h.y);
+  if(z===null)z=zn(ax.x1,ax.y1);
+  if(z===null)z=zn(ax.x2,ax.y2);
+  if(z===null)z=zoneEtrangereProche(zs,TOUS_LES_NETS,(a,b)=>segSegDist(ax,{x1:a.x,y1:a.y,x2:b.x,y2:b.y}),q=>h.d/2+classOf(q.net).clr);
+  return z;
+}
 function zoneEtrangereProche(zs,net,ecart,marge){
   for(const z of zs){
-    if((z.net||"")===(net||""))continue;
+    if(net!==TOUS_LES_NETS&&(z.net||"")===(net||""))continue;   // un trou : aucun net à exclure
     const P=z.pts, lim=marge(z);
     for(let k=0,j=P.length-1;k<P.length;j=k++)
       if(ecart(P[j],P[k])<lim)return z.net;
@@ -366,12 +380,7 @@ function gerberCopper(i){
     /* trou NPTH (carte ou empreinte) : la zone s'en écarte de l'écartement de
        sa classe — le foret ne doit pas mordre le cuivre ni le laisser à vif */
     for(const h of trousMonde()){
-      const ax=axePercage(h);
-      let z=zn(h.x,h.y);
-      if(z===null)z=zn(ax.x1,ax.y1);
-      if(z===null)z=zn(ax.x2,ax.y2);
-      // un trou n'a pas de net : toute zone voisine compte, celle sans net aussi
-      if(z===null)z=zoneEtrangereProche(zs,PNS_NPTH,(a,b)=>segSegDist(ax,{x1:a.x,y1:a.y,x2:b.x,y2:b.y}),q=>h.d/2+classOf(q.net).clr);
+      const z=zoneDuTrou(i,h,zs);
       if(z===null)continue;
       gPercage(body,A,h,classOf(z).clr);
     }

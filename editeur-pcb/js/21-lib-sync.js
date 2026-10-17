@@ -158,7 +158,12 @@ function pcbAppliquerMajLib(pkgName) {
 function pcbInitialiserLibSync() {
   if (typeof sessEcouterLibModif !== "function") return;
 
-  sessEcouterLibModif(function(detail) {
+  sessEcouterLibModif(pcbSurModifLib);
+}
+/* Ce que fait l'éditeur PCB quand la Gestion LIB signale une modification
+   (canal de session) : caches, miroir FPLIB, catalogue, puis l'alerte si des
+   empreintes de la carte sont concernées. */
+function pcbSurModifLib(detail) {
     if (!detail) return;
 
     if (detail.typeFichier === "pcb" || detail.genre === "catalogue") {
@@ -171,6 +176,12 @@ function pcbInitialiserLibSync() {
         else delete PCB_LIB_CACHE[k];
       }
 
+      // le miroir FPLIB aussi, que l'empreinte soit sur la carte ou non ; l'export
+      // du schéma attend FPLIB_PRET : la relecture s'y enchaîne
+      if (nom && typeof fpLibRelire === "function") {
+        const relu = PCB_LIB_ALERTE.relu = fpLibRelire(nom);
+        if (typeof FPLIB_PRET !== "undefined") FPLIB_PRET = FPLIB_PRET.then(() => relu);
+      }
       if (typeof pcbChargerCatalogueEmpreintes === "function") {
         pcbChargerCatalogueEmpreintes();
       }
@@ -199,7 +210,6 @@ function pcbInitialiserLibSync() {
         if (typeof buildProps === "function") buildProps();
       }
     }
-  });
 }
 
 /* `forcer` relit le serveur même si un catalogue est déjà en mémoire : c'est
