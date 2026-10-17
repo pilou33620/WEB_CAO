@@ -36,6 +36,7 @@ async function ouvrirEditeurPcb(nomFichier, donneesExistantes = null) {
   EDITEUR_LIB.selectionIndex = -1;
   EDITEUR_LIB.survolIndex = -1;
   EDITEUR_LIB.outilActif = "move";
+  EDITEUR_LIB.trouSel = -1;
   EDITEUR_LIB.drag = null;
   EDITEUR_LIB.ligneEnCours = null;
   EDITEUR_LIB.grilleMm = 0.1;
@@ -73,6 +74,7 @@ async function ouvrirEditeurSch(nomFichier, donneesExistantes = null) {
   EDITEUR_LIB.selectionIndex = -1;
   EDITEUR_LIB.survolIndex = -1;
   EDITEUR_LIB.outilActif = "move";
+  EDITEUR_LIB.trouSel = -1;
   EDITEUR_LIB.drag = null;
   EDITEUR_LIB.ligneEnCours = null;
   EDITEUR_LIB.grillePx = 10;
@@ -448,6 +450,19 @@ function editeurSnap(val, step) {
   return Math.round(val / step) * step;
 }
 
+// Le trou le plus proche du pointeur, à son rayon à l'écran (12 px au moins)
+function editeurHitTrou(clientX, clientY) {
+  const r = EDITEUR_LIB.renderer, T = EDITEUR_LIB.data && EDITEUR_LIB.data.holes;
+  if (!r || !Array.isArray(T)) return -1;
+  const cr = r.canvas.getBoundingClientRect(), sx = clientX - cr.left, sy = clientY - cr.top;
+  let best = -1, bd = Infinity;
+  T.forEach((t, i) => {
+    const ps = r.worldToScreen(t.x, t.y), d = Math.hypot(sx - ps.x, sy - ps.y);
+    if (d <= Math.max(12, ((Math.max(t.w || 0, t.d || 1)) * r.zoom) / 2 + 4) && d < bd) { bd = d; best = i; }
+  });
+  return best;
+}
+
 function editeurHitPad(clientX, clientY) {
   if (!EDITEUR_LIB.data || !Array.isArray(EDITEUR_LIB.data.pads) || !EDITEUR_LIB.renderer) return -1;
   const r = EDITEUR_LIB.renderer;
@@ -543,6 +558,19 @@ function editeurPointerDown(e) {
       return true;
     }
 
+    // Un trou sous le pointeur : sélectionné et glissé comme une pastille
+    const iTrou = isPcb ? editeurHitTrou(e.clientX, e.clientY) : -1;
+    if (iTrou >= 0) {
+      const t = EDITEUR_LIB.data.holes[iTrou];
+      EDITEUR_LIB.trouSel = iTrou;
+      EDITEUR_LIB.drag = { trou: iTrou, startX: e.clientX, startY: e.clientY, origX: t.x, origY: t.y, hasMoved: false };
+      try { EDITEUR_LIB.renderer.canvas.setPointerCapture(e.pointerId); } catch (_) {}
+      editeurAfficherInfoCanvas("Trou #" + (iTrou + 1) + " sélectionné — glissez pour le déplacer, Suppr pour l'effacer");
+      EDITEUR_LIB.renderer.render();
+      return true;
+    }
+    EDITEUR_LIB.trouSel = -1;
+
     // Clic dans le vide en mode move : désélectionne et permet le pan
     if (EDITEUR_LIB.selectionIndex >= 0) {
       EDITEUR_LIB.selectionIndex = -1;
@@ -608,6 +636,15 @@ function editeurPointerMove(e) {
     const newX = isPcb ? parseFloat((editeurSnap(w.x, EDITEUR_LIB.grilleMm)).toFixed(3)) : editeurSnap(w.x, EDITEUR_LIB.grillePx);
     const newY = isPcb ? parseFloat((editeurSnap(w.y, EDITEUR_LIB.grilleMm)).toFixed(3)) : editeurSnap(w.y, EDITEUR_LIB.grillePx);
     const idx = EDITEUR_LIB.drag.index;
+
+    if (EDITEUR_LIB.drag.trou != null) {
+      const t = EDITEUR_LIB.data.holes && EDITEUR_LIB.data.holes[EDITEUR_LIB.drag.trou];
+      if (t) { t.x = newX; t.y = newY; }
+      editeurAfficherInfoCanvas(`Trou #${EDITEUR_LIB.drag.trou + 1} : X = ${newX} mm, Y = ${newY} mm`);
+      EDITEUR_LIB.drag.hasMoved = true;
+      EDITEUR_LIB.renderer.render();
+      return true;
+    }
 
     if (isPcb) {
       if (EDITEUR_LIB.data.pads[idx]) {
@@ -1429,6 +1466,15 @@ function editeurSupprimerTrou(idx) {
   if (EDITEUR_LIB.renderer) EDITEUR_LIB.renderer.render();
 }
 
+// Suppr : efface le trou sélectionné (rend vrai s'il y en avait un)
+function editeurSupprimerSelection() {
+  const i = EDITEUR_LIB.trouSel;
+  if (!(i >= 0) || !Array.isArray(EDITEUR_LIB.data.holes) || !EDITEUR_LIB.data.holes[i]) return false;
+  EDITEUR_LIB.trouSel = -1;
+  editeurSupprimerTrou(i);
+  return true;
+}
+
 function editeurAjouterPin() {
   editeurHistoriquePush();
   if (!EDITEUR_LIB.data.pins) EDITEUR_LIB.data.pins = [];
@@ -1988,6 +2034,12 @@ if (typeof window !== "undefined" && typeof window.addEventListener === "functio
     if (mod && k === "y") {
       e.preventDefault();
       editeurRedo();
+      return;
+    }
+
+    // Suppr / Retour arrière hors d'un champ : efface le trou sélectionné
+    if ((e.key === "Delete" || e.key === "Backspace") && !/^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || "")) {
+      if (editeurSupprimerSelection()) { e.preventDefault(); if (EDITEUR_LIB.renderer) EDITEUR_LIB.renderer.render(); }
       return;
     }
 

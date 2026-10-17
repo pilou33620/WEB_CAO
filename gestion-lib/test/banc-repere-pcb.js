@@ -59,6 +59,26 @@ const z = r.zoom, pres = (x, rr) => arcs2.some(a => Math.abs(a[0] - x) < 1e-9 &&
 assert.ok(pres(0.6 * z, 0.3 * z) && pres(-0.6 * z, 0.3 * z), "fente de pastille dessinee : " + JSON.stringify(arcs2));
 arcs2.length = 0; r._drawHoles(ctx3);
 assert.ok(pres(1 * z, 0.5 * z) && pres(-1 * z, 0.5 * z), "trou oblong dessine : " + JSON.stringify(arcs2));
+// 3 ter. Trous : un clic en mode Deplacer qui ne touche aucune pastille prend le
+// trou, le glisser le pose sur la grille, Suppr l'efface (points ouverts, T9)
+{
+  const g2 = { EDITEUR_LIB: { actif: true, type: "pcb", outilActif: "move", grilleMm: 0.05, selectionIndex: -1, trouSel: -1,
+      data: { pads: [{ n: 1, x: -5, y: 0, w: 1, h: 1 }], holes: [{ x: 2, y: 1, d: 1 }] },
+      renderer: { zoom: 10, canvas: { getBoundingClientRect: () => ({ left: 0, top: 0 }), setPointerCapture: () => {}, style: {} },
+        worldToScreen: (x, y) => ({ x: 100 + x * 10, y: 100 + y * 10 }), screenToWorld: (sx, sy) => ({ x: (sx - 100) / 10, y: (sy - 100) / 10 }),
+        render: () => {} } } };
+  for (const f of ["editeurHistoriquePush", "remplirElementsEditeur", "editeurMettreAJourSelectionTable", "editeurSyncInputsTable", "editeurAfficherInfoCanvas"]) g2[f] = () => {};
+  vm.createContext(g2);
+  for (const nom of ["editeurSnap", "editeurHitPad", "editeurHitTrou", "editeurPointerDown", "editeurPointerMove", "editeurSupprimerTrou", "editeurSupprimerSelection"])
+    vm.runInContext(src.match(new RegExp("function " + nom + "\\([^)]*\\)[\\s\\S]*?\\n}\\n"))[0], g2);
+  assert.ok(g2.editeurPointerDown({ button: 0, clientX: 121, clientY: 110, pointerId: 1 }), "clic sur le trou pris");
+  assert.strictEqual(g2.EDITEUR_LIB.trouSel, 0, "trou selectionne");
+  g2.editeurPointerMove({ clientX: 131.2, clientY: 140.3 });
+  const tr = g2.EDITEUR_LIB.data.holes[0];
+  assert.ok(Math.abs(tr.x - 3.1) < 1e-9 && Math.abs(tr.y - 4.05) < 1e-9, "trou glisse sur la grille : " + JSON.stringify(tr));
+  assert.ok(g2.editeurSupprimerSelection(), "Suppr pris");
+  assert.ok(!g2.EDITEUR_LIB.data.holes, "trou efface : " + JSON.stringify(g2.EDITEUR_LIB.data));
+}
 // 4. Un champ numerique ne recoit jamais une valeur du fichier telle quelle : un
 // JSON (ou une reponse de l'assistant) qui porterait '"><img onerror=...>' dans x
 // en ferait du HTML. Forcee en nombre (+) ou passee par n() de l'editeur.

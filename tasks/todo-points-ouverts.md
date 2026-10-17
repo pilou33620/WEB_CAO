@@ -59,8 +59,8 @@ Bancs :
 - [x] `JS_PCB` passe
 
 ### T9 : Gestion LIB, glisser et Suppr pour les trous
-- [ ] Un trou se glisse comme une pastille et s'efface par Suppr
-- [ ] `JS_LIB` passe
+- [x] Un trou se glisse comme une pastille et s'efface par Suppr
+- [x] `JS_LIB` passe
 
 ### T10 : la mise à jour LIB relit aussi FPLIB
 - [ ] Après une modification signalée par la Gestion LIB, `fpLibPourBoitier` rend la nouvelle définition
