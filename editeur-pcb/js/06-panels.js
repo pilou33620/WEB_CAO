@@ -835,6 +835,9 @@ function propsHole(box, h){
     '<button class="tb" style="padding:2px 6px;font-size:10px" id="pHoleM3">M3 (3,2 mm)</button>'+
     '<button class="tb" style="padding:2px 6px;font-size:10px" id="pHoleM4">M4 (4,2 mm)</button>'+
     '</div></div>'+
+    '<div class="prop two"><div><label title="Longueur hors tout d\'une fente ; 0, ou pas plus que le Ø : trou rond">Longueur (mm)</label>'+
+    '<input id="pHoleL" type="number" step="0.1" min="0" max="60" value="'+(h.w>h.d?fmt(h.w,2):0)+'"></div>'+
+    '<div><label title="Angle de la longueur, en degrés">Angle (°)</label><input id="pHoleR" type="number" step="15" value="'+fmt(h.rot||0,1)+'"></div></div>'+
     '<div class="prop two"><div><label>X (mm)</label><input id="pHoleX" type="number" step="0.1" value="'+fmt(h.x,3)+'"></div>'+
     '<div><label>Y (mm)</label><input id="pHoleY" type="number" step="0.1" value="'+fmt(h.y,3)+'"></div></div>'+
     '<div class="prop"><label><input id="pHoleLock" type="checkbox"'+(h.locked?' checked':'')+'> Verrouiller la position</label></div>'+
@@ -855,6 +858,21 @@ function propsHole(box, h){
   if($("pHoleM3"))$("pHoleM3").onclick=()=>setPreset(3.2);
   if($("pHoleM4"))$("pHoleM4").onclick=()=>setPreset(4.2);
 
+  /* fente : longueur au-delà du Ø, sinon le trou redevient rond (sans clé) */
+  const inL=$("pHoleL");
+  if(inL)inL.onchange=e=>{
+    const v=+String(e.target.value).replace(",",".");
+    if(!Number.isFinite(v))return;
+    push();
+    if(v>h.d){h.w=r4(Math.min(60,v));}else{delete h.w;delete h.rot;}
+    touch();buildProps();draw();
+  };
+  const inR=$("pHoleR");
+  if(inR)inR.onchange=e=>{
+    const v=+String(e.target.value).replace(",",".");
+    if(!Number.isFinite(v)||!(h.w>h.d))return;
+    push();const r=padRot(v);if(r)h.rot=r;else delete h.rot;touch();buildProps();draw();
+  };
   const inX=$("pHoleX");
   if(inX)inX.onchange=e=>{
     const v=+e.target.value.replace(",",".");

@@ -55,8 +55,8 @@ Bancs :
 ## Phase 3 : confort
 
 ### T8 : panneau Propriétés d'un trou de carte, L et Rot
-- [ ] Champs L et Rot ; L ≤ Ø remet le trou rond
-- [ ] `JS_PCB` passe
+- [x] Champs L et Rot ; L ≤ Ø remet le trou rond
+- [x] `JS_PCB` passe
 
 ### T9 : Gestion LIB, glisser et Suppr pour les trous
 - [ ] Un trou se glisse comme une pastille et s'efface par Suppr

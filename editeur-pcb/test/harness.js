@@ -6386,6 +6386,21 @@ T("écran : le dégagement suit la zone qui contient l'objet, comme le Gerber (p
     if(!a||Math.abs(a[2]-(1+1.0))>1e-9)throw new Error("trou dans la zone HV : rayon de dégagement "+(a&&a[2])+" au lieu de 2 (Ø/2 + 1,0)");
   }finally{document.createElement=avantCE;zoneCache.clear();loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);}
 });
+T("panneau d'un trou de carte : longueur et angle d'une fente (points ouverts, T8)",()=>{
+  loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);clearSel();
+  try{
+    const h=mkHole(20,20,1.2);S.holes=[h];S.sel.holes=new Set([h.id]);touch();
+    buildProps();
+    const ev=v=>({target:{value:v}});
+    if(!$("pHoleL")||!$("pHoleR"))throw new Error("champs L et Rot absents du panneau");
+    $("pHoleL").onchange(ev("4"));
+    if(S.holes[0].w!==4)throw new Error("longueur non posée : "+JSON.stringify(S.holes[0]));
+    $("pHoleR").onchange(ev("-30"));
+    if(S.holes[0].rot!==330)throw new Error("angle ramené dans [0 ; 360[ attendu 330 : "+S.holes[0].rot);
+    $("pHoleL").onchange(ev("1"));            // L ≤ Ø : le trou redevient rond
+    if("w" in S.holes[0]||"rot" in S.holes[0])throw new Error("L ≤ Ø : trou rond, sans clé : "+JSON.stringify(S.holes[0]));
+  }finally{loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);}
+});
 T("bibliothèque : lecture défensive et fusion des noms",()=>{
   fpLibRaz();
   if(!fpLibParse("ceci n'est pas du json").err)
