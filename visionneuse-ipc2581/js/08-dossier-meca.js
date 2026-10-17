@@ -65,6 +65,7 @@ function mecaEntreeIpc(m){
   const trous=[];
   for(const t0 of npth){
     const t={x:t0.x*k,y:t0.y*k,d:t0.d*k,metallise:false};
+    if(t0.l>t0.d){t.l=t0.l*k;t.rot=t0.r||0;}        // une fente : longueur et angle, comme l'éditeur
     const c=composants.find(c=>mecaDedans(t,c.corps));
     if(!c)trous.push(t);
     else if(!c.trous.some(q=>pres(q,t)))c.trous.push(t);

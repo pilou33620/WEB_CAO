@@ -31,10 +31,10 @@ Bancs :
 ## Phase 2 : cohérence des sorties
 
 ### T4 : la visionneuse lit les fentes (SlotCavity)
-- [ ] `ipc2581_parser` : un `SlotCavity` devient un trou avec `l` et `rot`
-- [ ] `ipc2581_json` les porte ; la visionneuse les dessine en gélule et les compte
-- [ ] Dossier méca de la visionneuse : la fente avec `l` et `rot` ; comparaison méca rebranchée pour `exemple-1-fentes`
-- [ ] `PY_EXP` (attendu : fentes comptées), `PY_VIS`, `JS_VIS` passent
+- [x] `ipc2581_parser` : un `SlotCavity` devient un trou avec `l` et `rot`
+- [x] `ipc2581_json` les porte ; la visionneuse les dessine en gélule et les compte
+- [x] Dossier méca de la visionneuse : la fente avec `l` et `rot` ; comparaison méca rebranchée pour `exemple-1-fentes`
+- [x] `PY_EXP` (attendu : fentes comptées), `PY_VIS`, `JS_VIS` passent
 
 ### T5 : fentes en vraie forme aux plans et au DXF
 - [ ] Détail du plan de fabrication et feuilles cuivre : contour oblong

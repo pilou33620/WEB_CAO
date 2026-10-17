@@ -850,7 +850,14 @@ function mdlChemins(){
     const r=(t.d||0)/2;
     if(r<=0)continue;
     const p=/NON/i.test(t.p||"")?V.trous.npth:V.trous.pth;
-    p.moveTo(t.x+r,t.y); p.arc(t.x,t.y,r,0,2*Math.PI);
+    if(t.l>t.d){
+      /* une fente : deux demi-cercles reliés, sur l'axe de sa longueur */
+      const a=(t.r||0)*Math.PI/180, k=(t.l-t.d)/2, dx=k*Math.cos(a), dy=k*Math.sin(a);
+      p.moveTo(t.x+dx+r*Math.cos(a-Math.PI/2),t.y+dy+r*Math.sin(a-Math.PI/2));
+      p.arc(t.x+dx,t.y+dy,r,a-Math.PI/2,a+Math.PI/2);
+      p.arc(t.x-dx,t.y-dy,r,a+Math.PI/2,a+3*Math.PI/2);
+      p.closePath();
+    }else{p.moveTo(t.x+r,t.y); p.arc(t.x,t.y,r,0,2*Math.PI);}
     V.trous.n++;
     /* le contre-perçage : un cercle au diamètre du foret quand le fichier le
        donne, sinon un peu au-delà du trou — on montre qu'il y en a un, on

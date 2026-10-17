@@ -6710,6 +6710,23 @@ T("dossier méca, visionneuse : sur un export de l'éditeur, les mêmes trous, c
   }finally{carte();}
 });
 
+/* Les fentes (<SlotCavity>) d'un export de l'éditeur : relues avec leur
+   longueur et leur angle, dessinées, et au dossier méca (points ouverts, T4). */
+T("fentes : lues dans le SlotCavity, dessinées et au dossier méca",()=>{
+  const f=path.join(RACINE,"..","editeur-pcb","dist","essai-ipc2581","exemple-1-fentes.modele.json");
+  if(!fs.existsSync(f)){console.log("      (sauté : lancer le banc de l'éditeur puis banc-ipc2581-export.py)");return;}
+  try{
+    mdlCharger(JSON.parse(fs.readFileSync(f,"utf8")),"exemple-1-fentes.xml");
+    const fe=V.modele.percages.filter(t=>t.l>t.d);
+    if(fe.length!==2)throw new Error(fe.length+" fentes relues pour 2");
+    const np=fe.find(t=>/NON/i.test(t.p)), pl=fe.find(t=>!/NON/i.test(t.p));
+    if(!np||Math.abs(np.l-3)>1e-6||Math.abs(np.d-1)>1e-6)throw new Error("fente NPTH : "+JSON.stringify(np));
+    if(!pl||Math.abs(pl.l-1.8)>1e-6||Math.abs(pl.d-0.6)>1e-6)throw new Error("fente métallisée : "+JSON.stringify(pl));
+    const E=mecaEntreeIpc(V.modele), t=E.trous.find(h=>h.l);
+    if(!t||Math.abs(t.l-3)>1e-6)throw new Error("dossier méca : fente sans longueur : "+JSON.stringify(E.trous));
+  }finally{carte();}
+});
+
 /* ---------- dossier méca : réglages et fichiers de la visionneuse ---------- */
 T("dossier méca, visionneuse : la saisie va dans le modèle (export .json), bornée",()=>{
   carteMeca();

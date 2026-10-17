@@ -25703,9 +25703,9 @@ function ipcAttendu(){
       if(padLayers(fp,q).includes(z.l)&&dans(q)&&(q.net||"")!==(z.net||""))dehors.push([X(q.x),Y(q.y)]);
     zones.push({couche:nomCu(z.l),net:z.net,dedans,dehors});
   }
-  /* les fentes partent en <SlotCavity>, que le lecteur de la visionneuse ne lit pas encore */
-  const trous={VIA:S.vias.length,PLATED:0,NONPLATED:trousMonde().filter(h=>h.d>0&&!(h.w>h.d)).length};
-  for(const fp of S.fps)for(const q of padsOf(fp))if(q.drill>0&&!(q.slot>q.drill))trous.PLATED++;
+  /* les fentes, parties en <SlotCavity>, se relisent comme des trous */
+  const trous={VIA:S.vias.length,PLATED:0,NONPLATED:trousMonde().filter(h=>h.d>0).length};
+  for(const fp of S.fps)for(const q of padsOf(fp))if(q.drill>0)trous.PLATED++;
   const textes=S.fps.filter(fp=>fp.silk!==false&&(!fp.side||n>1)).length+
     (S.drawings||[]).filter(d=>d.shape==="text"&&(d.layer!=="silkB"||n>1)).length;
   return {cuivres:S.cuL.map(L=>L.name),nets:[...nets].sort(),composants:comps,pistes,arcs,
@@ -25816,8 +25816,7 @@ T("IPC-2581 : les cartes d'exemple écrites pour le banc Python, contenu compté
       fs.writeFileSync(path.join(dir,nom+".attendu.json"),JSON.stringify(ipcAttendu(),null,1));
       /* le dossier méca de l'éditeur, que la visionneuse doit retrouver
          (visionneuse-ipc2581/test/harness-sim.js) */
-      if(nom!=="exemple-1-fentes")   // la visionneuse ne lit pas encore les fentes : pas de comparaison méca
-        fs.writeFileSync(path.join(dir,nom+".meca.json"),JSON.stringify(mecaDossier()));
+      fs.writeFileSync(path.join(dir,nom+".meca.json"),JSON.stringify(mecaDossier()));
     }
     /* ce que la carte chargée doit avoir écrit */
     const x=fs.readFileSync(path.join(dir,"exemple-1-charge.xml"),"utf8");
