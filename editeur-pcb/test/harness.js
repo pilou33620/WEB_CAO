@@ -6327,6 +6327,23 @@ T("routeur : les trous NPTH sont des obstacles, pour tous les nets (points ouver
     if(pnsWorld().jointAt(0,50,30).pads.length)throw new Error("jointAt prend la fente pour une pastille");
   }finally{loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);}
 });
+T("DRC des fentes : fente plus longue que sa pastille, axe trop près d'une découpe (points ouverts, T2)",()=>{
+  loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);clearSel();
+  try{
+    S.board={x:0,y:0,w:100,h:80,cutouts:[[{x:29,y:20},{x:31,y:20},{x:31,y:29.6},{x:29,y:29.6}]]};
+    const msgs=()=>runDrc().map(e=>e.msg||"");
+    /* fente NPTH de 27 à 33 en y = 30 : ses bouts sont loin de la découpe, son milieu non */
+    S.holes=[normHole({x:30,y:30,d:1,w:6,rot:0},0)];touch();
+    if(!msgs().some(m=>/Trou NPTH .*contour de carte ou trop près du bord/.test(m)))throw new Error("fente au bord d'une découpe : non signalée");
+    S.holes=[];
+    /* fente plus longue que sa pastille */
+    const fp=mkFp("J1","","FENTE",1);fp.x=60;fp.y=40;S.fps.push(fp);
+    fpApplyDef(fp,{name:"FENTE",pins:1,style:"row",pads:[{n:1,x:0,y:0,w:2,h:1,shape:"oval",drill:0.6,slot:2.4}]});touch();
+    if(!msgs().some(m=>/J1\.1/.test(m)&&/fente/i.test(m)))throw new Error("fente qui sort de sa pastille : non signalée");
+    fpApplyDef(fp,{name:"FENTE",pins:1,style:"row",pads:[{n:1,x:0,y:0,w:2.4,h:1.2,shape:"oval",drill:0.6,slot:1.8}]});touch();
+    if(msgs().some(m=>/fente/i.test(m)))throw new Error("fente dans sa pastille : rien à signaler");
+  }finally{loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);}
+});
 T("bibliothèque : lecture défensive et fusion des noms",()=>{
   fpLibRaz();
   if(!fpLibParse("ceci n'est pas du json").err)

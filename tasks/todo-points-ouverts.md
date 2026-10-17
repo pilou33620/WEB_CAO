@@ -20,9 +20,9 @@ Bancs :
 - [x] `JS_PCB` passe
 
 ### T2 : DRC, anneau de fente et bord concave
-- [ ] Pastille dont la fente déborde : « anneau de fente » signalé sur la pastille
-- [ ] Fente NPTH dont l'axe frôle une encoche concave du contour : signalée
-- [ ] `JS_PCB` passe
+- [x] Pastille dont la fente déborde : « anneau de fente » signalé sur la pastille
+- [x] Fente NPTH dont l'axe frôle une encoche concave du contour : signalée
+- [x] `JS_PCB` passe
 
 ### T3 : Gerber, trou près d'une zone sans net
 - [ ] Trou hors d'une zone sans net mais à moins de son écartement : dégagé

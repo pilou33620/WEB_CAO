@@ -505,6 +505,15 @@ function inBoard(x,y,m){
   }
   return true;
 }
+/* Une fente dans la carte : ses deux bouts dedans, et tout son axe à `m` du
+   contour et des découpes — une encoche entre les deux bouts compte aussi */
+function axeDansCarte(a,m){
+  if(!inBoard(a.x1,a.y1,0)||!inBoard(a.x2,a.y2,0))return false;
+  for(const P of [boardPoly(),...boardCutouts()])
+    for(let i=0,j=P.length-1;i<P.length;j=i++)
+      if(segSegDist(a,{x1:P[j].x,y1:P[j].y,x2:P[i].x,y2:P[i].y})<m)return false;
+  return true;
+}
 function runDrc(){
   const out=[];
   conn(true);              // le contrôle exige l'analyse fine des îlots
@@ -632,7 +641,7 @@ function runDrc(){
     const rond=a=>a.x1===a.x2&&a.y1===a.y2;
     for(const h of trous){
       const a=axes.get(h);
-      if(!inBoard(a.x1,a.y1,h.d/2+S.rule.edge)||!inBoard(a.x2,a.y2,h.d/2+S.rule.edge))
+      if(!(rond(a)?inBoard(h.x,h.y,h.d/2+S.rule.edge):axeDansCarte(a,h.d/2+S.rule.edge)))
         out.push({x:h.x,y:h.y,msg:"Trou NPTH Ø"+fmt(h.d,2)+" hors du contour de carte ou trop près du bord"});
     }
     for(let i=0;i<trous.length;i++){
@@ -690,6 +699,14 @@ function runDrc(){
     }
   }
   for(const e of bPP)out.push(e);
+  /* une fente plus longue que sa pastille sort du cuivre : le foret coupe
+     l'anneau (le minimum d'anneau face au fabricant est dans l'audit) */
+  for(const fp of S.fps)
+    for(const q of padsWorld(fp))
+      if(q.drill>0&&q.slot>q.drill&&(q.slot>Math.max(q.w,q.h)+1e-6||q.drill>Math.min(q.w,q.h)+1e-6))
+        out.push({x:q.x,y:q.y,l:0,
+          msg:"Fente de la pastille "+fp.ref+"."+q.n+" ("+fmt(q.drill,2)+" × "+fmt(q.slot,2)+" mm) plus grande que sa pastille ("+
+              fmt(q.w,2)+" × "+fmt(q.h,2)+" mm) : le foret coupe l'anneau"});
   /* ---------- pastilles d'une même empreinte ----------
      Deux pastilles d'une même empreinte se touchent presque, par construction :
      un QFN au pas de 0,5 mm n'a pas 0,25 mm entre ses plages, et ce n'est pas
