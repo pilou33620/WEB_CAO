@@ -3548,7 +3548,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
     def log_message(self, fmt, *args):
         # une ligne par requete, sans l'horodatage verbeux par defaut
-        sys.stderr.write("  %s\n" % (fmt % args))
+        sys.stderr.write("  %s\n" % appairage.masquer(fmt % args))
 
 
 class ThreadedServer(socketserver.ThreadingTCPServer):
@@ -3738,6 +3738,8 @@ def start_server(host, port, navigateur=True):
         print("  appareil. Relancez sans --local pour ouvrir l'acces au reseau.")
     else:
         print("  adresse       : http://%s:%d/" % (get_local_ip(), bound_port))
+        if appairage.ip_tailscale():
+            print("  tailscale     : http://%s:%d/" % (appairage.ip_tailscale(), bound_port))
         print()
         print("  Depuis un autre appareil du meme reseau WiFi (iPad par exemple),")
         print("  ouvrez le navigateur et tapez cette adresse.")
