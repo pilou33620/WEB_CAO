@@ -231,6 +231,19 @@ function fpLibCharger(){
     });
   }).catch(()=>false);     // pas de serveur (fichier ouvert seul) : bibliothèque de séance
 }
+/* Une seule définition relue sur le serveur, après une modification signalée
+   par la Gestion LIB : le miroir FPLIB ne garde pas l'ancienne forme. */
+function fpLibRelire(nom){
+  if(typeof fetch!=="function"||!nom)return Promise.resolve(false);
+  const cle=pkgKey(nom), present=Object.keys(FPLIB).find(n=>n===nom||pkgKey(n)===cle);
+  const fichier=(present&&FPLIB_FICHIER[present])||(String(nom).replace(/\.json$/i,"")+".json");
+  return fetch("/api/lib/fichier?type=pcb&nom="+encodeURIComponent(fichier))
+    .then(r=>r.text().then(t=>{if(!r.ok)throw new Error("erreur "+r.status);return JSON.parse(t);}))
+    .then(r=>{const d=normFpDef(r.data);if(!d)return false;
+      if(present&&present!==d.name)delete FPLIB[present];
+      FPLIB[d.name]=d;FPLIB_FICHIER[d.name]=fichier;return true;})
+    .catch(()=>false);
+}
 /* La lecture en cours, pour qui doit l'attendre (l'export du schéma, qui
    pose les empreintes de la LIB avant d'écrire la carte). */
 let FPLIB_PRET=Promise.resolve(false);

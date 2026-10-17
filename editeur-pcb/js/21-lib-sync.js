@@ -135,6 +135,9 @@ function pcbAppliquerMajLib(pkgName) {
   };
 
   const promises = [];
+  // le miroir FPLIB (import de netlist, explorateur) relit lui aussi la définition,
+  // à côté : la mise à jour des empreintes de la carte n'a pas à l'attendre
+  if (typeof fpLibRelire === "function") PCB_LIB_ALERTE.relu = fpLibRelire(pkgName);
   for (const fp of matches) {
     if (typeof pcbAppliquerEmpreinteLib === "function") {
       const res = pcbAppliquerEmpreinteLib(fp, fp.pkg);

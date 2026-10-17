@@ -5941,6 +5941,25 @@ function fpLibRaz(){for(const k of Object.keys(FPLIB))delete FPLIB[k];}
 /* La LIB du serveur, simulée : liste, lecture, écriture et effacement de
    lib_empreinte_pcb/. Une entrée illisible et un ancien stockage du
    navigateur vérifient la lecture défensive et la reprise unique. */
+TA("mise à jour LIB : le miroir FPLIB est relu, pas seulement le cache (points ouverts, T10)",async()=>{
+  fpLibRaz();
+  const avant=global.fetch;
+  const neuf={format:"pcbfp-1",name:"RJ45-MAJ",pkg:"RJ45-MAJ",pins:1,style:"row",
+    pads:[{n:1,x:0,y:0,w:1.5,h:1.5,shape:"circ",drill:0.9}],holes:[{x:0,y:3,d:3.25}]};
+  const rep=o=>Promise.resolve({ok:true,status:200,text:()=>Promise.resolve(JSON.stringify(o))});
+  global.fetch=(url,opt)=>{
+    if(!String(url).startsWith("/api/lib/"))return avant(url,opt);
+    return rep({data:neuf});
+  };
+  try{
+    FPLIB["RJ45-MAJ"]=normFpDef({name:"RJ45-MAJ",pkg:"RJ45-MAJ",pins:1,style:"row"});   // l'ancienne définition, sans trous
+    FPLIB_FICHIER["RJ45-MAJ"]="RJ45-MAJ.json";
+    await pcbAppliquerMajLib("RJ45-MAJ");
+    await PCB_LIB_ALERTE.relu;
+    const d=fpLibPourBoitier("RJ45-MAJ");
+    if(!d||!d.holes||d.holes.length!==1)throw new Error("FPLIB non relu après la mise à jour : "+JSON.stringify(d));
+  }finally{global.fetch=avant;fpLibRaz();}
+});
 TA("bibliothèque : lue dans la LIB, écrite dans la LIB, plus dans le navigateur",async()=>{
   fpLibRaz();
   const disque={"0402.json":{format:"pcbfp-1",name:"0402",pins:2,style:"chip",pitch:0.95,span:0.95},

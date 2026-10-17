@@ -63,8 +63,8 @@ Bancs :
 - [x] `JS_LIB` passe
 
 ### T10 : la mise à jour LIB relit aussi FPLIB
-- [ ] Après une modification signalée par la Gestion LIB, `fpLibPourBoitier` rend la nouvelle définition
-- [ ] `JS_PCB` passe
+- [x] Après une modification signalée par la Gestion LIB, `fpLibPourBoitier` rend la nouvelle définition
+- [x] `JS_PCB` passe
 
 ## Phase 4 : données
 
