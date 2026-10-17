@@ -48,8 +48,8 @@ Bancs :
 - [x] `JS_PCB` passe
 
 ### T7 : dégagement à l'écran égal au Gerber
-- [ ] Deux zones de classes différentes sur une couche : l'écran dégage à l'écartement de la zone qui contient l'objet
-- [ ] `JS_PCB` passe
+- [x] Deux zones de classes différentes sur une couche : l'écran dégage à l'écartement de la zone qui contient l'objet
+- [x] `JS_PCB` passe
 **Point de contrôle : tous les bancs**
 
 ## Phase 3 : confort

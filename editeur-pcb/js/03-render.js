@@ -158,7 +158,9 @@ function zoneCanvas(i){
   clipToBoard(c,x1,y1,x2,y2);
 
   /* dégagements : tout ce qui n'appartient pas à la zone qui le recouvre */
-  const clr=classOf(zs[0].net||"").clr, thermals=[];
+  /* l'écartement est celui de la zone qui recouvre l'objet, comme au Gerber :
+     une couche peut porter des zones de classes différentes */
+  const thermals=[], clrIci=(x,y)=>classOf(zoneNetAt(i,x,y)).clr;
   const sameNet=(x,y,net)=>{
     const z=zoneAt(i,x,y);
     return !!(z&&net&&z.net===net);
@@ -187,7 +189,7 @@ function zoneCanvas(i){
     c.fill();
   }
   for(const h of trousMonde()){       // trou NPTH : dégagé à l'écartement de la zone (comme au Gerber)
-    c.beginPath();cheminPercage(c,h,clr);c.fill();
+    c.beginPath();cheminPercage(c,h,clrIci(h.x,h.y));c.fill();
   }
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
@@ -204,9 +206,9 @@ function zoneCanvas(i){
         if(q.drill>0){c.beginPath();cheminPercage(c,q,clrK(zoneNetAt(i,q.x,q.y),q.net,"cu","th"));c.fill();}
         continue;
       }
-      padFill(c,qc,same?clr:clrK(zoneNetAt(i,q.x,q.y),q.net,"cu",q.drill>0?"th":"smd"));
+      padFill(c,qc,same?classOf(q.net).clr:clrK(zoneNetAt(i,q.x,q.y),q.net,"cu",q.drill>0?"th":"smd"));
       if(same)thermals.push(q);
-      else if(q.drill>0){c.beginPath();cheminPercage(c,q,clr);c.fill();}
+      else if(q.drill>0){c.beginPath();cheminPercage(c,q,clrK(zoneNetAt(i,q.x,q.y),q.net,"cu","th"));c.fill();}
     }
   /* liaisons thermiques : quatre bras par défaut, ou configuration personnalisée */
   c.globalCompositeOperation="source-over";
@@ -215,7 +217,7 @@ function zoneCanvas(i){
     const tw=(q.thermalWidth>0)?q.thermalWidth:S.rule.thermal;
     const spokes=(q.thermalSpokes>0)?q.thermalSpokes:4;
     const baseAngle=((q.thermalAngle||0)*Math.PI/180);
-    const len=Math.max(q.w,q.h)/2+clr+0.2;
+    const len=Math.max(q.w,q.h)/2+classOf(q.net).clr+0.2;
     c.save();c.translate(q.x,q.y);c.rotate(q.rot+baseAngle);
     for(let k=0;k<spokes;k++){
       const ang=(Math.PI*2/spokes)*k;

@@ -68,7 +68,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "boardChanged","polyEdgeDist","segDist","orient","signedArea",
   "coordOpen","coordClose","coordApply","coordMode","coordPoint","coordAnchor",
   "placeOrigin","ux","uy","wxu","wyu","snapX","snapY","gOrigin","routeToPoint","hint",
-  "pushClear","magnet","projOnSeg","trkAt","mitreSel","mitreAt","collinearRun","runFrom","segClearBad","setActive","segSegDist","segCross","routeBad","focusNet","cancelRoute","updateRoute","classOf","syncAutoZones","detachAuto","zoneCanvas","inPoly","hitTest","px","dist","boardZonePts",
+  "pushClear","magnet","projOnSeg","trkAt","mitreSel","mitreAt","collinearRun","runFrom","segClearBad","setActive","segSegDist","segCross","routeBad","focusNet","cancelRoute","updateRoute","classOf","syncAutoZones","detachAuto","zoneCanvas","zoneCache","inPoly","hitTest","px","dist","boardZonePts",
   "selectLayerZones","zoneUnder",
   /* repérage commun : chercher un repère, mesurer une distance
      (commun/reperage.js + le module d'adaptation de l'éditeur) */
@@ -6368,6 +6368,23 @@ T("encombrement : un plot qui dépasse du corps élargit la boîte de l'empreint
     fp.rot=90;touch();
     if(Math.abs(fpBBox(fp).y2-25)>1e-9)throw new Error("tournée de 90° : le plot passe en y = 24, boîte jusqu'à 25");
   }finally{loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);}
+});
+T("écran : le dégagement suit la zone qui contient l'objet, comme le Gerber (points ouverts, T7)",()=>{
+  loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);clearSel();
+  const avantCE=document.createElement;
+  try{
+    S.classes.push({name:"HV",w:0.5,clr:1.0,via:0.8,drill:0.4});setNetClass("HT","HV");
+    S.zones=[{id:S.nextId++,l:0,net:"GND",pts:[{x:5,y:5},{x:30,y:5},{x:30,y:50},{x:5,y:50}]},
+             {id:S.nextId++,l:0,net:"HT",pts:[{x:35,y:5},{x:60,y:5},{x:60,y:50},{x:35,y:50}]}];
+    S.holes=[mkHole(47,30,2)];touch();
+    if(classOf("HT").clr!==1.0)throw new Error("classe HV non posée");
+    const arcs=[];
+    const ctx=new Proxy({},{get:(_,k)=>k==="arc"?(x,y,r)=>arcs.push([x,y,r]):k==="getImageData"?undefined:()=>{},set:()=>true});
+    document.createElement=t=>t==="canvas"?{width:0,height:0,getContext:()=>ctx}:avantCE.call(document,t);
+    zoneCache.clear();zoneCanvas(0);
+    const a=arcs.find(a=>Math.abs(a[0]-47)<1e-9&&Math.abs(a[1]-30)<1e-9);
+    if(!a||Math.abs(a[2]-(1+1.0))>1e-9)throw new Error("trou dans la zone HV : rayon de dégagement "+(a&&a[2])+" au lieu de 2 (Ø/2 + 1,0)");
+  }finally{document.createElement=avantCE;zoneCache.clear();loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);}
 });
 T("bibliothèque : lecture défensive et fusion des noms",()=>{
   fpLibRaz();
