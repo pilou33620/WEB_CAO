@@ -43,9 +43,9 @@ Bancs :
 - [x] `JS_PCB` passe
 
 ### T6 : `fpBBox` compte les trous
-- [ ] Un plot qui dépasse du corps élargit la boîte de l'empreinte
-- [ ] Les essais de placement et de score passent sans changer d'attendu
-- [ ] `JS_PCB` passe
+- [x] Un plot qui dépasse du corps élargit la boîte de l'empreinte
+- [x] Les essais de placement et de score passent sans changer d'attendu
+- [x] `JS_PCB` passe
 
 ### T7 : dégagement à l'écran égal au Gerber
 - [ ] Deux zones de classes différentes sur une couche : l'écran dégage à l'écartement de la zone qui contient l'objet

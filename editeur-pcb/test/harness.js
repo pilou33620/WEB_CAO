@@ -6353,6 +6353,22 @@ T("Gerber : un trou près d'une zone SANS net y est dégagé (points ouverts, T3
     if(d03(gerberCopper(0))!==sans+1)throw new Error("trou au bord d'une zone sans net : non dégagé au Gerber");
   }finally{loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);}
 });
+T("encombrement : un plot qui dépasse du corps élargit la boîte de l'empreinte (points ouverts, T6)",()=>{
+  loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);clearSel();
+  try{
+    const fp=mkFp("J1","","J",1);fp.x=20;fp.y=20;S.fps.push(fp);
+    fpApplyDef(fp,{name:"J",pins:1,style:"row",pads:[{n:1,x:0,y:0,w:1.5,h:1.5,shape:"circ",drill:0.8}],
+      body:{x1:-1,y1:-1,x2:1,y2:1}});touch();
+    const b0=fpBBox(fp);
+    fp.holes=[{x:4,y:0,d:2},{x:0,y:0,d:1,w:7,rot:90}];touch();
+    const b=fpBBox(fp);
+    if(Math.abs(b.x2-25)>1e-9)throw new Error("plot à x = 4 (Ø2) : x2 attendu 25, vu "+b.x2);
+    if(Math.abs(b.y1-16.5)>1e-9||Math.abs(b.y2-23.5)>1e-9)throw new Error("fente verticale de 7 hors tout : y de 16,5 à 23,5, vu "+b.y1+" à "+b.y2);
+    if(b0.x1!==b.x1)throw new Error("rien à gauche : x1 inchangé");
+    fp.rot=90;touch();
+    if(Math.abs(fpBBox(fp).y2-25)>1e-9)throw new Error("tournée de 90° : le plot passe en y = 24, boîte jusqu'à 25");
+  }finally{loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);}
+});
 T("bibliothèque : lecture défensive et fusion des noms",()=>{
   fpLibRaz();
   if(!fpLibParse("ceci n'est pas du json").err)

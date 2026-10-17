@@ -2300,17 +2300,18 @@ function fpTrousDe(fp,def){
    garde son origine (fp, i) : il ne se sélectionne pas, il suit l'empreinte. */
 function trousMonde(){
   const out=(S.holes||[]).slice();
-  for(const fp of S.fps){
-    if(!fp.holes||!fp.holes.length)continue;
-    const T=fpXform(fp);
-    const a=fp.rot||0, m=fp.side?-1:1;
-    fp.holes.forEach((h,i)=>{
-      const c=T(h.x,h.y), o={x:r3(c.x),y:r3(c.y),d:h.d,fp,i};
-      if(h.w>h.d){o.w=h.w;o.rot=padRot(a+m*(h.rot||0));}   // l'angle tourne et passe au miroir comme une pastille
-      out.push(o);
-    });
-  }
+  for(const fp of S.fps)out.push(...trousDe(fp));
   return out;
+}
+/* Les trous d'une seule empreinte, en coordonnées monde */
+function trousDe(fp){
+  if(!fp.holes||!fp.holes.length)return [];
+  const T=fpXform(fp), a=fp.rot||0, m=fp.side?-1:1;
+  return fp.holes.map((h,i)=>{
+    const c=T(h.x,h.y), o={x:r3(c.x),y:r3(c.y),d:h.d,fp,i};
+    if(h.w>h.d){o.w=h.w;o.rot=padRot(a+m*(h.rot||0));}   // l'angle tourne et passe au miroir comme une pastille
+    return o;
+  });
 }
 /* Contour d'un perçage oblong (axe de axePercage) : deux demi-cercles de
    douze pas reliés par les côtés, en coordonnées monde */
@@ -2362,6 +2363,10 @@ function fpBBox(fp){
   for(const q of ps){
     const r=Math.max(q.w,q.h)/2;
     x1=Math.min(x1,q.x-r);x2=Math.max(x2,q.x+r);y1=Math.min(y1,q.y-r);y2=Math.max(y2,q.y+r);
+  }
+  for(const h of trousDe(fp)){          // un plot de centrage peut dépasser du corps
+    const b=holeBBox(h);
+    x1=Math.min(x1,b.x1);x2=Math.max(x2,b.x2);y1=Math.min(y1,b.y1);y2=Math.max(y2,b.y2);
   }
   return {x1,y1,x2,y2};
 }
