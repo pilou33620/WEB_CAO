@@ -6302,6 +6302,31 @@ T("perçages oblongs : constats de la revue M2 (zone à cheval, couche sans cuiv
     if(!runDrc().some(e=>e.msg&&/J1\.1/.test(e.msg)))throw new Error("piste interne dans la fente : non signalée");
   }finally{loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);}
 });
+T("routeur : les trous NPTH sont des obstacles, pour tous les nets (points ouverts, T1)",()=>{
+  loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);clearSel();
+  try{
+    const ligne=y=>({l:0,net:"SIG",w:0.3,pts:[{x:20,y},{x:40,y}]});
+    if(pnsWorld().firstObstacle(ligne(30)))throw new Error("carte vide : aucun obstacle");
+    S.holes=[mkHole(30,30,3.2)];touch();
+    const o=pnsWorld().firstObstacle(ligne(30));
+    if(!o||!o.it.npth)throw new Error("piste au travers d'un trou de carte : pas d'obstacle");
+    const sansNet=pnsWorld().firstObstacle({l:1,net:"",w:0.3,pts:[{x:20,y:30},{x:40,y:30}]});
+    if(!sansNet)throw new Error("une piste sans net doit aussi buter sur le trou, sur l'autre face");
+    /* fente d'empreinte : obstacle jusqu'à son bout (axe de 47 à 53) */
+    S.holes=[];
+    const fp=mkFp("J1","","FENTE",1);fp.x=50;fp.y=10;S.fps.push(fp);
+    fpApplyDef(fp,{name:"FENTE",pins:1,style:"row",pads:[{n:1,x:0,y:-5,w:1.5,h:1.5,shape:"circ",drill:0.8}],holes:[{x:0,y:20,d:1,w:7,rot:0}]});touch();
+    if(!pnsWorld().firstObstacle({l:0,net:"SIG",w:0.2,pts:[{x:53.2,y:20},{x:53.2,y:40}]}))
+      throw new Error("piste au bout d'une fente d'empreinte : pas d'obstacle");
+    /* le contrôle ne compte pas deux fois : le trou reste jugé par le seul bloc NPTH */
+    S.tracks=[{l:0,x1:20,y1:30,x2:60,y2:30,w:0.3,net:"SIG"}];touch();
+    const msgs=runDrc().map(e=>e.msg||"");
+    if(msgs.some(m=>/Isolation piste\/pastille/.test(m)))throw new Error("trou compté comme pastille par le DRC : "+msgs.join(" | "));
+    if(!msgs.some(m=>/trou NPTH/.test(m)))throw new Error("le bloc NPTH doit toujours signaler la piste : "+msgs.join(" | "));
+    /* un bout de piste posé sur un trou ne s'y raccroche pas comme à une pastille */
+    if(pnsWorld().jointAt(0,50,30).pads.length)throw new Error("jointAt prend la fente pour une pastille");
+  }finally{loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);}
+});
 T("bibliothèque : lecture défensive et fusion des noms",()=>{
   fpLibRaz();
   if(!fpLibParse("ceci n'est pas du json").err)

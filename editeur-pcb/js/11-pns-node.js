@@ -74,6 +74,20 @@ function pnsItemsPad(fp,q){
   }
   return out;
 }
+/* UN TROU NPTH EST UN OBSTACLE. Il entre comme une pastille percée sans
+   cuivre, de sa vraie forme (rond ou fente), sur toutes les couches, sous un
+   net qui n'est jamais celui d'un vrai cuivre : aucun net ne le traverse, même
+   le cuivre sans net. Le routeur ne pousse pas une pastille, il ne poussera pas
+   un trou ; le contrôle, lui, le laisse au bloc NPTH (02-connectivity.js). Un
+   trou d'empreinte porte son empreinte : la déplacer l'emporte. */
+const PNS_NPTH="(trou NPTH)", PNS_TROU_CARTE={ref:"trou NPTH",id:-1};
+function pnsItemTrou(h){
+  const ax=axePercage(h), L=h.w>h.d?h.w:h.d, r=L/2;
+  const q={n:0,x:h.x,y:h.y,w:L,h:h.d,shape:L>h.d?"oval":"circ",drill:h.d,net:PNS_NPTH,
+           rot:Math.atan2(ax.y2-ax.y1,ax.x2-ax.x1)};
+  return {k:"P",q,fp:h.fp||PNS_TROU_CARTE,net:PNS_NPTH,l0:0,l1:S.cu-1,src:h,npth:true,
+          bx1:h.x-r,by1:h.y-r,bx2:h.x+r,by2:h.y+r};
+}
 function pnsItemVia(v){
   const r=v.d/2;
   return {k:"V", v, net:v.net||"", l0:v.a, l1:v.b, src:v,
@@ -338,7 +352,7 @@ function pnsNode(parent){
         else if(dist(x,y,it.seg.x2,it.seg.y2)<=e)j.ends.push({it,e:2});
       }else if(it.k==="V"){
         if(dist(x,y,it.v.x,it.v.y)<=e)j.vias.push(it);
-      }else if(padDist(x,y,it.q)<=e)j.pads.push(it);
+      }else if(!it.npth&&padDist(x,y,it.q)<=e)j.pads.push(it);   // un trou n'est pas un raccord
     }
     return j;
   };
@@ -403,7 +417,7 @@ function pnsNode(parent){
    ========================================================================== */
 let pnsCache=null;
 function pnsStamp(){
-  return S.ver+"/"+S.cu+"/"+S.tracks.length+"/"+S.vias.length+"/"+S.fps.length;
+  return S.ver+"/"+S.cu+"/"+S.tracks.length+"/"+S.vias.length+"/"+S.fps.length+"/"+(S.holes||[]).length;
 }
 function pnsBuild(){
   const N=pnsNode(null);
@@ -411,6 +425,7 @@ function pnsBuild(){
     for(const q of padsWorld(fp))for(const it of pnsItemsPad(fp,q))N.add(it);
   for(const v of S.vias)N.add(pnsItemVia(v));
   for(const t of S.tracks)for(const it of pnsItemsTrack(t))N.add(it);
+  for(const h of trousMonde())if(h.d>0)N.add(pnsItemTrou(h));
   return N;
 }
 function pnsWorld(){

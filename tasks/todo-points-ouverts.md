@@ -15,9 +15,9 @@ Bancs :
 ## Phase 1 : risques de fabrication
 
 ### T1 : le routeur voit les trous NPTH
-- [ ] Une piste routée au travers d'un trou de carte, puis d'une fente d'empreinte, est refusée ou contournée (`pnsWorld`)
-- [ ] Ajouter ou supprimer un trou invalide le cache du routeur
-- [ ] `JS_PCB` passe
+- [x] Une piste routée au travers d'un trou de carte, puis d'une fente d'empreinte, est refusée ou contournée (`pnsWorld`)
+- [x] Ajouter ou supprimer un trou invalide le cache du routeur
+- [x] `JS_PCB` passe
 
 ### T2 : DRC, anneau de fente et bord concave
 - [ ] Pastille dont la fente déborde : « anneau de fente » signalé sur la pastille

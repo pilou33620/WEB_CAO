@@ -541,6 +541,7 @@ function runDrc(){
   const bTT=[], bTP=[], bV=[], bPP=[];
   for(const a of N.all())
     for(const b of N.colliding(a)){
+      if(a.npth||b.npth)continue;       // les trous NPTH ont leur propre bloc, plus bas
       if(!neuf(a,b))continue;
       const d=fmt(Math.max(0,pnsPairGap(a,b)),3);
       /* La cote exigée est dite en clair : sans elle, une case de la matrice
