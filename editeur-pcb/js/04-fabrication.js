@@ -370,7 +370,8 @@ function gerberCopper(i){
       let z=zn(h.x,h.y);
       if(z===null)z=zn(ax.x1,ax.y1);
       if(z===null)z=zn(ax.x2,ax.y2);
-      if(z===null)z=zoneEtrangereProche(zs,"",(a,b)=>segSegDist(ax,{x1:a.x,y1:a.y,x2:b.x,y2:b.y}),q=>h.d/2+classOf(q.net).clr);
+      // un trou n'a pas de net : toute zone voisine compte, celle sans net aussi
+      if(z===null)z=zoneEtrangereProche(zs,PNS_NPTH,(a,b)=>segSegDist(ax,{x1:a.x,y1:a.y,x2:b.x,y2:b.y}),q=>h.d/2+classOf(q.net).clr);
       if(z===null)continue;
       gPercage(body,A,h,classOf(z).clr);
     }

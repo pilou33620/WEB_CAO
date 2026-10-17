@@ -25,8 +25,8 @@ Bancs :
 - [x] `JS_PCB` passe
 
 ### T3 : Gerber, trou près d'une zone sans net
-- [ ] Trou hors d'une zone sans net mais à moins de son écartement : dégagé
-- [ ] `JS_PCB` passe
+- [x] Trou hors d'une zone sans net mais à moins de son écartement : dégagé
+- [x] `JS_PCB` passe
 
 ## Phase 2 : cohérence des sorties
 

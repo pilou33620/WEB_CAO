@@ -6344,6 +6344,15 @@ T("DRC des fentes : fente plus longue que sa pastille, axe trop près d'une déc
     if(msgs().some(m=>/fente/i.test(m)))throw new Error("fente dans sa pastille : rien à signaler");
   }finally{loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);}
 });
+T("Gerber : un trou près d'une zone SANS net y est dégagé (points ouverts, T3)",()=>{
+  loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);clearSel();
+  try{
+    S.zones=[{id:S.nextId++,l:0,net:"",pts:[{x:31.5,y:5},{x:60,y:5},{x:60,y:50},{x:31.5,y:50}]}];touch();
+    const d03=s=>(s.match(/D03\*/g)||[]).length, sans=d03(gerberCopper(0));
+    S.holes=[mkHole(31.1,30,1)];touch();   // centre hors de la zone, bord à 0,1 mm dedans
+    if(d03(gerberCopper(0))!==sans+1)throw new Error("trou au bord d'une zone sans net : non dégagé au Gerber");
+  }finally{loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);}
+});
 T("bibliothèque : lecture défensive et fusion des noms",()=>{
   fpLibRaz();
   if(!fpLibParse("ceci n'est pas du json").err)
