@@ -22998,6 +22998,21 @@ T("perçages oblongs : G85 dans l'Excellon, à part au tableau de perçage, cont
   }finally{const s=JSON.parse(sauve);Object.assign(fp,s);for(const k of ["pads","holes","body"])if(!(k in s))delete fp[k];touch();}
   if(drillFile().holes!==nBefore)throw new Error("carte rendue : même nombre de trous qu'avant");
 });
+T("fentes en vraie forme aux plans et sur leur propre calque DXF (points ouverts, T5)",()=>{
+  exCharger(1);
+  const fp=S.fps[0], sauve=JSON.stringify({pads:fp.pads,holes:fp.holes,style:fp.style,pins:fp.pins,pitch:fp.pitch,span:fp.span,body:fp.body});
+  fpApplyDef(fp,{name:"FENTE",pins:1,style:"row",pads:[{n:1,x:0,y:0,w:2.4,h:1.2,shape:"oval",drill:0.6,slot:1.8}],
+    holes:[{x:0,y:3,d:1,w:3,rot:0}]});touch();
+  try{
+    const D=dxfLu(dxfCarte().octets);
+    for(const c of ["TROUS_PTH_0_60X1_80","TROUS_NPTH_1_00X3_00"])
+      if(D.calques.indexOf(c)<0)throw new Error("calque DXF "+c+" absent : "+D.calques.filter(x=>/^TROUS_/.test(x)).join(", "));
+    /* contourOblong : 26 sommets ; le détail de fabrication et la feuille cuivre en portent */
+    dfRegler("couches",true);
+    const doc=dfDocument(), oblongs=doc.feuilles.reduce((s,f)=>s+f.items.filter(it=>it.t==="p"&&it.sp&&it.sp[0].length===26).length,0);
+    if(oblongs<2)throw new Error("fentes dessinées en cercle aux feuilles cuivre ("+oblongs+" contours oblongs)");
+  }finally{dfRegler("couches",false);const s=JSON.parse(sauve);Object.assign(fp,s);for(const k of ["pads","holes","body"])if(!(k in s))delete fp[k];touch();}
+});
 T("plans : variante — non montés en tirets, hors nomenclature",()=>{
   exCharger(1);
   const c3=S.fps.find(f=>f.ref==="C3");

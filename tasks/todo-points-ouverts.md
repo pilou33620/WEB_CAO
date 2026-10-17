@@ -37,9 +37,10 @@ Bancs :
 - [x] `PY_EXP` (attendu : fentes comptées), `PY_VIS`, `JS_VIS` passent
 
 ### T5 : fentes en vraie forme aux plans et au DXF
-- [ ] Détail du plan de fabrication et feuilles cuivre : contour oblong
-- [ ] DXF : calque `TROUS_PTH_<Ø>x<L>` / `TROUS_NPTH_<Ø>x<L>` pour une fente
-- [ ] `JS_PCB` passe
+- [x] Détail du plan de fabrication et feuilles cuivre : contour oblong
+  → l'essai vérifie les feuilles cuivre ; le détail est un rappel de dessin de la vue (même `contourOblong`), non relevé par le banc
+- [x] DXF : calque `TROUS_PTH_<Ø>x<L>` / `TROUS_NPTH_<Ø>x<L>` pour une fente
+- [x] `JS_PCB` passe
 
 ### T6 : `fpBBox` compte les trous
 - [ ] Un plot qui dépasse du corps élargit la boîte de l'empreinte

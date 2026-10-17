@@ -483,14 +483,14 @@ function dxfOutils(D,P){
   };
   for(const fp of S.fps)
     for(const q of padsWorld(fp))
-      if(q.drill>0)poser("TROUS_PTH_"+dxfDiam(q.drill),q.drill,q.x,q.y);
+      if(q.drill>0)poser("TROUS_PTH_"+dxfDiam(q.drill)+(q.slot>q.drill?"X"+dxfDiam(q.slot):""),q.drill,q.x,q.y);   // une fente : son calque
   for(const v of S.vias){
     if(!(v.drill>0))continue;
     const a=Math.min(v.a,v.b), b=Math.max(v.a,v.b);
     poser("VIAS_"+(a===0&&b===S.cu-1?"":"L"+(a+1)+"-L"+(b+1)+"_")+dxfDiam(v.drill),v.drill,v.x,v.y);
   }
   for(const h of trousMonde())
-    if(h.d>0)poser("TROUS_NPTH_"+dxfDiam(h.d),h.d,h.x,h.y);
+    if(h.d>0)poser("TROUS_NPTH_"+dxfDiam(h.d)+(h.w>h.d?"X"+dxfDiam(h.w):""),h.d,h.x,h.y);
   if(typeof cpPaires==="function")
     for(const pa of cpPaires())
       for(const o of pa.outils.values()){

@@ -939,7 +939,10 @@ function dfDessinFab(F,V,groupes,detail){
   groupes.forEach((e,i)=>{
     for(const p of e.pts){
       const s=V.T(p.x,p.y);
-      if(detail)dfCercle(F,s.x,s.y,e.d/2*V.k,{lw:0.12,trait:0.35});
+      if(detail){
+        if(p.ax)dfPoly(F,contourOblong(p.ax).map(q=>V.T(q.x,q.y)),{ferme:true,lw:0.12,trait:0.35});   // fente
+        else dfCercle(F,s.x,s.y,e.d/2*V.k,{lw:0.12,trait:0.35});
+      }
       dfSymbole(F,i,s.x,s.y,rs);
     }
   });
@@ -1182,7 +1185,11 @@ function dfDessinCouche(F,V,i){
       const surCouche=q.drill>0?padCuLayers(fp,q).includes(i):padLayers(fp,q)[0]===i;
       if(!surCouche)continue;
       dfPoly(F,dfPadForme(q).map(P),{ferme:true,plein:cu,trait:null});
-      if(q.drill>0){const s=P(q);dfCercle(F,s.x,s.y,q.drill/2*V.k,{plein:1,trait:null});}
+      if(q.drill>0){
+        const a=axePercage(q);
+        if(a.x1!==a.x2||a.y1!==a.y2)dfPoly(F,contourOblong(a).map(P),{ferme:true,plein:1,trait:null});   // fente
+        else{const s=P(q);dfCercle(F,s.x,s.y,q.drill/2*V.k,{plein:1,trait:null});}
+      }
     }
   for(const v of S.vias){
     if(i<Math.min(v.a,v.b)||i>Math.max(v.a,v.b))continue;
