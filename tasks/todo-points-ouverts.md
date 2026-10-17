@@ -69,8 +69,10 @@ Bancs :
 ## Phase 4 : données
 
 ### T11 : doutes de fiche (PROJETS)
-- [ ] Amphenol 10132797 (numérotation), Yamaichi IC51-0484-806 (broche 1), Keystone 1067 (côté du trou) confrontés à deux sources
-- [ ] Empreinte corrigée seulement si deux sources concordent, sinon doute laissé écrit
+- [x] Amphenol 10132797 (numérotation), Yamaichi IC51-0484-806 (broche 1), Keystone 1067 (côté du trou) confrontés à deux sources
+- [x] Empreinte corrigée seulement si deux sources concordent, sinon doute laissé écrit
+
+  → Amphenol et Keystone confirmés (deux sources) ; Yamaichi : corps corrigé, broche 1 en doute écrit (une seule source)
 
 ## Clôture
 
