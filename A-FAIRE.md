@@ -13,7 +13,7 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 700 essais a
 
 | Composant | Statut | Couverture / Bancs |
 | --- | --- | --- |
-| **Éditeur PCB** | En service | 988 essais (`editeur-pcb/test/harness.js`, relevé du 16/10/2026), dont 44 pour les plans (Draftsman), 30 pour le dossier mécanique, 24 pour le gestionnaire de contraintes et la topologie, 3 pour l'export IPC-2581 (+ 60 cas d'aller-retour, `banc-ipc2581-export.py`) |
+| **Éditeur PCB** | En service | 1002 essais (`editeur-pcb/test/harness.js`, relevé du 16/10/2026), dont 44 pour les plans (Draftsman), 30 pour le dossier mécanique, 24 pour le gestionnaire de contraintes et la topologie, 3 pour l'export IPC-2581 (+ 60 cas d'aller-retour, `banc-ipc2581-export.py`) |
 | **Éditeur Schématique** | En service | 157 essais (`editeur-schematique/test/harness.js`), dont 3 pour les contraintes de nets |
 | **Visionneuse IPC-2581** (lecteur `ipc2581_parser` 1.82, `ipc2581_json` 1.3.0) | En service | 226 essais (`harness-sim.js`), dont 13 pour le dossier mécanique + 76 (`banc-essai.py`) |
 | **SI — Impédance & Vias (`ligne_mom` v2.9.0)** | En service (0,3 à 0,4 % vs étalons ; pertes conducteur par l'inductance incrémentale de Wheeler, ruban + plan(s) + bords ; rugosité Hammerstad / Huray, diélectrique causal Djordjevic-Sarkar, via en ligne — branchés dans la cascade) | 236 cas (`python/test/banc-ligne-mom.py`) |
@@ -104,22 +104,20 @@ Rien en cours : l'option B, les limites de l'option A et la garde de la règle *
 ### Trous dans les empreintes (`SPEC-trous-npth.md`, 16/10/2026)
 - [x] **M1 — trous ronds NPTH dans l'empreinte** (`holes` de pcbfp-1, `trousMonde()`) : voir *Éditeur PCB* ci-dessous.
 - [x] **M2 — perçages oblongs** (16/10/2026) : pastille à fente (`slot`), trou NPTH oblong (`w`, `rot`, carte et empreinte) ; `axePercage` pour l'Excellon (G85), le tableau de perçage, le DXF, le dessin, les dégagements (écran, îlots, Gerber, IPC-2581), le DRC (y compris la fente sur une couche sans cuivre) et l'audit fabricant (`drilling.slots`) ; IPC-2581C en `SlotCavity` (calque ROUT) comme KiCad, conforme au XSD ; Gestion LIB (colonnes Fente, L, Rot). 8 essais + carte d'essai `exemple-1-fentes`.
-- [ ] Suites de M2 laissées pour plus tard :
-  - la visionneuse ne lit pas encore `SlotCavity` : une fente d'un fichier IPC-2581 n'y apparaît pas ;
-  - IPC-D-356 : la fente garde sa largeur (le format ne connaît pas les fentes) ;
-  - Draftsman : le détail du plan et les feuilles cuivre dessinent la fente en cercle ; DXF : calques `TROUS_PTH_<Ø>` / `TROUS_NPTH_<Ø>` mêlent fente et rond de même largeur (POINT au centre) ;
-  - le DRC ne borne pas `slot` par la pastille (l'audit, lui, signale l'anneau) ; contrôle au bord de carte sur les deux bouts seulement (encoche concave entre les deux non vue) ;
-  - panneau Propriétés d'un trou de carte : pas de champ L / Rot (un trou oblong de carte ne vient que d'un fichier).
-- [x] **M3 — LIB** (16/10/2026, PROJETS) : les trous de 13 empreintes revérifiés sur fiche et passés dans `holes`, pattes oblongues du TE 2305018-2 en `slot`. Les MECA-LOC ne deviennent pas des empreintes : un trou de locating se pose comme trou de carte (décision du 16/10/2026). Doutes laissés tels quels : trou Ø2,03 du MPD-BA2AAPC (plan rév. H) trop juste pour la vis 2-56 qu'il recommande ; vue du « Mounting Detail » du Keystone 1067 ; numérotation Amphenol 10132797 et broche 1 du Yamaichi.
-- [ ] Accrocher une cote du Draftsman à un trou d'empreinte (référence empreinte + rang) : laissé hors de M1 (D3).
-- [ ] Gestion LIB : déplacer un trou au glisser et l'effacer avec Suppr (aujourd'hui tableau X / Y et bouton ✕).
-- [ ] Relevés de la revue M1 laissés pour plus tard :
-  - le routeur (PNS) ignore les trous NPTH comme obstacles, comme il ignorait déjà `S.holes` : seul le DRC le dit après coup ;
-  - `fpBBox` / `fpLocalBox` ignorent les trous : placement par blocs, score et `arrange` peuvent poser un composant sur un plot qui dépasse du corps (seul `placerSatellites` les compte) ;
-  - le miroir `FPLIB` n'est pas relu après une modification dans la Gestion LIB (`21-lib-sync.js` ne vide que `PCB_LIB_CACHE`) : défaut antérieur, pastilles comprises ;
-  - à l'écran, `zoneCanvas` dégage à l'écartement de la première zone de la couche, le Gerber à celui de la zone qui contient l'objet : défaut antérieur, déjà vrai pour les pastilles ;
-  - au Gerber, un trou proche d'une zone SANS net (mais hors d'elle) n'y est pas dégagé ;
-  - l'essai « empreintes toutes centrées » contrôle la géométrie calculée pour chaque nom, pas celle des fichiers de la LIB : beaucoup d'empreintes de connecteur suivent l'origine de leur fiche, il faudra décider si la règle s'applique à elles ;
+- [x] **Points ouverts de M1 à M3** (17/10/2026, `tasks/plan-points-ouverts.md`) :
+  - le routeur voit les trous NPTH (carte et empreinte, rond ou fente) comme des obstacles pour tous les nets ;
+  - DRC : bord de carte d'une fente sur tout son axe, fente plus grande que sa pastille ; Gerber : trou près d'une zone sans net dégagé ;
+  - la visionneuse lit les fentes (`SlotCavity`, calque ROUT), les dessine et les passe au dossier méca ;
+  - Draftsman et DXF : fentes en vraie forme, calques `TROUS_PTH_<Ø>X<L>` ; `fpBBox` compte les trous ; l'écran dégage à l'écartement de la zone qui contient l'objet, comme le Gerber ;
+  - panneau d'un trou de carte : longueur et angle ; Gestion LIB : glisser et Suppr pour les trous ; la mise à jour LIB relit aussi le miroir `FPLIB` ;
+  - doutes de fiche : Amphenol 10132797 et Keystone 1067 confirmés par deux sources, corps du Yamaichi IC51 tourné (32 × 29).
+- [x] **M3 — LIB** (16/10/2026, PROJETS) : les trous de 13 empreintes revérifiés sur fiche et passés dans `holes`, pattes oblongues du TE 2305018-2 en `slot`. Les MECA-LOC ne deviennent pas des empreintes : un trou de locating se pose comme trou de carte (décision du 16/10/2026).
+- [ ] Restent ouverts :
+  - Yamaichi IC51-0484-806 : broche 1 non marquée sur le plan 48 broches (une seule source indirecte) — à vérifier sur le repère moulé du support ;
+  - MPD-BA2AAPC : trou Ø2,03 (plan rév. H) gardé, trop juste pour la vis 2-56 que la fiche recommande (choix du 16/10/2026) ;
+  - IPC-D-356 : une fente garde sa largeur, le format ne connaît pas les fentes ;
+  - accrocher une cote du Draftsman à un trou d'empreinte (référence empreinte + rang), laissé hors de M1 (D3) ;
+  - l'essai « empreintes toutes centrées » contrôle la géométrie calculée pour chaque nom, pas celle des fichiers de la LIB : beaucoup d'empreintes de connecteur suivent l'origine de leur fiche, à décider ;
   - le tableau de perçage range les plots de centrage d'un connecteur sous « fixation ».
 
 ### Contenu de la LIB (données, pas code)

@@ -77,6 +77,8 @@ Bancs :
 ## Clôture
 
 ### T12 : revue, documentation, push
-- [ ] Revue indépendante, constats traités
-- [ ] `A-FAIRE.md` à jour ; tous les bancs passent
-- [ ] Push WEB_CAO et PROJETS ; graphe graphify mis à jour
+- [x] Revue indépendante, constats traités
+- [x] `A-FAIRE.md` à jour ; tous les bancs passent
+- [x] Push WEB_CAO et PROJETS ; graphe graphify mis à jour
+
+  → revue indépendante : 6 constats importants corrigés (double message via ↔ trou, règle commune routeur / contrôle, trous pendant le glisser, zone d'un trou à cheval sur l'écran, sélection Suppr dans la Gestion LIB, FPLIB relu pour une empreinte absente de la carte) ; fente oblique ajoutée à la carte d'essai.
