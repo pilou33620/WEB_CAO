@@ -760,6 +760,27 @@ def test_routes():
         assert a.essayer(a.code)[0] and a.grilles == 0
         print("[PASS] Appairage : pause doublee a chaque code brule (60 s -> 1 h)")
 
+        # 41. Canal de pilotage (pilote.py, module canal-pilote du MCP de web_suite) :
+        # une page bat, le MCP de ce poste voit l'onglet ; une autre origine est refusée
+        def pilote(methode, route, corps=None, origine=None):
+            c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            entetes = {"Content-Type": "application/json"}
+            if origine:
+                entetes["Origin"] = origine
+            c.request(methode, route, body=None if corps is None else json.dumps(corps), headers=entetes)
+            r = c.getresponse()
+            donnees = r.read()
+            c.close()
+            return r.status, (json.loads(donnees) if donnees[:1] == b"{" else None)
+        onglet = {"id": "o1", "page": "pcb", "projet": "essai", "focus_il_y_a": 0}
+        assert pilote("POST", "/api/pilote/battement", {"navigateur": "n1", "onglets": [onglet]},
+                      origine="http://evil.example")[0] == 403
+        assert pilote("POST", "/api/pilote/battement", {"navigateur": "n1", "onglets": [onglet]},
+                      origine="http://127.0.0.1:%d" % port)[0] == 200
+        code, liste = pilote("GET", "/api/pilote/onglets")
+        assert code == 200 and [o["id"] for o in liste["onglets"]] == ["o1"], liste
+        print("[PASS] Canal de pilotage : battement de la page, onglets vus par le MCP, autre origine refusée")
+
     finally:
         conn.close()
         httpd.shutdown()

@@ -492,6 +492,8 @@ if DOSSIER_PYTHON not in sys.path:
 # Remplace dans start_server() selon l'adresse d'ecoute obtenue.
 import appairage  # noqa: E402
 GARDE = appairage.Garde("WEB_CAO", actif=False)
+import pilote  # noqa: E402  (canal de pilotage des pages par le MCP de web_suite)
+PILOTE = pilote.Pilote()
 try:
     import passerelle_mcp
     ERREUR_PASSERELLE = None
@@ -3350,6 +3352,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
         if not self._valider_csrf():
             return
+        if PILOTE.traiter(self):
+            return
         route = self._route()
         if route == "/api/github/envoyer":
             self._projet_api(self._github_envoyer)
@@ -3396,6 +3400,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         self._api(appel)
 
     def do_GET(self):
+        if PILOTE.traiter(self):
+            return
         route = self._route()
         if route == "/api/datasheet/ouvrir":
             self._datasheet_api(self._datasheet_ouvrir)
