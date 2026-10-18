@@ -31,10 +31,42 @@ async function piloteCaoCalcul(args) {
   return { analyse, rapport: simRapMarkdown(simRapCollecter()) };
 }
 
+/* cao_valeur_composant (schéma) : la recherche et le rafraîchissement de l'action
+   schema_values de l'assistant (ia-assistant.js), en une étape d'historique. Le repère
+   est cherché AVANT push() : un repère inconnu ne laisse pas d'étape vide à défaire. */
+function piloteTrouverComp(ref) {
+  const cible = String(ref || "").trim().toUpperCase();
+  const meme = c => (c.ref || "").trim().toUpperCase() === cible;
+  let c = S.comps.find(meme);
+  for (const p of S.pages || []) { if (c) break; if (Array.isArray(p.comps)) c = p.comps.find(meme); }
+  if (!c) throw new Error("Repère « " + ref + " » introuvable dans le schéma.");
+  return c;
+}
+
+const PILOTE_VALEUR = {
+  ecriture: true, historique: true,      // une étape dans l'historique de l'éditeur : Ctrl+Z la défait
+  proposer: a => {
+    const c = piloteTrouverComp(a.ref);
+    return { titre: c.ref + " : valeur", avant: c.value || "", apres: String(a.valeur).trim() };
+  },
+  appliquer: a => {
+    const c = piloteTrouverComp(a.ref);
+    const v = String(a.valeur).trim();
+    push();
+    const def = typeof defOf === "function" ? defOf(c.type) : null;
+    if (def && typeof def.pins === "function" && typeof reshapeComp === "function") reshapeComp(c, () => { c.value = v; });
+    else c.value = v;
+    if (typeof buildList === "function") buildList();
+    if (typeof refreshPanels === "function") refreshPanels();
+    if (typeof draw === "function") draw();
+  },
+};
+
 function piloteCao(page) {
   if (typeof Pilote === "undefined") return;
   const TOILES = { schema: "sheet", pcb: "board", "visionneuse-ipc": "carte" };
   Pilote.declarer({ page, projet: () => (typeof projNom === "function" ? projNom() : "") });
   if (TOILES[page]) Pilote.capture(() => document.getElementById(TOILES[page]));
   if (page === "pcb" || page === "visionneuse-ipc") Pilote.commande("cao_calcul", { executer: piloteCaoCalcul });
+  if (page === "schema") Pilote.commande("cao_valeur_composant", PILOTE_VALEUR);
 }

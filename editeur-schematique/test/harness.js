@@ -59,6 +59,8 @@ const EXPOSE=[
   "SCHEMA_PATTERNS","NET_CLASSES","netClassSelect",
   "addComp","schComposantsDansZone","schToutesLesZones",
   "push","undo","redo","touchWires","buildTabs","draw","fit","resize",
+  /* canal de pilotage du MCP de web_suite (commun/pilote-cao.js) */
+  "piloteCao",
   /* bus et hiérarchie */
   "C_BUS","BUS_WIDTH","sheetBlocks","hitSheetBlock","hitSheetPin","sheetInterconnections","newHierPage",
   "schDevelopperSignauxBus","schBusDuPoint","schPiquageSurFil","schTousLesPiquages",
@@ -193,6 +195,34 @@ console.log("— banc d'essai éditeur schématique —");
 /* ==========================================================================
    Découpe automatique des fils (07-connectivite.js)
    ========================================================================== */
+T("canal de pilotage : cao_valeur_composant propose, applique en une étape, Ctrl+Z la défait",()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  try{
+    piloteCao("schema");
+    const d=cmds.cao_valeur_composant;
+    if(!(d&&d.ecriture&&d.historique))throw new Error("écriture par l'historique de l'éditeur attendue");
+    const c=addComp("resistor",100,100); c.ref="R7"; c.value="1k";
+    const prop=d.proposer({ref:"r7",valeur:"4k7"});      // repère sans tenir compte de la casse
+    if(prop.avant!=="1k"||prop.apres!=="4k7"||!/R7/.test(prop.titre))throw new Error("carte : "+JSON.stringify(prop));
+    if(c.value!=="1k")throw new Error("proposer ne doit rien écrire");
+    const n=S.hist.length;
+    d.appliquer({ref:"R7",valeur:"4k7"});
+    const apres=S.comps.find(x=>x.ref==="R7");
+    if(apres.value!=="4k7")throw new Error("valeur non appliquée : "+apres.value);
+    if(S.hist.length!==n+1)throw new Error("une seule étape d'undo attendue, "+(S.hist.length-n)+" poussée(s)");
+    undo();
+    if(S.comps.find(x=>x.ref==="R7").value!=="1k")throw new Error("Ctrl+Z ne défait pas la valeur");
+    for(const f of [()=>d.proposer({ref:"R99",valeur:"1k"}),()=>d.appliquer({ref:"R99",valeur:"1k"})]){
+      const avant=S.hist.length;
+      let msg="";
+      try{f();}catch(e){msg=e.message;}
+      if(!/R99/.test(msg))throw new Error("repère inconnu : message attendu, lu « "+msg+" »");
+      if(S.hist.length!==avant)throw new Error("repère inconnu : rien ne doit être poussé");
+    }
+  }finally{global.Pilote=ancien;}
+});
+
 T("classes d'interface : la table commune est chargée",()=>{
   if(Object.keys(CLASSES_INTERFACE).length!==7)throw new Error("7 interfaces attendues");
   if(familleClasse("USB HS")!=="Rapide"||familleClasse("CAN")!=="Lent"||familleClasse("RF")!=="RF")
