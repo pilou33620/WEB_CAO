@@ -122,6 +122,9 @@ jobs:
       - name: Rapport de simulation (Markdown) — banc d'essai
         run: node commun/test/banc-rapport-sim.js
 
+      - name: Canal de pilotage (MCP de web_suite) — commandes des pages
+        run: node commun/test/banc-pilote-cao.js
+
       - name: Mise à jour automatique GitHub — banc d'essai
         run: python python/test/banc-maj-github.py
 
