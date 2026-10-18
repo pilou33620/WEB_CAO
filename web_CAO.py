@@ -1733,6 +1733,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Expires", "0")
         # un .txt ou un .json de la LIB ne doit jamais etre interprete en page
         self.send_header("X-Content-Type-Options", "nosniff")
+        # Pas d'affichage dans le cadre d'un autre site : un clic piégé sur « Appliquer » du panneau Claude
+        self.send_header("X-Frame-Options", "SAMEORIGIN")
+        self.send_header("Content-Security-Policy", "frame-ancestors 'self'")
         super().end_headers()
 
     def _chemin_lib(self, path):

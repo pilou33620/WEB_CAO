@@ -781,6 +781,14 @@ def test_routes():
         assert code == 200 and [o["id"] for o in liste["onglets"]] == ["o1"], liste
         print("[PASS] Canal de pilotage : battement de la page, onglets vus par le MCP, autre origine refusée")
 
+        # 42. Pas d'affichage dans le cadre d'un autre site (clic piégé sur « Appliquer » du panneau Claude)
+        c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        c.request("GET", "/index.html")
+        r = c.getresponse(); r.read(); c.close()
+        assert r.getheader("X-Frame-Options") == "SAMEORIGIN", r.getheader("X-Frame-Options")
+        assert "frame-ancestors 'self'" in (r.getheader("Content-Security-Policy") or "")
+        print("[PASS] Cadres : même origine seulement (X-Frame-Options, frame-ancestors)")
+
     finally:
         conn.close()
         httpd.shutdown()
