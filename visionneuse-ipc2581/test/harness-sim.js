@@ -67,7 +67,7 @@ const FICHIERS=[
   path.join(RACINE,"..","commun","dossier-meca.js"),
   path.join(RACINE,"js","08-dossier-meca.js")
 ];
-const EXPOSE=["ECRITURE_CAO","simDsChamp","SIM_DS","SIM_PDN","simPDNAssistantActif","SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
+const EXPOSE=["ECRITURE_CAO","simDsChamp","simDsLire","simDsEcrire","SIM_DS","SIM_PDN","simPDNAssistantActif","SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simSaisie","simPorts","SIM_FORMAT",
   "V","LT","ltAire","ltPreparer","LT_SEUIL_PLAN","mdlLongueur",
   "mdlNetNom","mdlNb","mdlCharger","mdlCouches","mdlPlansDans",
@@ -6805,6 +6805,15 @@ T("canal de pilotage : cao_sim_ecrire, unité du catalogue, une carte qu'Annuler
   SIM_PDN.rVrmMOhm -= 1;
   d.annuler({ lot }, jeton);
   if (SIM_PDN.rVrmMOhm !== r0) throw new Error("Annuler ne remet pas R_vrm : " + SIM_PDN.rVrmMOhm);
+  // une valeur d'avant hors des bornes (0 = non renseigné) revient telle quelle
+  const chTr = simDsChamp("si", "tr"), tr0 = simDsLire(chTr);
+  simDsEcrire(chTr, 0);
+  const lt = [{ groupe: "si", cle: "tr", valeur: 0.5, unite: chTr.unite }];
+  const jt = d.appliquer({ lot: lt }, d.proposer({ lot: lt }));
+  if (simDsLire(chTr) !== 0.5) throw new Error("tr non écrit");
+  d.annuler({ lot: lt }, jt);
+  if (simDsLire(chTr) !== 0) throw new Error("Annuler doit remettre tr à 0, lu " + simDsLire(chTr));
+  simDsEcrire(chTr, tr0);
   refus([{ groupe: "pdn", cle: "rVrmMOhm", valeur: 7, unite: "Ω" }], /unité « Ω », le catalogue attend « mΩ »/);
   refus([{ groupe: "pdn", cle: "rVrm", valeur: 7, unite: uR }], /paramètre « rVrm » inconnu/);
   refus([{ groupe: "pdn", cle: "rVrmMOhm", valeur: 1e9, unite: uR }], /hors des bornes/);

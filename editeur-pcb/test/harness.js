@@ -26572,9 +26572,16 @@ TA("canal de pilotage : cao_composants_ecrire au PCB, un lot en une étape, DRC 
       throw new Error("lot mal appliqué");
     const drc=runDrc().filter(x=>!x.info).length;
     if(!new RegExp("^DRC : \\d+ erreurs? avant → "+drc+" après\\.$","m").test(prop.apres))throw new Error("bilan DRC : "+prop.apres);
+    // déplacer U1 ne crée pas d'erreur « neuve » à elle seule : les mêmes messages, ailleurs
+    const p2=d.proposer({lot:[{ref:"U1",champs:{x:x0+6}}]}); d.appliquer({lot:[{ref:"U1",champs:{x:x0+6}}]},p2);
+    if(/Nouvelles erreurs/.test(p2.apres)&&runDrc().filter(x=>!x.info).length<=drc)throw new Error("erreurs déplacées comptées neuves : "+p2.apres);
+    undo();
     undo();
     if(!fp("R2")||fp("R2").side||ux(fp("U1").x)!==x0||fp("R1").pkg!=="0603")throw new Error("Ctrl+Z ne remet pas tout");
     refus({lot:[{ref:"R1",champs:{boitier:"ZZZ-99"}}]},/« ZZZ-99 » inconnu des empreintes/);
+    // une empreinte dessinée à la main (pastilles qui ne viennent pas de la LIB) garde son dessin
+    const r3fp=fp("R3"); r3fp.pads=padsOf(r3fp).map(padClone); delete r3fp.lib; touch();
+    refus({lot:[{ref:"R3",champs:{boitier:"0805"}}]},/dessinée à la main/);
     refus({lot:[{ref:"R1",champs:{ref:"r3"}}]},/« r3 » est déjà pris/);
     refus({lot:[{ref:"R1",champs:{x:2000}}]},/à ±1000/);
     refus({lot:[{ref:"R1",champs:{face:"gauche"}}]},/dessus ou dessous/);

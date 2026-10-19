@@ -1027,6 +1027,29 @@ function brochesResoudre(fp,pins){
 }
 /* Applique une netlist : les empreintes déjà posées gardent leur place, les
    nouvelles sont rangées à côté de la carte. Rien n'est routé automatiquement. */
+/* Refait la forme d'une empreinte pour un nouveau boîtier : l'empreinte de la LIB quand le
+   boîtier en a une, sinon la géométrie de la table. Une empreinte dessinée à la main
+   (pastilles explicites qui ne viennent pas de la LIB) garde son dessin : la refaire
+   effacerait un travail qu'aucun boîtier ne sait reproduire. Rend "lib", "table" ou ""
+   (rien de refait). À appeler dans fpReshape, pour que les pistes suivent les pastilles.
+   L'import de la netlist et l'écriture de Claude (commun/ecriture-cao.js) s'en servent. */
+function fpReposerBoitier(fp,pkg,pins){
+  const dessin=fpFree(fp)&&!fp.lib;
+  const lib=dessin?null:((typeof fpLibPourBoitier==="function")?fpLibPourBoitier(pkg):null);
+  if(lib&&fpApplyDef(fp,lib)){fp.lib=lib.name;return "lib";}
+  if(dessin)return "";
+  if(fp.lib){delete fp.pads;delete fp.body;delete fp.lib;}
+  const g=fpGeomFor(pkg,pins);
+  fp.style=g.style;fp.pitch=g.pitch;fp.span=g.span;fp.pins=g.pins;
+  fpTrousDe(fp,g);
+  if(g.pads){
+    fp.pads=g.pads.map(padClone);
+    if(g.body)fp.body={...g.body};
+    fp.lib=g.pkg;
+    fpSyncPins(fp);
+  }
+  return "table";
+}
 function applyNetlist(txt,dropMissing){
   const {comps,nets}=parseNetlist(txt);
   const pinCount=new Map(), pinNet=new Map(), brochesDe=new Map();
@@ -1085,24 +1108,9 @@ function applyNetlist(txt,dropMissing){
         /* fpReshape, comme la fenêtre ECO : les pistes suivent les
            pastilles déplacées, au lieu de rester à l'ancienne place */
         const refaire=()=>{
-          const dessin=fpFree(fp)&&!fp.lib;
-          const lib=dessin?null:libPour(meta.pkg);
-          if(lib&&fpApplyDef(fp,lib)){
-            fp.lib=lib.name;
-            libFp.push(fp);repkg.push(fp);
-          }else if(!dessin){
-            if(fp.lib){delete fp.pads;delete fp.body;delete fp.lib;}
-            const g=fpGeomFor(meta.pkg,pins);
-            fp.style=g.style;fp.pitch=g.pitch;fp.span=g.span;fp.pins=g.pins;
-            fpTrousDe(fp,g);
-            if(g.pads){
-              fp.pads=g.pads.map(padClone);
-              if(g.body)fp.body={...g.body};
-              fp.lib=g.pkg;
-              fpSyncPins(fp);
-            }
-            repkg.push(fp);
-          }
+          const r=fpReposerBoitier(fp,meta.pkg,pins);
+          if(r==="lib")libFp.push(fp);
+          if(r)repkg.push(fp);
         };
         if(typeof fpReshape==="function")fpReshape(fp,refaire);else refaire();
       }

@@ -70,11 +70,12 @@ const ECRITURE_CAO = (function () {
 
   /* ---------- DRC avant → après (PCB) ---------- */
   const DRC_MAX = 80;
-  const cleDrc = d => d.msg + "|" + Math.round(d.x * 100) + "|" + Math.round(d.y * 100);
   function erreursDrc() { return runDrc().filter(d => !d.info); }
+  // par message, avec leur nombre : une erreur qui a seulement bougé avec sa pastille n'est pas neuve
   function bilanDrc(avant, apres) {
-    const vues = new Set(avant.map(cleDrc));
-    const neuves = apres.filter(d => !vues.has(cleDrc(d)));
+    const restant = new Map();
+    for (const d of avant) restant.set(d.msg, (restant.get(d.msg) || 0) + 1);
+    const neuves = apres.filter(d => { const n = restant.get(d.msg) || 0; restant.set(d.msg, n - 1); return n <= 0; });
     const pl = n => n + " erreur" + (n > 1 ? "s" : "");
     const lignes = ["DRC : " + pl(avant.length) + " avant → " + apres.length + " après."];
     if (neuves.length) lignes.push("Nouvelles erreurs (" + neuves.length + ") :");
@@ -198,9 +199,13 @@ const ECRITURE_CAO = (function () {
           if (texte(v, quoi, refus) !== null && v !== (fp.value || "")) lignes.push({ quoi, avant: fp.value || "", apres: v });
         } else if (k === "boitier") {
           if (texte(v, quoi, refus) === null) continue;
-          // la page ignore en silence un boîtier hors table ; ici, c'est un refus
-          const g = v.trim() ? pkgGeom(v.trim(), fpWiredPins(fp)) : null;
-          if (!g || (fpFree(fp) && !g.pads)) { refus.push(quoi + " : « " + v + " » inconnu des empreintes (bibliothèque ou table de boîtiers)"); continue; }
+          // comme l'import de la netlist (fpReposerBoitier) : l'empreinte de la LIB, sinon la table ;
+          // le panneau, lui, garderait en silence l'ancienne forme pour un boîtier inconnu
+          const nom = v.trim();
+          if (!nom || !(fpLibPourBoitier(nom) || pkgGeom(nom, fpWiredPins(fp)))) {
+            refus.push(quoi + " : « " + v + " » inconnu des empreintes (LIB ou table de boîtiers)"); continue;
+          }
+          if (fpFree(fp) && !fp.lib) { refus.push(quoi + " : empreinte dessinée à la main, qu'un boîtier ne refait pas : change-la dans l'éditeur"); continue; }
           if (v.trim() !== (fp.pkg || "")) lignes.push({ quoi, avant: fp.pkg || "", apres: v.trim() });
         } else if (k === "face") {
           if (!Object.prototype.hasOwnProperty.call(FACES, v)) { refus.push(quoi + " : dessus ou dessous"); continue; }
@@ -224,7 +229,10 @@ const ECRITURE_CAO = (function () {
     for (const [fp, ch] of cibles) {
       if ("ref" in ch) fp.ref = ch.ref;
       if ("valeur" in ch) fp.value = ch.valeur;
-      if ("boitier" in ch) { fp.pkg = ch.boitier.trim(); applyPkgGeom(fp); }
+      if ("boitier" in ch) {
+        fp.pkg = ch.boitier.trim();
+        fpReshape(fp, () => fpReposerBoitier(fp, fp.pkg, fpWiredPins(fp)));   // les pistes suivent les pastilles
+      }
       if (POSE.some(k => k in ch)) transformFps([fp.id], () => {
         if ("face" in ch) fp.side = FACES[ch.face];
         if ("x" in ch) fp.x = wxu(ch.x);
@@ -510,6 +518,13 @@ const ECRITURE_CAO = (function () {
     const r = simDsAppliquer(prep, prep.lignes.filter(l => l.ok).map(l => l.id));
     return r.messages || [];
   }
+  /* Annuler remet la valeur d'avant telle quelle, même hors des bornes du catalogue (0 = « non
+     renseigné ») : les lignes sont faites ici, sans simDsPreparer, pour le même chemin d'écriture. */
+  function remettreSim(jeton) {
+    const lignes = jeton.map((x, id) => ({ id, ok: true, genre: "champ", sim: x.sim, cle: x.cle, nouveau: x.valeur,
+                                           ana: (simDsGroupe(x.sim) || {}).ana || "" }));
+    simDsAppliquer({ lignes, source: "annulation" }, lignes.map(l => l.id));
+  }
 
   const SIMULATION = lot({
     titre: "Paramètres de simulation",
@@ -523,7 +538,7 @@ const ECRITURE_CAO = (function () {
     rafraichir: () => {},
     // annuler n'a lieu que si aucun paramètre n'a rebougé depuis (pilote.js compare etat())
     etat: () => simDsGroupes().map(g => g.champs.map(c => simDsLire(c))),
-    annuler: (args, jeton) => { simPrete(); ecrireSim(jeton || []); },
+    annuler: (args, jeton) => { simPrete(); remettreSim(jeton || []); },
   });
 
   return { lot, composantsSch: COMPOSANTS_SCH, composantsPcb: COMPOSANTS_PCB, pistes: PISTES, classes: CLASSES,
