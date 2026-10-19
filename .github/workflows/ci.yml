@@ -114,7 +114,6 @@ jobs:
 
       - name: Assistant IA — échappement du HTML du modèle
         run: |
-          node gestion-lib/test/banc-ia-xss.js
           node commun/test/banc-ia-markdown.js
 
       - name: Gestion LIB — repère des empreintes (y vers le bas, comme l'éditeur PCB)

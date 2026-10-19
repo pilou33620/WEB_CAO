@@ -132,9 +132,7 @@
       {sel:"#bAutoAssoc",titre:"Auto-associer",
        texte:"Relie empreintes et symboles aux composants d'après leur préfixe et leur boîtier."},
       {sel:"#bSave",titre:"Enregistrer",
-       texte:"Écrit le catalogue sur le disque. Ouvert depuis le réseau, la LIB est en lecture seule."},
-      {sel:"#bModeIaLib",titre:"Assistant IA LIB",
-       texte:"Demandez une empreinte ou un symbole à partir d'une datasheet, ou une correction."}
+       texte:"Écrit le catalogue sur le disque. Ouvert depuis le réseau, la LIB est en lecture seule."}
     ],
     ipc2581:[
       {titre:"Bienvenue dans la visionneuse IPC-2581",

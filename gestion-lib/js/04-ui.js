@@ -122,9 +122,6 @@ function initApp() {
   const bNewSch = document.getElementById("bNewSch");
   if (bNewSch) bNewSch.addEventListener("click", () => creerNouveauSymboleSch());
 
-  const bModeIa = document.getElementById("bModeIaLib");
-  if (bModeIa) bModeIa.addEventListener("click", () => iaLibBasculer());
-
   const bCols = document.getElementById("bReglerColonnes");
   if (bCols) bCols.addEventListener("click", () => ouvrirModaleColonnes());
 
@@ -156,7 +153,6 @@ function initApp() {
       fermerModaleNouveauComposant();
       fermerModaleColonnes();
       fermerEditeurLib();
-      iaLibFermer();
     }
   });
 

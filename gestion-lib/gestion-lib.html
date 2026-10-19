@@ -34,7 +34,6 @@
       <button class="tb" id="bAutoAssoc" title="Associe automatiquement les empreintes PCB et symboles selon le préfixe et boîtier, et complète le Brochage des références au brochage certain (transistors SOT-23, références relevées sur datasheet)">🔄 Auto-associer</button>
       <button class="tb" id="bExportCsv" title="Télécharger le fichier CSV mis à jour">📥 Exporter CSV</button>
       <button class="tb success" id="bSave" title="Enregistrer les modifications sur le serveur (LIB/LIB_composants.csv)">💾 Enregistrer</button>
-      <button class="tb primary" id="bModeIaLib" title="Ouvrir l'Assistant IA pour la bibliothèque">✨ Assistant IA LIB</button>
     </div>
   </header>
 
@@ -387,47 +386,6 @@
     </div>
   </div>
 
-  <!-- Volet Latéral : Assistant IA LIB -->
-  <aside class="ia-panel-drawer" id="panelIaLib">
-    <div class="ia-head">
-      <div class="ia-brand">
-        <i>✨</i>
-        <span>Assistant IA LIB</span>
-      </div>
-      <button class="tb mini" onclick="iaLibFermer()">✕</button>
-    </div>
-
-    <!-- Barre de configuration IA -->
-    <div class="ia-config-bar">
-      <span>Modèle :</span>
-      <select id="iaModelSelect">
-        <option value="gemma-4-31b-it">Gemma 4 31B</option>
-        <option value="gemini-3.8-flash">Gemini 3.8 Flash</option>
-        <option value="gemini-3.8-flash-thinking">Gemini 3.8 Flash (Thinking)</option>
-      </select>
-      <span class="ia-key-pill missing" id="iaKeyPill" onclick="demanderCleApi()">🔑 Saisir clé</span>
-    </div>
-
-    <!-- Messages du chat -->
-    <div class="ia-chat-messages" id="iaChatMessages"></div>
-
-    <!-- Zone de saisie et suggestions -->
-    <div class="ia-input-area">
-      <div class="ia-quick-suggestions">
-        <span class="ia-chip" onclick="iaActionRapide('pcb_qfn')">📐 QFN-16</span>
-        <span class="ia-chip" onclick="iaActionRapide('pcb_corriger')">📐 Corriger PCB</span>
-        <span class="ia-chip" onclick="iaActionRapide('sch_ldo')">⚡ Régulateur LDO</span>
-        <span class="ia-chip" onclick="iaActionRapide('sch_corriger')">⚡ Corriger Schéma</span>
-        <span class="ia-chip" onclick="iaActionRapide('cat_completer')">📋 Compléter composant</span>
-        <span class="ia-chip" onclick="iaActionRapide('cat_auditer')">🔍 Audit catalogue</span>
-      </div>
-      <div class="ia-prompt-row">
-        <textarea id="iaPromptInput" placeholder="Demandez une empreinte, un symbole ou une correction..." onkeydown="if(event.key==='Enter' && !event.shiftKey){ event.preventDefault(); envoyerPromptIa(); }"></textarea>
-        <button class="ia-btn-send" onclick="envoyerPromptIa()" title="Envoyer">➤</button>
-      </div>
-    </div>
-  </aside>
-
   <!-- Toasts de notification -->
   <div id="toastContainer"></div>
 
@@ -442,7 +400,6 @@
   <script src="js/03-rendu-symbole.js"></script>
   <script src="js/04-ui.js"></script>
   <script src="js/05-editeur-lib.js"></script>
-  <script src="js/06-ia-lib.js"></script>
   <script src="js/07-import-jlc.js"></script>
   <script src="js/08-pilote-lib.js"></script>
 <script src="../commun/tuto.js" data-outil="lib"></script>
