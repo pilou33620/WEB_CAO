@@ -288,9 +288,92 @@ const ECRITURE_CAO = (function () {
     }
   }
 
-  function rafraichirRegles() { touch(); zoneCache.clear(); refreshPanels(); draw(); }
+  function rafraichirRegles() { touch(); zoneCache.clear(); refreshPanels(); draw(); reSync(); }   // reSync : rien si la fenêtre Règles est fermée
 
   const PISTES = lot({ titre: "Largeur des pistes", verifier: verifierPistes, muter: muterPistes, rafraichir: rafraichirRegles, drc: true });
 
-  return { lot, composantsSch: COMPOSANTS_SCH, composantsPcb: COMPOSANTS_PCB, pistes: PISTES, LOT_MAX };
+  /* ---------- classes de nets ----------
+     Un lot d'actions jouées dans l'ordre sur une copie (classes et rattachements) : on peut
+     créer une classe puis y rattacher des nets dans la même carte. La copie validée
+     remplace S.classes et S.netClass d'un coup. */
+  const CHAMPS_CLASSE = { largeur: ["w", 0.05, 10], isolation: ["clr", 0.05, 5], via: ["via", 0.2, 6], percage: ["drill", 0.05, 6] };
+  const decrire = c => "largeur " + c.w + ", isolation " + c.clr + ", via " + c.via + ", perçage " + c.drill +
+                       (c.wL ? ", par couche " + Object.keys(c.wL).map(l => LECTURE_CAO.aides.nomCouchePcb(+l) + " " + c.wL[l]).join(" ") : "");
+
+  function jouerClasses(args) {
+    const classes = S.classes.map(c => Object.assign({}, c, c.wL ? { wL: Object.assign({}, c.wL) } : {}));
+    const netClass = Object.assign({}, S.netClass);
+    const lignes = [], refus = [];
+    const trouver = nom => classes.findIndex(c => c.name.toLowerCase() === String(nom).toLowerCase());
+    const nets = new Set(netTable().map(n => n.name));
+    for (const e of args.lot) {
+      const a = e && e.action;
+      if (a === "affecter") {
+        if (typeof e.net !== "string" || !nets.has(e.net)) { refus.push("net « " + (e && e.net) + " » inconnu (voir cao_pcb_lire nets)"); continue; }
+        const i = trouver(e.classe);
+        if (i < 0) { refus.push(e.net + " : classe « " + e.classe + " » inconnue"); continue; }
+        const avant = netClass[e.net] && trouver(netClass[e.net]) >= 0 ? classes[trouver(netClass[e.net])].name : classes[0].name;
+        if (i === 0) delete netClass[e.net]; else netClass[e.net] = classes[i].name;   // comme setNetClass
+        if (avant !== classes[i].name) lignes.push({ quoi: "net " + e.net + ", classe", avant, apres: classes[i].name });
+        continue;
+      }
+      if (!["creer", "modifier", "supprimer"].includes(a)) { refus.push("action « " + a + " » inconnue (creer, modifier, supprimer, affecter)"); continue; }
+      if (typeof e.nom !== "string" || !/^[^\x00-\x1f]{1,40}$/.test(e.nom.trim())) { refus.push("nom de classe : 1 à 40 caractères"); continue; }
+      const i = trouver(e.nom.trim());
+      if (a === "supprimer") {
+        if (i < 0) { refus.push("classe « " + e.nom + " » inconnue"); continue; }
+        if (i === 0) { refus.push("« " + classes[0].name + " » est la classe par défaut : elle ne se supprime pas"); continue; }
+        lignes.push({ quoi: "classe " + classes[i].name, avant: decrire(classes[i]), apres: null });
+        classes.splice(i, 1);
+        continue;
+      }
+      if (a === "creer" && i >= 0) { refus.push("classe « " + e.nom + " » : existe déjà"); continue; }
+      if (a === "modifier" && i < 0) { refus.push("classe « " + e.nom + " » inconnue"); continue; }
+      // une copie : la classe de travail ne change qu'une fois la candidate validée
+      const cand = Object.assign({}, a === "creer" ? classes[0] : classes[i], a === "creer" ? { name: e.nom.trim() } : {});
+      if (a === "creer") delete cand.wL; else if (cand.wL) cand.wL = Object.assign({}, cand.wL);
+      const quoi = "classe " + cand.name;
+      let ok = true;
+      for (const [k, [cle, mini, maxi]] of Object.entries(CHAMPS_CLASSE)) {
+        if (e[k] === undefined) continue;
+        if (typeof e[k] !== "number" || !(e[k] >= mini && e[k] <= maxi)) { refus.push(quoi + "." + k + " : de " + mini + " à " + maxi + " mm"); ok = false; continue; }
+        cand[cle] = e[k];
+      }
+      if (e.largeur_couches !== undefined) {
+        const wl = e.largeur_couches;
+        if (!wl || typeof wl !== "object" || Array.isArray(wl)) { refus.push(quoi + ".largeur_couches : {couche: largeur}"); ok = false; }
+        else {
+          cand.wL = Object.assign({}, cand.wL);
+          for (const [nom, v] of Object.entries(wl)) {
+            const l = coucheIndex(nom);
+            if (l < 0) { refus.push(quoi + " : couche « " + nom + " » inconnue"); ok = false; continue; }
+            if (v === null) { delete cand.wL[l]; continue; }
+            if (typeof v !== "number" || !(v >= 0.05 && v <= 10)) { refus.push(quoi + " : largeur sur " + nom + " de 0,05 à 10 mm"); ok = false; continue; }
+            cand.wL[l] = v;
+          }
+          if (!Object.keys(cand.wL).length) delete cand.wL;
+        }
+      }
+      if (!ok) continue;
+      if (!(cand.drill <= r3(cand.via - 0.05))) { refus.push(quoi + " : perçage " + cand.drill + " trop grand pour une via de " + cand.via); continue; }
+      // la page bornerait en silence : une valeur qu'elle changerait est refusée ici
+      const norme = normClass(cand, 0);
+      if (decrire(norme) !== decrire(cand) || norme.name !== cand.name) { refus.push(quoi + " : valeurs refusées par la page (" + decrire(norme) + ")"); continue; }
+      if (a === "creer") { classes.push(norme); lignes.push({ quoi, avant: null, apres: decrire(norme) }); }
+      else if (decrire(norme) !== decrire(classes[i])) { lignes.push({ quoi, avant: decrire(classes[i]), apres: decrire(norme) }); classes[i] = norme; }
+    }
+    // une classe supprimée ne doit plus avoir de net : les rattacher ailleurs dans le même lot
+    for (const [net, nom] of Object.entries(netClass))
+      if (trouver(nom) < 0 && S.classes.some(c => c.name === nom)) refus.push("classe « " + nom + " » supprimée alors que le net " + net + " y est encore rattaché");
+    return { lignes, refus, classes, netClass };
+  }
+
+  const CLASSES = lot({
+    titre: "Classes de nets (le routage posé ne bouge pas : cao_pistes_ecrire realigner)",
+    verifier: jouerClasses,
+    muter: args => { const j = jouerClasses(args); S.classes = j.classes; S.netClass = j.netClass; },
+    rafraichir: rafraichirRegles, drc: true,
+  });
+
+  return { lot, composantsSch: COMPOSANTS_SCH, composantsPcb: COMPOSANTS_PCB, pistes: PISTES, classes: CLASSES, LOT_MAX };
 })();

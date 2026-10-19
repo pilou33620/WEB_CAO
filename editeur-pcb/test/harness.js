@@ -26625,6 +26625,48 @@ TA("canal de pilotage : cao_pistes_ecrire, largeur d'un net (une couche) et réa
   }finally{global.Pilote=ancien;}
 });
 
+TA("canal de pilotage : cao_classes_ecrire, créer puis rattacher en une étape ; refus sans rien toucher",async()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  const refus=(a,motif)=>{
+    const n=S.undo.length, avant=serialize();
+    let m="";try{cmds.cao_classes_ecrire.proposer(a);}catch(e){m=e.message;}
+    if(!motif.test(m))throw new Error("refus attendu "+motif+", lu « "+m+" »");
+    if(S.undo.length!==n||serialize()!==avant)throw new Error("un refus a écrit : "+motif);
+  };
+  try{
+    piloteCao("pcb");
+    loadDoc(exemple1());
+    S.undo.length=0;
+    const d=cmds.cao_classes_ecrire;
+    const [na,nb]=netTable().map(n=>n.name);
+    const largeurs=String(S.tracks.map(t=>t.w)), avant=serialize();
+    const lot=[{action:"creer",nom:"Puissance",largeur:0.8,isolation:0.3,via:1,percage:0.5,largeur_couches:{[LECTURE_CAO.aides.nomCouchePcb(0)]:0.9}},
+               {action:"affecter",net:na,classe:"puissance"},{action:"affecter",net:nb,classe:"Puissance"},
+               {action:"modifier",nom:S.classes[0].name,isolation:0.21}];
+    const prop=d.proposer({lot});
+    if(!/routage posé ne bouge pas/.test(prop.titre)||!prop.apres.split("\n").includes("net "+na+", classe : Puissance")||!/\(4 changements\)/.test(prop.titre))throw new Error("carte : "+JSON.stringify(prop));
+    d.appliquer({lot},prop);
+    if(S.undo.length!==1)throw new Error("une étape attendue");
+    if(classOf(na).name!=="Puissance"||classWidth(na,0)!==0.9||classWidth(na,1)!==0.8||S.classes[0].clr!==0.21)throw new Error("classes mal posées");
+    if(String(S.tracks.map(t=>t.w))!==largeurs)throw new Error("les pistes posées ont bougé");
+    undo();
+    if(serialize()!==avant)throw new Error("Ctrl+Z ne remet pas tout");
+    d.appliquer({lot},d.proposer({lot}));
+    refus({lot:[{action:"supprimer",nom:"Puissance"}]},/supprimée alors que le net .* y est encore rattaché/);
+    refus({lot:[{action:"supprimer",nom:S.classes[0].name}]},/classe par défaut/);
+    refus({lot:[{action:"creer",nom:"puissance"}]},/existe déjà/);
+    refus({lot:[{action:"modifier",nom:"Puissance",via:0.6,percage:0.6}]},/perçage 0.6 trop grand/);
+    refus({lot:[{action:"modifier",nom:"Puissance",largeur:20}]},/largeur : de 0.05 à 10 mm/);
+    refus({lot:[{action:"affecter",net:"ZZ",classe:"Puissance"}]},/net « ZZ » inconnu/);
+    refus({lot:[{action:"renommer",nom:"Puissance"}]},/action « renommer » inconnue/);
+    /* supprimer après avoir rattaché ailleurs ses nets, dans le même lot : accepté */
+    const lot2=[{action:"affecter",net:na,classe:S.classes[0].name},{action:"affecter",net:nb,classe:S.classes[0].name},{action:"supprimer",nom:"Puissance"}];
+    d.appliquer({lot:lot2},d.proposer({lot:lot2}));
+    if(S.classes.some(c=>c.name==="Puissance")||S.netClass[na])throw new Error("suppression mal faite");
+  }finally{global.Pilote=ancien;}
+});
+
 (async()=>{
   for(const [name,fn] of T_ASYNC){
     try{await fn();console.log("  ok  "+name);ok++;}
