@@ -209,6 +209,7 @@ function piloteCao(page) {
   }
   if (page === "schema") Pilote.commande("cao_valeur_composant", PILOTE_VALEUR);
   if (page === "schema") Pilote.commande("cao_composants_ecrire", ECRITURE_CAO.composantsSch);
+  if (page === "schema" && typeof dessinPiloteCommande === "function") Pilote.commande("cao_schema_dessiner", dessinPiloteCommande());
   if (page === "pcb") {
     Pilote.commande("cao_composants_ecrire", ECRITURE_CAO.composantsPcb);
     Pilote.commande("cao_pistes_ecrire", ECRITURE_CAO.pistes);

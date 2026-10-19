@@ -22,7 +22,7 @@ const ECRITURE_CAO = (function () {
   const montrer = v => v === undefined || v === null || v === "" ? "—" : typeof v === "object" ? JSON.stringify(v) : String(v);
 
   /* Une commande d'écriture du canal, faite d'un lot. `def` :
-     - titre : le titre de la carte ;
+     - titre : le titre de la carte ; max : le plafond du lot (LOT_MAX par défaut) ;
      - verifier(args) → {lignes:[{quoi, avant, apres}], refus:[]} sans rien toucher ;
      - muter(args) : applique, sans push() ; peut rendre {jeton, notes} (notes ajoutées au
        texte « après », jeton gardé par pilote.js pour annuler) ;
@@ -37,7 +37,8 @@ const ECRITURE_CAO = (function () {
     const verifier = args => {
       const liste = args && args.lot;
       if (!Array.isArray(liste) || !liste.length) throw new Error("« lot » : une liste d'au moins un élément.");
-      if (liste.length > LOT_MAX) throw new Error("Lot trop long : " + liste.length + " éléments, " + LOT_MAX + " au plus par carte.");
+      const max = def.max || LOT_MAX;
+      if (liste.length > max) throw new Error("Lot trop long : " + liste.length + " éléments, " + max + " au plus par carte.");
       const v = def.verifier(args);
       if (v.refus.length) throw new Error("Rien n'est changé : " + v.refus.join(" ; ") + ".");
       if (!v.lignes.length) throw new Error("Rien à changer : tout est déjà à ces valeurs.");

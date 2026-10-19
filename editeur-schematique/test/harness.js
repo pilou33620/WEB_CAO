@@ -67,7 +67,7 @@ const EXPOSE=[
   "schSignauxOccupesSurBus","schSuggererProchainSignal","schPiquerSignal","schOuvrirPiquageModal","schFermerPiquageModal",
   "SCH_PIQUAGE_MEMOIRE",
   /* bibliothèque et géométrie */
-  "bbox",
+  "bbox","hitBox",
   "defOf","allPins","pinCount","icGeom","key","LIB","pinsOf","LECTURE_CAO","ECRITURE_CAO",
   "pkgBaseOf","pkgKnown","pkgBaseList","PKG_BASES",
   /* brochage (04 + 19) */
@@ -386,6 +386,59 @@ T("canal de pilotage : cao_composants_ecrire, un lot en une étape, refus sans r
     const u=addComp("ic",200,200); u.ref="U1";
     d.appliquer({lot:[{ref:"U1",champs:{valeur:"LM358"}}]});
     if(S.comps.find(x=>x.ref==="U1").value!=="LM358")throw new Error("valeur du CI");
+  }finally{global.Pilote=ancien;sheet([],[]);}
+});
+
+T("canal de pilotage : cao_schema_dessiner, simulé sans trace puis appliqué en une étape",()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  const etat=()=>JSON.stringify([serialize(),S.hist.length,S.dirty,[...S.sel],S.scale,S.ox,S.oy]);
+  const refus=(lot,motif)=>{
+    const avant=etat();
+    let m="";try{cmds.cao_schema_dessiner.proposer({lot});}catch(e){m=e.message;}
+    if(!motif.test(m))throw new Error("refus attendu "+motif+", lu « "+m+" »");
+    if(etat()!==avant)throw new Error("un refus a laissé une trace : "+motif);
+  };
+  try{
+    piloteCao("schema");
+    const d=cmds.cao_schema_dessiner;
+    if(!(d&&d.ecriture&&d.historique))throw new Error("écriture par l'historique attendue");
+    sheet([],[]);
+    const r1=addComp("resistor",0,0); r1.ref="R1";
+    const p=allPins(r1); S.wires.push({x1:p[1].x,y1:p[1].y,x2:p[1].x+100,y2:p[1].y}); touchWires();
+    S.hist.length=0; S.dirty=false; clearSel(); S.sel.add(r1.id); S.scale=1.5; S.ox=10; S.oy=20;
+    const lot=[{op:"poser",type:"resistor",ref:"R10",valeur:"1k",x:20,y:0},
+               {op:"poser",type:"capacitor"},                                   // place libre, repère tiré : C1
+               {op:"tourner",ref:"R1",angle:90},
+               {op:"deplacer",ref:"c1",dx:0,dy:5}];
+    const avant=etat();
+    const prop=d.proposer({lot});
+    if(etat()!==avant)throw new Error("proposer a laissé une trace");
+    if(!/^1\. poser R10 : resistor 1k, x 20 y 0 mm, 0°$/m.test(prop.apres)||!/^2\. poser C1 : capacitor/m.test(prop.apres)||
+       !/^4\. deplacer C1 : /m.test(prop.avant))throw new Error("carte : "+prop.apres+" | "+prop.avant);
+    d.appliquer({lot},prop);
+    const c=r=>S.comps.find(x=>x.ref===r);
+    if(S.hist.length!==1)throw new Error("une étape attendue, "+S.hist.length);
+    if(!c("R10")||c("R10").x!==400||!c("C1")||c("R1").rot!==90)throw new Error("lot mal appliqué");
+    if(!allPins(c("R1")).some(q=>S.wires.some(w=>(w.x1===q.x&&w.y1===q.y)||(w.x2===q.x&&w.y2===q.y))))throw new Error("le fil n'a pas suivi R1 tourné");
+    if(S.comps.some(a=>S.comps.some(b=>a!==b&&(()=>{const A=hitBox(a),B=hitBox(b);return A.x1<B.x2&&B.x1<A.x2&&A.y1<B.y2&&B.y1<A.y2;})())))
+      throw new Error("des composants se chevauchent");
+    undo();
+    if(c("R10")||c("C1")||c("R1").rot!==0)throw new Error("Ctrl+Z ne remet pas tout");
+    S.hist.length=0;
+    refus([{op:"poser",type:"resistor",x:0,y:0}],/chevauche R1/);
+    refus([{op:"poser",type:"licorne"}],/type « licorne » inconnu/);
+    refus([{op:"tourner",ref:"R9",angle:90}],/R9.*introuvable/);
+    refus([{op:"tourner",ref:"R1",angle:45}],/90, 180 ou 270/);
+    refus([{op:"poser",type:"resistor",x:30}],/donne x et y/);
+    refus([{op:"poser",type:"resistor",ref:"r1"}],/« r1 » déjà pris/);
+    refus([{op:"poser",type:"gnd",ref:"G1"}],/n'a pas de repère/);
+    refus([{op:"voler",ref:"R1"}],/opération inconnue/);
+    refus(Array.from({length:41},()=>({op:"miroir",ref:"R1"})),/41 éléments, 40 au plus/);
+    /* le premier refus arrête tout : rien de ce qui précède ne reste */
+    refus([{op:"poser",type:"resistor",ref:"R11",x:40,y:0},{op:"supprimer",ref:"R99"}],/2\. supprimer.*R99/);
+    d.appliquer({lot:[{op:"supprimer",ref:"R1"}]});
+    if(c("R1"))throw new Error("supprimer");
   }finally{global.Pilote=ancien;sheet([],[]);}
 });
 
