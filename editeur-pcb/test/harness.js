@@ -1147,6 +1147,16 @@ T("la piste sort droit du centre d'une pastille hors grille",()=>{
     throw new Error("la piste devait rester sur la colonne de la pastille : "+t.x1+" → "+t.x2);
   S.avoid=true;
 });
+T("un clic sur une pastille prend le boîtier, même si une piste y aboutit (carte importée)",()=>{
+  const q=pastilleHorsGrille();
+  const fp=q.fp;
+  S.tracks=[{l:0,net:"T",w:0.3,x1:q.x,y1:q.y,x2:q.x+8,y2:q.y}];touch();
+  setMode("select");S.active=0;
+  const h=hitTest(q.x,q.y);
+  if(!h||h.fp!==fp)throw new Error("le clic sur la pastille devait prendre le boîtier : "+JSON.stringify(h&&Object.keys(h)));
+  const t=hitTest(q.x+6,q.y);
+  if(!t||!t.track)throw new Error("la piste, loin de la pastille, reste attrapable");
+});
 T("recentrer une piste sur le centre d'une pastille",()=>{
   const q=pastilleHorsGrille();
   const g=snapX(q.x);                         // là où la grille seule posait le bout

@@ -901,8 +901,13 @@ function hitTest(x,y,e){
       if(segDist(x,y,a.x1,a.y1,a.x2,a.y2)<=h.d/2+tol)return {hole:h};
     }
   }
+  /* Le cuivre d'une pastille appartient à son boîtier : une piste qui y aboutit
+     (ou son raccord au centre, dans une carte importée) ne la vole pas au clic. */
+  let surPastille=null;
+  const surUnePastille=()=>surPastille!==null?surPastille:(surPastille=S.fps.some(fp=>
+    padsWorld(fp).some(q=>padCuLayers(fp,q).includes(S.active)&&padDist(x,y,q)<=0)));
   for(const t of S.tracks)
-    if(t.l===S.active&&trkDist(x,y,t)<=t.w/2+tol)return {track:t};
+    if(t.l===S.active&&trkDist(x,y,t)<=t.w/2+tol&&!surUnePastille())return {track:t};
   for(let i=S.fps.length-1;i>=0;i--){
     const fp=S.fps[i];
     const tp = fpTextPos(fp);
