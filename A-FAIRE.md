@@ -110,6 +110,26 @@ Ce que les modules du MCP ont laissé ouvert côté WEB_CAO (détail dans
 - [ ] **Essais réels restants** : `cao_paire` et `cao_placement_auto` dans la vraie page après la
   revue du routage ; le canal depuis l'iPad.
 
+### Dossier de fabrication — animation 3D de la carte qui s'assemble (demandé le 19/10/2026)
+
+Modèle : une vidéo de gopcb.ai (contrôleur de vol 36 × 36 mm) — carte 3D sur fond noir,
+caméra qui tourne et s'approche, la carte se construit sous les yeux, titre et dimensions en haut.
+
+- [ ] **Option à la génération de `fabrication.zip`** (case à cocher, décochée par défaut) :
+  - **Rendu 3D** : substrat à l'épaisseur de l'empilage et au vrai contour (découpes, trous),
+    cuivre et pastilles dorés, vernis, sérigraphie, composants en volumes (encombrement de
+    l'empreinte × hauteur de la LIB, boîte par défaut sinon) ; three.js, déjà dans
+    `WEB_3D/vendor/three/` (l'éditeur PCB n'a aujourd'hui aucune vue 3D).
+  - **Contenu** : titre (nom du projet) et « L × l mm » lus sur le contour, cotes sur la carte ;
+    ordre d'assemblage : carte nue → cuivre / pistes → composants posés un par un (gros boîtiers
+    d'abord, face dessus puis dessous), puis un tour complet de la carte finie.
+  - **Sorties** : vidéo **MP4 ou WebM** (enregistrée dans le navigateur, `MediaRecorder` sur le
+    canvas — à vérifier sur le Pi : codecs disponibles, temps de rendu) et **page HTML autonome**
+    (animation en boucle, carte orientable à la souris, three.js embarqué pour s'ouvrir hors ligne).
+  - Pas retenu pour l'instant : bulles de description des composants, schéma-bloc qui se construit.
+  - À réutiliser : `trousMonde()`, contour et empilage du dossier méca (`commun/dossier-meca.js`),
+    l'esprit des animations de `screen/` (2D, SVG / GIF).
+
 ### Code en double à fusionner (relevé par l'audit du 16/10/2026)
 L'audit complet a corrigé les défauts et retiré le code mort ; ces doublons, eux, sont des chantiers à part (/spec puis /plan) : chaque copie doit être corrigée N fois, et certaines ont déjà divergé.
 - [ ] **Adaptateurs de simulation éditeur / visionneuse** : environ 920 lignes à 60–100 % identiques entre `editeur-pcb/js/19-simulation.js` et `visionneuse-ipc2581/js/07-simulation.js` (`simRetourValeurs`, `simRetourTrace`, `simZValeurs`, `simXtFentes`, `simDocDiff`, `simXtDetours`, `simZNumeroLot`, `simVoile`, `simZTrace`, `simXtCoupe`, `simDCCercle`, `simEstResistance*`, `pcbParseResistance` / `simParseResistance`). Déjà divergé : `plans_sans_cuivre` (la visionneuse l'envoie, `simCheveluRes` le perd, `simRetourValeursIpc` n'a pas la branche), libellés « portée supposée » / « découplages non cherchés » côté visionneuse seulement. À ranger dans `commun/` avec un rappel de coordonnées et de nom de couche.
