@@ -40,7 +40,7 @@ const SOT235 = {
 };
 let r = CL.verifierEmpreinte(SOT235, "SOT-23-5.json");
 verifier(r.erreurs.length === 0, "SOT-23-5 juste : aucune erreur (" + r.erreurs.join(" | ") + ")");
-verifier(r.remarques.some(m => /hors du corps/.test(m)), "pattes hors du corps : une remarque, pas une erreur");
+verifier(r.remarques.some(m => /dépassent du corps/.test(m)), "pattes hors du corps : une remarque, pas une erreur");
 
 function refus(modif, motif, libelle, fichier) {
   const d = copie(SOT235);
@@ -140,6 +140,96 @@ refusLigne(l => { l["Number Of pins"] = "cinq"; }, /entier/, "nombre de broches 
 r = CL.verifierLigne(Object.assign({}, LDO, { "Empreinte PCB": "SOT-23-5-NEUF" }),
   Object.assign({}, ctx, { nouvelle: Object.assign(copie(SOT235), { name: "SOT-23-5-NEUF" }) }));
 verifier(!r.erreurs.length, "empreinte créée par la même carte : acceptée");
+
+/* ---------- générateurs IPC-7351B ---------- */
+console.log("— générateurs —");
+const gen = (f, p) => {
+  const res = CL.genererEmpreinte(f, p);
+  verifier(res.empreinte && !res.erreurs.length, f + " " + JSON.stringify(p) + " : généré sans erreur (" + res.erreurs.join(" | ") + ")");
+  return res;
+};
+const proche = (a, b, tol) => Math.abs(a - b) <= tol;
+/* pastille n : x, y, w, h attendus au centième (calcul à la main, IPC-7351B densité N, F 0,10, P 0,05) */
+function pastille(res, n, x, y, w, h, libelle) {
+  const q = res.empreinte.pads.find(p => p.n === n);
+  verifier(q && proche(q.x, x, 0.006) && proche(q.y, y, 0.006) && proche(q.w, w, 0.006) && proche(q.h, h, 0.006),
+    libelle + " pastille " + n + " = (" + x + ", " + y + ") " + w + " × " + h + " (obtenu " + JSON.stringify(q) + ")");
+  return q;
+}
+/* 0603 : L 1,5-1,7, W 0,7-0,9, T 0,15-0,45 ; Z 2,429, G 0,852, X 0,929 */
+r = gen("chip", { code: "0603" });
+verifier(r.cotes.Z === 2.429 && r.cotes.G === 0.852 && r.cotes.X === 0.929, "0603 : Z, G, X calculés à la main");
+pastille(r, 1, -0.82, 0, 0.79, 0.93, "0603");
+pastille(r, 2, 0.82, 0, 0.79, 0.93, "0603");
+/* SOT-23-5 : L 2,6-3,0, T 0,3-0,6, W 0,3-0,5, pas 0,95 ; Z 3,715, G 0,898, X 0,589 */
+r = gen("sot", { variante: "SOT-23-5" });
+pastille(r, 1, -1.15, -0.95, 1.41, 0.59, "SOT-23-5");
+pastille(r, 3, -1.15, 0.95, 1.41, 0.59, "SOT-23-5");
+pastille(r, 4, 1.15, 0.95, 1.41, 0.59, "SOT-23-5");
+pastille(r, 5, 1.15, -0.95, 1.41, 0.59, "SOT-23-5");
+verifier(r.empreinte.pins === 5 && r.empreinte.style === "sop", "SOT-23-5 : 5 broches, style sop");
+/* SOIC-8 : L 5,8-6,2, T 0,4-1,27, W 0,31-0,51, pas 1,27 ; Z 6,915, G 2,978, X 0,599 */
+r = gen("soic", { broches: 8, corps: [3.9, 4.9] });
+pastille(r, 1, -2.47, -1.905, 1.97, 0.60, "SOIC-8");
+pastille(r, 8, 2.47, -1.905, 1.97, 0.60, "SOIC-8");
+pastille(r, 5, 2.47, 1.905, 1.97, 0.60, "SOIC-8");
+/* QFN-16 3×3 : corps 2,9-3,1, T 0,3-0,5, W 0,18-0,30, pas 0,5 ; Z 3,729, G 2,009, X 0,264 ; EP 1,7 */
+r = gen("qfn", { broches: 16, pas: 0.5, corps: [2.9, 3.1], pied: [0.3, 0.5], largeur: [0.18, 0.30], thermique: [1.7, 1.7] });
+pastille(r, 1, -1.43, -0.75, 0.86, 0.26, "QFN-16");
+pastille(r, 5, -0.75, 1.43, 0.26, 0.86, "QFN-16");
+pastille(r, 9, 1.43, 0.75, 0.86, 0.26, "QFN-16");
+pastille(r, 16, -0.75, -1.43, 0.26, 0.86, "QFN-16");
+verifier(pastille(r, 17, 0, 0, 1.7, 1.7, "QFN-16").nom === "EP" && r.empreinte.pins === 17 && r.empreinte.name === "QFN-16-EP-3x3",
+  "QFN-16 : pastille thermique n° 17 « EP », nom QFN-16-EP-3x3");
+/* DIP-8 : patte 0,6 + jeu 0,20 → trou 0,8 ; pastille 0,8 + 2 × 0,35 = 1,5 */
+r = gen("dip", { broches: 8 });
+let q = pastille(r, 1, -3.81, -3.81, 1.5, 1.5, "DIP-8");
+verifier(q.drill === 0.8 && q.shape === "rect" && r.empreinte.pads[1].shape === "circ", "DIP-8 : trou 0,8, pastille 1 carrée");
+pastille(r, 8, 3.81, -3.81, 1.5, 1.5, "DIP-8");
+pastille(r, 4, -3.81, 3.81, 1.5, 1.5, "DIP-8");
+/* barrette 1×4 au pas de 2,54 : diagonale 0,905 + 0,20 → trou 1,15 ; pastille 1,85 */
+r = gen("barrette", { broches: 4 });
+q = pastille(r, 1, -3.81, 0, 1.85, 1.85, "1×4");
+verifier(q.drill === 1.15, "1×4 : trou 1,15");
+pastille(r, 4, 3.81, 0, 1.85, 1.85, "1×4");
+r = gen("barrette", { broches: 5, rangees: 2 });
+pastille(r, 2, -5.08, 1.27, 1.85, 1.85, "2×5");
+verifier(r.empreinte.pins === 10 && r.empreinte.style === "dip", "2×5 : 10 broches, 1 et 2 face à face");
+for (const [f, p] of [["sot", { variante: "SOT-23-3" }], ["sot", { variante: "SOT-23-6" }], ["sot", { variante: "SOT-223" }],
+                      ["tssop", { broches: 14 }], ["msop", { broches: 10, pas: 0.5 }], ["chip", { code: "0402", densite: "M" }],
+                      ["dfn", { broches: 8, pas: 0.65, corps: [2.9, 3.1], pied: [0.3, 0.5], largeur: [0.25, 0.35], thermique: [1.5, 2.4] }]])
+  gen(f, p);
+verifier(CL.genererEmpreinte("chip", { code: "0402", densite: "M" }).empreinte.name === "0402-M", "densité autre que N : dans le nom");
+
+/* au dixième des empreintes de référence : KiCad (IPC-7351) et la LIB pour le 0603
+   (le SOIC-8 et le SOT-23-5 de la LIB ne suivent pas l'IPC : 0,15 à 0,23 mm d'écart) */
+function compare(res, n, x, w, h, libelle) {
+  const p = res.empreinte.pads.find(o => o.n === n);
+  verifier(proche(Math.abs(p.x), x, 0.1) && proche(p.w, w, 0.1) && proche(p.h, h, 0.1),
+    libelle + " à moins de 0,1 mm (" + p.x + ", " + p.w + " × " + p.h + ")");
+}
+compare(CL.genererEmpreinte("chip", { code: "0603" }), 1, 0.825, 0.8, 0.95, "0603 ↔ KiCad R_0603_1608Metric");
+compare(CL.genererEmpreinte("chip", { code: "0603" }), 1, 0.75, 0.825, 0.93, "0603 ↔ LIB 0603");
+compare(CL.genererEmpreinte("sot", { variante: "SOT-23-5" }), 1, 1.1375, 1.325, 0.6, "SOT-23-5 ↔ KiCad SOT-23-5");
+compare(CL.genererEmpreinte("soic", { broches: 8 }), 1, 2.475, 1.95, 0.6, "SOIC-8 ↔ KiCad SOIC-8_3.9x4.9mm_P1.27mm");
+
+for (const [f, p, motif] of [
+  ["soic", { broches: 8, pas: 0 }, /pas/], ["soic", { broches: 8, pas: -1 }, /pas/], ["soic", { broches: 7 }, /pair/],
+  ["soic", { broches: 8, corps: [6.5, 4.9] }, /plus large que l'empattement/],
+  ["soic", { broches: 8, empattement: [6.2, 5.8] }, /min ≤ max/],
+  ["chip", { code: "9999" }, /code/], ["chip", {}, /longueur/],
+  ["qfn", { broches: 16, pas: 0.5, corps: [2.9, 3.1], pied: [0.3, 0.5], largeur: [0.18, 0.30], thermique: [2.6, 2.6] }, /thermique trop grande/],
+  ["qfn", { broches: 15, pas: 0.5, corps: [2.9, 3.1], pied: [0.3, 0.5], largeur: [0.18, 0.3] }, /multiple de 4/],
+  ["qfn", { broches: 32, pas: 0.5, corps: [2.9, 3.1], pied: [0.3, 0.5], largeur: [0.18, 0.3] }, /ne tiennent pas/],
+  ["soic", { broches: 8, pas: 0.5 }, /moins de 0,1 mm/], ["dip", { broches: 8, pas: 1 }, /moins de 0,2 mm/],
+  ["chip", { longueur: [1, 1.1], largeur: 0.5, terminaison: [0.5, 0.6] }, /L − 2·T/],
+  ["chip", { code: "0603", densite: "X" }, /densite/], ["triangle", {}, /famille inconnue/],
+  ["sot", { variante: "SOT-89" }, /variante/], ["barrette", { broches: 4, rangees: 3 }, /rangees/]]) {
+  const res = CL.genererEmpreinte(f, p);
+  verifier(!res.empreinte && res.erreurs.some(e => motif.test(e)), f + " " + JSON.stringify(p) + " : refus clair (" + res.erreurs.join(" | ") + ")");
+}
+r = CL.genererEmpreinte("chip", { code: "0603", nom: "../0603" });
+verifier(r.erreurs.some(e => /« name »/.test(e)), "nom imposé illisible : refusé par les contrôles");
 
 /* ---------- la LIB réelle passe les contrôles ---------- */
 const LIB = [process.env.WEB_CAO_LIB, path.join(RACINE, "LIB"), path.join(RACINE, "..", "PROJETS", "LIB_CAO")]

@@ -132,7 +132,7 @@ const COMPOSANTS_LIB = (() => {
       const hors = pads.filter(q => !(q.drill > 0) &&
         (q.x - q.w / 2 < b.x1 - 1e-6 || q.x + q.w / 2 > b.x2 + 1e-6 || q.y - q.h / 2 < b.y1 - 1e-6 || q.y + q.h / 2 > b.y2 + 1e-6));
       if (hors.length)
-        remarques.push(hors.length + " pastille(s) CMS hors du corps (normal pour des pattes en aile de mouette ; à vérifier sinon)");
+        remarques.push(hors.length + " pastille(s) CMS dépassent du corps (normal pour des pattes ou des terminaisons ; à vérifier sinon)");
     }
     return { erreurs, remarques };
   }
@@ -248,5 +248,268 @@ const COMPOSANTS_LIB = (() => {
     return { erreurs, remarques, ligne: sortie };
   }
 
-  return { STYLES, FORMES, SYMBOLES, verifierEmpreinte, verifierBrochage, verifierLigne };
+  /* ---------- générateurs IPC-7351B ----------
+     Pastille CMS (IPC-7351B, § 3.1) à partir des cotes min/max de la datasheet :
+       Z = Lmin + 2·Jt + √(CL² + F² + P²)          bord extérieur à bord extérieur
+       G = Smax − 2·Jh − √(CS² + F² + P²)          bord intérieur à bord intérieur
+       X = Wmin + 2·Js + √(CW² + F² + P²)          largeur de la pastille
+     avec S = L − 2·T (écart entre terminaisons), CS = √(CL² + 2·CT²) et Smax ramené
+     à la tolérance quadratique (Smax − ((Smax − Smin) − CS) / 2), comme le fait la norme.
+     F = 0,10 (fabrication), P = 0,05 (placement). Pas d'arrondi au 0,05 de la norme :
+     les cotes sont rendues au millième. */
+  const F_FAB = 0.10, P_POSE = 0.05;
+  /* Jt (pointe), Jh (talon), Js (côté), par densité : M (large), N (nominale), L (serrée) */
+  const SOUDURE = {
+    // tableau 3-5 : puces rectangulaires de 1608 (0603) et plus
+    puce:      { Jt: { M: 0.55, N: 0.35, L: 0.15 }, Jh: { M: -0.05, N: -0.05, L: -0.05 }, Js: { M: 0.05, N: 0, L: -0.05 } },
+    // tableau 3-6 : puces plus petites que 1608 (valeurs relevées, à confirmer sur la norme)
+    pucePetite:{ Jt: { M: 0.20, N: 0.10, L: 0.02 }, Jh: { M: -0.05, N: -0.05, L: -0.05 }, Js: { M: 0.05, N: 0, L: -0.05 } },
+    // tableau 3-2 : pattes en aile de mouette, pas > 0,625 mm (SOIC, SOT, TSSOP 0,65)
+    aile:      { Jt: { M: 0.55, N: 0.35, L: 0.15 }, Jh: { M: 0.45, N: 0.35, L: 0.25 }, Js: { M: 0.05, N: 0.03, L: 0.01 } },
+    // même tableau, pas ≤ 0,625 mm
+    aileFine:  { Jt: { M: 0.55, N: 0.35, L: 0.15 }, Jh: { M: 0.45, N: 0.35, L: 0.25 }, Js: { M: 0.01, N: -0.02, L: -0.04 } },
+    // QFN, DFN (sans pattes) : talon nul, côté rentrant
+    sansPatte: { Jt: { M: 0.40, N: 0.30, L: 0.20 }, Jh: { M: 0, N: 0, L: 0 }, Js: { M: -0.04, N: -0.04, L: -0.04 } }
+  };
+  /* traversant (IPC-2222 / IPC-7251, simplifié) : trou = patte + jeu, pastille = trou + 2·couronne */
+  const TROU = { jeu: { M: 0.25, N: 0.20, L: 0.15 }, couronne: { M: 0.45, N: 0.35, L: 0.25 } };
+
+  /* cotes de puces courantes (datasheets de résistances CMS), en mm [min, max] */
+  const PUCES = {
+    "0201": { L: [0.57, 0.63], W: [0.27, 0.33], T: [0.10, 0.20] },
+    "0402": { L: [0.95, 1.05], W: [0.45, 0.55], T: [0.15, 0.35] },
+    "0603": { L: [1.50, 1.70], W: [0.70, 0.90], T: [0.15, 0.45] },
+    "0805": { L: [1.80, 2.20], W: [1.05, 1.45], T: [0.25, 0.65] },
+    "1206": { L: [3.00, 3.40], W: [1.40, 1.80], T: [0.25, 0.75] },
+    "1210": { L: [3.00, 3.40], W: [2.30, 2.70], T: [0.25, 0.75] },
+    "2010": { L: [4.80, 5.20], W: [2.30, 2.70], T: [0.35, 0.85] },
+    "2512": { L: [6.10, 6.50], W: [3.00, 3.40], T: [0.35, 0.85] }
+  };
+  /* boîtiers à pattes en aile de mouette : cotes JEDEC par défaut (à vérifier sur la datasheet).
+     L : pointe à pointe des pattes, T : pied, W : largeur de patte, corps [x, y] nominal. */
+  const AILES = {
+    "SOT-23-3": { broches: 3, pas: 0.95, L: [2.10, 2.64], T: [0.30, 0.60], W: [0.30, 0.50], corps: [1.3, 2.9] },
+    "SOT-23-5": { broches: 5, pas: 0.95, L: [2.60, 3.00], T: [0.30, 0.60], W: [0.30, 0.50], corps: [1.6, 2.9] },
+    "SOT-23-6": { broches: 6, pas: 0.95, L: [2.60, 3.00], T: [0.30, 0.60], W: [0.30, 0.50], corps: [1.6, 2.9] },
+    "SOT-223":  { broches: 4, pas: 2.30, L: [6.70, 7.30], T: [0.75, 1.10], W: [0.66, 0.84], languette: [2.90, 3.15], corps: [3.5, 6.5] },
+    SOIC:  { pas: 1.27, L: [5.80, 6.20], T: [0.40, 1.27], W: [0.31, 0.51], largeurCorps: 3.9 },
+    TSSOP: { pas: 0.65, L: [6.20, 6.60], T: [0.45, 0.75], W: [0.19, 0.30], largeurCorps: 4.4 },
+    MSOP:  { pas: 0.65, L: [4.75, 5.05], T: [0.40, 0.70], W: [0.22, 0.38], largeurCorps: 3.0 }
+  };
+  const r3 = v => Math.round(v * 1000) / 1000;
+
+  class Refus extends Error {}
+  /* une cote [min, max] (ou un nombre : min = max), en mm, bornée */
+  function cote(v, nom, max) {
+    const t = typeof v === "number" ? [v, v] : v;
+    if (!Array.isArray(t) || t.length !== 2 || !t.every(fini) || t[0] <= 0 || t[1] < t[0] || t[1] > (max || 100))
+      throw new Refus("« " + nom + " » : [min, max] en mm, 0 < min ≤ max ≤ " + (max || 100));
+    return t;
+  }
+  function nombre(v, nom, min, max, entier) {
+    if (!fini(v) || v < min || v > max || (entier && !Number.isInteger(v)))
+      throw new Refus("« " + nom + " » : " + (entier ? "entier" : "nombre") + " de " + min + " à " + max);
+    return v;
+  }
+  /* Z, G, X et la pastille qui en sort (longueur, centre), ou un refus si les cotes se contredisent */
+  function pastilleIpc(L, T, W, J, densite) {
+    const CL = L[1] - L[0], CT = T[1] - T[0], CW = W[1] - W[0];
+    const Smin = L[0] - 2 * T[1], Smax = L[1] - 2 * T[0];
+    if (Smin <= 0) throw new Refus("pieds plus longs que la moitié de l'empattement (L − 2·T ≤ 0) : cotes à revoir");
+    const CS = Math.sqrt(CL * CL + 2 * CT * CT);
+    const SmaxQ = Smax - ((Smax - Smin) - CS) / 2;
+    const Z = L[0] + 2 * J.Jt[densite] + Math.hypot(CL, F_FAB, P_POSE);
+    const G = SmaxQ - 2 * J.Jh[densite] - Math.hypot(CS, F_FAB, P_POSE);
+    const X = W[0] + 2 * J.Js[densite] + Math.hypot(CW, F_FAB, P_POSE);
+    if (G <= 0.1) throw new Refus("les pastilles se touchent au milieu (G = " + r3(G) + " mm) : cotes à revoir");
+    return { Z: r3(Z), G: r3(G), X: r3(X), longueur: (Z - G) / 2, centre: (Z + G) / 4, largeur: X };
+  }
+  const plaque = (n, x, y, w, h) => ({ n, x: r3(x), y: r3(y), w: r3(w), h: r3(h), shape: "rect", drill: 0, rot: 0 });
+  const trou = (n, x, y, d, D) => ({ n, x: r3(x), y: r3(y), w: r3(D), h: r3(D), shape: n === 1 ? "rect" : "circ", drill: r3(d), rot: 0 });
+  const rangee = (k, nb, pas) => (k - (nb - 1) / 2) * pas;     // position de la k-ième d'une rangée centrée
+  function corpsDe(x, y) { return { x1: r3(-x / 2), y1: r3(-y / 2), x2: r3(x / 2), y2: r3(y / 2) }; }
+  function verifierPas(largeur, pas) {
+    if (largeur > pas - 0.1) throw new Refus("pastilles de " + r3(largeur) + " mm au pas de " + pas + " mm : moins de 0,1 mm entre elles");
+  }
+
+  /* deux rangées gauche/droite, numérotées dans le sens inverse des aiguilles d'une montre :
+     1 en haut à gauche, la dernière en haut à droite (y vers le bas, comme le PCB) */
+  function deuxRangees(nbG, nbD, pas, p, pads, premier) {
+    let n = premier || 1;
+    for (let k = 0; k < nbG; k++) pads.push(plaque(n++, -p.centre, rangee(k, nbG, pas), p.longueur, p.largeur));
+    for (let k = nbD - 1; k >= 0; k--) pads.push(plaque(n++, p.centre, rangee(k, nbD, pas), p.longueur, p.largeur));
+  }
+
+  const FAMILLES = {
+    chip(a, d, rq) {
+      let c;
+      if (a.code != null) {
+        c = PUCES[String(a.code)];
+        if (!c) throw new Refus("« code » inconnu (" + a.code + ") : " + Object.keys(PUCES).join(", ") + ", ou donne longueur, largeur, terminaison");
+        if (a.longueur == null) rq.push("cotes courantes d'une " + a.code + " : vérifie-les sur la datasheet");
+      }
+      const L = cote(a.longueur != null ? a.longueur : c && c.L, "longueur", 20);
+      const W = cote(a.largeur != null ? a.largeur : c && c.W, "largeur", 20);
+      const T = cote(a.terminaison != null ? a.terminaison : c && c.T, "terminaison", 10);
+      const p = pastilleIpc(L, T, W, (L[0] + L[1]) / 2 < 1.6 ? SOUDURE.pucePetite : SOUDURE.puce, d);
+      return { nom: a.code ? String(a.code) : "CHIP-" + r3((L[0] + L[1]) / 2) + "x" + r3((W[0] + W[1]) / 2),
+               style: "chip", pins: 2, pitch: r3(2 * p.centre), span: r3(2 * p.centre), cotes: p,
+               pads: [plaque(1, -p.centre, 0, p.longueur, p.largeur), plaque(2, p.centre, 0, p.longueur, p.largeur)],
+               body: corpsDe(L[1], W[1]) };
+    },
+    sot(a, d, rq) {
+      const v = AILES[a.variante];
+      if (!v || !/^SOT/.test(a.variante)) throw new Refus("« variante » : SOT-23-3, SOT-23-5, SOT-23-6 ou SOT-223");
+      if (a.empattement == null) rq.push("cotes JEDEC du " + a.variante + " par défaut : vérifie-les sur la datasheet");
+      const L = cote(a.empattement != null ? a.empattement : v.L, "empattement", 20);
+      const T = cote(a.pied != null ? a.pied : v.T, "pied", 10);
+      const W = cote(a.largeur != null ? a.largeur : v.W, "largeur", 10);
+      const pas = a.pas != null ? nombre(a.pas, "pas", 0.3, 5) : v.pas;
+      const p = pastilleIpc(L, T, W, pas > 0.625 ? SOUDURE.aile : SOUDURE.aileFine, d);
+      verifierPas(p.largeur, pas);
+      const pads = [];
+      if (a.variante === "SOT-23-3") {
+        pads.push(plaque(1, -p.centre, -pas, p.longueur, p.largeur), plaque(2, -p.centre, pas, p.longueur, p.largeur),
+                  plaque(3, p.centre, 0, p.longueur, p.largeur));
+      } else if (a.variante === "SOT-23-5") {
+        deuxRangees(3, 2, pas, p, pads);
+        pads[3].y = r3(pas); pads[4].y = r3(-pas);            // 4 en bas à droite, 5 en haut : le milieu est libre
+      } else if (a.variante === "SOT-223") {
+        deuxRangees(3, 0, pas, p, pads);
+        const lg = cote(a.languette != null ? a.languette : v.languette, "languette", 10);
+        const t = pastilleIpc(L, T, lg, SOUDURE.aile, d);
+        pads.push(plaque(4, t.centre, 0, t.longueur, t.largeur));
+      } else deuxRangees(3, 3, pas, p, pads);
+      const corps = Array.isArray(a.corps) ? a.corps : v.corps;
+      return { nom: a.variante, style: "sop", pins: pads.length, pitch: pas, span: r3(2 * p.centre), cotes: p,
+               pads, body: corpsDe(corps[0], corps[1]) };
+    },
+    /* SOIC, TSSOP, MSOP : deux rangées en aile de mouette */
+    aile(a, d, rq, famille) {
+      const v = AILES[famille.toUpperCase()];
+      const n = nombre(a.broches, "broches", 4, 200, true);
+      if (n % 2) throw new Refus("« broches » : un nombre pair pour deux rangées");
+      const pas = a.pas != null ? nombre(a.pas, "pas", 0.3, 5) : v.pas;
+      if (a.empattement == null) rq.push("cotes JEDEC " + famille.toUpperCase() + " par défaut : vérifie-les sur la datasheet");
+      const L = cote(a.empattement != null ? a.empattement : v.L, "empattement", 40);
+      const T = cote(a.pied != null ? a.pied : v.T, "pied", 10);
+      const W = cote(a.largeur != null ? a.largeur : v.W, "largeur", 10);
+      let corps = a.corps;
+      if (corps == null) {
+        corps = [v.largeurCorps, r3((n / 2 - 1) * pas + 1.1)];
+        rq.push("corps estimé " + corps[0] + " × " + corps[1] + " mm : donne « corps » de la datasheet");
+      } else if (!Array.isArray(corps) || corps.length !== 2 || !corps.every(x => fini(x) && x > 0 && x <= 100))
+        throw new Refus("« corps » : [largeur, longueur] en mm");
+      if (corps[0] >= L[0]) throw new Refus("corps (" + corps[0] + " mm) plus large que l'empattement (" + L[0] + " mm)");
+      const p = pastilleIpc(L, T, W, pas > 0.625 ? SOUDURE.aile : SOUDURE.aileFine, d);
+      verifierPas(p.largeur, pas);
+      const pads = [];
+      deuxRangees(n / 2, n / 2, pas, p, pads);
+      return { nom: famille.toUpperCase() + "-" + n, style: "sop", pins: n, pitch: pas, span: r3(2 * p.centre),
+               cotes: p, pads, body: corpsDe(corps[0], corps[1]) };
+    },
+    /* QFN (quatre côtés) et DFN (deux côtés), pastille thermique facultative */
+    sansPatte(a, d, rq, famille) {
+      const qfn = famille === "qfn";
+      const n = nombre(a.broches, "broches", qfn ? 8 : 2, 200, true);
+      if (n % (qfn ? 4 : 2)) throw new Refus("« broches » : un multiple de " + (qfn ? 4 : 2));
+      const pas = nombre(a.pas, "pas", 0.3, 2);
+      const Lc = cote(a.corps, "corps", 20);
+      const T = cote(a.pied, "pied", 5), W = cote(a.largeur, "largeur", 5);
+      const lon = a.longueur != null ? cote(a.longueur, "longueur", 20) : Lc;
+      const p = pastilleIpc(Lc, T, W, SOUDURE.sansPatte, d);
+      verifierPas(p.largeur, pas);
+      const parCote = qfn ? n / 4 : n / 2, pads = [];
+      if ((parCote - 1) * pas + p.largeur > Math.min(Lc[0], lon[0]) + 0.2)
+        throw new Refus(parCote + " pastilles au pas de " + pas + " mm ne tiennent pas sur un côté de " + Lc[0] + " mm");
+      if (qfn) {
+        let k = 1;
+        for (let i = 0; i < parCote; i++) pads.push(plaque(k++, -p.centre, rangee(i, parCote, pas), p.longueur, p.largeur));
+        for (let i = 0; i < parCote; i++) pads.push(plaque(k++, rangee(i, parCote, pas), p.centre, p.largeur, p.longueur));
+        for (let i = parCote - 1; i >= 0; i--) pads.push(plaque(k++, p.centre, rangee(i, parCote, pas), p.longueur, p.largeur));
+        for (let i = parCote - 1; i >= 0; i--) pads.push(plaque(k++, rangee(i, parCote, pas), -p.centre, p.largeur, p.longueur));
+      } else deuxRangees(parCote, parCote, pas, p, pads);
+      let nom = famille.toUpperCase() + "-" + n;
+      if (a.thermique != null) {
+        const t = a.thermique;
+        if (!Array.isArray(t) || t.length !== 2 || !t.every(x => fini(x) && x > 0))
+          throw new Refus("« thermique » : [largeur, hauteur] de la pastille thermique en mm");
+        const bord = p.centre - p.longueur / 2 - 0.15;       // 0,15 mm de vernis entre elles
+        if (t[0] / 2 > bord || (qfn && t[1] / 2 > bord))
+          throw new Refus("pastille thermique trop grande : moins de 0,15 mm des pastilles");
+        pads.push(Object.assign(plaque(n + 1, 0, 0, t[0], t[1]), { nom: "EP" }));
+        nom += "-EP";
+      }
+      return { nom: nom + "-" + r3((Lc[0] + Lc[1]) / 2) + "x" + r3((lon[0] + lon[1]) / 2),
+               style: qfn ? "quad" : "sop", pins: pads.length, pitch: pas, span: r3(2 * p.centre), cotes: p, pads,
+               body: corpsDe((Lc[0] + Lc[1]) / 2, (lon[0] + lon[1]) / 2) };
+    },
+    dip(a, d, rq) {
+      const n = nombre(a.broches, "broches", 4, 64, true);
+      if (n % 2) throw new Refus("« broches » : un nombre pair");
+      const pas = a.pas != null ? nombre(a.pas, "pas", 1, 5) : 2.54;
+      const ecart = a.rangee != null ? nombre(a.rangee, "rangee", 2, 30) : 7.62;
+      const t = traversant(a.diametre != null ? a.diametre : 0.6, d, pas, ecart);
+      const pads = [], nb = n / 2;
+      for (let k = 0; k < nb; k++) pads.push(trou(k + 1, -ecart / 2, rangee(k, nb, pas), t.trou, t.pastille));
+      for (let k = nb - 1; k >= 0; k--) pads.push(trou(n - k, ecart / 2, rangee(k, nb, pas), t.trou, t.pastille));
+      const corps = Array.isArray(a.corps) ? a.corps : [ecart - 1.3, nb * pas + 0.1];
+      return { nom: "DIP-" + n + (ecart !== 7.62 ? "-W" + ecart : ""), style: "dip", pins: n, pitch: pas, span: ecart,
+               pads, body: corpsDe(corps[0], corps[1]) };
+    },
+    /* barrette 1×N (le long de x) ou 2×N (1 et 2 face à face, puis 3 et 4… comme les connecteurs IDC) */
+    barrette(a, d, rq) {
+      const rangs = a.rangees == null ? 1 : a.rangees;
+      if (rangs !== 1 && rangs !== 2) throw new Refus("« rangees » : 1 ou 2");
+      const nb = nombre(a.broches, "broches", 1, 100, true);
+      const pas = a.pas != null ? nombre(a.pas, "pas", 1, 5) : 2.54;
+      const t = traversant(a.diametre != null ? a.diametre : 0.64 * Math.SQRT2, d, pas, pas);
+      const pads = [];
+      for (let k = 0; k < nb; k++)
+        for (let r = 0; r < rangs; r++)
+          pads.push(trou(k * rangs + r + 1, rangee(k, nb, pas), rangs === 1 ? 0 : (r - 0.5) * pas, t.trou, t.pastille));
+      return { nom: "HEADER-" + pas.toFixed(2) + "-" + rangs + "x" + nb, style: rangs === 1 ? "row" : "dip",
+               pins: nb * rangs, pitch: pas, span: pas, pads,
+               body: corpsDe(nb * pas, rangs * pas) };
+    }
+  };
+  function traversant(diametre, d, pas, ecart) {
+    const dia = nombre(diametre, "diametre", 0.2, 3);
+    const t = Math.ceil((dia + TROU.jeu[d]) / 0.05 - 1e-9) * 0.05;       // trou au 0,05 supérieur
+    const D = t + 2 * TROU.couronne[d];
+    if (D > Math.min(pas, ecart) - 0.2) throw new Refus("pastilles de " + r3(D) + " mm au pas de " + pas + " mm : moins de 0,2 mm entre elles");
+    return { trou: r3(t), pastille: r3(D) };
+  }
+
+  /* famille + paramètres de la datasheet → { empreinte, erreurs, remarques, cotes } : rien n'est écrit */
+  function genererEmpreinte(famille, params) {
+    const a = params && typeof params === "object" && !Array.isArray(params) ? params : {};
+    const remarques = [];
+    const f = String(famille || "").toLowerCase();
+    const d = a.densite == null ? "N" : a.densite;
+    try {
+      if (!["M", "N", "L"].includes(d)) throw new Refus("« densite » : M (large), N (nominale) ou L (serrée)");
+      let r;
+      if (f === "chip") r = FAMILLES.chip(a, d, remarques);
+      else if (f === "sot") r = FAMILLES.sot(a, d, remarques);
+      else if (f === "soic" || f === "tssop" || f === "msop") r = FAMILLES.aile(a, d, remarques, f);
+      else if (f === "qfn" || f === "dfn") r = FAMILLES.sansPatte(a, d, remarques, f);
+      else if (f === "dip") r = FAMILLES.dip(a, d, remarques);
+      else if (f === "barrette") r = FAMILLES.barrette(a, d, remarques);
+      else throw new Refus("famille inconnue : chip, sot, soic, tssop, msop, qfn, dfn, dip, barrette");
+      const nom = a.nom != null ? a.nom : r.nom + (d !== "N" ? "-" + d : "");
+      const empreinte = { format: "pcbfp-1", name: nom, pkg: r.nom, pins: r.pins, style: r.style,
+                          pitch: r.pitch, span: r.span, pads: r.pads, body: r.body,
+                          description: "Généré (IPC-7351B, densité " + d + ") : " + r.nom };
+      const v = verifierEmpreinte(empreinte, typeof nom === "string" ? nom + ".json" : null);
+      return { empreinte, erreurs: v.erreurs, remarques: remarques.concat(v.remarques),
+               cotes: r.cotes ? { Z: r.cotes.Z, G: r.cotes.G, X: r.cotes.X } : null };
+    } catch (e) {
+      if (!(e instanceof Refus)) throw e;
+      return { empreinte: null, erreurs: [e.message], remarques, cotes: null };
+    }
+  }
+
+  return { STYLES, FORMES, SYMBOLES, verifierEmpreinte, verifierBrochage, verifierLigne,
+           PUCES, AILES, genererEmpreinte };
 })();

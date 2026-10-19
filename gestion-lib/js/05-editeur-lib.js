@@ -1066,7 +1066,7 @@ function remplirFormulaireEditeur() {
           </div>
           <div class="form-group">
             <label>Style</label>
-            <input id="edFpStyle" value="${escapeHtml(data.style || 'smd')}" placeholder="chip, dip, qfn, soic...">
+            <input id="edFpStyle" value="${escapeHtml(data.style || 'sop')}" placeholder="chip, row, dip, sop, quad, bga">
           </div>
         </div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
@@ -1165,7 +1165,7 @@ function editeurCollecterGeneralPcb() {
   if (!d) return;
   d.name = (document.getElementById("edFpNom")?.value || "").trim();
   d.pkg = (document.getElementById("edFpPkg")?.value || "").trim();
-  d.style = (document.getElementById("edFpStyle")?.value || "smd").trim();
+  d.style = (document.getElementById("edFpStyle")?.value || "sop").trim();
   d.pitch = parseFloat(document.getElementById("edFpPitch")?.value) || 0;
   d.pins = parseInt(document.getElementById("edFpPins")?.value, 10) || (d.pads ? d.pads.length : 0);
   d.description = (document.getElementById("edFpDesc")?.value || "").trim();
@@ -1863,7 +1863,7 @@ function editeurGenererSoic() {
   EDITEUR_LIB.data.pads = pads;
   delete EDITEUR_LIB.data.holes; // une empreinte générée repart de zéro : les trous de la précédente n'y ont pas leur place
   EDITEUR_LIB.data.pins = pins;
-  EDITEUR_LIB.data.style = "soic";
+  EDITEUR_LIB.data.style = "sop";
   EDITEUR_LIB.data.pitch = pitch;
   EDITEUR_LIB.data.pkg = `SOIC-${pins}`;
   editeurAjusterCorpsAuto(true);
@@ -1896,7 +1896,7 @@ function editeurGenererHeader() {
   EDITEUR_LIB.data.pads = pads;
   delete EDITEUR_LIB.data.holes; // une empreinte générée repart de zéro : les trous de la précédente n'y ont pas leur place
   EDITEUR_LIB.data.pins = pins;
-  EDITEUR_LIB.data.style = "header";
+  EDITEUR_LIB.data.style = "row";
   EDITEUR_LIB.data.pitch = pitch;
   EDITEUR_LIB.data.pkg = `HDR-1x${pins}`;
   editeurAjusterCorpsAuto(true);
@@ -1975,6 +1975,13 @@ async function editeurEnregistrer() {
         return;
       }
     }
+  }
+
+  // les contrôles de la création par le MCP (commun/composants-lib.js) : montrés, l'utilisateur décide
+  if (EDITEUR_LIB.type === "pcb" && typeof COMPOSANTS_LIB !== "undefined") {
+    const v = COMPOSANTS_LIB.verifierEmpreinte(EDITEUR_LIB.data, nom);
+    if (v.erreurs.length && !confirm("Cette empreinte ne passe pas les contrôles :\n• " +
+        v.erreurs.slice(0, 8).join("\n• ") + "\n\nEnregistrer quand même ?")) return;
   }
 
   const type = EDITEUR_LIB.type;
