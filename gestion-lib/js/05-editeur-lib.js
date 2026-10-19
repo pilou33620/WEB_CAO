@@ -1979,7 +1979,7 @@ async function editeurEnregistrer() {
 
   // les contrôles de la création par le MCP (commun/composants-lib.js) : montrés, l'utilisateur décide
   if (EDITEUR_LIB.type === "pcb" && typeof COMPOSANTS_LIB !== "undefined") {
-    const v = COMPOSANTS_LIB.verifierEmpreinte(EDITEUR_LIB.data, nom);
+    const v = COMPOSANTS_LIB.verifierEmpreinte(EDITEUR_LIB.data, nom.replace(/\.json$/i, ".json"));
     if (v.erreurs.length && !confirm("Cette empreinte ne passe pas les contrôles :\n• " +
         v.erreurs.slice(0, 8).join("\n• ") + "\n\nEnregistrer quand même ?")) return;
   }

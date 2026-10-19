@@ -24,6 +24,11 @@ const COMPOSANTS_LIB = (() => {
                           "pads", "body", "holes", "description"];
   const NOM_EMPREINTE = /^[A-Za-z0-9_.+-]{1,60}$/;
   const CONTROLE = /[\x00-\x1f\x7f]/;
+  /* une cellule du catalogue ne doit ni passer pour une formule à l'ouverture dans un tableur
+     (« =HYPERLINK(… », « @SUM », « +cmd|… » ; « -40 » et « +/-20% » restent permis), ni cacher
+     des caractères invisibles qui feraient un sosie d'une référence existante */
+  const FORMULE = /^\s*([=@]|[+-]\s*[A-Za-z(])/;
+  const INVISIBLE = /[\u0080-\u009f\u00a0\u00ad\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/;
   const COORD = 100, COURONNE = 0.1, PASTILLE_MIN = 0.05;
 
   /* Symboles intégrés du schéma (clés de LIB, editeur-schematique/js/02-bibliotheque.js) :
@@ -116,6 +121,12 @@ const COMPOSANTS_LIB = (() => {
       if (doubles.length)
         remarques.push("numéro(s) en double : " + doubles.join(", ") + " (pastille fractionnée, pastille thermique : à vérifier)");
     }
+    if (!erreurs.length) {
+      const touchent = chevauchements(pads);
+      if (touchent.length)
+        erreurs.push("pastilles qui se recouvrent (court-circuit) : " + touchent.slice(0, 6).join(", ") +
+                     (touchent.length > 6 ? "…" : ""));
+    }
     if (Array.isArray(def.holes))
       def.holes.forEach((h, i) => {
         if (!h || !fini(h.x) || !fini(h.y) || !fini(h.d) || h.d < 0.4 || h.d > 30 || Math.abs(h.x) > COORD || Math.abs(h.y) > COORD)
@@ -135,6 +146,24 @@ const COMPOSANTS_LIB = (() => {
         remarques.push(hors.length + " pastille(s) CMS dépassent du corps (normal pour des pattes ou des terminaisons ; à vérifier sinon)");
     }
     return { erreurs, remarques };
+  }
+
+  /* Paires de pastilles de numéros différents dont les rectangles se recouvrent (un même numéro,
+     c'est une pastille fractionnée : permis). Une pastille tournée d'un angle quelconque compte
+     pour son cercle englobant. Balayage selon x : pas de comparaison de tout avec tout. */
+  function chevauchements(pads) {
+    const boites = pads.map(q => {
+      const r = ((q.rot || 0) % 180 + 180) % 180;
+      const [w, h] = r === 0 ? [q.w, q.h] : r === 90 ? [q.h, q.w] : [Math.hypot(q.w, q.h), Math.hypot(q.w, q.h)];
+      return { n: q.n, x1: q.x - w / 2, x2: q.x + w / 2, y1: q.y - h / 2, y2: q.y + h / 2 };
+    }).sort((a, b) => a.x1 - b.x1);
+    const out = [], EPS = 1e-6;
+    for (let i = 0; i < boites.length && out.length < 50; i++)
+      for (let j = i + 1; j < boites.length && boites[j].x1 < boites[i].x2 - EPS; j++) {
+        const a = boites[i], b = boites[j];
+        if (a.n !== b.n && b.y1 < a.y2 - EPS && a.y1 < b.y2 - EPS) out.push(a.n + "/" + b.n);
+      }
+    return out;
   }
 
   /* ---------- brochage ---------- */
@@ -187,7 +216,7 @@ const COMPOSANTS_LIB = (() => {
   /* ---------- ligne de catalogue ---------- */
   const OBLIGATOIRES = ["Part Name", "Reference designator Prefix", "Number Of pins",
                         "Empreinte PCB", "Empreinte Schématique"];
-  const nomDeChemin = v => String(v).trim().replace(/^.*[\\/]/, "").replace(/\.json$/i, "");
+  const nomDeChemin = v => String(v == null ? "" : v).trim().replace(/^.*[\\/]/, "").replace(/\.json$/i, "");
 
   /* contexte : { partNames: [...], empreintes: [noms sans .json], nouvelle: def pcbfp-1 créée
      par la même carte (ou null), empreinteDef: def de l'empreinte visée si elle existe }.
@@ -206,6 +235,8 @@ const COMPOSANTS_LIB = (() => {
       if (typeof v === "number" && Number.isFinite(v)) v = String(v);
       if (typeof v !== "string") { erreurs.push("« " + c + " » : texte attendu"); v = ""; }
       else if (CONTROLE.test(v) || v.length > 500) erreurs.push("« " + c + " » : une ligne, 500 caractères au plus");
+      else if (FORMULE.test(v)) erreurs.push("« " + c + " » : commence comme une formule de tableur (=, @, +lettre, -lettre)");
+      else if (INVISIBLE.test(v)) erreurs.push("« " + c + " » : caractère invisible ou de contrôle Unicode");
       sortie[c] = v.trim();
     }
     for (const c of OBLIGATOIRES) if (!sortie[c]) erreurs.push("colonne obligatoire vide ou manquante : « " + c + " »");
@@ -418,26 +449,32 @@ const COMPOSANTS_LIB = (() => {
       const Lc = cote(a.corps, "corps", 20);
       const T = cote(a.pied, "pied", 5), W = cote(a.largeur, "largeur", 5);
       const lon = a.longueur != null ? cote(a.longueur, "longueur", 20) : Lc;
-      const p = pastilleIpc(Lc, T, W, SOUDURE.sansPatte, d);
+      const p = pastilleIpc(Lc, T, W, SOUDURE.sansPatte, d);              // côtés gauche et droit : cote X du corps
+      const pY = qfn ? pastilleIpc(lon, T, W, SOUDURE.sansPatte, d) : p;   // haut et bas : cote Y (corps rectangulaire)
       verifierPas(p.largeur, pas);
       const parCote = qfn ? n / 4 : n / 2, pads = [];
-      if ((parCote - 1) * pas + p.largeur > Math.min(Lc[0], lon[0]) + 0.2)
-        throw new Refus(parCote + " pastilles au pas de " + pas + " mm ne tiennent pas sur un côté de " + Lc[0] + " mm");
+      const demi = (parCote - 1) * pas / 2 + p.largeur / 2;                // demi-étendue d'une rangée
+      // une rangée de QFN ne doit pas toucher celle du côté voisin (angles : court-circuit) ;
+      // celle d'un DFN doit tenir sur la longueur du corps
+      if (qfn ? demi > Math.min(p.centre - p.longueur / 2, pY.centre - pY.longueur / 2) - 0.1 : 2 * demi > lon[0] + 0.2)
+        throw new Refus(parCote + " pastilles au pas de " + pas + " mm ne tiennent pas sur un côté" +
+                        (qfn ? " sans toucher celles du côté voisin" : " de " + lon[0] + " mm"));
       if (qfn) {
         let k = 1;
         for (let i = 0; i < parCote; i++) pads.push(plaque(k++, -p.centre, rangee(i, parCote, pas), p.longueur, p.largeur));
-        for (let i = 0; i < parCote; i++) pads.push(plaque(k++, rangee(i, parCote, pas), p.centre, p.largeur, p.longueur));
+        for (let i = 0; i < parCote; i++) pads.push(plaque(k++, rangee(i, parCote, pas), pY.centre, p.largeur, pY.longueur));
         for (let i = parCote - 1; i >= 0; i--) pads.push(plaque(k++, p.centre, rangee(i, parCote, pas), p.longueur, p.largeur));
-        for (let i = parCote - 1; i >= 0; i--) pads.push(plaque(k++, rangee(i, parCote, pas), -p.centre, p.largeur, p.longueur));
+        for (let i = parCote - 1; i >= 0; i--) pads.push(plaque(k++, rangee(i, parCote, pas), -pY.centre, p.largeur, pY.longueur));
       } else deuxRangees(parCote, parCote, pas, p, pads);
       let nom = famille.toUpperCase() + "-" + n;
       if (a.thermique != null) {
         const t = a.thermique;
         if (!Array.isArray(t) || t.length !== 2 || !t.every(x => fini(x) && x > 0))
           throw new Refus("« thermique » : [largeur, hauteur] de la pastille thermique en mm");
-        const bord = p.centre - p.longueur / 2 - 0.15;       // 0,15 mm de vernis entre elles
-        if (t[0] / 2 > bord || (qfn && t[1] / 2 > bord))
-          throw new Refus("pastille thermique trop grande : moins de 0,15 mm des pastilles");
+        // 0,15 mm de vernis entre elle et les pastilles, sur chaque axe
+        if (t[0] / 2 > p.centre - p.longueur / 2 - 0.15 ||
+            t[1] / 2 > (qfn ? pY.centre - pY.longueur / 2 - 0.15 : lon[0] / 2))
+          throw new Refus("pastille thermique trop grande : moins de 0,15 mm des pastilles, ou hors du corps");
         pads.push(Object.assign(plaque(n + 1, 0, 0, t[0], t[1]), { nom: "EP" }));
         nom += "-EP";
       }
@@ -561,6 +598,9 @@ const COMPOSANTS_LIB = (() => {
     return v;
   }
   const FORMES_KICAD = { rect: "sharp", roundrect: "rect", circle: "circ", oval: "oval" };
+  /* ce que la conversion lit (ou n'a pas à reprendre : net, identifiants) dans une pastille */
+  const SOUS_PASTILLE = ["at", "size", "drill", "layers", "roundrect_rratio", "chamfer_ratio", "chamfer",
+                         "net", "uuid", "tstamp"];
 
   function convertirKicad(texte) {
     const remarques = [];
@@ -594,15 +634,23 @@ const COMPOSANTS_LIB = (() => {
             if (v.length > 1 && v[0] !== v[1]) slot = Math.max(v[0], v[1]);
             if (enfant(dr, "offset")) remarques.push("pastille « " + num + " » : décalage du perçage ignoré");
           }
+          for (const sous of e.slice(4))
+            if (Array.isArray(sous) && !SOUS_PASTILLE.includes(sous[0])) ignorer("« " + sous[0] + " » de pastille");
           if (genre === "np_thru_hole") {
+            if (slot) remarques.push("trou non métallisé oblong en (" + x + ", " + y + ") repris rond de " + drill + " mm");
             holes.push({ x: r4(x), y: r4(y), d: r4(drill || Math.min(w, h)) });
+            continue;
+          }
+          if (genre === "thru_hole" && !(drill > 0)) throw new Refus("pastille traversante « " + num + " » sans perçage : kicad_mod illisible");
+          const couches = (enfant(e, "layers") || []).slice(1);
+          if (!couches.some(c => /^(\*|F|B)\.Cu$/.test(c))) {
+            remarques.push("pastille « " + num + " » sans cuivre (" + couches.join(" ") + ") : écartée");
             continue;
           }
           if (forme === "custom") throw new Refus("pastille personnalisée (custom) « " + num + " » : non convertible, dessine-la en pcbfp-1");
           if (!FORMES_KICAD[forme]) throw new Refus("forme de pastille inconnue « " + forme + " » (pastille « " + num + " »)");
           if (!num) { remarques.push("pastille sans numéro en (" + x + ", " + y + ") : ignorée (patte mécanique)"); continue; }
           if (genre === "connect") remarques.push("pastille « " + num + " » de contact (connect) : reprise comme CMS");
-          const couches = (enfant(e, "layers") || []).slice(1);
           if ((genre === "smd" || genre === "connect") && couches.some(c => /^B\.Cu$/.test(c)) && !couches.some(c => /^F\.Cu$/.test(c)))
             remarques.push("pastille « " + num + " » côté cuivre bas : posée côté haut");
           if (enfant(e, "chamfer_ratio")) remarques.push("pastille « " + num + " » : chanfrein KiCad repris en coins adoucis");
@@ -619,7 +667,12 @@ const COMPOSANTS_LIB = (() => {
           pads.push(q);
         } else if (/^fp_(line|rect|poly|circle|arc)$/.test(k) || /^gr_/.test(k)) {
           const couche = (enfant(e, "layer") || [])[1];
-          if (couche === "F.Fab" && k !== "fp_arc") {
+          if (couche === "F.Fab" && /circle$/.test(k)) {
+            // un cercle : son centre et un point du bord ; le corps prend tout le disque
+            const [cx, cy] = nombres(enfant(e, "center"), 2, "cercle"), [ex, ey] = nombres(enfant(e, "end"), 2, "cercle");
+            const rayon = Math.hypot(ex - cx, ey - cy);
+            fab.push([cx - rayon, cy - rayon], [cx + rayon, cy + rayon]);
+          } else if (couche === "F.Fab" && k !== "fp_arc") {
             for (const s of ["start", "end", "center"]) { const a = enfant(e, s); if (a) fab.push(nombres(a, 2, "contour")); }
             const pts = enfant(e, "pts");
             if (pts) for (const xy of enfants(pts, "xy")) fab.push(nombres(xy, 2, "contour"));
@@ -648,7 +701,8 @@ const COMPOSANTS_LIB = (() => {
         empreinte.body = { x1: r4(Math.min(...fx)), y1: r4(Math.min(...fy)), x2: r4(Math.max(...fx)), y2: r4(Math.max(...fy)) };
       }
       if (descr && typeof descr[1] === "string")
-        empreinte.description = descr[1].replace(/[\x00-\x08\x0b-\x1f\x7f]/g, " ").slice(0, 2000);
+        // coupée par caractères entiers : une paire de substitution tranchée ferait échouer l'écriture
+        empreinte.description = Array.from(descr[1].replace(/[\x00-\x08\x0b-\x1f\x7f]/g, " ")).slice(0, 2000).join("");
       const v = verifierEmpreinte(empreinte, nom + ".json");
       return { empreinte, erreurs: v.erreurs, remarques: remarques.concat(v.remarques) };
     } catch (e) {
@@ -657,6 +711,5 @@ const COMPOSANTS_LIB = (() => {
     }
   }
 
-  return { STYLES, FORMES, SYMBOLES, verifierEmpreinte, verifierBrochage, verifierLigne,
-           PUCES, AILES, genererEmpreinte, convertirKicad };
+  return { SYMBOLES, nomDeChemin, verifierEmpreinte, verifierBrochage, verifierLigne, genererEmpreinte, convertirKicad };
 })();

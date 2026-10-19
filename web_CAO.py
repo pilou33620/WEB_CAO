@@ -2506,16 +2506,17 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         dossier = dossier_lib()
         os.makedirs(dossier, exist_ok=True)
         cible = os.path.join(dossier, "LIB_composants.csv")
-        try:
-            ecrire_texte_atomique(cible, texte)
-        except OSError as exc:
-            raise ErreurLib(500, "Impossible d'ecrire %s : %s" % (cible, exc))
+        with VERROU_CATALOGUE:      # un ajout de ligne en cours ne doit pas reecrire l'ancien texte par-dessus
+            try:
+                ecrire_texte_atomique(cible, texte)
+            except OSError as exc:
+                raise ErreurLib(500, "Impossible d'ecrire %s : %s" % (cible, exc))
 
-        racine_csv = os.path.join(ROOT, "LIB_composants.csv")
-        try:
-            ecrire_texte_atomique(racine_csv, texte)
-        except OSError:
-            pass
+            racine_csv = os.path.join(ROOT, "LIB_composants.csv")
+            try:
+                ecrire_texte_atomique(racine_csv, texte)
+            except OSError:
+                pass
 
         return {"ok": True, "total": len(composants), "message": "Composants enregistres"}
 
@@ -2523,8 +2524,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         """Ajoute UNE ligne au catalogue sans reecrire les autres : le texte existant reste tel
         quel, octet pour octet (encodage du fichier, fins de ligne), la ligne vient au bout. Une
         Part Name deja presente (casse ignoree) est refusee : jamais d'ecrasement."""
-        if not isinstance(ligne, dict) or not ligne:
-            raise ErreurLib(400, "« ajouter » : une ligne de catalogue (objet colonne -> valeur)")
+        if not isinstance(ligne, dict) or not ligne or len(ligne) > 41:
+            raise ErreurLib(400, "« ajouter » : une ligne de catalogue (objet colonne -> valeur, 41 au plus)")
         import csv
         import io
         with VERROU_CATALOGUE:
@@ -2539,15 +2540,22 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                     break
                 except UnicodeDecodeError:
                     continue
-            fin = "\r\n" if "\r\n" in texte else "\n"
             lignes = [r for r in csv.reader(io.StringIO(texte), delimiter=';') if any(c.strip() for c in r)]
             if not lignes:
                 raise ErreurLib(500, "Catalogue sans en-tete")
             colonnes = [c.strip() for c in lignes[0]]
-            entete = texte.split(fin, 1)[0]
+            # l'en-tete est la premiere ligne du texte ; sa fin de ligne (\r\n, \n, ou le \r\r\n des
+            # anciens enregistrements) est celle de la ligne ajoutee
+            coupe = texte.find("\n")
+            tete, reste = (texte, "") if coupe < 0 else (texte[:coupe], texte[coupe:])
+            noyau = tete.rstrip("\r")
+            fin = tete[len(noyau):] + "\n"
             if "Brochage" in ligne and "Brochage" not in colonnes:
+                if [c.strip() for c in next(csv.reader([noyau], delimiter=';'), [])] != colonnes:
+                    raise ErreurLib(409, "En-tete du catalogue inattendu (ligne vide ou guillemets en tete) : "
+                                         "ajoute la colonne Brochage dans Gestion LIB d'abord")
                 colonnes.append("Brochage")            # comme la page : la colonne vient a la fin
-                entete = entete + ";Brochage"
+                tete = noyau + ";Brochage" + tete[len(noyau):]
             inconnues = [k for k in ligne if k not in colonnes]
             if inconnues:
                 raise ErreurLib(400, "Colonne(s) inconnue(s) du catalogue : %s" % ", ".join(inconnues))
@@ -2556,12 +2564,18 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                 if not isinstance(v, (str, int, float)) or isinstance(v, bool):
                     raise ErreurLib(400, "Colonne « %s » : texte attendu" % k)
                 v = str(v)
-                if re.search(r"[\x00-\x1f\x7f]", v):
-                    raise ErreurLib(400, "Colonne « %s » : une seule ligne, sans caractere de controle" % k)
+                if len(v) > 500 or re.search(r"[\x00-\x1f\x7f]", v):
+                    raise ErreurLib(400, "Colonne « %s » : une seule ligne, 500 caracteres au plus" % k)
+                # memes regles que la page (commun/composants-lib.js) : ni formule de tableur, ni invisible
+                if re.match(r"\s*([=@]|[+-]\s*[A-Za-z(])", v):
+                    raise ErreurLib(400, "Colonne « %s » : commence comme une formule de tableur" % k)
+                if re.search("[\u0080-\u009f\u00a0\u00ad\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]", v):
+                    raise ErreurLib(400, "Colonne « %s » : caractere invisible ou de controle Unicode" % k)
                 valeurs[k] = v
             nom = valeurs.get("Part Name", "").strip()
             if not nom:
                 raise ErreurLib(400, "« Part Name » est obligatoire")
+            valeurs["Part Name"] = nom                 # ecrite comme elle est comparee
             i_nom = colonnes.index("Part Name") if "Part Name" in colonnes else -1
             existants = {(r[i_nom].strip().upper() if 0 <= i_nom < len(r) else "") for r in lignes[1:]}
             if nom.upper() in existants:
@@ -2569,10 +2583,10 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             sortie = io.StringIO()
             csv.writer(sortie, delimiter=';', quoting=csv.QUOTE_MINIMAL, lineterminator=fin).writerow(
                 [valeurs.get(c, "") for c in colonnes])
-            corps = texte.split(fin, 1)[1] if fin in texte else ""
-            if corps and not corps.endswith(fin):
-                corps += fin
-            neuf = entete + fin + corps + sortie.getvalue()
+            neuf = tete + reste
+            if not neuf.endswith("\n"):
+                neuf += fin
+            neuf += sortie.getvalue()
             ecrit = "utf-8" if enc == "utf-8-sig" else enc
             prefixe = "\ufeff" if brut.startswith(b"\xef\xbb\xbf") else ""
             try:
@@ -2651,15 +2665,37 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             raise ErreurLib(400, "Champ 'data' ou 'contenu' requis")
 
         if charge.get("si_absent") is True:
-            # jamais d'ecrasement : c'est le systeme qui refuse (O_EXCL), pas un « lire puis ecrire »
+            # jamais d'ecrasement : c'est le systeme qui refuse (lien ou O_EXCL), pas un « lire puis
+            # ecrire » ; le fichier est ecrit a part puis lie sous son nom, complet ou pas du tout
+            temp = "%s.%d.%d.tmp" % (chemin, os.getpid(), threading.get_ident())
             try:
-                fd = os.open(chemin, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+                with open(temp, "w", encoding="utf-8", newline="") as f:
+                    f.write(contenu)
+                try:
+                    os.link(temp, chemin)
+                except FileExistsError:
+                    raise ErreurLib(409, "Le fichier existe deja : %s (jamais d'ecrasement)" % nom)
+                except OSError:
+                    # systeme de fichiers sans liens (FAT, exFAT) : creation exclusive, puis ecriture ;
+                    # un echec en cours d'ecriture retire le fichier, pour ne pas laisser un vide
+                    fd = os.open(chemin, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+                    try:
+                        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+                            f.write(contenu)
+                    except BaseException:
+                        os.remove(chemin)
+                        raise
             except FileExistsError:
                 raise ErreurLib(409, "Le fichier existe deja : %s (jamais d'ecrasement)" % nom)
+            except UnicodeEncodeError:
+                raise ErreurLib(400, "Texte invalide (caractere non encodable en UTF-8) : %s" % nom)
             except OSError as exc:
                 raise ErreurLib(500, "Erreur d'ecriture : %s" % exc)
-            with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
-                f.write(contenu)
+            finally:
+                try:
+                    os.remove(temp)
+                except OSError:
+                    pass
             return {"ok": True, "type": genre, "nom": nom}
 
         try:

@@ -81,7 +81,9 @@ async function apiGet(url) {
       const j = await resp.json();
       if (j.detail) err = j.detail;
     } catch (_) {}
-    throw new Error(err);
+    const e = new Error(err);
+    e.status = resp.status;
+    throw e;
   }
   return await resp.json();
 }
@@ -98,7 +100,9 @@ async function apiPost(url, data) {
       const j = await resp.json();
       if (j.detail) err = j.detail;
     } catch (_) {}
-    throw new Error(err);
+    const e = new Error(err);
+    e.status = resp.status;
+    throw e;
   }
   return await resp.json();
 }
@@ -322,12 +326,17 @@ async function sauvegarderFichierLib(type, nom, dataOuContenu, options) {
 // Sauvegarde des modifications du catalogue vers le serveur
 async function enregistrerCatalogue() {
   if (!LIB_STATE.sale) return { ok: true, message: "Aucune modification à enregistrer" };
+  // l'enregistrement réécrit tout le catalogue : ce qu'un autre onglet y a mis serait perdu
+  if (LIB_STATE.perime && !confirm("Le catalogue a changé ailleurs (autre onglet, carte de Claude) depuis " +
+      "son chargement. L'enregistrer maintenant effacera ces changements. Continuer ?"))
+    throw new Error("enregistrement annulé : recharge la page pour reprendre le catalogue à jour");
   const payload = {
     colonnes: LIB_STATE.colonnes,
     composants: LIB_STATE.composants
   };
   const res = await apiPost("/api/lib/composants", payload);
   LIB_STATE.sale = false;
+  LIB_STATE.perime = false;
   libSuiteNoter("catalogue");
 
   if (typeof sessDiffuserLibModif === "function") {
@@ -339,6 +348,20 @@ async function enregistrerCatalogue() {
 
   return res;
 }
+
+/* Le catalogue changé ailleurs (autre onglet, carte de Claude) : sans modification en cours, on
+   le relit ; sinon on le note, et « Enregistrer » demandera avant d'écraser. */
+function libSurCatalogueAilleurs(m) {
+  if (!m || m.genre !== "catalogue") return;
+  if (LIB_STATE.sale) {
+    LIB_STATE.perime = true;
+    if (typeof afficherToast === "function")
+      afficherToast("Le catalogue a changé dans un autre onglet : l'enregistrer effacerait ce changement", "warn");
+    return;
+  }
+  chargerDonneesBibliotheque().then(() => { if (typeof rafraichirTout === "function") rafraichirTout(); });
+}
+if (typeof sessEcouterLibModif === "function") sessEcouterLibModif(libSurCatalogueAilleurs);
 
 // Filtrage et tri de la liste de composants
 /* Les colonnes où cherche la barre de recherche. Les références fabricant y

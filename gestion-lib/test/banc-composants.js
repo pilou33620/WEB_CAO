@@ -137,6 +137,11 @@ refusLigne(l => { l["Couleur"] = "bleu"; }, /colonne\(s\) inconnue/, "colonne in
 refusLigne(l => { l["Value"] = "a\nb"; }, /une ligne/, "valeur sur deux lignes");
 refusLigne(l => { l["Brochage"] = "IN=1,GND=2,OUT=8"; }, /absente\(s\) de l'empreinte/, "brochage incohérent");
 refusLigne(l => { l["Number Of pins"] = "cinq"; }, /entier/, "nombre de broches illisible");
+refusLigne(l => { l["Description"] = '=HYPERLINK("http://x","y")'; }, /formule/, "formule de tableur");
+refusLigne(l => { l["Manufacturer"] = "@SUM(1+1)"; }, /formule/, "formule « @ »");
+refusLigne(l => { l["Part Name"] = "LDO\u200b_ESSAI"; }, /invisible/, "caractère invisible");
+r = CL.verifierLigne(Object.assign({}, LDO, { "Minimum operating temperature": "-40", tolerance: "+/-20%" }), ctx);
+verifier(!r.erreurs.length, "« -40 » et « +/-20% » restent permis");
 r = CL.verifierLigne(Object.assign({}, LDO, { "Empreinte PCB": "SOT-23-5-NEUF" }),
   Object.assign({}, ctx, { nouvelle: Object.assign(copie(SOT235), { name: "SOT-23-5-NEUF" }) }));
 verifier(!r.erreurs.length, "empreinte créée par la même carte : acceptée");
@@ -228,6 +233,16 @@ for (const [f, p, motif] of [
   const res = CL.genererEmpreinte(f, p);
   verifier(!res.empreinte && res.erreurs.some(e => motif.test(e)), f + " " + JSON.stringify(p) + " : refus clair (" + res.erreurs.join(" | ") + ")");
 }
+/* QFN rectangulaire : haut et bas sur la cote Y (corps 3 × 4 : Z/G de la cote Y = celles du
+   QFN 3×3 décalées de 0,5 mm) ; angles qui se toucheraient : refusés */
+r = gen("qfn", { broches: 16, pas: 0.5, corps: [2.9, 3.1], longueur: [3.9, 4.1], pied: [0.3, 0.5], largeur: [0.18, 0.30] });
+pastille(r, 1, -1.43, -0.75, 0.86, 0.26, "QFN 3×4");
+pastille(r, 5, -0.75, 1.93, 0.26, 0.86, "QFN 3×4 (bas, cote Y)");
+pastille(r, 13, 0.75, -1.93, 0.26, 0.86, "QFN 3×4 (haut, cote Y)");
+r = CL.genererEmpreinte("qfn", { broches: 20, pas: 0.5, corps: [2.9, 3.1], pied: [0.3, 0.5], largeur: [0.18, 0.30] });
+verifier(!r.empreinte && r.erreurs.some(e => /côté voisin/.test(e)), "QFN-20 3×3 : pastilles d'angle qui se toucheraient, refusé (" + r.erreurs.join(" | ") + ")");
+refus(d => { d.pads[1].y = -0.7; }, /se recouvrent.*1\/2/, "deux pastilles qui se recouvrent");
+
 r = CL.genererEmpreinte("chip", { code: "0603", nom: "../0603" });
 verifier(r.erreurs.some(e => /« name »/.test(e)), "nom imposé illisible : refusé par les contrôles");
 
@@ -283,6 +298,24 @@ verifier(JSON.stringify(r.empreinte.holes) === JSON.stringify([{ x: 1.27, y: 3, 
   "trou non métallisé repris, style row");
 verifier(r.remarques.some(m => /pas de corps/.test(m)), "pas de F.Fab : remarque « pas de corps »");
 
+/* cercle F.Fab : le corps prend tout le disque ; pastille sans cuivre écartée ; trou oblong et
+   sous-éléments de pastille signalés ; description coupée par caractères entiers */
+r = CL.convertirKicad(`(footprint "CP_Radial" (layer "F.Cu") (descr "${"é😀".repeat(1500)}")
+  (fp_circle (center 1.25 0) (end 3.75 0) (stroke (width 0.1) (type solid)) (layer "F.Fab"))
+  (pad "1" thru_hole rect (at 0 0) (size 1.6 1.6) (drill 0.8) (layers "*.Cu" "*.Mask") (solder_mask_margin 0.1))
+  (pad "2" thru_hole circle (at 2.5 0) (size 1.6 1.6) (drill 0.8) (layers "*.Cu" "*.Mask"))
+  (pad "3" smd rect (at 0 3) (size 1 1) (layers "F.Mask"))
+  (pad "" np_thru_hole oval (at 1 -3) (size 1 2) (drill oval 1 2) (layers "*.Cu")))`);
+verifier(r.empreinte && JSON.stringify(r.empreinte.body) === JSON.stringify({ x1: -1.25, y1: -2.5, x2: 3.75, y2: 2.5 }),
+  "cercle F.Fab : corps = disque entier (" + JSON.stringify(r.empreinte && r.empreinte.body) + ")");
+verifier(r.empreinte.pins === 2 && r.remarques.some(m => /« 3 » sans cuivre/.test(m)), "pastille sans cuivre écartée, en remarque");
+verifier(r.remarques.some(m => /oblong/.test(m)) && r.remarques.some(m => /solder_mask_margin/.test(m)),
+  "trou oblong et sous-élément de pastille en remarque (" + r.remarques.join(" | ") + ")");
+verifier(!/[\ud800-\udbff]$/.test(r.empreinte.description) && Array.from(r.empreinte.description).length === 2000,
+  "description coupée sans trancher un caractère");
+r = CL.convertirKicad('(footprint "X" (pad "1" thru_hole circle (at 0 0) (size 1.6 1.6) (layers "*.Cu")))');
+verifier(!r.empreinte && r.erreurs.some(e => /sans perçage/.test(e)), "traversante sans perçage : refusé");
+
 /* BGA : noms de pattes renumérotés, nom gardé */
 r = CL.convertirKicad(`(footprint "BGA-4" (layer "F.Cu")
   (pad "A1" smd circle (at -0.4 -0.4) (size 0.3 0.3) (layers "F.Cu"))
@@ -317,7 +350,7 @@ Object.assign(bac, {
   apiGet: async url => url === "/api/lib/composants" ? { composants: SRV.parts.map(p => ({ "Part Name": p })) }
                      : url === "/api/lib/fichiers" ? { pcb: SRV.pcb.slice() } : null,
   apiPost: async (url, corps) => {
-    if (SRV.refusLigne) throw new Error(SRV.refusLigne);
+    if (SRV.refusLigne) throw Object.assign(new Error(SRV.refusLigne), { status: SRV.statutLigne });
     SRV.ecrits.push(["ligne", corps.ajouter]);
     SRV.parts.push(corps.ajouter["Part Name"]);
     return { ok: true };
@@ -361,6 +394,7 @@ const asyncTests = (async () => {
   const n2 = Object.assign(copie(SOT235), { name: "SOT-23-5-B" });
   const p2 = await C.proposer({ ligne: l2, empreinte: n2 });
   SRV.refusLigne = "Colonne(s) inconnue(s) du catalogue : Brochage";
+  SRV.statutLigne = 400;
   refuse = null;
   try { await C.appliquer({ ligne: l2, empreinte: n2 }, p2); } catch (e) { refuse = e.message; }
   SRV.refusLigne = null;
@@ -368,6 +402,18 @@ const asyncTests = (async () => {
            JSON.stringify(SRV.ecrits.map(e => e[0])) === JSON.stringify(["empreinte", "retrait"]) &&
            SRV.ecrits[1][1] === "/api/lib/fichier?type=pcb&nom=SOT-23-5-B.json" && SRV.ecrits[1][2] === "DELETE",
     "ligne refusée : empreinte retirée (" + refuse + ")");
+
+  // réponse perdue (pas de statut HTTP) : la ligne a pu être écrite, l'empreinte reste
+  SRV.ecrits.length = 0;
+  SRV.pcb = SRV.pcb.filter(f => f !== "SOT-23-5-B.json");
+  const p2b = await C.proposer({ ligne: l2, empreinte: n2 });
+  SRV.refusLigne = "Failed to fetch";
+  SRV.statutLigne = undefined;
+  refuse = null;
+  try { await C.appliquer({ ligne: l2, empreinte: n2 }, p2b); } catch (e) { refuse = e.message; }
+  SRV.refusLigne = null;
+  verifier(refuse && /gardée/.test(refuse) && JSON.stringify(SRV.ecrits.map(e => e[0])) === JSON.stringify(["empreinte"]),
+    "réponse perdue : empreinte gardée, l'utilisateur prévenu (" + refuse + ")");
 
   // empreinte déjà là au clic (409) : rien d'autre n'est écrit
   SRV.ecrits.length = 0;

@@ -22,7 +22,7 @@ function libPiloteCommandes() {
     if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error("« " + nom + " » : un objet attendu");
     return v;
   };
-  const nomEmpreinte = v => String(v == null ? "" : v).trim().replace(/^.*[\\/]/, "").replace(/\.json$/i, "");
+  const nomEmpreinte = CL.nomDeChemin;     // « lib/empreinte/X.json » → « X »
 
   /* une empreinte donnée par son nom dans la LIB, ou un pcbfp-1 */
   async function empreinteDe(v) {
@@ -57,6 +57,10 @@ function libPiloteCommandes() {
       if (vise !== neuve.name) erreurs.push("« Empreinte PCB » de la ligne doit désigner l'empreinte créée (" + neuve.name + ")");
     }
     const existante = !neuve && lib.empreintes.includes(vise) ? await obtenirFichierLib("pcb", vise + ".json") : null;
+    if (!neuve && lib.empreintes.includes(vise) && !existante)
+      erreurs.push("l'empreinte « " + vise + " » est dans la LIB mais illisible : le brochage ne peut pas être vérifié");
+    // une empreinte déjà là est montrée telle quelle : ses défauts en remarque, sans la refuser
+    if (existante) remarques.push(...CL.verifierEmpreinte(existante, vise + ".json").erreurs.map(e => "empreinte existante : " + e));
     const v = CL.verifierLigne(ligne, { partNames: lib.partNames, empreintes: lib.empreintes, nouvelle: neuve, empreinteDef: existante });
     erreurs.push(...v.erreurs);
     remarques.push(...v.remarques);
@@ -100,7 +104,9 @@ function libPiloteCommandes() {
                " + ligne " + L["Part Name"] + " (" + L["Reference designator Prefix"] + ", " + L["Number Of pins"] +
                " broches, symbole " + nomEmpreinte(L["Empreinte Schématique"]) +
                (L["Brochage"] ? ", brochage " + L["Brochage"] : "") + ")",
-        details: p.remarques.length ? "Remarques : " + p.remarques.join(" ; ") : undefined
+        // toute la ligne écrite est montrée, pas seulement le résumé : on clique sur ce qu'on a vu
+        details: Object.entries(L).filter(([, v]) => v !== "").map(([k, v]) => k + " = " + v).join(" · ") +
+                 (p.remarques.length ? " — Remarques : " + p.remarques.join(" ; ") : "")
       };
     },
     async appliquer(args) {
@@ -118,9 +124,12 @@ function libPiloteCommandes() {
       try {
         await apiPost("/api/lib/composants", { ajouter: ajout });
       } catch (e) {
-        // pas d'empreinte orpheline : celle-ci vient d'être créée par cette carte (si_absent), on la retire
+        // pas d'empreinte orpheline : celle-ci vient d'être créée par cette carte (si_absent), on la
+        // retire, mais seulement sur un vrai refus du serveur ; une réponse perdue a pu écrire la ligne
         let retiree = "";
-        if (fichier) {
+        if (fichier && !(e.status >= 400 && e.status < 500))
+          retiree = " ; réponse incertaine : empreinte " + fichier + " gardée, vérifie le catalogue avant de réessayer";
+        else if (fichier) {
           try { await retirer(fichier); retiree = " ; empreinte " + fichier + " retirée"; }
           catch (e2) { retiree = " ; empreinte " + fichier + " NON retirée (" + e2.message + ") : à retirer à la main"; }
         }
@@ -131,10 +140,13 @@ function libPiloteCommandes() {
       if (L["Brochage"] && !LIB_STATE.colonnes.includes("Brochage")) LIB_STATE.colonnes.push("Brochage");
       const id = LIB_STATE.composants.reduce((m, c) => Math.max(m, c._id), -1) + 1;
       LIB_STATE.composants.push(Object.assign({}, L, { _id: id }));
-      libSuiteNoter("catalogue");
-      if (typeof sessDiffuserLibModif === "function") sessDiffuserLibModif({ genre: "catalogue", action: "sauvegarde" });
-      if (typeof rafraichirTout === "function") rafraichirTout();
-      oublier();
+      // tout est écrit : un raté de l'affichage ne doit pas faire croire à un échec (et à un nouvel essai)
+      try {
+        libSuiteNoter("catalogue");
+        if (typeof sessDiffuserLibModif === "function") sessDiffuserLibModif({ genre: "catalogue", action: "sauvegarde" });
+        if (typeof rafraichirTout === "function") rafraichirTout();
+        oublier();
+      } catch (e) { console.warn(e); }
       return { empreinte: fichier ? "lib_empreinte_pcb/" + fichier : null, ligne: L["Part Name"] };
     },
     refuser: () => oublier()

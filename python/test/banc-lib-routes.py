@@ -366,6 +366,8 @@ class TestLibDossierTemporaire(unittest.TestCase):
         self.assertTrue(self._json("/api/lib/fichier", {"type": "pcb", "nom": "ESSAI.json",
                                                         "data": dict(fp, name="AUTRE")})["ok"])
         self.assertIn(b"AUTRE", open(chemin, "rb").read())
+        self.assertEqual([f for f in os.listdir(os.path.dirname(chemin)) if f.endswith(".tmp")], [],
+                         "fichier temporaire laisse")
 
     def _ajout_garde_les_octets(self, encodage, fin, bom=False):
         chemin = os.path.join(self.tmp, "LIB_composants.csv")
@@ -405,6 +407,10 @@ class TestLibDossierTemporaire(unittest.TestCase):
         self.assertEqual(self._refus(url, {"ajouter": {"Part Name": "X", "Value": "a\nb"}}), 400)
         self.assertEqual(self._refus(url, {"ajouter": {"Part Name": "  "}}), 400)
         self.assertEqual(self._refus(url, {"ajouter": {"Part Name": "X", "Value": ["a"]}}), 400)
+        for piege in ('=HYPERLINK("http://x","y")', "@SUM(1+1)", "+cmd|' /C calc'!A0", "-HYPERLINK(1)",
+                      "AMS1117\u200b-3.3", "x" * 501):
+            self.assertEqual(self._refus(url, {"ajouter": {"Part Name": "X", "Description": piege}}), 400, piege[:20])
+        self.assertEqual(self._refus(url, {"ajouter": {str(i): "x" for i in range(42)}}), 400)
         self.assertEqual(open(chemin, "rb").read(), avant, "un refus a ecrit")
 
     def test_13f_ajout_cree_la_colonne_brochage(self):
@@ -417,6 +423,28 @@ class TestLibDossierTemporaire(unittest.TestCase):
         self.assertEqual(open(chemin, "rb").read(),
                          b"Part Name;Value;Brochage\r\nR1K;1k\r\nESSAI_B;;1=VIN\r\n")
         self.assertEqual(self._json("/api/lib/composants")["composants"][-1]["Brochage"], "1=VIN")
+
+    def test_13g_brochage_dans_un_entete_ancien_ou_inattendu(self):
+        chemin = os.path.join(self.tmp, "LIB_composants.csv")
+        web_CAO.definir_dossier_lib(self.tmp, initialiser=False, persister=False)
+        with open(chemin, "wb") as f:                       # ancien format \r\r\n
+            f.write(b"Part Name;Value\r\r\nR1K;1k\r\r\n")
+        self._json("/api/lib/composants", {"ajouter": {"Part Name": " ESSAI_C ", "Brochage": "1=VIN"}})
+        self.assertEqual(open(chemin, "rb").read(),
+                         b"Part Name;Value;Brochage\r\r\nR1K;1k\r\r\nESSAI_C;;1=VIN\r\r\n")
+        relu = self._json("/api/lib/composants")
+        self.assertEqual([c["Part Name"] for c in relu["composants"]], ["R1K", "ESSAI_C"])
+        with open(chemin, "wb") as f:                       # ligne vide en tete : on ne devine pas
+            f.write(b"\nPart Name;Value\nR1K;1k\n")
+        self.assertEqual(self._refus("/api/lib/composants", {"ajouter": {"Part Name": "X", "Brochage": "1=A"}}), 409)
+        self.assertEqual(open(chemin, "rb").read(), b"\nPart Name;Value\nR1K;1k\n")
+
+    def test_13h_si_absent_texte_non_encodable_ne_laisse_rien(self):
+        web_CAO.definir_dossier_lib(self.tmp, initialiser=False, persister=False)
+        corps = {"type": "pcb", "nom": "BRISE.json", "si_absent": True,
+                 "data": {"format": "pcbfp-1", "name": "BRISE", "description": "a\ud800b"}}
+        self.assertEqual(self._refus("/api/lib/fichier", corps), 400)
+        self.assertEqual(os.listdir(os.path.join(self.tmp, "lib_empreinte_pcb")), [], "fichier laisse")
 
     def test_14_lib_en_ligne_de_commande_non_persistee(self):
         cfg = os.path.join(ROOT, "config_lib.json")
