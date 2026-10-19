@@ -68,7 +68,7 @@ const EXPOSE=[
   "SCH_PIQUAGE_MEMOIRE",
   /* bibliothèque et géométrie */
   "bbox",
-  "defOf","allPins","pinCount","icGeom","key","LIB","pinsOf","LECTURE_CAO",
+  "defOf","allPins","pinCount","icGeom","key","LIB","pinsOf","LECTURE_CAO","ECRITURE_CAO",
   "pkgBaseOf","pkgKnown","pkgBaseList","PKG_BASES",
   /* brochage (04 + 19) */
   "icPins","icBodyOf","icSideOf","icPinLabel","icFree","icShapeOf","icStep","IC_STEP",
@@ -319,6 +319,58 @@ T("canal de pilotage : cao_valeur_composant propose, applique en une étape, Ctr
       if(S.hist.length!==avant)throw new Error("repère inconnu : rien ne doit être poussé");
     }
   }finally{global.Pilote=ancien;}
+});
+
+T("canal de pilotage : cao_composants_ecrire, un lot en une étape, refus sans rien toucher",()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  const refus=(a,motif)=>{
+    const n=S.hist.length, avant=serialize();
+    let m="";try{cmds.cao_composants_ecrire.proposer(a);}catch(e){m=e.message;}
+    if(!motif.test(m))throw new Error("refus attendu "+motif+", lu « "+m+" »");
+    if(S.hist.length!==n||serialize()!==avant)throw new Error("un refus a écrit : "+motif);
+  };
+  try{
+    piloteCao("schema");
+    const d=cmds.cao_composants_ecrire;
+    if(!(d&&d.ecriture&&d.historique))throw new Error("écriture par l'historique attendue");
+    docLecture();
+    const lot=[{ref:"r1",champs:{valeur:"4k7",mpn:"ERJ-3EKF4701V",fabricant:"Panasonic"}},
+               {ref:"R2",champs:{ref:"R20",non_monte:true}},                 // sur la feuille 2, la 1 est affichée
+               {ref:"R3",champs:{specs:{tolerance:"1%"},boitier:"0402"}}];
+    const avant=serialize(), n=S.hist.length;
+    const prop=d.proposer({lot});
+    if(serialize()!==avant)throw new Error("proposer a écrit");
+    if(!/Composants du schéma \(7 changements\)/.test(prop.titre)||!/^R1\.valeur : 10k$/m.test(prop.avant)||
+       !/^R1\.valeur : 4k7$/m.test(prop.apres)||!/^R2\.ref : R20$/m.test(prop.apres)||!/^R3\.specs\.tolerance : —$/m.test(prop.avant))
+      throw new Error("carte : "+JSON.stringify(prop));
+    d.appliquer({lot},prop);
+    const c=r=>[...S.comps,...S.pages.flatMap((p,i)=>i===S.page?[]:p.comps)].find(x=>x.ref===r);
+    if(S.hist.length!==n+1)throw new Error("une seule étape attendue, "+(S.hist.length-n));
+    if(c("R1").value!=="4k7"||c("R1").manufacturer!=="Panasonic"||!c("R20")||!c("R20").nonMonte||c("R3").pkg!=="0402"||c("R3").specs.tolerance!=="1%")
+      throw new Error("lot mal appliqué");
+    undo();
+    if(serialize()!==avant)throw new Error("Ctrl+Z ne remet pas tout");
+    /* refus : tout le lot, rien d'écrit */
+    refus({lot:[{ref:"R1",champs:{valeur:"1k"}},{ref:"R9",champs:{valeur:"1k"}}]},/R9.*introuvable/);
+    refus({lot:[{ref:"R1",champs:{ref:"r3"}}]},/« r3 » est déjà pris/);
+    refus({lot:[{ref:"R1",champs:{couleur:"bleu"}}]},/champ « couleur » inconnu/);
+    refus({lot:[{ref:"R1",champs:{valeur:"x".repeat(201)}}]},/200 caractères/);
+    refus({lot:[{ref:"R1",champs:{valeur:"a\nb"}}]},/une ligne/);
+    refus({lot:[{ref:"R1",champs:{specs:Object.fromEntries(Array.from({length:31},(_,i)=>["k"+i,"v"]))}}]},/30 clés/);
+    refus({lot:Array.from({length:51},()=>({ref:"R1",champs:{valeur:"1k"}}))},/51 éléments, 50 au plus/);
+    refus({lot:[{ref:"R1",champs:{valeur:"10k"}}]},/Rien à changer/);
+    refus({lot:[]},/au moins un élément/);
+    /* le document bouge sous la carte : refus au clic */
+    const p2=d.proposer({lot:[{ref:"R1",champs:{valeur:"22k"}}]});
+    c("R1").value="33k";
+    let m="";try{d.appliquer({lot:[{ref:"R1",champs:{valeur:"22k"}}]},p2);}catch(e){m=e.message;}
+    if(!/a changé depuis la carte/.test(m)||c("R1").value!=="33k"||S.hist.length!==n)throw new Error("carte périmée : « "+m+" »");
+    /* un CI : la valeur passe par reshapeComp, sans erreur */
+    const u=addComp("ic",200,200); u.ref="U1";
+    d.appliquer({lot:[{ref:"U1",champs:{valeur:"LM358"}}]});
+    if(S.comps.find(x=>x.ref==="U1").value!=="LM358")throw new Error("valeur du CI");
+  }finally{global.Pilote=ancien;sheet([],[]);}
 });
 
 T("classes d'interface : la table commune est chargée",()=>{

@@ -8,9 +8,9 @@
    ============================================================================= */
 "use strict";
 const fs = require("fs"), path = require("path"), vm = require("vm");
-// lecture-cao.js d'abord, comme dans les pages : les commandes de lecture s'en servent
-const CODE = fs.readFileSync(path.join(__dirname, "..", "lecture-cao.js"), "utf8") + "\n" +
-             fs.readFileSync(path.join(__dirname, "..", "pilote-cao.js"), "utf8");
+// lecture-cao.js et ecriture-cao.js d'abord, comme dans les pages : les commandes s'en servent
+const CODE = ["lecture-cao.js", "ecriture-cao.js", "pilote-cao.js"]
+  .map(f => fs.readFileSync(path.join(__dirname, "..", f), "utf8")).join("\n");
 
 function page(nom, sim) {
   const appels = [];
@@ -178,6 +178,17 @@ async function refuse(promesse, motif) {
   await T("cao_vue et cao_drc : déclarés dans les bonnes pages", () => {
     egal(["schema", "pcb", "visionneuse-ipc", "gestion-lib"].map(p => [!!page(p).declare.commandes.cao_vue, !!page(p).declare.commandes.cao_drc]),
          [[true, false], [true, true], [true, false], [false, false]]);
+  });
+
+  await T("écritures en lot (ecriture-cao) : déclarées dans les bonnes pages, annulables", () => {
+    const ecrire = ["cao_composants_ecrire", "cao_pistes_ecrire", "cao_classes_ecrire", "cao_contraintes_ecrire", "cao_sim_ecrire"];
+    const vues = {};
+    for (const p of ["schema", "pcb", "visionneuse-ipc", "gestion-lib"]) {
+      const c = page(p).declare.commandes;
+      vues[p] = ecrire.filter(n => c[n]);
+      for (const n of vues[p]) egal(!!(c[n].ecriture && (c[n].historique || c[n].annuler)), true, n + " : écriture annulable");
+    }
+    egal(vues, { schema: ["cao_composants_ecrire"], pcb: [], "visionneuse-ipc": [], "gestion-lib": [] });
   });
 
   console.log("\n" + ok + " essais réussis, " + ko + " en échec.");
