@@ -297,6 +297,7 @@ const COMPOSANTS_LIB = (() => {
     MSOP:  { pas: 0.65, L: [4.75, 5.05], T: [0.40, 0.70], W: [0.22, 0.38], largeurCorps: 3.0 }
   };
   const r3 = v => Math.round(v * 1000) / 1000;
+  const r4 = v => Math.round(v * 10000) / 10000;       // la précision du PCB (normFpDef) : KiCad écrit 1,1375
 
   class Refus extends Error {}
   /* une cote [min, max] (ou un nombre : min = max), en mm, bornée */
@@ -510,6 +511,152 @@ const COMPOSANTS_LIB = (() => {
     }
   }
 
+  /* ---------- conversion KiCad (kicad_mod → pcbfp-1) ----------
+     Le texte vient d'Internet (pcbparts, cse_get_kicad) : c'est une donnée, lue par un
+     lecteur d'expressions S borné (taille, profondeur, nombre de nœuds), jamais exécutée.
+     Repris : les pastilles (pad), les trous non métallisés et le contour de fabrication
+     (F.Fab) qui devient le corps. Le reste est compté dans les remarques. */
+  const KICAD_MAX = 200 * 1024;
+  function lireS(texte) {
+    let i = 0, noeuds = 0;
+    const n = texte.length;
+    function blanc() { while (i < n && /\s/.test(texte[i])) i++; }
+    function liste(prof) {
+      if (prof > 40) throw new Refus("kicad_mod illisible : imbrication trop profonde");
+      i++;                                                   // « ( »
+      const out = [];
+      for (;;) {
+        blanc();
+        if (i >= n) throw new Refus("kicad_mod illisible : parenthèse non fermée");
+        const c = texte[i];
+        if (++noeuds > 200000) throw new Refus("kicad_mod illisible : trop d'éléments");
+        if (c === ")") { i++; return out; }
+        if (c === "(") out.push(liste(prof + 1));
+        else if (c === '"') {
+          let v = "";
+          i++;
+          while (i < n && texte[i] !== '"') { if (texte[i] === "\\" && i + 1 < n) i++; v += texte[i++]; }
+          if (i >= n) throw new Refus("kicad_mod illisible : guillemet non fermé");
+          i++;
+          out.push(v);
+        } else {
+          const d = i;
+          while (i < n && !/[\s()"]/.test(texte[i])) i++;
+          out.push(texte.slice(d, i));
+        }
+      }
+    }
+    blanc();
+    if (texte[i] !== "(") throw new Refus("kicad_mod illisible : il doit commencer par « (footprint » ou « (module »");
+    const racine = liste(0);
+    blanc();
+    if (i < n) throw new Refus("kicad_mod illisible : texte après la dernière parenthèse");
+    return racine;
+  }
+  const enfant = (l, nom) => l.find(e => Array.isArray(e) && e[0] === nom);
+  const enfants = (l, nom) => l.filter(e => Array.isArray(e) && e[0] === nom);
+  function nombres(l, nb, quoi) {
+    const v = (l || []).slice(1, 1 + nb).map(Number);
+    if (v.length < nb || !v.every(Number.isFinite)) throw new Refus("kicad_mod : " + quoi + " illisible");
+    return v;
+  }
+  const FORMES_KICAD = { rect: "sharp", roundrect: "rect", circle: "circ", oval: "oval" };
+
+  function convertirKicad(texte) {
+    const remarques = [];
+    try {
+      if (typeof texte !== "string" || !texte.trim()) throw new Refus("kicad_mod : texte vide");
+      // un kicad_mod est de l'ASCII : un caractère, un octet (le MCP borne aussi les octets)
+      if (texte.length > KICAD_MAX) throw new Refus("kicad_mod de plus de 200 Ko : refusé");
+      const r = lireS(texte);
+      if (r[0] !== "footprint" && r[0] !== "module") throw new Refus("kicad_mod illisible : ni « footprint » ni « module »");
+      const brut = typeof r[1] === "string" ? r[1].replace(/^.*:/, "") : "";
+      let nom = brut.replace(/[^A-Za-z0-9_.+-]/g, "_").slice(0, 60);
+      if (!nom || /^\.+$/.test(nom)) nom = "KICAD";
+      if (nom !== brut) remarques.push("nom « " + brut.slice(0, 80) + " » ramené à « " + nom + " »");
+      const descr = enfant(r, "descr");
+      const ignores = {};
+      const ignorer = quoi => { ignores[quoi] = (ignores[quoi] || 0) + 1; };
+      const pads = [], holes = [], numeros = new Map(), fab = [];
+      let lettres = 0;
+      for (const e of r.slice(2)) {
+        if (!Array.isArray(e)) continue;
+        const k = e[0];
+        if (k === "pad") {
+          const num = String(e[1] == null ? "" : e[1]), genre = e[2], forme = e[3];
+          const [x, y, angle] = (() => { const a = enfant(e, "at"); const v = nombres(a, 2, "position de pastille"); return [v[0], v[1], Number(a[3]) || 0]; })();
+          let [w, h] = nombres(enfant(e, "size"), 2, "taille de pastille « " + num + " »");
+          const dr = enfant(e, "drill");
+          let drill = 0, slot = 0;
+          if (dr) {
+            const v = dr.slice(1).filter(t => typeof t === "string" && /^-?[\d.]+$/.test(t)).map(Number);
+            drill = v.length > 1 ? Math.min(v[0], v[1]) : v[0] || 0;
+            if (v.length > 1 && v[0] !== v[1]) slot = Math.max(v[0], v[1]);
+            if (enfant(dr, "offset")) remarques.push("pastille « " + num + " » : décalage du perçage ignoré");
+          }
+          if (genre === "np_thru_hole") {
+            holes.push({ x: r4(x), y: r4(y), d: r4(drill || Math.min(w, h)) });
+            continue;
+          }
+          if (forme === "custom") throw new Refus("pastille personnalisée (custom) « " + num + " » : non convertible, dessine-la en pcbfp-1");
+          if (!FORMES_KICAD[forme]) throw new Refus("forme de pastille inconnue « " + forme + " » (pastille « " + num + " »)");
+          if (!num) { remarques.push("pastille sans numéro en (" + x + ", " + y + ") : ignorée (patte mécanique)"); continue; }
+          if (genre === "connect") remarques.push("pastille « " + num + " » de contact (connect) : reprise comme CMS");
+          const couches = (enfant(e, "layers") || []).slice(1);
+          if ((genre === "smd" || genre === "connect") && couches.some(c => /^B\.Cu$/.test(c)) && !couches.some(c => /^F\.Cu$/.test(c)))
+            remarques.push("pastille « " + num + " » côté cuivre bas : posée côté haut");
+          if (enfant(e, "chamfer_ratio")) remarques.push("pastille « " + num + " » : chanfrein KiCad repris en coins adoucis");
+          let rot = ((angle % 360) + 360) % 360;
+          if (rot === 90 || rot === 270) { [w, h] = [h, w]; rot = 0; }
+          else if (rot === 180) rot = 0;
+          else if (rot) remarques.push("pastille « " + num + " » tournée de " + rot + "° : sens à vérifier");
+          let n;
+          if (/^\d+$/.test(num)) n = +num;
+          else { if (!numeros.has(num)) numeros.set(num, ++lettres); n = -numeros.get(num); }   // renuméroté plus bas
+          const q = { n, x: r4(x), y: r4(y), w: r4(w), h: r4(h), shape: FORMES_KICAD[forme], drill: r4(drill), rot: r4(rot) };
+          if (slot) q.slot = r4(slot);
+          if (n < 0) q.nom = num.slice(0, 8);
+          pads.push(q);
+        } else if (/^fp_(line|rect|poly|circle|arc)$/.test(k) || /^gr_/.test(k)) {
+          const couche = (enfant(e, "layer") || [])[1];
+          if (couche === "F.Fab" && k !== "fp_arc") {
+            for (const s of ["start", "end", "center"]) { const a = enfant(e, s); if (a) fab.push(nombres(a, 2, "contour")); }
+            const pts = enfant(e, "pts");
+            if (pts) for (const xy of enfants(pts, "xy")) fab.push(nombres(xy, 2, "contour"));
+          } else ignorer(k === "fp_arc" ? "arc(s)" : "tracé(s) " + (couche || "?"));
+        } else if (k === "fp_text" || k === "property" || k === "fp_text_box") ignorer("texte(s)");
+        else if (k === "model") ignorer("modèle(s) 3D");
+        else if (!["layer", "descr", "tags", "attr", "version", "generator", "generator_version", "tedit", "uuid", "tstamp", "at", "path", "embedded_fonts"].includes(k))
+          ignorer("« " + k + " »");
+      }
+      /* noms de pattes (« A1 », « EP ») : numéros à la suite des pattes numérotées */
+      const maxNum = pads.reduce((m, q) => q.n > 0 ? Math.max(m, q.n) : m, 0);
+      for (const q of pads) if (q.n < 0) q.n = maxNum - q.n;
+      if (lettres) remarques.push(lettres + " nom(s) de patte non numériques renumérotés à partir de " + (maxNum + 1) + " (nom gardé)");
+      const ign = Object.entries(ignores).map(([k, v]) => v + " " + k);
+      if (ign.length) remarques.push("non repris : " + ign.join(", "));
+      if (!pads.length) throw new Refus("kicad_mod sans pastille");
+      const distincts = new Set(pads.map(q => q.n)).size;
+      const xs = new Set(pads.map(q => q.x)).size, ys = new Set(pads.map(q => q.y)).size;
+      const traversant = pads.every(q => q.drill > 0);
+      const style = traversant ? (xs === 1 || ys === 1 ? "row" : "dip")
+        : distincts <= 2 ? "chip" : (xs <= 2 || ys <= 2) ? "sop" : pads.length >= xs * ys * 0.8 ? "bga" : "quad";
+      const empreinte = { format: "pcbfp-1", name: nom, pkg: nom, pins: distincts, style, pads };
+      if (holes.length) empreinte.holes = holes;
+      if (fab.length) {
+        const fx = fab.map(v => v[0]), fy = fab.map(v => v[1]);
+        empreinte.body = { x1: r4(Math.min(...fx)), y1: r4(Math.min(...fy)), x2: r4(Math.max(...fx)), y2: r4(Math.max(...fy)) };
+      }
+      if (descr && typeof descr[1] === "string")
+        empreinte.description = descr[1].replace(/[\x00-\x08\x0b-\x1f\x7f]/g, " ").slice(0, 2000);
+      const v = verifierEmpreinte(empreinte, nom + ".json");
+      return { empreinte, erreurs: v.erreurs, remarques: remarques.concat(v.remarques) };
+    } catch (e) {
+      if (!(e instanceof Refus)) throw e;
+      return { empreinte: null, erreurs: [e.message], remarques };
+    }
+  }
+
   return { STYLES, FORMES, SYMBOLES, verifierEmpreinte, verifierBrochage, verifierLigne,
-           PUCES, AILES, genererEmpreinte };
+           PUCES, AILES, genererEmpreinte, convertirKicad };
 })();

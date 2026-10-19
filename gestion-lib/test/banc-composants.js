@@ -231,6 +231,83 @@ for (const [f, p, motif] of [
 r = CL.genererEmpreinte("chip", { code: "0603", nom: "../0603" });
 verifier(r.erreurs.some(e => /« name »/.test(e)), "nom imposé illisible : refusé par les contrôles");
 
+/* ---------- conversion KiCad ---------- */
+console.log("— conversion KiCad —");
+const KICAD_SOT235 = `(footprint "SOT-23-5" (version 20221018) (generator pcbnew)
+  (layer "F.Cu")
+  (descr "SOT, 5 Pin (https://www.jedec.org/sites/default/files/docs/Mo-178c.PDF variant AA), generated with kicad-footprint-generator ipc_gullwing_generator.py")
+  (tags "SOT TO_SOT_SMD")
+  (attr smd)
+  (fp_text reference "REF**" (at 0 -2.4) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))))
+  (fp_text value "SOT-23-5" (at 0 2.4) (layer "F.Fab") (effects (font (size 1 1) (thickness 0.15))))
+  (fp_line (start 0 -1.56) (end -1.8 -1.56) (stroke (width 0.12) (type solid)) (layer "F.SilkS"))
+  (fp_line (start -2.05 -1.7) (end 2.05 -1.7) (stroke (width 0.05) (type solid)) (layer "F.CrtYd"))
+  (fp_line (start -0.4 -1.45) (end 0.8 -1.45) (stroke (width 0.1) (type solid)) (layer "F.Fab"))
+  (fp_line (start 0.8 -1.45) (end 0.8 1.45) (stroke (width 0.1) (type solid)) (layer "F.Fab"))
+  (fp_line (start 0.8 1.45) (end -0.8 1.45) (stroke (width 0.1) (type solid)) (layer "F.Fab"))
+  (fp_line (start -0.8 1.45) (end -0.8 -1.05) (stroke (width 0.1) (type solid)) (layer "F.Fab"))
+  (fp_line (start -0.8 -1.05) (end -0.4 -1.45) (stroke (width 0.1) (type solid)) (layer "F.Fab"))
+  (fp_arc (start 0 0) (mid 0.1 0.1) (end 0.2 0) (stroke (width 0.1) (type solid)) (layer "F.SilkS"))
+  (fp_text user "\${REFERENCE}" (at 0 0 90) (layer "F.Fab") (effects (font (size 0.4 0.4) (thickness 0.06))))
+  (pad "1" smd roundrect (at -1.1375 -0.95) (size 1.325 0.6) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio 0.25))
+  (pad "2" smd roundrect (at -1.1375 0) (size 1.325 0.6) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio 0.25))
+  (pad "3" smd roundrect (at -1.1375 0.95) (size 1.325 0.6) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio 0.25))
+  (pad "4" smd roundrect (at 1.1375 0.95) (size 1.325 0.6) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio 0.25))
+  (pad "5" smd roundrect (at 1.1375 -0.95) (size 1.325 0.6) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio 0.25))
+  (model "\${KICAD6_3DMODEL_DIR}/Package_TO_SOT_SMD.3dshapes/SOT-23-5.wrl"
+    (offset (xyz 0 0 0)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))
+)`;
+r = CL.convertirKicad(KICAD_SOT235);
+verifier(r.empreinte && !r.erreurs.length, "SOT-23-5 KiCad converti sans erreur (" + r.erreurs.join(" | ") + ")");
+const e = r.empreinte;
+verifier(e.name === "SOT-23-5" && e.pins === 5 && e.style === "sop" && e.pads.length === 5, "nom, 5 broches, style sop");
+verifier(JSON.stringify(e.pads[0]) === JSON.stringify({ n: 1, x: -1.1375, y: -0.95, w: 1.325, h: 0.6, shape: "rect", drill: 0, rot: 0 }),
+  "pastille 1 : numéro, position, taille, roundrect → rect (" + JSON.stringify(e.pads[0]) + ")");
+verifier(e.pads[4].n === 5 && e.pads[4].x === 1.1375 && e.pads[4].y === -0.95, "pastille 5 en haut à droite");
+verifier(JSON.stringify(e.body) === JSON.stringify({ x1: -0.8, y1: -1.45, x2: 0.8, y2: 1.45 }), "corps = contour F.Fab");
+verifier(/^SOT, 5 Pin/.test(e.description), "description reprise");
+const nonRepris = r.remarques.find(m => /^non repris/.test(m)) || "";
+verifier(/3 texte/.test(nonRepris) && /1 modèle\(s\) 3D/.test(nonRepris) && /1 arc/.test(nonRepris) && /F\.SilkS/.test(nonRepris),
+  "textes, modèle 3D, arc, sérigraphie : en remarque (" + nonRepris + ")");
+
+/* traversant, forme rect, rotation de 90°, trou non métallisé, oblong, ancien format « module » */
+r = CL.convertirKicad(`(module Essai_THT (layer F.Cu)
+  (pad 1 thru_hole rect (at 0 0) (size 1.7 1.7) (drill 1) (layers *.Cu *.Mask))
+  (pad 2 thru_hole oval (at 2.54 0 90) (size 1.7 2.2) (drill oval 1 1.4) (layers *.Cu *.Mask))
+  (pad "" np_thru_hole circle (at 1.27 3) (size 3.2 3.2) (drill 3.2) (layers *.Cu *.Mask)))`);
+verifier(r.empreinte && !r.erreurs.length, "ancien format « module » converti (" + r.erreurs.join(" | ") + ")");
+verifier(r.empreinte.pads[0].shape === "sharp" && r.empreinte.pads[0].drill === 1, "rect KiCad → angles droits, perçage");
+verifier(r.empreinte.pads[1].w === 2.2 && r.empreinte.pads[1].h === 1.7 && r.empreinte.pads[1].rot === 0 &&
+         r.empreinte.pads[1].drill === 1 && r.empreinte.pads[1].slot === 1.4, "rotation 90° → largeur et hauteur échangées ; perçage oblong");
+verifier(JSON.stringify(r.empreinte.holes) === JSON.stringify([{ x: 1.27, y: 3, d: 3.2 }]) && r.empreinte.style === "row",
+  "trou non métallisé repris, style row");
+verifier(r.remarques.some(m => /pas de corps/.test(m)), "pas de F.Fab : remarque « pas de corps »");
+
+/* BGA : noms de pattes renumérotés, nom gardé */
+r = CL.convertirKicad(`(footprint "BGA-4" (layer "F.Cu")
+  (pad "A1" smd circle (at -0.4 -0.4) (size 0.3 0.3) (layers "F.Cu"))
+  (pad "A2" smd circle (at 0.4 -0.4) (size 0.3 0.3) (layers "F.Cu"))
+  (pad "B1" smd circle (at -0.4 0.4) (size 0.3 0.3) (layers "F.Cu"))
+  (pad "B2" smd circle (at 0.4 0.4) (size 0.3 0.3) (layers "F.Cu")))`);
+verifier(r.empreinte && r.empreinte.pads.map(q => q.n + q.nom).join() === "1A1,2A2,3B1,4B2", "noms de pattes : numéros 1 à 4, nom gardé");
+
+for (const [texte, motif, libelle] of [
+  ['(footprint "X" (pad "1" smd custom (at 0 0) (size 1 1) (layers "F.Cu")))', /personnalisée/, "pastille personnalisée"],
+  ['(footprint "X" (pad "1" smd trapezoid (at 0 0) (size 1 1) (layers "F.Cu")))', /forme de pastille inconnue/, "trapèze"],
+  ['(footprint "X" (pad "1" smd rect (at 0 0) (size 1 1)', /non fermée/, "parenthèse non fermée"],
+  ['bonjour', /commencer par/, "texte illisible"],
+  ['(symbol "X")', /ni « footprint »/, "pas une empreinte"],
+  ['(footprint "X" (pad "1" smd rect (at a b) (size 1 1)))', /position/, "nombre illisible"],
+  ['(footprint "X" (fp_text reference "R"))', /sans pastille/, "sans pastille"],
+  ['(footprint "X"' + "(a".repeat(60) + ")".repeat(61), /profonde/, "imbrication trop profonde"],
+  ['(footprint "X" (descr "' + "x".repeat(210 * 1024) + '"))', /200 Ko/, "plus de 200 Ko"],
+  [42, /vide/, "pas un texte"]]) {
+  const res = CL.convertirKicad(texte);
+  verifier(!res.empreinte && res.erreurs.some(m => motif.test(m)), libelle + " : refusé (" + res.erreurs.join(" | ") + ")");
+}
+r = CL.convertirKicad('(footprint "a/../b c" (pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu")))');
+verifier(r.empreinte && r.empreinte.name === "a_.._b_c" && r.remarques.some(m => /ramené/.test(m)), "nom ramené aux caractères permis");
+
 /* ---------- la LIB réelle passe les contrôles ---------- */
 const LIB = [process.env.WEB_CAO_LIB, path.join(RACINE, "LIB"), path.join(RACINE, "..", "PROJETS", "LIB_CAO")]
   .find(d => d && fs.existsSync(path.join(d, "lib_empreinte_pcb")));
