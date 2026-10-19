@@ -1040,6 +1040,7 @@ function paint(c,dpr,w,h,noGrid){
   if(typeof groupesDessiner==="function")groupesDessiner(c); // cadre du groupe sélectionné
   drawTech(c);
   drawRoute(c);
+  if(typeof routageApercuDessiner==="function")routageApercuDessiner(c);   // l'aperçu d'une carte de routage (37-routage-pilote.js)
   if(S.dragShove)drawShove(c,S.dragShove);     // le cuivre qu'écarte le boîtier tiré
   if(typeof drawDp==="function")drawDp(c);
   drawZoneDraft(c);

@@ -437,7 +437,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* classes d'interface (commun/classes-interface.js) */
   "CLASSES_INTERFACE","familleClasse","simNaturePcb",
   /* lectures partagées Gemini / canal de pilotage (commun/lecture-cao.js) */
-  "LECTURE_CAO","piloteCao","ECRITURE_CAO"];
+  "LECTURE_CAO","piloteCao","ECRITURE_CAO","ROUTAGE"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -26777,6 +26777,67 @@ T("lectures pour router : liaisons (de pastille a pastille) et contenu d'une fen
   if(lire("zone",{x1:-1e5,y1:-1e5,x2:-1e5+1,y2:-1e5+1})!=="Rien dans cette fenêtre.")throw new Error("fenetre hors carte");
   const tout=lire("zone",{x1:-1e4,y1:-1e4,x2:1e4,y2:1e4}).split("\n");
   if(tout.length>201||!/objets de plus|contour/.test(tout[tout.length-1]))throw new Error("borne a 200 objets : "+tout.length);
+});
+
+TA("canal de pilotage : cao_router, simule puis charge, une etape, tout ou rien par route",async()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  try{
+    piloteCao("pcb");
+    loadDoc(exemple1());
+    const retirees=S.tracks.splice(0,8); touch(); S.undo.length=0; S.redo.length=0; S.dirty=false;
+    const d=cmds.cao_router;
+    if(!(d&&d.ecriture&&d.historique))throw new Error("cao_router : ecriture par l'historique attendue");
+    const c=conn(true);
+    const bout=(x,y,net)=>{const p=c.padNodes.find(q=>q.q.x===x&&q.q.y===y&&q.q.net===net);return p.fp.ref+"."+p.q.n;};
+    const routes=c.rats.slice(0,4).map(r=>({depart:bout(r.x1,r.y1,r.net),arrivee:bout(r.x2,r.y2,r.net)}));
+    const u1=S.fps.find(f=>f.ref==="U1"); clearSel(); S.sel.fps.add(u1.id);
+    const etat=()=>JSON.stringify([serialize(),S.undo.length,S.redo.length,S.dirty,[...S.sel.fps],S.scale,S.ox,S.oy,S.active,S.avoid]);
+    const avant=etat(), docAvant=serialize();
+    const prop=d.proposer({routes});
+    if(etat()!==avant)throw new Error("proposer a laisse une trace");
+    if(!/^route 1 \(\S+\) : posée$/m.test(prop.apres)||!ROUTAGE.apercu||!ROUTAGE.apercu.pistes.length)throw new Error("carte ou apercu : "+prop.apres);
+    const ratsAvant=conn(true).rats.length;
+    d.appliquer({routes},prop);
+    if(S.undo.length!==1)throw new Error("une seule etape attendue : "+S.undo.length);
+    if(serialize()!==prop.resultat)throw new Error("le document applique n'est pas celui de l'apercu");
+    if(conn(true).rats.length>=ratsAvant)throw new Error("aucune liaison routee");
+    if(ROUTAGE.apercu)throw new Error("l'apercu doit s'effacer au clic");
+    if(!/^DRC : \d+ erreurs? avant → \d+ après\.$/m.test(prop.apres))throw new Error("bilan DRC : "+prop.apres);
+    undo();
+    if(serialize()!==docAvant)throw new Error("Ctrl+Z ne remet pas tout");
+    S.undo.length=0;
+    /* tout ou rien par route : une bonne, une mauvaise (arrivee sur un autre net), un depart dans le vide */
+    const autre=c.padNodes.find(q=>q.q.net&&q.q.net!==c.rats[0].net);
+    const mix=[routes[0],{depart:routes[1].depart,arrivee:autre.fp.ref+"."+autre.q.n},{depart:{x:-500,y:-500},arrivee:routes[2].arrivee}];
+    const p2=d.proposer({routes:mix});
+    if(!/^route 1 .* : posée$/m.test(p2.apres)||!/^route 2 : refusée, (bloquée vers \S+ : l'isolation|l'arrivée \S+ n'est pas atteinte)/m.test(p2.apres)||
+       !/^route 3 : refusée, le départ \(-500, -500\) n'est sur le cuivre d'aucun net$/m.test(p2.apres))throw new Error("tout ou rien : "+p2.apres);
+    d.appliquer({routes:mix},p2);
+    const seules=JSON.parse(p2.resultat).tracks.length-JSON.parse(docAvant).tracks.length;
+    if(seules<=0||S.tracks.length!==JSON.parse(docAvant).tracks.length+seules)throw new Error("seule la route posee doit rester");
+    undo(); S.undo.length=0;
+    /* le document bouge entre la carte et le clic : refus */
+    const p3=d.proposer({routes:[routes[0]]});
+    S.tracks.push(Object.assign({},S.tracks[0])); touch();
+    let m="";try{d.appliquer({routes:[routes[0]]},p3);}catch(e){m=e.message;}
+    if(!/a changé depuis la proposition/.test(m)||S.undo.length!==0)throw new Error("carte perimee : "+m);
+    if(ROUTAGE.apercu&&ROUTAGE.apercu.ver===S.ver)throw new Error("l'apercu d'une carte perimee doit tomber");
+    S.tracks.pop(); touch();
+    /* rien d'applicable : refus de la carte */
+    m="";try{d.proposer({routes:[{depart:{x:-500,y:-500},arrivee:{x:-490,y:-500}}]});}catch(e){m=e.message;}
+    if(!/^Rien n'est posé : route 1 : refusée/.test(m))throw new Error("rien de pose : "+m);
+    for(const [a,motif] of [[{},/Rien à router/],[{routes:Array.from({length:21},()=>routes[0])},/20 routes au plus/],[{routes,mode:"sauter"},/pousser ou contourner/]]){
+      m="";try{d.proposer(a);}catch(e){m=e.message;}
+      if(!motif.test(m))throw new Error("refus attendu "+motif+" : "+m);
+    }
+    /* changer de couche en chemin : une via a l'aller, une au retour sur la pastille */
+    const r0=c.rats[0], mx=(r0.x1+r0.x2)/2, my=(r0.y1+r0.y2)/2+2;
+    const bas=LECTURE_CAO.aides.nomCouchePcb(S.cu-1);
+    const p4=d.proposer({routes:[{depart:routes[0].depart,points:[{x:mx,y:my,couche:bas}],arrivee:routes[0].arrivee}]});
+    if(!/^route 1 .* : posée$/m.test(p4.apres)||!(ROUTAGE.apercu.vias.length>=1&&ROUTAGE.apercu.pistes.some(t=>t.l===S.cu-1)))
+      throw new Error("changement de couche : "+p4.apres);
+  }finally{global.Pilote=ancien;}
 });
 
 (async()=>{

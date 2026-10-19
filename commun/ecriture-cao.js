@@ -602,5 +602,6 @@ const ECRITURE_CAO = (function () {
   });
 
   return { lot, composantsSch: COMPOSANTS_SCH, composantsPcb: COMPOSANTS_PCB, pistes: PISTES, classes: CLASSES,
-           contraintes: CONTRAINTES, simulation: SIMULATION, LOT_MAX };
+           contraintes: CONTRAINTES, simulation: SIMULATION, LOT_MAX,
+           drc: { erreurs: erreursDrc, bilan: bilanDrc } };        // repris par le routage (37-routage-pilote.js)
 })();

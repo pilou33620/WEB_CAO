@@ -215,6 +215,8 @@ function piloteCao(page) {
     Pilote.commande("cao_pistes_ecrire", ECRITURE_CAO.pistes);
     Pilote.commande("cao_classes_ecrire", ECRITURE_CAO.classes);
     Pilote.commande("cao_contraintes_ecrire", ECRITURE_CAO.contraintes);
+    if (typeof routagePiloteCommandes === "function")
+      for (const [nom, def] of Object.entries(routagePiloteCommandes())) Pilote.commande(nom, def);
   }
   for (const f of PILOTE_LIRE[page] || []) Pilote.commande("cao_" + f + "_lire", { executer: async a => piloteLire(f, a) });
   if (PILOTE_LIRE[page]) Pilote.commande("cao_vue", { executer: a => piloteVue(page, a) });
