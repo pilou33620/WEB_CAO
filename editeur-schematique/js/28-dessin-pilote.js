@@ -69,6 +69,67 @@ function dessinTransformer(el, fn) {
   touchWires();
 }
 
+/* « R1.2 » ou « U1.OUT » : numéro de patte (comme les lectures de registre-cao), sinon nom. */
+function dessinBroche(txt, n, op) {
+  const m = typeof txt === "string" && txt.match(/^\s*([^.\s]+)\.(.+?)\s*$/);
+  if (!m) throw dessinRefus(n, op, "broche « " + txt + " » : REPÈRE.broche (numéro ou nom)");
+  const el = dessinComp(m[1], n, op), voulu = dessinCle(m[2]);
+  const toutes = pinsOf(el).map((_, i) => i);
+  let idx = toutes.filter(i => brPattes(el, i).some(pad => dessinCle(pad) === voulu));
+  if (!idx.length) idx = toutes.filter(i => dessinCle(brNomBroche(el, i)) === voulu);
+  if (!idx.length) throw dessinRefus(n, op, el.ref + " n'a pas de broche « " + m[2] + " » (voir cao_schema_lire composant)");
+  if (idx.length > 1) throw dessinRefus(n, op, el.ref + "." + m[2] + " : plusieurs broches portent ce nom, donne le numéro");
+  return { el, i: idx[0], pos: pinPos(el, idx[0]), cle: el.id + "." + (idx[0] + 1), nom: el.ref + "." + m[2] };
+}
+
+/* ---------- pas de connexion par accident ----------
+   La connectivité de la page relie tout point posé sur un fil. Avant et après une
+   opération, on relève broche → net sur la feuille ; seule la fusion demandée est admise. */
+function dessinNets() {
+  const g = new Map();
+  nets().list.forEach((net, k) => { for (const nd of net.nodes) g.set(nd.id + "." + nd.pin, k); });
+  return g;
+}
+function dessinBrochesFeuille() {
+  const out = [];
+  for (const el of S.comps) if (!defOf(el.type).noRef) pinsOf(el).forEach((_, i) => out.push({ cle: el.id + "." + (i + 1), nom: el.ref + "." + brPatte(el, i) }));
+  return out;
+}
+/* Rend "" si la feuille relie exactement ce qu'il faut, sinon ce qui cloche. `fusions` :
+   paires de clés de broches qu'on voulait relier. */
+function dessinEcart(avant, fusions) {
+  const broches = dessinBrochesFeuille(), apres = dessinNets();
+  const pere = new Map(broches.map(b => [b.cle, b.cle]));
+  const racine = k => { while (pere.get(k) !== k) k = pere.get(k); return k; };
+  const unir = (a, b) => { if (pere.has(a) && pere.has(b)) pere.set(racine(a), racine(b)); };
+  const parNet = new Map();
+  for (const b of broches) if (avant.has(b.cle)) {
+    const k = avant.get(b.cle);
+    if (parNet.has(k)) unir(b.cle, parNet.get(k)); else parNet.set(k, b.cle);
+  }
+  for (const [a, b] of fusions) unir(a, b);
+  const nom = new Map(broches.map(b => [b.cle, b.nom]));
+  const vus = new Map();                                  // net d'après → racine attendue
+  for (const b of broches) {
+    const net = apres.has(b.cle) ? "n" + apres.get(b.cle) : "seule" + b.cle, r = racine(b.cle);
+    if (!vus.has(net)) { vus.set(net, { r, cle: b.cle }); continue; }
+    if (vus.get(net).r !== r) return "relierait aussi " + nom.get(vus.get(net).cle) + " et " + b.nom + ", qui ne devaient pas l'être";
+  }
+  const attendu = new Map();                              // racine attendue → net d'après
+  for (const b of broches) {
+    const net = apres.has(b.cle) ? "n" + apres.get(b.cle) : "seule" + b.cle, r = racine(b.cle);
+    if (attendu.has(r) && attendu.get(r).net !== net) return nom.get(attendu.get(r).cle) + " et " + b.nom + " ne sont pas reliées";
+    if (!attendu.has(r)) attendu.set(r, { net, cle: b.cle });
+  }
+  return "";
+}
+function dessinNetDe(b) { const g = dessinNets(); return g.has(b.cle) ? nets().list[g.get(b.cle)].name : "aucun net"; }
+
+/* Fils de la feuille copiés (resolveSplits coupe des fils existants) et remis en place,
+   dans le même tableau : la feuille garde sa référence. */
+const dessinFils = () => S.wires.map(w => Object.assign({}, w));
+function dessinRemettreFils(copie) { S.wires.splice(0, S.wires.length, ...copie.map(w => Object.assign({}, w))); touchWires(); }
+
 const dessinOuEst = el => "x " + dessinMm(el.x) + " y " + dessinMm(el.y) + " mm, " + (el.rot || 0) + "°" + (el.mir ? ", miroir" : "");
 
 /* Joue une opération ; rend la ligne de la carte. `ctx.dernier` : le dernier posé. */
@@ -146,6 +207,51 @@ const DESSIN_OPS = {
     const avant = dessinOuEst(el);
     dessinTransformer(el, e => { e.mir = !e.mir; });
     return { quoi: (n + 1) + ". miroir " + el.ref, avant, apres: dessinOuEst(el) };
+  },
+
+  relier(o, n) {
+    const a = dessinBroche(o.de, n, "relier"), b = dessinBroche(o.a, n, "relier");
+    if (a.cle === b.cle) throw dessinRefus(n, "relier", "une broche avec elle-même");
+    const avant = dessinNets(), copie = dessinFils();
+    let ecart = "";
+    // les deux L possibles : par l'horizontale d'abord, puis par la verticale
+    for (const horiz of [Math.abs(b.pos.x - a.pos.x) >= Math.abs(b.pos.y - a.pos.y), Math.abs(b.pos.x - a.pos.x) < Math.abs(b.pos.y - a.pos.y)]) {
+      for (const sg of routeAxis(a.pos, b.pos, horiz)) if (sg.x1 !== sg.x2 || sg.y1 !== sg.y2) S.wires.push(sg);
+      touchWires(); resolveSplits(); touchWires();
+      ecart = dessinEcart(avant, [[a.cle, b.cle]]);
+      if (!ecart) break;
+      dessinRemettreFils(copie);
+    }
+    if (ecart) throw dessinRefus(n, "relier", a.nom + " → " + b.nom + " : le fil " + ecart + " ; essaie une étiquette (etiqueter)");
+    return { quoi: (n + 1) + ". relier " + a.nom + " — " + b.nom, avant: null, apres: "net " + dessinNetDe(a) };
+  },
+
+  supprimer_fil(o, n) {
+    const a = dessinBroche(o.de, n, "supprimer_fil"), b = dessinBroche(o.a, n, "supprimer_fil");
+    const k = p => p.x + "," + p.y;
+    // le fil direct : de point en point, sans passer par une jonction ni par une autre broche
+    const autresBroches = new Set();
+    for (const el of S.comps) allPins(el).forEach(p => autresBroches.add(k(p)));
+    autresBroches.delete(k(a.pos)); autresBroches.delete(k(b.pos));
+    const deg = new Map();
+    for (const w of S.wires) for (const p of [k({ x: w.x1, y: w.y1 }), k({ x: w.x2, y: w.y2 })]) deg.set(p, (deg.get(p) || 0) + 1);
+    const chemin = [], vus = new Set();
+    let ici = k(a.pos);
+    while (ici !== k(b.pos)) {
+      const w = S.wires.find(x => !vus.has(x) && (k({ x: x.x1, y: x.y1 }) === ici || k({ x: x.x2, y: x.y2 }) === ici));
+      if (!w || (ici !== k(a.pos) && (deg.get(ici) > 2 || autresBroches.has(ici)))) { chemin.length = 0; break; }
+      vus.add(w); chemin.push(w);
+      ici = k({ x: w.x1, y: w.y1 }) === ici ? k({ x: w.x2, y: w.y2 }) : k({ x: w.x1, y: w.y1 });
+    }
+    if (!chemin.length) throw dessinRefus(n, "supprimer_fil", "pas de fil direct entre " + a.nom + " et " + b.nom + " (sans jonction ni autre broche)");
+    const net = dessinNetDe(a), avant = dessinNets();
+    for (const w of chemin) S.wires.splice(S.wires.indexOf(w), 1);
+    touchWires();
+    const ecart = dessinEcart(avant, []);
+    // retirer un fil ne peut que séparer : on vérifie seulement qu'aucune fusion n'apparaît
+    if (/^relierait/.test(ecart)) throw dessinRefus(n, "supprimer_fil", ecart);
+    return { quoi: (n + 1) + ". supprimer_fil " + a.nom + " — " + b.nom, avant: "net " + net,
+             apres: a.nom + " sur " + dessinNetDe(a) + ", " + b.nom + " sur " + dessinNetDe(b) };
   },
 
   supprimer(o, n) {

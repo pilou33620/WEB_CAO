@@ -442,6 +442,47 @@ T("canal de pilotage : cao_schema_dessiner, simulé sans trace puis appliqué en
   }finally{global.Pilote=ancien;sheet([],[]);}
 });
 
+T("canal de pilotage : cao_schema_dessiner relie broche à broche, sans connexion par accident",()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  const etat=()=>JSON.stringify([serialize(),S.hist.length,S.dirty]);
+  const refus=(lot,motif)=>{
+    const avant=etat();
+    let m="";try{cmds.cao_schema_dessiner.proposer({lot});}catch(e){m=e.message;}
+    if(!motif.test(m))throw new Error("refus attendu "+motif+", lu « "+m+" »");
+    if(etat()!==avant)throw new Error("un refus a laissé une trace : "+motif);
+  };
+  const ensemble=(a,b)=>nets().list.some(n=>n.nodes.some(x=>x.ref===a[0]&&x.pin===a[1])&&n.nodes.some(x=>x.ref===b[0]&&x.pin===b[1]));
+  try{
+    piloteCao("schema");
+    const d=cmds.cao_schema_dessiner;
+    sheet([],[]);
+    const r1=addComp("resistor",0,0); r1.ref="R1";
+    const r2=addComp("resistor",400,200); r2.ref="R2";
+    S.hist.length=0; S.dirty=false;
+    const prop=d.proposer({lot:[{op:"relier",de:"R1.2",a:"r2.1"}]});
+    if(!/^1\. relier R1\.2 — R2\.1 : net N\$\d+$/m.test(prop.apres))throw new Error("carte : "+prop.apres);
+    d.appliquer({lot:[{op:"relier",de:"R1.2",a:"r2.1"}]},prop);
+    if(!ensemble(["R1",2],["R2",1])||S.hist.length!==1)throw new Error("R1.2 et R2.1 doivent être reliées, en une étape");
+    /* R3 posée debout, une broche sur le chemin du fil : refus qui la nomme */
+    const r3=addComp("resistor",0,0); r3.ref="R3"; r3.rot=90;
+    const q=allPins(r3)[0]; r3.x+=200-q.x; r3.y+=-400-q.y;
+    const r4=addComp("resistor",-200,-400); r4.ref="R4"; const r5=addComp("resistor",600,-400); r5.ref="R5";
+    touchWires(); S.hist.length=0;
+    refus([{op:"relier",de:"R4.2",a:"R5.1"}],/relierait aussi R3\.1/);
+    /* supprimer_fil défait le relier ; sans fil direct : refus */
+    d.appliquer({lot:[{op:"supprimer_fil",de:"R1.2",a:"R2.1"}]});
+    if(ensemble(["R1",2],["R2",1]))throw new Error("supprimer_fil n'a pas séparé R1.2 et R2.1");
+    refus([{op:"supprimer_fil",de:"R1.2",a:"R2.1"}],/pas de fil direct/);
+    refus([{op:"relier",de:"R1.9",a:"R2.1"}],/R1 n'a pas de broche « 9 »/);
+    refus([{op:"relier",de:"R1",a:"R2.1"}],/REPÈRE\.broche/);
+    refus([{op:"relier",de:"R1.1",a:"R1.1"}],/avec elle-même/);
+    /* poser puis relier dans le même lot */
+    d.appliquer({lot:[{op:"poser",type:"capacitor",ref:"C9",x:-20,y:20},{op:"relier",de:"C9.1",a:"R1.1"}]});
+    if(!ensemble(["C9",1],["R1",1]))throw new Error("un repère posé dans le lot doit pouvoir être relié");
+  }finally{global.Pilote=ancien;sheet([],[]);}
+});
+
 T("classes d'interface : la table commune est chargée",()=>{
   if(Object.keys(CLASSES_INTERFACE).length!==7)throw new Error("7 interfaces attendues");
   if(familleClasse("USB HS")!=="Rapide"||familleClasse("CAN")!=="Lent"||familleClasse("RF")!=="RF")
