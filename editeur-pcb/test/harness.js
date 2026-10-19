@@ -26742,11 +26742,13 @@ T("écritures en lot : un échec en cours d'application remet le document d'avan
   loadDoc(exemple1());
   S.undo.length=0;
   const avant=serialize();
+  S.redo.length=0; S.redo.push("rétablir-avant");          // la pile de l'utilisateur doit survivre à l'échec
   const cmd=ECRITURE_CAO.lot({titre:"essai",verifier:()=>({lignes:[{quoi:"x",avant:1,apres:2}],refus:[]}),
     muter:()=>{S.fps[0].x+=5;S.fps[1].ref="ZZ";throw new Error("boum");},rafraichir:()=>{}});
   let m="";try{cmd.appliquer({lot:[{}]},cmd.proposer({lot:[{}]}));}catch(e){m=e.message;}
   if(!/Échec en appliquant, rien n'est changé : boum/.test(m))throw new Error("message : "+m);
   if(serialize()!==avant)throw new Error("le lot à moitié appliqué est resté");
+  if(S.redo.length!==1||S.redo[0]!=="rétablir-avant")throw new Error("la pile de rétablissement a changé : "+S.redo.length);
   for(const [v,att] of [["=HYPERLINK(1)","'=HYPERLINK(1)"],["+3V3","'+3V3"],["-40","-40"],["0402","0402"]])
     if(pcbCsvCell(v)!==att)throw new Error("formule : "+v+" → "+pcbCsvCell(v));
 });

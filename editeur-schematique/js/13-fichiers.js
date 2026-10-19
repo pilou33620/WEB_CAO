@@ -256,7 +256,7 @@ function netlistText(horodatage){
       out.push(("  ; "+nlCol("repère",8)+nlCol("part name",28)+nlCol("part number",28)+nlCol("fabricant",20)+"empreinte").replace(/\s+$/,""));
       for(const r of rows){
         if(r.csvPartName || r.mpn || r.fpPcb){
-          out.push(("  ; "+nlCol(r.ref,8)+nlCol(r.csvPartName||"—",28)+nlCol(r.mpn||"—",28)+nlCol(r.manufacturer||"—",20)+(r.fpPcb||"—")).replace(/\s+$/,""));
+          out.push(("  ; "+nlCol(r.ref,8)+nlCol(r.csvPartName||"—",28)+nlCol(r.mpn||"—",28)+nlCol(r.manufacturer||"—",20)+String(r.fpPcb||"—").replace(/\s+/g," ")).replace(/\s+$/,""));
         }
       }
       out.push("");

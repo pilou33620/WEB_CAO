@@ -11,9 +11,12 @@
 "use strict";
 
 const DESSIN_MAX = 40;                       // opérations par carte
-const DESSIN_MM = 20;                        // px par mm (G)
+const DESSIN_MM = G;                         // px par mm
 const DESSIN_ANGLES = [0, 90, 180, 270];
 const DESSIN_REF = /^[A-Za-z][A-Za-z0-9_]{0,19}$/;
+// noms servant de clés d'objet ailleurs dans la page (classes, contraintes, surcharges) ; « ␞ » sépare les clés de contraintes
+const DESSIN_RESERVES = new Set(["__proto__", "constructor", "prototype"]);
+const dessinNomValide = (t, re) => typeof t === "string" && re.test(t) && !DESSIN_RESERVES.has(t.trim().toLowerCase()) && !t.includes("\u241E");
 
 const dessinMm = px => Math.round(px / DESSIN_MM * 1000) / 1000;
 const dessinCle = r => String(r || "").trim().toUpperCase();
@@ -37,9 +40,11 @@ function dessinComp(ref, n, op) {
 }
 
 // la boîte de clic de la page (petite marge) : sans marge, une résistance n'a pas de hauteur
-function dessinChevauche(el) {
+function dessinChevauche(el, boites) {
   const a = hitBox(el);
-  return S.comps.find(o => o !== el && (() => { const b = hitBox(o); return a.x1 < b.x2 && b.x1 < a.x2 && a.y1 < b.y2 && b.y1 < a.y2; })());
+  const liste = boites || S.comps.filter(o => o !== el).map(o => ({ o, b: hitBox(o) }));
+  const t = liste.find(({ b }) => a.x1 < b.x2 && b.x1 < a.x2 && a.y1 < b.y2 && b.y1 < a.y2);
+  return t ? t.o : null;
 }
 
 /* Une place libre sur la grille : à droite du dernier posé (ou du composant le plus à droite),
@@ -52,10 +57,11 @@ function dessinPlaceLibre(el, depuis) {
     x0 = Math.max(...autres.map(o => hitBox(o).x2)) + 5 * DESSIN_MM;
     y0 = Math.min(...autres.map(o => o.y));
   }
+  const boites = S.comps.filter(o => o !== el).map(o => ({ o, b: hitBox(o) }));   // une fois, pas à chaque case
   for (let r = 0; r < 40; r++)
     for (let c = 0; c < 40; c++) {
       el.x = snap(x0 + c * 5 * DESSIN_MM); el.y = snap(y0 + r * 5 * DESSIN_MM);
-      if (!dessinChevauche(el)) return true;
+      if (!dessinChevauche(el, boites)) return true;
     }
   return false;
 }
@@ -85,9 +91,12 @@ function dessinBroche(txt, n, op) {
 /* ---------- pas de connexion par accident ----------
    La connectivité de la page relie tout point posé sur un fil. Avant et après une
    opération, on relève broche → net sur la feuille ; seule la fusion demandée est admise. */
-function dessinNets() {
+function dessinNets() {                       // clé de broche → {k : n° du net, noms : ses noms}
   const g = new Map();
-  nets().list.forEach((net, k) => { for (const nd of net.nodes) g.set(nd.id + "." + nd.pin, k); });
+  nets().list.forEach((net, k) => {
+    const noms = (net.names || []).map(dessinCle);
+    for (const nd of net.nodes) g.set(nd.id + "." + nd.pin, { k, noms });
+  });
   return g;
 }
 function dessinBrochesFeuille() {
@@ -96,34 +105,49 @@ function dessinBrochesFeuille() {
   return out;
 }
 /* Rend "" si la feuille relie exactement ce qu'il faut, sinon ce qui cloche. `fusions` :
-   paires de clés de broches qu'on voulait relier. */
-function dessinEcart(avant, fusions) {
+   paires de clés de broches qu'on voulait relier ; `nomme` : [clé, nom] d'une étiquette posée.
+   Les noms comptent aussi : une broche ne prend pas, en passant, le nom d'une étiquette ou
+   d'une alimentation touchée par accident (qui la relierait aux autres feuilles). */
+function dessinEcart(avant, fusions, nomme) {
   const broches = dessinBrochesFeuille(), apres = dessinNets();
   const pere = new Map(broches.map(b => [b.cle, b.cle]));
   const racine = k => { while (pere.get(k) !== k) k = pere.get(k); return k; };
   const unir = (a, b) => { if (pere.has(a) && pere.has(b)) pere.set(racine(a), racine(b)); };
   const parNet = new Map();
   for (const b of broches) if (avant.has(b.cle)) {
-    const k = avant.get(b.cle);
+    const k = avant.get(b.cle).k;
     if (parNet.has(k)) unir(b.cle, parNet.get(k)); else parNet.set(k, b.cle);
   }
   for (const [a, b] of fusions) unir(a, b);
+  const nomsPermis = new Map();                           // racine → noms admis après
+  const permettre = (cle, noms) => { const r = racine(cle); nomsPermis.set(r, new Set([...(nomsPermis.get(r) || []), ...noms])); };
+  for (const b of broches) permettre(b.cle, avant.has(b.cle) ? avant.get(b.cle).noms : []);
+  if (nomme) permettre(nomme[0], [dessinCle(nomme[1])]);
   const nom = new Map(broches.map(b => [b.cle, b.nom]));
   const vus = new Map();                                  // net d'après → racine attendue
   for (const b of broches) {
-    const net = apres.has(b.cle) ? "n" + apres.get(b.cle) : "seule" + b.cle, r = racine(b.cle);
+    const net = apres.has(b.cle) ? "n" + apres.get(b.cle).k : "seule" + b.cle, r = racine(b.cle);
+    const intrus = apres.has(b.cle) ? apres.get(b.cle).noms.find(x => !nomsPermis.get(r).has(x)) : null;
+    if (intrus) return "donnerait à " + b.nom + " le nom de net « " + intrus + " »";
     if (!vus.has(net)) { vus.set(net, { r, cle: b.cle }); continue; }
     if (vus.get(net).r !== r) return "relierait aussi " + nom.get(vus.get(net).cle) + " et " + b.nom + ", qui ne devaient pas l'être";
   }
   const attendu = new Map();                              // racine attendue → net d'après
   for (const b of broches) {
-    const net = apres.has(b.cle) ? "n" + apres.get(b.cle) : "seule" + b.cle, r = racine(b.cle);
+    const net = apres.has(b.cle) ? "n" + apres.get(b.cle).k : "seule" + b.cle, r = racine(b.cle);
     if (attendu.has(r) && attendu.get(r).net !== net) return nom.get(attendu.get(r).cle) + " et " + b.nom + " ne sont pas reliées";
     if (!attendu.has(r)) attendu.set(r, { net, cle: b.cle });
   }
   return "";
 }
-function dessinNetDe(b) { const g = dessinNets(); return g.has(b.cle) ? nets().list[g.get(b.cle)].name : "aucun net"; }
+/* Deux noms sur un même net (SDA et SCL réunis) : une erreur de câblage, jamais voulue ici. */
+function dessinSansConflit(b, n, op) {
+  const g = dessinNets();
+  if (!g.has(b.cle)) return;
+  const noms = [...new Set(g.get(b.cle).noms)];
+  if (noms.length > 1) throw dessinRefus(n, op, b.nom + " : réunirait les nets " + noms.join(" et "));
+}
+function dessinNetDe(b) { const g = dessinNets(); return g.has(b.cle) ? nets().list[g.get(b.cle).k].name : "aucun net"; }
 
 /* Fils de la feuille copiés (resolveSplits coupe des fils existants) et remis en place,
    dans le même tableau : la feuille garde sa référence. */
@@ -139,11 +163,12 @@ function dessinPlaceEtiquette(el, pin, bout) {
     return Math.hypot(w.x1 + t * lx - p.x, w.y1 + t * ly - p.y) < 3;
   });
   const dans = (r, p) => p.x > r.x1 && p.x < r.x2 && p.y > r.y1 && p.y < r.y2;
+  const boites = S.comps.filter(c => c !== el).map(hitBox);
   const pts = [], h = hitBox(el);
   for (let x = h.x1; x <= h.x2; x += 5) for (let y = h.y1; y <= h.y2; y += 5) pts.push({ x, y });
   for (let k = 0; k <= 8; k++) pts.push({ x: pin.x + (bout.x - pin.x) * k / 8, y: pin.y + (bout.y - pin.y) * k / 8 });
   return !pts.some(p => Math.hypot(p.x - pin.x, p.y - pin.y) > 12 &&
-                        (surFil(p) || S.comps.some(c => c !== el && dans(hitBox(c), p))));
+                        (surFil(p) || boites.some(b => dans(b, p))));
 }
 
 const dessinOuEst = el => "x " + dessinMm(el.x) + " y " + dessinMm(el.y) + " mm, " + (el.rot || 0) + "°" + (el.mir ? ", miroir" : "");
@@ -161,10 +186,12 @@ const DESSIN_OPS = {
       type = schTypeDuCatalogue(ligne);
     }
     const def = typeof type === "string" && (LIB[type] || ligne) ? defOf(type) : null;
-    if (!def || (def === DEF_UNKNOWN && !ligne)) throw dessinRefus(n, "poser", "type « " + o.type + " » inconnu (types intégrés : resistor, capacitor, ic, opamp, gnd, vcc, port…)");
+    if (!def || (def === DEF_UNKNOWN && !ligne)) throw dessinRefus(n, "poser", "type « " + o.type + " » inconnu (types intégrés : resistor, capacitor, ic, opamp, regulator…)");
+    // une étiquette ou une alimentation nomme un net : seulement par etiqueter, qui vérifie où elle tombe
+    if (["port", "gport", "vcc", "gnd"].includes(type)) throw dessinRefus(n, "poser", "un « " + type + " » se pose avec etiqueter (broche, net, genre)");
     if (o.ref !== undefined) {
       if (def.noRef && !ligne) throw dessinRefus(n, "poser", "un « " + o.type + " » n'a pas de repère");
-      if (typeof o.ref !== "string" || !DESSIN_REF.test(o.ref)) throw dessinRefus(n, "poser", "repère : lettre puis lettres, chiffres ou _, 20 au plus");
+      if (!dessinNomValide(o.ref, DESSIN_REF)) throw dessinRefus(n, "poser", "repère : lettre puis lettres, chiffres ou _, 20 au plus (pas un nom réservé)");
       if ([...usedRefs()].some(r => dessinCle(r) === dessinCle(o.ref))) throw dessinRefus(n, "poser", "repère « " + o.ref + " » déjà pris");
     }
     if (o.valeur !== undefined && (typeof o.valeur !== "string" || !/^[^\x00-\x1f\x7f]{1,200}$/.test(o.valeur)))
@@ -174,6 +201,7 @@ const DESSIN_OPS = {
     const el = addComp(type, 0, 0);
     if (ligne) schPoserDepuisCatalogue(el, ligne);           // comme la pose à la souris depuis l'explorateur
     if (o.ref !== undefined) el.ref = o.ref;
+    else if (el.ref && !dessinNomValide(el.ref, DESSIN_REF)) throw dessinRefus(n, "poser", "le repère tiré du catalogue (« " + el.ref + " ») n'est pas valide : donne « ref »");
     if (o.valeur !== undefined) el.value = o.valeur;
     el.rot = o.rotation || 0;
     el.mir = o.miroir === true;
@@ -185,7 +213,11 @@ const DESSIN_OPS = {
     } else if (!dessinPlaceLibre(el, ctx.dernier && S.comps.includes(ctx.dernier) ? ctx.dernier : null)) throw dessinRefus(n, "poser", "aucune place libre trouvée : donne x et y");
     touchWires();
     ctx.dernier = el;
-    const origine = ligne ? "catalogue " + ligne["Part Name"] + (def === DEF_UNKNOWN ? " (symbole générique : la page ne connaît pas le sien)" : "") + ", " : "";
+    // le symbole du catalogue, s'il n'est pas celui que la page a pris : elle n'en connaît pas de tel
+    const symCat = ligne ? String(ligne["Empreinte Schématique"] || ligne["Empreinte Schematique"] || "").toLowerCase()
+      .replace(/^.*[\\/]/, "").replace(/\.json$/i, "").trim() : "";
+    const origine = ligne ? "catalogue " + ligne["Part Name"] +
+      (symCat && symCat !== type ? " (symbole « " + symCat + " » inconnu de la page : " + type + " générique)" : "") + ", " : "";
     return { quoi: (n + 1) + ". poser " + (el.ref || el.type), avant: null,
              apres: origine + el.type + (el.value ? " " + el.value : "") + (el.pkg ? " (" + el.pkg + ")" : "") + ", " + dessinOuEst(el) };
   },
@@ -229,6 +261,8 @@ const DESSIN_OPS = {
     const a = dessinBroche(o.de, n, "relier"), b = dessinBroche(o.a, n, "relier");
     if (a.cle === b.cle) throw dessinRefus(n, "relier", "une broche avec elle-même");
     const avant = dessinNets(), copie = dessinFils();
+    if (avant.has(a.cle) && avant.has(b.cle) && avant.get(a.cle).k === avant.get(b.cle).k)
+      throw dessinRefus(n, "relier", a.nom + " et " + b.nom + " sont déjà reliées");
     let ecart = "";
     // les deux L possibles : par l'horizontale d'abord, puis par la verticale
     for (const horiz of [Math.abs(b.pos.x - a.pos.x) >= Math.abs(b.pos.y - a.pos.y), Math.abs(b.pos.x - a.pos.x) < Math.abs(b.pos.y - a.pos.y)]) {
@@ -239,6 +273,7 @@ const DESSIN_OPS = {
       dessinRemettreFils(copie);
     }
     if (ecart) throw dessinRefus(n, "relier", a.nom + " → " + b.nom + " : le fil " + ecart + " ; essaie une étiquette (etiqueter)");
+    dessinSansConflit(a, n, "relier");
     return { quoi: (n + 1) + ". relier " + a.nom + " — " + b.nom, avant: null, apres: "net " + dessinNetDe(a) };
   },
 
@@ -249,7 +284,7 @@ const DESSIN_OPS = {
     const type = Object.prototype.hasOwnProperty.call(GENRES, o.genre) ? GENRES[o.genre] : null;
     if (!type) throw dessinRefus(n, "etiqueter", "« genre » : local, global, vcc ou gnd");
     const net = o.net === undefined && o.genre === "gnd" ? "GND" : o.net;
-    if (typeof net !== "string" || !/^[^\x00-\x1f\x7f\s][^\x00-\x1f\x7f]{0,39}$/.test(net))
+    if (!dessinNomValide(net, /^[^\x00-\x1f\x7f\s][^\x00-\x1f\x7f]{0,39}$/))
       throw dessinRefus(n, "etiqueter", "« net » : nom de 1 à 40 caractères, sans espace au début");
     const b = dessinBroche(o.broche, n, "etiqueter");
     const dx = b.pos.x - b.el.x, dy = b.pos.y - b.el.y;
@@ -281,8 +316,9 @@ const DESSIN_OPS = {
     const bout = placer(dir);
     if (bout.x !== b.pos.x || bout.y !== b.pos.y) S.wires.push({ x1: b.pos.x, y1: b.pos.y, x2: bout.x, y2: bout.y });
     touchWires(); resolveSplits(); touchWires();
-    const ecart = dessinEcart(avant, memes.map(m => [b.cle, m]));
+    const ecart = dessinEcart(avant, memes.map(m => [b.cle, m]), [b.cle, net]);
     if (ecart) throw dessinRefus(n, "etiqueter", b.nom + " : l'étiquette " + ecart);
+    dessinSansConflit(b, n, "etiqueter");
     return { quoi: (n + 1) + ". etiqueter " + b.nom, avant: null,
              apres: { port: "étiquette locale", gport: "étiquette globale", vcc: "alimentation", gnd: "masse" }[type] + " " + net };
   },
@@ -296,14 +332,24 @@ const DESSIN_OPS = {
     autresBroches.delete(k(a.pos)); autresBroches.delete(k(b.pos));
     const deg = new Map();
     for (const w of S.wires) for (const p of [k({ x: w.x1, y: w.y1 }), k({ x: w.x2, y: w.y2 })]) deg.set(p, (deg.get(p) || 0) + 1);
-    const chemin = [], vus = new Set();
-    let ici = k(a.pos);
-    while (ici !== k(b.pos)) {
-      const w = S.wires.find(x => !vus.has(x) && (k({ x: x.x1, y: x.y1 }) === ici || k({ x: x.x2, y: x.y2 }) === ici));
-      if (!w || (ici !== k(a.pos) && (deg.get(ici) > 2 || autresBroches.has(ici)))) { chemin.length = 0; break; }
-      vus.add(w); chemin.push(w);
-      ici = k({ x: w.x1, y: w.y1 }) === ici ? k({ x: w.x2, y: w.y2 }) : k({ x: w.x1, y: w.y1 });
-    }
+    // chaque fil qui part de a est essayé : de point en point, sans jonction ni autre broche
+    const bouts = w => [k({ x: w.x1, y: w.y1 }), k({ x: w.x2, y: w.y2 })];
+    const marcher = (ici, vus) => {
+      if (ici === k(b.pos)) return [];
+      if (ici !== k(a.pos) && (deg.get(ici) > 2 || autresBroches.has(ici))) return null;
+      for (const w of S.wires) {
+        if (vus.has(w) || !bouts(w).includes(ici)) continue;
+        const suite = marcher(bouts(w)[0] === ici ? bouts(w)[1] : bouts(w)[0], new Set([...vus, w]));
+        if (suite) return [w, ...suite];
+      }
+      return null;
+    };
+    const chemin = marcher(k(a.pos), new Set()) || [];
+    // une broche posée au milieu d'un segment du chemin en serait détachée sans le dire
+    const surSegment = (w, p) => (w.x1 === w.x2 ? p.x === w.x1 && p.y > Math.min(w.y1, w.y2) && p.y < Math.max(w.y1, w.y2)
+                                                : w.y1 === w.y2 && p.y === w.y1 && p.x > Math.min(w.x1, w.x2) && p.x < Math.max(w.x1, w.x2));
+    const touchee = [...autresBroches].map(t => ({ x: +t.split(",")[0], y: +t.split(",")[1] })).find(p => chemin.some(w => surSegment(w, p)));
+    if (touchee) throw dessinRefus(n, "supprimer_fil", "le fil passe par une autre broche (x " + dessinMm(touchee.x) + " y " + dessinMm(touchee.y) + " mm) : il la détacherait");
     if (!chemin.length) throw dessinRefus(n, "supprimer_fil", "pas de fil direct entre " + a.nom + " et " + b.nom + " (sans jonction ni autre broche)");
     const net = dessinNetDe(a), avant = dessinNets();
     for (const w of chemin) S.wires.splice(S.wires.indexOf(w), 1);
@@ -319,6 +365,7 @@ const DESSIN_OPS = {
   feuille(o, n) {
     const nom = o.nom !== undefined ? o.nom : o.creer;
     if (typeof nom !== "string" || !/^[^\x00-\x1f\x7f]{1,60}$/.test(nom.trim())) throw dessinRefus(n, "feuille", "nom de feuille : 1 à 60 caractères");
+    if (o.creer !== undefined && o.nom !== undefined) throw dessinRefus(n, "feuille", "« creer » porte le nom : pas de « nom » avec lui");
     if (o.creer !== undefined && o.renommer === undefined) {
       storeCurrent();
       S.pages.push(newPage(nom.trim()));
@@ -338,19 +385,30 @@ const DESSIN_OPS = {
      bas et de gauche à droite. Le PCB garde les anciens jusqu'à sa resynchronisation. */
   renumeroter(o, n) {
     storeCurrent();
-    const parPrefixe = new Map(), lignes = [];
+    // les parties d'un même boîtier (U3A, U3B : même repère, el.part) gardent un seul repère
+    const parPrefixe = new Map(), nouveau = new Map(), lignes = [], anciens = new Set();
+    const tous = [];
     S.pages.forEach((p, i) => {
-      const liste = (i === S.page ? S.comps : p.comps || []).filter(c => c.ref && !defOf(c.type).noRef)
-        .sort((a, b) => (a.y - b.y) || (a.x - b.x));
-      for (const c of liste) {
-        const pre = (String(c.ref).match(/^[A-Za-z_]+/) || [defOf(c.type).p || "X"])[0];
-        const k = (parPrefixe.get(pre) || 0) + 1;
-        parPrefixe.set(pre, k);
-        if (c.ref !== pre + k) { lignes.push({ quoi: (n + 1) + ". renumeroter " + c.ref, avant: c.ref, apres: pre + k }); c.ref = pre + k; }
-      }
+      tous.push(...(i === S.page ? S.comps : p.comps || []).filter(c => c.ref && !defOf(c.type).noRef)
+        .sort((a, b) => (a.y - b.y) || (a.x - b.x)));
     });
+    for (const c of tous) anciens.add(dessinCle(c.ref));
+    for (const c of tous) {
+      const vieux = dessinCle(c.ref);
+      if (!nouveau.has(vieux)) {
+        const pre = (String(c.ref).match(/^[A-Za-z_]+/) || [defOf(c.type).p || "X"])[0];
+        const k = (parPrefixe.get(pre.toUpperCase()) || 0) + 1;     // « r5 » et « R3 » : un seul compteur
+        parPrefixe.set(pre.toUpperCase(), k);
+        nouveau.set(vieux, pre + k);
+        if (dessinCle(pre + k) !== vieux) lignes.push({ quoi: (n + 1) + ". renumeroter " + c.ref, avant: c.ref, apres: pre + k });
+      }
+      c.ref = nouveau.get(vieux);
+    }
     if (!lignes.length) throw dessinRefus(n, "renumeroter", "les repères sont déjà dans l'ordre");
-    lignes.push({ quoi: (n + 1) + ". PCB", avant: null, apres: "garde les anciens repères jusqu'à sa resynchronisation" });
+    // un repère repris par un autre composant : au PCB, l'empreinte déjà placée recevrait ses nets
+    const repris = lignes.filter(l => anciens.has(dessinCle(l.apres))).map(l => l.apres);
+    lignes.push({ quoi: (n + 1) + ". PCB", avant: null, apres: "garde les anciens repères jusqu'à sa resynchronisation" +
+      (repris.length ? " ; attention, " + repris.join(", ") + " y désignent alors d'autres composants : leurs pistes resteraient sur les anciennes empreintes" : "") });
     return lignes;
   },
 
@@ -373,30 +431,45 @@ function dessinJouer(ops) {
       if (!Number.isInteger(o.feuille) || !S.pages[o.feuille - 1]) throw dessinRefus(n, o.op, "feuille " + o.feuille + " inconnue : 1 à " + S.pages.length);
       if (o.feuille - 1 !== S.page) gotoPage(o.feuille - 1);
     }
+    // ce qui bouge des broches passe la même garde que relier : un composant posé sur un fil le rejoindrait
+    const garde = ["poser", "deplacer", "tourner", "miroir"].includes(o.op) ? dessinNets() : null;
     lignes.push(...[].concat(f(o, n, ctx)));
+    const ecart = garde ? dessinEcart(garde, []) : "";
+    if (ecart) throw dessinRefus(n, o.op, "toucherait un fil ou une broche : " + ecart);
   });
   return lignes;
 }
 
-/* Joue le lot, relève ses lignes, puis remet le document tel qu'il était : feuilles,
-   drapeau « modifié », historique, sélection et vue. */
+/* Joue le lot sur un CLONE des feuilles, relève ses lignes, puis remet les objets d'origine
+   eux-mêmes : pas de restore() (qui recopierait tout, relancerait l'analyse des motifs et
+   laisserait orphelins les objets tenus par une fenêtre ouverte). Historique, drapeau,
+   sélection, vue et geste en cours (pose, fil, glissé) reviennent tels quels. */
 function dessinSimuler(args) {
-  const garde = { doc: serialize(), dirty: S.dirty, hist: S.hist.slice(), redo: S.redo.slice(),
-                  sel: [...S.sel], selW: S.wires.map((w, i) => S.selW.has(w) ? i : -1).filter(i => i >= 0),
-                  vue: [S.scale, S.ox, S.oy] };
+  storeCurrent();
+  const garde = { pages: S.pages, page: S.page, comps: S.comps, wires: S.wires, drawings: S.drawings, uid: S.uid,
+                  dirty: S.dirty, hist: S.hist, redo: S.redo, vue: [S.scale, S.ox, S.oy],
+                  sel: new Set(S.sel), selW: new Set(S.selW), selD: S.selD ? new Set(S.selD) : null, selBlock: S.selBlock,
+                  geste: { place: S.place, placeLibItem: S.placeLibItem, wireStart: S.wireStart, drawStart: S.drawStart,
+                           drag: S.drag, marquee: S.marquee } };
+  S.pages = JSON.parse(JSON.stringify(S.pages));
+  const p = S.pages[S.page];
+  S.comps = p.comps; S.wires = p.wires; S.drawings = p.drawings || []; S.uid = p.uid || 1;
+  S.hist = S.hist.slice(); S.redo = S.redo.slice();
+  touchWires();
   try {
     return { lignes: dessinJouer(args.lot), refus: [] };
   } catch (e) {
     if (!e.dessin) throw e;
     return { lignes: [], refus: [e.message] };
   } finally {
-    restore(garde.doc);
-    S.dirty = garde.dirty; S.hist = garde.hist; S.redo = garde.redo;
-    clearSel();
-    garde.sel.forEach(id => S.sel.add(id));
-    garde.selW.forEach(i => S.wires[i] && S.selW.add(S.wires[i]));
+    Object.assign(S, { pages: garde.pages, page: garde.page, comps: garde.comps, wires: garde.wires, drawings: garde.drawings,
+                       uid: garde.uid, dirty: garde.dirty, hist: garde.hist, redo: garde.redo, sel: garde.sel, selW: garde.selW,
+                       selBlock: garde.selBlock }, garde.geste);
+    if (garde.selD) S.selD = garde.selD;
     [S.scale, S.ox, S.oy] = garde.vue;
-    draw();
+    touchWires();
+    setPalette(garde.geste.place || null);
+    buildTabs(); refreshPanels(); draw();
   }
 }
 

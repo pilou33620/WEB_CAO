@@ -28,7 +28,7 @@ function loadPage(i){
   const p=S.pages[S.page];
   S.comps=p.comps;S.wires=p.wires;S.drawings=p.drawings||[];S.uid=p.uid||1;
   S.scale=p.scale||1;S.ox=p.ox||0;S.oy=p.oy||0;
-  clearSel();S.wireStart=null;S.drawStart=null;S.place=null;S.drag=null;S.marquee=null;setPalette(null);
+  clearSel();S.wireStart=null;S.drawStart=null;S.place=null;S.placeLibItem=null;S.drag=null;S.marquee=null;setPalette(null);
   touchWires();
 }
 function gotoPage(i){

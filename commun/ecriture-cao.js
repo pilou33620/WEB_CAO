@@ -58,12 +58,15 @@ const ECRITURE_CAO = (function () {
         if (prop && prop.lignes !== undefined && JSON.stringify(v.lignes) !== prop.lignes)
           throw new Error("Le document a changé depuis la carte : rien n'est appliqué, à reproposer.");
         const avant = def.drc ? erreursDrc() : null;
+        // push() vide la pile de rétablissement ; la visionneuse (simulation seule) n'a pas de S
+        const redo = !def.annuler && typeof S !== "undefined" && Array.isArray(S.redo) ? S.redo.slice() : null;
         if (!def.annuler) push();
         let r;
         try { r = def.muter(args) || {}; }
         catch (e) {
-          // un lot à moitié appliqué serait pire qu'un refus : retour à l'instantané qu'on vient de pousser
-          if (!def.annuler) undo();
+          // un lot à moitié appliqué serait pire qu'un refus : retour à l'instantané qu'on vient de pousser,
+          // et la pile de rétablissement d'avant (undo y mettrait l'état à moitié fait)
+          if (!def.annuler) { undo(); if (redo) S.redo.splice(0, S.redo.length, ...redo); }
           def.rafraichir();
           throw new Error("Échec en appliquant, rien n'est changé : " + ((e && e.message) || e));
         }

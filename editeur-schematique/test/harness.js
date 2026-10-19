@@ -432,7 +432,8 @@ T("canal de pilotage : cao_schema_dessiner, simulé sans trace puis appliqué en
     refus([{op:"tourner",ref:"R1",angle:45}],/90, 180 ou 270/);
     refus([{op:"poser",type:"resistor",x:30}],/donne x et y/);
     refus([{op:"poser",type:"resistor",ref:"r1"}],/« r1 » déjà pris/);
-    refus([{op:"poser",type:"gnd",ref:"G1"}],/n'a pas de repère/);
+    refus([{op:"poser",type:"gnd",x:60,y:60}],/se pose avec etiqueter/);
+    refus([{op:"poser",type:"resistor",ref:"constructor",x:60,y:60}],/nom réservé/);
     refus([{op:"voler",ref:"R1"}],/opération inconnue/);
     refus(Array.from({length:41},()=>({op:"miroir",ref:"R1"})),/41 éléments, 40 au plus/);
     /* le premier refus arrête tout : rien de ce qui précède ne reste */
@@ -585,6 +586,97 @@ T("canal de pilotage : un montage dessiné en un lot (régulateur, deux condensa
         x>h.x1&&x<h.x2&&y>h.y1&&y<h.y2&&Math.hypot(x-pin.x,y-pin.y)>12));
       if(coupe)throw new Error("l'étiquette "+e.type+" "+e.value+" est posée sur un fil");
     }
+  }finally{global.Pilote=ancien;sheet([],[]);}
+});
+
+T("canal de pilotage : cao_schema_dessiner, garde sur poser/déplacer/tourner, noms, parties d'un boîtier, geste en cours",()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  const refus=(lot,motif)=>{
+    const avant=serialize();
+    let m="";try{cmds.cao_schema_dessiner.proposer({lot});}catch(e){m=e.message;}
+    if(!motif.test(m))throw new Error("refus attendu "+motif+", lu « "+m+" »");
+    if(serialize()!==avant)throw new Error("un refus a laissé une trace : "+motif);
+  };
+  try{
+    piloteCao("schema");
+    const d=cmds.cao_schema_dessiner;
+    sheet([],[]);
+    const r1=addComp("resistor",0,0); r1.ref="R1";
+    S.wires.push({x1:-400,y1:400,x2:400,y2:400}); touchWires();          // un fil seul, à y = 20 mm
+    /* une broche posée, déplacée ou tournée sur ce fil le rejoindrait : refus */
+    refus([{op:"poser",type:"resistor",ref:"R2",x:0,y:20}],/toucherait un fil ou une broche/);
+    refus([{op:"deplacer",ref:"R1",x:0,y:20}],/toucherait un fil ou une broche/);
+    /* une étiquette GND posée à la main, puis un fil qui passerait sur sa broche : le nom GND serait pris */
+    const g=addComp("gnd",0,0); const pg=allPins(g)[0]; g.x+=200-pg.x; g.y+=-200-pg.y;
+    const r4=addComp("resistor",-200,-200); r4.ref="R4"; const r5=addComp("resistor",600,-200); r5.ref="R5";
+    touchWires();
+    refus([{op:"relier",de:"R4.2",a:"R5.1"}],/le nom de net « GND »/);
+    refus([{op:"etiqueter",broche:"R1.1",net:"constructor",genre:"local"}],/1 à 40 caractères/);
+    /* renuméroter : les parties d'un même boîtier gardent un seul repère, l'échange est signalé */
+    sheet([],[]);
+    const a=addComp("opamp",0,0); a.ref="U9"; a.part="A";
+    const b=addComp("opamp",400,0); b.ref="U9"; b.part="B";
+    const u1=addComp("opamp",0,400); u1.ref="U1";
+    const pr=d.proposer({lot:[{op:"renumeroter"}]});
+    d.appliquer({lot:[{op:"renumeroter"}]},pr);
+    if(a.ref!=="U1"||b.ref!=="U1"||u1.ref!=="U2")throw new Error("parties : "+[a.ref,b.ref,u1.ref]);
+    if(!/U1, U2 y désignent alors d'autres composants|U1.*d'autres composants/.test(pr.apres))throw new Error("échange non signalé : "+pr.apres);
+    /* une proposition n'interrompt pas une pose en cours */
+    S.place="capacitor"; S.placeLibItem={"Part Name":"X"};
+    d.proposer({lot:[{op:"poser",type:"resistor",x:80,y:80}]});
+    if(S.place!=="capacitor"||!S.placeLibItem)throw new Error("la pose en cours a été perdue");
+    S.place=null; S.placeLibItem=null;
+  }finally{global.Pilote=ancien;sheet([],[]);}
+});
+
+T("canal de pilotage : cao_schema_dessiner, objets d'origine gardés, conflits de noms, fils à branches, symbole inconnu",()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  const msg=lot=>{let m="";try{cmds.cao_schema_dessiner.proposer({lot});}catch(e){m=e.message;}return m;};
+  try{
+    piloteCao("schema");
+    const d=cmds.cao_schema_dessiner;
+    sheet([],[]);
+    const r1=addComp("resistor",0,0); r1.ref="R1"; const r2=addComp("resistor",400,0); r2.ref="R2";
+    const r3=addComp("resistor",0,400); r3.ref="R3";
+    /* proposer garde les objets eux-mêmes (une fenêtre ouverte sur R1 reste branchée) */
+    const pages=S.pages, comps=S.comps;
+    d.proposer({lot:[{op:"poser",type:"resistor",x:60,y:60},{op:"feuille",creer:"X"}]});
+    if(S.pages!==pages||S.comps!==comps||S.comps[0]!==r1)throw new Error("proposer a remplacé les objets du document");
+    /* déjà reliées ; deux noms réunis */
+    d.appliquer({lot:[{op:"relier",de:"R1.2",a:"R2.1"}]});
+    if(!/déjà reliées/.test(msg([{op:"relier",de:"R1.2",a:"R2.1"}])))throw new Error("déjà reliées");
+    d.appliquer({lot:[{op:"etiqueter",broche:"R1.1",net:"SDA",genre:"local"},{op:"etiqueter",broche:"R3.1",net:"SCL",genre:"local"}]});
+    if(!/réunirait les nets SDA et SCL|réunirait les nets SCL et SDA/.test(msg([{op:"relier",de:"R1.1",a:"R3.1"}])))throw new Error("conflit SDA/SCL : "+msg([{op:"relier",de:"R1.1",a:"R3.1"}]));
+    if(!/réunirait les nets/.test(msg([{op:"etiqueter",broche:"R2.2",net:"SDA",genre:"local"},{op:"etiqueter",broche:"R2.2",net:"SCL",genre:"local"}])))
+      throw new Error("deux étiquettes de noms différents sur un net");
+    /* supprimer_fil : R2.2 a deux fils, le bon est trouvé ; une broche au milieu du chemin : refus */
+    sheet([],[]);
+    const a=addComp("resistor",0,0); a.ref="R1"; const b=addComp("resistor",400,0); b.ref="R2";
+    const pa=allPins(a)[1], pb=allPins(b)[0];
+    S.wires.push({x1:pa.x,y1:pa.y,x2:pa.x,y2:pa.y-100},{x1:pa.x,y1:pa.y,x2:pb.x,y2:pb.y}); touchWires();
+    d.appliquer({lot:[{op:"supprimer_fil",de:"R1.2",a:"R2.1"}]});
+    if(S.wires.length!==1)throw new Error("le fil direct devait partir, le moignon rester : "+S.wires.length);
+    sheet([],[]);
+    const c=addComp("resistor",0,0); c.ref="R1"; const e=addComp("resistor",800,0); e.ref="R2";
+    const m=addComp("resistor",0,0); m.ref="R3"; m.rot=90;
+    const pc=allPins(c)[1], pe=allPins(e)[0], pm=allPins(m)[0]; m.x+=400-pm.x; m.y+=pc.y-pm.y;
+    S.wires.push({x1:pc.x,y1:pc.y,x2:pe.x,y2:pe.y}); touchWires();
+    if(!/passe par une autre broche/.test(msg([{op:"supprimer_fil",de:"R1.2",a:"R2.1"}])))throw new Error("broche au milieu : "+msg([{op:"supprimer_fil",de:"R1.2",a:"R2.1"}]));
+    /* symbole du catalogue inconnu de la page : dit sur la carte */
+    const lib=window.CSV_LIB;
+    window.CSV_LIB=[{"Part Name":"BIZARRE","Reference designator Prefix":"U","Empreinte Schématique":"lib/symbole/licorne.json"}];
+    try{
+      const pr=d.proposer({lot:[{op:"poser",catalogue:"BIZARRE",x:100,y:100}]});
+      if(!/symbole « licorne » inconnu de la page/.test(pr.apres))throw new Error("symbole inconnu non dit : "+pr.apres);
+    }finally{window.CSV_LIB=lib;}
+    if(!/pas de « nom » avec lui/.test(msg([{op:"feuille",creer:"A",nom:"B"}])))throw new Error("creer + nom");
+    /* renuméroter : r5 et R3 partagent le compteur */
+    sheet([],[]);
+    const x1=addComp("resistor",0,0); x1.ref="r5"; const x2=addComp("resistor",400,0); x2.ref="R3";
+    d.appliquer({lot:[{op:"renumeroter"}]});
+    if(x1.ref.toUpperCase()===x2.ref.toUpperCase())throw new Error("doublon de casse : "+x1.ref+" / "+x2.ref);
   }finally{global.Pilote=ancien;sheet([],[]);}
 });
 
