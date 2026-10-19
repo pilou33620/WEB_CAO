@@ -348,6 +348,76 @@ class TestLibDossierTemporaire(unittest.TestCase):
         self.assertTrue(all(c.get("Part Name") for c in cat["composants"]),
                         "une ligne vide est devenue un composant")
 
+    def _refus(self, url, corps):
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self._json(url, corps)
+        return ctx.exception.code
+
+    def test_13b_fichier_si_absent_jamais_d_ecrasement(self):
+        web_CAO.definir_dossier_lib(self.tmp, initialiser=False, persister=False)
+        fp = {"format": "pcbfp-1", "name": "ESSAI", "pads": []}
+        corps = {"type": "pcb", "nom": "ESSAI.json", "data": fp, "si_absent": True}
+        self.assertTrue(self._json("/api/lib/fichier", corps)["ok"])
+        chemin = os.path.join(self.tmp, "lib_empreinte_pcb", "ESSAI.json")
+        avant = open(chemin, "rb").read()
+        self.assertEqual(self._refus("/api/lib/fichier", dict(corps, data=dict(fp, name="AUTRE"))), 409)
+        self.assertEqual(open(chemin, "rb").read(), avant, "le fichier existant a bouge")
+        # sans si_absent : le comportement d'avant (remplacement)
+        self.assertTrue(self._json("/api/lib/fichier", {"type": "pcb", "nom": "ESSAI.json",
+                                                        "data": dict(fp, name="AUTRE")})["ok"])
+        self.assertIn(b"AUTRE", open(chemin, "rb").read())
+
+    def _ajout_garde_les_octets(self, encodage, fin, bom=False):
+        chemin = os.path.join(self.tmp, "LIB_composants.csv")
+        texte = open(chemin, "rb").read().decode("utf-8-sig").replace("\r\n", "\n").rstrip("\n")
+        texte = texte.replace("\n", fin) + fin
+        brut = (b"\xef\xbb\xbf" if bom else b"") + texte.encode(encodage, errors="replace")
+        with open(chemin, "wb") as f:
+            f.write(brut)
+        web_CAO.definir_dossier_lib(self.tmp, initialiser=False, persister=False)
+        total = self._json("/api/lib/composants")["total"]
+        r = self._json("/api/lib/composants", {"ajouter": {"Part Name": "ESSAI_LDO", "Value": "3V3 é"}})
+        self.assertEqual((r["ajoute"], r["total"]), ("ESSAI_LDO", total + 1))
+        apres = open(chemin, "rb").read()
+        self.assertTrue(apres.startswith(brut), "une ligne existante a change")
+        ajout = apres[len(brut):]
+        self.assertTrue(ajout.endswith(fin.encode()) and ajout.count(b"\n") == 1, ajout)
+        self.assertIn("3V3 é".encode(encodage), ajout)
+        relu = self._json("/api/lib/composants")
+        self.assertEqual(relu["total"], total + 1)
+        self.assertEqual(relu["composants"][-1]["Value"], "3V3 é")
+        return chemin, brut
+
+    def test_13c_ajout_utf8_crlf_octet_pour_octet(self):
+        self._ajout_garde_les_octets("utf-8", "\r\n", bom=True)
+
+    def test_13d_ajout_latin1_lf_octet_pour_octet(self):
+        self._ajout_garde_les_octets("latin1", "\n")
+
+    def test_13e_ajout_refus(self):
+        chemin, _ = self._ajout_garde_les_octets("latin1", "\r\n")
+        avant = open(chemin, "rb").read()
+        nom = self._json("/api/lib/composants")["composants"][0]["Part Name"]
+        url = "/api/lib/composants"
+        self.assertEqual(self._refus(url, {"ajouter": {"Part Name": nom.lower()}}), 409)
+        self.assertEqual(self._refus(url, {"ajouter": {"Part Name": "X", "Inconnue": "1"}}), 400)
+        self.assertEqual(self._refus(url, {"ajouter": {"Part Name": "X", "Value": "€"}}), 400)
+        self.assertEqual(self._refus(url, {"ajouter": {"Part Name": "X", "Value": "a\nb"}}), 400)
+        self.assertEqual(self._refus(url, {"ajouter": {"Part Name": "  "}}), 400)
+        self.assertEqual(self._refus(url, {"ajouter": {"Part Name": "X", "Value": ["a"]}}), 400)
+        self.assertEqual(open(chemin, "rb").read(), avant, "un refus a ecrit")
+
+    def test_13f_ajout_cree_la_colonne_brochage(self):
+        chemin = os.path.join(self.tmp, "LIB_composants.csv")
+        brut = b"Part Name;Value\r\nR1K;1k\r\n"
+        with open(chemin, "wb") as f:
+            f.write(brut)
+        web_CAO.definir_dossier_lib(self.tmp, initialiser=False, persister=False)
+        self._json("/api/lib/composants", {"ajouter": {"Part Name": "ESSAI_B", "Brochage": "1=VIN"}})
+        self.assertEqual(open(chemin, "rb").read(),
+                         b"Part Name;Value;Brochage\r\nR1K;1k\r\nESSAI_B;;1=VIN\r\n")
+        self.assertEqual(self._json("/api/lib/composants")["composants"][-1]["Brochage"], "1=VIN")
+
     def test_14_lib_en_ligne_de_commande_non_persistee(self):
         cfg = os.path.join(ROOT, "config_lib.json")
         if os.path.exists(cfg):

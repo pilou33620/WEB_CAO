@@ -800,8 +800,12 @@ def dossier_lib():
     return dossier_lib_defaut()
 
 
-def ecrire_texte_atomique(chemin, texte):
-    """Ecrit `texte` en UTF-8 via un fichier temporaire puis os.replace.
+# un ajout au catalogue relit puis reecrit le fichier : deux ajouts simultanes ne doivent pas se croiser
+VERROU_CATALOGUE = threading.Lock()
+
+
+def ecrire_texte_atomique(chemin, texte, encodage="utf-8"):
+    """Ecrit `texte` (en UTF-8 par defaut) via un fichier temporaire puis os.replace.
 
     Meme precaution que pour les profils et les projets : une coupure au
     mauvais moment laisse l'ancien fichier entier plutot qu'un catalogue
@@ -812,7 +816,7 @@ def ecrire_texte_atomique(chemin, texte):
     # dans le meme .tmp et le rename posait un melange des deux
     temp = "%s.%d-%d.tmp" % (chemin, os.getpid(), threading.get_ident())
     try:
-        with open(temp, "w", encoding="utf-8", newline="") as f:
+        with open(temp, "w", encoding=encodage, newline="") as f:
             f.write(texte)
         os.replace(temp, chemin)
     except OSError:
@@ -2474,6 +2478,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if not isinstance(charge, dict):
             raise ErreurLib(400, "Corps JSON invalide (objet attendu)")
 
+        if "ajouter" in charge:
+            return self._lib_composants_ajouter(charge["ajouter"])
+
         composants = charge.get("composants")
         if not isinstance(composants, list):
             raise ErreurLib(400, "Liste de composants manquante ou invalide")
@@ -2511,6 +2518,76 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             pass
 
         return {"ok": True, "total": len(composants), "message": "Composants enregistres"}
+
+    def _lib_composants_ajouter(self, ligne):
+        """Ajoute UNE ligne au catalogue sans reecrire les autres : le texte existant reste tel
+        quel, octet pour octet (encodage du fichier, fins de ligne), la ligne vient au bout. Une
+        Part Name deja presente (casse ignoree) est refusee : jamais d'ecrasement."""
+        if not isinstance(ligne, dict) or not ligne:
+            raise ErreurLib(400, "« ajouter » : une ligne de catalogue (objet colonne -> valeur)")
+        import csv
+        import io
+        with VERROU_CATALOGUE:
+            chemin = os.path.join(dossier_lib(), "LIB_composants.csv")
+            if not os.path.exists(chemin):
+                raise ErreurLib(404, "Fichier LIB_composants.csv introuvable")
+            with open(chemin, "rb") as f:
+                brut = f.read()
+            for enc in ("utf-8-sig", "latin1"):
+                try:
+                    texte = brut.decode(enc)
+                    break
+                except UnicodeDecodeError:
+                    continue
+            fin = "\r\n" if "\r\n" in texte else "\n"
+            lignes = [r for r in csv.reader(io.StringIO(texte), delimiter=';') if any(c.strip() for c in r)]
+            if not lignes:
+                raise ErreurLib(500, "Catalogue sans en-tete")
+            colonnes = [c.strip() for c in lignes[0]]
+            entete = texte.split(fin, 1)[0]
+            if "Brochage" in ligne and "Brochage" not in colonnes:
+                colonnes.append("Brochage")            # comme la page : la colonne vient a la fin
+                entete = entete + ";Brochage"
+            inconnues = [k for k in ligne if k not in colonnes]
+            if inconnues:
+                raise ErreurLib(400, "Colonne(s) inconnue(s) du catalogue : %s" % ", ".join(inconnues))
+            valeurs = {}
+            for k, v in ligne.items():
+                if not isinstance(v, (str, int, float)) or isinstance(v, bool):
+                    raise ErreurLib(400, "Colonne « %s » : texte attendu" % k)
+                v = str(v)
+                if re.search(r"[\x00-\x1f\x7f]", v):
+                    raise ErreurLib(400, "Colonne « %s » : une seule ligne, sans caractere de controle" % k)
+                valeurs[k] = v
+            nom = valeurs.get("Part Name", "").strip()
+            if not nom:
+                raise ErreurLib(400, "« Part Name » est obligatoire")
+            i_nom = colonnes.index("Part Name") if "Part Name" in colonnes else -1
+            existants = {(r[i_nom].strip().upper() if 0 <= i_nom < len(r) else "") for r in lignes[1:]}
+            if nom.upper() in existants:
+                raise ErreurLib(409, "« %s » est deja au catalogue (jamais d'ecrasement)" % nom)
+            sortie = io.StringIO()
+            csv.writer(sortie, delimiter=';', quoting=csv.QUOTE_MINIMAL, lineterminator=fin).writerow(
+                [valeurs.get(c, "") for c in colonnes])
+            corps = texte.split(fin, 1)[1] if fin in texte else ""
+            if corps and not corps.endswith(fin):
+                corps += fin
+            neuf = entete + fin + corps + sortie.getvalue()
+            ecrit = "utf-8" if enc == "utf-8-sig" else enc
+            prefixe = "\ufeff" if brut.startswith(b"\xef\xbb\xbf") else ""
+            try:
+                (prefixe + neuf).encode(ecrit)
+            except UnicodeEncodeError:
+                raise ErreurLib(400, "Un caractere ne passe pas dans l'encodage du catalogue (%s)" % ecrit)
+            try:
+                ecrire_texte_atomique(chemin, prefixe + neuf, ecrit)
+            except OSError as exc:
+                raise ErreurLib(500, "Impossible d'ecrire %s : %s" % (chemin, exc))
+            try:
+                ecrire_texte_atomique(os.path.join(ROOT, "LIB_composants.csv"), prefixe + neuf, ecrit)
+            except OSError:
+                pass
+            return {"ok": True, "ajoute": nom, "total": len(lignes)}
 
     def _lib_fichiers_liste(self):
         """Liste les fichiers d'empreintes PCB, symboles schematiques et modeles de simulation."""
@@ -2572,6 +2649,18 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             contenu = str(charge["contenu"])
         else:
             raise ErreurLib(400, "Champ 'data' ou 'contenu' requis")
+
+        if charge.get("si_absent") is True:
+            # jamais d'ecrasement : c'est le systeme qui refuse (O_EXCL), pas un « lire puis ecrire »
+            try:
+                fd = os.open(chemin, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+            except FileExistsError:
+                raise ErreurLib(409, "Le fichier existe deja : %s (jamais d'ecrasement)" % nom)
+            except OSError as exc:
+                raise ErreurLib(500, "Erreur d'ecriture : %s" % exc)
+            with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+                f.write(contenu)
+            return {"ok": True, "type": genre, "nom": nom}
 
         try:
             ecrire_texte_atomique(chemin, contenu)
