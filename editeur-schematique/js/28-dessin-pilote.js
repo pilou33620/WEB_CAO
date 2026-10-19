@@ -130,6 +130,22 @@ function dessinNetDe(b) { const g = dessinNets(); return g.has(b.cle) ? nets().l
 const dessinFils = () => S.wires.map(w => Object.assign({}, w));
 function dessinRemettreFils(copie) { S.wires.splice(0, S.wires.length, ...copie.map(w => Object.assign({}, w))); touchWires(); }
 
+/* L'étiquette posée et son fil (de la broche au bout) ne passent sur aucun fil ni composant :
+   on sonde des points, tous les 5 px, en laissant de côté les abords de la broche. */
+function dessinPlaceEtiquette(el, pin, bout) {
+  const surFil = p => S.wires.some(w => {
+    const lx = w.x2 - w.x1, ly = w.y2 - w.y1, l2 = lx * lx + ly * ly;
+    const t = l2 ? Math.max(0, Math.min(1, ((p.x - w.x1) * lx + (p.y - w.y1) * ly) / l2)) : 0;
+    return Math.hypot(w.x1 + t * lx - p.x, w.y1 + t * ly - p.y) < 3;
+  });
+  const dans = (r, p) => p.x > r.x1 && p.x < r.x2 && p.y > r.y1 && p.y < r.y2;
+  const pts = [], h = hitBox(el);
+  for (let x = h.x1; x <= h.x2; x += 5) for (let y = h.y1; y <= h.y2; y += 5) pts.push({ x, y });
+  for (let k = 0; k <= 8; k++) pts.push({ x: pin.x + (bout.x - pin.x) * k / 8, y: pin.y + (bout.y - pin.y) * k / 8 });
+  return !pts.some(p => Math.hypot(p.x - pin.x, p.y - pin.y) > 12 &&
+                        (surFil(p) || S.comps.some(c => c !== el && dans(hitBox(c), p))));
+}
+
 const dessinOuEst = el => "x " + dessinMm(el.x) + " y " + dessinMm(el.y) + " mm, " + (el.rot || 0) + "°" + (el.mir ? ", miroir" : "");
 
 /* Joue une opération ; rend la ligne de la carte. `ctx.dernier` : le dernier posé. */
@@ -237,8 +253,7 @@ const DESSIN_OPS = {
       throw dessinRefus(n, "etiqueter", "« net » : nom de 1 à 40 caractères, sans espace au début");
     const b = dessinBroche(o.broche, n, "etiqueter");
     const dx = b.pos.x - b.el.x, dy = b.pos.y - b.el.y;
-    const dir = Math.abs(dx) >= Math.abs(dy) ? { x: dx < 0 ? -1 : 1, y: 0 } : { x: 0, y: dy < 0 ? -1 : 1 };
-    const bout = { x: snap(b.pos.x + dir.x * 2 * DESSIN_MM), y: snap(b.pos.y + dir.y * 2 * DESSIN_MM) };
+    const dehors = Math.abs(dx) >= Math.abs(dy) ? { x: dx < 0 ? -1 : 1, y: 0 } : { x: 0, y: dy < 0 ? -1 : 1 };
     const avant = dessinNets();
     // les broches déjà sur un net de ce nom, sur cette feuille : l'étiquette doit les rejoindre
     const memes = [];
@@ -246,13 +261,24 @@ const DESSIN_OPS = {
       for (const nd of nt.nodes) memes.push(nd.id + "." + nd.pin); });
     const el = addComp(type, 0, 0);
     el.value = net;
-    for (const r of DESSIN_ANGLES) {                   // l'orientation dont le corps part dans la direction du fil
-      el.rot = r; el.x = 0; el.y = 0;
+    // VCC vers le haut, GND vers le bas, un port vers l'extérieur ; puis les autres côtés, le premier
+    // où ni le fil ni l'étiquette ne passent sur un fil ou un composant (sinon : vers l'extérieur)
+    const HAUT = { x: 0, y: -1 }, BAS = { x: 0, y: 1 };
+    const prefere = type === "vcc" ? [HAUT, dehors] : type === "gnd" ? [BAS, dehors] : [dehors];
+    const essais = prefere.concat([{ x: dehors.y, y: dehors.x }, { x: -dehors.y, y: -dehors.x }, HAUT, BAS, { x: -dehors.x, y: -dehors.y }]);
+    const placer = dir => {
+      const bout = { x: snap(b.pos.x + dir.x * 2 * DESSIN_MM), y: snap(b.pos.y + dir.y * 2 * DESSIN_MM) };
+      for (const r of DESSIN_ANGLES) {               // l'orientation dont le corps part dans la direction du fil
+        el.rot = r; el.x = 0; el.y = 0;
+        const q = pinPos(el, 0);
+        if (Math.sign(-q.x) === dir.x && Math.sign(-q.y) === dir.y) break;
+      }
       const q = pinPos(el, 0);
-      if (Math.sign(-q.x) === dir.x && Math.sign(-q.y) === dir.y) break;
-    }
-    const q = pinPos(el, 0);
-    el.x = bout.x - q.x; el.y = bout.y - q.y;
+      el.x = bout.x - q.x; el.y = bout.y - q.y;
+      return bout;
+    };
+    const dir = essais.find(d => dessinPlaceEtiquette(el, b.pos, placer(d))) || dehors;
+    const bout = placer(dir);
     if (bout.x !== b.pos.x || bout.y !== b.pos.y) S.wires.push({ x1: b.pos.x, y1: b.pos.y, x2: bout.x, y2: bout.y });
     touchWires(); resolveSplits(); touchWires();
     const ecart = dessinEcart(avant, memes.map(m => [b.cle, m]));

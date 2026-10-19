@@ -195,7 +195,8 @@ function schTypeDuCatalogue(item) {
   else compType = "ic";
 
   const symRaw = String(item["Empreinte Schématique"] || item["Empreinte Schematique"] || "").toLowerCase();
-  const sym = symRaw.replace(/\.json$/i, "").trim();
+  // « lib/symbole/regulator.json » → « regulator », comme l'empreinte PCB dans schPoserDepuisCatalogue
+  const sym = symRaw.replace(/^.*[\\/]/, "").replace(/\.json$/i, "").trim();
   if(sym && typeof defOf === "function" && typeof DEF_UNKNOWN !== "undefined") {
     try {
       const d = defOf(sym);

@@ -578,6 +578,13 @@ T("canal de pilotage : un montage dessiné en un lot (régulateur, deux condensa
     for(const [nom,liste] of Object.entries(att))
       if(JSON.stringify(membres(nom))!==JSON.stringify(liste))throw new Error(nom+" : "+JSON.stringify(membres(nom))+" au lieu de "+JSON.stringify(liste));
     if(S.hist.length<1)throw new Error("une étape attendue");
+    /* aucune étiquette n'est posée en travers d'un fil tracé avant elle */
+    for(const e of S.comps.filter(c=>defOf(c.type).noRef)){
+      const h=hitBox(e), pin=allPins(e)[0];
+      const coupe=S.wires.some(w=>[[w.x1,w.y1],[w.x2,w.y2],[(w.x1+w.x2)/2,(w.y1+w.y2)/2]].some(([x,y])=>
+        x>h.x1&&x<h.x2&&y>h.y1&&y<h.y2&&Math.hypot(x-pin.x,y-pin.y)>12));
+      if(coupe)throw new Error("l'étiquette "+e.type+" "+e.value+" est posée sur un fil");
+    }
   }finally{global.Pilote=ancien;sheet([],[]);}
 });
 
@@ -2736,6 +2743,9 @@ T("Explorateur visuel pop-up : initialisation, recherche, classification et pose
   el.rot = S.placeRot;
   schPoserDepuisCatalogue(el, S.placeLibItem);
   if(schTypeDuCatalogue(S.placeLibItem) !== "capacitor") throw new Error("type du catalogue : " + schTypeDuCatalogue(S.placeLibItem));
+  // le catalogue réel écrit le symbole avec son chemin : « lib/symbole/regulator.json »
+  if(schTypeDuCatalogue({"Part Name":"REG","Reference designator Prefix":"U","Empreinte Schématique":"lib/symbole/regulator.json"}) !== "regulator")
+    throw new Error("chemin du symbole non retiré : " + schTypeDuCatalogue({"Empreinte Schématique":"lib/symbole/regulator.json"}));
   if(el.specs["Voltage Rating"] !== "10V" || el.manufacturer !== "Murata" || el.csvMpn !== "GCM155R71A104KA55D")
     throw new Error("enrichissement du catalogue : " + JSON.stringify(el));
 
