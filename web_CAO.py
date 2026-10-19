@@ -1063,7 +1063,7 @@ PROJETS_PROFONDEUR = 3            # niveaux explores en listant (clients/acme/ca
 PROJETS_OUVERT = False            # vrai seulement si l'ecoute est locale
 # --projets-reseau : ouvre aussi au reseau la lecture/ecriture des projets SOUS
 # LES RACINES DECLAREES et des fichiers de la LIB active -- rien d'autre. Un
-# chemin tape hors des racines, le choix du dossier de LIB, la cle IA et les
+# chemin tape hors des racines, le choix du dossier de LIB et les
 # datasheets restent reserves a l'ecoute locale. A n'utiliser que sur un
 # reseau de confiance : ces routes n'ont pas de mot de passe (WEB_SUITE le
 # passe avec --reseau, qui fait deja ce pari pour le lanceur).

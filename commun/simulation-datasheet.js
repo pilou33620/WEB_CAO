@@ -12,7 +12,7 @@
    `SIM_PDN` ou `SIM.saisie` pourrait poser n'importe quelle clé, dans n'importe
    quelle unité : un 12,5 lu en mA et posé dans un champ en ampères ne produit
    ni refus ni champ vide, seulement un facteur mille. Ici chaque clé a son
-   unité ÉCRITE dans le catalogue que l'IA reçoit, et une valeur hors des bornes
+   unité ÉCRITE dans le catalogue que lit Claude, et une valeur hors des bornes
    physiques est refusée avant même d'être proposée.
 
    RIEN NE S'APPLIQUE SANS ÊTRE VU. `simDsPreparer` rend des lignes — valeur
@@ -303,7 +303,7 @@ function simDsReappliquerCapas(capas) {
 }
 
 /* ==========================================================================
-   CE QUE L'IA REÇOIT : le catalogue, les valeurs en cours, et les cibles.
+   CE QUE LIT CLAUDE (cao_sim_lire catalogue) : le catalogue, les valeurs en cours, et les cibles.
    ========================================================================== */
 function simDsCatalogue() {
   const L = [];
@@ -323,7 +323,8 @@ function simDsCatalogue() {
   }
 
   L.push("");
-  L.push("[condensateurs] Parasites des condensateurs de découplage du rail PDN, par repère, MPN ou valeur. " +
+  L.push("[condensateurs] Parasites des condensateurs de découplage du rail PDN, par repère, MPN ou valeur " +
+         "(cao_sim_ecrire ne les écrit pas encore : à donner à l'utilisateur, qui les saisit dans la page). " +
          "Champs : esr_mohm (mΩ, à la fréquence de résonance), esl_nh (nH), cap_nf (nF, capacité EFFECTIVE sous la tension du rail si la datasheet donne la courbe DC-bias).");
   const capas = SIM_PDN.condensateurs || [];
   if (capas.length) {
@@ -337,7 +338,7 @@ function simDsCatalogue() {
   }
 
   L.push("");
-  L.push("[bornes_dc] Bornes de la chute DC, par repère de composant. Champs : courant_ma (charge : courant TOTAL tiré par le composant sur ce rail, en mA, réparti ensuite sur ses broches) ou tension_v (source : tension imposée, en V).");
+  L.push("[bornes_dc] Bornes de la chute DC, par repère de composant (cao_sim_ecrire ne les écrit pas encore : à saisir dans la page). Champs : courant_ma (charge : courant TOTAL tiré par le composant sur ce rail, en mA, réparti ensuite sur ses broches) ou tension_v (source : tension imposée, en V).");
   const bornes = simDsBornes();
   if (bornes.length) {
     L.push("Bornes posées : " + bornes.map(b => (b.role === "source" ? "source " : "charge ") +
@@ -357,7 +358,7 @@ function simDsCatalogue() {
 }
 
 /* ==========================================================================
-   LA PROPOSITION DE L'IA, VÉRIFIÉE LIGNE PAR LIGNE
+   LA PROPOSITION (cao_sim_ecrire), VÉRIFIÉE LIGNE PAR LIGNE
    --------------------------------------------------------------------------
    `act` : {type:"sim_params", source, composant,
             valeurs:[{sim, cle, valeur, page, citation, confiance}],
@@ -365,7 +366,7 @@ function simDsCatalogue() {
             bornes_dc:[{composant, courant_ma | tension_v, page, citation}]}
    Rend {lignes, avertissements}. Une ligne refusée (`ok` faux) reste dans la
    table avec son motif : taire un refus laisserait croire que la valeur a été
-   oubliée par l'IA, alors qu'elle a été écartée ici.
+   oubliée, alors qu'elle a été écartée ici.
    ========================================================================== */
 function simDsPreparer(act) {
   act = act || {};

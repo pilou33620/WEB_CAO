@@ -852,18 +852,7 @@ cv.addEventListener("contextmenu",e=>{
   if(S.wireStart){S.wireStart=null;draw();}
   else if(S.drawStart){S.drawStart=null;draw();}
   else if(S.place){S.place=null;S.placeLibItem=null;setPalette(null);draw();}
-  else{
-    const p=mpos(e);
-    if(selCount() === 0 && typeof hitComp === "function"){
-      const el = hitComp(p.x, p.y);
-      if(el){ S.sel.add(el.id); refreshPanels(); draw(); }
-      else if(typeof hitWire === "function"){
-        const wi = hitWire(p.x, p.y);
-        if(wi >= 0){ S.selW.add(S.wires[wi]); refreshPanels(); draw(); }
-      }
-    }
-    clearSel(); refreshPanels(); draw();
-  }
+  else{clearSel(); refreshPanels(); draw();}
 });
 cv.addEventListener("dblclick",e=>{
   if(S.wireStart){S.wireStart=null;draw();return;}

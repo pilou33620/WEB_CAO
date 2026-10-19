@@ -1986,7 +1986,7 @@ elle appartient à l'analyse d'impédance et n'a rien à dire sous un autre ongl
 ### Régler les simulations depuis une datasheet
 
 Dans l'éditeur PCB et la visionneuse, Claude Code (par le MCP de web_suite) lit
-la datasheet lui-même et propose des valeurs pour **toutes** les simulations :
+la datasheet lui-même et propose des valeurs pour les simulations :
 il lit d'abord le catalogue (`cao_sim_lire`, quoi=catalogue), puis propose le lot
 par `cao_sim_ecrire`. La méthode (pire cas, page et citation) est dans la fiche
 `simulation.md` du skill `web-suite`.
@@ -1995,10 +1995,10 @@ par `cao_sim_ecrire`. La méthode (pire cas, page et citation) est dans la fiche
 |---|---|
 | PDN, fiche de la charge | fréquence d'horloge, IDD actif / veille, temps de réveil, front et courant des sorties, VDD min |
 | PDN, cible et régulateur | Vdd, ondulation admise, R_vrm (load regulation), f_vrm (bande passante de boucle), ΔI s'il est donné tel quel |
-| PDN, stratifié et condensateurs | εr, tanδ ; ESR, ESL et capacité effective, par repère, MPN ou valeur |
+| PDN, stratifié et condensateurs | εr, tanδ ; ESR, ESL et capacité effective, par repère, MPN ou valeur (ces derniers saisis dans la page) |
 | SI (impédance, Z diff, crosstalk, retour, santé) | temps de montée, amplitude, marge de bruit, impédances visées et tolérances, f₀ |
 | Bus synchrone | protocole, fréquence, tsu / th du récepteur, tco min / max de l'émetteur, pull-up I2C, débit UART |
-| Chute DC | courant total par composant (réparti sur ses broches), tension des sources, budgets, ambiante, conductivité du stratifié |
+| Chute DC | budgets, ambiante, conductivité du stratifié ; courant total par composant et tension des sources, saisis dans la page |
 
 **La liste est fermée** (`commun/simulation-datasheet.js`) : chaque clé a son
 unité et ses bornes physiques, que Claude lit avec les valeurs en cours. **Rien

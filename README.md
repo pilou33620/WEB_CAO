@@ -100,7 +100,7 @@ L'ancien assistant IA intégré est retiré. **Claude Code** pilote les pages ou
 | Option | Effet |
 | :--- | :--- |
 | `--port N` | Port d'écoute (défaut 8000, repli automatique 8001–8020) |
-| `--local` | N'écoute que la machine elle-même : projets, écriture de la LIB et clé IA autorisés |
+| `--local` | N'écoute que la machine elle-même : projets et écriture de la LIB autorisés |
 | `--host ADR` | Adresse d'écoute explicite |
 | `--navigateur` / `--sans-navigateur` | Force l'ouverture ou non du navigateur |
 | `--sans-pause` | Rend la main sans attendre Entrée (Windows) |
@@ -126,7 +126,7 @@ index.html               Accueil : outils, projet, bibliothèque, profil, mode t
 web_CAO.py               Serveur local et API (bibliothèque standard Python)
 editeur-schematique/     editeur-pcb/     gestion-lib/
 recherche-composants/    visionneuse-ipc2581/
-commun/                  Code partagé : panneaux, projets, profils, tactile, variantes de montage, IA, simulation
+commun/                  Code partagé : panneaux, projets, profils, tactile, variantes de montage, canal de pilotage, simulation
 python/                  Solveurs (MoM, diaphonie, DC, RF), parseur IPC-2581, bancs d'essai
 bancs-mesure/            Cartes d'essai à fabriquer et comparaison simulation / mesure (crosstalk)
 profils/                 Profils utilisateurs et fabricants

@@ -85,6 +85,31 @@ Ce qui manque au code des outils eux-mêmes. Les bancs, cartes d'essai, mesures
 et vérifications contre des documents externes sont à part, dans la section
 suivante.
 
+### Pilotage par Claude (MCP de web_suite) — relevé du 19/10/2026
+
+Ce que les modules du MCP ont laissé ouvert côté WEB_CAO (détail dans
+`web_suite/tasks/todo-*.md`) :
+
+- [ ] **Datasheet → simulation, deux familles non écrites** : les parasites des condensateurs
+  (ESR, ESL, capacité effective) et les bornes de la chute DC (courant d'une charge, tension
+  d'une source) sont au catalogue (`simDsCatalogue`) mais `cao_sim_ecrire` ne les écrit pas ;
+  aujourd'hui Claude les donne à saisir. Étendre `ECRITURE_CAO.simulation` (`commun/ecriture-cao.js`)
+  aux entrées `condensateurs` et `bornes_dc` de `simDsPreparer`.
+- [ ] **« Bus synchrone » absent de `cao_calcul`** : l'analyse existe dans la page (setup / hold,
+  temps de vol, skews), mais le canal ne sait pas la lancer (`piloteCaoCalcul`, `commun/pilote-cao.js`).
+- [ ] **Gestion LIB trop lourde sur le Pi** : environ 890 Mo au chargement (500 Mo ensuite), plus
+  encore en rechargeant ou en ouvrant la galerie des 269 empreintes ; l'onglet a été tué par le
+  noyau (OOM) pendant un essai. Mesurer ce qui coûte (table du catalogue, vignettes), puis alléger.
+- [ ] **Visionneuse : clic droit sans carte ouverte** → `TypeError` (`designer`, `04-interaction.js` :
+  `V.modele` nul, lecture de `percages`). Antérieur au retrait de l'assistant ; une garde suffit.
+- [ ] **Générateurs IPC-7351B** (`commun/composants-lib.js`) : les constantes des puces plus petites
+  que 0603 (tableau 3-6) sont « à confirmer sur la norme » ; QFN, DIP et barrette n'ont pas de
+  comparaison à une référence externe (seuls 0603, SOT-23-5 et SOIC-8 sont comparés à KiCad).
+- [ ] **LIB : SOIC-8 et SOT-23-5** ne suivent pas l'IPC-7351B (pastilles décalées de 0,15 à
+  0,23 mm) : à régénérer, ou à garder en connaissance de cause.
+- [ ] **Essais réels restants** : `cao_paire` et `cao_placement_auto` dans la vraie page après la
+  revue du routage ; le canal depuis l'iPad.
+
 ### Code en double à fusionner (relevé par l'audit du 16/10/2026)
 L'audit complet a corrigé les défauts et retiré le code mort ; ces doublons, eux, sont des chantiers à part (/spec puis /plan) : chaque copie doit être corrigée N fois, et certaines ont déjà divergé.
 - [ ] **Adaptateurs de simulation éditeur / visionneuse** : environ 920 lignes à 60–100 % identiques entre `editeur-pcb/js/19-simulation.js` et `visionneuse-ipc2581/js/07-simulation.js` (`simRetourValeurs`, `simRetourTrace`, `simZValeurs`, `simXtFentes`, `simDocDiff`, `simXtDetours`, `simZNumeroLot`, `simVoile`, `simZTrace`, `simXtCoupe`, `simDCCercle`, `simEstResistance*`, `pcbParseResistance` / `simParseResistance`). Déjà divergé : `plans_sans_cuivre` (la visionneuse l'envoie, `simCheveluRes` le perd, `simRetourValeursIpc` n'a pas la branche), libellés « portée supposée » / « découplages non cherchés » côté visionneuse seulement. À ranger dans `commun/` avec un rappel de coordonnées et de nom de couche.

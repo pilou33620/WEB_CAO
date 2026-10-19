@@ -3954,7 +3954,7 @@ cv.addEventListener("pointerdown",e=>{
   }
   if(PTR_PCB.size>2)return;
 
-  // appui long (tactile) : déclenche menu contextuel / annulation
+  // appui long (tactile) : comme le clic droit, annule le geste en cours ou désélectionne
   if(e.pointerType==="touch"&&e.button===0){
     cancelLongpress();
     LONGPRESS_START={x:e.clientX,y:e.clientY,id:e.pointerId};
@@ -4771,20 +4771,7 @@ cv.addEventListener("contextmenu",e=>{
   if(S.route)commitRoute();
   else if(S.zoneDraft)closeZone();
   else if(S.edgeDraft)closeEdge();
-  else{
-    if(selCount() === 0 && typeof hitTest === "function"){
-      const r = cv.getBoundingClientRect();
-      const w = s2w(e.clientX - r.left, e.clientY - r.top);
-      const h = hitTest(w.x, w.y);
-      if(h){
-        if(h.track){ S.sel.tracks.add(h.track); if(h.track.net) S.hlNet = h.track.net; }
-        else if(h.fp){ S.sel.fps.add(h.fp.id); }
-        else if(h.via){ S.sel.vias.add(h.via); if(h.via.net) S.hlNet = h.via.net; }
-        refreshPanels(); draw();
-      }
-    }
-    clearSel();S.hlNet=null;refreshPanels();draw();
-  }
+  else{clearSel();S.hlNet=null;refreshPanels();draw();}
 });
 cv.addEventListener("dblclick",e=>{
   if(S.dp)dpCommit();

@@ -452,6 +452,14 @@ const asyncTests = (async () => {
   verifier(r.empreinte && r.empreinte.pads.length === 5, "lib_kicad_convertir");
 })();
 
+/* ---------- escapeHtml (04-ui.js) : protège ?nom= avant innerHTML dans l'éditeur ---------- */
+{
+  const src = lire("gestion-lib/js/04-ui.js").match(/function escapeHtml[\s\S]*?\n}/)[0];
+  const esc = vm.runInNewContext(src + ";escapeHtml");
+  verifier(esc(`<img src=x onerror="a('1')">&`) === "&lt;img src=x onerror=&quot;a(&#39;1&#39;)&quot;&gt;&amp;" && esc(null) === "",
+    "escapeHtml échappe < > & \" ' et rend vide pour null");
+}
+
 /* ---------- la LIB réelle passe les contrôles ---------- */
 const LIB = [process.env.WEB_CAO_LIB, path.join(RACINE, "LIB"), path.join(RACINE, "..", "PROJETS", "LIB_CAO")]
   .find(d => d && fs.existsSync(path.join(d, "lib_empreinte_pcb")));
