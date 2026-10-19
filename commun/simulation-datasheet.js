@@ -315,7 +315,9 @@ function simDsCatalogue() {
       const act = simDsLire(c);
       const sup = (typeof c.suppose === "function" && c.suppose()) ? ", supposée" : "";
       const u = c.choix ? "un de : " + c.choix.join(", ") : (c.unite || "sans unité");
-      L.push("- " + g.cle + "." + c.cle + " (" + u + ") [actuel : " + simDsTexte(act) + sup + "] " +
+      // les bornes que cao_sim_ecrire applique : les annoncer évite un refus « hors des bornes »
+      const bornes = !c.choix && c.min != null && c.max != null ? " [bornes : " + simDsTexte(c.min) + " … " + simDsTexte(c.max) + "]" : "";
+      L.push("- " + g.cle + "." + c.cle + " (" + u + ") [actuel : " + simDsTexte(act) + sup + "]" + bornes + " " +
              c.lib + ". Où : " + c.ou);
     }
   }

@@ -5709,6 +5709,7 @@ T("Datasheet : le catalogue nomme chaque simulation, ses clés et leurs unités"
                    "pdn_fiche.iActifMa (mA)", "si.tr (ns)", "bus.tsu (ns)", "pdn.fVrmKhz (kHz)", "C2 10uF 0603 MPN GRM188R61A106MAAL"])
     if (c.indexOf(k) < 0) throw new Error("« " + k + " » absent du catalogue");
   if (c.indexOf("Charge du rail PDN (la fiche pdn_fiche la décrit) : U1") < 0) throw new Error("la charge du rail n'est pas nommée");
+  if (!/pdn_fiche\.iActifMa \(mA\) \[actuel : [^\]]*\] \[bornes : [^\]]+ … [^\]]+\]/.test(c)) throw new Error("bornes absentes du catalogue");
 });
 
 T("Datasheet : ce qui est hors bornes, inconnu ou sans cible est refusé, avec son motif", function(){
