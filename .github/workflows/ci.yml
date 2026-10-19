@@ -110,6 +110,7 @@ jobs:
           if [ "$LIB_REELLE" = 1 ]; then node gestion-lib/test/banc-catalogue.js
           else echo "::warning title=Banc sauté::banc-catalogue.js : la LIB privée n'est pas disponible ici (voir l'étape LIB)."; fi
           node gestion-lib/test/banc-import-jlc.js
+          node gestion-lib/test/banc-composants.js
 
       - name: Assistant IA — échappement du HTML du modèle
         run: |
