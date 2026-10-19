@@ -26511,6 +26511,7 @@ TA("canal de pilotage : cao_vue cadre et masque sans écrire, cao_drc rend le DR
   try{
     piloteCao("pcb");
     loadDoc(exemple1());
+    S.undo.length=0;                       // pile pleine après les essais précédents : un push n'en changerait pas la longueur
     const pile=S.undo.length, dirty=S.dirty;
     S.scale=1;S.ox=0;S.oy=0;
     if(!/ni repère ni net/.test(await refus({cadrer:"ZZ9"}))||S.ox!==0)throw new Error("repère inconnu : la vue a bougé");
@@ -26537,6 +26538,48 @@ TA("canal de pilotage : cao_vue cadre et masque sans écrire, cao_drc rend le DR
     if(!erreurs||(t.match(/\[erreur\]/g)||[]).length!==erreurs)throw new Error(erreurs+" erreur(s) attendue(s) :\n"+t);
     if(S.listTab!=="drc")throw new Error("l'onglet DRC devait s'ouvrir, comme au bouton");
     if(S.undo.length!==pile||S.dirty!==dirty)throw new Error("le DRC a écrit");
+  }finally{global.Pilote=ancien;}
+});
+
+TA("canal de pilotage : cao_composants_ecrire au PCB, un lot en une étape, DRC avant → après",async()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  const refus=(a,motif)=>{
+    const n=S.undo.length, avant=serialize();
+    let m="";try{cmds.cao_composants_ecrire.proposer(a);}catch(e){m=e.message;}
+    if(!motif.test(m))throw new Error("refus attendu "+motif+", lu « "+m+" »");
+    if(S.undo.length!==n||serialize()!==avant)throw new Error("un refus a écrit : "+motif);
+  };
+  try{
+    piloteCao("pcb");
+    loadDoc(exemple1());
+    S.undo.length=0;                       // la pile est pleine (80) après les essais précédents : sa longueur ne bougerait plus
+    const d=cmds.cao_composants_ecrire;
+    if(!(d&&d.ecriture&&d.historique))throw new Error("écriture par l'historique attendue");
+    const u1=S.fps.find(f=>f.ref==="U1"), x0=ux(u1.x);
+    const avant=serialize(), n=S.undo.length;
+    const lot=[{ref:"u1",champs:{x:x0+5,rotation:450}},
+               {ref:"R2",champs:{face:"dessous",valeur:"2k2",ref:"R20"}},
+               {ref:"R1",champs:{boitier:"0805"}}];
+    const prop=d.proposer({lot});
+    if(serialize()!==avant)throw new Error("proposer a écrit");
+    if(!/^U1\.rotation : 90$/m.test(prop.apres)||!/^U1\.x : /m.test(prop.avant)||!/^R2\.face : dessus$/m.test(prop.avant)||!/^R1\.boitier : 0805$/m.test(prop.apres))
+      throw new Error("carte : "+JSON.stringify(prop));
+    d.appliquer({lot},prop);
+    const fp=r=>S.fps.find(f=>f.ref===r);
+    if(S.undo.length!==n+1)throw new Error("une seule étape attendue, "+(S.undo.length-n));
+    if(ux(fp("U1").x)!==r3(x0+5)||fp("U1").rot!==90||!fp("R20")||fp("R20").side!==1||fp("R20").value!=="2k2"||fp("R1").pkg!=="0805")
+      throw new Error("lot mal appliqué");
+    const drc=runDrc().filter(x=>!x.info).length;
+    if(!new RegExp("^DRC : \\d+ erreurs? avant → "+drc+" après\\.$","m").test(prop.apres))throw new Error("bilan DRC : "+prop.apres);
+    undo();
+    if(!fp("R2")||fp("R2").side||ux(fp("U1").x)!==x0||fp("R1").pkg!=="0603")throw new Error("Ctrl+Z ne remet pas tout");
+    refus({lot:[{ref:"R1",champs:{boitier:"ZZZ-99"}}]},/« ZZZ-99 » inconnu des empreintes/);
+    refus({lot:[{ref:"R1",champs:{ref:"r3"}}]},/« r3 » est déjà pris/);
+    refus({lot:[{ref:"R1",champs:{x:2000}}]},/à ±1000/);
+    refus({lot:[{ref:"R1",champs:{face:"gauche"}}]},/dessus ou dessous/);
+    refus({lot:[{ref:"R1",champs:{rotation:"90"}}]},/nombre de degrés/);
+    refus({lot:[{ref:"Z9",champs:{valeur:"1"}},{ref:"R1",champs:{valeur:"2"}}]},/Z9.*introuvable/);
   }finally{global.Pilote=ancien;}
 });
 

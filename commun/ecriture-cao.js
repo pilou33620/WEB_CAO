@@ -23,7 +23,9 @@ const ECRITURE_CAO = (function () {
      - titre : le titre de la carte ;
      - verifier(args) → {lignes:[{quoi, avant, apres}], refus:[]} sans rien toucher ;
      - muter(args) : applique, sans push() ;
-     - rafraichir() : redessine la page.
+     - rafraichir() : redessine la page ;
+     - drc : au PCB, le DRC tourne avant et après, et son bilan s'ajoute au texte « après »
+       de la carte, que pilote.js renvoie à Claude.
      La carte garde ses lignes : au clic, si la vérification ne redonne pas les mêmes (le
      document a bougé sous la carte), rien n'est appliqué. */
   function lot(def) {
@@ -49,11 +51,28 @@ const ECRITURE_CAO = (function () {
         const v = verifier(args);
         if (prop && prop.lignes !== undefined && JSON.stringify(v.lignes) !== prop.lignes)
           throw new Error("Le document a changé depuis la carte : rien n'est appliqué, à reproposer.");
+        const avant = def.drc ? erreursDrc() : null;
         push();
         def.muter(args);
         def.rafraichir();
+        if (def.drc && prop) prop.apres += "\n" + bilanDrc(avant, erreursDrc());
       },
     };
+  }
+
+  /* ---------- DRC avant → après (PCB) ---------- */
+  const DRC_MAX = 80;
+  const cleDrc = d => d.msg + "|" + Math.round(d.x * 100) + "|" + Math.round(d.y * 100);
+  function erreursDrc() { return runDrc().filter(d => !d.info); }
+  function bilanDrc(avant, apres) {
+    const vues = new Set(avant.map(cleDrc));
+    const neuves = apres.filter(d => !vues.has(cleDrc(d)));
+    const pl = n => n + " erreur" + (n > 1 ? "s" : "");
+    const lignes = ["DRC : " + pl(avant.length) + " avant → " + apres.length + " après."];
+    if (neuves.length) lignes.push("Nouvelles erreurs (" + neuves.length + ") :");
+    for (const d of neuves.slice(0, DRC_MAX)) lignes.push("- " + d.msg + " (x " + ux(d.x) + " y " + uy(d.y) + " mm)");
+    if (neuves.length > DRC_MAX) lignes.push("... (" + (neuves.length - DRC_MAX) + " de plus : cao_drc les liste)");
+    return lignes.join("\n");
   }
 
   /* ---------- composants du schéma ----------
@@ -138,5 +157,78 @@ const ECRITURE_CAO = (function () {
 
   const COMPOSANTS_SCH = lot({ titre: "Composants du schéma", verifier: verifierSch, muter: muterSch, rafraichir: rafraichirSch });
 
-  return { lot, composantsSch: COMPOSANTS_SCH, LOT_MAX };
+  /* ---------- composants du PCB ----------
+     Position dans le repère de l'utilisateur (ux/uy, wxu/wyu), comme le panneau. Face,
+     position et rotation passent par transformFps : le cuivre accroché suit, selon la
+     préférence de l'utilisateur (S.moveEtch). */
+  const FACES = { dessus: 0, dessous: 1 };
+  const CHAMPS_PCB = ["ref", "valeur", "boitier", "face", "x", "y", "rotation"];
+  const POSE = ["face", "x", "y", "rotation"];
+  const cleRef = r => String(r || "").trim().toUpperCase();
+  const empreinte = ref => typeof ref === "string" ? S.fps.find(f => cleRef(f.ref) === cleRef(ref)) : null;
+  const angle = v => ((v % 360) + 360) % 360;
+
+  function verifierPcb(args) {
+    const lignes = [], refus = [];
+    const pris = new Set(S.fps.map(f => cleRef(f.ref)).filter(Boolean)), vus = new Set();
+    for (const e of args.lot) {
+      const fp = e && empreinte(e.ref);
+      if (!fp) { refus.push("repère « " + (e && e.ref) + " » introuvable (voir cao_pcb_lire composants)"); continue; }
+      if (vus.has(fp)) { refus.push(fp.ref + " : deux fois dans le lot"); continue; }
+      vus.add(fp);
+      const ch = e.champs;
+      if (!ch || typeof ch !== "object" || Array.isArray(ch) || !Object.keys(ch).length) { refus.push(fp.ref + " : « champs » vide"); continue; }
+      for (const k of Object.keys(ch)) {
+        if (!CHAMPS_PCB.includes(k)) { refus.push(fp.ref + " : champ « " + k + " » inconnu (" + CHAMPS_PCB.join(", ") + ")"); continue; }
+        const quoi = fp.ref + "." + k, v = ch[k];
+        if (k === "ref") {
+          if (typeof v !== "string" || !REF.test(v)) { refus.push(quoi + " : lettre puis lettres, chiffres ou _, 20 au plus"); continue; }
+          if (cleRef(v) !== cleRef(fp.ref) && pris.has(cleRef(v))) { refus.push(quoi + " : « " + v + " » est déjà pris"); continue; }
+          pris.delete(cleRef(fp.ref)); pris.add(cleRef(v));
+          if (v !== fp.ref) lignes.push({ quoi, avant: fp.ref, apres: v });
+        } else if (k === "valeur") {
+          if (texte(v, quoi, refus) !== null && v !== (fp.value || "")) lignes.push({ quoi, avant: fp.value || "", apres: v });
+        } else if (k === "boitier") {
+          if (texte(v, quoi, refus) === null) continue;
+          // la page ignore en silence un boîtier hors table ; ici, c'est un refus
+          const g = v.trim() ? pkgGeom(v.trim(), fpWiredPins(fp)) : null;
+          if (!g || (fpFree(fp) && !g.pads)) { refus.push(quoi + " : « " + v + " » inconnu des empreintes (bibliothèque ou table de boîtiers)"); continue; }
+          if (v.trim() !== (fp.pkg || "")) lignes.push({ quoi, avant: fp.pkg || "", apres: v.trim() });
+        } else if (k === "face") {
+          if (!Object.prototype.hasOwnProperty.call(FACES, v)) { refus.push(quoi + " : dessus ou dessous"); continue; }
+          const avant = fp.side ? "dessous" : "dessus";
+          if (v !== avant) lignes.push({ quoi, avant, apres: v });
+        } else {
+          if (typeof v !== "number" || !Number.isFinite(v) || (k !== "rotation" && Math.abs(v) > 1000)) {
+            refus.push(quoi + (k === "rotation" ? " : nombre de degrés" : " : nombre de mm, à ±1000")); continue;
+          }
+          const avant = k === "x" ? ux(fp.x) : k === "y" ? uy(fp.y) : angle(fp.rot || 0);
+          const apres = k === "rotation" ? angle(v) : r3(v);
+          if (apres !== avant) lignes.push({ quoi, avant, apres });
+        }
+      }
+    }
+    return { lignes, refus };
+  }
+
+  function muterPcb(args) {
+    const cibles = args.lot.map(e => [empreinte(e.ref), e.champs]);
+    for (const [fp, ch] of cibles) {
+      if ("ref" in ch) fp.ref = ch.ref;
+      if ("valeur" in ch) fp.value = ch.valeur;
+      if ("boitier" in ch) { fp.pkg = ch.boitier.trim(); applyPkgGeom(fp); }
+      if (POSE.some(k => k in ch)) transformFps([fp.id], () => {
+        if ("face" in ch) fp.side = FACES[ch.face];
+        if ("x" in ch) fp.x = wxu(ch.x);
+        if ("y" in ch) fp.y = wyu(ch.y);
+        if ("rotation" in ch) fp.rot = angle(ch.rotation);
+      });
+    }
+  }
+
+  function rafraichirPcb() { touch(); refreshPanels(); draw(); }
+
+  const COMPOSANTS_PCB = lot({ titre: "Composants du PCB", verifier: verifierPcb, muter: muterPcb, rafraichir: rafraichirPcb, drc: true });
+
+  return { lot, composantsSch: COMPOSANTS_SCH, composantsPcb: COMPOSANTS_PCB, LOT_MAX };
 })();

@@ -206,6 +206,7 @@ function piloteCao(page) {
   if (page === "pcb" || page === "visionneuse-ipc") Pilote.commande("cao_calcul", { executer: piloteCaoCalcul });
   if (page === "schema") Pilote.commande("cao_valeur_composant", PILOTE_VALEUR);
   if (page === "schema") Pilote.commande("cao_composants_ecrire", ECRITURE_CAO.composantsSch);
+  if (page === "pcb") Pilote.commande("cao_composants_ecrire", ECRITURE_CAO.composantsPcb);
   for (const f of PILOTE_LIRE[page] || []) Pilote.commande("cao_" + f + "_lire", { executer: async a => piloteLire(f, a) });
   if (PILOTE_LIRE[page]) Pilote.commande("cao_vue", { executer: a => piloteVue(page, a) });
   if (page === "pcb") Pilote.commande("cao_drc", { executer: piloteDrc });
