@@ -125,6 +125,8 @@ async function refuse(promesse, motif) {
          "U1 = MCU (QFN-32), couche TOP, x 1 y 2, rotation 90°.\nBroches (2) :\n- 1 → GND\n- 2 → non connectée");
     egal(await c.executer({ quoi: "nets", filtre: "gn" }), "- GND [Défaut] : 12.346 mm de pistes, 1 couche(s)");
     await refuse(c.executer({ quoi: "drc" }), /« quoi » inconnu.*empilage, composants, composant, nets, net/);
+    for (const quoi of ["__proto__", "constructor", "toString"])     // noms hérités de Object.prototype
+      await refuse(c.executer({ quoi }), /« quoi » inconnu/);
     await refuse(page("visionneuse-ipc", { V: { modele: null } }).declare.commandes.cao_ipc_lire.executer({ quoi: "nets" }),
                  /Aucun fichier IPC-2581 ouvert/);
   });
@@ -142,6 +144,8 @@ async function refuse(promesse, motif) {
     await c.executer({ quoi: "simulation", analyse: "pdn", afficher: true });
     egal(p.appels, [["simAllerFamille", "pi"], ["simAllerAnalyse", "pdn"]]);
     await refuse(c.executer({ quoi: "simulation", analyse: "rien", afficher: true }), /Analyse « rien » inconnue/);
+    await refuse(c.executer({ quoi: "simulation", analyse: "constructor", afficher: true }), /Analyse « constructor » inconnue/);
+    egal(await c.executer({ quoi: "simulation", analyse: "valueOf" }).then(t => /inconnue/.test(t)), true);
     await refuse(page("pcb").declare.commandes.cao_sim_lire.executer({ quoi: "simulations" }), /simulations ne sont pas chargées/);
   });
 
@@ -157,6 +161,9 @@ async function refuse(promesse, motif) {
     await refuse(vue.executer({ feuille: 2 }), /feuille.*schéma/);
     await refuse(vue.executer({}), /Rien à faire/);
     egal(p.appels, [], "un refus ne touche à rien");
+    const longue = page("visionneuse-ipc", { V: { ...v, couches: Array.from({ length: 300 }, (_, i) => ({ nom: "L" + i })) } });
+    const e = await longue.declare.commandes.cao_vue.executer({ couches: ["NULLE"] }).catch(e => e.message);
+    egal([/L39,/.test(e), /L40,/.test(e), /260 couches de plus/.test(e)], [true, false, true], "liste des couches bornée");
     const t = await vue.executer({ cadrer: "u1", surligner: "gnd", couches: ["top"] });
     egal(p.appels, [["pnlCouches"], ["dessiner"], ["choisirComp", "U1", true], ["choisirNet", 0, false]]);
     egal(v.couches.map(c => c.visible), [true, false], "seules les couches demandées restent visibles");

@@ -71,16 +71,19 @@ function piloteLire(famille, args) {
     throw new Error("Aucun fichier IPC-2581 ouvert dans la visionneuse.");
   if (famille === "sim" && !LECTURE_CAO.aides.simRapportsDispo())
     throw new Error("Les simulations ne sont pas chargées dans cette page.");
-  const outils = LECTURE_CAO[famille], o = outils[args.quoi];
+  const outils = LECTURE_CAO[famille], o = Object.hasOwn(outils, args.quoi) && outils[args.quoi];
   if (!o) throw new Error("« quoi » inconnu ici : " + Object.keys(outils).join(", ") + ".");
-  if (famille === "sim" && args.afficher && args.analyse) piloteAfficherAnalyse(args.analyse);
+  if (famille === "sim" && args.afficher) {
+    if (!args.analyse) throw new Error("« afficher » : précise « analyse » (voir la lecture « simulations »).");
+    piloteAfficherAnalyse(args.analyse);
+  }
   return [].concat(o.fn(args)).join("\n");
 }
 
 /* Le rapport complet n'existe que pour l'analyse affichée : y passer, comme un clic sur l'onglet. */
 function piloteAfficherAnalyse(k) {
-  const fam = SIM_FAMILLES.find(f => f.analyses.includes(k));
-  if (!fam || !SIM_RAP_ETAT[k]) throw new Error("Analyse « " + k + " » inconnue. Analyses : " + Object.keys(SIM_RAP_ETAT).join(", ") + ".");
+  const fam = typeof SIM_FAMILLES !== "undefined" && SIM_FAMILLES.find(f => f.analyses.includes(k));
+  if (!fam || !Object.hasOwn(SIM_RAP_ETAT, k)) throw new Error("Analyse « " + k + " » inconnue. Analyses : " + Object.keys(SIM_RAP_ETAT).join(", ") + ".");
   simAllerFamille(fam.cle);
   simAllerAnalyse(k);
 }
@@ -89,9 +92,9 @@ function piloteAfficherAnalyse(k) {
    premier changement : un repère ou une couche inconnus laissent la vue telle quelle.
    Pas de phare animé (18-reperage.js) : la capture qui suit le montrerait à moitié. */
 function piloteCible(page, v) {
-  const q = String(v).toLowerCase();
   if (page === "schema") return schCibleTrouver(v);
   if (page === "pcb") return pcbCibleTrouver(v);
+  const q = String(v).toLowerCase();
   const ref = [...V.parRef.keys()].find(r => r.toLowerCase() === q);
   // choisirComp sans centrer désélectionne le composant déjà choisi : ne pas le rappeler
   if (ref) return { cle: ref, aller: garder => { if (!(garder && V.comp === ref)) choisirComp(ref, !garder); } };
@@ -107,38 +110,81 @@ function piloteCouches(page, noms) {
   const voulues = new Set();
   for (const n of noms) {
     const t = toutes.find(x => String(x.nom).toLowerCase() === String(n).toLowerCase());
-    if (!t) throw new Error("Couche « " + n + " » inconnue. Couches : " + toutes.map(x => x.nom).join(", ") + ".");
+    if (!t) throw new Error("Couche « " + n + " » inconnue. Couches : " + LECTURE_CAO.aides.borner(toutes.map(x => x.nom), 40, "couches").join(", ") + ".");
     voulues.add(t.c);
   }
   return () => {
     for (const { c } of toutes) c[page === "pcb" ? "vis" : "visible"] = voulues.has(c);
     // la visionneuse n'enregistre pas ce choix dans ses préférences (prefEcrire) : il vient de Claude
-    if (page === "pcb") { touch(); buildLayers(); buildTabs(); draw(); } else { pnlCouches(); dessiner(); }
+    // pas de touch() : S.ver est la révision de la carte, la changer périmerait les simulations
+    if (page === "pcb") { buildLayers(); buildTabs(); draw(); } else { pnlCouches(); dessiner(); }
   };
+}
+
+/* Feuilles du schéma où se trouve une cible : celle du repère, ou celles des broches du net. */
+function schFeuillesDe(t) {
+  const q = String(t.cle).trim().toUpperCase();
+  if (t.type === "composant")
+    return [S.pages.findIndex((p, i) => (i === S.page ? S.comps : p.comps || []).some(c => (c.ref || "").trim().toUpperCase() === q))];
+  const g = docNets().groups.find(x => x.name === t.cle);
+  return g ? [...new Set(g.members.map(m => m.page))] : [];
+}
+
+/* Aller à une cible. Surligner un net ne touche pas à la sélection : sélectionner tout son
+   routage (selectNetRouting, selectNet) le livrerait à la touche Suppr de l'utilisateur. */
+function piloteAller(page, t, garder, feuille) {
+  if (page === "visionneuse-ipc") return t.aller(garder);
+  const net = /^net/.test(t.type);
+  if (page === "schema" && net) {
+    if (S.page !== feuille) gotoPage(feuille);         // aller() irait à la feuille du premier membre
+    const n = nets().list.find(x => x.name === t.cle);
+    if (garder) { S.hoverNet = n || null; return draw(); }
+    selectNet(n);
+    const b = rpNetBox(n);
+    if (b) rpCadrer(b);
+    return draw();
+  }
+  if (garder && net) { S.hlNet = t.cle; return draw(); }
+  const vue = [S.scale, S.ox, S.oy];
+  t.aller();
+  if (garder) { [S.scale, S.ox, S.oy] = vue; draw(); }   // surligner sans bouger la vue
 }
 
 async function piloteVue(page, a) {
   if (page === "visionneuse-ipc" && !(typeof V !== "undefined" && V && V.modele))
     throw new Error("Aucun fichier IPC-2581 ouvert dans la visionneuse.");
   const faire = [], dit = [];
+  let feuille = page === "schema" ? S.page : null;     // la feuille affichée après chaque étape
   if (a.feuille != null) {
     if (page !== "schema") throw new Error("« feuille » : seulement au schéma.");
-    const i = a.feuille - 1;
-    if (!S.pages[i]) throw new Error("Feuille " + a.feuille + " inconnue : 1 à " + S.pages.length + ".");
-    faire.push(() => gotoPage(i)); dit.push("feuille f" + a.feuille);
+    if (!Number.isInteger(a.feuille) || !S.pages[a.feuille - 1])
+      throw new Error("Feuille " + a.feuille + " inconnue : 1 à " + S.pages.length + ".");
+    feuille = a.feuille - 1;
+    faire.push(() => gotoPage(feuille)); dit.push("feuille f" + a.feuille);
   }
-  if (a.couches) { faire.push(piloteCouches(page, a.couches)); dit.push("couches visibles : " + a.couches.join(", ")); }
+  if (a.couches) {
+    if (!Array.isArray(a.couches)) throw new Error("« couches » : une liste de noms de couches.");
+    faire.push(piloteCouches(page, a.couches)); dit.push("couches visibles : " + a.couches.join(", "));
+  }
   if (a.ajuster) { faire.push(() => fit()); dit.push("vue ajustée à tout le document"); }
   for (const [cle, garder] of [["cadrer", false], ["surligner", true]]) {
     if (a[cle] == null) continue;
     const t = piloteCible(page, a[cle]);
     if (!t) throw new Error("« " + a[cle] + " » : ni repère ni net de cette page (voir les lectures « composants » et « nets »).");
-    faire.push(() => {
-      const vue = page === "visionneuse-ipc" ? null : [S.scale, S.ox, S.oy];
-      if (page === "visionneuse-ipc") t.aller(garder); else t.aller();
-      if (garder && vue) { [S.scale, S.ox, S.oy] = vue; draw(); }      // surligner sans bouger la vue
-    });
-    dit.push((garder ? "surligné " : "cadré sur ") + t.cle + (t.net && !garder ? " (la visionneuse surligne un net sans le cadrer)" : ""));
+    if (page === "schema") {
+      const fs = schFeuillesDe(t);
+      if (!fs.includes(feuille)) {
+        // surligner garde la vue, et « feuille » est explicite : ni l'un ni l'autre ne change de feuille en douce
+        if (garder || a.feuille != null)
+          throw new Error("« " + t.cle + " » est sur " + fs.map(i => "f" + (i + 1)).join(", ") + ", pas sur f" + (feuille + 1) +
+                          (garder ? " : donne « feuille », ou utilise « cadrer »." : " : change « feuille »."));
+        feuille = fs[0];
+      }
+    }
+    const f = feuille;
+    faire.push(() => piloteAller(page, t, garder, f));
+    dit.push((garder ? "surligné " : "cadré sur ") + t.cle + (page === "schema" && !garder ? " (f" + (f + 1) + ")" : "") +
+             (t.net && !garder ? " (la visionneuse surligne un net sans le cadrer)" : ""));
   }
   if (!faire.length) throw new Error("Rien à faire : cadrer, surligner, feuille, couches ou ajuster.");
   faire.forEach(f => f());

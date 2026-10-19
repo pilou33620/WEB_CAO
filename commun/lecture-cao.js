@@ -238,7 +238,7 @@ const LECTURE_CAO = (function() {
       desc: "une partie du rapport d'une simulation. « partie » vaut : chiffres, diagnostics, methode, piste, bornes, reglages, resultats, texte ou json (données brutes, volumineuses : en dernier recours). Commence par chiffres et diagnostics",
       fn: a => {
         const k = a.analyse || SIM.analyse;
-        if (!SIM_RAP_ETAT[k]) return ["Analyse « " + k + " » inconnue. Analyses : " + Object.keys(SIM_RAP_ETAT).join(", ") + "."];
+        if (!Object.hasOwn(SIM_RAP_ETAT, k)) return ["Analyse « " + k + " » inconnue. Analyses : " + Object.keys(SIM_RAP_ETAT).join(", ") + "."];
         const partie = a.partie || "chiffres";
         if (k === SIM.analyse && typeof simRapCollecter === "function") {
           const sections = simRapMarkdown(simRapCollecter()).split(/\n(?=## )/);
@@ -351,6 +351,6 @@ const LECTURE_CAO = (function() {
 
   return {
     pcb: OUTILS_PCB, ipc: OUTILS_IPC, sim: OUTILS_SIM, schema: OUTILS_SCH,
-    aides: { contient, borner, mm, nomCouchePcb, simRapportsDispo, simAvecResultat }
+    aides: { borner, nomCouchePcb, simRapportsDispo, simAvecResultat }
   };
 })();

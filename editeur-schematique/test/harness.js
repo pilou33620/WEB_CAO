@@ -217,6 +217,9 @@ function docLecture(){
 }
 const lireSch=(quoi,a)=>[].concat(LECTURE_CAO.schema[quoi].fn(a||{})).join("\n");
 T("lectures du schéma : feuilles, composants, composant, nets, net",()=>{
+  try{lecturesSchema();}finally{sheet([],[]);}
+});
+function lecturesSchema(){
   docLecture();
   const hist=S.hist.length, dirty=S.dirty, page=S.page, ver=S.wireVer;
   const f=lireSch("feuilles");
@@ -237,7 +240,7 @@ T("lectures du schéma : feuilles, composants, composant, nets, net",()=>{
   if(!/Broches \(1\) : R2\.1$/m.test(lireSch("net",{nom:"LOCAL",feuille:2})))throw new Error(lireSch("net",{nom:"LOCAL",feuille:2}));
   if(!/introuvable : demande la liste avec l'outil « nets »/.test(lireSch("net",{nom:"XYZ"})))throw new Error("XYZ");
   if(S.hist.length!==hist||S.dirty!==dirty||S.page!==page||S.wireVer!==ver)throw new Error("une lecture a modifié le document");
-});
+}
 T("lectures du schéma : bornes reprises (150 composants)",()=>{
   const comps=[];
   for(let i=0;i<160;i++)comps.push(C("resistor",i*3,0,{ref:"R"+(i+1)}));
@@ -265,6 +268,15 @@ TA("canal de pilotage : cao_vue change de feuille et cadre sans écrire",async()
     if(S.page!==1||!r2||!S.sel.has(r2.id))throw new Error("R2 non atteint : feuille "+S.page);
     await cmds.cao_vue.executer({feuille:1,ajuster:true});
     if(S.page!==0)throw new Error("feuille 1 attendue");
+    /* surligner garde la vue : une cible d'une autre feuille est refusée ; « feuille » contredite aussi */
+    const vue=[S.scale,S.ox,S.oy];
+    if(!/R2 » est sur f2, pas sur f1 : donne « feuille »/.test(await refus({surligner:"R2"}))||S.page!==0)throw new Error("surligner R2 depuis f1");
+    if(!/R2 » est sur f2, pas sur f1 : change « feuille »/.test(await refus({feuille:1,cadrer:"R2"}))||S.page!==0)throw new Error("feuille contredite");
+    await cmds.cao_vue.executer({surligner:"bus"});
+    if(!S.hoverNet||S.hoverNet.name!=="BUS"||S.selW.size||S.sel.size||String([S.scale,S.ox,S.oy])!==String(vue))
+      throw new Error("surligner BUS : halo, sans sélection ni vue changée");
+    const t=await cmds.cao_vue.executer({feuille:2,cadrer:"BUS"});
+    if(S.page!==1||!S.selW.size||!/cadré sur BUS \(f2\)/.test(t))throw new Error("BUS cadré sur f2 attendu : feuille "+S.page+", "+t);
     if(S.hist.length!==hist||S.dirty!==dirty)throw new Error("la vue a écrit");
   }finally{global.Pilote=ancien;sheet([],[]);}
 });

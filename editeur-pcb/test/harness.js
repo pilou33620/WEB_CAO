@@ -26521,8 +26521,12 @@ TA("canal de pilotage : cao_vue cadre et masque sans écrire, cao_drc rend le DR
     const vue=[S.scale,S.ox,S.oy];
     await cmds.cao_vue.executer({surligner:"GND"});
     if(S.hlNet!=="GND"||String([S.scale,S.ox,S.oy])!==String(vue))throw new Error("surligner : "+S.hlNet+" ; vue "+[S.scale,S.ox,S.oy]);
+    // surligner ne sélectionne pas le routage du net : Suppr l'effacerait
+    if(S.sel.tracks.size||S.sel.vias.size||!S.sel.fps.has(u1.id))throw new Error("surligner a changé la sélection");
+    const ver=S.ver;
     await cmds.cao_vue.executer({couches:["top"]});
     if(!S.cuL[0].vis||S.cuL[1].vis)throw new Error("couches : "+S.cuL.map(c=>c.vis));
+    if(S.ver!==ver)throw new Error("couches : la révision de la carte a changé (les simulations seraient périmées)");
     await cmds.cao_vue.executer({couches:["Top","Bottom"]});
     if(S.undo.length!==pile||S.dirty!==dirty)throw new Error("la vue a écrit");
     /* une carte abîmée : le DRC lancé par Claude dit autant d'erreurs que le bouton */
@@ -26532,6 +26536,7 @@ TA("canal de pilotage : cao_vue cadre et masque sans écrire, cao_drc rend le DR
     const erreurs=runDrc().filter(d=>!d.info).length;
     if(!erreurs||(t.match(/\[erreur\]/g)||[]).length!==erreurs)throw new Error(erreurs+" erreur(s) attendue(s) :\n"+t);
     if(S.listTab!=="drc")throw new Error("l'onglet DRC devait s'ouvrir, comme au bouton");
+    if(S.undo.length!==pile||S.dirty!==dirty)throw new Error("le DRC a écrit");
   }finally{global.Pilote=ancien;}
 });
 
