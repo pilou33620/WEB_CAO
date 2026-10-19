@@ -247,6 +247,27 @@ T("lectures du schéma : bornes reprises (150 composants)",()=>{
   if(L.length!==151||!/^\.\.\. \(10 composants de plus : précise le filtre\)$/.test(L[150]))throw new Error(L.slice(-2).join(" | "));
 });
 
+TA("canal de pilotage : cao_vue change de feuille et cadre sans écrire",async()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  const refus=async a=>{try{await cmds.cao_vue.executer(a);}catch(e){return e.message;}return "";};
+  try{
+    piloteCao("schema");
+    docLecture();
+    const hist=S.hist.length, dirty=S.dirty;
+    S.scale=1;S.ox=0;S.oy=0;
+    if(!/ni repère ni net/.test(await refus({cadrer:"ZZ9"}))||S.ox!==0||S.page!==0)throw new Error("repère inconnu : la vue a bougé");
+    if(!/Feuille 9 inconnue : 1 à 2/.test(await refus({feuille:9,cadrer:"R2"}))||S.page!==0)throw new Error("feuille inconnue");
+    if(!/couches.*PCB/.test(await refus({couches:["Top"]})))throw new Error("couches au schéma");
+    if(cmds.cao_drc)throw new Error("pas de DRC au schéma");
+    await cmds.cao_vue.executer({cadrer:"r2"});
+    const r2=S.comps.find(c=>c.ref==="R2");
+    if(S.page!==1||!r2||!S.sel.has(r2.id))throw new Error("R2 non atteint : feuille "+S.page);
+    await cmds.cao_vue.executer({feuille:1,ajuster:true});
+    if(S.page!==0)throw new Error("feuille 1 attendue");
+    if(S.hist.length!==hist||S.dirty!==dirty)throw new Error("la vue a écrit");
+  }finally{global.Pilote=ancien;sheet([],[]);}
+});
 TA("canal de pilotage : cao_schema_lire lit sans rien écrire",async()=>{
   const cmds={}, ancien=global.Pilote;
   global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};

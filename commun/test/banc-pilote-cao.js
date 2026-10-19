@@ -145,6 +145,34 @@ async function refuse(promesse, motif) {
     await refuse(page("pcb").declare.commandes.cao_sim_lire.executer({ quoi: "simulations" }), /simulations ne sont pas chargées/);
   });
 
+  await T("cao_vue dans la visionneuse : cadrer, surligner, couches ; refus avant tout changement", async () => {
+    const v = JSON.parse(JSON.stringify({ ...V, parNet: [] })); v.parNet = V.parNet;
+    v.parRef = new Map([["U1", {}]]); v.couches = [{ nom: "TOP", visible: true }, { nom: "BOTTOM", visible: true }];
+    const p = page("visionneuse-ipc", { V: v });
+    for (const n of ["choisirComp", "choisirNet", "fit", "dessiner", "pnlCouches", "prefEcrire"])
+      p.ctx[n] = (...a) => p.appels.push([n].concat(a));
+    const vue = p.declare.commandes.cao_vue;
+    await refuse(vue.executer({ cadrer: "U1", couches: ["NULLE"] }), /Couche « NULLE » inconnue.*TOP, BOTTOM/);
+    await refuse(vue.executer({ cadrer: "U9" }), /« U9 » : ni repère ni net/);
+    await refuse(vue.executer({ feuille: 2 }), /feuille.*schéma/);
+    await refuse(vue.executer({}), /Rien à faire/);
+    egal(p.appels, [], "un refus ne touche à rien");
+    const t = await vue.executer({ cadrer: "u1", surligner: "gnd", couches: ["top"] });
+    egal(p.appels, [["pnlCouches"], ["dessiner"], ["choisirComp", "U1", true], ["choisirNet", 0, false]]);
+    egal(v.couches.map(c => c.visible), [true, false], "seules les couches demandées restent visibles");
+    if (!/U1/.test(t) || !/GND/.test(t)) throw new Error(t);
+    egal(!!vue.ecriture, false, "la vue n'écrit pas");
+    v.comp = "U1"; p.appels.length = 0;
+    await vue.executer({ surligner: "U1" });
+    egal(p.appels, [], "surligner le composant déjà choisi ne le désélectionne pas");
+    await refuse(page("visionneuse-ipc", { V: { modele: null } }).declare.commandes.cao_vue.executer({ ajuster: true }), /Aucun fichier IPC-2581/);
+  });
+
+  await T("cao_vue et cao_drc : déclarés dans les bonnes pages", () => {
+    egal(["schema", "pcb", "visionneuse-ipc", "gestion-lib"].map(p => [!!page(p).declare.commandes.cao_vue, !!page(p).declare.commandes.cao_drc]),
+         [[true, false], [true, true], [true, false], [false, false]]);
+  });
+
   console.log("\n" + ok + " essais réussis, " + ko + " en échec.");
   process.exit(ko ? 1 : 0);
 })();

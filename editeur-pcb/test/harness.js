@@ -26503,6 +26503,38 @@ TA("canal de pilotage : cao_pcb_lire et cao_sim_lire lisent sans rien écrire",a
   }finally{global.Pilote=ancien;}
 });
 
+
+TA("canal de pilotage : cao_vue cadre et masque sans écrire, cao_drc rend le DRC du bouton",async()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  const refus=async a=>{try{await cmds.cao_vue.executer(a);}catch(e){return e.message;}return "";};
+  try{
+    piloteCao("pcb");
+    loadDoc(exemple1());
+    const pile=S.undo.length, dirty=S.dirty;
+    S.scale=1;S.ox=0;S.oy=0;
+    if(!/ni repère ni net/.test(await refus({cadrer:"ZZ9"}))||S.ox!==0)throw new Error("repère inconnu : la vue a bougé");
+    if(!/Couche « Milieu » inconnue/.test(await refus({cadrer:"U1",couches:["Milieu"]}))||S.ox!==0)throw new Error("couche inconnue");
+    const u1=S.fps.find(f=>f.ref==="U1");
+    await cmds.cao_vue.executer({cadrer:"u1"});
+    if(!S.sel.fps.has(u1.id)||S.ox===0)throw new Error("U1 non cadré");
+    const vue=[S.scale,S.ox,S.oy];
+    await cmds.cao_vue.executer({surligner:"GND"});
+    if(S.hlNet!=="GND"||String([S.scale,S.ox,S.oy])!==String(vue))throw new Error("surligner : "+S.hlNet+" ; vue "+[S.scale,S.ox,S.oy]);
+    await cmds.cao_vue.executer({couches:["top"]});
+    if(!S.cuL[0].vis||S.cuL[1].vis)throw new Error("couches : "+S.cuL.map(c=>c.vis));
+    await cmds.cao_vue.executer({couches:["Top","Bottom"]});
+    if(S.undo.length!==pile||S.dirty!==dirty)throw new Error("la vue a écrit");
+    /* une carte abîmée : le DRC lancé par Claude dit autant d'erreurs que le bouton */
+    S.tracks.splice(0,5);
+    const t0=S.tracks.find(t=>t.net!=="GND"); S.tracks.push(Object.assign({},t0,{net:"GND",x1:t0.x1+0.1,x2:t0.x2+0.1})); touch();
+    const t=await cmds.cao_drc.executer({});
+    const erreurs=runDrc().filter(d=>!d.info).length;
+    if(!erreurs||(t.match(/\[erreur\]/g)||[]).length!==erreurs)throw new Error(erreurs+" erreur(s) attendue(s) :\n"+t);
+    if(S.listTab!=="drc")throw new Error("l'onglet DRC devait s'ouvrir, comme au bouton");
+  }finally{global.Pilote=ancien;}
+});
+
 (async()=>{
   for(const [name,fn] of T_ASYNC){
     try{await fn();console.log("  ok  "+name);ok++;}

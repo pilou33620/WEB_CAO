@@ -85,6 +85,73 @@ function piloteAfficherAnalyse(k) {
   simAllerAnalyse(k);
 }
 
+/* cao_vue : la vue seulement, ni le projet ni l'historique. Tout est vérifié avant le
+   premier changement : un repère ou une couche inconnus laissent la vue telle quelle.
+   Pas de phare animé (18-reperage.js) : la capture qui suit le montrerait à moitié. */
+function piloteCible(page, v) {
+  const q = String(v).toLowerCase();
+  if (page === "schema") return schCibleTrouver(v);
+  if (page === "pcb") return pcbCibleTrouver(v);
+  const ref = [...V.parRef.keys()].find(r => r.toLowerCase() === q);
+  // choisirComp sans centrer désélectionne le composant déjà choisi : ne pas le rappeler
+  if (ref) return { cle: ref, aller: garder => { if (!(garder && V.comp === ref)) choisirComp(ref, !garder); } };
+  const i = V.parNet.findIndex(n => String(n.nom).toLowerCase() === q);
+  if (i >= 0) return { cle: V.parNet[i].nom, net: true, aller: () => { if (V.net !== i) choisirNet(i, false); } };
+  return null;
+}
+
+function piloteCouches(page, noms) {
+  if (page === "schema") throw new Error("« couches » : seulement au PCB et dans la visionneuse.");
+  const toutes = page === "pcb" ? S.cuL.slice(0, S.cu).map((c, i) => ({ c, nom: LECTURE_CAO.aides.nomCouchePcb(i) }))
+                                : V.couches.map(c => ({ c, nom: c.nom }));
+  const voulues = new Set();
+  for (const n of noms) {
+    const t = toutes.find(x => String(x.nom).toLowerCase() === String(n).toLowerCase());
+    if (!t) throw new Error("Couche « " + n + " » inconnue. Couches : " + toutes.map(x => x.nom).join(", ") + ".");
+    voulues.add(t.c);
+  }
+  return () => {
+    for (const { c } of toutes) c[page === "pcb" ? "vis" : "visible"] = voulues.has(c);
+    // la visionneuse n'enregistre pas ce choix dans ses préférences (prefEcrire) : il vient de Claude
+    if (page === "pcb") { touch(); buildLayers(); buildTabs(); draw(); } else { pnlCouches(); dessiner(); }
+  };
+}
+
+async function piloteVue(page, a) {
+  if (page === "visionneuse-ipc" && !(typeof V !== "undefined" && V && V.modele))
+    throw new Error("Aucun fichier IPC-2581 ouvert dans la visionneuse.");
+  const faire = [], dit = [];
+  if (a.feuille != null) {
+    if (page !== "schema") throw new Error("« feuille » : seulement au schéma.");
+    const i = a.feuille - 1;
+    if (!S.pages[i]) throw new Error("Feuille " + a.feuille + " inconnue : 1 à " + S.pages.length + ".");
+    faire.push(() => gotoPage(i)); dit.push("feuille f" + a.feuille);
+  }
+  if (a.couches) { faire.push(piloteCouches(page, a.couches)); dit.push("couches visibles : " + a.couches.join(", ")); }
+  if (a.ajuster) { faire.push(() => fit()); dit.push("vue ajustée à tout le document"); }
+  for (const [cle, garder] of [["cadrer", false], ["surligner", true]]) {
+    if (a[cle] == null) continue;
+    const t = piloteCible(page, a[cle]);
+    if (!t) throw new Error("« " + a[cle] + " » : ni repère ni net de cette page (voir les lectures « composants » et « nets »).");
+    faire.push(() => {
+      const vue = page === "visionneuse-ipc" ? null : [S.scale, S.ox, S.oy];
+      if (page === "visionneuse-ipc") t.aller(garder); else t.aller();
+      if (garder && vue) { [S.scale, S.ox, S.oy] = vue; draw(); }      // surligner sans bouger la vue
+    });
+    dit.push((garder ? "surligné " : "cadré sur ") + t.cle + (t.net && !garder ? " (la visionneuse surligne un net sans le cadrer)" : ""));
+  }
+  if (!faire.length) throw new Error("Rien à faire : cadrer, surligner, feuille, couches ou ajuster.");
+  faire.forEach(f => f());
+  return "Vue : " + dit.join(" ; ") + ".";
+}
+
+/* cao_drc : le bouton DRC de la page (onglet DRC ouvert, compte rendu), puis la même
+   lecture que cao_pcb_lire « drc ». Le résultat n'entre pas dans l'historique. */
+async function piloteDrc() {
+  document.getElementById("bDrc").onclick();
+  return [].concat(LECTURE_CAO.pcb.drc.fn({})).join("\n");
+}
+
 function piloteCao(page) {
   if (typeof Pilote === "undefined") return;
   const TOILES = { schema: "sheet", pcb: "board", "visionneuse-ipc": "carte" };
@@ -93,4 +160,6 @@ function piloteCao(page) {
   if (page === "pcb" || page === "visionneuse-ipc") Pilote.commande("cao_calcul", { executer: piloteCaoCalcul });
   if (page === "schema") Pilote.commande("cao_valeur_composant", PILOTE_VALEUR);
   for (const f of PILOTE_LIRE[page] || []) Pilote.commande("cao_" + f + "_lire", { executer: async a => piloteLire(f, a) });
+  if (PILOTE_LIRE[page]) Pilote.commande("cao_vue", { executer: a => piloteVue(page, a) });
+  if (page === "pcb") Pilote.commande("cao_drc", { executer: piloteDrc });
 }
