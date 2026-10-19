@@ -68,7 +68,7 @@ const EXPOSE=[
   "SCH_PIQUAGE_MEMOIRE",
   /* bibliothèque et géométrie */
   "bbox",
-  "defOf","allPins","pinCount","icGeom","key","LIB","pinsOf",
+  "defOf","allPins","pinCount","icGeom","key","LIB","pinsOf","LECTURE_CAO",
   "pkgBaseOf","pkgKnown","pkgBaseList","PKG_BASES",
   /* brochage (04 + 19) */
   "icPins","icBodyOf","icSideOf","icPinLabel","icFree","icShapeOf","icStep","IC_STEP",
@@ -195,6 +195,58 @@ console.log("— banc d'essai éditeur schématique —");
 /* ==========================================================================
    Découpe automatique des fils (07-connectivite.js)
    ========================================================================== */
+/* ==========================================================================
+   Lectures du schéma (commun/lecture-cao.js, LECTURE_CAO.schema) : ce que
+   Claude lit par le canal de pilotage (web_suite, registre-cao)
+   ========================================================================== */
+/* deux feuilles : BUS est global (les deux), LOCAL est local à chaque feuille, R3 est en l'air */
+function docLecture(){
+  const mk=(nom,ref,x,extra)=>{
+    const r=C("resistor",x,0,Object.assign({ref:ref,value:"10k",pkg:"0603"},extra||{}));
+    const g=C("gport",x,4,{value:"BUS"}), q=C("port",x,-4,{value:"LOCAL"});
+    const p=allPins(r), pg=allPins(g), pq=allPins(q);
+    const pg1=newPage(nom);
+    pg1.comps=[r,g,q];
+    pg1.wires=[{x1:p[1].x,y1:p[1].y,x2:pg[0].x,y2:pg[0].y},{x1:p[0].x,y1:p[0].y,x2:pq[0].x,y2:pq[0].y}];
+    return pg1;
+  };
+  const f2=mk("Logique","R2",5);
+  f2.comps.push(C("resistor",10,0,{ref:"R3",value:"1k"}));
+  S.pages=[mk("Alim","R1",0,{mpn:"RC0603FR-0710KL"}),f2];
+  loadPage(0);touchWires();
+}
+const lireSch=(quoi,a)=>[].concat(LECTURE_CAO.schema[quoi].fn(a||{})).join("\n");
+T("lectures du schéma : feuilles, composants, composant, nets, net",()=>{
+  docLecture();
+  const hist=S.hist.length, dirty=S.dirty, page=S.page, ver=S.wireVer;
+  const f=lireSch("feuilles");
+  if(!/2 feuille\(s\), 3 composant\(s\)/.test(f)||!/f1 « Alim » : 1 composant\(s\)/.test(f)||!/f2 « Logique » : 2 composant\(s\)/.test(f))throw new Error(f);
+  const cs=lireSch("composants");
+  if(!/^- R1 = 10k \(0603\), RC0603FR-0710KL, f1, x 0 y 0 mm, rotation 0°$/m.test(cs))throw new Error(cs);
+  if(!/^- R2 = 10k \(0603\), f2, x 5 y 0 mm/m.test(cs)||/LOCAL|BUS/.test(cs))throw new Error(cs);
+  if(lireSch("composants",{filtre:"r2"}).split("\n").length!==1)throw new Error(lireSch("composants",{filtre:"r2"}));
+  const c2=lireSch("composant",{ref:"r2"});           // sur la feuille 2, la 1 est affichée
+  if(!/^R2 = 10k \(0603\), f2/.test(c2)||!/^- 1 → LOCAL$/m.test(c2)||!/^- 2 → BUS$/m.test(c2))throw new Error(c2);
+  if(!/^- 1 → non connectée$/m.test(lireSch("composant",{ref:"R3"})))throw new Error(lireSch("composant",{ref:"R3"}));
+  if(!/introuvable : demande la liste avec l'outil « composants »/.test(lireSch("composant",{ref:"R9"})))throw new Error("R9");
+  const ns=lireSch("nets");
+  if(!/^- BUS \[global\] : 2 broches, f1, f2$/m.test(ns)||(ns.match(/^- LOCAL : 1 broches?, f[12]$/mg)||[]).length!==2)throw new Error(ns);
+  const b=lireSch("net",{nom:"bus"});
+  if(!/^Net BUS, global, sur f1, f2\.$/m.test(b)||!/Broches \(2\) : R1\.2, R2\.2/.test(b))throw new Error(b);
+  if(!/plusieurs feuilles.*f1, f2.*feuille/.test(lireSch("net",{nom:"LOCAL"})))throw new Error(lireSch("net",{nom:"LOCAL"}));
+  if(!/Broches \(1\) : R2\.1$/m.test(lireSch("net",{nom:"LOCAL",feuille:2})))throw new Error(lireSch("net",{nom:"LOCAL",feuille:2}));
+  if(!/introuvable : demande la liste avec l'outil « nets »/.test(lireSch("net",{nom:"XYZ"})))throw new Error("XYZ");
+  if(S.hist.length!==hist||S.dirty!==dirty||S.page!==page||S.wireVer!==ver)throw new Error("une lecture a modifié le document");
+});
+T("lectures du schéma : bornes reprises (150 composants)",()=>{
+  const comps=[];
+  for(let i=0;i<160;i++)comps.push(C("resistor",i*3,0,{ref:"R"+(i+1)}));
+  sheet(comps,[]);
+  const L=lireSch("composants").split("\n");
+  sheet([],[]);   // feuille vide pour les essais suivants (ils posent leur propre R7)
+  if(L.length!==151||!/^\.\.\. \(10 composants de plus : précise le filtre\)$/.test(L[150]))throw new Error(L.slice(-2).join(" | "));
+});
+
 T("canal de pilotage : cao_valeur_composant propose, applique en une étape, Ctrl+Z la défait",()=>{
   const cmds={}, ancien=global.Pilote;
   global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};

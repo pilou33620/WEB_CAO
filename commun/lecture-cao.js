@@ -258,8 +258,99 @@ const LECTURE_CAO = (function() {
     }
   };
 
+  /* ---------- Éditeur schématique (S, 04-etat.js) ----------
+     Le document a plusieurs feuilles : un repère est unique dans le document,
+     pas dans la feuille, et un net global court sur plusieurs feuilles
+     (docNets). Les symboles sans repère (alimentations, étiquettes) ne sont
+     pas des composants. Les coordonnées sont en pixels : 20 px = 1 mm. */
+  const schMm = px => mm(px / 20);
+  const schFeuille = i => "f" + (i + 1);
+  function schComposants() {
+    const L = [];
+    (S.pages || []).forEach((p, i) => {
+      for (const c of (i === S.page ? S.comps : p.comps) || [])
+        if (!defOf(c.type).noRef) L.push({ c, page: i });
+    });
+    return L;
+  }
+  function schTrouver(ref) {
+    const cible = String(ref || "").trim().toUpperCase();
+    return schComposants().find(x => (x.c.ref || "").trim().toUpperCase() === cible) || null;
+  }
+  const schReel = g => g.members.some(m => isRealNet(m.net));
+  const schLigneComp = ({ c, page }) => c.ref + (c.value ? (" = " + c.value) : "") + (c.pkg ? (" (" + c.pkg + ")") : "") +
+    (c.mpn ? (", " + c.mpn) : "") + ", " + schFeuille(page) + ", x " + schMm(c.x) + " y " + schMm(c.y) + " mm, rotation " + (c.rot || 0) + "°";
+
+  const OUTILS_SCH = {
+    feuilles: {
+      desc: "les feuilles du document (nom, nombre de composants, feuille affichée)",
+      fn: () => {
+        const tous = schComposants();
+        return ["Document : " + (S.pages || []).length + " feuille(s), " + tous.length + " composant(s) :"].concat((S.pages || []).map((p, i) =>
+          "- " + schFeuille(i) + " « " + p.name + " » : " + tous.filter(x => x.page === i).length + " composant(s)" +
+          (i === S.page ? " [affichée]" : "") + (p.isHierarchy ? " [hiérarchie]" : "")));
+      }
+    },
+    composants: {
+      args: '"filtre":"R"',
+      desc: "liste des composants de toutes les feuilles (repère, valeur, boîtier, référence fabricant, feuille, position) ; filtre facultatif",
+      fn: a => {
+        const L = schComposants().filter(x => contient(a.filtre, x.c.ref, x.c.value, x.c.pkg, x.c.mpn, x.c.type)).map(x => "- " + schLigneComp(x));
+        return L.length ? borner(L, 150, "composants") : ["Aucun composant ne correspond."];
+      }
+    },
+    composant: {
+      args: '"ref":"U1"',
+      desc: "un composant : valeur, boîtier, feuille, position, et le net de chaque broche (patte de l'empreinte, nom de broche)",
+      fn: a => {
+        const x = schTrouver(a.ref);
+        if (!x) return ["Composant « " + a.ref + " » introuvable : demande la liste avec l'outil « composants »."];
+        /* Une broche en l'air n'est dans aucun net du document : on part des
+           broches du composant, puis on cherche leur net. */
+        const net = new Map();
+        for (const g of docNets().groups)
+          for (const n of g.nodes)
+            if (n.page === x.page && n.id === x.c.id && schReel(g)) net.set(n.pin + "/" + n.pad, g.name);
+        const lignes = [];
+        allPins(x.c).forEach((_, i) => {
+          const nomB = brNomBroche(x.c, i);
+          for (const pad of brPattes(x.c, i))
+            lignes.push("- " + pad + (nomB ? (" (" + nomB + ")") : "") + " → " + (net.get((i + 1) + "/" + pad) || "non connectée"));
+        });
+        const L = [schLigneComp(x) + (x.c.type ? (", symbole " + x.c.type) : "") + "."];
+        L.push("Broches (" + lignes.length + ") :");
+        return L.concat(borner(lignes, 200, "broches"));
+      }
+    },
+    nets: {
+      args: '"filtre":"USB"',
+      desc: "liste des nets du document (global ou local, nombre de broches, feuilles) ; filtre facultatif",
+      fn: a => {
+        const L = docNets().groups.filter(g => schReel(g) && contient(a.filtre, g.name)).map(g =>
+          "- " + g.name + (g.global ? " [global]" : "") + " : " + g.nodes.length + " broches, " + g.pages.map(schFeuille).join(", ") +
+          (g.conflict ? ", conflit de noms" : ""));
+        return L.length ? borner(L, 150, "nets") : ["Aucun net ne correspond."];
+      }
+    },
+    net: {
+      args: '"nom":"GND","feuille":2',
+      desc: "un net : global ou local, feuilles, broches reliées (REPÈRE.patte) ; « feuille » (numéro) départage deux nets locaux de même nom",
+      fn: a => {
+        const nom = String(a.nom || "").toLowerCase();
+        let gs = docNets().groups.filter(g => schReel(g) && String(g.name).toLowerCase() === nom);
+        if (a.feuille != null) gs = gs.filter(g => g.pages.includes(Number(a.feuille) - 1));
+        if (!gs.length) return ["Net « " + a.nom + " » introuvable : demande la liste avec l'outil « nets »."];
+        if (gs.length > 1) return ["Net « " + a.nom + " » : plusieurs feuilles en ont un, distincts (" + gs.map(g => g.pages.map(schFeuille).join("+")).join(", ") +
+                                   ") : précise « feuille »."];
+        const g = gs[0], broches = g.nodes.map(n => n.ref + "." + n.pad);
+        return ["Net " + g.name + ", " + (g.global ? "global" : "local") + ", sur " + g.pages.map(schFeuille).join(", ") + "." + (g.conflict ? " Conflit de noms." : ""),
+                "Broches (" + broches.length + ") : " + broches.slice(0, 200).join(", ") + (broches.length > 200 ? " …" : "")];
+      }
+    }
+  };
+
   return {
-    pcb: OUTILS_PCB, ipc: OUTILS_IPC, sim: OUTILS_SIM,
+    pcb: OUTILS_PCB, ipc: OUTILS_IPC, sim: OUTILS_SIM, schema: OUTILS_SCH,
     aides: { contient, borner, mm, nomCouchePcb, simRapportsDispo, simAvecResultat }
   };
 })();
