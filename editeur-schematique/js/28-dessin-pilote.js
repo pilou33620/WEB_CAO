@@ -226,6 +226,41 @@ const DESSIN_OPS = {
     return { quoi: (n + 1) + ". relier " + a.nom + " — " + b.nom, avant: null, apres: "net " + dessinNetDe(a) };
   },
 
+  /* Une étiquette au bout d'un fil de 2 mm qui part vers l'extérieur du composant, tournée
+     pour que sa broche touche le fil et que son corps s'éloigne. */
+  etiqueter(o, n) {
+    const GENRES = { local: "port", global: "gport", vcc: "vcc", gnd: "gnd" };
+    const type = Object.prototype.hasOwnProperty.call(GENRES, o.genre) ? GENRES[o.genre] : null;
+    if (!type) throw dessinRefus(n, "etiqueter", "« genre » : local, global, vcc ou gnd");
+    const net = o.net === undefined && o.genre === "gnd" ? "GND" : o.net;
+    if (typeof net !== "string" || !/^[^\x00-\x1f\x7f\s][^\x00-\x1f\x7f]{0,39}$/.test(net))
+      throw dessinRefus(n, "etiqueter", "« net » : nom de 1 à 40 caractères, sans espace au début");
+    const b = dessinBroche(o.broche, n, "etiqueter");
+    const dx = b.pos.x - b.el.x, dy = b.pos.y - b.el.y;
+    const dir = Math.abs(dx) >= Math.abs(dy) ? { x: dx < 0 ? -1 : 1, y: 0 } : { x: 0, y: dy < 0 ? -1 : 1 };
+    const bout = { x: snap(b.pos.x + dir.x * 2 * DESSIN_MM), y: snap(b.pos.y + dir.y * 2 * DESSIN_MM) };
+    const avant = dessinNets();
+    // les broches déjà sur un net de ce nom, sur cette feuille : l'étiquette doit les rejoindre
+    const memes = [];
+    nets().list.forEach(nt => { if ((nt.names || []).some(x => dessinCle(x) === dessinCle(net)) || dessinCle(nt.name) === dessinCle(net))
+      for (const nd of nt.nodes) memes.push(nd.id + "." + nd.pin); });
+    const el = addComp(type, 0, 0);
+    el.value = net;
+    for (const r of DESSIN_ANGLES) {                   // l'orientation dont le corps part dans la direction du fil
+      el.rot = r; el.x = 0; el.y = 0;
+      const q = pinPos(el, 0);
+      if (Math.sign(-q.x) === dir.x && Math.sign(-q.y) === dir.y) break;
+    }
+    const q = pinPos(el, 0);
+    el.x = bout.x - q.x; el.y = bout.y - q.y;
+    if (bout.x !== b.pos.x || bout.y !== b.pos.y) S.wires.push({ x1: b.pos.x, y1: b.pos.y, x2: bout.x, y2: bout.y });
+    touchWires(); resolveSplits(); touchWires();
+    const ecart = dessinEcart(avant, memes.map(m => [b.cle, m]));
+    if (ecart) throw dessinRefus(n, "etiqueter", b.nom + " : l'étiquette " + ecart);
+    return { quoi: (n + 1) + ". etiqueter " + b.nom, avant: null,
+             apres: { port: "étiquette locale", gport: "étiquette globale", vcc: "alimentation", gnd: "masse" }[type] + " " + net };
+  },
+
   supprimer_fil(o, n) {
     const a = dessinBroche(o.de, n, "supprimer_fil"), b = dessinBroche(o.a, n, "supprimer_fil");
     const k = p => p.x + "," + p.y;

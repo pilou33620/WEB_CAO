@@ -483,6 +483,35 @@ T("canal de pilotage : cao_schema_dessiner relie broche à broche, sans connexio
   }finally{global.Pilote=ancien;sheet([],[]);}
 });
 
+T("canal de pilotage : cao_schema_dessiner étiquette (local, global, VCC, GND) dans les quatre directions",()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  const sur=(nom,ref,pin)=>docNets().groups.some(g=>g.name.toUpperCase()===nom&&g.nodes.some(x=>x.ref===ref&&x.pin===pin));
+  try{
+    piloteCao("schema");
+    const d=cmds.cao_schema_dessiner;
+    sheet([],[]);
+    const lot=[{op:"poser",type:"resistor",ref:"R1",x:0,y:0},
+               {op:"poser",type:"resistor",ref:"R2",x:20,y:0,rotation:90},
+               {op:"poser",type:"resistor",ref:"R3",x:0,y:20},
+               {op:"etiqueter",broche:"R1.1",net:"SDA",genre:"local"},     // vers la gauche
+               {op:"etiqueter",broche:"R1.2",net:"BUS",genre:"global"},    // vers la droite
+               {op:"etiqueter",broche:"R2.1",net:"3V3",genre:"vcc"},       // vers le haut ou le bas
+               {op:"etiqueter",broche:"R2.2",genre:"gnd"},
+               {op:"etiqueter",broche:"R3.1",net:"SDA",genre:"local"}];   // rejoint le SDA de R1.1
+    const prop=d.proposer({lot});
+    if(!/^4\. etiqueter R1\.1 : étiquette locale SDA$/m.test(prop.apres)||!/^7\. etiqueter R2\.2 : masse GND$/m.test(prop.apres))throw new Error("carte : "+prop.apres);
+    d.appliquer({lot},prop);
+    for(const [nom,ref,pin] of [["SDA","R1",1],["BUS","R1",2],["3V3","R2",1],["GND","R2",2],["SDA","R3",1]])
+      if(!sur(nom,ref,pin))throw new Error(ref+"."+pin+" devrait être sur "+nom+" : "+JSON.stringify(docNets().groups.map(g=>[g.name,g.nodes.map(x=>x.ref+"."+x.pin)])));
+    if(!docNets().groups.find(g=>g.name.toUpperCase()==="BUS").global)throw new Error("BUS doit être global");
+    let m="";try{d.proposer({lot:[{op:"etiqueter",broche:"R3.2",net:"",genre:"local"}]});}catch(e){m=e.message;}
+    if(!/1 à 40 caractères/.test(m))throw new Error("net vide : "+m);
+    m="";try{d.proposer({lot:[{op:"etiqueter",broche:"R3.2",net:"X",genre:"rouge"}]});}catch(e){m=e.message;}
+    if(!/local, global, vcc ou gnd/.test(m))throw new Error("genre : "+m);
+  }finally{global.Pilote=ancien;sheet([],[]);}
+});
+
 T("classes d'interface : la table commune est chargée",()=>{
   if(Object.keys(CLASSES_INTERFACE).length!==7)throw new Error("7 interfaces attendues");
   if(familleClasse("USB HS")!=="Rapide"||familleClasse("CAN")!=="Lent"||familleClasse("RF")!=="RF")
