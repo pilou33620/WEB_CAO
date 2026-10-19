@@ -134,6 +134,54 @@ const LECTURE_CAO = (function() {
         return tri.length ? borner(tri.map(d => "- " + (d.info ? "[remarque] " : "[erreur] ") + d.msg + " (x " + mm(d.x) + ", y " + mm(d.y) + ")"), 80, "lignes")
                           : ["DRC propre : aucune erreur."];
       }
+    },
+    /* Pour router (web_suite, module routage) : les liaisons qui restent et ce qu'il y a dans une
+       fenêtre de la carte. Positions en mm, dans le même repère que les autres lectures. */
+    liaisons: {
+      args: '"filtre":"GND"',
+      desc: "liaisons qui restent à router : net, classe, de REF.pastille à REF.pastille avec positions et couches ; filtre facultatif sur le net",
+      fn: a => {
+        const c = conn(true);
+        const bout = (x, y, net) => {
+          const p = c.padNodes.find(q => q.q.x === x && q.q.y === y && q.q.net === net);
+          return p ? p.fp.ref + "." + p.q.n + " (x " + mm(x) + " y " + mm(y) + ", " + p.layers.map(nomCouchePcb).join("/") + ")"
+                   : "(x " + mm(x) + " y " + mm(y) + ")";
+        };
+        const L = c.rats.filter(r => contient(a.filtre, r.net)).map(r =>
+          "- " + r.net + " [" + classOf(r.net).name + "] : " + bout(r.x1, r.y1, r.net) + " → " + bout(r.x2, r.y2, r.net) +
+          ", " + mm(Math.hypot(r.x2 - r.x1, r.y2 - r.y1)) + " mm à vol d'oiseau");
+        return L.length ? borner(L, 150, "liaisons") : [a.filtre ? "Aucune liaison à router sur ce filtre." : "Tout est routé."];
+      }
+    },
+    zone: {
+      args: '"x1":10,"y1":10,"x2":30,"y2":25',
+      desc: "ce qu'il y a dans une fenêtre de la carte (mm) : pastilles, pistes, vias, zones de cuivre, contour",
+      fn: a => {
+        const v = ["x1", "y1", "x2", "y2"].map(k => +a[k]);
+        if (!v.every(Number.isFinite)) return ["Donne la fenêtre en mm : x1, y1, x2, y2."];
+        const X1 = Math.min(v[0], v[2]), X2 = Math.max(v[0], v[2]), Y1 = Math.min(v[1], v[3]), Y2 = Math.max(v[1], v[3]);
+        if (X2 - X1 <= 0 || Y2 - Y1 <= 0) return ["Fenêtre vide : x1 ≠ x2 et y1 ≠ y2."];
+        const dans = (x, y) => x >= X1 && x <= X2 && y >= Y1 && y <= Y2;
+        const boite = (ax, ay, bx, by) => Math.max(ax, bx) >= X1 && Math.min(ax, bx) <= X2 && Math.max(ay, by) >= Y1 && Math.min(ay, by) <= Y2;
+        const L = [];
+        for (const f of S.fps) for (const q of padsWorld(f)) if (dans(q.x, q.y))
+          L.push("- pastille " + f.ref + "." + q.n + " [" + (q.net || "sans net") + "] x " + mm(q.x) + " y " + mm(q.y) + ", " +
+                 mm(q.w) + " × " + mm(q.h) + " mm" + (q.drill ? ", perçage " + mm(q.drill) : "") + ", " + padCuLayers(f, q).map(nomCouchePcb).join("/"));
+        for (const t of S.tracks) if (boite(t.x1, t.y1, t.x2, t.y2))
+          L.push("- piste [" + (t.net || "sans net") + "] " + nomCouchePcb(t.l) + " : x " + mm(t.x1) + " y " + mm(t.y1) + " → x " + mm(t.x2) + " y " + mm(t.y2) + ", largeur " + mm(t.w));
+        for (const w of S.vias) if (dans(w.x, w.y))
+          L.push("- via [" + (w.net || "sans net") + "] x " + mm(w.x) + " y " + mm(w.y) + ", ø " + mm(w.d) + " / " + mm(w.drill) + ", " + nomCouchePcb(w.a) + " à " + nomCouchePcb(w.b));
+        for (const z of S.zones || []) {
+          const xs = (z.pts || []).map(q => q.x), ys = (z.pts || []).map(q => q.y);
+          if (xs.length && boite(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)))
+            L.push("- zone de cuivre [" + (z.net || "sans net") + "] " + nomCouchePcb(z.l));
+        }
+        const b = S.board || {}, coins = b.pts && b.pts.length ? b.pts
+          : [{ x: b.x, y: b.y }, { x: b.x + b.w, y: b.y }, { x: b.x + b.w, y: b.y + b.h }, { x: b.x, y: b.y + b.h }];
+        if (coins.some((q, k) => { const r = coins[(k + 1) % coins.length]; return boite(q.x, q.y, r.x, r.y); }))
+          L.push("- le contour de la carte passe dans la fenêtre");
+        return L.length ? borner(L, 200, "objets") : ["Rien dans cette fenêtre."];
+      }
     }
   };
 

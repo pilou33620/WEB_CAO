@@ -26556,7 +26556,8 @@ TA("canal de pilotage : cao_composants_ecrire au PCB, un lot en une étape, DRC 
     S.undo.length=0;                       // la pile est pleine (80) après les essais précédents : sa longueur ne bougerait plus
     const d=cmds.cao_composants_ecrire;
     if(!(d&&d.ecriture&&d.historique))throw new Error("écriture par l'historique attendue");
-    const u1=S.fps.find(f=>f.ref==="U1"), x0=ux(u1.x);
+    const u1=S.fps.find(f=>f.ref==="U1"), x0=u1.x;
+    S.origin={x:7,y:3};                    // une origine deplacee ne change pas le repere de Claude (celui des lectures)
     const avant=serialize(), n=S.undo.length;
     const lot=[{ref:"u1",champs:{x:x0+5,rotation:450}},
                {ref:"R2",champs:{face:"dessous",valeur:"2k2",ref:"R20"}},
@@ -26568,7 +26569,7 @@ TA("canal de pilotage : cao_composants_ecrire au PCB, un lot en une étape, DRC 
     d.appliquer({lot},prop);
     const fp=r=>S.fps.find(f=>f.ref===r);
     if(S.undo.length!==n+1)throw new Error("une seule étape attendue, "+(S.undo.length-n));
-    if(ux(fp("U1").x)!==r3(x0+5)||fp("U1").rot!==90||!fp("R20")||fp("R20").side!==1||fp("R20").value!=="2k2"||fp("R1").pkg!=="0805")
+    if(fp("U1").x!==r3(x0+5)||!new RegExp("^- U1 .* x "+r3(x0+5)+" ","m").test([].concat(LECTURE_CAO.pcb.composants.fn({filtre:"U1"})).join("\n"))||fp("U1").rot!==90||!fp("R20")||fp("R20").side!==1||fp("R20").value!=="2k2"||fp("R1").pkg!=="0805")
       throw new Error("lot mal appliqué");
     const drc=runDrc().filter(x=>!x.info).length;
     if(!new RegExp("^DRC : \\d+ erreurs? avant → "+drc+" après\\.$","m").test(prop.apres))throw new Error("bilan DRC : "+prop.apres);
@@ -26577,7 +26578,8 @@ TA("canal de pilotage : cao_composants_ecrire au PCB, un lot en une étape, DRC 
     if(/Nouvelles erreurs/.test(p2.apres)&&runDrc().filter(x=>!x.info).length<=drc)throw new Error("erreurs déplacées comptées neuves : "+p2.apres);
     undo();
     undo();
-    if(!fp("R2")||fp("R2").side||ux(fp("U1").x)!==x0||fp("R1").pkg!=="0603")throw new Error("Ctrl+Z ne remet pas tout");
+    if(!fp("R2")||fp("R2").side||fp("U1").x!==x0||fp("R1").pkg!=="0603")throw new Error("Ctrl+Z ne remet pas tout");
+    S.origin={x:0,y:0};
     refus({lot:[{ref:"R1",champs:{boitier:"ZZZ-99"}}]},/« ZZZ-99 » inconnu des empreintes/);
     // une empreinte dessinée à la main (pastilles qui ne viennent pas de la LIB) garde son dessin
     const r3fp=fp("R3"); r3fp.pads=padsOf(r3fp).map(padClone); delete r3fp.lib; touch();
@@ -26751,6 +26753,30 @@ T("écritures en lot : un échec en cours d'application remet le document d'avan
   if(S.redo.length!==1||S.redo[0]!=="rétablir-avant")throw new Error("la pile de rétablissement a changé : "+S.redo.length);
   for(const [v,att] of [["=HYPERLINK(1)","'=HYPERLINK(1)"],["+3V3","'+3V3"],["-40","-40"],["0402","0402"]])
     if(pcbCsvCell(v)!==att)throw new Error("formule : "+v+" → "+pcbCsvCell(v));
+});
+
+T("lectures pour router : liaisons (de pastille a pastille) et contenu d'une fenetre",()=>{
+  loadDoc(exemple1());
+  S.tracks.splice(0,8); touch();                         // l'exemple est route : on lui retire quelques pistes
+  const lire=(q,a)=>[].concat(LECTURE_CAO.pcb[q].fn(a||{})).join("\n");
+  const rats=conn(true).rats, L=lire("liaisons").split("\n");
+  if(!rats.length)throw new Error("l'exemple 1 devrait avoir des liaisons a router");
+  if(L.length!==Math.min(rats.length,151))throw new Error(L.length+" lignes pour "+rats.length+" liaisons");
+  if(!L.every(l=>/^- \S+ \[[^\]]+\] : \S+\.\S+ \(x [\d.-]+ y [\d.-]+, [^)]+\) → \S+\.\S+ \(x /.test(l)))throw new Error("forme : "+L.slice(0,3).join(" | "));
+  const net=rats[0].net;
+  if(!lire("liaisons",{filtre:net}).split("\n").every(l=>l.indexOf("- "+net+" [")===0))throw new Error("filtre sur le net");
+  if(lire("liaisons",{filtre:"PAS_DE_NET"})!=="Aucune liaison à router sur ce filtre.")throw new Error("filtre vide");
+  const u1=S.fps.find(f=>f.ref==="U1"), pw=padsWorld(u1);
+  const xs=pw.map(q=>q.x), ys=pw.map(q=>q.y);
+  const z=lire("zone",{x1:Math.min(...xs)-1,y1:Math.min(...ys)-1,x2:Math.max(...xs)+1,y2:Math.max(...ys)+1});
+  if(pw.some(q=>z.indexOf("- pastille U1."+q.n+" [")<0))throw new Error("pastilles de U1 absentes : "+z.slice(0,300));
+  const t=S.tracks.find(t=>pw.some(q=>(t.x1===q.x&&t.y1===q.y)||(t.x2===q.x&&t.y2===q.y)));
+  if(t&&z.indexOf("- piste ["+t.net+"]")<0)throw new Error("piste qui touche U1 absente");
+  if(lire("zone",{x1:5,y1:5,x2:5,y2:9})!=="Fenêtre vide : x1 ≠ x2 et y1 ≠ y2.")throw new Error("fenetre vide");
+  if(lire("zone",{x1:"a"})!=="Donne la fenêtre en mm : x1, y1, x2, y2.")throw new Error("fenetre illisible");
+  if(lire("zone",{x1:-1e5,y1:-1e5,x2:-1e5+1,y2:-1e5+1})!=="Rien dans cette fenêtre.")throw new Error("fenetre hors carte");
+  const tout=lire("zone",{x1:-1e4,y1:-1e4,x2:1e4,y2:1e4}).split("\n");
+  if(tout.length>201||!/objets de plus|contour/.test(tout[tout.length-1]))throw new Error("borne a 200 objets : "+tout.length);
 });
 
 (async()=>{

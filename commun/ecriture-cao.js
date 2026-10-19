@@ -94,7 +94,7 @@ const ECRITURE_CAO = (function () {
     const pl = n => n + " erreur" + (n > 1 ? "s" : "");
     const lignes = ["DRC : " + pl(avant.length) + " avant → " + apres.length + " après."];
     if (neuves.length) lignes.push("Nouvelles erreurs (" + neuves.length + ") :");
-    for (const d of neuves.slice(0, DRC_MAX)) lignes.push("- " + d.msg + " (x " + ux(d.x) + " y " + uy(d.y) + " mm)");
+    for (const d of neuves.slice(0, DRC_MAX)) lignes.push("- " + d.msg + " (x " + r3(d.x) + " y " + r3(d.y) + " mm)");
     if (neuves.length > DRC_MAX) lignes.push("... (" + (neuves.length - DRC_MAX) + " de plus : cao_drc les liste)");
     return lignes.join("\n");
   }
@@ -186,7 +186,8 @@ const ECRITURE_CAO = (function () {
   const COMPOSANTS_SCH = lot({ titre: "Composants du schéma", verifier: verifierSch, muter: muterSch, rafraichir: rafraichirSch });
 
   /* ---------- composants du PCB ----------
-     Position dans le repère de l'utilisateur (ux/uy, wxu/wyu), comme le panneau. Face,
+     Position dans le repère des lectures (cao_pcb_lire, liaisons, zone, routage) : c'est le seul
+     que Claude voit, quelle que soit l'origine choisie dans le panneau. Face,
      position et rotation passent par transformFps : le cuivre accroché suit, selon la
      préférence de l'utilisateur (S.moveEtch). */
   const FACES = { dessus: 0, dessous: 1 };
@@ -234,7 +235,7 @@ const ECRITURE_CAO = (function () {
           if (typeof v !== "number" || !Number.isFinite(v) || (k !== "rotation" && Math.abs(v) > 1000)) {
             refus.push(quoi + (k === "rotation" ? " : nombre de degrés" : " : nombre de mm, à ±1000")); continue;
           }
-          const avant = k === "x" ? ux(fp.x) : k === "y" ? uy(fp.y) : angle(fp.rot || 0);
+          const avant = k === "x" ? r3(fp.x) : k === "y" ? r3(fp.y) : angle(fp.rot || 0);
           const apres = k === "rotation" ? angle(v) : r3(v);
           if (apres !== avant) lignes.push({ quoi, avant, apres });
         }
@@ -254,8 +255,8 @@ const ECRITURE_CAO = (function () {
       }
       if (POSE.some(k => k in ch)) transformFps([fp.id], () => {
         if ("face" in ch) fp.side = FACES[ch.face];
-        if ("x" in ch) fp.x = wxu(ch.x);
-        if ("y" in ch) fp.y = wyu(ch.y);
+        if ("x" in ch) fp.x = r3(ch.x);
+        if ("y" in ch) fp.y = r3(ch.y);
         if ("rotation" in ch) fp.rot = angle(ch.rotation);
       });
     }
