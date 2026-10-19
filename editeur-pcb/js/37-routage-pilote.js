@@ -275,8 +275,41 @@ function routageJouerPlacement(a){
            (bouges.length ? " (" + bouges.slice(0, 40).join(", ") + (bouges.length > 40 ? "…" : "") + ")" : "") + dit}];
 }
 
+/* cao_score : lectures. Le routage se juge sur le DRC de la page, qui contient déjà les écarts
+   aux contraintes (« Contrainte … ») et aux groupes de longueur (« Groupe … ») ; le placement,
+   sur le score du serveur (le même document que le panneau de placement). */
+function routageScoreRoutage(){
+  const c = conn(true), drc = runDrc();
+  const err = drc.filter(d => !d.info), rem = drc.filter(d => d.info);
+  const classe = re => drc.filter(d => re.test(d.msg)).length;
+  const longueur = S.tracks.reduce((t, x) => t + trkLen(x), 0);
+  const total = 10 * c.unrouted + 5 * err.length + rem.length + 0.2 * S.vias.length;
+  return ["Score de routage (plus bas = mieux) :",
+          "- liaisons restantes : " + c.unrouted,
+          "- DRC : " + err.length + " erreur(s), " + rem.length + " remarque(s) ; dont contraintes " + classe(/^Contrainte /) +
+            ", groupes de longueur " + classe(/^Groupe /) + ", topologie " + classe(/topolog|moignon/i),
+          "- vias : " + S.vias.length + " ; longueur totale de pistes : " + r3(longueur) + " mm",
+          "- total indicatif : " + r3(total) + " (10 par liaison restante, 5 par erreur, 1 par remarque, 0,2 par via)"].join("\n");
+}
+async function routageScorePlacement(){
+  const doc = PLACEMENT_SCORE.documentPcb();
+  if(!doc || !doc.footprints || !doc.footprints.length) throw new Error("Aucune empreinte sur la carte.");
+  const rep = await fetch("/api/pcb/score-placement", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(doc)});
+  const d = rep.ok ? await rep.json() : null;
+  if(!d || !d.succes) throw new Error("Le serveur n'a pas pu scorer le placement : " + ((d && d.detail) || ("HTTP " + rep.status)));
+  const court = v => { const t = JSON.stringify(v); return t.length > 600 ? t.slice(0, 600) + "…" : t; };
+  const L = ["Score de placement (serveur) :", "- longueur des liaisons (HPWL) : " + r3(d.hpwl_mm) + " mm"];
+  for(const k of ["top_contributeurs", "congestion", "decouplage", "ordonnancement"]) if(d[k] != null) L.push("- " + k + " : " + court(d[k]));
+  return L.join("\n");
+}
+
 function routagePiloteCommandes(){
   return {
+    cao_score: {executer: async a => {
+      if(a.quoi === "routage") return routageScoreRoutage();
+      if(a.quoi === "placement") return routageScorePlacement();
+      throw new Error("« quoi » : routage ou placement.");
+    }},
     cao_placement_auto: routageCommande(a => "Placement automatique (" + a.methode + ")", routageJouerPlacement),
     cao_paire: routageCommande(a => "Paire différentielle " + a.paire, routageJouerPaire),
     cao_router: routageCommande(a => "Routage (" + ((a.routes || []).length) + " route(s), " + ((a.vias || []).length) + " via(s))", routageJouerRoutes),

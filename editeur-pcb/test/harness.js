@@ -437,7 +437,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* classes d'interface (commun/classes-interface.js) */
   "CLASSES_INTERFACE","familleClasse","simNaturePcb",
   /* lectures partagées Gemini / canal de pilotage (commun/lecture-cao.js) */
-  "LECTURE_CAO","piloteCao","ECRITURE_CAO","ROUTAGE"];
+  "LECTURE_CAO","piloteCao","ECRITURE_CAO","ROUTAGE","PLACEMENT_SCORE"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -26895,6 +26895,39 @@ TA("canal de pilotage : cao_placement_auto, forces et satellites en une etape ; 
       if(!motif.test(m))throw new Error("refus attendu "+motif+" : "+m);
     }
   }finally{global.Pilote=ancien;}
+});
+
+TA("canal de pilotage : cao_score, routage (liaisons, DRC, vias, longueur) et placement (serveur)",async()=>{
+  const cmds={}, ancien=global.Pilote, fetchGarde=global.fetch;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  try{
+    piloteCao("pcb");
+    const d=cmds.cao_score;
+    if(!d||d.ecriture)throw new Error("cao_score est une lecture");
+    loadDoc(exemple1());
+    const lire=()=>d.executer({quoi:"routage"});
+    const avant=serialize(), t1=await lire();
+    const L=S.tracks.reduce((t,x)=>t+trkLen(x),0);
+    if(!new RegExp("liaisons restantes : "+conn(true).unrouted+"\\n").test(t1)||!new RegExp("vias : "+S.vias.length+" ; longueur totale de pistes : "+r3(L)+" mm").test(t1))
+      throw new Error("routage : "+t1);
+    S.tracks.splice(0,8); touch();
+    const t2=await lire(), u=conn(true).unrouted;
+    if(!u||!new RegExp("liaisons restantes : "+u+"\\n").test(t2))throw new Error("carte abimee : "+t2);
+    const tot=s=>+s.match(/total indicatif : ([\d.]+)/)[1];
+    if(!(tot(t2)>tot(t1)))throw new Error("le total doit monter quand il reste des liaisons");
+    loadDoc(JSON.parse(avant),true);
+    if(serialize()!==avant)throw new Error("une lecture a ecrit");
+    /* placement : le document du panneau part au serveur ; une reponse en erreur est un refus clair */
+    let corps=null;
+    global.fetch=async(url,o)=>{ corps=o.body; return {ok:true,status:200,json:async()=>({succes:true,hpwl_mm:123.456,top_contributeurs:[{ref:"U1"}]})}; };
+    const tp=await d.executer({quoi:"placement"});
+    if(corps!==JSON.stringify(PLACEMENT_SCORE.documentPcb())||!/HPWL\) : 123\.456 mm/.test(tp)||!/top_contributeurs : \[\{"ref":"U1"\}\]/.test(tp))throw new Error("placement : "+tp);
+    global.fetch=async()=>({ok:false,status:500,json:async()=>null});
+    let m="";try{await d.executer({quoi:"placement"});}catch(e){m=e.message;}
+    if(!/n'a pas pu scorer le placement : HTTP 500/.test(m))throw new Error("erreur serveur : "+m);
+    m="";try{await d.executer({quoi:"tout"});}catch(e){m=e.message;}
+    if(!/routage ou placement/.test(m))throw new Error("quoi inconnu : "+m);
+  }finally{global.Pilote=ancien; global.fetch=fetchGarde;}
 });
 
 (async()=>{

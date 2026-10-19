@@ -718,6 +718,7 @@ var PLACEMENT_SCORE = (function() {
 
   return {
     actualiser,
+    documentPcb: construireDocumentPcb,   // repris par cao_score (37-routage-pilote.js)
     injecterMotifs,
     selectionnerGroupe,
     ciblerComposant,
