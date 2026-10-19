@@ -845,9 +845,6 @@ function simRapOuvrir(){
           '<div class="rap-sous-titre">'+simRapSousTitre(d)+'</div>'+
         '</div>'+
         '<div class="rap-actions">'+
-          (typeof iaLancerAnalyseSelection==="function"
-            ? '<button class="rap-btn" id="bSimRapIa" title="Ouvrir l\'assistant IA avec ce rapport déjà dans la question : vous relisez, puis envoyez">🤖 Envoyer à l\'IA</button>'
-            : '')+
           '<button class="rap-btn" id="bSimRapCopier" title="Copier le rapport complet (Markdown), autonome : à coller dans n\'importe quelle IA">📋 Copier</button>'+
           '<button class="rap-btn" id="bSimRapPrint" title="Imprimer ou enregistrer au format PDF">🖨️ Imprimer / PDF</button>'+
           '<button class="rap-btn" id="bSimRapDl" title="Télécharger un fichier HTML autonome hors-ligne">⤓ Fichier .html</button>'+
@@ -858,8 +855,6 @@ function simRapOuvrir(){
     '</div>';
   mod.removeAttribute("hidden");
   simEl("bSimRapCopier").onclick=simRapCopier;
-  const bIa=simEl("bSimRapIa");
-  if(bIa)bIa.onclick=simRapVersIa;
   simEl("bSimRapPrint").onclick=function(){window.print();};
   simEl("bSimRapDl").onclick=simRapTelecharger;
   simEl("bSimRapFermer").onclick=simRapFermer;
@@ -879,27 +874,6 @@ function simRapToast(msg){
   t.textContent=msg;
   mod.appendChild(t);
   setTimeout(()=>t.remove(),2200);
-}
-
-/* VERS L'ASSISTANT DE LA SUITE (commun/ia-assistant.js). Le rapport part
-   comme la question, posé dans le champ de saisie et NON envoyé : on relit,
-   on précise, puis on envoie. Sans clé API, l'assistant la demande d'abord
-   et envoie la question dès qu'elle est saisie — c'est son comportement pour
-   toutes les analyses qu'on lui confie. La fenêtre se ferme pour laisser voir
-   le volet. */
-function simRapVersIa(){
-  const d=SIM_RAP_DONNEES||simRapCollecter();
-  simRapFermer();
-  /* LA QUESTION, PAS LE RAPPORT : l'assistant le lit lui-même, partie par
-     partie, avec ses outils de lecture (commun/ia-assistant.js) — les chiffres
-     et les diagnostics d'abord, l'annexe JSON seulement s'il lui manque un
-     chiffre. Le rapport entier pèse jusqu'à 60 000 caractères. */
-  iaLancerAnalyseSelection({type:"rapport_simulation", texte:
-    "Analyse le rapport de la simulation « "+d.analyse+" » (analyse « "+d.cle+
-    " », statut : "+d.statutTxt+"). Lis-le avec l'outil « simulation », en "+
-    "commençant par les chiffres clés et les diagnostics. Dis si le résultat est "+
-    "fiable, ce qui ne va pas et pourquoi, et ce qu'il faut corriger sur la carte, "+
-    "par ordre de priorité."});
 }
 
 function simRapCopier(){

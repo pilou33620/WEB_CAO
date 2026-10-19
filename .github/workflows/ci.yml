@@ -112,10 +112,6 @@ jobs:
           node gestion-lib/test/banc-import-jlc.js
           node gestion-lib/test/banc-composants.js
 
-      - name: Assistant IA — échappement du HTML du modèle
-        run: |
-          node commun/test/banc-ia-markdown.js
-
       - name: Gestion LIB — repère des empreintes (y vers le bas, comme l'éditeur PCB)
         run: node gestion-lib/test/banc-repere-pcb.js
 

@@ -2,9 +2,9 @@
    commun/simulation-datasheet.js
    DE LA DATASHEET AUX RÉGLAGES DES SIMULATIONS
    -----------------------------------------------------------------------------
-   L'assistant IA lit une datasheet (PDF joint) et propose des valeurs pour les
-   simulations. Ce fichier est tout ce qui se trouve entre sa réponse et le
-   panneau : la LISTE FERMÉE de ce qui peut être réglé, dans quelle unité, entre
+   Claude (par le MCP de web_suite, cao_sim_ecrire) lit une datasheet et propose
+   des valeurs pour les simulations. Ce fichier est tout ce qui se trouve entre
+   sa proposition et le panneau : la LISTE FERMÉE de ce qui peut être réglé, dans quelle unité, entre
    quelles bornes, et le geste qui l'applique proprement — fiche ΔI remise à
    jour, résultat devenu faux oublié, onglet redessiné.
 

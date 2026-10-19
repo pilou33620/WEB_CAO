@@ -1985,10 +1985,11 @@ elle appartient à l'analyse d'impédance et n'a rien à dire sous un autre ongl
 
 ### Régler les simulations depuis une datasheet
 
-Dans l'éditeur PCB et la visionneuse, l'assistant IA lit une datasheet jointe
-(📎, ou PDF glissé sur le volet) et propose des valeurs pour **toutes** les
-simulations. Le bouton « ⚙️ Paramétrer les simulations avec cette datasheet »
-pose la question pour vous.
+Dans l'éditeur PCB et la visionneuse, Claude Code (par le MCP de web_suite) lit
+la datasheet lui-même et propose des valeurs pour **toutes** les simulations :
+il lit d'abord le catalogue (`cao_sim_lire`, quoi=catalogue), puis propose le lot
+par `cao_sim_ecrire`. La méthode (pire cas, page et citation) est dans la fiche
+`simulation.md` du skill `web-suite`.
 
 | Simulation | Ce que la datasheet règle |
 |---|---|
@@ -2000,22 +2001,15 @@ pose la question pour vous.
 | Chute DC | courant total par composant (réparti sur ses broches), tension des sources, budgets, ambiante, conductivité du stratifié |
 
 **La liste est fermée** (`commun/simulation-datasheet.js`) : chaque clé a son
-unité et ses bornes physiques, et l'IA reçoit ce catalogue avec les valeurs en
-cours. **Rien ne s'applique sans être vu** : « 🔍 Vérifier et appliquer… »
-affiche chaque valeur à côté de la valeur actuelle, avec la page et la citation
-de la datasheet. On coche ce qu'on garde. Une valeur hors bornes, une clé
-inconnue ou un composant absent de la carte est refusé, motif affiché. Une
-valeur donnée en confiance basse arrive décochée.
+unité et ses bornes physiques, que Claude lit avec les valeurs en cours. **Rien
+ne s'applique sans être vu** : la carte du panneau « Claude » montre chaque
+valeur à côté de la valeur actuelle, et une valeur hors bornes, une clé inconnue
+ou une autre unité refuse le lot entier, motif affiché.
 
 Après application, ce qu'un réglage invalide est oublié (f₀ ou front changé →
 résultat SI à relancer), Z(ω) se recalcule, et l'assistant ΔI s'allume si la
-fiche de la charge a été remplie. Les condensateurs réglés portent le badge
-« Datasheet », les bornes DC le badge « DS ». Les parasites relevés sont gardés
-dans le profil **par MPN** et survivent à « ⚡ Détecter » ; sans MPN, ils ne
-valent que pour la session.
-
-Les trois modèles du sélecteur lisent le PDF, Gemma 4 compris. Il part chez
-Google AI Studio avec le message : à éviter pour un document sous NDA.
+fiche de la charge a été remplie. Les parasites des condensateurs et les bornes
+de la chute DC relevés dans une datasheet se saisissent encore dans la page.
 
 ### Deux modes, et ils ne répondent pas à la même question
 

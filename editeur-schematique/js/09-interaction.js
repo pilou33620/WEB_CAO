@@ -862,10 +862,6 @@ cv.addEventListener("contextmenu",e=>{
         if(wi >= 0){ S.selW.add(S.wires[wi]); refreshPanels(); draw(); }
       }
     }
-    if(selCount() > 0 && typeof iaAfficherMenuContextuel === "function"){
-      iaAfficherMenuContextuel(e);
-      return;
-    }
     clearSel(); refreshPanels(); draw();
   }
 });

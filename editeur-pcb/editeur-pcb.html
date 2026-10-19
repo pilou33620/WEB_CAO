@@ -11,7 +11,6 @@
 <link rel="stylesheet" href="../commun/reperage.css">
 <link rel="stylesheet" href="../commun/simulation-em.css">
 <link rel="stylesheet" href="../commun/simulation-rapport.css">
-<link rel="stylesheet" href="../commun/ia-assistant.css">
 <link rel="stylesheet" href="../commun/projet.css">
 <link rel="stylesheet" href="../commun/variantes.css">
 <link rel="stylesheet" href="../commun/tactile.css">
@@ -33,7 +32,6 @@
         <button type="button" data-cao-nav="accueil" title="Accueil">⌂</button>
       </nav>
       <button class="tb" id="bProfil" data-cao-profil title="Utilisateur : panneaux, réglages et derniers documents lui appartiennent">👤 …</button>
-      <button class="tb tb-ia" id="bIaAssistant" title="Assistant IA technique — Gemma 4 31B &amp; Gemini 3.8 Flash (Google AI Studio)"><span class="ia-sparkle">✨</span> IA</button>
       <button class="tb tb-tactile-indicator" id="bTactileToggle" title="Mode tactile (iPad / tablette)"><span class="tactile-dot"></span> 📱 Tactile</button>
     </div>
     <nav class="menubar">
@@ -320,19 +318,6 @@
     <div class="pnl-body" id="simResultats"></div>
   </section>
 
-  <section class="pnl" data-pnl="ia" data-title="Assistant IA">
-    <header class="pnl-head">
-      <span class="pnl-grip">⠿</span><span class="pnl-title">Assistant IA</span>
-      <span class="pnl-acts">
-        <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
-        <button class="pnl-btn" data-act="maximize" title="Plein écran">□</button>
-        <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
-        <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
-      </span>
-    </header>
-    <div class="pnl-body" id="iaPanneau"></div>
-  </section>
-
   <section class="pnl" data-pnl="placement" data-title="Qualité de placement">
     <header class="pnl-head">
       <span class="pnl-grip">⠿</span><span class="pnl-title">Qualité de placement</span>
@@ -420,7 +405,6 @@
 <script src="../commun/explorateur-lib.js"></script>
 <script src="../commun/workspace.js"></script>
 <script src="../commun/lecture-cao.js"></script>
-<script src="../commun/ia-assistant.js"></script>
 <script src="../commun/tactile.js"></script>
 <script src="../commun/menus.js"></script>
 <script src="../commun/tuto.js" data-outil="pcb"></script>

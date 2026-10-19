@@ -19,7 +19,7 @@ const WS_CONFIG={
        « Espace de travail » la liste comme les autres. Déclarée ici sans
        figurer dans `order`, elle démarre masquée ; `last` dit où elle ira. */
     order:{dockL:["couches"],dockR:["carte","detail"],dockB:["composants","nets"]},
-    hidden:["sim","resultats","ia"],
+    hidden:["sim","resultats"],
     panels:{
       couches   :{grow:1,collapsed:false,x:80 ,y:140,w:250,h:520,last:"dockL"},
       carte     :{grow:1,collapsed:false,x:150,y:140,w:340,h:420,last:"dockR"},
@@ -30,8 +30,7 @@ const WS_CONFIG={
       /* Les résultats de la simulation EM ont leur section, en bas : une
          courbe « le long du parcours » ou « en fréquence » se lit en largeur.
          Masquée d'usine, elle reparaît d'elle-même à la fin d'un calcul. */
-      resultats :{grow:2.5,collapsed:false,x:220,y:160,w:900,h:560,last:"dockB"},
-      ia        :{grow:1.5,collapsed:false,x:250,y:140,w:440,h:580,last:"dockR"}
+      resultats :{grow:2.5,collapsed:false,x:220,y:160,w:900,h:560,last:"dockB"}
     }
   }
 };

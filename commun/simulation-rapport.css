@@ -581,7 +581,7 @@
 /* AU-DESSUS DE L'ESPACE DE TRAVAIL. Les panneaux flottants et la couche
    tactile montent jusqu'à 9 999, l'explorateur de la LIB à 12 000 : à 1 000,
    le rapport s'ouvrait dessous. Il reste sous la fenêtre de projet (99 990)
-   et l'assistant IA (99 998), qu'on doit pouvoir appeler par-dessus. */
+   et le panneau « Claude » du canal de pilotage, qu'on doit pouvoir voir par-dessus. */
 .rap-modal {
   z-index: 12500;
 }

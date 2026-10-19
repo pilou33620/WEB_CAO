@@ -14728,7 +14728,7 @@ function simRendrePDN() {
     } else if (cp.prov === "catalogue") {
       provBadge = '<span class="simBadge" style="background:rgba(59,130,246,0.18);color:#60a5fa" title="Caractéristiques extraites du catalogue de composants">Catalogue</span>';
     } else if (cp.prov === "datasheet") {
-      provBadge = '<span class="simBadge" style="background:rgba(236,72,153,0.16);color:#f472b6" title="Parasites relevés dans la datasheet par l\'assistant IA, validés à la main (commun/simulation-datasheet.js)">Datasheet</span>';
+      provBadge = '<span class="simBadge" style="background:rgba(236,72,153,0.16);color:#f472b6" title="Parasites relevés dans la datasheet, validés à la main (commun/simulation-datasheet.js)">Datasheet</span>';
     }
 
     const esrTxt = cp.esr < 1 ? (cp.esr * 1000).toFixed(1) + " mΩ" : cp.esr.toFixed(2) + " Ω";

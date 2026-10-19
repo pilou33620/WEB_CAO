@@ -4783,9 +4783,6 @@ cv.addEventListener("contextmenu",e=>{
         refreshPanels(); draw();
       }
     }
-    if(selCount() > 0 && typeof iaAfficherMenuContextuel === "function" && iaAfficherMenuContextuel(e)){
-      return;
-    }
     clearSel();S.hlNet=null;refreshPanels();draw();
   }
 });

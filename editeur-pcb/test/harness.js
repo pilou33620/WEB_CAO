@@ -436,7 +436,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "ipc2581Document","ipc2581Fichier","exportIpc2581","ipcFonctionCuivre",
   /* classes d'interface (commun/classes-interface.js) */
   "CLASSES_INTERFACE","familleClasse","simNaturePcb",
-  /* lectures partagées Gemini / canal de pilotage (commun/lecture-cao.js) */
+  /* lectures du canal de pilotage (commun/lecture-cao.js) */
   "LECTURE_CAO","piloteCao","ECRITURE_CAO","ROUTAGE","PLACEMENT_SCORE"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
@@ -546,10 +546,10 @@ function T(name,fn){
 const T_ASYNC=[];
 function TA(name,fn){T_ASYNC.push([name,fn]);}
 
-/* Les registres de lecture ont quitté ia-assistant.js pour commun/lecture-cao.js
+/* Les registres de lecture ont quitté l'ancien assistant IA pour commun/lecture-cao.js
    (web_suite, registre-cao). Le relevé a été pris AVANT le déplacement, avec le
    code de l'assistant, sur ce même scénario : les sorties doivent être identiques
-   au caractère près, parce que Gemini et Claude lisent le même texte. En tête du
+   au caractère près (Claude lit le texte qu'il lisait). En tête du
    banc : le relevé part d'une page neuve (ni DRC lancé, ni résultat de simulation). */
 T("lectures CAO : sorties identiques au relevé pris avant le déplacement",()=>{
   const releve=JSON.parse(fs.readFileSync(path.join(__dirname,"releve-lecture-pcb.json"),"utf8"));

@@ -21,7 +21,7 @@ const WS_CONFIG={
        le liste comme les autres. Un panneau déclaré ici sans figurer dans
        `order` démarre masqué : c'est `last` qui dit où il ira. */
     order:{dockL:["stack"],dockR:["props","list","stackup"],dockB:[]},
-    hidden:["sim","resultats","ia","placement"],
+    hidden:["sim","resultats","placement"],
     panels:{
       stack:{grow:1  ,collapsed:false,x:90 ,y:150,w:250,h:300,last:"dockL"},
       props:{grow:1.2,collapsed:false,x:150,y:150,w:300,h:400,last:"dockR"},
@@ -32,8 +32,7 @@ const WS_CONFIG={
       /* Les résultats de la simulation EM ont leur section, en bas : une
          courbe « le long du parcours » ou « en fréquence » se lit en largeur.
          Masquée d'usine, elle reparaît d'elle-même à la fin d'un calcul. */
-      resultats:{grow:1,collapsed:false,x:220,y:160,w:900,h:560,last:"dockB"},
-      ia   :{grow:1.5,collapsed:false,x:250,y:140,w:440,h:580,last:"dockR"}
+      resultats:{grow:1,collapsed:false,x:220,y:160,w:900,h:560,last:"dockB"}
     }
   }
 };

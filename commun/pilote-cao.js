@@ -31,8 +31,8 @@ async function piloteCaoCalcul(args) {
   return { analyse, rapport: simRapMarkdown(simRapCollecter()) };
 }
 
-/* cao_valeur_composant (schéma) : la recherche et le rafraîchissement de l'action
-   schema_values de l'assistant (ia-assistant.js), en une étape d'historique. Le repère
+/* cao_valeur_composant (schéma) : la recherche et le rafraîchissement de l'ancienne action
+   schema_values de l'assistant IA (retiré), en une étape d'historique. Le repère
    est cherché AVANT push() : un repère inconnu ne laisse pas d'étape vide à défaire. */
 function piloteTrouverComp(ref) {
   const cible = String(ref || "").trim().toUpperCase();

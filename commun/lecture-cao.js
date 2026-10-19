@@ -2,9 +2,9 @@
    commun/lecture-cao.js
    Les lectures des pages WEB_CAO : éditeur PCB (S), visionneuse IPC-2581 (V),
    simulations (SIM). Chaque outil rend des lignes de texte, faites pour être
-   lues par un modèle. Deux lecteurs : l'assistant Gemini (commun/ia-assistant.js,
-   jusqu'à son retrait) et le canal de pilotage (commun/pilote-cao.js, outils MCP
-   de web_suite). Chargé avant les deux.
+   lues par un modèle : le canal de pilotage (commun/pilote-cao.js, outils MCP de
+   web_suite) les sert à Claude. Elles viennent de l'ancien assistant IA intégré,
+   retiré depuis. Chargé avant le canal.
    Les fonctions lisent S, V et SIM au moment de l'appel, sans rien modifier.
    ============================================================================= */
 "use strict";

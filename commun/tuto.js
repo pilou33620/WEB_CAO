@@ -152,9 +152,7 @@
       {sel:"#bClasserNets",titre:"Classer les nets",
        texte:"PWR, GND ou signal : la classe prépare les réglages de simulation."},
       {sel:"#bSim",titre:"Simulation EM",
-       texte:"Impédance, diaphonie, chemin de retour, chute DC, PDN : le calcul tourne sur le serveur."},
-      {sel:"#bIaAssistant",titre:"Assistant IA",
-       texte:"Il lit les datasheets et propose les réglages de simulation, valeur par valeur, avec la page d'où ils viennent."}
+       texte:"Impédance, diaphonie, chemin de retour, chute DC, PDN : le calcul tourne sur le serveur."}
     ]
   };
   const etapes=ETAPES[outil];

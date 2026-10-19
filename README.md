@@ -2,7 +2,7 @@
 
 **Suite de CAO électronique en HTML5 / JavaScript, 100 % locale, sans compilation ni dépendance obligatoire.**
 
-Du schéma au dossier de fabrication : saisie multi-feuilles, routage *Push & Shove*, bibliothèque de composants, inspection de fichiers IPC-2581 et simulation d'intégrité du signal et de l'alimentation (SI / PI / RF). Un assistant IA optionnel lit vos datasheets et propose les réglages de simulation, avec la page et la citation d'où ils viennent.
+Du schéma au dossier de fabrication : saisie multi-feuilles, routage *Push & Shove*, bibliothèque de composants, inspection de fichiers IPC-2581 et simulation d'intégrité du signal et de l'alimentation (SI / PI / RF). Claude Code, par le serveur MCP de web_suite, lit vos datasheets et propose les réglages de simulation, valeur par valeur.
 
 Les éditeurs s'ouvrent par simple double-clic dans le navigateur, sans `npm install` ni serveur.
 
@@ -86,11 +86,9 @@ Le bouton **« Simulation EM… »** de l'Éditeur PCB et de la Visionneuse ouvr
 
 Physique, équations et étalons de validation : [Guide Simulation EM](docs/simulation-em.md).
 
-## 🤖 Assistant IA
+## 🤖 Claude, par le MCP de web_suite
 
-Volet présent dans tous les outils, branché sur **Google AI Studio** (Gemma 4 31B par défaut, Gemini 3.8 Flash). Il connaît l'état du schéma ou de la carte, accepte une datasheet en PDF ou en capture, et peut **paramétrer les simulations depuis la datasheet** : chaque valeur est bornée, sourcée, et appliquée seulement si vous la cochez.
-
-La clé API reste en mémoire vive, ou est fournie par le serveur (`GEMINI_API_KEY`, ou `api_key_free_ia_studio.txt` ignoré par Git). Les pièces jointes partent chez Google avec le message.
+L'ancien assistant IA intégré est retiré. **Claude Code** pilote les pages ouvertes par le serveur MCP de [web_suite](https://github.com/pilou33620/web_suite) : il lit le schéma, la carte, les simulations et la bibliothèque, lance les calculs, et propose ses écritures (valeurs, propriétés, dessin du schéma, routage, réglages de simulation depuis une datasheet, création de composants) sur une **carte** du panneau « Claude » : rien ne change avant votre clic, sauf si vous allumez l'interrupteur de l'onglet. Détail des outils : `lanceur/docs/DETAILS.md` de web_suite.
 
 ---
 
