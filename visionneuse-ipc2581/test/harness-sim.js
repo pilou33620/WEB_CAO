@@ -6814,11 +6814,28 @@ T("canal de pilotage : cao_sim_ecrire, unité du catalogue, une carte qu'Annuler
   d.annuler({ lot: lt }, jt);
   if (simDsLire(chTr) !== 0) throw new Error("Annuler doit remettre tr à 0, lu " + simDsLire(chTr));
   simDsEcrire(chTr, tr0);
+  // la fiche de la charge allume l'assistant ΔI et part dans le profil : Annuler remet l'un et l'autre
+  pdnDeLabo();
+  const asst0 = simPDNAssistantActif(), dI0 = SIM_PDN.deltaIA, sup0 = JSON.stringify(SIM_PDN.fiche && SIM_PDN.fiche.suppose);
+  const lf = [{ groupe: "pdn_fiche", cle: "iActifMa", valeur: 55, unite: uI }];
+  const pf = d.proposer({ lot: lf }), jf = d.appliquer({ lot: lf }, pf);
+  if (!/gardée dans ton profil/.test(pf.apres)) throw new Error("la carte doit dire que la fiche part dans le profil : " + pf.apres);
+  d.annuler({ lot: lf }, jf);
+  if (simPDNAssistantActif() !== asst0 || SIM_PDN.deltaIA !== dI0 || JSON.stringify(SIM_PDN.fiche && SIM_PDN.fiche.suppose) !== sup0)
+    throw new Error("Annuler ne remet pas l'assistant, ΔI ou la fiche : " + [simPDNAssistantActif(), SIM_PDN.deltaIA, JSON.stringify(SIM_PDN.fiche && SIM_PDN.fiche.suppose)] + " ; attendu " + [asst0, dI0, sup0]);
+  // ΔI tapé : le mode « manuel » revient aussi
+  const man0 = !!SIM_PDN.deltaIManuel, ld = [{ groupe: "pdn", cle: "deltaIA", valeur: 0.3, unite: "A" }];
+  const jd = d.appliquer({ lot: ld }, d.proposer({ lot: ld }));
+  if (!SIM_PDN.deltaIManuel) throw new Error("ΔI tapé : mode manuel attendu");
+  d.annuler({ lot: ld }, jd);
+  if (!!SIM_PDN.deltaIManuel !== man0 || SIM_PDN.deltaIA !== dI0) throw new Error("Annuler ne remet pas le mode de ΔI");
   refus([{ groupe: "pdn", cle: "rVrmMOhm", valeur: 7, unite: "Ω" }], /unité « Ω », le catalogue attend « mΩ »/);
   refus([{ groupe: "pdn", cle: "rVrm", valeur: 7, unite: uR }], /paramètre « rVrm » inconnu/);
   refus([{ groupe: "pdn", cle: "rVrmMOhm", valeur: 1e9, unite: uR }], /hors des bornes/);
   refus([{ groupe: "rf", cle: "x", valeur: 1 }], /groupe « rf » inconnu/);
   refus([{ groupe: "pdn", cle: "rVrmMOhm", valeur: r0, unite: uR }], /Rien à changer/);
+  const chP = simDsChamp("bus", "protocole");
+  if (chP && chP.choix) refus([{ groupe: "bus", cle: "protocole", valeur: simDsLire(chP), unite: chP.unite }], /Rien à changer/);
   refus([{ groupe: "pdn", cle: "rVrmMOhm", valeur: 9, unite: uR }, { groupe: "pdn", cle: "rVrmMOhm", valeur: 8, unite: uR }], /deux fois/);
 });
 

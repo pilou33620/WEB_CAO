@@ -348,7 +348,9 @@ function exportNetlist(){
 /* Nomenclature exploitable : une ligne par composant, plus un récapitulatif
    par (type, valeur, boîtier) — c'est ce regroupement qui sert à commander. */
 function csvCell(v){
-  const t=String(v==null?"":v);
+  let t=String(v==null?"":v);
+  // un tableur lit « =… », « +… », « @… » comme une formule : la valeur vient du projet, pas d'un calcul
+  if(/^[=+@\t\r]|^-(?![\d.])/.test(t))t="'"+t;
   return /[";\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t;
 }
 /* `variante` : l'identifiant d'une variante de montage (commun/variantes.js),

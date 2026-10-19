@@ -12,6 +12,8 @@
 const ECRITURE_CAO = (function () {
   const LOT_MAX = 50;                                   // éléments par carte
   const TEXTE = /^[^\x00-\x1f\x7f]{0,200}$/;
+  // des noms venus du projet ou de Claude servent de clés d'objet : jamais ceux-là
+  const CLE_INTERDITE = new Set(["__proto__", "constructor", "prototype"]);
 
   function texte(v, nom, refus) {
     if (typeof v !== "string" || !TEXTE.test(v)) { refus.push(nom + " : texte d'une ligne, 200 caractères au plus"); return null; }
@@ -56,9 +58,18 @@ const ECRITURE_CAO = (function () {
           throw new Error("Le document a changé depuis la carte : rien n'est appliqué, à reproposer.");
         const avant = def.drc ? erreursDrc() : null;
         if (!def.annuler) push();
-        const r = def.muter(args) || {};
+        let r;
+        try { r = def.muter(args) || {}; }
+        catch (e) {
+          // un lot à moitié appliqué serait pire qu'un refus : retour à l'instantané qu'on vient de pousser
+          if (!def.annuler) undo();
+          def.rafraichir();
+          throw new Error("Échec en appliquant, rien n'est changé : " + ((e && e.message) || e));
+        }
         def.rafraichir();
-        const notes = (r.notes || []).concat(def.drc ? [bilanDrc(avant, erreursDrc())] : []);
+        let drc = [];
+        if (def.drc) { try { drc = [bilanDrc(avant, erreursDrc())]; } catch (e) { drc = ["DRC indisponible après l'écriture : " + ((e && e.message) || e)]; } }
+        const notes = (r.notes || []).concat(drc);
         if (prop && notes.length) prop.apres += "\n" + notes.join("\n");
         return r.jeton;
       },
@@ -101,7 +112,7 @@ const ECRITURE_CAO = (function () {
     const cle = r => String(r || "").trim().toUpperCase();
     const pris = new Set(tous.map(c => cle(c.ref)).filter(Boolean)), vus = new Set();
     for (const e of args.lot) {
-      const c = e && typeof e.ref === "string" ? tous.find(x => cle(x.ref) === cle(e.ref)) : null;
+      const c = e && typeof e.ref === "string" && cle(e.ref) ? tous.find(x => cle(x.ref) === cle(e.ref)) : null;
       if (!c) { refus.push("repère « " + (e && e.ref) + " » introuvable (voir cao_schema_lire composants)"); continue; }
       if (vus.has(c)) { refus.push(c.ref + " : deux fois dans le lot"); continue; }
       vus.add(c);
@@ -122,7 +133,7 @@ const ECRITURE_CAO = (function () {
           // une clé à null l'efface ; les autres clés de c.specs restent
           if (!v || typeof v !== "object" || Array.isArray(v) || Object.keys(v).length > 30) { refus.push(quoi + " : objet de 30 clés au plus"); continue; }
           for (const s of Object.keys(v)) {
-            if (!/^[^\x00-\x1f]{1,60}$/.test(s)) { refus.push(quoi + " : clé « " + s + " » invalide"); continue; }
+            if (!/^[^\x00-\x1f]{1,60}$/.test(s) || CLE_INTERDITE.has(s)) { refus.push(quoi + " : clé « " + s + " » invalide"); continue; }
             if (v[s] !== null && texte(v[s], quoi + "." + s, refus) === null) continue;
             const avant = c.specs && Object.prototype.hasOwnProperty.call(c.specs, s) ? c.specs[s] : null;
             if (avant !== v[s]) lignes.push({ quoi: quoi + "." + s, avant, apres: v[s] });
@@ -145,10 +156,14 @@ const ECRITURE_CAO = (function () {
       const poser = () => {
         for (const [k, p] of Object.entries(PROP_SCH)) if (k in ch) c[p] = ch[k];
       };
-      // la valeur d'un CI redessine ses broches : les fils suivent (reshapeComp)
+      // la valeur d'un CI (texte du corps) élargit son symbole et déplace ses broches : les fils suivent (reshapeComp)
       const def = typeof defOf === "function" ? defOf(c.type) : null;
-      if ("valeur" in ch && def && typeof def.pins === "function" && typeof reshapeComp === "function") reshapeComp(c, poser);
-      else poser();
+      if ("valeur" in ch && def && typeof def.pins === "function" && typeof reshapeComp === "function") {
+        // reshapeComp fait suivre S.wires, les fils de la feuille affichée : ceux de la feuille du CI ici
+        const page = S.comps.includes(c) ? null : S.pages.find(p => (p.comps || []).includes(c));
+        if (!page) reshapeComp(c, poser);
+        else { const affiches = S.wires; S.wires = page.wires || []; try { reshapeComp(c, poser); } finally { S.wires = affiches; } }
+      } else poser();
       if ("ref" in ch) c.ref = ch.ref;
       if ("non_monte" in ch) { if (ch.non_monte) c.nonMonte = true; else delete c.nonMonte; }
       if (ch.specs) {
@@ -174,7 +189,7 @@ const ECRITURE_CAO = (function () {
   const CHAMPS_PCB = ["ref", "valeur", "boitier", "face", "x", "y", "rotation"];
   const POSE = ["face", "x", "y", "rotation"];
   const cleRef = r => String(r || "").trim().toUpperCase();
-  const empreinte = ref => typeof ref === "string" ? S.fps.find(f => cleRef(f.ref) === cleRef(ref)) : null;
+  const empreinte = ref => typeof ref === "string" && cleRef(ref) ? S.fps.find(f => cleRef(f.ref) === cleRef(ref)) : null;
   const angle = v => ((v % 360) + 360) % 360;
 
   function verifierPcb(args) {
@@ -256,8 +271,9 @@ const ECRITURE_CAO = (function () {
   const largeurs = ts => [...new Set(ts.map(t => r3(t.w)))].sort((a, b) => a - b).join(" / ");
   function hors(net) {
     return { pistes: S.tracks.filter(t => t.net === net && Math.abs(t.w - classWidth(t.net, t.l)) > 1e-6),
-             vias: S.vias.filter(v => v.net === net && (Math.abs(v.d - classOf(net).via) > 1e-6 || Math.abs(v.drill - classOf(net).drill) > 1e-6)) };
+             vias: S.vias.filter(v => v.net === net && (Math.abs(v.d - classOf(net).via) > 1e-6 || Math.abs(v.drill - percageVia(classOf(net))) > 1e-6)) };
   }
+  const percageVia = cl => Math.min(cl.drill, cl.via - 0.1);     // comme applyClasses
   function pistesDe(e) {
     const l = e.couche == null ? null : coucheIndex(e.couche);
     return S.tracks.filter(t => t.net === e.net && (l === null || t.l === l));
@@ -299,7 +315,7 @@ const ECRITURE_CAO = (function () {
       if (e.realigner) {
         const h = hors(e.net), cl = classOf(e.net);
         for (const t of h.pistes) t.w = classWidth(t.net, t.l);
-        for (const v of h.vias) { v.d = cl.via; v.drill = Math.min(cl.drill, cl.via - 0.1); }
+        for (const v of h.vias) { v.d = cl.via; v.drill = percageVia(cl); }
       } else for (const t of pistesDe(e)) t.w = r3(e.largeur);
     }
   }
@@ -325,7 +341,7 @@ const ECRITURE_CAO = (function () {
     for (const e of args.lot) {
       const a = e && e.action;
       if (a === "affecter") {
-        if (typeof e.net !== "string" || !nets.has(e.net)) { refus.push("net « " + (e && e.net) + " » inconnu (voir cao_pcb_lire nets)"); continue; }
+        if (typeof e.net !== "string" || !nets.has(e.net) || CLE_INTERDITE.has(e.net)) { refus.push("net « " + (e && e.net) + " » inconnu (voir cao_pcb_lire nets)"); continue; }
         const i = trouver(e.classe);
         if (i < 0) { refus.push(e.net + " : classe « " + e.classe + " » inconnue"); continue; }
         const avant = netClass[e.net] && trouver(netClass[e.net]) >= 0 ? classes[trouver(netClass[e.net])].name : classes[0].name;
@@ -378,9 +394,13 @@ const ECRITURE_CAO = (function () {
       if (a === "creer") { classes.push(norme); lignes.push({ quoi, avant: null, apres: decrire(norme) }); }
       else if (decrire(norme) !== decrire(classes[i])) { lignes.push({ quoi, avant: decrire(classes[i]), apres: decrire(norme) }); classes[i] = norme; }
     }
-    // une classe supprimée ne doit plus avoir de net : les rattacher ailleurs dans le même lot
+    // aucun net ne doit finir rattaché à une classe absente (supprimée, ou recréée avec une autre casse) ;
+    // un rattachement déjà orphelin avant le lot n'est pas le fait de cette carte
+    const noms = new Set(classes.map(c => c.name));
+    const dejaOrphelin = (net, nom) => S.netClass[net] === nom && !S.classes.some(c => c.name === nom);
     for (const [net, nom] of Object.entries(netClass))
-      if (trouver(nom) < 0 && S.classes.some(c => c.name === nom)) refus.push("classe « " + nom + " » supprimée alors que le net " + net + " y est encore rattaché");
+      if (!noms.has(nom) && !dejaOrphelin(net, nom))
+        refus.push("classe « " + nom + " » supprimée alors que le net " + net + " y est encore rattaché");
     return { lignes, refus, classes, netClass };
   }
 
@@ -435,11 +455,11 @@ const ECRITURE_CAO = (function () {
         const vue = r => Object.keys(CHAMPS_PAIRE).map(k => k + " " + r[CHAMPS_PAIRE[k]]).join(", ") + ", portée " + (r.scope || "toutes") + ", impédance " + (r.useImp ? r.imp : "—");
         if (vue(norme) !== vue(cand)) { refus.push(quoi + " : valeurs refusées par la page (" + vue(norme) + ")"); continue; }
         if (i < 0) { regles.push(Object.assign(norme, { nouvelle: true })); lignes.push({ quoi, avant: null, apres: vue(norme) }); }
-        else if (vue(norme) !== vue(regles[i])) { lignes.push({ quoi, avant: vue(regles[i]), apres: vue(norme) }); regles[i] = Object.assign(norme, { uid: regles[i].uid }); }
+        else if (vue(norme) !== vue(regles[i])) { lignes.push({ quoi, avant: vue(regles[i]), apres: vue(norme) }); regles[i] = Object.assign(norme, { uid: regles[i].uid, nouvelle: regles[i].nouvelle }); }
         continue;
       }
       if (a !== "net") { refus.push("action « " + a + " » inconnue (paire, net)"); continue; }
-      if (typeof e.net !== "string" || !nets.has(e.net)) { refus.push("net « " + (e && e.net) + " » inconnu (voir cao_pcb_lire nets)"); continue; }
+      if (typeof e.net !== "string" || !nets.has(e.net) || CLE_INTERDITE.has(e.net)) { refus.push("net « " + (e && e.net) + " » inconnu (voir cao_pcb_lire nets)"); continue; }
       const cand = Object.assign({}, cnets[e.net]), quoi = "contraintes " + e.net;
       let ok = true;
       for (const [k, cle] of Object.entries(CHAMPS_NET)) {
@@ -507,6 +527,7 @@ const ECRITURE_CAO = (function () {
       if ((e.unite || "") !== (ch.unite || "")) { refus.push(quoi + " : unité « " + (e.unite || "") + " », le catalogue attend « " + (ch.unite || "") + " »"); continue; }
       const l = simDsPreparer({ valeurs: [{ sim: g.cle, cle: ch.cle, valeur: e.valeur }] }).lignes[0];
       if (!l.ok) { if (l.motif !== "déjà à cette valeur") refus.push(quoi + " : " + l.motif); continue; }
+      if (l.actuel === l.nouveau) continue;                     // simDsPreparer ne le voit que pour les nombres
       lignes.push({ quoi, avant: avecUnite(l.actuel, ch.unite), apres: avecUnite(l.nouveau, ch.unite) });
       aEcrire.push({ sim: g.cle, cle: ch.cle, valeur: l.nouveau, avant: l.actuel });
     }
@@ -516,14 +537,38 @@ const ECRITURE_CAO = (function () {
   function ecrireSim(valeurs) {
     const prep = simDsPreparer({ valeurs });
     const r = simDsAppliquer(prep, prep.lignes.filter(l => l.ok).map(l => l.id));
+    const rates = prep.lignes.filter(l => /^échec/.test(l.motif || ""));
+    if (rates.length) throw new Error(rates.map(l => l.sim + "." + l.cle + " : " + l.motif).join(" ; "));
     return r.messages || [];
+  }
+  /* Ce qu'une écriture du catalogue change EN PLUS de ses valeurs : la fiche de la charge
+     (gardée dans le profil, pour tous les projets), l'assistant ΔI (profil aussi), ΔI et
+     son mode, le front repris par le crosstalk. La carte le garde ; Annuler le remet. */
+  function cotesSim() {
+    const P = typeof SIM_PDN !== "undefined" ? SIM_PDN : {};
+    return JSON.parse(JSON.stringify({
+      fiche: P.fiche || null, assistant: !!P.assistantActif, manuel: !!P.deltaIManuel, deltaIA: P.deltaIA,
+      evenements: P.evenements || null, xtTr: typeof SIM_XT !== "undefined" ? SIM_XT.saisie.tr : null,
+      profilFiches: typeof profLire === "function" ? profLire("pdnFiches") || null : null }));
   }
   /* Annuler remet la valeur d'avant telle quelle, même hors des bornes du catalogue (0 = « non
      renseigné ») : les lignes sont faites ici, sans simDsPreparer, pour le même chemin d'écriture. */
   function remettreSim(jeton) {
-    const lignes = jeton.map((x, id) => ({ id, ok: true, genre: "champ", sim: x.sim, cle: x.cle, nouveau: x.valeur,
-                                           ana: (simDsGroupe(x.sim) || {}).ana || "" }));
+    const lignes = jeton.valeurs.map((x, id) => ({ id, ok: true, genre: "champ", sim: x.sim, cle: x.cle, nouveau: x.valeur,
+                                                  ana: (simDsGroupe(x.sim) || {}).ana || "" }));
     simDsAppliquer({ lignes, source: "annulation" }, lignes.map(l => l.id));
+    const c = jeton.cotes;
+    if (typeof SIM_PDN === "undefined") return;
+    if (!!SIM_PDN.assistantActif !== c.assistant) simPDNBasculerAssistant(c.assistant);   // remet aussi le profil
+    Object.assign(SIM_PDN, { deltaIManuel: c.manuel, deltaIA: c.deltaIA, evenements: c.evenements });
+    if (jeton.fiche) {
+      // la fiche d'avant (null si l'écriture l'a créée) et la section du profil telle qu'elle était
+      SIM_PDN.fiche = c.fiche;
+      if (typeof profEcrire === "function") profEcrire("pdnFiches", c.profilFiches || {});
+    }
+    if (c.xtTr !== null && typeof SIM_XT !== "undefined") SIM_XT.saisie.tr = c.xtTr;
+    SIM_PDN.result = null;
+    simCalculerPDN();
   }
 
   const SIMULATION = lot({
@@ -531,14 +576,24 @@ const ECRITURE_CAO = (function () {
     verifier: verifierSim,
     muter: args => {
       const a = verifierSim(args).aEcrire, vides = a.filter(x => x.avant === null);
-      const notes = ecrireSim(a.map(x => ({ sim: x.sim, cle: x.cle, valeur: x.valeur })));
+      const jeton = { valeurs: a.filter(x => x.avant !== null).map(x => ({ sim: x.sim, cle: x.cle, valeur: x.avant })),
+                      cotes: cotesSim(), fiche: a.some(x => x.sim === "pdn_fiche") };
+      let notes;
+      // pas d'instantané d'éditeur à défaire ici : un échec en route remet tout à la main
+      try { notes = ecrireSim(a.map(x => ({ sim: x.sim, cle: x.cle, valeur: x.valeur }))); }
+      catch (e) { remettreSim(jeton); throw e; }
       if (vides.length) notes.push("Sans valeur d'avant, Annuler ne remettra pas : " + vides.map(x => x.sim + "." + x.cle).join(", ") + ".");
-      return { jeton: a.filter(x => x.avant !== null).map(x => ({ sim: x.sim, cle: x.cle, valeur: x.avant })), notes };
+      if (a.some(x => x.sim === "pdn_fiche"))
+        notes.push("La fiche de la charge est gardée dans ton profil (tous les projets qui ont ce composant) ; Annuler l'y remet.");
+      return { jeton, notes };
     },
     rafraichir: () => {},
     // annuler n'a lieu que si aucun paramètre n'a rebougé depuis (pilote.js compare etat())
-    etat: () => simDsGroupes().map(g => g.champs.map(c => simDsLire(c))),
-    annuler: (args, jeton) => { simPrete(); remettreSim(jeton || []); },
+    etat: () => {
+      const c = cotesSim();
+      return [simDsGroupes().map(g => g.champs.map(ch => simDsLire(ch))), c.assistant, c.manuel, c.xtTr, c.fiche && c.fiche.suppose];
+    },
+    annuler: (args, jeton) => { simPrete(); remettreSim(jeton); },
   });
 
   return { lot, composantsSch: COMPOSANTS_SCH, composantsPcb: COMPOSANTS_PCB, pistes: PISTES, classes: CLASSES,

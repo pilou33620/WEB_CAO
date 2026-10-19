@@ -1075,7 +1075,9 @@ function fabReadme(files,dr){
    assembleurs. C'est donc la virgule qu'il faut protéger — une valeur comme
    « 10k, 1% » couperait la ligne en deux sans cela. */
 function pcbCsvCell(v){
-  const t=String(v==null?"":v);
+  let t=String(v==null?"":v);
+  // un tableur lit « =… », « +… », « @… » comme une formule : la valeur vient du projet, pas d'un calcul
+  if(/^[=+@\t\r]|^-(?![\d.])/.test(t))t="'"+t;
   return /[",\r\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t;
 }
 

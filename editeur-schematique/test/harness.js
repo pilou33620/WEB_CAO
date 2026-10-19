@@ -361,11 +361,27 @@ T("canal de pilotage : cao_composants_ecrire, un lot en une étape, refus sans r
     refus({lot:Array.from({length:51},()=>({ref:"R1",champs:{valeur:"1k"}}))},/51 éléments, 50 au plus/);
     refus({lot:[{ref:"R1",champs:{valeur:"10k"}}]},/Rien à changer/);
     refus({lot:[]},/au moins un élément/);
+    refus({lot:[{ref:"",champs:{valeur:"x"}}]},/introuvable/);                 // un port n'a pas de repère : jamais visé
+    refus({lot:[{ref:"R1",champs:{specs:JSON.parse('{"__proto__":"x"}')}}]},/clé « __proto__ » invalide/);   // tel que le JSON du MCP l'apporte
     /* le document bouge sous la carte : refus au clic */
     const p2=d.proposer({lot:[{ref:"R1",champs:{valeur:"22k"}}]});
     c("R1").value="33k";
     let m="";try{d.appliquer({lot:[{ref:"R1",champs:{valeur:"22k"}}]},p2);}catch(e){m=e.message;}
     if(!/a changé depuis la carte/.test(m)||c("R1").value!=="33k"||S.hist.length!==n)throw new Error("carte périmée : « "+m+" »");
+    /* un CI sur la feuille 2 : les fils de la feuille affichée ne bougent pas, même posés sur ses
+       anciennes coordonnées de broche (reshapeComp ne fait suivre que S.wires) */
+    docLecture();
+    const ci=addComp("ic",600,200); ci.ref="U9";
+    S.comps.splice(S.comps.indexOf(ci),1); S.pages[1].comps.push(ci);
+    const pins=allPins(ci), bout=pins[pins.length-1];
+    const leurre={x1:bout.x,y1:bout.y,x2:bout.x+40,y2:bout.y};                 // feuille 1, sur une broche du CI
+    const sien={x1:bout.x,y1:bout.y,x2:bout.x+40,y2:bout.y}; S.pages[1].wires.push(sien);   // feuille 2, son fil
+    S.wires.push(leurre); const copie=JSON.stringify(leurre);
+    d.appliquer({lot:[{ref:"U9",champs:{valeur:"CIRCUIT-INTEGRE-AU-NOM-TRES-LONG-1234"}}]});   // un texte long élargit le corps
+    const apres=allPins(ci);
+    if(JSON.stringify(apres[apres.length-1])===JSON.stringify(bout))throw new Error("valeur longue : les broches devaient bouger");
+    if(JSON.stringify(leurre)!==copie)throw new Error("un fil de la feuille affichée a suivi le CI de la feuille 2");
+    if(!apres.some(p=>p.x===sien.x1&&p.y===sien.y1))throw new Error("le fil du CI, sur sa feuille, n'a pas suivi sa broche");
     /* un CI : la valeur passe par reshapeComp, sans erreur */
     const u=addComp("ic",200,200); u.ref="U1";
     d.appliquer({lot:[{ref:"U1",champs:{valeur:"LM358"}}]});
@@ -675,6 +691,9 @@ T("nomenclature : les séparateurs sont protégés",()=>{
   if(csvCell('dit "oui"')!=='"dit ""oui"""')throw new Error("guillemets : "+csvCell('dit "oui"'));
   if(csvCell("simple")!=="simple")throw new Error("valeur simple inutilement protégée");
   if(csvCell(null)!=="")throw new Error("valeur absente : chaîne vide attendue");
+  // une valeur écrite par Claude ou venue d'un projet ne doit pas devenir une formule de tableur
+  for(const [v,att] of [["=1+1","'=1+1"],["+5V","'+5V"],["@SUM(A1)","'@SUM(A1)"],["-x","'-x"],["-40","-40"],["-.5","-.5"],["10k","10k"]])
+    if(csvCell(v)!==att)throw new Error("formule : "+v+" → "+csvCell(v));
 });
 T("nomenclature : colonnes enrichies (MPN, Fabricant, Specs, Datasheet)",()=>{
   const c1 = C("resistor",0,0,{

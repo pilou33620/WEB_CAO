@@ -437,7 +437,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* classes d'interface (commun/classes-interface.js) */
   "CLASSES_INTERFACE","familleClasse","simNaturePcb",
   /* lectures partagées Gemini / canal de pilotage (commun/lecture-cao.js) */
-  "LECTURE_CAO","piloteCao"];
+  "LECTURE_CAO","piloteCao","ECRITURE_CAO"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -26587,6 +26587,12 @@ TA("canal de pilotage : cao_composants_ecrire au PCB, un lot en une étape, DRC 
     refus({lot:[{ref:"R1",champs:{face:"gauche"}}]},/dessus ou dessous/);
     refus({lot:[{ref:"R1",champs:{rotation:"90"}}]},/nombre de degrés/);
     refus({lot:[{ref:"Z9",champs:{valeur:"1"}},{ref:"R1",champs:{valeur:"2"}}]},/Z9.*introuvable/);
+    refus({lot:[{ref:"",champs:{valeur:"1"}}]},/introuvable/);
+    /* le document bouge sous la carte : refus au clic */
+    const pp=d.proposer({lot:[{ref:"U1",champs:{x:1}}]});
+    fp("U1").x+=3; touch();
+    let mm="";try{d.appliquer({lot:[{ref:"U1",champs:{x:1}}]},pp);}catch(e){mm=e.message;}
+    if(!/a changé depuis la carte/.test(mm))throw new Error("carte périmée au PCB : « "+mm+" »");
   }finally{global.Pilote=ancien;}
 });
 
@@ -26629,6 +26635,12 @@ TA("canal de pilotage : cao_pistes_ecrire, largeur d'un net (une couche) et réa
     refus({lot:[{net:na,largeur:0.3,couche:"Milieu"}]},/couche « Milieu » inconnue/);
     refus({lot:[{net:na,largeur:0.3},{net:na,largeur:0.4}]},/deux fois/);
     refus({lot:[{net:nb,realigner:true}]},/Rien à changer/);
+    /* perçage de classe entre via-0,1 et via-0,05 : réaligné une fois, puis plus rien à changer */
+    const cl=classOf(nb); cl.drill=r3(cl.via-0.07);
+    if(S.vias.some(v=>v.net===nb)){
+      d.appliquer({lot:[{net:nb,realigner:true}]},d.proposer({lot:[{net:nb,realigner:true}]}));
+      refus({lot:[{net:nb,realigner:true}]},/Rien à changer/);
+    }
   }finally{global.Pilote=ancien;}
 });
 
@@ -26667,6 +26679,8 @@ TA("canal de pilotage : cao_classes_ecrire, créer puis rattacher en une étape 
     refus({lot:[{action:"modifier",nom:"Puissance",largeur:20}]},/largeur : de 0.05 à 10 mm/);
     refus({lot:[{action:"affecter",net:"ZZ",classe:"Puissance"}]},/net « ZZ » inconnu/);
     refus({lot:[{action:"renommer",nom:"Puissance"}]},/action « renommer » inconnue/);
+    refus({lot:[{action:"creer",nom:"Q"},{action:"affecter",net:na,classe:"Q"},{action:"supprimer",nom:"Q"}]},/supprimée alors que le net/);
+    refus({lot:[{action:"supprimer",nom:"Puissance"},{action:"creer",nom:"puissance"}]},/supprimée alors que le net/);   // casse différente
     /* supprimer après avoir rattaché ailleurs ses nets, dans le même lot : accepté */
     const lot2=[{action:"affecter",net:na,classe:S.classes[0].name},{action:"affecter",net:nb,classe:S.classes[0].name},{action:"supprimer",nom:"Puissance"}];
     d.appliquer({lot:lot2},d.proposer({lot:lot2}));
@@ -26711,6 +26725,9 @@ TA("canal de pilotage : cao_contraintes_ecrire, règle de paire et contraintes d
     const l2=[{action:"paire",nom:"usb",ecart_pref:0.17},{action:"net",net:na,l_max:null}];
     d.appliquer({lot:l2},d.proposer({lot:l2}));
     if(S.dpRules.find(x=>x.name==="USB").prefGap!==0.17||"lMax" in S.contraintes.nets[na])throw new Error("modification");
+    const l3=[{action:"paire",nom:"HDMI",ecart_pref:0.18},{action:"paire",nom:"HDMI",largeur_pref:0.19}];
+    d.appliquer({lot:l3},d.proposer({lot:l3}));
+    if(!/^[A-Z]{8}$/.test(S.dpRules.find(x=>x.name==="HDMI").uid))throw new Error("règle créée puis modifiée sans identifiant");
     refus({lot:[{action:"paire",nom:"USB",largeur_min:0.3}]},/min ≤ préférée ≤ max/);
     refus({lot:[{action:"paire",nom:"USB",impedance:"D77"}]},/impédance « D77 » inconnue/);
     refus({lot:[{action:"paire",nom:"USB",portee:"NOPE"}]},/paire « NOPE » inconnue/);
@@ -26719,6 +26736,19 @@ TA("canal de pilotage : cao_contraintes_ecrire, règle de paire et contraintes d
     refus({lot:[{action:"net",net:na,couches:["Milieu"]}]},/couche inconnue/);
     refus({lot:[{action:"net",net:"ZZ",z:50}]},/net « ZZ » inconnu/);
   }finally{global.Pilote=ancien;}
+});
+
+T("écritures en lot : un échec en cours d'application remet le document d'avant ; CSV sans formule",()=>{
+  loadDoc(exemple1());
+  S.undo.length=0;
+  const avant=serialize();
+  const cmd=ECRITURE_CAO.lot({titre:"essai",verifier:()=>({lignes:[{quoi:"x",avant:1,apres:2}],refus:[]}),
+    muter:()=>{S.fps[0].x+=5;S.fps[1].ref="ZZ";throw new Error("boum");},rafraichir:()=>{}});
+  let m="";try{cmd.appliquer({lot:[{}]},cmd.proposer({lot:[{}]}));}catch(e){m=e.message;}
+  if(!/Échec en appliquant, rien n'est changé : boum/.test(m))throw new Error("message : "+m);
+  if(serialize()!==avant)throw new Error("le lot à moitié appliqué est resté");
+  for(const [v,att] of [["=HYPERLINK(1)","'=HYPERLINK(1)"],["+3V3","'+3V3"],["-40","-40"],["0402","0402"]])
+    if(pcbCsvCell(v)!==att)throw new Error("formule : "+v+" → "+pcbCsvCell(v));
 });
 
 (async()=>{
