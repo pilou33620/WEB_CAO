@@ -74,10 +74,19 @@ const dessinOuEst = el => "x " + dessinMm(el.x) + " y " + dessinMm(el.y) + " mm,
 /* Joue une opération ; rend la ligne de la carte. `ctx.dernier` : le dernier posé. */
 const DESSIN_OPS = {
   poser(o, n, ctx) {
-    const def = typeof o.type === "string" && LIB[o.type] ? defOf(o.type) : null;
-    if (!def || def === DEF_UNKNOWN) throw dessinRefus(n, "poser", "type « " + o.type + " » inconnu (types intégrés : resistor, capacitor, ic, opamp, gnd, vcc, port…)");
+    if ((o.type === undefined) === (o.catalogue === undefined)) throw dessinRefus(n, "poser", "donne « type » (symbole intégré) ou « catalogue » (Part Name), un seul");
+    let type = o.type, ligne = null;
+    if (o.catalogue !== undefined) {
+      const lib = typeof window !== "undefined" ? window.CSV_LIB : null;
+      if (!Array.isArray(lib)) throw dessinRefus(n, "poser", "le catalogue n'est pas encore chargé dans la page");
+      ligne = typeof o.catalogue === "string" && dessinCle(o.catalogue) ? lib.find(r => dessinCle(r["Part Name"]) === dessinCle(o.catalogue)) : null;
+      if (!ligne) throw dessinRefus(n, "poser", "« " + o.catalogue + " » absent du catalogue (voir lib_composants)");
+      type = schTypeDuCatalogue(ligne);
+    }
+    const def = typeof type === "string" && (LIB[type] || ligne) ? defOf(type) : null;
+    if (!def || (def === DEF_UNKNOWN && !ligne)) throw dessinRefus(n, "poser", "type « " + o.type + " » inconnu (types intégrés : resistor, capacitor, ic, opamp, gnd, vcc, port…)");
     if (o.ref !== undefined) {
-      if (def.noRef) throw dessinRefus(n, "poser", "un « " + o.type + " » n'a pas de repère");
+      if (def.noRef && !ligne) throw dessinRefus(n, "poser", "un « " + o.type + " » n'a pas de repère");
       if (typeof o.ref !== "string" || !DESSIN_REF.test(o.ref)) throw dessinRefus(n, "poser", "repère : lettre puis lettres, chiffres ou _, 20 au plus");
       if ([...usedRefs()].some(r => dessinCle(r) === dessinCle(o.ref))) throw dessinRefus(n, "poser", "repère « " + o.ref + " » déjà pris");
     }
@@ -85,7 +94,8 @@ const DESSIN_OPS = {
       throw dessinRefus(n, "poser", "« valeur » : texte d'une ligne, 200 caractères au plus");
     if (o.rotation !== undefined && !DESSIN_ANGLES.includes(o.rotation)) throw dessinRefus(n, "poser", "« rotation » : 0, 90, 180 ou 270");
     if ((o.x === undefined) !== (o.y === undefined)) throw dessinRefus(n, "poser", "donne x et y, ou aucun des deux (place libre)");
-    const el = addComp(o.type, 0, 0);
+    const el = addComp(type, 0, 0);
+    if (ligne) schPoserDepuisCatalogue(el, ligne);           // comme la pose à la souris depuis l'explorateur
     if (o.ref !== undefined) el.ref = o.ref;
     if (o.valeur !== undefined) el.value = o.valeur;
     el.rot = o.rotation || 0;
@@ -98,7 +108,9 @@ const DESSIN_OPS = {
     } else if (!dessinPlaceLibre(el, ctx.dernier)) throw dessinRefus(n, "poser", "aucune place libre trouvée : donne x et y");
     touchWires();
     ctx.dernier = el;
-    return { quoi: (n + 1) + ". poser " + (el.ref || el.type), avant: null, apres: el.type + (el.value ? " " + el.value : "") + ", " + dessinOuEst(el) };
+    const origine = ligne ? "catalogue " + ligne["Part Name"] + (def === DEF_UNKNOWN ? " (symbole générique : la page ne connaît pas le sien)" : "") + ", " : "";
+    return { quoi: (n + 1) + ". poser " + (el.ref || el.type), avant: null,
+             apres: origine + el.type + (el.value ? " " + el.value : "") + (el.pkg ? " (" + el.pkg + ")" : "") + ", " + dessinOuEst(el) };
   },
 
   deplacer(o, n) {

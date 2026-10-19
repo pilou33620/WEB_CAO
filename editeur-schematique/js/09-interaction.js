@@ -494,53 +494,7 @@ cv.addEventListener("pointerdown",e=>{
     push();
     const el=addComp(S.place,p.x,p.y);
     el.rot=S.placeRot||0;
-    if(S.placeLibItem){
-      const it=S.placeLibItem;
-      el.csvPartName = it["Part Name"] || "";
-      el.csvMpn = it["Part Number"] || it["Part Number "] || "";
-      if(it["Manufacturer"]) el.manufacturer = it["Manufacturer"];
-      if(it["Value"]) el.value = it["Value"];
-      const sym = it["Empreinte Schématique"] || it["Empreinte Schematique"] || "";
-      if(sym) el.symSch = sym;
-      const pref = String(it["Reference designator Prefix"] || "").trim().toUpperCase();
-      if(pref && typeof nextRef === "function" && !el.ref.startsWith(pref)) {
-        el.ref = nextRef(pref);
-      }
-      const nPins = parseInt(it["Number Of pins"], 10);
-      if((el.type === "ic" || el.type === "connector") && nPins > 0) {
-        el.pins = nPins;
-      }
-      const fp = it["Empreinte PCB"] || "";
-      if(fp) {
-        el.fpPcb = fp;
-        /* « lib/empreinte/SC-70.json » → « SC-70 » : le PCB cherche le
-           boîtier par son nom, pas par le chemin du catalogue */
-        const cleanPkg = fp.replace(/^.*[\\\/]/, "").replace(/\.json$/i, "");
-        if(cleanPkg) el.pkg = cleanPkg;
-      } else if(it["Package type"] && it["Package type"] !== "xx") {
-        el.pkg = it["Package type"];
-      }
-      const sim = it["Modèle Simulation"] || it["Modele Simulation"] || "";
-      if(sim && sim !== "-" && sim !== "xx") el.simModel = sim;
-      // broche du symbole → patte de l'empreinte, selon la référence
-      if(typeof brDepuisLib === "function") brDepuisLib(el, it, true);
-
-      // Spécifications électriques
-      const specs = el.specs ? { ...el.specs } : {};
-      const vRating = it["Voltage Rating"] || it["Voltage"] || "";
-      const cRating = it["current Rating"] || it["Current Rating"] || "";
-      const wRating = it["wattage"] || it["Wattage"] || "";
-      const fRating = it["fréquency"] || it["frequency"] || "";
-      let hasSpecs = false;
-      if (vRating && vRating !== "xx" && vRating !== "-") { specs["Voltage Rating"] = vRating; hasSpecs = true; }
-      if (cRating && cRating !== "xx" && cRating !== "-") { specs["Current Rating"] = cRating; hasSpecs = true; }
-      if (wRating && wRating !== "xx" && wRating !== "-") { specs["Power Rating"] = wRating; hasSpecs = true; }
-      if (fRating && fRating !== "xx" && fRating !== "-") { specs["Frequency"] = fRating; hasSpecs = true; }
-      if (hasSpecs) {
-        el.specs = specs;
-        el.specsProvenance = "catalogue";
-      }
-    }
+    if(S.placeLibItem)schPoserDepuisCatalogue(el,S.placeLibItem);
     if(!e.shiftKey){S.place=null;S.placeLibItem=null;setPalette(null);}
     clearSel();S.sel.add(el.id);
     refreshPanels();draw();return;
@@ -1120,5 +1074,56 @@ function schOuvrirPiquageModal(busWire, signalWire, tapPt){
         schFermerPiquageModal();
       }
     };
+  }
+}
+
+/* Ce que le catalogue apporte à un composant posé depuis une de ses lignes : repère
+   préfixé, valeur, boîtier (nom de l'empreinte), MPN, brochage, modèle de simulation,
+   spécifications. La pose à la souris et le dessin par Claude (28-dessin-pilote.js)
+   passent par ici. */
+function schPoserDepuisCatalogue(el, it){
+  el.csvPartName = it["Part Name"] || "";
+  el.csvMpn = it["Part Number"] || it["Part Number "] || "";
+  if(it["Manufacturer"]) el.manufacturer = it["Manufacturer"];
+  if(it["Value"]) el.value = it["Value"];
+  const sym = it["Empreinte Schématique"] || it["Empreinte Schematique"] || "";
+  if(sym) el.symSch = sym;
+  const pref = String(it["Reference designator Prefix"] || "").trim().toUpperCase();
+  if(pref && typeof nextRef === "function" && !el.ref.startsWith(pref)) {
+    el.ref = nextRef(pref);
+  }
+  const nPins = parseInt(it["Number Of pins"], 10);
+  if((el.type === "ic" || el.type === "connector") && nPins > 0) {
+    el.pins = nPins;
+  }
+  const fp = it["Empreinte PCB"] || "";
+  if(fp) {
+    el.fpPcb = fp;
+    /* « lib/empreinte/SC-70.json » → « SC-70 » : le PCB cherche le
+       boîtier par son nom, pas par le chemin du catalogue */
+    const cleanPkg = fp.replace(/^.*[\\\/]/, "").replace(/\.json$/i, "");
+    if(cleanPkg) el.pkg = cleanPkg;
+  } else if(it["Package type"] && it["Package type"] !== "xx") {
+    el.pkg = it["Package type"];
+  }
+  const sim = it["Modèle Simulation"] || it["Modele Simulation"] || "";
+  if(sim && sim !== "-" && sim !== "xx") el.simModel = sim;
+  // broche du symbole → patte de l'empreinte, selon la référence
+  if(typeof brDepuisLib === "function") brDepuisLib(el, it, true);
+
+  // Spécifications électriques
+  const specs = el.specs ? { ...el.specs } : {};
+  const vRating = it["Voltage Rating"] || it["Voltage"] || "";
+  const cRating = it["current Rating"] || it["Current Rating"] || "";
+  const wRating = it["wattage"] || it["Wattage"] || "";
+  const fRating = it["fréquency"] || it["frequency"] || "";
+  let hasSpecs = false;
+  if (vRating && vRating !== "xx" && vRating !== "-") { specs["Voltage Rating"] = vRating; hasSpecs = true; }
+  if (cRating && cRating !== "xx" && cRating !== "-") { specs["Current Rating"] = cRating; hasSpecs = true; }
+  if (wRating && wRating !== "xx" && wRating !== "-") { specs["Power Rating"] = wRating; hasSpecs = true; }
+  if (fRating && fRating !== "xx" && fRating !== "-") { specs["Frequency"] = fRating; hasSpecs = true; }
+  if (hasSpecs) {
+    el.specs = specs;
+    el.specsProvenance = "catalogue";
   }
 }

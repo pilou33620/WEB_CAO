@@ -67,7 +67,7 @@ const EXPOSE=[
   "schSignauxOccupesSurBus","schSuggererProchainSignal","schPiquerSignal","schOuvrirPiquageModal","schFermerPiquageModal",
   "SCH_PIQUAGE_MEMOIRE",
   /* bibliothèque et géométrie */
-  "bbox","hitBox",
+  "bbox","hitBox","schPoserDepuisCatalogue","schTypeDuCatalogue",
   "defOf","allPins","pinCount","icGeom","key","LIB","pinsOf","LECTURE_CAO","ECRITURE_CAO",
   "pkgBaseOf","pkgKnown","pkgBaseList","PKG_BASES",
   /* brochage (04 + 19) */
@@ -414,7 +414,7 @@ T("canal de pilotage : cao_schema_dessiner, simulé sans trace puis appliqué en
     const avant=etat();
     const prop=d.proposer({lot});
     if(etat()!==avant)throw new Error("proposer a laissé une trace");
-    if(!/^1\. poser R10 : resistor 1k, x 20 y 0 mm, 0°$/m.test(prop.apres)||!/^2\. poser C1 : capacitor/m.test(prop.apres)||
+    if(!/^1\. poser R10 : resistor 1k( \([^)]*\))?, x 20 y 0 mm, 0°$/m.test(prop.apres)||!/^2\. poser C1 : capacitor/m.test(prop.apres)||
        !/^4\. deplacer C1 : /m.test(prop.avant))throw new Error("carte : "+prop.apres+" | "+prop.avant);
     d.appliquer({lot},prop);
     const c=r=>S.comps.find(x=>x.ref===r);
@@ -2592,22 +2592,39 @@ T("Explorateur visuel pop-up : initialisation, recherche, classification et pose
   S.placeRot = 90;
   S.placeLibItem = window.CSV_LIB[0];
 
+  // la pose à la souris passe par schPoserDepuisCatalogue (09-interaction.js) : on l'appelle, au lieu de la recopier
   const el = addComp(S.place, 20 * G, 15 * G);
   el.rot = S.placeRot;
-  const it = S.placeLibItem;
-  el.csvPartName = it["Part Name"];
-  el.csvMpn = it["Part Number"];
-  el.manufacturer = it["Manufacturer"];
-  el.value = it["Value"];
-  el.symSch = it["Empreinte Schématique"];
-  el.fpPcb = it["Empreinte PCB"];
-  el.pkg = it["Package type"];
-  el.simModel = it["Modèle Simulation"];
-  el.specs = { "Voltage Rating": it["Voltage Rating"] };
+  schPoserDepuisCatalogue(el, S.placeLibItem);
+  if(schTypeDuCatalogue(S.placeLibItem) !== "capacitor") throw new Error("type du catalogue : " + schTypeDuCatalogue(S.placeLibItem));
+  if(el.specs["Voltage Rating"] !== "10V" || el.manufacturer !== "Murata" || el.csvMpn !== "GCM155R71A104KA55D")
+    throw new Error("enrichissement du catalogue : " + JSON.stringify(el));
 
   if(el.csvPartName !== "C0402_100NF") throw new Error("csvPartName non assigné: " + el.csvPartName);
   if(el.value !== "100nF") throw new Error("valeur non assignée: " + el.value);
   if(el.pkg !== "0402") throw new Error("boîtier non assigné: " + el.pkg);
+  /* Claude pose la même ligne par cao_schema_dessiner : même composant qu'à la souris */
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  try{
+    piloteCao("schema");
+    const d=cmds.cao_schema_dessiner;
+    const prop=d.proposer({lot:[{op:"poser",catalogue:"stm32f103c8t6",x:60,y:0}]});
+    if(!/catalogue STM32F103C8T6, ic STM32F103 \(LQFP-48\)/.test(prop.apres))throw new Error("carte : "+prop.apres);
+    d.appliquer({lot:[{op:"poser",catalogue:"C0402_100NF",x:60,y:0},{op:"poser",catalogue:"STM32F103C8T6",x:120,y:0}]});
+    const c2=S.comps[S.comps.length-2], u=S.comps[S.comps.length-1];
+    const garde=["type","value","pkg","csvPartName","csvMpn","manufacturer","simModel","specs"];
+    if(JSON.stringify(garde.map(k=>c2[k]))!==JSON.stringify(garde.map(k=>el[k])))
+      throw new Error("Claude et la souris ne posent pas le même composant : "+JSON.stringify([garde.map(k=>c2[k]),garde.map(k=>el[k])]));
+    if(u.type!=="ic"||!/^U\d+$/.test(u.ref)||u.pkg!=="LQFP-48")throw new Error("CI du catalogue : "+JSON.stringify(u));
+    let m="";try{d.proposer({lot:[{op:"poser",catalogue:"INCONNU"}]});}catch(e){m=e.message;}
+    if(!/absent du catalogue \(voir lib_composants\)/.test(m))throw new Error("Part Name inconnue : "+m);
+    const lib=window.CSV_LIB; delete window.CSV_LIB;
+    m="";try{d.proposer({lot:[{op:"poser",catalogue:"C0402_100NF"}]});}catch(e){m=e.message;}finally{window.CSV_LIB=lib;}
+    if(!/catalogue n'est pas encore chargé/.test(m))throw new Error("catalogue absent : "+m);
+    m="";try{d.proposer({lot:[{op:"poser",catalogue:"C0402_100NF",type:"resistor"}]});}catch(e){m=e.message;}
+    if(!/un seul/.test(m))throw new Error("type et catalogue : "+m);
+  }finally{global.Pilote=ancien;}
   if(el.simModel !== "murata_gcm155.sub") throw new Error("modèle SPICE non assigné: " + el.simModel);
   if(el.rot !== 90) throw new Error("rotation non respectée");
   if(!el.ref.startsWith("C")) throw new Error("préfixe C attendu pour condensateur: " + el.ref);

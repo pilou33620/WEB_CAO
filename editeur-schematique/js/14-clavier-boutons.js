@@ -178,32 +178,39 @@ document.getElementById("bOpen").onclick=()=>document.getElementById("fileIn").c
 const bAddComp = document.getElementById("bAddComp");
 if(bAddComp) bAddComp.onclick = () => schOuvrirExplorateurLib();
 
+/* Le symbole intégré d'une ligne du catalogue : sa classe (R, C, L, D, Q, CI…), puis son
+   « Empreinte Schématique » si la page connaît ce symbole. L'explorateur et le dessin par
+   Claude (28-dessin-pilote.js) passent par ici. */
+function schTypeDuCatalogue(item) {
+  let compType = "resistor";
+  const cat = (typeof elibClassifierItem === "function") ? elibClassifierItem(item) : "r";
+  if(cat === "r") compType = "resistor";
+  else if(cat === "c") compType = "capacitor";
+  else if(cat === "l") compType = "inductor";
+  else if(cat === "d") compType = "diode";
+  else if(cat === "q") compType = "npn";
+  else if(cat === "ic") compType = "ic";
+  else if(cat === "conn") compType = "connector";
+  else if(cat === "pwr") compType = "vcc";
+  else compType = "ic";
+
+  const symRaw = String(item["Empreinte Schématique"] || item["Empreinte Schematique"] || "").toLowerCase();
+  const sym = symRaw.replace(/\.json$/i, "").trim();
+  if(sym && typeof defOf === "function" && typeof DEF_UNKNOWN !== "undefined") {
+    try {
+      const d = defOf(sym);
+      if(d && d !== DEF_UNKNOWN) compType = sym;
+    } catch(_) {}
+  }
+  return compType;
+}
+
 function schOuvrirExplorateurLib() {
   if(typeof explorateurLibOuvrir !== "function") return;
   explorateurLibOuvrir({
     mode: "schema",
     onSelect: (item) => {
-      let compType = "resistor";
-      const cat = (typeof elibClassifierItem === "function") ? elibClassifierItem(item) : "r";
-      if(cat === "r") compType = "resistor";
-      else if(cat === "c") compType = "capacitor";
-      else if(cat === "l") compType = "inductor";
-      else if(cat === "d") compType = "diode";
-      else if(cat === "q") compType = "npn";
-      else if(cat === "ic") compType = "ic";
-      else if(cat === "conn") compType = "connector";
-      else if(cat === "pwr") compType = "vcc";
-      else compType = "ic";
-
-      const symRaw = String(item["Empreinte Schématique"] || item["Empreinte Schematique"] || "").toLowerCase();
-      const sym = symRaw.replace(/\.json$/i, "").trim();
-      if(sym && typeof defOf === "function" && typeof DEF_UNKNOWN !== "undefined") {
-        try {
-          const d = defOf(sym);
-          if(d && d !== DEF_UNKNOWN) compType = sym;
-        } catch(_) {}
-      }
-
+      const compType = schTypeDuCatalogue(item);
       setMode("select");
       S.place = compType;
       S.placeRot = 0;
