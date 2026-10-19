@@ -56,6 +56,7 @@ const FICHIERS=[
   path.join(RACINE,"js","02-modele.js"),
   path.join(RACINE,"..","commun","simulation-em.js"),
   path.join(RACINE,"..","commun","simulation-datasheet.js"),
+  path.join(RACINE,"..","commun","ecriture-cao.js"),
   path.join(RACINE,"js","07-simulation.js"),
   /* dossier méca : la visionneuse emprunte les sorties PDF / DXF des plans
      de l'éditeur (fonte, Draftsman, export, vues) */
@@ -66,7 +67,7 @@ const FICHIERS=[
   path.join(RACINE,"..","commun","dossier-meca.js"),
   path.join(RACINE,"js","08-dossier-meca.js")
 ];
-const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
+const EXPOSE=["ECRITURE_CAO","simDsChamp","SIM_DS","SIM_PDN","simPDNAssistantActif","SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simSaisie","simPorts","SIM_FORMAT",
   "V","LT","ltAire","ltPreparer","LT_SEUIL_PLAN","mdlLongueur",
   "mdlNetNom","mdlNb","mdlCharger","mdlCouches","mdlPlansDans",
@@ -6774,6 +6775,42 @@ T("dossier méca, visionneuse : l'aperçu SVG de la feuille se dessine",()=>{
     const svg=mecaPlan(mecaIpcDossier(),mecaIpcCtx(),null).map(F=>dfSvg(F)).join("");
     if(!/^<svg/.test(svg)||svg.indexOf("Plan mécanique")<0)throw new Error(svg.slice(0,120));
   }finally{carte();}
+});
+
+T("canal de pilotage : cao_sim_ecrire, unité du catalogue, une carte qu'Annuler défait", function(){
+  pdnDeLabo();
+  const d = ECRITURE_CAO.simulation;
+  if (!d.ecriture || d.historique || typeof d.annuler !== "function" || typeof d.etat !== "function")
+    throw new Error("écriture annulable par la carte attendue (pas d'historique d'éditeur)");
+  const etat = () => JSON.stringify(d.etat());
+  const refus = (lot, motif) => {
+    const avant = etat();
+    let m = ""; try { d.proposer({ lot }); } catch (e) { m = e.message; }
+    if (!motif.test(m)) throw new Error("refus attendu " + motif + ", lu « " + m + " »");
+    if (etat() !== avant) throw new Error("un refus a écrit : " + motif);
+  };
+  const uR = simDsChamp("pdn", "rVrmMOhm").unite, uI = simDsChamp("pdn_fiche", "iActifMa").unite;
+  const r0 = SIM_PDN.rVrmMOhm;
+  const lot = [{ groupe: "pdn", cle: "rVrmMOhm", valeur: r0 + 5, unite: uR }, { groupe: "pdn_fiche", cle: "iActifMa", valeur: 40, unite: uI }];
+  const avant = etat();
+  const prop = d.proposer({ lot });
+  if (etat() !== avant) throw new Error("proposer a écrit");
+  if (!new RegExp("^pdn\\.rVrmMOhm .* : " + (r0 + 5) + " " + uR + "$", "m").test(prop.apres)) throw new Error("carte : " + prop.apres);
+  const jeton = d.appliquer({ lot }, prop);
+  if (SIM_PDN.rVrmMOhm !== r0 + 5 || SIM_PDN.fiche.iActifMa !== 40) throw new Error("lot non appliqué");
+  if (!/Assistant ΔI activé/.test(prop.apres)) throw new Error("l'assistant ΔI allumé doit être écrit sur la carte : " + prop.apres);
+  // pilote.js n'annule que si etat() n'a pas bougé : une retouche à la main doit le changer
+  const apres = etat(); SIM_PDN.rVrmMOhm += 1;
+  if (etat() === apres) throw new Error("etat() ne voit pas une retouche de R_vrm");
+  SIM_PDN.rVrmMOhm -= 1;
+  d.annuler({ lot }, jeton);
+  if (SIM_PDN.rVrmMOhm !== r0) throw new Error("Annuler ne remet pas R_vrm : " + SIM_PDN.rVrmMOhm);
+  refus([{ groupe: "pdn", cle: "rVrmMOhm", valeur: 7, unite: "Ω" }], /unité « Ω », le catalogue attend « mΩ »/);
+  refus([{ groupe: "pdn", cle: "rVrm", valeur: 7, unite: uR }], /paramètre « rVrm » inconnu/);
+  refus([{ groupe: "pdn", cle: "rVrmMOhm", valeur: 1e9, unite: uR }], /hors des bornes/);
+  refus([{ groupe: "rf", cle: "x", valeur: 1 }], /groupe « rf » inconnu/);
+  refus([{ groupe: "pdn", cle: "rVrmMOhm", valeur: r0, unite: uR }], /Rien à changer/);
+  refus([{ groupe: "pdn", cle: "rVrmMOhm", valeur: 9, unite: uR }, { groupe: "pdn", cle: "rVrmMOhm", valeur: 8, unite: uR }], /deux fois/);
 });
 
 (async()=>{

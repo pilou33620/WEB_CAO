@@ -203,7 +203,10 @@ function piloteCao(page) {
   const TOILES = { schema: "sheet", pcb: "board", "visionneuse-ipc": "carte" };
   Pilote.declarer({ page, projet: () => (typeof projNom === "function" ? projNom() : "") });
   if (TOILES[page]) Pilote.capture(() => document.getElementById(TOILES[page]));
-  if (page === "pcb" || page === "visionneuse-ipc") Pilote.commande("cao_calcul", { executer: piloteCaoCalcul });
+  if (page === "pcb" || page === "visionneuse-ipc") {
+    Pilote.commande("cao_calcul", { executer: piloteCaoCalcul });
+    Pilote.commande("cao_sim_ecrire", ECRITURE_CAO.simulation);
+  }
   if (page === "schema") Pilote.commande("cao_valeur_composant", PILOTE_VALEUR);
   if (page === "schema") Pilote.commande("cao_composants_ecrire", ECRITURE_CAO.composantsSch);
   if (page === "pcb") {

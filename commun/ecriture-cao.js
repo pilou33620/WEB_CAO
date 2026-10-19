@@ -22,10 +22,13 @@ const ECRITURE_CAO = (function () {
   /* Une commande d'écriture du canal, faite d'un lot. `def` :
      - titre : le titre de la carte ;
      - verifier(args) → {lignes:[{quoi, avant, apres}], refus:[]} sans rien toucher ;
-     - muter(args) : applique, sans push() ;
+     - muter(args) : applique, sans push() ; peut rendre {jeton, notes} (notes ajoutées au
+       texte « après », jeton gardé par pilote.js pour annuler) ;
      - rafraichir() : redessine la page ;
      - drc : au PCB, le DRC tourne avant et après, et son bilan s'ajoute au texte « après »
-       de la carte, que pilote.js renvoie à Claude.
+       de la carte, que pilote.js renvoie à Claude ;
+     - annuler(args, jeton) et etat() : pour ce qui n'est pas dans l'historique de l'éditeur
+       (la simulation) ; sinon, un seul push() et Ctrl+Z défait le lot.
      La carte garde ses lignes : au clic, si la vérification ne redonne pas les mêmes (le
      document a bougé sous la carte), rien n'est appliqué. */
   function lot(def) {
@@ -38,8 +41,8 @@ const ECRITURE_CAO = (function () {
       if (!v.lignes.length) throw new Error("Rien à changer : tout est déjà à ces valeurs.");
       return v;
     };
-    return {
-      ecriture: true, historique: true,
+    const cmd = {
+      ecriture: true,
       proposer: args => {
         const v = verifier(args);
         return { titre: def.titre + " (" + v.lignes.length + " changement" + (v.lignes.length > 1 ? "s" : "") + ")",
@@ -52,12 +55,17 @@ const ECRITURE_CAO = (function () {
         if (prop && prop.lignes !== undefined && JSON.stringify(v.lignes) !== prop.lignes)
           throw new Error("Le document a changé depuis la carte : rien n'est appliqué, à reproposer.");
         const avant = def.drc ? erreursDrc() : null;
-        push();
-        def.muter(args);
+        if (!def.annuler) push();
+        const r = def.muter(args) || {};
         def.rafraichir();
-        if (def.drc && prop) prop.apres += "\n" + bilanDrc(avant, erreursDrc());
+        const notes = (r.notes || []).concat(def.drc ? [bilanDrc(avant, erreursDrc())] : []);
+        if (prop && notes.length) prop.apres += "\n" + notes.join("\n");
+        return r.jeton;
       },
     };
+    if (def.annuler) Object.assign(cmd, { annuler: def.annuler, etat: def.etat });
+    else cmd.historique = true;
+    return cmd;
   }
 
   /* ---------- DRC avant → après (PCB) ---------- */
@@ -466,6 +474,58 @@ const ECRITURE_CAO = (function () {
     rafraichir: rafraichirRegles, drc: true,
   });
 
+  /* ---------- paramètres de simulation ----------
+     Le catalogue de la page (simDsGroupes : unité, bornes, choix) contrôle chaque valeur ;
+     l'unité donnée doit être celle du catalogue, sans conversion. simDsAppliquer écrit et
+     garde ses effets (recalcul PDN, résultats SI périmés, assistant ΔI) ; annuler rejoue
+     les valeurs d'avant par le même chemin. Hors de l'historique de l'éditeur. */
+  function simPrete() {
+    if (typeof simDsGroupes !== "function" || typeof SIM === "undefined")
+      throw new Error("Les simulations ne sont pas chargées dans cette page.");
+  }
+  const avecUnite = (v, u) => v === null || v === undefined ? null : u ? v + " " + u : v;
+
+  function verifierSim(args) {
+    simPrete();
+    const lignes = [], refus = [], vus = new Set(), aEcrire = [];
+    for (const e of args.lot) {
+      const g = e && typeof e.groupe === "string" ? simDsGroupe(e.groupe) : null;
+      if (!g) { refus.push("groupe « " + (e && e.groupe) + " » inconnu (" + simDsGroupes().map(x => x.cle).join(", ") + ")"); continue; }
+      const ch = typeof e.cle === "string" ? simDsChamp(g, e.cle) : null;
+      if (!ch) { refus.push(g.cle + " : paramètre « " + e.cle + " » inconnu (" + g.champs.map(c => c.cle).join(", ") + ")"); continue; }
+      const quoi = g.cle + "." + ch.cle + " (" + ch.lib + ")";
+      if (vus.has(quoi)) { refus.push(quoi + " : deux fois dans le lot"); continue; }
+      vus.add(quoi);
+      if ((e.unite || "") !== (ch.unite || "")) { refus.push(quoi + " : unité « " + (e.unite || "") + " », le catalogue attend « " + (ch.unite || "") + " »"); continue; }
+      const l = simDsPreparer({ valeurs: [{ sim: g.cle, cle: ch.cle, valeur: e.valeur }] }).lignes[0];
+      if (!l.ok) { if (l.motif !== "déjà à cette valeur") refus.push(quoi + " : " + l.motif); continue; }
+      lignes.push({ quoi, avant: avecUnite(l.actuel, ch.unite), apres: avecUnite(l.nouveau, ch.unite) });
+      aEcrire.push({ sim: g.cle, cle: ch.cle, valeur: l.nouveau, avant: l.actuel });
+    }
+    return { lignes, refus, aEcrire };
+  }
+
+  function ecrireSim(valeurs) {
+    const prep = simDsPreparer({ valeurs });
+    const r = simDsAppliquer(prep, prep.lignes.filter(l => l.ok).map(l => l.id));
+    return r.messages || [];
+  }
+
+  const SIMULATION = lot({
+    titre: "Paramètres de simulation",
+    verifier: verifierSim,
+    muter: args => {
+      const a = verifierSim(args).aEcrire, vides = a.filter(x => x.avant === null);
+      const notes = ecrireSim(a.map(x => ({ sim: x.sim, cle: x.cle, valeur: x.valeur })));
+      if (vides.length) notes.push("Sans valeur d'avant, Annuler ne remettra pas : " + vides.map(x => x.sim + "." + x.cle).join(", ") + ".");
+      return { jeton: a.filter(x => x.avant !== null).map(x => ({ sim: x.sim, cle: x.cle, valeur: x.avant })), notes };
+    },
+    rafraichir: () => {},
+    // annuler n'a lieu que si aucun paramètre n'a rebougé depuis (pilote.js compare etat())
+    etat: () => simDsGroupes().map(g => g.champs.map(c => simDsLire(c))),
+    annuler: (args, jeton) => { simPrete(); ecrireSim(jeton || []); },
+  });
+
   return { lot, composantsSch: COMPOSANTS_SCH, composantsPcb: COMPOSANTS_PCB, pistes: PISTES, classes: CLASSES,
-           contraintes: CONTRAINTES, LOT_MAX };
+           contraintes: CONTRAINTES, simulation: SIMULATION, LOT_MAX };
 })();
