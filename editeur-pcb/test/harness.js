@@ -26840,6 +26840,35 @@ TA("canal de pilotage : cao_router, simule puis charge, une etape, tout ou rien 
   }finally{global.Pilote=ancien;}
 });
 
+TA("canal de pilotage : cao_paire, une paire declaree routee en un lot",async()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  try{
+    piloteCao("pcb");
+    loadDoc(exemple2());
+    const pair=S.dpPairs[0];
+    S.tracks=S.tracks.filter(t=>t.net!==pair.p&&t.net!==pair.n); touch(); S.undo.length=0;
+    const pads=net=>S.fps.flatMap(f=>padsWorld(f).filter(q=>q.net===net).map(q=>({f,q})));
+    const P=pads(pair.p), N=pads(pair.n);
+    // les deux bouts : la pastille de N la plus proche de chaque pastille de P
+    const bouts=P.map(a=>{const b=N.reduce((m,x)=>Math.hypot(x.q.x-a.q.x,x.q.y-a.q.y)<Math.hypot(m.q.x-a.q.x,m.q.y-a.q.y)?x:m);return {x:(a.q.x+b.q.x)/2,y:(a.q.y+b.q.y)/2,ref:a.f.ref};});
+    const d=cmds.cao_paire;
+    const prop=d.proposer({paire:pair.name.toLowerCase(),depart:{x:bouts[0].x,y:bouts[0].y},arrivee:{x:bouts[1].x,y:bouts[1].y}});
+    if(!/^paire usb \(USB_DP \/ USB_DM\) : posée$/m.test(prop.apres)||!ROUTAGE.apercu.pistes.some(t=>t.net===pair.p)||!ROUTAGE.apercu.pistes.some(t=>t.net===pair.n))
+      throw new Error("carte : "+prop.apres);
+    const avant=serialize();
+    d.appliquer({paire:"usb"},prop);
+    if(S.undo.length!==1||!S.tracks.some(t=>t.net===pair.p)||!S.tracks.some(t=>t.net===pair.n))throw new Error("paire non posee en une etape");
+    undo();
+    if(serialize()!==avant)throw new Error("Ctrl+Z ne remet pas tout");
+    const refus=async(a,motif)=>{let m="";try{d.proposer(a);}catch(e){m=e.message;}if(!motif.test(m))throw new Error("refus attendu "+motif+" : "+m);};
+    await refus({paire:"HDMI",depart:{x:bouts[0].x,y:bouts[0].y},arrivee:{x:bouts[1].x,y:bouts[1].y}},/paire « HDMI » inconnue \(USB\)/);
+    await refus({paire:"USB",depart:{x:-400,y:-400},arrivee:{x:bouts[1].x,y:bouts[1].y}},/pas de départ de la paire/);
+    await refus({paire:"USB",depart:{x:bouts[0].x,y:bouts[0].y},arrivee:{x:bouts[1].x,y:bouts[1].y},mode:"sauter"},/pousser ou contourner/);
+    if(S.undo.length!==0||serialize()!==avant)throw new Error("un refus a laisse une trace");
+  }finally{global.Pilote=ancien;}
+});
+
 (async()=>{
   for(const [name,fn] of T_ASYNC){
     try{await fn();console.log("  ok  "+name);ok++;}

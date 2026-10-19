@@ -108,6 +108,48 @@ function routageUneRoute(r){
   }
 }
 
+/* Une paire déclarée : départ (un bout libre des deux nets, ou une de leurs pastilles), points
+   de passage, arrivée. L'échelle de vue est fixée pendant le jeu (remise avec la vue) : les
+   accroches de dpStart et dpUpdate se mesurent en pixels d'écran. */
+function routageUnePaire(a){
+  const avant = serialize();
+  try{
+    const pair = (S.dpPairs || []).find(x => typeof a.paire === "string" && x.name.toUpperCase() === a.paire.toUpperCase());
+    if(!pair) throw routageRefus("paire « " + a.paire + " » inconnue (" + ((S.dpPairs || []).map(x => x.name).join(", ") || "aucune déclarée") + ")");
+    const dep = routagePoint(a.depart), arr = routagePoint(a.arrivee);
+    const pts = Array.isArray(a.points) ? a.points : [];
+    if(pts.length > ROUTAGE_POINTS) throw routageRefus(ROUTAGE_POINTS + " points au plus");
+    const etapes = pts.map(routagePoint).concat([arr]);
+    S.scale = 20;
+    S.active = a.couche != null ? routageCouche(a.couche) : (dep.couches ? dep.couches[0] : (dep.couche != null ? dep.couche : S.active));
+    if(!dpStart(dep.x, dep.y)) throw routageRefus("pas de départ de la paire en " + dep.nom + " sur " + LECTURE_CAO.aides.nomCouchePcb(S.active) + " : un bout libre de ses deux nets");
+    if(S.dp.pair !== pair) throw routageRefus("le départ " + dep.nom + " est sur la paire " + S.dp.pair.name + ", pas sur " + pair.name);
+    for(const [k, e] of etapes.entries()){
+      if(!S.dp) throw routageRefus("elle a rejoint ses pastilles avant le point " + (k + 1) + " : raccourcis-la");
+      if(e.couche != null && e.couche !== S.dp.layer){
+        dpToLayer(e.couche);
+        if(S.dp.layer !== e.couche) throw routageRefus("vias de la paire refusées avant " + e.nom);
+      }
+      dpUpdate(e.x, e.y);
+      if(S.dp.bad) throw routageRefus(S.dp.cross ? "les deux pistes arriveraient croisées vers " + e.nom : "bloquée vers " + e.nom + " : l'isolation n'y passe pas");
+      const n0 = S.dp.doneP.length + S.dp.doneN.length;
+      dpStep();
+      if(S.dp && S.dp.doneP.length + S.dp.doneN.length === n0) throw routageRefus("bloquée vers " + e.nom);
+    }
+    if(S.dp){
+      if(arr.couches) throw routageRefus("l'arrivée " + arr.nom + " n'est pas accrochée par les deux pistes");
+      dpCommit();
+    }
+    return {ok:true, net:pair.p + " / " + pair.n};
+  }catch(err){
+    if(S.dp) dpCancel();
+    S.dp = null;
+    loadDoc(JSON.parse(avant), true);
+    if(err instanceof RoutageRefus) return {ok:false, raison:err.message};
+    throw err;
+  }
+}
+
 /* Une via seule : {x, y, net, de?, a?} ; refusée par la page si elle gêne. */
 function routageUneVia(v){
   if(!v || !Number.isFinite(v.x) || !Number.isFinite(v.y) || Math.abs(v.x) > 1000 || Math.abs(v.y) > 1000)
@@ -134,7 +176,8 @@ function routageSimuler(jouer){
     resultat = serialize();
   }finally{
     if(S.route) cancelRoute();
-    S.route = null;
+    if(S.dp) dpCancel();
+    S.route = null; S.dp = null;
     loadDoc(JSON.parse(garde.doc), true);
     S.undo = garde.undo; S.redo = garde.redo; S.dirty = garde.dirty;
     [S.scale, S.ox, S.oy] = garde.vue;
@@ -196,8 +239,16 @@ function routageJouerRoutes(a){
   return lignes;
 }
 
+function routageJouerPaire(a){
+  if(a.mode != null && a.mode !== "pousser" && a.mode !== "contourner") throw new Error("« mode » : pousser ou contourner.");
+  S.rule.route = a.mode === "contourner" ? "walk" : "shove";
+  const r = routageUnePaire(a);
+  return [{ok:r.ok, texte:"paire " + a.paire + (r.ok ? " (" + r.net + ") : posée" : " : refusée, " + r.raison)}];
+}
+
 function routagePiloteCommandes(){
   return {
+    cao_paire: routageCommande(a => "Paire différentielle " + a.paire, routageJouerPaire),
     cao_router: routageCommande(a => "Routage (" + ((a.routes || []).length) + " route(s), " + ((a.vias || []).length) + " via(s))", routageJouerRoutes),
   };
 }
