@@ -247,6 +247,19 @@ T("lectures du schéma : bornes reprises (150 composants)",()=>{
   if(L.length!==151||!/^\.\.\. \(10 composants de plus : précise le filtre\)$/.test(L[150]))throw new Error(L.slice(-2).join(" | "));
 });
 
+TA("canal de pilotage : cao_schema_lire lit sans rien écrire",async()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  try{
+    piloteCao("schema");
+    docLecture();
+    const hist=S.hist.length, dirty=S.dirty, page=S.page, lus={};
+    for(const quoi of ["feuilles","composants","composant","nets","net"])
+      lus[quoi]=await cmds.cao_schema_lire.executer({quoi,ref:"R2",nom:"BUS"});
+    if(!/R2\.2/.test(lus.net)||!/f2 « Logique »/.test(lus.feuilles)||!/^- 2 → BUS$/m.test(lus.composant))throw new Error(JSON.stringify(lus));
+    if(S.hist.length!==hist||S.dirty!==dirty||S.page!==page)throw new Error("une lecture a écrit");
+  }finally{global.Pilote=ancien;sheet([],[]);}
+});
 T("canal de pilotage : cao_valeur_composant propose, applique en une étape, Ctrl+Z la défait",()=>{
   const cmds={}, ancien=global.Pilote;
   global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};

@@ -62,6 +62,29 @@ const PILOTE_VALEUR = {
   },
 };
 
+/* Lectures (commun/lecture-cao.js) : le registre de la page, choisi par « quoi », rendu
+   en texte. Rien n'est écrit, donc pas de carte ; la trace vient de pilote.js. */
+const PILOTE_LIRE = { schema: ["schema"], pcb: ["pcb", "sim"], "visionneuse-ipc": ["ipc", "sim"] };
+
+function piloteLire(famille, args) {
+  if (famille === "ipc" && !(typeof V !== "undefined" && V && V.modele))
+    throw new Error("Aucun fichier IPC-2581 ouvert dans la visionneuse.");
+  if (famille === "sim" && !LECTURE_CAO.aides.simRapportsDispo())
+    throw new Error("Les simulations ne sont pas chargées dans cette page.");
+  const outils = LECTURE_CAO[famille], o = outils[args.quoi];
+  if (!o) throw new Error("« quoi » inconnu ici : " + Object.keys(outils).join(", ") + ".");
+  if (famille === "sim" && args.afficher && args.analyse) piloteAfficherAnalyse(args.analyse);
+  return [].concat(o.fn(args)).join("\n");
+}
+
+/* Le rapport complet n'existe que pour l'analyse affichée : y passer, comme un clic sur l'onglet. */
+function piloteAfficherAnalyse(k) {
+  const fam = SIM_FAMILLES.find(f => f.analyses.includes(k));
+  if (!fam || !SIM_RAP_ETAT[k]) throw new Error("Analyse « " + k + " » inconnue. Analyses : " + Object.keys(SIM_RAP_ETAT).join(", ") + ".");
+  simAllerFamille(fam.cle);
+  simAllerAnalyse(k);
+}
+
 function piloteCao(page) {
   if (typeof Pilote === "undefined") return;
   const TOILES = { schema: "sheet", pcb: "board", "visionneuse-ipc": "carte" };
@@ -69,4 +92,5 @@ function piloteCao(page) {
   if (TOILES[page]) Pilote.capture(() => document.getElementById(TOILES[page]));
   if (page === "pcb" || page === "visionneuse-ipc") Pilote.commande("cao_calcul", { executer: piloteCaoCalcul });
   if (page === "schema") Pilote.commande("cao_valeur_composant", PILOTE_VALEUR);
+  for (const f of PILOTE_LIRE[page] || []) Pilote.commande("cao_" + f + "_lire", { executer: async a => piloteLire(f, a) });
 }

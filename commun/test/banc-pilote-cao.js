@@ -8,7 +8,9 @@
    ============================================================================= */
 "use strict";
 const fs = require("fs"), path = require("path"), vm = require("vm");
-const CODE = fs.readFileSync(path.join(__dirname, "..", "pilote-cao.js"), "utf8");
+// lecture-cao.js d'abord, comme dans les pages : les commandes de lecture s'en servent
+const CODE = fs.readFileSync(path.join(__dirname, "..", "lecture-cao.js"), "utf8") + "\n" +
+             fs.readFileSync(path.join(__dirname, "..", "pilote-cao.js"), "utf8");
 
 function page(nom, sim) {
   const appels = [];
@@ -91,6 +93,56 @@ async function refuse(promesse, motif) {
     await refuse(dite.declare.commandes.cao_calcul.executer({ analyse: "diff" }), /plan de référence/);
     const sansRf = page("visionneuse-ipc", { simRfGo: undefined });
     await refuse(sansRf.declare.commandes.cao_calcul.executer({ analyse: "s21" }), /indisponible/);
+  });
+
+  await T("commandes de lecture : chacune dans sa page, aucune n'écrit", () => {
+    const lire = ["cao_schema_lire", "cao_pcb_lire", "cao_ipc_lire", "cao_sim_lire"];
+    const vues = {};
+    for (const p of ["schema", "pcb", "visionneuse-ipc", "gestion-lib"]) {
+      const c = page(p).declare.commandes;
+      vues[p] = lire.filter(n => c[n]);
+      for (const n of vues[p]) egal(!!c[n].ecriture, false, n + " ne doit pas écrire");
+    }
+    egal(vues, { schema: ["cao_schema_lire"], pcb: ["cao_pcb_lire", "cao_sim_lire"],
+                 "visionneuse-ipc": ["cao_ipc_lire", "cao_sim_lire"], "gestion-lib": [] });
+  });
+
+  /* un V minimal, à la main : la visionneuse n'a pas de banc qui construit V depuis un fichier */
+  const V = {
+    unite: "mm", net: -1,
+    modele: { empilage: [{ nom: "TOP", type: "CONDUCTOR", ep: 0.035, mat: "cuivre" }],
+              composants: [{ ref: "U1", val: "MCU", pkg: "QFN-32", c: 0, x: 1, y: 2, r: 90,
+                             pins: [{ num: "1", n: 0 }, { num: "2" }] }],
+              nets: ["GND"] },
+    couches: [{ nom: "TOP" }],
+    parNet: [{ i: 0, nom: "GND", classe: "Défaut", longueur: 12.3456, couches: new Set([0]),
+               pistes: [1, 2], arcs: [], plans: [], pads: [1], trous: [] }],
+  };
+
+  await T("cao_ipc_lire : les lectures de la visionneuse, refus lisibles", async () => {
+    const c = page("visionneuse-ipc", { V }).declare.commandes.cao_ipc_lire;
+    egal(await c.executer({ quoi: "composant", ref: "u1" }),
+         "U1 = MCU (QFN-32), couche TOP, x 1 y 2, rotation 90°.\nBroches (2) :\n- 1 → GND\n- 2 → non connectée");
+    egal(await c.executer({ quoi: "nets", filtre: "gn" }), "- GND [Défaut] : 12.346 mm de pistes, 1 couche(s)");
+    await refuse(c.executer({ quoi: "drc" }), /« quoi » inconnu.*empilage, composants, composant, nets, net/);
+    await refuse(page("visionneuse-ipc", { V: { modele: null } }).declare.commandes.cao_ipc_lire.executer({ quoi: "nets" }),
+                 /Aucun fichier IPC-2581 ouvert/);
+  });
+
+  await T("cao_sim_lire : afficher passe le panneau sur l'analyse, sinon rien ne bouge", async () => {
+    const sim = {
+      SIM_RAP_ETAT: { pdn: () => ({ res: null }), crosstalk: () => ({ res: null }) },
+      SIM_ANALYSES: { pdn: { nom: "Z(ω) PDN" }, crosstalk: { nom: "Crosstalk" } },
+      SIM_FAMILLES: [{ cle: "si", analyses: ["crosstalk"] }, { cle: "pi", analyses: ["dc", "pdn"] }],
+      SIM: { occupe: false, analyse: "crosstalk" },
+    };
+    const p = page("pcb", sim), c = p.declare.commandes.cao_sim_lire;
+    egal(await c.executer({ quoi: "simulation", analyse: "pdn" }), "La simulation « Z(ω) PDN » n'a pas de résultat.");
+    egal(p.appels, [], "sans afficher, le panneau ne bouge pas");
+    await c.executer({ quoi: "simulation", analyse: "pdn", afficher: true });
+    egal(p.appels, [["simAllerFamille", "pi"], ["simAllerAnalyse", "pdn"]]);
+    await refuse(c.executer({ quoi: "simulation", analyse: "rien", afficher: true }), /Analyse « rien » inconnue/);
+    await refuse(page("pcb").declare.commandes.cao_sim_lire.executer({ quoi: "simulations" }), /simulations ne sont pas chargées/);
   });
 
   console.log("\n" + ok + " essais réussis, " + ko + " en échec.");

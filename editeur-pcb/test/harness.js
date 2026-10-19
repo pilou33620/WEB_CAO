@@ -437,7 +437,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* classes d'interface (commun/classes-interface.js) */
   "CLASSES_INTERFACE","familleClasse","simNaturePcb",
   /* lectures partagées Gemini / canal de pilotage (commun/lecture-cao.js) */
-  "LECTURE_CAO"];
+  "LECTURE_CAO","piloteCao"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -26479,6 +26479,29 @@ T("dossier méca : une saisie invalide est refusée, un document abîmé ne cass
   S.dessin=null;
 });
 
+
+
+/* Les commandes de lecture du canal de pilotage (commun/pilote-cao.js), dans le vrai
+   bundle : chaque « quoi » répond, et rien n'est écrit (ni historique, ni drapeau). */
+TA("canal de pilotage : cao_pcb_lire et cao_sim_lire lisent sans rien écrire",async()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  try{
+    piloteCao("pcb");
+    loadDoc(exemple1()); runDrc();
+    const pile=S.undo.length, dirty=S.dirty, ver=S.ver;
+    for(const quoi of Object.keys(LECTURE_CAO.pcb)){
+      const t=await cmds.cao_pcb_lire.executer({quoi,ref:"U1",nom:"GND"});
+      if(typeof t!=="string"||!t)throw new Error(quoi+" : rien lu");
+    }
+    if(!/^- \+5V \[Alimentation\]/m.test(await cmds.cao_pcb_lire.executer({quoi:"nets"})))throw new Error("nets");
+    if(!/impedance/.test(await cmds.cao_sim_lire.executer({quoi:"simulations"})))throw new Error("simulations");
+    let refus="";
+    try{await cmds.cao_pcb_lire.executer({quoi:"feuilles"});}catch(e){refus=e.message;}
+    if(!/« quoi » inconnu ici : empilage, classes/.test(refus))throw new Error("refus : "+refus);
+    if(S.undo.length!==pile||S.dirty!==dirty||S.ver!==ver)throw new Error("une lecture a écrit : pile "+pile+"→"+S.undo.length+", dirty "+dirty+"→"+S.dirty);
+  }finally{global.Pilote=ancien;}
+});
 
 (async()=>{
   for(const [name,fn] of T_ASYNC){
