@@ -9,7 +9,8 @@
 "use strict";
 const fs = require("fs"), path = require("path"), vm = require("vm");
 // lecture-cao.js et ecriture-cao.js d'abord, comme dans les pages : les commandes s'en servent
-const CODE = ["lecture-cao.js", "ecriture-cao.js", "pilote-cao.js"]
+// et, pour Gestion LIB, ses commandes (08-pilote-lib.js) et leur code métier
+const CODE = ["lecture-cao.js", "ecriture-cao.js", "composants-lib.js", "../gestion-lib/js/08-pilote-lib.js", "pilote-cao.js"]
   .map(f => fs.readFileSync(path.join(__dirname, "..", f), "utf8")).join("\n");
 
 function page(nom, sim) {
@@ -54,11 +55,23 @@ async function refuse(promesse, motif) {
 
 (async () => {
   await T("chaque page se déclare, avec son projet et son canevas", () => {
-    for (const [p, toile] of [["pcb", "board"], ["schema", "sheet"], ["visionneuse-ipc", "carte"]]) {
+    for (const [p, toile] of [["pcb", "board"], ["schema", "sheet"], ["visionneuse-ipc", "carte"], ["gestion-lib", "canvasPcbInsp"]]) {
       const { declare } = page(p);
       egal([declare.page, declare.projet(), declare.capture().id], [p, "carte PIR", toile], p);
     }
-    egal(page("gestion-lib").declare.capture, null, "gestion-lib sans canevas");
+  });
+
+  await T("Gestion LIB : quatre calculs et une carte de création, jamais directe", () => {
+    const LIB = ["lib_empreinte_generer", "lib_empreinte_verifier", "lib_kicad_convertir", "lib_brochage_verifier", "lib_composant_creer"];
+    for (const p of ["pcb", "schema", "visionneuse-ipc", "gestion-lib"]) {
+      const c = page(p).declare.commandes;
+      egal(LIB.map(n => !!c[n]), LIB.map(() => p === "gestion-lib"), p);
+    }
+    const c = page("gestion-lib").declare.commandes;
+    egal(LIB.map(n => !!c[n].ecriture), [false, false, false, false, true], "seule la création écrit");
+    const creer = c.lib_composant_creer;
+    egal([creer.clic, typeof creer.irreversible, !!creer.annuler, !!creer.historique], [true, "string", false, false],
+         "création : toujours au clic, irréversible");
   });
 
   await T("cao_calcul déclaré dans le PCB et la visionneuse seulement", () => {

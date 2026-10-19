@@ -200,7 +200,7 @@ async function piloteDrc() {
 
 function piloteCao(page) {
   if (typeof Pilote === "undefined") return;
-  const TOILES = { schema: "sheet", pcb: "board", "visionneuse-ipc": "carte" };
+  const TOILES = { schema: "sheet", pcb: "board", "visionneuse-ipc": "carte", "gestion-lib": "canvasPcbInsp" };
   Pilote.declarer({ page, projet: () => (typeof projNom === "function" ? projNom() : "") });
   if (TOILES[page]) Pilote.capture(() => document.getElementById(TOILES[page]));
   if (page === "pcb" || page === "visionneuse-ipc") {
@@ -221,4 +221,6 @@ function piloteCao(page) {
   for (const f of PILOTE_LIRE[page] || []) Pilote.commande("cao_" + f + "_lire", { executer: async a => piloteLire(f, a) });
   if (PILOTE_LIRE[page]) Pilote.commande("cao_vue", { executer: a => piloteVue(page, a) });
   if (page === "pcb") Pilote.commande("cao_drc", { executer: piloteDrc });
+  if (page === "gestion-lib" && typeof libPiloteCommandes === "function")
+    for (const [nom, def] of Object.entries(libPiloteCommandes())) Pilote.commande(nom, def);
 }

@@ -272,7 +272,8 @@ function libSuiteNoter(quoi) {
 }
 
 // Sauvegarde d'un fichier d'empreinte ou symbole sur le serveur
-async function sauvegarderFichierLib(type, nom, dataOuContenu) {
+/* options.si_absent : le serveur refuse (409) si le fichier existe déjà, jamais d'écrasement */
+async function sauvegarderFichierLib(type, nom, dataOuContenu, options) {
   if (!type || !nom) throw new Error("Type et nom de fichier requis");
   if (!nom.endsWith(".json") && (type === "pcb" || type === "schematique")) {
     nom += ".json";
@@ -282,6 +283,7 @@ async function sauvegarderFichierLib(type, nom, dataOuContenu) {
     type: type,
     nom: nom
   };
+  if (options && options.si_absent) payload.si_absent = true;
   if (typeof dataOuContenu === "object") {
     payload.data = dataOuContenu;
   } else {
