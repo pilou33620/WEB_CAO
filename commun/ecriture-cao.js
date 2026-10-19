@@ -230,5 +230,67 @@ const ECRITURE_CAO = (function () {
 
   const COMPOSANTS_PCB = lot({ titre: "Composants du PCB", verifier: verifierPcb, muter: muterPcb, rafraichir: rafraichirPcb, drc: true });
 
-  return { lot, composantsSch: COMPOSANTS_SCH, composantsPcb: COMPOSANTS_PCB, LOT_MAX };
+  /* ---------- pistes ----------
+     {net, largeur, couche?} : les pistes du net (d'une couche) ; {net, realigner: true} :
+     pistes et vias du net remis sur leur classe, comme applyClasses() pour ce seul net. */
+  const coucheIndex = nom => {
+    const i = [...Array(S.cu).keys()].find(k => LECTURE_CAO.aides.nomCouchePcb(k).toLowerCase() === String(nom).toLowerCase());
+    return i === undefined ? -1 : i;
+  };
+  const largeurs = ts => [...new Set(ts.map(t => r3(t.w)))].sort((a, b) => a - b).join(" / ");
+  function hors(net) {
+    return { pistes: S.tracks.filter(t => t.net === net && Math.abs(t.w - classWidth(t.net, t.l)) > 1e-6),
+             vias: S.vias.filter(v => v.net === net && (Math.abs(v.d - classOf(net).via) > 1e-6 || Math.abs(v.drill - classOf(net).drill) > 1e-6)) };
+  }
+  function pistesDe(e) {
+    const l = e.couche == null ? null : coucheIndex(e.couche);
+    return S.tracks.filter(t => t.net === e.net && (l === null || t.l === l));
+  }
+
+  function verifierPistes(args) {
+    const lignes = [], refus = [], vus = new Set();
+    for (const e of args.lot) {
+      if (!e || typeof e.net !== "string" || !e.net) { refus.push("« net » manquant"); continue; }
+      const cle = e.net + "|" + (e.couche == null ? "*" : String(e.couche).toLowerCase());
+      if (vus.has(cle)) { refus.push(e.net + " : deux fois dans le lot"); continue; }
+      vus.add(cle);
+      if (!S.tracks.some(t => t.net === e.net)) { refus.push("net « " + e.net + " » : aucune piste (voir cao_pcb_lire nets)"); continue; }
+      if (e.realigner === true) {
+        if (e.largeur != null || e.couche != null) { refus.push(e.net + " : « realigner » se donne seul"); continue; }
+        const h = hors(e.net);
+        if (h.pistes.length || h.vias.length)
+          lignes.push({ quoi: "net " + e.net + " (classe " + classOf(e.net).name + ")",
+                        avant: h.pistes.length + " piste(s) et " + h.vias.length + " via(s) hors classe",
+                        apres: "réalignés sur la classe" });
+        continue;
+      }
+      if (e.couche != null && coucheIndex(e.couche) < 0) {
+        refus.push(e.net + " : couche « " + e.couche + " » inconnue (" + [...Array(S.cu).keys()].map(LECTURE_CAO.aides.nomCouchePcb).join(", ") + ")"); continue;
+      }
+      if (typeof e.largeur !== "number" || !(e.largeur >= 0.05 && e.largeur <= 10)) { refus.push(e.net + " : largeur de 0,05 à 10 mm"); continue; }
+      const ts = pistesDe(e);
+      if (!ts.length) { refus.push(e.net + " : aucune piste sur " + e.couche); continue; }
+      if (ts.some(t => Math.abs(t.w - e.largeur) > 1e-6))
+        lignes.push({ quoi: "net " + e.net + (e.couche != null ? " sur " + LECTURE_CAO.aides.nomCouchePcb(coucheIndex(e.couche)) : "") +
+                            " (" + ts.length + " piste(s)), largeur",
+                      avant: largeurs(ts), apres: r3(e.largeur) });
+    }
+    return { lignes, refus };
+  }
+
+  function muterPistes(args) {
+    for (const e of args.lot) {
+      if (e.realigner) {
+        const h = hors(e.net), cl = classOf(e.net);
+        for (const t of h.pistes) t.w = classWidth(t.net, t.l);
+        for (const v of h.vias) { v.d = cl.via; v.drill = Math.min(cl.drill, cl.via - 0.1); }
+      } else for (const t of pistesDe(e)) t.w = r3(e.largeur);
+    }
+  }
+
+  function rafraichirRegles() { touch(); zoneCache.clear(); refreshPanels(); draw(); }
+
+  const PISTES = lot({ titre: "Largeur des pistes", verifier: verifierPistes, muter: muterPistes, rafraichir: rafraichirRegles, drc: true });
+
+  return { lot, composantsSch: COMPOSANTS_SCH, composantsPcb: COMPOSANTS_PCB, pistes: PISTES, LOT_MAX };
 })();

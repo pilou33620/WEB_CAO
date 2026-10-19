@@ -188,7 +188,7 @@ async function refuse(promesse, motif) {
       vues[p] = ecrire.filter(n => c[n]);
       for (const n of vues[p]) egal(!!(c[n].ecriture && (c[n].historique || c[n].annuler)), true, n + " : écriture annulable");
     }
-    egal(vues, { schema: ["cao_composants_ecrire"], pcb: ["cao_composants_ecrire"], "visionneuse-ipc": [], "gestion-lib": [] });
+    egal(vues, { schema: ["cao_composants_ecrire"], pcb: ["cao_composants_ecrire", "cao_pistes_ecrire"], "visionneuse-ipc": [], "gestion-lib": [] });
   });
 
   console.log("\n" + ok + " essais réussis, " + ko + " en échec.");

@@ -26583,6 +26583,48 @@ TA("canal de pilotage : cao_composants_ecrire au PCB, un lot en une étape, DRC 
   }finally{global.Pilote=ancien;}
 });
 
+TA("canal de pilotage : cao_pistes_ecrire, largeur d'un net (une couche) et réalignement sur la classe",async()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  const refus=(a,motif)=>{
+    const n=S.undo.length, avant=serialize();
+    let m="";try{cmds.cao_pistes_ecrire.proposer(a);}catch(e){m=e.message;}
+    if(!motif.test(m))throw new Error("refus attendu "+motif+", lu « "+m+" »");
+    if(S.undo.length!==n||serialize()!==avant)throw new Error("un refus a écrit : "+motif);
+  };
+  try{
+    piloteCao("pcb");
+    loadDoc(exemple1());
+    S.undo.length=0;
+    const d=cmds.cao_pistes_ecrire;
+    const parNet={};
+    for(const t of S.tracks)if(t.net)(parNet[t.net]=parNet[t.net]||[]).push(t);
+    const [na,nb]=Object.keys(parNet).filter(k=>parNet[k].length>=2);
+    if(!na||!nb)throw new Error("exemple : deux nets routés attendus");
+    const l0=parNet[na][0].l, couche=LECTURE_CAO.aides.nomCouchePcb(l0);
+    const autres=S.tracks.filter(t=>!(t.net===na&&t.l===l0)).map(t=>t.w);
+    const ver=S.ver;
+    const prop=d.proposer({lot:[{net:na,largeur:0.8,couche:couche.toLowerCase()}]});
+    d.appliquer({lot:[{net:na,largeur:0.8,couche}]},prop);
+    if(S.undo.length!==1||S.ver===ver)throw new Error("une étape et touch() attendus");
+    if(S.tracks.some(t=>t.net===na&&t.l===l0&&t.w!==0.8))throw new Error("largeur non posée");
+    if(String(S.tracks.filter(t=>!(t.net===na&&t.l===l0)).map(t=>t.w))!==String(autres))throw new Error("d'autres pistes ont bougé");
+    if(!/^DRC : /m.test(prop.apres))throw new Error("bilan DRC manquant");
+    undo();
+    /* réaligner nb seulement : même résultat qu'applyClasses pour lui, les autres nets intacts */
+    for(const t of S.tracks)if(t.net===nb||t.net===na)t.w=1.234;
+    touch();
+    d.appliquer({lot:[{net:nb,realigner:true}]},d.proposer({lot:[{net:nb,realigner:true}]}));
+    if(S.tracks.some(t=>t.net===nb&&t.w!==classWidth(t.net,t.l)))throw new Error("nb non réaligné");
+    if(S.tracks.some(t=>t.net===na&&t.w!==1.234))throw new Error("na touché par le réalignement de nb");
+    refus({lot:[{net:"PAS_DE_NET",largeur:0.3}]},/aucune piste/);
+    refus({lot:[{net:na,largeur:0.01}]},/0,05 à 10 mm/);
+    refus({lot:[{net:na,largeur:0.3,couche:"Milieu"}]},/couche « Milieu » inconnue/);
+    refus({lot:[{net:na,largeur:0.3},{net:na,largeur:0.4}]},/deux fois/);
+    refus({lot:[{net:nb,realigner:true}]},/Rien à changer/);
+  }finally{global.Pilote=ancien;}
+});
+
 (async()=>{
   for(const [name,fn] of T_ASYNC){
     try{await fn();console.log("  ok  "+name);ok++;}
