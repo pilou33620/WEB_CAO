@@ -26496,6 +26496,8 @@ TA("canal de pilotage : cao_pcb_lire et cao_sim_lire lisent sans rien écrire",a
     }
     if(!/^- \+5V \[Alimentation\]/m.test(await cmds.cao_pcb_lire.executer({quoi:"nets"})))throw new Error("nets");
     if(!/impedance/.test(await cmds.cao_sim_lire.executer({quoi:"simulations"})))throw new Error("simulations");
+    // le catalogue des paramètres réglables (savoir-metier : les unités viennent de l'outil)
+    if(!/\[pdn_fiche\][\s\S]*pdn_fiche\.iActifMa \(mA\)/.test(await cmds.cao_sim_lire.executer({quoi:"catalogue"})))throw new Error("catalogue");
     let refus="";
     try{await cmds.cao_pcb_lire.executer({quoi:"feuilles"});}catch(e){refus=e.message;}
     if(!/« quoi » inconnu ici : empilage, classes/.test(refus))throw new Error("refus : "+refus);

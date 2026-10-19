@@ -275,6 +275,13 @@ const LECTURE_CAO = (function() {
   }
 
   const OUTILS_SIM = {
+    /* ce qui peut se régler et dans quelle unité : sans lui, un courant lu en mA finit dans un
+       champ en ampères (commun/simulation-datasheet.js) */
+    catalogue: {
+      desc: "le catalogue des paramètres de simulation réglables : groupe.clé, unité ou choix, valeur actuelle, où la lire dans une datasheet",
+      fn: () => typeof simDsCatalogue === "function" ? simDsCatalogue().split("\n")
+                                                     : ["Le catalogue des paramètres de simulation n'est pas chargé dans cette page."]
+    },
     simulations: {
       desc: "les analyses de simulation, celles qui ont un résultat et leurs chiffres clés",
       fn: () => Object.keys(SIM_RAP_ETAT).map(k => {
