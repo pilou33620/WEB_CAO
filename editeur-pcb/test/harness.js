@@ -26667,6 +26667,53 @@ TA("canal de pilotage : cao_classes_ecrire, créer puis rattacher en une étape 
   }finally{global.Pilote=ancien;}
 });
 
+TA("canal de pilotage : cao_contraintes_ecrire, règle de paire et contraintes de net en une étape",async()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  const refus=(a,motif)=>{
+    const n=S.undo.length, avant=serialize();
+    let m="";try{cmds.cao_contraintes_ecrire.proposer(a);}catch(e){m=e.message;}
+    if(!motif.test(m))throw new Error("refus attendu "+motif+", lu « "+m+" »");
+    if(S.undo.length!==n||serialize()!==avant)throw new Error("un refus a écrit : "+motif);
+  };
+  try{
+    piloteCao("pcb");
+    loadDoc(exemple1());
+    S.undo.length=0;
+    S.contraintes.schema={nets:{SCH:{lMax:5}},groupes:[]};
+    const d=cmds.cao_contraintes_ecrire;
+    const [na,nb]=netTable().map(n=>n.name), top=LECTURE_CAO.aides.nomCouchePcb(0);
+    const avant=serialize();
+    const lot=[{action:"paire",nom:"USB",largeur_min:0.15,largeur_pref:0.18,largeur_max:0.25,ecart_pref:0.16,impedance:"D90",portee:""},
+               {action:"net",net:na,l_max:40,vias_max:2,couches:[top]},{action:"net",net:nb,z:50,z_tol:10}];
+    const prop=d.proposer({lot});
+    d.appliquer({lot},prop);
+    if(S.undo.length!==1)throw new Error("une étape attendue");
+    const r=S.dpRules.find(x=>x.name==="USB");
+    if(!r||r.prefW!==0.18||r.imp!=="D90"||!r.useImp||!/^[A-Z]{8}$/.test(r.uid))throw new Error("règle de paire : "+JSON.stringify(r));
+    if(S.contraintes.nets[na].lMax!==40||String(S.contraintes.nets[na].couches)!=="0"||S.contraintes.nets[nb].z!==50)throw new Error("contraintes : "+JSON.stringify(S.contraintes.nets));
+    if(!S.contraintes.schema.nets.SCH)throw new Error("les contraintes du schéma ont été touchées");
+    // le gestionnaire de contraintes et le routeur les voient
+    const rg=cmRegleDe(na);
+    if(!rg.lMax||rg.lMax.v!==40||rg.lMax.src!=="net")throw new Error("cmRegleDe : "+JSON.stringify(rg.lMax));
+    if(S.dpRules.length===1&&dpRuleFor({name:"PAIRE"})!==r)throw new Error("dpRuleFor ne rend pas la règle sans portée");
+    undo();
+    if(serialize()!==avant)throw new Error("Ctrl+Z ne remet pas tout");
+    d.appliquer({lot},d.proposer({lot}));
+    /* modifier puis effacer une clé */
+    const l2=[{action:"paire",nom:"usb",ecart_pref:0.17},{action:"net",net:na,l_max:null}];
+    d.appliquer({lot:l2},d.proposer({lot:l2}));
+    if(S.dpRules.find(x=>x.name==="USB").prefGap!==0.17||"lMax" in S.contraintes.nets[na])throw new Error("modification");
+    refus({lot:[{action:"paire",nom:"USB",largeur_min:0.3}]},/min ≤ préférée ≤ max/);
+    refus({lot:[{action:"paire",nom:"USB",impedance:"D77"}]},/impédance « D77 » inconnue/);
+    refus({lot:[{action:"paire",nom:"USB",portee:"NOPE"}]},/paire « NOPE » inconnue/);
+    refus({lot:[{action:"net",net:na,l_min:50,l_max:10}]},/l_min plus grand que l_max/);
+    refus({lot:[{action:"net",net:na,z:5000}]},/valeurs refusées par la page/);
+    refus({lot:[{action:"net",net:na,couches:["Milieu"]}]},/couche inconnue/);
+    refus({lot:[{action:"net",net:"ZZ",z:50}]},/net « ZZ » inconnu/);
+  }finally{global.Pilote=ancien;}
+});
+
 (async()=>{
   for(const [name,fn] of T_ASYNC){
     try{await fn();console.log("  ok  "+name);ok++;}

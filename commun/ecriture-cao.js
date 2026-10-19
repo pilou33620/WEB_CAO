@@ -375,5 +375,97 @@ const ECRITURE_CAO = (function () {
     rafraichir: rafraichirRegles, drc: true,
   });
 
-  return { lot, composantsSch: COMPOSANTS_SCH, composantsPcb: COMPOSANTS_PCB, pistes: PISTES, classes: CLASSES, LOT_MAX };
+  /* ---------- paires différentielles et contraintes de net ----------
+     {action:"paire", nom, …} crée ou modifie une règle de paire (S.dpRules) ;
+     {action:"net", net, …} pose les contraintes d'un net (S.contraintes.nets) ; null efface
+     une clé. Les contraintes saisies au schéma (S.contraintes.schema) ne sont pas touchées. */
+  const CHAMPS_PAIRE = { largeur_min: "minW", largeur_pref: "prefW", largeur_max: "maxW", ecart_min: "minGap",
+                         ecart_pref: "prefGap", ecart_max: "maxGap", decouple_max: "maxUncoupled" };
+  const CHAMPS_NET = { z: "z", z_tol: "zTol", l_min: "lMin", l_max: "lMax", vias_max: "viasMax" };
+  const nomsCouches = ls => ls.map(l => LECTURE_CAO.aides.nomCouchePcb(l)).join(" ");
+
+  function jouerContraintes(args) {
+    const regles = S.dpRules.map(r => Object.assign({}, r));
+    const cnets = Object.assign({}, S.contraintes.nets);
+    const lignes = [], refus = [];
+    const nets = new Set(netTable().map(n => n.name)), paires = new Set(S.dpPairs.map(p => p.name));
+    for (const e of args.lot) {
+      const a = e && e.action;
+      if (a === "paire") {
+        if (typeof e.nom !== "string" || !/^[^\x00-\x1f]{1,40}$/.test(e.nom.trim())) { refus.push("nom de règle de paire : 1 à 40 caractères"); continue; }
+        let i = regles.findIndex(r => r.name.toLowerCase() === e.nom.trim().toLowerCase());
+        const cand = Object.assign({}, i >= 0 ? regles[i] : DP_FALLBACK, i >= 0 ? {} : { name: e.nom.trim(), layers: {}, scope: "" });
+        const quoi = "paire " + cand.name;
+        let ok = true;
+        for (const [k, cle] of Object.entries(CHAMPS_PAIRE)) {
+          if (e[k] === undefined) continue;
+          const maxi = k === "decouple_max" ? 1e4 : 100, mini = k === "decouple_max" ? 0 : 0.01;
+          if (typeof e[k] !== "number" || !(e[k] >= mini && e[k] <= maxi)) { refus.push(quoi + "." + k + " : de " + mini + " à " + maxi + " mm"); ok = false; continue; }
+          cand[cle] = e[k];
+        }
+        if (e.portee !== undefined) {
+          if (e.portee !== "" && !paires.has(e.portee)) { refus.push(quoi + " : paire « " + e.portee + " » inconnue (vide : toutes les paires)"); ok = false; }
+          else cand.scope = e.portee;
+        }
+        if (e.impedance !== undefined) {
+          if (e.impedance !== "" && !dpProfile(e.impedance)) { refus.push(quoi + " : impédance « " + e.impedance + " » inconnue (" + DP_PROFILES.map(p => p.id).join(", ") + ")"); ok = false; }
+          else { cand.imp = e.impedance; cand.useImp = e.impedance !== ""; }
+        }
+        if (!ok) continue;
+        if (!(cand.minW <= cand.prefW && cand.prefW <= cand.maxW && cand.minGap <= cand.prefGap && cand.prefGap <= cand.maxGap)) {
+          refus.push(quoi + " : il faut min ≤ préférée ≤ max, pour la largeur et pour l'écart"); continue;
+        }
+        const norme = normDpRule(cand, 0, S.cu);
+        const vue = r => Object.keys(CHAMPS_PAIRE).map(k => k + " " + r[CHAMPS_PAIRE[k]]).join(", ") + ", portée " + (r.scope || "toutes") + ", impédance " + (r.useImp ? r.imp : "—");
+        if (vue(norme) !== vue(cand)) { refus.push(quoi + " : valeurs refusées par la page (" + vue(norme) + ")"); continue; }
+        if (i < 0) { regles.push(Object.assign(norme, { nouvelle: true })); lignes.push({ quoi, avant: null, apres: vue(norme) }); }
+        else if (vue(norme) !== vue(regles[i])) { lignes.push({ quoi, avant: vue(regles[i]), apres: vue(norme) }); regles[i] = Object.assign(norme, { uid: regles[i].uid }); }
+        continue;
+      }
+      if (a !== "net") { refus.push("action « " + a + " » inconnue (paire, net)"); continue; }
+      if (typeof e.net !== "string" || !nets.has(e.net)) { refus.push("net « " + (e && e.net) + " » inconnu (voir cao_pcb_lire nets)"); continue; }
+      const cand = Object.assign({}, cnets[e.net]), quoi = "contraintes " + e.net;
+      let ok = true;
+      for (const [k, cle] of Object.entries(CHAMPS_NET)) {
+        if (e[k] === undefined) continue;
+        if (e[k] === null) { delete cand[cle]; continue; }
+        if (typeof e[k] !== "number" || !Number.isFinite(e[k])) { refus.push(quoi + "." + k + " : un nombre, ou null pour l'effacer"); ok = false; continue; }
+        cand[cle] = e[k];
+      }
+      if (e.couches !== undefined) {
+        if (e.couches === null) delete cand.couches;
+        else if (!Array.isArray(e.couches) || !e.couches.length) { refus.push(quoi + ".couches : une liste de noms de couches"); ok = false; }
+        else {
+          const ls = e.couches.map(coucheIndex);
+          if (ls.some(l => l < 0)) { refus.push(quoi + " : couche inconnue dans " + e.couches.join(", ")); ok = false; }
+          else cand.couches = [...new Set(ls)].sort((x, y) => x - y);
+        }
+      }
+      if (!ok) continue;
+      if (cand.lMin != null && cand.lMax != null && cand.lMin > cand.lMax) { refus.push(quoi + " : l_min plus grand que l_max"); continue; }
+      const norme = cmNormRegle(cand) || {};
+      const vue = r => Object.keys(CHAMPS_NET).filter(k => r[CHAMPS_NET[k]] != null).map(k => k + " " + r[CHAMPS_NET[k]])
+                       .concat(r.couches ? ["couches " + nomsCouches(r.couches)] : []).join(", ") || "aucune";
+      if (vue(norme) !== vue(cand)) { refus.push(quoi + " : valeurs refusées par la page (gardées : " + vue(norme) + ")"); continue; }
+      const avant = vue(cnets[e.net] || {});
+      if (Object.keys(norme).length) cnets[e.net] = norme; else delete cnets[e.net];
+      if (vue(norme) !== avant) lignes.push({ quoi, avant, apres: vue(norme) });
+    }
+    return { lignes, refus, regles, cnets };
+  }
+
+  const CONTRAINTES = lot({
+    titre: "Paires différentielles et contraintes de net",
+    verifier: jouerContraintes,
+    muter: args => {
+      const j = jouerContraintes(args);
+      // une règle neuve reçoit son identifiant ici seulement : il est tiré au hasard
+      S.dpRules = j.regles.map(r => { if (!r.nouvelle) return r; const n = Object.assign({}, r, { uid: dpUid() }); delete n.nouvelle; return n; });
+      S.contraintes = Object.assign({}, S.contraintes, { nets: j.cnets });
+    },
+    rafraichir: rafraichirRegles, drc: true,
+  });
+
+  return { lot, composantsSch: COMPOSANTS_SCH, composantsPcb: COMPOSANTS_PCB, pistes: PISTES, classes: CLASSES,
+           contraintes: CONTRAINTES, LOT_MAX };
 })();

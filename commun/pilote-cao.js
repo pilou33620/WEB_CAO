@@ -210,6 +210,7 @@ function piloteCao(page) {
     Pilote.commande("cao_composants_ecrire", ECRITURE_CAO.composantsPcb);
     Pilote.commande("cao_pistes_ecrire", ECRITURE_CAO.pistes);
     Pilote.commande("cao_classes_ecrire", ECRITURE_CAO.classes);
+    Pilote.commande("cao_contraintes_ecrire", ECRITURE_CAO.contraintes);
   }
   for (const f of PILOTE_LIRE[page] || []) Pilote.commande("cao_" + f + "_lire", { executer: async a => piloteLire(f, a) });
   if (PILOTE_LIRE[page]) Pilote.commande("cao_vue", { executer: a => piloteVue(page, a) });
