@@ -512,6 +512,75 @@ T("canal de pilotage : cao_schema_dessiner étiquette (local, global, VCC, GND) 
   }finally{global.Pilote=ancien;sheet([],[]);}
 });
 
+T("canal de pilotage : cao_schema_dessiner crée une feuille, y dessine, renumérote le document",()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  try{
+    piloteCao("schema");
+    const d=cmds.cao_schema_dessiner;
+    docLecture();                                     // f1 « Alim » : R1 ; f2 « Logique » : R2, R3
+    S.hist.length=0;
+    const avant=serialize(), nf=S.pages.length;
+    const lot=[{op:"feuille",creer:"Régulateur"},
+               {op:"poser",type:"capacitor",ref:"C20",x:0,y:0},{op:"poser",type:"capacitor",ref:"C21",x:20,y:0},
+               {op:"relier",de:"C20.2",a:"C21.1"},
+               {op:"feuille",renommer:1,nom:"Alimentation"},
+               {op:"poser",type:"resistor",ref:"R30",x:60,y:30,feuille:1}];
+    const prop=d.proposer({lot});
+    if(serialize()!==avant||S.pages.length!==nf)throw new Error("proposer a laissé la feuille");
+    if(!/^1\. feuille f3 : créée « Régulateur »$/m.test(prop.apres))throw new Error("carte : "+prop.apres);
+    d.appliquer({lot},prop);
+    storeCurrent();
+    const f3=S.pages[2];
+    if(S.pages.length!==nf+1||f3.name!=="Régulateur"||!f3.comps.some(c=>c.ref==="C20")||S.pages[0].name!=="Alimentation")throw new Error("feuilles mal faites");
+    if(!S.pages[0].comps.some(c=>c.ref==="R30"))throw new Error("« feuille: 1 » devait poser R30 sur f1");
+    if(S.hist.length!==1)throw new Error("une étape attendue");
+    undo();
+    if(S.pages.length!==nf||S.pages[0].name!=="Alim")throw new Error("Ctrl+Z ne retire pas la feuille");
+    let m="";try{d.proposer({lot:[{op:"poser",type:"resistor",feuille:9}]});}catch(e){m=e.message;}
+    if(!/feuille 9 inconnue : 1 à 2/.test(m))throw new Error("feuille inconnue : "+m);
+    /* renuméroter : feuille par feuille, haut → bas puis gauche → droite */
+    docLecture();
+    storeCurrent();
+    const f2=S.pages[1].comps.filter(c=>c.ref);
+    S.pages[0].comps.find(c=>c.ref==="R1").ref="R7";
+    const [a,b]=f2.sort((x,y)=>(x.y-y.y)||(x.x-y.x));      // a est lu avant b
+    a.ref="R9"; b.ref="R4";
+    const p2=d.proposer({lot:[{op:"renumeroter"}]});
+    if(!/^1\. renumeroter R7 : R1$/m.test(p2.apres)||!/^1\. PCB : garde les anciens repères/m.test(p2.apres))throw new Error("carte : "+p2.apres);
+    d.appliquer({lot:[{op:"renumeroter"}]});
+    storeCurrent();
+    const refs=S.pages.map(p=>p.comps.filter(c=>c.ref).map(c=>c.ref).sort());
+    if(JSON.stringify(refs)!==JSON.stringify([["R1"],["R2","R3"]]))throw new Error("renumérotation : "+JSON.stringify(refs));
+    if(a.ref!=="R2"||b.ref!=="R3")throw new Error("ordre de lecture : "+a.ref+", "+b.ref);
+    m="";try{d.proposer({lot:[{op:"renumeroter"}]});}catch(e){m=e.message;}
+    if(!/déjà dans l'ordre/.test(m))throw new Error("rien à renuméroter : "+m);
+  }finally{global.Pilote=ancien;sheet([],[]);}
+});
+
+T("canal de pilotage : un montage dessiné en un lot (régulateur, deux condensateurs, VCC, GND) a les nets voulus",()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  const membres=nom=>{const g=docNets().groups.find(x=>x.name.toUpperCase()===nom);return g?g.nodes.map(x=>x.ref+"."+x.pin).sort():[];};
+  try{
+    piloteCao("schema");
+    sheet([],[]);
+    const lot=[{op:"poser",type:"regulator",ref:"U1",valeur:"AMS1117-3.3",x:0,y:0},
+               {op:"poser",type:"capacitor",ref:"C1",valeur:"10u",x:-10,y:8,rotation:90},
+               {op:"poser",type:"capacitor",ref:"C2",valeur:"10u",x:10,y:8,rotation:90},
+               {op:"relier",de:"U1.IN",a:"C1.1"},{op:"relier",de:"U1.OUT",a:"C2.1"},
+               {op:"etiqueter",broche:"U1.IN",net:"5V",genre:"vcc"},
+               {op:"etiqueter",broche:"U1.OUT",net:"3V3",genre:"local"},
+               {op:"etiqueter",broche:"U1.GND",genre:"gnd"},
+               {op:"etiqueter",broche:"C1.2",genre:"gnd"},{op:"etiqueter",broche:"C2.2",genre:"gnd"}];
+    cmds.cao_schema_dessiner.appliquer({lot},cmds.cao_schema_dessiner.proposer({lot}));
+    const att={"5V":["C1.1","U1.1"],"3V3":["C2.1","U1.2"],"GND":["C1.2","C2.2","U1.3"]};
+    for(const [nom,liste] of Object.entries(att))
+      if(JSON.stringify(membres(nom))!==JSON.stringify(liste))throw new Error(nom+" : "+JSON.stringify(membres(nom))+" au lieu de "+JSON.stringify(liste));
+    if(S.hist.length<1)throw new Error("une étape attendue");
+  }finally{global.Pilote=ancien;sheet([],[]);}
+});
+
 T("classes d'interface : la table commune est chargée",()=>{
   if(Object.keys(CLASSES_INTERFACE).length!==7)throw new Error("7 interfaces attendues");
   if(familleClasse("USB HS")!=="Rapide"||familleClasse("CAN")!=="Lent"||familleClasse("RF")!=="RF")

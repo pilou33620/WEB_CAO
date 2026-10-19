@@ -166,7 +166,7 @@ const DESSIN_OPS = {
       el.y = snap(dessinNombre(o.y, n, "poser", "y", 1000) * DESSIN_MM);
       const autre = dessinChevauche(el);
       if (autre) throw dessinRefus(n, "poser", "chevauche " + (autre.ref || autre.type) + " ; sans x ni y, la page cherche une place libre");
-    } else if (!dessinPlaceLibre(el, ctx.dernier)) throw dessinRefus(n, "poser", "aucune place libre trouvée : donne x et y");
+    } else if (!dessinPlaceLibre(el, ctx.dernier && S.comps.includes(ctx.dernier) ? ctx.dernier : null)) throw dessinRefus(n, "poser", "aucune place libre trouvée : donne x et y");
     touchWires();
     ctx.dernier = el;
     const origine = ligne ? "catalogue " + ligne["Part Name"] + (def === DEF_UNKNOWN ? " (symbole générique : la page ne connaît pas le sien)" : "") + ", " : "";
@@ -289,6 +289,45 @@ const DESSIN_OPS = {
              apres: a.nom + " sur " + dessinNetDe(a) + ", " + b.nom + " sur " + dessinNetDe(b) };
   },
 
+  /* {creer: nom} : une feuille neuve, où vont les opérations suivantes ; {renommer: n°, nom}. */
+  feuille(o, n) {
+    const nom = o.nom !== undefined ? o.nom : o.creer;
+    if (typeof nom !== "string" || !/^[^\x00-\x1f\x7f]{1,60}$/.test(nom.trim())) throw dessinRefus(n, "feuille", "nom de feuille : 1 à 60 caractères");
+    if (o.creer !== undefined && o.renommer === undefined) {
+      storeCurrent();
+      S.pages.push(newPage(nom.trim()));
+      gotoPage(S.pages.length - 1);
+      return { quoi: (n + 1) + ". feuille f" + S.pages.length, avant: null, apres: "créée « " + nom.trim() + " »" };
+    }
+    if (o.renommer !== undefined && o.creer === undefined) {
+      if (!Number.isInteger(o.renommer) || !S.pages[o.renommer - 1]) throw dessinRefus(n, "feuille", "feuille " + o.renommer + " inconnue : 1 à " + S.pages.length);
+      const p = S.pages[o.renommer - 1], avant = p.name;
+      p.name = nom.trim();
+      return { quoi: (n + 1) + ". feuille f" + o.renommer, avant: "« " + avant + " »", apres: "« " + p.name + " »" };
+    }
+    throw dessinRefus(n, "feuille", "donne « creer » (nom), ou « renommer » (n°) et « nom »");
+  },
+
+  /* Repères refaits par préfixe dans tout le document : feuille par feuille, puis de haut en
+     bas et de gauche à droite. Le PCB garde les anciens jusqu'à sa resynchronisation. */
+  renumeroter(o, n) {
+    storeCurrent();
+    const parPrefixe = new Map(), lignes = [];
+    S.pages.forEach((p, i) => {
+      const liste = (i === S.page ? S.comps : p.comps || []).filter(c => c.ref && !defOf(c.type).noRef)
+        .sort((a, b) => (a.y - b.y) || (a.x - b.x));
+      for (const c of liste) {
+        const pre = (String(c.ref).match(/^[A-Za-z_]+/) || [defOf(c.type).p || "X"])[0];
+        const k = (parPrefixe.get(pre) || 0) + 1;
+        parPrefixe.set(pre, k);
+        if (c.ref !== pre + k) { lignes.push({ quoi: (n + 1) + ". renumeroter " + c.ref, avant: c.ref, apres: pre + k }); c.ref = pre + k; }
+      }
+    });
+    if (!lignes.length) throw dessinRefus(n, "renumeroter", "les repères sont déjà dans l'ordre");
+    lignes.push({ quoi: (n + 1) + ". PCB", avant: null, apres: "garde les anciens repères jusqu'à sa resynchronisation" });
+    return lignes;
+  },
+
   supprimer(o, n) {
     const el = dessinComp(o.ref, n, "supprimer");
     const avant = el.type + (el.value ? " " + el.value : "") + ", " + dessinOuEst(el);
@@ -304,7 +343,11 @@ function dessinJouer(ops) {
   ops.forEach((o, n) => {
     const f = o && typeof o.op === "string" && Object.prototype.hasOwnProperty.call(DESSIN_OPS, o.op) ? DESSIN_OPS[o.op] : null;
     if (!f) throw dessinRefus(n, String(o && o.op), "opération inconnue (" + Object.keys(DESSIN_OPS).join(", ") + ")");
-    lignes.push(f(o, n, ctx));
+    if (o.feuille !== undefined) {                       // l'opération vise une feuille : on y passe
+      if (!Number.isInteger(o.feuille) || !S.pages[o.feuille - 1]) throw dessinRefus(n, o.op, "feuille " + o.feuille + " inconnue : 1 à " + S.pages.length);
+      if (o.feuille - 1 !== S.page) gotoPage(o.feuille - 1);
+    }
+    lignes.push(...[].concat(f(o, n, ctx)));
   });
   return lignes;
 }
