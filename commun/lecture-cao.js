@@ -141,9 +141,9 @@ const LECTURE_CAO = (function() {
       args: '"filtre":"GND"',
       desc: "liaisons qui restent à router : net, classe, de REF.pastille à REF.pastille avec positions et couches ; filtre facultatif sur le net",
       fn: a => {
-        const c = conn(true);
+        const c = conn(true), parPos = new Map(c.padNodes.map(q => [q.q.x + "," + q.q.y + "," + q.q.net, q]));
         const bout = (x, y, net) => {
-          const p = c.padNodes.find(q => q.q.x === x && q.q.y === y && q.q.net === net);
+          const p = parPos.get(x + "," + y + "," + net);
           return p ? p.fp.ref + "." + p.q.n + " (x " + mm(x) + " y " + mm(y) + ", " + p.layers.map(nomCouchePcb).join("/") + ")"
                    : "(x " + mm(x) + " y " + mm(y) + ")";
         };
@@ -155,7 +155,7 @@ const LECTURE_CAO = (function() {
     },
     zone: {
       args: '"x1":10,"y1":10,"x2":30,"y2":25',
-      desc: "ce qu'il y a dans une fenêtre de la carte (mm) : pastilles, pistes, vias, zones de cuivre, contour",
+      desc: "ce qu'il y a dans une fenêtre de la carte (mm) : pastilles, pistes, vias, zones de cuivre, contour (pistes et zones par leur boîte englobante : approximatif)",
       fn: a => {
         const v = ["x1", "y1", "x2", "y2"].map(k => +a[k]);
         if (!v.every(Number.isFinite)) return ["Donne la fenêtre en mm : x1, y1, x2, y2."];
@@ -172,8 +172,10 @@ const LECTURE_CAO = (function() {
         for (const w of S.vias) if (dans(w.x, w.y))
           L.push("- via [" + (w.net || "sans net") + "] x " + mm(w.x) + " y " + mm(w.y) + ", ø " + mm(w.d) + " / " + mm(w.drill) + ", " + nomCouchePcb(w.a) + " à " + nomCouchePcb(w.b));
         for (const z of S.zones || []) {
-          const xs = (z.pts || []).map(q => q.x), ys = (z.pts || []).map(q => q.y);
-          if (xs.length && boite(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)))
+          // une boucle, pas Math.min(...xs) : une zone importée peut avoir des centaines de milliers de points
+          let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+          for (const q of z.pts || []) { x1 = Math.min(x1, q.x); y1 = Math.min(y1, q.y); x2 = Math.max(x2, q.x); y2 = Math.max(y2, q.y); }
+          if (x1 !== Infinity && boite(x1, y1, x2, y2))
             L.push("- zone de cuivre [" + (z.net || "sans net") + "] " + nomCouchePcb(z.l));
         }
         const b = S.board || {}, coins = b.pts && b.pts.length ? b.pts

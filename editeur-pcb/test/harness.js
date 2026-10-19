@@ -26797,10 +26797,11 @@ TA("canal de pilotage : cao_router, simule puis charge, une etape, tout ou rien 
     const prop=d.proposer({routes});
     if(etat()!==avant)throw new Error("proposer a laisse une trace");
     if(!/^route 1 \(\S+\) : posée$/m.test(prop.apres)||!ROUTAGE.apercu||!ROUTAGE.apercu.pistes.length)throw new Error("carte ou apercu : "+prop.apres);
-    const ratsAvant=conn(true).rats.length;
+    const ratsAvant=conn(true).rats.length, relevé=prop.resultat;
     d.appliquer({routes},prop);
     if(S.undo.length!==1)throw new Error("une seule etape attendue : "+S.undo.length);
-    if(serialize()!==prop.resultat)throw new Error("le document applique n'est pas celui de l'apercu");
+    const cuivre=JSON.parse(serialize()), CU=["fps","tracks","vias","zones","holes","nextId"];
+    if(JSON.stringify(CU.map(k=>cuivre[k]))!==relevé)throw new Error("le cuivre applique n'est pas celui de l'apercu");
     if(conn(true).rats.length>=ratsAvant)throw new Error("aucune liaison routee");
     if(ROUTAGE.apercu)throw new Error("l'apercu doit s'effacer au clic");
     if(!/^DRC : \d+ erreurs? avant → \d+ après\.$/m.test(prop.apres))throw new Error("bilan DRC : "+prop.apres);
@@ -26811,10 +26812,12 @@ TA("canal de pilotage : cao_router, simule puis charge, une etape, tout ou rien 
     const autre=c.padNodes.find(q=>q.q.net&&q.q.net!==c.rats[0].net);
     const mix=[routes[0],{depart:routes[1].depart,arrivee:autre.fp.ref+"."+autre.q.n},{depart:{x:-500,y:-500},arrivee:routes[2].arrivee}];
     const p2=d.proposer({routes:mix});
-    if(!/^route 1 .* : posée$/m.test(p2.apres)||!/^route 2 : refusée, (bloquée vers \S+ : l'isolation|l'arrivée \S+ n'est pas atteinte)/m.test(p2.apres)||
+    if(!/^route 1 .* : posée$/m.test(p2.apres)||!/^route 2 : refusée, \S+ \(\S+\) et \S+ \(\S+\) ne sont pas sur le même net$/m.test(p2.apres)||
        !/^route 3 : refusée, le départ \(-500, -500\) n'est sur le cuivre d'aucun net$/m.test(p2.apres))throw new Error("tout ou rien : "+p2.apres);
+    const pistesMix=JSON.parse(p2.resultat)[1].length;
     d.appliquer({routes:mix},p2);
-    const seules=JSON.parse(p2.resultat).tracks.length-JSON.parse(docAvant).tracks.length;
+    if(p2.resultat!==null)throw new Error("le document releve doit etre libere au clic");
+    const seules=pistesMix-JSON.parse(docAvant).tracks.length;
     if(seules<=0||S.tracks.length!==JSON.parse(docAvant).tracks.length+seules)throw new Error("seule la route posee doit rester");
     undo(); S.undo.length=0;
     /* le document bouge entre la carte et le clic : refus */
@@ -26822,7 +26825,7 @@ TA("canal de pilotage : cao_router, simule puis charge, une etape, tout ou rien 
     S.tracks.push(Object.assign({},S.tracks[0])); touch();
     let m="";try{d.appliquer({routes:[routes[0]]},p3);}catch(e){m=e.message;}
     if(!/a changé depuis la proposition/.test(m)||S.undo.length!==0)throw new Error("carte perimee : "+m);
-    if(ROUTAGE.apercu&&ROUTAGE.apercu.ver===S.ver)throw new Error("l'apercu d'une carte perimee doit tomber");
+    if(ROUTAGE.apercu)throw new Error("l'apercu d'une carte perimee doit tomber");
     S.tracks.pop(); touch();
     /* rien d'applicable : refus de la carte */
     m="";try{d.proposer({routes:[{depart:{x:-500,y:-500},arrivee:{x:-490,y:-500}}]});}catch(e){m=e.message;}
@@ -26831,12 +26834,43 @@ TA("canal de pilotage : cao_router, simule puis charge, une etape, tout ou rien 
       m="";try{d.proposer(a);}catch(e){m=e.message;}
       if(!motif.test(m))throw new Error("refus attendu "+motif+" : "+m);
     }
+    /* les reglages de l'utilisateur ne bougent pas au clic : coins, mode du routeur, couche active, couches vues */
+    S.rule.corner="90"; S.rule.route="mark"; S.active=S.cu-1; S.cuL[0].vis=false; touch();
+    const pr=d.proposer({routes:[routes[0]]});
+    d.appliquer({routes:[routes[0]]},pr);
+    if(S.rule.corner!=="90"||S.rule.route!=="mark"||S.active!==S.cu-1||S.cuL[0].vis!==false)
+      throw new Error("le clic a change les reglages : "+[S.rule.corner,S.rule.route,S.active,S.cuL[0].vis]);
+    undo(); S.undo.length=0; S.rule.corner="45"; S.rule.route="shove"; S.active=0; S.cuL[0].vis=true;
+    /* masquer une couche entre la carte et le clic ne la rend pas perimee */
+    const pv=d.proposer({routes:[routes[0]]}); S.cuL[1].vis=false; touch();
+    d.appliquer({routes:[routes[0]]},pv);
+    if(S.undo.length!==1||S.cuL[1].vis!==false)throw new Error("une couche masquee a rendu la carte perimee, ou a ete remise");
+    undo(); S.undo.length=0; S.cuL[1].vis=true;
+    /* Refuser dans le panneau efface l'apercu (crochet appele par pilote.js) */
+    d.proposer({routes:[routes[0]]});
+    if(!ROUTAGE.apercu||typeof d.refuser!=="function")throw new Error("apercu et crochet refuser attendus");
+    d.refuser(); if(ROUTAGE.apercu)throw new Error("refuser doit effacer l'apercu");
+    /* le DRC affiche n'est pas efface par une proposition */
+    runDrc(); const drc=JSON.stringify(S.drc);
+    d.proposer({routes:[routes[0]]}); d.refuser();
+    if(!S.drcRun||JSON.stringify(S.drc)!==drc)throw new Error("la proposition a efface le DRC");
+    /* un geste en cours dans l'editeur : refus, rien n'est detruit */
+    S.zoneDraft={pts:[]};
+    m="";try{d.proposer({routes:[routes[0]]});}catch(e){m=e.message;}
+    S.zoneDraft=null;
+    if(!/tracé est en cours/.test(m))throw new Error("geste en cours : "+m);
+    /* deux pastilles de nets differents ; trop de points dans le lot */
+    m="";try{d.proposer({routes:[{depart:routes[0].depart,arrivee:autre.fp.ref+"."+autre.q.n}]});}catch(e){m=e.message;}
+    if(!/ne sont pas sur le même net/.test(m))throw new Error("nets differents : "+m);
+    m="";try{d.proposer({routes:Array.from({length:6},()=>Object.assign({},routes[0],{points:Array.from({length:200},()=>({x:1,y:1}))}))});}catch(e){m=e.message;}
+    if(!/1000 points de passage au plus/.test(m))throw new Error("points du lot : "+m);
     /* changer de couche en chemin : une via a l'aller, une au retour sur la pastille */
     const r0=c.rats[0], mx=(r0.x1+r0.x2)/2, my=(r0.y1+r0.y2)/2+2;
     const bas=LECTURE_CAO.aides.nomCouchePcb(S.cu-1);
-    const p4=d.proposer({routes:[{depart:routes[0].depart,points:[{x:mx,y:my,couche:bas}],arrivee:routes[0].arrivee}]});
+    const p4=d.proposer({routes:[{depart:routes[0].depart,points:[{x:mx,y:my,couche:bas}],arrivee:routes[0].arrivee,largeur:0.42}]});
     if(!/^route 1 .* : posée$/m.test(p4.apres)||!(ROUTAGE.apercu.vias.length>=1&&ROUTAGE.apercu.pistes.some(t=>t.l===S.cu-1)))
       throw new Error("changement de couche : "+p4.apres);
+    if(!ROUTAGE.apercu.pistes.filter(t=>t.l===S.cu-1).every(t=>t.w===0.42))throw new Error("la largeur demandee doit tenir apres la via");
   }finally{global.Pilote=ancien;}
 });
 

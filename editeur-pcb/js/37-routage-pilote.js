@@ -7,9 +7,11 @@
    SIMULER, RELEVER, PUIS CHARGER. Le routeur a un garde-temps : le rejouer au
    clic pourrait donner un autre tracé sur une machine lente. `proposer` fait
    donc le lot pour de vrai, relève le document obtenu, puis remet l'original
-   (loadDoc, comme Ctrl+Z). Au clic, si rien n'a bougé, la page pousse UNE
-   étape d'historique et charge le document relevé : le tracé appliqué est
-   celui de l'aperçu, dessiné en pointillés tant que la carte attend.
+   (loadDoc, comme Ctrl+Z). Au clic, si le cuivre n'a pas bougé, la page pousse
+   UNE étape d'historique et reprend du relevé le cuivre et les empreintes
+   SEULEMENT (CUIVRE ci-dessous) : réglages, couche active, couches visibles
+   restent ceux de l'utilisateur. Le tracé appliqué est celui de l'aperçu,
+   dessiné en pointillés tant que la carte attend.
 
    Positions en mm, dans le repère des lectures (cao_pcb_lire liaisons, zone).
    Spec : web_suite/lanceur/docs/SPEC-mcp-routage.md.
@@ -17,8 +19,13 @@
 "use strict";
 
 const ROUTAGE_MAX = 20, ROUTAGE_POINTS = 200, ROUTAGE_VIAS = 50;
+const ROUTAGE_POINTS_LOT = 1000, ROUTAGE_BUDGET_MS = 10000;   // le lot entier : la page reste utilisable
+const CUIVRE = ["fps", "tracks", "vias", "zones", "holes", "nextId"];   // ce qu'une carte de routage ou de placement change
+const routageCuivre = d => JSON.stringify(CUIVRE.map(k => d[k]));
+// un nom venu du projet ne fabrique pas d'autre ligne sur la carte
+const routagePropre = t => String(t == null ? "" : t).replace(/[\x00-\x1f\x7f\u2028\u2029]/g, " ").slice(0, 120);
 // var, pas const : dans le bundle d'un seul script, paint() la lit avant que ce fichier ne s'exécute
-var ROUTAGE = { apercu: null };      // apercu : {pistes, vias, ver}, ce que la carte en attente posera
+var ROUTAGE = { apercu: null };      // apercu : {pistes, vias, retirees, ver}, ce que la carte en attente posera
 
 /* L'aperçu, par-dessus la carte (appelé par paint, 03-render.js), tant que le document est
    celui de la carte : une modification le rend caduc. */
@@ -32,6 +39,9 @@ function routageApercuDessiner(c){
     c.strokeStyle = layerColor(t.l); c.lineWidth = t.w;
     c.beginPath(); c.moveTo(t.x1, t.y1); c.lineTo(t.x2, t.y2); c.stroke();
   }
+  // le cuivre existant que la poussée déplace ou retire, en rouge : on voit aussi ce qui part
+  c.strokeStyle = C_ERR;
+  for(const t of A.retirees || []){ c.lineWidth = t.w; c.beginPath(); c.moveTo(t.x1, t.y1); c.lineTo(t.x2, t.y2); c.stroke(); }
   c.setLineDash([]); c.fillStyle = C_SEL;
   for(const v of A.vias){ c.beginPath(); c.arc(v.x, v.y, v.d / 2, 0, Math.PI * 2); c.fill(); }
   c.restore();
@@ -67,24 +77,31 @@ function routageUneRoute(r){
     const pts = Array.isArray(r.points) ? r.points : [];
     if(pts.length > ROUTAGE_POINTS) throw routageRefus(ROUTAGE_POINTS + " points au plus par route");
     const etapes = pts.map(routagePoint).concat([arr]);
+    if(dep.net && arr.net && dep.net !== arr.net) throw routageRefus(dep.nom + " (" + routagePropre(dep.net) + ") et " + arr.nom + " (" + routagePropre(arr.net) + ") ne sont pas sur le même net");
+    // la couche de départ ne dépend pas de celle affichée : celle donnée, sinon la première de la pastille
     const couche0 = r.couche != null ? routageCouche(r.couche)
-                  : dep.couches ? (dep.couches.includes(S.active) ? S.active : dep.couches[0]) : (dep.couche != null ? dep.couche : S.active);
+                  : dep.couches ? dep.couches[0] : (dep.couche != null ? dep.couche : 0);
     if(dep.couches && !dep.couches.includes(couche0)) throw routageRefus(dep.nom + " n'est pas sur " + LECTURE_CAO.aides.nomCouchePcb(couche0));
     S.active = couche0;
     startRoute(dep.x, dep.y, true);
     const R = S.route;
     if(!R || !R.net) throw routageRefus("le départ " + dep.nom + " n'est sur le cuivre d'aucun net");
+    let largeur = null;
     if(r.largeur != null){
       if(typeof r.largeur !== "number" || !(r.largeur >= 0.05 && r.largeur <= 10)) throw routageRefus("largeur de 0,05 à 10 mm");
-      R.w = r3(r.largeur);
+      R.w = largeur = r3(r.largeur);
     }
     const net = R.net;
     for(const [k, e] of etapes.entries()){
       if(!S.route) break;                                    // arrivé sur le cuivre du net : la route s'est posée
       const voulue = e.couche != null ? e.couche : (e.couches && !e.couches.includes(S.route.layer) ? e.couches[0] : null);
       if(voulue != null && voulue !== S.route.layer){
+        // une via sur la pastille de départ n'est pas un choix à faire en silence
+        if(e.couche == null && S.route.pt.x === dep.x && S.route.pt.y === dep.y)
+          throw routageRefus(e.nom + " n'est pas sur la couche de départ : donne un point avec « couche » là où poser la via");
         routeToLayer(voulue);
         if(S.route.layer !== voulue) throw routageRefus("via refusée en (" + r3(S.route.pt.x) + ", " + r3(S.route.pt.y) + ") pour passer sur " + LECTURE_CAO.aides.nomCouchePcb(voulue));
+        if(largeur != null) S.route.w = largeur;            // routeToLayer reprend la largeur de la classe
       }
       routeToPoint({x:e.x, y:e.y});
       if(S.route.bad) throw routageRefus("bloquée vers " + e.nom + " : l'isolation de " + classOf(net).clr + " mm n'y passe pas");
@@ -98,7 +115,7 @@ function routageUneRoute(r){
       if(arr.couches) throw routageRefus("l'arrivée " + arr.nom + " n'est pas atteinte sur une de ses couches");
       commitRoute();                                         // une arrivée libre : la route s'arrête là
     }
-    return {net, ok:true};
+    return {net:routagePropre(net), ok:true};
   }catch(err){
     if(S.route) cancelRoute();
     S.route = null;
@@ -115,7 +132,7 @@ function routageUnePaire(a){
   const avant = serialize();
   try{
     const pair = (S.dpPairs || []).find(x => typeof a.paire === "string" && x.name.toUpperCase() === a.paire.toUpperCase());
-    if(!pair) throw routageRefus("paire « " + a.paire + " » inconnue (" + ((S.dpPairs || []).map(x => x.name).join(", ") || "aucune déclarée") + ")");
+    if(!pair) throw routageRefus("paire « " + routagePropre(a.paire) + " » inconnue (" + ((S.dpPairs || []).map(x => routagePropre(x.name)).join(", ") || "aucune déclarée") + ")");
     const dep = routagePoint(a.depart), arr = routagePoint(a.arrivee);
     const pts = Array.isArray(a.points) ? a.points : [];
     if(pts.length > ROUTAGE_POINTS) throw routageRefus(ROUTAGE_POINTS + " points au plus");
@@ -140,7 +157,7 @@ function routageUnePaire(a){
       if(arr.couches) throw routageRefus("l'arrivée " + arr.nom + " n'est pas accrochée par les deux pistes");
       dpCommit();
     }
-    return {ok:true, net:pair.p + " / " + pair.n};
+    return {ok:true, net:routagePropre(pair.p) + " / " + routagePropre(pair.n)};
   }catch(err){
     if(S.dp) dpCancel();
     S.dp = null;
@@ -159,62 +176,95 @@ function routageUneVia(v){
   try{ if(v.de != null) a = routageCouche(v.de); if(v.a != null) b = routageCouche(v.a); }
   catch(e){ return {ok:false, raison:e.message}; }
   const fait = placeVia(r3(v.x), r3(v.y), v.net, Math.min(a, b), Math.max(a, b), false);
-  return fait ? {ok:true, net:v.net} : {ok:false, raison:"la page la refuse en (" + r3(v.x) + ", " + r3(v.y) + ") : elle gênerait le cuivre voisin"};
+  return fait ? {ok:true, net:routagePropre(v.net)} : {ok:false, raison:"la page la refuse en (" + r3(v.x) + ", " + r3(v.y) + ") : elle gênerait le cuivre voisin"};
 }
 
-/* Le socle : jouer pour de vrai, relever, remettre. Rend {lignes, resultat, ver, apercu}. */
+/* Le socle : jouer pour de vrai, relever, remettre. Rend {lignes, resultat, cuivre, apercu}.
+   Refuse si un geste est en cours dans l'éditeur : la simulation le détruirait. Remet tout ce que
+   loadDoc touche hors du document (DRC, paire de couches, sélection, message d'aide). */
 function routageSimuler(jouer){
-  const sel = {fps:[...S.sel.fps], pistes:S.tracks.map((t, i) => S.sel.tracks.has(t) ? i : -1).filter(i => i >= 0),
-               vias:S.vias.map((v, i) => S.sel.vias.has(v) ? i : -1).filter(i => i >= 0)};
+  if(S.route || S.dp || S.zoneDraft || S.cutDraft || S.edgeDraft || S.meanderDraft || S.dragShove)
+    throw new Error("Un tracé est en cours dans l'éditeur : termine-le (ou Échap), puis repropose.");
+  const listes = {fps:S.fps, tracks:S.tracks, vias:S.vias, zones:S.zones, cuts:S.cuts, holes:S.holes || [], drawings:S.drawings || []};
+  // un objet sélectionné est repris par son rang (loadDoc refait les objets), un identifiant tel quel
+  const sel = Object.entries(S.sel).filter(([, v]) => v instanceof Set).map(([k, v]) =>
+    [k, [...v].map(x => x && typeof x === "object" && listes[k] ? {rang:listes[k].indexOf(x)} : {id:x})]);
+  const aide = typeof document !== "undefined" && document.getElementById("fHint");
   const garde = {doc:serialize(), undo:S.undo.slice(), redo:S.redo.slice(), dirty:S.dirty, vue:[S.scale, S.ox, S.oy],
-                 active:S.active, avoid:S.avoid, hlNet:S.hlNet};
-  const cles = d => new Set([...d.tracks.map(t => JSON.stringify(t)), ...d.vias.map(v => JSON.stringify(v))]);
+                 active:S.active, avoid:S.avoid, hlNet:S.hlNet, pair:S.pair, drc:S.drc, drcRun:S.drcRun,
+                 edge:S.sel.edge, aide:aide ? aide.textContent : null, t0:Date.now()};
   let lignes, resultat;
   try{
     S.avoid = true;
+    ROUTAGE.budget = garde.t0 + ROUTAGE_BUDGET_MS;
     lignes = jouer();
     resultat = serialize();
   }finally{
     if(S.route) cancelRoute();
     if(S.dp) dpCancel();
-    S.route = null; S.dp = null;
+    S.route = null; S.dp = null; ROUTAGE.budget = null;
     loadDoc(JSON.parse(garde.doc), true);
     S.undo = garde.undo; S.redo = garde.redo; S.dirty = garde.dirty;
     [S.scale, S.ox, S.oy] = garde.vue;
-    S.active = garde.active; S.avoid = garde.avoid; S.hlNet = garde.hlNet;
+    Object.assign(S, {active:garde.active, avoid:garde.avoid, hlNet:garde.hlNet, pair:garde.pair, drc:garde.drc, drcRun:garde.drcRun});
+    const listes2 = {fps:S.fps, tracks:S.tracks, vias:S.vias, zones:S.zones, cuts:S.cuts, holes:S.holes || [], drawings:S.drawings || []};
     clearSel();
-    sel.fps.forEach(id => S.sel.fps.add(id));
-    sel.pistes.forEach(i => S.tracks[i] && S.sel.tracks.add(S.tracks[i]));
-    sel.vias.forEach(i => S.vias[i] && S.sel.vias.add(S.vias[i]));
+    for(const [k, xs] of sel) for(const x of xs){
+      const v = "rang" in x ? listes2[k] && listes2[k][x.rang] : x.id;
+      if(v !== undefined && v !== null) S.sel[k].add(v);
+    }
+    S.sel.edge = garde.edge;
+    if(aide) aide.textContent = garde.aide;
+    refreshPanels(); draw();
   }
-  const avant = cles(JSON.parse(garde.doc)), apres = JSON.parse(resultat);
-  const apercu = {pistes:apres.tracks.filter(t => !avant.has(JSON.stringify(t))),
-                  vias:apres.vias.filter(v => !avant.has(JSON.stringify(v))), ver:S.ver};
-  return {lignes, resultat, ver:S.ver, apercu};
+  const d0 = JSON.parse(garde.doc), d1 = JSON.parse(resultat);
+  const cles = d => new Set([...d.tracks.map(t => JSON.stringify(t)), ...d.vias.map(v => JSON.stringify(v))]);
+  const avant = cles(d0), apres = cles(d1);
+  const apercu = {pistes:d1.tracks.filter(t => !avant.has(JSON.stringify(t))),
+                  vias:d1.vias.filter(v => !avant.has(JSON.stringify(v))),
+                  retirees:d0.tracks.filter(t => !apres.has(JSON.stringify(t))), ver:S.ver};
+  const nRetirees = apercu.retirees.length + d0.vias.filter(v => !apres.has(JSON.stringify(v))).length;
+  if(nRetirees) lignes.push({ok:true, texte:"attention : " + nRetirees + " piste(s) ou via(s) existante(s) déplacée(s) ou retirée(s) par la poussée (en rouge sur l'aperçu)"});
+  return {lignes, resultat:JSON.stringify(CUIVRE.map(k => d1[k])), cuivre:routageCuivre(d0), apercu};
 }
 
+/* Le temps du lot est borné : passé le budget, les routes qui restent sont refusées (le jeu tourne
+   dans la page, et un routeur qui pousse longtemps la figerait). */
+const routageHorsBudget = () => ROUTAGE.budget && Date.now() > ROUTAGE.budget;
+
 /* Une commande « simuler puis charger ». `jouer(args)` rend les lignes de la carte et
-   lève une Error si le lot n'a pas de sens ; `titre(args)` nomme la carte. */
-function routageCommande(titre, jouer){
+   lève une Error si le lot n'a pas de sens ; `titre(args)` nomme la carte. Au clic, seuls le
+   cuivre et les empreintes du relevé sont repris, si ceux du document n'ont pas bougé. */
+function routageCommande(titre, jouer, avecApercu){
   return {
     ecriture:true, historique:true,
     proposer:args => {
       const s = routageSimuler(() => jouer(args));
-      if(!s.lignes.some(l => l.ok)) throw new Error("Rien n'est posé : " + s.lignes.map(l => l.texte).join(" ; "));
-      ROUTAGE.apercu = s.apercu;
+      if(!s.lignes.some(l => l.ok && !/^attention/.test(l.texte))) throw new Error("Rien n'est posé : " + s.lignes.map(l => l.texte).join(" ; "));
+      ROUTAGE.apercu = avecApercu === false ? null : s.apercu;
       draw();
-      return {titre:titre(args), avant:"", apres:s.lignes.map(l => l.texte).join("\n"), resultat:s.resultat, ver:s.ver};
+      return {titre:titre(args), avant:"", apres:s.lignes.map(l => l.texte).join("\n"), resultat:s.resultat, cuivre:s.cuivre};
     },
     appliquer:(args, prop) => {
       if(!prop || !prop.resultat) throw new Error("Carte sans résultat : à reproposer.");
-      if(S.ver !== prop.ver) throw new Error("La carte a changé depuis la proposition : rien n'est appliqué, à reproposer.");
-      const avant = ECRITURE_CAO.drc.erreurs();
+      const doc = JSON.parse(serialize());
+      if(routageCuivre(doc) !== prop.cuivre){
+        ROUTAGE.apercu = null; draw();
+        throw new Error("Le cuivre a changé depuis la proposition : rien n'est appliqué, à reproposer.");
+      }
+      let avant = null;
+      try{ avant = ECRITURE_CAO.drc.erreurs(); }catch(e){}
       push();
-      loadDoc(JSON.parse(prop.resultat), true);
-      ROUTAGE.apercu = null;
+      JSON.parse(prop.resultat).forEach((v, i) => { doc[CUIVRE[i]] = v; });
+      loadDoc(doc, true);
+      ROUTAGE.apercu = null; prop.resultat = null;          // le document relevé ne sert plus
       touch(); refreshPanels(); draw();
-      prop.apres += "\n" + ECRITURE_CAO.drc.bilan(avant, ECRITURE_CAO.drc.erreurs());
+      // le lot est appliqué : un DRC qui échoue ne doit pas le faire passer pour raté
+      try{ prop.apres += "\n" + ECRITURE_CAO.drc.bilan(avant || [], ECRITURE_CAO.drc.erreurs()); }
+      catch(e){ prop.apres += "\nDRC indisponible après l'écriture : " + ((e && e.message) || e); }
     },
+    // la carte refusée dans le panneau : son aperçu s'en va (pilote.js appelle ce crochet)
+    refuser:() => { ROUTAGE.apercu = null; draw(); },
   };
 }
 
@@ -224,12 +274,15 @@ function routageJouerRoutes(a){
   if(!routes.length && !vias.length) throw new Error("Rien à router : « routes » ou « vias ».");
   if(routes.length > ROUTAGE_MAX) throw new Error(ROUTAGE_MAX + " routes au plus par carte.");
   if(vias.length > ROUTAGE_VIAS) throw new Error(ROUTAGE_VIAS + " vias seules au plus par carte.");
+  const total = routes.reduce((t, r) => t + (r && Array.isArray(r.points) ? r.points.length : 0), 0);
+  if(total > ROUTAGE_POINTS_LOT) throw new Error(ROUTAGE_POINTS_LOT + " points de passage au plus par carte (" + total + " donnés).");
   if(a.mode != null && a.mode !== "pousser" && a.mode !== "contourner") throw new Error("« mode » : pousser ou contourner.");
   S.rule.route = a.mode === "contourner" ? "walk" : "shove";   // remis avec le document après la simulation
   S.rule.corner = "45";
   const lignes = [];
   routes.forEach((r, k) => {
-    const res = routageUneRoute(r);
+    const res = routageHorsBudget() ? {ok:false, raison:"temps du lot épuisé (" + ROUTAGE_BUDGET_MS / 1000 + " s) : repropose-la dans une autre carte"}
+                                    : routageUneRoute(r);
     lignes.push({ok:res.ok, texte:"route " + (k + 1) + (res.net ? " (" + res.net + ")" : "") + " : " + (res.ok ? "posée" : "refusée, " + res.raison)});
   });
   vias.forEach((v, k) => {
@@ -286,7 +339,7 @@ function routageScoreRoutage(){
   const total = 10 * c.unrouted + 5 * err.length + rem.length + 0.2 * S.vias.length;
   return ["Score de routage (plus bas = mieux) :",
           "- liaisons restantes : " + c.unrouted,
-          "- DRC : " + err.length + " erreur(s), " + rem.length + " remarque(s) ; dont contraintes " + classe(/^Contrainte /) +
+          "- DRC : " + err.length + " erreur(s), " + rem.length + " remarque(s) ; dont contraintes " + classe(/^Contrainte (?!.*(topolog|moignon))/i) +
             ", groupes de longueur " + classe(/^Groupe /) + ", topologie " + classe(/topolog|moignon/i),
           "- vias : " + S.vias.length + " ; longueur totale de pistes : " + r3(longueur) + " mm",
           "- total indicatif : " + r3(total) + " (10 par liaison restante, 5 par erreur, 1 par remarque, 0,2 par via)"].join("\n");
@@ -294,9 +347,11 @@ function routageScoreRoutage(){
 async function routageScorePlacement(){
   const doc = PLACEMENT_SCORE.documentPcb();
   if(!doc || !doc.footprints || !doc.footprints.length) throw new Error("Aucune empreinte sur la carte.");
-  const rep = await fetch("/api/pcb/score-placement", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(doc)});
-  const d = rep.ok ? await rep.json() : null;
-  if(!d || !d.succes) throw new Error("Le serveur n'a pas pu scorer le placement : " + ((d && d.detail) || ("HTTP " + rep.status)));
+  const rep = await fetch("/api/pcb/score-placement", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(doc),
+                                                         signal:typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(20000) : undefined});
+  let d = null;
+  try{ d = await rep.json(); }catch(e){}
+  if(!rep.ok || !d || !d.succes) throw new Error("Le serveur n'a pas pu scorer le placement : " + routagePropre((d && d.detail) || ("HTTP " + rep.status)));
   const court = v => { const t = JSON.stringify(v); return t.length > 600 ? t.slice(0, 600) + "…" : t; };
   const L = ["Score de placement (serveur) :", "- longueur des liaisons (HPWL) : " + r3(d.hpwl_mm) + " mm"];
   for(const k of ["top_contributeurs", "congestion", "decouplage", "ordonnancement"]) if(d[k] != null) L.push("- " + k + " : " + court(d[k]));
@@ -310,7 +365,7 @@ function routagePiloteCommandes(){
       if(a.quoi === "placement") return routageScorePlacement();
       throw new Error("« quoi » : routage ou placement.");
     }},
-    cao_placement_auto: routageCommande(a => "Placement automatique (" + a.methode + ")", routageJouerPlacement),
+    cao_placement_auto: routageCommande(a => "Placement automatique (" + a.methode + ")", routageJouerPlacement, false),
     cao_paire: routageCommande(a => "Paire différentielle " + a.paire, routageJouerPaire),
     cao_router: routageCommande(a => "Routage (" + ((a.routes || []).length) + " route(s), " + ((a.vias || []).length) + " via(s))", routageJouerRoutes),
   };
