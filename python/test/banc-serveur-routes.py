@@ -480,11 +480,11 @@ def test_routes():
             assert res.status == 200, "la lecture de la LIB doit rester ouverte"
             conn.request("GET", "/api/ia/cle")
             res = conn.getresponse()
-            data = json.loads(res.read().decode("utf-8"))
-            assert res.status == 200 and data.get("dispo") is False and data.get("cle") == "", data
+            res.read()
+            assert res.status == 404, "la route de la cle IA est retiree : %d" % res.status
         finally:
             web_CAO.PROJETS_OUVERT = True
-        print("[PASS] Ecoute reseau : LIB en lecture seule (403) et cle IA non partagee")
+        print("[PASS] Ecoute reseau : LIB en lecture seule (403) ; plus de route de cle IA (404)")
 
         # 26. profils/fabricants/ est servi, les profils d'utilisateur non.
         conn.request("GET", "/profils/fabricants/jlcpcb.json")
@@ -596,10 +596,10 @@ def test_routes():
             res = conn.getresponse()
             res.read()
             assert res.status == attendu, "Origin %s : %d au lieu de %d" % (origine, res.status, attendu)
-        conn.request("GET", "/api/ia/cle", headers={"Origin": "http://192.168.1.50:8000"})
+        conn.request("GET", "/api/lib/fichiers", headers={"Origin": "http://192.168.1.50:8000"})
         res = conn.getresponse()
         res.read()
-        assert res.getheader("Access-Control-Allow-Origin") is None, "cle IA lisible par un autre appareil du LAN"
+        assert res.getheader("Access-Control-Allow-Origin") is None, "LIB lisible par une page d'un autre appareil du LAN"
         assert res.getheader("X-Content-Type-Options") == "nosniff"
         print("[PASS] CORS/CSRF : seule l'origine du serveur est admise, nosniff pose")
 

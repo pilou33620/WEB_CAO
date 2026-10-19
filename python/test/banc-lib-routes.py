@@ -117,13 +117,11 @@ class TestLibRoutes(unittest.TestCase):
             urllib.request.urlopen(f"{BASE_URL}/api/lib/fichier?type=pcb&nom=../../web_CAO.py")
         self.assertEqual(ctx.exception.code, 400)
 
-    def test_07_ia_cle(self):
-        req = urllib.request.Request(f"{BASE_URL}/api/ia/cle")
-        with urllib.request.urlopen(req) as resp:
-            self.assertEqual(resp.status, 200)
-            data = json.loads(resp.read().decode("utf-8"))
-            self.assertIn("dispo", data)
-            self.assertIn("cle", data)
+    def test_07_ia_cle_retiree(self):
+        # l'assistant IA intégré est retiré : la route qui rendait sa clé n'existe plus
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            urllib.request.urlopen(f"{BASE_URL}/api/ia/cle")
+        self.assertEqual(ctx.exception.code, 404)
 
     def test_08_creer_modifier_fichier_lib(self):
         # 1. Créer une nouvelle empreinte de test

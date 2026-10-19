@@ -1859,8 +1859,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         """Vrai si `origine` est ce serveur-ci : « http://<Host> », rien d'autre.
 
         Etre sur le reseau prive ne suffit pas : une box, une imprimante ou
-        un autre serveur de dev du LAN lisait la cle IA (/api/ia/cle) et
-        ecrivait sur le disque. Toutes les pages sont servies par ce serveur :
+        un autre serveur de dev du LAN lisait les projets et ecrivait sur le
+        disque. Toutes les pages sont servies par ce serveur :
         leur origine est « http://<Host> », rien d'autre n'en a besoin.
 
         Le Host, lui, a deja ete verifie (parse_request) : c'est une adresse de
@@ -3186,32 +3186,6 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         except OSError:
             return True
 
-    # -- cle IA locale ----------------------------------------------------
-    def _ia_cle_api(self):
-        """GET /api/ia/cle : renvoie la cle API Google AI Studio si presente localement.
-
-        Sur une ecoute reseau, la cle n'est PAS donnee : n'importe quel appareil
-        du reseau la recevrait. La reponse garde sa forme (dispo=False) et les
-        pages demandent alors la cle a l'utilisateur, comme sans fichier.
-        """
-        if not PROJETS_OUVERT:
-            self._envoyer_json({"dispo": False, "cle": "",
-                                "detail": "Cle non partagee : ce serveur ecoute"
-                                          " sur le reseau (relancez avec --local)."})
-            return
-        cle =(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or "").strip()
-        if not cle:
-            chemin = os.path.join(ROOT, "api_key_free_ia_studio.txt")
-            if os.path.isfile(chemin):
-                try:
-                    with open(chemin, "r", encoding="utf-8") as f:
-                        txt = f.read().strip()
-                        if txt and not txt.startswith("YOUR_GEMINI"):
-                            cle = txt
-                except OSError:
-                    pass
-        self._envoyer_json({"dispo": bool(cle), "cle": cle})
-
     # -- datasheets composants --------------------------------------------
     def _datasheet_api(self, action):
         """Execute action() et gere les reponses de telechargement/consultation."""
@@ -3417,7 +3391,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                      "/api/projets", "/api/projet", "/api/projet/doc",
                      "/api/github", "/api/github/envoyer", "/api/github/identite",
                      "/api/lib/composants", "/api/lib/fichiers", "/api/lib/fichier", "/api/lib/parasites",
-                     "/api/lib/config", "/api/ia/cle"):
+                     "/api/lib/config"):
             self.send_response(204)
             self.send_header("Access-Control-Allow-Methods",
                              "GET, POST, PUT, DELETE, OPTIONS")
@@ -3599,9 +3573,6 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if route == "/api/lib/config":
             self._lib_api(self._lib_config_lire)
             return
-        if route == "/api/ia/cle":
-            self._ia_cle_api()
-            return
         super().do_GET()
 
     def do_HEAD(self):
@@ -3635,9 +3606,6 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         if route == "/api/lib/config":
             self._lib_api(self._lib_config_lire)
-            return
-        if route == "/api/ia/cle":
-            self._ia_cle_api()
             return
         if route == "/api/profils":
             self._profil_api(self._profils_index)
