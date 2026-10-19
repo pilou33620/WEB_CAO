@@ -26869,6 +26869,34 @@ TA("canal de pilotage : cao_paire, une paire declaree routee en un lot",async()=
   }finally{global.Pilote=ancien;}
 });
 
+TA("canal de pilotage : cao_placement_auto, forces et satellites en une etape ; blocs sans motif refuse",async()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  try{
+    piloteCao("pcb");
+    const d=cmds.cao_placement_auto;
+    if(!(d&&d.ecriture&&d.historique))throw new Error("ecriture par l'historique attendue");
+    for(const methode of ["forces","satellites"]){
+      loadDoc(exemple1()); S.undo.length=0;
+      const avant=serialize();
+      let prop, m="";
+      try{ prop=d.proposer({methode}); }catch(e){ m=e.message; }
+      // forces deplace toujours l'exemple ; satellites peut le trouver deja en place (0 empreinte : refus clair)
+      if(!prop){ if(methode==="forces"||!/Rien n'est posé : placement \w+ : 0 empreinte/.test(m))throw new Error(methode+" : "+m); continue; }
+      if(serialize()!==avant)throw new Error(methode+" : proposer a ecrit");
+      if(!new RegExp("^placement "+methode+" : [1-9]\\d* empreinte\\(s\\) déplacée\\(s\\)").test(prop.apres))throw new Error(methode+" : "+prop.apres);
+      d.appliquer({methode},prop);
+      if(S.undo.length!==1||serialize()===avant)throw new Error(methode+" : une etape qui deplace attendue");
+      undo();
+      if(serialize()!==avant)throw new Error(methode+" : Ctrl+Z");
+    }
+    for(const [a,motif] of [[{methode:"tirage"},/forces, satellites ou blocs/],[{methode:"blocs"},/donne « motif »/],[{methode:"blocs",motif:"ZZZ"},/Motif « ZZZ » inconnu/]]){
+      let m="";try{d.proposer(a);}catch(e){m=e.message;}
+      if(!motif.test(m))throw new Error("refus attendu "+motif+" : "+m);
+    }
+  }finally{global.Pilote=ancien;}
+});
+
 (async()=>{
   for(const [name,fn] of T_ASYNC){
     try{await fn();console.log("  ok  "+name);ok++;}

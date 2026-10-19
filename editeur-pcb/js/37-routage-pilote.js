@@ -246,8 +246,38 @@ function routageJouerPaire(a){
   return [{ok:r.ok, texte:"paire " + a.paire + (r.ok ? " (" + r.net + ") : posée" : " : refusée, " + r.raison)}];
 }
 
+/* cao_placement_auto : les placements de la page, sur le même socle (une carte, une étape). */
+function routageJouerPlacement(a){
+  const pos = () => new Map(S.fps.map(f => [f.ref, f.x + "," + f.y + "," + (f.rot || 0) + "," + (f.side || 0)]));
+  const avant = pos();
+  let dit = "";
+  if(a.methode === "forces"){
+    const r = autoPlace(150);
+    if(!r) throw new Error("Placement par forces : il faut au moins deux empreintes libres (non fixées à la main).");
+    const sat = [r.decouplage && r.decouplage + " découplage(s)", r.serie && r.serie + " série", r.chaine && r.chaine + " en chaîne"].filter(Boolean);
+    dit = sat.length ? " ; contre leur broche : " + sat.join(", ") : "";
+  }else if(a.methode === "satellites"){
+    const r = placerSatellites();
+    dit = " ; " + (r.decouplage || 0) + " découplage(s), " + (r.serie || 0) + " série, " + (r.chaine || 0) + " en chaîne" +
+          (r.sansPlace && r.sansPlace.length ? " ; sans place : " + r.sansPlace.join(", ") : "");
+  }else if(a.methode === "blocs"){
+    // les motifs que le schéma a publiés (getPatterns().motifs : id, label) et les zones (id, nom)
+    const pat = typeof BLOC_PLACEMENT !== "undefined" ? BLOC_PLACEMENT.getPatterns() : null;
+    const noms = [...((pat && Array.isArray(pat.motifs)) ? pat.motifs.map(m => m.label || m.id) : []),
+                  ...(typeof BLOC_PLACEMENT !== "undefined" ? BLOC_PLACEMENT.getZones() : []).map(z => z.nom || z.id)].filter(Boolean);
+    const liste = noms.join(", ") || "aucun motif publié par le schéma";
+    if(typeof a.motif !== "string" || !a.motif) throw new Error("Placement par blocs : donne « motif » (" + liste + ").");
+    if(!BLOC_PLACEMENT.compacterSurPlace(a.motif)) throw new Error("Motif « " + a.motif + " » inconnu ou trop petit (" + liste + ").");
+    dit = " ; motif " + a.motif;
+  }else throw new Error("« methode » : forces, satellites ou blocs.");
+  const apres = pos(), bouges = [...apres.keys()].filter(r => apres.get(r) !== avant.get(r));
+  return [{ok:bouges.length > 0, texte:"placement " + a.methode + " : " + bouges.length + " empreinte(s) déplacée(s)" +
+           (bouges.length ? " (" + bouges.slice(0, 40).join(", ") + (bouges.length > 40 ? "…" : "") + ")" : "") + dit}];
+}
+
 function routagePiloteCommandes(){
   return {
+    cao_placement_auto: routageCommande(a => "Placement automatique (" + a.methode + ")", routageJouerPlacement),
     cao_paire: routageCommande(a => "Paire différentielle " + a.paire, routageJouerPaire),
     cao_router: routageCommande(a => "Routage (" + ((a.routes || []).length) + " route(s), " + ((a.vias || []).length) + " via(s))", routageJouerRoutes),
   };
