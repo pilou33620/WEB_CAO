@@ -1,0 +1,298 @@
+[
+ {
+  "ex": 0,
+  "famille": "pcb",
+  "quoi": "drc",
+  "args": {},
+  "sortie": "Le DRC n'a pas encore été lancé : propose à l'utilisateur de le lancer."
+ },
+ {
+  "ex": 0,
+  "famille": "pcb",
+  "quoi": "empilage",
+  "args": {},
+  "sortie": "Empilage : 2 couche(s) cuivre, 1.6 mm au total, finition ENIG (or chimique) :\n- Top : cuivre 35 µm\n- core FR-4 : 1.48 mm, εr 4.5, tan δ 0.02\n- Bottom : cuivre 35 µm, plan GND"
+ },
+ {
+  "ex": 0,
+  "famille": "pcb",
+  "quoi": "classes",
+  "args": {},
+  "sortie": "Classes de nets :\n- Défaut : piste 0.25 mm, isolement 0.2 mm, via 0.6 / perçage 0.3 mm\n- Alimentation : piste 0.4 mm, isolement 0.2 mm, via 0.8 / perçage 0.4 mm\nRègles : bord de carte 0.4 mm, perçage mini 0.25 mm, masque 0.05 mm, angle 45, profil fabricant jlcpcb."
+ },
+ {
+  "ex": 0,
+  "famille": "pcb",
+  "quoi": "composants",
+  "args": {},
+  "sortie": "- J1 = Entrée 12 V, dessus, x 5 y 16 mm, rotation 90°\n- C1 = 10µ (1206), dessus, x 8 y 14 mm, rotation 90°\n- U1 = AMS1117-5.0 (SOT-223-4), dessus, x 14 y 11 mm, rotation 0°\n- C2 = 22µ (1206), dessus, x 22 y 11 mm, rotation 90°\n- R2 = 1k (0603), dessus, x 12 y 20.5 mm, rotation 0°\n- Q3 = MMBT5551 (SOT-23), dessus, x 18 y 22 mm, rotation 0°\n- R3 = 100k (0603), dessus, x 14 y 25 mm, rotation 90°\n- R1 = 100k (0603), dessus, x 24.75 y 25 mm, rotation 90°\n- J2 = Sortie, dessus, x 45 y 16 mm, rotation 90°"
+ },
+ {
+  "ex": 0,
+  "famille": "pcb",
+  "quoi": "composants",
+  "args": {
+   "filtre": "U"
+  },
+  "sortie": "- U1 = AMS1117-5.0 (SOT-223-4), dessus, x 14 y 11 mm, rotation 0°"
+ },
+ {
+  "ex": 0,
+  "famille": "pcb",
+  "quoi": "composant",
+  "args": {
+   "ref": "J1"
+  },
+  "sortie": "J1 = Entrée 12 V, face dessus, x 5 y 16 mm, rotation 90°.\nBroches (3) :\n- 1 → 12V\n- 2 → GND\n- 3 → EN"
+ },
+ {
+  "ex": 0,
+  "famille": "pcb",
+  "quoi": "composant",
+  "args": {
+   "ref": "j1"
+  },
+  "sortie": "J1 = Entrée 12 V, face dessus, x 5 y 16 mm, rotation 90°.\nBroches (3) :\n- 1 → 12V\n- 2 → GND\n- 3 → EN"
+ },
+ {
+  "ex": 0,
+  "famille": "pcb",
+  "quoi": "composant",
+  "args": {
+   "ref": "ZZ999"
+  },
+  "sortie": "Composant « ZZ999 » introuvable : demande la liste avec l'outil « composants »."
+ },
+ {
+  "ex": 0,
+  "famille": "pcb",
+  "quoi": "nets",
+  "args": {},
+  "sortie": "- +5V [Alimentation] : 4 broches, routé\n- 12V [Alimentation] : 4 broches, routé\n- GND [Alimentation] : 7 broches, routé\n- BASE_Q3 [Défaut] : 3 broches, routé\n- EN [Défaut] : 2 broches, routé\n- SORTIE [Défaut] : 3 broches, routé"
+ },
+ {
+  "ex": 0,
+  "famille": "pcb",
+  "quoi": "nets",
+  "args": {
+   "filtre": "12V"
+  },
+  "sortie": "- 12V [Alimentation] : 4 broches, routé"
+ },
+ {
+  "ex": 0,
+  "famille": "pcb",
+  "quoi": "nets",
+  "args": {
+   "a_router": true
+  },
+  "sortie": "Aucun net ne correspond."
+ },
+ {
+  "ex": 0,
+  "famille": "pcb",
+  "quoi": "net",
+  "args": {
+   "nom": "12V"
+  },
+  "sortie": "Net 12V, classe Alimentation : piste 0.4 mm, isolement 0.2 mm, via 0.8 / 0.4 mm.\nÉtat : routé.\nBroches (4) : J1.1, C1.1, U1.1, R1.2\nPistes sur Top : 48.542 mm en 11 segment(s), largeur(s) 0.4 mm.\nLongueur de piste totale : 48.542 mm. Vias : 0."
+ },
+ {
+  "ex": 0,
+  "famille": "pcb",
+  "quoi": "net",
+  "args": {
+   "nom": "inconnu_xyz"
+  },
+  "sortie": "Net « inconnu_xyz » introuvable : demande la liste avec l'outil « nets »."
+ },
+ {
+  "ex": 0,
+  "famille": "pcb",
+  "quoi": "drc",
+  "args": {},
+  "sortie": "DRC propre : aucune erreur."
+ },
+ {
+  "ex": 0,
+  "famille": "sim",
+  "quoi": "simulations",
+  "args": {},
+  "sortie": "- impedance (Impédance) [affichée] : pas de résultat\n- diff (Z différentielle) : pas de résultat\n- retour (Current Return Path) : pas de résultat\n- crosstalk (Crosstalk) : pas de résultat\n- oeil (Diagramme de l'œil) : pas de résultat\n- dc (Chute DC) : pas de résultat\n- pdn (Z(ω) PDN) : pas de résultat\n- bus (Bus synchrone) : pas de résultat\n- s21 (S21) : pas de résultat\n- verif (Vérification) : pas de résultat"
+ },
+ {
+  "ex": 0,
+  "famille": "sim",
+  "quoi": "simulation",
+  "args": {
+   "analyse": "crosstalk",
+   "partie": "chiffres"
+  },
+  "sortie": "La simulation « Crosstalk » n'a pas de résultat."
+ },
+ {
+  "ex": 0,
+  "famille": "sim",
+  "quoi": "simulation",
+  "args": {
+   "analyse": "rien"
+  },
+  "sortie": "Analyse « rien » inconnue. Analyses : impedance, diff, retour, crosstalk, oeil, dc, pdn, bus, s21, verif."
+ },
+ {
+  "ex": 1,
+  "famille": "pcb",
+  "quoi": "drc",
+  "args": {},
+  "sortie": "DRC propre : aucune erreur."
+ },
+ {
+  "ex": 1,
+  "famille": "pcb",
+  "quoi": "empilage",
+  "args": {},
+  "sortie": "Empilage : 4 couche(s) cuivre, 1.6 mm au total, finition ENIG (or chimique) :\n- Top : cuivre 35 µm\n- prepreg FR-4 1080 x2 : 0.21 mm, εr 4.3, tan δ 0.02\n- Inner 1 : cuivre 18 µm, plan GND\n- core FR-4 : 1.025 mm, εr 4.5, tan δ 0.02\n- Inner 2 : cuivre 18 µm, plan +3V3\n- prepreg FR-4 1080 x2 : 0.21 mm, εr 4.3, tan δ 0.02\n- Bottom : cuivre 35 µm"
+ },
+ {
+  "ex": 1,
+  "famille": "pcb",
+  "quoi": "classes",
+  "args": {},
+  "sortie": "Classes de nets :\n- Défaut : piste 0.25 mm, isolement 0.2 mm, via 0.6 / perçage 0.3 mm\n- Alimentation : piste 0.4 mm, isolement 0.2 mm, via 0.8 / perçage 0.4 mm\n- Impédance 50Ω : piste 0.38 mm, isolement 0.25 mm, via 0.8 / perçage 0.4 mm\n- Rapide : piste 0.25 mm, isolement 0.2 mm, via 0.6 / perçage 0.3 mm\n- Horloge : piste 0.25 mm, isolement 0.2 mm, via 0.6 / perçage 0.3 mm\nRègles : bord de carte 0.4 mm, perçage mini 0.25 mm, masque 0.05 mm, angle 45, profil fabricant jlcpcb.\nPaires différentielles : USB (USB_DP / USB_DM)."
+ },
+ {
+  "ex": 1,
+  "famille": "pcb",
+  "quoi": "composants",
+  "args": {},
+  "sortie": "- J1 = USB micro-B (MICRO-USB-B), dessus, x 7 y 20 mm, rotation 0°\n- U3 = LP2980-3.3 (SOT-23-5), dessus, x 14 y 10 mm, rotation 0°\n- C1 = 10µ (0805), dessus, x 8.05 y 13.7 mm, rotation 270°\n- C2 = 1µ (0603), dessus, x 18.525 y 13.5 mm, rotation 90°\n- U1 = STM32WL55 (TQFP-32), dessus, x 40 y 20 mm, rotation 0°\n- C3 = 100n (0402), dessus, x 32 y 14 mm, rotation 90°\n- C4 = 100n (0402), dessus, x 47 y 14 mm, rotation 90°\n- U2 = M95P08 (SOIC-8), dessus, x 27 y 33 mm, rotation 0°\n- C5 = 100n (0402), dessus, x 27 y 39 mm, rotation 0°\n- J3 = SMA 50Ω (SMA-EDGE), dessus, x 58 y 18 mm, rotation 0°\n- J2 = SWD (HEADER-2.54-1x4), dessus, x 54 y 32 mm, rotation 0°"
+ },
+ {
+  "ex": 1,
+  "famille": "pcb",
+  "quoi": "composants",
+  "args": {
+   "filtre": "U"
+  },
+  "sortie": "- J1 = USB micro-B (MICRO-USB-B), dessus, x 7 y 20 mm, rotation 0°\n- U3 = LP2980-3.3 (SOT-23-5), dessus, x 14 y 10 mm, rotation 0°\n- U1 = STM32WL55 (TQFP-32), dessus, x 40 y 20 mm, rotation 0°\n- U2 = M95P08 (SOIC-8), dessus, x 27 y 33 mm, rotation 0°"
+ },
+ {
+  "ex": 1,
+  "famille": "pcb",
+  "quoi": "composant",
+  "args": {
+   "ref": "J1"
+  },
+  "sortie": "J1 = USB micro-B (MICRO-USB-B), face dessus, x 7 y 20 mm, rotation 0°.\nBroches (7) :\n- 1 → +5V\n- 2 → USB_DM\n- 3 → USB_DP\n- 4 → non connectée\n- 5 → GND\n- 6 → GND\n- 7 → GND"
+ },
+ {
+  "ex": 1,
+  "famille": "pcb",
+  "quoi": "composant",
+  "args": {
+   "ref": "j1"
+  },
+  "sortie": "J1 = USB micro-B (MICRO-USB-B), face dessus, x 7 y 20 mm, rotation 0°.\nBroches (7) :\n- 1 → +5V\n- 2 → USB_DM\n- 3 → USB_DP\n- 4 → non connectée\n- 5 → GND\n- 6 → GND\n- 7 → GND"
+ },
+ {
+  "ex": 1,
+  "famille": "pcb",
+  "quoi": "composant",
+  "args": {
+   "ref": "ZZ999"
+  },
+  "sortie": "Composant « ZZ999 » introuvable : demande la liste avec l'outil « composants »."
+ },
+ {
+  "ex": 1,
+  "famille": "pcb",
+  "quoi": "nets",
+  "args": {},
+  "sortie": "- +3V3 [Alimentation] : 11 broches, routé\n- +5V [Alimentation] : 4 broches, routé\n- GND [Alimentation] : 17 broches, routé\n- RF_ANT [Impédance 50Ω] : 2 broches, routé\n- SPI_CS [Défaut] : 2 broches, routé\n- SPI_MISO [Défaut] : 2 broches, routé\n- SPI_MOSI [Défaut] : 2 broches, routé\n- SPI_SCK [Horloge] : 2 broches, routé\n- SWCLK [Défaut] : 2 broches, routé\n- SWDIO [Défaut] : 2 broches, routé\n- USB_DM [Rapide] : 2 broches, routé\n- USB_DP [Rapide] : 2 broches, routé"
+ },
+ {
+  "ex": 1,
+  "famille": "pcb",
+  "quoi": "nets",
+  "args": {
+   "filtre": "+5V"
+  },
+  "sortie": "- +5V [Alimentation] : 4 broches, routé"
+ },
+ {
+  "ex": 1,
+  "famille": "pcb",
+  "quoi": "nets",
+  "args": {
+   "a_router": true
+  },
+  "sortie": "Aucun net ne correspond."
+ },
+ {
+  "ex": 1,
+  "famille": "pcb",
+  "quoi": "net",
+  "args": {
+   "nom": "+5V"
+  },
+  "sortie": "Net +5V, classe Alimentation : piste 0.4 mm, isolement 0.2 mm, via 0.8 / 0.4 mm.\nÉtat : routé.\nBroches (4) : J1.1, U3.1, U3.3, C1.1\nPistes sur Top : 17.057 mm en 8 segment(s), largeur(s) 0.4 mm.\nLongueur de piste totale : 17.057 mm. Vias : 0."
+ },
+ {
+  "ex": 1,
+  "famille": "pcb",
+  "quoi": "net",
+  "args": {
+   "nom": "inconnu_xyz"
+  },
+  "sortie": "Net « inconnu_xyz » introuvable : demande la liste avec l'outil « nets »."
+ },
+ {
+  "ex": 1,
+  "famille": "pcb",
+  "quoi": "drc",
+  "args": {},
+  "sortie": "DRC propre : aucune erreur."
+ },
+ {
+  "ex": 1,
+  "famille": "sim",
+  "quoi": "simulations",
+  "args": {},
+  "sortie": "- impedance (Impédance) [affichée] : pas de résultat\n- diff (Z différentielle) : pas de résultat\n- retour (Current Return Path) : pas de résultat\n- crosstalk (Crosstalk) : pas de résultat\n- oeil (Diagramme de l'œil) : pas de résultat\n- dc (Chute DC) : pas de résultat\n- pdn (Z(ω) PDN) : pas de résultat\n- bus (Bus synchrone) : pas de résultat\n- s21 (S21) : pas de résultat\n- verif (Vérification) : pas de résultat"
+ },
+ {
+  "ex": 1,
+  "famille": "sim",
+  "quoi": "simulation",
+  "args": {
+   "analyse": "crosstalk",
+   "partie": "chiffres"
+  },
+  "sortie": "La simulation « Crosstalk » n'a pas de résultat."
+ },
+ {
+  "ex": 1,
+  "famille": "sim",
+  "quoi": "simulation",
+  "args": {
+   "analyse": "rien"
+  },
+  "sortie": "Analyse « rien » inconnue. Analyses : impedance, diff, retour, crosstalk, oeil, dc, pdn, bus, s21, verif."
+ },
+ {
+  "ex": "abimee",
+  "famille": "pcb",
+  "quoi": "nets",
+  "args": {
+   "a_router": true
+  },
+  "sortie": "- 12V [Alimentation] : 4 broches, 2 liaison(s) à router\n- GND [Alimentation] : 7 broches, 1 liaison(s) à router"
+ },
+ {
+  "ex": "abimee",
+  "famille": "pcb",
+  "quoi": "drc",
+  "args": {},
+  "sortie": "- [erreur] Isolation piste/piste 0.000 mm (12V / GND) : la règle en exige 0.200 mm (x 4.05, y 14.46)\n- [erreur] Isolation piste/piste 0.000 mm (12V / GND) : la règle en exige 0.200 mm (x 3.55, y 18.095)\n- [erreur] Isolation piste/pastille J1.1 : 0.000 mm : la règle en exige 0.200 mm (x 5, y 13.46)\n- [remarque] Net 12V : 2 liaison(s) non routée(s) (x 5, y 13.46)\n- [remarque] Net GND : 1 liaison(s) non routée(s) (x 5, y 16)\n- [remarque] Piste GND : entre dans J1.1 à 0.10 mm de son centre (x 5.1, y 13.46)"
+ }
+]

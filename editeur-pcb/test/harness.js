@@ -435,7 +435,9 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* export IPC-2581 (35-ipc2581-export.js) */
   "ipc2581Document","ipc2581Fichier","exportIpc2581","ipcFonctionCuivre",
   /* classes d'interface (commun/classes-interface.js) */
-  "CLASSES_INTERFACE","familleClasse","simNaturePcb"];
+  "CLASSES_INTERFACE","familleClasse","simNaturePcb",
+  /* lectures partagées Gemini / canal de pilotage (commun/lecture-cao.js) */
+  "LECTURE_CAO"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -543,6 +545,50 @@ function T(name,fn){
    arrive. */
 const T_ASYNC=[];
 function TA(name,fn){T_ASYNC.push([name,fn]);}
+
+/* Les registres de lecture ont quitté ia-assistant.js pour commun/lecture-cao.js
+   (web_suite, registre-cao). Le relevé a été pris AVANT le déplacement, avec le
+   code de l'assistant, sur ce même scénario : les sorties doivent être identiques
+   au caractère près, parce que Gemini et Claude lisent le même texte. En tête du
+   banc : le relevé part d'une page neuve (ni DRC lancé, ni résultat de simulation). */
+T("lectures CAO : sorties identiques au relevé pris avant le déplacement",()=>{
+  const releve=JSON.parse(fs.readFileSync(path.join(__dirname,"releve-lecture-pcb.json"),"utf8"));
+  const vu=[], avant=serialize(), drcAvant=[S.drc,S.drcRun];
+  try{ lecturesRelevees(vu); }
+  finally{ loadDoc(avant); [S.drc,S.drcRun]=drcAvant; }   // les essais suivants partent d'une page neuve
+  if(vu.length!==releve.length)throw new Error(vu.length+" cas, le relevé en a "+releve.length);
+  vu.forEach((v,k)=>{
+    const d=firstDiff(releve[k],v,"cas "+k+" ("+v.famille+"."+v.quoi+")");
+    if(d)throw new Error(d);
+  });
+  if(!/\[erreur\]/.test(vu[vu.length-1].sortie))throw new Error("la carte abîmée devait donner des erreurs de DRC");
+});
+function lecturesRelevees(vu){
+  const noter=(ex,famille,quoi,args)=>{
+    let sortie;
+    try{sortie=[].concat(LECTURE_CAO[famille][quoi].fn(args)).join("\n");}catch(e){sortie="ERREUR "+e.message;}
+    vu.push({ex,famille,quoi,args,sortie});
+  };
+  EXEMPLES.forEach((e,i)=>{
+    loadDoc(e.build());
+    const fp=S.fps[0], net=(S.fps.find(f=>f.nets&&Object.values(f.nets).length)||{nets:{}}).nets;
+    const unNet=Object.values(net)[0]||"GND";
+    noter(i,"pcb","drc",{});
+    for(const q of ["empilage","classes"]) noter(i,"pcb",q,{});
+    noter(i,"pcb","composants",{}); noter(i,"pcb","composants",{filtre:"U"});
+    noter(i,"pcb","composant",{ref:fp.ref}); noter(i,"pcb","composant",{ref:String(fp.ref).toLowerCase()}); noter(i,"pcb","composant",{ref:"ZZ999"});
+    noter(i,"pcb","nets",{}); noter(i,"pcb","nets",{filtre:unNet.slice(0,3)}); noter(i,"pcb","nets",{a_router:true});
+    noter(i,"pcb","net",{nom:unNet}); noter(i,"pcb","net",{nom:"inconnu_xyz"});
+    runDrc(); noter(i,"pcb","drc",{});
+    noter(i,"sim","simulations",{}); noter(i,"sim","simulation",{analyse:"crosstalk",partie:"chiffres"}); noter(i,"sim","simulation",{analyse:"rien"});
+  });
+  /* une carte abîmée : liaisons à router et erreurs de DRC */
+  loadDoc(EXEMPLES[0].build());
+  S.tracks.splice(0,5); S.fps[1].x=S.fps[2].x; S.fps[1].y=S.fps[2].y;
+  const t0=S.tracks.find(t=>t.net!=="GND"); S.tracks.push(Object.assign({},t0,{net:"GND",x1:t0.x1+0.1,x2:t0.x2+0.1})); touch();
+  noter("abimee","pcb","nets",{a_router:true}); runDrc(); noter("abimee","pcb","drc",{});
+}
+
 console.log("— banc d'essai éditeur PCB —");
 T("classes d'interface : la table commune est chargée",()=>{
   if(Object.keys(CLASSES_INTERFACE).length!==7)throw new Error("7 interfaces attendues");
@@ -26432,6 +26478,7 @@ T("dossier méca : une saisie invalide est refusée, un document abîmé ne cass
   if(!mecaDossier().composants.length)throw new Error("dossier vide");
   S.dessin=null;
 });
+
 
 (async()=>{
   for(const [name,fn] of T_ASYNC){
