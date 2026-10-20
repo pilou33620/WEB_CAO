@@ -357,7 +357,7 @@ function brPanneauHtml(el) {
   const table = brAUneTable(el);
   const aChoisir = brReferenceAChoisir(el);
   if (!def.pn && !el.brochage && !table && !alertes.length && !aChoisir) return "";
-  const e = (typeof esc === "function") ? esc : (s => String(s));
+  const e = esc;              // commun/echappe.js, chargé en premier
   const parties = brochageParties(brLu(el));
   const source = el.pinMapMain ? "retouché à la main"
     : el.brochage ? "LIB — " + (el.csvPartName || "référence")

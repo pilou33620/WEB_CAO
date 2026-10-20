@@ -3155,6 +3155,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
     def _datasheet_telecharger(self):
         self._projet_garde(reseau=False)
         corps = self._corps_json(MAX_CORPS, ErreurProjet)     # refus rendu par _datasheet_api
+        if not isinstance(corps, dict):
+            raise ErreurProjet(400, "Corps JSON attendu : un objet")
 
         url = str(corps.get("url") or "").strip()
         try:

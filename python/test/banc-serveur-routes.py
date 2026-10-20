@@ -602,6 +602,15 @@ def test_routes():
         assert res.getheader("Access-Control-Allow-Origin") is None, "LIB lisible par une page d'un autre appareil du LAN"
         assert res.getheader("X-Content-Type-Options") == "nosniff"
         print("[PASS] CORS/CSRF : seule l'origine du serveur est admise, nosniff pose")
+        # 30a. Datasheet en local : un corps JSON qui n'est pas un objet est un
+        # refus (400), pas une « Erreur interne » 500.
+        for corps in (b"null", b"[1]"):
+            conn.request("POST", "/api/datasheet/telecharger", body=corps,
+                         headers={"Content-Type": "application/json"})
+            res = conn.getresponse()
+            res.read()
+            assert res.status == 400, "datasheet, corps %r : %d au lieu de 400" % (corps, res.status)
+        print("[PASS] Datasheet : corps JSON non objet refuse (400)")
 
         # 30b. Telephone serveur hors des plages privees classiques (partage de
         # connexion, 4G, Tailscale 100.64/10, liaison directe 169.254) : sa propre

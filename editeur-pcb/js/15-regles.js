@@ -1303,7 +1303,7 @@ mfg(){
       '</div>' +
     '</div>' +
     '<input type="file" id="reMfgFileInput" accept=".json" style="display:none">' +
-    (prof.vendorUrl ? '<div class="prop">' + reFact("Documentation usine", '<a href="' + esc(prof.vendorUrl) + '" target="_blank" style="color:var(--yellow);text-decoration:underline">' + esc(prof.vendorUrl) + '</a>') + '</div>' : '') +
+    (/^https?:\/\//i.test(prof.vendorUrl||"") ? '<div class="prop">' + reFact("Documentation usine", '<a href="' + esc(prof.vendorUrl) + '" target="_blank" style="color:var(--yellow);text-decoration:underline">' + esc(prof.vendorUrl) + '</a>') + '</div>' : '') +
     '<div class="cat">Comparatif : Bornes Usine vs Règles par Défaut du Projet</div>' +
     '<div class="mxwrap" style="max-height:220px;overflow-y:auto;margin:6px 0 10px 0">' +
       '<table class="mfg-table">' +

@@ -4,7 +4,6 @@
    Importation directe JLCPCB / LCSC avec prévisualisation et respect strict des 39 colonnes
    ============================================================================= */
 
-
 const COLONNES_CATALOGUE_39 = [
   "Part Name",
   "Part Type",
@@ -551,7 +550,7 @@ async function lancerRechercheJlc() {
 
     for (const r of resultats) {
       const isBasic = String(r.library_type || "").toLowerCase() === "basic";
-      const stock = r.stock || 0;
+      const stock = Number(r.stock) || 0;   // donnée de pcbparts : un texte ne passe pas tel quel dans le HTML
       const stockBadge = stock > 0 
         ? `<span class="jlc-pill ok">${stock.toLocaleString()} pcs</span>` 
         : `<span class="jlc-pill warn">Rupture</span>`;
@@ -560,7 +559,7 @@ async function lancerRechercheJlc() {
         : `<span class="jlc-pill extended">Extended</span>`;
 
       h += `
-        <div class="jlc-card" onclick="selectionnerCandidatJlc('${esc(r.lcsc)}')">
+        <div class="jlc-card" data-lcsc="${esc(r.lcsc)}">
           <div class="jlc-card-top">
             <div>
               <b class="jlc-card-model">${esc(r.model || r.lcsc)}</b>
@@ -584,6 +583,10 @@ async function lancerRechercheJlc() {
 
     h += `</div>`;
     body.innerHTML = h;
+    /* Le code LCSC vient de pcbparts : lu dans l'attribut, jamais recopié dans
+       un onclick, où l'échappement HTML ne protège pas une chaîne JavaScript. */
+    body.querySelectorAll(".jlc-card").forEach(c =>
+      c.addEventListener("click", () => selectionnerCandidatJlc(c.dataset.lcsc)));
 
   } catch (err) {
     body.innerHTML = `

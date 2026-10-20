@@ -427,7 +427,7 @@ function schChargerExemple(i){
 function schExOuvrir(){
   const m = document.createElement("div");
   m.className = "modal";
-  const escFn = (typeof esc==="function")?esc:(s=>String(s||""));
+  const escFn = esc;          // commun/echappe.js, chargé en premier
   const carte = (ex, i) =>
     '<div class="ex-carte"><h4>' + escFn(ex.titre) + '</h4>' +
     '<div class="ex-sous">' + escFn(ex.sous) + '</div>' +
