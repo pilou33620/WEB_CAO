@@ -1317,55 +1317,6 @@ function ltGeom(coucheIdx){
           planBas:bas>=0?LT.cu[bas].nom:"",
           kHaut:haut, kBas:bas};
 }
-/* L'ÉPAISSEUR DU CUIVRE, RAMENÉE À UNE LARGEUR (Wheeler).
-
-   Hammerstad-Jensen traite un ruban d'épaisseur nulle. Un ruban épais porte de
-   la charge sur ses flancs : il se comporte comme un ruban mince un peu plus
-   large. Sans cette correction, la fiche lisait systématiquement HAUT — 51,0 Ω
-   là où le solveur de section donne 48,0 —, et l'écart passait pour le prix de
-   la formule légère alors que c'était un terme manquant. Avec elle, la même
-   formule donne 48,1 : le mode rapide et le mode Simulation EM s'accordent
-   désormais à quelques dixièmes de pour cent, et quand ils divergent c'est que
-   la géométrie sort du domaine de la formule — ce qui est une information.
-
-   C'est mot pour mot `_largeur_effective()` de python/ligne_mom.py. */
-function ltWeff(g,w){
-  const t=g.t||0, h=Math.max(g.h,1e-4);
-  if(!(t>0)||!(w>0))return w;
-  return w+(t/Math.PI)*(1+Math.log(2*h/t));
-}
-/* Permittivité effective (Hammerstad). Le microruban a de l'air d'un côté :
-   il voit une moyenne entre l'air et le stratifié, et d'autant plus de
-   stratifié que la piste est large devant la hauteur du diélectrique. La
-   triplaque, noyée, ne voit que le stratifié. */
-function ltEeff(g,w){
-  if(g.kind==="strip")return g.er;
-  const h=Math.max(g.h,1e-4), x=Math.max(ltWeff(g,w),1e-4);
-  return (g.er+1)/2+(g.er-1)/2/Math.sqrt(1+12*h/x);
-}
-/* Impédance caractéristique. Microruban : Hammerstad-Jensen, en deux branches
-   selon que la piste est plus étroite ou plus large que la hauteur du
-   diélectrique — c'est la même courbe, mais aucune des deux expressions ne la
-   suit sur toute sa longueur. Triplaque : l'approximation de l'IPC-2141A.
-
-   CE QUE CETTE FORMULE EST, ET CE QU'ELLE N'EST PAS. C'est l'aperçu : elle
-   répond au clic, sans serveur ni Python, et elle vaut mieux que le pour cent
-   sur un microruban courant. Elle ne voit pas ce que voit le panneau
-   « Simulation EM » — une triplaque décentrée, une piste interne couverte, une
-   section qui sort de son domaine d'ajustement. Les deux ne se remplacent pas
-   l'un l'autre ; ils se recoupent, et c'est le recoupement qui informe. */
-function ltZ0(g,w){
-  if(!(w>0))return 0;
-  if(g.kind==="strip"){
-    const b=Math.max(g.b,1e-4);
-    const x=4*b/(0.67*Math.PI*(0.8*w+g.t));
-    return x>1?60/Math.sqrt(g.er)*Math.log(x):0;
-  }
-  if(!(g.h>0))return 0;
-  const h=g.h, e=Math.sqrt(ltEeff(g,w)), u=ltWeff(g,w)/h;
-  return u<=1 ? 60/e*Math.log(8/u+u/4)
-              : 120*Math.PI/(e*(u+1.393+0.667*Math.log(u+1.444)));
-}
 /* Ce qu'une piste vaut : sa géométrie, son impédance, son retard, et les deux
    éléments répartis qui s'en déduisent — C = t/Z₀, L = t·Z₀. Renvoie null
    quand la couche n'est pas du cuivre de l'empilage : sans empilage, il n'y a

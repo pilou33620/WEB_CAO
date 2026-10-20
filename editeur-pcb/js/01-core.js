@@ -3314,57 +3314,6 @@ const LT_C0=2.99792458e11;              // vitesse de la lumière, en mm/s
    l'air d'un côté : il voit une moyenne entre l'air et le stratifié, et
    d'autant plus de stratifié que la piste est large devant la hauteur du
    diélectrique. La triplaque, noyée, ne voit que le stratifié. */
-/* L'ÉPAISSEUR DU CUIVRE, RAMENÉE À UNE LARGEUR (Wheeler).
-
-   Hammerstad-Jensen traite un ruban d'épaisseur nulle. Un ruban épais porte de
-   la charge sur ses flancs : il se comporte comme un ruban mince un peu plus
-   large. Sans cette correction, la fiche lisait systématiquement HAUT — 51,0 Ω
-   là où le solveur de section du panneau « Simulation EM » donne 48,0 —, et
-   l'écart passait pour le prix de la formule légère alors que c'était un terme
-   manquant. Avec elle, la même formule donne 48,1.
-
-   C'est mot pour mot `_largeur_effective()` de python/ligne_mom.py, et c'est
-   voulu : les deux modes doivent partir de la même section pour que leur
-   comparaison veuille dire quelque chose. */
-function ltWeff(g,w){
-  const t=g.t||0, h=Math.max(g.h,1e-4);
-  if(!(t>0)||!(w>0))return w;
-  return w+(t/Math.PI)*(1+Math.log(2*h/t));
-}
-function ltEeff(g,w){
-  if(g.kind==="strip")return r3(g.er);
-  const h=Math.max(g.h,1e-4), x=Math.max(ltWeff(g,w),1e-4);
-  return r3((g.er+1)/2+(g.er-1)/2/Math.sqrt(1+12*h/x));
-}
-/* Impédance caractéristique. Microruban : Hammerstad-Jensen, en deux branches
-   selon que la piste est plus étroite ou plus large que la hauteur du
-   diélectrique — c'est la même courbe, mais aucune des deux expressions ne la
-   suit sur toute sa longueur. Triplaque : l'approximation de l'IPC-2141A.
-
-   IL N'Y A PLUS QU'UNE FORMULE LÉGÈRE DANS CET ÉDITEUR. `dpZ0()`, qui sert les
-   paires différentielles, appelait sa propre forme IPC pour le microruban et
-   sortait 45,9 Ω là où celle-ci sortait 51,0 : deux panneaux du même outil, la
-   même piste, 11 % d'écart, et rien pour dire lequel croire. `dpZ0()` passe
-   maintenant par ici pour le microruban. La triplaque, elle, garde l'IPC-2141A
-   des deux côtés — c'est la même expression depuis toujours.
-
-   CE QUE CETTE FORMULE EST, ET CE QU'ELLE N'EST PAS. C'est l'aperçu : elle
-   répond au clic, sans serveur ni Python. Elle ne voit pas ce que voit le
-   panneau « Simulation EM » — une triplaque décentrée, une piste interne
-   couverte, une section hors du domaine d'ajustement. Les deux ne se
-   remplacent pas ; ils se recoupent, et c'est le recoupement qui informe. */
-function ltZ0(g,w){
-  if(!(w>0))return 0;
-  if(g.kind==="strip"){
-    const b=Math.max(g.b,1e-4);
-    const x=4*b/(0.67*Math.PI*(0.8*w+g.t));
-    return x>1?r3(60/Math.sqrt(g.er)*Math.log(x)):0;
-  }
-  const h=Math.max(g.h,1e-4), e=Math.sqrt(ltEeff(g,w)), u=ltWeff(g,w)/h;
-  return r3(u<=1
-    ? 60/e*Math.log(8/u+u/4)
-    : 120*Math.PI/(e*(u+1.393+0.667*Math.log(u+1.444))));
-}
 /* Ce qu'un segment vaut : sa géométrie, son impédance, son retard, et les deux
    éléments répartis qui s'en déduisent — C = t/Z₀, L = t·Z₀. La géométrie de
    couche peut être fournie par l'appelant : elle ne dépend que de la couche,
