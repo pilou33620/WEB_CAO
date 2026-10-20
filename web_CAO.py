@@ -1900,18 +1900,41 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return "Erreur interne : %s" % exc
         return "Erreur interne (details dans le terminal du serveur)"
 
+    def _json_api(self, action, erreur, fermer=True):
+        """Execute action() et traduit les refus `erreur` (et l'imprevu, en
+        500) en JSON {"detail": ...}. `fermer` : apres un refus, le corps n'a
+        peut-etre pas ete lu, la connexion ne se reutilise pas."""
+        try:
+            self._envoyer_json(action())
+        except erreur as exc:
+            if fermer:
+                self.close_connection = True
+            self._envoyer_json({"detail": exc.message}, exc.code)
+        except Exception as exc:                       # noqa: BLE001
+            if fermer:
+                self.close_connection = True
+            self._envoyer_json({"detail": self._detail_interne(exc)}, 500)
+
+    def _corps_json(self, plafond, erreur, trop="Requete trop grande"):
+        """Corps JSON de la requete ({} s'il est vide), ou leve `erreur`."""
+        try:
+            taille = self._taille_corps()
+        except ValueError:
+            raise erreur(400, "Content-Length invalide")
+        if taille > plafond:
+            raise erreur(413, trop)
+        try:
+            return json.loads(self.rfile.read(taille) or b"{}")
+        except (ValueError, UnicodeDecodeError):
+            raise erreur(400, "Corps JSON illisible")
+
     def _api(self, action):
         """Execute action() et traduit les erreurs en JSON {"detail": ...}."""
         if passerelle_mcp is None:
             self._envoyer_json({"detail": "Passerelle composants indisponible"
                                           " : %s" % ERREUR_PASSERELLE}, 503)
             return
-        try:
-            self._envoyer_json(action())
-        except passerelle_mcp.ErreurPasserelle as exc:
-            self._envoyer_json({"detail": exc.message}, exc.code)
-        except Exception as exc:                       # noqa: BLE001
-            self._envoyer_json({"detail": self._detail_interne(exc)}, 500)
+        self._json_api(action, passerelle_mcp.ErreurPasserelle, fermer=False)
 
     def _taille_corps(self):
         """Content-Length de la requete ; ValueError s'il est illisible ou
@@ -1923,16 +1946,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
     def _lire_json(self):
         """Corps de la requete, ou leve ErreurPasserelle."""
-        try:
-            taille = self._taille_corps()
-        except ValueError:
-            raise passerelle_mcp.ErreurPasserelle(400, "Content-Length invalide")
-        if taille > MAX_CORPS:
-            raise passerelle_mcp.ErreurPasserelle(413, "Requete trop grande")
-        try:
-            return json.loads(self.rfile.read(taille) or b"{}")
-        except (ValueError, UnicodeDecodeError):
-            raise passerelle_mcp.ErreurPasserelle(400, "Corps JSON illisible")
+        return self._corps_json(MAX_CORPS, passerelle_mcp.ErreurPasserelle)
 
     # -- profils utilisateur ----------------------------------------------
     # Trois routes, et un seul dossier : profils/. La page d'accueil liste les
@@ -1945,14 +1959,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         rien ici ne depend de la passerelle composants. Un profil doit se lire
         et s'ecrire meme quand pcbparts.dev est hors de portee.
         """
-        try:
-            self._envoyer_json(action())
-        except ErreurProfil as exc:
-            self.close_connection = True    # le corps n'a peut-etre pas ete lu
-            self._envoyer_json({"detail": exc.message}, exc.code)
-        except Exception as exc:                       # noqa: BLE001
-            self.close_connection = True
-            self._envoyer_json({"detail": self._detail_interne(exc)}, 500)
+        self._json_api(action, ErreurProfil)
 
     def _profil_nom(self):
         params = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
@@ -1962,16 +1969,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         return nom
 
     def _profil_corps(self):
-        try:
-            taille = self._taille_corps()
-        except ValueError:
-            raise ErreurProfil(400, "Content-Length invalide")
-        if taille > MAX_PROFIL:
-            raise ErreurProfil(413, "Profil trop volumineux")
-        try:
-            return json.loads(self.rfile.read(taille) or b"{}")
-        except (ValueError, UnicodeDecodeError):
-            raise ErreurProfil(400, "Corps JSON illisible")
+        return self._corps_json(MAX_PROFIL, ErreurProfil, "Profil trop volumineux")
 
     def _profils_index(self):
         """La liste des utilisateurs, c'est le contenu du dossier."""
@@ -2046,14 +2044,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
     def _projet_api(self, action):
         """Jumeau de _profil_api pour les projets."""
-        try:
-            self._envoyer_json(action())
-        except ErreurProjet as exc:
-            self.close_connection = True    # le corps n'a peut-etre pas ete lu
-            self._envoyer_json({"detail": exc.message}, exc.code)
-        except Exception as exc:                       # noqa: BLE001
-            self.close_connection = True
-            self._envoyer_json({"detail": self._detail_interne(exc)}, 500)
+        self._json_api(action, ErreurProjet)
 
     def _projet_garde(self, reseau=True):
         """Ces routes n'existent que sur une ecoute locale.
@@ -2091,16 +2082,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         return outil
 
     def _projet_corps(self):
-        try:
-            taille = self._taille_corps()
-        except ValueError:
-            raise ErreurProjet(400, "Content-Length invalide")
-        if taille > MAX_PROJET:
-            raise ErreurProjet(413, "Fichier trop volumineux")
-        try:
-            return json.loads(self.rfile.read(taille) or b"{}")
-        except (ValueError, UnicodeDecodeError):
-            raise ErreurProjet(400, "Corps JSON illisible")
+        return self._corps_json(MAX_PROJET, ErreurProjet, "Fichier trop volumineux")
 
     def _projet_fichier_lire(self, chemin, quoi):
         try:
@@ -2274,11 +2256,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
     def _client_local(self):
         """La requete vient-elle de ce poste (boucle locale) ?"""
-        try:
-            ip = ipaddress.ip_address(self.client_address[0].split("%")[0])
-        except ValueError:
-            return False
-        return (getattr(ip, "ipv4_mapped", None) or ip).is_loopback
+        return appairage.Garde.ce_poste(self)
 
     def _github_relai(self, route, charge):
         hote, port = adresse_lanceur()
@@ -2377,17 +2355,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         « Erreur interne » 500, et la route dependait de passerelle_mcp pour
         pouvoir dire non.
         """
-        try:
-            taille = self._taille_corps()
-        except ValueError:
-            raise ErreurLib(400, "Content-Length invalide")
-        if taille > MAX_LIB:
-            raise ErreurLib(413, "Requete trop grande (%d Mo au plus)"
-                            % (MAX_LIB // (1024 * 1024)))
-        try:
-            return json.loads(self.rfile.read(taille) or b"{}")
-        except (ValueError, UnicodeDecodeError):
-            raise ErreurLib(400, "Corps JSON illisible")
+        return self._corps_json(MAX_LIB, ErreurLib, "Requete trop grande (%d Mo au plus)"
+                                % (MAX_LIB // (1024 * 1024)))
 
     def _lib_garde(self, reseau=True):
         """Ecrire dans la bibliotheque n'existe que sur une ecoute locale.
@@ -2407,14 +2376,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
     def _lib_api(self, action):
         """Execute action() et traduit les erreurs en JSON {"detail": ...}."""
-        try:
-            self._envoyer_json(action())
-        except ErreurLib as exc:
-            self.close_connection = True
-            self._envoyer_json({"detail": exc.message}, exc.code)
-        except Exception as exc:                       # noqa: BLE001
-            self.close_connection = True
-            self._envoyer_json({"detail": self._detail_interne(exc)}, 500)
+        self._json_api(action, ErreurLib)
 
     def _lib_composants_lire(self):
         """Lit LIB/LIB_composants.csv et renvoie colonnes + liste de composants en JSON."""
@@ -3192,19 +3154,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
     def _datasheet_telecharger(self):
         self._projet_garde(reseau=False)
-        try:
-            taille = self._taille_corps()
-        except ValueError:
-            self._envoyer_json({"detail": "Content-Length invalide"}, 400)
-            return
-        if taille > MAX_CORPS:
-            self._envoyer_json({"detail": "Requete trop grande"}, 413)
-            return
-        try:
-            corps = json.loads(self.rfile.read(taille) or b"{}")
-        except Exception:
-            self._envoyer_json({"detail": "Corps JSON illisible"}, 400)
-            return
+        corps = self._corps_json(MAX_CORPS, ErreurProjet)     # refus rendu par _datasheet_api
 
         url = str(corps.get("url") or "").strip()
         try:
@@ -3462,146 +3412,55 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
         self._api(appel)
 
+    # Les routes de lecture, les memes pour GET et HEAD (_envoyer_json
+    # n'ecrit pas le corps d'un HEAD) : route -> (enveloppe, action).
+    LECTURES = {
+        "/api/datasheet/ouvrir": ("_datasheet_api", "_datasheet_ouvrir"),
+        "/api/tools": ("_api", "_outils_liste"),
+        "/api/profils": ("_profil_api", "_profils_index"),
+        "/api/profil": ("_profil_api", "_profil_lire"),
+        "/api/github": ("_projet_api", "_github_etat"),
+        "/api/projets": ("_projet_api", "_projets_index"),
+        "/api/projet": ("_projet_api", "_projet_lire"),
+        "/api/projet/doc": ("_projet_api", "_projet_doc_lire"),
+        "/api/ipc2581": ("_ipc_api", "_ipc2581_etat"),
+        "/api/simulation": ("_ipc_api", "_simulation_etat"),
+        "/api/simulation-dc": ("_ipc_api", "_dc_etat"),
+        "/api/crosstalk": ("_ipc_api", "_crosstalk_etat"),
+        "/api/simulation-rf": ("_ipc_api", "_rf_etat"),
+        "/api/oeil": ("_ipc_api", "_oeil_etat"),
+        "/api/pcb/score-placement": ("_ipc_api", "_scoring_etat"),
+        "/api/schema/patterns": ("_ipc_api", "_patterns_etat"),
+        "/api/analyse-carte": ("_ipc_api", "_analyse_etat"),
+        "/api/lib/composants": ("_lib_api", "_lib_composants_lire"),
+        "/api/lib/fichiers": ("_lib_api", "_lib_fichiers_liste"),
+        "/api/lib/parasites": ("_lib_api", "_lib_parasites"),
+        "/api/lib/fichier": ("_lib_api", "_lib_fichier_lire"),
+        "/api/lib/config": ("_lib_api", "_lib_config_lire"),
+    }
+
+    def _outils_liste(self):
+        # appel differe : le module peut etre absent (import tolerant), _api
+        # repond alors 503 avant d'arriver ici.
+        return passerelle_mcp.liste_outils()
+
+    def _lecture(self):
+        """Sert une route de LECTURES ; faux si la route n'en est pas une."""
+        quoi = self.LECTURES.get(self._route())
+        if not quoi:
+            return False
+        enveloppe, action = quoi
+        getattr(self, enveloppe)(getattr(self, action))
+        return True
+
     def do_GET(self):
-        if PILOTE.traiter(self):
-            return
-        route = self._route()
-        if route == "/api/datasheet/ouvrir":
-            self._datasheet_api(self._datasheet_ouvrir)
-            return
-        if route == "/api/tools":
-            # lambda et non passerelle_mcp.liste_outils : le module peut etre
-            # absent (import tolerant), _api repond alors 503.
-            self._api(lambda: passerelle_mcp.liste_outils())
-            return
-        if route == "/api/profils":
-            self._profil_api(self._profils_index)
-            return
-        if route == "/api/profil":
-            self._profil_api(self._profil_lire)
-            return
-        if route == "/api/github":
-            self._projet_api(self._github_etat)
-            return
-        if route == "/api/projets":
-            self._projet_api(self._projets_index)
-            return
-        if route == "/api/projet":
-            self._projet_api(self._projet_lire)
-            return
-        if route == "/api/projet/doc":
-            self._projet_api(self._projet_doc_lire)
-            return
-        if route == "/api/ipc2581":
-            self._ipc_api(self._ipc2581_etat)
-            return
-        if route == "/api/simulation":
-            self._ipc_api(self._simulation_etat)
-            return
-        if route == "/api/simulation-dc":
-            self._ipc_api(self._dc_etat)
-            return
-        if route == "/api/crosstalk":
-            self._ipc_api(self._crosstalk_etat)
-            return
-        if route == "/api/simulation-rf":
-            self._ipc_api(self._rf_etat)
-            return
-        if route == "/api/oeil":
-            self._ipc_api(self._oeil_etat)
-            return
-        if route == "/api/pcb/score-placement":
-            self._ipc_api(self._scoring_etat)
-            return
-        if route == "/api/schema/patterns":
-            self._ipc_api(self._patterns_etat)
-            return
-        if route == "/api/analyse-carte":
-            self._ipc_api(self._analyse_etat)
-            return
-        if route == "/api/lib/composants":
-            self._lib_api(self._lib_composants_lire)
-            return
-        if route == "/api/lib/fichiers":
-            self._lib_api(self._lib_fichiers_liste)
-            return
-        if route == "/api/lib/parasites":
-            self._lib_api(self._lib_parasites)
-            return
-        if route == "/api/lib/fichier":
-            self._lib_api(self._lib_fichier_lire)
-            return
-        if route == "/api/lib/config":
-            self._lib_api(self._lib_config_lire)
+        if PILOTE.traiter(self) or self._lecture():
             return
         super().do_GET()
 
     def do_HEAD(self):
-        route = self._route()
-        if route == "/api/datasheet/ouvrir":
-            self._datasheet_api(self._datasheet_ouvrir)
-            return
-        if route == "/api/tools":
-            self._api(lambda: passerelle_mcp.liste_outils())
-            return
-        if route == "/api/pcb/score-placement":
-            self._ipc_api(self._scoring_etat)
-            return
-        if route == "/api/schema/patterns":
-            self._ipc_api(self._patterns_etat)
-            return
-        if route == "/api/analyse-carte":
-            self._ipc_api(self._analyse_etat)
-            return
-        if route == "/api/lib/composants":
-            self._lib_api(self._lib_composants_lire)
-            return
-        if route == "/api/lib/fichiers":
-            self._lib_api(self._lib_fichiers_liste)
-            return
-        if route == "/api/lib/parasites":
-            self._lib_api(self._lib_parasites)
-            return
-        if route == "/api/lib/fichier":
-            self._lib_api(self._lib_fichier_lire)
-            return
-        if route == "/api/lib/config":
-            self._lib_api(self._lib_config_lire)
-            return
-        if route == "/api/profils":
-            self._profil_api(self._profils_index)
-            return
-        if route == "/api/profil":
-            self._profil_api(self._profil_lire)
-            return
-        if route == "/api/projets":
-            self._projet_api(self._projets_index)
-            return
-        if route == "/api/projet":
-            self._projet_api(self._projet_lire)
-            return
-        if route == "/api/projet/doc":
-            self._projet_api(self._projet_doc_lire)
-            return
-        if route == "/api/ipc2581":
-            self._ipc_api(self._ipc2581_etat)
-            return
-        if route == "/api/simulation":
-            self._ipc_api(self._simulation_etat)
-            return
-        if route == "/api/simulation-dc":
-            self._ipc_api(self._dc_etat)
-            return
-        if route == "/api/crosstalk":
-            self._ipc_api(self._crosstalk_etat)
-            return
-        if route == "/api/simulation-rf":
-            self._ipc_api(self._rf_etat)
-            return
-        if route == "/api/oeil":
-            self._ipc_api(self._oeil_etat)
-            return
-        super().do_HEAD()
+        if not self._lecture():
+            super().do_HEAD()
 
     def handle(self):
         try:
