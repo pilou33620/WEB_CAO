@@ -90,7 +90,7 @@ const EXPOSE=["ECRITURE_CAO","simDsChamp","simDsLire","simDsEcrire","SIM_DS","SI
   "simModelesIpcNorm","simModelesIpcRelire","simModelesIpcForm","SIM_MODELES_VIA_IPC",
   "mdlArc","mdlArcAngle","mdlArcLongueur","ltArc","ltNet","ltPiste",
   "simCheveluRes","simRetourCouleurRes","simRetourActifIpc",
-  "simRetourTraceIpc",
+  "simRetourTrace",
   "simRetoursIpc","SIM_RAYON_RETOUR_IPC","SIM_RAYON_RETOUR_OPTIMAL_IPC",
   /* Les découplages qui joignent deux plans de nets différents : c'est par
      eux que le retour passe quand aucun via de masse ne peut refermer. */
@@ -2584,7 +2584,7 @@ T("le chevelu tombe sur le cuivre, en unités du fichier",()=>{
   const o=SIM.ouvert, a=SIM.analyse, r=SIM.res;
   SIM.ouvert=true; SIM.analyse="retour"; SIM.res=res;
   try{
-    simRetourTraceIpc(t.ctx,1);
+    simRetourTrace(t.ctx,1);
   }finally{
     SIM.ouvert=o; SIM.analyse=a; SIM.res=r; V.unite=uni;
     global.poserMonde=vraiPoser; global.w2s=vraiW2s;
@@ -2625,7 +2625,7 @@ T("la sélection d'un via dans le rapport met son chevelu en surbrillance",()=>{
   SIM.ouvert=true; SIM.analyse="retour"; SIM.res=res;
   SIM.viaActif=0;
   try{
-    simRetourTraceIpc(t.ctx,1);
+    simRetourTrace(t.ctx,1);
   }finally{
     SIM.ouvert=o; SIM.analyse=a; SIM.res=r; SIM.viaActif=va;
     global.poserMonde=vraiPoser; global.w2s=vraiW2s;

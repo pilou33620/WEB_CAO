@@ -379,7 +379,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* Le net du plan AU DROIT D'UN POINT : c'est lui qui distingue deux
      versements d'une meme couche, et le banc doit pouvoir le lire. */
   "simNetPlanEn",
-  "simRetourCouleur","SIM_RAYON_RETOUR",
+  "simRetourTrace","simNb","SIM_RAYON_RETOUR",
   "simPontsPlans","SIM_RAYON_PONT","simAireEnRegard",
   "simProjU","simTangente","simStackup","simCuIndex",
   "SIM_ECART_MAX","SIM_COULOIR","SIM_PLAGE_MIN","SIM_PAS",
@@ -12249,6 +12249,48 @@ T("le chevelu ne s'ouvre que sur un via de signal sélectionné",()=>{
   SIM.analyse="retour"; SIM.ouvert=false;
   if(simChevelu().length)throw new Error("le chevelu survit au panneau fermé");
   SIM.ouvert=false; SIM.analyse="";
+});
+
+T("le chevelu de l'éditeur passe par le peintre commun",()=>{
+  /* simRetourTrace est dans commun/simulation-em.js ; l'éditeur lui donne son
+     chevelu, calculé sur place, à la forme de celui du résultat
+     (simCheveluPcb). Un trait vers le via de masse, partant du via de signal,
+     et l'inductance écrite sous le via. */
+  const toile=()=>{
+    const t={traits:[], txt:[], _p:null};
+    const rien=()=>{};
+    t.ctx={save:rien, restore:rien, setTransform:rien, scale:rien, fill:rien,
+      rect:rien, roundRect:rien, setLineDash:rien, arc:rien,
+      beginPath(){t._p=null;}, moveTo(x,y){t._p=[x,y,x,y];},
+      lineTo(x,y){if(t._p){t._p[2]=x;t._p[3]=y;}},
+      stroke(){if(t._p)t.traits.push(t._p);t._p=null;},
+      fillText(s){t.txt.push(s);}, measureText(s){return {width:6*String(s).length};}};
+    return t;
+  };
+  const peindre=via=>{
+    const t=toile();
+    SIM.ouvert=true; SIM.analyse="retour";
+    clearSel(); S.sel.vias.add(via);
+    try{ simRetourTrace(t.ctx,1); }
+    finally{ SIM.ouvert=false; SIM.analyse=""; clearSel(); }
+    return t;
+  };
+  const c=simCarteRetour("GND");
+  const m=simPoserMasse(c.x+0.6, SIM_Y);
+  const t=peindre(c.via);
+  if(t.traits.length!==1)throw new Error("un trait attendu, "+t.traits.length);
+  const [x1,y1,x2,y2]=t.traits[0];
+  if(Math.hypot(x1-c.via.x,y1-c.via.y)>1e-9||Math.hypot(x2-m.x,y2-m.y)>1e-9)
+    throw new Error("le trait ne joint pas le via de signal à son via de masse");
+  const L=simVoisinageVia(c.via).L;
+  if(t.txt.indexOf("L = "+simNb(L*1e9,2)+" nH")<0)
+    throw new Error("l'inductance n'est pas écrite : "+JSON.stringify(t.txt));
+  /* Une référence qui change : le via de masse est barré et la page le dit. */
+  const c2=simCarteRetour("PWR");
+  simPoserMasse(c2.x+0.6, SIM_Y);
+  const t2=peindre(c2.via);
+  if(!t2.txt.some(s=>/^référence .+ → .+ : aucun via ne peut joindre les deux$/.test(s)))
+    throw new Error("le changement de référence n'est pas écrit : "+JSON.stringify(t2.txt));
 });
 
 T("le via envoyé porte sa position, son antipad et ses retours",()=>{

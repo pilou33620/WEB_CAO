@@ -344,6 +344,8 @@ function simZPlaceLibre(x,y,w,h){
    ce fichier ne s'exécute. */
 var simZDrawnLabels=new Set();
 function simZTrace(c,dpr){
+  /* paint() passe ici avant que le panneau ne soit branché (simInit). */
+  if(!SIM_ED||!SIM_ED.z)return;
   if(typeof simCarteActive!=="function"||!simCarteActive())return;
   simZDrawnLabels.clear();
   SIM_Z_CARTOUCHES.length=0;
@@ -5793,6 +5795,273 @@ function simRetourCouleurRes(f){
   if(part>=0.30)return "#49c07a";
   if(part>=0.10)return "#e0a63c";
   return "#7d8590";
+}
+
+/* ==========================================================================
+   LE CHEVELU DU COURANT DE RETOUR, PEINT — un seul peintre pour les deux
+   pages. Ce qu'il peint vient de `SIM_ED.retour`, l'adaptateur de la page :
+     · `liens()` les vias de signal, chacun avec ses vias de masse et ses
+       ponts, sous la forme de `simCheveluRes` — positions en millimètres,
+       noms de couche déjà écrits. La visionneuse le lit dans le résultat ;
+       l'éditeur le calcule à chaque image (il faut répondre pendant qu'on
+       déplace le via) et le met à cette forme ;
+     · `k()` les millimètres par unité du monde de la page ;
+     · `monde(c, dpr)` pose le repère du monde et rend un pixel écran dans
+       l'unité du monde.
+   ========================================================================== */
+function simRetourTrace(c,dpr){
+  /* paint() passe ici avant que le panneau ne soit branché (simInit). */
+  const R=SIM_ED&&SIM_ED.retour;
+  if(!R)return;
+  const liens=R.liens();
+  if(!liens.length)return;
+  const k=R.k();
+  if(!(k>0))return;
+  const u=v=>v/k;                          /* millimètres -> unités de la page */
+
+  const actif=(typeof SIM!=="undefined"&&SIM.viaActif!=null)?SIM.viaActif:null;
+  const actifGnd=(actif!=null&&typeof SIM!=="undefined"&&SIM.gndViaActif!=null)?SIM.gndViaActif:null;
+
+  const px=R.monde(c,dpr);                  /* un pixel écran, en unités monde */
+  c.save();
+  c.lineCap="round";
+
+  for(const g of liens){
+    const isSel=(actif!=null&&g.idx===actif);
+    const dimmed=(actif!=null&&!isSel);
+    const gx=u(g.x), gy=u(g.y);
+
+    c.save();
+    if(dimmed){
+      c.globalAlpha=0.22;
+    }
+
+    /* Le halo de mise en surbrillance si ce via est sélectionné au rapport */
+    if(isSel){
+      c.save();
+      c.beginPath();
+      c.arc(gx,gy,u(g.pastille)/2+px*12,0,Math.PI*2);
+      c.fillStyle="rgba(73, 192, 122, 0.22)";
+      c.fill();
+      c.strokeStyle="#ffe066";
+      c.lineWidth=px*3.2;
+      c.stroke();
+      c.restore();
+    }
+
+    const vias=g.vias||[];
+    for(let fIdx=0; fIdx<vias.length; fIdx++){
+      const f=vias[fIdx];
+      const isThisGnd=(isSel&&actifGnd===fIdx);
+      const isOtherGndDimmed=(isSel&&actifGnd!=null&&!isThisGnd);
+
+      c.save();
+      if(isOtherGndDimmed){
+        c.globalAlpha=0.20;
+      }
+
+      c.strokeStyle=isThisGnd?"#ffe066":simRetourCouleurRes(f);
+      /* L'ÉPAISSEUR DIT LA PART DU COURANT */
+      let baseW=f.retenu?px*(1.2+4.0*Math.max(f.part||0,0)):px*1.2;
+      if(isSel){
+        baseW*=isThisGnd?2.6:1.4;
+        if(f.retenu&&!isThisGnd&&actifGnd==null)
+          c.strokeStyle=(f.part>=0.20?"#5efc82":"#ffd166");
+      }
+      c.lineWidth=baseW;
+      /* UN REFUS STRUCTUREL NE SE RÉPÈTE PAS PAR VIA. Quand la référence change
+         de NET, AUCUN via de masse ne peut refermer : ils échouent tous pour la
+         même raison, et sur un plan bien cousu cela fait une douzaine de traits
+         rouges identiques qui noient le seul trait qui compte — celui du
+         condensateur. On les garde VISIBLES, parce que les effacer laisserait
+         croire qu'on ne les a pas regardés, mais on les met en sourdine. */
+      if(!f.retenu&&g.change&&!isThisGnd)c.globalAlpha*=0.40;
+      c.setLineDash(f.retenu?[]:[px*3,px*3]);
+      c.beginPath();
+      c.moveTo(gx,gy);
+      c.lineTo(u(f.x),u(f.y));
+      c.stroke();
+
+      /* Halo brillant doré sur le via de masse ciblé */
+      if(isThisGnd){
+        c.save();
+        c.beginPath();
+        c.arc(u(f.x),u(f.y),px*10,0,Math.PI*2);
+        c.fillStyle="rgba(255, 224, 102, 0.35)";
+        c.fill();
+        c.strokeStyle="#ffe066";
+        c.lineWidth=px*2.5;
+        c.stroke();
+        c.restore();
+      }
+      c.restore();
+    }
+
+    /* LE CHEMIN QUE LE RETOUR PREND VRAIMENT. Quand la référence change de net,
+       aucun via de masse ne referme — ils sont tous barrés de rouge — et le
+       courant passe par les condensateurs qui joignent les deux plans. Un trait
+       CYAN par pont, et son épaisseur dit sa part, exactement comme pour les
+       vias de retour. La part vient du SERVEUR (`cavite.ponts_detail`) : le
+       trait et le chiffre ont la même source, il ne peut pas y avoir de
+       désaccord entre le dessin et la fiche. */
+    for(const p of (g.ponts||[])){
+      const part=Math.max(p.part||0,0);
+      c.save();
+      /* Sous 5 % le trait s'efface presque : ce pont est là, il ne sert pas —
+         c'est une information, pas un chemin. */
+      if(part<0.05)c.globalAlpha*=0.35;
+      c.setLineDash([px*7,px*4]);
+      c.strokeStyle="#38bdf8";
+      c.lineWidth=px*(isSel?1.4:1.0)*(1.0+3.0*part);
+      c.beginPath();
+      c.moveTo(gx,gy);
+      c.lineTo(u(p.x),u(p.y));
+      c.stroke();
+      c.setLineDash([]);
+      c.beginPath();
+      c.arc(u(p.x),u(p.y),px*7,0,Math.PI*2);
+      c.fillStyle="rgba(56, 189, 248, "+(0.10+0.30*part).toFixed(3)+")";
+      c.fill();
+      c.stroke();
+      c.restore();
+    }
+
+    /* Le via de signal, cerclé : c'est lui dont on parle. */
+    c.setLineDash([]);
+    c.strokeStyle=isSel?"#ffffff":(g.retenus?"#49c07a":"#e8564a");
+    c.lineWidth=isSel?px*2.8:px*1.6;
+    c.beginPath();
+    c.arc(gx,gy,u(g.pastille)/2+px*3,0,Math.PI*2);
+    c.stroke();
+
+    c.restore();
+  }
+  c.restore();
+  simRetourValeurs(c,liens,dpr,u,px);
+}
+
+
+/* Les chiffres, tracés en pixels écran : une étiquette qui grossit avec le
+   zoom finit par couvrir la carte, et celle-ci doit rester lisible quand on
+   dézoome pour voir la liaison entière. C'est la règle de `simZValeurs`. */
+function simRetourValeurs(c,liens,dpr,u,px){
+  c.save();
+  c.setTransform(1,0,0,1,0,0);
+  c.scale(dpr,dpr);
+  c.textAlign="center"; c.textBaseline="middle";
+
+  const actif=(typeof SIM!=="undefined"&&SIM.viaActif!=null)?SIM.viaActif:null;
+  const actifGnd=(actif!=null&&typeof SIM!=="undefined"&&SIM.gndViaActif!=null)?SIM.gndViaActif:null;
+
+  const cartouche=(e,txt,bord,dy,petit,isSel)=>{
+    c.font=(petit?(isSel?"700 10.5px ":"600 9.5px "):(isSel?"700 12px ":"600 11px "))+
+      "\"JetBrains Mono\",\"SF Mono\",Consolas,\"Roboto Mono\",monospace";
+    const w=c.measureText(txt).width+10, hh=petit?15:18;
+    c.fillStyle=isSel?"rgba(20,24,28,0.96)":"rgba(15,16,18,0.86)";
+    c.beginPath();
+    if(c.roundRect)c.roundRect(e.x-w/2,e.y+dy-hh/2,w,hh,4);
+    else c.rect(e.x-w/2,e.y+dy-hh/2,w,hh);
+    c.fill();
+    c.strokeStyle=isSel?"#ffe066":bord; c.lineWidth=isSel?2.0:1.2; c.stroke();
+    c.fillStyle=isSel?"#ffffff":"#e6e8ec";
+    c.fillText(txt,e.x,e.y+dy+0.5);
+  };
+
+  for(const g of liens){
+    const isSel=(actif!=null&&g.idx===actif);
+    const dimmed=(actif!=null&&!isSel);
+    if(dimmed)continue; // Si un via précis est sélectionné, on n'affiche que ses étiquettes
+
+    const o=w2s(u(g.x),u(g.y));
+    const vias=g.vias||[];
+    /* UNE MÊME RAISON NE S'ÉCRIT QU'UNE FOIS. Dix vias de masse écartés
+       portaient dix fois « ne rejoint pas Conductor-3 » : la répétition
+       n'ajoute rien et couvre le dessin — c'est illisible sur une carte cousue.
+       On garde tous les TRAITS, chacun désignant un via bien examiné, et on ne
+       pose l'étiquette qu'au premier de chaque raison. Une raison DIFFÉRENTE,
+       elle, s'écrit : « ne couvre pas » désigne un via borgne, qui se répare,
+       et le confondre avec le refus structurel ferait manquer le cas
+       actionnable. */
+    const raisonsVues=new Set();
+    for(let fIdx=0; fIdx<vias.length; fIdx++){
+      const f=vias[fIdx];
+      const isThisGnd=(isSel&&actifGnd===fIdx);
+      const isOtherGndDimmed=(isSel&&actifGnd!=null&&!isThisGnd);
+      if(isOtherGndDimmed)continue;
+      const e=w2s(u(f.x),u(f.y));
+      const lg=Math.hypot(e.x-o.x,e.y-o.y);
+      if(lg<45&&f.retenu&&!isSel&&!isThisGnd)continue;
+      const m={x:o.x+0.66*(e.x-o.x), y:o.y+0.66*(e.y-o.y)};
+      if(!f.retenu){
+        const r=f.raison||"écarté";
+        /* Le via explicitement désigné au rapport garde la sienne, toujours :
+           on a cliqué dessus pour la lire. */
+        if(isThisGnd||!raisonsVues.has(r)){
+          raisonsVues.add(r);
+          cartouche(m,r,"#e8564a",-14,true,isThisGnd||isSel);
+        }
+      }
+      else if((f.part||0)>=0.05||isThisGnd)
+        cartouche(m,Math.round(100*f.part)+" %",
+                  isThisGnd?"#ffe066":simRetourCouleurRes(f),0,true,isThisGnd||isSel);
+    }
+    const txt=(g.seul
+      ? "L ≥ "+simNb(g.L_nH,2)+" nH · sans retour"
+      : "L = "+simNb(g.L_nH,2)+" nH")+(g.cascade?"":" · hors parcours");
+    const rayon=(u(g.pastille)/2)/px+14;
+    cartouche(o,txt,g.seul?"#e8564a":(isSel?"#ffe066":"#49c07a"),-Math.max(18,rayon),false,isSel);
+
+    /* PAS DE RÉFÉRENCE DU TOUT, comme dans l'éditeur : un plan sans cuivre au
+       droit du via n'est pas une référence qui change, et c'est le seul
+       message. */
+    if(g.sansCuivre.length){
+      cartouche(o,"aucun cuivre sur "+g.sansCuivre.join("/")+" sous ce via : pas de plan de référence ici",
+                "#e8564a",Math.max(20,rayon),true,isSel);
+    }else if(g.change){
+      cartouche(o,"référence "+g.plans+" : aucun via ne peut joindre les deux",
+                "#e8564a",Math.max(20,rayon),true,isSel);
+      /* ET CE QUI PORTE LE RETOUR À LEUR PLACE, nommé, coté et CHIFFRÉ. Sans
+         ces étiquettes, le dessin disait le défaut sans jamais désigner le
+         chemin — ni dire lequel des découplages le porte. */
+      if(g.ponts&&g.ponts.length){
+        for(const p of g.ponts){
+          const part=Math.max(p.part||0,0);
+          /* On n'étiquette que ce qui travaille : sous 5 % le trait pâle suffit
+             à dire « il est là et il ne sert pas ». */
+          if(part<0.05&&g.ponts.length>1)continue;
+          const e=w2s(u(p.x),u(p.y));
+          cartouche({x:o.x+0.6*(e.x-o.x), y:o.y+0.6*(e.y-o.y)},
+                    (p.repere||"découplage")+" · "+simNb(p.distance_mm,2)+
+                    " mm · "+Math.round(100*part)+" %",
+                    "#38bdf8",-12,true,isSel);
+        }
+        /* LA CAVITÉ EST UN CHEMIN SANS OBJET À DESSINER : le courant de
+           déplacement passe par la capacité répartie des deux plans, il ne
+           traverse aucun composant. On ne peut pas lui tracer un trait, alors
+           on écrit sa part — sinon les pourcentages ne somment à rien. Et la
+           fréquence avec, parce que ce partage en dépend, et fortement. */
+        cartouche(o,(g.partCavite>=0.005
+                       ? Math.round(100*g.partCavite)+" % par la capacité des plans · "
+                       : "")+"parts à "+simFreq(g.freqParts),
+                  "#38bdf8",Math.max(20,rayon)+17,true,isSel);
+      }else if(g.pontsCherches===false){
+        /* « On n'a pas regardé » n'est pas « il n'y a rien ». */
+        cartouche(o,"découplages entre les deux plans non cherchés",
+                  "#e0a63c",Math.max(20,rayon)+17,true,isSel);
+      }else{
+        cartouche(o,"aucun découplage entre les deux plans dans "+
+                  simNb(g.pontRayon,0)+" mm",
+                  "#e8564a",Math.max(20,rayon)+17,true,isSel);
+      }
+    }
+    else if(g.doute)
+      cartouche(o,"référence "+g.plans+" : nets des plans non déclarés",
+                "#e0a63c",Math.max(20,rayon),true,isSel);
+    else if(g.supposee&&!g.seul)
+      cartouche(o,"portée des vias de masse supposée traversante",
+                "#7d8590",Math.max(20,rayon),true,isSel);
+  }
+  c.restore();
 }
 
 function simRetourNotes(vias){
