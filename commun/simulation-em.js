@@ -8381,6 +8381,107 @@ function simDiffPartenaireNom(nom){
   return "";
 }
 
+/* ==========================================================================
+   LE DOCUMENT D'UNE PAIRE DIFFÉRENTIELLE (PISTE 1 / PISTE 2) — un seul pour
+   les deux pages. Ce qui diffère tient dans `SIM_ED.diff`, l'adaptateur :
+     · `pret()` un refus si la page ne peut rien envoyer, sinon null ;
+     · `pistes(nom)` les pistes du net, `selection()` les pistes sélectionnées,
+       `netDe(piste)` le nom du net d'une piste (vide s'il n'en a pas) ;
+     · `segments(pistes)` le parcours à envoyer (`simSegments` de la page) ;
+     · `voisinsMasse(pistes, g)` le cuivre des nets de masse retenus qui
+       borde la piste 1, et `masseVide()` vrai si aucun n'est retenu ;
+     · `stackup()`.
+   ========================================================================== */
+function simDocDiff(piste1, piste2, opts){
+  const P=SIM_ED.diff;
+  opts=opts||(typeof simSaisie==="function"?simSaisie():{});
+  const refus=P.pret();
+  if(refus)return refus;
+  let list1=piste1?P.pistes(piste1):[], list2=piste2?P.pistes(piste2):[];
+
+  // Si non trouvées par nom exact mais qu'on a des pistes sélectionnées sur la carte :
+  const sel=(!list1.length||!list2.length)?P.selection():[];
+  if(sel.length>=2){
+    const parNet=new Map();
+    sel.forEach((e,i)=>{
+      const n=P.netDe(e)||("anonyme_"+i);
+      if(!parNet.has(n))parNet.set(n,[]);
+      parNet.get(n).push(e);
+    });
+    const entries=[...parNet.entries()];
+    if(entries.length>=2){
+      if(!list1.length){list1=entries[0][1]; piste1=entries[0][0];}
+      if(!list2.length){list2=entries[1][1]; piste2=entries[1][0];}
+    }else if(sel.length===2){
+      /* Deux pistes d'un même net : on les prend quand même, et le refus
+         « même net » qui suit dit ce qui ne va pas. */
+      if(!list1.length){list1=[sel[0]]; piste1=P.netDe(sel[0])||"Piste_1";}
+      if(!list2.length){list2=[sel[1]]; piste2=P.netDe(sel[1])||"Piste_2";}
+    }
+  }
+
+  if(!list1.length)return {
+    erreur:"Piste 1 introuvable ou ne contient aucun cuivre.",
+    conseil:"Sélectionnez la piste sur la carte et cliquez sur 🎯 Piste 1, ou saisissez son nom de net."
+  };
+  if(!list2.length)return {
+    erreur:"Piste 2 introuvable ou ne contient aucun cuivre.",
+    conseil:"Sélectionnez la 2ème piste sur la carte et cliquez sur 🎯 Piste 2, ou saisissez son nom de net."
+  };
+
+  const g1=P.segments(list1);
+  if(!g1.envoi.length)return {erreur:"La Piste 1 ne porte aucun tronçon exploitable."};
+  const g2=P.segments(list2);
+  if(!g2.envoi.length)return {erreur:"La Piste 2 ne porte aucun tronçon exploitable."};
+
+  const nom1=piste1||P.netDe(list1[0])||"Piste_1";
+  const nom2=piste2||P.netDe(list2[0])||"Piste_2";
+
+  if(String(nom1).trim().toLowerCase()===String(nom2).trim().toLowerCase()){
+    const part=(typeof simDiffPartenaireNom==="function")?simDiffPartenaireNom(nom1):"";
+    return {
+      erreur:"Piste 1 et Piste 2 ont le même net (« "+nom1+" »).",
+      conseil:"Une paire différentielle nécessite 2 pistes distinctes."+(part?" Partenaire suggéré : « "+part+" ».":"")
+    };
+  }
+
+  /* Le voisinage ciblé : les segments de la Piste 2, et la masse coplanaire
+     déclarée pour tenir compte des blindages. */
+  const voisinage=g2.envoi.slice();
+  for(const v of P.voisinsMasse(list1,g1))
+    if(v.net&&v.net!==nom2)voisinage.push(v);
+
+  const notes=[];
+  if(P.masseVide())
+    notes.push("Aucun net de masse retenu : le cuivre qui borde la piste sur sa propre couche n'est pas compté. Choisissez la masse dans la barre du panneau.");
+
+  const saisie=(typeof SIM!=="undefined"&&SIM.saisie)||{};
+  return {
+    doc:{
+      carte:SIM_ED.carte(), net:nom1,
+      stackup:P.stackup(),
+      geometry:{objects:g1.envoi},
+      vias:g1.vias||((g1.chaine||{}).vias)||[],
+      ports:[{id:1, impedance:opts.z0||50}, {id:2, impedance:opts.z0||50}],
+      voisinage:voisinage,
+      paires:[[nom1, nom2]],
+      cible_diff:opts.cibleDiff||saisie.cibleDiff||100,
+      analyse:{
+        f_debut:opts.f1, f_fin:opts.f2, points:opts.points,
+        f_centre:opts.fc, temps_montee:opts.tr||0,
+        amplitude_v:saisie.swing||0,
+        z_ref_diff:opts.cibleDiff||saisie.cibleDiff||100
+      }
+    },
+    objets:g1.objets,
+    portee:nom1+" / "+nom2+" (Paire diff)",
+    titre:nom1+" / "+nom2+" · Paire différentielle",
+    notes:notes,
+    couture:g1.couture,
+    voisins:g1.voisins
+  };
+}
+
 function simDiffNetlistEcrire(){
   const allNets=(SIM_ED&&typeof SIM_ED.listeNets==="function")?SIM_ED.listeNets():[];
   const sorted=[...new Set(allNets)].filter(Boolean)

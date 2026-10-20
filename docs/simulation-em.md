@@ -345,7 +345,7 @@ franchissent la même fente, leurs deux retours empruntent le **même cuivre** :
 c'est un couplage par **impédance commune**, et il se chiffre à part, puis
 s'**ajoute** au niveau 2 des lignes couplées.
 
-**Ce que la page mesure** (`simXtFentes`, `simXtFentesIpc`, même mesure que
+**Ce que la page mesure** (`simXtFentes`, commun aux deux pages, même mesure que
 le RF) : au milieu de chaque fente sondée sous le parcours, les détours
 **d1** (à gauche du sens de marche, le côté +1 de la couture) et **d2** (à
 droite) jusqu'où le plan se referme sur la ligne de la piste, 30 mm au plus

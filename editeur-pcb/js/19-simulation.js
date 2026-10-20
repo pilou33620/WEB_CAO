@@ -2504,119 +2504,6 @@ function simDocPcb(liste,opts){
 }
 
 /* ==========================================================================
-   SIMULATION DE PAIRE DIFFÉRENTIELLE (PISTE 1 / PISTE 2)
-   ========================================================================== */
-function simDocDiffPcb(piste1, piste2, opts){
-  opts = opts || (typeof simSaisie === "function" ? simSaisie() : {});
-  let tracks1 = [], tracks2 = [];
-  const sel = [...S.sel.tracks].filter(t => trkLen(t) > 0);
-
-  if (piste1) {
-    const s1 = String(piste1).trim().toLowerCase();
-    tracks1 = S.tracks.filter(t => (t.net === piste1 || (t.net && t.net.trim().toLowerCase() === s1)) && trkLen(t) > 0);
-  }
-  if (piste2) {
-    const s2 = String(piste2).trim().toLowerCase();
-    tracks2 = S.tracks.filter(t => (t.net === piste2 || (t.net && t.net.trim().toLowerCase() === s2)) && trkLen(t) > 0);
-  }
-
-  // Si non trouvées par nom exact mais qu'on a des pistes sélectionnées sur le PCB :
-  if ((!tracks1.length || !tracks2.length) && sel.length >= 2) {
-    const parNet = new Map();
-    for (const t of sel) {
-      const n = t.net || ("anonyme_" + (t.id || 0));
-      if (!parNet.has(n)) parNet.set(n, []);
-      parNet.get(n).push(t);
-    }
-    const entries = [...parNet.entries()];
-    if (entries.length >= 2) {
-      if (!tracks1.length) { tracks1 = entries[0][1]; piste1 = entries[0][0]; }
-      if (!tracks2.length) { tracks2 = entries[1][1]; piste2 = entries[1][0]; }
-    } else if (sel.length === 2) {
-      if (!tracks1.length) { tracks1 = [sel[0]]; piste1 = sel[0].net || "Piste_1"; }
-      if (!tracks2.length) { tracks2 = [sel[1]]; piste2 = sel[1].net || "Piste_2"; }
-    }
-  }
-
-  if (!tracks1.length) {
-    return {
-      erreur: "Piste 1 introuvable ou ne contient aucun cuivre.",
-      conseil: "Sélectionnez la piste sur le circuit et cliquez sur 🎯 Piste 1, ou saisissez son nom de net."
-    };
-  }
-  if (!tracks2.length) {
-    return {
-      erreur: "Piste 2 introuvable ou ne contient aucun cuivre.",
-      conseil: "Sélectionnez la 2ème piste sur le circuit et cliquez sur 🎯 Piste 2, ou saisissez son nom de net."
-    };
-  }
-
-  const g1 = simSegments(tracks1);
-  if (!g1.envoi.length) {
-    return { erreur: "La Piste 1 ne porte aucun tronçon exploitable." };
-  }
-  const g2 = simSegments(tracks2);
-  if (!g2.envoi.length) {
-    return { erreur: "La Piste 2 ne porte aucun tronçon exploitable." };
-  }
-
-  const nom1 = piste1 || tracks1[0].net || "Piste_1";
-  const nom2 = piste2 || tracks2[0].net || "Piste_2";
-
-  if (String(nom1).trim().toLowerCase() === String(nom2).trim().toLowerCase()) {
-    const part = (typeof simDiffPartenaireNom === "function") ? simDiffPartenaireNom(nom1) : "";
-    return {
-      erreur: "Piste 1 et Piste 2 ont le même net (« " + nom1 + " »).",
-      conseil: "Une paire différentielle nécessite 2 pistes distinctes." + (part ? " Partenaire suggéré : « " + part + " »." : "")
-    };
-  }
-
-  // Voisinage ciblé : les segments de la Piste 2
-  const voisinage = g2.envoi.slice();
-
-  // Y adjoindre la masse coplanaire si déclarée pour tenir compte des blindages
-  const refs = simRefSet();
-  if (refs.size) {
-    const voisins1 = simVoisinagePcb(tracks1);
-    for (const v of voisins1) {
-      if (refs.has(v.net) && v.net !== nom2) {
-        voisinage.push(v);
-      }
-    }
-  }
-
-  const notes = [];
-  if (!refs.size) {
-    notes.push("Aucun net de masse retenu : le cuivre qui borde la piste sur sa propre couche n'est pas compté. Choisissez la masse dans la barre du panneau.");
-  }
-
-  return {
-    doc: {
-      carte: SIM_PCB.carte(), net: nom1,
-      stackup: simStackup(),
-      geometry: { objects: g1.envoi },
-      vias: g1.vias || [],
-      ports: [{id: 1, impedance: opts.z0 || 50}, {id: 2, impedance: opts.z0 || 50}],
-      voisinage: voisinage,
-      paires: [[nom1, nom2]],
-      cible_diff: opts.cibleDiff || (typeof SIM !== "undefined" && SIM.saisie && SIM.saisie.cibleDiff) || 100,
-      analyse: {
-        f_debut: opts.f1, f_fin: opts.f2, points: opts.points,
-        f_centre: opts.fc, temps_montee: opts.tr || 0,
-        amplitude_v: (typeof SIM !== "undefined" && SIM.saisie && SIM.saisie.swing) || 0,
-        z_ref_diff: opts.cibleDiff || (typeof SIM !== "undefined" && SIM.saisie && SIM.saisie.cibleDiff) || 100
-      }
-    },
-    objets: g1.objets,
-    portee: nom1 + " / " + nom2 + " (Paire diff)",
-    titre: nom1 + " / " + nom2 + " · Paire différentielle",
-    notes: notes,
-    couture: g1.couture,
-    voisins: g1.voisins
-  };
-}
-
-/* ==========================================================================
    CROSSTALK — CE QUE SEULE LA PAGE PEUT MESURER
    --------------------------------------------------------------------------
    LE SERVEUR NE VOIT QUE CE QU'ON LUI ENVOIE, et la section Crosstalk demande
@@ -3884,6 +3771,23 @@ const SIM_PCB={
     k:function(){ return 1; },
     monde:function(){ return px(1); }
   },
+  /* Les deux pistes d'une paire différentielle, pour `simDocDiff` (commun). */
+  diff:{
+    pret:function(){ return null; },
+    pistes:function(nom){
+      const s=String(nom).trim().toLowerCase();
+      return S.tracks.filter(t=>(t.net===nom||(t.net&&t.net.trim().toLowerCase()===s))&&trkLen(t)>0);
+    },
+    selection:function(){ return [...S.sel.tracks].filter(t=>trkLen(t)>0); },
+    netDe:function(t){ return t.net||""; },
+    segments:function(pistes){ return simSegments(pistes); },
+    voisinsMasse:function(pistes){
+      const refs=simRefSet();
+      return refs.size?simVoisinagePcb(pistes).filter(v=>refs.has(v.net)):[];
+    },
+    masseVide:function(){ return !simRefSet().size; },
+    stackup:function(){ return simStackup(); }
+  },
   /* Révision de la carte : avance à chaque modification (touch). Les résultats
      de toute la carte la retiennent et partent quand elle change. */
   revision:function(){ return S.ver; },
@@ -4268,7 +4172,7 @@ const SIM_PCB={
   },
 
   problemeDiff:function(p1,p2,opts){
-    return simDocDiffPcb(p1,p2,opts);
+    return simDocDiff(p1,p2,opts);
   },
 
   /* LES LOTS : un document par parcours continu de la sélection.
@@ -4284,7 +4188,7 @@ const SIM_PCB={
     const p1 = opts.diffPiste1 || (typeof SIM !== "undefined" && SIM.saisie && SIM.saisie.diffPiste1) || "";
     const p2 = opts.diffPiste2 || (typeof SIM !== "undefined" && SIM.saisie && SIM.saisie.diffPiste2) || "";
     if (estDiff && (p1 || p2 || S.sel.tracks.size >= 2)) {
-      const p = simDocDiffPcb(p1, p2, opts);
+      const p = simDocDiff(p1, p2, opts);
       return p.erreur ? p : { lots: [p] };
     }
     if(!S.sel.tracks.size)

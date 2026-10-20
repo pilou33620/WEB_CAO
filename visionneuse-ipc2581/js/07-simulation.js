@@ -3391,99 +3391,6 @@ function simPistesDuNetIpc(netNomOuIdx){
   return out;
 }
 
-function simDocDiffIpc(piste1, piste2, opts){
-  opts=opts||(typeof simSaisie==="function"?simSaisie():{});
-  if(!V.modele)return {erreur:"Aucune carte ouverte.", conseil:"Ouvrez un fichier IPC-2581."};
-  if(!LT.pret)return {erreur:"L'empilage de calcul n'est pas prêt.", conseil:"Complétez-le dans le panneau « La carte », sous « Empilage du calcul »."};
-
-  let list1=[], list2=[];
-  if(piste1)list1=simPistesDuNetIpc(piste1);
-  if(piste2)list2=simPistesDuNetIpc(piste2);
-
-  // Si non trouvées par nom, inspecter les pistes sélectionnées :
-  if((!list1.length||!list2.length)&&typeof simZPistes==="function"){
-    const selPistes=simZPistes();
-    if(selPistes.length>=2){
-      const parNet=new Map();
-      for(const e of selPistes){
-        const netNom=(e.piste&&e.piste.n>=0)?mdlNetNom(e.piste.n):"piste";
-        if(!parNet.has(netNom))parNet.set(netNom,[]);
-        parNet.get(netNom).push(e);
-      }
-      const entries=[...parNet.entries()];
-      if(entries.length>=2){
-        if(!list1.length){list1=entries[0][1]; piste1=entries[0][0];}
-        if(!list2.length){list2=entries[1][1]; piste2=entries[1][0];}
-      } else if(selPistes.length===2){
-        if(!list1.length){list1=[selPistes[0]]; piste1=(selPistes[0].piste&&selPistes[0].piste.n>=0)?mdlNetNom(selPistes[0].piste.n):"Piste_1";}
-        if(!list2.length){list2=[selPistes[1]]; piste2=(selPistes[1].piste&&selPistes[1].piste.n>=0)?mdlNetNom(selPistes[1].piste.n):"Piste_2";}
-      }
-    }
-  }
-
-  if(!list1.length)return {erreur:"Piste 1 introuvable ou ne contient aucun cuivre.", conseil:"Spécifiez le nom du net ou sélectionnez la piste 1 sur la carte."};
-  if(!list2.length)return {erreur:"Piste 2 introuvable ou ne contient aucun cuivre.", conseil:"Spécifiez le nom du net ou sélectionnez la piste 2 sur la carte."};
-
-  const netIdx1=(list1[0].piste&&list1[0].piste.n>=0)?list1[0].piste.n:-1;
-  const netIdx2=(list2[0].piste&&list2[0].piste.n>=0)?list2[0].piste.n:-1;
-  const N1=netIdx1>=0?V.parNet[netIdx1]:null;
-  const N2=netIdx2>=0?V.parNet[netIdx2]:null;
-
-  const g1=simSegments(list1,N1);
-  const g2=simSegments(list2,N2);
-  if(!g1.envoi.length)return {erreur:"La Piste 1 ne porte aucun tronçon exploitable."};
-  if(!g2.envoi.length)return {erreur:"La Piste 2 ne porte aucun tronçon exploitable."};
-
-  const nom1=piste1||(N1?N1.nom:"Piste_1");
-  const nom2=piste2||(N2?N2.nom:"Piste_2");
-
-  if(String(nom1).trim().toLowerCase()===String(nom2).trim().toLowerCase()){
-    const part=(typeof simDiffPartenaireNom==="function")?simDiffPartenaireNom(nom1):"";
-    return {
-      erreur:"Piste 1 et Piste 2 ont le même net (« "+nom1+" »).",
-      conseil:"Une paire différentielle nécessite 2 pistes distinctes."+(part?" Partenaire suggéré : « "+part+" ».":"")
-    };
-  }
-
-  const voisinage=g2.envoi.slice();
-  const refs=simRefIdx();
-  if(refs.size){
-    const voisins1=simVoisinageIpc(g1.envoi,g1.objets);
-    for(const v of voisins1){
-      if(v.net&&v.net!==nom2){
-        const nIdx=V.parNet?V.parNet.findIndex(x=>x.nom===v.net):-1;
-        if(nIdx>=0&&refs.has(nIdx)){
-          voisinage.push(v);
-        }
-      }
-    }
-  }
-
-  return {
-    doc:{
-      carte:(V.modele&&V.modele.nom)||"ipc2581",
-      net:nom1,
-      stackup:simStackupIpc(),
-      geometry:{objects:g1.envoi},
-      vias:((g1.chaine||{}).vias)||[],
-      ports:[{id:1,impedance:opts.z0||50},{id:2,impedance:opts.z0||50}],
-      voisinage:voisinage,
-      paires:[[nom1,nom2]],
-      cible_diff:opts.cibleDiff||(typeof SIM!=="undefined"&&SIM.saisie&&SIM.saisie.cibleDiff)||100,
-      analyse:{
-        f_debut:opts.f1, f_fin:opts.f2, points:opts.points,
-        f_centre:opts.fc, temps_montee:opts.tr||0,
-        amplitude_v:(typeof SIM!=="undefined"&&SIM.saisie&&SIM.saisie.swing)||0,
-        z_ref_diff:opts.cibleDiff||(typeof SIM!=="undefined"&&SIM.saisie&&SIM.saisie.cibleDiff)||100
-      }
-    },
-    objets:g1.objets,
-    portee:nom1+" / "+nom2+" (Paire diff)",
-    titre:nom1+" / "+nom2+" · Paire différentielle",
-    notes:[]
-  };
-}
-
 /* ==========================================================================
    CROSSTALK — CE QUE SEULE LA PAGE PEUT MESURER
    --------------------------------------------------------------------------
@@ -4467,6 +4374,32 @@ const SIM_IPC={
     k:simKUnite,
     monde:function(c,dpr){ poserMonde(c,dpr); return 1/V.vue.scale; }
   },
+  /* Les deux pistes d'une paire différentielle, pour `simDocDiff` (commun) :
+     des plages de polylignes, leurs nets par indice. */
+  diff:{
+    pret:function(){
+      if(!V.modele)return {erreur:"Aucune carte ouverte.", conseil:"Ouvrez un fichier IPC-2581."};
+      if(!LT.pret)return {erreur:"L'empilage de calcul n'est pas prêt.", conseil:"Complétez-le dans le panneau « La carte », sous « Empilage du calcul »."};
+      return null;
+    },
+    pistes:function(nom){ return simPistesDuNetIpc(nom); },
+    selection:function(){ return typeof simZPistes==="function"?simZPistes():[]; },
+    netDe:function(e){ return (e.piste&&e.piste.n>=0)?mdlNetNom(e.piste.n):""; },
+    segments:function(pistes){
+      const n=(pistes[0].piste&&pistes[0].piste.n>=0)?pistes[0].piste.n:-1;
+      return simSegments(pistes,n>=0?V.parNet[n]:null);
+    },
+    voisinsMasse:function(pistes,g){
+      const refs=simRefIdx();
+      if(!refs.size)return [];
+      return simVoisinageIpc(g.envoi,g.objets).filter(v=>{
+        const i=V.parNet?V.parNet.findIndex(x=>x.nom===v.net):-1;
+        return i>=0&&refs.has(i);
+      });
+    },
+    masseVide:function(){ return !simRefIdx().size; },
+    stackup:function(){ return simStackupIpc(); }
+  },
   /* Révision : la carte chargée elle-même (une autre carte, un autre objet). */
   revision:function(){ return V.modele; },
   /* Un composant coché « non monté » sort de toutes les simulations. */
@@ -4959,7 +4892,7 @@ const SIM_IPC={
   },
 
   problemeDiff:function(p1,p2,opts){
-    return simDocDiffIpc(p1,p2,opts);
+    return simDocDiff(p1,p2,opts);
   },
 
   /* LES LOTS : un document par parcours continu de la sélection.
@@ -4974,7 +4907,7 @@ const SIM_IPC={
     const p1=opts.diffPiste1||(typeof SIM!=="undefined"&&SIM.saisie&&SIM.saisie.diffPiste1)||"";
     const p2=opts.diffPiste2||(typeof SIM!=="undefined"&&SIM.saisie&&SIM.saisie.diffPiste2)||"";
     if(estDiff&&(p1||p2||(V.sel&&V.sel.length>=2))){
-      const p=simDocDiffIpc(p1,p2,opts);
+      const p=simDocDiff(p1,p2,opts);
       return p.erreur?p:{lots:[p]};
     }
     if(!V.sel||V.sel.length<2){

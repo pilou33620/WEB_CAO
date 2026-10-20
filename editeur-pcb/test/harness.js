@@ -302,7 +302,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simZDiffCouleur","simZDiffTolAbs","simZDiffVerdict",
   "simCarteDiffPartenaire","simCarteDiffLegende",
   "simTrackU","simPistePartenaire","simProjSegmentSurPiste","simLotsSontPaireDiff",
-  "simZValeurs","simZDrawnLabels","simZTraceLot","simZTrace",
+  "simZValeurs","simZDrawnLabels","simZTraceLot","simZTrace","simDocDiff",
   /* Le voile : ce qui n'est pas dans la simulation s'estompe. */
   "simVoileActif","SIM_VOILE_ALPHA",
   /* Choisir sa paire a la main plutot que de la laisser deviner. */
@@ -13381,6 +13381,36 @@ T("aucune masse retenue : l'écart tombe à zéro et le panneau le dit",()=>{
   if(!p.notes.some(n=>/Aucun net de masse/.test(n)))
     throw new Error("le panneau doit signaler qu'aucune masse n'est retenue");
   SIM.refAuto=true; SIM.ref=null;
+});
+
+T("paire différentielle : le document part des deux nets, et dit ce qui manque",()=>{
+  /* simDocDiff est dans commun/simulation-em.js ; SIM_PCB.diff lui donne les
+     pistes de l'éditeur. */
+  const opts={z0:50,f1:1e8,f2:5e9,points:11,fc:1e9};
+  const tP=simCarte();
+  const tN={l:0, net:"N$2", w:SIM_W, x1:SIM_X1, y1:SIM_Y+0.6, x2:SIM_X2, y2:SIM_Y+0.6};
+  S.tracks.push(tN); touch();
+  simZone("GND",5,24,55,30);
+  const p=simDocDiff("N$1","N$2",opts);
+  if(p.erreur)throw new Error("refus inattendu : "+p.erreur);
+  if(JSON.stringify(p.doc.paires)!=='[["N$1","N$2"]]'||p.doc.net!=="N$1")
+    throw new Error("paire mal nommée : "+JSON.stringify(p.doc.paires));
+  const n2=simSegments([tN]).envoi.length;
+  if(p.doc.voisinage.length<n2)
+    throw new Error("la Piste 2 doit être dans le voisinage : "+p.doc.voisinage.length);
+  if(!p.doc.geometry.objects.length||p.objets.length!==p.doc.geometry.objects.length)
+    throw new Error("la Piste 1 doit être envoyée, objet par objet");
+  /* La sélection suffit quand aucun nom n'est donné : un net par piste. */
+  clearSel(); S.sel.tracks.add(tP); S.sel.tracks.add(tN);
+  const q=simDocDiff("","",opts);
+  if(q.erreur||JSON.stringify(q.doc.paires)!=='[["N$1","N$2"]]')
+    throw new Error("la sélection ne donne pas la paire : "+JSON.stringify(q.erreur||q.doc.paires));
+  /* Les refus, et ce qu'ils disent. */
+  if(!/même net/.test(simDocDiff("N$1","n$1",opts).erreur||""))
+    throw new Error("deux fois le même net doit être refusé");
+  clearSel();
+  if(!/Piste 2 introuvable/.test(simDocDiff("N$1","ABSENT",opts).erreur||""))
+    throw new Error("un net absent doit être refusé");
 });
 
 T("les plages : dix pour cent d'écart les sépare, un demi-millimètre les fond",()=>{

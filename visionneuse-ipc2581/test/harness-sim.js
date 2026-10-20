@@ -149,7 +149,7 @@ const EXPOSE=["ECRITURE_CAO","simDsChamp","simDsLire","simDsEcrire","SIM_DS","SI
   "simZDiffCouleur","simZDiffTolAbs","simZDiffVerdict",
   "simCarteDiffPartenaire","simCarteDiffLegende",
   "simPistePartenaireIpc","simProjSegmentSurPisteIpc","simLotsSontPaireDiff",
-  "simZValeurs","simZDrawnLabels","simZTrace",
+  "simZValeurs","simZDrawnLabels","simZTrace","simDocDiff",
   /* Le voile : ce qui n'est pas dans la simulation s'estompe. */
   "simVoileActif","SIM_VOILE_ALPHA",
   /* Choisir sa paire a la main plutot que de la laisser deviner. */
@@ -553,6 +553,28 @@ T("un via hors du couloir ne coud pas le cuivre qui borde la piste",()=>{
   if(c.n!==0)
     throw new Error("un via à 9 mm de l'axe est hors du couloir de "+
                     SIM_COULOIR+" mm, "+c.n+" compté(s)");
+});
+
+T("paire différentielle : le document part des deux nets, et dit ce qui manque",()=>{
+  /* simDocDiff est dans commun/simulation-em.js ; SIM_IPC.diff lui donne les
+     plages de la visionneuse. */
+  const opts={z0:50,f1:1e8,f2:5e9,points:11,fc:1e9};
+  carte({pistes:[{c:0, n:0, w:W, p:[X1,Y, X2,Y]},
+                 {c:0, n:2, w:W, p:[X1,Y+0.6, X2,Y+0.6]}]});
+  const p=simDocDiff("N$1","N$2",opts);
+  if(p.erreur)throw new Error("refus inattendu : "+p.erreur);
+  if(JSON.stringify(p.doc.paires)!=='[["N$1","N$2"]]'||p.doc.net!=="N$1")
+    throw new Error("paire mal nommée : "+JSON.stringify(p.doc.paires));
+  if(!p.doc.voisinage.length)throw new Error("la Piste 2 doit être dans le voisinage");
+  if(!p.doc.geometry.objects.length||p.objets.length!==p.doc.geometry.objects.length)
+    throw new Error("la Piste 1 doit être envoyée, objet par objet");
+  if(!/même net/.test(simDocDiff("N$1","n$1",opts).erreur||""))
+    throw new Error("deux fois le même net doit être refusé");
+  const pret=LT.pret; LT.pret=false;
+  try{
+    if(!/empilage de calcul/.test(simDocDiff("N$1","N$2",opts).erreur||""))
+      throw new Error("sans empilage de calcul, rien ne part");
+  }finally{LT.pret=pret;}
 });
 
 T("aucune masse retenue : l'écart tombe à zéro et le panneau le dit",()=>{
