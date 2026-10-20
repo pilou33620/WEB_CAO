@@ -220,7 +220,6 @@
    ============================================================================= */
 "use strict";
 
-const SIM_PORT=8000;                   // DEFAULT_PORT de web_CAO.py
 const SIM_ROUTE="/api/simulation";
 const SIM_DC_ROUTE="/api/simulation-dc";
 const SIM_DC_FORMAT="cao-sim-dc-1";   // FORMAT de python/dc_solver.py
@@ -3092,19 +3091,11 @@ function simCarteRetenir(parValeur){
 
 /* ==========================================================================
    Trouver le serveur
-   Même ordre que la visionneuse (01-api.js) : l'origine qui sert la page, puis
-   le même hôte sur le port de web_CAO.py, puis 127.0.0.1 pour une page ouverte
-   en file://. La sonde ne se fait qu'une fois par session.
+   L'origine qui sert la page, et elle seule : web_CAO.py refuse toute autre
+   origine (une page en file:// ne peut pas l'appeler). La sonde ne se fait
+   qu'une fois par session.
    ========================================================================== */
-function simCandidats(){
-  const out=[], ajoute=function(v){if(v!==null&&out.indexOf(v)<0)out.push(v);};
-  if(location.protocol==="http:"||location.protocol==="https:"){
-    ajoute("");
-    ajoute(location.protocol+"//"+location.hostname+":"+SIM_PORT);
-  }
-  ajoute("http://127.0.0.1:"+SIM_PORT);
-  return out;
-}
+function simCandidats(){return [""];}
 /* Le serveur répond {"detail": "…"}, et le détail porte parfois deux lignes —
    le refus, puis ce qu'il faut changer. */
 async function simErreur(rep){

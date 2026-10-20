@@ -4,7 +4,7 @@
 
 Du schéma au dossier de fabrication : saisie multi-feuilles, routage *Push & Shove*, bibliothèque de composants, inspection de fichiers IPC-2581 et simulation d'intégrité du signal et de l'alimentation (SI / PI / RF). Claude Code, par le serveur MCP de web_suite, lit vos datasheets et propose les réglages de simulation, valeur par valeur.
 
-Les éditeurs s'ouvrent par simple double-clic dans le navigateur, sans `npm install` ni serveur.
+Les éditeurs s'ouvrent par simple double-clic dans le navigateur, sans `npm install` ni serveur. Ce qui passe par le serveur (simulations, LIB, visionneuse IPC-2581, recherche de composants) demande la page ouverte à l'adresse qu'affiche `web_CAO.py` : il n'admet que sa propre origine, une page en `file://` ne peut pas l'appeler.
 
 <p align="center">
   <img src="screen/schematique-carte-usb.svg" width="800" alt="Animation : saisie du schéma d'une carte USB dans l'Éditeur Schématique, puis envoi de la netlist à l'Éditeur PCB">

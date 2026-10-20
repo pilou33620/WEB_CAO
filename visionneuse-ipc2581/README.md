@@ -59,7 +59,7 @@ et ceux du dossier partagé, identiques aux autres outils :
 | Fichier | Lignes | Rôle |
 |---|---:|---|
 | `js/00-espace-config.js` | 25 | `WS_CONFIG` : clé de stockage local et disposition d'usine des cinq panneaux |
-| `js/01-api.js` | 121 | Découverte du serveur (origine courante, secours en 8000), envoi du fichier à `/api/ipc2581`, relecture d'un `.json` déjà traduit |
+| `js/01-api.js` | 121 | Sonde du serveur (l'origine qui sert la page, et elle seule), envoi du fichier à `/api/ipc2581`, relecture d'un `.json` déjà traduit |
 | `../python/ipc2581_json.py` | 419 | Traduction `IPCDesign` → dictionnaire JSON : couches et nets deviennent des index, les polygones des tableaux plats. Ouvre aussi les archives `.zip` |
 | `js/02-modele.js` | 804 | Table des couches et couleurs, rangement par couche et par net, placement des pastilles, assemblage des `Path2D`, et la ligne de transmission (impédance, retard, capacité, self) |
 | `js/03-rendu.js` | 374 | Canevas : repère écran/monde, ordre de dessin, couches, perçages, textes, mise en évidence, règle d'échelle |

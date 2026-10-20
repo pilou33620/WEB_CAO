@@ -10,29 +10,17 @@
    de personne — c'est aussi pourquoi « Exporter .json » existe, et pourquoi le
    .json exporté se rouvre en double-clic, serveur éteint.
 
-   L'adresse du serveur est cherchée dans le même ordre que pour la recherche
-   de composants :
-     1. l'origine qui sert la page (cas normal : c'est web_CAO.py) ;
-     2. le même hôte sur le port par défaut de web_CAO.py ;
-     3. http://127.0.0.1:8000 (page ouverte en file://).
+   Le serveur est celui qui sert la page (web_CAO.py) : il n'admet que sa
+   propre origine, une page ouverte en file:// ne peut donc pas l'appeler.
    ============================================================================= */
 
-const API_PORT=8000;                   // DEFAULT_PORT de web_CAO.py
 const API_ROUTE="/api/ipc2581";
 
 let API_BASE=null;                     // racine retenue, "" = même origine
 let API_ETAT=null;                     // réponse de la sonde : {dispo, max, …}
 
 /* racines à essayer, sans doublon */
-function apiCandidats(){
-  const out=[], ajoute=function(v){if(v!==null&&out.indexOf(v)<0)out.push(v);};
-  if(location.protocol==="http:"||location.protocol==="https:"){
-    ajoute("");                                        // même origine
-    ajoute(location.protocol+"//"+location.hostname+":"+API_PORT);
-  }
-  ajoute("http://127.0.0.1:"+API_PORT);
-  return out;
-}
+function apiCandidats(){return [""];}                  // même origine, rien d'autre
 
 /* message d'erreur lisible : le serveur répond {"detail": "..."} */
 async function apiErreur(rep){

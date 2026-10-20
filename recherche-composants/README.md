@@ -51,10 +51,10 @@ Puis l'adresse affichée au démarrage : la page d'accueil propose les deux
 serveur. `--local` limite l'écoute à cette machine, `--port` change le port.
 
 La page cherche sa passerelle dans l'ordre : l'adresse mémorisée par le bouton
-**Serveur…**, l'origine qui la sert, le port 8000 du même hôte, puis
-`http://127.0.0.1:8000`. Dans le cas normal — page ouverte depuis l'adresse
-qu'affiche `web_CAO.py` — c'est la deuxième qui répond et rien d'autre n'est
-tenté ; les deux dernières ne servent qu'à la page ouverte en `file://`.
+**Serveur…**, puis l'origine qui la sert. Dans le cas normal — page ouverte
+depuis l'adresse qu'affiche `web_CAO.py` — c'est la seconde qui répond.
+`web_CAO.py` n'admet que sa propre origine : une page ouverte en `file://`
+ne peut pas l'appeler.
 
 Le second serveur `serveur-composants.py` (FastAPI et uvicorn, port 8420) a été
 supprimé. Il exposait exactement les mêmes routes `/api/tools` et `/api/tool`

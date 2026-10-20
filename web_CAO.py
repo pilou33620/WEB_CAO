@@ -1874,13 +1874,6 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         return bool(origine and hote
                     and origine.lower() in ("http://" + hote, "https://" + hote))
 
-    def _cors(self):
-        """Autorise la page si elle vient de ce serveur."""
-        origine = self.headers.get("Origin")
-        if self._origine_permise(origine):
-            self.send_header("Access-Control-Allow-Origin", origine)
-            self.send_header("Vary", "Origin")
-
     def _valider_csrf(self):
         """Rejette les requetes modificatrices provenant d'une origine non autorisee."""
         origine = self.headers.get("Origin")
@@ -1894,7 +1887,6 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(corps)))
-        self._cors()
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(corps)
@@ -3377,43 +3369,12 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         self.send_response(200)
-        self._cors()
         self.send_header("Content-Type", "application/pdf")
         self.send_header("Content-Disposition", 'inline; filename="%s"' % nom_base)
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(data)
-
-    def do_OPTIONS(self):
-        route = self._route()
-        if route in ("/api/profils", "/api/profil",
-                     "/api/projets", "/api/projet", "/api/projet/doc",
-                     "/api/github", "/api/github/envoyer", "/api/github/identite",
-                     "/api/lib/composants", "/api/lib/fichiers", "/api/lib/fichier", "/api/lib/parasites",
-                     "/api/lib/config"):
-            self.send_response(204)
-            self.send_header("Access-Control-Allow-Methods",
-                             "GET, POST, PUT, DELETE, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type, Content-Encoding")
-            self._cors()
-            self.end_headers()
-            return
-        if route not in ("/api/tools", "/api/tool", "/api/ipc2581",
-                         "/api/simulation", "/api/simulation-dc",
-                         "/api/crosstalk", "/api/simulation-rf",
-                         "/api/oeil",
-                         "/api/datasheet/telecharger",
-                         "/api/datasheet/ouvrir",
-                         "/api/pcb/score-placement", "/api/schema/patterns",
-                         "/api/analyse-carte"):
-            self.send_error(405, "Unsupported method (OPTIONS)")
-            return
-        self.send_response(204)
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Content-Encoding")
-        self._cors()
-        self.end_headers()
 
     def do_PUT(self):
         if not self._valider_csrf():
