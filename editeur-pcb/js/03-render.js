@@ -1176,7 +1176,7 @@ function paintCarte(c,dpr,w,h,noGrid){
      JUSTE AVANT les cartes — celle des impedances comme celle du potentiel —
      et n'existe que tant que l'une d'elles peint. */
   if(!noGrid&&typeof simVoile==="function")simVoile(c,w,h,C_BG);
-  if(!noGrid&&typeof simZTrace==="function")simZTrace(c);
+  if(!noGrid&&typeof simZTrace==="function")simZTrace(c,dpr);
   /* La carte de POTENTIEL (chute DC), sur la couche affichée. Elle passe au
      même rang que la carte d'impédance et pour la même raison — les deux
      jugent le tracé —, et jamais en même temps qu'elle : `simDCActif()` exige

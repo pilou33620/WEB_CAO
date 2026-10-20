@@ -1431,271 +1431,44 @@ function simProjSegmentSurPiste(tSource, u1, u2, tCible){
 
 /* `simLotsSontPaireDiff` vit dans ../commun/simulation-em.js, partagé avec la
    visionneuse : la copie qui se tenait ici en était l'exact double. */
-var simZDrawnLabels = new Set();
-function simZTrace(c){
-  if(typeof simCarteActive!=="function"||!simCarteActive())return;
-  if(typeof simZDrawnLabels!=="undefined"&&simZDrawnLabels.clear)simZDrawnLabels.clear();
-  if(typeof SIM_Z_CARTOUCHES!=="undefined")SIM_Z_CARTOUCHES.length=0;
-  /* Le cuivre de TOUS les lots d'abord, les étiquettes ensuite : peintes lot
-     par lot, celles d'une paire différentielle passaient sous la piste
-     partenaire, peinte après elles. Chaque passe dans simPourChaqueLot : c'est
-     lui qui met SIM.objets / SIM.res du lot en place, et les remet en sortant. */
-  if(typeof simPourChaqueLot!=="function"){
-    simZTraceLot(c,null);simZValeurs(c,null);simZNumeroLot(c,null);return;
-  }
-  simPourChaqueLot(function(lot){simZTraceLot(c,lot);});
-  simPourChaqueLot(function(lot){simZValeurs(c,lot);simZNumeroLot(c,lot);});
+/* Le cuivre d'un objet envoyé, pour le peintre de la carte d'impédance
+   (`simZTraceLot`, commun) : la page est en millimètres, un objet est un
+   morceau [u1, u2] d'une piste ou d'un arc. */
+function simZTraitPcb(o){
+  if(!o.trk)return null;
+  return {w:o.trk.w, net:o.trk.net||"",
+          tracer:function(c){c.beginPath();simSousChemin(c,o.trk,o.u1,o.u2);c.stroke();},
+          milieu:trkAt(o.trk,(o.u1+o.u2)/2), debut:trkAt(o.trk,o.u1)};
 }
-
-function simZTraceLot(c,lot){
-  const n=SIM.objets.length;
-  const quoi=typeof simCarteQuoi==="function"?simCarteQuoi():"";
-  c.save();
-  c.lineCap="round"; c.lineJoin="round";
-
-  // En mode Z différentielle, on repère aussi les tronçons de la piste partenaire
-  const passesDiff=[];
-  if(quoi==="zdiff"){
-    const netGlobal=typeof simCarteDiffPartenaire==="function"?(simCarteDiffPartenaire()||{}).net:"";
-    for(let i=0;i<n;i++){
-      const s=simCarteSegment(i);
-      if(!s||!s.obj||!s.obj.trk)continue;
-      let netVoisin=(s.chaleur&&s.chaleur.z_diff_net)||"";
-      if(!netVoisin&&typeof SIM!=="undefined"&&SIM.lots&&SIM.lots.length>=2){
-        const curNet=(lot&&lot.net)||(SIM.res&&SIM.res.net)||(s.obj.trk&&s.obj.trk.net)||"";
-        const alt=SIM.lots.find(l=>l&&l!==lot&&l.net&&l.net!==curNet);
-        if(alt)netVoisin=alt.net;
-      }
-      if(!netVoisin)netVoisin=netGlobal;
-      if(!netVoisin)continue;
-      const cands=(S.tracks||[]).filter(t=>t.l===s.obj.trk.l&&t.net===netVoisin&&t!==s.obj.trk);
-      for(const vt of cands){
-        const proj=simProjSegmentSurPiste(s.obj.trk, s.obj.u1, s.obj.u2, vt);
-        if(proj){
-          passesDiff.push({s, vt, u1:proj.u1, u2:proj.u2});
-        }
-      }
-    }
+/* Les morceaux de la piste partenaire, sur la même couche, en regard du trait. */
+function simZPartenairesPcb(t,net){
+  const o=t.obj, out=[];
+  for(const vt of (S.tracks||[])){
+    if(vt.l!==o.trk.l||vt.net!==net||vt===o.trk)continue;
+    const pr=simProjSegmentSurPiste(o.trk,o.u1,o.u2,vt);
+    if(pr)out.push({w:vt.w,
+                    tracer:function(c){c.beginPath();simSousChemin(c,vt,pr.u1,pr.u2);c.stroke();}});
   }
-
-  const passe=(alpha,largeur)=>{
-    for(let i=0;i<n;i++){
-      const s=simCarteSegment(i);
-      if(!s||!s.obj||!s.obj.trk)continue;
-      c.strokeStyle=s.couleur(alpha);
-      c.lineWidth=largeur(s.obj.trk);
-      c.beginPath();
-      simSousChemin(c,s.obj.trk,s.obj.u1,s.obj.u2);
-      c.stroke();
-    }
-    // Surbrillance synchronisée de la piste partenaire couplée
-    for(const pd of passesDiff){
-      c.strokeStyle=pd.s.couleur(alpha);
-      c.lineWidth=largeur(pd.vt);
-      c.beginPath();
-      simSousChemin(c,pd.vt,pd.u1,pd.u2);
-      c.stroke();
-    }
-  };
-  passe(0.30, t=>t.w+px(7));
-  passe(0.95, t=>Math.max(t.w,px(2.5)));
-  passe(1.00, ()=>px(2));
-
-  c.restore();
+  return out;
 }
-
-
-/* LE NUMÉRO DU LOT, POSÉ SUR SON CUIVRE. Le tableau du panneau parle de
-   « lot 3 » ; sans ce jeton, rien sur la carte ne dit lequel c'est, et il
-   faudrait déplier les quatre fiches pour retrouver le morceau qui sort de la
-   bande. Il ne paraît que s'il y a plus d'un lot, et au DÉBUT du parcours : le
-   milieu porte déjà l'étiquette d'impédance, et deux cartouches au même endroit
-   se recouvrent. */
-function simZNumeroLot(c,lot){
-  if(!lot||!lot.rang)return;
-  if(typeof simLotsMultiples!=="function"||!simLotsMultiples())return;
-  if(simLotsSontPaireDiff())return; // Deux moitiés d'une même paire : ne pas polluer avec (1) et (2)
-  const s=simCarteSegment(0);
-  if(!s||!s.obj||!s.obj.trk)return;
-  const p=trkAt(s.obj.trk,s.obj.u1), e=w2s(p.x,p.y);
-  c.save();
-  c.setTransform(1,0,0,1,0,0);
-  const dpr=window.devicePixelRatio||1;
-  c.scale(dpr,dpr);
-  c.font="700 10px "+
-    "\"JetBrains Mono\",\"SF Mono\",Consolas,\"Roboto Mono\",monospace";
-  c.textAlign="center"; c.textBaseline="middle";
-  c.beginPath();
-  c.arc(e.x,e.y,9,0,2*Math.PI);
-  c.fillStyle="rgba(15,16,18,0.9)"; c.fill();
-  c.strokeStyle=s.couleur(1); c.lineWidth=1.4; c.stroke();
-  c.fillStyle="#e6e8ec";
-  c.fillText(String(lot.rang),e.x,e.y+0.5);
-  c.restore();
-}
-
-/* Les valeurs écrites sur la piste.
-   Une étiquette par IMPÉDANCE DISTINCTE, et non par tronçon : une piste de
-   cinquante segments de même largeur sur la même couche a une seule impédance,
-   et cinquante fois « 48,0 Ω » empilés au même endroit ne se lisent pas. On
-   pose donc l'étiquette au milieu du plus long tronçon de chaque valeur.
-
-   Le texte est tracé en pixels écran, pas en unités monde : une étiquette qui
-   grossit avec le zoom finit par couvrir la carte, et elle doit rester lisible
-   quand on dézoome pour voir la liaison entière. */
-function simZValeurs(c,lot){
-  const n=SIM.objets.length;
-  const quoi=typeof simCarteQuoi==="function"?simCarteQuoi():"";
-  const parValeur=new Map();
-  for(let i=0;i<n;i++){
-    const s=simCarteSegment(i);
-    if(!s||!s.obj||!s.obj.trk||!s.texte)continue;
-    /* UNE ÉTIQUETTE PAR VALEUR AFFICHÉE, et non par tronçon : c'est le TEXTE
-       qui groupe, si bien que la règle vaut pour les ohms comme pour les
-       pourcentages, sans que ce fichier ait à savoir lequel des deux il pose. */
-    const lg=(s.seg&&s.seg.longueur)||0;
-    const p=parValeur.get(s.texte);
-    if(!p||lg>p.lg)
-      parValeur.set(s.texte,{lg:lg, valeur:s.valeur, texte:s.texte,
-                             couleur:s.couleur, obj:s.obj, chaleur:s.chaleur});
+/* Le point de la piste partenaire le plus proche du milieu du trait — celles
+   de l'autre lot, puis celles du net partenaire sur la même couche —, à 4 mm
+   au plus. */
+function simZProchePcb(t,net,altLot){
+  const o=t.obj, p1=t.milieu, cands=[];
+  if(altLot&&altLot.objets)
+    for(const ao of altLot.objets)
+      if(ao&&ao.trk&&ao.trk!==o.trk&&!cands.includes(ao.trk))cands.push(ao.trk);
+  if(net&&typeof S!=="undefined"&&S.tracks)
+    for(const x of S.tracks)
+      if(x.net===net&&x.l===o.trk.l&&x!==o.trk&&!cands.includes(x))cands.push(x);
+  let best=null, bestD=Infinity;
+  for(const cand of cands){
+    const q=projOnSeg(p1.x,p1.y,cand);
+    const d=dist(p1.x,p1.y,q.x,q.y);
+    if(d<=4.0&&d<bestD){bestD=d;best=q;}
   }
-  if(!parValeur.size)return;
-  const retenues=simCarteRetenir(parValeur);
-
-  c.save();
-  c.setTransform(1,0,0,1,0,0);
-  const dpr=window.devicePixelRatio||1;
-  c.scale(dpr,dpr);
-  c.font="600 11px "+
-    "\"JetBrains Mono\",\"SF Mono\",Consolas,\"Roboto Mono\",monospace";
-  c.textAlign="center"; c.textBaseline="middle";
-
-  for(const v of retenues){
-    const u=(v.obj.u1+v.obj.u2)/2;
-    const p1=trkAt(v.obj.trk,u);
-    let p2=null;
-    let e1=w2s(p1.x,p1.y);
-    let e2=null;
-    let e=e1;
-
-    if(quoi==="zdiff"){
-      let netVoisin=(v.chaleur&&v.chaleur.z_diff_net)||"";
-      let altLot=null;
-      if(typeof SIM!=="undefined"&&SIM.lots&&SIM.lots.length>=2){
-        const curNet=(lot&&lot.net)||(SIM.res&&SIM.res.net)||(v.obj&&v.obj.trk&&v.obj.trk.net)||"";
-        altLot=SIM.lots.find(l=>l&&l!==lot&&l.net&&l.net!==curNet);
-        if(!netVoisin&&altLot)netVoisin=altLot.net;
-      }
-      if(!netVoisin&&typeof simCarteDiffPartenaire==="function"){
-        netVoisin=(simCarteDiffPartenaire()||{}).net||"";
-      }
-
-      // Collecter toutes les pistes candidates du partenaire sur la même couche
-      const cands=[];
-      const couche=(v.obj&&v.obj.trk)?v.obj.trk.l:null;
-      if(altLot&&altLot.objets){
-        for(const ao of altLot.objets){
-          if(ao&&ao.trk&&ao.trk!==v.obj.trk){
-            if(!cands.includes(ao.trk))cands.push(ao.trk);
-          }
-        }
-      }
-      if(netVoisin&&typeof S!=="undefined"&&S.tracks){
-        for(const t of S.tracks){
-          if(t.net===netVoisin&&(couche===null||t.l===couche)&&t!==v.obj.trk){
-            if(!cands.includes(t))cands.push(t);
-          }
-        }
-      }
-
-      // Projeter p1 sur tous les candidats pour trouver le point perpendiculaire le plus proche
-      let bestP2=null, bestD=Infinity;
-      for(const cand of cands){
-        const q=projOnSeg(p1.x,p1.y,cand);
-        const d=dist(p1.x,p1.y,q.x,q.y);
-        if(d<=4.0&&d<bestD){
-          bestD=d;
-          bestP2=q;
-        }
-      }
-
-      if(bestP2){
-        p2=bestP2;
-        e2=w2s(p2.x,p2.y);
-        e={x:(e1.x+e2.x)/2, y:(e1.y+e2.y)/2};
-      }
-    }
-
-    // Déduplication : si deux lots calculent la même étiquette de paire, on ne la dessine qu'une fois
-    const isDiffPair=typeof simLotsSontPaireDiff==="function"&&simLotsSontPaireDiff();
-    const labelKey=isDiffPair
-      ? ("diff_"+v.texte)
-      : (v.texte+"_"+Math.round(e.x/8)+"_"+Math.round(e.y/8));
-    if(simZDrawnLabels.has(labelKey))continue;
-    simZDrawnLabels.add(labelKey);
-
-    const txt=v.texte;
-    const w=c.measureText(txt).width+14;
-    const h=19;
-
-    // Repère de couplage / accolade entre les deux pistes
-    if(e2){
-      const dx=e2.x-e1.x, dy=e2.y-e1.y;
-      const d=Math.hypot(dx,dy);
-      if(d>1){
-        const tx=-dy/d, ty=dx/d;
-        const tk=4.5;
-
-        c.save();
-        c.strokeStyle=v.couleur(0.7);
-        c.lineWidth=1.2;
-
-        // 1. Ligne de liaison entre les 2 pistes (en pointillés discrets)
-        c.beginPath();
-        c.setLineDash([2,2]);
-        c.moveTo(e1.x,e1.y);
-        c.lineTo(e2.x,e2.y);
-        c.stroke();
-        c.setLineDash([]);
-
-        // 2. Ticks perpendiculaires sur chaque piste
-        c.beginPath();
-        c.moveTo(e1.x-tx*tk, e1.y-ty*tk);
-        c.lineTo(e1.x+tx*tk, e1.y+ty*tk);
-        c.moveTo(e2.x-tx*tk, e2.y-ty*tk);
-        c.lineTo(e2.x+tx*tk, e2.y+ty*tk);
-        c.stroke();
-
-        // 3. Petits points de contact sur le cuivre
-        c.fillStyle=v.couleur(1);
-        c.beginPath();
-        c.arc(e1.x,e1.y,2.2,0,2*Math.PI);
-        c.arc(e2.x,e2.y,2.2,0,2*Math.PI);
-        c.fill();
-
-        c.restore();
-      }
-    }
-
-    /* Décalé s'il en chevauche un autre, relié alors à son point par un trait */
-    const yLibre=simZPlaceLibre(e.x,e.y,w,h);
-    if(yLibre!==e.y){
-      c.strokeStyle=v.couleur(0.8);c.lineWidth=1;
-      c.beginPath();c.moveTo(e.x,e.y);c.lineTo(e.x,yLibre+(yLibre>e.y?-h/2:h/2));c.stroke();
-      e={x:e.x,y:yLibre};
-    }
-    /* Un cartouche sombre sous le texte */
-    c.fillStyle="rgba(15,16,18,0.88)";
-    c.beginPath();
-    if(c.roundRect)c.roundRect(e.x-w/2,e.y-h/2,w,h,4);
-    else c.rect(e.x-w/2,e.y-h/2,w,h);
-    c.fill();
-    c.strokeStyle=v.couleur(1); c.lineWidth=1.3;
-    c.stroke();
-    c.fillStyle="#e6e8ec";
-    c.fillText(txt,e.x,e.y+0.5);
-  }
-  c.restore();
+  return best;
 }
 
 
@@ -4333,6 +4106,14 @@ const SIM_PCB={
     nus:simXtNus,
     nom:function(i){ return cuLabel(i,S.cu); },
     image:simXtImagePlans
+  },
+  /* Le cuivre de la carte d'impédance, pour `simZTraceLot` (commun) : le
+     canevas est déjà dans le repère du monde, en millimètres. */
+  z:{
+    monde:function(){ return px(1); },
+    trait:simZTraitPcb,
+    partenaires:simZPartenairesPcb,
+    proche:simZProchePcb
   },
   /* Révision de la carte : avance à chaque modification (touch). Les résultats
      de toute la carte la retiennent et partent quand elle change. */

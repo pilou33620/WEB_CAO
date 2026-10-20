@@ -302,7 +302,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simZDiffCouleur","simZDiffTolAbs","simZDiffVerdict",
   "simCarteDiffPartenaire","simCarteDiffLegende",
   "simTrackU","simPistePartenaire","simProjSegmentSurPiste","simLotsSontPaireDiff",
-  "simZValeurs","simZDrawnLabels",
+  "simZValeurs","simZDrawnLabels","simZTraceLot","simZTrace",
   /* Le voile : ce qui n'est pas dans la simulation s'estompe. */
   "simVoileActif","SIM_VOILE_ALPHA",
   /* Choisir sa paire a la main plutot que de la laisser deviner. */
@@ -19624,7 +19624,11 @@ T("simulation EM - Z Différentielle : projection géométrique, piste partenair
   SIM.objets = lotP.objets;
   SIM.res = lotP.res;
 
-  simZValeurs(canvasEd, lotP);
+  /* Les traits viennent du peintre du cuivre (commun), comme dans simZTrace ;
+     son propre tracé ne compte pas dans ce qui suit. */
+  const traitsP = simZTraceLot(canvasEd, 1, lotP);
+  canvasEd.traits.length = 0; canvasEd.cercles.length = 0;
+  simZValeurs(canvasEd, 1, traitsP, lotP);
 
   if (canvasEd.txt.length !== 1 || canvasEd.txt[0].s !== "100,0 Ω") {
     throw new Error("Badge '100,0 Ω' attendu, obtenu: " + JSON.stringify(canvasEd.txt));
@@ -19644,9 +19648,21 @@ T("simulation EM - Z Différentielle : projection géométrique, piste partenair
   // Second lot: déduplication
   SIM.objets = lotN.objets;
   SIM.res = lotN.res;
-  simZValeurs(canvasEd, lotN);
+  simZValeurs(canvasEd, 1, simZTraceLot(canvasEd, 1, lotN), lotN);
   if (canvasEd.txt.length !== 1) {
     throw new Error("Le second lot ne doit pas dupliquer le badge");
+  }
+
+  /* LE PEINTRE ENTIER (commun/simulation-em.js, crochets SIM_PCB.z) : le cuivre
+     des deux lots et celui de la piste partenaire, puis UNE étiquette de paire,
+     sans numéro de lot (deux moitiés d'une même paire). */
+  canvasEd.traits.length = 0; canvasEd.txt.length = 0; canvasEd.cercles.length = 0;
+  simZTrace(canvasEd, 1);
+  if (canvasEd.traits.length < 12) {
+    throw new Error("Trois passes de cuivre par lot, piste partenaire comprise, attendues : " + canvasEd.traits.length);
+  }
+  if (canvasEd.txt.length !== 1 || canvasEd.txt[0].s !== "100,0 Ω") {
+    throw new Error("Une seule étiquette de paire attendue, obtenu : " + JSON.stringify(canvasEd.txt));
   }
 
   SIM.analyse = "impedance";

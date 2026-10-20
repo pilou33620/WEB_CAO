@@ -149,7 +149,7 @@ const EXPOSE=["ECRITURE_CAO","simDsChamp","simDsLire","simDsEcrire","SIM_DS","SI
   "simZDiffCouleur","simZDiffTolAbs","simZDiffVerdict",
   "simCarteDiffPartenaire","simCarteDiffLegende",
   "simPistePartenaireIpc","simProjSegmentSurPisteIpc","simLotsSontPaireDiff",
-  "simZValeurs","simZDrawnLabelsIpc",
+  "simZValeurs","simZDrawnLabels","simZTrace",
   /* Le voile : ce qui n'est pas dans la simulation s'estompe. */
   "simVoileActif","SIM_VOILE_ALPHA",
   /* Choisir sa paire a la main plutot que de la laisser deviner. */
@@ -4034,19 +4034,21 @@ T("simulation EM IPC-2581 - Z Différentielle : projection géométrique, piste 
   global.w2s = (x, y) => ({ x: x, y: y });
 
   const tDiff = toileMouchard();
-  simZDrawnLabelsIpc.clear();
+  simZDrawnLabels.clear();
 
   // On simule une échelle écran normale (10 px / unité monde)
   global.w2s = (x, y) => ({ x: x * 10, y: y * 10 });
 
-  const traitsLot1 = [{
+  /* Le trait tel que la page le rend (SIM_IPC.z.trait), avec ce que le
+     segment de la carte y ajoute. */
+  const traitsLot1 = [Object.assign(SIM_IPC.z.trait(lot1.objets[0]), {
     texte: "97,5 Ω",
     valeur: 97.5,
     couleur: () => "#00ffff",
     obj: lot1.objets[0],
     seg: { longueur: 20 },
     chaleur: { z_diff: 97.5, z_diff_net: "DIFF_N" }
-  }];
+  })];
 
   simZValeurs(tDiff.ctx, 1, traitsLot1, lot1);
 
@@ -4067,17 +4069,36 @@ T("simulation EM IPC-2581 - Z Différentielle : projection géométrique, piste 
   }
 
   // Déduplication : l'appel pour le deuxième lot ne doit pas ajouter de badge doublon
-  const traitsLot2 = [{
+  const traitsLot2 = [Object.assign(SIM_IPC.z.trait(lot2.objets[1]), {
     texte: "97,5 Ω",
     valeur: 97.5,
     couleur: () => "#00ffff",
     obj: lot2.objets[1],
     seg: { longueur: 14 },
     chaleur: { z_diff: 97.5, z_diff_net: "DIFF_P" }
-  }];
+  })];
   simZValeurs(tDiff.ctx, 1, traitsLot2, lot2);
   if (tDiff.txt.length !== 1) {
     throw new Error("L'étiquette de paire différentielle ne doit pas être dupliquée pour le second lot");
+  }
+
+  /* LE PEINTRE ENTIER (commun/simulation-em.js, crochets SIM_IPC.z) : chaque
+     lot peint son cuivre en trois passes, la piste partenaire avec, puis UNE
+     étiquette de paire. Les tracés de la visionneuse sont des Path2D. */
+  lot1.res.segments = [{ longueur: 20 }];
+  lot2.res.segments = [{ longueur: 6 }, { longueur: 14 }];
+  const tTout = toileMouchard();
+  let chemins = 0;
+  tTout.ctx.stroke = p => { if (p) chemins++; };
+  const ouvert = SIM.ouvert, vraiPoser = global.poserMonde;
+  SIM.ouvert = true; global.poserMonde = function(){};
+  try { simZTrace(tTout.ctx, 1); }
+  finally { SIM.ouvert = ouvert; global.poserMonde = vraiPoser; }
+  if (chemins < 9 + 6) {
+    throw new Error("Trois passes de cuivre par plage, piste partenaire comprise, attendues : " + chemins);
+  }
+  if (tTout.txt.length !== 1 || tTout.txt[0].s !== "97,5 Ω") {
+    throw new Error("Une seule étiquette de paire attendue, obtenu : " + JSON.stringify(tTout.txt));
   }
 
   global.simCarteQuoi = oldCarteQuoi;

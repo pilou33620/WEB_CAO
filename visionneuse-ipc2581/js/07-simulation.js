@@ -2450,8 +2450,6 @@ function simSousPoly(p,cum,u1,u2){
 /* TROIS ANALYSES PEIGNENT CE CUIVRE, ET PAS LA MÊME GRANDEUR — voir
    `simCarteSegment` dans commun/simulation-em.js : ce fichier ne sait plus ce
    qu'il peint, il sait seulement où. */
-var simZDrawnLabelsIpc=new Set();
-
 /* Liste de tous les tronçons et arcs du net partenaire sur une couche donnée. */
 function simCandidatsPartenaireIpc(netVoisinNom, couche){
   if(!netVoisinNom||typeof V==="undefined"||!V.parNet)return [];
@@ -2516,79 +2514,80 @@ function simProjSegmentSurPisteIpc(pSource, cumSource, u1, u2, pCible, cumCible)
   return {u1:minU, u2:maxU, q1, q2, p1:{x:pr1.x,y:pr1.y}, p2:{x:pr2.x,y:pr2.y}};
 }
 
-function simZTrace(c,dpr){
-  if(typeof simCarteActive!=="function"||!simCarteActive())return;
-  if(typeof simZDrawnLabelsIpc!=="undefined"&&simZDrawnLabelsIpc.clear)simZDrawnLabelsIpc.clear();
-  SIM_Z_CARTOUCHES.length=0;
-  /* Le cuivre de TOUS les lots d'abord, les étiquettes ensuite, comme dans
-     l'éditeur : peintes lot par lot, celles d'une paire différentielle
-     passaient sous la piste partenaire, peinte après elles. Chaque passe dans
-     simPourChaqueLot : c'est lui qui met SIM.objets / SIM.res du lot en place. */
-  if(typeof simPourChaqueLot!=="function"){
-    const t=simZTraceLot(c,dpr,null);simZValeurs(c,dpr,t,null);simZNumeroLot(c,dpr,null,t);return;
-  }
-  const traits=[];
-  simPourChaqueLot(function(lot){traits.push(simZTraceLot(c,dpr,lot));});
-  let i=0;
-  simPourChaqueLot(function(lot){const t=traits[i++];simZValeurs(c,dpr,t,lot);simZNumeroLot(c,dpr,lot,t);});
+/* Le cuivre d'un objet envoyé, pour le peintre de la carte d'impédance
+   (`simZTraceLot`, commun) : un objet est une plage [u1, u2] d'une polyligne,
+   en unités du fichier. */
+function simZTraitIpc(o){
+  if(!o.piste||!o.piste.p)return null;
+  const chemin=simSousPoly(o.piste.p,o.cum,o.u1,o.u2);
+  return {w:o.piste.w||0, net:(o.piste.n>=0&&mdlNetNom(o.piste.n))||"",
+          tracer:function(c){c.stroke(chemin);},
+          milieu:simSurPoly(o.piste.p,o.cum,(o.u1+o.u2)/2),
+          debut:simSurPoly(o.piste.p,o.cum,o.u1)};
 }
-
-function simZTraceLot(c,dpr,lot){
-  poserMonde(c,dpr);
-  const px=1/V.vue.scale;                    // un pixel écran, en unités monde
-  c.lineCap="round"; c.lineJoin="round";
-  const quoi=typeof simCarteQuoi==="function"?simCarteQuoi():"";
-
-  const traits=[];
-  for(let i=0;i<SIM.objets.length;i++){
-    const s=simCarteSegment(i);
-    if(!s||!s.obj||!s.obj.piste||!s.obj.piste.p)continue;
-    const o=s.obj;
-    traits.push({chemin:simSousPoly(o.piste.p,o.cum,o.u1,o.u2),
-                 w:o.piste.w||0, valeur:s.valeur, texte:s.texte,
-                 couleur:s.couleur, obj:o, seg:s.seg, chaleur:s.chaleur});
+/* Les plages de la piste partenaire, sur la même couche, en regard du trait. */
+function simZPartenairesIpc(t,net){
+  const o=t.obj, out=[];
+  const couche=(o.piste.c!=null)?o.piste.c:(o.coucheIdx!=null?o.coucheIdx:-1);
+  for(const vt of simCandidatsPartenaireIpc(net,couche)){
+    if(vt===o.piste)continue;
+    const vtCum=vt._cum||(vt._cum=simCumul(vt.p));
+    const proj=simProjSegmentSurPisteIpc(o.piste,o.cum,o.u1,o.u2,vt,vtCum);
+    if(!proj)continue;
+    const chemin=simSousPoly(vt.p,vtCum,proj.u1,proj.u2);
+    out.push({w:vt.w||0, tracer:function(c){c.stroke(chemin);}});
   }
-
-  // En mode Z différentielle, on repère aussi les tronçons de la piste partenaire
-  const passesDiff=[];
-  if(quoi==="zdiff"){
-    const netGlobal=typeof simCarteDiffPartenaire==="function"?(simCarteDiffPartenaire()||{}).net:"";
-    for(let i=0;i<SIM.objets.length;i++){
-      const s=simCarteSegment(i);
-      if(!s||!s.obj||!s.obj.piste||!s.obj.piste.p)continue;
-      let netVoisin=(s.chaleur&&s.chaleur.z_diff_net)||"";
-      if(!netVoisin&&typeof SIM!=="undefined"&&SIM.lots&&SIM.lots.length>=2){
-        const curNet=(lot&&lot.net)||(SIM.res&&SIM.res.net)||(s.obj&&s.obj.piste&&s.obj.piste.n>=0&&mdlNetNom(s.obj.piste.n))||"";
-        const alt=SIM.lots.find(l=>l&&l!==lot&&l.net&&l.net!==curNet);
-        if(alt)netVoisin=alt.net;
+  return out;
+}
+/* Le point de la piste partenaire le plus proche du milieu du trait — celles
+   de l'autre lot, puis les pistes et les arcs du net partenaire sur la même
+   couche —, à 4 mm au plus. */
+function simZProcheIpc(t,net,altLot){
+  const o=t.obj, m1=t.milieu, cands=[];
+  const couche=(o.piste&&o.piste.c!=null)?o.piste.c:(o.coucheIdx!=null?o.coucheIdx:-1);
+  if(altLot&&altLot.objets){
+    for(const ao of altLot.objets){
+      if(ao&&ao.piste&&ao.piste.p&&ao.piste.p.length>=4&&ao.piste!==o.piste){
+        if(!cands.includes(ao.piste))cands.push(ao.piste);
       }
-      if(!netVoisin)netVoisin=netGlobal;
-      if(!netVoisin)continue;
-      const couche=(s.obj.piste.c!=null)?s.obj.piste.c:(s.obj.coucheIdx!=null?s.obj.coucheIdx:-1);
-      const cands=simCandidatsPartenaireIpc(netVoisin, couche);
-      for(const vt of cands){
-        if(vt===s.obj.piste)continue;
-        const vtCum=vt._cum||(vt._cum=simCumul(vt.p));
-        const proj=simProjSegmentSurPisteIpc(s.obj.piste, s.obj.cum, s.obj.u1, s.obj.u2, vt, vtCum);
-        if(proj){
-          passesDiff.push({
-            chemin:simSousPoly(vt.p, vtCum, proj.u1, proj.u2),
-            w:vt.w||0,
-            couleur:s.couleur
-          });
+    }
+  }
+  if(net&&typeof V!=="undefined"&&V.parNet){
+    const n=V.parNet.find(x=>x&&x.nom===net);
+    if(n&&n.pistes){
+      for(const p of n.pistes){
+        if((couche<0||p.c===couche)&&p.p&&p.p.length>=4&&p!==o.piste){
+          if(!cands.includes(p))cands.push(p);
+        }
+      }
+    }
+    if(n&&n.arcs){
+      for(const a of n.arcs){
+        if(couche<0||a.c===couche){
+          const pts=simArcEnPolyligne(a);
+          if(pts&&pts.length>=4)cands.push({c:a.c, n:a.n, w:a.w, p:pts, arc:a});
         }
       }
     }
   }
-
-  /* LE PLAN DU MÊME NET QUI A ÉLARGI LA SECTION se peint à sa couleur : c'est
-     son cuivre que le calcul a pris (`simLargeurSienne`), et le laisser gris
-     ferait croire qu'il n'y est pas.
-     ponytail: un plan traversé par plusieurs tronçons prend la couleur du
-     dernier peint ; le découper par tronçon si cela se met à compter. */
+  const k=typeof simKUnite==="function"?simKUnite():1;
+  let best=null, bestD=Infinity;
+  for(const cand of cands){
+    const candCum=cand._cum||(cand._cum=simCumul(cand.p));
+    const pr=simProjPoly(cand.p,candCum,m1.x,m1.y);
+    if(pr&&pr.d*k<=4.0&&pr.d<bestD){bestD=pr.d;best=pr;}
+  }
+  return best;
+}
+/* LE PLAN DU MÊME NET QUI A ÉLARGI LA SECTION se peint à sa couleur, sous le
+   cuivre : c'est son cuivre que le calcul a pris (`simLargeurSienne`), et le
+   laisser gris ferait croire qu'il n'y est pas.
+   ponytail: un plan traversé par plusieurs tronçons prend la couleur du
+   dernier peint ; le découper par tronçon si cela se met à compter. */
+function simZPlansElargisIpc(c,traits){
   for(const t of traits){
     if(!t.obj.elargi)continue;
-    const o=t.obj, m=simSurPoly(o.piste.p,o.cum,(o.u1+o.u2)/2);
+    const o=t.obj, m=t.milieu;
     const N=(o.piste.n>=0)?V.parNet[o.piste.n]:null;
     for(const pl of (N?N.plans:[])){
       if(pl.c!==o.coucheIdx)continue;
@@ -2604,57 +2603,6 @@ function simZTraceLot(c,dpr,lot){
       }
     }
   }
-
-  for(const t of traits){
-    c.strokeStyle=t.couleur(0.30);
-    c.lineWidth=t.w+px*7; c.stroke(t.chemin);
-  }
-  for(const pd of passesDiff){
-    c.strokeStyle=pd.couleur(0.30);
-    c.lineWidth=pd.w+px*7; c.stroke(pd.chemin);
-  }
-
-  for(const t of traits){
-    c.strokeStyle=t.couleur(0.95);
-    c.lineWidth=Math.max(t.w,px*2.5); c.stroke(t.chemin);
-  }
-  for(const pd of passesDiff){
-    c.strokeStyle=pd.couleur(0.95);
-    c.lineWidth=Math.max(pd.w,px*2.5); c.stroke(pd.chemin);
-  }
-
-  for(const t of traits){
-    c.strokeStyle=t.couleur(1);
-    c.lineWidth=px*2; c.stroke(t.chemin);
-  }
-  for(const pd of passesDiff){
-    c.strokeStyle=pd.couleur(1);
-    c.lineWidth=px*2; c.stroke(pd.chemin);
-  }
-
-  return traits;
-}
-
-function simZNumeroLot(c,dpr,lot,traits){
-  if(!lot||!lot.rang||!traits.length)return;
-  if(typeof simLotsMultiples!=="function"||!simLotsMultiples())return;
-  if(typeof simLotsSontPaireDiff==="function"&&simLotsSontPaireDiff())return; // Deux moitiés d'une même paire : ne pas polluer avec (1) et (2)
-  const o=traits[0].obj;
-  if(!o||!o.piste||!o.piste.p)return;
-  const m=simSurPoly(o.piste.p,o.cum,o.u1);
-  const e=w2s(m.x,m.y);
-  c.save();
-  c.setTransform(1,0,0,1,0,0);
-  c.scale(dpr,dpr);
-  c.font="700 10px \"JetBrains Mono\",\"SF Mono\",Consolas,monospace";
-  c.textAlign="center"; c.textBaseline="middle";
-  c.beginPath();
-  c.arc(e.x,e.y,9,0,2*Math.PI);
-  c.fillStyle="rgba(15,16,18,0.9)"; c.fill();
-  c.strokeStyle=traits[0].couleur(1); c.lineWidth=1.4; c.stroke();
-  c.fillStyle="#e6e8ec";
-  c.fillText(String(lot.rang),e.x,e.y+0.5);
-  c.restore();
 }
 
 
@@ -2985,181 +2933,6 @@ function simRetourClicIpc(wx,wy){
     }
   }
   return false;
-}
-
-/* Les valeurs écrites sur la piste.
-   Une étiquette par IMPÉDANCE DISTINCTE, et non par piste : un net de vingt
-   pistes de même largeur sur la même couche a une seule impédance, et vingt
-   fois « 61,1 Ω » empilés ne se lisent pas. On pose donc l'étiquette au milieu
-   de la plus longue piste de chaque valeur.
-
-   Le texte est tracé en pixels écran, pas en unités monde : une étiquette qui
-   grossit avec le zoom finit par couvrir la carte, et elle doit rester lisible
-   quand on dézoome pour voir la liaison entière. */
-function simZValeurs(c,dpr,traits,lot){
-  const quoi=typeof simCarteQuoi==="function"?simCarteQuoi():"";
-  const parValeur=new Map();
-  for(const t of traits){
-    if(!t.texte)continue;
-    /* UNE ÉTIQUETTE PAR VALEUR AFFICHÉE — c'est le TEXTE qui groupe, si bien
-       que la règle vaut pour les ohms comme pour les pourcentages. */
-    const lg=(t.seg&&t.seg.longueur)||0;
-    const p=parValeur.get(t.texte);
-    if(!p||lg>p.lg)
-      parValeur.set(t.texte,{lg:lg, valeur:t.valeur, texte:t.texte,
-                             couleur:t.couleur, obj:t.obj, chaleur:t.chaleur});
-  }
-  if(!parValeur.size)return;
-  const retenues=simCarteRetenir(parValeur);
-
-  c.save();
-  c.setTransform(1,0,0,1,0,0);
-  c.scale(dpr,dpr);
-  c.font="600 11px \"JetBrains Mono\",\"SF Mono\",Consolas,monospace";
-  c.textAlign="center"; c.textBaseline="middle";
-  for(const v of retenues){
-    /* Le milieu de la PLAGE, et non de la piste : une piste découpée en trois
-       plages porte trois étiquettes, et chacune doit tomber sur le morceau
-       qu'elle chiffre. Posée au sommet médian de la polyligne, comme avant,
-       elles se seraient toutes empilées au même endroit. */
-    const o=v.obj;
-    const m1=simSurPoly(o.piste.p,o.cum,(o.u1+o.u2)/2);
-    let e1=w2s(m1.x,m1.y);
-    let e2=null;
-    let e=e1;
-
-    if(quoi==="zdiff"){
-      let netVoisin=(v.chaleur&&v.chaleur.z_diff_net)||"";
-      let altLot=null;
-      if(typeof SIM!=="undefined"&&SIM.lots&&SIM.lots.length>=2){
-        const curNet=(lot&&lot.net)||(SIM.res&&SIM.res.net)||(o.piste&&o.piste.n>=0&&mdlNetNom(o.piste.n))||"";
-        altLot=SIM.lots.find(l=>l&&l!==lot&&l.net&&l.net!==curNet);
-        if(!netVoisin&&altLot)netVoisin=altLot.net;
-      }
-      if(!netVoisin&&typeof simCarteDiffPartenaire==="function"){
-        netVoisin=(simCarteDiffPartenaire()||{}).net||"";
-      }
-
-      // Collecter toutes les pistes candidates du partenaire sur la même couche
-      const cands=[];
-      const couche=(o.piste&&o.piste.c!=null)?o.piste.c:(o.coucheIdx!=null?o.coucheIdx:-1);
-      if(altLot&&altLot.objets){
-        for(const ao of altLot.objets){
-          if(ao&&ao.piste&&ao.piste.p&&ao.piste.p.length>=4&&ao.piste!==o.piste){
-            if(!cands.includes(ao.piste))cands.push(ao.piste);
-          }
-        }
-      }
-      if(netVoisin&&typeof V!=="undefined"&&V.parNet){
-        const n=V.parNet.find(x=>x&&x.nom===netVoisin);
-        if(n&&n.pistes){
-          for(const p of n.pistes){
-            if((couche<0||p.c===couche)&&p.p&&p.p.length>=4&&p!==o.piste){
-              if(!cands.includes(p))cands.push(p);
-            }
-          }
-        }
-        if(n&&n.arcs){
-          for(const a of n.arcs){
-            if(couche<0||a.c===couche){
-              const pts=simArcEnPolyligne(a);
-              if(pts&&pts.length>=4){
-                const ao={c:a.c, n:a.n, w:a.w, p:pts, arc:a};
-                cands.push(ao);
-              }
-            }
-          }
-        }
-      }
-
-      // Projeter m1 sur tous les candidats pour trouver le point perpendiculaire le plus proche
-      const k=typeof simKUnite==="function"?simKUnite():1;
-      let bestPr=null, bestD=Infinity;
-      for(const cand of cands){
-        const candCum=cand._cum||(cand._cum=simCumul(cand.p));
-        const pr=simProjPoly(cand.p,candCum,m1.x,m1.y);
-        if(pr&&pr.d*k<=4.0&&pr.d<bestD){
-          bestD=pr.d;
-          bestPr=pr;
-        }
-      }
-
-      if(bestPr){
-        e2=w2s(bestPr.x,bestPr.y);
-        e={x:(e1.x+e2.x)/2, y:(e1.y+e2.y)/2};
-      }
-    }
-
-    // Déduplication : si deux lots calculent la même étiquette de paire, on ne la dessine qu'une fois
-    const isDiffPair=typeof simLotsSontPaireDiff==="function"&&simLotsSontPaireDiff();
-    const labelKey=isDiffPair
-      ? ("diff_"+v.texte)
-      : (v.texte+"_"+Math.round(e.x/8)+"_"+Math.round(e.y/8));
-    if(simZDrawnLabelsIpc.has(labelKey))continue;
-    simZDrawnLabelsIpc.add(labelKey);
-
-    const txt=v.texte;
-    const w=c.measureText(txt).width+14;
-    const h=19;
-
-    // Repère de couplage / accolade entre les deux pistes
-    if(e2){
-      const dx=e2.x-e1.x, dy=e2.y-e1.y;
-      const d=Math.hypot(dx,dy);
-      if(d>1){
-        const tx=-dy/d, ty=dx/d;
-        const tk=4.5;
-
-        c.save();
-        c.strokeStyle=v.couleur(0.7);
-        c.lineWidth=1.2;
-
-        // 1. Ligne de liaison entre les 2 pistes (en pointillés discrets)
-        c.beginPath();
-        c.setLineDash([2,2]);
-        c.moveTo(e1.x,e1.y);
-        c.lineTo(e2.x,e2.y);
-        c.stroke();
-        c.setLineDash([]);
-
-        // 2. Ticks perpendiculaires sur chaque piste
-        c.beginPath();
-        c.moveTo(e1.x-tx*tk, e1.y-ty*tk);
-        c.lineTo(e1.x+tx*tk, e1.y+ty*tk);
-        c.moveTo(e2.x-tx*tk, e2.y-ty*tk);
-        c.lineTo(e2.x+tx*tk, e2.y+ty*tk);
-        c.stroke();
-
-        // 3. Petits points de contact sur le cuivre
-        c.fillStyle=v.couleur(1);
-        c.beginPath();
-        c.arc(e1.x,e1.y,2.2,0,2*Math.PI);
-        c.arc(e2.x,e2.y,2.2,0,2*Math.PI);
-        c.fill();
-
-        c.restore();
-      }
-    }
-
-    /* Décalé s'il en chevauche un autre, relié alors à son point par un trait */
-    const yLibre=simZPlaceLibre(e.x,e.y,w,h);
-    if(yLibre!==e.y){
-      c.strokeStyle=v.couleur(0.8);c.lineWidth=1;
-      c.beginPath();c.moveTo(e.x,e.y);c.lineTo(e.x,yLibre+(yLibre>e.y?-h/2:h/2));c.stroke();
-      e={x:e.x,y:yLibre};
-    }
-    /* Un cartouche sombre sous le texte */
-    c.fillStyle="rgba(15,16,18,0.88)";
-    c.beginPath();
-    if(c.roundRect)c.roundRect(e.x-w/2,e.y-h/2,w,h,4);
-    else c.rect(e.x-w/2,e.y-h/2,w,h);
-    c.fill();
-    c.strokeStyle=v.couleur(1); c.lineWidth=1.3;
-    c.stroke();
-    c.fillStyle="#e6e8ec";
-    c.fillText(txt,e.x,e.y+0.5);
-  }
-  c.restore();
 }
 
 /* ==========================================================================
@@ -4931,6 +4704,15 @@ const SIM_IPC={
     nus:simXtNusIpc,
     nom:function(c){ return simXtNomCoucheIpc(c); },
     image:simXtImagePlansIpc
+  },
+  /* Le cuivre de la carte d'impédance, pour `simZTraceLot` (commun) : le
+     monde est dans l'unité du fichier, posé par `poserMonde`. */
+  z:{
+    monde:function(c,dpr){ poserMonde(c,dpr); return 1/V.vue.scale; },
+    trait:simZTraitIpc,
+    partenaires:simZPartenairesIpc,
+    proche:simZProcheIpc,
+    avantTraits:simZPlansElargisIpc
   },
   /* Révision : la carte chargée elle-même (une autre carte, un autre objet). */
   revision:function(){ return V.modele; },
