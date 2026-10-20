@@ -100,8 +100,6 @@ Ce que les modules du MCP ont laissé ouvert côté WEB_CAO (détail dans
 - [ ] **Gestion LIB trop lourde sur le Pi** : environ 890 Mo au chargement (500 Mo ensuite), plus
   encore en rechargeant ou en ouvrant la galerie des 269 empreintes ; l'onglet a été tué par le
   noyau (OOM) pendant un essai. Mesurer ce qui coûte (table du catalogue, vignettes), puis alléger.
-- [ ] **Visionneuse : clic droit sans carte ouverte** → `TypeError` (`designer`, `04-interaction.js` :
-  `V.modele` nul, lecture de `percages`). Antérieur au retrait de l'assistant ; une garde suffit.
 - [ ] **Générateurs IPC-7351B** (`commun/composants-lib.js`) : les constantes des puces plus petites
   que 0603 (tableau 3-6) sont « à confirmer sur la norme » ; QFN, DIP et barrette n'ont pas de
   comparaison à une référence externe (seuls 0603, SOT-23-5 et SOIC-8 sont comparés à KiCad).
