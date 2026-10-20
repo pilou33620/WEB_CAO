@@ -787,7 +787,7 @@ if(bParcourirNouveau) {
           pDosMsg("Dossier parent « <b>" + esc(handle.name) + "</b> » sélectionné sur le support.");
         }
       } catch(err) {
-        if(err.name !== "AbortError") pDosMsg(err.message, true);
+        if(err.name !== "AbortError") pDosMsg(esc(err.message), true);
       }
     } else {
       if(inChemNouveau) inChemNouveau.focus();
@@ -831,7 +831,7 @@ if(bCreerNouveau) {
           if(inNomNouveau) inNomNouveau.value = "";
           pDosFait(etat);
         })
-        .catch(function(e) { pDosMsg(e.message, true); });
+        .catch(function(e) { pDosMsg(esc(e.message), true); });
       return;
     }
 
@@ -843,7 +843,7 @@ if(bCreerNouveau) {
           pDosFait(etat);
         })
         .catch(function(e) {
-          pDosMsg(e.message, true);
+          pDosMsg(esc(e.message), true);
         });
       return;
     }
@@ -859,7 +859,7 @@ if(bCreerNouveau) {
             pDosFait(etat);
           })
           .catch(function(e) {
-            pDosMsg(e.message, true);
+            pDosMsg(esc(e.message), true);
           });
         return;
       }
@@ -873,7 +873,7 @@ if(bCreerNouveau) {
           })
           .catch(function(e) {
             if(e && e.name === "AbortError") { pDosRendre(); return; }
-            pDosMsg(e.message, true);
+            pDosMsg(esc(e.message), true);
           });
         return;
       }
@@ -900,7 +900,7 @@ function pChoisirDossierExistant() {
   const rouvrir = projdAReconnecter();
   if(rouvrir) {
     pDosMsg("Réouverture de « " + esc(rouvrir) + " »…");
-    projdReconnecter().then(pDosFait).catch(function(e) { pDosMsg(e.message, true); });
+    projdReconnecter().then(pDosFait).catch(function(e) { pDosMsg(esc(e.message), true); });
     return;
   }
 
@@ -922,7 +922,7 @@ function pChoisirDossierExistant() {
                    "Voulez-vous l'initialiser comme nouveau projet nommé « " + d.nom + " » ?");
   }).then(pDosFait).catch(function(e) {
     if(e && e.name === "AbortError") { pDosRendre(); return; }
-    pDosMsg(e.message, true);
+    pDosMsg(esc(e.message), true);
   });
 }
 
@@ -1016,7 +1016,7 @@ function pDosFait(etat) {
 function pDosOuvrir(ou, racine) {
   pDosMsg("Ouverture de " + esc(ou) + "…");
   projdOuvrirServeur(ou, racine).then(pDosFait).catch(function(e) {
-    pDosMsg(e.message, true);
+    pDosMsg(esc(e.message), true);
   });
 }
 
@@ -1326,7 +1326,7 @@ async function libAppliquer(nouveauChemin, initialiser){
       throw new Error(data.detail || ("Erreur " + res.status));
     }
     libRendreEtat(data);
-    libMsg("✓ " + (data.message || "Bibliothèque mise à jour avec succès."));
+    libMsg("✓ " + esc(data.message || "Bibliothèque mise à jour avec succès."));
   } catch(err) {
     libMsg(err.message, true);
   }
@@ -1342,7 +1342,7 @@ async function libParcourir(){
           if(!champ.value || champ.value === handle.name){
             champ.value = handle.name;
           }
-          libMsg("Dossier « " + handle.name + " » sélectionné. S'il s'agit d'un lecteur ou dossier local, vous pouvez aussi taper ou coller son chemin absolu (ex: D:\\CAO\\LIB), puis cliquer sur « Appliquer ».");
+          libMsg("Dossier « " + esc(handle.name) + " » sélectionné. S'il s'agit d'un lecteur ou dossier local, vous pouvez aussi taper ou coller son chemin absolu (ex: D:\\CAO\\LIB), puis cliquer sur « Appliquer ».");
         }
       }
     } catch(err) {
