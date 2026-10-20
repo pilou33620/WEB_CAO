@@ -452,12 +452,11 @@ const asyncTests = (async () => {
   verifier(r.empreinte && r.empreinte.pads.length === 5, "lib_kicad_convertir");
 })();
 
-/* ---------- escapeHtml (04-ui.js) : protège ?nom= avant innerHTML dans l'éditeur ---------- */
+/* ---------- esc (commun/echappe.js) : protège ?nom= avant innerHTML dans l'éditeur ---------- */
 {
-  const src = lire("gestion-lib/js/04-ui.js").match(/function escapeHtml[\s\S]*?\n}/)[0];
-  const esc = vm.runInNewContext(src + ";escapeHtml");
-  verifier(esc(`<img src=x onerror="a('1')">&`) === "&lt;img src=x onerror=&quot;a(&#39;1&#39;)&quot;&gt;&amp;" && esc(null) === "",
-    "escapeHtml échappe < > & \" ' et rend vide pour null");
+  const esc = vm.runInNewContext(lire("commun/echappe.js") + ";esc");
+  verifier(esc(`<img src=x onerror="a('1')">&`) === "&lt;img src=x onerror=&quot;a(&#39;1&#39;)&quot;&gt;&amp;" && esc(null) === "" && esc(0) === "0",
+    "esc échappe < > & \" ' et rend vide pour null, « 0 » pour 0");
 }
 
 /* ---------- la LIB réelle passe les contrôles ---------- */

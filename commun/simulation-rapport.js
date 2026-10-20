@@ -515,13 +515,13 @@ function simRapCollecter(){
 function simRapSection(titre,note,corps){
   return '<div class="rap-sec"><div class="rap-sec-head">'+
     '<span class="rap-sec-titre">'+titre+'</span>'+
-    '<span class="rap-sec-note">'+simEsc(note||"")+'</span></div>'+corps+'</div>';
+    '<span class="rap-sec-note">'+esc(note||"")+'</span></div>'+corps+'</div>';
 }
 function simRapTable(entetes,lignes){
   return '<div class="rap-table-wrap"><table class="rap-table">'+
-    (entetes?'<thead><tr>'+entetes.map(t=>'<th>'+simEsc(t)+'</th>').join("")+'</tr></thead>':"")+
+    (entetes?'<thead><tr>'+entetes.map(t=>'<th>'+esc(t)+'</th>').join("")+'</tr></thead>':"")+
     '<tbody>'+lignes.map(l=>'<tr>'+l.map((c,i)=>
-      '<td'+(i?' class="mono"':'')+'>'+simEsc(c)+'</td>').join("")+'</tr>').join("")+
+      '<td'+(i?' class="mono"':'')+'>'+esc(c)+'</td>').join("")+'</tr>').join("")+
     '</tbody></table></div>';
 }
 
@@ -533,9 +533,9 @@ function simRapHtml(d){
     h+='<div class="rap-sec"><div class="rap-kpis">';
     for(const k of d.kpis)
       h+='<div class="rap-kpi '+(k.rang||"")+'">'+
-         '<span class="rap-kpi-lbl">'+simEsc(k.lbl)+'</span>'+
-         '<span class="rap-kpi-val">'+simEsc(k.val)+'</span>'+
-         (k.detail?'<span class="rap-kpi-detail">'+simEsc(k.detail)+'</span>':'')+
+         '<span class="rap-kpi-lbl">'+esc(k.lbl)+'</span>'+
+         '<span class="rap-kpi-val">'+esc(k.val)+'</span>'+
+         (k.detail?'<span class="rap-kpi-detail">'+esc(k.detail)+'</span>':'')+
          '</div>';
     h+='</div></div>';
   }
@@ -547,13 +547,13 @@ function simRapHtml(d){
       c+='<div class="rap-diag-item info"><div class="rap-diag-head">'+
          '<span class="rap-badge-statut info">INFO</span>'+
          '<span class="rap-diag-titre">Simulation non exécutée</span></div>'+
-         '<div class="rap-diag-desc">Aucun résultat pour « '+simEsc(d.analyse)+
+         '<div class="rap-diag-desc">Aucun résultat pour « '+esc(d.analyse)+
          ' ». Le rapport décrit ce qui est prêt à partir au calcul.</div></div>';
     for(const k of d.constats)
       c+='<div class="rap-diag-item '+k.rang+'"><div class="rap-diag-head">'+
          '<span class="rap-badge-statut '+k.rang+'">'+k.rang.toUpperCase()+'</span>'+
-         (k.titre?'<span class="rap-diag-titre">'+simEsc(k.titre)+'</span>':'')+
-         '</div>'+(k.desc?'<div class="rap-diag-desc">'+simEsc(k.desc)+'</div>':'')+'</div>';
+         (k.titre?'<span class="rap-diag-titre">'+esc(k.titre)+'</span>':'')+
+         '</div>'+(k.desc?'<div class="rap-diag-desc">'+esc(k.desc)+'</div>':'')+'</div>';
     c+='</div>';
     h+=simRapSection("🛡️ Diagnostics & vigilance",
       d.constats.length+" point"+(d.constats.length>1?"s":"")+" relevé"+
@@ -607,13 +607,13 @@ function simRapHtml(d){
     h+=simRapSection("📘 Méthode & définitions","ce que calcule « "+d.analyse+" »",
       '<div class="rap-diags"><div class="rap-diag-item info">'+
         '<div class="rap-diag-titre">Méthode</div>'+
-        '<div class="rap-diag-desc">'+simEsc(g.methode)+'</div>'+
+        '<div class="rap-diag-desc">'+esc(g.methode)+'</div>'+
         '<div class="rap-diag-titre">Grandeurs</div>'+
-        '<div class="rap-diag-desc">'+g.grandeurs.map(simEsc).join("<br>")+'</div>'+
+        '<div class="rap-diag-desc">'+g.grandeurs.map(esc).join("<br>")+'</div>'+
         '<div class="rap-diag-titre">Critères</div>'+
-        '<div class="rap-diag-desc">'+simEsc(g.criteres)+'</div>'+
+        '<div class="rap-diag-desc">'+esc(g.criteres)+'</div>'+
         '<div class="rap-diag-titre">Limites du modèle</div>'+
-        '<div class="rap-diag-desc">'+simEsc(g.limites)+'</div>'+
+        '<div class="rap-diag-desc">'+esc(g.limites)+'</div>'+
       '</div></div>');
 
   // 6. La fiche
@@ -624,14 +624,14 @@ function simRapHtml(d){
   // 6. Le rapport texte de l'analyse
   if(d.texte)
     h+=simRapSection("🧾 Rapport texte complet","toutes les lignes, toutes les hypothèses",
-      '<div class="rap-log-box" style="max-height:none">'+simEsc(d.texte)+'</div>');
+      '<div class="rap-log-box" style="max-height:none">'+esc(d.texte)+'</div>');
 
   // 8. Les données brutes : repliées à l'écran, mais dans le fichier .html
   if(d.res)
     h+=simRapSection("🗂️ Données brutes du calcul","JSON, 5 chiffres significatifs",
       '<details><summary class="rap-sec-note" style="cursor:pointer">Afficher le '+
       'résultat du solveur</summary><div class="rap-log-box" style="max-height:none">'+
-      simEsc(simRapJson(d.res))+'</div></details>');
+      esc(simRapJson(d.res))+'</div></details>');
   return h;
 }
 
@@ -818,10 +818,10 @@ function simRapMarkdown(d){
 let SIM_RAP_DONNEES=null;
 
 function simRapTitre(d){
-  return "📋 Rapport de simulation — "+simEsc(d.analyse||"—");
+  return "📋 Rapport de simulation — "+esc(d.analyse||"—");
 }
 function simRapSousTitre(d){
-  return simEsc([d.carte||"carte sans nom", d.famille,
+  return esc([d.carte||"carte sans nom", d.famille,
     d.date.toLocaleDateString()+" "+d.date.toLocaleTimeString(),
     d.outil||"WEB_CAO"].filter(Boolean).join(" · "));
 }
@@ -841,7 +841,7 @@ function simRapOuvrir(){
       '<div class="rap-head">'+
         '<div class="rap-titres">'+
           '<div class="rap-titre-principal"><span>'+simRapTitre(d)+'</span>'+
-            '<span class="rap-badge-statut '+d.statut+'">'+simEsc(d.statutTxt)+'</span></div>'+
+            '<span class="rap-badge-statut '+d.statut+'">'+esc(d.statutTxt)+'</span></div>'+
           '<div class="rap-sous-titre">'+simRapSousTitre(d)+'</div>'+
         '</div>'+
         '<div class="rap-actions">'+
@@ -910,7 +910,7 @@ function simRapTelecharger(){
   }
   const page='<!DOCTYPE html>\n<html lang="fr">\n<head>\n<meta charset="utf-8">\n'+
     '<meta name="viewport" content="width=device-width, initial-scale=1">\n'+
-    '<title>Rapport '+simEsc(d.analyse)+' — '+simEsc(d.carte||"carte")+'</title>\n<style>\n'+
+    '<title>Rapport '+esc(d.analyse)+' — '+esc(d.carte||"carte")+'</title>\n<style>\n'+
     ':root{--bg:#0f1012;--panel:#17181b;--panel2:#1c1e22;--border:#2b2e34;--border2:#3a3e46;'+
     '--txt:#e6e8ec;--txt-dim:#8b919c;--yellow:#f2c744;--blue:#3fa0ea;--blue-deep:#2b7fbf;'+
     '--red:#e8443a;--green:#4cc38a;--cyan:#8af0ff;'+
@@ -921,7 +921,7 @@ function simRapTelecharger(){
     '</style>\n</head>\n<body>\n<div class="rap-box">\n'+
     '<header class="rap-head" style="margin-bottom:20px"><div class="rap-titres">'+
     '<div class="rap-titre-principal"><span>'+simRapTitre(d)+'</span>'+
-    '<span class="rap-badge-statut '+d.statut+'">'+simEsc(d.statutTxt)+'</span></div>'+
+    '<span class="rap-badge-statut '+d.statut+'">'+esc(d.statutTxt)+'</span></div>'+
     '<div class="rap-sous-titre">'+simRapSousTitre(d)+'</div></div></header>\n'+
     '<div class="rap-corps">\n'+simRapHtml(d)+'\n</div>\n</div>\n</body>\n</html>';
   const propre=s=>String(s||"").replace(/[^\w.-]+/g,"_").replace(/^_+|_+$/g,"");

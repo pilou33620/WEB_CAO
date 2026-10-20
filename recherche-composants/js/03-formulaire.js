@@ -8,10 +8,6 @@
    ============================================================================= */
 
 /* ---------- utilitaires d'affichage, partagés par les modules suivants ------ */
-function esc(s){
-  return String(s).replace(/[&<>"'`]/g,ch=>
-    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;","`":"&#96;"}[ch]));
-}
 function fmtEntier(n){
   return String(n).replace(/\B(?=(\d{3})+(?!\d))/g," ");
 }

@@ -240,10 +240,6 @@ var PLACEMENT_SCORE = (function() {
     }
   }
 
-  function esc(s) {
-    return String(s || "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
-  }
-
   /* ---------- Rendu HTML du panneau ---------- */
   function rendrePanneau(data, erreur) {
     const el = document.getElementById("pnlPlacementBody");

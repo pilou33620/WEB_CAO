@@ -655,6 +655,7 @@
     </footer>
   </div>
 
+<script src="commun/echappe.js"></script>
 <script src="commun/profils.js"></script>
 <script src="commun/projet.js"></script>
 <script src="commun/projet-disque.js"></script>
@@ -669,10 +670,6 @@
    qui travaille, qu'on ajoute quelqu'un et qu'on efface ses préférences. Les
    éditeurs, eux, n'ont qu'un bouton pour en changer.
    ========================================================================== */
-function uEsc(s){
-  return String(s).replace(/[&<>"']/g, ch =>
-    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
-}
 function uQuand(t){
   if(!t) return "";
   try{ return new Date(t).toLocaleDateString("fr-FR"); }catch(_){ return ""; }
@@ -680,8 +677,8 @@ function uQuand(t){
 function uRendreListe(){
   const box = document.getElementById("uList"), courant = profNom();
   box.innerHTML = profListe().map(n =>
-    '<button data-nom="' + uEsc(n) + '"' + (n === courant ? ' class="on"' : '') + '>' +
-    '<span class="ck">' + (n === courant ? "✓" : "") + '</span>' + uEsc(n) +
+    '<button data-nom="' + esc(n) + '"' + (n === courant ? ' class="on"' : '') + '>' +
+    '<span class="ck">' + (n === courant ? "✓" : "") + '</span>' + esc(n) +
     '</button>').join("");
   box.querySelectorAll("[data-nom]").forEach(function(b){
     b.onclick = function(){ profChoisir(b.dataset.nom); uRendre(); };
@@ -690,9 +687,9 @@ function uRendreListe(){
 function uRendreInfo(){
   const etat = profEtat();
   let txt = "Panneaux, réglages d'affichage et derniers documents de <b>" +
-            uEsc(etat.nom) + "</b> — ";
+            esc(etat.nom) + "</b> — ";
   if(etat.serveur === true)
-    txt += "enregistrés dans <code>" + uEsc(etat.fichier) + "</code>.";
+    txt += "enregistrés dans <code>" + esc(etat.fichier) + "</code>.";
   else if(etat.enLigne)
     txt += "en attente du serveur ; pour l'instant dans ce navigateur seulement.";
   else
@@ -709,7 +706,7 @@ function uRendreRecents(){
     if(!r.length) continue;
     h += "<div><em>" + titre + "</em> " + r.slice(0, 4).map(function(e){
       const q = uQuand(e.t);
-      return "<b>" + uEsc(e.nom) + "</b>" + (q ? " (" + q + ")" : "");
+      return "<b>" + esc(e.nom) + "</b>" + (q ? " (" + q + ")" : "");
     }).join(" · ") + "</div>";
   }
   document.getElementById("uRec").innerHTML = h;
@@ -787,7 +784,7 @@ if(bParcourirNouveau) {
           PROJ_PARENT_HANDLE = handle;
           if(inChemNouveau) inChemNouveau.value = handle.name;
           pMajApercuNouveau();
-          pDosMsg("Dossier parent « <b>" + uEsc(handle.name) + "</b> » sélectionné sur le support.");
+          pDosMsg("Dossier parent « <b>" + esc(handle.name) + "</b> » sélectionné sur le support.");
         }
       } catch(err) {
         if(err.name !== "AbortError") pDosMsg(err.message, true);
@@ -825,7 +822,7 @@ if(bCreerNouveau) {
       return;
     }
 
-    pDosMsg("Création du projet « " + uEsc(nom) + " »…");
+    pDosMsg("Création du projet « " + esc(nom) + " »…");
 
     // Lancé par WEB_SUITE : toujours dans PROJETS, jamais ailleurs
     if(typeof projdSuite === "function" && projdSuite()) {
@@ -885,7 +882,7 @@ if(bCreerNouveau) {
       projOuvrir(nom);
       if(inNomNouveau) inNomNouveau.value = "";
       pRendre();
-      pDosMsg("Projet virtuel « <b>" + uEsc(nom) + "</b> » créé en mémoire (aucun dossier rattaché).", true);
+      pDosMsg("Projet virtuel « <b>" + esc(nom) + "</b> » créé en mémoire (aucun dossier rattaché).", true);
     });
   };
 }
@@ -902,7 +899,7 @@ if(inNomNouveau) {
 function pChoisirDossierExistant() {
   const rouvrir = projdAReconnecter();
   if(rouvrir) {
-    pDosMsg("Réouverture de « " + uEsc(rouvrir) + " »…");
+    pDosMsg("Réouverture de « " + esc(rouvrir) + " »…");
     projdReconnecter().then(pDosFait).catch(function(e) { pDosMsg(e.message, true); });
     return;
   }
@@ -967,7 +964,7 @@ if(bFermer) {
     projdDetacher();
     pRendre();
     pDosRendre();
-    pDosMsg("Projet « " + uEsc(nom) + " » fermé. Vos fichiers restent intacts sur le support.");
+    pDosMsg("Projet « " + esc(nom) + " » fermé. Vos fichiers restent intacts sur le support.");
   };
 }
 
@@ -995,7 +992,7 @@ function pDosDocs() {
   const d = projdDocuments();
   return [["schema", "Schéma"], ["pcb", "PCB"], ["ipc2581", "IPC-2581"]].map(function(x) {
     const e = d[x[0]];
-    return "<span>" + x[1] + " : " + (e.present ? uEsc(e.fichier) : "<i>absent</i>") + "</span>";
+    return "<span>" + x[1] + " : " + (e.present ? esc(e.fichier) : "<i>absent</i>") + "</span>";
   }).join("");
 }
 
@@ -1004,7 +1001,7 @@ function pDosFait(etat) {
   pDosRendre();
   const nom = projNom() || projdChemin();
   if(etat && etat.neuf) {
-    pDosMsg("Nouveau projet <b>" + uEsc(nom) + "</b> initialisé avec succès dans <b>" + uEsc(projdChemin()) + "</b>.");
+    pDosMsg("Nouveau projet <b>" + esc(nom) + "</b> initialisé avec succès dans <b>" + esc(projdChemin()) + "</b>.");
     return;
   }
   const d = projdDocuments();
@@ -1012,12 +1009,12 @@ function pDosFait(etat) {
   if(d.schema && d.schema.present) quoi.push("le schéma");
   if(d.pcb && d.pcb.present) quoi.push("la carte PCB");
   if(d.ipc2581 && d.ipc2581.present) quoi.push("le modèle IPC-2581");
-  pDosMsg("Projet <b>" + uEsc(nom) + "</b> ouvert depuis <b>" + uEsc(projdChemin()) + "</b>" +
+  pDosMsg("Projet <b>" + esc(nom) + "</b> ouvert depuis <b>" + esc(projdChemin()) + "</b>" +
           (quoi.length ? " (" + quoi.join(", ") + " chargés)" : ""));
 }
 
 function pDosOuvrir(ou, racine) {
-  pDosMsg("Ouverture de " + uEsc(ou) + "…");
+  pDosMsg("Ouverture de " + esc(ou) + "…");
   projdOuvrirServeur(ou, racine).then(pDosFait).catch(function(e) {
     pDosMsg(e.message, true);
   });
@@ -1040,7 +1037,7 @@ function pRendre() {
 
   if(badgeActif) {
     badgeActif.innerHTML = actif
-      ? '<span class="badge-lib badge-local" style="font-size:11px;">🟢 ' + uEsc(nom || etat.chemin) + '</span>'
+      ? '<span class="badge-lib badge-local" style="font-size:11px;">🟢 ' + esc(nom || etat.chemin) + '</span>'
       : '<span class="badge-lib" style="background:#1c1e22; border:1px solid #3a3e46; color:var(--txt-dim); font-size:11px;">⚪ Aucun projet</span>';
   }
 
@@ -1059,8 +1056,8 @@ function pRendre() {
     // chaque document : son fichier, puis l'heure de sa dernière sauvegarde
     const doc = function(e, vide){
       if(!(e && e.present)) return '<span style="color:var(--txt-dim); font-style:italic;">' + vide + '</span>';
-      return '<span style="color:var(--green);">✓ ' + uEsc(e.fichier) + '</span>' +
-        (e.modifie ? '<div class="p-doc-quand">enregistré ' + uEsc(projdQuand(e.modifie)) + '</div>' : '');
+      return '<span style="color:var(--green);">✓ ' + esc(e.fichier) + '</span>' +
+        (e.modifie ? '<div class="p-doc-quand">enregistré ' + esc(projdQuand(e.modifie)) + '</div>' : '');
     };
     if(elDocSch) elDocSch.innerHTML = doc(d.schema, "non créé");
     if(elDocPcb) elDocPcb.innerHTML = doc(d.pcb, "non créé");
@@ -1070,8 +1067,8 @@ function pRendre() {
     if(elSauve) {
       const t = projdDerniereSauvegarde(), g = projdDernierEnvoi();
       elSauve.innerHTML =
-        '<span>💾 Dernière sauvegarde : <b>' + (t ? uEsc(projdQuand(t)) : "aucune") + '</b></span>' +
-        (g ? '<span title="Envoi fait depuis ce navigateur">☁ Envoyé sur GitHub : <b>' + uEsc(projdQuand(g)) + '</b></span>' : '');
+        '<span>💾 Dernière sauvegarde : <b>' + (t ? esc(projdQuand(t)) : "aucune") + '</b></span>' +
+        (g ? '<span title="Envoi fait depuis ce navigateur">☁ Envoyé sur GitHub : <b>' + esc(projdQuand(g)) + '</b></span>' : '');
     }
   }
 }
@@ -1085,11 +1082,11 @@ function pRendreServeur(projets) {
   box.innerHTML = projets.map(function(p, i) {
     return '<div class="p-recent-item" data-i="' + i + '">' +
       '<div class="p-rec-info">' +
-        '<div style="font-weight:600; font-size:13px; color:var(--txt);">📁 ' + uEsc(p.nom) + '</div>' +
-        '<div style="font-size:11px; font-family:var(--mono); color:var(--txt-dim);" class="truncate">' + uEsc(p.chemin) + '</div>' +
+        '<div style="font-weight:600; font-size:13px; color:var(--txt);">📁 ' + esc(p.nom) + '</div>' +
+        '<div style="font-size:11px; font-family:var(--mono); color:var(--txt-dim);" class="truncate">' + esc(p.chemin) + '</div>' +
       '</div>' +
       '<div class="p-rec-actions">' +
-        '<span style="font-size:11px; color:var(--txt-dim); font-family:var(--mono);" title="Dernière sauvegarde">' + (p.t ? "💾 " + uEsc(projdQuand(p.t)) : "") + '</span>' +
+        '<span style="font-size:11px; color:var(--txt-dim); font-family:var(--mono);" title="Dernière sauvegarde">' + (p.t ? "💾 " + esc(projdQuand(p.t)) : "") + '</span>' +
         '<button type="button" class="btn-sm" style="color:var(--blue); font-weight:600;">Ouvrir →</button>' +
       '</div>' +
     '</div>';
@@ -1114,7 +1111,7 @@ function pDosRendre() {
       let html = '<span style="font-size:11px; color:var(--txt-dim);">Emplacements rapides :</span>';
       r.racines.forEach(function(rac) {
         const nomCourt = rac.split(/[\\/]/).filter(Boolean).pop() || rac;
-        html += '<button type="button" class="btn-sugg" data-chemin="' + uEsc(rac) + '">📁 ' + uEsc(nomCourt) + '</button>';
+        html += '<button type="button" class="btn-sugg" data-chemin="' + esc(rac) + '">📁 ' + esc(nomCourt) + '</button>';
       });
       elSugg.innerHTML = html;
       elSugg.querySelectorAll(".btn-sugg").forEach(function(b) {
@@ -1230,16 +1227,11 @@ uRendre();
    ========================================================================== */
 let LIB_CONFIG = null;
 
-function libEsc(s){
-  return String(s || "").replace(/[&<>"']/g, function(ch){
-    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch];
-  });
-}
 
 function libMsg(txt, ennui){
   const el = document.getElementById("libMsg");
   if(!el) return;
-  el.innerHTML = ennui ? "<i style='color:var(--red);'>" + libEsc(txt) + "</i>" : "<span style='color:var(--txt);'>" + txt + "</span>";
+  el.innerHTML = ennui ? "<i style='color:var(--red);'>" + esc(txt) + "</i>" : "<span style='color:var(--txt);'>" + txt + "</span>";
 }
 
 function libRendreEtat(cfg){
@@ -1272,7 +1264,7 @@ function libRendreEtat(cfg){
     '<span class="badge-stat"><b>' + (st.simulation || 0) + '</b> modèle(s) SPICE</span>'
   ].join(" ");
 
-  let detailChemin = "Dossier actif : <b>" + libEsc(cfg.chemin) + "</b>";
+  let detailChemin = "Dossier actif : <b>" + esc(cfg.chemin) + "</b>";
   if(cfg.est_defaut) detailChemin += " <i>(inclus dans le dépôt CAO)</i>";
   if(!cfg.existe) detailChemin += " <b style='color:var(--red);'>[Dossier introuvable]</b>";
 

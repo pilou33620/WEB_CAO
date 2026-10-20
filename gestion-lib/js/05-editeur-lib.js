@@ -170,7 +170,7 @@ function afficherModaleEditeur() {
   const titre = (EDITEUR_LIB.estNouveau ? "Création de : " : "Édition de : ") + EDITEUR_LIB.nomFichier;
 
   // le nom vient de l'adresse (?nom=), d'une cellule du catalogue ou de l'IA : échappé
-  document.getElementById("editeurModalTitre").innerHTML = `<span>${icon} ${typeLabel}</span> — <small style="color:var(--txt-dim);">${escapeHtml(titre)}</small>`;
+  document.getElementById("editeurModalTitre").innerHTML = `<span>${icon} ${typeLabel}</span> — <small style="color:var(--txt-dim);">${esc(titre)}</small>`;
   const inpNom = document.getElementById("editeurNomFichier");
   if (inpNom) inpNom.value = EDITEUR_LIB.nomFichier;
 
@@ -977,7 +977,7 @@ function rendreDetailPad() {
       </div>`;
   };
   cont.innerHTML = `
-    <div style="font-weight:600; font-size:12px; margin-bottom:4px;">Pastille ${escapeHtml(p.n)} — masque, pâte${th ? " et forme par couche" : ""}</div>
+    <div style="font-weight:600; font-size:12px; margin-bottom:4px;">Pastille ${esc(p.n)} — masque, pâte${th ? " et forme par couche" : ""}</div>
     <div class="pad-detail-row" style="display:flex; gap:6px; align-items:flex-end; flex-wrap:wrap;">
       <label style="min-width:150px; font-size:11px;">Masque (vernis)<br><select id="padMaskMode">
         <option value="regle" ${mMode === "regle" ? "selected" : ""}>Règle de la carte</option>
@@ -1057,16 +1057,16 @@ function remplirFormulaireEditeur() {
       contGen.innerHTML = `
         <div class="form-group">
           <label>Nom de l'empreinte</label>
-          <input id="edFpNom" value="${escapeHtml(data.name || '')}">
+          <input id="edFpNom" value="${esc(data.name || '')}">
         </div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
           <div class="form-group">
             <label>Boîtier (Package)</label>
-            <input id="edFpPkg" value="${escapeHtml(data.pkg || '')}">
+            <input id="edFpPkg" value="${esc(data.pkg || '')}">
           </div>
           <div class="form-group">
             <label>Style</label>
-            <input id="edFpStyle" value="${escapeHtml(data.style || 'sop')}" placeholder="chip, row, dip, sop, quad, bga">
+            <input id="edFpStyle" value="${esc(data.style || 'sop')}" placeholder="chip, row, dip, sop, quad, bga">
           </div>
         </div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
@@ -1081,7 +1081,7 @@ function remplirFormulaireEditeur() {
         </div>
         <div class="form-group">
           <label>Description</label>
-          <textarea id="edFpDesc" rows="2">${escapeHtml(data.description || '')}</textarea>
+          <textarea id="edFpDesc" rows="2">${esc(data.description || '')}</textarea>
         </div>
         <div style="border-top:1px solid var(--border); padding-top:10px;">
           <label style="font-weight:600; font-size:11.5px; color:var(--txt);">Corps sérigraphie (mm)</label>
@@ -1110,30 +1110,30 @@ function remplirFormulaireEditeur() {
       contGen.innerHTML = `
         <div class="form-group">
           <label>ID Symbole</label>
-          <input id="edSchId" value="${escapeHtml(data.id || '')}">
+          <input id="edSchId" value="${esc(data.id || '')}">
         </div>
         <div class="form-group">
           <label>Nom du symbole</label>
-          <input id="edSchNom" value="${escapeHtml(data.name || '')}">
+          <input id="edSchNom" value="${esc(data.name || '')}">
         </div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
           <div class="form-group">
             <label>Préfixe de référence</label>
-            <input id="edSchPrefix" value="${escapeHtml(data.prefix || 'U')}" maxlength="5">
+            <input id="edSchPrefix" value="${esc(data.prefix || 'U')}" maxlength="5">
           </div>
           <div class="form-group">
             <label>Catégorie</label>
-            <input id="edSchCat" value="${escapeHtml(data.category || 'Générique')}">
+            <input id="edSchCat" value="${esc(data.category || 'Générique')}">
           </div>
         </div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
           <div class="form-group">
             <label>Valeur par défaut</label>
-            <input id="edSchDefVal" value="${escapeHtml(data.defaultValue || '')}">
+            <input id="edSchDefVal" value="${esc(data.defaultValue || '')}">
           </div>
           <div class="form-group">
             <label>Boîtier par défaut</label>
-            <input id="edSchDefPkg" value="${escapeHtml(data.defaultPkg || '')}">
+            <input id="edSchDefPkg" value="${esc(data.defaultPkg || '')}">
           </div>
         </div>
       `;
@@ -1239,7 +1239,7 @@ function remplirElementsEditeur() {
     pads.forEach((p, idx) => {
       rowsHtml += `
         <tr data-idx="${idx}">
-          <td style="width:38px;"><input type="text" data-field="n" value="${escapeHtml(p.n)}" style="text-align:center;"></td>
+          <td style="width:38px;"><input type="text" data-field="n" value="${esc(p.n)}" style="text-align:center;"></td>
           <td><input type="number" step="0.05" data-field="x" value="${+(p.x) || 0}"></td>
           <td><input type="number" step="0.05" data-field="y" value="${+(p.y) || 0}"></td>
           <td><input type="number" step="0.05" data-field="w" value="${+(p.w || 1) || 0}"></td>
@@ -1371,7 +1371,7 @@ function remplirElementsEditeur() {
       const pn = p.n !== undefined ? p.n : (idx + 1);
       rowsHtml += `
         <tr data-idx="${idx}">
-          <td style="width:45px;"><input type="text" data-field="n" value="${escapeHtml(pn)}" style="text-align:center;"></td>
+          <td style="width:45px;"><input type="text" data-field="n" value="${esc(pn)}" style="text-align:center;"></td>
           <td><input type="number" step="5" data-field="x" value="${+(px) || 0}"></td>
           <td><input type="number" step="5" data-field="y" value="${+(py) || 0}"></td>
           <td style="width:30px; text-align:center;">

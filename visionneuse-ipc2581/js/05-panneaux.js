@@ -22,8 +22,8 @@ function pnlCouches(){
   const ligne=function(c){
     return '<button class="cch '+(c.visible?"on":"off")+'" data-couche="'+c.i+'">'
       +'<span class="pastille" style="background:'+c.couleur+'"></span>'
-      +'<span class="nom" title="'+mdlEsc(c.nom)+' — '+mdlEsc(c.genre)+'">'
-      +mdlEsc(c.nom)+'</span>'
+      +'<span class="nom" title="'+esc(c.nom)+' — '+esc(c.genre)+'">'
+      +esc(c.nom)+'</span>'
       +'<span class="cpt">'+mdlEntier(c.cpt)+'</span></button>';
   };
   const cu=V.couches.filter(c=>c.cuivre).sort((a,b)=>a.seq-b.seq);
@@ -60,7 +60,7 @@ function pnlElements(){
   if(!box)return;
   box.innerHTML=ELEMENTS.map(function(e){
     return '<button class="tb mini'+(V.aff[e[0]]?" on":"")+'" data-aff="'+e[0]
-      +'" title="'+mdlEsc(e[2])+'">'+e[1]+"</button>";
+      +'" title="'+esc(e[2])+'">'+e[1]+"</button>";
   }).join("");
   box.querySelectorAll("[data-aff]").forEach(function(b){
     b.onclick=function(){ basculer(b.dataset.aff,BOUTON_AFF[b.dataset.aff]); };
@@ -89,8 +89,8 @@ function pnlInfos(){
   const m=V.modele, s=m.stats, b=V.bbox;
   const l=function(a,v){return "<tr><td>"+a+"</td><td>"+v+"</td></tr>";};
   let h='<div class="fiche"><h3>Fichier</h3><table>'
-    +l("Nom",'<span class="val">'+mdlEsc(V.fichier)+"</span>")
-    +l("Unités",mdlEsc(m.unites||"—"))
+    +l("Nom",'<span class="val">'+esc(V.fichier)+"</span>")
+    +l("Unités",esc(m.unites||"—"))
     +l("Dimensions",mdlNb(b.x2-b.x1)+" × "+mdlNb(b.y2-b.y1)+" "+V.unite)
     +l("Épaisseur",m.epaisseur?mdlMes(m.epaisseur):"—")
     +l("Origine",mdlNb(b.x1)+" ; "+mdlNb(b.y1))
@@ -123,7 +123,7 @@ function pnlInfos(){
       const badge=pnlBadgeFonction(e, c);
       h+='<div class="lit"><span class="bande" style="height:'+haut+'px;background:'
         +((c&&c.couleur)||"#4a4f57")+'"></span>'
-        +"<b>"+mdlEsc(e.nom)+"</b>"+badge+" <span>"+mdlEsc(det)+"</span></div>";
+        +"<b>"+esc(e.nom)+"</b>"+badge+" <span>"+esc(det)+"</span></div>";
     }
     h+="</div>";
   }
@@ -147,7 +147,7 @@ function pnlBadgeFonction(e, c){
       else if(cu.taux > 0) srcDet = "Déduit géométriquement (" + Math.round(cu.taux*100) + " % de cuivre plein - " + roleLbl + ")";
       else srcDet = "Couche de signal";
     }
-    return ' <span class="badgeFonction ' + cls + '" title="' + mdlEsc(srcDet) + '">' + roleLbl + '</span>';
+    return ' <span class="badgeFonction ' + cls + '" title="' + esc(srcDet) + '">' + roleLbl + '</span>';
   }
   const genre = c ? c.genre : mdlGenre(e.nom, e);
   let gNom = "Autre", gCls = "fn-autre";
@@ -177,7 +177,7 @@ function pnlChamp(quoi,cle,valeur,src,defaut){
      La lecture, elle, accepte les deux. */
   return '<input type="text" inputmode="decimal" spellcheck="false"'
     +' class="ltv'+(vide?" manque":(src==="saisi"?" saisi":""))+'"'
-    +' data-lt="'+quoi+'" data-cle="'+mdlEsc(cle)+'"'
+    +' data-lt="'+quoi+'" data-cle="'+esc(cle)+'"'
     +(vide?'' : ' value="'+mdlNb(valeur,4)+'"')
     +' placeholder="'+mdlNb(defaut,4)+'"'
     +' title="'+(vide?"Absent du fichier : "+mdlNb(defaut,4)+" est pris par défaut."
@@ -203,14 +203,14 @@ function pnlEmpilageForm(){
       ? "Rôle forcé pour la simulation (" + roleLbl + ", initialement " + autoDet + "). Cliquez pour changer."
       : "Rôle auto-détecté (" + autoDet + "). Modifiable pour la simulation.";
     const selRole = '<select class="ltRoleSelect' + (e.roleSaisi ? ' saisi' : '') + '"'
-      + ' data-lt-role="' + mdlEsc(e.nom) + '" title="' + mdlEsc(tip) + '">'
+      + ' data-lt-role="' + esc(e.nom) + '" title="' + esc(tip) + '">'
       + '<option value="signal"' + (e.role === 'signal' ? ' selected' : '') + '>Signal</option>'
       + '<option value="gnd"' + (e.role === 'gnd' ? ' selected' : '') + '>GND</option>'
       + '<option value="pwr"' + (e.role === 'pwr' ? ' selected' : '') + '>PWR</option>'
       + '</select>';
     h+='<tr class="cu"><td class="g">'
       +'<span class="pastille" style="background:'+((c&&c.couleur)||"#4a4f57")+'"></span>'
-      +mdlEsc(e.nom) + selRole + "</td>"
+      +esc(e.nom) + selRole + "</td>"
       +'<td>'+pnlChamp("cu",e.nom,e.ep,e.epSrc,LT_EP_CU)+" mm</td></tr>";
     const g=LT.gap[i];
     if(g)
@@ -227,7 +227,7 @@ function pnlEmpilageForm(){
     if(man.ep.length)dit.push(man.ep.length+" épaisseur(s) de cuivre absente(s)");
     if(man.aucunPlan)dit.push("aucun plan de référence reconnu");
     h+='<div class="note attention">Le fichier ne dit pas tout : '
-      +mdlEsc(dit.join(", "))+".<br>Les cases jaunes prennent la valeur grisée "
+      +esc(dit.join(", "))+".<br>Les cases jaunes prennent la valeur grisée "
       +"tant qu'elles restent vides. Ce que vous y écrivez sert au calcul "
       +"d'impédance et vous suit d'une ouverture à l'autre.</div>";
   }
@@ -316,7 +316,7 @@ function pnlNets(){
       +(cl==="signal"&&n.nature?n.nature.toUpperCase():cl.toUpperCase())+'</span>';
     return '<button class="ligne'+(selNets().has(n.i)?" on":"")+'" data-net="'+n.i+'">'
       +badge
-      +"<b>"+mdlEsc(n.nom)+"</b>"
+      +"<b>"+esc(n.nom)+"</b>"
       +'<span class="cpt">'+n.pistes.length+" p · "+mdlNb(n.longueur,1)+" "+V.unite
       +(n.trous.length?" · "+n.trous.length+" ⌀":"")+"</span></button>";
   }).join("")
@@ -344,7 +344,7 @@ function pnlNets(){
 function pnlSelNature(n,attr){
   if((n.classe||"signal")!=="signal")return "";
   return '<select class="ltRoleSelect'+(n.natureManuelle?" saisi":"")+'" '+attr+'="'+n.i+'"'
-    +' title="Nature du signal, comme dans l’éditeur PCB'+(n.natureRaison?" — "+mdlEsc(n.natureRaison):"")+'">'
+    +' title="Nature du signal, comme dans l’éditeur PCB'+(n.natureRaison?" — "+esc(n.natureRaison):"")+'">'
     +MDL_NATURES_SIGNAL.map(function(c){
       return '<option'+(n.nature===c?" selected":"")+titreClasse(c)+'>'+c+'</option>';
     }).join("")+'</select>';
@@ -464,8 +464,8 @@ function mettreAJourApercuPrereglages(){
     voltPdn=v?" ("+v+" V)":"";
   }
 
-  el.innerHTML='<span>🟢 <b>Plans de masse SI :</b> '+(gndNets.length?gndNets.length+' net(s) configuré(s) comme référence de retour RF ('+gndNets.map(n=>mdlEsc(n.nom)).slice(0,3).join(", ")+(gndNets.length>3?'…':'')+')':'aucun net de masse')+'.</span>'
-    +'<br><span>⚡ <b>Intégrité d\'alimentation PI :</b> '+(pwrNets.length?pwrNets.length+' rail(s) PWR. Rail actif : <b>'+mdlEsc(railPdn)+'</b>'+voltPdn+' pour l\'impédance cible PDN & découplages.':'aucun rail détecté')+'.</span>'
+  el.innerHTML='<span>🟢 <b>Plans de masse SI :</b> '+(gndNets.length?gndNets.length+' net(s) configuré(s) comme référence de retour RF ('+gndNets.map(n=>esc(n.nom)).slice(0,3).join(", ")+(gndNets.length>3?'…':'')+')':'aucun net de masse')+'.</span>'
+    +'<br><span>⚡ <b>Intégrité d\'alimentation PI :</b> '+(pwrNets.length?pwrNets.length+' rail(s) PWR. Rail actif : <b>'+esc(railPdn)+'</b>'+voltPdn+' pour l\'impédance cible PDN & découplages.':'aucun rail détecté')+'.</span>'
     +'<br><span>〰 <b>Signaux haute vitesse SI :</b> '+sigNets.length+' net(s) privilégié(s) pour l\'impédance de ligne (50 Ω, différentiel) et diaphonie.</span>';
 }
 
@@ -499,12 +499,12 @@ function rendreModalNets(){
     ].filter(Boolean).join(" · ");
 
     const raison=(n.autoDetecte
-      ? 'Auto : <b>'+mdlEsc(n.autoRaison||"—")+'</b>'
+      ? 'Auto : <b>'+esc(n.autoRaison||"—")+'</b>'
       : '<span style="color:var(--cyan)">Manuel</span>')
-      +(cl==="signal"&&n.natureRaison?' · '+mdlEsc(n.nature)+' : '+mdlEsc(n.natureRaison):'');
+      +(cl==="signal"&&n.natureRaison?' · '+esc(n.nature)+' : '+esc(n.natureRaison):'');
 
     return '<tr data-net-id="'+n.i+'">'
-      +'<td class="net-nom"><b>'+mdlEsc(n.nom)+'</b></td>'
+      +'<td class="net-nom"><b>'+esc(n.nom)+'</b></td>'
       +'<td class="net-geo">'+geo+'</td>'
       +'<td>'
       +'  <div class="seg-ctrl" data-net-seg="'+n.i+'">'
@@ -585,10 +585,10 @@ function pnlComps(){
   box.innerHTML=vus.map(function(c){
     const cu=V.couches[c.c];
     return '<button class="ligne'+(selRefs().has(c.ref)?" on":"")+'" data-ref="'
-      +mdlEsc(c.ref)+'">'
-      +"<b>"+mdlEsc(c.ref)+"</b>"
-      +(c.val?"<em>"+mdlEsc(c.val)+"</em>":"")
-      +'<span class="cpt">'+mdlEsc(c.pkg||"")
+      +esc(c.ref)+'">'
+      +"<b>"+esc(c.ref)+"</b>"
+      +(c.val?"<em>"+esc(c.val)+"</em>":"")
+      +'<span class="cpt">'+esc(c.pkg||"")
       +(cu&&cu.dessous?" · dessous":"")
       +(mdlMonte(c.ref)?"":" · non monté")+"</span></button>";
   }).join("")
@@ -625,7 +625,7 @@ function pnlComps(){
    ne se pose qu'après l'avoir lu. */
 function pnlSuppose(){
   return ' <span class="suppose" title="'+
-    mdlEsc("Le fichier ne déclare pas de padstack pour ce perçage : cette "+
+    esc("Le fichier ne déclare pas de padstack pour ce perçage : cette "+
            "cote est un repli du lecteur (perçage + 0,3 mm), pas une valeur "+
            "lue.")+'">supposé</span>';
 }
@@ -639,14 +639,14 @@ function pnlContrePercage(t,l){
   if(!cp)return "";
   const mm=v=>String(Math.round(v*1000)/1000).replace(".",",")+" mm";
   const face=cp.cote?(cp.cote==="dessous"?"depuis le dessous":"depuis le dessus")+
-    (cp.depart?" ("+mdlEsc(cp.depart)+")":""):
-    (cp.depart?"depuis "+mdlEsc(cp.depart)+", qui n'est pas une face":"face non déclarée");
+    (cp.depart?" ("+esc(cp.depart)+")":""):
+    (cp.depart?"depuis "+esc(cp.depart)+", qui n'est pas une face":"face non déclarée");
   return l("Contre-perçage",'<span class="val">'+face+"</span>")
-    +l("Ne pas couper",cp.garde?mdlEsc(cp.garde):'<span class="suppose">non déclarée</span>')
+    +l("Ne pas couper",cp.garde?esc(cp.garde):'<span class="suppose">non déclarée</span>')
     +l("Moignon résiduel",cp.res!=null?mm(cp.res):'<span class="suppose">non déclaré</span>')
     +(cp.prof?l("Profondeur",mm(cp.prof)+" depuis la face"):"")
     +(cp.d?l("Foret",mdlMes(cp.d)):"")
-    +l("Source",mdlEsc((cp.src==="calque"?"calque de perçage":"spécification")+
+    +l("Source",esc((cp.src==="calque"?"calque de perçage":"spécification")+
                        (cp.spec?" "+cp.spec:"")))
     +(cp.complet?"":l("Simulation","non transmis : "+
                       (!cp.cote?"face inconnue":!cp.garde?"couche à ne pas couper inconnue":
@@ -681,7 +681,7 @@ function pnlSelection(){
     }
     else t=(typeof resume==="function")?resume(s):s.type;
     if(s.net!=null&&s.net>=0)nets.add(s.net);
-    lignes.push('<tr><td class="g">'+(i+1)+"</td><td>"+mdlEsc(t)+"</td>"+
+    lignes.push('<tr><td class="g">'+(i+1)+"</td><td>"+esc(t)+"</td>"+
       '<td><button class="tb mini" data-vsel="'+i+'" '+
       'title="Retirer ce morceau de la sélection">×</button></td></tr>');
   });
@@ -718,14 +718,14 @@ function pnlDetail(){
     const cu=V.couches[comp.c];
     const typeLib=pnlLibelleTypeComp(comp.type,comp.ref);
     h+='<div class="fiche"><h3>Composant</h3><table>'
-      +l("Repère",'<span class="val">'+mdlEsc(comp.ref)+"</span>")
-      +(typeLib?l("Type",'<span style="color:#60a5fa;font-weight:600">'+mdlEsc(typeLib)+'</span>'):"")
-      +l("Valeur",comp.val?'<b style="color:var(--yellow)">'+mdlEsc(comp.val)+'</b>':"—")
-      +(comp.tol?l("Tolérance",mdlEsc(comp.tol)):"")
-      +(comp.part&&comp.part!==comp.val?l("Référence",mdlEsc(comp.part)):"")
-      +l("Boîtier",mdlEsc(comp.pkg||"—"))
-      +l("Montage",mdlEsc(comp.mnt||"—"))
-      +l("Face",cu?mdlEsc(cu.nom)+(cu.dessous?" (dessous)":""):"—")
+      +l("Repère",'<span class="val">'+esc(comp.ref)+"</span>")
+      +(typeLib?l("Type",'<span style="color:#60a5fa;font-weight:600">'+esc(typeLib)+'</span>'):"")
+      +l("Valeur",comp.val?'<b style="color:var(--yellow)">'+esc(comp.val)+'</b>':"—")
+      +(comp.tol?l("Tolérance",esc(comp.tol)):"")
+      +(comp.part&&comp.part!==comp.val?l("Référence",esc(comp.part)):"")
+      +l("Boîtier",esc(comp.pkg||"—"))
+      +l("Montage",esc(comp.mnt||"—"))
+      +l("Face",cu?esc(cu.nom)+(cu.dessous?" (dessous)":""):"—")
       +l("Position",mdlNb(comp.x)+" ; "+mdlNb(comp.y)+" "+V.unite)
       +l("Rotation",mdlNb(comp.r,1)+"°"+(comp.m?" · miroir":""))
       +l("Broches",(comp.pins?comp.pins.length:0)+" ("
@@ -733,7 +733,7 @@ function pnlDetail(){
       +"</table>"
       +'<label class="nonMonte" title="La pièce est absente de la carte : toutes '
       +'les simulations l\'ignorent. Ses pastilles restent, c\'est du cuivre.">'
-      +'<input type="checkbox" data-nonmonte="'+mdlEsc(comp.ref)+'"'
+      +'<input type="checkbox" data-nonmonte="'+esc(comp.ref)+'"'
       +(mdlMonte(comp.ref)?"":" checked")+"> Non monté (ignoré par les simulations)</label>";
     if(comp.props&&typeof comp.props==="object"){
       const cles=Object.keys(comp.props).filter(function(k){
@@ -743,7 +743,7 @@ function pnlDetail(){
       if(cles.length>0){
         h+="<h3>Propriétés</h3><table>";
         for(const k of cles.slice(0,10)){
-          h+=l(mdlEsc(k),mdlEsc(comp.props[k]));
+          h+=l(esc(k),esc(comp.props[k]));
         }
         h+="</table>";
       }
@@ -763,9 +763,9 @@ function pnlDetail(){
       for(const p of broches.slice(0,80)){
         const rang=(p.n==null?-1:p.n);
         const nom=rang<0?"—":mdlNetNom(rang);
-        h+='<tr><td class="g">'+mdlEsc(p.num||"?")+'</td><td>'
+        h+='<tr><td class="g">'+esc(p.num||"?")+'</td><td>'
           +'<span class="lien" data-vnet="'+rang+'">'
-          +mdlEsc(nom)+"</span></td></tr>";
+          +esc(nom)+"</span></td></tr>";
       }
       if(broches.length>80)
         h+='<tr><td colspan="2">… et '+(broches.length-80)+" autres</td></tr>";
@@ -791,21 +791,21 @@ function pnlDetail(){
     const cf=(typeof mdlClasseFichier==="function")?mdlClasseFichier(n.nom):"";
     const pf=(typeof mdlPaireFichier==="function")?mdlPaireFichier(n.nom):null;
     const rangMate=pf?V.parNet.findIndex(x=>x&&x.nom===pf.mate):-1;
-    const paire=pf?('<span class="val">'+mdlEsc(pf.nom||"")+"</span> · "+(n.nom===pf.p?"P":"N")+" ↔ "
-      +(rangMate>=0?'<span class="lien" data-vnet="'+rangMate+'">'+mdlEsc(pf.mate)+"</span>":mdlEsc(pf.mate))
+    const paire=pf?('<span class="val">'+esc(pf.nom||"")+"</span> · "+(n.nom===pf.p?"P":"N")+" ↔ "
+      +(rangMate>=0?'<span class="lien" data-vnet="'+rangMate+'">'+esc(pf.mate)+"</span>":esc(pf.mate))
       +(pf.zdiff?" · "+mdlNb(pf.zdiff,0)+" Ω":"")):"";
     h+='<div class="fiche"><h3>Net</h3><table>'
-      +l("Nom",badge+'<span class="val">'+mdlEsc(n.nom)+"</span>")
+      +l("Nom",badge+'<span class="val">'+esc(n.nom)+"</span>")
       +l("Classification",selClasse+pnlSelNature(n,"data-set-nature"))
-      +(cf?l("Classe (fichier)",'<span class="val">'+mdlEsc(cf)+"</span>"):"")
+      +(cf?l("Classe (fichier)",'<span class="val">'+esc(cf)+"</span>"):"")
       +(paire?l("Paire diff.",paire):"")
       +l("Longueur",mdlMes(n.longueur,2))
       +l("Pistes",n.pistes.length+(n.arcs.length?" + "+n.arcs.length+" arc(s)":""))
       +l("Pastilles",n.pads.length)
       +l("Perçages",n.trous.length)
       +l("Plans",n.plans.length)
-      +l("Couches",mdlEsc(couches||"—"))
-      +l("Montré",mdlEsc(pnlPortee()))
+      +l("Couches",esc(couches||"—"))
+      +l("Montré",esc(pnlPortee()))
       +"</table>"
       /* Les chiffres du net entier ne s'affichent que quand c'est le net
          entier qu'on regarde : Maj+clic, ou un choix dans la liste. Sur un
@@ -828,7 +828,7 @@ function pnlDetail(){
       +(t.a?l("Anneau",mdlMes(t.a)+(t.a_sup?pnlSuppose():"")):"")
       +(ps&&ps.pad?l("Pastille",mdlMes(ps.pad)+
                      (ps.pad_sup?pnlSuppose():"")):"")
-      +l("Définition",mdlEsc(t.ps||"—"))
+      +l("Définition",esc(t.ps||"—"))
       +l("Position",mdlNb(t.x)+" ; "+mdlNb(t.y)+" "+V.unite)
       +pnlContrePercage(t,l)
       +"</table></div>";
@@ -841,14 +841,14 @@ function pnlDetail(){
     const t=s.trou;
     const anneau=t?(t.a||(s.d>t.d?(s.d-t.d)/2:0)):0;
     h+='<div class="fiche"><h3>Pastille</h3><table>'
-      +l("Broche",mdlEsc(s.pin||"—"))
-      +l("Couche",mdlEsc(mdlCoucheNom(s.couche)))
+      +l("Broche",esc(s.pin||"—"))
+      +l("Couche",esc(mdlCoucheNom(s.couche)))
       +(ps&&ps.trou?l("Trou",mdlMes(ps.trou)):(t?l("Trou",mdlMes(t.d)):""))
       +(anneau?l("Anneau",'<span class="val">'+mdlMes(anneau)+"</span>"+
                  (t.a&&t.a_sup?pnlSuppose():"")):"")
       +(ps&&ps.pad?l("Diamètre",mdlMes(ps.pad)+
                      (ps.pad_sup?pnlSuppose():"")):"")
-      +l("Définition",mdlEsc(s.ps||"—"))
+      +l("Définition",esc(s.ps||"—"))
       +l("Position",mdlNb(s.x)+" ; "+mdlNb(s.y)+" "+V.unite)
       +(t?pnlContrePercage(t,l):"")
       +"</table></div>";
@@ -861,7 +861,7 @@ function pnlDetail(){
       +l("Largeur",'<span class="val">'+mdlMes(s.piste.w)+"</span>")
       +l("Longueur",mdlMes(lgTot,2)+(chaine.length>1?' <span class="simNote">('+chaine.length+' tronçons continus)</span>':''))
       +l("Segments",segsTot)
-      +l("Couche",mdlEsc(mdlCoucheNom(s.couche)))
+      +l("Couche",esc(mdlCoucheNom(s.couche)))
       +"</table>"
       /* Le clic seul interroge ce bout de piste, et le calcul est ici. Avec
          Maj, c'est le net entier qu'on a demandé : les chiffres sont alors
@@ -877,8 +877,8 @@ function pnlDetail(){
     for(const ct of g.g)dec+=(ct.t?ct.t.length:0);
     h+='<div class="fiche"><h3>Plan</h3><table>'
       +l("Net",'<span class="val">'
-        +mdlEsc(s.net>=0?mdlNetNom(s.net):"aucun")+"</span>")
-      +l("Couche",mdlEsc(mdlCoucheNom(s.couche)))
+        +esc(s.net>=0?mdlNetNom(s.net):"aucun")+"</span>")
+      +l("Couche",esc(mdlCoucheNom(s.couche)))
       /* L'aire dit ce que le fichier ne dit pas : un plan de référence couvre
          la carte, un îlot de cuivre ne couvre que lui-même. */
       +l("Aire",mdlNb(mdlAirePlan(g),2)+" "+V.unite+"²")
@@ -1009,7 +1009,7 @@ function pnlLigne(piste,coucheIdx){
       : (c&&!c.cuivre) ? "cette couche n'est pas du cuivre"
       : "cette couche n'est pas dans l'empilage";
     return "<h3>Ligne de transmission</h3>"
-      +'<div class="note">Rien à calculer : '+mdlEsc(pourquoi)+".</div>";
+      +'<div class="note">Rien à calculer : '+esc(pourquoi)+".</div>";
   }
   const g=e.g, sup=e.suppose;
   const marque=function(t,quand){ return quand?" "+t:""; };
@@ -1038,7 +1038,7 @@ function pnlLigne(piste,coucheIdx){
 
   const manques=pnlLigneManques(sup,g);
   if(manques.length)
-    t+='<div class="note attention">'+manques.map(mdlEsc).join("<br>")
+    t+='<div class="note attention">'+manques.map(esc).join("<br>")
       +"<br>Ces valeurs se complètent à la main dans le panneau « La carte », "
       +"sous « Empilage du calcul ».</div>";
 
@@ -1049,7 +1049,7 @@ function pnlLigne(piste,coucheIdx){
      piste à mi-hauteur. C'est le cas de presque tout empilage 4 couches : âme
      épaisse d'un côté, préimprégné mince de l'autre. */
   if(g.kind==="strip"&&g.dissym>0.4)
-    t+='<div class="note attention">'+mdlEsc("Triplaque dissymétrique ("
+    t+='<div class="note attention">'+esc("Triplaque dissymétrique ("
       + ltMm(g.h) + " d'un plan, " + ltMm(g.b-g.h-g.t) + " de l'autre) : la "
       + "formule suppose la piste centrée entre les deux, Z₀ sort au-dessus de "
       + "la réalité.")+"</div>";
@@ -1106,7 +1106,7 @@ function pnlLigneNet(i){
   if(t.morceaux.length>1){
     h+="<h3>Par couche et largeur</h3><table>";
     for(const m of t.morceaux.slice(0,12))
-      h+="<tr><td>"+mdlEsc(mdlCoucheNom(m.couche))+"</td><td>"
+      h+="<tr><td>"+esc(mdlCoucheNom(m.couche))+"</td><td>"
         +ltMm(m.len,2)+" en "+pnlSegments(m.pistes,m.arcs)+" · "+ltMm(m.w,3)
         +" · "+(m.z0>0?mdlNb(m.z0,1)+" Ω":"—")+"</td></tr>";
     if(t.morceaux.length>12)
@@ -1117,7 +1117,7 @@ function pnlLigneNet(i){
 
   const manques=pnlLigneManques(t.suppose,null);
   if(manques.length)
-    h+='<div class="note attention">'+manques.map(mdlEsc).join("<br>")
+    h+='<div class="note attention">'+manques.map(esc).join("<br>")
       +"<br>Ces valeurs se complètent à la main dans le panneau « La carte », "
       +"sous « Empilage du calcul ».</div>";
 
@@ -1131,7 +1131,7 @@ function pnlLigneNet(i){
       +"empilage ("+t.couchesHors.map(mdlCoucheNom).join(", ")
       +") : cette longueur n'est comptée dans aucun total");
   if(dehors.length)
-    h+='<div class="note attention">'+dehors.map(mdlEsc).join("<br>")+"</div>";
+    h+='<div class="note attention">'+dehors.map(esc).join("<br>")+"</div>";
   if(varie)
     h+='<div class="note">'+"Un net n'a pas une impédance : il en a une par "
       +"tronçon. Les longueurs, retards, capacités et inductances s'ajoutent ; "
@@ -1153,9 +1153,9 @@ function pnlPlan(k){
   const e=LT.cu[k];
   if(!e)return "—";
   if(e.roleSaisi){
-    return mdlEsc(e.nom)+' <span title="Rôle forcé pour la simulation.">(modifié)</span>';
+    return esc(e.nom)+' <span title="Rôle forcé pour la simulation.">(modifié)</span>';
   }
-  return mdlEsc(e.nom)+(e.planSrc==="cuivre"
+  return esc(e.nom)+(e.planSrc==="cuivre"
     ? ' <span title="Couche déclarée SIGNAL par le fichier, mais couverte de '
       +'cuivre plein : c\'est ce qui en fait un plan de référence.">('
       +Math.round(e.taux*100)+" % de cuivre)</span>"

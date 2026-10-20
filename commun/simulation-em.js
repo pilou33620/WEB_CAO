@@ -492,7 +492,7 @@ function simCarteDCListe(){
   let h='<select class="simU simUSel" id="simDCQuoi" title="La grandeur '+
         'peinte sur le cuivre analysé.">';
   for(const g of SIM_DC_GRANDEURS)
-    h+='<option value="'+g.cle+'">'+simEsc(g.nom)+'</option>';
+    h+='<option value="'+g.cle+'">'+esc(g.nom)+'</option>';
   return h+"</select>";
 }
 
@@ -682,7 +682,7 @@ function simRendreBornes(){
           ? "Alimentation : sa tension est imposée"
           : "Consommateur : son courant est imposé")+'">'+
        (src?"source":"charge")+'</span>'+
-       '<span class="simBadge" style="font-size:9.5px; font-weight:700; padding:1px 5px; border-radius:3px; margin-right:4px; line-height:1; cursor:default; '+bSty+'" title="'+simEsc(bTip)+'">'+bTxt+'</span>'+
+       '<span class="simBadge" style="font-size:9.5px; font-weight:700; padding:1px 5px; border-radius:3px; margin-right:4px; line-height:1; cursor:default; '+bSty+'" title="'+esc(bTip)+'">'+bTxt+'</span>'+
        /* LE REPERE SE RENOMME, ET C'EST TOUT L'INTERET. « pastille 32.1 ;
           72.34 » est ce que le fichier sait dire ; ce n'est pas ce que la
           carte veut dire. Sur cinq bornes, deux couples de coordonnees ne se
@@ -770,7 +770,7 @@ function simDCListeUnite(id,b){
   const liste=simDCUnites(b), courante=simDCUnite(b).cle;
   const quoi=(b.role==="source")?"la tension imposée":"le courant tiré";
   let h='<select class="simU simUSel" id="'+id+'" title="'+
-        simEsc("Unité de "+quoi+". En changer garde le nombre écrit : "+
+        esc("Unité de "+quoi+". En changer garde le nombre écrit : "+
                "250 passé de A en mA vaut 250 mA.")+'">';
   for(const u of liste)
     h+='<option value="'+u.cle+'"'+(u.cle===courante?" selected":"")+">"+
@@ -1425,7 +1425,7 @@ function simDCLegende(){
   const puce=(t,txt)=>'<span><i style="background:rgb('+
     simDCCouleur(t).join(",")+')"></i>'+txt+"</span>";
   return '<div class="simLegZ simLegDC">'+
-    "<span><b>"+simEsc(g.nom)+"</b></span>"+
+    "<span><b>"+esc(g.nom)+"</b></span>"+
     puce(0,simNb(bas,g.dec)+" "+g.unite)+
     puce(0.5,simNb(mil,g.dec)+" "+g.unite)+
     puce(1,simNb(haut,g.dec)+" "+g.unite)+
@@ -1498,16 +1498,16 @@ function simDCCoucheBar(){
   const propose=simDCCoucheInteressante();
   let h='<div class="simDCBar"><span>Couche peinte</span>'+
     '<select class="simU simUSel" id="simDCCoucheSel" title="'+
-    simEsc("La carte ne peint qu'UNE couche : superposer deux potentiels les "+
+    esc("La carte ne peint qu'UNE couche : superposer deux potentiels les "+
            "mélangerait sans le dire. « Auto » suit ce que l'outil propose — "+
            "la couche active côté éditeur, celle de la charge côté "+
            "visionneuse.")+'">';
   h+='<option value="auto"'+(SIM.dcCouche==null?" selected":"")+">auto"+
-     (cs.indexOf(propose)>=0?" — "+simEsc(simDCNomCouche(propose)):"")+
+     (cs.indexOf(propose)>=0?" — "+esc(simDCNomCouche(propose)):"")+
      "</option>";
   for(const c of cs)
     h+='<option value="'+c+'"'+(SIM.dcCouche===c?" selected":"")+">"+
-       simEsc(simDCNomCouche(c))+"</option>";
+       esc(simDCNomCouche(c))+"</option>";
   h+="</select>";
   /* CE QUI EST PEINT EN CE MOMENT, écrit à côté : « auto » ne dit pas de quoi
      il s'agit, et sur une carte où l'on cherche un point chaud, savoir quelle
@@ -1515,7 +1515,7 @@ function simDCCoucheBar(){
   const vue=simDCCoucheVoulue();
   h+='<span class="simFaible">'+
      (cs.indexOf(vue)>=0
-        ? simEsc(simDCNomCouche(vue))+" — "+cs.length+" couche(s) calculée(s)"
+        ? esc(simDCNomCouche(vue))+" — "+cs.length+" couche(s) calculée(s)"
         : "aucune couche peinte")+"</span>";
   return h+"</div>";
 }
@@ -1580,7 +1580,7 @@ function simRendreDC(){
     return simProgres("Un réseau résistif sur tout le cuivre du net, puis un "+
       "gradient conjugué, puis la densité et l'échauffement.");
   if(SIM.erreurDC)
-    return '<p class="simErr">'+simEsc(SIM.erreurDC)+'</p>';
+    return '<p class="simErr">'+esc(SIM.erreurDC)+'</p>';
   if(!SIM.resDC){
     return '<p class="simEtat">'+
       (nSrc&&nCharge
@@ -1615,7 +1615,7 @@ function simRendreDC(){
        prend donc le rouge de `simAlerte`, comme la note du plan de référence
        dans la fiche d'impédance — la seule autre qui FLATTE le résultat. */
     const grave=/EMBALLEMENT/.test(a);
-    html+='<p class="simNote'+(grave?" simAlerte":"")+'">· '+simEsc(a)+'</p>';
+    html+='<p class="simNote'+(grave?" simAlerte":"")+'">· '+esc(a)+'</p>';
   });
   return html;
 }
@@ -1702,8 +1702,8 @@ function simVerdictDC(res){
                " (budget "+simNb(bud.dt,0)+" °C"+
                (m.dtCharte>0?", IPC-2221 en annoncerait "+
                   simNb(m.dtCharte,1)+" °C":"")+")");
-  return '<p class="simVerdict '+cls+'">'+simEsc(tete)+
-         " <span>"+simEsc(bouts.join(" · ")||"rien à mesurer")+"</span></p>";
+  return '<p class="simVerdict '+cls+'">'+esc(tete)+
+         " <span>"+esc(bouts.join(" · ")||"rien à mesurer")+"</span></p>";
 }
 
 /* LA LIGNE DE CONTEXTE, comme celle de la fiche d'impédance : sur quoi le
@@ -1718,7 +1718,7 @@ function simMetaDC(res){
   for(const n of Object.keys(cour))total+=Math.abs(cour[n]);
   const couches=(res.couches||[]).length;
   return '<div class="simMeta"><span>'+
-    simEsc(nets.join(", ")||SIM.portee||"—")+"</span>"+
+    esc(nets.join(", ")||SIM.portee||"—")+"</span>"+
     "<span>"+couches+" couche"+(couches>1?"s":"")+"</span>"+
     "<span>"+simNb(total,3)+" A</span>"+
     "<span>"+simNb(res.pas,3)+" mm de trame</span>"+
@@ -1749,7 +1749,7 @@ function simTableauNetsDC(res){
        lire les deux dans la même colonne. */
     const ref=refs.indexOf(net)>=0
       ? ' <i class="simFaible">(réf.)</i>' : '';
-    html+="<tr><td>"+simEsc(net)+ref+"</td>"+
+    html+="<tr><td>"+esc(net)+ref+"</td>"+
           "<td>"+(i?simNb(i,3)+" A":"—")+"</td>"+
           "<td>"+simNb(ch[net]*1e3,2)+" mV</td></tr>";
   }
@@ -1793,7 +1793,7 @@ function simDCCuivrePris(res){
   h+='<p class="simNote">· <b>Trame</b> : '+simNb(res.pas,4)+' mm'+d+
      ' — '+res.n_noeuds+' nœuds, '+res.n_aretes+' liaisons, '+res.n_vias+
      ' trou(s) métallisé(s) relié(s).</p>';
-  if(f&&f.note)h+='<p class="simNote">· '+simEsc(f.note)+'</p>';
+  if(f&&f.note)h+='<p class="simNote">· '+esc(f.note)+'</p>';
   /* SOUS QUATRE CARREAUX, UNE FORME N'EST PLUS MAILLÉE : ELLE EST
      ÉCHANTILLONNÉE. Sa résistance sort de la position de deux ou trois points,
      pas de sa géométrie — et l'écart peut atteindre des dizaines de pour cent
@@ -1814,7 +1814,7 @@ function simDCCuivrePris(res){
      (`SIM.notes`) ; celle-ci les laissait tomber, si bien qu'un document où
      tous les trous étaient supposés traversants ne le disait nulle part. */
   for(const n of (SIM.dcNotes||[]))
-    h+='<p class="simNote">· '+simEsc(n)+'</p>';
+    h+='<p class="simNote">· '+esc(n)+'</p>';
   return h;
 }
 
@@ -1867,14 +1867,14 @@ function simTableauBornes(res){
        autres en gris. C'est la réponse d'un coup d'œil à « pourquoi ne vois-je
        rien autour de celle-là ». */
     const ici=(b.couche===vue);
-    html+="<tr><td>"+simEsc(b.repere||"—")+
+    html+="<tr><td>"+esc(b.repere||"—")+
           ' <i class="simFaible">'+(src?"source":"charge")+"</i></td>"+
           "<td"+(ici?"":' class="simFaible"')+' title="'+
-          simEsc(ici?"sur la couche peinte"
+          esc(ici?"sur la couche peinte"
                     :"PAS sur la couche peinte : le cuivre autour de cette "+
                      "borne n'est pas coloré ici, ce qui ne veut pas dire "+
                      "qu'elle ne porte rien")+'">'+
-          simEsc(simDCNomCouche(b.couche))+"</td>"+
+          esc(simDCNomCouche(b.couche))+"</td>"+
           "<td>"+(src?simNb(b.consigne,3)+" V"
                      :simNb(Math.abs(b.consigne),3)+" A")+"</td>"+
           "<td>"+simNb(b.tension,4)+" V</td>"+
@@ -1889,8 +1889,8 @@ function simTableauBornes(res){
   const ailleurs=bornes.filter(b=>b.couche!==vue);
   if(ailleurs.length)
     html+='<p class="simNote">· '+ailleurs.length+' borne(s) ne sont PAS sur '+
-      'la couche peinte ('+simEsc(simDCNomCouche(vue))+') : '+
-      ailleurs.map(b=>simEsc(b.repere||"—")).join(", ")+
+      'la couche peinte ('+esc(simDCNomCouche(vue))+') : '+
+      ailleurs.map(b=>esc(b.repere||"—")).join(", ")+
       ". Le cuivre autour d'elles n'est pas coloré ici — cela ne veut pas "+
       "dire qu'elles ne portent rien : changez de couche peinte pour les "+
       "voir. Les chiffres du tableau, eux, sont ceux de tout le calcul.</p>";
@@ -1900,7 +1900,7 @@ function simTableauBornes(res){
        lignes plus haut, et la répéter apprend à sauter les notes. */
     const pire=charges.reduce((a,b)=>(b.chute>a.chute?b:a));
     html+='<p class="simNote">· La charge la plus mal servie est <b>'+
-          simEsc(pire.repere||"—")+"</b> : il lui arrive "+
+          esc(pire.repere||"—")+"</b> : il lui arrive "+
           simNb(pire.tension,4)+" V, soit "+simNb(pire.chute*1e3,2)+
           " mV de moins qu'à la source"+
           (ref?" ("+simNb(100*pire.chute/ref,2)+" %)":"")+".</p>";
@@ -1953,20 +1953,20 @@ function simTableauPire(res){
        élargit une piste ; l'absolu est ce qu'on compare au Tg du stratifié ou
        à la cote d'un boîtier. Les deux se lisent, et ni l'un ni l'autre ne
        remplace l'autre. */
-    html+="<tr><td>"+simEsc(net)+"</td>"+
+    html+="<tr><td>"+esc(net)+"</td>"+
           '<td class="'+cls+'" title="'+
-          simEsc("Échauffement physique par étalement thermique"+ou+". Ambiante "+
+          esc("Échauffement physique par étalement thermique"+ou+". Ambiante "+
                  simNb(SIM.dcAmbiante,0)+" °C.")+'">+'+
           simNb(p.echauffement,2)+" °C<small>"+
           simNb(SIM.dcAmbiante+p.echauffement,1)+" °C</small></td>"+
           '<td class="simFaible" title="'+
-          simEsc("Référence normative comparative IPC-2221, au MÊME point (conducteur isolé dans l'air calme).")+'">'+
+          esc("Référence normative comparative IPC-2221, au MÊME point (conducteur isolé dans l'air calme).")+'">'+
           (charte>0?"+"+simNb(charte,2)+" °C":"—")+"</td>"+
           '<td class="simFaible" title="'+
-          simEsc("Écart absolu entre le modèle d'étalement physique et la référence IPC-2221.")+'">'+
+          esc("Écart absolu entre le modèle d'étalement physique et la référence IPC-2221.")+'">'+
           ecartTxt+"</td>"+
           "<td>"+simNb(p.largeur_chaude,2)+" mm</td>"+
-          '<td title="'+simEsc("Maximum ponctuel : il dit où regarder, pas "+
+          '<td title="'+esc("Maximum ponctuel : il dit où regarder, pas "+
             "combien. À un angle vif il croît quand on affine la trame.")+
           '">'+simNb(p.densite,1)+" A/mm²</td></tr>";
   }
@@ -2020,7 +2020,7 @@ function simThermiqueDC(res){
     }
   }
   if(res.modele_thermique)
-    h+='<p class="simNote">· '+simEsc(res.modele_thermique)+'</p>';
+    h+='<p class="simNote">· '+esc(res.modele_thermique)+'</p>';
   h+='<p class="simNote">· Couche(s) prise(s) pour extérieure(s) : '+
      ((res.couches_externes||[]).map(c=>c+1).join(", ")||"aucune")+
      '. Une extérieure perd en plus par sa face nue ; la charte, elle, en '+
@@ -2077,10 +2077,10 @@ function simTableauVias(res){
            "<th>Courant</th><th>Chute</th><th>R</th></tr>";
   vias.slice(0,SIM_DC_VIAS_MAX).forEach(v=>{
     if(!v.relie){
-      html+="<tr><td>"+simEsc(v.repere||"—")+"</td>"+
+      html+="<tr><td>"+esc(v.repere||"—")+"</td>"+
             "<td>"+(v.couche_a+1)+"→"+(v.couche_b+1)+"</td>"+
             '<td colspan="3" class="z0ko">hors calcul<small>'+
-            simEsc(v.motif||"non relié")+"</small></td></tr>";
+            esc(v.motif||"non relié")+"</small></td></tr>";
       return;
     }
     /* Le courant en MILLIAMPÈRES sous l'ampère : « 0,043 A » se lit mal, et
@@ -2101,11 +2101,11 @@ function simTableauVias(res){
        ELLE-MÊME : si le trou est borgne, elle n'existe pas, et le courant
        qu'elle porte n'existe pas non plus. La seconde est un ordre de gravité
        au-dessus, donc elle se marque sur les COUCHES, là où on la lit. */
-    html+='<tr><td title="'+simEsc("en "+simNb(v.x,3)+" ; "+simNb(v.y,3)+
+    html+='<tr><td title="'+esc("en "+simNb(v.x,3)+" ; "+simNb(v.y,3)+
           " mm"+(sup?" — perçage SUPPOSÉ, déduit de la pastille":""))+'">'+
-          simEsc(v.repere||"—")+(sup?' <i class="simFaible">?</i>':"")+"</td>"+
+          esc(v.repere||"—")+(sup?' <i class="simFaible">?</i>':"")+"</td>"+
           "<td"+(por?' class="z0limite" title="'+
-            simEsc("PORTÉE SUPPOSÉE : le fichier ne déclare pas entre quelles "+
+            esc("PORTÉE SUPPOSÉE : le fichier ne déclare pas entre quelles "+
                    "couches ce perçage court, il est pris TRAVERSANT. Si le "+
                    "trou est borgne ou enterré, cette liaison N'EXISTE PAS — "+
                    "et le courant qui la traverse non plus.")+'"':"")+">"+
@@ -2113,7 +2113,7 @@ function simTableauVias(res){
           "<td>"+ia+"</td>"+
           "<td>"+simNb(v.chute*1e3,3)+" mV</td>"+
           '<td'+(sup?' class="simFaible" title="'+
-            simEsc("Perçage SUPPOSÉ (déduit de la pastille) : la résistance "+
+            esc("Perçage SUPPOSÉ (déduit de la pastille) : la résistance "+
                    "va comme 1/section, donc un diamètre deviné à cinquante "+
                    "pour cent près se paie double ici.")+'"':"")+">"+
           simNb(v.resistance*1e3,3)+" mΩ</td></tr>";
@@ -2229,7 +2229,7 @@ function simPorteesSupposees(relies){
   return '<p class="simNote simAlerte">· '+n+
     ' via(s) sont montés sur une portée SUPPOSÉE traversante, et ils portent '+
     '<b>'+simNb(part,1)+' %</b> du passage vertical'+
-    (pire?" — le plus chargé est "+simEsc(pire.repere||"?")+", à "+
+    (pire?" — le plus chargé est "+esc(pire.repere||"?")+", à "+
       ma(Math.abs(pire.courant)):"")+
     '. Le fichier ne déclare pas entre quelles couches ces perçages courent : '+
     's\'ils sont borgnes ou enterrés, ces liaisons N\'EXISTENT PAS et ce '+
@@ -2824,10 +2824,6 @@ function simUniteBande2(){
   return SIM_UNITES.find(u=>u.cle===cle)||simUnite();
 }
 
-function simEsc(s){
-  return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;")
-    .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-}
 function simEl(id){return document.getElementById(id);}
 /* Virgule décimale, comme partout ailleurs dans les deux outils. */
 function simNb(v,dec){
@@ -3330,7 +3326,7 @@ function simCascadeRefusee(res){
   const d=(res.topologie&&res.topologie.derivations)||[];
   let h='<div class="simRefus"><p class="simRefusTitre">'+
         "Paramètres S non calculés</p>"+
-        '<p class="simRefusQuoi">'+simEsc(res.cascade_refusee)+"</p>";
+        '<p class="simRefusQuoi">'+esc(res.cascade_refusee)+"</p>";
   if(d.length){
     const n=Math.min(d.length,4);
     h+='<p class="simRefusOu">'+(d.length>1?"Points de dérivation":
@@ -3339,7 +3335,7 @@ function simCascadeRefusee(res){
     for(let i=0;i<n;i++)
       l.push(simNb(d[i].x,3)+" ; "+simNb(d[i].y,3)+
              " ("+d[i].branches+" branches)");
-    h+=simEsc(l.join(" · "))+(d.length>n?" … et "+(d.length-n)+" autre"+
+    h+=esc(l.join(" · "))+(d.length>n?" … et "+(d.length-n)+" autre"+
        (d.length-n>1?"s":""):"")+"</p>";
   }
   /* CE QUI RESTE VALABLE, dit tout de suite. Sans cette phrase le refus se
@@ -3627,7 +3623,7 @@ function simFiche(){
      « cao-sim-em-resultat-5 » : `!==false` les tient pour valables, ce qu'ils
      étaient — la question ne se posait pas encore. */
   const cumuls=L.cumuls_valides!==false;
-  h+='<div class="simMeta"><span>'+simEsc(SIM.portee||res.net||"—")+"</span>"+
+  h+='<div class="simMeta"><span>'+esc(SIM.portee||res.net||"—")+"</span>"+
      "<span>"+L.troncons+" tronçon"+(L.troncons>1?"s":"")+"</span>"+
      "<span>"+simNb(L.longueur,2)+" mm</span>"+
      /* LE RETARD ET LES PERTES SONT DES CUMULS LE LONG D'UN PARCOURS. Sur
@@ -3637,11 +3633,11 @@ function simFiche(){
         avec la raison au survol. Le taire ferait croire à un calcul
         incomplet ; le laisser nu le ferait lire comme un retard de liaison. */
      "<span"+(cumuls?"":' class="simDouteux" title="'+
-       simEsc("Somme sur toute la sélection : sur une liaison qui n'est pas "+
+       esc("Somme sur toute la sélection : sur une liaison qui n'est pas "+
               "une chaîne, ce n'est le trajet d'aucun front.")+'"')+">"+
      simRetard(L.retard)+"</span>"+
      "<span"+(cumuls?"":' class="simDouteux" title="'+
-       simEsc("Somme sur toute la sélection, et non le long d'un parcours.")+
+       esc("Somme sur toute la sélection, et non le long d'un parcours.")+
        '"')+">"+simNb(L.pertes_db,2)+" dB</span>"+
      "<span>réf. "+simNb(res.impedance_reference||SIM.saisie.z0,0)+" Ω</span>"+
      "<span>"+simNb(res.duree,2)+" s</span></div>";
@@ -3657,9 +3653,9 @@ function simFiche(){
 
   /* Ce que l'outil sait du modèle et que le serveur ne peut pas deviner, puis
      ce que le serveur sait des limites du calcul. */
-  for(const n of SIM.notes)h+='<p class="simNote">· '+simEsc(n)+"</p>";
+  for(const n of SIM.notes)h+='<p class="simNote">· '+esc(n)+"</p>";
   for(const a of (res.avertissements||[]))
-    h+='<p class="simNote">· '+simEsc(a)+"</p>";
+    h+='<p class="simNote">· '+esc(a)+"</p>";
   if(L.ecartes)
     h+='<p class="simNote">· '+L.ecartes+" tronçon(s) écarté(s) : pas de "+
        "plan de référence en face, ou couche absente de l'empilage.</p>";
@@ -3701,10 +3697,10 @@ function simFiche(){
        légende qui venait d'être lue trois lignes plus haut. */
     const cls=v===null?"":(v===0?"z0ok":(v>0?"z0haut":"z0bas"));
     h+='<tr><td><i class="simPuce" style="background:'+simZCouleur(s.z0)+
-       '"></i>'+(g.n>1?g.n+" × ":"")+simEsc(g.couche)+"</td>"+
+       '"></i>'+(g.n>1?g.n+" × ":"")+esc(g.couche)+"</td>"+
        "<td>"+simNb(g.longueur,2)+"</td>"+
        "<td>"+simNb(s.largeur,3)+"</td>"+
-       "<td>"+simEsc(simTopo(s))+"</td>"+
+       "<td>"+esc(simTopo(s))+"</td>"+
        "<td>"+(s.z0>0?simNb(s.z0,1):"—")+"</td>"+
        '<td class="'+cls+'">'+
        (s.z0>0?(d>=0?"+":"−")+simNb(Math.abs(d),1):"—")+"</td></tr>";
@@ -3772,12 +3768,12 @@ function simSection(res){
       /* Triplaque : ce qui compte est l'écart ENTRE plans et où le ruban se
          trouve dedans — un empilage 4 couches n'est jamais symétrique, et
          c'est justement ce que la formule IPC ne sait pas prendre. */
-      bouts.push("plans "+simEsc(s.plan_haut||"?")+" et "+
-                 simEsc(s.plan_bas||"?"));
+      bouts.push("plans "+esc(s.plan_haut||"?")+" et "+
+                 esc(s.plan_bas||"?"));
       bouts.push("écart entre plans "+simNb(s.entre_plans,3)+" mm");
       bouts.push("ruban à "+simNb(s.h,3)+" mm du plus proche");
     }else{
-      bouts.push("plan "+simEsc(s.plan_haut||s.plan_bas||"?"));
+      bouts.push("plan "+esc(s.plan_haut||s.plan_bas||"?"));
       bouts.push("h "+simNb(s.h,3)+" mm");
       if(s.couverture>0)
         bouts.push("couvert de "+simNb(s.couverture,3)+" mm de stratifié");
@@ -3795,11 +3791,11 @@ function simSection(res){
       ? SIM_ED.provenance(s) : "";
 
     h+='<p class="simSection"><b>Section</b> '+
-       simEsc(s.nom_couche||("couche "+s.couche))+" — "+
-       simEsc(simTopoNom(s))+" : "+bouts.join(", ")+
+       esc(s.nom_couche||("couche "+s.couche))+" — "+
+       esc(simTopoNom(s))+" : "+bouts.join(", ")+
        " → ε_eff "+simNb(s.eps_eff,3)+
        (vues.size>1?" ("+simNb(v.longueur,2)+" mm)":"")+"."+
-       (prov?" <i>"+simEsc(prov)+"</i>":"")+
+       (prov?" <i>"+esc(prov)+"</i>":"")+
        /* LE MASQUE DE SOUDURE N'EST PAS DANS L'EMPILAGE ENVOYÉ, et sur une
           piste de couche extérieure il compte : il remplit l'écart coplanaire,
           là où le champ est le plus fort. Deux à trois pour cent de Z₀ en
@@ -3936,8 +3932,8 @@ function simRefEcrire(){
         'dans le calcul ; celui des autres nets, non.">Masse</span>';
   for(const c of cand.slice(0,SIM_REF_MAX))
     h+='<button class="simRefNet'+(s.has(c.net)?" on":"")+
-       '" data-ref="'+simEsc(c.net)+'" title="'+simEsc(c.quoi||"")+'">'+
-       simEsc(c.net)+"</button>";
+       '" data-ref="'+esc(c.net)+'" title="'+esc(c.quoi||"")+'">'+
+       esc(c.net)+"</button>";
   if(cand.length>SIM_REF_MAX)
     h+='<span class="simRefVide">+'+(cand.length-SIM_REF_MAX)+" autre(s)</span>";
   h+='<span class="simRefEtat">'+
@@ -4490,7 +4486,7 @@ function simCouture(res){
 function simVoisins(){
   const v=SIM.voisins;
   if(!v||!v.length)return "";
-  const l=v.slice(0,4).map(o=>simEsc(o.net)+" à "+simNb(o.ecart,3)+" mm sur "+
+  const l=v.slice(0,4).map(o=>esc(o.net)+" à "+simNb(o.ecart,3)+" mm sur "+
                              simNb(o.longueur,2)+" mm");
   return '<p class="simNote">· Du cuivre <b>qui n\'est pas de la masse</b> '+
     "longe la piste sur sa propre couche : "+l.join(", ")+
@@ -4541,8 +4537,8 @@ function simPorts(res){
      et son cuivre à elle ne compte pas. Sans les deux phrases côte à côte, on
      lit S₁₁ comme s'il comprenait la pastille. */
   return '<p class="simNote">· Ports déduits, non placés : <b>1</b> au départ '+
-    "du premier tronçon"+simEsc(a)+", <b>2</b> à l'arrivée du dernier"+
-    simEsc(b)+", tous deux sur "+simNb(zr,0)+" Ω. Le modèle est une chaîne : "+
+    "du premier tronçon"+esc(a)+", <b>2</b> à l'arrivée du dernier"+
+    esc(b)+", tous deux sur "+simNb(zr,0)+" Ω. Le modèle est une chaîne : "+
     "elle a exactement deux bouts, il n'y a donc rien à placer. Ils sont "+
     "idéaux — le port est posé là, mais ni la pastille, ni le via, ni le "+
     "connecteur, ni la longueur d'accès n'entrent dans le modèle : S₁₁ est la "+
@@ -4560,7 +4556,7 @@ function simFicheSchemaAdaptation(res){
   let h='<div class="simCardSchema">';
   h+='<span class="simBadgeSchema">⚡ Schéma & Adaptation</span>';
   if(info.composants.length){
-    h+='<span class="simSchemaComps">Composants : <b>'+info.composants.map(simEsc).join(" → ")+'</b></span>';
+    h+='<span class="simSchemaComps">Composants : <b>'+info.composants.map(esc).join(" → ")+'</b></span>';
   }
   const z0=(res&&res.ligne&&res.ligne.z0_moyen)||50;
   if(info.rTerm!=null){
@@ -4571,8 +4567,8 @@ function simFicheSchemaAdaptation(res){
     const evalTxt=gAbs<=0.1?"Excellente adaptation série (|Γ| ≤ 0,10)"
                  :(gAbs<=0.25?"Bonne adaptation série (|Γ| ≤ 0,25)":"Adaptation modérée");
     h+='<div class="simSchemaRterm">'+
-       'Terminaison série détectée : <b>'+simEsc(info.rTermRef||"R")+' = '+simNb(info.rTerm,1)+' Ω</b>'+
-       (info.rTermComp&&info.rTermComp.mpn?' ('+simEsc(info.rTermComp.mpn)+')':'')+'. '+
+       'Terminaison série détectée : <b>'+esc(info.rTermRef||"R")+' = '+simNb(info.rTerm,1)+' Ω</b>'+
+       (info.rTermComp&&info.rTermComp.mpn?' ('+esc(info.rTermComp.mpn)+')':'')+'. '+
        'Source équivalente R<sub>s</sub> ≈ '+simNb(rs,1)+' Ω (driver ~20 Ω + R<sub>série</sub>), '+
        'Z₀ ligne ≈ '+simNb(z0,1)+' Ω → réflexion source <b>Γ ≈ '+(gamma>=0?"+":"")+simNb(gamma,2)+'</b> ('+evalTxt+').'+
        '</div>';
@@ -4704,7 +4700,7 @@ function simPointsChauds(res){
        près : l'entassement vient alors d'autre chose — un bord de zone, une
        jonction de largeur — et on ne devine pas. */
     const cause=p.cause
-      ? simEsc(p.cause)+(p.ecart_repere_mm>0
+      ? esc(p.cause)+(p.ecart_repere_mm>0
           ? ' <small>à '+simNb(p.ecart_repere_mm,2)+" mm</small>" : "")
       : '<i class="simFaible">non nommée</i>';
     /* LE VERTICAL EST UN DISCRIMINANT BINAIRE : il vaut exactement zéro sur du
@@ -4714,7 +4710,7 @@ function simPointsChauds(res){
       ? simNb(p.part_verticale*100,0)+" %"
       : '<span class="simFaible">—</span>';
     h+="<tr><td>"+simNb(p.s_mm,2)+" mm</td>"+
-       "<td>"+simEsc(p.genre)+"</td>"+
+       "<td>"+esc(p.genre)+"</td>"+
        "<td>"+cause+"</td>"+
        "<td>"+simNb(p.part_transverse*100,0)+" %</td>"+
        "<td>"+vert+"</td>"+
@@ -4882,8 +4878,8 @@ function simDiscontinuites(res){
                  rang:horsChaine?Infinity:t.troncon,
                  apres:horsChaine?"—":null,
                  type:horsChaine?"Via <small>hors parcours</small>":"Via",
-                 detail:simEsc((t.nom_depart||"?")+" → "+(t.nom_arrivee||"?"))+
-                        '<br><small>'+simEsc(cotes.join(" · "))+"</small>"+moi,
+                 detail:esc((t.nom_depart||"?")+" → "+(t.nom_arrivee||"?"))+
+                        '<br><small>'+esc(cotes.join(" · "))+"</small>"+moi,
                  m:t.modelise||{}, l:"inductance_nH", ul:" nH", dl:3,
                  cotes:c,
                  /* LA CAPACITÉ AFFICHÉE EST CELLE QUI EST CASCADÉE : celle du
@@ -4942,10 +4938,10 @@ function simDiscontinuites(res){
     const bouts=[];
     if(repli.length)
       bouts.push("des valeurs par défaut du solveur ("+
-                 simEsc(repli.join(", "))+"), que la page n'envoie pas encore");
+                 esc(repli.join(", "))+"), que la page n'envoie pas encore");
     if(devine.length)
       bouts.push("des cotes que le lecteur du fichier a devinées ("+
-                 simEsc(devine.join(", "))+") faute de padstack déclaré — "+
+                 esc(devine.join(", "))+") faute de padstack déclaré — "+
                  "ce ne sont pas des cotes du fichier");
     h+=bouts.join(" et ")+
        ". La hauteur, elle, est lue dans l'empilage ("+
@@ -5044,7 +5040,7 @@ function simRetourCellule(t){
   }
   if(r.reference_change)
     return '<span class="z0ko">⚠ '+
-           simEsc((r.nets_depart||r.plans_depart||["?"]).join("/")+"→"+
+           esc((r.nets_depart||r.plans_depart||["?"]).join("/")+"→"+
                   (r.nets_arrivee||r.plans_arrivee||["?"]).join("/"))+"</span>";
   /* LE DOUTE A SA PROPRE CASE, et il ne se confond ni avec le défaut ni avec
      le cas sain : deux plans de noms différents dont on ignore les nets
@@ -5052,7 +5048,7 @@ function simRetourCellule(t){
      (grave), et rien ici ne permet de trancher. */
   if(r.plan_change&&r.nets_differents==null)
     return '<span class="simFaible">? '+
-           simEsc((r.plans_depart||["?"]).join("/")+"→"+
+           esc((r.plans_depart||["?"]).join("/")+"→"+
                   (r.plans_arrivee||["?"]).join("/"))+"</span>";
   if(r.source==="absent")
     return '<span class="simFaible">non envoyé</span>';
@@ -5210,8 +5206,8 @@ function simRetourNotes(vias){
     const r=graves[0].retour;
     h+='<p class="simNote simAlerte">· <b>Le plan de référence change</b> à '+
        (graves.length>1?graves.length+" vias":"ce via")+" — "+
-       simEsc((r.plans_depart||["?"]).join("/"))+" d'un côté, "+
-       simEsc((r.plans_arrivee||["?"]).join("/"))+" de l'autre — et aucun via "+
+       esc((r.plans_depart||["?"]).join("/"))+" d'un côté, "+
+       esc((r.plans_arrivee||["?"]).join("/"))+" de l'autre — et aucun via "+
        "de masse ne joint les deux. Le courant de retour passe par la cavité "+
        "entre plans et ses condensateurs de découplage, absents de ce modèle : "+
        "l'inductance réelle est plus grande, donc |S₁₁| est meilleur ici qu'il "+
@@ -5234,8 +5230,8 @@ function simRetourNotes(vias){
     const r=doutes[0].retour;
     h+='<p class="simNote">· Le plan de référence change à '+
        (doutes.length>1?doutes.length+" vias":"ce via")+" — "+
-       simEsc((r.plans_depart||["?"]).join("/"))+" d'un côté, "+
-       simEsc((r.plans_arrivee||["?"]).join("/"))+" de l'autre — et "+
+       esc((r.plans_depart||["?"]).join("/"))+" d'un côté, "+
+       esc((r.plans_arrivee||["?"]).join("/"))+" de l'autre — et "+
        "<b>on ne peut pas dire si c'est grave</b> : l'empilage ne déclare pas "+
        "le net de ces plans. Deux plans de MASSE sont le cas ordinaire, qu'un "+
        "via de masse referme ; une masse et une alimentation sont le défaut "+
@@ -5250,7 +5246,7 @@ function simRetourNotes(vias){
        des courants induits qui referment la boucle. Il n'y a jamais « pas de
        chemin » — il y a un chemin dont on connaît plus ou moins bien le prix. */
     h+='<p class="simNote">· Le retour change de plan — '+
-       simEsc(cav.plan_haut+" → "+cav.plan_bas)+", "+simNb(cav.hauteur_mm,3)+
+       esc(cav.plan_haut+" → "+cav.plan_bas)+", "+simNb(cav.hauteur_mm,3)+
        " mm entre eux. <b>Aucun via de masse ne peut les joindre</b> : il "+
        "joindrait de la masse à de la masse. Le courant passe par la capacité "+
        "répartie des deux plans ("+simNb(cav.capacite_plans_pF,0)+" pF"+
@@ -5264,7 +5260,7 @@ function simRetourNotes(vias){
        personne qui le lit doit savoir sur quoi il repose. */
     const sup=(cavites[0].retour&&cavites[0].retour.nets_supposes)||[];
     if(sup.length)
-      h+='<p class="simNote">· Le net de <b>'+simEsc(sup.join(" / "))+
+      h+='<p class="simNote">· Le net de <b>'+esc(sup.join(" / "))+
          "</b> n'a pas été lu dans le cuivre : il est <b>déduit du rôle</b> "+
          "donné à la couche dans l'empilage. Tout ce verdict en dépend — "+
          "vérifiez ce rôle avant d'y croire.</p>";
@@ -5278,7 +5274,7 @@ function simRetourNotes(vias){
       h+='<p class="simNote">· '+
          (cav.ponts_raison
             ? "Les découplages n'ont pas été cherchés — <b>"+
-              simEsc(cav.ponts_raison)+"</b>. On"
+              esc(cav.ponts_raison)+"</b>. On"
             : "Cette page ne cherche pas les découplages : on")+
          " ne compte que l'étalement dans les plans ("+
          simNb(cav.etalement_cavite_nH,2)+" nH), et la traversée est donc "+
@@ -5298,7 +5294,7 @@ function simRetourNotes(vias){
             : "Cavité modale de "+simNb(r.a,0)+" × "+simNb(r.b,0)+" mm (modes TM compris), ")+
          simNb(cav.capacite_plans_pF,0)+" pF, "+(cav.ponts||0)+" pont(s) sur la carte"+
          (cav.pont
-            ? " ; le plus proche : "+simEsc(cav.pont.repere||"?")+" à "+
+            ? " ; le plus proche : "+esc(cav.pont.repere||"?")+" à "+
               simNb(cav.pont.distance_mm,2)+" mm."
             : " — <b>aucun</b>, direct ni par un 0 Ω : le retour ne traverse que par la cavité.")+
          "</p>";
@@ -5318,7 +5314,7 @@ function simRetourNotes(vias){
         h+='<p class="simNote">· La cavité <b>rayonne</b> par ses bords au pire '+
            simNb(ry.champ_dbuv_m,0)+" dBµV/m à "+simNb(ry.freq_hz/1e6,0)+" MHz (limite "+
            simNb(ry.limite_dbuv_m,0)+", <b>marge "+(ry.marge_db>=0?"+":"")+simNb(ry.marge_db,0)+
-           " dB</b>, classe "+simEsc(cav.rayonnement.classe)+" à "+simNb(cav.rayonnement.distance_m,0)+
+           " dB</b>, classe "+esc(cav.rayonnement.classe)+" à "+simNb(cav.rayonnement.distance_m,0)+
            " m) — cavité seule, ni câbles ni mode commun.</p>";
     }else{
       h+='<p class="simNote">· La traversée pèse <b>'+
@@ -5328,10 +5324,10 @@ function simRetourNotes(vias){
             ? " — aucun découplage n'a été trouvé dans le rayon optimal de "+
               simNb(cav.rayon_mm,1)+" mm"+
               (cav.plus_proche_hors_rayon_mm!=null
-                ? " (le plus proche trouvé "+(cav.plus_proche_hors_rayon_ref?"["+simEsc(cav.plus_proche_hors_rayon_ref)+"] ":"")+"est à <b>"+simNb(cav.plus_proche_hors_rayon_mm,2)+" mm</b>, trop éloigné)"
+                ? " (le plus proche trouvé "+(cav.plus_proche_hors_rayon_ref?"["+esc(cav.plus_proche_hors_rayon_ref)+"] ":"")+"est à <b>"+simNb(cav.plus_proche_hors_rayon_mm,2)+" mm</b>, trop éloigné)"
                 : "")+
               " : on a supposé le plus proche <b>à ce rayon</b>, ce qui est un <b>minorant</b>."
-            : ", par "+simEsc(cav.pont.repere||"le découplage le plus proche")+
+            : ", par "+esc(cav.pont.repere||"le découplage le plus proche")+
               " à "+simNb(cav.pont.distance_mm,2)+" mm.")+
          " Elle se décompose en "+simNb(cav.etalement_nH,2)+
          " nH d'étalement dans les plans (Bogatin éq. 13-35) et "+
@@ -5361,7 +5357,7 @@ function simRetourNotes(vias){
       : '';
     h+='<div class="simBilanBloc" style="margin-top:8px; padding:8px 12px; background:rgba(255,255,255,0.03); border-left:3px solid '+colBilan+'; border-radius:3px;">';
     h+='<p class="simNote" style="margin:0 0 6px 0;">· <b>Bilan de santé du signal : '+simNb(b.score_reconstruction_pct,1)+
-       '% de fidélité de reconstruction</b> — '+simEsc(b.verdict)+
+       '% de fidélité de reconstruction</b> — '+esc(b.verdict)+
        '<br><small>Signal f₀ = '+simFreq(fBilan)+
        ', front t<sub>r</sub> = '+simRetard(trBilan)+
        ' (f<sub>knee</sub> = '+simFreq(b.f_knee||b.f_knee_hz)+')</small></p>'+
@@ -5542,7 +5538,7 @@ function simRetourNotes(vias){
     h+='<p class="simNote">· Les vias de retour ne se partagent pas le courant '+
        "à parts égales — leur mutuelle les en empêche, et c'est pourquoi trois "+
        "vias ne divisent pas l'inductance par trois. Au tronçon "+
-       partages[0].troncon+" : "+simEsc(parts.join(" · "))+".</p>";
+       partages[0].troncon+" : "+esc(parts.join(" · "))+".</p>";
   }
 
   return h;
@@ -5630,7 +5626,7 @@ function simCoplanaire(res){
     (SIM_ED&&SIM_ED.outil==="editeur-pcb"
       ? "de la règle d'isolation qui creuse le plan"
       : "d'une mesure sur le cuivre du fichier")+
-    (refs.length?", et « masse » veut dire "+simEsc(refs.join(", ")):"")+
+    (refs.length?", et « masse » veut dire "+esc(refs.join(", ")):"")+
     "."+
     /* CE QUE CE CALCUL SUPPOSE est contrôlé par la note suivante, et les deux
        ne se lisent bien qu'ensemble : le cuivre latéral n'est tenu à zéro volt
@@ -5716,7 +5712,7 @@ function simGrouper(segments){
    Une classe posée ici vaut pour tous, y compris ceux de demain. */
 function simChamp(id,titre,large){
   return '<input id="'+id+'" type="text" inputmode="decimal" spellcheck="false"'+
-         ' class="simChamp'+(large?" large":"")+'" title="'+simEsc(titre)+'">';
+         ' class="simChamp'+(large?" large":"")+'" title="'+esc(titre)+'">';
 }
 /* UN CHAMP DE TEXTE, et non de nombre : pas de `inputmode="decimal"`, qui
    ferait sortir un pave numerique sur une tablette pour ecrire « U7 VDD ». Il
@@ -5726,9 +5722,9 @@ function simChamp(id,titre,large){
    texte grisé du champ vide. */
 function simChampTexte(id,valeur,titre,sous,ph){
   return '<input id="'+id+'" type="text" spellcheck="false"'+
-         (ph?' placeholder="'+simEsc(ph)+'"':'')+
-         ' class="simChamp simTxt" value="'+simEsc(valeur||"")+'"'+
-         ' title="'+simEsc(titre+(sous?" — "+sous:""))+'">';
+         (ph?' placeholder="'+esc(ph)+'"':'')+
+         ' class="simChamp simTxt" value="'+esc(valeur||"")+'"'+
+         ' title="'+esc(titre+(sous?" — "+sous:""))+'">';
 }
 /* L'UNITÉ DES FRÉQUENCES, EN LISTE PLUTÔT QU'EN ÉTIQUETTE. Le champ portait
    « GHz » écrit à côté, et écrire 868 dans un champ qui attend des gigahertz
@@ -5906,7 +5902,7 @@ function simRendreRetour(){
   if(SIM.occupe)
     return simProgres("Les vias de la sélection, et les vias de masse qui "+
       "referment leur boucle.");
-  if(SIM.err)return '<p class="simErr">'+simEsc(SIM.err)+"</p>";
+  if(SIM.err)return '<p class="simErr">'+esc(SIM.err)+"</p>";
   if(SIM.res)return simFicheRetour();
   return '<p class="simEtat">Sélectionnez une piste, puis calculez.<br>'+
     "<small>Cette analyse ne montre QUE le chemin de retour : les vias de la "+
@@ -5926,7 +5922,7 @@ function simFicheRetour(){
      dire vaut mieux que de laisser croire à un calcul qui n’a pas abouti. */
   if(!vias.length){
     let h='<p class="simVerdict dedans">Aucun via dans la sélection'+
-          ' <span>'+simEsc(SIM.portee||res.net||"—")+"</span></p>";
+          ' <span>'+esc(SIM.portee||res.net||"—")+"</span></p>";
     h+='<p class="simNote">· La sélection ne change pas de couche : le '+
        "courant revient par le plan de référence, sous la piste, et il n’y a "+
        "pas de liaison verticale à chiffrer. Le chemin de retour ne devient "+
@@ -5962,7 +5958,7 @@ function simFicheRetour(){
           : (vias.length>1
               ? "Les "+vias.length+" vias ont un retour identifié"
               : "Le via a un retour identifié")))+
-    ' <span>'+simEsc(SIM.portee||res.net||"—")+" · "+
+    ' <span>'+esc(SIM.portee||res.net||"—")+" · "+
     simFreq(res.f_centre)+
     (res.temps_montee?" · t<sub>r</sub> "+simRetard(res.temps_montee):"")+"</span></p>";
 
@@ -5971,7 +5967,7 @@ function simFicheRetour(){
      détachée de son panneau ne se lit pas sans elle. */
   h+='<div class="simMeta"><span>'+vias.length+" via"+
      (vias.length>1?"s":"")+"</span>"+
-     "<span>masse : "+simEsc((res.reference_nets||[]).join(", ")||
+     "<span>masse : "+esc((res.reference_nets||[]).join(", ")||
                              "non déclarée")+"</span>"+
      (seuls.length?"<span>"+seuls.length+" hors parcours</span>":"")+
      "<span>"+simNb(res.duree,2)+" s</span></div>";
@@ -5995,13 +5991,13 @@ function simFicheRetour(){
       const isGndSel=(estActif&&typeof SIM!=="undefined"&&SIM.gndViaActif===idx);
       const isVigiGnd=v.retenu&&(v.statut==="vigilance"||v.distance_mm>(r.rayon_optimal_mm||1.8));
       const cls=v.retenu?(isVigiGnd?"simVigilance":(v.part>=0.20?"z0ok":"simFaible")):"z0ko";
-      const plansTip=(v.plans&&v.plans.length)?' · Connecté aux plans : '+simEsc(v.plans.join(', ')):'';
+      const plansTip=(v.plans&&v.plans.length)?' · Connecté aux plans : '+esc(v.plans.join(', ')):'';
       return '<div class="simGndItem '+cls+(isGndSel?' simGndActif':'')+'" data-via-idx="'+vIdx+'" data-gnd-idx="'+idx+'" title="Cliquez pour isoler ce via de retour sur le PCB'+plansTip+(isVigiGnd?' [Zone de vigilance : boucle large]':'')+'">'+
              '#'+(idx+1)+' · '+simNb(v.distance_mm,2)+" mm"+
              (isVigiGnd?' <span style="color:#f59f00;font-size:9px;font-weight:700;">[vigilance]</span>':'')+
-             (v.plans&&v.plans.length?' <span class="simFaible" style="font-size:9px;" title="Plans connectés : '+simEsc(v.plans.join(', '))+'">['+simEsc(v.plans.join('/'))+']</span>':'')+
+             (v.plans&&v.plans.length?' <span class="simFaible" style="font-size:9px;" title="Plans connectés : '+esc(v.plans.join(', '))+'">['+esc(v.plans.join('/'))+']</span>':'')+
              (v.retenu?" · <b>"+Math.round((v.part||0)*100)+" %</b>":" · <i>écarté</i>")+
-             (v.raison?' <small title="'+simEsc(v.raison)+'">('+simEsc(v.raison)+')</small>':'')+
+             (v.raison?' <small title="'+esc(v.raison)+'">('+esc(v.raison)+')</small>':'')+
              '</div>';
     }).join("");
     const gndCol=gndVias.length>3
@@ -6018,11 +6014,11 @@ function simFicheRetour(){
        '<td><b>#'+rang+'</b>'+(hors?'<br><small class="simFaible">hors</small>':'')+
        '<br><small class="simFaible" style="font-size:9.5px;color:var(--txt-dim);white-space:nowrap;" title="Position X ; Y">'+posTxt+'</small></td>'+
        '<td><div style="font-size:11px;font-weight:600;line-height:1.2;">'+
-       simEsc(t.nom_depart||"?")+'<br><span style="color:var(--txt-dim);font-size:9.5px;font-weight:400;">→ '+simEsc(t.nom_arrivee||"?")+'</span></div></td>'+
+       esc(t.nom_depart||"?")+'<br><span style="color:var(--txt-dim);font-size:9.5px;font-weight:400;">→ '+esc(t.nom_arrivee||"?")+'</span></div></td>'+
        '<td>'+simRetourCellule(t)+'</td>'+
        '<td style="text-align:right;">'+(m.inductance_nH!=null
                 ? '<b>'+simNb(m.inductance_nH,3)+' nH</b><br><small class="simFaible">'+
-                  simEsc(m.inductance_source||"")+'</small>'
+                  esc(m.inductance_source||"")+'</small>'
                 : "—")+'</td>'+
        '<td>'+gndCol+'</td></tr>';
   }
@@ -6442,7 +6438,7 @@ function simCarteAvertEcrire(){
   const e=simEl("simCarteAvert");
   if(!e)return;
   const L=simCarteFrontsAvert(SIM_CARTE.reglages);
-  e.innerHTML="<span>"+L.map(m=>"⚠ "+simEsc(m)).join("<br>")+"</span>";
+  e.innerHTML="<span>"+L.map(m=>"⚠ "+esc(m)).join("<br>")+"</span>";
   e.style.display=L.length?"":"none";
 }
 
@@ -6475,7 +6471,7 @@ function simCorpsCarte(){
                    "compare qu'à lui-même":
                "le Z₀ de la carte"+(k==="Analogique"?" — et un net Analogique sans "+
                                      "cible ne se compare qu'à lui-même":"");
-    classes+='<tr><td'+(itf?' title="'+simEsc(itf.nom)+'"':'')+'>'+simEsc(k)+'</td><td>'+
+    classes+='<tr><td'+(itf?' title="'+esc(itf.nom)+'"':'')+'>'+esc(k)+'</td><td>'+
       champU("simCarteTr"+id,"Le front de montée d'un net de classe « "+k+
              " » : celui de la techno qui le pilote, borné par 10 % de la "+
              "période de sa cadence.","ce front",
@@ -6491,7 +6487,7 @@ function simCorpsCarte(){
             "classe « "+k+" », celle de sa norme : la règle des paires "+
             "différentielles la juge face à elle, et non face à la Z_diff de "+
             "la carte.","Ω"):'<span class="simU">—</span>')+'</td>'+
-      '<td class="simEx">'+simEsc(itf?itf.nom:EX[k]||"")+'</td></tr>';
+      '<td class="simEx">'+esc(itf?itf.nom:EX[k]||"")+'</td></tr>';
   }
   return '<div class="pnl-bar simBarFixe">'+
     '<button class="tb mini on" id="simCarteGo" title="Juger toutes les '+
@@ -6696,7 +6692,7 @@ async function simCarteGo(){
 function simRendreCarte(){
   if(SIM_CARTE.occupe)
     return simProgres("Toutes les pistes de la carte, tous les nets.");
-  if(SIM_CARTE.err)return '<p class="simErr">'+simEsc(SIM_CARTE.err)+"</p>";
+  if(SIM_CARTE.err)return '<p class="simErr">'+esc(SIM_CARTE.err)+"</p>";
   if(SIM_CARTE.res)return simFicheCarte();
   return '<p class="simEtat">Vérifie toute la carte, sans sélection.<br>'+
     "<small>Les angles des pistes sur tous les nets — aigus, droits, "+
@@ -6763,11 +6759,11 @@ function simCarteLigne(i,ctx){
     '" data-carte-i="'+i+'" title="'+(k.x==null?"Un constat de carte, sans "+
     "position":"Amener la vue sur ce point")+'">'+
     (ctx&&ctx.derog?"":'<span class="simCarteOk" role="button" data-carte-ok="'+
-      simEsc(cle)+'" title="Accepter ce constat (dérogation) : il ne reviendra '+
+      esc(cle)+'" title="Accepter ce constat (dérogation) : il ne reviendra '+
       'plus dans le rapport de cette carte">✓</span>')+
     (neuf?'<span class="simCarteNeuf" title="Absent de la référence">nouveau</span>':"")+
-    simEsc(String(k.c))+" · "+simCartePos(k)+
-    simEsc(k.msg)+simCarteFreqs(k)+"</button>";
+    esc(String(k.c))+" · "+simCartePos(k)+
+    esc(k.msg)+simCarteFreqs(k)+"</button>";
 }
 function simCarteRegles(groupes,ouvrir,ctx){
   let h="";
@@ -6779,13 +6775,13 @@ function simCarteRegles(groupes,ouvrir,ctx){
        '<summary><span class="simCarteTag '+sev+'">'+SIM_CARTE_SEV[sev]+
        "</span> <b>"+R.titre+"</b> · "+ids.length+
        (g.parNet.size>1?" sur "+g.parNet.size+" nets":"")+"</summary>"+
-       '<div class="simCartePourquoi">'+simEsc(R.pourquoi)+"</div>";
+       '<div class="simCartePourquoi">'+esc(R.pourquoi)+"</div>";
     for(const [net,lst] of g.parNet){
       const cl=simCarteClasse(net);
-      h+='<div class="simCarteNet"><b>'+simEsc(simCarteNomNet(net))+"</b> "+
+      h+='<div class="simCarteNet"><b>'+esc(simCarteNomNet(net))+"</b> "+
          (cl?'<span class="simCarteClasse" title="La classe fixe le front, donc '+
              'le verdict des règles électriques. Elle se corrige dans la liste '+
-             'des nets.">'+simEsc(cl)+"</span> ":"")+lst.length+"</div>";
+             'des nets.">'+esc(cl)+"</span> ":"")+lst.length+"</div>";
       for(const i of lst)h+=simCarteLigne(i,ctx);
     }
     h+="</details>";
@@ -6876,10 +6872,10 @@ function simFicheCarte(){
         (cpt.critique>1?"s":"")+"</span>"+
       '<span class="simBadge simBadgeAlerte">'+cpt.vigilance+" vigilance</span>"+
       '<span class="simBadge">'+cpt.info+" info</span></div>"+
-    '<div class="simCarteMeta">'+simEsc(simCarteMeta(res).join(" · "))+"</div>"+
-    (res.notes||[]).map(n=>'<p class="simNote simAlerte">· '+simEsc(n)+"</p>").join("")+
-    (T.ref?'<p class="simNote">Comparé à la référence <b>'+simEsc(T.ref.carte)+"</b> ("+
-      simEsc(T.ref.date||"")+") : <b>"+T.nouveaux+"</b> nouveau"+(T.nouveaux>1?"x":"")+
+    '<div class="simCarteMeta">'+esc(simCarteMeta(res).join(" · "))+"</div>"+
+    (res.notes||[]).map(n=>'<p class="simNote simAlerte">· '+esc(n)+"</p>").join("")+
+    (T.ref?'<p class="simNote">Comparé à la référence <b>'+esc(T.ref.carte)+"</b> ("+
+      esc(T.ref.date||"")+") : <b>"+T.nouveaux+"</b> nouveau"+(T.nouveaux>1?"x":"")+
       ", <b>"+T.resolus.length+"</b> résolu"+(T.resolus.length>1?"s":"")+
       ' <span class="simCarteLien" role="button" data-carte-oublier="1" '+
       'title="Ne plus comparer à cette référence">oublier</span></p>':"")+
@@ -6890,7 +6886,7 @@ function simFicheCarte(){
   if(T.resolus.length)
     h+='<details class="simCarteAPart"><summary>Résolus depuis la référence · '+
        T.resolus.length+"</summary>"+'<div class="simCarteNoms">'+
-       T.resolus.map(c=>simEsc(T.ref.cles[c])).join("<br>")+"</div></details>";
+       T.resolus.map(c=>esc(T.ref.cles[c])).join("<br>")+"</div></details>";
   if(T.acceptes.length)
     h+='<details class="simCarteAPart"><summary>Dérogations acceptées · '+
        T.acceptes.length+"</summary>"+
@@ -6912,7 +6908,7 @@ function simFicheCarte(){
        "relié — ne les a classés : ils sont traités comme lents. Un net "+
        "rapide au nom automatique s'y cache ; corrigez sa nature dans la "+
        "liste des nets.</div>"+
-       '<div class="simCarteNoms">'+simEsc(SIM_CARTE.parDefaut.join(", "))+
+       '<div class="simCarteNoms">'+esc(SIM_CARTE.parDefaut.join(", "))+
        "</div></details>";
   return h+"</div>";
 }
@@ -7127,13 +7123,13 @@ function simCouplageVide(quoi){
       "couche.</small></p>";
   if(SIM.analyse==="diff" && SIM.saisie && SIM.saisie.diffPiste1 && SIM.saisie.diffPiste2){
     return '<p class="simVerdict dehors">Aucun couplage trouvé entre les deux pistes'+
-      ' <span>'+simEsc(SIM.portee||"—")+"</span></p>"+
-      '<p class="simNote">· Les pistes <b>'+simEsc(SIM.saisie.diffPiste1)+'</b> et <b>'+
-      simEsc(SIM.saisie.diffPiste2)+'</b> ne se côtoient pas en parallèle sur la même couche à portée de couplage électromagnétique.<br>'+
+      ' <span>'+esc(SIM.portee||"—")+"</span></p>"+
+      '<p class="simNote">· Les pistes <b>'+esc(SIM.saisie.diffPiste1)+'</b> et <b>'+
+      esc(SIM.saisie.diffPiste2)+'</b> ne se côtoient pas en parallèle sur la même couche à portée de couplage électromagnétique.<br>'+
       '<small>Vérifiez que les deux pistes sont bien sur la même couche et parallèles.</small></p>';
   }
   return '<p class="simVerdict dedans">Rien ne longe la sélection'+
-    ' <span>'+simEsc(SIM.portee||"—")+"</span></p>"+
+    ' <span>'+esc(SIM.portee||"—")+"</span></p>"+
     '<p class="simNote">· '+c.voisinage+" tronçon(s) voisin(s) ont été "+
     "examinés, et aucun ne longe la sélection assez pour "+quoi+" : ni sur la "+
     "même couche, ni parallèle, ni assez près. C’est une réponse, pas une "+
@@ -7142,7 +7138,7 @@ function simCouplageVide(quoi){
 
 /* Les deux nets d'un longement, dans l'ordre victime → agresseur. */
 function simCoupleNoms(f){
-  return simEsc(f.net||"?")+" ↔ "+simEsc(f.net_voisin||"?");
+  return esc(f.net||"?")+" ↔ "+esc(f.net_voisin||"?");
 }
 /* La colonne « géométrie » : ce sur quoi le chiffre a été obtenu. Sans elle,
    deux lignes du tableau qui diffèrent de vingt ohms n'ont pas d'explication
@@ -7175,7 +7171,7 @@ function simCoupleSection(sec){
   if(!sec)return "";
   let h='<p class="simSection"><b>SECTION RÉSOLUE</b> ';
   if(sec.raison)
-    return h+'<i class="simFaible">'+simEsc(sec.raison)+"</i></p>";
+    return h+'<i class="simFaible">'+esc(sec.raison)+"</i></p>";
   const bouts=[];
   if(sec.ecart_g>0)bouts.push("plan à "+simNb(sec.ecart_g,3)+" mm");
   else bouts.push('<i class="simFaible">pas de plan à portée</i>');
@@ -7185,7 +7181,7 @@ function simCoupleSection(sec){
      C'est le signe de x qui fait la gauche et la droite. */
   const ordre=(sec.conducteurs||[]).slice().sort((a,b)=>a.x-b.x);
   const dedans=ordre.map(function(d){
-    return (d.selection?"<b>":"")+simEsc(d.net)+(d.selection?"</b>":"")+
+    return (d.selection?"<b>":"")+esc(d.net)+(d.selection?"</b>":"")+
            /* TENUE OU FLOTTANTE : les deux se dessinent pareil dans une coupe,
               et elles ne font PAS la même chose. Une garde cousue blinde ; une
               garde qui ne l’est pas transfère, et peut faire pire que pas de
@@ -7218,8 +7214,8 @@ function simCoupleSection(sec){
   /* CE QUI N'A PAS PU ENTRER, et pourquoi. Une voisine qui disparaît sans un
      mot se lit comme un couplage nul. */
   for(const e of (sec.ecartes||[]))
-    h+='<p class="simNote">· <b>'+simEsc(e.net)+"</b> n’entre pas dans la "+
-       "section : "+simEsc(e.raison)+". Son couplage n’est pas chiffré.</p>";
+    h+='<p class="simNote">· <b>'+esc(e.net)+"</b> n’entre pas dans la "+
+       "section : "+esc(e.raison)+". Son couplage n’est pas chiffré.</p>";
   /* LE PLAN ABSENT EST UNE HYPOTHÈSE, pas un fait : la page sonde jusqu'à
      trois millimètres, et au-delà elle ne rend rien. Sans plan, le couplage
      rendu est un MAJORANT. */
@@ -7259,7 +7255,7 @@ function simCoupleHypotheses(){
   const c=simCouplage();
   let h="";
   for(const t of ((c&&c.hypotheses)||[]))
-    h+='<p class="simNote">· '+simEsc(t)+"</p>";
+    h+='<p class="simNote">· '+esc(t)+"</p>";
   return h;
 }
 
@@ -7307,9 +7303,9 @@ function simCoupleSuperposes(){
   h+='<table class="simTab simTabC"><tr><th>Net</th><th>Couches</th>'+
      "<th>en regard</th><th>décalage</th><th>diélectrique</th></tr>";
   for(const s of sup)
-    h+="<tr><td>"+simEsc(s.net||"?")+"</td>"+
-       "<td>"+simEsc(s.nom_couche||"?")+" <i>sous</i> "+
-       simEsc(s.nom_depuis||"?")+"</td>"+
+    h+="<tr><td>"+esc(s.net||"?")+"</td>"+
+       "<td>"+esc(s.nom_couche||"?")+" <i>sous</i> "+
+       esc(s.nom_depuis||"?")+"</td>"+
        "<td>"+simNb(s.longueur,1)+" mm</td>"+
        "<td>"+(s.decalage>0?simNb(s.decalage,3)+" mm"
                           :"<b>0</b> <i>(superposées)</i>")+"</td>"+
@@ -7376,7 +7372,7 @@ function simCarteDiffLegende(){
   const zs=peints.map(c=>c.z_diff);
   const dehors=zs.filter(z=>simZDiffVerdict(z)!==0).length;
   return '<p class="simSection"><b>SUR LA CARTE</b> '+
-    "Z<sub>diff</sub> tronçon par tronçon, avec <b>"+simEsc(par.net)+"</b>"+
+    "Z<sub>diff</sub> tronçon par tronçon, avec <b>"+esc(par.net)+"</b>"+
     (par.declare?"":" <i>(la voisine la plus proche, pas une paire déclarée)</i>")+
     " — de "+simNb(Math.min(...zs),1)+" à "+simNb(Math.max(...zs),1)+" Ω sur "+
     peints.length+" tronçon"+(peints.length>1?"s":"")+
@@ -7404,7 +7400,7 @@ function simCarteDiffLegende(){
    L'ONGLET « Z DIFFÉRENTIELLE »
    ========================================================================== */
 function simChampPisteDiff(id, listId, placeholder){
-  return '<input id="'+id+'" type="text" class="simChamp simInputTxt" placeholder="'+simEsc(placeholder)+'" list="'+listId+'" autocomplete="off" spellcheck="false">';
+  return '<input id="'+id+'" type="text" class="simChamp simInputTxt" placeholder="'+esc(placeholder)+'" list="'+listId+'" autocomplete="off" spellcheck="false">';
 }
 
 /* LES DEUX PISTES D'UNE PAIRE, ÉCRITES UNE FOIS. « Z différentielle » et
@@ -7510,7 +7506,7 @@ function simDiffNetlistEcrire(){
     .sort((a,b)=>String(a).localeCompare(String(b),"fr",{numeric:true}));
   let opts='';
   for(const n of sorted){
-    opts+='<option value="'+simEsc(n)+'">';
+    opts+='<option value="'+esc(n)+'">';
   }
   const dl1=simEl("simDiffNetsList1"), dl2=simEl("simDiffNetsList2");
   if(dl1)dl1.innerHTML=opts;
@@ -7945,15 +7941,15 @@ function simFicheSDiff(res){
     /* LA PAIRE DISSYMÉTRIQUE (simulation_em 5.1.0) : Scd exact, de la
        cascade à quatre accès — et ce qui le fait. */
     h+='<p class="simNote">· <b>Conversion de mode CEM (Scd₂₁)</b>, exacte : la paire est mise en cascade brin par brin (quatre accès), '+
-       'et ses dissymétries convertissent le différentiel en commun — '+simEsc((sd.dissymetries||[]).join(" ; ")||"cascade forcée")+
-       (sd.brin_long?" ; brin le plus long : <b>"+simEsc(sd.brin_long)+"</b>":"")+
+       'et ses dissymétries convertissent le différentiel en commun — '+esc((sd.dissymetries||[]).join(" ; ")||"cascade forcée")+
+       (sd.brin_long?" ; brin le plus long : <b>"+esc(sd.brin_long)+"</b>":"")+
        '. Un niveau supérieur à <b>−20 dB</b> constitue un risque accru de rayonnement électromagnétique parasite.</p>';
   } else if(mode==="scd"){
     h+='<p class="simNote">· <b>Conversion de mode CEM (Scd₂₁)</b> : mesure la proportion d\'énergie différentielle convertie en mode commun par le déséquilibre de longueur (skew ΔL = '+
        simNb(deltaL,3)+' mm). Un niveau supérieur à <b>−20 dB</b> constitue un risque accru de rayonnement électromagnétique parasite.</p>';
   }
   if(sd.quatre_acces&&mode!=="scd")
-    h+='<p class="simNote">· Paire dissymétrique ('+simEsc((sd.dissymetries||[]).join(" ; "))+
+    h+='<p class="simNote">· Paire dissymétrique ('+esc((sd.dissymetries||[]).join(" ; "))+
        ') : Sdd et Scc viennent de la cascade à quatre accès, brin par brin, conversions de mode comprises.</p>';
 
   h+='</div>';
@@ -8010,20 +8006,20 @@ function simRendreDiff(){
     return simProgres("Une section à deux conducteurs par couple de pistes "+
       "qui se longent : la matrice de Maxwell, puis les modes pair et "+
       "impair.",SIM.lots.length,SIM.lotsAttendus);
-  if(SIM.err)return '<p class="simErr">'+simEsc(SIM.err)+"</p>";
+  if(SIM.err)return '<p class="simErr">'+esc(SIM.err)+"</p>";
   const p1=SIM.saisie&&SIM.saisie.diffPiste1;
   const p2=SIM.saisie&&SIM.saisie.diffPiste2;
   if(p1&&p2&&String(p1).trim().toLowerCase()===String(p2).trim().toLowerCase()){
     const part=simDiffPartenaireNom(p1);
     return '<p class="simErr" style="background:rgba(239,68,68,0.12);border:1px solid #ef4444;padding:8px 12px;border-radius:6px;">'+
-      '⚠️ <b>Piste 1 et Piste 2 ont le même net (« '+simEsc(p1)+' »).</b><br>'+
+      '⚠️ <b>Piste 1 et Piste 2 ont le même net (« '+esc(p1)+' »).</b><br>'+
       'Une paire différentielle nécessite 2 pistes distinctes.'+
-      (part?'<br><small>💡 Partenaire suggéré : <b>'+simEsc(part)+'</b> (cliquez sur 🎯 Piste 2 pour l’assigner automatiquement).</small>':'')+
+      (part?'<br><small>💡 Partenaire suggéré : <b>'+esc(part)+'</b> (cliquez sur 🎯 Piste 2 pour l’assigner automatiquement).</small>':'')+
       '</p>';
   }
   if(!SIM.res){
     if(p1&&p2){
-      return '<p class="simEtat">Paire différentielle prête à simuler : <b>'+simEsc(p1)+'</b> et <b>'+simEsc(p2)+'</b>.<br>'+
+      return '<p class="simEtat">Paire différentielle prête à simuler : <b>'+esc(p1)+'</b> et <b>'+esc(p2)+'</b>.<br>'+
         '<small>Cliquez sur <b>▶ Calculer</b> pour lancer la simulation électromagnétique entre ces deux pistes.</small></p>';
     }
     return '<p class="simEtat">Définissez la Piste 1 et la Piste 2 ci-dessus, puis calculez.<br>'+
@@ -8058,7 +8054,7 @@ function simFicheDiff(){
           : (declarees.length>1
               ? "Les "+declarees.length+" paires sont dans la tolérance"
               : "La paire est dans la tolérance")))+
-    ' <span>'+simEsc(SIM.portee||"—")+" · cible "+simNb(cible,0)+" ± "+
+    ' <span>'+esc(SIM.portee||"—")+" · cible "+simNb(cible,0)+" ± "+
     simNb(tol,1)+" Ω</span></p>";
 
   /* PAS DE FRÉQUENCE DANS LE BANDEAU : elle n'entre pas dans ce calcul, et
@@ -8067,10 +8063,10 @@ function simFicheDiff(){
   const partenaire=simCarteDiffPartenaire();
   h+='<div class="simMeta"><span>'+paires.length+" longement"+
      (paires.length>1?"s":"")+"</span>"+
-     "<span>masse : "+simEsc(((SIM.res.reference_nets)||[]).join(", ")||
+     "<span>masse : "+esc(((SIM.res.reference_nets)||[]).join(", ")||
                              "non déclarée")+"</span>"+
      "<span>paire : "+(partenaire
-        ? simEsc(partenaire.net)+" <small>("+
+        ? esc(partenaire.net)+" <small>("+
           (partenaire.declare
             ? (SIM.saisie.paireN===partenaire.net?"choisie":"reconnue")
             : "la plus proche")+")</small>"
@@ -8080,8 +8076,8 @@ function simFicheDiff(){
     const dInfo=SIM_ED.schemaInfosDiff(partenaire?partenaire.net:null);
     if(dInfo&&dInfo.rTerm!=null){
       h+='<p class="simNote">⚡ <b>Terminaison différentielle au schéma</b> : '+
-         simEsc(dInfo.ref)+' = <b>'+simNb(dInfo.rTerm,0)+' Ω</b>'+
-         (dInfo.mpn?' ('+simEsc(dInfo.mpn)+')':'')+'. '+
+         esc(dInfo.ref)+' = <b>'+simNb(dInfo.rTerm,0)+' Ω</b>'+
+         (dInfo.mpn?' ('+esc(dInfo.mpn)+')':'')+'. '+
          '<button class="tb mini" id="simDiffApplyTarget" data-z="'+dInfo.rTerm+'" '+
          'title="Aligner la cible différentielle sur la résistance du schéma">Cibler '+
          simNb(dInfo.rTerm,0)+' Ω</button></p>';
@@ -8090,18 +8086,18 @@ function simFicheDiff(){
 
   const tableau=function(liste,titre){
     if(!liste.length)return "";
-    let t=titre?'<p class="simSection"><b>'+simEsc(titre)+"</b></p>":"";
+    let t=titre?'<p class="simSection"><b>'+esc(titre)+"</b></p>":"";
     t+='<table class="simTab simTabC"><tr><th>Nets</th>'+
        "<th>Longement</th><th>Z<sub>diff</sub></th><th>Z<sub>comm</sub></th>"+
        "<th>impair / pair</th><th>ε<sub>eff</sub></th></tr>";
     for(const f of liste){
       if(f.raison){
         t+="<tr><td>"+simCoupleNoms(f)+"</td><td>"+simCoupleGeom(f)+"</td>"+
-           '<td colspan="4" class="simFaible">'+simEsc(f.raison)+"</td></tr>";
+           '<td colspan="4" class="simFaible">'+esc(f.raison)+"</td></tr>";
         continue;
       }
       t+="<tr><td>"+simCoupleNoms(f)+
-         '<br><small class="simFaible">'+simEsc(f.nom_couche||("couche "+f.couche))+
+         '<br><small class="simFaible">'+esc(f.nom_couche||("couche "+f.couche))+
          (f.deux_cotes?" · des deux côtés":"")+"</small></td>"+
          "<td>"+simCoupleGeom(f)+"</td>"+
          '<td class="'+juge(f)+'">'+simNb(f.z_diff,2)+" Ω</td>"+
@@ -8343,11 +8339,11 @@ function simZpLecture(P,L){
   const pos="<b>"+simNb(L.s,2)+" mm</b>";
   if(!L.a)return "";
   const tA=L.a.tr, sA=tA.seg||{};
-  const couche=s=>simEsc(s.nom_couche||("couche "+s.couche));
+  const couche=s=>esc(s.nom_couche||("couche "+s.couche));
   if(P.quoi==="z"){
     const v=tA.z0;
     return '<div>'+pos+" · "+couche(sA)+" · piste "+simNb(sA.largeur,3)+
-      " mm"+(simTopo(sA)?" · "+simEsc(simTopo(sA)):"")+"</div>"+
+      " mm"+(simTopo(sA)?" · "+esc(simTopo(sA)):"")+"</div>"+
       (v>0
         ? '<div><i style="background:'+simZCouleur(v)+'"></i>Z₀ <b>'+
           simNb(v,1)+' Ω</b> <span class="'+simZpClasse(simZVerdict(v))+'">'+
@@ -8357,7 +8353,7 @@ function simZpLecture(P,L){
   }
   const zd=tA.zd!=null?tA.zd:(L.b?L.b.tr.zd:null);
   const ecart=tA.ecart!=null?tA.ecart:(L.b?L.b.tr.ecart:null);
-  let h='<div>'+pos+" le long de <b>"+simEsc(P.A.net||"Piste 1")+"</b>"+
+  let h='<div>'+pos+" le long de <b>"+esc(P.A.net||"Piste 1")+"</b>"+
     (ecart!=null?" · écart "+simNb(ecart,3)+" mm":"")+"</div>";
   h+=(zd>0)
     ? '<div><i style="background:'+simZDiffCouleur(zd)+'"></i>Z<sub>diff</sub> <b>'+
@@ -8369,7 +8365,7 @@ function simZpLecture(P,L){
   const piste=(k,net,tr,sg)=>{
     const alerte=F&&F.qui===k;
     return '<div><i style="background:'+SIM_ZP_COUL[k-1]+'"></i>Piste '+k+
-      " <b>"+simEsc(net||"?")+"</b> : "+
+      " <b>"+esc(net||"?")+"</b> : "+
       (tr&&tr.z0>0
         ? "Z₀ <b"+(alerte?' class="z0ko"':"")+">"+simNb(tr.z0,1)+" Ω</b>"+
           " · piste "+simNb(sg.largeur,3)+" mm · "+couche(sg)
@@ -8387,7 +8383,7 @@ function simZpLecture(P,L){
     h+='<div>ΔZ₀ <b>'+simNb(Math.abs(F.dz),1)+" Ω</b> ("+
       simNb(100*F.rel,1)+" %) — "+
       (F.qui
-        ? '<b class="z0ko">'+simEsc(F.qui===1?P.A.net:P.B.net)+
+        ? '<b class="z0ko">'+esc(F.qui===1?P.A.net:P.B.net)+
           "</b> s’écarte de la Z₀ ordinaire de la paire ("+simNb(F.ref,1)+" Ω)"
         : "les deux pistes sont équilibrées ici")+"</div>";
   return h;
@@ -8449,7 +8445,7 @@ function simZpFigure(P){
     if(P.ref>0&&cle==="z0")
       svg+='<line class="simZpCible" x1="'+MG+'" y1="'+simXY(Y(P.ref))+'" x2="'+
            (W-MD)+'" y2="'+simXY(Y(P.ref))+'"><title>'+
-           simEsc("Z₀ ordinaire de la paire : "+simNb(P.ref,1)+" Ω")+"</title></line>";
+           esc("Z₀ ordinaire de la paire : "+simNb(P.ref,1)+" Ω")+"</title></line>";
     svg+='<text class="simCote simZpTitre" x="'+(MG+4)+'" y="'+(y0-4)+'">'+
          titre+"</text>";
     /* LES PALIERS DE LA PISTE 1, chacun à la couleur de son verdict en
@@ -8495,7 +8491,7 @@ function simZpFigure(P){
          simNb(P.total*k/4,1)+"</text>";
   }
   svg+='<text class="simCote" x="'+simXY(MG+LW/2)+'" y="'+(yBas+26)+
-       '" text-anchor="middle">'+simEsc("position le long de "+
+       '" text-anchor="middle">'+esc("position le long de "+
          (P.A.net||"la piste")+" (mm)")+"</text>";
   /* LE CURSEUR, PAR-DESSUS TOUT. SEULE LA RÉGLETTE LE DÉPLACE, comme au
      crosstalk : une courbe qui le suivrait au survol le ferait bouger à
@@ -8533,15 +8529,15 @@ function simZProfilFiche(){
   if(P.quoi==="zdiff")
     h+='<div class="simLeg">'+
       '<span><i style="background:'+SIM_ZP_COUL[0]+'"></i>Piste 1 '+
-        simEsc(P.A.net||"")+"</span>"+
+        esc(P.A.net||"")+"</span>"+
       '<span><i style="background:'+SIM_ZP_COUL[1]+'"></i>Piste 2 '+
-        simEsc(P.B?P.B.net:"—")+"</span>"+
+        esc(P.B?P.B.net:"—")+"</span>"+
       (P.ref>0?'<span><i style="background:var(--txt-dim)"></i>Z₀ ordinaire '+
         "de la paire "+simNb(P.ref,1)+" Ω</span>":"")+"</div>";
   h+=simZpFigure(P);
   h+='<div class="simXtRegle"><label for="simZpPos">Position</label>'+
      '<input type="range" id="simZpPos" min="0" max="'+SIM_ZP_CRANS+
-     '" step="1" value="'+cran+'" title="'+simEsc(
+     '" step="1" value="'+cran+'" title="'+esc(
        "Le point lu partout à la fois : sur les courbes, et sur le cuivre — "+
        "un viseur s'y promène, à l'abscisse exacte du parcours.")+'">'+
      '<span id="simZpPosVal">'+simNb(L.s,2)+" mm</span></div>"+
@@ -8804,7 +8800,7 @@ function simXtAvanceBouton(){
     : "La présélection géométrique et le seuil des zones à risque : ils ont "+
       "un défaut qui marche, ou se déduisent quand on les laisse vides.";
   return '<button class="tb mini simXtAvanceBtn'+
-    (ecarts.length?" on":"")+'" id="simXtAvanceBtn" title="'+simEsc(titre)+'">'+
+    (ecarts.length?" on":"")+'" id="simXtAvanceBtn" title="'+esc(titre)+'">'+
     (ouvert?"▾":"▸")+" avancés"+
     (ecarts.length?" · "+ecarts.length+" modifié"+(ecarts.length>1?"s":""):"")+
     "</button>";
@@ -8891,7 +8887,7 @@ function simXtCalculDit(r){
    `SIM_CARTE.reglages` ; `pre` préfixe les identifiants de chaque panneau. */
 function simXtCtrlPertesSomme(pre){
   const r=SIM_CARTE.reglages||{};
-  return '<label class="simSuivre" title="'+simEsc(
+  return '<label class="simSuivre" title="'+esc(
       "Les pertes de la ligne — R (effet de peau) et G (tan δ) — évaluées au "+
       "genou du front, 0,35/t_r. Elles ne font qu'ÔTER du bruit : coupées, le "+
       "niveau 2 reste le pire cas normalisé. Sensibles au-delà de quelques "+
@@ -8899,7 +8895,7 @@ function simXtCtrlPertesSomme(pre){
     '"><input type="checkbox" id="'+pre+'Pertes"'+(r.xt_pertes?" checked":"")+
     "> pertes R, G</label>"+
     '<span class="simGr"><span class="pnl-lbl">Σ agresseurs</span>'+
-    '<select id="'+pre+'Somme" title="'+simEsc(
+    '<select id="'+pre+'Somme" title="'+esc(
       "Plusieurs agresseurs sur une victime : EN PHASE, la somme arithmétique "+
       "— tous basculent ensemble, le pire cas ; QUADRATIQUE, la racine de la "+
       "somme des carrés — des agresseurs indépendants (power sum).")+'">'+
@@ -8949,8 +8945,8 @@ function simXtReglages(){
 }
 
 function simXtCase(id,texte,titre){
-  return '<label class="simSuivre" title="'+simEsc(titre)+'">'+
-         '<input type="checkbox" id="'+id+'"> '+simEsc(texte)+"</label>";
+  return '<label class="simSuivre" title="'+esc(titre)+'">'+
+         '<input type="checkbox" id="'+id+'"> '+esc(texte)+"</label>";
 }
 
 /* ==========================================================================
@@ -9383,14 +9379,14 @@ function simXtCarteSommes(d){
     .filter(y=>SIM_XT.carte.tout||y.s!=="vert");
   if(!L.length)return "";
   let h='<p class="simNote"><b>Σ agresseurs</b> — somme '+
-    simEsc(simXtSommeNom(d.somme_mode))+" de tous les voisins d’une victime "+
+    esc(simXtSommeNom(d.somme_mode))+" de tous les voisins d’une victime "+
     "(NEXT et FEXT chacun de leur côté) :</p>"+
     '<table class="simTab simXtN2"><thead><tr><th>victime</th>'+
     "<th>agresseurs</th><th>Σ NEXT</th><th>Σ FEXT</th><th>statut</th>"+
     "</tr></thead><tbody>";
   for(const y of L.slice(0,200))
-    h+="<tr><td><b>"+simEsc(y.x.victime)+"</b></td><td>"+
-       simEsc((y.x.agresseurs||[]).join(", "))+"</td><td>"+
+    h+="<tr><td><b>"+esc(y.x.victime)+"</b></td><td>"+
+       esc((y.x.agresseurs||[]).join(", "))+"</td><td>"+
        simXtPct(y.x.next)+" %</td><td>"+simXtPct(y.x.fext)+" %</td><td>"+
        simXtPastille(y.s)+"</td></tr>";
   return h+"</tbody></table>";
@@ -9411,7 +9407,7 @@ function simXtCarteFiche(){
                  "par la méthode des moments à l'écart réel, puis le niveau 2 "+
                  "sous le t_r global.")+"</div>";
   if(C.err)return '<div class="simXtBloc"><b>Toute la carte</b><p class="simErr">'+
-                  simEsc(C.err)+"</p></div>";
+                  esc(C.err)+"</p></div>";
   if(!C.res)return "";
   const d=(C.res.bilan&&C.res.bilan.diaphonie)||{};
   const paires=simXtCartePaires();
@@ -9422,7 +9418,7 @@ function simXtCarteFiche(){
   const pire=simXtPireStatut(st);
   let h='<div class="simXtBloc simXtCarteEntiere"><b>Toute la carte</b> '+
     simXtPastille(pire)+' <span class="simNote">t<sub>r</sub> global '+
-    simEsc(simDureeXt(d.t_r||(SIM_CARTE.reglages.xt_tr||1e-9)))+" · "+
+    esc(simDureeXt(d.t_r||(SIM_CARTE.reglages.xt_tr||1e-9)))+" · "+
     (d.paires_total||paires.length)+" paire(s) jugée(s) · "+
     "<b>"+n.rouge+"</b> rouge(s), <b>"+n.orange+"</b> orange(s), "+n.vert+
     " verte(s) · seuils "+simNb(100*seuils.orange,1)+" % / "+
@@ -9432,7 +9428,7 @@ function simXtCarteFiche(){
     (d.pertes?"pertes R, G":"sans pertes")+"</span>";
   h+='<p><label class="simSuivre"><input type="checkbox" id="simXtCarteTout"'+
      (C.tout?" checked":"")+"> montrer aussi les paires vertes</label> "+
-     '<label class="simSuivre" title="'+simEsc("Colorer sur le layout la "+
+     '<label class="simSuivre" title="'+esc("Colorer sur le layout la "+
        "portion de chaque victime qui fait face à son agresseur, à la "+
        "couleur du statut de la paire")+'"><input type="checkbox" '+
      'id="simXtCartePeindre"'+(C.peindre!==false?" checked":"")+
@@ -9450,15 +9446,15 @@ function simXtCarteFiche(){
   for(const x of vues){
     const p=x.p;
     h+='<tr class="simXtLigneCarte" data-xtpaire="'+x.i+'" title="'+
-       simEsc("Centrer la vue sur cette paire")+'"><td><b>'+
-       simEsc(p.victime)+"</b> ← "+simEsc(p.agresseur)+
+       esc("Centrer la vue sur cette paire")+'"><td><b>'+
+       esc(p.victime)+"</b> ← "+esc(p.agresseur)+
        (p.superposee?' <span class="simTag">superposées</span>':"")+
-       (p.fente?' <span class="simTag" title="'+simEsc("fente du plan franchie "+
+       (p.fente?' <span class="simTag" title="'+esc("fente du plan franchie "+
          "par les deux : +"+simXtPct(p.fente.next)+" % NEXT / FEXT par impédance "+
          "commune ("+simXtModeleFente(p.fente)+"), fourchette "+simXtPct(p.fente.next_fourchette[0])+" à "+
          simXtPct(p.fente.next_fourchette[1])+" % ; lignes seules NEXT "+
          simXtPct((p.lignes||{}).next)+" %")+'">fente</span>':"")+"</td>"+
-       "<td>"+simEsc(p.couche||"")+"</td>"+
+       "<td>"+esc(p.couche||"")+"</td>"+
        "<td>"+simNb(p.longueur,1)+" mm</td>"+
        "<td>"+simNb(p.ecart,3)+" mm</td>"+
        "<td>"+simXtPct(p.k_total)+" %</td>"+
@@ -9469,7 +9465,7 @@ function simXtCarteFiche(){
   h+="</tbody></table>";
   const notes=(C.res.notes||[]).filter(t=>/diaphonie|section|plan de référence/i.test(t));
   if(notes.length)
-    h+='<p class="simNote">· '+notes.map(simEsc).join("<br>· ")+"</p>";
+    h+='<p class="simNote">· '+notes.map(esc).join("<br>· ")+"</p>";
   return h+"</div>";
 }
 
@@ -9482,7 +9478,7 @@ function simRendreCrosstalk(){
     h+=simProgres("Présélection géométrique, puis [C] et [L] bloc par bloc "+
       "par la méthode des moments, puis le niveau 2 de chaque paire.");
   else if(SIM_XT.err&&!SIM_XT.res)
-    h+='<p class="simErr">'+simEsc(SIM_XT.err)+"</p>";
+    h+='<p class="simErr">'+esc(SIM_XT.err)+"</p>";
   else if(!SIM_XT.res)
     h+='<p class="simEtat">Sélectionnez la piste AGRESSEUR, puis '+
       "analysez — ou lancez <b>toute la carte</b>.<br><small>Le niveau 2 "+
@@ -9492,7 +9488,7 @@ function simRendreCrosstalk(){
       "connaître.</small></p>";
   else{
     const r=SIM_XT.res;
-    if(SIM_XT.err)h+='<p class="simErr">'+simEsc(SIM_XT.err)+"</p>";
+    if(SIM_XT.err)h+='<p class="simErr">'+esc(SIM_XT.err)+"</p>";
     h+=simXtResume(r);
     h+=simXtActions(r);
     h+=simXtReserves(r);
@@ -9511,7 +9507,7 @@ function simRendreCrosstalk(){
 /* UN BLOC REPLIÉ. Vide, il ne pose même pas son titre. */
 function simXtRepli(titre,corps){
   if(!corps)return "";
-  return '<details class="simXtHyp"><summary>'+simEsc(titre)+
+  return '<details class="simXtHyp"><summary>'+esc(titre)+
          "</summary>"+corps+"</details>";
 }
 
@@ -9528,7 +9524,7 @@ function simXtNonCalcules(r){
   return (r.couples||[]).filter(c=>c.non_calcule);
 }
 function simXtNonCalculesDit(nc){
-  return nc.map(c=>simEsc(c.victime)+" ("+simNb(c.longement,1)+" mm à "+
+  return nc.map(c=>esc(c.victime)+" ("+simNb(c.longement,1)+" mm à "+
                    simNb(c.distance,2)+" mm)").join(", ");
 }
 
@@ -9579,8 +9575,8 @@ function simXtResume(r){
      (graves.length?' <span class="simXtSousRes">sous réserve</span>':"")+
      "</div>";
   h+='<p class="simXtMethode">Échelon unitaire de <b>'+
-     simEsc(r.principal||"—")+"</b>, lignes adaptées, <b>t<sub>r</sub> = "+
-     simEsc(simDureeXt(r.t_r))+"</b> ("+simEsc(r.source_tr||"")+") · "+
+     esc(r.principal||"—")+"</b>, lignes adaptées, <b>t<sub>r</sub> = "+
+     esc(simDureeXt(r.t_r))+"</b> ("+esc(r.source_tr||"")+") · "+
      "vert &lt; "+simNb(100*seuils.orange,1)+" % ≤ orange ≤ "+
      simNb(100*seuils.rouge,1)+" % &lt; rouge · "+simXtCalculDit(r)+"</p>";
   /* LE FRONT QUE PERSONNE N'A SAISI, DIT EN ALERTE : la classe RF impose
@@ -9593,10 +9589,10 @@ function simXtResume(r){
   if(somme){
     const S=somme.somme, st=simXtStatuts(somme).somme;
     h+="<p>Sous <b>tous ses agresseurs</b> (somme "+
-       simEsc(simXtSommeNom(S.mode))+" de "+(S.agresseurs||[]).length+
+       esc(simXtSommeNom(S.mode))+" de "+(S.agresseurs||[]).length+
        ") : NEXT "+simXtPct(S.next)+" %, FEXT "+simXtPct(S.fext)+" % "+
        simXtPastille(st)+" — compté dans le statut de "+
-       "<b>"+simEsc(somme.victime)+"</b>"+
+       "<b>"+esc(somme.victime)+"</b>"+
        ((r.couples||[]).filter(c=>c.somme).length>1?" et des autres victimes sommées":"")+
        ".</p>";
   }
@@ -9620,7 +9616,7 @@ function simXtResume(r){
     .slice().sort((a,b)=>Math.max(b.next,b.fext)-Math.max(a.next,a.fext))[0];
   if(pire){
     const s=simXtStatuts(pire);
-    h+="<p>La plus bruitée est <b>"+simEsc(pire.victime)+"</b> : "+
+    h+="<p>La plus bruitée est <b>"+esc(pire.victime)+"</b> : "+
        "<b>NEXT "+simXtPct(pire.next)+" %</b> ("+simXtDb(pire.next_db)+" dB) "+
        simXtPastille(s.next)+" · <b>FEXT "+simXtPct(pire.fext)+" %</b> ("+
        simXtDb(pire.fext_db)+" dB) "+simXtPastille(s.fext)+
@@ -9658,12 +9654,12 @@ function simXtFrontImpose(r){
   if(!fi)return "";
   if(fi.porteuse_rf==null)
     return '<p class="simXtAlerte"><b>'+
-           simEsc(fi.titre||("t_r = "+simDureeXt(fi.t_r)+" imposé par la classe "+
+           esc(fi.titre||("t_r = "+simDureeXt(fi.t_r)+" imposé par la classe "+
                              (fi.classe||"RF")+" — saisissez un front ou une "+
                              "porteuse pour affiner"))+
            "</b> — le FEXT varie comme 1/t<sub>r</sub> : ce chiffre est "+
            "celui du front de la classe, pas du signal.</p>";
-  return '<p class="simNote">· '+simEsc(fi.titre||"")+"</p>";
+  return '<p class="simNote">· '+esc(fi.titre||"")+"</p>";
 }
 
 /* CE QUI CHANGE LA LECTURE, EN UNE LIGNE, la version longue repliée. */
@@ -9674,11 +9670,11 @@ function simXtReserves(r){
   const texte=x=>typeof x==="string"?x:(x.texte||x.titre||"");
   let h='<div class="simXtAvert"><b>'+g.length+" réserve"+
         (g.length>1?"s":"")+"</b> · "+
-        simEsc(g.map(titre).join(" · "));
+        esc(g.map(titre).join(" · "));
   h+='<details class="simXtPourquoi"><summary>pourquoi, et quoi en faire'+
      "</summary><ul>";
   for(const a of g)
-    h+="<li><b>"+simEsc(titre(a))+"</b><br>"+simEsc(texte(a))+"</li>";
+    h+="<li><b>"+esc(titre(a))+"</b><br>"+esc(texte(a))+"</li>";
   return h+"</ul></details></div>";
 }
 
@@ -9689,17 +9685,17 @@ function simXtActions(r){
   if(!a.length)return "";
   let h='<div class="simXtFaire"><b>À faire</b><ol>';
   for(const x of a)
-    h+="<li><b>"+simEsc(x.quoi)+"</b> "+simEsc(x.cible)+" — "+
-       simEsc(x.ou)+"</li>";
+    h+="<li><b>"+esc(x.quoi)+"</b> "+esc(x.cible)+" — "+
+       esc(x.ou)+"</li>";
   h+="</ol>";
   h+='<details class="simXtPourquoi"><summary>pourquoi ces gestes-là, et '+
      "dans cet ordre</summary><ul>";
   for(const x of a)
-    h+="<li><b>"+simEsc(x.quoi+" "+x.cible+" "+x.ou)+"</b><br>"+
-       simEsc(x.pourquoi)+"</li>";
+    h+="<li><b>"+esc(x.quoi+" "+x.cible+" "+x.ou)+"</b><br>"+
+       esc(x.pourquoi)+"</li>";
   h+="</ul></details>";
   if(r.actions_omises&&r.actions_omises.nombre>0)
-    h+='<p class="simNote">· '+simEsc(r.actions_omises.detail)+"</p>";
+    h+='<p class="simNote">· '+esc(r.actions_omises.detail)+"</p>";
   return h+"</div>";
 }
 
@@ -9707,7 +9703,7 @@ function simXtAvertissements(r){
   const liste=r.avertissements||[];
   if(!liste.length)return "";
   let h='<div class="simXtAvert"><b>À lire avant la carte</b><ul>';
-  for(const a of liste)h+="<li>"+simEsc(a)+"</li>";
+  for(const a of liste)h+="<li>"+esc(a)+"</li>";
   return h+"</ul></div>";
 }
 
@@ -9736,12 +9732,12 @@ function simXtTableauCouples(r){
     const s=simXtStatuts(c);
     const ou=simXtGeoOu(r,c.victime);
     h+="<tr"+(c.confirmee?"":' class="simXtHors"')+">"+
-       "<td>"+(c.rang||"")+"</td><td><b>"+simEsc(c.victime)+"</b>"+
+       "<td>"+(c.rang||"")+"</td><td><b>"+esc(c.victime)+"</b>"+
        (c.superposee?' <span class="simTag">superposée '+
                      simNb(c.longueur_superposee,1)+" mm</span>":"")+
        /* LE TERME DE FENTE, DIT À PART : le niveau de la paire le contient,
           et la fiche doit pouvoir dire d'où il vient — et sa fourchette. */
-       (c.fente?' <span class="simTag" title="'+simEsc("impédance commune"+
+       (c.fente?' <span class="simTag" title="'+esc("impédance commune"+
          " d'une fente du plan franchie par les deux ("+simXtModeleFente(c.fente)+") : +"+
          simXtPct(c.fente.next)+" % en NEXT comme en FEXT, fourchette "+
          simXtPct(c.fente.next_fourchette[0])+" à "+
@@ -9756,27 +9752,27 @@ function simXtTableauCouples(r){
        "<td>"+simXtDb(c.next_db)+"</td>"+
        "<td>"+simXtPct(c.fext)+" % "+simXtPastille(s.fext)+"</td>"+
        "<td>"+simXtDb(c.fext_db)+"</td>"+
-       "<td>"+(c.somme?'<span title="'+simEsc("somme "+
+       "<td>"+(c.somme?'<span title="'+esc("somme "+
          simXtSommeNom(c.somme.mode)+" : "+((c.somme.agresseurs||[])
            .map(x=>x.agresseur).join(", ")))+'">NEXT '+simXtPct(c.somme.next)+
          " %, FEXT "+simXtPct(c.somme.fext)+" % "+simXtPastille(s.somme)+
          "</span>":"—")+"</td>"+
        "<td>"+simXtPastille(s.paire)+"</td>"+
        "<td>"+simNb(c.td_ps||0,1)+" ps</td>"+
-       '<td title="'+simEsc(c.t_sature_ps>0?"saturé sous un front de "+
+       '<td title="'+esc(c.t_sature_ps>0?"saturé sous un front de "+
                     simNb(c.t_sature_ps,0)+" ps":"")+'">'+
        (c.sature?"oui":"non")+"</td>"+
-       "<td>"+(ou?simEsc(ou):"—")+"</td>"+
+       "<td>"+(ou?esc(ou):"—")+"</td>"+
        "<td>"+simNb(c.longement,1)+" mm</td>"+
        "<td>"+simNb(c.distance,3)+" mm</td>"+
-       "<td>"+simEsc(c.nom_couche||c.type||"")+"</td></tr>";
+       "<td>"+esc(c.nom_couche||c.type||"")+"</td></tr>";
   }
   for(const c of nc)
-    h+='<tr class="simXtAlerte"><td>—</td><td><b>'+simEsc(c.victime)+
+    h+='<tr class="simXtAlerte"><td>—</td><td><b>'+esc(c.victime)+
        '</b></td><td colspan="10">non calculé — ce n’est pas un couplage '+
        "nul</td><td>"+simNb(c.longement,1)+" mm</td><td>"+
        simNb(c.distance,3)+" mm</td><td>"+
-       simEsc(c.nom_couche||c.type||"")+"</td></tr>";
+       esc(c.nom_couche||c.type||"")+"</td></tr>";
   return h+"</tbody></table></div>";
 }
 
@@ -9973,13 +9969,13 @@ function simXtCoches(fiches){
     const s=simXtStatuts(c);
     h+='<label class="simXtCoche'+(f.visible?"":" simXtOff")+
        (f.confirmee?"":" simXtSousSeuil")+'" title="'+
-       simEsc("Allumer ou éteindre « "+f.net+" » : sa courbe, sa chaleur "+
+       esc("Allumer ou éteindre « "+f.net+" » : sa courbe, sa chaleur "+
               "peinte sur le cuivre, son point de réglette et ses plages à "+
               "risque. Le calcul ne bouge pas.")+'">'+
-       '<input type="checkbox" data-xtvic="'+simEsc(f.net)+'"'+
+       '<input type="checkbox" data-xtvic="'+esc(f.net)+'"'+
        (f.visible?" checked":"")+">"+
        '<i style="background:'+f.couleur+'"></i>'+
-       "<b>"+simEsc(f.net)+"</b>"+
+       "<b>"+esc(f.net)+"</b>"+
        (nc?'<span class="simXtSeuilBout">non calculé</span>'
           :(f.confirmee?"":'<span class="simXtSeuilBout">sous le seuil</span>'))+
        (nc
@@ -10001,7 +9997,7 @@ function simXtLectureLignes(i){
            "</span>";
   let h="";
   for(const f of R.fiches)
-    h+='<div><i style="background:'+f.couleur+'"></i><b>'+simEsc(f.net)+
+    h+='<div><i style="background:'+f.couleur+'"></i><b>'+esc(f.net)+
        "</b> — NEXT local "+(f.vNext&&f.vNext[i]!=null?simXtPct(f.vNext[i])+" %":"—")+
        (f.espV?(f.espV[i]==null
                  ? ' · <span class="simFaible">ne longe pas ici</span>'
@@ -10149,7 +10145,7 @@ function simXtCarte(r){
     g+='<rect x="'+simXY(x0)+'" y="'+simXY(MH)+'" width="'+
        simXY(Math.max(1,x1-x0))+'" height="'+simXY(H)+'" fill="url(#simXtH-'+
        (SIM_XT_HACHURES.some(m=>m.cle===z.type)?z.type:"couture")+
-       ')"><title>'+simEsc(z.type+" : "+z.detail)+"</title></rect>";
+       ')"><title>'+esc(z.type+" : "+z.detail)+"</title></rect>";
   }
   for(const t of [0,0.5,1]){
     const y=yDe(haut*t);
@@ -10173,7 +10169,7 @@ function simXtCarte(r){
     let d="";
     for(let k=0;k<n;k++)d+=(k?"L":"M")+simXY(xs[k])+","+simXY(f.yNext[k]);
     g+='<path class="simXtCourbe" d="'+d+'" fill="none" stroke="'+f.couleur+
-       '" stroke-width="1.8"><title>'+simEsc(f.net+" — NEXT local")+
+       '" stroke-width="1.8"><title>'+esc(f.net+" — NEXT local")+
        "</title></path>";
   });
   const k0=Math.round((n-1)*Math.max(0,Math.min(1,SIM_XT.pos||0)));
@@ -10197,7 +10193,7 @@ function simXtCarte(r){
     "couplait comme à cet endroit. Pas d’axe : "+
     simNb(((c.lignes[0]||{}).resolution)||0,2)+" mm. Les tirets sont les "+
     "seuils DRC"+(horsEchelle.length?" (hors de l’échelle : "+
-    simEsc(horsEchelle.join(", "))+")":"")+" ; les hachures, les zones de "+
+    esc(horsEchelle.join(", "))+")":"")+" ; les hachures, les zones de "+
     "vigilance du plan de référence.</p>";
   h+=simXtCoches(fiches);
   h+=g;
@@ -10707,8 +10703,8 @@ function simXtTableauCandidats(r){
   const s=(r.etape0&&r.etape0.seuils)||{};
   let h='<div class="simXtBloc"><b>Étape 0a — ce qui longe</b> '+
     '<span class="simNote">seuil de distance '+simNb(s.distance_max,3)+
-    " mm, "+simEsc(s.source||"")+" ; longement minimal "+
-    simEsc(s.longueur_min_source||"")+" ; couches adjacentes "+
+    " mm, "+esc(s.source||"")+" ; longement minimal "+
+    esc(s.longueur_min_source||"")+" ; couches adjacentes "+
     (s.couches_adjacentes?"comprises":"EXCLUES")+" ; "+
     ((r.etape0&&r.etape0.regardes)||0)+" tronçons regardés.</span>";
   if(!liste.length)
@@ -10720,11 +10716,11 @@ function simXtTableauCandidats(r){
      "<th>longement</th><th>retenue</th></tr></thead><tbody>";
   for(const c of liste){
     const e=esp[c.net];
-    h+='<tr class="'+(c.retenu?"":"simXtHors")+'"><td>'+simEsc(c.net)+
+    h+='<tr class="'+(c.retenu?"":"simXtHors")+'"><td>'+esc(c.net)+
        (c.paire?' <span class="simTag">paire</span>':"")+
        (c.role==="agresseur"?' <span class="simTag">agresseur</span>':"")+
-       "</td><td>"+simEsc(c.nom_couche||("couche "+c.couche))+"</td><td>"+
-       simEsc(c.type)+"</td><td>"+simEsc(c.cote||"—")+"</td><td>"+
+       "</td><td>"+esc(c.nom_couche||("couche "+c.couche))+"</td><td>"+
+       esc(c.type)+"</td><td>"+esc(c.cote||"—")+"</td><td>"+
        simNb(c.distance,3)+" mm</td><td>"+
        /* LA DISTANCE EST LE MINIMUM, L'ÉCART MÉDIAN EST CE QUE LA PISTE FAIT
           LA PLUPART DU TEMPS. Les deux ensemble disent si le longement est
@@ -10734,13 +10730,13 @@ function simXtTableauCandidats(r){
           simNb(e.min,3)+"…"+simNb(e.max,3)+")</span>"
          :'<span class="simNote">—</span>')+
        "</td><td>"+simNb(c.longueur,2)+" mm</td><td>"+
-       (c.retenu?"oui":simEsc(c.raison||"non"))+"</td></tr>";
+       (c.retenu?"oui":esc(c.raison||"non"))+"</td></tr>";
   }
   h+="</tbody></table>";
   const sans=liste.filter(c=>c.retenu&&!esp[c.net]);
   if(sans.length)
     h+='<p class="simNote">· Pas de profil d\'espacement pour '+
-       sans.map(c=>"<b>"+simEsc(c.net)+"</b>").join(", ")+" : le "+
+       sans.map(c=>"<b>"+esc(c.net)+"</b>").join(", ")+" : le "+
        "recouvrement d'une couche adjacente se mesure en LONGUEUR et non en "+
        "abscisse — on ne saurait pas où le poser sur l'axe, et une position "+
        "inventée serait pire que pas de profil du tout. La distance mesurée, "+
@@ -10753,12 +10749,12 @@ function simXtMasse(r){
   if(!m)return "";
   let h='<div class="simXtBloc"><b>Plan de référence</b> '+
     '<span class="simNote">seuil de pas de couture '+simNb(m.seuil,2)+
-    " mm, tiré de "+simEsc(m.source||"")+
+    " mm, tiré de "+esc(m.source||"")+
     /* D'OÙ SORT LE SEUIL, ET CE QUE L'AUTRE RÈGLE AURAIT DIT. C'est le haut
        de bande qui le fixe le plus souvent, et le haut de bande se règle deux
        centimètres plus haut dans le même panneau : sans cette ligne, on part
        chercher dans le cuivre la cause d'une alarme qui vient d'un champ. */
-    (m.ecarte?" ("+simEsc(m.ecarte)+")":"")+
+    (m.ecarte?" ("+esc(m.ecarte)+")":"")+
     ". Ces contrôles sont "+
     "INDÉPENDANTS du couplage : le blindage est déjà dans la matrice S, et le "+
     "compter deux fois serait le compter faux.</span>";
@@ -10767,7 +10763,7 @@ function simXtMasse(r){
       "ni positions de couture, ni discontinuités, ni vias de masse. "+
       "L'absence de zone sur la carte ne veut donc pas dire qu'il n'y en a "+
       "pas.</p></div>";
-  h+='<p class="simNote">Examiné : '+simEsc(m.mesure.join(" ; "))+".</p>";
+  h+='<p class="simNote">Examiné : '+esc(m.mesure.join(" ; "))+".</p>";
   if(!(m.zones||[]).length)
     return h+'<p class="simNote">Aucune zone de vigilance.</p></div>';
   /* LA PART COUVERTE, AVANT LE TABLEAU. Deux lignes identiques à l'œil sont
@@ -10785,9 +10781,9 @@ function simXtMasse(r){
   h+='<table class="simTab"><thead><tr><th>type</th><th>côté</th><th>de</th>'+
      "<th>à</th><th>ce qui a été vu</th></tr></thead><tbody>";
   for(const z of m.zones)
-    h+="<tr><td>"+simEsc(z.type)+"</td><td>"+simEsc(z.cote||"—")+"</td><td>"+
+    h+="<tr><td>"+esc(z.type)+"</td><td>"+esc(z.cote||"—")+"</td><td>"+
        simNb(z.s0,2)+" mm</td><td>"+
-       simNb(z.s1,2)+" mm</td><td>"+simEsc(z.detail||"")+"</td></tr>";
+       simNb(z.s1,2)+" mm</td><td>"+esc(z.detail||"")+"</td></tr>";
   return h+"</tbody></table></div>";
 }
 
@@ -10795,7 +10791,7 @@ function simXtHypotheses(r){
   if(!(r.hypotheses||[]).length)return "";
   let h='<details class="simXtHyp"><summary>Sous quelles hypothèses '+
         "</summary><ul>";
-  for(const x of r.hypotheses)h+="<li>"+simEsc(x)+"</li>";
+  for(const x of r.hypotheses)h+="<li>"+esc(x)+"</li>";
   return h+"</ul></details>";
 }
 
@@ -11187,7 +11183,7 @@ function simCorpsBus(){
     '<span class="pnl-lbl">Protocole</span>'+
     '<select class="simU simUSel" id="simBusProtocole" title="Protocole du bus (définit automatiquement la méthode et les tolérances)" style="max-width:130px">';
   for(const k in SIM_BUS_PROTOCOLES){
-    h+='<option value="'+k+'"'+(k===pKey?' selected':'')+'>'+simEsc(SIM_BUS_PROTOCOLES[k].nom)+'</option>';
+    h+='<option value="'+k+'"'+(k===pKey?' selected':'')+'>'+esc(SIM_BUS_PROTOCOLES[k].nom)+'</option>';
   }
   h+='</select>'+
     '<span class="simBusProtoBadge simBusProto_'+pKey+'">'+pCfg.court+'</span>';
@@ -11231,7 +11227,7 @@ function simCorpsBus(){
   // Ligne 2 : Nom, gestion manuelle des signaux et boutons d'action
   h+='<div class="pnl-bar simBarFixe" style="gap:6px;flex-wrap:wrap">'+
     '<span class="pnl-lbl">Nom</span>'+
-    '<input class="simChamp simChampTexte" id="simBusNom" value="'+simEsc(b.nom)+'" style="width:125px" placeholder="Nom du bus">'+
+    '<input class="simChamp simChampTexte" id="simBusNom" value="'+esc(b.nom)+'" style="width:125px" placeholder="Nom du bus">'+
     '<select class="simU simUSel" id="simBusAddNet" title="Sélectionner un net du design à ajouter manuellement au bus" style="max-width:130px">'+
       '<option value="">+ Ajouter net… ▾</option>'+
     '</select>'+
@@ -11357,7 +11353,7 @@ function simBusRendreNetsBar(){
     if(selDispo.length){
       optHtml+='<optgroup label="Sélectionné sur la carte">';
       for(const sn of selDispo){
-        optHtml+='<option value="'+simEsc(sn)+'">⚡ '+simEsc(sn)+'</option>';
+        optHtml+='<option value="'+esc(sn)+'">⚡ '+esc(sn)+'</option>';
       }
       optHtml+='</optgroup>';
     }
@@ -11366,13 +11362,13 @@ function simBusRendreNetsBar(){
     if(bridgesDispo.length){
       optHtml+='<optgroup label="Liaisons série (Résistances d\'adaptation)">';
       for(const sb of bridgesDispo){
-        optHtml+='<option value="'+simEsc(sb)+'">🔗 '+simEsc(sb)+'</option>';
+        optHtml+='<option value="'+esc(sb)+'">🔗 '+esc(sb)+'</option>';
       }
       optHtml+='</optgroup>';
     }
     optHtml+='<optgroup label="Tous les nets du design">';
     for(const an of dispoNets){
-      optHtml+='<option value="'+simEsc(an)+'">'+simEsc(an)+'</option>';
+      optHtml+='<option value="'+esc(an)+'">'+esc(an)+'</option>';
     }
     optHtml+='</optgroup>';
     addNetSel.innerHTML=optHtml;
@@ -11388,7 +11384,7 @@ function simBusRendreNetsBar(){
     const baseList = pool || allNets;
     const list = (currentNet && !baseList.includes(currentNet)) ? [currentNet, ...baseList] : baseList;
     for(const n of list){
-      opts+='<option value="'+simEsc(n)+'"'+(n===currentNet?' selected':'')+'>'+simEsc(n)+'</option>';
+      opts+='<option value="'+esc(n)+'"'+(n===currentNet?' selected':'')+'>'+esc(n)+'</option>';
     }
     return opts;
   };
@@ -11454,33 +11450,33 @@ function simBusRendreNetsBar(){
         }
       }
       rSerieHtml='<label class="simBusRSerieLabel" title="Résistance d\'adaptation série active sur cette ligne">'+
-          '<input type="checkbox" class="simBusRSerieChk" data-rserie-toggle="'+role+':'+simEsc(net)+'" checked> R série'+
+          '<input type="checkbox" class="simBusRSerieChk" data-rserie-toggle="'+role+':'+esc(net)+'" checked> R série'+
         '</label>'+
         '<span style="color:var(--txt-dim);font-size:10px;margin:0 1px">➔</span>'+
         '<span class="simBadge" style="font-size:8.5px;background:rgba(99,102,241,0.18);color:#a5b4fc;border:1px solid rgba(99,102,241,0.35);padding:1px 4px;border-radius:3px" title="Composant série d\'adaptation (référence PCB)">'+
-          simEsc(rComp)+
+          esc(rComp)+
         '</span>'+
-        '<input type="number" class="simBusRValInput" data-rval-change="'+role+':'+simEsc(net)+'" value="'+rValNum+'" min="0" max="100000" step="any" title="Valeur de la résistance d\'adaptation en Ohms (modifiable pour tester différentes valeurs)">'+
+        '<input type="number" class="simBusRValInput" data-rval-change="'+role+':'+esc(net)+'" value="'+rValNum+'" min="0" max="100000" step="any" title="Valeur de la résistance d\'adaptation en Ohms (modifiable pour tester différentes valeurs)">'+
         '<span style="font-size:10px;color:var(--txt-dim);margin:0 2px 0 1px">Ω</span>'+
         '<span style="color:var(--txt-dim);font-size:10px;margin:0 1px">➔</span>'+
-        '<select class="simBusNetSelect" data-downstream-change="'+role+':'+simEsc(net)+'" title="Net aval (suite du bus après la résistance série)">'+
+        '<select class="simBusNetSelect" data-downstream-change="'+role+':'+esc(net)+'" title="Net aval (suite du bus après la résistance série)">'+
           renderNetOptions(cleanAval, dispoAval)+
         '</select>'+
-        '<button class="simBusDelBtn" data-unchain="'+role+':'+simEsc(net)+'" title="Déchaîner / retirer la résistance série">✂</button>';
+        '<button class="simBusDelBtn" data-unchain="'+role+':'+esc(net)+'" title="Déchaîner / retirer la résistance série">✂</button>';
     }else{
       rSerieHtml='<label class="simBusRSerieLabel" title="Cocher s\'il y a une résistance d\'adaptation série sur cette ligne (ex: damping 22Ω)">'+
-          '<input type="checkbox" class="simBusRSerieChk" data-rserie-toggle="'+role+':'+simEsc(net)+'"> R série'+
+          '<input type="checkbox" class="simBusRSerieChk" data-rserie-toggle="'+role+':'+esc(net)+'"> R série'+
         '</label>';
     }
 
     return '<span class="simBusNetPill">'+
-      '<button class="simBusRoleBtn '+roleClass+'" data-role-toggle="'+role+':'+simEsc(net)+'" title="'+simEsc(roleTitle)+'">'+roleLabel+'</button>'+
-      '<select class="simBusNetSelect" data-net-change="'+role+':'+simEsc(net)+'" title="Net émetteur / amont : cliquez pour choisir un autre net">'+
+      '<button class="simBusRoleBtn '+roleClass+'" data-role-toggle="'+role+':'+esc(net)+'" title="'+esc(roleTitle)+'">'+roleLabel+'</button>'+
+      '<select class="simBusNetSelect" data-net-change="'+role+':'+esc(net)+'" title="Net émetteur / amont : cliquez pour choisir un autre net">'+
         renderNetOptions(cleanBase, allNets)+
       '</select>'+
       rSerieHtml+
       (extraHtml||'')+
-      '<button class="simBusDelBtn" data-del-net="'+role+':'+simEsc(net)+'" title="Retirer ce signal">×</button>'+
+      '<button class="simBusDelBtn" data-del-net="'+role+':'+esc(net)+'" title="Retirer ce signal">×</button>'+
     '</span>';
   };
 
@@ -11494,8 +11490,8 @@ function simBusRendreNetsBar(){
     if(SIM_BUS.clocks.length>1){
       const curClk=SIM_BUS.dataClockMap[data]||SIM_BUS.clocks[0];
       selClkHtml='<span style="color:var(--txt-dim);font-size:9.5px;margin-left:2px">ref:</span>'+
-        '<select class="simU simUSel" data-clk-map="'+simEsc(data)+'" style="padding:1px 12px 1px 2px;font-size:9.5px" title="Horloge de référence associée">'+
-          SIM_BUS.clocks.map(c=>'<option value="'+simEsc(c)+'"'+(c===curClk?' selected':'')+'>'+simEsc(c)+'</option>').join('')+
+        '<select class="simU simUSel" data-clk-map="'+esc(data)+'" style="padding:1px 12px 1px 2px;font-size:9.5px" title="Horloge de référence associée">'+
+          SIM_BUS.clocks.map(c=>'<option value="'+esc(c)+'"'+(c===curClk?' selected':'')+'>'+esc(c)+'</option>').join('')+
         '</select>';
     }
     h+=renderPill("data", data, selClkHtml);
@@ -12232,13 +12228,13 @@ function simBusCalculer(){
     let actionHtml="—";
     if(status==="hold_violation"){
       if(SIM_ED&&typeof SIM_ED.armerSerpentin==="function"){
-        actionHtml='<button class="tb mini on simBtnMeander" data-net="'+simEsc(dataNet)+'" data-add="'+meanderOptMm+'" title="Armer l\'outil serpentin pour ce net">Régler serpentin (+'+meanderOptMm+' mm)</button>';
+        actionHtml='<button class="tb mini on simBtnMeander" data-net="'+esc(dataNet)+'" data-add="'+meanderOptMm+'" title="Armer l\'outil serpentin pour ce net">Régler serpentin (+'+meanderOptMm+' mm)</button>';
       }else{
         actionHtml='<span style="color:var(--txt-danger,#ef4444);font-weight:600">Serpentin requis (+'+meanderOptMm+' mm)</span>';
       }
     }else if(meanderOptMm>0.3){
       if(SIM_ED&&typeof SIM_ED.armerSerpentin==="function"){
-        actionHtml='<button class="tb mini simBtnMeander" data-net="'+simEsc(dataNet)+'" data-add="'+meanderOptMm+'" title="Centrer la donnée au milieu de l\'œil">Centrer (+'+meanderOptMm+' mm)</button>';
+        actionHtml='<button class="tb mini simBtnMeander" data-net="'+esc(dataNet)+'" data-add="'+meanderOptMm+'" title="Centrer la donnée au milieu de l\'œil">Centrer (+'+meanderOptMm+' mm)</button>';
       }else{
         actionHtml='<span style="color:var(--txt-dim)">Allonger (+'+meanderOptMm+' mm)</span>';
       }
@@ -12290,23 +12286,23 @@ function simBusCalculer(){
 
 function simBusFormatNetLabel(netName){
   if(!netName) return "—";
-  if(!netName.includes("+")) return '<b>'+simEsc(netName)+'</b>';
+  if(!netName.includes("+")) return '<b>'+esc(netName)+'</b>';
   const cleanStr=netName.replace(/\s*\([^)]*\)/g, "");
   const parts=cleanStr.split("+").map(s=>s.trim());
   const rMatch=netName.match(/\(([^)]+)\)/);
   const rAnnot=rMatch?rMatch[1]:"R série";
   return '<div style="display:inline-flex;align-items:center;gap:3px;font-family:var(--mono);font-size:10.5px">'+
-    '<b>'+simEsc(parts[0])+'</b>'+
+    '<b>'+esc(parts[0])+'</b>'+
     '<span style="color:var(--txt-dim);font-size:9px">➔</span>'+
-    '<span class="simBadge" style="font-size:8px;background:rgba(99,102,241,0.18);color:#a5b4fc;border:1px solid rgba(99,102,241,0.35);padding:1px 3px;border-radius:2px" title="Résistance / composant d\'adaptation série">'+simEsc(rAnnot)+'</span>'+
+    '<span class="simBadge" style="font-size:8px;background:rgba(99,102,241,0.18);color:#a5b4fc;border:1px solid rgba(99,102,241,0.35);padding:1px 3px;border-radius:2px" title="Résistance / composant d\'adaptation série">'+esc(rAnnot)+'</span>'+
     '<span style="color:var(--txt-dim);font-size:9px">➔</span>'+
-    '<b>'+simEsc(parts[1]||"")+'</b>'+
+    '<b>'+esc(parts[1]||"")+'</b>'+
   '</div>';
 }
 
 function simRendreBus(){
   if(SIM_BUS.erreur){
-    return '<div class="simBusWrap"><p class="simErr">'+simEsc(SIM_BUS.erreur)+'</p></div>';
+    return '<div class="simBusWrap"><p class="simErr">'+esc(SIM_BUS.erreur)+'</p></div>';
   }
   const r=SIM_BUS.result;
   if(!r){
@@ -12316,10 +12312,10 @@ function simRendreBus(){
 
   let h='<div class="simBusWrap">';
 
-  const compInfo=(SIM_BUS.comp1&&SIM_BUS.comp2)?(' · '+simEsc(SIM_BUS.comp1)+' ➔ '+simEsc(SIM_BUS.comp2)):'';
+  const compInfo=(SIM_BUS.comp1&&SIM_BUS.comp2)?(' · '+esc(SIM_BUS.comp1)+' ➔ '+esc(SIM_BUS.comp2)):'';
   h+='<div class="simBusCard">'+
     '<div class="simBusCardHead">'+
-      '<div><b>'+simEsc(SIM_BUS.nom||"Liaison Bus")+'</b>'+compInfo+' · <span class="simBusProtoBadge simBusProto_'+r.protocole+'">'+simEsc(r.protoNom)+'</span></div>'+
+      '<div><b>'+esc(SIM_BUS.nom||"Liaison Bus")+'</b>'+compInfo+' · <span class="simBusProtoBadge simBusProto_'+r.protocole+'">'+esc(r.protoNom)+'</span></div>'+
       (r.allPass
         ? '<span class="simBadge simBadgeOk">✔ CONFORME</span>'
         : '<span class="simBadge simBadgeCritique">⚠ VIOLATIONS DÉTECTÉES</span>')+
@@ -12359,7 +12355,7 @@ function simRendreBus(){
         recoHtml='Diminuer R_pullup (max '+sig.rpuMaxK+' kΩ)';
       }
       h+='<tr>'+
-        '<td><span class="simBusRoleBtn '+(sig.role.includes("SCL")?'simBusRoleClk':'simBusRoleData')+'">'+simEsc(sig.role)+'</span></td>'+
+        '<td><span class="simBusRoleBtn '+(sig.role.includes("SCL")?'simBusRoleClk':'simBusRoleData')+'">'+esc(sig.role)+'</span></td>'+
         '<td>'+simBusFormatNetLabel(sig.net)+'</td>'+
         '<td class="n">'+sig.len+' mm</td>'+
         '<td class="n">'+sig.capPf+' pF</td>'+
@@ -12399,7 +12395,7 @@ function simRendreBus(){
         badgeHtml='<span class="simBadge simBadgeAlerte">ATTENTION</span>';
       }
       h+='<tr>'+
-        '<td><span class="simBusRoleBtn simBusRoleData">'+simEsc(sig.role)+'</span></td>'+
+        '<td><span class="simBusRoleBtn simBusRoleData">'+esc(sig.role)+'</span></td>'+
         '<td>'+simBusFormatNetLabel(sig.net)+'</td>'+
         '<td class="n">'+sig.len+' mm</td>'+
         '<td class="n">'+sig.tflightPs+' ps</td>'+
@@ -12467,8 +12463,8 @@ function simRendreBus(){
 
       h+='<tr>'+
         '<td><span class="simBusRoleBtn simBusRoleData">DATA</span></td>'+
-        '<td style="font-size:10px;color:var(--txt-dim)">'+simEsc(sig.direction||"—")+'</td>'+
-        '<td><span style="font-family:var(--mono);font-size:10px">'+simEsc(sig.clkRef)+'</span></td>'+
+        '<td style="font-size:10px;color:var(--txt-dim)">'+esc(sig.direction||"—")+'</td>'+
+        '<td><span style="font-family:var(--mono);font-size:10px">'+esc(sig.clkRef)+'</span></td>'+
         '<td>'+simBusFormatNetLabel(sig.net)+'</td>'+
         '<td class="n">'+sig.len+' mm</td>'+
         '<td class="n"'+(sig.rcDelayPs?' title="Délai ligne: '+sig.tflightLine+' ps + Retard RC: '+sig.rcDelayPs+' ps"':'')+'>'+sig.tflight+' ps</td>'+
@@ -14291,9 +14287,9 @@ function simPDNGenererHeatmapCavite(r, modeStr, W, H) {
     const dotCol = isGood ? "#22c55e" : (kappa < 0.2 ? "#f59e0b" : "#38bdf8");
     const effPct = (kappa * 100).toFixed(0);
 
-    svg += '<g class="simPDNCapMarker" data-ref="' + simEsc(cp.ref) + '" data-eff="' + effPct + '" data-x="' + posX.toFixed(1) + '" data-y="' + posY.toFixed(1) + '" style="cursor:pointer">' +
+    svg += '<g class="simPDNCapMarker" data-ref="' + esc(cp.ref) + '" data-eff="' + effPct + '" data-x="' + posX.toFixed(1) + '" data-y="' + posY.toFixed(1) + '" style="cursor:pointer">' +
            '<circle cx="' + xPix.toFixed(1) + '" cy="' + yPix.toFixed(1) + '" r="5.5" fill="' + dotCol + '" stroke="#0f172a" stroke-width="1.5"/>' +
-           '<text x="' + (xPix + 7).toFixed(1) + '" y="' + (yPix + 3.5).toFixed(1) + '" fill="#ffffff" font-family="var(--mono)" font-size="9px" font-weight="600">' + simEsc(cp.ref) + '</text>' +
+           '<text x="' + (xPix + 7).toFixed(1) + '" y="' + (yPix + 3.5).toFixed(1) + '" fill="#ffffff" font-family="var(--mono)" font-size="9px" font-weight="600">' + esc(cp.ref) + '</text>' +
            '</g>';
   }
 
@@ -14390,17 +14386,17 @@ function simCorpsPDN() {
   if (autresNets.length > 0) {
     optRails += '<optgroup label="⚡ Rails d\'alimentation détectés">';
     for (const r of rails) {
-      optRails += '<option value="' + simEsc(r) + '"' + (r === SIM_PDN.rail ? " selected" : "") + '>' + simEsc(r) + '</option>';
+      optRails += '<option value="' + esc(r) + '"' + (r === SIM_PDN.rail ? " selected" : "") + '>' + esc(r) + '</option>';
     }
     optRails += '</optgroup>';
     optRails += '<optgroup label="Tous les autres nets de la carte">';
     for (const r of autresNets) {
-      optRails += '<option value="' + simEsc(r) + '"' + (r === SIM_PDN.rail ? " selected" : "") + '>' + simEsc(r) + '</option>';
+      optRails += '<option value="' + esc(r) + '"' + (r === SIM_PDN.rail ? " selected" : "") + '>' + esc(r) + '</option>';
     }
     optRails += '</optgroup>';
   } else {
     for (const r of rails) {
-      optRails += '<option value="' + simEsc(r) + '"' + (r === SIM_PDN.rail ? " selected" : "") + '>' + simEsc(r) + '</option>';
+      optRails += '<option value="' + esc(r) + '"' + (r === SIM_PDN.rail ? " selected" : "") + '>' + esc(r) + '</option>';
     }
   }
 
@@ -14656,7 +14652,7 @@ function simBrancherPDN() {
 
 function simRendrePDN() {
   if (SIM_PDN.erreur) {
-    return '<p class="simErr">' + simEsc(SIM_PDN.erreur) + '</p>';
+    return '<p class="simErr">' + esc(SIM_PDN.erreur) + '</p>';
   }
   const r = SIM_PDN.result;
   if (!r) {
@@ -14689,8 +14685,8 @@ function simRendrePDN() {
       '<div style="font-size:11px;color:var(--txt)">' +
         '<b style="color:' + (ok ? '#22c55e' : '#ef4444') + '">ONDULATION ESTIMÉE : ' + mV(pire.dV) + ' (' + pct(pire.dV) + ')</b> pour ' +
         mV(bil.tolV) + ' admis (' + SIM_PDN.ripplePct + ' %). ' +
-        (ok ? 'Les ' + bil.nbActifs + ' appels de courant de l\'assistant tiennent ; le plus exigeant est « ' + simEsc(pire.ev.nom) + ' » à ' + simPDNFormatFreq(pire.f) + '.'
-            : 'Dépassement par ' + simEsc(fautifs.join(", ")) + ' : c\'est à cette fréquence qu\'il faut renforcer le découplage.') +
+        (ok ? 'Les ' + bil.nbActifs + ' appels de courant de l\'assistant tiennent ; le plus exigeant est « ' + esc(pire.ev.nom) + ' » à ' + simPDNFormatFreq(pire.f) + '.'
+            : 'Dépassement par ' + esc(fautifs.join(", ")) + ' : c\'est à cette fréquence qu\'il faut renforcer le découplage.') +
       '</div>' +
     '</div>';
     html += '<p class="simNote" style="margin:0 0 8px">· Vérification la plus sévère (ΔI max ' + (SIM_PDN.deltaIA * 1e3).toPrecision(3) +
@@ -14722,21 +14718,21 @@ function simRendrePDN() {
   if (r.caviteNote) {
     const sansCavite = r.caviteTrouvee === false;
     html += '<p class="simNote' + (sansCavite ? ' simAlerte' : '') + '" id="simPDNCaviteNote">· ' +
-      simEsc(r.caviteNote) +
+      esc(r.caviteNote) +
       (sansCavite && r.multiport ? ' Le plan a été recoché à la main : la cavité est celle des champs ci-dessus, pas celle de la carte.' : '') +
       '</p>';
   }
 
   // Summary row
   html += '<div style="font-size:10.5px;color:var(--txt-dim);display:flex;gap:14px;flex-wrap:wrap;margin-bottom:6px">' +
-    '<span>Rail : <b>' + simEsc(SIM_PDN.rail || "VCC") + '</b></span>' +
+    '<span>Rail : <b>' + esc(SIM_PDN.rail || "VCC") + '</b></span>' +
     '<span>Impédance cible : <b style="color:#38bdf8">' + simPDNFormatZ(r.zTarget) + '</b></span>' +
     '<span>Impédance max : <b style="color:' + (r.conforme ? '#22c55e' : '#ef4444') + '">' + simPDNFormatZ(r.zMax) + '</b></span>' +
     '<span>Fréquence pic : <b>' + simPDNFormatFreq(r.fZMax) + '</b></span>' +
     '<span>Condensateurs actifs : <b>' + r.capasCount + '</b></span>' +
     (r.cPlaneTotalPf ? '<span>Capacité plan : <b>' + r.cPlaneTotalPf.toFixed(0) + ' pF</b></span>' : '') +
-    (r.multiport ? '<span>Point observé : <b>' + (r.portRef ? simEsc(r.portRef) + ' ' : '') + '(' + r.portXCarte.toFixed(1) + ', ' + r.portYCarte.toFixed(1) + ') mm</b></span>' : '') +
-    (r.pistesComptees ? '<span title="Sans plan, chaque condensateur est relié à la charge par sa piste : son inductance et sa résistance sont en série avec lui">Charge : <b>' + simEsc(r.portRef || "?") + '</b>, pistes comptées</span>' : '') +
+    (r.multiport ? '<span>Point observé : <b>' + (r.portRef ? esc(r.portRef) + ' ' : '') + '(' + r.portXCarte.toFixed(1) + ', ' + r.portYCarte.toFixed(1) + ') mm</b></span>' : '') +
+    (r.pistesComptees ? '<span title="Sans plan, chaque condensateur est relié à la charge par sa piste : son inductance et sa résistance sont en série avec lui">Charge : <b>' + esc(r.portRef || "?") + '</b>, pistes comptées</span>' : '') +
     (r.surfaceCm2 ? '<span>Surface en regard : <b>' + r.surfaceCm2.toFixed(1) + ' cm²</b></span>' : '') +
     (r.multiport && r.lEpandPortNh != null ? '<span title="Inductance d\'épandage propre au point observé, somme des modes hors résonance">Épandage : <b>' + r.lEpandPortNh.toFixed(3) + ' nH</b></span>' : '') +
     (r.caviteModes && r.caviteModes.length ? '<span>Mode fond. : <b style="color:#c084fc">' + r.caviteModes[0].modeStr + ' (' + simPDNFormatFreq(r.caviteModes[0].f) + ')</b></span>' : '') +
@@ -14791,9 +14787,9 @@ function simRendrePDN() {
 
     html += '<tr style="' + (cp.actif === false ? 'opacity:0.4;background:rgba(0,0,0,0.1)' : '') + '">' +
       '<td style="text-align:center"><input type="checkbox" class="simPDNCapToggle" data-id="' + cp.id + '"' + (cp.actif !== false ? ' checked' : '') + ' style="cursor:pointer" /></td>' +
-      '<td style="font-weight:600;color:var(--txt)">' + simEsc(cp.ref) + '</td>' +
-      '<td>' + simEsc(cp.val) + '</td>' +
-      '<td style="color:var(--txt-dim)">' + simEsc(cp.pkg) + '</td>' +
+      '<td style="font-weight:600;color:var(--txt)">' + esc(cp.ref) + '</td>' +
+      '<td>' + esc(cp.val) + '</td>' +
+      '<td style="color:var(--txt-dim)">' + esc(cp.pkg) + '</td>' +
       '<td class="n">' + esrTxt + '</td>' +
       '<td class="n">' + eslTxt + '</td>' +
       '<td class="n" style="color:var(--txt-dim)">' + lMountTxt + '</td>' +
@@ -14839,8 +14835,8 @@ function simRendrePDN() {
       '<span>Facteur Q : <b>' + curModeObj.q.toFixed(1) + '</b></span>' +
       '<span>Bande passante : <b>' + simPDNFormatFreq(curModeObj.deltaF) + '</b></span>' +
       '<span>Impédance crête : <b>' + simPDNFormatZ(curModeObj.zPeak) + '</b></span>' +
-      '<span>Type : <b>' + simEsc(curModeObj.type) + '</b></span>' +
-      '<span>Ventres : <b>' + simEsc(curModeObj.ventres) + '</b></span>' +
+      '<span>Type : <b>' + esc(curModeObj.type) + '</b></span>' +
+      '<span>Ventres : <b>' + esc(curModeObj.ventres) + '</b></span>' +
     '</div>';
 
     // Cartographie 2D SVG (Heatmap)
@@ -14867,8 +14863,8 @@ function simRendrePDN() {
         '<td class="n">' + cm.q.toFixed(1) + '</td>' +
         '<td class="n">' + simPDNFormatFreq(cm.deltaF) + '</td>' +
         '<td class="n" style="color:#ef4444">' + simPDNFormatZ(cm.zPeak) + '</td>' +
-        '<td>' + simEsc(cm.type) + '</td>' +
-        '<td style="color:var(--txt-dim);font-size:10px">' + simEsc(cm.ventres) + '</td>' +
+        '<td>' + esc(cm.type) + '</td>' +
+        '<td style="color:var(--txt-dim);font-size:10px">' + esc(cm.ventres) + '</td>' +
       '</tr>';
     }
     html += '</tbody></table></div>';
@@ -14910,7 +14906,7 @@ function simPDNRendreEvenements(r) {
   const fmtV = v => v >= 1 ? v.toFixed(2) + " V" : (v * 1e3).toFixed(v < 0.01 ? 2 : 0) + " mV";
   const champ = (ev, nom, val, larg, titre) =>
     '<input class="simChamp simPDNEv" data-id="' + ev.id + '" data-champ="' + nom + '" value="' +
-    simEsc(String(val)) + '" style="width:' + (larg || 48) + 'px" title="' + simEsc(titre || "") + '"/>';
+    esc(String(val)) + '" style="width:' + (larg || 48) + 'px" title="' + esc(titre || "") + '"/>';
   const aVerifier = '<span class="simBadge" style="background:rgba(234,179,8,0.18);color:#facc15" ' +
     'title="Valeur par défaut : à lire dans la datasheet et à saisir.">à vérifier</span>';
 
@@ -14920,15 +14916,15 @@ function simPDNRendreEvenements(r) {
                    : fiche.source === "bibliothèque" ? "en partie lue dans la bibliothèque" : "valeurs par défaut";
   let h = '<div style="margin-top:12px" id="simPDNEvBloc">' +
     '<div style="font-size:11px;font-weight:600;color:var(--txt);margin-bottom:4px">Fiche de la charge ' +
-      '<b style="color:#38bdf8">' + simEsc(info.ref || "?") + '</b>' +
-      (fiche.cle && fiche.cle !== String(info.ref || "").toUpperCase() ? ' <span style="font-weight:400;color:var(--txt-dim)">(' + simEsc(fiche.cle) + ')</span>' : '') +
+      '<b style="color:#38bdf8">' + esc(info.ref || "?") + '</b>' +
+      (fiche.cle && fiche.cle !== String(info.ref || "").toUpperCase() ? ' <span style="font-weight:400;color:var(--txt-dim)">(' + esc(fiche.cle) + ')</span>' : '') +
       ' <span style="font-weight:400;color:var(--txt-dim)">— ' + provenance +
       '. Recopie les valeurs de sa datasheet : l\'outil en déduit les appels de courant.</span></div>' +
     '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:4px 14px;margin-bottom:8px">';
   for (const c of SIM_PDN_FICHE) {
-    h += '<label style="display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--txt-dim)" title="' + simEsc(c.ou) + '">' +
-      '<span style="flex:1">' + simEsc(c.lib) + ' <span style="cursor:help;color:#60a5fa">ⓘ</span></span>' +
-      '<input class="simChamp simPDNFiche" data-cle="' + c.cle + '" value="' + simEsc(String(fiche[c.cle])) + '" style="width:58px"/>' +
+    h += '<label style="display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--txt-dim)" title="' + esc(c.ou) + '">' +
+      '<span style="flex:1">' + esc(c.lib) + ' <span style="cursor:help;color:#60a5fa">ⓘ</span></span>' +
+      '<input class="simChamp simPDNFiche" data-cle="' + c.cle + '" value="' + esc(String(fiche[c.cle])) + '" style="width:58px"/>' +
       '<span class="simU" style="min-width:22px">' + c.unite + '</span>' +
       (fiche.suppose[c.cle] ? aVerifier : '') +
     '</label>';
@@ -14986,10 +14982,10 @@ function simPDNRendreEvenements(r) {
     const verdict = !actif ? '<span style="color:var(--txt-dim)">—</span>'
       : l.ok ? '<span style="color:#22c55e;font-weight:600">✓ tient</span>'
              : '<span style="color:#ef4444;font-weight:600">✗ ' + (l.dV / b.tolV).toFixed(1) + ' × la marge</span>';
-    h += '<tr style="' + (actif ? '' : 'opacity:0.45') + '" title="' + simEsc(SIM_PDN_EV_TYPES[ev.type] ? SIM_PDN_EV_TYPES[ev.type].aide : "") + '">' +
+    h += '<tr style="' + (actif ? '' : 'opacity:0.45') + '" title="' + esc(SIM_PDN_EV_TYPES[ev.type] ? SIM_PDN_EV_TYPES[ev.type].aide : "") + '">' +
       '<td style="text-align:center"><input type="checkbox" class="simPDNEvActif" data-id="' + ev.id + '"' + (actif ? ' checked' : '') + '/></td>' +
       '<td style="font-family:var(--mono);color:' + (l.ok ? '#22c55e' : '#f97316') + '">' + (k + 1) + '</td>' +
-      '<td style="font-weight:600;color:var(--txt)">' + simEsc(ev.type === "charge" ? SIM_PDN_EV_TYPES.charge.nom : ev.nom) + '</td>' +
+      '<td style="font-weight:600;color:var(--txt)">' + esc(ev.type === "charge" ? SIM_PDN_EV_TYPES.charge.nom : ev.nom) + '</td>' +
       '<td style="white-space:nowrap;color:var(--txt-dim)">' + calc + '</td>' +
       '<td class="n">' + fmtI(l.dI) + '</td>' +
       '<td class="n">' + simPDNFormatFreq(l.f) + (l.horsBande ? ' <span title="Hors de la bande tracée : Z lue au bord">⚠</span>' : '') + '</td>' +
@@ -16453,7 +16449,7 @@ function simRfBilan(r){
     "<tr><td>Z vue par la charge</td><td>"+simRfZTxt(b.zout)+"</td></tr>"+
     (r.validite&&isFinite(r.validite.f_max)
       ? "<tr><td>Validité</td><td>quasi-statique jusqu'à "+
-        simFreq(r.validite.f_max)+" — "+simEsc(r.validite.limites[0].cause+
+        simFreq(r.validite.f_max)+" — "+esc(r.validite.limites[0].cause+
         " ("+r.validite.limites[0].detail+")")+"</td></tr>"
       : "")+
     "<tr><td>Pertes</td><td>désadaptation "+
@@ -16463,7 +16459,7 @@ function simRfBilan(r){
         " % partis dans les pistes voisines":"")+
       "</td></tr>"+
     "</tbody></table>"+
-    '<p class="'+cls+'">'+simEsc(verdict)+"</p>";
+    '<p class="'+cls+'">'+esc(verdict)+"</p>";
 }
 
 /* Les trois modules en dB sur la bande, et le repère de f₀. */
@@ -16549,10 +16545,10 @@ function simRfSmith(r){
   const b=r.bilan, p0=g(b.zin), pc=g(b.zin_cible);
   svg+='<circle cx="'+pc[0].toFixed(1)+'" cy="'+pc[1].toFixed(1)+
        '" r="6" fill="none" stroke="var(--green)" stroke-width="2"><title>'+
-       "Cible : "+simEsc(simRfZTxt(b.zin_cible))+"</title></circle>"+
+       "Cible : "+esc(simRfZTxt(b.zin_cible))+"</title></circle>"+
        '<circle cx="'+p0[0].toFixed(1)+'" cy="'+p0[1].toFixed(1)+
        '" r="3.5" fill="var(--yellow)"><title>Z vue par la puce à f₀ : '+
-       simEsc(simRfZTxt(b.zin))+"</title></circle></svg>";
+       esc(simRfZTxt(b.zin))+"</title></circle></svg>";
   return '<div class="simLeg"><span><i style="background:var(--yellow)"></i>'+
     "Z vue par la puce (point : f₀)</span><span><i style=\"background:"+
     'var(--green)"></i>cible (conjugué de la sortie)</span></div>'+svg;
@@ -16568,7 +16564,7 @@ function simRfTableComposants(){
     if(c.broche){
       /* UNE BROCHE ANNEXE DE LA PUCE : ouverte par défaut, ou l'impédance
          qu'on sait qu'elle présente. */
-      h+="<tr><td>"+simEsc(c.ref)+"</td><td>"+simEsc(c.valeur)+"</td><td>"+
+      h+="<tr><td>"+esc(c.ref)+"</td><td>"+esc(c.valeur)+"</td><td>"+
          (c.z?"impédance":"ouverte")+"</td><td>"+
          '<input class="simChamp" data-rfbr="'+i+'" data-p="re" value="'+
          (c.z?nb(c.z.re):"")+'" title="Partie réelle, en ohms. Vide : '+
@@ -16583,8 +16579,8 @@ function simRfTableComposants(){
     const imp=simRfModeleImporte(c.ref);
     const modele=c.exclu?"exclu":c.erreur?"aucun":
       (c.source+(c.nom&&c.nom!=="idéal"?" · "+c.nom:""));
-    h+="<tr><td>"+simEsc(c.ref)+"</td><td>"+simEsc(c.valeur||"")+"</td>"+
-       '<td class="'+(c.erreur?"simErr":"")+'">'+simEsc(modele)+"</td><td>"+
+    h+="<tr><td>"+esc(c.ref)+"</td><td>"+esc(c.valeur||"")+"</td>"+
+       '<td class="'+(c.erreur?"simErr":"")+'">'+esc(modele)+"</td><td>"+
        (u&&!c.exclu
          ? '<input class="simChamp" data-rfsi="'+i+'" value="'+
            (s!=null?nb(s/u.f):"")+'" placeholder="'+
@@ -16598,7 +16594,7 @@ function simRfTableComposants(){
          'mesurés, composants actifs compris) ou sous-circuit SPICE '+
          'linéaire.">📂</button>')+
        (imp?'<button class="tb mini" data-rfoub="'+i+'" title="Oublier le '+
-         "modèle importé « "+simEsc(imp)+' »">✕</button>':"")+
+         "modèle importé « "+esc(imp)+' »">✕</button>':"")+
        '<label title="Exclure ce composant du réseau RF"><input '+
          'type="checkbox" data-rfexc="'+i+'"'+(c.exclu?" checked":"")+
          "> exclu</label></td></tr>";
@@ -16614,16 +16610,16 @@ function simRfTableBranches(r){
   let h='<table class="simTab"><thead><tr><th>Piste</th><th>Longueur</th>'+
         "<th>Z₀</th><th>Section</th><th>Pertes</th></tr></thead><tbody>";
   for(const b of r.branches){
-    const sec=(b.sections||[]).map(s=>simEsc(String(s.couche))+" · h "+
+    const sec=(b.sections||[]).map(s=>esc(String(s.couche))+" · h "+
       simNb(s.h,3)+" mm · εr "+simNb(s.er,2)).join("<br>");
-    h+="<tr><td>"+simEsc(b.net)+"</td><td>"+simNb(b.longueur,2)+" mm"+
+    h+="<tr><td>"+esc(b.net)+"</td><td>"+simNb(b.longueur,2)+" mm"+
        (b.couplee>0?" (dont "+simNb(b.couplee,2)+" couplés)":"")+"</td><td>"+
        (b.z0_min==null?"—":simNb(b.z0_min,1)+(b.z0_max-b.z0_min>0.5?"–"+
         simNb(b.z0_max,1):"")+" Ω")+"</td><td>"+(sec||"—")+"</td><td>"+
        simNb(b.pertes_db,3)+" dB</td></tr>";
   }
   for(const m of r.masses)
-    h+="<tr><td>"+simEsc(/~v\d+$/.test(m.noeud)
+    h+="<tr><td>"+esc(/~v\d+$/.test(m.noeud)
          ? "via de la coulée de masse de "+m.noeud.replace(/^G:/,"").replace(/~v\d+$/,"")
          : "vias de masse "+m.noeud.replace(/^G:/,""))+
        "</td><td></td><td>"+simNb(m.l_nH,3)+" nH</td><td></td><td></td></tr>";
@@ -16632,7 +16628,7 @@ function simRfTableBranches(r){
     h+='<table class="simTab"><thead><tr><th>Longement</th><th>Longueur</th>'+
        "<th>Écart</th><th>NEXT saturé</th></tr></thead><tbody>";
     for(const c of r.couplages)
-      h+="<tr><td>"+simEsc(c.nets.join(" ↔ "))+"</td><td>"+
+      h+="<tr><td>"+esc(c.nets.join(" ↔ "))+"</td><td>"+
          simNb(c.longueur,2)+" mm</td><td>"+simNb(c.ecart,3)+" mm</td><td>"+
          simNb(c.next_pct,2)+" %</td></tr>";
     h+="</tbody></table>";
@@ -16640,7 +16636,7 @@ function simRfTableBranches(r){
   const vois=(r.voisines||[]).filter(v=>v.pct>=0.001);
   if(vois.length)
     h+='<p class="simNote">· Énergie partie dans les pistes d\'autres nets, '+
-       "fermées sur leur Z₀ : "+vois.map(v=>simEsc(v.net)+" "+
+       "fermées sur leur Z₀ : "+vois.map(v=>esc(v.net)+" "+
        simNb(v.pct,3)+" %").join(", ")+".</p>";
   if((r.mutuelles||[]).length){
     /* Les plus fortes seulement : une carte réelle en compte des dizaines,
@@ -16649,7 +16645,7 @@ function simRfTableBranches(r){
     h+='<table class="simTab"><thead><tr><th>Couplage magnétique</th>'+
        "<th>Mutuelle</th><th>k</th></tr></thead><tbody>";
     for(const m of tri.slice(0,8))
-      h+="<tr><td>"+simEsc(m.entre.join(" ↔ "))+"</td><td>"+
+      h+="<tr><td>"+esc(m.entre.join(" ↔ "))+"</td><td>"+
          simNb(m.m_nH,4)+" nH</td><td>"+(m.k==null?"—":simNb(m.k,4))+
          "</td></tr>";
     h+="</tbody></table>";
@@ -16662,7 +16658,7 @@ function simRfTableBranches(r){
     h+='<table class="simTab"><thead><tr><th>Fente du plan sous</th>'+
        "<th>Largeur</th><th>Détours</th></tr></thead><tbody>";
     for(const f of fentes)
-      h+="<tr><td>"+simEsc(f.net)+"</td><td>"+simNb(f.largeur_fente,2)+
+      h+="<tr><td>"+esc(f.net)+"</td><td>"+simNb(f.largeur_fente,2)+
          " mm</td><td>"+simNb(f.d1,2)+" / "+simNb(f.d2,2)+" mm"+
          (f.borne?" (coupé de bord à bord)":"")+"</td></tr>";
     h+="</tbody></table>";
@@ -16688,12 +16684,12 @@ function simRendreRf(){
   if(!r&&!SIM_RF.err)
     h+='<p class="simEtat">Posez le port 1 sur la broche de sortie de la '+
        "puce, le port 2 sur le connecteur ou l'antenne, puis calculez.</p>";
-  if(SIM_RF.err)h+='<p class="simErr">'+simEsc(SIM_RF.err)+"</p>";
+  if(SIM_RF.err)h+='<p class="simErr">'+esc(SIM_RF.err)+"</p>";
   if(r)h+=simRfBilan(r)+simRfCourbe(r)+simRfSmith(r);
   h+=simRfTableComposants();
   if(r)h+=simRfTableBranches(r);
   const notes=SIM_RF.notes.concat(r?r.avertissements:[]);
-  for(const n of notes)h+='<p class="simNote">· '+simEsc(n)+"</p>";
+  for(const n of notes)h+='<p class="simNote">· '+esc(n)+"</p>";
   return h;
 }
 
@@ -16865,20 +16861,20 @@ function simOeilSelectGabarit(){
   const fams=[];
   for(const g of (SIM_OEIL.gabarits||[]))if(fams.indexOf(g.famille)<0)fams.push(g.famille);
   for(const f of fams){
-    h+='<optgroup label="'+simEsc(f)+'">';
+    h+='<optgroup label="'+esc(f)+'">';
     for(const g of SIM_OEIL.gabarits.filter(x=>x.famille===f))
-      h+='<option value="'+simEsc(g.id)+'"'+(g.id===SIM_OEIL.gab?" selected":"")+">"+
-         simEsc(g.nom)+"</option>";
+      h+='<option value="'+esc(g.id)+'"'+(g.id===SIM_OEIL.gab?" selected":"")+">"+
+         esc(g.nom)+"</option>";
     h+="</optgroup>";
   }
   return h+"</select>";
 }
 function simOeilBadge(fiab){
   const f=SIM_OEIL_FIAB[fiab];
-  return f?'<span class="simBadge '+f.cls+'">'+simEsc(f.nom)+"</span>":"";
+  return f?'<span class="simBadge '+f.cls+'">'+esc(f.nom)+"</span>":"";
 }
 function simOeilChampU(id,liste,cle,quoi){
-  let h='<select class="simU simUSel" id="'+id+'" title="Unité '+simEsc(quoi)+'">';
+  let h='<select class="simU simUSel" id="'+id+'" title="Unité '+esc(quoi)+'">';
   for(const u of liste)
     h+='<option value="'+u.cle+'"'+(u.cle===cle?" selected":"")+">"+u.cle+"</option>";
   return h+"</select>";
@@ -16893,7 +16889,7 @@ function simCorpsOeil(){
   const aEg=g&&g.egaliseur;
   let h='<div class="pnl-bar simRefBar" id="simRefBar"></div>';
   if(SIM_OEIL.gabErr)
-    h+='<div class="pnl-bar"><span class="simErr">'+simEsc(SIM_OEIL.gabErr)+"</span></div>";
+    h+='<div class="pnl-bar"><span class="simErr">'+esc(SIM_OEIL.gabErr)+"</span></div>";
   else if(!SIM_OEIL.gabarits)
     h+='<div class="pnl-bar"><span class="simNote">Chargement des gabarits depuis le serveur…</span></div>';
   h+='<div class="pnl-bar">'+
@@ -16901,8 +16897,8 @@ function simCorpsOeil(){
        (g?" "+simOeilBadge(g.fiabilite):"")+
      "</div>";
   if(g)
-    h+='<div class="pnl-bar"><span class="simNote">· '+simEsc(g.lieu)+
-       (g.note?"<br>· "+simEsc(g.note):"")+"</span></div>";
+    h+='<div class="pnl-bar"><span class="simNote">· '+esc(g.lieu)+
+       (g.note?"<br>· "+esc(g.note):"")+"</span></div>";
   h+='<div class="pnl-bar">'+
        '<span class="pnl-lbl">Mode</span>'+
        '<select id="simOeilMode" class="simUSel" title="Simple : une piste contre la masse. Différentiel : les deux pistes d\'une paire.">'+
@@ -16997,7 +16993,7 @@ function simOeilCorpsStat(){
       simXtCase("simOeilXt","voisines de la sélection",
         "Chaque voisine qui longe la piste sur sa couche devient un agresseur borné : son NEXT ou son FEXT (niveau 2 de l'onglet Crosstalk) fois l'excursion de la victime, ajouté au pire cas et à l'œil statistique.")+
       '<select id="simOeilXtSens" class="simUSel" title="Le sens dans lequel les voisines émettent : même sens que la victime, c\'est leur FEXT qui arrive au récepteur ; sens opposé, leur NEXT.">'+
-        SIM_OEIL_SENS.map(x=>'<option value="'+x.cle+'"'+(s.xtSens===x.cle?" selected":"")+">"+simEsc(x.nom)+"</option>").join("")+
+        SIM_OEIL_SENS.map(x=>'<option value="'+x.cle+'"'+(s.xtSens===x.cle?" selected":"")+">"+esc(x.nom)+"</option>").join("")+
       "</select>"+
     "</div>";
 }
@@ -17024,7 +17020,7 @@ function simOeilCorpsAc(){
       simChamp("simOeilAcEsr","Résistance série du condensateur (Ω). Vide : 0.")+
       '<span class="simU">Ω</span>'+
       '<select id="simOeilAcPos" class="simUSel" title="Où les condensateurs sont posés : entre l\'émetteur (et son boîtier) et la piste, ou entre la piste et le récepteur.">'+
-        SIM_OEIL_POS_AC.map(x=>'<option value="'+x.cle+'"'+(s.acPos===x.cle?" selected":"")+">"+simEsc(x.nom)+"</option>").join("")+
+        SIM_OEIL_POS_AC.map(x=>'<option value="'+x.cle+'"'+(s.acPos===x.cle?" selected":"")+">"+esc(x.nom)+"</option>").join("")+
       "</select>"+
     "</div>";
 }
@@ -17105,10 +17101,10 @@ function simOeilCorpsIbis(){
       return h+'<button class="tb mini" id="simOeilIbis_'+cle+'" title="Charger un fichier .ibs : le tampon '+
         (cle==="em"?"émetteur remplace le générateur de Thévenin":"récepteur apporte sa capacité C_comp et ses diodes")+
         '">fichier .ibs…</button>';
-    h+='<span class="simU" title="'+simEsc(f.fichier)+'">'+simEsc(f.fichier)+"</span>"+
+    h+='<span class="simU" title="'+esc(f.fichier)+'">'+esc(f.fichier)+"</span>"+
        '<select id="simOeilIbisMod_'+cle+'" class="simUSel" title="Le [Model] du fichier">'+
-       f.modeles.map(m=>'<option value="'+simEsc(m.nom)+'"'+(m.nom===f.modele?" selected":"")+">"+
-         simEsc(m.nom)+(m.type?" ("+simEsc(m.type)+")":"")+"</option>").join("")+
+       f.modeles.map(m=>'<option value="'+esc(m.nom)+'"'+(m.nom===f.modele?" selected":"")+">"+
+         esc(m.nom)+(m.type?" ("+esc(m.type)+")":"")+"</option>").join("")+
        "</select>"+
        '<select id="simOeilIbisCoin_'+cle+'" class="simUSel" title="Le coin du modèle : typ, min (faible, lent), max (fort, rapide)">'+
        ["typ","min","max"].map(c=>'<option value="'+c+'"'+(c===f.coin?" selected":"")+">"+c+"</option>").join("")+
@@ -17120,8 +17116,8 @@ function simOeilCorpsIbis(){
     if(enDiff)
       h+='<select id="simOeilIbisModN_'+cle+'" class="simUSel" title="Le [Model] du brin inverse (N). « = P » : celui du brin direct, ou celui de la broche inverse d\'une paire de [Diff Pin] — un modèle choisi ici ne la remplace que dans son [Model Selector].">'+
          '<option value=""'+(f.modeleN?"":" selected")+">N : = P</option>"+
-         f.modeles.map(m=>'<option value="'+simEsc(m.nom)+'"'+(m.nom===f.modeleN?" selected":"")+">N : "+
-           simEsc(m.nom)+"</option>").join("")+
+         f.modeles.map(m=>'<option value="'+esc(m.nom)+'"'+(m.nom===f.modeleN?" selected":"")+">N : "+
+           esc(m.nom)+"</option>").join("")+
          "</select>"+
          '<select id="simOeilIbisCoinN_'+cle+'" class="simUSel" title="Le coin du brin inverse (N) : un brin rapide contre un brin lent fait du mode commun. « = P » : celui du brin direct.">'+
          '<option value=""'+(f.coinN?"":" selected")+">coin N : = P</option>"+
@@ -17139,17 +17135,17 @@ function simOeilCorpsIbis(){
          (diff?"La paire de [Diff Pin] : chaque brin prend le modèle et le boîtier de sa broche, le brin inverse est retardé de tdelay. « boîtier moyen » : les deux brins du modèle choisi, sans décalage.":
                "La broche ([Pin]) : son modèle et son boîtier R/L/C_pin. « boîtier moyen » : le [Package] du composant.")+'">'+
          '<option value=""'+(choix?"":" selected")+">"+(diff?"paire…":"broche…")+" (boîtier moyen)</option>"+
-         opts.map(o=>'<option value="'+simEsc(o.v)+'"'+(o.v===choix?" selected":"")+">"+simEsc(o.t)+"</option>").join("")+
+         opts.map(o=>'<option value="'+esc(o.v)+'"'+(o.v===choix?" selected":"")+">"+esc(o.t)+"</option>").join("")+
          "</select>";
     /* L'AMI : le .ami se lit et se montre ; la bibliothèque (œil 2.3.0)
        s'exécute seulement si l'on la DÉSIGNE, par son chemin dans la LIB ou
        le projet du serveur — jamais depuis le navigateur ni une URL. */
     if(f.ami){
       const libs=(f.amiLibs||[]).map(x=>x.plateforme+" : "+x.bibliotheque).join(" ; ");
-      h+='<span class="simU" title="Fichier .ami lu (paramètres)">AMI '+simEsc(f.ami.fichier)+"</span>"+
+      h+='<span class="simU" title="Fichier .ami lu (paramètres)">AMI '+esc(f.ami.fichier)+"</span>"+
          '<button class="simBtnClear" id="simOeilAmiX_'+cle+'" title="Retirer le fichier .ami">✕</button>'+
-         '<input id="simOeilAmiLib_'+cle+'" type="text" spellcheck="false" class="simChamp simTxt" placeholder="bibliothèque .so/.dll (chemin dans la LIB)" value="'+simEsc(f.ami.bibliotheque||"")+'" title="Pour EXÉCUTER le modèle AMI : le chemin de sa bibliothèque (.so sous Linux, .dll sous Windows), relatif à la LIB ou à un dossier de projets du serveur. Vide : le modèle n\'est pas exécuté, l\'égaliseur de référence sert.'+(libs?" Le .ibs déclare : "+simEsc(libs):"")+'">'+
-         '<input id="simOeilAmiPar_'+cle+'" type="text" spellcheck="false" class="simChamp simTxt" placeholder="paramètres : nom=valeur …" value="'+simEsc(f.ami.parametres||"")+'" title="Surcharges des paramètres In/InOut passés au modèle (AMI_parameters_in), « nom=valeur » séparés par des espaces, le nom étant celui de la feuille ou son chemin (TX_FFE/Tap/-1=-0.1). Vide : les valeurs par défaut du .ami.">';
+         '<input id="simOeilAmiLib_'+cle+'" type="text" spellcheck="false" class="simChamp simTxt" placeholder="bibliothèque .so/.dll (chemin dans la LIB)" value="'+esc(f.ami.bibliotheque||"")+'" title="Pour EXÉCUTER le modèle AMI : le chemin de sa bibliothèque (.so sous Linux, .dll sous Windows), relatif à la LIB ou à un dossier de projets du serveur. Vide : le modèle n\'est pas exécuté, l\'égaliseur de référence sert.'+(libs?" Le .ibs déclare : "+esc(libs):"")+'">'+
+         '<input id="simOeilAmiPar_'+cle+'" type="text" spellcheck="false" class="simChamp simTxt" placeholder="paramètres : nom=valeur …" value="'+esc(f.ami.parametres||"")+'" title="Surcharges des paramètres In/InOut passés au modèle (AMI_parameters_in), « nom=valeur » séparés par des espaces, le nom étant celui de la feuille ou son chemin (TX_FFE/Tap/-1=-0.1). Vide : les valeurs par défaut du .ami.">';
     }
     else if(f.amiAttendu)
       h+='<button class="tb mini" id="simOeilAmi_'+cle+'" title="Le modèle déclare un [Algorithmic Model] : chargez son fichier .ami pour en lire les paramètres (FFE, DFE, CTLE, gigue), puis désignez sa bibliothèque pour l\'exécuter.">fichier .ami…</button>';
@@ -17719,7 +17715,7 @@ function simOeilBaignoire(r){
     '<p class="simLeg simNote">Baignoire : taux d\'erreur au seuil, phase par phase · '+
     '<span class="simOeilLegM"></span> taux visé '+simOeilBer(st.ber_cible)+
     " — largeur "+simNb(r.mesures.largeur_ber_ui,2)+" UI<br><small>"+
-    simEsc((st.hypotheses||[]).join(" "))+"</small></p>";
+    esc((st.hypotheses||[]).join(" "))+"</small></p>";
 }
 function simOeilPas(brut){
   const p=Math.pow(10,Math.floor(Math.log10(Math.max(brut,1e-12))));
@@ -17736,7 +17732,7 @@ function simRendreOeil(){
     return simProgres("Cascade de la liaison sur une grille fine, passage en "+
       "temporel, superposition des bits, puis contrôle du gabarit.");
   if(SIM_OEIL.err&&!SIM_OEIL.res)
-    return '<p class="simErr">'+simEsc(SIM_OEIL.err)+"</p>";
+    return '<p class="simErr">'+esc(SIM_OEIL.err)+"</p>";
   const r=SIM_OEIL.res;
   if(!r)
     return '<p class="simEtat">Sélectionnez la liaison — ou les deux pistes '+
@@ -17751,11 +17747,11 @@ function simRendreOeil(){
   const m=r.mesures, g=r.gabarit, eg=r.egalisation||{};
   let h=simOeilVerdict(r);
   if(g){
-    h+='<p class="simNote">· Gabarit <b>'+simEsc(g.nom)+"</b> "+
-       simOeilBadge(g.fiabilite)+"<br><small>"+simEsc(g.fiabilite_texte)+
-       (g.source?"<br>Source : "+simEsc(g.source):"")+"</small></p>";
+    h+='<p class="simNote">· Gabarit <b>'+esc(g.nom)+"</b> "+
+       simOeilBadge(g.fiabilite)+"<br><small>"+esc(g.fiabilite_texte)+
+       (g.source?"<br>Source : "+esc(g.source):"")+"</small></p>";
   }
-  for(const n of SIM_OEIL.notes)h+='<p class="simNote">· '+simEsc(n)+"</p>";
+  for(const n of SIM_OEIL.notes)h+='<p class="simNote">· '+esc(n)+"</p>";
   h+=simOeilFigure(r);
   const ui=r.ui;
   const lignes=[
@@ -17772,7 +17768,7 @@ function simRendreOeil(){
     lignes[1].push(simNb(m.largeur_ber_ui,2)+" UI ("+simOeilT(m.largeur_ber_ui*ui)+")");
     if(lignes[2])lignes[2].push(m.marge_ber!=null?simNb(100*m.marge_ber,0)+" %":"—");
   }
-  h+='<table class="simTab"><tr><th></th><th>PRBS ('+simEsc(r.motif.toUpperCase())+
+  h+='<table class="simTab"><tr><th></th><th>PRBS ('+esc(r.motif.toUpperCase())+
      ")</th><th>pire cas</th>"+(st?"<th>à "+simOeilBer(m.ber_cible)+"</th>":"")+"</tr>"+
      lignes.map(l=>"<tr>"+l.map((x,i)=>"<td>"+x+"</td>").join("")+"</tr>").join("")+
      "</table>";
@@ -17791,7 +17787,7 @@ function simRendreOeil(){
   if(eg.ffe&&eg.ffe.length>1)det.push(["FFE", eg.ffe.map(c=>simNb(c,3)).join("  ")]);
   if(r.ligne)det.push(["Ligne (Z₀ d'une piste seule)", "Z₀ "+simNb(r.ligne.z0_min,1)+"–"+simNb(r.ligne.z0_max,1)+
                        " Ω, "+simNb(r.ligne.longueur,1)+" mm"+
-                       (r.partenaire?" — paire avec « "+simEsc(r.partenaire)+" »":"")]);
+                       (r.partenaire?" — paire avec « "+esc(r.partenaire)+" »":"")]);
   if(st){
     const gg=[];
     if(st.rj_s>0)gg.push("RJ "+simOeilT(st.rj_s)+" rms ("+simNb(st.rj_ui,3)+" UI)");
@@ -17802,7 +17798,7 @@ function simRendreOeil(){
               " × "+simNb(c.largeur_ui,2)+" UI").join(" ; ")]);
   }
   const xt=r.diaphonie;
-  if(xt)det.push(["Diaphonie (bornée)", xt.agresseurs.map(a=>simEsc(a.nom)+" "+simOeilV(a.crete_v)+
+  if(xt)det.push(["Diaphonie (bornée)", xt.agresseurs.map(a=>esc(a.nom)+" "+simOeilV(a.crete_v)+
       (a.coef?" ("+simNb(100*a.coef,2)+" % de "+simOeilV(a.v)+")":"")).join(", ")+
       " — total "+simOeilV(xt.crete_totale_v)+(xt.gain_ctle&&xt.gain_ctle!==1?" après CTLE":"")]);
   const ib=r.ibis;
@@ -17810,9 +17806,9 @@ function simRendreOeil(){
     for(const [cle,nom] of [["emetteur","Émetteur IBIS"],["recepteur","Récepteur IBIS"]]){
       const x=ib[cle];
       if(!x)continue;
-      det.push([nom, simEsc(x.modele)+(x.type?" ("+simEsc(x.type)+")":"")+", coin "+simEsc(x.coin)+
-        (x.fichier?" — "+simEsc(x.fichier):"")+", C_comp "+simNb((x.c_comp||0)*1e12,2)+" pF"+
-        (x.front_10_90?", front "+simOeilT(x.front_10_90)+" ("+simEsc(x.commande)+")":"")+
+      det.push([nom, esc(x.modele)+(x.type?" ("+esc(x.type)+")":"")+", coin "+esc(x.coin)+
+        (x.fichier?" — "+esc(x.fichier):"")+", C_comp "+simNb((x.c_comp||0)*1e12,2)+" pF"+
+        (x.front_10_90?", front "+simOeilT(x.front_10_90)+" ("+esc(x.commande)+")":"")+
         (cle==="recepteur"?(x.diodes?", diodes comprises":", sans diode"):"")+
         simOeilBrocheTexte(x)]);
     }
@@ -17827,7 +17823,7 @@ function simRendreOeil(){
   if(mc)det.push(["Mode commun (récepteur)", "continu "+simOeilV(mc.continu)+", crête à crête "+
     simOeilV(mc.crete_crete)+(mc.conversion_db!=null?", conversion "+simNb(mc.conversion_db,1)+" dB":"")+
     " — à l'émetteur "+simOeilV(mc.emetteur.crete_crete)+" c-c"+
-    (mc.asymetries&&mc.asymetries.length?"<br><small>"+simEsc(mc.asymetries.join(" ; "))+"</small>":
+    (mc.asymetries&&mc.asymetries.length?"<br><small>"+esc(mc.asymetries.join(" ; "))+"</small>":
                                           "<br><small>brins identiques</small>")+
     (mc.hauteur_symetrique!=null?"<br><small>œil brut (sans égaliseur) "+simOeilV(mc.hauteur_brute)+
       " — paire symétrique "+simOeilV(mc.hauteur_symetrique)+"</small>":"")]);
@@ -17849,18 +17845,18 @@ function simRendreOeil(){
   if(mc&&mc.courbe&&mc.courbe.v&&mc.courbe.v.length>1)h+=simOeilModeCommun(mc);
   if(am)h+=simOeilAmiParametres(am);
   if(r.avertissements&&r.avertissements.length)
-    h+=r.avertissements.map(a=>'<p class="simNote">· '+simEsc(a)+"</p>").join("");
-  if(SIM_OEIL.err)h+='<p class="simErr">'+simEsc(SIM_OEIL.err)+"</p>";
+    h+=r.avertissements.map(a=>'<p class="simNote">· '+esc(a)+"</p>").join("");
+  if(SIM_OEIL.err)h+='<p class="simErr">'+esc(SIM_OEIL.err)+"</p>";
   return h;
 }
 
 /* La broche, la paire et le boîtier d'un bout IBIS, en une suite de mots. */
 function simOeilBrocheTexte(x){
-  const bt=b=>b?"R "+simNb(b.r,3)+" Ω, L "+simNb(b.l*1e9,2)+" nH, C "+simNb(b.c*1e12,2)+" pF ("+simEsc(b.source)+")"+
+  const bt=b=>b?"R "+simNb(b.r,3)+" Ω, L "+simNb(b.l*1e9,2)+" nH, C "+simNb(b.c*1e12,2)+" pF ("+esc(b.source)+")"+
                  (b.sections?" en "+b.sections+" section"+(b.sections>1?"s":""):""):
                  "aucun";
   let t="";
-  if(x.broche)t+="<br><small>broche "+simEsc(x.broche)+(x.inverse?" / inverse "+simEsc(x.inverse):"")+
+  if(x.broche)t+="<br><small>broche "+esc(x.broche)+(x.inverse?" / inverse "+esc(x.inverse):"")+
     (x.tdelay!=null?", tdelay "+simOeilT(x.tdelay):"")+(x.vdiff!=null?", vdiff ±"+simOeilV(x.vdiff):"")+"</small>";
   if("boitier" in x)t+="<br><small>boîtier : "+bt(x.boitier)+
     ("boitier_n" in x?" — brin inverse : "+bt(x.boitier_n):"")+"</small>";
@@ -17869,7 +17865,7 @@ function simOeilBrocheTexte(x){
     " nH, C<sub>m</sub> "+simNb(x.mutuelle.c*1e12,2)+" pF (k<sub>L</sub> "+simNb(x.mutuelle.k_l,2)+
     ", k<sub>C</sub> "+simNb(x.mutuelle.k_c,2)+")</small>";
   if(x.modele_n&&(x.modele_n!==x.modele||x.coin_n!==x.coin))
-    t+="<br><small>brin inverse : "+simEsc(x.modele_n)+", coin "+simEsc(x.coin_n)+"</small>";
+    t+="<br><small>brin inverse : "+esc(x.modele_n)+", coin "+esc(x.coin_n)+"</small>";
   return t;
 }
 /* « c0=0.7 c1=-0.3 TX_FFE/Tap/-1=-0.1 » -> {c0:0.7, ...} ; les nombres en
@@ -17891,15 +17887,15 @@ function simOeilAmiParametres_(txt){
    appliqué — et s'il est exécuté (œil 2.3.0), ce que l'exécution a rendu. */
 function simOeilAmiTexte(am){
   const lus=[am.emetteur,am.recepteur].filter(Boolean)
-    .map(a=>simEsc(a.fichier||a.modele)+" ("+a.parametres.length+" paramètres)");
+    .map(a=>esc(a.fichier||a.modele)+" ("+a.parametres.length+" paramètres)");
   const p=am.propositions||{};
   let t=lus.length?lus.join(", "):"aucun .ami chargé";
   if(am.renvois&&am.renvois.length)
-    t+="<br><small>[Algorithmic Model] : "+am.renvois.map(x=>simEsc(x.bout+" "+x.modele+" → "+
+    t+="<br><small>[Algorithmic Model] : "+am.renvois.map(x=>esc(x.bout+" "+x.modele+" → "+
       x.fichier_ami+", "+x.bibliotheque)).join(" ; ")+"</small>";
   if(p.notes&&p.notes.length)
-    t+="<br><small>"+p.notes.map(simEsc).join("<br>")+"</small>";
-  t+="<br><small>"+(am.applique&&am.applique.length?"appliqué : "+simEsc(am.applique.join(", ")):
+    t+="<br><small>"+p.notes.map(esc).join("<br>")+"</small>";
+  t+="<br><small>"+(am.applique&&am.applique.length?"appliqué : "+esc(am.applique.join(", ")):
                    "proposé, non appliqué (cochez « régler l'égaliseur d'après l'AMI »)")+"</small>";
   /* L'EXÉCUTION, bout par bout : chargée, AMI_Init, GetWave, le message du
      modèle, ses paramètres Out, et la raison d'un repli. */
@@ -17907,13 +17903,13 @@ function simOeilAmiTexte(am){
   for(const [cle,nom] of [["emetteur","émetteur"],["recepteur","récepteur"]]){
     const e=ex[cle];
     if(!e)continue;
-    const outs=Object.keys(e.parametres_out||{}).map(k=>k+" = "+simEsc(String(e.parametres_out[k]))).join(", ");
-    t+="<br><small>"+nom+" : "+simEsc(e.bibliotheque)+" — "+
+    const outs=Object.keys(e.parametres_out||{}).map(k=>k+" = "+esc(String(e.parametres_out[k]))).join(", ");
+    t+="<br><small>"+nom+" : "+esc(e.bibliotheque)+" — "+
        (!e.chargee?"non chargée":e.init===false?"AMI_Init en échec":e.init?"AMI_Init ok"+
          (e.init_returns_impulse===false?" (impulsion non modifiée)":"")+(e.getwave?", AMI_GetWave par blocs":", sans GetWave"):"non exécutée")+
-       (e.message?" · « "+simEsc(e.message)+" »":"")+(e.note?" · "+simEsc(e.note):"")+
+       (e.message?" · « "+esc(e.message)+" »":"")+(e.note?" · "+esc(e.note):"")+
        (outs?"<br>paramètres Out : "+outs:"")+
-       (e.surcharges_ignorees&&e.surcharges_ignorees.length?"<br>surcharges ignorées : "+simEsc(e.surcharges_ignorees.join(", ")):"")+
+       (e.surcharges_ignorees&&e.surcharges_ignorees.length?"<br>surcharges ignorées : "+esc(e.surcharges_ignorees.join(", ")):"")+
        "</small>";
   }
   if(am.horloges&&am.horloges.n)t+="<br><small>"+am.horloges.n+" instants d'horloge rendus par le récepteur"+
@@ -17921,7 +17917,7 @@ function simOeilAmiTexte(am){
     (am.horloges.imposee?" — imposés à l'échantillonnage de l'œil ("+simNb(am.horloges.decalage_ui,3)+
        " UI du centre que l'outil aurait pris, gigue "+simNb(am.horloges.gigue_rms_ui,3)+" UI rms)"
      :" — l'œil garde son propre instant d'échantillonnage")+"</small>";
-  return t+"<br><small><b>"+simEsc(am.note)+"</b></small>";
+  return t+"<br><small><b>"+esc(am.note)+"</b></small>";
 }
 /* Les paramètres lus du .ami, repliés : chemin, valeur, plage. */
 function simOeilAmiParametres(am){
@@ -17929,12 +17925,12 @@ function simOeilAmiParametres(am){
   for(const [cle,nom] of [["emetteur","émetteur"],["recepteur","récepteur"]]){
     const a=am[cle];
     if(!a)continue;
-    const val=v=>v==null?"":Array.isArray(v)?v.map(x=>simEsc(String(x))).join(" "):simEsc(String(v));
-    h+='<details class="simNote"><summary>Paramètres AMI de l\''+nom+" — "+simEsc(a.modele)+
-       (a.description?" : "+simEsc(a.description):"")+"</summary>"+
+    const val=v=>v==null?"":Array.isArray(v)?v.map(x=>esc(String(x))).join(" "):esc(String(v));
+    h+='<details class="simNote"><summary>Paramètres AMI de l\''+nom+" — "+esc(a.modele)+
+       (a.description?" : "+esc(a.description):"")+"</summary>"+
        '<table class="simTab"><tr><th>paramètre</th><th>usage</th><th>valeur</th><th>plage / liste</th></tr>'+
-       a.parametres.map(x=>"<tr><td>"+simEsc(x.chemin)+"</td><td>"+simEsc(x.usage||"")+" "+
-         simEsc(x.type||"")+"</td><td>"+val(x.valeur)+"</td><td>"+
+       a.parametres.map(x=>"<tr><td>"+esc(x.chemin)+"</td><td>"+esc(x.usage||"")+" "+
+         esc(x.type||"")+"</td><td>"+val(x.valeur)+"</td><td>"+
          (x.liste?val(x.liste):x.plage?val(x.plage[0])+" … "+val(x.plage[1]):"")+"</td></tr>").join("")+
        "</table>"+(a.tronque?"<small>(liste tronquée)</small>":"")+"</details>";
   }
@@ -17961,7 +17957,7 @@ function simOeilModeCommun(mc){
     const y=Y(v);
     svg+='<line class="simGrille" x1="'+mg.g+'" y1="'+simXY(y)+'" x2="'+(W-mg.d)+'" y2="'+simXY(y)+'"/>'+
          '<text class="simCote" x="'+(mg.g-6)+'" y="'+simXY(y+3.5)+'" text-anchor="end">'+
-         simEsc(simOeilV(v))+"</text>";
+         esc(simOeilV(v))+"</text>";
   }
   const nbits=Math.round((n-1)*c.dt_ui);
   for(let b=0;b<=nbits;b+=Math.max(1,Math.round(nbits/8))){
@@ -18243,8 +18239,8 @@ function simOnglets(){
   let h='<div class="simFam" role="tablist">';
   for(const f of SIM_FAMILLES)
     h+='<button class="simOnglet'+(f.cle===SIM.famille?" on":"")+
-       '" data-fam="'+f.cle+'" title="'+simEsc(f.quoi)+'">'+
-       '<b>'+f.court+"</b> "+simEsc(f.nom)+"</button>";
+       '" data-fam="'+f.cle+'" title="'+esc(f.quoi)+'">'+
+       '<b>'+f.court+"</b> "+esc(f.nom)+"</button>";
   h+="</div>";
 
   const fam=simFamille();
@@ -18255,15 +18251,15 @@ function simOnglets(){
     const a=SIM_ANALYSES[cle];
     if(!a)continue;
     h+='<button class="simOnglet mini'+(cle===SIM.analyse?" on":"")+
-       '" data-ana="'+cle+'" title="'+simEsc(a.titre)+'">'+
-       simEsc(a.nom)+"</button>";
+       '" data-ana="'+cle+'" title="'+esc(a.titre)+'">'+
+       esc(a.nom)+"</button>";
   }
   /* LE REPLI DES RÉGLAGES, au bout de la rangée des analyses et non dans le
      corps de l'une d'elles : il vaut pour toutes, et un bouton posé dans un
      corps naîtrait et mourrait avec lui à chaque changement d'onglet. */
   if(simCalculable())
     h+='<button class="simOnglet mini simPlier'+(SIM.plie?" on":"")+
-       '" id="simPlier" title="'+simEsc(
+       '" id="simPlier" title="'+esc(
          "Replier les réglages pour laisser la place aux résultats. Le calcul "+
          "ne bouge pas, et la rangée des boutons reste : on relance sans "+
          "déplier.")+'">'+simXtTexteRepli()+"</button>";
@@ -18271,7 +18267,7 @@ function simOnglets(){
      les analyses. Il vit dans commun/simulation-rapport.js — une page qui ne
      le charge pas n'a pas le bouton. */
   if(simCalculable()&&typeof simRapOuvrir==="function")
-    h+='<button class="simOnglet mini" id="simRapport" title="'+simEsc(
+    h+='<button class="simOnglet mini" id="simRapport" title="'+esc(
          "Générer le rapport complet de cette simulation : la piste, "+
          "l'empilage, les réglages, les résultats et le diagnostic — à "+
          "copier, imprimer en PDF ou enregistrer en .html.")+
@@ -18689,10 +18685,10 @@ function simProgres(detail,faits,total){
   h+='<div class="simProgLigne"><span>'+
      (determine?("lot "+Math.min(faits+1,total)+" sur "+total)
                :"le solveur travaille")+"</span>"+
-     (ecoule?"<span>"+simEsc(ecoule)+"</span>":"")+
-     (SIM.taille?"<span>"+simEsc(SIM.taille)+"</span>":"")+
+     (ecoule?"<span>"+esc(ecoule)+"</span>":"")+
+     (SIM.taille?"<span>"+esc(SIM.taille)+"</span>":"")+
      "</div>";
-  h+='<p class="simNote">· '+simEsc(detail)+"</p>";
+  h+='<p class="simNote">· '+esc(detail)+"</p>";
   /* OÙ REGARDER QUAND C'EST LONG. Le terminal du serveur porte une ligne par
      étape, avec sa durée : c'est le seul endroit qui dise LAQUELLE coince. */
   h+='<p class="simNote">· Le terminal du serveur (<code>python '+
@@ -18739,7 +18735,7 @@ function simSortieReveler(){
 
 function simRendreVide(){
   const fam=simFamille();
-  return '<p class="simEtat"><b>'+simEsc(fam.nom)+"</b> — "+simEsc(fam.quoi)+
+  return '<p class="simEtat"><b>'+esc(fam.nom)+"</b> — "+esc(fam.quoi)+
     "<br><small>Aucune analyse de cette famille n'est encore écrite. Ce qui "+
     "existe est dans <b>SI</b>, à côté.<br>"+
     "Le jour où l'une arrive, elle se déclare dans <code>SIM_ANALYSES</code> "+
@@ -18762,7 +18758,7 @@ function simRendreImpedance(){
   /* UNE ERREUR N'EMPORTE PAS LE TABLEAU DES LOTS : elle peut n'être que celle
      du lot qu'on vient de déplier, les autres restant justes. */
   if(SIM.err&&!SIM.res)
-    return simTableauLots()+'<p class="simErr">'+simEsc(SIM.err)+"</p>";
+    return simTableauLots()+'<p class="simErr">'+esc(SIM.err)+"</p>";
   if(SIM.res)return simTableauLots()+simLotEntete()+simFiche();
   return '<p class="simEtat">Sélectionnez une piste, puis calculez.<br>'+
     "<small><b>Clic</b> : le tronçon cliqué seul. <b>Maj+clic</b> : la piste "+
@@ -18922,14 +18918,14 @@ function simTableauLots(){
     const b=simLotBilan(l);
     const actif=(i===SIM.lotActif);
     h+='<tr class="simLotL'+(actif?" on":"")+'" data-simlot="'+i+'" '+
-       'title="'+simEsc("Voir la fiche complète de ce lot")+'">';
+       'title="'+esc("Voir la fiche complète de ce lot")+'">';
     h+='<td><i class="simPuce" style="background:'+
        (b?simZCouleur(b.z0max&&simZVerdict(b.z0max)!==0?b.z0max:b.z0moy)
           :"rgba(139,145,156,1)")+'"></i>'+(i+1)+"</td>";
-    h+="<td>"+simEsc(l.titre||l.portee||l.net||"—")+"</td>";
+    h+="<td>"+esc(l.titre||l.portee||l.net||"—")+"</td>";
     if(!b){
       h+='<td colspan="4" class="simLotErr">'+
-         simEsc(l.err||"non calculé")+"</td></tr>";
+         esc(l.err||"non calculé")+"</td></tr>";
       return;
     }
     h+="<td>"+simNb(b.longueur,2)+"</td>"+
@@ -18959,7 +18955,7 @@ function simLotEntete(){
   if(SIM.lots.length<2)return "";
   const l=SIM.lots[SIM.lotActif];
   return '<p class="simLotTitre">Lot '+(SIM.lotActif+1)+" sur "+
-    SIM.lots.length+" — "+simEsc(l.titre||l.portee||l.net||"")+
+    SIM.lots.length+" — "+esc(l.titre||l.portee||l.net||"")+
     " <small>cliquez une ligne du tableau pour en déplier un autre</small></p>";
 }
 

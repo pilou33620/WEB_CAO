@@ -227,7 +227,7 @@ function simModelesIpcForm(){
     +'<tr><td class="g">Modèle de via</td><td><select class="ltRoleSelect'
     +(m.via!==SIM_VIA_DEFAUT_IPC?" saisi":"")+'" id="simViaMIpc">'
     +Object.keys(SIM_MODELES_VIA_IPC).map(k=>'<option value="'+k+'"'
-       +(k===m.via?" selected":"")+">"+mdlEsc(SIM_MODELES_VIA_IPC[k])+"</option>").join("")
+       +(k===m.via?" selected":"")+">"+esc(SIM_MODELES_VIA_IPC[k])+"</option>").join("")
     +"</select></td></tr>"
     +'<tr><td class="g" colspan="2"><label><input type="checkbox" id="simPorteesIpc"'
     +(m.portees?" checked":"")+"> Portée percée de tous les vias déclarés</label></td></tr>"

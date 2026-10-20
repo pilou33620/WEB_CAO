@@ -4,15 +4,6 @@
    Importation directe JLCPCB / LCSC avec prévisualisation et respect strict des 39 colonnes
    ============================================================================= */
 
-function esc(s) {
-  if (s == null) return "";
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
 
 const COLONNES_CATALOGUE_39 = [
   "Part Name",

@@ -114,10 +114,6 @@ function mdlGenre(nom,entree){
    ========================================================================== */
 /* Millimètres par unité du fichier. */
 function mdlK(){ return V.unite==="in"?25.4:V.unite==="µm"?0.001:1; }
-function mdlEsc(s){
-  return String(s==null?"":s).replace(/[&<>"'`]/g,ch=>
-    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;","`":"&#96;"}[ch]));
-}
 /* Un nombre lisible : la virgule française, et juste assez de décimales pour
    que le micron reste visible sans noyer la valeur sous les zéros. */
 function mdlNb(v,dec){

@@ -316,7 +316,7 @@ function rafraichirTable() {
       } else if (col === "Description") {
         styleCol += " min-width:220px;";
       }
-      thsHtml += `<th style="${styleCol}" data-col="${escapeHtml(col)}" title="Cliquer pour trier par ${escapeHtml(col)}">${escapeHtml(col)}${fleche}</th>`;
+      thsHtml += `<th style="${styleCol}" data-col="${esc(col)}" title="Cliquer pour trier par ${esc(col)}">${esc(col)}${fleche}</th>`;
     });
     thead.innerHTML = `<tr>${thsHtml}</tr>`;
     // tri branché ici : un nom de colonne à apostrophe cassait l'onclick en ligne
@@ -330,11 +330,11 @@ function rafraichirTable() {
 
   // Options pour les sélecteurs
   const pcbOptions = ['<option value="">-- Aucune --</option>']
-    .concat(LIB_STATE.fichiers.pcb.map(f => `<option value="${escapeHtml(f)}">${escapeHtml(f)}</option>`)).join("");
+    .concat(LIB_STATE.fichiers.pcb.map(f => `<option value="${esc(f)}">${esc(f)}</option>`)).join("");
   const schOptions = ['<option value="">-- Aucun --</option>']
-    .concat(LIB_STATE.fichiers.schematique.map(f => `<option value="${escapeHtml(f)}">${escapeHtml(f)}</option>`)).join("");
+    .concat(LIB_STATE.fichiers.schematique.map(f => `<option value="${esc(f)}">${esc(f)}</option>`)).join("");
   const simOptions = ['<option value="">-- Aucun --</option>']
-    .concat(LIB_STATE.fichiers.simulation.map(f => `<option value="${escapeHtml(f)}">${escapeHtml(f)}</option>`)).join("");
+    .concat(LIB_STATE.fichiers.simulation.map(f => `<option value="${esc(f)}">${esc(f)}</option>`)).join("");
 
   let html = "";
   const maxRows = Math.min(250, liste.length);
@@ -345,7 +345,7 @@ function rafraichirTable() {
     const schVal = c[colSch] || "";
     const simVal = c[colSim] || "";
 
-    html += `<tr data-id="${escapeHtml(c._id)}" class="${isSelected ? 'selected' : ''}">`;
+    html += `<tr data-id="${esc(c._id)}" class="${isSelected ? 'selected' : ''}">`;
 
     LIB_STATE.colonnesVisibles.forEach(col => {
       const val = c[col] !== undefined ? c[col] : "";
@@ -354,7 +354,7 @@ function rafraichirTable() {
         html += `
           <td>
             <select class="sel-assoc ${pcbVal ? 'has-val' : 'empty'}" data-field="${colPcb}" data-id="${c._id}">
-              ${pcbOptions.replace(`value="${escapeHtml(pcbVal)}"`, `value="${escapeHtml(pcbVal)}" selected`)}
+              ${pcbOptions.replace(`value="${esc(pcbVal)}"`, `value="${esc(pcbVal)}" selected`)}
             </select>
           </td>
         `;
@@ -362,7 +362,7 @@ function rafraichirTable() {
         html += `
           <td>
             <select class="sel-assoc ${schVal ? 'has-val' : 'empty'}" data-field="${colSch}" data-id="${c._id}">
-              ${schOptions.replace(`value="${escapeHtml(schVal)}"`, `value="${escapeHtml(schVal)}" selected`)}
+              ${schOptions.replace(`value="${esc(schVal)}"`, `value="${esc(schVal)}" selected`)}
             </select>
           </td>
         `;
@@ -370,18 +370,18 @@ function rafraichirTable() {
         html += `
           <td>
             <select class="sel-assoc ${simVal ? 'has-val' : 'empty'}" data-field="${colSim}" data-id="${c._id}">
-              ${simOptions.replace(`value="${escapeHtml(simVal)}"`, `value="${escapeHtml(simVal)}" selected`)}
+              ${simOptions.replace(`value="${esc(simVal)}"`, `value="${esc(simVal)}" selected`)}
             </select>
           </td>
         `;
       } else if (col === "Reference designator Prefix") {
-        html += `<td><span class="tag-prefix">${escapeHtml(val || "—")}</span></td>`;
+        html += `<td><span class="tag-prefix">${esc(val || "—")}</span></td>`;
       } else if (col === "Package type") {
-        html += `<td><span class="tag-pkg">${escapeHtml(val || "—")}</span></td>`;
+        html += `<td><span class="tag-pkg">${esc(val || "—")}</span></td>`;
       } else if (col === "Part Name") {
-        html += `<td><b>${escapeHtml(val || "")}</b></td>`;
+        html += `<td><b>${esc(val || "")}</b></td>`;
       } else {
-        html += `<td><span title="${escapeHtml(val)}" style="max-width:240px; display:inline-block; overflow:hidden; text-overflow:ellipsis; vertical-align:middle;">${escapeHtml(val || "—")}</span></td>`;
+        html += `<td><span title="${esc(val)}" style="max-width:240px; display:inline-block; overflow:hidden; text-overflow:ellipsis; vertical-align:middle;">${esc(val || "—")}</span></td>`;
       }
     });
 
@@ -516,11 +516,11 @@ function inspBrochageApercu(texte) {
   const lu = typeof brochageLire === "function" ? brochageLire(texte) : null;
   if (!lu) return { ok: true, html: texte.trim() ? "" : "Vide : la broche n du symbole va sur la patte n." };
   if (lu.erreurs.length)
-    return { ok: false, html: lu.erreurs.map(e => '<div class="err">⛔ ' + escapeHtml(e) + "</div>").join("") };
+    return { ok: false, html: lu.erreurs.map(e => '<div class="err">⛔ ' + esc(e) + "</div>").join("") };
   const html = lu.parties.map(p =>
-    (p.nom ? "<b>" + escapeHtml(p.nom) + "</b>  " : "") +
-    Object.entries(p.broches).map(([b, n]) => escapeHtml(b) + "→<b>" + escapeHtml(n) + "</b>").join("  ") +
-    (p.nc.length ? "  NC→" + escapeHtml(p.nc.join("/")) : "")).join("<br>");
+    (p.nom ? "<b>" + esc(p.nom) + "</b>  " : "") +
+    Object.entries(p.broches).map(([b, n]) => esc(b) + "→<b>" + esc(n) + "</b>").join("  ") +
+    (p.nc.length ? "  NC→" + esc(p.nc.join("/")) : "")).join("<br>");
   return { ok: true, html: html };
 }
 function inspBrochageAfficher(comp) {
@@ -627,11 +627,11 @@ function rafraichirGaleriePcb() {
   for (const f of slice) {
     const base = f.replace(/\.json$/i, "");
     html += `
-      <div class="lib-card" data-nom="${escapeHtml(f)}" data-type="pcb" title="Double-cliquez pour éditer l'empreinte">
-        <canvas class="lib-card-canvas" id="cv_pcb_${escapeHtml(base)}"></canvas>
+      <div class="lib-card" data-nom="${esc(f)}" data-type="pcb" title="Double-cliquez pour éditer l'empreinte">
+        <canvas class="lib-card-canvas" id="cv_pcb_${esc(base)}"></canvas>
         <div class="lib-card-info">
           <div style="display:flex; justify-content:space-between; align-items:center;">
-            <span class="lib-card-title">${escapeHtml(base)}</span>
+            <span class="lib-card-title">${esc(base)}</span>
             <button class="tb mini" style="padding:1px 6px; font-size:10px;" data-editer="1" title="Éditer">✏️</button>
           </div>
           <div class="lib-card-sub">
@@ -703,11 +703,11 @@ function rafraichirGalerieSch() {
   for (const f of slice) {
     const base = f.replace(/\.json$/i, "");
     html += `
-      <div class="lib-card" data-nom="${escapeHtml(f)}" data-type="schematique" title="Double-cliquez pour éditer le symbole">
-        <canvas class="lib-card-canvas" id="cv_sch_${escapeHtml(base)}"></canvas>
+      <div class="lib-card" data-nom="${esc(f)}" data-type="schematique" title="Double-cliquez pour éditer le symbole">
+        <canvas class="lib-card-canvas" id="cv_sch_${esc(base)}"></canvas>
         <div class="lib-card-info">
           <div style="display:flex; justify-content:space-between; align-items:center;">
-            <span class="lib-card-title">${escapeHtml(base)}</span>
+            <span class="lib-card-title">${esc(base)}</span>
             <button class="tb mini" style="padding:1px 6px; font-size:10px;" data-editer="1" title="Éditer">✏️</button>
           </div>
           <div class="lib-card-sub">
@@ -779,10 +779,10 @@ function rafraichirGalerieSim() {
     html += `
       <div class="preview-card" style="margin-bottom:12px;">
         <div class="preview-card-head">
-          <span>${escapeHtml(f)}</span>
+          <span>${esc(f)}</span>
           <span class="type-label">SPICE Subcircuit (.sub)</span>
         </div>
-        <pre style="margin:0; padding:10px; background:#090a0c; font-family:var(--mono); font-size:11.5px; color:#93c5fd; overflow-x:auto;" id="sim_code_${escapeHtml(f.replace(/\./g, '_'))}">Chargement...</pre>
+        <pre style="margin:0; padding:10px; background:#090a0c; font-family:var(--mono); font-size:11.5px; color:#93c5fd; overflow-x:auto;" id="sim_code_${esc(f.replace(/\./g, '_'))}">Chargement...</pre>
       </div>
     `;
   }
@@ -899,9 +899,6 @@ function afficherToast(msg, type = "info") {
   }, 3500);
 }
 
-function escapeHtml(s) {
-  return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-}
 
 /* ---------- Modale de sélection des colonnes ---------- */
 
@@ -933,8 +930,8 @@ function remplirGrilleColonnesPicker(filtre = "") {
     const isChecked = visibles.has(col);
     html += `
       <label class="col-item ${isChecked ? 'checked' : ''}">
-        <input type="checkbox" value="${escapeHtml(col)}" ${isChecked ? 'checked' : ''} onchange="this.parentElement.classList.toggle('checked', this.checked); majCompteurColsPicker();">
-        <span title="${escapeHtml(col)}">${escapeHtml(col)}</span>
+        <input type="checkbox" value="${esc(col)}" ${isChecked ? 'checked' : ''} onchange="this.parentElement.classList.toggle('checked', this.checked); majCompteurColsPicker();">
+        <span title="${esc(col)}">${esc(col)}</span>
       </label>
     `;
   });

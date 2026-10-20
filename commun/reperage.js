@@ -48,10 +48,6 @@ const RP={
   q:{ouvert:false,res:[],i:0}
 };
 
-function rpEsc(s){
-  return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;")
-    .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-}
 function rpEl(id){return document.getElementById(id);}
 /* Trois décimales, virgule décimale : la même écriture que les champs de
    coordonnées et que la fenêtre des règles. */
@@ -231,9 +227,9 @@ function rpQBuild(){
   }
   box.innerHTML=RP.q.res.map((t,i)=>
     '<div class="rpl'+(i===RP.q.i?" on":"")+'" data-i="'+i+'">'+
-      '<span class="rpt">'+rpEsc(t.type)+'</span>'+
-      '<span class="rpc">'+rpEsc(t.cle)+'</span>'+
-      '<span class="rpd">'+rpEsc(t.detail)+'</span>'+
+      '<span class="rpt">'+esc(t.type)+'</span>'+
+      '<span class="rpc">'+esc(t.cle)+'</span>'+
+      '<span class="rpd">'+esc(t.detail)+'</span>'+
     '</div>').join("");
 }
 function rpQAller(i){

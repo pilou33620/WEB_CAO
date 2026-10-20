@@ -42,10 +42,6 @@ const r3 = v => Math.round(v*1000)/1000;
    millimètre ne suffisent pas à écrire 17,5 µm sans le déformer */
 const r4 = v => Math.round(v*10000)/10000;
 const fmt = (v,n) => Number(v).toFixed(n==null?2:n);
-function esc(s){
-  return String(s).replace(/[&<>"'`]/g,ch=>
-    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;","`":"&#96;"}[ch]));
-}
 function dist(x1,y1,x2,y2){return Math.hypot(x2-x1,y2-y1);}
 /* ---------- les huit sens du tracé ----------
    Un segment qui ne tombe pas sur un multiple de 45° est un **angle bâtard**

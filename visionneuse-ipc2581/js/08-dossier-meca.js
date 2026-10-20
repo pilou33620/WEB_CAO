@@ -11,7 +11,6 @@
 /* les mêmes que 01-core.js de l'éditeur, que la visionneuse ne charge pas */
 const clamp=(v,a,b)=>v<a?a:(v>b?b:v);
 const fmt=(v,n)=>Number(v).toFixed(n==null?2:n);
-const esc=mdlEsc;          // l'aperçu SVG des plans (dfSvg) échappe ses textes
 
 /* L'entrée neutre du dossier (commun/dossier-meca.js) tirée du modèle lu. Le
    fichier est déjà dans le repère des Gerber (Y vers le haut, son origine) ;
@@ -132,7 +131,7 @@ function mecaIpcApercu(){
     (MECA_IPC.libKo?" · LIB indisponible (hors serveur) : hauteurs du fichier et saisies seulement":"");
 }
 function mecaIpcRendre(){
-  const J=mecaIpcDossier(), r=mecaIpcReglages(), e=mdlEsc;
+  const J=mecaIpcDossier(), r=mecaIpcReglages(), e=esc;
   document.getElementById("mecaTable").innerHTML=
     '<tr><th>Repère</th><th>Hauteur (mm)</th><th title="Ouverture dans le boîtier">Ouv.</th></tr>'+
     J.composants.map(c=>{

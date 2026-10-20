@@ -1015,10 +1015,6 @@ function buildBom(){
     };
   });
 }
-function esc(s){
-  return String(s).replace(/[&<>"'`]/g,ch=>
-    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;","`":"&#96;"}[ch]));
-}
 
 /* ---------- menu déroulant du bouton Trait ---------- */
 function drawMenuBuild(){

@@ -15330,7 +15330,7 @@ T("fiche DC : le verdict compare aux DEUX budgets, et l'un suffit a sortir",()=>
     SIM.dcBudget={chute:5, dt:5};
     h=simVerdictDC(dcResFiche());
     if(!/simVerdict dehors/.test(h))throw new Error("verdict : "+h);
-    if(!/l'échauffement/.test(h))
+    if(!/l&#39;échauffement/.test(h))                 // l'apostrophe est échappée (esc)
       throw new Error("le verdict ne dit pas CE qui sort : "+h);
     if(/la chute et/.test(h))
       throw new Error("la chute est accusee alors qu'elle tient : "+h);

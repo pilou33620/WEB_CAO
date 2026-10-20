@@ -525,9 +525,9 @@ function elibFiltrerEtAfficher() {
         '<canvas class="elib-card-thumb" width="160" height="90"></canvas>' +
       '</div>' +
       '<div class="elib-card-info">' +
-        '<div class="elib-card-name" title="' + elibEsc(name) + '">' + elibEsc(name) + '</div>' +
-        (val ? '<div class="elib-card-val">' + elibEsc(val) + '</div>' : '') +
-        '<div class="elib-card-pkg" title="' + elibEsc(pkg) + '">' + elibEsc(pkg) + '</div>' +
+        '<div class="elib-card-name" title="' + esc(name) + '">' + esc(name) + '</div>' +
+        (val ? '<div class="elib-card-val">' + esc(val) + '</div>' : '') +
+        '<div class="elib-card-pkg" title="' + esc(pkg) + '">' + esc(pkg) + '</div>' +
         '<div class="elib-card-badges">' +
           (hasSp ? '<span class="elib-badge elib-badge-spice" title="Modèle SPICE inclus">SPICE</span>' : '') +
           (isS ? '<span class="elib-badge elib-badge-smd">CMS</span>' : (isT ? '<span class="elib-badge elib-badge-tht">THT</span>' : '')) +
@@ -601,9 +601,9 @@ function elibAfficherDetails(it) {
 
   let html =
     '<div class="elib-detail-sect">' +
-      '<div class="elib-detail-title">' + elibEsc(name) + (val ? ' · <span style="color:var(--yellow)">' + elibEsc(val) + '</span>' : '') + '</div>' +
-      (mfr || mpn ? '<div class="elib-detail-mfr">' + elibEsc((mfr ? mfr + " " : "") + (mpn ? "· " + mpn : "")) + '</div>' : '') +
-      '<div class="elib-detail-desc">' + elibEsc(desc) + '</div>' +
+      '<div class="elib-detail-title">' + esc(name) + (val ? ' · <span style="color:var(--yellow)">' + esc(val) + '</span>' : '') + '</div>' +
+      (mfr || mpn ? '<div class="elib-detail-mfr">' + esc((mfr ? mfr + " " : "") + (mpn ? "· " + mpn : "")) + '</div>' : '') +
+      '<div class="elib-detail-desc">' + esc(desc) + '</div>' +
     '</div>' +
 
     '<!-- Double prévisualisation interactive (Symbole + Empreinte) -->' +
@@ -623,13 +623,13 @@ function elibAfficherDetails(it) {
       '<div style="font-size:11px; font-weight:600; text-transform:uppercase; color:var(--txt-dim); letter-spacing:0.04em;">Caractéristiques</div>' +
       '<table class="elib-props-table">' +
         '<tbody>' +
-          '<tr><td class="elib-props-k">Boîtier / Footprint</td><td class="elib-props-v">' + elibEsc(pkg) + '</td></tr>' +
-          (val ? '<tr><td class="elib-props-k">Valeur</td><td class="elib-props-v" style="color:var(--yellow)">' + elibEsc(val) + '</td></tr>' : '') +
-          (vRating && vRating !== "xx" && vRating !== "-" ? '<tr><td class="elib-props-k">Tension max</td><td class="elib-props-v">' + elibEsc(vRating) + '</td></tr>' : '') +
-          (cRating && cRating !== "xx" && cRating !== "-" ? '<tr><td class="elib-props-k">Courant max</td><td class="elib-props-v">' + elibEsc(cRating) + '</td></tr>' : '') +
-          (wRating && wRating !== "xx" && wRating !== "-" ? '<tr><td class="elib-props-k">Puissance</td><td class="elib-props-v">' + elibEsc(wRating) + '</td></tr>' : '') +
-          (fRating && fRating !== "xx" && fRating !== "-" ? '<tr><td class="elib-props-k">Fréquence</td><td class="elib-props-v">' + elibEsc(fRating) + '</td></tr>' : '') +
-          (sim && sim !== "-" && sim !== "xx" ? '<tr><td class="elib-props-k">Modèle SPICE</td><td class="elib-props-v" style="color:#4ade80">✅ ' + elibEsc(sim) + '</td></tr>' : '') +
+          '<tr><td class="elib-props-k">Boîtier / Footprint</td><td class="elib-props-v">' + esc(pkg) + '</td></tr>' +
+          (val ? '<tr><td class="elib-props-k">Valeur</td><td class="elib-props-v" style="color:var(--yellow)">' + esc(val) + '</td></tr>' : '') +
+          (vRating && vRating !== "xx" && vRating !== "-" ? '<tr><td class="elib-props-k">Tension max</td><td class="elib-props-v">' + esc(vRating) + '</td></tr>' : '') +
+          (cRating && cRating !== "xx" && cRating !== "-" ? '<tr><td class="elib-props-k">Courant max</td><td class="elib-props-v">' + esc(cRating) + '</td></tr>' : '') +
+          (wRating && wRating !== "xx" && wRating !== "-" ? '<tr><td class="elib-props-k">Puissance</td><td class="elib-props-v">' + esc(wRating) + '</td></tr>' : '') +
+          (fRating && fRating !== "xx" && fRating !== "-" ? '<tr><td class="elib-props-k">Fréquence</td><td class="elib-props-v">' + esc(fRating) + '</td></tr>' : '') +
+          (sim && sim !== "-" && sim !== "xx" ? '<tr><td class="elib-props-k">Modèle SPICE</td><td class="elib-props-v" style="color:#4ade80">✅ ' + esc(sim) + '</td></tr>' : '') +
         '</tbody>' +
       '</table>' +
     '</div>';
@@ -716,14 +716,6 @@ function explorateurLibFermer() {
   ELIB.open = false;
 }
 
-function elibEsc(s) {
-  if (s === null || s === undefined) return "";
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
 
 if (typeof window !== "undefined") {
   window.ELIB = ELIB;

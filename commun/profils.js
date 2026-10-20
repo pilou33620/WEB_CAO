@@ -457,10 +457,6 @@ async function profRelever(){
    d'accueil : c'est là qu'on choisit qui travaille. Les éditeurs n'ont besoin
    que de le montrer et de permettre d'en changer sans repasser par l'accueil.
    ========================================================================== */
-function profEsc(s){
-  return String(s).replace(/[&<>"'`]/g, ch =>
-    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;","`":"&#96;"}[ch]));
-}
 function profMenuFermer(){
   const m = document.getElementById("profMenu");
   if(m) m.classList.remove("on");
@@ -477,9 +473,9 @@ function profMenuConstruire(){
   }
   let h = '<div class="mtitle">Utilisateur</div>';
   for(const n of PROF_LISTE)
-    h += '<button class="mi" data-prof="' + profEsc(n) + '">' +
+    h += '<button class="mi" data-prof="' + esc(n) + '">' +
          '<span class="ck">' + (profMemeNom(n, PROF_NOM) ? "✓" : "") + '</span>' +
-         profEsc(n) + '</button>';
+         esc(n) + '</button>';
   h += '<div class="msep"></div>' +
        '<button class="mi" data-cmd="neuf">' +
        '<span class="ck">+</span>Nouvel utilisateur…</button>' +
@@ -487,7 +483,7 @@ function profMenuConstruire(){
        (PROF_SERVEUR === false
          ? "Préférences gardées dans ce navigateur : sans " +
            "<code>web_CAO.py</code>, aucun fichier ne peut être écrit."
-         : "Préférences enregistrées dans " + profEsc(profEtat().fichier) + ".") +
+         : "Préférences enregistrées dans " + esc(profEtat().fichier) + ".") +
        '</div>';
   m.innerHTML = h;
   m.querySelectorAll("[data-prof]").forEach(function(b){

@@ -1080,7 +1080,8 @@ function assertPropre(html,quoi){
 T("esc() couvre les caractères dangereux",()=>{
   const got=esc('<&>"\'`');
   if(got!=="&lt;&amp;&gt;&quot;&#39;&#96;")throw new Error("échappement : "+got);
-  if(esc(null)!=="null")throw new Error("valeur absente : "+esc(null));
+  if(esc(null)!==""||esc(undefined)!=="")throw new Error("valeur absente : "+esc(null));
+  if(esc(0)!=="0")throw new Error("zéro : "+esc(0));
 });
 T("nomenclature : repère et valeur d'un fichier importé échappés",()=>{
   sheet([C("resistor",0,0,{ref:XSS,value:XSS,pkg:XSS})],[]);

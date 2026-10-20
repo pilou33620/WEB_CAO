@@ -254,18 +254,10 @@ function crFmtEntier(n) {
 
 function crFmtPrix(p, devise) {
   if (p === null || p === undefined || isNaN(p)) return "—";
-  const d = crEsc(devise || "$");   // la devise vient du JSON du distributeur, posée en HTML
+  const d = esc(devise || "$");   // la devise vient du JSON du distributeur, posée en HTML
   return Number(p).toFixed(4).replace(/\.?0+$/, "") + " " + d;
 }
 
-function crEsc(s) {
-  if (s === null || s === undefined) return "";
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
 
 /* ---------- Appel vers la passerelle locale (/api/tool) ---------- */
 async function crApiAppel(outil, args) {
@@ -527,7 +519,7 @@ async function crLancerRecherche(overrideQuery, forceDistribOnly) {
   CR_ETAT.query = q;
   CR_ETAT.loadingSearch = true;
   const listEl = document.getElementById("crList");
-  listEl.innerHTML = '<div class="cr-loading"><span class="cr-spinner"></span> Recherche en cours pour « ' + crEsc(q) + ' »...</div>';
+  listEl.innerHTML = '<div class="cr-loading"><span class="cr-spinner"></span> Recherche en cours pour « ' + esc(q) + ' »...</div>';
   document.getElementById("crCount").textContent = "";
   document.getElementById("crBtnApply").disabled = true;
 
@@ -560,7 +552,7 @@ async function crLancerRecherche(overrideQuery, forceDistribOnly) {
     if (!rawResults.length) {
       listEl.innerHTML =
         '<div class="cr-placeholder">' +
-          'Aucun composant trouvé pour « ' + crEsc(q) + ' » chez JLCPCB, Mouser ou DigiKey.<br><br>' +
+          'Aucun composant trouvé pour « ' + esc(q) + ' » chez JLCPCB, Mouser ou DigiKey.<br><br>' +
           '<i>Conseil : Vérifiez la référence exacte du fabricant (MPN, ex: IRA-S400ST01A01, STM32F103, LM358...).</i>' +
         '</div>';
       document.getElementById("crDetailsPanel").innerHTML = '<div class="cr-placeholder">Aucun résultat.</div>';
@@ -570,7 +562,7 @@ async function crLancerRecherche(overrideQuery, forceDistribOnly) {
     crTrierEtAfficherCandidats(true);
   } catch (err) {
     CR_ETAT.loadingSearch = false;
-    listEl.innerHTML = '<div class="cr-error">Erreur de recherche : ' + crEsc(err.message || err) + '</div>';
+    listEl.innerHTML = '<div class="cr-error">Erreur de recherche : ' + esc(err.message || err) + '</div>';
   }
 }
 
@@ -611,9 +603,9 @@ function crTrierEtAfficherCandidats(autoSelectPremier) {
     const refTag = c.lcsc || (c.mouserData && c.mouserData.part_number) || (c.digikeyData && c.digikeyData.part_number) || c.model;
 
     html +=
-      '<div class="cr-card' + selClass + '" data-lcsc="' + crEsc(c.lcsc || "") + '" data-idx="' + idx + '">' +
+      '<div class="cr-card' + selClass + '" data-lcsc="' + esc(c.lcsc || "") + '" data-idx="' + idx + '">' +
         '<div class="cr-card-head">' +
-          '<b class="cr-mpn">' + crEsc(c.model || c.lcsc) + '</b>' +
+          '<b class="cr-mpn">' + esc(c.model || c.lcsc) + '</b>' +
           '<div class="cr-badges">' +
             badgeSource +
             (isRec ? '<span class="cr-badge cr-badge-rec" title="Recommandé : meilleur équilibre stock & sans frais">★ Recommandé</span>' : '') +
@@ -621,14 +613,14 @@ function crTrierEtAfficherCandidats(autoSelectPremier) {
           '</div>' +
         '</div>' +
         '<div class="cr-card-sub">' +
-          '<span>' + crEsc(c.manufacturer || "Fabricant inconnu") + '</span>' +
+          '<span>' + esc(c.manufacturer || "Fabricant inconnu") + '</span>' +
           '<span>·</span>' +
-          '<span>' + crEsc(c.package || "Boîtier inconnu") + '</span>' +
+          '<span>' + esc(c.package || "Boîtier inconnu") + '</span>' +
         '</div>' +
         '<div class="cr-card-meta">' +
           '<span>Stock : <b>' + crFmtEntier(c.stock) + '</b></span>' +
           '<span>Prix : <b>' + crFmtPrix(c.price, c.currency) + '</b></span>' +
-          '<span class="cr-lcsc-tag">' + crEsc(refTag) + '</span>' +
+          '<span class="cr-lcsc-tag">' + esc(refTag) + '</span>' +
         '</div>' +
       '</div>';
   });
@@ -770,7 +762,7 @@ async function crSelectionnerCandidat(cand) {
 
     crAfficherDetailsComplets();
   } catch (err) {
-    pnl.innerHTML = '<div class="cr-error">Erreur lors de la récupération des détails : ' + crEsc(err.message || err) + '</div>';
+    pnl.innerHTML = '<div class="cr-error">Erreur lors de la récupération des détails : ' + esc(err.message || err) + '</div>';
   }
 }
 
@@ -798,9 +790,9 @@ function crAfficherDetailsComplets() {
   // Titre & description du composant
   html +=
     '<div class="cr-det-header">' +
-      '<div class="cr-det-title">' + crEsc(mpn) + '</div>' +
-      '<div class="cr-det-sub">' + crEsc(mfr) + (pkg ? ' · Boîtier : <b>' + crEsc(pkg) + '</b>' : '') + '</div>' +
-      (d.description ? '<div class="cr-det-desc">' + crEsc(d.description) + '</div>' : '') +
+      '<div class="cr-det-title">' + esc(mpn) + '</div>' +
+      '<div class="cr-det-sub">' + esc(mfr) + (pkg ? ' · Boîtier : <b>' + esc(pkg) + '</b>' : '') + '</div>' +
+      (d.description ? '<div class="cr-det-desc">' + esc(d.description) + '</div>' : '') +
     '</div>';
 
   // --- SECTION 1 : Comparatif Distributeurs (JLCPCB, Mouser, DigiKey) ---
@@ -813,7 +805,7 @@ function crAfficherDetailsComplets() {
         (d.lcsc ? (
           '<div class="cr-distrib-stat">Stock : <b>' + crFmtEntier(d.stock || (CR_ETAT.selectedCand && CR_ETAT.selectedCand.stock)) + '</b></div>' +
           '<div class="cr-distrib-stat">Prix (1+) : <b>' + crFmtPrix(d.price || (CR_ETAT.selectedCand && CR_ETAT.selectedCand.price)) + '</b></div>' +
-          '<div class="cr-distrib-ref">Réf : ' + crEsc(d.lcsc || (CR_ETAT.selectedCand && CR_ETAT.selectedCand.lcsc)) + '</div>'
+          '<div class="cr-distrib-ref">Réf : ' + esc(d.lcsc || (CR_ETAT.selectedCand && CR_ETAT.selectedCand.lcsc)) + '</div>'
         ) : '<div class="cr-distrib-none">Non référencé JLCPCB</div>') +
       '</div>' +
       // Carte Mouser
@@ -822,7 +814,7 @@ function crAfficherDetailsComplets() {
         (m ? (
           '<div class="cr-distrib-stat">Stock : <b>' + crFmtEntier(m.stock) + '</b></div>' +
           '<div class="cr-distrib-stat">Prix (1+) : <b>' + crFmtPrix(m.price, m.currency) + '</b></div>' +
-          '<div class="cr-distrib-ref" title="' + crEsc(m.part_number) + '">Réf : ' + crEsc(m.part_number) + '</div>'
+          '<div class="cr-distrib-ref" title="' + esc(m.part_number) + '">Réf : ' + esc(m.part_number) + '</div>'
         ) : '<div class="cr-distrib-none">Non trouvé / rupture</div>') +
       '</div>' +
       // Carte DigiKey
@@ -831,7 +823,7 @@ function crAfficherDetailsComplets() {
         (dk ? (
           '<div class="cr-distrib-stat">Stock : <b>' + crFmtEntier(dk.stock) + '</b></div>' +
           '<div class="cr-distrib-stat">Prix (1+) : <b>' + crFmtPrix(dk.price, dk.currency) + '</b></div>' +
-          '<div class="cr-distrib-ref" title="' + crEsc(dk.part_number) + '">Réf : ' + crEsc(dk.part_number) + '</div>'
+          '<div class="cr-distrib-ref" title="' + esc(dk.part_number) + '">Réf : ' + esc(dk.part_number) + '</div>'
         ) : '<div class="cr-distrib-none">Non trouvé / rupture</div>') +
       '</div>' +
     '</div>';
@@ -853,7 +845,7 @@ function crAfficherDetailsComplets() {
     '<label class="cr-prop-row">' +
       '<input type="checkbox" id="cp_mpn" data-prop="mpn" data-essential="1" checked>' +
       '<span class="cr-prop-k">Référence (MPN)</span>' +
-      '<span class="cr-prop-v">' + crEsc(mpn) + '</span>' +
+      '<span class="cr-prop-v">' + esc(mpn) + '</span>' +
     '</label>';
 
   // 2. Fabricant — Essentiel : coché
@@ -861,7 +853,7 @@ function crAfficherDetailsComplets() {
     '<label class="cr-prop-row">' +
       '<input type="checkbox" id="cp_mfr" data-prop="manufacturer" data-essential="1" checked>' +
       '<span class="cr-prop-k">Fabricant</span>' +
-      '<span class="cr-prop-v">' + crEsc(mfr) + '</span>' +
+      '<span class="cr-prop-v">' + esc(mfr) + '</span>' +
     '</label>';
 
   // 3. Boîtier / Empreinte — Essentiel : coché
@@ -870,7 +862,7 @@ function crAfficherDetailsComplets() {
       '<label class="cr-prop-row">' +
         '<input type="checkbox" id="cp_pkg" data-prop="pkg" data-essential="1" checked>' +
         '<span class="cr-prop-k">Boîtier / Empreinte</span>' +
-        '<span class="cr-prop-v">' + crEsc(pkg) + '</span>' +
+        '<span class="cr-prop-v">' + esc(pkg) + '</span>' +
       '</label>';
   }
 
@@ -896,9 +888,9 @@ function crAfficherDetailsComplets() {
   specItems.forEach((sp) => {
     html +=
       '<label class="cr-prop-row">' +
-        '<input type="checkbox" class="cp-spec" data-spec-key="' + crEsc(sp.nom) + '" data-spec-val="' + crEsc(sp.val) + '" data-essential="1" checked>' +
-        '<span class="cr-prop-k">' + crEsc(sp.nom) + '</span>' +
-        '<span class="cr-prop-v">' + crEsc(sp.val) + '</span>' +
+        '<input type="checkbox" class="cp-spec" data-spec-key="' + esc(sp.nom) + '" data-spec-val="' + esc(sp.val) + '" data-essential="1" checked>' +
+        '<span class="cr-prop-k">' + esc(sp.nom) + '</span>' +
+        '<span class="cr-prop-v">' + esc(sp.val) + '</span>' +
       '</label>';
   });
 
@@ -908,7 +900,7 @@ function crAfficherDetailsComplets() {
       '<label class="cr-prop-row cr-prop-dsheet">' +
         '<input type="checkbox" id="cp_dsheet" data-prop="datasheet" data-essential="1" checked>' +
         '<span class="cr-prop-k">Télécharger la Datasheet</span>' +
-        '<span class="cr-prop-v"><a href="' + crEsc(dsheetUrl) + '" target="_blank" rel="noopener" class="cr-link">Voir PDF en ligne ↗</a></span>' +
+        '<span class="cr-prop-v"><a href="' + esc(dsheetUrl) + '" target="_blank" rel="noopener" class="cr-link">Voir PDF en ligne ↗</a></span>' +
       '</label>';
   }
 
@@ -918,7 +910,7 @@ function crAfficherDetailsComplets() {
       '<label class="cr-prop-row dim">' +
         '<input type="checkbox" id="cp_lcsc" data-prop="lcsc">' +
         '<span class="cr-prop-k">Code LCSC</span>' +
-        '<span class="cr-prop-v">' + crEsc(d.lcsc) + '</span>' +
+        '<span class="cr-prop-v">' + esc(d.lcsc) + '</span>' +
       '</label>';
   }
 
@@ -929,7 +921,7 @@ function crAfficherDetailsComplets() {
       '<label class="cr-prop-row' + (isMouserPrimary ? '' : ' dim') + '">' +
         '<input type="checkbox" id="cp_mouser" data-prop="mouser"' + (isMouserPrimary ? ' data-essential="1" checked' : '') + '>' +
         '<span class="cr-prop-k">Référence Mouser</span>' +
-        '<span class="cr-prop-v">' + crEsc(m.part_number) + '</span>' +
+        '<span class="cr-prop-v">' + esc(m.part_number) + '</span>' +
       '</label>';
   }
 
@@ -940,7 +932,7 @@ function crAfficherDetailsComplets() {
       '<label class="cr-prop-row' + (isDkPrimary ? '' : ' dim') + '">' +
         '<input type="checkbox" id="cp_digikey" data-prop="digikey"' + (isDkPrimary ? ' data-essential="1" checked' : '') + '>' +
         '<span class="cr-prop-k">Référence DigiKey</span>' +
-        '<span class="cr-prop-v">' + crEsc(dk.part_number) + '</span>' +
+        '<span class="cr-prop-v">' + esc(dk.part_number) + '</span>' +
       '</label>';
   }
 
@@ -964,7 +956,7 @@ function crAfficherDetailsComplets() {
       '<div class="cr-sect-title cr-sect-pinout">⚡ BROCHAGE SCHÉMATIQUE OFFICIEL (PINOUT — ' + pin.length + ' BROCHES)</div>' +
       '<div class="cr-pinout-box">' +
         '<div class="cr-pinout-meta">' +
-          (pkg ? '<span>Boîtier : <b>' + crEsc(pkg) + '</b></span>' : '') +
+          (pkg ? '<span>Boîtier : <b>' + esc(pkg) + '</b></span>' : '') +
           '<span>Nombre de broches : <b>' + pin.length + '</b></span>' +
           '<span>Source : <b style="color:#52c41a">Symbole EasyEDA / LCSC</b></span>' +
         '</div>' +
@@ -988,11 +980,11 @@ function crAfficherDetailsComplets() {
       const racc = crBrocheRaccordementSchema(CR_ETAT.el, num);
       const nomActuel = (CR_ETAT.el && CR_ETAT.el.pinNames && CR_ETAT.el.pinNames[num - 1]) || "";
 
-      let cellNom = '<b>' + crEsc(nom) + '</b>';
+      let cellNom = '<b>' + esc(nom) + '</b>';
       if (nomActuel && nomActuel.toUpperCase() === nom.toUpperCase()) {
         cellNom += ' <span style="color:#52c41a;font-size:10px;font-weight:normal" title="Votre schéma porte déjà ce nom officiel">✓ Actuel</span>';
       } else if (nomActuel) {
-        cellNom += '<div style="font-size:10px;color:var(--txt-dim);font-family:var(--mono)">Actuel sur schéma : ' + crEsc(nomActuel) + '</div>';
+        cellNom += '<div style="font-size:10px;color:var(--txt-dim);font-family:var(--mono)">Actuel sur schéma : ' + esc(nomActuel) + '</div>';
       }
 
       let netTxt = '<span style="color:var(--txt-dim);font-style:italic">Non raccordé</span>';
@@ -1002,7 +994,7 @@ function crAfficherDetailsComplets() {
       }
 
       if (racc && racc.hasWire) {
-        netTxt = '<b style="color:#60a5fa">' + crEsc(racc.netName || "Net sans nom") + '</b>';
+        netTxt = '<b style="color:#60a5fa">' + esc(racc.netName || "Net sans nom") + '</b>';
         const normNet = crNormSig(racc.netName);
         const normPin = crNormSig(nom);
 
@@ -1017,15 +1009,15 @@ function crAfficherDetailsComplets() {
         } else if (typeInfo.cat === "alim" && crIsPower(racc.netName)) {
           stTxt = '<span class="cr-conf-badge cr-conf-badge-ok">✓ Alim OK</span>';
         } else {
-          stTxt = '<span class="cr-conf-badge cr-conf-badge-info">Câblé (' + crEsc(racc.netName) + ')</span>';
+          stTxt = '<span class="cr-conf-badge cr-conf-badge-info">Câblé (' + esc(racc.netName) + ')</span>';
         }
       }
 
       html +=
         '<tr>' +
-          '<td class="cr-pin-num-cell">#' + crEsc(p.number) + '</td>' +
+          '<td class="cr-pin-num-cell">#' + esc(p.number) + '</td>' +
           '<td class="cr-pin-name-cell">' + cellNom + '</td>' +
-          '<td><span class="cr-pin-pill ' + typeInfo.cls + '">' + crEsc(typeInfo.badge) + '</span></td>' +
+          '<td><span class="cr-pin-pill ' + typeInfo.cls + '">' + esc(typeInfo.badge) + '</span></td>' +
           '<td>' + netTxt + '</td>' +
           '<td>' + stTxt + '</td>' +
         '</tr>';
@@ -1054,8 +1046,8 @@ function crAfficherDetailsComplets() {
         '<label class="cr-conflict-card' + (conf.critique ? ' crit' : '') + '">' +
           '<input type="checkbox" class="cp-conflict-cb" data-cidx="' + cIdx + '"' + (conf.checked ? ' checked' : '') + '> ' +
           '<div class="cr-conf-body">' +
-            '<div class="cr-conf-head">' + critBadge + '<b class="cr-conf-title">' + crEsc(conf.titre) + '</b></div>' +
-            '<div class="cr-conf-desc">' + crEsc(conf.desc) + '</div>' +
+            '<div class="cr-conf-head">' + critBadge + '<b class="cr-conf-title">' + esc(conf.titre) + '</b></div>' +
+            '<div class="cr-conf-desc">' + esc(conf.desc) + '</div>' +
           '</div>' +
         '</label>';
     });
@@ -1089,7 +1081,7 @@ function crAfficherDetailsComplets() {
     batchWrap.innerHTML =
       '<label class="cr-batch-label">' +
         '<input type="checkbox" id="crBatchApply" checked> ' +
-        'Appliquer également aux <b>' + CR_ETAT.identicalCount + '</b> autre(s) composant(s) identique(s) (' + crEsc(CR_ETAT.el.value) + ')' +
+        'Appliquer également aux <b>' + CR_ETAT.identicalCount + '</b> autre(s) composant(s) identique(s) (' + esc(CR_ETAT.el.value) + ')' +
       '</label>';
   } else {
     batchWrap.innerHTML = "";

@@ -36,10 +36,6 @@ function wsHint(t){
   const el=wsQ("fHint");
   if(el)el.textContent=t;
 }
-function wsEsc(s){
-  return String(s).replace(/[&<>"'`]/g,ch=>
-    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;","`":"&#96;"}[ch]));
-}
 if(typeof WS_CONFIG!=="object"||!WS_CONFIG||!WS_CONFIG.key||!WS_CONFIG.layout)
   throw new Error("workspace.js : WS_CONFIG manquant ou incomplet "+
                   "(clés attendues : key, layout).");
@@ -624,7 +620,7 @@ function wsMenuBuild(){
     if(!el)continue;
     const vis=wsPlaceOf(id)!=="hidden";
     h+='<button class="mi'+(vis?"":" off")+'" data-tgl="'+id+'">'+
-       '<span class="ck">'+(vis?"✓":"")+'</span>'+wsEsc(el.dataset.title)+
+       '<span class="ck">'+(vis?"✓":"")+'</span>'+esc(el.dataset.title)+
        '<span class="st">'+wsLabel(id)+'</span></button>';
   }
   h+='<div class="msep"></div>'+

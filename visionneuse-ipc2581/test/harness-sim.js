@@ -52,6 +52,7 @@ global.Path2D=function(){this.pts=[];};
    sont pas chargés : ils branchent l'interface, et ce banc ne clique pas. */
 const RACINE=path.join(__dirname,"..");
 const FICHIERS=[
+  path.join(RACINE,"..","commun","echappe.js"),
   path.join(RACINE,"..","commun","classes-interface.js"),
   path.join(RACINE,"js","02-modele.js"),
   path.join(RACINE,"..","commun","simulation-em.js"),

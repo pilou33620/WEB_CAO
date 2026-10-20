@@ -361,11 +361,10 @@ function trCatalogue(){
     .concat(Object.keys(TR.cfg.perso));
 }
 function trContextes(){ const o = TR_OUTILS[TR.outil]; return (o && o.contextes) || ["comp","fil","vide","trace"]; }
-function trEchappe(s){ return String(s).replace(/[&<>"]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch])); }
 function trSvg(nom, taille){
   return '<svg viewBox="0 0 24 24" width="'+(taille||20)+'" height="'+(taille||20)+'" aria-hidden="true"><path d="'+(TR_ICONES[nom]||TR_ICONES.groupe)+'"/></svg>';
 }
-function trIco(c, taille){ return TR_ICONES[c.ico] ? trSvg(c.ico, taille) : '<span class="tr-gl">'+trEchappe(c.ico)+'</span>'; }
+function trIco(c, taille){ return TR_ICONES[c.ico] ? trSvg(c.ico, taille) : '<span class="tr-gl">'+esc(c.ico)+'</span>'; }
 
 /* ---------- Réglages : défauts de l'outil, profil, sinon navigateur ---------- */
 function trDefaut(){
@@ -635,8 +634,8 @@ function trOuvrir(x, y, cible){
          '<path class="tr-coin" d="'+trArc(a-pas/2+.012, a+pas/2-.012, TR_R_INT+2, TR_R_EXT-2)+'"/>'+
          '<circle class="tr-bulle" cx="'+trF(ix)+'" cy="'+trF(gy)+'" r="22"/>';
     if(TR_ICONES[inf.ico]) h += '<g class="tr-ico" transform="translate('+trF(ix-12)+' '+trF(gy-12)+')"><path d="'+TR_ICONES[inf.ico]+'"/></g>';
-    else h += '<g class="tr-ico"><text x="'+trF(ix)+'" y="'+trF(gy)+'">'+trEchappe(inf.ico)+'</text></g>';
-    if(noms) h += '<text class="tr-nomseg" x="'+trF(ix)+'" y="'+trF(iy+18)+'">'+trEchappe(inf.nom)+'</text>';
+    else h += '<g class="tr-ico"><text x="'+trF(ix)+'" y="'+trF(gy)+'">'+esc(inf.ico)+'</text></g>';
+    if(noms) h += '<text class="tr-nomseg" x="'+trF(ix)+'" y="'+trF(iy+18)+'">'+esc(inf.nom)+'</text>';
     if(en.t==="grp"){ const [mx,my] = trPol(TR_R_EXT-11, a); h += '<circle class="tr-marque" cx="'+trF(mx)+'" cy="'+trF(my)+'" r="3"/>'; }
     h += '</g>';
   });
@@ -716,8 +715,8 @@ function trEventail(i){
   const ev = TR.el.querySelector(".tr-eventail");
   const items = r.entrees[i].g.items.filter(id=>trDispo(id, r.cible));
   ev.innerHTML = items.length ? items.map(id=>{ const c = trCmd(id);
-      return '<button type="button" class="tr-pastille'+(c.danger?" danger":"")+'" data-id="'+trEchappe(id)+'">'+trIco(c,20)+
-             '<span>'+trEchappe(c.nom)+'</span>'+(c.touche ? '<kbd>'+trEchappe(c.touche)+'</kbd>' : '')+'</button>'; }).join("")
+      return '<button type="button" class="tr-pastille'+(c.danger?" danger":"")+'" data-id="'+esc(id)+'">'+trIco(c,20)+
+             '<span>'+esc(c.nom)+'</span>'+(c.touche ? '<kbd>'+esc(c.touche)+'</kbd>' : '')+'</button>'; }).join("")
     : '<button type="button" class="tr-pastille" data-id=""><span>Groupe vide : ajouter des commandes avec ＋</span></button>';
   TR.el.classList.add("eventail");
   const els = Array.from(ev.children), n = els.length, H = 44, G = 8, mid = (n-1)/2;
@@ -961,8 +960,8 @@ function trBoutons(ch){
 }
 function trLigne(id, ch, sous){
   const c = trCmd(id); if(!c) return "";
-  return '<div class="tr-ligne'+(sous?" sous":"")+'"><span class="tr-i">'+trIco(c,20)+'</span><span class="tr-n">'+trEchappe(c.nom)+
-         '<small>'+trEchappe(c.touche || (c.action ? "selon ce qui est touché" : ""))+(TR.cfg.perso[id]?" · perso":"")+'</small></span>'+trBoutons(ch)+'</div>';
+  return '<div class="tr-ligne'+(sous?" sous":"")+'"><span class="tr-i">'+trIco(c,20)+'</span><span class="tr-n">'+esc(c.nom)+
+         '<small>'+esc(c.touche || (c.action ? "selon ce qui est touché" : ""))+(TR.cfg.perso[id]?" · perso":"")+'</small></span>'+trBoutons(ch)+'</div>';
 }
 function trPersoRendre(){
   const d = TR.perso, q = s=>d.querySelector(s);
@@ -971,7 +970,7 @@ function trPersoRendre(){
   trR().forEach((e, i)=>{
     if(typeof e==="string") h += trLigne(e, String(i), false);
     else{
-      h += '<div class="tr-ligne grp"><span class="tr-i">'+trSvg(e.ico,20)+'</span><span class="tr-n">Groupe '+trEchappe(e.g)+
+      h += '<div class="tr-ligne grp"><span class="tr-i">'+trSvg(e.ico,20)+'</span><span class="tr-n">Groupe '+esc(e.g)+
            '<small>'+e.items.length+' commande(s), s\'ouvre en éventail</small></span>'+trBoutons(String(i))+'</div>';
       e.items.forEach((id, j)=>{ h += trLigne(id, i+"."+j, true); });
     }
@@ -979,12 +978,12 @@ function trPersoRendre(){
   q(".tr-liste").innerHTML = h;
   const sd = q("#trDest"), avant = sd.value;
   sd.innerHTML = '<option value="roue">la roulette</option>' +
-    trR().map((e, i)=>typeof e==="string" ? "" : '<option value="'+i+'">le groupe '+trEchappe(e.g)+'</option>').join("");
+    trR().map((e, i)=>typeof e==="string" ? "" : '<option value="'+i+'">le groupe '+esc(e.g)+'</option>').join("");
   sd.value = Array.from(sd.options).some(o=>o.value===avant) ? avant : "roue";
   const dest = trDest();
   const dispo = trCatalogue().filter(id=>!dest.includes(id));
   q(".tr-catalogue").innerHTML = dispo.length
-    ? dispo.map(id=>'<button type="button" data-ajout="'+trEchappe(id)+'">'+trIco(trCmd(id),16)+trEchappe(trCmd(id).nom)+'</button>').join("")
+    ? dispo.map(id=>'<button type="button" data-ajout="'+esc(id)+'">'+trIco(trCmd(id),16)+esc(trCmd(id).nom)+'</button>').join("")
     : '<span class="tr-note">Tout y est déjà.</span>';
   d.querySelectorAll("input[data-opt]").forEach(inp=>{ inp.checked = !!TR.cfg[inp.dataset.opt]; });
 }

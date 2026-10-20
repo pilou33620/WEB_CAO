@@ -83,10 +83,6 @@ var SCHEMA_PATTERNS = (function() {
     if (typeof draw === "function") draw();
   }
 
-  function esc(s) {
-    return String(s || "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
-  }
-
   /* ---------- Classes de nets : suggestion de l'analyse + corrections ---------- */
   /* Sans serveur, ou avant la première analyse, la masse et les alimentations
      se reconnaissent encore à leur nom, avec les règles du serveur
