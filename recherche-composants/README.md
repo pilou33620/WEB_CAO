@@ -38,7 +38,7 @@ Deux fichiers viennent du dossier partagé, identiques pour les deux éditeurs :
 | `js/03-formulaire.js` | 231 | Formulaire construit en croisant le catalogue et le schéma d'arguments du serveur ; lecture et validation des champs |
 | `js/04-resultats.js` | 193 | Tableau, fiche ou bloc de texte selon la réponse ; exports `.csv` et `.json` |
 | `js/05-details.js` | 146 | Panneau de détail, enchaînements (équivalences, brochage, KiCad, distributeurs), échappement systématique |
-| `js/06-demarrage.js` | 258 | Câblage des boutons, liste des outils, historique, fenêtre « Serveur… », session d'onglet |
+| `js/06-demarrage.js` | 215 | Câblage des boutons, liste des outils, historique, session d'onglet |
 
 ## Démarrage
 
@@ -50,10 +50,9 @@ Puis l'adresse affichée au démarrage : la page d'accueil propose les deux
 éditeurs et la recherche de composants, et la recherche passe par ce même
 serveur. `--local` limite l'écoute à cette machine, `--port` change le port.
 
-La page cherche sa passerelle dans l'ordre : l'adresse mémorisée par le bouton
-**Serveur…**, puis l'origine qui la sert. Dans le cas normal — page ouverte
-depuis l'adresse qu'affiche `web_CAO.py` — c'est la seconde qui répond.
-`web_CAO.py` n'admet que sa propre origine : une page ouverte en `file://`
+La passerelle est l'origine qui sert la page : ouverte depuis l'adresse
+qu'affiche `web_CAO.py`, elle la trouve d'office. `web_CAO.py` n'admet que sa
+propre origine : une page ouverte en `file://`, ou servie par un autre port,
 ne peut pas l'appeler.
 
 Le second serveur `serveur-composants.py` (FastAPI et uvicorn, port 8420) a été

@@ -102,47 +102,6 @@ function majEtatApi(ok,texte){
   el.className="push "+(ok?"ok":"ko");
   el.textContent="serveur : "+texte;
 }
-function fenetreServeur(){
-  let m=q("mdServeur");
-  if(!m){
-    m=document.createElement("div");
-    m.id="mdServeur";m.className="modal";m.hidden=true;
-    m.innerHTML=
-      '<div class="modal-box">'+
-        '<div class="modal-head">Adresse de la passerelle</div>'+
-        '<div class="modal-corps">'+
-          "<p>La recherche passe par un serveur local, qui relaie les requêtes "+
-          "vers pcbparts.dev. <code>web_CAO.py</code> le fait lui-même : laissez "+
-          "le champ vide pour la détection automatique, ou indiquez l'adresse "+
-          "d'un autre serveur.</p>"+
-          '<p><code>python web_CAO.py</code></p>'+
-          '<div class="champ"><label for="mdBase">Racine</label>'+
-          '<input type="text" id="mdBase" placeholder="laisser vide = détection automatique" spellcheck="false"></div>'+
-        "</div>"+
-        '<div class="modal-pied">'+
-          '<button class="tb" id="mdAnnule">Annuler</button>'+
-          '<button class="tb on" id="mdOk">Se connecter</button>'+
-        "</div>"+
-      "</div>";
-    document.body.appendChild(m);
-    m.querySelector("#mdAnnule").onclick=function(){m.hidden=true;};
-    m.querySelector("#mdOk").onclick=async function(){
-      const v=m.querySelector("#mdBase").value.trim().replace(/\/+$/,"");
-      apiMemoriser(v);
-      API_BASE=null;
-      m.hidden=true;
-      await connecter();
-    };
-    m.addEventListener("keydown",function(ev){
-      if(ev.key==="Escape")m.hidden=true;
-      if(ev.key==="Enter")m.querySelector("#mdOk").click();
-    });
-  }
-  m.querySelector("#mdBase").value=apiMemorisee();
-  m.hidden=false;
-  m.querySelector("#mdBase").focus();
-}
-
 /* ---------- connexion ---------- */
 async function connecter(){
   hint("Recherche de la passerelle…");
@@ -167,8 +126,7 @@ async function connecter(){
       "<b>web_CAO.py</b> s'en charge, sans dépendance à installer.<br><br>"+
       "Dans le dossier du dépôt :<br>"+
       "<code>python web_CAO.py</code><br><br>"+
-      "puis ouvrez la page depuis l'adresse affichée au démarrage. Si le serveur "+
-      "tourne ailleurs, indiquez son adresse avec le bouton « Serveur… ».<br><br>"+
+      "puis ouvrez la page depuis l'adresse affichée au démarrage.<br><br>"+
       '<span class="err">'+esc((e&&e.message)||String(e))+"</span></div>";
     hint("Passerelle introuvable.");
     return false;
@@ -238,7 +196,6 @@ function sessionComposants(repris){
   q("bBack").onclick=revenir;
   q("bCsv").onclick=exportCsv;
   q("bJson").onclick=exportJson;
-  q("bApi").onclick=fenetreServeur;
   q("bCopyJson").onclick=function(){
     const t=JSON.stringify(RESULTAT.data,null,1);
     if(navigator.clipboard&&navigator.clipboard.writeText)

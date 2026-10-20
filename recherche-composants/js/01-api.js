@@ -5,39 +5,20 @@
    parle jamais directement au serveur MCP : sans passerelle locale, ni le CORS
    ni le protocole ne le permettraient.
 
-   L'adresse de la passerelle est cherchée dans cet ordre :
-     1. celle mémorisée par l'utilisateur (bouton « Serveur… ») ;
-     2. l'origine qui sert la page (cas normal : web_CAO.py relaie lui-même).
+   La passerelle est l'origine qui sert la page (web_CAO.py relaie lui-même).
    web_CAO.py n'admet que sa propre origine : une page ouverte en file://, ou
    servie par un autre port, ne peut pas l'appeler. Si web_CAO.py a dû prendre
    un autre port (8000 peut être réservé par le système), ouvrez l'adresse
    qu'il affiche au démarrage.
    ============================================================================= */
 
-const API_CLE="recherche.api.v1";      // clé de stockage local
 
 let API_BASE=null;                     // racine retenue, "" = même origine
 let API_SCHEMAS={};                    // nom d'outil -> inputSchema du serveur
 let API_NOMS=[];                       // outils autorisés par la passerelle
 
-function apiMemorisee(){
-  try{return localStorage.getItem(API_CLE)||"";}catch(e){return "";}
-}
-function apiMemoriser(base){
-  try{
-    if(base)localStorage.setItem(API_CLE,base);
-    else localStorage.removeItem(API_CLE);
-  }catch(e){}
-}
-
-/* racines à essayer, sans doublon */
-function apiCandidats(){
-  const out=[], ajoute=function(v){if(v!==null&&out.indexOf(v)<0)out.push(v);};
-  const memo=apiMemorisee();
-  if(memo)ajoute(memo.replace(/\/+$/,""));
-  ajoute("");                                          // même origine
-  return out;
-}
+/* racines à essayer : la même origine, rien d'autre */
+function apiCandidats(){return [""];}
 
 /* message d'erreur lisible : la passerelle répond {"detail": "..."} */
 async function apiErreur(rep){
