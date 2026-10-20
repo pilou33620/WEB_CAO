@@ -19,22 +19,6 @@
 const FPLIB_KEY="pcbedit.empreintes.v1";
 const FPLIB_FORMAT="pcbfp-1";
 
-/* Forme d'une empreinte, telle qu'elle s'enregistre. Empreinte calculée : les
-   trois cotes suffisent, `pads` reste absent et l'empreinte se recalculera
-   chez celui qui l'importe. Empreinte dessinée : la liste est recopiée. */
-function fpDefOf(fp,name){
-  const def={name:String(name||fp.pkg||fp.ref||"empreinte").slice(0,80).trim(),
-             pkg:fp.pkg||"", pins:fp.pins, style:fp.style,
-             pitch:r3(fp.pitch), span:r3(fp.span)};
-  const free=fpFree(fp);
-  if(free){
-    def.pads=free.map(padClone);
-    const b=bodyOf(fp);
-    def.body={x1:r4(b.x1),y1:r4(b.y1),x2:r4(b.x2),y2:r4(b.y2)};
-  }
-  if(fp.holes&&fp.holes.length)def.holes=fp.holes.map(h=>({...h}));
-  return def;
-}
 /* Lecture défensive : une définition peut venir d'un fichier écrit à la main,
    d'une version antérieure ou d'ailleurs. Même exigence que normFp(). */
 function normFpDef(d){
@@ -130,9 +114,6 @@ function fpLibWrite(o){
   });
   return true;
 }
-function fpLibNames(){
-  return Object.keys(fpLibAll()).sort((a,b)=>a.localeCompare(b,"fr",{numeric:true}));
-}
 function fpLibGet(name){return fpLibAll()[String(name)]||null;}
 /* L'empreinte de la LIB qui répond à un nom de boîtier venu du schéma ou d'une
    netlist. Le nom exact d'abord, puis la même clé (pkgKey : « SOT23-5 » vaut
@@ -147,46 +128,6 @@ function fpLibPourBoitier(pkg){
   for(const n of Object.keys(FPLIB))
     if(pkgKey(n)===k||pkgKey(FPLIB[n].pkg)===k)return FPLIB[n];
   return null;
-}
-/* Enregistrement sous un nom : le même nom remplace, c'est ce qu'on attend
-   d'une correction. Renvoie la définition retenue, ou null si le stockage
-   n'est pas disponible. */
-function fpLibPut(def){
-  const d=normFpDef(def);
-  if(!d)return null;
-  const all=fpLibAll();
-  all[d.name]=d;
-  return fpLibWrite(all)?d:null;
-}
-function fpLibDel(name){
-  const all=fpLibAll();
-  if(!all[name])return false;
-  delete all[name];
-  return fpLibWrite(all);
-}
-/* Fichier d'échange : une ou plusieurs empreintes. */
-function fpLibFile(names){
-  const all=fpLibAll();
-  const list=(names&&names.length?names:Object.keys(all))
-    .map(n=>all[n]).filter(Boolean);
-  return {format:FPLIB_FORMAT,footprints:list};
-}
-/* Lecture d'un fichier d'empreintes, sans rien écrire : l'appelant décide.
-   On accepte le fichier complet, la définition seule ou un tableau — celui qui
-   colle une empreinte à la main ne doit pas buter sur l'enveloppe. */
-function fpLibParse(txt){
-  let o=null;
-  try{o=JSON.parse(String(txt));}
-  catch(_){return {err:"Fichier illisible : ce n'est pas du JSON."};}
-  let list=null;
-  if(Array.isArray(o))list=o;
-  else if(o&&Array.isArray(o.footprints))list=o.footprints;
-  else if(o&&typeof o==="object")list=[o];
-  if(!list)return {err:"Aucune empreinte dans ce fichier."};
-  const defs=list.map(normFpDef).filter(Boolean);
-  if(!defs.length)return {err:"Aucune empreinte exploitable dans ce fichier : "+
-    "il y faut au moins un nom et des cotes."};
-  return {defs:defs};
 }
 /* Fusion dans la bibliothèque. Un nom déjà pris par une empreinte différente
    n'est pas écrasé en silence : la nouvelle reçoit un suffixe, et l'appelant

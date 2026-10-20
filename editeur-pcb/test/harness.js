@@ -169,13 +169,13 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* empreintes dessinees a la main et bibliotheque personnelle */
   "fpFree","padClone","fpAutoBody","fpFreeze","fpGeneric","fpSyncPins",
   "fpMovePad","fpSetPad","fpAddPad","fpDelPad","fpSetPins","fpSetBody",
-  "dPads","dHoles","trousMonde","fpTrousDe","axePercage","followBase","followWorld","fpLibRelire","pcbSurModifLib","drawHoles","dBody","fpDefOf","normFpDef","fpApplyDef","fpLibAll","fpLibWrite",
-  "fpLibNames","fpLibGet","fpLibPut","fpLibDel","fpLibFile","fpLibParse",
+  "dPads","dHoles","trousMonde","fpTrousDe","axePercage","followBase","followWorld","fpLibRelire","pcbSurModifLib","drawHoles","dBody","normFpDef","fpApplyDef","fpLibAll","fpLibWrite",
+  "fpLibGet",
   "fpLibMerge","FPLIB_KEY","FPLIB_FORMAT",
   "FPLIB","FPLIB_FICHIER","fpLibCharger","fpLibFichier","fpLibPourBoitier",
   /* formes de pastille, rotation, origine de l'empreinte */
   "PAD_SHAPES","padShape","padRadius","padRot","padHalf","padDist","padOpening",
-  "fpLocalBox","fpMoveOrigin","fpOffCenter","fpIsCentered","fpCenterOrigin",
+  "fpLocalBox",
   "apSet","apForPad","netAtPoint","padCuLayers","pnsItemsPad","aplatClick","closeAplat","selDecoupes","deleteSel","hitTest","selectHit","brocheNum","parseNetlist","applyNetlist","padSurCouche","maskOpenings","pasteOpenings","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","UNDO_BUDGET","rotChoix","padNom",
   /* repère de broche 1 */
   "MARK_D","PASSIF_REF","fpMarkWanted","fpMarkAuto","fpMark","fpSetMark",
@@ -6121,29 +6121,21 @@ TA("bibliothèque : lue dans la LIB, écrite dans la LIB, plus dans le navigateu
   localStorage.setItem(FPLIB_KEY,JSON.stringify({"DIP-8 maison":{name:"DIP-8 maison",pins:8,style:"dip"}}));
   try{
     if(!await fpLibCharger())throw new Error("la LIB devait se charger");
-    if(fpLibNames().join()!=="0402,DIP-8 maison")throw new Error("bibliothèque : "+fpLibNames());
+    const noms=Object.keys(FPLIB).sort().join();
+    if(noms!=="0402,DIP-8 maison")throw new Error("bibliothèque : "+noms);
     if(appels.join()!=="PUT DIP-8 maison.json")throw new Error("reprise : "+appels);
     if(localStorage.getItem(FPLIB_KEY))throw new Error("l'ancien stockage devait être effacé");
     if(disque["DIP-8 maison.json"].format!=="pcbfp-1")throw new Error("format du fichier écrit");
-    /* une modification et une suppression partent aussi au serveur */
-    fpLibPut({name:"0402",pins:2,style:"chip",pitch:1,span:1});
-    fpLibDel("DIP-8 maison");
-    await new Promise(r=>setTimeout(r,0));
-    if(appels.slice(1).join()!=="PUT 0402.json,DELETE DIP-8 maison.json")
-      throw new Error("écritures : "+appels);
-    if(disque["0402.json"].pitch!==1)throw new Error("0402 non réécrite dans son fichier");
   }finally{global.fetch=avant;fpLibRaz();localStorage.removeItem(FPLIB_KEY);}
 });
-T("bibliothèque : enregistrer, relire, appliquer",()=>{
+T("bibliothèque : appliquer une empreinte de la LIB",()=>{
   fpLibRaz();
   S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
   const src=mkFp("U1","","DIP-8",8);
   src.x=20;src.y=15;S.fps.push(src);
   fpMovePad(src,0,-6,-6);
   fpSetPad(src,0,"drill",0.9);
-  const def=fpLibPut(fpDefOf(src,"DIP-8 maison"));
-  if(!def)throw new Error("l'enregistrement a échoué");
-  if(fpLibNames().join()!=="DIP-8 maison")throw new Error("bibliothèque : "+fpLibNames());
+  FPLIB["DIP-8 maison"]=normFpDef({name:"DIP-8 maison",pins:8,style:"dip",pads:fpFree(src).map(padClone)});
   const cible=mkFp("U2","LM358","SOIC-8",8);
   cible.x=60;cible.y=40;cible.rot=90;cible.side=1;cible.nets={1:"GND",8:"+5V"};
   S.fps.push(cible);touch();
@@ -6157,9 +6149,7 @@ T("bibliothèque : enregistrer, relire, appliquer",()=>{
     throw new Error("la position et la face ne bougent pas");
   if(padsOf(cible).find(q=>q.n===8).net!=="+5V")throw new Error("les nets devaient rester");
   /* une empreinte calculée s'enregistre aussi : elle se recalcule à l'arrivée */
-  const gen=mkFp("R1","","0805",2);
-  const d2=fpLibPut(fpDefOf(gen,"0805 large"));
-  if(d2.pads)throw new Error("une empreinte calculée ne porte pas de pastilles");
+  const d2=normFpDef({name:"0805 large",pkg:"0805",pins:2,style:"chip",pitch:2,span:2});
   if(!fpApplyDef(cible,d2))throw new Error("application de l'empreinte calculée refusée");
   if(fpFree(cible))throw new Error("elle devait rendre la cible au calcul");
   if(cible.style!=="chip")throw new Error("style attendu chip : "+cible.style);
@@ -6177,8 +6167,6 @@ T("trous NPTH d'empreinte : lus, posés sur la carte, relus (M1-1, M1-2)",()=>{
   if(!fpApplyDef(fp,def))throw new Error("application refusée");
   if(JSON.stringify(fp.holes)!==JSON.stringify([{x:-5.7,y:3.05,d:3.25},{x:5.7,y:3.05,d:3.25},{x:0,y:-4,d:30}]))
     throw new Error("trous posés : "+JSON.stringify(fp.holes));
-  if(JSON.stringify(fpDefOf(fp,"RJ45 relu").holes)!==JSON.stringify(fp.holes))
-    throw new Error("fpDefOf doit écrire les trous");
   const relu=normDoc(JSON.parse(JSON.stringify(docObj())));
   if(JSON.stringify(relu.fps[0].holes)!==JSON.stringify(fp.holes))
     throw new Error("aller-retour du fichier de carte : "+JSON.stringify(relu.fps[0].holes));
@@ -6623,36 +6611,18 @@ TA("mise à jour LIB : la Gestion LIB signale une empreinte absente de la carte,
     if(!d||!d.holes)throw new Error("FPLIB non relu pour une empreinte absente de la carte : "+JSON.stringify(d));
   }finally{global.fetch=avant;fpLibRaz();}
 });
-T("bibliothèque : lecture défensive et fusion des noms",()=>{
+T("bibliothèque : la reprise de l'ancien stockage fusionne sans écraser",()=>{
   fpLibRaz();
-  if(!fpLibParse("ceci n'est pas du json").err)
-    throw new Error("un fichier illisible doit se dire");
-  if(!fpLibParse('{"format":"pcbfp-1","footprints":[]}').err)
-    throw new Error("un fichier sans empreinte exploitable doit se dire");
-  if(!fpLibParse('[{"pins":8}]').err)throw new Error("une empreinte sans nom est refusée");
-  /* définition seule, sans enveloppe : acceptée */
-  const r=fpLibParse('{"name":"pont 4 broches","pins":4,"style":"row","pitch":2.54}');
-  if(r.err)throw new Error("une définition seule devait passer : "+r.err);
-  if(r.defs[0].name!=="pont 4 broches")throw new Error("nom perdu");
-  fpLibMerge(r.defs);
+  const pont=n=>normFpDef({name:"pont 4 broches",pins:n,style:"row",pitch:2.54});
+  fpLibMerge([pont(4)]);
   /* même nom, même empreinte : une seule entrée */
-  fpLibMerge(fpLibParse('{"name":"pont 4 broches","pins":4,"style":"row","pitch":2.54}').defs);
-  if(fpLibNames().length!==1)throw new Error("le doublon exact ne crée rien : "+fpLibNames());
+  fpLibMerge([pont(4)]);
+  if(Object.keys(FPLIB).length!==1)throw new Error("le doublon exact ne crée rien : "+Object.keys(FPLIB));
   /* même nom, empreinte différente : renommée, jamais écrasée en silence */
-  const m=fpLibMerge(fpLibParse('{"name":"pont 4 broches","pins":6,"style":"row","pitch":2}').defs);
+  const m=fpLibMerge([pont(6)]);
   if(m.renamed.length!==1)throw new Error("le conflit devait renommer : "+JSON.stringify(m));
-  if(fpLibNames().length!==2)throw new Error("deux entrées attendues : "+fpLibNames());
+  if(Object.keys(FPLIB).length!==2)throw new Error("deux entrées attendues : "+Object.keys(FPLIB));
   if(fpLibGet("pont 4 broches").pins!==4)throw new Error("l'originale ne bouge pas");
-  /* aller-retour par le fichier d'échange */
-  const f=fpLibFile(null);
-  if(f.format!==FPLIB_FORMAT||f.footprints.length!==2)
-    throw new Error("fichier d'échange : "+JSON.stringify(f).slice(0,120));
-  fpLibRaz();
-  const back=fpLibParse(JSON.stringify(f));
-  if(back.err||back.defs.length!==2)throw new Error("le fichier ne se relit pas");
-  fpLibMerge(back.defs);
-  if(fpLibNames().length!==2)throw new Error("les deux empreintes devaient revenir");
-  if(fpLibDel("absente"))throw new Error("supprimer l'absent ne fait rien");
   fpLibRaz();
 });
 
@@ -7104,44 +7074,6 @@ T("historique : borné en mémoire autant qu'en nombre",()=>{
   histBorner(petits);
   if(petits.length!==UNDO_MAX)throw new Error("plafond en nombre : "+petits.length);
 });
-T("déplacer l'origine ne déplace pas le cuivre",()=>{
-  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
-  const fp=mkFp("U1","","DIP-8",8);
-  fp.x=30;fp.y=25;fp.rot=90;S.fps.push(fp);touch();
-  const avant=padsWorld(fp).map(q=>[q.n,q.x,q.y].join());
-  const cible=padsOf(fp)[0];                  // l'origine s'en va sur la pastille 1
-  if(!fpMoveOrigin(fp,cible.x,cible.y))throw new Error("le déplacement devait aboutir");
-  if(!fpFree(fp))throw new Error("déplacer l'origine fige l'empreinte");
-  const apres=padsWorld(fp).map(q=>[q.n,q.x,q.y].join());
-  if(apres.join(" ")!==avant.join(" "))
-    throw new Error("le cuivre a bougé :\n"+avant.join(" ")+"\n"+apres.join(" "));
-  /* la pastille 1 est maintenant à l'origine du repère local */
-  const p1=padsOf(fp)[0];
-  if(Math.abs(p1.x)>1e-9||Math.abs(p1.y)>1e-9)
-    throw new Error("la pastille 1 devait tomber sur l'origine : "+JSON.stringify(p1));
-  if(fpMoveOrigin(fp,0,0))throw new Error("ne rien déplacer ne change rien");
-});
-T("origine ramenée au centre du composant",()=>{
-  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
-  const fp=mkFp("U1","","DIP-8",8);
-  fp.x=30;fp.y=25;S.fps.push(fp);touch();
-  /* une empreinte calculée est centrée d'office : on ne la fige pas pour rien */
-  if(!fpIsCentered(fp))throw new Error("une empreinte calculée est centrée");
-  if(fpCenterOrigin(fp))throw new Error("rien à recentrer");
-  if(fpFree(fp))throw new Error("recentrer une empreinte centrée ne doit pas la figer");
-  /* un dessin décentré revient au centre, sans déplacer le cuivre */
-  fpMovePad(fp,0,-12,-9);
-  if(fpIsCentered(fp))throw new Error("le dessin est maintenant décentré");
-  const avant=padsWorld(fp).map(q=>[q.n,q.x,q.y].join()).join(" ");
-  if(!fpCenterOrigin(fp))throw new Error("le recentrage devait avoir lieu");
-  if(!fpIsCentered(fp))throw new Error("après recentrage, l'origine est au centre");
-  if(padsWorld(fp).map(q=>[q.n,q.x,q.y].join()).join(" ")!==avant)
-    throw new Error("recentrer l'origine ne déplace pas le cuivre");
-  /* le centre est celui de l'encombrement : pastilles et contour réunis */
-  const b=fpLocalBox(fp);
-  if(Math.abs(b.x1+b.x2)>1e-3||Math.abs(b.y1+b.y2)>1e-3)
-    throw new Error("encombrement mal centré : "+JSON.stringify(b));
-});
 T("document : formes, rotations et origine déplacée se relisent",()=>{
   S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
   const fp=mkFp("J1","","",4);
@@ -7150,7 +7082,7 @@ T("document : formes, rotations et origine déplacée se relisent",()=>{
   fpSetPad(fp,0,"shape","oval");fpSetPad(fp,0,"rot",45);
   fpSetPad(fp,1,"shape","sharp");
   fpSetPad(fp,2,"shape","circ");
-  fpMoveOrigin(fp,1.27,0);
+  for(const q of fp.pads)q.x=r4(q.x-1.27);   // origine écartée du centre, comme un fichier de la LIB
   touch();
   const doc=docObj();
   const d=firstDiff(JSON.parse(JSON.stringify(doc)),
@@ -7208,12 +7140,6 @@ T("repère de broche 1 : montré, déplacé, retiré, et le document s'en souvie
   fpSetMarkD(fp,0.8);
   const m2=fpMark(fp);
   if(m2.x!==1.5||m2.y!==-1.2||m2.d!==0.8)throw new Error("point mal réglé : "+JSON.stringify(m2));
-  /* déplacer l'origine emmène le point : il est posé dans le repère local */
-  const avant=fpXform(fp)(m2.x,m2.y);
-  fpMoveOrigin(fp,0.5,0.5);
-  const apres=fpXform(fp)(fpMark(fp).x,fpMark(fp).y);
-  if(Math.abs(avant.x-apres.x)>1e-6||Math.abs(avant.y-apres.y)>1e-6)
-    throw new Error("le point a sauté sur la carte : "+JSON.stringify([avant,apres]));
   /* retiré à la main : la règle automatique ne doit pas le faire revenir */
   fpSetMark(fp,false);
   if(fpMark(fp))throw new Error("retiré, il reste retiré");

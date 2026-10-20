@@ -2191,12 +2191,7 @@ function fpSetMarkD(fp,d){
    la carte. C'est par lui que l'empreinte se déplace, autour de lui qu'elle
    pivote, et de lui que se placent le repère et la valeur sur la sérigraphie
    (fpTextPos). Une empreinte calculée l'a d'office en son centre ; un dessin
-   fait à la main peut l'en écarter sans le vouloir, en déplaçant une pastille.
-
-   `fpMoveOrigin` prend un point du repère local et en fait la nouvelle
-   origine : les pastilles et le contour reculent d'autant, `fp.x`/`fp.y`
-   avancent d'autant sur la carte. Le cuivre ne bouge donc pas d'un micron —
-   seule change la poignée par laquelle on le tient. */
+   fait à la main peut l'en écarter sans le vouloir, en déplaçant une pastille. */
 function fpLocalBox(fp){
   const b=bodyOf(fp);
   let x1=b.x1,y1=b.y1,x2=b.x2,y2=b.y2;
@@ -2206,43 +2201,6 @@ function fpLocalBox(fp){
     y1=Math.min(y1,q.y-hf.y);y2=Math.max(y2,q.y+hf.y);
   }
   return {x1:x1,y1:y1,x2:x2,y2:y2};
-}
-function fpMoveOrigin(fp,lx,ly){
-  const dx=r4(lx), dy=r4(ly);
-  if(!Number.isFinite(dx)||!Number.isFinite(dy))return false;
-  if(!dx&&!dy)return false;
-  const c=fpXform(fp)(dx,dy);          // où ce point se trouve sur la carte
-  fpFreeze(fp);                        // une empreinte calculée se recentre seule
-  for(const q of fp.pads){q.x=r4(q.x-dx);q.y=r4(q.y-dy);}
-  const b=fp.body;
-  if(b){b.x1=r4(b.x1-dx);b.y1=r4(b.y1-dy);b.x2=r4(b.x2-dx);b.y2=r4(b.y2-dy);}
-  /* le point de repère est posé dans le repère local : il recule comme le
-     reste, sinon il sauterait sur la sérigraphie */
-  const m=fp.mark;
-  if(m&&typeof m==="object"){m.x=r4(m.x-dx);m.y=r4(m.y-dy);}
-  for(const h of fp.holes||[]){h.x=r4(h.x-dx);h.y=r4(h.y-dy);}
-  fp.x=r3(c.x);fp.y=r3(c.y);
-  return true;
-}
-/* Origine au centre de l'encombrement. C'est l'état dans lequel la fenêtre
-   d'empreinte rend toujours l'empreinte : une poignée au milieu du composant
-   se saisit là où on la cherche, la rotation tourne autour du composant et non
-   à côté, et le repère de sérigraphie — placé à mi-hauteur du contour, de part
-   et d'autre de l'origine — retombe où il faut. Déjà centrée : rien à faire,
-   et surtout pas figer une empreinte calculée pour rien. */
-function fpOffCenter(fp){
-  const b=fpLocalBox(fp);
-  return {x:r4((b.x1+b.x2)/2), y:r4((b.y1+b.y2)/2)};
-}
-/* Un demi-micromètre d'écart n'est pas un décentrage : c'est un arrondi. */
-function fpIsCentered(fp){
-  const c=fpOffCenter(fp);
-  return Math.abs(c.x)<5e-4&&Math.abs(c.y)<5e-4;
-}
-function fpCenterOrigin(fp){
-  if(fpIsCentered(fp))return false;
-  const c=fpOffCenter(fp);
-  return fpMoveOrigin(fp,c.x,c.y);
 }
 /* Rectangle de sérigraphie imposé, en coordonnées locales. `null` rend la
    main au contour automatique. */
