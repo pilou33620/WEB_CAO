@@ -76,15 +76,18 @@ function zoneMask(l,net){
   c.setTransform(res,0,0,res,-x1*res,-y1*res);
   c.fillStyle="#fff";
   for(const z of zs){
-    c.beginPath();zonePath(c,z);c.fill("evenodd");
+    zoneFill(c,z);
   }
   clipToBoard(c,x1,y1,x2,y2);
   /* une zone d'un autre net posée par-dessus recouvre celle-ci à l'écran :
      le masque doit refléter le même ordre de peinture */
-  for(const z of S.zones){
+  const i0=S.zones.indexOf(zs[0]);
+  for(let iz=i0+1;iz<S.zones.length;iz++){
+    const z=S.zones[iz];
     if(z.l!==l||(z.net||"")===net||z.pts.length<3)continue;
-    if(S.zones.indexOf(z)<S.zones.indexOf(zs[0]))continue;
-    c.beginPath();zonePath(c,z);c.fill("evenodd");
+    const zb=zoneCalc(z).bb;
+    if(zb.x2<x1||zb.x1>x2||zb.y2<y1||zb.y1>y2)continue;
+    zoneFill(c,z);
   }
   /* les découpes de zone retirent le cuivre, comme à l'écran (`zoneCanvas`) :
      un via posé dans une découpe n'est pas relié au plan qui l'entoure */
@@ -95,22 +98,32 @@ function zoneMask(l,net){
     c.closePath();c.fill();
   }
   c.strokeStyle="#000";c.fillStyle="#000";c.lineCap="round";c.lineJoin="round";
+  /* ce qui tombe hors du masque n'y laisse rien : une carte importée compte
+     des centaines de zones, chacune ne paie que son voisinage */
+  const M=2, hors=(a,b,c2,d)=>c2<x1-M||a>x2+M||d<y1-M||b>y2+M;
   for(const t of S.tracks){
     if(t.l!==l||t.net===net)continue;
+    const tb=trkBBox(t);
+    if(hors(tb.x1,tb.y1,tb.x2,tb.y2))continue;
     c.lineWidth=t.w+2*clrK(net,t.net,"cu","trk");
     c.beginPath();trkPath(c,t);c.stroke();
   }
   for(const v of S.vias){
-    if(l<v.a||l>v.b)continue;
+    if(l<v.a||l>v.b||hors(v.x-v.d,v.y-v.d,v.x+v.d,v.y+v.d))continue;
     c.beginPath();
     c.arc(v.x,v.y,v.net===net?v.drill/2:v.d/2+clrK(net,v.net,"cu","via"),0,Math.PI*2);
     c.fill();
   }
-  for(const h of trousMonde()){c.beginPath();cheminPercage(c,h,clr);c.fill();}
+  for(const h of trousMonde()){
+    const ax=axePercage(h);
+    if(hors(Math.min(ax.x1,ax.x2)-ax.d,Math.min(ax.y1,ax.y2)-ax.d,Math.max(ax.x1,ax.x2)+ax.d,Math.max(ax.y1,ax.y2)+ax.d))continue;
+    c.beginPath();cheminPercage(c,h,clr);c.fill();
+  }
   const thermals=[];
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
-      if(!padLayers(fp,q).includes(l))continue;
+      const qr=Math.max(q.w,q.h);
+      if(hors(q.x-qr,q.y-qr,q.x+qr,q.y+qr)||!padLayers(fp,q).includes(l))continue;
       if(q.net===net&&zoneFichier(zoneAt(l,q.x,q.y)))continue;   // raccordée par le fichier
       const qc=padSurCouche(q,l);
       if(!qc){
@@ -170,22 +183,53 @@ function maskCost(){
 /* Sur une petite carte, l'analyse des îlots est immédiate. Sur une grande, la
    faire à chaque image bloquerait le glissement d'une empreinte : on répond
    d'abord au contour, puis on affine dès que la main s'arrête. */
+/* Durée de la dernière analyse fine. Au-delà de 300 ms, elle ne se relance plus
+   d'elle-même après chaque retouche — elle figeait l'écran des secondes sur
+   une grosse carte ; le DRC la demande quand il en a besoin (`conn(true)`). */
+let _connExactCout=0;
+function connExacte(){
+  const t0=performance.now(), c=computeConn(true);
+  _connExactCout=performance.now()-t0;
+  return c;
+}
+/* Pendant un geste (boîtier tiré, extrémité étirée), l'analyse attend que la
+   main se pose : sur une grosse carte elle coûte des centaines de
+   millisecondes, et chaque pas du geste la relançait. Le chevelu se remet à
+   jour à la moindre pause (150 ms), et au relâchement. */
+let _connGeleT=null, _connDegel=false;
+function connGelee(){
+  return !_connDegel&&typeof drag!=="undefined"&&!!drag&&!!drag.moved;
+}
 function conn(exact){
   if(_conn && _connVer===S.ver && (!exact||_connExact))return _conn;
+  if(_conn&&!exact&&connGelee()){
+    clearTimeout(_connGeleT);
+    _connGeleT=setTimeout(()=>{
+      _connDegel=true;
+      try{if(typeof draw==="function")draw();}finally{_connDegel=false;}
+    },150);
+    return _conn;
+  }
   const want = !!exact || maskCost()<=MASK_BUDGET;
-  _conn=computeConn(want); _connVer=S.ver; _connExact=want;
+  _conn=want?connExacte():computeConn(false); _connVer=S.ver; _connExact=want;
   if(!want)scheduleRefine();
   return _conn;
 }
 function scheduleRefine(){
+  if(_connExactCout>300)return;
   if(_refineT)clearTimeout(_refineT);
   _refineT=setTimeout(()=>{
     _refineT=null;
     if(_connExact&&_connVer===S.ver)return;
-    _conn=computeConn(true);_connVer=S.ver;_connExact=true;
+    _conn=connExacte();_connVer=S.ver;_connExact=true;
     if(typeof draw==="function")draw();
     if(S.listTab==="nets"&&typeof buildList==="function")buildList();
   },220);
+}
+/* Le point tombe-t-il dans l'une des zones ? La boîte d'abord : les zones
+   importées comptent des milliers de sommets. */
+function dansZones(zs,x,y){
+  return zs.some(z=>zoneContient(z,x,y));
 }
 function computeConn(exact){
   const par=new Map();
@@ -282,16 +326,16 @@ function computeConn(exact){
          retombe sur le contour, quitte à être optimiste le temps d'un geste */
       const zk="Z"+g.l+"|"+g.net+"|poly";
       for(const p of padNodes)
-        if(p.q.net===g.net&&p.layers.includes(g.l)&&g.zs.some(z=>inPoly(p.q.x,p.q.y,z.pts)))uni(p.k,zk);
+        if(p.q.net===g.net&&p.layers.includes(g.l)&&dansZones(g.zs,p.q.x,p.q.y))uni(p.k,zk);
       S.vias.forEach((v,i)=>{
-        if(v.net===g.net&&g.l>=v.a&&g.l<=v.b&&g.zs.some(z=>inPoly(v.x,v.y,z.pts))){
+        if(v.net===g.net&&g.l>=v.a&&g.l<=v.b&&dansZones(g.zs,v.x,v.y)){
           uni("V"+i,zk);
           if(viaCuivreZone(v,g.l,g.net))viaZone(v,g.l);
         }
       });
       S.tracks.forEach((t,i)=>{
         if(t.l===g.l&&t.net===g.net&&
-           g.zs.some(z=>inPoly(t.x1,t.y1,z.pts)||inPoly(t.x2,t.y2,z.pts)))uni("T"+i+"a",zk);
+           (dansZones(g.zs,t.x1,t.y1)||dansZones(g.zs,t.x2,t.y2)))uni("T"+i+"a",zk);
       });
       zoneIslands.push({l:g.l,net:g.net,islands:1,approx:true});
       continue;
@@ -366,8 +410,7 @@ function zoneCuivreEn(l,net,x,y){
   const z=zoneAt(l,x,y);
   if(!z||(z.net||"")!==net)return false;
   if(S.cuts.some(c=>c.l===l&&c.pts.length>2&&inPoly(x,y,c.pts)))return false;
-  if(zoneFichier(z)&&Array.isArray(z.trous)&&
-     z.trous.some(t=>t&&t.length>=3&&inPoly(x,y,t)))return false;
+  if(dansTrouZone(z,x,y))return false;
   return true;
 }
 /* Un via touche-t-il le cuivre de la zone, sans rasterisation ? Mêmes points

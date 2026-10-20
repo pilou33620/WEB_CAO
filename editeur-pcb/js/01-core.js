@@ -1251,7 +1251,7 @@ const PKG_LIB={
   "SOP":{style:"sop",pitch:1.27,span:n=>n>16?9.4:5.4},
   "SSOP":{style:"sop",pitch:0.65,span:5.7},
   "TSSOP":{style:"sop",pitch:0.65,span:5.9},
-  "MSOP":{style:"sop",pitch:0.65,span:4.4},
+  "MSOP":{style:"sop",pitch:n=>n>=10?0.5:0.65,span:4.4},   // MSOP-8 : 0,65 ; MSOP-10 et plus : 0,5
   "DFN":{style:"sop",pitch:0.5,span:2.6},
   "DIP":{style:"dip",pitch:2.54,span:n=>n>=32?15.24:7.62},
   /* quatre côtés : à pattes (QFP) ou sans pattes (QFN, PLCC) */
@@ -2270,7 +2270,18 @@ function fpXform(fp){
    rectangle w × h. Les sommets sont dans le repère de la pastille ; dessous,
    ils passent au miroir comme le reste de l'empreinte — la rotation, elle, est
    déjà retournée ci-dessus. */
+/* Le temps d'une image (`paint`), les pastilles d'un boîtier ne bougent pas :
+   calculées une fois, relues par chaque couche. Hors image, pas de cache. */
+let PADS_IMAGE=null;
 function padsWorld(fp){
+  if(PADS_IMAGE){
+    let r=PADS_IMAGE.get(fp);
+    if(!r)PADS_IMAGE.set(fp,r=padsWorldCalc(fp));
+    return r;
+  }
+  return padsWorldCalc(fp);
+}
+function padsWorldCalc(fp){
   const T=fpXform(fp), a=(fp.rot||0)*Math.PI/180, m=fp.side?-1:1;
   return padsOf(fp).map(q=>{
     const c=T(q.x,q.y);
@@ -2420,8 +2431,62 @@ function zoneSig(pts){
   for(let i=0;i<pts.length;i++)s+=(pts[i].x*31.7+pts[i].y*17.3)*(i%7+1);
   return pts.length+":"+s.toFixed(4);
 }
+/* Ce qu'on tire d'une zone (boîte, signature du fichier) vaut tant que le
+   document n'a pas changé : sur une carte importée, des centaines de zones de
+   milliers de sommets étaient relues à chaque test de point. */
+let ZONE_CALC_VER=-1;
+const ZONE_CALC=new Map();
+function zoneCalc(z){
+  if(ZONE_CALC_VER!==S.ver){ZONE_CALC.clear();ZONE_CALC_VER=S.ver;}
+  let r=ZONE_CALC.get(z);
+  if(!r||r.pts!==z.pts)ZONE_CALC.set(z,r={pts:z.pts,bb:polyBBox(z.pts)});
+  return r;
+}
+/* Point dans un grand polygone : les arêtes rangées par bandes horizontales,
+   seules celles de la bande du point sont lues. Même règle que `inPoly`. */
+function bandesPoly(pts,bb){
+  const n=pts.length, B=Math.max(1,Math.ceil(Math.sqrt(n))), h=(bb.y2-bb.y1)/B||1;
+  const bandes=Array.from({length:B},()=>[]);
+  for(let i=0,j=n-1;i<n;j=i++){
+    const ya=Math.min(pts[i].y,pts[j].y), yb=Math.max(pts[i].y,pts[j].y);
+    const k1=Math.max(0,Math.floor((ya-bb.y1)/h)), k2=Math.min(B-1,Math.floor((yb-bb.y1)/h));
+    for(let k=k1;k<=k2;k++)bandes[k].push(i);
+  }
+  return {B,h,y1:bb.y1,bandes};
+}
+function inPolyBandes(x,y,pts,ix){
+  const k=Math.floor((y-ix.y1)/ix.h);
+  if(k<0||k>=ix.B)return false;
+  let inside=false;
+  for(const i of ix.bandes[k]){
+    const a=pts[i], b=pts[i?i-1:pts.length-1];
+    if((a.y>y)!==(b.y>y) && x < (b.x-a.x)*(y-a.y)/(b.y-a.y)+a.x) inside=!inside;
+  }
+  return inside;
+}
+/* Le polygone `pts` (sa boîte `bb`, son index rangé dans `o[cle]`) contient-il le point ? */
+function dansPolyIndexe(o,cle,pts,bb,x,y){
+  if(x<bb.x1||x>bb.x2||y<bb.y1||y>bb.y2)return false;
+  if(pts.length<64)return inPoly(x,y,pts);
+  if(!o[cle])o[cle]=bandesPoly(pts,bb);
+  return inPolyBandes(x,y,pts,o[cle]);
+}
+function zoneContient(z,x,y){
+  const r=zoneCalc(z);
+  return dansPolyIndexe(r,"ix",z.pts,r.bb,x,y);
+}
+/* Le point est-il dans l'un des trous du fichier de la zone ? */
+function dansTrouZone(z,x,y){
+  if(!zoneFichier(z)||!Array.isArray(z.trous))return false;
+  const r=zoneCalc(z);
+  if(!r.tb){r.tb=z.trous.map(t=>t&&t.length>=3?polyBBox(t):null);r.ti=[];}
+  return z.trous.some((t,i)=>r.tb[i]&&dansPolyIndexe(r.ti,i,t,r.tb[i],x,y));
+}
 function zoneFichier(z){
-  return !!(z&&z.fichier&&z.sig===zoneSig(z.pts));
+  if(!(z&&z.fichier))return false;
+  const r=zoneCalc(z);
+  if(r.fic===undefined)r.fic=z.sig===zoneSig(z.pts);
+  return r.fic;
 }
 /* contour de la zone, puis ses trous du fichier : à remplir en « evenodd » */
 function zonePath(c,z){
@@ -2436,10 +2501,25 @@ function zonePath(c,z){
       c.closePath();
     }
 }
+/* Remplit une zone (contour et trous du fichier, en « evenodd »). Le chemin
+   est gardé tant que le contour (sa signature) et les trous ne changent pas :
+   une zone importée compte des dizaines de milliers de sommets, et chaque
+   plan les retraçait à chaque palier de zoom. */
+const ZONE_PATH=new WeakMap();
+function zoneFill(c,z){
+  if(typeof Path2D!=="function"){c.beginPath();zonePath(c,z);c.fill("evenodd");return;}
+  const sig=zoneSig(z.pts), fic=zoneFichier(z);
+  let r=ZONE_PATH.get(z);
+  if(!r||r.sig!==sig||r.fic!==fic||r.trous!==z.trous){
+    const p=new Path2D();zonePath(p,z);
+    ZONE_PATH.set(z,r={sig,fic,trous:z.trous,p});
+  }
+  c.fill(r.p,"evenodd");
+}
 function zoneAt(l,x,y){
   for(let i=S.zones.length-1;i>=0;i--){
     const z=S.zones[i];
-    if(z.l===l&&inPoly(x,y,z.pts))return z;
+    if(z.l===l&&zoneContient(z,x,y))return z;
   }
   return null;
 }

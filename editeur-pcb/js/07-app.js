@@ -280,6 +280,49 @@ function pcbAfficherToastPinout(res) {
   }
 }
 
+/* Les composants du contrôle, rangés : fautifs, non placés, conformes. */
+function pcbPinoutGroupes(res) {
+  const L = (res && res.composants) || [];
+  return {
+    fautifs: L.filter(c => !c.conforme && c.statut !== "NON_PLACE"),
+    nonPlaces: L.filter(c => c.statut === "NON_PLACE"),
+    conformes: L.filter(c => c.conforme)
+  };
+}
+/* Le rapport texte des composants à corriger : ce qu'on colle dans un mail,
+   un ticket ou une revue. Seuls les contrôles en échec et les broches
+   critiques y figurent. */
+function pcbRapportPinout(res) {
+  const g = pcbPinoutGroupes(res);
+  const out = ["RAPPORT PINOUT / BOÎTIER — " + (typeof pcbFile === "function" ? pcbFile("", "carte") : "carte"),
+               new Date().toLocaleString("fr-FR"),
+               g.fautifs.length + " composant(s) à corriger, " + g.nonPlaces.length + " non placé(s), " +
+               g.conformes.length + " conforme(s)", ""];
+  for (const c of g.fautifs) {
+    out.push(c.ref + "  " + (c.value || "") + (c.pkg ? "  (" + c.pkg + ")" : "") + (c.mpn ? "  MPN " + c.mpn : ""));
+    for (const [nom, k] of [["Pas", c.pitchCheck], ["Boîtier", c.spanCheck], ["Pastilles", c.pinCountCheck]])
+      if (k && !k.ok) out.push("  - " + nom + " : " + k.msg);
+    for (const p of (c.pins || []).filter(p => p.statut === "critique"))
+      out.push("  - Broche " + p.pin + " (" + (p.schName || "—") + " / " + (p.pcbNet || "—") + ") : " + p.detail);
+    out.push("");
+  }
+  if (g.nonPlaces.length) out.push("Non placés : " + g.nonPlaces.map(c => c.ref).join(", "));
+  return out.join("\n").trim() + "\n";
+}
+/* Presse-papiers, avec le repli de l'ancien execCommand (page servie en http
+   sur le réseau local : l'API moderne y est refusée). */
+function pcbCopierTexte(txt, msg) {
+  const repli = () => {
+    const t = document.createElement("textarea");
+    t.value = txt; t.style.cssText = "position:fixed;opacity:0";
+    document.body.appendChild(t); t.select();
+    try { document.execCommand("copy"); hint(msg); } catch (e) { hint("Copie impossible : " + e.message); }
+    t.remove();
+  };
+  if (navigator.clipboard && window.isSecureContext)
+    navigator.clipboard.writeText(txt).then(() => hint(msg), repli);
+  else repli();
+}
 function pcbOuvrirDialoguePinout(res) {
   if (!res) res = (typeof pcbVerifierPinout === "function") ? pcbVerifierPinout() : null;
   if (!res || typeof document === "undefined") return;
@@ -292,10 +335,7 @@ function pcbOuvrirDialoguePinout(res) {
   m.className = "modal";
 
   let cardsHtml = "";
-  if (!res.composants || !res.composants.length) {
-    cardsHtml = '<div class="empty" style="padding:20px;text-align:center">Aucun composant à afficher. Importez une netlist ou chargez un schéma.</div>';
-  } else {
-    res.composants.forEach(c => {
+  const carte = c => {
       const isOk = c.conforme;
       const isMissing = c.statut === "NON_PLACE";
       const badgeCls = isOk ? "ok" : (isMissing ? "dim" : "warn");
@@ -320,8 +360,7 @@ function pcbOuvrirDialoguePinout(res) {
         });
       }
 
-      cardsHtml +=
-        '<div class="pcb-comp-card ' + (isOk ? 'ok' : 'warn') + '">' +
+      return '<div class="pcb-comp-card ' + (isOk ? 'ok' : 'warn') + '">' +
           '<div class="pcb-comp-head">' +
             '<div>' +
               '<span class="pcb-comp-ref">' + esc(c.ref) + '</span> ' +
@@ -367,7 +406,23 @@ function pcbOuvrirDialoguePinout(res) {
             ) : '') +
           '</div>' +
         '</div>';
-    });
+  };
+  if (!res.composants || !res.composants.length) {
+    cardsHtml = '<div class="empty" style="padding:20px;text-align:center">Aucun composant à afficher. Importez une netlist ou chargez un schéma.</div>';
+  } else {
+    /* Trois groupes : ce qui est à corriger d'abord, ouvert ; les conformes
+       repliés en bas, pour ne pas noyer les 14 fautifs sous 300 cartes vertes. */
+    const g = pcbPinoutGroupes(res);
+    const groupe = (titre, couleur, liste, ouvert) => liste.length ?
+      '<details class="pcb-pinout-groupe"' + (ouvert ? ' open' : '') + ' style="margin-bottom:10px">' +
+        '<summary style="cursor:pointer;font-weight:600;color:' + couleur + ';margin-bottom:8px">' +
+          titre + ' (' + liste.length + ')</summary>' +
+        liste.map(carte).join("") +
+      '</details>' : '';
+    cardsHtml =
+      groupe("⚠️ À corriger", "#fbbf24", g.fautifs, true) +
+      groupe("⏳ Non placés", "#9aa3b0", g.nonPlaces, !g.fautifs.length) +
+      groupe("✓ Conformes", "#52c41a", g.conformes, false);
   }
 
   m.innerHTML =
@@ -390,7 +445,10 @@ function pcbOuvrirDialoguePinout(res) {
         '<div style="font-size:11px;color:var(--txt-dim)">' +
           (res.conforme ? '<span style="color:#52c41a">✓ Tous les composants vérifiés sont conformes</span>' : '<span style="color:#fbbf24">⚠️ Corrigez les empreintes signalées pour garantir l\'assemblage</span>') +
         '</div>' +
-        '<button class="tb" id="pcbModalCloseBtn">Fermer</button>' +
+        '<div style="display:flex;gap:6px">' +
+          (res.conforme ? '' : '<button class="tb" id="pcbModalCopier" title="Copier dans le presse-papiers le rapport des composants à corriger">📋 Copier le rapport</button>') +
+          '<button class="tb" id="pcbModalCloseBtn">Fermer</button>' +
+        '</div>' +
       '</div>' +
     '</div>';
 
@@ -402,6 +460,8 @@ function pcbOuvrirDialoguePinout(res) {
   if (bX) bX.onclick = close;
   const bF = document.getElementById("pcbModalCloseBtn");
   if (bF) bF.onclick = close;
+  const bC = document.getElementById("pcbModalCopier");
+  if (bC) bC.onclick = () => pcbCopierTexte(pcbRapportPinout(res), "Rapport pinout copié (" + res.nbAnomalies + " composant(s) à corriger).");
 
   // Câbler les boutons pour reposer l'empreinte automatique
   m.querySelectorAll(".pcb-repose-btn").forEach(btn => {
@@ -600,6 +660,9 @@ $("cuCount").onchange=()=>{
   push();setCuCount(n);zoneCache.clear();
   hint("Empilage : "+n+" couche(s) de cuivre.");
 };
+$("bCouTout").onclick=()=>couchesToutes(true);
+$("bCouRien").onclick=()=>couchesToutes(false);
+$("bCouCuivre").onclick=()=>couchesToutes(false,true);
 for(const [id,t] of [["tabNets","nets"],["tabComps","comps"],["tabDrc","drc"]])
   $(id).onclick=()=>{
     S.listTab=t;

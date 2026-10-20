@@ -69,7 +69,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "coordOpen","coordClose","coordApply","coordMode","coordPoint","coordAnchor",
   "placeOrigin","ux","uy","wxu","wyu","snapX","snapY","gOrigin","routeToPoint","hint",
   "pushClear","magnet","projOnSeg","trkAt","mitreSel","mitreAt","collinearRun","runFrom","segClearBad","setActive","segSegDist","segCross","routeBad","focusNet","cancelRoute","updateRoute","classOf","syncAutoZones","detachAuto","zoneCanvas","zoneCache","inPoly","hitTest","px","dist","boardZonePts",
-  "selectLayerZones","zoneUnder",
+  "selectLayerZones","couchesToutes","zoneContient","inPoly","zoneUnder",
   /* repérage commun : chercher un repère, mesurer une distance
      (commun/reperage.js + le module d'adaptation de l'éditeur) */
   "cv",
@@ -265,7 +265,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "pcbParseFrequence","pcbDefinirSchema","pcbSchemaDoc","pcbComposantsSchema",
   "pcbSpecsComposant","pcbParasitesComposant","SIM_PARASITES_MURATA","pcbNetComposants","simFicheSchemaAdaptation","simDiffApres",
   "applyNetlist","pcbNettoyerPistesConflits",
-  "pcbVerifierPinout","pcbVerifierPinoutComposant","pcbVerifierEtNotifierPinout","pcbAfficherToastPinout","pcbOuvrirDialoguePinout",
+  "pcbVerifierPinout","pcbVerifierPinoutComposant","pcbGeomMesuree","pcbPinoutGroupes","pcbRapportPinout","pcbVerifierEtNotifierPinout","pcbAfficherToastPinout","pcbOuvrirDialoguePinout",
   /* synchronisation schéma ↔ PCB & ECO */
   "PCB_ECO","pcbObtenirDonneesSchema","pcbPistesConnecteesFp","pcbPistesConnecteesPad",
   "pcbDetecterDisparitesEco","pcbAppliquerEco","pcbOuvrirFenetreEco","pcbVerifierEtNotifierEco",
@@ -3993,7 +3993,62 @@ T("halo sur les pastilles du net suivi",()=>{
   draw();
   loadDoc(JSON.parse(savedAvoid),true);
 });
-T("clic sur une pastille : son net remonte dans la liste",()=>{
+T("zone de milliers de sommets : l'index par bandes répond comme inPoly",()=>{
+  // une étoile dentelée, concave, de 400 sommets
+  const pts=[];
+  for(let k=0;k<400;k++){const a=k*Math.PI*2/400, r=k%2?20:8+(k%7);
+    pts.push({x:50+r*Math.cos(a),y:40+r*Math.sin(a)});}
+  const z={l:0,net:"GND",pts};
+  let x=0.37;
+  for(let k=0;k<5000;k++){
+    x=(x*9301+49297)%233280/233280;const px=28+x*44;
+    x=(x*9301+49297)%233280/233280;const py=18+x*44;
+    if(zoneContient(z,px,py)!==inPoly(px,py,pts))
+      throw new Error("écart en "+px+","+py);
+  }
+});
+T("simulation : une couche « signal » coulée (carte importée) part en plan de référence",()=>{
+  const saved=serialize();
+  S.zones=[];setCuCount(4,true);
+  for(let i=0;i<4;i++)setLayerRole(i,"signal");
+  const roles=()=>simStackup().layers.filter(l=>l.type==="copper").map(l=>l.role).join(",");
+  if(roles()!=="signal,signal,signal,signal")throw new Error("sans cuivre coulé : "+roles());
+  S.zones.push({id:S.nextId++,l:1,net:"GND",pts:[{x:0,y:0},{x:50,y:0},{x:50,y:40},{x:0,y:40}]});touch();
+  if(roles()!=="signal,plane,signal,signal")throw new Error("coulage GND en Inner 1 : "+roles());
+  loadDoc(JSON.parse(saved),true);
+});
+T("pinout : une empreinte importée est mesurée sur ses pastilles, et le rapport ne liste que les fautifs",()=>{
+  // SOT23-6 importé : pastilles au pas de 0,95, rangées à 2,5 mm ; pitch/span du générateur laissés aux défauts
+  const pads=[];
+  for(let k=0;k<3;k++){pads.push({n:k+1,x:-1.25,y:(k-1)*0.95,w:0.6,h:1.15,shape:"rect",drill:0});
+                       pads.push({n:6-k,x:1.25,y:(k-1)*0.95,w:0.6,h:1.15,shape:"rect",drill:0});}
+  const f=mkFp("U9","","",6);f.pkg="SOT23_6";f.pads=pads;f.pitch=2.54;f.span=7.62;
+  const m=pcbGeomMesuree(f);
+  if(m.pitch!==0.95||m.span!==2.5)throw new Error("mesure : "+JSON.stringify(m));
+  const ok=pcbVerifierPinoutComposant({ref:"U9",pkg:"SOT23_6",npins:6},f);
+  if(!ok.pitchCheck.ok||!ok.spanCheck.ok||ok.peutReposer)throw new Error("faux positif : "+ok.pitchCheck.msg+" / "+ok.spanCheck.msg);
+  // le même au pas de 1,27 : fautif, et seul dans le rapport
+  f.pads=pads.map(q=>Object.assign({},q,{y:q.y/0.95*1.27}));
+  const ko=pcbVerifierPinoutComposant({ref:"U9",pkg:"SOT23_6",npins:6},f);
+  if(ko.pitchCheck.ok)throw new Error("pas de 1,27 accepté pour un SOT23-6");
+  const res={composants:[ko,{ref:"R1",conforme:true},{ref:"C2",statut:"NON_PLACE",conforme:false}],nbAnomalies:1};
+  const g=pcbPinoutGroupes(res), txt=pcbRapportPinout(res);
+  if(g.fautifs.length!==1||g.nonPlaces.length!==1||g.conformes.length!==1)throw new Error("groupes");
+  if(!/U9/.test(txt)||/R1/.test(txt)||!/mesurée à 1\.27/.test(txt)||!/Non placés : C2/.test(txt))
+    throw new Error("rapport : "+txt);
+});
+T("panneau Couches : tout, rien, cuivre seul",()=>{
+  const vis=S.cuL.map(L=>L.vis), show=Object.assign({},S.show);
+  couchesToutes(false);
+  if(S.cuL.some(L=>L.vis)||S.show.silkT||S.show.edge||S.show.rats)throw new Error("Rien");
+  couchesToutes(false,true);
+  if(!S.cuL.every(L=>L.vis)||!S.show.edge||!S.show.plane||S.show.silkT||S.show.rats)
+    throw new Error("Cuivre seul : "+JSON.stringify(S.show));
+  couchesToutes(true);
+  if(!S.cuL.every(L=>L.vis)||!S.show.silkB||!S.show.drc)throw new Error("Tout");
+  S.cuL.forEach((L,i)=>L.vis=vis[i]);S.show=show;
+});
+T("Alt+clic sur une pastille : son net remonte dans la liste",()=>{
   /* Pendant du clic sur la liste : le canevas désigne un net, l'onglet Nets
      revient au premier plan et la ligne porte la mise en avant — même si le
      filtre « non routés » l'aurait masquée. */
@@ -4005,8 +4060,20 @@ T("clic sur une pastille : son net remonte dans la liste",()=>{
   setMode("select");clearSel();S.hlNet=null;
   S.listTab="comps";S.onlyUnrouted=false;buildList();
   const q=padsWorld(f).find(x=>x.n===2);
+  // repère posé sur la pastille (carte importée) : la pastille passe avant le texte
+  const tp=fpTextPos(f).ref;f.refOffX=q.x-tp.x;f.refOffY=q.y-tp.y;
+  const ht=hitTest(q.x,q.y);
+  if(!ht||ht.fpText||!ht.fp)throw new Error("la pastille sous le repère doit prendre le boîtier");
+  delete f.refOffX;delete f.refOffY;
+  // clic simple : le boîtier seul, sans mise en avant
+  S.hlNet="SIG_A";
   fire("pointerdown",sc(q.x,q.y));
   fire("pointerup",sc(q.x,q.y));
+  if(S.hlNet!==null||!S.sel.fps.has(f.id))
+    throw new Error("un clic sur la pastille prend le boîtier seul : "+S.hlNet);
+  // Alt+clic : le net de la pastille
+  fire("pointerdown",Object.assign(sc(q.x,q.y),{altKey:true}));
+  fire("pointerup",Object.assign(sc(q.x,q.y),{altKey:true}));
   if(S.hlNet!=="SIG_B")
     throw new Error("le net de la pastille doit être mis en avant : "+S.hlNet);
   if(S.listTab!=="nets")

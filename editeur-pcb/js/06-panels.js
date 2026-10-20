@@ -91,6 +91,15 @@ function buildLayers(){
   });
   buildActiveLayer();
 }
+/* Boutons Tout / Rien / Cuivre seul du panneau Couches, comme la visionneuse
+   IPC-2581. Cuivre seul garde les zones et le contour de carte comme repère. */
+function couchesToutes(v,cuivreSeul){
+  for(const L of S.cuL)L.vis=cuivreSeul||v;
+  for(const k of ["silkT","silkB","maskT","maskB","pasteT","pasteB","edge","plane","rats","drc"])
+    S.show[k]=cuivreSeul?(k==="edge"||k==="plane"):v;
+  $("bRats").classList.toggle("on",S.show.rats);
+  touch();buildLayers();buildTabs();draw();
+}
 function buildActiveLayer(){
   const box=$("actLay");
   if(!box)return;

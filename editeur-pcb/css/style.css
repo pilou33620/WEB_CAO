@@ -212,6 +212,7 @@
   /* le bouton d'ouverture, dans la barre d'un panneau : plus petit qu'un bouton
      de barre d'outils, poussé à droite de son étiquette */
   .pnl-bar button.tb{margin-left:auto;padding:3px 7px;font-size:11px}
+  .pnl-bar button.tb+button.tb{margin-left:4px}
   /* la figure d'une règle : le dessin coté, et sa ligne de chiffres */
   .refig{padding:10px 14px 11px;border-bottom:1px solid var(--border);background:#131519}
   .refig svg{display:block;width:100%;height:auto;max-height:190px}

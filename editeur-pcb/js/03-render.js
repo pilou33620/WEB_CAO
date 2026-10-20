@@ -132,18 +132,38 @@ const zoneCache=new Map();
 function zoneCanvas(i){
   const zs=S.zones.filter(z=>z.l===i&&z.pts.length>=3);
   if(!zs.length)return null;
-  const res=clamp(S.scale*2,3,20);
-  const old=zoneCache.get(i);
-  if(old&&old.ver===S.ver&&Math.abs(Math.log(old.res/res))<0.45)return old;
-
   let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;
   for(const z of zs){
-    const b=polyBBox(z.pts);
+    const b=zoneCalc(z).bb;
     x1=Math.min(x1,b.x1);y1=Math.min(y1,b.y1);
     x2=Math.max(x2,b.x2);y2=Math.max(y2,b.y2);
   }
   const pad=1;
   x1-=pad;y1-=pad;x2+=pad;y2+=pad;
+  /* À fort zoom, seule la vue et une demi-vue de marge tout autour sont
+     rastérisées : la carte entière à 20 px/mm coûtait une seconde à chaque
+     palier de zoom. Le plan est refait quand la vue sort de cette région. */
+  const v=VUE_MONDE;
+  const vx1=v?Math.max(x1,v.x1):x1, vy1=v?Math.max(y1,v.y1):y1;
+  const vx2=v?Math.min(x2,v.x2):x2, vy2=v?Math.min(y2,v.y2):y2;
+  if(v){
+    const mx=(v.x2-v.x1)/2, my=(v.y2-v.y1)/2;
+    x1=Math.max(x1,v.x1-mx);y1=Math.max(y1,v.y1-my);
+    x2=Math.min(x2,v.x2+mx);y2=Math.min(y2,v.y2+my);
+    if(x2<=x1||y2<=y1)return null;
+  }
+  /* La résolution suit l'écran (pixels réels, dpr compris) : plafonnée à
+     20 px/mm, l'image du plan était agrandie quatre fois à fort zoom et ses
+     bords bavaient. Le budget de 6 Mpx par couche borne la mémoire. */
+  const dpr=(typeof window!=="undefined"&&window.devicePixelRatio)||1;
+  const res=Math.max(3,Math.min(S.scale*Math.max(2,dpr),Math.sqrt(6e6/((x2-x1)*(y2-y1)))));
+  const old=zoneCache.get(i);
+  const couvre=o=>vx1>=o.x&&vy1>=o.y&&vx2<=o.x+o.w&&vy2<=o.y+o.h;
+  if(old&&old.ver===S.ver&&old.res>=res*0.85&&old.res<=res*2.5&&couvre(old))return old;
+  /* En plein geste (boîtier tiré, extrémité étirée, vue qui glisse), l'ancien
+     plan reste : le recalcul coûte des centaines de millisecondes sur une
+     grosse carte, il attend que le geste se pose. */
+  if(old&&typeof drag!=="undefined"&&drag&&drag.moved)return old;
   const W=Math.max(1,Math.ceil((x2-x1)*res)), H=Math.max(1,Math.ceil((y2-y1)*res));
   if(W*H>36e6)return null;                     // garde-fou mémoire
   const o=document.createElement("canvas");o.width=W;o.height=H;
@@ -152,7 +172,9 @@ function zoneCanvas(i){
   const col=layerColor(i);
   c.fillStyle=col;
   for(const z of zs){
-    c.beginPath();zonePath(c,z);c.fill("evenodd");
+    const b=zoneCalc(z).bb;
+    if(b.x2<x1||b.x1>x2||b.y2<y1||b.y1>y2)continue;   // hors de la région
+    zoneFill(c,z);
   }
   /* le cuivre s'arrête à la marge de bord, quoi qu'ait tracé la main */
   clipToBoard(c,x1,y1,x2,y2);
@@ -166,6 +188,8 @@ function zoneCanvas(i){
     return !!(z&&net&&z.net===net);
   };
   const zoneNetAt=(l,x,y)=>{const z=zoneAt(l,x,y);return z?z.net:"";};
+  // ce qui tombe hors de la région rastérisée n'y laisse rien (marge : l'isolation)
+  const hors=(a,b,c2,d,r)=>c2+r+2<x1||a-r-2>x2||d+r+2<y1||b-r-2>y2;
   c.strokeStyle="#000";c.fillStyle="#000";c.lineCap="round";c.lineJoin="round";
   for(const ct of S.cuts){
     if(ct.l!==i||ct.pts.length<2)continue;
@@ -176,26 +200,30 @@ function zoneCanvas(i){
   }
   for(const t of S.tracks){
     if(t.l!==i)continue;
+    const tb=trkBBox(t);
+    if(hors(tb.x1,tb.y1,tb.x2,tb.y2,t.w))continue;
     const m=trkMid(t);
     if(sameNet(m.x,m.y,t.net))continue;
     c.lineWidth=t.w+2*clrK(zoneNetAt(i,m.x,m.y),t.net,"cu","trk");
     c.beginPath();trkPath(c,t);c.stroke();
   }
   for(const v of S.vias){
-    if(i<v.a||i>v.b)continue;
+    if(i<v.a||i>v.b||hors(v.x,v.y,v.x,v.y,v.d))continue;
     const same=sameNet(v.x,v.y,v.net);
     c.beginPath();
     c.arc(v.x,v.y,same?v.drill/2:v.d/2+clrK(zoneNetAt(i,v.x,v.y),v.net,"cu","via"),0,Math.PI*2);
     c.fill();
   }
   for(const h of trousMonde()){       // trou NPTH : la zone choisie comme au Gerber (zoneDuTrou)
+    const ax=axePercage(h);
+    if(hors(Math.min(ax.x1,ax.x2),Math.min(ax.y1,ax.y2),Math.max(ax.x1,ax.x2),Math.max(ax.y1,ax.y2),ax.d))continue;
     const z=zoneDuTrou(i,h,zs);
     if(z===null)continue;
     c.beginPath();cheminPercage(c,h,classOf(z).clr);c.fill();
   }
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
-      if(!padLayers(fp,q).includes(i))continue;
+      if(hors(q.x,q.y,q.x,q.y,Math.max(q.w,q.h))||!padLayers(fp,q).includes(i))continue;
       const same=sameNet(q.x,q.y,q.net);
       /* zone au cuivre du fichier : la pastille de son net y est déjà raccordée
          comme le fabricant l'a voulu — seul le trou se perce */
@@ -426,7 +454,7 @@ function drawSmdPads(c,i,a){
   const col=layerColor(i);
   for(const fp of S.fps){
     for(const q of padsWorld(fp)){
-      if(q.drill>0)continue;
+      if(q.drill>0||padHorsVue(q))continue;
       if(padLayers(fp,q)[0]!==i)continue;
       c.globalAlpha=a*netAlpha(q.net);
       padFill(c,q,0,col);
@@ -443,7 +471,7 @@ function drawSmdPads(c,i,a){
 function drawThruPads(c){
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
-      if(!(q.drill>0))continue;
+      if(!(q.drill>0)||padHorsVue(q))continue;
       c.globalAlpha=netAlpha(q.net);
       padFill(c,q,0,C_THRU);
     }
@@ -452,7 +480,7 @@ function drawThruPads(c){
 function drawThruMarks(c){
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
-      if(!(q.drill>0))continue;
+      if(!(q.drill>0)||padHorsVue(q))continue;
       c.globalAlpha=netAlpha(q.net);
       padOutline(c,q,C_THRU,px(1.2));
       c.fillStyle=C_DRILL;
@@ -460,43 +488,70 @@ function drawThruMarks(c){
     }
   c.globalAlpha=1;
 }
-function drawVias(c){
+/* Les vias traversants par lot de transparence : des milliers d'arcs en un
+   seul remplissage. Les borgnes, rares et bicolores, restent un par un. */
+function lotsVias(){
+  const lots=new Map();
   for(const v of S.vias){
+    if(horsVue(v.x-v.d,v.y-v.d,v.x+v.d,v.y+v.d))continue;
+    const k=(v.a===0&&v.b===S.cu-1?"T":"B")+netAlpha(v.net);
+    let l=lots.get(k);if(!l)lots.set(k,l=[]);
+    l.push(v);
+  }
+  return lots;
+}
+function arcsVias(c,vs,r){
+  c.beginPath();
+  for(const v of vs){const q=r(v);c.moveTo(v.x+q,v.y);c.arc(v.x,v.y,q,0,Math.PI*2);}
+}
+function drawVias(c){
+  for(const [k,vs] of lotsVias()){
+    if(k[0]!=="T")continue;
+    c.globalAlpha=+k.slice(1);c.fillStyle=C_THRU;
+    arcsVias(c,vs,v=>v.d/2);c.fill();
+  }
+  for(const v of S.vias){
+    if((v.a===0&&v.b===S.cu-1)||horsVue(v.x-v.d,v.y-v.d,v.x+v.d,v.y+v.d))continue;
     c.globalAlpha=netAlpha(v.net);
-    const thru=(v.a===0&&v.b===S.cu-1);
-    c.fillStyle=thru?C_THRU:layerColor(v.a);
+    c.fillStyle=layerColor(v.a);
     c.beginPath();c.arc(v.x,v.y,v.d/2,0,Math.PI*2);c.fill();
-    if(!thru){                     // via borgne : anneau bicolore, de a vers b
-      c.strokeStyle=layerColor(v.b);c.lineWidth=v.d*0.22;
-      c.beginPath();c.arc(v.x,v.y,v.d/2-v.d*0.11,0,Math.PI*2);c.stroke();
-    }
+    // via borgne : anneau bicolore, de a vers b
+    c.strokeStyle=layerColor(v.b);c.lineWidth=v.d*0.22;
+    c.beginPath();c.arc(v.x,v.y,v.d/2-v.d*0.11,0,Math.PI*2);c.stroke();
   }
   c.globalAlpha=1;
 }
 function drawViaMarks(c){
-  for(const v of S.vias){
-    c.globalAlpha=netAlpha(v.net);
-    const thru=(v.a===0&&v.b===S.cu-1);
-    c.strokeStyle=thru?C_THRU:layerColor(v.b);c.lineWidth=px(1.2);
-    c.beginPath();c.arc(v.x,v.y,v.d/2,0,Math.PI*2);c.stroke();
-    c.fillStyle=C_DRILL;
-    c.beginPath();c.arc(v.x,v.y,v.drill/2,0,Math.PI*2);c.fill();
-    if(S.sel.vias.has(v)){
-      c.globalAlpha=1;
-      c.strokeStyle=C_SEL;c.lineWidth=px(1.6);
-      c.beginPath();c.arc(v.x,v.y,v.d/2+px(2),0,Math.PI*2);c.stroke();
+  c.lineWidth=px(1.2);
+  for(const [k,vs] of lotsVias()){
+    c.globalAlpha=+k.slice(1);
+    if(k[0]==="T"){c.strokeStyle=C_THRU;arcsVias(c,vs,v=>v.d/2);c.stroke();}
+    else for(const v of vs){            // borgne : l'anneau à la couleur de sa couche d'arrivée
+      c.strokeStyle=layerColor(v.b);
+      c.beginPath();c.arc(v.x,v.y,v.d/2,0,Math.PI*2);c.stroke();
     }
+    c.fillStyle=C_DRILL;arcsVias(c,vs,v=>v.drill/2);c.fill();
+  }
+  c.globalAlpha=1;c.strokeStyle=C_SEL;c.lineWidth=px(1.6);
+  for(const v of S.sel.vias){
+    c.beginPath();c.arc(v.x,v.y,v.d/2+px(2),0,Math.PI*2);c.stroke();
   }
   c.globalAlpha=1;
 }
 function drawSilk(c){
   for(const fp of S.fps){
     const top=!fp.side;
-    if(top&&!S.show.silkT)continue;
-    if(!top&&!S.show.silkB)continue;
+    const sel=S.sel.fps.has(fp.id);
+    const bb=bodyOf(fp), rr=Math.max(-bb.x1,bb.x2,-bb.y1,bb.y2)*1.5+3+
+      Math.hypot(fp.refOffX||0,fp.refOffY||0,fp.valOffX||0,fp.valOffY||0);
+    if(horsVue(fp.x-rr,fp.y-rr,fp.x+rr,fp.y+rr))continue;
+    /* La sélection se voit même sérigraphie masquée (« Cuivre seul ») : sur une
+       carte importée et routée, le contour pointillé seul se perdait dans le
+       cuivre, alors chaque pastille du boîtier pris est cernée. */
+    if(sel)for(const q of padsWorld(fp))padOutline(c,q,C_SEL,px(1.6));
+    if(!(top?S.show.silkT:S.show.silkB)&&!sel)continue;
     const T=fpXform(fp), b=bodyOf(fp);
     const pts=[T(b.x1,b.y1),T(b.x2,b.y1),T(b.x2,b.y2),T(b.x1,b.y2)];
-    const sel=S.sel.fps.has(fp.id);
     /* Sérigraphie automatique coupée (carte importée : sa vraie sérigraphie
        est dans les dessins) : ni contour, ni point de broche 1 imprimés. Le
        contour ne revient qu'en pointillés à la sélection, pour voir ce qu'on
@@ -520,7 +575,7 @@ function drawSilk(c){
        film — même place, même diamètre. L'écran montrait un anneau large
        autour de la pastille, qui n'existait dans aucun fichier et masquait le
        cuivre ; ce qu'on voit est maintenant ce qui sera imprimé. */
-    const mk=auto?fpMark(fp):null;
+    const mk=auto&&(top?S.show.silkT:S.show.silkB)?fpMark(fp):null;
     if(mk){
       const w=T(mk.x,mk.y);
       c.fillStyle=sel?C_SEL:(top?C_SILK_T:C_SILK_B);
@@ -535,11 +590,23 @@ function drawSilk(c){
   }
   /* traits de sérigraphie utilisateur */
   if(S.drawings){
+    /* Les traits simples non sélectionnés partent en un lot par face et par
+       largeur : une carte importée en compte des dizaines de milliers, et un
+       trait = un save/stroke/restore la figeait. */
+    const lots=new Map();
     for(const d of S.drawings){
       const top = d.layer !== "silkB";
       if(top&&!S.show.silkT)continue;
       if(!top&&!S.show.silkB)continue;
       const sel = S.sel.drawings && S.sel.drawings.has(d.id);
+      if(!sel&&d.shape!=="rect"&&d.shape!=="text"&&d.shape!=="poly"){
+        const e=(d.width||0)/2;
+        if(horsVue(Math.min(d.x1,d.x2)-e,Math.min(d.y1,d.y2)-e,Math.max(d.x1,d.x2)+e,Math.max(d.y1,d.y2)+e))continue;
+        const k=(top?"T":"B")+(d.width||0.15);
+        let p=lots.get(k);if(!p)lots.set(k,p=[]);
+        p.push(d);
+        continue;
+      }
       c.save();
       c.lineCap = "round";
       c.lineJoin = "round";
@@ -649,6 +716,17 @@ function drawSilk(c){
       }
       c.restore();
     }
+    c.save();
+    c.lineCap="round";c.lineJoin="round";
+    c.globalAlpha=S.hlNet?0.55:1;
+    for(const [k,p] of lots){
+      c.strokeStyle=k[0]==="T"?C_SILK_T:C_SILK_B;
+      c.lineWidth=Math.max(+k.slice(1),px(1));
+      c.beginPath();
+      for(const d of p){c.moveTo(d.x1,d.y1);c.lineTo(d.x2,d.y2);}
+      c.stroke();
+    }
+    c.restore();
   }
   /* prévisualisation d'un aplat de sérigraphie */
   if(S.aplatDraft&&S.aplatDraft.pts.length){
@@ -770,23 +848,28 @@ function drawDrc(c){
   c.stroke();
 }
 function drawZones(c,i,a){
+  /* les contours non sélectionnés : un seul tracé pointillé pour la couche */
+  c.globalAlpha=a*0.5;c.strokeStyle=layerColor(i);c.lineWidth=px(1);
+  c.setLineDash([px(5),px(4)]);
+  c.beginPath();
   for(const z of S.zones){
+    if(z.l!==i||z.pts.length<2||S.sel.zones.has(z))continue;
+    if(z.pts.length>=3){const b=zoneCalc(z).bb;if(horsVue(b.x1,b.y1,b.x2,b.y2))continue;}
+    c.moveTo(z.pts[0].x,z.pts[0].y);
+    for(let k=1;k<z.pts.length;k++)c.lineTo(z.pts[k].x,z.pts[k].y);
+    c.closePath();
+  }
+  c.stroke();c.setLineDash([]);
+  for(const z of S.sel.zones){
     if(z.l!==i||z.pts.length<2)continue;
-    const sel=S.sel.zones.has(z);
-    c.globalAlpha=a*(sel?1:0.5);
-    c.strokeStyle=sel?C_SEL:layerColor(i);
-    c.lineWidth=px(sel?1.6:1);
-    c.setLineDash(sel?[]:[px(5),px(4)]);
+    c.globalAlpha=a;c.strokeStyle=C_SEL;c.lineWidth=px(1.6);
     c.beginPath();
     c.moveTo(z.pts[0].x,z.pts[0].y);
     for(let k=1;k<z.pts.length;k++)c.lineTo(z.pts[k].x,z.pts[k].y);
     c.closePath();c.stroke();
-    c.setLineDash([]);
-    if(sel){
-      c.fillStyle=C_SEL;
-      for(const p of z.pts){
-        c.beginPath();c.arc(p.x,p.y,px(3.5),0,Math.PI*2);c.fill();
-      }
+    c.fillStyle=C_SEL;
+    for(const p of z.pts){
+      c.beginPath();c.arc(p.x,p.y,px(3.5),0,Math.PI*2);c.fill();
     }
   }
   for(const ct of S.cuts){
@@ -1000,7 +1083,27 @@ function drawHoles(c){
     }
   }
 }
+/* Le rectangle du monde à l'écran, élargi d'une marge, le temps d'une image :
+   ce qui tombe dehors n'est pas peint. Une grosse carte zoomée ne paie plus
+   que ce qu'on voit. */
+let VUE_MONDE=null;
+function horsVue(x1,y1,x2,y2){
+  const v=VUE_MONDE;
+  return !!v&&(x2<v.x1||x1>v.x2||y2<v.y1||y1>v.y2);
+}
+function padHorsVue(q){
+  const r=Math.max(q.w,q.h);
+  return horsVue(q.x-r,q.y-r,q.x+r,q.y+r);
+}
 function paint(c,dpr,w,h,noGrid){
+  const a=s2w(0,0), b=s2w(w/dpr,h/dpr), m=px(30);
+  VUE_MONDE={x1:Math.min(a.x,b.x)-m,y1:Math.min(a.y,b.y)-m,
+             x2:Math.max(a.x,b.x)+m,y2:Math.max(a.y,b.y)+m};
+  PADS_IMAGE=new Map();
+  try{paintCarte(c,dpr,w,h,noGrid);}
+  finally{VUE_MONDE=null;PADS_IMAGE=null;}
+}
+function paintCarte(c,dpr,w,h,noGrid){
   c.setTransform(1,0,0,1,0,0);
   c.fillStyle=C_BG;c.fillRect(0,0,w,h);
 
@@ -1117,9 +1220,35 @@ function paint(c,dpr,w,h,noGrid){
   if(!noGrid&&typeof roomsPeindre==="function")roomsPeindre(c);
   c.setTransform(1,0,0,1,0,0);
 }
+/* Vue rapide : sur une carte lourde, un cran de molette ou un pas de
+   panoramique ne repeint pas tout — la dernière image complète est déplacée et
+   mise à l'échelle à la cadence de l'écran, et la vraie revient dès que le
+   geste se pose. Une carte légère (`cout` bas) reste repeinte en direct. */
+const VUE={img:null,cout:0,s:1,ox:0,oy:0,raf:0,t:0};
+function drawVue(){
+  if(VUE.cout<8||typeof requestAnimationFrame!=="function"){draw();return;}
+  if(!VUE.img){
+    const o=document.createElement("canvas");o.width=cv.width;o.height=cv.height;
+    o.getContext("2d").drawImage(cv,0,0);
+    VUE.img=o;
+  }
+  if(!VUE.raf)VUE.raf=requestAnimationFrame(()=>{
+    VUE.raf=0;
+    if(!VUE.img)return;
+    const dpr=window.devicePixelRatio||1, k=S.scale/VUE.s;
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.fillStyle=C_BG;ctx.fillRect(0,0,cv.width,cv.height);
+    ctx.drawImage(VUE.img,dpr*(S.ox-VUE.ox*k),dpr*(S.oy-VUE.oy*k),cv.width*k,cv.height*k);
+    $("fZoom").textContent=Math.round(S.scale*20)+"%";
+  });
+  clearTimeout(VUE.t);
+  VUE.t=setTimeout(draw,150);
+}
 function draw(){
-  const dpr=window.devicePixelRatio||1;
+  clearTimeout(VUE.t);VUE.img=null;
+  const dpr=window.devicePixelRatio||1, t0=performance.now();
   paint(ctx,dpr,cv.width,cv.height,false);
+  VUE.cout=performance.now()-t0;VUE.s=S.scale;VUE.ox=S.ox;VUE.oy=S.oy;
   $("fZoom").textContent=Math.round(S.scale*20)+"%";
   updateGridInfo();
   $("fN").textContent=S.fps.length;

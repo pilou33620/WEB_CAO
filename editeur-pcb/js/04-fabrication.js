@@ -320,6 +320,12 @@ function zoneDuTrou(i,h,zs){
   let z=zn(h.x,h.y);
   if(z===null)z=zn(ax.x1,ax.y1);
   if(z===null)z=zn(ax.x2,ax.y2);
+  if(z===null){
+    // seules les zones dont la boîte passe près du trou peuvent l'atteindre
+    const m=ax.d/2+5, X1=Math.min(ax.x1,ax.x2)-m, X2=Math.max(ax.x1,ax.x2)+m,
+          Y1=Math.min(ax.y1,ax.y2)-m, Y2=Math.max(ax.y1,ax.y2)+m;
+    zs=zs.filter(o=>{const b=zoneCalc(o).bb;return !(b.x2<X1||b.x1>X2||b.y2<Y1||b.y1>Y2);});
+  }
   if(z===null)z=zoneEtrangereProche(zs,TOUS_LES_NETS,(a,b)=>segSegDist(ax,{x1:a.x,y1:a.y,x2:b.x,y2:b.y}),q=>h.d/2+classOf(q.net).clr);
   return z;
 }

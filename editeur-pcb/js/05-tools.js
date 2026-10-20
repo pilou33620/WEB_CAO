@@ -908,13 +908,16 @@ function hitTest(x,y,e){
     padsWorld(fp).some(q=>padCuLayers(fp,q).includes(S.active)&&padDist(x,y,q)<=0)));
   for(const t of S.tracks)
     if(t.l===S.active&&trkDist(x,y,t)<=t.w/2+tol&&!surUnePastille())return {track:t};
+  /* Les pastilles avant les repères : sur une carte importée, le repère est
+     souvent posé sur le boîtier, et le clic prenait le texte au lieu du composant. */
+  for(let i=S.fps.length-1;i>=0;i--)
+    for(const q of padsWorld(S.fps[i]))
+      if(padDist(x,y,q)<=tol)return {fp:S.fps[i],pad:q};
   for(let i=S.fps.length-1;i>=0;i--){
     const fp=S.fps[i];
     const tp = fpTextPos(fp);
     if(Math.abs(x-tp.ref.x)<=(fp.ref.length||0)*tp.ref.size*0.4 && Math.abs(y-tp.ref.y)<=tp.ref.size*0.8) return {fpText:fp, kind:"ref"};
     if(fp.value && Math.abs(x-tp.val.x)<=(fp.value.length||0)*tp.val.size*0.4 && Math.abs(y-tp.val.y)<=tp.val.size*0.8) return {fpText:fp, kind:"val"};
-    for(const q of padsWorld(fp))
-      if(padDist(x,y,q)<=tol)return {fp,pad:q};
     const b=bodyOf(fp);
     const a=-(fp.rot||0)*Math.PI/180, ca=Math.cos(a), sa=Math.sin(a);
     let lx=(x-fp.x)*ca-(y-fp.y)*sa, ly=(x-fp.x)*sa+(y-fp.y)*ca;
@@ -1055,6 +1058,8 @@ function toggleHit(h){
    c'est ce qui permet de garder les deux usages sans se gêner. */
 function altTarget(x,y){
   if(S.mode!=="select")return false;
+  // Alt+clic sur une pastille : mise en avant de son net, pas la main
+  if(S.fps.some(fp=>padsWorld(fp).some(q=>padDist(x,y,q)<=px(3))))return true;
   for(const t of S.sel.tracks){
     for(const en of [1,2]){
       const ex=en===1?t.x1:t.x2, ey=en===1?t.y1:t.y2;
@@ -4332,8 +4337,12 @@ cv.addEventListener("pointerdown",e=>{
     else toggleHit(h);
   }else if(!hitSelected(h))selectHit(h,false);
   groupeEtendreSel();                       // un membre touché prend son groupe
-  const pn=(h.pad&&h.pad.net)||null;
+  /* Un clic sur une pastille prend le boîtier, rien d'autre : sur une carte
+     routée, la mise en avant du net masquait le composant qu'on voulait
+     déplacer. Alt+clic sur la pastille met son net en avant. */
+  const pn=(e.altKey&&h.pad&&h.pad.net)||null;
   if(pn)S.hlNet=pn;
+  else if(h.fp&&!add)S.hlNet=null;
   /* boîtier saisi (corps ou pastille) : c'est SON centre qui s'accroche à la
      grille, pas le déplacement. Sinon un boîtier posé hors grille (placement
      auto, import) gardait son décalage, et deux 0402 côte à côte ne
@@ -4449,7 +4458,7 @@ cv.addEventListener("pointermove",e=>{
     S.scale=PINCH_PCB.scale*k;
     S.ox=mx-(mx-PINCH_PCB.ox)*k+((a.x+b.x)/2-PINCH_PCB.mx);
     S.oy=my-(my-PINCH_PCB.oy)*k+((a.y+b.y)/2-PINCH_PCB.my);
-    draw();return;
+    drawVue();return;
   }
 
   const p=evPos(e);
@@ -4461,7 +4470,7 @@ cv.addEventListener("pointermove",e=>{
   if(drag&&drag.pan){
     S.ox=drag.ox+(e.clientX-drag.sx);
     S.oy=drag.oy+(e.clientY-drag.sy);
-    draw();return;
+    drawVue();return;
   }
   if(drag&&drag.marquee){
     S.marquee.x2=p.x;S.marquee.y2=p.y;draw();return;
@@ -4761,7 +4770,9 @@ cv.addEventListener("pointerup",e=>{
   if(drag&&drag.move&&!drag.moved&&drag.toggleOff){
     toggleHit(drag.toggleOff);groupeRetirerSel(drag.toggleOff);refreshPanels();draw();
   }
+  const gele=drag&&drag.moved;
   drag=null;
+  if(gele)draw();              // les plans gelés pendant le geste (zoneCanvas) se recalculent
 });
 cv.addEventListener("pointercancel",e=>{
   cancelLongpress();
@@ -4769,7 +4780,9 @@ cv.addEventListener("pointercancel",e=>{
   if(PTR_PCB.size<2)PINCH_PCB=null;
   if(drag&&drag.follow){pruneDeadTracks();S.dragShove=null;}   // jambes de réserve repliées
   fanoutRelease(drag);
+  const gele=drag&&drag.moved;
   drag=null;
+  if(gele)draw();
 });
 cv.addEventListener("contextmenu",e=>{
   e.preventDefault();
@@ -4803,7 +4816,7 @@ cv.addEventListener("wheel",e=>{
   const a=s2w(mx,my);
   S.ox+=(mirX(a.x)-mirX(b.x))*S.scale;
   S.oy+=(a.y-b.y)*S.scale;
-  draw();
+  drawVue();
 },{passive:false});
 
 /* Roulette du mode tactile (commun/tactile.js). Un appui long au stylet

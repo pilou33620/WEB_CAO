@@ -65,6 +65,15 @@ function simCuIndex(i){return 2*clamp(i,0,S.cu-1);}
 /* L'empilage, à plat. Les épaisseurs sont en millimètres — le document de
    simulation l'est entièrement. Le rôle voyage avec la couche : c'est lui qui
    dit au serveur quel conducteur est un plan de référence. */
+/* UNE COUCHE DE RÉFÉRENCE : un plan déclaré (rôle GND, PWR, blindage), ou une
+   couche qui porte du cuivre coulé. Une carte importée garde ses couches en
+   « signal » avec leurs coulages du fichier : l'empilage ne marquait « plan »
+   que le rôle déclaré, et le serveur, sans plan, refusait toute impédance
+   alors que le panneau, lui, voyait les coulages. Le cuivre réel en face de
+   chaque tronçon est sondé ensuite (`simXtNus`). */
+function simEstRef(i){
+  return rolePlane(layerRole(i)) || S.zones.some(z => z.l === i && z.pts && z.pts.length >= 3);
+}
 function simStackup(){
   const couches=[];
   for(let i=0;i<S.cu;i++){
@@ -72,7 +81,7 @@ function simStackup(){
     const c={
       type:"copper", name:cuLabel(i,S.cu),
       thickness:cuT(i),
-      role:rolePlane(layerRole(i))?"plane":"signal",
+      role:simEstRef(i)?"plane":"signal",
       net:L.net||""
     };
     /* LA RUGOSITÉ, EN MICROMÈTRES et la clé le dit : le serveur la passe à
@@ -1448,8 +1457,27 @@ var simZDrawnLabels = new Set();
 function simZTrace(c){
   if(typeof simCarteActive!=="function"||!simCarteActive())return;
   if(typeof simZDrawnLabels!=="undefined"&&simZDrawnLabels.clear)simZDrawnLabels.clear();
-  if(typeof simPourChaqueLot!=="function"){simZTraceLot(c,null);return;}
-  simPourChaqueLot(function(lot){simZTraceLot(c,lot);});
+  if(typeof SIM_Z_CARTOUCHES!=="undefined")SIM_Z_CARTOUCHES.length=0;
+  /* Le cuivre de TOUS les lots d'abord, les étiquettes ensuite : peintes lot
+     par lot, celles d'une paire différentielle passaient sous la piste
+     partenaire, peinte après elles. */
+  const lots=[];
+  if(typeof simPourChaqueLot!=="function")lots.push(null);
+  else simPourChaqueLot(function(lot){lots.push(lot);});
+  for(const lot of lots)simZTraceLot(c,lot);
+  for(const lot of lots){simZValeurs(c,lot);simZNumeroLot(c,lot);}
+}
+/* Les cartouches déjà posés dans l'image (pixels écran) : le suivant qui en
+   chevauche un se décale, au lieu de le recouvrir. `var` : dans le bundle d'un
+   seul script, paint() peut passer ici avant que ce fichier ne s'exécute. */
+var SIM_Z_CARTOUCHES=[];
+function simZPlaceLibre(x,y,w,h){
+  const chevauche=(px,py)=>SIM_Z_CARTOUCHES.some(r=>
+    Math.abs(r.x-px)<(r.w+w)/2+2&&Math.abs(r.y-py)<(r.h+h)/2+2);
+  let py=y;
+  for(let k=1;k<8&&chevauche(x,py);k++)py=y+(k%2?1:-1)*Math.ceil(k/2)*(h+3);
+  SIM_Z_CARTOUCHES.push({x,y:py,w,h});
+  return py;
 }
 
 function simZTraceLot(c,lot){
@@ -1507,8 +1535,6 @@ function simZTraceLot(c,lot){
   passe(1.00, ()=>px(2));
 
   c.restore();
-  simZValeurs(c,lot);
-  simZNumeroLot(c,lot);
 }
 
 
@@ -1684,6 +1710,13 @@ function simZValeurs(c,lot){
       }
     }
 
+    /* Décalé s'il en chevauche un autre, relié alors à son point par un trait */
+    const yLibre=simZPlaceLibre(e.x,e.y,w,h);
+    if(yLibre!==e.y){
+      c.strokeStyle=v.couleur(0.8);c.lineWidth=1;
+      c.beginPath();c.moveTo(e.x,e.y);c.lineTo(e.x,yLibre+(yLibre>e.y?-h/2:h/2));c.stroke();
+      e={x:e.x,y:yLibre};
+    }
     /* Un cartouche sombre sous le texte */
     c.fillStyle="rgba(15,16,18,0.88)";
     c.beginPath();
@@ -1843,8 +1876,7 @@ function simBoucleVias(hauteur, signal, retours){
    `section_de_couche` côté serveur — celle qui décide de l'impédance. */
 function simPlansRef(l){
   const out = [];
-  const estRef = i => rolePlane(layerRole(i)) ||
-    S.zones.some(z => z.l === i && z.pts && z.pts.length >= 3);
+  const estRef = simEstRef;
   for(let i = l - 1; i >= 0; i--)
     if(estRef(i)){out.push(i); break;}
   for(let i = l + 1; i < S.cu; i++)
@@ -2927,7 +2959,7 @@ function simDocPcb(liste,opts){
   if(vias)
     notes.push(vias+" via(s) du net ne sont pas modélisés : la transition "+
                "verticale manque au modèle.");
-  if(!S.cuL.some((L,i)=>rolePlane(layerRole(i))))
+  if(!S.cuL.some((L,i)=>simEstRef(i)))
     notes.push("Aucun plan de référence dans l'empilage : sans plan en face "+
                "de la piste, il n'y a pas de ligne de transmission.");
   /* AUCUNE MASSE DÉCLARÉE, et il faut le dire fort : le calcul coplanaire
@@ -3225,8 +3257,7 @@ function simXtPlansDe(l){
    la règle de `simPlansRef` — dont c'est la version complète : le premier de
    chaque liste est celui qu'elle rend. */
 function simXtCotes(l){
-  const estRef = i => rolePlane(layerRole(i)) ||
-    S.zones.some(z => z.l === i && z.pts && z.pts.length >= 3);
+  const estRef = simEstRef;
   const haut=[], bas=[];
   for(let i=l-1;i>=0;i--)if(estRef(i))haut.push(i);
   for(let i=l+1;i<S.cu;i++)if(estRef(i))bas.push(i);
@@ -4091,6 +4122,24 @@ function pcbNomEstMasse(s){
   return j === "0V" || /^(GND|VSS|AGND|DGND|PGND|SGND|CGND|MASSE|EARTH)[A-Z0-9]*$/.test(j);
 }
 
+/* Pas et écartement MESURÉS sur les pastilles d'une empreinte qui porte les
+   siennes (import, bibliothèque) : ses champs pitch/span y sont les défauts
+   du générateur (2,54 / 7,62), qui ne décrivent rien, et la comparaison au
+   boîtier criait à tort. Le pas est la plus courte distance entre deux
+   pastilles ; l'écartement, l'étendue des centres en travers de ce pas. */
+function pcbGeomMesuree(fp) {
+  const P = typeof fpFree === "function" ? fpFree(fp) : null;
+  if (!P || P.length < 2) return null;
+  let best = null;
+  for (let i = 0; i < P.length; i++)
+    for (let j = i + 1; j < P.length; j++) {
+      const d = Math.hypot(P[i].x - P[j].x, P[i].y - P[j].y);
+      if (d > 1e-6 && (!best || d < best.d)) best = {d, dx: Math.abs(P[i].x - P[j].x), dy: Math.abs(P[i].y - P[j].y)};
+    }
+  if (!best) return null;
+  const travers = best.dx > best.dy ? P.map(q => q.y) : P.map(q => q.x);
+  return {pitch: r3(best.d), span: r3(Math.max(...travers) - Math.min(...travers))};
+}
 function pcbVerifierPinoutComposant(c, fp) {
   if (!c) return null;
   const ref = c.ref;
@@ -4121,8 +4170,10 @@ function pcbVerifierPinoutComposant(c, fp) {
   const expPitch = expGeom ? expGeom.pitch : null;
   const expSpan = expGeom ? expGeom.span : null;
 
-  const actPitch = fp.pitch != null ? fp.pitch : (expPitch || 1.27);
-  const actSpan = fp.span != null ? fp.span : (expSpan || 5.4);
+  const mes = pcbGeomMesuree(fp);
+  const actPitch = mes ? mes.pitch : (fp.pitch != null ? fp.pitch : (expPitch || 1.27));
+  const actSpan = mes ? mes.span : (fp.span != null ? fp.span : (expSpan || 5.4));
+  const regle = mes ? "mesurée à " : "réglée à ";
 
   const anomalies = [];
   const avertissements = [];
@@ -4131,10 +4182,13 @@ function pcbVerifierPinoutComposant(c, fp) {
   let pitchOk = true;
   let pitchMsg = "Pas des broches : " + Number(actPitch).toFixed(2) + " mm";
   if (expPitch != null) {
-    const dPitch = Math.abs(actPitch - expPitch);
+    /* ponytail: mesuré, un pas double est accepté (broche dépeuplée : TO-252,
+       SOT-223) ; une empreinte à broches manquantes plus irrégulières passe aussi */
+    const dPitch = mes ? Math.min(Math.abs(actPitch - expPitch), Math.abs(actPitch - 2 * expPitch))
+                       : Math.abs(actPitch - expPitch);
     if (dPitch > 0.05) {
       pitchOk = false;
-      const m = "Distance entre pins (pitch) incorrecte : " + expPitch.toFixed(2) + " mm attendu pour " + (pkgName || "boîtier") + ", mais empreinte PCB réglée à " + Number(actPitch).toFixed(2) + " mm";
+      const m = "Distance entre pins (pitch) incorrecte : " + expPitch.toFixed(2) + " mm attendu pour " + (pkgName || "boîtier") + ", mais empreinte PCB " + regle + Number(actPitch).toFixed(2) + " mm";
       pitchMsg = m;
       anomalies.push(m);
     } else {
@@ -4247,7 +4301,8 @@ function pcbVerifierPinoutComposant(c, fp) {
     avertissements: avertissements,
     resume: resume,
     pins: pinDetails,
-    peutReposer: !!(expGeom && (!pitchOk || !spanOk || !pinCountOk))
+    // une empreinte aux pastilles propres (import) ne se régénère pas d'un clic : on perdrait le dessin du fichier
+    peutReposer: !!(expGeom && !mes && (!pitchOk || !spanOk || !pinCountOk))
   };
 }
 
