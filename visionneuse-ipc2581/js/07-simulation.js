@@ -2522,12 +2522,15 @@ function simZTrace(c,dpr){
   SIM_Z_CARTOUCHES.length=0;
   /* Le cuivre de TOUS les lots d'abord, les étiquettes ensuite, comme dans
      l'éditeur : peintes lot par lot, celles d'une paire différentielle
-     passaient sous la piste partenaire, peinte après elles. */
-  const lots=[];
-  if(typeof simPourChaqueLot!=="function")lots.push(null);
-  else simPourChaqueLot(function(lot){lots.push(lot);});
-  const traits=lots.map(lot=>simZTraceLot(c,dpr,lot));
-  lots.forEach((lot,i)=>{simZValeurs(c,dpr,traits[i],lot);simZNumeroLot(c,dpr,lot,traits[i]);});
+     passaient sous la piste partenaire, peinte après elles. Chaque passe dans
+     simPourChaqueLot : c'est lui qui met SIM.objets / SIM.res du lot en place. */
+  if(typeof simPourChaqueLot!=="function"){
+    const t=simZTraceLot(c,dpr,null);simZValeurs(c,dpr,t,null);simZNumeroLot(c,dpr,null,t);return;
+  }
+  const traits=[];
+  simPourChaqueLot(function(lot){traits.push(simZTraceLot(c,dpr,lot));});
+  let i=0;
+  simPourChaqueLot(function(lot){const t=traits[i++];simZValeurs(c,dpr,t,lot);simZNumeroLot(c,dpr,lot,t);});
 }
 
 function simZTraceLot(c,dpr,lot){

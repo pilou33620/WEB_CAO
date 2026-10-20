@@ -211,7 +211,8 @@ const EXPOSE=["ECRITURE_CAO","simDsChamp","simDsLire","simDsEcrire","SIM_DS","SI
    propre et rien ne sortirait. */
 const code=FICHIERS.map(f=>fs.readFileSync(f,"utf8")
                             .replace(/^"use strict";\s*/,"")).join("\n;\n");
-eval(code+"\n"+EXPOSE.map(n=>"globalThis."+n+"="+n+";").join("\n"));
+eval(code+"\n"+fs.readFileSync(path.join(RACINE,"..","commun","test","essai-lots-ztrace.js"),"utf8")+"\n"
+     +EXPOSE.concat(["essaiLotsZTrace"]).map(n=>"globalThis."+n+"="+n+";").join("\n"));
 
 let ok=0, ko=0;
 function T(nom,fn){
@@ -2305,6 +2306,10 @@ T("un via déjà dans le parcours n'est pas envoyé deux fois",()=>{
   }
 });
 
+T("carte d'impédance à deux lots : chaque lot peint avec son état, le cuivre avant les étiquettes",()=>{
+  const vu=essaiLotsZTrace().join();
+  if(vu!=="cuivre 1,cuivre 2,valeurs 1,numéro 1,valeurs 2,numéro 2")throw new Error("ordre ou état des lots : "+vu);
+});
 T("le chevelu lit les deux listes, et marque ce qui n'est pas cascadé",()=>{
   /* `simCheveluRes` ne lisait que les transitions. Un via hors parcours porte
      exactement les mêmes champs, dans une autre liste — et il doit se

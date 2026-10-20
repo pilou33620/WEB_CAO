@@ -258,7 +258,6 @@ function crFmtPrix(p, devise) {
   return Number(p).toFixed(4).replace(/\.?0+$/, "") + " " + d;
 }
 
-
 /* ---------- Appel vers la passerelle locale (/api/tool) ---------- */
 async function crApiAppel(outil, args) {
   const resp = await fetch("/api/tool", {

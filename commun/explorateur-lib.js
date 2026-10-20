@@ -716,7 +716,6 @@ function explorateurLibFermer() {
   ELIB.open = false;
 }
 
-
 if (typeof window !== "undefined") {
   window.ELIB = ELIB;
   window.explorateurLibOuvrir = explorateurLibOuvrir;

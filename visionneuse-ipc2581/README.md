@@ -41,6 +41,7 @@ Côté Python, trois fichiers dans python/, à la racine du dépôt :
 et ceux du dossier partagé, identiques aux autres outils :
 
 ```
+../commun/echappe.js              esc() : échappement HTML, chargé en premier
 ../commun/workspace.css           habillage de l'espace de travail
 ../commun/workspace.js            panneaux détachables, paramétré par WS_CONFIG
 ../commun/session.css             habillage des boutons de navigation

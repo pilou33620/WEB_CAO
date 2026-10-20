@@ -441,7 +441,8 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
-     +EXPOSE.map(n=>"globalThis."+n+"="+n+";").join("\n")+"\n"
+     +fs.readFileSync(path.join(__dirname,"..","..","commun","test","essai-lots-ztrace.js"),"utf8")+"\n"
+     +EXPOSE.concat(["essaiLotsZTrace"]).map(n=>"globalThis."+n+"="+n+";").join("\n")+"\n"
      +'Object.defineProperty(globalThis,"WS",'
      +'{get:()=>WS,set:v=>{WS=v;},configurable:true});'
      /* SESS_QUITTE bascule à la sortie vers un autre outil : le banc
@@ -4262,6 +4263,10 @@ function assertPresent(html,quoi){
   if(html.indexOf("&lt;img")<0&&html.indexOf("&lt;svg")<0)
     throw new Error(quoi+" : la charge n'apparaît pas, l'essai ne prouve rien");
 }
+T("carte d'impédance à deux lots : chaque lot peint avec son état, le cuivre avant les étiquettes",()=>{
+  const vu=essaiLotsZTrace().join();
+  if(vu!=="cuivre 1,cuivre 2,valeurs 1,numéro 1,valeurs 2,numéro 2")throw new Error("ordre ou état des lots : "+vu);
+});
 T("esc() couvre les caractères dangereux",()=>{
   const got=esc('<&>"\'`');
   if(got!=="&lt;&amp;&gt;&quot;&#39;&#96;")throw new Error("échappement : "+got);
@@ -6148,7 +6153,7 @@ T("bibliothèque : appliquer une empreinte de la LIB",()=>{
   if(cible.x!==60||cible.y!==40||cible.rot!==90||cible.side!==1)
     throw new Error("la position et la face ne bougent pas");
   if(padsOf(cible).find(q=>q.n===8).net!=="+5V")throw new Error("les nets devaient rester");
-  /* une empreinte calculée s'enregistre aussi : elle se recalcule à l'arrivée */
+  /* une définition calculée (sans pastilles) rend la cible au calcul */
   const d2=normFpDef({name:"0805 large",pkg:"0805",pins:2,style:"chip",pitch:2,span:2});
   if(!fpApplyDef(cible,d2))throw new Error("application de l'empreinte calculée refusée");
   if(fpFree(cible))throw new Error("elle devait rendre la cible au calcul");

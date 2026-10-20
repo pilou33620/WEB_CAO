@@ -3306,10 +3306,8 @@ function dpSolveGap(target,w,layer){
    ========================================================================== */
 const LT_C0=2.99792458e11;              // vitesse de la lumière, en mm/s
 
-/* Permittivité effective vue par la ligne (Hammerstad). Le microruban a de
-   l'air d'un côté : il voit une moyenne entre l'air et le stratifié, et
-   d'autant plus de stratifié que la piste est large devant la hauteur du
-   diélectrique. La triplaque, noyée, ne voit que le stratifié. */
+/* ltWeff, ltEeff et ltZ0 (la formule légère) : commun/simulation-em.js, partagés
+   avec la visionneuse. */
 /* Ce qu'un segment vaut : sa géométrie, son impédance, son retard, et les deux
    éléments répartis qui s'en déduisent — C = t/Z₀, L = t·Z₀. La géométrie de
    couche peut être fournie par l'appelant : elle ne dépend que de la couche,

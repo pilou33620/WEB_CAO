@@ -101,11 +101,6 @@ function fpLibWrite(o){
     if(FPLIB_SRV)envois.push(fpLibApi("PUT",null,
       {type:"pcb",nom:f,data:Object.assign({format:FPLIB_FORMAT},o[n])}));
   }
-  for(const n of Object.keys(FPLIB)){
-    if(o[n])continue;
-    if(FPLIB_SRV)envois.push(fpLibApi("DELETE",{type:"pcb",nom:fpLibFichier(n)}));
-    delete FPLIB_FICHIER[n];
-  }
   for(const n of Object.keys(FPLIB))delete FPLIB[n];
   Object.assign(FPLIB,o);
   FPLIB_ENVOI=Promise.all(envois).then(()=>true,e=>{

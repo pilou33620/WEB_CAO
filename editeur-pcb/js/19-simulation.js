@@ -1438,12 +1438,13 @@ function simZTrace(c){
   if(typeof SIM_Z_CARTOUCHES!=="undefined")SIM_Z_CARTOUCHES.length=0;
   /* Le cuivre de TOUS les lots d'abord, les étiquettes ensuite : peintes lot
      par lot, celles d'une paire différentielle passaient sous la piste
-     partenaire, peinte après elles. */
-  const lots=[];
-  if(typeof simPourChaqueLot!=="function")lots.push(null);
-  else simPourChaqueLot(function(lot){lots.push(lot);});
-  for(const lot of lots)simZTraceLot(c,lot);
-  for(const lot of lots){simZValeurs(c,lot);simZNumeroLot(c,lot);}
+     partenaire, peinte après elles. Chaque passe dans simPourChaqueLot : c'est
+     lui qui met SIM.objets / SIM.res du lot en place, et les remet en sortant. */
+  if(typeof simPourChaqueLot!=="function"){
+    simZTraceLot(c,null);simZValeurs(c,null);simZNumeroLot(c,null);return;
+  }
+  simPourChaqueLot(function(lot){simZTraceLot(c,lot);});
+  simPourChaqueLot(function(lot){simZValeurs(c,lot);simZNumeroLot(c,lot);});
 }
 
 function simZTraceLot(c,lot){

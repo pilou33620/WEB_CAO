@@ -24,6 +24,8 @@ Ces fichiers viennent du dossier partagé, à la racine du dépôt, et sont
 identiques pour l'éditeur PCB :
 
 ```
+../commun/echappe.js             esc() : échappement HTML, chargé en premier
+../commun/csv.js                 lecture de LIB_composants.csv (avec la Gestion LIB)
 ../commun/workspace.css          habillage de l'espace de travail
 ../commun/workspace.js           panneaux détachables, paramétré par WS_CONFIG
 ../commun/session.css            habillage des boutons de navigation
@@ -60,7 +62,7 @@ identiques pour l'éditeur PCB :
 | `js/15-import.js` | 216 | Import JSON défensif (normalisation), sauvegarde automatique et reprise de la session d'onglet (`sessionSchema`) |
 | `js/16-demo.js` | 61 | Schéma de démonstration des deux feuilles |
 | `js/17-demarrage.js` | 30 | Séquence de démarrage des données et de l'affichage, puis reprise du travail laissé dans l'onglet |
-| `js/18-csv.js` | 108 | Bibliothèque `LIB_composants.csv` : analyse, chargement HTTP ou manuel |
+| `js/18-csv.js` | 89 | Bibliothèque `LIB_composants.csv` : chargement HTTP ou manuel (la lecture du fichier est dans `../commun/csv.js`) |
 | `js/19-broches.js` | 379 | Éditeur de brochage : nombre de broches, représentation, taille du corps, noms et placement des pattes à la grille |
 | `js/20-profil.js` | 83 | Réglages d'affichage rangés dans le profil de l'utilisateur : grille, étiquettes de net, onglet de liste |
 | `js/21-reperage.js` | 223 | Ce que la recherche et la mesure valent sur un schéma : aimant sur les broches, cibles de toutes les feuilles, cadrage, cross-probing vers le PCB |

@@ -738,10 +738,9 @@ pour rattacher les nets.
 **L'origine est visible et se déplace.** La croix jaune — la même que
 l'origine de la carte — marque le point d'accrochage : `fp.x`, `fp.y`. C'est
 par lui que l'empreinte se déplace, autour de lui qu'elle pivote, et de lui que
-se placent le repère et la valeur sur la sérigraphie (`fpTextPos`). On le
-glisse à la souris ou on le décale au clavier ; le cuivre ne bouge pas d'un
-micron pour autant — les pastilles reculent exactement de ce que `fp.x`/`fp.y`
-avancent (`fpMoveOrigin`).
+se placent le repère et la valeur sur la sérigraphie (`fpTextPos`). Il vient
+de l'empreinte de la LIB (souvent l'origine de la fiche du fabricant) et se
+règle dans la Gestion LIB.
 
 **Le repère de broche 1 est un point de sérigraphie**, et rien d'autre :
 `fp.mark`, un disque en coordonnées locales, avec son diamètre (0,4 mm par

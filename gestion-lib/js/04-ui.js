@@ -899,7 +899,6 @@ function afficherToast(msg, type = "info") {
   }, 3500);
 }
 
-
 /* ---------- Modale de sélection des colonnes ---------- */
 
 function ouvrirModaleColonnes() {
