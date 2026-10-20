@@ -337,6 +337,222 @@ function simXtCoupe(x1,y1,x2,y2,a){
   if(t<-1e-9||t>1+1e-9||u<-1e-9||u>1+1e-9)return -1;
   return Math.max(0,Math.min(1,t));
 }
+
+/* ==========================================================================
+   LES FENTES DU PLAN DE RÉFÉRENCE SOUS UN PARCOURS — un seul algorithme pour
+   les deux pages. Ce qui diffère tient dans `SIM_ED.xt`, l'adaptateur de la
+   page : `k` (millimètres par unité de la page — 1 dans l'éditeur, l'unité du
+   fichier dans la visionneuse), `pret`, `troncon` (les sondes à pas d'un
+   tronçon, dans le sens de marche), `aretes`, `nus`, `nom` et `image` (les
+   plans d'une couche, lus sur le modèle de la page).
+
+   Les abscisses `s`, les largeurs et les détours sont en MILLIMÈTRES ; les
+   points `x`, `y` dans l'unité de la page, et rendus en millimètres.
+   ========================================================================== */
+const SIM_XT_PAS=0.5;           /* mm — le pas de sonde du plan de référence */
+const SIM_XT_SONDES_MAX=2000;   /* au-delà, on grossit le pas plutôt que d'inonder */
+const SIM_XT_EPS=0.002;         /* mm — la sonde posée de part et d'autre d'une arête */
+const SIM_XT_FENTE_MIN=0.1;     /* mm — une fente mesurée sur ses bords vaut au moins ça */
+
+/* LES DÉTOURS DU COURANT DE RETOUR AUTOUR D'UNE FENTE — ce que le serveur ne
+   peut pas mesurer, et dont son terme d'impédance commune (Ott, `crosstalk`
+   4.5.0) a besoin. Au milieu de la fente, on avance le long de la NORMALE à
+   la piste, par pas de sonde, jusqu'à ce que le plan se referme sur la ligne
+   de la piste — c'est-à-dire qu'aucun plan ne manque plus sur toute la
+   largeur de la fente : c'est le chemin que le retour doit faire. Même
+   mesure que celle du RF (`fentes.push({… d1, d2 …})`), au pas du crosstalk.
+
+   d1 EST À GAUCHE DU SENS DE MARCHE, d2 à droite — le côté +1 de la couture,
+   et c'est la convention que le serveur lit pour savoir de quel côté passe
+   la victime. 30 mm au plus, et `borne` le dit : un plan coupé de bord à
+   bord n'a pas de détour, le retour y passe par des condensateurs ou des
+   coutures que ce calcul ne voit pas. `retour` nomme les plans qui FERMENT
+   encore le retour sous la fente ; vide, tous sont coupés, et c'est la
+   condition du modèle — un plan qui reste dessous (fente sur L2 seule, L3
+   intact) n'a pas de terme, le serveur le dit. */
+const SIM_XT_FENTE_MAX=30;      /* mm — plafond du détour, celui du RF (SIM_RF_FENTE_MAX) */
+function simXtDetours(t,pas,refs){
+  const P=SIM_ED.xt, k=P.k();
+  /* LA SONDE LA PLUS PROCHE DU MILIEU DE LA FENTE — pas celle du milieu de la
+     liste : les sondes d'arête s'y pressent à 2 µm des bords. */
+  const mil=(t.debut+t.fin)/2;
+  let m=t.ech[0];
+  for(const q of t.ech)if(Math.abs(q.s-mil)<Math.abs(m.s-mil))m=q;
+  /* La largeur est EXACTE quand les deux arêtes la bornent ; sinon, un pas
+     de sonde en plus, comme la mesure du RF. */
+  const largeur=(t.debutExact&&t.finExacte)?t.fin-t.debut:t.fin-t.debut+pas;   // mm
+  const demi=(largeur/2+m.w*k/2)/k;                // unité de la page
+  const nq=Math.max(2,Math.ceil(2*demi*k/SIM_XT_PAS));
+  const ouvert=(cx,cy)=>{
+    for(let q=0;q<=nq;q++){
+      const d=-demi+2*demi*q/nq;
+      if(P.nus(m.cotes,cx+d*m.tx,cy+d*m.ty,refs).length)return true;
+    }
+    return false;
+  };
+  const detour=sg=>{
+    for(let d=SIM_XT_PAS;d<=SIM_XT_FENTE_MAX;d+=SIM_XT_PAS){
+      const du=d/k;
+      if(!ouvert(m.x-sg*du*m.ty,m.y+sg*du*m.tx))return {d:d,borne:false};
+    }
+    return {d:SIM_XT_FENTE_MAX,borne:true};
+  };
+  const a=detour(1), b=detour(-1);
+  const retour=[];
+  P.nus(m.cotes,m.x,m.y,refs,retour);
+  const r3=x=>Math.round(x*1000)/1000;
+  return {d1:r3(a.d), d2:r3(b.d), largeur:r3(largeur), borne:a.borne||b.borne,
+          retour:retour.map(P.nom).filter(Boolean),
+          x:r3(m.x*k), y:r3(m.y*k), maillage:P.image(m,a.d,b.d,refs)};
+}
+
+/* Les discontinuités du plan sous le parcours, en intervalles d'abscisse.
+
+   REND `null` QUAND ON N'A PAS SU SONDER, et c'est la moitié de l'intérêt : un
+   plan de référence qui ne porte aucun cuivre n'est pas un plan sans fente,
+   c'est un plan qu'on ne voit pas. Rendre une liste vide ferait écrire
+   « aucune zone de vigilance » sous un contrôle qui n'a jamais eu lieu.
+
+   LES FENTES FINES SONT VUES PAR LEURS BORDS, et c'est le correctif de la
+   carte d'essai du banc crosstalk. La sonde avançait par pas de 0,5 mm et
+   jetait tout trou plus court que 1,5 pas, pris pour un dégagement d'antipad :
+   une fente de 0,75 mm passait inaperçue, et celle du cas 4 a dû être portée à
+   2 mm pour être vue. On garde les sondes à pas — elles disent où le plan
+   MANQUE sur une longue découpe —, et l'on y ajoute, pour chaque corde du
+   parcours, une sonde DE CHAQUE CÔTÉ de chaque arête de plan qu'elle coupe
+   (SIM_XT_EPS). Une fente est alors bornée par ses deux arêtes, à sa largeur
+   et à sa position exactes, quelle que soit sa finesse ; le filtre « deux
+   pas » ne s'applique plus qu'aux trous qu'aucune arête ne borne. */
+function simXtFentes(par,refs){
+  const P=SIM_ED.xt;
+  if(!par.total||!P.pret())return null;
+  const pas=Math.max(SIM_XT_PAS,par.total/SIM_XT_SONDES_MAX);
+  /* L'epsilon est en millimètres ; les cordes sont dans l'unité de la page. */
+  const k=P.k();
+  const epsU=SIM_XT_EPS/(k>0?k:1);
+  let sondable=false;
+  const trous=[];
+  let courant=null;
+  const aretesDe=new Map();
+  const aretes=c=>{
+    if(!aretesDe.has(c))aretesDe.set(c,P.aretes(c));
+    return aretesDe.get(c);
+  };
+  /* TOUTES LES ABSCISSES D'ARÊTE COUPÉES (mm), pour recaler les bouts d'un
+     trou qu'une sonde à pas aurait ouvert ou fermé PILE sur l'arête — le point
+     sur le bord d'un polygone est « dedans » ou « dehors » au hasard du lancer
+     de rayon, et c'est l'arête qui a raison. */
+  const bords=[];
+  for(const e of par.liste){
+    /* TOUS LES PLANS DE RÉFÉRENCE, ET PLUS SEULEMENT CELUI DU DESSOUS — c'est
+       `troncon` qui les lit. Une triplaque en a deux, et le courant de retour
+       se partage entre eux : une fente dans l'un ouvre la boucle même si
+       l'autre est intact.
+       UNE COUCHE SANS PLAN N'A PAS DE FENTE À AVOIR (`troncon` rend null) :
+       c'est un défaut d'un autre ordre, que l'onglet Impédance signale déjà.
+       On passe, sans compter ce tronçon comme sondé. */
+    const n=Math.max(1,Math.round(e.longueur/pas));
+    const tr=P.troncon(e,n,refs);
+    if(!tr)continue;
+    sondable=true;
+    const cotes=tr.cotes, w=tr.w, pts=tr.pts;
+    /* CHAQUE SONDE GARDE SA TANGENTE DANS LE SENS DE MARCHE : c'est au milieu
+       de la fente que les détours se mesurent (`simXtDetours`), le long de la
+       normale. Une sonde à pas la lit sur la piste ; une sonde d'arête prend
+       la direction de sa corde, déjà rangée dans le sens du parcours. */
+    const sondes=pts.map(q=>({s:q.s, x:q.x, y:q.y, bord:null, tx:q.tx, ty:q.ty}));
+    /* PUIS LES ARÊTES : sur chaque corde, chaque bord de plan coupé reçoit une
+       sonde juste avant et une juste après. `bord` porte l'abscisse exacte de
+       l'arête, c'est elle qui bornera la fente. Toutes les couches de plan des
+       deux côtés sont lues : une fente sur le plan de repli compte aussi. */
+    for(let j=0;j+1<pts.length;j++){
+      const A=pts[j], B=pts[j+1], ds=B.s-A.s;
+      if(!(ds>0))continue;
+      const dx=B.x-A.x, dy=B.y-A.y, lc=Math.hypot(dx,dy)||1e-12;
+      const ex=dx/lc*epsU, ey=dy/lc*epsU;
+      const ts=[];
+      for(const c of tr.couches)
+        for(const ar of aretes(c)){
+          const t=simXtCoupe(A.x,A.y,B.x,B.y,ar);
+          if(t>=0)ts.push(t);
+        }
+      ts.sort((p,q)=>p-q);
+      let prec=-1;
+      for(const t of ts){
+        if(prec>=0&&t-prec<1e-6)continue;
+        prec=t;
+        const s=A.s+t*ds, x=A.x+dx*t, y=A.y+dy*t;
+        bords.push(s);
+        sondes.push({s:s-SIM_XT_EPS, x:x-ex, y:y-ey, bord:s, tx:dx/lc, ty:dy/lc});
+        sondes.push({s:s+SIM_XT_EPS, x:x+ex, y:y+ey, bord:s, tx:dx/lc, ty:dy/lc});
+      }
+    }
+    sondes.sort((p,q)=>p.s-q.s);
+    for(const q of sondes){
+      /* UN SEUL PLAN PERCÉ SUFFIT À OUVRIR LA BOUCLE. On note lequel : « le
+         plan du dessus » et « le plan du dessous » ne demandent pas le même
+         geste, et sur une triplaque la fiche doit pouvoir le dire. */
+      const nus=P.nus(cotes,q.x,q.y,refs);
+      const s=q.s;
+      /* La sonde d'APRÈS une arête ouvre une fente exactement sur l'arête ;
+         celle d'AVANT la referme exactement dessus. */
+      const apres=q.bord!=null&&q.s>q.bord, avant=q.bord!=null&&q.s<q.bord;
+      /* LA SONDE GARDE SON POINT ET SA TANGENTE : c'est au milieu de la
+         fente que les détours se mesurent (`simXtDetours`). */
+      const ech={s:s, x:q.x, y:q.y, tx:q.tx, ty:q.ty, w:w, cotes:cotes};
+      if(!nus.length){
+        if(courant){trous.push(courant);courant=null;}
+      }else if(courant&&s-courant.fin<=pas*1.5){
+        courant.fin=avant?q.bord:s;
+        courant.finExacte=avant;
+        courant.ech.push(ech);
+        for(const c of nus)if(courant.plans.indexOf(c)<0)courant.plans.push(c);
+      }else{
+        if(courant)trous.push(courant);
+        courant={debut:apres?q.bord:s, fin:avant?q.bord:s, plans:nus.slice(),
+                 debutExact:apres, finExacte:avant, ech:[ech]};
+      }
+    }
+  }
+  if(courant)trous.push(courant);
+  if(!sondable)return null;
+  /* UN BOUT DE TROU À MOINS DE DEUX EPSILON D'UNE ARÊTE EST SUR L'ARÊTE. */
+  const recaler=v=>{
+    for(const b of bords)if(Math.abs(b-v)<=2*SIM_XT_EPS+1e-9)return b;
+    return null;
+  };
+  for(const t of trous){
+    let b;
+    if(!t.debutExact&&(b=recaler(t.debut))!=null){t.debut=b;t.debutExact=true;}
+    if(!t.finExacte&&(b=recaler(t.fin))!=null){t.fin=b;t.finExacte=true;}
+  }
+  /* UN SEUL POINT SANS CUIVRE N'EST PAS UNE FENTE quand rien ne le borne :
+     c'est le pas de sonde qui tombe dans un dégagement. On garde ce qui dure
+     au moins deux pas — en deçà, on inonderait la carte de marques que rien ne
+     justifie. UNE FENTE BORNÉE PAR SES DEUX ARÊTES, elle, est gardée dès
+     SIM_XT_FENTE_MIN : sa largeur est mesurée, pas devinée. */
+  const r3=x=>Math.round(x*1000)/1000;
+  /* `plans` PART À CÔTÉ DE `quoi`, et ce n'est pas un doublon : `quoi` est une
+     phrase, faite pour être lue, et le serveur ne doit pas avoir à l'analyser
+     pour savoir DE QUEL PLAN on parle. Il en a besoin — c'est le nom de couche
+     qu'il retire de l'empilage sur les blocs concernés, pour que la section y
+     soit résolue sans une référence qui n'y est pas. `nom` rend celui que
+     l'empilage envoie, donc celui que `section_de_couche` compare. */
+  /* ET LES DÉTOURS d1 / d2, la largeur, les plans qui ferment encore le
+     retour : ce que le terme d'impédance commune du serveur demande. */
+  return trous.filter(t=>(t.debutExact&&t.finExacte)
+                         ? t.fin-t.debut>=SIM_XT_FENTE_MIN
+                         : t.fin-t.debut>=pas*1.5)
+    .map(t=>Object.assign({s:r3(t.debut), longueur:r3(t.fin-t.debut),
+              plans:t.plans.map(P.nom).filter(Boolean),
+              quoi:(t.plans.length>1
+                      ? "les plans de référence "+t.plans.map(P.nom).join(" / ")+
+                        " n'ont pas de cuivre de retour"
+                      : "le plan de référence "+P.nom(t.plans[0])+
+                        " n'a pas de cuivre de retour")+
+                   " sous le parcours sur "+r3(t.fin-t.debut)+" mm"},
+              simXtDetours(t,pas,refs)));
+}
 /* Un cercle en polygone. Vingt-quatre côtés : à 0,4 mm de diamètre, l'écart au
    cercle vrai est de trois micromètres — très en dessous de la trame la plus
    fine que le solveur accepte. */

@@ -3999,10 +3999,9 @@ function simDocDiffIpc(piste1, piste2, opts){
    réponse honnête. Le serveur écrit alors « rien n'a pu être examiné » au lieu
    de « aucune zone de vigilance ».
    ========================================================================== */
-const SIM_XT_PAS_IPC=0.5;         /* mm — le pas de sonde du plan de référence */
-const SIM_XT_SONDES_MAX_IPC=2000; /* au-delà, on grossit le pas plutôt que d'inonder */
-const SIM_XT_EPS_IPC=0.002;       /* mm — la sonde posée de part et d'autre d'une arête */
-const SIM_XT_FENTE_MIN_IPC=0.1;   /* mm — une fente mesurée sur ses bords vaut au moins ça */
+/* Les pas de sonde (SIM_XT_PAS…) et la recherche des fentes (`simXtFentes`,
+   `simXtDetours`) sont dans ../commun/simulation-em.js, partagés avec
+   l'éditeur ; ce fichier leur passe ses sondes par `SIM_IPC.xt`. */
 
 /* Le parcours, plage par plage, avec son abscisse curviligne cumulée.
 
@@ -4496,7 +4495,7 @@ function simXtNusIpc(cotes,x,y,idx,retour){
         continue;
       }
       /* Le plus proche sans cuivre de masse : on ne sait pas le sonder, et
-         `simXtFentesIpc` ne compte pas ce côté comme sondé. */
+         `simXtFentes` ne compte pas ce côté comme sondé. */
       if(k===0)break;
       if(simNetPlanEnIpc(c,x,y)){if(retour)retour.push(c);break;}
       nus.push(c);
@@ -4505,53 +4504,45 @@ function simXtNusIpc(cotes,x,y,idx,retour){
   return nus;
 }
 
-/* LES DÉTOURS DU COURANT DE RETOUR AUTOUR D'UNE FENTE — ce que le serveur ne
-   peut pas mesurer, et dont son terme d'impédance commune (Ott, `crosstalk`
-   4.5.0) a besoin. Au milieu de la fente, on avance le long de la NORMALE à
-   la piste, par pas de sonde, jusqu'à ce que le plan se referme sur la ligne
-   de la piste — plus aucun plan ne manque sur toute la largeur de la fente.
-   Même mesure que celle de l'éditeur (`simXtDetours`) et du RF.
+/* LES SONDES À PAS D'UNE PLAGE, pour `simXtFentes` (commun) : ses plans de
+   référence, et un point par pas, tangente dans le sens de marche — en
+   unités du fichier, abscisses en millimètres. Rend null quand la couche n'a
+   pas de plan dont un contour couvre le parcours.
 
-   d1 EST À GAUCHE DU SENS DE MARCHE, d2 à droite — le côté +1 de la couture,
-   la convention que le serveur lit pour savoir de quel côté passe la
-   victime ; une plage `retourne` a sa tangente retournée. 30 mm au plus, et
-   `borne` le dit. `retour` nomme les plans qui FERMENT encore le retour sous
-   la fente ; vide, tous sont coupés — la condition du modèle. Les points
-   sont dans l'unité du FICHIER, les distances rendues en millimètres. */
-const SIM_XT_FENTE_MAX_IPC=30;    /* mm — plafond du détour, celui du RF */
-function simXtDetoursIpc(t,pas,idx){
-  const k=simKUnite();
-  /* LA SONDE LA PLUS PROCHE DU MILIEU DE LA FENTE — pas celle du milieu de la
-     liste : les sondes d'arête s'y pressent à 2 µm des bords. */
-  const mil=(t.debut+t.fin)/2;
-  let m=t.ech[0];
-  for(const q of t.ech)if(Math.abs(q.s-mil)<Math.abs(m.s-mil))m=q;
-  /* La largeur est EXACTE quand les deux arêtes la bornent ; sinon, un pas de
-     sonde en plus, comme la mesure du RF. */
-  const largeur=(t.debutExact&&t.finExacte)?t.fin-t.debut:t.fin-t.debut+pas;   // mm
-  const demi=(largeur/2+m.w*k/2)/k;                // unité du fichier
-  const nq=Math.max(2,Math.ceil(2*demi*k/SIM_XT_PAS_IPC));
-  const ouvert=(cx,cy)=>{
-    for(let q=0;q<=nq;q++){
-      const d=-demi+2*demi*q/nq;
-      if(simXtNusIpc(m.cotes,cx+d*m.tx,cy+d*m.ty,idx).length)return true;
+   LE SENS DE MARCHE : une plage `retourne` remonte la polyligne, sa tangente
+   se retourne et, avec elle, gauche et droite — les détours d1 / d2 se
+   mesurent dans le sens du parcours, comme la couture. Les SOMMETS de la
+   polyligne qui tombent dans la plage s'ajoutent aux sondes à pas : une corde
+   qui couperait un coude lirait les arêtes à côté du cuivre. */
+function simXtTronconIpc(e,n,idx){
+  const o=e.o;
+  const cu=simCuDe(o.coucheIdx);
+  if(cu<0)return null;
+  const plans=simXtPlansDeIpc(cu).filter(c=>simXtContoursIpc(c,idx).length);
+  if(!plans.length)return null;
+  const a=Math.min(o.u1,o.u2), b=Math.max(o.u1,o.u2);
+  const cotes=simXtCotesIpc(cu);
+  const sens=o.retourne?-1:1;
+  const fs=[];
+  for(let j=0;j<=n;j++)fs.push(j/n);
+  const total=o.cum[o.cum.length-1]||0;
+  if(total>0&&b>a)
+    for(const c of o.cum){
+      const u=c/total;
+      if(u>a+1e-9&&u<b-1e-9)fs.push(o.retourne?(b-u)/(b-a):(u-a)/(b-a));
     }
-    return false;
-  };
-  const detour=sg=>{
-    for(let d=SIM_XT_PAS_IPC;d<=SIM_XT_FENTE_MAX_IPC;d+=SIM_XT_PAS_IPC){
-      const du=d/k;
-      if(!ouvert(m.x-sg*du*m.ty,m.y+sg*du*m.tx))return {d:d,borne:false};
-    }
-    return {d:SIM_XT_FENTE_MAX_IPC,borne:true};
-  };
-  const a=detour(1), b=detour(-1);
-  const retour=[];
-  simXtNusIpc(m.cotes,m.x,m.y,idx,retour);
-  const r3=x=>Math.round(x*1000)/1000;
-  return {d1:r3(a.d), d2:r3(b.d), largeur:r3(largeur), borne:a.borne||b.borne,
-          retour:retour.map(simXtNomCoucheIpc).filter(Boolean),
-          x:r3(m.x*k), y:r3(m.y*k), maillage:simXtImagePlansIpc(m,a.d,b.d,idx)};
+  fs.sort((p,q)=>p-q);
+  const pts=[];
+  let prec=-1;
+  for(const f of fs){
+    if(pts.length&&f-prec<1e-9)continue;
+    prec=f;
+    const u=o.retourne?(b-(b-a)*f):(a+(b-a)*f);
+    const p=simSurPoly(o.piste.p,o.cum,u);
+    pts.push({s:e.s0+f*e.longueur, x:p.x, y:p.y, tx:p.tx*sens, ty:p.ty*sens});
+  }
+  return {cotes:cotes, w:o.piste.w||0, pts:pts,
+          couches:cotes[0].concat(cotes[1]).filter(c=>simXtContoursIpc(c,null).length)};
 }
 
 /* L'IMAGE DES PLANS AUTOUR DU FRANCHISSEMENT, pour l'option B du serveur
@@ -4588,13 +4579,6 @@ function simXtImagePlansIpc(m,d1,d2,idx){
                           plans:plans, vias:vias, coupe:simXtCoupe});
 }
 
-/* Les discontinuités du plan sous le parcours, en intervalles d'abscisse.
-
-   REND `null` QUAND ON N'A PAS SU SONDER, et c'est la moitié de l'intérêt : un
-   plan de référence dont aucun contour ne couvre le parcours n'est pas un plan
-   sans fente, c'est un plan qu'on ne voit pas. Rendre une liste vide ferait
-   écrire « aucune zone de vigilance » sous un contrôle qui n'a jamais eu
-   lieu. */
 /* LES ARÊTES DU CUIVRE D'UNE COUCHE DE PLAN, tous nets (le cuivre d'un autre
    net est un trou du retour), contours extérieurs et trous : des segments
    [x1, y1, x2, y2, boîte…] en unités FICHIER. C'est là, et seulement là, que
@@ -4616,167 +4600,6 @@ function simXtAretesIpc(coucheIdx){
   return out;
 }
 
-
-/* LES FENTES FINES SONT VUES PAR LEURS BORDS — même correctif que `simXtFentes`
-   dans l'éditeur, et pour la même carte d'essai (banc crosstalk) : la sonde à
-   pas de 0,5 mm jetait tout trou plus court que 1,5 pas, et une fente de
-   0,75 mm passait inaperçue. On garde les sondes à pas, et l'on pose en plus,
-   sur chaque corde du parcours, une sonde de chaque côté de chaque arête de
-   plan qu'elle coupe : une fente est alors bornée par ses deux arêtes, à sa
-   largeur et à sa position exactes. Le filtre « deux pas » ne s'applique plus
-   qu'aux trous qu'aucune arête ne borne. */
-function simXtFentesIpc(par,idx){
-  if(!par.total||!LT.pret)return null;
-  const pas=Math.max(SIM_XT_PAS_IPC,par.total/SIM_XT_SONDES_MAX_IPC);
-  /* L'epsilon est en millimètres ; les cordes sont en unités du fichier. */
-  const k=simKUnite();
-  const epsU=SIM_XT_EPS_IPC/(k>0?k:1);
-  let sondable=false;
-  const trous=[];
-  let courant=null;
-  const aretesDe=new Map();
-  const aretes=c=>{
-    if(!aretesDe.has(c))aretesDe.set(c,simXtAretesIpc(c));
-    return aretesDe.get(c);
-  };
-  /* TOUTES LES ABSCISSES D'ARÊTE COUPÉES (mm), pour recaler les bouts d'un
-     trou qu'une sonde à pas aurait ouvert ou fermé PILE sur l'arête — le point
-     sur le bord d'un contour est « dedans » ou « dehors » au hasard du lancer
-     de rayon, et c'est l'arête qui a raison. */
-  const bords=[];
-  for(const e of par.liste){
-    const o=e.o;
-    const cu=simCuDe(o.coucheIdx);
-    if(cu<0)continue;
-    const plans=simXtPlansDeIpc(cu).filter(c=>simXtContoursIpc(c,idx).length);
-    /* UNE COUCHE SANS PLAN N'A PAS DE FENTE À AVOIR : c'est un défaut d'un
-       autre ordre, que l'onglet Impédance signale déjà. On passe, sans
-       compter cette plage comme sondée. */
-    if(!plans.length)continue;
-    sondable=true;
-    const n=Math.max(1,Math.round(e.longueur/pas));
-    const a=Math.min(o.u1,o.u2), b=Math.max(o.u1,o.u2);
-    const cotes=simXtCotesIpc(cu);
-    /* LE SENS DE MARCHE : une plage `retourne` remonte la polyligne, sa
-       tangente se retourne et, avec elle, gauche et droite — les détours
-       d1 / d2 se mesurent dans le sens du parcours, comme la couture. */
-    const sens=o.retourne?-1:1;
-    const w=o.piste.w||0;
-    /* LES SONDES À PAS, en fractions `f` du parcours de la plage — plus les
-       SOMMETS de la polyligne qui tombent dedans : une corde qui couperait un
-       coude lirait les arêtes à côté du cuivre. */
-    const fs=[];
-    for(let j=0;j<=n;j++)fs.push(j/n);
-    const total=o.cum[o.cum.length-1]||0;
-    if(total>0&&b>a)
-      for(const c of o.cum){
-        const u=c/total;
-        if(u>a+1e-9&&u<b-1e-9)fs.push(o.retourne?(b-u)/(b-a):(u-a)/(b-a));
-      }
-    fs.sort((p,q)=>p-q);
-    const pts=[];
-    for(const f of fs){
-      if(pts.length&&f-pts[pts.length-1].f<1e-9)continue;
-      const u=o.retourne?(b-(b-a)*f):(a+(b-a)*f);
-      pts.push({f:f, s:e.s0+f*e.longueur, p:simSurPoly(o.piste.p,o.cum,u)});
-    }
-    /* CHAQUE SONDE GARDE SA TANGENTE DANS LE SENS DE MARCHE : c'est au milieu
-       de la fente que les détours se mesurent (`simXtDetoursIpc`), le long de
-       la normale. Une sonde à pas la lit sur la polyligne ; une sonde d'arête
-       prend la direction de sa corde, déjà rangée dans le sens du parcours. */
-    const sondes=pts.map(q=>({s:q.s, x:q.p.x, y:q.p.y, bord:null,
-                              tx:q.p.tx*sens, ty:q.p.ty*sens}));
-    /* PUIS LES ARÊTES, de toutes les couches de plan des deux côtés : chaque
-       bord coupé reçoit une sonde juste avant et une juste après, `bord`
-       portant l'abscisse exacte de l'arête, en millimètres. */
-    const couches=cotes[0].concat(cotes[1]).filter(c=>simXtContoursIpc(c,null).length);
-    for(let j=0;j+1<pts.length;j++){
-      const A=pts[j], B=pts[j+1], ds=B.s-A.s;
-      if(!(ds>0))continue;
-      const dx=B.p.x-A.p.x, dy=B.p.y-A.p.y, lc=Math.hypot(dx,dy)||1e-12;
-      const ex=dx/lc*epsU, ey=dy/lc*epsU;
-      const ts=[];
-      for(const c of couches)
-        for(const ar of aretes(c)){
-          const t=simXtCoupe(A.p.x,A.p.y,B.p.x,B.p.y,ar);
-          if(t>=0)ts.push(t);
-        }
-      ts.sort((p,q)=>p-q);
-      let prec=-1;
-      for(const t of ts){
-        if(prec>=0&&t-prec<1e-6)continue;
-        prec=t;
-        const s=A.s+t*ds, x=A.p.x+dx*t, y=A.p.y+dy*t;
-        bords.push(s);
-        sondes.push({s:s-SIM_XT_EPS_IPC, x:x-ex, y:y-ey, bord:s, tx:dx/lc, ty:dy/lc});
-        sondes.push({s:s+SIM_XT_EPS_IPC, x:x+ex, y:y+ey, bord:s, tx:dx/lc, ty:dy/lc});
-      }
-    }
-    sondes.sort((p,q)=>p.s-q.s);
-    for(const q of sondes){
-      const s=q.s;
-      /* UN SEUL PLAN PERCÉ SUFFIT À OUVRIR LA BOUCLE, et on note lequel. */
-      const nus=simXtNusIpc(cotes,q.x,q.y,idx);
-      /* La sonde d'APRÈS une arête ouvre une fente exactement sur l'arête ;
-         celle d'AVANT la referme exactement dessus. */
-      const apres=q.bord!=null&&q.s>q.bord, avant=q.bord!=null&&q.s<q.bord;
-      /* LA SONDE GARDE SON POINT ET SA TANGENTE : c'est au milieu de la
-         fente que les détours se mesurent (`simXtDetoursIpc`). */
-      const ech={s:s, x:q.x, y:q.y, tx:q.tx, ty:q.ty, w:w, cotes:cotes};
-      if(!nus.length){
-        if(courant){trous.push(courant);courant=null;}
-      }else if(courant&&s-courant.fin<=pas*1.5){
-        courant.fin=avant?q.bord:s;
-        courant.finExacte=avant;
-        courant.ech.push(ech);
-        for(const c of nus)if(courant.plans.indexOf(c)<0)courant.plans.push(c);
-      }else{
-        if(courant)trous.push(courant);
-        courant={debut:apres?q.bord:s, fin:avant?q.bord:s, plans:nus.slice(),
-                 debutExact:apres, finExacte:avant, ech:[ech]};
-      }
-    }
-  }
-  if(courant)trous.push(courant);
-  if(!sondable)return null;
-  /* UN BOUT DE TROU À MOINS DE DEUX EPSILON D'UNE ARÊTE EST SUR L'ARÊTE. */
-  const recaler=v=>{
-    for(const b of bords)if(Math.abs(b-v)<=2*SIM_XT_EPS_IPC+1e-9)return b;
-    return null;
-  };
-  for(const t of trous){
-    let b;
-    if(!t.debutExact&&(b=recaler(t.debut))!=null){t.debut=b;t.debutExact=true;}
-    if(!t.finExacte&&(b=recaler(t.fin))!=null){t.fin=b;t.finExacte=true;}
-  }
-  /* UN SEUL POINT SANS CUIVRE N'EST PAS UNE FENTE quand rien ne le borne :
-     c'est le pas de sonde qui tombe dans un dégagement. On garde ce qui dure
-     au moins deux pas — en deçà, on inonderait la carte de marques que rien ne
-     justifie. UNE FENTE BORNÉE PAR SES DEUX ARÊTES est gardée dès
-     SIM_XT_FENTE_MIN_IPC : sa largeur est mesurée, pas devinée. */
-  const r3=x=>Math.round(x*1000)/1000;
-  /* `plans` PART À CÔTÉ DE `quoi`, et ce n'est pas un doublon : `quoi` est une
-     phrase, faite pour être lue, et le serveur ne doit pas avoir à l'analyser
-     pour savoir DE QUEL PLAN on parle. Il en a besoin — c'est le nom de couche
-     qu'il retire de l'empilage sur les blocs concernés, pour que la section y
-     soit résolue sans une référence qui n'y est pas. Un nom lu dans une phrase
-     se serait décollé de la phrase au premier remaniement. */
-  /* ET LES DÉTOURS d1 / d2, la largeur, les plans qui ferment encore le
-     retour : ce que le terme d'impédance commune du serveur demande. */
-  return trous.filter(t=>(t.debutExact&&t.finExacte)
-                         ? t.fin-t.debut>=SIM_XT_FENTE_MIN_IPC
-                         : t.fin-t.debut>=pas*1.5)
-    .map(t=>Object.assign({s:r3(t.debut), longueur:r3(t.fin-t.debut),
-              plans:t.plans.map(simXtNomCoucheIpc).filter(Boolean),
-              quoi:(t.plans.length>1
-                      ? "les plans de référence "+
-                        t.plans.map(simXtNomCoucheIpc).join(" / ")+
-                        " n'ont pas de cuivre de retour"
-                      : "le plan de référence "+simXtNomCoucheIpc(t.plans[0])+
-                        " n'a pas de cuivre de retour")+
-                   " sous le parcours sur "+r3(t.fin-t.debut)+" mm"},
-              simXtDetoursIpc(t,pas,idx)));
-}
 
 /* Les perçages de masse à portée du parcours, pour juger les changements de
    couche. On envoie tous ceux de la boîte élargie : c'est le serveur qui
@@ -4884,7 +4707,7 @@ function simXtGeometrieIpc(){
        SENS DU PARCOURS : sur une plage retournée, l'abscisse zéro est le bout
        u2. Le trait suivrait sinon la piste à l'envers, et toutes les plages de
        ce tronçon tomberaient en miroir. */
-    const n=Math.max(2,Math.ceil(e.longueur/SIM_XT_PAS_IPC));
+    const n=Math.max(2,Math.ceil(e.longueur/SIM_XT_PAS));
     const pts=[];
     for(let j=0;j<=n;j++){
       const f=j/n;
@@ -5098,6 +4921,17 @@ function simIpcEntrees(){
 }
 
 const SIM_IPC={
+  /* Les sondes du plan de référence, pour `simXtFentes` (commun) : les points
+     sont dans l'unité du fichier, les couches des indices du modèle. */
+  xt:{
+    k:simKUnite,
+    pret:function(){ return !!LT.pret; },
+    troncon:simXtTronconIpc,
+    aretes:simXtAretesIpc,
+    nus:simXtNusIpc,
+    nom:function(c){ return simXtNomCoucheIpc(c); },
+    image:simXtImagePlansIpc
+  },
   /* Révision : la carte chargée elle-même (une autre carte, un autre objet). */
   revision:function(){ return V.modele; },
   /* Un composant coché « non monté » sort de toutes les simulations. */
@@ -5726,7 +5560,7 @@ const SIM_IPC={
        alors ABSENT du document. Une liste vide dirait « rien à signaler », ce
        qui est le contraire — et c'est exactement le genre de silence qui rend
        un outil de mesure nuisible. */
-    const fentes=simXtFentesIpc(par,idx);
+    const fentes=simXtFentes(par,idx);
     if(fentes)doc.fentes=fentes;
     doc.vias_masse=simXtViasMasseIpc(par,idx);
 

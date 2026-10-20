@@ -118,10 +118,10 @@ const EXPOSE=["ECRITURE_CAO","simDsChamp","simDsLire","simDsEcrire","SIM_DS","SI
   /* CROSSTALK : les trois mesures que seule la page peut faire — l'abscisse
      du parcours, les vias de couture qui s'y projettent, les fentes du plan
      sondées dessous, et les perçages de masse. */
-  "simXtParcoursIpc","simXtAbscisseIpc","simXtCoutureIpc","simXtFentesIpc",
+  "simXtParcoursIpc","simXtAbscisseIpc","simXtCoutureIpc","simXtFentes",
   "simXtViasMasseIpc","simXtPlansDeIpc","simXtNomCoucheIpc",
   "simXtZoneMasseIpc",
-  "simXtContoursIpc","simXtDansContourIpc","SIM_XT_PAS_IPC",
+  "simXtContoursIpc","simXtDansContourIpc","SIM_XT_PAS",
   /* Les zones a risque, posees sur le cuivre : l'algorithme est commun,
      l'outil ne fournit que les deux formes neutres, en MILLIMETRES. */
   "simXtGeometrieIpc","simXtRisqueGeom","simXtRisqueTraits","simXtRisques",
@@ -3141,7 +3141,7 @@ T("un plan qu'on ne sait pas sonder rend null, jamais une liste vide",()=>{
      liste vide ferait écrire « aucune zone de vigilance » sous un contrôle qui
      n'a jamais eu lieu. */
   carte();
-  const f=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  const f=simXtFentes(simXtParcoursIpc(simSegments()),simRefIdx());
   if(f!==null)
     throw new Error("sans contour de plan, il faut null : "+JSON.stringify(f));
 });
@@ -3154,7 +3154,7 @@ T("une fente du plan sous le parcours est trouvée et localisée",()=>{
   carte({plans:[planDessous(rect(2,2,X1+10,38)),
                 planDessous(rect(X1+20,2,58,38))]});
   const par=simXtParcoursIpc(simSegments());
-  const f=simXtFentesIpc(par,simRefIdx());
+  const f=simXtFentes(par,simRefIdx());
   if(!f||!f.length)
     throw new Error("la fente doit être trouvée : "+JSON.stringify(f));
   if(Math.abs(f[0].s-10)>1.0)
@@ -3165,7 +3165,7 @@ T("une fente du plan sous le parcours est trouvée et localisée",()=>{
   if(!f[0].quoi)throw new Error("une zone doit dire ce qui a été vu");
   /* ET UN PLAN CONTINU N'EN A PAS. */
   carte({plans:[planDessous(rect(2,2,58,38))]});
-  const rien=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  const rien=simXtFentes(simXtParcoursIpc(simSegments()),simRefIdx());
   if(rien===null||rien.length)
     throw new Error("un plan continu n'a pas de fente : "+
                     JSON.stringify(rien));
@@ -3178,7 +3178,7 @@ T("une fente FINE du plan (0,3 mm) est vue, avec sa largeur et sa position",()=>
      ses deux arêtes la bornent maintenant exactement. */
   carte({plans:[planDessous(rect(2,2,X1+10,38)),
                 planDessous(rect(X1+10.3,2,58,38))]});
-  const f=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  const f=simXtFentes(simXtParcoursIpc(simSegments()),simRefIdx());
   if(!f||f.length!==1)
     throw new Error("une fente de 0,3 mm doit être vue, une seule : "+
                     JSON.stringify(f));
@@ -3192,13 +3192,13 @@ T("une fente FINE du plan (0,3 mm) est vue, avec sa largeur et sa position",()=>
     throw new Error("la fente nomme son plan : "+JSON.stringify(f[0]));
   /* UN TROU DE 0,2 MM dans un plan plein est une fente aussi. */
   carte({plans:[planDessous(rect(2,2,58,38),[rect(X1+25,5,X1+25.2,35)])]});
-  const c=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  const c=simXtFentes(simXtParcoursIpc(simSegments()),simRefIdx());
   if(!c||c.length!==1||Math.abs(c[0].s-25)>0.01||Math.abs(c[0].longueur-0.2)>0.01)
     throw new Error("un trou de 0,2 mm est une fente : "+JSON.stringify(c));
   /* ET LA FENTE LARGE GARDE SES BORDS EXACTS : 10 mm pile. */
   carte({plans:[planDessous(rect(2,2,X1+10,38)),
                 planDessous(rect(X1+20,2,58,38))]});
-  const g=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  const g=simXtFentes(simXtParcoursIpc(simSegments()),simRefIdx());
   if(!g||g.length!==1||Math.abs(g[0].s-10)>0.01||Math.abs(g[0].longueur-10)>0.01)
     throw new Error("la fente de 10 mm est bornée par ses arêtes : "+
                     JSON.stringify(g));
@@ -3215,7 +3215,7 @@ T("la fente part avec ses détours d1 / d2, sa largeur et les plans qui ferment 
                   planDessous(rect(X1+19,2,X1+21,Y-8)),
                   planDessous(rect(X1+19,Y+12,X1+21,38))];
   carte({plans:morceaux});
-  let f=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  let f=simXtFentes(simXtParcoursIpc(simSegments()),simRefIdx());
   if(!f||f.length!==1)
     throw new Error("une fente attendue : "+JSON.stringify(f));
   let t=f[0];
@@ -3260,7 +3260,7 @@ T("la fente part avec ses détours d1 / d2, sa largeur et les plans qui ferment 
   ];
   carte({empilage:empilage, couches:["Top","Gnd","Pwr"],
          plans:morceaux.concat([{c:2, n:2, g:[{o:rect(2,2,58,38), t:[]}]}])});
-  f=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  f=simXtFentes(simXtParcoursIpc(simSegments()),simRefIdx());
   if(!f||f.length!==1)throw new Error("la fente doit rester vue");
   if(f[0].retour.join()!=="Pwr")
     throw new Error("le plan plein du dessous ferme le retour : "+
@@ -3279,7 +3279,7 @@ T("la fente part avec ses détours d1 / d2, sa largeur et les plans qui ferment 
      d2 — gauche et droite se définissent dans le sens du parcours, comme le
      côté de la couture que le serveur lit. */
   carte({plans:morceaux, piste:{p:[X2,Y, X1,Y]}});
-  f=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  f=simXtFentes(simXtParcoursIpc(simSegments()),simRefIdx());
   if(!f||f.length!==1)throw new Error("la fente doit être vue à rebours aussi");
   if(!(Math.abs(f[0].d1-8)<=1.0&&Math.abs(f[0].d2-12)<=1.0))
     throw new Error("à rebours, d1 et d2 s'échangent : "+JSON.stringify(f[0]));
@@ -3302,14 +3302,14 @@ T("sous une découpe, le plan de repli est sondé lui aussi",()=>{
   const decoupe=[planDessous(rect(2,2,58,38),[rect(X1-2,Y-3,X2+2,Y+3)])];
   /* Pwr SANS CUIVRE : les deux plans manquent. */
   carte({empilage:empilage, couches:["Top","Gnd","Pwr"], plans:decoupe});
-  let f=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  let f=simXtFentes(simXtParcoursIpc(simSegments()),simRefIdx());
   if(!f||!f.length)throw new Error("la découpe doit être trouvée");
   if(f[0].plans.join()!=="Gnd,Pwr")
     throw new Error("les deux plans manquent : "+JSON.stringify(f[0].plans));
   /* Pwr PLEIN : il referme le retour, seul Gnd est nommé. */
   carte({empilage:empilage, couches:["Top","Gnd","Pwr"],
          plans:decoupe.concat([{c:2, n:2, g:[{o:rect(2,2,58,38), t:[]}]}])});
-  f=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  f=simXtFentes(simXtParcoursIpc(simSegments()),simRefIdx());
   if(!f||!f.length||f[0].plans.join()!=="Gnd")
     throw new Error("seul Gnd manque : "+JSON.stringify(f&&f[0]&&f[0].plans));
 });
@@ -3321,7 +3321,7 @@ T("le cuivre d'un autre net sur la couche de plan est un trou du retour",()=>{
      continu un retour qui ne l'est pas. */
   carte({plans:[planDessous(rect(2,2,58,38),[rect(X1+10,2,X1+20,38)]),
                 {c:1, n:2, g:[{o:rect(X1+10,2,X1+20,38), t:[]}]}]});
-  const f=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  const f=simXtFentes(simXtParcoursIpc(simSegments()),simRefIdx());
   if(!f||!f.length)
     throw new Error("le cuivre étranger doit ressortir comme une fente : "+
                     JSON.stringify(f));
