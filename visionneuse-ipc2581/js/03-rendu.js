@@ -190,7 +190,7 @@ function peindre(c,dpr,W,H){
      pas se confondre avec celui qui porte une couleur de chaleur. Il se pose
      JUSTE AVANT les cartes — celle des impédances comme celle du potentiel —
      et n'existe que tant que l'une d'elles peint. */
-  if(typeof simVoile==="function")simVoile(c,W,H);
+  if(typeof simVoile==="function")simVoile(c,W,H,FOND);
   if(typeof simZTrace==="function")simZTrace(c,dpr);
   /* La carte de POTENTIEL (chute DC). Elle ne s'affiche jamais en même
      temps que celle des impédances : `simDCActif()` exige l'onglet DC,

@@ -261,7 +261,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simTermeDiff","simLireDiff","simLectureTexteDiff","simCourbeDiff","simFicheSDiff","simDiffExportS2p","simDb",
   "simDCTraceSonde",
   /* liaison schéma & simulations enrichies */
-  "pcbParseVolt","pcbParseCourant","pcbParsePuissance","pcbParseResistance",
+  "pcbParseVolt","pcbParseCourant","pcbParsePuissance","simParseResistance",
   "pcbParseFrequence","pcbDefinirSchema","pcbSchemaDoc","pcbComposantsSchema",
   "pcbSpecsComposant","pcbParasitesComposant","SIM_PARASITES_MURATA","pcbNetComposants","simFicheSchemaAdaptation","simDiffApres",
   "applyNetlist","pcbNettoyerPistesConflits",
@@ -18229,11 +18229,11 @@ T("liaison schéma : convertisseurs d'unités électriques (V, A, W, Ω, Hz)",()
      Math.abs(pcbParsePuissance("1/4W")-0.25)>1e-6||
      pcbParsePuissance("1W")!==1)
     throw new Error("échec pcbParsePuissance");
-  if(pcbParseResistance("22")!==22||
-     pcbParseResistance("22 Ω")!==22||
-     pcbParseResistance("4R7")!==4.7||
-     pcbParseResistance("10k")!==10000)
-    throw new Error("échec pcbParseResistance");
+  if(simParseResistance("22")!==22||
+     simParseResistance("22 Ω")!==22||
+     simParseResistance("4R7")!==4.7||
+     simParseResistance("10k")!==10000)
+    throw new Error("échec simParseResistance");
   if(pcbParseFrequence("72MHz")!==72e6||
      pcbParseFrequence("1 GHz")!==1e9||
      pcbParseFrequence("100 kHz")!==100e3)
@@ -19970,13 +19970,13 @@ T("Pré-placement assisté par blocs : actions compacterSurPlace et deposerEnGra
 T("simulation EM - Bus numérique : détection pont série réseau de résistances RN1 et repli schéma", () => {
   carteVide();
   // 1. Test parsing syntaxe résistance
-  if(pcbParseResistance("560") !== 560) throw new Error("pcbParseResistance 560 doit valoir 560");
-  if(pcbParseResistance("560 ohm") !== 560) throw new Error("pcbParseResistance 560 ohm doit valoir 560");
-  if(pcbParseResistance("4R7") !== 4.7) throw new Error("pcbParseResistance 4R7 doit valoir 4.7");
-  if(pcbParseResistance("22R") !== 22) throw new Error("pcbParseResistance 22R doit valoir 22");
-  if(pcbParseResistance("10k") !== 10000) throw new Error("pcbParseResistance 10k doit valoir 10000");
-  if(pcbParseResistance("R050") !== 0.05) throw new Error("pcbParseResistance R050 doit valoir 0.05");
-  if(pcbParseResistance("0402") !== null) throw new Error("0402 ne doit pas être pris pour une résistance");
+  if(simParseResistance("560") !== 560) throw new Error("simParseResistance 560 doit valoir 560");
+  if(simParseResistance("560 ohm") !== 560) throw new Error("simParseResistance 560 ohm doit valoir 560");
+  if(simParseResistance("4R7") !== 4.7) throw new Error("simParseResistance 4R7 doit valoir 4.7");
+  if(simParseResistance("22R") !== 22) throw new Error("simParseResistance 22R doit valoir 22");
+  if(simParseResistance("10k") !== 10000) throw new Error("simParseResistance 10k doit valoir 10000");
+  if(simParseResistance("R050") !== 0.05) throw new Error("simParseResistance R050 doit valoir 0.05");
+  if(simParseResistance("0402") !== null) throw new Error("0402 ne doit pas être pris pour une résistance");
 
   // 2. Test réseau de résistances RN1 à 8 broches
   S.fps = [

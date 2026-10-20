@@ -1360,28 +1360,6 @@ function simSousChemin(c,t,u1,u2){
   else c.lineTo(b.x,b.y);
 }
 
-/* ==========================================================================
-   LE VOILE — CE QUI N'EST PAS DANS LA SIMULATION S'ESTOMPE
-   --------------------------------------------------------------------------
-   Posé par `paint()` JUSTE AVANT les cartes de chaleur. Voir `simVoileActif`
-   (commun/simulation-em.js) : tout ce qui a été dessiné avant s'efface d'un
-   cran, tout ce qui se peint après reste plein — le cuivre qui n'entre dans
-   aucun calcul cesse de se confondre avec celui qui porte une couleur de
-   chaleur, et une couleur de COUCHE cesse de se lire comme une couleur de
-   BRUIT.
-
-   IL SE POSE EN PIXELS ÉCRAN, à la transformation d'identité : c'est la toile
-   entière qu'il couvre, pas une région du monde.
-   ========================================================================== */
-function simVoile(c,w,h){
-  if(typeof simVoileActif!=="function"||!simVoileActif())return;
-  c.save();
-  c.setTransform(1,0,0,1,0,0);
-  c.globalAlpha=SIM_VOILE_ALPHA;
-  c.fillStyle=C_BG;
-  c.fillRect(0,0,w,h);
-  c.restore();
-}
 
 /* TOUS LES LOTS SE PEIGNENT, ET C'EST LE POINT. La fiche ne peut déplier qu'un
    morceau à la fois — quatre jeux de paramètres S ne se lisent pas ensemble —,
@@ -1466,18 +1444,6 @@ function simZTrace(c){
   else simPourChaqueLot(function(lot){lots.push(lot);});
   for(const lot of lots)simZTraceLot(c,lot);
   for(const lot of lots){simZValeurs(c,lot);simZNumeroLot(c,lot);}
-}
-/* Les cartouches déjà posés dans l'image (pixels écran) : le suivant qui en
-   chevauche un se décale, au lieu de le recouvrir. `var` : dans le bundle d'un
-   seul script, paint() peut passer ici avant que ce fichier ne s'exécute. */
-var SIM_Z_CARTOUCHES=[];
-function simZPlaceLibre(x,y,w,h){
-  const chevauche=(px,py)=>SIM_Z_CARTOUCHES.some(r=>
-    Math.abs(r.x-px)<(r.w+w)/2+2&&Math.abs(r.y-py)<(r.h+h)/2+2);
-  let py=y;
-  for(let k=1;k<8&&chevauche(x,py);k++)py=y+(k%2?1:-1)*Math.ceil(k/2)*(h+3);
-  SIM_Z_CARTOUCHES.push({x,y:py,w,h});
-  return py;
 }
 
 function simZTraceLot(c,lot){
@@ -2522,17 +2488,6 @@ function simRetourClicPcb(wx, wy){
    calculs séparés, dont aucun n'aurait été juste. */
 const SIM_DCB={bornes:[], attente:null};
 
-/* Un cercle en polygone. Vingt-quatre côtés : à 0,4 mm de diamètre, l'écart au
-   cercle vrai est de trois micromètres — très en dessous de la trame la plus
-   fine que le solveur accepte. */
-function simDCCercle(x,y,r,n){
-  const pts=[]; n=n||24;
-  for(let i=0;i<n;i++){
-    const a=2*Math.PI*i/n;
-    pts.push([x+r*Math.cos(a), y+r*Math.sin(a)]);
-  }
-  return pts;
-}
 
 /* Une pastille en polygone, dans ses coordonnées monde et sa rotation.
    L'oblong est rendu par ses deux demi-cercles et le rectangle entre eux —
@@ -3321,19 +3276,6 @@ function simXtAretes(couche){
   return out;
 }
 
-/* Le paramètre t ∈ [0 ; 1] du point où la corde (x1,y1)→(x2,y2) coupe l'arête
-   `a` (le format de `simXtAretes`), ou -1 si elle ne la coupe pas. */
-function simXtCoupe(x1,y1,x2,y2,a){
-  if(Math.max(x1,x2)<a[4]||Math.min(x1,x2)>a[6]||
-     Math.max(y1,y2)<a[5]||Math.min(y1,y2)>a[7])return -1;
-  const dx=x2-x1, dy=y2-y1, ex=a[2]-a[0], ey=a[3]-a[1];
-  const den=dx*ey-dy*ex;
-  if(Math.abs(den)<1e-12)return -1;
-  const fx=a[0]-x1, fy=a[1]-y1;
-  const t=(fx*ey-fy*ex)/den, u=(fx*dy-fy*dx)/den;
-  if(t<-1e-9||t>1+1e-9||u<-1e-9||u>1+1e-9)return -1;
-  return Math.max(0,Math.min(1,t));
-}
 
 /* LES DÉTOURS DU COURANT DE RETOUR AUTOUR D'UNE FENTE — ce que le serveur ne
    peut pas mesurer, et dont son terme d'impédance commune (Ott, `crosstalk`
@@ -3781,83 +3723,6 @@ function pcbParsePuissance(val){
   return m[2].toLowerCase()==="mw"?n*1e-3:n;
 }
 
-function pcbParseResistance(val){
-  if(val==null) return null;
-  const s=String(val).trim();
-  if(!s) return null;
-
-  const pkgCodes = ["0402", "0603", "0805", "1206", "1210", "1812", "2010", "2512", "0201", "01005"];
-  if(pkgCodes.includes(s)) return null;
-
-  // 1. Valeur numérique pure (ex: "560", "22", "1000", "4.7")
-  if(/^\d+(?:[.,]\d+)?$/.test(s)){
-    return parseFloat(s.replace(",", "."));
-  }
-
-  // 1b. Nombre décimal, multiplicateur et unité facultatifs : 4.7k, 2,2M,
-  //     10 kohm, 4.7 Ω, 47R. Testé AVANT les codes 4K7 / 22R ci-dessous : leur
-  //     \b accrochait après la virgule décimale, et « 4.7k » devenait « 7k »
-  //     (7000 Ω), « 2.2M » 2 MΩ, « 10 kohm » 10 Ω.
-  //     « m » minuscule vaut milli, comme en SPICE : un shunt « 10m » ou
-  //     « 10 mΩ » fait 0,01 Ω ; le méga s'écrit « M » ou « meg ».
-  const mDec = s.match(/^(\d+(?:[.,]\d+)?)\s*(k|K|MEG|Meg|meg|M|m)?\s*(?:ohms?|Ohms?|OHMS?|Ω|R)?$/);
-  if(mDec){
-    const u = mDec[2] || "";
-    const mult = (u === "k" || u === "K") ? 1e3 : (u === "m" ? 1e-3 : (u ? 1e6 : 1));
-    return parseFloat(mDec[1].replace(",", ".")) * mult;
-  }
-
-  // 2. Format R standard : 4R7 -> 4.7, 22R -> 22, 0R5 -> 0.5, 22R0 -> 22.0
-  const mCode = s.match(/\b(\d+)[rR](\d*)\b/);
-  if(mCode){
-    const dec = mCode[2] ? ("." + mCode[2]) : "";
-    return parseFloat(mCode[1] + dec);
-  }
-
-  // 3. Format K standard : 4K7 -> 4700, 10K -> 10000, 10K5 -> 10500
-  const mCodeK = s.match(/\b(\d+)[kK](\d*)\b/);
-  if(mCodeK){
-    const dec = mCodeK[2] ? ("." + mCodeK[2]) : "";
-    return parseFloat(mCodeK[1] + dec) * 1000;
-  }
-
-  // 4. Format M standard : 1M -> 1e6, 2M2 -> 2.2e6 ; « m » minuscule =
-  //    milli (4m7 -> 0,0047 Ω), comme en SPICE
-  const mCodeM = s.match(/\b(\d+)([mM])(\d*)\b/);
-  if(mCodeM && !/ohm/i.test(s)){
-    const dec = mCodeM[3] ? ("." + mCodeM[3]) : "";
-    return parseFloat(mCodeM[1] + dec) * (mCodeM[2] === "m" ? 1e-3 : 1e6);
-  }
-
-  // 5. Format R préfixe : R10 -> 0.10, R050 -> 0.050
-  const mPreR = s.match(/\b[rR](\d+(?:[.,]\d+)?)\b/);
-  if(mPreR){
-    return parseFloat("0." + mPreR[1].replace(",", ""));
-  }
-
-  // 6. Format avec unité explicite : "560 ohm", "22 Ω", "4.7 kohm", "10k"
-  const mUnit = s.match(/(\d+(?:[.,]\d+)?)\s*(k|meg|m|r|ohm|Ω)/i);
-  if(mUnit){
-    const n = parseFloat(mUnit[1].replace(",", "."));
-    const u = mUnit[2];
-    if(u === "k" || u === "K") return n * 1000;
-    if(/^meg$/i.test(u) || u === "M") return n * 1e6;
-    if(u === "m") return n * 1e-3;             // mΩ, mohm : milli
-    return n;
-  }
-
-  // 7. Nombre isolé ne correspondant pas à un code boîtier (0402, 0603, etc.)
-  const allNums = s.match(/\b\d+(?:[.,]\d+)?\b/g);
-  if(allNums){
-    for(const numStr of allNums){
-      if(["0402", "0603", "0805", "1206", "1210", "1812", "2010", "2512", "0201", "01005"].includes(numStr)) continue;
-      const n = parseFloat(numStr.replace(",", "."));
-      if(n >= 0) return n;
-    }
-  }
-
-  return null;
-}
 
 function pcbParseFrequence(val){
   if(val==null)return null;
@@ -3974,7 +3839,7 @@ function pcbSpecsComposant(c){
     const kl=k.toLowerCase();
     if((kl.includes("output")||kl.includes("out"))&&kl.includes("volt"))voltOut=voltOut||pcbParseVolt(v);
     else if((kl.includes("supply")||kl.includes("operating")||kl.includes("input")||kl.includes("forward")||kl.includes("rating")||kl.includes("rated")||kl.includes("nom")||kl.includes("tension"))&&kl.includes("volt"))voltIn=voltIn||pcbParseVolt(v);
-    else if(kl.includes("resistance"))res=res||pcbParseResistance(v);
+    else if(kl.includes("resistance"))res=res||simParseResistance(v);
     else if((kl.includes("current")||kl.includes("courant"))&&(kl.includes("supply")||kl.includes("operating")||kl.includes("max")||kl.includes("output")||kl.includes("forward")||kl.includes("rating")||kl.includes("rated")||kl.includes("consommation")||kl.includes("load")||kl.includes("charge")||kl.includes("nom")))curr=curr||pcbParseCourant(v);
     else if(kl.includes("power")||kl.includes("watt")||kl.includes("puissance"))power=power||pcbParsePuissance(v);
     else if(kl.includes("freq")||kl.includes("speed")||kl.includes("clock"))freq=freq||pcbParseFrequence(v);
@@ -4034,7 +3899,7 @@ function pcbSpecsComposant(c){
     if(voltIn!=null && !prov) prov="schema";
   }
   if(res==null&&(c.type==="resistor"||/^R/i.test(c.ref))){
-    res=pcbParseResistance(c.value);
+    res=simParseResistance(c.value);
   }
   
   const estSource=(c.type==="vcc"||c.type==="regulator"||
@@ -4614,7 +4479,7 @@ function simFpNetSet(fp){
 /* Extrait la valeur et la résistance en ohms d'une empreinte PCB (avec repli schéma) */
 function simPcbValeurResistance(fp){
   const rawVal = fp.value || fp.val || fp.spec || (fp.props && (fp.props.VALUE || fp.props.Value)) || "";
-  let parsedR = pcbParseResistance(rawVal);
+  let parsedR = simParseResistance(rawVal);
   if(parsedR == null){
     try {
       let sch = null;
@@ -4629,7 +4494,7 @@ function simPcbValeurResistance(fp){
         for(const pg of sch.pages){
           const sc = (pg.comps || []).find(c => c && c.ref === fp.ref);
           if(sc && (sc.value || sc.spec)){
-            const sv = pcbParseResistance(sc.value || sc.spec);
+            const sv = simParseResistance(sc.value || sc.spec);
             if(sv != null && sv >= 0){ parsedR = sv; break; }
           }
         }
@@ -4639,17 +4504,6 @@ function simPcbValeurResistance(fp){
   return { rawVal: String(rawVal).trim(), parsedR: parsedR };
 }
 
-/* Vérifie si l'empreinte PCB correspond à une résistance */
-function simEstResistancePcb(ref, val, type){
-  if(type && /resistor/i.test(String(type))) return true;
-  const r = String(ref || "").trim();
-  if(/^(R|RN|RP|RA|RES|RS)[0-9_]/i.test(r)) return true;
-  if(/^(R|RN|RP|RA|RES|RS)$/i.test(r)) return true;
-  if(/^R[A-Z0-9_-]*$/i.test(r)) return true;
-  const v = String(val || "").trim();
-  if(/(?:ohm|Ω|\b\d+[rR]\d*\b|\b\d+[kK]\d*\b)/i.test(v)) return true;
-  return false;
-}
 
 const SIM_PCB={
   /* Révision de la carte : avance à chaque modification (touch). Les résultats
@@ -5857,7 +5711,7 @@ const SIM_PCB={
           annotation: (ref || "R") + valSuffix,
           label: cleanTarget + " + " + aval + " (" + (ref || "R") + valSuffix + ")"
         };
-        if(simEstResistancePcb(ref, rawVal, fp.type) || parsedR != null){
+        if(simEstResistance(ref, rawVal, fp.type) || parsedR != null){
           return bridge;
         }
         if(isPassiveRef(ref) && !fallback){
@@ -5950,7 +5804,7 @@ const SIM_PCB={
           if(nA !== nB){
             bridges.push(nA + " + " + nB + " (" + (ref || "R") + valSuffix + ")");
           }
-        }else if(simEstResistancePcb(ref, rawVal, fp.type)){
+        }else if(simEstResistance(ref, rawVal, fp.type)){
           for(const p of pn){
             if(!p.net || isPwr(p.net)) continue;
             const pNum = parseInt(p.pin, 10);

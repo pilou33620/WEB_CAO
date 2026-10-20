@@ -160,7 +160,7 @@ const EXPOSE=["ECRITURE_CAO","simDsChamp","simDsLire","simDsEcrire","SIM_DS","SI
   "simLotBilan","simTableauLots","simOublierRes","simZVerdict","simGrouper",
   "SIM_DCB","simDCClic","simDCBornePastilleIpc","simDCPolysPisteIpc",
   "simDCPolysArcIpc","simDCPadPolysIpc","simDCFormeIpc","simDCRangIpc",
-  "simDCHauteurIpc","simDCCoucheVue","simDCCercleIpc",
+  "simDCHauteurIpc","simDCCoucheVue","simDCCercle",
   /* Les cotes que le solveur thermique attend, tirees de l'empilage. */
   "simDCThermiqueIpc",
   /* La portee d'un percage, et le compte de celles qui restent supposees. */
@@ -2335,6 +2335,13 @@ T("le chevelu lit les deux listes, et marque ce qui n'est pas cascadé",()=>{
     modelise:{inductance_nH:0.9, inductance_source:"self"}}]}};
   if(simCheveluRes()[0].cascade!==true)
     throw new Error("une transition du parcours est marquée hors parcours");
+  if(simCheveluRes()[0].sansCuivre.length!==0)
+    throw new Error("un via sans relevé de plan nu en annonce un");
+  /* UN PLAN SANS CUIVRE AU DROIT DU VIA : le serveur le rend, le chevelu le
+     garde (il se perdait au retour, et la visionneuse ne pouvait pas le dire). */
+  SIM.res.discontinuites.transitions[0].retour.plans_sans_cuivre=["Inner 1"];
+  if(simCheveluRes()[0].sansCuivre.join()!=="Inner 1")
+    throw new Error("plans sans cuivre perdus au retour : "+JSON.stringify(simCheveluRes()[0].sansCuivre));
   SIM.res=null; SIM.ouvert=false;
 });
 

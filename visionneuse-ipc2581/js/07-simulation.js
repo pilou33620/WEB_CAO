@@ -2440,28 +2440,6 @@ function simSousPoly(p,cum,u1,u2){
   return t;
 }
 
-/* ==========================================================================
-   LE VOILE — CE QUI N'EST PAS DANS LA SIMULATION S'ESTOMPE
-   --------------------------------------------------------------------------
-   Posé par `peindre()` JUSTE AVANT les cartes de chaleur. Voir `simVoileActif`
-   (commun/simulation-em.js) : tout ce qui a été dessiné avant s'efface d'un
-   cran, tout ce qui se peint après reste plein — le cuivre qui n'entre dans
-   aucun calcul cesse de se confondre avec celui qui porte une couleur de
-   chaleur, et une couleur de COUCHE cesse de se lire comme une couleur de
-   BRUIT.
-
-   IL SE POSE EN PIXELS ÉCRAN, à la transformation d'identité : c'est la toile
-   entière qu'il couvre, pas une région du monde.
-   ========================================================================== */
-function simVoile(c,W,H){
-  if(typeof simVoileActif!=="function"||!simVoileActif())return;
-  c.save();
-  c.setTransform(1,0,0,1,0,0);
-  c.globalAlpha=SIM_VOILE_ALPHA;
-  c.fillStyle=FOND;
-  c.fillRect(0,0,W,H);
-  c.restore();
-}
 
 /* TOUS LES LOTS SE PEIGNENT, ET C'EST LE POINT. La fiche ne peut déplier qu'un
    morceau à la fois — six jeux de paramètres S ne se lisent pas ensemble —, mais
@@ -2541,8 +2519,15 @@ function simProjSegmentSurPisteIpc(pSource, cumSource, u1, u2, pCible, cumCible)
 function simZTrace(c,dpr){
   if(typeof simCarteActive!=="function"||!simCarteActive())return;
   if(typeof simZDrawnLabelsIpc!=="undefined"&&simZDrawnLabelsIpc.clear)simZDrawnLabelsIpc.clear();
-  if(typeof simPourChaqueLot!=="function"){simZTraceLot(c,dpr,null);return;}
-  simPourChaqueLot(function(lot){simZTraceLot(c,dpr,lot);});
+  SIM_Z_CARTOUCHES.length=0;
+  /* Le cuivre de TOUS les lots d'abord, les étiquettes ensuite, comme dans
+     l'éditeur : peintes lot par lot, celles d'une paire différentielle
+     passaient sous la piste partenaire, peinte après elles. */
+  const lots=[];
+  if(typeof simPourChaqueLot!=="function")lots.push(null);
+  else simPourChaqueLot(function(lot){lots.push(lot);});
+  const traits=lots.map(lot=>simZTraceLot(c,dpr,lot));
+  lots.forEach((lot,i)=>{simZValeurs(c,dpr,traits[i],lot);simZNumeroLot(c,dpr,lot,traits[i]);});
 }
 
 function simZTraceLot(c,dpr,lot){
@@ -2644,8 +2629,7 @@ function simZTraceLot(c,dpr,lot){
     c.lineWidth=px*2; c.stroke(pd.chemin);
   }
 
-  simZValeurs(c,dpr,traits,lot);
-  simZNumeroLot(c,dpr,lot,traits);
+  return traits;
 }
 
 function simZNumeroLot(c,dpr,lot,traits){
@@ -2900,7 +2884,13 @@ function simRetourValeursIpc(c,liens,dpr,u){
     const rayon=(u(g.pastille)/2)*V.vue.scale+14;
     cartouche(o,txt,g.seul?"#e8564a":(isSel?"#ffe066":"#49c07a"),-Math.max(18,rayon),false,isSel);
 
-    if(g.change){
+    /* PAS DE RÉFÉRENCE DU TOUT, comme dans l'éditeur : un plan sans cuivre au
+       droit du via n'est pas une référence qui change, et c'est le seul
+       message. */
+    if(g.sansCuivre.length){
+      cartouche(o,"aucun cuivre sur "+g.sansCuivre.join("/")+" sous ce via : pas de plan de référence ici",
+                "#e8564a",Math.max(20,rayon),true,isSel);
+    }else if(g.change){
       cartouche(o,"référence "+g.plans+" : aucun via ne peut joindre les deux",
                 "#e8564a",Math.max(20,rayon),true,isSel);
       /* ET CE QUI PORTE LE RETOUR À LEUR PLACE, nommé, coté et CHIFFRÉ. Sans
@@ -3148,6 +3138,13 @@ function simZValeurs(c,dpr,traits,lot){
       }
     }
 
+    /* Décalé s'il en chevauche un autre, relié alors à son point par un trait */
+    const yLibre=simZPlaceLibre(e.x,e.y,w,h);
+    if(yLibre!==e.y){
+      c.strokeStyle=v.couleur(0.8);c.lineWidth=1;
+      c.beginPath();c.moveTo(e.x,e.y);c.lineTo(e.x,yLibre+(yLibre>e.y?-h/2:h/2));c.stroke();
+      e={x:e.x,y:yLibre};
+    }
     /* Un cartouche sombre sous le texte */
     c.fillStyle="rgba(15,16,18,0.88)";
     c.beginPath();
@@ -3181,15 +3178,6 @@ function simZValeurs(c,dpr,traits,lot){
 
 const SIM_DCB={bornes:[], attente:null};
 
-/* Un cercle en polygone, dans l'unité du modèle. */
-function simDCCercleIpc(x,y,r,n){
-  const pts=[]; n=n||24;
-  for(let i=0;i<n;i++){
-    const a=2*Math.PI*i/n;
-    pts.push([x+r*Math.cos(a), y+r*Math.sin(a)]);
-  }
-  return pts;
-}
 
 /* Les contours d'une forme de padstack, en coordonnées LOCALES.
 
@@ -3211,7 +3199,7 @@ function simDCFormeIpc(id,dParDefaut){
   };
   if(f){
     switch(f.t){
-      case "CIRCLE":     plein.push(simDCCercleIpc(0,0,(f.d||0)/2)); break;
+      case "CIRCLE":     plein.push(simDCCercle(0,0,(f.d||0)/2)); break;
       case "RECTCENTER":
       case "OVAL":
       case "RECTROUND":
@@ -3226,7 +3214,7 @@ function simDCFormeIpc(id,dParDefaut){
     }
   }
   if(!plein.length&&dParDefaut>0)
-    plein.push(simDCCercleIpc(0,0,dParDefaut/2));
+    plein.push(simDCCercle(0,0,dParDefaut/2));
   return {plein:plein, creux:creux};
 }
 
@@ -3260,7 +3248,7 @@ function simDCPolysPisteIpc(pi,k){
   /* Une piste réduite à UN point est une pastille de fortune : un rond de sa
      largeur, plutôt que rien. */
   if(!out.length&&pl.length>=2)
-    out.push(simDCCercleIpc(pl[0]*k,pl[1]*k,w/2));
+    out.push(simDCCercle(pl[0]*k,pl[1]*k,w/2));
   return out;
 }
 
@@ -4594,7 +4582,7 @@ function simXtImagePlansIpc(m,d1,d2,idx){
         if(!/NON/i.test(t.p||""))vias.push({x:t.x, y:t.y, d:(t.d||0.3/k)*k, couches:null});
     }
   return simXtImageFente({x:m.x, y:m.y, ux:m.tx, uy:m.ty, d1:d1, d2:d2, k:k,
-                          plans:plans, vias:vias, coupe:simXtCoupeIpc});
+                          plans:plans, vias:vias, coupe:simXtCoupe});
 }
 
 /* Les discontinuités du plan sous le parcours, en intervalles d'abscisse.
@@ -4625,19 +4613,6 @@ function simXtAretesIpc(coucheIdx){
   return out;
 }
 
-/* Le paramètre t ∈ [0 ; 1] du point où la corde (x1,y1)→(x2,y2) coupe l'arête
-   `a` (le format de `simXtAretesIpc`), ou -1 si elle ne la coupe pas. */
-function simXtCoupeIpc(x1,y1,x2,y2,a){
-  if(Math.max(x1,x2)<a[4]||Math.min(x1,x2)>a[6]||
-     Math.max(y1,y2)<a[5]||Math.min(y1,y2)>a[7])return -1;
-  const dx=x2-x1, dy=y2-y1, ex=a[2]-a[0], ey=a[3]-a[1];
-  const den=dx*ey-dy*ex;
-  if(Math.abs(den)<1e-12)return -1;
-  const fx=a[0]-x1, fy=a[1]-y1;
-  const t=(fx*ey-fy*ex)/den, u=(fx*dy-fy*dx)/den;
-  if(t<-1e-9||t>1+1e-9||u<-1e-9||u>1+1e-9)return -1;
-  return Math.max(0,Math.min(1,t));
-}
 
 /* LES FENTES FINES SONT VUES PAR LEURS BORDS — même correctif que `simXtFentes`
    dans l'éditeur, et pour la même carte d'essai (banc crosstalk) : la sonde à
@@ -4720,7 +4695,7 @@ function simXtFentesIpc(par,idx){
       const ts=[];
       for(const c of couches)
         for(const ar of aretes(c)){
-          const t=simXtCoupeIpc(A.p.x,A.p.y,B.p.x,B.p.y,ar);
+          const t=simXtCoupe(A.p.x,A.p.y,B.p.x,B.p.y,ar);
           if(t>=0)ts.push(t);
         }
       ts.sort((p,q)=>p-q);
@@ -4993,83 +4968,6 @@ function simZCurseurTraceIpc(c,dpr){
   simZPeindreCurseur(c,dpr,(x,y)=>{const e=w2s(x,y);return [e.x,e.y];});
 }
 
-function simParseResistance(val){
-  if(val==null) return null;
-  const s=String(val).trim();
-  if(!s) return null;
-
-  const pkgCodes = ["0402", "0603", "0805", "1206", "1210", "1812", "2010", "2512", "0201", "01005"];
-  if(pkgCodes.includes(s)) return null;
-
-  // 1. Valeur numérique pure (ex: "560", "22", "1000", "4.7")
-  if(/^\d+(?:[.,]\d+)?$/.test(s)){
-    return parseFloat(s.replace(",", "."));
-  }
-
-  // 1b. Nombre décimal, multiplicateur et unité facultatifs : 4.7k, 2,2M,
-  //     10 kohm, 4.7 Ω, 47R. Testé AVANT les codes 4K7 / 22R ci-dessous : leur
-  //     \b accrochait après la virgule décimale, et « 4.7k » devenait « 7k »
-  //     (7000 Ω), « 2.2M » 2 MΩ, « 10 kohm » 10 Ω.
-  //     « m » minuscule vaut milli, comme en SPICE : un shunt « 10m » ou
-  //     « 10 mΩ » fait 0,01 Ω ; le méga s'écrit « M » ou « meg ».
-  const mDec = s.match(/^(\d+(?:[.,]\d+)?)\s*(k|K|MEG|Meg|meg|M|m)?\s*(?:ohms?|Ohms?|OHMS?|Ω|R)?$/);
-  if(mDec){
-    const u = mDec[2] || "";
-    const mult = (u === "k" || u === "K") ? 1e3 : (u === "m" ? 1e-3 : (u ? 1e6 : 1));
-    return parseFloat(mDec[1].replace(",", ".")) * mult;
-  }
-
-  // 2. Format R standard : 4R7 -> 4.7, 22R -> 22, 0R5 -> 0.5, 22R0 -> 22.0
-  const mCode = s.match(/\b(\d+)[rR](\d*)\b/);
-  if(mCode){
-    const dec = mCode[2] ? ("." + mCode[2]) : "";
-    return parseFloat(mCode[1] + dec);
-  }
-
-  // 3. Format K standard : 4K7 -> 4700, 10K -> 10000, 10K5 -> 10500
-  const mCodeK = s.match(/\b(\d+)[kK](\d*)\b/);
-  if(mCodeK){
-    const dec = mCodeK[2] ? ("." + mCodeK[2]) : "";
-    return parseFloat(mCodeK[1] + dec) * 1000;
-  }
-
-  // 4. Format M standard : 1M -> 1e6, 2M2 -> 2.2e6 ; « m » minuscule =
-  //    milli (4m7 -> 0,0047 Ω), comme en SPICE
-  const mCodeM = s.match(/\b(\d+)([mM])(\d*)\b/);
-  if(mCodeM && !/ohm/i.test(s)){
-    const dec = mCodeM[3] ? ("." + mCodeM[3]) : "";
-    return parseFloat(mCodeM[1] + dec) * (mCodeM[2] === "m" ? 1e-3 : 1e6);
-  }
-
-  // 5. Format R préfixe : R10 -> 0.10, R050 -> 0.050
-  const mPreR = s.match(/\b[rR](\d+(?:[.,]\d+)?)\b/);
-  if(mPreR){
-    return parseFloat("0." + mPreR[1].replace(",", ""));
-  }
-
-  // 6. Format avec unité explicite : "560 ohm", "22 Ω", "4.7 kohm", "10k"
-  const mUnit = s.match(/(\d+(?:[.,]\d+)?)\s*(k|meg|m|r|ohm|Ω)/i);
-  if(mUnit){
-    const n = parseFloat(mUnit[1].replace(",", "."));
-    const u = mUnit[2];
-    if(u === "k" || u === "K") return n * 1000;
-    if(/^meg$/i.test(u) || u === "M") return n * 1e6;
-    if(u === "m") return n * 1e-3;             // mΩ, mohm : milli
-    return n;
-  }
-
-  // 7. Nombre isolé ne correspondant pas à un code boîtier (0402, 0603, etc.)
-  const allNums = s.match(/\b\d+(?:[.,]\d+)?\b/g);
-  if(allNums){
-    for(const numStr of allNums){
-      if(["0402", "0603", "0805", "1206", "1210", "1812", "2010", "2512", "0201", "01005"].includes(numStr)) continue;
-      const n = parseFloat(numStr.replace(",", "."));
-      if(n >= 0) return n;
-    }
-  }
-
-  return null;
-}
 
 /* Récupère toutes les broches/pastilles d'un composant IPC-2581 avec leur net associé */
 function simIpcCompNets(comp){
@@ -5184,17 +5082,6 @@ function simIpcValeurComp(comp){
   return { rawVal: String(rawVal).trim(), parsedR: parsedR };
 }
 
-/* Vérifie si le composant est une résistance */
-function simEstResistanceIpc(ref, val, type){
-  if(type && /resistor/i.test(String(type))) return true;
-  const r = String(ref || "").trim();
-  if(/^(R|RN|RP|RA|RES|RS)[0-9_]/i.test(r)) return true;
-  if(/^(R|RN|RP|RA|RES|RS)$/i.test(r)) return true;
-  if(/^R[A-Z0-9_-]*$/i.test(r)) return true;
-  const v = String(val || "").trim();
-  if(/(?:ohm|Ω|\b\d+[rR]\d*\b|\b\d+[kK]\d*\b)/i.test(v)) return true;
-  return false;
-}
 
 /* Les composants montés, en paires [repère, composant] : ce que lisent les
    méthodes du bus. Un non-monté (mdlMonte) n'y paraît pas. */
@@ -6210,7 +6097,7 @@ const SIM_IPC={
           annotation: (ref || "R") + valSuffix,
           label: cleanTarget + " + " + aval + " (" + (ref || "R") + valSuffix + ")"
         };
-        if(simEstResistanceIpc(ref, rawVal, comp.type) || parsedR != null){
+        if(simEstResistance(ref, rawVal, comp.type) || parsedR != null){
           return bridge;
         }
         if(isPassiveRef(ref) && !fallback) fallback = bridge;
