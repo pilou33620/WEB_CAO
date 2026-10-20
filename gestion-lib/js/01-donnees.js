@@ -134,13 +134,7 @@ async function chargerDonneesBibliotheque() {
 
 // Repli de chargement direct du CSV si l'API échoue
 async function chargerRepliCsv() {
-  const paths = [
-    "../LIB/LIB_composants.csv",
-    "../../LIB/LIB_composants.csv",
-    "/LIB/LIB_composants.csv",
-    "../LIB_composants.csv"
-  ];
-  for (const p of paths) {
+  for (const p of CSV_LIB_REPLIS) {
     try {
       const resp = await fetch(p);
       if (resp.ok) {
@@ -151,59 +145,6 @@ async function chargerRepliCsv() {
     } catch (_) {}
   }
   throw new Error("Impossible de charger la bibliothèque de composants.");
-}
-
-function parseCSVLine(text) {
-  const result = [];
-  let cur = "";
-  let inQuotes = false;
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    if (inQuotes) {
-      if (char === '"') {
-        if (i + 1 < text.length && text[i + 1] === '"') {
-          cur += '"';
-          i++;
-        } else {
-          inQuotes = false;
-        }
-      } else {
-        cur += char;
-      }
-    } else {
-      if (char === '"') {
-        inQuotes = true;
-      } else if (char === ';') {
-        result.push(cur);
-        cur = "";
-      } else {
-        cur += char;
-      }
-    }
-  }
-  result.push(cur);
-  return result;
-}
-
-// Lignes logiques du CSV : un champ entre guillemets peut contenir un saut de
-// ligne (telechargerCsv en écrit), et le BOM d'un fichier enregistré par Excel
-// collait au premier en-tête (« \uFEFFPart Name » introuvable).
-function csvLignes(text) {
-  text = String(text || "").replace(/^\uFEFF/, "");
-  const out = [];
-  let cur = "", q = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (c === '"') q = !q;
-    if (!q && (c === "\n" || c === "\r")) {
-      if (c === "\r" && text[i + 1] === "\n") i++;
-      out.push(cur); cur = "";
-      continue;
-    }
-    cur += c;
-  }
-  out.push(cur);
-  return out;
 }
 
 function parserCsvBrut(csvText) {

@@ -2,60 +2,6 @@
 
 window.CSV_LIB = [];
 
-// Helper pour parser la ligne CSV (avec séparateur point-virgule)
-function parseCSVLine(text) {
-    let result = [];
-    let cur = "";
-    let inQuotes = false;
-    for (let i = 0; i < text.length; i++) {
-        let char = text[i];
-        if (inQuotes) {
-            if (char === '"') {
-                if (i + 1 < text.length && text[i + 1] === '"') {
-                    cur += '"';
-                    i++;
-                } else {
-                    inQuotes = false;
-                }
-            } else {
-                cur += char;
-            }
-        } else {
-            if (char === '"') {
-                inQuotes = true;
-            } else if (char === ';') {
-                result.push(cur);
-                cur = "";
-            } else {
-                cur += char;
-            }
-        }
-    }
-    result.push(cur);
-    return result;
-}
-
-// Lignes logiques du CSV : un champ entre guillemets peut contenir un saut de
-// ligne (telechargerCsv en écrit), et le BOM d'un fichier enregistré par Excel
-// collait au premier en-tête (« \uFEFFPart Name » introuvable).
-function csvLignes(text) {
-  text = String(text || "").replace(/^\uFEFF/, "");
-  const out = [];
-  let cur = "", q = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (c === '"') q = !q;
-    if (!q && (c === "\n" || c === "\r")) {
-      if (c === "\r" && text[i + 1] === "\n") i++;
-      out.push(cur); cur = "";
-      continue;
-    }
-    cur += c;
-  }
-  out.push(cur);
-  return out;
-}
-
 function loadCSVFromString(text, filename) {
     const lines = csvLignes(text).filter(l => l.trim() !== "");
     if (lines.length === 0) return;
@@ -117,14 +63,7 @@ function loadCSVLib() {
         })
         .catch(() => {
             // Repli sur les fichiers statiques si mode hors-ligne
-            const paths = [
-                '../LIB/LIB_composants.csv',
-                '../../LIB/LIB_composants.csv',
-                '/LIB/LIB_composants.csv',
-                '../LIB_composants.csv',
-                '../../LIB_composants.csv',
-                '/LIB_composants.csv'
-            ];
+            const paths = CSV_LIB_REPLIS;
             let pathIndex = 0;
             function tryNextPath() {
                 if (pathIndex >= paths.length) {

@@ -39,6 +39,7 @@ const sandbox = {
   fetch: () => Promise.reject(new Error("pas de réseau dans le banc"))
 };
 vm.createContext(sandbox);
+vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "..", "commun", "csv.js"), "utf8"), sandbox);
 vm.runInContext(
   fs.readFileSync(path.join(__dirname, "..", "js", "01-donnees.js"), "utf8"),
   sandbox

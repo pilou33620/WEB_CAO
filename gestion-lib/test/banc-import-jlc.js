@@ -121,6 +121,7 @@ assert(Array.isArray(symMcu.primitives) && symMcu.primitives.length >= 1, "Primi
 const sbCsv = { console, localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
   document: sandbox.document, window: { location: { search: "" } }, fetch: sandbox.fetch };
 vm.createContext(sbCsv);
+vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "..", "commun", "csv.js"), "utf8"), sbCsv);
 vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "js", "01-donnees.js"), "utf8"), sbCsv);
 vm.runInContext("initialiserColonnesVisibles = () => {}", sbCsv);
 vm.runInContext("parserCsvBrut", sbCsv)('﻿Part Name;Description\r\nR1;"ligne 1\r\nligne 2"\r\nC1;ok\r\n');
