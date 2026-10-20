@@ -49,6 +49,8 @@ from collections import defaultdict
 import numpy as np
 
 from crosstalk import INTERFACES, TR_CLASSES, famille
+from crosstalk import SEUIL_ORANGE as XT_ORANGE, SEUIL_ROUGE as XT_ROUGE
+from dc_solver import RESISTIVITE_CUIVRE as RHO_CU
 
 TOL_DEG = 1.0     # un 90° dessiné sur des coordonnées arrondies au µm s'en écarte de quelques dixièmes
 EPS_MM = 1e-3     # deux bouts à moins d'un micron sont le même point
@@ -224,7 +226,6 @@ Z0 = 50.0                # impédance de ligne supposée pour juger une réflexi
 # orange / rouge, en fraction de l'agresseur. Les mêmes que l'analyse d'une
 # piste sélectionnée (crosstalk.TR_DEFAUT, SEUIL_ORANGE, SEUIL_ROUGE).
 XT_TR = 1e-9
-XT_ORANGE, XT_ROUGE = 0.03, 0.07
 PAIRES_MAX = 3000        # paires rendues au tableau « toute la carte »
 # Réflexion d'un via : |Γ| au-delà duquel on alerte, puis on condamne.
 GAMMA_VIGILANCE, GAMMA_CRITIQUE = 0.05, 0.10
@@ -1843,7 +1844,6 @@ def empilage(doc, couches):
 # net sinon.
 # ==========================================================================
 
-RHO_CU = 1.72e-8
 CLASSES_Z = ("Horloge", "Rapide", "RF")
 
 

@@ -138,7 +138,7 @@ L'audit complet a corrigé les défauts et retiré le code mort ; ces doublons, 
 - [ ] **Serveur `web_CAO.py`** : 7 lecteurs de corps de requête, 6 enveloppes erreur → JSON (`_api`, `_profil_api`, `_projet_api`, `_lib_api`, `_ipc_api`, `_datasheet_api`), tables de routes répétées dans `do_GET` et `do_HEAD`, `_client_local` qui refait `appairage.Garde.ce_poste`.
 - [ ] **Bibliothèque d'empreintes de l'éditeur PCB** : la fenêtre d'édition intégrée est retirée ; `fpLibPut`, `fpLibDel`, `fpLibFile`, `fpLibParse`, `fpLibNames`, `fpDefOf`, `fpCenterOrigin` ne servent plus qu'au banc. À retirer avec leurs essais si la Gestion LIB reste le seul éditeur.
 - [ ] **Repli « page en double-clic + serveur sur 127.0.0.1:8000 »** (`simCandidats`, `visionneuse-ipc2581/js/01-api.js`, `do_OPTIONS` / `_cors` du serveur) : il ne peut pas marcher (une page `file://` envoie `Origin: null`, refusé). Le documenter comme non pris en charge ou le retirer.
-- [ ] Constantes en double côté Python : seuils de diaphonie 0,03 / 0,07, résistivité du cuivre 1,72e-8 contre 1,724e-8.
+- [x] Constantes en double côté Python (20/10/2026) : `analyse_carte` reprend les seuils de diaphonie de `crosstalk` et la résistivité de `dc_solver` (1,724e-8 Ω·m partout).
 
 ### Simulation SI — crosstalk
 Rien en cours : l'option B, les limites de l'option A et la garde de la règle *diaphonie* sont faites (13/10/2026, détail dans *Backlog par domaine → Simulation SI*).
