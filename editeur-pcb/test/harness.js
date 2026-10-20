@@ -4017,6 +4017,23 @@ T("simulation : une couche « signal » coulée (carte importée) part en plan d
   if(roles()!=="signal,plane,signal,signal")throw new Error("coulage GND en Inner 1 : "+roles());
   loadDoc(JSON.parse(saved),true);
 });
+T("pinout : symbole en plusieurs parties, broches non connectées, broche sans pastille",()=>{
+  const sch={pages:[{comps:[
+    {ref:"U1",npins:3,pinMap:["1","2","3"],pinNames:["A","B","C"]},
+    {ref:"U1",npins:2,pinMap:["4","5"],pinNames:["D","E"]},          // seconde partie du même boîtier
+    {ref:"D1",npins:2,pinMap:["1","3"],pinNames:["A","K"]},           // BAS16 : la broche 2 n'existe pas
+    {ref:"X1",npins:2,pinMap:["1","9"],pinNames:["X1","X2"]}]}]};     // « 9 » n'a pas de pastille
+  const m=pcbComposantsSchema(sch);
+  const u=m.get("U1"), dd=m.get("D1");
+  if(u.npins!==5||u.pinNames[3]!=="D"||u.pinMap.length!==5)throw new Error("parties : "+JSON.stringify(u.pinNames));
+  if(dd.pinNames[2]!=="K"||dd.pinNames[1]!==undefined)throw new Error("BAS16 : la broche 3 va sur la pastille 3");
+  const fp=(ref,n)=>{const f=mkFp(ref,"","",n);f.style="row";return f;};
+  const r=(ref,n)=>pcbVerifierPinoutComposant(m.get(ref),fp(ref,n)).pinCountCheck;
+  if(!r("U1",5).ok)throw new Error("5 broches en deux parties pour 5 pastilles : "+r("U1",5).msg);
+  if(!r("D1",3).ok)throw new Error("2 broches pour 3 pastilles : "+r("D1",3).msg);
+  if(r("X1",3).ok||!/9/.test(r("X1",3).msg))throw new Error("broche 9 sans pastille : "+r("X1",3).msg);
+  if(r("U1",4).ok)throw new Error("5 broches au schéma pour 4 pastilles acceptées");
+});
 T("pinout : une empreinte importée est mesurée sur ses pastilles, et le rapport ne liste que les fautifs",()=>{
   // SOT23-6 importé : pastilles au pas de 0,95, rangées à 2,5 mm ; pitch/span du générateur laissés aux défauts
   const pads=[];

@@ -3912,7 +3912,18 @@ function pcbComposantsSchema(doc){
     const comps=Array.isArray(p.comps)?p.comps:(Array.isArray(p.components)?p.components:[]);
     for(const c of comps){
       if(!c||!c.ref)continue;
-      m.set(c.ref,{
+      /* SYMBOLE EN PLUSIEURS PARTIES (import eCADSTAR : un MCU de 80 broches
+         en 64 + 16, un connecteur de 100 en 64 + 36) : chaque partie porte la
+         même référence. La dernière lue écrasait les autres, et le contrôle
+         pinout voyait 16 broches pour 80 pastilles. Les parties s'ajoutent. */
+      const prev=m.get(c.ref);
+      if(prev){
+        prev.npins+=c.npins||(Array.isArray(c.pinNames)?c.pinNames.length:0);
+        if(Array.isArray(c.pinout))prev.pinout=prev.pinout.concat(c.pinout);
+        pcbRangerBroches(prev,c);
+        continue;
+      }
+      const e={
         ref:c.ref,
         type:c.type||"",
         value:c.value||c.val||"",
@@ -3931,10 +3942,25 @@ function pcbComposantsSchema(doc){
         lcsc:c.lcsc||"",
         pageIndex:pIdx,
         pageName:p.name||("Feuille "+(pIdx+1))
-      });
+      };
+      if(Array.isArray(c.pinMap)){e.pinMap=[];e.pinNames=[];pcbRangerBroches(e,c);}
+      m.set(c.ref,e);
     }
   });
   return m;
+}
+/* Les noms de broches d'une partie, rangés au NUMÉRO DE PASTILLE que donne son
+   `pinMap` (pinNames[n - 1], comme les lecteurs l'attendent) : un BAS16 en
+   SOT23 déclare les broches 1 et 3, et son « 3 » tombait sur la pastille 2. */
+function pcbRangerBroches(e,c){
+  const noms=Array.isArray(c.pinNames)?c.pinNames:[];
+  const map=Array.isArray(c.pinMap)?c.pinMap:null;
+  if(!map){e.pinNames=(Array.isArray(e.pinNames)?e.pinNames:[]).concat(noms);return;}
+  e.pinMap=(e.pinMap||[]).concat(map);
+  map.forEach((num,k)=>{
+    const i=parseInt(num,10);
+    if(String(i)===String(num).trim()&&i>=1)e.pinNames[i-1]=noms[k]!=null?noms[k]:"";
+  });
 }
 
 function pcbSpecsComposant(c){
@@ -4212,13 +4238,29 @@ function pcbVerifierPinoutComposant(c, fp) {
   }
 
   // 3. Nombre de broches / pastilles
+  /* Moins de broches au schéma que de pastilles n'est pas une faute : broche
+     non connectée (BAS16 en SOT23 : 1 et 3), pastille mécanique (quartz).
+     La faute, c'est une broche du schéma sans pastille où se poser — par son
+     numéro quand le symbole le donne (`pinMap`), par le compte sinon. */
   let pinCountOk = true;
   let pinCountMsg = nPcb + " pastilles";
-  if (nSch && nPcb && nSch !== nPcb) {
+  const numsPcb = new Set();
+  for (const q of padsOf(fp)) { numsPcb.add(String(q.n)); if (q.nom != null && q.nom !== "") numsPcb.add(String(q.nom)); }
+  const sansPastille = (c.pinMap || []).filter(n => n != null && n !== "" && !numsPcb.has(String(n)));
+  if (sansPastille.length) {
+    pinCountOk = false;
+    const m = "Broche(s) du schéma sans pastille sur l'empreinte : " + sansPastille.slice(0, 12).join(", ") +
+              (sansPastille.length > 12 ? "… (" + sansPastille.length + ")" : "");
+    pinCountMsg = m;
+    anomalies.push(m);
+  } else if (nSch && nPcb && nSch > nPcb) {
     pinCountOk = false;
     const m = "Nombre de broches incohérent : " + nSch + " broches au schéma vs " + nPcb + " pastilles sur le PCB";
     pinCountMsg = m;
     anomalies.push(m);
+  } else if (nSch && nPcb && nSch < nPcb) {
+    pinCountMsg = nSch + " broches au schéma pour " + nPcb + " pastilles : " + (nPcb - nSch) +
+                  " sans broche (non connectées ou mécaniques) ✓";
   } else {
     pinCountMsg = nPcb + " broches / pastilles (Conforme ✓)";
   }
