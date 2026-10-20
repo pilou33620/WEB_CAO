@@ -13,7 +13,7 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 700 essais a
 
 | Composant | Statut | Couverture / Bancs |
 | --- | --- | --- |
-| **Éditeur PCB** | En service | 1024 essais (`editeur-pcb/test/harness.js`, relevé du 20/10/2026), dont 44 pour les plans (Draftsman), 30 pour le dossier mécanique, 24 pour le gestionnaire de contraintes et la topologie, 3 pour l'export IPC-2581 (+ 60 cas d'aller-retour, `banc-ipc2581-export.py`) |
+| **Éditeur PCB** | En service | 1025 essais (`editeur-pcb/test/harness.js`, relevé du 20/10/2026), dont 44 pour les plans (Draftsman), 30 pour le dossier mécanique, 24 pour le gestionnaire de contraintes et la topologie, 3 pour l'export IPC-2581 (+ 60 cas d'aller-retour, `banc-ipc2581-export.py`) |
 | **Éditeur Schématique** | En service | 157 essais (`editeur-schematique/test/harness.js`), dont 3 pour les contraintes de nets |
 | **Visionneuse IPC-2581** (lecteur `ipc2581_parser` 1.82, `ipc2581_json` 1.3.0) | En service | 230 essais (`harness-sim.js`, relevé du 20/10/2026), dont 13 pour le dossier mécanique + 79 (`banc-essai.py`) |
 | **SI — Impédance & Vias (`ligne_mom` v2.9.0)** | En service (0,3 à 0,4 % vs étalons ; pertes conducteur par l'inductance incrémentale de Wheeler, ruban + plan(s) + bords ; rugosité Hammerstad / Huray, diélectrique causal Djordjevic-Sarkar, via en ligne — branchés dans la cascade) | 236 cas (`python/test/banc-ligne-mom.py`) |
@@ -157,13 +157,13 @@ Rien en cours : l'option B, les limites de l'option A et la garde de la règle *
   - panneau d'un trou de carte : longueur et angle ; Gestion LIB : glisser et Suppr pour les trous ; la mise à jour LIB relit aussi le miroir `FPLIB` ;
   - doutes de fiche : Amphenol 10132797 et Keystone 1067 confirmés par deux sources, corps du Yamaichi IC51 tourné (32 × 29).
 - [x] **M3 — LIB** (16/10/2026, PROJETS) : les trous de 13 empreintes revérifiés sur fiche et passés dans `holes`, pattes oblongues du TE 2305018-2 en `slot`. Les MECA-LOC ne deviennent pas des empreintes : un trou de locating se pose comme trou de carte (décision du 16/10/2026).
-- [ ] Restent ouverts :
-  - Yamaichi IC51-0484-806 : broche 1 non marquée sur le plan 48 broches (une seule source indirecte) — à vérifier sur le repère moulé du support ;
-  - MPD-BA2AAPC : trou Ø2,03 (plan rév. H) gardé, trop juste pour la vis 2-56 que la fiche recommande (choix du 16/10/2026) ;
-  - IPC-D-356 : une fente garde sa largeur, le format ne connaît pas les fentes ;
-  - accrocher une cote du Draftsman à un trou d'empreinte (référence empreinte + rang), laissé hors de M1 (D3) ;
-  - l'essai « empreintes toutes centrées » contrôle la géométrie calculée pour chaque nom, pas celle des fichiers de la LIB : beaucoup d'empreintes de connecteur suivent l'origine de leur fiche, à décider ;
-  - le tableau de perçage range les plots de centrage d'un connecteur sous « fixation ».
+- [x] **Points ouverts après M3** (20/10/2026) :
+  - accrocher une cote du Draftsman à un trou d'empreinte : référence `{type:"trou-fp", fp, i}` (empreinte, rang dans `holes`), proposée à l'accroche, relue, suivie quand le composant bouge, orpheline quand l'empreinte disparaît (D3 levé) ;
+  - le tableau de perçage range les trous d'empreinte sous « centrage », les trous de carte sous « fixation » ; le tableau des H1, H2… devient « Trous non métallisés » et dit l'usage de chacun (« centrage J1 » ou « fixation ») ;
+  - empreintes de la LIB qui ne sont pas centrées : on garde l'origine de la fiche (décision du 20/10/2026 — recentrer décalerait tout composant déjà posé). L'essai lit maintenant les FICHIERS de la LIB (posés par `fpApplyDef`), pas seulement la géométrie que le nom calcule ; les 28 empreintes « origine fiche » sont nommées (`FP_ORIGINE_FICHE`, banc de l'éditeur), toute autre doit être centrée, et une empreinte de la liste redevenue centrée doit en sortir. Sans la LIB (CI sans jeton), restent les boîtiers intégrés ;
+  - MPD-BA2AAPC : le trou Ø2,03 du plan rév. H reste, trop juste pour la vis 2-56 recommandée — choix du 16/10/2026, clos ;
+  - IPC-D-356 : une fente y garde sa largeur pour diamètre — le format ne connaît pas les fentes, c'est sa limite ; le Gerber, l'Excellon (G85) et l'IPC-2581 portent la vraie forme. Clos.
+- [ ] Reste ouvert : Yamaichi IC51-0484-806, broche 1 non marquée sur le plan 48 broches (une seule source indirecte) — à vérifier sur le repère moulé du support, par toi.
 
 ### Contenu de la LIB (données, pas code)
 - [x] **Empreintes PCB** (16/10/2026) : 208 composants associés, 167 empreintes nouvelles d'après les fiches (land pattern, pad thermique, pattes de fixation) ; restent sans empreinte les antennes, selfs et modules maison, méca non électrique, piles, Testpoint_HFS_810 et CONN_BatteryHolder_TypeC/D.

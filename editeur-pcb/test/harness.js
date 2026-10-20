@@ -403,7 +403,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "mecaDonnees","mecaEntreeEditeur","mecaDossier","stackTotal","exCharger","mecaFeuilles",
   "mecaDxf","mecaFichiers","mecaFichiersEditeur","mecaRegler","mecaNormReglages",
   /* cotes à la main, vues à la souris, détails (34-draftsman-vues.js) */
-  "dfNormCotes","dfNormVues","dfNormDetails","dfResoudre","dfMesurer","dfAccroches","dfAccrocher",
+  "dfNormCotes","dfNormVues","dfNormDetails","dfResoudre","dfMesurer","dfAccroches","dfAccrocher","dfNormRef","dfRefTexte",
   "dfAjouterCote","dfModifierCote","dfSupprimerCote","dfDeplacerCote","dfAjouterDetail","dfSupprimerDetail",
   "dfPlacerVue","dfReplacer","dfBoiteVue","dfBoiteItems","dfVersFeuille","dfDansPoly","dfCoupeLigne",
   "dfCoupePoly","dfClicFeuille","dfGlisser","dfLacher","dfToucher","dfChoisirOutil","dfOutilsTouche","dfSurSvg",
@@ -23064,26 +23064,44 @@ T("déplacer un boîtier hors grille pose son centre sur la grille",()=>{
     if(r1.x!==130.3)throw new Error("un simple clic ne doit pas déplacer le boîtier : "+r1.x);
   }finally{S.grid=g0;carteVide();}
 });
+/* L'ORIGINE DE LA FICHE EST GARDÉE (décision du 20/10/2026) : ces empreintes de
+   la LIB suivent l'origine de leur fiche, pas le centre de leur encombrement.
+   Les recentrer décalerait tout composant déjà posé à la prochaine mise à jour
+   LIB. Toute autre empreinte doit être centrée. */
+const FP_ORIGINE_FICHE=new Set([
+  "AVX-SCMR14-Plastique-Coude","Amphenol-10128798-005RLF","Amphenol-10129379-908002BLF",
+  "CP-RADIAL-D8-P3.5-COUCHE","Cinch-142-0701-801","GCT-SIM7200-6-0-18-00-A",
+  "Hirose-DF13C-3P-1.25V","Hirose-U.FL-R-SMT-1","MPD-BA2AAPC","MUP-C792",
+  "MicroCrystal-MS1V-T1K","Molex-22-05-3051","Molex-22-05-3061","Molex-22-05-3081",
+  "Molex-53261-0371","Molex-53398-0371","Molex-78646-3001","Pulse-JXT7-1140NL",
+  "Quectel-L80","SOT-89-5","Samtec-SSW-105-02-S-RA","Samtec-SSW-106-02-S-RA",
+  "Samtec-SSW-108-02-S-RA","SiliconLabs-BGX220P","SiliconLabs-WT12","TE-2305018-2",
+  "Wurth-68610614122","Wurth-693022010811"]);
 T("empreintes : toutes centrées sur leur origine (LIB et boîtiers intégrés)",()=>{
+  /* LA GÉOMÉTRIE DES FICHIERS DE LA LIB, et plus seulement celle que le nom
+     calcule : chaque fichier est posé par fpApplyDef, comme dans la page. Sans
+     la LIB (CI sans jeton), restent les boîtiers intégrés. */
   const noms=new Set(PCB_LIB_DEFAUT.filter(n=>typeof n==="string"));
   const dir=path.join(__dirname,"..","..","..","PROJETS","LIB_CAO","lib_empreinte_pcb");
-  /* le nombre de broches vient du fichier : un nom de pièce (« Molex-22-05-3051 »)
-     finit par une référence, pas par un brochage */
-  const broches=new Map();
+  const fichiers=new Map();
   if(fs.existsSync(dir))for(const f of fs.readdirSync(dir))if(/\.json$/.test(f)){
     const n=f.replace(/\.json$/,"");noms.add(n);
-    try{const p=JSON.parse(fs.readFileSync(path.join(dir,f),"utf8")).pins;if(Number.isInteger(p))broches.set(n,p);}catch(_){}
+    try{fichiers.set(n,normFpDef(JSON.parse(fs.readFileSync(path.join(dir,f),"utf8"))));}catch(_){}
   }
-  const faux=[];
+  const faux=[], recentrees=[];
   for(const n of noms){
-    const m=/(\d+)$/.exec(n);
-    const fp=mkFp("X1","",n,broches.get(n)||(m?+m[1]:2));fp.x=0;fp.y=0;fp.rot=0;
+    const d=fichiers.get(n), m=/(\d+)$/.exec(n);
+    const fp=mkFp("X1","",n,(d&&d.pins)||(m?+m[1]:2));fp.x=0;fp.y=0;fp.rot=0;
+    if(d&&!fpApplyDef(fp,d))throw new Error("fichier de LIB non appliqué : "+n);
     const b=fpBBox(fp);
-    if(Math.abs((b.x1+b.x2)/2)>0.01||Math.abs((b.y1+b.y2)/2)>0.01)faux.push(n);
+    const decentree=Math.abs((b.x1+b.x2)/2)>0.01||Math.abs((b.y1+b.y2)/2)>0.01;
+    if(decentree&&!FP_ORIGINE_FICHE.has(n))faux.push(n);
+    if(!decentree&&FP_ORIGINE_FICHE.has(n)&&fichiers.has(n))recentrees.push(n);
   }
   if(faux.length)throw new Error("empreintes décentrées : "+faux.join(", "));
+  if(recentrees.length)
+    throw new Error("centrées maintenant, à retirer de FP_ORIGINE_FICHE : "+recentrees.join(", "));
 });
-
 /* ==========================================================================
    Export demandé par le schéma (bouton « ⇉ PCB » de l'éditeur schématique)
    ========================================================================== */
@@ -23239,6 +23257,7 @@ T("plans : tableau de perçage — autant de trous que les fichiers Excellon",()
   try{
     const g2=dfPercages(), np=g2.find(e=>!e.plaque);
     if(!np||np.pts.length!==1||Math.abs(np.d-3.2)>1e-9)throw new Error("trou de fixation absent : "+JSON.stringify(np));
+    if(!np.usages.has("fixation"))throw new Error("un trou de carte est une fixation : "+[...np.usages].join(", "));
     const doc=dfDocument();
     if(!dfChercher(doc,"fixation").length)throw new Error("le tableau des trous de fixation manque");
   }finally{S.holes=[];}
@@ -23250,7 +23269,13 @@ T("trous NPTH d'empreinte : IPC-2581, plans et dossier méca (M1-4)",()=>{
   try{
     const g=dfPercages(), n=g.reduce((a,e)=>a+e.pts.length,0);
     if(n!==drillFile().holes)throw new Error(n+" trous au plan, "+drillFile().holes+" à l'Excellon");
-    if(!g.some(e=>!e.plaque&&Math.abs(e.d-2.5)<1e-9))throw new Error("trou d'empreinte absent du tableau de perçage");
+    const ge=g.find(e=>!e.plaque&&Math.abs(e.d-2.5)<1e-9);
+    if(!ge)throw new Error("trou d'empreinte absent du tableau de perçage");
+    /* un plot de centrage n'est pas une fixation de la carte */
+    if(!ge.usages.has("centrage")||ge.usages.has("fixation"))
+      throw new Error("trou d'empreinte rangé sous « "+[...ge.usages].join(", ")+" »");
+    if(!dfChercher(dfDocument(),"centrage "+fp.ref).length)
+      throw new Error("le tableau des trous non métallisés ne nomme pas l'empreinte");
     const D=dxfLu(dxfCarte().octets), cer=D.ents.filter(e=>e.type==="CIRCLE");
     if(cer.length!==drillFile().holes)throw new Error(cer.length+" CIRCLE pour "+drillFile().holes+" trous");
     const apres=ipc2581Document(date);
@@ -23442,6 +23467,27 @@ T("plans : cote accrochée à une pastille — elle suit le composant et se met 
     if(!(g&&c&&g.x<c.x&&Math.abs(g.y-c.y)<1e-9))throw new Error("bord gauche de pastille mal résolu");
     if(!(c.d>0))throw new Error("une pastille percée a un diamètre");
   }finally{S.holes=[];}
+});
+T("plans : une cote s'accroche à un trou d'empreinte, et le suit",()=>{
+  /* La référence est (empreinte, rang du trou) : le connecteur bouge, la cote
+     suit ; l'empreinte renommée, la cote est orpheline. */
+  exCharger(1);
+  const j=S.fps.find(f=>f.ref==="J2");
+  j.holes=[{x:0,y:0,d:1.6},{x:3,y:0,d:2.2}];touch();
+  try{
+    const a=dfAccroches().find(p=>p.ref.type==="trou-fp"&&p.ref.fp==="J2"&&p.ref.i===1);
+    if(!a||Math.abs(a.d-2.2)>1e-9)throw new Error("le trou 2 de J2 n'est pas proposé à l'accroche");
+    const ref=dfNormRef(JSON.parse(JSON.stringify(a.ref)));
+    if(JSON.stringify(ref)!==JSON.stringify(a.ref))throw new Error("référence mal relue : "+JSON.stringify(ref));
+    const p0=dfResoudre(ref);
+    if(!p0||Math.abs(p0.x-a.x)>1e-9||Math.abs(p0.d-2.2)>1e-9)throw new Error("trou mal résolu : "+JSON.stringify(p0));
+    j.x+=2.5;touch();
+    const p1=dfResoudre(ref);
+    if(!p1||Math.abs(p1.x-p0.x-2.5)>1e-6)throw new Error("la cote n'a pas suivi le connecteur");
+    if(dfRefTexte(ref)!=="J2, trou n° 2")throw new Error("nom de la référence : "+dfRefTexte(ref));
+    if(dfResoudre({type:"trou-fp",fp:"J2",i:5})!==null)throw new Error("un rang absent doit rendre null");
+    if(dfResoudre({type:"trou-fp",fp:"J99",i:0})!==null)throw new Error("une empreinte absente doit rendre null");
+  }finally{delete j.holes;j.x-=2.5;touch();}
 });
 T("plans : cote orpheline — rouge, signalée, jamais fausse en silence",()=>{
   exCharger(1);

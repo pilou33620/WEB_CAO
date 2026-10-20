@@ -7,11 +7,12 @@
 
      · COTES ACCROCHÉES À LA GÉOMÉTRIE. Horizontale, verticale, alignée,
        diamètre ou rayon : on clique des points qui s'aimantent sur la carte
-       (centre d'un trou de fixation ou d'un via, centre ou bord d'une
+       (centre d'un trou de fixation, d'un trou d'empreinte ou d'un via, centre ou bord d'une
        pastille, sommet ou bord du contour et des découpes), puis on place la
        ligne. La cote retient la RÉFÉRENCE, jamais la coordonnée :
            {type:"trou", id}          {type:"via", id}
            {type:"pastille", fp:"J1", pad:"3", ou:"c"|"g"|"d"|"h"|"b"}
+           {type:"trou-fp", fp:"J1", i}   (le trou n° i de l'empreinte, son rang dans `holes`)
            {type:"contour", i, c?}    {type:"bord", i, t, c?}
            {type:"origine"}           (l'origine des fichiers, gOrigin())
        (`c` : l'indice d'une découpe, absent pour le contour extérieur ; `ou` :
@@ -85,7 +86,7 @@ const DF_COTES={h:"Cote horizontale",v:"Cote verticale",a:"Cote alignée",d:"Dia
 const DF_TOL={sym:"± symétrique",asym:"+ / − écarts",lim:"limites max / min",
   ref:"( ) de référence",base:"▭ théoriquement exacte"};
 const DF_MAX_SUITE=60;                    // points d'une chaîne ou d'une ordonnée
-const DF_NOMS_VUES={carte:"Vue de la carte",percage:"Tableau de perçage",fixation:"Trous de fixation",
+const DF_NOMS_VUES={carte:"Vue de la carte",percage:"Tableau de perçage",fixation:"Trous non métallisés",
   impedances:"Impédances contrôlées",empilage:"Coupe d'empilage",notes:"Notes de fabrication",
   nomenclature:"Nomenclature",nonmontes:"Non montés",detail:"Vue de détail"};
 const DF_CLE_RE=/^[A-Za-z0-9~_\/-]{1,40}$/;
@@ -107,6 +108,10 @@ function dfNormRef(r){
     const fp=String(r.fp==null?"":r.fp).slice(0,64), pad=String(r.pad==null?"":r.pad).slice(0,16);
     if(!fp||!pad)return null;
     return {type:t,fp,pad,ou:typeof r.ou==="string"&&r.ou.length===1&&"cgdhb".indexOf(r.ou)>=0?r.ou:"c"};
+  }
+  if(t==="trou-fp"){
+    const fp=String(r.fp==null?"":r.fp).slice(0,64), i=dfEnt(r.i,0,1e4);
+    return !fp||i==null?null:{type:t,fp,i};
   }
   if(t==="contour"||t==="bord"){
     const i=dfEnt(r.i,0,1e5);
@@ -371,6 +376,11 @@ function dfResoudre(ref){
     const h=(S.holes||[]).find(h=>h.id===ref.id);
     return h?{x:h.x,y:h.y,d:h.d}:null;
   }
+  if(ref.type==="trou-fp"){
+    const fp=S.fps.find(f=>String(f.ref)===ref.fp);
+    const h=fp&&trousDe(fp)[ref.i];
+    return h?{x:h.x,y:h.y,d:h.d}:null;
+  }
   if(ref.type==="via"){
     const v=S.vias.find(v=>v.id===ref.id);
     return v?{x:v.x,y:v.y,d:v.drill}:null;
@@ -399,6 +409,7 @@ function dfRefTexte(ref){
   if(ref.type==="origine")return "origine des fichiers de fabrication";
   if(ref.type==="trou")return "trou de fixation n° "+ref.id;
   if(ref.type==="via")return "via n° "+ref.id;
+  if(ref.type==="trou-fp")return ref.fp+", trou n° "+(ref.i+1);
   if(ref.type==="pastille")return ref.fp+"."+ref.pad+" ("+OU[ref.ou]+")";
   const ou=ref.c==null?"contour":"découpe "+(ref.c+1);
   return ref.type==="contour"?ou+", sommet "+(ref.i+1):ou+", côté "+(ref.i+1);
@@ -515,6 +526,8 @@ function dfAccroches(){
     if(v.id)out.push({ref:{type:"via",id:v.id},x:v.x,y:v.y,d:v.drill,lib:"via"+(v.net?" "+v.net:"")});
   for(const fp of S.fps){
     if(!fp.ref)continue;
+    trousDe(fp).forEach((h,i)=>{if(h.d>0)out.push({ref:{type:"trou-fp",fp:String(fp.ref),i},x:h.x,y:h.y,d:h.d,
+                                                  lib:fp.ref+", trou "+(i+1)+" Ø"+dfMm(h.d)});});
     for(const q of padsWorld(fp)){
       if(q.n==null||q.n==="")continue;
       const pad=String(q.n), nom=fp.ref+"."+pad, R=ou=>({type:"pastille",fp:String(fp.ref),pad,ou});

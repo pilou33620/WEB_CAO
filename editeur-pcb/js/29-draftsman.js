@@ -747,8 +747,9 @@ function dfPercages(){
       if(q.drill>0)ajout(q.drill,q.x,q.y,true,"pastilles",0,S.cu-1,q);
   for(const v of S.vias)
     if(v.drill>0)ajout(v.drill,v.x,v.y,true,"vias",Math.min(v.a,v.b),Math.max(v.a,v.b));
+  /* un trou d'empreinte est un plot de centrage du composant, pas une fixation de la carte */
   for(const h of trousMonde())
-    if(h.d>0)ajout(h.d,h.x,h.y,false,"fixation",0,S.cu-1,h);
+    if(h.d>0)ajout(h.d,h.x,h.y,false,h.fp?"centrage":"fixation",0,S.cu-1,h);
   return [...g.values()].sort((u,v)=>(v.plaque-u.plaque)||(u.d-v.d)||(u.a-v.a)||(u.b-v.b));
 }
 const DF_SYMBOLES=["croix","x","carre","triangle","losange","rond","plus","nabla","hexagone","carrex"];
@@ -994,10 +995,11 @@ function dfFeuillesFab(ctx){
   dfVueBlocs("percage",blocs);
   if(npth.length){
     const o=gOrigin();
-    blocs.push(dfBlocEspace(4),...dfVueBlocs("fixation",[dfBlocTitre("Trous de fixation (non métallisés)"),
-      ...dfTableau([{t:"N°",p:10,a:"m"},{t:"X (mm)",p:25,a:"d"},{t:"Y (mm)",p:25,a:"d"},{t:"Ø (mm)",p:20,a:"d"}],
+    blocs.push(dfBlocEspace(4),...dfVueBlocs("fixation",[dfBlocTitre("Trous non métallisés"),
+      ...dfTableau([{t:"N°",p:10,a:"m"},{t:"X (mm)",p:20,a:"d"},{t:"Y (mm)",p:20,a:"d"},{t:"Ø (mm)",p:20,a:"d"},{t:"Usage",p:30}],
       npth.map((h,i)=>["H"+(i+1),fmt(h.x-o.x,3).replace(".",","),fmt(o.y-h.y,3).replace(".",","),
-                       (fmt(h.d,2)+(h.w>h.d?" × "+fmt(h.w,2)+" oblong":"")).replace(/\./g,",")]),{cat:"percage"})]));
+                       (fmt(h.d,2)+(h.w>h.d?" × "+fmt(h.w,2)+" oblong":"")).replace(/\./g,","),
+                       h.fp?"centrage "+(h.fp.ref||""):"fixation"]),{cat:"percage"})]));
   }
   /* les classes à impédance cible du gestionnaire de contraintes
      (30-contraintes.js) : la largeur qui la donne, couche par couche */
