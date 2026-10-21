@@ -2351,12 +2351,16 @@ function fpBBox(fp){
 }
 /* Le repère tel qu'il est imprimé : l'écran, le Gerber et l'IPC-2581 le
    prennent tous ici (hauteur des traits de textStrokes, décalage compris). La
-   valeur n'est pas imprimée : elle reste aux dessins d'assemblage. */
+   valeur n'est pas imprimée : elle reste aux dessins d'assemblage. Il se pose
+   au-dessus de l'ENCOMBREMENT, pastilles comprises (fpBBox) : mesuré sur le
+   corps, dans le repère de l'empreinte, il tombait sur une pastille dès que
+   le composant était tourné ou que ses pastilles dépassaient du corps (« D1 »
+   sur l'anode de la LED de LED_UV). */
 function fpTextPos(fp){
-  const b=bodyOf(fp);
+  const b=bodyOf(fp), bb=fpBBox(fp);
   const size=clamp((b.x2-b.x1)*0.34,0.8,1.6);
   return {
-    ref: {x: fp.x+(fp.refOffX||0), y: fp.y-((b.y2-b.y1)/2+size*0.9)+(fp.refOffY||0), size: size}
+    ref: {x: fp.x+(fp.refOffX||0), y: bb.y1-size*0.9+(fp.refOffY||0), size: size}
   };
 }
 function fpById(id){return S.fps.find(f=>f.id===id)||null;}

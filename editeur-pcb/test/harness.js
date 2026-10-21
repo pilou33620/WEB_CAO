@@ -3482,7 +3482,7 @@ T("sérigraphie : le Gerber place le repère où l'écran le montre, décalage c
       // Y du Gerber vers le haut : un décalage de -1 mm à l'écran monte de 1 mm
       if(x1-x0!==2e6||y1-y0!==1e6)throw new Error("décalage du repère dans le Gerber : "+p+" → "+neufs[i]);});
     const tr=fpTextPos(f).ref;
-    if(tr.x!==22||Math.abs(tr.y-(20-((bodyOf(f).y2-bodyOf(f).y1)/2+tr.size*0.9)-1))>1e-9)throw new Error("fpTextPos : "+JSON.stringify(tr));
+    if(tr.x!==22||Math.abs(tr.y-(fpBBox(f).y1-tr.size*0.9-1))>1e-9)throw new Error("fpTextPos : "+JSON.stringify(tr));
     if("val" in fpTextPos(f))throw new Error("la valeur n'est pas imprimée : elle n'a plus de place en sérigraphie");
   }finally{suiviFin(reg);loadDoc(JSON.parse(saved),true);}
 });
@@ -3614,6 +3614,24 @@ T("cuivre mini : la bande trop étroite entre deux dégagements est retirée, pa
       throw new Error("cuivre étroit : "+r.map(e=>e.msg).join(" | "));
     S.tracks[0].y1=S.tracks[0].y2=yPiste(0.3);touch();
     if(runDrc().some(e=>/Cuivre de zone de/.test(e.msg)))throw new Error("0,3 mm de cuivre : rien à dire");
+  }finally{suiviFin(reg);loadDoc(JSON.parse(saved),true);}
+});
+T("sérigraphie sur le cuivre nu : repère posé au-dessus des pastilles, sinon le DRC le dit",()=>{
+  const saved=serialize(), reg=suiviDecor();
+  try{
+    // une 0805 tournée de 90° : ses pastilles dépassent en haut et en bas
+    const f=mkFp("D1","","0805",2);f.x=20;f.y=20;f.rot=90;S.fps.push(f);touch();
+    const silk=()=>runDrc().filter(e=>/Sérigraphie sur le cuivre nu/.test(e.msg));
+    if(silk().length)throw new Error("repère d'office sur une pastille : "+silk()[0].msg);
+    const p1=padsWorld(f).find(q=>q.n===1), tr=fpTextPos(f).ref;
+    f.refOffY=r3(p1.y-tr.y);touch();                 // le repère glissé sur la pastille du haut
+    const r=silk();
+    if(r.length!==1||!r[0].info||!/le repère D1 recouvre la pastille D1\.\d/.test(r[0].msg))throw new Error("repère sur pastille : "+r.map(e=>e.msg).join(" | "));
+    delete f.refOffY;
+    S.drawings=[{id:S.nextId++,shape:"text",type:"text",layer:"silkT",text:"UV",x1:p1.x,y1:p1.y,size:1,height:1,rot:0,width:0.15}];touch();
+    if(!silk().some(e=>/le texte « UV » recouvre/.test(e.msg)))throw new Error("texte sur pastille");
+    S.drawings[0].layer="silkB";touch();
+    if(silk().length)throw new Error("la sérigraphie du dessous ne juge pas les pastilles du dessus");
   }finally{suiviFin(reg);loadDoc(JSON.parse(saved),true);}
 });
 T("Gerber : masque, pâte, sérigraphie, contour",()=>{

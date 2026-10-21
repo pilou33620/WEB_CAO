@@ -747,7 +747,12 @@ traits du Gerber (`textStrokes`), à la même hauteur et à la même place,
 décalage glissé à la souris compris ; le Gerber et l'IPC-2581 le prennent au
 même endroit (`fpTextPos`). La valeur (« 18R », « 100n ») n'est pas imprimée,
 comme d'usage : elle reste aux dessins d'assemblage, et l'écran ne la montre
-plus sur la sérigraphie.
+plus sur la sérigraphie. D'office, le repère se pose au-dessus de
+l'encombrement, pastilles comprises (`fpBBox`) : mesuré sur le seul corps, il
+tombait sur une pastille d'un composant tourné. Le DRC signale un repère ou un
+dessin de sérigraphie (texte, trait, cadre) posé sur une ouverture du masque —
+le fabricant y efface l'encre. Le contour d'office des boîtiers n'est pas jugé :
+il passe toujours sur les pastilles d'une puce, et ce rognage est attendu.
 
 **Le repère de broche 1 est un point de sérigraphie**, et rien d'autre :
 `fp.mark`, un disque en coordonnées locales, avec son diamètre (0,4 mm par

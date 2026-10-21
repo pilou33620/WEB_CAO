@@ -1092,6 +1092,45 @@ function runDrc(){
       }
     }
   }
+  /* Sérigraphie sur une ouverture du masque (maskOpenings) : le fabricant
+     efface l'encre sur le cuivre nu, un repère y devient illisible (« D1 » posé
+     sur l'anode de la LED de LED_UV). Les repères et les dessins (textes,
+     traits, cadres), avec les traits du Gerber. shortcut: le contour d'office
+     des boîtiers n'est pas jugé — il passe toujours sur les pastilles d'une
+     puce, et ce rognage-là est attendu ; un aplat non plus. */
+  for(const side of [0,1]){
+    const ouv=maskOpenings(side).map(o=>({o,q:o.grow?Object.assign({},o.q,{w:o.q.w+2*o.grow,h:o.q.h+2*o.grow}):o.q}));
+    if(!ouv.length)continue;
+    const juger=(nom,polys,w,x,y)=>{
+      for(const P of polys)for(let k=0;k+1<P.length;k++){
+        const sg={x1:P[k].x,y1:P[k].y,x2:P[k+1].x,y2:P[k+1].y,w};
+        for(const {o,q} of ouv){
+          const R=Math.hypot(q.w,q.h)/2+w;
+          if(Math.min(sg.x1,sg.x2)>q.x+R||Math.max(sg.x1,sg.x2)<q.x-R||Math.min(sg.y1,sg.y2)>q.y+R||Math.max(sg.y1,sg.y2)<q.y-R)continue;
+          if(segPadDist(sg,q)<0){
+            const qui=o.q.fp?"la pastille "+o.q.fp.ref+"."+o.q.n:"une via";
+            out.push({info:true,x,y,l:side?S.cu-1:0,
+              msg:"Sérigraphie sur le cuivre nu ("+(side?"dessous":"dessus")+") : "+nom+" recouvre "+qui+
+                  " — le fabricant l'efface là ; déplacez-le"});
+            return;
+          }
+        }
+      }
+    };
+    for(const fp of S.fps){
+      if(!!fp.side!==!!side||fp.silk===false)continue;
+      const tr=fpTextPos(fp).ref;
+      juger("le repère "+fp.ref,textStrokes(fp.ref,tr.x,tr.y,tr.size,!!side),0.15,tr.x,tr.y);
+    }
+    for(const d of S.drawings||[]){
+      if((d.layer==="silkB")!==!!side||d.shape==="poly")continue;
+      const w=d.width||0.15;
+      const P=d.shape==="text"?textStrokes(d.text||"TEXT",d.x1,d.y1,d.size||1.5,!!side,d.rot||0)
+        :d.shape==="rect"?[[{x:d.x1,y:d.y1},{x:d.x2,y:d.y1},{x:d.x2,y:d.y2},{x:d.x1,y:d.y2},{x:d.x1,y:d.y1}]]
+        :[[{x:d.x1,y:d.y1},{x:d.x2,y:d.y2}]];
+      juger(d.shape==="text"?"le texte « "+d.text+" »":"le "+(d.shape==="rect"?"cadre":"trait")+" "+d.id,P,w,d.x1,d.y1);
+    }
+  }
   for(const z of S.zones){
     const b=polyBBox(z.pts);
     if(!z.net)out.push({x:(b.x1+b.x2)/2,y:(b.y1+b.y2)/2,l:z.l,

@@ -90,6 +90,7 @@ function exFp(D,o){
   else if(g.body&&!o.pads)fp.body={...g.body};
   if(o.csvPartName)fp.csvPartName=o.csvPartName;
   if(o.csvMpn)fp.csvMpn=o.csvMpn;
+  if(o.refOffX)fp.refOffX=o.refOffX;
   if(o.manufacturer)fp.manufacturer=o.manufacturer;
   D.fps.push(fp);
   return fp;
@@ -289,6 +290,7 @@ function exemple2(){
   // J1: USB Micro-B (x: 7, y: 20)
   const J1=exFp(D,{
     ref:"J1",val:"USB micro-B",pkg:"MICRO-USB-B",style:"chip",pins:7,x:7,y:20,
+    refOffX:-3,                        // au-dessus, le repère tombait sur la pastille de C1
     nets:{1:"+5V",2:"USB_DM",3:"USB_DP",5:"GND",6:"GND",7:"GND"},
     csvPartName:"CONN-USB_Mini_651005136421",
     body:{x1:-1.6,y1:-4.6,x2:1,y2:4.6},
