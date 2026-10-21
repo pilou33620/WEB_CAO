@@ -378,5 +378,7 @@ function routagePiloteCommandes(){
     cao_placement_auto: routageCommande(a => "Placement automatique (" + a.methode + ")", routageJouerPlacement),
     cao_paire: routageCommande(a => "Paire différentielle " + a.paire, routageJouerPaire),
     cao_router: routageCommande(a => "Routage (" + ((a.routes || []).length) + " route(s), " + ((a.vias || []).length) + " via(s))", routageJouerRoutes),
+    // une lecture : des points de passage proposés, rien n'est écrit (38-chemin-auto.js)
+    cao_chemin: {executer: async a => cheminCommande(a)},
   };
 }

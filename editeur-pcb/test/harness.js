@@ -176,7 +176,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* formes de pastille, rotation, origine de l'empreinte */
   "PAD_SHAPES","padShape","padRadius","padRot","padHalf","padDist","padOpening",
   "fpLocalBox",
-  "apSet","apForPad","netAtPoint","padCuLayers","pnsItemsPad","aplatClick","closeAplat","selDecoupes","deleteSel","hitTest","selectHit","brocheNum","parseNetlist","applyNetlist","padSurCouche","padLiaison","padBras","zoneLanieres","maskOpenings","pasteOpenings","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","classesAProposer","UNDO_BUDGET","rotChoix","padNom",
+  "apSet","apForPad","netAtPoint","padCuLayers","pnsItemsPad","aplatClick","closeAplat","selDecoupes","deleteSel","hitTest","selectHit","brocheNum","parseNetlist","applyNetlist","padSurCouche","padLiaison","padBras","zoneLanieres","maskOpenings","pasteOpenings","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","classesAProposer","carteVide","UNDO_BUDGET","rotChoix","padNom",
   /* repère de broche 1 */
   "MARK_D","PASSIF_REF","fpMarkWanted","fpMarkAuto","fpMark","fpSetMark",
   "fpMoveMark","fpSetMarkD","fpXform",
@@ -437,7 +437,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* classes d'interface (commun/classes-interface.js) */
   "CLASSES_INTERFACE","familleClasse","simNaturePcb",
   /* lectures du canal de pilotage (commun/lecture-cao.js) */
-  "LECTURE_CAO","piloteCao","ECRITURE_CAO","ROUTAGE","PLACEMENT_SCORE"];
+  "LECTURE_CAO","piloteCao","ECRITURE_CAO","ROUTAGE","PLACEMENT_SCORE","CHEMIN","cheminCommande"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -27553,6 +27553,92 @@ TA("canal de pilotage : cao_placement_auto, forces et satellites en une etape ; 
       if(serialize()!==avant)throw new Error("blocs : Ctrl+Z");
     }finally{BLOC_PLACEMENT.injecterMotifs(null);BLOC_PLACEMENT.injecterZones(null);}
   }finally{global.Pilote=ancien;}
+});
+
+TA("chemin-auto : cao_chemin propose des points que cao_router pose, sans rien écrire",async()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  const garde={doc:serialize(),undo:S.undo.slice(),redo:S.redo.slice()};
+  try{
+    piloteCao("pcb");
+    const d=cmds.cao_chemin;
+    if(!d||d.ecriture||typeof d.executer!=="function")throw new Error("cao_chemin est une lecture");
+    loadDoc(exemple1());
+    S.tracks=[];S.vias=[];touch();                       // l'exemple dérouté : toutes ses liaisons sont à faire
+    const c=conn(true), parPos=new Map(c.padNodes.map(q=>[q.q.x+","+q.q.y+","+q.q.net,q]));
+    const nom=(x,y,net)=>{const p=parPos.get(x+","+y+","+net);return p&&p.fp.ref+"."+p.q.n;};
+    const liaisons=c.rats.map(r=>({depart:nom(r.x1,r.y1,r.net),arrivee:nom(r.x2,r.y2,r.net)})).filter(l=>l.depart&&l.arrivee).slice(0,4);
+    if(liaisons.length<3)throw new Error("l'exemple doit avoir des liaisons de pastille à pastille : "+liaisons.length);
+    S.undo.length=0;
+    const avant=serialize(), t0=Date.now();
+    const r=await d.executer({liaisons});
+    if(serialize()!==avant||S.undo.length)throw new Error("cao_chemin a écrit");
+    if(r.routes.length!==liaisons.length)throw new Error("chemins : "+JSON.stringify(r.resultats));
+    const P=boardPoly();
+    for(const rt of r.routes){
+      for(const p of rt.points)if(!inPoly(p.x,p.y,P))throw new Error("point hors de la carte : "+JSON.stringify(p));
+      for(let k=1;k<rt.points.length;k++){
+        const dx=Math.abs(rt.points[k].x-rt.points[k-1].x), dy=Math.abs(rt.points[k].y-rt.points[k-1].y);
+        if(!(dx<1e-6||dy<1e-6||Math.abs(dx-dy)<2e-3))throw new Error("segment hors 45° : "+JSON.stringify(rt.points.slice(k-1,k+1)));
+      }
+    }
+    // les routes proposées passent la carte de cao_router : chacune posée, puis appliquées en une étape
+    const routeur=cmds.cao_router, prop=routeur.proposer({routes:r.routes});
+    const lignes=prop.apres.split("\n").filter(l=>/^route /.test(l));
+    if(lignes.length!==liaisons.length||!lignes.every(l=>/: posée$/.test(l)))throw new Error("cao_router : "+prop.apres+" / routes : "+JSON.stringify(r.routes));
+    const restantes=conn(true).rats.length;
+    routeur.appliquer({routes:r.routes},prop);
+    if(conn(true).rats.length!==restantes-liaisons.length)throw new Error("liaisons restantes : "+conn(true).rats.length+" au lieu de "+(restantes-liaisons.length));
+    // refus par liaison, sans arrêter l'appel ; refus de l'appel entier
+    const r2=await d.executer({liaisons:[{depart:"ZZ9.1",arrivee:liaisons[0].arrivee},{depart:liaisons[0].depart,arrivee:liaisons[1].arrivee}]});
+    if(r2.resultats[0].trouve||!/introuvable/.test(r2.resultats[0].raison))throw new Error("pastille inconnue : "+JSON.stringify(r2.resultats[0]));
+    const memeNet=c.rats[0].net===c.rats[1].net;
+    if(!memeNet&&(r2.resultats[1].trouve||!/pas sur le même net/.test(r2.resultats[1].raison)))throw new Error("nets différents : "+JSON.stringify(r2.resultats[1]));
+    for(const [a,motif] of [[{liaisons:[]},/de 1 à 20/],[{liaisons:liaisons,pas:0}, /« pas »/],[{liaisons:Array(21).fill(liaisons[0])},/de 1 à 20/]]){
+      let m="";try{await d.executer(a);}catch(e){m=e.message;}
+      if(!motif.test(m))throw new Error("refus attendu "+motif+" : "+m);
+    }
+    if(Date.now()-t0>20000)throw new Error("trop lent : "+(Date.now()-t0)+" ms");
+  }finally{
+    global.Pilote=ancien;
+    loadDoc(JSON.parse(garde.doc),true);S.undo=garde.undo;S.redo=garde.redo;
+  }
+});
+
+TA("chemin-auto : un mur sur le dessus fait passer dessous par deux vias ; sans issue, une raison",async()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  const garde={doc:serialize(),undo:S.undo.slice(),redo:S.redo.slice()};
+  try{
+    piloteCao("pcb");
+    loadDoc(exemple1());
+    carteVide();
+    S.board={x:0,y:0,w:50,h:30,pts:null};
+    const A=mkFp("R1","","0603",2);A.x=10;A.y=15;A.nets={1:"SIG",2:"Z1"};
+    const B=mkFp("R2","","0603",2);B.x=40;B.y=15;B.nets={1:"SIG",2:"Z2"};
+    S.fps.push(A,B);
+    S.tracks.push({l:0,net:"MUR",w:0.5,x1:25,y1:0,x2:25,y2:30});   // le dessus coupé d'un bord à l'autre
+    touch();
+    const li={depart:"R1.1",arrivee:"R2.1"};
+    const r=await cmds.cao_chemin.executer({liaisons:[li]});
+    const res=r.resultats[0], rt=r.routes[0];
+    if(!res.trouve||res.vias!==2)throw new Error("deux vias attendues : "+JSON.stringify(r));
+    const bas=LECTURE_CAO.aides.nomCouchePcb(S.cu-1), haut=LECTURE_CAO.aides.nomCouchePcb(0);
+    const couches=rt.points.filter(p=>p.couche).map(p=>p.couche);
+    if(couches.join()!==[bas,haut].join())throw new Error("dessous puis retour dessus : "+JSON.stringify(rt.points));
+    const ix=rt.points.findIndex(p=>p.couche===bas), iy=rt.points.findIndex(p=>p.couche===haut);
+    if(!(rt.points[ix-1].x<25&&rt.points[iy-1].x>25))throw new Error("les vias de part et d'autre du mur : "+JSON.stringify(rt.points));
+    const prop=cmds.cao_router.proposer({routes:r.routes});
+    if(!/^route 1 \(SIG\) : posée$/m.test(prop.apres))throw new Error("cao_router : "+prop.apres+" / "+JSON.stringify(rt));
+    // le mur aussi dessous : plus d'issue, la raison le dit
+    S.tracks.push({l:S.cu-1,net:"MUR",w:0.5,x1:25,y1:0,x2:25,y2:30});touch();
+    const r2=await cmds.cao_chemin.executer({liaisons:[li]});
+    if(r2.resultats[0].trouve||!/aucun chemin sur la grille de 0.25 mm/.test(r2.resultats[0].raison)||r2.routes.length)
+      throw new Error("sans issue : "+JSON.stringify(r2));
+  }finally{
+    global.Pilote=ancien;
+    loadDoc(JSON.parse(garde.doc),true);S.undo=garde.undo;S.redo=garde.redo;
+  }
 });
 
 TA("canal de pilotage : cao_score, routage (liaisons, DRC, vias, longueur) et placement (serveur)",async()=>{
