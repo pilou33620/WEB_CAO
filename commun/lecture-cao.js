@@ -430,6 +430,21 @@ const LECTURE_CAO = (function() {
         return L.concat(borner(lignes, 200, "broches"));
       }
     },
+    etiquettes: {
+      args: '"filtre":"VCC"',
+      desc: "étiquettes de net et alimentations de toutes les feuilles (#id, genre, net, feuille, position) ; « #id » les désigne au dessin (déplacer, tourner, supprimer) sur la feuille affichée ; filtre facultatif",
+      fn: a => {
+        const GENRE = { port: "étiquette locale", gport: "étiquette globale", vcc: "alimentation", gnd: "masse" };
+        const L = [];
+        (S.pages || []).forEach((p, i) => {
+          for (const c of (i === S.page ? S.comps : p.comps) || [])
+            if (GENRE[c.type] && contient(a.filtre, c.value, c.type))
+              L.push("- #" + c.id + " " + GENRE[c.type] + " " + (c.value || "") + ", " + schFeuille(i) + (i === S.page ? " [affichée]" : "") +
+                     ", x " + schMm(c.x) + " y " + schMm(c.y) + " mm, rotation " + (c.rot || 0) + "°");
+        });
+        return L.length ? borner(L, 150, "étiquettes") : ["Aucune étiquette ni alimentation ne correspond."];
+      }
+    },
     nets: {
       args: '"filtre":"USB"',
       desc: "liste des nets du document (global ou local, nombre de broches, feuilles) ; filtre facultatif",

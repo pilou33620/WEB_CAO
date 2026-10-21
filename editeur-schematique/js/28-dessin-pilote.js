@@ -29,8 +29,17 @@ function dessinNombre(v, n, op, nom, maxi) {
   return v;
 }
 
-/* Le composant d'un repère, sur la feuille affichée seulement : les opérations dessinent là. */
+/* Le composant d'un repère, sur la feuille affichée seulement : les opérations dessinent là.
+   « #12 » désigne un symbole par son id : les étiquettes et alimentations n'ont pas de repère
+   (etiqueter rend leur id, cao_schema_lire etiquettes les liste). */
+const dessinNom = el => el.ref || "#" + el.id;
 function dessinComp(ref, n, op) {
+  const id = typeof ref === "string" && /^#\d{1,9}$/.test(ref.trim()) ? +ref.trim().slice(1) : null;
+  if (id !== null) {
+    const e = S.comps.find(x => x.id === id);
+    if (e) return e;
+    throw dessinRefus(n, op, "« " + ref + " » introuvable sur la feuille affichée (voir cao_schema_lire etiquettes)");
+  }
   const c = typeof ref === "string" && dessinCle(ref) ? S.comps.find(x => dessinCle(x.ref) === dessinCle(ref)) : null;
   if (c) return c;
   const ailleurs = typeof ref === "string" && dessinCle(ref) &&
@@ -239,7 +248,7 @@ const DESSIN_OPS = {
     moveSelBy(cx - x0, cy - y0);
     clearSel();
     touchWires();
-    return { quoi: (n + 1) + ". deplacer " + el.ref, avant, apres: dessinOuEst(el) };
+    return { quoi: (n + 1) + ". deplacer " + dessinNom(el), avant, apres: dessinOuEst(el) };
   },
 
   tourner(o, n) {
@@ -247,14 +256,14 @@ const DESSIN_OPS = {
     if (![90, 180, 270].includes(o.angle)) throw dessinRefus(n, "tourner", "« angle » : 90, 180 ou 270");
     const avant = dessinOuEst(el);
     dessinTransformer(el, e => { e.rot = (((e.rot | 0) + o.angle) % 360 + 360) % 360; });
-    return { quoi: (n + 1) + ". tourner " + el.ref, avant, apres: dessinOuEst(el) };
+    return { quoi: (n + 1) + ". tourner " + dessinNom(el), avant, apres: dessinOuEst(el) };
   },
 
   miroir(o, n) {
     const el = dessinComp(o.ref, n, "miroir");
     const avant = dessinOuEst(el);
     dessinTransformer(el, e => { e.mir = !e.mir; });
-    return { quoi: (n + 1) + ". miroir " + el.ref, avant, apres: dessinOuEst(el) };
+    return { quoi: (n + 1) + ". miroir " + dessinNom(el), avant, apres: dessinOuEst(el) };
   },
 
   relier(o, n) {
@@ -320,7 +329,8 @@ const DESSIN_OPS = {
     if (ecart) throw dessinRefus(n, "etiqueter", b.nom + " : l'étiquette " + ecart);
     dessinSansConflit(b, n, "etiqueter");
     return { quoi: (n + 1) + ". etiqueter " + b.nom, avant: null,
-             apres: { port: "étiquette locale", gport: "étiquette globale", vcc: "alimentation", gnd: "masse" }[type] + " " + net };
+             apres: { port: "étiquette locale", gport: "étiquette globale", vcc: "alimentation", gnd: "masse" }[type] + " " + net +
+                    " (#" + el.id + " : à donner comme « ref » pour la déplacer ou la supprimer)" };
   },
 
   supprimer_fil(o, n) {
@@ -435,7 +445,7 @@ const DESSIN_OPS = {
     const avant = el.type + (el.value ? " " + el.value : "") + ", " + dessinOuEst(el);
     deleteComps([el.id]);
     touchWires();
-    return { quoi: (n + 1) + ". supprimer " + el.ref, avant, apres: null };
+    return { quoi: (n + 1) + ". supprimer " + dessinNom(el), avant, apres: null };
   },
 };
 

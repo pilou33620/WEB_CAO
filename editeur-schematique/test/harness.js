@@ -536,7 +536,7 @@ T("canal de pilotage : cao_schema_dessiner étiquette (local, global, VCC, GND) 
                {op:"etiqueter",broche:"R2.2",genre:"gnd"},
                {op:"etiqueter",broche:"R3.1",net:"SDA",genre:"local"}];   // rejoint le SDA de R1.1
     const prop=d.proposer({lot});
-    if(!/^4\. etiqueter R1\.1 : étiquette locale SDA$/m.test(prop.apres)||!/^7\. etiqueter R2\.2 : masse GND$/m.test(prop.apres))throw new Error("carte : "+prop.apres);
+    if(!/^4\. etiqueter R1\.1 : étiquette locale SDA \(#\d+ : /m.test(prop.apres)||!/^7\. etiqueter R2\.2 : masse GND \(#\d+ : /m.test(prop.apres))throw new Error("carte : "+prop.apres);
     d.appliquer({lot},prop);
     for(const [nom,ref,pin] of [["SDA","R1",1],["BUS","R1",2],["3V3","R2",1],["GND","R2",2],["SDA","R3",1]])
       if(!sur(nom,ref,pin))throw new Error(ref+"."+pin+" devrait être sur "+nom+" : "+JSON.stringify(docNets().groups.map(g=>[g.name,g.nodes.map(x=>x.ref+"."+x.pin)])));
@@ -545,6 +545,19 @@ T("canal de pilotage : cao_schema_dessiner étiquette (local, global, VCC, GND) 
     if(!/1 à 40 caractères/.test(m))throw new Error("net vide : "+m);
     m="";try{d.proposer({lot:[{op:"etiqueter",broche:"R3.2",net:"X",genre:"rouge"}]});}catch(e){m=e.message;}
     if(!/local, global, vcc ou gnd/.test(m))throw new Error("genre : "+m);
+    /* une étiquette n'a pas de repère : la carte et la lecture donnent son #id, que le dessin reprend */
+    const id=+/^8\. etiqueter R3\.1 : étiquette locale SDA \(#(\d+) /m.exec(prop.apres)[1];
+    const lu=LECTURE_CAO.schema.etiquettes.fn({filtre:"sda"});
+    if(lu.length!==2||!lu.some(l=>l.indexOf("- #"+id+" étiquette locale SDA, f1 [affichée], x ")===0))throw new Error("lecture : "+lu.join(" | "));
+    if(!/^- #\d+ masse GND, /.test(LECTURE_CAO.schema.etiquettes.fn({filtre:"gnd"})[0]))throw new Error("lecture GND");
+    const lab=S.comps.find(c=>c.id===id), x0=lab.x;
+    const p2=d.proposer({lot:[{op:"deplacer",ref:"#"+id,dx:0,dy:5},{op:"supprimer",ref:"#"+id}]});
+    if(!/^1\. deplacer #\d+ : /m.test(p2.apres)||!/^2\. supprimer #\d+$/m.test(p2.avant.split("\n").map(l=>l.replace(/ : .*/,"")).join("\n")))throw new Error("carte #id : "+p2.avant+" / "+p2.apres);
+    if(lab.x!==x0||!S.comps.includes(lab))throw new Error("proposer a touché l'étiquette");
+    d.appliquer({lot:[{op:"supprimer",ref:"#"+id}]},d.proposer({lot:[{op:"supprimer",ref:"#"+id}]}));
+    if(S.comps.some(c=>c.id===id)||sur("SDA","R3",1))throw new Error("étiquette #"+id+" non supprimée");
+    m="";try{d.proposer({lot:[{op:"deplacer",ref:"#99999",dx:1,dy:0}]});}catch(e){m=e.message;}
+    if(!/« #99999 » introuvable sur la feuille affichée/.test(m))throw new Error("#id inconnu : "+m);
   }finally{global.Pilote=ancien;sheet([],[]);}
 });
 
