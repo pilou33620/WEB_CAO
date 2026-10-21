@@ -1097,6 +1097,7 @@ function runDrc(){
       }
   /* intégration mécanique : zones interdites par face, hauteurs (38-interdits.js) */
   if(typeof interditsDrc==="function")interditsDrc(out);
+  if(typeof thermiqueDrc==="function")thermiqueDrc(out);     // l'estimation de la révision courante (39-thermique.js)
   /* Sérigraphie sur une ouverture du masque (maskOpenings) : le fabricant
      efface l'encre sur le cuivre nu, un repère y devient illisible (« D1 » posé
      sur l'anode de la LED de LED_UV). Les repères et les dessins (textes,

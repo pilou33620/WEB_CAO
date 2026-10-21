@@ -191,7 +191,7 @@ const ECRITURE_CAO = (function () {
      position et rotation passent par transformFps : le cuivre accroché suit, selon la
      préférence de l'utilisateur (S.moveEtch). */
   const FACES = { dessus: 0, dessous: 1 };
-  const CHAMPS_PCB = ["ref", "valeur", "boitier", "face", "x", "y", "rotation"];
+  const CHAMPS_PCB = ["ref", "valeur", "boitier", "face", "x", "y", "rotation", "puissance"];
   const POSE = ["face", "x", "y", "rotation"];
   const cleRef = r => String(r || "").trim().toUpperCase();
   const empreinte = ref => typeof ref === "string" && cleRef(ref) ? S.fps.find(f => cleRef(f.ref) === cleRef(ref)) : null;
@@ -227,6 +227,11 @@ const ECRITURE_CAO = (function () {
           }
           if (fpFree(fp) && !fp.lib) { refus.push(quoi + " : empreinte dessinée à la main, qu'un boîtier ne refait pas : change-la dans l'éditeur"); continue; }
           if (v.trim() !== (fp.pkg || "")) lignes.push({ quoi, avant: fp.pkg || "", apres: v.trim() });
+        } else if (k === "puissance") {
+          // dissipée en service (W), pour l'estimation thermique (39-thermique.js) ; 0 ou null l'efface
+          if (v !== null && !nombre(v, 0, 100)) { refus.push(quoi + " : de 0 à 100 W, ou null"); continue; }
+          const av = fp.puissance > 0 ? fp.puissance : null, ap = v > 0 ? r3(v) : null;
+          if (av !== ap) lignes.push({ quoi, avant: av, apres: ap });
         } else if (k === "face") {
           if (!Object.prototype.hasOwnProperty.call(FACES, v)) { refus.push(quoi + " : dessus ou dessous"); continue; }
           const avant = fp.side ? "dessous" : "dessus";
@@ -249,6 +254,7 @@ const ECRITURE_CAO = (function () {
     for (const [fp, ch] of cibles) {
       if ("ref" in ch) fp.ref = ch.ref;
       if ("valeur" in ch) fp.value = ch.valeur;
+      if ("puissance" in ch) { if (ch.puissance > 0) fp.puissance = r3(ch.puissance); else delete fp.puissance; }
       if ("boitier" in ch) {
         fp.pkg = ch.boitier.trim();
         fpReshape(fp, () => fpReposerBoitier(fp, fp.pkg, fpWiredPins(fp)));   // les pistes suivent les pastilles

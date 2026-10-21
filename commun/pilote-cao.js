@@ -244,6 +244,8 @@ function piloteCao(page) {
     Pilote.commande("cao_contour_ecrire", ECRITURE_CAO.contour);
     Pilote.commande("cao_decoupes_ecrire", ECRITURE_CAO.decoupes);
     Pilote.commande("cao_interdits_ecrire", ECRITURE_CAO.interdits);
+    if (typeof pcbThermiqueEstimer === "function")
+      Pilote.commande("cao_thermique", { executer: async () => thermiqueTexte(await pcbThermiqueEstimer()) });
     Pilote.commande("cao_zones_ecrire", ECRITURE_CAO.zones);
     Pilote.commande("cao_serigraphie_ecrire", ECRITURE_CAO.serigraphie);
     Pilote.commande("cao_pastille_regler", ECRITURE_CAO.pastilles);

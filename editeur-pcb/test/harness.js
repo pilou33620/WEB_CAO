@@ -64,7 +64,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* variantes de montage (commun/variantes.js + 26-variantes.js) */
   "varNorm","varVide","varEstMonte","pcbVarDepuisSchema","pcbVarChoisir","pcbVarDessiner",
   "pcbVarOuvrir","pcbVarFermer","fabFpsMontes","listComps",
-  "edgeClick","edgeMove","closeEdge","interditsListe","boardPoly","setBoardSize","setBoardRect","setBoardDisque","boardDisquePts","contourChanger","inBoard","boardCutouts",
+  "edgeClick","edgeMove","closeEdge","interditsListe","pcbThermiqueDocument","pcbThermiqueEstimer","boardPoly","setBoardSize","setBoardRect","setBoardDisque","boardDisquePts","contourChanger","inBoard","boardCutouts",
   "boardChanged","polyEdgeDist","segDist","orient","signedArea",
   "coordOpen","coordClose","coordApply","coordMode","coordPoint","coordAnchor",
   "placeOrigin","ux","uy","wxu","wyu","snapX","snapY","gOrigin","routeToPoint","hint",
@@ -27208,6 +27208,45 @@ TA("canal de pilotage : cao_decoupes_ecrire, créer dans le contour, supprimer p
   refus("cao_decoupes_ecrire",[{action:"creer",forme:"rectangle",x:b.x-5,y:cy,largeur:10,hauteur:2}],/sort du contour/);
   refus("cao_decoupes_ecrire",[{action:"supprimer",numero:3}],/« numero »/);
   refus("cao_decoupes_ecrire",[{action:"percer"}],/creer ou supprimer/);
+});
+TA("échauffement estimé : cuivre relié mesuré, serveur, DRC tant que la carte n'a pas bougé, cao_thermique",async()=>{
+  const saved=serialize(), reg=suiviDecor(), fetchGarde=global.fetch;
+  try{
+    S.board={x:0,y:0,w:30,h:30,pts:null};
+    const L=mkFp("LED1","","",2);L.x=15;L.y=15;S.fps.push(L);
+    pcbAppliquerDefEmpreinte(L,"ESSAI-LEDP",{style:"chip",pins:2,
+      pads:[{n:1,x:-2,y:0,w:1,h:1,shape:"rect",drill:0},{n:2,x:1,y:0,w:3,h:3,shape:"rect",drill:0,connexion:"directe"}]});
+    L.nets={1:"LED_A",2:"GND"};L.puissance=1;touch();
+    let doc=pcbThermiqueDocument();
+    const nu=doc.composants[0];
+    if(!nu||Math.abs(nu.source_mm2-10)>0.01||Math.abs(nu.surface_mm2-10)>0.01||nu.cuivre_um<17)throw new Error("sans zone, les pastilles seules : "+JSON.stringify(nu));
+    // le plot relié directement au plan GND : la surface du plan (moins ses dégagements) compte
+    S.zones=[{id:S.nextId++,l:0,net:"GND",pts:boardZonePts(),connexion:"directe"}];touch();
+    doc=pcbThermiqueDocument();
+    const plan=doc.composants[0].surface_mm2;
+    if(!(plan>600&&plan<=30*30+10))throw new Error("cuivre relié par le plan : "+plan);
+    if(!("epaisseur_stratifie" in doc.thermique))throw new Error("le bloc thermique de la chute DC part aussi");
+    // le serveur répond ; le DRC le reprend tant que la carte n'a pas bougé
+    let envoye=null;
+    global.fetch=async(u,o)=>{envoye=[u,JSON.parse(o.body)];return {ok:true,status:200,json:async()=>({composants:[{ref:"LED1",puissance_w:1,surface_mm2:plan,dT:55,r_th:55,r_etalement:15,r_sortie:40}],modele:"Estimation"})};};
+    await pcbThermiqueEstimer();
+    if(envoye[0]!=="/api/thermique-composants"||envoye[1].composants[0].ref!=="LED1")throw new Error("requête : "+JSON.stringify(envoye));
+    const e=runDrc().find(x=>/LED1 : échauffement estimé 55 K/.test(x.msg));
+    if(!e||e.info)throw new Error("au-delà de 40 K : erreur du DRC");
+    S.rule.dTMax=60;
+    if(runDrc().some(x=>/échauffement estimé/.test(x.msg)))throw new Error("sous la limite : rien");
+    S.rule.dTMax=40;touch();
+    if(runDrc().some(x=>/échauffement estimé/.test(x.msg)))throw new Error("la carte a bougé : l'estimation ne vaut plus");
+    // la commande de pilotage rend le tableau
+    const cmds={}, ancien=global.Pilote;
+    global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+    try{piloteCao("pcb");}finally{global.Pilote=ancien;}
+    const t=await cmds.cao_thermique.executer({});
+    if(!/- LED1 : 55 K pour 1\.00 W/.test(t))throw new Error("cao_thermique : "+t);
+    // la puissance part au fichier, et se règle par le canal
+    loadDoc(JSON.parse(serialize()),true);
+    if(S.fps.find(f=>f.ref==="LED1").puissance!==1)throw new Error("puissance relue");
+  }finally{global.fetch=fetchGarde;suiviFin(reg);loadDoc(JSON.parse(saved),true);}
 });
 TA("canal de pilotage : cao_interdits_ecrire, zones d'une face et hauteurs ; lecture « interdits »",async()=>{
   const {jouer,refus}=pilotePcbCmds();

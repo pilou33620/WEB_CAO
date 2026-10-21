@@ -2969,6 +2969,17 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             raise ErreurIPC(413, "Maillage trop lourd pour la memoire disponible")
         return resultat
 
+    def _thermique_lancer(self):
+        """POST /api/thermique-composants : echauffement estime des composants qui dissipent
+        (dc_solver.echauffement_composants, le modele d'etalement de la chute DC)."""
+        if dc_solver is None:
+            raise ErreurIPC(503, "Solveur DC indisponible : %s" % ERREUR_DC)
+        doc = self._lire_document(1024 * 1024)
+        try:
+            return dc_solver.echauffement_composants(doc)
+        except dc_solver.ErreurDC as exc:
+            raise ErreurIPC(422, exc.message + ("\n" + exc.conseil if exc.conseil else ""))
+
     def _dc_lancer(self):
         """POST /api/simulation-dc : calcul DC (IR drop)."""
         if dc_solver is None:
@@ -3396,7 +3407,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                   "/api/oeil": self._oeil_lancer,
                   "/api/pcb/score-placement": self._scoring_lancer,
                   "/api/schema/patterns": self._patterns_lancer,
-                  "/api/analyse-carte": self._analyse_lancer}.get(route)
+                  "/api/analyse-carte": self._analyse_lancer,
+                  "/api/thermique-composants": self._thermique_lancer}.get(route)
         if calcul:
             with CALCULS:
                 self._ipc_api(calcul)

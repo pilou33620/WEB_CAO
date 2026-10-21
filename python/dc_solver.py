@@ -1527,6 +1527,97 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
     }
 
 
+# ==========================================================================
+# L'ECHAUFFEMENT D'UN COMPOSANT QUI DISSIPE (estimation, pas une simulation)
+#
+#   Un composant dissipe P dans le cuivre relie a ses pastilles : un ilot de
+#   surface A (pastilles, pistes, plan du net). Deux etapes en serie :
+#
+#   1. L'ETALEMENT DANS L'ILOT, des pastilles (disque de rayon r0, leur surface)
+#      jusqu'au disque equivalent de l'ilot (rayon a = sqrt(A/pi)) : conduction
+#      radiale dans la nappe de l'ilot, Ks_i = k_cu*t_cu + Ks (stratifie et
+#      plans declares, ceux du modele d'etalement des pistes),
+#
+#          R_etal = ln(a / r0) / (2 pi Ks_i)                         [K/W]
+#
+#   2. LA SORTIE DE L'ILOT : ses deux faces (2 h A), et l'AILETTE de la carte
+#      autour de lui, de nappe Ks et de longueur L = sqrt(Ks / 2h), alimentee
+#      sur le bord d'un disque de rayon a (Bessel modifiees, x = a / L) :
+#
+#          G = 2 h A + 2 pi Ks x K1(x) / K0(x)                        [W/K]
+#
+#   dT = P (R_etal + 1 / G). Memes constantes que `_thermique` (k du
+#   stratifie, h par face, cuivre etaleur) et memes replis, annonces.
+#
+#   CE QUE CE CHIFFRE N'EST PAS. L'ilot est pris rond et isotherme sur son
+#   bord, la carte uniforme, sans autre composant qui chauffe a cote, sans le
+#   boitier qui rayonne lui-meme (prudent), sans convection forcee. C'est un
+#   ordre de grandeur, a +-30 % : de quoi savoir si un plot thermique sur
+#   26 mm de disque tient 1 W, pas de quoi signer un dossier thermique.
+# ==========================================================================
+THERMIQUE_COMPOSANTS_MAX = 2000
+
+
+def echauffement_composants(doc):
+    """L'echauffement estime de chaque composant qui dissipe. Le document est en
+    MILLIMETRES (surfaces en mm2, epaisseurs du bloc thermique en mm, cuivre de
+    l'ilot en um), comme celui de resoudre_document ; rend des kelvins.
+
+    {"thermique": {...}, "composants": [{"ref", "puissance_w", "surface_mm2",
+     "source_mm2", "cuivre_um"}]}
+    """
+    from scipy.special import k0, k1
+    th_doc = doc.get("thermique") or {}
+    brut = {}
+    if isinstance(th_doc, dict):
+        for cle in ("k_stratifie", "h_surface"):
+            if th_doc.get(cle) is not None:
+                brut[cle] = float(th_doc[cle])
+        for cle in ("epaisseur_stratifie", "cuivre_etaleur"):
+            if th_doc.get(cle) is not None:
+                brut[cle] = float(th_doc[cle]) * 1e-3
+    th = _thermique(brut)
+    comps = doc.get("composants")
+    if not isinstance(comps, list) or not comps:
+        raise ErreurDC("Aucun composant qui dissipe.",
+                       "Donnez une puissance dissipée (W) à au moins un composant.")
+    if len(comps) > THERMIQUE_COMPOSANTS_MAX:
+        raise ErreurDC("Trop de composants : %d, %d au plus." % (len(comps), THERMIQUE_COMPOSANTS_MAX))
+    ks, h2 = th["nappe"], 2.0 * th["h_surface"]
+    L = math.sqrt(ks / h2)
+    sortie = []
+    for c in comps:
+        def lire(cle, mini, maxi):
+            try:
+                v = float(c.get(cle))
+            except (TypeError, ValueError, AttributeError):
+                raise ErreurDC("« %s » : un nombre attendu (%s)." % (cle, c.get("ref") if isinstance(c, dict) else c))
+            if not (mini <= v <= maxi) or v != v:
+                raise ErreurDC("« %s » de %s hors bornes : %g (%g à %g)." % (cle, c.get("ref"), v, mini, maxi))
+            return v
+        p = lire("puissance_w", 0.0, 100.0)
+        a_m2 = lire("surface_mm2", 1e-3, 1e6) * 1e-6
+        s_m2 = min(lire("source_mm2", 1e-4, 1e6) * 1e-6, a_m2)
+        t_cu = lire("cuivre_um", 1.0, 500.0) * 1e-6
+        a, r0 = math.sqrt(a_m2 / math.pi), math.sqrt(s_m2 / math.pi)
+        ks_i = CONDUCTIVITE_CUIVRE_TH * t_cu + ks
+        r_etal = math.log(a / r0) / (2.0 * math.pi * ks_i) if a > r0 else 0.0
+        x = a / L
+        g = h2 * a_m2 + 2.0 * math.pi * ks * x * float(k1(x)) / float(k0(x))
+        r_tot = r_etal + 1.0 / g
+        sortie.append({"ref": str(c.get("ref", "?"))[:40], "puissance_w": p, "surface_mm2": a_m2 * 1e6,
+                       "dT": p * r_tot, "r_th": r_tot, "r_etalement": r_etal, "r_sortie": 1.0 / g})
+    return {"composants": sortie,
+            "thermique": {"k_stratifie": th["k_stratifie"], "h_surface": th["h_surface"],
+                          "epaisseur_stratifie_mm": th["epaisseur_stratifie"] * 1e3,
+                          "cuivre_etaleur_um": th["cuivre_etaleur"] * 1e6,
+                          "longueur_etalement_mm": L * 1e3, "replis": th["replis"]},
+            "modele": ("Estimation : étalement radial dans l'îlot de cuivre relié aux pastilles, puis sortie par"
+                       " ses deux faces et par l'ailette de la carte (modèle d'étalement, Bessel K0/K1). Îlot pris"
+                       " rond, carte uniforme, sans voisin qui chauffe ni convection forcée : un ordre de grandeur,"
+                       " ±30 %." + (" Supposé faute de mieux : %s." % ", ".join(th["replis"]) if th["replis"] else ""))}
+
+
 def resoudre_document(doc, journal=None):
     """Le document d'echange (en MILLIMETRES) -> le resultat (en volts).
 

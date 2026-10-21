@@ -470,6 +470,7 @@ function normFp(f,i){
      importée apporte la sienne. Absent = coupée jamais, comme avant. */
   if(f.silk===false)out.silk=false;
   if(f.simNonMonte===true)out.simNonMonte=true;   // ignorée par les simulations (19-simulation.js)
+  if(+f.puissance>0)out.puissance=r3(dRange(f.puissance,0,0,100));   // dissipée en service, W (39-thermique.js)
   if(f.mark===false)out.mark=false;
   else if(f.mark&&typeof f.mark==="object"){
     const mx=+f.mark.x, my=+f.mark.y;
@@ -685,6 +686,7 @@ function normDoc(d){
             cuMin:dRange(r.cuMin,0.2,0,5),   // cuivre de zone mini : les fichiers muets prennent 0,2 mm
             // hauteur maximale des composants par face (38-interdits.js) : null, pas de limite
             hDessus:+r.hDessus>0?dRange(r.hDessus,null,0.1,100):null,hDessous:+r.hDessous>0?dRange(r.hDessous,null,0.1,100):null,
+            dTMax:dRange(r.dTMax,40,1,500),   // échauffement estimé au-delà duquel le DRC le signale (39-thermique.js)
             mask:dRange(r.mask,0.05,-100,100),paste:dRange(r.paste,0,-100,100),
             viaFinish:VIA_FINISH[vf]?vf:(r.tented===false?"open":"tented"),
             corner:CORNER_MODES[cm]?cm:"45",
@@ -826,7 +828,7 @@ function loadDoc(d,keepView){
   S.origin=d.origin;
   S.fabOrigin=d.fabOrigin;
   const r=d.rule;
-  S.rule={edge:r.edge, thermal:r.thermal, cuMin:r.cuMin, hDessus:r.hDessus, hDessous:r.hDessous, mask:r.mask, paste:r.paste,
+  S.rule={edge:r.edge, thermal:r.thermal, cuMin:r.cuMin, hDessus:r.hDessus, hDessous:r.hDessous, dTMax:r.dTMax, mask:r.mask, paste:r.paste,
           viaFinish:r.viaFinish, corner:r.corner, route:r.route, hole:r.hole,
           mat:r.mat, short:r.short, aspWarn:r.aspWarn, aspMax:r.aspMax,
           mfgProfile:r.mfgProfile||"jlcpcb"};

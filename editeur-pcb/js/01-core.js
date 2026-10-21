@@ -997,7 +997,7 @@ const S = {
      pas à la condamner quinze fois.
      `aspWarn`/`aspMax` : les seuils du rapport d'aspect, que le fabricant
      annonce et qui ne sont donc pas les mêmes partout. */
-  rule:{edge:0.4,thermal:0.5,cuMin:0.2,hDessus:null,hDessous:null,mask:0.05,paste:0.0,viaFinish:"tented",corner:"45",
+  rule:{edge:0.4,thermal:0.5,cuMin:0.2,hDessus:null,hDessous:null,dTMax:40,mask:0.05,paste:0.0,viaFinish:"tented",corner:"45",
         route:"shove",hole:0.25,mat:{},short:false,
         aspWarn:ASPECT_WARN,aspMax:ASPECT_MAX,mfgProfile:"jlcpcb"},
   classes:[{name:"Défaut",      w:0.3, clr:0.25, via:0.8, drill:0.4},

@@ -1497,6 +1497,7 @@ function propsFp(box,fp){
       'title="La pièce est absente de la carte : toutes les simulations l\'ignorent. Ses pastilles '+
       'restent, c\'est du cuivre. Ne change ni bom.csv ni positions.csv : pour la fabrication, ce sont les variantes.">'+
       '<input type="checkbox" id="pSimNM"'+(fp.simNonMonte?" checked":"")+'> Non monté (ignoré par les simulations)</label></div>'+
+    (typeof thermiquePropsHtml==="function"?thermiquePropsHtml(fp):"")+
     '<div class="cat">Broches et nets</div><table class="bom"><tbody>';
   for(const [k,q] of ps.entries()){
     let pinSchName = "";
@@ -1524,6 +1525,7 @@ function propsFp(box,fp){
   if(typeof groupesPropsHtml==="function")h+=groupesPropsHtml(fp);   // son groupe (27-groupes.js)
   box.innerHTML=h;
   if(typeof groupesPropsBind==="function")groupesPropsBind(fp);
+  if(typeof thermiquePropsBind==="function")thermiquePropsBind(fp);
   const upd=(id,fn,num)=>{
     const el=$(id);
     if(!el)return;
@@ -1675,6 +1677,8 @@ function propsBoard(box){
     '<div class="prop two" title="Hauteur des composants (dossier mécanique ou LIB) au-delà de laquelle le DRC le signale ; vide : pas de limite">'+
       numProp("bpHD","Hauteur max dessus (mm)",S.rule.hDessus||"",0.5,0)+
       numProp("bpHB","Hauteur max dessous (mm)",S.rule.hDessous||"",0.5,0)+'</div>'+
+    '<div class="prop two" title="Au-delà, le DRC signale l\'échauffement estimé d\'un composant (propriétés du composant : puissance dissipée)">'+
+      numProp("bpDT","Échauffement max (K)",S.rule.dTMax||40,1,1)+'<div></div></div>'+
     '<div class="prop two">'+
       '<div><label>Contour</label><input value="'+(S.board.pts?"libre":"rectangle")+
       '" disabled></div>'+
@@ -1701,6 +1705,7 @@ function propsBoard(box){
   $("bpH").onchange=()=>{push();contourChanger(()=>setBoardSize(S.board.w,parseFloat($("bpH").value)||S.board.h));
     reSync();refreshPanels();draw();};
   $("bpDraw").onclick=()=>setMode("edge");
+  $("bpDT").onchange=()=>{push();const v=parseFloat($("bpDT").value);S.rule.dTMax=v>=1?Math.min(v,500):40;touch();refreshPanels();};
   for(const [id,k] of [["bpHD","hDessus"],["bpHB","hDessous"]])
     $(id).onchange=()=>{push();const v=parseFloat($(id).value);S.rule[k]=v>0?r3(Math.min(v,100)):null;touch();refreshPanels();draw();};
   $("bpDisque").onclick=()=>{const b=S.board;push();
