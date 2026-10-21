@@ -179,7 +179,9 @@ function bindPkgField(el){
         fr=document.getElementById("pPkgFree"),
         tx=document.getElementById("pPkgTxt");
   const set=v=>{
-    if(v)el.pkg=String(v).slice(0,PKG_MAX);else delete el.pkg;
+    const n=v?String(v).slice(0,PKG_MAX):"";
+    if(n!==(el.pkg||"")&&PROP_FRAPPE!==el){push();PROP_FRAPPE=el;}   // une étape, comme repère et valeur
+    if(n)el.pkg=n;else delete el.pkg;
     buildList();
   };
   const baseOf=()=>PKG_BASES.find(b=>b.b===bs.value)||null;

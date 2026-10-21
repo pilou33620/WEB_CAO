@@ -321,7 +321,7 @@ T("canal de pilotage : cao_valeur_composant propose, applique en une étape, Ctr
   }finally{global.Pilote=ancien;}
 });
 
-T("Propriétés : repère et valeur tapés au clavier font une étape, que Ctrl+Z défait",()=>{
+T("Propriétés : repère, valeur et boîtier font une étape, que Ctrl+Z défait",()=>{
   const el=addComp("resistor",300,300); el.ref="R41"; el.value="1k";
   clearSel();S.sel.add(el.id);refreshPanels();
   const n=S.hist.length, avant=serialize();
@@ -335,6 +335,16 @@ T("Propriétés : repère et valeur tapés au clavier font une étape, que Ctrl+
   clearSel();S.sel.add(S.comps.find(c=>c.ref==="R41").id);refreshPanels();
   const v=document.getElementById("pVal"); v.value="10k"; v.oninput();
   if(S.hist.length!==n+1)throw new Error("après Ctrl+Z, une nouvelle saisie refait une étape");
+  /* le boîtier choisi dans la liste : une étape aussi */
+  undo();
+  const R=S.comps.find(c=>c.ref==="R41"); clearSel();S.sel.add(R.id);refreshPanels();
+  const bs=document.getElementById("pPkgB"), choix=bs&&(PKG_BASES.find(b=>b.b!==bs.value&&!(R.pkg||"").startsWith(b.b))||{}).b;
+  if(!choix)throw new Error("liste des boîtiers vide");
+  const doc=serialize(), m=S.hist.length;
+  bs.value=choix; bs.onchange();
+  if(S.hist.length!==m+1||serialize()===doc)throw new Error("boîtier : une étape attendue, "+(S.hist.length-m));
+  undo();
+  if(serialize()!==doc)throw new Error("Ctrl+Z ne défait pas le boîtier");
 });
 
 T("historique : un flot de lots de Claude se fond, les étapes de l'utilisateur restent",()=>{
