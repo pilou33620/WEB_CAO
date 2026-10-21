@@ -415,6 +415,7 @@ function ipcRemplir(z){
     }
   }
   for(const ct of S.cuts)if(ct.l===i)prendre(moins,ct.pts);
+  for(const P of zoneLanieres(i))prendre(moins,P);     // les lanières, comme au Gerber
   const fichier=zoneFichier(z);
   if(fichier&&Array.isArray(z.trous))for(const t of z.trous)prendre(moins,t);
   /* le cuivre d'un autre net */

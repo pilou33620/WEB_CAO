@@ -198,6 +198,9 @@ function zoneCanvas(i){
     for(let k=1;k<ct.pts.length;k++)c.lineTo(ct.pts[k].x,ct.pts[k].y);
     c.closePath();c.fill();
   }
+  for(const P of zoneLanieres(i)){        // cuivre plus étroit que cuMin entre deux dégagements
+    c.beginPath();c.moveTo(P[0].x,P[0].y);for(let k=1;k<P.length;k++)c.lineTo(P[k].x,P[k].y);c.closePath();c.fill();
+  }
   for(const t of S.tracks){
     if(t.l!==i)continue;
     const tb=trkBBox(t);

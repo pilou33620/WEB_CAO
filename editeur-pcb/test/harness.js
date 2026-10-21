@@ -176,7 +176,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* formes de pastille, rotation, origine de l'empreinte */
   "PAD_SHAPES","padShape","padRadius","padRot","padHalf","padDist","padOpening",
   "fpLocalBox",
-  "apSet","apForPad","netAtPoint","padCuLayers","pnsItemsPad","aplatClick","closeAplat","selDecoupes","deleteSel","hitTest","selectHit","brocheNum","parseNetlist","applyNetlist","padSurCouche","padLiaison","padBras","maskOpenings","pasteOpenings","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","UNDO_BUDGET","rotChoix","padNom",
+  "apSet","apForPad","netAtPoint","padCuLayers","pnsItemsPad","aplatClick","closeAplat","selDecoupes","deleteSel","hitTest","selectHit","brocheNum","parseNetlist","applyNetlist","padSurCouche","padLiaison","padBras","zoneLanieres","maskOpenings","pasteOpenings","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","UNDO_BUDGET","rotChoix","padNom",
   /* repère de broche 1 */
   "MARK_D","PASSIF_REF","fpMarkWanted","fpMarkAuto","fpMark","fpSetMark",
   "fpMoveMark","fpSetMarkD","fpXform",
@@ -3555,6 +3555,7 @@ T("bras thermiques : celui qui toucherait l'anode voisine n'est tracé nulle par
     pcbAppliquerDefEmpreinte(L,"ESSAI-LED",{style:"chip",pins:2,
       pads:[{n:1,x:0,y:2.5,w:1,h:1,shape:"rect",drill:0},{n:2,x:0,y:0,w:3,h:3,shape:"rect",drill:0}]});
     L.nets={1:"LED_A",2:"GND"};
+    S.rule.cuMin=0;                    // les lanières (essai suivant) ajouteraient leurs propres traits au Gerber
     S.zones=[{id:S.nextId++,l:0,net:"GND",pts:boardZonePts()}];touch();
     const plot=()=>padsWorld(L).find(q=>q.n===2);
     const B=padBras(plot(),0);
@@ -3575,6 +3576,44 @@ T("bras thermiques : celui qui toucherait l'anode voisine n'est tracé nulle par
     L.pads[1].thermalSpokes=1;touch();
     const e=runDrc().find(x=>/Liaison thermique LED1\.2/.test(x.msg));
     if(!e||e.info||!/aucun bras possible/.test(e.msg))throw new Error("aucun bras : "+(e&&e.msg));
+  }finally{suiviFin(reg);loadDoc(JSON.parse(saved),true);}
+});
+T("cuivre mini : la bande trop étroite entre deux dégagements est retirée, partout",()=>{
+  const saved=serialize(), reg=suiviDecor();
+  try{
+    const L=mkFp("LED1","","",2);L.x=20;L.y=20;S.fps.push(L);
+    S.rule.cuMin=0.2;
+    const ca=clrK("GND","LED_A","cu","smd"), cb=classOf("GND").clr;   // le dégagement de l'anode, l'anneau du plot
+    // anode et plot GND : 0,1 mm de cuivre entre les deux dégagements
+    const gap=ca+cb+0.1, xm=20+0.5+ca+0.05;
+    pcbAppliquerDefEmpreinte(L,"ESSAI-FENTE",{style:"chip",pins:2,
+      pads:[{n:1,x:0,y:0,w:1,h:1,shape:"sharp",drill:0},{n:2,x:1+gap,y:0,w:1,h:1,shape:"sharp",drill:0}]});
+    L.nets={1:"LED_A",2:"GND"};
+    S.zones=[{id:S.nextId++,l:0,net:"GND",pts:boardZonePts()}];touch();
+    const lan=zoneLanieres(0);
+    if(lan.length!==1)throw new Error("une lanière attendue : "+lan.length);
+    if(!inPoly(xm,20,lan[0])||inPoly(xm,21.5,lan[0])||inPoly(20.2,20,lan[0]))throw new Error("la fente seule : "+JSON.stringify(polyBBox(lan[0])));
+    const regions=()=>(gerberCopper(0).match(/G36\*/g)||[]).length;
+    const avec=regions();
+    S.rule.cuMin=0;touch();
+    if(zoneLanieres(0).length||regions()!==avec-1)throw new Error("cuMin à 0 : rien de retiré");
+    S.rule.cuMin=0.2;L.pads[1].x=1+ca+cb+1.5;touch();
+    if(zoneLanieres(0).length)throw new Error("1,5 mm de cuivre : rien à retirer");
+    // la règle part au fichier et en revient, 0,2 mm pour un fichier muet
+    const d=JSON.parse(serialize());d.rule.cuMin=0.15;loadDoc(d,true);
+    if(S.rule.cuMin!==0.15)throw new Error("cuMin relu : "+S.rule.cuMin);
+    delete d.rule.cuMin;loadDoc(d,true);
+    if(S.rule.cuMin!==0.2)throw new Error("fichier muet : "+S.rule.cuMin);
+    // le long d'une piste, la bande reste : le DRC la signale (remarque), et seulement sous le mini
+    const P=padsWorld(S.fps[0]).find(q=>q.n===1), ct=clrK("GND","SIG","cu","trk");
+    const yPiste=e=>P.y+0.5+ca+e+ct+0.1;   // 0,1 mm : la demi-largeur de la piste
+    S.tracks=[{l:0,net:"SIG",w:0.2,x1:P.x-3,y1:yPiste(0.1),x2:P.x+3,y2:yPiste(0.1)}];touch();
+    const r=runDrc().filter(e=>/Cuivre de zone de/.test(e.msg));
+    // elle longe les deux pastilles : une remarque pour chacune
+    if(r.length!==2||!r.every(e=>e.info)||!r.some(e=>/0\.100 mm entre la piste SIG et la pastille LED1\.1/.test(e.msg)))
+      throw new Error("cuivre étroit : "+r.map(e=>e.msg).join(" | "));
+    S.tracks[0].y1=S.tracks[0].y2=yPiste(0.3);touch();
+    if(runDrc().some(e=>/Cuivre de zone de/.test(e.msg)))throw new Error("0,3 mm de cuivre : rien à dire");
   }finally{suiviFin(reg);loadDoc(JSON.parse(saved),true);}
 });
 T("Gerber : masque, pâte, sérigraphie, contour",()=>{

@@ -4829,6 +4829,7 @@ const SIM_PCB={
           trous.push(rect(q,clrK(zn,q.net,"cu",q.drill>0?"th":"smd")));
         }
       for(const c of S.cuts||[])if(c.l===z.l&&c.pts.length>2)trous.push(plat(c.pts));
+      for(const P of zoneLanieres(z.l))trous.push(plat(P));   // les lanières, comme au Gerber
       return {c:nom(z.l),n:zn,o:plat(z.pts),isolement:clrK(zn,"","cu","trk"),t:trous};
     }).concat(liaisons);
     const routes=new Set(S.tracks.map(t=>t.net));

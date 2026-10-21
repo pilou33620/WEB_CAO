@@ -1206,11 +1206,16 @@ zone(){
         "Case comprise, classe de net comprise : c'est ce que le remplissage "+
         "écarte réellement d'une piste étrangère.")+
       reFact("Zones coupées en îlots",String(isl))+'</div>'+
+    '<div class="prop two">'+
+      numProp("reCuMin","Cuivre de zone mini (mm)",fmt(S.rule.cuMin,3),0.05,0)+'</div>'+
     '<div class="restate pad">Ces quatre cases sont la ligne « Cuivre » de la '+
     'matrice, dépliée ici : c\'est la même cote pour le remplissage à l\'écran, '+
     'pour le Gerber et pour le contrôle. À zéro, la classe de net décide seule. '+
     'Une zone sans net reste isolée ; une zone coupée en plusieurs îlots ne '+
-    'relie plus ce qu\'elle prétend relier.</div>';
+    'relie plus ce qu\'elle prétend relier. Entre deux pastilles dont les '+
+    'dégagements laissent moins que le cuivre mini, la bande est retirée : '+
+    'pas de pointe de cuivre au bout d\'une fente, qui se décollerait au '+
+    'nettoyage (0 : rien n\'est retiré).</div>';
 },
 dp(){
   /* Le panneau des paires, entier, dans sa page. `buildDiffPairs()` écrit dans
@@ -1853,6 +1858,7 @@ function reBind(){
   /* --- règles générales --- */
   num("reHole",v=>S.rule.hole=Math.max(0,v));
   num("reTh",v=>S.rule.thermal=Math.max(0,v));
+  num("reCuMin",v=>S.rule.cuMin=Math.max(0,v));
   num("reEdge",v=>{S.rule.edge=Math.max(0,v);boardChanged();});
   num("reMask",v=>S.rule.mask=v);
   num("rePaste",v=>S.rule.paste=v);

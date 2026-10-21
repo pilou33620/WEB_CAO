@@ -359,6 +359,7 @@ function gerberCopper(i){
     for(const ct of S.cuts){
       if(ct.l===i&&ct.pts.length>=3)gRegion(body,ct.pts);
     }
+    for(const P of zoneLanieres(i))gRegion(body,P);   // cuivre plus étroit que cuMin entre deux dégagements
     /* les trous du cuivre d'une zone importée, tels que le fabricant les a */
     for(const z of zs)
       if(zoneFichier(z)&&Array.isArray(z.trous))

@@ -826,6 +826,15 @@ l'anode à 0,5 mm, DRC à zéro. Comme KiCad, le DRC le dit quand une pastille
 garde moins de deux bras (remarque), ou aucun (erreur : elle n'est plus reliée
 à sa zone).
 
+**Cuivre de zone mini** (`S.rule.cuMin`, 0,2 mm par défaut, fenêtre Règles,
+section Zone) : entre deux pastilles (ou une pastille et une via) dont les
+dégagements laissent moins que ce minimum, la bande est retirée du
+remplissage (`zoneLanieres`) — plus de pointe de cuivre au bout d'une fente,
+ni de lanière qui se décolle. L'écran, les îlots, le Gerber, l'IPC-2581 et la
+simulation retirent les mêmes. Le long d'une piste, la bande n'est pas
+retirée : le DRC la signale (« Cuivre de zone de … mm entre … »). 0 désactive
+les deux.
+
 **Zone au cuivre du fichier** (`fichier`, `trous`, `sig`) : une zone dont le
 document porte le cuivre déjà calculé est remplie avec ce cuivre — ses trous, liaisons
 thermiques comprises — à l'écran, à l'analyse, au Gerber et en simulation.

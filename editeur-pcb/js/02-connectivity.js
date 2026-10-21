@@ -97,6 +97,9 @@ function zoneMask(l,net){
     for(let k=1;k<ct.pts.length;k++)c.lineTo(ct.pts[k].x,ct.pts[k].y);
     c.closePath();c.fill();
   }
+  for(const P of zoneLanieres(l)){        // cuivre plus étroit que cuMin entre deux dégagements
+    c.beginPath();c.moveTo(P[0].x,P[0].y);for(let k=1;k<P.length;k++)c.lineTo(P[k].x,P[k].y);c.closePath();c.fill();
+  }
   c.strokeStyle="#000";c.fillStyle="#000";c.lineCap="round";c.lineJoin="round";
   /* ce qui tombe hors du masque n'y laisse rien : une carte importée compte
      des centaines de zones, chacune ne paie que son voisinage */
@@ -597,6 +600,76 @@ function padBras(q,l){
   BRAS_MEMO.m.set(cle,r);
   return r;
 }
+/* LES LANIÈRES D'UNE ZONE, sur la couche l. Entre deux pastilles voisines (ou
+   une pastille et une via), le cuivre que leurs dégagements laissent peut être
+   plus étroit que `S.rule.cuMin` : une bande au fond d'une fente, des pointes
+   à ses bouts, entre les coins arrondis des deux dégagements (carte LED_UV,
+   quatre pointes autour de la LED). Ce cuivre-là se décolle et ne relie rien.
+   Rend les polygones à retirer, comme des découpes de zone : l'enveloppe
+   convexe des bords des deux dégagements qui sont à moins de cuMin l'un de
+   l'autre — la fente seule, pas tout l'entre-deux d'un coin à l'autre. Deux
+   formes pleines du net de la zone (liaison directe, via du net) se touchent
+   par le cuivre : rien à retirer entre elles. Écran, îlots, Gerber, IPC-2581
+   et simulation s'en servent ; mémoïsé par révision.
+   shortcut: pastilles et vias seulement, pas les pistes (une piste longe une
+   pastille sur toute sa longueur) ; un algorithme d'ouverture du cuivre
+   rempli le ferait partout, à envisager si des lanières de piste gênent. */
+const LANIERES_MEMO={ver:-1,m:new Map()};
+function enveloppeConvexe(P){
+  const p=P.slice().sort((a,b)=>a.x-b.x||a.y-b.y), h=[];
+  const cr=(o,a,b)=>(a.x-o.x)*(b.y-o.y)-(a.y-o.y)*(b.x-o.x);
+  for(const pass of [p,p.slice().reverse()]){
+    const d=h.length;
+    for(const q of pass){while(h.length>=d+2&&cr(h[h.length-2],h[h.length-1],q)<=0)h.pop();h.push(q);}
+    h.pop();
+  }
+  return h;
+}
+function zoneLanieres(l){
+  const w=S.rule.cuMin;
+  if(!(w>0)||!S.zones.some(z=>z.l===l))return [];
+  if(LANIERES_MEMO.ver!==S.ver){LANIERES_MEMO.ver=S.ver;LANIERES_MEMO.m.clear();}
+  if(LANIERES_MEMO.m.has(l))return LANIERES_MEMO.m.get(l);
+  /* chaque forme : son bord dégagé (points, tous les 0,05 mm), sa distance au
+     bord dégagé, et si elle est du cuivre plein de la zone */
+  const formes=[];
+  const bord=P=>{const o=[];P.forEach((a,k)=>{const b=P[(k+1)%P.length], n=Math.max(1,Math.ceil(Math.hypot(b.x-a.x,b.y-a.y)/0.05));
+    for(let j=0;j<n;j++)o.push({x:a.x+(b.x-a.x)*j/n,y:a.y+(b.y-a.y)*j/n});});return o;};
+  for(const fp of S.fps)
+    for(const q of padsWorld(fp)){
+      if(!padLayers(fp,q).includes(l))continue;
+      const qc=padSurCouche(q,l), z=zoneAt(l,q.x,q.y);
+      if(!qc||!z||zoneFichier(z))continue;
+      const meme=!!q.net&&q.net===z.net;
+      const e=meme?(padLiaison(q,l,z)==="directe"?0:classOf(q.net).clr):clrK(z.net,q.net,"cu",q.drill>0?"th":"smd");
+      formes.push({pts:bord(padWorldPts(qc,e)),plein:meme&&e===0,d:(x,y)=>padDist(x,y,qc)-e,
+                   r:Math.hypot(qc.w,qc.h)/2+e,x:q.x,y:q.y});
+    }
+  for(const v of S.vias){
+    if(l<v.a||l>v.b)continue;
+    const z=zoneAt(l,v.x,v.y);
+    if(!z||zoneFichier(z))continue;
+    const meme=!!v.net&&v.net===z.net, r=v.d/2+(meme?0:clrK(z.net,v.net,"cu","via"));
+    const P=[];for(let k=0;k<Math.max(16,Math.ceil(2*Math.PI*r/0.05));k++){const a=k*2*Math.PI/Math.max(16,Math.ceil(2*Math.PI*r/0.05));P.push({x:v.x+r*Math.cos(a),y:v.y+r*Math.sin(a)});}
+    formes.push({pts:P,plein:meme,d:(x,y)=>Math.hypot(x-v.x,y-v.y)-r,r,x:v.x,y:v.y});
+  }
+  const out=[];
+  // balayage trié en x : une carte importée a des milliers de pastilles dans ses plans
+  formes.sort((a,b)=>a.x-b.x);
+  const rMax=formes.reduce((m,f)=>Math.max(m,f.r),0);
+  for(let i=0;i<formes.length;i++)
+    for(let j=i+1;j<formes.length&&formes[j].x-formes[i].x<=formes[i].r+rMax+w;j++){
+      const A=formes[i], B=formes[j];
+      if(A.plein&&B.plein)continue;
+      if(Math.hypot(A.x-B.x,A.y-B.y)>A.r+B.r+w)continue;
+      const pres=A.pts.filter(p=>B.d(p.x,p.y)<w).concat(B.pts.filter(p=>A.d(p.x,p.y)<w));
+      if(pres.length<3)continue;
+      const H=enveloppeConvexe(pres);
+      if(H.length>=3&&Math.abs(signedArea(H))>1e-4)out.push(H);
+    }
+  LANIERES_MEMO.m.set(l,out);
+  return out;
+}
 /* Écart cuivre à cuivre entre deux pastilles : sommets de chacune contre
    l'autre, et bords qui se croisent. Mesurer du centre de l'une, moins son
    demi petit côté, rendait 0,85 mm pour deux pastilles 2×0,5 bout à bout
@@ -960,6 +1033,65 @@ function runDrc(){
             msg:"Liaison thermique "+fp.ref+"."+q.n+" ("+q.net+") : aucun bras possible ("+qui+
                 ") — la pastille n'est pas reliée à sa zone, passez-la en liaison directe ou dégagez-la"});
       }
+  /* Cuivre de zone trop étroit le long d'une piste : entre une piste et une
+     pastille, une via ou une autre piste, les deux dégagements laissent moins
+     que cuMin. Entre pastilles et vias, le remplissage retire déjà la bande
+     (zoneLanieres) ; le long d'une piste, il la laisse, et le DRC le dit.
+     shortcut: pistes droites seulement, un arc n'est pas mesuré. */
+  const wMin=S.rule.cuMin;
+  if(wMin>0&&S.zones.length)for(let l=0;l<S.cu;l++){
+    if(!S.zones.some(z=>z.l===l))continue;
+    const objs=[];                  // {seg (axe), demi (demi-largeur + dégagement), plein, nom}
+    const dans=(x,y)=>{const z=zoneAt(l,x,y);return z&&!zoneFichier(z)?z:null;};
+    for(const t of S.tracks){
+      if(t.l!==l||arcOf(t))continue;
+      const m=trkMid(t), z=dans(m.x,m.y);
+      if(!z)continue;
+      const meme=!!t.net&&t.net===z.net;
+      objs.push({seg:t,demi:t.w/2+(meme?0:clrK(z.net,t.net,"cu","trk")),plein:meme,piste:true,nom:"la piste "+(t.net||"sans net")});
+    }
+    if(!objs.length)continue;
+    for(const v of S.vias){
+      if(l<v.a||l>v.b)continue;
+      const z=dans(v.x,v.y);
+      if(!z)continue;
+      const meme=!!v.net&&v.net===z.net;
+      objs.push({seg:{x1:v.x,y1:v.y,x2:v.x,y2:v.y},demi:v.d/2+(meme?0:clrK(z.net,v.net,"cu","via")),plein:meme,nom:"la via "+(v.net||"sans net")});
+    }
+    for(const fp of S.fps)
+      for(const q of padsWorld(fp)){
+        if(!padLayers(fp,q).includes(l))continue;
+        const qc=padSurCouche(q,l), z=qc&&dans(q.x,q.y);
+        if(!z)continue;
+        const meme=!!q.net&&q.net===z.net, e=meme?(padLiaison(q,l,z)==="directe"?0:classOf(q.net).clr)
+                                                 :clrK(z.net,q.net,"cu",q.drill>0?"th":"smd");
+        objs.push({pad:qc,demi:e,plein:meme&&e===0,nom:"la pastille "+fp.ref+"."+q.n,
+                   seg:{x1:q.x,y1:q.y,x2:q.x,y2:q.y},r:Math.hypot(qc.w,qc.h)/2});
+      }
+    const boite=o=>{const r=(o.r||0)+o.demi+wMin;return {x1:Math.min(o.seg.x1,o.seg.x2)-r,y1:Math.min(o.seg.y1,o.seg.y2)-r,
+                                                         x2:Math.max(o.seg.x1,o.seg.x2)+r,y2:Math.max(o.seg.y1,o.seg.y2)+r};};
+    const G=new Map(), PAS=2, cases=b=>{const o=[];
+      for(let x=Math.floor(b.x1/PAS);x<=Math.floor(b.x2/PAS);x++)for(let y=Math.floor(b.y1/PAS);y<=Math.floor(b.y2/PAS);y++)o.push(x+"|"+y);
+      return o;};
+    objs.forEach((o,k)=>{o.b=boite(o);for(const c of cases(o.b)){let a=G.get(c);if(!a)G.set(c,a=[]);a.push(k);}});
+    for(let i=0;i<objs.length;i++){
+      const A=objs[i];
+      if(!A.piste)continue;          // une paire sans piste : la lanière est déjà retirée
+      const voisins=new Set();
+      for(const c of cases(A.b))for(const k of G.get(c)||[])voisins.add(k);
+      for(const j of voisins){
+        const B=objs[j];
+        if(j===i||(B.piste&&j<i)||(A.plein&&B.plein))continue;
+        if(A.b.x2<B.b.x1||B.b.x2<A.b.x1||A.b.y2<B.b.y1||B.b.y2<A.b.y1)continue;
+        const g=(B.pad?segPadDist(Object.assign({},A.seg,{w:0}),B.pad):segSegDist(A.seg,B.seg))-A.demi-B.demi;
+        if(!(g>1e-6&&g<wMin-1e-6))continue;
+        const m=trkMid(A.seg);
+        out.push({info:true,x:m.x,y:m.y,l,
+          msg:"Cuivre de zone de "+fmt(g,3)+" mm entre "+A.nom+" et "+B.nom+" sur "+cuId(l,S.cu)+
+              " (mini "+fmt(wMin,3)+" mm) : il se décollerait — écartez-les, ou posez une découpe de zone"});
+      }
+    }
+  }
   for(const z of S.zones){
     const b=polyBBox(z.pts);
     if(!z.net)out.push({x:(b.x1+b.x2)/2,y:(b.y1+b.y2)/2,l:z.l,

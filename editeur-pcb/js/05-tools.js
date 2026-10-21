@@ -680,6 +680,7 @@ function normDoc(d){
   // idem pour la conduite face à un obstacle : les fichiers muets se poussent
   const rm=dStr(r.route,8);
   out.rule={edge:dRange(r.edge,0.4,0,100),thermal:dRange(r.thermal,0.5,0,100),
+            cuMin:dRange(r.cuMin,0.2,0,5),   // cuivre de zone mini : les fichiers muets prennent 0,2 mm
             mask:dRange(r.mask,0.05,-100,100),paste:dRange(r.paste,0,-100,100),
             viaFinish:VIA_FINISH[vf]?vf:(r.tented===false?"open":"tented"),
             corner:CORNER_MODES[cm]?cm:"45",
@@ -813,7 +814,7 @@ function loadDoc(d,keepView){
   S.origin=d.origin;
   S.fabOrigin=d.fabOrigin;
   const r=d.rule;
-  S.rule={edge:r.edge, thermal:r.thermal, mask:r.mask, paste:r.paste,
+  S.rule={edge:r.edge, thermal:r.thermal, cuMin:r.cuMin, mask:r.mask, paste:r.paste,
           viaFinish:r.viaFinish, corner:r.corner, route:r.route, hole:r.hole,
           mat:r.mat, short:r.short, aspWarn:r.aspWarn, aspMax:r.aspMax,
           mfgProfile:r.mfgProfile||"jlcpcb"};
