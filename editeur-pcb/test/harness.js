@@ -4054,7 +4054,8 @@ T("pinout : symbole en plusieurs parties, broches non connectées, broche sans p
     {ref:"U1",npins:3,pinMap:["1","2","3"],pinNames:["A","B","C"]},
     {ref:"U1",npins:2,pinMap:["4","5"],pinNames:["D","E"]},          // seconde partie du même boîtier
     {ref:"D1",npins:2,pinMap:["1","3"],pinNames:["A","K"]},           // BAS16 : la broche 2 n'existe pas
-    {ref:"X1",npins:2,pinMap:["1","9"],pinNames:["X1","X2"]}]}]};     // « 9 » n'a pas de pastille
+    {ref:"X1",npins:2,pinMap:["1","9"],pinNames:["X1","X2"]},         // « 9 » n'a pas de pastille
+    {ref:"LED1",npins:2,pinMap:["1","2/3"],pinNames:["A","K"]}]}]};   // K sur deux pattes (commun/brochage.js)
   const m=pcbComposantsSchema(sch);
   const u=m.get("U1"), dd=m.get("D1");
   if(u.npins!==5||u.pinNames[3]!=="D"||u.pinMap.length!==5)throw new Error("parties : "+JSON.stringify(u.pinNames));
@@ -4065,6 +4066,23 @@ T("pinout : symbole en plusieurs parties, broches non connectées, broche sans p
   if(!r("D1",3).ok)throw new Error("2 broches pour 3 pastilles : "+r("D1",3).msg);
   if(r("X1",3).ok||!/9/.test(r("X1",3).msg))throw new Error("broche 9 sans pastille : "+r("X1",3).msg);
   if(r("U1",4).ok)throw new Error("5 broches au schéma pour 4 pastilles acceptées");
+  const led=m.get("LED1");
+  if(led.pinNames[1]!=="K"||led.pinNames[2]!=="K")throw new Error("K=2/3 : le nom va aux deux pattes : "+JSON.stringify(led.pinNames));
+  if(!r("LED1",3).ok)throw new Error("K=2/3 sur 3 pastilles : "+r("LED1",3).msg);
+  if(r("LED1",2).ok||!/3/.test(r("LED1",2).msg))throw new Error("K=2/3 sur 2 pastilles : la 3 manque : "+r("LED1",2).msg);
+});
+T("pinout : une seule rangée de pastilles (2512, barrette) n'a pas d'écartement nul",()=>{
+  const deux=(ref,pkg,dx,w,h)=>{const f=mkFp(ref,"","",2);f.pkg=pkg;
+    f.pads=[{n:1,x:-dx/2,y:0,w,h,shape:"rect",drill:0},{n:2,x:dx/2,y:0,w,h,shape:"rect",drill:0}];return f;};
+  const r=pcbVerifierPinoutComposant({ref:"R1",pkg:"2512",npins:2},deux("R1","2512",6.2,1.2,3.4));
+  if(!r.spanCheck.ok||r.spanCheck.span!==6.2)throw new Error("2512 à 6,2 mm : "+r.spanCheck.msg);
+  const k=pcbVerifierPinoutComposant({ref:"R1",pkg:"2512",npins:2},deux("R1","2512",4,1.2,3.4));
+  if(k.spanCheck.ok)throw new Error("2512 à 4 mm accepté : "+k.spanCheck.msg);
+  // trois pattes en ligne : rien à comparer, ni faux 0,00 mm
+  const f=mkFp("Q1","","",3);f.pkg="TO-92";
+  f.pads=[0,1,2].map(i=>({n:i+1,x:(i-1)*2.54,y:0,w:1.5,h:1.5,shape:"circ",drill:0.8}));
+  const t=pcbVerifierPinoutComposant({ref:"Q1",pkg:"TO-92",npins:3},f);
+  if(!t.spanCheck.ok||t.spanCheck.span!==null||/0\.00/.test(t.spanCheck.msg))throw new Error("TO-92 : "+t.spanCheck.msg);
 });
 T("pinout : une empreinte importée est mesurée sur ses pastilles, et le rapport ne liste que les fautifs",()=>{
   // SOT23-6 importé : pastilles au pas de 0,95, rangées à 2,5 mm ; pitch/span du générateur laissés aux défauts

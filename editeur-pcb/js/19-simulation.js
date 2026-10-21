@@ -3062,11 +3062,15 @@ function pcbRangerBroches(e,c){
   const map=Array.isArray(c.pinMap)?c.pinMap:null;
   if(!map){e.pinNames=(Array.isArray(e.pinNames)?e.pinNames:[]).concat(noms);return;}
   e.pinMap=(e.pinMap||[]).concat(map);
+  // « 2/3 » : une broche sur plusieurs pattes (commun/brochage.js), son nom va à chacune
   map.forEach((num,k)=>{
-    const i=parseInt(num,10);
-    if(String(i)===String(num).trim()&&i>=1)e.pinNames[i-1]=noms[k]!=null?noms[k]:"";
+    for(const patte of pcbPattes(num)){
+      const i=parseInt(patte,10);
+      if(String(i)===patte&&i>=1)e.pinNames[i-1]=noms[k]!=null?noms[k]:"";
+    }
   });
 }
+const pcbPattes=n=>String(n==null?"":n).split("/").map(x=>x.trim()).filter(Boolean);
 
 function pcbSpecsComposant(c){
   if(!c)return null;
@@ -3269,7 +3273,11 @@ function pcbGeomMesuree(fp) {
     }
   if (!best) return null;
   const travers = best.dx > best.dy ? P.map(q => q.y) : P.map(q => q.x);
-  return {pitch: r3(best.d), span: r3(Math.max(...travers) - Math.min(...travers))};
+  const ecart = Math.max(...travers) - Math.min(...travers);
+  /* une seule rangée : pas d'écartement entre rangées. Deux pastilles (chip, barrette 1x2) :
+     la « taille » de la table est leur entraxe ; au-delà (TO-92), rien à comparer */
+  if (ecart < 1e-6) return {pitch: r3(best.d), span: P.length === 2 ? r3(best.d) : null};
+  return {pitch: r3(best.d), span: r3(ecart)};
 }
 function pcbVerifierPinoutComposant(c, fp) {
   if (!c) return null;
@@ -3303,7 +3311,7 @@ function pcbVerifierPinoutComposant(c, fp) {
 
   const mes = pcbGeomMesuree(fp);
   const actPitch = mes ? mes.pitch : (fp.pitch != null ? fp.pitch : (expPitch || 1.27));
-  const actSpan = mes ? mes.span : (fp.span != null ? fp.span : (expSpan || 5.4));
+  const actSpan = mes ? mes.span : (fp.span != null ? fp.span : (expSpan || 5.4));   // null : une rangée, sans écartement
   const regle = mes ? "mesurée à " : "réglée à ";
 
   const anomalies = [];
@@ -3329,8 +3337,9 @@ function pcbVerifierPinoutComposant(c, fp) {
 
   // 2. Taille du boîtier / Écartement des rangées (Span)
   let spanOk = true;
-  let spanMsg = "Taille / Écartement : " + Number(actSpan).toFixed(2) + " mm";
-  if (expSpan != null) {
+  let spanMsg = actSpan == null ? "Une seule rangée de pastilles : pas d'écartement à contrôler"
+                                : "Taille / Écartement : " + Number(actSpan).toFixed(2) + " mm";
+  if (expSpan != null && actSpan != null) {
     const dSpan = Math.abs(actSpan - expSpan);
     if (dSpan > 0.35) {
       spanOk = false;
@@ -3351,7 +3360,7 @@ function pcbVerifierPinoutComposant(c, fp) {
   let pinCountMsg = nPcb + " pastilles";
   const numsPcb = new Set();
   for (const q of padsOf(fp)) { numsPcb.add(String(q.n)); if (q.nom != null && q.nom !== "") numsPcb.add(String(q.nom)); }
-  const sansPastille = (c.pinMap || []).filter(n => n != null && n !== "" && !numsPcb.has(String(n)));
+  const sansPastille = (c.pinMap || []).flatMap(pcbPattes).filter(n => !numsPcb.has(n));
   if (sansPastille.length) {
     pinCountOk = false;
     const m = "Broche(s) du schéma sans pastille sur l'empreinte : " + sansPastille.slice(0, 12).join(", ") +
@@ -3428,7 +3437,7 @@ function pcbVerifierPinoutComposant(c, fp) {
 
   let resume = "";
   if (conforme) {
-    resume = "Brochage, pas (" + Number(actPitch).toFixed(2) + " mm) et taille (" + Number(actSpan).toFixed(2) + " mm) 100% conformes ✓";
+    resume = "Brochage, pas (" + Number(actPitch).toFixed(2) + " mm)" + (actSpan == null ? "" : " et taille (" + Number(actSpan).toFixed(2) + " mm)") + " 100% conformes ✓";
   } else {
     resume = anomalies.join(" · ");
   }
