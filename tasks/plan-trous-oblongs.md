@@ -104,7 +104,9 @@ T2..T6 ─▶ T7 clôture, revue
 
 ## Questions ouvertes
 
-1. Lecture de `SlotCavity` par la visionneuse : pas dans M2. À faire si
-   l'aller-retour IPC-2581 des cartes à fentes devient utile.
-2. Dossier méca : faut-il dessiner les fentes en vraie forme dans ses vues ?
-   M2 ne fait que les transmettre.
+1. ~~Lecture de `SlotCavity` par la visionneuse~~ : faite
+   (`python/ipc2581_parser.py`, essai dans `harness-sim.js`).
+2. ~~Dossier méca : dessiner les fentes en vraie forme~~ : fait le 21/10/2026.
+   Le JSON garde `l` et `rot` ; le plan et le DXF dessinent l'oblong et son
+   dégagement (deux arcs dans le DXF), la nomenclature dit « Ø d × l »
+   (`commun/dossier-meca.js`, essai au harnais PCB).
