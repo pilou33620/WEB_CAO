@@ -38,6 +38,7 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 2 300 essais a
 Le détail de chaque point est plus bas, dans sa section.
 
 **Code (faisable sans rien d'autre)**
+- Outil MCP pour lier un modèle de simulation (.sNp, SPICE) à une référence de la LIB.
 - Animation 3D de la carte qui s'assemble, en option de `fabrication.zip` (vidéo + page HTML).
 
 **Décisions à prendre**
@@ -116,6 +117,10 @@ Ce que les modules du MCP ont laissé ouvert côté WEB_CAO (détail dans
 - [x] **LIB : SOIC-8 et SOT-23-5 régénérés à l'IPC-7351B** (21/10/2026, densité N, cotes JEDEC du
   générateur) : SOIC-8 1,969 × 0,599 mm à ±2,473 mm (KiCad 1,95 × 0,6 à ±2,475), SOT-23-5
   1,409 × 0,589 mm à ±1,153 mm. Nom, corps et brochage gardés : les composants posés gardent leurs broches.
+- [ ] **Outil MCP pour lier un modèle de simulation** (demandé le 21/10/2026) : ce que fait
+  « 📎 Lier un fichier » dans la fiche d'une référence, mais par Claude, avec une carte de
+  confirmation (commande de la Gestion LIB dans `js/08-pilote-lib.js`, outil dans web_suite ;
+  la préparation est déjà dans `COMPOSANTS_LIB.brancherTouchstone`).
 - [ ] **Essais réels restants** : `cao_paire` et `cao_placement_auto` dans la vraie page après la
   revue du routage ; le canal depuis l'iPad.
 
