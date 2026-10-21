@@ -200,14 +200,15 @@ async function refuse(promesse, motif) {
   });
 
   await T("écritures en lot (ecriture-cao) : déclarées dans les bonnes pages, annulables", () => {
-    const ecrire = ["cao_composants_ecrire", "cao_pistes_ecrire", "cao_classes_ecrire", "cao_contraintes_ecrire", "cao_sim_ecrire"];
+    const ecrire = ["cao_composants_ecrire", "cao_pistes_ecrire", "cao_classes_ecrire", "cao_contraintes_ecrire", "cao_sim_ecrire",
+                    "cao_contour_ecrire", "cao_zones_ecrire", "cao_serigraphie_ecrire", "cao_pastille_regler"];
     const vues = {};
     for (const p of ["schema", "pcb", "visionneuse-ipc", "gestion-lib"]) {
       const c = page(p).declare.commandes;
       vues[p] = ecrire.filter(n => c[n]);
       for (const n of vues[p]) egal(!!(c[n].ecriture && (c[n].historique || c[n].annuler)), true, n + " : écriture annulable");
     }
-    egal(vues, { schema: ["cao_composants_ecrire"], pcb: ["cao_composants_ecrire", "cao_pistes_ecrire", "cao_classes_ecrire", "cao_contraintes_ecrire", "cao_sim_ecrire"], "visionneuse-ipc": ["cao_sim_ecrire"], "gestion-lib": [] });
+    egal(vues, { schema: ["cao_composants_ecrire"], pcb: ecrire, "visionneuse-ipc": ["cao_sim_ecrire"], "gestion-lib": [] });
   });
 
   console.log("\n" + ok + " essais réussis, " + ko + " en échec.");

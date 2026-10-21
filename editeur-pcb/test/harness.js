@@ -26932,6 +26932,110 @@ TA("canal de pilotage : cao_pistes_ecrire, largeur d'un net (une couche) et réa
   }finally{global.Pilote=ancien;}
 });
 
+/* La géométrie de la carte par le canal : contour, zones, sérigraphie, pastilles. Chaque
+   lot est une étape d'historique ; un refus ne touche à rien. */
+function pilotePcbCmds(){
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  piloteCao("pcb");
+  global.Pilote=ancien;
+  const jouer=(nom,lot)=>{const a={lot},p=cmds[nom].proposer(a);cmds[nom].appliquer(a,p);return p;};
+  const refus=(nom,lot,motif)=>{
+    const n=S.undo.length, avant=serialize();
+    let m="";try{cmds[nom].proposer({lot});}catch(e){m=e.message;}
+    if(!motif.test(m))throw new Error(nom+" : refus attendu "+motif+", lu « "+m+" »");
+    if(S.undo.length!==n||serialize()!==avant)throw new Error(nom+" : un refus a écrit");
+  };
+  return {cmds,jouer,refus};
+}
+TA("canal de pilotage : cao_contour_ecrire, rectangle, disque et polygone ; lecture « carte »",async()=>{
+  const {cmds,jouer,refus}=pilotePcbCmds();
+  loadDoc(exemple1());S.undo.length=0;
+  const d=cmds.cao_contour_ecrire;
+  if(!(d&&d.ecriture&&d.historique))throw new Error("écriture par l'historique attendue");
+  const p=jouer("cao_contour_ecrire",[{forme:"disque",x:30,y:20,rayon:15}]);
+  if(S.undo.length!==1||!S.board.pts||Math.abs(S.board.w-30)>0.01)throw new Error("disque non posé");
+  if(!/disque Ø 30 mm/.test(p.apres)||!/^DRC : /m.test(p.apres))throw new Error("carte : "+p.apres);
+  const lu=[].concat(LECTURE_CAO.pcb.carte.fn({})).join("\n");
+  if(!/Contour : disque Ø 30 mm, centre \(30, 20\)/.test(lu))throw new Error("lecture carte : "+lu);
+  jouer("cao_contour_ecrire",[{forme:"rectangle",x:0,y:0,largeur:60,hauteur:40}]);
+  if(S.board.pts||S.board.w!==60||S.board.h!==40)throw new Error("rectangle");
+  jouer("cao_contour_ecrire",[{forme:"polygone",points:[{x:0,y:0},{x:50,y:0},{x:50,y:30},{x:25,y:45},{x:0,y:30}]}]);
+  if(boardPoly().length!==5)throw new Error("polygone");
+  undo();undo();undo();
+  if(S.board.pts||S.undo.length)throw new Error("Ctrl+Z défait chaque contour");
+  refus("cao_contour_ecrire",[{forme:"polygone",points:[{x:0,y:0},{x:20,y:10},{x:20,y:0},{x:0,y:20}]}],/se coupent/);
+  refus("cao_contour_ecrire",[{forme:"rectangle",x:0,y:0,largeur:2,hauteur:40}],/5 mm au moins/);
+  refus("cao_contour_ecrire",[{forme:"ovale"}],/rectangle, disque ou polygone/);
+  refus("cao_contour_ecrire",[{forme:"disque",x:0,y:0,rayon:10},{forme:"disque",x:0,y:0,rayon:20}],/au plus|un seul contour/);
+});
+TA("canal de pilotage : cao_zones_ecrire, créer, modifier, supprimer ; liaison directe ; lecture « zones »",async()=>{
+  const {jouer,refus}=pilotePcbCmds();
+  loadDoc(exemple1());S.undo.length=0;
+  const n0=S.zones.length, net=netTable()[0].name;
+  const p=jouer("cao_zones_ecrire",[{action:"creer",couche:LECTURE_CAO.aides.nomCouchePcb(0),net,forme:"carte",liaison:"cms-directe"}]);
+  if(S.undo.length!==1||S.zones.length!==n0+1)throw new Error("zone non créée");
+  const z=S.zones[S.zones.length-1];
+  if(z.net!==net||z.connexion!=="cms-directe"||z.pts.length!==boardPoly().length)throw new Error("zone : "+JSON.stringify(z).slice(0,200));
+  if(!new RegExp("Zones créées : "+z.id).test(p.apres))throw new Error("id de la zone créée : "+p.apres);
+  const lu=[].concat(LECTURE_CAO.pcb.zones.fn({})).join("\n");
+  if(!lu.split("\n").some(l=>l.startsWith("- zone "+z.id+" : "+net+" sur ")&&/liaison cms-directe/.test(l)))throw new Error("lecture zones : "+lu);
+  jouer("cao_zones_ecrire",[{action:"modifier",id:z.id,liaison:"thermique",forme:"rectangle",x:2,y:2,largeur:10,hauteur:8}]);
+  if(z.connexion||z.pts.length!==4||S.undo.length!==2)throw new Error("modifier : "+JSON.stringify(z.pts));
+  jouer("cao_zones_ecrire",[{action:"supprimer",id:z.id}]);
+  if(S.zones.some(o=>o.id===z.id))throw new Error("supprimer");
+  undo();undo();undo();
+  if(S.zones.length!==n0)throw new Error("Ctrl+Z");
+  refus("cao_zones_ecrire",[{action:"creer",couche:"Nulle",net,forme:"carte"}],/couche « Nulle » inconnue/);
+  refus("cao_zones_ecrire",[{action:"creer",couche:LECTURE_CAO.aides.nomCouchePcb(0),net:"PAS_UN_NET",forme:"carte"}],/net « PAS_UN_NET » inconnu/);
+  refus("cao_zones_ecrire",[{action:"modifier",id:99999,net}],/introuvable/);
+  refus("cao_zones_ecrire",[{action:"creer",couche:LECTURE_CAO.aides.nomCouchePcb(0),net}],/« forme »/);
+  refus("cao_zones_ecrire",[{action:"creer",couche:LECTURE_CAO.aides.nomCouchePcb(0),net,forme:"carte",liaison:"soudée"}],/liaison/);
+});
+TA("canal de pilotage : cao_serigraphie_ecrire, texte, trait, repère, auto, supprimer ; lecture « serigraphie »",async()=>{
+  const {jouer,refus}=pilotePcbCmds();
+  loadDoc(exemple1());S.undo.length=0;
+  const fp=S.fps[0], n0=(S.drawings||[]).length;
+  const p=jouer("cao_serigraphie_ecrire",[{action:"texte",face:"dessus",texte:"LED_UV v1",x:10,y:5,hauteur:1.2},
+                                          {action:"trait",face:"dessous",x1:0,y1:0,x2:10,y2:0},
+                                          {action:"repere",ref:fp.ref,dx:1.5,dy:-2},
+                                          {action:"auto",ref:fp.ref,actif:false}]);
+  if(S.undo.length!==1||S.drawings.length!==n0+2)throw new Error("une étape, deux dessins");
+  const t=S.drawings.find(d=>d.text==="LED_UV v1");
+  if(!t||t.layer!=="silkT"||t.size!==1.2||S.drawings.find(d=>d.shape==="line").layer!=="silkB")throw new Error("dessins");
+  if(fp.refOffX!==1.5||fp.refOffY!==-2||fp.silk!==false)throw new Error("repère et auto");
+  if(!/Dessins posés : /.test(p.apres))throw new Error("ids : "+p.apres);
+  const lu=[].concat(LECTURE_CAO.pcb.serigraphie.fn({})).join("\n");
+  if(!new RegExp("dessin "+t.id+" \\(dessus\\) : texte « LED_UV v1 »").test(lu)||!new RegExp("repère "+fp.ref+" décalé de \\(1.5, -2\\)").test(lu))
+    throw new Error("lecture serigraphie : "+lu);
+  jouer("cao_serigraphie_ecrire",[{action:"supprimer",id:t.id},{action:"repere",ref:fp.ref,dx:0,dy:0}]);
+  if(S.drawings.some(d=>d.id===t.id)||"refOffX" in fp)throw new Error("supprimer, repère remis");
+  undo();undo();
+  if(S.drawings.length!==n0||S.fps.find(f=>f.ref===fp.ref).silk===false)throw new Error("Ctrl+Z");
+  refus("cao_serigraphie_ecrire",[{action:"texte",face:"dessus",texte:"  ",x:0,y:0}],/vide/);
+  refus("cao_serigraphie_ecrire",[{action:"texte",face:"cote",texte:"A",x:0,y:0}],/dessus ou dessous/);
+  refus("cao_serigraphie_ecrire",[{action:"repere",ref:"ZZ9",dx:0,dy:1}],/introuvable/);
+  refus("cao_serigraphie_ecrire",[{action:"supprimer",id:424242}],/introuvable/);
+  refus("cao_serigraphie_ecrire",[{action:"peindre"}],/« action »/);
+});
+TA("canal de pilotage : cao_pastille_regler, liaison, bras, masque ; null rend la règle",async()=>{
+  const {jouer,refus}=pilotePcbCmds();
+  loadDoc(exemple1());S.undo.length=0;
+  const fp=S.fps.find(f=>padsOf(f).some(q=>q.net)), q0=padsOf(fp).find(q=>q.net), nom=fp.ref+"."+q0.n;
+  jouer("cao_pastille_regler",[{pastille:nom,liaison:"directe",bras_largeur:0.8,bras_nombre:2,bras_angle:-45,masque:0.1}]);
+  const q=()=>padsOf(fp).find(x=>String(x.n)===String(q0.n));
+  if(S.undo.length!==1||q().connexion!=="directe"||q().thermalWidth!==0.8||q().thermalSpokes!==2||q().thermalAngle!==315||q().mask!==0.1)
+    throw new Error("réglages : "+JSON.stringify(q()));
+  const lu=[].concat(LECTURE_CAO.pcb.composant.fn({ref:fp.ref})).join("\n");
+  if(!new RegExp("- "+q0.n+" → .*\\(liaison directe, bras 0.8 mm, 2 bras, bras à 315°, masque 0.1 mm\\)").test(lu))throw new Error("lecture : "+lu);
+  jouer("cao_pastille_regler",[{pastille:nom.toLowerCase(),liaison:"zone",bras_largeur:null,masque:null}]);
+  if(q().connexion||q().thermalWidth||q().mask!=null||q().thermalSpokes!==2)throw new Error("null rend la règle : "+JSON.stringify(q()));
+  refus("cao_pastille_regler",[{pastille:nom,bras_nombre:2}],/Rien à changer/);
+  refus("cao_pastille_regler",[{pastille:fp.ref+".999",liaison:"directe"}],/introuvable/);
+  refus("cao_pastille_regler",[{pastille:nom,bras_nombre:12}],/1 à 8/);
+  refus("cao_pastille_regler",[{pastille:nom,soudure:1}],/inconnu/);
+  refus("cao_pastille_regler",[{pastille:nom}],/rien à régler/);
+});
 TA("canal de pilotage : cao_classes_ecrire, créer puis rattacher en une étape ; refus sans rien toucher",async()=>{
   const cmds={}, ancien=global.Pilote;
   global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};

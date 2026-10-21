@@ -645,7 +645,257 @@ const ECRITURE_CAO = (function () {
     annuler: (args, jeton) => { simPrete(); remettreSim(jeton); },
   });
 
+  /* ---------- géométrie de la carte (contour, zones, sérigraphie, pastilles) ----------
+     Positions en mm, dans le repère des lectures, comme les composants. Rien n'est écrit
+     dans S hors de muter : chaque lot est une étape d'historique, Ctrl+Z le défait. */
+  const COORD_MAX = 1000;
+  const nombre = (v, min, max) => typeof v === "number" && Number.isFinite(v) && v >= min && v <= max;
+  const coord = v => nombre(v, -COORD_MAX, COORD_MAX);
+  /* Un polygone : 3 à 1000 sommets {x, y}, une surface, des côtés qui ne se coupent pas. */
+  function polygone(P, quoi, refus) {
+    if (!Array.isArray(P) || P.length < 3 || P.length > 1000 || !P.every(p => p && coord(p.x) && coord(p.y))) {
+      refus.push(quoi + " : « points », 3 à 1000 sommets {x, y} en mm (±" + COORD_MAX + ")"); return null;
+    }
+    const Q = P.map(p => ({ x: r3(p.x), y: r3(p.y) }));
+    if (Math.abs(signedArea(Q)) < 0.01) { refus.push(quoi + " : polygone sans surface"); return null; }
+    const n = Q.length, cote = i => ({ x1: Q[i].x, y1: Q[i].y, x2: Q[(i + 1) % n].x, y2: Q[(i + 1) % n].y });
+    for (let i = 0; i < n; i++)
+      for (let j = i + 2; j < n; j++) {
+        if (i === 0 && j === n - 1) continue;              // côtés voisins par le premier sommet
+        if (segCross(cote(i), cote(j))) { refus.push(quoi + " : les côtés " + (i + 1) + " et " + (j + 1) + " se coupent"); return null; }
+      }
+    return Q;
+  }
+  const rectPts = (x, y, w, h) => [{ x: r3(x), y: r3(y) }, { x: r3(x + w), y: r3(y) }, { x: r3(x + w), y: r3(y + h) }, { x: r3(x), y: r3(y + h) }];
+  /* Une forme {forme: rectangle {x, y, largeur, hauteur} | disque {x, y, rayon} (x, y : centre)
+     | polygone {points}} → ses sommets, ou null avec le refus. */
+  function forme(e, quoi, refus, tailleMin) {
+    if (e.forme === "rectangle") {
+      if (!coord(e.x) || !coord(e.y) || !nombre(e.largeur, tailleMin, 2 * COORD_MAX) || !nombre(e.hauteur, tailleMin, 2 * COORD_MAX)) {
+        refus.push(quoi + " : rectangle {x, y (coin), largeur, hauteur} en mm, côtés de " + tailleMin + " mm au moins"); return null;
+      }
+      return { pts: rectPts(e.x, e.y, e.largeur, e.hauteur), dit: "rectangle " + r3(e.largeur) + " × " + r3(e.hauteur) + " mm en (" + r3(e.x) + ", " + r3(e.y) + ")" };
+    }
+    if (e.forme === "disque") {
+      if (!coord(e.x) || !coord(e.y) || !nombre(e.rayon, tailleMin / 2, COORD_MAX)) {
+        refus.push(quoi + " : disque {x, y (centre), rayon} en mm, rayon de " + tailleMin / 2 + " mm au moins"); return null;
+      }
+      return { pts: boardDisquePts(e.x, e.y, e.rayon), disque: true, dit: "disque Ø " + r3(2 * e.rayon) + " mm centré en (" + r3(e.x) + ", " + r3(e.y) + ")" };
+    }
+    if (e.forme === "polygone") {
+      const P = polygone(e.points, quoi, refus);
+      return P && { pts: P, dit: "polygone de " + P.length + " sommets" };
+    }
+    refus.push(quoi + " : « forme » rectangle, disque ou polygone"); return null;
+  }
+  function decrireContour() {
+    const b = S.board;
+    if (!(b.pts && b.pts.length >= 3)) return "rectangle " + r3(b.w) + " × " + r3(b.h) + " mm en (" + r3(b.x) + ", " + r3(b.y) + ")";
+    const segs = typeof dxfSegments === "function" ? dxfSegments(b.pts) : [];
+    const rond = segs.length === 2 && segs.every(x => x.t === "a");
+    return (rond ? "disque Ø " + r3(2 * segs[0].r) + " mm" : "polygone de " + b.pts.length + " sommets") + ", " + r3(b.w) + " × " + r3(b.h) + " mm";
+  }
+
+  /* cao_contour_ecrire : le contour extérieur, un seul élément. Les découpes restent. */
+  function verifierContour(args) {
+    const lignes = [], refus = [];
+    if (args.lot.length !== 1) return { lignes, refus: ["un seul contour par carte : un lot d'un élément"] };
+    const f = forme(args.lot[0] || {}, "contour", refus, 5);
+    if (f) lignes.push({ quoi: "contour de carte", avant: decrireContour(), apres: f.dit });
+    return { lignes, refus };
+  }
+  function muterContour(args) {
+    const e = args.lot[0], f = forme(e, "contour", [], 5);
+    if (e.forme === "rectangle") {
+      Object.assign(S.board, { pts: null, x: r3(e.x), y: r3(e.y), w: r3(e.largeur), h: r3(e.hauteur) });
+      boardChanged();
+    } else { S.board.pts = f.pts; boardChanged(); }
+    const dehors = S.fps.filter(fp => !inBoard(fp.x, fp.y, 0)).map(fp => fp.ref);
+    return { notes: dehors.length ? ["Hors du nouveau contour : " + dehors.slice(0, 30).join(", ") + (dehors.length > 30 ? "…" : "") + "."] : [] };
+  }
+  const CONTOUR = lot({ titre: "Contour de carte", max: 1, verifier: verifierContour, muter: muterContour, rafraichir: rafraichirRegles, drc: true });
+
+  /* cao_zones_ecrire : créer, modifier, supprimer des zones de cuivre, dans l'ordre du lot.
+     forme « carte » : la carte entière (le remplissage s'arrête à la marge de bord). */
+  const LIAISONS = { thermique: "bras thermiques", directe: "directe", "cms-directe": "directe pour les CMS" };
+  const decrireZone = z => "net " + (z.net || "(aucun)") + " sur " + LECTURE_CAO.aides.nomCouchePcb(z.l) + ", " + z.pts.length +
+                           " sommets, liaison " + LIAISONS[z.connexion || "thermique"];
+  function planZones(args, refus) {
+    const zones = S.zones.map(z => Object.assign({}, z)), plan = [], nets = new Set(netTable().map(n => n.name));
+    let neuf = 0;
+    args.lot.forEach((e, k) => {
+      const quoi = "zone, élément " + (k + 1);
+      if (!e || typeof e !== "object") { refus.push(quoi + " : un objet"); return; }
+      const z0 = e.action === "creer" ? { id: "nouvelle " + (++neuf), l: 0, net: "", pts: null }
+                                      : zones.find(z => z.id === e.id);
+      if (!["creer", "modifier", "supprimer"].includes(e.action)) { refus.push(quoi + " : « action » creer, modifier ou supprimer"); return; }
+      if (!z0) { refus.push(quoi + " : zone « " + e.id + " » introuvable (voir cao_pcb_lire zones)"); return; }
+      if (e.action === "supprimer") { zones.splice(zones.indexOf(z0), 1); plan.push({ e, z: z0, avant: decrireZone(z0), apres: "supprimée" }); return; }
+      const z = Object.assign({}, z0), avant = z0.pts ? decrireZone(z0) : "";
+      if (e.couche != null) { const l = coucheIndex(e.couche); if (l < 0) { refus.push(quoi + " : couche « " + e.couche + " » inconnue"); return; } z.l = l; }
+      if (e.net != null) { if (typeof e.net !== "string" || (e.net && !nets.has(e.net))) { refus.push(quoi + " : net « " + e.net + " » inconnu (voir cao_pcb_lire nets ; vide = cuivre isolé)"); return; } z.net = e.net; }
+      if (e.liaison != null) { if (!LIAISONS[e.liaison]) { refus.push(quoi + " : « liaison » thermique, directe ou cms-directe"); return; } z.connexion = e.liaison; }
+      if (e.forme != null) {
+        if (e.forme === "carte") z.pts = boardZonePts();
+        else { const f = forme(e, quoi, refus, 0.1); if (!f) return; z.pts = f.pts; }
+      }
+      if (!z.pts) { refus.push(quoi + " : « forme » carte, rectangle, disque ou polygone"); return; }
+      if (e.action === "creer" && e.couche == null) { refus.push(quoi + " : « couche » manquante"); return; }
+      if (e.action === "creer") zones.push(z); else zones[zones.indexOf(z0)] = z;
+      plan.push({ e, z, z0, avant, apres: decrireZone(z) });
+    });
+    return plan;
+  }
+  function verifierZones(args) {
+    const refus = [], plan = planZones(args, refus);
+    return { refus, lignes: plan.filter(p => p.avant !== p.apres).map(p => ({ quoi: "zone " + p.z.id, avant: p.avant, apres: p.apres })) };
+  }
+  function muterZones(args) {
+    const plan = planZones(args, []), cree = new Map();
+    for (const { e, z } of plan) {
+      const vraie = typeof z.id === "number" ? S.zones.find(o => o.id === z.id) : null;
+      if (e.action === "supprimer") { detachAuto(vraie); S.zones = S.zones.filter(o => o !== vraie); continue; }
+      if (e.action === "creer") {
+        const n = { id: S.nextId++, l: z.l, net: z.net || "", pts: z.pts };
+        if (z.connexion && z.connexion !== "thermique") n.connexion = z.connexion;
+        S.zones.push(n); cree.set(z.id, n.id); continue;
+      }
+      if (e.forme != null || e.couche != null) detachAuto(vraie);      // un plan de couche déformé devient une zone libre
+      vraie.l = z.l; vraie.net = z.net; vraie.pts = z.pts;
+      if (vraie.auto && S.cuL[vraie.l]) S.cuL[vraie.l].net = vraie.net;
+      if (z.connexion && z.connexion !== "thermique") vraie.connexion = z.connexion; else delete vraie.connexion;
+    }
+    clearSel();
+    return { notes: cree.size ? ["Zones créées : " + [...cree.values()].join(", ") + " (leurs id)."] : [] };
+  }
+  function rafraichirZones() { touch(); zoneCache.clear(); buildLayers(); buildTabs(); refreshPanels(); draw(); }
+  const ZONES = lot({ titre: "Zones de cuivre", verifier: verifierZones, muter: muterZones, rafraichir: rafraichirZones, drc: true });
+
+  /* cao_serigraphie_ecrire : textes, traits, rectangles (S.drawings, couches silkT / silkB),
+     décalage du repère d'un composant, sérigraphie automatique, suppression d'un dessin. */
+  const COUCHES_SILK = { dessus: "silkT", dessous: "silkB" };
+  function planSilk(args, refus) {
+    const plan = [], vus = new Set();
+    args.lot.forEach((e, k) => {
+      const quoi = "sérigraphie, élément " + (k + 1);
+      if (!e || typeof e !== "object") { refus.push(quoi + " : un objet"); return; }
+      if (e.action === "repere" || e.action === "auto") {
+        const fp = empreinte(e.ref);
+        if (!fp) { refus.push(quoi + " : repère « " + e.ref + " » introuvable"); return; }
+        if (vus.has(fp.ref + e.action)) { refus.push(quoi + " : " + fp.ref + " deux fois"); return; }
+        vus.add(fp.ref + e.action);
+        if (e.action === "auto") {
+          if (typeof e.actif !== "boolean") { refus.push(quoi + " : « actif » true ou false"); return; }
+          if (e.actif !== (fp.silk !== false)) plan.push({ e, fp, quoi: fp.ref + " sérigraphie automatique", avant: fp.silk !== false, apres: e.actif });
+          return;
+        }
+        if (!nombre(e.dx, -50, 50) || !nombre(e.dy, -50, 50)) { refus.push(quoi + " : « dx », « dy » en mm (±50), décalage depuis la place d'office"); return; }
+        const av = r3(fp.refOffX || 0) + ", " + r3(fp.refOffY || 0), ap = r3(e.dx) + ", " + r3(e.dy);
+        if (av !== ap) plan.push({ e, fp, quoi: fp.ref + " décalage du repère", avant: av, apres: ap });
+        return;
+      }
+      if (e.action === "supprimer") {
+        const d = (S.drawings || []).find(x => x.id === e.id);
+        if (!d) { refus.push(quoi + " : dessin « " + e.id + " » introuvable (voir cao_pcb_lire serigraphie)"); return; }
+        plan.push({ e, d, quoi: "dessin " + d.id, avant: d.shape + (d.text ? " « " + d.text + " »" : ""), apres: "supprimé" });
+        return;
+      }
+      if (!["texte", "trait", "rectangle"].includes(e.action)) { refus.push(quoi + " : « action » texte, trait, rectangle, repere, auto ou supprimer"); return; }
+      if (!COUCHES_SILK[e.face]) { refus.push(quoi + " : « face » dessus ou dessous"); return; }
+      if (e.largeur != null && !nombre(e.largeur, 0.05, 5)) { refus.push(quoi + " : « largeur » du trait de 0,05 à 5 mm"); return; }
+      let brut;
+      if (e.action === "texte") {
+        if (texte(e.texte, quoi + " texte", refus) === null) return;
+        if (!e.texte.trim()) { refus.push(quoi + " : « texte » vide"); return; }
+        if (!coord(e.x) || !coord(e.y)) { refus.push(quoi + " : « x », « y » en mm (centre du texte)"); return; }
+        if (e.hauteur != null && !nombre(e.hauteur, 0.5, 25)) { refus.push(quoi + " : « hauteur » de 0,5 à 25 mm"); return; }
+        if (e.rotation != null && !nombre(e.rotation, -360, 360)) { refus.push(quoi + " : « rotation » en degrés"); return; }
+        brut = { shape: "text", text: e.texte, x1: e.x, y1: e.y, size: e.hauteur || 1, rot: e.rotation || 0 };
+      } else {
+        if (![e.x1, e.y1, e.x2, e.y2].every(coord)) { refus.push(quoi + " : « x1 », « y1 », « x2 », « y2 » en mm"); return; }
+        if (Math.hypot(e.x2 - e.x1, e.y2 - e.y1) < 0.01 || (e.action === "rectangle" && (Math.abs(e.x2 - e.x1) < 0.01 || Math.abs(e.y2 - e.y1) < 0.01))) {
+          refus.push(quoi + " : trop petit"); return;
+        }
+        brut = { shape: e.action === "trait" ? "line" : "rect", x1: e.x1, y1: e.y1, x2: e.x2, y2: e.y2 };
+      }
+      const d = normDrawingPcb(Object.assign(brut, { layer: COUCHES_SILK[e.face], width: e.largeur || 0.15 }), 0);
+      plan.push({ e, d, quoi: e.action + " (" + e.face + ")", avant: "", apres: e.action === "texte" ? "« " + d.text + " » en (" + r3(d.x1) + ", " + r3(d.y1) + "), " + d.size + " mm"
+                                                                                     : "(" + r3(d.x1) + ", " + r3(d.y1) + ") → (" + r3(d.x2) + ", " + r3(d.y2) + ")" });
+    });
+    return plan;
+  }
+  function verifierSilk(args) {
+    const refus = [], plan = planSilk(args, refus);
+    return { refus, lignes: plan.map(p => ({ quoi: p.quoi, avant: p.avant, apres: p.apres })) };
+  }
+  function muterSilk(args) {
+    const ids = [];
+    if (!Array.isArray(S.drawings)) S.drawings = [];
+    for (const p of planSilk(args, [])) {
+      const e = p.e;
+      if (e.action === "auto") { if (e.actif) delete p.fp.silk; else p.fp.silk = false; }
+      else if (e.action === "repere") {
+        for (const [k, v] of [["refOffX", e.dx], ["refOffY", e.dy]]) { if (r3(v)) p.fp[k] = r3(v); else delete p.fp[k]; }
+      } else if (e.action === "supprimer") S.drawings = S.drawings.filter(x => x !== p.d);
+      else { p.d.id = S.nextId++; S.drawings.push(p.d); ids.push(p.d.id); }
+    }
+    return { notes: ids.length ? ["Dessins posés : " + ids.join(", ") + " (leurs id)."] : [] };
+  }
+  const SERIGRAPHIE = lot({ titre: "Sérigraphie", verifier: verifierSilk, muter: muterSilk, rafraichir: rafraichirPcb });
+
+  /* cao_pastille_regler : liaison à la zone, bras thermiques, masque et pâte d'une pastille
+     « REF.n » (toutes celles de ce numéro). null rend la règle de la carte. Une empreinte
+     calculée est figée en pastilles explicites (fpFreeze), comme au panneau. */
+  const REGLAGES = {
+    liaison: { cle: "connexion", ok: v => v === "zone" || v === "thermique" || v === "directe", attendu: "zone, thermique ou directe", val: v => v === "zone" ? null : v },
+    bras_largeur: { cle: "thermalWidth", ok: v => nombre(v, 0.05, 10), attendu: "de 0,05 à 10 mm" },
+    bras_nombre: { cle: "thermalSpokes", ok: v => Number.isInteger(v) && v >= 1 && v <= 8, attendu: "entier de 1 à 8" },
+    bras_angle: { cle: "thermalAngle", ok: v => nombre(v, -360, 360), attendu: "degrés", val: v => padRot(v) },
+    masque: { cle: "mask", ok: v => nombre(v, -5, 5), attendu: "ouverture du masque en mm, de -5 à 5" },
+    pate: { cle: "paste", ok: v => nombre(v, -5, 5), attendu: "retrait de la pâte en mm, de -5 à 5" },
+  };
+  function cibles(nom) {
+    const m = typeof nom === "string" && nom.match(/^\s*([^.\s]+)\.(\S+)\s*$/), fp = m && empreinte(m[1]);
+    if (!fp) return null;
+    const idx = padsOf(fp).map((q, i) => String(q.n).toUpperCase() === m[2].toUpperCase() || String(q.nom || "").toUpperCase() === m[2].toUpperCase() ? i : -1).filter(i => i >= 0);
+    return idx.length ? { fp, idx, nom: fp.ref + "." + m[2] } : null;
+  }
+  function verifierPastilles(args) {
+    const lignes = [], refus = [], vus = new Set();
+    for (const e of args.lot) {
+      const c = e && cibles(e.pastille);
+      if (!c) { refus.push("pastille « " + (e && e.pastille) + " » introuvable : « REF.numéro » (voir cao_pcb_lire composant)"); continue; }
+      if (vus.has(c.nom)) { refus.push(c.nom + " : deux fois dans le lot"); continue; }
+      vus.add(c.nom);
+      const cles = Object.keys(e).filter(k => k !== "pastille");
+      if (!cles.length) { refus.push(c.nom + " : rien à régler (" + Object.keys(REGLAGES).join(", ") + ")"); continue; }
+      const q = padsOf(c.fp)[c.idx[0]];
+      for (const k of cles) {
+        const R = REGLAGES[k];
+        if (!R) { refus.push(c.nom + " : « " + k + " » inconnu (" + Object.keys(REGLAGES).join(", ") + ")"); continue; }
+        if (e[k] !== null && !R.ok(e[k])) { refus.push(c.nom + "." + k + " : " + R.attendu + ", ou null"); continue; }
+        const apres = e[k] === null ? null : (R.val ? R.val(e[k]) : e[k]), avant = q[R.cle] == null ? null : q[R.cle];
+        if (avant !== apres) lignes.push({ quoi: c.nom + " " + k, avant: avant == null ? "règle de la carte" : avant, apres: apres == null ? "règle de la carte" : apres });
+      }
+    }
+    return { lignes, refus };
+  }
+  function muterPastilles(args) {
+    for (const e of args.lot) {
+      const c = cibles(e.pastille);
+      fpFreeze(c.fp);
+      for (const i of c.idx)
+        for (const [k, R] of Object.entries(REGLAGES)) {
+          if (!(k in e)) continue;
+          const v = e[k] === null ? null : (R.val ? R.val(e[k]) : e[k]);
+          if (v === null) delete c.fp.pads[i][R.cle]; else fpSetPad(c.fp, i, R.cle, v);
+        }
+    }
+  }
+  const PASTILLES = lot({ titre: "Réglages de pastilles", verifier: verifierPastilles, muter: muterPastilles, rafraichir: rafraichirZones, drc: true });
+
   return { lot, composantsSch: COMPOSANTS_SCH, composantsPcb: COMPOSANTS_PCB, pistes: PISTES, classes: CLASSES,
-           contraintes: CONTRAINTES, simulation: SIMULATION, LOT_MAX,
+           contraintes: CONTRAINTES, simulation: SIMULATION, contour: CONTOUR, zones: ZONES, serigraphie: SERIGRAPHIE,
+           pastilles: PASTILLES, LOT_MAX,
            drc: { erreurs: erreursDrc, bilan: bilanDrc } };        // repris par le routage (37-routage-pilote.js)
 })();

@@ -218,6 +218,10 @@ function piloteCao(page) {
     Pilote.commande("cao_pistes_ecrire", ECRITURE_CAO.pistes);
     Pilote.commande("cao_classes_ecrire", ECRITURE_CAO.classes);
     Pilote.commande("cao_contraintes_ecrire", ECRITURE_CAO.contraintes);
+    Pilote.commande("cao_contour_ecrire", ECRITURE_CAO.contour);
+    Pilote.commande("cao_zones_ecrire", ECRITURE_CAO.zones);
+    Pilote.commande("cao_serigraphie_ecrire", ECRITURE_CAO.serigraphie);
+    Pilote.commande("cao_pastille_regler", ECRITURE_CAO.pastilles);
     if (typeof routagePiloteCommandes === "function")
       for (const [nom, def] of Object.entries(routagePiloteCommandes())) Pilote.commande(nom, def);
   }

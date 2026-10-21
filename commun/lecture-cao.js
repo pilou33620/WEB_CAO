@@ -77,7 +77,12 @@ const LECTURE_CAO = (function() {
                    ", x " + mm(f.x) + " y " + mm(f.y) + " mm, rotation " + (f.rot || 0) + "°."];
         const pads = padsOf(f);
         L.push("Broches (" + pads.length + ") :");
-        return L.concat(borner(pads.map(q => "- " + q.n + " → " + (q.net || "non connectée")), 200, "broches"));
+        // les réglages propres à la pastille (cao_pastille_regler), quand il y en a
+        const reglages = q => [q.connexion && "liaison " + q.connexion, q.thermalWidth > 0 && "bras " + q.thermalWidth + " mm",
+                               q.thermalSpokes > 0 && q.thermalSpokes + " bras", q.thermalAngle && "bras à " + q.thermalAngle + "°",
+                               q.mask != null && "masque " + q.mask + " mm", q.paste != null && "pâte " + q.paste + " mm"].filter(Boolean);
+        return L.concat(borner(pads.map(q => "- " + q.n + " → " + (q.net || "non connectée") +
+                                         (reglages(q).length ? " (" + reglages(q).join(", ") + ")" : "")), 200, "broches"));
       }
     },
     nets: {
@@ -133,6 +138,48 @@ const LECTURE_CAO = (function() {
         const tri = S.drc.filter(d => !d.info).concat(S.drc.filter(d => d.info));
         return tri.length ? borner(tri.map(d => "- " + (d.info ? "[remarque] " : "[erreur] ") + d.msg + " (x " + mm(d.x) + ", y " + mm(d.y) + ")"), 80, "lignes")
                           : ["DRC propre : aucune erreur."];
+      }
+    },
+    carte: {
+      desc: "le contour de la carte (rectangle, disque ou polygone, avec ses sommets), ses dimensions et ses découpes",
+      fn: () => {
+        const b = S.board, P = boardPoly(), segs = typeof dxfSegments === "function" ? dxfSegments(P) : [];
+        const rond = b.pts && segs.length === 2 && segs.every(x => x.t === "a");
+        const L = ["Carte " + mm(b.w) + " × " + mm(b.h) + " mm, coin en (" + mm(b.x) + ", " + mm(b.y) + "), marge de bord " + S.rule.edge + " mm."];
+        if (!(b.pts && b.pts.length >= 3)) L.push("Contour : rectangle.");
+        else if (rond) L.push("Contour : disque Ø " + mm(2 * segs[0].r) + " mm, centre (" + mm(b.x + b.w / 2) + ", " + mm(b.y + b.h / 2) + "), " + P.length + " sommets.");
+        else L.push("Contour : polygone de " + P.length + " sommets : " + borner(P.map(q => "(" + mm(q.x) + ", " + mm(q.y) + ")"), 60, "sommets").join(" "));
+        const D = boardCutouts();
+        if (D.length) L.push("Découpes : " + D.map((d, i) => (i + 1) + ") " + d.length + " sommets").join(" ; ") + ".");
+        return L;
+      }
+    },
+    zones: {
+      desc: "les zones de cuivre : id, couche, net, liaison des pastilles, sommets et emprise",
+      fn: () => {
+        const L = (S.zones || []).map(z => {
+          let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+          for (const q of z.pts || []) { x1 = Math.min(x1, q.x); y1 = Math.min(y1, q.y); x2 = Math.max(x2, q.x); y2 = Math.max(y2, q.y); }
+          return "- zone " + z.id + " : " + (z.net || "sans net") + " sur " + nomCouchePcb(z.l) + ", liaison " + (z.connexion || "thermique") +
+                 ", " + (z.pts || []).length + " sommets, de (" + mm(x1) + ", " + mm(y1) + ") à (" + mm(x2) + ", " + mm(y2) + ")" +
+                 (z.auto ? ", plan de couche (suit le contour)" : "") + (z.fichier ? ", cuivre du fichier" : "");
+        });
+        return L.length ? borner(L, 150, "zones") : ["Aucune zone de cuivre."];
+      }
+    },
+    serigraphie: {
+      desc: "les dessins de sérigraphie (id, face, texte, trait, rectangle, aplat) et les repères déplacés ou sans sérigraphie automatique",
+      fn: () => {
+        const face = d => d.layer === "silkB" ? "dessous" : "dessus";
+        const L = (S.drawings || []).map(d => "- dessin " + d.id + " (" + face(d) + ") : " +
+          (d.shape === "text" ? "texte « " + d.text + " » en (" + mm(d.x1) + ", " + mm(d.y1) + "), " + d.size + " mm" + (d.rot ? ", " + d.rot + "°" : "")
+           : d.shape === "poly" ? "aplat de " + d.pts.length + " sommets"
+           : (d.shape === "rect" ? "rectangle" : "trait") + " (" + mm(d.x1) + ", " + mm(d.y1) + ") → (" + mm(d.x2) + ", " + mm(d.y2) + ")"));
+        for (const f of S.fps) {
+          if (f.refOffX || f.refOffY) L.push("- repère " + f.ref + " décalé de (" + mm(f.refOffX || 0) + ", " + mm(f.refOffY || 0) + ") mm");
+          if (f.silk === false) L.push("- " + f.ref + " : sérigraphie automatique coupée");
+        }
+        return L.length ? borner(L, 200, "lignes") : ["Ni dessin de sérigraphie, ni repère déplacé : la sérigraphie automatique seule."];
       }
     },
     /* Pour router (web_suite, module routage) : les liaisons qui restent et ce qu'il y a dans une
