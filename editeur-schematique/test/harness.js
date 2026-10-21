@@ -321,6 +321,22 @@ T("canal de pilotage : cao_valeur_composant propose, applique en une étape, Ctr
   }finally{global.Pilote=ancien;}
 });
 
+T("Propriétés : repère et valeur tapés au clavier font une étape, que Ctrl+Z défait",()=>{
+  const el=addComp("resistor",300,300); el.ref="R41"; el.value="1k";
+  clearSel();S.sel.add(el.id);refreshPanels();
+  const n=S.hist.length, avant=serialize();
+  for(const [id,txt] of [["pVal","4"],["pVal","4k"],["pVal","4k7"],["pRef","R4"],["pRef","R42"]]){
+    const i=document.getElementById(id); i.value=txt; i.oninput();
+  }
+  if(el.value!=="4k7"||el.ref!=="R42")throw new Error("saisie non appliquée : "+el.ref+" "+el.value);
+  if(S.hist.length!==n+1)throw new Error("une étape attendue, "+(S.hist.length-n)+" poussée(s)");
+  undo();
+  if(serialize()!==avant)throw new Error("Ctrl+Z ne défait pas la saisie");
+  clearSel();S.sel.add(S.comps.find(c=>c.ref==="R41").id);refreshPanels();
+  const v=document.getElementById("pVal"); v.value="10k"; v.oninput();
+  if(S.hist.length!==n+1)throw new Error("après Ctrl+Z, une nouvelle saisie refait une étape");
+});
+
 T("historique : un flot de lots de Claude se fond, les étapes de l'utilisateur restent",()=>{
   const pile=[];
   for(let i=0;i<20;i++){pile.push('{"u":'+i+'}');histBorner(pile);}

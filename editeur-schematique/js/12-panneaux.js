@@ -512,7 +512,8 @@ function refreshPanels(){
     box.innerHTML=html;
     bindNetCells(box);
     const r=document.getElementById("pRef"), v=document.getElementById("pVal");
-    if(r)r.oninput=()=>{el.ref=r.value;draw();buildList();};
+    const etape=()=>{if(PROP_FRAPPE!==el){push();PROP_FRAPPE=el;}};
+    if(r)r.oninput=()=>{etape();el.ref=r.value;draw();buildList();};
     // la valeur d'un symbole d'alimentation ou d'une étiquette renomme le net :
     // le panneau des connexions doit suivre la frappe
     /* La valeur d'un symbole d'alimentation ou d'une étiquette renomme le net :
@@ -520,6 +521,7 @@ function refreshPanels(){
        aussi de la largeur du corps : les broches s'écartent, et reshapeComp
        emmène les fils qui y sont accrochés plutôt que de les décrocher. */
     v.oninput=()=>{
+      etape();
       if(typeof def.pins==="function")reshapeComp(el,()=>{el.value=v.value;});
       else el.value=v.value;
       draw();
