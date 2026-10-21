@@ -1652,7 +1652,16 @@ tiré de la valeur qui le remplace. Les sous-circuits SPICE sont lus **en linéa
 (R, L, C, sous-circuits imbriqués, `PARAMS:`) : un transistor ou une diode
 SPICE est refusé — il lui faudrait un point de polarisation — et la fiche
 demande son `.sNp`. Les Touchstone v1 et v2 sont lus en S, Y ou Z, en MA, DB
-ou RI, sans extrapolation hors de leur bande. Sous un composant en dérivation,
+ou RI, sans extrapolation hors de leur bande. Un fichier à N ports va sur les
+N broches du composant, dans l'ordre des numéros ; une puce qui a d'autres
+broches (masse, commandes) le dit dans le fichier, en commentaire :
+`! broches : 5 3 1` met le port k sur la k-ième broche nommée, `! masse : 2`
+rapporte les ports à cette broche — à ses vias, pas à une masse idéale. Les
+broches non nommées restent hors du modèle, et la marche du réseau ne passe
+pas par elles (les commandes d'un commutateur ne mènent plus au MCU). Une
+colonne « Modèle Simulation » peut donner plusieurs fichiers séparés par
+« | » (les états d'un commutateur) : le premier sert par défaut, et le
+panneau propose les autres, composant par composant, gardés avec la carte. Sous un composant en dérivation,
 les vias qui descendent sa pastille de masse au plan comptent pour leur self
 partielle (mutuelles comprises). Un via atteint par une **piste de masse** —
 bout à bout sur quatre tronçons au plus — ajoute ce chemin : la self et la

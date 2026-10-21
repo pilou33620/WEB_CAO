@@ -99,7 +99,10 @@ except Exception:                                      # noqa: BLE001
 # (`simulation_em._rugosite_section`, ligne_mom 2.8.0) dans la piste de masse
 # et les sections couplees. Un plan qui n'en declare pas prend celle de la
 # piste : sans elle, le chiffre d'avant au bit pres.
-VERSION = "1.7.0"
+# 1.8.0 (2026-10-21) : un bloc Touchstone peut etre rapporte a une broche de
+# la puce (`reference` du composant, ses vias de masse) plutot qu'a la masse
+# ideale : la page l'envoie quand le fichier nomme sa broche « ! masse ».
+VERSION = "1.8.0"
 FORMAT = "cao-sim-rf-1"
 FORMAT_RESULTAT = "cao-sim-rf-resultat-1"
 MASSE = "0"
@@ -2086,6 +2089,9 @@ def analyser(doc, journal=None):
             raise ErreurRF("%s : le modèle « %s » a %d port(s), le composant"
                            " %d broche(s) branchée(s)." % (ref, m.nom, m.n,
                                                             len(noeuds)))
+        if isinstance(m, ModeleSnp):
+            # les ports rapportes a une broche de la puce (ses vias), sinon a la masse
+            m.reference = str(c.get("reference") or MASSE)
         composants.append((noeuds, m))
         spec = c.get("modele") or {}
         fiche = {"ref": ref, "type": spec.get("type"), "nom": m.nom,
@@ -2181,6 +2187,7 @@ def analyser(doc, journal=None):
         noms += [a, b]
     for ns, _ in composants + blocs:
         noms += ns
+    noms += [m.reference for _, m in composants if isinstance(m, ModeleSnp)]
     noms += [n for n, _ in masses]
     noms += [n for n, _ in shunts]
     for ns, _ in maillages:
@@ -2404,18 +2411,27 @@ def _poser_snp(y, index, noeuds, m, f, rang):
 
     Ondes de puissance sur les references reelles z0 du fichier :
     (V - z0 I)/rac(z0) = S (V + z0 I)/rac(z0), I entrant dans le composant.
+    V est pris par rapport a `m.reference` (la broche de masse de la puce),
+    ou le courant de chaque port revient.
     """
     s = _interpoler(m.freqs, m.s, f, m.nom)
     rz = np.sqrt(m.z0)
+    ref = getattr(m, "reference", MASSE)
+    ir = index.get(ref) if ref != MASSE else None
     for k, n in enumerate(noeuds):
         i = index.get(n) if n != MASSE else None
         if i is not None:
             y[i, rang + k] += 1.0              # le courant quitte le noeud
+        if ir is not None:
+            y[ir, rang + k] -= 1.0             # et revient par la reference
         for j, nj in enumerate(noeuds):
             ij = index.get(nj) if nj != MASSE else None
             d = 1.0 if j == k else 0.0
+            a = d / rz[k] - s[k, j] / rz[j]
             if ij is not None:
-                y[rang + k, ij] += d / rz[k] - s[k, j] / rz[j]
+                y[rang + k, ij] += a
+            if ir is not None:
+                y[rang + k, ir] -= a
             y[rang + k, rang + j] += -d * rz[k] - s[k, j] * rz[j]
 
 

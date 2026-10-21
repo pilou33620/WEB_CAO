@@ -188,7 +188,7 @@ const EXPOSE=["ECRITURE_CAO","simDsChamp","simDsLire","simDsEcrire","SIM_DS","SI
   "simDsCatalogue","simDsPreparer","simDsAppliquer","simDsGroupes","simDsNb",
   "simDsBorneDe","simDsReappliquerCapas","SIM_DS","simPDNAssistantActif",
   /* La simulation RF : la carte lue, décrite pour le panneau commun. */
-  "simRfProbleme","simRfClic","SIM_RF_ATTENTE","simRfPlateauIpc","simRfZ","simRfModele",
+  "simRfProbleme","simRfClic","SIM_RF_ATTENTE","simRfPlateauIpc","simRfZ","simRfModele","simRfVariante",
   /* Le diagramme de l'œil : la saisie de la gigue, de la diaphonie et des
      fichiers IBIS, et le rendu de l'œil statistique. */
   "SIM_OEIL","simCorpsOeil","simRendreOeil","simOeilReglages",
@@ -6048,6 +6048,68 @@ TA("simulation RF : le modèle vient de la ligne du catalogue, par le nom de pi�
     const t2=await texte();
     if(t1!=="* lib/simulation/GCM1555C1H3R3CA16.sub"||t2!=="* modifié")
       throw new Error("relecture de la LIB : "+t1+" puis "+t2);
+  }finally{globalThis.fetch=avant;}
+});
+
+TA("simulation RF : un Touchstone 3 ports sur une puce à 6 broches, deux états",async ()=>{
+  /* Le commutateur AS179 : J3 (1) côté radio, J1 (5) côté antenne, J2 (3)
+     vers la réception, GND (2), V1 (4) commandée par R9 depuis le MCU. Le
+     fichier nomme ses broches et sa masse : la marche ne passe pas par V1, et
+     le bloc va sur 5, 3, 1, rapporté aux vias de 2. La colonne du catalogue
+     donne deux fichiers (deux états) : le premier, puis celui qu'on choisit. */
+  const avant=globalThis.fetch;
+  globalThis.fetch=async url=>({ok:true, json:async()=>
+    /composants/.test(url)?{composants:[{"Part Name":"AS179",
+      "Modèle Simulation":"lib/simulation/a.s3p | lib/simulation/b.s3p"}]}
+    :{contenu:"! broches : 5 3 1\n! masse : 2\n! "+
+              decodeURIComponent(url.split("nom=")[1])+"\n"}});
+  try{
+    const pad=(x,y,pin,n)=>({x:x,y:y,ps:"SMD",pin:pin,n:n});
+    carte({nets:["RF_OUT","GND","RF_ANT","RX","CTL","MCU"],
+           padstacks:{SMD:{pad:0.6,pads:[{c:"Top",d:0.6,f:"R"}]}},
+           formes:{R:{t:"RECTCENTER",w:0.6,h:0.5}},
+           composants:[
+             {ref:"U1",pkg:"QFN",c:0,x:10,y:20,r:0,m:0,val:"RADIO",
+              pads:[pad(-0.8,0,"1",1),pad(0.8,0,"2",0)]},
+             {ref:"U2",pkg:"SC-70-6",c:0,x:20,y:20,r:0,m:0,val:"AS179",part:"AS179",
+              pads:[pad(-0.8,-0.65,"1",0),pad(-0.8,0,"2",1),pad(-0.8,0.65,"3",3),
+                    pad(0.8,0.65,"4",4),pad(0.8,0,"5",2),pad(0.8,-0.65,"6",4)]},
+             {ref:"R9",pkg:"0402",c:0,x:25,y:26,r:0,m:0,val:"10k",
+              pads:[pad(-0.8,0,"1",4),pad(0.8,0,"2",5)]},
+             {ref:"J1",pkg:"UFL",c:0,x:38,y:20,r:0,m:0,val:"UFL",
+              pads:[pad(-0.8,0,"1",2),pad(0.8,0,"2",1)]}],
+           pistes:[{c:0,n:0,w:0.35,p:[10.8,20, 19.2,19.35]},
+                   {c:0,n:2,w:0.35,p:[20.8,20, 37.2,20]},
+                   {c:0,n:3,w:0.35,p:[19.2,20.65, 16,24]},
+                   {c:0,n:4,w:0.2,p:[20.8,20.65, 24.2,26]}],
+           percages:[{x:19.2,y:20,d:0.3,p:"PLATED",n:1}]});
+    SIM_RF_ATTENTE.port=0; simRfClic(10.8,20);
+    SIM_RF_ATTENTE.port=1; simRfClic(37.2,20);
+    const calcul=async()=>{
+      const r=await simRfProbleme({analyse:{f_debut:0.8e9,f_fin:0.9e9,points:3,f_centre:0.868e9}});
+      if(r.erreur)throw new Error("refus : "+r.erreur+" / "+r.conseil);
+      return r;
+    };
+    const r=await calcul();
+    const refs=r.doc.composants.map(c=>c.ref).sort().join(",");
+    if(refs!=="U2")throw new Error("composants : "+refs+" (R9 est derrière V1, hors modèle)");
+    if(r.doc.branches.some(b=>b.net==="CTL"))throw new Error("la marche est passée par V1");
+    const u2=r.doc.composants[0];
+    if(u2.noeuds.join(",")!=="P:U2.5,P:U2.3,P:U2.1"||u2.reference!=="G:U2.2")
+      throw new Error("broches du Touchstone : "+JSON.stringify([u2.noeuds,u2.reference]));
+    if(!/a\.s3p/.test(u2.modele.texte))throw new Error("premier état attendu : "+u2.modele.texte);
+    const ligne=r.composants.find(c=>c.ref==="U2");
+    if(!ligne.variantes||ligne.variantes.length!==2)throw new Error("variantes : "+JSON.stringify(ligne));
+    simRfVariante("U2","lib/simulation/b.s3p");
+    const r2=await calcul();
+    if(!/b\.s3p/.test(r2.doc.composants[0].modele.texte))
+      throw new Error("état choisi non pris : "+r2.doc.composants[0].modele.texte);
+    /* Une empreinte qui n'a pas la broche nommée : un refus qui le dit. */
+    globalThis.fetch=async url=>({ok:true, json:async()=>
+      /composants/.test(url)?{composants:[{"Part Name":"AS179","Modèle Simulation":"x.s3p"}]}
+      :{contenu:"! broches : 5 3 9\n"}});
+    const r3=await simRfProbleme({analyse:{f_debut:0.8e9,f_fin:0.9e9,points:3,f_centre:0.868e9}});
+    if(!r3.erreur||!/broches 5, 3, 9/.test(r3.erreur))throw new Error("broche absente : "+r3.erreur);
   }finally{globalThis.fetch=avant;}
 });
 

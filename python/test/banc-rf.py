@@ -390,6 +390,50 @@ def un_snp_hors_de_sa_bande_est_refuse():
         raise AssertionError("extrapolation silencieuse au-dela de 2 GHz")
 
 
+def un_s3p_se_rapporte_a_la_broche_de_masse():
+    """Le commutateur AS179 de la LIB, etat J1-J2 : J1 et J2 aux ports, J3
+    chargee par 50 ohms. Rapporte a la masse, S21 est celui du fichier ;
+    rapporte a une broche tenue a la masse par 1 milliohm, aussi ; par
+    1 nH (des vias trop longs), il perd."""
+    nom = "AS179-92LF_Vdd_0mV_Vctrl_3000mV_J1-J2_25C.s3p"
+    with open(os.path.join(LIB_SIM, nom), encoding="utf-8") as f:
+        txt = f.read()
+    freqs, s, _ = rf.lire_touchstone(txt, nom)
+    i = int(np.argmin(np.abs(freqs - 868e6)))
+
+    def s21(reference, vers_masse=None):
+        comps = [{"ref": "U1", "noeuds": ["j1", "j2", "j3"],
+                  "reference": reference,
+                  "modele": {"type": "snp", "texte": txt, "nom": nom}},
+                 _ideal("R3", "R", 50.0, "j3", "0")]
+        if vers_masse:
+            comps.append(_ideal("RG", vers_masse[0], vers_masse[1], "g", "0"))
+        d = _doc([("j1", 50 + 0j), ("j2", 50 + 0j)], comps,
+                 f1=freqs[i], f2=freqs[i + 1], points=2)
+        d["analyse"]["f_centre"] = freqs[i]
+        return _s(rf.analyser(d), 0, 1, 0)
+
+    assert abs(s21("0") - s[i, 1, 0]) < 1e-9, "S21 rapporte a la masse"
+    assert abs(s21("g", ("R", 1e-3)) - s21("0")) < 1e-5, \
+        "S21 rapporte a une broche tenue a la masse"
+    assert abs(s21("g", ("L", 5e-9)) - s21("0")) > 1e-3, \
+        "5 nH sous la broche de masse doivent se voir"
+
+
+def un_s1p_rapporte_a_une_broche_s_ajoute_a_ce_qui_la_tient():
+    """20 ohms mesures entre la broche et sa reference, la reference tenue
+    a la masse par 30 ohms : le port voit 50 ohms."""
+    g = (20.0 - 50.0) / (20.0 + 50.0)
+    txt = "# GHZ S RI R 50\n1 %r 0\n4 %r 0\n" % (g, g)
+    r = rf.analyser(_doc([("a", 50 + 0j), ("b", 50 + 0j)],
+                         [{"ref": "R1", "noeuds": ["a"], "reference": "g",
+                           "modele": {"type": "snp", "texte": txt,
+                                      "nom": "r.s1p"}},
+                          _ideal("RG", "R", 30.0, "g", "0"),
+                          _ideal("RX", "R", 1e6, "a", "b")]))
+    assert abs(_s(r, _k0(r), 0, 0)) < 1e-4, _s(r, _k0(r), 0, 0)
+
+
 def les_vias_de_masse_en_parallele():
     un = rf.inductance_masse(QUATRE, 0, [{"x": 0, "y": 0, "percage": 0.3,
                                           "couche_plan": 2}])

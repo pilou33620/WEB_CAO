@@ -387,7 +387,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "SIM_ZP","simZProfil","simZCurseurMarques","simZProfilFiche",
   "simZPeindreCurseur","simProblemes","simLotMirroir","simSegments",
   /* La simulation RF : le réseau entre deux ports, et sa persistance. */
-  "simRfProbleme","simRfClic","SIM_RF_ATTENTE","simRfEtat","normRf",
+  "simRfProbleme","simRfClic","SIM_RF_ATTENTE","simRfEtat","normRf","simRfVariante",
   "simRfZ","simRfExclure","simRfImporter","simRfOublierModele","simRfBroche",
   "simRfValeurSI","trkAt","simRfMasque",
   /* les liens des bouts de piste, et la transformation des boîtiers */

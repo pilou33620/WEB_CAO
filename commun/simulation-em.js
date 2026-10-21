@@ -16452,6 +16452,7 @@ function simRfEtat(){
   if(!rf.modeles||typeof rf.modeles!=="object")rf.modeles={};
   if(!Array.isArray(rf.exclus))rf.exclus=[];
   if(!rf.broches||typeof rf.broches!=="object")rf.broches={};
+  if(!rf.variantes||typeof rf.variantes!=="object")rf.variantes={};
   return rf;
 }
 function simRfModifie(){if(SIM_ED&&SIM_ED.rfModifie)SIM_ED.rfModifie();}
@@ -16521,6 +16522,9 @@ function simRfModeleImporte(ref){
   const m=simRfEtat().modeles[ref];
   return m?m.nom:"";
 }
+/* Le modèle de la bibliothèque choisi parmi les variantes de la pièce (les
+   états d'un commutateur : un fichier par état). */
+function simRfVariante(ref,nom){simRfEtat().variantes[ref]=String(nom);simRfModifie();}
 function simRfExclure(ref,oui){
   const rf=simRfEtat();
   rf.exclus=rf.exclus.filter(r=>r!==ref);
@@ -16626,6 +16630,14 @@ async function simRfModele(c,surcharge){
     const it=await simRfLigneLib(c.mpn);
     if(it)lib=String(it["Modèle Simulation"]||it["Modele Simulation"]||"").trim();
   }
+  /* « a.s3p | b.s3p » : plusieurs modèles pour la pièce, la variante choisie
+     pour ce composant (la première sinon). */
+  const variantes=lib.split("|").map(s=>s.trim()).filter(s=>!vide(s));
+  if(variantes.length>1){
+    const v=rf.variantes&&rf.variantes[c.ref];
+    lib=variantes.includes(v)?v:variantes[0];
+  }
+  const avecV=o=>variantes.length>1?Object.assign(o,{variantes:variantes}):o;
   let note="";
   const noms=[];
   if(!vide(lib)&&!SIM_RF_GENERIQUES.test(lib.replace(/\\/g,"/").split("/").pop()))
@@ -16635,8 +16647,8 @@ async function simRfModele(c,surcharge){
   for(const nom of noms){
     const texte=await simRfLireLib(nom);
     if(texte)
-      return avec({spec:{type:genre(nom), texte:texte, nom:nom},
-                   source:"bibliothèque", nom:nom});
+      return avecV(avec({spec:{type:genre(nom), texte:texte, nom:nom},
+                         source:"bibliothèque", nom:nom}));
     if(nom===lib)note="modèle « "+lib+" » introuvable dans la bibliothèque";
   }
   if(ideal&&ideal.valeur>=0&&(ideal.valeur>0||ideal.genre!=="C"))
@@ -16644,6 +16656,22 @@ async function simRfModele(c,surcharge){
                  source:"idéal", nom:"idéal", note:note});
   return {erreur:c.ref+" : aucun modèle RF"+(note?" ("+note+")":"")+
                  ". Importez son .sNp, ou excluez-le."};
+}
+
+/* LES BROCHES D'UN TOUCHSTONE. Un fichier à N ports va sur les N broches du
+   composant, dans l'ordre des numéros ; quand la puce a d'autres broches
+   (masse, commandes), le fichier le dit en commentaire :
+     ! broches : 5 3 1     le port k sur la k-ième broche nommée
+     ! masse : 2           les ports rapportés à cette broche (ses vias)
+   Les broches non nommées restent hors du modèle : la marche ne passe pas
+   par elles. */
+function simRfBrochesSnp(m){
+  if(!m||!m.spec||m.spec.type!=="snp")return null;
+  const t=String(m.spec.texte||"");
+  const b=/^[ \t]*![ \t]*broches[ \t]*:[ \t]*(.+)$/im.exec(t);
+  if(!b)return null;
+  const g=/^[ \t]*![ \t]*masse[ \t]*:[ \t]*(\S+)[ \t]*$/im.exec(t);
+  return {broches:b[1].trim().split(/[\s,;]+/), masse:g?g[1]:null};
 }
 
 /* --------------------------------------------------------------------------
@@ -16739,6 +16767,17 @@ async function simRfProbleme(opts){
     if(P.estAlim(n)){alims.add(n);return;}
     nets.add(n); file.push(n);
   };
+  /* Le modèle de chaque composant, lu dès la marche : un Touchstone qui nomme
+     ses broches ne mène qu'aux nets de celles-ci. */
+  const modeles=new Map();
+  const modeleDe=async c=>{
+    if(!modeles.has(c)){
+      const s=opts.surcharges&&opts.surcharges[c.ref];
+      modeles.set(c,await simRfModele(c,s!=null?s:-1));
+    }
+    return modeles.get(c);
+  };
+  const broche=(c,pin)=>c.pads.find(q=>String(q.pin)===String(pin));
   ajouter(PP[0].net);
   while(file.length){
     const n=file.shift();
@@ -16749,10 +16788,18 @@ async function simRfProbleme(opts){
                    comps.map(c=>({ref:c.ref, valeur:c.valeur})));
     for(const c of P.composants){
       if(vus.has(c)||portComps.has(c)||!c.pads.some(q=>q.net===n))continue;
+      if(exclus.has(c.ref)){vus.add(c);continue;}
+      const m=await modeleDe(c), b=simRfBrochesSnp(m);
+      if(b&&b.broches.concat(b.masse!=null?[b.masse]:[]).some(p=>!broche(c,p)))
+        return refus(c.ref+" : le modèle « "+m.nom+" » nomme les broches "+
+                     b.broches.join(", ")+(b.masse!=null?" (masse "+b.masse+")":"")+
+                     ", que l'empreinte n'a pas toutes.",
+                     "Corrigez les lignes « ! broches » et « ! masse » du fichier.");
+      const pads=b?b.broches.map(p=>broche(c,p)):c.pads;
+      if(!pads.some(q=>q.net===n))continue;   // touché par une broche hors modèle
       vus.add(c);
-      if(exclus.has(c.ref))continue;
       comps.push(c);
-      for(const q of c.pads)ajouter(q.net);
+      for(const q of pads)ajouter(q.net);
     }
   }
   const liste=comps.map(c=>({ref:c.ref, valeur:c.valeur||"", exclu:false}));
@@ -17153,21 +17200,23 @@ async function simRfProbleme(opts){
   let erreur=null;
   for(let i=0;i<comps.length;i++){
     const c=comps[i];
-    const pads=c.pads.slice()
-      .sort((a,b)=>String(a.pin).localeCompare(String(b.pin),"fr",{numeric:true}));
-    const noeuds=pads.map(q=>noeudBroche(c,q));
-    const surch=opts.surcharges&&opts.surcharges[c.ref];
-    const m=await simRfModele(c,surch!=null?surch:-1);
+    const m=await modeleDe(c), b=simRfBrochesSnp(m);
     Object.assign(liste[i],{source:m.source||"", nom:m.nom||"",
                             genre:m.genre||"", valeurSI:m.valeur,
-                            note:m.note||"", erreur:m.erreur||""});
+                            note:m.note||"", erreur:m.erreur||"",
+                            variantes:m.variantes||null});
     if(m.erreur){erreur=erreur||m.erreur;continue;}
-    if(noeuds.some(x=>x==null)){
+    const pads=b?b.broches.map(p=>broche(c,p)):c.pads.slice()
+      .sort((a,b)=>String(a.pin).localeCompare(String(b.pin),"fr",{numeric:true}));
+    const masse=b&&b.masse!=null?broche(c,b.masse):null;
+    const noeuds=pads.map(q=>noeudBroche(c,q));
+    if(noeuds.some(x=>x==null)||(masse&&noeudBroche(c,masse)==null)){
       erreur=erreur||(c.ref+" : une broche n'a pas de net.");
       continue;
     }
     if(m.note)notes.push(c.ref+" : "+m.note+", modèle idéal.");
     const d={ref:c.ref, noeuds:noeuds, modele:m.spec};
+    if(masse)d.reference=noeudBroche(c,masse);
     /* UNE SELF porte sa géométrie : le serveur en fait un solénoïde, d'une
        pastille à l'autre, pour ses mutuelles. */
     if(m.genre==="L"&&pads.length===2){
@@ -17551,10 +17600,17 @@ function simRfTableComposants(){
     const u=SIM_RF_UNITES[c.genre];
     const s=SIM_RF.surcharges[c.ref];
     const imp=simRfModeleImporte(c.ref);
+    const choix=c.variantes&&!c.exclu&&c.source==="bibliothèque";
     const modele=c.exclu?"exclu":c.erreur?"aucun":
-      (c.source+(c.nom&&c.nom!=="idéal"?" · "+c.nom:""));
+      (c.source+(c.nom&&c.nom!=="idéal"&&!choix?" · "+c.nom:""));
+    const variantes=choix
+      ? ' <select class="simChamp" data-rfvar="'+i+'" title="Le modèle de la '+
+        'bibliothèque pour ce composant (un état du commutateur, par exemple)">'+
+        c.variantes.map(v=>"<option"+(v===c.nom?" selected":"")+">"+esc(v)+
+                           "</option>").join("")+"</select>"
+      : "";
     h+="<tr><td>"+esc(c.ref)+"</td><td>"+esc(c.valeur||"")+"</td>"+
-       '<td class="'+(c.erreur?"simErr":"")+'">'+esc(modele)+"</td><td>"+
+       '<td class="'+(c.erreur?"simErr":"")+'">'+esc(modele)+variantes+"</td><td>"+
        (u&&!c.exclu
          ? '<input class="simChamp" data-rfsi="'+i+'" value="'+
            (s!=null?nb(s/u.f):"")+'" placeholder="'+
@@ -17698,6 +17754,11 @@ function simRfApres(){
   for(const e of tous("[data-rfoub]"))
     e.onclick=function(){
       simRfOublierModele(L[+this.dataset.rfoub].ref);
+      simRfGo();
+    };
+  for(const e of tous("[data-rfvar]"))
+    e.onchange=function(){
+      simRfVariante(L[+this.dataset.rfvar].ref,this.value);
       simRfGo();
     };
   for(const e of tous("[data-rfexc]"))

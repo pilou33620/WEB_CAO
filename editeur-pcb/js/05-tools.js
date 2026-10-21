@@ -81,7 +81,7 @@ function rfTexteId(t){
   return id;
 }
 function normRf(src){
-  if(!src||typeof src!=="object")return {ports:[null,null],modeles:{},exclus:[],broches:{}};
+  if(!src||typeof src!=="object")return {ports:[null,null],modeles:{},exclus:[],broches:{},variantes:{}};
   const port=p=>(p&&typeof p==="object"&&p.ref!=null&&p.pin!=null)
     ? {ref:dStr(p.ref,64), pin:dStr(p.pin,16),
        re:dRange(p.re,50,1e-6,1e6), im:dRange(p.im,0,-1e6,1e6)}
@@ -100,10 +100,14 @@ function normRf(src){
       if(z&&typeof z==="object")
         broches[dStr(cle,80)]={re:dRange(z.re,0,-1e9,1e9),
                                im:dRange(z.im,0,-1e9,1e9)};
+  const variantes={};
+  if(src.variantes&&typeof src.variantes==="object")
+    for(const [ref,nom] of Object.entries(src.variantes))
+      if(typeof nom==="string")variantes[dStr(ref,64)]=dStr(nom,256);
   return {ports:[port(ports[0]),port(ports[1])], modeles:modeles,
           exclus:(Array.isArray(src.exclus)?src.exclus:[])
                    .slice(0,500).map(r=>dStr(r,64)),
-          broches:broches};
+          broches:broches, variantes:variantes};
 }
 function dNum(v,def){const n=+v;return Number.isFinite(n)?n:def;}
 function dRange(v,def,min,max){return clamp(dNum(v,def),min,max);}
