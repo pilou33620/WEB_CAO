@@ -7,22 +7,22 @@ Pour les détails techniques approfondis, les dérivations physiques et l'histor
 
 ---
 
-## État des lieux (septembre 2026)
+## État des lieux (octobre 2026)
 
-L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 700 essais automatisés, tous passés** (relevé du 02/10/2026) :
+L'ensemble de la chaîne est fonctionnel et couvert par **plus de 2 300 essais automatisés, tous passés** (relevé du 21/10/2026) :
 
 | Composant | Statut | Couverture / Bancs |
 | --- | --- | --- |
-| **Éditeur PCB** | En service | 1025 essais (`editeur-pcb/test/harness.js`, relevé du 20/10/2026), dont 44 pour les plans (Draftsman), 30 pour le dossier mécanique, 24 pour le gestionnaire de contraintes et la topologie, 3 pour l'export IPC-2581 (+ 60 cas d'aller-retour, `banc-ipc2581-export.py`) |
-| **Éditeur Schématique** | En service | 157 essais (`editeur-schematique/test/harness.js`), dont 3 pour les contraintes de nets |
+| **Éditeur PCB** | En service | 1025 essais (`editeur-pcb/test/harness.js`, relevé du 20/10/2026), dont 44 pour les plans (Draftsman), 30 pour le dossier mécanique, 24 pour le gestionnaire de contraintes et la topologie, 3 pour l'export IPC-2581 (+ 70 cas d'aller-retour, `banc-ipc2581-export.py`) |
+| **Éditeur Schématique** | En service | 173 essais (`editeur-schematique/test/harness.js`), dont 3 pour les contraintes de nets |
 | **Visionneuse IPC-2581** (lecteur `ipc2581_parser` 1.83, `ipc2581_json` 1.4.0) | En service | 232 essais (`harness-sim.js`, relevé du 21/10/2026), dont 13 pour le dossier mécanique + 79 (`banc-essai.py`) |
 | **SI — Impédance & Vias (`ligne_mom` v2.9.0)** | En service (0,3 à 0,4 % vs étalons ; pertes conducteur par l'inductance incrémentale de Wheeler, ruban + plan(s) + bords ; rugosité Hammerstad / Huray, diélectrique causal Djordjevic-Sarkar, via en ligne — branchés dans la cascade) | 236 cas (`python/test/banc-ligne-mom.py`) |
 | **SI — Z différentielle (`solve_multiline`)** | En service (< 3 % vs Garg-Bahl) | inclus dans les 199 cas |
 | **SI — Crosstalk niveau 2 (`crosstalk` v4.6.0)** | En service (scan normalisé : k_total, NEXT et FEXT en % et dB, statut vert / orange / rouge, piste sélectionnée — t_r saisi ou déduit de la classe — ou toute la carte sous un t_r global ; pistes superposées résolues ; pertes R, G au genou du front en option ; carte sans plan avec masse arrosée sur la couche ; somme des agresseurs en phase ou quadratique ; **fente du plan franchie par les deux pistes : impédance commune du détour, le courant de retour résolu par PEEC sur l'image des plans que la page envoie (toute forme, plan intact dessous, vias de masse, victime superposée), Ott en repli et en borne haute de la fourchette** — dans « Analyser la piste » et dans la règle *diaphonie* de toute la carte ; garde sans perçage dans le document supposée cousue des deux côtés ; coloration au statut DRC sur le layout ; l'analyse électrique est retirée ; S = 3W pile sur le seuil retenu, couples écartés de peu nommés, front RF imposé signalé) | 56 cas (`python/test/banc-crosstalk.py`), dont la triplaque exacte (Cohn), les formules du niveau 2, l'estimation d'Ott du cas 4 du banc de mesure et le retour résolu (microruban, convergence, cas 4b, vias, fente en biais, victime superposée) |
 | **Cascade SI / PDN (`simulation_em` v5.5.0)** | En service (hauteur et topologie aux pertes, rugosité par cuivre et rugosité propre du plan — cascade simple et différentielle —, diélectrique causal en option, via en π ou en ligne au-delà de 0,3 rad, mutuelle des fûts de la paire, contre-perçage ; dispersion de Getsinger comptée une seule fois dans la cascade ; paire par brin : via sur le brin N seul, brins superposés couplés en large face) | couvert par les bancs `ligne_mom`, crosstalk, œil, RF et éditeur |
-| **SI — Diagramme de l'œil (`oeil` v2.4.0)** | En service (réponse à un bit depuis la cascade ABCD, simple et différentiel, vias et coudes de la paire compris ; œil PRBS et pire cas PDA ; CTLE, FFE, DFE ; œil statistique RJ/DJ/bruit, contours 10⁻⁶…10⁻¹⁵ et baignoire ; diaphonie bornée saisie ou reprise du couplage (NEXT/FEXT du niveau 2) ; tampons IBIS émetteur et récepteur simulés dans le temps avec leur boîtier, [Diff Pin], paire brin par brin et mode commun ; condensateurs de liaison (couplage AC, coupure basse et droop exact) ; .ami lu et **modèle AMI exécuté** par ctypes depuis la LIB/projet — GetWave de l'émetteur et du récepteur, horloge récupérée imposée, forme d'onde des tampons IBIS —, repli sur l'égaliseur de référence ; mutuelles du boîtier vers les broches voisines (`ibis.py` 1.4.0) ; 18 gabarits avec leur fiabilité, plus aucun « à vérifier ») | 62 cas (`python/test/banc-oeil.py`) |
-| **RF — S21 port à port (`rf_reseau` v1.7.0)** | En service dans l'éditeur PCB et la visionneuse, chacun avec son empilage (pistes par `simulation_em`, lignes couplées à N conducteurs avec pertes et dispersion modale, coudes et vias aux bords des longements, pastilles en MoM 3D sur stratifié étalonné sur l'empilage, zones et coulées de masse entières en maillage adaptatif creux sur leur cuivre rempli, longements recoupés à leur écart local, chemins de masse piste + via, broches annexes, pistes des autres nets fermées sur leur Z₀, mutuelles des selfs entre elles et avec les pistes (Neumann avec image), fentes du plan de référence (Ott), composants SPICE / .sNp / idéaux, S généralisés sur ports complexes, « et si ») — quasi-statique (+ Getsinger) : le domaine de validité (modes supérieurs, ondes de surface, rayonnement) est calculé et signalé ; les modéliser demande le moteur pleine onde | 47 cas (`python/test/banc-rf.py`) + 8 essais de page (`editeur-pcb/test/harness.js`) + 3 (`harness-sim.js`) |
-| **PI — Chute DC & Échauffement (`dc_solver` v2.1.0)** | En service (IR drop, densité J, modèle étalement) | 42 cas (`python/test/banc-dc.py`) |
+| **SI — Diagramme de l'œil (`oeil` v2.4.0)** | En service (réponse à un bit depuis la cascade ABCD, simple et différentiel, vias et coudes de la paire compris ; œil PRBS et pire cas PDA ; CTLE, FFE, DFE ; œil statistique RJ/DJ/bruit, contours 10⁻⁶…10⁻¹⁵ et baignoire ; diaphonie bornée saisie ou reprise du couplage (NEXT/FEXT du niveau 2) ; tampons IBIS émetteur et récepteur simulés dans le temps avec leur boîtier, [Diff Pin], paire brin par brin et mode commun ; condensateurs de liaison (couplage AC, coupure basse et droop exact) ; .ami lu et **modèle AMI exécuté** par ctypes depuis la LIB/projet — GetWave de l'émetteur et du récepteur, horloge récupérée imposée, forme d'onde des tampons IBIS —, repli sur l'égaliseur de référence ; mutuelles du boîtier vers les broches voisines, sections du boîtier lues du die vers la broche (`ibis.py` 1.5.0) ; 18 gabarits avec leur fiabilité, plus aucun « à vérifier ») | 62 cas (`python/test/banc-oeil.py`) |
+| **RF — S21 port à port (`rf_reseau` v1.7.0)** | En service dans l'éditeur PCB et la visionneuse, chacun avec son empilage (pistes par `simulation_em`, lignes couplées à N conducteurs avec pertes et dispersion modale, coudes et vias aux bords des longements, pastilles en MoM 3D sur stratifié étalonné sur l'empilage, zones et coulées de masse entières en maillage adaptatif creux sur leur cuivre rempli, longements recoupés à leur écart local, chemins de masse piste + via, broches annexes, pistes des autres nets fermées sur leur Z₀, mutuelles des selfs entre elles et avec les pistes (Neumann avec image), fentes du plan de référence (Ott), composants SPICE / .sNp / idéaux, S généralisés sur ports complexes, « et si ») — quasi-statique (+ Getsinger) : le domaine de validité (modes supérieurs, ondes de surface, rayonnement) est calculé et signalé ; les modéliser demande le moteur pleine onde | 48 cas (`python/test/banc-rf.py`) + 8 essais de page (`editeur-pcb/test/harness.js`) + 3 (`harness-sim.js`) |
+| **PI — Chute DC & Échauffement (`dc_solver` v2.1.0)** | En service (IR drop, densité J, modèle étalement) | 43 cas (`python/test/banc-dc.py`) |
 | **Scoring placement & Rotation (`pcb_scoring`)** | En service (HPWL, congestion, découplage HF, auto-rotation) | 18 cas (`python/test/banc-pcb-scoring.py`) |
 | **Vérification de la carte (`analyse_carte`)** | En service (tous nets : angles, bouts orphelins, empilage ; à la cadence de chaque classe : impédance, chemins de retour, fentes de plan, vias de couture, diaphonie, paires différentielles, découplage, bord de carte, moignons de vias, branches en T ; quartz, ESD, courant des rails ; dérogations et comparaison de révisions ; classes d'interface USB, Ethernet, LVDS, CAN, RS-485 à leur front et à la Z_diff de leur norme) — mode d'emploi : [docs/verification-carte.md](docs/verification-carte.md) | 25 cas (`python/test/banc-analyse-carte.py`) + route (`banc-serveur-routes.py`) + 11 essais éditeur + 4 visionneuse |
 | **Reconnaissance de motifs (`pattern_recognition`)** | En service (LDO/78xx/79xx/Buck, I2C, SPI, UART, quartz, RC, courants DC) | 24 cas (`python/test/banc-patterns.py`) |
@@ -31,7 +31,32 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 700 essais a
 | **Moteur 2,5D pleine onde (`mom_solver`)** | Archivé dans branche `archive/mom-solver-25d` (recentrage sur 2D instantané) | Préservé dans l'historique Git |
 | **Support Android / Termux** | Abandonné volontairement (ajouté le 17/09, retiré au commit suivant) | — |
 | **Passerelle MCP, profils, cross-probing** | En service | `web_CAO.py`, `commun/session.js` |
-| **Gestion LIB — catalogue, recherche, import JLCPCB / LCSC** | En service | 27 + 65 essais (`gestion-lib/test/banc-catalogue.js`, `banc-import-jlc.js`) ; repère et trous des empreintes (`banc-repere-pcb.js`) ; routes LIB : 16 cas (`banc-lib-routes.py`) |
+| **Gestion LIB — catalogue, recherche, import JLCPCB / LCSC** | En service | 45 + 67 essais (`gestion-lib/test/banc-catalogue.js`, `banc-import-jlc.js`) ; générateurs IPC-7351B, vérification et conversion KiCad : 174 contrôles (`banc-composants.js`) ; repère et trous des empreintes (`banc-repere-pcb.js`) ; routes LIB : 16 cas (`banc-lib-routes.py`) |
+
+### Ce qui reste — synthèse au 21/10/2026
+
+Le détail de chaque point est plus bas, dans sa section.
+
+**Code (faisable sans rien d'autre)**
+- Gestion LIB trop lourde sur le Pi (≈ 890 Mo au chargement) : mesurer, puis alléger.
+- Animation 3D de la carte qui s'assemble, en option de `fabrication.zip` (vidéo + page HTML).
+- Banc crosstalk : refaire `carte.png` (6 cas) et réexporter `docs-sim/`.
+
+**Décisions à prendre**
+- LIB : régénérer SOIC-8 et SOT-23-5 à l'IPC-7351B, ou les garder.
+- Simulation RF S21 de la carte P01x274 : cinq questions sans réponse (modèle AS179, ports 1 et 2, branche RX, fichiers).
+- Export eCADSTAR : en attente d'un vrai besoin.
+
+**À vérifier sur du réel (carte, fichier, matériel)**
+- Broche 1 du Yamaichi IC51-0484-806 ; empreintes SOT-89-5 et LED RVB ; `<Package><Outline>` et `height` d'un fichier eCADSTAR.
+- `cao_paire` et `cao_placement_auto` dans la vraie page ; le canal depuis l'iPad.
+- Banc crosstalk : empreinte SMA 142-0701-801, fabrication et mesure de la carte JLC, `releves.csv`, trancher cas 4 / 4b, référence pleine onde (option D).
+- 12 relevés uSimmics ; contre-perçage et règles IPC-2581 d'exports Altium / Allegro ; un vrai modèle AMI de fabricant.
+
+**Normes (réseau de l'environnement à ouvrir : usb.org, fabricants de feuillard)**
+- USB 2.0 Template 2 : positions en % UI à relire dans la figure 7-15.
+- Rugosité de Huray : a et SR à tirer des fiches de feuillard (méthode « cannonball »).
+- Relus le 21/10/2026 sur sources secondaires seulement (à confirmer dans la norme quand elle est lisible) : sections IBIS, constantes IPC-7351B des puces, masque HDMI 1.4 TP2.
 
 ### Corrections du 24/09/2026 (révélées par l'extension des bancs scoring et motifs)
 - [x] **Motifs** : la tension d'un LDO se lisait aussi dans le repère (`U5` + `AMS1117-3.3` → 5 V, `U12` → 12 V) ; elle ne se lit plus que dans la valeur.
