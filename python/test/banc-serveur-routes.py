@@ -331,6 +331,23 @@ def test_routes():
         print("[PASS] POST /api/simulation-dc (IR drop, %d couche(s) peinte(s))"
               % len(data["cartes"]))
 
+        # 19 bis. POST /api/thermique-composants : l'echauffement d'un composant qui dissipe
+        conn.request("POST", "/api/thermique-composants",
+                     body=json.dumps({"thermique": {"epaisseur_stratifie": 1.6},
+                                      "composants": [{"ref": "D1", "puissance_w": 1, "surface_mm2": 400,
+                                                      "source_mm2": 12, "cuivre_um": 35}]}).encode("utf-8"),
+                     headers={"Content-Type": "application/json"})
+        res = conn.getresponse()
+        assert res.status == 200, res.read()[:300]
+        data = json.loads(res.read().decode("utf-8"))
+        assert data["composants"][0]["ref"] == "D1" and 30 < data["composants"][0]["dT"] < 90, data
+        conn.request("POST", "/api/thermique-composants", body=b'{"composants": []}',
+                     headers={"Content-Type": "application/json"})
+        res = conn.getresponse()
+        assert res.status == 422, res.status
+        res.read()
+        print("[PASS] POST /api/thermique-composants (%.0f K, refus propre)" % data["composants"][0]["dT"])
+
         # 20. GET /api/crosstalk
         conn.request("GET", "/api/crosstalk")
         res = conn.getresponse()

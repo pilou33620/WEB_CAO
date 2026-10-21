@@ -64,7 +64,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* variantes de montage (commun/variantes.js + 26-variantes.js) */
   "varNorm","varVide","varEstMonte","pcbVarDepuisSchema","pcbVarChoisir","pcbVarDessiner",
   "pcbVarOuvrir","pcbVarFermer","fabFpsMontes","listComps",
-  "edgeClick","edgeMove","closeEdge","boardPoly","setBoardSize","setBoardRect","setBoardDisque","boardDisquePts","contourChanger","inBoard","boardCutouts",
+  "edgeClick","edgeMove","closeEdge","interditsListe","pcbThermiqueDocument","pcbThermiqueEstimer","boardPoly","setBoardSize","setBoardRect","setBoardDisque","boardDisquePts","contourChanger","inBoard","boardCutouts",
   "boardChanged","polyEdgeDist","segDist","orient","signedArea",
   "coordOpen","coordClose","coordApply","coordMode","coordPoint","coordAnchor",
   "placeOrigin","ux","uy","wxu","wyu","snapX","snapY","gOrigin","routeToPoint","hint",
@@ -3614,16 +3614,36 @@ T("cuivre mini : la bande trop étroite entre deux dégagements est retirée, pa
     if(S.rule.cuMin!==0.15)throw new Error("cuMin relu : "+S.rule.cuMin);
     delete d.rule.cuMin;loadDoc(d,true);
     if(S.rule.cuMin!==0.2)throw new Error("fichier muet : "+S.rule.cuMin);
-    // le long d'une piste, la bande reste : le DRC la signale (remarque), et seulement sous le mini
+    // le long d'une piste aussi : la bande est retirée, sur la longueur où elle est étroite
     const P=padsWorld(S.fps[0]).find(q=>q.n===1), ct=clrK("GND","SIG","cu","trk");
     const yPiste=e=>P.y+0.5+ca+e+ct+0.1;   // 0,1 mm : la demi-largeur de la piste
     S.tracks=[{l:0,net:"SIG",w:0.2,x1:P.x-3,y1:yPiste(0.1),x2:P.x+3,y2:yPiste(0.1)}];touch();
-    const r=runDrc().filter(e=>/Cuivre de zone de/.test(e.msg));
-    // elle longe les deux pastilles : une remarque pour chacune
-    if(r.length!==2||!r.every(e=>e.info)||!r.some(e=>/0\.100 mm entre la piste SIG et la pastille LED1\.1/.test(e.msg)))
-      throw new Error("cuivre étroit : "+r.map(e=>e.msg).join(" | "));
+    const lp=zoneLanieres(0), ym=P.y+0.5+ca+0.05;
+    if(!lp.some(H=>inPoly(P.x,ym,H)))throw new Error("la bande entre la piste et LED1.1 : "+lp.length+" lanières");
+    if(lp.some(H=>inPoly(P.x-2.5,ym,H)))throw new Error("loin de la pastille, rien n'est retiré le long de la piste");
     S.tracks[0].y1=S.tracks[0].y2=yPiste(0.3);touch();
-    if(runDrc().some(e=>/Cuivre de zone de/.test(e.msg)))throw new Error("0,3 mm de cuivre : rien à dire");
+    if(zoneLanieres(0).some(H=>inPoly(P.x,P.y+0.5+ca+0.15,H)))throw new Error("0,3 mm de cuivre : rien à retirer");
+    // un arc qui frôle la pastille au même écart : la bande est retirée aussi
+    const yc=yPiste(0.1), arc={l:0,net:"SIG",w:0.2,x1:P.x-3,y1:yc,x2:P.x+3,y2:yc,ca:0.2};
+    if(trkMid(arc).y<yc)arc.ca=-0.2;                     // le ventre vers l'extérieur, puis la corde rapprochée
+    const fl=trkMid(arc).y-yc;arc.y1=arc.y2=yc-fl;
+    S.tracks=[arc];touch();
+    if(Math.abs(trkMid(arc).y-yc)>1e-6||!zoneLanieres(0).some(H=>inPoly(P.x,ym,H)))throw new Error("arc : la bande sous son ventre");
+    // deux arcs concentriques de nets différents, 0,1 mm de cuivre entre leurs dégagements : seule la bande
+    // entre eux part, pas le creux du virage (l'enveloppe de deux arcs entiers le couvrait : du cuivre sain)
+    const cP=clrK("GND","P","cu","trk"), ecart=0.2+2*cP+0.1, arcs=[];
+    for(const [net,R] of [["P",8],["N",8+ecart]])
+      arcs.push({l:0,net,w:0.2,x1:20+R,y1:20,x2:20-R,y2:20,ca:Math.PI});
+    S.fps=[];S.tracks=arcs;touch();
+    const la=zoneLanieres(0), aireLan=la.reduce((s,H)=>s+Math.abs(signedArea(H)),0);
+    const yv=trkMid(arcs[0]).y>20?1:-1, Rm=8+ecart/2;
+    if(!la.some(H=>inPoly(20,20+yv*Rm,H)))throw new Error("la bande entre les deux arcs");
+    if(la.some(H=>inPoly(20,20+yv*4,H)))throw new Error("le creux du virage est du cuivre sain : rien n'y part");
+    if(aireLan>Math.PI*Rm*(ecart+0.4)*1.5)throw new Error("lanières des arcs trop grandes : "+aireLan.toFixed(1)+" mm²");
+    S.fps=[L];
+    // une piste du net de la zone tient le cuivre qu'elle touche : rien entre elle et la pastille
+    S.tracks=[{l:0,net:"GND",w:0.2,x1:P.x-3,y1:yPiste(0.1),x2:P.x+3,y2:yPiste(0.1)}];touch();
+    if(zoneLanieres(0).some(H=>inPoly(P.x,ym,H)))throw new Error("piste GND : rien à retirer");
   }finally{suiviFin(reg);loadDoc(JSON.parse(saved),true);}
 });
 T("sérigraphie sur le cuivre nu : repère posé au-dessus des pastilles, sinon le DRC le dit",()=>{
@@ -3643,6 +3663,83 @@ T("sérigraphie sur le cuivre nu : repère posé au-dessus des pastilles, sinon 
     S.drawings[0].layer="silkB";touch();
     if(silk().length)throw new Error("la sérigraphie du dessous ne juge pas les pastilles du dessus");
   }finally{suiviFin(reg);loadDoc(JSON.parse(saved),true);}
+});
+/* Banc de charge : 300 boîtiers SO8 sous un plan GND, 1500 pistes. Le 21/10/2026, un calcul
+   des bras quadratique faisait passer l'analyse des îlots de 0,4 à 9,7 s par retouche ; les
+   bornes laissent dix fois la marge d'un Raspberry Pi, et attrapent ce genre de régression. */
+T("charge : 300 boîtiers sous un plan, îlots et Gerber cuivre en temps raisonnable",()=>{
+  const saved=serialize(), reg=suiviDecor();
+  try{
+    S.board={x:0,y:0,w:200,h:200,pts:null};S.rule.cuMin=0.2;
+    for(let i=0;i<300;i++){
+      const f=mkFp("U"+i,"","",8);f.x=5+(i%18)*10.5;f.y=5+Math.floor(i/18)*10.5;
+      const pads=[];for(let k=0;k<8;k++)pads.push({n:k+1,x:(k<4?-2.5:2.5),y:-1.905+(k%4)*1.27,w:1.5,h:0.6,shape:"rect",drill:0});
+      pcbAppliquerDefEmpreinte(f,"ESSAI-SO8",{style:"chip",pins:8,pads});
+      f.nets={};for(let k=1;k<=8;k++)f.nets[k]=(k%4===0)?"GND":"N"+i+"_"+k;
+      S.fps.push(f);
+      for(let k=0;k<5;k++)S.tracks.push({l:0,net:"N"+i+"_1",w:0.2,x1:f.x-2.5,y1:f.y-1.905,x2:f.x-2.5-k-1,y2:f.y-8-k});
+    }
+    // et vingt longues diagonales : sans tronçons, leur boîte couvrait la carte entière
+    for(let k=0;k<20;k++)S.tracks.push({l:0,net:"D"+k,w:0.2,x1:5+k*0.6,y1:3,x2:195,y2:193-k*0.6});
+    S.zones=[{id:S.nextId++,l:0,net:"GND",pts:[{x:0.5,y:0.5},{x:199.5,y:0.5},{x:199.5,y:199.5},{x:0.5,y:199.5}]}];
+    touch();
+    let t=Date.now();conn(true);const tc=Date.now()-t;
+    touch();t=Date.now();gerberCopper(0);const tg=Date.now()-t;
+    if(tc>5000||tg>8000)throw new Error("îlots "+tc+" ms, Gerber "+tg+" ms : un calcul est devenu quadratique ?");
+  }finally{suiviFin(reg);loadDoc(JSON.parse(saved),true);}
+});
+T("vue cuivre final : quatrième cran du contraste, dessinée sans erreur, H reboucle",()=>{
+  const avant=S.contrast;
+  try{
+    setContrast(3);
+    if(!/cuivre final/.test(document.getElementById("bContrast").innerHTML))throw new Error("libellé du bouton");
+    draw();
+    key("h",{});
+    if(S.contrast!==0)throw new Error("H reboucle sur « complet » après « cuivre final » : "+S.contrast);
+  }finally{setContrast(avant);}
+});
+T("zones interdites : patte qui ressort, composant interdit ou trop haut, hauteur par face",()=>{
+  const saved=serialize(), reg=suiviDecor(), lib=window.CSV_LIB;
+  try{
+    window.CSV_LIB=[{"Part Name":"TRAV-2","Maximun Height":"8.5"},{"Part Name":"PUCE","Maximun Height":"1.2"}];
+    // J1 traversant, posé dessus : ses pattes ressortent dessous ; R1 CMS dessus, 1,2 mm
+    const J=mkFp("J1","","",2);J.style="row";J.pitch=2.54;J.x=20;J.y=20;J.csvPartName="TRAV-2";
+    pcbAppliquerDefEmpreinte(J,"ESSAI-TRAV",{style:"row",pins:2,pads:[{n:1,x:0,y:0,w:1.6,h:1.6,shape:"circ",drill:0.9},{n:2,x:2.54,y:0,w:1.6,h:1.6,shape:"circ",drill:0.9}]});
+    const R=mkFp("R1","","0805",2);R.x=40;R.y=20;R.csvPartName="PUCE";
+    S.fps.push(J,R);touch();
+    const rect=(x,y,w,h)=>[{x,y},{x:x+w,y},{x:x+w,y:y+h},{x,y:y+h}];
+    const drc=re=>runDrc().filter(e=>re.test(e.msg));
+    // côté LED (dessous) : les pattes de J1 n'ont rien à y faire
+    S.interdits=[{id:S.nextId++,face:"dessous",pts:rect(15,15,10,10),hMax:null,nom:"Côté LED"}];touch();
+    const r1=drc(/ressort/);
+    if(r1.length!==1||r1[0].info||!/Patte traversante J1\.\d : elle ressort sur le dessous dans « Côté LED »/.test(r1[0].msg))throw new Error("patte : "+r1.map(e=>e.msg).join(" | "));
+    if(drc(/aucun composant n'y est permis/).length)throw new Error("J1 est posé dessus : la zone du dessous ne juge que ses pattes");
+    // dessus, sans hauteur permise : J1 et R1 y sont interdits ; puis 3 mm : J1 (8,5) trop haut, R1 (1,2) passe
+    S.interdits[0].face="dessus";S.interdits[0].pts=rect(15,15,30,10);touch();
+    if(drc(/aucun composant n'y est permis/).length!==2||drc(/ressort/).length)throw new Error("dessus, aucun composant : "+runDrc().map(e=>e.msg).join(" | "));
+    S.interdits[0].hMax=3;touch();
+    const r3_=drc(/trop haut dans/);
+    if(r3_.length!==1||!/J1 trop haut dans « Côté LED » : 8,50 mm pour 3,00 mm permis/.test(r3_[0].msg))throw new Error("hauteur : "+r3_.map(e=>e.msg).join(" | "));
+    // hauteur maximale de la face, pour toute la carte ; une hauteur inconnue est dite, jamais supposée
+    S.interdits=[];S.rule.hDessus=5;delete R.csvPartName;touch();
+    if(drc(/J1 \(dessus\) trop haut : 8,50 mm pour 5,00 mm permis sur la carte/).length!==1)throw new Error("limite de la face");
+    if(!drc(/1 composant\(s\) de hauteur inconnue \(R1\)/).length)throw new Error("hauteur inconnue de R1");
+    // tracé au geste (deux coins, Entrée), relu du fichier, supprimé
+    S.rule.hDessus=null;setMode("interdit");edgeClick(50,50,true);edgeClick(60,58,true);closeEdge();setMode("select");
+    const z=interditsListe()[0];
+    if(!z||z.pts.length!==4||z.face!=="dessus"||z.hMax!==null||!S.sel.interdits.has(z))throw new Error("zone tracée : "+JSON.stringify(z));
+    z.hMax=2.5;loadDoc(JSON.parse(serialize()),true);
+    const z2=interditsListe()[0];
+    if(!z2||z2.hMax!==2.5||z2.nom!==z.nom)throw new Error("relue du fichier : "+JSON.stringify(z2));
+    // couper puis coller : elle revient, décalée sous le pointeur, avec sa face et sa hauteur
+    clearSel();S.sel.interdits.add(z2);cutSelPcb();
+    if(interditsListe().length)throw new Error("Ctrl+X retire la zone");
+    pasteClipPcb();
+    const z3=interditsListe()[0];
+    if(!z3||z3.hMax!==2.5||z3.face!=="dessus"||z3.pts.length!==4)throw new Error("Ctrl+V la rend : "+JSON.stringify(z3));
+    clearSel();S.sel.interdits.add(z3);buildProps();deleteSel();
+    if(interditsListe().length)throw new Error("Suppr retire la zone");
+  }finally{window.CSV_LIB=lib;suiviFin(reg);loadDoc(JSON.parse(saved),true);}
 });
 T("Gerber : masque, pâte, sérigraphie, contour",()=>{
   if(gerberMask(0).indexOf("Soldermask,Top")<0)throw new Error("fonction du masque");
@@ -19241,6 +19338,8 @@ T("Vérification de la carte : zones, contour, trous et broches partent aussi",(
      de la couche en trous), le bord de la carte, les trous métallisés avec
      leur portée, les broches de chaque empreinte avec leur net. */
   const {q}=carteVerif();
+  // la piste CLK du décor traverse une pastille d'un autre net : sa lanière (cuivre mini) s'ajouterait aux trous
+  const cuMin=S.rule.cuMin;S.rule.cuMin=0;
   S.zones.push({id:S.nextId++,l:0,net:"GND",
                 pts:[{x:0,y:0},{x:50,y:0},{x:50,y:50},{x:0,y:50}]});
   S.cuts.push({l:0,pts:[{x:10,y:10},{x:12,y:10},{x:12,y:12}]});
@@ -19271,7 +19370,7 @@ T("Vérification de la carte : zones, contour, trous et broches partent aussi",(
     throw new Error("les broches de J1 : "+JSON.stringify(j1));
   if(!d.pastilles.some(p=>p.x===q.x&&p.y===q.y&&p.n==="CLK"))
     throw new Error("la pastille porte son net");
-  carteVide();
+  S.rule.cuMin=cuMin;carteVide();
 });
 
 T("Vérification de la carte : la zone part rognée au bord, ses pastilles en liaisons thermiques",()=>{
@@ -27162,6 +27261,66 @@ TA("canal de pilotage : cao_decoupes_ecrire, créer dans le contour, supprimer p
   refus("cao_decoupes_ecrire",[{action:"creer",forme:"rectangle",x:b.x-5,y:cy,largeur:10,hauteur:2}],/sort du contour/);
   refus("cao_decoupes_ecrire",[{action:"supprimer",numero:3}],/« numero »/);
   refus("cao_decoupes_ecrire",[{action:"percer"}],/creer ou supprimer/);
+});
+TA("échauffement estimé : cuivre relié mesuré, serveur, DRC tant que la carte n'a pas bougé, cao_thermique",async()=>{
+  const saved=serialize(), reg=suiviDecor(), fetchGarde=global.fetch;
+  try{
+    S.board={x:0,y:0,w:30,h:30,pts:null};
+    const L=mkFp("LED1","","",2);L.x=15;L.y=15;S.fps.push(L);
+    pcbAppliquerDefEmpreinte(L,"ESSAI-LEDP",{style:"chip",pins:2,
+      pads:[{n:1,x:-2,y:0,w:1,h:1,shape:"rect",drill:0},{n:2,x:1,y:0,w:3,h:3,shape:"rect",drill:0,connexion:"directe"}]});
+    L.nets={1:"LED_A",2:"GND"};L.puissance=1;touch();
+    let doc=pcbThermiqueDocument();
+    const nu=doc.composants[0];
+    if(!nu||Math.abs(nu.source_mm2-10)>0.01||Math.abs(nu.surface_mm2-10)>0.01||nu.cuivre_um<17)throw new Error("sans zone, les pastilles seules : "+JSON.stringify(nu));
+    // le plot relié directement au plan GND : la surface du plan (moins ses dégagements) compte
+    S.zones=[{id:S.nextId++,l:0,net:"GND",pts:boardZonePts(),connexion:"directe"}];touch();
+    doc=pcbThermiqueDocument();
+    const plan=doc.composants[0].surface_mm2;
+    if(!(plan>600&&plan<=30*30+10))throw new Error("cuivre relié par le plan : "+plan);
+    if(!("epaisseur_stratifie" in doc.thermique)||Math.abs(doc.carte_mm2-900)>1e-6)throw new Error("le bloc thermique et la surface de la carte partent aussi");
+    // le serveur répond ; le DRC le reprend tant que la carte n'a pas bougé
+    let envoye=null;
+    global.fetch=async(u,o)=>{envoye=[u,JSON.parse(o.body)];return {ok:true,status:200,json:async()=>({composants:[{ref:"LED1",puissance_w:1,surface_mm2:plan,dT:55,r_th:55,r_etalement:15,r_sortie:40}],modele:"Estimation"})};};
+    await pcbThermiqueEstimer();
+    if(envoye[0]!=="/api/thermique-composants"||envoye[1].composants[0].ref!=="LED1")throw new Error("requête : "+JSON.stringify(envoye));
+    const e=runDrc().find(x=>/LED1 : échauffement estimé 55 K/.test(x.msg));
+    if(!e||e.info)throw new Error("au-delà de 40 K : erreur du DRC");
+    S.rule.dTMax=60;
+    if(runDrc().some(x=>/échauffement estimé/.test(x.msg)))throw new Error("sous la limite : rien");
+    S.rule.dTMax=40;touch();
+    if(runDrc().some(x=>/échauffement estimé/.test(x.msg)))throw new Error("la carte a bougé : l'estimation ne vaut plus");
+    if(!runDrc().some(x=>x.info&&/l'estimation date d'avant la dernière retouche/.test(x.msg)))throw new Error("périmée : le DRC le dit");
+    // la commande de pilotage rend le tableau
+    const cmds={}, ancien=global.Pilote;
+    global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+    try{piloteCao("pcb");}finally{global.Pilote=ancien;}
+    const t=await cmds.cao_thermique.executer({});
+    if(!/- LED1 : 55 K pour 1\.00 W/.test(t))throw new Error("cao_thermique : "+t);
+    // la puissance part au fichier, et se règle par le canal
+    loadDoc(JSON.parse(serialize()),true);
+    if(S.fps.find(f=>f.ref==="LED1").puissance!==1)throw new Error("puissance relue");
+  }finally{global.fetch=fetchGarde;suiviFin(reg);loadDoc(JSON.parse(saved),true);}
+});
+TA("canal de pilotage : cao_interdits_ecrire, zones d'une face et hauteurs ; lecture « interdits »",async()=>{
+  const {jouer,refus}=pilotePcbCmds();
+  loadDoc(exemple1());S.undo.length=0;S.interdits=[];touch();
+  const p=jouer("cao_interdits_ecrire",[{action:"creer",forme:"disque",x:20,y:15,rayon:6,face:"dessous",nom:"Côté LED"},
+                                        {action:"hauteurs",dessus:12}]);
+  const z=interditsListe()[0];
+  if(S.undo.length!==1||!z||z.face!=="dessous"||z.hMax!==null||S.rule.hDessus!==12)throw new Error("lot mal appliqué");
+  if(!new RegExp("Zones interdites créées : "+z.id).test(p.apres))throw new Error("id : "+p.apres);
+  const lu=[].concat(LECTURE_CAO.pcb.interdits.fn({})).join("\n");
+  if(!/dessus 12 mm, dessous pas de limite/.test(lu)||!new RegExp("zone interdite "+z.id+" « Côté LED » : dessous, aucun composant").test(lu))throw new Error("lecture : "+lu);
+  jouer("cao_interdits_ecrire",[{action:"modifier",id:z.id,hauteur_max:2},{action:"hauteurs",dessus:null}]);
+  if(z.hMax!==2||S.rule.hDessus!==null)throw new Error("modifier, hauteurs null");
+  jouer("cao_interdits_ecrire",[{action:"supprimer",id:z.id}]);
+  undo();undo();undo();
+  if(interditsListe().length||S.rule.hDessus)throw new Error("Ctrl+Z");
+  refus("cao_interdits_ecrire",[{action:"creer",forme:"disque",x:0,y:0,rayon:3,face:"cote"}],/dessus ou dessous/);
+  refus("cao_interdits_ecrire",[{action:"creer",forme:"disque",x:0,y:0,rayon:3,hauteur_max:500}],/0,1 à 100 mm/);
+  refus("cao_interdits_ecrire",[{action:"modifier",id:99999,face:"dessus"}],/introuvable/);
+  refus("cao_interdits_ecrire",[{action:"hauteurs",dessous:-1}],/0,1 à 100 mm/);
 });
 TA("canal de pilotage : cao_zones_ecrire, créer, modifier, supprimer ; liaison directe ; lecture « zones »",async()=>{
   const {jouer,refus}=pilotePcbCmds();

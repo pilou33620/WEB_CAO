@@ -105,6 +105,11 @@ js/35-ipc2581-export.js  export IPC-2581 révision C : toute la carte en un
 js/36-dossier-meca.js    dossier mécanique : l'entrée tirée de la carte, le
                          tableau des hauteurs et des ouvertures, le zip ;
                          voir « Dossier mécanique »
+js/37-routage-pilote.js  routage, paires et placement par le canal de pilotage
+js/38-interdits.js       zones interdites par face et hauteurs maximales :
+                         données, tracé, fiche et DRC
+js/39-thermique.js       échauffement estimé des composants qui dissipent :
+                         cuivre relié, appel au serveur, DRC, fiche
 outils/build-monofichier.py assemble le tout dans dist/
 outils/fonte-plans.py    réduit Liberation Sans à la fonte des plans
 test/harness.js          banc d'essai sans navigateur
@@ -839,9 +844,39 @@ section Zone) : entre deux pastilles (ou une pastille et une via) dont les
 dégagements laissent moins que ce minimum, la bande est retirée du
 remplissage (`zoneLanieres`) — plus de pointe de cuivre au bout d'une fente,
 ni de lanière qui se décolle. L'écran, les îlots, le Gerber, l'IPC-2581 et la
-simulation retirent les mêmes. Le long d'une piste, la bande n'est pas
-retirée : le DRC la signale (« Cuivre de zone de … mm entre … »). 0 désactive
-les deux.
+simulation retirent les mêmes. Le long d'une piste aussi, sur la
+longueur où la bande est étroite ; une forme du net de la zone (liaison
+directe, piste ou via du net) tient le cuivre qu'elle touche et n'en fait pas
+retirer. Les arcs de piste aussi. 0 désactive.
+
+**Zones interdites et hauteurs** (`38-interdits.js`, outil « Zone interdite »
+du menu Outils, ou `cao_interdits_ecrire`) : une zone se pose sur UNE face, comme
+une découpe (un clic par sommet, ou deux coins puis Entrée). Le DRC y signale
+toute patte traversante qui en ressort — celle d'un composant posé sur l'autre
+face —, et tout composant posé sur cette face qui la touche : interdit si la
+zone n'admet aucune hauteur, trop haut sinon. Les propriétés de la carte
+donnent aussi une hauteur maximale par face. La hauteur d'un composant est
+celle du dossier mécanique (saisie, fichier, sinon « Maximun Height » de la
+LIB) ; inconnue, elle est signalée, jamais supposée.
+
+**Échauffement estimé** (`39-thermique.js`, propriétés d'un composant, ou
+`cao_thermique`) : un composant porte la puissance qu'il dissipe (W). La page
+mesure le cuivre RELIÉ à ses pastilles — leurs surfaces, les îlots de zone
+qu'elles touchent par un cuivre réel (liaison directe ou bras tracés), au pixel
+du masque des îlots, et les pistes de leurs nets — et le serveur
+(`/api/thermique-composants`, `dc_solver.echauffement_composants`) rend ΔT :
+étalement radial dans l'îlot, puis sortie par ses deux faces et par l'ailette
+de la carte, avec les constantes et les replis du modèle d'étalement de la
+chute DC. Un ordre de grandeur (±30 %), pas une simulation : îlot pris rond,
+carte uniforme, sans voisin qui chauffe. Le DRC reprend l'estimation tant que
+la carte n'a pas bougé et signale ce qui dépasse l'« échauffement max » des
+propriétés de la carte (40 K par défaut).
+
+**Vue « cuivre final »** (Affichage › Contraste, quatrième cran de la touche
+H) : la couche active seule, telle que le Gerber la grave — zone opaque,
+isolements, bras et lanières retirées — sans chevelu, sérigraphie, contours
+pointillés, rooms ni repères de DRC. C'est à fort zoom dans cette vue qu'un
+bras posé sur une pastille voisine ou une pointe de cuivre se voit.
 
 **Zone au cuivre du fichier** (`fichier`, `trous`, `sig`) : une zone dont le
 document porte le cuivre déjà calculé est remplie avec ce cuivre — ses trous, liaisons

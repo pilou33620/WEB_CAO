@@ -199,7 +199,7 @@ const ECRITURE_CAO = (function () {
      position et rotation passent par transformFps : le cuivre accroché suit, selon la
      préférence de l'utilisateur (S.moveEtch). */
   const FACES = { dessus: 0, dessous: 1 };
-  const CHAMPS_PCB = ["ref", "valeur", "boitier", "face", "x", "y", "rotation"];
+  const CHAMPS_PCB = ["ref", "valeur", "boitier", "face", "x", "y", "rotation", "puissance"];
   const POSE = ["face", "x", "y", "rotation"];
   const cleRef = r => String(r || "").trim().toUpperCase();
   const empreinte = ref => typeof ref === "string" && cleRef(ref) ? S.fps.find(f => cleRef(f.ref) === cleRef(ref)) : null;
@@ -235,6 +235,11 @@ const ECRITURE_CAO = (function () {
           }
           if (fpFree(fp) && !fp.lib) { refus.push(quoi + " : empreinte dessinée à la main, qu'un boîtier ne refait pas : change-la dans l'éditeur"); continue; }
           if (v.trim() !== (fp.pkg || "")) lignes.push({ quoi, avant: fp.pkg || "", apres: v.trim() });
+        } else if (k === "puissance") {
+          // dissipée en service (W), pour l'estimation thermique (39-thermique.js) ; 0 ou null l'efface
+          if (v !== null && !nombre(v, 0, 100)) { refus.push(quoi + " : de 0 à 100 W, ou null"); continue; }
+          const av = fp.puissance > 0 ? fp.puissance : null, ap = v > 0 ? r3(v) : null;
+          if (av !== ap) lignes.push({ quoi, avant: av, apres: ap });
         } else if (k === "face") {
           if (!Object.prototype.hasOwnProperty.call(FACES, v)) { refus.push(quoi + " : dessus ou dessous"); continue; }
           const avant = fp.side ? "dessous" : "dessus";
@@ -257,6 +262,7 @@ const ECRITURE_CAO = (function () {
     for (const [fp, ch] of cibles) {
       if ("ref" in ch) fp.ref = ch.ref;
       if ("valeur" in ch) fp.value = ch.valeur;
+      if ("puissance" in ch) { if (ch.puissance > 0) fp.puissance = r3(ch.puissance); else delete fp.puissance; }
       if ("boitier" in ch) {
         fp.pkg = ch.boitier.trim();
         fpReshape(fp, () => fpReposerBoitier(fp, fp.pkg, fpWiredPins(fp)));   // les pistes suivent les pastilles
@@ -780,6 +786,68 @@ const ECRITURE_CAO = (function () {
     if (!S.board.cutouts.length) delete S.board.cutouts;
     boardChanged();
   }
+  /* cao_interdits_ecrire : zones interdites d'une face et hauteurs maximales (38-interdits.js),
+     dans l'ordre : creer {forme…, face, hauteur_max?, nom?} (hauteur_max absente ou null : aucun
+     composant), modifier {id, …}, supprimer {id}, hauteurs {dessus?, dessous?} (null : pas de limite). */
+  const FACES_I = ["dessus", "dessous"];
+  const decrireInterdit = z => "« " + z.nom + " », " + z.face + ", " + (z.hMax != null ? "h ≤ " + r3(z.hMax) + " mm" : "aucun composant") +
+                               ", " + z.pts.length + " sommets";
+  const hauteurOk = v => v === null || nombre(v, 0.1, 100);
+  function planInterdits(args, refus) {
+    const zones = interditsListe().map(z => Object.assign({}, z)), plan = [];
+    let neuf = 0;
+    args.lot.forEach((e, k) => {
+      const quoi = "zone interdite, élément " + (k + 1);
+      if (!e || typeof e !== "object") { refus.push(quoi + " : un objet"); return; }
+      if (e.action === "hauteurs") {
+        for (const f of FACES_I) {
+          if (!(f in e)) continue;
+          if (!hauteurOk(e[f])) { refus.push(quoi + " : « " + f + " » de 0,1 à 100 mm, ou null"); return; }
+          const cle = f === "dessus" ? "hDessus" : "hDessous", av = S.rule[cle] || null, ap = e[f] === null ? null : r3(e[f]);
+          if (av !== ap) plan.push({ e, quoi: "hauteur maximale " + f, avant: av == null ? "pas de limite" : av + " mm", apres: ap == null ? "pas de limite" : ap + " mm", cle, ap });
+        }
+        return;
+      }
+      if (!["creer", "modifier", "supprimer"].includes(e.action)) { refus.push(quoi + " : « action » creer, modifier, supprimer ou hauteurs"); return; }
+      const z0 = e.action === "creer" ? { id: "nouvelle " + (++neuf), face: "dessus", pts: null, hMax: null, nom: "Zone interdite " + (zones.length + 1) }
+                                      : zones.find(z => z.id === e.id);
+      if (!z0) { refus.push(quoi + " : zone « " + e.id + " » introuvable (voir cao_pcb_lire interdits)"); return; }
+      if (e.action === "supprimer") { zones.splice(zones.indexOf(z0), 1); plan.push({ e, z: z0, quoi: "zone interdite " + z0.id, avant: decrireInterdit(z0), apres: "supprimée" }); return; }
+      const z = Object.assign({}, z0), avant = z0.pts ? decrireInterdit(z0) : "";
+      if (e.face != null) { if (!FACES_I.includes(e.face)) { refus.push(quoi + " : « face » dessus ou dessous"); return; } z.face = e.face; }
+      if ("hauteur_max" in e) { if (!hauteurOk(e.hauteur_max)) { refus.push(quoi + " : « hauteur_max » de 0,1 à 100 mm, ou null (aucun composant)"); return; } z.hMax = e.hauteur_max === null ? null : r3(e.hauteur_max); }
+      if (e.nom != null) {
+        if (texte(e.nom, quoi + " nom", refus) === null) return;
+        if (!e.nom.trim()) { refus.push(quoi + " : « nom » vide"); return; }
+        z.nom = e.nom.trim().slice(0, 60);
+      }
+      if (e.forme != null) { const f = forme(e, quoi, refus, 0.5); if (!f) return; z.pts = f.pts; }
+      if (!z.pts) { refus.push(quoi + " : « forme » rectangle, disque ou polygone"); return; }
+      if (e.action === "creer") zones.push(z); else zones[zones.indexOf(z0)] = z;
+      plan.push({ e, z, z0, quoi: "zone interdite " + z.id, avant, apres: decrireInterdit(z) });
+    });
+    return plan;
+  }
+  function verifierInterdits(args) {
+    const refus = [], plan = planInterdits(args, refus);
+    const etat = z => JSON.stringify([z.face, z.pts, z.hMax, z.nom]);
+    return { refus, lignes: plan.filter(p => !p.z0 || p.e.action !== "modifier" || etat(p.z0) !== etat(p.z)).map(p => ({ quoi: p.quoi, avant: p.avant, apres: p.apres })) };
+  }
+  function muterInterdits(args) {
+    const ids = [];
+    if (!Array.isArray(S.interdits)) S.interdits = [];
+    for (const p of planInterdits(args, [])) {
+      if (p.cle) { S.rule[p.cle] = p.ap; continue; }
+      const vraie = typeof p.z.id === "number" ? S.interdits.find(o => o.id === p.z.id) : null;
+      if (p.e.action === "supprimer") { S.interdits = S.interdits.filter(o => o !== vraie); continue; }
+      if (p.e.action === "creer") { const n = { id: S.nextId++, face: p.z.face, pts: p.z.pts, hMax: p.z.hMax, nom: p.z.nom }; S.interdits.push(n); ids.push(n.id); continue; }
+      Object.assign(vraie, { face: p.z.face, pts: p.z.pts, hMax: p.z.hMax, nom: p.z.nom });
+    }
+    clearSel();
+    return { notes: ids.length ? ["Zones interdites créées : " + ids.join(", ") + " (leurs id)."] : [] };
+  }
+  const INTERDITS = lot({ titre: "Zones interdites et hauteurs", verifier: verifierInterdits, muter: muterInterdits, rafraichir: rafraichirPcb, drc: true });
+
   const DECOUPES = lot({ titre: "Découpes de carte", verifier: verifierDecoupes, muter: muterDecoupes, rafraichir: rafraichirRegles, drc: true });
 
   /* cao_zones_ecrire : créer, modifier, supprimer des zones de cuivre, dans l'ordre du lot.
@@ -968,7 +1036,7 @@ const ECRITURE_CAO = (function () {
   const PASTILLES = lot({ titre: "Réglages de pastilles", verifier: verifierPastilles, muter: muterPastilles, rafraichir: rafraichirZones, drc: true });
 
   return { lot, composantsSch: COMPOSANTS_SCH, composantsPcb: COMPOSANTS_PCB, pistes: PISTES, classes: CLASSES,
-           contraintes: CONTRAINTES, simulation: SIMULATION, contour: CONTOUR, decoupes: DECOUPES, zones: ZONES, serigraphie: SERIGRAPHIE,
+           contraintes: CONTRAINTES, simulation: SIMULATION, contour: CONTOUR, decoupes: DECOUPES, interdits: INTERDITS, zones: ZONES, serigraphie: SERIGRAPHIE,
            pastilles: PASTILLES, LOT_MAX, pousser,
            drc: { erreurs: erreursDrc, bilan: bilanDrc } };        // repris par le routage (37-routage-pilote.js)
 })();

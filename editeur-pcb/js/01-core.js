@@ -982,7 +982,7 @@ const S = {
   show:{silkT:true,silkB:true,edge:true,rats:true,plane:true,drc:true,
         maskT:false,maskB:false,pasteT:false,pasteB:false},
   board:{x:0,y:0,w:100,h:80,pts:null},   // pts = contour libre, sinon rectangle
-  fps:[], tracks:[], vias:[], zones:[], cuts:[], holes:[], drawings:[],
+  fps:[], tracks:[], vias:[], zones:[], cuts:[], holes:[], drawings:[], interdits:[],
   /* `corner` : l'angle imposé aux pistes tracées — « 45 » par défaut, c'est la
      règle de l'art ; « 90 » pour un tracé orthogonal strict, « free » pour un
      angle quelconque. */
@@ -997,7 +997,7 @@ const S = {
      pas à la condamner quinze fois.
      `aspWarn`/`aspMax` : les seuils du rapport d'aspect, que le fabricant
      annonce et qui ne sont donc pas les mêmes partout. */
-  rule:{edge:0.4,thermal:0.5,cuMin:0.2,mask:0.05,paste:0.0,viaFinish:"tented",corner:"45",
+  rule:{edge:0.4,thermal:0.5,cuMin:0.2,hDessus:null,hDessous:null,dTMax:40,mask:0.05,paste:0.0,viaFinish:"tented",corner:"45",
         route:"shove",hole:0.25,mat:{},short:false,
         aspWarn:ASPECT_WARN,aspMax:ASPECT_MAX,mfgProfile:"jlcpcb"},
   classes:[{name:"Défaut",      w:0.3, clr:0.25, via:0.8, drill:0.4},
@@ -1019,7 +1019,7 @@ const S = {
   coord:{open:false,mode:"abs"},       // saisie de coordonnées au clavier
   avoid:true,                          // le tracé se tient à distance des obstacles
   mode:"select",
-  sel:{fps:new Set(),tracks:new Set(),vias:new Set(),zones:new Set(),cuts:new Set(),holes:new Set(),drawings:new Set(),edge:false},
+  sel:{fps:new Set(),tracks:new Set(),vias:new Set(),zones:new Set(),cuts:new Set(),holes:new Set(),drawings:new Set(),interdits:new Set(),edge:false},
   route:null,                 // tracé de piste en cours
   dp:null,                    // tracé de paire différentielle en cours
   zoneDraft:null,             // zone en cours de saisie
@@ -1873,8 +1873,13 @@ function padsOf(fp){
     for(const q of free)out.push(padClone(q));
   }else if(fp.style==="chip"){
     /* les plus petites puces (0201, 01005) ont des bornes plus fines que le
-       plancher d'un connecteur : les pastilles suivent l'écartement */
-    const w=Math.max(0.4,sp*0.55), h=Math.max(0.45,sp*0.62);
+       plancher d'un connecteur : les pastilles suivent l'écartement. Les
+       grandes (1206 et plus, entraxe de 3 mm et plus) gardent une pastille
+       de 1,2 mm de long, comme l'IPC-7351B (1,165 pour une 1206, 1,265 pour
+       une 2512) : à 0,55 × l'entraxe, la 2512 sortait à 9,6 mm hors tout.
+       La largeur suit l'entraxe faute de connaître le composant : la LIB
+       (générateur IPC) la donne juste, et c'est elle que la pose prend. */
+    const w=sp>=3?1.2:Math.max(0.4,sp*0.55), h=Math.max(0.45,sp*0.62);
     for(let i=0;i<n;i++)
       out.push({n:i+1, x:(i-(n-1)/2)*sp, y:0, w, h, shape:"rect", drill:0});
   }else if(fp.style==="row"){

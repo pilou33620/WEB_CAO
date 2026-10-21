@@ -201,10 +201,33 @@ async function piloteDrc() {
   return [].concat(LECTURE_CAO.pcb.drc.fn({})).join("\n");
 }
 
+/* L'aide des commandes, pour qui pilote la page depuis sa console : Pilote.aide() liste celles de
+   la page, Pilote.aide("cao_schema_dessiner") donne la description et le schéma des arguments.
+   commun/pilote-aide.json est tiré des définitions du MCP (web_suite/lanceur/aide_pilote.py). */
+function piloteAideTexte(cat, nom, declarees) {
+  const O = (cat && cat.outils) || {};
+  if (nom == null) {
+    const L = ["Commandes de cette page (Pilote.aide(\"nom\") pour le détail) :"];
+    for (const n of [...declarees].sort()) L.push("- " + n + (O[n] ? " : " + O[n].description.split(". ")[0] + "." : ""));
+    const api = Object.keys(O).filter(n => !declarees.includes(n)).sort();
+    if (api.length) L.push("Par l'API seulement (MCP) : " + api.join(", ") + ".");
+    return L.join("\n");
+  }
+  const o = Object.prototype.hasOwnProperty.call(O, nom) ? O[nom] : null;
+  if (!o) return "« " + nom + " » : pas une commande connue (Pilote.aide() les liste).";
+  return nom + (declarees.includes(nom) ? "" : " (pas déclarée dans cette page)") + "\n\n" + o.description +
+         "\n\nArguments :\n" + JSON.stringify(o.arguments, null, 2);
+}
+
 function piloteCao(page) {
   if (typeof Pilote === "undefined") return;
   const TOILES = { schema: "sheet", pcb: "board", "visionneuse-ipc": "carte", "gestion-lib": "canvasPcbInsp" };
   Pilote.declarer({ page, projet: () => (typeof projNom === "function" ? projNom() : "") });
+  let catalogue = null;
+  Pilote.aide = async nom => {
+    if (!catalogue) catalogue = await fetch("../commun/pilote-aide.json").then(r => r.json());
+    return piloteAideTexte(catalogue, nom, Object.keys(Pilote.commandes || {}));
+  };
   if (TOILES[page]) Pilote.capture(() => document.getElementById(TOILES[page]));
   if (page === "pcb" || page === "visionneuse-ipc") {
     Pilote.commande("cao_calcul", { executer: piloteCaoCalcul });
@@ -220,6 +243,9 @@ function piloteCao(page) {
     Pilote.commande("cao_contraintes_ecrire", ECRITURE_CAO.contraintes);
     Pilote.commande("cao_contour_ecrire", ECRITURE_CAO.contour);
     Pilote.commande("cao_decoupes_ecrire", ECRITURE_CAO.decoupes);
+    Pilote.commande("cao_interdits_ecrire", ECRITURE_CAO.interdits);
+    if (typeof pcbThermiqueEstimer === "function")
+      Pilote.commande("cao_thermique", { executer: async () => thermiqueTexte(await pcbThermiqueEstimer()) });
     Pilote.commande("cao_zones_ecrire", ECRITURE_CAO.zones);
     Pilote.commande("cao_serigraphie_ecrire", ECRITURE_CAO.serigraphie);
     Pilote.commande("cao_pastille_regler", ECRITURE_CAO.pastilles);

@@ -92,7 +92,7 @@ function profilAppliquer(garderVue){
     $("bAvoid").classList.toggle("on",S.avoid);
   }
   if(!garderVue&&(p.vue==="dessus"||p.vue==="dessous"))setFlip(p.vue==="dessous");
-  if([0,1,2].indexOf(+p.contraste)>=0)setContrast(+p.contraste);
+  if([0,1,2,3].indexOf(+p.contraste)>=0)setContrast(+p.contraste);
   /* les rooms (32-rooms.js, chargé après ce fichier : il lira S.voirRooms) */
   if(typeof p.rooms==="boolean"){
     S.voirRooms=p.rooms;

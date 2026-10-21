@@ -618,6 +618,7 @@ $("mZone").onclick=e=>{e.stopPropagation();setMode("zone");zoneMenuToggle();};
 if($("mSilk")) $("mSilk").onclick=e=>{e.stopPropagation();setMode("silk");silkMenuToggle();};
 $("mEdge").onclick=()=>setMode("edge");
 $("mDecoupe").onclick=()=>setMode("decoupe");
+$("mInterdit").onclick=()=>setMode("interdit");
 $("mOrigin").onclick=()=>setMode("origin");
 $("mErase").onclick=()=>setMode("cut");
 if($("bAddFp")) $("bAddFp").onclick=()=>pcbOuvrirExplorateurLib();
@@ -644,7 +645,7 @@ $("bAvoid").onclick=()=>{
 };
 $("bRats").onclick=()=>{S.show.rats=!S.show.rats;$("bRats").classList.toggle("on",S.show.rats);buildLayers();draw();};
 $("bView").onclick=()=>setFlip(!S.flip);
-$("bContrast").onclick=()=>setContrast((S.contrast+1)%3);
+$("bContrast").onclick=()=>setContrast((S.contrast+1)%4);
 $("bFit").onclick=fit;
 $("bImport").onclick=openImport;
 if($("bEcoSync")) $("bEcoSync").onclick=()=>{ if(typeof pcbOuvrirFenetreEco==="function") pcbOuvrirFenetreEco(); };

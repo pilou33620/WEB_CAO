@@ -13,7 +13,7 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 2 300 essais a
 
 | Composant | Statut | Couverture / Bancs |
 | --- | --- | --- |
-| **Éditeur PCB** | En service | 1042 essais (`editeur-pcb/test/harness.js`, relevé du 21/10/2026), dont 44 pour les plans (Draftsman), 30 pour le dossier mécanique, 24 pour le gestionnaire de contraintes et la topologie, 3 pour l'export IPC-2581 (+ 70 cas d'aller-retour, `banc-ipc2581-export.py`) |
+| **Éditeur PCB** | En service | 1047 essais (`editeur-pcb/test/harness.js`, relevé du 21/10/2026), dont 44 pour les plans (Draftsman), 30 pour le dossier mécanique, 24 pour le gestionnaire de contraintes et la topologie, 3 pour l'export IPC-2581 (+ 70 cas d'aller-retour, `banc-ipc2581-export.py`) |
 | **Éditeur Schématique** | En service | 175 essais (`editeur-schematique/test/harness.js`), dont 3 pour les contraintes de nets |
 | **Visionneuse IPC-2581** (lecteur `ipc2581_parser` 1.83, `ipc2581_json` 1.4.0) | En service | 232 essais (`harness-sim.js`, relevé du 21/10/2026), dont 13 pour le dossier mécanique + 79 (`banc-essai.py`) |
 | **SI — Impédance & Vias (`ligne_mom` v2.9.0)** | En service (0,3 à 0,4 % vs étalons ; pertes conducteur par l'inductance incrémentale de Wheeler, ruban + plan(s) + bords ; rugosité Hammerstad / Huray, diélectrique causal Djordjevic-Sarkar, via en ligne — branchés dans la cascade) | 236 cas (`python/test/banc-ligne-mom.py`) |
@@ -26,7 +26,7 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 2 300 essais a
 | **Scoring placement & Rotation (`pcb_scoring`)** | En service (HPWL, congestion, découplage HF, auto-rotation) | 18 cas (`python/test/banc-pcb-scoring.py`) |
 | **Vérification de la carte (`analyse_carte`)** | En service (tous nets : angles, bouts orphelins, empilage ; à la cadence de chaque classe : impédance, chemins de retour, fentes de plan, vias de couture, diaphonie, paires différentielles, découplage, bord de carte, moignons de vias, branches en T ; quartz, ESD, courant des rails ; dérogations et comparaison de révisions ; classes d'interface USB, Ethernet, LVDS, CAN, RS-485 à leur front et à la Z_diff de leur norme) — mode d'emploi : [docs/verification-carte.md](docs/verification-carte.md) | 25 cas (`python/test/banc-analyse-carte.py`) + route (`banc-serveur-routes.py`) + 11 essais éditeur + 4 visionneuse |
 | **Reconnaissance de motifs (`pattern_recognition`)** | En service (LDO/78xx/79xx/Buck, I2C, SPI, UART, quartz, RC, courants DC) | 24 cas (`python/test/banc-patterns.py`) |
-| **Claude par le MCP de web_suite (schéma, PCB, visionneuse, Gestion LIB)** | En service (lectures, écritures en cartes cliquées, calculs, routage et chemins proposés par A* (`38-chemin-auto.js`), composants et modèles de simulation liés ; l'ancien assistant IA intégré est retiré) | `commun/lecture-cao.js`, `commun/pilote-cao.js`, `commun/ecriture-cao.js` ; bancs de web_suite (`lanceur/banc_mcp.py`) |
+| **Claude par le MCP de web_suite (schéma, PCB, visionneuse, Gestion LIB)** | En service (lectures, écritures en cartes cliquées, calculs, routage et chemins proposés par A* (`40-chemin-auto.js`), composants et modèles de simulation liés ; l'ancien assistant IA intégré est retiré) | `commun/lecture-cao.js`, `commun/pilote-cao.js`, `commun/ecriture-cao.js` ; bancs de web_suite (`lanceur/banc_mcp.py`) |
 | **Serveur `web_CAO.py`** | En service (détection Raspberry Pi / terminal sans affichage : navigateur non ouvert par défaut, `--navigateur` / `--sans-navigateur`) | `banc-serveur-routes.py`, `banc-lib-routes.py`, `banc-maj-github.py`, `banc-detection-plateforme.py` |
 | **Moteur 2,5D pleine onde (`mom_solver`)** | Archivé dans branche `archive/mom-solver-25d` (recentrage sur 2D instantané) | Préservé dans l'historique Git |
 | **Support Android / Termux** | Abandonné volontairement (ajouté le 17/09, retiré au commit suivant) | — |
@@ -38,8 +38,6 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 2 300 essais a
 Le détail de chaque point est plus bas, dans sa section.
 
 **Code (faisable sans rien d'autre)**
-- Contrôles d'intégration mécanique (retour d'essai LED_UV, 21/10/2026) : voir *Éditeur PCB*.
-- Empreintes 1206 et 1210 de la LIB à refaire aux cotes IPC-7351B (même défaut que l'ancienne 2512).
 - Animation 3D de la carte qui s'assemble, en option de `fabrication.zip` (vidéo + page HTML).
 
 **Décisions à prendre**
@@ -122,7 +120,7 @@ Ce que les modules du MCP ont laissé ouvert côté WEB_CAO (détail dans
   `lib_simulation_lier`, le « 📎 Lier un fichier » de la fiche par Claude, carte toujours
   cliquée (`js/08-pilote-lib.js`, `brancherTouchstone`) ; le serveur ne réécrit que la case
   « Modèle Simulation » de la référence (`POST /api/lib/composants {lier_simulation}`,
-  `banc-serveur-routes.py`). 60 Ko au plus : une commande du canal est bornée à 64 Ko.
+  `banc-serveur-routes.py`). Fichier de 4 Mo au plus (le canal porte 8 Mo par commande).
 - [x] **Limites laissées par les modules** (21/10/2026, branche `mcp`) : les lots de Claude se
   fondent entre eux quand l'historique est plein, au lieu de chasser les étapes de
   l'utilisateur (`histBorner`, PCB et schéma) ; « affecter » crée une classe que le schéma
@@ -130,7 +128,7 @@ Ce que les modules du MCP ont laissé ouvert côté WEB_CAO (détail dans
   (lecture `etiquettes`) ; aperçu dessiné du placement automatique, et un essai réussi de la
   méthode « blocs ».
 - [x] **chemin-auto** (21/10/2026, branche `mcp`) : `cao_chemin` propose les points de passage
-  par A* sur grille (`editeur-pcb/js/38-chemin-auto.js`), sans rien écrire ; `cao_router` pose.
+  par A* sur grille (`editeur-pcb/js/40-chemin-auto.js`), sans rien écrire ; `cao_router` pose.
 - [ ] **Essais réels restants** : `cao_paire`, `cao_placement_auto` et `cao_chemin` dans la
   vraie page ; le canal depuis l'iPad.
 
@@ -207,32 +205,23 @@ exposé réglé dans la Gestion LIB ; opération `cadre` au schéma (le texte li
 `poser` annot_text) ; empreintes en attente qui suivent un nouveau contour ;
 acquittement d'une anomalie de brochage.
 
+Puis le reste du retour, fait le 21/10/2026 : lanières retirées le long des pistes (droites
+et arcs) ; banc de charge (300 boîtiers sous un plan) ; empreintes 1206/1210 en IPC-7351B et
+pastilles des grandes puces calculées ; vue « cuivre final » (4e cran du contraste) ; zones
+interdites par face et hauteurs maximales (`38-interdits.js`, `cao_interdits_ecrire`) ;
+`Pilote.aide` (tirée du MCP, `lanceur/aide_pilote.py`) ; échauffement estimé des composants qui
+dissipent (`39-thermique.js`, `/api/thermique-composants`, `cao_thermique`).
+
 Reste :
-- [ ] **Lanières le long d'une piste** : signalées au DRC, pas retirées (`zoneLanieres`
-  ne traite que pastilles et vias). Un vrai algorithme d'ouverture du cuivre rempli le
-  ferait partout.
-- [ ] **Banc de charge** : aucun essai sur une grosse carte. 300 boîtiers SO8 sous un plan
-  GND (relevé du 21/10/2026) : îlots 0,5 s, Gerber cuivre 0,8 s, DRC 2,3 s par révision.
-- [ ] **Aide dans la page** (`Pilote.aide`) : le MCP donne déjà le schéma de chaque outil ;
-  la page n'en a pas.
 - Décalages de repère des cartes antérieures au 21/10/2026 : le repère se pose maintenant
   au-dessus de l'encombrement (pastilles comprises) et non plus du corps ; un décalage
   glissé à la main avant cette date peut donc avoir bougé de quelques dixièmes.
-- [ ] **Face interdite** : une zone qui signale au DRC des pattes traversantes ressortant
-  d'une face (côté LED, intégration dans un bouchon).
-- [ ] **Hauteur des composants** : contrôle contre une hauteur maximale par face ou par zone
-  (la hauteur est déjà lue pour le dossier mécanique, « Maximun Height »). À rapprocher de
-  `web3d_collisions`.
-- [ ] **Estimation thermique simple** : puissance dissipée d'un composant, surface de cuivre
-  reliée à son plot, ΔT — le modèle d'étalement de `dc_solver` peut servir.
-- [ ] **Empreintes 1206 / 1210** : faites, comme l'ancienne 2512, avec la formule générique de
-  l'éditeur (pastille = 0,55 × entraxe) ; la 1210 a des pastilles plus étroites que le
-  composant (1,92 mm pour 2,5 mm). Les refaire par le générateur IPC-7351B, et revoir la
-  formule de `padsOf` (style chip) pour les grandes puces.
 - Gardé tel quel : les noms de colonnes du catalogue (« Maximun », « Standoof »,
   « Dimenssions », « 3nd source ») — une douzaine d'endroits du code et sans doute le format
   d'origine de la bibliothèque en dépendent ; le symbole `header.json` sans noms de broches —
   aucun symbole de la LIB n'en porte, une barrette se désigne par ses numéros.
+- L'échauffement est un ordre de grandeur (îlot pris rond, carte uniforme, sans voisin qui
+  chauffe) : une vraie simulation thermique de la carte reste à faire si le besoin vient.
 
 ### Contenu de la LIB (données, pas code)
 - [x] **Empreintes PCB** (16/10/2026) : 208 composants associés, 167 empreintes nouvelles d'après les fiches (land pattern, pad thermique, pattes de fixation) ; restent sans empreinte les antennes, selfs et modules maison, méca non électrique, piles, Testpoint_HFS_810 et CONN_BatteryHolder_TypeC/D.

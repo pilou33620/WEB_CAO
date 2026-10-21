@@ -1496,6 +1496,65 @@ def cas_le_maillage_vectorise_est_le_maillage_pur():
 essai("le maillage vectorise donne les memes cases que le test point par point",
       cas_le_maillage_vectorise_est_le_maillage_pur)
 
+# L'echauffement d'un composant qui dissipe (echauffement_composants)
+def cas_echauffement_composant_formule():
+    """Source = ilot : pas d'etalement, il reste 1 / (2hA + ailette), pose a la main."""
+    from scipy.special import k0, k1
+    r = ds.echauffement_composants({"thermique": {"epaisseur_stratifie": 1.6, "k_stratifie": 0.8, "h_surface": 12},
+                                    "composants": [{"ref": "U1", "puissance_w": 2, "surface_mm2": 100,
+                                                    "source_mm2": 100, "cuivre_um": 35}]})["composants"][0]
+    ks, h2, A = 0.8 * 1.6e-3, 24.0, 100e-6
+    a = math.sqrt(A / math.pi); L = math.sqrt(ks / h2); x = a / L
+    attendu = 2 / (h2 * A + 2 * math.pi * ks * x * k1(x) / k0(x))
+    assert r["r_etalement"] == 0 and abs(r["dT"] - attendu) < 1e-9 * attendu, (r, attendu)
+
+
+def cas_echauffement_composant_sens():
+    """Plus de cuivre ou un cuivre plus epais : plus froid ; deux fois la puissance : deux fois dT."""
+    def dT(**k):
+        c = dict(ref="D1", puissance_w=1, surface_mm2=400, source_mm2=12, cuivre_um=35); c.update(k)
+        return ds.echauffement_composants({"thermique": {"epaisseur_stratifie": 1.6}, "composants": [c]})["composants"][0]["dT"]
+    d0 = dT()
+    assert dT(surface_mm2=1600) < d0 < dT(surface_mm2=100), d0
+    assert dT(cuivre_um=70) < d0
+    assert abs(dT(puissance_w=2) - 2 * d0) < 1e-9 * d0
+    # l'ordre de grandeur connu : 1 W dans 20 x 20 mm de cuivre 35 um sur FR-4 nu, quelques dizaines de kelvins
+    assert 30 < d0 < 90, d0
+
+
+def cas_echauffement_composant_carte_finie():
+    """L'ilot couvre la carte : la chaleur ne sort que par ses deux faces, dT >= P / (2 h A_carte)."""
+    carte = math.pi * 13 ** 2                                  # le disque de 26 mm de LED_UV
+    r = ds.echauffement_composants({"thermique": {"epaisseur_stratifie": 1.6, "h_surface": 12}, "carte_mm2": carte,
+                                    "composants": [{"ref": "LED1", "puissance_w": 1, "surface_mm2": carte * 0.9,
+                                                    "source_mm2": 12, "cuivre_um": 35}]})["composants"][0]
+    plancher = 1 / (2 * 12 * carte * 1e-6)
+    assert r["dT"] >= plancher, (r["dT"], plancher)
+    # une surface plus grande que la carte est bornee a la carte
+    r2 = ds.echauffement_composants({"thermique": {"epaisseur_stratifie": 1.6}, "carte_mm2": 100,
+                                     "composants": [{"ref": "X", "puissance_w": 1, "surface_mm2": 5000,
+                                                     "source_mm2": 1, "cuivre_um": 35}]})["composants"][0]
+    assert abs(r2["surface_mm2"] - 100) < 1e-6, r2
+
+
+def cas_echauffement_composant_refus():
+    for doc in ({"composants": []},
+                {"composants": [{"ref": "X", "puissance_w": "beaucoup", "surface_mm2": 1, "source_mm2": 1, "cuivre_um": 35}]},
+                {"composants": [{"ref": "X", "puissance_w": 500, "surface_mm2": 1, "source_mm2": 1, "cuivre_um": 35}]},
+                {"thermique": {"k_stratifie": 1e-300}, "composants": [{"ref": "X", "puissance_w": 1, "surface_mm2": 1, "source_mm2": 1, "cuivre_um": 35}]},
+                {"thermique": {"k_stratifie": float("inf")}, "composants": [{"ref": "X", "puissance_w": 1, "surface_mm2": 1, "source_mm2": 1, "cuivre_um": 35}]}):
+        try:
+            ds.echauffement_composants(doc)
+        except ErreurDC:
+            continue
+        raise AssertionError("aurait du refuser : %r" % doc)
+
+
+essai("echauffement d'un composant : la formule posee a la main", cas_echauffement_composant_formule)
+essai("echauffement d'un composant : plus de cuivre, plus froid ; dT proportionnel a P", cas_echauffement_composant_sens)
+essai("echauffement d'un composant : la carte est finie (plancher 2hA)", cas_echauffement_composant_carte_finie)
+essai("echauffement d'un composant : les refus", cas_echauffement_composant_refus)
+
 print("\n" + "-" * 62)
 if ECHECS:
     print("  %d cas passes, %d EN ECHEC" % (len(REUSSIS), len(ECHECS)))
