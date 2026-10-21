@@ -13,8 +13,8 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 2 300 essais a
 
 | Composant | Statut | Couverture / Bancs |
 | --- | --- | --- |
-| **Éditeur PCB** | En service | 1034 essais (`editeur-pcb/test/harness.js`, relevé du 21/10/2026), dont 44 pour les plans (Draftsman), 30 pour le dossier mécanique, 24 pour le gestionnaire de contraintes et la topologie, 3 pour l'export IPC-2581 (+ 70 cas d'aller-retour, `banc-ipc2581-export.py`) |
-| **Éditeur Schématique** | En service | 173 essais (`editeur-schematique/test/harness.js`), dont 3 pour les contraintes de nets |
+| **Éditeur PCB** | En service | 1039 essais (`editeur-pcb/test/harness.js`, relevé du 21/10/2026), dont 44 pour les plans (Draftsman), 30 pour le dossier mécanique, 24 pour le gestionnaire de contraintes et la topologie, 3 pour l'export IPC-2581 (+ 70 cas d'aller-retour, `banc-ipc2581-export.py`) |
+| **Éditeur Schématique** | En service | 174 essais (`editeur-schematique/test/harness.js`), dont 3 pour les contraintes de nets |
 | **Visionneuse IPC-2581** (lecteur `ipc2581_parser` 1.83, `ipc2581_json` 1.4.0) | En service | 232 essais (`harness-sim.js`, relevé du 21/10/2026), dont 13 pour le dossier mécanique + 79 (`banc-essai.py`) |
 | **SI — Impédance & Vias (`ligne_mom` v2.9.0)** | En service (0,3 à 0,4 % vs étalons ; pertes conducteur par l'inductance incrémentale de Wheeler, ruban + plan(s) + bords ; rugosité Hammerstad / Huray, diélectrique causal Djordjevic-Sarkar, via en ligne — branchés dans la cascade) | 236 cas (`python/test/banc-ligne-mom.py`) |
 | **SI — Z différentielle (`solve_multiline`)** | En service (< 3 % vs Garg-Bahl) | inclus dans les 199 cas |
@@ -191,8 +191,25 @@ en disque et arcs G03 au Gerber ; liaison directe des pastilles à une zone ; co
 pilotage `cao_contour_ecrire`, `cao_zones_ecrire`, `cao_serigraphie_ecrire`,
 `cao_pastille_regler` ; écriture appliquée sans carte signalée ; `/api/lib/fichier` sans
 extension ; note du schéma décochée qui n'est plus une room ; 2512 en IPC-7351B.
+Puis, d'après le retour complet : bras thermiques jamais par-dessus un autre net
+(`padBras`) et DRC des bras ; cuivre de zone mini (`S.rule.cuMin`, lanières retirées
+entre dégagements, DRC le long des pistes) ; repère posé au-dessus des pastilles et DRC
+« sérigraphie sur le cuivre nu » ; `cao_decoupes_ecrire` ; liaison « aucune » et plot
+exposé réglé dans la Gestion LIB ; opération `cadre` au schéma (le texte libre existait :
+`poser` annot_text) ; empreintes en attente qui suivent un nouveau contour ;
+acquittement d'une anomalie de brochage.
 
 Reste :
+- [ ] **Lanières le long d'une piste** : signalées au DRC, pas retirées (`zoneLanieres`
+  ne traite que pastilles et vias). Un vrai algorithme d'ouverture du cuivre rempli le
+  ferait partout.
+- [ ] **Banc de charge** : aucun essai sur une grosse carte. 300 boîtiers SO8 sous un plan
+  GND (relevé du 21/10/2026) : îlots 0,5 s, Gerber cuivre 0,8 s, DRC 2,3 s par révision.
+- [ ] **Aide dans la page** (`Pilote.aide`) : le MCP donne déjà le schéma de chaque outil ;
+  la page n'en a pas.
+- Décalages de repère des cartes antérieures au 21/10/2026 : le repère se pose maintenant
+  au-dessus de l'encombrement (pastilles comprises) et non plus du corps ; un décalage
+  glissé à la main avant cette date peut donc avoir bougé de quelques dixièmes.
 - [ ] **Face interdite** : une zone qui signale au DRC des pattes traversantes ressortant
   d'une face (côté LED, intégration dans un bouchon).
 - [ ] **Hauteur des composants** : contrôle contre une hauteur maximale par face ou par zone
