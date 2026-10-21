@@ -1497,7 +1497,7 @@ function propsFp(box,fp){
       'restent, c\'est du cuivre. Ne change ni bom.csv ni positions.csv : pour la fabrication, ce sont les variantes.">'+
       '<input type="checkbox" id="pSimNM"'+(fp.simNonMonte?" checked":"")+'> Non monté (ignoré par les simulations)</label></div>'+
     '<div class="cat">Broches et nets</div><table class="bom"><tbody>';
-  for(const q of ps){
+  for(const [k,q] of ps.entries()){
     let pinSchName = "";
     if (schComp) {
       const pinObj = Array.isArray(schComp.pinout) ? schComp.pinout.find(x => String(x.number) === String(q.n)) : null;
@@ -1508,9 +1508,18 @@ function propsFp(box,fp){
        '>#'+esc(q.n)+(q.nom?'<br><span style="color:var(--txt-dim);font-size:10px">'+esc(q.nom)+'</span>':"")+'</td>'+
        (pinSchName ? '<td style="font-family:var(--mono);font-size:11px;color:#f0abfc;font-weight:600;width:75px;overflow:hidden;text-overflow:ellipsis" title="Broche schéma : '+esc(pinSchName)+'">'+esc(pinSchName)+'</td>' : '<td style="width:30px;color:var(--txt-dim);font-size:10px">—</td>')+
        '<td class="net">'+(q.net?'<span class="dot" style="background:'+netColor(q.net)+
-       '"></span>'+esc(q.net):'<span style="color:var(--txt-dim)">non connectée</span>')+'</td></tr>';
+       '"></span>'+esc(q.net):'<span style="color:var(--txt-dim)">non connectée</span>')+'</td>'+
+       '<td style="width:74px">'+(q.net?'<select class="pLiaison" data-k="'+k+'" style="width:100%;font-size:10px" '+
+         'title="Liaison à la zone de son net : celle de la zone, ou imposée">'+
+         [["","zone"],["thermique","bras"],["directe","directe"]].map(([v,t])=>'<option value="'+v+'"'+((q.connexion||"")===v?" selected":"")+'>'+t+'</option>').join("")+
+         '</select>':"")+'</td></tr>';
   }
   h+='</tbody></table>';
+  /* les bras thermiques des pastilles de ce composant (la règle de la carte sinon) */
+  const bras=ps.find(q=>q.thermalWidth>0||q.thermalSpokes>0)||{};
+  h+='<div class="prop two" title="Vide : la règle de la carte (Règles de tracé), quatre bras">'+
+     numProp("pThW","Bras thermiques (mm)",bras.thermalWidth>0?bras.thermalWidth:"",0.05,0.05)+
+     numProp("pThN","Nombre de bras",bras.thermalSpokes>0?bras.thermalSpokes:"",1,1)+'</div>';
   if(typeof groupesPropsHtml==="function")h+=groupesPropsHtml(fp);   // son groupe (27-groupes.js)
   box.innerHTML=h;
   if(typeof groupesPropsBind==="function")groupesPropsBind(fp);
@@ -1626,6 +1635,20 @@ function propsFp(box,fp){
       buildProps();buildList();revealNet(S.hlNet);draw();
     };
   });
+  // fpSetPad fige une empreinte calculée en pastilles explicites : l'ordre de padsOf est gardé
+  box.querySelectorAll("select.pLiaison").forEach(s=>{
+    s.onclick=e=>e.stopPropagation();
+    s.onchange=()=>{push();fpSetPad(fp,+s.dataset.k,"connexion",s.value);touch();refreshPanels();draw();};
+  });
+  for(const [id,k] of [["pThW","thermalWidth"],["pThN","thermalSpokes"]]){
+    const el=$(id);
+    if(el)el.onchange=()=>{
+      push();fpFreeze(fp);
+      const v=parseFloat(el.value);
+      for(const q of fp.pads){if(v>0)fpSetPad(fp,fp.pads.indexOf(q),k,v);else delete q[k];}
+      touch();refreshPanels();draw();
+    };
+  }
 }
 /* Une découpe de carte : sa taille, ses sommets, et les gestes qui la
    modifient. */
@@ -1692,12 +1715,18 @@ function propsZone(box,z){
       '<option value="">— aucun (cuivre isolé) —</option>'+
       netTable().map(n=>'<option'+(n.name===z.net?" selected":"")+'>'+esc(n.name)+'</option>').join("")+
       '</select></div>'+
+    '<div class="prop"><label>Liaison des pastilles du net</label><select id="zC" '+
+      'title="Une pastille peut imposer la sienne (propriétés du composant)">'+
+      [["thermique","Bras thermiques"],["cms-directe","Directe pour les CMS, bras pour les traversantes"],
+       ["directe","Directe pour toutes"]].map(([v,t])=>'<option value="'+v+'"'+((z.connexion||"thermique")===v?" selected":"")+'>'+t+'</option>').join("")+
+      '</select></div>'+
     '<div class="prop two">'+
       '<div><label>Sommets</label><input value="'+z.pts.length+'" disabled></div>'+
       '<div><label>Emprise</label><input value="'+fmt(b.x2-b.x1,1)+" × "+fmt(b.y2-b.y1,1)+
       ' mm" disabled></div></div>'+
     '<div class="empty" style="padding:6px 12px">'+
-      (z.net?"Les pastilles "+esc(z.net)+" de cette couche prises dans le contour sont reliées par des bras thermiques"+
+      (z.net?"Les pastilles "+esc(z.net)+" de cette couche prises dans le contour sont reliées "+
+        ({directe:"directement, sans bras",["cms-directe"]:"directement pour les CMS, par des bras pour les traversantes"}[z.connexion]||"par des bras thermiques")+
         (info?" ("+info.pads.length+" pastille(s) sur ce net)":"")+"."
            :"Sans net, la zone est du cuivre isolé : elle dégage tout ce qu'elle rencontre.")+
       '<br>Glissez les poignées pour déformer · Ctrl+clic sur une arête ajoute un sommet.'+
@@ -1713,6 +1742,8 @@ function propsZone(box,z){
     if(z.auto&&S.cuL[z.l])S.cuL[z.l].net=z.net;
     touch();buildLayers();buildTabs();refreshPanels();draw();
   };
+  $("zC").onchange=()=>{push();const v=$("zC").value;if(v==="thermique")delete z.connexion;else z.connexion=v;
+    touch();refreshPanels();draw();};
   $("zFull").onclick=()=>{push();z.pts=boardZonePts();touch();refreshPanels();draw();};
   $("zDel").onclick=()=>{push();detachAuto(z);S.zones=S.zones.filter(o=>o!==z);clearSel();
     touch();buildLayers();buildTabs();refreshPanels();draw();};

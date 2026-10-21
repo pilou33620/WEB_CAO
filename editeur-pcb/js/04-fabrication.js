@@ -400,6 +400,7 @@ function gerberCopper(i){
         if(z===null)continue;
         const same=(z===q.net&&q.net);
         if(same&&zoneFichier(zoneAt(i,q.x,q.y)))continue;   // raccordée par le fichier
+        if(same&&padLiaison(q,i)==="directe")continue;       // la zone la recouvre, sans bras
         const qc=padSurCouche(q,i);
         if(!qc){                       // pas de cuivre ici : le trou seul se dégage
           if(q.drill>0)gPercage(body,A,q,clrK(z,q.net,"cu","th"));

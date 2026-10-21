@@ -807,6 +807,17 @@ nombre de couches, prepreg et cœurs alternés) ; changer le nombre de couches
 garde l'épaisseur visée tant qu'elle laisse 60 µm par isolant. Clavier :
 1-9, 0 pour la dixième couche, Page ↑ / Page ↓ pour la couche voisine.
 
+**Liaison des pastilles à une zone** (`z.connexion`, `q.connexion`,
+`padLiaison`) : par défaut, une pastille du net de la zone y est reliée par
+des bras thermiques (quatre, à la largeur de la règle « Bras thermique »).
+La zone peut choisir la liaison **directe** pour toutes ses pastilles, ou
+**directe pour les CMS** et bras pour les traversantes — le plot thermique
+d'une LED de puissance, d'un QFN ou d'un régulateur évacue sa chaleur par
+le cuivre, pas par quatre ponts. Une pastille peut imposer la sienne (« bras »
+ou « directe », colonne de droite du tableau des broches), et le composant
+régler la largeur et le nombre de ses bras. Le même choix vaut à l'écran, à
+l'analyse des îlots, au Gerber, à l'IPC-2581 et en simulation.
+
 **Zone au cuivre du fichier** (`fichier`, `trous`, `sig`) : une zone dont le
 document porte le cuivre déjà calculé est remplie avec ce cuivre — ses trous, liaisons
 thermiques comprises — à l'écran, à l'analyse, au Gerber et en simulation.

@@ -432,6 +432,7 @@ function ipcRemplir(z){
       if(!padLayers(fp,q).includes(i))continue;
       const meme=!!q.net&&q.net===zn;
       if(meme&&fichier)continue;                    // raccordée par le fichier
+      if(meme&&padLiaison(q,i,z)==="directe")continue;   // la zone la recouvre, sans bras
       const qc=padSurCouche(q,i);
       if(!qc){
         if(q.drill>0)prendre(moins,ipcPercage(q,clrK(zn,q.net,"cu","th")));

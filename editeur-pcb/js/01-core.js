@@ -1789,6 +1789,7 @@ function padClone(q){
   if(q.thermalAngle!=null)out.thermalAngle=padRot(q.thermalAngle);
   if(q.thermalWidth!=null)out.thermalWidth=Math.max(0.05,r4(q.thermalWidth));
   if(q.thermalGap!=null)out.thermalGap=Math.max(0,r4(q.thermalGap));
+  if(q.connexion==="directe"||q.connexion==="thermique")out.connexion=q.connexion;
   const nom=padNom(q.nom);
   if(nom)out.nom=nom;
   if(q.slot>out.drill&&out.drill>0)out.slot=r4(q.slot);
@@ -1820,6 +1821,19 @@ function padClone(q){
    (pastille non fonctionnelle). `parCouche` le dit, couche par couche ; null
    veut dire « pas de cuivre ici ». Le Gerber cuivre et le remplissage des
    zones s'en servent ; le DRC et le routeur gardent la forme principale. */
+/* Liaison d'une pastille à la zone de son net, sur la couche l : « thermique »
+   (bras, l'usage pour le brasage) ou « directe » (le cuivre de la zone touche
+   la pastille : plot thermique d'une LED, d'un QFN, d'un régulateur). La
+   pastille peut l'imposer (`q.connexion`) ; sinon la zone décide
+   (`z.connexion` : thermique, directe, ou cms-directe = directe pour les CMS,
+   thermique pour les traversantes). */
+const LIAISONS_ZONE=["thermique","directe","cms-directe"];
+function padLiaison(q,l,z){
+  if(q.connexion==="directe"||q.connexion==="thermique")return q.connexion;
+  if(!z)z=S.zones.find(o=>o.l===l&&o.net===q.net&&zoneContient(o,q.x,q.y));
+  const m=z&&z.connexion;
+  return m==="directe"||(m==="cms-directe"&&!(q.drill>0))?"directe":"thermique";
+}
 function padSurCouche(q,l){
   /* une couche nommée l'emporte ; sinon « int » vaut pour toutes les couches
      internes et « bas » pour le dessous — c'est ainsi qu'une empreinte de
@@ -2042,6 +2056,8 @@ function fpSetPad(fp,i,k,v){
     q.thermalWidth=clamp(r4(+v||0),0,200);
   }else if(k==="thermalGap"){
     q.thermalGap=clamp(r4(+v||0),0,200);
+  }else if(k==="connexion"){
+    if(v==="directe"||v==="thermique")q.connexion=v;else delete q.connexion;
   /* masque et pâte propres à la pastille : null rend la règle de la carte */
   }else if(k==="mask"){
     if(v==null||v===""){delete q.mask;}else{q.mask=clamp(r4(+v||0),-5,5);delete q.noMask;}
@@ -2244,7 +2260,7 @@ function padsWorldCalc(fp){
     if(q.chamfer!=null)o.chamfer=q.chamfer;
     if(q.chamferCorners)o.chamferCorners=q.chamferCorners;
     if(q.slot)o.slot=q.slot;
-    for(const k of ["thermalSpokes","thermalAngle","thermalWidth","thermalGap",
+    for(const k of ["thermalSpokes","thermalAngle","thermalWidth","thermalGap","connexion",
                     "mask","noMask","paste","noPaste","parCouche"])
       if(q[k]!=null)o[k]=q[k];
     return o;

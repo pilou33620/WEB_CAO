@@ -125,6 +125,10 @@ function zoneMask(l,net){
       const qr=Math.max(q.w,q.h);
       if(hors(q.x-qr,q.y-qr,q.x+qr,q.y+qr)||!padLayers(fp,q).includes(l))continue;
       if(q.net===net&&zoneFichier(zoneAt(l,q.x,q.y)))continue;   // raccordée par le fichier
+      if(q.net===net&&padLiaison(q,l)==="directe"){            // le cuivre de la zone la touche
+        if(q.drill>0){c.beginPath();cheminPercage(c,q);c.fill();}
+        continue;
+      }
       const qc=padSurCouche(q,l);
       if(!qc){
         if(q.drill>0){c.beginPath();cheminPercage(c,q,clrK(net,q.net,"cu","th"));c.fill();}

@@ -4798,6 +4798,7 @@ const SIM_PCB={
       if(zn&&!fichier)for(const fp of S.fps)
         for(const q of padsWorld(fp)){
           if(q.net!==zn||!padLayers(fp,q).includes(z.l)||!dans(q.x,q.y))continue;
+          if(padLiaison(q,z.l,z)==="directe")continue;      // la zone la recouvre, sans bras
           trous.push(rect(q,clr));
           liaisons.push({c:nom(z.l),n:zn,o:rect(q,0),t:[]});
           const tw=(q.thermalWidth>0)?q.thermalWidth:S.rule.thermal;

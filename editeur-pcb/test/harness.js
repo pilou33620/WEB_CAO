@@ -176,7 +176,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* formes de pastille, rotation, origine de l'empreinte */
   "PAD_SHAPES","padShape","padRadius","padRot","padHalf","padDist","padOpening",
   "fpLocalBox",
-  "apSet","apForPad","netAtPoint","padCuLayers","pnsItemsPad","aplatClick","closeAplat","selDecoupes","deleteSel","hitTest","selectHit","brocheNum","parseNetlist","applyNetlist","padSurCouche","maskOpenings","pasteOpenings","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","UNDO_BUDGET","rotChoix","padNom",
+  "apSet","apForPad","netAtPoint","padCuLayers","pnsItemsPad","aplatClick","closeAplat","selDecoupes","deleteSel","hitTest","selectHit","brocheNum","parseNetlist","applyNetlist","padSurCouche","padLiaison","maskOpenings","pasteOpenings","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","UNDO_BUDGET","rotChoix","padNom",
   /* repère de broche 1 */
   "MARK_D","PASSIF_REF","fpMarkWanted","fpMarkAuto","fpMark","fpSetMark",
   "fpMoveMark","fpSetMarkD","fpXform",
@@ -3512,6 +3512,36 @@ T("contour en disque : arcs G03 au Gerber, zone pleine carte sans débordement",
     S.zones[0].pts=S.zones[0].pts.map(p=>({x:p.x+0.05,y:p.y}));touch();
     if(!runDrc().some(e=>/débordant du contour/.test(e.msg)))throw new Error("50 µm dehors : le débordement doit être signalé");
   }finally{loadDoc(JSON.parse(saved),true);}
+});
+T("liaison directe : par zone (CMS seulement, ou toutes) et par pastille, au Gerber et à l'enregistrement",()=>{
+  const saved=serialize(), reg=suiviDecor();
+  try{
+    const U=mkFp("U1","","",2);U.x=20;U.y=20;S.fps.push(U);
+    pcbAppliquerDefEmpreinte(U,"ESSAI-PLOT",{style:"chip",pins:2,
+      pads:[{n:1,x:-3,y:0,w:3,h:3,shape:"rect",drill:0},{n:2,x:3,y:0,w:1.6,h:1.6,shape:"circ",drill:0.8}]});
+    U.nets={1:"GND",2:"GND"};
+    S.zones=[{id:S.nextId++,l:0,net:"GND",pts:[{x:5,y:5},{x:35,y:5},{x:35,y:35},{x:5,y:35}]}];touch();
+    const z=S.zones[0], p=n=>padsWorld(U).find(q=>q.n===n);
+    const traits=()=>(gerberCopper(0).match(/D01\*/g)||[]).length;
+    const deBras=traits();
+    if(padLiaison(p(1),0)!=="thermique"||padLiaison(p(2),0)!=="thermique")throw new Error("bras par défaut");
+    z.connexion="cms-directe";touch();
+    if(padLiaison(p(1),0)!=="directe"||padLiaison(p(2),0)!=="thermique")throw new Error("cms-directe : le plot CMS seul");
+    if(traits()!==deBras-4)throw new Error("le plot CMS perd ses 4 bras au Gerber : "+deBras+" → "+traits());
+    z.connexion="directe";touch();
+    if(traits()!==deBras-8)throw new Error("directe : plus aucun bras : "+traits());
+    // la pastille l'emporte sur la zone
+    fpSetPad(U,1,"connexion","thermique");touch();
+    if(padLiaison(p(2),0)!=="thermique"||traits()!==deBras-4)throw new Error("la pastille impose ses bras");
+    if(!conn(true).nets.get("GND")||conn(true).nets.get("GND").miss!==0)throw new Error("relié par la zone, avec ou sans bras");
+    // relu du fichier : les deux réglages restent
+    loadDoc(JSON.parse(serialize()),true);
+    const U2=S.fps.find(f=>f.ref==="U1");
+    if(S.zones[0].connexion!=="directe"||padsWorld(U2).find(q=>q.n===2).connexion!=="thermique")throw new Error("réglages perdus à la relecture");
+    // les panneaux s'ouvrent sur les deux réglages
+    clearSel();S.sel.fps.add(U2.id);buildProps();
+    clearSel();S.sel.zones.add(S.zones[0]);buildProps();clearSel();
+  }finally{suiviFin(reg);loadDoc(JSON.parse(saved),true);}
 });
 T("Gerber : masque, pâte, sérigraphie, contour",()=>{
   if(gerberMask(0).indexOf("Soldermask,Top")<0)throw new Error("fonction du masque");

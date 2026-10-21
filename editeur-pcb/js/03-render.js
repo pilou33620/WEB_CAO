@@ -227,7 +227,8 @@ function zoneCanvas(i){
       const same=sameNet(q.x,q.y,q.net);
       /* zone au cuivre du fichier : la pastille de son net y est déjà raccordée
          comme le fabricant l'a voulu — seul le trou se perce */
-      if(same&&zoneFichier(zoneAt(i,q.x,q.y))){
+      /* liaison directe : le cuivre de la zone touche la pastille, seul le trou se perce */
+      if(same&&(zoneFichier(zoneAt(i,q.x,q.y))||padLiaison(q,i)==="directe")){
         if(q.drill>0){c.beginPath();cheminPercage(c,q);c.fill();}
         continue;
       }
