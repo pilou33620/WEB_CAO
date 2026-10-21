@@ -63,17 +63,20 @@ async function refuse(promesse, motif) {
     }
   });
 
-  await T("Gestion LIB : quatre calculs et une carte de création, jamais directe", () => {
-    const LIB = ["lib_empreinte_generer", "lib_empreinte_verifier", "lib_kicad_convertir", "lib_brochage_verifier", "lib_composant_creer"];
+  await T("Gestion LIB : quatre calculs et deux cartes (création, liaison), jamais directes", () => {
+    const LIB = ["lib_empreinte_generer", "lib_empreinte_verifier", "lib_kicad_convertir", "lib_brochage_verifier", "lib_composant_creer",
+                 "lib_simulation_lier"];
     for (const p of ["pcb", "schema", "visionneuse-ipc", "gestion-lib"]) {
       const c = page(p).declare.commandes;
       egal(LIB.map(n => !!c[n]), LIB.map(() => p === "gestion-lib"), p);
     }
     const c = page("gestion-lib").declare.commandes;
-    egal(LIB.map(n => !!c[n].ecriture), [false, false, false, false, true], "seule la création écrit");
-    const creer = c.lib_composant_creer;
-    egal([creer.clic, typeof creer.irreversible, !!creer.annuler, !!creer.historique], [true, "string", false, false],
-         "création : toujours au clic, irréversible");
+    egal(LIB.map(n => !!c[n].ecriture), [false, false, false, false, true, true], "seules la création et la liaison écrivent");
+    for (const n of ["lib_composant_creer", "lib_simulation_lier"]) {
+      const d = c[n];
+      egal([d.clic, typeof d.irreversible, !!d.annuler, !!d.historique], [true, "string", false, false],
+           n + " : toujours au clic, irréversible");
+    }
   });
 
   await T("cao_calcul déclaré dans le PCB et la visionneuse seulement", () => {

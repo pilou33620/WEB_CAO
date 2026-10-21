@@ -485,6 +485,71 @@ const asyncTests = (async () => {
   verifier(!r.erreurs.length, "lib_empreinte_verifier : nom de fichier tiré du nom");
   r = await CMD.lib_kicad_convertir.executer({ texte: KICAD_SOT235 });
   verifier(r.empreinte && r.empreinte.pads.length === 5, "lib_kicad_convertir");
+
+  /* lib_simulation_lier : un faux serveur qui tient le catalogue, lib_simulation et la liaison */
+  const SIM = { fichiers: { "as179_a.s3p": "! broches : 5 3 1\n# GHz S DB R 50\n" }, ecrits: [], refusLier: null };
+  const CAT = [{ "Part Name": "AS179", "Number Of pins": "6", "Brochage": "J3=1,GND=2,J2=3,V1=4,J1=5,V2=6",
+                 "Modèle Simulation": "lib/simulation/as179_a.s3p" }, { "Part Name": "R1", "Number Of pins": "2" }];
+  const sauve = { apiGet: bac.apiGet, apiPost: bac.apiPost, sauvegarderFichierLib: bac.sauvegarderFichierLib, fetch: bac.fetch };
+  Object.assign(bac, {
+    apiGet: async url => {
+      if (url === "/api/lib/composants") return { composants: CAT.map(c => Object.assign({}, c)) };
+      const nom = decodeURIComponent(url.replace(/^.*nom=/, ""));
+      if (nom in SIM.fichiers) return { contenu: SIM.fichiers[nom] };
+      throw Object.assign(new Error("introuvable"), { status: 404 });
+    },
+    apiPost: async (url, corps) => {
+      if (SIM.refusLier) throw Object.assign(new Error(SIM.refusLier), { status: 404 });
+      const l = corps.lier_simulation, c = CAT.find(x => x["Part Name"] === l.part);
+      SIM.ecrits.push(["lier", l.part, l.modele]);
+      c["Modèle Simulation"] = [c["Modèle Simulation"], l.modele].filter(Boolean).join(" | ");
+      return { ok: true, modeles: c["Modèle Simulation"].split(" | ") };
+    },
+    sauvegarderFichierLib: async (type, nom, texte, opt) => { SIM.ecrits.push(["fichier", type, nom, opt.si_absent]); SIM.fichiers[nom] = texte; },
+    fetch: async (url, opt) => { SIM.ecrits.push(["retrait", url, opt.method]); return { ok: true }; }
+  });
+  bac.LIB_STATE.colonnes = ["Part Name", "Modèle Simulation"];
+  bac.LIB_STATE.composants = [{ _id: 0, "Part Name": "AS179", "Modèle Simulation": "lib/simulation/as179_a.s3p" }];
+  bac.LIB_STATE.fichiers.simulation = ["as179_a.s3p"];
+  const S3P_B = "! fabricant\n# GHz S DB R 50\n0.1 -20 0 -0.2 0 -40 0 -0.2 0 -20 0 -40 0 -40 0 -40 0 -1 0\n";
+  const L = CMD.lib_simulation_lier;
+  verifier(L.ecriture && L.clic && typeof L.irreversible === "string", "lib_simulation_lier : toujours au clic, irréversible");
+  const argsB = { reference: "as179", fichier: "as179 b.s3p", texte: S3P_B, ports: ["J1", "J2", "J3"], masse: "GND" };
+  const pB = await L.proposer(argsB);
+  verifier(!SIM.ecrits.length && /Lier « as179_b\.s3p » à « AS179 »/.test(pB.titre) &&
+           /pattes 5, 3, 1, masse 2/.test(pB.apres) && /as179_a\.s3p \| lib\/simulation\/as179_b\.s3p/.test(pB.apres),
+    "proposer n'écrit rien ; la carte dit le fichier, les pattes et la case après (" + pB.apres + ")");
+  const rB = await L.appliquer(argsB, pB);
+  verifier(JSON.stringify(SIM.ecrits) === JSON.stringify([["fichier", "simulation", "as179_b.s3p", true],
+                                                           ["lier", "AS179", "lib/simulation/as179_b.s3p"]]) &&
+           SIM.fichiers["as179_b.s3p"].startsWith("! broches : 5 3 1\n! masse : 2\n! fabricant"),
+    "au clic : fichier branché (si_absent), puis la liaison");
+  verifier(rB.modeles.length === 2 && bac.LIB_STATE.composants[0]["Modèle Simulation"] === "lib/simulation/as179_a.s3p | lib/simulation/as179_b.s3p" &&
+           bac.LIB_STATE.fichiers.simulation.includes("as179_b.s3p"), "le miroir de la page suit (un Enregistrer ne l'effacera pas)");
+  const refusSim = async (a, motif, quoi) => {
+    SIM.ecrits.length = 0;
+    let m = null;
+    try { await L.proposer(a); } catch (e) { m = e.message; }
+    verifier(m && motif.test(m) && !SIM.ecrits.length, "lib_simulation_lier refusé : " + quoi + " (" + m + ")");
+  };
+  await refusSim(argsB, /déjà lié/, "déjà lié");
+  await refusSim(Object.assign({}, argsB, { texte: S3P_B + "1 2 3\n" }), /autre contenu/, "même nom, autre contenu : jamais d'écrasement");
+  await refusSim(Object.assign({}, argsB, { reference: "INCONNU" }), /pas au catalogue/, "référence inconnue");
+  await refusSim(Object.assign({}, argsB, { fichier: "x.s3p", ports: ["J1", "J2"] }), /3 port/, "une patte par port");
+  await refusSim(Object.assign({}, argsB, { fichier: "x.txt" }), /Touchstone.*SPICE/, "ni Touchstone ni SPICE");
+  await refusSim({ reference: "R1", fichier: "r.sub", texte: ".SUBCKT R 1 2\n", ports: ["1"] }, /Touchstone seulement/, "ports pour un SPICE");
+  // un SPICE se range tel quel ; la liaison refusée au clic retire le fichier que la carte vient d'écrire
+  const argsS = { reference: "R1", fichier: "r.sub", texte: ".SUBCKT R 1 2\nR1 1 2 1k\n.ENDS\n" };
+  const pS = await L.proposer(argsS);
+  verifier(/modèle SPICE/.test(pS.apres) && /aucun modèle/.test(pS.avant), "SPICE : rangé tel quel (" + pS.apres + ")");
+  SIM.ecrits.length = 0;
+  SIM.refusLier = "« R1 » n'est pas au catalogue";
+  let mS = null;
+  try { await L.appliquer(argsS, pS); } catch (e) { mS = e.message; }
+  SIM.refusLier = null;
+  verifier(mS && /r\.sub retiré/.test(mS) && JSON.stringify(SIM.ecrits.map(e => e[0])) === JSON.stringify(["fichier", "retrait"]) &&
+           /type=simulation&nom=r\.sub/.test(SIM.ecrits[1][1]), "liaison refusée : le fichier écrit par la carte est retiré (" + mS + ")");
+  Object.assign(bac, sauve);
 })();
 
 /* ---------- esc (commun/echappe.js) : protège ?nom= avant innerHTML dans l'éditeur ---------- */

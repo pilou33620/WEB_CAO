@@ -11,6 +11,9 @@
      lib_brochage_verifier   brochage face à l'empreinte et au symbole
      lib_composant_creer     carte : empreinte neuve (si_absent) puis ligne de
                              catalogue (ajoutée, jamais réécrite) ; toujours au clic
+     lib_simulation_lier     carte : modèle .sNp ou SPICE rangé dans lib_simulation
+                             (si_absent) puis ajouté à la case « Modèle Simulation »
+                             d'une référence ; toujours au clic
 
    Le code métier est dans commun/composants-lib.js ; les quatre premières
    commandes ne font que calculer.
@@ -80,11 +83,11 @@ function libPiloteCommandes() {
     else montrer(null, "—");
   }
 
-  async function retirer(fichier) {
-    const r = await fetch("/api/lib/fichier?type=pcb&nom=" + encodeURIComponent(fichier), { method: "DELETE" });
+  async function retirer(fichier, type = "pcb") {
+    const r = await fetch("/api/lib/fichier?type=" + type + "&nom=" + encodeURIComponent(fichier), { method: "DELETE" });
     if (!r.ok) throw new Error("erreur " + r.status);
-    LIB_STATE.cacheFichiers.delete("pcb:" + fichier);
-    if (Array.isArray(LIB_STATE.fichiers.pcb)) LIB_STATE.fichiers.pcb = LIB_STATE.fichiers.pcb.filter(f => f !== fichier);
+    LIB_STATE.cacheFichiers.delete(type + ":" + fichier);
+    if (Array.isArray(LIB_STATE.fichiers[type])) LIB_STATE.fichiers[type] = LIB_STATE.fichiers[type].filter(f => f !== fichier);
   }
 
   const creer = {
@@ -152,7 +155,116 @@ function libPiloteCommandes() {
     refuser: () => oublier()
   };
 
+  /* ---------- lib_simulation_lier : « 📎 Lier un fichier » de la fiche, par Claude ----------
+     Même préparation que la fiche (04-ui.js) : un Touchstone reçoit la patte de chaque port et
+     la masse (CL.brancherTouchstone), un modèle SPICE se range tel quel. Jamais d'écrasement : un
+     fichier de même nom n'est repris que s'il a exactement le même contenu. */
+  const SPICE = /\.(sub|cir|lib|mod|sp|spi|spice)$/i;
+  const COL_SIM = ["Modèle Simulation", "Modele Simulation"];
+  const lfs = t => String(t).replace(/\r\n?/g, "\n");
+  async function fichierSim(nom) {
+    try {
+      const d = await apiGet("/api/lib/fichier?type=simulation&nom=" + encodeURIComponent(nom));
+      return d.contenu !== undefined ? d.contenu : JSON.stringify(d.data);
+    } catch (e) {
+      if (e.status === 404) return null;
+      throw e;
+    }
+  }
+  async function preparerSim(args) {
+    const ref = String(args.reference || "").trim();
+    const nom = String(args.fichier || "").replace(/^.*[\\\/]/, "").replace(/[^A-Za-z0-9_.+-]/g, "_");
+    const texte = typeof args.texte === "string" ? args.texte : "";
+    const erreurs = [];
+    const cat = await apiGet("/api/lib/composants");
+    const comp = (cat.composants || []).find(c => String(c["Part Name"] || "").trim().toUpperCase() === ref.toUpperCase());
+    if (!comp) throw new Error("« " + ref + " » n'est pas au catalogue de la LIB");
+    const n = CL.portsTouchstone(nom);
+    if (!n && !SPICE.test(nom)) throw new Error("« " + nom + " » : un Touchstone (.s1p à .s9p) ou un modèle SPICE (.sub, .cir, .lib, .mod, .sp)");
+    if (!texte.trim()) throw new Error("« texte » vide : le contenu du fichier");
+    const pins = parseInt(comp["Number Of pins"], 10);
+    let pret = texte, branchement = "";
+    if (n) {
+      const r = CL.brancherTouchstone(texte, nom, { broches: Array.isArray(args.ports) ? args.ports.map(String) : [],
+        masse: args.masse == null ? "" : String(args.masse), brochage: comp["Brochage"], pins: Number.isInteger(pins) ? pins : 0 });
+      erreurs.push(...r.erreurs);
+      if (r.texte) {
+        pret = r.texte;
+        branchement = "ports → pattes " + r.broches.join(", ") + (r.masse ? ", masse " + r.masse : ", masse de la carte");
+      }
+    } else if (args.ports != null || args.masse != null) erreurs.push("ports et masse : pour un Touchstone seulement");
+    const col = COL_SIM.find(c => c in comp) || COL_SIM[0];
+    const liste = String(comp[col] || "").split("|").map(x => x.trim()).filter(x => x && x !== "-" && x.toLowerCase() !== "xx");
+    const lie = liste.some(x => x.replace(/^.*[\\\/]/, "") === nom);
+    const existant = await fichierSim(nom);
+    const reprise = existant != null && lfs(existant) === lfs(pret);
+    if (existant != null && !reprise)
+      erreurs.push("« " + nom + " » est déjà dans la LIB avec un autre contenu (jamais d'écrasement) : choisis un autre nom");
+    else if (reprise && lie) erreurs.push("« " + nom + " » est déjà lié à " + comp["Part Name"]);
+    return { erreurs, comp, nom, texte: pret, n, branchement, reprise, liste, col };
+  }
+
+  const lierSim = {
+    ecriture: true,
+    clic: true,       // la LIB est partagée par tous les projets, comme lib_composant_creer
+    irreversible: "Écrit dans la LIB partagée (pas d'annulation par la carte) : pour défaire, délie le modèle " +
+                  "dans la fiche de la référence (Gestion LIB) et retire le fichier de lib_simulation.",
+    async proposer(args) {
+      const p = await preparerSim(args);
+      if (p.erreurs.length) throw new Error("Liaison refusée : " + p.erreurs.join(" ; "));
+      const debut = lfs(p.texte).split("\n").slice(0, 8).join(" ⏎ ");
+      return {
+        titre: "Lier « " + p.nom + " » à « " + p.comp["Part Name"] + " »",
+        avant: p.col + " : " + (p.liste.join(" | ") || "aucun modèle"),
+        apres: (p.reprise ? "fichier déjà dans lib_simulation (même contenu), " : "fichier rangé dans lib_simulation, ") +
+               (p.n ? p.n + " port" + (p.n > 1 ? "s" : "") + " (" + p.branchement + ")" : "modèle SPICE") +
+               " ; " + p.col + " : " + p.liste.concat("lib/simulation/" + p.nom).join(" | "),
+        details: "Début du fichier : " + debut.slice(0, 600)
+      };
+    },
+    async appliquer(args) {
+      const p = await preparerSim(args);
+      if (p.erreurs.length) throw new Error("Refusé au clic (la LIB a changé depuis la carte ?) : " + p.erreurs.join(" ; "));
+      if (!p.reprise) {
+        try { await sauvegarderFichierLib("simulation", p.nom, p.texte, { si_absent: true }); }
+        catch (e) { throw new Error("Fichier non écrit : " + e.message); }
+      }
+      let rep;
+      try {
+        rep = await apiPost("/api/lib/composants", { lier_simulation: { part: p.comp["Part Name"], modele: "lib/simulation/" + p.nom } });
+      } catch (e) {
+        // même règle que la création : on ne retire que le fichier écrit par cette carte, et sur un vrai refus
+        let retire = "";
+        if (!p.reprise && !(e.status >= 400 && e.status < 500))
+          retire = " ; réponse incertaine : " + p.nom + " gardé dans la LIB, vérifie la fiche avant de réessayer";
+        else if (!p.reprise) {
+          try { await retirer(p.nom, "simulation"); retire = " ; " + p.nom + " retiré de la LIB"; }
+          catch (e2) { retire = " ; " + p.nom + " NON retiré (" + e2.message + ") : à retirer à la main"; }
+        }
+        throw new Error("Liaison refusée par le serveur : " + e.message + retire);
+      }
+      // le miroir de la page suit : sinon un « Enregistrer » du catalogue effacerait la liaison
+      try {
+        const col = COL_SIM.find(c => LIB_STATE.colonnes.includes(c)) || COL_SIM[0];
+        if (!LIB_STATE.colonnes.includes(col)) LIB_STATE.colonnes.push(col);
+        const nomRef = String(p.comp["Part Name"]).trim().toUpperCase();
+        const ligne = LIB_STATE.composants.find(c => String(c["Part Name"] || "").trim().toUpperCase() === nomRef);
+        if (ligne) ligne[col] = rep.modeles.join(" | ");
+        if (Array.isArray(LIB_STATE.fichiers.simulation) && !LIB_STATE.fichiers.simulation.includes(p.nom))
+          LIB_STATE.fichiers.simulation.push(p.nom);
+        LIB_STATE.cacheFichiers.delete("simulation:" + p.nom);
+        libSuiteNoter("catalogue");
+        if (typeof sessDiffuserLibModif === "function") sessDiffuserLibModif({ genre: "catalogue", action: "sauvegarde" });
+        if (typeof rafraichirTout === "function") rafraichirTout();
+        if (ligne && LIB_STATE.selection && LIB_STATE.selection._id === ligne._id && typeof inspSimAfficher === "function")
+          inspSimAfficher(ligne);
+      } catch (e) { console.warn(e); }
+      return { modele: "lib_simulation/" + p.nom, reference: p.comp["Part Name"], modeles: rep.modeles };
+    }
+  };
+
   return {
+    lib_simulation_lier: lierSim,
     lib_empreinte_generer: { executer: async a => CL.genererEmpreinte(a.famille, objet(a.parametres || {}, "parametres")) },
     lib_empreinte_verifier: { executer: async a => {
       const e = objet(a.empreinte, "empreinte");

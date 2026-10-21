@@ -2434,6 +2434,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
         if "ajouter" in charge:
             return self._lib_composants_ajouter(charge["ajouter"])
+        if "lier_simulation" in charge:
+            return self._lib_composants_lier_simulation(charge["lier_simulation"])
 
         composants = charge.get("composants")
         if not isinstance(composants, list):
@@ -2483,17 +2485,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         import csv
         import io
         with VERROU_CATALOGUE:
-            chemin = os.path.join(dossier_lib(), "LIB_composants.csv")
-            if not os.path.exists(chemin):
-                raise ErreurLib(404, "Fichier LIB_composants.csv introuvable")
-            with open(chemin, "rb") as f:
-                brut = f.read()
-            for enc in ("utf-8-sig", "latin1"):
-                try:
-                    texte = brut.decode(enc)
-                    break
-                except UnicodeDecodeError:
-                    continue
+            chemin, brut, texte, enc = self._catalogue_brut()
             lignes = [r for r in csv.reader(io.StringIO(texte), delimiter=';') if any(c.strip() for c in r)]
             if not lignes:
                 raise ErreurLib(500, "Catalogue sans en-tete")
@@ -2541,21 +2533,114 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             if not neuf.endswith("\n"):
                 neuf += fin
             neuf += sortie.getvalue()
-            ecrit = "utf-8" if enc == "utf-8-sig" else enc
-            prefixe = "\ufeff" if brut.startswith(b"\xef\xbb\xbf") else ""
-            try:
-                (prefixe + neuf).encode(ecrit)
-            except UnicodeEncodeError:
-                raise ErreurLib(400, "Un caractere ne passe pas dans l'encodage du catalogue (%s)" % ecrit)
-            try:
-                ecrire_texte_atomique(chemin, prefixe + neuf, ecrit)
-            except OSError as exc:
-                raise ErreurLib(500, "Impossible d'ecrire %s : %s" % (chemin, exc))
-            try:
-                ecrire_texte_atomique(os.path.join(ROOT, "LIB_composants.csv"), prefixe + neuf, ecrit)
-            except OSError:
-                pass
+            self._catalogue_ecrire(chemin, brut, enc, neuf)
             return {"ok": True, "ajoute": nom, "total": len(lignes)}
+
+    @staticmethod
+    def _catalogue_brut():
+        """(chemin, octets, texte, encodage) du catalogue ; l'appelant tient VERROU_CATALOGUE."""
+        chemin = os.path.join(dossier_lib(), "LIB_composants.csv")
+        if not os.path.exists(chemin):
+            raise ErreurLib(404, "Fichier LIB_composants.csv introuvable")
+        with open(chemin, "rb") as f:
+            brut = f.read()
+        for enc in ("utf-8-sig", "latin1"):
+            try:
+                return chemin, brut, brut.decode(enc), enc
+            except UnicodeDecodeError:
+                continue
+
+    @staticmethod
+    def _catalogue_ecrire(chemin, brut, enc, neuf):
+        """Reecrit le catalogue dans son encodage d'origine (BOM compris), puis sa copie a la racine."""
+        ecrit = "utf-8" if enc == "utf-8-sig" else enc
+        prefixe = "\ufeff" if brut.startswith(b"\xef\xbb\xbf") else ""
+        try:
+            (prefixe + neuf).encode(ecrit)
+        except UnicodeEncodeError:
+            raise ErreurLib(400, "Un caractere ne passe pas dans l'encodage du catalogue (%s)" % ecrit)
+        try:
+            ecrire_texte_atomique(chemin, prefixe + neuf, ecrit)
+        except OSError as exc:
+            raise ErreurLib(500, "Impossible d'ecrire %s : %s" % (chemin, exc))
+        try:
+            ecrire_texte_atomique(os.path.join(ROOT, "LIB_composants.csv"), prefixe + neuf, ecrit)
+        except OSError:
+            pass
+
+    def _lib_composants_lier_simulation(self, demande):
+        """Lie un modele de lib_simulation a UNE reference : sa case « Modèle Simulation » recoit
+        « lib/simulation/<fichier> » a la suite des modeles deja lies (« | »), comme « Lier un
+        fichier » de Gestion LIB. Les autres lignes restent octet pour octet ; seule la ligne visee
+        est reecrite. Un modele deja lie (meme fichier) ne change rien."""
+        if (not isinstance(demande, dict) or not isinstance(demande.get("part"), str)
+                or not isinstance(demande.get("modele"), str)):
+            raise ErreurLib(400, "« lier_simulation » : {part, modele} attendus")
+        nom, modele = demande["part"].strip(), demande["modele"].strip()
+        if not nom:
+            raise ErreurLib(400, "« part » : la Part Name de la reference")
+        fichier = modele[len("lib/simulation/"):] if modele.startswith("lib/simulation/") else ""
+        if not re.fullmatch(r"[A-Za-z0-9_.+-]+", fichier) or not LIB_EXTENSIONS.search(fichier):
+            raise ErreurLib(400, "« modele » : lib/simulation/<fichier> attendu")
+        if not os.path.isfile(chemin_lib_fichier("simulation", fichier)):
+            raise ErreurLib(404, "Modele absent de la LIB : %s" % fichier)
+        import csv
+        import io
+        with VERROU_CATALOGUE:
+            chemin, brut, texte, enc = self._catalogue_brut()
+            # les lignes physiques, chacune avec sa fin : on sait ainsi lesquelles portent la ligne visee,
+            # meme si un champ entre guillemets court sur plusieurs
+            physiques = re.findall(r"[^\n]*\n|[^\n]+$", texte)
+            lues = [0]
+
+            def suivante():
+                while lues[0] < len(physiques):
+                    lues[0] += 1
+                    yield physiques[lues[0] - 1]
+            lignes, debut = [], 0
+            for r in csv.reader(suivante(), delimiter=';'):
+                if any(c.strip() for c in r):
+                    lignes.append((r, debut, lues[0]))
+                debut = lues[0]
+            if not lignes:
+                raise ErreurLib(500, "Catalogue sans en-tete")
+            colonnes = [c.strip() for c in lignes[0][0]]
+            i_nom = colonnes.index("Part Name") if "Part Name" in colonnes else -1
+            visees = [l for l in lignes[1:] if 0 <= i_nom < len(l[0]) and l[0][i_nom].strip().upper() == nom.upper()]
+            if not visees:
+                raise ErreurLib(404, "« %s » n'est pas au catalogue" % nom)
+            if len(visees) > 1:
+                raise ErreurLib(409, "« %s » est %d fois au catalogue : a corriger dans Gestion LIB" % (nom, len(visees)))
+            ligne, d, f = visees[0]
+            col = next((c for c in ("Modèle Simulation", "Modele Simulation") if c in colonnes), None)
+            if col is None:                            # comme la page : la colonne vient a la fin
+                tete = physiques[0]
+                noyau = tete.rstrip("\r\n")
+                if lignes[0][1:] != (0, 1) or [c.strip() for c in next(csv.reader([noyau], delimiter=';'), [])] != colonnes:
+                    raise ErreurLib(409, "En-tete du catalogue inattendu (ligne vide ou guillemets en tete) : "
+                                         "ajoute la colonne Modèle Simulation dans Gestion LIB d'abord")
+                col = "Modèle Simulation"
+                colonnes.append(col)
+                physiques[0] = noyau + ";" + col + tete[len(noyau):]
+            j = colonnes.index(col)
+            avant = ligne[j].strip() if j < len(ligne) else ""
+            liste = [x.strip() for x in avant.split("|")]
+            liste = [x for x in liste if x and x != "-" and x.lower() != "xx"]
+            if any(os.path.basename(x.replace("\\", "/")) == fichier for x in liste):
+                return {"ok": True, "part": nom, "modeles": liste, "deja": True}
+            liste.append(modele)
+            valeur = " | ".join(liste)
+            if len(valeur) > 500:
+                raise ErreurLib(400, "« %s » : plus de 500 caracteres de modeles lies" % col)
+            ligne = ligne + [""] * (len(colonnes) - len(ligne))
+            ligne[j] = valeur
+            derniere = physiques[f - 1]
+            fin = derniere[len(derniere.rstrip("\r\n")):] or physiques[0][len(physiques[0].rstrip("\r\n")):] or "\r\n"
+            sortie = io.StringIO()
+            csv.writer(sortie, delimiter=';', quoting=csv.QUOTE_MINIMAL, lineterminator=fin).writerow(ligne)
+            physiques[d:f] = [sortie.getvalue()]
+            self._catalogue_ecrire(chemin, brut, enc, "".join(physiques))
+            return {"ok": True, "part": nom, "modeles": liste}
 
     def _lib_fichiers_liste(self):
         """Liste les fichiers d'empreintes PCB, symboles schematiques et modeles de simulation."""

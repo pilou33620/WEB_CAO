@@ -798,6 +798,52 @@ def test_routes():
         assert "frame-ancestors 'self'" in (r.getheader("Content-Security-Policy") or "")
         print("[PASS] Cadres : même origine seulement (X-Frame-Options, frame-ancestors)")
 
+        # 43. Lier un modele de simulation a une reference (MCP lib_simulation_lier) : seule la case
+        # « Modèle Simulation » de cette ligne change, les autres lignes restent octet pour octet.
+        import tempfile as _tf
+        lib = _tf.mkdtemp(prefix="webcao_lier_")
+        os.makedirs(os.path.join(lib, "lib_simulation"))
+        for f in ("as179_b.s3p", "r.sub"):
+            open(os.path.join(lib, "lib_simulation", f), "w").close()
+        csv_ = os.path.join(lib, "LIB_composants.csv")
+        brut = ("Part Name;Value;Description;Modèle Simulation\r\nR1;1k;\"sur\r\ndeux lignes\";\r\n"
+                "AS179;;switch;lib/simulation/as179_a.s3p\r\nC1;;\"a;b\";-\r\n").encode("latin1")
+        with open(csv_, "wb") as f:
+            f.write(brut)
+        actif = web_CAO.DOSSIER_LIB_ACTIF
+        web_CAO.definir_dossier_lib(lib, initialiser=False, persister=False)
+
+        def lier(part, modele):
+            conn.request("POST", "/api/lib/composants", headers={"Content-Type": "application/json"},
+                         body=json.dumps({"lier_simulation": {"part": part, "modele": modele}}).encode("utf-8"))
+            r = conn.getresponse()
+            return r.status, json.loads(r.read().decode("utf-8"))
+        try:
+            code, rep = lier("as179", "lib/simulation/as179_b.s3p")
+            assert code == 200 and rep["modeles"] == ["lib/simulation/as179_a.s3p", "lib/simulation/as179_b.s3p"], rep
+            apres = open(csv_, "rb").read()
+            assert apres == brut.replace(b"as179_a.s3p\r\n", b"as179_a.s3p | lib/simulation/as179_b.s3p\r\n"), apres
+            code, rep = lier("AS179", "lib/simulation/as179_b.s3p")
+            assert code == 200 and rep.get("deja") and open(csv_, "rb").read() == apres, rep
+            code, rep = lier("C1", "lib/simulation/r.sub")       # « - » vaut « rien de lie »
+            assert code == 200 and rep["modeles"] == ["lib/simulation/r.sub"], rep
+            assert open(csv_, "rb").read().endswith(b'C1;;"a;b";lib/simulation/r.sub\r\n')
+            avant = open(csv_, "rb").read()
+            for part, modele, attendu in (("X", "lib/simulation/r.sub", 404), ("R1", "lib/simulation/absent.s2p", 404),
+                                          ("R1", "lib/simulation/../r.sub", 400), ("R1", "r.sub", 400),
+                                          ("R1", "lib/simulation/x.html", 400), ("", "lib/simulation/r.sub", 400)):
+                code, rep = lier(part, modele)
+                assert code == attendu, (part, modele, code, rep)
+            assert open(csv_, "rb").read() == avant, "un refus a ecrit"
+            with open(csv_, "wb") as f:                             # colonne absente : ajoutee en fin d'en-tete
+                f.write(b"Part Name;Value\nR1;1k\nR2;2k\n")
+            code, rep = lier("R2", "lib/simulation/r.sub")
+            assert code == 200 and open(csv_, "rb").read() == (
+                "Part Name;Value;Modèle Simulation\nR1;1k\nR2;2k;lib/simulation/r.sub\n").encode("utf-8"), rep
+        finally:
+            web_CAO.DOSSIER_LIB_ACTIF = actif
+        print("[PASS] LIB : lier un modele de simulation reecrit une seule case (octets des autres lignes gardes)")
+
     finally:
         conn.close()
         httpd.shutdown()
