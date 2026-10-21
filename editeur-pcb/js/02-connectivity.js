@@ -888,8 +888,11 @@ function runDrc(){
        de tout plan pleine carte, que le rôle de couche dessine précisément aux
        dimensions de la carte (`boardZonePts`). `inPoly` ne tranche pas sur sa
        propre frontière — un coin y passe, le suivant non — d'où la distance au
-       contour, qui vaut zéro sur le trait et grandit dès qu'on en sort. */
-    const dehors=p=>!inBoard(p.x,p.y,0)&&polyEdgeDist(p.x,p.y,boardPoly())>1e-6;
+       contour, qui vaut zéro sur le trait et grandit dès qu'on en sort. Les
+       sommets sont arrondis au micron (r3) : un contour aux sommets plus fins
+       (disque, polygone importé) en sort d'un demi-micron, qui n'est pas un
+       débordement. */
+    const dehors=p=>!inBoard(p.x,p.y,0)&&polyEdgeDist(p.x,p.y,boardPoly())>1e-3;
     if(z.pts.some(dehors))
       out.push({x:(b.x1+b.x2)/2,y:(b.y1+b.y2)/2,l:z.l,
         msg:"Zone débordant du contour de carte (le remplissage y est rogné)"});

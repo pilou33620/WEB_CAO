@@ -1663,6 +1663,8 @@ function propsBoard(box){
     '<div class="prop"><div class="row">'+
       '<button class="tb" id="bpDraw">Redessiner <kbd>E</kbd></button>'+
       (S.board.pts?'<button class="tb" id="bpRect">Revenir au rectangle</button>':"")+
+      '<button class="tb" id="bpDisque" title="Disque inscrit dans la largeur et la hauteur actuelles, '+
+        'écrit en arcs dans le Gerber, le DXF et l\'IPC-2581">Disque</button>'+
       (boardCutouts().length?'<button class="tb" id="bpCutOff">Retirer les découpes</button>':"")+
       '</div></div>';
   if($("bpCutOff"))$("bpCutOff").onclick=()=>{push();delete S.board.cutouts;boardChanged();
@@ -1672,6 +1674,9 @@ function propsBoard(box){
   $("bpH").onchange=()=>{push();setBoardSize(S.board.w,parseFloat($("bpH").value)||S.board.h);
     reSync();refreshPanels();draw();};
   $("bpDraw").onclick=()=>setMode("edge");
+  $("bpDisque").onclick=()=>{const b=S.board;push();
+    setBoardDisque(b.x+b.w/2,b.y+b.h/2,Math.min(b.w,b.h)/2);reSync();refreshPanels();draw();
+    hint("Contour en disque de "+fmt(Math.min(b.w,b.h),2)+" mm de diamètre.");};
   const r=$("bpRect");
   if(r)r.onclick=()=>{push();setBoardRect();reSync();refreshPanels();draw();
     hint("Contour ramené au rectangle englobant.");};

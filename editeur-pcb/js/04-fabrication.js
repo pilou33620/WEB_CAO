@@ -529,10 +529,21 @@ function gerberSilk(side){
    écrits séparément, chacun avec l'attribut qui le décrit.
    ========================================================================== */
 function edgeSegs(body,A){
-  /* le contour, puis chaque découpe intérieure : le fraisage les suit tous */
+  /* le contour, puis chaque découpe intérieure : le fraisage les suit tous.
+     Les suites de cordes égales (coin arrondi, carte ronde) sortent en arcs,
+     reconnus comme au DXF et à l'IPC-2581 (dxfSegments, Y vers le haut) :
+     G03 antihoraire de a1 à a2, I/J du départ au centre, en multi-quadrant. */
   for(const c of [boardPoly()].concat(boardCutouts()))
-    for(let k=0;k<c.length;k++)
-      gSeg(body,A,c[k].x,c[k].y,c[(k+1)%c.length].x,c[(k+1)%c.length].y,0.1);
+    for(const s of dxfSegments(c.map(p=>({x:p.x,y:-p.y})))){
+      if(s.t==="l"){gSeg(body,A,s.a.x,-s.a.y,s.b.x,-s.b.y,0.1);continue;}
+      const rad=a=>a*Math.PI/180, pt=a=>({x:s.c.x+s.r*Math.cos(rad(a)),y:-(s.c.y+s.r*Math.sin(rad(a)))});
+      const p1=pt(s.a1), p2=pt(s.a2);
+      body.push("D"+A.get("C,"+fmt(0.1,4))+"*");
+      body.push(gXY(p1.x,p1.y)+"D02*");
+      body.push("G75*");
+      body.push("G03"+gXY(p2.x,p2.y)+"I"+gNum(-s.r*Math.cos(rad(s.a1)))+"J"+gNum(-s.r*Math.sin(rad(s.a1)))+"D01*");
+      body.push("G01*");
+    }
 }
 /* Le profil de découpe. « NP » : le bord n'est pas métallisé — un contour
    plaqué existe (bords dorés, connecteur de carte) mais se commande à part. */

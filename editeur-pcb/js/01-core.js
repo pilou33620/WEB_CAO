@@ -2561,6 +2561,20 @@ function setBoardRect(){
   S.board.pts=null;
   boardChanged();
 }
+/* Une carte ronde : des cordes égales, assez nombreuses pour que la flèche
+   reste sous 5 µm. Le contour reste un polygone pour tout le programme ; les
+   sorties (Gerber, DXF, IPC-2581) y reconnaissent le cercle (dxfSegments) et
+   l'écrivent en arcs. */
+function boardDisquePts(cx,cy,r){
+  const n=Math.max(16,Math.min(720,Math.ceil(Math.PI/Math.acos(Math.max(-1,1-0.005/r)))));
+  const P=[];
+  for(let i=0;i<n;i++){const a=2*Math.PI*i/n;P.push({x:r3(cx+r*Math.cos(a)),y:r3(cy+r*Math.sin(a))});}
+  return P;
+}
+function setBoardDisque(cx,cy,r){
+  S.board.pts=boardDisquePts(cx,cy,r);
+  boardChanged();
+}
 
 /* ==========================================================================
    Nets

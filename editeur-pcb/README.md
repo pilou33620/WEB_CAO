@@ -1270,6 +1270,11 @@ reconnaît (cordes égales, tournant du même côté, 30° au plus chacune, somm
 sur un même cercle) et les écrit en `ARC`, sur le cercle qui passe exactement
 par les sommets de part et d'autre : le contour reste fermé, et le modeleur
 reçoit un rayon au lieu de vingt facettes. Un octogone reste un octogone.
+Le Gerber du contour (`.GM1`, `.GKO`) fait la même reconnaissance et sort ces
+arcs en `G03` (multi-quadrant, `G75`), comme l'IPC-2581 en `PolyStepCurve`.
+Le bouton **Disque** des propriétés de la carte pose un contour rond inscrit
+dans la largeur et la hauteur actuelles (`setBoardDisque`) : des cordes égales
+dont la flèche reste sous 5 µm, que ces trois sorties écrivent en cercle.
 
 La feuille est lue dans la même liste d'objets que le PDF et l'aperçu : tout
 ce qui s'y dessine passe dans le DXF. Pour ranger un nouveau dessin sur son

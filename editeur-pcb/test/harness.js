@@ -64,7 +64,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* variantes de montage (commun/variantes.js + 26-variantes.js) */
   "varNorm","varVide","varEstMonte","pcbVarDepuisSchema","pcbVarChoisir","pcbVarDessiner",
   "pcbVarOuvrir","pcbVarFermer","fabFpsMontes","listComps",
-  "edgeClick","edgeMove","closeEdge","boardPoly","setBoardSize","setBoardRect","inBoard","boardCutouts",
+  "edgeClick","edgeMove","closeEdge","boardPoly","setBoardSize","setBoardRect","setBoardDisque","boardDisquePts","inBoard","boardCutouts",
   "boardChanged","polyEdgeDist","segDist","orient","signedArea",
   "coordOpen","coordClose","coordApply","coordMode","coordPoint","coordAnchor",
   "placeOrigin","ux","uy","wxu","wyu","snapX","snapY","gOrigin","routeToPoint","hint",
@@ -3485,6 +3485,33 @@ T("sérigraphie : le Gerber place le repère où l'écran le montre, décalage c
     if(tr.x!==22||Math.abs(tr.y-(20-((bodyOf(f).y2-bodyOf(f).y1)/2+tr.size*0.9)-1))>1e-9)throw new Error("fpTextPos : "+JSON.stringify(tr));
     if("val" in fpTextPos(f))throw new Error("la valeur n'est pas imprimée : elle n'a plus de place en sérigraphie");
   }finally{suiviFin(reg);loadDoc(JSON.parse(saved),true);}
+});
+T("contour en disque : arcs G03 au Gerber, zone pleine carte sans débordement",()=>{
+  const saved=serialize();
+  try{
+    setBoardDisque(20,20,13);
+    const ol=gerberOutline();
+    if((ol.match(/G03/g)||[]).length!==2||(ol.match(/D01\*/g)||[]).length!==2)throw new Error("deux demi-cercles attendus : "+ol.split("\n").filter(l=>/D01/.test(l)).length+" traits");
+    if(!/G75\*/.test(ol))throw new Error("mode multi-quadrant non déclaré");
+    // relu dans le fichier : centre = départ + (I, J), rayon de 13 mm aux deux bouts
+    const o=gOrigin(), C=[(20-o.x)*1e6,(o.y-20)*1e6];let cur=null;
+    for(const l of ol.split("\n")){
+      let m=l.match(/^X(-?\d+)Y(-?\d+)D02/);if(m){cur=[+m[1],+m[2]];continue;}
+      m=l.match(/^G03X(-?\d+)Y(-?\d+)I(-?\d+)J(-?\d+)D01/);if(!m)continue;
+      const c=[cur[0]+ +m[3],cur[1]+ +m[4]];
+      if(Math.hypot(c[0]-C[0],c[1]-C[1])>1000||Math.abs(Math.hypot(+m[1]-c[0],+m[2]-c[1])-13e6)>1000)   // 1 µm
+        throw new Error("arc faux : centre "+c+" attendu "+C+" ; "+l);
+    }
+    if(Math.abs(S.board.w-26)>0.01)throw new Error("largeur du disque : "+S.board.w);
+    // un polygone aux sommets plus fins que le micron, comme une carte écrite par un script
+    S.board.pts=[...Array(120).keys()].map(i=>({x:20+12.9*Math.cos(i*Math.PI/60),y:20+12.9*Math.sin(i*Math.PI/60)}));
+    boardChanged();
+    S.zones=[{id:S.nextId++,l:0,net:"GND",pts:boardZonePts()}];touch();
+    const d=runDrc().filter(e=>/débordant du contour/.test(e.msg));
+    if(d.length)throw new Error("la zone pleine carte ne déborde pas : "+d[0].msg);
+    S.zones[0].pts=S.zones[0].pts.map(p=>({x:p.x+0.05,y:p.y}));touch();
+    if(!runDrc().some(e=>/débordant du contour/.test(e.msg)))throw new Error("50 µm dehors : le débordement doit être signalé");
+  }finally{loadDoc(JSON.parse(saved),true);}
 });
 T("Gerber : masque, pâte, sérigraphie, contour",()=>{
   if(gerberMask(0).indexOf("Soldermask,Top")<0)throw new Error("fonction du masque");
