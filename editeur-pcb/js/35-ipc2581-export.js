@@ -1047,8 +1047,8 @@ function ipc2581Document(opts){
       k.push(["Features",[],[["Location",[["x",X(w.x)],["y",Y(w.y)]]],
         ["Circle",[["diameter",ipcN(mk.d)]],[["FillDesc",[["fillProperty","FILL"]]]]]]]);
     }
-    const h=clamp((bb.x2-bb.x1)*0.34,0.8,1.6);
-    k.push(texte(fp.ref,fp.x,fp.y-((bb.y2-bb.y1)/2+h*0.9),h,!!fp.side,0,lw));
+    const tr=fpTextPos(fp).ref;
+    k.push(texte(fp.ref,tr.x,tr.y,tr.size,!!fp.side,0,lw));
   }
   for(const d of (S.drawings||[])){
     const f=d.layer==="silkB"?1:0;

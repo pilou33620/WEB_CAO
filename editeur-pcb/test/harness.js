@@ -3467,6 +3467,25 @@ T("Gerber : zone en polarité négative",()=>{
   if(g.lastIndexOf("%LPD*%")<g.lastIndexOf("%LPC*%"))
     throw new Error("le cuivre doit être redessiné après les dégagements");
 });
+T("sérigraphie : le Gerber place le repère où l'écran le montre, décalage compris, sans la valeur",()=>{
+  const saved=serialize(), reg=suiviDecor();
+  try{
+    const f=mkFp("D1","18R","0805",2);f.x=20;f.y=20;S.fps.push(f);touch();
+    const pts=g=>(g.match(/X-?\d+Y-?\d+/g)||[]);
+    const a=pts(gerberSilk(0));
+    f.refOffX=2;f.refOffY=-1;touch();
+    const b=pts(gerberSilk(0)), A=new Set(a), B=new Set(b);
+    const neufs=b.filter(p=>!A.has(p)), partis=a.filter(p=>!B.has(p));
+    if(!neufs.length||neufs.length!==partis.length)throw new Error("seul le repère doit bouger : "+neufs.length+"/"+partis.length);
+    const xy=p=>p.match(/-?\d+/g).map(Number);
+    partis.forEach((p,i)=>{const [x0,y0]=xy(p),[x1,y1]=xy(neufs[i]);
+      // Y du Gerber vers le haut : un décalage de -1 mm à l'écran monte de 1 mm
+      if(x1-x0!==2e6||y1-y0!==1e6)throw new Error("décalage du repère dans le Gerber : "+p+" → "+neufs[i]);});
+    const tr=fpTextPos(f).ref;
+    if(tr.x!==22||Math.abs(tr.y-(20-((bodyOf(f).y2-bodyOf(f).y1)/2+tr.size*0.9)-1))>1e-9)throw new Error("fpTextPos : "+JSON.stringify(tr));
+    if("val" in fpTextPos(f))throw new Error("la valeur n'est pas imprimée : elle n'a plus de place en sérigraphie");
+  }finally{suiviFin(reg);loadDoc(JSON.parse(saved),true);}
+});
 T("Gerber : masque, pâte, sérigraphie, contour",()=>{
   if(gerberMask(0).indexOf("Soldermask,Top")<0)throw new Error("fonction du masque");
   if(gerberPaste(1).indexOf("Paste,Bot")<0)throw new Error("fonction de la pâte");

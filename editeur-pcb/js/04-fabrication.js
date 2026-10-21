@@ -467,10 +467,10 @@ function gerberSilk(side){
       const w=T(mk.x,mk.y);
       gFlash(body,A,A.get("C,"+fmt(mk.d,4)),w.x,w.y);
     }
-    const h=clamp((bb.x2-bb.x1)*0.34,0.8,1.6);
+    const tr=fpTextPos(fp).ref;
     // sur la face inférieure, le texte doit être en miroir dans le fichier
     // pour se lire à l'endroit une fois la carte retournée
-    for(const poly of textStrokes(fp.ref,fp.x,fp.y-((bb.y2-bb.y1)/2+h*0.9),h,!!side))
+    for(const poly of textStrokes(fp.ref,tr.x,tr.y,tr.size,!!side))
       for(let k=0;k+1<poly.length;k++)
         gSeg(body,A,poly[k].x,poly[k].y,poly[k+1].x,poly[k+1].y,lw);
   }

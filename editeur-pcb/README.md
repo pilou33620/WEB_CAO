@@ -738,9 +738,16 @@ pour rattacher les nets.
 **L'origine est visible et se déplace.** La croix jaune — la même que
 l'origine de la carte — marque le point d'accrochage : `fp.x`, `fp.y`. C'est
 par lui que l'empreinte se déplace, autour de lui qu'elle pivote, et de lui que
-se placent le repère et la valeur sur la sérigraphie (`fpTextPos`). Il vient
+se place le repère sur la sérigraphie (`fpTextPos`). Il vient
 de l'empreinte de la LIB (souvent l'origine de la fiche du fabricant) et se
 règle dans la Gestion LIB.
+
+**Le repère affiché est celui qui sera imprimé.** L'écran le trace avec les
+traits du Gerber (`textStrokes`), à la même hauteur et à la même place,
+décalage glissé à la souris compris ; le Gerber et l'IPC-2581 le prennent au
+même endroit (`fpTextPos`). La valeur (« 18R », « 100n ») n'est pas imprimée,
+comme d'usage : elle reste aux dessins d'assemblage, et l'écran ne la montre
+plus sur la sérigraphie.
 
 **Le repère de broche 1 est un point de sérigraphie**, et rien d'autre :
 `fp.mark`, un disque en coordonnées locales, avec son diamètre (0,4 mm par

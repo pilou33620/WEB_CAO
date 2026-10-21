@@ -920,8 +920,8 @@ function hitTest(x,y,e){
   for(let i=S.fps.length-1;i>=0;i--){
     const fp=S.fps[i];
     const tp = fpTextPos(fp);
-    if(Math.abs(x-tp.ref.x)<=(fp.ref.length||0)*tp.ref.size*0.4 && Math.abs(y-tp.ref.y)<=tp.ref.size*0.8) return {fpText:fp, kind:"ref"};
-    if(fp.value && Math.abs(x-tp.val.x)<=(fp.value.length||0)*tp.val.size*0.4 && Math.abs(y-tp.val.y)<=tp.val.size*0.8) return {fpText:fp, kind:"val"};
+    // textStrokes : 5/6 de la hauteur par caractère
+    if(Math.abs(x-tp.ref.x)<=(fp.ref.length||0)*tp.ref.size*0.42 && Math.abs(y-tp.ref.y)<=tp.ref.size*0.6) return {fpText:fp, kind:"ref"};
     const b=bodyOf(fp);
     const a=-(fp.rot||0)*Math.PI/180, ca=Math.cos(a), sa=Math.sin(a);
     let lx=(x-fp.x)*ca-(y-fp.y)*sa, ly=(x-fp.x)*sa+(y-fp.y)*ca;

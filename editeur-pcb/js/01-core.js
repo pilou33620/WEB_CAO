@@ -2185,8 +2185,7 @@ function fpSetMarkD(fp,d){
 /* ---------- origine de l'empreinte ----------
    L'origine du repère local, c'est le point d'accrochage : `fp.x`, `fp.y` sur
    la carte. C'est par lui que l'empreinte se déplace, autour de lui qu'elle
-   pivote, et de lui que se placent le repère et la valeur sur la sérigraphie
-   (fpTextPos). Une empreinte calculée l'a d'office en son centre ; un dessin
+   pivote, et de lui que se place le repère sur la sérigraphie (fpTextPos). Une empreinte calculée l'a d'office en son centre ; un dessin
    fait à la main peut l'en écarter sans le vouloir, en déplaçant une pastille. */
 function fpLocalBox(fp){
   const b=bodyOf(fp);
@@ -2335,12 +2334,14 @@ function fpBBox(fp){
   }
   return {x1,y1,x2,y2};
 }
+/* Le repère tel qu'il est imprimé : l'écran, le Gerber et l'IPC-2581 le
+   prennent tous ici (hauteur des traits de textStrokes, décalage compris). La
+   valeur n'est pas imprimée : elle reste aux dessins d'assemblage. */
 function fpTextPos(fp){
   const b=bodyOf(fp);
-  const size=Math.max(0.9,Math.min(2.2,(b.x2-b.x1)*0.34));
+  const size=clamp((b.x2-b.x1)*0.34,0.8,1.6);
   return {
-    ref: {x: fp.x+(fp.refOffX||0), y: fp.y-((b.y2-b.y1)/2+size*0.85)+(fp.refOffY||0), size: size},
-    val: {x: fp.x+(fp.valOffX||0), y: fp.y+((b.y2-b.y1)/2+size*0.85)+(fp.valOffY||0), size: size*0.85}
+    ref: {x: fp.x+(fp.refOffX||0), y: fp.y-((b.y2-b.y1)/2+size*0.9)+(fp.refOffY||0), size: size}
   };
 }
 function fpById(id){return S.fps.find(f=>f.id===id)||null;}

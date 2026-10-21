@@ -581,12 +581,16 @@ function drawSilk(c){
       c.fillStyle=sel?C_SEL:(top?C_SILK_T:C_SILK_B);
       c.beginPath();c.arc(w.x,w.y,mk.d/2,0,Math.PI*2);c.fill();
     }
-    // repère + valeur
-    const tp = fpTextPos(fp);
-    TXT(c,fp.ref,tp.ref.x,tp.ref.y,tp.ref.size,
-        sel?C_SEL:(!auto?"#9aa3b0":(top?C_SILK_T:C_SILK_B)));
-    if(S.scale>6&&fp.value)
-      TXT(c,fp.value,tp.val.x,tp.val.y,tp.val.size,"#9aa3b0");
+    // le repère, avec les traits du Gerber (textStrokes) : ce qu'on voit est ce qui sera imprimé
+    const tr = fpTextPos(fp).ref;
+    c.strokeStyle = sel?C_SEL:(!auto?"#9aa3b0":(top?C_SILK_T:C_SILK_B));
+    c.lineWidth = Math.max(0.15, px(1)); c.lineCap = "round"; c.lineJoin = "round";
+    c.beginPath();
+    for(const P of textStrokes(fp.ref,tr.x,tr.y,tr.size,!top!==!!S.flip)){
+      c.moveTo(P[0].x,P[0].y);
+      for(let k=1;k<P.length;k++)c.lineTo(P[k].x,P[k].y);
+    }
+    c.stroke();
   }
   /* traits de sérigraphie utilisateur */
   if(S.drawings){
@@ -1028,9 +1032,7 @@ function drawTextLink(c){
   if(!S.hlText)return;
   const fp=S.hlText.fpText;
   if(!fp)return;
-  const tp=fpTextPos(fp);
-  const tx=S.hlText.kind==="ref"?tp.ref.x:tp.val.x;
-  const ty=S.hlText.kind==="ref"?tp.ref.y:tp.val.y;
+  const tr=fpTextPos(fp).ref, tx=tr.x, ty=tr.y;
   c.strokeStyle=C_SEL;
   c.lineWidth=px(1);
   c.setLineDash([px(2),px(2)]);
