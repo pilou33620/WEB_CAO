@@ -13,8 +13,8 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 2 300 essais a
 
 | Composant | Statut | Couverture / Bancs |
 | --- | --- | --- |
-| **Éditeur PCB** | En service | 1039 essais (`editeur-pcb/test/harness.js`, relevé du 21/10/2026), dont 44 pour les plans (Draftsman), 30 pour le dossier mécanique, 24 pour le gestionnaire de contraintes et la topologie, 3 pour l'export IPC-2581 (+ 70 cas d'aller-retour, `banc-ipc2581-export.py`) |
-| **Éditeur Schématique** | En service | 174 essais (`editeur-schematique/test/harness.js`), dont 3 pour les contraintes de nets |
+| **Éditeur PCB** | En service | 1042 essais (`editeur-pcb/test/harness.js`, relevé du 21/10/2026), dont 44 pour les plans (Draftsman), 30 pour le dossier mécanique, 24 pour le gestionnaire de contraintes et la topologie, 3 pour l'export IPC-2581 (+ 70 cas d'aller-retour, `banc-ipc2581-export.py`) |
+| **Éditeur Schématique** | En service | 175 essais (`editeur-schematique/test/harness.js`), dont 3 pour les contraintes de nets |
 | **Visionneuse IPC-2581** (lecteur `ipc2581_parser` 1.83, `ipc2581_json` 1.4.0) | En service | 232 essais (`harness-sim.js`, relevé du 21/10/2026), dont 13 pour le dossier mécanique + 79 (`banc-essai.py`) |
 | **SI — Impédance & Vias (`ligne_mom` v2.9.0)** | En service (0,3 à 0,4 % vs étalons ; pertes conducteur par l'inductance incrémentale de Wheeler, ruban + plan(s) + bords ; rugosité Hammerstad / Huray, diélectrique causal Djordjevic-Sarkar, via en ligne — branchés dans la cascade) | 236 cas (`python/test/banc-ligne-mom.py`) |
 | **SI — Z différentielle (`solve_multiline`)** | En service (< 3 % vs Garg-Bahl) | inclus dans les 199 cas |
@@ -26,19 +26,18 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 2 300 essais a
 | **Scoring placement & Rotation (`pcb_scoring`)** | En service (HPWL, congestion, découplage HF, auto-rotation) | 18 cas (`python/test/banc-pcb-scoring.py`) |
 | **Vérification de la carte (`analyse_carte`)** | En service (tous nets : angles, bouts orphelins, empilage ; à la cadence de chaque classe : impédance, chemins de retour, fentes de plan, vias de couture, diaphonie, paires différentielles, découplage, bord de carte, moignons de vias, branches en T ; quartz, ESD, courant des rails ; dérogations et comparaison de révisions ; classes d'interface USB, Ethernet, LVDS, CAN, RS-485 à leur front et à la Z_diff de leur norme) — mode d'emploi : [docs/verification-carte.md](docs/verification-carte.md) | 25 cas (`python/test/banc-analyse-carte.py`) + route (`banc-serveur-routes.py`) + 11 essais éditeur + 4 visionneuse |
 | **Reconnaissance de motifs (`pattern_recognition`)** | En service (LDO/78xx/79xx/Buck, I2C, SPI, UART, quartz, RC, courants DC) | 24 cas (`python/test/banc-patterns.py`) |
-| **Claude par le MCP de web_suite (schéma, PCB, visionneuse, Gestion LIB)** | En service (lectures, écritures en cartes cliquées, calculs, routage, composants ; l'ancien assistant IA intégré est retiré) | `commun/lecture-cao.js`, `commun/pilote-cao.js`, `commun/ecriture-cao.js` ; bancs de web_suite (`lanceur/banc_mcp.py`) |
+| **Claude par le MCP de web_suite (schéma, PCB, visionneuse, Gestion LIB)** | En service (lectures, écritures en cartes cliquées, calculs, routage et chemins proposés par A* (`38-chemin-auto.js`), composants et modèles de simulation liés ; l'ancien assistant IA intégré est retiré) | `commun/lecture-cao.js`, `commun/pilote-cao.js`, `commun/ecriture-cao.js` ; bancs de web_suite (`lanceur/banc_mcp.py`) |
 | **Serveur `web_CAO.py`** | En service (détection Raspberry Pi / terminal sans affichage : navigateur non ouvert par défaut, `--navigateur` / `--sans-navigateur`) | `banc-serveur-routes.py`, `banc-lib-routes.py`, `banc-maj-github.py`, `banc-detection-plateforme.py` |
 | **Moteur 2,5D pleine onde (`mom_solver`)** | Archivé dans branche `archive/mom-solver-25d` (recentrage sur 2D instantané) | Préservé dans l'historique Git |
 | **Support Android / Termux** | Abandonné volontairement (ajouté le 17/09, retiré au commit suivant) | — |
 | **Passerelle MCP, profils, cross-probing** | En service | `web_CAO.py`, `commun/session.js` |
-| **Gestion LIB — catalogue, recherche, import JLCPCB / LCSC** | En service | 45 + 67 essais (`gestion-lib/test/banc-catalogue.js`, `banc-import-jlc.js`) ; générateurs IPC-7351B, vérification et conversion KiCad : 174 contrôles (`banc-composants.js`) ; repère et trous des empreintes (`banc-repere-pcb.js`) ; routes LIB : 16 cas (`banc-lib-routes.py`) |
+| **Gestion LIB — catalogue, recherche, import JLCPCB / LCSC** | En service | 45 + 67 essais (`gestion-lib/test/banc-catalogue.js`, `banc-import-jlc.js`) ; générateurs IPC-7351B, vérification et conversion KiCad, commandes de pilotage : 197 contrôles (`banc-composants.js`) ; repère et trous des empreintes (`banc-repere-pcb.js`) ; routes LIB : 16 cas (`banc-lib-routes.py`) |
 
 ### Ce qui reste — synthèse au 21/10/2026
 
 Le détail de chaque point est plus bas, dans sa section.
 
 **Code (faisable sans rien d'autre)**
-- Outil MCP pour lier un modèle de simulation (.sNp, SPICE) à une référence de la LIB.
 - Contrôles d'intégration mécanique (retour d'essai LED_UV, 21/10/2026) : voir *Éditeur PCB*.
 - Empreintes 1206 et 1210 de la LIB à refaire aux cotes IPC-7351B (même défaut que l'ancienne 2512).
 - Animation 3D de la carte qui s'assemble, en option de `fabrication.zip` (vidéo + page HTML).
@@ -48,7 +47,7 @@ Le détail de chaque point est plus bas, dans sa section.
 
 **À vérifier sur du réel (carte, fichier, matériel)**
 - Broche 1 du Yamaichi IC51-0484-806 ; empreintes SOT-89-5 et LED RVB ; `<Package><Outline>` et `height` d'un fichier eCADSTAR.
-- `cao_paire` et `cao_placement_auto` dans la vraie page ; le canal depuis l'iPad.
+- `cao_paire`, `cao_placement_auto` et `cao_chemin` dans la vraie page ; le canal depuis l'iPad.
 
 **Normes (réseau de l'environnement à ouvrir : usb.org, fabricants de feuillard)**
 - USB 2.0 Template 2 : positions en % UI à relire dans la figure 7-15.
@@ -119,12 +118,21 @@ Ce que les modules du MCP ont laissé ouvert côté WEB_CAO (détail dans
 - [x] **LIB : SOIC-8 et SOT-23-5 régénérés à l'IPC-7351B** (21/10/2026, densité N, cotes JEDEC du
   générateur) : SOIC-8 1,969 × 0,599 mm à ±2,473 mm (KiCad 1,95 × 0,6 à ±2,475), SOT-23-5
   1,409 × 0,589 mm à ±1,153 mm. Nom, corps et brochage gardés : les composants posés gardent leurs broches.
-- [ ] **Outil MCP pour lier un modèle de simulation** (demandé le 21/10/2026) : ce que fait
-  « 📎 Lier un fichier » dans la fiche d'une référence, mais par Claude, avec une carte de
-  confirmation (commande de la Gestion LIB dans `js/08-pilote-lib.js`, outil dans web_suite ;
-  la préparation est déjà dans `COMPOSANTS_LIB.brancherTouchstone`).
-- [ ] **Essais réels restants** : `cao_paire` et `cao_placement_auto` dans la vraie page après la
-  revue du routage ; le canal depuis l'iPad.
+- [x] **Outil MCP pour lier un modèle de simulation** (21/10/2026, branche `mcp`) :
+  `lib_simulation_lier`, le « 📎 Lier un fichier » de la fiche par Claude, carte toujours
+  cliquée (`js/08-pilote-lib.js`, `brancherTouchstone`) ; le serveur ne réécrit que la case
+  « Modèle Simulation » de la référence (`POST /api/lib/composants {lier_simulation}`,
+  `banc-serveur-routes.py`). 60 Ko au plus : une commande du canal est bornée à 64 Ko.
+- [x] **Limites laissées par les modules** (21/10/2026, branche `mcp`) : les lots de Claude se
+  fondent entre eux quand l'historique est plein, au lieu de chasser les étapes de
+  l'utilisateur (`histBorner`, PCB et schéma) ; « affecter » crée une classe que le schéma
+  connaît (`schClass`) ; étiquettes et alimentations désignées par « #id » au dessin
+  (lecture `etiquettes`) ; aperçu dessiné du placement automatique, et un essai réussi de la
+  méthode « blocs ».
+- [x] **chemin-auto** (21/10/2026, branche `mcp`) : `cao_chemin` propose les points de passage
+  par A* sur grille (`editeur-pcb/js/38-chemin-auto.js`), sans rien écrire ; `cao_router` pose.
+- [ ] **Essais réels restants** : `cao_paire`, `cao_placement_auto` et `cao_chemin` dans la
+  vraie page ; le canal depuis l'iPad.
 
 ### Dossier de fabrication — animation 3D de la carte qui s'assemble (demandé le 19/10/2026)
 
