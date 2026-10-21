@@ -3629,6 +3629,18 @@ T("cuivre mini : la bande trop étroite entre deux dégagements est retirée, pa
     const fl=trkMid(arc).y-yc;arc.y1=arc.y2=yc-fl;
     S.tracks=[arc];touch();
     if(Math.abs(trkMid(arc).y-yc)>1e-6||!zoneLanieres(0).some(H=>inPoly(P.x,ym,H)))throw new Error("arc : la bande sous son ventre");
+    // deux arcs concentriques de nets différents, 0,1 mm de cuivre entre leurs dégagements : seule la bande
+    // entre eux part, pas le creux du virage (l'enveloppe de deux arcs entiers le couvrait : du cuivre sain)
+    const cP=clrK("GND","P","cu","trk"), ecart=0.2+2*cP+0.1, arcs=[];
+    for(const [net,R] of [["P",8],["N",8+ecart]])
+      arcs.push({l:0,net,w:0.2,x1:20+R,y1:20,x2:20-R,y2:20,ca:Math.PI});
+    S.fps=[];S.tracks=arcs;touch();
+    const la=zoneLanieres(0), aireLan=la.reduce((s,H)=>s+Math.abs(signedArea(H)),0);
+    const yv=trkMid(arcs[0]).y>20?1:-1, Rm=8+ecart/2;
+    if(!la.some(H=>inPoly(20,20+yv*Rm,H)))throw new Error("la bande entre les deux arcs");
+    if(la.some(H=>inPoly(20,20+yv*4,H)))throw new Error("le creux du virage est du cuivre sain : rien n'y part");
+    if(aireLan>Math.PI*Rm*(ecart+0.4)*1.5)throw new Error("lanières des arcs trop grandes : "+aireLan.toFixed(1)+" mm²");
+    S.fps=[L];
     // une piste du net de la zone tient le cuivre qu'elle touche : rien entre elle et la pastille
     S.tracks=[{l:0,net:"GND",w:0.2,x1:P.x-3,y1:yPiste(0.1),x2:P.x+3,y2:yPiste(0.1)}];touch();
     if(zoneLanieres(0).some(H=>inPoly(P.x,ym,H)))throw new Error("piste GND : rien à retirer");
@@ -3667,6 +3679,8 @@ T("charge : 300 boîtiers sous un plan, îlots et Gerber cuivre en temps raisonn
       S.fps.push(f);
       for(let k=0;k<5;k++)S.tracks.push({l:0,net:"N"+i+"_1",w:0.2,x1:f.x-2.5,y1:f.y-1.905,x2:f.x-2.5-k-1,y2:f.y-8-k});
     }
+    // et vingt longues diagonales : sans tronçons, leur boîte couvrait la carte entière
+    for(let k=0;k<20;k++)S.tracks.push({l:0,net:"D"+k,w:0.2,x1:5+k*0.6,y1:3,x2:195,y2:193-k*0.6});
     S.zones=[{id:S.nextId++,l:0,net:"GND",pts:[{x:0.5,y:0.5},{x:199.5,y:0.5},{x:199.5,y:199.5},{x:0.5,y:199.5}]}];
     touch();
     let t=Date.now();conn(true);const tc=Date.now()-t;
@@ -3717,7 +3731,13 @@ T("zones interdites : patte qui ressort, composant interdit ou trop haut, hauteu
     z.hMax=2.5;loadDoc(JSON.parse(serialize()),true);
     const z2=interditsListe()[0];
     if(!z2||z2.hMax!==2.5||z2.nom!==z.nom)throw new Error("relue du fichier : "+JSON.stringify(z2));
-    clearSel();S.sel.interdits.add(z2);buildProps();deleteSel();
+    // couper puis coller : elle revient, décalée sous le pointeur, avec sa face et sa hauteur
+    clearSel();S.sel.interdits.add(z2);cutSelPcb();
+    if(interditsListe().length)throw new Error("Ctrl+X retire la zone");
+    pasteClipPcb();
+    const z3=interditsListe()[0];
+    if(!z3||z3.hMax!==2.5||z3.face!=="dessus"||z3.pts.length!==4)throw new Error("Ctrl+V la rend : "+JSON.stringify(z3));
+    clearSel();S.sel.interdits.add(z3);buildProps();deleteSel();
     if(interditsListe().length)throw new Error("Suppr retire la zone");
   }finally{window.CSV_LIB=lib;suiviFin(reg);loadDoc(JSON.parse(saved),true);}
 });
@@ -27231,7 +27251,7 @@ TA("échauffement estimé : cuivre relié mesuré, serveur, DRC tant que la cart
     doc=pcbThermiqueDocument();
     const plan=doc.composants[0].surface_mm2;
     if(!(plan>600&&plan<=30*30+10))throw new Error("cuivre relié par le plan : "+plan);
-    if(!("epaisseur_stratifie" in doc.thermique))throw new Error("le bloc thermique de la chute DC part aussi");
+    if(!("epaisseur_stratifie" in doc.thermique)||Math.abs(doc.carte_mm2-900)>1e-6)throw new Error("le bloc thermique et la surface de la carte partent aussi");
     // le serveur répond ; le DRC le reprend tant que la carte n'a pas bougé
     let envoye=null;
     global.fetch=async(u,o)=>{envoye=[u,JSON.parse(o.body)];return {ok:true,status:200,json:async()=>({composants:[{ref:"LED1",puissance_w:1,surface_mm2:plan,dT:55,r_th:55,r_etalement:15,r_sortie:40}],modele:"Estimation"})};};
@@ -27243,6 +27263,7 @@ TA("échauffement estimé : cuivre relié mesuré, serveur, DRC tant que la cart
     if(runDrc().some(x=>/échauffement estimé/.test(x.msg)))throw new Error("sous la limite : rien");
     S.rule.dTMax=40;touch();
     if(runDrc().some(x=>/échauffement estimé/.test(x.msg)))throw new Error("la carte a bougé : l'estimation ne vaut plus");
+    if(!runDrc().some(x=>x.info&&/l'estimation date d'avant la dernière retouche/.test(x.msg)))throw new Error("périmée : le DRC le dit");
     // la commande de pilotage rend le tableau
     const cmds={}, ancien=global.Pilote;
     global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};

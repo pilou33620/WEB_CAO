@@ -1522,10 +1522,27 @@ def cas_echauffement_composant_sens():
     assert 30 < d0 < 90, d0
 
 
+def cas_echauffement_composant_carte_finie():
+    """L'ilot couvre la carte : la chaleur ne sort que par ses deux faces, dT >= P / (2 h A_carte)."""
+    carte = math.pi * 13 ** 2                                  # le disque de 26 mm de LED_UV
+    r = ds.echauffement_composants({"thermique": {"epaisseur_stratifie": 1.6, "h_surface": 12}, "carte_mm2": carte,
+                                    "composants": [{"ref": "LED1", "puissance_w": 1, "surface_mm2": carte * 0.9,
+                                                    "source_mm2": 12, "cuivre_um": 35}]})["composants"][0]
+    plancher = 1 / (2 * 12 * carte * 1e-6)
+    assert r["dT"] >= plancher, (r["dT"], plancher)
+    # une surface plus grande que la carte est bornee a la carte
+    r2 = ds.echauffement_composants({"thermique": {"epaisseur_stratifie": 1.6}, "carte_mm2": 100,
+                                     "composants": [{"ref": "X", "puissance_w": 1, "surface_mm2": 5000,
+                                                     "source_mm2": 1, "cuivre_um": 35}]})["composants"][0]
+    assert abs(r2["surface_mm2"] - 100) < 1e-6, r2
+
+
 def cas_echauffement_composant_refus():
     for doc in ({"composants": []},
                 {"composants": [{"ref": "X", "puissance_w": "beaucoup", "surface_mm2": 1, "source_mm2": 1, "cuivre_um": 35}]},
-                {"composants": [{"ref": "X", "puissance_w": 500, "surface_mm2": 1, "source_mm2": 1, "cuivre_um": 35}]}):
+                {"composants": [{"ref": "X", "puissance_w": 500, "surface_mm2": 1, "source_mm2": 1, "cuivre_um": 35}]},
+                {"thermique": {"k_stratifie": 1e-300}, "composants": [{"ref": "X", "puissance_w": 1, "surface_mm2": 1, "source_mm2": 1, "cuivre_um": 35}]},
+                {"thermique": {"k_stratifie": float("inf")}, "composants": [{"ref": "X", "puissance_w": 1, "surface_mm2": 1, "source_mm2": 1, "cuivre_um": 35}]}):
         try:
             ds.echauffement_composants(doc)
         except ErreurDC:
@@ -1535,6 +1552,7 @@ def cas_echauffement_composant_refus():
 
 essai("echauffement d'un composant : la formule posee a la main", cas_echauffement_composant_formule)
 essai("echauffement d'un composant : plus de cuivre, plus froid ; dT proportionnel a P", cas_echauffement_composant_sens)
+essai("echauffement d'un composant : la carte est finie (plancher 2hA)", cas_echauffement_composant_carte_finie)
 essai("echauffement d'un composant : les refus", cas_echauffement_composant_refus)
 
 print("\n" + "-" * 62)

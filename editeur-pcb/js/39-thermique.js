@@ -21,17 +21,23 @@
 
 var THERMIQUE={ver:-1,res:null,erreur:""};
 
-/* Le cuivre relié aux pastilles d'une empreinte : {surface, source, cuivre_um} en mm², µm. */
+/* Le cuivre relié aux pastilles d'une empreinte, couche par couche (pastilles, îlots de zone
+   touchés par un cuivre réel, pistes de ses nets). Rend {surface, source, cuivre_um, approche} :
+   la surface est la PROJECTION — la plus grande des couches, deux plans superposés ne doublent
+   pas les faces qui évacuent — et l'épaisseur, celle des couches qui en portent au moins le
+   quart. `approche` : un îlot pris en zone entière, faute de rastérisation. */
 function pcbCuivreRelie(fp,masques){
-  let surface=0, source=0, cuivre=0;
-  const vus=new Set(), nets=new Set();
+  const parCouche=new Map(), vus=new Set(), nets=new Set();
+  const ajout=(l,a)=>parCouche.set(l,(parCouche.get(l)||0)+a);
   const aire=q=>q.shape==="circ"?Math.PI*Math.pow(Math.max(q.w,q.h)/2,2):q.w*q.h;
+  let source=0, approche=false;
   for(const q of padsWorld(fp)){
     source+=aire(q);
+    const ls=padCuLayers(fp,q);
+    for(const l of ls)ajout(l,aire(q));
     if(!q.net)continue;
     nets.add(q.net);
-    for(const l of padCuLayers(fp,q)){
-      cuivre=Math.max(cuivre,cuT(l)*1000);
+    for(const l of ls){
       const z=zoneAt(l,q.x,q.y);
       if(!z||z.net!==q.net||zoneFichier(z))continue;
       // relié par un cuivre réel : liaison directe ou au moins un bras (comme computeConn)
@@ -45,31 +51,41 @@ function pcbCuivreRelie(fp,masques){
       }
       const {M,n}=masques.get(k);
       if(!M){
-        /* pas de rastérisation (page sans canevas, banc) : la zone entière, comme
-           l'analyse des îlots retombe sur le contour — optimiste, et dit tel */
-        if(!vus.has(k+"|poly")){vus.add(k+"|poly");surface+=Math.min(Math.abs(signedArea(z.pts)),Math.abs(S.board.w*S.board.h));}
+        /* pas de rastérisation (carte trop grande pour le masque, page sans canevas) :
+           la zone entière — optimiste, et dit dans le texte rendu */
+        if(!vus.has(k+"|poly")){vus.add(k+"|poly");ajout(l,Math.abs(signedArea(z.pts)));approche=true;}
         continue;
       }
       for(const lb of maskLabels(M,q.x,q.y,Math.max(q.w,q.h)/2+classOf(q.net).clr+0.3,q.rot)){
         if(!lb||vus.has(k+"|"+lb))continue;
         vus.add(k+"|"+lb);
-        surface+=n[lb]/(M.res*M.res);
+        ajout(l,n[lb]/(M.res*M.res));
       }
     }
   }
-  for(const t of S.tracks)if(nets.has(t.net))surface+=t.w*trkLen(t);
-  return {surface:surface+source,source,cuivre_um:cuivre||35};
+  for(const t of S.tracks)if(nets.has(t.net))ajout(t.l,t.w*trkLen(t));
+  const A=Math.max(0,...parCouche.values());
+  let cuivre=0;
+  for(const [l,a] of parCouche)if(a>=A/4)cuivre+=cuT(l)*1000;
+  return {surface:A,source,cuivre_um:cuivre||35,approche};
 }
 
-/* Ce qui part au serveur : les composants qui dissipent, et le bloc thermique de la chute DC. */
+/* La surface de la carte (contour moins découpes) : l'ailette ne sort pas de la carte. */
+function pcbSurfaceCarte(){
+  return Math.max(1,Math.abs(signedArea(boardPoly()))-boardCutouts().reduce((s,D)=>s+Math.abs(signedArea(D)),0));
+}
+
+/* Ce qui part au serveur : les composants qui dissipent, la carte, et le bloc thermique de la chute DC. */
 function pcbThermiqueDocument(){
-  const masques=new Map(), composants=[];
+  const masques=new Map(), composants=[], approches=[];
   for(const fp of S.fps){
     if(!(fp.puissance>0))continue;
     const c=pcbCuivreRelie(fp,masques);
-    composants.push({ref:fp.ref,puissance_w:fp.puissance,surface_mm2:r3(c.surface),source_mm2:r3(Math.max(c.source,1e-3)),cuivre_um:r3(c.cuivre_um)});
+    if(c.approche)approches.push(fp.ref);
+    composants.push({ref:fp.ref,puissance_w:fp.puissance,surface_mm2:r3(Math.max(c.surface,1e-3)),
+                     source_mm2:r3(Math.max(c.source,1e-3)),cuivre_um:r3(c.cuivre_um)});
   }
-  return {thermique:simDCThermiquePcb(),composants};
+  return {thermique:simDCThermiquePcb(),carte_mm2:r3(pcbSurfaceCarte()),composants,approches};
 }
 
 /* L'estimation, gardée pour la révision de la carte. Lève une Error lisible en cas de refus. */
@@ -83,6 +99,8 @@ async function pcbThermiqueEstimer(){
     THERMIQUE.erreur=(d&&d.detail)||("HTTP "+rep.status);
     throw new Error("Estimation thermique refusée : "+THERMIQUE.erreur);
   }
+  if(doc.approches.length)
+    d.modele+=" Approché sur "+doc.approches.join(", ")+" : sans rastérisation, la zone entière est prise pour l'îlot (optimiste).";
   Object.assign(THERMIQUE,{ver,res:d,erreur:""});
   return d;
 }
@@ -102,7 +120,12 @@ function thermiqueTexte(d){
 /* Le DRC (runDrc) : ce qui dépasse la limite, tant que la carte n'a pas bougé. */
 function thermiqueDrc(out){
   const d=thermiqueCourant(), lim=S.rule.dTMax>0?S.rule.dTMax:40;
-  if(!d)return;
+  if(!d){
+    // faite sur une autre révision : elle ne vaut plus, le dire plutôt que se taire
+    if(THERMIQUE.res&&S.fps.some(f=>f.puissance>0))
+      out.push({info:true,x:S.board.x,y:S.board.y,l:0,msg:"Échauffement : l'estimation date d'avant la dernière retouche — relancez-la (propriétés d'un composant qui dissipe, ou cao_thermique)"});
+    return;
+  }
   for(const c of d.composants){
     if(!(c.dT>lim))continue;
     const fp=S.fps.find(f=>f.ref===c.ref);

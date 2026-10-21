@@ -2642,13 +2642,14 @@ function pcbClipContent(){
   const vias=S.vias.filter(v=>S.sel.vias.has(v)||gc.vias.has(v));
   const zones=S.zones.filter(z=>S.sel.zones.has(z));
   const cuts=S.cuts.filter(c=>S.sel.cuts.has(c));
+  const interdits=selInterdits();
   const drawings=selDrawingsPcb();
   const holes=selHolesPcb();
   let x=1e9,y=1e9;
   for(const f of fps){x=Math.min(x,f.x);y=Math.min(y,f.y);}
   for(const t of tracks){x=Math.min(x,t.x1,t.x2);y=Math.min(y,t.y1,t.y2);}
   for(const v of vias){x=Math.min(x,v.x);y=Math.min(y,v.y);}
-  for(const z of zones.concat(cuts))
+  for(const z of zones.concat(cuts,interdits))
     for(const q of z.pts){x=Math.min(x,q.x);y=Math.min(y,q.y);}
   for(const d of drawings){x=Math.min(x,d.x1,d.x2);y=Math.min(y,d.y1,d.y2);}
   for(const h of holes){x=Math.min(x,h.x);y=Math.min(y,h.y);}
@@ -2678,7 +2679,7 @@ function pcbClipContent(){
     // les groupes copiés entiers, en rangs : ils renaissent au collage
     groupes:gc.gs.map(g=>({nom:g.nom,fps:g.fps.map(id=>fi.get(id)),
                            vias:g.vias.map(id=>vi.get(id)).filter(i=>i!=null)})),
-    zones:zones.map(poly), cuts:cuts.map(poly),
+    zones:zones.map(poly), cuts:cuts.map(poly), interdits:interdits.map(poly),
     holes:holes.map(h=>({d:h.d,w:h.w,rot:h.rot,x:r3(h.x-x),y:r3(h.y-y),locked:h.locked})),
     drawings:drawings.map(d=>({
       layer:d.layer,
@@ -2737,7 +2738,7 @@ function pasteClipPcb(){
   if(!c||typeof c!=="object"){hint("Presse-papier vide : copiez d'abord une sélection (Ctrl+C).");return;}
   const arr=v=>Array.isArray(v)?v:[];
   if(!arr(c.fps).length&&!arr(c.tracks).length&&!arr(c.vias).length&&
-     !arr(c.zones).length&&!arr(c.cuts).length&&!arr(c.drawings).length&&!arr(c.holes).length){hint("Presse-papier vide.");return;}
+     !arr(c.zones).length&&!arr(c.cuts).length&&!arr(c.drawings).length&&!arr(c.holes).length&&!arr(c.interdits).length){hint("Presse-papier vide.");return;}
   const bx=snapX(S.mouse.x), by=snapY(S.mouse.y);
   push();
   clearSel();
@@ -2787,6 +2788,14 @@ function pasteClipPcb(){
     ct.id=S.nextId++;
     ct.pts=ct.pts.map(q=>({x:r3(q.x+bx),y:r3(q.y+by)}));
     S.cuts.push(ct);S.sel.cuts.add(ct);
+  }
+  for(const src of arr(c.interdits)){              // zones interdites (38-interdits.js)
+    const z=normInterdit(src,interditsListe().length);
+    if(!z){dropped++;continue;}
+    z.id=S.nextId++;
+    z.pts=z.pts.map(q=>({x:r3(q.x+bx),y:r3(q.y+by)}));
+    if(!Array.isArray(S.interdits))S.interdits=[];
+    S.interdits.push(z);if(!S.sel.interdits)S.sel.interdits=new Set();S.sel.interdits.add(z);
   }
   for(const src of arr(c.holes)){
     const h=normHole(src,0);
@@ -4771,6 +4780,10 @@ cv.addEventListener("pointerup",e=>{
         if(layerAlpha(ct.l)<=0||ct.pts.length<2)continue;
         const b=polyBBox(ct.pts);
         if(b.x1>=x1&&b.x2<=x2&&b.y1>=y1&&b.y2<=y2)S.sel.cuts.add(ct);
+      }
+      for(const z of interditsListe()){             // zones interdites (38-interdits.js)
+        const b=polyBBox(z.pts);
+        if(b.x1>=x1&&b.x2<=x2&&b.y1>=y1&&b.y2<=y2){if(!S.sel.interdits)S.sel.interdits=new Set();S.sel.interdits.add(z);}
       }
       if(S.drawings){
         for(const d of S.drawings){

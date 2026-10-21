@@ -688,31 +688,39 @@ function zoneLanieres(l){
     const r=v.d/2+clrK(z.net,v.net,"cu","via");
     ajouter({fait:()=>cercle(v.x,v.y,r,0,2*Math.PI),d:(x,y)=>Math.hypot(x-v.x,y-v.y)-r,net:v.net},v.x-r,v.y-r,v.x+r,v.y+r);
   }
-  for(const t of S.tracks){
-    if(t.l!==l)continue;
-    if(arcOf(t)){
-      /* un arc : son bord, de part et d'autre de l'axe, échantillonné le long de lui (trkAt) */
+  /* les pistes, par TRONÇONS (2 mm au plus ; un arc : 1 mm ou 15° au plus) : l'enveloppe d'une
+     paire reste locale — celle de deux arcs entiers couvrait tout le creux d'un virage, du cuivre
+     sain — et une longue diagonale ne s'apparie qu'à ses voisines. Chaque tronçon regarde la
+     zone sous son milieu : une piste qui sort d'un plan partiel y est jugée là où elle y est. */
+  for(const t0 of S.tracks){
+    if(t0.l!==l)continue;
+    const A0=arcOf(t0), len=trkLen(t0);
+    const n=A0?Math.max(1,Math.ceil(Math.max(len/1,Math.abs(t0.ca)/(Math.PI/12)))):Math.max(1,Math.ceil(len/2));
+    for(let k=0;k<n;k++){
+      const p1=trkAt(t0,k/n), p2=trkAt(t0,(k+1)/n);
+      const t=A0?{l:t0.l,net:t0.net,w:t0.w,x1:p1.x,y1:p1.y,x2:p2.x,y2:p2.y,ca:t0.ca/n}:{l:t0.l,net:t0.net,w:t0.w,x1:p1.x,y1:p1.y,x2:p2.x,y2:p2.y};
       const m=trkMid(t), z=zoneAt(l,m.x,m.y);
       if(!z||zoneFichier(z)||(t.net&&t.net===z.net))continue;
-      const r=t.w/2+clrK(z.net,t.net,"cu","trk"), b=trkBBox(t), A=arcOf(t);
-      ajouter({piste:true,net:t.net,d:(x,y)=>trkDist(x,y,t)-r,
-               fait:()=>{const n=Math.max(4,Math.ceil(trkLen(t)/0.1)),o=[];
-                 for(let k=0;k<=n;k++){const p=trkAt(t,k/n), a=Math.atan2(p.y-A.cy,p.x-A.cx);
-                   o.push({x:p.x+r*Math.cos(a),y:p.y+r*Math.sin(a)},{x:p.x-r*Math.cos(a),y:p.y-r*Math.sin(a)});}
-                 return o.concat(cercle(t.x1,t.y1,r,0,2*Math.PI),cercle(t.x2,t.y2,r,0,2*Math.PI));}},
-              b.x1-r,b.y1-r,b.x2+r,b.y2+r);
-      continue;
+      const r=t.w/2+clrK(z.net,t.net,"cu","trk"), A=arcOf(t);
+      if(A){
+        const b=trkBBox(t);
+        ajouter({piste:true,net:t.net,d:(x,y)=>trkDist(x,y,t)-r,
+                 fait:()=>{const m2=Math.max(2,Math.ceil(trkLen(t)/0.1)),o=[];
+                   for(let j=0;j<=m2;j++){const p=trkAt(t,j/m2), a=Math.atan2(p.y-A.cy,p.x-A.cx);
+                     o.push({x:p.x+r*Math.cos(a),y:p.y+r*Math.sin(a)},{x:p.x-r*Math.cos(a),y:p.y-r*Math.sin(a)});}
+                   return o.concat(cercle(t.x1,t.y1,r,0,2*Math.PI),cercle(t.x2,t.y2,r,0,2*Math.PI));}},
+                b.x1-r,b.y1-r,b.x2+r,b.y2+r);
+        continue;
+      }
+      const a=Math.atan2(t.y2-t.y1,t.x2-t.x1), nx=-Math.sin(a)*r, ny=Math.cos(a)*r;
+      ajouter({piste:true,net:t.net,d:(x,y)=>segDist(x,y,t.x1,t.y1,t.x2,t.y2)-r,
+               // le bord de la gélule : un flanc, le bout arrondi, l'autre flanc, l'autre bout
+               fait:()=>ligne({x:t.x1+nx,y:t.y1+ny},{x:t.x2+nx,y:t.y2+ny}).concat(
+                 cercle(t.x2,t.y2,r,a+Math.PI/2,a-Math.PI/2),
+                 ligne({x:t.x2-nx,y:t.y2-ny},{x:t.x1-nx,y:t.y1-ny}),
+                 cercle(t.x1,t.y1,r,a-Math.PI/2,a-3*Math.PI/2))},
+              Math.min(t.x1,t.x2)-r,Math.min(t.y1,t.y2)-r,Math.max(t.x1,t.x2)+r,Math.max(t.y1,t.y2)+r);
     }
-    const m=trkMid(t), z=zoneAt(l,m.x,m.y);
-    if(!z||zoneFichier(z)||(t.net&&t.net===z.net))continue;
-    const r=t.w/2+clrK(z.net,t.net,"cu","trk"), a=Math.atan2(t.y2-t.y1,t.x2-t.x1), nx=-Math.sin(a)*r, ny=Math.cos(a)*r;
-    ajouter({piste:true,net:t.net,d:(x,y)=>segDist(x,y,t.x1,t.y1,t.x2,t.y2)-r,
-             // le bord de la gélule : un flanc, le bout arrondi, l'autre flanc, l'autre bout
-             fait:()=>ligne({x:t.x1+nx,y:t.y1+ny},{x:t.x2+nx,y:t.y2+ny}).concat(
-               cercle(t.x2,t.y2,r,a+Math.PI/2,a-Math.PI/2),
-               ligne({x:t.x2-nx,y:t.y2-ny},{x:t.x1-nx,y:t.y1-ny}),
-               cercle(t.x1,t.y1,r,a-Math.PI/2,a-3*Math.PI/2))},
-            Math.min(t.x1,t.x2)-r,Math.min(t.y1,t.y2)-r,Math.max(t.x1,t.x2)+r,Math.max(t.y1,t.y2)+r);
   }
   /* les paires proches, par cases de 2 mm : une piste longue rendait inutile un balayage en x */
   const G=new Map(), PAS=2;
