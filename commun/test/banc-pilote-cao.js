@@ -211,6 +211,18 @@ async function refuse(promesse, motif) {
     egal(vues, { schema: ["cao_composants_ecrire"], pcb: ecrire, "visionneuse-ipc": ["cao_sim_ecrire"], "gestion-lib": [] });
   });
 
+  await T("Pilote.aide : commandes de la page, description et arguments tirés du MCP (pilote-aide.json)", async () => {
+    let lu = null;
+    const { ctx, declare } = page("pcb", { fetch: async u => { lu = u; return { json: async () => JSON.parse(fs.readFileSync(path.join(__dirname, "..", "pilote-aide.json"), "utf8")) }; } });
+    ctx.Pilote.commandes = declare.commandes;          // pilote.js les range là
+    const liste = await ctx.Pilote.aide();
+    egal(lu, "../commun/pilote-aide.json", "fichier lu");
+    egal(/- cao_contour_ecrire : Contour de la carte/.test(liste) && /Par l'API seulement \(MCP\) : .*cao_projets/.test(liste), true, "liste : " + liste.slice(0, 300));
+    const un = await ctx.Pilote.aide("cao_schema_dessiner");
+    egal(/pas déclarée dans cette page/.test(un) && /"operations"/.test(un), true, "schéma au PCB : " + un.slice(0, 200));
+    egal(/pas une commande connue/.test(await ctx.Pilote.aide("cao_inventee")), true, "inconnue");
+  });
+
   console.log("\n" + ok + " essais réussis, " + ko + " en échec.");
   process.exit(ko ? 1 : 0);
 })();
