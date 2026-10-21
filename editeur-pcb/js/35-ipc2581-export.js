@@ -445,12 +445,8 @@ function ipcRemplir(z){
       }
       /* liaison thermique : l'anneau de l'isolement de la zone, et ses bras */
       prendre(moins,ipcPastilleDegagee(qc,classOf(zn).clr));
-      const tw=(q.thermalWidth>0)?q.thermalWidth:S.rule.thermal;
-      const nb=(q.thermalSpokes>0)?q.thermalSpokes:4;
-      const a0=q.rot+((q.thermalAngle||0)*Math.PI/180);
-      const len=Math.max(q.w,q.h)/2+classOf(q.net).clr+0.2;
-      for(let k=0;k<nb;k++){
-        const a=a0+(Math.PI*2/nb)*k, c=Math.cos(a), s=Math.sin(a), nx=-s*tw/2, ny=c*tw/2;
+      for(const {a,len,tw} of padBras(q,i).ok){       // ceux du Gerber
+        const c=Math.cos(a), s=Math.sin(a), nx=-s*tw/2, ny=c*tw/2;
         prendre(plus,[{x:q.x+nx,y:q.y+ny},{x:q.x+len*c+nx,y:q.y+len*s+ny},
                       {x:q.x+len*c-nx,y:q.y+len*s-ny},{x:q.x-nx,y:q.y-ny}]);
       }

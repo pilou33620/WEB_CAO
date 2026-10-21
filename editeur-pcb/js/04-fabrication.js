@@ -413,16 +413,8 @@ function gerberCopper(i){
           gPercage(body,A,q,clrK(z,q.net,"cu","th"));
       }
     body.push("%LPD*%");
-    for(const q of thermals){          // liaisons thermiques (personnalisées ou 4 bras par défaut)
-      const tw=(q.thermalWidth>0)?q.thermalWidth:S.rule.thermal;
-      const spokes=(q.thermalSpokes>0)?q.thermalSpokes:4;
-      const baseAngle=q.rot+((q.thermalAngle||0)*Math.PI/180);
-      const len=Math.max(q.w,q.h)/2+classOf(q.net).clr+0.2;
-      for(let k=0;k<spokes;k++){
-        const ang=baseAngle+(Math.PI*2/spokes)*k;
-        const ca=Math.cos(ang), sa=Math.sin(ang);
-        gSeg(body,A,q.x,q.y,q.x+len*ca,q.y+len*sa,tw);
-      }
+    for(const q of thermals){          // liaisons thermiques : les bras qui ne touchent aucun autre net (padBras)
+      for(const b of padBras(q,i).ok)gSeg(body,A,b.ax.x1,b.ax.y1,b.ax.x2,b.ax.y2,b.tw);
       if(q.drill>0){
         body.push("%LPC*%");
         gPercage(body,A,q,0);

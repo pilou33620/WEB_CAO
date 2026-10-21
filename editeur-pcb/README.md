@@ -818,6 +818,14 @@ ou « directe », colonne de droite du tableau des broches), et le composant
 régler la largeur et le nombre de ses bras. Le même choix vaut à l'écran, à
 l'analyse des îlots, au Gerber, à l'IPC-2581 et en simulation.
 
+**Un bras ne touche jamais un autre net** (`padBras`) : un bras qui passerait à
+moins de l'isolement d'une pastille, d'une piste ou d'une via d'un autre net,
+d'un trou ou du bord n'est tracé nulle part. Avant, il était peint par-dessus
+l'isolement : sur la carte LED_UV, un bras du plot thermique GND rejoignait
+l'anode à 0,5 mm, DRC à zéro. Comme KiCad, le DRC le dit quand une pastille
+garde moins de deux bras (remarque), ou aucun (erreur : elle n'est plus reliée
+à sa zone).
+
 **Zone au cuivre du fichier** (`fichier`, `trous`, `sig`) : une zone dont le
 document porte le cuivre déjà calculé est remplie avec ce cuivre — ses trous, liaisons
 thermiques comprises — à l'écran, à l'analyse, au Gerber et en simulation.

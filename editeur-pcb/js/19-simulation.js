@@ -4802,12 +4802,8 @@ const SIM_PCB={
           if(padLiaison(q,z.l,z)==="directe")continue;      // la zone la recouvre, sans bras
           trous.push(rect(q,clr));
           liaisons.push({c:nom(z.l),n:zn,o:rect(q,0),t:[]});
-          const tw=(q.thermalWidth>0)?q.thermalWidth:S.rule.thermal;
-          const bras=(q.thermalSpokes>0)?q.thermalSpokes:4;
-          const a0=(q.rot||0)+(q.thermalAngle||0)*Math.PI/180;
-          const L=Math.max(q.w,q.h)/2+clr+0.2;
-          for(let k=0;k<bras;k++){
-            const a=a0+2*Math.PI*k/bras, c=Math.cos(a), sn=Math.sin(a);
+          for(const {a,len:L,tw} of padBras(q,z.l).ok){   // ceux du Gerber
+            const c=Math.cos(a), sn=Math.sin(a);
             liaisons.push({c:nom(z.l),n:zn,t:[],
               o:[[0,-tw/2],[L,-tw/2],[L,tw/2],[0,tw/2]]
                 .flatMap(([u,v])=>[q.x+u*c-v*sn,q.y+u*sn+v*c])});

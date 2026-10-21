@@ -245,18 +245,10 @@ function zoneCanvas(i){
   c.globalCompositeOperation="source-over";
   c.fillStyle=col;
   for(const q of thermals){
-    const tw=(q.thermalWidth>0)?q.thermalWidth:S.rule.thermal;
-    const spokes=(q.thermalSpokes>0)?q.thermalSpokes:4;
-    const baseAngle=((q.thermalAngle||0)*Math.PI/180);
-    const len=Math.max(q.w,q.h)/2+classOf(q.net).clr+0.2;
-    c.save();c.translate(q.x,q.y);c.rotate(q.rot+baseAngle);
-    for(let k=0;k<spokes;k++){
-      const ang=(Math.PI*2/spokes)*k;
-      c.save();c.rotate(ang);
-      c.fillRect(0,-tw/2,len,tw);
-      c.restore();
+    // padBras : un bras qui toucherait le cuivre d'un autre net n'est pas tracé
+    for(const b of padBras(q,i).ok){
+      c.save();c.translate(q.x,q.y);c.rotate(b.a);c.fillRect(0,-b.tw/2,b.len,b.tw);c.restore();
     }
-    c.restore();
     if(q.drill>0){
       c.save();c.globalCompositeOperation="destination-out";
       c.beginPath();cheminPercage(c,q);c.fill();c.restore();

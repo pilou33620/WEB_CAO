@@ -140,13 +140,10 @@ function zoneMask(l,net){
     }
   c.globalCompositeOperation="source-over";
   c.fillStyle="#fff";
-  const tw=S.rule.thermal;
   for(const q of thermals){
-    const len=Math.max(q.w,q.h)/2+clr+0.2;
-    c.save();c.translate(q.x,q.y);c.rotate(q.rot);
-    c.fillRect(-len,-tw/2,len*2,tw);
-    c.fillRect(-tw/2,-len,tw,len*2);
-    c.restore();
+    for(const b of padBras(q,l).ok){                 // les bras que le Gerber trace, pas plus
+      c.save();c.translate(q.x,q.y);c.rotate(b.a);c.fillRect(0,-b.tw/2,b.len,b.tw);c.restore();
+    }
     if(q.drill>0){
       c.save();c.globalCompositeOperation="destination-out";
       c.beginPath();cheminPercage(c,q);c.fill();c.restore();
@@ -541,6 +538,65 @@ function segPadDist(t,q){
   }
   return best-t.w/2;
 }
+/* LES BRAS D'UNE LIAISON THERMIQUE, sur la couche l. Un bras part du centre
+   de la pastille et traverse l'isolement de la zone ; tracé tel quel, il
+   passait aussi par-dessus l'isolement d'un AUTRE net — le plot thermique
+   d'une LED rejoignait l'anode, à 0,5 mm, sans que rien ne le dise. Un bras
+   qui passerait à moins de l'isolement du cuivre d'un autre net (pastille,
+   piste, via), d'un trou ou du bord n'est donc pas tracé : `ok` les bras
+   gardés, `bras` tous, chacun avec ce qui le gêne. Écran, îlots, Gerber,
+   IPC-2581 et simulation tracent `ok` ; le DRC dit ce qui manque. Mémoïsé
+   par révision de la carte. */
+const BRAS_MEMO={ver:-1,m:new Map()};
+function padBras(q,l){
+  if(BRAS_MEMO.ver!==S.ver){BRAS_MEMO.ver=S.ver;BRAS_MEMO.m.clear();}
+  const cle=l+"|"+(q.fp?q.fp.id:"")+"|"+q.n+"|"+q.x+"|"+q.y;
+  const vu=BRAS_MEMO.m.get(cle);
+  if(vu)return vu;
+  const tw=(q.thermalWidth>0)?q.thermalWidth:S.rule.thermal;
+  const n=(q.thermalSpokes>0)?q.thermalSpokes:4;
+  const a0=(q.rot||0)+((q.thermalAngle||0)*Math.PI/180);
+  const len=Math.max(q.w,q.h)/2+classOf(q.net).clr+0.2;
+  const loin=len+tw+maxClr()+1;                 // au-delà, rien ne peut gêner
+  const pres=(x1,y1,x2,y2)=>Math.max(x1,x2)>=q.x-loin&&Math.min(x1,x2)<=q.x+loin&&
+                           Math.max(y1,y2)>=q.y-loin&&Math.min(y1,y2)<=q.y+loin;
+  const bras=[];
+  for(let k=0;k<n;k++){
+    const a=a0+2*Math.PI*k/n;
+    const ax={x1:q.x,y1:q.y,x2:q.x+len*Math.cos(a),y2:q.y+len*Math.sin(a)};
+    let gene=null;
+    for(const f of S.fps){
+      if(gene)break;
+      for(const p of padsWorld(f)){
+        if(p.net===q.net&&p.net||!pres(p.x-p.w-p.h,p.y-p.w-p.h,p.x+p.w+p.h,p.y+p.w+p.h)||!padLayers(f,p).includes(l))continue;
+        const pc=padSurCouche(p,l);
+        if(pc&&segPadDist(Object.assign({},ax,{w:tw}),pc)<clrK(q.net,p.net,"cu",p.drill>0?"th":"smd")-1e-6){
+          gene="la pastille "+f.ref+"."+p.n+(p.net?" ("+p.net+")":"");break;
+        }
+      }
+    }
+    if(!gene)for(const t of S.tracks){
+      if(t.l!==l||t.net===q.net)continue;
+      const b=trkBBox(t);
+      if(!pres(b.x1,b.y1,b.x2,b.y2))continue;
+      if(distAxePiste(ax,t)-t.w/2-tw/2<clrK(q.net,t.net,"cu","trk")-1e-6){gene="une piste "+(t.net||"sans net");break;}
+    }
+    if(!gene)for(const v of S.vias){
+      if(l<v.a||l>v.b||v.net===q.net||!pres(v.x,v.y,v.x,v.y))continue;
+      if(segDist(v.x,v.y,ax.x1,ax.y1,ax.x2,ax.y2)-v.d/2-tw/2<clrK(q.net,v.net,"cu","via")-1e-6){gene="une via "+(v.net||"sans net");break;}
+    }
+    if(!gene)for(const h of trousMonde()){
+      const ah=axePercage(h);
+      if(!pres(ah.x1,ah.y1,ah.x2,ah.y2))continue;
+      if(segSegDist(ax,ah)-ah.d/2-tw/2<classOf(q.net).clr-1e-6){gene="un trou non métallisé";break;}
+    }
+    if(!gene&&!axeDansCarte(ax,S.rule.edge+tw/2))gene="le bord de carte";
+    bras.push({a,len,tw,ax,gene});
+  }
+  const r={tw,len,bras,ok:bras.filter(b=>!b.gene)};
+  BRAS_MEMO.m.set(cle,r);
+  return r;
+}
 /* Écart cuivre à cuivre entre deux pastilles : sommets de chacune contre
    l'autre, et bords qui se croisent. Mesurer du centre de l'une, moins son
    demi petit côté, rendait 0,85 mm pour deux pastilles 2×0,5 bout à bout
@@ -884,6 +940,26 @@ function runDrc(){
       msg:"Angle aigu de "+fmt(a.deg,0)+"° sur "+(a.net||"?")+
           " : le fond du V piège le bain de gravure, reprenez le coude"});
 
+  /* Liaisons thermiques : un bras qui toucherait le cuivre d'un autre net n'est
+     pas tracé (padBras). Comme KiCad, le dire quand il en reste moins de deux :
+     sur une barrette au pas de 2,54, deux bras sur quatre tombent toujours entre
+     les pastilles, ce n'est pas un défaut. Aucun : la pastille n'est plus reliée. */
+  if(S.zones.length)for(let l=0;l<S.cu;l++)
+    for(const fp of S.fps)
+      for(const q of padsWorld(fp)){
+        if(!q.net||!padLayers(fp,q).includes(l)||!padSurCouche(q,l))continue;
+        const z=zoneAt(l,q.x,q.y);
+        if(!z||z.net!==q.net||zoneFichier(z)||padLiaison(q,l,z)!=="thermique")continue;
+        const B=padBras(q,l), retires=B.bras.filter(b=>b.gene);
+        if(!retires.length||B.ok.length>=Math.min(2,B.bras.length))continue;
+        const qui=[...new Set(retires.map(b=>b.gene))].join(", ");
+        out.push(B.ok.length?{info:true,x:q.x,y:q.y,l,
+            msg:"Liaison thermique "+fp.ref+"."+q.n+" ("+q.net+") : "+retires.length+" bras sur "+B.bras.length+
+                " non tracé(s), trop près de "+qui}
+          :{x:q.x,y:q.y,l,
+            msg:"Liaison thermique "+fp.ref+"."+q.n+" ("+q.net+") : aucun bras possible ("+qui+
+                ") — la pastille n'est pas reliée à sa zone, passez-la en liaison directe ou dégagez-la"});
+      }
   for(const z of S.zones){
     const b=polyBBox(z.pts);
     if(!z.net)out.push({x:(b.x1+b.x2)/2,y:(b.y1+b.y2)/2,l:z.l,

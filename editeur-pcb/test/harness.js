@@ -176,7 +176,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* formes de pastille, rotation, origine de l'empreinte */
   "PAD_SHAPES","padShape","padRadius","padRot","padHalf","padDist","padOpening",
   "fpLocalBox",
-  "apSet","apForPad","netAtPoint","padCuLayers","pnsItemsPad","aplatClick","closeAplat","selDecoupes","deleteSel","hitTest","selectHit","brocheNum","parseNetlist","applyNetlist","padSurCouche","padLiaison","maskOpenings","pasteOpenings","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","UNDO_BUDGET","rotChoix","padNom",
+  "apSet","apForPad","netAtPoint","padCuLayers","pnsItemsPad","aplatClick","closeAplat","selDecoupes","deleteSel","hitTest","selectHit","brocheNum","parseNetlist","applyNetlist","padSurCouche","padLiaison","padBras","maskOpenings","pasteOpenings","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","UNDO_BUDGET","rotChoix","padNom",
   /* repère de broche 1 */
   "MARK_D","PASSIF_REF","fpMarkWanted","fpMarkAuto","fpMark","fpSetMark",
   "fpMoveMark","fpSetMarkD","fpXform",
@@ -3545,6 +3545,36 @@ T("liaison directe : par zone (CMS seulement, ou toutes) et par pastille, au Ger
     // les panneaux s'ouvrent sur les deux réglages
     clearSel();S.sel.fps.add(U2.id);buildProps();
     clearSel();S.sel.zones.add(S.zones[0]);buildProps();clearSel();
+  }finally{suiviFin(reg);loadDoc(JSON.parse(saved),true);}
+});
+T("bras thermiques : celui qui toucherait l'anode voisine n'est tracé nulle part, et le DRC le dit",()=>{
+  const saved=serialize(), reg=suiviDecor();
+  try{
+    // la LED de l'essai LED_UV : plot thermique GND de 3 mm, anode à 0,5 mm en dessous
+    const L=mkFp("LED1","","",2);L.x=20;L.y=20;S.fps.push(L);
+    pcbAppliquerDefEmpreinte(L,"ESSAI-LED",{style:"chip",pins:2,
+      pads:[{n:1,x:0,y:2.5,w:1,h:1,shape:"rect",drill:0},{n:2,x:0,y:0,w:3,h:3,shape:"rect",drill:0}]});
+    L.nets={1:"LED_A",2:"GND"};
+    S.zones=[{id:S.nextId++,l:0,net:"GND",pts:boardZonePts()}];touch();
+    const plot=()=>padsWorld(L).find(q=>q.n===2);
+    const B=padBras(plot(),0);
+    if(B.bras.length!==4||B.ok.length!==3)throw new Error("3 bras sur 4 attendus : "+B.ok.length);
+    const vers=B.bras.find(b=>b.gene);
+    if(!(Math.sin(vers.a)>0.9)||!/LED1\.1/.test(vers.gene))throw new Error("le bras retiré est celui vers l'anode : "+vers.gene);
+    const traits=()=>(gerberCopper(0).match(/D01\*/g)||[]).length;
+    const pres=traits();
+    if(runDrc().some(e=>/Liaison thermique LED1\.2/.test(e.msg)))throw new Error("trois bras sur quatre : rien à dire");
+    // l'anode loin : les quatre bras reviennent, au Gerber aussi
+    L.pads[0].y=6;touch();
+    if(padBras(plot(),0).ok.length!==4||traits()!==pres+1)throw new Error("anode éloignée : "+traits()+" / "+pres);
+    // deux bras, dont un vers l'anode revenue : il n'en reste qu'un, remarque du DRC
+    L.pads[0].y=2.5;L.pads[1].thermalSpokes=2;L.pads[1].thermalAngle=90;touch();
+    const d=runDrc().find(e=>/Liaison thermique LED1\.2/.test(e.msg));
+    if(!d||!d.info||!/1 bras sur 2 non tracé.*LED1\.1/.test(d.msg))throw new Error("remarque du DRC : "+(d&&d.msg));
+    // un seul, vers l'anode : plus aucune liaison, erreur du DRC
+    L.pads[1].thermalSpokes=1;touch();
+    const e=runDrc().find(x=>/Liaison thermique LED1\.2/.test(x.msg));
+    if(!e||e.info||!/aucun bras possible/.test(e.msg))throw new Error("aucun bras : "+(e&&e.msg));
   }finally{suiviFin(reg);loadDoc(JSON.parse(saved),true);}
 });
 T("Gerber : masque, pâte, sérigraphie, contour",()=>{
@@ -19157,6 +19187,7 @@ T("Vérification de la carte : la zone part rognée au bord, ses pastilles en li
   const bord=S.board, regle=S.rule.edge;
   S.board={x:0,y:0,w:40,h:30,pts:null};S.rule.edge=0.4;
   fp.nets[2]="GND";
+  S.tracks=S.tracks.filter(t=>t.net!=="CLK");          // elle traversait la pastille GND : ses bras seraient retirés
   S.zones.push({id:S.nextId++,l:0,net:"GND",
                 pts:[{x:-10,y:-10},{x:60,y:-10},{x:60,y:60},{x:-10,y:60}]});
   touch();
@@ -19182,8 +19213,10 @@ T("Vérification de la carte : la zone part rognée au bord, ses pastilles en li
     for(const [quoi,x,y,attendu] of cas)
       if(net(x,y)!==attendu)throw new Error(quoi+" ("+x+", "+y+") : « "+net(x,y)+
                                             " », attendu « "+attendu+" »");
-    if(plans.filter(p=>p.n==="GND").length!==1+1+4)
-      throw new Error("la zone, la pastille et ses quatre bras : "+plans.length);
+    // le bras vers la pastille CLK voisine (pas de 2,54) n'est pas tracé : padBras
+    const nb=padBras(q,0).ok.length;
+    if(nb<3||plans.filter(p=>p.n==="GND").length!==1+1+nb)
+      throw new Error("la zone, la pastille et ses bras : "+plans.length+" pour "+nb+" bras");
   }finally{
     S.board=bord;S.rule.edge=regle;carteVide();
   }
