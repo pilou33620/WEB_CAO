@@ -1827,7 +1827,6 @@ function padClone(q){
    pastille peut l'imposer (`q.connexion`) ; sinon la zone décide
    (`z.connexion` : thermique, directe, ou cms-directe = directe pour les CMS,
    thermique pour les traversantes). */
-const LIAISONS_ZONE=["thermique","directe","cms-directe"];
 function padLiaison(q,l,z){
   if(q.connexion==="directe"||q.connexion==="thermique")return q.connexion;
   if(!z)z=S.zones.find(o=>o.l===l&&o.net===q.net&&zoneContient(o,q.x,q.y));

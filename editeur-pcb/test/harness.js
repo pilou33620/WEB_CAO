@@ -3503,6 +3503,10 @@ T("contour en disque : arcs G03 au Gerber, zone pleine carte sans débordement",
         throw new Error("arc faux : centre "+c+" attendu "+C+" ; "+l);
     }
     if(Math.abs(S.board.w-26)>0.01)throw new Error("largeur du disque : "+S.board.w);
+    // un dodécagone de 10 mm : cordes à 0,34 mm du cercle, il reste en cordes (la marge de bord est mesurée dessus)
+    S.board.pts=[...Array(12).keys()].map(i=>({x:r3(20+10*Math.cos(i*Math.PI/6)),y:r3(20+10*Math.sin(i*Math.PI/6))}));boardChanged();
+    const o12=gerberOutline();
+    if(/G03/.test(o12)||(o12.match(/D01\*/g)||[]).length!==12)throw new Error("dodécagone : douze cordes attendues");
     // un polygone aux sommets plus fins que le micron, comme une carte écrite par un script
     S.board.pts=[...Array(120).keys()].map(i=>({x:20+12.9*Math.cos(i*Math.PI/60),y:20+12.9*Math.sin(i*Math.PI/60)}));
     boardChanged();
@@ -26991,9 +26995,13 @@ TA("canal de pilotage : cao_zones_ecrire, créer, modifier, supprimer ; liaison 
   if(!lu.split("\n").some(l=>l.startsWith("- zone "+z.id+" : "+net+" sur ")&&/liaison cms-directe/.test(l)))throw new Error("lecture zones : "+lu);
   jouer("cao_zones_ecrire",[{action:"modifier",id:z.id,liaison:"thermique",forme:"rectangle",x:2,y:2,largeur:10,hauteur:8}]);
   if(z.connexion||z.pts.length!==4||S.undo.length!==2)throw new Error("modifier : "+JSON.stringify(z.pts));
+  // la forme seule : même couche, même net, même nombre de sommets, même liaison
+  const pm=jouer("cao_zones_ecrire",[{action:"modifier",id:z.id,forme:"rectangle",x:20,y:12,largeur:10,hauteur:8}]);
+  if(S.undo.length!==3||z.pts[0].x!==20||z.pts[0].y!==12)throw new Error("déplacer seulement : "+JSON.stringify(z.pts[0]));
+  if(!pm.avant.includes("de (2, 2) à (12, 10)")||!pm.apres.includes("de (20, 12) à (30, 20)"))throw new Error("emprise sur la carte : "+pm.avant+" → "+pm.apres);
   jouer("cao_zones_ecrire",[{action:"supprimer",id:z.id}]);
   if(S.zones.some(o=>o.id===z.id))throw new Error("supprimer");
-  undo();undo();undo();
+  undo();undo();undo();undo();
   if(S.zones.length!==n0)throw new Error("Ctrl+Z");
   refus("cao_zones_ecrire",[{action:"creer",couche:"Nulle",net,forme:"carte"}],/couche « Nulle » inconnue/);
   refus("cao_zones_ecrire",[{action:"creer",couche:LECTURE_CAO.aides.nomCouchePcb(0),net:"PAS_UN_NET",forme:"carte"}],/net « PAS_UN_NET » inconnu/);

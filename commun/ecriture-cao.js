@@ -718,8 +718,13 @@ const ECRITURE_CAO = (function () {
   /* cao_zones_ecrire : créer, modifier, supprimer des zones de cuivre, dans l'ordre du lot.
      forme « carte » : la carte entière (le remplissage s'arrête à la marge de bord). */
   const LIAISONS = { thermique: "bras thermiques", directe: "directe", "cms-directe": "directe pour les CMS" };
-  const decrireZone = z => "net " + (z.net || "(aucun)") + " sur " + LECTURE_CAO.aides.nomCouchePcb(z.l) + ", " + z.pts.length +
-                           " sommets, liaison " + LIAISONS[z.connexion || "thermique"];
+  const decrireZone = z => {
+    const b = polyBBox(z.pts);
+    return "net " + (z.net || "(aucun)") + " sur " + LECTURE_CAO.aides.nomCouchePcb(z.l) + ", " + z.pts.length +
+           " sommets de (" + r3(b.x1) + ", " + r3(b.y1) + ") à (" + r3(b.x2) + ", " + r3(b.y2) + "), liaison " + LIAISONS[z.connexion || "thermique"];
+  };
+  // ce qui change vraiment une zone : la description n'y suffit pas (même emprise, autre forme)
+  const etatZone = z => JSON.stringify([z.l, z.net || "", z.pts, z.connexion || "thermique"]);
   function planZones(args, refus) {
     const zones = S.zones.map(z => Object.assign({}, z)), plan = [], nets = new Set(netTable().map(n => n.name));
     let neuf = 0;
@@ -748,7 +753,8 @@ const ECRITURE_CAO = (function () {
   }
   function verifierZones(args) {
     const refus = [], plan = planZones(args, refus);
-    return { refus, lignes: plan.filter(p => p.avant !== p.apres).map(p => ({ quoi: "zone " + p.z.id, avant: p.avant, apres: p.apres })) };
+    return { refus, lignes: plan.filter(p => p.e.action !== "modifier" || etatZone(p.z0) !== etatZone(p.z))
+                                .map(p => ({ quoi: "zone " + p.z.id, avant: p.avant, apres: p.apres })) };
   }
   function muterZones(args) {
     const plan = planZones(args, []), cree = new Map();

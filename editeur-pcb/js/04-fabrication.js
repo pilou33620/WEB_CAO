@@ -529,13 +529,38 @@ function gerberSilk(side){
    contrôle d'entrée pour contour mécanique manquant. Les deux sont maintenant
    écrits séparément, chacun avec l'attribut qui le décrit.
    ========================================================================== */
+/* Un arc n'est écrit que si ses cordes en sont déjà très proches : la flèche
+   de chacune sous 10 µm. Un polygone grossier (dodécagone de 5 mm : 0,17 mm)
+   reste en cordes, celles que le DRC et le remplissage des zones mesurent ;
+   sinon la fraise couperait plus près du cuivre que la marge de bord. */
+function gArcsFins(Q,segs){
+  for(const s of segs){
+    if(s.t!=="a")continue;
+    const tour=((s.a2-s.a1)%360+360)%360||360, tol=0.005+s.r*2e-4;
+    const sur=p=>Math.abs(Math.hypot(p.x-s.c.x,p.y-s.c.y)-s.r)<=tol;
+    for(let k=0;k<Q.length;k++){
+      const a=Q[k], b=Q[(k+1)%Q.length];
+      if(!sur(a)||!sur(b))continue;
+      const m=Math.atan2((a.y+b.y)/2-s.c.y,(a.x+b.x)/2-s.c.x)*180/Math.PI;
+      if(((m-s.a1)%360+360)%360>tour)continue;           // corde d'un autre arc du même cercle
+      const L=Math.hypot(b.x-a.x,b.y-a.y);
+      if(s.r-Math.sqrt(Math.max(0,s.r*s.r-L*L/4))>0.01)return false;
+    }
+  }
+  return true;
+}
 function edgeSegs(body,A){
   /* le contour, puis chaque découpe intérieure : le fraisage les suit tous.
      Les suites de cordes égales (coin arrondi, carte ronde) sortent en arcs,
      reconnus comme au DXF et à l'IPC-2581 (dxfSegments, Y vers le haut) :
      G03 antihoraire de a1 à a2, I/J du départ au centre, en multi-quadrant. */
-  for(const c of [boardPoly()].concat(boardCutouts()))
-    for(const s of dxfSegments(c.map(p=>({x:p.x,y:-p.y})))){
+  for(const c of [boardPoly()].concat(boardCutouts())){
+    const Q=c.map(p=>({x:p.x,y:-p.y})), segs=dxfSegments(Q);
+    if(!gArcsFins(Q,segs)){
+      for(let k=0;k<c.length;k++)gSeg(body,A,c[k].x,c[k].y,c[(k+1)%c.length].x,c[(k+1)%c.length].y,0.1);
+      continue;
+    }
+    for(const s of segs){
       if(s.t==="l"){gSeg(body,A,s.a.x,-s.a.y,s.b.x,-s.b.y,0.1);continue;}
       const rad=a=>a*Math.PI/180, pt=a=>({x:s.c.x+s.r*Math.cos(rad(a)),y:-(s.c.y+s.r*Math.sin(rad(a)))});
       const p1=pt(s.a1), p2=pt(s.a2);
@@ -545,6 +570,7 @@ function edgeSegs(body,A){
       body.push("G03"+gXY(p2.x,p2.y)+"I"+gNum(-s.r*Math.cos(rad(s.a1)))+"J"+gNum(-s.r*Math.sin(rad(s.a1)))+"D01*");
       body.push("G01*");
     }
+  }
 }
 /* Le profil de découpe. « NP » : le bord n'est pas métallisé — un contour
    plaqué existe (bords dorés, connecteur de carte) mais se commande à part. */

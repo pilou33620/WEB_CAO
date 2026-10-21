@@ -1282,7 +1282,11 @@ sur un même cercle) et les écrit en `ARC`, sur le cercle qui passe exactement
 par les sommets de part et d'autre : le contour reste fermé, et le modeleur
 reçoit un rayon au lieu de vingt facettes. Un octogone reste un octogone.
 Le Gerber du contour (`.GM1`, `.GKO`) fait la même reconnaissance et sort ces
-arcs en `G03` (multi-quadrant, `G75`), comme l'IPC-2581 en `PolyStepCurve`.
+arcs en `G03` (multi-quadrant, `G75`), comme l'IPC-2581 en `PolyStepCurve` —
+mais seulement si chaque corde est à moins de 10 µm de son arc (`gArcsFins`) :
+un polygone grossier (dodécagone de 5 mm, 0,17 mm de flèche) reste en cordes,
+celles sur lesquelles le DRC et les zones mesurent la marge de bord, sinon la
+fraise couperait plus près du cuivre que la règle.
 Le bouton **Disque** des propriétés de la carte pose un contour rond inscrit
 dans la largeur et la hauteur actuelles (`setBoardDisque`) : des cordes égales
 dont la flèche reste sous 5 µm, que ces trois sorties écrivent en cercle.
