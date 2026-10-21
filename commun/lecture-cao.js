@@ -150,7 +150,11 @@ const LECTURE_CAO = (function() {
         else if (rond) L.push("Contour : disque Ø " + mm(2 * segs[0].r) + " mm, centre (" + mm(b.x + b.w / 2) + ", " + mm(b.y + b.h / 2) + "), " + P.length + " sommets.");
         else L.push("Contour : polygone de " + P.length + " sommets : " + borner(P.map(q => "(" + mm(q.x) + ", " + mm(q.y) + ")"), 60, "sommets").join(" "));
         const D = boardCutouts();
-        if (D.length) L.push("Découpes : " + D.map((d, i) => (i + 1) + ") " + d.length + " sommets").join(" ; ") + ".");
+        if (D.length) L.push("Découpes : " + D.map((d, i) => {
+          let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+          for (const q of d) { x1 = Math.min(x1, q.x); y1 = Math.min(y1, q.y); x2 = Math.max(x2, q.x); y2 = Math.max(y2, q.y); }
+          return (i + 1) + ") " + d.length + " sommets de (" + mm(x1) + ", " + mm(y1) + ") à (" + mm(x2) + ", " + mm(y2) + ")";
+        }).join(" ; ") + ".");
         return L;
       }
     },

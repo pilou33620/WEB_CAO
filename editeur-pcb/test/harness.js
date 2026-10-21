@@ -27072,6 +27072,23 @@ TA("canal de pilotage : cao_contour_ecrire, rectangle, disque et polygone ; lect
   refus("cao_contour_ecrire",[{forme:"ovale"}],/rectangle, disque ou polygone/);
   refus("cao_contour_ecrire",[{forme:"disque",x:0,y:0,rayon:10},{forme:"disque",x:0,y:0,rayon:20}],/au plus|un seul contour/);
 });
+TA("canal de pilotage : cao_decoupes_ecrire, créer dans le contour, supprimer par numéro ; lecture « carte »",async()=>{
+  const {jouer,refus}=pilotePcbCmds();
+  loadDoc(exemple1());S.undo.length=0;delete S.board.cutouts;touch();
+  const b=S.board, cx=b.x+b.w/2, cy=b.y+b.h/2;
+  jouer("cao_decoupes_ecrire",[{action:"creer",forme:"rectangle",x:cx-2,y:cy-1,largeur:4,hauteur:2},
+                               {action:"creer",forme:"disque",x:cx+6,y:cy,rayon:1.5}]);
+  if(S.undo.length!==1||boardCutouts().length!==2)throw new Error("deux découpes en une étape");
+  const lu=[].concat(LECTURE_CAO.pcb.carte.fn({})).join("\n");
+  if(!/Découpes : 1\) 4 sommets de \(/.test(lu)||!/2\) \d+ sommets/.test(lu))throw new Error("lecture : "+lu);
+  jouer("cao_decoupes_ecrire",[{action:"supprimer",numero:1}]);
+  if(boardCutouts().length!==1||boardCutouts()[0].length===4)throw new Error("la première supprimée, le disque reste");
+  undo();undo();
+  if(boardCutouts().length)throw new Error("Ctrl+Z");
+  refus("cao_decoupes_ecrire",[{action:"creer",forme:"rectangle",x:b.x-5,y:cy,largeur:10,hauteur:2}],/sort du contour/);
+  refus("cao_decoupes_ecrire",[{action:"supprimer",numero:3}],/« numero »/);
+  refus("cao_decoupes_ecrire",[{action:"percer"}],/creer ou supprimer/);
+});
 TA("canal de pilotage : cao_zones_ecrire, créer, modifier, supprimer ; liaison directe ; lecture « zones »",async()=>{
   const {jouer,refus}=pilotePcbCmds();
   loadDoc(exemple1());S.undo.length=0;

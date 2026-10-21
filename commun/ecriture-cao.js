@@ -715,6 +715,43 @@ const ECRITURE_CAO = (function () {
   }
   const CONTOUR = lot({ titre: "Contour de carte", max: 1, verifier: verifierContour, muter: muterContour, rafraichir: rafraichirRegles, drc: true });
 
+  /* cao_decoupes_ecrire : les fenêtres fraisées dans la carte (S.board.cutouts), dans l'ordre :
+     creer {forme…} (dans le contour, comme au tracé : closeDecoupe), supprimer {numero} (1 = la
+     première, cao_pcb_lire carte). Les numéros sont ceux d'avant le lot. */
+  const decrireDecoupe = P => { const b = polyBBox(P); return P.length + " sommets de (" + r3(b.x1) + ", " + r3(b.y1) + ") à (" + r3(b.x2) + ", " + r3(b.y2) + ")"; };
+  function planDecoupes(args, refus) {
+    const avant = boardCutouts(), suppr = new Set(), neuves = [];
+    args.lot.forEach((e, k) => {
+      const quoi = "découpe, élément " + (k + 1);
+      if (!e || typeof e !== "object") { refus.push(quoi + " : un objet"); return; }
+      if (e.action === "supprimer") {
+        if (!Number.isInteger(e.numero) || !avant[e.numero - 1]) { refus.push(quoi + " : « numero » de 1 à " + avant.length + " (cao_pcb_lire carte)"); return; }
+        if (suppr.has(e.numero)) { refus.push(quoi + " : découpe " + e.numero + " deux fois"); return; }
+        suppr.add(e.numero); return;
+      }
+      if (e.action !== "creer") { refus.push(quoi + " : « action » creer ou supprimer"); return; }
+      const f = forme(e, quoi, refus, 0.5);
+      if (!f) return;
+      const B = boardPoly();
+      if (f.pts.some(p => !inPoly(p.x, p.y, B) && polyEdgeDist(p.x, p.y, B) > 1e-3)) { refus.push(quoi + " : elle sort du contour de carte"); return; }
+      neuves.push(f);
+    });
+    return { avant, suppr, neuves };
+  }
+  function verifierDecoupes(args) {
+    const refus = [], p = planDecoupes(args, refus), lignes = [];
+    for (const n of [...p.suppr].sort((a, b) => a - b)) lignes.push({ quoi: "découpe " + n, avant: decrireDecoupe(p.avant[n - 1]), apres: "supprimée" });
+    p.neuves.forEach((f, k) => lignes.push({ quoi: "découpe nouvelle " + (k + 1), avant: "", apres: f.dit }));
+    return { lignes, refus };
+  }
+  function muterDecoupes(args) {
+    const p = planDecoupes(args, []);
+    S.board.cutouts = p.avant.filter((_, i) => !p.suppr.has(i + 1)).concat(p.neuves.map(f => f.pts));
+    if (!S.board.cutouts.length) delete S.board.cutouts;
+    boardChanged();
+  }
+  const DECOUPES = lot({ titre: "Découpes de carte", verifier: verifierDecoupes, muter: muterDecoupes, rafraichir: rafraichirRegles, drc: true });
+
   /* cao_zones_ecrire : créer, modifier, supprimer des zones de cuivre, dans l'ordre du lot.
      forme « carte » : la carte entière (le remplissage s'arrête à la marge de bord). */
   const LIAISONS = { thermique: "bras thermiques", directe: "directe", "cms-directe": "directe pour les CMS" };
@@ -901,7 +938,7 @@ const ECRITURE_CAO = (function () {
   const PASTILLES = lot({ titre: "Réglages de pastilles", verifier: verifierPastilles, muter: muterPastilles, rafraichir: rafraichirZones, drc: true });
 
   return { lot, composantsSch: COMPOSANTS_SCH, composantsPcb: COMPOSANTS_PCB, pistes: PISTES, classes: CLASSES,
-           contraintes: CONTRAINTES, simulation: SIMULATION, contour: CONTOUR, zones: ZONES, serigraphie: SERIGRAPHIE,
+           contraintes: CONTRAINTES, simulation: SIMULATION, contour: CONTOUR, decoupes: DECOUPES, zones: ZONES, serigraphie: SERIGRAPHIE,
            pastilles: PASTILLES, LOT_MAX,
            drc: { erreurs: erreursDrc, bilan: bilanDrc } };        // repris par le routage (37-routage-pilote.js)
 })();
