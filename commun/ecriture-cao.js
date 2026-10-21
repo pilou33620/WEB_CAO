@@ -345,6 +345,22 @@ const ECRITURE_CAO = (function () {
   const decrire = c => "largeur " + c.w + ", isolation " + c.clr + ", via " + c.via + ", perçage " + c.drill +
                        (c.wL ? ", par couche " + Object.keys(c.wL).map(l => LECTURE_CAO.aides.nomCouchePcb(+l) + " " + c.wL[l]).join(" ") : "");
 
+  /* Une classe que le schéma connaît (Horloge, RF, Antenne, une interface…) et que la carte n'a pas
+     encore : comme dans le menu des classes, elle se crée au premier rattachement, avec ses règles
+     d'office (schClass). schClass écrit dans S.classes : on lui prête la copie de travail. Rend son
+     rang dans la copie, ou -1. */
+  function classeDuSchema(classes, nom, lignes) {
+    if (typeof SCH_CLASSES === "undefined") return -1;
+    const k = Object.keys(SCH_CLASSES).find(n => n.toLowerCase() === String(nom).toLowerCase());
+    if (!k) return -1;
+    const n = classes.length, vraies = S.classes;
+    let c;
+    S.classes = classes;
+    try { c = schClass(k); } finally { S.classes = vraies; }
+    if (classes.length > n) lignes.push({ quoi: "classe " + c.name, avant: null, apres: decrire(c) + " (classe du schéma)" });
+    return classes.indexOf(c);
+  }
+
   function jouerClasses(args) {
     const classes = S.classes.map(c => Object.assign({}, c, c.wL ? { wL: Object.assign({}, c.wL) } : {}));
     const netClass = Object.assign({}, S.netClass);
@@ -355,8 +371,10 @@ const ECRITURE_CAO = (function () {
       const a = e && e.action;
       if (a === "affecter") {
         if (typeof e.net !== "string" || !nets.has(e.net) || CLE_INTERDITE.has(e.net)) { refus.push("net « " + (e && e.net) + " » inconnu (voir cao_pcb_lire nets)"); continue; }
-        const i = trouver(e.classe);
-        if (i < 0) { refus.push(e.net + " : classe « " + e.classe + " » inconnue"); continue; }
+        let i = trouver(e.classe);
+        if (i < 0) i = classeDuSchema(classes, e.classe, lignes);
+        if (i < 0) { refus.push(e.net + " : classe « " + e.classe + " » inconnue (ni sur la carte, ni parmi celles du schéma : " +
+                                classesAProposer().join(", ") + ")"); continue; }
         const avant = netClass[e.net] && trouver(netClass[e.net]) >= 0 ? classes[trouver(netClass[e.net])].name : classes[0].name;
         if (i === 0) delete netClass[e.net]; else netClass[e.net] = classes[i].name;   // comme setNetClass
         if (avant !== classes[i].name) lignes.push({ quoi: "net " + e.net + ", classe", avant, apres: classes[i].name });

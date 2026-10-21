@@ -176,7 +176,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* formes de pastille, rotation, origine de l'empreinte */
   "PAD_SHAPES","padShape","padRadius","padRot","padHalf","padDist","padOpening",
   "fpLocalBox",
-  "apSet","apForPad","netAtPoint","padCuLayers","pnsItemsPad","aplatClick","closeAplat","selDecoupes","deleteSel","hitTest","selectHit","brocheNum","parseNetlist","applyNetlist","padSurCouche","padLiaison","padBras","zoneLanieres","maskOpenings","pasteOpenings","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","UNDO_BUDGET","rotChoix","padNom",
+  "apSet","apForPad","netAtPoint","padCuLayers","pnsItemsPad","aplatClick","closeAplat","selDecoupes","deleteSel","hitTest","selectHit","brocheNum","parseNetlist","applyNetlist","padSurCouche","padLiaison","padBras","zoneLanieres","maskOpenings","pasteOpenings","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","classesAProposer","UNDO_BUDGET","rotChoix","padNom",
   /* repère de broche 1 */
   "MARK_D","PASSIF_REF","fpMarkWanted","fpMarkAuto","fpMark","fpSetMark",
   "fpMoveMark","fpSetMarkD","fpXform",
@@ -27275,6 +27275,20 @@ TA("canal de pilotage : cao_classes_ecrire, créer puis rattacher en une étape 
     const lot2=[{action:"affecter",net:na,classe:S.classes[0].name},{action:"affecter",net:nb,classe:S.classes[0].name},{action:"supprimer",nom:"Puissance"}];
     d.appliquer({lot:lot2},d.proposer({lot:lot2}));
     if(S.classes.some(c=>c.name==="Puissance")||S.netClass[na])throw new Error("suppression mal faite");
+    /* une classe que le schéma connaît et que la carte n'a pas : créée au rattachement, comme dans le menu */
+    const sch=classesAProposer()[0];
+    if(!sch)throw new Error("l'exemple devrait avoir des classes du schéma à proposer");
+    const nCl=S.classes.length, lot3=[{action:"affecter",net:na,classe:sch.toLowerCase()}];
+    const p3=d.proposer({lot:lot3});
+    if(S.classes.length!==nCl)throw new Error("proposer a créé la classe");
+    if(!p3.apres.split("\n").some(l=>l.indexOf("classe "+sch+" : ")===0&&/\(classe du schéma\)$/.test(l))||!p3.apres.includes("net "+na+", classe : "+sch))
+      throw new Error("carte : "+p3.apres);
+    const av3=serialize();
+    d.appliquer({lot:lot3},p3);
+    if(classOf(na).name!==sch||S.classes.length!==nCl+1)throw new Error("classe du schéma non créée ou non rattachée");
+    undo();
+    if(serialize()!==av3)throw new Error("Ctrl+Z ne retire pas la classe du schéma");
+    refus({lot:[{action:"affecter",net:na,classe:"Inexistante"}]},new RegExp("ni sur la carte, ni parmi celles du schéma : "+sch));
   }finally{global.Pilote=ancien;}
 });
 
