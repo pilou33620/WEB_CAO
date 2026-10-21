@@ -45,7 +45,7 @@ Le détail de chaque point est plus bas, dans sa section.
 
 **À vérifier sur du réel (carte, fichier, matériel)**
 - Broche 1 du Yamaichi IC51-0484-806 ; empreintes SOT-89-5 et LED RVB ; `<Package><Outline>` et `height` d'un fichier eCADSTAR.
-- `cao_paire`, `cao_placement_auto` et `cao_chemin` dans la vraie page ; le canal depuis l'iPad.
+- `cao_chemin` sur le Pi (durée) ; le canal depuis l'iPad ; le routeur qui entre dans une pastille (voir *Pilotage*).
 - Animation 3D de `fabrication.zip` sur le Pi : format de vidéo retenu par son Chromium et images par seconde du rendu (la barre d'état les donne).
 
 **Normes (réseau de l'environnement à ouvrir : usb.org, fabricants de feuillard)**
@@ -128,10 +128,17 @@ Ce que les modules du MCP ont laissé ouvert côté WEB_CAO (détail dans
   connaît (`schClass`) ; étiquettes et alimentations désignées par « #id » au dessin
   (lecture `etiquettes`) ; aperçu dessiné du placement automatique, et un essai réussi de la
   méthode « blocs ».
-- [x] **chemin-auto** (21/10/2026, branche `mcp`) : `cao_chemin` propose les points de passage
+- [x] **chemin-auto** (21/10/2026) : `cao_chemin` propose les points de passage
   par A* sur grille (`editeur-pcb/js/40-chemin-auto.js`), sans rien écrire ; `cao_router` pose.
-- [ ] **Essais réels restants** : `cao_paire`, `cao_placement_auto` et `cao_chemin` dans la
-  vraie page ; le canal depuis l'iPad.
+- [x] **Essai réel** (21/10/2026, sous Linux, Chromium) : `cao_paire`, `cao_placement_auto` et
+  `cao_chemin` dans la vraie page, par le vrai serveur MCP (exemple 2, cartes cliquées) : tout
+  répond, aucune erreur JavaScript ; une liaison sur 20 sans chemin (l'ordre), 19 posées.
+- [ ] **Le routeur entre dans une pastille d'un autre net** (vu à l'essai du 21/10/2026) : sur
+  l'exemple 2, la route U3.1 → U3.3 (+5V) proposée par `cao_chemin` contourne U3.2 (GND) ;
+  en la finissant, le routeur coupe en diagonale de (13,73 ; 9,93) à (12,90 ; 10,75) et entre de
+  0,13 mm dans U3.2. La carte le dit (DRC 0 → 1). À voir avec toi : le routeur (`11-pns-*` à
+  `13-pns-shove.js`) ne se change pas sans accord.
+- [ ] **Essais réels restants** : la durée de `cao_chemin` sur le Pi ; le canal depuis l'iPad.
 
 ### Dossier de fabrication — animation 3D de la carte qui s'assemble (demandé le 19/10/2026)
 
