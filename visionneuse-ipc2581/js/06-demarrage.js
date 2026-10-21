@@ -175,15 +175,6 @@ function nomBase(){
      fichier ouvert, exactement comme avant. */
   return (typeof projBase==="function")?projBase(PREF,repli):repli;
 }
-/* Le modèle traduit, tel qu'il est arrivé du serveur. Les champs calculés à
-   l'affichage (boîtes de composants, boîtes de pistes) sont retirés : ils se
-   recalculent en une passe, et les garder doublerait le fichier. Le contour
-   d'un plan (`_p`, un Path2D) ne survivrait pas au voyage : JSON en fait `{}`. */
-function modeleTexte(){
-  return JSON.stringify(V.modele,function(cle,valeur){
-    return (cle==="boite"||cle==="_b"||cle==="_p")?undefined:valeur;
-  });
-}
 /* Avec un dossier de projet rattaché, la carte lue s'y range à côté du schéma
    et du circuit imprimé ; sans dossier, elle se télécharge comme avant. Le
    repli n'est pas un luxe : sur un .json rouvert en double-clic, aucun accès
