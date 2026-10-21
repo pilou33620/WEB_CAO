@@ -79,7 +79,9 @@ function schToutesLesZones(){
     const dList=(p===S||pIdx===S.page)?(S.drawings||[]):(p.drawings||[]);
     const cList=(p===S||pIdx===S.page)?(S.comps||[]):(p.comps||[]);
     dList.forEach(d=>{
-      if(d&&(d.isZone||(d.shape==="rect"&&d.label))){
+      /* une zone : cochée (isZone, category), ou un rectangle étiqueté d'avant la case
+         (carte PIR v2) ; un rectangle de note décoché (isZone:false) n'en est pas une */
+      if(d&&(d.isZone||d.category||(d.shape==="rect"&&d.label&&d.isZone===undefined))){
         const comps=schComposantsDansZone(d,cList);
         zones.push({
           id:d.id||("zone_"+zones.length),

@@ -25912,6 +25912,12 @@ T("rooms : lues dans le document du schéma, composant par son centre",()=>{
   if(z[0].refs.join()!=="U1,C3"||z[1].refs.join()!=="U2"||z[2].refs.length)throw new Error(JSON.stringify(z.map(x=>x.refs)));
   if(roomNomCourt("Clignoteur TLC555 · D1 témoin")!=="Clignoteur TLC555")throw new Error("nom court");
   if(roomCouleur("javascript:alert(1)")!=="#f59e0b"||roomCouleur("#60A5FA")!=="#60A5FA")throw new Error("couleur non filtrée");
+  // un rectangle de note décoché (« Zone fonctionnelle » : isZone false) n'est pas un bloc ; coché, si
+  const doc=roomsDocEssai(), d=doc.pages[1].drawings;
+  d.push({id:5,shape:"rect",label:"Note : LED côté bouchon",isZone:false,x1:0,y1:0,x2:200,y2:200},
+         {id:6,shape:"rect",label:"",isZone:true,category:"Puissance",x1:0,y1:0,x2:200,y2:200});
+  const n=roomsDepuisDoc(doc).map(x=>x.id);
+  if(n.includes("sch:1:5")||!n.includes("sch:1:6"))throw new Error("note décochée ou zone cochée : "+n.join(", "));
 });
 T("rooms : une région autour des empreintes du bloc, qui suit le placement",()=>{
   exCharger(1);

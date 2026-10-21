@@ -48,7 +48,8 @@ function roomsDepuisDoc(doc){
   doc.pages.forEach((p,pi)=>{
     const comps=Array.isArray(p&&p.comps)?p.comps:[];
     for(const d of (Array.isArray(p&&p.drawings)?p.drawings:[])){
-      if(!d||!(d.isZone||((d.shape==="rect"||d.type==="rect")&&d.label)))continue;
+      // la règle du schéma (schZones) : une note décochée (isZone:false) n'est pas un bloc
+      if(!d||!(d.isZone||d.category||((d.shape==="rect"||d.type==="rect")&&d.label&&d.isZone===undefined)))continue;
       const x1=Math.min(d.x1,d.x2), x2=Math.max(d.x1,d.x2), y1=Math.min(d.y1,d.y2), y2=Math.max(d.y1,d.y2);
       const refs=[];
       for(const c of comps){

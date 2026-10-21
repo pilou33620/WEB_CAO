@@ -259,7 +259,7 @@ function refreshPanels(){
       '</select></div>'+
       (isRect ? (
         '<div class="prop"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;font-weight:600;color:var(--txt);">'+
-        '<input type="checkbox" id="pDIsZone"'+(d.isZone||d.category?' checked':'')+' style="width:16px;height:16px;accent-color:var(--yellow);"> '+
+        '<input type="checkbox" id="pDIsZone"'+(d.isZone||d.category||(d.label&&d.isZone===undefined)?' checked':'')+' style="width:16px;height:16px;accent-color:var(--yellow);"> '+
         'Zone fonctionnelle (Room)</label></div>'+
         '<div class="prop"><label>Catégorie</label>'+
         '<select id="pDCategory">'+
@@ -313,6 +313,7 @@ function refreshPanels(){
     if(cIsZone) cIsZone.onchange=e=>{
       push();
       d.isZone = e.target.checked;
+      if(!d.isZone) delete d.category;      // décochée, elle ne revient pas par sa catégorie
       if(d.isZone){
         if(!d.category) d.category="Alimentation";
         if(!d.color||d.color==="#6b7280") d.color="#f59e0b";
