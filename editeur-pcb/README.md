@@ -1422,13 +1422,16 @@ découpes et trous) → cuivre des faces externes (les pistes se posent de
 gauche à droite, puis zones, pastilles et vias) → vernis et sérigraphie →
 composants un par un, du plus gros au plus petit, dessus puis dessous (la
 caméra passe sous la carte) → un tour complet de la carte finie. Le titre (le
-nom du projet), « L × l mm » et l'étape sont en bandeau.
+nom du projet), « L × l mm » et l'étape sont en bandeau ; les cotes hors tout
+sont dessinées à côté de la carte, avec la carte nue puis pour le tour final.
 
 Les composants sont des pavés : le corps de l'empreinte à la hauteur du
 dossier mécanique (saisie, fichier, puis LIB) ; sans hauteur connue, 0,4 × le
-côté moyen du corps, entre 0,3 et 3 mm. Les zones de cuivre sont dessinées
-entières, sans leurs dégagements, sous le vernis. La barre d'état dit le format
-de la vidéo et le nombre d'images par seconde du rendu.
+côté moyen du corps, entre 0,3 et 3 mm. Les zones de cuivre sont l'image que
+l'écran en peint (`zoneCanvas` à finesse fixe, jusqu'à 20 px/mm) : dégagements,
+liaisons thermiques et marge de bord compris. La barre d'état dit le format de
+la vidéo et le nombre d'images par seconde du rendu. Un second **Fabrication
+.zip** pendant l'enregistrement ne relance rien : le dossier part à la fin.
 
 Le code : `js/41-animation-3d.js`. `anim3dDonnees` relève la carte dans le
 repère des Gerber (le dossier méca, `silkTraits` pour la sérigraphie, que le

@@ -127,9 +127,11 @@ function focusNet(){return (S.route&&S.route.net)||S.hlNet||null;}
    Le remplissage d'une couche (toutes ses zones) est calculé une fois dans un
    canevas hors écran : le recalculer à chaque image coûterait bien trop cher.
    Le cache est invalidé par le compteur de version, et régénéré quand le zoom
-   a suffisamment changé pour que la finesse ne suive plus. */
+   a suffisamment changé pour que la finesse ne suive plus.
+   `fixe` ({res} en px/mm) : toute la couche à cette finesse, hors du cache et
+   de la vue — l'animation 3D (41-animation-3d.js) en fait sa texture. */
 const zoneCache=new Map();
-function zoneCanvas(i){
+function zoneCanvas(i,fixe){
   const zs=S.zones.filter(z=>z.l===i&&z.pts.length>=3);
   if(!zs.length)return null;
   let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;
@@ -143,7 +145,7 @@ function zoneCanvas(i){
   /* À fort zoom, seule la vue et une demi-vue de marge tout autour sont
      rastérisées : la carte entière à 20 px/mm coûtait une seconde à chaque
      palier de zoom. Le plan est refait quand la vue sort de cette région. */
-  const v=VUE_MONDE;
+  const v=fixe?null:VUE_MONDE;
   const vx1=v?Math.max(x1,v.x1):x1, vy1=v?Math.max(y1,v.y1):y1;
   const vx2=v?Math.min(x2,v.x2):x2, vy2=v?Math.min(y2,v.y2):y2;
   if(v){
@@ -156,14 +158,14 @@ function zoneCanvas(i){
      20 px/mm, l'image du plan était agrandie quatre fois à fort zoom et ses
      bords bavaient. Le budget de 6 Mpx par couche borne la mémoire. */
   const dpr=(typeof window!=="undefined"&&window.devicePixelRatio)||1;
-  const res=Math.max(3,Math.min(S.scale*Math.max(2,dpr),Math.sqrt(6e6/((x2-x1)*(y2-y1)))));
+  const res=fixe?fixe.res:Math.max(3,Math.min(S.scale*Math.max(2,dpr),Math.sqrt(6e6/((x2-x1)*(y2-y1)))));
   const old=zoneCache.get(i);
   const couvre=o=>vx1>=o.x&&vy1>=o.y&&vx2<=o.x+o.w&&vy2<=o.y+o.h;
-  if(old&&old.ver===S.ver&&old.res>=res*0.85&&old.res<=res*2.5&&couvre(old))return old;
+  if(!fixe&&old&&old.ver===S.ver&&old.res>=res*0.85&&old.res<=res*2.5&&couvre(old))return old;
   /* En plein geste (boîtier tiré, extrémité étirée, vue qui glisse), l'ancien
      plan reste : le recalcul coûte des centaines de millisecondes sur une
      grosse carte, il attend que le geste se pose. */
-  if(old&&typeof drag!=="undefined"&&drag&&drag.moved)return old;
+  if(!fixe&&old&&typeof drag!=="undefined"&&drag&&drag.moved)return old;
   const W=Math.max(1,Math.ceil((x2-x1)*res)), H=Math.max(1,Math.ceil((y2-y1)*res));
   if(W*H>36e6)return null;                     // garde-fou mémoire
   const o=document.createElement("canvas");o.width=W;o.height=H;
@@ -258,7 +260,7 @@ function zoneCanvas(i){
     }
   }
   const rec={ver:S.ver,res,cvs:o,x:x1,y:y1,w:W/res,h:H/res};
-  zoneCache.set(i,rec);
+  if(!fixe)zoneCache.set(i,rec);
   return rec;
 }
 /* Trace le contour de la pastille dans le repère du canevas et laisse l'état

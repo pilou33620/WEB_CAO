@@ -1286,10 +1286,13 @@ function exportFab(){
   if(typeof pcbVarDepuisSchema==="function")pcbVarDepuisSchema();
   /* l'animation s'enregistre en temps réel : le dossier part quand elle est finie */
   if(FAB_ANIM){
+    /* un second clic pendant l'enregistrement ne relance rien : le dossier part à la fin */
+    if(ANIM3D_EN_COURS){hint("Animation 3D en cours d'enregistrement : le dossier partira à la fin.");return null;}
+    ANIM3D_EN_COURS=true;
     anim3dFichiers().then(r=>fabLivrer(r.fichiers,r.note),e=>{
       alert("Animation 3D impossible : "+(e&&e.message||e)+"\nLe dossier part sans elle.");
       fabLivrer([],"");
-    });
+    }).finally(()=>{ANIM3D_EN_COURS=false;});
     return null;
   }
   return fabLivrer([],"");

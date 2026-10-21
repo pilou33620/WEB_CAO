@@ -4007,6 +4007,31 @@ T("animation 3D : données de la scène, page autonome, dossier qui l'annonce",(
     fabAnimBasculer();
   }finally{loadDoc(JSON.parse(avant),true);}
 });
+/* Sans MediaRecorder (Node), l'animation part sans vidéo : le chemin entier
+   tourne, et un second clic pendant l'enregistrement ne relance rien. */
+TA("animation 3D : un second Fabrication .zip pendant l'enregistrement ne relance rien",async()=>{
+  const avant=serialize(), co=URL.createObjectURL, zips=[], notes=[];
+  /* la barre d'état lue juste après la livraison : d'autres essais l'écrivent ensuite */
+  URL.createObjectURL=b=>{zips.push(b);queueMicrotask(()=>notes.push($("fHint").textContent));return "blob:essai";};
+  try{
+    loadDoc(EXEMPLES[0].build());
+    fabAnimBasculer();
+    if(exportFab()!==null||exportFab()!==null)throw new Error("l'export avec animation rend la main tout de suite");
+    if(!/en cours d'enregistrement/.test($("fHint").textContent))throw new Error("second clic : "+$("fHint").textContent);
+    for(let k=0;k<200&&!zips.length;k++)await new Promise(r=>setTimeout(r,25));
+    await new Promise(r=>setTimeout(r,25));
+    if(zips.length!==1)throw new Error(zips.length+" archive(s) livrée(s)");
+    if(!/Animation 3D : pas de vidéo/.test(notes[0]))throw new Error("barre d'état : "+notes[0]);
+    /* la garde retombe : un nouvel export repart */
+    exportFab();
+    for(let k=0;k<200&&zips.length<2;k++)await new Promise(r=>setTimeout(r,25));
+    if(zips.length!==2)throw new Error("la garde n'est pas retombée");
+  }finally{
+    URL.createObjectURL=co;
+    if($("bFabAnim").classList.contains("on"))fabAnimBasculer();
+    loadDoc(JSON.parse(avant),true);
+  }
+});
 /* Un Excellon par portée : le défaut de fabrication silencieux qu'on vient de
    corriger. Sur 4 couches avec un via borgne 1-2 et un traversant 1-4, le
    fabricant doit recevoir deux fichiers distincts, sinon il perce de part en

@@ -149,9 +149,9 @@ caméra qui tourne et s'approche, la carte se construit sous les yeux, titre et 
   Chromium headless (SwiftShader) : WebM VP9, 20 s, 6 images/s en rendu logiciel ; la page
   s'ouvre hors ligne et se tourne à la souris. Essai au banc (`harness.js`).
   - [ ] Sur le Pi : format retenu par son Chromium et images par seconde (la barre d'état les donne).
-  - Pas fait : les cotes dessinées sur la carte (le bandeau donne L × l), les bulles de
-    description et le schéma-bloc (pas retenus), les dégagements des zones de cuivre (dessinées
-    entières sous le vernis).
+  - Faits ensuite (21/10/2026) : cotes hors tout dessinées à côté de la carte, zones de cuivre
+    avec leurs dégagements (l'image de l'écran), un seul enregistrement à la fois.
+  - Pas retenus : bulles de description des composants, schéma-bloc qui se construit.
 
 ### Code en double à fusionner (relevé par l'audit du 16/10/2026)
 L'audit complet a corrigé les défauts et retiré le code mort ; ces doublons, eux, sont des chantiers à part (/spec puis /plan) : chaque copie doit être corrigée N fois, et certaines ont déjà divergé.

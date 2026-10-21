@@ -18,6 +18,7 @@
    ========================================================================== */
 
 let FAB_ANIM=false;
+let ANIM3D_EN_COURS=false;     // un enregistrement à la fois (exportFab)
 function fabAnimBasculer(){
   FAB_ANIM=!FAB_ANIM;
   const b=$("bFabAnim");
@@ -42,6 +43,27 @@ function anim3dFinition(){
   if(/OSP/i.test(f))return 0xc77a3c;
   return 0xd6ad48;                                            // or (ENIG, or dur)
 }
+/* Le remplissage des zones d'une couche, tel que l'écran le peint (dégagements,
+   liaisons thermiques, lanières, bord) : une image PNG blanche sur transparent,
+   posée à plat dans la scène. {png, x, y, l, h} : centre et taille en mm, repère
+   des Gerber ; null sans zone (ou sans canevas, au banc d'essai). */
+function anim3dZone(L,o){
+  if(!S.zones.some(z=>z.l===L&&z.pts.length>=3))return null;
+  try{
+    const bb=S.zones.filter(z=>z.l===L&&z.pts.length>=3).map(z=>zoneCalc(z).bb);
+    const aire=bb.reduce((a,b)=>a+(b.x2-b.x1+2)*(b.y2-b.y1+2),0);
+    const r=zoneCanvas(L,{res:Math.min(20,Math.sqrt(4e6/Math.max(1,aire)))});
+    if(!r||typeof r.cvs.toDataURL!=="function")return null;
+    const c=document.createElement("canvas");
+    c.width=r.cvs.width;c.height=r.cvs.height;
+    const g=c.getContext("2d");
+    g.drawImage(r.cvs,0,0);
+    g.globalCompositeOperation="source-in";            // la couleur de la couche devient blanche
+    g.fillStyle="#fff";g.fillRect(0,0,c.width,c.height);
+    return {png:c.toDataURL("image/png"),x:anim3dR(r.x+r.w/2-o.x),y:anim3dR(o.y-(r.y+r.h/2)),
+            l:anim3dR(r.w),h:anim3dR(r.h)};
+  }catch(_){return null;}
+}
 function anim3dDonnees(){
   const o=gOrigin(), P=p=>[anim3dR(p.x-o.x),anim3dR(o.y-p.y)];
   const J=mecaDossier(), ep=J.carte.epaisseur||1.6, der=S.cu-1;
@@ -64,8 +86,7 @@ function anim3dDonnees(){
       if(padLayers(fp,q).includes(L))pads.push(padWorldPts(q).map(P));
     return {pistes,pads,
       vias:S.vias.filter(v=>v.a<=L&&L<=v.b).map(v=>P(v).concat(anim3dR(v.d),anim3dR(v.drill||0))),
-      /* shortcut: la zone entière, sans ses dégagements ; le vernis la couvre, à revoir si on la voit nue */
-      zones:S.zones.filter(z=>z.l===L&&z.pts.length>=3).map(z=>z.pts.map(P))};
+      zone:anim3dZone(L,o)};
   };
   const seri=side=>{
     const segs=[],pts=[],polys=[];
@@ -87,7 +108,7 @@ function anim3dDonnees(){
   return {titre:fabBase(),l:anim3dR(B.x2-B.x1),h:anim3dR(B.y2-B.y1),ep,
     contour:J.carte.contour,decoupes:J.carte.decoupes,trous,finition:anim3dFinition(),
     faces:[{cuivre:cuivre(0),seri:seri(0)},
-           {cuivre:der>0?cuivre(der):{pistes:[],pads:[],vias:[],zones:[]},seri:seri(1)}],
+           {cuivre:der>0?cuivre(der):{pistes:[],pads:[],vias:[],zone:null},seri:seri(1)}],
     composants:composants.map(c=>({ref:c.ref,face:c.face,corps:c.corps,h:c.h,couleur:c.couleur}))};
 }
 
@@ -158,10 +179,15 @@ function anim3dLancer(THREE,J,canvas,o){
     new THREE.MeshStandardMaterial({color:0x8d8a4e,roughness:0.85}));
   substrat.position.z=-ep;
   carte.add(substrat);
-  const pistes=[];
+  const pistes=[], zones=[];
   J.faces.forEach((F,f)=>{
     const z=d=>f?-ep-d:d, C=F.cuivre;
-    poser_(polys(C.zones.map(p=>({p})),z(0.012)),M.zone,1);
+    if(C.zone){
+      const g=new THREE.PlaneGeometry(C.zone.l,C.zone.h);g.translate(C.zone.x,C.zone.y,z(0.012));
+      const m=M.zone.clone();
+      m.map=new THREE.TextureLoader().load(C.zone.png);m.map.colorSpace=THREE.SRGBColorSpace;
+      zones.push(poser_(g,m,1));
+    }
     const R=rubans(C.pistes,z(0.018));
     pistes.push({geo:R.geo,fins:R.fins});
     poser_(R.geo,M.piste,2);
@@ -228,6 +254,28 @@ function anim3dLancer(THREE,J,canvas,o){
     hm.material.map.colorSpace=THREE.SRGBColorSpace;
     hm.material.needsUpdate=true;
   }
+  /* cotes hors tout, dans le plan de la face dessus, hors de la carte : avec la
+     carte nue, puis pour le tour final */
+  const Lc=x2-x1, Hc=y2-y1, Mx=Math.max(Lc,Hc), dc=0.07*Mx+1, fl=0.025*Mx, zc=0.05;
+  const cl=[], trait=(a,b,c,d)=>cl.push(a,b,zc,c,d,zc);
+  const fleche=(x,y,dx,dy)=>{trait(x,y,x+dx*1.8*fl-dy*0.6*fl,y+dy*1.8*fl+dx*0.6*fl);trait(x,y,x+dx*1.8*fl+dy*0.6*fl,y+dy*1.8*fl-dx*0.6*fl);};
+  const yb=y1-dc, xg=x1-dc;
+  trait(x1,y1-0.3,x1,yb-fl);trait(x2,y1-0.3,x2,yb-fl);trait(x1,yb,x2,yb);fleche(x1,yb,1,0);fleche(x2,yb,-1,0);
+  trait(x1-0.3,y1,xg-fl,y1);trait(x1-0.3,y2,xg-fl,y2);trait(xg,y1,xg,y2);fleche(xg,y1,0,1);fleche(xg,y2,0,-1);
+  const gc=new THREE.BufferGeometry();gc.setAttribute("position",new THREE.Float32BufferAttribute(cl,3));
+  const mc=new THREE.LineBasicMaterial({color:0xd8dde3,transparent:true,opacity:0});
+  carte.add(new THREE.LineSegments(gc,mc));
+  const etiquette=(txt,x,y)=>{
+    const c=document.createElement("canvas");c.width=512;c.height=128;
+    const g=c.getContext("2d");
+    g.font="600 76px system-ui,sans-serif";g.textAlign="center";g.textBaseline="middle";g.fillStyle="#e4e8ec";
+    g.fillText(txt,256,64);
+    const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;
+    const s=new THREE.Sprite(new THREE.SpriteMaterial({map:t,transparent:true,opacity:0}));
+    const h=0.06*Mx;s.scale.set(h*4,h,1);s.position.set(x,y,zc);carte.add(s);
+    return s.material;
+  };
+  const mcT=[etiquette(fr(Lc)+" mm",(x1+x2)/2,yb-0.05*Mx),etiquette(fr(Hc)+" mm",xg-0.13*Mx,(y1+y2)/2)];
   function poser(l,h){
     renderer.setSize(l,h,false);
     camera.aspect=l/h;
@@ -257,11 +305,13 @@ function anim3dLancer(THREE,J,canvas,o){
     t=Math.max(0,Math.min(t,duree));
     const e=(a,b)=>Math.min(1,Math.max(0,(t-a)/(b-a)));
     substrat.scale.z=Math.max(0.02,lisse(e(0,1.2)));
-    M.zone.opacity=lisse(e(1.2,2.2));
+    for(const x of zones)x.material.opacity=lisse(e(1.2,2.2));
     for(const P of pistes){const n=Math.floor(e(1.2,3.8)*P.fins.length);P.geo.setDrawRange(0,n?P.fins[n-1]:0);}
     M.pastille.opacity=lisse(e(3.2,4.2));
     M.vernis.opacity=0.86*lisse(e(4.2,5.4));
     M.seri.opacity=lisse(e(5,6));
+    mc.opacity=lisse(e(0.6,1.4))*(1-lisse(e(5.4,6)))+lisse(e(tTour,tTour+1));
+    for(const m of mcT)m.opacity=mc.opacity;
     for(const c of comps){
       const u=e(c.t,c.t+chute);
       c.m.visible=u>0;
