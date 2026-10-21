@@ -204,6 +204,8 @@
   function afficher(){
     const e=etapes[i], dernier=i===etapes.length-1;
     const cible=e.sel&&document.querySelector(e.sel);
+    // une barre qui défile sur elle-même (Gestion LIB) cache ses derniers boutons
+    if(visible(cible))cible.scrollIntoView({block:"nearest",inline:"nearest"});
     const r=visible(cible)?cible.getBoundingClientRect():null;
     calque.hidden=!!r; spot.hidden=!r;
     if(r)Object.assign(spot.style,{left:r.left-4+"px",top:r.top-4+"px",width:r.width+8+"px",height:r.height+8+"px"});
