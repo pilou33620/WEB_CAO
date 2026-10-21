@@ -100,6 +100,7 @@ Ce que les modules du MCP ont laissé ouvert côté WEB_CAO (détail dans
 - [ ] **Gestion LIB trop lourde sur le Pi** : environ 890 Mo au chargement (500 Mo ensuite), plus
   encore en rechargeant ou en ouvrant la galerie des 269 empreintes ; l'onglet a été tué par le
   noyau (OOM) pendant un essai. Mesurer ce qui coûte (table du catalogue, vignettes), puis alléger.
+- [x] **Générateur IPC-7351B dans Gestion LIB** (21/10/2026) : l'onglet « Générateurs » de l'éditeur d'empreintes appelle le même calcul que `lib_empreinte_generer` (famille, densité, cotes min / max de la datasheet ; `COMPOSANTS_LIB.CHAMPS` et `lireParametres`), et pose l'empreinte dans l'éditeur sans rien écrire. Il remplace les trois générateurs à la main (DIP, SOIC, barrette), qui ne suivaient pas la norme. L'enregistrement demande avant de remplacer un fichier de même nom déjà dans la LIB.
 - [ ] **Générateurs IPC-7351B** (`commun/composants-lib.js`) : les constantes des puces plus petites
   que 0603 (tableau 3-6) sont « à confirmer sur la norme » ; QFN, DIP et barrette n'ont pas de
   comparaison à une référence externe (seuls 0603, SOT-23-5 et SOIC-8 sont comparés à KiCad).

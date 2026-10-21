@@ -22,17 +22,28 @@ r.fp = { pads: [{ n: 1, x: -2.7, y: -1.905, w: 1.5, h: 0.6, shape: "rect", drill
 appels.length = 0; r._drawPads(ctx);
 assert.ok(appels[0][1] < 0, "la broche 1 (y = -1,905) doit etre dessinee au-dessus de l'axe");
 
-// 2. Generateurs : broche 1 en haut a gauche, rangee droite remontant depuis le bas
+// 2. Generateur IPC-7351B du formulaire : broche 1 en haut a gauche, rangee droite
+// remontant depuis le bas ; l'empreinte remplace la precedente dans le meme objet
 const src = fs.readFileSync(path.join(R, "05-editeur-lib.js"), "utf8");
-for (const nom of ["editeurGenererSoic", "editeurGenererDip"]) {
-  const g = { EDITEUR_LIB: { data: {} }, document: { getElementById: () => null } };
-  for (const f of ["editeurHistoriquePush", "editeurAjusterCorpsAuto", "remplirFormulaireEditeur", "basculerSousOngletEditeur"]) g[f] = () => {};
+for (const [fam, champs] of [["soic", { broches: "8" }], ["dip", { broches: "8" }], ["qfn", { broches: "16", pas: "0,5", corps: "2,9 3,1", pied: "0,3 0,5", largeur: "0,18 0,3" }]]) {
+  const valeurs = Object.assign({ genIpcFamille: fam, genIpcDensite: "N", genIpcNom: "" },
+    ...Object.entries(champs).map(([k, v]) => ({ ["genIpc_" + k]: v })));
+  const ancien = { name: "ANCIEN", holes: [{ x: 0, y: 0, d: 1 }], pads: [] };
+  const g = { EDITEUR_LIB: { data: ancien, estNouveau: true }, JSON, Object, Math, Number, String, Array, Set, Map, RegExp,
+    document: { getElementById: id => id in valeurs ? { value: valeurs[id] } : id === "editeurNomFichier" ? (valeurs.fichier = { value: "" }) : null } };
+  for (const f of ["editeurHistoriquePush", "remplirFormulaireEditeur"]) g[f] = () => {};
+  g.esc = s => String(s);
   vm.createContext(g);
-  vm.runInContext(src.match(new RegExp("function " + nom + "\\(\\)[\\s\\S]*?\\n}\\n"))[0] + "\n" + nom + "();", g);
-  const p = g.EDITEUR_LIB.data.pads, n = p.length, b = k => p.find(q => q.n === k);
-  assert.ok(b(1).x < 0 && b(1).y < 0, nom + " : broche 1 en haut a gauche");
-  assert.ok(b(n / 2).y > 0 && b(n / 2 + 1).x > 0 && b(n / 2 + 1).y > 0 && b(n).y < 0,
-    nom + " : sens antihoraire vu de dessus");
+  for (const f of ["commun/brochage.js", "commun/composants-lib.js"])
+    vm.runInContext(fs.readFileSync(path.join(R, "..", "..", f), "utf8"), g);
+  vm.runInContext(src.match(/function editeurGenererIpc\(\)[\s\S]*?\n}\n/)[0], g);
+  assert.ok(vm.runInContext("editeurGenererIpc()", g), fam + " : generee");
+  const d = g.EDITEUR_LIB.data, p = d.pads, b = k => p.find(q => q.n === k);
+  assert.ok(d === ancien && !d.holes && d.format === "pcbfp-1", fam + " : meme objet, trous de l'ancienne retires");
+  assert.ok(valeurs.fichier.value === d.name + ".json", fam + " : le nom de fichier suit l'empreinte");
+  assert.ok(b(1).x < 0 && b(1).y < 0, fam + " : broche 1 en haut a gauche");
+  if (fam !== "qfn") assert.ok(b(4).y > 0 && b(5).x > 0 && b(5).y > 0 && b(8).y < 0, fam + " : sens antihoraire vu de dessus");
+  else assert.ok(b(5).y > 0 && b(9).x > 0 && b(13).y < 0, fam + " : sens antihoraire vu de dessus");
 }
 // 3. Trous NPTH : dessinés dans le même repère, posés au clic par l'outil Trou
 const arcs = [];

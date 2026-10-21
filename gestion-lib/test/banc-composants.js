@@ -206,6 +206,27 @@ for (const [f, p] of [["sot", { variante: "SOT-23-3" }], ["sot", { variante: "SO
   gen(f, p);
 verifier(CL.genererEmpreinte("chip", { code: "0402", densite: "M" }).empreinte.name === "0402-M", "densité autre que N : dans le nom");
 
+/* le formulaire de Gestion LIB : ses textes deviennent les mêmes paramètres que ceux de Claude */
+{
+  const lu = CL.lireParametres("soic", { broches: "8", pas: "1,27", empattement: "5,8 / 6,2", corps: "3,9 x 4,9", pied: " " });
+  verifier(!lu.erreurs.length && JSON.stringify(lu.parametres) === '{"broches":8,"pas":1.27,"empattement":[5.8,6.2],"corps":[3.9,4.9]}',
+    "formulaire : virgule décimale, min et max, largeur × longueur, champ vide omis (" + JSON.stringify(lu) + ")");
+  verifier(JSON.stringify(CL.genererEmpreinte("soic", lu.parametres).empreinte) ===
+           JSON.stringify(CL.genererEmpreinte("soic", { broches: 8, pas: 1.27, empattement: [5.8, 6.2], corps: [3.9, 4.9] }).empreinte),
+    "formulaire : même empreinte que l'appel direct");
+  const faux = CL.lireParametres("soic", { broches: "8,5", empattement: "5.8 6.0 6.2", corps: "3.9", pas: "1.27mm" });
+  verifier(faux.erreurs.length === 4 && !Object.keys(faux.parametres).length, "formulaire : entier, trois nombres, paire incomplète, unité collée refusés");
+  verifier(CL.lireParametres("chip", { code: "9999" }).erreurs.length === 1 && CL.lireParametres("chip", { code: "0603" }).parametres.code === "0603",
+    "formulaire : un choix hors liste est refusé");
+  verifier(CL.lireParametres("bga", {}).erreurs.length === 1, "formulaire : famille inconnue refusée");
+  /* chaque champ du formulaire est un paramètre que les familles lisent (la liste de
+     lanceur/mcp_composants.py, PARAMETRES, côté web_suite) */
+  const permis = ["code", "variante", "densite", "nom", "broches", "pas", "rangee", "rangees", "diametre", "longueur",
+                  "largeur", "terminaison", "empattement", "pied", "languette", "corps", "thermique"];
+  const champs = [].concat(...Object.values(CL.CHAMPS)).map(c => c[0]);
+  verifier(champs.every(c => permis.includes(c)), "formulaire : aucun champ hors des paramètres connus");
+}
+
 /* au dixième des empreintes de référence : KiCad (IPC-7351) et la LIB pour le 0603
    (le SOIC-8 et le SOT-23-5 de la LIB ne suivent pas l'IPC : 0,15 à 0,23 mm d'écart) */
 function compare(res, n, x, w, h, libelle) {

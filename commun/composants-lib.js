@@ -519,6 +519,53 @@ const COMPOSANTS_LIB = (() => {
     return { trou: r3(t), pastille: r3(D) };
   }
 
+  /* Les champs de chaque famille, pour le formulaire de Gestion LIB : [clé, libellé, genre, choix].
+     genre : « cote » (un nombre, ou min et max), « paire » (deux nombres), « nombre »,
+     « entier », « texte » ou « choix ». Vides, les cotes JEDEC par défaut s'appliquent. */
+  const AILE = [["broches", "Broches", "entier"], ["pas", "Pas", "nombre"],
+                ["empattement", "Empattement (bout à bout des pattes)", "cote"], ["pied", "Pied (longueur soudée)", "cote"],
+                ["largeur", "Largeur de patte", "cote"], ["corps", "Corps largeur × longueur", "paire"]];
+  const SANS_PATTE = [["broches", "Broches", "entier"], ["pas", "Pas", "nombre"], ["corps", "Corps (côté)", "cote"],
+                      ["longueur", "Longueur du corps, s'il n'est pas carré", "cote"], ["pied", "Longueur de plot", "cote"],
+                      ["largeur", "Largeur de plot", "cote"], ["thermique", "Pastille thermique largeur × hauteur", "paire"]];
+  const CHAMPS = {
+    chip: [["code", "Code", "choix", Object.keys(PUCES)], ["longueur", "Longueur", "cote"],
+           ["largeur", "Largeur", "cote"], ["terminaison", "Terminaison", "cote"]],
+    sot: [["variante", "Variante", "choix", ["SOT-23-3", "SOT-23-5", "SOT-23-6", "SOT-223"]],
+          ["empattement", "Empattement", "cote"], ["pied", "Pied", "cote"], ["largeur", "Largeur de patte", "cote"],
+          ["pas", "Pas", "nombre"], ["languette", "Languette (SOT-223)", "cote"], ["corps", "Corps largeur × longueur", "paire"]],
+    soic: AILE, tssop: AILE, msop: AILE, qfn: SANS_PATTE, dfn: SANS_PATTE,
+    dip: [["broches", "Broches", "entier"], ["pas", "Pas", "nombre"], ["rangee", "Écart des rangées", "nombre"],
+          ["diametre", "Ø de la patte", "nombre"], ["corps", "Corps largeur × longueur", "paire"]],
+    barrette: [["rangees", "Rangées (1 ou 2)", "entier"], ["broches", "Broches", "entier"],
+               ["pas", "Pas", "nombre"], ["diametre", "Ø de la patte", "nombre"]]
+  };
+  /* Les textes saisis → les paramètres de genererEmpreinte. Un nombre s'écrit avec un point ou
+     une virgule ; deux nombres se séparent par une espace, « / », « x », « × » ou « ; ». */
+  function lireParametres(famille, textes) {
+    const champs = CHAMPS[String(famille || "").toLowerCase()];
+    if (!champs) return { parametres: {}, erreurs: ["famille inconnue : " + Object.keys(CHAMPS).join(", ")] };
+    const parametres = {}, erreurs = [], t = textes || {};
+    for (const [cle, lib, genre, liste] of champs) {
+      const s = String(t[cle] == null ? "" : t[cle]).trim();
+      if (!s) continue;
+      if (genre === "texte" || genre === "choix") {
+        if (genre === "choix" && !liste.includes(s)) erreurs.push(lib + " : " + liste.join(", "));
+        else parametres[cle] = s;
+        continue;
+      }
+      const v = s.split(/\s*[\s\/x×;]\s*/i).map(x => x.replace(",", "."));
+      const n = v.map(x => /^\d+(\.\d+)?$|^\.\d+$/.test(x) ? +x : NaN);
+      const deux = genre === "cote" || genre === "paire";
+      if (n.some(x => !Number.isFinite(x)) || n.length > (deux ? 2 : 1) || (genre === "paire" && n.length !== 2) ||
+          (genre === "entier" && !Number.isInteger(n[0])))
+        erreurs.push(lib + " : " + (genre === "paire" ? "deux nombres (mm)" : genre === "cote" ? "un nombre, ou min et max (mm)" :
+                                    genre === "entier" ? "un nombre entier" : "un nombre (mm)"));
+      else parametres[cle] = n.length === 2 ? n : n[0];
+    }
+    return { parametres, erreurs };
+  }
+
   /* famille + paramètres de la datasheet → { empreinte, erreurs, remarques, cotes } : rien n'est écrit */
   function genererEmpreinte(famille, params) {
     const a = params && typeof params === "object" && !Array.isArray(params) ? params : {};
@@ -711,5 +758,6 @@ const COMPOSANTS_LIB = (() => {
     }
   }
 
-  return { SYMBOLES, nomDeChemin, verifierEmpreinte, verifierBrochage, verifierLigne, genererEmpreinte, convertirKicad };
+  return { SYMBOLES, CHAMPS, nomDeChemin, verifierEmpreinte, verifierBrochage, verifierLigne, genererEmpreinte,
+           lireParametres, convertirKicad };
 })();

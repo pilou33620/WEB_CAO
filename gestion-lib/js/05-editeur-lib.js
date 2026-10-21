@@ -1718,42 +1718,30 @@ function remplirGenerateurEditeur() {
   if (!cont) return;
   const isPcb = EDITEUR_LIB.type === "pcb";
 
+  /* déjà là : on garde ce qui a été saisi (remplirFormulaireEditeur repasse ici après chaque génération) */
+  if (isPcb && document.getElementById("genIpcFamille")) return;
   if (isPcb) {
+    /* Le générateur IPC-7351B de la LIB (commun/composants-lib.js), le même que celui de
+       Claude (lib_empreinte_generer) : les cotes min / max de la datasheet → l'empreinte. */
+    const familles = Object.keys(COMPOSANTS_LIB.CHAMPS);
     cont.innerHTML = `
-      <!-- Générateur DIP / Traversant -->
       <div class="generator-card">
-        <h4>📐 Boîtier DIP (Double rangée traversante)</h4>
+        <h4>📐 Empreinte IPC-7351B, depuis les cotes de la datasheet</h4>
         <div class="generator-grid">
-          <div class="form-group"><label>Nb broches</label><input type="number" id="genDipPins" value="8" step="2"></div>
-          <div class="form-group"><label>Pitch (mm)</label><input type="number" id="genDipPitch" value="2.54" step="0.01"></div>
-          <div class="form-group"><label>Écartement rangées (mm)</label><input type="number" id="genDipRowSpan" value="7.62" step="0.01"></div>
-          <div class="form-group"><label>Diamètre perçage (mm)</label><input type="number" id="genDipDrill" value="0.8" step="0.05"></div>
+          <div class="form-group"><label>Famille</label><select id="genIpcFamille" onchange="editeurIpcChamps()">
+            ${familles.map(f => `<option value="${f}">${f.toUpperCase()}</option>`).join("")}</select></div>
+          <div class="form-group"><label>Densité</label><select id="genIpcDensite">
+            <option value="N">N — nominale</option><option value="M">M — large</option><option value="L">L — serrée</option></select></div>
+          <div class="form-group"><label>Nom (facultatif)</label><input type="text" id="genIpcNom" placeholder="nom calculé"></div>
         </div>
-        <button class="tb primary mini" style="align-self:flex-start;" onclick="editeurGenererDip()">Générer DIP</button>
-      </div>
-
-      <!-- Générateur SOIC / SOP CMS -->
-      <div class="generator-card">
-        <h4>📐 Boîtier SOIC / TSSOP (CMS Double rangée)</h4>
-        <div class="generator-grid">
-          <div class="form-group"><label>Nb broches</label><input type="number" id="genSoicPins" value="8" step="2"></div>
-          <div class="form-group"><label>Pitch (mm)</label><input type="number" id="genSoicPitch" value="1.27" step="0.01"></div>
-          <div class="form-group"><label>Écartement centre-centre (mm)</label><input type="number" id="genSoicSpan" value="5.4" step="0.1"></div>
-          <div class="form-group"><label>Taille pad W x H (mm)</label><input type="text" id="genSoicPadSize" value="1.5 x 0.6"></div>
-        </div>
-        <button class="tb primary mini" style="align-self:flex-start;" onclick="editeurGenererSoic()">Générer SOIC / TSSOP</button>
-      </div>
-
-      <!-- Générateur Barrette Header -->
-      <div class="generator-card">
-        <h4>📐 Barrette de broches (Header 1xN)</h4>
-        <div class="generator-grid">
-          <div class="form-group"><label>Nb broches</label><input type="number" id="genHdrPins" value="4"></div>
-          <div class="form-group"><label>Pitch (mm)</label><input type="number" id="genHdrPitch" value="2.54" step="0.01"></div>
-        </div>
-        <button class="tb primary mini" style="align-self:flex-start;" onclick="editeurGenererHeader()">Générer Barrette</button>
+        <div class="generator-grid" id="genIpcChamps"></div>
+        <small style="color:var(--txt-dim);">Cotes en mm : « 5,8 6,2 » pour min et max, « 3,9 x 4,9 » pour largeur × longueur.
+          Un champ vide prend la cote JEDEC courante, à vérifier.</small>
+        <button class="tb primary mini" style="align-self:flex-start;" onclick="editeurGenererIpc()">Générer</button>
+        <div id="genIpcResultat"></div>
       </div>
     `;
+    editeurIpcChamps();
   } else {
     // Générateur Symbole Schématique
     cont.innerHTML = `
@@ -1771,139 +1759,54 @@ function remplirGenerateurEditeur() {
   }
 }
 
-function editeurGenererDip() {
-  editeurHistoriquePush();
-  const pins = parseInt(document.getElementById("genDipPins")?.value, 10) || 8;
-  const pitch = parseFloat(document.getElementById("genDipPitch")?.value) || 2.54;
-  const rowSpan = parseFloat(document.getElementById("genDipRowSpan")?.value) || 7.62;
-  const drill = parseFloat(document.getElementById("genDipDrill")?.value) || 0.8;
-
-  const nSide = Math.floor(pins / 2);
-  const pads = [];
-  const startY = ((nSide - 1) * pitch) / 2; // y vers le bas : broche 1 en haut à gauche
-
-  // Rangée gauche (pins 1 à nSide)
-  for (let i = 0; i < nSide; i++) {
-    pads.push({
-      n: i + 1,
-      x: -rowSpan / 2,
-      y: -startY + i * pitch,
-      w: 1.5,
-      h: 1.5,
-      shape: i === 0 ? "rect" : "circ",
-      drill: drill,
-      rot: 0
-    });
-  }
-  // Rangée droite (pins nSide+1 à pins) du bas vers le haut
-  for (let i = 0; i < nSide; i++) {
-    pads.push({
-      n: nSide + 1 + i,
-      x: rowSpan / 2,
-      y: startY - i * pitch,
-      w: 1.5,
-      h: 1.5,
-      shape: "circ",
-      drill: drill,
-      rot: 0
-    });
-  }
-
-  EDITEUR_LIB.data.pads = pads;
-  delete EDITEUR_LIB.data.holes; // une empreinte générée repart de zéro : les trous de la précédente n'y ont pas leur place
-  EDITEUR_LIB.data.pins = pins;
-  EDITEUR_LIB.data.style = "dip";
-  EDITEUR_LIB.data.pitch = pitch;
-  EDITEUR_LIB.data.pkg = `DIP-${pins}`;
-  editeurAjusterCorpsAuto(true);
-
-  remplirFormulaireEditeur();
-  basculerSousOngletEditeur("elements");
-  if (EDITEUR_LIB.renderer) EDITEUR_LIB.renderer.autoFit();
+/* Les champs de la famille choisie (COMPOSANTS_LIB.CHAMPS) */
+function editeurIpcChamps() {
+  const cont = document.getElementById("genIpcChamps");
+  if (!cont) return;
+  const f = document.getElementById("genIpcFamille")?.value || "chip";
+  cont.innerHTML = (COMPOSANTS_LIB.CHAMPS[f] || []).map(([cle, lib, genre, liste]) =>
+    `<div class="form-group"><label>${esc(lib)}</label>` + (genre === "choix"
+      ? `<select id="genIpc_${cle}"><option value="">—</option>${liste.map(v => `<option>${esc(v)}</option>`).join("")}</select>`
+      : `<input type="text" id="genIpc_${cle}" placeholder="${genre === "cote" ? "min max" : genre === "paire" ? "l x L" : ""}">`) +
+    `</div>`).join("");
+  const res = document.getElementById("genIpcResultat");
+  if (res) res.innerHTML = "";
 }
 
-function editeurGenererSoic() {
+/* Génère l'empreinte et la pose dans l'éditeur, sans rien enregistrer : on la relit, on la
+   nomme, puis « Enregistrer » la contrôle et l'écrit comme toute autre. */
+function editeurGenererIpc() {
+  const val = id => document.getElementById(id)?.value || "";
+  const f = val("genIpcFamille") || "chip";
+  const textes = {};
+  for (const [cle] of COMPOSANTS_LIB.CHAMPS[f] || []) textes[cle] = val("genIpc_" + cle);
+  const lu = COMPOSANTS_LIB.lireParametres(f, textes);
+  const res = document.getElementById("genIpcResultat");
+  const montrer = (erreurs, remarques, cotes) => {
+    if (!res) return;
+    res.innerHTML = erreurs.map(e => `<div style="color:var(--err,#e8564a);">✗ ${esc(e)}</div>`).join("") +
+      remarques.map(r => `<div style="color:var(--txt-dim);">• ${esc(r)}</div>`).join("") +
+      (cotes ? `<div style="color:var(--txt-dim);">IPC-7351B : Z ${+cotes.Z} · G ${+cotes.G} · X ${+cotes.X} mm</div>` : "");
+  };
+  if (lu.erreurs.length) { montrer(lu.erreurs, []); return false; }
+  lu.parametres.densite = val("genIpcDensite") || "N";
+  const nom = val("genIpcNom").trim();
+  if (nom) lu.parametres.nom = nom;
+  const r = COMPOSANTS_LIB.genererEmpreinte(f, lu.parametres);
+  if (!r.empreinte || r.erreurs.length) { montrer(r.erreurs, r.remarques || []); return false; }
   editeurHistoriquePush();
-  const pins = parseInt(document.getElementById("genSoicPins")?.value, 10) || 8;
-  const pitch = parseFloat(document.getElementById("genSoicPitch")?.value) || 1.27;
-  const span = parseFloat(document.getElementById("genSoicSpan")?.value) || 5.4;
-  const padSize = (document.getElementById("genSoicPadSize")?.value || "1.5 x 0.6").split("x");
-  const padW = parseFloat(padSize[0]) || 1.5;
-  const padH = parseFloat(padSize[1]) || 0.6;
-
-  const nSide = Math.floor(pins / 2);
-  const pads = [];
-  const startY = ((nSide - 1) * pitch) / 2;
-
-  for (let i = 0; i < nSide; i++) {
-    pads.push({
-      n: i + 1,
-      x: -span / 2,
-      y: -startY + i * pitch,
-      w: padW,
-      h: padH,
-      shape: "rect",
-      drill: 0,
-      rot: 0
-    });
+  // le même objet : le moteur de rendu le tient
+  const d = EDITEUR_LIB.data;
+  for (const k of Object.keys(d)) delete d[k];
+  Object.assign(d, JSON.parse(JSON.stringify(r.empreinte)));
+  if (EDITEUR_LIB.estNouveau) {
+    const inp = document.getElementById("editeurNomFichier");
+    if (inp) inp.value = d.name + ".json";
   }
-  for (let i = 0; i < nSide; i++) {
-    pads.push({
-      n: nSide + 1 + i,
-      x: span / 2,
-      y: startY - i * pitch,
-      w: padW,
-      h: padH,
-      shape: "rect",
-      drill: 0,
-      rot: 0
-    });
-  }
-
-  EDITEUR_LIB.data.pads = pads;
-  delete EDITEUR_LIB.data.holes; // une empreinte générée repart de zéro : les trous de la précédente n'y ont pas leur place
-  EDITEUR_LIB.data.pins = pins;
-  EDITEUR_LIB.data.style = "sop";
-  EDITEUR_LIB.data.pitch = pitch;
-  EDITEUR_LIB.data.pkg = `SOIC-${pins}`;
-  editeurAjusterCorpsAuto(true);
-
   remplirFormulaireEditeur();
-  basculerSousOngletEditeur("elements");
+  montrer([], r.remarques, r.cotes);
   if (EDITEUR_LIB.renderer) EDITEUR_LIB.renderer.autoFit();
-}
-
-function editeurGenererHeader() {
-  editeurHistoriquePush();
-  const pins = parseInt(document.getElementById("genHdrPins")?.value, 10) || 4;
-  const pitch = parseFloat(document.getElementById("genHdrPitch")?.value) || 2.54;
-  const pads = [];
-  const startY = ((pins - 1) * pitch) / 2;
-
-  for (let i = 0; i < pins; i++) {
-    pads.push({
-      n: i + 1,
-      x: 0,
-      y: -startY + i * pitch,
-      w: 1.7,
-      h: 1.7,
-      shape: i === 0 ? "rect" : "circ",
-      drill: 1.0,
-      rot: 0
-    });
-  }
-
-  EDITEUR_LIB.data.pads = pads;
-  delete EDITEUR_LIB.data.holes; // une empreinte générée repart de zéro : les trous de la précédente n'y ont pas leur place
-  EDITEUR_LIB.data.pins = pins;
-  EDITEUR_LIB.data.style = "row";
-  EDITEUR_LIB.data.pitch = pitch;
-  EDITEUR_LIB.data.pkg = `HDR-1x${pins}`;
-  editeurAjusterCorpsAuto(true);
-
-  remplirFormulaireEditeur();
-  basculerSousOngletEditeur("elements");
-  if (EDITEUR_LIB.renderer) EDITEUR_LIB.renderer.autoFit();
+  return true;
 }
 
 function editeurGenererCiSch() {
@@ -1985,6 +1888,11 @@ async function editeurEnregistrer() {
   }
 
   const type = EDITEUR_LIB.type;
+  /* un autre fichier de la LIB du même nom : on ne l'écrase pas sans le demander (un nom
+     généré, « SOIC-8 », « 0603 », y est souvent déjà) */
+  const existe = Array.isArray(LIB_STATE.fichiers[type]) && LIB_STATE.fichiers[type].includes(nom);
+  if (existe && (EDITEUR_LIB.estNouveau || nom !== EDITEUR_LIB.nomFichier) &&
+      !confirm(`${nom} existe déjà dans la LIB. Le remplacer ?`)) return;
   try {
     afficherToast(`Enregistrement de ${nom} en cours...`, "info");
     await sauvegarderFichierLib(type, nom, EDITEUR_LIB.data);
@@ -2096,9 +2004,8 @@ window.editeurAjouterPad = editeurAjouterPad;
 window.editeurSupprimerPad = editeurSupprimerPad;
 window.editeurAjouterPin = editeurAjouterPin;
 window.editeurSupprimerPin = editeurSupprimerPin;
-window.editeurGenererDip = editeurGenererDip;
-window.editeurGenererSoic = editeurGenererSoic;
-window.editeurGenererHeader = editeurGenererHeader;
+window.editeurIpcChamps = editeurIpcChamps;
+window.editeurGenererIpc = editeurGenererIpc;
 window.editeurGenererCiSch = editeurGenererCiSch;
 window.editeurChangerOutil = editeurChangerOutil;
 window.editeurChangerPasGrille = editeurChangerPasGrille;
