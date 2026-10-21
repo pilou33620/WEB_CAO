@@ -641,9 +641,7 @@ function padBras(q,l){
    forme pleine du net de la zone (liaison directe, via du net) tient ce cuivre
    tout du long : il ne se décolle pas, rien à retirer. Écran, îlots, Gerber, IPC-2581
    et simulation s'en servent ; mémoïsé par révision.
-   shortcut: pastilles et vias seulement, pas les pistes (une piste longe une
-   pastille sur toute sa longueur) ; un algorithme d'ouverture du cuivre
-   rempli le ferait partout, arcs compris. */
+   Pastilles, vias et pistes (droites et arcs). */
 const LANIERES_MEMO={ver:-1,m:new Map()};
 function enveloppeConvexe(P){
   const p=P.slice().sort((a,b)=>a.x-b.x||a.y-b.y), h=[];
@@ -690,9 +688,21 @@ function zoneLanieres(l){
     const r=v.d/2+clrK(z.net,v.net,"cu","via");
     ajouter({fait:()=>cercle(v.x,v.y,r,0,2*Math.PI),d:(x,y)=>Math.hypot(x-v.x,y-v.y)-r,net:v.net},v.x-r,v.y-r,v.x+r,v.y+r);
   }
-  // shortcut: les arcs de piste n'y sont pas (bord à échantillonner sur l'arc) ; à faire si un tracé courbe en laisse
   for(const t of S.tracks){
-    if(t.l!==l||arcOf(t))continue;
+    if(t.l!==l)continue;
+    if(arcOf(t)){
+      /* un arc : son bord, de part et d'autre de l'axe, échantillonné le long de lui (trkAt) */
+      const m=trkMid(t), z=zoneAt(l,m.x,m.y);
+      if(!z||zoneFichier(z)||(t.net&&t.net===z.net))continue;
+      const r=t.w/2+clrK(z.net,t.net,"cu","trk"), b=trkBBox(t), A=arcOf(t);
+      ajouter({piste:true,net:t.net,d:(x,y)=>trkDist(x,y,t)-r,
+               fait:()=>{const n=Math.max(4,Math.ceil(trkLen(t)/0.1)),o=[];
+                 for(let k=0;k<=n;k++){const p=trkAt(t,k/n), a=Math.atan2(p.y-A.cy,p.x-A.cx);
+                   o.push({x:p.x+r*Math.cos(a),y:p.y+r*Math.sin(a)},{x:p.x-r*Math.cos(a),y:p.y-r*Math.sin(a)});}
+                 return o.concat(cercle(t.x1,t.y1,r,0,2*Math.PI),cercle(t.x2,t.y2,r,0,2*Math.PI));}},
+              b.x1-r,b.y1-r,b.x2+r,b.y2+r);
+      continue;
+    }
     const m=trkMid(t), z=zoneAt(l,m.x,m.y);
     if(!z||zoneFichier(z)||(t.net&&t.net===z.net))continue;
     const r=t.w/2+clrK(z.net,t.net,"cu","trk"), a=Math.atan2(t.y2-t.y1,t.x2-t.x1), nx=-Math.sin(a)*r, ny=Math.cos(a)*r;

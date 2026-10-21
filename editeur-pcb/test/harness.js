@@ -3623,8 +3623,14 @@ T("cuivre mini : la bande trop étroite entre deux dégagements est retirée, pa
     if(lp.some(H=>inPoly(P.x-2.5,ym,H)))throw new Error("loin de la pastille, rien n'est retiré le long de la piste");
     S.tracks[0].y1=S.tracks[0].y2=yPiste(0.3);touch();
     if(zoneLanieres(0).some(H=>inPoly(P.x,P.y+0.5+ca+0.15,H)))throw new Error("0,3 mm de cuivre : rien à retirer");
+    // un arc qui frôle la pastille au même écart : la bande est retirée aussi
+    const yc=yPiste(0.1), arc={l:0,net:"SIG",w:0.2,x1:P.x-3,y1:yc,x2:P.x+3,y2:yc,ca:0.2};
+    if(trkMid(arc).y<yc)arc.ca=-0.2;                     // le ventre vers l'extérieur, puis la corde rapprochée
+    const fl=trkMid(arc).y-yc;arc.y1=arc.y2=yc-fl;
+    S.tracks=[arc];touch();
+    if(Math.abs(trkMid(arc).y-yc)>1e-6||!zoneLanieres(0).some(H=>inPoly(P.x,ym,H)))throw new Error("arc : la bande sous son ventre");
     // une piste du net de la zone tient le cuivre qu'elle touche : rien entre elle et la pastille
-    S.tracks[0].net="GND";S.tracks[0].y1=S.tracks[0].y2=yPiste(0.1);touch();
+    S.tracks=[{l:0,net:"GND",w:0.2,x1:P.x-3,y1:yPiste(0.1),x2:P.x+3,y2:yPiste(0.1)}];touch();
     if(zoneLanieres(0).some(H=>inPoly(P.x,ym,H)))throw new Error("piste GND : rien à retirer");
   }finally{suiviFin(reg);loadDoc(JSON.parse(saved),true);}
 });

@@ -844,10 +844,10 @@ section Zone) : entre deux pastilles (ou une pastille et une via) dont les
 dégagements laissent moins que ce minimum, la bande est retirée du
 remplissage (`zoneLanieres`) — plus de pointe de cuivre au bout d'une fente,
 ni de lanière qui se décolle. L'écran, les îlots, le Gerber, l'IPC-2581 et la
-simulation retirent les mêmes. Le long d'une piste droite aussi, sur la
+simulation retirent les mêmes. Le long d'une piste aussi, sur la
 longueur où la bande est étroite ; une forme du net de la zone (liaison
 directe, piste ou via du net) tient le cuivre qu'elle touche et n'en fait pas
-retirer. Les arcs de piste ne sont pas encore traités. 0 désactive.
+retirer. Les arcs de piste aussi. 0 désactive.
 
 **Zones interdites et hauteurs** (`38-interdits.js`, outil « Zone interdite »
 du menu Outils, ou `cao_interdits_ecrire`) : une zone se pose sur UNE face, comme
