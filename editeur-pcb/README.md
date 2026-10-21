@@ -105,6 +105,9 @@ js/35-ipc2581-export.js  export IPC-2581 révision C : toute la carte en un
 js/36-dossier-meca.js    dossier mécanique : l'entrée tirée de la carte, le
                          tableau des hauteurs et des ouvertures, le zip ;
                          voir « Dossier mécanique »
+js/37-routage-pilote.js  routage, paires et placement par le canal de pilotage
+js/38-interdits.js       zones interdites par face et hauteurs maximales :
+                         données, tracé, fiche et DRC
 outils/build-monofichier.py assemble le tout dans dist/
 outils/fonte-plans.py    réduit Liberation Sans à la fonte des plans
 test/harness.js          banc d'essai sans navigateur
