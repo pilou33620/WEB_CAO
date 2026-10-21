@@ -1873,8 +1873,13 @@ function padsOf(fp){
     for(const q of free)out.push(padClone(q));
   }else if(fp.style==="chip"){
     /* les plus petites puces (0201, 01005) ont des bornes plus fines que le
-       plancher d'un connecteur : les pastilles suivent l'écartement */
-    const w=Math.max(0.4,sp*0.55), h=Math.max(0.45,sp*0.62);
+       plancher d'un connecteur : les pastilles suivent l'écartement. Les
+       grandes (1206 et plus, entraxe de 3 mm et plus) gardent une pastille
+       de 1,2 mm de long, comme l'IPC-7351B (1,165 pour une 1206, 1,265 pour
+       une 2512) : à 0,55 × l'entraxe, la 2512 sortait à 9,6 mm hors tout.
+       La largeur suit l'entraxe faute de connaître le composant : la LIB
+       (générateur IPC) la donne juste, et c'est elle que la pose prend. */
+    const w=sp>=3?1.2:Math.max(0.4,sp*0.55), h=Math.max(0.45,sp*0.62);
     for(let i=0;i<n;i++)
       out.push({n:i+1, x:(i-(n-1)/2)*sp, y:0, w, h, shape:"rect", drill:0});
   }else if(fp.style==="row"){

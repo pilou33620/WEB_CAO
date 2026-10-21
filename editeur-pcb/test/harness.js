@@ -3644,6 +3644,28 @@ T("sérigraphie sur le cuivre nu : repère posé au-dessus des pastilles, sinon 
     if(silk().length)throw new Error("la sérigraphie du dessous ne juge pas les pastilles du dessus");
   }finally{suiviFin(reg);loadDoc(JSON.parse(saved),true);}
 });
+/* Banc de charge : 300 boîtiers SO8 sous un plan GND, 1500 pistes. Le 21/10/2026, un calcul
+   des bras quadratique faisait passer l'analyse des îlots de 0,4 à 9,7 s par retouche ; les
+   bornes laissent dix fois la marge d'un Raspberry Pi, et attrapent ce genre de régression. */
+T("charge : 300 boîtiers sous un plan, îlots et Gerber cuivre en temps raisonnable",()=>{
+  const saved=serialize(), reg=suiviDecor();
+  try{
+    S.board={x:0,y:0,w:200,h:200,pts:null};S.rule.cuMin=0.2;
+    for(let i=0;i<300;i++){
+      const f=mkFp("U"+i,"","",8);f.x=5+(i%18)*10.5;f.y=5+Math.floor(i/18)*10.5;
+      const pads=[];for(let k=0;k<8;k++)pads.push({n:k+1,x:(k<4?-2.5:2.5),y:-1.905+(k%4)*1.27,w:1.5,h:0.6,shape:"rect",drill:0});
+      pcbAppliquerDefEmpreinte(f,"ESSAI-SO8",{style:"chip",pins:8,pads});
+      f.nets={};for(let k=1;k<=8;k++)f.nets[k]=(k%4===0)?"GND":"N"+i+"_"+k;
+      S.fps.push(f);
+      for(let k=0;k<5;k++)S.tracks.push({l:0,net:"N"+i+"_1",w:0.2,x1:f.x-2.5,y1:f.y-1.905,x2:f.x-2.5-k-1,y2:f.y-8-k});
+    }
+    S.zones=[{id:S.nextId++,l:0,net:"GND",pts:[{x:0.5,y:0.5},{x:199.5,y:0.5},{x:199.5,y:199.5},{x:0.5,y:199.5}]}];
+    touch();
+    let t=Date.now();conn(true);const tc=Date.now()-t;
+    touch();t=Date.now();gerberCopper(0);const tg=Date.now()-t;
+    if(tc>5000||tg>8000)throw new Error("îlots "+tc+" ms, Gerber "+tg+" ms : un calcul est devenu quadratique ?");
+  }finally{suiviFin(reg);loadDoc(JSON.parse(saved),true);}
+});
 T("Gerber : masque, pâte, sérigraphie, contour",()=>{
   if(gerberMask(0).indexOf("Soldermask,Top")<0)throw new Error("fonction du masque");
   if(gerberPaste(1).indexOf("Paste,Bot")<0)throw new Error("fonction de la pâte");
