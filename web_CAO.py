@@ -2583,6 +2583,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if not genre or not nom:
             raise ErreurLib(400, "Parametres 'type' et 'nom' requis")
         chemin = chemin_lib_fichier(genre, nom)
+        # « 2512 » comme les commandes de pilotage le nomment : le .json s'il existe
+        if not os.path.exists(chemin) and "." not in os.path.basename(chemin) and os.path.exists(chemin + ".json"):
+            chemin, nom = chemin + ".json", nom + ".json"
         if not os.path.exists(chemin):
             raise ErreurLib(404, "Fichier introuvable : %s" % nom)
         try:

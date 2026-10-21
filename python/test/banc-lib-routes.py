@@ -82,6 +82,13 @@ class TestLibRoutes(unittest.TestCase):
             self.assertEqual(fp.get("pins"), 2)
             self.assertIsInstance(fp.get("pads"), list)
 
+    def test_02b_lib_fichier_sans_extension(self):
+        # le nom des commandes de pilotage, sans .json : le fichier .json est rendu
+        with urllib.request.urlopen(f"{BASE_URL}/api/lib/fichier?type=pcb&nom=0603") as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            self.assertEqual(data.get("nom"), "0603.json")
+            self.assertEqual(data.get("data").get("name"), "0603")
+
     def test_03_lib_fichier_schematique(self):
         req = urllib.request.Request(f"{BASE_URL}/api/lib/fichier?type=schematique&nom=resistor.json")
         with urllib.request.urlopen(req) as resp:
