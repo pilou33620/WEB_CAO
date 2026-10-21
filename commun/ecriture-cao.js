@@ -706,12 +706,16 @@ const ECRITURE_CAO = (function () {
   }
   function muterContour(args) {
     const e = args.lot[0], f = forme(e, "contour", [], 5);
-    if (e.forme === "rectangle") {
-      Object.assign(S.board, { pts: null, x: r3(e.x), y: r3(e.y), w: r3(e.largeur), h: r3(e.hauteur) });
+    // les empreintes qui attendaient à côté de l'ancien contour viennent à côté du nouveau
+    const ranges = contourChanger(() => {
+      if (e.forme === "rectangle") Object.assign(S.board, { pts: null, x: r3(e.x), y: r3(e.y), w: r3(e.largeur), h: r3(e.hauteur) });
+      else S.board.pts = f.pts;
       boardChanged();
-    } else { S.board.pts = f.pts; boardChanged(); }
+    });
+    const notes = ranges ? [ranges + " empreinte(s) en attente rangée(s) à côté du nouveau contour."] : [];
     const dehors = S.fps.filter(fp => !inBoard(fp.x, fp.y, 0)).map(fp => fp.ref);
-    return { notes: dehors.length ? ["Hors du nouveau contour : " + dehors.slice(0, 30).join(", ") + (dehors.length > 30 ? "…" : "") + "."] : [] };
+    if (dehors.length) notes.push("Hors du nouveau contour : " + dehors.slice(0, 30).join(", ") + (dehors.length > 30 ? "…" : "") + ".");
+    return { notes };
   }
   const CONTOUR = lot({ titre: "Contour de carte", max: 1, verifier: verifierContour, muter: muterContour, rafraichir: rafraichirRegles, drc: true });
 

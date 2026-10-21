@@ -64,7 +64,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* variantes de montage (commun/variantes.js + 26-variantes.js) */
   "varNorm","varVide","varEstMonte","pcbVarDepuisSchema","pcbVarChoisir","pcbVarDessiner",
   "pcbVarOuvrir","pcbVarFermer","fabFpsMontes","listComps",
-  "edgeClick","edgeMove","closeEdge","boardPoly","setBoardSize","setBoardRect","setBoardDisque","boardDisquePts","inBoard","boardCutouts",
+  "edgeClick","edgeMove","closeEdge","boardPoly","setBoardSize","setBoardRect","setBoardDisque","boardDisquePts","contourChanger","inBoard","boardCutouts",
   "boardChanged","polyEdgeDist","segDist","orient","signedArea",
   "coordOpen","coordClose","coordApply","coordMode","coordPoint","coordAnchor",
   "placeOrigin","ux","uy","wxu","wyu","snapX","snapY","gOrigin","routeToPoint","hint",
@@ -27077,6 +27077,15 @@ TA("canal de pilotage : cao_contour_ecrire, rectangle, disque et polygone ; lect
   if(boardPoly().length!==5)throw new Error("polygone");
   undo();undo();undo();
   if(S.board.pts||S.undo.length)throw new Error("Ctrl+Z défait chaque contour");
+  // les empreintes en attente à côté de la carte suivent le contour ; celles posées dessus restent
+  loadDoc(exemple1());S.undo.length=0;
+  const pose=S.fps[0], attente=S.fps.slice(1,3), b0=S.board;
+  attente.forEach((f,k)=>{f.x=b0.x+b0.w+40;f.y=b0.y+5+k*6;});touch();
+  const xy=[pose.x,pose.y];
+  const pc=jouer("cao_contour_ecrire",[{forme:"disque",x:pose.x,y:pose.y,rayon:12}]);
+  if(pose.x!==xy[0]||pose.y!==xy[1])throw new Error("une empreinte posée ne bouge pas");
+  if(attente.some(f=>f.x>pose.x+12+30))throw new Error("l'attente suit le contour : "+attente.map(f=>f.x).join(", "));
+  if(!/en attente rangée\(s\) à côté du nouveau contour/.test(pc.apres))throw new Error("la carte le dit : "+pc.apres);
   refus("cao_contour_ecrire",[{forme:"polygone",points:[{x:0,y:0},{x:20,y:10},{x:20,y:0},{x:0,y:20}]}],/se coupent/);
   refus("cao_contour_ecrire",[{forme:"rectangle",x:0,y:0,largeur:2,hauteur:40}],/5 mm au moins/);
   refus("cao_contour_ecrire",[{forme:"ovale"}],/rectangle, disque ou polygone/);

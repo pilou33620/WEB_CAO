@@ -3754,8 +3754,7 @@ function closeEdge(){
   if(Z&&Z.decoupe){closeDecoupe(Z);return;}
   if(!Z||Z.pts.length<3){draw();return;}
   push();
-  S.board.pts=Z.pts.map(p=>({x:r3(p.x),y:r3(p.y)}));
-  boardChanged();
+  contourChanger(()=>{S.board.pts=Z.pts.map(p=>({x:r3(p.x),y:r3(p.y)}));boardChanged();});   // l'attente suit
   clearSel();S.sel.edge=true;
   refreshPanels();reSync();draw();
   const out=S.fps.filter(f=>!inBoard(f.x,f.y,0)).length;

@@ -1698,7 +1698,7 @@ function propsBoard(box){
     reSync();refreshPanels();draw();};
   $("bpDraw").onclick=()=>setMode("edge");
   $("bpDisque").onclick=()=>{const b=S.board;push();
-    setBoardDisque(b.x+b.w/2,b.y+b.h/2,Math.min(b.w,b.h)/2);reSync();refreshPanels();draw();
+    contourChanger(()=>setBoardDisque(b.x+b.w/2,b.y+b.h/2,Math.min(b.w,b.h)/2));reSync();refreshPanels();draw();
     hint("Contour en disque de "+fmt(Math.min(b.w,b.h),2)+" mm de diamètre.");};
   const r=$("bpRect");
   if(r)r.onclick=()=>{push();setBoardRect();reSync();refreshPanels();draw();

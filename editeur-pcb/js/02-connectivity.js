@@ -1521,6 +1521,17 @@ function arrange(list){
     y+=h+2;
   }
 }
+/* Les empreintes en attente à côté de la carte (rangées là par l'import, jamais
+   posées dessus) suivent un nouveau contour : une carte de 100 mm réduite à un
+   disque de 26 mm les laissait à 80 mm de lui (LED_UV). Celles qui étaient sur
+   la carte ne bougent pas, même si le nouveau contour les laisse dehors. `fn`
+   change le contour ; rend le nombre d'empreintes rangées. */
+function contourChanger(fn){
+  const attente=S.fps.filter(fp=>!inBoard(fp.x,fp.y,0));
+  fn();
+  if(attente.length){arrange(attente);touch();}
+  return attente.length;
+}
 /* Placement assisté : attraction le long du chevelu, répulsion des boîtiers.
    Quelques dizaines d'itérations suffisent pour dégrossir. Les empreintes
    encore hors de la carte (rangées à côté après un import) partent d'une
