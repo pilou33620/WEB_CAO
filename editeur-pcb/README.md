@@ -110,6 +110,8 @@ js/38-interdits.js       zones interdites par face et hauteurs maximales :
                          données, tracé, fiche et DRC
 js/39-thermique.js       échauffement estimé des composants qui dissipent :
                          cuivre relié, appel au serveur, DRC, fiche
+js/41-animation-3d.js    animation 3D de la carte qui s'assemble, en option
+                         de Fabrication .zip : vidéo et page HTML autonome
 outils/build-monofichier.py assemble le tout dans dist/
 outils/fonte-plans.py    réduit Liberation Sans à la fonte des plans
 test/harness.js          banc d'essai sans navigateur
@@ -143,6 +145,9 @@ Ces fichiers viennent du dossier partagé, à la racine du dépôt :
                          mécanique » et le DXF, communs avec la visionneuse
 ../commun/zip.js         archive ZIP sans compression (crc32, zipBlob) :
                          fabrication.zip, dossier méca
+../commun/vendor/three-source.js  three.js r186 en texte (THREE_SOURCE), évalué
+                         par l'animation 3D et recopié dans sa page ; licence
+                         MIT à côté, commun/vendor/LICENSE-three.txt
 ../commun/test/dom-stub.js  DOM minimal du banc d'essai
 ../commun/outils/monofichier.py  mécanique d'assemblage
 ```
@@ -1398,6 +1403,37 @@ dessin.meca   {h:{<id d'empreinte>:mm}, ouv:{<id d'empreinte>:true|false}}
 bornés par `dfCfg` (`mecaNormReglages` : identifiants existants, hauteur de 0
 à 100 mm). L'export IPC-2581 écrit la hauteur connue en `<Package height>`.
 La visionneuse IPC-2581 donne le même dossier depuis un fichier IPC.
+
+## Animation 3D dans le dossier de fabrication
+
+**Fichier → Animation 3D dans le .zip** est une bascule, éteinte à chaque
+ouverture de l'éditeur. Allumée, **Fabrication .zip** joue d'abord la carte
+qui s'assemble dans un voile (une vingtaine de secondes, en temps réel : il
+faut garder l'onglet au premier plan), puis livre le dossier avec deux
+fichiers de plus, annoncés par le Master Drawing et le LISEZ-MOI :
+
+| fichier | contenu |
+| --- | --- |
+| `<projet>-ASSEMBLAGE-3D.html` | l'animation en boucle, orientable à la souris (glisser, molette, double-clic pour revenir), three.js embarqué : elle s'ouvre hors ligne, sans serveur |
+| `<projet>-ASSEMBLAGE-3D.mp4` ou `.webm` | la même en vidéo 1280 × 720, enregistrée dans le navigateur (`MediaRecorder` sur le canvas) : H.264 en MP4 si le navigateur l'encode, sinon WebM (VP9, puis VP8). Sans `MediaRecorder`, pas de vidéo, la page part seule |
+
+L'ordre : carte nue (le substrat à l'épaisseur de l'empilage, contour,
+découpes et trous) → cuivre des faces externes (les pistes se posent de
+gauche à droite, puis zones, pastilles et vias) → vernis et sérigraphie →
+composants un par un, du plus gros au plus petit, dessus puis dessous (la
+caméra passe sous la carte) → un tour complet de la carte finie. Le titre (le
+nom du projet), « L × l mm » et l'étape sont en bandeau.
+
+Les composants sont des pavés : le corps de l'empreinte à la hauteur du
+dossier mécanique (saisie, fichier, puis LIB) ; sans hauteur connue, 0,4 × le
+côté moyen du corps, entre 0,3 et 3 mm. Les zones de cuivre sont dessinées
+entières, sans leurs dégagements, sous le vernis. La barre d'état dit le format
+de la vidéo et le nombre d'images par seconde du rendu.
+
+Le code : `js/41-animation-3d.js`. `anim3dDonnees` relève la carte dans le
+repère des Gerber (le dossier méca, `silkTraits` pour la sérigraphie, que le
+Gerber lit aussi) ; `anim3dLancer` construit et joue la scène, sans rien
+d'autre que THREE et ces données, d'où sa recopie telle quelle dans la page.
 
 ## Export IPC-2581
 

@@ -537,6 +537,10 @@ function masterDrawingPdf(fabFiles){
   for(const f of (fabFiles||[]).filter(f=>/\.dxf$/i.test(f.name)))
     tableRow(f.name,/-CARTE\.dxf$/i.test(f.name)?"Board outline, holes, components - DXF R12, mm, scale 1:1"
                                                 :"Fabrication drawing sheet - DXF R12, mm",true,alt=!alt);
+  /* l'animation 3D (41-animation-3d.js), si elle est dans l'archive */
+  for(const f of (fabFiles||[]).filter(f=>f.kind==="anim3d"))
+    tableRow(f.name,/\.html$/i.test(f.name)?"3D assembly animation - standalone HTML page (illustration only)"
+                                          :"3D assembly animation - video (illustration only)",true,alt=!alt);
   y+=MD_LH*1.2;
 
   if(plansF){

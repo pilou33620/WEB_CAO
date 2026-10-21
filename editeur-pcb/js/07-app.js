@@ -673,6 +673,7 @@ $("bOpen").onclick=()=>$("fileIn").click();
 $("fileIn").onchange=()=>{const f=$("fileIn").files[0];if(f)openFile(f);$("fileIn").value="";};
 $("bPng").onclick=exportPng;
 $("bFab").onclick=exportFab;
+$("bFabAnim").onclick=()=>fabAnimBasculer();   // 41-animation-3d.js se charge après ce fichier
 $("bVariantes").onclick=()=>pcbVarOuvrir();   // 26-variantes.js se charge après ce fichier
 $("bNew").onclick=newDoc;
 $("cuCount").onchange=()=>{
