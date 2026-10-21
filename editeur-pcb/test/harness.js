@@ -265,7 +265,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "pcbParseFrequence","pcbDefinirSchema","pcbSchemaDoc","pcbComposantsSchema",
   "pcbSpecsComposant","pcbParasitesComposant","SIM_PARASITES_MURATA","pcbNetComposants","simFicheSchemaAdaptation","simDiffApres",
   "applyNetlist","pcbNettoyerPistesConflits",
-  "pcbVerifierPinout","pcbVerifierPinoutComposant","pcbGeomMesuree","pcbPinoutGroupes","pcbRapportPinout","pcbVerifierEtNotifierPinout","pcbAfficherToastPinout","pcbOuvrirDialoguePinout",
+  "pcbVerifierPinout","pcbVerifierPinoutComposant","pcbAcquitterPinout","pcbGeomMesuree","pcbPinoutGroupes","pcbRapportPinout","pcbVerifierEtNotifierPinout","pcbAfficherToastPinout","pcbOuvrirDialoguePinout",
   /* synchronisation schéma ↔ PCB & ECO */
   "PCB_ECO","pcbObtenirDonneesSchema","pcbPistesConnecteesFp","pcbPistesConnecteesPad",
   "pcbDetecterDisparitesEco","pcbAppliquerEco","pcbOuvrirFenetreEco","pcbVerifierEtNotifierEco",
@@ -19545,6 +19545,27 @@ T("Pinout PCB : conformité complète d'un composant (pas, taille de boîtier, b
   if (verifGlobale.nbAnomalies !== 0) throw new Error("nbAnomalies devrait valoir 0");
 });
 
+T("Pinout PCB : une anomalie acquittée sort de l'alerte, et revient si elle change",()=>{
+  const fpsAvant=S.fps, acqAvant=S.pinoutAcquits;
+  try{
+    pcbDefinirSchema({pages:[{comps:[{ref:"X1",npins:2,pinMap:["1","9"],pinNames:["A","B"]}]}]});   // « 9 » sans pastille
+    const fp=mkFp("X1","","",3);fp.style="row";S.fps=[fp];S.pinoutAcquits={};touch();
+    S.undo.length=0;const n0=0;          // la pile est pleine après les essais précédents
+    if(pcbVerifierPinout().nbAnomalies!==1)throw new Error("le décor : une anomalie");
+    if(!pcbAcquitterPinout("X1",true)||S.undo.length!==n0+1)throw new Error("acquitter : une étape d'historique");
+    const r=pcbVerifierPinout();
+    if(r.nbAnomalies!==0||!r.conforme||!r.composants[0].acquitte||pcbPinoutGroupes(r).acquittes.length!==1)throw new Error("acquittée : hors de l'alerte");
+    pcbOuvrirDialoguePinout(r);const mo=document.getElementById("pcbPinoutModal");if(mo)mo.remove();   // la fenêtre s'ouvre avec le groupe « Acquittées »
+    // relue du fichier
+    loadDoc(JSON.parse(serialize()),true);
+    if(pcbVerifierPinout().nbAnomalies!==0)throw new Error("l'acquittement part au fichier");
+    // les anomalies changent (« 9 » devient « 8 ») : l'alerte revient
+    pcbDefinirSchema({pages:[{comps:[{ref:"X1",npins:2,pinMap:["1","8"],pinNames:["A","B"]}]}]});touch();
+    if(pcbVerifierPinout().nbAnomalies!==1)throw new Error("une autre anomalie n'est pas acquittée");
+    pcbAcquitterPinout("X1",true);pcbAcquitterPinout("X1",false);
+    if(pcbVerifierPinout().nbAnomalies!==1)throw new Error("ne plus acquitter");
+  }finally{S.fps=fpsAvant;S.pinoutAcquits=acqAvant;touch();}
+});
 T("Pinout PCB : détection d'une mauvaise distance entre les pins (pitch)", ()=>{
   const schDoc = {
     pages: [{

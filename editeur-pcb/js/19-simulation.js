@@ -3463,6 +3463,18 @@ function pcbVerifierPinoutComposant(c, fp) {
   };
 }
 
+/* Ce qu'on acquitte : le texte exact des anomalies d'un composant. */
+function pcbSignaturePinout(diag) { return (diag.anomalies || []).join(" | "); }
+/* Acquitter (ou rendre) les anomalies de brochage d'un composant : une étape Ctrl+Z. */
+function pcbAcquitterPinout(ref, oui) {
+  const diag = (pcbVerifierPinout().composants || []).find(c => c.ref === ref);
+  if (oui && (!diag || diag.conforme)) return false;
+  push();
+  S.pinoutAcquits = Object.assign({}, S.pinoutAcquits || {});
+  if (oui) S.pinoutAcquits[ref] = pcbSignaturePinout(diag); else delete S.pinoutAcquits[ref];
+  touch();
+  return true;
+}
 function pcbVerifierPinout(doc) {
   const schMap = pcbComposantsSchema(doc);
   if (typeof S === "undefined" || !Array.isArray(S.fps)) {
@@ -3473,33 +3485,31 @@ function pcbVerifierPinout(doc) {
   const anomaliesGlobales = [];
   const fpsMap = new Map(S.fps.map(f => [f.ref, f]));
 
+  /* Une anomalie acquittée (faux positif reconnu) sort du compte et de l'alerte,
+     tant que ses anomalies restent exactement celles qu'on a acquittées. */
+  const acquits = S.pinoutAcquits || {};
+  const compter = diag => {
+    resultats.push(diag);
+    if (diag.conforme || diag.statut === "NON_PLACE") return;
+    if (Object.prototype.hasOwnProperty.call(acquits, diag.ref) && acquits[diag.ref] === pcbSignaturePinout(diag)) diag.acquitte = true;
+    else anomaliesGlobales.push(...diag.anomalies);
+  };
+
   // 1. Vérifier les composants déclarés au schéma
   schMap.forEach(c => {
-    const fp = fpsMap.get(c.ref);
-    const diag = pcbVerifierPinoutComposant(c, fp);
-    if (diag) {
-      resultats.push(diag);
-      if (!diag.conforme && diag.statut !== "NON_PLACE") {
-        anomaliesGlobales.push(...diag.anomalies);
-      }
-    }
+    const diag = pcbVerifierPinoutComposant(c, fpsMap.get(c.ref));
+    if (diag) compter(diag);
   });
 
   // 2. Vérifier les empreintes PCB absentes du schéma
   S.fps.forEach(fp => {
     if (!schMap.has(fp.ref)) {
       const diag = pcbVerifierPinoutComposant({ ref: fp.ref, value: fp.value, pkg: fp.pkg }, fp);
-      if (diag) {
-        resultats.push(diag);
-        if (!diag.conforme) {
-          anomaliesGlobales.push(...diag.anomalies);
-        }
-      }
+      if (diag) compter(diag);
     }
   });
 
-  const allConforme = resultats.length > 0 && resultats.every(r => r.conforme || r.statut === "NON_PLACE");
-  const nbAnom = resultats.filter(r => !r.conforme && r.statut !== "NON_PLACE").length;
+  const nbAnom = resultats.filter(r => !r.conforme && r.statut !== "NON_PLACE" && !r.acquitte).length;
 
   let resume = "";
   if (resultats.length === 0) {

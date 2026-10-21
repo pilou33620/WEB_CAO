@@ -284,7 +284,8 @@ function pcbAfficherToastPinout(res) {
 function pcbPinoutGroupes(res) {
   const L = (res && res.composants) || [];
   return {
-    fautifs: L.filter(c => !c.conforme && c.statut !== "NON_PLACE"),
+    fautifs: L.filter(c => !c.conforme && c.statut !== "NON_PLACE" && !c.acquitte),
+    acquittes: L.filter(c => c.acquitte),
     nonPlaces: L.filter(c => c.statut === "NON_PLACE"),
     conformes: L.filter(c => c.conforme)
   };
@@ -338,8 +339,8 @@ function pcbOuvrirDialoguePinout(res) {
   const carte = c => {
       const isOk = c.conforme;
       const isMissing = c.statut === "NON_PLACE";
-      const badgeCls = isOk ? "ok" : (isMissing ? "dim" : "warn");
-      const badgeTxt = isOk ? "✓ Conforme" : (isMissing ? "⏳ Non placé" : "⚠️ Incohérence");
+      const badgeCls = isOk ? "ok" : (isMissing || c.acquitte ? "dim" : "warn");
+      const badgeTxt = isOk ? "✓ Conforme" : (isMissing ? "⏳ Non placé" : c.acquitte ? "☑ Acquittée" : "⚠️ Incohérence");
 
       let pinsRows = "";
       if (c.pins && c.pins.length) {
@@ -388,6 +389,14 @@ function pcbOuvrirDialoguePinout(res) {
                 '<b>Nombre de pastilles :</b> ' + esc(c.pinCountCheck ? c.pinCountCheck.msg : "—") +
               '</div>' +
             '</div>' +
+            (!isOk && !isMissing ? (
+              '<div style="margin:8px 0 4px">' +
+                '<button class="tb pcb-acquit-btn" data-acquit-ref="' + esc(c.ref) + '" data-acquit="' + (c.acquitte ? "0" : "1") + '" style="font-size:11px" ' +
+                  'title="' + (c.acquitte ? 'Remettre ces anomalies dans l\'alerte' : 'Faux positif reconnu : ces anomalies sortent de l\'alerte, et reviennent si elles changent') + '">' +
+                  (c.acquitte ? '↩ Ne plus acquitter' : '☑ Acquitter (faux positif)') +
+                '</button>' +
+              '</div>'
+            ) : '') +
             (c.peutReposer ? (
               '<div style="margin:10px 0 6px">' +
                 '<button class="tb on pcb-repose-btn" data-repose-ref="' + esc(c.ref) + '" style="background:#2563eb;border-color:#3b82f6;color:#fff;font-size:11px">' +
@@ -421,6 +430,7 @@ function pcbOuvrirDialoguePinout(res) {
       '</details>' : '';
     cardsHtml =
       groupe("⚠️ À corriger", "#fbbf24", g.fautifs, true) +
+      groupe("☑ Acquittées", "#9aa3b0", g.acquittes, false) +
       groupe("⏳ Non placés", "#9aa3b0", g.nonPlaces, !g.fautifs.length) +
       groupe("✓ Conformes", "#52c41a", g.conformes, false);
   }
@@ -463,6 +473,15 @@ function pcbOuvrirDialoguePinout(res) {
   const bC = document.getElementById("pcbModalCopier");
   if (bC) bC.onclick = () => pcbCopierTexte(pcbRapportPinout(res), "Rapport pinout copié (" + res.nbAnomalies + " composant(s) à corriger).");
 
+  m.querySelectorAll(".pcb-acquit-btn").forEach(btn => {
+    btn.onclick = () => {
+      const ref = btn.getAttribute("data-acquit-ref"), oui = btn.getAttribute("data-acquit") === "1";
+      if (!pcbAcquitterPinout(ref, oui)) return;
+      hint(oui ? "Anomalies de " + ref + " acquittées : elles reviennent si elles changent." : "Anomalies de " + ref + " remises dans l'alerte.");
+      pcbOuvrirDialoguePinout(pcbVerifierPinout());
+      pcbVerifierEtNotifierPinout(false);
+    };
+  });
   // Câbler les boutons pour reposer l'empreinte automatique
   m.querySelectorAll(".pcb-repose-btn").forEach(btn => {
     btn.onclick = () => {

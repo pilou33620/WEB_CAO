@@ -17,6 +17,7 @@ function docObj(){
           fps:S.fps,tracks:S.tracks,vias:S.vias,zones:S.zones,cuts:S.cuts,
           holes:S.holes||[],
           drawings:S.drawings||[],
+          pinoutAcquits:S.pinoutAcquits||{},
           variantes:S.variantes,
           groupes:groupesPropres(),
           dessin:S.dessin||null,
@@ -777,6 +778,13 @@ function normDoc(d){
   out.cuts=arr(src.cuts).map((c,i)=>normCut(c,cu,i)).filter(Boolean);
   out.holes=arr(src.holes).map((h,i)=>normHole(h,i)).filter(Boolean);
   out.drawings=arr(src.drawings).map((d,i)=>normDrawingPcb(d,i)).filter(Boolean);
+  /* anomalies de brochage acquittées : repère → leur texte exact, pour qu'un
+     changement les fasse revenir (pcbVerifierPinout) */
+  out.pinoutAcquits={};
+  const pa=src.pinoutAcquits;
+  if(pa&&typeof pa==="object"&&!Array.isArray(pa))
+    for(const [k,v] of Object.entries(pa).slice(0,2000))
+      if(typeof v==="string"&&/^[^\x00-\x1f]{1,40}$/.test(k)&&!["__proto__","constructor","prototype"].includes(k))out.pinoutAcquits[k]=v.slice(0,4000);
   if(cu<2)out.vias=[];                    // une seule couche : aucun via ne relie rien
 
   const maxId=Math.max(uniqueIds(out.fps),uniqueIds(out.zones),uniqueIds(out.cuts),
@@ -841,7 +849,7 @@ function loadDoc(d,keepView){
   S.dessin=d.dessin;
   S.contraintes=d.contraintes;
   S.fps=d.fps;S.tracks=d.tracks;S.vias=d.vias;
-  S.zones=d.zones;S.cuts=d.cuts;S.holes=d.holes||[];S.drawings=d.drawings||[];
+  S.zones=d.zones;S.cuts=d.cuts;S.holes=d.holes||[];S.drawings=d.drawings||[];S.pinoutAcquits=d.pinoutAcquits||{};
   S.active=d.active;S.pair=[0,S.cu-1];
   S.nextId=d.nextId;
   /* Fichiers de la V1.0 : le rôle « plan » portait sur la couche entière, sans
