@@ -13,7 +13,7 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 2 300 essais a
 
 | Composant | Statut | Couverture / Bancs |
 | --- | --- | --- |
-| **Éditeur PCB** | En service | 1025 essais (`editeur-pcb/test/harness.js`, relevé du 20/10/2026), dont 44 pour les plans (Draftsman), 30 pour le dossier mécanique, 24 pour le gestionnaire de contraintes et la topologie, 3 pour l'export IPC-2581 (+ 70 cas d'aller-retour, `banc-ipc2581-export.py`) |
+| **Éditeur PCB** | En service | 1034 essais (`editeur-pcb/test/harness.js`, relevé du 21/10/2026), dont 44 pour les plans (Draftsman), 30 pour le dossier mécanique, 24 pour le gestionnaire de contraintes et la topologie, 3 pour l'export IPC-2581 (+ 70 cas d'aller-retour, `banc-ipc2581-export.py`) |
 | **Éditeur Schématique** | En service | 173 essais (`editeur-schematique/test/harness.js`), dont 3 pour les contraintes de nets |
 | **Visionneuse IPC-2581** (lecteur `ipc2581_parser` 1.83, `ipc2581_json` 1.4.0) | En service | 232 essais (`harness-sim.js`, relevé du 21/10/2026), dont 13 pour le dossier mécanique + 79 (`banc-essai.py`) |
 | **SI — Impédance & Vias (`ligne_mom` v2.9.0)** | En service (0,3 à 0,4 % vs étalons ; pertes conducteur par l'inductance incrémentale de Wheeler, ruban + plan(s) + bords ; rugosité Hammerstad / Huray, diélectrique causal Djordjevic-Sarkar, via en ligne — branchés dans la cascade) | 236 cas (`python/test/banc-ligne-mom.py`) |
@@ -39,6 +39,8 @@ Le détail de chaque point est plus bas, dans sa section.
 
 **Code (faisable sans rien d'autre)**
 - Outil MCP pour lier un modèle de simulation (.sNp, SPICE) à une référence de la LIB.
+- Contrôles d'intégration mécanique (retour d'essai LED_UV, 21/10/2026) : voir *Éditeur PCB*.
+- Empreintes 1206 et 1210 de la LIB à refaire aux cotes IPC-7351B (même défaut que l'ancienne 2512).
 - Animation 3D de la carte qui s'assemble, en option de `fabrication.zip` (vidéo + page HTML).
 
 **Décisions à prendre**
@@ -180,6 +182,32 @@ Rien en cours : l'option B, les limites de l'option A et la garde de la règle *
   - MPD-BA2AAPC : le trou Ø2,03 du plan rév. H reste, trop juste pour la vis 2-56 recommandée — choix du 16/10/2026, clos ;
   - IPC-D-356 : une fente y garde sa largeur pour diamètre — le format ne connaît pas les fentes, c'est sa limite ; le Gerber, l'Excellon (G85) et l'IPC-2581 portent la vraie forme. Clos.
 - [ ] Reste ouvert : Yamaichi IC51-0484-806, broche 1 non marquée sur le plan 48 broches (une seule source indirecte) — à vérifier sur le repère moulé du support, par toi.
+
+### Retour d'essai de la carte LED_UV (21/10/2026)
+Corrigé le 21/10/2026 : connexion d'une piste à une pastille par sa vraie forme ; sérigraphie
+identique à l'écran et au Gerber (repère décalé, valeurs non imprimées) ; brochage « K=2/3 »
+au PCB ; taille des composants à une rangée ; zone pleine carte sur un contour fin ; contour
+en disque et arcs G03 au Gerber ; liaison directe des pastilles à une zone ; commandes de
+pilotage `cao_contour_ecrire`, `cao_zones_ecrire`, `cao_serigraphie_ecrire`,
+`cao_pastille_regler` ; écriture appliquée sans carte signalée ; `/api/lib/fichier` sans
+extension ; note du schéma décochée qui n'est plus une room ; 2512 en IPC-7351B.
+
+Reste :
+- [ ] **Face interdite** : une zone qui signale au DRC des pattes traversantes ressortant
+  d'une face (côté LED, intégration dans un bouchon).
+- [ ] **Hauteur des composants** : contrôle contre une hauteur maximale par face ou par zone
+  (la hauteur est déjà lue pour le dossier mécanique, « Maximun Height »). À rapprocher de
+  `web3d_collisions`.
+- [ ] **Estimation thermique simple** : puissance dissipée d'un composant, surface de cuivre
+  reliée à son plot, ΔT — le modèle d'étalement de `dc_solver` peut servir.
+- [ ] **Empreintes 1206 / 1210** : faites, comme l'ancienne 2512, avec la formule générique de
+  l'éditeur (pastille = 0,55 × entraxe) ; la 1210 a des pastilles plus étroites que le
+  composant (1,92 mm pour 2,5 mm). Les refaire par le générateur IPC-7351B, et revoir la
+  formule de `padsOf` (style chip) pour les grandes puces.
+- Gardé tel quel : les noms de colonnes du catalogue (« Maximun », « Standoof »,
+  « Dimenssions », « 3nd source ») — une douzaine d'endroits du code et sans doute le format
+  d'origine de la bibliothèque en dépendent ; le symbole `header.json` sans noms de broches —
+  aucun symbole de la LIB n'en porte, une barrette se désigne par ses numéros.
 
 ### Contenu de la LIB (données, pas code)
 - [x] **Empreintes PCB** (16/10/2026) : 208 composants associés, 167 empreintes nouvelles d'après les fiches (land pattern, pad thermique, pattes de fixation) ; restent sans empreinte les antennes, selfs et modules maison, méca non électrique, piles, Testpoint_HFS_810 et CONN_BatteryHolder_TypeC/D.
