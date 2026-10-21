@@ -3325,7 +3325,8 @@ function pcbVerifierPinoutComposant(c, fp) {
        SOT-223) ; une empreinte à broches manquantes plus irrégulières passe aussi */
     const dPitch = mes ? Math.min(Math.abs(actPitch - expPitch), Math.abs(actPitch - 2 * expPitch))
                        : Math.abs(actPitch - expPitch);
-    if (dPitch > 0.05) {
+    // une puce (2 pastilles) : l'entraxe suit la densité IPC-7351 choisie (L, N, M), pas le seul boîtier
+    if (dPitch > (expGeom.style === "chip" ? 0.35 : 0.05)) {
       pitchOk = false;
       const m = "Distance entre pins (pitch) incorrecte : " + expPitch.toFixed(2) + " mm attendu pour " + (pkgName || "boîtier") + ", mais empreinte PCB " + regle + Number(actPitch).toFixed(2) + " mm";
       pitchMsg = m;

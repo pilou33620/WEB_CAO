@@ -4152,6 +4152,9 @@ T("pinout : une seule rangée de pastilles (2512, barrette) n'a pas d'écartemen
     f.pads=[{n:1,x:-dx/2,y:0,w,h,shape:"rect",drill:0},{n:2,x:dx/2,y:0,w,h,shape:"rect",drill:0}];return f;};
   const r=pcbVerifierPinoutComposant({ref:"R1",pkg:"2512",npins:2},deux("R1","2512",6.2,1.2,3.4));
   if(!r.spanCheck.ok||r.spanCheck.span!==6.2)throw new Error("2512 à 6,2 mm : "+r.spanCheck.msg);
+  // la 2512 IPC-7351B de la LIB (entraxe 5,95 mm, densité N) : conforme à la table (6,2 mm)
+  const ipc=pcbVerifierPinoutComposant({ref:"R1",pkg:"2512",npins:2},deux("R1","2512",5.95,1.265,3.415));
+  if(!ipc.pitchCheck.ok||!ipc.spanCheck.ok)throw new Error("2512 IPC : "+ipc.pitchCheck.msg+" / "+ipc.spanCheck.msg);
   const k=pcbVerifierPinoutComposant({ref:"R1",pkg:"2512",npins:2},deux("R1","2512",4,1.2,3.4));
   if(k.spanCheck.ok)throw new Error("2512 à 4 mm accepté : "+k.spanCheck.msg);
   // trois pattes en ligne : rien à comparer, ni faux 0,00 mm
