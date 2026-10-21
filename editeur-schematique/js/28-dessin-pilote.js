@@ -412,6 +412,24 @@ const DESSIN_OPS = {
     return lignes;
   },
 
+  /* {x1, y1, x2, y2 (mm), titre?, zone?} : un cadre de la feuille. zone : une zone fonctionnelle,
+     qui devient une room au PCB ; sinon un simple cadre de note (isZone false), qui n'en devient pas une.
+     Le texte libre, lui, se pose : poser {type: annot_text ou annot_note, valeur}. */
+  cadre(o, n) {
+    const v = ["x1", "y1", "x2", "y2"].map(k => dessinNombre(o[k], n, "cadre", k, 1000));
+    if (Math.abs(v[2] - v[0]) < 2 || Math.abs(v[3] - v[1]) < 2) throw dessinRefus(n, "cadre", "2 mm de côté au moins");
+    if (o.titre !== undefined && (typeof o.titre !== "string" || !/^[^\x00-\x1f\x7f]{1,60}$/.test(o.titre)))
+      throw dessinRefus(n, "cadre", "« titre » : texte d'une ligne, 60 caractères au plus");
+    if (o.zone !== undefined && typeof o.zone !== "boolean") throw dessinRefus(n, "cadre", "« zone » : true ou false");
+    const zone = o.zone === true, [x1, y1, x2, y2] = v.map(x => snap(x * DESSIN_MM));
+    if (!S.drawings) S.drawings = [];
+    S.drawings.push({ id: S.uid++, shape: "rect", type: "rect", x1, y1, x2, y2, style: "dashed", width: 2,
+                      color: zone ? "#f59e0b" : "#2f86cc", label: o.titre || (zone ? "ZONE" : ""), isZone: zone });
+    return { quoi: (n + 1) + ". cadre" + (o.titre ? " « " + o.titre + " »" : ""), avant: null,
+             apres: "de (" + dessinMm(Math.min(x1, x2)) + ", " + dessinMm(Math.min(y1, y2)) + ") à (" + dessinMm(Math.max(x1, x2)) + ", " +
+                    dessinMm(Math.max(y1, y2)) + ") mm" + (zone ? ", zone fonctionnelle (une room au PCB)" : ", cadre de note") };
+  },
+
   supprimer(o, n) {
     const el = dessinComp(o.ref, n, "supprimer");
     const avant = el.type + (el.value ? " " + el.value : "") + ", " + dessinOuEst(el);

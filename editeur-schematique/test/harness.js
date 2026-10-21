@@ -389,6 +389,27 @@ T("canal de pilotage : cao_composants_ecrire, un lot en une étape, refus sans r
   }finally{global.Pilote=ancien;sheet([],[]);}
 });
 
+T("canal de pilotage : cao_schema_dessiner, texte libre (annot_text) et cadre, note ou zone",()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  try{
+    piloteCao("schema");
+    const d=cmds.cao_schema_dessiner;
+    sheet([],[]);S.drawings=[];S.hist.length=0;
+    const lot=[{op:"poser",type:"annot_text",valeur:"LED UV 365 nm|côté bouchon",x:40,y:40},
+               {op:"cadre",x1:0,y1:0,x2:30,y2:20,titre:"Note : côté LED"},
+               {op:"cadre",x1:50,y1:0,x2:80,y2:20,titre:"Alim",zone:true}];
+    const prop=d.proposer({lot});
+    if(!/^2\. cadre « Note : côté LED » : de \(0, 0\) à \(30, 20\) mm, cadre de note$/m.test(prop.apres)||!/3\. cadre « Alim » .*room au PCB/.test(prop.apres))
+      throw new Error("carte : "+prop.apres);
+    d.appliquer({lot},prop);
+    if(S.hist.length!==1||!S.comps.some(c=>c.type==="annot_text"&&/bouchon/.test(c.value))||S.drawings.length!==2)throw new Error("lot mal appliqué");
+    const zones=schToutesLesZones().map(z=>z.nom);
+    if(zones.join()!=="Alim")throw new Error("seul le cadre « zone » est un bloc : "+zones.join());
+    let m="";try{d.proposer({lot:[{op:"cadre",x1:0,y1:0,x2:1,y2:10}]});}catch(e){m=e.message;}
+    if(!/2 mm de côté/.test(m))throw new Error("cadre trop petit : "+m);
+  }finally{global.Pilote=ancien;}
+});
 T("canal de pilotage : cao_schema_dessiner, simulé sans trace puis appliqué en une étape",()=>{
   const cmds={}, ancien=global.Pilote;
   global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
