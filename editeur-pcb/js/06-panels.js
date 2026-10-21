@@ -1692,16 +1692,16 @@ function propsBoard(box){
       '</div></div>';
   if($("bpCutOff"))$("bpCutOff").onclick=()=>{push();delete S.board.cutouts;boardChanged();
     reSync();refreshPanels();draw();hint("Découpes intérieures retirées.");};
-  $("bpW").onchange=()=>{push();setBoardSize(parseFloat($("bpW").value)||S.board.w,S.board.h);
+  $("bpW").onchange=()=>{push();contourChanger(()=>setBoardSize(parseFloat($("bpW").value)||S.board.w,S.board.h));
     reSync();refreshPanels();draw();};
-  $("bpH").onchange=()=>{push();setBoardSize(S.board.w,parseFloat($("bpH").value)||S.board.h);
+  $("bpH").onchange=()=>{push();contourChanger(()=>setBoardSize(S.board.w,parseFloat($("bpH").value)||S.board.h));
     reSync();refreshPanels();draw();};
   $("bpDraw").onclick=()=>setMode("edge");
   $("bpDisque").onclick=()=>{const b=S.board;push();
     contourChanger(()=>setBoardDisque(b.x+b.w/2,b.y+b.h/2,Math.min(b.w,b.h)/2));reSync();refreshPanels();draw();
     hint("Contour en disque de "+fmt(Math.min(b.w,b.h),2)+" mm de diamètre.");};
   const r=$("bpRect");
-  if(r)r.onclick=()=>{push();setBoardRect();reSync();refreshPanels();draw();
+  if(r)r.onclick=()=>{push();contourChanger(setBoardRect);reSync();refreshPanels();draw();
     hint("Contour ramené au rectangle englobant.");};
 }
 function propsZone(box,z){

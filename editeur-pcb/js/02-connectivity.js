@@ -554,9 +554,52 @@ function segPadDist(t,q){
    gardés, `bras` tous, chacun avec ce qui le gêne. Écran, îlots, Gerber,
    IPC-2581 et simulation tracent `ok` ; le DRC dit ce qui manque. Mémoïsé
    par révision de la carte. */
-const BRAS_MEMO={ver:-1,m:new Map()};
+const BRAS_MEMO={ver:-1,m:new Map(),obs:new Map()};
+/* Le cuivre et les trous d'une couche, indexés par cases de 2 mm : construit
+   une fois par révision, interrogé par chaque pastille (un plan sous 600
+   pastilles demandait sinon toutes les empreintes, pour chaque bras). */
+function brasObstacles(l){
+  let o=BRAS_MEMO.obs.get(l);
+  if(o)return o;
+  const items=[], G=new Map(), PAS=2;
+  const ranger=it=>{
+    const k=items.push(it)-1, b=it.b;
+    for(let x=Math.floor(b.x1/PAS);x<=Math.floor(b.x2/PAS);x++)
+      for(let y=Math.floor(b.y1/PAS);y<=Math.floor(b.y2/PAS);y++){
+        const c=x+"|"+y;let a=G.get(c);if(!a)G.set(c,a=[]);a.push(k);
+      }
+  };
+  for(const f of S.fps)
+    for(const p of padsWorld(f)){
+      if(!padLayers(f,p).includes(l))continue;
+      const pc=padSurCouche(p,l);
+      if(!pc)continue;
+      const r=Math.hypot(pc.w,pc.h)/2;
+      ranger({k:"pad",net:p.net,pc,drill:p.drill,nom:"la pastille "+f.ref+"."+p.n+(p.net?" ("+p.net+")":""),
+              b:{x1:p.x-r,y1:p.y-r,x2:p.x+r,y2:p.y+r}});
+    }
+  for(const t of S.tracks)if(t.l===l){
+    const b=trkBBox(t), r=t.w/2;
+    ranger({k:"trk",net:t.net,t,b:{x1:b.x1-r,y1:b.y1-r,x2:b.x2+r,y2:b.y2+r}});
+  }
+  for(const v of S.vias)if(l>=v.a&&l<=v.b)
+    ranger({k:"via",net:v.net,v,b:{x1:v.x-v.d/2,y1:v.y-v.d/2,x2:v.x+v.d/2,y2:v.y+v.d/2}});
+  for(const h of trousMonde()){
+    const ah=axePercage(h), r=ah.d/2;
+    ranger({k:"trou",ah,b:{x1:Math.min(ah.x1,ah.x2)-r,y1:Math.min(ah.y1,ah.y2)-r,x2:Math.max(ah.x1,ah.x2)+r,y2:Math.max(ah.y1,ah.y2)+r}});
+  }
+  o={items,pres:(x1,y1,x2,y2)=>{
+    const vus=new Set();
+    for(let x=Math.floor(x1/PAS);x<=Math.floor(x2/PAS);x++)
+      for(let y=Math.floor(y1/PAS);y<=Math.floor(y2/PAS);y++)
+        for(const k of G.get(x+"|"+y)||[])vus.add(k);
+    return [...vus].map(k=>items[k]);
+  }};
+  BRAS_MEMO.obs.set(l,o);
+  return o;
+}
 function padBras(q,l){
-  if(BRAS_MEMO.ver!==S.ver){BRAS_MEMO.ver=S.ver;BRAS_MEMO.m.clear();}
+  if(BRAS_MEMO.ver!==S.ver){BRAS_MEMO.ver=S.ver;BRAS_MEMO.m.clear();BRAS_MEMO.obs.clear();}
   const cle=l+"|"+(q.fp?q.fp.id:"")+"|"+q.n+"|"+q.x+"|"+q.y;
   const vu=BRAS_MEMO.m.get(cle);
   if(vu)return vu;
@@ -564,38 +607,21 @@ function padBras(q,l){
   const n=padLiaison(q,l)==="aucune"?0:(q.thermalSpokes>0)?q.thermalSpokes:4;
   const a0=(q.rot||0)+((q.thermalAngle||0)*Math.PI/180);
   const len=Math.max(q.w,q.h)/2+classOf(q.net).clr+0.2;
-  const loin=len+tw+maxClr()+1;                 // au-delà, rien ne peut gêner
-  const pres=(x1,y1,x2,y2)=>Math.max(x1,x2)>=q.x-loin&&Math.min(x1,x2)<=q.x+loin&&
-                           Math.max(y1,y2)>=q.y-loin&&Math.min(y1,y2)<=q.y+loin;
+  const loin=len+tw+maxClr()+0.1;              // au-delà, rien ne peut gêner
+  // les voisins, une fois pour tous les bras ; la pastille elle-même et son net ne gênent pas
+  const voisins=n?brasObstacles(l).pres(q.x-loin,q.y-loin,q.x+loin,q.y+loin).filter(o=>o.k==="trou"||o.net!==q.net||!q.net):[];
   const bras=[];
   for(let k=0;k<n;k++){
     const a=a0+2*Math.PI*k/n;
     const ax={x1:q.x,y1:q.y,x2:q.x+len*Math.cos(a),y2:q.y+len*Math.sin(a)};
+    const sw=Object.assign({},ax,{w:tw});
     let gene=null;
-    for(const f of S.fps){
-      if(gene)break;
-      for(const p of padsWorld(f)){
-        if(p.net===q.net&&p.net||!pres(p.x-p.w-p.h,p.y-p.w-p.h,p.x+p.w+p.h,p.y+p.w+p.h)||!padLayers(f,p).includes(l))continue;
-        const pc=padSurCouche(p,l);
-        if(pc&&segPadDist(Object.assign({},ax,{w:tw}),pc)<clrK(q.net,p.net,"cu",p.drill>0?"th":"smd")-1e-6){
-          gene="la pastille "+f.ref+"."+p.n+(p.net?" ("+p.net+")":"");break;
-        }
-      }
-    }
-    if(!gene)for(const t of S.tracks){
-      if(t.l!==l||t.net===q.net)continue;
-      const b=trkBBox(t);
-      if(!pres(b.x1,b.y1,b.x2,b.y2))continue;
-      if(distAxePiste(ax,t)-t.w/2-tw/2<clrK(q.net,t.net,"cu","trk")-1e-6){gene="une piste "+(t.net||"sans net");break;}
-    }
-    if(!gene)for(const v of S.vias){
-      if(l<v.a||l>v.b||v.net===q.net||!pres(v.x,v.y,v.x,v.y))continue;
-      if(segDist(v.x,v.y,ax.x1,ax.y1,ax.x2,ax.y2)-v.d/2-tw/2<clrK(q.net,v.net,"cu","via")-1e-6){gene="une via "+(v.net||"sans net");break;}
-    }
-    if(!gene)for(const h of trousMonde()){
-      const ah=axePercage(h);
-      if(!pres(ah.x1,ah.y1,ah.x2,ah.y2))continue;
-      if(segSegDist(ax,ah)-ah.d/2-tw/2<classOf(q.net).clr-1e-6){gene="un trou non métallisé";break;}
+    for(const o of voisins){
+      const g=o.k==="pad"?segPadDist(sw,o.pc)-clrK(q.net,o.net,"cu",o.drill>0?"th":"smd")
+             :o.k==="trk"?distAxePiste(ax,o.t)-o.t.w/2-tw/2-clrK(q.net,o.t.net,"cu","trk")
+             :o.k==="via"?segDist(o.v.x,o.v.y,ax.x1,ax.y1,ax.x2,ax.y2)-o.v.d/2-tw/2-clrK(q.net,o.v.net,"cu","via")
+             :segSegDist(ax,o.ah)-o.ah.d/2-tw/2-classOf(q.net).clr;
+      if(g<-1e-6){gene=o.k==="pad"?o.nom:o.k==="trk"?"une piste "+(o.net||"sans net"):o.k==="via"?"une via "+(o.net||"sans net"):"un trou non métallisé";break;}
     }
     if(!gene&&!axeDansCarte(ax,S.rule.edge+tw/2))gene="le bord de carte";
     bras.push({a,len,tw,ax,gene});
@@ -611,9 +637,9 @@ function padBras(q,l){
    quatre pointes autour de la LED). Ce cuivre-là se décolle et ne relie rien.
    Rend les polygones à retirer, comme des découpes de zone : l'enveloppe
    convexe des bords des deux dégagements qui sont à moins de cuMin l'un de
-   l'autre — la fente seule, pas tout l'entre-deux d'un coin à l'autre. Deux
-   formes pleines du net de la zone (liaison directe, via du net) se touchent
-   par le cuivre : rien à retirer entre elles. Écran, îlots, Gerber, IPC-2581
+   l'autre — la fente seule, pas tout l'entre-deux d'un coin à l'autre. Une
+   forme pleine du net de la zone (liaison directe, via du net) tient ce cuivre
+   tout du long : il ne se décolle pas, rien à retirer. Écran, îlots, Gerber, IPC-2581
    et simulation s'en servent ; mémoïsé par révision.
    shortcut: pastilles et vias seulement, pas les pistes (une piste longe une
    pastille sur toute sa longueur) ; un algorithme d'ouverture du cuivre
@@ -634,10 +660,10 @@ function zoneLanieres(l){
   if(!(w>0)||!S.zones.some(z=>z.l===l))return [];
   if(LANIERES_MEMO.ver!==S.ver){LANIERES_MEMO.ver=S.ver;LANIERES_MEMO.m.clear();}
   if(LANIERES_MEMO.m.has(l))return LANIERES_MEMO.m.get(l);
-  /* chaque forme : son bord dégagé (points, tous les 0,05 mm), sa distance au
+  /* chaque forme : son bord dégagé (points, tous les 0,1 mm), sa distance au
      bord dégagé, et si elle est du cuivre plein de la zone */
   const formes=[];
-  const bord=P=>{const o=[];P.forEach((a,k)=>{const b=P[(k+1)%P.length], n=Math.max(1,Math.ceil(Math.hypot(b.x-a.x,b.y-a.y)/0.05));
+  const bord=P=>{const o=[];P.forEach((a,k)=>{const b=P[(k+1)%P.length], n=Math.max(1,Math.ceil(Math.hypot(b.x-a.x,b.y-a.y)/0.1));
     for(let j=0;j<n;j++)o.push({x:a.x+(b.x-a.x)*j/n,y:a.y+(b.y-a.y)*j/n});});return o;};
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
@@ -646,7 +672,8 @@ function zoneLanieres(l){
       if(!qc||!z||zoneFichier(z))continue;
       const meme=!!q.net&&q.net===z.net;
       const e=meme?(padLiaison(q,l,z)==="directe"?0:classOf(q.net).clr):clrK(z.net,q.net,"cu",q.drill>0?"th":"smd");
-      formes.push({pts:bord(padWorldPts(qc,e)),plein:meme&&e===0,d:(x,y)=>padDist(x,y,qc)-e,
+      // le bord n'est échantillonné qu'à la demande : seules les formes d'une paire proche en ont besoin
+      formes.push({fait:()=>bord(padWorldPts(qc,e)),plein:meme&&e===0,d:(x,y)=>padDist(x,y,qc)-e,
                    r:Math.hypot(qc.w,qc.h)/2+e,x:q.x,y:q.y});
     }
   for(const v of S.vias){
@@ -654,8 +681,9 @@ function zoneLanieres(l){
     const z=zoneAt(l,v.x,v.y);
     if(!z||zoneFichier(z))continue;
     const meme=!!v.net&&v.net===z.net, r=v.d/2+(meme?0:clrK(z.net,v.net,"cu","via"));
-    const P=[];for(let k=0;k<Math.max(16,Math.ceil(2*Math.PI*r/0.05));k++){const a=k*2*Math.PI/Math.max(16,Math.ceil(2*Math.PI*r/0.05));P.push({x:v.x+r*Math.cos(a),y:v.y+r*Math.sin(a)});}
-    formes.push({pts:P,plein:meme,d:(x,y)=>Math.hypot(x-v.x,y-v.y)-r,r,x:v.x,y:v.y});
+    const nP=Math.max(16,Math.ceil(2*Math.PI*r/0.1));
+    formes.push({fait:()=>[...Array(nP).keys()].map(k=>({x:v.x+r*Math.cos(k*2*Math.PI/nP),y:v.y+r*Math.sin(k*2*Math.PI/nP)})),
+                 plein:meme,d:(x,y)=>Math.hypot(x-v.x,y-v.y)-r,r,x:v.x,y:v.y});
   }
   const out=[];
   // balayage trié en x : une carte importée a des milliers de pastilles dans ses plans
@@ -664,9 +692,18 @@ function zoneLanieres(l){
   for(let i=0;i<formes.length;i++)
     for(let j=i+1;j<formes.length&&formes[j].x-formes[i].x<=formes[i].r+rMax+w;j++){
       const A=formes[i], B=formes[j];
-      if(A.plein&&B.plein)continue;
+      if(A.plein||B.plein)continue;
       if(Math.hypot(A.x-B.x,A.y-B.y)>A.r+B.r+w)continue;
-      const pres=A.pts.filter(p=>B.d(p.x,p.y)<w).concat(B.pts.filter(p=>A.d(p.x,p.y)<w));
+      const pts=F=>{
+        if(!F.pts){F.pts=F.fait();let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;
+          for(const p of F.pts){x1=Math.min(x1,p.x);y1=Math.min(y1,p.y);x2=Math.max(x2,p.x);y2=Math.max(y2,p.y);}
+          F.bb={x1:x1-w,y1:y1-w,x2:x2+w,y2:y2+w};}
+        return F.pts;
+      };
+      // seuls les points en face de l'autre forme (dans sa boîte, élargie de w) passent la mesure exacte
+      const face=(F,G)=>pts(F).filter(p=>p.x>=G.bb.x1&&p.x<=G.bb.x2&&p.y>=G.bb.y1&&p.y<=G.bb.y2&&G.d(p.x,p.y)<w);
+      pts(A);pts(B);
+      const pres=face(A,B).concat(face(B,A));
       if(pres.length<3)continue;
       const H=enveloppeConvexe(pres);
       if(H.length>=3&&Math.abs(signedArea(H))>1e-4)out.push(H);
@@ -1085,7 +1122,8 @@ function runDrc(){
       for(const c of cases(A.b))for(const k of G.get(c)||[])voisins.add(k);
       for(const j of voisins){
         const B=objs[j];
-        if(j===i||(B.piste&&j<i)||(A.plein&&B.plein))continue;
+        // une forme du net de la zone (pleine) tient ce cuivre tout du long : il ne se décolle pas
+        if(j===i||(B.piste&&j<i)||A.plein||B.plein)continue;
         if(A.b.x2<B.b.x1||B.b.x2<A.b.x1||A.b.y2<B.b.y1||B.b.y2<A.b.y1)continue;
         const g=(B.pad?segPadDist(Object.assign({},A.seg,{w:0}),B.pad):segSegDist(A.seg,B.seg))-A.demi-B.demi;
         if(!(g>1e-6&&g<wMin-1e-6))continue;
@@ -1106,9 +1144,14 @@ function runDrc(){
     const ouv=maskOpenings(side).map(o=>({o,q:o.grow?Object.assign({},o.q,{w:o.q.w+2*o.grow,h:o.q.h+2*o.grow}):o.q}));
     if(!ouv.length)continue;
     const juger=(nom,polys,w,x,y)=>{
+      // les ouvertures proches du texte entier d'abord : une carte importée en compte des milliers
+      let bx1=1e9,by1=1e9,bx2=-1e9,by2=-1e9;
+      for(const P of polys)for(const p of P){bx1=Math.min(bx1,p.x);by1=Math.min(by1,p.y);bx2=Math.max(bx2,p.x);by2=Math.max(by2,p.y);}
+      const proches=ouv.filter(({q})=>{const R=Math.hypot(q.w,q.h)/2+w;return q.x+R>=bx1&&q.x-R<=bx2&&q.y+R>=by1&&q.y-R<=by2;});
+      if(!proches.length)return;
       for(const P of polys)for(let k=0;k+1<P.length;k++){
         const sg={x1:P[k].x,y1:P[k].y,x2:P[k+1].x,y2:P[k+1].y,w};
-        for(const {o,q} of ouv){
+        for(const {o,q} of proches){
           const R=Math.hypot(q.w,q.h)/2+w;
           if(Math.min(sg.x1,sg.x2)>q.x+R||Math.max(sg.x1,sg.x2)<q.x-R||Math.min(sg.y1,sg.y2)>q.y+R||Math.max(sg.y1,sg.y2)<q.y-R)continue;
           if(segPadDist(sg,q)<0){
@@ -1524,10 +1567,13 @@ function arrange(list){
 /* Les empreintes en attente à côté de la carte (rangées là par l'import, jamais
    posées dessus) suivent un nouveau contour : une carte de 100 mm réduite à un
    disque de 26 mm les laissait à 80 mm de lui (LED_UV). Celles qui étaient sur
-   la carte ne bougent pas, même si le nouveau contour les laisse dehors. `fn`
-   change le contour ; rend le nombre d'empreintes rangées. */
+   la carte ne bougent pas, même si le nouveau contour les laisse dehors ; ni
+   une empreinte reliée à une piste (un connecteur de bord dont l'origine
+   dépasse : ses pistes resteraient pendantes), ni une posée dans une découpe.
+   `fn` change le contour ; rend le nombre d'empreintes rangées. */
 function contourChanger(fn){
-  const attente=S.fps.filter(fp=>!inBoard(fp.x,fp.y,0));
+  const P=boardPoly();
+  const attente=S.fps.filter(fp=>!inPoly(fp.x,fp.y,P)&&!pcbPistesConnecteesFp(fp).length);
   fn();
   if(attente.length){arrange(attente);touch();}
   return attente.length;

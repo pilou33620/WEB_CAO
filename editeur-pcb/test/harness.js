@@ -27107,6 +27107,13 @@ TA("canal de pilotage : cao_contour_ecrire, rectangle, disque et polygone ; lect
   if(pose.x!==xy[0]||pose.y!==xy[1])throw new Error("une empreinte posée ne bouge pas");
   if(attente.some(f=>f.x>pose.x+12+30))throw new Error("l'attente suit le contour : "+attente.map(f=>f.x).join(", "));
   if(!/en attente rangée\(s\) à côté du nouveau contour/.test(pc.apres))throw new Error("la carte le dit : "+pc.apres);
+  // un connecteur de bord routé dont l'origine dépasse ne part pas : ses pistes resteraient pendantes
+  const J=S.fps.find(f=>pcbPistesConnecteesFp(f).length);
+  if(!J)throw new Error("le décor : une empreinte routée");
+  const b1=JSON.parse(JSON.stringify(S.board)), jx=J.x;
+  S.board.pts=null;S.board.x=J.x+1;touch();               // J dehors, ses pistes avec lui
+  contourChanger(()=>{Object.assign(S.board,b1);boardChanged();});
+  if(J.x!==jx)throw new Error("une empreinte routée hors du contour ne bouge pas");
   refus("cao_contour_ecrire",[{forme:"polygone",points:[{x:0,y:0},{x:20,y:10},{x:20,y:0},{x:0,y:20}]}],/se coupent/);
   refus("cao_contour_ecrire",[{forme:"rectangle",x:0,y:0,largeur:2,hauteur:40}],/5 mm au moins/);
   refus("cao_contour_ecrire",[{forme:"ovale"}],/rectangle, disque ou polygone/);

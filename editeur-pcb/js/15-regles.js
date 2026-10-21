@@ -1858,7 +1858,7 @@ function reBind(){
   /* --- règles générales --- */
   num("reHole",v=>S.rule.hole=Math.max(0,v));
   num("reTh",v=>S.rule.thermal=Math.max(0,v));
-  num("reCuMin",v=>S.rule.cuMin=Math.max(0,v));
+  num("reCuMin",v=>S.rule.cuMin=clamp(v,0,5));        // la borne de normDoc
   num("reEdge",v=>{S.rule.edge=Math.max(0,v);boardChanged();});
   num("reMask",v=>S.rule.mask=v);
   num("rePaste",v=>S.rule.paste=v);
@@ -1882,8 +1882,8 @@ function reBind(){
   };
 
   /* --- carte, origine, grille --- */
-  num("reBW",v=>setBoardSize(v,S.board.h));
-  num("reBH",v=>setBoardSize(S.board.w,v));
+  num("reBW",v=>contourChanger(()=>setBoardSize(v,S.board.h)));      // l'attente suit (02-connectivity.js)
+  num("reBH",v=>contourChanger(()=>setBoardSize(S.board.w,v)));
   num("reOX",v=>S.origin.x=v);
   num("reOY",v=>S.origin.y=v);
   sel("reFab",v=>{push();S.fabOrigin=(v==="1");touch();reSync();});
@@ -1891,7 +1891,7 @@ function reBind(){
   clk("reOSet",()=>{reClose();setMode("origin");
     hint("Cliquez le point qui devient l'origine des cotes.");});
   clk("reOZero",()=>reEdit(()=>{S.origin={x:0,y:0};}));
-  clk("reBRect",()=>{reEdit(()=>setBoardRect());
+  clk("reBRect",()=>{reEdit(()=>contourChanger(setBoardRect));
     hint("Contour ramené au rectangle englobant.");});
 
   /* --- le contrôle --- */
