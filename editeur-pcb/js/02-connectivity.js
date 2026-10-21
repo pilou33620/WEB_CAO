@@ -643,7 +643,7 @@ function padBras(q,l){
    et simulation s'en servent ; mémoïsé par révision.
    shortcut: pastilles et vias seulement, pas les pistes (une piste longe une
    pastille sur toute sa longueur) ; un algorithme d'ouverture du cuivre
-   rempli le ferait partout, à envisager si des lanières de piste gênent. */
+   rempli le ferait partout, arcs compris. */
 const LANIERES_MEMO={ver:-1,m:new Map()};
 function enveloppeConvexe(P){
   const p=P.slice().sort((a,b)=>a.x-b.x||a.y-b.y), h=[];
@@ -660,54 +660,75 @@ function zoneLanieres(l){
   if(!(w>0)||!S.zones.some(z=>z.l===l))return [];
   if(LANIERES_MEMO.ver!==S.ver){LANIERES_MEMO.ver=S.ver;LANIERES_MEMO.m.clear();}
   if(LANIERES_MEMO.m.has(l))return LANIERES_MEMO.m.get(l);
-  /* chaque forme : son bord dégagé (points, tous les 0,1 mm), sa distance au
-     bord dégagé, et si elle est du cuivre plein de la zone */
+  /* chaque forme dégagée par la zone : son bord (points tous les 0,1 mm, faits à
+     la demande), sa distance à ce bord, sa boîte. Le cuivre plein du net de la
+     zone (liaison directe, piste ou via du net) n'en est pas : il tient le
+     cuivre qui le touche. */
   const formes=[];
   const bord=P=>{const o=[];P.forEach((a,k)=>{const b=P[(k+1)%P.length], n=Math.max(1,Math.ceil(Math.hypot(b.x-a.x,b.y-a.y)/0.1));
     for(let j=0;j<n;j++)o.push({x:a.x+(b.x-a.x)*j/n,y:a.y+(b.y-a.y)*j/n});});return o;};
+  const cercle=(x,y,r,a0,a1)=>{const n=Math.max(4,Math.ceil(Math.abs(a1-a0)*r/0.1)),o=[];
+    for(let k=0;k<=n;k++){const a=a0+(a1-a0)*k/n;o.push({x:x+r*Math.cos(a),y:y+r*Math.sin(a)});}return o;};
+  const ligne=(a,b)=>{const n=Math.max(1,Math.ceil(Math.hypot(b.x-a.x,b.y-a.y)/0.1)),o=[];
+    for(let j=0;j<=n;j++)o.push({x:a.x+(b.x-a.x)*j/n,y:a.y+(b.y-a.y)*j/n});return o;};
+  const ajouter=(F,x1,y1,x2,y2)=>{F.b={x1:x1-w,y1:y1-w,x2:x2+w,y2:y2+w};formes.push(F);};
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
       if(!padLayers(fp,q).includes(l))continue;
-      const qc=padSurCouche(q,l), z=zoneAt(l,q.x,q.y);
-      if(!qc||!z||zoneFichier(z))continue;
+      const qc=padSurCouche(q,l), z=qc&&zoneAt(l,q.x,q.y);
+      if(!z||zoneFichier(z))continue;
       const meme=!!q.net&&q.net===z.net;
       const e=meme?(padLiaison(q,l,z)==="directe"?0:classOf(q.net).clr):clrK(z.net,q.net,"cu",q.drill>0?"th":"smd");
-      // le bord n'est échantillonné qu'à la demande : seules les formes d'une paire proche en ont besoin
-      formes.push({fait:()=>bord(padWorldPts(qc,e)),plein:meme&&e===0,d:(x,y)=>padDist(x,y,qc)-e,
-                   r:Math.hypot(qc.w,qc.h)/2+e,x:q.x,y:q.y});
+      if(meme&&e===0)continue;
+      const r=Math.hypot(qc.w,qc.h)/2+e;
+      ajouter({fait:()=>bord(padWorldPts(qc,e)),d:(x,y)=>padDist(x,y,qc)-e,net:q.net},q.x-r,q.y-r,q.x+r,q.y+r);
     }
   for(const v of S.vias){
     if(l<v.a||l>v.b)continue;
     const z=zoneAt(l,v.x,v.y);
-    if(!z||zoneFichier(z))continue;
-    const meme=!!v.net&&v.net===z.net, r=v.d/2+(meme?0:clrK(z.net,v.net,"cu","via"));
-    const nP=Math.max(16,Math.ceil(2*Math.PI*r/0.1));
-    formes.push({fait:()=>[...Array(nP).keys()].map(k=>({x:v.x+r*Math.cos(k*2*Math.PI/nP),y:v.y+r*Math.sin(k*2*Math.PI/nP)})),
-                 plein:meme,d:(x,y)=>Math.hypot(x-v.x,y-v.y)-r,r,x:v.x,y:v.y});
+    if(!z||zoneFichier(z)||(v.net&&v.net===z.net))continue;
+    const r=v.d/2+clrK(z.net,v.net,"cu","via");
+    ajouter({fait:()=>cercle(v.x,v.y,r,0,2*Math.PI),d:(x,y)=>Math.hypot(x-v.x,y-v.y)-r,net:v.net},v.x-r,v.y-r,v.x+r,v.y+r);
   }
-  const out=[];
-  // balayage trié en x : une carte importée a des milliers de pastilles dans ses plans
-  formes.sort((a,b)=>a.x-b.x);
-  const rMax=formes.reduce((m,f)=>Math.max(m,f.r),0);
-  for(let i=0;i<formes.length;i++)
-    for(let j=i+1;j<formes.length&&formes[j].x-formes[i].x<=formes[i].r+rMax+w;j++){
-      const A=formes[i], B=formes[j];
-      if(A.plein||B.plein)continue;
-      if(Math.hypot(A.x-B.x,A.y-B.y)>A.r+B.r+w)continue;
-      const pts=F=>{
-        if(!F.pts){F.pts=F.fait();let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;
-          for(const p of F.pts){x1=Math.min(x1,p.x);y1=Math.min(y1,p.y);x2=Math.max(x2,p.x);y2=Math.max(y2,p.y);}
-          F.bb={x1:x1-w,y1:y1-w,x2:x2+w,y2:y2+w};}
-        return F.pts;
-      };
-      // seuls les points en face de l'autre forme (dans sa boîte, élargie de w) passent la mesure exacte
-      const face=(F,G)=>pts(F).filter(p=>p.x>=G.bb.x1&&p.x<=G.bb.x2&&p.y>=G.bb.y1&&p.y<=G.bb.y2&&G.d(p.x,p.y)<w);
-      pts(A);pts(B);
-      const pres=face(A,B).concat(face(B,A));
-      if(pres.length<3)continue;
-      const H=enveloppeConvexe(pres);
-      if(H.length>=3&&Math.abs(signedArea(H))>1e-4)out.push(H);
-    }
+  // shortcut: les arcs de piste n'y sont pas (bord à échantillonner sur l'arc) ; à faire si un tracé courbe en laisse
+  for(const t of S.tracks){
+    if(t.l!==l||arcOf(t))continue;
+    const m=trkMid(t), z=zoneAt(l,m.x,m.y);
+    if(!z||zoneFichier(z)||(t.net&&t.net===z.net))continue;
+    const r=t.w/2+clrK(z.net,t.net,"cu","trk"), a=Math.atan2(t.y2-t.y1,t.x2-t.x1), nx=-Math.sin(a)*r, ny=Math.cos(a)*r;
+    ajouter({piste:true,net:t.net,d:(x,y)=>segDist(x,y,t.x1,t.y1,t.x2,t.y2)-r,
+             // le bord de la gélule : un flanc, le bout arrondi, l'autre flanc, l'autre bout
+             fait:()=>ligne({x:t.x1+nx,y:t.y1+ny},{x:t.x2+nx,y:t.y2+ny}).concat(
+               cercle(t.x2,t.y2,r,a+Math.PI/2,a-Math.PI/2),
+               ligne({x:t.x2-nx,y:t.y2-ny},{x:t.x1-nx,y:t.y1-ny}),
+               cercle(t.x1,t.y1,r,a-Math.PI/2,a-3*Math.PI/2))},
+            Math.min(t.x1,t.x2)-r,Math.min(t.y1,t.y2)-r,Math.max(t.x1,t.x2)+r,Math.max(t.y1,t.y2)+r);
+  }
+  /* les paires proches, par cases de 2 mm : une piste longue rendait inutile un balayage en x */
+  const G=new Map(), PAS=2;
+  formes.forEach((F,k)=>{
+    for(let x=Math.floor(F.b.x1/PAS);x<=Math.floor(F.b.x2/PAS);x++)
+      for(let y=Math.floor(F.b.y1/PAS);y<=Math.floor(F.b.y2/PAS);y++){const c=x+"|"+y;let A=G.get(c);if(!A)G.set(c,A=[]);A.push(k);}
+  });
+  const pts=F=>F.pts||(F.pts=F.fait());
+  // seuls les points en face de l'autre forme (dans sa boîte) passent la mesure exacte
+  const face=(F,H)=>pts(F).filter(p=>p.x>=H.b.x1&&p.x<=H.b.x2&&p.y>=H.b.y1&&p.y<=H.b.y2&&H.d(p.x,p.y)<w);
+  const out=[], vues=new Set();
+  for(const cases of G.values())
+    for(let i=0;i<cases.length;i++)
+      for(let j=i+1;j<cases.length;j++){
+        const a=cases[i], b=cases[j], cle=a<b?a+"|"+b:b+"|"+a;
+        if(vues.has(cle))continue;
+        vues.add(cle);
+        const A=formes[a], B=formes[b];
+        if(A.b.x2<B.b.x1||B.b.x2<A.b.x1||A.b.y2<B.b.y1||B.b.y2<A.b.y1)continue;
+        // une piste et ce qui est de son net (segment suivant, sa pastille) : la jonction, pas une fente
+        if((A.piste||B.piste)&&A.net&&A.net===B.net)continue;
+        const pres=face(A,B).concat(face(B,A));
+        if(pres.length<3)continue;
+        const H=enveloppeConvexe(pres);
+        if(H.length>=3&&Math.abs(signedArea(H))>1e-4)out.push(H);
+      }
   LANIERES_MEMO.m.set(l,out);
   return out;
 }
@@ -1074,66 +1095,6 @@ function runDrc(){
             msg:"Liaison thermique "+fp.ref+"."+q.n+" ("+q.net+") : aucun bras possible ("+qui+
                 ") — la pastille n'est pas reliée à sa zone, passez-la en liaison directe ou dégagez-la"});
       }
-  /* Cuivre de zone trop étroit le long d'une piste : entre une piste et une
-     pastille, une via ou une autre piste, les deux dégagements laissent moins
-     que cuMin. Entre pastilles et vias, le remplissage retire déjà la bande
-     (zoneLanieres) ; le long d'une piste, il la laisse, et le DRC le dit.
-     shortcut: pistes droites seulement, un arc n'est pas mesuré. */
-  const wMin=S.rule.cuMin;
-  if(wMin>0&&S.zones.length)for(let l=0;l<S.cu;l++){
-    if(!S.zones.some(z=>z.l===l))continue;
-    const objs=[];                  // {seg (axe), demi (demi-largeur + dégagement), plein, nom}
-    const dans=(x,y)=>{const z=zoneAt(l,x,y);return z&&!zoneFichier(z)?z:null;};
-    for(const t of S.tracks){
-      if(t.l!==l||arcOf(t))continue;
-      const m=trkMid(t), z=dans(m.x,m.y);
-      if(!z)continue;
-      const meme=!!t.net&&t.net===z.net;
-      objs.push({seg:t,demi:t.w/2+(meme?0:clrK(z.net,t.net,"cu","trk")),plein:meme,piste:true,nom:"la piste "+(t.net||"sans net")});
-    }
-    if(!objs.length)continue;
-    for(const v of S.vias){
-      if(l<v.a||l>v.b)continue;
-      const z=dans(v.x,v.y);
-      if(!z)continue;
-      const meme=!!v.net&&v.net===z.net;
-      objs.push({seg:{x1:v.x,y1:v.y,x2:v.x,y2:v.y},demi:v.d/2+(meme?0:clrK(z.net,v.net,"cu","via")),plein:meme,nom:"la via "+(v.net||"sans net")});
-    }
-    for(const fp of S.fps)
-      for(const q of padsWorld(fp)){
-        if(!padLayers(fp,q).includes(l))continue;
-        const qc=padSurCouche(q,l), z=qc&&dans(q.x,q.y);
-        if(!z)continue;
-        const meme=!!q.net&&q.net===z.net, e=meme?(padLiaison(q,l,z)==="directe"?0:classOf(q.net).clr)
-                                                 :clrK(z.net,q.net,"cu",q.drill>0?"th":"smd");
-        objs.push({pad:qc,demi:e,plein:meme&&e===0,nom:"la pastille "+fp.ref+"."+q.n,
-                   seg:{x1:q.x,y1:q.y,x2:q.x,y2:q.y},r:Math.hypot(qc.w,qc.h)/2});
-      }
-    const boite=o=>{const r=(o.r||0)+o.demi+wMin;return {x1:Math.min(o.seg.x1,o.seg.x2)-r,y1:Math.min(o.seg.y1,o.seg.y2)-r,
-                                                         x2:Math.max(o.seg.x1,o.seg.x2)+r,y2:Math.max(o.seg.y1,o.seg.y2)+r};};
-    const G=new Map(), PAS=2, cases=b=>{const o=[];
-      for(let x=Math.floor(b.x1/PAS);x<=Math.floor(b.x2/PAS);x++)for(let y=Math.floor(b.y1/PAS);y<=Math.floor(b.y2/PAS);y++)o.push(x+"|"+y);
-      return o;};
-    objs.forEach((o,k)=>{o.b=boite(o);for(const c of cases(o.b)){let a=G.get(c);if(!a)G.set(c,a=[]);a.push(k);}});
-    for(let i=0;i<objs.length;i++){
-      const A=objs[i];
-      if(!A.piste)continue;          // une paire sans piste : la lanière est déjà retirée
-      const voisins=new Set();
-      for(const c of cases(A.b))for(const k of G.get(c)||[])voisins.add(k);
-      for(const j of voisins){
-        const B=objs[j];
-        // une forme du net de la zone (pleine) tient ce cuivre tout du long : il ne se décolle pas
-        if(j===i||(B.piste&&j<i)||A.plein||B.plein)continue;
-        if(A.b.x2<B.b.x1||B.b.x2<A.b.x1||A.b.y2<B.b.y1||B.b.y2<A.b.y1)continue;
-        const g=(B.pad?segPadDist(Object.assign({},A.seg,{w:0}),B.pad):segSegDist(A.seg,B.seg))-A.demi-B.demi;
-        if(!(g>1e-6&&g<wMin-1e-6))continue;
-        const m=trkMid(A.seg);
-        out.push({info:true,x:m.x,y:m.y,l,
-          msg:"Cuivre de zone de "+fmt(g,3)+" mm entre "+A.nom+" et "+B.nom+" sur "+cuId(l,S.cu)+
-              " (mini "+fmt(wMin,3)+" mm) : il se décollerait — écartez-les, ou posez une découpe de zone"});
-      }
-    }
-  }
   /* Sérigraphie sur une ouverture du masque (maskOpenings) : le fabricant
      efface l'encre sur le cuivre nu, un repère y devient illisible (« D1 » posé
      sur l'anode de la LED de LED_UV). Les repères et les dessins (textes,

@@ -3614,16 +3614,18 @@ T("cuivre mini : la bande trop étroite entre deux dégagements est retirée, pa
     if(S.rule.cuMin!==0.15)throw new Error("cuMin relu : "+S.rule.cuMin);
     delete d.rule.cuMin;loadDoc(d,true);
     if(S.rule.cuMin!==0.2)throw new Error("fichier muet : "+S.rule.cuMin);
-    // le long d'une piste, la bande reste : le DRC la signale (remarque), et seulement sous le mini
+    // le long d'une piste aussi : la bande est retirée, sur la longueur où elle est étroite
     const P=padsWorld(S.fps[0]).find(q=>q.n===1), ct=clrK("GND","SIG","cu","trk");
     const yPiste=e=>P.y+0.5+ca+e+ct+0.1;   // 0,1 mm : la demi-largeur de la piste
     S.tracks=[{l:0,net:"SIG",w:0.2,x1:P.x-3,y1:yPiste(0.1),x2:P.x+3,y2:yPiste(0.1)}];touch();
-    const r=runDrc().filter(e=>/Cuivre de zone de/.test(e.msg));
-    // elle longe les deux pastilles : une remarque pour chacune
-    if(r.length!==2||!r.every(e=>e.info)||!r.some(e=>/0\.100 mm entre la piste SIG et la pastille LED1\.1/.test(e.msg)))
-      throw new Error("cuivre étroit : "+r.map(e=>e.msg).join(" | "));
+    const lp=zoneLanieres(0), ym=P.y+0.5+ca+0.05;
+    if(!lp.some(H=>inPoly(P.x,ym,H)))throw new Error("la bande entre la piste et LED1.1 : "+lp.length+" lanières");
+    if(lp.some(H=>inPoly(P.x-2.5,ym,H)))throw new Error("loin de la pastille, rien n'est retiré le long de la piste");
     S.tracks[0].y1=S.tracks[0].y2=yPiste(0.3);touch();
-    if(runDrc().some(e=>/Cuivre de zone de/.test(e.msg)))throw new Error("0,3 mm de cuivre : rien à dire");
+    if(zoneLanieres(0).some(H=>inPoly(P.x,P.y+0.5+ca+0.15,H)))throw new Error("0,3 mm de cuivre : rien à retirer");
+    // une piste du net de la zone tient le cuivre qu'elle touche : rien entre elle et la pastille
+    S.tracks[0].net="GND";S.tracks[0].y1=S.tracks[0].y2=yPiste(0.1);touch();
+    if(zoneLanieres(0).some(H=>inPoly(P.x,ym,H)))throw new Error("piste GND : rien à retirer");
   }finally{suiviFin(reg);loadDoc(JSON.parse(saved),true);}
 });
 T("sérigraphie sur le cuivre nu : repère posé au-dessus des pastilles, sinon le DRC le dit",()=>{
@@ -19236,6 +19238,8 @@ T("Vérification de la carte : zones, contour, trous et broches partent aussi",(
      de la couche en trous), le bord de la carte, les trous métallisés avec
      leur portée, les broches de chaque empreinte avec leur net. */
   const {q}=carteVerif();
+  // la piste CLK du décor traverse une pastille d'un autre net : sa lanière (cuivre mini) s'ajouterait aux trous
+  const cuMin=S.rule.cuMin;S.rule.cuMin=0;
   S.zones.push({id:S.nextId++,l:0,net:"GND",
                 pts:[{x:0,y:0},{x:50,y:0},{x:50,y:50},{x:0,y:50}]});
   S.cuts.push({l:0,pts:[{x:10,y:10},{x:12,y:10},{x:12,y:12}]});
@@ -19266,7 +19270,7 @@ T("Vérification de la carte : zones, contour, trous et broches partent aussi",(
     throw new Error("les broches de J1 : "+JSON.stringify(j1));
   if(!d.pastilles.some(p=>p.x===q.x&&p.y===q.y&&p.n==="CLK"))
     throw new Error("la pastille porte son net");
-  carteVide();
+  S.rule.cuMin=cuMin;carteVide();
 });
 
 T("Vérification de la carte : la zone part rognée au bord, ses pastilles en liaisons thermiques",()=>{

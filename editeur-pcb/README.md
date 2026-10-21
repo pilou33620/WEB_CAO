@@ -839,9 +839,10 @@ section Zone) : entre deux pastilles (ou une pastille et une via) dont les
 dégagements laissent moins que ce minimum, la bande est retirée du
 remplissage (`zoneLanieres`) — plus de pointe de cuivre au bout d'une fente,
 ni de lanière qui se décolle. L'écran, les îlots, le Gerber, l'IPC-2581 et la
-simulation retirent les mêmes. Le long d'une piste, la bande n'est pas
-retirée : le DRC la signale (« Cuivre de zone de … mm entre … »). 0 désactive
-les deux.
+simulation retirent les mêmes. Le long d'une piste droite aussi, sur la
+longueur où la bande est étroite ; une forme du net de la zone (liaison
+directe, piste ou via du net) tient le cuivre qu'elle touche et n'en fait pas
+retirer. Les arcs de piste ne sont pas encore traités. 0 désactive.
 
 **Zone au cuivre du fichier** (`fichier`, `trous`, `sig`) : une zone dont le
 document porte le cuivre déjà calculé est remplie avec ce cuivre — ses trous, liaisons
