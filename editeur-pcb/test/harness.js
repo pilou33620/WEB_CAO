@@ -1542,6 +1542,37 @@ function decouplageRelie(D){
   relie("+3V3",{x:c1.x,y:c1.y},{x:D.alim.x,y:D.alim.y});
   relie("GND",{x:c2.x,y:c2.y},{x:D.gnd.x,y:D.gnd.y});
 }
+/* Une pastille touche par sa vraie forme : une piste qui s'arrête dans le
+   bout d'une pastille allongée, une via posée de biais dans un plot. */
+T("connectivité : une piste ou une via dans la pastille, loin du centre, est reliée",()=>{
+  const reg=suiviDecor();
+  try{
+    const D=mkFp("D1","","",2);D.x=10;D.y=10;
+    const R=mkFp("R1","","",2);R.x=30;R.y=10;
+    S.fps.push(D,R);
+    pcbAppliquerDefEmpreinte(D,"ESSAI-LONG",{style:"chip",pins:2,
+      pads:[{n:1,x:-3,y:0,w:3,h:1,shape:"rect",drill:0},{n:2,x:2,y:0,w:3,h:3,shape:"rect",drill:0}]});
+    D.nets={1:"A",2:"B"};R.nets={1:"A",2:"B"};touch();
+    const p=(f,n)=>padsWorld(f).find(q=>String(q.n)===String(n));
+    const a=p(D,1), b=p(D,2), r1=p(R,1), r2=p(R,2);
+    // 1,2 mm du centre le long de la pastille : dans le cuivre, hors du disque de 0,5 mm
+    S.tracks.push({l:0,net:"A",w:0.25,x1:r1.x,y1:r1.y,x2:a.x+1.2,y2:a.y+0.3});
+    const v={x:b.x+1,y:b.y+1,d:0.6,drill:0.3,a:0,b:S.cu-1,net:"B"};
+    S.vias.push(v);
+    S.tracks.push({l:S.cu-1,net:"B",w:0.25,x1:r2.x,y1:r2.y,x2:v.x,y2:v.y});
+    R.side=0;touch();
+    // R1.2 est en surface : la piste du dessous va donc de sa via à son trou, s'il en a ;
+    // sinon le net B reste à relier par une via sous R1.2, posée ici
+    if(!(r2.drill>0))S.vias.push({x:r2.x,y:r2.y,d:0.6,drill:0.3,a:0,b:S.cu-1,net:"B"});
+    touch();
+    const c=conn(true);
+    if(c.nets.get("A").miss!==0)throw new Error("la piste qui finit dans le bout de D1.1 doit la relier");
+    if(c.nets.get("B").miss!==0)throw new Error("la via posée dans le plot D1.2, hors du centre, doit le relier");
+    // et une piste qui s'arrête juste avant le cuivre ne l'est pas
+    S.tracks[0].x2=a.x+1.5+0.125+0.05;S.tracks[0].y2=a.y;touch();
+    if(conn(true).nets.get("A").miss!==1)throw new Error("à 0,05 mm du bord, rien ne touche");
+  }finally{suiviFin(reg);}
+});
 T("liens : chaque bout de piste nomme sa pastille ou son via",()=>{
   const D=decouplage();
   try{

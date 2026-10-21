@@ -298,10 +298,29 @@ function computeConn(exact){
     touchSeg(t.l,t.x2,t.y2,t.w/2,"T"+i+"b");
   });
   S.vias.forEach((v,i)=>{for(let l=v.a;l<=v.b;l++)touchSeg(l,v.x,v.y,v.d/2,"V"+i);});
+  /* une pastille touche par sa vraie forme : une piste qui s'arrête dans le
+     cuivre sans atteindre le centre, ou une via posée dans un plot thermique,
+     est reliée — c'est ce que montre le Gerber */
+  const viaGrid=new Map();
+  let viaR=0;
+  S.vias.forEach((v,i)=>{
+    viaR=Math.max(viaR,v.d/2);
+    const k=Math.floor(v.x/CELL)+"|"+Math.floor(v.y/CELL);
+    let a=viaGrid.get(k); if(!a)viaGrid.set(k,a=[]); a.push(i);
+  });
   for(const p of padNodes)
     for(const l of p.layers){
       const qc=padSurCouche(p.q,l)||p.q;      // la forme de CETTE couche
-      touchSeg(l,p.q.x,p.q.y,Math.min(qc.w,qc.h)/2,p.k);
+      const R=Math.hypot(qc.w,qc.h)/2;
+      for(const i of near(l,p.q.x,p.q.y,R+1))
+        if(segPadDist(S.tracks[i],qc)<=1e-6)uni(p.k,"T"+i+"a");
+      const r=R+viaR;
+      for(let cx=Math.floor((p.q.x-r)/CELL);cx<=Math.floor((p.q.x+r)/CELL);cx++)
+        for(let cy=Math.floor((p.q.y-r)/CELL);cy<=Math.floor((p.q.y+r)/CELL);cy++)
+          for(const i of viaGrid.get(cx+"|"+cy)||[]){
+            const v=S.vias[i];
+            if(l>=v.a&&l<=v.b&&padDist(v.x,v.y,qc)<=v.d/2+1e-6)uni(p.k,"V"+i);
+          }
     }
 
   /* Zones de cuivre : on ne se contente pas du contour tracé. Le remplissage
