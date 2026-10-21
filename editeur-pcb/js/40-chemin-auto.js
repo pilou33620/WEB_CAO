@@ -16,7 +16,7 @@
    ========================================================================== */
 "use strict";
 
-const CHEMIN = { MAX: 20, CELLULES: 2e6, BUDGET_MS: 8000, VIA_MM: 2, VIRAGE_MM: 0.3, PAS: 0.25 };
+const CHEMIN = { MAX: 20, CELLULES: 2e6, BUDGET_MS: 8000, VIA_MM: 10, VIRAGE_MM: 0.3, PAS: 0.25 };
 // les huit directions, dans l'ordre des angles (d × 45°) : l'écart de deux rangs dit le virage
 const CHEMIN_DX = [1, 1, 0, -1, -1, -1, 0, 1], CHEMIN_DY = [0, 1, 1, 1, 0, -1, -1, -1];
 
