@@ -203,7 +203,7 @@ const EXPOSE=["ECRITURE_CAO","simDsChamp","simDsLire","simDsEcrire","SIM_DS","SI
   /* sorties empruntées au Draftsman de l'éditeur */
   "dfNouvelle","dfTexte","dfCadre","dfPdf","dxfNouveau","dxfContour","dxfOctets",
   /* dossier méca */
-  "mecaDonnees","mecaEntreeIpc","mecaIpcDossier","mecaIpcRegler","mecaIpcFichiers","MECA_IPC","mecaPlan","mecaIpcCtx","dfSvg","mecaIpcLib"];
+  "mecaDonnees","mecaEntreeIpc","mecaIpcDossier","mecaIpcRegler","mecaIpcFichiers","MECA_IPC","mecaPlan","mecaIpcCtx","dfSvg","mecaIpcLib","modeleTexte"];
 
 /* Un seul `eval`, sur les fichiers concaténés : ils se voient l'un
    l'autre comme dans la page, où ils partagent la portée globale. Le "use
@@ -6881,6 +6881,13 @@ T("dossier méca, visionneuse : la saisie va dans le modèle (export .json), bor
     const j=mecaIpcDossier();
     const U1=j.composants.find(c=>c.ref==="U1"), J1=j.composants.find(c=>c.ref==="J1");
     if(U1.hauteur!==1.75||U1.source_hauteur!=="saisie"||J1.ouverture!==null)throw new Error(JSON.stringify([U1,J1]));
+    /* « Exporter .json » puis réouverture : les réglages reviennent tels quels */
+    const relu=JSON.parse(modeleTexte());
+    if(JSON.stringify(relu.meca)!==JSON.stringify(V.modele.meca))throw new Error("export .json : "+JSON.stringify(relu.meca));
+    const garde=V.modele; V.modele=relu;
+    const U1r=mecaIpcDossier().composants.find(c=>c.ref==="U1");
+    V.modele=garde;
+    if(U1r.hauteur!==1.75||U1r.source_hauteur!=="saisie")throw new Error("réglage perdu à la réouverture : "+JSON.stringify(U1r));
     V.modele.meca={h:{U1:"x"},ouv:"faux"};
     if(mecaIpcDossier().composants.find(c=>c.ref==="U1").source_hauteur!=="inconnue")throw new Error("réglage abîmé accepté");
   }finally{carte();}

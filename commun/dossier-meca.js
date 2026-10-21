@@ -28,6 +28,20 @@ const MECA_ORGANE=/^(SW|LED|DS|BT)\d/i;
 const MECA_FIXATION=/^M?H\d/i;
 
 function mecaR3(v){return Math.round(v*1000)/1000;}
+/* Une fente (longueur hors tout `l` > `d`, `rot` en degrés, Y vers le haut) : son contour
+   facetté, élargi de `marge` ; dxfContour en retrouve les deux arcs. */
+function mecaOblong(f,marge){
+  const r=f.d/2+marge, a=f.rot*Math.PI/180, c=Math.cos(a), s=Math.sin(a), e=(f.l-f.d)/2, pts=[];
+  for(const [u0,a0] of [[e,-90],[-e,90]])
+    for(let i=0;i<=12;i++){
+      const t=(a0+i*15)*Math.PI/180, u=u0+r*Math.cos(t), v=r*Math.sin(t);
+      pts.push({x:f.x+u*c-v*s,y:f.y+u*s+v*c});
+    }
+  return pts;
+}
+/* Ø d, ou Ø d × l pour une fente ; et la demi-longueur du dégagement (où poser le repère) */
+function mecaDiam(f){return mecaFr(f.d)+(f.l?" × "+mecaFr(f.l):"");}
+function mecaDemiDeg(f){return (f.l?f.l-f.d:0)/2+f.d_degagement/2;}
 function mecaPts(P){return P.map(p=>[mecaR3(p.x),mecaR3(p.y)]);}
 function mecaBoite(P){
   let x1=Infinity,y1=Infinity,x2=-Infinity,y2=-Infinity;
@@ -124,8 +138,9 @@ function mecaDonnees(entree,lib,reglages,info){
   const comps=Array.isArray(E.composants)?E.composants:[];
   const estFixation=c=>(MECA_FIXATION.test(c.ref||"")||/MOUNT|TROU/i.test(c.pkg||""))&&
                        Array.isArray(c.trous)&&c.trous.length===1;
-  const fixation=(id,t)=>({id,x:mecaR3(t.x),y:mecaR3(t.y),d:mecaR3(t.d),metallise:!!t.metallise,
-                           d_degagement:mecaR3(t.pad>t.d?t.pad:t.d+2)});
+  const fixation=(id,t)=>Object.assign({id,x:mecaR3(t.x),y:mecaR3(t.y),d:mecaR3(t.d),metallise:!!t.metallise,
+                           d_degagement:mecaR3(t.pad>t.d?t.pad:t.d+2)},
+                          t.l>t.d?{l:mecaR3(t.l),rot:mecaR3(t.rot||0)}:{});   // une fente garde sa forme
   const fixations=comps.filter(estFixation).map(c=>fixation(c.ref,c.trous[0]));
   const pris=new Set(comps.map(c=>c.ref));
   let n=0;
@@ -300,10 +315,16 @@ function mecaFeuilles(J,ctx,monde){
   dfCalque(F,"FIXATIONS");
   for(const f of J.fixations){
     const s=TG(f.x,f.y);
-    dfCercle(F,s.x,s.y,f.d/2*k,{lw:0.25});
-    dfCercle(F,s.x,s.y,f.d_degagement/2*k,{lw:0.12,trait:0.45});
+    if(f.l){
+      const P=m=>mecaOblong(f,m).map(p=>TG(p.x,p.y));
+      dfPoly(F,P(0),{ferme:true,lw:0.25});
+      dfPoly(F,P((f.d_degagement-f.d)/2),{ferme:true,lw:0.12,trait:0.45});
+    }else{
+      dfCercle(F,s.x,s.y,f.d/2*k,{lw:0.25});
+      dfCercle(F,s.x,s.y,f.d_degagement/2*k,{lw:0.12,trait:0.45});
+    }
     dfLigne(F,s.x-1.5,s.y,s.x+1.5,s.y,0.12);dfLigne(F,s.x,s.y-1.5,s.x,s.y+1.5,0.12);
-    dfTexte(F,f.id+"  Ø "+mecaFr(f.d),s.x+f.d_degagement/2*k+1,s.y-1,6.5,{cat:"percage",lieu:f.id});
+    dfTexte(F,f.id+"  Ø "+mecaDiam(f),s.x+mecaDemiDeg(f)*k+1,s.y-1,6.5,{cat:"percage",lieu:f.id});
   }
   dfCalque(F);
   /* cotes hors tout, et cotes en ordonnée des fixations depuis l'origine */
@@ -351,9 +372,9 @@ function mecaFeuilles(J,ctx,monde){
     ["Plus haut composant, face dessous",mecaFr(hB)],
     ["Hauteur totale (dessous + carte + dessus)",mecaFr(J.hauteur_max.total)]],{cat:"tableau"})];
   if(J.fixations.length)blocs.push(dfBlocEspace(4),dfBlocTitre("Trous de fixation"),
-    ...dfTableau([{t:"N°",p:12,a:"m"},{t:"X",p:16,a:"d"},{t:"Y",p:16,a:"d"},{t:"Ø",p:13,a:"d"},
+    ...dfTableau([{t:"N°",p:12,a:"m"},{t:"X",p:14,a:"d"},{t:"Y",p:14,a:"d"},{t:"Ø",p:17,a:"d"},
                   {t:"Métallisé",p:16,a:"m"},{t:"Ø dégagement",p:21,a:"d"}],
-      J.fixations.map(f=>[f.id,mecaFr(f.x),mecaFr(f.y),mecaFr(f.d),f.metallise?"Oui":"Non",mecaFr(f.d_degagement)]),
+      J.fixations.map(f=>[f.id,mecaFr(f.x),mecaFr(f.y),mecaDiam(f),f.metallise?"Oui":"Non",mecaFr(f.d_degagement)]),
       {cat:"percage"}));
   const ouv=J.composants.filter(c=>c.ouverture);
   blocs.push(dfBlocEspace(4),dfBlocTitre("Ouvertures dans le boîtier"));
@@ -382,9 +403,14 @@ function mecaDxf(J){
   dxfContour(D,"CONTOUR",J.carte.contour.map(xy));
   for(const d of J.carte.decoupes)dxfContour(D,"DECOUPES",d.map(xy));
   for(const f of J.fixations){
-    dxfCercle(D,"FIXATIONS",{x:f.x,y:f.y},f.d/2);
-    dxfCercle(D,"DEGAGEMENTS",{x:f.x,y:f.y},f.d_degagement/2);
-    dxfTexte(D,"REPERES_FIXATIONS",f.id,{x:f.x+f.d_degagement/2+0.5,y:f.y},1.2,0,"g");
+    if(f.l){
+      dxfContour(D,"FIXATIONS",mecaOblong(f,0));
+      dxfContour(D,"DEGAGEMENTS",mecaOblong(f,(f.d_degagement-f.d)/2));
+    }else{
+      dxfCercle(D,"FIXATIONS",{x:f.x,y:f.y},f.d/2);
+      dxfCercle(D,"DEGAGEMENTS",{x:f.x,y:f.y},f.d_degagement/2);
+    }
+    dxfTexte(D,"REPERES_FIXATIONS",f.id,{x:f.x+mecaDemiDeg(f)+0.5,y:f.y},1.2,0,"g");
   }
   for(const c of J.composants){
     if(c.corps.length<3)continue;

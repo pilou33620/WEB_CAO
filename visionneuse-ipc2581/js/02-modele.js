@@ -1727,3 +1727,14 @@ function mdlNetPoserNature(i,nature){
   mdlPoserNature(n);
   mdlMemoriserNets();
 }
+
+/* Le modèle traduit, tel qu'il est arrivé du serveur (pour « Exporter .json »,
+   ici plutôt que dans 06-demarrage.js pour que le banc le voie). Les champs calculés à
+   l'affichage (boîtes de composants, boîtes de pistes) sont retirés : ils se
+   recalculent en une passe, et les garder doublerait le fichier. Le contour
+   d'un plan (`_p`, un Path2D) ne survivrait pas au voyage : JSON en fait `{}`. */
+function modeleTexte(){
+  return JSON.stringify(V.modele,function(cle,valeur){
+    return (cle==="boite"||cle==="_b"||cle==="_p")?undefined:valeur;
+  });
+}

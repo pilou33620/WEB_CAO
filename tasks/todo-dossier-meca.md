@@ -171,7 +171,7 @@ réutilise la recherche de T2/T3.
 - La LIB vient de `GET /api/lib/composants`. Les réglages vont dans `V.modele.meca`, donc dans `-IPC.json`.
 - [x] Sur un IPC exporté par l'éditeur, le zip a les mêmes trous, corps et hauteurs que celui de l'éditeur (critère 5) — essai chaîné de T11, et fenêtre vue dans Chromium sur `exemple-1-charge`
 - [x] Sans serveur (`.json` rouvert), la fenêtre marche avec les hauteurs du fichier et le dit
-- [~] Les réglages survivent à « Exporter .json » puis réouverture : `V.modele.meca` n'est pas retiré par `modeleTexte` et se relit borné ; pas d'essai automatique (06-demarrage.js hors du banc)
+- [x] Les réglages survivent à « Exporter .json » puis réouverture : `V.modele.meca` n'est pas retiré par `modeleTexte` et se relit borné ; essai automatique depuis le 21/10/2026 (`modeleTexte` passé dans 02-modele.js, que le banc charge)
 - Vérifier : `JS_VIS` ; contrôle à la main dans le navigateur
 - Fichiers : `visionneuse-ipc2581/visionneuse-ipc2581.html`, `visionneuse-ipc2581/js/08-dossier-meca.js`, `visionneuse-ipc2581/css/…`
 - Dépend de : T1, T7, T11
@@ -181,4 +181,4 @@ réutilise la recherche de T2/T3.
 - [ ] Les critères 1 à 6 sont tenus (critère 6 : donner le JSON de la carte d'exemple à une IA et contrôler sa réponse à la main)
 - [x] `editeur-pcb/README.md`, `visionneuse-ipc2581/README.md` et `A-FAIRE.md` sont à jour
 - [x] `/review` est passé (APPROVE ; corrections : notes regroupées, vue de gauche, vues déclarées, focus de la fenêtre, face de repli, NPTH rattaché à son boîtier, `_safe_float` non-fini, lecture des réglages sans prototype)
-- [ ] Proposer la mise à jour du graphe (`/graphify`)
+- [x] ~~Proposer la mise à jour du graphe (`/graphify`)~~ : sans objet (pas de graphe dans le dépôt)

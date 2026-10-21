@@ -403,7 +403,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "dfLigne",
   /* dossier mécanique (commun/dossier-meca.js) */
   "mecaDonnees","mecaEntreeEditeur","mecaDossier","stackTotal","exCharger","mecaFeuilles",
-  "mecaDxf","mecaFichiers","mecaFichiersEditeur","mecaRegler","mecaNormReglages",
+  "mecaDxf","mecaFichiers","mecaFichiersEditeur","mecaRegler","mecaNormReglages","mecaOblong","mecaDiam",
   /* cotes à la main, vues à la souris, détails (34-draftsman-vues.js) */
   "dfNormCotes","dfNormVues","dfNormDetails","dfResoudre","dfMesurer","dfAccroches","dfAccrocher","dfNormRef","dfRefTexte",
   "dfAjouterCote","dfModifierCote","dfSupprimerCote","dfDeplacerCote","dfAjouterDetail","dfSupprimerDetail",
@@ -26788,6 +26788,20 @@ T("dossier méca : un trou non métallisé et une empreinte MH1 sont deux fixati
   if(!h||h.id!=="H1"||h.d!==3.2||h.d_degagement!==5.2)throw new Error("trou libre : "+JSON.stringify(h));
   if(!m||!m.metallise||m.d_degagement!==6||m.x!==40.5)throw new Error("MH1 : "+JSON.stringify(m));
   if(j.composants.some(c=>c.ref==="MH1"))throw new Error("une fixation n'est pas un composant");
+});
+T("dossier méca : une fente garde sa forme dans le JSON, le DXF et la nomenclature",()=>{
+  const e=mecaEntree();
+  e.trous.push({x:20,y:10,d:1.2,l:3.2,rot:90,metallise:false});
+  const J=mecaDonnees(e,[],{}), f=J.fixations.find(f=>f.l);
+  if(!f||f.l!==3.2||f.rot!==90||f.d!==1.2)throw new Error("fente : "+JSON.stringify(J.fixations));
+  if(J.fixations.find(f=>f.id==="H1").l!==undefined)throw new Error("un trou rond reste rond");
+  const P=mecaOblong(f,0), ys=P.map(p=>p.y), xs=P.map(p=>p.x);
+  if(Math.abs(Math.max(...ys)-Math.min(...ys)-3.2)>1e-9||Math.abs(Math.max(...xs)-Math.min(...xs)-1.2)>1e-9)
+    throw new Error("contour de la fente à 90° : "+(Math.max(...xs)-Math.min(...xs))+" × "+(Math.max(...ys)-Math.min(...ys)));
+  if(mecaDiam(f)!=="1,20 × 3,20"&&mecaDiam(f)!=="1,2 × 3,2")throw new Error("Ø : "+mecaDiam(f));
+  const x=mecaEntites(Buffer.from(mecaDxf(J)).toString("latin1"));
+  const arcs=x.filter(y=>y.type==="ARC"&&y.calque==="FIXATIONS"), cercles=x.filter(y=>y.type==="CIRCLE"&&y.calque==="FIXATIONS");
+  if(arcs.length!==2||cercles.length!==2)throw new Error("DXF : "+arcs.length+" arcs, "+cercles.length+" cercles de fixation");
 });
 T("dossier méca : un trou libre ne prend pas le nom d'une empreinte de fixation",()=>{
   const e=mecaEntree();

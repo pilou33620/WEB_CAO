@@ -307,13 +307,18 @@ function histBorner(pile){
     pile.splice(Math.max(k,0),1);
   }
 }
+/* L'élément dont le panneau Propriétés a déjà poussé son étape : une saisie de repère ou de
+   valeur fait une étape, pas une par touche. Toute autre étape (ou Ctrl+Z) la referme. */
+let PROP_FRAPPE=null;
 function push(snapshot){
+  PROP_FRAPPE=null;
   S.hist.push(snapshot===undefined?serialize():snapshot);
   histBorner(S.hist);
   S.redo.length=0;
   S.dirty=true;
 }
 function restore(js){
+  PROP_FRAPPE=null;
   const o=JSON.parse(js);
   S.pages=o.pages;loadPage(o.page||0);
   S.netClasses=o.netClasses||{};

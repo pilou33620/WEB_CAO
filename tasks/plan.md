@@ -83,8 +83,8 @@ distincts, sauf T6 et T8 qui partagent le panneau.
 - [x] T3 : la Z_diff par classe pour les paires (`zdiff_classes`)
 
 ### Point d'étape 1
-- [ ] `banc-analyse-carte`, `banc-crosstalk` et `banc-serveur-routes` passent, `compileall` est propre
-- [ ] Le cas TRD1_N n'est plus condamné par la règle de retour
+- [x] `banc-analyse-carte`, `banc-crosstalk` et `banc-serveur-routes` passent, `compileall` est propre
+- [ ] Le cas TRD1_N n'est plus condamné par la règle de retour (suivi dans `tasks/todo.md`, points d'étape 1 et 2)
 - [ ] Relecture humaine avant de passer au JS
 
 ### Phase 2 : pages
@@ -95,16 +95,16 @@ distincts, sauf T6 et T8 qui partagent le panneau.
 - [x] T8 : la visionneuse : nature d'interface, mémoire par fichier, envoi
 
 ### Point d'étape 2
-- [ ] Les sept bancs de la spec passent
-- [ ] Les bundles monofichiers se construisent et contiennent la table
-- [ ] Vérification à la main dans le navigateur (carte TRD1_N)
+- [x] Les sept bancs de la spec passent
+- [x] Les bundles monofichiers se construisent et contiennent la table
+- [ ] Vérification à la main dans le navigateur (carte TRD1_N ; suivi dans `tasks/todo.md`, point d'étape 2)
 
 ### Phase 3 : finition
 - [x] T9 : A-FAIRE.md, l'État des lieux et les aides du panneau
 
 ### Point d'étape final
-- [ ] Les critères 1 à 8 de la spec sont tenus et couverts
-- [ ] `/review` avant de déclarer le travail fini
+- [x] Les critères 1 à 8 de la spec sont tenus et couverts, sauf TRD1_N (vérification sur la vraie carte)
+- [x] `/review` avant de déclarer le travail fini (revue du 13/10/2026, suites faites le 14/10/2026)
 
 ## Risques et parades
 

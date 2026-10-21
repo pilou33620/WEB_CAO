@@ -179,7 +179,9 @@ function bindPkgField(el){
         fr=document.getElementById("pPkgFree"),
         tx=document.getElementById("pPkgTxt");
   const set=v=>{
-    if(v)el.pkg=String(v).slice(0,PKG_MAX);else delete el.pkg;
+    const n=v?String(v).slice(0,PKG_MAX):"";
+    if(n!==(el.pkg||"")&&PROP_FRAPPE!==el){push();PROP_FRAPPE=el;}   // une étape, comme repère et valeur
+    if(n)el.pkg=n;else delete el.pkg;
     buildList();
   };
   const baseOf=()=>PKG_BASES.find(b=>b.b===bs.value)||null;
@@ -512,7 +514,8 @@ function refreshPanels(){
     box.innerHTML=html;
     bindNetCells(box);
     const r=document.getElementById("pRef"), v=document.getElementById("pVal");
-    if(r)r.oninput=()=>{el.ref=r.value;draw();buildList();};
+    const etape=()=>{if(PROP_FRAPPE!==el){push();PROP_FRAPPE=el;}};
+    if(r)r.oninput=()=>{etape();el.ref=r.value;draw();buildList();};
     // la valeur d'un symbole d'alimentation ou d'une étiquette renomme le net :
     // le panneau des connexions doit suivre la frappe
     /* La valeur d'un symbole d'alimentation ou d'une étiquette renomme le net :
@@ -520,6 +523,7 @@ function refreshPanels(){
        aussi de la largeur du corps : les broches s'écartent, et reshapeComp
        emmène les fils qui y sont accrochés plutôt que de les décrocher. */
     v.oninput=()=>{
+      etape();
       if(typeof def.pins==="function")reshapeComp(el,()=>{el.value=v.value;});
       else el.value=v.value;
       draw();
