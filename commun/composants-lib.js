@@ -598,6 +598,65 @@ const COMPOSANTS_LIB = (() => {
     }
   }
 
+  /* ---------- un Touchstone à lier à une référence ----------
+     Un fichier .sNp a N ports ; la puce, souvent plus de pattes (masse, commandes). Pour chaque
+     port, la patte de l'empreinte : son numéro, ou le nom de sa broche dans le brochage (« J1 »),
+     et la patte de masse si les ports s'y rapportent. Rend le texte prêt à ranger dans la LIB,
+     avec les lignes que lit la simulation RF (simRfBrochesSnp, commun/simulation-em.js) :
+       ! broches : 5 3 1
+       ! masse : 2
+     Rien n'est écrit ici. */
+  const LIGNE_BRANCHEMENT = /^[ \t]*![ \t]*(broches|masse)[ \t]*:[ \t]*(.*)$/i;
+  function portsTouchstone(nomFichier) {
+    const m = /\.s(\d)p$/i.exec(String(nomFichier || ""));
+    return m ? +m[1] : 0;
+  }
+  /* le branchement déjà écrit dans un fichier, ou null */
+  function lireBranchement(texte) {
+    let broches = null, masse = null;
+    for (const l of String(texte || "").split(/\r?\n/)) {
+      const m = LIGNE_BRANCHEMENT.exec(l);
+      if (!m) continue;
+      if (m[1].toLowerCase() === "broches") broches = m[2].trim().split(/[\s,;]+/).filter(Boolean);
+      else masse = m[2].trim() || null;
+    }
+    return broches ? { broches, masse } : null;
+  }
+  function brancherTouchstone(texte, nomFichier, saisie) {
+    const n = portsTouchstone(nomFichier), s = saisie || {}, erreurs = [];
+    if (!n) return { texte: null, erreurs: ["pas un Touchstone (.s1p à .s9p)"] };
+    if (!/^[ \t]*#/m.test(String(texte || "")))
+      return { texte: null, erreurs: ["pas de ligne d'options « # » : ce n'est pas un Touchstone lisible"] };
+    const lu = s.brochage && typeof brochageLire === "function" ? brochageLire(s.brochage) : null;
+    const broches = lu && !lu.erreurs.length ? lu.parties[0].broches : {};
+    const pins = Number.isInteger(s.pins) && s.pins > 0 ? s.pins : 0;
+    /* « 5 », ou « J1 » lu dans le brochage ; une broche sur plusieurs pattes ne désigne pas un port */
+    const patte = (v, quoi) => {
+      const t = String(v == null ? "" : v).trim();
+      if (!t) { erreurs.push(quoi + " : patte manquante"); return null; }
+      let p = /^\d+$/.test(t) ? String(+t) : null;
+      if (p == null) {
+        const b = broches[typeof brochageNom === "function" ? brochageNom(t) : t.toUpperCase()];
+        if (b == null) { erreurs.push(quoi + " : « " + t + " » n'est ni un numéro de patte ni une broche du brochage"); return null; }
+        if (b.includes("/")) { erreurs.push(quoi + " : la broche " + t + " va sur plusieurs pattes (" + b + "), donne la patte"); return null; }
+        p = b;
+      }
+      if (pins && (+p < 1 || +p > pins)) { erreurs.push(quoi + " : patte " + p + " hors de 1 à " + pins); return null; }
+      return p;
+    };
+    const ports = Array.isArray(s.broches) ? s.broches : [];
+    if (ports.length !== n) erreurs.push(n + " port(s) dans le fichier, " + ports.length + " patte(s) données");
+    const liste = ports.map((v, k) => patte(v, "port " + (k + 1)));
+    const masse = s.masse != null && String(s.masse).trim() ? patte(s.masse, "masse") : null;
+    const vus = liste.filter(Boolean).concat(masse ? [masse] : []);
+    const doubles = vus.filter((p, i) => vus.indexOf(p) !== i);
+    if (doubles.length) erreurs.push("patte " + [...new Set(doubles)].join(", ") + " donnée deux fois");
+    if (erreurs.length) return { texte: null, erreurs };
+    const corps = String(texte).split(/\r?\n/).filter(l => !LIGNE_BRANCHEMENT.test(l)).join("\n");
+    return { texte: "! broches : " + liste.join(" ") + "\n" + (masse ? "! masse : " + masse + "\n" : "") + corps,
+             broches: liste, masse, erreurs };
+  }
+
   /* ---------- conversion KiCad (kicad_mod → pcbfp-1) ----------
      Le texte vient d'Internet (pcbparts, cse_get_kicad) : c'est une donnée, lue par un
      lecteur d'expressions S borné (taille, profondeur, nombre de nœuds), jamais exécutée.
@@ -762,5 +821,5 @@ const COMPOSANTS_LIB = (() => {
   }
 
   return { SYMBOLES, CHAMPS, nomDeChemin, verifierEmpreinte, verifierBrochage, verifierLigne, genererEmpreinte,
-           lireParametres, convertirKicad };
+           lireParametres, convertirKicad, portsTouchstone, lireBranchement, brancherTouchstone };
 })();

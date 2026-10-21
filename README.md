@@ -55,7 +55,7 @@ WEB_CAO tourne dans n'importe quel navigateur récent ; seul le serveur demande 
 | :--- | :--- | :---: | :--- |
 | **Éditeur Schématique** | Multi-feuilles, bus et hiérarchie, netlist et BOM enrichies, variantes de montage (composants non montés), reconnaissance de motifs (LDO, buck, I2C/SPI/UART…), contraintes de nets pour le PCB | Non | [Guide](editeur-schematique/README.md) |
 | **Éditeur PCB** | Routage *Push & Shove*, paires différentielles, vias borgnes/enterrés, DRC temps réel, profils fabricants, placement assisté, synchro schéma → PCB, gestionnaire de contraintes, plans de fabrication et d'assemblage (Draftsman) | Non¹ | [Guide](editeur-pcb/README.md) |
-| **Gestion LIB** | Catalogue `LIB_composants.csv`, éditeurs d'empreintes et de symboles, modèles SPICE, import JLCPCB / LCSC | Oui | — |
+| **Gestion LIB** | Catalogue `LIB_composants.csv`, éditeurs d'empreintes et de symboles, modèles SPICE et Touchstone (« 📎 Lier un fichier » dans la fiche d'une référence), import JLCPCB / LCSC | Oui | — |
 | **Recherche de composants** | Stocks et prix JLCPCB via [pcbparts.dev](https://pcbparts.dev/), équivalences, empreintes KiCad, datasheets | Oui | [Guide](recherche-composants/README.md) |
 | **Visionneuse IPC-2581** | Carte livrée par le fabricant : couches, empilage, nets, mesures et simulation SI/PI | Oui | [Guide](visionneuse-ipc2581/README.md) |
 

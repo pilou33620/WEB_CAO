@@ -494,6 +494,36 @@ const asyncTests = (async () => {
     "esc échappe < > & \" ' et rend vide pour null, « 0 » pour 0");
 }
 
+/* ---------- un Touchstone lié à une référence (inspecteur de Gestion LIB) ---------- */
+console.log("— Touchstone —");
+{
+  const S3P = "! fabricant\n# GHz S DB R 50\n0.1 -20 0 -0.2 0 -40 0 -0.2 0 -20 0 -40 0 -40 0 -40 0 -1 0\n";
+  const AS179 = "J3=1,GND=2,J2=3,V1=4,J1=5,V2=6";
+  verifier(CL.portsTouchstone("a.s3p") === 3 && CL.portsTouchstone("A.S2P") === 2 && CL.portsTouchstone("a.sub") === 0,
+    "Touchstone : le nombre de ports se lit dans l'extension");
+  let r = CL.brancherTouchstone(S3P, "as179.s3p", { broches: ["J1", "J2", "J3"], masse: "gnd", brochage: AS179, pins: 6 });
+  verifier(!r.erreurs.length && r.texte.startsWith("! broches : 5 3 1\n! masse : 2\n! fabricant\n# GHz"),
+    "Touchstone : noms du brochage → pattes, lignes « ! broches » et « ! masse » en tête");
+  /* la page RF relit ce qu'on écrit (même syntaxe que simRfBrochesSnp) */
+  const b = CL.lireBranchement(r.texte);
+  verifier(b && b.broches.join(" ") === "5 3 1" && b.masse === "2", "Touchstone : le branchement écrit se relit");
+  const r2 = CL.brancherTouchstone(r.texte, "as179.s3p", { broches: ["5", "1", "3"], masse: "", pins: 6 });
+  verifier(!r2.erreurs.length && r2.texte.startsWith("! broches : 5 1 3\n! fabricant") && !/masse/.test(r2.texte),
+    "Touchstone : relié une deuxième fois, l'ancien branchement est remplacé");
+  const refus = (s, nom, motif, quoi) => {
+    const x = CL.brancherTouchstone(S3P, nom || "a.s3p", s);
+    verifier(!x.texte && x.erreurs.some(e => motif.test(e)), "Touchstone refusé : " + quoi + " (" + x.erreurs[0] + ")");
+  };
+  refus({ broches: ["5", "3"], pins: 6 }, null, /3 port/, "une patte par port");
+  refus({ broches: ["5", "3", "9"], pins: 6 }, null, /hors de 1 à 6/, "patte hors de l'empreinte");
+  refus({ broches: ["5", "3", "5"], pins: 6 }, null, /deux fois/, "même patte deux fois");
+  refus({ broches: ["5", "3", "1"], masse: "5", pins: 6 }, null, /deux fois/, "la masse est aussi un port");
+  refus({ broches: ["J1", "J2", "X9"], brochage: AS179 }, null, /X9/, "nom inconnu du brochage");
+  refus({ broches: ["IN", "OUT", "GND"], brochage: "IN=1,OUT=2,GND=3/4" }, null, /plusieurs pattes/, "broche sur plusieurs pattes");
+  refus({ broches: ["1"] }, "a.sub", /Touchstone/, "pas un .sNp");
+  verifier(!CL.brancherTouchstone("1 2 3", "a.s1p", { broches: ["1"] }).texte, "Touchstone refusé : sans ligne « # »");
+}
+
 /* ---------- la LIB réelle passe les contrôles ---------- */
 const LIB = [process.env.WEB_CAO_LIB, path.join(RACINE, "LIB"), path.join(RACINE, "..", "PROJETS", "LIB_CAO")]
   .find(d => d && fs.existsSync(path.join(d, "lib_empreinte_pcb")));

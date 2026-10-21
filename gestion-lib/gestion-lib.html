@@ -222,13 +222,18 @@
           </div>
         </div>
 
-        <!-- Aperçu Modèle Simulation -->
-        <div class="preview-card" id="inspSimWrap" hidden>
+        <!-- Modèles de simulation liés à la référence (SPICE, Touchstone) : on en lie
+             un depuis un fichier, un Touchstone reçoit la patte de chaque port -->
+        <div class="preview-card" id="inspSimWrap">
           <div class="preview-card-head">
-            <span>MODÈLE SPICE</span>
-            <span class="type-label">.SUB</span>
+            <span>MODÈLES DE SIMULATION</span>
+            <button class="tb" id="inspSimLier" title="Ranger un fichier dans la LIB (lib_simulation) et le lier à cette référence : sous-circuit SPICE ou paramètres S (.s2p, .s3p…). Plusieurs modèles : les états d'un commutateur, la simulation RF propose le choix.">📎 Lier un fichier…</button>
+            <input type="file" id="inspSimFichier" hidden
+                   accept=".sub,.mod,.cir,.lib,.sp,.spi,.spice,.s1p,.s2p,.s3p,.s4p,.s5p,.s6p,.s7p,.s8p,.s9p">
           </div>
-          <pre style="margin:0; padding:10px; font-family:var(--mono); font-size:11px; background:#090a0c; color:#93c5fd; overflow-x:auto;" id="inspSimCode"></pre>
+          <div id="inspSimListe" class="insp-sim-liste"></div>
+          <div id="inspSimForm" class="insp-sim-form" hidden></div>
+          <pre style="margin:0; padding:10px; font-family:var(--mono); font-size:11px; background:#090a0c; color:#93c5fd; overflow-x:auto; max-height:220px;" id="inspSimCode" hidden></pre>
         </div>
 
       </div>

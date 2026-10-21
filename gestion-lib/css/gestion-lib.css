@@ -1267,3 +1267,24 @@ table.lib-table tr.selected td {
 .insp-brochage-apercu { font-family: var(--mono); font-size: 10.5px; line-height: 1.5; color: var(--txt-dim); }
 .insp-brochage-apercu b { color: var(--purple); }
 .insp-brochage-apercu .err { color: var(--red); font-family: var(--ui); }
+
+/* Modèles de simulation de la référence (inspecteur) */
+.preview-card-head .tb { padding: 2px 8px; font-size: 11px; }
+.insp-sim-liste { display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; font-size: 11.5px; }
+.insp-sim-vide { color: var(--txt-dim); }
+.insp-sim-ligne { display: flex; align-items: center; gap: 6px; }
+.insp-sim-ligne button { background: none; border: none; color: var(--txt); cursor: pointer; padding: 1px 2px;
+  font-family: var(--mono); font-size: 11px; text-align: left; overflow: hidden; text-overflow: ellipsis; }
+.insp-sim-ligne button.nom { flex: 1; min-width: 0; white-space: nowrap; }
+.insp-sim-ligne button.nom:hover { color: var(--blue); }
+.insp-sim-ligne button.delier { color: var(--txt-dim); }
+.insp-sim-ligne button.delier:hover { color: var(--red); }
+.insp-sim-ligne span { color: var(--txt-dim); font-size: 10px; }
+.insp-sim-form { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; font-size: 11.5px;
+  border-top: 1px solid var(--border); }
+.insp-sim-form .ports { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; }
+.insp-sim-form input { background: var(--bg); border: 1px solid var(--border2); color: var(--txt);
+  border-radius: 4px; padding: 3px 6px; font-family: var(--mono); font-size: 11.5px; min-width: 0; }
+.insp-sim-form .aide { color: var(--txt-dim); font-size: 10.5px; line-height: 1.4; }
+.insp-sim-form .err { color: var(--red); }
+.insp-sim-form .actions { display: flex; gap: 6px; justify-content: flex-end; }

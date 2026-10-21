@@ -366,6 +366,9 @@ function rafraichirTable() {
             </select>
           </td>
         `;
+      } else if (col === colSim && simVal.includes("|")) {
+        // plusieurs modèles (états d'un commutateur) : la liste n'en tiendrait qu'un, l'inspecteur les gère
+        html += `<td><span class="tag-pkg" title="${esc(simVal)}">${simVal.split("|").length} modèles</span></td>`;
       } else if (col === colSim) {
         html += `
           <td>
@@ -461,11 +464,9 @@ async function selectionnerComposant(id) {
 
   const colPcb = "Empreinte PCB";
   const colSch = LIB_STATE.colonnes.includes("Empreinte Schématique") ? "Empreinte Schématique" : "Empreinte Schematique";
-  const colSim = LIB_STATE.colonnes.includes("Modèle Simulation") ? "Modèle Simulation" : "Modele Simulation";
 
   const nomPcb = comp[colPcb];
   const nomSch = comp[colSch];
-  const nomSim = comp[colSim];
 
   document.getElementById("inspPcbName").textContent = nomPcb || "Non associée";
   document.getElementById("inspSchName").textContent = nomSch || "Non associé";
@@ -494,17 +495,121 @@ async function selectionnerComposant(id) {
     }
   }
 
-  // Rendu aperçu simulation
-  const simWrap = document.getElementById("inspSimWrap");
-  if (simWrap) {
-    if (nomSim) {
-      const simData = await obtenirFichierLib("simulation", nomSim);
-      document.getElementById("inspSimCode").textContent = simData || "(Modèle vide)";
-      simWrap.hidden = false;
-    } else {
-      simWrap.hidden = true;
-    }
+  inspSimAfficher(comp);
+}
+
+/* ---------- Modèles de simulation de la référence ----------
+   La colonne « Modèle Simulation » peut en lier plusieurs, séparés par « | » (les
+   états d'un commutateur) : la simulation RF prend le premier et propose les autres.
+   « Lier un fichier » le range dans lib_simulation et l'ajoute à la colonne ; un
+   Touchstone y reçoit d'abord la patte de chaque port et de la masse
+   (COMPOSANTS_LIB.brancherTouchstone), que la simulation RF lit. */
+const nomFichierSim = c => String(c).replace(/^.*[\\\/]/, "");
+function inspSimListe(comp) {
+  return String(comp[colSimDe()] || "").split("|").map(x => x.trim())
+    .filter(x => x && x !== "-" && x.toLowerCase() !== "xx");
+}
+function colSimDe() {
+  return LIB_STATE.colonnes.includes("Modèle Simulation") ? "Modèle Simulation" : "Modele Simulation";
+}
+function inspSimModifier(comp, liste, message) {
+  if (!LIB_STATE.colonnes.includes(colSimDe())) LIB_STATE.colonnes.push(colSimDe());
+  if (modifierComposant(comp._id, colSimDe(), liste.join(" | "))) {
+    rafraichirStats();
+    afficherToast(message + " — à enregistrer", "info");
   }
+  inspSimAfficher(comp);
+}
+async function inspSimVoir(nom) {
+  const pre = document.getElementById("inspSimCode");
+  if (!pre) return;
+  const texte = nom ? await obtenirFichierLib("simulation", nom) : null;
+  pre.textContent = texte == null ? (nom ? "(fichier introuvable dans la LIB : " + nomFichierSim(nom) + ")" : "")
+    : String(texte).split("\n").slice(0, 60).join("\n");
+  pre.hidden = !nom;
+}
+function inspSimAfficher(comp) {
+  const box = document.getElementById("inspSimListe");
+  if (!box) return;
+  const liste = inspSimListe(comp);
+  document.getElementById("inspSimForm").hidden = true;
+  box.innerHTML = liste.length ? liste.map((nom, i) =>
+    '<div class="insp-sim-ligne"><button class="nom" data-voir="' + i + '" title="' + esc(nom) + '">' +
+    esc(nomFichierSim(nom)) + "</button>" + (i === 0 && liste.length > 1 ? "<span>par défaut</span>" : "") +
+    '<button class="delier" data-delier="' + i + '" title="Délier (le fichier reste dans la LIB)">✕</button></div>').join("")
+    : '<div class="insp-sim-vide">Aucun modèle lié.</div>';
+  box.querySelectorAll("[data-voir]").forEach(b => b.onclick = () => inspSimVoir(liste[+b.dataset.voir]));
+  box.querySelectorAll("[data-delier]").forEach(b => b.onclick = () => {
+    const nom = liste[+b.dataset.delier];
+    inspSimModifier(comp, liste.filter((_, i) => i !== +b.dataset.delier), nomFichierSim(nom) + " délié");
+  });
+  inspSimVoir(liste[0]);
+  const fic = document.getElementById("inspSimFichier");
+  document.getElementById("inspSimLier").onclick = () => fic.click();
+  fic.onchange = () => {
+    const f = fic.files && fic.files[0];
+    fic.value = "";
+    if (!f) return;
+    const lr = new FileReader();
+    lr.onload = () => inspSimPreparer(comp, f.name, String(lr.result || ""));
+    lr.readAsText(f);
+  };
+}
+/* Un Touchstone demande ses pattes ; un autre modèle se range tel quel. */
+function inspSimPreparer(comp, nomBrut, texte) {
+  const nom = nomBrut.replace(/[^A-Za-z0-9_.+-]/g, "_");
+  const n = COMPOSANTS_LIB.portsTouchstone(nom);
+  if (!n) { inspSimRanger(comp, nom, texte); return; }
+  const pins = parseInt(comp["Number Of pins"], 10);
+  const deja = COMPOSANTS_LIB.lireBranchement(texte);
+  const lu = typeof brochageLire === "function" ? brochageLire(comp["Brochage"]) : null;
+  const broches = lu && !lu.erreurs.length ? lu.parties[0].broches : {};
+  const gnd = Object.keys(broches).find(k => /^(GND|VSS|AGND|PGND|EP)$/.test(k) && !broches[k].includes("/"));
+  const ports = deja ? deja.broches : (n === pins ? Array.from({ length: n }, (_, k) => String(k + 1)) : []);
+  const masse = deja ? deja.masse || "" : (n < pins && gnd ? broches[gnd] : "");
+  const form = document.getElementById("inspSimForm");
+  form.innerHTML =
+    "<div><b>" + esc(nom) + "</b> : " + n + " port" + (n > 1 ? "s" : "") +
+    (pins ? ", la référence a " + pins + " pattes" : "") + ".</div>" +
+    '<div class="aide">Pour chaque port du fichier, la patte de l\'empreinte : son numéro, ou le nom de la broche ' +
+    "du brochage" + (Object.keys(broches).length ? " (" + esc(Object.keys(broches).join(", ")) + ")" : "") +
+    ". La masse : la patte à laquelle les ports se rapportent (vide : la masse de la carte).</div>" +
+    '<div class="ports">' + Array.from({ length: n }, (_, k) =>
+      "<label>Port " + (k + 1) + '</label><input data-port="' + k + '" value="' + esc(ports[k] || "") + '">').join("") +
+    '<label>Masse</label><input data-masse value="' + esc(masse) + '"></div>' +
+    '<div class="err"></div>' +
+    '<div class="actions"><button class="tb" data-annuler>Annuler</button>' +
+    '<button class="tb success" data-ok>Ranger dans la LIB et lier</button></div>';
+  form.hidden = false;
+  form.oninput = () => { form.querySelector(".err").innerHTML = ""; };
+  form.querySelector("[data-annuler]").onclick = () => { form.hidden = true; };
+  form.querySelector("[data-ok]").onclick = () => {
+    const r = COMPOSANTS_LIB.brancherTouchstone(texte, nom, {
+      broches: [...form.querySelectorAll("[data-port]")].map(i => i.value),
+      masse: form.querySelector("[data-masse]").value,
+      brochage: comp["Brochage"], pins: Number.isInteger(pins) ? pins : 0 });
+    form.querySelector(".err").innerHTML = r.erreurs.map(e => "⛔ " + esc(e)).join("<br>");
+    if (r.texte) inspSimRanger(comp, nom, r.texte);
+  };
+  const premier = form.querySelector("[data-port]");
+  if (premier) premier.focus();
+}
+async function inspSimRanger(comp, nom, texte) {
+  try {
+    try {
+      await sauvegarderFichierLib("simulation", nom, texte, { si_absent: true });
+    } catch (e) {
+      if (e.status !== 409) throw e;
+      if (!confirm(nom + " existe déjà dans la LIB. Le remplacer ?")) return;
+      await sauvegarderFichierLib("simulation", nom, texte);
+    }
+  } catch (e) {
+    afficherToast("Impossible de ranger " + nom + " : " + e.message, "error");
+    return;
+  }
+  const liste = inspSimListe(comp).filter(x => nomFichierSim(x) !== nom);
+  inspSimModifier(comp, liste.concat("lib/simulation/" + nom), nom + " rangé dans la LIB et lié à " +
+                  (comp["Part Name"] || "la référence"));
 }
 
 /* ---------- Brochage de la référence ----------

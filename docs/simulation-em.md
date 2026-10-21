@@ -1661,7 +1661,12 @@ broches non nommées restent hors du modèle, et la marche du réseau ne passe
 pas par elles (les commandes d'un commutateur ne mènent plus au MCU). Une
 colonne « Modèle Simulation » peut donner plusieurs fichiers séparés par
 « | » (les états d'un commutateur) : le premier sert par défaut, et le
-panneau propose les autres, composant par composant, gardés avec la carte. Sous un composant en dérivation,
+panneau propose les autres, composant par composant, gardés avec la carte.
+Pour lier un nouveau fichier : Gestion LIB, fiche de la référence, carte
+« Modèles de simulation », **📎 Lier un fichier…** ; pour un Touchstone, on
+donne la patte de chaque port (numéro, ou nom de broche du brochage : J1,
+GND…) et la masse, et le fichier est rangé dans `lib_simulation` avec ses
+lignes `! broches` / `! masse`, puis ajouté à la colonne (✕ le délie). Sous un composant en dérivation,
 les vias qui descendent sa pastille de masse au plan comptent pour leur self
 partielle (mutuelles comprises). Un via atteint par une **piste de masse** —
 bout à bout sur quatre tronçons au plus — ajoute ce chemin : la self et la
