@@ -3524,6 +3524,11 @@ T("liaison directe : par zone (CMS seulement, ou toutes) et par pastille, au Ger
     pcbAppliquerDefEmpreinte(U,"ESSAI-PLOT",{style:"chip",pins:2,
       pads:[{n:1,x:-3,y:0,w:3,h:3,shape:"rect",drill:0},{n:2,x:3,y:0,w:1.6,h:1.6,shape:"circ",drill:0.8}]});
     U.nets={1:"GND",2:"GND"};
+    // le plot exposé réglé dans la Gestion LIB (pastille « connexion ») arrive tel quel sur la carte
+    const E=mkFp("U9","","",1);E.x=40;E.y=40;S.fps.push(E);
+    pcbAppliquerDefEmpreinte(E,"ESSAI-EP",{style:"chip",pins:1,pads:[{n:1,x:0,y:0,w:2,h:2,shape:"rect",drill:0,connexion:"directe"}]});
+    if(padsWorld(E)[0].connexion!=="directe")throw new Error("la liaison de la LIB est perdue à la pose");
+    S.fps.pop();
     S.zones=[{id:S.nextId++,l:0,net:"GND",pts:[{x:5,y:5},{x:35,y:5},{x:35,y:35},{x:5,y:35}]}];touch();
     const z=S.zones[0], p=n=>padsWorld(U).find(q=>q.n===n);
     const traits=()=>(gerberCopper(0).match(/D01\*/g)||[]).length;
@@ -3538,6 +3543,11 @@ T("liaison directe : par zone (CMS seulement, ou toutes) et par pastille, au Ger
     fpSetPad(U,1,"connexion","thermique");touch();
     if(padLiaison(p(2),0)!=="thermique"||traits()!==deBras-4)throw new Error("la pastille impose ses bras");
     if(!conn(true).nets.get("GND")||conn(true).nets.get("GND").miss!==0)throw new Error("relié par la zone, avec ou sans bras");
+    // « aucune » : la pastille garde son anneau, sans bras, et n'est plus reliée
+    fpSetPad(U,1,"connexion","aucune");touch();
+    if(padLiaison(p(2),0)!=="aucune"||padBras(p(2),0).ok.length||traits()!==deBras-8)throw new Error("aucune : ni bras ni liaison");
+    if(conn(true).nets.get("GND").miss!==1)throw new Error("aucune : U1.2 n'est plus reliée à la zone");
+    fpSetPad(U,1,"connexion","thermique");touch();
     // relu du fichier : les deux réglages restent
     loadDoc(JSON.parse(serialize()),true);
     const U2=S.fps.find(f=>f.ref==="U1");

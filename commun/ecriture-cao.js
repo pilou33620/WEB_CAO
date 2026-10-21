@@ -754,7 +754,7 @@ const ECRITURE_CAO = (function () {
 
   /* cao_zones_ecrire : créer, modifier, supprimer des zones de cuivre, dans l'ordre du lot.
      forme « carte » : la carte entière (le remplissage s'arrête à la marge de bord). */
-  const LIAISONS = { thermique: "bras thermiques", directe: "directe", "cms-directe": "directe pour les CMS" };
+  const LIAISONS = { thermique: "bras thermiques", directe: "directe", "cms-directe": "directe pour les CMS", aucune: "aucune" };
   const decrireZone = z => {
     const b = polyBBox(z.pts);
     return "net " + (z.net || "(aucun)") + " sur " + LECTURE_CAO.aides.nomCouchePcb(z.l) + ", " + z.pts.length +
@@ -776,7 +776,7 @@ const ECRITURE_CAO = (function () {
       const z = Object.assign({}, z0), avant = z0.pts ? decrireZone(z0) : "";
       if (e.couche != null) { const l = coucheIndex(e.couche); if (l < 0) { refus.push(quoi + " : couche « " + e.couche + " » inconnue"); return; } z.l = l; }
       if (e.net != null) { if (typeof e.net !== "string" || (e.net && !nets.has(e.net))) { refus.push(quoi + " : net « " + e.net + " » inconnu (voir cao_pcb_lire nets ; vide = cuivre isolé)"); return; } z.net = e.net; }
-      if (e.liaison != null) { if (!LIAISONS[e.liaison]) { refus.push(quoi + " : « liaison » thermique, directe ou cms-directe"); return; } z.connexion = e.liaison; }
+      if (e.liaison != null) { if (!LIAISONS[e.liaison]) { refus.push(quoi + " : « liaison » thermique, directe, cms-directe ou aucune"); return; } z.connexion = e.liaison; }
       if (e.forme != null) {
         if (e.forme === "carte") z.pts = boardZonePts();
         else { const f = forme(e, quoi, refus, 0.1); if (!f) return; z.pts = f.pts; }
@@ -890,7 +890,7 @@ const ECRITURE_CAO = (function () {
      « REF.n » (toutes celles de ce numéro). null rend la règle de la carte. Une empreinte
      calculée est figée en pastilles explicites (fpFreeze), comme au panneau. */
   const REGLAGES = {
-    liaison: { cle: "connexion", ok: v => v === "zone" || v === "thermique" || v === "directe", attendu: "zone, thermique ou directe", val: v => v === "zone" ? null : v },
+    liaison: { cle: "connexion", ok: v => ["zone", "thermique", "directe", "aucune"].includes(v), attendu: "zone, thermique, directe ou aucune", val: v => v === "zone" ? null : v },
     bras_largeur: { cle: "thermalWidth", ok: v => nombre(v, 0.05, 10), attendu: "de 0,05 à 10 mm" },
     bras_nombre: { cle: "thermalSpokes", ok: v => Number.isInteger(v) && v >= 1 && v <= 8, attendu: "entier de 1 à 8" },
     bras_angle: { cle: "thermalAngle", ok: v => nombre(v, -360, 360), attendu: "degrés", val: v => padRot(v) },

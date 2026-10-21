@@ -1511,7 +1511,7 @@ function propsFp(box,fp){
        '"></span>'+esc(q.net):'<span style="color:var(--txt-dim)">non connectée</span>')+'</td>'+
        '<td style="width:74px">'+(q.net?'<select class="pLiaison" data-k="'+k+'" style="width:100%;font-size:10px" '+
          'title="Liaison à la zone de son net : celle de la zone, ou imposée">'+
-         [["","zone"],["thermique","bras"],["directe","directe"]].map(([v,t])=>'<option value="'+v+'"'+((q.connexion||"")===v?" selected":"")+'>'+t+'</option>').join("")+
+         [["","zone"],["thermique","bras"],["directe","directe"],["aucune","aucune"]].map(([v,t])=>'<option value="'+v+'"'+((q.connexion||"")===v?" selected":"")+'>'+t+'</option>').join("")+
          '</select>':"")+'</td></tr>';
   }
   h+='</tbody></table>';
@@ -1718,7 +1718,7 @@ function propsZone(box,z){
     '<div class="prop"><label>Liaison des pastilles du net</label><select id="zC" '+
       'title="Une pastille peut imposer la sienne (propriétés du composant)">'+
       [["thermique","Bras thermiques"],["cms-directe","Directe pour les CMS, bras pour les traversantes"],
-       ["directe","Directe pour toutes"]].map(([v,t])=>'<option value="'+v+'"'+((z.connexion||"thermique")===v?" selected":"")+'>'+t+'</option>').join("")+
+       ["directe","Directe pour toutes"],["aucune","Aucune (pastilles dégagées, non reliées)"]].map(([v,t])=>'<option value="'+v+'"'+((z.connexion||"thermique")===v?" selected":"")+'>'+t+'</option>').join("")+
       '</select></div>'+
     '<div class="prop two">'+
       '<div><label>Sommets</label><input value="'+z.pts.length+'" disabled></div>'+
@@ -1726,7 +1726,8 @@ function propsZone(box,z){
       ' mm" disabled></div></div>'+
     '<div class="empty" style="padding:6px 12px">'+
       (z.net?"Les pastilles "+esc(z.net)+" de cette couche prises dans le contour sont reliées "+
-        ({directe:"directement, sans bras",["cms-directe"]:"directement pour les CMS, par des bras pour les traversantes"}[z.connexion]||"par des bras thermiques")+
+        ({directe:"directement, sans bras",["cms-directe"]:"directement pour les CMS, par des bras pour les traversantes",
+          aucune:"— non : dégagées comme un autre net"}[z.connexion]||"par des bras thermiques")+
         (info?" ("+info.pads.length+" pastille(s) sur ce net)":"")+"."
            :"Sans net, la zone est du cuivre isolé : elle dégage tout ce qu'elle rencontre.")+
       '<br>Glissez les poignées pour déformer · Ctrl+clic sur une arête ajoute un sommet.'+

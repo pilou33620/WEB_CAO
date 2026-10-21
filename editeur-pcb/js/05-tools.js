@@ -174,7 +174,7 @@ function dPads(a){
     if(q.thermalAngle!=null)o.thermalAngle=padRot(q.thermalAngle);
     if(q.thermalWidth!=null)o.thermalWidth=r4(dRange(q.thermalWidth,0.3,0.05,50));
     if(q.thermalGap!=null)o.thermalGap=r4(dRange(q.thermalGap,0.3,0,50));
-    if(q.connexion==="directe"||q.connexion==="thermique")o.connexion=q.connexion;
+    if(LIAISONS_PASTILLE.includes(q.connexion))o.connexion=q.connexion;
     /* nom d'origine de la broche (« A1 », « K ») : le numéro reste l'entier
        qui porte le net, le nom n'est qu'une étiquette qui l'accompagne */
     const nom=padNom(q.nom);
@@ -529,7 +529,7 @@ function normZone(z,cu,i){
   const out={id:dInt(z.id,i+1,1,Number.MAX_SAFE_INTEGER),
              l:dInt(z.l,0,0,cu-1),net:dNet(z.net),pts:pts};
   if(z.auto)out.auto=true;
-  if(z.connexion==="directe"||z.connexion==="cms-directe")out.connexion=z.connexion;
+  if(["directe","cms-directe","aucune"].includes(z.connexion))out.connexion=z.connexion;
   /* cuivre du fichier : les trous et la signature du contour d'origine
      (posée à la première lecture si le fichier ne la porte pas) */
   if(z.fichier){

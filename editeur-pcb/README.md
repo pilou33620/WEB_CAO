@@ -819,8 +819,11 @@ La zone peut choisir la liaison **directe** pour toutes ses pastilles, ou
 **directe pour les CMS** et bras pour les traversantes — le plot thermique
 d'une LED de puissance, d'un QFN ou d'un régulateur évacue sa chaleur par
 le cuivre, pas par quatre ponts. Une pastille peut imposer la sienne (« bras »
-ou « directe », colonne de droite du tableau des broches), et le composant
-régler la largeur et le nombre de ses bras. Le même choix vaut à l'écran, à
+ou « directe », colonne de droite du tableau des broches ; « aucune » : dégagée
+comme un autre net, sans bras, non reliée), et le composant
+régler la largeur et le nombre de ses bras. Le plot exposé d'une empreinte se
+règle une fois pour toutes dans la Gestion LIB (fiche de la pastille, « Liaison
+à la zone de son net ») et arrive ainsi sur la carte. Le même choix vaut à l'écran, à
 l'analyse des îlots, au Gerber, à l'IPC-2581 et en simulation.
 
 **Un bras ne touche jamais un autre net** (`padBras`) : un bras qui passerait à

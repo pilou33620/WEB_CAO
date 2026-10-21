@@ -338,6 +338,10 @@ function computeConn(exact){
      zone, pour qu'un via et le DRC ne voient jamais deux cuivres différents. */
   const viaZones=new Map();
   const viaZone=(v,l)=>{let s=viaZones.get(v);if(!s)viaZones.set(v,s=new Set());s.add(l);};
+  /* une pastille n'est reliée à sa zone que par un cuivre réel : liaison directe,
+     au moins un bras tracé (padBras), ou le cuivre d'un fichier — pas par le
+     plan qui entoure son anneau. « aucune », ou tous les bras écartés : non reliée. */
+  const relieeZone=(q,l)=>padLiaison(q,l)==="directe"||zoneFichier(zoneAt(l,q.x,q.y))||padBras(q,l).ok.length>0;
   for(const g of zoneGroups()){
     const M=exact?zoneMask(g.l,g.net):null;
     const seen=new Set();
@@ -349,7 +353,7 @@ function computeConn(exact){
          retombe sur le contour, quitte à être optimiste le temps d'un geste */
       const zk="Z"+g.l+"|"+g.net+"|poly";
       for(const p of padNodes)
-        if(p.q.net===g.net&&p.layers.includes(g.l)&&dansZones(g.zs,p.q.x,p.q.y))uni(p.k,zk);
+        if(p.q.net===g.net&&p.layers.includes(g.l)&&dansZones(g.zs,p.q.x,p.q.y)&&relieeZone(p.q,g.l))uni(p.k,zk);
       S.vias.forEach((v,i)=>{
         if(v.net===g.net&&g.l>=v.a&&g.l<=v.b&&dansZones(g.zs,v.x,v.y)){
           uni("V"+i,zk);
@@ -364,7 +368,7 @@ function computeConn(exact){
       continue;
     }
     for(const p of padNodes){
-      if(p.q.net!==g.net||!p.layers.includes(g.l))continue;
+      if(p.q.net!==g.net||!p.layers.includes(g.l)||!relieeZone(p.q,g.l))continue;
       // on interroge le cuivre là où les bras thermiques rejoignent la zone
       link(p.k,maskLabels(M,p.q.x,p.q.y,
         Math.max(p.q.w,p.q.h)/2+classOf(g.net).clr+0.3,p.q.rot));
@@ -557,7 +561,7 @@ function padBras(q,l){
   const vu=BRAS_MEMO.m.get(cle);
   if(vu)return vu;
   const tw=(q.thermalWidth>0)?q.thermalWidth:S.rule.thermal;
-  const n=(q.thermalSpokes>0)?q.thermalSpokes:4;
+  const n=padLiaison(q,l)==="aucune"?0:(q.thermalSpokes>0)?q.thermalSpokes:4;
   const a0=(q.rot||0)+((q.thermalAngle||0)*Math.PI/180);
   const len=Math.max(q.w,q.h)/2+classOf(q.net).clr+0.2;
   const loin=len+tw+maxClr()+1;                 // au-delà, rien ne peut gêner

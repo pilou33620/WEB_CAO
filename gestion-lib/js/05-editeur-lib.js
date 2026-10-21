@@ -978,6 +978,12 @@ function rendreDetailPad() {
   };
   cont.innerHTML = `
     <div style="font-weight:600; font-size:12px; margin-bottom:4px;">Pastille ${esc(p.n)} — masque, pâte${th ? " et forme par couche" : ""}</div>
+    <div class="pad-detail-row" style="display:flex; gap:6px; align-items:flex-end; margin-bottom:6px; flex-wrap:wrap;">
+      <label style="min-width:150px; font-size:11px;" title="Plot exposé (EP) d'un QFN, plot thermique d'une LED : liaison directe, la chaleur passe par le cuivre">Liaison à la zone de son net<br><select id="padLiaison">
+        ${[["", "Celle de la zone"], ["thermique", "Bras thermiques"], ["directe", "Directe (plot exposé)"], ["aucune", "Aucune"]]
+          .map(([v, t]) => `<option value="${v}" ${(p.connexion || "") === v ? "selected" : ""}>${t}</option>`).join("")}
+      </select></label>
+    </div>
     <div class="pad-detail-row" style="display:flex; gap:6px; align-items:flex-end; flex-wrap:wrap;">
       <label style="min-width:150px; font-size:11px;">Masque (vernis)<br><select id="padMaskMode">
         <option value="regle" ${mMode === "regle" ? "selected" : ""}>Règle de la carte</option>
@@ -1003,6 +1009,8 @@ function rendreDetailPad() {
   `;
   const avant = () => { editeurHistoriquePush(); };
   const apres = () => { rendreDetailPad(); if (EDITEUR_LIB.renderer) EDITEUR_LIB.renderer.render(); };
+  const li = document.getElementById("padLiaison");
+  if (li) li.onchange = () => { avant(); if (li.value) p.connexion = li.value; else delete p.connexion; apres(); };
   const mm = document.getElementById("padMaskMode");
   if (mm) mm.onchange = () => {
     avant();
