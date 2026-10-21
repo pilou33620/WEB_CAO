@@ -64,7 +64,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* variantes de montage (commun/variantes.js + 26-variantes.js) */
   "varNorm","varVide","varEstMonte","pcbVarDepuisSchema","pcbVarChoisir","pcbVarDessiner",
   "pcbVarOuvrir","pcbVarFermer","fabFpsMontes","listComps",
-  "edgeClick","edgeMove","closeEdge","boardPoly","setBoardSize","setBoardRect","setBoardDisque","boardDisquePts","contourChanger","inBoard","boardCutouts",
+  "edgeClick","edgeMove","closeEdge","interditsListe","boardPoly","setBoardSize","setBoardRect","setBoardDisque","boardDisquePts","contourChanger","inBoard","boardCutouts",
   "boardChanged","polyEdgeDist","segDist","orient","signedArea",
   "coordOpen","coordClose","coordApply","coordMode","coordPoint","coordAnchor",
   "placeOrigin","ux","uy","wxu","wyu","snapX","snapY","gOrigin","routeToPoint","hint",
@@ -3677,6 +3677,43 @@ T("vue cuivre final : quatrième cran du contraste, dessinée sans erreur, H reb
     key("h",{});
     if(S.contrast!==0)throw new Error("H reboucle sur « complet » après « cuivre final » : "+S.contrast);
   }finally{setContrast(avant);}
+});
+T("zones interdites : patte qui ressort, composant interdit ou trop haut, hauteur par face",()=>{
+  const saved=serialize(), reg=suiviDecor(), lib=window.CSV_LIB;
+  try{
+    window.CSV_LIB=[{"Part Name":"TRAV-2","Maximun Height":"8.5"},{"Part Name":"PUCE","Maximun Height":"1.2"}];
+    // J1 traversant, posé dessus : ses pattes ressortent dessous ; R1 CMS dessus, 1,2 mm
+    const J=mkFp("J1","","",2);J.style="row";J.pitch=2.54;J.x=20;J.y=20;J.csvPartName="TRAV-2";
+    pcbAppliquerDefEmpreinte(J,"ESSAI-TRAV",{style:"row",pins:2,pads:[{n:1,x:0,y:0,w:1.6,h:1.6,shape:"circ",drill:0.9},{n:2,x:2.54,y:0,w:1.6,h:1.6,shape:"circ",drill:0.9}]});
+    const R=mkFp("R1","","0805",2);R.x=40;R.y=20;R.csvPartName="PUCE";
+    S.fps.push(J,R);touch();
+    const rect=(x,y,w,h)=>[{x,y},{x:x+w,y},{x:x+w,y:y+h},{x,y:y+h}];
+    const drc=re=>runDrc().filter(e=>re.test(e.msg));
+    // côté LED (dessous) : les pattes de J1 n'ont rien à y faire
+    S.interdits=[{id:S.nextId++,face:"dessous",pts:rect(15,15,10,10),hMax:null,nom:"Côté LED"}];touch();
+    const r1=drc(/ressort/);
+    if(r1.length!==1||r1[0].info||!/Patte traversante J1\.\d : elle ressort sur le dessous dans « Côté LED »/.test(r1[0].msg))throw new Error("patte : "+r1.map(e=>e.msg).join(" | "));
+    if(drc(/aucun composant n'y est permis/).length)throw new Error("J1 est posé dessus : la zone du dessous ne juge que ses pattes");
+    // dessus, sans hauteur permise : J1 et R1 y sont interdits ; puis 3 mm : J1 (8,5) trop haut, R1 (1,2) passe
+    S.interdits[0].face="dessus";S.interdits[0].pts=rect(15,15,30,10);touch();
+    if(drc(/aucun composant n'y est permis/).length!==2||drc(/ressort/).length)throw new Error("dessus, aucun composant : "+runDrc().map(e=>e.msg).join(" | "));
+    S.interdits[0].hMax=3;touch();
+    const r3_=drc(/trop haut dans/);
+    if(r3_.length!==1||!/J1 trop haut dans « Côté LED » : 8,50 mm pour 3,00 mm permis/.test(r3_[0].msg))throw new Error("hauteur : "+r3_.map(e=>e.msg).join(" | "));
+    // hauteur maximale de la face, pour toute la carte ; une hauteur inconnue est dite, jamais supposée
+    S.interdits=[];S.rule.hDessus=5;delete R.csvPartName;touch();
+    if(drc(/J1 \(dessus\) trop haut : 8,50 mm pour 5,00 mm permis sur la carte/).length!==1)throw new Error("limite de la face");
+    if(!drc(/1 composant\(s\) de hauteur inconnue \(R1\)/).length)throw new Error("hauteur inconnue de R1");
+    // tracé au geste (deux coins, Entrée), relu du fichier, supprimé
+    S.rule.hDessus=null;setMode("interdit");edgeClick(50,50,true);edgeClick(60,58,true);closeEdge();setMode("select");
+    const z=interditsListe()[0];
+    if(!z||z.pts.length!==4||z.face!=="dessus"||z.hMax!==null||!S.sel.interdits.has(z))throw new Error("zone tracée : "+JSON.stringify(z));
+    z.hMax=2.5;loadDoc(JSON.parse(serialize()),true);
+    const z2=interditsListe()[0];
+    if(!z2||z2.hMax!==2.5||z2.nom!==z.nom)throw new Error("relue du fichier : "+JSON.stringify(z2));
+    clearSel();S.sel.interdits.add(z2);buildProps();deleteSel();
+    if(interditsListe().length)throw new Error("Suppr retire la zone");
+  }finally{window.CSV_LIB=lib;suiviFin(reg);loadDoc(JSON.parse(saved),true);}
 });
 T("Gerber : masque, pâte, sérigraphie, contour",()=>{
   if(gerberMask(0).indexOf("Soldermask,Top")<0)throw new Error("fonction du masque");
@@ -27171,6 +27208,26 @@ TA("canal de pilotage : cao_decoupes_ecrire, créer dans le contour, supprimer p
   refus("cao_decoupes_ecrire",[{action:"creer",forme:"rectangle",x:b.x-5,y:cy,largeur:10,hauteur:2}],/sort du contour/);
   refus("cao_decoupes_ecrire",[{action:"supprimer",numero:3}],/« numero »/);
   refus("cao_decoupes_ecrire",[{action:"percer"}],/creer ou supprimer/);
+});
+TA("canal de pilotage : cao_interdits_ecrire, zones d'une face et hauteurs ; lecture « interdits »",async()=>{
+  const {jouer,refus}=pilotePcbCmds();
+  loadDoc(exemple1());S.undo.length=0;S.interdits=[];touch();
+  const p=jouer("cao_interdits_ecrire",[{action:"creer",forme:"disque",x:20,y:15,rayon:6,face:"dessous",nom:"Côté LED"},
+                                        {action:"hauteurs",dessus:12}]);
+  const z=interditsListe()[0];
+  if(S.undo.length!==1||!z||z.face!=="dessous"||z.hMax!==null||S.rule.hDessus!==12)throw new Error("lot mal appliqué");
+  if(!new RegExp("Zones interdites créées : "+z.id).test(p.apres))throw new Error("id : "+p.apres);
+  const lu=[].concat(LECTURE_CAO.pcb.interdits.fn({})).join("\n");
+  if(!/dessus 12 mm, dessous pas de limite/.test(lu)||!new RegExp("zone interdite "+z.id+" « Côté LED » : dessous, aucun composant").test(lu))throw new Error("lecture : "+lu);
+  jouer("cao_interdits_ecrire",[{action:"modifier",id:z.id,hauteur_max:2},{action:"hauteurs",dessus:null}]);
+  if(z.hMax!==2||S.rule.hDessus!==null)throw new Error("modifier, hauteurs null");
+  jouer("cao_interdits_ecrire",[{action:"supprimer",id:z.id}]);
+  undo();undo();undo();
+  if(interditsListe().length||S.rule.hDessus)throw new Error("Ctrl+Z");
+  refus("cao_interdits_ecrire",[{action:"creer",forme:"disque",x:0,y:0,rayon:3,face:"cote"}],/dessus ou dessous/);
+  refus("cao_interdits_ecrire",[{action:"creer",forme:"disque",x:0,y:0,rayon:3,hauteur_max:500}],/0,1 à 100 mm/);
+  refus("cao_interdits_ecrire",[{action:"modifier",id:99999,face:"dessus"}],/introuvable/);
+  refus("cao_interdits_ecrire",[{action:"hauteurs",dessous:-1}],/0,1 à 100 mm/);
 });
 TA("canal de pilotage : cao_zones_ecrire, créer, modifier, supprimer ; liaison directe ; lecture « zones »",async()=>{
   const {jouer,refus}=pilotePcbCmds();

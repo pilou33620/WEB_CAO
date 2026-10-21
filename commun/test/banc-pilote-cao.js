@@ -201,7 +201,7 @@ async function refuse(promesse, motif) {
 
   await T("écritures en lot (ecriture-cao) : déclarées dans les bonnes pages, annulables", () => {
     const ecrire = ["cao_composants_ecrire", "cao_pistes_ecrire", "cao_classes_ecrire", "cao_contraintes_ecrire", "cao_sim_ecrire",
-                    "cao_contour_ecrire", "cao_decoupes_ecrire", "cao_zones_ecrire", "cao_serigraphie_ecrire", "cao_pastille_regler"];
+                    "cao_contour_ecrire", "cao_decoupes_ecrire", "cao_interdits_ecrire", "cao_zones_ecrire", "cao_serigraphie_ecrire", "cao_pastille_regler"];
     const vues = {};
     for (const p of ["schema", "pcb", "visionneuse-ipc", "gestion-lib"]) {
       const c = page(p).declare.commandes;

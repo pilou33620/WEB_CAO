@@ -799,6 +799,7 @@ function buildProps(){
   if(hl.length===1&&only(1))return propsHole(box,hl[0]);
   if(S.sel.edge&&only(0))return propsBoard(box);
   if(S.sel.decoupes&&S.sel.decoupes.size===1&&only(1))return propsDecoupe(box,[...S.sel.decoupes][0]);
+  if(S.sel.interdits&&S.sel.interdits.size===1&&only(1))return propsInterdit(box,[...S.sel.interdits][0]);
   if(zo.length===1&&only(1))return propsZone(box,zo[0]);
   if(dr.length===1&&only(1))return propsDrawing(box,dr[0]);
   /* Une piste prise entière — Maj+clic, ou Maj+double-clic qui la suit d'une
@@ -1671,6 +1672,9 @@ function propsBoard(box){
   box.innerHTML=
     '<div class="prop two">'+numProp("bpW","Largeur (mm)",fmt(S.board.w,2),0.5,5)+
       numProp("bpH","Hauteur (mm)",fmt(S.board.h,2),0.5,5)+'</div>'+
+    '<div class="prop two" title="Hauteur des composants (dossier mécanique ou LIB) au-delà de laquelle le DRC le signale ; vide : pas de limite">'+
+      numProp("bpHD","Hauteur max dessus (mm)",S.rule.hDessus||"",0.5,0)+
+      numProp("bpHB","Hauteur max dessous (mm)",S.rule.hDessous||"",0.5,0)+'</div>'+
     '<div class="prop two">'+
       '<div><label>Contour</label><input value="'+(S.board.pts?"libre":"rectangle")+
       '" disabled></div>'+
@@ -1697,6 +1701,8 @@ function propsBoard(box){
   $("bpH").onchange=()=>{push();contourChanger(()=>setBoardSize(S.board.w,parseFloat($("bpH").value)||S.board.h));
     reSync();refreshPanels();draw();};
   $("bpDraw").onclick=()=>setMode("edge");
+  for(const [id,k] of [["bpHD","hDessus"],["bpHB","hDessous"]])
+    $(id).onchange=()=>{push();const v=parseFloat($(id).value);S.rule[k]=v>0?r3(Math.min(v,100)):null;touch();refreshPanels();draw();};
   $("bpDisque").onclick=()=>{const b=S.board;push();
     contourChanger(()=>setBoardDisque(b.x+b.w/2,b.y+b.h/2,Math.min(b.w,b.h)/2));reSync();refreshPanels();draw();
     hint("Contour en disque de "+fmt(Math.min(b.w,b.h),2)+" mm de diamètre.");};

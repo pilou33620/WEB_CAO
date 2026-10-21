@@ -17,6 +17,7 @@ function docObj(){
           fps:S.fps,tracks:S.tracks,vias:S.vias,zones:S.zones,cuts:S.cuts,
           holes:S.holes||[],
           drawings:S.drawings||[],
+          interdits:interditsListe(),
           pinoutAcquits:S.pinoutAcquits||{},
           variantes:S.variantes,
           groupes:groupesPropres(),
@@ -682,6 +683,8 @@ function normDoc(d){
   const rm=dStr(r.route,8);
   out.rule={edge:dRange(r.edge,0.4,0,100),thermal:dRange(r.thermal,0.5,0,100),
             cuMin:dRange(r.cuMin,0.2,0,5),   // cuivre de zone mini : les fichiers muets prennent 0,2 mm
+            // hauteur maximale des composants par face (38-interdits.js) : null, pas de limite
+            hDessus:+r.hDessus>0?dRange(r.hDessus,null,0.1,100):null,hDessous:+r.hDessous>0?dRange(r.hDessous,null,0.1,100):null,
             mask:dRange(r.mask,0.05,-100,100),paste:dRange(r.paste,0,-100,100),
             viaFinish:VIA_FINISH[vf]?vf:(r.tented===false?"open":"tented"),
             corner:CORNER_MODES[cm]?cm:"45",
@@ -778,6 +781,7 @@ function normDoc(d){
   out.cuts=arr(src.cuts).map((c,i)=>normCut(c,cu,i)).filter(Boolean);
   out.holes=arr(src.holes).map((h,i)=>normHole(h,i)).filter(Boolean);
   out.drawings=arr(src.drawings).map((d,i)=>normDrawingPcb(d,i)).filter(Boolean);
+  out.interdits=arr(src.interdits).map((z,i)=>normInterdit(z,i)).filter(Boolean);
   /* anomalies de brochage acquittées : repère → leur texte exact, pour qu'un
      changement les fasse revenir (pcbVerifierPinout) */
   out.pinoutAcquits={};
@@ -788,7 +792,7 @@ function normDoc(d){
   if(cu<2)out.vias=[];                    // une seule couche : aucun via ne relie rien
 
   const maxId=Math.max(uniqueIds(out.fps),uniqueIds(out.zones),uniqueIds(out.cuts),
-                       uniqueIds(out.holes),uniqueIds(out.dpPairs),uniqueIds(out.drawings),
+                       uniqueIds(out.holes),uniqueIds(out.dpPairs),uniqueIds(out.drawings),uniqueIds(out.interdits),
                        uniqueIds(out.vias.filter(v=>v.id)));
   out.active=dInt(src.active,0,0,cu-1);
   out.nextId=Math.max(dInt(src.nextId,1,1,Number.MAX_SAFE_INTEGER),maxId+1);
@@ -822,7 +826,7 @@ function loadDoc(d,keepView){
   S.origin=d.origin;
   S.fabOrigin=d.fabOrigin;
   const r=d.rule;
-  S.rule={edge:r.edge, thermal:r.thermal, cuMin:r.cuMin, mask:r.mask, paste:r.paste,
+  S.rule={edge:r.edge, thermal:r.thermal, cuMin:r.cuMin, hDessus:r.hDessus, hDessous:r.hDessous, mask:r.mask, paste:r.paste,
           viaFinish:r.viaFinish, corner:r.corner, route:r.route, hole:r.hole,
           mat:r.mat, short:r.short, aspWarn:r.aspWarn, aspMax:r.aspMax,
           mfgProfile:r.mfgProfile||"jlcpcb"};
@@ -849,7 +853,7 @@ function loadDoc(d,keepView){
   S.dessin=d.dessin;
   S.contraintes=d.contraintes;
   S.fps=d.fps;S.tracks=d.tracks;S.vias=d.vias;
-  S.zones=d.zones;S.cuts=d.cuts;S.holes=d.holes||[];S.drawings=d.drawings||[];S.pinoutAcquits=d.pinoutAcquits||{};
+  S.zones=d.zones;S.cuts=d.cuts;S.holes=d.holes||[];S.drawings=d.drawings||[];S.pinoutAcquits=d.pinoutAcquits||{};S.interdits=d.interdits||[];
   S.active=d.active;S.pair=[0,S.cu-1];
   S.nextId=d.nextId;
   /* Fichiers de la V1.0 : le rôle « plan » portait sur la couche entière, sans
@@ -896,8 +900,8 @@ function redo(){
    ========================================================================== */
 function clearSel(){S.sel.fps.clear();S.sel.tracks.clear();S.sel.vias.clear();
   S.sel.zones.clear();S.sel.cuts.clear();if(S.sel.drawings)S.sel.drawings.clear();if(S.sel.holes)S.sel.holes.clear();S.sel.edge=false;
-  if(S.sel.decoupes)S.sel.decoupes.clear();}
-function selCount(){return S.sel.fps.size+S.sel.tracks.size+S.sel.vias.size+S.sel.zones.size+S.sel.cuts.size+(S.sel.drawings?S.sel.drawings.size:0)+(S.sel.holes?S.sel.holes.size:0)+(S.sel.decoupes?S.sel.decoupes.size:0);}
+  if(S.sel.decoupes)S.sel.decoupes.clear();if(S.sel.interdits)S.sel.interdits.clear();}
+function selCount(){return S.sel.fps.size+S.sel.tracks.size+S.sel.vias.size+S.sel.zones.size+S.sel.cuts.size+(S.sel.drawings?S.sel.drawings.size:0)+(S.sel.holes?S.sel.holes.size:0)+(S.sel.decoupes?S.sel.decoupes.size:0)+(S.sel.interdits?S.sel.interdits.size:0);}
 /* découpes de carte sélectionnées : les polygones eux-mêmes (tableaux de
    sommets de S.board.cutouts), sans identifiant à garder */
 function selDecoupes(){
@@ -983,6 +987,8 @@ function hitTest(x,y,e){
     const c=S.cuts[i];
     if(layerAlpha(c.l)>0&&c.pts.length>1&&polyEdgeDist(x,y,c.pts)<=px(5))return {cut:c};
   }
+  /* une zone interdite se prend par son bord : son intérieur laisse passer le clic */
+  for(const z of interditsListe())if(polyEdgeDist(x,y,z.pts)<=px(5))return {interdit:z};
   /* une découpe de carte se prend par son bord ou par son vide */
   if(S.show.edge)
     for(const D of boardCutouts())
@@ -1041,6 +1047,7 @@ function selectHit(h,add){
   else if(h.drawing){if(!S.sel.drawings)S.sel.drawings=new Set();S.sel.drawings.add(h.drawing.id);}
   else if(h.edge)S.sel.edge=true;
   else if(h.decoupe){if(!S.sel.decoupes)S.sel.decoupes=new Set();S.sel.decoupes.add(h.decoupe);}
+  else if(h.interdit){if(!S.sel.interdits)S.sel.interdits=new Set();S.sel.interdits.add(h.interdit);}
 }
 /* L'élément touché fait-il déjà partie de la sélection ? */
 function hitSelected(h){
@@ -1049,7 +1056,8 @@ function hitSelected(h){
     (h.cut&&S.sel.cuts.has(h.cut))||
     (h.drawing&&S.sel.drawings&&S.sel.drawings.has(h.drawing.id))||
     (h.hole&&S.sel.holes&&S.sel.holes.has(h.hole.id))||(h.edge&&S.sel.edge)||
-    (h.decoupe&&S.sel.decoupes&&S.sel.decoupes.has(h.decoupe)));
+    (h.decoupe&&S.sel.decoupes&&S.sel.decoupes.has(h.decoupe))||
+    (h.interdit&&S.sel.interdits&&S.sel.interdits.has(h.interdit)));
 }
 /* Ctrl+clic (ou Maj+clic) sur un élément : il entre dans la sélection, ou il en
    sort. Renvoie vrai s'il vient d'en sortir. Le clic sur le canevas ne l'appelle
@@ -1066,6 +1074,7 @@ function toggleHit(h){
   if(h.drawing){if(!S.sel.drawings)S.sel.drawings=new Set();return t(S.sel.drawings,h.drawing.id);}
   if(h.edge){S.sel.edge=!S.sel.edge;return !S.sel.edge;}
   if(h.decoupe){if(!S.sel.decoupes)S.sel.decoupes=new Set();return t(S.sel.decoupes,h.decoupe);}
+  if(h.interdit){if(!S.sel.interdits)S.sel.interdits=new Set();return t(S.sel.interdits,h.interdit);}
   return false;
 }
 /* Points où Alt a un sens : extrémité ou corps d'une piste déjà sélectionnée,
@@ -2602,6 +2611,8 @@ function deleteSel(){
     if(!S.board.cutouts.length)delete S.board.cutouts;
     boardChanged();
   }
+  const zi=selInterdits();
+  if(zi.length)S.interdits=interditsListe().filter(z=>zi.indexOf(z)<0);
   clearSel();touch();refreshPanels();draw();
 }
 /* ==========================================================================
@@ -3728,9 +3739,9 @@ function edgeClick(x,y,exact){
   const Z=S.edgeDraft;
   const p=exact?{x:r3(x),y:r3(y)}:{x:snapX(x),y:snapY(y)};
   if(!Z){
-    const dec=S.mode==="decoupe";
-    S.edgeDraft={pts:[p],cur:null,decoupe:dec};
-    hint(dec
+    const dec=S.mode==="decoupe", inter=S.mode==="interdit";
+    S.edgeDraft={pts:[p],cur:null,decoupe:dec,interdit:inter};
+    hint(dec||inter
       ? "Découpe : un clic par sommet · deux coins puis Entrée pour un rectangle · retour sur le premier point (ou Entrée) pour fermer · Maj pour 45°/90° · Échap abandonne."
       : "Clic pour chaque sommet du contour · retour sur le premier point (ou Entrée) pour fermer · Échap abandonne.");
     return;
@@ -3760,6 +3771,7 @@ function closeEdge(){
   const Z=S.edgeDraft;
   S.edgeDraft=null;
   if(Z&&Z.decoupe){closeDecoupe(Z);return;}
+  if(Z&&Z.interdit){closeInterdit(Z);return;}
   if(!Z||Z.pts.length<3){draw();return;}
   push();
   contourChanger(()=>{S.board.pts=Z.pts.map(p=>({x:r3(p.x),y:r3(p.y)}));boardChanged();});   // l'attente suit
@@ -3865,7 +3877,7 @@ function coordAnchor(){
   return null;
 }
 function coordUsable(){
-  return S.mode==="track"||S.mode==="zone"||S.mode==="edge"||S.mode==="decoupe"||
+  return S.mode==="track"||S.mode==="zone"||S.mode==="edge"||S.mode==="decoupe"||S.mode==="interdit"||
          (S.mode==="select"&&S.sel.fps.size===1);
 }
 function coordMode(m){
@@ -3922,7 +3934,7 @@ function coordApply(){
     else{routeToPoint(pt);stepRoute();}
   }else if(S.mode==="zone"){
     zoneClick(pt.x,pt.y,true);
-  }else if(S.mode==="edge"||S.mode==="decoupe"){
+  }else if(S.mode==="edge"||S.mode==="decoupe"||S.mode==="interdit"){
     edgeClick(pt.x,pt.y,true);
   }else if(S.mode==="select"&&S.sel.fps.size===1){
     const f=fpById([...S.sel.fps][0]);
@@ -4155,7 +4167,7 @@ cv.addEventListener("pointerdown",e=>{
   if(S.mode==="zone"){
     zoneClick(p.x,p.y);draw();return;
   }
-  if(S.mode==="edge"||S.mode==="decoupe"){
+  if(S.mode==="edge"||S.mode==="decoupe"||S.mode==="interdit"){
     edgeClick(p.x,p.y);draw();return;
   }
   if(S.mode==="origin"){
@@ -4181,6 +4193,7 @@ cv.addEventListener("pointerdown",e=>{
       else if(h.hole)S.holes=S.holes.filter(hl=>hl!==h.hole);
       else if(h.zone){detachAuto(h.zone);S.zones=S.zones.filter(z=>z!==h.zone);
         buildLayers();buildTabs();}
+      else if(h.interdit)S.interdits=interditsListe().filter(z=>z!==h.interdit);
       else if(h.decoupe){
         S.board.cutouts=boardCutouts().filter(D=>D!==h.decoupe);
         if(!S.board.cutouts.length)delete S.board.cutouts;
@@ -4253,6 +4266,10 @@ cv.addEventListener("pointerdown",e=>{
       drag={vert:{z:S.board,i:bi},board:true,moved:true};draw();return;
     }
   }
+  /* sommets d'une zone interdite sélectionnée : même geste que le contour */
+  for(const z of selInterdits())
+    for(let i=0;i<z.pts.length;i++)
+      if(dist(p.x,p.y,z.pts[i].x,z.pts[i].y)<=px(6)){drag={vert:{z,i},moved:false};return;}
   /* sommets d'une découpe de carte sélectionnée : même geste que le contour */
   for(const D of selDecoupes()){
     for(let i=0;i<D.length;i++)
@@ -4396,6 +4413,7 @@ function dragMoveBy(dx,dy,alt){
     for(const D of selDecoupes())for(const q of D){q.x=r3(q.x+dx);q.y=r3(q.y+dy);}
     if(typeof zoneCache!=="undefined")zoneCache.clear();
   }
+  for(const z of selInterdits())for(const q of z.pts){q.x=r3(q.x+dx);q.y=r3(q.y+dy);}
   if(drag.drw){
     for(const o of drag.drw){
       o.d.x1=r3(o.x1+drag.dx);o.d.y1=r3(o.y1+drag.dy);
@@ -4426,6 +4444,7 @@ function dragMoveBy(dx,dy,alt){
     for(const z of S.sel.zones)for(const q of z.pts){q.x=r3(q.x-dx);q.y=r3(q.y-dy);}
     for(const ct of S.sel.cuts)for(const q of ct.pts){q.x=r3(q.x-dx);q.y=r3(q.y-dy);}
     for(const D of selDecoupes())for(const q of D){q.x=r3(q.x-dx);q.y=r3(q.y-dy);}
+    for(const z of selInterdits())for(const q of z.pts){q.x=r3(q.x-dx);q.y=r3(q.y-dy);}
     for(const o of drag.trk){
       o.t.x1=r3(o.x1+drag.dx);o.t.y1=r3(o.y1+drag.dy);
       o.t.x2=r3(o.x2+drag.dx);o.t.y2=r3(o.y2+drag.dy);
@@ -4628,7 +4647,7 @@ cv.addEventListener("pointermove",e=>{
                            ?simDCCoucheVoulue():S.active))draw();
   if(S.mode==="zone"&&S.zoneDraft){zoneMove(p.x,p.y,e.shiftKey);draw();return;}
   if(S.mode==="cut"&&S.cutDraft){cutMove(p.x,p.y,e.shiftKey);draw();return;}
-  if((S.mode==="edge"||S.mode==="decoupe")&&S.edgeDraft){edgeMove(p.x,p.y,e.shiftKey);draw();return;}
+  if((S.mode==="edge"||S.mode==="decoupe"||S.mode==="interdit")&&S.edgeDraft){edgeMove(p.x,p.y,e.shiftKey);draw();return;}
   if(S.mode==="track"&&S.route){updateRoute(p.x,p.y);draw();return;}
   if(S.mode==="dpair"&&S.dp){dpUpdate(p.x,p.y);draw();return;}
   if(S.mode==="dpair"){
@@ -5045,7 +5064,7 @@ document.addEventListener("keydown",e=>{
       else if(S.meanderDraft){S.meanderDraft=null;hint("Serpentin annulé.");}
       else if(S.zoneDraft){S.zoneDraft=null;hint("Zone abandonnée.");}
       else if(S.cutDraft){S.cutDraft=null;hint("Découpe abandonnée.");}
-      else if(S.edgeDraft){hint(S.edgeDraft.decoupe?"Découpe abandonnée.":"Contour abandonné.");S.edgeDraft=null;}
+      else if(S.edgeDraft){hint(S.edgeDraft.decoupe?"Découpe abandonnée.":S.edgeDraft.interdit?"Zone interdite abandonnée.":"Contour abandonné.");S.edgeDraft=null;}
       else if(S.silkDraft){S.silkDraft=null;hint("Tracé de sérigraphie annulé.");}
       else if(S.aplatDraft){S.aplatDraft=null;hint("Aplat abandonné.");}
       else if(S.mode==="mesure"&&rpMesEnCours()){rpMesRaz();rpMesDire();draw();break;}
@@ -5098,7 +5117,7 @@ function setMode(m){
   if(S.dp&&m!=="dpair")dpCommit();
   if(S.coord.open&&!coordUsable())coordClose();
   if(S.zoneDraft&&m!=="zone")S.zoneDraft=null;
-  if(S.edgeDraft&&m!==(S.edgeDraft.decoupe?"decoupe":"edge"))S.edgeDraft=null;
+  if(S.edgeDraft&&m!==(S.edgeDraft.decoupe?"decoupe":S.edgeDraft.interdit?"interdit":"edge"))S.edgeDraft=null;
   if(S.silkDraft&&m!=="silk")S.silkDraft=null;
   if(S.aplatDraft&&(m!=="silk"||S.silkShape!=="aplat"))S.aplatDraft=null;
   if(S.meanderDraft&&m!=="meander")S.meanderDraft=null;
@@ -5110,7 +5129,7 @@ function setMode(m){
   if(m!=="meander"&&typeof meanderMenuClose==="function")meanderMenuClose();
   for(const [id,md] of [["mSelect","select"],["mTrack","track"],["mVia","via"],["mHole","hole"],
                         ["mDiff","dpair"],["mMeander","meander"],
-                        ["mZone","zone"],["mSilk","silk"],["mEdge","edge"],["mDecoupe","decoupe"],["mOrigin","origin"],
+                        ["mZone","zone"],["mSilk","silk"],["mEdge","edge"],["mDecoupe","decoupe"],["mInterdit","interdit"],["mOrigin","origin"],
                         ["mErase","erase"],["mMesure","mesure"]]){
     const b=$(id);
     if(b)b.classList.toggle("on",m===md);
@@ -5118,7 +5137,7 @@ function setMode(m){
   $("fMode").textContent={select:"Sélection",track:"Piste",via:"Via",hole:"Trou NPTH",
                           dpair:"Paire différentielle",meander:"Serpentin (Appariement)",
                           zone:"Zone de cuivre",silk:"Sérigraphie",edge:"Contour de carte",
-                          decoupe:"Découpe de carte",
+                          decoupe:"Découpe de carte",interdit:"Zone interdite",
                           origin:"Origine",erase:"Gomme",
                           mesure:"Mesure"}[m];
   cv.style.cursor=m==="erase"?"not-allowed":"crosshair";
@@ -5141,6 +5160,7 @@ function setMode(m){
       ? "Aplat de sérigraphie : un clic par sommet · deux coins puis Entrée pour un rectangle plein · retour sur le premier point (ou Entrée) pour fermer · Maj pour 45°/90° · Échap abandonne."
       : "Cliquez et glissez (ou deux clics) pour tracer un trait de sérigraphie (F.SilkS/B.SilkS) · Maj contraint à l'horizontale/verticale/45° · Échap annule.",
     edge:"Dessinez le contour de la carte, sommet par sommet · retour sur le premier point pour fermer · Maj contraint à 45°.",
+    interdit:"Zone interdite de la face regardée : un clic par sommet, ou deux coins puis Entrée · retour sur le premier point pour fermer · Échap abandonne.",
     origin:"Cliquez le point qui servira d'origine — une pastille proche l'attire.",
     erase:"Clic sur une piste, un via ou une empreinte pour le supprimer.",
     mesure:"Cliquez le premier point, puis le second : la cote se fige · les pastilles, "+

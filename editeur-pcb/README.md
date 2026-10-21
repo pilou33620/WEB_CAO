@@ -844,6 +844,16 @@ longueur où la bande est étroite ; une forme du net de la zone (liaison
 directe, piste ou via du net) tient le cuivre qu'elle touche et n'en fait pas
 retirer. Les arcs de piste ne sont pas encore traités. 0 désactive.
 
+**Zones interdites et hauteurs** (`38-interdits.js`, outil « Zone interdite »
+du menu Outils, ou `cao_interdits_ecrire`) : une zone se pose sur UNE face, comme
+une découpe (un clic par sommet, ou deux coins puis Entrée). Le DRC y signale
+toute patte traversante qui en ressort — celle d'un composant posé sur l'autre
+face —, et tout composant posé sur cette face qui la touche : interdit si la
+zone n'admet aucune hauteur, trop haut sinon. Les propriétés de la carte
+donnent aussi une hauteur maximale par face. La hauteur d'un composant est
+celle du dossier mécanique (saisie, fichier, sinon « Maximun Height » de la
+LIB) ; inconnue, elle est signalée, jamais supposée.
+
 **Vue « cuivre final »** (Affichage › Contraste, quatrième cran de la touche
 H) : la couche active seule, telle que le Gerber la grave — zone opaque,
 isolements, bras et lanières retirées — sans chevelu, sérigraphie, contours

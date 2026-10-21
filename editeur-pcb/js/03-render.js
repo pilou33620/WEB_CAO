@@ -1143,6 +1143,7 @@ function paintCarte(c,dpr,w,h,noGrid){
     drawNetPads(c);
     drawRats(c);
     drawSilk(c);
+    if(typeof interditsDessiner==="function")interditsDessiner(c);   // zones interdites (38-interdits.js)
     if(typeof pcbVarDessiner==="function")pcbVarDessiner(c);   // non montés de la variante
     if(typeof groupesDessiner==="function")groupesDessiner(c); // cadre du groupe sélectionné
     drawTech(c);

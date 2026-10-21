@@ -1095,6 +1095,8 @@ function runDrc(){
             msg:"Liaison thermique "+fp.ref+"."+q.n+" ("+q.net+") : aucun bras possible ("+qui+
                 ") — la pastille n'est pas reliée à sa zone, passez-la en liaison directe ou dégagez-la"});
       }
+  /* intégration mécanique : zones interdites par face, hauteurs (38-interdits.js) */
+  if(typeof interditsDrc==="function")interditsDrc(out);
   /* Sérigraphie sur une ouverture du masque (maskOpenings) : le fabricant
      efface l'encre sur le cuivre nu, un repère y devient illisible (« D1 » posé
      sur l'anode de la LED de LED_UV). Les repères et les dessins (textes,

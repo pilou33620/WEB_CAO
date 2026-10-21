@@ -158,6 +158,21 @@ const LECTURE_CAO = (function() {
         return L;
       }
     },
+    interdits: {
+      desc: "intégration mécanique : zones interdites d'une face (id, nom, face, hauteur permise, emprise) et hauteur maximale par face",
+      fn: () => {
+        const R = S.rule || {}, Z = typeof interditsListe === "function" ? interditsListe() : [];
+        const L = ["Hauteur maximale : dessus " + (R.hDessus ? R.hDessus + " mm" : "pas de limite") + ", dessous " + (R.hDessous ? R.hDessous + " mm" : "pas de limite") + "."];
+        for (const z of Z) {
+          let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+          for (const q of z.pts) { x1 = Math.min(x1, q.x); y1 = Math.min(y1, q.y); x2 = Math.max(x2, q.x); y2 = Math.max(y2, q.y); }
+          L.push("- zone interdite " + z.id + " « " + z.nom + " » : " + z.face + ", " + (z.hMax != null ? "hauteur permise " + z.hMax + " mm" : "aucun composant") +
+                 ", pas de patte traversante qui ressorte, de (" + mm(x1) + ", " + mm(y1) + ") à (" + mm(x2) + ", " + mm(y2) + ")");
+        }
+        if (!Z.length) L.push("Aucune zone interdite.");
+        return L;
+      }
+    },
     zones: {
       desc: "les zones de cuivre : id, couche, net, liaison des pastilles, sommets et emprise",
       fn: () => {
