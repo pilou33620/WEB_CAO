@@ -202,6 +202,6 @@ fichier est chargé par :
 **Dépendances :** T1 à T8. **Fichiers :** `A-FAIRE.md`, `commun/simulation-em.js`. **Taille :** XS.
 
 ## Point d'étape final
-- [ ] Les critères 1 à 8 de la spec sont tenus et couverts
-- [ ] `/review` est passé
-- [ ] Proposer la mise à jour du graphe (`/graphify`)
+- [x] Les critères 1 à 8 de la spec sont tenus et couverts, sauf TRD1_N (vérification sur la vraie carte)
+- [x] `/review` est passé (revue du 13/10/2026, suites faites le 14/10/2026)
+- [x] ~~Proposer la mise à jour du graphe (`/graphify`)~~ : sans objet (pas de graphe dans le dépôt)
