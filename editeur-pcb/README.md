@@ -844,6 +844,12 @@ longueur où la bande est étroite ; une forme du net de la zone (liaison
 directe, piste ou via du net) tient le cuivre qu'elle touche et n'en fait pas
 retirer. Les arcs de piste ne sont pas encore traités. 0 désactive.
 
+**Vue « cuivre final »** (Affichage › Contraste, quatrième cran de la touche
+H) : la couche active seule, telle que le Gerber la grave — zone opaque,
+isolements, bras et lanières retirées — sans chevelu, sérigraphie, contours
+pointillés, rooms ni repères de DRC. C'est à fort zoom dans cette vue qu'un
+bras posé sur une pastille voisine ou une pointe de cuivre se voit.
+
 **Zone au cuivre du fichier** (`fichier`, `trous`, `sig`) : une zone dont le
 document porte le cuivre déjà calculé est remplie avec ce cuivre — ses trous, liaisons
 thermiques comprises — à l'écran, à l'analyse, au Gerber et en simulation.

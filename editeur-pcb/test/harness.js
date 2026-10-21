@@ -3668,6 +3668,16 @@ T("charge : 300 boîtiers sous un plan, îlots et Gerber cuivre en temps raisonn
     if(tc>5000||tg>8000)throw new Error("îlots "+tc+" ms, Gerber "+tg+" ms : un calcul est devenu quadratique ?");
   }finally{suiviFin(reg);loadDoc(JSON.parse(saved),true);}
 });
+T("vue cuivre final : quatrième cran du contraste, dessinée sans erreur, H reboucle",()=>{
+  const avant=S.contrast;
+  try{
+    setContrast(3);
+    if(!/cuivre final/.test(document.getElementById("bContrast").innerHTML))throw new Error("libellé du bouton");
+    draw();
+    key("h",{});
+    if(S.contrast!==0)throw new Error("H reboucle sur « complet » après « cuivre final » : "+S.contrast);
+  }finally{setContrast(avant);}
+});
 T("Gerber : masque, pâte, sérigraphie, contour",()=>{
   if(gerberMask(0).indexOf("Soldermask,Top")<0)throw new Error("fonction du masque");
   if(gerberPaste(1).indexOf("Paste,Bot")<0)throw new Error("fonction de la pâte");

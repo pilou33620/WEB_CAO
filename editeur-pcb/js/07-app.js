@@ -644,7 +644,7 @@ $("bAvoid").onclick=()=>{
 };
 $("bRats").onclick=()=>{S.show.rats=!S.show.rats;$("bRats").classList.toggle("on",S.show.rats);buildLayers();draw();};
 $("bView").onclick=()=>setFlip(!S.flip);
-$("bContrast").onclick=()=>setContrast((S.contrast+1)%3);
+$("bContrast").onclick=()=>setContrast((S.contrast+1)%4);
 $("bFit").onclick=fit;
 $("bImport").onclick=openImport;
 if($("bEcoSync")) $("bEcoSync").onclick=()=>{ if(typeof pcbOuvrirFenetreEco==="function") pcbOuvrirFenetreEco(); };

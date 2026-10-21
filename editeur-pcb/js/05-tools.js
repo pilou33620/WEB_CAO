@@ -5013,7 +5013,7 @@ document.addEventListener("keydown",e=>{
     case "g":setGrid(!S.showGrid);break;
     case "n":S.show.rats=!S.show.rats;$("bRats").classList.toggle("on",S.show.rats);draw();break;
     case "y":setFlip(!S.flip);break;
-    case "h":setContrast((S.contrast+1)%3);break;
+    case "h":setContrast((S.contrast+1)%4);break;
     /* Bascule de posture : « / » comme le routeur de KiCad, Espace pour la
        main gauche. Elle inverse l'arrangement que la géométrie a choisi, le
        temps du coude en cours. */
@@ -5201,7 +5201,7 @@ function setFlip(v){
 }
 function setContrast(v){
   S.contrast=v;
-  const n=["complet","atténué","couche seule"][v];
+  const n=["complet","atténué","couche seule","cuivre final"][v];
   $("bContrast").innerHTML="Contraste : "+n+' <kbd>H</kbd>';
   $("bContrast").classList.toggle("on",v>0);
   if(typeof profilNoter==="function")profilNoter();

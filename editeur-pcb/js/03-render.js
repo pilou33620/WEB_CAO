@@ -1110,23 +1110,28 @@ function paintCarte(c,dpr,w,h,noGrid){
   // après le substrat, avant le cuivre : la grille se voit là où l'on travaille
   if(!noGrid){c.save();c.setTransform(dpr,0,0,dpr,0,0);drawGrid(c,w/dpr,h/dpr);c.restore();}
   drawBoard(c);
+  /* CUIVRE FINAL (contraste 3) : la couche active telle que le Gerber la grave —
+     zone opaque, isolements, bras et lanières retirées, sans chevelu, sans
+     sérigraphie, sans contour pointillé ni repère de DRC. C'est là qu'un bras
+     sur une pastille voisine ou une pointe de cuivre se voit. */
+  const fin=S.contrast===3;
   /* le fond des rooms : sous le cuivre (32-rooms.js) */
-  if(!noGrid&&typeof roomsPeindreFond==="function")roomsPeindreFond(c);
+  if(!fin&&!noGrid&&typeof roomsPeindreFond==="function")roomsPeindreFond(c);
 
   drawVias(c);                                 // cuivre : sous les pistes
   drawThruPads(c);
   for(const i of layerOrder()){
     const a=layerAlpha(i);
     if(a<=0)continue;
-    if(S.show.plane){
+    if(S.show.plane||fin){
       const o=zoneCanvas(i);
       if(o){
         const zn=S.zones.find(z=>z.l===i&&z.net);
-        c.globalAlpha=a*(S.hlNet&&(!zn||zn.net!==S.hlNet)?0.2:0.85);
+        c.globalAlpha=fin?1:a*(S.hlNet&&(!zn||zn.net!==S.hlNet)?0.2:0.85);
         c.drawImage(o.cvs,o.x,o.y,o.w,o.h);
         c.globalAlpha=1;
       }
-      drawZones(c,i,a);
+      if(!fin)drawZones(c,i,a);
     }
     drawSmdPads(c,i,a);                        // cuivre : sous les pistes
     drawTracks(c,i,a);
@@ -1134,12 +1139,14 @@ function paintCarte(c,dpr,w,h,noGrid){
   drawViaMarks(c);                             // contour et perçage : par-dessus
   drawThruMarks(c);
   drawHoles(c);
-  drawNetPads(c);
-  drawRats(c);
-  drawSilk(c);
-  if(typeof pcbVarDessiner==="function")pcbVarDessiner(c);   // non montés de la variante
-  if(typeof groupesDessiner==="function")groupesDessiner(c); // cadre du groupe sélectionné
-  drawTech(c);
+  if(!fin){
+    drawNetPads(c);
+    drawRats(c);
+    drawSilk(c);
+    if(typeof pcbVarDessiner==="function")pcbVarDessiner(c);   // non montés de la variante
+    if(typeof groupesDessiner==="function")groupesDessiner(c); // cadre du groupe sélectionné
+    drawTech(c);
+  }
   drawRoute(c);
   if(typeof routageApercuDessiner==="function")routageApercuDessiner(c);   // l'aperçu d'une carte de routage (37-routage-pilote.js)
   if(S.dragShove)drawShove(c,S.dragShove);     // le cuivre qu'écarte le boîtier tiré
@@ -1151,7 +1158,7 @@ function paintCarte(c,dpr,w,h,noGrid){
   if(typeof drawMeanderDraft==="function")drawMeanderDraft(c);
   drawTextLink(c);
   drawHover(c);
-  drawDrc(c);
+  if(!fin)drawDrc(c);
   if(S.marquee){
     const m=S.marquee;
     c.strokeStyle=C_SEL;c.lineWidth=px(1);c.setLineDash([px(4),px(3)]);
@@ -1215,7 +1222,7 @@ function paintCarte(c,dpr,w,h,noGrid){
   /* Les blocs fonctionnels du schéma, encadrés comme les rooms d'Altium
      (32-rooms.js) : le cadre et l'étiquette, par-dessus. Ils remplacent les
      pastilles de couleur de 22-bloc-placement.js. */
-  if(!noGrid&&typeof roomsPeindre==="function")roomsPeindre(c);
+  if(!fin&&!noGrid&&typeof roomsPeindre==="function")roomsPeindre(c);
   c.setTransform(1,0,0,1,0,0);
 }
 /* Vue rapide : sur une carte lourde, un cran de molette ou un pas de
