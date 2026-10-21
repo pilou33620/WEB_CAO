@@ -27521,7 +27521,11 @@ TA("canal de pilotage : cao_placement_auto, forces et satellites en une etape ; 
       if(!prop){ if(methode==="forces"||!/Rien n'est posé : placement \w+ : 0 empreinte/.test(m))throw new Error(methode+" : "+m); continue; }
       if(serialize()!==avant)throw new Error(methode+" : proposer a ecrit");
       if(!new RegExp("^placement "+methode+" : [1-9]\\d* empreinte\\(s\\) déplacée\\(s\\)").test(prop.apres))throw new Error(methode+" : "+prop.apres);
+      // l'aperçu dessiné : une boîte et un trajet par empreinte déplacée
+      const nb=+/: (\d+) empreinte/.exec(prop.apres)[1], A=ROUTAGE.apercu;
+      if(!A||!A.fps||A.fps.length!==nb||!A.fps.every(f=>f.b.x2>f.b.x1&&Number.isFinite(f.x0)))throw new Error(methode+" : aperçu "+JSON.stringify(A&&A.fps));
       d.appliquer({methode},prop);
+      if(ROUTAGE.apercu)throw new Error(methode+" : l'aperçu doit partir au clic");
       if(S.undo.length!==1||serialize()===avant)throw new Error(methode+" : une etape qui deplace attendue");
       undo();
       if(serialize()!==avant)throw new Error(methode+" : Ctrl+Z");
@@ -27530,6 +27534,24 @@ TA("canal de pilotage : cao_placement_auto, forces et satellites en une etape ; 
       let m="";try{d.proposer(a);}catch(e){m=e.message;}
       if(!motif.test(m))throw new Error("refus attendu "+motif+" : "+m);
     }
+    /* blocs : un motif publié par le schéma (un buck), compacté autour de son régulateur, en une étape */
+    loadDoc(exemple1());
+    const u1=mkFp("U1","TPS5430","SOIC-8",8), c1=mkFp("C1","10uF","0805",2), l1=mkFp("L1","10uH","IND_SMD_6x6",2);
+    Object.assign(u1,{x:25,y:25}); Object.assign(c1,{x:5,y:5}); Object.assign(l1,{x:5,y:10});
+    S.fps=[u1,c1,l1]; touch(); S.undo.length=0;
+    BLOC_PLACEMENT.injecterMotifs({motifs:[{id:"pat_buck",label:"Buck 5V",layout_template:"buck_compact",
+      components:["U1","C1","L1"],role_map:{cin:["C1"],sw_inductor:"L1"}}]});
+    try{
+      const avant=serialize(), p=d.proposer({methode:"blocs",motif:"Buck 5V"});
+      if(serialize()!==avant||S.undo.length)throw new Error("blocs : proposer a écrit");
+      if(!/^placement blocs : 2 empreinte\(s\) déplacée\(s\) \(C1, L1\) ; motif Buck 5V$/.test(p.apres))throw new Error("blocs : "+p.apres);
+      if(ROUTAGE.apercu.fps.length!==2)throw new Error("blocs : aperçu");
+      d.appliquer({methode:"blocs",motif:"Buck 5V"},p);
+      const C1=S.fps.find(f=>f.ref==="C1"), U1=S.fps.find(f=>f.ref==="U1");
+      if(S.undo.length!==1||Math.hypot(C1.x-U1.x,C1.y-U1.y)>15||U1.x!==25)throw new Error("blocs : C1 compacté près de U1, en une étape");
+      undo();
+      if(serialize()!==avant)throw new Error("blocs : Ctrl+Z");
+    }finally{BLOC_PLACEMENT.injecterMotifs(null);BLOC_PLACEMENT.injecterZones(null);}
   }finally{global.Pilote=ancien;}
 });
 

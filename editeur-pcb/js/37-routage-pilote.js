@@ -25,7 +25,7 @@ const routageCuivre = d => JSON.stringify(CUIVRE.map(k => d[k]));
 // un nom venu du projet ne fabrique pas d'autre ligne sur la carte
 const routagePropre = t => String(t == null ? "" : t).replace(/[\x00-\x1f\x7f\u2028\u2029]/g, " ").slice(0, 120);
 // var, pas const : dans le bundle d'un seul script, paint() la lit avant que ce fichier ne s'exécute
-var ROUTAGE = { apercu: null };      // apercu : {pistes, vias, retirees, ver}, ce que la carte en attente posera
+var ROUTAGE = { apercu: null };      // apercu : {pistes, vias, retirees, fps, ver}, ce que la carte en attente posera
 
 /* L'aperçu, par-dessus la carte (appelé par paint, 03-render.js), tant que le document est
    celui de la carte : une modification le rend caduc. */
@@ -44,6 +44,13 @@ function routageApercuDessiner(c){
   for(const t of A.retirees || []){ c.lineWidth = t.w; c.beginPath(); c.moveTo(t.x1, t.y1); c.lineTo(t.x2, t.y2); c.stroke(); }
   c.setLineDash([]); c.fillStyle = C_SEL;
   for(const v of A.vias){ c.beginPath(); c.arc(v.x, v.y, v.d / 2, 0, Math.PI * 2); c.fill(); }
+  // les empreintes qu'un placement déplace : leur nouvelle place en pointillés, et le trajet depuis l'ancienne
+  c.strokeStyle = C_SEL; c.lineWidth = px(1.5);
+  for(const f of A.fps || []){
+    c.setLineDash([px(5), px(3)]); c.strokeRect(f.b.x1, f.b.y1, f.b.x2 - f.b.x1, f.b.y2 - f.b.y1);
+    c.setLineDash([]); c.beginPath(); c.moveTo(f.x0, f.y0); c.lineTo(f.x, f.y); c.stroke();
+    c.beginPath(); c.arc(f.x, f.y, px(3), 0, Math.PI * 2); c.fill();
+  }
   c.restore();
 }
 
@@ -193,12 +200,15 @@ function routageSimuler(jouer){
   const garde = {doc:serialize(), undo:S.undo.slice(), redo:S.redo.slice(), dirty:S.dirty, vue:[S.scale, S.ox, S.oy],
                  active:S.active, avoid:S.avoid, hlNet:S.hlNet, pair:S.pair, drc:S.drc, drcRun:S.drcRun,
                  edge:S.sel.edge, aide:aide ? aide.textContent : null, t0:Date.now()};
-  let lignes, resultat;
+  let lignes, resultat, fps;
   try{
     S.avoid = true;
     ROUTAGE.budget = garde.t0 + ROUTAGE_BUDGET_MS;
     lignes = jouer();
     resultat = serialize();
+    const d0 = new Map(JSON.parse(garde.doc).fps.map(f => [f.ref, f]));
+    fps = S.fps.filter(f => { const o = d0.get(f.ref); return o && (o.x !== f.x || o.y !== f.y || (o.rot || 0) !== (f.rot || 0) || !!o.side !== !!f.side); })
+      .map(f => ({x0:d0.get(f.ref).x, y0:d0.get(f.ref).y, x:f.x, y:f.y, b:fpBBox(f)}));
   }finally{
     if(S.route) cancelRoute();
     if(S.dp) dpCancel();
@@ -222,7 +232,7 @@ function routageSimuler(jouer){
   const avant = cles(d0), apres = cles(d1);
   const apercu = {pistes:d1.tracks.filter(t => !avant.has(JSON.stringify(t))),
                   vias:d1.vias.filter(v => !avant.has(JSON.stringify(v))),
-                  retirees:d0.tracks.filter(t => !apres.has(JSON.stringify(t))), ver:S.ver};
+                  retirees:d0.tracks.filter(t => !apres.has(JSON.stringify(t))), fps, ver:S.ver};
   const nRetirees = apercu.retirees.length + d0.vias.filter(v => !apres.has(JSON.stringify(v))).length;
   if(nRetirees) lignes.push({ok:true, texte:"attention : " + nRetirees + " piste(s) ou via(s) existante(s) déplacée(s) ou retirée(s) par la poussée (en rouge sur l'aperçu)"});
   return {lignes, resultat:JSON.stringify(CUIVRE.map(k => d1[k])), cuivre:routageCuivre(d0), apercu};
@@ -235,13 +245,13 @@ const routageHorsBudget = () => ROUTAGE.budget && Date.now() > ROUTAGE.budget;
 /* Une commande « simuler puis charger ». `jouer(args)` rend les lignes de la carte et
    lève une Error si le lot n'a pas de sens ; `titre(args)` nomme la carte. Au clic, seuls le
    cuivre et les empreintes du relevé sont repris, si ceux du document n'ont pas bougé. */
-function routageCommande(titre, jouer, avecApercu){
+function routageCommande(titre, jouer){
   return {
     ecriture:true, historique:true,
     proposer:args => {
       const s = routageSimuler(() => jouer(args));
       if(!s.lignes.some(l => l.ok && !/^attention/.test(l.texte))) throw new Error("Rien n'est posé : " + s.lignes.map(l => l.texte).join(" ; "));
-      ROUTAGE.apercu = avecApercu === false ? null : s.apercu;
+      ROUTAGE.apercu = s.apercu;
       draw();
       return {titre:titre(args), avant:"", apres:s.lignes.map(l => l.texte).join("\n"), resultat:s.resultat, cuivre:s.cuivre};
     },
@@ -365,7 +375,7 @@ function routagePiloteCommandes(){
       if(a.quoi === "placement") return routageScorePlacement();
       throw new Error("« quoi » : routage ou placement.");
     }},
-    cao_placement_auto: routageCommande(a => "Placement automatique (" + a.methode + ")", routageJouerPlacement, false),
+    cao_placement_auto: routageCommande(a => "Placement automatique (" + a.methode + ")", routageJouerPlacement),
     cao_paire: routageCommande(a => "Paire différentielle " + a.paire, routageJouerPaire),
     cao_router: routageCommande(a => "Routage (" + ((a.routes || []).length) + " route(s), " + ((a.vias || []).length) + " via(s))", routageJouerRoutes),
   };
