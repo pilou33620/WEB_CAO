@@ -446,27 +446,31 @@ function gerberPaste(side){
   for(const o of pasteOpenings(side))gPad(body,A,o.q,o.grow);
   return gAssemble(gHeader("Paste,"+(side?"Bot":"Top")),A,body);
 }
-function gerberSilk(side){
-  const A=apSet(), body=[], lw=0.15;
+/* La sérigraphie d'une face, en traits du monde : le Gerber la trace, l'animation
+   3D (41-animation-3d.js) la dessine. Chaque trait, dans l'ordre du fichier :
+   {k:"seg",x1,y1,x2,y2,w}, {k:"pt",x,y,d} (repère de broche 1), {k:"poly",pts,trous}. */
+function silkTraits(side){
+  const out=[], lw=0.15;
+  const seg=(x1,y1,x2,y2,w)=>out.push({k:"seg",x1,y1,x2,y2,w});
   for(const fp of S.fps){
     if(!!fp.side!==!!side)continue;
     if(fp.silk===false)continue;          // sérigraphie importée : dans les dessins
     const T=fpXform(fp), bb=bodyOf(fp);
     const c=[T(bb.x1,bb.y1),T(bb.x2,bb.y1),T(bb.x2,bb.y2),T(bb.x1,bb.y2)];
-    for(let k=0;k<4;k++)gSeg(body,A,c[k].x,c[k].y,c[(k+1)%4].x,c[(k+1)%4].y,lw);
+    for(let k=0;k<4;k++)seg(c[k].x,c[k].y,c[(k+1)%4].x,c[(k+1)%4].y,lw);
     /* point de repère de la broche 1, là où l'écran le montre — un composant
        symétrique n'en a pas, et celui qu'on a retiré ne revient pas ici */
     const mk=fpMark(fp);
     if(mk){
       const w=T(mk.x,mk.y);
-      gFlash(body,A,A.get("C,"+fmt(mk.d,4)),w.x,w.y);
+      out.push({k:"pt",x:w.x,y:w.y,d:mk.d});
     }
     const tr=fpTextPos(fp).ref;
     // sur la face inférieure, le texte doit être en miroir dans le fichier
     // pour se lire à l'endroit une fois la carte retournée
     for(const poly of textStrokes(fp.ref,tr.x,tr.y,tr.size,!!side))
       for(let k=0;k+1<poly.length;k++)
-        gSeg(body,A,poly[k].x,poly[k].y,poly[k+1].x,poly[k+1].y,lw);
+        seg(poly[k].x,poly[k].y,poly[k+1].x,poly[k+1].y,lw);
   }
   if(S.drawings){
     const targetLayer = side ? "silkB" : "silkT";
@@ -475,28 +479,39 @@ function gerberSilk(side){
       const w = d.width || lw;
       if(d.shape === "poly"){
         /* aplat : la région pleine, puis ses trous effacés */
-        gRegion(body, d.pts);
-        if(d.trous&&d.trous.length){
-          body.push("%LPC*%");
-          for(const t of d.trous)gRegion(body, t);
-          body.push("%LPD*%");
-        }
+        out.push({k:"poly",pts:d.pts,trous:d.trous||[]});
         continue;
       }
       if(d.shape === "text"){
         const strokes = textStrokes(d.text || "TEXT", d.x1, d.y1, d.size || 1.5, !!side, d.rot || 0);
         for(const poly of strokes){
           for(let k=0; k+1<poly.length; k++){
-            gSeg(body, A, poly[k].x, poly[k].y, poly[k+1].x, poly[k+1].y, w);
+            seg(poly[k].x, poly[k].y, poly[k+1].x, poly[k+1].y, w);
           }
         }
       }else if(d.shape === "rect"){
-        gSeg(body, A, d.x1, d.y1, d.x2, d.y1, w);
-        gSeg(body, A, d.x2, d.y1, d.x2, d.y2, w);
-        gSeg(body, A, d.x2, d.y2, d.x1, d.y2, w);
-        gSeg(body, A, d.x1, d.y2, d.x1, d.y1, w);
+        seg(d.x1, d.y1, d.x2, d.y1, w);
+        seg(d.x2, d.y1, d.x2, d.y2, w);
+        seg(d.x2, d.y2, d.x1, d.y2, w);
+        seg(d.x1, d.y2, d.x1, d.y1, w);
       }else{
-        gSeg(body, A, d.x1, d.y1, d.x2, d.y2, w);
+        seg(d.x1, d.y1, d.x2, d.y2, w);
+      }
+    }
+  }
+  return out;
+}
+function gerberSilk(side){
+  const A=apSet(), body=[];
+  for(const t of silkTraits(side)){
+    if(t.k==="seg")gSeg(body,A,t.x1,t.y1,t.x2,t.y2,t.w);
+    else if(t.k==="pt")gFlash(body,A,A.get("C,"+fmt(t.d,4)),t.x,t.y);
+    else{
+      gRegion(body,t.pts);
+      if(t.trous.length){
+        body.push("%LPC*%");
+        for(const h of t.trous)gRegion(body,h);
+        body.push("%LPD*%");
       }
     }
   }
@@ -1070,6 +1085,10 @@ function fabReadme(files,dr){
            "calque (TROUS_PTH_0_80, TROUS_NPTH_3_20, VIAS_0_30, contre-percage",
            "CONTRE_PERCAGE_DESSOUS_0_55...), avec un POINT au centre de chaque",
            "trou : les positions de percage, un diametre par calque.");
+  for(const x of files.filter(f=>f.kind==="anim3d"))
+    L.push(x.name+(/\.html$/i.test(x.name)
+      ?" : la carte qui s'assemble en 3D, page autonome (s'ouvre hors ligne, orientable a la souris)."
+      :" : la meme animation en video.")+" Illustration seulement : elle ne fait pas foi.");
   L.push("positions.csv et bom.csv servent a l'assemblage : millimetres,");
   L.push("rotation en degres dans le sens horaire (convention JLCPCB), de");
   L.push("0 a 360, meme origine que les Gerber. Ils ne concernent pas le");
@@ -1203,7 +1222,9 @@ function pcbFile(suffixe, repli){
   const n=pcbProjNom();
   return n?n+suffixe:repli;
 }
-function buildFabFiles(){
+/* `extra` : des fichiers venus d'ailleurs (l'animation 3D, 41-animation-3d.js),
+   posés avant le Master Drawing et le LISEZ-MOI, qui les annoncent. */
+function buildFabFiles(extra){
   const base=fabBase();
   const files=[];
   for(let i=0;i<S.cu;i++){
@@ -1241,6 +1262,7 @@ function buildFabFiles(){
   /* les DXF pour la mécanique (33-draftsman-export.js) : la carte à 1:1, et
      la feuille du plan de fabrication */
   if(typeof dxfFichiers==="function")files.push(...dxfFichiers());
+  if(extra)files.push(...extra);
   const md=masterDrawingPdf(files);
   if(md)files.push({name:fabDocNum()+".pdf",data:md});
   files.push({name:"EMPILAGE.txt",text:stackReport()});
@@ -1262,7 +1284,21 @@ function exportFab(){
   }
   // les variantes du schéma ont pu changer depuis que la carte les a copiées
   if(typeof pcbVarDepuisSchema==="function")pcbVarDepuisSchema();
-  const {files,drill}=buildFabFiles();
+  /* l'animation s'enregistre en temps réel : le dossier part quand elle est finie */
+  if(FAB_ANIM){
+    /* un second clic pendant l'enregistrement ne relance rien : le dossier part à la fin */
+    if(ANIM3D_EN_COURS){hint("Animation 3D en cours d'enregistrement : le dossier partira à la fin.");return null;}
+    ANIM3D_EN_COURS=true;
+    anim3dFichiers().then(r=>fabLivrer(r.fichiers,r.note),e=>{
+      alert("Animation 3D impossible : "+(e&&e.message||e)+"\nLe dossier part sans elle.");
+      fabLivrer([],"");
+    }).finally(()=>{ANIM3D_EN_COURS=false;});
+    return null;
+  }
+  return fabLivrer([],"");
+}
+function fabLivrer(extra,note){
+  const {files,drill}=buildFabFiles(extra);
   const vid=(S.variantes&&S.variantes.active)||"";
   const sl=vid?varSlug(S.variantes,vid):"";
   const zipNom=pcbFile("-fabrication"+(sl?"-"+sl:"")+".zip","fabrication"+(sl?"-"+sl:"")+".zip");
@@ -1270,6 +1306,7 @@ function exportFab(){
   hint(files.length+" fichier(s) exportés dans "+zipNom+" — "+
        drill.holes+" trou(s), "+drill.tools+" outil(s) de perçage, "+
        S.fps.length+" empreinte(s)"+
-       (vid?" — variante « "+varNom(S.variantes,vid)+" », "+(S.fps.length-fabFpsMontes().length)+" non montée(s).":"."));
+       (vid?" — variante « "+varNom(S.variantes,vid)+" », "+(S.fps.length-fabFpsMontes().length)+" non montée(s).":".")+
+       (note?" Animation 3D : "+note+".":""));
   return files;
 }

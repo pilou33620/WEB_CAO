@@ -58,6 +58,8 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "clrPair","applyClasses","jointAt","splitTrack","netTracks","selectNetRouting",
   "deleteNetRouting","autoClass","classOptionsHtml","poserClasseNet","schemaPublie","listNets","mkFp","w2s","runDrc","padsOf",
   "buildFabFiles","gerberCopper","gerberMask","gerberPaste","gerberSilk",
+  /* animation 3D de fabrication.zip (41-animation-3d.js) */
+  "anim3dDonnees","anim3dPage","fabAnimBasculer","silkTraits","fabLivrer","THREE_SOURCE",
   "gerberEdge","gerberOutline","ipcNetlist","ipc317","masterDrawingPdf","noAcc",
   "drillFile","maskOpenings","pasteOpenings","textStrokes","crc32","zipBlob","exportFab",
   "positionsCsvText","bomPcbCsvText","pcbCsvCell","fabReadme",
@@ -3956,6 +3958,79 @@ T("placement et bom.csv dans l'archive de fabrication",()=>{
   const rm=files.find(f=>f.name==="LISEZ-MOI.txt").text;
   for(const n of ["positions.csv","bom.csv"])
     if(rm.indexOf(n)<0)throw new Error("le LISEZ-MOI ne cite pas "+n);
+});
+/* L'animation 3D de fabrication.zip : la scène (WebGL) et la vidéo (MediaRecorder)
+   ne tournent que dans un navigateur ; ici, ce qu'elles reçoivent et ce que le
+   dossier en dit. */
+T("animation 3D : données de la scène, page autonome, dossier qui l'annonce",()=>{
+  const avant=serialize();
+  try{
+    loadDoc(EXEMPLES[0].build());
+    const fp=S.fps.find(f=>/^C\d/.test(f.ref));
+    fp.side=1;                                       // un composant dessous
+    const J=anim3dDonnees(), o=gOrigin();
+    if(J.titre!==fabBase()||!(J.ep>0)||J.contour.length<3)throw new Error("carte : "+JSON.stringify([J.titre,J.ep,J.contour.length]));
+    if(J.composants.length!==S.fps.length)throw new Error(J.composants.length+" composants pour "+S.fps.length+" empreintes");
+    /* dessus d'abord, puis du plus gros au plus petit dans chaque face */
+    const fin=J.composants.findIndex(c=>c.face===1);
+    if(fin<0||J.composants.slice(fin).some(c=>c.face!==1))throw new Error("ordre des faces");
+    if(J.composants[fin].ref!==fp.ref)throw new Error("le composant dessous : "+J.composants[fin].ref);
+    const vol=c=>{const P=c.corps;let a=0;for(let i=0;i<P.length;i++){const q=P[(i+1)%P.length];a+=P[i][0]*q[1]-q[0]*P[i][1];}return Math.abs(a)/2*c.h;};
+    for(let i=1;i<fin;i++)if(vol(J.composants[i])>vol(J.composants[i-1])+1e-6)throw new Error("ordre des volumes à "+J.composants[i].ref);
+    /* repère des Gerber : la pastille 1 de U1 au même endroit */
+    const u=S.fps.find(f=>f.ref==="U1")||S.fps[0], q=padsWorld(u)[0];
+    const r=v=>Math.round(v*1000)/1000, pp=padWorldPts(q).map(p=>[r(p.x-o.x),r(o.y-p.y)]);
+    if(!J.faces[0].cuivre.pads.some(P=>JSON.stringify(P)===JSON.stringify(pp)))throw new Error("pastille hors repère");
+    if(!J.faces[0].cuivre.pistes.length)throw new Error("aucune piste dessus");
+    if(!J.trous.length)throw new Error("aucun trou");
+    /* la sérigraphie dessous vient du même relevé que son Gerber */
+    if(J.faces[1].seri.segs.length!==silkTraits(1).filter(t=>t.k==="seg").length)throw new Error("sérigraphie dessous");
+    /* la page : three.js embarqué, et un repère piégé ne ferme pas le script */
+    J.titre="</script><b>";J.composants[0].ref="</script>";
+    const html=anim3dPage(J);
+    if(html.indexOf(THREE_SOURCE)<0)throw new Error("three.js absent de la page");
+    if(html.split("</script>").length!==3)throw new Error("une balise </script> de trop");
+    if(html.indexOf("<title>&lt;/script&gt;")<0)throw new Error("titre non échappé");
+    /* le dossier : la page et la vidéo annoncées par le LISEZ-MOI */
+    const ex=[{name:"carte-ASSEMBLAGE-3D.html",text:"x",kind:"anim3d"},{name:"carte-ASSEMBLAGE-3D.webm",data:new Uint8Array(3),kind:"anim3d"}];
+    const {files}=buildFabFiles(ex), noms=files.map(f=>f.name);
+    if(noms.indexOf("carte-ASSEMBLAGE-3D.webm")<0||noms.indexOf("carte-ASSEMBLAGE-3D.webm")>noms.indexOf(fabDocNum()+".pdf"))
+      throw new Error("la vidéo doit précéder le Master Drawing : "+noms.join(" "));
+    const rm=files.find(f=>f.name==="LISEZ-MOI.txt").text;
+    for(const n of ["carte-ASSEMBLAGE-3D.html","carte-ASSEMBLAGE-3D.webm"])
+      if(rm.indexOf(n+" : ")<0)throw new Error("le LISEZ-MOI ne décrit pas "+n);
+    if(buildFabFiles().files.some(f=>f.kind==="anim3d"))throw new Error("animation sans la bascule");
+    /* la bascule : éteinte au départ, allumée au clic */
+    if($("bFabAnim").classList.contains("on"))throw new Error("bascule allumée d'office");
+    fabAnimBasculer();
+    if(!$("bFabAnim").classList.contains("on"))throw new Error("bascule non allumée");
+    fabAnimBasculer();
+  }finally{loadDoc(JSON.parse(avant),true);}
+});
+/* Sans MediaRecorder (Node), l'animation part sans vidéo : le chemin entier
+   tourne, et un second clic pendant l'enregistrement ne relance rien. */
+TA("animation 3D : un second Fabrication .zip pendant l'enregistrement ne relance rien",async()=>{
+  const avant=serialize(), co=URL.createObjectURL, zips=[], notes=[];
+  /* la barre d'état lue juste après la livraison : d'autres essais l'écrivent ensuite */
+  URL.createObjectURL=b=>{zips.push(b);queueMicrotask(()=>notes.push($("fHint").textContent));return "blob:essai";};
+  try{
+    loadDoc(EXEMPLES[0].build());
+    fabAnimBasculer();
+    if(exportFab()!==null||exportFab()!==null)throw new Error("l'export avec animation rend la main tout de suite");
+    if(!/en cours d'enregistrement/.test($("fHint").textContent))throw new Error("second clic : "+$("fHint").textContent);
+    for(let k=0;k<200&&!zips.length;k++)await new Promise(r=>setTimeout(r,25));
+    await new Promise(r=>setTimeout(r,25));
+    if(zips.length!==1)throw new Error(zips.length+" archive(s) livrée(s)");
+    if(!/Animation 3D : pas de vidéo/.test(notes[0]))throw new Error("barre d'état : "+notes[0]);
+    /* la garde retombe : un nouvel export repart */
+    exportFab();
+    for(let k=0;k<200&&zips.length<2;k++)await new Promise(r=>setTimeout(r,25));
+    if(zips.length!==2)throw new Error("la garde n'est pas retombée");
+  }finally{
+    URL.createObjectURL=co;
+    if($("bFabAnim").classList.contains("on"))fabAnimBasculer();
+    loadDoc(JSON.parse(avant),true);
+  }
 });
 /* Un Excellon par portée : le défaut de fabrication silencieux qu'on vient de
    corriger. Sur 4 couches avec un via borgne 1-2 et un traversant 1-4, le
