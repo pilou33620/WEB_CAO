@@ -55,7 +55,7 @@ const PILOTE_VALEUR = {
   appliquer: a => {
     const c = piloteTrouverComp(a.ref);
     const v = String(a.valeur).trim();
-    push();
+    ECRITURE_CAO.pousser();
     const def = typeof defOf === "function" ? defOf(c.type) : null;
     if (def && typeof def.pins === "function" && typeof reshapeComp === "function") reshapeComp(c, () => { c.value = v; });
     else c.value = v;

@@ -60,7 +60,7 @@ const ECRITURE_CAO = (function () {
         const avant = def.drc ? erreursDrc() : null;
         // push() vide la pile de rétablissement ; la visionneuse (simulation seule) n'a pas de S
         const redo = !def.annuler && typeof S !== "undefined" && Array.isArray(S.redo) ? S.redo.slice() : null;
-        if (!def.annuler) push();
+        if (!def.annuler) pousser();
         let r;
         try { r = def.muter(args) || {}; }
         catch (e) {
@@ -81,6 +81,14 @@ const ECRITURE_CAO = (function () {
     if (def.annuler) Object.assign(cmd, { annuler: def.annuler, etat: def.etat });
     else cmd.historique = true;
     return cmd;
+  }
+
+  /* L'étape d'historique d'un lot de Claude : l'instantané porte une espace finale (JSON.parse
+     l'ignore), à laquelle les éditeurs reconnaissent les lots qu'ils peuvent fondre entre eux
+     quand la pile est pleine (histBorner), plutôt que de chasser les étapes de l'utilisateur. */
+  function pousser() {
+    if (typeof pushSnap === "function") pushSnap(serialize() + " ");   // PCB
+    else push(serialize() + " ");                                       // schéma
   }
 
   /* ---------- DRC avant → après (PCB) ---------- */
@@ -943,6 +951,6 @@ const ECRITURE_CAO = (function () {
 
   return { lot, composantsSch: COMPOSANTS_SCH, composantsPcb: COMPOSANTS_PCB, pistes: PISTES, classes: CLASSES,
            contraintes: CONTRAINTES, simulation: SIMULATION, contour: CONTOUR, decoupes: DECOUPES, zones: ZONES, serigraphie: SERIGRAPHIE,
-           pastilles: PASTILLES, LOT_MAX,
+           pastilles: PASTILLES, LOT_MAX, pousser,
            drc: { erreurs: erreursDrc, bilan: bilanDrc } };        // repris par le routage (37-routage-pilote.js)
 })();

@@ -297,9 +297,19 @@ function serialize(){
   return JSON.stringify({pages:S.pages,page:S.page,netClasses:S.netClasses,variantes:S.variantes,
                          contraintes:S.contraintes});
 }
+/* Pile pleine, deux lots de Claude d'affilée (instantanés marqués d'une espace finale par
+   ECRITURE_CAO.pousser, que JSON.parse ignore) se fondent en un avant qu'une étape plus
+   ancienne ne parte : un flot de cartes appliquées directement ne chasse pas celles de
+   l'utilisateur. */
+function histBorner(pile){
+  while(pile.length>HIST_MAX){
+    const k=pile.findIndex((t,i)=>i>0&&t.endsWith(" ")&&pile[i-1].endsWith(" "));
+    pile.splice(Math.max(k,0),1);
+  }
+}
 function push(snapshot){
   S.hist.push(snapshot===undefined?serialize():snapshot);
-  if(S.hist.length>HIST_MAX)S.hist.shift();
+  histBorner(S.hist);
   S.redo.length=0;
   S.dirty=true;
 }
@@ -323,7 +333,7 @@ function undo(){
 function redo(){
   if(!S.redo.length)return;
   S.hist.push(serialize());
-  if(S.hist.length>HIST_MAX)S.hist.shift();
+  histBorner(S.hist);
   restore(S.redo.pop());
 }
 

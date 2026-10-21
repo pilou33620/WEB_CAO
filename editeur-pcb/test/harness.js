@@ -7308,6 +7308,33 @@ T("historique : borné en mémoire autant qu'en nombre",()=>{
   histBorner(petits);
   if(petits.length!==UNDO_MAX)throw new Error("plafond en nombre : "+petits.length);
 });
+T("historique : un flot de lots de Claude se fond, les étapes de l'utilisateur restent",()=>{
+  const pile=[];
+  for(let i=0;i<30;i++){pile.push('{"u":'+i+'}');histBorner(pile);}
+  for(let i=0;i<200;i++){pile.push('{"c":'+i+'} ');histBorner(pile);}
+  if(pile.length!==UNDO_MAX)throw new Error("plafond : "+pile.length);
+  if(pile.slice(0,30).some((t,i)=>t!=='{"u":'+i+'}'))throw new Error("une étape de l'utilisateur est partie");
+  if(pile[UNDO_MAX-1]!=='{"c":199} ')throw new Error("le dernier lot de Claude doit rester à part");
+  // pile de l'utilisateur seul : les plus anciennes partent, comme avant
+  const seul=[];
+  for(let i=0;i<UNDO_MAX+3;i++){seul.push('{"u":'+i+'}');histBorner(seul);}
+  if(seul[0]!=='{"u":3}')throw new Error("plus ancienne gardée : "+seul[0]);
+  // l'étape poussée par un lot est marquée, et se relit ; le document des essais suivants revient
+  const garde={doc:serialize(),undo:S.undo.slice(),redo:S.redo.slice(),dirty:S.dirty};
+  try{
+    loadDoc(exemple1());
+    S.undo.length=0;
+    const doc=serialize();
+    ECRITURE_CAO.pousser();
+    if(S.undo[0]!==doc+" ")throw new Error("instantané de Claude non marqué");
+    S.fps[0].x+=3;
+    undo();
+    if(serialize()!==doc)throw new Error("Ctrl+Z ne relit pas l'instantané marqué");
+  }finally{
+    loadDoc(JSON.parse(garde.doc),true);
+    S.undo=garde.undo;S.redo=garde.redo;S.dirty=garde.dirty;
+  }
+});
 T("document : formes, rotations et origine déplacée se relisent",()=>{
   S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
   const fp=mkFp("J1","","",4);

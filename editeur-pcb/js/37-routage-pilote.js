@@ -254,7 +254,7 @@ function routageCommande(titre, jouer, avecApercu){
       }
       let avant = null;
       try{ avant = ECRITURE_CAO.drc.erreurs(); }catch(e){}
-      push();
+      ECRITURE_CAO.pousser();
       JSON.parse(prop.resultat).forEach((v, i) => { doc[CUIVRE[i]] = v; });
       loadDoc(doc, true);
       ROUTAGE.apercu = null; prop.resultat = null;          // le document relevé ne sert plus

@@ -58,7 +58,7 @@ const EXPOSE=[
   "S","G","newPage","loadPage","storeCurrent","gotoPage","addPage","removePage","clearSel",
   "SCHEMA_PATTERNS","NET_CLASSES","netClassSelect",
   "addComp","schComposantsDansZone","schToutesLesZones",
-  "push","undo","redo","touchWires","buildTabs","draw","fit","resize",
+  "push","undo","redo","histBorner","HIST_MAX","touchWires","buildTabs","draw","fit","resize",
   /* canal de pilotage du MCP de web_suite (commun/pilote-cao.js) */
   "piloteCao",
   /* bus et hiérarchie */
@@ -319,6 +319,20 @@ T("canal de pilotage : cao_valeur_composant propose, applique en une étape, Ctr
       if(S.hist.length!==avant)throw new Error("repère inconnu : rien ne doit être poussé");
     }
   }finally{global.Pilote=ancien;}
+});
+
+T("historique : un flot de lots de Claude se fond, les étapes de l'utilisateur restent",()=>{
+  const pile=[];
+  for(let i=0;i<20;i++){pile.push('{"u":'+i+'}');histBorner(pile);}
+  for(let i=0;i<150;i++){pile.push('{"c":'+i+'} ');histBorner(pile);}
+  if(pile.length!==HIST_MAX)throw new Error("plafond : "+pile.length);
+  if(pile.slice(0,20).some((t,i)=>t!=='{"u":'+i+'}'))throw new Error("une étape de l'utilisateur est partie");
+  if(pile[HIST_MAX-1]!=='{"c":149} ')throw new Error("le dernier lot de Claude doit rester à part");
+  const n=S.hist.length, doc=serialize();
+  ECRITURE_CAO.pousser();
+  if(S.hist.length!==n+1||S.hist[n]!==doc+" ")throw new Error("instantané de Claude non marqué");
+  undo();
+  if(serialize()!==doc)throw new Error("Ctrl+Z ne relit pas l'instantané marqué");
 });
 
 T("canal de pilotage : cao_composants_ecrire, un lot en une étape, refus sans rien toucher",()=>{

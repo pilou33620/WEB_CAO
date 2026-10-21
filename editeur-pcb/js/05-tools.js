@@ -44,12 +44,19 @@ function push(){pushSnap(null);}
    une grosse carte (vingt mille pistes, trois mégaoctets de texte par
    instantané), quatre-vingts copies pèseraient près d'un demi-gigaoctet. On
    garde alors les plus récents qui tiennent dans le budget — toujours au moins
-   le dernier, pour qu'un Ctrl+Z reste possible. */
+   le dernier, pour qu'un Ctrl+Z reste possible.
+   Les lots de Claude (canal de pilotage) poussent un instantané marqué d'une espace
+   finale, que JSON.parse ignore (ECRITURE_CAO.pousser). Pile pleine, deux lots de Claude
+   d'affilée se fondent en un avant qu'une étape plus ancienne ne parte : un flot de cartes
+   appliquées directement ne chasse pas les étapes de l'utilisateur. */
 const UNDO_MAX=80, UNDO_BUDGET=48e6;       // en caractères (≈ 96 Mo en mémoire)
 function histBorner(pile){
   let tot=0;
   for(const t of pile)tot+=t.length;
-  while(pile.length>UNDO_MAX||(pile.length>1&&tot>UNDO_BUDGET))tot-=pile.shift().length;
+  while(pile.length>UNDO_MAX||(pile.length>1&&tot>UNDO_BUDGET)){
+    const k=pile.findIndex((t,i)=>i>0&&t.endsWith(" ")&&pile[i-1].endsWith(" "));
+    tot-=pile.splice(Math.max(k,0),1)[0].length;
+  }
 }
 function pushSnap(snap){
   S.undo.push(snap||serialize());
