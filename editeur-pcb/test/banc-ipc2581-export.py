@@ -388,6 +388,8 @@ def cas_export(nom):
         pose = {r.get("name"): r.get("populate") == "true"
                 for r in racine.iter(NS + "RefDes")}
         egal(pose, {a["ref"]: a["pose"] for a in A["composants"]}, u"repere -> monte")
+        # relu par la visionneuse : populate="false" -> "nm", le reste monte
+        egal({c["ref"]: not c.get("nm") for c in M["composants"]}, pose, u"modele relu : repere -> monte")
     T(u"%s : nomenclature, non-montes de la variante marques" % nom, nomenclature)
 
 

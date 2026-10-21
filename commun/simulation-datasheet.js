@@ -324,8 +324,8 @@ function simDsCatalogue() {
 
   L.push("");
   L.push("[condensateurs] Parasites des condensateurs de découplage du rail PDN, par repère, MPN ou valeur " +
-         "(cao_sim_ecrire ne les écrit pas encore : à donner à l'utilisateur, qui les saisit dans la page). " +
-         "Champs : esr_mohm (mΩ, à la fréquence de résonance), esl_nh (nH), cap_nf (nF, capacité EFFECTIVE sous la tension du rail si la datasheet donne la courbe DC-bias).");
+         "(cao_sim_ecrire : {groupe: \"condensateurs\", cle, valeur, unite, cible: {refs: [repères]} ou {mpn} ou {valeur: \"100nF\", boitier?}}). " +
+         "Clés : esr_mohm (mΩ, à la fréquence de résonance), esl_nh (nH), cap_nf (nF, capacité EFFECTIVE sous la tension du rail si la datasheet donne la courbe DC-bias).");
   const capas = SIM_PDN.condensateurs || [];
   if (capas.length) {
     const lignes = capas.slice(0, 40).map(c => c.ref + " " + (c.val || "") + " " + (c.pkg || "") +
@@ -338,7 +338,7 @@ function simDsCatalogue() {
   }
 
   L.push("");
-  L.push("[bornes_dc] Bornes de la chute DC, par repère de composant (cao_sim_ecrire ne les écrit pas encore : à saisir dans la page). Champs : courant_ma (charge : courant TOTAL tiré par le composant sur ce rail, en mA, réparti ensuite sur ses broches) ou tension_v (source : tension imposée, en V).");
+  L.push("[bornes_dc] Bornes de la chute DC, par repère de composant (cao_sim_ecrire : {groupe: \"bornes_dc\", cle, valeur, unite, cible: {composant: repère}} ; la borne doit déjà être posée dans la page). Clés : courant_ma (charge : courant TOTAL tiré par le composant sur ce rail, en mA, réparti ensuite sur ses broches) ou tension_v (source : tension imposée, en V).");
   const bornes = simDsBornes();
   if (bornes.length) {
     L.push("Bornes posées : " + bornes.map(b => (b.role === "source" ? "source " : "charge ") +

@@ -518,12 +518,38 @@ const ECRITURE_CAO = (function () {
   }
   const avecUnite = (v, u) => v === null || v === undefined ? null : u ? v + " " + u : v;
 
+  /* Condensateurs et bornes DC ne sont pas des champs du catalogue : chacun vise des objets de la
+     carte par « cible » ({refs | mpn | valeur, boitier?} ou {composant}). simDsPreparer les
+     contrôle comme une proposition de datasheet ; `act` est l'entrée qu'il attend. */
+  const HORS_CATALOGUE = {
+    condensateurs: { cles: { esr_mohm: "mΩ", esl_nh: "nH", cap_nf: "nF" }, cible: "{refs: [repères]}, {mpn} ou {valeur, boitier?}" },
+    bornes_dc: { cles: { courant_ma: "mA", tension_v: "V" }, cible: "{composant: repère}" },
+  };
+  function verifierHorsCatalogue(e, h, refus, vus, lignes, aEcrire) {
+    const unite = h.cles[e.cle];
+    if (!unite) return refus.push(e.groupe + " : paramètre « " + e.cle + " » inconnu (" + Object.keys(h.cles).join(", ") + ")");
+    const c = e.cible;
+    if (!c || typeof c !== "object" || Array.isArray(c)) return refus.push(e.groupe + "." + e.cle + " : « cible » attendue, " + h.cible);
+    const quoi = e.groupe + "." + e.cle + " (" + (c.composant || (Array.isArray(c.refs) && c.refs.join(", ")) || c.mpn || c.valeur || "?") + ")";
+    if (vus.has(quoi)) return refus.push(quoi + " : deux fois dans le lot");
+    vus.add(quoi);
+    if ((e.unite || "") !== unite) return refus.push(quoi + " : unité « " + (e.unite || "") + " », attendue « " + unite + " »");
+    const act = e.groupe === "condensateurs" ? Object.assign({}, c, { [e.cle]: e.valeur }) : { composant: c.composant, [e.cle]: e.valeur };
+    const l = simDsPreparer({ [e.groupe]: [act] }).lignes[0];
+    if (!l || !l.ok) return refus.push(quoi + " : " + (l ? l.motif : "rien de visé"));
+    if (l.actuel === l.nouveau) return;
+    lignes.push({ quoi: quoi + " " + l.lib, avant: avecUnite(l.actuel, unite), apres: avecUnite(l.nouveau, unite) });
+    aEcrire.push({ sim: e.groupe, act });
+  }
+
   function verifierSim(args) {
     simPrete();
     const lignes = [], refus = [], vus = new Set(), aEcrire = [];
     for (const e of args.lot) {
+      const h = e && Object.hasOwn(HORS_CATALOGUE, e.groupe) && HORS_CATALOGUE[e.groupe];
+      if (h) { verifierHorsCatalogue(e, h, refus, vus, lignes, aEcrire); continue; }
       const g = e && typeof e.groupe === "string" ? simDsGroupe(e.groupe) : null;
-      if (!g) { refus.push("groupe « " + (e && e.groupe) + " » inconnu (" + simDsGroupes().map(x => x.cle).join(", ") + ")"); continue; }
+      if (!g) { refus.push("groupe « " + (e && e.groupe) + " » inconnu (" + simDsGroupes().map(x => x.cle).concat(Object.keys(HORS_CATALOGUE)).join(", ") + ")"); continue; }
       const ch = typeof e.cle === "string" ? simDsChamp(g, e.cle) : null;
       if (!ch) { refus.push(g.cle + " : paramètre « " + e.cle + " » inconnu (" + g.champs.map(c => c.cle).join(", ") + ")"); continue; }
       const quoi = g.cle + "." + ch.cle + " (" + ch.lib + ")";
@@ -539,8 +565,10 @@ const ECRITURE_CAO = (function () {
     return { lignes, refus, aEcrire };
   }
 
-  function ecrireSim(valeurs) {
-    const prep = simDsPreparer({ valeurs });
+  function ecrireSim(a) {
+    const prep = simDsPreparer({ valeurs: a.filter(x => !x.act).map(x => ({ sim: x.sim, cle: x.cle, valeur: x.valeur })),
+                                 condensateurs: a.filter(x => x.sim === "condensateurs").map(x => x.act),
+                                 bornes_dc: a.filter(x => x.sim === "bornes_dc").map(x => x.act) });
     const r = simDsAppliquer(prep, prep.lignes.filter(l => l.ok).map(l => l.id));
     const rates = prep.lignes.filter(l => /^échec/.test(l.motif || ""));
     if (rates.length) throw new Error(rates.map(l => l.sim + "." + l.cle + " : " + l.motif).join(" ; "));
@@ -556,9 +584,23 @@ const ECRITURE_CAO = (function () {
       evenements: P.evenements || null, xtTr: typeof SIM_XT !== "undefined" ? SIM_XT.saisie.tr : null,
       profilFiches: typeof profLire === "function" ? profLire("pdnFiches") || null : null }));
   }
+  /* Les parasites et les bornes, objet par objet (gardés par référence : Annuler n'a lieu que si
+     etat() n'a pas bougé, donc ni nouvelle détection ni borne retirée entre-temps). */
+  const PROPS_CAPA = ["esr", "esl", "cap", "prov", "f0"], PROPS_BORNE = ["valeur", "provenance", "unite"];
+  const photo = (objs, props) => objs.map(o => ({ o, v: props.map(k => o[k]) }));
+  function objetsSim() {
+    return { capas: photo(SIM_PDN.condensateurs || [], PROPS_CAPA), bornes: photo(simDsBornes(), PROPS_BORNE),
+             profilCapas: typeof profLire === "function" ? JSON.stringify(profLire("dsCapas") || {}) : null };
+  }
+  function remettreObjets(p) {
+    for (const x of p.capas) PROPS_CAPA.forEach((k, i) => { x.o[k] = x.v[i]; });
+    for (const x of p.bornes) PROPS_BORNE.forEach((k, i) => { x.o[k] = x.v[i]; });
+    if (p.profilCapas !== null) profEcrire("dsCapas", JSON.parse(p.profilCapas));
+  }
   /* Annuler remet la valeur d'avant telle quelle, même hors des bornes du catalogue (0 = « non
      renseigné ») : les lignes sont faites ici, sans simDsPreparer, pour le même chemin d'écriture. */
   function remettreSim(jeton) {
+    if (jeton.objets) remettreObjets(jeton.objets);
     const lignes = jeton.valeurs.map((x, id) => ({ id, ok: true, genre: "champ", sim: x.sim, cle: x.cle, nouveau: x.valeur,
                                                   ana: (simDsGroupe(x.sim) || {}).ana || "" }));
     simDsAppliquer({ lignes, source: "annulation" }, lignes.map(l => l.id));
@@ -580,12 +622,12 @@ const ECRITURE_CAO = (function () {
     titre: "Paramètres de simulation",
     verifier: verifierSim,
     muter: args => {
-      const a = verifierSim(args).aEcrire, vides = a.filter(x => x.avant === null);
-      const jeton = { valeurs: a.filter(x => x.avant !== null).map(x => ({ sim: x.sim, cle: x.cle, valeur: x.avant })),
-                      cotes: cotesSim(), fiche: a.some(x => x.sim === "pdn_fiche") };
+      const a = verifierSim(args).aEcrire, vides = a.filter(x => !x.act && x.avant === null);
+      const jeton = { valeurs: a.filter(x => !x.act && x.avant !== null).map(x => ({ sim: x.sim, cle: x.cle, valeur: x.avant })),
+                      cotes: cotesSim(), fiche: a.some(x => x.sim === "pdn_fiche"), objets: a.some(x => x.act) ? objetsSim() : null };
       let notes;
       // pas d'instantané d'éditeur à défaire ici : un échec en route remet tout à la main
-      try { notes = ecrireSim(a.map(x => ({ sim: x.sim, cle: x.cle, valeur: x.valeur }))); }
+      try { notes = ecrireSim(a); }
       catch (e) { remettreSim(jeton); throw e; }
       if (vides.length) notes.push("Sans valeur d'avant, Annuler ne remettra pas : " + vides.map(x => x.sim + "." + x.cle).join(", ") + ".");
       if (a.some(x => x.sim === "pdn_fiche"))
@@ -596,7 +638,9 @@ const ECRITURE_CAO = (function () {
     // annuler n'a lieu que si aucun paramètre n'a rebougé depuis (pilote.js compare etat())
     etat: () => {
       const c = cotesSim();
-      return [simDsGroupes().map(g => g.champs.map(ch => simDsLire(ch))), c.assistant, c.manuel, c.xtTr, c.fiche && c.fiche.suppose];
+      const o = objetsSim();
+      return [simDsGroupes().map(g => g.champs.map(ch => simDsLire(ch))), c.assistant, c.manuel, c.xtTr, c.fiche && c.fiche.suppose,
+              o.capas.map(x => x.v), o.bornes.map(x => x.v)];
     },
     annuler: (args, jeton) => { simPrete(); remettreSim(jeton); },
   });

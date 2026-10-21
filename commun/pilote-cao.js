@@ -8,7 +8,7 @@
    rapport la dit (web_suite, SPEC-mcp-canal-pilote.md, question tranchée 1). */
 const PILOTE_CALCULS = {
   impedance: ["si", "simGo"], diff: ["si", "simGo"], retour: ["si", "simGo"],
-  crosstalk: ["si", "simXtGo"], oeil: ["si", "simOeilGo"],
+  crosstalk: ["si", "simXtGo"], oeil: ["si", "simOeilGo"], bus: ["si", "simBusCalculer"],
   dc: ["pi", "simDCLancer"], pdn: ["pi", "simCalculerPDN"],
   s21: ["rf", "simRfGo"], verif: ["carte", "simCarteGo"],
 };
@@ -28,6 +28,9 @@ async function piloteCaoCalcul(args) {
   if (quoi[1] === "simGo" && !(simCalculable() && simProblemes()))
     throw new Error(SIM.err || "Rien à calculer : sélectionne d'abord une piste ou un net dans l'éditeur.");
   await lancer();
+  // le bus range son refus dans SIM_BUS.erreur, que le rapport ne reprend pas ; sans net, il ne dit rien
+  if (analyse === "bus" && !SIM_BUS.result)
+    throw new Error(SIM_BUS.erreur || "Rien à calculer : désigne d'abord l'horloge et les données du bus (onglet Bus synchrone).");
   return { analyse, rapport: simRapMarkdown(simRapCollecter()) };
 }
 

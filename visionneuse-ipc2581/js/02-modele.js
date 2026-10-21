@@ -723,9 +723,9 @@ function mdlCharger(modele,nomFichier){
      de fichier (mdlMemoriserNets). Un .json exporté porte le sien, qui passe
      devant. On ne reprend plus les classes du fichier PRÉCÉDENT (V.netClasses) :
      deux cartes qui partagent un nom de net n'ont rien d'autre en commun. */
-  // un .json exporté porte sa liste (repères seulement), sinon la mémoire du navigateur
+  // un .json exporté porte sa liste (repères seulement), sinon la mémoire du navigateur, sinon le fichier
   modele.nonMontes=Array.isArray(modele.nonMontes)
-    ?modele.nonMontes.filter(r=>typeof r==="string"):mdlMemoireNonMontes();
+    ?modele.nonMontes.filter(r=>typeof r==="string"):(mdlMemoireNonMontes()||mdlNonMontesFichier(modele));
   const mem=modele.netClasses?null:mdlMemoireNets();
   if(mem&&mem.natures&&!modele.netNatures)modele.netNatures=mem.natures;
   mdlAutoDetecterClassesNets(modele.classes_nets, modele.netClasses || (mem&&mem.classes) || null);
@@ -756,13 +756,19 @@ function mdlMemoriserNets(){
 /* LES COMPOSANTS NON MONTÉS : toutes les simulations les ignorent — leurs
    pastilles restent, c'est du cuivre, mais la pièce elle-même n'existe pas.
    Une liste de repères dans V.modele.nonMontes, qui part avec l'export .json,
-   et mémorisée par nom de fichier dans ce navigateur comme les nets. */
+   et mémorisée par nom de fichier dans ce navigateur comme les nets. Au départ,
+   celle du fichier (populate="false" de la BOM, « nm » du modèle) ; la mémoire
+   ne garde que ce qui s'en écarte. */
 function mdlCleNonMontes(){ return "cao.visionneuse.nonmontes.v1."+(V.fichier||""); }
+function mdlNonMontesFichier(modele){
+  return ((modele&&modele.composants)||[]).filter(c=>c&&c.nm).map(c=>String(c.ref));
+}
+// null : rien de mémorisé pour ce fichier
 function mdlMemoireNonMontes(){
   try{
-    const l=JSON.parse(localStorage.getItem(mdlCleNonMontes())||"[]");
-    return Array.isArray(l)?l.filter(r=>typeof r==="string"):[];
-  }catch(_){ return []; }
+    const l=JSON.parse(localStorage.getItem(mdlCleNonMontes()));
+    return Array.isArray(l)?l.filter(r=>typeof r==="string"):null;
+  }catch(_){ return null; }
 }
 /* Le repère est-il monté ? Vrai pour tout ce que la liste ne nomme pas. */
 function mdlMonte(ref){
@@ -778,8 +784,9 @@ function mdlPoserMonte(ref,monte){
   const l=(Array.isArray(V.modele.nonMontes)?V.modele.nonMontes:[]).filter(r=>r!==ref);
   if(!monte)l.push(ref);
   V.modele.nonMontes=l;
+  const f=mdlNonMontesFichier(V.modele);
   try{
-    if(l.length)localStorage.setItem(mdlCleNonMontes(),JSON.stringify(l));
+    if(l.length!==f.length||l.some(r=>f.indexOf(r)<0))localStorage.setItem(mdlCleNonMontes(),JSON.stringify(l));
     else localStorage.removeItem(mdlCleNonMontes());
   }catch(_){}
 }

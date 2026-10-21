@@ -4382,6 +4382,25 @@ T("composant non monté : hors du bus et du PDN, retenu par fichier dans ce navi
   }
 });
 
+T("composant non monté : populate=\"false\" du fichier coche la case, la mémoire ne garde que l'écart", function(){
+  // carte() charge par mdlCharger, sans nom de fichier : « carte »
+  const cle = "cao.visionneuse.nonmontes.v1.carte";
+  const charger = () => carte({ composants: [{ ref: "R1", nm: 1, pads: [] }, { ref: "R2", pads: [] }] });
+  localStorage.removeItem(cle);
+  try{
+    charger();
+    if (mdlMonte("R1") || !mdlMonte("R2")) throw new Error("R1 non monté par le fichier, R2 monté : " + V.modele.nonMontes);
+    mdlPoserMonte("R1", true);
+    if (localStorage.getItem(cle) !== "[]") throw new Error("décocher un non-monté du fichier se retient : " + localStorage.getItem(cle));
+    charger();
+    if (!mdlMonte("R1")) throw new Error("rechargé, la case décochée doit rester décochée");
+    mdlPoserMonte("R1", false);
+    if (localStorage.getItem(cle) !== null) throw new Error("revenu à la liste du fichier, la mémoire s'efface");
+    charger();
+    if (mdlMonte("R1")) throw new Error("rechargé sans mémoire : la liste du fichier");
+  }finally{ localStorage.removeItem(cle); V.parNet = null; V.parRef = null; V.couches = null; LT.pret = false; }
+});
+
 T("SIM_BUS dans visionneuse IPC-2581 : détection pont série avec comp.pins (sans pad.n) et comp.val", function(){
   carte({nets: ["DATA0", "DATA0_R", "GND"]});
   V.unite = "mm";
@@ -6894,6 +6913,42 @@ T("canal de pilotage : cao_sim_ecrire, unité du catalogue, une carte qu'Annuler
   const chP = simDsChamp("bus", "protocole");
   if (chP && chP.choix) refus([{ groupe: "bus", cle: "protocole", valeur: simDsLire(chP), unite: chP.unite }], /Rien à changer/);
   refus([{ groupe: "pdn", cle: "rVrmMOhm", valeur: 9, unite: uR }, { groupe: "pdn", cle: "rVrmMOhm", valeur: 8, unite: uR }], /deux fois/);
+});
+
+T("canal de pilotage : cao_sim_ecrire écrit les condensateurs et les bornes DC, et Annuler les remet", function(){
+  pdnDeLabo();
+  const d = ECRITURE_CAO.simulation, b0 = SIM_DCB.bornes;
+  const prof = typeof profLire === "function" ? JSON.stringify(profLire("dsCapas") || {}) : null;
+  SIM_DCB.bornes = [{ role: "charge", compRef: "U1", nom: "U1.3", valeur: 0.01, unite: "mA", provenance: "manuel" },
+                    { role: "charge", compRef: "U1", nom: "U1.7", valeur: 0.01, unite: "mA", provenance: "manuel" },
+                    { role: "source", compRef: "U9", nom: "U9.2", valeur: 3.3, provenance: "manuel" }];
+  const cuivre = SIM_IPC.dcBornes; SIM_IPC.dcBornes = () => SIM_DCB.bornes;   // pas de carte ouverte : les bornes telles quelles
+  try {
+    const [c1, c2] = SIM_PDN.condensateurs;
+    const lot = [{ groupe: "condensateurs", cle: "esl_nh", valeur: 0.3, unite: "nH", cible: { refs: ["C1"] } },
+                 { groupe: "condensateurs", cle: "esr_mohm", valeur: 5, unite: "mΩ", cible: { mpn: "GRM188R61A106MAAL" } },
+                 { groupe: "bornes_dc", cle: "courant_ma", valeur: 80, unite: "mA", cible: { composant: "U1" } },
+                 { groupe: "bornes_dc", cle: "tension_v", valeur: 5, unite: "V", cible: { composant: "U9" } }];
+    const prop = d.proposer({ lot });
+    if (!/condensateurs\.esl_nh \(C1\) ESL/.test(prop.apres) || !/bornes_dc\.courant_ma \(U1\)/.test(prop.apres)) throw new Error("carte : " + prop.apres);
+    const avant = JSON.stringify(d.etat());
+    const jeton = d.appliquer({ lot }, prop);
+    if (Math.abs(c1.esl - 0.3e-9) > 1e-15 || Math.abs(c2.esr - 0.005) > 1e-12 || c2.prov !== "datasheet") throw new Error("parasites non écrits");
+    const [u3, u7, u9] = SIM_DCB.bornes;
+    if (Math.abs(u3.valeur - 0.04) > 1e-12 || Math.abs(u7.valeur - 0.04) > 1e-12 || u9.valeur !== 5) throw new Error("bornes non écrites : " + [u3.valeur, u7.valeur, u9.valeur]);
+    if (JSON.stringify(d.etat()) === avant) throw new Error("etat() ne voit pas l'écriture");
+    d.annuler({ lot }, jeton);
+    if (Math.abs(c1.esl - 0.45e-9) > 1e-15 || c2.esr !== 0.008 || c2.prov !== "defaut" || u3.valeur !== 0.01 || u9.valeur !== 3.3 || u3.unite !== "mA")
+      throw new Error("Annuler ne remet pas tout");
+    if (JSON.stringify(d.etat()) !== avant) throw new Error("etat() d'après Annuler différent d'avant");
+    if (prof !== null && JSON.stringify(profLire("dsCapas") || {}) !== prof) throw new Error("Annuler ne remet pas le profil des condensateurs");
+    const refus = (l, motif) => { let m = ""; try { d.proposer({ lot: l }); } catch (e) { m = e.message; } if (!motif.test(m)) throw new Error("refus attendu " + motif + ", lu « " + m + " »"); };
+    refus([{ groupe: "condensateurs", cle: "esl_nh", valeur: 0.3, unite: "pH", cible: { refs: ["C1"] } }], /attendue « nH »/);
+    refus([{ groupe: "condensateurs", cle: "esl_nh", valeur: 0.3, unite: "nH", cible: { refs: ["C99"] } }], /aucun condensateur/);
+    refus([{ groupe: "condensateurs", cle: "esl_nh", valeur: 0.3, unite: "nH" }], /« cible » attendue/);
+    refus([{ groupe: "bornes_dc", cle: "courant_ma", valeur: 1, unite: "mA", cible: { composant: "U5" } }], /aucune borne/);
+    refus([{ groupe: "bornes_dc", cle: "ohms", valeur: 1, unite: "Ω", cible: { composant: "U1" } }], /inconnu/);
+  } finally { SIM_DCB.bornes = b0; SIM_IPC.dcBornes = cuivre; }
 });
 
 (async()=>{

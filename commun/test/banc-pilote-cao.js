@@ -32,6 +32,8 @@ function page(nom, sim) {
     simGo: lanceur("simGo"), simXtGo: lanceur("simXtGo"), simOeilGo: lanceur("simOeilGo"),
     simDCLancer: lanceur("simDCLancer"), simCalculerPDN: () => { appels.push(["simCalculerPDN"]); },
     simRfGo: lanceur("simRfGo"), simCarteGo: lanceur("simCarteGo"),
+    simBusCalculer: () => { appels.push(["simBusCalculer"]); ctx.SIM_BUS.result = ctx.SIM_BUS.donne; },
+    SIM_BUS: { result: null, erreur: "", donne: { allPass: true } },
     simRapCollecter: () => ({ analyse: ctx.SIM.analyse }),
     simRapMarkdown: d => "# Rapport " + d.analyse,
   }, sim || {}));
@@ -82,7 +84,7 @@ async function refuse(promesse, motif) {
 
   await T("chaque analyse : famille, analyse, lanceur attendu, puis rapport", async () => {
     const attendu = { impedance: ["si", "simGo"], diff: ["si", "simGo"], retour: ["si", "simGo"],
-                      crosstalk: ["si", "simXtGo"], oeil: ["si", "simOeilGo"], dc: ["pi", "simDCLancer"],
+                      crosstalk: ["si", "simXtGo"], oeil: ["si", "simOeilGo"], bus: ["si", "simBusCalculer"], dc: ["pi", "simDCLancer"],
                       pdn: ["pi", "simCalculerPDN"], s21: ["rf", "simRfGo"], verif: ["carte", "simCarteGo"] };
     for (const [analyse, [famille, lanceur]] of Object.entries(attendu)) {
       const p = page("pcb");
@@ -104,6 +106,10 @@ async function refuse(promesse, motif) {
     egal(vide.appels.filter(a => a[0] === "simGo"), [], "simGo pas appelé sans sélection");
     const dite = page("pcb", { simProblemes: () => null, SIM: { occupe: false, err: "Net GND : pas de plan de référence." } });
     await refuse(dite.declare.commandes.cao_calcul.executer({ analyse: "diff" }), /plan de référence/);
+    const busVide = page("pcb", { SIM_BUS: { result: null, erreur: "", donne: null } });
+    await refuse(busVide.declare.commandes.cao_calcul.executer({ analyse: "bus" }), /horloge et les données/);
+    const busDit = page("pcb", { SIM_BUS: { result: null, erreur: "Cet outil ne fournit pas de calcul physique de bus.", donne: null } });
+    await refuse(busDit.declare.commandes.cao_calcul.executer({ analyse: "bus" }), /calcul physique/);
     const sansRf = page("visionneuse-ipc", { simRfGo: undefined });
     await refuse(sansRf.declare.commandes.cao_calcul.executer({ analyse: "s21" }), /indisponible/);
   });
