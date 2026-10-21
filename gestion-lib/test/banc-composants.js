@@ -161,11 +161,11 @@ function pastille(res, n, x, y, w, h, libelle) {
     libelle + " pastille " + n + " = (" + x + ", " + y + ") " + w + " × " + h + " (obtenu " + JSON.stringify(q) + ")");
   return q;
 }
-/* 0603 : L 1,5-1,7, W 0,7-0,9, T 0,15-0,45 ; Z 2,429, G 0,852, X 0,929 */
+/* 0603 : L 1,5-1,7, W 0,7-0,9, T 0,15-0,45 ; talon 0 (IPC-7351B relayé par KiCad) : Z 2,429, G 0,752, X 0,929 */
 r = gen("chip", { code: "0603" });
-verifier(r.cotes.Z === 2.429 && r.cotes.G === 0.852 && r.cotes.X === 0.929, "0603 : Z, G, X calculés à la main");
-pastille(r, 1, -0.82, 0, 0.79, 0.93, "0603");
-pastille(r, 2, 0.82, 0, 0.79, 0.93, "0603");
+verifier(r.cotes.Z === 2.429 && r.cotes.G === 0.752 && r.cotes.X === 0.929, "0603 : Z, G, X calculés à la main");
+pastille(r, 1, -0.795, 0, 0.838, 0.929, "0603");
+pastille(r, 2, 0.795, 0, 0.838, 0.929, "0603");
 /* SOT-23-5 : L 2,6-3,0, T 0,3-0,6, W 0,3-0,5, pas 0,95 ; Z 3,715, G 0,898, X 0,589 */
 r = gen("sot", { variante: "SOT-23-5" });
 pastille(r, 1, -1.15, -0.95, 1.41, 0.59, "SOT-23-5");
@@ -238,6 +238,20 @@ compare(CL.genererEmpreinte("chip", { code: "0603" }), 1, 0.825, 0.8, 0.95, "060
 compare(CL.genererEmpreinte("chip", { code: "0603" }), 1, 0.75, 0.825, 0.93, "0603 ↔ LIB 0603");
 compare(CL.genererEmpreinte("sot", { variante: "SOT-23-5" }), 1, 1.1375, 1.325, 0.6, "SOT-23-5 ↔ KiCad SOT-23-5");
 compare(CL.genererEmpreinte("soic", { broches: 8 }), 1, 2.475, 1.95, 0.6, "SOIC-8 ↔ KiCad SOIC-8_3.9x4.9mm_P1.27mm");
+/* LES MÊMES COTES DE BOÎTIER QUE KICAD (kicad-footprint-generator, data/SMD_2terminal_chip_molded,
+   data/package/no_lead) : l'écart ne vient plus que de son arrondi au 0,05 (0,02 pour les < 0603) */
+function auCentieme(res, n, x, w, h, tol, libelle) {
+  const p = res.empreinte.pads.find(o => o.n === n);
+  verifier(proche(Math.abs(p.x), x, tol) && proche(p.w, w, tol) && proche(p.h, h, tol),
+    libelle + " à " + tol + " mm (" + p.x + ", " + p.w + " × " + p.h + ")");
+}
+auCentieme(CL.genererEmpreinte("chip", { code: "0603", longueur: [1.5, 1.7], largeur: [0.7, 0.95], terminaison: [0.15, 0.4] }),
+           2, 0.825, 0.8, 0.95, 0.025, "0603 ↔ KiCad R_0603_1608Metric, mêmes cotes");
+auCentieme(CL.genererEmpreinte("chip", { code: "0402", longueur: [1.0, 1.1], largeur: [0.48, 0.6], terminaison: [0.1, 0.3] }),
+           2, 0.51, 0.54, 0.64, 0.01, "0402 ↔ KiCad R_0402_1005Metric, mêmes cotes");
+auCentieme(CL.genererEmpreinte("chip", { code: "0201" }), 2, 0.32, 0.46, 0.40, 0.01, "0201 ↔ KiCad R_0201_0603Metric");
+auCentieme(CL.genererEmpreinte("qfn", { broches: 16, pas: 0.5, corps: [2.85, 3.15], pied: [0.3, 0.5], largeur: [0.18, 0.3], thermique: [0.8, 0.8] }),
+           1, 1.4375, 0.875, 0.25, 0.025, "QFN-16 ↔ KiCad Texas_RTE0016D_WQFN-16-1EP_3x3mm_P0.5mm, mêmes cotes");
 
 for (const [f, p, motif] of [
   ["soic", { broches: 8, pas: 0 }, /pas/], ["soic", { broches: 8, pas: -1 }, /pas/], ["soic", { broches: 7 }, /pair/],

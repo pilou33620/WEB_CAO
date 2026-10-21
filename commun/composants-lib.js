@@ -291,10 +291,13 @@ const COMPOSANTS_LIB = (() => {
   const F_FAB = 0.10, P_POSE = 0.05;
   /* Jt (pointe), Jh (talon), Js (côté), par densité : M (large), N (nominale), L (serrée) */
   const SOUDURE = {
+    /* puces : les valeurs IPC-7351B relayées par le générateur d'empreintes de KiCad
+       (kilibs/config/ipc_configs/ipc7351B_2terminal.yaml) ; la norme elle-même n'a pas été lue.
+       Le talon de −0,05 était celui de l'IPC-7351 A. */
     // tableau 3-5 : puces rectangulaires de 1608 (0603) et plus
-    puce:      { Jt: { M: 0.55, N: 0.35, L: 0.15 }, Jh: { M: -0.05, N: -0.05, L: -0.05 }, Js: { M: 0.05, N: 0, L: -0.05 } },
-    // tableau 3-6 : puces plus petites que 1608 (valeurs relevées, à confirmer sur la norme)
-    pucePetite:{ Jt: { M: 0.20, N: 0.10, L: 0.02 }, Jh: { M: -0.05, N: -0.05, L: -0.05 }, Js: { M: 0.05, N: 0, L: -0.05 } },
+    puce:      { Jt: { M: 0.55, N: 0.35, L: 0.15 }, Jh: { M: 0, N: 0, L: 0 }, Js: { M: 0.05, N: 0, L: -0.05 } },
+    // tableau 3-6 : puces plus petites que 1608
+    pucePetite:{ Jt: { M: 0.30, N: 0.20, L: 0.10 }, Jh: { M: 0, N: 0, L: 0 }, Js: { M: 0.05, N: 0, L: -0.05 } },
     // tableau 3-2 : pattes en aile de mouette, pas > 0,625 mm (SOIC, SOT, TSSOP 0,65)
     aile:      { Jt: { M: 0.55, N: 0.35, L: 0.15 }, Jh: { M: 0.45, N: 0.35, L: 0.25 }, Js: { M: 0.05, N: 0.03, L: 0.01 } },
     // même tableau, pas ≤ 0,625 mm
@@ -538,7 +541,7 @@ const COMPOSANTS_LIB = (() => {
     dip: [["broches", "Broches", "entier"], ["pas", "Pas", "nombre"], ["rangee", "Écart des rangées", "nombre"],
           ["diametre", "Ø de la patte", "nombre"], ["corps", "Corps largeur × longueur", "paire"]],
     barrette: [["rangees", "Rangées (1 ou 2)", "entier"], ["broches", "Broches", "entier"],
-               ["pas", "Pas", "nombre"], ["diametre", "Ø de la patte", "nombre"]]
+               ["pas", "Pas", "nombre"], ["diametre", "Ø de la patte (carrée : sa diagonale, 0,64 → 0,91)", "nombre"]]
   };
   /* Les textes saisis → les paramètres de genererEmpreinte. Un nombre s'écrit avec un point ou
      une virgule ; deux nombres se séparent par une espace, « / », « x », « × » ou « ; ». */

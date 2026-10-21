@@ -907,9 +907,9 @@ affichée à côté du verdict, parce que les normes sont payantes :
 
 | Fiabilité | Sens | Gabarits |
 | :--- | :--- | :--- |
-| recoupé | valeurs retrouvées dans une source publique (fiche de fabricant, note d'application, procédure de test, ou la spécification elle-même quand elle est publique) | USB 2.0 HS Template 1 et Template 2 (extrémité), USB 3.x Gen 1 (après CTLE), PCIe Gen 1, Gen 2 et Gen 3 (après CTLE et DFE de référence), SATA Gen 1 à 3, SGMII |
+| recoupé | valeurs retrouvées dans une source publique (fiche de fabricant, note d'application, procédure de test, ou la spécification elle-même quand elle est publique) | USB 2.0 HS Template 1 et Template 2 (extrémité), USB 3.x Gen 1 (après CTLE), PCIe Gen 1, Gen 2 et Gen 3 (après CTLE et DFE de référence), SATA Gen 1 à 3, SGMII, HDMI 1.4 (TP2, d'après ngscopeclient) |
 | à vérifier | valeurs de la norme non recoupées : aucune source publique ne les reproduit | — (plus aucun depuis `oeil` 2.3.0) |
-| dérivé | gabarit non officiel : seuils du récepteur (VIL/VIH, sensibilité) et sa fenêtre setup/hold, ou — norme diffusée sous accord — la forme usuelle de son masque | LVDS, MIPI D-PHY HS, SPI 3,3 V et 1,8 V, QSPI, SD High Speed, eMMC HS, HDMI 1.4 (TP2) |
+| dérivé | gabarit non officiel : seuils du récepteur (VIL/VIH, sensibilité) et sa fenêtre setup/hold | LVDS, MIPI D-PHY HS, SPI 3,3 V et 1,8 V, QSPI, SD High Speed, eMMC HS |
 
 **La vérification d'octobre 2026.** PCIe Gen 2 (120 mV, 0,60 UI à 10⁻¹²)
 et Gen 3 (25 mV, 0,3 UI derrière le CTLE à pôles 2 et 8 GHz, gain continu
@@ -922,15 +922,16 @@ est publique (usb.org), et ses six points (figure 7-15 : 0 mV à 12,5 et
 87,5 % UI, ±175 mV de 35 à 65 % UI, limites ±525 / ±475 mV) sont ceux du
 code — concordance établie de mémoire et avec les gabarits « far end » des
 logiciels de conformité, le document n'ayant pas été relu ici ; la fiche le
-dit. Le Template 1 n'a pas été retouché (ses points 2 et 3 sont à 37,5 et
-62,5 % UI dans le code ; une lecture de la figure 7-14 pourrait les placer à
-32,5 et 67,5 %, à vérifier dans le document). **HDMI 1.4** passe « dérivé » :
-sa spécification et sa procédure de conformité ne sont diffusées qu'aux
-adoptants, les points de TP2 ne seront dans aucune source publique ; le
-gabarit garde la forme usuelle d'un masque de puits TMDS (0,6 UI, plateau
-0,2 UI) et la sensibilité minimale d'un récepteur TMDS (150 mV), et ne vaut
-pas un verdict de conformité. Les seules valeurs publiques (source HDMI 2.0
-au bout du câble de référence) sont une autre exigence, qu'on ne recopie pas.
+dit. Le Template 1 garde ses points 2 et 3 à 37,5 et 62,5 % UI (±300 mV) :
+deux sources indépendantes les donnent ainsi (Microchip DS00002142A,
+tableau 6-6 ; Analog Devices, « Improving USB 2.0 Switched-System
+Response », 0,375 UI et 300 mV) — le 32,5 / 67,5 % qu'on avait supposé ne se
+confirme pas. **HDMI 1.4 (TP2)** passe de « dérivé » à « recoupé » le
+21/10/2026 : sa spécification n'est diffusée qu'aux adoptants, mais le
+logiciel ouvert ngscopeclient publie le masque du puits d'après la figure
+4-32 (0 mV à ±0,35 UI, ±75 mV de −0,25 à +0,25 UI, limites ±780 mV), repris
+tel quel ; source secondaire, la norme n'a pas été lue. Le gabarit dérivé
+d'avant (0,6 UI, plateau 0,2 UI, 150 mV) avait la même hauteur.
 Les gabarits PCIe et SATA portent aussi
 leur taux d'erreur (10⁻¹²) : c'est sur ce contour de l'œil statistique qu'ils
 se jugent quand la gigue est saisie. Les gabarits dérivés citent maintenant le

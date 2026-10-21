@@ -404,7 +404,7 @@ def les_gabarits_verifies_disent_leur_source():
     losange ; PCIe 2 et 3 sont recoupes et se jugent a 10^-12 ; USB 2.0
     extremite (Template 2) est recoupe sur la specification publique
     (2.3.0) ; HDMI 1.4, dont la norme n'est diffusee que sous accord, est
-    DERIVE et le dit. Plus aucun gabarit n'est « a verifier »."""
+    recoupe sur le masque publie par ngscopeclient (figure 4-32). Plus aucun gabarit n'est « a verifier »."""
     for gid, larg, h in (("sata-gen1", 0.49, 0.325), ("sata-gen2", 0.43, 0.275),
                          ("sata-gen3", 0.43, 0.240)):
         g = oeil.gabarit(gid)
@@ -426,7 +426,8 @@ def les_gabarits_verifies_disent_leur_source():
                                      [0.15, 0.175], [0.375, 0.0],
                                      [0.15, -0.175], [-0.15, -0.175]]
     g = oeil.gabarit("hdmi14-tmds")
-    assert g["fiabilite"] == "derive" and "DÉRIVÉ" in g["source"], g["source"]
+    assert g["fiabilite"] == "corrobore" and "ngscopeclient" in g["source"], g["source"]
+    assert g["masque"]["points"][0] == [-0.35, 0.0] and g["v_max"] == 0.780
     assert not [x["id"] for x in oeil.GABARITS if x["fiabilite"] == "a_verifier"]
 
 
@@ -1929,8 +1930,14 @@ def un_boitier_par_sections_est_une_ligne():
     assert "section" in bt["source"] and bt["sections"]
     b2 = ibis.boitier_broche(lu, "A2")
     proche(b2["c"], 1.2e-12, 1e-12, "C totale, derivation comprise")
-    # la limite localisee
+    # l'ordre du fichier va du die (fil de cablage) a la broche : vue de la
+    # broche, la capacite de la broche vient d'abord (A = 1), puis L
     f = np.array([5e9])
+    m = ibis.abcd_sections(f, [{"len": 0.0, "r": 0.0, "l": 1e-9, "c": 0.0, "g": 0.0},
+                               {"len": 0.0, "r": 0.0, "l": 0.0, "c": 1e-12, "g": 0.0}])[0]
+    z, y = 1j * 2 * math.pi * 5e9 * 1e-9, 1j * 2 * math.pi * 5e9 * 1e-12
+    assert abs(m[0, 0] - 1) < 1e-12 and abs(m[1, 1] - (1 + y * z)) < 1e-12, m
+    # la limite localisee
     ecarts = []
     for lg in (1.0, 0.1, 0.01):
         sec = [{"len": lg, "r": 0.0, "l": 0.25e-9, "c": 0.1e-12, "g": 0.0}]

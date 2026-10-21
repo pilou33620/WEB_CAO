@@ -79,7 +79,7 @@ try:
 except Exception:                                      # noqa: BLE001
     np = None
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 COINS = {"typ": 0, "min": 1, "max": 2}
 SUFFIXES = {"T": 1e12, "G": 1e9, "M": 1e6, "k": 1e3, "m": 1e-3, "u": 1e-6,
             "n": 1e-9, "p": 1e-12, "f": 1e-15}
@@ -478,8 +478,10 @@ def _ligne_sections(etat, ligne):
     """Une ligne de [Pin Numbers] : une broche, et ses sections s'il y en a
     (1.2.0) -- « A1 Len=0 L=1.2n / », puis « Len=1.2 L=2.3n C=4.3p / » sur
     les lignes suivantes, « Fork » ... « Endfork » pour une derivation.
-    Les sections se rangent dans `sections_broche[broche]`, de la broche
-    vers le die, chacune {len, r, l, c, g} -- ou {fourche: [...]}."""
+    Les sections se rangent dans `sections_broche[broche]` dans l'ordre du
+    fichier, DU DIE VERS LA BROCHE (le fil de cablage d'abord, comme
+    l'exemple de la norme), chacune {len, r, l, c, g} -- ou {fourche: [...]},
+    une derivation lue depuis son point de depart."""
     mb = etat["mb"]
     jetons = ligne.replace("=", " = ").replace("/", " / ").split()
     if not jetons:
@@ -546,8 +548,20 @@ def _sinhc(x):
 
 
 def abcd_sections(freqs, sections):
-    """La matrice ABCD (N, 2, 2) d'une suite de sections, DE LA BROCHE VERS
-    LE DIE (l'ordre de la norme).
+    """La matrice ABCD (N, 2, 2) d'une suite de sections donnee dans l'ordre
+    du fichier (du die vers la broche, 1.5.0 -- avant, lue a l'envers),
+    rendue DE LA BROCHE VERS LE DIE.
+
+    Ordre de la norme d'apres sources secondaires : l'exemple de [Pin
+    Numbers] repris au sommet IBIS de novembre 2014 (KEI Systems, fil de
+    cablage en premier) et la presentation ICM d'Intel (le modele part du
+    die) ; le texte de la norme n'a pas ete relu."""
+    return _cascade(freqs, list(sections)[::-1])
+
+
+def _cascade(freqs, sections):
+    """La cascade des sections dans l'ordre donne, du premier acces au
+    second.
 
     · Len > 0 : une LIGNE, R, L, G, C par unite de longueur ; avec
       zl = (R + jwL) Len et yl = (G + jwC) Len, theta = racine(zl yl) :
@@ -565,7 +579,7 @@ def abcd_sections(freqs, sections):
     for s in sections:
         e = np.zeros((n, 2, 2), dtype=complex)
         if "fourche" in s:
-            mb = abcd_sections(freqs, s["fourche"])
+            mb = _cascade(freqs, s["fourche"])      # du depart de la branche a son bout ouvert
             a = np.where(np.abs(mb[:, 0, 0]) > 1e-300, mb[:, 0, 0], 1e-300)
             e[:, 0, 0] = e[:, 1, 1] = 1.0
             e[:, 1, 0] = mb[:, 1, 0] / a
@@ -964,7 +978,7 @@ def abcd_boitier(freqs, bt, sens):
     `sens` « emission » : du die vers la broche -- R et L en serie, puis
     C_pkg ; « reception » : de la broche vers le die -- C_pkg, puis R et L.
     Un boitier PAR SECTIONS (1.2.0) est leur cascade (`abcd_sections`), de
-    la broche vers le die ; vue du die, la meme retournee -- un reseau
+    la broche vers le die (fichier lu du die vers la broche) ; vue du die, la meme retournee -- un reseau
     reciproque se retourne en echangeant A et D."""
     if boitier_nul(bt):
         return None

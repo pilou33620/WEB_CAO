@@ -244,9 +244,7 @@ FIABILITES = {
                    "s'applique avant de conclure."),
     "derive": ("Gabarit non officiel : construit à partir des seuils du "
                "récepteur (VIL/VIH, sensibilité) et de sa fenêtre "
-               "setup/hold — ou, pour une norme diffusée sous accord (HDMI), "
-               "de la forme usuelle de son masque. Pas un verdict de "
-               "conformité."),
+               "setup/hold. Pas un verdict de conformité."),
 }
 
 
@@ -270,7 +268,10 @@ GABARITS = [
              "connecteur, la charge est celle de l'appareil d'essai.",
      "fiabilite": "corrobore",
      "source": "USB 2.0 §7.1.2.2, Template 1 ; points recoupés dans la fiche "
-               "Microchip DS00002142A (tableau « Hi-Speed eye pattern »).",
+               "Microchip DS00002142A (tableau 6-6 « Hi-Speed eye pattern » : "
+               "0 V à 7,5 et 92,5 % UI, ±300 mV de 37,5 à 62,5 % UI) et chez "
+               "Analog Devices (« Improving USB 2.0 Switched-System "
+               "Response » : 0,375 UI, 300 mV).",
      "note": "Les limites ±525 mV ne valent que dans l'UI qui suit une "
              "transition ; ±475 mV ailleurs. Le contrôle ci-dessous applique "
              "525 mV partout, donc il est un peu indulgent.",
@@ -413,34 +414,32 @@ GABARITS = [
      "nom": "HDMI 1.4 TMDS — récepteur (TP2)",
      "debit": 3.4e9, "mode": "diff",
      "lieu": "Au connecteur du récepteur (TP2).",
-     "fiabilite": "derive",
-     # DERIVE, ET DIT (2026-10). La specification HDMI 1.4 et sa procedure
-     # de conformite (CTS) ne sont diffusees qu'aux adoptants, sous accord :
-     # les points du masque du puits a TP2 (§4.2.6, figure 4-32) ne sont
-     # dans aucune source publique, et ne le seront pas. Ce que l'on trouve
-     # (ST AN5121, TI TMDS181) est le masque de la SOURCE au bout du cable
-     # de reference (TP2_EQ) de HDMI 2.0 : 0,6 UI et 335 mV a 3,4 Gb/s,
-     # 0,4 UI et 150 mV a 6 Gb/s -- une autre exigence, qu'on ne recopie
-     # pas. Le gabarit ci-dessous est donc DERIVE : la forme usuelle d'un
-     # masque de puits TMDS (hexagone 0,6 UI, plateau 0,2 UI) et la
-     # sensibilite differentielle minimale d'un recepteur TMDS (150 mV),
-     # comme les gabarits LVDS ou D-PHY le sont de leur recepteur. Il ne
-     # vaut pas un verdict de conformite HDMI.
-     "source": "Gabarit DÉRIVÉ : la spécification HDMI 1.4 (§4.2.6, figure "
-               "4-32, masque du puits à TP2) et sa procédure de conformité "
-               "ne sont diffusées qu'aux adoptants ; aucune valeur "
-               "publique. Forme usuelle d'un masque de puits TMDS "
-               "(0,6 UI, plateau 0,2 UI) et sensibilité différentielle "
-               "minimale d'un récepteur TMDS (150 mV). Les seules valeurs "
-               "publiques (ST AN5121, TI TMDS181 : 0,6 UI / 335 mV à "
-               "3,4 Gb/s, 0,4 UI / 150 mV à 6 Gb/s) sont celles de la "
-               "SOURCE au bout du câble de référence en HDMI 2.0 — une "
-               "autre exigence, non reprise.",
-     "note": "L'émetteur TMDS est une source de courant (10 mA) sans "
-             "terminaison de départ : les réflexions qui reviennent ne sont "
-             "pas absorbées côté émetteur.",
-     "masque": {"type": "hexagone", "largeur_ui": 0.60, "plat_ui": 0.20,
-                "hauteur_v": 0.150},
+     "fiabilite": "corrobore",
+     # RECOUPE EN 2026-10 PAR UNE SOURCE SECONDAIRE. La specification HDMI 1.4
+     # et sa procedure de conformite (CTS) ne sont diffusees qu'aux
+     # adoptants, sous accord : le masque du puits a TP2 (§4.2.6, figure
+     # 4-32) n'a pas ete lu. Le logiciel ouvert ngscopeclient (scopehal-apps,
+     # src/ngscopeclient/masks/hdmi-1.4-sink-tp2.yml, « HDMI v1.4b figure
+     # 4-32 ») le publie : hexagone 0 V a ±0,35 UI, ±75 mV de -0,25 a
+     # +0,25 UI, zones interdites au-dela de ±780 mV. Ce sont les points
+     # ci-dessous. Avant, un gabarit derive (0,6 UI, plateau 0,2 UI, 150 mV,
+     # sensibilite d'un recepteur TMDS) : la hauteur etait la meme. Ce
+     # qu'on trouve chez ST (AN5121) et TI (TMDS181) -- 0,6 UI / 335 mV a
+     # 3,4 Gb/s -- est le masque de la SOURCE au bout du cable de reference
+     # de HDMI 2.0, une autre exigence.
+     "source": "HDMI 1.4b §4.2.6, figure 4-32 (masque du puits à TP2), "
+               "d'après le masque publié par le logiciel ouvert ngscopeclient "
+               "(hdmi-1.4-sink-tp2.yml) : 0 mV à ±0,35 UI, ±75 mV de −0,25 à "
+               "+0,25 UI, limites ±780 mV. La norme, diffusée sous accord, "
+               "n'a pas été lue.",
+     "note": "Source secondaire : relisez la figure 4-32 pour un verdict de "
+             "conformité HDMI. L'émetteur TMDS est une source de courant "
+             "(10 mA) sans terminaison de départ : les réflexions qui "
+             "reviennent ne sont pas absorbées côté émetteur.",
+     "masque": {"type": "polygone",
+                "points": [[-0.35, 0.0], [-0.25, 0.075], [0.25, 0.075],
+                           [0.35, 0.0], [0.25, -0.075], [-0.25, -0.075]]},
+     "v_max": 0.780, "v_min": -0.780,
      "emetteur": {"v_haut": 5.5, "v_bas": -5.5, "r_source": 1000.0,
                   "tr": 100e-12},
      "recepteur": {"r_charge": 100.0, "c_charge": 1e-12}},

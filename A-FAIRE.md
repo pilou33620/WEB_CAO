@@ -96,9 +96,7 @@ Ce que les modules du MCP ont laissé ouvert côté WEB_CAO (détail dans
   encore en rechargeant ou en ouvrant la galerie des 269 empreintes ; l'onglet a été tué par le
   noyau (OOM) pendant un essai. Mesurer ce qui coûte (table du catalogue, vignettes), puis alléger.
 - [x] **Générateur IPC-7351B dans Gestion LIB** (21/10/2026) : l'onglet « Générateurs » de l'éditeur d'empreintes appelle le même calcul que `lib_empreinte_generer` (famille, densité, cotes min / max de la datasheet ; `COMPOSANTS_LIB.CHAMPS` et `lireParametres`), et pose l'empreinte dans l'éditeur sans rien écrire. Il remplace les trois générateurs à la main (DIP, SOIC, barrette), qui ne suivaient pas la norme. L'enregistrement demande avant de remplacer un fichier de même nom déjà dans la LIB.
-- [ ] **Générateurs IPC-7351B** (`commun/composants-lib.js`) : les constantes des puces plus petites
-  que 0603 (tableau 3-6) sont « à confirmer sur la norme » ; QFN, DIP et barrette n'ont pas de
-  comparaison à une référence externe (seuls 0603, SOT-23-5 et SOIC-8 sont comparés à KiCad).
+- [x] **Générateurs IPC-7351B** (21/10/2026) : constantes des puces alignées sur celles que relaie le générateur d'empreintes de KiCad (< 0603 : pointe 0,30 / 0,20 / 0,10, talon 0 ; ≥ 0603 : talon 0 au lieu du −0,05 de l'IPC-7351 A). Avec les mêmes cotes de boîtier, 0201, 0402, 0603 et un QFN-16 3×3 retombent sur les empreintes KiCad à 0,01–0,025 mm (son arrondi au 0,05) : essais dans `banc-composants.js`. Ailes de mouette et QFN avaient déjà ses constantes. DIP et barrette (traversants, simplifiés) : DIP-8 trou 0,8 / pastille 1,5 (KiCad 0,8 / 1,6) ; barrette trou 1,15 / 1,85 (KiCad 1,0 / 1,7), plus large parce qu'il couvre la diagonale de la patte carrée — le champ le dit désormais (0,64 → 0,91).
 - [ ] **LIB : SOIC-8 et SOT-23-5** ne suivent pas l'IPC-7351B (pastilles décalées de 0,15 à
   0,23 mm) : à régénérer, ou à garder en connaissance de cause.
 - [ ] **Essais réels restants** : `cao_paire` et `cao_placement_auto` dans la vraie page après la
@@ -201,11 +199,12 @@ bancs automatiques en CI sont listés dans l'*État des lieux*.
 - [ ] 12 relevés uSimmics manquants dans `python/test/usimmics-releves.csv`.
 
 ### Normes et documents à relire
-- [ ] **USB 2.0 Template 1** : points 2 et 3 à 37,5 / 62,5 % UI dans le code, la figure 7-14 (spécification publique) pourrait les placer à 32,5 / 67,5 % ; valeurs non changées faute de certitude.
-- [ ] **USB 2.0 Template 2** : concordance avec la figure 7-15 établie de mémoire, à relire dans le document.
-- [ ] **HDMI 1.4 TP2** : reste « dérivé » (norme et CTS sous accord).
-- [ ] **Sections IBIS** : ordre broche → die des sections (`Len=`, `Fork`) à confirmer dans le texte de la norme.
-- [ ] **Rugosité de Huray** : jeux de paramètres à confronter à des fiches de feuillard.
+Relu le 21/10/2026 sur sources secondaires (décision : le réseau de l'environnement n'atteint ni usb.org, ni ibis.org, ni les sites des fabricants ; recherche web, dépôts publics GitHub / GitLab).
+- [x] **USB 2.0 Template 1** : 37,5 / 62,5 % UI et ±300 mV confirmés par deux sources indépendantes (Microchip DS00002142A, tableau 6-6 ; Analog Devices, « Improving USB 2.0 Switched-System Response ») ; le 32,5 / 67,5 % ne se confirme pas. Code inchangé, source complétée (`oeil.py`).
+- [ ] **USB 2.0 Template 2** : ±175 mV retrouvé (brevet sur la réception USB 2.0), mais les positions 12,5 / 35 / 65 / 87,5 % UI ne le sont toujours pas — à relire dans la figure 7-15 dès que usb.org est joignable.
+- [x] **HDMI 1.4 TP2** : masque repris de ngscopeclient (`hdmi-1.4-sink-tp2.yml`, « HDMI v1.4b figure 4-32 ») : 0 mV à ±0,35 UI, ±75 mV de −0,25 à +0,25 UI, limites ±780 mV ; « recoupé », source secondaire (`oeil.py`, `banc-oeil.py`, `docs/simulation-em.md`).
+- [x] **Sections IBIS** : lues du die vers la broche (fil de câblage d'abord), comme l'exemple de la norme repris au sommet IBIS 2014 (KEI Systems) et la présentation ICM d'Intel ; le code les cascadait à l'envers (`ibis` 1.5.0, essai dans `banc-oeil.py`). Le texte normatif n'a pas été lu.
+- [ ] **Rugosité de Huray** : aucune fiche de feuillard ne donne a et SR (elles donnent Rz / Ra) ; la méthode « cannonball » de Simonovich les déduit de Rz, mais son texte n'est pas joignable ici. Jeux inchangés (STD a 0,5 µm SR 1,5 ; HVLP a 0,3 µm SR 0,6).
 
 ### Fichiers réels à faire passer
 - [ ] **Contre-perçage** : valider la lecture sur de vrais exports Altium / Allegro.
