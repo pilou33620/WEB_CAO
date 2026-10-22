@@ -14,6 +14,9 @@
      lib_simulation_lier     carte : modèle .sNp ou SPICE rangé dans lib_simulation
                              (si_absent) puis ajouté à la case « Modèle Simulation »
                              d'une référence ; toujours au clic
+     lib_composant_modifier  carte : cases d'une référence existante remplacées
+                             (ligne relue, refus si elle a changé), empreinte neuve
+                             éventuelle sous un nom neuf ; toujours au clic
 
    Le code métier est dans commun/composants-lib.js ; les quatre premières
    commandes ne font que calculer.
@@ -263,7 +266,121 @@ function libPiloteCommandes() {
     }
   };
 
+  /* ---------- lib_composant_modifier : corriger une référence du catalogue ----------
+     Les champs donnés remplacent ceux de la ligne, les autres restent ; la Part Name ne change
+     pas (elle désigne la ligne). Ce qui était lu part avec la demande : le serveur refuse si la
+     ligne a changé entre la carte et le clic. Une empreinte donnée est créée sous un nom neuf
+     (si_absent), jamais par-dessus l'ancienne. Seules les fautes NOUVELLES refusent : celles
+     que la ligne avait déjà sont montrées en remarque. */
+  async function preparerModif(args) {
+    const ref = String(args.reference || "").trim();
+    const champs = objet(args.champs || {}, "champs");
+    const neuve = args.empreinte == null ? null : objet(args.empreinte, "empreinte");
+    const [cat, fichiers] = await Promise.all([apiGet("/api/lib/composants"), apiGet("/api/lib/fichiers")]);
+    const cle = n => String(n || "").trim().toUpperCase();
+    const vues = (cat.composants || []).filter(c => cle(c["Part Name"]) === cle(ref));
+    if (!vues.length) throw new Error("« " + ref + " » n'est pas au catalogue de la LIB");
+    if (vues.length > 1) throw new Error("« " + ref + " » est " + vues.length + " fois au catalogue : à corriger dans Gestion LIB");
+    const comp = vues[0], erreurs = [], remarques = [];
+    if (Object.keys(champs).some(k => cle(k) === "PART NAME"))
+      erreurs.push("« Part Name » ne se modifie pas : elle désigne la ligne (crée une nouvelle référence)");
+    const voulu = Object.assign({}, champs);
+    const empreintes = (fichiers.pcb || []).map(nomEmpreinte);
+    if (neuve) {
+      const v = CL.verifierEmpreinte(neuve, typeof neuve.name === "string" ? neuve.name + ".json" : null);
+      erreurs.push(...v.erreurs.map(e => "empreinte : " + e));
+      remarques.push(...v.remarques.map(e => "empreinte : " + e));
+      if (empreintes.some(n => n.toLowerCase() === String(neuve.name).toLowerCase()))
+        erreurs.push("l'empreinte « " + neuve.name + " » est déjà dans la LIB (jamais d'écrasement) : donne-lui un nom neuf");
+      if (voulu["Empreinte PCB"] == null) voulu["Empreinte PCB"] = neuve.name;
+      else if (nomEmpreinte(voulu["Empreinte PCB"]) !== neuve.name)
+        erreurs.push("« Empreinte PCB » doit désigner l'empreinte créée (" + neuve.name + ")");
+    }
+    // la ligne vue par le contrôle : les colonnes qu'il connaît, avant et après la modification
+    const colonnes = COLONNES_CATALOGUE_39.concat("Brochage");
+    const ancienne = {};
+    for (const c of colonnes) if (comp[c] != null && comp[c] !== "") ancienne[c] = comp[c];
+    const autres = (cat.composants || []).filter(c => c !== comp).map(c => c["Part Name"] || "");
+    const defDe = async v => { const n = nomEmpreinte(v || ""); return empreintes.includes(n) ? await obtenirFichierLib("pcb", n + ".json") : null; };
+    const fusion = Object.assign({}, ancienne, voulu);
+    const vAvant = CL.verifierLigne(ancienne, { partNames: autres, empreintes, empreinteDef: await defDe(ancienne["Empreinte PCB"]) });
+    const vApres = CL.verifierLigne(fusion, { partNames: autres, empreintes, nouvelle: neuve,
+                                             empreinteDef: neuve ? null : await defDe(fusion["Empreinte PCB"]) });
+    for (const e of vApres.erreurs) (vAvant.erreurs.includes(e) ? remarques : erreurs).push(vAvant.erreurs.includes(e) ? "déjà avant : " + e : e);
+    remarques.push(...vApres.remarques.filter(r => !vAvant.remarques.includes(r)));
+    // les cases qui changent vraiment, écrites comme le contrôle les rend (chemins lib/…, espaces ôtés)
+    const changements = {};
+    for (const k of Object.keys(voulu)) {
+      const apres = vApres.ligne && k in vApres.ligne ? vApres.ligne[k] : String(voulu[k]).trim();
+      if (apres !== String(comp[k] == null ? "" : comp[k]).trim()) changements[k] = apres;
+    }
+    if (!Object.keys(changements).length && !erreurs.length) erreurs.push("rien ne change : les valeurs données sont déjà celles de la ligne");
+    return { erreurs, remarques, comp, changements, neuve,
+             apercu: neuve || (changements["Empreinte PCB"] ? await defDe(changements["Empreinte PCB"]) : null) };
+  }
+
+  const modifier = {
+    ecriture: true,
+    clic: true,       // la LIB est partagée par tous les projets : jamais sans le clic, même interrupteur allumé
+    irreversible: "Écrit dans la LIB partagée (pas d'annulation par la carte) : l'ancienne valeur de chaque case " +
+                  "est sur la carte, pour la remettre dans Gestion LIB.",
+    async proposer(args) {
+      const p = await preparerModif(args);
+      if (p.erreurs.length) throw new Error("Modification refusée : " + p.erreurs.join(" ; "));
+      if (p.apercu) montrer(p.apercu, nomEmpreinte(p.changements["Empreinte PCB"]));
+      const cases = Object.entries(p.changements);
+      return {
+        titre: "Modifier « " + p.comp["Part Name"] + " » dans la LIB",
+        avant: cases.map(([k]) => k + " = " + (String(p.comp[k] == null ? "" : p.comp[k]).trim() || "(vide)")).join(" · "),
+        apres: cases.map(([k, v]) => k + " = " + (v || "(vide)")).join(" · ") +
+               (p.neuve ? " ; empreinte neuve " + p.neuve.name + " (" + p.neuve.pads.length + " pastilles)" : ""),
+        details: p.remarques.length ? "Remarques : " + p.remarques.join(" ; ") : ""
+      };
+    },
+    async appliquer(args) {
+      const p = await preparerModif(args);
+      if (p.erreurs.length) throw new Error("Refusé au clic (la LIB a changé depuis la carte ?) : " + p.erreurs.join(" ; "));
+      let fichier = null;
+      if (p.neuve) {
+        fichier = p.neuve.name + ".json";
+        try { await sauvegarderFichierLib("pcb", fichier, p.neuve, { si_absent: true }); }
+        catch (e) { throw new Error("Empreinte non écrite : " + e.message); }
+      }
+      const avant = {};
+      for (const k of Object.keys(p.changements)) avant[k] = p.comp[k] == null ? "" : String(p.comp[k]);
+      let rep;
+      try {
+        rep = await apiPost("/api/lib/composants", { modifier: { part: p.comp["Part Name"], champs: p.changements, avant } });
+      } catch (e) {
+        // même règle que la création : on ne retire que l'empreinte écrite par cette carte, sur un vrai refus
+        let retiree = "";
+        if (fichier && !(e.status >= 400 && e.status < 500))
+          retiree = " ; réponse incertaine : empreinte " + fichier + " gardée, vérifie la ligne avant de réessayer";
+        else if (fichier) {
+          try { await retirer(fichier); retiree = " ; empreinte " + fichier + " retirée"; }
+          catch (e2) { retiree = " ; empreinte " + fichier + " NON retirée (" + e2.message + ") : à retirer à la main"; }
+        }
+        throw new Error("Modification refusée par le serveur : " + e.message + retiree);
+      }
+      // le miroir de la page suit : sinon un « Enregistrer » du catalogue remettrait les anciennes valeurs
+      try {
+        const nomRef = String(p.comp["Part Name"]).trim().toUpperCase();
+        const ligne = LIB_STATE.composants.find(c => String(c["Part Name"] || "").trim().toUpperCase() === nomRef);
+        if (ligne) Object.assign(ligne, rep.champs);
+        if (fichier && Array.isArray(LIB_STATE.fichiers.pcb) && !LIB_STATE.fichiers.pcb.includes(fichier))
+          LIB_STATE.fichiers.pcb.push(fichier);
+        libSuiteNoter("catalogue");
+        if (typeof sessDiffuserLibModif === "function") sessDiffuserLibModif({ genre: "catalogue", action: "sauvegarde" });
+        if (typeof rafraichirTout === "function") rafraichirTout();
+        oublier();
+      } catch (e) { console.warn(e); }
+      return { reference: p.comp["Part Name"], champs: rep.champs, empreinte: fichier ? "lib_empreinte_pcb/" + fichier : null };
+    },
+    refuser: () => oublier()
+  };
+
   return {
+    lib_composant_modifier: modifier,
     lib_simulation_lier: lierSim,
     lib_empreinte_generer: { executer: async a => CL.genererEmpreinte(a.famille, objet(a.parametres || {}, "parametres")) },
     lib_empreinte_verifier: { executer: async a => {

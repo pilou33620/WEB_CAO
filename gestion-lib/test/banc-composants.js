@@ -549,6 +549,55 @@ const asyncTests = (async () => {
   SIM.refusLier = null;
   verifier(mS && /r\.sub retiré/.test(mS) && JSON.stringify(SIM.ecrits.map(e => e[0])) === JSON.stringify(["fichier", "retrait"]) &&
            /type=simulation&nom=r\.sub/.test(SIM.ecrits[1][1]), "liaison refusée : le fichier écrit par la carte est retiré (" + mS + ")");
+
+  /* lib_composant_modifier : la ligne relue, les seules cases changées envoyées avec ce qui était lu */
+  const MOD = { cat: [Object.assign({}, LDO, { "Empreinte PCB": "lib/empreinte/SOT-23-5.json",
+                                               "Empreinte Schématique": "lib/symbole/regulator.json",
+                                               "Description": "=ancienne formule" }),
+                      { "Part Name": "R1", "Number Of pins": "2" }],
+                pcb: ["SOT-23-5.json"], ecrits: [] };
+  Object.assign(bac, {
+    apiGet: async url => url === "/api/lib/composants" ? { composants: MOD.cat.map(c => Object.assign({}, c)) }
+                       : { pcb: MOD.pcb.slice() },
+    apiPost: async (url, corps) => {
+      MOD.ecrits.push(["modifier", corps.modifier]);
+      const c = MOD.cat.find(x => x["Part Name"] === corps.modifier.part);
+      Object.assign(c, corps.modifier.champs);
+      return { ok: true, part: c["Part Name"], champs: corps.modifier.champs };
+    },
+    sauvegarderFichierLib: async (type, nom, data, opt) => { MOD.ecrits.push(["empreinte", nom, opt.si_absent]); MOD.pcb.push(nom); }
+  });
+  bac.LIB_STATE.composants = [{ _id: 0, "Part Name": "LDO_ESSAI_3V3", "Value": "3V3" }];
+  const M = CMD.lib_composant_modifier;
+  verifier(M.ecriture && M.clic && typeof M.irreversible === "string", "lib_composant_modifier : toujours au clic, irréversible");
+  const argsM = { reference: "ldo_essai_3v3", champs: { "Value": "3V3 500 mA", "Brochage": "IN=1,GND=2,OUT=4,NC=3/5" } };
+  const pM = await M.proposer(argsM);
+  verifier(!MOD.ecrits.length && /Value = 3V3 ·/.test(pM.avant) && /Value = 3V3 500 mA/.test(pM.apres) &&
+           /déjà avant : .*formule/.test(pM.details),
+    "proposer n'écrit rien ; avant / après par case ; une faute déjà là reste une remarque (" + pM.details + ")");
+  await M.appliquer(argsM, pM);
+  verifier(MOD.ecrits.length === 1 && JSON.stringify(MOD.ecrits[0][1].avant) === JSON.stringify({ "Value": "3V3", "Brochage": LDO["Brochage"] }) &&
+           Object.keys(MOD.ecrits[0][1].champs).join() === "Value,Brochage" && bac.LIB_STATE.composants[0]["Value"] === "3V3 500 mA",
+    "au clic : les seules cases changées, avec ce qui était lu ; le miroir de la page suit");
+  const refusMod = async (a, motif, quoi) => {
+    MOD.ecrits.length = 0;
+    let m = null;
+    try { await M.proposer(a); } catch (e) { m = e.message; }
+    verifier(m && motif.test(m) && !MOD.ecrits.length, "lib_composant_modifier refusé : " + quoi + " (" + m + ")");
+  };
+  await refusMod(argsM, /rien ne change/, "valeurs déjà en place");
+  await refusMod({ reference: "LDO_ESSAI_3V3", champs: { "Part Name": "X" } }, /ne se modifie pas/, "renommer");
+  await refusMod({ reference: "LDO_ESSAI_3V3", champs: { "Empreinte PCB": "ABSENTE" } }, /absente de la LIB/, "empreinte absente");
+  await refusMod({ reference: "LDO_ESSAI_3V3", champs: { "Value": "=1+1" } }, /formule/, "nouvelle formule de tableur");
+  await refusMod({ reference: "INCONNU", champs: { "Value": "1" } }, /pas au catalogue/, "référence inconnue");
+  // une empreinte neuve : créée sous son nom (si_absent), la ligne la désigne
+  MOD.ecrits.length = 0;
+  const argsE = { reference: "LDO_ESSAI_3V3", empreinte: Object.assign(copie(SOT235), { name: "SOT-23-5-NEUVE" }) };
+  const pE = await M.proposer(argsE);
+  await M.appliquer(argsE, pE);
+  verifier(JSON.stringify(MOD.ecrits.map(e => e.slice(0, 2))) === JSON.stringify([["empreinte", "SOT-23-5-NEUVE.json"], ["modifier", MOD.ecrits[1] && MOD.ecrits[1][1]]]) &&
+           MOD.ecrits[0][2] === true && MOD.ecrits[1][1].champs["Empreinte PCB"] === "lib/empreinte/SOT-23-5-NEUVE.json",
+    "empreinte neuve : écrite si_absent, puis la ligne la désigne");
   Object.assign(bac, sauve);
 })();
 

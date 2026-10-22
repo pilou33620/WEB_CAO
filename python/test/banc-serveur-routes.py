@@ -861,6 +861,39 @@ def test_routes():
             web_CAO.DOSSIER_LIB_ACTIF = actif
         print("[PASS] LIB : lier un modele de simulation reecrit une seule case (octets des autres lignes gardes)")
 
+        # 44. Modifier une reference existante (MCP lib_composant_modifier) : seules les cases donnees
+        # changent, la ligne lue a change = 409, les autres lignes restent octet pour octet.
+        brut = ("Part Name;Value;Description;Brochage\r\nR1;1k;\"sur\r\ndeux lignes\";\r\n"
+                "U1;;ldo;IN=1,GND=2\r\nC1;;\"a;b\";\r\n").encode("latin1")
+        with open(csv_, "wb") as f:
+            f.write(brut)
+        web_CAO.definir_dossier_lib(lib, initialiser=False, persister=False)
+
+        def modifier(demande):
+            conn.request("POST", "/api/lib/composants", headers={"Content-Type": "application/json"},
+                         body=json.dumps({"modifier": demande}).encode("utf-8"))
+            r = conn.getresponse()
+            return r.status, json.loads(r.read().decode("utf-8"))
+        try:
+            code, rep = modifier({"part": "u1", "champs": {"Brochage": "IN=1,GND=2,OUT=3", "Value": " 3.3V "},
+                                  "avant": {"Brochage": "IN=1,GND=2", "Value": ""}})
+            assert code == 200 and rep["champs"] == {"Brochage": "IN=1,GND=2,OUT=3", "Value": "3.3V"}, rep
+            apres = open(csv_, "rb").read()
+            assert apres == brut.replace(b"U1;;ldo;IN=1,GND=2\r\n", b"U1;3.3V;ldo;IN=1,GND=2,OUT=3\r\n"), apres
+            for demande, attendu in (
+                    ({"part": "U1", "champs": {"Value": "5V"}, "avant": {"Value": ""}}, 409),     # lue avant le changement
+                    ({"part": "X", "champs": {"Value": "1"}}, 404),
+                    ({"part": "U1", "champs": {"Part Name": "U2"}}, 400),
+                    ({"part": "U1", "champs": {"Inconnue": "1"}}, 400),
+                    ({"part": "U1", "champs": {"Value": "=1+1"}}, 400),
+                    ({"part": "U1", "champs": {}}, 400)):
+                code, rep = modifier(demande)
+                assert code == attendu, (demande, code, rep)
+            assert open(csv_, "rb").read() == apres, "un refus a ecrit"
+        finally:
+            web_CAO.DOSSIER_LIB_ACTIF = actif
+        print("[PASS] LIB : modifier une reference reecrit ses seules cases, refuse une ligne qui a change")
+
     finally:
         conn.close()
         httpd.shutdown()
