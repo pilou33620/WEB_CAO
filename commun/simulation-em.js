@@ -16432,7 +16432,7 @@ const SIM_RF_ROUTE="/api/simulation-rf";
 const SIM_RF={res:null, err:"", occupe:false, composants:[], notes:[],
               surcharges:{}, cible:null, couplage:true};
 const SIM_RF_UNITES={C:{f:1e-12,u:"pF"}, L:{f:1e-9,u:"nH"}, R:{f:1,u:"Ω"}};
-const SIM_RF_ATTENTE={port:null};
+const SIM_RF_ATTENTE={port:null, moins:false};
 const SIM_RF_MAX_NETS=40, SIM_RF_TOL=0.02;
 /* Pistes d'autres nets : jusqu'à 2 mm du réseau, 60 au plus. Fentes : un
    échantillon tous les 50 µm, un détour plafonné à 30 mm. */
@@ -16465,28 +16465,46 @@ function simRfPad(P,port){
   return q?{c:c, q:q, net:q.net}:null;
 }
 
+/* La borne − d'un port différentiel (RFI_N face à RFI_P), ou null. */
+function simRfMoins(port){
+  return port&&port.ref_n?{ref:port.ref_n, pin:port.pin_n}:null;
+}
+
 function simRfPorts(){
   const rf=simRfEtat(), P=SIM_ED.rfPlateau();
   return [0,1].map(k=>{
     const p=rf.ports[k];
     if(!p)return null;
     const pad=P.composants?simRfPad(P,p):null;
+    const m=simRfMoins(p), padN=m&&P.composants?simRfPad(P,m):null;
     return {ref:p.ref, pin:p.pin, re:p.re, im:p.im,
-            net:pad?pad.net:"", perdu:!pad};
+            net:pad?pad.net:"", perdu:!pad||(!!m&&!padN),
+            ref_n:m?m.ref:"", pin_n:m?m.pin:"", net_n:padN?padN.net:""};
   });
 }
 
-function simRfDesigner(k){
-  SIM_RF_ATTENTE.port=k;
+function simRfDesigner(k,moins){
+  const p=simRfEtat().ports[k];
+  if(moins&&simRfMoins(p)){              // recliquer revient au port simple
+    delete p.ref_n; delete p.pin_n;
+    simRfModifie();
+    simRfAstuce("Port "+(k+1)+" : port simple, rapporté à la masse.");
+    simRfPortChoisi();
+    return;
+  }
+  if(moins&&!p){simRfAstuce("Posez d'abord la borne + du port "+(k+1)+".");return;}
+  SIM_RF_ATTENTE.port=k; SIM_RF_ATTENTE.moins=!!moins;
   if(SIM_ED.rfArmer)SIM_ED.rfArmer(k);
-  simRfAstuce(k===0?"Cliquez la pastille du PORT 1 — la sortie de la puce."
+  simRfAstuce(moins?"Cliquez la pastille de la borne − du PORT "+(k+1)+
+                    " (RFI_N face à RFI_P) : le port devient différentiel."
+             :k===0?"Cliquez la pastille du PORT 1 — la sortie de la puce."
                    :"Cliquez la pastille du PORT 2 — le connecteur ou l'antenne.");
 }
 
 /* Le clic qui pose un port, EN MILLIMÈTRES : l'outil convertit avant. */
 function simRfClic(x,y){
-  const k=SIM_RF_ATTENTE.port;
-  SIM_RF_ATTENTE.port=null;
+  const k=SIM_RF_ATTENTE.port, moins=SIM_RF_ATTENTE.moins;
+  SIM_RF_ATTENTE.port=null; SIM_RF_ATTENTE.moins=false;
   const P=SIM_ED.rfPlateau();
   let best=null, bd=0.5;
   for(const c of (P.composants||[]))
@@ -16496,10 +16514,27 @@ function simRfClic(x,y){
     }
   if(!best)simRfAstuce("Aucune pastille sous le clic : visez le cuivre d'une "+
                        "pastille.");
+  else if(moins&&(k===0||k===1)){
+    const p=simRfEtat().ports[k];
+    if(!p)return;
+    if(p.ref===best.c.ref&&String(p.pin)===String(best.q.pin))
+      simRfAstuce("La borne − ne peut pas être la pastille de la borne +.");
+    else{
+      p.ref_n=best.c.ref; p.pin_n=String(best.q.pin);
+      simRfModifie();
+      simRfAstuce("Port "+(k+1)+" différentiel, borne − : "+best.c.ref+"."+
+                  best.q.pin+(best.q.net?" (net "+best.q.net+")"
+                                        :" — cette pastille n'a pas de net"));
+    }
+  }
   else if(k===0||k===1){
     const rf=simRfEtat(), av=rf.ports[k]||{};
     rf.ports[k]={ref:best.c.ref, pin:String(best.q.pin),
                  re:av.re!=null?av.re:50, im:av.im||0};
+    const m=simRfMoins(av);
+    if(m&&!(m.ref===best.c.ref&&String(m.pin)===String(best.q.pin))){
+      rf.ports[k].ref_n=m.ref; rf.ports[k].pin_n=m.pin;
+    }
     simRfModifie();
     simRfAstuce("Port "+(k+1)+" : "+best.c.ref+"."+best.q.pin+
                 (best.q.net?" (net "+best.q.net+")"
@@ -16756,10 +16791,28 @@ async function simRfProbleme(opts){
     if(!PP[k].net||P.estMasse(PP[k].net))
       return refus("Port "+(k+1)+" : la pastille "+PP[k].c.ref+"."+PP[k].q.pin+
                    " n'a pas de net de signal.");
+  /* LA BORNE − D'UN PORT DIFFÉRENTIEL : sur un net de signal elle aussi —
+     posée sur la masse, c'est un port simple. */
+  const PN=[0,1].map(k=>{
+    const m=simRfMoins(rf.ports[k]);
+    return m?(simRfPad(P,m)||false):null;
+  });
+  for(const k of [0,1]){
+    if(PN[k]===false)
+      return refus("Port "+(k+1)+" : la pastille de sa borne − est introuvable.",
+                   "Désignez-la de nouveau, ou revenez au port simple.");
+    if(PN[k]&&(!PN[k].net||P.estMasse(PN[k].net)))
+      return refus("Port "+(k+1)+" : la borne − "+PN[k].c.ref+"."+PN[k].q.pin+
+                   " n'a pas de net de signal.",
+                   "Sur la masse, c'est un port simple : retirez la borne −.");
+    if(PN[k]&&PN[k].net===PP[k].net)
+      return refus("Port "+(k+1)+" : ses deux bornes sont sur le même net ("+
+                   PP[k].net+").");
+  }
 
   /* La marche de net en net, à travers les composants. */
   const exclus=new Set(rf.exclus);
-  const portComps=new Set([PP[0].c, PP[1].c]);
+  const portComps=new Set([PP[0].c, PP[1].c].concat(PN.filter(Boolean).map(e=>e.c)));
   const nets=new Set(), file=[], comps=[], notes=[], vus=new Set();
   const alims=new Set();
   const ajouter=n=>{
@@ -16779,6 +16832,7 @@ async function simRfProbleme(opts){
   };
   const broche=(c,pin)=>c.pads.find(q=>String(q.pin)===String(pin));
   ajouter(PP[0].net);
+  if(PN[0])ajouter(PN[0].net);
   while(file.length){
     const n=file.shift();
     if(nets.size>SIM_RF_MAX_NETS)
@@ -16808,16 +16862,22 @@ async function simRfProbleme(opts){
     return refus("Aucun chemin entre les deux ports : le net du port 2 ("+
                  PP[1].net+") n'est pas atteint depuis celui du port 1.",
                  "Vérifiez les nets, ou ré-incluez un composant exclu.",liste);
+  for(const k of [0,1])
+    if(PN[k]&&!nets.has(PN[k].net))
+      return refus("Le net de la borne − du port "+(k+1)+" ("+PN[k].net+
+                   ") n'est pas atteint depuis le port 1.",
+                   "Vérifiez les nets, ou ré-incluez un composant exclu.",liste);
   if(alims.size)
     notes.push("Nets d'alimentation tenus pour une masse RF (découplés) : "+
                [...alims].join(", ")+".");
   /* LES BROCHES ANNEXES DE LA PUCE (ou du connecteur) qui touchent le réseau :
      leur piste est un moignon du réseau, et leur impédance se saisit. */
   const annexes=[];
-  for(const k of [0,1])
-    for(const q of PP[k].c.pads)
-      if(q!==PP[k].q&&nets.has(q.net))
-        annexes.push({c:PP[k].c, q:q, cle:PP[k].c.ref+"."+q.pin});
+  const bornes=new Set(PP.map(e=>e.q).concat(PN.filter(Boolean).map(e=>e.q)));
+  for(const c of new Set([...portComps]))
+    for(const q of c.pads)
+      if(!bornes.has(q)&&nets.has(q.net))
+        annexes.push({c:c, q:q, cle:c.ref+"."+q.pin});
 
   const noeudPad=(c,q)=>"P:"+c.ref+"."+q.pin;
   const masses=[], vusMasse=new Map();
@@ -16909,7 +16969,7 @@ async function simRfProbleme(opts){
   for(const n of nets)padsDuNet.set(n,[]);
   for(const c of comps)
     for(const q of c.pads)if(nets.has(q.net))padsDuNet.get(q.net).push({c:c,q:q});
-  for(const k of [0,1])padsDuNet.get(PP[k].net).push({c:PP[k].c, q:PP[k].q});
+  for(const e of PP.concat(PN.filter(Boolean)))padsDuNet.get(e.net).push({c:e.c, q:e.q});
   for(const a of annexes)padsDuNet.get(a.q.net).push({c:a.c, q:a.q});
 
   const branches=[], objetsPeints=[], pastilles=[], zonesDoc=[];
@@ -17240,8 +17300,9 @@ async function simRfProbleme(opts){
   return {
     doc:{format:"cao-sim-rf-1", source:(SIM_ED.outil||""), carte:P.carte(),
          stackup:P.stackup(), reference_nets:[...simRefSet()],
-         ports:[0,1].map(k=>({noeud:noeudPad(PP[k].c,PP[k].q),
-                              z:[+rf.ports[k].re||0, +rf.ports[k].im||0]})),
+         ports:[0,1].map(k=>Object.assign({noeud:noeudPad(PP[k].c,PP[k].q),
+                              z:[+rf.ports[k].re||0, +rf.ports[k].im||0]},
+                              PN[k]?{noeud_n:noeudPad(PN[k].c,PN[k].q)}:{})),
          branches:branches, composants:composants, masses:masses,
          pastilles:pastilles, zones:zonesDoc, voisines:voisines,
          couplage:opts.couplage!==false,
@@ -17264,6 +17325,9 @@ function simCorpsRf(){
              "la pastille sur la carte."
             :"Désigner le connecteur ou l'antenne : cliquez ici, puis la "+
              "pastille sur la carte.")+'">🎯</button>'+
+    '<button class="tb mini" id="simRfM'+k+'" title="Port différentiel : '+
+      'cliquez ici, puis la pastille de la borne − (RFI_N face à RFI_P). '+
+      'Recliquez pour revenir à un port simple, rapporté à la masse.">±</button>'+
     '<span class="simU" id="simRfNom'+k+'">—</span>'+
     simChamp("simRfR"+k,"Partie réelle de l'impédance, en ohms")+
     '<select class="simU simUSel" id="simRfS'+k+'" title="Signe de la partie '+
@@ -17318,8 +17382,12 @@ function simRfPortsEcrire(){
   const ports=simRfPorts();
   for(const k of [0,1]){
     const p=ports[k], nom=simEl("simRfNom"+k);
-    if(nom)nom.textContent=p?(p.ref+"."+p.pin+(p.perdu?" (introuvable)":
-                                              (p.net?" · "+p.net:""))):"—";
+    if(nom)nom.textContent=p?(p.ref+"."+p.pin+(p.net?" · "+p.net:"")+
+                              (p.ref_n?" / − "+p.ref_n+"."+p.pin_n+
+                                       (p.net_n?" · "+p.net_n:""):"")+
+                              (p.perdu?" (introuvable)":"")):"—";
+    const mo=simEl("simRfM"+k);
+    if(mo){mo.disabled=!p; mo.classList.toggle("on",!!(p&&p.ref_n));}
     /* La partie imaginaire s'écrit en valeur absolue, son signe au sélecteur. */
     for(const [id,v] of [["simRfR"+k,p?p.re:""],
                          ["simRfX"+k,p&&p.im!=null?Math.abs(p.im):""]]){
@@ -17354,6 +17422,7 @@ function simBrancherRf(){
   const pose=(id,quoi,fn)=>{const e=simEl(id);if(e)e[quoi]=fn;};
   for(const k of [0,1]){
     pose("simRfP"+k,"onclick",()=>simRfDesigner(k));
+    pose("simRfM"+k,"onclick",()=>simRfDesigner(k,true));
     const lire=()=>{
       const re=simRfNb(simEl("simRfR"+k)), x=simRfNb(simEl("simRfX"+k));
       const sg=simEl("simRfS"+k);

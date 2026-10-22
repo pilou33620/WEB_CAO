@@ -188,7 +188,7 @@ const EXPOSE=["ECRITURE_CAO","simDsChamp","simDsLire","simDsEcrire","SIM_DS","SI
   "simDsCatalogue","simDsPreparer","simDsAppliquer","simDsGroupes","simDsNb",
   "simDsBorneDe","simDsReappliquerCapas","SIM_DS","simPDNAssistantActif",
   /* La simulation RF : la carte lue, décrite pour le panneau commun. */
-  "simRfProbleme","simRfClic","SIM_RF_ATTENTE","simRfPlateauIpc","simRfZ","simRfModele","simRfVariante",
+  "simRfProbleme","simRfClic","SIM_RF_ATTENTE","simRfPlateauIpc","simRfZ","simRfModele","simRfVariante","simRfEtat","simRfDesigner","simRfPorts",
   /* Le diagramme de l'œil : la saisie de la gigue, de la diaphonie et des
      fichiers IBIS, et le rendu de l'œil statistique. */
   "SIM_OEIL","simCorpsOeil","simRendreOeil","simOeilReglages",
@@ -5956,6 +5956,53 @@ TA("simulation RF : la carte IPC-2581 donne le réseau, T sur un sommet compris"
   if(!di||Math.abs(di.thickness-0.2)>1e-9)throw new Error("empilage : "+JSON.stringify(d.stackup));
   if(!d.pastilles.some(p=>p.noeud==="P:L1.1"&&p.largeur===0.6))
     throw new Error("pastilles : "+JSON.stringify(d.pastilles.slice(0,2)));
+});
+
+TA("simulation RF : port différentiel — la borne − cliquée, son net parcouru",async ()=>{
+  /* Une puce à sortie différentielle (RF_P / RF_N), une self dans chaque fil,
+     un connecteur différentiel : deux ports à deux bornes, sans masse. */
+  const pv=(dy,pin,n)=>({x:0,y:dy,ps:"SMD",pin:pin,n:n});
+  const ph=(dx,pin,n)=>({x:dx,y:0,ps:"SMD",pin:pin,n:n});
+  const vert=(ref,val,x,a,b)=>({ref:ref,pkg:"DIFF",c:0,x:x,y:20,r:0,m:0,val:val,
+                                pads:[pv(-1,"1",a),pv(1,"2",b)]});
+  const self=(ref,y,a,b)=>({ref:ref,pkg:"0603",c:0,x:20,y:y,r:0,m:0,val:"3.3nH",
+                            pads:[ph(-0.8,"1",a),ph(0.8,"2",b)]});
+  carte({
+    nets:["RF_P","GND","RF_N","OUT_P","OUT_N"],
+    padstacks:{SMD:{pad:0.6,pads:[{c:"Top",d:0.6,f:"R"}]}},
+    formes:{R:{t:"RECTCENTER",w:0.6,h:0.5}},
+    composants:[vert("U1","RADIO",10,0,2), self("L1",19,0,3), self("L2",21,2,4),
+                vert("J1","UFL-DIFF",30,3,4)],
+    pistes:[{c:0,n:0,w:0.3,p:[10,19, 19.2,19]},{c:0,n:2,w:0.3,p:[10,21, 19.2,21]},
+            {c:0,n:3,w:0.3,p:[20.8,19, 30,19]},{c:0,n:4,w:0.3,p:[20.8,21, 30,21]}]
+  });
+  const rf=simRfEtat(); rf.ports=[null,null];
+  SIM_RF_ATTENTE.port=0; simRfClic(10,19);
+  SIM_RF_ATTENTE.port=1; simRfClic(30,19);
+  simRfDesigner(0,true); simRfClic(10,19);           // la borne + refusée en −
+  if(rf.ports[0].ref_n)throw new Error("la borne + acceptée comme borne −");
+  simRfDesigner(0,true); simRfClic(10,21);
+  simRfDesigner(1,true); simRfClic(30,21);
+  const a={analyse:{f_debut:2e9,f_fin:3e9,points:11,f_centre:2.44e9}};
+  const r=await simRfProbleme(a);
+  if(r.erreur)throw new Error("refus : "+r.erreur+" / "+r.conseil);
+  const d=r.doc, pt=d.ports.map(p=>p.noeud+"/"+p.noeud_n).join(" ");
+  if(pt!=="P:U1.1/P:U1.2 P:J1.1/P:J1.2")throw new Error("ports : "+pt);
+  const refs=d.composants.map(c=>c.ref).sort().join(",");
+  if(refs!=="L1,L2")throw new Error("composants (aucune broche annexe) : "+refs);
+  if(new Set(d.branches.map(b=>b.net)).size!==4)throw new Error("branches : "+d.branches.map(b=>b.net));
+  const nom=simRfPorts()[1];
+  if(nom.net_n!=="OUT_N"||nom.perdu)throw new Error("port 2 : "+JSON.stringify(nom));
+  /* Recliquer ± revient au port simple : RF_N n'est plus parcouru. */
+  simRfDesigner(1,true);
+  if(rf.ports[1].ref_n)throw new Error("la borne − du port 2 est restée");
+  const r2=await simRfProbleme(a);
+  if(r2.erreur||"noeud_n" in r2.doc.ports[1])throw new Error("port simple : "+JSON.stringify(r2.erreur||r2.doc.ports[1]));
+  /* Une borne − dont la pastille a disparu est refusée, pas oubliée. */
+  rf.ports[1].ref_n="U1"; rf.ports[1].pin_n="9";
+  const r3=await simRfProbleme(a);
+  if(!/borne − est introuvable/.test(r3.erreur||""))throw new Error("pastille perdue : "+r3.erreur);
+  rf.ports=[null,null];
 });
 
 TA("simulation RF : raccords d'un vrai fichier — lisière de polygone, bouts décalés",async ()=>{
