@@ -7,7 +7,8 @@ complet jusqu'au 22/10/2026 y est recopié).
 
 ## Bugs
 
-Aucun bug connu ouvert. Corrigés le 22/10/2026 : l'empreinte SOT-89-5 de la LIB, refaite
+Aucun bug connu ouvert. Corrigés le 22/10/2026 : le canal de pilotage (`pilote.py`, copie de
+web_suite) qui refusait les pages servies en HTTPS, donc celles de l'iPad en mode réseau ; l'empreinte SOT-89-5 de la LIB, refaite
 selon le plan de pastilles Torex (dans `WEB_SUITE_PROJETS`), et la description du Template 4
 USB dans `oeil.py`. Le 21/10/2026 : le chanfrein du routeur qui entrait dans une pastille d'un
 autre net, la Gestion LIB qui montait à environ 890 Mo au chargement.
