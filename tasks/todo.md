@@ -76,7 +76,7 @@ JSON que sans ce `tr` étendu.
 
 ## Point d'étape 1
 - [x] `PY_AC`, `PY_XT`, `PY_SRV` et `COMP` verts
-- [ ] Le cas TRD1_N n'est plus condamné
+- ~~Le cas TRD1_N n'est plus condamné~~ (retiré le 22/10/2026 : essai abandonné)
 - [ ] Relecture humaine, puis un commit par tâche
 
 ---
@@ -177,7 +177,7 @@ fichier est chargé par :
 ## Point d'étape 2
 - [x] Les sept commandes de la spec sont vertes
 - [x] Les bundles monofichiers se construisent
-- [ ] Vérification à la main : la carte TRD1_N, classée « ETH 100 » dans la visionneuse puis dans le PCB, n'est plus condamnée par la règle `retour`
+- ~~Vérification à la main : la carte TRD1_N, classée « ETH 100 » dans la visionneuse puis dans le PCB, n'est plus condamnée par la règle `retour`~~ (retiré le 22/10/2026 : essai abandonné)
 - [ ] Relecture humaine
 
 ---
