@@ -169,9 +169,17 @@ const COMPOSANTS_LIB = (() => {
   /* ---------- brochage ---------- */
   /* Le brochage d'une référence (commun/brochage.js) face à l'empreinte et au symbole :
      chaque patte existe dans l'empreinte, chaque broche existe dans le symbole. */
-  function verifierBrochage(texte, empreinte, type) {
+  /* Un symbole de la LIB (schsym-1) vu comme un intégré : ses noms de broches s'ils sont tous
+     donnés, sinon son nombre de broches. */
+  const brochesSymbole = def => {
+    const pins = Array.isArray(def && def.pins) ? def.pins.slice().sort((a, b) => a.n - b.n) : [];
+    const noms = pins.map(p => typeof p.name === "string" ? p.name : typeof p.nom === "string" ? p.nom : "");
+    return noms.length && noms.every(Boolean) ? noms : pins.length;
+  };
+  function verifierBrochage(texte, empreinte, type, symboleDef) {
     const erreurs = [], remarques = [];
-    const sym = typeof type === "string" && Object.prototype.hasOwnProperty.call(SYMBOLES, type) ? SYMBOLES[type] : undefined;
+    const sym = typeof type === "string" && Object.prototype.hasOwnProperty.call(SYMBOLES, type) ? SYMBOLES[type]
+              : symboleDef ? brochesSymbole(symboleDef) : undefined;
     if (sym === undefined) erreurs.push("symbole intégré inconnu : « " + type + " »");
     if (texte != null && (typeof texte !== "string" || texte.length > 500 || CONTROLE.test(texte) || texte.includes(";")))
       return { erreurs: erreurs.concat("brochage : texte d'une ligne, sans « ; », 500 caractères au plus"), remarques };
@@ -210,6 +218,46 @@ const COMPOSANTS_LIB = (() => {
           if (manquent.length) remarques.push("broche(s) du symbole sans patte" + ici + " : " + manquent.join(", "));
         }
       }
+    return { erreurs, remarques };
+  }
+
+  /* ---------- symbole schsym-1 ----------
+     Les règles du schéma qui le dessinera (editeur-schematique/js/29-symboles-lib.js) : broches
+     numérotées de 1 à N sans trou, coordonnées finies, primitives connues. */
+  const OPS_SYMBOLE = { line: ["x1", "y1", "x2", "y2"], rect: ["x", "y", "w", "h"], arc: ["cx", "cy", "r", "start", "end"],
+                        circle: ["x", "y", "r"], text: ["x", "y"], arrow: ["x", "y"], poly: [] };
+  function verifierSymbole(sym, nomFichier) {
+    const erreurs = [], remarques = [];
+    const coord = v => fini(v) && Math.abs(v) <= 4000;
+    if (!sym || typeof sym !== "object" || Array.isArray(sym)) return { erreurs: ["le symbole doit être un objet schsym-1"], remarques };
+    if (sym.format !== "schsym-1") erreurs.push("« format » doit valoir « schsym-1 »");
+    if (typeof sym.id !== "string" || !NOM_EMPREINTE.test(sym.id)) erreurs.push("« id » : le nom du fichier, [A-Za-z0-9_.+-]");
+    else if (nomFichier && sym.id + ".json" !== nomFichier) erreurs.push("« id » doit être le nom du fichier (" + nomFichier + ")");
+    if (typeof sym.id === "string" && Object.prototype.hasOwnProperty.call(SYMBOLES, sym.id.toLowerCase()))
+      erreurs.push("« " + sym.id + " » est un symbole intégré : un fichier de ce nom ne le remplacerait pas");
+    const pins = Array.isArray(sym.pins) ? sym.pins : [];
+    if (!pins.length || pins.length > 1024) erreurs.push("« pins » : de 1 à 1024 broches {n, x, y, name?}");
+    const vus = new Set();
+    for (const p of pins) {
+      if (!p || !Number.isInteger(p.n) || p.n < 1 || !coord(p.x) || !coord(p.y)) { erreurs.push("broche illisible : " + JSON.stringify(p).slice(0, 60)); continue; }
+      if (vus.has(p.n)) erreurs.push("broche " + p.n + " en double");
+      vus.add(p.n);
+      if ((p.x % 20 || p.y % 20) && remarques.length < 5) remarques.push("broche " + p.n + " hors du pas de 1 mm (20) : moins facile à câbler");
+    }
+    for (let n = 1; n <= vus.size; n++) if (!vus.has(n)) { erreurs.push("broches numérotées de 1 à " + vus.size + " sans trou : la " + n + " manque"); break; }
+    const prims = Array.isArray(sym.primitives) ? sym.primitives : [];
+    if (prims.length > 5000) erreurs.push("« primitives » : 5000 au plus");
+    for (const q of prims) {
+      const cles = q && Object.prototype.hasOwnProperty.call(OPS_SYMBOLE, q.op) ? OPS_SYMBOLE[q.op] : null;
+      if (!cles) { erreurs.push("primitive inconnue : « " + String(q && q.op).slice(0, 20) + " » (" + Object.keys(OPS_SYMBOLE).join(", ") + ")"); break; }
+      if (cles.some(k => !coord(q[k]))) { erreurs.push(q.op + " : coordonnées numériques finies"); break; }
+      if (q.op === "poly" && !(Array.isArray(q.pts) && q.pts.length >= 2 && q.pts.length <= 500 && q.pts.every(p => Array.isArray(p) && coord(p[0]) && coord(p[1])))) {
+        erreurs.push("poly : de 2 à 500 points [x, y]"); break;
+      }
+      if (q.op === "text" && typeof (q.text != null ? q.text : q.txt) !== "string") { erreurs.push("text : un texte"); break; }
+    }
+    if (sym.prefix != null && !(typeof sym.prefix === "string" && /^[A-Za-z]{1,4}$/.test(sym.prefix))) erreurs.push("« prefix » : 1 à 4 lettres");
+    if (!prims.length) remarques.push("aucune primitive : le symbole n'aura que ses broches");
     return { erreurs, remarques };
   }
 
@@ -264,15 +312,23 @@ const COMPOSANTS_LIB = (() => {
       if (fpDef && nb && /^\d+$/.test(nb) && +nb !== fpDef.pins)
         remarques.push("« Number Of pins » (" + nb + ") ≠ pastilles de l'empreinte (" + fpDef.pins + ")");
     }
-    let type = "";
+    let type = "", symDef = null;
     if (sortie["Empreinte Schématique"]) {
-      type = nomDeChemin(sortie["Empreinte Schématique"]).toLowerCase();
-      if (!Object.prototype.hasOwnProperty.call(SYMBOLES, type))
-        erreurs.push("symbole intégré inconnu : « " + type + " » (" + Object.keys(SYMBOLES).join(", ") + ")");
-      else sortie["Empreinte Schématique"] = "lib/symbole/" + type + ".json";
+      const nom = nomDeChemin(sortie["Empreinte Schématique"]);
+      const neuf = ctx.nouveauSymbole && ctx.nouveauSymbole.id === nom ? ctx.nouveauSymbole : null;
+      type = nom.toLowerCase();
+      if (Object.prototype.hasOwnProperty.call(SYMBOLES, type)) sortie["Empreinte Schématique"] = "lib/symbole/" + type + ".json";
+      else if (neuf || (ctx.symboles || []).includes(nom)) {
+        // un symbole de la LIB (schsym-1), dessiné par le schéma (29-symboles-lib.js) : son nom garde sa casse
+        type = nom;
+        symDef = neuf || (ctx.symboleDefs && ctx.symboleDefs[nom]) || null;
+        sortie["Empreinte Schématique"] = "lib/symbole/" + nom + ".json";
+      } else
+        erreurs.push("symbole inconnu : « " + nom + " » (intégré : " + Object.keys(SYMBOLES).join(", ") +
+                     " ; ou un symbole de la LIB, ou créé par cette carte)");
     }
-    if (sortie["Brochage"] && type) {
-      const br = verifierBrochage(sortie["Brochage"], fpDef, type);
+    if (sortie["Brochage"] && type && (Object.prototype.hasOwnProperty.call(SYMBOLES, type) || symDef)) {
+      const br = verifierBrochage(sortie["Brochage"], fpDef, type, symDef);
       erreurs.push(...br.erreurs.filter(e => !/^symbole intégré inconnu/.test(e)));
       remarques.push(...br.remarques);
     }
@@ -820,6 +876,6 @@ const COMPOSANTS_LIB = (() => {
     }
   }
 
-  return { SYMBOLES, CHAMPS, nomDeChemin, verifierEmpreinte, verifierBrochage, verifierLigne, genererEmpreinte,
+  return { SYMBOLES, CHAMPS, nomDeChemin, verifierEmpreinte, verifierBrochage, verifierSymbole, verifierLigne, genererEmpreinte,
            lireParametres, convertirKicad, portsTouchstone, lireBranchement, brancherTouchstone };
 })();

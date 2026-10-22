@@ -132,8 +132,30 @@ function refusLigne(modif, motif, libelle, c) {
 refusLigne(l => { delete l["Reference designator Prefix"]; }, /obligatoire.*Prefix/, "colonne obligatoire manquante");
 refusLigne(l => { l["Part Name"] = "LDO_DEJA"; }, /déjà au catalogue/, "Part Name déjà prise (casse ignorée)");
 refusLigne(l => { l["Empreinte PCB"] = "SOT-89"; }, /absente de la LIB/, "empreinte absente");
-refusLigne(l => { l["Empreinte Schématique"] = "lib/symbole/ldo.json"; }, /symbole intégré inconnu/, "symbole inconnu");
+refusLigne(l => { l["Empreinte Schématique"] = "lib/symbole/ldo.json"; }, /symbole inconnu : « ldo »/, "symbole inconnu");
 refusLigne(l => { l["Couleur"] = "bleu"; }, /colonne\(s\) inconnue/, "colonne inconnue");
+
+/* ---------- symboles de la LIB (schsym-1) ---------- */
+const SYM = { format: "schsym-1", id: "LDO_SYM", name: "LDO", prefix: "U",
+  pins: [{ n: 1, x: -40, y: 0, name: "VIN" }, { n: 2, x: 0, y: 40, name: "GND" }, { n: 3, x: 40, y: 0, name: "VOUT" }],
+  primitives: [{ op: "rect", x: -20, y: -20, w: 40, h: 40, r: 2, fill: true }, { op: "text", text: "LDO", x: 0, y: 0, size: 10 }] };
+r = CL.verifierSymbole(SYM, "LDO_SYM.json");
+verifier(!r.erreurs.length, "symbole juste (" + r.erreurs.join(" | ") + ")");
+for (const [modif, motif, quoi] of [
+    [s => { s.format = "x"; }, /schsym-1/, "format"], [s => { s.pins = [{ n: 1, x: 0, y: 0 }, { n: 3, x: 20, y: 0 }]; }, /la 2 manque/, "numérotation trouée"],
+    [s => { s.primitives = [{ op: "img", x: 0, y: 0 }]; }, /primitive inconnue/, "primitive inconnue"],
+    [s => { s.id = "regulator"; }, /symbole intégré/, "nom d'un intégré"], [s => {}, /nom du fichier/, "id ≠ fichier", "AUTRE.json"]]) {
+  const s = copie(SYM); modif(s);
+  const e = CL.verifierSymbole(s, quoi === "id ≠ fichier" ? "AUTRE.json" : s.id + ".json").erreurs;
+  verifier(e.some(x => motif.test(x)), "symbole refusé : " + quoi + " (" + e.join(" | ") + ")");
+}
+// une ligne qui désigne un symbole de la LIB : brochage contrôlé par ses noms de broches
+const ctxSym = Object.assign({}, ctx, { symboles: ["LDO_SYM"], symboleDefs: { LDO_SYM: SYM } });
+r = CL.verifierLigne(Object.assign({}, LDO, { "Empreinte Schématique": "LDO_SYM", "Brochage": "VIN=1,GND=2,VOUT=5,NC=3/4" }), ctxSym);
+verifier(!r.erreurs.length && r.ligne["Empreinte Schématique"] === "lib/symbole/LDO_SYM.json", "ligne sur un symbole de la LIB (" + r.erreurs.join(" | ") + ")");
+refusLigne(l => { l["Empreinte Schématique"] = "LDO_SYM"; l["Brochage"] = "IN=1,GND=2,OUT=5"; }, /broche « IN » inconnue du symbole LDO_SYM/, "brochage face au symbole de la LIB", ctxSym);
+r = CL.verifierLigne(Object.assign({}, LDO, { "Empreinte Schématique": "LDO_SYM", "Brochage": "VIN=1,GND=2,VOUT=5" }), Object.assign({}, ctx, { nouveauSymbole: SYM }));
+verifier(!r.erreurs.length, "ligne sur un symbole créé par la même carte (" + r.erreurs.join(" | ") + ")");
 refusLigne(l => { l["Value"] = "a\nb"; }, /une ligne/, "valeur sur deux lignes");
 refusLigne(l => { l["Brochage"] = "IN=1,GND=2,OUT=8"; }, /absente\(s\) de l'empreinte/, "brochage incohérent");
 refusLigne(l => { l["Number Of pins"] = "cinq"; }, /entier/, "nombre de broches illisible");
@@ -475,6 +497,21 @@ const asyncTests = (async () => {
   try { await C.proposer({ ligne: Object.assign({}, l4, { "Part Name": "LDO_5" }), empreinte: Object.assign(copie(SOT235), { name: "AUTRE" }) }); }
   catch (e) { refuse = e.message; }
   verifier(refuse && /doit désigner l'empreinte créée/.test(refuse), "la ligne doit désigner l'empreinte créée");
+
+  // un symbole neuf (schsym-1) avec la ligne : écrit si_absent, avant la ligne qui le désigne
+  SRV.ecrits.length = 0;
+  const lSym = Object.assign({}, LDO, { "Part Name": "LDO_SYMB", "Empreinte PCB": "SOT-23-5", "Empreinte Schématique": "LDO_SYM",
+                                        "Brochage": "VIN=1,GND=2,VOUT=5,NC=3/4" });
+  const pSym = await C.proposer({ ligne: lSym, symbole: SYM });
+  verifier(/symbole neuf LDO_SYM \(3 broches\)/.test(pSym.apres) && !SRV.ecrits.length, "la carte annonce le symbole neuf (" + pSym.apres + ")");
+  await C.appliquer({ ligne: lSym, symbole: SYM }, pSym);
+  verifier(JSON.stringify(SRV.ecrits.map(e => e.slice(0, 2))) === JSON.stringify([["empreinte", "LDO_SYM.json"], ["ligne", SRV.ecrits[1] && SRV.ecrits[1][1]]]) &&
+           SRV.ecrits[0][2].si_absent === true && SRV.ecrits[1][1]["Empreinte Schématique"] === "lib/symbole/LDO_SYM.json",
+    "au clic : le symbole (si_absent), puis la ligne qui le désigne");
+  refuse = null;
+  try { await C.proposer({ ligne: Object.assign({}, lSym, { "Part Name": "LDO_SYMC" }), symbole: Object.assign(copie(SYM), { primitives: [{ op: "img" }] }) }); }
+  catch (e) { refuse = e.message; }
+  verifier(refuse && /symbole : primitive inconnue/.test(refuse), "symbole fautif : refusé (" + refuse + ")");
 
   // calculs
   r = await CMD.lib_brochage_verifier.executer({ brochage: "IN=1,GND=2,OUT=9", empreinte: "SOT-23-5", symbole: "regulator" });

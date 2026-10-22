@@ -42,15 +42,49 @@ function libPiloteCommandes() {
   async function etatLib() {
     const [cat, fichiers] = await Promise.all([apiGet("/api/lib/composants"), apiGet("/api/lib/fichiers")]);
     return { partNames: (cat.composants || []).map(c => c["Part Name"] || ""),
-             empreintes: (fichiers.pcb || []).map(nomEmpreinte) };
+             empreintes: (fichiers.pcb || []).map(nomEmpreinte),
+             symboles: (fichiers.schematique || []).map(nomEmpreinte) };
+  }
+
+  /* Le symbole de la ligne : un symbole neuf (schsym-1) donné avec la carte, contrôlé et jamais
+     écrit par-dessus un fichier ; ou un symbole de la LIB, lu pour contrôler le brochage. */
+  async function symboleDe(args, ligne, lib, erreurs, remarques) {
+    const neuf = args.symbole == null ? null : objet(args.symbole, "symbole");
+    const ctx = { symboles: lib.symboles, nouveauSymbole: neuf, symboleDefs: {} };
+    if (neuf) {
+      const v = CL.verifierSymbole(neuf, typeof neuf.id === "string" ? neuf.id + ".json" : null);
+      erreurs.push(...v.erreurs.map(e => "symbole : " + e));
+      remarques.push(...v.remarques.map(e => "symbole : " + e));
+      if (lib.symboles.some(n => n.toLowerCase() === String(neuf.id).toLowerCase()))
+        erreurs.push("le symbole « " + neuf.id + " » est déjà dans la LIB (jamais d'écrasement) : désigne-le sans le redonner, ou choisis un autre nom");
+      if (ligne["Empreinte Schématique"] == null) ligne["Empreinte Schématique"] = neuf.id;
+      else if (nomEmpreinte(ligne["Empreinte Schématique"]) !== neuf.id)
+        erreurs.push("« Empreinte Schématique » doit désigner le symbole créé (" + neuf.id + ")");
+    } else {
+      const nom = nomEmpreinte(ligne["Empreinte Schématique"] || "");
+      if (nom && lib.symboles.includes(nom) && !Object.prototype.hasOwnProperty.call(CL.SYMBOLES, nom.toLowerCase())) {
+        const def = await obtenirFichierLib("schematique", nom + ".json");
+        if (def) ctx.symboleDefs[nom] = def;
+      }
+    }
+    return { neuf, ctx };
+  }
+  /* Le symbole neuf écrit par la carte (si_absent) ; rend son nom de fichier. */
+  async function ecrireSymbole(neuf) {
+    if (!neuf) return null;
+    const fichier = neuf.id + ".json";
+    try { await sauvegarderFichierLib("schematique", fichier, neuf, { si_absent: true }); }
+    catch (e) { throw new Error("Symbole non écrit : " + e.message); }
+    return fichier;
   }
 
   /* Tous les contrôles de la carte ; refaits au clic, la LIB ayant pu changer entre-temps. */
   async function preparer(args) {
-    const ligne = objet(args.ligne, "ligne");
+    const ligne = Object.assign({}, objet(args.ligne, "ligne"));
     const neuve = args.empreinte == null ? null : objet(args.empreinte, "empreinte");
     const lib = await etatLib();
     const erreurs = [], remarques = [];
+    const sy = await symboleDe(args, ligne, lib, erreurs, remarques);
     const vise = nomEmpreinte(ligne["Empreinte PCB"]);
     if (neuve) {
       const v = CL.verifierEmpreinte(neuve, typeof neuve.name === "string" ? neuve.name + ".json" : null);
@@ -67,10 +101,10 @@ function libPiloteCommandes() {
       erreurs.push("l'empreinte « " + vise + " » est dans la LIB mais illisible : le brochage ne peut pas être vérifié");
     // une empreinte déjà là est montrée telle quelle : ses défauts en remarque, sans la refuser
     if (existante) remarques.push(...CL.verifierEmpreinte(existante, vise + ".json").erreurs.map(e => "empreinte existante : " + e));
-    const v = CL.verifierLigne(ligne, { partNames: lib.partNames, empreintes: lib.empreintes, nouvelle: neuve, empreinteDef: existante });
+    const v = CL.verifierLigne(ligne, Object.assign({ partNames: lib.partNames, empreintes: lib.empreintes, nouvelle: neuve, empreinteDef: existante }, sy.ctx));
     erreurs.push(...v.erreurs);
     remarques.push(...v.remarques);
-    return { erreurs, remarques, ligne: v.ligne, neuve, apercu: neuve || existante };
+    return { erreurs, remarques, ligne: v.ligne, neuve, symbole: sy.neuf, apercu: neuve || existante };
   }
 
   /* L'aperçu de l'empreinte dans l'inspecteur, le temps de la carte. */
@@ -84,6 +118,20 @@ function libPiloteCommandes() {
   function oublier() {
     if (LIB_STATE.selection && typeof selectionnerComposant === "function") selectionnerComposant(LIB_STATE.selection._id);
     else montrer(null, "—");
+  }
+
+  /* Une écriture refusée par le serveur : les fichiers écrits par la carte sont retirés, mais
+     seulement sur un vrai refus (4xx) ; une réponse perdue a pu écrire la ligne. */
+  async function retirerEcrits(e, ecrits, ou) {
+    let dit = "";
+    for (const [fichier, type, quoi] of ecrits) {
+      if (!fichier) continue;
+      const f = quoi === "empreinte" ? "e" : "";            // l'accord du participe
+      if (!(e.status >= 400 && e.status < 500)) { dit += " ; réponse incertaine : " + quoi + " " + fichier + " gardé" + f + ", vérifie " + ou + " avant de réessayer"; continue; }
+      try { await retirer(fichier, type); dit += " ; " + quoi + " " + fichier + " retiré" + f; }
+      catch (e2) { dit += " ; " + quoi + " " + fichier + " NON retiré" + f + " (" + e2.message + ") : à retirer à la main"; }
+    }
+    return dit;
   }
 
   async function retirer(fichier, type = "pcb") {
@@ -105,7 +153,8 @@ function libPiloteCommandes() {
       montrer(p.apercu, nomEmpreinte(L["Empreinte PCB"]));
       return {
         titre: "Créer « " + L["Part Name"] + " » dans la LIB",
-        apres: (p.neuve ? "empreinte neuve " + p.neuve.name + " (" + p.neuve.pads.length + " pastilles)"
+        apres: (p.symbole ? "symbole neuf " + p.symbole.id + " (" + p.symbole.pins.length + " broches) + " : "") +
+               (p.neuve ? "empreinte neuve " + p.neuve.name + " (" + p.neuve.pads.length + " pastilles)"
                         : "empreinte existante " + nomEmpreinte(L["Empreinte PCB"])) +
                " + ligne " + L["Part Name"] + " (" + L["Reference designator Prefix"] + ", " + L["Number Of pins"] +
                " broches, symbole " + nomEmpreinte(L["Empreinte Schématique"]) +
@@ -120,10 +169,14 @@ function libPiloteCommandes() {
       if (p.erreurs.length) throw new Error("Refusé au clic (la LIB a changé depuis la carte ?) : " + p.erreurs.join(" ; "));
       const L = p.ligne;
       let fichier = null;
+      const symFichier = await ecrireSymbole(p.symbole);
       if (p.neuve) {
         fichier = p.neuve.name + ".json";
         try { await sauvegarderFichierLib("pcb", fichier, p.neuve, { si_absent: true }); }
-        catch (e) { throw new Error("Empreinte non écrite : " + e.message); }
+        catch (e) {
+          if (symFichier) await retirer(symFichier, "schematique").catch(() => {});
+          throw new Error("Empreinte non écrite : " + e.message);
+        }
       }
       const ajout = {};
       for (const [k, v] of Object.entries(L)) if (v !== "") ajout[k] = v;
@@ -132,14 +185,8 @@ function libPiloteCommandes() {
       } catch (e) {
         // pas d'empreinte orpheline : celle-ci vient d'être créée par cette carte (si_absent), on la
         // retire, mais seulement sur un vrai refus du serveur ; une réponse perdue a pu écrire la ligne
-        let retiree = "";
-        if (fichier && !(e.status >= 400 && e.status < 500))
-          retiree = " ; réponse incertaine : empreinte " + fichier + " gardée, vérifie le catalogue avant de réessayer";
-        else if (fichier) {
-          try { await retirer(fichier); retiree = " ; empreinte " + fichier + " retirée"; }
-          catch (e2) { retiree = " ; empreinte " + fichier + " NON retirée (" + e2.message + ") : à retirer à la main"; }
-        }
-        throw new Error("Ligne refusée par le serveur : " + e.message + retiree);
+        throw new Error("Ligne refusée par le serveur : " + e.message +
+                        await retirerEcrits(e, [[fichier, "pcb", "empreinte"], [symFichier, "schematique", "symbole"]], "le catalogue"));
       }
       /* le miroir de la page suit : sinon un « Enregistrer » du catalogue (qui réécrit tout)
          effacerait la ligne ajoutée */
@@ -153,7 +200,8 @@ function libPiloteCommandes() {
         if (typeof rafraichirTout === "function") rafraichirTout();
         oublier();
       } catch (e) { console.warn(e); }
-      return { empreinte: fichier ? "lib_empreinte_pcb/" + fichier : null, ligne: L["Part Name"] };
+      return { empreinte: fichier ? "lib_empreinte_pcb/" + fichier : null,
+               symbole: symFichier ? "lib_empreinte_schematique/" + symFichier : null, ligne: L["Part Name"] };
     },
     refuser: () => oublier()
   };
@@ -277,6 +325,7 @@ function libPiloteCommandes() {
     const champs = objet(args.champs || {}, "champs");
     const neuve = args.empreinte == null ? null : objet(args.empreinte, "empreinte");
     const [cat, fichiers] = await Promise.all([apiGet("/api/lib/composants"), apiGet("/api/lib/fichiers")]);
+    const symboles = (fichiers.schematique || []).map(nomEmpreinte);
     const cle = n => String(n || "").trim().toUpperCase();
     const vues = (cat.composants || []).filter(c => cle(c["Part Name"]) === cle(ref));
     if (!vues.length) throw new Error("« " + ref + " » n'est pas au catalogue de la LIB");
@@ -286,6 +335,10 @@ function libPiloteCommandes() {
       erreurs.push("« Part Name » ne se modifie pas : elle désigne la ligne (crée une nouvelle référence)");
     const voulu = Object.assign({}, champs);
     const empreintes = (fichiers.pcb || []).map(nomEmpreinte);
+    const sy = await symboleDe(args, voulu, { symboles }, erreurs, remarques);
+    // le symbole de la ligne, s'il n'est pas modifié, est lu pour contrôler le brochage
+    if (!sy.neuf && voulu["Empreinte Schématique"] == null && comp["Empreinte Schématique"])
+      Object.assign(sy.ctx, (await symboleDe({}, { "Empreinte Schématique": comp["Empreinte Schématique"] }, { symboles }, [], [])).ctx);
     if (neuve) {
       const v = CL.verifierEmpreinte(neuve, typeof neuve.name === "string" ? neuve.name + ".json" : null);
       erreurs.push(...v.erreurs.map(e => "empreinte : " + e));
@@ -303,9 +356,10 @@ function libPiloteCommandes() {
     const autres = (cat.composants || []).filter(c => c !== comp).map(c => c["Part Name"] || "");
     const defDe = async v => { const n = nomEmpreinte(v || ""); return empreintes.includes(n) ? await obtenirFichierLib("pcb", n + ".json") : null; };
     const fusion = Object.assign({}, ancienne, voulu);
-    const vAvant = CL.verifierLigne(ancienne, { partNames: autres, empreintes, empreinteDef: await defDe(ancienne["Empreinte PCB"]) });
-    const vApres = CL.verifierLigne(fusion, { partNames: autres, empreintes, nouvelle: neuve,
-                                             empreinteDef: neuve ? null : await defDe(fusion["Empreinte PCB"]) });
+    const vAvant = CL.verifierLigne(ancienne, Object.assign({ partNames: autres, empreintes, empreinteDef: await defDe(ancienne["Empreinte PCB"]) },
+                                                            { symboles, symboleDefs: sy.ctx.symboleDefs }));
+    const vApres = CL.verifierLigne(fusion, Object.assign({ partNames: autres, empreintes, nouvelle: neuve,
+                                                           empreinteDef: neuve ? null : await defDe(fusion["Empreinte PCB"]) }, sy.ctx));
     for (const e of vApres.erreurs) (vAvant.erreurs.includes(e) ? remarques : erreurs).push(vAvant.erreurs.includes(e) ? "déjà avant : " + e : e);
     remarques.push(...vApres.remarques.filter(r => !vAvant.remarques.includes(r)));
     // les cases qui changent vraiment, écrites comme le contrôle les rend (chemins lib/…, espaces ôtés)
@@ -315,7 +369,7 @@ function libPiloteCommandes() {
       if (apres !== String(comp[k] == null ? "" : comp[k]).trim()) changements[k] = apres;
     }
     if (!Object.keys(changements).length && !erreurs.length) erreurs.push("rien ne change : les valeurs données sont déjà celles de la ligne");
-    return { erreurs, remarques, comp, changements, neuve,
+    return { erreurs, remarques, comp, changements, neuve, symbole: sy.neuf,
              apercu: neuve || (changements["Empreinte PCB"] ? await defDe(changements["Empreinte PCB"]) : null) };
   }
 
@@ -333,7 +387,8 @@ function libPiloteCommandes() {
         titre: "Modifier « " + p.comp["Part Name"] + " » dans la LIB",
         avant: cases.map(([k]) => k + " = " + (String(p.comp[k] == null ? "" : p.comp[k]).trim() || "(vide)")).join(" · "),
         apres: cases.map(([k, v]) => k + " = " + (v || "(vide)")).join(" · ") +
-               (p.neuve ? " ; empreinte neuve " + p.neuve.name + " (" + p.neuve.pads.length + " pastilles)" : ""),
+               (p.neuve ? " ; empreinte neuve " + p.neuve.name + " (" + p.neuve.pads.length + " pastilles)" : "") +
+               (p.symbole ? " ; symbole neuf " + p.symbole.id + " (" + p.symbole.pins.length + " broches)" : ""),
         details: p.remarques.length ? "Remarques : " + p.remarques.join(" ; ") : ""
       };
     },
@@ -341,10 +396,14 @@ function libPiloteCommandes() {
       const p = await preparerModif(args);
       if (p.erreurs.length) throw new Error("Refusé au clic (la LIB a changé depuis la carte ?) : " + p.erreurs.join(" ; "));
       let fichier = null;
+      const symFichier = await ecrireSymbole(p.symbole);
       if (p.neuve) {
         fichier = p.neuve.name + ".json";
         try { await sauvegarderFichierLib("pcb", fichier, p.neuve, { si_absent: true }); }
-        catch (e) { throw new Error("Empreinte non écrite : " + e.message); }
+        catch (e) {
+          if (symFichier) await retirer(symFichier, "schematique").catch(() => {});
+          throw new Error("Empreinte non écrite : " + e.message);
+        }
       }
       const avant = {};
       for (const k of Object.keys(p.changements)) avant[k] = p.comp[k] == null ? "" : String(p.comp[k]);
@@ -352,15 +411,8 @@ function libPiloteCommandes() {
       try {
         rep = await apiPost("/api/lib/composants", { modifier: { part: p.comp["Part Name"], champs: p.changements, avant } });
       } catch (e) {
-        // même règle que la création : on ne retire que l'empreinte écrite par cette carte, sur un vrai refus
-        let retiree = "";
-        if (fichier && !(e.status >= 400 && e.status < 500))
-          retiree = " ; réponse incertaine : empreinte " + fichier + " gardée, vérifie la ligne avant de réessayer";
-        else if (fichier) {
-          try { await retirer(fichier); retiree = " ; empreinte " + fichier + " retirée"; }
-          catch (e2) { retiree = " ; empreinte " + fichier + " NON retirée (" + e2.message + ") : à retirer à la main"; }
-        }
-        throw new Error("Modification refusée par le serveur : " + e.message + retiree);
+        throw new Error("Modification refusée par le serveur : " + e.message +
+                        await retirerEcrits(e, [[fichier, "pcb", "empreinte"], [symFichier, "schematique", "symbole"]], "la ligne"));
       }
       // le miroir de la page suit : sinon un « Enregistrer » du catalogue remettrait les anciennes valeurs
       try {
@@ -374,7 +426,8 @@ function libPiloteCommandes() {
         if (typeof rafraichirTout === "function") rafraichirTout();
         oublier();
       } catch (e) { console.warn(e); }
-      return { reference: p.comp["Part Name"], champs: rep.champs, empreinte: fichier ? "lib_empreinte_pcb/" + fichier : null };
+      return { reference: p.comp["Part Name"], champs: rep.champs, empreinte: fichier ? "lib_empreinte_pcb/" + fichier : null,
+               symbole: symFichier ? "lib_empreinte_schematique/" + symFichier : null };
     },
     refuser: () => oublier()
   };
