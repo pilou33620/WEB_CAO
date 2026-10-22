@@ -19,18 +19,15 @@ autre net, la Gestion LIB qui montait à environ 890 Mo au chargement.
   standard » et « Huray · HVLP » (`editeur-pcb/js/01-core.js`) suivent la méthode
   « cannonball » : a = Rz / 16,73, SR = 4,887 ; Rz 5 µm (a 0,299 µm) et 1,5 µm (a 0,09 µm).
   Un empilage déjà réglé garde ses valeurs : seuls les choix faits ensuite dans la liste changent.
-- [ ] **Huray, une rugosité par face** (piste) : Simonovich calcule K pour chaque face du
-  feuillard (côté tambour, côté mat) puis fait la moyenne ; le code n'a qu'une rugosité par
-  cuivre. Demande la Rz des deux faces de chaque feuillard.
-- [ ] **Simulation RF S21 TX de la carte P01x274** (U400 → antenne) : les modèles AS179 sont
-  en place, l'étude est faite (voir l'historique, *Simulation RF — S21 TX de la carte P01x274*).
-  En attente de tes réponses : (2) port 1, Zopt Semtech ou 50 Ω ; (3) port 2, antenne, U.FL ou
-  les deux ; (4) branche RX exclue, gardée, ou S21 RX plus tard ; (5) les fichiers Murata,
-  l'impédance de l'IFA, la Zopt. La mesure de comparaison est dans
-  [TESTS-A-FAIRE.md](TESTS-A-FAIRE.md).
-- [ ] **Port différentiel en simulation RF** (piste) : seuls deux ports asymétriques existent ;
-  un S21 RX sur RFI_P / RFI_N le demanderait. Ne se commence que si la réponse (4) ci-dessus
-  garde la branche RX.
+- [ ] **Port différentiel en simulation RF** (décidé le 22/10/2026, pour plus tard) : la
+  simulation RF n'a que des ports simples (un signal par rapport à la masse). Une entrée
+  différentielle, comme l'entrée réception RFI_P / RFI_N du SX1261 de P01x274, en demande un.
+  Prérequis du S21 en réception de cette carte, qui viendra après celui en émission.
+
+La simulation S21 en émission de P01x274 n'est plus ici : elle ne demande aucun code
+(l'impédance de chaque port se règle dans le panneau, les modèles des composants viennent de la
+LIB). C'est un essai, dans [TESTS-A-FAIRE.md](TESTS-A-FAIRE.md). Retirée le 22/10/2026 : une
+rugosité de Huray par face du feuillard (écart faible, données rarement publiées).
 
 Côté pilotage par Claude (MCP), les fonctionnalités possibles sont listées dans
 [l'A-FAIRE de web_suite](https://github.com/pilou33620/web_suite/blob/main/A-FAIRE.md).

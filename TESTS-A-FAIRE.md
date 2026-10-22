@@ -26,8 +26,9 @@ donner à Claude in Chrome. Le code à écrire est dans [A-FAIRE.md](A-FAIRE.md)
 - [ ] **eCADSTAR** : un fichier IPC-2581 porte-t-il `<Package><Outline>` et `height` ? Sinon les
   corps restent estimés d'après les pastilles — [ESSAI-cao-ecadstar-package.md](https://github.com/pilou33620/web_suite/blob/main/tasks/essais/ESSAI-cao-ecadstar-package.md)
 - [ ] **Carte TRD1_N en « ETH 100 »** — [ESSAI-cao-trd1n-eth100.md](https://github.com/pilou33620/web_suite/blob/main/tasks/essais/ESSAI-cao-trd1n-eth100.md)
-- [ ] **Simulation RF de P01x274** : la mesure à comparer au S21 simulé, avec tes réponses (voir
-  [A-FAIRE.md](A-FAIRE.md)) — [ESSAI-cao-rf-p01x274.md](https://github.com/pilou33620/web_suite/blob/main/tasks/essais/ESSAI-cao-rf-p01x274.md)
+- [ ] **Simulation RF de P01x274, S21 en émission** : U400.23 → J400 (U.FL), les deux ports à
+  50 Ω, branche réception exclue (choix du 22/10/2026). Reste : la variante de montage vers J400
+  (R416 0 Ω, ou R425 / J401), lancer la simulation, puis la mesure au banc pour comparer — [ESSAI-cao-rf-p01x274.md](https://github.com/pilou33620/web_suite/blob/main/tasks/essais/ESSAI-cao-rf-p01x274.md)
 - [ ] **Dossier mécanique** : télécharger le zip et importer le DXF dans la CAO méca —
   [ESSAI-cao-dossier-meca-import.md](https://github.com/pilou33620/web_suite/blob/main/tasks/essais/ESSAI-cao-dossier-meca-import.md) ; une IA lit le JSON (critère 6) —
   [ESSAI-cao-dossier-meca-ia.md](https://github.com/pilou33620/web_suite/blob/main/tasks/essais/ESSAI-cao-dossier-meca-ia.md)
