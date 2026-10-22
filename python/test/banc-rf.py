@@ -85,7 +85,9 @@ def _doc(ports, composants=(), branches=(), masses=(), f1=2.0e9, f2=3.0e9,
          points=11):
     return {"format": rf.FORMAT, "stackup": {"layers": QUATRE},
             "reference_nets": ["GND"],
-            "ports": [{"noeud": n, "z": [z.real, z.imag]} for n, z in ports],
+            "ports": [dict({"noeud": p[0], "z": [p[1].real, p[1].imag]},
+                           **({"noeud_n": p[2]} if len(p) > 2 else {}))
+                      for p in ports],
             "branches": list(branches), "composants": list(composants),
             "masses": list(masses),
             "analyse": {"f_debut": f1, "f_fin": f2, "points": points,
@@ -171,6 +173,40 @@ def deux_ports_relies_donnent_le_gain_de_desadaptation():
     proche(abs(_s(r, 0, 1, 0)) ** 2, attendu, 1e-6, "|S21|^2 d'un fil")
     proche(abs(_s(r, 0, 0, 0)) ** 2, 1 - attendu, 1e-6,
            "|S11|^2 d'un fil sans pertes")
+
+
+def les_ports_differentiels():
+    """rf_reseau 1.9.0 : un port entre deux noeuds (RFI_P / RFI_N), sans masse.
+    50 ohms dans chaque fil d'une paire, deux ports differentiels de 100 :
+    100 ohms en serie entre deux 100, S21 = 2/3 et S11 = 1/3. Le mode commun
+    n'est tenu que par deux fuites de 1 Mohm, qui ne doivent rien changer."""
+    comp = [_ideal("R1", "R", 50.0, "p", "q"), _ideal("R2", "R", 50.0, "n", "m"),
+            _ideal("RF1", "R", 1e6, "n", "0"), _ideal("RF2", "R", 1e6, "m", "0")]
+    r = rf.analyser(_doc([("p", 100 + 0j, "n"), ("q", 100 + 0j, "m")], comp))
+    proche(_s(r, 0, 1, 0), 2 / 3, 1e-4, "S21 differentiel")
+    proche(_s(r, 0, 0, 0), 1 / 3, 1e-4, "S11 differentiel")
+    assert r["ports"][0].get("noeud_n") == "n", r["ports"]
+    # La borne - reliee a la masse par un 0 ohm : c'est le port asymetrique.
+    a = rf.analyser(_doc([("a", 14 + 8j, "g"), ("b", 50 + 0j)],
+                         [_ideal("R0", "R", 0.0, "a", "b"),
+                          _ideal("RG", "R", 0.0, "g", "0")]))
+    s = rf.analyser(_doc([("a", 14 + 8j), ("b", 50 + 0j)],
+                         [_ideal("R0", "R", 0.0, "a", "b")]))
+    proche(_s(a, 0, 1, 0), _s(s, 0, 1, 0), 1e-9, "borne - a la masse")
+    assert "noeud_n" not in a["ports"][0], a["ports"]
+    # Une paire croisee (+ d'un cote, - de l'autre) inverse S21.
+    x = rf.analyser(_doc([("p", 100 + 0j, "n"), ("m", 100 + 0j, "q")], comp))
+    proche(_s(x, 0, 1, 0), -2 / 3, 1e-4, "S21 d'une paire croisee")
+    for ports, quoi in (([("a", 50 + 0j, "a"), ("b", 50 + 0j)], "bornes egales"),
+                        ([("a", 50 + 0j, "b"), ("b", 50 + 0j, "a")], "meme paire"),
+                        ([("a", 50 + 0j, "g"), ("b", 50 + 0j)], "0 ohm entre bornes")):
+        try:
+            rf.analyser(_doc(ports, [_ideal("R", "R", 1, "a", "b"),
+                                     _ideal("RG", "R", 0.0, "g", "a")]))
+        except rf.ErreurRF:
+            pass
+        else:
+            raise AssertionError("port refuse attendu : " + quoi)
 
 
 def un_reseau_en_l_adapte_14_8j_sur_50():

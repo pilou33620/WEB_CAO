@@ -47,8 +47,10 @@ Il est refuse avec cette phrase, pas linearise en silence.
 Le document d'entree, format « cao-sim-rf-1 », EN MILLIMETRES :
 
     stackup, reference_nets, analyse   comme pour `simulation_em`
-    ports       [{noeud, z: [re, im]}] x 2 -- l'impedance de SORTIE de la
-                puce au port 1, celle de la charge au port 2
+    ports       [{noeud, noeud_n?, z: [re, im]}] x 2 -- l'impedance de SORTIE
+                de la puce au port 1, celle de la charge au port 2 ; un port
+                DIFFERENTIEL porte `noeud_n` (RFI_N face a RFI_P) : sa tension
+                est V(noeud) - V(noeud_n), sans masse ; sinon noeud_n = « 0 »
     branches    [{a, b, net, objets, vias, fentes?}] -- `objets` rangés de a
                 vers b, au format de `geometry.objects` de simulation_em ;
                 `fentes` [{d1, d2, g, largeur, plan, borne}] les fentes du plan
@@ -102,7 +104,7 @@ except Exception:                                      # noqa: BLE001
 # 1.8.0 (2026-10-21) : un bloc Touchstone peut etre rapporte a une broche de
 # la puce (`reference` du composant, ses vias de masse) plutot qu'a la masse
 # ideale : la page l'envoie quand le fichier nomme sa broche « ! masse ».
-VERSION = "1.8.0"
+VERSION = "1.9.0"
 FORMAT = "cao-sim-rf-1"
 FORMAT_RESULTAT = "cao-sim-rf-resultat-1"
 MASSE = "0"
@@ -1866,9 +1868,13 @@ def _valider(doc):
         n = str(p.get("noeud") or "")
         if not n or n == MASSE:
             raise ErreurRF("Port %d posé sur la masse ou nulle part." % (k + 1))
+        moins = str(p.get("noeud_n") or MASSE)
+        if moins == n:
+            raise ErreurRF("Port %d : ses deux bornes sont sur le même nœud."
+                           % (k + 1))
         z.append(zc)
-        noeuds.append(n)
-    if noeuds[0] == noeuds[1]:
+        noeuds.append((n, moins))
+    if noeuds[0][0] == noeuds[1][0] or noeuds[0] == noeuds[1][::-1]:
         raise ErreurRF("Les deux ports sont sur le même nœud.")
     if len(doc.get("branches") or []) > MAX_BRANCHES:
         raise ErreurRF("Trop de branches de piste (maximum %d)." % MAX_BRANCHES)
@@ -2178,11 +2184,14 @@ def analyser(doc, journal=None):
     shunts = [(racine(n), c) for n, c in shunts]
     noms_masses = [n for n, _ in masses]      # les noms, pour la fiche
     masses = [(racine(n), ys) for n, ys in masses]
-    noeuds_ports = [racine(n) for n in noeuds_ports]
-    if MASSE in noeuds_ports:
-        raise ErreurRF("Un port est court-circuité à la masse par un 0 Ω.")
+    noeuds_ports = [(racine(a), racine(b)) for a, b in noeuds_ports]
+    for a, b in noeuds_ports:
+        if a == b:
+            raise ErreurRF("Un port est court-circuité à la masse par un 0 Ω."
+                           if b == MASSE else "Un port différentiel est "
+                           "court-circuité par un 0 Ω entre ses deux bornes.")
 
-    noms = list(noeuds_ports)
+    noms = [n for paire in noeuds_ports for n in paire]
     for a, b, _ in branches:
         noms += [a, b]
     for ns, _ in composants + blocs:
@@ -2380,8 +2389,9 @@ def analyser(doc, journal=None):
     return {
         "format": FORMAT_RESULTAT, "version": VERSION,
         "carte": doc.get("carte") or "",
-        "ports": [{"noeud": n, "z": [z.real, z.imag]}
-                  for n, z in zip(noeuds_ports, z_ports)],
+        "ports": [dict({"noeud": a, "z": [z.real, z.imag]},
+                       **({"noeud_n": b} if b != MASSE else {}))
+                  for (a, b), z in zip(noeuds_ports, z_ports)],
         "f_centre": fc,
         "freqs": [float(f) for f in freqs],
         "s": [[[float(v.real), float(v.imag)] for v in m.flatten()]
@@ -2465,9 +2475,9 @@ class _Assemblage(object):
         r = [np.array(self.r, dtype=int)] + [b[0] for b in self.blocs]
         c = [np.array(self.c, dtype=int)] + [b[1] for b in self.blocs]
         v = [np.array(self.v, dtype=complex)] + [b[2] for b in self.blocs]
-        di = np.array(list(diag.keys()), dtype=int)
-        r = np.concatenate(r + [di])
-        c = np.concatenate(c + [di])
+        di = np.array(list(diag.keys()), dtype=int).reshape(-1, 2)
+        r = np.concatenate(r + [di[:, 0]])
+        c = np.concatenate(c + [di[:, 1]])
         v = np.concatenate(v + [np.array(list(diag.values()), dtype=complex)])
         if self.n > 400 and _SPARSE is not None:
             return _SPARSE.coo_matrix((v, (r, c)),
@@ -2497,22 +2507,35 @@ def _s_ports(y, index, ports, z, impedances=None, sondes=None, energie=None):
         a_j = 1 / (2 rac(Rj)),  b_i = (V_i - Zi* I_i) / (2 rac(Ri))
     ce qui ne demande jamais d'inverser la matrice Y du reseau -- donc marche
     aussi sur un fil ou un bloc S sans matrice Y. Les deux attaques partagent
-    UNE factorisation.
+    UNE factorisation. Un port est une paire (noeud +, noeud -), la masse
+    valant 0 V : un port differentiel pose sa reference entre ses deux bornes
+    et y injecte +I / -I, sa tension est V+ - V-.
     """
-    ip = [index[n] for n in ports]
+    ip = [(index.get(a), index.get(b)) for a, b in ports]
     diag = {}
-    for i, zk in zip(ip, z):
-        diag[i] = diag.get(i, 0) + 1.0 / zk
+    for (a, b), zk in zip(ip, z):
+        for r, c, sg in ((a, a, 1), (b, b, 1), (a, b, -1), (b, a, -1)):
+            if r is not None and c is not None:
+                diag[(r, c)] = diag.get((r, c), 0) + sg / zk
     m, creuse = y.matrice(diag)
     rhs = np.zeros((y.n, 2), dtype=complex)
     for j in range(2):
-        rhs[ip[j], j] += 1.0 / z[j]
+        a, b = ip[j]
+        if a is not None:
+            rhs[a, j] += 1.0 / z[j]
+        if b is not None:
+            rhs[b, j] -= 1.0 / z[j]
+
+    def tension(v, k):
+        a, b = ip[k]
+        return ((v[a] if a is not None else 0) - (v[b] if b is not None else 0))
+
     vv = _resoudre(m, creuse, rhs)
     s = np.zeros((2, 2), dtype=complex)
     for j in range(2):
         v = vv[:, j]
         for i in range(2):
-            vi = v[ip[i]]
+            vi = tension(v, i)
             courant = ((1.0 - vi) if i == j else -vi) / z[i]
             b = (vi - z[i].conjugate() * courant) / (2 * math.sqrt(z[i].real))
             s[i, j] = b * 2 * math.sqrt(z[j].real)
@@ -2525,7 +2548,7 @@ def _s_ports(y, index, ports, z, impedances=None, sondes=None, energie=None):
                 par[net] = par.get(net, 0.0) + 4 * z[0].real * g * abs(v[i_n]) ** 2
             energie.append(par)
         if impedances is not None:
-            vj = v[ip[j]]
+            vj = tension(v, j)
             courant = (1.0 - vj) / z[j]
             impedances[j].append(vj / courant if abs(courant) > 1e-300
                                  else complex(float("inf")))
