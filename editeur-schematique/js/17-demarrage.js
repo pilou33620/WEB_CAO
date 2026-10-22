@@ -69,7 +69,7 @@ function schChargerProjet(){
   projdDocLire("schema").then(function(d){
     /* un brouillon plus récent que le document (sauvegarde automatique d'une
        session fermée sans enregistrer) se propose, même sans document */
-    return projdBrouillonProposer("schema","du schéma").then(function(b){return {d:d,b:b};});
+    return projdBrouillonProposer("schema","du schéma",function(){return S.dirty;}).then(function(b){return {d:d,b:b};});
   }).then(function(r){
     const d=r.b||r.d;
     if(!d)return;            // dossier sans schéma : il n'y a rien à reprendre

@@ -119,7 +119,8 @@ du projet (`projdBrouillonTic`, `commun/projet-disque.js` ; route
 fichier est ignoré par git (`.gitignore` de PROJETS), sans netlist, et
 *Enregistrer .json* l'efface. À la réouverture du projet, un brouillon plus
 récent que le document est proposé (confirmation) : repris, le schéma reste
-« modifié » ; refusé, le brouillon est effacé. Au démarrage la session passe
+« modifié » ; refusé, il reste jusqu'au prochain enregistrement (rien ne se
+propose si le schéma a été modifié pendant la lecture). Au démarrage la session passe
 d'abord, et sans rien demander ; le brouillon ne sert qu'à défaut. Rien n'est
 gardé dans le navigateur : le disque fait foi. Sans projet ouvert (version
 téléchargement), pas de brouillon : l'avertissement de fermeture reste le seul

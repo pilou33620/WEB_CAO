@@ -1741,6 +1741,26 @@ TA("brouillon : écrit si modifié et changé, effacé à l'enregistrement, repr
     const r9=S.pages.flatMap(p=>p.comps).find(c=>c.ref==="R9");
     if(!r9||r9.value!=="brouillon")throw new Error("le brouillon n'est pas repris");
     if(!S.dirty)throw new Error("un brouillon repris doit rester « modifié »");
+    /* refusé (ou boîte fermée par le navigateur) : le document enregistré, le brouillon reste */
+    global.confirm=()=>false;
+    sheet([],[]);S.dirty=false;SCH_PROJET_LU=false;
+    schChargerProjet();
+    for(let i=0;i<40;i++)await null;
+    storeCurrent();
+    if(!disque.brouillon)throw new Error("refusé, le brouillon ne s'efface pas : le prochain enregistrement le fera");
+    if(S.dirty||S.pages.flatMap(p=>p.comps).find(c=>c.ref==="R9").value!=="en cours")
+      throw new Error("refusé : le schéma enregistré devait être chargé");
+    /* travail commencé pendant la lecture : rien ne se propose */
+    let question="";global.confirm=t=>{question=t;return true;};
+    sheet([],[]);S.dirty=false;SCH_PROJET_LU=false;
+    schChargerProjet();S.dirty=true;
+    for(let i=0;i<40;i++)await null;
+    if(question||!disque.brouillon)throw new Error("occupé : le brouillon ne devait pas se proposer");
+    /* nom déclaré sans .json : pas de brouillon, il serait le document lui-même */
+    projdAdopter("serveur","carte",Object.assign(projdNeuf("carte"),{fichiers:{schema:"carte-SCH"}}),{});
+    if(projdNomBrouillon("schema")!=="")throw new Error("sans .json : "+projdNomBrouillon("schema"));
+    const n=appels.length;
+    if(await tic()||appels.length!==n)throw new Error("sans .json : rien ne s'écrit");
   }finally{
     global.fetch=avant;global.confirm=conf;avis.querySelector=qs;SCH_PROJET_LU=luAvant;
     projdDetacher();projFermer();S.dirty=false;dom.storage.clear();

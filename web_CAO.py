@@ -2379,9 +2379,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                     "modifie": mtime_ms(chemin)}
 
     def _projet_doc_effacer(self):
-        """Efface le brouillon, apres un enregistrement ou un refus de le
-        reprendre. Seul le brouillon s'efface par cette route : le document,
-        jamais. Absent, ce n'est pas une erreur."""
+        """Efface le brouillon, apres un enregistrement. Seul le brouillon
+        s'efface par cette route : le document, jamais. Absent, ce n'est pas
+        une erreur."""
         dossier = self._projet_dossier()
         outil = self._projet_outil()
         if not self._projet_brouillon():

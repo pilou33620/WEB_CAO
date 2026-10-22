@@ -549,7 +549,9 @@ function projdDocEcrire(outil, obj){
    brouillon hors projet si on perd du travail ainsi.
    ========================================================================== */
 function projdNomBrouillon(outil){
-  return projdNomDoc(outil).replace(/\.json$/i, ".brouillon.json");
+  const nom = projdNomDoc(outil);
+  // sans .json final, le remplacement rendrait le document lui-meme : pas de brouillon
+  return /\.json$/i.test(nom) ? nom.replace(/\.json$/i, ".brouillon.json") : "";
 }
 function projdBrouillonEcrire(outil, obj){
   const nom = projdNomBrouillon(outil);
@@ -604,21 +606,22 @@ function projdBrouillonTic(outil, sale, doc){
   return e.p;
 }
 /* A la reouverture : un brouillon plus recent que le document se propose.
-   Rend son document s'il est repris, null sinon ; refuse, il est efface. Un
-   brouillon plus ancien que le document reste ou il est (le prochain
-   enregistrement l'effacera) : on n'efface pas en silence. */
-function projdBrouillonProposer(outil, quoi){
+   Rend son document s'il est repris, null sinon. Refuse (ou boite fermee
+   d'office par le navigateur, autre onglet sur le meme projet), comme plus
+   ancien que le document, il reste ou il est : le prochain enregistrement
+   l'effacera ; on n'efface pas sur un « Annuler ». `occupe()` vrai (travail
+   commence pendant la lecture) : rien n'est propose. */
+function projdBrouillonProposer(outil, quoi, occupe){
   return projdBrouillonLire(outil).then(function(b){
     if(!b) return null;
     const d = PROJD.documents && PROJD.documents[outil];
     const docT = PROJD_VU[outil] || (d && d.present && d.modifie) || 0;
-    if(b.modifie <= docT) return null;
+    if(b.modifie <= docT || (occupe && occupe())) return null;
     const ok = typeof confirm === "function" && confirm(
       "Un brouillon " + (quoi || "de ce document") + " plus récent que le document enregistré a été trouvé "
       + "(sauvegarde automatique, " + projdQuand(b.modifie) + ").\n\n"
-      + "Le reprendre ? (Annuler : le brouillon est effacé.)");
-    if(ok) return b.document;
-    return projdBrouillonEffacer(outil).then(function(){ return null; });
+      + "Le reprendre ? (Annuler : il reste sur le disque jusqu'au prochain enregistrement.)");
+    return ok ? b.document : null;
   }).catch(function(){ return null; });
 }
 /* ==========================================================================

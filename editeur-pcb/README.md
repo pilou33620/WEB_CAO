@@ -3437,8 +3437,10 @@ navigateur). Il est ignoré par git (`.gitignore` de PROJETS) et ne compte ni
 dans le relevé des documents ni dans l'heure de dernière sauvegarde.
 L'enregistrement réussi l'efface (DELETE, qui n'efface jamais le document). À la
 réouverture, un brouillon plus récent que la carte est proposé : repris, la
-carte reste « modifiée » ; refusé, il est effacé ; plus ancien, il reste là
-sans question. La session de l'onglet passe devant et ne demande rien. Rien
+carte reste « modifiée » ; refusé, ou plus ancien, il reste là jusqu'au
+prochain enregistrement (on n'efface pas sur un « Annuler », que le navigateur
+peut donner seul). Rien ne se propose si la carte a été modifiée pendant la
+lecture, ni si le nom déclaré ne finit pas par `.json` (pas de brouillon). La session de l'onglet passe devant et ne demande rien. Rien
 n'est écrit à la fermeture : une requête partie de `pagehide` est bornée à
 64 Ko.
 

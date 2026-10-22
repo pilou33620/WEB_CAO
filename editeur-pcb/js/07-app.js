@@ -881,7 +881,7 @@ function pcbChargerProjet(){
   PCB_PROJET_P=projdDocLire("pcb").then(function(d){
     /* un brouillon plus récent que la carte (sauvegarde automatique d'une
        session fermée sans enregistrer) se propose, même sans carte */
-    return projdBrouillonProposer("pcb","de la carte").then(function(b){return {d:d,b:b};});
+    return projdBrouillonProposer("pcb","de la carte",function(){return S.dirty;}).then(function(b){return {d:d,b:b};});
   }).then(function(r){
     const d=r.b||r.d;
     if(!d)return;              // dossier sans carte : il n'y a rien à reprendre

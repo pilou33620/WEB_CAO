@@ -47,7 +47,8 @@ Les limites connues des guides qui restent à coder (22/10/2026) :
   le schéma ou la carte modifiés et changés depuis la dernière fois partent dans un
   brouillon à côté du document (`<nom>-SCH.brouillon.json`, `-PCB.brouillon.json`, ignorés
   par git), effacé à l'enregistrement ; à la réouverture, un brouillon plus récent que le
-  document est proposé (refusé, il est effacé), la session de l'onglet passant devant.
+  document est proposé (refusé, il reste jusqu'au prochain enregistrement ; rien ne se
+  propose si le travail a commencé), la session de l'onglet passant devant.
   Reste : sans projet ouvert (téléchargement), pas de brouillon ; les 30 dernières
   secondes ne sont pas dans le brouillon.
 - [x] **Laminage séquentiel** (22/10/2026) : la séquence de pressages se décrit dans
