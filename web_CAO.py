@@ -3748,6 +3748,7 @@ def start_server(host, port, navigateur=True):
     url = adresse_locale(bound_host, bound_port)
     global GARDE
     GARDE = appairage.Garde("WEB_CAO", actif=not is_local_only)
+    GARDE.brancher(httpd)               # en mode reseau : HTTPS sur le meme port
 
     # Les dossiers de projet ne s'ouvrent que sur une ecoute locale. Le choix
     # se fait ici, sur l'adresse reellement obtenue -- pas sur l'intention :
@@ -3819,9 +3820,9 @@ def start_server(host, port, navigateur=True):
         print("  Mode local : le serveur n'est PAS accessible depuis un autre")
         print("  appareil. Relancez sans --local pour ouvrir l'acces au reseau.")
     else:
-        print("  adresse       : http://%s:%d/" % (get_local_ip(), bound_port))
+        print("  adresse       : %s" % GARDE.adresse(get_local_ip(), bound_port))
         if appairage.ip_tailscale():
-            print("  tailscale     : http://%s:%d/" % (appairage.ip_tailscale(), bound_port))
+            print("  tailscale     : %s" % GARDE.adresse(appairage.ip_tailscale(), bound_port))
         print()
         print("  Depuis un autre appareil du meme reseau WiFi (iPad par exemple),")
         print("  ouvrez le navigateur et tapez cette adresse.")

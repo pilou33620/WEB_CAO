@@ -46,6 +46,8 @@ WEB_CAO tourne dans n'importe quel navigateur récent ; seul le serveur demande 
 > Lancé **depuis un terminal**, le serveur écoute sur tout le réseau. Par prudence (pas de mot de passe), les dossiers de projet y sont alors refusés et la bibliothèque passe en lecture seule, sauf avec `--projets-reseau` sur un réseau de confiance. Lancé par double-clic ou avec `--local`, il n'écoute que la machine elle-même et tout est permis.
 >
 > Depuis un autre appareil, la page demande une fois un **code d'appairage** à 6 chiffres, affiché dans la console du serveur (ou dans les logs de WEB_CAO, dans WEB·SUITE). L'appareil s'en souvient ensuite, pour tous les web tools de ce poste (`appairage.py`, commun aux web tools) ; la machine elle-même n'en a jamais besoin.
+>
+> En mode réseau, la connexion est **chiffrée (HTTPS)** quand la commande `openssl` est présente sur le poste (Raspberry Pi, Linux, macOS ; sous Windows, celle de Git) : une autorité propre au poste, créée une fois dans `~/.web_tools/tls/`, signe le certificat du serveur. Chaque appareil l'installe une fois, depuis le lien de la page du code (`/appairage/ca.pem`) ; sur iPad : Réglages › Profil téléchargé › Installer, puis Général › Informations › Réglages des certificats › activer. Comparer son empreinte SHA-256 avec celle du terminal. Sans `openssl` (ou avec `WEB_TOOLS_HTTP=1`), tout reste en HTTP et le terminal le dit.
 
 ---
 
