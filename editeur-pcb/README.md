@@ -3563,9 +3563,6 @@ désactive au lieu de disparaître.
   BGA — lettres et colonnes — ne sont pas dessinés d'avance ; ils se dessinent
   à la main dans la fenêtre d'empreinte, et s'enregistrent ensuite dans la
   bibliothèque personnelle.
-- Une pastille est rectangulaire (coins adoucis ou angles droits), oblongue ou
-  ronde, avec sa rotation propre. Pas de forme quelconque : ni pastille en
-  polygone, ni plage thermique découpée, ni chanfrein.
 - Gestionnaire de contraintes : le moignon d'un via se compte en épaisseur
   d'empilage, contre-perçage déduit. Les contraintes de classe, l'isolation
   entre classes et les largeurs se règlent au PCB, qui connaît l'empilage ; le

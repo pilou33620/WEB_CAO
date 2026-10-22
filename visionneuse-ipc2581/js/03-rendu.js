@@ -334,7 +334,9 @@ function peindreNet(c,dpr,net,mev){
   c.globalAlpha=1;
 }
 
-/* Les composants : une boîte et, au zoom qui le permet, leur repère. On ne
+/* Les composants : le contour du boîtier quand le fichier le donne, sinon le
+   cadre de ses pastilles, en tirets et un peu élargi — une estimation, qui
+   doit se voir comme telle. Au zoom qui le permet, leur repère. On ne
    dessine que ceux qui sont à l'écran — c'est ici que le tri par fenêtre
    compte, une carte dense en portant des milliers. */
 function peindreComposants(c,dpr){
@@ -347,12 +349,20 @@ function peindreComposants(c,dpr){
   }
   poserMonde(c,dpr);
   c.lineWidth=Math.max(0.8/V.vue.scale,0.01);
+  const marge=0.25/mdlK(), tiret=[4/V.vue.scale,3/V.vue.scale];
+  c.globalAlpha=0.55;
   for(const comp of vus){
     const b=comp.boite, cu=V.couches[comp.c];
     c.strokeStyle=(cu&&cu.dessous)?"#3fa0ea":"#8b919c";
-    c.globalAlpha=0.55;
-    c.strokeRect(b.x1,b.y1,b.x2-b.x1,b.y2-b.y1);
+    if(comp.corpsPl){
+      c.setLineDash([]);
+      c.stroke(compCorpsChemin(comp));
+    }else{
+      c.setLineDash(tiret);
+      c.strokeRect(b.x1-marge,b.y1-marge,b.x2-b.x1+2*marge,b.y2-b.y1+2*marge);
+    }
   }
+  c.setLineDash([]);
   c.globalAlpha=1;
   if(!V.aff.refs)return;
 
@@ -382,23 +392,24 @@ function peindreComposants(c,dpr){
   }
 }
 
-/* Les textes du fichier (sérigraphie, repères de fabrication). IPC-2581 ne
-   donne pas ici de hauteur exploitable : on prend une hauteur de référence,
-   celle d'une sérigraphie courante, et le zoom fait le reste. */
+/* Les textes du fichier (sérigraphie, repères de fabrication), à leur hauteur
+   (`h` : la <BoundingBox> du texte, à défaut son fontSize). Un fichier qui ne
+   la donne pas reçoit une hauteur de référence, celle d'une sérigraphie
+   courante, et le zoom fait le reste. */
 function peindreTextes(c,dpr){
   if(!V.aff.textes)return;
-  const h=1.2/mdlK();                        // hauteur de référence : 1,2 mm
-  const px=h*V.vue.scale;
-  if(px<5)return;                            // illisible : autant ne rien mettre
-  const f=fenetre(h*4);
+  const href=1.2/mdlK();                     // hauteur de référence : 1,2 mm
+  const f=fenetre(0);
   c.setTransform(dpr,0,0,dpr,0,0);
   c.textAlign="left"; c.textBaseline="middle";
-  c.font=Math.round(px)+"px "+MONO;
   for(const couche of V.couches){
     if(!couche.visible||!couche.textes.length)continue;
     c.fillStyle=couche.couleur;
     for(const t of couche.textes){
-      if(!dansFenetre(f,t.x,t.y,t.x,t.y))continue;
+      const h=t.h>0?t.h:href, px=h*V.vue.scale;
+      if(px<5)continue;                      // illisible : autant ne rien mettre
+      if(!dansFenetre(f,t.x-4*h,t.y-4*h,t.x+4*h,t.y+4*h))continue;
+      c.font=Math.round(px)+"px "+MONO;
       const p=w2s(t.x,t.y);
       const rot=(t.r||0)*Math.PI/180;
       const mir=(t.m?1:0)^(V.vue.flip?1:0);
@@ -412,6 +423,15 @@ function peindreTextes(c,dpr){
   }
 }
 
+function compCorpsChemin(comp){
+  if(comp.corpsChemin)return comp.corpsChemin;
+  const p=new Path2D(), q=comp.corpsPl;
+  p.moveTo(q[0],q[1]);
+  for(let i=2;i+1<q.length;i+=2)p.lineTo(q[i],q[i+1]);
+  p.closePath();
+  return comp.corpsChemin=p;
+}
+
 function peindreCompChoisi(c,dpr,ref){
   const comp=V.parRef.get(ref==null?V.comp:ref);
   if(!comp)return;
@@ -419,7 +439,8 @@ function peindreCompChoisi(c,dpr,ref){
   const b=comp.boite;
   c.strokeStyle="#f2c744";
   c.lineWidth=Math.max(1.6/V.vue.scale,0.02);
-  c.strokeRect(b.x1,b.y1,b.x2-b.x1,b.y2-b.y1);
+  if(comp.corpsPl)c.stroke(compCorpsChemin(comp));
+  else c.strokeRect(b.x1,b.y1,b.x2-b.x1,b.y2-b.y1);
   /* Les pastilles du composant, elles aussi : un boîtier se reconnaît à son
      empreinte plus qu'à son cadre. */
   const p=new Path2D(), poses=[];

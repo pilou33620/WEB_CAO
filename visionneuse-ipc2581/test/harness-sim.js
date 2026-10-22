@@ -6827,6 +6827,14 @@ T("dossier méca, visionneuse : face, corps placé, hauteur du fichier, corps es
   if(U1.face!=="dessous"||!U1.corps_estime)throw new Error("U1 : "+JSON.stringify(U1));
   if(!j.avertissements.some(a=>/^Encombrement estimé.* : U1$/.test(a)))throw new Error(j.avertissements.join(" | "));
 });
+T("contour du boîtier à l'écran : placé, dans la boîte du composant, absent sans <Outline>",()=>{
+  carteMeca();
+  const J1=V.parRef.get("J1"), U1=V.parRef.get("U1"), b=J1.boite;
+  if(!J1.corpsPl||J1.corpsPl[0]!==0||J1.corpsPl[1]!==17||J1.corpsPl[4]!==4||J1.corpsPl[5]!==23)
+    throw new Error("corps placé "+JSON.stringify(J1.corpsPl));
+  if(b.x1>0||b.x2<4||b.y1>17||b.y2<23)throw new Error("boîte sans le corps "+JSON.stringify(b));
+  if(U1.corpsPl!==null)throw new Error("U1 sans contour : "+JSON.stringify(U1.corpsPl));
+});
 T("dossier méca, visionneuse : le NPTH d'une empreinte de fixation sans pastille reste sa fixation",()=>{
   carte({composants:[{ref:"MH1",pkg:"MountingHole",c:0,x:30,y:20,r:0,m:0,pads:[],
     pins:[{num:"1",x:-2,y:-2},{num:"2",x:2,y:2}],props:{},part:"",val:""}],

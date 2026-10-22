@@ -669,6 +669,7 @@ function mdlCharger(modele,nomFichier){
   for(const comp of modele.composants){
     V.parRef.set(comp.ref,comp);
     comp.boite=mdlBoiteComp(comp);
+    comp.corpsPl=mdlCorpsComp(comp);
     for(const pad of (comp.pads||[]))mdlPadPlace(pad,comp,V.couches,poses);
   }
   const netParXY = new Map();
@@ -791,9 +792,9 @@ function mdlPoserMonte(ref,monte){
   }catch(_){}
 }
 
-/* Boîte d'un composant : ce que couvrent ses pastilles et ses broches, avec
-   une marge. Elle sert au cadrage, au survol et au rectangle de sélection —
-   IPC-2581 ne donne pas de contour d'empreinte exploitable ici. */
+/* Boîte d'un composant : ce que couvrent ses pastilles, ses broches et le
+   contour de son boîtier (<Package><Outline>) quand le fichier le donne. Elle
+   sert au cadrage, au survol et au rectangle de sélection. */
 function mdlBoiteComp(comp){
   let x1=Infinity,y1=Infinity,x2=-Infinity,y2=-Infinity;
   const voir=function(px,py,marge){
@@ -806,11 +807,26 @@ function mdlBoiteComp(comp){
     voir(p.x,p.y,(ps&&ps.pad?ps.pad:0.5)/2);
   }
   for(const p of (comp.pins||[]))voir(p.x,p.y,0.2);
+  const cp=comp.corps||[];
+  for(let i=0;i+1<cp.length;i+=2)voir(cp[i],cp[i+1],0);
   if(!isFinite(x1)){                       // ni pastille ni broche connue
     const d=0.5/mdlK();
     return {x1:comp.x-d,y1:comp.y-d,x2:comp.x+d,y2:comp.y+d};
   }
   return {x1:x1,y1:y1,x2:x2,y2:y2};
+}
+
+/* Le contour du boîtier posé sur la carte, en [x0, y0, x1, y1…], ou null si
+   le fichier ne le donne pas (<Outline> est facultatif). */
+function mdlCorpsComp(comp){
+  const cp=comp.corps;
+  if(!Array.isArray(cp)||cp.length<6)return null;
+  const out=[];
+  for(let i=0;i+1<cp.length;i+=2){
+    const q=mdlPlacer(cp[i],cp[i+1],comp.x,comp.y,comp.r,!!comp.m);
+    out.push(q.x,q.y);
+  }
+  return out;
 }
 
 /* Boîte de la carte : son profil s'il est donné, sinon tout ce qu'on connaît.
@@ -1082,6 +1098,7 @@ function ltSaisi(quoi,cle){
    saisie : il ne coûte qu'un parcours de l'empilage et des plans. */
 function ltPreparer(){
   const m=V.modele, k=mdlK();      // tout en millimètres
+  if(typeof LT_MOM!=="undefined")LT_MOM=new WeakMap();   // un autre empilage, d'autres Z₀
   const parNom=new Map();
   for(const c of V.couches)parNom.set(c.nom,c);
 

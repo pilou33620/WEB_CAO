@@ -584,8 +584,8 @@ largeur du cuivre y disparaissait.
 
 Ce n'est pas la formule de la fiche de ligne, c'est un calcul de champ sur la
 section — et il traite des cas que la formule ne traite pas, à commencer par
-la **triplaque décentrée**, que les « Limites connues » plus bas signalent
-comme un défaut de la formule IPC-2141A. Vérifié contre étalons extérieurs
+la **triplaque décentrée**, que la formule IPC-2141A suppose centrée (la fiche
+de ligne lui demande alors Z₀, voir « Limites connues » plus bas). Vérifié contre étalons extérieurs
 (`../python/test/banc-ligne-mom.py`) : **0,42 %** d'écart
 au pire contre Hammerstad-Jensen sur le microruban, **0,30 %** contre la
 solution exacte en intégrales elliptiques sur la triplaque. La géométrie qui
@@ -811,28 +811,33 @@ d'un boîtier annonçait « 0 broche ».
 
 ## Limites connues
 
-**Pas de contour de boîtier à l'écran.** IPC-2581 décrit les broches d'une
-empreinte ; la silhouette (`<Outline>`) est facultative, et seul le dossier
-mécanique la lit. Le cadre affiché est donc celui de ses pastilles :
-un connecteur dont toutes les broches sont sur une rangée apparaît comme une
-bande, ce qui est fidèle aux données mais pas au boîtier.
+**Le contour d'un boîtier n'est dessiné que si le fichier le donne.** IPC-2581
+décrit les broches d'une empreinte ; la silhouette (`<Package><Outline>`) est
+facultative. Quand elle est là, l'écran la trace, et la boîte du composant
+(cadrage, survol, sélection) la couvre. Sinon le cadre est celui de ses
+pastilles, un peu élargi et **en tirets** : une estimation, qui se lit comme
+telle — un connecteur dont toutes les broches sont sur une rangée apparaît alors
+comme une bande.
 
-**Hauteur des textes.** Le fichier ne porte pas de hauteur exploitable pour les
-textes ; ils sont dessinés à une hauteur de référence (1,2 mm) qui suit le zoom.
-La position et l'orientation, elles, sont celles du fichier.
+**Hauteur des textes.** Un texte est dessiné à la hauteur de sa `<BoundingBox>`,
+à défaut de son `fontSize` ; un fichier qui ne donne ni l'une ni l'autre reçoit
+une hauteur de référence (1,2 mm). La police est celle de l'écran, pas celle du
+fichier : la largeur d'un texte peut différer de sa boîte.
 
 **Les couches d'une pastille sont celles de son padstack**, telles que le
 fichier les nomme — le côté du composant n'est pas utilisé pour les deviner. Un
 fichier qui décrit un boîtier du dessous avec un padstack ne mentionnant que
 `TOP` verra donc ses pastilles sur le dessus. C'est ce que dit le fichier.
 
-**L'impédance suppose la piste centrée entre ses plans.** La formule IPC-2141A
-de la triplaque ne connaît que l'écart entre les deux plans, pas la position de
-la piste entre eux : sur un empilage 4 couches courant — âme épaisse d'un côté,
-préimprégné mince de l'autre — elle sort nettement au-dessus de la réalité. La
-fiche le signale dès que les deux hauteurs s'écartent de plus de 40 %. C'est
-aussi la limite de l'éditeur PCB, dont les formules sont reprises telles
-quelles.
+**Une triplaque décentrée passe au solveur.** La formule IPC-2141A de la
+triplaque ne connaît que l'écart entre les deux plans, pas la position de la
+piste entre eux : sur un empilage 4 couches courant — âme épaisse d'un côté,
+préimprégné mince de l'autre — elle sort nettement au-dessus de la réalité. Dès
+que les deux hauteurs s'écartent de plus de 40 %, la fiche demande donc Z₀ au
+solveur de section (`ligne_mom`, par `/api/simulation`, comme le panneau
+« Simulation EM… ») et l'affiche à la place, la formule entre parenthèses ;
+la capacité et l'inductance restent celles de la formule. Sans serveur, la
+formule reste seule, avec sa note.
 
 **Une couche est un conducteur si le fichier le déclare** (`layerFunction`), et
 un plan de référence s'il annonce `PLANE`, `POWER` ou `GROUND`. À défaut, c'est

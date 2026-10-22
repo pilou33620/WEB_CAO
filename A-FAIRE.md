@@ -22,6 +22,12 @@ autre net, la Gestion LIB qui montait à environ 890 Mo au chargement.
   (RFI_P / RFI_N du SX1261 de P01x274), sans masse : `rf_reseau.py` 1.9.0 (`noeud_n`), et un
   bouton ± par port dans le panneau RF pour cliquer la borne −. Le S21 en réception de
   P01x274 ne demande plus de code : c'est l'essai gardé, en bas.
+- [x] **Visionneuse : contour des boîtiers, hauteur des textes, triplaque décentrée**
+  (22/10/2026) : le `<Package><Outline>` se dessine à l'écran et entre dans la boîte du
+  composant (sans lui, le cadre des pastilles en tirets) ; un texte prend la hauteur de sa
+  `<BoundingBox>` ou de son `fontSize` (1,2 mm à défaut) ; une triplaque décentrée de plus de
+  40 % prend sa Z₀ du solveur de section (`ligne_mom` par `/api/simulation`), la formule entre
+  parenthèses.
 
 Le S21 en émission de P01x274 ne demande pas de code non plus (l'impédance de chaque port se
 règle dans le panneau, les modèles des composants viennent de la LIB). Retirée le 22/10/2026 :
@@ -29,9 +35,6 @@ une rugosité de Huray par face du feuillard (écart faible, données rarement p
 
 Les limites connues des guides qui restent à coder (22/10/2026) :
 
-- [ ] **Pastilles de forme quelconque** (éditeur PCB) : pastille en polygone, plage
-  thermique découpée, chanfrein. Aujourd'hui : rectangle (coins adoucis ou droits),
-  oblong ou rond.
 - [ ] **Arcs posés par le routeur** : les pistes circulaires venues d'un fichier se
   montrent, se mesurent et partent en Gerber, mais le routeur ne trace que des segments ;
   zones de cuivre, coupes et contour de carte restent des polygones.
