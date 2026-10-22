@@ -2,7 +2,7 @@
 
 > **Archive de référence (août 2026 – 22 octobre 2026)**
 > Ce document regroupe l'historique complet des chantiers réalisés, les audits de validité physique, les dérivations mathématiques (solveurs SI/PI, MoM 2D et 2.5D, formules de Grover, Bogatin, Gupta, etc.), les post-mortems de bugs et les cas de validation.
-> Pour le carnet de route et les tâches en cours ou à venir, consulter [A-FAIRE.md](../A-FAIRE.md) ; pour les essais, [TESTS-A-FAIRE.md](../TESTS-A-FAIRE.md). Le carnet de route d'avant le 22/10/2026 est à la fin de ce fichier.
+> Pour le carnet de route et les tâches en cours ou à venir, consulter [A-FAIRE.md](../A-FAIRE.md). Le carnet de route d'avant le 22/10/2026 est à la fin de ce fichier.
 
 ---
 
@@ -2904,6 +2904,10 @@ Au fur et à mesure qu'un circuit grossit, empiler des feuilles à plat dans une
 ---
 
 # Carnet de route jusqu'au 22/10/2026 (ancien `A-FAIRE.md`)
+
+> Le 22/10/2026, les essais à faire (`TESTS-A-FAIRE.md`) ont été retirés : on ne s'occupe pour
+> l'instant que des fonctionnalités, les essais se feront plus tard et autrement. Ils restent
+> dans l'historique git, au commit `2e66d19`.
 
 > Le 22/10/2026, `A-FAIRE.md` a été séparé en deux : [A-FAIRE.md](../A-FAIRE.md) (fonctionnalités
 > et bugs encore ouverts) et [TESTS-A-FAIRE.md](../TESTS-A-FAIRE.md) (essais à faire). Le carnet

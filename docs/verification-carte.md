@@ -4,7 +4,7 @@
 > commune à l'**éditeur PCB** et à la **visionneuse IPC-2581**. Les dérivations
 > physiques et les étalons des moteurs réutilisés sont dans
 > [simulation-em.md](simulation-em.md) ; le reste à faire, dans
-> [A-FAIRE.md](../A-FAIRE.md), les essais dans [TESTS-A-FAIRE.md](../TESTS-A-FAIRE.md).
+> [A-FAIRE.md](../A-FAIRE.md).
 
 ---
 

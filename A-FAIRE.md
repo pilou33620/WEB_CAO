@@ -1,8 +1,7 @@
 # À faire — fonctionnalités et bugs
 
 Ce qui reste à coder dans WEB_CAO, au 22/10/2026 : nouvelles fonctionnalités et bugs, rien
-d'autre. Les essais (sur du réel, sur le Pi, contre les normes) sont dans
-[TESTS-A-FAIRE.md](TESTS-A-FAIRE.md) ; ce qui est fait, dans
+d'autre (les essais sont repoussés à plus tard, voir l'historique) ; ce qui est fait, dans
 [docs/HISTORIQUE_DEVELOPPEMENT.md](docs/HISTORIQUE_DEVELOPPEMENT.md) (le carnet de route
 complet jusqu'au 22/10/2026 y est recopié).
 
@@ -26,7 +25,7 @@ autre net, la Gestion LIB qui montait à environ 890 Mo au chargement.
 
 La simulation S21 en émission de P01x274 n'est plus ici : elle ne demande aucun code
 (l'impédance de chaque port se règle dans le panneau, les modèles des composants viennent de la
-LIB). C'est un essai, dans [TESTS-A-FAIRE.md](TESTS-A-FAIRE.md). Retirée le 22/10/2026 : une
+LIB) : c'est un essai, repoussé avec les autres. Retirée le 22/10/2026 : une
 rugosité de Huray par face du feuillard (écart faible, données rarement publiées).
 
 Côté pilotage par Claude (MCP), les fonctionnalités possibles sont listées dans
