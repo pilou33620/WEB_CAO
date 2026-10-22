@@ -54,6 +54,7 @@ function saveJsonProjet(doc,repli){
      remet S.dirty à vrai, et le succès ne doit pas l'effacer */
   S.dirty=false;
   return projdDocEcrire("pcb",doc).then(function(nom){
+    if(!S.dirty&&typeof projdBrouillonEffacer==="function")projdBrouillonEffacer("pcb");   // modifiée pendant l'écriture : le brouillon reste
     if(typeof profNoterDocument==="function")profNoterDocument("pcb",nom);
     hint("Carte enregistrée dans le dossier du projet ("+nom+").");
     if(typeof projdAvis==="function")
@@ -748,6 +749,11 @@ window.addEventListener("beforeunload",e=>{
   if(sessQuitte())return;
   if(S.dirty){e.preventDefault();e.returnValue="";}
 });
+/* Sauvegarde automatique : un brouillon à côté de la carte du projet toutes
+   les 30 s, tant qu'elle est modifiée (commun/projet-disque.js). Pas à la
+   fermeture : une requête partie de pagehide est bornée à 64 Ko. */
+if(typeof projdBrouillonTic==="function")
+  setInterval(function(){projdBrouillonTic("pcb",S.dirty,docObj);},30000);
 
 /* ==========================================================================
    Session d'onglet : le travail suit l'utilisateur d'un outil à l'autre
@@ -873,11 +879,17 @@ function pcbChargerProjet(){
   }
   PCB_PROJET_LU=true;
   PCB_PROJET_P=projdDocLire("pcb").then(function(d){
+    /* un brouillon plus récent que la carte (sauvegarde automatique d'une
+       session fermée sans enregistrer) se propose, même sans carte */
+    return projdBrouillonProposer("pcb","de la carte").then(function(b){return {d:d,b:b};});
+  }).then(function(r){
+    const d=r.b||r.d;
     if(!d)return;              // dossier sans carte : il n'y a rien à reprendre
     if(S.dirty)return;         // travail commencé pendant la lecture : on n'écrase pas
     loadDoc(d);
+    if(r.b)S.dirty=true;       // un brouillon repris n'est pas enregistré
     draw();
-    hint("Carte chargée depuis le dossier du projet.");
+    hint(r.b?"Brouillon repris : enregistrez pour le garder.":"Carte chargée depuis le dossier du projet.");
     /* La cible du cross-probing n'a pu être reprise au démarrage (18-reperage.js,
        juste après cette page) que si la session d'onglet avait déjà une carte :
        une carte lue APRÈS coup, comme ici, doit retenter une fois chargée. */

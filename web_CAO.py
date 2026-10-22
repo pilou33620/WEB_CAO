@@ -2,6 +2,18 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.23.0
+# Date: 2026-10-22
+# Explication: sauvegarde automatique des editeurs sur disque. /api/projet/doc
+#   accepte `brouillon=1` en lecture et en ecriture (sans controle 409), et
+#   DELETE l'efface : <nom>-SCH.brouillon.json a cote du document, nom derive
+#   du nom canonique (chemin_brouillon), memes gardes que le document. DELETE
+#   n'efface jamais le document lui-meme.
+# Fonctions ajoutees/modifiees :
+# - chemin_brouillon (nouvelle)
+# - CustomHandler._projet_brouillon, _projet_doc_effacer (nouvelles),
+#   _projet_doc_lire, _projet_doc_ecrire, do_DELETE
+#
 # Version: 2.22.0
 # Date: 2026-10-11
 # Explication: /api/oeil passe a `oeil.analyser` les dossiers sous lesquels
@@ -1126,6 +1138,15 @@ def mtime_ms(chemin):
         return int(os.path.getmtime(chemin) * 1000)
     except OSError:
         return 0
+
+
+def chemin_brouillon(chemin):
+    """Le brouillon d'un document : la sauvegarde automatique de l'editeur,
+    a cote de lui (carte-SCH.json -> carte-SCH.brouillon.json). Il ne finit
+    plus par le suffixe de l'outil : ni le releve des documents, ni le repli
+    _projet_doc_trouver, ni derniere_sauvegarde ne le prennent pour le
+    document. Ignore par git (lanceur/projets.py, GITIGNORE)."""
+    return chemin[:-len(".json")] + ".brouillon.json"
 
 
 def derniere_sauvegarde(dossier):
@@ -2315,11 +2336,20 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         return self._github_relai("/api/identite", {"nom": str(charge.get("nom") or ""),
                                                     "email": str(charge.get("email") or "")})
 
+    def _projet_brouillon(self):
+        """`brouillon=1` : la route vise le brouillon du document, jamais le
+        document lui-meme. Son nom derive du nom canonique (sans le repli en
+        lecture) : meme dossier, memes gardes."""
+        return (self._projet_params().get("brouillon") or [""])[0] == "1"
+
     def _projet_doc_lire(self):
         dossier = self._projet_dossier()
         outil = self._projet_outil()
-        chemin = self._projet_doc_chemin(dossier, outil, self._projet_charge(dossier),
-                                         lire=True)
+        charge = self._projet_charge(dossier)
+        if self._projet_brouillon():
+            chemin = chemin_brouillon(self._projet_doc_chemin(dossier, outil, charge))
+        else:
+            chemin = self._projet_doc_chemin(dossier, outil, charge, lire=True)
         return {"document": self._projet_fichier_lire(chemin,
                                                       "Le document %s" % outil),
                 "fichier": os.path.basename(chemin), "modifie": mtime_ms(chemin)}
@@ -2338,6 +2368,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         # le PCB), 409 : la page demande avant d'ecraser. Sans parametre,
         # ecriture forcee (« ecraser quand meme »).
         vu = (self._projet_params().get("modifie") or [""])[0]
+        if self._projet_brouillon():
+            chemin, vu = chemin_brouillon(chemin), ""     # pas de 409 : il n'est qu'a cette page
         with VERROU_DOCS:
             if vu.isdigit() and lisible(chemin) and mtime_ms(chemin) != int(vu):
                 raise ErreurProjet(409, "Le document %s a ete modifie ailleurs depuis"
@@ -2345,6 +2377,25 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self._projet_fichier_ecrire(chemin, charge, "Le document %s" % outil)
             return {"ok": True, "fichier": os.path.basename(chemin),
                     "modifie": mtime_ms(chemin)}
+
+    def _projet_doc_effacer(self):
+        """Efface le brouillon, apres un enregistrement ou un refus de le
+        reprendre. Seul le brouillon s'efface par cette route : le document,
+        jamais. Absent, ce n'est pas une erreur."""
+        dossier = self._projet_dossier()
+        outil = self._projet_outil()
+        if not self._projet_brouillon():
+            raise ErreurProjet(405, "Seul le brouillon d'un document s'efface (brouillon=1)")
+        chemin = chemin_brouillon(self._projet_doc_chemin(dossier, outil,
+                                                          self._projet_charge(dossier)))
+        with VERROU_DOCS:
+            try:
+                os.remove(chemin)
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                raise ErreurProjet(500, "Brouillon %s non efface (%s)" % (outil, exc))
+        return {"ok": True}
 
     # -- bibliotheques CAO (LIB) -------------------------------------------
     def _lire_json_lib(self):
@@ -3515,6 +3566,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         route = self._route()
         if route == "/api/profil":
             self._profil_api(self._profil_effacer)
+            return
+        if route == "/api/projet/doc":
+            self._projet_api(self._projet_doc_effacer)
             return
         if route == "/api/lib/fichier":
             self._lib_api(self._lib_fichier_effacer)

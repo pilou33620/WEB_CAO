@@ -3428,6 +3428,20 @@ moyen de garder une carte au-delà de la session. Dans la version un seul
 fichier (`dist/`), les autres outils ne sont pas à côté : les boutons de
 navigation s'effacent d'eux-mêmes.
 
+**Sauvegarde automatique : un brouillon à côté de la carte.** Projet ouvert,
+toutes les 30 s, si la carte est modifiée et a changé depuis le dernier
+brouillon, `projdBrouillonTic` (`commun/projet-disque.js`) écrit
+`<nom>-PCB.brouillon.json` dans le dossier du projet (route
+`/api/projet/doc?brouillon=1`, sans contrôle 409, ou le dossier choisi dans le
+navigateur). Il est ignoré par git (`.gitignore` de PROJETS) et ne compte ni
+dans le relevé des documents ni dans l'heure de dernière sauvegarde.
+L'enregistrement réussi l'efface (DELETE, qui n'efface jamais le document). À la
+réouverture, un brouillon plus récent que la carte est proposé : repris, la
+carte reste « modifiée » ; refusé, il est effacé ; plus ancien, il reste là
+sans question. La session de l'onglet passe devant et ne demande rien. Rien
+n'est écrit à la fermeture : une requête partie de `pagehide` est bornée à
+64 Ko.
+
 ## Banc d'essai
 
 ```
@@ -3653,9 +3667,11 @@ désactive au lieu de disparaître.
   seulement quand Claude pilote la page (`cao_chemin`, puis `cao_router` ou
   `cao_paire`) ; les liaisons se cherchent dans l'ordre donné, sans
   ordonnancement des nets ni reprise d'ensemble.
-- Pas de sauvegarde automatique sur disque. Le travail tient dans l'onglet
-  tant qu'il est ouvert (voir plus haut), mais fermer l'onglet sans
-  « Enregistrer .json » le perd.
+- Sauvegarde automatique sans projet ouvert : aucune. Le brouillon (voir plus
+  haut) ne s'écrit que dans un dossier de projet ; hors projet, fermer l'onglet
+  sans « Enregistrer .json » perd le travail, et seul l'avertissement de
+  fermeture le rappelle. Le travail des 30 dernières secondes n'est pas dans
+  le brouillon.
 - Laminage séquentiel : le chercheur de chemin (`cao_chemin`) et la pose de
   vias ne consultent pas `viaBuild()`, ils peuvent poser un via que la séquence
   décrite ne permet pas — le DRC le dit. Une portée se juge d'un seul perçage :

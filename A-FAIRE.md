@@ -43,8 +43,13 @@ Les limites connues des guides qui restent à coder (22/10/2026) :
   en arcs au Gerber (G02/G03 dans la région) et à l'IPC-2581 (`<PolyStepCurve>`), comme le
   contour de carte. Reste : les polygones sont toujours des points en interne, pas d'outil
   d'arc pour les zones.
-- [ ] **Sauvegarde automatique sur disque** : le travail tient dans l'onglet, un
-  avertissement part à la fermeture, mais sans « Enregistrer .json » il est perdu.
+- [x] **Sauvegarde automatique sur disque** (22/10/2026) : projet ouvert, toutes les 30 s,
+  le schéma ou la carte modifiés et changés depuis la dernière fois partent dans un
+  brouillon à côté du document (`<nom>-SCH.brouillon.json`, `-PCB.brouillon.json`, ignorés
+  par git), effacé à l'enregistrement ; à la réouverture, un brouillon plus récent que le
+  document est proposé (refusé, il est effacé), la session de l'onglet passant devant.
+  Reste : sans projet ouvert (téléchargement), pas de brouillon ; les 30 dernières
+  secondes ne sont pas dans le brouillon.
 - [x] **Laminage séquentiel** (22/10/2026) : la séquence de pressages se décrit dans
   l'empilage (`S.stack.press`, plages de cuivres pressées ensemble, de l'intérieur vers
   l'extérieur ; liste « Pressages » du panneau Empilage physique). Décrite, `viaBuild` la

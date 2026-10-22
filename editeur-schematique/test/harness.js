@@ -99,6 +99,9 @@ const EXPOSE=[
   "schVarPropsHtml","schVarOuvrir","schVarFermer","bomCsvNom",
   /* nom de projet commun (commun/projet.js) */
   "projNom","projOuvrir","projFermer","projDoc","projPeindre",
+  /* dossier de projet et brouillon (commun/projet-disque.js) */
+  "projdAdopter","projdNeuf","projdDetacher","projdNomBrouillon","projdBrouillonTic",
+  "saveJsonProjet","schChargerProjet","SCH_REPRISE",
   /* CSV de bibliothèque (18) */
   "parseCSVLine","loadCSVFromString","loadCSVLib",
   /* repérage commun : chercher un repère, mesurer une distance
@@ -155,7 +158,9 @@ const EXPOSE=[
 eval(code.replace(/^"use strict";/,"")+"\n"
      +EXPOSE.map(n=>'try{globalThis.'+n+'='+n+';}catch(e){}').join("\n")+"\n"
      +'Object.defineProperty(globalThis,"WS",'
-     +'{get:()=>WS,set:v=>{WS=v;},configurable:true});');
+     +'{get:()=>WS,set:v=>{WS=v;},configurable:true});'
+     +'Object.defineProperty(globalThis,"SCH_PROJET_LU",'
+     +'{get:()=>SCH_PROJET_LU,set:v=>{SCH_PROJET_LU=v;},configurable:true});');
 
 /* ==========================================================================
    Outils du banc
@@ -1687,6 +1692,59 @@ T("navigateur : aucune copie du schéma n'y est gardée",()=>{
   if(dom.storage.getItem("schemedit.autosave"))throw new Error("ancienne sauvegarde restée");
   S.dirty=false;
   dom.storage.clear();
+});
+/* Brouillon : la sauvegarde automatique va à côté du document du projet, sur
+   le serveur simulé ; rien dans le navigateur. */
+TA("brouillon : écrit si modifié et changé, effacé à l'enregistrement, repris à la réouverture",async()=>{
+  if(SCH_REPRISE)throw new Error("le banc démarre sans session : la reprise du projet est sautée");
+  const avant=global.fetch, conf=global.confirm, luAvant=SCH_PROJET_LU;
+  const disque={}, appels=[];
+  let horloge=1000;
+  const rep=(st,o)=>Promise.resolve({ok:st<400,status:st,text:()=>Promise.resolve(JSON.stringify(o))});
+  global.fetch=(url,opt)=>{
+    const u=String(url), m=(opt&&opt.method)||"GET";
+    if(u.split("?")[0]!=="/api/projet/doc")return rep(404,{detail:"absent"});
+    const cle=/brouillon=1/.test(u)?"brouillon":"doc";
+    appels.push(m+" "+cle);
+    if(m==="PUT"){disque[cle]={document:JSON.parse(opt.body),modifie:horloge+=1000};return rep(200,{fichier:cle,modifie:horloge});}
+    if(m==="DELETE"){delete disque[cle];return rep(200,{ok:true});}
+    return disque[cle]?rep(200,disque[cle]):rep(404,{detail:"introuvable"});
+  };
+  const avis=document.getElementById("projdAvis"), qs=avis.querySelector;
+  avis.querySelector=()=>({textContent:""});      // l'avis remplit son HTML, que le DOM simulé ne découpe pas
+  SCH_PROJET_LU=true;          // l'adoption du projet ne relit pas le schéma : l'essai le fait
+  dom.storage.clear();
+  try{
+    projdAdopter("serveur","carte",projdNeuf("carte"),{});
+    if(projdNomBrouillon("schema")!=="carte-SCH.brouillon.json")throw new Error("nom : "+projdNomBrouillon("schema"));
+    const tic=()=>projdBrouillonTic("schema",S.dirty,function(){return schDocCourant(true);});
+    sheet([C("resistor",1,1,{ref:"R9",value:"en cours"})],[]);S.dirty=false;
+    if(await tic())throw new Error("schéma propre : rien à écrire");
+    S.dirty=true;
+    if(!await tic())throw new Error("schéma modifié : brouillon attendu");
+    if(await tic())throw new Error("rien n'a changé : pas de second brouillon (la netlist et son heure n'y sont pas)");
+    if(disque.brouillon.document.netlist!==null)throw new Error("le brouillon ne porte pas de netlist");
+    if([...dom.storage._map.values(),...dom.session._map.values()].some(v=>v.indexOf("en cours")>=0))
+      throw new Error("le brouillon ne va pas dans le navigateur");
+    if(!await saveJsonProjet(schDocCourant(),false))throw new Error("enregistrement refusé");
+    for(let i=0;i<20;i++)await null;     // microtâches seulement : un tour de boucle réveillerait le rejet orphelin d'un essai plus haut (crSelectionnerCandidat)
+    if(disque.brouillon||appels.join()!=="PUT brouillon,PUT doc,DELETE brouillon")throw new Error("appels : "+appels);
+    /* réouverture : un brouillon plus récent se propose, repris il reste « modifié » */
+    const b=JSON.parse(JSON.stringify(disque.doc.document));
+    b.pages[b.pages.length-1].comps[0].value="brouillon";
+    disque.brouillon={document:b,modifie:horloge+500};
+    global.confirm=()=>true;
+    sheet([],[]);S.dirty=false;SCH_PROJET_LU=false;
+    schChargerProjet();
+    for(let i=0;i<40;i++)await null;
+    storeCurrent();
+    const r9=S.pages.flatMap(p=>p.comps).find(c=>c.ref==="R9");
+    if(!r9||r9.value!=="brouillon")throw new Error("le brouillon n'est pas repris");
+    if(!S.dirty)throw new Error("un brouillon repris doit rester « modifié »");
+  }finally{
+    global.fetch=avant;global.confirm=conf;avis.querySelector=qs;SCH_PROJET_LU=luAvant;
+    projdDetacher();projFermer();S.dirty=false;dom.storage.clear();
+  }
 });
 T("session : un état illisible ou hostile ne casse pas le démarrage",()=>{
   dom.session.setItem("cao.session.v1.schema","pas du json");

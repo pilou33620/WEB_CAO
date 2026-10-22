@@ -27,13 +27,16 @@ function schFile(suffixe, repli){
    Lancé par WEB_SUITE, c'est autre chose : on n'enregistre que dans un projet
    de PROJETS, jamais en téléchargement, et sans rien envoyer sur GitHub --
    c'est saveProjetGithub() qui envoie (commun/projet-disque.js).
-   Rend une promesse : vrai si le document est dans le dossier du projet. */
-function schDocCourant(){
+   Rend une promesse : vrai si le document est dans le dossier du projet.
+   `brouillon` : pour la sauvegarde automatique, sans netlist (elle se
+   recalcule, et son heure ferait paraître neuf chaque brouillon) ni annonce
+   au PCB. */
+function schDocCourant(brouillon){
   storeCurrent();
-  const nl=(typeof netlistText==="function")?netlistText():null;
+  const nl=(!brouillon&&typeof netlistText==="function")?netlistText():null;
   const doc={format:"schemedit-2",pages:S.pages,page:S.page,netClasses:S.netClasses,variantes:S.variantes,symboles:S.symboles,
              contraintes:S.contraintes,netlist:nl};
-  if(typeof sessDiffuserSchemaModif==="function")sessDiffuserSchemaModif({netlist:nl});
+  if(!brouillon&&typeof sessDiffuserSchemaModif==="function")sessDiffuserSchemaModif({netlist:nl});
   return doc;
 }
 function schDire(t){document.getElementById("fHint").textContent=t;}
@@ -116,7 +119,7 @@ function saveJsonProjet(doc,repli){
      remet S.dirty à vrai, et le succès ne doit pas l'effacer */
   S.dirty=false;
   return projdDocEcrire("schema",doc).then(function(nom){
-    if(!S.dirty)clearBackup();          // modifié pendant l'écriture : la copie de secours reste
+    if(!S.dirty&&typeof projdBrouillonEffacer==="function")projdBrouillonEffacer("schema");   // modifié pendant l'écriture : le brouillon reste
     if(typeof profNoterDocument==="function")profNoterDocument("schema",nom);
     document.getElementById("fHint").textContent=
       "Document enregistré dans le dossier du projet ("+nom+").";

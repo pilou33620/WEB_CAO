@@ -242,7 +242,9 @@ document.getElementById("fileIn").onchange=e=>{
    Plus de sauvegarde automatique dans le navigateur : une copie gardée là
    finissait par concurrencer, en plus vieille, le fichier du projet que git
    tient à jour. Le dossier du projet fait foi ; ne rien perdre en partant,
-   c'est la confirmation de sortie qui s'en charge.
+   c'est la confirmation de sortie qui s'en charge, et le brouillon que la
+   sauvegarde automatique pose à côté du document du projet toutes les 30 s
+   (commun/projet-disque.js, projdBrouillonTic).
    -------------------------------------------------------------------------- */
 const BAK="schemedit.autosave";      // ancienne sauvegarde : effacée au démarrage
 /* dernière netlist annoncée aux autres onglets : tant que le schéma reste
@@ -263,6 +265,8 @@ function autosave(){
 }
 function clearBackup(){try{localStorage.removeItem(BAK);}catch(_){}}
 setInterval(autosave,4000);
+if(typeof projdBrouillonTic==="function")
+  setInterval(function(){projdBrouillonTic("schema",S.dirty,function(){return schDocCourant(true);});},30000);
 window.addEventListener("beforeunload",e=>{
   autosave();
   /* Changer d'outil met le schéma en session (commun/session.js) : rien à

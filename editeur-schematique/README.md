@@ -59,7 +59,7 @@ identiques pour l'éditeur PCB :
 | `js/12-panneaux.js` | 561 | Propriétés, champ boîtier, nomenclature, liste des nets |
 | `js/13-fichiers.js` | 182 | Export JSON, PNG, netlist `.txt`, nomenclature `.csv` |
 | `js/14-clavier-boutons.js` | 105 | Raccourcis clavier et branchement de la barre d'outils |
-| `js/15-import.js` | 216 | Import JSON défensif (normalisation), sauvegarde automatique et reprise de la session d'onglet (`sessionSchema`) |
+| `js/15-import.js` | 216 | Import JSON défensif (normalisation), sauvegarde automatique (brouillon) et reprise de la session d'onglet (`sessionSchema`) |
 | `js/16-demo.js` | 61 | Schéma de démonstration des deux feuilles |
 | `js/17-demarrage.js` | 30 | Séquence de démarrage des données et de l'affichage, puis reprise du travail laissé dans l'onglet |
 | `js/18-csv.js` | 89 | Bibliothèque `LIB_composants.csv` : chargement HTTP ou manuel (la lecture du fichier est dans `../commun/csv.js`) |
@@ -110,13 +110,20 @@ plus rien — et le va-et-vient peut se répéter autant qu'on veut.
 
 Deux filets se superposent alors, et ils ne servent pas à la même chose. La
 session de l'onglet vient du même travail, poursuivi il y a quelques secondes :
-elle se reprend sans rien demander. La sauvegarde automatique de
-`15-import.js`, elle, vise le plantage et la fermeture accidentelle : elle vit
-dans le stockage local, peut dater de la veille, et demande donc confirmation.
-Au démarrage la session passe d'abord ; la sauvegarde ne sert qu'à défaut.
-Aucune des deux ne remplace *Enregistrer .json* : fermer l'onglet efface la
-première, et c'est pour cela que l'avertissement de fermeture reste posé sur un
-schéma modifié.
+elle se reprend sans rien demander. La sauvegarde automatique, elle, vise le
+plantage et la fermeture accidentelle : projet ouvert, toutes les 30 s, si le
+schéma est modifié et a changé depuis la dernière fois, elle écrit un
+**brouillon** à côté du document, `<nom>-SCH.brouillon.json` dans le dossier
+du projet (`projdBrouillonTic`, `commun/projet-disque.js` ; route
+`/api/projet/doc?brouillon=1`, ou le dossier choisi dans le navigateur). Ce
+fichier est ignoré par git (`.gitignore` de PROJETS), sans netlist, et
+*Enregistrer .json* l'efface. À la réouverture du projet, un brouillon plus
+récent que le document est proposé (confirmation) : repris, le schéma reste
+« modifié » ; refusé, le brouillon est effacé. Au démarrage la session passe
+d'abord, et sans rien demander ; le brouillon ne sert qu'à défaut. Rien n'est
+gardé dans le navigateur : le disque fait foi. Sans projet ouvert (version
+téléchargement), pas de brouillon : l'avertissement de fermeture reste le seul
+filet, et il reste posé sur tout schéma modifié.
 
 Ctrl étant pris, le **détachement** du câblage est passé sur `Alt+glisser`.
 Alt garde ses deux usages sans qu'ils se gênent : sur le vide il déplace la vue

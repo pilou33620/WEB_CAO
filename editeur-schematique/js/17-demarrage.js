@@ -67,12 +67,18 @@ function schChargerProjet(){
   }
   SCH_PROJET_LU=true;
   projdDocLire("schema").then(function(d){
+    /* un brouillon plus récent que le document (sauvegarde automatique d'une
+       session fermée sans enregistrer) se propose, même sans document */
+    return projdBrouillonProposer("schema","du schéma").then(function(b){return {d:d,b:b};});
+  }).then(function(r){
+    const d=r.b||r.d;
     if(!d)return;            // dossier sans schéma : il n'y a rien à reprendre
     if(S.dirty)return;       // travail commencé pendant la lecture : on n'écrase pas
     loadDoc(d);
-    S.dirty=false;
+    S.dirty=!!r.b;           // un brouillon repris n'est pas enregistré
     const h=document.getElementById("fHint");
-    if(h)h.textContent="Schéma chargé depuis le dossier du projet.";
+    if(h)h.textContent=r.b?"Brouillon repris : enregistrez pour le garder."
+                          :"Schéma chargé depuis le dossier du projet.";
     /* La cible du cross-probing n'a pu être reprise au démarrage (21-reperage.js,
        juste après cette page) que si la session d'onglet avait déjà un schéma :
        un schéma lu APRÈS coup, comme ici, doit retenter une fois chargé. */

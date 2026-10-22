@@ -744,6 +744,53 @@ def test_routes():
         assert not [n for n in os.listdir(dossier) if n.endswith(".tmp")]
         print("[PASS] Projet : ecritures simultanees, fichier toujours entier")
 
+        # 36 bis. Brouillon (sauvegarde automatique) : ecrit a cote du document
+        # sans 409, relu avec sa date, absent du releve, efface par DELETE --
+        # qui n'efface jamais le document ; memes gardes que le document.
+        def req(methode, route, corps=None, entetes=None):
+            conn.request(methode, route, body=corps,
+                         headers=dict({"Content-Type": "application/json"}, **(entetes or {})))
+            r = conn.getresponse()
+            return r.status, json.loads(r.read().decode("utf-8") or "{}")
+        brou = url + "&brouillon=1"
+        st, rep = req("PUT", brou + "&modifie=1", b'{"b": 1}')    # date fausse : pas de 409
+        assert st == 200 and rep["fichier"] == "carte-SCH.brouillon.json", (st, rep)
+        assert os.path.isfile(os.path.join(dossier, "carte-SCH.brouillon.json"))
+        with open(os.path.join(dossier, "carte-SCH.json"), encoding="utf-8") as f:
+            assert "b" not in json.load(f)                       # le document n'a pas bouge
+        st, rep = req("GET", brou)
+        assert st == 200 and rep["document"] == {"b": 1} and rep["modifie"] > 0, (st, rep)
+        st, rep = req("GET", url)
+        assert st == 200 and "b" not in rep["document"], rep
+        st, lu = req("GET", "/api/projet?chemin=" + _up.quote(dossier))
+        assert lu["documents"]["schema"]["fichier"] == "carte-SCH.json", lu["documents"]
+        assert web_CAO.derniere_sauvegarde(dossier) == lu["documents"]["schema"]["modifie"]
+        # seul le brouillon reste : le repli au suffixe ne le prend pas pour le document
+        os.rename(os.path.join(dossier, "carte-SCH.json"), os.path.join(dossier, "_sch"))
+        st, lu = req("GET", "/api/projet?chemin=" + _up.quote(dossier))
+        assert lu["documents"]["schema"]["present"] is False, lu["documents"]
+        assert req("GET", url)[0] == 404
+        os.rename(os.path.join(dossier, "_sch"), os.path.join(dossier, "carte-SCH.json"))
+        # memes gardes : autre origine (CSRF), puis hors racine en ecoute reseau
+        for m, c in (("PUT", b'{"x": 1}'), ("DELETE", None)):
+            assert req(m, brou, c, {"Origin": "http://evil.example"})[0] == 403, m
+        avant = web_CAO.PROJETS_OUVERT, web_CAO.PROJETS_RESEAU
+        web_CAO.PROJETS_OUVERT, web_CAO.PROJETS_RESEAU = False, True
+        try:
+            for m, c in (("GET", None), ("PUT", b'{"x": 1}'), ("DELETE", None)):
+                assert req(m, brou, c)[0] == 403, m
+        finally:
+            web_CAO.PROJETS_OUVERT, web_CAO.PROJETS_RESEAU = avant
+        st, rep = req("GET", brou)
+        assert rep["document"] == {"b": 1}, rep                  # rien n'a ete ecrit ni efface
+        assert req("DELETE", url)[0] == 405                      # sans brouillon=1 : refuse
+        assert os.path.isfile(os.path.join(dossier, "carte-SCH.json"))
+        assert req("DELETE", brou) == (200, {"ok": True})
+        assert not os.path.exists(os.path.join(dossier, "carte-SCH.brouillon.json"))
+        assert req("DELETE", brou)[0] == 200                     # absent : pas une erreur
+        assert req("GET", brou)[0] == 404
+        print("[PASS] Projet : brouillon ecrit sans 409, relu, efface, hors releve, memes gardes")
+
         # 37. Une grille de cavite qui se cite elle-meme ne bloque plus le serveur.
         doc = web_CAO._deplier_grilles({"cavites_grilles": {"a": {"cavite_grille": "a"}},
                                         "v": {"cavite_grille": "a"}})

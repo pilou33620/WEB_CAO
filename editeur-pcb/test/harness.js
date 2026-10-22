@@ -212,6 +212,9 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* dossier de projet sur le disque (commun/projet-disque.js) */
   "projdEtat","projdLie","projdChemin","projdRevision","projdAuteur",
   "projdNomDoc","projdNeuf","projdAdopter","projdDetacher","PROJD_FORMAT",
+  /* brouillon : la sauvegarde automatique à côté du document */
+  "projdNomBrouillon","projdBrouillonTic","projdBrouillonLire","projdBrouillonEffacer",
+  "projdBrouillonProposer","saveJsonProjet","pcbChargerProjet",
   /* simulation EM : la masse de référence, l'écart par côté, le découpage en
      plages, la couture de vias (commun/simulation-em.js + 19-simulation.js) */
   "SIM","SIM_PCB","simRefSet","simRefListe","simRefCandidats",
@@ -458,7 +461,13 @@ eval(code.replace(/^"use strict";/,"")+"\n"
         qu'un essai puisse le remettre à l'état où il est au démarrage —
         pas encore initialisé — et vérifier que rien n'en dépend. */
      +'Object.defineProperty(globalThis,"RE",'
-     +'{get:()=>RE,set:v=>{RE=v;},configurable:true});');
+     +'{get:()=>RE,set:v=>{RE=v;},configurable:true});'
+     /* la relecture de la carte du projet : rejouée par l'essai du brouillon */
+     +'Object.defineProperty(globalThis,"PCB_PROJET_LU",'
+     +'{get:()=>PCB_PROJET_LU,set:v=>{PCB_PROJET_LU=v;},configurable:true});'
+     +'Object.defineProperty(globalThis,"PCB_REPRISE",'
+     +'{get:()=>PCB_REPRISE,set:v=>{PCB_REPRISE=v;},configurable:true});'
+     +'Object.defineProperty(globalThis,"PCB_PROJET_P",{get:()=>PCB_PROJET_P,configurable:true});');
 
 const fire=dom.fire, key=dom.key;
 /* Première différence entre deux documents, ou null s'ils sont équivalents.
@@ -11937,6 +11946,79 @@ T("dossier : la révision du fichier projet alimente le master drawing",()=>{
   if(txt2.indexOf("[C3]")<0)throw new Error("révision absente du tableau de la page 1");
   projdDetacher();
   projFermer();
+});
+
+/* Brouillon : le serveur simulé tient la carte et son brouillon. La minuterie
+   n'écrit que si la carte est modifiée et a changé ; l'enregistrement efface
+   le brouillon ; à la réouverture, un brouillon plus récent se propose,
+   repris (carte « modifiée ») ou effacé. */
+TA("dossier : brouillon écrit par la minuterie, effacé à l'enregistrement, proposé à la réouverture",async()=>{
+  const avant=global.fetch, conf=global.confirm, luAvant=PCB_PROJET_LU, repAvant=PCB_REPRISE, tic=()=>new Promise(r=>setTimeout(r,0));
+  const disque={}, appels=[];
+  let horloge=1000;
+  const rep=(st,o)=>Promise.resolve({ok:st<400,status:st,text:()=>Promise.resolve(JSON.stringify(o))});
+  global.fetch=(url,opt)=>{
+    const u=String(url), m=(opt&&opt.method)||"GET";
+    if(u.split("?")[0]!=="/api/projet/doc")return rep(404,{detail:"absent"});
+    const cle=/doc=pcb/.test(u)?(/brouillon=1/.test(u)?"brouillon":"pcb"):"autre";
+    appels.push(m+" "+cle);
+    if(m==="PUT"){disque[cle]={document:JSON.parse(opt.body),modifie:horloge+=1000};return rep(200,{fichier:cle,modifie:horloge});}
+    if(m==="DELETE"){delete disque[cle];return rep(200,{ok:true});}
+    return disque[cle]?rep(200,disque[cle]):rep(404,{detail:"introuvable"});
+  };
+  PCB_PROJET_LU=true;            // l'adoption du projet ne relit pas la carte : l'essai le fait
+  projOuvrir("carte PIR");
+  try{
+    projdAdopter("serveur","carte PIR",projdNeuf("carte PIR"),{pcb:{fichier:"carte PIR-PCB.json",present:true,modifie:horloge}});
+    if(projdNomBrouillon("pcb")!=="carte PIR-PCB.brouillon.json")throw new Error("nom : "+projdNomBrouillon("pcb"));
+    carteVide();importNetlist(NET,false);S.dirty=false;
+    if(await projdBrouillonTic("pcb",S.dirty,docObj)||appels.length)throw new Error("carte propre : rien à écrire");
+    S.dirty=true;
+    if(!await projdBrouillonTic("pcb",S.dirty,docObj))throw new Error("carte modifiée : brouillon attendu");
+    if(await projdBrouillonTic("pcb",S.dirty,docObj))throw new Error("rien n'a changé : pas de nouveau brouillon");
+    S.fps[0].x+=5;
+    if(!await projdBrouillonTic("pcb",S.dirty,docObj))throw new Error("la carte a changé : brouillon attendu");
+    if(appels.join()!=="PUT brouillon,PUT brouillon")throw new Error("appels : "+appels);
+    if(disque.brouillon.document.fps[0].x!==S.fps[0].x)throw new Error("le brouillon n'a pas la carte du moment");
+    /* enregistrer : la carte part, le brouillon s'efface (l'avis de sauvegarde
+       remplit son HTML, que le DOM simulé ne découpe pas) */
+    const avis=document.getElementById("projdAvis"), qs=avis.querySelector;
+    avis.querySelector=()=>({textContent:""});
+    try{ if(!await saveJsonProjet(docObj(),false))throw new Error("enregistrement refusé"); }
+    finally{ avis.querySelector=qs; }
+    await tic();await tic();await tic();
+    if(disque.brouillon)throw new Error("le brouillon devait être effacé après l'enregistrement");
+    if(appels.slice(2).join()!=="PUT pcb,DELETE brouillon")throw new Error("appels : "+appels);
+    if(S.dirty)throw new Error("la carte enregistrée reste modifiée");
+    const enregistree=disque.pcb.document;
+    /* réouverture, brouillon plus récent : proposé, accepté -> repris, carte modifiée */
+    const brouillon=JSON.parse(JSON.stringify(enregistree));brouillon.fps[0].x+=7;
+    disque.brouillon={document:brouillon,modifie:horloge+500};
+    let question="";
+    global.confirm=t=>{question=t;return true;};
+    carteVide();S.dirty=false;PCB_REPRISE=false;PCB_PROJET_LU=false;
+    pcbChargerProjet();await PCB_PROJET_P;
+    if(!/brouillon de la carte plus récent/.test(question))throw new Error("question : "+question);
+    if(S.fps[0].x!==brouillon.fps[0].x)throw new Error("le brouillon n'est pas repris");
+    if(!S.dirty)throw new Error("un brouillon repris doit rester « modifié »");
+    if(!disque.brouillon)throw new Error("le brouillon repris reste jusqu'à l'enregistrement");
+    /* refusé -> la carte enregistrée, et le brouillon s'efface */
+    global.confirm=()=>false;
+    carteVide();S.dirty=false;PCB_PROJET_LU=false;
+    pcbChargerProjet();await PCB_PROJET_P;
+    if(disque.brouillon)throw new Error("refusé, le brouillon devait être effacé");
+    if(S.dirty||S.fps[0].x!==enregistree.fps[0].x)throw new Error("la carte enregistrée devait être chargée");
+    /* plus ancien que la carte : ni question ni effacement */
+    disque.brouillon={document:brouillon,modifie:1};question="";
+    global.confirm=t=>{question=t;return true;};
+    carteVide();S.dirty=false;PCB_PROJET_LU=false;
+    pcbChargerProjet();await PCB_PROJET_P;
+    if(question||S.dirty||!disque.brouillon)throw new Error("un brouillon plus ancien ne se propose ni ne s'efface");
+    await new Promise(r=>setTimeout(r,400));   // la synchro du schéma part après 350 ms : sous ce fetch-ci
+  }finally{
+    global.fetch=avant;global.confirm=conf;PCB_PROJET_LU=luAvant;PCB_REPRISE=repAvant;
+    projdDetacher();projFermer();carteVide();S.dirty=false;
+  }
 });
 
 /* ==========================================================================

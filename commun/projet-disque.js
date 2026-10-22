@@ -50,6 +50,7 @@ let PROJD_HANDLE = null;                 // FileSystemDirectoryHandle, si mode "
 let PROJD_ATTENTE = null;                // dossier retrouve, mais pas encore autorise
 let PROJD_SRV;                           // undefined = pas encore teste
 const PROJD_VU = {};                     // outil -> date (ms) du fichier lu ou ecrit par cette page
+const PROJD_BROU = {};                   // outil -> {txt: dernier brouillon ecrit, p: ecriture en cours}
 
 /* ==========================================================================
    Etat, lecture synchrone
@@ -318,6 +319,7 @@ function projdAdopter(mode, chemin, fichier, documents){
   PROJD = {mode:mode, chemin:chemin||"", fichier:fichier||null,
            documents:documents||null};
   for(const k in PROJD_VU) delete PROJD_VU[k];   // dates de l'ancien projet
+  for(const k in PROJD_BROU) delete PROJD_BROU[k];
   const nom = fichier && fichier.nom;
   if(nom){
     if(typeof projOuvrir === "function") projOuvrir(nom, chemin, mode);
@@ -533,6 +535,91 @@ function projdDocEcrire(outil, obj){
     if(!ok) throw new Error("Acces au dossier refuse");
     return projdEcrireFichierHandle(PROJD_HANDLE,nom,obj).then(function(){ return note(nom); });
   });
+}
+/* ==========================================================================
+   Brouillon : la sauvegarde automatique, a cote du document
+   --------------------------------------------------------------------------
+   Toutes les 30 s, tant que le travail est modifie et qu'il a change depuis
+   le dernier brouillon, l'editeur l'ecrit dans <nom>-SCH.brouillon.json (ou
+   -PCB) : un fichier du projet, ignore par git (.gitignore de PROJETS), que
+   l'enregistrement efface. Rien dans le navigateur : le disque fait foi.
+   Le nom ne finit pas par le suffixe de l'outil : ni le releve des documents
+   ni le repli « premier fichier au suffixe » ne le prennent pour le document.
+   shortcut: sans projet ouvert (telechargement), pas de brouillon, ajouter un
+   brouillon hors projet si on perd du travail ainsi.
+   ========================================================================== */
+function projdNomBrouillon(outil){
+  return projdNomDoc(outil).replace(/\.json$/i, ".brouillon.json");
+}
+function projdBrouillonEcrire(outil, obj){
+  const nom = projdNomBrouillon(outil);
+  if(!projdLie() || !nom) return Promise.reject(new Error("Aucun dossier de projet rattache"));
+  if(PROJD.mode === "serveur")
+    return projdApi("PUT","/api/projet/doc",{chemin:PROJD.chemin, doc:outil, brouillon:1}, obj);
+  if(!PROJD_HANDLE) return Promise.reject(new Error("Dossier plus accessible"));
+  // sans geste de l'utilisateur, on ne redemande pas l'autorisation : on constate
+  return projdHandleAutorise(PROJD_HANDLE,false).then(function(ok){
+    if(!ok) throw new Error("Acces au dossier refuse");
+    return projdEcrireFichierHandle(PROJD_HANDLE,nom,obj);
+  });
+}
+/* {document, modifie} ou null s'il n'y en a pas. */
+function projdBrouillonLire(outil){
+  const nom = projdNomBrouillon(outil);
+  if(!projdLie() || !nom) return Promise.resolve(null);
+  if(PROJD.mode === "serveur")
+    return projdApi("GET","/api/projet/doc",{chemin:PROJD.chemin, doc:outil, brouillon:1})
+      .then(function(r){ return r.document ? {document:r.document, modifie:r.modifie||0} : null; })
+      .catch(function(e){ if(e.code === 404) return null; throw e; });
+  if(!PROJD_HANDLE) return Promise.resolve(null);
+  return PROJD_HANDLE.getFileHandle(nom).then(function(fh){ return fh.getFile(); })
+    .then(function(f){
+      return f.text().then(function(txt){ return {document:JSON.parse(txt), modifie:f.lastModified||0}; });
+    }).catch(function(){ return null; });
+}
+/* Apres l'ecriture en cours, s'il y en a une : sinon elle reposerait un
+   brouillon perime juste apres l'enregistrement. */
+function projdBrouillonEffacer(outil){
+  const e = PROJD_BROU[outil];
+  delete PROJD_BROU[outil];
+  const nom = projdNomBrouillon(outil);
+  if(!projdLie() || !nom) return Promise.resolve(false);
+  return Promise.resolve(e && e.p).catch(function(){}).then(function(){
+    if(PROJD.mode === "serveur")
+      return projdApi("DELETE","/api/projet/doc",{chemin:PROJD.chemin, doc:outil, brouillon:1});
+    if(!PROJD_HANDLE) return false;
+    return PROJD_HANDLE.removeEntry(nom).catch(function(){});
+  }).then(function(){ return true; }, function(){ return false; });
+}
+/* Un tour de minuterie. `sale` : le travail est-il modifie ; `doc` : la
+   fonction qui le rend. Rend vrai si un brouillon a ete ecrit. */
+function projdBrouillonTic(outil, sale, doc){
+  const e = PROJD_BROU[outil] || (PROJD_BROU[outil] = {txt:null, p:null});
+  if(!sale || e.p || !projdLie() || !projdNomBrouillon(outil)) return Promise.resolve(false);
+  const obj = doc(), txt = JSON.stringify(obj);
+  if(txt === e.txt) return Promise.resolve(false);
+  e.p = projdBrouillonEcrire(outil, obj).then(function(){ e.txt = txt; return true; },
+                                              function(){ return false; })
+    .then(function(ok){ e.p = null; return ok; });
+  return e.p;
+}
+/* A la reouverture : un brouillon plus recent que le document se propose.
+   Rend son document s'il est repris, null sinon ; refuse, il est efface. Un
+   brouillon plus ancien que le document reste ou il est (le prochain
+   enregistrement l'effacera) : on n'efface pas en silence. */
+function projdBrouillonProposer(outil, quoi){
+  return projdBrouillonLire(outil).then(function(b){
+    if(!b) return null;
+    const d = PROJD.documents && PROJD.documents[outil];
+    const docT = PROJD_VU[outil] || (d && d.present && d.modifie) || 0;
+    if(b.modifie <= docT) return null;
+    const ok = typeof confirm === "function" && confirm(
+      "Un brouillon " + (quoi || "de ce document") + " plus récent que le document enregistré a été trouvé "
+      + "(sauvegarde automatique, " + projdQuand(b.modifie) + ").\n\n"
+      + "Le reprendre ? (Annuler : le brouillon est effacé.)");
+    if(ok) return b.document;
+    return projdBrouillonEffacer(outil).then(function(){ return null; });
+  }).catch(function(){ return null; });
 }
 /* ==========================================================================
    Enregistrer (local) et Sauvegarder le projet (GitHub) -- WEB_SUITE

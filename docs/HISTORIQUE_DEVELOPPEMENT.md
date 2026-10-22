@@ -2922,6 +2922,13 @@ Au fur et à mesure qu'un circuit grossit, empiler des feuilles à plat dans une
 - Volet « Cotes et détails » : liste « Feuille du détail » quand un détail est choisi, l'aperçu le suit sur sa feuille. Le DXF `-PLAN-FABRICATION.dxf` ne prend toujours que les feuilles de fabrication (signalé au README).
 - Essais (`harness.js`, 1 essai) : bornes de `feuille`, détail sur l'assemblage et pas sur la fabrication, renvois sur les deux feuilles et au PDF, `dfGenreVue`, volet, annulation, assemblage décoché (repli sans renvoi).
 
+### Sauvegarde automatique sur disque — 2026-10-22 [FAIT]
+
+- Décision : un brouillon à côté du document du projet, rien dans le navigateur (le disque fait foi depuis `8485332`). `commun/projet-disque.js` : `projdNomBrouillon` (`-SCH.json` → `-SCH.brouillon.json`), `projdBrouillonEcrire/Lire/Effacer` (voie serveur ou dossier choisi, sans `PROJD_VU` ni 409), `projdBrouillonTic(outil, sale, doc)` (n'écrit que si le travail est modifié et que son JSON a changé ; une écriture à la fois, l'effacement attend celle en cours), `projdBrouillonProposer` (plus récent que le document → `confirm` ; refus → effacé ; plus ancien → laissé).
+- Éditeurs : minuterie de 30 s (`15-import.js`, `07-app.js`) ; le brouillon du schéma est `schDocCourant(true)`, sans netlist ni annonce au PCB (son heure le rendait toujours neuf). `saveJsonProjet` efface le brouillon si rien n'a bougé pendant l'écriture. `schChargerProjet` / `pcbChargerProjet` proposent le brouillon après la lecture du document, même sans document ; repris, le travail reste « modifié ». La session de l'onglet passe devant sans question. Rien à la fermeture (`pagehide` borné à 64 Ko). Sans projet ouvert : pas de brouillon (limite notée).
+- `web_CAO.py` 2.23.0 : `brouillon=1` sur GET/PUT `/api/projet/doc` (`chemin_brouillon`, dérivé du nom canonique, mêmes gardes : CSRF, appairage, `_projet_garde`, racines, `projet.cao.json` exigé), DELETE `/api/projet/doc?…&brouillon=1` (405 sans le paramètre : le document ne s'efface jamais). Le nom ne finit pas par le suffixe de l'outil : relevé `documents`, repli `_projet_doc_trouver` et `derniere_sauvegarde` l'ignorent. WEB_SUITE : `*.brouillon.json` au `.gitignore` de PROJETS (`lanceur/projets.py`, ajouté aussi à un `.gitignore` existant).
+- Essais : `banc-serveur-routes.py` (écrit sans 409, relu avec sa date, hors relevé et hors repli, CSRF et hors racine refusés, DELETE sans brouillon refusé, absent → 404) ; `harness.js` PCB (minuterie, enregistrement → effacé, proposé et repris « modifié », refusé → effacé, plus ancien → ni question ni effacement) ; `harness.js` schéma (minuterie sans netlist, rien dans le navigateur, effacé à l'enregistrement, repris).
+
 ---
 
 # Carnet de route jusqu'au 22/10/2026 (ancien `A-FAIRE.md`)
