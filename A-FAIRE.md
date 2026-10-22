@@ -18,10 +18,10 @@ autre net, la Gestion LIB qui montait à environ 890 Mo au chargement.
   standard » et « Huray · HVLP » (`editeur-pcb/js/01-core.js`) suivent la méthode
   « cannonball » : a = Rz / 16,73, SR = 4,887 ; Rz 5 µm (a 0,299 µm) et 1,5 µm (a 0,09 µm).
   Un empilage déjà réglé garde ses valeurs : seuls les choix faits ensuite dans la liste changent.
-- [ ] **Port différentiel en simulation RF** (décidé le 22/10/2026, pour plus tard) : la
-  simulation RF n'a que des ports simples (un signal par rapport à la masse). Une entrée
-  différentielle, comme l'entrée réception RFI_P / RFI_N du SX1261 de P01x274, en demande un.
-  Prérequis du S21 en réception de cette carte, qui viendra après celui en émission.
+- [x] **Port différentiel en simulation RF** (22/10/2026) : un port peut avoir deux bornes
+  (RFI_P / RFI_N du SX1261 de P01x274), sans masse : `rf_reseau.py` 1.9.0 (`noeud_n`), et un
+  bouton ± par port dans le panneau RF pour cliquer la borne −. Le S21 en réception de
+  P01x274 ne demande plus de code : c'est un essai, repoussé avec les autres.
 
 La simulation S21 en émission de P01x274 n'est plus ici : elle ne demande aucun code
 (l'impédance de chaque port se règle dans le panneau, les modèles des composants viennent de la
