@@ -1002,19 +1002,20 @@ function pnlLigneManques(sup,g){
    centrée ; ligne_mom (par /api/simulation, le même chemin que le panneau
    « Simulation EM… ») connaît la vraie place de la piste entre ses plans. Un
    calcul par piste, gardé ; sans serveur, la formule reste avec sa note. */
-let LT_MOM=new WeakMap();              // piste -> null (en cours) | {z0} | {erreur}
+let LT_MOM=new WeakMap();              // piste -> null (en cours) | {z0, eeff} | {erreur}
 let LT_MOM_PISTE=null;                 // la piste dont la fiche est à l'écran
 function ltMomTexte(r){
   if(r===undefined||r===null)return "Calcul par la méthode des moments…";
-  if(r.z0>0)return "Z₀ de la méthode des moments, piste à sa vraie place ; capacité et "
-    +"inductance restent celles de la formule.";
+  if(r.z0>0)return "Z₀ et εr effective de la méthode des moments, piste à sa vraie place ; "
+    +"retards, capacité et inductance en découlent.";
   return "Méthode des moments indisponible ("+r.erreur+") : seule la formule répond.";
 }
-/* la case Z₀ : celle du solveur dès qu'il a répondu, la formule à côté */
-function ltZ0Html(z0,r){
-  if(!(z0>0))return "—";
-  if(r&&r.z0>0)return '<span class="val">'+mdlNb(r.z0,1)+" Ω</span> (formule : "+mdlNb(z0,1)+" Ω)";
-  return '<span class="val">'+mdlNb(z0,1)+" Ω</span>";
+/* La ligne refaite sur le solveur : t_pd = ℓ·√εeff / c, C = t_pd / Z₀ et
+   L = t_pd·Z₀, comme `ltPiste` le fait de la formule. */
+function ltMomLigne(e,r){
+  const eeff=r.eeff>0?r.eeff:e.eeff, tpd=e.len*Math.sqrt(eeff)/LT_C0;
+  return Object.assign({},e,{z0:r.z0, eeff:eeff, tpd:tpd, c:tpd/r.z0, ind:tpd*r.z0,
+                             psmm:e.len>0?tpd*1e12/e.len:0});
 }
 async function ltMomLancer(piste){
   if(LT_MOM.has(piste))return;
@@ -1026,14 +1027,12 @@ async function ltMomLancer(piste){
     if(p.erreur)throw new Error(p.erreur);
     simDocFinir(p.doc);
     const res=await simLancer(p.doc);
+    /* la section seule, sans dispersion : ce que la formule calcule aussi */
     const s=res.segments.find(s=>s&&s.z0>0);
-    r=s?{z0:s.z0}:{erreur:"aucune impédance rendue"};
+    r=s?{z0:s.z0_statique>0?s.z0_statique:s.z0, eeff:s.eps_eff}:{erreur:"aucune impédance rendue"};
   }catch(e){ r={erreur:String(e.message||e).split("\n")[0]}; }
   LT_MOM.set(piste,r);
-  const el=document.getElementById("ltMom"), z=document.getElementById("ltZ0");
-  if(!el||LT_MOM_PISTE!==piste)return;
-  el.textContent=ltMomTexte(r);
-  if(z)z.innerHTML=ltZ0Html(+z.dataset.z0,r);
+  if(LT_MOM_PISTE===piste&&document.getElementById("ltMom"))pnlDetail();
 }
 
 function pnlLigne(piste,coucheIdx){
@@ -1052,6 +1051,8 @@ function pnlLigne(piste,coucheIdx){
   }
   const g=e.g, sup=e.suppose;
   const marque=function(t,quand){ return quand?" "+t:""; };
+  const r=g.kind==="strip"&&g.dissym>0.4?LT_MOM.get(piste):null;
+  const m=r&&r.z0>0?ltMomLigne(e,r):e;  // m : ce qui s'affiche, e : la formule
   let t="<h3>Ligne de transmission</h3><table>"
     +l3("Topologie",g.ref===0?"— aucun plan —":(LT_TOPO[g.kind]||"—"))
     +(g.ref===2
@@ -1064,15 +1065,16 @@ function pnlLigne(piste,coucheIdx){
        : l3("Hauteur au plan",g.h>0?ltMm(g.h):"—"))
     +l3("Épaisseur cuivre",ltMm(g.t)+marque("(supposée)",sup.ep))
     +l3("εr stratifié",mdlNb(g.er,2)+marque("(supposée)",sup.er))
-    +l3("εr effective",mdlNb(e.eeff,2))
-    +l3("Impédance Z₀",'<span id="ltZ0" data-z0="'+(e.z0||0)+'">'
-         +ltZ0Html(e.z0,g.kind==="strip"&&g.dissym>0.4?LT_MOM.get(piste):null)+"</span>")
-    +l3("Retard t_pd",ltT(e.tpd))
-    +l3("Retard par mm",e.psmm?mdlNb(e.psmm,3)+" ps/mm":"—")
+    +l3("εr effective",mdlNb(m.eeff,2))
+    +l3("Impédance Z₀",m.z0>0
+         ?'<span class="val">'+mdlNb(m.z0,1)+" Ω</span>"
+           +(m!==e&&e.z0>0?" (formule : "+mdlNb(e.z0,1)+" Ω)":""):"—")
+    +l3("Retard t_pd",ltT(m.tpd))
+    +l3("Retard par mm",m.psmm?mdlNb(m.psmm,3)+" ps/mm":"—")
     /* Les deux se déduisent de Z₀ : sans elle, il n'y a pas de valeur à
        montrer, et « 0 pF » se lirait comme une mesure. */
-    +l3("Capacité",e.z0>0?ltC(e.c):"—")
-    +l3("Inductance",e.z0>0?ltL(e.ind):"—")
+    +l3("Capacité",m.z0>0?ltC(m.c):"—")
+    +l3("Inductance",m.z0>0?ltL(m.ind):"—")
     +"</table>";
 
   const manques=pnlLigneManques(sup,g);

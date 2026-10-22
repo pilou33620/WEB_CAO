@@ -26,8 +26,8 @@ autre net, la Gestion LIB qui montait à environ 890 Mo au chargement.
   (22/10/2026) : le `<Package><Outline>` se dessine à l'écran et entre dans la boîte du
   composant (sans lui, le cadre des pastilles en tirets) ; un texte prend la hauteur de sa
   `<BoundingBox>` ou de son `fontSize` (1,2 mm à défaut) ; une triplaque décentrée de plus de
-  40 % prend sa Z₀ du solveur de section (`ligne_mom` par `/api/simulation`), la formule entre
-  parenthèses.
+  40 % prend sa Z₀ et sa εr effective du solveur de section (`ligne_mom` par `/api/simulation`),
+  la formule entre parenthèses ; retard, capacité et inductance en sont refaits.
 
 Le S21 en émission de P01x274 ne demande pas de code non plus (l'impédance de chaque port se
 règle dans le panneau, les modèles des composants viennent de la LIB). Retirée le 22/10/2026 :

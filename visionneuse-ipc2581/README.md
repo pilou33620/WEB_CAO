@@ -835,8 +835,9 @@ piste entre eux : sur un empilage 4 couches courant — âme épaisse d'un côt�
 préimprégné mince de l'autre — elle sort nettement au-dessus de la réalité. Dès
 que les deux hauteurs s'écartent de plus de 40 %, la fiche demande donc Z₀ au
 solveur de section (`ligne_mom`, par `/api/simulation`, comme le panneau
-« Simulation EM… ») et l'affiche à la place, la formule entre parenthèses ;
-la capacité et l'inductance restent celles de la formule. Sans serveur, la
+« Simulation EM… ») avec sa permittivité effective, et les affiche à la place,
+la formule entre parenthèses ; le retard, la capacité et l'inductance en sont
+refaits (t_pd = ℓ·√εeff / c, C = t_pd / Z₀, L = t_pd·Z₀). Sans serveur, la
 formule reste seule, avec sa note.
 
 **Une couche est un conducteur si le fichier le déclare** (`layerFunction`), et
