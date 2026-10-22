@@ -131,7 +131,8 @@ function dessinEcart(avant, fusions, nomme) {
   const nomsPermis = new Map();                           // racine → noms admis après
   const permettre = (cle, noms) => { const r = racine(cle); nomsPermis.set(r, new Set([...(nomsPermis.get(r) || []), ...noms])); };
   for (const b of broches) permettre(b.cle, avant.has(b.cle) ? avant.get(b.cle).noms : []);
-  if (nomme) permettre(nomme[0], [dessinCle(nomme[1])]);
+  // une paire [clé, nom], ou une liste de paires (un fil qui touche des nets nommés par ses deux bouts)
+  for (const [c, nm] of nomme && Array.isArray(nomme[0]) ? nomme : nomme ? [nomme] : []) permettre(c, [dessinCle(nm)]);
   const nom = new Map(broches.map(b => [b.cle, b.nom]));
   const vus = new Map();                                  // net d'après → racine attendue
   for (const b of broches) {
@@ -264,6 +265,46 @@ const DESSIN_OPS = {
     const avant = dessinOuEst(el);
     dessinTransformer(el, e => { e.mir = !e.mir; });
     return { quoi: (n + 1) + ". miroir " + dessinNom(el), avant, apres: dessinOuEst(el) };
+  },
+
+  /* Un fil par coordonnées : une ligne brisée de segments horizontaux ou verticaux, en mm.
+     Il ne relie que par ses DEUX BOUTS (broche, fil ou rien) ; ce qu'il toucherait en chemin
+     est refusé, comme pour relier. */
+  fil(o, n) {
+    const P = o.points;
+    if (!Array.isArray(P) || P.length < 2 || P.length > 50) throw dessinRefus(n, "fil", "« points » : de 2 à 50 points {x, y} en mm");
+    const pts = P.map((p, k) => {
+      if (!p || typeof p !== "object") throw dessinRefus(n, "fil", "point " + (k + 1) + " : {x, y} en mm");
+      return { x: snap(dessinNombre(p.x, n, "fil", "x", 1000) * DESSIN_MM), y: snap(dessinNombre(p.y, n, "fil", "y", 1000) * DESSIN_MM) };
+    });
+    for (let k = 1; k < pts.length; k++) {
+      const a = pts[k - 1], b = pts[k];
+      if ((a.x === b.x) === (a.y === b.y)) throw dessinRefus(n, "fil", "segment " + k + " : horizontal ou vertical, et non nul (calé sur la grille)");
+    }
+    // le net que touche chaque bout, avant le fil : une broche, ou un fil qui passe là
+    const N = nets();
+    const surFil = (p, w) => !w.bus && (w.x1 === w.x2 ? p.x === w.x1 && p.y >= Math.min(w.y1, w.y2) && p.y <= Math.max(w.y1, w.y2)
+                                                       : p.y === w.y1 && p.x >= Math.min(w.x1, w.x2) && p.x <= Math.max(w.x1, w.x2));
+    const netAu = p => N.byPoint.get(key(p.x, p.y)) || (w => w ? N.byWire.get(w) : null)(S.wires.find(w => surFil(p, w))) || null;
+    const bouts = [pts[0], pts[pts.length - 1]].map(p => {
+      const net = netAu(p), nd = net && net.nodes[0];
+      const el = nd && S.comps.find(c => c.id === nd.id);
+      return { net, cle: nd ? nd.id + "." + nd.pin : null, nom: el ? dessinNom(el) + "." + brPatte(el, nd.pin - 1) : "" };
+    });
+    const avant = dessinNets(), copie = dessinFils();
+    for (let k = 1; k < pts.length; k++) S.wires.push({ x1: pts[k - 1].x, y1: pts[k - 1].y, x2: pts[k].x, y2: pts[k].y });
+    touchWires(); resolveSplits(); touchWires();
+    const [a, b] = bouts;
+    const fusions = a.cle && b.cle && a.cle !== b.cle ? [[a.cle, b.cle]] : [];
+    const nomme = [];
+    for (const [x, y] of [[a, b], [b, a]]) if (x.net && y.cle) for (const nm of x.net.names || []) nomme.push([y.cle, nm]);
+    const ecart = dessinEcart(avant, fusions, nomme);
+    if (ecart) { dessinRemettreFils(copie); throw dessinRefus(n, "fil", "le fil " + ecart + " ; déplace un point, ou relie par les broches (relier)"); }
+    for (const x of bouts) if (x.cle) dessinSansConflit(x, n, "fil");
+    const ou = pts.map(p => "(" + dessinMm(p.x) + ", " + dessinMm(p.y) + ")").join(" → ");
+    const relie = bouts.filter(x => x.nom).map(x => x.nom);
+    return { quoi: (n + 1) + ". fil " + ou, avant: null,
+             apres: (relie.length ? "touche " + relie.join(" et ") + ", " : "bouts libres, ") + "net " + (a.cle || b.cle ? dessinNetDe(a.cle ? a : b) : "sans broche") };
   },
 
   relier(o, n) {

@@ -539,6 +539,95 @@ const ECRITURE_CAO = (function () {
     rafraichir: rafraichirRegles, drc: true,
   });
 
+  /* ---------- classes et contraintes du schéma ----------
+     Ce que le schéma sait d'un net et transmet au PCB : sa classe (S.netClasses, la liste
+     NET_CLASSES ; "" la rend à l'analyse) et ses contraintes (S.contraintes.nets, mêmes bornes
+     que le PCB, commun/contraintes.js). Seuls les nets nommés passent au PCB : seuls eux
+     s'écrivent. Les couches se donnent par leur rang (1 = dessus), le schéma ne connaît pas
+     leurs noms. */
+  const netsNommes = () => new Set(typeof schCmNetsNommes === "function" ? schCmNetsNommes().map(n => n.name) : []);
+
+  function jouerClassesSch(args) {
+    const classes = Object.assign({}, S.netClasses || {}), lignes = [], refus = [], nets = netsNommes();
+    for (const e of args.lot) {
+      if (!e || e.action !== "affecter") { refus.push("au schéma, seule l'action « affecter » {net, classe} existe"); continue; }
+      if (typeof e.net !== "string" || !nets.has(e.net) || CLE_INTERDITE.has(e.net)) { refus.push("net « " + (e && e.net) + " » inconnu : un net nommé du schéma (cao_schema_lire nets)"); continue; }
+      const c = e.classe == null ? "" : String(e.classe);
+      const k = c === "" ? "" : NET_CLASSES.find(n => n.toLowerCase() === c.toLowerCase());
+      if (k === undefined) { refus.push(e.net + " : classe « " + c + " » inconnue du schéma (" + NET_CLASSES.join(", ") + ", ou \"\" pour l'automatique)"); continue; }
+      const avant = classes[e.net] || "";
+      if (k) classes[e.net] = k; else delete classes[e.net];
+      if (avant !== k) lignes.push({ quoi: "net " + e.net + ", classe", avant: avant || "automatique", apres: k || "automatique" });
+    }
+    return { lignes, refus, classes };
+  }
+  const CLASSES_SCH = lot({
+    titre: "Classes de nets du schéma (le PCB les applique à la synchronisation)",
+    verifier: jouerClassesSch,
+    muter: args => {
+      S.netClasses = jouerClassesSch(args).classes;
+      if (typeof SCHEMA_PATTERNS !== "undefined" && SCHEMA_PATTERNS.publierClasses) SCHEMA_PATTERNS.publierClasses();
+    },
+    rafraichir: rafraichirSch,
+  });
+
+  const CHAMPS_NET_SCH = { z: "z", z_tol: "zTol", l_min: "lMin", l_max: "lMax", vias_max: "viasMax",
+                           stub_max: "stubMax", via_stub_max: "viaStubMax", etoile_tol: "etoileTol" };
+  const vueNetSch = r => Object.keys(CHAMPS_NET_SCH).filter(k => r[CHAMPS_NET_SCH[k]] != null).map(k => k + " " + r[CHAMPS_NET_SCH[k]])
+    .concat(r.couches ? ["couches " + r.couches.map(i => i + 1).join(",")] : [], r.topo ? ["topologie " + r.topo] : [],
+            r.ordre ? ["ordre " + r.ordre.join(" → ")] : []).join(", ") || "aucune";
+
+  function jouerContraintesSch(args) {
+    const cnets = Object.assign({}, schCmModele().nets), lignes = [], refus = [], nets = netsNommes();
+    for (const e of args.lot) {
+      if (!e || e.action !== "net") { refus.push("au schéma, seule l'action « net » existe (les règles de paire sont au PCB)"); continue; }
+      if (typeof e.net !== "string" || !nets.has(e.net) || CLE_INTERDITE.has(e.net)) { refus.push("net « " + (e && e.net) + " » inconnu : un net nommé du schéma (cao_schema_lire nets)"); continue; }
+      const cand = Object.assign({}, cnets[e.net]), quoi = "contraintes " + e.net;
+      let ok = true;
+      for (const [k, cle] of Object.entries(CHAMPS_NET_SCH)) {
+        if (e[k] === undefined) continue;
+        if (e[k] === null) { delete cand[cle]; continue; }
+        if (typeof e[k] !== "number" || !Number.isFinite(e[k])) { refus.push(quoi + "." + k + " : un nombre, ou null pour l'effacer"); ok = false; continue; }
+        cand[cle] = e[k];
+      }
+      if (e.couches !== undefined) {
+        if (e.couches === null) delete cand.couches;
+        else if (!Array.isArray(e.couches) || !e.couches.length || !e.couches.every(i => Number.isInteger(i) && i >= 1 && i <= 64)) {
+          refus.push(quoi + ".couches : une liste de rangs de couche, 1 = dessus"); ok = false;
+        } else cand.couches = [...new Set(e.couches.map(i => i - 1))].sort((x, y) => x - y);
+      }
+      if (e.topologie !== undefined) {
+        if (e.topologie === null) delete cand.topo;
+        else if (!CM_TOPOS.includes(e.topologie)) { refus.push(quoi + ".topologie : " + CM_TOPOS.join(", ")); ok = false; }
+        else cand.topo = e.topologie;
+      }
+      if (e.ordre !== undefined) {
+        if (e.ordre === null) delete cand.ordre;
+        else if (!Array.isArray(e.ordre) || !e.ordre.length || !e.ordre.every(x => typeof x === "string" && REF.test(x))) {
+          refus.push(quoi + ".ordre : les repères dans l'ordre du net, le premier est la source"); ok = false;
+        } else cand.ordre = e.ordre;
+      }
+      if (!ok) continue;
+      if (cand.lMin != null && cand.lMax != null && cand.lMin > cand.lMax) { refus.push(quoi + " : l_min plus grand que l_max"); continue; }
+      const norme = cmNormRegle(cand) || {};
+      if (vueNetSch(norme) !== vueNetSch(cand)) { refus.push(quoi + " : valeurs refusées par la page (gardées : " + vueNetSch(norme) + ")"); continue; }
+      const avant = vueNetSch(cnets[e.net] || {});
+      if (Object.keys(norme).length) cnets[e.net] = norme; else delete cnets[e.net];
+      if (vueNetSch(norme) !== avant) lignes.push({ quoi, avant, apres: vueNetSch(norme) });
+    }
+    return { lignes, refus, cnets };
+  }
+  const CONTRAINTES_SCH = lot({
+    titre: "Contraintes de nets du schéma (le PCB les reprend à la synchronisation)",
+    verifier: jouerContraintesSch,
+    muter: args => {
+      const C = schCmModele();
+      S.contraintes = { nets: cmNormNets(jouerContraintesSch(args).cnets), groupes: C.groupes };
+      S.dirty = true;
+    },
+    rafraichir: rafraichirSch,
+  });
+
   /* ---------- paramètres de simulation ----------
      Le catalogue de la page (simDsGroupes : unité, bornes, choix) contrôle chaque valeur ;
      l'unité donnée doit être celle du catalogue, sans conversion. simDsAppliquer écrit et
@@ -1036,7 +1125,7 @@ const ECRITURE_CAO = (function () {
   const PASTILLES = lot({ titre: "Réglages de pastilles", verifier: verifierPastilles, muter: muterPastilles, rafraichir: rafraichirZones, drc: true });
 
   return { lot, composantsSch: COMPOSANTS_SCH, composantsPcb: COMPOSANTS_PCB, pistes: PISTES, classes: CLASSES,
-           contraintes: CONTRAINTES, simulation: SIMULATION, contour: CONTOUR, decoupes: DECOUPES, interdits: INTERDITS, zones: ZONES, serigraphie: SERIGRAPHIE,
+           contraintes: CONTRAINTES, classesSch: CLASSES_SCH, contraintesSch: CONTRAINTES_SCH, simulation: SIMULATION, contour: CONTOUR, decoupes: DECOUPES, interdits: INTERDITS, zones: ZONES, serigraphie: SERIGRAPHIE,
            pastilles: PASTILLES, LOT_MAX, pousser,
            drc: { erreurs: erreursDrc, bilan: bilanDrc } };        // repris par le routage (37-routage-pilote.js)
 })();

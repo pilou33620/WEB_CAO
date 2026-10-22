@@ -450,6 +450,33 @@ T("canal de pilotage : cao_schema_dessiner, texte libre (annot_text) et cadre, n
     if(!/2 mm de côté/.test(m))throw new Error("cadre trop petit : "+m);
   }finally{global.Pilote=ancien;}
 });
+T("canal de pilotage : cao_schema_dessiner, un fil par coordonnées ne relie que par ses bouts",()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  try{
+    piloteCao("schema");
+    const d=cmds.cao_schema_dessiner;
+    sheet([],[]);S.hist.length=0;
+    const r1=addComp("resistor",0,0);r1.ref="R1";
+    const r2=addComp("resistor",200,100);r2.ref="R2";
+    const r3=addComp("resistor",100,60);r3.ref="R3";
+    const lot=[{op:"fil",points:[{x:2,y:0},{x:8,y:0},{x:8,y:5}]}];
+    const prop=d.proposer({lot});
+    if(!/^1\. fil \(2, 0\) → \(8, 0\) → \(8, 5\)$/m.test(prop.avant)&&!/1\. fil \(2, 0\)/.test(prop.apres))throw new Error("carte : "+prop.avant+" | "+prop.apres);
+    if(!/touche R1\.2 et R2\.1/.test(prop.apres))throw new Error("bouts : "+prop.apres);
+    d.appliquer({lot},prop);
+    const g=nets(), net=el=>g.list.findIndex(x=>x.nodes.some(nd=>nd.id===el.id&&nd.pin===(el===r1?2:1)));
+    if(S.hist.length!==1||net(r1)<0||net(r1)!==net(r2))throw new Error("R1.2 et R2.1 non reliées par le fil");
+    const refus=(l,motif)=>{let m="";try{d.proposer({lot:l});}catch(e){m=e.message;}if(!motif.test(m))throw new Error("refus attendu "+motif+" : "+m);};
+    // passer sur les deux broches de R3 en chemin : refusé, rien ne reste
+    const fils=S.wires.length;
+    refus([{op:"fil",points:[{x:2,y:-3},{x:2,y:3},{x:10,y:3}]}],/relierait aussi|ne devaient pas/);
+    if(S.wires.length!==fils)throw new Error("un refus a laissé du fil");
+    refus([{op:"fil",points:[{x:0,y:0},{x:3,y:3}]}],/horizontal ou vertical/);
+    refus([{op:"fil",points:[{x:0,y:0}]}],/de 2 à 50 points/);
+    refus([{op:"fil",points:[{x:0,y:0},{x:5000,y:0}]}],/±1000/);
+  }finally{global.Pilote=ancien;sheet([],[]);}
+});
 T("canal de pilotage : cao_schema_dessiner, simulé sans trace puis appliqué en une étape",()=>{
   const cmds={}, ancien=global.Pilote;
   global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
@@ -3777,6 +3804,38 @@ T("contraintes de nets : groupes d'appariement, nets disparus, résumé",()=>{
     if(SCM.filtre!=="CLK")throw new Error("la fenêtre s'ouvre filtrée sur le net");
   }finally{schCmFermer();}
   S.contraintes={nets:{},groupes:[]};
+});
+T("canal de pilotage : cao_classes_ecrire et cao_contraintes_ecrire au schéma, un lot une étape",()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  try{
+    piloteCao("schema");
+    scmFeuille();
+    S.netClasses={};S.contraintes={nets:{},groupes:[]};S.hist.length=0;
+    const K=cmds.cao_classes_ecrire, C=cmds.cao_contraintes_ecrire;
+    const pk=K.proposer({lot:[{action:"affecter",net:"CLK",classe:"horloge"}]});
+    if(!/net CLK, classe : Horloge/.test(pk.apres)||S.netClasses.CLK)throw new Error("carte des classes : "+pk.apres);
+    K.appliquer({lot:[{action:"affecter",net:"CLK",classe:"horloge"}]},pk);
+    if(S.netClasses.CLK!=="Horloge"||S.hist.length!==1)throw new Error("classe non posée en une étape");
+    const lot=[{action:"net",net:"CLK",z:50,l_max:40,couches:[1,4],topologie:"chaine",ordre:["U1","U2"]},
+               {action:"net",net:"DATA",vias_max:2}];
+    const pc=C.proposer({lot});
+    if(!/contraintes CLK : z 50, l_max 40, couches 1,4, topologie chaine, ordre U1 → U2/.test(pc.apres))throw new Error("carte : "+pc.apres);
+    C.appliquer({lot},pc);
+    const n=schCmModele().nets;
+    if(n.CLK.z!==50||n.CLK.couches.join()!=="0,3"||n.CLK.topo!=="chaine"||n.DATA.viasMax!==2||S.hist.length!==2)
+      throw new Error("contraintes : "+JSON.stringify(n));
+    undo();
+    if(schCmModele().nets.CLK)throw new Error("Ctrl+Z ne remet pas les contraintes");
+    const refus=(cmd,l,motif)=>{let m="";try{cmd.proposer({lot:l});}catch(e){m=e.message;}if(!motif.test(m))throw new Error("refus attendu "+motif+" : "+m);};
+    refus(K,[{action:"affecter",net:"NUL",classe:"RF"}],/inconnu : un net nommé/);
+    refus(K,[{action:"affecter",net:"CLK",classe:"Licorne"}],/inconnue du schéma/);
+    refus(K,[{action:"creer",nom:"X"}],/seule l'action « affecter »/);
+    refus(C,[{action:"paire",nom:"USB"}],/règles de paire sont au PCB/);
+    refus(C,[{action:"net",net:"CLK",couches:["Top"]}],/rangs de couche/);
+    refus(C,[{action:"net",net:"CLK",l_min:5,l_max:2}],/l_min plus grand/);
+    refus(C,[{action:"net",net:"CLK",topologie:"anneau"}],/p2p, chaine, etoile, flyby/);
+  }finally{global.Pilote=ancien;S.netClasses={};S.contraintes={nets:{},groupes:[]};}
 });
 
 (async()=>{
