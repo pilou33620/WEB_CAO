@@ -160,8 +160,12 @@ function routageUnePaire(a){
       dpStep();
       if(S.dp && S.dp.doneP.length + S.dp.doneN.length === n0) throw routageRefus("bloquée vers " + e.nom);
     }
-    // dpStep dépose la paire en accrochant des pastilles ; encore en cours, elle resterait pendante
-    if(S.dp) throw routageRefus("l'arrivée " + arr.nom + " n'est pas accrochée par les deux pistes");
+    if(S.dp){
+      // une arrivée sur le cuivre de la paire (pastilles, ou le milieu que rend cao_chemin) doit s'y accrocher
+      if(arr.couches || [...Array(S.cu).keys()].some(l => dpPrimPair(pair, arr.x, arr.y, l, CHEMIN.ACCROCHE_PAIRE)))
+        throw routageRefus("l'arrivée " + arr.nom + " n'est pas accrochée par les deux pistes");
+      dpCommit();                                            // une arrivée libre : la paire s'arrête là
+    }
     return {ok:true, net:routagePropre(pair.p) + " / " + routagePropre(pair.n)};
   }catch(err){
     if(S.dp) dpCancel();

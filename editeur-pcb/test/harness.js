@@ -28463,9 +28463,10 @@ TA("chemin-auto : paire large, la via de retour laisse la place de la porte",asy
   }
 });
 
-/* Une arrivée que la paire n'accroche pas (un point libre, loin de ses
-   pastilles) : refusée, rien de posé. Avant : « posée », une paire pendante. */
-TA("canal de pilotage : cao_paire refuse une arrivée qui n'accroche pas la paire",async()=>{
+/* Une arrivée libre, loin du cuivre de la paire : la paire s'y arrête (pose en plusieurs
+   fois). Une arrivée sur ses pastilles (le milieu que rend cao_chemin) doit s'y accrocher :
+   sinon refusée, rien de posé (avant : « posée », une paire pendante). */
+TA("canal de pilotage : cao_paire, arrivée libre posée, arrivée sur les pastilles accrochée ou refusée",async()=>{
   const cmds={}, ancien=global.Pilote;
   global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
   const garde={doc:serialize(),undo:S.undo.slice(),redo:S.redo.slice()};
@@ -28479,10 +28480,14 @@ TA("canal de pilotage : cao_paire refuse une arrivée qui n'accroche pas la pair
     const B=mkFp("R2","","0603",2);B.x=42;B.y=15;B.rot=90;B.nets={1:"USB_DP",2:"USB_DM"};
     S.fps.push(A,B);touch();
     if(dpAutoAll()!==1)throw new Error("la paire USB devait se déclarer");
+    const libre=cmds.cao_paire.proposer({paire:"USB",depart:{x:8,y:15},arrivee:{x:20,y:15}});
+    if(!/: posée$/m.test(libre.apres))throw new Error("arrivée libre : "+libre.apres);
     const avant=serialize();
-    let m="";try{cmds.cao_paire.proposer({paire:"USB",depart:{x:8,y:15},arrivee:{x:20,y:15}});}catch(e){m=e.message;}
-    if(!/l'arrivée \(20, 15\) n'est pas accrochée par les deux pistes/.test(m))throw new Error("refus attendu : "+m);
-    if(serialize()!==avant)throw new Error("un refus a laissé une trace");
+    let m="",dit="";try{dit=cmds.cao_paire.proposer({paire:"USB",depart:{x:8,y:15},arrivee:{x:41.2,y:15}}).apres;}catch(e){m=e.message;}
+    if(m){
+      if(!/l'arrivée \(41\.2, 15\) n'est pas accrochée par les deux pistes/.test(m))throw new Error("refus attendu : "+m);
+      if(serialize()!==avant)throw new Error("un refus a laissé une trace");
+    }else if(!/: posée$/m.test(dit))throw new Error("arrivée sur les pastilles : "+dit);
   }finally{
     global.Pilote=ancien;
     loadDoc(JSON.parse(garde.doc),true);S.undo=garde.undo;S.redo=garde.redo;
