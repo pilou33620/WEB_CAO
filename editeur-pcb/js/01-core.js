@@ -349,6 +349,7 @@ function pressNorm(src,cu,di){
     if(!Number.isInteger(a)||!Number.isInteger(b)||a<0||b>cu-1||a>=b)continue;
     if(a===0&&b===cu-1)continue;                       // la carte entière : implicite
     if((a>0&&core(a-1))||(b<cu-1&&core(b)))continue;   // couperait une âme
+    if(b===a+1&&core(a))continue;                      // une âme seule : déjà pressée, pas un pressage de plus
     const croise=p=>p.a<=b&&a<=p.b&&!(p.a<=a&&b<=p.b)&&!(a<=p.a&&p.b<=b);
     if(out.some(p=>(p.a===a&&p.b===b)||croise(p)))continue;
     out.push({a,b});
@@ -1151,7 +1152,12 @@ function setCuCount(n,silent){
     if(v.a===v.b){v.a=0;v.b=n-1;}
   }
   S.cu=n; S.cuL=L;
-  if(old!==n)stackResize(n);           // l'empilage physique suit le compte
+  if(old!==n){
+    // les pressages suivent leurs cuivres comme les vias (dessous → dessous) ; stackResize relit ceux qui tiennent
+    if(S.stack&&Array.isArray(S.stack.press))
+      S.stack.press=S.stack.press.map(p=>p&&typeof p==="object"?{a:map(p.a),b:map(p.b)}:p);
+    stackResize(n);                    // l'empilage physique suit le compte
+  }
   syncAutoZones();
   S.active=clamp(S.active,0,n-1);
   S.pair=[0,n-1];

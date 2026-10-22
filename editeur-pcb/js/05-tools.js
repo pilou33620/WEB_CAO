@@ -2316,6 +2316,7 @@ function mitreAt(l,x,y,dry,cap,arc){
   const MIN=minJog(A.t.w);
   // le pas de recul : une largeur de chanfrein, ou une largeur de rayon pour l'arc
   const pas=r3(MIN*tg);
+  if(!(pas>0))return false;  // coude presque droit : un pas nul ne raccourcirait jamais
   let L=Math.min(ra.len,rb.len);
   if(cap>0)L=Math.min(L,r3(cap*A.t.w*tg));
   /* Ce qui reste d'une jambe après le chanfrein : nul quand le chanfrein l'a

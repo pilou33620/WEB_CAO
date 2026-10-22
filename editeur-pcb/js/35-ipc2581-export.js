@@ -587,12 +587,12 @@ function ipc2581Document(opts){
     if(!segs.some(s=>s.t==="a")||(fins&&!gArcsFins(Q,segs)))return {k:poly(P0,null),arcs:0};
     /* un arc y est rangé dans le sens trigonométrique, de a1 à a2 : le sens
        du parcours se lit au point d'où l'on arrive. On part donc d'un
-       segment droit ; une carte ronde, qui n'en a pas, se parcourt dans le
-       sens de son contour. */
+       segment droit ; sans droite, du bout du premier arc que touche le
+       dernier élément (`contourDepart`). */
     const pt=(s,a)=>({x:s.c.x+s.r*Math.cos(a*Math.PI/180),y:s.c.y+s.r*Math.sin(a*Math.PI/180)});
     const i0=Math.max(0,segs.findIndex(s=>s.t==="l"));
     const L=segs.slice(i0).concat(segs.slice(0,i0));
-    let cur=L[0].t==="l"?L[0].a:(signedArea(Q)>0?pt(L[0],L[0].a1):pt(L[0],L[0].a2));
+    let cur=contourDepart(L,pt);
     const k=[["PolyBegin",[["x",ipcN(cur.x)],["y",ipcN(cur.y)]]]];
     let arcs=0;
     for(const s of L){

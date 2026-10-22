@@ -201,12 +201,16 @@ function cheminUne(g, li, extra, fin){
     const d = dpGeom(pair, l);
     return r3(2 * d.w + d.gap);
   });
-  // une via de paire : deux vias écartés de dpViaSpread, que l'éventail de dpVia avance de ce qu'il rattrape sur le pas des pistes
+  /* une via de paire : deux vias écartés de dpViaSpread, que l'éventail de dpVia avance de ce qu'il rattrape sur le
+     pas des pistes ; sans éventail (pas ≥ écart), au pas. cao_paire part du point accroché à la grille de la page :
+     le disque s'élargit de cet écart. */
   // shortcut: un disque qui couvre les deux vias dans tous les sens, pas deux vias orientés ; à affiner si une paire ne trouve plus où changer de couche
   let Rv = classOf(net).via / 2;
+  const pasL = pair ? [...Array(g.L).keys()].map(l => { const d = dpGeom(pair, l); return d.w + d.gap; }) : [];
   if(pair){
-    const s = dpViaSpread(pair), pas = Math.min(...[...Array(g.L).keys()].map(l => { const d = dpGeom(pair, l); return d.w + d.gap; }));
-    Rv = Math.hypot(Math.max(0, s - pas) / 2, s / 2) + Math.max(classOf(pair.p).via, classOf(pair.n).via) / 2;
+    const s = dpViaSpread(pair), pasMin = Math.min(...pasL), pasMax = Math.max(...pasL);
+    Rv = Math.hypot(Math.max(0, s - pasMin) / 2, Math.max(s, pasMax) / 2) + (S.grid > 0 ? S.grid : 0) / Math.SQRT2 +
+         Math.max(classOf(pair.p).via, classOf(pair.n).via) / 2;
   }
   const nets = pair ? [pair.p, pair.n] : [net];
   const {T, V} = cheminObstacles(g, nets, larg, extra, new Set(pair ? dep.pads.concat(arr.pads) : [dep.nom, arr.nom]), Rv);
@@ -218,10 +222,15 @@ function cheminUne(g, li, extra, fin){
   for(const [b, estBut] of [[dep, false], [arr, true]]){
     const [ci, cj] = cel(b.x, b.y);
     if(!dans(ci, cj)) throw new Error(b.nom + " est hors de la carte");
-    // une paire : pas de via de paire à portée d'accroche de ses pastilles (dpVia veut un segment avant elle, cao_paire s'y accrocherait)
-    if(pair) for(const q of b.qs){
-      const R = Rv + CHEMIN.ACCROCHE_PAIRE, m = Math.max(q.w, q.h) / 2 + R;
-      for(let l = 0; l < g.L; l++) cheminBoite(V, g, l, q.x - m, q.y - m, q.x + m, q.y + m, (x, y) => padDist(x, y, q) < R);
+    /* une paire : pas de via de paire à portée d'accroche de ses pastilles (dpVia veut un segment avant elle, cao_paire
+       s'y accrocherait), ni avant la porte de dpGate (lead depuis l'écart des deux pastilles) et un pas pour s'y aligner */
+    if(pair) for(let l = 0; l < g.L; l++){
+      const e = dist(b.ancres[0].x, b.ancres[0].y, b.ancres[1].x, b.ancres[1].y), lead = Math.abs(e - pasL[l]) / 2 + pasL[l] / 2 + dpGeom(pair, l).w;
+      const R = Rv + Math.max(CHEMIN.ACCROCHE_PAIRE, lead + pasL[l]);
+      for(const q of b.qs){
+        const m = Math.max(q.w, q.h) / 2 + R;
+        cheminBoite(V, g, l, q.x - m, q.y - m, q.x + m, q.y + m, (x, y) => padDist(x, y, q) < R);
+      }
     }
     for(const l of b.couches){
       const base = l * nxy;

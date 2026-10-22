@@ -431,6 +431,7 @@ function mecaDxf(J){
    seulement, `ctx.cfg.vues`), cadre et cartouche. */
 function mecaPlan(J,ctx,monde){
   const feuilles=mecaFeuilles(J,ctx,monde);
+  // shortcut: un détail d'une vue d'une autre feuille (fab/carte…) posé sur la feuille meca n'y est pas : sa vue mère n'est pas construite ici ; à faire si l'on veut le zip MECA complet
   if(ctx.cfg.vues&&typeof dfAgencer==="function")dfAgencer(feuilles,ctx);
   feuilles.forEach((F,i)=>dfCadre(F,ctx,i+1,feuilles.length));
   return feuilles;

@@ -160,10 +160,8 @@ function routageUnePaire(a){
       dpStep();
       if(S.dp && S.dp.doneP.length + S.dp.doneN.length === n0) throw routageRefus("bloquée vers " + e.nom);
     }
-    if(S.dp){
-      if(arr.couches) throw routageRefus("l'arrivée " + arr.nom + " n'est pas accrochée par les deux pistes");
-      dpCommit();
-    }
+    // dpStep dépose la paire en accrochant des pastilles ; encore en cours, elle resterait pendante
+    if(S.dp) throw routageRefus("l'arrivée " + arr.nom + " n'est pas accrochée par les deux pistes");
     return {ok:true, net:routagePropre(pair.p) + " / " + routagePropre(pair.n)};
   }catch(err){
     if(S.dp) dpCancel();

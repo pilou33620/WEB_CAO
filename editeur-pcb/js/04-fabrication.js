@@ -290,7 +290,7 @@ function gRegionArcs(body,pts){
   const pt=(s,a)=>({x:s.c.x+s.r*Math.cos(a*Math.PI/180),y:s.c.y+s.r*Math.sin(a*Math.PI/180)});
   const i0=Math.max(0,segs.findIndex(s=>s.t==="l"));
   const L=segs.slice(i0).concat(segs.slice(0,i0));
-  const dep=L[0].t==="l"?L[0].a:(signedArea(Q)>0?pt(L[0],L[0].a1):pt(L[0],L[0].a2));
+  const dep=contourDepart(L,pt);
   let cur=dep;
   body.push("G36*");
   body.push(gXY(dep.x,-dep.y)+"D02*");
@@ -570,6 +570,16 @@ function gerberSilk(side){
    de chacune sous 10 µm. Un polygone grossier (dodécagone de 5 mm : 0,17 mm)
    reste en cordes, celles que le DRC et le remplissage des zones mesurent ;
    sinon la fraise couperait plus près du cuivre que la marge de bord. */
+/* Le départ d'un contour rangé en droites et arcs (`dxfSegments`) : le bout
+   de L[0] partagé avec le dernier élément. Le sens d'un arc se lit au point
+   d'où l'on arrive ; un arc concave tourne à rebours du contour, et partir
+   de son autre bout fait arriver hors de l'arc suivant. */
+function contourDepart(L,pt){
+  if(L[0].t==="l")return L[0].a;
+  const bouts=s=>s.t==="l"?[s.a,s.b]:[pt(s,s.a1),pt(s,s.a2)], Z=bouts(L[L.length-1]);
+  const d=p=>Math.min(...Z.map(z=>Math.hypot(z.x-p.x,z.y-p.y))), [e1,e2]=bouts(L[0]);
+  return d(e1)<=d(e2)?e1:e2;
+}
 function gArcsFins(Q,segs){
   for(const s of segs){
     if(s.t!=="a")continue;

@@ -1220,7 +1220,10 @@ vue sur l'une de ces deux feuilles refait alors tout le document, pas la
 seule feuille (`dfGenreVue` rend `null`). **Au DXF :** le
 `-PLAN-FABRICATION.dxf` de Fabrication .zip ne prend que les feuilles de
 fabrication ; un détail de la vue de fabrication posé ailleurs n'y est donc
-pas (exporter sa feuille par **DXF feuille**).
+pas (exporter sa feuille par **DXF feuille**). De même, le zip **MECA** ne
+construit que ses propres vues : un détail d'une autre feuille (la vue de la
+carte au plan de fabrication, par exemple) posé sur la feuille mécanique n'y
+figure pas.
 
 ### Où vivent les réglages
 

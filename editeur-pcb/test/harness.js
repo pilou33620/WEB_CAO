@@ -5556,6 +5556,22 @@ T("laminage séquentiel : pressages décrits, vias, DRC et sorties",()=>{
   if("press" in JSON.parse(serialize()).stack)throw new Error("press écrit sans séquence");
   loadDoc(JSON.parse(save),true);
 });
+/* Une plage qui n'est qu'une âme n'est pas un pressage : elle comptait pour
+   un, et faisait passer la carte en laminage séquentiel. Relue aussi après
+   qu'un diélectrique est devenu une âme. */
+T("laminage séquentiel : une âme seule n'est pas un pressage",()=>{
+  const save=serialize();
+  try{
+    setCuCount(6);applyPreset(presetsFor(6)[0]);
+    const di=S.stack.di;                               // prépreg / âme / prépreg / âme / prépreg
+    if(JSON.stringify(pressNorm([{a:1,b:2}],6,di))!=="[]")throw new Error("L2–L3, une âme, accepté comme pressage");
+    for(const d of di)d.k="prepreg";
+    S.stack.press=[{a:2,b:3}];
+    if(pressList().length!==1)throw new Error("L3–L4 dans un prépreg : un pressage");
+    di[2].k="core";
+    if(pressList().length)throw new Error("L3–L4 devenu une âme : plus un pressage, "+JSON.stringify(pressList()));
+  }finally{loadDoc(JSON.parse(save),true);}
+});
 T("DRC : le rôle annoncé contre le cuivre posé",()=>{
   setCuCount(4);applyPreset(presetsFor(4)[0]);
   S.fps=[];S.tracks=[];S.zones=[];S.vias=[];
@@ -6187,6 +6203,20 @@ T("règle arrondi : un arc tangent à chaque coude, raccordé aux deux droites",
   if(fautes.length)throw new Error("l'arc a créé : "+fautes.map(e=>e.msg).join(" ; "));
   if(coude({l:0,net:"X",w:0.3,x1:19.6,y1:0.4,x2:19.6,y2:0.41})||S.tracks.some(isArc)||S.tracks.length!==3)
     throw new Error("sans place, le coude reste tel quel");
+});
+/* Un coude presque droit (0,1° ici) : le pas de recul de l'arc, arrondi au
+   micron, valait 0, et la boucle de recul ne finissait plus — le dépôt
+   figeait la page. */
+T("règle arrondi : un coude presque droit ne fige pas le dépôt",()=>{
+  S.fps=[];S.vias=[];S.zones=[];
+  S.tracks=[{l:0,net:"GND",w:0.3,x1:5,y1:10,x2:10.2,y2:10.01}];
+  touch();clearSel();setCornerMode("arc");S.avoid=false;setMode("track");S.active=0;
+  try{
+    startRoute(10.2,10.01,true);
+    routeToPoint({x:10.4,y:10.01});stepRoute();routeToPoint({x:10.4,y:15});stepRoute();
+    if(S.route)commitRoute();
+  }finally{setMode("select");setCornerMode("45");S.avoid=true;}
+  if(S.route||S.tracks.length!==3||S.tracks.some(isArc))throw new Error("trois droites attendues : "+JSON.stringify(S.tracks));
 });
 T("import : la règle d'angle est une liste fermée",()=>{
   const d=normDoc({rule:{corner:"90"}});
@@ -12002,11 +12032,11 @@ TA("dossier : brouillon écrit par la minuterie, effacé à l'enregistrement, pr
     if(S.fps[0].x!==brouillon.fps[0].x)throw new Error("le brouillon n'est pas repris");
     if(!S.dirty)throw new Error("un brouillon repris doit rester « modifié »");
     if(!disque.brouillon)throw new Error("le brouillon repris reste jusqu'à l'enregistrement");
-    /* refusé -> la carte enregistrée, et le brouillon s'efface */
+    /* refusé -> la carte enregistrée ; le brouillon reste sur le disque jusqu'au prochain enregistrement */
     global.confirm=()=>false;
     carteVide();S.dirty=false;PCB_PROJET_LU=false;
     pcbChargerProjet();await PCB_PROJET_P;
-    if(disque.brouillon)throw new Error("refusé, le brouillon devait être effacé");
+    if(!disque.brouillon)throw new Error("refusé, le brouillon devait rester sur le disque");
     if(S.dirty||S.fps[0].x!==enregistree.fps[0].x)throw new Error("la carte enregistrée devait être chargée");
     /* plus ancien que la carte : ni question ni effacement */
     disque.brouillon={document:brouillon,modifie:1};question="";
@@ -26999,6 +27029,57 @@ T("zones et découpes rondes : arcs au Gerber cuivre et à l'IPC-2581, la zone r
     if(/<PolyStepCurve /.test(xr))throw new Error("IPC-2581 : zone rectangulaire sans arc");
   }finally{loadDoc(JSON.parse(avant),true);}
 });
+/* Un contour fait seulement d'arcs, concaves : le sens d'un arc ne suit pas
+   celui du contour. Le départ est le bout du premier arc partagé avec le
+   dernier élément ; partir de l'autre faisait arriver hors du cercle suivant. */
+T("arcs seuls, concaves : chaque arc part d'un point de son cercle, au Gerber et à l'IPC-2581",()=>{
+  const avant=serialize();
+  try{
+    S.fps=[];S.tracks=[];S.vias=[];S.holes=[];S.cuts=[];setBoardRect();
+    const P=boardPoly(), cx=r3(P.reduce((t,p)=>t+p.x,0)/P.length), cy=r3(P.reduce((t,p)=>t+p.y,0)/P.length);
+    /* un carré de 20 mm, chaque côté creusé en arc de rayon 25, trente cordes (assez fines pour le cuivre) */
+    const C=[[-10,-10],[10,-10],[10,10],[-10,10]].map(([x,y])=>({x:cx+x,y:cy+y})), pts=[];
+    C.forEach((a,i)=>{
+      const b=C[(i+1)%4], m={x:(a.x+b.x)/2,y:(a.y+b.y)/2}, h=Math.sqrt(625-100);
+      const o={x:m.x+(m.x-cx)/10*h,y:m.y+(m.y-cy)/10*h};    // centre dehors : le côté se creuse
+      const a0=Math.atan2(a.y-o.y,a.x-o.x), a1=Math.atan2(b.y-o.y,b.x-o.x);
+      let d=a1-a0;if(d>Math.PI)d-=2*Math.PI;if(d<-Math.PI)d+=2*Math.PI;
+      for(let k=0;k<30;k++)pts.push({x:r4(o.x+25*Math.cos(a0+d*k/30)),y:r4(o.y+25*Math.sin(a0+d*k/30))});
+    });
+    S.zones=[{id:S.nextId++,l:0,net:"GND",pts}];touch();
+    const g=gerberCopper(0), R=g.slice(g.indexOf("G36*"),g.indexOf("G37*")).split("\n");
+    let cur=null, n=0;
+    for(const l of R){
+      let m=l.match(/^X(-?\d+)Y(-?\d+)D0[12]/);
+      if(m){cur=[+m[1],+m[2]];continue;}
+      m=l.match(/^G0[23]X(-?\d+)Y(-?\d+)I(-?\d+)J(-?\d+)D01/);if(!m)continue;
+      const c=[cur[0]+ +m[3],cur[1]+ +m[4]];
+      if(Math.abs(Math.hypot(+m[1]-c[0],+m[2]-c[1])-25e6)>5000||Math.abs(Math.hypot(+m[3],+m[4])-25e6)>5000)
+        throw new Error("Gerber : arc hors de son cercle depuis "+cur+" ; "+l);
+      cur=[+m[1],+m[2]];n++;
+    }
+    if(n!==4)throw new Error("Gerber : quatre arcs attendus, "+n);
+    const verifIpc=(x,quoi)=>{
+      let cur=null, n=0;
+      for(const m of x.matchAll(/<Poly(Begin|StepSegment|StepCurve) x="([-\d.]+)" y="([-\d.]+)"(?: centerX="([-\d.]+)" centerY="([-\d.]+)")?/g)){
+        const p=[+m[2],+m[3]];
+        if(m[1]==="StepCurve"){
+          const c=[+m[4],+m[5]];
+          if(Math.abs(Math.hypot(cur[0]-c[0],cur[1]-c[1])-Math.hypot(p[0]-c[0],p[1]-c[1]))>0.005)
+            throw new Error(quoi+" : arc hors de son cercle depuis "+cur+" vers "+p);
+          n++;
+        }
+        cur=p;
+      }
+      if(n!==4)throw new Error(quoi+" : quatre arcs attendus, "+n);
+    };
+    verifIpc(ipc2581Document({}).xml,"IPC-2581, zone");
+    /* le contour de carte passe par le même chemin */
+    S.zones=[];S.board.pts=pts;touch();
+    const x=ipc2581Document({}).xml;
+    verifIpc(x.slice(x.indexOf("<Profile>"),x.indexOf("</Profile>")),"IPC-2581, contour");
+  }finally{loadDoc(JSON.parse(avant),true);}
+});
 T("IPC-2581 : classes, paires et contraintes écrites avec les éléments du XSD (netPair, SpecRef, Impedance)",()=>{
   const avant=serialize();
   try{
@@ -28319,6 +28400,89 @@ TA("chemin-auto : une paire passe sous un mur par deux vias de paire, que cao_pa
     const err=runDrc().filter(e=>!e.info&&!drc0.has(e.msg));     // la zone d'exemple1 déborde déjà de la petite carte
     if(err.length)throw new Error("DRC : "+err.map(e=>e.msg).join(" ; "));
     if(conn(true).rats.some(x=>x.net==="USB_DP"||x.net==="USB_DM"))throw new Error("la paire n'est pas reliée");
+  }finally{
+    global.Pilote=ancien;
+    loadDoc(JSON.parse(garde.doc),true);S.undo=garde.undo;S.redo=garde.redo;
+  }
+});
+
+/* La carte d'essai des vias de paire : deux 0603 debout, la paire USB entre
+   eux, le dessus coupé d'un mur ; `plus` y ajoute du cuivre. Rend la réponse
+   de cao_chemin et, si une paire est proposée, ce qu'en dit cao_paire. */
+async function cheminPaireMur(cmds,plus,regle){
+  loadDoc(exemple1());
+  carteVide();S.dpPairs=[];S.dpRules=regle?[normDpRule(regle,0,2)]:[];
+  setCuCount(2,true);
+  S.board={x:0,y:0,w:50,h:30,pts:null};
+  const A=mkFp("R1","","0603",2);A.x=8;A.y=15;A.rot=90;A.nets={1:"USB_DP",2:"USB_DM"};
+  const B=mkFp("R2","","0603",2);B.x=42;B.y=15;B.rot=90;B.nets={1:"USB_DP",2:"USB_DM"};
+  S.fps.push(A,B);
+  S.tracks.push({l:0,net:"MUR",w:0.5,x1:25,y1:0,x2:25,y2:30});
+  plus();touch();
+  if(dpAutoAll()!==1)throw new Error("la paire USB devait se déclarer");
+  const r=await cmds.cao_chemin.executer({liaisons:[{paire:S.dpPairs[0].name,depart:["R1.1","R1.2"],arrivee:["R2.1","R2.2"]}]});
+  let dit=null;
+  if(r.paires[0]){try{dit=cmds.cao_paire.proposer(r.paires[0]).apres;}catch(e){dit=e.message;}}
+  return {r,dit};
+}
+/* Les vias d'une paire tombent en avant du point (l'éventail) et à la grille de
+   la page : le disque réservé par cao_chemin les couvre. Une via d'un autre net
+   en biais devant le point : avant, « trouvé » puis « vias de la paire
+   refusées ». */
+TA("chemin-auto : le disque d'une via de paire couvre les vias que cao_paire pose",async()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  const garde={doc:serialize(),undo:S.undo.slice(),redo:S.redo.slice()};
+  try{
+    piloteCao("pcb");
+    const n=Math.hypot(0.276,0.401);
+    const {r,dit}=await cheminPaireMur(cmds,()=>{
+      S.tracks.push({l:1,net:"MUR",w:0.5,x1:22.4,y1:0,x2:22.4,y2:30});        // dessous, un mur avant le premier
+      S.vias.push({x:r3(23.75+0.276/n*1.27),y:r3(15+0.401/n*1.27),d:0.6,drill:0.3,net:"MUR",a:0,b:1});
+    });
+    if(r.resultats[0].trouve&&!/: posée$/m.test(dit))throw new Error("cao_chemin trouve, cao_paire refuse : "+dit+" / "+JSON.stringify(r.paires[0]));
+  }finally{
+    global.Pilote=ancien;
+    loadDoc(JSON.parse(garde.doc),true);S.undo=garde.undo;S.redo=garde.redo;
+  }
+});
+/* Une paire large : la porte de dpGate est loin devant ses pastilles, la via
+   de retour ne se pose pas avant. Avant : « deux vias » puis « croisées ». */
+TA("chemin-auto : paire large, la via de retour laisse la place de la porte",async()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  const garde={doc:serialize(),undo:S.undo.slice(),redo:S.redo.slice()};
+  try{
+    piloteCao("pcb");
+    const {r,dit}=await cheminPaireMur(cmds,()=>{},{minW:0.8,prefW:0.8,maxW:0.8,minGap:0.2,prefGap:0.2,maxGap:0.2});
+    if(!r.resultats[0].trouve||r.resultats[0].vias!==2)throw new Error("deux vias attendues : "+JSON.stringify(r.resultats));
+    if(!/: posée$/m.test(dit))throw new Error("cao_paire : "+dit+" / "+JSON.stringify(r.paires[0]));
+  }finally{
+    global.Pilote=ancien;
+    loadDoc(JSON.parse(garde.doc),true);S.undo=garde.undo;S.redo=garde.redo;
+  }
+});
+
+/* Une arrivée que la paire n'accroche pas (un point libre, loin de ses
+   pastilles) : refusée, rien de posé. Avant : « posée », une paire pendante. */
+TA("canal de pilotage : cao_paire refuse une arrivée qui n'accroche pas la paire",async()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  const garde={doc:serialize(),undo:S.undo.slice(),redo:S.redo.slice()};
+  try{
+    piloteCao("pcb");
+    loadDoc(exemple1());
+    carteVide();S.dpPairs=[];S.dpRules=[];
+    setCuCount(2,true);
+    S.board={x:0,y:0,w:50,h:30,pts:null};
+    const A=mkFp("R1","","0603",2);A.x=8;A.y=15;A.rot=90;A.nets={1:"USB_DP",2:"USB_DM"};
+    const B=mkFp("R2","","0603",2);B.x=42;B.y=15;B.rot=90;B.nets={1:"USB_DP",2:"USB_DM"};
+    S.fps.push(A,B);touch();
+    if(dpAutoAll()!==1)throw new Error("la paire USB devait se déclarer");
+    const avant=serialize();
+    let m="";try{cmds.cao_paire.proposer({paire:"USB",depart:{x:8,y:15},arrivee:{x:20,y:15}});}catch(e){m=e.message;}
+    if(!/l'arrivée \(20, 15\) n'est pas accrochée par les deux pistes/.test(m))throw new Error("refus attendu : "+m);
+    if(serialize()!==avant)throw new Error("un refus a laissé une trace");
   }finally{
     global.Pilote=ancien;
     loadDoc(JSON.parse(garde.doc),true);S.undo=garde.undo;S.redo=garde.redo;
