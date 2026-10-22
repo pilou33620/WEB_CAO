@@ -13,14 +13,15 @@ donner à Claude in Chrome. Le code à écrire est dans [A-FAIRE.md](A-FAIRE.md)
   par rapport à la charnière ? Et vérifier que l'empreinte porte bien le perçage de 0,8 mm sous
   ses pastilles — [ESSAI-cao-yamaichi-broche1.md](https://github.com/pilou33620/web_suite/blob/main/tasks/essais/ESSAI-cao-yamaichi-broche1.md)
 - [ ] **Empreinte SOT-89-5 (Torex)** : calculée depuis le contour, à poser sur une vraie carte.
-  *22/10/2026* : numérotation et brochage du XC6231 justes ; les pastilles s'écartent de Torex
-  (correction dans [A-FAIRE.md](A-FAIRE.md)). Reste : vérifier l'empreinte corrigée sur la
-  carte réelle —
+  *22/10/2026* : numérotation et brochage du XC6231 justes ; les pastilles s'écartaient de
+  Torex, l'empreinte est refaite selon son plan (0,7 × 1,5 mm, pastille 2 d'un seul tenant).
+  Reste : la poser sur une carte réelle —
   [ESSAI-cao-sot89-5.md](https://github.com/pilou33620/web_suite/blob/main/tasks/essais/ESSAI-cao-sot89-5.md)
 - [ ] **LED RVB, sens et couleurs** : pastilles d'après OSRAM, vue déduite du schéma.
   *22/10/2026* : concordant avec la datasheet (vue de dessus, trois paires couleur) ; le coin
-  coupé du boîtier est du côté de la pastille 4, pas de la 1. Reste : allumer la LED, bleu entre
-  les pastilles 1 et 4, vert entre 2 et 5, rouge entre 3 et 6 —
+  coupé du boîtier est du côté de la pastille 4, pas de la 1 (description de l'empreinte
+  corrigée). Hauteur : 2,04 mm dans la LIB, 1,8 mm sur la page produit, à trancher. Reste :
+  allumer la LED, bleu entre les pastilles 1 et 4, vert entre 2 et 5, rouge entre 3 et 6 —
   [ESSAI-cao-led-rvb.md](https://github.com/pilou33620/web_suite/blob/main/tasks/essais/ESSAI-cao-led-rvb.md)
 - [ ] **eCADSTAR** : un fichier IPC-2581 porte-t-il `<Package><Outline>` et `height` ? Sinon les
   corps restent estimés d'après les pastilles — [ESSAI-cao-ecadstar-package.md](https://github.com/pilou33620/web_suite/blob/main/tasks/essais/ESSAI-cao-ecadstar-package.md)
@@ -52,7 +53,7 @@ donner à Claude in Chrome. Le code à écrire est dans [A-FAIRE.md](A-FAIRE.md)
   norme » — [ESSAI-cao-norme-usb2-template2.md](https://github.com/pilou33620/web_suite/blob/main/tasks/essais/ESSAI-cao-norme-usb2-template2.md)
 - [x] **Rugosité de Huray** (22/10/2026) : formules de Simonovich retrouvées avec son exemple
   chiffré ; SR y vaut toujours 4,887, contre 1,5 et 0,6 dans le code. Décision : passer à
-  Simonovich (dans [A-FAIRE.md](A-FAIRE.md)) — [ESSAI-cao-huray.md](https://github.com/pilou33620/web_suite/blob/main/tasks/essais/ESSAI-cao-huray.md)
+  Simonovich, fait (voir [A-FAIRE.md](A-FAIRE.md)) — [ESSAI-cao-huray.md](https://github.com/pilou33620/web_suite/blob/main/tasks/essais/ESSAI-cao-huray.md)
 - [x] **Sections IBIS** (22/10/2026) : la norme 8.0 (p. 184) dit qu'une description de
   boîtier commence côté puce ; le sens de `ibis.py` (puce → broche) est confirmé — [ESSAI-cao-norme-ibis-sections.md](https://github.com/pilou33620/web_suite/blob/main/tasks/essais/ESSAI-cao-norme-ibis-sections.md)
 - [ ] **IPC-7351B, constantes des puces** : alignées sur KiCad, à confirmer dans la norme —

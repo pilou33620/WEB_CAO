@@ -708,8 +708,11 @@ function ozLabel(t){
 const RUG_MODELES={hammerstad:"Hammerstad-Groiss (Rq)",huray:"Huray (nodules)"};
 /* Les ordres de grandeur des fiches de feuillard (Rq ≈ Rz / 4 à 6) : standard
    ED 1,5–2,5 µm, traité inversé ~1 µm, VLP 0,4–0,8, HVLP 0,1–0,4. Les deux
-   Huray donnent, à 10 GHz, ~70 % et ~15 % de perte de cuivre en plus — ce
-   que les fabricants annoncent pour ces deux classes. */
+   Huray suivent la méthode « cannonball » de Simonovich (Polar AP8195, 2017) :
+   a = Rz / 16,73 et SR = 14π/9 = 4,887 quel que soit le feuillard. Rz de
+   5 µm (JX JTCS-P1 35 µm, ED standard) et 1,5 µm (Taiwan Copper Foil
+   HS1-VSP, HVLP) : K = 2,30 et 1,21 à 10 GHz. Décidé le 22/10/2026 ; avant,
+   a 0,5 / SR 1,5 et a 0,3 / SR 0,6, calés sur K à 10 GHz. */
 const RUG_PRESETS=[
   {id:"lisse",n:"Lisse — aucune rugosité",m:"hammerstad",rms:0},
   {id:"lisse-decl",n:"Lisse déclaré — plan lisse sous une piste rugueuse",m:"hammerstad",rms:0,decl:true},
@@ -717,8 +720,8 @@ const RUG_PRESETS=[
   {id:"rtf",n:"Traité inversé (RTF) — Rq 1 µm",m:"hammerstad",rms:1},
   {id:"vlp",n:"VLP — Rq 0,6 µm",m:"hammerstad",rms:0.6},
   {id:"hvlp",n:"HVLP — Rq 0,3 µm",m:"hammerstad",rms:0.3},
-  {id:"hu-std",n:"Huray · ED standard — a 0,5 µm, SR 1,5",m:"huray",a:0.5,sr:1.5},
-  {id:"hu-hvlp",n:"Huray · HVLP — a 0,3 µm, SR 0,6",m:"huray",a:0.3,sr:0.6}
+  {id:"hu-std",n:"Huray · ED standard, Rz 5 µm — a 0,299 µm, SR 4,887",m:"huray",a:0.299,sr:4.887},
+  {id:"hu-hvlp",n:"Huray · HVLP, Rz 1,5 µm — a 0,09 µm, SR 4,887",m:"huray",a:0.09,sr:4.887}
 ];
 const SIM_MODELES_VIA={pi:"π (C/2 – L – C/2)",ligne:"Ligne (barreau réparti)",
                        auto:"Auto (ligne si le via est long devant λ)"};

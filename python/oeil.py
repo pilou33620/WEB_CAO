@@ -297,8 +297,9 @@ GABARITS = [
      # points 2, 3, 5 et 6 a 35 et 65 % UI (±175 mV), limites ±525 mV : ce
      # sont les six points ci-dessous. La norme ne parle pas de « TP3 pour un
      # hub » : la mention est retiree. Le Template 4 (figure 7-16, et non
-     # 7-17 ; sensibilite du recepteur) a la meme forme avec ±150 mV ; il
-     # n'est pas repris.
+     # 7-17 ; sensibilite du recepteur) n'a pas la meme forme : 0 V a 15 et
+     # 85 % UI, ±150 mV a 35 et 65 % UI, niveaux ±575 mV ; il n'est pas
+     # repris.
      "source": "USB 2.0 §7.1.2.2, figure 7-14 (Template 2) : 0 mV à 12,5 "
                "et 87,5 % UI, ±175 mV de 35 à 65 % UI, limites ±525 mV "
                "(±475 mV hors transition). Relu dans la spécification "
@@ -307,7 +308,8 @@ GABARITS = [
                "(Tektronix TDSUSB2, Keysight U7242A).",
      "note": "Six points et limites ±525 mV relus dans la figure 7-14 de la "
              "spécification. Le Template 4 (figure 7-16, sensibilité du "
-             "récepteur, ±150 mV) a la même forme et n'est pas repris. Les "
+             "récepteur : 0 V à 15 et 85 % UI, ±150 mV à 35 et 65 % UI, "
+             "niveaux ±575 mV) n'est pas repris. Les "
              "limites ±525 mV s'appliquent partout ici, donc un peu "
              "indulgentes.",
      "masque": {"type": "polygone",
