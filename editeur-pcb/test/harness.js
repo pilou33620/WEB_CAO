@@ -23543,7 +23543,8 @@ const FP_ORIGINE_FICHE=new Set([
   "Hirose-DF13C-3P-1.25V","Hirose-U.FL-R-SMT-1","MPD-BA2AAPC","MUP-C792",
   "MicroCrystal-MS1V-T1K","Molex-22-05-3051","Molex-22-05-3061","Molex-22-05-3081",
   "Molex-53261-0371","Molex-53398-0371","Molex-78646-3001","Pulse-JXT7-1140NL",
-  "Quectel-L80","SOT-89-5","Samtec-SSW-105-02-S-RA","Samtec-SSW-106-02-S-RA",
+  "Quectel-L80","SMA-EDGE-142-0701-801","SMA-EDGE-142-0701-801-DOS",
+  "Samtec-SSW-105-02-S-RA","Samtec-SSW-106-02-S-RA",
   "Samtec-SSW-108-02-S-RA","SiliconLabs-BGX220P","SiliconLabs-WT12","TE-2305018-2",
   "Wurth-68610614122","Wurth-693022010811"]);
 T("empreintes : toutes centrées sur leur origine (LIB et boîtiers intégrés)",()=>{
@@ -27862,6 +27863,49 @@ TA("chemin-auto : cao_chemin propose des points que cao_router pose, sans rien �
       if(!motif.test(m))throw new Error("refus attendu "+motif+" : "+m);
     }
     if(Date.now()-t0>20000)throw new Error("trop lent : "+(Date.now()-t0)+" ms");
+  }finally{
+    global.Pilote=ancien;
+    loadDoc(JSON.parse(garde.doc),true);S.undo=garde.undo;S.redo=garde.redo;
+  }
+});
+
+TA("chemin-auto : une paire déclarée, son axe proposé, posée par cao_paire",async()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  const garde={doc:serialize(),undo:S.undo.slice(),redo:S.redo.slice()};
+  try{
+    piloteCao("pcb");
+    loadDoc(exemple2());
+    const pair=S.dpPairs[0];
+    S.tracks=S.tracks.filter(t=>t.net!==pair.p&&t.net!==pair.n); touch();
+    const pads=net=>S.fps.flatMap(f=>padsWorld(f).filter(q=>q.net===net).map(q=>({f,q,nom:f.ref+"."+q.n})));
+    const P=pads(pair.p), N=pads(pair.n);
+    const proche=a=>N.reduce((m,x)=>Math.hypot(x.q.x-a.q.x,x.q.y-a.q.y)<Math.hypot(m.q.x-a.q.x,m.q.y-a.q.y)?x:m);
+    const li={paire:pair.name.toLowerCase(),depart:[P[0].nom,proche(P[0]).nom],arrivee:[P[1].nom,proche(P[1]).nom]};
+    const avant=serialize();
+    const r=await cmds.cao_chemin.executer({liaisons:[li]});
+    if(serialize()!==avant)throw new Error("cao_chemin a écrit");
+    if(r.routes.length||r.paires.length!==1||!r.resultats[0].trouve||r.resultats[0].paire!==pair.name)throw new Error("paire : "+JSON.stringify(r));
+    const pp=r.paires[0];
+    if(Math.abs(pp.depart.x-(P[0].q.x+proche(P[0]).q.x)/2)>1e-3)throw new Error("départ : le milieu des deux pastilles "+JSON.stringify(pp));
+    const prop=cmds.cao_paire.proposer(pp);
+    if(!/: posée$/m.test(prop.apres))throw new Error("cao_paire : "+prop.apres+" / "+JSON.stringify(pp));
+    // un mur d'un autre net sur la ligne droite : l'axe le contourne, et la paire se pose encore
+    S.tracks.push({l:0,net:"MUR",w:0.5,x1:20,y1:17,x2:20,y2:22.5});touch();
+    const rm=await cmds.cao_chemin.executer({liaisons:[li]});
+    const pm=rm.paires[0];
+    if(!pm||!pm.points.length)throw new Error("détour attendu : "+JSON.stringify(rm));
+    const propm=cmds.cao_paire.proposer(pm);
+    if(!/: posée$/m.test(propm.apres))throw new Error("cao_paire avec détour : "+propm.apres+" / "+JSON.stringify(pm));
+    S.tracks.pop();touch();
+    // refus : paire inconnue, bouts qui ne sont pas ses deux nets, largeur imposée
+    for(const [a,motif] of [[Object.assign({},li,{paire:"HDMI"}),/paire « HDMI » inconnue/],
+                            [Object.assign({},li,{depart:[P[0].nom,P[1].nom]}),/ne sont pas les deux nets/],
+                            [Object.assign({},li,{depart:P[0].nom}),/\[« REF\.pastille »/],
+                            [Object.assign({},li,{largeur:0.3}),/règle/]]){
+      const x=await cmds.cao_chemin.executer({liaisons:[a]});
+      if(x.resultats[0].trouve||!motif.test(x.resultats[0].raison))throw new Error("refus attendu "+motif+" : "+JSON.stringify(x.resultats[0]));
+    }
   }finally{
     global.Pilote=ancien;
     loadDoc(JSON.parse(garde.doc),true);S.undo=garde.undo;S.redo=garde.redo;

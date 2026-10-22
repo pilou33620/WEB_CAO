@@ -12,11 +12,16 @@
    cao_router, qui fait le détail (contournement, poussée) et passe par sa carte.
    Les liaisons d'un appel se cherchent dans l'ordre, chaque chemin trouvé
    devenant un obstacle pour les suivantes. Le routeur lui-même n'est pas touché.
+
+   Une PAIRE différentielle déclarée ({paire, depart:[P, N], arrivee:[P, N]}) se
+   cherche par son axe : une piste aussi large que ses deux pistes et leur écart
+   (règle de paire), du milieu de ses deux pastilles de départ au milieu de celles
+   d'arrivée. Les points rendus vont à cao_paire, qui fait les éventails.
    Spec : web_suite/lanceur/docs/SPEC-mcp-chemin-auto.md.
    ========================================================================== */
 "use strict";
 
-const CHEMIN = { MAX: 20, CELLULES: 2e6, BUDGET_MS: 8000, VIA_MM: 10, VIRAGE_MM: 0.3, PAS: 0.25 };
+const CHEMIN = { MAX: 20, CELLULES: 2e6, BUDGET_MS: 8000, VIA_MM: 10, VIRAGE_MM: 0.3, PAS: 0.25, ACCROCHE_PAIRE: 1.25 };
 // les huit directions, dans l'ordre des angles (d × 45°) : l'écart de deux rangs dit le virage
 const CHEMIN_DX = [1, 1, 0, -1, -1, -1, 0, 1], CHEMIN_DY = [0, 1, 1, 1, 0, -1, -1, -1];
 
@@ -86,13 +91,14 @@ function cheminCarte(T, g, l, marge){
    et V (où le centre d'une via peut tomber). `extra` : les chemins déjà trouvés dans l'appel. Le
    cuivre du net lui-même gêne aussi (le routeur s'arrête dès qu'il le touche), sauf les pastilles
    des deux bouts (`bouts` : leurs clés REF.n). */
-function cheminObstacles(g, net, larg, extra, bouts){
+function cheminObstacles(g, nets, larg, extra, bouts){
+  const net = nets[0];
   const N = g.nx * g.ny * g.L, T = new Uint8Array(N), V = new Uint8Array(N);
   const cl = classOf(net), Rv = cl.via / 2;
   const pads = [];
   for(const fp of S.fps) for(const q of padsWorld(fp)) if(!bouts.has(fp.ref + "." + q.n)) pads.push({q, L:padCuLayers(fp, q)});
   const trous = trousMonde();
-  const ecart = (autre, ka, kb) => autre === net ? 0.05 : clrK(net, autre || "", ka, kb);   // le même net : ne pas le toucher
+  const ecart = (autre, ka, kb) => nets.includes(autre) ? 0.05 : clrK(net, autre || "", ka, kb);   // le même net : ne pas le toucher
   for(let l = 0; l < g.L; l++){
     const Rt = larg[l] / 2;
     cheminCarte(T, g, l, S.rule.edge + Rt);
@@ -163,16 +169,45 @@ function cheminTas(){
 }
 
 /* Une liaison : rend {points, couche, longueur, vias, pistes, viasPosees} ou lève une Error (raison). */
+/* Un bout de paire : [« REF.pastille » de P, de N] → le milieu des deux, sur leurs couches communes. */
+function cheminBoutPaire(v, pair, quoi){
+  if(!Array.isArray(v) || v.length !== 2) throw new Error(quoi + " de la paire : [« REF.pastille » de " + routagePropre(pair.p) + ", de " + routagePropre(pair.n) + "]");
+  const a = cheminBout(v[0], quoi), b = cheminBout(v[1], quoi);
+  if(!a.q || !b.q) throw new Error(quoi + " de la paire : deux pastilles « REF.pastille »");
+  const nets = [a.net, b.net].sort().join(), voulu = [pair.p, pair.n].sort().join();
+  if(nets !== voulu) throw new Error(a.nom + " (" + routagePropre(a.net) + ") et " + b.nom + " (" + routagePropre(b.net) + ") ne sont pas les deux nets de la paire " + routagePropre(pair.name));
+  return {x:r3((a.x + b.x) / 2), y:r3((a.y + b.y) / 2), couches:a.couches.filter(l => b.couches.includes(l)),
+          q:null, nom:a.nom + "/" + b.nom, pads:[a.nom, b.nom], net:a.net, ancres:[{x:a.x, y:a.y}, {x:b.x, y:b.y}]};
+}
+
 function cheminUne(g, li, extra, fin){
-  const dep = cheminBout(li.depart, "départ"), arr = cheminBout(li.arrivee, "arrivée");
-  if(!dep.q && !arr.q) throw new Error("au moins un bout doit être une pastille (« REF.pastille ») : c'est elle qui donne le net");
-  if(dep.net && arr.net && dep.net !== arr.net)
+  // shortcut: une paire reste sur sa couche (pas de vias de paire), à étendre si une paire doit changer de face
+  const pair = li.paire == null ? null : (S.dpPairs || []).find(x => typeof li.paire === "string" && x.name.toUpperCase() === li.paire.toUpperCase());
+  if(li.paire != null && !pair)
+    throw new Error("paire « " + routagePropre(li.paire) + " » inconnue (" + ((S.dpPairs || []).map(x => routagePropre(x.name)).join(", ") || "aucune déclarée") + ")");
+  const dep = pair ? cheminBoutPaire(li.depart, pair, "départ") : cheminBout(li.depart, "départ");
+  const arr = pair ? cheminBoutPaire(li.arrivee, pair, "arrivée") : cheminBout(li.arrivee, "arrivée");
+  if(!pair && !dep.q && !arr.q) throw new Error("au moins un bout doit être une pastille (« REF.pastille ») : c'est elle qui donne le net");
+  if(!pair && dep.net && arr.net && dep.net !== arr.net)
     throw new Error(dep.nom + " (" + routagePropre(dep.net) + ") et " + arr.nom + " (" + routagePropre(arr.net) + ") ne sont pas sur le même net");
   const net = dep.net || arr.net;
   if(!net) throw new Error("les pastilles " + dep.nom + " / " + arr.nom + " ne sont sur aucun net");
-  if(li.largeur != null && (typeof li.largeur !== "number" || !(li.largeur >= 0.05 && li.largeur <= 10))) throw new Error("largeur de 0,05 à 10 mm");
-  const larg = [...Array(g.L).keys()].map(l => li.largeur != null ? li.largeur : classWidth(net, l));
-  const {T, V} = cheminObstacles(g, net, larg, extra, new Set([dep.nom, arr.nom]));
+  if(li.largeur != null && (pair || typeof li.largeur !== "number" || !(li.largeur >= 0.05 && li.largeur <= 10)))
+    throw new Error(pair ? "largeur : celle d'une paire vient de sa règle" : "largeur de 0,05 à 10 mm");
+  if(pair && !dep.couches.some(l => arr.couches.includes(l)))
+    throw new Error("les pastilles de départ et d'arrivée de la paire n'ont pas de couche commune (pas de vias de paire)");
+  // une paire : l'axe porte les deux pistes et leur écart
+  const larg = [...Array(g.L).keys()].map(l => {
+    if(!pair) return li.largeur != null ? li.largeur : classWidth(net, l);
+    const d = dpGeom(pair, l);
+    return r3(2 * d.w + d.gap);
+  });
+  const nets = pair ? [pair.p, pair.n] : [net];
+  const {T, V} = cheminObstacles(g, nets, larg, extra, new Set(pair ? dep.pads.concat(arr.pads) : [dep.nom, arr.nom]));
+  if(pair){
+    V.fill(1);
+    for(const b of [dep, arr]) b.couches = b.couches.filter(l => (b === dep ? arr : dep).couches.includes(l));
+  }
   const nxy = g.nx * g.ny, N = nxy * g.L;
   const cel = (x, y) => [Math.round((x - g.x0) / g.pas), Math.round((y - g.y0) / g.pas)];
   const dans = (i, j) => i >= 0 && j >= 0 && i < g.nx && j < g.ny;
@@ -248,7 +283,7 @@ function cheminUne(g, li, extra, fin){
     cells.push({l:Math.floor(k / nxy), i:r % g.nx, j:Math.floor(r / g.nx)});
   }
   cells.reverse();
-  return cheminPoints(g, cells, dep, net, larg, extra);
+  return Object.assign(cheminPoints(g, cells, dep, net, larg, extra), {dep, arr, pair, l:cells[0].l});
 }
 
 /* Cellules → points de passage de cao_router : un point par virage ; une via au point où la
@@ -286,17 +321,26 @@ function cheminPoints(g, cells, dep, net, larg, extra){
   return {couche:nom(cells[0].l), points, longueur:r3(longueur), vias};
 }
 
-/* cao_chemin : {liaisons:[{depart, arrivee, largeur?}], pas?} → les routes pour cao_router. */
+/* cao_chemin : {liaisons:[{depart, arrivee, largeur?} | {paire, depart:[P, N], arrivee:[P, N]}], pas?}
+   → les routes pour cao_router, et les paires pour cao_paire. */
 function cheminCommande(a){
   const liaisons = Array.isArray(a && a.liaisons) ? a.liaisons : [];
-  if(!liaisons.length || liaisons.length > CHEMIN.MAX) throw new Error("« liaisons » : de 1 à " + CHEMIN.MAX + " liaisons {depart, arrivee, largeur?}.");
+  if(!liaisons.length || liaisons.length > CHEMIN.MAX) throw new Error("« liaisons » : de 1 à " + CHEMIN.MAX + " liaisons {depart, arrivee, largeur?} ou {paire, depart, arrivee}.");
   if(a.pas != null && (typeof a.pas !== "number" || !(a.pas >= 0.05 && a.pas <= 2))) throw new Error("« pas » : de 0,05 à 2 mm.");
   const g = cheminGrille(a.pas != null ? a.pas : CHEMIN.PAS), fin = Date.now() + CHEMIN.BUDGET_MS;
-  const extra = {pistes:[], vias:[]}, resultats = [], routes = [];
+  const extra = {pistes:[], vias:[]}, resultats = [], routes = [], paires = [];
   liaisons.forEach((li, k) => {
     try{
-      if(!li || typeof li !== "object") throw new Error("liaison : un objet {depart, arrivee, largeur?}");
+      if(!li || typeof li !== "object") throw new Error("liaison : un objet {depart, arrivee, largeur?} ou {paire, depart, arrivee}");
       const r = cheminUne(g, li, extra, fin);
+      if(r.pair){
+        /* cao_paire termine la paire dès qu'un point passe à portée d'accroche d'un couple de ses pastilles
+           (1 mm du cuivre, routageUnePaire) : un tel point, près de l'arrivée, l'arrêterait avant la fin */
+        const points = r.points.filter(p => !dpPrimPair(r.pair, p.x, p.y, r.l, CHEMIN.ACCROCHE_PAIRE, r.dep.ancres));
+        paires.push({paire:r.pair.name, depart:{x:r.dep.x, y:r.dep.y}, couche:r.couche, points, arrivee:{x:r.arr.x, y:r.arr.y}});
+        resultats.push({liaison:k + 1, paire:r.pair.name, trouve:true, longueur_mm:r.longueur, points:r.points.length});
+        return;
+      }
       const route = {depart:li.depart, couche:r.couche, points:r.points, arrivee:li.arrivee};
       if(li.largeur != null) route.largeur = li.largeur;
       routes.push(route);
@@ -305,7 +349,9 @@ function cheminCommande(a){
       resultats.push({liaison:k + 1, trouve:false, raison:routagePropre((e && e.message) || e)});
     }
   });
-  return {pas_mm:g.pas, resultats, routes,
-          conseil:routes.length ? "Donne « routes » à cao_router (une carte) ; une route refusée se reprend avec d'autres points." :
-                                  "Aucun chemin : vois les raisons, et la carte par pilote_capture."};
+  const conseil = [];
+  if(routes.length) conseil.push("Donne « routes » à cao_router (une carte) ; une route refusée se reprend avec d'autres points.");
+  if(paires.length) conseil.push("Donne chaque élément de « paires » à cao_paire (une carte par paire) : il fait les éventails jusqu'aux pastilles.");
+  return {pas_mm:g.pas, resultats, routes, paires,
+          conseil:conseil.join(" ") || "Aucun chemin : vois les raisons, et la carte par pilote_capture."};
 }
