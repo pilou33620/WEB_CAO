@@ -10,7 +10,7 @@ Reconnaît :
 3. Oscillateurs (Quartz + 2 condensateurs de charge à la masse).
 4. Filtres (RC passe-bas, filtres actifs).
 5. Amplificateurs (AOP, amplis audio, transistors polarisés).
-6. Inférence de courants typiques pour le solveur DC (point 4 de A-FAIRE.md).
+6. Inférence de courants typiques pour le solveur DC (point 4 de docs/HISTORIQUE_DEVELOPPEMENT.md).
 """
 
 from collections import defaultdict
@@ -595,7 +595,7 @@ def estimer_courants_dc(
     components: Dict[str, Any],
     nets: Optional[Dict[str, List[Any]]] = None
 ) -> List[Dict[str, Any]]:
-    """Estime les courants DC consommés pour alimenter le solveur DC (A-FAIRE.md).
+    """Estime les courants DC consommés pour alimenter le solveur DC (docs/HISTORIQUE_DEVELOPPEMENT.md).
 
     Avec `nets`, une résistance n'est comptée comme limitation de LED que si
     elle partage un net avec une LED : un filtre RC de 1 kΩ n'en est pas une.

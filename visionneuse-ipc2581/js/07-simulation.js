@@ -4,7 +4,7 @@
    L'adaptateur qui relie la carte lue au solveur de section
    (python/ligne_mom.py, via python/simulation_em.py). Ce n'est PAS
    mom_solver/ : le moteur 2,5D pleine onde est hors du chemin de calcul, et
-   A-FAIRE.md dit pourquoi.
+   docs/HISTORIQUE_DEVELOPPEMENT.md dit pourquoi.
 
    Le panneau lui-même — saisie, envoi, fiche, courbe, exports — est dans
    `../commun/simulation-em.js`, que l'éditeur PCB charge aussi. Ce fichier ne

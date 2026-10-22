@@ -142,7 +142,7 @@ def tableau_previsions(fronts):
                 ligne += " | %s %s" % (pc(p["next"]).strip().rjust(5),
                                        pc(p["fext"]).strip().rjust(6))
                 # Au front le plus proche de 1 ns, celui de l'estimation d'Ott
-                # dans A-FAIRE.md.
+                # dans docs/HISTORIQUE_DEVELOPPEMENT.md.
                 if p.get("fente") and (fente is None
                                        or abs(t - 1.0) < abs(fente[0] - 1.0)):
                     fente = (t, p)

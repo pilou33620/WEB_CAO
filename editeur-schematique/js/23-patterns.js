@@ -6,7 +6,7 @@
    - Bus numériques (I2C, SPI, UART)
    - Oscillateurs et horloges
    - Filtres RC et amplificateurs
-   - Suggestion de classes de nets et inférence de courants DC (A-FAIRE.md)
+   - Suggestion de classes de nets et inférence de courants DC (docs/HISTORIQUE_DEVELOPPEMENT.md)
    ============================================================================= */
 
 var SCHEMA_PATTERNS = (function() {

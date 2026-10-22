@@ -758,7 +758,7 @@ différentielle**, **Crosstalk** et **Current Return Path** ; PI
 porte **Chute DC** et **Z(ω) PDN**. Le découpage avait été posé quand il n'y avait qu'une
 analyse, parce qu'il coûtait moins cher à poser qu'à retailler ensuite autour
 de six. Ce qu'il resterait à y mettre est listé dans
-[A-FAIRE.md](../A-FAIRE.md).
+[HISTORIQUE_DEVELOPPEMENT.md](HISTORIQUE_DEVELOPPEMENT.md).
 
 ### Vérification de la carte
 
@@ -2063,7 +2063,7 @@ que sur une ligne longue devant la longueur d'onde, et c'est mesuré
 |S₂₁| mesure le couplage de la fente et non la ligne.
 
 Le détail, les mesures et le cas de non-régression sont dans
-[HISTORIQUE_DEVELOPPEMENT.md](HISTORIQUE_DEVELOPPEMENT.md) et [A-FAIRE.md](../A-FAIRE.md).
+[HISTORIQUE_DEVELOPPEMENT.md](HISTORIQUE_DEVELOPPEMENT.md).
 Le jour où ce port sera là, le moteur apportera ce
 que le modèle de ligne ne peut pas donner — les coudes réels, les résonances,
 le rayonnement, le couplage entre pistes non parallèles — et les deux se

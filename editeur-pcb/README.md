@@ -3085,7 +3085,7 @@ Ce qu'il ne voit pas, et le panneau le dit sous chaque résultat :
 La 2,5D pleine onde — `mom_engine.py`, `green_layered.py` — **n'est pas dans le
 chemin de calcul** et ne doit pas y revenir en l'état : sa formulation EFIE a
 perdu tout son terme de potentiel scalaire, celui qui porte les charges. C'est
-écrit en tête du fichier et détaillé dans [../A-FAIRE.md](../A-FAIRE.md).
+écrit en tête du fichier et détaillé dans [../docs/HISTORIQUE_DEVELOPPEMENT.md](../docs/HISTORIQUE_DEVELOPPEMENT.md).
 
 ## Pas de grille
 

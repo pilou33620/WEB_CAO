@@ -335,7 +335,7 @@
   ],
   "documentation": [
     { "fichier": "README.md", "description": "Description générale du projet, bancs d'essai avec 257 cas Python validés, description des 4 onglets UI et des 5 chaînes physiques" },
-    { "fichier": "A-FAIRE.md", "description": "Journal des chantiers SI/PI, jalons atteints, historique de validation et spécifications d'évolution" },
+    { "fichier": "docs/HISTORIQUE_DEVELOPPEMENT.md", "description": "Journal des chantiers SI/PI, jalons atteints, historique de validation et spécifications d'évolution" },
     { "fichier": "editeur-pcb/README.md", "description": "Documentation détaillée du panneau de simulation dans l'éditeur PCB (sections 1473-2200)" },
     { "fichier": "visionneuse-ipc2581/README.md", "description": "Documentation du panneau de simulation dans la visionneuse de fabrication IPC-2581 (sections 220-400)" }
   ],

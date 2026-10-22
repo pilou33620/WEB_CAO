@@ -15525,7 +15525,7 @@ T("carte DC : la rampe part du cyan et finit a l'ambre, sans rouge d'erreur",()=
   if(haut.join()!==SIM_DC_RAMPE[SIM_DC_RAMPE.length-1].join())
     throw new Error("haut : "+haut);
   /* LE ROUGE DU DRC EST #e8443a = 232,68,58. La carte d'impedance s'y confond
-     deja (voir A-FAIRE.md) ; celle-ci ne doit pas s'y ajouter. */
+     deja (voir docs/HISTORIQUE_DEVELOPPEMENT.md) ; celle-ci ne doit pas s'y ajouter. */
   for(let k=0;k<=20;k++){
     const c=simDCCouleur(k/20);
     if(Math.abs(c[0]-232)<24&&Math.abs(c[1]-68)<24&&Math.abs(c[2]-58)<24)

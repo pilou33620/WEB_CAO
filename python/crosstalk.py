@@ -628,7 +628,7 @@
 #   la victime a 1 ns, contre 0,9 % calcule : le terme absent etait DIX FOIS
 #   le terme rendu.
 #
-#   LE MODELE (option A de A-FAIRE.md) : le courant de retour contourne la
+#   LE MODELE (option A de docs/HISTORIQUE_DEVELOPPEMENT.md) : le courant de retour contourne la
 #   fente par ses deux bouts ; chaque detour d est une self L_d = mu0/pi .
 #   2d . ln(2d/W) (Ott, EMC Engineering 2009 : L = mu0/2pi . D ln(D/W) pour
 #   une fente de longueur D = 2d franchie en son milieu), et les deux detours

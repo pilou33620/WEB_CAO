@@ -709,7 +709,7 @@
 #   en serie dans la piste, faute de courant vertical vers le plan de masse, et
 #   il ne couple au mode guide que si la ligne est longue devant la longueur
 #   d'onde. A 868 MHz sur quelques centimetres, elle ne l'est pas. Voir
-#   A-FAIRE.md.
+#   docs/HISTORIQUE_DEVELOPPEMENT.md.
 #
 #   CE QUI LE REMPLACE est une methode des moments, elle aussi -- celle de
 #   Harrington sur la section droite -- et elle a l'avantage decisif d'etre

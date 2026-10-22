@@ -551,7 +551,7 @@ def green_spectral_micro_masque(beta, h, masque_epaisseur, epsilon_r, epsilon_ma
     La dérivation suit la même marche que `green_spectral_micro_couvert` :
     continuité de φ et de Dₙ à chaque interface, résolution du système 3×3.
 
-    Formules (A-FAIRE.md, § 1 du lot 2) :
+    Formules (docs/HISTORIQUE_DEVELOPPEMENT.md, § 1 du lot 2) :
         G = K / (ε₀ β (M + εr₁ K coth(βh)))
         K = ch(βc) + sh(βc)/εr₂
         M = εr₂ sh(βc) + ch(βc)

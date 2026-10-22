@@ -158,7 +158,7 @@ Les bancs lisent la LIB à son emplacement par défaut (`../PROJETS/LIB_CAO`). W
 
 ## 🗺️ Feuille de route
 
-Backlog dans [A-FAIRE.md](A-FAIRE.md) ; limites connues dans chaque guide d'outil.
+Backlog dans [A-FAIRE.md](A-FAIRE.md), essais dans [TESTS-A-FAIRE.md](TESTS-A-FAIRE.md) ; limites connues dans chaque guide d'outil.
 
 ## 📄 Licence
 

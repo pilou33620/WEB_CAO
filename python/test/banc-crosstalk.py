@@ -1544,7 +1544,7 @@ T("une fente sous le longement change le couplage, et le dit quand elle"
 # L'IMPEDANCE COMMUNE D'UNE FENTE (Ott), 4.5.0 : le cas 4 du banc de mesure
 # --------------------------------------------------------------------------
 # Fente de +-10 mm coupant tous les plans, pistes de 0,35 mm a 1,4 mm d'axe
-# a axe, 50 ohm : l'estimation faite a la main dans A-FAIRE.md donne une self
+# a axe, 50 ohm : l'estimation faite a la main dans docs/HISTORIQUE_DEVELOPPEMENT.md donne une self
 # de detour d'environ 16 nH, une mutuelle d'environ 11 nH, soit ~10 % a chaque
 # bout de la victime a 1 ns et ~2 % a 5 ns -- contre 0,9 % pour les lignes
 # couplees seules. C'est l'ordre de grandeur que le terme doit retrouver.

@@ -458,7 +458,7 @@ def test_diaphonie_garde_seuil_front_rf():
     assert "gardes_couture_supposee" not in flot["bilan"]["diaphonie"]
     # SANS AUCUN PERÇAGE, la couture n'est pas mesurée : la garde est supposée
     # tenue, comme « Analyser la piste » le fait d'une couture nulle, et c'est
-    # dit (A-FAIRE : harmoniser les deux).
+    # dit (docs/HISTORIQUE_DEVELOPPEMENT.md : harmoniser les deux).
     muet = analyser(regles=["diaphonie"], natures=nat,
                     pistes=[droite("A", 0.0), droite("GND", 0.5), droite("V", 1.0)])
     pm = paires(muet)[0]

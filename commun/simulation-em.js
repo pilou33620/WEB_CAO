@@ -1551,7 +1551,7 @@ function simDCFinesse(polygones){
 
    LA TEINTE ÉVITE LE ROUGE, ET C'EST DÉLIBÉRÉ. `SIM_Z_ROUGE` vaut exactement
    la couleur d'erreur du DRC, et la carte d'impédance s'y confond déjà (voir
-   A-FAIRE.md). Celle-ci va du CYAN (au potentiel de référence) au VIOLET puis
+   docs/HISTORIQUE_DEVELOPPEMENT.md). Celle-ci va du CYAN (au potentiel de référence) au VIOLET puis
    à l'AMBRE (le plus loin) : trois teintes qu'aucun autre calque n'emploie,
    donc lisibles par-dessus un DRC allumé.
    ========================================================================== */

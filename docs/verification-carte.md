@@ -4,7 +4,7 @@
 > commune à l'**éditeur PCB** et à la **visionneuse IPC-2581**. Les dérivations
 > physiques et les étalons des moteurs réutilisés sont dans
 > [simulation-em.md](simulation-em.md) ; le reste à faire, dans
-> [A-FAIRE.md](../A-FAIRE.md).
+> [A-FAIRE.md](../A-FAIRE.md), les essais dans [TESTS-A-FAIRE.md](../TESTS-A-FAIRE.md).
 
 ---
 
@@ -743,7 +743,7 @@ coup d'œil, et le constat choisi reste marqué par-dessus.
 | Courant par rail saisi dans le panneau, porteuse par net, solveur de couplage à deux niveaux | à faire |
 
 Le détail, avec ce que chaque point réutilisera, est dans
-[A-FAIRE.md](../A-FAIRE.md#vérification-de-la-carte-entière).
+[HISTORIQUE_DEVELOPPEMENT.md](HISTORIQUE_DEVELOPPEMENT.md#vérification-de-la-carte-entière).
 
 ---
 
