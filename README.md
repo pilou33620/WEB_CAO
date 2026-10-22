@@ -92,6 +92,8 @@ Physique, équations et étalons de validation : [Guide Simulation EM](docs/simu
 
 L'ancien assistant IA intégré est retiré. **Claude Code** pilote les pages ouvertes par le serveur MCP de [web_suite](https://github.com/pilou33620/web_suite) : il lit le schéma, la carte, les simulations et la bibliothèque, lance les calculs, et propose ses écritures (valeurs, propriétés, dessin du schéma, routage, réglages de simulation depuis une datasheet, création de composants) sur une **carte** du panneau « Claude » : rien ne change avant votre clic, sauf si vous allumez l'interrupteur de l'onglet. Détail des outils : `lanceur/docs/DETAILS.md` de web_suite.
 
+**Lui écrire depuis la page**, sur n'importe quel appareil (iPad compris) : le panneau « Claude » a une zone « Demander à Claude ». Si l'outil a été lancé par WEB·SUITE, la demande part à Claude Code du poste qui fait tourner les outils (Pi ou PC), limité au MCP web_suite ; sa réponse s'affiche dans le panneau. Il suffit que Claude Code y soit installé et connecté une fois (`lanceur/docs/SPEC-claude-pages.md` de web_suite).
+
 ---
 
 ## 🖥️ Options du serveur
