@@ -417,6 +417,8 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* aperçu du lâcher d'une vue, tolérances par point d'une chaîne ou d'une ordonnée */
   "dfDispositionRepousser","dfApercuVue","dfConsigne","dfNum","DF_APERCUS","dfGenreVue",
   "dfNormTols","dfTolPoint","dfTolererPoint","dfHtmlTolerance",
+  /* vue de détail sur une autre feuille */
+  "dfFeuilleDetail","dfHtmlFeuilleDetail",
   /* gestionnaire de contraintes (01-core.js pour le modèle, 30-contraintes.js) */
   "cmNorm","cmCle","cmClrClasses","cmClrMax","cmMesures","cmRegleDe","cmVerifier","cmEvaluerGroupe",
   "cmManqueLongueur","cmLargeurPourZ","cmDrc","cmEdit","cmPoser","cmPoserPhysique","cmPoserMatrice",
@@ -24291,6 +24293,54 @@ T("plans : PDF toujours produit — cotes, vues déplacées, détails, toutes fe
     if(t.indexOf("0.82 0.08 0.08 rg")<0)throw new Error("l'orpheline doit être rouge au PDF");
     if(doc.feuilles.length!==1+1+1+S.cu)throw new Error("feuilles : "+doc.feuilles.length);
   }finally{S.dessin=null;}
+});
+/* Un détail posé sur une autre feuille : il y est seul, et les deux feuilles
+   se renvoient l'une à l'autre ; sa feuille décochée, il revient chez sa
+   vue mère, sans renvoi. */
+T("plans : vue de détail sur une autre feuille — renvois, repli, annulation",()=>{
+  exCharger(1);
+  S.dessin={fonte:false};                       // codage WinAnsi lisible tel quel
+  const c0=dfCoin(), txt=(F,v)=>F.items.slice(v.i0,v.i1).filter(t=>t.t==="t"&&!t.cache).map(t=>t.s);
+  try{
+    const n=dfNormDetails([{id:1,source:"fab/carte",x:0,y:0,feuille:"<x>"},{id:2,source:"fab/carte",x:0,y:0,feuille:"cu3"},
+                           {id:3,source:"fab/carte",x:0,y:0,feuille:["fab"]}]);
+    if(n.length!==3||n[0].feuille!==undefined||n[1].feuille!=="cu3"||n[2].feuille!==undefined)
+      throw new Error("feuille mal bornée : "+JSON.stringify(n));
+    const id=dfAjouterDetail({source:"fab/carte",forme:"cercle",x:c0.x+3,y:c0.y+3,r:4,echelle:5}), cle="det/"+id;
+    if(dfFeuilleDetail(id,"zz")!==false)throw new Error("une feuille inconnue doit être refusée");
+    dfPlacerVue(cle,40,150);
+    if(!dfFeuilleDetail(id,"asmT"))throw new Error("feuille refusée");
+    if(dfCfg().vues[cle])throw new Error("la place d'avant ne vaut plus sur l'autre feuille");
+    let doc=dfDocument();
+    const nf=doc.feuilles.findIndex(F=>F.genre==="fab")+1, na=doc.feuilles.findIndex(F=>F.genre==="asmT")+1;
+    let F=dfFab(doc);
+    const A=doc.feuilles[na-1];
+    if(F.vues.some(v=>v.cle===cle)||!A.vues.some(v=>v.cle===cle))throw new Error("le détail doit être sur l'assemblage, pas sur la fabrication");
+    const mere=txt(F,F.vues.find(v=>v.cle==="fab/carte"));
+    if(mere.indexOf("A")<0||mere.indexOf("FEUILLE "+na)<0)throw new Error("renvoi absent de la vue mère : "+mere.filter(s=>/FEUILLE/.test(s)));
+    if(txt(A,A.vues.find(v=>v.cle===cle)).indexOf("DÉTAIL A — ÉCHELLE 5:1 — VOIR FEUILLE "+nf)<0)throw new Error("étiquette sans renvoi");
+    const pdf=dfLatin(dfPdfOctets(doc));
+    if(pdf.indexOf("(FEUILLE "+na+") Tj")<0||pdf.indexOf("VOIR FEUILLE "+nf+") Tj")<0)throw new Error("renvois absents du PDF");
+    /* les deux feuilles se tiennent : un glisser refait tout le document */
+    const c=dfCfg();
+    if(dfGenreVue(c,cle)!==null||dfGenreVue(c,"fab/carte")!==null||dfGenreVue(c,"asmT/carte")!==null||dfGenreVue(c,"bom~1/bom")!=="bom")
+      throw new Error("dfGenreVue doit refaire tout le document");
+    /* le volet : la feuille du détail choisi */
+    DF.doc=doc;DF.sel={genre:"vue",cle};
+    const h=dfHtmlFeuilleDetail(c);
+    if(h.indexOf('data-op="detFeuille"')<0||h.indexOf('value="asmT" selected')<0||h.indexOf('value="cu0"')<0)throw new Error("volet : "+h);
+    /* retour sur la feuille de la vue mère : une étape d'annulation */
+    dfFeuilleDetail(id,"");
+    if(dfCfg().details[0].feuille!==undefined)throw new Error("la feuille doit s'effacer");
+    undo();
+    if(dfCfg().details[0].feuille!=="asmT")throw new Error("Ctrl+Z doit rendre la feuille");
+    /* l'assemblage décoché : le détail revient chez sa mère, sans renvoi */
+    dfRegler("asmT",false);
+    doc=dfDocument();F=dfFab(doc);
+    const v=F.vues.find(v=>v.cle===cle);
+    if(!v||txt(F,v).indexOf("DÉTAIL A — ÉCHELLE 5:1")<0)throw new Error("le détail doit revenir sur la fabrication");
+    if(doc.feuilles.some(G=>G.items.some(t=>t.t==="t"&&!t.cache&&/FEUILLE/.test(t.s)&&t.cat==="detail")))throw new Error("un renvoi reste sans feuille");
+  }finally{DF.sel=null;DF.doc=null;S.dessin=null;}
 });
 T("plans : outils de la fenêtre — cote posée à la souris, glissée, effacée, annulée",()=>{
   exCharger(1);

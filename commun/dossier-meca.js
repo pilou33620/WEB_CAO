@@ -431,7 +431,7 @@ function mecaDxf(J){
    seulement, `ctx.cfg.vues`), cadre et cartouche. */
 function mecaPlan(J,ctx,monde){
   const feuilles=mecaFeuilles(J,ctx,monde);
-  if(ctx.cfg.vues&&typeof dfAgencer==="function")feuilles.forEach(F=>dfAgencer(F,ctx));
+  if(ctx.cfg.vues&&typeof dfAgencer==="function")dfAgencer(feuilles,ctx);
   feuilles.forEach((F,i)=>dfCadre(F,ctx,i+1,feuilles.length));
   return feuilles;
 }

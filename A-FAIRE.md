@@ -55,8 +55,11 @@ Les limites connues des guides qui restent à coder (22/10/2026) :
   StackupGroup. Reste : le chercheur de chemin (`cao_chemin`) et la pose de vias ne
   consultent pas `viaBuild`, ils peuvent poser un via que la séquence ne permet pas (le DRC
   le dit) ; pas de micro-via empilé ou décalé sur plusieurs pressages en une portée.
-- [ ] **Vue de détail sur une autre feuille** (plans Draftsman) : elle ne se pose
-  aujourd'hui que sur la feuille de sa vue mère.
+- [x] **Vue de détail sur une autre feuille** (plans Draftsman, 22/10/2026) : la feuille se
+  choisit dans le volet « Cotes et détails » quand le détail est sélectionné ; « FEUILLE n »
+  sous la lettre du repère, « VOIR FEUILLE n » sous le détail ; feuille décochée, il revient
+  sur celle de sa vue mère. Le DXF du plan de fabrication (feuilles de fabrication seules)
+  ne prend pas un détail posé ailleurs.
 
 Côté pilotage par Claude (MCP), les fonctionnalités possibles sont listées dans
 [l'A-FAIRE de web_suite](https://github.com/pilou33620/web_suite/blob/main/A-FAIRE.md).

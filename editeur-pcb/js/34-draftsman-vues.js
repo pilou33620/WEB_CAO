@@ -237,6 +237,8 @@ function dfLettreLibre(prises){
     if(!prises.has(l))return l;
   }
 }
+/* La feuille choisie pour un détail : un genre de feuille (dfNouvelle). */
+const DF_FEUILLE_RE=/^(fab|asmT|asmB|bom|cu\d{1,2}|meca)$/;
 function dfNormDetails(src){
   const out=[], ids=new Set(), lettres=new Set();
   for(const d of (Array.isArray(src)?src:[]).slice(0,52)){
@@ -254,6 +256,7 @@ function dfNormDetails(src){
              echelle:dfNb(d.echelle,1,100,5)};
     if(forme==="cercle")o.r=dfNb(d.r,0.2,500,5);
     else{o.w=dfNb(d.w,0.2,1000,10);o.h=dfNb(d.h,0.2,1000,10);}
+    if(typeof d.feuille==="string"&&DF_FEUILLE_RE.test(d.feuille))o.feuille=d.feuille;   // sinon : la feuille de la vue mère
     out.push(o);
   }
   return out;
@@ -316,6 +319,18 @@ function dfAjouterDetail(o){
     const lettre=dfLettreLibre(new Set(c.details.map(d=>d.lettre)));
     c.details.push(Object.assign({},o,{id,lettre}));
     return id;
+  });
+}
+/* Un détail sur une autre feuille (un genre, DF_FEUILLE_RE) ; vide : sur
+   celle de sa vue mère. Sa place enregistrée ne vaut plus là-bas. */
+function dfFeuilleDetail(id,feuille){
+  if(feuille&&!DF_FEUILLE_RE.test(feuille))return false;
+  return dfEcrire(c=>{
+    const d=c.details.find(x=>x.id===id);
+    if(!d)return false;
+    if(feuille)d.feuille=feuille;else delete d.feuille;
+    delete c.vues["det/"+id];
+    return true;
   });
 }
 /* Le détail part avec ses cotes et sa position. */
@@ -678,7 +693,9 @@ function dfPlaceProche(F,w,h,x0,y0,obst){
    reste où elle est) et l'aire encore recouverte, en mm². */
 /* Le genre de la feuille qui porte la vue `cle` (dfCleVue) : le début de la
    clé, suite ôtée (« fab~1/notes » → « fab ») ; pour un détail, celui de
-   sa vue mère. null si la clé ne mène à rien de connu. */
+   sa vue mère. null si la clé ne mène à rien de connu, ou si sa feuille
+   donne ou reçoit un détail posé ailleurs (les deux feuilles se tiennent :
+   tout le document se refait). */
 function dfGenreVue(c,cle){
   let k=String(cle||"");
   for(let n=0;n<4&&k.startsWith("det/");n++){
@@ -687,7 +704,8 @@ function dfGenreVue(c,cle){
     k=String(d.source||"");
   }
   const g=k.split("/")[0].replace(/~\d+$/,"");
-  return g&&!g.startsWith("det")?g:null;
+  if(!g||g.startsWith("det"))return null;
+  return (c.details||[]).some(d=>d.feuille&&(d.feuille===g||String(d.source).split("/")[0]===g))?null:g;
 }
 function dfDispositionRepousser(c,cle,x,y){
   c.vues[cle]={x:Math.round(x/DF_GRILLE)*DF_GRILLE,y:Math.round(y/DF_GRILLE)*DF_GRILLE};
@@ -754,15 +772,28 @@ function dfApercuVue(g){
   }
   return a;
 }
-/* Après la mise en page calculée : les vues déplacées à la main, puis les
-   vues de détail dont la vue mère est sur cette feuille. */
-function dfAgencer(F,ctx){
-  const cfg=ctx.cfg;
-  for(const v of F.vues.slice()){const p=cfg.vues[v.cle];if(p)dfPoserVue(F,v,p);}
+/* Après la mise en page calculée de toutes les feuilles : les vues déplacées
+   à la main, puis les vues de détail — sur la feuille de leur vue mère, ou
+   sur celle qu'on leur a choisie (la première de ce genre ; absente ou
+   décochée, celle de la vue mère). Les renvois « FEUILLE n » de la vue mère
+   (dfRepereDetail) s'écrivent avant qu'elle ne bouge : dfBoiteVue garde sa
+   boîte. */
+function dfAgencer(feuilles,ctx){
+  const cfg=ctx.cfg, num=F=>feuilles.indexOf(F)+1, poses=[];
   for(const d of cfg.details){
-    const src=F.vues.find(v=>v.cle===d.source&&v.dessin);
-    if(src)dfDetail(F,ctx,d,src);
+    let M=null, src=null;
+    for(const F of feuilles)if(!src&&(src=F.vues.find(v=>v.cle===d.source&&v.dessin)))M=F;
+    if(!src)continue;
+    const C=d.feuille&&feuilles.find(F=>F.genre===d.feuille&&!F.suite)||M;
+    poses.push({d,src,M,C});
   }
+  for(const r of ctx.renvois||[]){
+    const p=poses.find(q=>q.d===r.d);
+    if(p&&p.C!==p.M)r.it.s="FEUILLE "+num(p.C);
+    else{r.it.s="";r.it.cache=true;}       // pas de renvoi : ni peint, ni compté dans la boîte
+  }
+  for(const F of feuilles)for(const v of F.vues.slice()){const p=cfg.vues[v.cle];if(p)dfPoserVue(F,v,p);}
+  for(const p of poses)dfDetail(p.C,ctx,p.d,p.src,p.C!==p.M?num(p.M):0);
 }
 
 /* ==========================================================================
@@ -1053,8 +1084,11 @@ function dfCoteSuite(F,V,c){
   dfCalque(F);
   return m.norph;
 }
-/* Le repère d'un détail sur sa vue mère : la zone agrandie et sa lettre. */
-function dfRepereDetail(F,V,d){
+/* Le repère d'un détail sur sa vue mère : la zone agrandie et sa lettre ;
+   dessous, pour un détail posé ailleurs, le renvoi à sa feuille — un texte
+   provisoire que dfAgencer remplit, les numéros ne se connaissant qu'une
+   fois toutes les feuilles faites. */
+function dfRepereDetail(F,V,d,ctx){
   const C=V.T(d.x,d.y);
   let lx,ly;
   if(d.forme==="rect"){
@@ -1067,11 +1101,15 @@ function dfRepereDetail(F,V,d){
     lx=C.x+r*0.71+0.8;ly=C.y-r*0.71-0.8;
   }
   dfTexte(F,d.lettre,lx,ly,10,{gras:true,cat:"detail",lieu:"repère du détail "+d.lettre});
+  if(d.feuille&&d.feuille!==F.genre){
+    dfTexte(F,"FEUILLE ?",lx,ly+2.8,6,{cat:"detail",lieu:"renvoi du détail "+d.lettre});
+    (ctx.renvois||(ctx.renvois=[])).push({d,it:F.items[F.items.length-1]});
+  }
 }
 /* Ce que les builders de 29-draftsman.js appellent sur chaque vue de la
    carte, avant de la clore : repères des détails, puis cotes. */
 function dfAnnoter(F,V,cle,ctx){
-  for(const d of ctx.cfg.details)if(d.source===cle)dfRepereDetail(F,V,d);
+  for(const d of ctx.cfg.details)if(d.source===cle)dfRepereDetail(F,V,d,ctx);
   dfCotesVue(F,V,cle,ctx.cfg);
 }
 
@@ -1167,8 +1205,9 @@ function dfFenetre(d,k){
 }
 /* Le détail est dessiné autour de l'origine, puis posé : à sa place
    enregistrée, sinon à la première place libre de la feuille. Dessous, il
-   garde le miroir de sa vue mère. */
-function dfDetail(F,ctx,d,src){
+   garde le miroir de sa vue mère. `voir` : le numéro de la feuille de sa vue
+   mère, quand il est posé sur une autre. */
+function dfDetail(F,ctx,d,src,voir){
   const k=d.echelle, s=src.V.face?-1:1, cle="det/"+d.id;
   const V={k,face:src.V.face,echelle:dfEchelleTxt(k),
     T:(x,y)=>({x:s*(x-d.x)*k,y:(y-d.y)*k}),
@@ -1181,7 +1220,7 @@ function dfDetail(F,ctx,d,src){
   if(d.forme==="rect")dfPoly(F,W,{ferme:true,lw:0.5});
   else dfCercle(F,0,0,d.r*k,{lw:0.5});
   const bas=d.forme==="rect"?d.h*k/2:d.r*k;
-  dfTexte(F,"DÉTAIL "+d.lettre+" — ÉCHELLE "+V.echelle,0,bas+6,8.5,
+  dfTexte(F,"DÉTAIL "+d.lettre+" — ÉCHELLE "+V.echelle+(voir?" — VOIR FEUILLE "+voir:""),0,bas+6,8.5,
           {ancre:"m",gras:true,cat:"detail",lieu:"vue de détail"});
   dfCotesVue(F,V,cle,ctx.cfg);
   const v=dfVueFin(F,m,cle,"detail",{V,W,det:d.id});
@@ -1654,7 +1693,7 @@ function dfRendreListeCotes(){
   const s=DF.sel&&DF.sel.genre==="cote"?cfg.cotes.find(c=>c.id===DF.sel.id):null;
   el.innerHTML='<p class="df-vide">'+cfg.cotes.length+' cote(s), '+cfg.details.length+' détail(s)'+
       (nv?', '+nv+' vue(s) déplacée(s)':"")+'. Outils au-dessus de la feuille ; double-clic sur une cote : sa tolérance.</p>'+
-    (s?dfHtmlTolerance(s):"")+
+    (s?dfHtmlTolerance(s):"")+dfHtmlFeuilleDetail(cfg)+
     cfg.cotes.map(c=>{
       const w=ou.get(c.id);
       if(!w)return "";                           // sur une feuille décochée
@@ -1666,6 +1705,20 @@ function dfRendreListeCotes(){
       return '<button type="button" class="df-cote-l'+on+'" data-op="cote'+att+esc(DF_COTES[c.type]+" — "+dfResumeCote(c))+
         '</b><span>'+esc(dfRefsTexte(c)+" · f. "+(w.p+1))+'</span></button>';
     }).join("");
+}
+/* Le détail choisi : sa feuille, celle de sa vue mère ou une autre. */
+function dfHtmlFeuilleDetail(cfg){
+  const k=DF.sel&&DF.sel.genre==="vue"&&/^det\/(\d+)$/.exec(DF.sel.cle);
+  const d=k&&cfg.details.find(x=>x.id===+k[1]);
+  if(!d)return "";
+  const opt=(v,lib)=>'<option value="'+v+'"'+((d.feuille||"")===v?" selected":"")+'>'+esc(lib)+'</option>', g=[];
+  for(const [f,lib] of DF_FEUILLES)
+    if(f!=="couches")g.push(opt(f,lib));
+    else for(let i=0;i<S.cu;i++)g.push(opt("cu"+i,"Couche "+(i+1)));
+  const absente=d.feuille&&!DF.doc.feuilles.some(F=>F.genre===d.feuille);
+  return '<label class="df-champ"><span>Feuille du détail '+esc(d.lettre)+'</span><select class="tbsel" data-op="detFeuille" data-id="'+d.id+'">'+
+    opt("","Feuille de la vue mère")+g.join("")+'</select></label>'+
+    (absente?'<p class="df-vide">Cette feuille n\'est pas cochée : le détail reste sur celle de sa vue mère.</p>':"");
 }
 /* La saisie de la tolérance (liste ou double-clic) : le genre et les écarts
    lus dans le volet, un écart vide prend la valeur d'avant ou ±0,1 mm
@@ -1876,6 +1929,14 @@ function dfBrancherOutils(m){
     if(d.op==="ech")DF.ech=+t.value||5;
     else if(d.op==="sens"){DF.sens=t.value==="v"?"v":"h";DF.msg="";dfRendreSur();}
     else if(d.op==="orig"){DF.origFab=t.value==="1";DF.clics=[];DF.msg="";dfRendreSur();}
+    else if(d.op==="detFeuille"){
+      /* l'aperçu suit le détail sur sa feuille */
+      const cle="det/"+d.id;
+      dfFeuilleDetail(+d.id,t.value);
+      dfApresEdition();
+      const p=DF.doc.feuilles.findIndex(F=>F.vues.some(v=>v.cle===cle));
+      if(p>=0&&p!==DF.page){DF.page=p;dfRendreApercu();}
+    }
     else if(d.tol)dfTolUi(d.tol);
   });
   m.addEventListener("dblclick",e=>{

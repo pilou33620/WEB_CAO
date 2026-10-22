@@ -1205,6 +1205,23 @@ le repère « A », le détail l'étiquette « DÉTAIL A — ÉCHELLE 5:1 ». Il
 de lui-même à la première place libre de la feuille, puis se glisse comme
 les autres, et les cotes s'y posent aussi.
 
+Un détail peut aussi vivre sur **une autre feuille** : choisi (outil
+Sélection), le volet « Cotes et détails » montre la liste **Feuille du
+détail** — « Feuille de la vue mère » (le défaut), ou l'une des feuilles
+(fabrication, assemblage dessus ou dessous, nomenclature, une couche, plan
+mécanique) ; l'aperçu passe sur la feuille choisie. Il s'y pose sur la
+première feuille de ce genre (pas une suite), à la première place libre ; sa
+place d'avant s'oublie. Les deux feuilles se renvoient l'une à l'autre :
+« FEUILLE 2 » sous la lettre du repère sur la vue mère, « DÉTAIL A — ÉCHELLE
+5:1 — VOIR FEUILLE 1 » sous le détail. Sur la feuille de sa vue mère, les
+textes ne changent pas. La feuille choisie décochée, le détail revient sur
+celle de sa vue mère, sans renvoi. Un seul pas d'historique. Le glisser d'une
+vue sur l'une de ces deux feuilles refait alors tout le document, pas la
+seule feuille (`dfGenreVue` rend `null`). **Au DXF :** le
+`-PLAN-FABRICATION.dxf` de Fabrication .zip ne prend que les feuilles de
+fabrication ; un détail de la vue de fabrication posé ailleurs n'y est donc
+pas (exporter sa feuille par **DXF feuille**).
+
 ### Où vivent les réglages
 
 Dans le document, `dessin` : format, feuilles cochées, noms du cartouche,
@@ -1224,7 +1241,8 @@ dessin.cotes   [{id, vue:"fab/carte", type:"h"|"v"|"a"|"d"|"r",
                 {id, vue, type:"ord", sens:"h"|"v", o:<réf>, pts:[<réf>…], tols?, dx, dy, tol?, memo}]
 dessin.vues    {"fab/percage": {x, y}, "det/7": {x, y}, …}
 dessin.details [{id, lettre:"A", source:"fab/carte", forme:"cercle"|"rect",
-                 x, y, r | w, h, echelle}]
+                 x, y, r | w, h, echelle, feuille?:"fab"|"asmT"|"asmB"|"bom"|"cuN"|"meca"}]
+                 (feuille absente : celle de la vue mère)
 
 <réf> : {type:"trou", id}  {type:"via", id}
         {type:"pastille", fp:"J1", pad:"3", ou:"c"|"g"|"d"|"h"|"b"}
@@ -3615,8 +3633,6 @@ désactive au lieu de disparaître.
   d'empilage, contre-perçage déduit. Les contraintes de classe, l'isolation
   entre classes et les largeurs se règlent au PCB, qui connaît l'empilage ; le
   schéma, lui, donne la classe de chaque net et ses contraintes propres.
-- Plans (Draftsman) : une vue de détail ne se pose que sur la feuille de sa
-  vue mère.
 - Les **pistes** savent être circulaires (voir plus haut) ; le routeur en pose
   aux coudes en règle d'angle « arrondi ». Les zones de cuivre, les découpes de
   cuivre et le contour de carte restent, dans le modèle, des **polygones** (des

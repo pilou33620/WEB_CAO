@@ -2915,6 +2915,13 @@ Au fur et à mesure qu'un circuit grossit, empiler des feuilles à plat dans une
 - Panneau *Empilage physique* : liste « Pressages » (ajouter du cuivre / au cuivre, retirer ; une étape d'annulation chacun, une plage refusée le dit). Sorties : feuille d'empilage, plan maître (nombre de pressages et plages au lieu de « A VALIDER »), notes Draftsman, lecture MCP `empilage`. IPC-2581 inchangé (un seul `StackupGroup`).
 - Essais (`harness.js`, 1 essai) : validation (bornes, croisement, âme coupée, doublon), 6 couches pressées L2–L5 (L2–L5 mécanique, L1–L2 laser, L1–L3 et L3–L4 refusés), DRC remarque / erreur, sorties, panneau et annulation, aller-retour du document, `stackResize` 6 → 8 → 4 couches.
 
+### Vue de détail sur une autre feuille — 2026-10-22 [FAIT]
+
+- `dessin.details[].feuille`, facultatif : le genre de la feuille qui porte le détail (`fab`, `asmT`, `asmB`, `bom`, `cuN`, `meca`, `DF_FEUILLE_RE`) ; absent, celle de la vue mère (anciens fichiers inchangés). `dfNormDetails` écarte une valeur inconnue ; `dfFeuilleDetail(id, feuille)` l'écrit en un pas d'historique et oublie la place enregistrée du détail.
+- `dfAgencer(feuilles, ctx)` (`34-draftsman-vues.js`) travaille sur tout le document : vues placées à la main, puis chaque détail sur la première feuille de son genre (pas une suite), ou sur celle de sa vue mère si elle est décochée. Renvois : `dfRepereDetail` pose « FEUILLE ? » sous la lettre, que `dfAgencer` remplit avant de poser les vues (la boîte de la vue mère se garde), ou cache vide s'il n'y a pas de renvoi ; l'étiquette du détail prend « — VOIR FEUILLE n ». `dfGenreVue` rend `null` (document entier) pour une feuille qui donne ou reçoit un tel détail. `mecaPlan` (`commun/dossier-meca.js`) suit la nouvelle signature.
+- Volet « Cotes et détails » : liste « Feuille du détail » quand un détail est choisi, l'aperçu le suit sur sa feuille. Le DXF `-PLAN-FABRICATION.dxf` ne prend toujours que les feuilles de fabrication (signalé au README).
+- Essais (`harness.js`, 1 essai) : bornes de `feuille`, détail sur l'assemblage et pas sur la fabrication, renvois sur les deux feuilles et au PDF, `dfGenreVue`, volet, annulation, assemblage décoché (repli sans renvoi).
+
 ---
 
 # Carnet de route jusqu'au 22/10/2026 (ancien `A-FAIRE.md`)

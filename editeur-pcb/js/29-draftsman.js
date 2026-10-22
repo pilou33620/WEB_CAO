@@ -1233,7 +1233,7 @@ function dfDocument(genre){
   /* dossier mécanique (commun/dossier-meca.js, 36-dossier-meca.js) */
   if(f.meca&&g("meca"))feuilles.push(...mecaFeuilles(mecaDossier(),ctx,mecaMonde()));
   /* vues déplacées à la main, puis vues de détail (34-draftsman-vues.js) */
-  feuilles.forEach(F=>dfAgencer(F,ctx));
+  dfAgencer(feuilles,ctx);
   feuilles.forEach((F,i)=>dfCadre(F,ctx,i+1,feuilles.length));
   const refs=S.fps.map(fp=>fp.ref).filter(Boolean);
   return {feuilles,ctx,meta:{
