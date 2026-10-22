@@ -9,9 +9,9 @@ donner à Claude in Chrome. Le code à écrire est dans [A-FAIRE.md](A-FAIRE.md)
 
 - [ ] **Yamaichi IC51-0484-806, broche 1** : non marquée sur le plan 48 broches, à lire sur le
   repère moulé du support. *22/10/2026* : les cotes du plan et du perçage concordent avec la
-  LIB ; aucun document ne marque la broche 1. Reste, support en main : où est le repère moulé
-  par rapport à la charnière ? Et vérifier que l'empreinte porte bien le perçage de 0,8 mm sous
-  ses pastilles — [ESSAI-cao-yamaichi-broche1.md](https://github.com/pilou33620/web_suite/blob/main/tasks/essais/ESSAI-cao-yamaichi-broche1.md)
+  LIB ; aucun document ne marque la broche 1. Les 48 pastilles portent bien le perçage de
+  0,8 mm du plan, et les 4 trous de fixation 3,2 mm (vérifié dans la LIB). Reste, support en
+  main : où est le repère moulé par rapport à la charnière ? — [ESSAI-cao-yamaichi-broche1.md](https://github.com/pilou33620/web_suite/blob/main/tasks/essais/ESSAI-cao-yamaichi-broche1.md)
 - [ ] **Empreinte SOT-89-5 (Torex)** : calculée depuis le contour, à poser sur une vraie carte.
   *22/10/2026* : numérotation et brochage du XC6231 justes ; les pastilles s'écartaient de
   Torex, l'empreinte est refaite selon son plan (0,7 × 1,5 mm, pastille 2 d'un seul tenant).
@@ -65,6 +65,12 @@ donner à Claude in Chrome. Le code à écrire est dans [A-FAIRE.md](A-FAIRE.md)
 
 - [ ] **Classes d'interface** — [ESSAI-cao-relecture-classes-interface.md](https://github.com/pilou33620/web_suite/blob/main/tasks/essais/ESSAI-cao-relecture-classes-interface.md)
 - [ ] **Dossier mécanique** — [ESSAI-cao-relecture-dossier-meca.md](https://github.com/pilou33620/web_suite/blob/main/tasks/essais/ESSAI-cao-relecture-dossier-meca.md)
+
+## Bancs qui demandent la LIB privée
+
+Sautés par la CI faute du secret `PROJETS_TOKEN` (laissé ainsi, décision du 22/10/2026) ; à
+lancer à la main avec la LIB clonée en `../PROJETS`. Passés le 22/10/2026 : `banc-lib-routes.py`
+25/25, `banc-catalogue.js` 45/45, `banc-rf.py` 50/50 (avec `scipy`).
 
 Le canal de pilotage depuis l'iPad et Claude Code avec le MCP (Pi, Windows) concernent toute la
 suite : ils sont dans le
