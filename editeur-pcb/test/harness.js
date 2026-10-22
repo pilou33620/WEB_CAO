@@ -3213,6 +3213,21 @@ T("l'angle droit s'adoucit depuis n'importe quel morceau de la portion",()=>{
   if(mitreSel()!==1)throw new Error("le coude de la portion devait être trouvé");
   undo();
 });
+T("le chanfrein recule devant le cuivre pris dans le coude (U3.2, essai du 21/10/2026)",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];
+  const h={l:0,net:"T",w:0.3,x1:0, y1:0,x2:20,y2:0};
+  const v={l:0,net:"T",w:0.3,x1:20,y1:0,x2:20,y2:30};
+  S.tracks.push(h,v,{l:0,net:"X",w:0.3,x1:12,y1:11.5,x2:12,y2:12.5});   // sur la diagonale maximale
+  touch();
+  setMode("select");S.active=0;clearSel();S.sel.tracks.add(h);
+  if(mitreSel()!==1)throw new Error("le coude devait être adouci, plus court");
+  const dia=S.tracks.find(t=>t.net==="T"&&Math.abs(t.x2-t.x1)>1e-6&&Math.abs(t.y2-t.y1)>1e-6);
+  if(!dia||Math.abs(dia.x2-dia.x1)>=20)throw new Error("diagonale raccourcie attendue : "+JSON.stringify(dia));
+  runDrc();
+  const fautes=S.drc.filter(e=>!e.info);
+  if(fautes.length)throw new Error("le chanfrein a créé : "+fautes.map(e=>e.msg).join(" ; "));
+  undo();
+});
 /* Le chanfrein recule d'autant des deux côtés — c'est ce qui fait le 45°. La
    portion la plus longue gardait donc l'écart des deux longueurs : un reste de
    onze centièmes sous une piste de trois dixièmes, l'écharde que le tracé

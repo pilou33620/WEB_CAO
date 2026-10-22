@@ -2307,6 +2307,15 @@ function mitreAt(l,x,y,dry,cap){
      alors d'une largeur de plus, ce qui rend du cuivre aux DEUX restes. */
   const maigre=v=>v>1e-9&&v<MIN;
   if(maigre(r3(ra.len-L))||maigre(r3(rb.len-L)))L=r3(L-MIN);
+  /* La diagonale coupe l'intérieur du coude : ce qui s'y trouve (une pastille
+     prise dans le coude) peut tomber sous l'isolation. On recule d'une
+     largeur jusqu'à ce qu'elle passe ; les restes grandissent d'autant, sans
+     devenir des échardes. */
+  const dA=endDir(A.t,A.e), dB=endDir(B.t,B.e), nA=Math.hypot(dA.x,dA.y), nB=Math.hypot(dB.x,dB.y);
+  const jambes=new Set(ra.segs.concat(rb.segs).map(o=>o.t));   // sans net, elles se gêneraient elles-mêmes
+  const gene=L=>pnsWorld().firstObstacle({l:A.t.l,net:A.t.net,w:A.t.w,
+    pts:[{x:r3(x-dA.x/nA*L),y:r3(y-dA.y/nA*L)},{x:r3(x-dB.x/nB*L),y:r3(y-dB.y/nB*L)}]},jambes);
+  while(L>=MIN&&gene(L))L=r3(L-MIN);
   if(L<MIN)return false;
   if(dry)return true;
   const lay=A.t.l, net=A.t.net, w=A.t.w;
@@ -3570,9 +3579,9 @@ function commitRoute(){
    déplacer le coude. Maximal, il aurait remplacé les deux jambes par la plus
    grande diagonale possible — et le clic qui avait posé ce coude aurait
    disparu. C'est la touche D qui donne le chanfrein maximal, sur demande.
-   Le chanfrein ne fait que couper l'intérieur du coude : il n'approche aucun
-   voisin, et ne peut donc pas créer de faute d'isolation là où il n'y en avait
-   pas. La sélection, elle, n'a rien à voir avec un dépôt : on la remet comme on
+   Le chanfrein coupe l'intérieur du coude, et ce qui s'y trouve peut en être
+   approché : `mitreAt` le raccourcit jusqu'à ce que l'isolation tienne (essai
+   du 21/10/2026 : U3.2 prise dans le coude de U3.1 → U3.3). La sélection, elle, n'a rien à voir avec un dépôt : on la remet comme on
    l'a trouvée, `mitreAt` ayant l'habitude d'y ranger ce qu'il chanfreine.
    Le glissement passe par la même porte, au relâchement — voir
    `pruneAfterDrag`. « Posé » s'y lit donc « ce que le geste vient d'écrire ». */

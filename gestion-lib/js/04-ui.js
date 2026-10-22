@@ -328,13 +328,23 @@ function rafraichirTable() {
   const liste = obtenirComposantsFiltres();
   document.getElementById("compListCount").textContent = `${liste.length} affiché(s) sur ${LIB_STATE.composants.length}`;
 
-  // Options pour les sélecteurs
-  const pcbOptions = ['<option value="">-- Aucune --</option>']
-    .concat(LIB_STATE.fichiers.pcb.map(f => `<option value="${esc(f)}">${esc(f)}</option>`)).join("");
-  const schOptions = ['<option value="">-- Aucun --</option>']
-    .concat(LIB_STATE.fichiers.schematique.map(f => `<option value="${esc(f)}">${esc(f)}</option>`)).join("");
-  const simOptions = ['<option value="">-- Aucun --</option>']
-    .concat(LIB_STATE.fichiers.simulation.map(f => `<option value="${esc(f)}">${esc(f)}</option>`)).join("");
+  /* Sélecteurs : chacun ne porte que sa valeur, la LIB entière n'y entre qu'à l'ouverture.
+     250 lignes × trois listes × toute la LIB faisaient des millions d'options (~890 Mo au
+     chargement sur le Pi). */
+  const listes = {
+    [colPcb]: ["-- Aucune --", LIB_STATE.fichiers.pcb],
+    [colSch]: ["-- Aucun --", LIB_STATE.fichiers.schematique],
+    [colSim]: ["-- Aucun --", LIB_STATE.fichiers.simulation]
+  };
+  const connus = {};
+  for (const k in listes) connus[k] = new Set(listes[k][1]);
+  const selAssoc = (field, val, id) => `
+          <td>
+            <select class="sel-assoc ${val ? 'has-val' : 'empty'}" data-field="${field}" data-id="${id}">
+              <option value="">${listes[field][0]}</option>${connus[field].has(val) ? `<option value="${esc(val)}" selected>${esc(val)}</option>` : ""}
+            </select>
+          </td>
+        `;
 
   let html = "";
   const maxRows = Math.min(250, liste.length);
@@ -351,32 +361,14 @@ function rafraichirTable() {
       const val = c[col] !== undefined ? c[col] : "";
 
       if (col === colPcb) {
-        html += `
-          <td>
-            <select class="sel-assoc ${pcbVal ? 'has-val' : 'empty'}" data-field="${colPcb}" data-id="${c._id}">
-              ${pcbOptions.replace(`value="${esc(pcbVal)}"`, `value="${esc(pcbVal)}" selected`)}
-            </select>
-          </td>
-        `;
+        html += selAssoc(colPcb, pcbVal, c._id);
       } else if (col === colSch) {
-        html += `
-          <td>
-            <select class="sel-assoc ${schVal ? 'has-val' : 'empty'}" data-field="${colSch}" data-id="${c._id}">
-              ${schOptions.replace(`value="${esc(schVal)}"`, `value="${esc(schVal)}" selected`)}
-            </select>
-          </td>
-        `;
+        html += selAssoc(colSch, schVal, c._id);
       } else if (col === colSim && simVal.includes("|")) {
         // plusieurs modèles (états d'un commutateur) : la liste n'en tiendrait qu'un, l'inspecteur les gère
         html += `<td><span class="tag-pkg" title="${esc(simVal)}">${simVal.split("|").length} modèles</span></td>`;
       } else if (col === colSim) {
-        html += `
-          <td>
-            <select class="sel-assoc ${simVal ? 'has-val' : 'empty'}" data-field="${colSim}" data-id="${c._id}">
-              ${simOptions.replace(`value="${esc(simVal)}"`, `value="${esc(simVal)}" selected`)}
-            </select>
-          </td>
-        `;
+        html += selAssoc(colSim, simVal, c._id);
       } else if (col === "Reference designator Prefix") {
         html += `<td><span class="tag-prefix">${esc(val || "—")}</span></td>`;
       } else if (col === "Package type") {
@@ -416,6 +408,16 @@ function rafraichirTable() {
 
   // Événements sur les sélecteurs
   tbody.querySelectorAll("select.sel-assoc").forEach(sel => {
+    const remplir = () => {
+      if (sel.dataset.plein) return;
+      sel.dataset.plein = "1";
+      const [vide, liste] = listes[sel.getAttribute("data-field")];
+      const v = sel.value;
+      sel.innerHTML = `<option value="">${vide}</option>` + liste.map(f => `<option value="${esc(f)}">${esc(f)}</option>`).join("");
+      sel.value = v;
+    };
+    sel.addEventListener("mousedown", remplir);
+    sel.addEventListener("focus", remplir);
     sel.addEventListener("change", e => {
       const id = parseInt(sel.getAttribute("data-id"), 10);
       const field = sel.getAttribute("data-field");
