@@ -27948,6 +27948,46 @@ TA("chemin-auto : un mur sur le dessus fait passer dessous par deux vias ; sans 
   }
 });
 
+TA("chemin-auto : une paire passe sous un mur par deux vias de paire, que cao_paire pose",async()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  const garde={doc:serialize(),undo:S.undo.slice(),redo:S.redo.slice()};
+  try{
+    piloteCao("pcb");
+    loadDoc(exemple1());
+    carteVide();S.dpPairs=[];S.dpRules=[];
+    setCuCount(2,true);
+    S.board={x:0,y:0,w:50,h:30,pts:null};
+    // deux 0603 debout : P et N l'un au-dessus de l'autre, la paire sort vers ±x
+    const A=mkFp("R1","","0603",2);A.x=8;A.y=15;A.rot=90;A.nets={1:"USB_DP",2:"USB_DM"};
+    const B=mkFp("R2","","0603",2);B.x=42;B.y=15;B.rot=90;B.nets={1:"USB_DP",2:"USB_DM"};
+    S.fps.push(A,B);
+    S.tracks.push({l:0,net:"MUR",w:0.5,x1:25,y1:0,x2:25,y2:30});   // le dessus coupé d'un bord à l'autre
+    touch();
+    if(dpAutoAll()!==1)throw new Error("la paire USB devait se déclarer");
+    const li={paire:S.dpPairs[0].name,depart:["R1.1","R1.2"],arrivee:["R2.1","R2.2"]};
+    const avant=serialize();
+    const r=await cmds.cao_chemin.executer({liaisons:[li]});
+    if(serialize()!==avant)throw new Error("cao_chemin a écrit");
+    const res=r.resultats[0], pp=r.paires[0];
+    if(!res.trouve||res.vias!==2||!pp)throw new Error("deux vias de paire attendues : "+JSON.stringify(r));
+    const bas=LECTURE_CAO.aides.nomCouchePcb(1), haut=LECTURE_CAO.aides.nomCouchePcb(0);
+    const couches=pp.points.concat([pp.arrivee]).filter(p=>p.couche).map(p=>p.couche);
+    if(couches.join()!==[bas,haut].join())throw new Error("dessous puis retour dessus : "+JSON.stringify(pp));
+    const av=S.vias.length, drc0=new Set(runDrc().filter(e=>!e.info).map(e=>e.msg)), prop=cmds.cao_paire.proposer(pp);
+    if(!/: posée$/m.test(prop.apres))throw new Error("cao_paire : "+prop.apres+" / "+JSON.stringify(pp));
+    cmds.cao_paire.appliquer(pp,prop);
+    if(S.vias.length!==av+4)throw new Error("deux vias par via de paire : "+(S.vias.length-av));
+    if(S.vias.slice(av).filter(v=>v.x<25).length!==2)throw new Error("une via de paire de part et d'autre du mur : "+JSON.stringify(S.vias.slice(av)));
+    const err=runDrc().filter(e=>!e.info&&!drc0.has(e.msg));     // la zone d'exemple1 déborde déjà de la petite carte
+    if(err.length)throw new Error("DRC : "+err.map(e=>e.msg).join(" ; "));
+    if(conn(true).rats.some(x=>x.net==="USB_DP"||x.net==="USB_DM"))throw new Error("la paire n'est pas reliée");
+  }finally{
+    global.Pilote=ancien;
+    loadDoc(JSON.parse(garde.doc),true);S.undo=garde.undo;S.redo=garde.redo;
+  }
+});
+
 TA("canal de pilotage : cao_score, routage (liaisons, DRC, vias, longueur) et placement (serveur)",async()=>{
   const cmds={}, ancien=global.Pilote, fetchGarde=global.fetch;
   global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};

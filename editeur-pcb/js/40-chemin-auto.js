@@ -16,7 +16,9 @@
    Une PAIRE différentielle déclarée ({paire, depart:[P, N], arrivee:[P, N]}) se
    cherche par son axe : une piste aussi large que ses deux pistes et leur écart
    (règle de paire), du milieu de ses deux pastilles de départ au milieu de celles
-   d'arrivée. Les points rendus vont à cao_paire, qui fait les éventails.
+   d'arrivée. Elle change de couche par une via de paire (les deux vias côte à côte
+   que pose cao_paire), jamais à portée de ses pastilles. Les points rendus vont à
+   cao_paire, qui fait les éventails.
    Spec : web_suite/lanceur/docs/SPEC-mcp-chemin-auto.md.
    ========================================================================== */
 "use strict";
@@ -90,11 +92,11 @@ function cheminCarte(T, g, l, marge){
 /* Les deux grilles d'une liaison du net `net` : T (où l'axe d'une piste de largeur w peut passer)
    et V (où le centre d'une via peut tomber). `extra` : les chemins déjà trouvés dans l'appel. Le
    cuivre du net lui-même gêne aussi (le routeur s'arrête dès qu'il le touche), sauf les pastilles
-   des deux bouts (`bouts` : leurs clés REF.n). */
-function cheminObstacles(g, nets, larg, extra, bouts){
+   des deux bouts (`bouts` : leurs clés REF.n). Rv : le rayon de la via (d'une paire, ses deux vias). */
+function cheminObstacles(g, nets, larg, extra, bouts, Rv){
   const net = nets[0];
   const N = g.nx * g.ny * g.L, T = new Uint8Array(N), V = new Uint8Array(N);
-  const cl = classOf(net), Rv = cl.via / 2;
+  const cl = classOf(net);
   const pads = [];
   for(const fp of S.fps) for(const q of padsWorld(fp)) if(!bouts.has(fp.ref + "." + q.n)) pads.push({q, L:padCuLayers(fp, q)});
   const trous = trousMonde();
@@ -177,11 +179,10 @@ function cheminBoutPaire(v, pair, quoi){
   const nets = [a.net, b.net].sort().join(), voulu = [pair.p, pair.n].sort().join();
   if(nets !== voulu) throw new Error(a.nom + " (" + routagePropre(a.net) + ") et " + b.nom + " (" + routagePropre(b.net) + ") ne sont pas les deux nets de la paire " + routagePropre(pair.name));
   return {x:r3((a.x + b.x) / 2), y:r3((a.y + b.y) / 2), couches:a.couches.filter(l => b.couches.includes(l)),
-          q:null, nom:a.nom + "/" + b.nom, pads:[a.nom, b.nom], net:a.net, ancres:[{x:a.x, y:a.y}, {x:b.x, y:b.y}]};
+          q:null, nom:a.nom + "/" + b.nom, pads:[a.nom, b.nom], qs:[a.q, b.q], net:a.net, ancres:[{x:a.x, y:a.y}, {x:b.x, y:b.y}]};
 }
 
 function cheminUne(g, li, extra, fin){
-  // shortcut: une paire reste sur sa couche (pas de vias de paire), à étendre si une paire doit changer de face
   const pair = li.paire == null ? null : (S.dpPairs || []).find(x => typeof li.paire === "string" && x.name.toUpperCase() === li.paire.toUpperCase());
   if(li.paire != null && !pair)
     throw new Error("paire « " + routagePropre(li.paire) + " » inconnue (" + ((S.dpPairs || []).map(x => routagePropre(x.name)).join(", ") || "aucune déclarée") + ")");
@@ -194,20 +195,21 @@ function cheminUne(g, li, extra, fin){
   if(!net) throw new Error("les pastilles " + dep.nom + " / " + arr.nom + " ne sont sur aucun net");
   if(li.largeur != null && (pair || typeof li.largeur !== "number" || !(li.largeur >= 0.05 && li.largeur <= 10)))
     throw new Error(pair ? "largeur : celle d'une paire vient de sa règle" : "largeur de 0,05 à 10 mm");
-  if(pair && !dep.couches.some(l => arr.couches.includes(l)))
-    throw new Error("les pastilles de départ et d'arrivée de la paire n'ont pas de couche commune (pas de vias de paire)");
   // une paire : l'axe porte les deux pistes et leur écart
   const larg = [...Array(g.L).keys()].map(l => {
     if(!pair) return li.largeur != null ? li.largeur : classWidth(net, l);
     const d = dpGeom(pair, l);
     return r3(2 * d.w + d.gap);
   });
-  const nets = pair ? [pair.p, pair.n] : [net];
-  const {T, V} = cheminObstacles(g, nets, larg, extra, new Set(pair ? dep.pads.concat(arr.pads) : [dep.nom, arr.nom]));
+  // une via de paire : deux vias écartés de dpViaSpread, que l'éventail de dpVia avance de ce qu'il rattrape sur le pas des pistes
+  // shortcut: un disque qui couvre les deux vias dans tous les sens, pas deux vias orientés ; à affiner si une paire ne trouve plus où changer de couche
+  let Rv = classOf(net).via / 2;
   if(pair){
-    V.fill(1);
-    for(const b of [dep, arr]) b.couches = b.couches.filter(l => (b === dep ? arr : dep).couches.includes(l));
+    const s = dpViaSpread(pair), pas = Math.min(...[...Array(g.L).keys()].map(l => { const d = dpGeom(pair, l); return d.w + d.gap; }));
+    Rv = Math.hypot(Math.max(0, s - pas) / 2, s / 2) + Math.max(classOf(pair.p).via, classOf(pair.n).via) / 2;
   }
+  const nets = pair ? [pair.p, pair.n] : [net];
+  const {T, V} = cheminObstacles(g, nets, larg, extra, new Set(pair ? dep.pads.concat(arr.pads) : [dep.nom, arr.nom]), Rv);
   const nxy = g.nx * g.ny, N = nxy * g.L;
   const cel = (x, y) => [Math.round((x - g.x0) / g.pas), Math.round((y - g.y0) / g.pas)];
   const dans = (i, j) => i >= 0 && j >= 0 && i < g.nx && j < g.ny;
@@ -216,10 +218,15 @@ function cheminUne(g, li, extra, fin){
   for(const [b, estBut] of [[dep, false], [arr, true]]){
     const [ci, cj] = cel(b.x, b.y);
     if(!dans(ci, cj)) throw new Error(b.nom + " est hors de la carte");
+    // une paire : pas de via de paire à portée d'accroche de ses pastilles (dpVia veut un segment avant elle, cao_paire s'y accrocherait)
+    if(pair) for(const q of b.qs){
+      const R = Rv + CHEMIN.ACCROCHE_PAIRE, m = Math.max(q.w, q.h) / 2 + R;
+      for(let l = 0; l < g.L; l++) cheminBoite(V, g, l, q.x - m, q.y - m, q.x + m, q.y + m, (x, y) => padDist(x, y, q) < R);
+    }
     for(const l of b.couches){
       const base = l * nxy;
       if(b.q){
-        const Rv = classOf(net).via / 2, m = Math.max(b.q.w, b.q.h) / 2 + Rv + g.pas;
+        const m = Math.max(b.q.w, b.q.h) / 2 + Rv + g.pas;
         for(let j = Math.max(0, Math.floor((b.y - m - g.y0) / g.pas)); j <= Math.min(g.ny - 1, Math.ceil((b.y + m - g.y0) / g.pas)); j++)
           for(let i = Math.max(0, Math.floor((b.x - m - g.x0) / g.pas)); i <= Math.min(g.nx - 1, Math.ceil((b.x + m - g.x0) / g.pas)); i++){
             const d = padDist(g.x0 + i * g.pas, g.y0 + j * g.pas, b.q);
@@ -283,13 +290,13 @@ function cheminUne(g, li, extra, fin){
     cells.push({l:Math.floor(k / nxy), i:r % g.nx, j:Math.floor(r / g.nx)});
   }
   cells.reverse();
-  return Object.assign(cheminPoints(g, cells, dep, net, larg, extra), {dep, arr, pair, l:cells[0].l});
+  return Object.assign(cheminPoints(g, cells, dep, net, larg, extra, 2 * Rv), {dep, arr, pair, l:cells[0].l});
 }
 
 /* Cellules → points de passage de cao_router : un point par virage ; une via au point où la
    couche change, le point suivant portant « couche ». Les bouts ne sont pas repris (ce sont
-   depart et arrivee). Le chemin rejoint aussi les obstacles des liaisons suivantes. */
-function cheminPoints(g, cells, dep, net, larg, extra){
+   depart et arrivee). Le chemin rejoint aussi les obstacles des liaisons suivantes (dv : diamètre de la via). */
+function cheminPoints(g, cells, dep, net, larg, extra, dv){
   const nom = l => LECTURE_CAO.aides.nomCouchePcb(l);
   const xy = c => ({x:r3(g.x0 + c.i * g.pas), y:r3(g.y0 + c.j * g.pas)});
   const dir = (a, b) => (b.i - a.i) + "," + (b.j - a.j);
@@ -300,7 +307,9 @@ function cheminPoints(g, cells, dep, net, larg, extra){
     const a = cells[k - 1], b = cells[k], c = cells[k + 1];
     if(a.l !== b.l){
       vias++;
-      if(k > 1 && !(points.length && points[points.length - 1].x === xy(a).x && points[points.length - 1].y === xy(a).y && points[points.length - 1].couche == null)) poser(a);
+      // pas deux fois le même point : cao_paire ferait demi-tour sur place, et ses deux pistes se croiseraient
+      const der = points[points.length - 1];
+      if(k > 1 && !(der && der.x === xy(a).x && der.y === xy(a).y)) poser(a);
       attente = b.l;
       continue;
     }
@@ -314,7 +323,7 @@ function cheminPoints(g, cells, dep, net, larg, extra){
   let longueur = 0;
   for(let k = 1; k < trace.length; k++){
     const a = trace[k - 1], b = trace[k];
-    if(a.l !== b.l){ extra.vias.push({x:a.x, y:a.y, d:classOf(net).via, a:Math.min(a.l, b.l), b:Math.max(a.l, b.l), net}); continue; }
+    if(a.l !== b.l){ extra.vias.push({x:a.x, y:a.y, d:dv, a:Math.min(a.l, b.l), b:Math.max(a.l, b.l), net}); continue; }
     longueur += dist(a.x, a.y, b.x, b.y);
     extra.pistes.push({x1:a.x, y1:a.y, x2:b.x, y2:b.y, w:larg[a.l], l:a.l, net});
   }
@@ -335,10 +344,20 @@ function cheminCommande(a){
       const r = cheminUne(g, li, extra, fin);
       if(r.pair){
         /* cao_paire termine la paire dès qu'un point passe à portée d'accroche d'un couple de ses pastilles
-           (1 mm du cuivre, routageUnePaire) : un tel point, près de l'arrivée, l'arrêterait avant la fin */
-        const points = r.points.filter(p => !dpPrimPair(r.pair, p.x, p.y, r.l, CHEMIN.ACCROCHE_PAIRE, r.dep.ancres));
-        paires.push({paire:r.pair.name, depart:{x:r.dep.x, y:r.dep.y}, couche:r.couche, points, arrivee:{x:r.arr.x, y:r.arr.y}});
-        resultats.push({liaison:k + 1, paire:r.pair.name, trouve:true, longueur_mm:r.longueur, points:r.points.length});
+           (1 mm du cuivre, routageUnePaire) : un tel point, près de l'arrivée, l'arrêterait avant la fin. Chaque
+           point se juge sur sa couche ; le « couche » d'un point retiré passe au suivant (ou à l'arrivée) : cao_paire
+           pose la via de paire là où il en est, avant d'aller au point, donc au même endroit. */
+        const points = [], arrivee = {x:r.arr.x, y:r.arr.y};
+        let l = r.l, couche = null;
+        for(const p of r.points){
+          if(p.couche){ l = routageCouche(p.couche); couche = p.couche; }
+          if(dpPrimPair(r.pair, p.x, p.y, l, CHEMIN.ACCROCHE_PAIRE, r.dep.ancres)) continue;
+          points.push(couche ? Object.assign({}, p, {couche}) : p);
+          couche = null;
+        }
+        if(couche) arrivee.couche = couche;
+        paires.push({paire:r.pair.name, depart:{x:r.dep.x, y:r.dep.y}, couche:r.couche, points, arrivee});
+        resultats.push({liaison:k + 1, paire:r.pair.name, trouve:true, longueur_mm:r.longueur, vias:r.vias, points:r.points.length});
         return;
       }
       const route = {depart:li.depart, couche:r.couche, points:r.points, arrivee:li.arrivee};
