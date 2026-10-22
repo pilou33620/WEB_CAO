@@ -3563,20 +3563,12 @@ désactive au lieu de disparaître.
   BGA — lettres et colonnes — ne sont pas dessinés d'avance ; ils se dessinent
   à la main dans la fenêtre d'empreinte, et s'enregistrent ensuite dans la
   bibliothèque personnelle.
-- Une pastille est rectangulaire (coins adoucis ou angles droits), oblongue ou
-  ronde, avec sa rotation propre. Pas de forme quelconque : ni pastille en
-  polygone, ni plage thermique découpée, ni chanfrein.
 - Gestionnaire de contraintes : le moignon d'un via se compte en épaisseur
-  d'empilage, contre-perçage déduit ; les contraintes de classe
-  ne se saisissent que dans le PCB.
-- Plans (Draftsman) : les cotes à la main sont linéaires (horizontale,
-  verticale, alignée), de diamètre ou de rayon — ni cote angulaire, ni cote
-  en chaîne ou depuis une origine commune, ni tolérance portée sur la
-  cote. Une vue déplacée
-  ne repousse pas les autres (elle peut les recouvrir), et une vue de détail
-  ne se pose que sur la feuille de sa vue mère. Ni export DXF. Le texte est
-  en Helvetica standard (non embarquée) : un lecteur la remplace par une
-  fonte équivalente.
+  d'empilage, contre-perçage déduit. Les contraintes de classe, l'isolation
+  entre classes et les largeurs se règlent au PCB, qui connaît l'empilage ; le
+  schéma, lui, donne la classe de chaque net et ses contraintes propres.
+- Plans (Draftsman) : une vue de détail ne se pose que sur la feuille de sa
+  vue mère.
 - Les **pistes** savent être circulaires (voir plus haut) ; les zones de
   cuivre, les coupes et le contour de carte restent des polygones. Le
   routeur ne pose pas d'arc : ils arrivent d'un fichier, et l'éditeur les
@@ -3588,19 +3580,15 @@ désactive au lieu de disparaître.
 - Le retour arrière du tracé (Retour arrière) recule d'un coude, mais ne remet
   pas en place le cuivre que ce coude avait poussé. Échap ou Ctrl+Z le font,
   eux, en une fois.
-- Pas d'auto-routeur : le moteur assiste un geste, il ne route pas une carte
-  tout seul. Il n'y a ni recherche de chemin global, ni ordonnancement des
-  nets.
+- Pas d'auto-routeur à la main : le moteur assiste un geste. Le chercheur de
+  chemin (`js/40-chemin-auto.js`, A* sur une grille par couche) propose un
+  premier tracé liaison par liaison, ou l'axe d'une paire différentielle, mais
+  seulement quand Claude pilote la page (`cao_chemin`, puis `cao_router` ou
+  `cao_paire`) ; les liaisons se cherchent dans l'ordre donné, sans
+  ordonnancement des nets ni reprise d'ensemble.
 - Pas de sauvegarde automatique sur disque. Le travail tient dans l'onglet
   tant qu'il est ouvert (voir plus haut), mais fermer l'onglet sans
   « Enregistrer .json » le perd.
-- Le calcul de ligne de transmission tient aux formules approchées
-  (Hammerstad, Wheeler, IPC-2141A) : ±5 % sur une piste seule, ±10 % sur une
-  paire. Pas de pertes — le Df de l'empilage reste inexploité, il n'y a donc ni
-  atténuation ni résistance série. Ni gravure en trapèze, ni vernis épargne sur
-  le microruban, ni triplaque asymétrique : le plan le plus proche décide, et la
-  formule la suppose centrée. Le couplage entre deux pistes voisines n'est pris
-  en compte que pour une paire différentielle déclarée.
 - Le contrôle des vias borgnes et enterrés suppose un pressage unique. Un
   empilage à laminage séquentiel est signalé comme tel, mais sa séquence ne se
   décrit pas : il n'y a qu'une liste de diélectriques, pas de sous-ensembles.

@@ -1,7 +1,7 @@
 # À faire — fonctionnalités et bugs
 
-Ce qui reste à coder dans WEB_CAO, au 22/10/2026 : nouvelles fonctionnalités et bugs, rien
-d'autre (les essais sont repoussés à plus tard, voir l'historique) ; ce qui est fait, dans
+Ce qui reste à coder dans WEB_CAO, au 22/10/2026 : nouvelles fonctionnalités et bugs,
+plus le seul essai en conditions réelles gardé (en bas) ; ce qui est fait, dans
 [docs/HISTORIQUE_DEVELOPPEMENT.md](docs/HISTORIQUE_DEVELOPPEMENT.md) (le carnet de route
 complet jusqu'au 22/10/2026 y est recopié).
 
@@ -21,12 +21,37 @@ autre net, la Gestion LIB qui montait à environ 890 Mo au chargement.
 - [x] **Port différentiel en simulation RF** (22/10/2026) : un port peut avoir deux bornes
   (RFI_P / RFI_N du SX1261 de P01x274), sans masse : `rf_reseau.py` 1.9.0 (`noeud_n`), et un
   bouton ± par port dans le panneau RF pour cliquer la borne −. Le S21 en réception de
-  P01x274 ne demande plus de code : c'est un essai, repoussé avec les autres.
+  P01x274 ne demande plus de code : c'est l'essai gardé, en bas.
+- [x] **Visionneuse : contour des boîtiers, hauteur des textes, triplaque décentrée**
+  (22/10/2026) : le `<Package><Outline>` se dessine à l'écran et entre dans la boîte du
+  composant (sans lui, le cadre des pastilles en tirets) ; un texte prend la hauteur de sa
+  `<BoundingBox>` ou de son `fontSize` (1,2 mm à défaut) ; une triplaque décentrée de plus de
+  40 % prend sa Z₀ du solveur de section (`ligne_mom` par `/api/simulation`), la formule entre
+  parenthèses.
 
-La simulation S21 en émission de P01x274 n'est plus ici : elle ne demande aucun code
-(l'impédance de chaque port se règle dans le panneau, les modèles des composants viennent de la
-LIB) : c'est un essai, repoussé avec les autres. Retirée le 22/10/2026 : une
-rugosité de Huray par face du feuillard (écart faible, données rarement publiées).
+Le S21 en émission de P01x274 ne demande pas de code non plus (l'impédance de chaque port se
+règle dans le panneau, les modèles des composants viennent de la LIB). Retirée le 22/10/2026 :
+une rugosité de Huray par face du feuillard (écart faible, données rarement publiées).
+
+Les limites connues des guides qui restent à coder (22/10/2026) :
+
+- [ ] **Arcs posés par le routeur** : les pistes circulaires venues d'un fichier se
+  montrent, se mesurent et partent en Gerber, mais le routeur ne trace que des segments ;
+  zones de cuivre, coupes et contour de carte restent des polygones.
+- [ ] **Sauvegarde automatique sur disque** : le travail tient dans l'onglet, un
+  avertissement part à la fermeture, mais sans « Enregistrer .json » il est perdu.
+- [ ] **Laminage séquentiel** : un empilage à pressages successifs est signalé, mais sa
+  séquence ne se décrit pas (une seule liste de diélectriques, pas de sous-ensembles) ;
+  le contrôle des vias borgnes et enterrés suppose un pressage unique.
+- [ ] **Vue de détail sur une autre feuille** (plans Draftsman) : elle ne se pose
+  aujourd'hui que sur la feuille de sa vue mère.
 
 Côté pilotage par Claude (MCP), les fonctionnalités possibles sont listées dans
 [l'A-FAIRE de web_suite](https://github.com/pilou33620/web_suite/blob/main/A-FAIRE.md).
+
+## Essai en conditions réelles
+
+Un seul gardé, les autres sont abandonnés (22/10/2026) :
+
+- [ ] **S21 de P01x274**, en émission et en réception (port différentiel RFI_P / RFI_N
+  du SX1261), dans le panneau RF, avec les modèles des composants pris dans la LIB.

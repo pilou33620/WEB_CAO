@@ -84,7 +84,7 @@ distincts, sauf T6 et T8 qui partagent le panneau.
 
 ### Point d'étape 1
 - [x] `banc-analyse-carte`, `banc-crosstalk` et `banc-serveur-routes` passent, `compileall` est propre
-- [ ] Le cas TRD1_N n'est plus condamné par la règle de retour (suivi dans `tasks/todo.md`, points d'étape 1 et 2)
+- ~~Le cas TRD1_N n'est plus condamné par la règle de retour (suivi dans `tasks/todo.md`, points d'étape 1 et 2)~~ (retiré le 22/10/2026 : essai abandonné)
 - [ ] Relecture humaine avant de passer au JS
 
 ### Phase 2 : pages
@@ -97,7 +97,7 @@ distincts, sauf T6 et T8 qui partagent le panneau.
 ### Point d'étape 2
 - [x] Les sept bancs de la spec passent
 - [x] Les bundles monofichiers se construisent et contiennent la table
-- [ ] Vérification à la main dans le navigateur (carte TRD1_N ; suivi dans `tasks/todo.md`, point d'étape 2)
+- ~~Vérification à la main dans le navigateur (carte TRD1_N ; suivi dans `tasks/todo.md`, point d'étape 2)~~ (retiré le 22/10/2026 : essai abandonné)
 
 ### Phase 3 : finition
 - [x] T9 : A-FAIRE.md, l'État des lieux et les aides du panneau

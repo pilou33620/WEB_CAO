@@ -891,6 +891,7 @@ function pnlDetail(){
     +"ajoute un morceau à la sélection, et la simulation les calcule alors un "
     +"par un. Les listes mènent au même endroit.</div>";
   box.innerHTML=h;
+  if(s&&s.type==="piste"&&box.querySelector("#ltMom"))ltMomLancer(s.piste);
   box.querySelectorAll("[data-vnet]").forEach(function(b){
     b.onclick=function(ev){
       const i=+b.dataset.vnet;
@@ -997,6 +998,44 @@ function pnlLigneManques(sup,g){
   return m;
 }
 
+/* LA TRIPLAQUE DÉCENTRÉE PASSE AU SOLVEUR DE SECTION. La formule la suppose
+   centrée ; ligne_mom (par /api/simulation, le même chemin que le panneau
+   « Simulation EM… ») connaît la vraie place de la piste entre ses plans. Un
+   calcul par piste, gardé ; sans serveur, la formule reste avec sa note. */
+let LT_MOM=new WeakMap();              // piste -> null (en cours) | {z0} | {erreur}
+let LT_MOM_PISTE=null;                 // la piste dont la fiche est à l'écran
+function ltMomTexte(r){
+  if(r===undefined||r===null)return "Calcul par la méthode des moments…";
+  if(r.z0>0)return "Z₀ de la méthode des moments, piste à sa vraie place ; capacité et "
+    +"inductance restent celles de la formule.";
+  return "Méthode des moments indisponible ("+r.erreur+") : seule la formule répond.";
+}
+/* la case Z₀ : celle du solveur dès qu'il a répondu, la formule à côté */
+function ltZ0Html(z0,r){
+  if(!(z0>0))return "—";
+  if(r&&r.z0>0)return '<span class="val">'+mdlNb(r.z0,1)+" Ω</span> (formule : "+mdlNb(z0,1)+" Ω)";
+  return '<span class="val">'+mdlNb(z0,1)+" Ω</span>";
+}
+async function ltMomLancer(piste){
+  if(LT_MOM.has(piste))return;
+  LT_MOM.set(piste,null);
+  let r;
+  try{
+    /* la portée courante : c'est la piste cliquée, celle de la fiche */
+    const p=simDocIpc(null,V.net,Object.assign({},SIM.saisie,{points:1}),true);
+    if(p.erreur)throw new Error(p.erreur);
+    simDocFinir(p.doc);
+    const res=await simLancer(p.doc);
+    const s=res.segments.find(s=>s&&s.z0>0);
+    r=s?{z0:s.z0}:{erreur:"aucune impédance rendue"};
+  }catch(e){ r={erreur:String(e.message||e).split("\n")[0]}; }
+  LT_MOM.set(piste,r);
+  const el=document.getElementById("ltMom"), z=document.getElementById("ltZ0");
+  if(!el||LT_MOM_PISTE!==piste)return;
+  el.textContent=ltMomTexte(r);
+  if(z)z.innerHTML=ltZ0Html(+z.dataset.z0,r);
+}
+
 function pnlLigne(piste,coucheIdx){
   const e=ltPiste(piste,coucheIdx);
   const c=V.couches[coucheIdx];
@@ -1026,8 +1065,8 @@ function pnlLigne(piste,coucheIdx){
     +l3("Épaisseur cuivre",ltMm(g.t)+marque("(supposée)",sup.ep))
     +l3("εr stratifié",mdlNb(g.er,2)+marque("(supposée)",sup.er))
     +l3("εr effective",mdlNb(e.eeff,2))
-    +l3("Impédance Z₀",e.z0>0
-         ?'<span class="val">'+mdlNb(e.z0,1)+" Ω</span>":"—")
+    +l3("Impédance Z₀",'<span id="ltZ0" data-z0="'+(e.z0||0)+'">'
+         +ltZ0Html(e.z0,g.kind==="strip"&&g.dissym>0.4?LT_MOM.get(piste):null)+"</span>")
     +l3("Retard t_pd",ltT(e.tpd))
     +l3("Retard par mm",e.psmm?mdlNb(e.psmm,3)+" ps/mm":"—")
     /* Les deux se déduisent de Z₀ : sans elle, il n'y a pas de valeur à
@@ -1048,11 +1087,13 @@ function pnlLigne(piste,coucheIdx){
      Une triplaque nettement décentrée sort trop haut, la formule supposant la
      piste à mi-hauteur. C'est le cas de presque tout empilage 4 couches : âme
      épaisse d'un côté, préimprégné mince de l'autre. */
-  if(g.kind==="strip"&&g.dissym>0.4)
+  if(g.kind==="strip"&&g.dissym>0.4){
+    LT_MOM_PISTE=piste;
     t+='<div class="note attention">'+esc("Triplaque dissymétrique ("
       + ltMm(g.h) + " d'un plan, " + ltMm(g.b-g.h-g.t) + " de l'autre) : la "
       + "formule suppose la piste centrée entre les deux, Z₀ sort au-dessus de "
-      + "la réalité.")+"</div>";
+      + "la réalité.")+'<br><span id="ltMom">'+esc(ltMomTexte(LT_MOM.get(piste)))+"</span></div>";
+  }
   t+='<div class="note">Hammerstad pour εr effective, Wheeler pour le '
     +"microruban, IPC-2141A pour la triplaque — les mêmes que l'éditeur PCB : "
     +"±5 % au mieux. De quoi juger un tracé, pas de quoi signer une commande.</div>";
