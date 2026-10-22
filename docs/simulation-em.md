@@ -918,11 +918,12 @@ valeurs n'ont pas bougé. SATA garde ses hauteurs (325, 275, 240 mVppd) et sa
 largeur passe de 0,4 UI à 1 − TJ de la tolérance à la gigue du récepteur :
 0,49 UI en Gen 1, 0,43 UI en Gen 2 et 3, en losange. **USB 2.0 extrémité
 (Template 2)** passe « recoupé » en `oeil` 2.3.0 : la spécification USB 2.0
-est publique (usb.org), et ses six points (figure 7-15 : 0 mV à 12,5 et
+est publique (usb.org), et ses six points (figure 7-14, et non 7-15 : 0 mV à 12,5 et
 87,5 % UI, ±175 mV de 35 à 65 % UI, limites ±525 / ±475 mV) sont ceux du
 code — concordance établie de mémoire et avec les gabarits « far end » des
 logiciels de conformité, le document n'ayant pas été relu ici ; la fiche le
-dit. Le Template 1 garde ses points 2 et 3 à 37,5 et 62,5 % UI (±300 mV) :
+dit. **Relu le 22/10/2026** dans la copie officielle : les six points et les
+±525 mV sont justes, la fiche passe « lu dans la norme ». Le Template 1 garde ses points 2 et 3 à 37,5 et 62,5 % UI (±300 mV) :
 deux sources indépendantes les donnent ainsi (Microchip DS00002142A,
 tableau 6-6 ; Analog Devices, « Improving USB 2.0 Switched-System
 Response », 0,375 UI et 300 mV) — le 32,5 / 67,5 % qu'on avait supposé ne se

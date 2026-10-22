@@ -421,7 +421,7 @@ def les_gabarits_verifies_disent_leur_source():
            "PCIe 3 : 25 mV")
     assert oeil.gabarit("pcie-gen3")["egaliseur"]["dfe"]["max_v"] == 0.030
     g = oeil.gabarit("usb2-hs-recepteur")
-    assert g["fiabilite"] == "corrobore" and "figure 7-15" in g["source"]
+    assert g["fiabilite"] == "norme" and "figure 7-14" in g["source"]
     assert g["masque"]["points"] == [[-0.375, 0.0], [-0.15, 0.175],
                                      [0.15, 0.175], [0.375, 0.0],
                                      [0.15, -0.175], [-0.15, -0.175]]

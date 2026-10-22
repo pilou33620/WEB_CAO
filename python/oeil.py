@@ -177,7 +177,7 @@ except Exception as _exc:                              # noqa: BLE001
     np = se = None
     ERREUR_OEIL = _exc
 
-VERSION = "2.4.0"
+VERSION = "2.4.1"
 FORMAT_RESULTAT = "cao-oeil-resultat-1"
 # UN FICHIER IBIS VOYAGE DANS LA REQUETE, en texte : quelques megaoctets pour
 # les plus gros composants, deux fois si l'emetteur et le recepteur en ont
@@ -227,6 +227,7 @@ class ErreurOeil(Exception):
 #              gabarit DERIVE des bus lents, qui n'en ont pas d'officiel.
 #
 # LA FIABILITE, sur chaque gabarit :
+#   norme       valeurs relues dans le texte de la norme elle-meme ;
 #   corrobore   valeurs recoupees avec une source publique (fiche de
 #               fabricant, note d'application) -- la norme elle-meme, payante,
 #               n'a pas ete lue ;
@@ -236,6 +237,8 @@ class ErreurOeil(Exception):
 # ==========================================================================
 
 FIABILITES = {
+    "norme": ("Valeurs relues dans le texte de la norme elle-même. Le "
+              "contrôle reste un gabarit : pas un verdict de conformité."),
     "corrobore": ("Valeurs recoupées avec une source publique (fiche de "
                   "fabricant, note d'application). La norme elle-même n'a "
                   "pas été consultée."),
@@ -287,30 +290,26 @@ GABARITS = [
      "nom": "USB 2.0 HS — extrémité de câble (Template 2/4)",
      "debit": 480e6, "mode": "diff",
      "lieu": "À l'entrée du récepteur, au bout de la liaison.",
-     "fiabilite": "corrobore",
-     # RECOUPE EN 2026-10. LA SPECIFICATION USB 2.0 EST PUBLIQUE (telechargeable
-     # sur usb.org, sans accord) : §7.1.2.2, figure 7-15 et son tableau
-     # « Template 2 Transmit Waveform Requirements » (hub mesure a TP3,
-     # peripherique a cable captif a TP2) : niveau 1 ±525 mV, niveau 2
-     # ±475 mV, points 1 et 4 a 12,5 et 87,5 % UI (0 mV), points 2, 3, 5 et
-     # 6 a 35 et 65 % UI (±175 mV). Ce sont les six points ci-dessous, les
-     # memes que ceux des gabarits « far end » des logiciels de conformite
-     # (Tektronix TDSUSB2, Keysight U7242A). Le document lui-meme n'a pas ete
-     # relu ici : c'est de memoire que la concordance est etablie, et la
-     # fiche le dit. Le Template 4 (figure 7-17, sensibilite du recepteur) a
-     # la meme forme avec ±150 mV ; il n'est pas repris.
-     "source": "USB 2.0 §7.1.2.2, figure 7-15 et tableau « Template 2 » "
-               "(TP3 d'un hub, TP2 d'un périphérique à câble captif) : "
-               "0 mV à 12,5 et 87,5 % UI, ±175 mV de 35 à 65 % UI, limites "
-               "±525 mV (±475 mV hors transition). La spécification USB 2.0 "
-               "est publique ; les mêmes points font le gabarit « far end » "
-               "des logiciels de conformité (Tektronix TDSUSB2, Keysight "
-               "U7242A).",
-     "note": "Concordance établie de mémoire avec la figure 7-15 de la "
-             "spécification (publique) ; relisez-la pour un verdict de "
-             "conformité. Le Template 4 (sensibilité du récepteur, ±150 mV) "
-             "a la même forme et n'est pas repris. Les limites ±525 mV "
-             "s'appliquent partout ici, donc un peu indulgentes.",
+     "fiabilite": "norme",
+     # RELU LE 22/10/2026 DANS LA COPIE OFFICIELLE DE LA SPECIFICATION USB 2.0
+     # (usb.org) : §7.1.2.2, figure 7-14 (Template 2), et non 7-15 comme on
+     # l'avait ecrit de memoire. Points 1 et 4 a 12,5 et 87,5 % UI (0 mV),
+     # points 2, 3, 5 et 6 a 35 et 65 % UI (±175 mV), limites ±525 mV : ce
+     # sont les six points ci-dessous. La norme ne parle pas de « TP3 pour un
+     # hub » : la mention est retiree. Le Template 4 (figure 7-16, et non
+     # 7-17 ; sensibilite du recepteur) a la meme forme avec ±150 mV ; il
+     # n'est pas repris.
+     "source": "USB 2.0 §7.1.2.2, figure 7-14 (Template 2) : 0 mV à 12,5 "
+               "et 87,5 % UI, ±175 mV de 35 à 65 % UI, limites ±525 mV "
+               "(±475 mV hors transition). Relu dans la spécification "
+               "USB 2.0 (usb.org, publique) le 22/10/2026 ; les mêmes points "
+               "font le gabarit « far end » des logiciels de conformité "
+               "(Tektronix TDSUSB2, Keysight U7242A).",
+     "note": "Six points et limites ±525 mV relus dans la figure 7-14 de la "
+             "spécification. Le Template 4 (figure 7-16, sensibilité du "
+             "récepteur, ±150 mV) a la même forme et n'est pas repris. Les "
+             "limites ±525 mV s'appliquent partout ici, donc un peu "
+             "indulgentes.",
      "masque": {"type": "polygone",
                 "points": [[-0.375, 0.0], [-0.15, 0.175], [0.15, 0.175],
                            [0.375, 0.0], [0.15, -0.175], [-0.15, -0.175]]},

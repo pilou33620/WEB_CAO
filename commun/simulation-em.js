@@ -17828,6 +17828,7 @@ const SIM_OEIL_POS_AC=[
   {cle:"emetteur", nom:"côté émetteur"},
   {cle:"recepteur", nom:"côté récepteur"}];
 const SIM_OEIL_FIAB={
+  norme:{nom:"lu dans la norme", cls:"simBadgeOk"},
   corrobore:{nom:"recoupé", cls:"simBadgeOk"},
   a_verifier:{nom:"à vérifier", cls:"simBadgeAlerte"},
   derive:{nom:"dérivé", cls:"simBadgeDerive"}

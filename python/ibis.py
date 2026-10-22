@@ -555,7 +555,8 @@ def abcd_sections(freqs, sections):
     Ordre de la norme d'apres sources secondaires : l'exemple de [Pin
     Numbers] repris au sommet IBIS de novembre 2014 (KEI Systems, fil de
     cablage en premier) et la presentation ICM d'Intel (le modele part du
-    die) ; le texte de la norme n'a pas ete relu."""
+    die). Confirme le 22/10/2026 dans le texte de la norme : IBIS 8.0,
+    p. 184, une description de boitier commence cote puce."""
     return _cascade(freqs, list(sections)[::-1])
 
 
