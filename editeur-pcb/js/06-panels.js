@@ -396,7 +396,7 @@ function buildStackup(){
      section qu'on relit avant de commander. */
   const tot=stackTotal(), ecart=r3(tot-st.target), asp=worstAspect();
   const asym=stackAsym(), sym=!asym.length, hors=Math.abs(ecart)>0.02;
-  const vc=viaCensus();
+  const vc=viaCensus(), P=pressList();
   h+='<div class="cat">Synthèse — bon pour commande ?</div>'+
      '<div class="prop two">'+numProp("skTarget","Épaisseur visée",fmt(st.target,3),0.05,0.05)+
        '<div><label>Obtenue</label><input value="'+fmt(tot,3)+' mm" disabled></div></div>'+
@@ -424,10 +424,12 @@ function buildStackup(){
            'perçage.')+
        (S.vias.length?'<br>Vias <b>'+vc.through+'</b> traversant(s), <b>'+vc.blind+
           '</b> borgne(s), <b>'+vc.buried+'</b> enterré(s)'+
-          (vc.seq?' — dont <b class="warn">'+vc.seq+'</b> hors d\'un pressage '+
-                  'unique : le contrôle DRC dit lesquels et pourquoi.':'.')
+          (vc.seq?' — dont <b class="warn">'+vc.seq+'</b> '+
+                  (P.length?'qu\'aucun pressage déclaré ne permet':'hors d\'un pressage unique')+
+                  ' : le contrôle DRC dit lesquels et pourquoi.':'.')
         :'')+
      '</div>'+
+     stkHtmlPressages(P)+
      '<div class="prop"><div class="row">'+
        '<button class="tb" id="skFit"'+(hors?"":" disabled")+' title="'+
          (hors?"Met les diélectriques à l\'échelle pour atteindre l\'épaisseur visée."
@@ -545,6 +547,7 @@ function buildStackup(){
   }
   stkBindRugosite(bind,pick);
   stkBindModeles(bind,pick);
+  stkBindPressages(P);
   bind("skTarget",v=>{st.target=clamp(v,0.05,50);});
   pick("skFin",v=>{if(FINISHES.indexOf(v)>=0)st.finish=v;});
   /* le traitement des vias change le masque : il faut redessiner */
@@ -576,6 +579,52 @@ function buildStackup(){
     hint("Feuille d'empilage enregistrée dans empilage.txt.");
   };
   cpBrancherEmpilage();
+}
+/* ---------- laminage séquentiel ----------
+   La séquence de pressages (01-core.js, `pressNorm`) : on en ajoute une,
+   cuivre de / à, ou on en retire une ; une plage qui couperait une âme ou en
+   croiserait une autre est refusée plutôt que corrigée. */
+function stkHtmlPressages(P){
+  if(S.cu<3)return "";
+  const opt=d=>S.cuL.map((L,i)=>'<option value="'+i+'"'+(i===d?" selected":"")+'>'+
+    esc(cuId(i,S.cu))+'</option>').join("");
+  let h='<div class="cat">Pressages — laminage séquentiel</div>';
+  P.forEach((p,i)=>{
+    h+='<div class="prop"><div class="row">Pressage '+(i+1)+' : '+esc(pressNom(p))+
+       ' <button class="tb" id="skPrX'+i+'">Retirer</button></div></div>';
+  });
+  h+='<div class="prop two"><div><label>Du cuivre</label><select id="skPrA">'+opt(1)+
+     '</select></div><div><label>Au cuivre</label><select id="skPrB">'+opt(S.cu-2)+
+     '</select></div></div>'+
+     '<div class="prop"><div class="row"><button class="tb" id="skPrAdd">'+
+     'Ajouter un pressage</button></div></div>'+
+     '<div class="stkinfo">'+(P.length
+       ? '<b>'+(P.length+1)+'</b> pressages : '+esc(pressTxt(P))+'. Chaque âme est '+
+         'pressée d\'avance. Un via qu\'aucun pressage ne permet est une erreur au DRC.'
+       : 'Séquence non décrite : un seul pressage est supposé, et les vias qui en '+
+         'demandent plus restent des remarques au DRC. Décrire les pressages, de '+
+         'l\'intérieur vers l\'extérieur, en fait des erreurs.')+'</div>';
+  return h;
+}
+function stkBindPressages(P){
+  const fini=L=>{if(L.length)S.stack.press=L;else delete S.stack.press;touch();buildStackup();};
+  P.forEach((p,i)=>{
+    const x=$("skPrX"+i);
+    if(x)x.onclick=()=>{push();fini(P.filter((q,k)=>k!==i));
+      hint("Pressage "+pressNom(p)+" retiré.");};
+  });
+  const add=$("skPrAdd");
+  if(add)add.onclick=()=>{
+    const a=+$("skPrA").value, b=+$("skPrB").value;
+    const L=pressNorm(P.concat([{a:Math.min(a,b),b:Math.max(a,b)}]),S.cu,S.stack.di);
+    if(L.length===P.length){
+      hint("Pressage refusé : la carte entière, une plage déjà là, une âme coupée "+
+           "ou un autre pressage croisé.");
+      return;
+    }
+    push();fini(L);
+    hint("Pressage "+pressNom({a:Math.min(a,b),b:Math.max(a,b)})+" ajouté.");
+  };
 }
 /* ---------- rugosité du cuivre et modèles de simulation ----------
    La rugosité se saisit sur la ligne de cuivre, comme son épaisseur : c'est
@@ -2026,8 +2075,9 @@ function propsVia(box,v){
       esc(cuId(v.a,S.cu))+" → "+esc(cuId(v.b,S.cu))+" : "+esc(bd.why)+"."+
       /* `viaBuild` sait ce qu'un seul pressage permet ; le dire ici évite de
          découvrir le laminage séquentiel sur le devis. */
-      (bd.ok?"":' <span class="warn">Un seul pressage n\'y suffit pas : '+
-        'à valider avec le fabricant.</span>')+
+      (bd.ok?"":pressList().length?' <span class="warn">Aucun pressage déclaré '+
+        'ne le permet : erreur au DRC.</span>':' <span class="warn">Un seul pressage '+
+        'n\'y suffit pas : à valider avec le fabricant.</span>')+
       " Perçage de "+fmt(stackSpan(v.a,v.b),3)+" mm de long, rapport d'aspect "+
       fmt(stackSpan(v.a,v.b)/Math.max(0.01,v.drill),1)+" : 1"+
       (stackSpan(v.a,v.b)/Math.max(0.01,v.drill)>8

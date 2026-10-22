@@ -307,6 +307,8 @@ function viaBuild(a,b){
   if(b<a){const k=a;a=b;b=k;}
   const n=S.cu;
   if(a<=0&&b>=n-1)return {kind:"through",ok:true,why:"traversant"};
+  const P=pressList();
+  if(P.length)return viaBuildSeq(a,b,P);
   if(a===0||b===n-1){
     const outer=(a===0)?0:n-2;            // diélectrique extérieur franchi
     const depth=(a===0)?b:(n-1-a);
@@ -330,6 +332,51 @@ function viaBuild(a,b){
                 " : sans âme entre les deux couches, il faut un laminage séquentiel"};
   return {kind:"buried",ok:false,
           why:"enterré sur "+(b-a)+" diélectriques : un seul pressage n'y suffit pas"};
+}
+/* ---------- laminage séquentiel ----------
+   `S.stack.press` = [{a,b}, …], facultatif : les plages de cuivres (indices,
+   bornes comprises) pressées ensemble avant la suite, de l'intérieur vers
+   l'extérieur. Chaque âme est un sous-ensemble déjà pressé et la carte entière
+   le dernier pressage : ni l'une ni l'autre ne s'écrit. Le bord d'une plage ne
+   coupe pas une âme, et deux plages s'emboîtent ou s'ignorent, jamais ne se
+   croisent. Absente, `viaBuild` garde la règle d'un pressage unique. */
+function pressNorm(src,cu,di){
+  const out=[], core=i=>!!(di&&di[i]&&di[i].k==="core");
+  const num=v=>(typeof v==="number"||(typeof v==="string"&&v!==""))?+v:NaN;
+  for(const o of (Array.isArray(src)?src:[]).slice(0,32)){
+    if(!o||typeof o!=="object")continue;
+    const a=num(o.a), b=num(o.b);
+    if(!Number.isInteger(a)||!Number.isInteger(b)||a<0||b>cu-1||a>=b)continue;
+    if(a===0&&b===cu-1)continue;                       // la carte entière : implicite
+    if((a>0&&core(a-1))||(b<cu-1&&core(b)))continue;   // couperait une âme
+    const croise=p=>p.a<=b&&a<=p.b&&!(p.a<=a&&b<=p.b)&&!(a<=p.a&&p.b<=b);
+    if(out.some(p=>(p.a===a&&p.b===b)||croise(p)))continue;
+    out.push({a,b});
+  }
+  return out.sort((p,q)=>(p.b-p.a)-(q.b-q.a)||p.a-q.a);
+}
+/* les pressages déclarés, relus contre l'empilage du moment : une âme posée
+   depuis peut en avoir rendu un impossible */
+function pressList(){return S.stack?pressNorm(S.stack.press,S.cu,S.stack.di):[];}
+function pressNom(p){return "L"+(p.a+1)+"–L"+(p.b+1);}
+/* « L2–L5, puis la carte entière » */
+function pressTxt(P){return P.map(pressNom).concat(["puis la carte entière"]).join(", ");}
+/* La séquence décrite : perçage mécanique d'un sous-ensemble une fois pressé
+   (âme, plage déclarée, carte), ou micro-via laser qui ne franchit qu'un
+   prépreg ou un film depuis la surface d'un sous-ensemble. */
+function viaBuildSeq(a,b,P){
+  const n=S.cu, kind=(a===0||b===n-1)?"blind":"buried", k=diAt(a).k;
+  if(b===a+1&&k==="core")
+    return {kind,ok:true,why:"enterré dans le diélectrique "+(a+1)+", percé avant pressage"};
+  if(P.some(p=>p.a===a&&p.b===b))
+    return {kind,ok:true,why:"percé après le pressage "+pressNom({a,b})+", avant le suivant"};
+  if(b===a+1&&k!=="core"){
+    const p=P.concat([{a:0,b:n-1}]).find(p=>p.a===a||p.b===b);
+    if(p)return {kind,ok:true,why:"micro-via laser dans le "+DI_KIND[k].toLowerCase()+
+                 (p.a===0&&p.b===n-1?" extérieur":", depuis la surface du pressage "+pressNom(p))};
+  }
+  return {kind,ok:false,why:"aucun des pressages déclarés ("+pressTxt(P)+") ne laisse "+
+          "L"+(a+1)+" et L"+(b+1)+" à percer d'un même coup"};
 }
 /* ---------- la nature d'un via, telle qu'on la choisit ----------
    `viaBuild` dit ce qu'une portée VAUT une fois la carte pressée ; ce qui suit
@@ -639,6 +686,9 @@ function stackResize(n){
     if(old.cu[k].rug)d.cu[d.cu.length-1].rug=Object.assign({},old.cu[k].rug);
   }
   if(old.sim)d.sim=Object.assign({},old.sim);
+  /* les pressages qui tiennent encore dans la nouvelle pile restent */
+  const press=pressNorm(old.press,n,d.di);
+  if(press.length)d.press=press;
   S.stack=d;
   stackFit();
 }

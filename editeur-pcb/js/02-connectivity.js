@@ -1191,6 +1191,9 @@ function runDrc(){
      c'est la pile qui les décide, d'où leur place ici plutôt que dans le seul
      panneau d'empilage. Les entrées portent le via fautif, pour qu'un clic
      dans la liste le sélectionne. */
+  /* sans séquence décrite, un pressage unique est une hypothèse : la remarque
+     suffit ; décrite, un via qu'aucun pressage ne permet est une erreur */
+  const seqDecl=pressList().length>0;
   for(const v of S.vias){
     const len=stackSpan(v.a,v.b), r=aspectOf(len,v.drill);
     const dit=fmt(len,2)+" mm percés pour "+fmt(v.drill,2)+" mm";
@@ -1204,7 +1207,7 @@ function runDrc(){
             ") : au-delà de "+aspWarn()+" : 1 la métallisation du trou se paie"});
     const b=viaBuild(v.a,v.b);
     if(!b.ok)
-      out.push({info:true,via:v,x:v.x,y:v.y,l:v.a,
+      out.push({info:!seqDecl,via:v,x:v.x,y:v.y,l:v.a,
         msg:"Via "+cuId(v.a,S.cu)+" → "+cuId(v.b,S.cu)+" : "+b.why});
   }
   /* le contre-perçage qui ne peut pas se faire tel quel : il couperait le

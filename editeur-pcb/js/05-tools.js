@@ -347,6 +347,9 @@ function normStack(s,cu){
   /* options de modèle (diélectrique causal, modèle de via) : de même */
   const sim=simModelesNorm(src.sim);
   if(sim)out.sim=sim;
+  /* séquence de pressages (01-core.js) : de même */
+  const press=pressNorm(src.press,cu,out.di);
+  if(press.length)out.press=press;
   return out;
 }
 function normClass(c,i){

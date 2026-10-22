@@ -104,6 +104,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "stackCuT","stackDiT","stackSpan","stackFit","stackSym","stackMirror",
   "worstAspect","applyPreset","presetsFor","diCount","cuT","diAt","maskFaces",
   "stackAsym","asymLabel","viaBuild","viaCensus","aspectOf","viaTented",
+  "pressNorm","pressList","dfNotesFab",
   "VIA_FINISH","roleCheck","ASPECT_WARN","ASPECT_MAX",
   "umLabel","ozLabel","buildStackup","stackReport","padLayers","segPadDist","padPadDist",
   "normStack","stkPick","CU_ROLES","CU_ROLE_SHORT","rolePlane",
@@ -5456,6 +5457,93 @@ T("DRC : rapport d'aspect et faisabilité des vias",()=>{
   if(!fais[0].info)throw new Error("un laminage séquentiel est une remarque, pas une erreur");
   if(!/L1_Top → L3_Inner/.test(fais[0].msg))throw new Error("message : "+fais[0].msg);
   S.vias=[];touch();
+});
+/* Laminage séquentiel : la séquence de pressages décrite dans l'empilage
+   (S.stack.press) remplace l'hypothèse du pressage unique. 6 couches d'usine :
+   prépreg / âme / prépreg / âme / prépreg — L2–L5 pressé d'abord, puis la carte. */
+T("laminage séquentiel : pressages décrits, vias, DRC et sorties",()=>{
+  const save=serialize();
+  setCuCount(6);applyPreset(presetsFor(6)[0]);
+  S.fps=[];S.tracks=[];S.zones=[];S.cuts=[];S.vias=[];
+  const di=S.stack.di;
+  // validation : bornes, croisement, âme coupée, carte entière, doublon, chaînes
+  const nrm=L=>JSON.stringify(pressNorm(L,6,di));
+  if(nrm([{a:1,b:4}])!=='[{"a":1,"b":4}]')throw new Error("L2–L5 valide refusé : "+nrm([{a:1,b:4}]));
+  for(const bad of [[{a:-1,b:4}],[{a:1,b:6}],[{a:3,b:3}],[{a:4,b:1}],[{a:1.5,b:4}],
+                    [{a:0,b:5}],[{a:2,b:4}],[{a:1,b:3}],[{a:null,b:4}],[null],"x"])
+    if(nrm(bad)!=="[]")throw new Error("plage invalide acceptée : "+JSON.stringify(bad)+" → "+nrm(bad));
+  if(nrm([{a:"1",b:"4"}])!=='[{"a":1,"b":4}]')throw new Error("chaîne numérique mal lue");
+  if(nrm([{a:1,b:4},{a:1,b:4}])!=='[{"a":1,"b":4}]')throw new Error("doublon gardé");
+  // 8 couches : P/C/P/C/P/C/P — L2–L5 et L4–L7 se croisent, L2–L5 et L2–L7 s'emboîtent
+  const di8=stackDefaults(8).di;
+  if(JSON.stringify(pressNorm([{a:1,b:4},{a:3,b:6}],8,di8))!=='[{"a":1,"b":4}]')
+    throw new Error("plages croisées acceptées");
+  if(JSON.stringify(pressNorm([{a:1,b:6},{a:1,b:4}],8,di8))!=='[{"a":1,"b":4},{"a":1,"b":6}]')
+    throw new Error("plages emboîtées : rangées de l'intérieur vers l'extérieur attendues");
+  // sans séquence : la règle d'aujourd'hui, une remarque au DRC
+  S.vias=[{x:10,y:10,d:0.6,drill:0.3,a:1,b:4,net:"GND"}];touch();
+  if(viaBuild(1,4).ok)throw new Error("sans pressage décrit, L2–L5 reste hors d'un pressage unique");
+  let f=runDrc().filter(x=>/^Via /.test(x.msg));
+  if(f.length!==1||!f[0].info)throw new Error("sans séquence : une remarque attendue");
+  // avec la séquence
+  S.stack.press=[{a:1,b:4}];touch();
+  const bur=viaBuild(1,4);
+  if(!bur.ok||bur.kind!=="buried"||!/pressage L2–L5/.test(bur.why))
+    throw new Error("L2–L5 se perce après son pressage : "+JSON.stringify(bur));
+  const las=viaBuild(0,1);
+  if(!las.ok||las.kind!=="blind")throw new Error("L1–L2 au laser : "+las.why);
+  if(!viaBuild(1,2).ok)throw new Error("une âme se perce avant pressage");
+  if(viaBuild(0,2).ok)throw new Error("L1–L3 : aucun pressage ne le permet");
+  if(viaBuild(2,3).ok)throw new Error("L3–L4 : ni âme ni surface de pressage");
+  if(!/pressage/.test(viaBuild(0,2).why))throw new Error("le pourquoi doit nommer les pressages");
+  if(JSON.stringify(viaBuild(2,0))!==JSON.stringify(viaBuild(0,2)))throw new Error("viaBuild symétrique");
+  f=runDrc().filter(x=>/^Via /.test(x.msg));
+  if(f.length)throw new Error("L2–L5 pressé : plus rien à signaler, "+f.map(x=>x.msg));
+  S.vias.push({x:20,y:10,d:0.6,drill:0.3,a:0,b:2,net:"GND"});touch();
+  f=runDrc().filter(x=>/^Via /.test(x.msg));
+  if(f.length!==1||f[0].info||f[0].via!==S.vias[1])
+    throw new Error("séquence décrite : une erreur sur L1–L3 attendue, "+JSON.stringify(f.map(x=>[x.msg,x.info])));
+  // sorties
+  const rep=stackReport();
+  if(rep.indexOf("Laminage sequentiel, 2 pressages : L2-L5, puis la carte entiere.")<0)
+    throw new Error("la feuille d'empilage doit donner la séquence");
+  if(rep.indexOf("qu'aucun pressage declare ne permet")<0)throw new Error("feuille : via fautif");
+  if(!dfNotesFab({cfg:{}}).some(n=>/2 pressages : L2–L5, puis la carte entière/.test(n.texte)))
+    throw new Error("notes Draftsman : séquence absente");
+  const md=buildFabFiles().files.find(x=>/MASTER-DRAWING\.pdf$/.test(x.name));
+  const txt=Buffer.from(md.data).toString("latin1");
+  if(txt.indexOf("2 pressings")<0||txt.indexOf("Lamination sequence: L2-L5, then full board.")<0)
+    throw new Error("plan maître : séquence absente");
+  if(txt.indexOf("A VALIDER")>=0)throw new Error("plan maître : « A VALIDER » malgré la séquence");
+  const lu=[].concat(LECTURE_CAO.pcb.empilage.fn({})).join("\n");
+  if(lu.indexOf('2 pressages : L2–L5, puis la carte entière (stack.press [{"a":1,"b":4}])')<0)
+    throw new Error("lecture MCP : séquence absente : "+lu);
+  // panneau : la liste, retirer puis ajouter, une étape d'annulation chacun
+  buildStackup();
+  if(!$("skPrX0")||!$("skPrAdd"))throw new Error("liste des pressages absente du panneau");
+  $("skPrX0").onclick();
+  if(S.stack.press)throw new Error("pressage non retiré");
+  undo();
+  if(JSON.stringify(S.stack.press)!=='[{"a":1,"b":4}]')throw new Error("annuler doit rendre le pressage");
+  buildStackup();
+  $("skPrA").value="2";$("skPrB").value="4";$("skPrAdd").onclick();
+  if(JSON.stringify(S.stack.press)!=='[{"a":1,"b":4}]')throw new Error("une âme coupée refusée");
+  $("skPrA").value="4";$("skPrB").value="1";$("skPrAdd").onclick();
+  if(JSON.stringify(S.stack.press)!=='[{"a":1,"b":4}]')throw new Error("doublon refusé");
+  // aller-retour du document, plage invalide écartée au chargement
+  const doc=JSON.parse(serialize());
+  doc.stack.press.push({a:3,b:5},{a:0,b:2});
+  loadDoc(doc,true);
+  if(JSON.stringify(S.stack.press)!=='[{"a":1,"b":4}]')
+    throw new Error("relu : "+JSON.stringify(S.stack.press));
+  // changer le nombre de couches : ce qui ne tient plus part
+  setCuCount(8);
+  if(JSON.stringify(S.stack.press)!=='[{"a":1,"b":4}]')throw new Error("8 couches : L2–L5 tient encore");
+  setCuCount(4);
+  if(S.stack.press)throw new Error("4 couches : L2–L5 ne tient plus");
+  // sans séquence, le document ne l'écrit pas
+  if("press" in JSON.parse(serialize()).stack)throw new Error("press écrit sans séquence");
+  loadDoc(JSON.parse(save),true);
 });
 T("DRC : le rôle annoncé contre le cuivre posé",()=>{
   setCuCount(4);applyPreset(presetsFor(4)[0]);

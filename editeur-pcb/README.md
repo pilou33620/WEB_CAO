@@ -386,6 +386,32 @@ dans le prépreg extérieur, au laser », « enterré dans le diélectrique 2, p
 avant pressage » — et prévient quand un seul pressage n'y suffit pas. Un
 laminage séquentiel se découvre sinon sur le devis.
 
+### Laminage séquentiel : la séquence de pressages
+
+Sous la synthèse du panneau *Empilage physique*, la liste **Pressages** décrit
+une carte pressée en plusieurs fois : chaque pressage est une plage de cuivres
+(« du cuivre / au cuivre ») pressés ensemble avant la suite. On en ajoute un ou
+on en retire un, une étape d'annulation chacun. Chaque âme est un sous-ensemble
+déjà pressé et la carte entière le dernier pressage : ni l'une ni l'autre ne
+s'écrit. Une plage qui couperait une âme (son bord tombe entre deux cuivres
+d'une âme) ou en croiserait une autre (elles s'emboîtent ou s'ignorent) est
+refusée, au panneau comme au chargement.
+
+```
+stack.press   [{a:1, b:4}, …]   indices de cuivre, bornes comprises,   si décrite
+```
+
+Non décrite, rien ne change : `viaBuild()` suppose un pressage unique et le
+DRC n'en fait qu'une remarque. Décrite, `viaBuildSeq()` (`js/01-core.js`) la
+suit : un via se perce mécaniquement après le pressage dont il relie les deux
+faces (âme : avant pressage ; carte : traversant), ou au laser s'il ne franchit
+qu'un prépreg ou un film depuis la surface d'un pressage. Un via qu'aucun
+pressage ne permet devient alors une **erreur** DRC, et le pourquoi nomme la
+séquence. Le nombre de pressages (les déclarés plus la carte) et leurs plages
+partent dans la feuille d'empilage, le plan maître (« Sequential lamination »),
+les notes de fabrication Draftsman et la lecture `empilage` du canal de
+pilotage. L'IPC-2581 garde un seul `StackupGroup`.
+
 La liste vaut pour **toute une sélection** : cinq vias pris au `Ctrl+clic`
 passent en borgne dessus d'un seul choix, par le panneau de groupes (voir
 [Sélection multiple](#sélection-multiple-et-presse-papier)).
@@ -3339,7 +3365,8 @@ Deux contrôles ne se voient pas sur le dessin, seulement dans la pile :
   avant pressage) ou un via borgne dans le diélectrique extérieur (au laser).
   Tout le reste demande un laminage séquentiel : `viaBuild()` le dit et
   explique pourquoi, en remarque et non en erreur — c'est faisable, mais c'est
-  un autre prix.
+  un autre prix. Quand la séquence de pressages est décrite (`stack.press`),
+  un via qu'aucun pressage ne permet est une erreur.
 
 S'y ajoute une confrontation du rôle annoncé au cuivre réellement posé : un plan
 qui porte des pistes, une couche de signal sous une zone pleine carte, une
@@ -3613,6 +3640,8 @@ désactive au lieu de disparaître.
 - Pas de sauvegarde automatique sur disque. Le travail tient dans l'onglet
   tant qu'il est ouvert (voir plus haut), mais fermer l'onglet sans
   « Enregistrer .json » le perd.
-- Le contrôle des vias borgnes et enterrés suppose un pressage unique. Un
-  empilage à laminage séquentiel est signalé comme tel, mais sa séquence ne se
-  décrit pas : il n'y a qu'une liste de diélectriques, pas de sous-ensembles.
+- Laminage séquentiel : le chercheur de chemin (`cao_chemin`) et la pose de
+  vias ne consultent pas `viaBuild()`, ils peuvent poser un via que la séquence
+  décrite ne permet pas — le DRC le dit. Une portée se juge d'un seul perçage :
+  pas de micro-vias empilés ou décalés sur plusieurs pressages. L'IPC-2581 ne
+  porte qu'un `StackupGroup`, la séquence n'y figure pas.

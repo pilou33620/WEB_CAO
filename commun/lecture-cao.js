@@ -43,6 +43,9 @@ const LECTURE_CAO = (function() {
             L.push("- " + d.k + " " + d.mat + " : " + d.t + " mm, εr " + d.er + ", tan δ " + d.df);
           }
         }
+        /* séquence de pressages (stack.press) : écrite seulement si elle est décrite */
+        const P = pressList();
+        if (P.length) L.push("Laminage séquentiel, " + (P.length + 1) + " pressages : " + pressTxt(P) + " (stack.press " + JSON.stringify(P) + ").");
         return L;
       }
     },

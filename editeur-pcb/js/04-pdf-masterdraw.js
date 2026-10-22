@@ -622,18 +622,26 @@ function masterDrawingPdf(fabFiles){
   y+=MD_LH*1.2;
 
   section("Via summary");
-  const vc=viaCensus();
+  const vc=viaCensus(), P=pressList();
   twoCol([
     ["Through vias",String(vc.through)],
     ["Blind vias",String(vc.blind)],
     ["Buried vias",String(vc.buried)],
   ],[
     ["Total vias",String(S.vias.length)],
-    ["Sequential lamination",vc.seq?vc.seq+" via(s) - A VALIDER":"Not required"],
+    ["Sequential lamination",P.length?(P.length+1)+" pressings"
+      :(vc.seq?vc.seq+" via(s) - A VALIDER":"Not required")],
   ]);
+  /* la séquence décrite (01-core.js, `pressList`) : de l'intérieur vers l'extérieur */
+  if(P.length){
+    mdText(L,"Lamination sequence: "+P.map(p=>"L"+(p.a+1)+"-L"+(p.b+1)).join(", ")
+            +", then full board.",MD_ML+2,y,7);
+    y+=MD_LH;
+  }
   if(vc.seq){
-    mdText(L,"Warning: "+vc.seq+" via(s) require sequential lamination — "
-            +"validate with manufacturer.",MD_ML+2,y,7,false,0.1);
+    mdText(L,"Warning: "+vc.seq+" via(s) "+(P.length?"not buildable with the declared "
+            +"lamination sequence.":"require sequential lamination — "
+            +"validate with manufacturer."),MD_ML+2,y,7,false,0.1);
     y+=MD_LH;
   }
   y+=MD_LH*0.4;

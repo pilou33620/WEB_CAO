@@ -781,7 +781,7 @@ function dfPortee(e){
 function dfNotesFab(ctx){
   const st=S.stack, base=fabBase();
   const mat=(st.di&&st.di[0]&&st.di[0].mat)||"FR-4";
-  const vc=viaCensus();
+  const vc=viaCensus(), P=pressList();
   const notes=[
     "Fabriquer selon IPC-6012, classe 2 ; contrôle d'aspect selon IPC-A-600, classe 2.",
     "Matériau : "+mat+", Tg ≥ "+(st.tg||150)+" °C, UL 94 V-0, conforme RoHS.",
@@ -789,7 +789,8 @@ function dfNotesFab(ctx){
       "cuivre extérieur "+ozLabel(cuT(0))+" — voir la coupe d'empilage.",
     "Finition : "+(st.finish||"ENIG")+". Vernis épargne "+(st.maskColor||"vert")+
       " deux faces (IPC-SM-840), sérigraphie "+(st.silkColor||"blanc")+".",
-    "Vias : "+viaFinishLabel()+(vc.blind||vc.buried?" ; vias borgnes / enterrés : laminage à valider avec le fabricant.":"."),
+    "Vias : "+viaFinishLabel()+(P.length?" ; laminage séquentiel en "+(P.length+1)+" pressages : "+pressTxt(P)+".":
+      (vc.blind||vc.buried?" ; vias borgnes / enterrés : laminage à valider avec le fabricant.":".")),
     "Diamètres de perçage FINIS, après métallisation ; tolérance ± 0,08 mm (métallisés), ± 0,05 mm (non métallisés).",
     "Le contour est défini par le fichier "+base+".GM1 ; tolérance de détourage ± 0,15 mm.",
     "Test électrique 100 % d'après la netlist "+base+".ipc (IPC-D-356).",

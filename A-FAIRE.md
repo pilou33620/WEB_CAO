@@ -45,9 +45,16 @@ Les limites connues des guides qui restent à coder (22/10/2026) :
   d'arc pour les zones.
 - [ ] **Sauvegarde automatique sur disque** : le travail tient dans l'onglet, un
   avertissement part à la fermeture, mais sans « Enregistrer .json » il est perdu.
-- [ ] **Laminage séquentiel** : un empilage à pressages successifs est signalé, mais sa
-  séquence ne se décrit pas (une seule liste de diélectriques, pas de sous-ensembles) ;
-  le contrôle des vias borgnes et enterrés suppose un pressage unique.
+- [x] **Laminage séquentiel** (22/10/2026) : la séquence de pressages se décrit dans
+  l'empilage (`S.stack.press`, plages de cuivres pressées ensemble, de l'intérieur vers
+  l'extérieur ; liste « Pressages » du panneau Empilage physique). Décrite, `viaBuild` la
+  suit (perçage mécanique d'un sous-ensemble pressé, micro-via laser depuis sa surface) et
+  un via qu'aucun pressage ne permet devient une erreur DRC ; non décrite, rien ne change
+  (remarque). La séquence part dans la feuille d'empilage, le plan maître, les notes de
+  fabrication Draftsman et la lecture MCP `empilage` ; l'IPC-2581 garde un seul
+  StackupGroup. Reste : le chercheur de chemin (`cao_chemin`) et la pose de vias ne
+  consultent pas `viaBuild`, ils peuvent poser un via que la séquence ne permet pas (le DRC
+  le dit) ; pas de micro-via empilé ou décalé sur plusieurs pressages en une portée.
 - [ ] **Vue de détail sur une autre feuille** (plans Draftsman) : elle ne se pose
   aujourd'hui que sur la feuille de sa vue mère.
 

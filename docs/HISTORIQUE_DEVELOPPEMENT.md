@@ -2908,6 +2908,13 @@ Au fur et à mesure qu'un circuit grossit, empiler des feuilles à plat dans une
 - Zones et découpes de cuivre : `gRegionArcs` (`04-fabrication.js`) écrit leur contour en G02/G03 dans la région `G36` quand `dxfSegments` y retrouve des arcs assez fins (`gArcsFins`), la région refermée exactement sur son départ ; à l'IPC-2581, les îlots de zone et leurs trous passent par `contourArcs(P, true)` (les dégagements ronds circonscrits en profitent : ils s'élargissent de la flèche, jamais ne rétrécissent). Les polygones restent des listes de points en interne.
 - Essais (`harness.js`) : règle arrondi (L, coude 45°, deux coudes, tangence, DRC, rayon réduit ou coude laissé devant un obstacle), `cao_router` en règle arrondi, zone et découpe rondes en arcs au Gerber et à l'IPC, zone rectangulaire en droites ; le compte d'arcs de `exemple-0-arrondi.xml` passe de 12 à 16 (deux dégagements ronds de la zone du dessous).
 
+### Laminage séquentiel — 2026-10-22 [FAIT]
+
+- `S.stack.press` = `[{a,b}, …]`, facultatif : plages de cuivres (bornes comprises) pressées ensemble, de l'intérieur vers l'extérieur ; chaque âme et la carte entière sont des pressages implicites, non écrits. `pressNorm` (`01-core.js`) les valide au chargement (`normStack`), au changement du nombre de couches (`stackResize`) et à chaque lecture (`pressList`, contre l'empilage du moment) : entiers, 0 ≤ a < b ≤ n − 1, pas la carte entière, pas de bord qui coupe une âme, emboîtées ou disjointes ; le reste est écarté.
+- `viaBuild` : sans séquence, la règle du pressage unique telle quelle. Avec, `viaBuildSeq` : perçage mécanique d'un sous-ensemble pressé (âme, plage, carte) ou micro-via laser franchissant un prépreg ou un film depuis la surface d'un pressage ; sinon refus, le pourquoi nomme la séquence. Le DRC en fait une erreur (une remarque sans séquence).
+- Panneau *Empilage physique* : liste « Pressages » (ajouter du cuivre / au cuivre, retirer ; une étape d'annulation chacun, une plage refusée le dit). Sorties : feuille d'empilage, plan maître (nombre de pressages et plages au lieu de « A VALIDER »), notes Draftsman, lecture MCP `empilage`. IPC-2581 inchangé (un seul `StackupGroup`).
+- Essais (`harness.js`, 1 essai) : validation (bornes, croisement, âme coupée, doublon), 6 couches pressées L2–L5 (L2–L5 mécanique, L1–L2 laser, L1–L3 et L3–L4 refusés), DRC remarque / erreur, sorties, panneau et annulation, aller-retour du document, `stackResize` 6 → 8 → 4 couches.
+
 ---
 
 # Carnet de route jusqu'au 22/10/2026 (ancien `A-FAIRE.md`)

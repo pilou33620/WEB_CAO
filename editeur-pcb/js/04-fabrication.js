@@ -971,11 +971,13 @@ function stackReport(){
   if(a)L.push("Rapport d'aspect le plus defavorable : "+fmt(a.ratio,1)+
               " pour 1 (percage "+fmt(a.drill,2)+" mm sur "+fmt(a.len,2)+" mm)"+
               (a.ratio>aspWarn()?", au-dela de "+aspWarn()+" pour 1.":"."));
-  const vc=viaCensus();
+  const vc=viaCensus(), P=pressList();
+  if(P.length)L.push("Laminage sequentiel, "+(P.length+1)+" pressages : "+noAcc(pressTxt(P))+".");
   if(S.vias.length){
     L.push("Vias : "+vc.through+" traversant(s), "+vc.blind+" borgne(s), "+
            vc.buried+" enterre(s)"+
-           (vc.seq?" dont "+vc.seq+" hors d'un pressage unique :":"."));
+           (vc.seq?" dont "+vc.seq+(P.length?" qu'aucun pressage declare ne permet :"
+                                           :" hors d'un pressage unique :"):"."));
     for(const v of S.vias){
       const b=viaBuild(v.a,v.b);
       if(!b.ok)L.push("  "+cuId(v.a,S.cu)+" vers "+cuId(v.b,S.cu)+" : "+noAcc(b.why));
