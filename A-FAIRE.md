@@ -36,9 +36,13 @@ une rugosité de Huray par face du feuillard (écart faible, données rarement p
 
 Les limites connues des guides qui restent à coder (22/10/2026) :
 
-- [ ] **Arcs posés par le routeur** : les pistes circulaires venues d'un fichier se
-  montrent, se mesurent et partent en Gerber, mais le routeur ne trace que des segments ;
-  zones de cuivre, coupes et contour de carte restent des polygones.
+- [x] **Arcs posés par le routeur** (22/10/2026) : nouvelle règle d'angle « arrondi »
+  (`S.rule.corner = "arc"`) : au dépôt, un arc tangent à chaque coude, 90° comme 45°, au
+  rayon borné à 4 largeurs, resserré devant le cuivre pris dans le coude (`mitreAt(…, arc)`,
+  `chamferPosed`) ; `cao_router` la garde. Les zones et les découpes de cuivre rondes partent
+  en arcs au Gerber (G02/G03 dans la région) et à l'IPC-2581 (`<PolyStepCurve>`), comme le
+  contour de carte. Reste : les polygones sont toujours des points en interne, pas d'outil
+  d'arc pour les zones.
 - [ ] **Sauvegarde automatique sur disque** : le travail tient dans l'onglet, un
   avertissement part à la fermeture, mais sans « Enregistrer .json » il est perdu.
 - [ ] **Laminage séquentiel** : un empilage à pressages successifs est signalé, mais sa

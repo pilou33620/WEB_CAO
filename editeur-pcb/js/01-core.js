@@ -98,9 +98,10 @@ function segDist(px,py,x1,y1,x2,y2){
    Ce que ça sert : une antenne NFC ronde, une boucle d'accord, un coude
    adouci. C'est toujours la même chose — quelques arcs bout à bout, chacun
    rangé comme une piste de plus, avec sa couche, sa largeur et son net. Le
-   routeur, lui, n'en pose pas : il ne sait faire que du 45°. Les arcs
-   arrivent d'un fichier, et l'éditeur doit savoir les montrer, les mesurer,
-   les contrôler et les sortir en Gerber sans les redresser au passage. */
+   routeur ne trace que du 45° ; en règle d'angle « arrondi », il pose au dépôt
+   un arc tangent à chaque coude (`mitreAt`). Les autres arcs arrivent d'un
+   fichier, et l'éditeur doit savoir les montrer, les mesurer, les contrôler
+   et les sortir en Gerber sans les redresser au passage. */
 const ARC_MIN=1e-4;              // en deçà, l'arc ne se distingue plus de sa corde
 const ARC_MAX=r4(2*Math.PI-1e-3);// un tour complet n'a pas de corde ; arrondi
                                  // comme l'angle enregistré, pour qu'un angle

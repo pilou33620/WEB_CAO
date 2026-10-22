@@ -2901,6 +2901,13 @@ Au fur et à mesure qu'un circuit grossit, empiler des feuilles à plat dans une
 - Mode interactif `meander` activé via le bouton de la barre d'outils `mMeander` ou le raccourci clavier `M`.
 - Prévisualisation dynamique sur canevas avec badge de delta de longueur (`+X.XX mm`) et application avec annulation Ctrl+Z.
 
+### Arcs posés par le routeur — 2026-10-22 [FAIT]
+
+- Règle d'angle « arrondi » (`CORNER_MODES.arc`, panneau *Règles de tracé*, 4ᵉ case de la figure) : le tracé reste celui du 45° ; au dépôt, `chamferPosed` appelle `mitreAt(l, x, y, false, MITRE_AUTO, true)`, qui recule les deux jambes de L = r·tan(θ/2) et pose une piste arc (`ca` = ±θ, signe vérifié contre `arcOf`) tangente aux deux, pour tout angle de virage (90° de deux clics, 45° du routeur). Rayon borné à `MITRE_AUTO` = 4 largeurs, resserré d'une largeur à la fois tant que les cordes de l'arc (`trkSegs`) gênent (`firstObstacle`), sans écharde laissée sur les jambes ; sans place, le coude reste franc.
+- `cao_router` (`37-routage-pilote.js`) ne force plus 45° quand la règle est « arrondi » ; l'aperçu de la carte dessine les arcs (`trkPath`).
+- Zones et découpes de cuivre : `gRegionArcs` (`04-fabrication.js`) écrit leur contour en G02/G03 dans la région `G36` quand `dxfSegments` y retrouve des arcs assez fins (`gArcsFins`), la région refermée exactement sur son départ ; à l'IPC-2581, les îlots de zone et leurs trous passent par `contourArcs(P, true)` (les dégagements ronds circonscrits en profitent : ils s'élargissent de la flèche, jamais ne rétrécissent). Les polygones restent des listes de points en interne.
+- Essais (`harness.js`) : règle arrondi (L, coude 45°, deux coudes, tangence, DRC, rayon réduit ou coude laissé devant un obstacle), `cao_router` en règle arrondi, zone et découpe rondes en arcs au Gerber et à l'IPC, zone rectangulaire en droites ; le compte d'arcs de `exemple-0-arrondi.xml` passe de 12 à 16 (deux dégagements ronds de la zone du dessous).
+
 ---
 
 # Carnet de route jusqu'au 22/10/2026 (ancien `A-FAIRE.md`)

@@ -578,11 +578,13 @@ function ipc2581Document(opts){
      les reconnaît — c'est lui qui les rend en ARC au DXF — et elles partent
      ici en <PolyStepCurve>, sur le cercle qui passe exactement par les
      sommets : le contour reste fermé, la fraise suit un rayon. Rend aussi le
-     nombre d'arcs écrits. */
-  const contourArcs=P0=>{
+     nombre d'arcs écrits. `fins` : le cuivre (zones, découpes) ne prend
+     l'arc que si ses cordes en sont très proches, comme au Gerber
+     (`gArcsFins`) — le remplissage a été mesuré sur les cordes. */
+  const contourArcs=(P0,fins)=>{
     const Q=P0.map(p=>({x:p.x-o.x,y:o.y-p.y}));
     const segs=typeof dxfSegments==="function"?dxfSegments(Q):[];
-    if(!segs.some(s=>s.t==="a"))return {k:poly(P0,null),arcs:0};
+    if(!segs.some(s=>s.t==="a")||(fins&&!gArcsFins(Q,segs)))return {k:poly(P0,null),arcs:0};
     /* un arc y est rangé dans le sens trigonométrique, de a1 à a2 : le sens
        du parcours se lit au point d'où l'on arrive. On part donc d'un
        segment droit ; une carte ronde, qui n'en a pas, se parcourt dans le
@@ -1027,8 +1029,14 @@ function ipc2581Document(opts){
     const r=ipcRemplir(z), nt=net(z.net);
     stats.zones++;
     if(r.approx)stats.approx++;
+    /* les îlots, arcs gardés : leurs sommets sont ceux de la zone et des
+       découpes (le booléen n'ajoute que les croisements), une zone ronde y
+       reste une suite de cordes égales */
+    const arcs=P=>contourArcs(P,true).k;
     for(const il of r.ilots){
-      set(cuN[z.l],"Z|"+(nt||""),[["net",nt],["netPair",netPair(z.net)]]).push(["Features",[],[contour(il.o,il.t)]]);
+      const k=arcs(il.o);k.push(["FillDesc",[["fillProperty","FILL"]]]);
+      set(cuN[z.l],"Z|"+(nt||""),[["net",nt],["netPair",netPair(z.net)]]).push(["Features",[],[["Contour",[],
+        [["Polygon",[],k]].concat((il.t||[]).map(t=>["Cutout",[],arcs(t)]))]]]);
       stats.ilots++;
     }
   }

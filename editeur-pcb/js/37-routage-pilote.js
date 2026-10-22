@@ -37,11 +37,11 @@ function routageApercuDessiner(c){
   c.lineCap = "round"; c.globalAlpha = 0.9; c.setLineDash([px(5), px(3)]);
   for(const t of A.pistes){
     c.strokeStyle = layerColor(t.l); c.lineWidth = t.w;
-    c.beginPath(); c.moveTo(t.x1, t.y1); c.lineTo(t.x2, t.y2); c.stroke();
+    c.beginPath(); trkPath(c, t); c.stroke();
   }
   // le cuivre existant que la poussée déplace ou retire, en rouge : on voit aussi ce qui part
   c.strokeStyle = C_ERR;
-  for(const t of A.retirees || []){ c.lineWidth = t.w; c.beginPath(); c.moveTo(t.x1, t.y1); c.lineTo(t.x2, t.y2); c.stroke(); }
+  for(const t of A.retirees || []){ c.lineWidth = t.w; c.beginPath(); trkPath(c, t); c.stroke(); }
   c.setLineDash([]); c.fillStyle = C_SEL;
   for(const v of A.vias){ c.beginPath(); c.arc(v.x, v.y, v.d / 2, 0, Math.PI * 2); c.fill(); }
   // les empreintes qu'un placement déplace : leur nouvelle place en pointillés, et le trajet depuis l'ancienne
@@ -288,7 +288,7 @@ function routageJouerRoutes(a){
   if(total > ROUTAGE_POINTS_LOT) throw new Error(ROUTAGE_POINTS_LOT + " points de passage au plus par carte (" + total + " donnés).");
   if(a.mode != null && a.mode !== "pousser" && a.mode !== "contourner") throw new Error("« mode » : pousser ou contourner.");
   S.rule.route = a.mode === "contourner" ? "walk" : "shove";   // remis avec le document après la simulation
-  S.rule.corner = "45";
+  if(S.rule.corner !== "arc") S.rule.corner = "45";   // l'arrondi réglé se garde : arcs posés aux coudes
   const lignes = [];
   routes.forEach((r, k) => {
     const res = routageHorsBudget() ? {ok:false, raison:"temps du lot épuisé (" + ROUTAGE_BUDGET_MS / 1000 + " s) : repropose-la dans une autre carte"}

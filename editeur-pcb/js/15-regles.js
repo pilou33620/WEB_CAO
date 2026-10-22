@@ -360,15 +360,16 @@ function figWidth(){
   return reFig(inner,"Largeur d'une piste de la classe "+c.name,
     "Largeur imposée par la classe · "+fmt(c.w,3)+" mm");
 }
-/* Angle des pistes : les trois conduites, celle qui vaut en pleine lumière. */
+/* Angle des pistes : les quatre conduites, celle qui vaut en pleine lumière. */
 function figAngle(){
   const m=cornerMode();
   const cell=[["45","M14 96 V56 L44 26 H100"],
               ["90","M14 96 V26 H100"],
-              ["free","M14 96 L100 34"]];
+              ["free","M14 96 L100 34"],
+              ["arc","M14 96 V60 A34 34 0 0 1 48 26 H100"]];
   let inner="";
   cell.forEach(([k,d],i)=>{
-    const on=(k===m), dx=8+i*116;
+    const on=(k===m), dx=-6+i*88;
     inner+='<g transform="translate('+dx+',10)">'+
       rePath(d,12,activeColor(),on?"1":".22")+
       (on?reLbl(57,124,CORNER_MODES[k],"middle")

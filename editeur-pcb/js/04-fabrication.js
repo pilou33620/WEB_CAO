@@ -277,6 +277,35 @@ function gRegion(body,pts){
   body.push(gXY(pts[0].x,pts[0].y)+"D01*");
   body.push("G37*");
 }
+/* Une zone ou une découpe de cuivre, arcs gardés. Le modèle n'en range que
+   les sommets : une zone ronde y est une suite de cordes égales, que l'on
+   reconnaît comme au contour de carte (`dxfSegments`, `edgeSegs`) et à la
+   même finesse (`gArcsFins`) — le cuivre écrit reste celui que le DRC a
+   mesuré. Dans une région, le tracé doit être continu : le sens d'un arc se
+   lit au point d'où l'on arrive, comme à l'IPC-2581 (`contourArcs`), et le
+   dernier pas retombe exactement sur le départ, la région restant fermée. */
+function gRegionArcs(body,pts){
+  const Q=pts.map(p=>({x:p.x,y:-p.y})), segs=pts.length>=3?dxfSegments(Q):[];
+  if(!segs.some(s=>s.t==="a")||!gArcsFins(Q,segs)){gRegion(body,pts);return;}
+  const pt=(s,a)=>({x:s.c.x+s.r*Math.cos(a*Math.PI/180),y:s.c.y+s.r*Math.sin(a*Math.PI/180)});
+  const i0=Math.max(0,segs.findIndex(s=>s.t==="l"));
+  const L=segs.slice(i0).concat(segs.slice(0,i0));
+  const dep=L[0].t==="l"?L[0].a:(signedArea(Q)>0?pt(L[0],L[0].a1):pt(L[0],L[0].a2));
+  let cur=dep;
+  body.push("G36*");
+  body.push(gXY(dep.x,-dep.y)+"D02*");
+  body.push("G75*");
+  L.forEach((s,k)=>{
+    if(s.t==="l"){cur=s.b;body.push(gXY(cur.x,-cur.y)+"D01*");return;}
+    const p1=pt(s,s.a1), p2=pt(s,s.a2);
+    const cw=Math.hypot(p2.x-cur.x,p2.y-cur.y)<Math.hypot(p1.x-cur.x,p1.y-cur.y);
+    const to=k===L.length-1?dep:(cw?p1:p2);
+    body.push((cw?"G02":"G03")+gXY(to.x,-to.y)+"I"+gNum(s.c.x-cur.x)+"J"+gNum(s.c.y-cur.y)+"D01*");
+    cur=to;
+  });
+  body.push("G01*");
+  body.push("G37*");
+}
 function gPad(body,A,q,grow){
   if(q.shape==="poly"||q.shape==="chamfer"){
     gRegion(body,padWorldPts(q,grow));
@@ -345,7 +374,7 @@ function gerberCopper(i){
   const zs=S.zones.filter(z=>z.l===i&&z.pts.length>=3);
   const b=S.board, m=S.rule.edge;
   if(zs.length){
-    for(const z of zs)gRegion(body,z.pts);
+    for(const z of zs)gRegionArcs(body,z.pts);
     /* hors carte : on rogne comme à l'écran, contour libre compris */
     body.push("%LPC*%");
     let zx1=1e9,zy1=1e9,zx2=-1e9,zy2=-1e9;
@@ -357,7 +386,7 @@ function gerberCopper(i){
     zx1-=1;zy1-=1;zx2+=1;zy2+=1;
     gOutside(body,A,zx1,zy1,zx2,zy2);
     for(const ct of S.cuts){
-      if(ct.l===i&&ct.pts.length>=3)gRegion(body,ct.pts);
+      if(ct.l===i&&ct.pts.length>=3)gRegionArcs(body,ct.pts);
     }
     for(const P of zoneLanieres(i))gRegion(body,P);   // cuivre plus étroit que cuMin entre deux dégagements
     /* les trous du cuivre d'une zone importée, tels que le fabricant les a */

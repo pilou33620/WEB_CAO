@@ -6025,6 +6025,70 @@ T("le routeur en règle 45° ne laisse pas d'angle droit",()=>{
   setCornerMode("45");
   S.avoid=true;
 });
+/* La règle « arrondi » : le tracé du 45°, puis au dépôt un arc tangent à
+   chaque coude — l'angle droit de deux clics comme le coude à 45° du routeur.
+   Les bouts de l'arc sont ceux des jambes reculées : rien ne se décroche. */
+T("règle arrondi : un arc tangent à chaque coude, raccordé aux deux droites",()=>{
+  const trace=pts=>{
+    S.fps=[];S.tracks=[];S.vias=[];S.zones=[];touch();clearSel();
+    S.avoid=false;setMode("track");S.active=0;
+    startRoute(pts[0].x,pts[0].y,true);
+    for(const p of pts.slice(1)){updateRoute(p.x,p.y);stepRoute();}
+    if(S.route)commitRoute();
+    setMode("select");
+  };
+  const verifie=(nom,coudes)=>{
+    const arcs=S.tracks.filter(isArc);
+    if(arcs.length!==coudes.length)throw new Error(nom+" : "+coudes.length+" arc(s) attendu(s), "+arcs.length+" — "+
+      JSON.stringify(S.tracks.map(t=>[t.x1,t.y1,t.x2,t.y2,t.ca])));
+    arcs.forEach((a,i)=>{
+      const A=arcOf(a);
+      if(Math.abs(Math.abs(a.ca)-coudes[i]*Math.PI/180)>1e-3)throw new Error(nom+" : arc de "+a.ca+" rad pour un coude de "+coudes[i]+"°");
+      if(A.r<a.w-1e-6)throw new Error(nom+" : rayon "+A.r+" sous la largeur");
+      for(const [x,y] of [[a.x1,a.y1],[a.x2,a.y2]]){
+        const j=jointAt(x,y,a.l), o=j.ends.find(e=>e.t!==a);
+        if(j.ends.length!==2||!o||isArc(o.t))throw new Error(nom+" : bout d'arc non raccordé à une droite ("+x+", "+y+")");
+        const d=endDir(o.t,o.e);
+        // tangente : la jambe est perpendiculaire au rayon qui tombe sur le bout
+        if(Math.abs((d.x*(x-A.cx)+d.y*(y-A.cy))/Math.hypot(d.x,d.y)/A.r)>2e-3)
+          throw new Error(nom+" : l'arc n'est pas tangent à sa jambe en ("+x+", "+y+")");
+      }
+    });
+    if(S.tracks.length!==2*coudes.length+1)throw new Error(nom+" : droites et arcs en alternance attendus, "+S.tracks.length+" pistes");
+    for(const t of S.tracks)t.net="T";        // tracé dans le vide, sans net : le DRC les verrait tous étrangers
+    touch();
+    const fautes=runDrc().filter(e=>!e.info);
+    if(fautes.length)throw new Error(nom+" : "+fautes.map(e=>e.msg).join(" ; "));
+    if(S.sel.tracks.size)throw new Error(nom+" : un dépôt ne doit rien sélectionner");
+  };
+  setCornerMode("arc");
+  if(cornerMode()!=="arc")throw new Error("la règle arrondi n'a pas pris");
+  trace([{x:0,y:0},{x:10,y:0},{x:10,y:-8}]);
+  verifie("angle droit",[90]);
+  const a=S.tracks.find(isArc);
+  if(Math.abs(arcOf(a).r-MITRE_AUTO*a.w)>2e-3)throw new Error("rayon borné à "+MITRE_AUTO+" largeurs : "+arcOf(a).r);
+  if(a.ca>=0)throw new Error("le coude tourne à gauche à l'écran : angle négatif attendu, "+a.ca);
+  trace([{x:0,y:0},{x:10,y:4}]);
+  verifie("coude du routeur à 45°",[45]);
+  trace([{x:0,y:0},{x:12,y:0},{x:12,y:12},{x:24,y:12}]);
+  verifie("deux angles droits",[90,90]);
+  setCornerMode("45");
+  S.avoid=true;
+  /* du cuivre pris dans le coude : le rayon recule, ou le coude reste franc */
+  const coude=obst=>{
+    S.fps=[];S.vias=[];S.zones=[];
+    S.tracks=[{l:0,net:"T",w:0.3,x1:0,y1:0,x2:20,y2:0},{l:0,net:"T",w:0.3,x1:20,y1:0,x2:20,y2:30},obst];
+    touch();clearSel();
+    return mitreAt(0,20,0,false,MITRE_AUTO,true);
+  };
+  if(!coude({l:0,net:"X",w:0.3,x1:19.4,y1:0.6,x2:19.4,y2:0.61}))throw new Error("le coude devait s'arrondir, plus serré");
+  const r=arcOf(S.tracks.find(isArc)).r;
+  if(r>=MITRE_AUTO*0.3-1e-6)throw new Error("rayon réduit attendu : "+r);
+  const fautes=runDrc().filter(e=>!e.info);
+  if(fautes.length)throw new Error("l'arc a créé : "+fautes.map(e=>e.msg).join(" ; "));
+  if(coude({l:0,net:"X",w:0.3,x1:19.6,y1:0.4,x2:19.6,y2:0.41})||S.tracks.some(isArc)||S.tracks.length!==3)
+    throw new Error("sans place, le coude reste tel quel");
+});
 T("import : la règle d'angle est une liste fermée",()=>{
   const d=normDoc({rule:{corner:"90"}});
   if(d.rule.corner!=="90")throw new Error("une règle valide doit passer");
@@ -26662,11 +26726,57 @@ T("IPC-2581 : les cartes d'exemple écrites pour le banc Python, contenu compté
     if((x.match(/<SpecRef id="BD_B_In1_150UM"\/>/g)||[]).length!==17)
       throw new Error("16 trous de via et leur calque de contre-perçage pointent la spec");
     /* les coins arrondis et la découpe ronde : quatre quarts de cercle et
-       deux demi-cercles, au profil comme au calque du contour */
+       deux demi-cercles, au profil comme au calque du contour ; plus, depuis
+       le 22/10/2026, les deux dégagements ronds de la zone du dessous (deux
+       demi-cercles chacun) */
     const y=fs.readFileSync(path.join(dir,"exemple-0-arrondi.xml"),"utf8");
     const prof=y.slice(y.indexOf("<Profile>"),y.indexOf("</Profile>"));
-    if((prof.match(/<PolyStepCurve /g)||[]).length!==6||(y.match(/<PolyStepCurve /g)||[]).length!==12)
+    if((prof.match(/<PolyStepCurve /g)||[]).length!==6||(y.match(/<PolyStepCurve /g)||[]).length!==16)
       throw new Error("arcs du contour : "+(prof.match(/<PolyStepCurve /g)||[]).length);
+  }finally{loadDoc(JSON.parse(avant),true);}
+});
+/* Une zone ronde n'est qu'une suite de cordes égales dans le modèle : elle part
+   en arcs au Gerber cuivre (G02/G03 dans la région G36) et à l'IPC-2581
+   (<PolyStepCurve>), comme le contour de carte ; une découpe de cuivre de même. */
+T("zones et découpes rondes : arcs au Gerber cuivre et à l'IPC-2581, la zone rectangulaire reste en droites",()=>{
+  const avant=serialize();
+  try{
+    S.fps=[];S.tracks=[];S.vias=[];S.holes=[];setBoardRect();
+    const P=boardPoly(), xs=P.map(p=>p.x), ys=P.map(p=>p.y);
+    const B={x1:Math.min(...xs),y1:Math.min(...ys),x2:Math.max(...xs),y2:Math.max(...ys)}, cx=r3((B.x1+B.x2)/2), cy=r3((B.y1+B.y2)/2), R=Math.min(B.x2-B.x1,B.y2-B.y1)/2-2;
+    S.zones=[{id:S.nextId++,l:0,net:"GND",pts:boardDisquePts(cx,cy,R)}];
+    S.cuts=[{id:S.nextId++,l:0,pts:boardDisquePts(cx,cy,R/3)}];
+    touch();
+    const o=gOrigin(), C=[(cx-o.x)*1e6,(o.y-cy)*1e6];
+    /* relu dans le fichier : centre = point courant + (I, J), le rayon aux deux bouts, la région refermée */
+    const regions=()=>gerberCopper(0).split("G36*").slice(1).map(r=>r.slice(0,r.indexOf("G37*")).split("\n"));
+    const arcs=(L,r)=>{
+      let cur=null, dep=null, n=0;
+      for(const l of L){
+        let m=l.match(/^X(-?\d+)Y(-?\d+)D0([12])/);
+        if(m){cur=[+m[1],+m[2]];if(m[3]==="2")dep=cur;continue;}
+        m=l.match(/^G0([23])X(-?\d+)Y(-?\d+)I(-?\d+)J(-?\d+)D01/);if(!m)continue;
+        const c=[cur[0]+ +m[4],cur[1]+ +m[5]];
+        if(Math.hypot(c[0]-C[0],c[1]-C[1])>2000||Math.abs(Math.hypot(+m[2]-c[0],+m[3]-c[1])-r*1e6)>5000)
+          throw new Error("arc faux : centre "+c+" attendu "+C+" ; "+l);
+        cur=[+m[2],+m[3]];n++;
+      }
+      if(cur+""!==dep+"")throw new Error("région non refermée : "+dep+" → "+cur);
+      return n;
+    };
+    const G=regions();
+    if(arcs(G[0],R)!==2||!G[0].includes("G75*"))throw new Error("zone ronde : deux demi-cercles attendus dans sa région");
+    const dec=G.find((L,i)=>i>0&&L.some(l=>/^G0[23]/.test(l)));
+    if(!dec||arcs(dec,R/3)!==2)throw new Error("découpe ronde : deux demi-cercles attendus");
+    const x=ipc2581Document({}).xml;
+    // carte rectangulaire, rien d'autre sur la carte : les arcs ne viennent que de la zone et de sa découpe
+    const n=(x.match(/<PolyStepCurve /g)||[]).length;
+    if(n<4)throw new Error("IPC-2581 : la zone et sa découpe en arcs, "+n+" <PolyStepCurve>");
+    /* une zone rectangulaire, sans découpe : rien que des droites */
+    S.zones[0].pts=[{x:B.x1+2,y:B.y1+2},{x:B.x2-2,y:B.y1+2},{x:B.x2-2,y:B.y2-2},{x:B.x1+2,y:B.y2-2}];S.cuts=[];touch();
+    if(regions().some(L=>L.some(l=>/^G0[23]/.test(l))))throw new Error("zone rectangulaire : aucun arc attendu");
+    const xr=ipc2581Document({}).xml;
+    if(/<PolyStepCurve /.test(xr))throw new Error("IPC-2581 : zone rectangulaire sans arc");
   }finally{loadDoc(JSON.parse(avant),true);}
 });
 T("IPC-2581 : classes, paires et contraintes écrites avec les éléments du XSD (netPair, SpecRef, Impedance)",()=>{
@@ -27707,6 +27817,13 @@ TA("canal de pilotage : cao_router, simule puis charge, une etape, tout ou rien 
     if(S.rule.corner!=="90"||S.rule.route!=="mark"||S.active!==S.cu-1||S.cuL[0].vis!==false)
       throw new Error("le clic a change les reglages : "+[S.rule.corner,S.rule.route,S.active,S.cuL[0].vis]);
     undo(); S.undo.length=0; S.rule.corner="45"; S.rule.route="shove"; S.active=0; S.cuL[0].vis=true;
+    /* règle « arrondi » : le routeur la garde (90° et libre passent en 45°) et pose des arcs aux coudes */
+    S.rule.corner="arc"; touch();
+    const parc=d.proposer({routes});
+    if(!JSON.parse(parc.resultat)[1].some(isArc)||!ROUTAGE.apercu.pistes.some(isArc))
+      throw new Error("cao_router en règle arrondi : aucun arc posé — "+parc.apres);
+    if(S.rule.corner!=="arc")throw new Error("la règle de l'utilisateur doit rester : "+S.rule.corner);
+    d.refuser(); S.rule.corner="45"; touch();
     /* masquer une couche entre la carte et le clic ne la rend pas perimee */
     const pv=d.proposer({routes:[routes[0]]}); S.cuL[1].vis=false; touch();
     d.appliquer({routes:[routes[0]]},pv);

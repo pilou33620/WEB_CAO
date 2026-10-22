@@ -1489,6 +1489,11 @@ arêtes sont coupées à leurs croisements, chaque tronçon qui sépare le dedan
 du dehors devient un bord, et les bords se rechaînent en îlots et en trous
 (`ipcBooleen`). Les cercles des dégagements partent en polygones
 **circonscrits** : un isolement exporté n'est jamais plus petit que la règle.
+Les îlots et leurs trous sortent arcs gardés (`contourArcs(P, true)`) : les
+sommets d'une zone ronde, d'une découpe ou d'un dégagement circonscrit
+traversent le booléen tels quels, et leurs suites de cordes égales partent en
+`<PolyStepCurve>` sur le cercle qui passe par les sommets — un dégagement n'y
+rétrécit pas, il s'élargit de la flèche.
 Une géométrie dégénérée qui ne se refermerait pas donne la zone telle que
 dessinée et ses dégagements en `Cutout` (le banc d'essai exige qu'aucune
 zone d'exemple n'en arrive là).
@@ -2059,6 +2064,21 @@ l'angle — `S.rule.corner`, lu par `cornerMode()` et posé par `setCornerMode()
 | **45°** *(défaut)* | le L chanfreiné ci-dessus : une portion droite et une diagonale |
 | **90°** | deux segments orthogonaux, l'axe le plus avancé d'abord |
 | **libre** | un seul segment, l'angle qu'on veut |
+| **arrondi** | le tracé du 45°, puis au dépôt un arc tangent à chaque coude |
+
+En règle **arrondi**, le tracé se conduit en tout comme en 45° (posture, aimant,
+DRC, poussée) ; seul le dépôt change. `chamferPosed` passe chaque coude que le
+geste vient de former à `mitreAt(…, arc)` : on recule d'autant sur les deux
+jambes, et les deux points se rejoignent par un arc tangent aux deux au lieu
+d'une diagonale — le coude droit de deux clics comme le coude à 45° du routeur.
+Le recul L et le rayon r se tiennent, L = r·tan(θ/2), θ l'angle dont la piste
+tourne ; le rayon est borné à `MITRE_AUTO` largeurs (1,2 mm sur une piste de
+0,3). Les bouts de l'arc sont ceux des jambes reculées : la connexité n'y voit
+qu'une piste de plus. Du cuivre pris dans le coude resserre l'arc d'une largeur
+de rayon à la fois (contrôle par `firstObstacle` sur ses cordes) ; sans place,
+le coude reste franc. `cao_router` garde la règle arrondi (90° et libre y
+passent en 45°) et pose donc des arcs ; la touche **D**, elle, chanfreine
+toujours en 45°.
 
 `routeCorner()` distribue les trois sur un même contrat : des segments bout à
 bout, aucun de longueur nulle, l'arrivée où on l'a demandée — à l'aimant près,
@@ -3289,8 +3309,9 @@ Ce que chaque passage en fait :
   Le sens s'inverse au passage, l'axe Y du Gerber montant là où celui du
   document descend. Une spirale de six tours tient en douze lignes au lieu de
   mille, et le fabricant lit un cercle rond.
-- **Le routeur** ne pose pas d'arcs — il ne sait faire que du 45° — et surtout
-  **il n'en défait pas**. Les cordes entrent dans le modèle du monde marquées
+- **Le routeur** ne trace que du 45° — en règle d'angle **arrondi**, il pose un
+  arc tangent à chaque coude au dépôt (voir *L'angle imposé aux pistes*) — et
+  surtout **il n'en défait pas**. Les cordes entrent dans le modèle du monde marquées
   `arc` : l'assemblage s'y arrête, et le *shove* refuse de pousser une courbe
   plutôt que de la rendre à `S.tracks` en segments droits. Face à elle, le tracé
   contourne, comme il contourne une pastille.
@@ -3373,7 +3394,7 @@ exécute `dist/pcb.js` et couvre : import de netlist, boîtiers nommés
 et empreintes qu'ils posent, chevelu
 multicouche, vias, îlots de cuivre, classes de net, édition des pistes,
 géométrie du L chanfreiné, posture du coude et règle d'angle (45° / 90° /
-libre), non-croisement du cuivre tiré, réglages d'usine,
+libre / arrondi), non-croisement du cuivre tiré, réglages d'usine,
 contour libre, origine utilisateur, saisie au clavier, anti-collision, rôles de
 couche, chute continue (le cuivre du net envoyé au solveur, les tubes
 métallisés qui font changer de couche, plusieurs sources et références,
@@ -3569,10 +3590,13 @@ désactive au lieu de disparaître.
   schéma, lui, donne la classe de chaque net et ses contraintes propres.
 - Plans (Draftsman) : une vue de détail ne se pose que sur la feuille de sa
   vue mère.
-- Les **pistes** savent être circulaires (voir plus haut) ; les zones de
-  cuivre, les coupes et le contour de carte restent des polygones. Le
-  routeur ne pose pas d'arc : ils arrivent d'un fichier, et l'éditeur les
-  montre, les mesure, les contrôle et les sort en Gerber sans les redresser.
+- Les **pistes** savent être circulaires (voir plus haut) ; le routeur en pose
+  aux coudes en règle d'angle « arrondi ». Les zones de cuivre, les découpes de
+  cuivre et le contour de carte restent, dans le modèle, des **polygones** (des
+  listes de points) : une zone ronde est une suite de cordes égales, que le
+  Gerber (`gRegionArcs`, `edgeSegs`) et l'IPC-2581 (`contourArcs`) écrivent en
+  arcs quand leur flèche est sous 10 µm (`gArcsFins`). Aucun outil ne dessine
+  d'arc dans une zone : elle se dessine en sommets, ou arrive d'un fichier.
 - Le routeur ne reprend pas le `SMART_PADS` de KiCad, qui décale l'entrée d'une
   piste vers le bord d'une grosse pastille. Cet éditeur fait le choix inverse,
   explicitement : l'aimant accroche au **centre** de la pastille. Les deux

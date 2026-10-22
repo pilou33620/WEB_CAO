@@ -2146,7 +2146,7 @@ function offAngleStop(g,landed){
     }
     if(!drag.offWarned){
       drag.offWarned=true;
-      hint("Angle imposé "+cornerMode()+"° : le sommet ne se pose que là où ses segments "+
+      hint("Angle imposé "+CORNER_MODES[cornerMode()]+" : le sommet ne se pose que là où ses segments "+
            "restent d'aplomb. Ajoutez un coude (touche D), ou passez en angle libre.");
     }
     return true;
@@ -2279,8 +2279,14 @@ function trimRun(run,L){
    clic ; à l'usage, c'est un clic qui disparaît. La touche D, elle, garde le
    chanfrein maximal : là, c'est un geste voulu. */
 const MITRE_AUTO=4;
-/* `cap` borne le chanfrein à `cap` largeurs de piste ; 0 ou absent = maximal. */
-function mitreAt(l,x,y,dry,cap){
+/* `cap` borne le chanfrein à `cap` largeurs de piste ; 0 ou absent = maximal.
+   `arc` (règle « arrondi ») : même recul des deux côtés, mais les deux points
+   se rejoignent par un arc tangent aux deux portions au lieu d'une corde. Le
+   recul L et le rayon r se tiennent, L = r·tan(θ/2), θ l'angle dont la piste
+   tourne : 90° pour un angle droit, 45° pour un coude du routeur — l'arc les
+   prend tous deux, `cap` borne alors le rayon. Les deux bouts de l'arc sont
+   ceux des portions reculées : la connexité n'y voit qu'une piste de plus. */
+function mitreAt(l,x,y,dry,cap,arc){
   if(padAt(l,x,y)||viaAt(l,x,y))return false;
   const j=jointAt(x,y,l);
   if(j.ends.length!==2)return false;
@@ -2289,8 +2295,14 @@ function mitreAt(l,x,y,dry,cap){
   /* Couper un angle suppose deux droites. Là où l'une des jambes est un arc,
      le raccord est déjà courbe : il n'y a pas d'angle à casser. */
   if(isArc(A.t)||isArc(B.t))return false;
+  const dA=endDir(A.t,A.e), dB=endDir(B.t,B.e), nA=Math.hypot(dA.x,dA.y), nB=Math.hypot(dB.x,dB.y);
   // angle droit seulement : ailleurs, couper en deux ne donnerait pas 45°
-  if(Math.abs(Math.abs(crossN(endDir(A.t,A.e),endDir(B.t,B.e)))-1)>1e-3)return false;
+  if(!arc&&Math.abs(Math.abs(crossN(dA,dB))-1)>1e-3)return false;
+  /* l'angle dont la piste tourne, signé comme `t.ca` : positif, elle tourne
+     dans le sens des aiguilles d'une montre à l'écran (Y vers le bas) */
+  const th=Math.acos(clamp(-(dA.x*dB.x+dA.y*dB.y)/(nA*nB||1),-1,1));
+  if(arc&&(th<1e-3||th>Math.PI-0.1))return false;          // tout droit, ou demi-tour
+  const tg=arc?Math.tan(th/2):1, ca=arc?r4(Math.sign(dB.x*dA.y-dB.y*dA.x)*th):0;
   const ra=runFrom(A.t,A.e), rb=runFrom(B.t,B.e);
   /* On recule d'autant des deux côtés — c'est ce qui fait le 45°. La portion la
      plus longue garde donc l'écart des deux longueurs : sous la largeur de
@@ -2299,29 +2311,33 @@ function mitreAt(l,x,y,dry,cap){
      ce qui rend du cuivre aux deux restes au lieu d'en laisser un famélique.
      Un chanfrein plus court que la piste ne veut rien dire : on n'y touche pas. */
   const MIN=minJog(A.t.w);
+  // le pas de recul : une largeur de chanfrein, ou une largeur de rayon pour l'arc
+  const pas=r3(MIN*tg);
   let L=Math.min(ra.len,rb.len);
-  if(cap>0)L=Math.min(L,r3(cap*A.t.w));
+  if(cap>0)L=Math.min(L,r3(cap*A.t.w*tg));
   /* Ce qui reste d'une jambe après le chanfrein : nul quand le chanfrein l'a
      mangée entière, sinon la différence. Un reste plus court que la piste est
      une écharde — celle-là même que le tracé s'interdit de poser. On recule
-     alors d'une largeur de plus, ce qui rend du cuivre aux DEUX restes. */
+     alors d'un pas de plus, ce qui rend du cuivre aux DEUX restes. */
   const maigre=v=>v>1e-9&&v<MIN;
-  if(maigre(r3(ra.len-L))||maigre(r3(rb.len-L)))L=r3(L-MIN);
-  /* La diagonale coupe l'intérieur du coude : ce qui s'y trouve (une pastille
-     prise dans le coude) peut tomber sous l'isolation. On recule d'une
-     largeur jusqu'à ce qu'elle passe ; les restes grandissent d'autant, sans
-     devenir des échardes. */
-  const dA=endDir(A.t,A.e), dB=endDir(B.t,B.e), nA=Math.hypot(dA.x,dA.y), nB=Math.hypot(dB.x,dB.y);
+  /* La diagonale (ou l'arc, en cordes) coupe l'intérieur du coude : ce qui
+     s'y trouve (une pastille prise dans le coude) peut tomber sous
+     l'isolation. On recule d'un pas jusqu'à ce qu'elle passe. */
   const jambes=new Set(ra.segs.concat(rb.segs).map(o=>o.t));   // sans net, elles se gêneraient elles-mêmes
-  const gene=L=>pnsWorld().firstObstacle({l:A.t.l,net:A.t.net,w:A.t.w,
-    pts:[{x:r3(x-dA.x/nA*L),y:r3(y-dA.y/nA*L)},{x:r3(x-dB.x/nB*L),y:r3(y-dB.y/nB*L)}]},jambes);
-  while(L>=MIN&&gene(L))L=r3(L-MIN);
-  if(L<MIN)return false;
+  const corde=L=>({x1:r3(x-dA.x/nA*L),y1:r3(y-dA.y/nA*L),x2:r3(x-dB.x/nB*L),y2:r3(y-dB.y/nB*L),ca});
+  const gene=L=>{
+    const c=corde(L);
+    return pnsWorld().firstObstacle({l:A.t.l,net:A.t.net,w:A.t.w,
+      pts:[{x:c.x1,y:c.y1}].concat(trkSegs(c).map(s=>({x:s.x2,y:s.y2})))},jambes);
+  };
+  while(L>=pas&&(maigre(r3(ra.len-L))||maigre(r3(rb.len-L))||gene(L)))L=r3(L-pas);
+  if(L<pas)return false;     // un chanfrein, un rayon plus court que la piste : rien à adoucir
   if(dry)return true;
   const lay=A.t.l, net=A.t.net, w=A.t.w;
   const pa=trimRun(ra,L), pb=trimRun(rb,L);
   if(!pa||!pb)return false;
   const nt={l:lay,net,w,x1:pa.x,y1:pa.y,x2:pb.x,y2:pb.y};
+  if(ca)nt.ca=ca;
   S.tracks.push(nt);S.sel.tracks.add(nt);
   return true;
 }
@@ -2962,13 +2978,15 @@ function dir8(s){
 /* ==========================================================================
    L'angle imposé aux pistes
    --------------------------------------------------------------------------
-   Trois règles, choisies dans le panneau *Règles de tracé* et rangées avec le
-   document (`S.rule.corner`) :
+   Quatre règles, choisies dans le panneau *Règles de tracé* et rangées avec
+   le document (`S.rule.corner`) :
      « 45 »   le L chanfreiné — la règle de l'art, et le défaut ;
      « 90 »   deux segments orthogonaux, l'angle droit franc ;
-     « free » un seul segment, l'angle qu'on veut.
+     « free » un seul segment, l'angle qu'on veut ;
+     « arc »  le tracé du 45°, puis un arc tangent posé à chaque coude au dépôt
+              (`chamferPosed`) — partout ailleurs, il se conduit comme le 45°.
    ========================================================================== */
-const CORNER_MODES={"45":"45°","90":"90°","free":"libre"};
+const CORNER_MODES={"45":"45°","90":"90°","free":"libre","arc":"arrondi"};
 function cornerMode(){
   const m=S.rule&&S.rule.corner;
   return CORNER_MODES[m]?m:"45";
@@ -3584,9 +3602,12 @@ function commitRoute(){
    du 21/10/2026 : U3.2 prise dans le coude de U3.1 → U3.3). La sélection, elle, n'a rien à voir avec un dépôt : on la remet comme on
    l'a trouvée, `mitreAt` ayant l'habitude d'y ranger ce qu'il chanfreine.
    Le glissement passe par la même porte, au relâchement — voir
-   `pruneAfterDrag`. « Posé » s'y lit donc « ce que le geste vient d'écrire ». */
+   `pruneAfterDrag`. « Posé » s'y lit donc « ce que le geste vient d'écrire ».
+   En règle « arrondi », la même porte pose un arc tangent à chaque coude, les
+   45° du routeur compris, au même rayon borné (`MITRE_AUTO` largeurs). */
 function chamferPosed(posed){
-  if(cornerMode()!=="45"||!posed.length)return;
+  const m=cornerMode();
+  if((m!=="45"&&m!=="arc")||!posed.length)return;
   const keep=[...S.sel.tracks];
   const seen=new Set(), pts=[];
   for(const t of posed)
@@ -3595,7 +3616,7 @@ function chamferPosed(posed){
       if(seen.has(k))continue;
       seen.add(k);pts.push({l:t.l,x,y});
     }
-  for(const p of pts)mitreAt(p.l,p.x,p.y,false,MITRE_AUTO);
+  for(const p of pts)mitreAt(p.l,p.x,p.y,false,MITRE_AUTO,m==="arc");
   S.sel.tracks.clear();
   for(const t of keep)if(S.tracks.indexOf(t)>=0)S.sel.tracks.add(t);
 }
