@@ -211,7 +211,7 @@ async function refuse(promesse, motif) {
       vues[p] = ecrire.filter(n => c[n]);
       for (const n of vues[p]) egal(!!(c[n].ecriture && (c[n].historique || c[n].annuler)), true, n + " : écriture annulable");
     }
-    egal(vues, { schema: ["cao_composants_ecrire"], pcb: ecrire, "visionneuse-ipc": ["cao_sim_ecrire"], "gestion-lib": [] });
+    egal(vues, { schema: ["cao_composants_ecrire", "cao_classes_ecrire", "cao_contraintes_ecrire"], pcb: ecrire, "visionneuse-ipc": ["cao_sim_ecrire"], "gestion-lib": [] });
   });
 
   await T("Pilote.aide : commandes de la page, description et arguments tirés du MCP (pilote-aide.json)", async () => {

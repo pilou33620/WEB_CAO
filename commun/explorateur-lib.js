@@ -691,6 +691,8 @@ async function explorateurLibOuvrir(options) {
         if (data && Array.isArray(data.composants)) {
           ELIB.items = data.composants;
           if (typeof window !== "undefined") window.CSV_LIB = data.composants;
+          // au schéma : les symboles de la LIB qu'il cite, lus pour être posés (29-symboles-lib.js)
+          if (typeof schSymbolesPrecharger === "function") schSymbolesPrecharger(data.composants);
         }
       }
     } catch (_) {}

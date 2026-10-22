@@ -180,6 +180,7 @@ function loadDoc(o, keepPage){
   else if(Array.isArray(o.comps)||Array.isArray(o.wires)||Array.isArray(o.drawings))raw=[{name:"Feuille 1",comps:o.comps,wires:o.wires,drawings:o.drawings,uid:o.uid}];
   else throw new Error("le fichier ne contient aucun schéma");
   if(!raw.length)throw new Error("le document ne contient aucune feuille");
+  const symboles=schSymbolesDuDocument(o);   // ses symboles de la LIB : avant normPage, qui écarte les types inconnus
   const pages=raw.slice(0,200).map(normPage);
   let addedHier = false;
   if(!pages[0].isHierarchy && pages[0].name!=="Hiérarchie" && pages[0].name!=="Feuille hiérarchique"){
@@ -190,6 +191,7 @@ function loadDoc(o, keepPage){
     n+((Array.isArray(p&&p.comps)?p.comps.length:0)-(pages[addedHier?i+1:i]?pages[addedHier?i+1:i].comps.length:0)),0);
   push();
   S.pages=pages;
+  S.symboles=symboles;
   S.netClasses={};
   const nc=(o.netClasses&&typeof o.netClasses==="object")?o.netClasses:{};
   for(const k in nc)if(NET_CLASSES.includes(nc[k]))S.netClasses[k]=nc[k];

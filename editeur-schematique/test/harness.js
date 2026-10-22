@@ -146,7 +146,9 @@ const EXPOSE=[
   "schCmNetsNommes","schCmOrphelins","schCmResumeNet","schCmOuvrir","schCmFermer","SCM",
   "cmNormNets","cmNormGroupes","cmLireChamp","schDocCourant","restore",
   /* classes d'interface (commun/classes-interface.js) */
-  "CLASSES_INTERFACE","familleClasse","titreClasse","loadDoc"
+  "CLASSES_INTERFACE","familleClasse","titreClasse","loadDoc",
+  /* symboles de la LIB (29-symboles-lib.js) */
+  "schSymboleLire","schSymboleDefinir","schSymbolesDuDocument","SYM_LIB_LUS","schTypeDuCatalogue","LIB"
 ];
 /* les noms absents du bundle sont ignorés : le banc d'essai reste utilisable
    même si un module est renommé, les essais concernés échoueront tout seuls */
@@ -449,6 +451,51 @@ T("canal de pilotage : cao_schema_dessiner, texte libre (annot_text) et cadre, n
     let m="";try{d.proposer({lot:[{op:"cadre",x1:0,y1:0,x2:1,y2:10}]});}catch(e){m=e.message;}
     if(!/2 mm de côté/.test(m))throw new Error("cadre trop petit : "+m);
   }finally{global.Pilote=ancien;}
+});
+T("symboles de la LIB (schsym-1) : contrôlés, posés depuis le catalogue, gardés dans le document",()=>{
+  const cmds={}, ancien=global.Pilote, lib=window.CSV_LIB;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  const MCU={format:"schsym-1",id:"mcu_essai",name:"MCU d'essai",prefix:"U",defaultValue:"MCU1",defaultPkg:"QFN-16",
+    pins:[{n:1,x:-60,y:-20,name:"VDD"},{n:2,x:-60,y:20,name:"GND"},{n:3,x:60,y:0,name:"TX"}],
+    ext:[-60,-40,60,40],
+    primitives:[{op:"rect",x:-40,y:-40,w:80,h:80,r:3,fill:true},{op:"line",x1:-60,y1:-20,x2:-40,y2:-20},
+                {op:"text",text:"MCU",x:0,y:0,size:11},{op:"poly",pts:[[0,10],[5,20],[-5,20]]},{op:"circle",x:0,y:-25,r:3},
+                {op:"arc",cx:0,cy:-40,r:6,start:0,end:Math.PI},{op:"arrow",x:50,y:0,angle:0,size:6}]};
+  try{
+    // contrôles : refus d'un fichier fautif, priorité aux intégrés
+    const faute=(m,motif)=>{const r=schSymboleLire(m);if(r.def||!r.erreurs.some(e=>motif.test(e)))throw new Error("refus attendu "+motif+" : "+JSON.stringify(r.erreurs));};
+    faute(Object.assign({},MCU,{format:"autre"}),/schsym-1/);
+    faute(Object.assign({},MCU,{pins:[{n:1,x:0,y:0},{n:3,x:20,y:0}]}),/la 2 manque/);
+    faute(Object.assign({},MCU,{primitives:[{op:"script",x:0}]}),/primitive inconnue/);
+    faute(Object.assign({},MCU,{primitives:[{op:"line",x1:0,y1:0,x2:1e9,y2:0}]}),/finies/);
+    faute(Object.assign({},MCU,{id:"../x"}),/id :/);
+    if(schSymboleDefinir(Object.assign({},MCU,{id:"resistor"})))throw new Error("un fichier ne remplace pas l'intégré resistor");
+    if(schSymboleDefinir(MCU)!=="mcu_essai"||!LIB.mcu_essai.lib||LIB.mcu_essai.pn.join()!=="VDD,GND,TX")throw new Error("symbole non défini");
+    // posé depuis le catalogue par Claude, relié par nom de broche
+    window.CSV_LIB=[{"Part Name":"MCU_ESSAI","Reference designator Prefix":"U","Empreinte Schématique":"lib/symbole/mcu_essai.json"}];
+    if(schTypeDuCatalogue(window.CSV_LIB[0])!=="mcu_essai")throw new Error("le catalogue ne trouve pas le symbole de la LIB");
+    piloteCao("schema");
+    sheet([],[]);S.symboles={};S.hist.length=0;
+    const r1=addComp("resistor",-200,-20);r1.ref="R1";
+    const lot=[{op:"poser",catalogue:"MCU_ESSAI",ref:"U1",x:0,y:0},{op:"relier",de:"R1.2",a:"U1.VDD"}];
+    const prop=cmds.cao_schema_dessiner.proposer({lot});
+    if(/générique/.test(prop.apres))throw new Error("le symbole de la LIB est tombé sur le générique : "+prop.apres);
+    cmds.cao_schema_dessiner.appliquer({lot},prop);
+    const u1=S.comps.find(c=>c.ref==="U1");
+    if(!u1||u1.type!=="mcu_essai"||!S.symboles.mcu_essai)throw new Error("posé sans être gardé dans le document");
+    draw();                                                   // les primitives se dessinent sans erreur
+    // le document rouvert sur un poste qui n'a pas ce symbole dans sa LIB
+    const doc=JSON.parse(schDocCourant?JSON.stringify(schDocCourant()):serialize());
+    delete LIB.mcu_essai; SYM_LIB_LUS.delete("mcu_essai");
+    loadDoc(doc);
+    // loadDoc met une feuille de hiérarchie en tête : U1 est sur une autre feuille
+    const f=S.pages.find(pg=>(pg.comps||[]).some(c=>c.ref==="U1"));
+    const u=f&&f.comps.find(c=>c.ref==="U1");
+    if(!u||u.type!=="mcu_essai"||!LIB.mcu_essai||allPins(u).length!==3||!S.symboles.mcu_essai)
+      throw new Error("le symbole ne revient pas avec le document");
+    const vdd=allPins(u)[0];
+    if(!(f.wires||[]).some(w=>(w.x1===vdd.x&&w.y1===vdd.y)||(w.x2===vdd.x&&w.y2===vdd.y)))throw new Error("le fil de U1.VDD est perdu");
+  }finally{global.Pilote=ancien;window.CSV_LIB=lib;delete LIB.mcu_essai;SYM_LIB_LUS.delete("mcu_essai");S.symboles={};sheet([],[]);}
 });
 T("canal de pilotage : cao_schema_dessiner, un fil par coordonnées ne relie que par ses bouts",()=>{
   const cmds={}, ancien=global.Pilote;

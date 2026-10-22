@@ -56,6 +56,7 @@ function loadCSVLib() {
             if (data && Array.isArray(data.composants)) {
                 window.CSV_LIB = data.composants;
                 console.log("CSV_LIB chargé via API:", data.composants.length, "composants");
+                schSymbolesPrecharger(data.composants);
                 if (typeof refreshPanels === "function") refreshPanels();
             } else {
                 throw new Error("Format API inattendu");

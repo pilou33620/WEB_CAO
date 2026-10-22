@@ -294,7 +294,7 @@ function sheetInterconnections(){
 /* ---------- historique (document entier) ---------- */
 function serialize(){
   storeCurrent();
-  return JSON.stringify({pages:S.pages,page:S.page,netClasses:S.netClasses,variantes:S.variantes,
+  return JSON.stringify({pages:S.pages,page:S.page,netClasses:S.netClasses,variantes:S.variantes,symboles:S.symboles,
                          contraintes:S.contraintes});
 }
 /* Pile pleine, deux lots de Claude d'affilée (instantanés marqués d'une espace finale par
@@ -320,6 +320,7 @@ function push(snapshot){
 function restore(js){
   PROP_FRAPPE=null;
   const o=JSON.parse(js);
+  S.symboles=schSymbolesDuDocument(o);      // avant que les composants ne se dessinent
   S.pages=o.pages;loadPage(o.page||0);
   S.netClasses=o.netClasses||{};
   S.variantes=varNorm(o.variantes);
@@ -364,6 +365,7 @@ function addComp(type,x,y){
   const def=defOf(type);
   const el={id:S.uid++,type,x:snap(x),y:snap(y),rot:0,mir:false,
             ref:def.noRef?"":nextRef(def.p),value:def.v};
+  if(def.lib)schSymboleRetenir(type);
   if(def.init)def.init(el);
   if(!def.noRef&&def.pkg)el.pkg=(typeof def.pkg==="function")?def.pkg(el):def.pkg;
   S.comps.push(el);
