@@ -55,7 +55,7 @@ global.BroadcastChannel.prototype.close=function(){
 const code=fs.readFileSync(path.join(__dirname,"..","dist","schema.js"),"utf8");
 const EXPOSE=[
   /* état et feuilles */
-  "S","G","newPage","loadPage","storeCurrent","gotoPage","addPage","removePage","clearSel",
+  "S","G","newPage","refStartPage","loadPage","storeCurrent","gotoPage","addPage","removePage","clearSel",
   "SCHEMA_PATTERNS","NET_CLASSES","netClassSelect",
   "addComp","schComposantsDansZone","schToutesLesZones",
   "push","undo","redo","histBorner","HIST_MAX","touchWires","buildTabs","draw","fit","resize",
@@ -329,6 +329,22 @@ T("canal de pilotage : cao_valeur_composant propose, applique en une étape, Ctr
   }finally{global.Pilote=ancien;}
 });
 
+T("feuille : premier numéro des repères, renumérotation sur demande, gardé à l'enregistrement",()=>{
+  const avant=serialize(), pr=global.prompt, conf=global.confirm;
+  try{
+    addPage(false); const i=S.page;
+    global.prompt=()=>"9100"; global.confirm=()=>false;
+    refStartPage(i);
+    const a=addComp("resistor",0,0), b=addComp("resistor",40,0), j=addComp("header",80,0);
+    if(a.ref!=="R9100"||b.ref!=="R9101"||j.ref!=="J9100")throw new Error("repères : "+[a.ref,b.ref,j.ref]);
+    a.ref="R5"; b.ref="R3";
+    global.prompt=()=>"9200"; global.confirm=()=>true;
+    refStartPage(i);
+    if(b.ref!=="R9200"||a.ref!=="R9201"||j.ref!=="J9200")throw new Error("renumérotation : "+[a.ref,b.ref,j.ref]);
+    loadDoc(JSON.parse(serialize()),true);     // peut ajouter la feuille Hiérarchie en tête : on cherche la feuille
+    if(!S.pages.some(p=>p.refStart===9200))throw new Error("refStart perdu au rechargement");
+  }finally{global.prompt=pr;global.confirm=conf;loadDoc(JSON.parse(avant),true);}
+});
 T("Propriétés : repère, valeur et boîtier font une étape, que Ctrl+Z défait",()=>{
   const el=addComp("resistor",300,300); el.ref="R41"; el.value="1k";
   clearSel();S.sel.add(el.id);refreshPanels();
