@@ -2010,6 +2010,27 @@ T("dossier de fabrication : une famille décochée n'est pas dans le .zip, et la
     if(S.fabExclus.join()!=="serigraphie,bom")throw new Error("choix perdu à l'enregistrement : "+S.fabExclus);
   }finally{loadDoc(JSON.parse(saved),true);}
 });
+T("ECO : un point de test sans boîtier prend l'empreinte de la LIB, une seule pastille",()=>{
+  const saved=serialize();
+  try{
+    FPLIB["TP-SMD-1.0mm"]=normFpDef({name:"TP-SMD-1.0mm",pkg:"TP-SMD-1.0mm",pins:1,style:"chip",
+      pads:[{n:1,x:0,y:0,w:1,h:1,shape:"circ",drill:0,rot:0}]});
+    S.fps=[];S.tracks=[];S.vias=[];S.zones=[];touch();
+    applyNetlist(NET.replace("=== Composants ===","=== Composants ===\n    TP1     TP                —                 f1")
+                    .replace('NET "GND"   ; feuille 1','NET "GND"   ; feuille 1\n    TP1.1'),false);
+    const tp=S.fps.find(f=>f.ref==="TP1");
+    if(!tp||tp.pkg)throw new Error("TP1 attendu sans boîtier : "+(tp&&tp.pkg));
+    const NET2=NET.replace("=== Composants ===","=== Composants ===\n    TP1     TP                TP-SMD-1.0mm      f1")
+                  .replace('NET "GND"   ; feuille 1','NET "GND"   ; feuille 1\n    TP1.1');
+    const rap=pcbDetecterDisparitesEco(pcbObtenirDonneesSchema(NET2));
+    const it=rap.boitiers.find(b=>b.ref==="TP1");
+    if(!it)throw new Error("changement de boîtier non proposé : "+rap.items.map(i=>i.type+" "+i.ref));
+    pcbAppliquerEco([it]);
+    const pads=padsWorld(tp);
+    if(pads.length!==1||pads[0].shape!=="circ"||pads[0].w!==1||pads[0].net!=="GND")
+      throw new Error("pastilles : "+JSON.stringify(pads.map(q=>[q.n,q.shape,q.w,q.net])));
+  }finally{delete FPLIB["TP-SMD-1.0mm"];loadDoc(JSON.parse(saved),true);}
+});
 T("repères renumérotés au schéma : l'empreinte est renommée, ni recréée ni orpheline",()=>{
   const saved=serialize();
   try{
