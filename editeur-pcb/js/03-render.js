@@ -1274,12 +1274,14 @@ function pcbCartouche(c){
   c.restore();
 }
 /* Le bouton : format de page, champs de la carte, société du profil */
-function pcbCartoucheDialogue(){
+/* `apres` : ce qui suit l'application (les plans se refont) */
+function pcbCartoucheDialogue(apres){
   cartoucheDialogue({format:S.cartouche||"",info:S.cartoucheInfo,appliquer:(f,info)=>{
     push();
     const avant=S.cartouche||"";
     S.cartouche=f;S.cartoucheInfo=info;touch();
     if(f!==avant)fit();else draw();
+    if(typeof apres==="function")apres();
   }});
 }
 function draw(){

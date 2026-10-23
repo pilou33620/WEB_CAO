@@ -645,7 +645,7 @@ $("bAvoid").onclick=()=>{
        "Anti-collision coupé : plus rien ne retient le tracé.");
 };
 $("bRats").onclick=()=>{S.show.rats=!S.show.rats;$("bRats").classList.toggle("on",S.show.rats);buildLayers();draw();};
-$("bCartouche").onclick=pcbCartoucheDialogue;
+$("bCartouche").onclick=()=>pcbCartoucheDialogue();
 $("bView").onclick=()=>setFlip(!S.flip);
 $("bContrast").onclick=()=>setContrast((S.contrast+1)%4);
 $("bFit").onclick=fit;

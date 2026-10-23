@@ -63,19 +63,25 @@ function cartoucheChamps(info,feuille,numero,variante){
   });
 }
 
-/* Logos décodés une fois ; le premier dessin redemande l'image quand elle est
-   prête. */
+/* Logos décodés une fois. Pas encore prêt : null, et l'éditeur se redessine
+   (avec `pret` en plus, pour les plans) quand il l'est. */
 const CARTOUCHE_IMG=new Map();
-function cartoucheImage(src){
+function cartoucheImage(src,pret){
   if(!src||typeof Image==="undefined")return null;
   let im=CARTOUCHE_IMG.get(src);
   if(!im){
     im=new Image();
-    im.onload=()=>{if(typeof draw==="function")draw();};
+    im.attente=[];
+    im.onload=()=>{
+      if(typeof draw==="function")draw();
+      for(const f of im.attente.splice(0))f();
+    };
     im.src=src;
     CARTOUCHE_IMG.set(src,im);
   }
-  return im.complete&&im.naturalWidth?im:null;
+  if(im.complete&&im.naturalWidth)return im;
+  if(pret&&!im.attente.includes(pret))im.attente.push(pret);
+  return null;
 }
 
 /* Au clic : aucun → A4 → A3 → aucun */
