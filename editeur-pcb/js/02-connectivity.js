@@ -1398,6 +1398,32 @@ function fpReposerBoitier(fp,pkg,pins){
   }
   return "table";
 }
+/* Repères renumérotés au schéma (D1 → D100) : l'empreinte que le schéma n'a plus
+   et le repère nouveau de même préfixe, même boîtier et mêmes nets sont la même
+   pièce. La renommer garde sa place et ses pistes ; sans cela, l'import la
+   laissait orpheline et en posait une neuve à côté de la carte. À clés égales
+   (deux pièces interchangeables), l'appariement suit l'ordre des numéros.
+   refsSch : repères du schéma ; pkgDe(ref), netsDe(ref) : son boîtier, ses nets. */
+function fpRenommages(refsSch,pkgDe,netsDe){
+  const num=r=>+((/\d+$/.exec(r)||["0"])[0]);
+  const cle=(ref,pkg,nets)=>String(ref).replace(/\d+$/,"")+"|"+String(pkg||"").trim().toUpperCase()+
+                            "|"+nets.filter(Boolean).sort().join(",");
+  const libres=new Map(), surPcb=new Set(S.fps.map(f=>f.ref));
+  for(const f of S.fps){
+    const nets=Object.values(f.nets||{});
+    if(refsSch.has(f.ref)||(!f.pkg&&!nets.length))continue;
+    const k=cle(f.ref,f.pkg,nets);
+    if(!libres.has(k))libres.set(k,[]);
+    libres.get(k).push(f);
+  }
+  for(const l of libres.values())l.sort((a,b)=>num(a.ref)-num(b.ref));
+  const out=[];
+  for(const ref of [...refsSch].filter(r=>!surPcb.has(r)).sort((a,b)=>num(a)-num(b))){
+    const l=libres.get(cle(ref,pkgDe(ref),netsDe(ref)||[]));
+    if(l&&l.length)out.push({fp:l.shift(),ref});
+  }
+  return out;
+}
 function applyNetlist(txt,dropMissing){
   const {comps,nets}=parseNetlist(txt);
   const pinCount=new Map(), pinNet=new Map(), brochesDe=new Map();
@@ -1417,6 +1443,14 @@ function applyNetlist(txt,dropMissing){
   const refs=new Set([...comps.keys(),...pinCount.keys()]);
   if(!refs.size)return {err:"Aucun composant reconnu dans ce fichier."};
   push();
+  const netsDe=new Map();
+  for(const [k,n] of pinNet){
+    const r=k.slice(0,k.indexOf("."));
+    if(!netsDe.has(r))netsDe.set(r,[]);
+    netsDe.get(r).push(n);
+  }
+  const renommes=fpRenommages(refs,r=>(comps.get(r)||{}).pkg,r=>netsDe.get(r));
+  for(const {fp,ref} of renommes)fp.ref=ref;
   const byRef=new Map(S.fps.map(f=>[f.ref,f]));
   const added=[], kept=[], repkg=[], libFp=[];
   const conflicts=[];
@@ -1502,6 +1536,7 @@ function applyNetlist(txt,dropMissing){
   autoClass();
   touch();
   return {added:added.length,kept:kept.length,removed,repkg:repkg.length,nets:nets.size,conflicts,
+          renamed:renommes.length,
           lib:libFp.length,
           /* créées sans empreinte LIB alors que la LIB n'est pas encore lue :
              l'appelant peut aller la chercher (importNetlist) */

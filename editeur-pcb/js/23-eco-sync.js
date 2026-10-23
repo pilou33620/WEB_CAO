@@ -249,6 +249,7 @@ function pcbDetecterDisparitesEco(schData) {
       total: 0,
       items: [],
       ajouts: [],
+      renommages: [],
       boitiers: [],
       valeurs: [],
       nets: [],
@@ -262,6 +263,7 @@ function pcbDetecterDisparitesEco(schData) {
 
   const items = [];
   const ajouts = [];
+  const renommages = [];
   const boitiers = [];
   const valeurs = [];
   const nets = [];
@@ -269,6 +271,34 @@ function pcbDetecterDisparitesEco(schData) {
   const contraintes = [];
 
   const fpsMap = new Map(S.fps.map(f => [f.ref, f]));
+  // Repères renumérotés au schéma : l'empreinte est renommée, pas recréée
+  const netsDe = new Map();
+  for (const [k, n] of schData.pinNet) {
+    const r = k.slice(0, k.indexOf("."));
+    if (!netsDe.has(r)) netsDe.set(r, []);
+    netsDe.get(r).push(n);
+  }
+  const renommees = new Set();
+  if (typeof fpRenommages === "function") {
+    for (const { fp, ref } of fpRenommages(new Set(schData.comps.keys()),
+                                           r => (schData.comps.get(r) || {}).pkg, r => netsDe.get(r))) {
+      const item = {
+        id: "ren_" + ref,
+        type: "RENOMMAGE",
+        categorie: "Repère renuméroté",
+        ref: ref,
+        oldRef: fp.ref,
+        tracksCount: pcbPistesConnecteesFp(fp).length,
+        tracks: [],
+        hasConflict: false,
+        active: true
+      };
+      items.push(item);
+      renommages.push(item);
+      renommees.add(fp);
+      fpsMap.set(ref, fp);
+    }
+  }
   let nbPistesConnecteesModifiees = 0;
   let nbConflitsNetsDirects = 0;
 
@@ -380,7 +410,7 @@ function pcbDetecterDisparitesEco(schData) {
 
   // 2. Composants orphelins (sur le PCB mais absents du schéma)
   for (const fp of S.fps) {
-    if (!schData.comps.has(fp.ref)) {
+    if (!schData.comps.has(fp.ref) && !renommees.has(fp)) {
       const trks = pcbPistesConnecteesFp(fp);
       const item = {
         id: "del_" + fp.ref,
@@ -424,6 +454,7 @@ function pcbDetecterDisparitesEco(schData) {
     total: items.length,
     items: items,
     ajouts: ajouts,
+    renommages: renommages,
     boitiers: boitiers,
     valeurs: valeurs,
     nets: nets,
@@ -470,6 +501,7 @@ function pcbAppliquerEco(items, options) {
   const addedFps = [];
   const tracksToDelete = new Set();
   let nbAjouts = 0;
+  let nbRenommages = 0;
   let nbBoitiers = 0;
   let nbValeurs = 0;
   let nbNets = 0;
@@ -482,6 +514,16 @@ function pcbAppliquerEco(items, options) {
     switch (item.type) {
       case "CONTRAINTES": {
         if (typeof cmDepuisSchema === "function" && cmDepuisSchema(item.doc, true)) nbContraintes++;
+        break;
+      }
+      case "RENOMMAGE": {
+        const fp = fpsMap.get(item.oldRef);
+        if (fp && !fpsMap.has(item.ref)) {
+          fp.ref = item.ref;
+          fpsMap.delete(item.oldRef);
+          fpsMap.set(item.ref, fp);
+          nbRenommages++;
+        }
         break;
       }
       case "AJOUT": {
@@ -605,11 +647,12 @@ function pcbAppliquerEco(items, options) {
     setTimeout(() => pcbVerifierEtNotifierPinout(false), 100);
   }
 
-  const totalAppliques = nbAjouts + nbBoitiers + nbValeurs + nbNets + nbSuppressions + nbContraintes;
+  const totalAppliques = nbAjouts + nbRenommages + nbBoitiers + nbValeurs + nbNets + nbSuppressions + nbContraintes;
   return {
     succes: true,
     nbAppliques: totalAppliques,
     ajouts: nbAjouts,
+    renommages: nbRenommages,
     boitiers: nbBoitiers,
     valeurs: nbValeurs,
     nets: nbNets,
@@ -699,6 +742,7 @@ function pcbOuvrirFenetreEco(source) {
     let badgeText = it.type;
 
     if (it.type === "AJOUT") { badgeColor = "#22c55e"; badgeText = "➕ AJOUT"; }
+    else if (it.type === "RENOMMAGE") { badgeColor = "#0ea5e9"; badgeText = "🔁 RENOMMÉ"; }
     else if (it.type === "BOITIER") { badgeColor = "#38bdf8"; badgeText = "📦 BOÎTIER"; }
     else if (it.type === "NET") { badgeColor = "#f59e0b"; badgeText = "⚡ NETLIST"; }
     else if (it.type === "VALEUR") { badgeColor = "#a855f7"; badgeText = "✏️ VALEUR"; }
@@ -711,6 +755,8 @@ function pcbOuvrirFenetreEco(source) {
     let detailDesc = "";
     if (it.type === "AJOUT") {
       detailDesc = `Nouveau composant <b>${e(it.ref)}</b> : valeur <i>${e(it.value || "—")}</i>, boîtier <b>${e(it.pkg || "générique")}</b> (${e(it.pins)} broches)`;
+    } else if (it.type === "RENOMMAGE") {
+      detailDesc = `Repère <span style="text-decoration:line-through;color:#94a3b8">${e(it.oldRef)}</span> ➔ <b style="color:#0ea5e9">${e(it.ref)}</b> : même boîtier, mêmes nets — l'empreinte garde sa place et ses pistes`;
     } else if (it.type === "BOITIER") {
       detailDesc = `Boîtier <b>${e(it.ref)}</b> : <span style="text-decoration:line-through;color:#94a3b8">${e(it.oldPkg)}</span> ➔ <b style="color:#38bdf8">${e(it.newPkg)}</b> (${e(it.newPins)} broches)`;
     } else if (it.type === "VALEUR") {
@@ -765,6 +811,7 @@ function pcbOuvrirFenetreEco(source) {
       // Filtres rapides
       '<div style="display:flex; flex-wrap:wrap; gap:12px; font-size:11.5px; color:var(--txt-dim); padding-bottom:8px; border-bottom:1px solid var(--border); margin-bottom:8px;">' +
         '<label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" id="ecoFiltreAjouts" checked> Nouveaux (' + rapport.ajouts.length + ')</label>' +
+        (rapport.renommages.length ? '<label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" id="ecoFiltreRenommages" checked> Renommés (' + rapport.renommages.length + ')</label>' : '') +
         '<label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" id="ecoFiltreBoitiers" checked> Boîtiers (' + rapport.boitiers.length + ')</label>' +
         '<label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" id="ecoFiltreNets" checked> Nets (' + rapport.nets.length + ')</label>' +
         '<label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" id="ecoFiltreValeurs" checked> Valeurs (' + rapport.valeurs.length + ')</label>' +
@@ -836,6 +883,8 @@ function pcbOuvrirFenetreEco(source) {
 
   const fAj = document.getElementById("ecoFiltreAjouts");
   if (fAj) fAj.onchange = function() { basculerCategorie("AJOUT", this.checked); };
+  const fRn = document.getElementById("ecoFiltreRenommages");
+  if (fRn) fRn.onchange = function() { basculerCategorie("RENOMMAGE", this.checked); };
   const fBk = document.getElementById("ecoFiltreBoitiers");
   if (fBk) fBk.onchange = function() { basculerCategorie("BOITIER", this.checked); };
   const fNt = document.getElementById("ecoFiltreNets");

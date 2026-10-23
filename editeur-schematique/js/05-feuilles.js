@@ -79,6 +79,12 @@ function renamePage(i){
   if(n===null)return;
   push();S.pages[i].name=n.trim()||S.pages[i].name;buildTabs();
 }
+/* Premier numéro des repères de la feuille i : par défaut la centaine de son rang
+   (feuille 1 → 100, feuille 2 → 200…), sauf réglage à la main. */
+function refStartDe(i){
+  const p=S.pages[i];
+  return (p&&p.refStart)||i*100||1;
+}
 /* Premier numéro des repères posés sur la feuille i (R100, C100, J100…) ; sur
    demande, les composants déjà posés y sont renumérotés, préfixe par préfixe,
    dans l'ordre de leurs numéros actuels et sans reprendre un repère d'une autre
@@ -86,12 +92,12 @@ function renamePage(i){
 function refStartPage(i){
   const p=S.pages[i];
   const t=prompt("Premier numéro des repères de « "+p.name+" » (ex. 100 → R100, C100, J100) :",
-                 String(p.refStart||1));
+                 String(refStartDe(i)));
   if(t===null)return;
   const n=parseInt(t,10);
   if(!(n>=1)){alert("Un entier positif, s'il vous plaît.");return;}
   push();storeCurrent();
-  if(n>1)p.refStart=n;else delete p.refStart;
+  if(n!==i*100)p.refStart=n;else delete p.refStart;
   const comps=p.comps||[];
   if(comps.some(c=>c.ref)&&confirm("Renuméroter aussi les composants déjà posés sur cette feuille à partir de "+n+" ?\n\n"+
      "Le PCB reconnaît les composants par leur repère : après la mise à jour depuis le schéma, "+
@@ -126,7 +132,7 @@ function buildTabs(){
     const isHier=(i===0 || !!p.isHierarchy);
     t.className="tab"+(isHier?" hier":"")+(i===S.page?" on":"");
     t.title=(isHier?"Feuille hiérarchique racine · Double-clic pour renommer":"Double-clic pour renommer")+
-            " · Clic droit : premier numéro des repères"+(p.refStart?" ("+p.refStart+")":"");
+            " · Clic droit : premier numéro des repères ("+refStartDe(i)+")";
     if(isHier){
       t.innerHTML='<span class="num">⬡</span><span>'+esc(p.name)+'</span><span class="tag-hier">Hiérarchie</span>';
     }else{
@@ -396,10 +402,10 @@ function usedRefs(){
   for(const c of S.comps) if(c.ref) used.add(c.ref);
   return used;
 }
-// chaque feuille peut faire partir ses repères d'un numéro à elle (R100, C100…)
+// chaque feuille fait partir ses repères de son propre numéro (R100, C100…)
 function nextRef(prefix){
   const used=usedRefs();
-  let n=(S.pages[S.page]&&S.pages[S.page].refStart)||1;
+  let n=refStartDe(S.page);
   while(used.has(prefix+n))n++;
   return prefix+n;
 }

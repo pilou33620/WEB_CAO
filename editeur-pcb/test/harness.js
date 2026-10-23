@@ -1997,6 +1997,23 @@ T("ECO : la capa passe de 0603 en 0805, ses pistes suivent leurs pastilles",()=>
     if(S.aRerouter.length)throw new Error("rien à marquer : "+S.aRerouter.map(g=>g.msg));
   }finally{undo();suiviFin(D.reg);}
 });
+T("repères renumérotés au schéma : l'empreinte est renommée, ni recréée ni orpheline",()=>{
+  const saved=serialize();
+  try{
+    S.fps=[];S.tracks=[];S.vias=[];S.zones=[];touch();
+    applyNetlist(NET,false);
+    S.fps.forEach((f,i)=>{f.x=5+i*7;f.y=9;});touch();
+    const avant=new Map(S.fps.map(f=>[f.ref.replace(/1$/,"100"),f]));
+    const NET2=NET.replace(/\b([RCUD])1\b/g,"$1100");
+    const rap=pcbDetecterDisparitesEco(pcbObtenirDonneesSchema(NET2));
+    if(rap.renommages.length!==4||rap.ajouts.length||rap.suppressions.length)
+      throw new Error("ECO : "+rap.renommages.length+" renommé(s), "+rap.ajouts.length+" ajout(s), "+rap.suppressions.length+" absent(s)");
+    const res=applyNetlist(NET2,false);
+    if(res.added||res.renamed!==4||S.fps.length!==4)throw new Error("import : "+JSON.stringify({a:res.added,r:res.renamed,n:S.fps.length}));
+    for(const [ref,f] of avant)
+      if(f.ref!==ref||!S.fps.includes(f))throw new Error(ref+" : empreinte remplacée ou mal renommée ("+f.ref+")");
+  }finally{loadDoc(JSON.parse(saved),true);}
+});
 T("empreinte de la LIB aux pastilles renumérotées : chaque piste suit SON numéro",()=>{
   const D=decouplage();
   const c1=D.pad(D.C,1), c2=D.pad(D.C,2);

@@ -55,7 +55,7 @@ global.BroadcastChannel.prototype.close=function(){
 const code=fs.readFileSync(path.join(__dirname,"..","dist","schema.js"),"utf8");
 const EXPOSE=[
   /* état et feuilles */
-  "S","G","newPage","refStartPage","loadPage","storeCurrent","gotoPage","addPage","removePage","clearSel",
+  "S","G","newPage","refStartPage","refStartDe","usedRefs","loadPage","storeCurrent","gotoPage","addPage","removePage","clearSel",
   "SCHEMA_PATTERNS","NET_CLASSES","netClassSelect",
   "addComp","schComposantsDansZone","schToutesLesZones",
   "push","undo","redo","histBorner","HIST_MAX","touchWires","buildTabs","draw","fit","resize",
@@ -333,6 +333,8 @@ T("feuille : premier numéro des repères, renumérotation sur demande, gardé �
   const avant=serialize(), pr=global.prompt, conf=global.confirm;
   try{
     addPage(false); const i=S.page;
+    const libre=!usedRefs().has("C"+i*100), d=addComp("capacitor",-40,0);
+    if(libre&&d.ref!=="C"+i*100)throw new Error("feuille "+i+" : "+d.ref+", C"+i*100+" attendu par défaut");
     global.prompt=()=>"9100"; global.confirm=()=>false;
     refStartPage(i);
     const a=addComp("resistor",0,0), b=addComp("resistor",40,0), j=addComp("header",80,0);
@@ -343,6 +345,10 @@ T("feuille : premier numéro des repères, renumérotation sur demande, gardé �
     if(b.ref!=="R9200"||a.ref!=="R9201"||j.ref!=="J9200")throw new Error("renumérotation : "+[a.ref,b.ref,j.ref]);
     loadDoc(JSON.parse(serialize()),true);     // peut ajouter la feuille Hiérarchie en tête : on cherche la feuille
     if(!S.pages.some(p=>p.refStart===9200))throw new Error("refStart perdu au rechargement");
+    global.prompt=()=>"1"; global.confirm=()=>false;
+    const k=S.pages.findIndex(p=>p.refStart===9200);
+    refStartPage(k);
+    if(refStartDe(k)!==1)throw new Error("le départ 1 doit pouvoir se choisir : "+refStartDe(k));
   }finally{global.prompt=pr;global.confirm=conf;loadDoc(JSON.parse(avant),true);}
 });
 T("Propriétés : repère, valeur et boîtier font une étape, que Ctrl+Z défait",()=>{
