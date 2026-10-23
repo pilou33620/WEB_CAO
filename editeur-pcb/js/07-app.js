@@ -507,7 +507,7 @@ function pcbOuvrirDialoguePinout(res) {
 }
 function exportPng(){
   const save={scale:S.scale,ox:S.ox,oy:S.oy};
-  const b=S.board, pad=6, res=12;
+  const b=pcbCartouchePage()||S.board, pad=6, res=12;   // avec un cartouche : toute la page
   const W=Math.round((b.w+pad*2)*res), H=Math.round((b.h+pad*2)*res);
   const o=document.createElement("canvas");o.width=W;o.height=H;
   const c=o.getContext("2d");
@@ -645,6 +645,7 @@ $("bAvoid").onclick=()=>{
        "Anti-collision coupé : plus rien ne retient le tracé.");
 };
 $("bRats").onclick=()=>{S.show.rats=!S.show.rats;$("bRats").classList.toggle("on",S.show.rats);buildLayers();draw();};
+$("bCartouche").onclick=()=>pcbCartoucheDialogue();
 $("bView").onclick=()=>setFlip(!S.flip);
 $("bContrast").onclick=()=>setContrast((S.contrast+1)%4);
 $("bFit").onclick=fit;

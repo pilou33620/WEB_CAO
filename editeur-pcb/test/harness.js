@@ -61,7 +61,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* animation 3D de fabrication.zip (41-animation-3d.js) */
   "anim3dDonnees","anim3dPage","fabAnimBasculer","silkTraits","fabLivrer","THREE_SOURCE",
   "gerberEdge","gerberOutline","ipcNetlist","ipc317","masterDrawingPdf","noAcc",
-  "drillFile","buildFabFiles","FAB_GROUPES","fabChoisir","maskOpenings","pasteOpenings","textStrokes","crc32","zipBlob","exportFab",
+  "drillFile","buildFabFiles","FAB_GROUPES","fabChoisir","pcbCartouche","pcbCartouchePage","cartoucheSocieteEcrire","CARTOUCHE_PROFIL","dfCfg","cartoucheSuivant","CARTOUCHE_FORMATS","maskOpenings","pasteOpenings","textStrokes","crc32","zipBlob","exportFab",
   "positionsCsvText","bomPcbCsvText","pcbCsvCell","fabReadme",
   /* variantes de montage (commun/variantes.js + 26-variantes.js) */
   "varNorm","varVide","varEstMonte","pcbVarDepuisSchema","pcbVarChoisir","pcbVarDessiner",
@@ -1996,6 +1996,33 @@ T("ECO : la capa passe de 0603 en 0805, ses pistes suivent leurs pastilles",()=>
     decouplageRelie(D);
     if(S.aRerouter.length)throw new Error("rien à marquer : "+S.aRerouter.map(g=>g.msg));
   }finally{undo();suiviFin(D.reg);}
+});
+T("plans : le cartouche est celui de l'éditeur — société du profil, titre, noms, dates et n° de la carte",()=>{
+  const saved=serialize(), avant=profLire(CARTOUCHE_PROFIL);
+  try{
+    cartoucheSocieteEcrire({societe:"Societe Essai",adresse:"1 rue A;33000 Ville",tel:"0102",web:"www.essai.example"});
+    S.dessin={};S.cartoucheInfo={titre:"T-ESSAI",dessine:"XY",dateDessin:"01/02/2026",verifie:"ZW",dateVerif:"03/02/2026",pcbNo:"N-PCB-9"};
+    if(dfCfg().cartouche!=="en")throw new Error("avec une société au profil, « mon cartouche » par défaut");
+    const doc=dfDocument(), textes=new Set();
+    for(const F of doc.feuilles)for(const it of F.items)if(it.t==="t")textes.add(it.s);
+    for(const t of ["SOCIETE ESSAI","1 rue A","TEL : 0102","T-ESSAI","XY","01/02/2026","ZW","03/02/2026","N-PCB-9"])
+      if(!textes.has(t))throw new Error("« "+t+" » absent des plans");
+  }finally{cartoucheSocieteEcrire(avant);loadDoc(JSON.parse(saved),true);}
+});
+T("cartouche du PCB : page centrée sur la carte, dessinée à l'endroit, gardée à l'enregistrement",()=>{
+  const saved=serialize(), flip=S.flip;
+  try{
+    if(pcbCartouchePage())throw new Error("aucun cartouche par défaut");
+    S.cartouche=cartoucheSuivant(cartoucheSuivant(""));
+    const P=pcbCartouchePage(), b=S.board;
+    if(S.cartouche!=="A3"||P.w!==420||P.h!==297)throw new Error("A3 attendu : "+S.cartouche+" "+JSON.stringify(P));
+    if(Math.abs(P.x+P.w/2-(b.x+b.w/2))>1e-9||Math.abs(P.y+P.h/2-(b.y+b.h/2))>1e-9)throw new Error("page non centrée");
+    S.cartoucheInfo={titre:"Carte essai",verifie:"CD",pcbNo:"X1PCB-A"};
+    S.flip=true;draw();S.flip=false;draw();
+    loadDoc(JSON.parse(serialize()),true);
+    if(S.cartouche!=="A3")throw new Error("cartouche perdu : "+S.cartouche);
+    if(S.cartoucheInfo.pcbNo!=="X1PCB-A"||S.cartoucheInfo.verifie!=="CD")throw new Error("champs perdus : "+JSON.stringify(S.cartoucheInfo));
+  }finally{S.flip=flip;loadDoc(JSON.parse(saved),true);}
 });
 T("dossier de fabrication : une famille décochée n'est pas dans le .zip, et la carte s'en souvient",()=>{
   const saved=serialize();

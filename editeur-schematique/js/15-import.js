@@ -171,6 +171,11 @@ function normPage(p,i){
   };
   const rs=Math.round(num(src.refStart,0));
   if(rs>=1)pObj.refStart=rs;
+  if(CARTOUCHE_FORMATS[src.format]){
+    pObj.format=src.format;
+    if(Number.isFinite(+src.pageX))pObj.pageX=+src.pageX;
+    if(Number.isFinite(+src.pageY))pObj.pageY=+src.pageY;
+  }
   if(src.blockPos && typeof src.blockPos==="object" && Number.isFinite(+src.blockPos.x) && Number.isFinite(+src.blockPos.y)){
     pObj.blockPos = {x: snap(+src.blockPos.x), y: snap(+src.blockPos.y)};
   }
@@ -200,6 +205,7 @@ function loadDoc(o, keepPage){
   /* variantes de montage : un composant ne garde que celles que le document
      déclare -- une variante supprimée à la main ne le laisse pas « non monté » */
   S.variantes=varNorm(o.variantes);
+  S.cartoucheInfo=cartoucheInfoNorm(o.cartouche);
   /* contraintes de nets pour le PCB : les bornes de commun/contraintes.js */
   S.contraintes={nets:cmNormNets(o.contraintes&&o.contraintes.nets),
                  groupes:cmNormGroupes(o.contraintes&&o.contraintes.groupes)};

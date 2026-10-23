@@ -124,7 +124,54 @@ function refStartPage(i){
   }
   buildTabs();
 }
+/* Cadre de page et cartouche de la feuille courante (commun/cartouche.js),
+   format réglé feuille par feuille. La page se centre sur le dessin quand on
+   choisit son format, puis reste où elle est (pageX, pageY : son coin). */
+const SCH_U=20/2.54;            // unités du schéma par mm : la grille de 20 vaut 0,1 pouce
+function schPage(){
+  const p=S.pages[S.page], F=p&&CARTOUCHE_FORMATS[p.format];
+  if(!F)return null;
+  const x1=p.pageX||0, y1=p.pageY||0;
+  return {x1,y1,x2:x1+F.w*SCH_U,y2:y1+F.h*SCH_U};
+}
+function schCartouche(c){
+  const p=S.pages[S.page], P=schPage();
+  if(!P)return;
+  const vid=S.variantes&&S.variantes.active;
+  cartoucheDessiner(c,P.x1,P.y1,SCH_U,p.format,
+    cartoucheChamps(S.cartoucheInfo,p.name,S.page?S.page+"/"+(S.pages.length-1):"0",
+                    vid&&typeof varNom==="function"?varNom(S.variantes,vid):""),"sch");
+}
+/* Format de la feuille courante ; un nouveau format recentre la page sur le dessin. */
+function schCartoucheFormat(f){
+  const p=S.pages[S.page];
+  if((p.format||"")===f)return;
+  delete p.pageX;delete p.pageY;
+  if(f){
+    p.format=f;
+    const b=schContenu(), F=CARTOUCHE_FORMATS[f];
+    if(b){p.pageX=snap((b.x1+b.x2-F.w*SCH_U)/2);p.pageY=snap((b.y1+b.y2-F.h*SCH_U)/2);}
+  }else delete p.format;
+}
+function schCartoucheBasculer(){
+  push();storeCurrent();
+  schCartoucheFormat(cartoucheSuivant(S.pages[S.page].format||""));
+  buildTabs();fit();
+}
+/* Le bouton : format de la feuille, champs du document, société du profil */
+function schCartoucheDialogue(){
+  cartoucheDialogue({format:S.pages[S.page].format||"",info:S.cartoucheInfo,appliquer:(f,info)=>{
+    push();storeCurrent();
+    const avant=S.pages[S.page].format||"";
+    S.cartoucheInfo=info;
+    schCartoucheFormat(f);
+    buildTabs();
+    if(f!==avant)fit();else draw();
+  }});
+}
 function buildTabs(){
+  const b=document.getElementById("bCartouche"), f=S.pages[S.page]&&S.pages[S.page].format;
+  if(b){b.textContent="Cartouche : "+(f||"aucun");b.classList.toggle("on",!!f);}
   const box=document.getElementById("tabs");
   box.innerHTML="";
   S.pages.forEach((p,i)=>{
@@ -342,6 +389,7 @@ function sheetInterconnections(){
 function serialize(){
   storeCurrent();
   return JSON.stringify({pages:S.pages,page:S.page,netClasses:S.netClasses,variantes:S.variantes,symboles:S.symboles,
+                         cartouche:S.cartoucheInfo||{},
                          contraintes:S.contraintes});
 }
 /* Pile pleine, deux lots de Claude d'affilée (instantanés marqués d'une espace finale par
@@ -371,6 +419,7 @@ function restore(js){
   S.pages=o.pages;loadPage(o.page||0);
   S.netClasses=o.netClasses||{};
   S.variantes=varNorm(o.variantes);
+  S.cartoucheInfo=cartoucheInfoNorm(o.cartouche);
   S.contraintes={nets:cmNormNets(o.contraintes&&o.contraintes.nets),
                  groupes:cmNormGroupes(o.contraintes&&o.contraintes.groupes)};
   buildTabs();refreshPanels();draw();

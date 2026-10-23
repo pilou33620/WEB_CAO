@@ -588,6 +588,7 @@ function draw(){
   ctx.restore();
 
   ctx.setTransform(dpr*S.scale,0,0,dpr*S.scale,dpr*S.ox,dpr*S.oy);
+  schCartouche(ctx);
   drawDrawings(ctx);
   drawSheetBlocks(ctx);
   drawNetGlow(ctx);

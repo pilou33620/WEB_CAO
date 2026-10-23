@@ -55,7 +55,7 @@ global.BroadcastChannel.prototype.close=function(){
 const code=fs.readFileSync(path.join(__dirname,"..","dist","schema.js"),"utf8");
 const EXPOSE=[
   /* état et feuilles */
-  "S","G","newPage","refStartPage","refStartDe","usedRefs","loadPage","storeCurrent","gotoPage","addPage","removePage","clearSel",
+  "S","G","newPage","refStartPage","refStartDe","usedRefs","schCartoucheBasculer","schCartouche","schPage","schContenu","CARTOUCHE_FORMATS","cartoucheSuivant","loadPage","storeCurrent","gotoPage","addPage","removePage","clearSel",
   "SCHEMA_PATTERNS","NET_CLASSES","netClassSelect",
   "addComp","schComposantsDansZone","schToutesLesZones",
   "push","undo","redo","histBorner","HIST_MAX","touchWires","buildTabs","draw","fit","resize",
@@ -329,6 +329,30 @@ T("canal de pilotage : cao_valeur_composant propose, applique en une étape, Ctr
   }finally{global.Pilote=ancien;}
 });
 
+T("cartouche : aucun → A4 → A3 → aucun, par feuille, gardé à l'enregistrement",()=>{
+  const avant=serialize();
+  try{
+    addPage(false); const i=S.page;
+    const r=addComp("resistor",3000,4000);
+    schCartoucheBasculer();
+    if(S.pages[i].format!=="A4")throw new Error("A4 attendu : "+S.pages[i].format);
+    const P=schPage();
+    if(!(P.x1<r.x&&r.x<P.x2&&P.y1<r.y&&r.y<P.y2))throw new Error("la page doit entourer le dessin : "+JSON.stringify(P));
+    schCartoucheBasculer();
+    if(S.pages[i].format!=="A3")throw new Error("A3 attendu : "+S.pages[i].format);
+    if(!/A3/.test(document.getElementById("bCartouche").textContent))throw new Error("bouton pas à jour");
+    S.cartoucheInfo={titre:"Carte essai",dessine:"AB",dateDessin:"01/02/2026",schNo:"X1SCH-A",bidon:"<b>"};
+    draw();                                   // le cadre se dessine sans erreur
+    const nom=S.pages[i].name;
+    loadDoc(JSON.parse(serialize()),true);
+    if(!S.pages.some(p=>p.name===nom&&p.format==="A3"))throw new Error("format perdu au rechargement");
+    if(S.cartoucheInfo.titre!=="Carte essai"||S.cartoucheInfo.schNo!=="X1SCH-A"||"bidon" in S.cartoucheInfo)
+      throw new Error("champs du cartouche : "+JSON.stringify(S.cartoucheInfo));
+    S.page=S.pages.findIndex(p=>p.name===nom&&p.format==="A3");loadPage(S.page);
+    schCartoucheBasculer();
+    if("format" in S.pages[S.page])throw new Error("retour à « aucun » attendu");
+  }finally{loadDoc(JSON.parse(avant),true);}
+});
 T("feuille : premier numéro des repères, renumérotation sur demande, gardé à l'enregistrement",()=>{
   const avant=serialize(), pr=global.prompt, conf=global.confirm;
   try{

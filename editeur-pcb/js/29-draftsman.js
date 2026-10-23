@@ -87,7 +87,10 @@ function dfCfg(){
     verifie:txt(src.verifie), approuve:txt(src.approuve),
     /* cartouche « en » : celui des dossiers de couches (DESIGN TITLE,
        DRAWING NAME, DRAWN / CHECKED, PCB NO., mention de confidentialité) */
-    cartouche:src.cartouche==="en"?"en":"fr",
+    /* à défaut de choix, le cartouche de l'utilisateur dès que son profil
+       porte une société (commun/cartouche.js) */
+    cartouche:src.cartouche==="fr"||src.cartouche==="en"?src.cartouche:
+      (typeof cartoucheSociete==="function"&&cartoucheSociete().societe?"en":"fr"),
     titre:txt(src.titre), adresse:txt(src.adresse,300), tel:txt(src.tel), web:txt(src.web),
     confid:txt(src.confid,600),
     notes:txt(src.notes,4000),
@@ -227,6 +230,8 @@ function dfLigne(F,x1,y1,x2,y2,lw,c,tirets){
 function dfRect(F,x,y,w,h,o){
   dfPoly(F,[{x,y},{x:x+w,y},{x:x+w,y:y+h},{x,y:y+h}],Object.assign({ferme:true},o||{}));
 }
+/* Image (le logo du cartouche) : un data URL, posé dans le rectangle donné. */
+function dfImage(F,src,x,y,w,h){F.items.push({t:"img",src,x,y,w,h});}
 function dfCercle(F,x,y,r,o){
   o=o||{};
   F.items.push({t:"c",x,y,r,lw:o.lw||0.25,trait:o.trait===undefined?0:o.trait,
@@ -274,7 +279,7 @@ function dfCouleur(c,trait){
 /* Le contenu d'une page. L'état graphique (épaisseur, couleurs, tirets)
    n'est réémis que lorsqu'il change : une couche de cuivre compte des
    milliers de pistes de même largeur. */
-function dfContenu(F,FE){
+function dfContenu(F,FE,IM){
   const H=F.h, L=["1 J 1 j"];
   const X=x=>dfNum(x/DF_PT), Y=y=>dfNum((H-y)/DF_PT);
   const st={lw:"",sc:"",fc:"",dash:false};
@@ -320,9 +325,27 @@ function dfContenu(F,FE){
       L.push("BT /F"+(it.gras?2:1)+" "+dfNum(it.pt)+" Tf "+(it.cache?3:0)+" Tr "+
         dfNum(ca)+" "+dfNum(sa)+" "+dfNum(-sa)+" "+dfNum(ca)+" "+X(x0)+" "+Y(y0)+" Tm "+
         (FE?FE.chaine(it.s,it.gras):dfPdfLit(it.s))+" Tj ET");
+    }else if(it.t==="img"&&IM&&IM.has(it.src)){
+      L.push("q "+dfNum(it.w/DF_PT)+" 0 0 "+dfNum(it.h/DF_PT)+" "+X(it.x)+" "+Y(it.y+it.h)+" cm /"+IM.get(it.src).nom+" Do Q");
     }
   }
   return L.join("\n")+"\n";
+}
+/* Les pixels d'une image déjà décodée (cartoucheImage) : RVB et alpha, tels
+   que le PDF les veut, sans compression. Hors navigateur ou pas encore
+   prête : null, et la feuille part sans elle. */
+function dfImagePixels(src){
+  const im=typeof cartoucheImage==="function"?cartoucheImage(src):null;
+  if(!im||typeof document==="undefined")return null;
+  const cv=document.createElement("canvas");
+  cv.width=im.naturalWidth;cv.height=im.naturalHeight;
+  const g=cv.getContext("2d");
+  if(!g||!g.getImageData)return null;
+  g.drawImage(im,0,0);
+  const d=g.getImageData(0,0,cv.width,cv.height).data, n=cv.width*cv.height;
+  const rvb=new Uint8Array(n*3), a=new Uint8Array(n);
+  for(let i=0;i<n;i++){rvb[i*3]=d[i*4];rvb[i*3+1]=d[i*4+1];rvb[i*3+2]=d[i*4+2];a[i]=d[i*4+3];}
+  return {w:cv.width,h:cv.height,rvb,a};
 }
 /* Le fichier. Plan des objets : catalogue, arbre des pages, deux fontes,
    ressources, informations, racine des signets, puis les pages et leurs
@@ -335,6 +358,13 @@ function dfPdf(feuilles,meta){
   const CAT=alloc(), PAGES=alloc(), F1=alloc(), F2=alloc(), RES=alloc(),
         INFO=alloc(), OUTL=alloc();
   const pageId=feuilles.map(()=>alloc()), contId=feuilles.map(()=>alloc());
+  /* images (le logo) : une fois chacune, avec son masque alpha */
+  const IM=new Map();
+  for(const F of feuilles)for(const it of F.items)
+    if(it.t==="img"&&!IM.has(it.src)){
+      const px=dfImagePixels(it.src);
+      if(px)IM.set(it.src,{nom:"Im"+(IM.size+1),id:alloc(),masque:alloc(),px});
+    }
   /* fonte embarquée (33-draftsman-export.js) : sous-ensemble TrueType des
      glyphes employés, Identity-H et /ToUnicode ; null → Helvetica, WinAnsi */
   const FE=typeof dfFontePreparer==="function"?dfFontePreparer(feuilles,meta.fonte):null;
@@ -372,7 +402,14 @@ function dfPdf(feuilles,meta){
     obj(F1,"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
     obj(F2,"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>");
   }
-  obj(RES,"<< /Font << /F1 "+F1+" 0 R /F2 "+F2+" 0 R >> /ProcSet [/PDF /Text] >>");
+  obj(RES,"<< /Font << /F1 "+F1+" 0 R /F2 "+F2+" 0 R >>"+
+      (IM.size?" /XObject << "+[...IM.values()].map(m=>"/"+m.nom+" "+m.id+" 0 R").join(" ")+" >>":"")+
+      " /ProcSet [/PDF /Text"+(IM.size?" /ImageC":"")+"] >>");
+  for(const m of IM.values()){
+    const p=m.px, dims=" /Width "+p.w+" /Height "+p.h+" /BitsPerComponent 8";
+    obj(m.masque,"<< /Type /XObject /Subtype /Image"+dims+" /ColorSpace /DeviceGray /Length "+p.a.length+" >>",p.a);
+    obj(m.id,"<< /Type /XObject /Subtype /Image"+dims+" /ColorSpace /DeviceRGB /SMask "+m.masque+" 0 R /Length "+p.rvb.length+" >>",p.rvb);
+  }
   const d=new Date(), p2=v=>String(v).padStart(2,"0");
   const quand="D:"+d.getFullYear()+p2(d.getMonth()+1)+p2(d.getDate())+
               p2(d.getHours())+p2(d.getMinutes())+p2(d.getSeconds());
@@ -397,7 +434,7 @@ function dfPdf(feuilles,meta){
       " /Count "+sig.length+" >>");
 
   feuilles.forEach((F,i)=>{
-    const contenu=dfContenu(F,FE);
+    const contenu=dfContenu(F,FE,IM);
     obj(contId[i],"<< /Length "+enc.encode(contenu).length+" >>",contenu);
     obj(pageId[i],"<< /Type /Page /Parent "+PAGES+" 0 R /MediaBox [0 0 "+
         dfNum(F.w/DF_PT)+" "+dfNum(F.h/DF_PT)+"] /Contents "+contId[i]+" 0 R /Resources "+RES+" 0 R >>");
@@ -454,6 +491,9 @@ function dfSvg(F,hits,sur){
     }else if(it.t==="c"){
       o.push('<circle cx="'+n(it.x)+'" cy="'+n(it.y)+'" r="'+n(it.r)+'" fill="'+dfSvgCouleur(it.plein)+
         '" stroke="'+dfSvgCouleur(it.trait)+'" stroke-width="'+n(it.lw)+'"/>');
+    }else if(it.t==="img"){
+      o.push('<image href="'+esc(it.src)+'" x="'+n(it.x)+'" y="'+n(it.y)+'" width="'+n(it.w)+'" height="'+n(it.h)+
+        '" preserveAspectRatio="xMinYMid meet"/>');
     }else if(it.t==="t"&&!it.cache){
       o.push('<text x="'+n(it.x)+'" y="'+n(it.y)+'" font-size="'+n(it.pt*DF_PT)+
         '" font-family="Helvetica,Arial,sans-serif"'+(it.gras?' font-weight="bold"':"")+
@@ -555,6 +595,13 @@ function dfCartoucheEn(F,ctx,num,total){
   for(const l of String(cfg.adresse||"").split(/\r?\n|;/).map(s=>s.trim()).filter(Boolean).slice(0,4)){
     val(l,x+1.2,ly,5.5);ly+=2.4;
   }
+  /* le logo du profil (commun/cartouche.js), entre l'adresse et le téléphone */
+  const im=ctx.logo&&typeof cartoucheImage==="function"?cartoucheImage(ctx.logo,()=>{if(DF.doc)dfReconstruire();}):null;
+  const bas=yb-(cfg.tel?5.6:0)-(cfg.web?2.6:0)-0.6;
+  if(im&&bas-ly>2){
+    const k=Math.min(Math.min(9,bas-ly)/im.naturalHeight,Math.min(32,xA-x-2.4)/im.naturalWidth);
+    dfImage(F,ctx.logo,x+1.2,ly,im.naturalWidth*k,im.naturalHeight*k);
+  }
   if(cfg.tel)val("TEL : "+cfg.tel,x+1.2,yb-4,5.5);
   if(cfg.web)val(cfg.web,x+1.2,yb-1.3,5.5);
   // dates et noms
@@ -570,8 +617,8 @@ function dfCartoucheEn(F,ctx,num,total){
     if(c!=null)val(c,i===3?(g1+xB)/2:(g2+xB)/2,yy,i?7:5,{ancre:"m",c:i?0:0.25});
   };
   ligne(0,"","DATE","NAME");
-  ligne(1,"DRAWN",date,cfg.auteur||"—");
-  ligne(2,"CHECKED",cfg.verifie?date:"",cfg.verifie||"—");
+  ligne(1,"DRAWN",ctx.dateDessin||date,cfg.auteur||"—");
+  ligne(2,"CHECKED",ctx.dateVerif||(cfg.verifie?date:""),cfg.verifie||"—");
   ligne(3,"PCB NO.","",ctx.pcbNo||ctx.docNum);
   // titre du design, nom de la feuille
   const ym=y+(yb-y)*0.47;
@@ -1339,14 +1386,24 @@ function dfFeuillePtst(ctx){
 /* ==========================================================================
    Le document
    ========================================================================== */
+/* Le cartouche est celui de l'éditeur (commun/cartouche.js) : la société et
+   le logo du profil, le titre, les noms, les dates et le n° de PCB de la
+   carte. Les anciens réglages des plans ne servent plus que de repli. */
 function dfContexte(){
   const cfg=dfCfg();
   const vid=(S.variantes&&S.variantes.active)||"";
   let rev="A";
   try{if(typeof projdRevision==="function")rev=projdRevision()||"A";}catch(_){}
+  const i=typeof cartoucheInfoNorm==="function"?cartoucheInfoNorm(S.cartoucheInfo):{};
+  const soc=typeof cartoucheSociete==="function"?cartoucheSociete():{};
+  for(const k of ["societe","adresse","tel","web","confid"])if(soc[k])cfg[k]=soc[k];
+  if(i.dessine)cfg.auteur=i.dessine;
+  if(i.verifie)cfg.verifie=i.verifie;
+  if(i.titre)cfg.titre=i.titre;
   return {cfg,vid,variante:vid&&typeof varNom==="function"?varNom(S.variantes,vid):"",
-          projet:pcbProjNom()||"Carte",docNum:fabBase()+"-PLANS",pcbNo:fabBase()+"-"+rev,rev,
-          date:new Date().toISOString().slice(0,10)};
+          projet:pcbProjNom()||"Carte",docNum:fabBase()+"-PLANS",pcbNo:i.pcbNo||fabBase()+"-"+rev,rev,
+          date:new Date().toISOString().slice(0,10),
+          dateDessin:i.dateDessin||"",dateVerif:i.dateVerif||"",logo:soc.logo||""};
 }
 /* `genre` (« fab », « asmT », « bom », « cu2 »…) : ne refaire que les
    feuilles de ce genre, suites comprises. C'est ce que demande la
@@ -1462,6 +1519,7 @@ function dfOuvrir(){
       const a=b.dataset.a;
       if(a==="fermer")dfFermer();
       else if(a==="pdf")dfExporter();
+      else if(a==="cartouche")pcbCartoucheDialogue(()=>dfReconstruire());
       else if(a==="page"){DF.page=+b.dataset.p;DF.actif=-1;dfRendreApercu();}
       else if(a==="hit")dfAller(+b.dataset.i);
       else if(a==="zoom+"){DF.zoom=Math.min(8,DF.zoom*1.4);dfRendreApercu();}
@@ -1504,11 +1562,10 @@ function dfRendreCadre(){
           (c.format===f?" selected":"")+'>'+f+' paysage ('+DF_FORMATS[f].w+' × '+DF_FORMATS[f].h+' mm)</option>').join("")+'</select>'+
         '<div class="df-h">Cartouche</div>'+
         '<select class="tbsel" data-cfg="cartouche">'+
-          '<option value="fr"'+(c.cartouche==="fr"?" selected":"")+'>Cartouche standard</option>'+
-          '<option value="en"'+(c.cartouche==="en"?" selected":"")+'>Cartouche dossier de couches (DESIGN TITLE…)</option></select>'+
-        champ("societe","Société")+champ("auteur","Dessiné par")+champ("verifie","Vérifié par")+champ("approuve","Approuvé par")+
-        champ("titre","Titre du design (DESIGN TITLE)")+champ("adresse","Adresse (lignes séparées par ;)",300)+
-        champ("tel","Téléphone")+champ("web","Site web")+champ("confid","Mention de confidentialité (vide : texte standard)",600)+
+          '<option value="en"'+(c.cartouche==="en"?" selected":"")+'>Mon cartouche (DESIGN TITLE, DRAWN / CHECKED…)</option>'+
+          '<option value="fr"'+(c.cartouche==="fr"?" selected":"")+'>Cartouche standard</option></select>'+
+        '<button class="tb" type="button" data-a="cartouche" style="margin-top:6px" title="Société, adresse, logo (votre profil) ; titre, noms, dates et n° de PCB (la carte) : le même cartouche que l\'éditeur">▭ Cartouche…</button>'+
+        champ("approuve","Approuvé par (cartouche standard)")+
         '<div class="df-h">Notes ajoutées au plan de fabrication</div>'+
         '<textarea data-cfg="notes" class="df-notes" placeholder="Une note par ligne">'+esc(c.notes)+'</textarea>'+
         '<div class="df-h">Cotes et détails</div><div id="dfCotes"></div>'+
