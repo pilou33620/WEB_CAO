@@ -53,7 +53,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* nature d'un via : traversant, borgne dessus/dessous, enterre */
   "VIA_KINDS","viaKindOf","viaKindTxt","viaKindsAvail","viaSetKind","viaBuild","fabBase",
   "flipSel","push","undo","redo","touch","padsWorld","cuId","serialize","loadDoc","exportPng",
-  "setFlip","setContrast","autoPlace","placerSatellites","placeManuelle","satValeurF","conn","netTable","fit","zoneClick","zoneMove",
+  "setFlip","setContrast","setFaceOpp","faceAlpha","autoPlace","placerSatellites","placeManuelle","satValeurF","conn","netTable","fit","zoneClick","zoneMove",
   "closeZone","fullBoardZone","zoneMask","labelMask","maskAt","classOf","setNetClass","defaultWidth",
   "clrPair","applyClasses","jointAt","splitTrack","netTracks","selectNetRouting",
   "deleteNetRouting","autoClass","classOptionsHtml","poserClasseNet","schemaPublie","listNets","mkFp","w2s","runDrc","padsOf",
@@ -4672,6 +4672,21 @@ T("vue dessous + contraste",()=>{
   setFlip(true);draw();
   setContrast(2);draw();
   setContrast(0);setFlip(false);draw();
+});
+T("retourner la carte : la couche externe suit, la face opposée s'efface",()=>{
+  setFlip(false);S.active=0;
+  setFlip(true);
+  if(S.active!==S.cu-1)throw new Error("vue dessous, couche active : "+S.active);
+  setFlip(false);
+  if(S.active!==0)throw new Error("vue dessus, couche active : "+S.active);
+  setFaceOpp(2);
+  if(faceAlpha(true)!==1||faceAlpha(false)!==0)throw new Error("vue dessus : le dessous doit être masqué");
+  setFlip(true);
+  if(faceAlpha(false)!==1||faceAlpha(true)!==0)throw new Error("vue dessous : le dessus doit être masqué");
+  draw();
+  setFaceOpp(1);
+  if(!(faceAlpha(true)>0&&faceAlpha(true)<1))throw new Error("atténuée : "+faceAlpha(true));
+  setFlip(false);setFaceOpp(1);
 });
 T("export png / json",()=>{
   exportPng();

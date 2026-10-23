@@ -93,11 +93,14 @@ function padOpening(c,q,grow,color,lw){
 }
 function drawTech(c){
   for(const [side,keyM,keyP] of [[0,"maskT","pasteT"],[1,"maskB","pasteB"]]){
+    c.globalAlpha=faceAlpha(!side);
+    if(!c.globalAlpha)continue;
     if(S.show[keyM])
       for(const o of maskOpenings(side))padOpening(c,o.q,o.grow,C_MASK,px(1.1));
     if(S.show[keyP])
       for(const o of pasteOpenings(side))padOpening(c,o.q,o.grow,C_PASTE,px(1));
   }
+  c.globalAlpha=1;
   if(S.show.ptst){
     /* une cible et le repère : à l'écran, un point de test se repère de loin */
     c.strokeStyle=c.fillStyle=C_PTST;c.lineWidth=px(1.4);

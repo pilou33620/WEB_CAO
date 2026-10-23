@@ -1069,7 +1069,7 @@ const S = {
   contraintes:{classes:{},nets:{},matrice:{},groupes:[],schema:{nets:{},groupes:[]}},  // gestionnaire de contraintes (30-contraintes.js)
   dpRules:[],                 // règles de paire ; vide = la règle d'usine
   scale:5, ox:0, oy:0,
-  grid:0.1, showGrid:true, flip:false, contrast:1,   // pas d'accrochage au démarrage
+  grid:0.1, showGrid:true, flip:false, contrast:1, faceOpp:1,   // pas d'accrochage au démarrage
   origin:{x:0,y:0}, fabOrigin:false,   // origine utilisateur ; repère des fichiers
   coord:{open:false,mode:"abs"},       // saisie de coordonnées au clavier
   avoid:true,                          // le tracé se tient à distance des obstacles

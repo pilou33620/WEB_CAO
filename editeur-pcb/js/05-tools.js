@@ -972,6 +972,7 @@ function hitTest(x,y,e){
       const d=S.drawings[i];
       if(d.layer==="silkT"&&!S.show.silkT)continue;
       if(d.layer==="silkB"&&!S.show.silkB)continue;
+      if(!faceAlpha(d.layer!=="silkB"))continue;     // face opposée masquée : rien à prendre
       const tol=Math.max((d.width||0)/2,px(3.5));
       if(d.shape==="poly"){
         if(inPoly(x,y,d.pts)||polyEdgeDist(x,y,d.pts)<=tol)return {drawing:d};
@@ -4839,6 +4840,7 @@ cv.addEventListener("pointerup",e=>{
         for(const d of S.drawings){
           if(d.layer==="silkT"&&!S.show.silkT)continue;
           if(d.layer==="silkB"&&!S.show.silkB)continue;
+          if(!faceAlpha(d.layer!=="silkB"))continue;
           const minX=Math.min(d.x1,d.x2), maxX=Math.max(d.x1,d.x2);
           const minY=Math.min(d.y1,d.y2), maxY=Math.max(d.y1,d.y2);
           if(minX>=x1&&maxX<=x2&&minY>=y1&&maxY<=y2){
@@ -5278,9 +5280,20 @@ function buildGridMenu(){
     String(g).replace(".",",")+' mm</option>').join("");
 }
 function setFlip(v){
-  S.flip=!!v;
+  v=!!v;
+  /* Retourner la carte, c'est aussi prendre en main la face qu'on regarde :
+     une couche externe passe à l'autre, une couche interne reste. */
+  if(v!==S.flip&&S.cu>1&&(S.active===0||S.active===S.cu-1))setActive(v?S.cu-1:0);
+  S.flip=v;
   $("bView").innerHTML="Vue : "+(S.flip?"dessous":"dessus")+' <kbd>Y</kbd>';
   $("bView").classList.toggle("on",S.flip);
+  if(typeof profilNoter==="function")profilNoter();
+  draw();
+}
+function setFaceOpp(v){
+  S.faceOpp=v;
+  $("bFaceOpp").innerHTML="Face opposée : "+["normale","atténuée","masquée"][v];
+  $("bFaceOpp").classList.toggle("on",v>0);
   if(typeof profilNoter==="function")profilNoter();
   draw();
 }

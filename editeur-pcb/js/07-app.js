@@ -648,6 +648,7 @@ $("bRats").onclick=()=>{S.show.rats=!S.show.rats;$("bRats").classList.toggle("on
 $("bCartouche").onclick=()=>pcbCartoucheDialogue();
 $("bView").onclick=()=>setFlip(!S.flip);
 $("bContrast").onclick=()=>setContrast((S.contrast+1)%4);
+$("bFaceOpp").onclick=()=>setFaceOpp((S.faceOpp+1)%3);
 $("bFit").onclick=fit;
 $("bImport").onclick=openImport;
 if($("bEcoSync")) $("bEcoSync").onclick=()=>{ if(typeof pcbOuvrirFenetreEco==="function") pcbOuvrirFenetreEco(); };

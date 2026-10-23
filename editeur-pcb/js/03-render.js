@@ -110,6 +110,10 @@ function layerOrder(){
   r.push(S.active);
   return r;
 }
+/* La face qu'on ne regarde pas (sérigraphie, masque, pâte) : vue de dessus,
+   c'est le dessous, et inversement. « Face opposée » la laisse, l'atténue ou
+   la retire, comme une carte qu'on tient vraiment dans la main. */
+function faceAlpha(top){return top===!S.flip?1:[1,0.3,0][S.faceOpp|0];}
 function layerAlpha(i){
   if(!S.cuL[i]||!S.cuL[i].vis)return 0;
   if(i===S.active||S.contrast===0)return 1;
@@ -547,7 +551,8 @@ function drawSilk(c){
        carte importée et routée, le contour pointillé seul se perdait dans le
        cuivre, alors chaque pastille du boîtier pris est cernée. */
     if(sel)for(const q of padsWorld(fp))padOutline(c,q,C_SEL,px(1.6));
-    if(!(top?S.show.silkT:S.show.silkB)&&!sel)continue;
+    const fa=sel?1:faceAlpha(top);
+    if(!(top?S.show.silkT:S.show.silkB)&&!sel||!fa)continue;
     const T=fpXform(fp), b=bodyOf(fp);
     const pts=[T(b.x1,b.y1),T(b.x2,b.y1),T(b.x2,b.y2),T(b.x1,b.y2)];
     /* Sérigraphie automatique coupée (carte importée : sa vraie sérigraphie
@@ -555,7 +560,7 @@ function drawSilk(c){
        contour ne revient qu'en pointillés à la sélection, pour voir ce qu'on
        tient, et le repère passe en gris — le gris de ce qui ne s'imprime pas. */
     const auto=fp.silk!==false;
-    c.globalAlpha=S.hlNet?0.55:1;
+    c.globalAlpha=(S.hlNet?0.55:1)*fa;
     c.strokeStyle=sel?C_SEL:(top?C_SILK_T:C_SILK_B);
     c.lineWidth=px(1.2);
     if(auto||sel){
@@ -601,6 +606,8 @@ function drawSilk(c){
       if(top&&!S.show.silkT)continue;
       if(!top&&!S.show.silkB)continue;
       const sel = S.sel.drawings && S.sel.drawings.has(d.id);
+      const fa = sel ? 1 : faceAlpha(top);
+      if(!fa)continue;
       if(!sel&&d.shape!=="rect"&&d.shape!=="text"&&d.shape!=="poly"){
         const e=(d.width||0)/2;
         if(horsVue(Math.min(d.x1,d.x2)-e,Math.min(d.y1,d.y2)-e,Math.max(d.x1,d.x2)+e,Math.max(d.y1,d.y2)+e))continue;
@@ -615,7 +622,7 @@ function drawSilk(c){
       const isRect = d.shape === "rect";
       const isText = d.shape === "text";
       if(d.shape === "poly"){
-        c.globalAlpha = S.hlNet ? 0.55 : 1;
+        c.globalAlpha = (S.hlNet ? 0.55 : 1) * fa;
         c.fillStyle = sel ? C_SEL : (top ? C_SILK_T : C_SILK_B);
         c.beginPath();
         for(const P of [d.pts].concat(d.trous||[])){
@@ -644,7 +651,7 @@ function drawSilk(c){
             c.stroke();
           }
         }
-        c.globalAlpha = S.hlNet ? 0.55 : 1;
+        c.globalAlpha = (S.hlNet ? 0.55 : 1) * fa;
         c.strokeStyle = sel ? C_SEL : (top ? C_SILK_T : C_SILK_B);
         c.lineWidth = Math.max(d.width || 0.15, px(1));
         for(const poly of strokes){
@@ -689,7 +696,7 @@ function drawSilk(c){
           c.stroke();
         }
       }
-      c.globalAlpha = S.hlNet ? 0.55 : 1;
+      c.globalAlpha = (S.hlNet ? 0.55 : 1) * fa;
       c.strokeStyle = sel ? C_SEL : (top ? C_SILK_T : C_SILK_B);
       c.lineWidth = Math.max(d.width || 0.15, px(1));
       if(isRect){
@@ -720,8 +727,8 @@ function drawSilk(c){
     }
     c.save();
     c.lineCap="round";c.lineJoin="round";
-    c.globalAlpha=S.hlNet?0.55:1;
     for(const [k,p] of lots){
+      c.globalAlpha=(S.hlNet?0.55:1)*faceAlpha(k[0]==="T");
       c.strokeStyle=k[0]==="T"?C_SILK_T:C_SILK_B;
       c.lineWidth=Math.max(+k.slice(1),px(1));
       c.beginPath();
