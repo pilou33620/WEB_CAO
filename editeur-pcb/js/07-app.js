@@ -128,7 +128,7 @@ function importNetlist(txt,dropMissing){
   if(!S.tracks.length)fit();else draw();
   const nbConf=(res.conflicts&&res.conflicts.length)||0;
   hint("Netlist importée : "+res.added+" empreinte(s) créée(s), "+res.kept+" mise(s) à jour, "+
-       res.nets+" net(s)"+(res.removed?", "+res.removed+" supprimée(s)":"")+
+       res.nets+" net(s)"+(res.renamed?", "+res.renamed+" repère(s) renommé(s)":"")+(res.removed?", "+res.removed+" supprimée(s)":"")+
        (res.repkg?", "+res.repkg+" empreinte(s) refaite(s) sur un nouveau boîtier":"")+
        (res.lib?", "+res.lib+" empreinte(s) de la LIB appliquée(s)":"")+
        (nbConf?", ⚠️ "+nbConf+" pastille(s) routée(s) en conflit":"")+
