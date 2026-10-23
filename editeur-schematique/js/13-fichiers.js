@@ -436,7 +436,10 @@ function bomRows(variante){
           digikey: digikey,
           specs: sp,
           datasheet: datasheet,
-          monte: varEstMonte(c, vid)
+          monte: varEstMonte(c, vid),
+          // pour la nomenclature Excel : la feuille fait la colonne PART, la LIB le reste
+          feuille: p.name||"",
+          lib: entry
       });
     }
   });
@@ -491,4 +494,198 @@ function exportBomCsv(variante){
   document.getElementById("fHint").textContent=
     rows.length+" composant(s) exporté(s) dans "+nom+
     (vid?" — variante « "+varNom(S.variantes,vid)+" », "+nm+" non monté(s).":".");
+}
+
+/* ==========================================================================
+   Nomenclature Excel (.xlsx), au format maison des BOM de carte : trois
+   onglets -- Presentation, History, BOM --, une ligne par repère, la carte nue
+   (CIP1) en tête, les non-montés en rouge marqués « [Not Fitted] ».
+   Le classeur s'écrit en XML brut et part dans un ZIP sans compression
+   (commun/zip.js), qu'Excel ouvre tel quel.
+   ========================================================================== */
+// texte d'une cellule : échappé, sans les caractères de contrôle que le XML refuse
+function bomxXml(v){
+  return esc(v).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g,"");
+}
+/* Styles (index de cellXfs) :
+   0 normal · 1 gras · 2 gras date · 3 en-tête BOM · 4 cellule · 5 jaune · 6 rouge
+   7 légende · 8 en-tête bleu · 9 PCB orange · 10 cadre · 11-15 couleurs du
+   tableau Presentation · 16 cadre fin · 17 en-tête History · 18 version
+   · 19 date · 20 texte sur plusieurs lignes */
+const BOMX_FILLS=["FFFF00","FF0000","99CCFF","FF9900","99CC00","CC99FF","FF9999","66FF99","3333FF"];
+function bomxStyles(){
+  const xf=(font,fill,bord,o)=>{
+    o=o||{};
+    const al=o.h||o.wrap?'<alignment'+(o.h?' horizontal="'+o.h+'"':'')+(o.wrap?' vertical="top" wrapText="1"':'')+'/>':'';
+    return '<xf numFmtId="'+(o.date?14:0)+'" fontId="'+font+'" fillId="'+fill+'" borderId="'+bord+'" xfId="0"'+
+      (o.date?' applyNumberFormat="1"':'')+' applyFont="1" applyFill="1" applyBorder="1"'+(al?' applyAlignment="1">'+al+'</xf>':'/>');
+  };
+  const bd=(g,d,h,b)=>'<border><left'+(g?' style="'+g+'"><color auto="1"/></left>':'/>')+
+    '<right'+(d?' style="'+d+'"><color auto="1"/></right>':'/>')+
+    '<top'+(h?' style="'+h+'"><color auto="1"/></top>':'/>')+
+    '<bottom'+(b?' style="'+b+'"><color auto="1"/></bottom>':'/>')+'<diagonal/></border>';
+  const xfs=[
+    xf(0,0,0), xf(1,0,0,{h:"left"}), xf(1,0,0,{h:"left",date:1}), xf(1,0,2,{h:"left"}),
+    xf(0,0,1), xf(0,2,1), xf(0,3,1), xf(2,0,1),
+    xf(1,4,2), xf(0,5,2), xf(0,0,2),
+    xf(0,6,3), xf(0,7,3), xf(0,8,3), xf(0,9,3), xf(0,10,3), xf(0,0,3),
+    xf(1,4,2,{h:"center"}), xf(0,0,1,{h:"center"}), xf(0,0,1,{h:"center",date:1}), xf(0,0,1,{wrap:1})
+  ];
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'+
+    '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'+
+    '<fonts count="3"><font><sz val="10"/><name val="Arial"/></font><font><b/><sz val="10"/><name val="Arial"/></font>'+
+    '<font><sz val="9"/><name val="Arial"/></font></fonts>'+
+    '<fills count="'+(BOMX_FILLS.length+2)+'"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'+
+    BOMX_FILLS.map(c=>'<fill><patternFill patternType="solid"><fgColor rgb="FF'+c+'"/><bgColor indexed="64"/></patternFill></fill>').join("")+'</fills>'+
+    '<borders count="4">'+bd()+bd("thin","thin","thin","thin")+bd("medium","medium","medium","medium")+bd("medium","medium","thin","thin")+'</borders>'+
+    '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'+
+    '<cellXfs count="'+xfs.length+'">'+xfs.join("")+'</cellXfs>'+
+    '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+}
+/* Une ligne de feuille : cellules [colonne, valeur, style], dans l'ordre des
+   colonnes. Valeur : texte, nombre, {f:"formule"} ou vide (cellule de style seul). */
+function bomxLigne(r,cells,haut){
+  return '<row r="'+r+'"'+(haut?' ht="'+haut+'" customHeight="1"':'')+'>'+cells.map(([col,v,s])=>{
+    const a='<c r="'+col+r+'" s="'+(s||0)+'"';
+    if(v==null||v==="")return a+'/>';
+    if(typeof v==="number")return a+'><v>'+v+'</v></c>';
+    if(v.f)return a+'><f>'+bomxXml(v.f)+'</f></c>';
+    return a+' t="inlineStr"><is><t xml:space="preserve">'+bomxXml(v)+'</t></is></c>';
+  }).join("")+'</row>';
+}
+function bomxFeuille(largeurs,lignes,o){
+  o=o||{};
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'+
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'+
+    '<sheetViews><sheetView workbookViewId="0"'+(o.actif?' tabSelected="1"':'')+'/></sheetViews>'+
+    '<sheetFormatPr defaultRowHeight="12.75"/>'+
+    '<cols>'+largeurs.map((w,i)=>'<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+w+'" customWidth="1"/>').join("")+'</cols>'+
+    '<sheetData>'+lignes.join("")+'</sheetData>'+
+    (o.filtre?'<autoFilter ref="'+o.filtre+'"/>':'')+
+    (o.fusions&&o.fusions.length?'<mergeCells count="'+o.fusions.length+'">'+o.fusions.map(m=>'<mergeCell ref="'+m+'"/>').join("")+'</mergeCells>':'')+
+    '</worksheet>';
+}
+// date du jour en numéro de série Excel (jours depuis le 30/12/1899)
+function bomxDateSerie(d){
+  return Math.round((Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())-Date.UTC(1899,11,30))/86400000);
+}
+/* Champ du catalogue LIB pour une colonne du modèle ; « xx » quand il manque,
+   comme dans les BOM écrites à la main. */
+function bomxLib(r,...cles){
+  for(const k of cles){
+    const v=r.lib&&r.lib[k]!=null?String(r.lib[k]).trim():"";
+    if(v&&v!=="xx")return v;
+  }
+  return "xx";
+}
+// secondes sources au format « P/N_FABRICANT », séparées par des virgules ; « - » s'il n'y en a pas
+function bomxSources(r){
+  const out=[];
+  for(const n of ["2nd","3nd","4nd"]){
+    const pn=bomxLib(r,n+" source P/N");
+    if(pn==="xx")continue;
+    const fab=bomxLib(r,n+" source Manufacturer");
+    out.push(fab==="xx"?pn:pn+"_"+fab);
+  }
+  return out.length?out.join(","):"-";
+}
+// client (Presentation!A3, à remplir dans Excel) : vide, il ne s'affiche pas « 0 » ailleurs
+const BOMX_CLIENT='IF(Presentation!A3="","",Presentation!A3)';
+function bomXlsxFichiers(variante){
+  const vid=variante===undefined?((S.variantes&&S.variantes.active)||""):variante;
+  const rows=bomRows(vid).slice().sort((a,b)=>triFr(String(a.ref),String(b.ref)));
+  if(!rows.length)return null;
+  const carte=(typeof projNom==="function"&&projNom())||"carte";
+  const doc=carte+"BOM";
+  const COLS="ABCDEFGHIJKLMN".split("");
+
+  // Presentation : nom du document, et le tableau PCB / Board name
+  const pres=[
+    bomxLigne(1,[["A",{f:"History!A1"},2],["C","",1]]),
+    bomxLigne(2,[["A",doc,1]]),
+    bomxLigne(3,[["A",""]]),
+    bomxLigne(6,[["B","PCB",8],["C","Board name",8],["D","",8],["E","",8],["F","",8]]),
+    bomxLigne(7,[["B",carte,9],["C",carte+(vid?" — "+varNom(S.variantes,vid):""),10],["D","",10],["E","",10],["F","",10]])
+  ];
+  for(let i=0;i<5;i++)
+    pres.push(bomxLigne(8+i,[["B","",11+i],["C","",16],["D","",16],["E","",16],["F","",16]]));
+  const presFus=[6,7,8,9,10,11,12].map(r=>"C"+r+":F"+r);
+
+  // History : une première version datée du jour, et la grille jusqu'à la ligne 43
+  const vide=["D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U"];
+  const hist=[
+    bomxLigne(1,[["A",{f:"MAX(B9:B43)"},2]]),
+    bomxLigne(2,[["A",{f:"Presentation!A2"},1]]),
+    bomxLigne(3,[["A",{f:BOMX_CLIENT},1]]),
+    bomxLigne(8,[["A","version",17],["B","Date",17],["C","Modifications",8]].concat(vide.map(c=>[c,"",8]),[["V","who",8]]))
+  ];
+  const histFus=["C8:U8"];
+  for(let r=9;r<=43;r++){
+    const premiere=r===9;
+    hist.push(bomxLigne(r,[["A",premiere?"A":"",18],["B",premiere?bomxDateSerie(new Date()):"",19],
+      ["C",premiere?"Initial version : génération de la BOM "+carte:"",20]].concat(vide.map(c=>[c,"",20]),[["V","",18]])));
+    histFus.push("C"+r+":U"+r);
+  }
+
+  // BOM : légende, en-tête, la carte nue, puis un repère par ligne
+  const bom=[
+    bomxLigne(1,[["A",{f:"Presentation!A1"},2]]),
+    bomxLigne(2,[["A",{f:"Presentation!A2"},1],["H","[Not Fitted]",6],["I","NON MONTE",7],["J","",7]]),
+    bomxLigne(3,[["A",{f:BOMX_CLIENT},1],["H","[New vers]",5],["I","DELTAS  version N-1",7],["J","",7]]),
+    bomxLigne(10,["QUANTITY","REFERENCE","DELTA (n-1)","PART","VALUE","POWER","TOLERANCE","PPM","VOLTAGE",
+      "DIELECTRIC","MANUFACTURER","1st SOURCE P/N","2nd SOURCE P/N","DESIGNATION"].map((t,i)=>[COLS[i],t,3])),
+    bomxLigne(11,[1,"CIP1",""].concat([carte+"PCB"],Array(9).fill("xx"),
+      ["See PCB requirement "+carte+"-PCB-MASTER-DRAWING.pdf"]).map((v,i)=>[COLS[i],v,5])),
+    bomxLigne(12,COLS.map(c=>[c,"",4]))
+  ];
+  rows.forEach((r,i)=>{
+    const s=r.monte?4:6;
+    bom.push(bomxLigne(13+i,[1,r.ref,r.monte?"-":"[Not Fitted]",r.feuille||"xx",r.value||"xx",
+      bomxLib(r,"wattage"),bomxLib(r,"tolerance"),bomxLib(r,"PPM"),bomxLib(r,"Voltage Rating"),
+      bomxLib(r,"Dielectrique","Dielectric"),r.manufacturer||"xx",r.mpn||"xx",bomxSources(r),r.desc||"xx"]
+      .map((v,j)=>[COLS[j],v,s])));
+  });
+  const fin=12+rows.length;
+
+  const NS='xmlns="http://schemas.openxmlformats.org/package/2006/relationships"';
+  const T='http://schemas.openxmlformats.org/officeDocument/2006/relationships/';
+  const ent='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
+  const feuilles=["Presentation","History","BOM"];
+  return [
+    {name:"[Content_Types].xml",text:ent+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'+
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'+
+      '<Default Extension="xml" ContentType="application/xml"/>'+
+      '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'+
+      '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'+
+      feuilles.map((_,i)=>'<Override PartName="/xl/worksheets/sheet'+(i+1)+'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join("")+
+      '</Types>'},
+    {name:"_rels/.rels",text:ent+'<Relationships '+NS+'><Relationship Id="rId1" Type="'+T+'officeDocument" Target="xl/workbook.xml"/></Relationships>'},
+    {name:"xl/workbook.xml",text:ent+'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="'+T.slice(0,-1)+'">'+
+      '<bookViews><workbookView activeTab="2"/></bookViews><sheets>'+
+      feuilles.map((n,i)=>'<sheet name="'+n+'" sheetId="'+(i+1)+'" r:id="rId'+(i+1)+'"/>').join("")+'</sheets>'+
+      '<definedNames><definedName name="_xlnm._FilterDatabase" localSheetId="2" hidden="1">BOM!$A$12:$N$'+fin+'</definedName></definedNames>'+
+      // les formules (dates, nom du document) sont calculées à l'ouverture
+      '<calcPr fullCalcOnLoad="1"/></workbook>'},
+    {name:"xl/_rels/workbook.xml.rels",text:ent+'<Relationships '+NS+'>'+
+      feuilles.map((_,i)=>'<Relationship Id="rId'+(i+1)+'" Type="'+T+'worksheet" Target="worksheets/sheet'+(i+1)+'.xml"/>').join("")+
+      '<Relationship Id="rId4" Type="'+T+'styles" Target="styles.xml"/></Relationships>'},
+    {name:"xl/styles.xml",text:bomxStyles()},
+    {name:"xl/worksheets/sheet1.xml",text:bomxFeuille([27.1,16.7,14.7,16.1,18.1,42.7],pres,{fusions:presFus})},
+    {name:"xl/worksheets/sheet2.xml",text:bomxFeuille([23.6,10.6,10.6,10.6,10.6,10.6,10.6,10.6,10.6,10.6,10.6,10.6,10.6,21.9,11.4,10.6,9,11.4,10.6,10.6,51.3,10.6],hist,{fusions:histFus})},
+    {name:"xl/worksheets/sheet3.xml",text:bomxFeuille([13.6,27.1,15,24.9,20.4,15.4,12.1,18.3,25.6,34.7,38,42,64.4,92.4],bom,
+      {actif:true,filtre:"A12:N"+fin,fusions:["I2:J2","I3:J3"]})}
+  ];
+}
+/* « P01x276BOM.xlsx », la variante en suffixe comme pour le CSV. */
+function bomXlsxNom(variante){
+  const sl=variante?varSlug(S.variantes,variante):"";
+  return ((typeof projNom==="function"&&projNom())||"carte")+"BOM"+(sl?"-"+sl:"")+".xlsx";
+}
+function exportBomXlsx(variante){
+  const vid=typeof variante==="string"?variante:((S.variantes&&S.variantes.active)||"");
+  const files=bomXlsxFichiers(vid);
+  if(!files){alert("Document vide : rien à exporter.");return;}
+  const nom=bomXlsxNom(vid);
+  dl(new Blob([zipBlob(files)],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),nom);
+  document.getElementById("fHint").textContent=bomRows(vid).length+" composant(s) exporté(s) dans "+nom+".";
 }

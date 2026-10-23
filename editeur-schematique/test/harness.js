@@ -97,6 +97,7 @@ const EXPOSE=[
   "varNorm","varVide","varAjouter","varSupprimer","varRenommer","varDefinirMonte","varEstMonte",
   "varReperesNonMontes","varSlug","varNom","schVarComposants","schVarChoisir","schVarDessiner",
   "schVarPropsHtml","schVarOuvrir","schVarFermer","bomCsvNom",
+  "bomXlsxFichiers","bomXlsxNom",
   /* nom de projet commun (commun/projet.js) */
   "projNom","projOuvrir","projFermer","projDoc","projPeindre",
   /* dossier de projet et brouillon (commun/projet-disque.js) */
@@ -3707,6 +3708,28 @@ T("variantes : la nomenclature CSV suit la variante (DNP listés, récapitulatif
     // sans argument : la variante active
     S.variantes.active=v.pro;
     if(bomRows().find(r=>r.ref==="R3").monte)throw new Error("la variante active doit s'appliquer par défaut");
+  }finally{variantesFin();}
+});
+T("nomenclature .xlsx : trois onglets, CIP1 en tête, un repère par ligne, DNP en rouge",()=>{
+  const v=variantesEssai();
+  try{
+    const f=bomXlsxFichiers(v.lite), par=n=>f.find(x=>x.name===n).text;
+    for(const n of ["[Content_Types].xml","xl/workbook.xml","xl/styles.xml","xl/worksheets/sheet3.xml"])
+      if(!f.some(x=>x.name===n))throw new Error(n+" absent");
+    const wb=par("xl/workbook.xml");
+    if(!/name="Presentation".*name="History".*name="BOM"/.test(wb))throw new Error("onglets : "+wb);
+    const bom=par("xl/worksheets/sheet3.xml");
+    if(bom.indexOf(">1st SOURCE P/N<")<0||bom.indexOf(">DESIGNATION<")<0)throw new Error("en-tête BOM incomplet");
+    if(!/<row r="11">.*>CIP1</.test(bom))throw new Error("la ligne 11 doit être la carte nue (CIP1)");
+    // R1..R4 en lignes 13 à 16, R2 et R4 non montés (style 6, rouge)
+    const l=r=>(bom.match(new RegExp('<row r="'+r+'">.*?</row>'))||[""])[0];
+    if(l(14).indexOf(">R2<")<0||l(14).indexOf("[Not Fitted]")<0||l(14).indexOf('s="6"')<0)throw new Error("R2 doit être [Not Fitted] en rouge : "+l(14));
+    if(l(13).indexOf("[Not Fitted]")>=0||l(13).indexOf('s="6"')>=0)throw new Error("R1 est monté : "+l(13));
+    if(l(17))throw new Error("4 repères, pas plus");
+    if(bom.indexOf('<autoFilter ref="A12:N16"/>')<0)throw new Error("filtre attendu sur A12:N16");
+    if(bomXlsxFichiers("")===null||bomXlsxNom(v.lite)!=="carteBOM-Lite.xlsx")throw new Error("nom : "+bomXlsxNom(v.lite));
+    sheet([],[]);
+    if(bomXlsxFichiers("")!==null)throw new Error("document vide : rien à exporter");
   }finally{variantesFin();}
 });
 T("variantes : enregistrement, relecture et historique les gardent",()=>{

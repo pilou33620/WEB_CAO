@@ -57,7 +57,7 @@ identiques pour l'éditeur PCB :
 | `js/10-actions.js` | 240 | Pivoter, miroir, dupliquer, supprimer, recadrer, pas de grille, presse-papier (copier/couper/coller), changement de mode |
 | `js/11-palette.js` | 52 | Icônes de la bibliothèque et construction du panneau de gauche |
 | `js/12-panneaux.js` | 561 | Propriétés, champ boîtier, nomenclature, liste des nets |
-| `js/13-fichiers.js` | 182 | Export JSON, PNG, netlist `.txt`, nomenclature `.csv` |
+| `js/13-fichiers.js` | 182 | Export JSON, PNG, netlist `.txt`, nomenclature `.csv` et `.xlsx` (format BOM : onglets Presentation, History, BOM) |
 | `js/14-clavier-boutons.js` | 105 | Raccourcis clavier et branchement de la barre d'outils |
 | `js/15-import.js` | 216 | Import JSON défensif (normalisation), sauvegarde automatique (brouillon) et reprise de la session d'onglet (`sessionSchema`) |
 | `js/16-demo.js` | 61 | Schéma de démonstration des deux feuilles |
@@ -358,6 +358,12 @@ cuivre est le même ; seule la liste des composants posés change.
   récapitulatif de commande sans les DNP, puis la variante et la liste des
   DNP en fin de fichier. « Exporter la BOM de chaque variante » en sort un
   fichier par variante, carte complète comprise.
+- **Nomenclature .xlsx** (menu Fichier) suit aussi la variante active, au
+  format BOM maison : onglets *Presentation*, *History* et *BOM*, la carte nue
+  (CIP1) en tête, une ligne par repère, les non-montés en rouge
+  « [Not Fitted] ». Puissance, tolérance, PPM, tension, diélectrique et
+  secondes sources viennent de `LIB_composants.csv` ; « xx » quand ils
+  manquent.
 
 Le document garde `variantes: {liste:[{id, nom}], active}` et, sur chaque
 composant, `nonMonte: [id…]` : c'est le composant qui porte l'information,
