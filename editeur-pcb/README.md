@@ -1007,9 +1007,21 @@ en deux temps. Un seul Ctrl+Z défait les deux.
    Chaque satellite tourne sa pastille du net partagé vers la broche et prend
    la première place libre en partant d'elle (0,6 mm entre boîtes).
 
-Ne bougent pas : les points de test (`TP…`), qui se placent à la main. Les
-connecteurs (`J…`) ne sont ni satellites ni circuits d'accueil. Les textes de
-sérigraphie ne comptent pas dans l'encombrement : ils restent à reprendre.
+Ne bougent pas : les points de test (`TP…`, `PTST…`), qui se placent à la
+main. Les connecteurs (`J…`) ne sont ni satellites ni circuits d'accueil. Les
+textes de sérigraphie ne comptent pas dans l'encombrement : ils restent à
+reprendre.
+
+### Couche PTST : les points de test
+
+Dans le panneau **Couches**, **Points de test (PTST)** marque d'une cible
+orange et de son repère chaque point de test de la carte. Ce sont les
+composants **Point de test** et **Point de test percé** du schéma : ils
+arrivent par la netlist avec leur repère `TP…` (ou `PTST…`, que le schéma
+admet aussi) et leur boîtier (`testpoint`, `TP-PTH`, `TP-SMD`), et c'est à
+cela que le PCB les reconnaît (`fpPointTest`, 04-fabrication.js). Rien à
+déclarer à la main : un point de test ajouté au schéma est sur la couche PTST
+à l'export suivant. Les plans (Draftsman) en tirent la feuille **PTST**.
 
 ## Rooms : les blocs du schéma sur la carte
 
@@ -1066,12 +1078,26 @@ dans **Fabrication .zip**, où le Master Drawing l'annonce avec son contenu.
 | Plan de fabrication | vue de dessus à une échelle normalisée (2:1, 1:1, 1:2…), contour et découpes, cotes hors tout, origine des fichiers ; un symbole de perçage par outil (diamètre, métallisation, portée) et son tableau ; trous de fixation avec leurs coordonnées ; coupe d'empilage dessinée ; notes de fabrication tirées de la carte (matériau, Tg, épaisseur, finition, vernis, vias, test électrique) puis celles qu'on ajoute |
 | Assemblage dessus / dessous | corps des composants, pastilles en gris, point de broche 1, repère centré et tourné selon le boîtier ; non-montés de la variante active en tirets, marqués NM. Dessous, la vue est en miroir : la carte retournée, comme le monteur la voit |
 | Nomenclature | groupée par valeur, boîtier et référence fabricant : quantité, repères, fabricant, face ; non-montés listés à part |
-| Couches de cuivre (option) | une feuille par couche : pistes, arcs, pastilles, vias, zones |
+| Couches de cuivre (option) | une feuille par couche, dans la couleur de la couche : pistes, arcs, pastilles, vias, zones |
+| Vernis épargne, pâte à braser (option) | une feuille par face : les ouvertures de masque (`maskOpenings`) ou de pochoir (`pasteOpenings`), en noir, avec le contour |
+| Points de test — PTST (option) | les points de test de la carte, pastilles en noir et repère à côté ; leur net se cherche |
+| Contour seul — BOARD (option) | le contour et les découpes, rien d'autre |
 
 Chaque feuille a son cadre, ses repères de zones (1, 2, 3… / A, B, C…) et un
 cartouche : société, projet, titre, dessiné / vérifié / approuvé, date, n° de
 document (`<projet>-PLANS`), révision (celle du projet), échelle, format,
-feuille n / N. Les formats sont A4, A3 (par défaut) et A2 paysage. Une
+feuille n / N. Les formats sont A4, A3 (par défaut) et A2 paysage.
+
+**Cartouche « dossier de couches »** (liste déroulante au-dessus des champs
+du cartouche) : le cartouche des dossiers de couches — à gauche la société,
+son adresse, son téléphone et son site ; au milieu DRAWN / CHECKED avec date et
+nom, et PCB NO. (`<projet>-PCB-<rév.>`) ; à droite DESIGN TITLE et DRAWING NAME
+(le nom de la feuille) ; en pied la mention de confidentialité (un texte
+standard au nom de la société si le champ est vide). Les feuilles prennent
+alors les noms de ces dossiers et leur ordre : Layer_1 (Top)… Layer_n
+(Bottom), Solder_Mask Top / Bottom, Solder_Paste Top / Bottom, Equipement
+Top / Bottom, PTST, Drilling, BOARD. Rien n'est écrit en dur dans le code :
+tout vient des champs, enregistrés avec la carte. Une
 colonne trop longue (beaucoup d'outils, une longue nomenclature) continue sur
 une feuille « (suite) », l'en-tête de tableau répété.
 

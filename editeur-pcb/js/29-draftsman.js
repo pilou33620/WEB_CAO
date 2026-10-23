@@ -60,6 +60,10 @@ const DF_FEUILLES=[
   ["asmB",   "Assemblage — face dessous"],
   ["bom",    "Nomenclature"],
   ["couches","Couches de cuivre"],
+  ["masques","Vernis épargne (Solder_Mask)"],
+  ["pates",  "Pâte à braser (Solder_Paste)"],
+  ["ptst",   "Points de test (PTST)"],
+  ["board",  "Contour seul (BOARD)"],
   ["meca",   "Plan mécanique"]];
 const DF_PT=25.4/72;                 // un point typographique, en mm
 const DF_CADRE=10;                   // cadre extérieur, depuis le bord
@@ -81,10 +85,16 @@ function dfCfg(){
     format:DF_FORMATS[src.format]?src.format:"A3",
     societe:txt(src.societe), auteur:txt(src.auteur),
     verifie:txt(src.verifie), approuve:txt(src.approuve),
+    /* cartouche « en » : celui des dossiers de couches (DESIGN TITLE,
+       DRAWING NAME, DRAWN / CHECKED, PCB NO., mention de confidentialité) */
+    cartouche:src.cartouche==="en"?"en":"fr",
+    titre:txt(src.titre), adresse:txt(src.adresse,300), tel:txt(src.tel), web:txt(src.web),
+    confid:txt(src.confid,600),
     notes:txt(src.notes,4000),
     fonte:typeof src.fonte==="boolean"?src.fonte:true,   // fonte embarquée (33-draftsman-export.js)
     feuilles:{fab:b("fab",true), asmT:b("asmT",true), asmB:b("asmB",true),
-              bom:b("bom",true), couches:b("couches",false), meca:b("meca",false)},
+              bom:b("bom",true), couches:b("couches",false), masques:b("masques",false),
+              pates:b("pates",false), ptst:b("ptst",false), board:b("board",false), meca:b("meca",false)},
     /* posés à la main (34-draftsman-vues.js) */
     cotes:dfNormCotes(src.cotes), vues:dfNormVues(src.vues), details:dfNormDetails(src.details),
     /* hauteurs et ouvertures du dossier méca (commun/dossier-meca.js) */
@@ -203,7 +213,7 @@ function dfCouper(s,largeur,pt,gras){
 function dfNouvelle(ctx,titre,genre){
   const fm=DF_FORMATS[ctx.cfg.format];
   return {w:fm.w,h:fm.h,format:ctx.cfg.format,titre,genre,items:[],signets:[],echelle:"",
-          vues:[],cotes:[]};
+          vues:[],cotes:[],cart:ctx.cfg.cartouche};
 }
 function dfPoly(F,pts,o){
   o=o||{};
@@ -468,7 +478,8 @@ function dfSvg(F,hits,sur){
    carte, à sa gauche, garde toute la hauteur. */
 function dfZone(F){
   const m=DF_CADRE+DF_BANDE;
-  const tw=clamp(Math.round((F.w-2*m-6)*0.36),118,190), th=36;
+  const en=F.cart==="en";
+  const tw=en?Math.min(180,F.w-2*m-6):clamp(Math.round((F.w-2*m-6)*0.36),118,190), th=en?50:36;
   return {x1:m+3,y1:m+3,x2:F.w-m-3,y2:F.h-m-3,
           cart:{x:F.w-m-tw,y:F.h-m-th,w:tw,h:th}};
 }
@@ -493,6 +504,7 @@ function dfCadre(F,ctx,num,total){
     dfTexte(F,l,W-a-2.5,y,7,{ancre:"m",c:0.3,cat:"zone"});
   }
 
+  if(F.cart==="en"){dfCartoucheEn(F,ctx,num,total);return;}
   /* Cartouche : quatre rangées. Chaque case porte une étiquette grise et sa
      valeur ; tout est texte, donc tout se cherche. */
   const C=dfZone(F).cart, x=C.x, y=C.y, w=C.w, rh=C.h/4;
@@ -518,6 +530,63 @@ function dfCadre(F,ctx,num,total){
   rangee(3,[[0.36,"N° de document",ctx.docNum,7],[0.12,"Rév.",ctx.rev,8,true],
             [0.18,"Échelle",F.echelle||"—"],[0.14,"Format",F.format],
             [0.20,"Feuille",num+" / "+total,8,true]]);
+  if(ctx.variante)
+    dfTexte(F,"Variante de montage : "+ctx.variante,x,y-1.6,6.5,{c:0.3,cat:"cartouche"});
+}
+
+/* Cartouche des dossiers de couches : société et adresse à gauche, dates et
+   noms au milieu, titre du design et nom de la feuille à droite, mention de
+   confidentialité en pied. Libellés en anglais, comme ces dossiers. */
+function dfCartoucheEn(F,ctx,num,total){
+  const C=dfZone(F).cart, x=C.x, y=C.y, w=C.w, h=C.h, cfg=ctx.cfg;
+  const r0=6, rc=9, yb=y+h-rc, xA=x+w*0.3, xB=x+w*0.745;
+  const lab=(s,X,Y,o)=>dfTexte(F,s,X,Y,5,Object.assign({c:0.25,cat:"cartouche"},o||{}));
+  const val=(s,X,Y,pt,o)=>dfTexte(F,s,X,Y,pt||7,Object.assign({cat:"cartouche"},o||{}));
+  dfRect(F,x,y,w,h,{lw:0.5,plein:1});
+  dfLigne(F,x,y+r0,xB,y+r0,0.25);
+  dfLigne(F,xB,y,xB,yb,0.25);
+  dfLigne(F,x,yb,x+w,yb,0.25);
+  dfLigne(F,xA,y+r0,xA,yb,0.25);
+  lab("UNLESS OTHERWISE SPECIFIED DIMENSIONS ARE IN MM",x+1.2,y+r0-1.8);
+  // société, adresse, téléphone, site
+  const soc=cfg.societe||"";
+  let ly=y+r0+3.2;
+  if(soc){val(soc.toUpperCase(),x+1.2,ly,6,{gras:true});ly+=2.6;}
+  for(const l of String(cfg.adresse||"").split(/\r?\n|;/).map(s=>s.trim()).filter(Boolean).slice(0,4)){
+    val(l,x+1.2,ly,5.5);ly+=2.4;
+  }
+  if(cfg.tel)val("TEL : "+cfg.tel,x+1.2,yb-4,5.5);
+  if(cfg.web)val(cfg.web,x+1.2,yb-1.3,5.5);
+  // dates et noms
+  const g1=xA+(xB-xA)*0.3, g2=xA+(xB-xA)*0.65, rh=(yb-y-r0)/4;
+  for(let i=1;i<4;i++)dfLigne(F,xA,y+r0+rh*i,xB,y+r0+rh*i,0.25);
+  dfLigne(F,g1,y+r0,g1,yb,0.25);
+  dfLigne(F,g2,y+r0,g2,y+r0+rh*3,0.25);
+  const d=/^(\d{4})-(\d\d)-(\d\d)$/.exec(ctx.date||""), date=d?d[3]+"/"+d[2]+"/"+d[1].slice(2):(ctx.date||"");
+  const ligne=(i,a,b,c)=>{
+    const yy=y+r0+rh*i+rh/2+1;
+    if(a)lab(a,xA+1.2,yy);
+    if(b)val(b,(g1+g2)/2,yy,i?7:5,{ancre:"m",c:i?0:0.25});
+    if(c!=null)val(c,i===3?(g1+xB)/2:(g2+xB)/2,yy,i?7:5,{ancre:"m",c:i?0:0.25});
+  };
+  ligne(0,"","DATE","NAME");
+  ligne(1,"DRAWN",date,cfg.auteur||"—");
+  ligne(2,"CHECKED",cfg.verifie?date:"",cfg.verifie||"—");
+  ligne(3,"PCB NO.","",ctx.pcbNo||ctx.docNum);
+  // titre du design, nom de la feuille
+  const ym=y+(yb-y)*0.47;
+  dfLigne(F,xB,ym,x+w,ym,0.25);
+  lab("DESIGN TITLE",(xB+x+w)/2,y+3.2,{ancre:"m"});
+  val(dfCouper(cfg.titre||ctx.projet,x+w-xB-2.4,8)[0],(xB+x+w)/2,(y+ym)/2+2,8,{ancre:"m",gras:true});
+  lab("DRAWING NAME",(xB+x+w)/2,ym+3.2,{ancre:"m"});
+  dfCouper(F.titre,x+w-xB-2.4,7.5).slice(0,2).forEach((l,i)=>
+    val(l,(xB+x+w)/2,ym+8.5+i*3.2,7.5,{ancre:"m",gras:true}));
+  // confidentialité
+  const conf=cfg.confid||("CONFIDENTIAL : This document is proprietary and the property of "+(soc||"its owner")+
+    ". It shall not be reproduced, copied, lent or otherwise disposed of directly or indirectly. "+
+    "Proprietary information should always be protected by a non-disclosure agreement or proprietary information agreement.");
+  dfCouper(conf,w-2.4,5).slice(0,3).forEach((l,i)=>val(l,x+1.2,yb+2.6+i*2.2,5));
+  dfTexte(F,F.format+"   "+num+" / "+total,F.w-DF_CADRE,F.h-DF_CADRE+4.5,7,{ancre:"d",c:0.3,cat:"cartouche"});
   if(ctx.variante)
     dfTexte(F,"Variante de montage : "+ctx.variante,x,y-1.6,6.5,{c:0.3,cat:"cartouche"});
 }
@@ -1145,7 +1214,8 @@ function dfFeuillesBom(ctx){
    ========================================================================== */
 function dfFeuilleCouche(ctx,i){
   const nom=(S.cuL[i]&&S.cuL[i].name)||cuLabel(i,S.cu);
-  const F=dfNouvelle(ctx,"Couche "+(i+1)+" — "+nom,"cu"+i);
+  const F=dfNouvelle(ctx,ctx.cfg.cartouche==="en"?"Layer_"+(i+1)+(i===0?" (Top)":i===S.cu-1?" (Bottom)":"")
+                                                 :"Couche "+(i+1)+" — "+nom,"cu"+i);
   const Z=dfZone(F);
   const box={x:Z.x1,y:Z.y1+12,w:Z.x2-Z.x1,h:Z.cart.y-6-(Z.y1+12)};
   const V=dfVue(box,0,8);
@@ -1163,13 +1233,14 @@ function dfFeuilleCouche(ctx,i){
 }
 /* Zones, contour, pistes, pastilles et vias d'une couche. */
 function dfDessinCouche(F,V,i){
-  const cu=0.15, P=p=>V.T(p.x,p.y);
+  // la couleur de la couche, comme à l'écran ; les zones en teinte claire, sous les pistes
+  const cu=dfRvb(S.cuL[i]&&S.cuL[i].color), P=p=>V.T(p.x,p.y);
   const boite=pts=>({x1:Math.min(...pts.map(p=>p.x))-0.6,y1:Math.min(...pts.map(p=>p.y))-0.6,
                      x2:Math.max(...pts.map(p=>p.x))+0.6,y2:Math.max(...pts.map(p=>p.y))+0.6});
   for(const z of S.zones){
     if(z.l!==i||!z.pts||z.pts.length<3)continue;
     const pts=z.pts.map(P);
-    dfPoly(F,pts,{ferme:true,lw:0.12,trait:0.45,plein:0.86});
+    dfPoly(F,pts,{ferme:true,lw:0.12,trait:cu,plein:cu.map(v=>1-(1-v)*0.35)});
     if(z.net)dfTexte(F,z.net,pts[0].x,pts[0].y,4,{cache:true,cible:boite(pts),cat:"net"});
   }
   dfContour(F,V,0.3);
@@ -1206,6 +1277,65 @@ function dfDessinCouche(F,V,i){
   }
 }
 
+/* « #e8742a » → [r,g,b] entre 0 et 1 ; gris foncé si la couleur est illisible. */
+function dfRvb(hex){
+  let h=String(hex||"").replace("#","");
+  if(/^[0-9a-f]{3}$/i.test(h))h=h.replace(/./g,c=>c+c);
+  if(!/^[0-9a-f]{6}$/i.test(h))return [0.15,0.15,0.15];
+  return [0,2,4].map(k=>parseInt(h.slice(k,k+2),16)/255);
+}
+/* Une feuille d'une seule vue de dessus : vernis, pâte, points de test,
+   contour. `dessin(F,V)` pose ce que la feuille montre. */
+function dfFeuillePlan(ctx,titre,genre,legende,dessin){
+  const F=dfNouvelle(ctx,titre,genre);
+  const Z=dfZone(F);
+  const box={x:Z.x1,y:Z.y1+12,w:Z.x2-Z.x1,h:Z.cart.y-6-(Z.y1+12)};
+  const V=dfVue(box,0,8);
+  F.echelle=V.echelle;
+  const m=dfVueDebut(F);
+  dfTexte(F,titre.toUpperCase()+" — VUE DE DESSUS — ÉCHELLE "+V.echelle,Z.x1,Z.y1+5,9,{gras:true,cat:"titre"});
+  if(legende)dfTexte(F,legende,Z.x1,Z.y1+10,6.5,{c:0.3,cat:"legende"});
+  dessin(F,V);
+  const cle=dfCleVue(F,"carte");
+  dfAnnoter(F,V,cle,ctx);
+  dfVueFin(F,m,cle,"carte",{V,dessin});
+  return F;
+}
+/* Une ouverture de masque ou de pochoir : la pastille dilatée (ou rétreinte)
+   de `grow`, comme padOpening() la trace à l'écran. */
+function dfOuverture(o){
+  const q=o.q, g=o.grow||0;
+  if(!g)return dfPadForme(q);
+  if(q.shape==="poly"&&Array.isArray(q.pts)&&q.pts.length>=3)return dfPadForme(Object.assign({},q,{pts:polyOffset(q.pts,g)}));
+  return dfPadForme(Object.assign({},q,{w:Math.max(q.w+2*g,0.01),h:Math.max(q.h+2*g,0.01),
+    chamfer:q.chamfer!=null?Math.max(q.chamfer+g,0):undefined}));
+}
+function dfFeuilleOuvertures(ctx,genre,titre,ouvertures){
+  return dfFeuillePlan(ctx,titre,genre,ouvertures.length+" ouverture(s), en noir.",(F,V)=>{
+    dfContour(F,V,0.3);
+    for(const o of ouvertures)dfPoly(F,dfOuverture(o).map(p=>V.T(p.x,p.y)),{ferme:true,plein:0,trait:null});
+  });
+}
+/* Couche PTST : les points de test (fpPointTest, 04-fabrication.js), pastilles
+   en noir et repère à côté ; le net, en texte invisible, se cherche. */
+function dfFeuillePtst(ctx){
+  const tps=pointsTest();
+  return dfFeuillePlan(ctx,"PTST","ptst",tps.length+" point(s) de test : "+tps.map(f=>f.ref).join(", "),(F,V)=>{
+    dfContour(F,V,0.3);
+    for(const fp of tps){
+      let net="";
+      for(const q of padsWorld(fp)){
+        dfPoly(F,dfPadForme(q).map(p=>V.T(p.x,p.y)),{ferme:true,plein:0,trait:null});
+        if(q.drill>0){const s=V.T(q.x,q.y);dfCercle(F,s.x,s.y,q.drill/2*V.k,{plein:1,trait:null});}
+        net=net||q.net||"";
+      }
+      const s=V.T(fp.x,fp.y), r=Math.max(...padsWorld(fp).map(q=>Math.max(q.w,q.h)/2),0.5)*V.k;
+      dfTexte(F,fp.ref,s.x+r+0.8,s.y+1,5,{cat:"repere",lieu:fp.ref});
+      if(net)dfTexte(F,net,s.x,s.y,4,{ancre:"m",cache:true,cat:"net",lieu:fp.ref});
+    }
+  });
+}
+
 /* ==========================================================================
    Le document
    ========================================================================== */
@@ -1215,7 +1345,7 @@ function dfContexte(){
   let rev="A";
   try{if(typeof projdRevision==="function")rev=projdRevision()||"A";}catch(_){}
   return {cfg,vid,variante:vid&&typeof varNom==="function"?varNom(S.variantes,vid):"",
-          projet:pcbProjNom()||"Carte",docNum:fabBase()+"-PLANS",rev,
+          projet:pcbProjNom()||"Carte",docNum:fabBase()+"-PLANS",pcbNo:fabBase()+"-"+rev,rev,
           date:new Date().toISOString().slice(0,10)};
 }
 /* `genre` (« fab », « asmT », « bom », « cu2 »…) : ne refaire que les
@@ -1224,14 +1354,31 @@ function dfContexte(){
    que sa feuille ; les numéros « feuille n / N » d'un tel document partiel
    ne valent rien, il ne se montre ni ne s'imprime. */
 function dfDocument(genre){
-  const ctx=dfContexte(), f=ctx.cfg.feuilles, feuilles=[], g=k=>!genre||genre===k;
-  if(f.fab&&g("fab"))feuilles.push(...dfFeuillesFab(ctx));
-  if(f.asmT&&g("asmT"))feuilles.push(dfFeuilleAsm(ctx,0));
-  if(f.asmB&&g("asmB")&&S.fps.some(fp=>fp.side))feuilles.push(dfFeuilleAsm(ctx,1));
-  if(f.bom&&g("bom"))feuilles.push(...dfFeuillesBom(ctx));
-  if(f.couches)for(let i=0;i<S.cu;i++)if(g("cu"+i))feuilles.push(dfFeuilleCouche(ctx,i));
-  /* dossier mécanique (commun/dossier-meca.js, 36-dossier-meca.js) */
-  if(f.meca&&g("meca"))feuilles.push(...mecaFeuilles(mecaDossier(),ctx,mecaMonde()));
+  const ctx=dfContexte(), f=ctx.cfg.feuilles, feuilles=[], g=k=>!genre||genre===k, en=ctx.cfg.cartouche==="en";
+  const faces=S.cu>1?[0,1]:[0], cote=s=>en?(s?"Bottom":"Top"):(s?"dessous":"dessus");
+  const pose={
+    fab:()=>{if(f.fab&&g("fab"))feuilles.push(...dfFeuillesFab(ctx));},
+    asmT:()=>{if(f.asmT&&g("asmT"))feuilles.push(dfFeuilleAsm(ctx,0));},
+    asmB:()=>{if(f.asmB&&g("asmB")&&S.fps.some(fp=>fp.side))feuilles.push(dfFeuilleAsm(ctx,1));},
+    bom:()=>{if(f.bom&&g("bom"))feuilles.push(...dfFeuillesBom(ctx));},
+    couches:()=>{if(f.couches)for(let i=0;i<S.cu;i++)if(g("cu"+i))feuilles.push(dfFeuilleCouche(ctx,i));},
+    masques:()=>{for(const s of faces)if(f.masques&&g("mask"+s))
+      feuilles.push(dfFeuilleOuvertures(ctx,"mask"+s,en?"Solder_Mask "+cote(s):"Vernis épargne "+cote(s),maskOpenings(s)));},
+    pates:()=>{for(const s of faces)if(f.pates&&g("paste"+s))
+      feuilles.push(dfFeuilleOuvertures(ctx,"paste"+s,en?"Solder_Paste "+cote(s):"Pâte à braser "+cote(s),pasteOpenings(s)));},
+    ptst:()=>{if(f.ptst&&g("ptst"))feuilles.push(dfFeuillePtst(ctx));},
+    board:()=>{if(f.board&&g("board"))feuilles.push(dfFeuillePlan(ctx,en?"BOARD":"Contour de carte","board","",(F,V)=>dfContour(F,V,0.35)));},
+    /* dossier mécanique (commun/dossier-meca.js, 36-dossier-meca.js) */
+    meca:()=>{if(f.meca&&g("meca"))feuilles.push(...mecaFeuilles(mecaDossier(),ctx,mecaMonde()));}
+  };
+  /* en « en », l'ordre des dossiers de couches : cuivres, vernis, pâte,
+     équipement, points de test, perçage, contour */
+  (en?["couches","masques","pates","asmT","asmB","ptst","fab","board","bom","meca"]
+     :["fab","asmT","asmB","bom","couches","masques","pates","ptst","board","meca"]).forEach(k=>pose[k]());
+  if(en){
+    const NOMS={asmT:"Equipement Top",asmB:"Equipement Bottom",fab:"Drilling"};
+    for(const F of feuilles)if(NOMS[F.genre])F.titre=NOMS[F.genre];
+  }
   /* vues déplacées à la main, puis vues de détail (34-draftsman-vues.js) */
   dfAgencer(feuilles,ctx);
   feuilles.forEach((F,i)=>dfCadre(F,ctx,i+1,feuilles.length));
@@ -1337,8 +1484,8 @@ function dfRendreCadre(){
   const m=document.getElementById("dfEd");
   if(!m)return;
   const c=dfCfg();
-  const champ=(k,lib)=>'<label class="df-champ"><span>'+lib+'</span><input type="text" data-cfg="'+k+
-    '" value="'+esc(c[k])+'" maxlength="120"></label>';
+  const champ=(k,lib,n)=>'<label class="df-champ"><span>'+lib+'</span><input type="text" data-cfg="'+k+
+    '" value="'+esc(c[k])+'" maxlength="'+(n||120)+'"></label>';
   m.innerHTML='<div class="modal-box df-box">'+
     '<div class="modal-head"><span class="modal-title">Plans — fabrication et assemblage</span>'+
       '<input type="search" id="dfQ" class="df-q" placeholder="Chercher : repère, valeur, net, référence…" value="'+esc(DF.q)+
@@ -1356,7 +1503,12 @@ function dfRendreCadre(){
         '<select class="tbsel" data-cfg="format">'+Object.keys(DF_FORMATS).map(f=>'<option value="'+f+'"'+
           (c.format===f?" selected":"")+'>'+f+' paysage ('+DF_FORMATS[f].w+' × '+DF_FORMATS[f].h+' mm)</option>').join("")+'</select>'+
         '<div class="df-h">Cartouche</div>'+
+        '<select class="tbsel" data-cfg="cartouche">'+
+          '<option value="fr"'+(c.cartouche==="fr"?" selected":"")+'>Cartouche standard</option>'+
+          '<option value="en"'+(c.cartouche==="en"?" selected":"")+'>Cartouche dossier de couches (DESIGN TITLE…)</option></select>'+
         champ("societe","Société")+champ("auteur","Dessiné par")+champ("verifie","Vérifié par")+champ("approuve","Approuvé par")+
+        champ("titre","Titre du design (DESIGN TITLE)")+champ("adresse","Adresse (lignes séparées par ;)",300)+
+        champ("tel","Téléphone")+champ("web","Site web")+champ("confid","Mention de confidentialité (vide : texte standard)",600)+
         '<div class="df-h">Notes ajoutées au plan de fabrication</div>'+
         '<textarea data-cfg="notes" class="df-notes" placeholder="Une note par ligne">'+esc(c.notes)+'</textarea>'+
         '<div class="df-h">Cotes et détails</div><div id="dfCotes"></div>'+

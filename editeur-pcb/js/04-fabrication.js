@@ -10,7 +10,20 @@
    des pastilles, une ouverture par pastille, dilatée ou rétreinte selon la
    règle. C'est aussi ce que fait le rendu à l'écran quand on les affiche.
    ========================================================================== */
-const C_MASK="#a97bf0", C_PASTE="#c3cad4";
+const C_MASK="#a97bf0", C_PASTE="#c3cad4", C_PTST="#f59e0b";
+
+/* Couche PTST : les points de test. Ce sont les composants « Point de test »
+   du schéma (testpoint, testpoint_pth), dont le repère commence par TP ou
+   PTST ; la netlist ne transmet que repère, valeur et boîtier, d'où le repère
+   et le boîtier comme signature. Ils se placent à la main. */
+function fpPointTest(fp){
+  return /^(TP|PTST)\d/i.test(String(fp&&fp.ref||""))||
+         /^(testpoint|TP-PTH|TP-SMD)$/i.test(String(fp&&fp.pkg||""));
+}
+function pointsTest(){
+  return S.fps.filter(fpPointTest)
+    .sort((a,b)=>String(a.ref).localeCompare(String(b.ref),"fr",{numeric:true}));
+}
 
 /* ouvertures de masque d'une face : toutes les pastilles présentes, plus les
    vias si on ne les recouvre pas de vernis */
@@ -84,6 +97,18 @@ function drawTech(c){
       for(const o of maskOpenings(side))padOpening(c,o.q,o.grow,C_MASK,px(1.1));
     if(S.show[keyP])
       for(const o of pasteOpenings(side))padOpening(c,o.q,o.grow,C_PASTE,px(1));
+  }
+  if(S.show.ptst){
+    /* une cible et le repère : à l'écran, un point de test se repère de loin */
+    c.strokeStyle=c.fillStyle=C_PTST;c.lineWidth=px(1.4);
+    c.font=px(11)+"px sans-serif";c.textAlign="left";c.textBaseline="middle";
+    for(const fp of pointsTest()){
+      const r=Math.max(px(7),...padsWorld(fp).map(q=>Math.max(q.w,q.h)/2+px(3)));
+      c.beginPath();c.arc(fp.x,fp.y,r,0,Math.PI*2);
+      c.moveTo(fp.x-r*1.4,fp.y);c.lineTo(fp.x+r*1.4,fp.y);
+      c.moveTo(fp.x,fp.y-r*1.4);c.lineTo(fp.x,fp.y+r*1.4);c.stroke();
+      c.fillText(fp.ref||"",fp.x+r*1.5,fp.y);
+    }
   }
 }
 

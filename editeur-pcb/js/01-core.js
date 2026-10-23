@@ -1035,7 +1035,7 @@ const S = {
   active:0,                   // couche cuivre active (indice)
   pair:[0,1],                 // paire de couches pour le changement rapide
   show:{silkT:true,silkB:true,edge:true,rats:true,plane:true,drc:true,
-        maskT:false,maskB:false,pasteT:false,pasteB:false},
+        maskT:false,maskB:false,pasteT:false,pasteB:false,ptst:false},
   board:{x:0,y:0,w:100,h:80,pts:null},   // pts = contour libre, sinon rectangle
   fps:[], tracks:[], vias:[], zones:[], cuts:[], holes:[], drawings:[], interdits:[],
   /* `corner` : l'angle imposé aux pistes tracées — « 45 » par défaut, c'est la

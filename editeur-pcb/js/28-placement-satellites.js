@@ -18,7 +18,7 @@
    ============================================================================= */
 
 /* Points de test : placés à la main, le placement automatique n'y touche pas. */
-function placeManuelle(fp){return /^TP\d/i.test(String(fp&&fp.ref||""));}
+function placeManuelle(fp){return fpPointTest(fp);}
 /* Connecteurs : ni satellites ni circuits d'accueil, on les place à la main. */
 function satConnecteur(fp){return /^(J|CN|CON|X?P)\d/i.test(String(fp&&fp.ref||""));}
 

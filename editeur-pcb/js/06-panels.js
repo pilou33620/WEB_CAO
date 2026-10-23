@@ -58,13 +58,14 @@ function buildLayers(){
   const tech=[["silkT","Sérigraphie dessus","F.SilkS"],["silkB","Sérigraphie dessous","B.SilkS"],
               ["maskT","Masque dessus","F.Mask"],["maskB","Masque dessous","B.Mask"],
               ["pasteT","Pâte dessus","F.Paste"],["pasteB","Pâte dessous","B.Paste"],
+              ["ptst","Points de test","PTST"],
               ["edge","Contour de carte","Board Outline"],["plane","Zones de cuivre","Zones"],
               ["rats","Chevelu","Ratsnest"],["drc","Erreurs DRC","DRC"]];
   for(const [k,n,id] of tech)
     h+='<div class="lay'+(S.show[k]?"":" off")+'" data-show="'+k+'">'+
        '<i class="sw" style="background:'+
        ({silkT:C_SILK_T,silkB:C_SILK_B,maskT:C_MASK,maskB:C_MASK,
-         pasteT:C_PASTE,pasteB:C_PASTE,edge:C_EDGE,plane:"#3a6b58",
+         pasteT:C_PASTE,pasteB:C_PASTE,ptst:C_PTST,edge:C_EDGE,plane:"#3a6b58",
          rats:C_RATS,drc:C_ERR}[k])+'"></i>'+
        '<span class="nm">'+n+'</span><span class="tp">'+id+'</span>'+
        '<span class="eye">'+(S.show[k]?"◉":"○")+'</span></div>';

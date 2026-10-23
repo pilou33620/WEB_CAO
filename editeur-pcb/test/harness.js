@@ -399,6 +399,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* les liens des bouts de piste, et la transformation des boîtiers */
   "transformFps","linkSync","fpXformInv","groupeEtendreSel","groupeCadre","groupeCuivre","pcbAppliquerDefEmpreinte","padDist","updateRoute","hitTest",
   /* plans de fabrication et d'assemblage (29-draftsman.js) */
+  "fpPointTest","pointsTest","placeManuelle",
   "dfCfg","dfRegler","dfDocument","dfPdf","dfPdfOctets","dfChercher","dfSvg","dfWinAnsi","dfPdfLit",
   "dfLargeur","dfCouper","dfPercages","dfVue","dfOuvrir","dfFermer","dfExporter","DF_FORMATS","DF","dfImpedances",
   /* export DXF et fonte embarquée (33-draftsman-export.js) */
@@ -23891,6 +23892,37 @@ TA("export du schéma : sans netlist dans la session, rien ne bouge",async()=>{
    table xref se vérifient directement dessus. */
 function dfLatin(pdf){return Buffer.from(pdf).toString("latin1");}
 function dfToutes(){return {fab:true,asmT:true,asmB:true,bom:true,couches:true};}
+T("plans : dossier de couches (cuivre, vernis, pâte, PTST, BOARD) et cartouche « en »",()=>{
+  exCharger(1);
+  const fp=S.fps[0], ref0=fp.ref;
+  fp.ref="TP9";          // un point de test du schéma arrive avec un repère TP…
+  S.dessin={fonte:false,cartouche:"en",societe:"ACME",titre:"D-G4",adresse:"1 rue A;33000 Ville",tel:"0102",
+    feuilles:{fab:true,asmT:true,asmB:true,bom:false,couches:true,masques:true,pates:true,ptst:true,board:true}};
+  try{
+    if(!fpPointTest(fp)||!placeManuelle(fp)||fpPointTest({ref:"R1",pkg:"0603"}))throw new Error("reconnaissance des points de test");
+    if(!fpPointTest({ref:"PTST12"})||!fpPointTest({ref:"X1",pkg:"testpoint"}))throw new Error("PTST… et boîtier testpoint");
+    const doc=dfDocument(), t=doc.feuilles.map(f=>f.titre);
+    const attendu=[];
+    for(let i=0;i<S.cu;i++)attendu.push("Layer_"+(i+1)+(i===0?" (Top)":i===S.cu-1?" (Bottom)":""));
+    const faces=S.cu>1?["Top","Bottom"]:["Top"];
+    attendu.push(...faces.map(f=>"Solder_Mask "+f),...faces.map(f=>"Solder_Paste "+f),"Equipement Top");
+    if(S.fps.some(f=>f.side))attendu.push("Equipement Bottom");
+    attendu.push("PTST");
+    if(JSON.stringify(t.slice(0,attendu.length))!==JSON.stringify(attendu))
+      throw new Error("ordre des feuilles :\n"+t.join(" | "));
+    if(t.indexOf("Drilling")<0||t[t.length-1]!=="BOARD")throw new Error("Drilling et BOARD attendus : "+t.join(" | "));
+    const ptst=doc.feuilles.find(f=>f.titre==="PTST");
+    if(!ptst.items.some(it=>it.t==="t"&&it.s==="TP9"))throw new Error("TP9 absent de la feuille PTST");
+    const L1=doc.feuilles[0];
+    if(!L1.items.some(it=>it.t==="p"&&Array.isArray(it.plein)))throw new Error("le cuivre doit être en couleur");
+    const txt=L1.items.filter(it=>it.t==="t").map(it=>it.s);
+    for(const s of ["DESIGN TITLE","D-G4","DRAWING NAME","Layer_1 (Top)","PCB NO.","ACME","TEL : 0102","33000 Ville"])
+      if(txt.indexOf(s)<0)throw new Error("cartouche : « "+s+" » absent");
+    if(!txt.some(s=>/^CONFIDENTIAL : .*ACME/.test(s)))throw new Error("mention de confidentialité");
+    if(!dfLatin(dfPdfOctets(doc)).startsWith("%PDF-1.4"))throw new Error("PDF");
+    if(process.env.DF_OUT)fs.writeFileSync(process.env.DF_OUT,Buffer.from(dfPdfOctets(doc)));
+  }finally{fp.ref=ref0;S.dessin=null;}
+});
 T("plans : PDF valide, chaque entrée de la table xref tombe sur son objet",()=>{
   exCharger(1);
   /* Helvetica en WinAnsi : la fonte embarquée a ses propres essais */
