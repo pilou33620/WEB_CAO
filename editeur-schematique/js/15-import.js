@@ -169,6 +169,8 @@ function normPage(p,i){
     scale:Math.max(.25,Math.min(4,num(src.scale,1))),
     ox:num(src.ox,0), oy:num(src.oy,0)
   };
+  const rs=Math.round(num(src.refStart,1));
+  if(rs>1)pObj.refStart=rs;
   if(src.blockPos && typeof src.blockPos==="object" && Number.isFinite(+src.blockPos.x) && Number.isFinite(+src.blockPos.y)){
     pObj.blockPos = {x: snap(+src.blockPos.x), y: snap(+src.blockPos.y)};
   }
