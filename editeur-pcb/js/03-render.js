@@ -1267,9 +1267,20 @@ function pcbCartouche(c){
   if(!P)return;
   c.save();
   if(S.flip){c.translate(2*bcx(),0);c.scale(-1,1);}
+  const vid=(S.variantes&&S.variantes.active)||"";
   cartoucheDessiner(c,P.x,P.y,1,S.cartouche,
-    cartoucheChamps("Circuit imprimé"+(S.flip?" — vue de dessous":""),"1 / 1"));
+    cartoucheChamps(S.cartoucheInfo,cuId(S.active,S.cu)+(S.flip?" (Bottom view)":""),"1/1",
+                    vid&&typeof varNom==="function"?varNom(S.variantes,vid):""),"pcb");
   c.restore();
+}
+/* Le bouton : format de page, champs de la carte, société du profil */
+function pcbCartoucheDialogue(){
+  cartoucheDialogue({format:S.cartouche||"",info:S.cartoucheInfo,appliquer:(f,info)=>{
+    push();
+    const avant=S.cartouche||"";
+    S.cartouche=f;S.cartoucheInfo=info;touch();
+    if(f!==avant)fit();else draw();
+  }});
 }
 function draw(){
   clearTimeout(VUE.t);VUE.img=null;

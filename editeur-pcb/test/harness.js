@@ -2005,9 +2005,11 @@ T("cartouche du PCB : page centrée sur la carte, dessinée à l'endroit, gardé
     const P=pcbCartouchePage(), b=S.board;
     if(S.cartouche!=="A3"||P.w!==420||P.h!==297)throw new Error("A3 attendu : "+S.cartouche+" "+JSON.stringify(P));
     if(Math.abs(P.x+P.w/2-(b.x+b.w/2))>1e-9||Math.abs(P.y+P.h/2-(b.y+b.h/2))>1e-9)throw new Error("page non centrée");
+    S.cartoucheInfo={titre:"Carte essai",verifie:"CD",pcbNo:"X1PCB-A"};
     S.flip=true;draw();S.flip=false;draw();
     loadDoc(JSON.parse(serialize()),true);
     if(S.cartouche!=="A3")throw new Error("cartouche perdu : "+S.cartouche);
+    if(S.cartoucheInfo.pcbNo!=="X1PCB-A"||S.cartoucheInfo.verifie!=="CD")throw new Error("champs perdus : "+JSON.stringify(S.cartoucheInfo));
   }finally{S.flip=flip;loadDoc(JSON.parse(saved),true);}
 });
 T("dossier de fabrication : une famille décochée n'est pas dans le .zip, et la carte s'en souvient",()=>{

@@ -21,6 +21,7 @@ function docObj(){
           pinoutAcquits:S.pinoutAcquits||{},
           fabExclus:S.fabExclus||[],
           cartouche:S.cartouche||"",
+          cartoucheInfo:S.cartoucheInfo||{},
           variantes:S.variantes,
           groupes:groupesPropres(),
           dessin:S.dessin||null,
@@ -805,6 +806,7 @@ function normDoc(d){
       if(typeof v==="string"&&/^[^\x00-\x1f]{1,40}$/.test(k)&&!["__proto__","constructor","prototype"].includes(k))out.pinoutAcquits[k]=v.slice(0,4000);
   out.fabExclus=arr(src.fabExclus).filter(k=>FAB_GROUPES.some(g=>g[0]===k));
   out.cartouche=CARTOUCHE_FORMATS[src.cartouche]?src.cartouche:"";
+  out.cartoucheInfo=cartoucheInfoNorm(src.cartoucheInfo);
   if(cu<2)out.vias=[];                    // une seule couche : aucun via ne relie rien
 
   const maxId=Math.max(uniqueIds(out.fps),uniqueIds(out.zones),uniqueIds(out.cuts),
@@ -872,6 +874,7 @@ function loadDoc(d,keepView){
   S.zones=d.zones;S.cuts=d.cuts;S.holes=d.holes||[];S.drawings=d.drawings||[];S.pinoutAcquits=d.pinoutAcquits||{};S.interdits=d.interdits||[];
   S.fabExclus=d.fabExclus||[];
   S.cartouche=d.cartouche||"";
+  S.cartoucheInfo=d.cartoucheInfo||{};
   S.active=d.active;S.pair=[0,S.cu-1];
   S.nextId=d.nextId;
   /* Fichiers de la V1.0 : le rôle « plan » portait sur la couche entière, sans

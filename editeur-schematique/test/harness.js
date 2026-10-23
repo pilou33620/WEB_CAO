@@ -341,10 +341,13 @@ T("cartouche : aucun → A4 → A3 → aucun, par feuille, gardé à l'enregistr
     schCartoucheBasculer();
     if(S.pages[i].format!=="A3")throw new Error("A3 attendu : "+S.pages[i].format);
     if(!/A3/.test(document.getElementById("bCartouche").textContent))throw new Error("bouton pas à jour");
+    S.cartoucheInfo={titre:"Carte essai",dessine:"AB",dateDessin:"01/02/2026",schNo:"X1SCH-A",bidon:"<b>"};
     draw();                                   // le cadre se dessine sans erreur
     const nom=S.pages[i].name;
     loadDoc(JSON.parse(serialize()),true);
     if(!S.pages.some(p=>p.name===nom&&p.format==="A3"))throw new Error("format perdu au rechargement");
+    if(S.cartoucheInfo.titre!=="Carte essai"||S.cartoucheInfo.schNo!=="X1SCH-A"||"bidon" in S.cartoucheInfo)
+      throw new Error("champs du cartouche : "+JSON.stringify(S.cartoucheInfo));
     S.page=S.pages.findIndex(p=>p.name===nom&&p.format==="A3");loadPage(S.page);
     schCartoucheBasculer();
     if("format" in S.pages[S.page])throw new Error("retour à « aucun » attendu");

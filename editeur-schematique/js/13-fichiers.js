@@ -35,6 +35,7 @@ function schDocCourant(brouillon){
   storeCurrent();
   const nl=(!brouillon&&typeof netlistText==="function")?netlistText():null;
   const doc={format:"schemedit-2",pages:S.pages,page:S.page,netClasses:S.netClasses,variantes:S.variantes,symboles:S.symboles,
+             cartouche:S.cartoucheInfo||{},
              contraintes:S.contraintes,netlist:nl};
   if(!brouillon&&typeof sessDiffuserSchemaModif==="function")sessDiffuserSchemaModif({netlist:nl});
   return doc;
