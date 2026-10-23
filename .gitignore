@@ -83,9 +83,13 @@ exports/
 
 # Builds
 dist/
-# Sortie d'outils d'analyse de code passes en local (graphify, etc.) et leurs
-# fichiers de config personnels : ni l'un ni l'autre ne fait partie du depot.
-/graphify-out/
+# Graphe graphify : le graphe est versionne ; son cache, ses copies datees et ses
+# fichiers propres au poste ne le sont pas.
+/graphify-out/cache/
+/graphify-out/20*/
+/graphify-out/.graphify_python
+/graphify-out/.graphify_root
+# Config personnelle d'outils d'analyse de code : ne fait pas partie du depot.
 /opencode.json
 
 # Cles d'API & secrets
