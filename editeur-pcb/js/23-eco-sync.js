@@ -336,7 +336,7 @@ function pcbDetecterDisparitesEco(schData) {
       // A. Changement de boîtier / empreinte
       const oldPkg = String(fp.pkg || "").trim();
       const newPkg = String(comp.pkg || "").trim();
-      if (newPkg && oldPkg && oldPkg.toUpperCase() !== newPkg.toUpperCase()) {
+      if (newPkg && oldPkg.toUpperCase() !== newPkg.toUpperCase()) {
         const trks = pcbPistesConnecteesFp(fp);
         nbPistesConnecteesModifiees += trks.length;
         const item = {
