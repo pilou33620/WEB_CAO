@@ -347,7 +347,11 @@ function pcbDetecterDisparitesEco(schData) {
           oldPkg: oldPkg,
           newPkg: newPkg,
           oldPins: fp.pins,
-          newPins: comp.pins || fp.pins,
+          /* le plus haut numéro de broche câblé au schéma : une netlist texte ne
+             donne pas le brochage, et comp.pins y vaut 2 d'office */
+          newPins: Math.max(0, ...[...schData.pinNet.keys()]
+                     .filter(k => k.startsWith(ref + "."))
+                     .map(k => +k.slice(ref.length + 1) || 0)) || fp.pins,
           tracksCount: trks.length,
           tracks: trks,
           hasConflict: false,
@@ -542,24 +546,12 @@ function pcbAppliquerEco(items, options) {
       case "BOITIER": {
         const fp = fpsMap.get(item.ref);
         if (fp) {
-          // Mise à jour géométrique sans déplacer le composant ; les pistes
+          // Mise à jour géométrique sans déplacer le composant, par l'empreinte
+          // de la LIB comme l'import de netlist (fpReposerBoitier) ; les pistes
           // accrochées suivent le numéro de leur pastille (`fpReshape`)
           const refaire = () => {
-          fp.pkg = item.newPkg;
-          if (typeof fpFree === "function" && !fpFree(fp) && typeof fpGeomFor === "function") {
-            const g = fpGeomFor(item.newPkg, item.newPins || fp.pins);
-            fp.style = g.style;
-            fp.pitch = g.pitch;
-            fp.span = g.span;
-            fp.pins = g.pins;
-            if (typeof fpTrousDe === "function") fpTrousDe(fp, g);
-            if (g.pads && typeof padClone === "function") {
-              fp.pads = g.pads.map(padClone);
-              if (g.body) fp.body = { ...g.body };
-              fp.lib = g.pkg;
-              if (typeof fpSyncPins === "function") fpSyncPins(fp);
-            }
-          }
+            fp.pkg = item.newPkg;
+            fpReposerBoitier(fp, item.newPkg, item.newPins || fp.pins);
           };
           if (typeof fpReshape === "function") fpReshape(fp, refaire); else refaire();
           // CONSERVATION DU ROUTAGE : aucune piste n'est effacée ; celle dont la
