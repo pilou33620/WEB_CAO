@@ -1288,56 +1288,88 @@ function pcbFile(suffixe, repli){
   const n=pcbProjNom();
   return n?n+suffixe:repli;
 }
+/* Les familles de fichiers du dossier de fabrication, que l'utilisateur coche
+   ou non avant l'export (fabChoisir). La carte garde celles qu'il a ôtées
+   (S.fabExclus) : une carte sans sérigraphie le reste d'un export à l'autre. */
+const FAB_GROUPES=[
+  ["cuivre","Cuivre (Gerber .GTL, .GBL, couches internes)"],
+  ["masque","Vernis épargne (.GTS, .GBS)"],
+  ["pate","Pâte à braser (.GTP, .GBP)"],
+  ["serigraphie","Sérigraphie (.GTO, .GBO)"],
+  ["contour","Contour de découpe (.GM1, .GKO)"],
+  ["percage","Perçage (Excellon, contre-perçage)"],
+  ["ipc","Netlist de test (.ipc)"],
+  ["ipc2581","Carte complète IPC-2581 (.xml)"],
+  ["plans","Plans Draftsman (PDF)"],
+  ["dxf","DXF pour la mécanique"],
+  ["master","Master Drawing (PDF)"],
+  ["empilage","Empilage (EMPILAGE.txt)"],
+  ["positions","Positions de placement (positions.csv)"],
+  ["bom","Nomenclature (bom.csv)"],
+  ["lisezmoi","LISEZ-MOI.txt"]
+];
+function fabVeut(k){return !(S.fabExclus||[]).includes(k);}
 /* `extra` : des fichiers venus d'ailleurs (l'animation 3D, 41-animation-3d.js),
    posés avant le Master Drawing et le LISEZ-MOI, qui les annoncent. */
 function buildFabFiles(extra){
   const base=fabBase();
   const files=[];
-  for(let i=0;i<S.cu;i++){
-    const ext = i===0?".GTL":(i===S.cu-1?".GBL":".GL"+(i+1));
-    files.push({name:base+ext,text:gerberCopper(i)});
+  if(fabVeut("cuivre"))
+    for(let i=0;i<S.cu;i++){
+      const ext = i===0?".GTL":(i===S.cu-1?".GBL":".GL"+(i+1));
+      files.push({name:base+ext,text:gerberCopper(i)});
+    }
+  if(fabVeut("masque")){
+    files.push({name:base+".GTS",text:gerberMask(0)});
+    if(S.cu>1)files.push({name:base+".GBS",text:gerberMask(1)});
   }
-  files.push({name:base+".GTS",text:gerberMask(0)});
-  if(S.cu>1)files.push({name:base+".GBS",text:gerberMask(1)});
-  files.push({name:base+".GTP",text:gerberPaste(0)});
-  if(S.cu>1)files.push({name:base+".GBP",text:gerberPaste(1)});
-  files.push({name:base+".GTO",text:gerberSilk(0)});
-  if(S.cu>1)files.push({name:base+".GBO",text:gerberSilk(1)});
-  files.push({name:base+".GM1",text:gerberOutline()});   // profil de découpe
-  files.push({name:base+".GKO",text:gerberEdge()});      // keepout (même géométrie)
+  if(fabVeut("pate")){
+    files.push({name:base+".GTP",text:gerberPaste(0)});
+    if(S.cu>1)files.push({name:base+".GBP",text:gerberPaste(1)});
+  }
+  if(fabVeut("serigraphie")){
+    files.push({name:base+".GTO",text:gerberSilk(0)});
+    if(S.cu>1)files.push({name:base+".GBO",text:gerberSilk(1)});
+  }
+  if(fabVeut("contour")){
+    files.push({name:base+".GM1",text:gerberOutline()});   // profil de découpe
+    files.push({name:base+".GKO",text:gerberEdge()});      // keepout (même géométrie)
+  }
   const dr=drillFile();
-  for(const f of dr.files)files.push(f);
-  /* le contre-perçage, aussi en Gerber X2 : la profondeur y est un champ.
-     Hors de `dr.files`, que le plan de fabrication détaille comme Excellon. */
-  for(const p of cpPaires())files.push(cpGerberX2(p));
+  if(fabVeut("percage")){
+    for(const f of dr.files)files.push(f);
+    /* le contre-perçage, aussi en Gerber X2 : la profondeur y est un champ.
+       Hors de `dr.files`, que le plan de fabrication détaille comme Excellon. */
+    for(const p of cpPaires())files.push(cpGerberX2(p));
+  }
   /* La netlist de test : elle vient après les Gerber et le perçage, parce
      qu'elle décrit ce que ces fichiers-là auront gravé. */
-  files.push({name:base+".ipc",text:ipcNetlist()});
+  if(fabVeut("ipc"))files.push({name:base+".ipc",text:ipcNetlist()});
   /* Toute la carte en un fichier IPC-2581 (35-ipc2581-export.js), avant le
      Master Drawing qui l'annonce. */
-  if(typeof ipc2581Fichier==="function")files.push(ipc2581Fichier());
+  if(fabVeut("ipc2581")&&typeof ipc2581Fichier==="function")files.push(ipc2581Fichier());
   /* Le Master Drawing PDF : trois pages IPC (PCB Details, Files, Stack-up).
      Pur JS, zero dépendance. On passe la liste déjà construite pour éviter
      une récursion buildFabFiles → masterDrawingPdf → buildFabFiles. */
   /* Les plans (29-draftsman.js) avant le Master Drawing : celui-ci les
      annonce dans sa liste de fichiers. */
-  if(typeof dfPdfOctets==="function"){
+  if(fabVeut("plans")&&typeof dfPdfOctets==="function"){
     const plans=dfPdfOctets();
     if(plans)files.push({name:fabBase()+"-PLANS.pdf",data:plans});
   }
   /* les DXF pour la mécanique (33-draftsman-export.js) : la carte à 1:1, et
      la feuille du plan de fabrication */
-  if(typeof dxfFichiers==="function")files.push(...dxfFichiers());
+  if(fabVeut("dxf")&&typeof dxfFichiers==="function")files.push(...dxfFichiers());
   if(extra)files.push(...extra);
-  const md=masterDrawingPdf(files);
+  const md=fabVeut("master")&&masterDrawingPdf(files);
   if(md)files.push({name:fabDocNum()+".pdf",data:md});
-  files.push({name:"EMPILAGE.txt",text:stackReport()});
+  if(fabVeut("empilage"))files.push({name:"EMPILAGE.txt",text:stackReport()});
   /* Placement et nomenclature avant le LISEZ-MOI : celui-ci liste les fichiers
      de l'archive, et une liste qui s'arrête avant les deux derniers vaudrait
      un dossier incomplet aux yeux du monteur. */
-  files.push({name:"positions.csv",text:positionsCsvText()});
-  files.push({name:"bom.csv",text:bomPcbCsvText()});
-  files.push({name:"LISEZ-MOI.txt",text:fabReadme(files,dr)});
+  if(fabVeut("positions"))files.push({name:"positions.csv",text:positionsCsvText()});
+  if(fabVeut("bom"))files.push({name:"bom.csv",text:bomPcbCsvText()});
+  if(fabVeut("lisezmoi"))files.push({name:"LISEZ-MOI.txt",text:fabReadme(files,dr)});
   return {files,drill:dr};
 }
 
@@ -1362,6 +1394,36 @@ function exportFab(){
     return null;
   }
   return fabLivrer([],"");
+}
+/* Le bouton « Fabrication .zip » : une case par famille de fichiers, puis
+   l'export. Le choix part avec la carte, en une étape d'historique. */
+function fabChoisir(){
+  if(typeof document==="undefined")return;
+  const m=document.createElement("div");
+  m.className="modal";
+  m.innerHTML='<div class="box" style="max-width:460px">'+
+    '<h3>🏭 Dossier de fabrication</h3>'+
+    '<p style="color:var(--txt-dim);font-size:12.5px;margin:6px 0 10px">Fichiers à mettre dans le .zip :</p>'+
+    FAB_GROUPES.map(([k,t])=>'<label style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12.5px;cursor:pointer">'+
+      '<input type="checkbox" data-fab="'+k+'"'+(fabVeut(k)?" checked":"")+'> '+esc(t)+'</label>').join("")+
+    '<div style="display:flex;justify-content:space-between;gap:8px;margin-top:14px">'+
+    '<span><button class="tb mini" id="fabTout">Tout cocher</button></span>'+
+    '<span style="display:flex;gap:8px"><button class="tb" id="fabAnnuler">Annuler</button>'+
+    '<button class="tb on" id="fabExporter">Exporter le .zip</button></span>'+
+    '</div></div>';
+  document.body.appendChild(m);
+  const cases=[...m.querySelectorAll("input[data-fab]")];
+  const close=()=>m.remove();
+  m.onclick=e=>{if(e.target===m)close();};
+  document.getElementById("fabAnnuler").onclick=close;
+  document.getElementById("fabTout").onclick=()=>cases.forEach(c=>{c.checked=true;});
+  document.getElementById("fabExporter").onclick=()=>{
+    const exclus=cases.filter(c=>!c.checked).map(c=>c.dataset.fab);
+    if(exclus.length===FAB_GROUPES.length){alert("Cochez au moins un fichier.");return;}
+    if(exclus.join()!==(S.fabExclus||[]).join()){push();S.fabExclus=exclus;touch();}
+    close();
+    exportFab();
+  };
 }
 function fabLivrer(extra,note){
   const {files,drill}=buildFabFiles(extra);

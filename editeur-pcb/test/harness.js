@@ -61,7 +61,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* animation 3D de fabrication.zip (41-animation-3d.js) */
   "anim3dDonnees","anim3dPage","fabAnimBasculer","silkTraits","fabLivrer","THREE_SOURCE",
   "gerberEdge","gerberOutline","ipcNetlist","ipc317","masterDrawingPdf","noAcc",
-  "drillFile","maskOpenings","pasteOpenings","textStrokes","crc32","zipBlob","exportFab",
+  "drillFile","buildFabFiles","FAB_GROUPES","fabChoisir","maskOpenings","pasteOpenings","textStrokes","crc32","zipBlob","exportFab",
   "positionsCsvText","bomPcbCsvText","pcbCsvCell","fabReadme",
   /* variantes de montage (commun/variantes.js + 26-variantes.js) */
   "varNorm","varVide","varEstMonte","pcbVarDepuisSchema","pcbVarChoisir","pcbVarDessiner",
@@ -1996,6 +1996,19 @@ T("ECO : la capa passe de 0603 en 0805, ses pistes suivent leurs pastilles",()=>
     decouplageRelie(D);
     if(S.aRerouter.length)throw new Error("rien à marquer : "+S.aRerouter.map(g=>g.msg));
   }finally{undo();suiviFin(D.reg);}
+});
+T("dossier de fabrication : une famille décochée n'est pas dans le .zip, et la carte s'en souvient",()=>{
+  const saved=serialize();
+  try{
+    const noms=()=>buildFabFiles().files.map(f=>f.name);
+    if(!noms().some(n=>/\.GTO$/.test(n)))throw new Error("sérigraphie attendue par défaut");
+    S.fabExclus=["serigraphie","bom"];
+    const l=noms();
+    if(l.some(n=>/\.(GTO|GBO)$/.test(n)||n==="bom.csv"))throw new Error("famille décochée exportée : "+l);
+    if(!l.some(n=>/\.GTL$/.test(n))||!l.includes("LISEZ-MOI.txt"))throw new Error("le reste doit partir : "+l);
+    loadDoc(JSON.parse(serialize()),true);
+    if(S.fabExclus.join()!=="serigraphie,bom")throw new Error("choix perdu à l'enregistrement : "+S.fabExclus);
+  }finally{loadDoc(JSON.parse(saved),true);}
 });
 T("repères renumérotés au schéma : l'empreinte est renommée, ni recréée ni orpheline",()=>{
   const saved=serialize();
