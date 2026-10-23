@@ -160,6 +160,7 @@ document.getElementById("netAll").onchange=e=>{
 document.getElementById("tabBom").onclick=()=>setListTab("bom");
 document.getElementById("tabNets").onclick=()=>setListTab("nets");
 document.getElementById("bNets").onclick=cycleNetLabels;
+document.getElementById("bCartouche").onclick=schCartoucheBasculer;
 document.getElementById("bNetlist").onclick=exportNetlist;
 document.getElementById("bCsv").onclick=exportBomCsv;
 document.getElementById("bXlsx").onclick=exportBomXlsx;

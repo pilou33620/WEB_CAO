@@ -124,7 +124,36 @@ function refStartPage(i){
   }
   buildTabs();
 }
+/* Cadre de page et cartouche de la feuille courante (commun/cartouche.js),
+   format réglé feuille par feuille. La page se centre sur le dessin quand on
+   choisit son format, puis reste où elle est (pageX, pageY : son coin). */
+const SCH_U=20/2.54;            // unités du schéma par mm : la grille de 20 vaut 0,1 pouce
+function schPage(){
+  const p=S.pages[S.page], F=p&&CARTOUCHE_FORMATS[p.format];
+  if(!F)return null;
+  const x1=p.pageX||0, y1=p.pageY||0;
+  return {x1,y1,x2:x1+F.w*SCH_U,y2:y1+F.h*SCH_U};
+}
+function schCartouche(c){
+  const p=S.pages[S.page], P=schPage();
+  if(!P)return;
+  cartoucheDessiner(c,P.x1,P.y1,SCH_U,p.format,
+    cartoucheChamps(p.name,S.page?S.page+" / "+(S.pages.length-1):"Hiérarchie"));
+}
+function schCartoucheBasculer(){
+  push();storeCurrent();
+  const p=S.pages[S.page], f=cartoucheSuivant(p.format||"");
+  delete p.pageX;delete p.pageY;
+  if(f){
+    p.format=f;
+    const b=schContenu(), F=CARTOUCHE_FORMATS[f];
+    if(b){p.pageX=snap((b.x1+b.x2-F.w*SCH_U)/2);p.pageY=snap((b.y1+b.y2-F.h*SCH_U)/2);}
+  }else delete p.format;
+  buildTabs();fit();
+}
 function buildTabs(){
+  const b=document.getElementById("bCartouche"), f=S.pages[S.page]&&S.pages[S.page].format;
+  if(b){b.textContent="Cartouche : "+(f||"aucun");b.classList.toggle("on",!!f);}
   const box=document.getElementById("tabs");
   box.innerHTML="";
   S.pages.forEach((p,i)=>{

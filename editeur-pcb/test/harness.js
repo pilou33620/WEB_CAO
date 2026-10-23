@@ -61,7 +61,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* animation 3D de fabrication.zip (41-animation-3d.js) */
   "anim3dDonnees","anim3dPage","fabAnimBasculer","silkTraits","fabLivrer","THREE_SOURCE",
   "gerberEdge","gerberOutline","ipcNetlist","ipc317","masterDrawingPdf","noAcc",
-  "drillFile","buildFabFiles","FAB_GROUPES","fabChoisir","maskOpenings","pasteOpenings","textStrokes","crc32","zipBlob","exportFab",
+  "drillFile","buildFabFiles","FAB_GROUPES","fabChoisir","pcbCartouche","pcbCartouchePage","cartoucheSuivant","CARTOUCHE_FORMATS","maskOpenings","pasteOpenings","textStrokes","crc32","zipBlob","exportFab",
   "positionsCsvText","bomPcbCsvText","pcbCsvCell","fabReadme",
   /* variantes de montage (commun/variantes.js + 26-variantes.js) */
   "varNorm","varVide","varEstMonte","pcbVarDepuisSchema","pcbVarChoisir","pcbVarDessiner",
@@ -1996,6 +1996,19 @@ T("ECO : la capa passe de 0603 en 0805, ses pistes suivent leurs pastilles",()=>
     decouplageRelie(D);
     if(S.aRerouter.length)throw new Error("rien à marquer : "+S.aRerouter.map(g=>g.msg));
   }finally{undo();suiviFin(D.reg);}
+});
+T("cartouche du PCB : page centrée sur la carte, dessinée à l'endroit, gardée à l'enregistrement",()=>{
+  const saved=serialize(), flip=S.flip;
+  try{
+    if(pcbCartouchePage())throw new Error("aucun cartouche par défaut");
+    S.cartouche=cartoucheSuivant(cartoucheSuivant(""));
+    const P=pcbCartouchePage(), b=S.board;
+    if(S.cartouche!=="A3"||P.w!==420||P.h!==297)throw new Error("A3 attendu : "+S.cartouche+" "+JSON.stringify(P));
+    if(Math.abs(P.x+P.w/2-(b.x+b.w/2))>1e-9||Math.abs(P.y+P.h/2-(b.y+b.h/2))>1e-9)throw new Error("page non centrée");
+    S.flip=true;draw();S.flip=false;draw();
+    loadDoc(JSON.parse(serialize()),true);
+    if(S.cartouche!=="A3")throw new Error("cartouche perdu : "+S.cartouche);
+  }finally{S.flip=flip;loadDoc(JSON.parse(saved),true);}
 });
 T("dossier de fabrication : une famille décochée n'est pas dans le .zip, et la carte s'en souvient",()=>{
   const saved=serialize();

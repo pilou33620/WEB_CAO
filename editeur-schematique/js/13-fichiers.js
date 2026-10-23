@@ -162,21 +162,15 @@ function dl(blob,name){
   setTimeout(()=>URL.revokeObjectURL(a.href),2000);
 }
 function exportPng(){
-  let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;
-  for(const el of S.comps){const b=bbox(el);x1=Math.min(x1,b.x1);y1=Math.min(y1,b.y1);x2=Math.max(x2,b.x2);y2=Math.max(y2,b.y2);}
-  for(const w of S.wires){x1=Math.min(x1,w.x1,w.x2);y1=Math.min(y1,w.y1,w.y2);x2=Math.max(x2,w.x1,w.x2);y2=Math.max(y2,w.y1,w.y2);}
-  for(const d of (S.drawings||[])){x1=Math.min(x1,d.x1,d.x2);y1=Math.min(y1,d.y1,d.y2);x2=Math.max(x2,d.x1,d.x2);y2=Math.max(y2,d.y1,d.y2);}
-  if(S.page===0 && typeof sheetBlocks==="function"){
-    for(const sb of sheetBlocks()){
-      x1=Math.min(x1,sb.x);y1=Math.min(y1,sb.y);x2=Math.max(x2,sb.x+sb.w);y2=Math.max(y2,sb.y+sb.h);
-    }
-  }
-  if(x1>x2){alert("Feuille vide : rien à exporter.");return;}
-  const pad=50, sc=2, W=(x2-x1+pad*2)*sc, H=(y2-y1+pad*2)*sc;
+  const pg=schPage(), b=pg||schContenu();          // avec un cartouche : toute la page
+  if(!b){alert("Feuille vide : rien à exporter.");return;}
+  const {x1,y1,x2,y2}=b;
+  const pad=pg?10:50, sc=2, W=(x2-x1+pad*2)*sc, H=(y2-y1+pad*2)*sc;
   const o=document.createElement("canvas");o.width=W;o.height=H;
   const c=o.getContext("2d");
   c.fillStyle=C_BG;c.fillRect(0,0,W,H);
   c.setTransform(sc,0,0,sc,-(x1-pad)*sc,-(y1-pad)*sc);
+  schCartouche(c);
   drawDrawings(c);
   if(typeof drawSheetBlocks==="function")drawSheetBlocks(c);
   drawWires(c);

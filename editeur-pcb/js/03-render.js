@@ -1111,6 +1111,7 @@ function paintCarte(c,dpr,w,h,noGrid){
   drawSub(c);
   // après le substrat, avant le cuivre : la grille se voit là où l'on travaille
   if(!noGrid){c.save();c.setTransform(dpr,0,0,dpr,0,0);drawGrid(c,w/dpr,h/dpr);c.restore();}
+  pcbCartouche(c);
   drawBoard(c);
   /* CUIVRE FINAL (contraste 3) : la couche active telle que le Gerber la grave —
      zone opaque, isolements, bras et lanières retirées, sans chevelu, sans
@@ -1252,8 +1253,28 @@ function drawVue(){
   clearTimeout(VUE.t);
   VUE.t=setTimeout(draw,150);
 }
+/* Cadre de page et cartouche (commun/cartouche.js), la page centrée sur la
+   carte. En vue de dessous, le miroir est défait pour lui : le texte reste
+   à l'endroit, et la page, centrée sur l'axe du miroir, ne bouge pas. */
+function pcbCartouchePage(){
+  const F=CARTOUCHE_FORMATS[S.cartouche];
+  if(!F)return null;
+  const b=S.board;
+  return {x:b.x+b.w/2-F.w/2,y:b.y+b.h/2-F.h/2,w:F.w,h:F.h};
+}
+function pcbCartouche(c){
+  const P=pcbCartouchePage();
+  if(!P)return;
+  c.save();
+  if(S.flip){c.translate(2*bcx(),0);c.scale(-1,1);}
+  cartoucheDessiner(c,P.x,P.y,1,S.cartouche,
+    cartoucheChamps("Circuit imprimé"+(S.flip?" — vue de dessous":""),"1 / 1"));
+  c.restore();
+}
 function draw(){
   clearTimeout(VUE.t);VUE.img=null;
+  const bc=$("bCartouche");
+  if(bc){bc.textContent="Cartouche : "+(S.cartouche||"aucun");bc.classList.toggle("on",!!S.cartouche);}
   const dpr=window.devicePixelRatio||1, t0=performance.now();
   paint(ctx,dpr,cv.width,cv.height,false);
   VUE.cout=performance.now()-t0;VUE.s=S.scale;VUE.ox=S.ox;VUE.oy=S.oy;
@@ -1267,7 +1288,7 @@ function draw(){
   $("fLayer").textContent=cuId(S.active,S.cu);
 }
 function fit(){
-  const b=S.board;
+  const b=pcbCartouchePage()||S.board;      // avec un cartouche : toute la page
   let x1=b.x,y1=b.y,x2=b.x+b.w,y2=b.y+b.h;
   for(const fp of S.fps){
     const q=fpBBox(fp);

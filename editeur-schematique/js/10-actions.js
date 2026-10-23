@@ -187,16 +187,23 @@ function delWiresSel(){
     (S.sel.size?" · "+S.sel.size+" composant(s) laissé(s) en place.":"."));
   refreshPanels();draw();
 }
-function fit(){
+/* L'encombrement de la feuille courante (composants, fils, dessins, blocs de
+   la hiérarchie), ou null si elle est vide. */
+function schContenu(){
   const blocks=(S.page===0&&typeof sheetBlocks==="function")?sheetBlocks():[];
-  if(!S.comps.length&&!S.wires.length&&(!S.drawings||!S.drawings.length)&&!blocks.length){
-    S.scale=1;S.ox=cv.clientWidth/2;S.oy=cv.clientHeight/2;draw();return;
-  }
   let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;
   for(const el of S.comps){const b=bbox(el);x1=Math.min(x1,b.x1);y1=Math.min(y1,b.y1);x2=Math.max(x2,b.x2);y2=Math.max(y2,b.y2);}
   for(const w of S.wires){x1=Math.min(x1,w.x1,w.x2);y1=Math.min(y1,w.y1,w.y2);x2=Math.max(x2,w.x1,w.x2);y2=Math.max(y2,w.y1,w.y2);}
   for(const d of (S.drawings||[])){x1=Math.min(x1,d.x1,d.x2);y1=Math.min(y1,d.y1,d.y2);x2=Math.max(x2,d.x1,d.x2);y2=Math.max(y2,d.y1,d.y2);}
   for(const sb of blocks){x1=Math.min(x1,sb.x);y1=Math.min(y1,sb.y);x2=Math.max(x2,sb.x+sb.w);y2=Math.max(y2,sb.y+sb.h);}
+  return x1>x2?null:{x1,y1,x2,y2};
+}
+function fit(){
+  const b=schPage()||schContenu();
+  if(!b){
+    S.scale=1;S.ox=cv.clientWidth/2;S.oy=cv.clientHeight/2;draw();return;
+  }
+  const {x1,y1,x2,y2}=b;
   const pad=60, W=cv.clientWidth, H=cv.clientHeight;
   S.scale=Math.max(.25,Math.min(2.5,Math.min(W/(x2-x1+pad*2),H/(y2-y1+pad*2))));
   S.ox=W/2-(x1+x2)/2*S.scale;S.oy=H/2-(y1+y2)/2*S.scale;
