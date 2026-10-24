@@ -83,6 +83,9 @@ function initApp() {
   const bAuto = document.getElementById("bAutoAssoc");
   if (bAuto) bAuto.addEventListener("click", actionAutoAssocier);
 
+  const bRetour = document.getElementById("bRetourListe");
+  if (bRetour) bRetour.addEventListener("click", () => document.body.classList.remove("lib-fiche"));
+
   const bExport = document.getElementById("bExportCsv");
   if (bExport) bExport.addEventListener("click", () => telechargerCsv());
 
@@ -391,6 +394,7 @@ function rafraichirTable() {
       if (e.target.tagName === "SELECT") return;
       const id = parseInt(tr.getAttribute("data-id"), 10);
       selectionnerComposant(id);
+      document.body.classList.add("lib-fiche"); // téléphone en portrait : la fiche passe devant la liste
     });
 
     // Double-clic sur la ligne : ouvrir l'éditeur PCB si disponible, sinon schéma

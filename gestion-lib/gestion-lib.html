@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="css/gestion-lib.css">
 <link rel="stylesheet" href="../commun/tuto.css">
 <link rel="stylesheet" href="../commun/pilote.css">
+<link rel="stylesheet" href="../commun/telephone.css">
 </head>
 <body>
 
@@ -20,7 +21,7 @@
       <span>CATALOGUE · EMPREINTES · MODÈLES</span>
     </div>
 
-    <div class="header-tools">
+    <div class="header-tools tools">
       <a href="../index.html" class="tb" title="Retour au tableau de bord principal">⌂ Accueil</a>
       <a href="../editeur-schematique/editeur-schematique.html" class="tb" title="Ouvrir l'éditeur schématique">Éditeur schématique</a>
       <a href="../editeur-pcb/editeur-pcb.html" class="tb" title="Ouvrir l'éditeur PCB">Éditeur PCB</a>
@@ -169,6 +170,7 @@
     <!-- Volet Inspecteur Latéral -->
     <aside class="inspector-panel" id="inspectorPanel">
       <div class="inspector-head">
+        <button type="button" class="tb lib-retour" id="bRetourListe" title="Revenir à la liste">‹ Liste</button>
         <b id="inspPartName">Sélectionnez un composant</b>
       </div>
       <div class="inspector-body">
@@ -412,6 +414,7 @@
 <script src="../commun/tuto.js" data-outil="lib"></script>
 <script src="../commun/pilote.js"></script>
 <script src="../commun/pilote-cao.js"></script>
+<script src="../commun/telephone.js"></script>
 <script>piloteCao("gestion-lib");</script>
 </body>
 </html>

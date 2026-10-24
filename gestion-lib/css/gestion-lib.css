@@ -1288,3 +1288,23 @@ table.lib-table tr.selected td {
 .insp-sim-form .aide { color: var(--txt-dim); font-size: 10.5px; line-height: 1.4; }
 .insp-sim-form .err { color: var(--red); }
 .insp-sim-form .actions { display: flex; gap: 6px; justify-content: flex-end; }
+
+/* ---------- Téléphone (classes posées par commun/telephone.js) ----------
+   Portrait : onglets et statistiques sur une ligne qui défile ; la fiche du
+   composant passe en plein écran au toucher d'une ligne, « ‹ Liste » revient.
+   Paysage : l'en-tête devient le rail de gauche (commun/telephone.css), liste
+   et fiche restent côte à côte. */
+.lib-retour { display: none; }
+body.tel .nav-tabs,
+body.tel .stats-items { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-left: 8px; padding-right: 8px; }
+body.tel .nav-tabs > *,
+body.tel .stats-items > * { flex: none; white-space: nowrap; }
+body.tel .stats-band { padding: 4px 8px; gap: 8px; }
+body.tel .stats-items { padding: 0; min-width: 0; }
+body.tel #compListCount { flex: none; }
+body.tel-portrait .main-layout { position: relative; }
+body.tel-portrait .inspector-panel { position: absolute; inset: 0; width: auto; z-index: 5; border-left: 0; display: none; }
+body.tel-portrait.lib-fiche .inspector-panel:not(.collapsed) { display: flex; }
+body.tel-portrait .lib-retour { display: inline-flex; margin-right: 8px; }
+body.tel-portrait .inspector-head { justify-content: flex-start; }
+body.tel-paysage .inspector-panel:not(.collapsed) { width: 50%; }
