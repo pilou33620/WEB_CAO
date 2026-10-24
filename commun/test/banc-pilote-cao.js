@@ -226,6 +226,23 @@ async function refuse(promesse, motif) {
     egal(/pas une commande connue/.test(await ctx.Pilote.aide("cao_inventee")), true, "inconnue");
   });
 
+  await T("cao_interface : dans chaque page, une écriture à carte ; les touches se lisent comme on les écrit", async () => {
+    for (const p of ["schema", "pcb", "visionneuse-ipc", "gestion-lib"]) {
+      const { declare } = page(p);
+      egal([typeof declare.commandes.cao_interface_lire.executer, declare.commandes.cao_interface.ecriture,
+            typeof declare.commandes.cao_interface.irreversible], ["function", true, "string"], p);
+    }
+    const { ctx } = page("pcb");
+    const k = t => { const o = ctx.piloteTouches(t); return [o.key, o.code, o.ctrlKey, o.shiftKey]; };
+    egal(k("Ctrl+Z"), ["z", "KeyZ", true, false], "Ctrl+Z");
+    egal(k("Ctrl+Shift+z"), ["Z", "KeyZ", true, true], "Ctrl+Shift+z");
+    egal(k("Delete"), ["Delete", "Delete", false, false], "Delete");
+    egal(k("Ctrl++"), ["+", "+", true, false], "Ctrl++");
+    egal(k("2"), ["2", "Digit2", false, false], "2");
+    await refuse(Promise.resolve().then(() => ctx.piloteTouches("Hyper+x")), /Modificateur/);
+    await refuse(Promise.resolve().then(() => ctx.piloteGeste("pcb", { geste: "sauter" })), /geste/);
+  });
+
   console.log("\n" + ok + " essais réussis, " + ko + " en échec.");
   process.exit(ko ? 1 : 0);
 })();
