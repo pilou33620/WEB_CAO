@@ -3306,8 +3306,13 @@ function pcbVerifierPinoutComposant(c, fp) {
 
   // Géométrie attendue d'après le boîtier du schéma
   const expGeom = (typeof pkgGeom === "function" && pkgName) ? pkgGeom(pkgName, nSch) : null;
-  const expPitch = expGeom ? expGeom.pitch : null;
-  const expSpan = expGeom ? expGeom.span : null;
+  /* La LIB fait foi : un boîtier qui y a son fichier se mesure sur ce fichier,
+     la table générique PKG_LIB n'est que le repli (SOIC-8 de la LIB à 4,95 mm
+     d'écartement contre 5,4 mm dans la table : deux dessins valables). */
+  const libFp = (typeof fpLibPourBoitier === "function" && pkgName) ? fpLibPourBoitier(pkgName) : null;
+  const libMes = libFp ? pcbGeomMesuree(libFp) : null;
+  const expPitch = libMes ? libMes.pitch : expGeom ? expGeom.pitch : null;
+  const expSpan = libMes ? libMes.span : expGeom ? expGeom.span : null;
 
   const mes = pcbGeomMesuree(fp);
   const actPitch = mes ? mes.pitch : (fp.pitch != null ? fp.pitch : (expPitch || 1.27));
@@ -3326,7 +3331,7 @@ function pcbVerifierPinoutComposant(c, fp) {
     const dPitch = mes ? Math.min(Math.abs(actPitch - expPitch), Math.abs(actPitch - 2 * expPitch))
                        : Math.abs(actPitch - expPitch);
     // une puce (2 pastilles) : l'entraxe suit la densité IPC-7351 choisie (L, N, M), pas le seul boîtier
-    if (dPitch > (expGeom.style === "chip" ? 0.35 : 0.05)) {
+    if (dPitch > ((libFp || expGeom).style === "chip" ? 0.35 : 0.05)) {
       pitchOk = false;
       const m = "Distance entre pins (pitch) incorrecte : " + expPitch.toFixed(2) + " mm attendu pour " + (pkgName || "boîtier") + ", mais empreinte PCB " + regle + Number(actPitch).toFixed(2) + " mm";
       pitchMsg = m;

@@ -4528,6 +4528,24 @@ T("pinout : symbole en plusieurs parties, broches non connectées, broche sans p
   if(!r("LED1",3).ok)throw new Error("K=2/3 sur 3 pastilles : "+r("LED1",3).msg);
   if(r("LED1",2).ok||!/3/.test(r("LED1",2).msg))throw new Error("K=2/3 sur 2 pastilles : la 3 manque : "+r("LED1",2).msg);
 });
+T("pinout : un boîtier qui a son fichier dans la LIB se compare à ce fichier, pas à PKG_LIB",()=>{
+  // SOIC-8 de la LIB : rangées à 4,95 mm (la table générique dit 5,4)
+  const soic=(e)=>{const p=[];for(let k=0;k<4;k++){p.push({n:k+1,x:-e/2,y:(k-1.5)*1.27,w:1.97,h:0.6,shape:"rect",drill:0});
+                                                  p.push({n:8-k,x:e/2,y:(k-1.5)*1.27,w:1.97,h:0.6,shape:"rect",drill:0});}return p;};
+  const f=mkFp("U100","","",8);f.pkg="SOIC-8";f.pads=soic(4.95);
+  const av=FPLIB["SOIC-8"];
+  try{
+    FPLIB["SOIC-8"]={name:"SOIC-8",style:"sop",pins:8,pads:soic(4.95)};
+    const ok=pcbVerifierPinoutComposant({ref:"U100",pkg:"SOIC-8",npins:8},f);
+    if(!ok.spanCheck.ok||ok.spanCheck.attendu!==4.95)throw new Error("SOIC-8 de la LIB refusé : "+ok.spanCheck.msg);
+    f.pads=soic(5.4);
+    if(pcbVerifierPinoutComposant({ref:"U100",pkg:"SOIC-8",npins:8},f).spanCheck.ok)
+      throw new Error("SOIC-8 à 5,4 mm accepté alors que la LIB dit 4,95");
+    delete FPLIB["SOIC-8"];
+    if(!pcbVerifierPinoutComposant({ref:"U100",pkg:"SOIC-8",npins:8},f).spanCheck.ok)
+      throw new Error("sans fichier dans la LIB, la table (5,4 mm) devait servir");
+  }finally{if(av)FPLIB["SOIC-8"]=av;else delete FPLIB["SOIC-8"];}
+});
 T("pinout : une seule rangée de pastilles (2512, barrette) n'a pas d'écartement nul",()=>{
   const deux=(ref,pkg,dx,w,h)=>{const f=mkFp(ref,"","",2);f.pkg=pkg;
     f.pads=[{n:1,x:-dx/2,y:0,w,h,shape:"rect",drill:0},{n:2,x:dx/2,y:0,w,h,shape:"rect",drill:0}];return f;};
