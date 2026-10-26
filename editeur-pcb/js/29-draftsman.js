@@ -64,6 +64,7 @@ const DF_FEUILLES=[
   ["pates",  "Pâte à braser (Solder_Paste)"],
   ["ptst",   "Points de test (PTST)"],
   ["board",  "Contour seul (BOARD)"],
+  ["mes",    "Fiche de mesure (technicien)"],
   ["meca",   "Plan mécanique"]];
 const DF_PT=25.4/72;                 // un point typographique, en mm
 const DF_CADRE=10;                   // cadre extérieur, depuis le bord
@@ -97,11 +98,13 @@ function dfCfg(){
     fonte:typeof src.fonte==="boolean"?src.fonte:true,   // fonte embarquée (33-draftsman-export.js)
     feuilles:{fab:b("fab",true), asmT:b("asmT",true), asmB:b("asmB",true),
               bom:b("bom",true), couches:b("couches",false), masques:b("masques",false),
-              pates:b("pates",false), ptst:b("ptst",false), board:b("board",false), meca:b("meca",false)},
+              pates:b("pates",false), ptst:b("ptst",false), board:b("board",false), mes:b("mes",false), meca:b("meca",false)},
     /* posés à la main (34-draftsman-vues.js) */
     cotes:dfNormCotes(src.cotes), vues:dfNormVues(src.vues), details:dfNormDetails(src.details),
     /* hauteurs et ouvertures du dossier méca (commun/dossier-meca.js) */
-    meca:mecaNormReglages(src.meca,S.fps.map(fp=>fp.id))
+    meca:mecaNormReglages(src.meca,S.fps.map(fp=>fp.id)),
+    /* fiche de mesure du technicien (commun/fiche-mesure.js) */
+    mesures:mesNormListe(src.mesures)
   };
 }
 /* Une étape d'annulation par champ édité, pas par touche : la première
@@ -1425,13 +1428,15 @@ function dfDocument(genre){
       feuilles.push(dfFeuilleOuvertures(ctx,"paste"+s,en?"Solder_Paste "+cote(s):"Pâte à braser "+cote(s),pasteOpenings(s)));},
     ptst:()=>{if(f.ptst&&g("ptst"))feuilles.push(dfFeuillePtst(ctx));},
     board:()=>{if(f.board&&g("board"))feuilles.push(dfFeuillePlan(ctx,en?"BOARD":"Contour de carte","board","",(F,V)=>dfContour(F,V,0.35)));},
+    /* fiche de mesure (commun/fiche-mesure.js, 42-fiche-mesure.js) */
+    mes:()=>{if(f.mes&&g("mes"))feuilles.push(...mesFeuilles(mesEntreeEditeur(),ctx.cfg.mesures,ctx));},
     /* dossier mécanique (commun/dossier-meca.js, 36-dossier-meca.js) */
     meca:()=>{if(f.meca&&g("meca"))feuilles.push(...mecaFeuilles(mecaDossier(),ctx,mecaMonde()));}
   };
   /* en « en », l'ordre des dossiers de couches : cuivres, vernis, pâte,
      équipement, points de test, perçage, contour */
-  (en?["couches","masques","pates","asmT","asmB","ptst","fab","board","bom","meca"]
-     :["fab","asmT","asmB","bom","couches","masques","pates","ptst","board","meca"]).forEach(k=>pose[k]());
+  (en?["couches","masques","pates","asmT","asmB","ptst","fab","board","bom","mes","meca"]
+     :["fab","asmT","asmB","bom","couches","masques","pates","ptst","board","mes","meca"]).forEach(k=>pose[k]());
   if(en){
     const NOMS={asmT:"Equipement Top",asmB:"Equipement Bottom",fab:"Drilling"};
     for(const F of feuilles)if(NOMS[F.genre])F.titre=NOMS[F.genre];
@@ -1483,7 +1488,7 @@ const DF_CAT={repere:"repère",valeur:"valeur",boitier:"boîtier",mpn:"réf. fab
   fabricant:"fabricant",description:"description",net:"net",bom:"nomenclature",
   percage:"perçage",empilage:"empilage",note:"note",cartouche:"cartouche",
   titre:"titre",tableau:"tableau",legende:"légende",cote:"cote",nm:"non monté",
-  symbole:"symbole",zone:"zone",impedance:"impédance",detail:"détail"};
+  symbole:"symbole",zone:"zone",impedance:"impédance",detail:"détail",mesure:"mesure"};
 
 function dfOuvrir(){
   if(typeof pcbVarDepuisSchema==="function")pcbVarDepuisSchema();
@@ -1575,6 +1580,7 @@ function dfRendreCadre(){
     '</div></div>';
   if(typeof dfxCadre==="function")dfxCadre(m);      // DXF et fonte (33-draftsman-export.js)
   if(typeof mecaCadre==="function")mecaCadre(m);    // dossier méca (36-dossier-meca.js)
+  if(typeof mesCadre==="function")mesCadre(m);      // fiche de mesure (42-fiche-mesure.js)
 }
 let dfMinuterie=null;
 /* Les champs se reconstruisent à la frappe, mais pas à chaque lettre : une

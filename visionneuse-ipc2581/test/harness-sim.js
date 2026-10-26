@@ -66,7 +66,10 @@ const FICHIERS=[
   path.join(RACINE,"..","editeur-pcb","js","33-draftsman-export.js"),
   path.join(RACINE,"..","editeur-pcb","js","34-draftsman-vues.js"),
   path.join(RACINE,"..","commun","dossier-meca.js"),
-  path.join(RACINE,"js","08-dossier-meca.js")
+  path.join(RACINE,"js","08-dossier-meca.js"),
+  /* fiche de mesure du technicien */
+  path.join(RACINE,"..","commun","fiche-mesure.js"),
+  path.join(RACINE,"js","09-fiche-mesure.js")
 ];
 const EXPOSE=["ECRITURE_CAO","simDsChamp","simDsLire","simDsEcrire","SIM_DS","SIM_PDN","simPDNAssistantActif","SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simSaisie","simPorts","SIM_FORMAT",
@@ -203,7 +206,9 @@ const EXPOSE=["ECRITURE_CAO","simDsChamp","simDsLire","simDsEcrire","SIM_DS","SI
   /* sorties empruntées au Draftsman de l'éditeur */
   "dfNouvelle","dfTexte","dfCadre","dfPdf","dxfNouveau","dxfContour","dxfOctets",
   /* dossier méca */
-  "mecaDonnees","mecaEntreeIpc","mecaIpcDossier","mecaIpcRegler","mecaIpcFichiers","MECA_IPC","mecaPlan","mecaIpcCtx","dfSvg","mecaIpcLib","modeleTexte"];
+  "mecaDonnees","mecaEntreeIpc","mecaIpcDossier","mecaIpcRegler","mecaIpcFichiers","MECA_IPC","mecaPlan","mecaIpcCtx","dfSvg","mecaIpcLib","modeleTexte",
+  /* fiche de mesure */
+  "mesEntreeIpc","mesFeuilles","mesResoudre"];
 
 /* Un seul `eval`, sur les fichiers concaténés : ils se voient l'un
    l'autre comme dans la page, où ils partagent la portée globale. Le "use
@@ -6863,6 +6868,18 @@ T("dossier méca, visionneuse : un repère non monté le reste dans le dossier",
     mdlPoserMonte("U1",true);    // la liste est mémorisée par fichier (localStorage)
     carte();                     // les essais asynchrones partent de la carte par défaut
   }
+});
+
+T("fiche de mesure, visionneuse : broches sans pastille rattachée, face dessous en miroir",()=>{
+  carteMeca();
+  const E=mesEntreeIpc(V.modele), U1=E.composants.find(c=>c.ref==="U1");
+  if(!U1||U1.face!=="dessous"||U1.pads.map(p=>p.n).join()!=="1,8")throw new Error(JSON.stringify(U1&&U1.pads));
+  const r=mesResoudre(E,"u1-8");
+  if(!r.p||r.p.cle!=="U1.8"||r.p.face!=="dessous"||!(r.p.pts.length>=3))throw new Error(JSON.stringify(r));
+  if(!mesResoudre(E,"J1").p)throw new Error("J1 n'a qu'une broche : son repère suffit");
+  const F=mesFeuilles(E,[{a:"J1",b:"U1.8",type:"Continuité",ech:0}],mecaIpcCtx());
+  const txt=F[0].items.filter(it=>it.t==="t").map(it=>it.s);
+  if(!txt.some(t=>/^VUE DE DESSOUS/.test(t))||!txt.some(t=>/^DÉTAIL B .*DESSOUS$/.test(t)))throw new Error(txt.join(" | "));
 });
 
 /* Le même dossier que l'éditeur : ses exports IPC-2581 de banc, relus par la
