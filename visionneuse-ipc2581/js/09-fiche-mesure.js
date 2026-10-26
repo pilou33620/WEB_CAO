@@ -31,7 +31,7 @@ function mesEntreeIpc(m){
       const w=mdlPlacer(p.x,p.y,c.x,c.y,c.r,!!c.m);
       poser(p.num,p.n,libres.get(cle(w.x,w.y)),w.x,w.y);
     }
-    return {ref:o.ref,face:o.face,corps:o.corps,pads};
+    return {ref:o.ref,face:o.face,corps:o.corps,pads,val:o.val,pkg:o.pkg,mpn:o.mpn,monte:o.monte};   // les trois derniers : les plans (10-plans.js)
   });
   return E;
 }
@@ -108,6 +108,6 @@ function mesOuvrir(){
   mesIpcApercu();
 }
 (function(){
-  const b=typeof document!=="undefined"&&document.getElementById&&document.getElementById("bMesure");
+  const b=typeof document!=="undefined"&&document.getElementById&&document.getElementById("bFicheMesure");
   if(b)b.onclick=mesOuvrir;
 })();

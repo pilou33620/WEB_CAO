@@ -69,7 +69,9 @@ const FICHIERS=[
   path.join(RACINE,"js","08-dossier-meca.js"),
   /* fiche de mesure du technicien */
   path.join(RACINE,"..","commun","fiche-mesure.js"),
-  path.join(RACINE,"js","09-fiche-mesure.js")
+  path.join(RACINE,"js","09-fiche-mesure.js"),
+  /* plans (Draftsman) : fabrication et assemblage */
+  path.join(RACINE,"js","10-plans.js")
 ];
 const EXPOSE=["ECRITURE_CAO","simDsChamp","simDsLire","simDsEcrire","SIM_DS","SIM_PDN","simPDNAssistantActif","SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simSaisie","simPorts","SIM_FORMAT",
@@ -208,7 +210,9 @@ const EXPOSE=["ECRITURE_CAO","simDsChamp","simDsLire","simDsEcrire","SIM_DS","SI
   /* dossier méca */
   "mecaDonnees","mecaEntreeIpc","mecaIpcDossier","mecaIpcRegler","mecaIpcFichiers","MECA_IPC","mecaPlan","mecaIpcCtx","dfSvg","mecaIpcLib","modeleTexte",
   /* fiche de mesure */
-  "mesEntreeIpc","mesFeuilles","mesResoudre"];
+  "mesEntreeIpc","mesFeuilles","mesResoudre",
+  /* plans (Draftsman) */
+  "plnIpcFeuilles","plnPercages"];
 
 /* Un seul `eval`, sur les fichiers concaténés : ils se voient l'un
    l'autre comme dans la page, où ils partagent la portée globale. Le "use
@@ -6880,6 +6884,22 @@ T("fiche de mesure, visionneuse : broches sans pastille rattachée, face dessous
   const F=mesFeuilles(E,[{a:"J1",b:"U1.8",type:"Continuité",ech:0}],mecaIpcCtx());
   const txt=F[0].items.filter(it=>it.t==="t").map(it=>it.s);
   if(!txt.some(t=>/^VUE DE DESSOUS/.test(t))||!txt.some(t=>/^DÉTAIL B .*DESSOUS$/.test(t)))throw new Error(txt.join(" | "));
+});
+
+T("plans (Draftsman), visionneuse : fabrication, assemblage dessus et dessous, PDF cherchable",()=>{
+  carteMeca();
+  const F=plnIpcFeuilles(), t=F.map(f=>f.titre);
+  if(t.join("|")!=="Plan de fabrication|Assemblage — face dessus|Assemblage — face dessous")throw new Error(t.join(" | "));
+  const g=plnPercages(V.modele);
+  if(g.length!==3||g.reduce((a,e)=>a+e.pts.length,0)!==3||g[0].plaque!==true||g[0].d!==0.3)throw new Error(JSON.stringify(g));
+  const txt=f=>f.items.filter(it=>it.t==="t").map(it=>it.s);
+  for(const s of ["TABLEAU DE PERÇAGE","EMPILAGE","NOTES DE FABRICATION"])
+    if(txt(F[0]).indexOf(s)<0)throw new Error("« "+s+" » absent du plan de fabrication");
+  if(txt(F[2]).indexOf("U1")<0||txt(F[2]).indexOf("U1 LM358")<0||!/MIROIR/i.test(txt(F[2]).join(" ")))
+    throw new Error("assemblage dessous : "+txt(F[2]).join(" | "));
+  if(txt(F[1]).indexOf("J1")<0||txt(F[1]).indexOf("U1")>=0)throw new Error("assemblage dessus : "+txt(F[1]).join(" | "));
+  const pdf=new TextDecoder("latin1").decode(dfPdf(F,{titre:"t",auteur:"",fonte:false,sujet:"",motsCles:""}));
+  if(!pdf.startsWith("%PDF-1.4"))throw new Error("PDF");
 });
 
 /* Le même dossier que l'éditeur : ses exports IPC-2581 de banc, relus par la
