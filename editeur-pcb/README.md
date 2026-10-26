@@ -1498,7 +1498,17 @@ caméra passe sous la carte) → un tour complet de la carte finie. Le titre (le
 nom du projet), « L × l mm » et l'étape sont en bandeau ; les cotes hors tout
 sont dessinées à côté de la carte, avec la carte nue puis pour le tour final.
 
-Les composants sont des pavés : le corps de l'empreinte à la hauteur du
+Un composant dont la LIB a un modèle 3D est dessiné avec ce modèle : colonne
+« Modèle 3D » (un STEP de `LIB/Models`), posé selon « Position 3D », et
+maillé d'avance dans `LIB/Models/maillages` par `python/maillages_3d.mjs`
+(à relancer après avoir ajouté des STEP : `npm install occt-import-js`, puis
+`node python/maillages_3d.mjs <dossier LIB>`). La ligne LIB se trouve par la
+Part Name, la référence fabricant, la valeur (carte IPC-2581), sinon c'est le
+modèle le plus courant de la même empreinte LIB. Un modèle mal posé se
+corrige dans la LIB, colonne « Position 3D » (`haut=Y+ rot=90 x=0 y=0 z=0.4` :
+l'axe du modèle qui monte, une rotation en degrés, un décalage en mm, repère
+de l'empreinte Y vers le haut) ; le script ne remplace jamais une position
+écrite. Les autres composants sont des pavés : le corps de l'empreinte à la hauteur du
 dossier mécanique (saisie, fichier, puis LIB) ; sans hauteur connue, 0,4 × le
 côté moyen du corps, entre 0,3 et 3 mm. Les zones de cuivre sont l'image que
 l'écran en peint (`zoneCanvas` à finesse fixe, jusqu'à 20 px/mm) : dégagements,

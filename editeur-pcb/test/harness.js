@@ -59,7 +59,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "deleteNetRouting","autoClass","classOptionsHtml","poserClasseNet","schemaPublie","listNets","mkFp","w2s","runDrc","padsOf",
   "buildFabFiles","jlcGerberFiles","jlcBomLignes","jlcBomCsvText","jlcCplCsvText","exportJlcpcb","gerberCopper","gerberMask","gerberPaste","gerberSilk",
   /* animation 3D de fabrication.zip (41-animation-3d.js) */
-  "anim3dDonnees","anim3dPage","fabAnimBasculer","silkTraits","silkRogne","silkContour","SILK_GARDE","fabLivrer","THREE_SOURCE",
+  "anim3dDonnees","anim3dPage","anim3dModeles","anim3dPose","fabAnimBasculer","silkTraits","silkRogne","silkContour","SILK_GARDE","fabLivrer","THREE_SOURCE",
   "gerberEdge","gerberOutline","ipcNetlist","ipc317","masterDrawingPdf","noAcc",
   "drillFile","buildFabFiles","FAB_GROUPES","fabChoisir","pcbCartouche","pcbCartouchePage","cartoucheSocieteEcrire","CARTOUCHE_PROFIL","dfCfg","cartoucheSuivant","CARTOUCHE_FORMATS","maskOpenings","pasteOpenings","textStrokes","crc32","zipBlob","exportFab",
   "positionsCsvText","bomPcbCsvText","pcbCsvCell","fabReadme",
@@ -4114,6 +4114,41 @@ T("animation 3D : données de la scène, page autonome, dossier qui l'annonce",(
     if(!$("bFabAnim").classList.contains("on"))throw new Error("bascule non allumée");
     fabAnimBasculer();
   }finally{loadDoc(JSON.parse(avant),true);}
+});
+/* Les modèles 3D de la LIB : la ligne du composant (Part Name), son maillage
+   par /api/lib/fichier, sa pose ; le point du modèle doit tomber là où
+   l'empreinte (fpXform) met le point correspondant, dessus comme dessous. */
+TA("animation 3D : modèles de la LIB posés sur leur empreinte",async()=>{
+  const avant=serialize(), fetchAvant=global.fetch, libAvant=window.CSV_LIB;
+  try{
+    loadDoc(EXEMPLES[0].build());
+    const [a,b,c]=S.fps;
+    a.csvPartName="ESSAI_3D";b.csvPartName="ESSAI_3D";b.side=1;b.rot=30;c.csvPartName="SANS_MAILLAGE";
+    window.CSV_LIB=[{"Part Name":"ESSAI_3D","Modèle 3D":"Models/essai.stp","Position 3D":"haut=Y+ rot=90 x=1 y=0 z=0.5"},
+                    {"Part Name":"SANS_MAILLAGE","Modèle 3D":"Models/absent.stp","Position 3D":"haut=Z+ rot=0 x=0 y=0 z=0"}];
+    const demandes=[];
+    global.fetch=url=>{
+      if(/type=modele3d/.test(url))demandes.push(String(url));
+      const ok=String(url)==="/api/lib/fichier?type=modele3d&nom=essai.stp.json";
+      return Promise.resolve({ok,json:()=>Promise.resolve({data:{format:"maillage3d-1",u:0.001,
+        g:[{c:"#808080",p:[0,0,0, 1000,0,0, 0,1000,0],i:[0,1,2]}]}})});
+    };
+    const J=anim3dDonnees(), n=await anim3dModeles(J);
+    if(n!==2)throw new Error(n+" composant(s) posé(s) au lieu de 2");
+    if(demandes.length!==2)throw new Error("un maillage demandé une seule fois : "+demandes.join(" "));
+    if(Object.keys(J.modeles).join()!=="essai.stp")throw new Error("modèles gardés : "+Object.keys(J.modeles));
+    if(J.composants.find(x=>x.ref===c.ref).mod)throw new Error("un maillage absent garde la boîte");
+    if(J.composants.some(x=>x.m3d))throw new Error("m3d doit disparaître de la scène");
+    const o=gOrigin();
+    for(const fp of [a,b]){
+      const C=J.composants.find(x=>x.ref===fp.ref), m=C.mat;
+      /* (1,0,0) du modèle : Y vers le haut -> (1,0,0), tourné de 90° -> (0,1,0), décalé -> (1,1,0.5) */
+      const X=m[0]*1000+m[12], Y=m[1]*1000+m[13], Z=m[2]*1000+m[14];   // 1 mm = 1000 µm du maillage
+      const w=fpXform(fp)(1,-1), ex=w.x-o.x, ey=o.y-w.y, ez=fp.side?-0.5:0.5;
+      if(Math.hypot(X-ex,Y-ey,Z-ez)>1e-6)throw new Error(fp.ref+" : "+[X,Y,Z]+" au lieu de "+[ex,ey,ez]);
+    }
+    if(anim3dPage(J).indexOf('"modeles":{"essai.stp"')<0)throw new Error("le maillage doit partir dans la page");
+  }finally{global.fetch=fetchAvant;window.CSV_LIB=libAvant;loadDoc(JSON.parse(avant),true);}
 });
 /* Sans MediaRecorder (Node), l'animation part sans vidéo : le chemin entier
    tourne, et un second clic pendant l'enregistrement ne relance rien. */

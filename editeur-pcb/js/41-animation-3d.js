@@ -15,6 +15,8 @@
    (gros boîtiers d'abord, dessus puis dessous) → tour complet de la carte finie.
    three.js est dans commun/vendor/three-source.js, en texte, évalué ici à la
    première animation.
+   Un composant dont la LIB a un « Modèle 3D » posé (« Position 3D ») est
+   dessiné avec ce modèle ; les autres restent une boîte extrudée de leur corps.
    ========================================================================== */
 
 let FAB_ANIM=false;
@@ -98,18 +100,91 @@ function anim3dDonnees(){
     return {segs,pts,polys};
   };
   const aire=c=>Math.abs(c.reduce((s,p,i)=>{const q=c[(i+1)%c.length];return s+p[0]*q[1]-q[0]*p[1];},0))/2;
+  const parRef=new Map(S.fps.map(fp=>[fp.ref,fp]));
   const composants=J.composants.filter(c=>c.monte&&c.corps.length>=3).map(c=>{
     const s=aire(c.corps);
     /* shortcut: sans hauteur (LIB, fichier ou saisie), une boîte à 0,4 × le côté moyen ; la renseigner dans la LIB */
     const h=c.hauteur!=null?c.hauteur:anim3dR(Math.min(3,Math.max(0.3,0.4*Math.sqrt(s))));
-    return {ref:c.ref,face:c.face==="dessous"?1:0,corps:c.corps,h,v:s*h,couleur:anim3dTeinte(c.ref,c.boitier)};
+    const l=parRef.has(c.ref)?anim3dLigneLib(parRef.get(c.ref)):null;
+    const nom=l?String(l["Modèle 3D"]||"").trim().replace(/^Models\//,""):"";
+    const m3d=nom&&anim3dPosition(l["Position 3D"])?{nom,pos:l["Position 3D"],x:c.x,y:c.y,rot:c.rot}:null;
+    return {ref:c.ref,face:c.face==="dessous"?1:0,corps:c.corps,h,v:s*h,couleur:anim3dTeinte(c.ref,c.boitier),m3d};
   }).sort((a,b)=>a.face-b.face||b.v-a.v);
   const B=J.carte.encombrement;
   return {titre:fabBase(),l:anim3dR(B.x2-B.x1),h:anim3dR(B.y2-B.y1),ep,
     contour:J.carte.contour,decoupes:J.carte.decoupes,trous,finition:anim3dFinition(),
     faces:[{cuivre:cuivre(0),seri:seri(0)},
            {cuivre:der>0?cuivre(der):{pistes:[],pads:[],vias:[],zone:null},seri:seri(1)}],
-    composants:composants.map(c=>({ref:c.ref,face:c.face,corps:c.corps,h:c.h,couleur:c.couleur}))};
+    composants:composants.map(c=>Object.assign({ref:c.ref,face:c.face,corps:c.corps,h:c.h,couleur:c.couleur},c.m3d?{m3d:c.m3d}:{}))};
+}
+
+/* ---------- les modèles 3D de la LIB ----------
+   « Modèle 3D » nomme un STEP de LIB/Models ; son maillage (Models/maillages,
+   fait par python/maillages_3d.mjs) vient par /api/lib/fichier?type=modele3d.
+   « Position 3D » le pose sur l'empreinte : « haut=Y+ rot=90 x=0.1 y=0 z=0.4 »,
+   dans le repère de l'empreinte, Y vers le haut. */
+function anim3dLigneLib(fp){
+  const lib=(typeof window!=="undefined"&&Array.isArray(window.CSV_LIB))?window.CSV_LIB:[];
+  const cle=v=>String(v||"").trim().toLowerCase(), nom=cle(fp.csvPartName||fp.partName), mpn=cle(fp.mpn||fp.csvMpn);
+  const val=cle(fp.value);                 // une carte IPC-2581 porte la Part Name en valeur
+  const l=(nom&&lib.find(l=>cle(l["Part Name"])===nom))||
+          (mpn&&lib.find(l=>cle(l["Part Number"])===mpn||cle(l["manufacturer part Number"])===mpn))||
+          (val&&lib.find(l=>cle(l["Part Name"])===val));
+  if(l||!fp.lib)return l||null;
+  /* sans Part Name (carte venue d'une netlist) : le modèle le plus courant de la
+     même empreinte LIB, et du même préfixe s'il y en a (R, C, LED…) */
+  const emp=cle(fp.lib), pref=cle((String(fp.ref||"").match(/^[A-Z]+/i)||[""])[0]);
+  const memes=lib.filter(l=>l["Modèle 3D"]&&l["Position 3D"]&&
+    cle(String(l["Empreinte PCB"]||"").replace(/^.*\//,"").replace(/\.json$/i,""))===emp);
+  const pr=memes.filter(l=>cle(l["Reference designator Prefix"])===pref), liste=pr.length?pr:memes, n=new Map();
+  for(const x of liste){const k=x["Modèle 3D"]+"\n"+x["Position 3D"];n.set(k,(n.get(k)||0)+1);}
+  let best=null;
+  for(const x of liste){const k=x["Modèle 3D"]+"\n"+x["Position 3D"];if(!best||n.get(k)>n.get(best[0]))best=[k,x];}
+  return best?best[1]:null;
+}
+/* l'axe du modèle qui monte : lignes de la matrice qui le couche dans le repère de l'empreinte */
+const ANIM3D_HAUTS={"Z+":[1,0,0,0,1,0,0,0,1],"Z-":[1,0,0,0,-1,0,0,0,-1],"Y+":[1,0,0,0,0,-1,0,1,0],
+                    "Y-":[1,0,0,0,0,1,0,-1,0],"X+":[0,1,0,0,0,1,1,0,0],"X-":[0,1,0,0,0,-1,-1,0,0]};
+function anim3dPosition(s){
+  const o={};
+  for(const m of String(s||"").matchAll(/(haut|rot|x|y|z)\s*=\s*([^\s;]+)/gi))o[m[1].toLowerCase()]=m[2];
+  if(!ANIM3D_HAUTS[o.haut])return null;
+  const n=k=>Number.isFinite(+o[k])?+o[k]:0;
+  return {haut:o.haut,rot:n("rot"),x:n("x"),y:n("y"),z:n("z")};
+}
+/* Matrice 4×4 (colonnes, comme Matrix4.fromArray) du maillage d'unité `u` vers
+   la carte, face dessus en z = 0 : pose sur l'empreinte, puis l'empreinte à sa
+   place (rotation inverse en Y vers le haut, retournée autour de Y dessous). */
+function anim3dPose(m,face,u){
+  const p=anim3dPosition(m.pos);
+  if(!p)return null;
+  const mul=(A,B)=>{const C=[];for(let i=0;i<3;i++)for(let j=0;j<4;j++)
+    C.push(A[4*i]*B[j]+A[4*i+1]*B[4+j]+A[4*i+2]*B[8+j]+(j===3?A[4*i+3]:0));return C;};
+  const rz=(deg,tx,ty,tz)=>{const a=deg*Math.PI/180,c=Math.round(Math.cos(a)*1e12)/1e12,s=Math.round(Math.sin(a)*1e12)/1e12;
+    return [c,-s,0,tx, s,c,0,ty, 0,0,1,tz];};
+  const H=ANIM3D_HAUTS[p.haut], U=[H[0]*u,H[1]*u,H[2]*u,0, H[3]*u,H[4]*u,H[5]*u,0, H[6]*u,H[7]*u,H[8]*u,0];
+  const F=face?[-1,0,0,0, 0,1,0,0, 0,0,-1,0]:[1,0,0,0, 0,1,0,0, 0,0,1,0];
+  const M=mul(rz(-(m.rot||0),m.x,m.y,0),mul(F,mul(rz(p.rot,p.x,p.y,p.z),U)));
+  return [M[0],M[4],M[8],0, M[1],M[5],M[9],0, M[2],M[6],M[10],0, M[3],M[7],M[11],1];
+}
+/* Charge les maillages, pose chaque composant qui en a un (`mod`, `mat`), et
+   rend leur nombre ; un maillage absent laisse la boîte extrudée. */
+async function anim3dModeles(J){
+  J.modeles={};
+  const noms=[...new Set(J.composants.filter(c=>c.m3d).map(c=>c.m3d.nom))];
+  await Promise.all(noms.map(nom=>Promise.resolve()
+    .then(()=>fetch("/api/lib/fichier?type=modele3d&nom="+encodeURIComponent(nom+".json")))
+    .then(r=>r.ok?r.json():null)
+    .then(d=>{if(d&&d.data&&Array.isArray(d.data.g)&&d.data.u>0)J.modeles[nom]=d.data;})
+    .catch(()=>{})));
+  let n=0;
+  for(const c of J.composants){
+    const M=c.m3d&&J.modeles[c.m3d.nom], mat=M&&anim3dPose(c.m3d,c.face,M.u);
+    if(mat){c.mod=c.m3d.nom;c.mat=mat;n++;}
+    delete c.m3d;
+  }
+  for(const k of Object.keys(J.modeles))if(!J.composants.some(c=>c.mod===k))delete J.modeles[k];
+  return n;
 }
 
 /* ---------- la scène ----------
@@ -204,12 +279,31 @@ function anim3dLancer(THREE,J,canvas,o){
   const t0D=6, t0B=t0D+nD*pas+(nB?1.4:0);
   let hmax=0;
   const comps=J.composants.map((c,i)=>{
-    const g=new THREE.ExtrudeGeometry(new THREE.Shape(c.corps.map(v2)),{depth:c.h,bevelEnabled:false});
-    const m=new THREE.Mesh(g,mat(c.couleur,{side:THREE.FrontSide}));
-    const base=c.face?-ep-0.045-c.h:0.045;
+    const M3=c.mod&&J.modeles&&J.modeles[c.mod];
+    let m, mats, base;
+    if(M3){
+      /* le modèle de la LIB : sa pose (`mat`) le met à sa place, le groupe ne fait que tomber */
+      m=new THREE.Group();mats=[];
+      const pose=new THREE.Group();
+      pose.matrixAutoUpdate=false;pose.matrix.fromArray(c.mat);
+      m.add(pose);
+      for(const G of M3.g){
+        const g=new THREE.BufferGeometry();
+        g.setAttribute("position",new THREE.Float32BufferAttribute(G.p,3));
+        g.setIndex(G.i);g.computeVertexNormals();
+        const x=mat(G.c||c.couleur,{side:THREE.DoubleSide});
+        mats.push(x);pose.add(new THREE.Mesh(g,x));
+      }
+      base=c.face?-ep-0.045:0.045;
+    }else{
+      m=new THREE.Mesh(new THREE.ExtrudeGeometry(new THREE.Shape(c.corps.map(v2)),{depth:c.h,bevelEnabled:false}),
+                       mat(c.couleur,{side:THREE.FrontSide}));
+      mats=[m.material];
+      base=c.face?-ep-0.045-c.h:0.045;
+    }
     m.position.z=base;m.visible=false;carte.add(m);
     hmax=Math.max(hmax,c.h);
-    return {m,base,face:c.face,t:c.face?t0B+(i-nD)*pas:t0D+i*pas};
+    return {m,mats,base,face:c.face,t:c.face?t0B+(i-nD)*pas:t0D+i*pas};
   });
   const tTour=(nB?t0B+nB*pas:t0D+nD*pas)+chute+0.4, duree=tTour+8;
 
@@ -315,7 +409,7 @@ function anim3dLancer(THREE,J,canvas,o){
     for(const c of comps){
       const u=e(c.t,c.t+chute);
       c.m.visible=u>0;
-      c.m.material.opacity=Math.min(1,u*3);
+      for(const x of c.mats){x.opacity=Math.min(1,u*3);x.transparent=x.opacity<1;}   // opaque, un modèle se trie bien
       c.m.position.z=c.base+(c.face?-1:1)*Math.pow(1-u,3)*rayon*0.6;   // tombe et ralentit en se posant
     }
     const el=Math.max(-1.45,Math.min(1.45,cle(EL,t)+vue.el)), az=cle(AZ,t)+vue.az, d=dist*cle(DI,t)*vue.zoom;
@@ -407,6 +501,7 @@ function anim3dPage(J){
 /* Les fichiers à joindre au dossier, et une ligne pour la barre d'état. */
 async function anim3dFichiers(){
   const J=anim3dDonnees(), THREE=anim3dThree(), fmt=anim3dFormat(), base=fabBase()+"-ASSEMBLAGE-3D";
+  const n=await anim3dModeles(J);
   const fichiers=[{name:base+".html",text:anim3dPage(J),kind:"anim3d"}];
   let note="pas de vidéo : ce navigateur n'enregistre pas un canvas (MediaRecorder)";
   if(fmt){
@@ -414,5 +509,6 @@ async function anim3dFichiers(){
     fichiers.push({name:base+"."+fmt.ext,data:v.data,kind:"anim3d"});   // après la page : le LISEZ-MOI la décrit d'abord
     note="vidéo "+fmt.type+", "+Math.round(v.duree)+" s, rendue à "+Math.round(v.ips)+" images/s";
   }
+  note+=", "+n+" / "+J.composants.length+" composant(s) avec leur modèle 3D de la LIB";
   return {fichiers,note};
 }

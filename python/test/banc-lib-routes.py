@@ -189,10 +189,12 @@ class TestLibRoutes(unittest.TestCase):
             self.assertEqual(resp.status, 200)
             data = json.loads(resp.read().decode("utf-8"))
             cols = data.get("colonnes", [])
-            # « Brochage » (broche du symbole -> patte de l'empreinte) vient
-            # en fin de ligne ; une LIB plus ancienne ne l'a pas encore
+            # « Brochage » (broche du symbole -> patte de l'empreinte), puis le
+            # modele 3D et sa pose (python/maillages_3d.mjs) viennent en fin de
+            # ligne ; une LIB plus ancienne ne les a pas encore
             self.assertEqual(cols[:39], colonnes_attendues)
-            self.assertIn(cols[39:], ([], ["Brochage"]))
+            fin = ["Brochage", "Modèle 3D", "Position 3D"]
+            self.assertIn(cols[39:], [fin[:n] for n in range(len(fin) + 1)])
 
     def test_10_lib_config_get(self):
         req = urllib.request.Request(f"{BASE_URL}/api/lib/config")

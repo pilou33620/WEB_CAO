@@ -3106,6 +3106,19 @@ caméra qui tourne et s'approche, la carte se construit sous les yeux, titre et 
   - Faits ensuite (21/10/2026) : cotes hors tout dessinées à côté de la carte, zones de cuivre
     avec leurs dégagements (l'image de l'écran), un seul enregistrement à la fois.
   - Pas retenus : bulles de description des composants, schéma-bloc qui se construit.
+- [x] **Vrais modèles 3D des composants** (26/10/2026) : la LIB a un dossier `Models` (332 STEP)
+  et deux colonnes, « Modèle 3D » (`Models/<fichier>`) et « Position 3D »
+  (`haut=Y+ rot=90 x=0.1 y=0 z=0.4`, repère de l'empreinte, Y vers le haut, corrigeable à la main).
+  `python/maillages_3d.mjs` (OpenCascade en WebAssembly, `npm install occt-import-js`) fait de chaque
+  STEP un maillage léger (`Models/maillages/<fichier>.json`, µm entiers, triangles par couleur),
+  calcule la position de chaque ligne — les 24 orientations essayées, l'appui du modèle sur les
+  pastilles de l'empreinte, les dimensions du corps et la hauteur LIB départagent — et remplit les
+  « Maximun Height » vides. Le serveur sert les maillages (`/api/lib/fichier?type=modele3d`) ;
+  l'animation pose le modèle du composant (Part Name, référence fabricant, valeur d'une carte
+  IPC-2581, sinon le modèle courant de la même empreinte LIB) et garde le pavé sans modèle.
+  Essais : `harness.js` (pose dessus et dessous contre `fpXform`, maillage absent),
+  `banc-lib-routes.py` ; relu sur planches (241 couples modèle / empreinte) et sur deux cartes
+  réelles (Carte PIR V3 : 33 / 39 composants, P01x284-B : 259 / 314, page 8,5 Mo).
 
 #### Code en double à fusionner (relevé par l'audit du 16/10/2026)
 L'audit complet a corrigé les défauts et retiré le code mort ; ces doublons, eux, sont des chantiers à part (/spec puis /plan) : chaque copie doit être corrigée N fois, et certaines ont déjà divergé.

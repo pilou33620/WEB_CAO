@@ -115,6 +115,9 @@ jobs:
       - name: Gestion LIB — repère des empreintes (y vers le bas, comme l'éditeur PCB)
         run: node gestion-lib/test/banc-repere-pcb.js
 
+      - name: Modèles 3D de la LIB — placement sur l'empreinte
+        run: node python/test/banc-maillages-3d.mjs
+
       - name: Rapport de simulation (Markdown) — banc d'essai
         run: node commun/test/banc-rapport-sim.js
 

@@ -728,7 +728,9 @@ LIB_CONFIG_FICHIER = "config_lib.json"
 LIB_SOUS_DOSSIERS = {
     "pcb": "lib_empreinte_pcb",
     "schematique": "lib_empreinte_schematique",
-    "simulation": "lib_simulation"
+    "simulation": "lib_simulation",
+    # maillages des modeles STEP de Models/, faits par python/maillages_3d.mjs
+    "modele3d": os.path.join("Models", "maillages")
 }
 
 DOSSIER_LIB_ACTIF = None
@@ -851,10 +853,11 @@ def chemin_lib_fichier(genre, nom_brut, creer=False):
         "empreinte": "pcb",
         "schematique": "schematique",
         "symbole": "schematique",
-        "simulation": "simulation"
+        "simulation": "simulation",
+        "modele3d": "modele3d"
     }.get(genre)
     if not genre_canon or genre_canon not in LIB_SOUS_DOSSIERS:
-        raise ErreurLib(400, "Genre de bibliotheque invalide (attendu: pcb, schematique, simulation)")
+        raise ErreurLib(400, "Genre de bibliotheque invalide (attendu: pcb, schematique, simulation, modele3d)")
     s = str(nom_brut or "").strip().replace("\\", "/")
     parts = [p for p in s.split("/") if p]
     if ".." in parts or s.startswith("/"):
@@ -959,6 +962,7 @@ def statistiques_lib(dossier):
         "pcb": 0,
         "schematique": 0,
         "simulation": 0,
+        "modele3d": 0,
         "csv_present": False
     }
 
