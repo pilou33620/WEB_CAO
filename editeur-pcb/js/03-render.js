@@ -589,7 +589,7 @@ function drawSilk(c){
     c.strokeStyle = sel?C_SEL:(!auto?"#9aa3b0":(top?C_SILK_T:C_SILK_B));
     c.lineWidth = Math.max(0.15, px(1)); c.lineCap = "round"; c.lineJoin = "round";
     c.beginPath();
-    for(const P of textStrokes(fp.ref,tr.x,tr.y,tr.size,!top!==!!S.flip)){
+    for(const P of textStrokes(fp.ref,tr.x,tr.y,tr.size,!top)){
       c.moveTo(P[0].x,P[0].y);
       for(let k=1;k<P.length;k++)c.lineTo(P[k].x,P[k].y);
     }
@@ -635,7 +635,7 @@ function drawSilk(c){
         continue;
       }
       if(isText){
-        const mirror = (d.layer === "silkB") !== (!!S.flip);
+        const mirror = d.layer === "silkB";   // miroir du fichier ; la vue dessous retourne déjà tout le canevas
         const strokes = (typeof textStrokes === "function")
           ? textStrokes(d.text != null ? d.text : "TEXT", d.x1, d.y1, d.size || d.height || 1.5, mirror, d.rot || 0)
           : [];
