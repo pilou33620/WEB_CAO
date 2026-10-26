@@ -59,7 +59,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "deleteNetRouting","autoClass","classOptionsHtml","poserClasseNet","schemaPublie","listNets","mkFp","w2s","runDrc","padsOf",
   "buildFabFiles","gerberCopper","gerberMask","gerberPaste","gerberSilk",
   /* animation 3D de fabrication.zip (41-animation-3d.js) */
-  "anim3dDonnees","anim3dPage","fabAnimBasculer","silkTraits","fabLivrer","THREE_SOURCE",
+  "anim3dDonnees","anim3dPage","fabAnimBasculer","silkTraits","silkRogne","silkContour","SILK_GARDE","fabLivrer","THREE_SOURCE",
   "gerberEdge","gerberOutline","ipcNetlist","ipc317","masterDrawingPdf","noAcc",
   "drillFile","buildFabFiles","FAB_GROUPES","fabChoisir","pcbCartouche","pcbCartouchePage","cartoucheSocieteEcrire","CARTOUCHE_PROFIL","dfCfg","cartoucheSuivant","CARTOUCHE_FORMATS","maskOpenings","pasteOpenings","textStrokes","crc32","zipBlob","exportFab",
   "positionsCsvText","bomPcbCsvText","pcbCsvCell","fabReadme",
@@ -4527,6 +4527,33 @@ T("pinout : symbole en plusieurs parties, broches non connectées, broche sans p
   if(led.pinNames[1]!=="K"||led.pinNames[2]!=="K")throw new Error("K=2/3 : le nom va aux deux pattes : "+JSON.stringify(led.pinNames));
   if(!r("LED1",3).ok)throw new Error("K=2/3 sur 3 pastilles : "+r("LED1",3).msg);
   if(r("LED1",2).ok||!/3/.test(r("LED1",2).msg))throw new Error("K=2/3 sur 2 pastilles : la 3 manque : "+r("LED1",2).msg);
+});
+T("sérigraphie : le contour d'office est rogné autour des pastilles, à l'écran comme au Gerber",()=>{
+  const ouv=[{q:{x:0,y:0,w:1,h:1,shape:"rect",rot:0},grow:0.05}];
+  // un trait qui traverse la pastille : deux morceaux, chacun à distance de l'ouverture
+  const m=silkRogne(-3,0,3,0,0.15,ouv);
+  if(m.length!==2)throw new Error("traversée : "+JSON.stringify(m));
+  const lim=0.5+0.05+0.075+SILK_GARDE;
+  if(Math.abs(m[0][2]+lim)>1e-3||Math.abs(m[1][0]-lim)>1e-3)throw new Error("coupe : "+JSON.stringify(m));
+  if(silkRogne(-3,2,3,2,0.15,ouv).length!==1)throw new Error("trait éloigné coupé");
+  if(silkRogne(-0.2,0,0.2,0,0.15,ouv).length!==0)throw new Error("trait dans la pastille gardé");
+  // une pastille ronde tournée, un trait qui l'effleure à peine
+  const rond=[{q:{x:0,y:0,w:1,h:1,shape:"circ",rot:0.7},grow:0}];
+  const r=silkRogne(-3,0.6,3,0.6,0.15,rond);
+  for(const s of r)for(const t of [0,0.5,1]){const x=s[0]+(s[2]-s[0])*t,y=s[1]+(s[3]-s[1])*t;
+    if(padDist(x,y,rond[0].q)<0.075+SILK_GARDE-1e-3)throw new Error("morceau trop près du rond");}
+  // SOIC-8 posé : aucun trait du Gerber de sérigraphie ne touche une ouverture du vernis
+  const f=mkFp("U7","","",8);f.pkg="SOIC-8";f.x=50;f.y=40;f.side=0;
+  const P=[];for(let k=0;k<4;k++){P.push({n:k+1,x:-2.473,y:(k-1.5)*1.27,w:1.969,h:0.599,shape:"rect",drill:0});
+                                  P.push({n:8-k,x:2.473,y:(k-1.5)*1.27,w:1.969,h:0.599,shape:"rect",drill:0});}
+  f.pads=P;f.body={x1:-1.8,y1:-2.65,x2:1.8,y2:2.65};
+  const avant=S.fps.slice();S.fps.push(f);
+  try{
+    const segs=silkContour(f,maskOpenings(0),0.15);
+    if(!segs.length)throw new Error("contour disparu");
+    for(const sg of segs)for(const {q,grow} of maskOpenings(0))
+      if(segPadDist({x1:sg[0],y1:sg[1],x2:sg[2],y2:sg[3],w:0.15},q)<grow-1e-3)throw new Error("trait sur la pastille "+q.n);
+  }finally{S.fps.length=0;S.fps.push(...avant);}
 });
 T("pinout : un boîtier qui a son fichier dans la LIB se compare à ce fichier, pas à PKG_LIB",()=>{
   // SOIC-8 de la LIB : rangées à 4,95 mm (la table générique dit 5,4)

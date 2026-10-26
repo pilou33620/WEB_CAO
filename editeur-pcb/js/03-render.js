@@ -541,6 +541,7 @@ function drawViaMarks(c){
   c.globalAlpha=1;
 }
 function drawSilk(c){
+  const OUV=[null,null], ouvDe=f=>OUV[f]||(OUV[f]=maskOpenings(f));
   for(const fp of S.fps){
     const top=!fp.side;
     const sel=S.sel.fps.has(fp.id);
@@ -563,14 +564,17 @@ function drawSilk(c){
     c.globalAlpha=(S.hlNet?0.55:1)*fa;
     c.strokeStyle=sel?C_SEL:(top?C_SILK_T:C_SILK_B);
     c.lineWidth=px(1.2);
-    if(auto||sel){
-      if(!auto)c.setLineDash([px(4),px(3)]);
+    // le contour imprimé, rogné autour des pastilles comme dans le Gerber (silkContour)
+    if(auto){
       c.beginPath();
-      c.moveTo(pts[0].x,pts[0].y);
-      for(let i=1;i<4;i++)c.lineTo(pts[i].x,pts[i].y);
-      c.closePath();c.stroke();
-      c.setLineDash([]);
+      for(const s of silkContour(fp,ouvDe(fp.side?1:0),0.15)){c.moveTo(s[0],s[1]);c.lineTo(s[2],s[3]);}
+      c.stroke();
     }
+    c.beginPath();
+    c.moveTo(pts[0].x,pts[0].y);
+    for(let i=1;i<4;i++)c.lineTo(pts[i].x,pts[i].y);
+    c.closePath();
+    if(sel&&!auto){c.setLineDash([px(4),px(3)]);c.stroke();c.setLineDash([]);}
     if(sel){
       c.fillStyle="rgba(138,240,255,.10)";c.fill();
     }

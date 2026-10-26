@@ -1119,9 +1119,9 @@ function runDrc(){
   /* Sérigraphie sur une ouverture du masque (maskOpenings) : le fabricant
      efface l'encre sur le cuivre nu, un repère y devient illisible (« D1 » posé
      sur l'anode de la LED de LED_UV). Les repères et les dessins (textes,
-     traits, cadres), avec les traits du Gerber. shortcut: le contour d'office
-     des boîtiers n'est pas jugé — il passe toujours sur les pastilles d'une
-     puce, et ce rognage-là est attendu ; un aplat non plus. */
+     traits, cadres), avec les traits du Gerber. Le contour d'office
+     des boîtiers n'est pas jugé : il est rogné autour des ouvertures
+     (silkContour, 04-fabrication.js). shortcut: un aplat n'est pas jugé. */
   for(const side of [0,1]){
     const ouv=maskOpenings(side).map(o=>({o,q:o.grow?Object.assign({},o.q,{w:o.q.w+2*o.grow,h:o.q.h+2*o.grow}):o.q}));
     if(!ouv.length)continue;

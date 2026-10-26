@@ -506,15 +506,59 @@ function gerberPaste(side){
 /* La sérigraphie d'une face, en traits du monde : le Gerber la trace, l'animation
    3D (41-animation-3d.js) la dessine. Chaque trait, dans l'ordre du fichier :
    {k:"seg",x1,y1,x2,y2,w}, {k:"pt",x,y,d} (repère de broche 1), {k:"poly",pts,trous}. */
+/* Le contour d'office d'un boîtier est le corps réel : sur une puce, un QFN,
+   un module, il passe sur les pastilles, et l'encre posée sur le cuivre nu
+   gêne la brasure (le fabricant l'efface, ou pas). Chaque côté est donc coupé
+   là où il approche une ouverture du vernis à moins d'un demi-trait + la
+   garde — comme le rognage de KiCad ou d'Altium. L'écran trace les mêmes
+   morceaux que le Gerber. */
+const SILK_GARDE=0.05;
+function silkRogne(x1,y1,x2,y2,w,ouv){
+  const L=Math.hypot(x2-x1,y2-y1);
+  const at=t=>({x:x1+(x2-x1)*t,y:y1+(y2-y1)*t});
+  const cuts=[];
+  for(const {q,grow} of ouv){
+    const clr=(grow||0)+w/2+SILK_GARDE, R=Math.hypot(q.w,q.h)/2+clr;
+    if(Math.min(x1,x2)>q.x+R||Math.max(x1,x2)<q.x-R||Math.min(y1,y2)>q.y+R||Math.max(y1,y2)<q.y-R)continue;
+    /* shortcut: la distance à une pastille convexe est convexe le long du trait
+       (un minimum, deux racines) ; une pastille polygone creuse peut être mal
+       rognée — passer à un échantillonnage si la LIB en a */
+    const f=t=>{const p=at(t);return padDist(p.x,p.y,q)-clr;};
+    let a=0,b=1;
+    for(let i=0;i<60;i++){const m1=a+(b-a)/3,m2=b-(b-a)/3;if(f(m1)<f(m2))b=m2;else a=m1;}
+    const tm=(a+b)/2;
+    if(f(tm)>=0)continue;
+    // la borne gardée est toujours celle du dehors : le trait restant ne touche pas l'ouverture
+    const racine=(dedans,dehors)=>{for(let i=0;i<50;i++){const m=(dedans+dehors)/2;if(f(m)<0)dedans=m;else dehors=m;}return dehors;};
+    cuts.push([f(0)<0?0:racine(tm,0),f(1)<0?1:racine(tm,1)]);
+  }
+  if(!cuts.length)return [[x1,y1,x2,y2]];
+  cuts.sort((u,v)=>u[0]-v[0]);
+  const out=[];let t=0;
+  for(const [c0,c1] of cuts){if(c0>t)out.push([t,c0]);t=Math.max(t,c1);}
+  if(t<1)out.push([t,1]);
+  return out.filter(([u,v])=>(v-u)*L>1e-3).map(([u,v])=>{const p=at(u),r=at(v);return [p.x,p.y,r.x,r.y];});
+}
+/* Les morceaux imprimés du contour d'office de `fp`, ouvertures `ouv` = maskOpenings(face). */
+function silkContour(fp,ouv,w){
+  const T=fpXform(fp), bb=bodyOf(fp);
+  const c=[T(bb.x1,bb.y1),T(bb.x2,bb.y1),T(bb.x2,bb.y2),T(bb.x1,bb.y2)];
+  const xs=c.map(p=>p.x), ys=c.map(p=>p.y);
+  const x1=Math.min(...xs), x2=Math.max(...xs), y1=Math.min(...ys), y2=Math.max(...ys);
+  const proches=ouv.filter(({q,grow})=>{const R=Math.hypot(q.w,q.h)/2+(grow||0)+w;
+    return q.x+R>=x1&&q.x-R<=x2&&q.y+R>=y1&&q.y-R<=y2;});
+  const out=[];
+  for(let k=0;k<4;k++){const a=c[k],z=c[(k+1)%4];out.push(...silkRogne(a.x,a.y,z.x,z.y,w,proches));}
+  return out;
+}
 function silkTraits(side){
-  const out=[], lw=0.15;
+  const out=[], lw=0.15, ouv=maskOpenings(side);
   const seg=(x1,y1,x2,y2,w)=>out.push({k:"seg",x1,y1,x2,y2,w});
   for(const fp of S.fps){
     if(!!fp.side!==!!side)continue;
     if(fp.silk===false)continue;          // sérigraphie importée : dans les dessins
-    const T=fpXform(fp), bb=bodyOf(fp);
-    const c=[T(bb.x1,bb.y1),T(bb.x2,bb.y1),T(bb.x2,bb.y2),T(bb.x1,bb.y2)];
-    for(let k=0;k<4;k++)seg(c[k].x,c[k].y,c[(k+1)%4].x,c[(k+1)%4].y,lw);
+    const T=fpXform(fp);
+    for(const s of silkContour(fp,ouv,lw))seg(s[0],s[1],s[2],s[3],lw);
     /* point de repère de la broche 1, là où l'écran le montre — un composant
        symétrique n'en a pas, et celui qu'on a retiré ne revient pas ici */
     const mk=fpMark(fp);
