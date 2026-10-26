@@ -19,7 +19,8 @@ function crc32(buf){
   for(let i=0;i<buf.length;i++)c=CRC_T[(c^buf[i])&0xFF]^(c>>>8);
   return (c^0xFFFFFFFF)>>>0;
 }
-function zipBlob(files){
+/* Les octets de l'archive : le dossier JLCPCB y glisse l'archive Gerber telle quelle. */
+function zipOctets(files){
   const enc=new TextEncoder();
   const parts=[], central=[];
   let off=0;
@@ -54,5 +55,11 @@ function zipBlob(files){
   }
   const end=new Uint8Array([].concat(u32(0x06054b50),u16(0),u16(0),
     u16(files.length),u16(files.length),u32(cLen),u32(off),u16(0)));
-  return new Blob(parts.concat(cParts,[end]),{type:"application/zip"});
+  const tout=parts.concat(cParts,[end]), out=new Uint8Array(tout.reduce((n,a)=>n+a.length,0));
+  let o=0;
+  for(const a of tout){out.set(a,o);o+=a.length;}
+  return out;
+}
+function zipBlob(files){
+  return new Blob([zipOctets(files)],{type:"application/zip"});
 }

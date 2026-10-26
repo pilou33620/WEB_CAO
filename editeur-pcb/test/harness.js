@@ -57,7 +57,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "closeZone","fullBoardZone","zoneMask","labelMask","maskAt","classOf","setNetClass","defaultWidth",
   "clrPair","applyClasses","jointAt","splitTrack","netTracks","selectNetRouting",
   "deleteNetRouting","autoClass","classOptionsHtml","poserClasseNet","schemaPublie","listNets","mkFp","w2s","runDrc","padsOf",
-  "buildFabFiles","gerberCopper","gerberMask","gerberPaste","gerberSilk",
+  "buildFabFiles","jlcGerberFiles","jlcBomLignes","jlcBomCsvText","jlcCplCsvText","exportJlcpcb","gerberCopper","gerberMask","gerberPaste","gerberSilk",
   /* animation 3D de fabrication.zip (41-animation-3d.js) */
   "anim3dDonnees","anim3dPage","fabAnimBasculer","silkTraits","silkRogne","silkContour","SILK_GARDE","fabLivrer","THREE_SOURCE",
   "gerberEdge","gerberOutline","ipcNetlist","ipc317","masterDrawingPdf","noAcc",
@@ -4117,6 +4117,38 @@ T("animation 3D : données de la scène, page autonome, dossier qui l'annonce",(
 });
 /* Sans MediaRecorder (Node), l'animation part sans vidéo : le chemin entier
    tourne, et un second clic pendant l'enregistrement ne relance rien. */
+TA("PCBA JLCPCB : archive Gerber, BOM et CPL aux colonnes de JLCPCB",async()=>{
+  const avant=serialize(), co=URL.createObjectURL, sch=S.schDoc, zips=[];
+  URL.createObjectURL=b=>{zips.push(b);return "blob:essai";};
+  try{
+    loadDoc(EXEMPLES[0].build());
+    const [a,b]=S.fps;
+    a.rot=90;b.side=1;b.rot=0;
+    S.schDoc={pages:[{comps:[{ref:a.ref,value:a.value,lcsc:"C25804"}]}]};
+    const g=jlcGerberFiles().map(f=>f.name);
+    if(!g.some(n=>/\.GTL$/.test(n))||!g.some(n=>/\.GM1$/.test(n)))throw new Error("Gerber : "+g.join(" "));
+    if(g.some(n=>/\.GKO$|\.csv$|\.pdf$|\.ipc$|LISEZ/.test(n)))throw new Error("de trop dans l'archive Gerber : "+g.join(" "));
+    if(!g.some(n=>/\.(DRL|TXT|XLN)$/i.test(n)))throw new Error("pas de perçage : "+g.join(" "));
+    const bom=jlcBomCsvText().split("\r\n");
+    if(bom[0]!=="Comment,Designator,Footprint,JLCPCB Part #")throw new Error("en-tête BOM : "+bom[0]);
+    if(!bom.some(l=>l.endsWith(",C25804")&&l.includes(a.ref)))throw new Error("code LCSC absent : "+bom.join(" | "));
+    const n=jlcBomLignes().reduce((t,l)=>t+l.refs.length,0);
+    if(n!==fabFpsMontes().length)throw new Error("BOM : "+n+" repères pour "+fabFpsMontes().length);
+    const cpl=jlcCplCsvText().split("\r\n"), o=gOrigin();
+    if(cpl[0]!=="Designator,Mid X,Mid Y,Layer,Rotation")throw new Error("en-tête CPL : "+cpl[0]);
+    const la=cpl.find(l=>l.startsWith(a.ref+",")).split(","), lb=cpl.find(l=>l.startsWith(b.ref+",")).split(",");
+    if(la[1]!==fmt(a.x-o.x,4)+"mm"||la[2]!==fmt(o.y-a.y,4)+"mm")throw new Error("position : "+la.join(","));
+    // l'éditeur tourne dans le sens horaire, JLCPCB dans le sens anti-horaire
+    if(la[3]!=="Top"||la[4]!=="270")throw new Error("rotation : "+la.join(","));
+    if(lb[3]!=="Bottom"||lb[4]!=="0")throw new Error("dessous : "+lb.join(","));
+    const files=exportJlcpcb();
+    const noms=files.map(f=>f.name);
+    if(noms.join()!==["carte-gerber.zip","carte-BOM-JLCPCB.csv","carte-CPL-JLCPCB.csv","LISEZ-MOI-JLCPCB.txt"].join())throw new Error("dossier : "+noms.join(" "));
+    if(files[0].data[0]!==0x50||files[0].data[1]!==0x4b)throw new Error("l'archive Gerber n'est pas un zip");
+    if(zips.length!==1)throw new Error(zips.length+" archive(s) livrée(s)");
+    if(!/Sans code LCSC/.test(files[3].text)||files[3].text.includes(a.ref+" —"))throw new Error("LISEZ-MOI : "+files[3].text);
+  }finally{URL.createObjectURL=co;S.schDoc=sch;loadDoc(JSON.parse(avant),true);}
+});
 TA("animation 3D : un second Fabrication .zip pendant l'enregistrement ne relance rien",async()=>{
   const avant=serialize(), co=URL.createObjectURL, zips=[], notes=[];
   /* la barre d'état lue juste après la livraison : d'autres essais l'écrivent ensuite */

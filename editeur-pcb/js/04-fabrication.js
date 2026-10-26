@@ -1358,32 +1358,33 @@ const FAB_GROUPES=[
 function fabVeut(k){return !(S.fabExclus||[]).includes(k);}
 /* `extra` : des fichiers venus d'ailleurs (l'animation 3D, 41-animation-3d.js),
    posés avant le Master Drawing et le LISEZ-MOI, qui les annoncent. */
-function buildFabFiles(extra){
+function buildFabFiles(extra,veut){
+  const prend=veut||fabVeut;   // le dossier JLCPCB ne prend que les Gerber et le perçage
   const base=fabBase();
   const files=[];
-  if(fabVeut("cuivre"))
+  if(prend("cuivre"))
     for(let i=0;i<S.cu;i++){
       const ext = i===0?".GTL":(i===S.cu-1?".GBL":".GL"+(i+1));
       files.push({name:base+ext,text:gerberCopper(i)});
     }
-  if(fabVeut("masque")){
+  if(prend("masque")){
     files.push({name:base+".GTS",text:gerberMask(0)});
     if(S.cu>1)files.push({name:base+".GBS",text:gerberMask(1)});
   }
-  if(fabVeut("pate")){
+  if(prend("pate")){
     files.push({name:base+".GTP",text:gerberPaste(0)});
     if(S.cu>1)files.push({name:base+".GBP",text:gerberPaste(1)});
   }
-  if(fabVeut("serigraphie")){
+  if(prend("serigraphie")){
     files.push({name:base+".GTO",text:gerberSilk(0)});
     if(S.cu>1)files.push({name:base+".GBO",text:gerberSilk(1)});
   }
-  if(fabVeut("contour")){
+  if(prend("contour")){
     files.push({name:base+".GM1",text:gerberOutline()});   // profil de découpe
     files.push({name:base+".GKO",text:gerberEdge()});      // keepout (même géométrie)
   }
   const dr=drillFile();
-  if(fabVeut("percage")){
+  if(prend("percage")){
     for(const f of dr.files)files.push(f);
     /* le contre-perçage, aussi en Gerber X2 : la profondeur y est un champ.
        Hors de `dr.files`, que le plan de fabrication détaille comme Excellon. */
@@ -1391,33 +1392,107 @@ function buildFabFiles(extra){
   }
   /* La netlist de test : elle vient après les Gerber et le perçage, parce
      qu'elle décrit ce que ces fichiers-là auront gravé. */
-  if(fabVeut("ipc"))files.push({name:base+".ipc",text:ipcNetlist()});
+  if(prend("ipc"))files.push({name:base+".ipc",text:ipcNetlist()});
   /* Toute la carte en un fichier IPC-2581 (35-ipc2581-export.js), avant le
      Master Drawing qui l'annonce. */
-  if(fabVeut("ipc2581")&&typeof ipc2581Fichier==="function")files.push(ipc2581Fichier());
+  if(prend("ipc2581")&&typeof ipc2581Fichier==="function")files.push(ipc2581Fichier());
   /* Le Master Drawing PDF : trois pages IPC (PCB Details, Files, Stack-up).
      Pur JS, zero dépendance. On passe la liste déjà construite pour éviter
      une récursion buildFabFiles → masterDrawingPdf → buildFabFiles. */
   /* Les plans (29-draftsman.js) avant le Master Drawing : celui-ci les
      annonce dans sa liste de fichiers. */
-  if(fabVeut("plans")&&typeof dfPdfOctets==="function"){
+  if(prend("plans")&&typeof dfPdfOctets==="function"){
     const plans=dfPdfOctets();
     if(plans)files.push({name:fabBase()+"-PLANS.pdf",data:plans});
   }
   /* les DXF pour la mécanique (33-draftsman-export.js) : la carte à 1:1, et
      la feuille du plan de fabrication */
-  if(fabVeut("dxf")&&typeof dxfFichiers==="function")files.push(...dxfFichiers());
+  if(prend("dxf")&&typeof dxfFichiers==="function")files.push(...dxfFichiers());
   if(extra)files.push(...extra);
-  const md=fabVeut("master")&&masterDrawingPdf(files);
+  const md=prend("master")&&masterDrawingPdf(files);
   if(md)files.push({name:fabDocNum()+".pdf",data:md});
-  if(fabVeut("empilage"))files.push({name:"EMPILAGE.txt",text:stackReport()});
+  if(prend("empilage"))files.push({name:"EMPILAGE.txt",text:stackReport()});
   /* Placement et nomenclature avant le LISEZ-MOI : celui-ci liste les fichiers
      de l'archive, et une liste qui s'arrête avant les deux derniers vaudrait
      un dossier incomplet aux yeux du monteur. */
-  if(fabVeut("positions"))files.push({name:"positions.csv",text:positionsCsvText()});
-  if(fabVeut("bom"))files.push({name:"bom.csv",text:bomPcbCsvText()});
-  if(fabVeut("lisezmoi"))files.push({name:"LISEZ-MOI.txt",text:fabReadme(files,dr)});
+  if(prend("positions"))files.push({name:"positions.csv",text:positionsCsvText()});
+  if(prend("bom"))files.push({name:"bom.csv",text:bomPcbCsvText()});
+  if(prend("lisezmoi"))files.push({name:"LISEZ-MOI.txt",text:fabReadme(files,dr)});
   return {files,drill:dr};
+}
+
+/* ==========================================================================
+   Dossier PCBA JLCPCB : les trois fichiers que JLCPCB demande pour fabriquer
+   ET assembler, à téléverser tels quels — l'archive Gerber + perçage, la
+   nomenclature (BOM) et le placement (CPL), à leurs colonnes à eux.
+   ========================================================================== */
+const JLC_GERBER=["cuivre","masque","pate","serigraphie","contour","percage"];
+function jlcGerberFiles(){
+  // .GKO répète le .GM1 : JLCPCB y verrait deux contours
+  return buildFabFiles(null,k=>JLC_GERBER.includes(k)).files.filter(f=>!/\.GKO$/.test(f.name));
+}
+/* BOM : une ligne par pièce (valeur, empreinte, code LCSC), repères groupés.
+   Le code LCSC vient du schéma (champ lcsc, ou « vendor reference » de la LIB). */
+function jlcBomLignes(){
+  let sch=new Map();
+  try{if(typeof pcbComposantsSchema==="function")sch=pcbComposantsSchema();}catch(_){}
+  const groupes=new Map();
+  for(const fp of fabFpsMontes()){
+    const c=sch.get(fp.ref)||{};
+    const val=fp.value||c.value||c.mpn||"", pkg=fp.pkg||"", lcsc=String(c.lcsc||"").trim();
+    const k=val+"|"+pkg+"|"+lcsc;
+    if(!groupes.has(k))groupes.set(k,{val,pkg,lcsc,refs:[]});
+    groupes.get(k).refs.push(fp.ref);
+  }
+  const nat=(a,b)=>String(a).localeCompare(String(b),"fr",{numeric:true});
+  const out=[...groupes.values()];
+  for(const g of out)g.refs.sort(nat);
+  return out.sort((a,b)=>nat(a.refs[0],b.refs[0]));
+}
+function jlcBomCsvText(){
+  const out=["Comment,Designator,Footprint,JLCPCB Part #"];
+  for(const g of jlcBomLignes())out.push([g.val,g.refs.join(","),g.pkg,g.lcsc].map(pcbCsvCell).join(","));
+  return out.join("\r\n")+"\r\n";
+}
+/* CPL : centre de l'empreinte (origine des Gerber, Y vers le haut), face, et
+   l'angle compté dans le sens anti-horaire vu de dessus comme le veut JLCPCB —
+   l'éditeur, lui, tourne dans le sens horaire (fpXform, y vers le bas). */
+function jlcCplCsvText(){
+  const o=gOrigin(), rows=["Designator,Mid X,Mid Y,Layer,Rotation"];
+  for(const fp of fabFpsMontes())
+    rows.push([fp.ref,fmt(fp.x-o.x,4)+"mm",fmt(o.y-fp.y,4)+"mm",fp.side?"Bottom":"Top",
+      String(padRot(360-(fp.rot||0)))].map(pcbCsvCell).join(","));
+  return rows.join("\r\n")+"\r\n";
+}
+function jlcLisezMoi(base,sansCode){
+  const L=["Dossier PCBA JLCPCB — "+base,"",
+    "1. jlcpcb.com > Order now : téléverser "+base+"-gerber.zip (Gerber + perçage).",
+    "2. Cocher « PCB Assembly », choisir la face à assembler.",
+    "3. Téléverser "+base+"-BOM-JLCPCB.csv (BOM) et "+base+"-CPL-JLCPCB.csv (CPL).",
+    "4. Vérifier l'orientation de chaque pièce dans l'aperçu de placement : le zéro",
+    "   des pièces de la bibliothèque JLCPCB n'est pas toujours celui de l'empreinte.",
+    "",
+    "Coordonnées en mm depuis l'origine des Gerber, rotation en degrés dans le sens",
+    "anti-horaire vu de dessus."];
+  if(sansCode.length)L.push("","Sans code LCSC (JLCPCB ne les posera pas tant qu'aucune pièce n'est choisie) :",
+    ...sansCode.map(g=>"  "+g.refs.join(",")+" — "+(g.val||"?")+" ("+(g.pkg||"?")+")"));
+  return L.join("\n")+"\n";
+}
+function exportJlcpcb(){
+  if(!S.fps.length&&!S.tracks.length){alert("Rien à fabriquer : la carte est vide.");return null;}
+  if(typeof pcbVarDepuisSchema==="function")pcbVarDepuisSchema();
+  const vid=(S.variantes&&S.variantes.active)||"", sl=vid?"-"+varSlug(S.variantes,vid):"";
+  const base=fabBase()+sl, sansCode=jlcBomLignes().filter(g=>!g.lcsc);
+  const gerber=zipOctets(jlcGerberFiles());
+  const files=[{name:base+"-gerber.zip",data:gerber},
+    {name:base+"-BOM-JLCPCB.csv",text:jlcBomCsvText()},
+    {name:base+"-CPL-JLCPCB.csv",text:jlcCplCsvText()},
+    {name:"LISEZ-MOI-JLCPCB.txt",text:jlcLisezMoi(base,sansCode)}];
+  const nom=pcbFile("-PCBA-JLCPCB"+sl+".zip","PCBA-JLCPCB"+sl+".zip");
+  dl(zipBlob(files),nom);
+  hint("Dossier JLCPCB exporté dans "+nom+" — "+fabFpsMontes().length+" composant(s) à placer"+
+       (sansCode.length?", "+sansCode.length+" ligne(s) de BOM sans code LCSC (liste dans le LISEZ-MOI).":"."));
+  return files;
 }
 
 /* L'archive ZIP (crc32, zipBlob) est dans commun/zip.js : la visionneuse
