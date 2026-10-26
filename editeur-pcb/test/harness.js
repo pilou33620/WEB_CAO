@@ -409,6 +409,8 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* dossier mécanique (commun/dossier-meca.js) */
   "mecaDonnees","mecaEntreeEditeur","mecaDossier","stackTotal","exCharger","mecaFeuilles",
   "mecaDxf","mecaFichiers","mecaFichiersEditeur","mecaRegler","mecaNormReglages","mecaOblong","mecaDiam",
+  /* fiche de mesure du technicien (commun/fiche-mesure.js, 42-fiche-mesure.js) */
+  "mesFeuilles","mesResoudre","mesEntreeEditeur","mesNormListe",
   /* cotes à la main, vues à la souris, détails (34-draftsman-vues.js) */
   "dfNormCotes","dfNormVues","dfNormDetails","dfResoudre","dfMesurer","dfAccroches","dfAccrocher","dfNormRef","dfRefTexte",
   "dfAjouterCote","dfModifierCote","dfSupprimerCote","dfDeplacerCote","dfAjouterDetail","dfSupprimerDetail",
@@ -24015,6 +24017,36 @@ T("plans : dossier de couches (cuivre, vernis, pâte, PTST, BOARD) et cartouche 
     if(!dfLatin(dfPdfOctets(doc)).startsWith("%PDF-1.4"))throw new Error("PDF");
     if(process.env.DF_OUT)fs.writeFileSync(process.env.DF_OUT,Buffer.from(dfPdfOctets(doc)));
   }finally{fp.ref=ref0;S.dessin=null;}
+});
+T("plans : fiche de mesure, points par repère.pastille ou par net, détails et sondes",()=>{
+  exCharger(1);
+  const fp=S.fps.find(f=>f.ref&&padsWorld(f).length>=2), q=padsWorld(fp), autre=S.fps.find(f=>f!==fp&&f.ref&&padsWorld(f).length);
+  const net=q.map(p=>p.net).find(Boolean);
+  const non={fab:false,asmT:false,asmB:false,bom:false,couches:false,mes:true};
+  S.dessin={fonte:false,feuilles:non,mesures:[
+    {a:fp.ref.toLowerCase()+"-"+q[0].n,b:autre.ref+"."+padsWorld(autre)[0].n,type:"Tension DC",att:"3,3 V",tol:"± 5 %"},
+    {a:net,b:fp.ref+"."+q[1].n,type:"Continuité"},
+    {a:"ZZ9.1",b:fp.ref+"."+q[0].n,type:"Résistance"}]};
+  try{
+    const E=mesEntreeEditeur();
+    const r=mesResoudre(E," "+fp.ref.toLowerCase()+" "+q[0].n);
+    if(!r.p||r.p.cle!==fp.ref+"."+q[0].n)throw new Error("repère.pastille : "+JSON.stringify(r.err||r.p.cle));
+    if(!mesResoudre(E,fp.ref).err&&padsWorld(fp).length>1)throw new Error("un repère seul à plusieurs pastilles doit être refusé");
+    if(!mesResoudre(E,fp.ref+".9999").err||!mesResoudre(E,"PASUNNET").err)throw new Error("points inconnus acceptés");
+    if(net){const n=mesResoudre(E,net.toLowerCase());if(!n.p||!n.p.parNet||n.p.net!==net)throw new Error("net : "+JSON.stringify(n));}
+    if(mesNormListe([{a:"U1.1"},{a:"A",b:"B",type:"?",ech:7}]).map(m=>m.type+m.ech).join()!=="Tension DC0")
+      throw new Error("normalisation de la liste");
+    const doc=dfDocument(), F=doc.feuilles.find(f=>f.genre==="mes");
+    if(!F||doc.feuilles.length!==1)throw new Error("une feuille de mesure attendue : "+doc.feuilles.map(f=>f.titre).join(" | "));
+    const txt=F.items.filter(it=>it.t==="t"&&!it.cache).map(it=>it.s);
+    for(const s of ["DÉTAIL A — ÉCHELLE","+","−","Tension DC","3,3 V",fp.ref+"."+q[0].n])
+      if(!txt.some(t=>t.indexOf(s)>=0))throw new Error("« "+s+" » absent de la fiche");
+    if(!txt.some(t=>/ATTENTION.*n° 3/.test(t)))throw new Error("la mesure au point introuvable doit être signalée");
+    if(!dfChercher(doc,"detail a").length)throw new Error("la fiche doit se chercher");
+    if(!F.items.some(it=>it.t==="p"&&Array.isArray(it.plein)))throw new Error("pastilles mesurées en couleur");
+    if(!dfLatin(dfPdfOctets(doc)).startsWith("%PDF-1.4"))throw new Error("PDF");
+    if(process.env.MES_OUT)fs.writeFileSync(process.env.MES_OUT,dfSvg(F,[]));
+  }finally{S.dessin=null;}
 });
 T("plans : PDF valide, chaque entrée de la table xref tombe sur son objet",()=>{
   exCharger(1);
