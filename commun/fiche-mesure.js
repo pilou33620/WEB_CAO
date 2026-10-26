@@ -207,15 +207,23 @@ function mesFeuille(E,lot,ko,ctx,suite,n0){
     if(reperes.has(cle))reperes.get(cle).lettres.push(g.lettre);
     else reperes.set(cle,{C,rr,lettres:[g.lettre]});
   }
+  const poses=[];                                   // cercles voisins : leurs lettres ne se recouvrent pas
   for(const {C,rr,lettres} of reperes.values()){
     dfCercle(F,C.x,C.y,rr,{lw:0.3});
-    dfTexte(F,lettres.join(", "),C.x-rr*0.71-0.4,C.y-rr*0.71-0.4,9,{ancre:"d",gras:true,cat:"detail",
-            lieu:"repère du détail "+lettres.join(", ")});
+    const x=C.x-rr*0.71-0.4;
+    let y=C.y-rr*0.71-0.4;
+    while(poses.some(p=>Math.abs(p.x-x)<8&&Math.abs(p.y-y)<3.4))y-=3.4;
+    poses.push({x,y});
+    dfTexte(F,lettres.join(", "),x,y,9,{ancre:"d",gras:true,cat:"detail",lieu:"repère du détail "+lettres.join(", ")});
   }
+  const bulles=new Map();                           // bulles au même endroit (mêmes points) : côte à côte
   for(const r of lot){
     const col=mesCouleur(r.i), A=vueDe(r.a.p), B=vueDe(r.b.p);
     const pa=A.T(r.a.p.x,r.a.p.y), pb=B.T(r.b.p.x,r.b.p.y);
     const bulle=(x,y,ax,ay)=>{
+      const cle=Math.round(ax*5)+","+Math.round(ay*5), n=bulles.get(cle)||0;
+      bulles.set(cle,n+1);
+      x+=n*4.4;
       dfLigne(F,ax,ay,x,y+1.9,0.2,col);
       dfCercle(F,x,y,1.9,{lw:0.35,trait:col,plein:1});
       dfTexte(F,String(r.i+1),x,y+1,8,{ancre:"m",gras:true,c:col,cat:"mesure",lieu:"mesure "+(r.i+1)});

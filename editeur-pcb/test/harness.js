@@ -24051,6 +24051,10 @@ T("plans : fiche de mesure, points par repère.pastille ou par net, détails et 
     if(zs.length<2)throw new Error("la pastille mesurée doit être cliquable sur la vue et dans son détail");
     for(const z of zs)if(mesPadSous(F,(z.x1+z.x2)/2,(z.y1+z.y2)/2,0.5)!==cle)throw new Error("clic sur "+cle);
     if(mesPadSous(F,1,1,0.5)!==null)throw new Error("un clic hors pastille ne choisit rien");
+    /* mesures 1 et 4 : mêmes points, bulles « 1 » et « 4 » côte à côte, pas l'une sur l'autre */
+    const b1=F.items.find(it=>it.t==="t"&&it.s==="1"&&it.cat==="mesure"&&it.y<F.h-80),
+          b4=F.items.find(it=>it.t==="t"&&it.s==="4"&&it.cat==="mesure"&&it.y<F.h-80);
+    if(!b1||!b4||Math.hypot(b1.x-b4.x,b1.y-b4.y)<3.8)throw new Error("bulles superposées : "+JSON.stringify([b1,b4]));
     if(!dfLatin(dfPdfOctets(doc)).startsWith("%PDF-1.4"))throw new Error("PDF");
     if(process.env.MES_OUT)fs.writeFileSync(process.env.MES_OUT,dfSvg(F,[]));
   }finally{S.dessin=null;}
