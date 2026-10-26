@@ -72,8 +72,9 @@ function mesTexte(p){return p.parNet?p.net+" → "+p.cle:p.cle+(p.net?" · "+p.n
 
 /* La carte, une face, dans le repère de la feuille : contour, corps et
    repères de cette face, ses pastilles (et les traversantes de l'autre), les
-   pastilles mesurées remplies de leur couleur (`surb` : clé → couleur). */
-function mesDessin(F,E,T,dessous,surb){
+   pastilles mesurées remplies de leur couleur (`surb` : clé → couleur).
+   `zones` : reçoit la boîte de chaque pastille sur la feuille, pour le clic. */
+function mesDessin(F,E,T,dessous,surb,zones){
   const face=dessous?"dessous":"dessus";
   dfCalque(F,"CONTOUR");
   if(E.contour.length)dfPoly(F,E.contour.map(p=>T(p.x,p.y)),{ferme:true,lw:0.35});
@@ -91,6 +92,7 @@ function mesDessin(F,E,T,dessous,surb){
     if(c.face!==face&&!p.trou)continue;
     const col=surb.get(c.ref+"."+p.n), pts=p.pts.map(q=>T(q.x,q.y)), b=mecaBoite(pts);
     dfPoly(F,pts,{ferme:true,lw:0.08,plein:col||1});
+    if(zones)zones.push({cle:c.ref+"."+p.n,x1:b.x1,y1:b.y1,x2:b.x2,y2:b.y2});
     const w=Math.min(b.x2-b.x1,b.y2-b.y1);
     if(w>1.6)dfTexte(F,p.n,(b.x1+b.x2)/2,(b.y1+b.y2)/2+w*0.12,clamp(w*0.35,0.6,2.2)/DF_PT,
                      {ancre:"m",c:col?1:0.3,cat:"repere",lieu:c.ref+" · broche "+p.n});
@@ -137,6 +139,7 @@ function mesFeuille(E,lot,ko,ctx,suite,n0){
   const F=dfNouvelle(ctx,"Fiche de mesure"+(suite?" (suite)":""),"mes");
   if(suite)F.suite=suite;
   const Z=dfZone(F), surb=new Map();
+  F.mesZones=[];
   for(const r of lot){                               // une pastille de deux mesures : la couleur de la première
     if(!surb.has(r.a.p.cle))surb.set(r.a.p.cle,mesCouleur(r.i));
     if(!surb.has(r.b.p.cle))surb.set(r.b.p.cle,MES_NOIR);
@@ -173,7 +176,7 @@ function mesFeuille(E,lot,ko,ctx,suite,n0){
     const box={x:Z.x1,y:yHaut+j*(hV+4),w:wV,h:hV}, V=mesVue(E,box,dessous);
     dfTexte(F,(dessous?"VUE DE DESSOUS (carte retournée, en miroir)":"VUE DE DESSUS")+" — ÉCHELLE "+dfEchelleTxt(V.k),
             box.x,box.y+5,9,{gras:true,cat:"titre"});
-    mesDessin(F,E,V.T,dessous,surb);
+    mesDessin(F,E,V.T,dessous,surb,F.mesZones);
     return Object.assign(V,{dessous});
   });
   const vueDe=p=>vues.find(v=>v.dessous===(p.face==="dessous"))||vues[0];
@@ -197,10 +200,17 @@ function mesFeuille(E,lot,ko,ctx,suite,n0){
 
   /* repères sur les vues de la carte : cercle et lettre de chaque détail,
      trait et bulle numérotée de chaque mesure */
+  const reperes=new Map();                          // deux détails du même point : un cercle, « A, C »
   for(const g of groupes){
     const V=vueDe(g.pts[0]), C=V.T(g.cx,g.cy), rr=Math.max(G.R/g.k*V.k,1.2);
+    const cle=[C.x,C.y,rr].map(v=>Math.round(v*5)).join();
+    if(reperes.has(cle))reperes.get(cle).lettres.push(g.lettre);
+    else reperes.set(cle,{C,rr,lettres:[g.lettre]});
+  }
+  for(const {C,rr,lettres} of reperes.values()){
     dfCercle(F,C.x,C.y,rr,{lw:0.3});
-    dfTexte(F,g.lettre,C.x-rr*0.71-0.4,C.y-rr*0.71-0.4,9,{ancre:"d",gras:true,cat:"detail",lieu:"repère du détail "+g.lettre});
+    dfTexte(F,lettres.join(", "),C.x-rr*0.71-0.4,C.y-rr*0.71-0.4,9,{ancre:"d",gras:true,cat:"detail",
+            lieu:"repère du détail "+lettres.join(", ")});
   }
   for(const r of lot){
     const col=mesCouleur(r.i), A=vueDe(r.a.p), B=vueDe(r.b.p);
@@ -225,7 +235,9 @@ function mesFeuille(E,lot,ko,ctx,suite,n0){
     W.sens=1;                                        // sens trigonométrique : pas besoin de signedArea (absent de la visionneuse)
     const D={items:[]};
     const sd=new Map(surb).set(g.r.a.p.cle,mesCouleur(g.r.i)).set(g.r.b.p.cle,MES_NOIR);   // le détail : les couleurs de sa mesure
-    mesDessin(D,E,T,dessous,sd);
+    const zd=[];
+    mesDessin(D,E,T,dessous,sd,zd);
+    for(const q of zd)if(Math.hypot((q.x1+q.x2)/2-g.X,(q.y1+q.y2)/2-g.Y)<G.R)F.mesZones.push(q);
     for(const it of D.items)for(const q of dfDecouper(it,W))F.items.push(q);
     dfCercle(F,g.X,g.Y,G.R,{lw:0.5});
     for(const p of g.pts){
@@ -287,17 +299,40 @@ function mesRendreListe(z,E,liste){
   }).join("");
 }
 /* `ops` : entree() l'entrée neutre, liste() les mesures, ecrire(liste) */
+/* La pastille sous (X,Y) en mm de feuille : celle qui le contient (la plus
+   petite), sinon la plus proche à moins de `tol`. */
+function mesPadSous(F,X,Y,tol){
+  let best=null, bd=Infinity;
+  for(const q of (F&&F.mesZones)||[]){
+    const d=Math.hypot(Math.max(q.x1-X,0,X-q.x2),Math.max(q.y1-Y,0,Y-q.y2)), a=(q.x2-q.x1)*(q.y2-q.y1);
+    const note=d>0?d:-1/(1+a);
+    if(d<=tol&&note<bd){bd=note;best=q.cle;}
+  }
+  return best;
+}
+/* `ops` : entree() l'entrée neutre, liste() les mesures, ecrire(liste).
+   Rend choisir(cle) : un clic sur une pastille de l'aperçu remplit la sonde
+   active (+ d'abord), puis passe à l'autre. */
 function mesBrancher(z,ops){
-  const val=k=>{const t=z.querySelector('[data-mes="'+k+'"]');return t?t.value:"";};
+  const champ=k=>z.querySelector('[data-mes="'+k+'"]');
+  const val=k=>{const t=champ(k);return t?t.value:"";};
+  const dire=t=>{const p=z.querySelector(".mes-err");if(p)p.textContent=t;};
+  let actif="a";
+  const activer=k=>{
+    actif=k;
+    for(const c of ["a","b"]){const t=champ(c);if(t&&t.style)t.style.outline=c===k?"2px solid #3d8bfd":"";}
+  };
+  activer("a");
   const ajouter=()=>{
     const E=ops.entree(), a=mesResoudre(E,val("a")), b=mesResoudre(E,val("b"));
     const e=a.err?"Sonde + : "+a.err:b.err?"Sonde − : "+b.err:a.p.cle===b.p.cle?"Les deux sondes sont sur la même pastille.":"";
-    const p=z.querySelector(".mes-err");
-    if(p)p.textContent=e;
+    dire(e);
     if(e)return;
     const nom=q=>q.parNet?q.net:q.cle;       // un net reste un net : son meilleur point peut changer
     ops.ecrire(ops.liste().concat([{a:nom(a.p),b:nom(b.p),type:val("type"),att:val("att"),tol:val("tol"),
                                     note:val("note"),ech:+val("ech")}]));
+    for(const k of ["a","b"]){const t=champ(k);if(t)t.value="";}
+    activer("a");
   };
   z.addEventListener("click",ev=>{
     const t=ev.target.closest&&ev.target.closest("[data-mes-a],[data-mes-sup]");
@@ -305,7 +340,16 @@ function mesBrancher(z,ops){
     if(t.dataset.mesA==="ajout")ajouter();
     else{const l=ops.liste().slice();l.splice(+t.dataset.mesSup,1);ops.ecrire(l);}
   });
+  z.addEventListener("focusin",ev=>{const k=ev.target.dataset&&ev.target.dataset.mes;if(k==="a"||k==="b")activer(k);});
   z.addEventListener("keydown",ev=>{
     if(ev.key==="Enter"&&ev.target.dataset&&ev.target.dataset.mes!=null){ev.preventDefault();ajouter();}
   });
+  return {choisir(cle){
+    const t=champ(actif);
+    if(!t)return;
+    t.value=cle;
+    const k=actif;
+    activer(k==="a"?"b":"a");
+    dire(k==="a"?cle+" → sonde +. Cliquez le point de la sonde −.":cle+" → sonde −. Entrée ou « Ajouter » pour valider.");
+  }};
 }

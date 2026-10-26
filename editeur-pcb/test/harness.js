@@ -410,7 +410,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "mecaDonnees","mecaEntreeEditeur","mecaDossier","stackTotal","exCharger","mecaFeuilles",
   "mecaDxf","mecaFichiers","mecaFichiersEditeur","mecaRegler","mecaNormReglages","mecaOblong","mecaDiam",
   /* fiche de mesure du technicien (commun/fiche-mesure.js, 42-fiche-mesure.js) */
-  "mesFeuilles","mesResoudre","mesEntreeEditeur","mesNormListe",
+  "mesFeuilles","mesResoudre","mesEntreeEditeur","mesNormListe","mesPadSous",
   /* cotes à la main, vues à la souris, détails (34-draftsman-vues.js) */
   "dfNormCotes","dfNormVues","dfNormDetails","dfResoudre","dfMesurer","dfAccroches","dfAccrocher","dfNormRef","dfRefTexte",
   "dfAjouterCote","dfModifierCote","dfSupprimerCote","dfDeplacerCote","dfAjouterDetail","dfSupprimerDetail",
@@ -24026,7 +24026,8 @@ T("plans : fiche de mesure, points par repère.pastille ou par net, détails et 
   S.dessin={fonte:false,feuilles:non,mesures:[
     {a:fp.ref.toLowerCase()+"-"+q[0].n,b:autre.ref+"."+padsWorld(autre)[0].n,type:"Tension DC",att:"3,3 V",tol:"± 5 %"},
     {a:net,b:fp.ref+"."+q[1].n,type:"Continuité"},
-    {a:"ZZ9.1",b:fp.ref+"."+q[0].n,type:"Résistance"}]};
+    {a:"ZZ9.1",b:fp.ref+"."+q[0].n,type:"Résistance"},
+    {a:autre.ref+"."+padsWorld(autre)[0].n,b:fp.ref+"."+q[0].n,type:"Résistance"}]};
   try{
     const E=mesEntreeEditeur();
     const r=mesResoudre(E," "+fp.ref.toLowerCase()+" "+q[0].n);
@@ -24044,6 +24045,12 @@ T("plans : fiche de mesure, points par repère.pastille ou par net, détails et 
     if(!txt.some(t=>/ATTENTION.*n° 3/.test(t)))throw new Error("la mesure au point introuvable doit être signalée");
     if(!dfChercher(doc,"detail a").length)throw new Error("la fiche doit se chercher");
     if(!F.items.some(it=>it.t==="p"&&Array.isArray(it.plein)))throw new Error("pastilles mesurées en couleur");
+    /* les mesures 1 et 4 ont les mêmes points : un seul repère par point, deux lettres */
+    if(!txt.some(t=>/^[A-Z], [A-Z]$/.test(t)))throw new Error("repères des mêmes points non regroupés : "+txt.join(" | "));
+    const cle=fp.ref+"."+q[0].n, zs=F.mesZones.filter(z=>z.cle===cle);
+    if(zs.length<2)throw new Error("la pastille mesurée doit être cliquable sur la vue et dans son détail");
+    for(const z of zs)if(mesPadSous(F,(z.x1+z.x2)/2,(z.y1+z.y2)/2,0.5)!==cle)throw new Error("clic sur "+cle);
+    if(mesPadSous(F,1,1,0.5)!==null)throw new Error("un clic hors pastille ne choisit rien");
     if(!dfLatin(dfPdfOctets(doc)).startsWith("%PDF-1.4"))throw new Error("PDF");
     if(process.env.MES_OUT)fs.writeFileSync(process.env.MES_OUT,dfSvg(F,[]));
   }finally{S.dessin=null;}

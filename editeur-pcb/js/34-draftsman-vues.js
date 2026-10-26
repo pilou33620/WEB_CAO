@@ -1400,6 +1400,7 @@ function dfApresEdition(){
   if(DF.glisse)DF.glisse.apercus=null;     // un Ctrl+Z en plein geste : l'aperçu se refait
   if(DF.page>=DF.doc.feuilles.length)DF.page=0;
   if(typeof document!=="undefined")dfChercherUi(true);
+  if(typeof mesRafraichir==="function")mesRafraichir();     // la liste de la fiche de mesure (42-fiche-mesure.js)
 }
 /* Un clic sur la feuille (X,Y en mm), selon l'outil. Séparé des événements
    pour que le banc d'essai pose une cote comme la souris. Rend ce qui a été

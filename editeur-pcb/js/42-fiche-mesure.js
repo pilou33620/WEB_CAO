@@ -28,6 +28,12 @@ function mesEcrire(m,z,liste){
   const i=DF.doc.feuilles.findIndex(F=>F.genre==="mes");
   if(i>=0){DF.page=i;dfRendreApercu();}
 }
+/* Après un Ctrl+Z ou un Ctrl+Y dans la fenêtre des plans (dfApresEdition) :
+   la liste suit le document. */
+function mesRafraichir(){
+  const z=typeof document!=="undefined"&&document.getElementById&&document.getElementById("mesPanneau");
+  if(z&&z.querySelector)mesRendreListe(z,mesEntreeEditeur(),dfCfg().mesures);
+}
 function mesCadre(m){
   const cotes=m&&m.querySelector&&m.querySelector("#dfCotes");
   if(!cotes||!cotes.insertAdjacentHTML||m.querySelector("#mesPanneau"))return;
@@ -35,5 +41,13 @@ function mesCadre(m){
   const z=m.querySelector("#mesPanneau"), E=mesEntreeEditeur();
   z.innerHTML=mesFormHtml(E);
   mesRendreListe(z,E,dfCfg().mesures);
-  mesBrancher(z,{entree:mesEntreeEditeur,liste:()=>dfCfg().mesures,ecrire:l=>mesEcrire(m,z,l)});
+  const ui=mesBrancher(z,{entree:mesEntreeEditeur,liste:()=>dfCfg().mesures,ecrire:l=>mesEcrire(m,z,l)});
+  /* un clic sur une pastille de la fiche, outil de sélection : le point de la sonde active */
+  if(m.mesClic)m.removeEventListener("click",m.mesClic,true);
+  m.mesClic=e=>{
+    if(DF.outil!=="sel"||!e.target.closest||!e.target.closest("#dfFeuille"))return;
+    const P=dfPointFeuille(e), cle=P&&P.F.genre==="mes"&&mesPadSous(P.F,P.X,P.Y,P.tol);
+    if(cle)ui.choisir(cle);
+  };
+  m.addEventListener("click",m.mesClic,true);      // en capture : les outils redessinent l'aperçu au clic, la cible en sortirait
 }

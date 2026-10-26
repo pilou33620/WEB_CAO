@@ -43,9 +43,10 @@ function mesIpcFeuilles(){
   F.forEach((f,i)=>dfCadre(f,ctx,i+1,F.length));
   return F;
 }
+let MES_IPC_F=[];                                // les feuilles de l'aperçu, pour le clic
 function mesIpcApercu(){
   const z=document.getElementById("mesApercu");
-  if(z)z.innerHTML=mesIpcFeuilles().map(f=>dfSvg(f)).join("");
+  if(z)z.innerHTML=(MES_IPC_F=mesIpcFeuilles()).map(f=>dfSvg(f)).join("");
 }
 function mesIpcFermer(){
   const m=document.getElementById("modaleMesure");
@@ -85,11 +86,23 @@ function mesOuvrir(){
   z.replaceWith(neuf);
   neuf.innerHTML=mesFormHtml(E);
   mesRendreListe(neuf,E,mesIpcListe());
-  mesBrancher(neuf,{entree:()=>E,liste:mesIpcListe,ecrire:l=>{
+  const ui=mesBrancher(neuf,{entree:()=>E,liste:mesIpcListe,ecrire:l=>{
     V.modele.mesures=mesNormListe(l);
     mesRendreListe(neuf,E,V.modele.mesures);
     mesIpcApercu();
   }});
+  /* un clic sur une pastille de l'aperçu : le point de la sonde active */
+  m.mesChoisir=ui.choisir;
+  if(!m.mesClic){
+    m.mesClic=true;
+    m.addEventListener("click",ev=>{
+      const svg=ev.target.closest&&ev.target.closest("#mesApercu svg");
+      if(!svg)return;
+      const F=MES_IPC_F[[...m.querySelectorAll("#mesApercu svg")].indexOf(svg)], r=svg.getBoundingClientRect();
+      const cle=F&&r.width&&mesPadSous(F,(ev.clientX-r.left)*F.w/r.width,(ev.clientY-r.top)*F.h/r.height,9*F.w/r.width);
+      if(cle)m.mesChoisir(cle);
+    });
+  }
   m.hidden=false;
   if(m.focus)m.focus();
   mesIpcApercu();
