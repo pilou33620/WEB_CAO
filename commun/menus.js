@@ -27,6 +27,13 @@
     if(ouvert===m)return;
     fermer();
     m.classList.add("open");ouvert=m;
+    // Affichage, Outils… à droite de la barre : le menu reste dans l'écran
+    // (téléphone : telephone.css le place déjà en position fixe)
+    const pop=m.querySelector(".mnu-pop");
+    if(!pop||document.body.classList.contains("tel"))return;
+    pop.style.left="";
+    const r=pop.getBoundingClientRect(), trop=r.right-(document.documentElement.clientWidth-6);
+    if(trop>0)pop.style.left=-Math.min(trop,r.left-6)+"px";
   }
 
   menus.forEach(function(m){

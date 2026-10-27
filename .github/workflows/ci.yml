@@ -124,6 +124,9 @@ jobs:
       - name: Canal de pilotage (MCP de web_suite) — commandes des pages
         run: node commun/test/banc-pilote-cao.js
 
+      - name: Menus déroulants — restent dans l'écran
+        run: node commun/test/banc-menus.js
+
       - name: Mise à jour automatique GitHub — banc d'essai
         run: python python/test/banc-maj-github.py
 
