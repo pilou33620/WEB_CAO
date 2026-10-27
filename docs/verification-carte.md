@@ -52,8 +52,8 @@ regarder (P01x274 : 20 s, dont 10 pour la diaphonie et 8 pour les impédances).
    fermez-la.
 2. Vérifiez l'**empilage** dans le panneau « La carte » : les règles
    électriques en ont besoin (plans de référence, épaisseurs, εr). Sans
-   empilage, seuls les angles, les bouts orphelins et le découplage sont
-   jugés, et le rapport le dit.
+   empilage, seuls les angles, les bouts orphelins, le découplage, le quartz,
+   la protection ESD et le courant des rails sont jugés, et le rapport le dit.
 3. `Simulation EM…` → famille **Audit de la carte** → onglet **Vérification**.
 4. Réglez si besoin (§ 3), puis **▶ Vérifier la carte**.
 
@@ -96,20 +96,31 @@ donnaient trois colonnes presque toujours identiques, et la cadence d'un net
 dépend de sa classe, pas de la carte.
 
 Les réglages se lisent dans un **tableau, une ligne par classe** (front,
-cadence max, Z₀ visée, exemples de nets) :
+cadence max, Z₀ visée, Z_diff visée, exemples de nets) :
 
 | Classe | Front | Cadence max | Exemples |
 | :--- | :--- | :--- | :--- |
 | Horloge | 2 ns | 50 MHz | oscillateur, CLK, MCLK, XIN/XOUT d'un quartz |
-| Rapide | 1 ns | 100 MHz | USB, Ethernet, DDR, HDMI, LVDS |
+| Rapide | 1 ns | 100 MHz | DDR, HDMI, SDIO ; USB, Ethernet et LVDS ont leur classe d'interface |
 | RF | 100 ps | 1 GHz | antenne LoRa, Wi-Fi/BLE, vers un SMA |
 | Analogique | 100 ns | 1 MHz | entrée d'ADC, capteur, référence, audio |
 | Lent | 10 ns | 10 MHz | GPIO, LED, bouton, reset, I2C, UART ; tout net non classé |
 | Découpage | 5 ns | 2 MHz | nœud SW d'un hacheur, qui agresse ses voisins |
 
-Chaque cadence par défaut reste sous 0,1 / t_r : à réglages par défaut, c'est
-le **front** de la classe qui juge, la cadence ne l'écrase pas. Une horloge
+Chaque cadence par défaut ne dépasse pas 0,1 / t_r (elle l'égale pour Horloge,
+Rapide, RF, Analogique et Lent ; Découpage reste en dessous) : à réglages par
+défaut, c'est le **front** de la classe qui juge, la cadence ne l'écrase pas. Une horloge
 déclarée à 100 MHz, elle, voit son front ramené à 1 ns (genou 350 MHz).
+
+**Z₀ visée** n'existe que pour Horloge, Rapide, RF, Analogique et les classes
+d'interface (vide : le « Z₀ des lignes »). **Z_diff visée** n'existe que pour
+les classes d'interface. Sept **classes d'interface** ajoutent chacune une
+ligne, avec la Z_diff de leur norme et sans Z₀ de brin : USB FS (4 ns, 6 MHz,
+90 Ω), USB HS (0,5 ns, 200 MHz, 90 Ω), ETH 100 (3 ns, 31,25 MHz, 100 Ω),
+ETH 1000 (2 ns, 50 MHz, 100 Ω), LVDS (0,3 ns, 330 MHz, 100 Ω), CAN (50 ns,
+500 kHz, 120 Ω), RS-485 (20 ns, 5 MHz, 120 Ω). Le serveur ne retient que
+celles qu'un net de la carte porte, et le rapport dit sous quelle interface
+chacune est jugée.
 
 | Autre réglage | Défaut | Sert à |
 | :--- | :--- | :--- |
@@ -120,6 +131,9 @@ déclarée à 100 MHz, elle, voit son front ramené à 1 ns (genou 350 MHz).
 | pertes R, G | coupées | la diaphonie avec les pertes de la ligne au genou du front (n'ôtent que du bruit) |
 | Σ agresseurs | en phase | la somme des agresseurs d'une victime : en phase (arithmétique) ou quadratique |
 | porteuse des nets RF | vide | remplie (868 MHz pour du LoRa), les nets RF se jugent à cette porteuse, au lieu de leur front et de leur cadence |
+| porteuse d'un net | vide | une porteuse propre à un net, devant celle des nets RF : `NET=valeur unité`, séparés par des points-virgules (`NFC_ANT=13,56 MHz ; LORA_RF=868 MHz`), MHz sans unité. Une carte LoRa + NFC juge chaque radio à sa fréquence |
+| courant d'un rail | vide | le courant que tire chaque rail, `NET=valeur` en A ou mA, séparés par des points-virgules (`VCC=0,5 ; 3V3=1,2 A`) : la règle « Courant des rails » juge alors la piste la plus étroite de chaque rail face à ce courant ; sans lui, seuls les étranglements sortent, en info |
+| ← Chute DC | (bouton) | reprend dans « courant d'un rail » la somme des charges posées dans l'onglet Chute DC, rail par rail ; les autres rails saisis restent |
 
 Un front plus long que la demi-période de sa cadence, ou sous 10 ps, est
 signalé sous le tableau : c'est presque toujours une faute d'unité.
@@ -163,7 +177,7 @@ n'appartiennent à aucun net et n'ont pas de position : ils se rangent sous
 **Chaque ligne** : la couche (ou « couche → couche » pour un via, « couche ↔
 couche » pour une cavité), la position en mm, le constat chiffré, et pour les
 règles électriques **une pastille**, à la cadence de la classe, colorée selon le
-verdict (ambre : vigilance, rouge : critique). La valeur d'une pastille est :
+verdict (jaune : vigilance, rouge : critique). La valeur d'une pastille est :
 
 - un **pourcentage** : la réflexion |Γ| (retour, fente, impédance, paire), le
   niveau de diaphonie, l'aller-retour 2T_d d'un moignon rapporté au front ;
@@ -243,7 +257,7 @@ Des constats de **carte**, sans position :
 
 | Ce qu'on regarde | Sévérité |
 | :--- | :--- |
-| une couche qui porte des signaux n'a **aucun plan** de référence dans l'empilage | critique s'il y passe un net rapide (Horloge, Rapide, RF, Découpage), vigilance sinon |
+| une couche qui porte des signaux n'a **aucun plan** de référence dans l'empilage | critique s'il y passe un net rapide (Horloge, Rapide, RF, ou une interface rapide ; un nœud de découpage n'est pas compté, il n'est pas jugé comme un signal), vigilance sinon |
 | le plan le plus proche est **derrière une autre couche de cuivre** | vigilance |
 | le plan collé est à plus de **0,5 mm** et la couche porte des nets rapides | vigilance |
 | deux couches de **signal face à face** sans plan entre elles | vigilance (couplage large face si des pistes s'y suivent) |
@@ -489,9 +503,6 @@ autre puce (`PWR_FLASH` sur P01x274) : classez-la en signal.
 masse (via au pied de la pastille) ; ajouter un petit condensateur (10 nF,
 100 pF en RF) à côté du gros.
 
-**Corriger** : rapprocher le condensateur de la broche, au plus court vers sa
-masse (via au pied de la pastille).
-
 ### Bord de carte
 
 - **Fabrication** (tous nets) : le détourage met à nu le cuivre trop proche du
@@ -587,8 +598,8 @@ Pour chaque rail (Alimentation, nœud de découpage), sa piste **la plus
 externe ou interne) — plus prudent que l'étalement que l'onglet **Chute DC**
 résout, qui reste l'outil pour un chiffre exact.
 
-- Avec un **courant** donné pour le rail (champ `courants` du document, en
-  ampères) : au-delà de ce que la piste tient à +10 °C, vigilance ; à +20 °C,
+- Avec un **courant** donné pour le rail (champ **courant d'un rail** du
+  panneau, ou `courants` du document, en ampères) : au-delà de ce que la piste tient à +10 °C, vigilance ; à +20 °C,
   critique.
 - Sans courant : un **étranglement** (piste plus de deux fois plus étroite que
   le reste du rail) sort en **info**, avec le courant qu'elle tient.
@@ -684,14 +695,16 @@ coup d'œil, et le constat choisi reste marqué par-dessus.
 - **Découplage** : un T posé au milieu d'un segment du rail n'est pas un
   nœud du plus court chemin (il l'est pour les branches en T) ; un rail passé
   par un plan se mesure à vol d'oiseau.
-- **Porteuse RF** : une seule pour toute la carte (LoRa **et** NFC à
-  13,56 MHz se jugent tous deux à 868 MHz).
-- **Courant** : pas de courant par rail sans le champ `courants` (le panneau
-  ne le demande pas encore) ; IPC-2221, pas l'étalement.
+- **Porteuse RF** : une seule pour tous les nets RF, sauf ceux qui ont leur
+  « porteuse d'un net » (sans elle, LoRa **et** NFC à 13,56 MHz se jugent
+  tous deux à 868 MHz).
+- **Courant** : pas de courant par rail sans le champ « courant d'un rail »
+  (ni l'éditeur ni la visionneuse n'en envoient) ; IPC-2221, pas l'étalement.
 - **Protection ESD** : un connecteur interne et un connecteur de façade se
   ressemblent ; seule la protection partielle trahit la façade.
 - **Vias de couture** : le pire trou de chaque cavité, pas la liste de tous.
-- **Z₀** est la même cible pour toutes les classes tenues (50 Ω par défaut) ;
+- **Z₀** est, par défaut, la même cible pour toutes les classes tenues
+  (50 Ω), sauf « Z₀ visée » donnée à une classe ;
   λ/20, λ/40, 5 h et 20 H sont des règles de pouce, pas un calcul de
   rayonnement.
 - Un rapport vide ne veut pas dire une carte sans défaut, seulement sans
@@ -740,7 +753,7 @@ coup d'œil, et le constat choisi reste marqué par-dessus.
 | Classes de nets, « Lent par défaut », nœud de découpage bruyant (schéma → PCB), classe Antenne, porteuse RF | **fait** |
 | Moignons de vias, branches en T, quartz, protection ESD, courant des rails | **fait** |
 | Dérogations, comparaison de révisions dans la page, tous les constats peints, classement mémorisé par fichier | **fait** |
-| Courant par rail saisi dans le panneau, porteuse par net, solveur de couplage à deux niveaux | à faire |
+| Courant par rail saisi dans le panneau (avec reprise de la Chute DC), porteuse par net, couplage entre couches voisines résolu (MoM à deux niveaux de conducteurs) | **fait** |
 
 Le détail, avec ce que chaque point réutilisera, est dans
 [HISTORIQUE_DEVELOPPEMENT.md](HISTORIQUE_DEVELOPPEMENT.md#vérification-de-la-carte-entière).
@@ -774,5 +787,6 @@ l'empilage, les fiches de via de chaque net de signal (même format que
 Current Return Path), la nature de chaque net, les nœuds bruyants, les paires
 différentielles, la masse de référence, les `courants` par rail (facultatif)
 et les réglages (dont `porteuse_rf` et `fmax`). Bancs :
-`python/test/banc-analyse-carte.py` (20 cas), `banc-serveur-routes.py`, et
-les essais des deux harnais (9 dans l'éditeur, 3 dans la visionneuse).
+`python/test/banc-analyse-carte.py` (25 cas), `banc-serveur-routes.py`, et
+les essais des deux harnais (15 « Vérification de la carte » dans l'éditeur,
+3 dans la visionneuse, 4 avec le contre-perçage).

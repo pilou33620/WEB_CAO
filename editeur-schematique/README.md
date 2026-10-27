@@ -3,14 +3,14 @@
 Découpage de `editeur-schematique.html` (2 948 lignes en un seul bloc) en
 modules séparés. **Le code JavaScript et le CSS sont recopiés à l'identique,
 ligne pour ligne** : aucune fonction renommée, aucun comportement modifié,
-aucune fonctionnalité retirée.
+aucune fonctionnalité retirée (à l'époque du découpage : l'éditeur a beaucoup évolué depuis).
 
 ```
 editeur-schematique/
 ├── editeur-schematique.html      structure de la page + ordre de chargement
 ├── css/
 │   └── editeur.css               thème « dashboard nocturne »
-├── js/                           22 modules, chargés dans l'ordre numéroté
+├── js/                           30 modules (00 à 29), chargés dans l'ordre numéroté
 ├── outils/
 │   └── build-monofichier.py      recompose un HTML unique dans dist/
 ├── test/
@@ -44,41 +44,43 @@ identiques pour l'éditeur PCB :
 
 | Fichier | Lignes | Rôle |
 |---|---:|---|
-| `js/00-espace-config.js` | 21 | `WS_CONFIG` : clé de stockage local et disposition d'usine des panneaux, lus par `../commun/workspace.js` |
-| `js/01-noyau.js` | 83 | Constantes de style (couleurs, pas de grille) et helpers de dessin (`L`, `P`, `RR`, `CIR`, `TXT`…) |
-| `js/02-bibliotheque.js` | 237 | `LIB` : définition et tracé de chaque symbole, plus `CATS` |
-| `js/03-boitiers.js` | 128 | `PKG_BASES`, nommage et filtrage des empreintes, accès sûr à la bibliothèque (`defOf`) |
-| `js/04-etat.js` | 245 | `S` (état global), sélection mixte, canvas, géométrie des symboles et des broches (rectangle, carré, disposition libre) |
-| `js/05-feuilles.js` | 137 | Feuilles et onglets, historique undo/redo, `addComp` / `nextRef` |
-| `js/06-rendu-fond.js` | 110 | Cadrage, conversions monde↔écran, grille et son échelle en millimètres, fils, cache des jonctions |
-| `js/07-connectivite.js` | 327 | Découpe automatique des segments + extraction des nets (feuille et document) |
-| `js/08-rendu-schema.js` | 189 | Jonctions, halo de net, étiquettes, symboles, sélection, boucle `draw()` |
-| `js/09-interaction.js` | 443 | Souris/tactile : pose, tracé de fils, glisser, sondes, marquee, zoom, pan |
-| `js/10-actions.js` | 240 | Pivoter, miroir, dupliquer, supprimer, recadrer, pas de grille, presse-papier (copier/couper/coller), changement de mode |
+| `js/00-espace-config.js` | 22 | `WS_CONFIG` : clé de stockage local et disposition d'usine des panneaux, lus par `../commun/workspace.js` |
+| `js/01-noyau.js` | 103 | Constantes de style (couleurs, pas de grille) et helpers de dessin (`L`, `P`, `RR`, `CIR`, `TXT`…) |
+| `js/02-bibliotheque.js` | 348 | `LIB` : définition et tracé de chaque symbole, plus `CATS` |
+| `js/03-boitiers.js` | 155 | `PKG_BASES`, nommage et filtrage des empreintes, accès sûr à la bibliothèque (`defOf`) |
+| `js/04-etat.js` | 370 | `S` (état global), sélection mixte, canvas, géométrie des symboles et des broches (rectangle, carré, disposition libre) |
+| `js/05-feuilles.js` | 470 | Feuilles et onglets, blocs hiérarchiques, cartouche, historique undo/redo, `addComp` / `nextRef` |
+| `js/06-rendu-fond.js` | 128 | Cadrage, conversions monde↔écran, grille et son échelle en millimètres, fils, cache des jonctions |
+| `js/07-connectivite.js` | 582 | Découpe automatique des segments + extraction des nets (feuille et document) |
+| `js/08-rendu-schema.js` | 664 | Jonctions, halo de net, étiquettes, symboles, sélection, boucle `draw()` |
+| `js/09-interaction.js` | 1114 | Souris/tactile : pose, tracé de fils et de bus, glisser, sondes, marquee, zoom, pan, fenêtre de piquage de bus |
+| `js/10-actions.js` | 376 | Pivoter, miroir, dupliquer, supprimer, recadrer, pas de grille, presse-papier (copier/couper/coller), changement de mode |
 | `js/11-palette.js` | 52 | Icônes de la bibliothèque et construction du panneau de gauche |
-| `js/12-panneaux.js` | 561 | Propriétés, champ boîtier, nomenclature, liste des nets |
-| `js/13-fichiers.js` | 182 | Export JSON, PNG, netlist `.txt`, nomenclature `.csv` et `.xlsx` (format BOM : onglets Presentation, History, BOM) |
-| `js/14-clavier-boutons.js` | 105 | Raccourcis clavier et branchement de la barre d'outils |
-| `js/15-import.js` | 216 | Import JSON défensif (normalisation), sauvegarde automatique (brouillon) et reprise de la session d'onglet (`sessionSchema`) |
-| `js/16-demo.js` | 61 | Schéma de démonstration des deux feuilles |
-| `js/17-demarrage.js` | 30 | Séquence de démarrage des données et de l'affichage, puis reprise du travail laissé dans l'onglet |
-| `js/18-csv.js` | 89 | Bibliothèque `LIB_composants.csv` : chargement HTTP ou manuel (la lecture du fichier est dans `../commun/csv.js`) |
-| `js/19-broches.js` | 379 | Éditeur de brochage : nombre de broches, représentation, taille du corps, noms et placement des pattes à la grille |
+| `js/12-panneaux.js` | 1066 | Propriétés, champ boîtier, nomenclature, liste des nets, menu du bouton Trait |
+| `js/13-fichiers.js` | 686 | Export JSON, PNG, netlist `.txt`, nomenclature `.csv` et `.xlsx` (format BOM : onglets Presentation, History, BOM) |
+| `js/14-clavier-boutons.js` | 213 | Raccourcis clavier et branchement de la barre d'outils |
+| `js/15-import.js` | 349 | Import JSON défensif (normalisation), sauvegarde automatique (brouillon) et reprise de la session d'onglet (`sessionSchema`) |
+| `js/16-demo.js` | 462 | Les deux schémas d'exemple (« Interface IoT & Bus Haute Vitesse — 4 couches », « Commande 12 V — 2 couches »), la fenêtre **Fichier → Exemples…** ; le premier sert de démonstration au démarrage sans projet |
+| `js/17-demarrage.js` | 94 | Séquence de démarrage des données et de l'affichage, puis reprise du travail laissé dans l'onglet |
+| `js/18-csv.js` | 90 | Bibliothèque `LIB_composants.csv` : chargement HTTP ou manuel (la lecture du fichier est dans `../commun/csv.js`) |
+| `js/19-broches.js` | 406 | Fenêtre **Édition du composant** (`ceOpen`, ouverte par double-clic) ; retouches du brochage (`icSetCount`, `icSetShape`, `icSetBody`, `icMovePin`) : nombre de broches, représentation, taille du corps, placement des pattes à la grille |
 | `js/20-profil.js` | 83 | Réglages d'affichage rangés dans le profil de l'utilisateur : grille, étiquettes de net, onglet de liste |
 | `js/21-reperage.js` | 223 | Ce que la recherche et la mesure valent sur un schéma : aimant sur les broches, cibles de toutes les feuilles, cadrage, cross-probing vers le PCB |
-| `js/22-recherche-composants.js` | 215 | Intégration recherche distributeurs (Mouser/DigiKey) et pinouts |
-| `js/23-patterns.js` | 135 | Reconnaissance des motifs de circuits, estimation des courants DC et pont vers le placement/DRC PCB |
-| `js/24-lib-sync.js` | 274 | Synchronisation et alertes avec Gestion LIB |
-| `js/25-brochage.js` | 405 | Brochage par référence : broche du symbole → patte de l'empreinte (`el.pinMap`), parties d'un composant multiple (`U3A`, `U3B`), choix de la référence, contrôle du brochage |
-| `../commun/brochage.js` | 152 | Lecture de la colonne « Brochage » de `LIB_composants.csv`, partagée avec Gestion LIB |
-| `js/26-variantes.js` | 330 | Variantes de montage : fenêtre des variantes, choix dans la nomenclature, section du panneau Propriétés, non-montés barrés sur la feuille |
+| `js/22-recherche-composants.js` | 1266 | Fenêtre « Enrichissement composant » : recherche JLCPCB puis distributeurs (Mouser/DigiKey), brochage officiel et vérification du câblage |
+| `js/23-patterns.js` | 450 | Reconnaissance des motifs de circuits, estimation des courants DC et pont vers le placement/DRC PCB |
+| `js/24-lib-sync.js` | 277 | Synchronisation et alertes avec Gestion LIB |
+| `js/25-brochage.js` | 412 | Brochage par référence : broche du symbole → patte de l'empreinte (`el.pinMap`), parties d'un composant multiple (`U3A`, `U3B`), choix de la référence, contrôle du brochage |
+| `../commun/brochage.js` | 158 | Lecture de la colonne « Brochage » de `LIB_composants.csv`, partagée avec Gestion LIB |
+| `js/26-variantes.js` | 302 | Variantes de montage : fenêtre des variantes, choix dans la nomenclature, section du panneau Propriétés, non-montés barrés sur la feuille |
 | `js/27-contraintes.js` | 290 | Contraintes de nets pour le PCB : fenêtre (Outils → Contraintes de nets…), section du panneau Propriétés d'un net, groupes d'appariement |
-| `../commun/variantes.js` | 160 | Le modèle des variantes de montage, partagé avec le PCB — **chargé avant `js/`** |
-| `../commun/contraintes.js` | 97 | Ce qu'est une contrainte de net et un groupe d'appariement, et comment se lit une saisie : les mêmes bornes que le PCB — **chargé avant `js/`** |
-| `../commun/reperage.js` | 294 | Chercher un repère, mesurer une distance — le geste, partagé avec l'éditeur PCB et paramétré par l'adaptateur de `21-reperage.js` |
-| `../commun/profils.js` | 555 | Profils utilisateur : qui travaille, ses panneaux, ses réglages, ses derniers documents — **chargé en premier**, avant l'espace de travail qui l'interroge |
-| `../commun/session.js` | 362 | Session d'onglet : le schéma part et revient quand on passe au PCB ou à la recherche, et porte le cross-probing entre les deux — **chargé en premier** |
-| `../commun/workspace.js` | 610 | Espace de travail : docks, panneaux flottants, persistance — **chargé en dernier** |
+| `js/28-dessin-pilote.js` | 554 | Dessin par Claude : les cartes d'opérations (poser, fil, relier, étiqueter, feuille…) appliquées par le canal de pilotage, 40 opérations au plus |
+| `js/29-symboles-lib.js` | 136 | Symboles de la LIB (fichiers `schsym-1`) : lus au chargement du catalogue, ajoutés à `LIB`, recopiés dans le document (`S.symboles`) |
+| `../commun/variantes.js` | 147 | Le modèle des variantes de montage, partagé avec le PCB — **chargé avant `js/`** |
+| `../commun/contraintes.js` | 109 | Ce qu'est une contrainte de net et un groupe d'appariement, et comment se lit une saisie : les mêmes bornes que le PCB — **chargé avant `js/`** |
+| `../commun/reperage.js` | 290 | Chercher un repère, mesurer une distance — le geste, partagé avec l'éditeur PCB et paramétré par l'adaptateur de `21-reperage.js` |
+| `../commun/profils.js` | 567 | Profils utilisateur : qui travaille, ses panneaux, ses réglages, ses derniers documents — **chargé avant `js/`**, avant l'espace de travail qui l'interroge |
+| `../commun/session.js` | 502 | Session d'onglet : le schéma part et revient quand on passe au PCB ou à la recherche, et porte le cross-probing entre les deux — **chargé avant `js/`**, juste après `echappe.js` |
+| `../commun/workspace.js` | 751 | Espace de travail : docks, panneaux flottants, persistance — chargé **après `js/`** (puis `telephone.js`, `tactile.js`, `menus.js`, `tuto.js` et le pilotage `pilote*.js`) |
 
 ## Ce que sait faire l'éditeur, au-delà du tracé
 
@@ -152,10 +154,13 @@ les symboles en place, et sélectionnés, prêts à être recâblés autrement. 
 fil dans la sélection, rien n'est supprimé : le pied de page le dit plutôt que
 d'emporter les composants.
 
-**Éditeur de brochage** (bouton *Éditer les broches…* du panneau Propriétés, ou
-`js/19-broches.js`). Le composant y est représenté avec ses broches : on les
-nomme, on règle leur nombre, la taille du corps, et **on déplace chaque patte à
-la grille** — le fil qui y était accroché suit. Trois représentations :
+**Brochage** (`js/19-broches.js`). La fenêtre *Édition du composant*
+(`ceOpen()` : double-clic sur le composant ou *✎ Détails du composant…*)
+règle noms de broches et pattes ; le tracé du symbole se gère dans la Gestion
+LIB (l'ancienne fenêtre de brochage, `peOpen()`, a été retirée avec son
+bouton). Les retouches `icSetCount`, `icSetShape`, `icSetBody`, `icMovePin`
+restent le seul endroit qui touche au brochage — le fil accroché à une patte
+déplacée suit. Trois représentations :
 
 | Représentation | Broches |
 |---|---|
@@ -163,19 +168,11 @@ la grille** — le fil qui y était accroché suit. Trois représentations :
 | Carrée | quatre côtés, numérotation antihoraire QFP/QFN ; côté réglable |
 | Libre | chaque broche est posée à la main (`el.pinPos`), le corps est décrit par `el.icBody` |
 
-`Ctrl+Z` et `Ctrl+Y` agissent aussi la fenêtre ouverte : c'est là qu'on vient
-de se tromper. Annuler recharge la feuille et remplace ses composants, celui en
-cours de brochage compris — `peReattach()` le reprend par son identifiant, ou
-ferme la fenêtre s'il a disparu. `Échap` ferme, et rien d'autre n'agit sur la
-feuille pendant ce temps.
-
 Les noms s'impriment dans le corps, à côté du numéro. Sur les côtés haut et bas
 ils ne sont écrits que si la broche voisine est assez loin — deux noms
 horizontaux à un pas d'écart se chevaucheraient. La valeur ne s'imprime au
 centre que si les colonnes de noms lui laissent la place, sinon elle descend
-sous le corps. *Ajuster aux noms* élargit le corps juste ce qu'il faut : les
-broches s'écartent d'autant, c'est une action volontaire et jamais un effet de
-bord de la frappe d'un nom.
+sous le corps.
 
 **Brochage par référence** (`js/25-brochage.js`, `../commun/brochage.js`). Un
 symbole générique ne dit que ses broches (AOP : `IN-`, `IN+`, `OUT`, `V+`,
@@ -322,9 +319,11 @@ geste est le même code, `../commun/reperage.js`, partagé avec le PCB.
 
 Chaque net nommé se classe dans la liste **Nets** du panneau « Nomenclature &
 Nets » (colonne *Classe*, sur la feuille ou sur tout le document) et dans le
-panneau Propriétés quand on sélectionne un de ses fils. Les huit classes sont
+panneau Propriétés quand on sélectionne un de ses fils. Les quinze classes sont
 celles de l'éditeur PCB et de la visionneuse IPC-2581 : Masse, Alimentation,
-Horloge, Rapide, RF, Analogique, Antenne, Lent.
+Horloge, Rapide, RF, Analogique, Antenne, USB FS, USB HS, ETH 100, ETH 1000,
+LVDS, CAN, RS-485, Lent. Les sept classes d'interface (USB FS à RS-485,
+`../commun/classes-interface.js`) ne se posent qu'à la main, jamais devinées.
 
 - **Auto · …** suit l'analyse du serveur (motifs, broches, composants reliés) ;
   sans serveur, la masse et les alimentations se reconnaissent encore à leur
@@ -367,7 +366,8 @@ cuivre est le même ; seule la liste des composants posés change.
 
 Le document garde `variantes: {liste:[{id, nom}], active}` et, sur chaque
 composant, `nonMonte: [id…]` : c'est le composant qui porte l'information,
-renuméroter les repères ne perd donc rien. Chaque geste s'annule (`Ctrl+Z`).
+renuméroter les repères ne perd donc rien. Chaque geste s'annule (`Ctrl+Z`),
+sauf le choix de la variante active, réglage du document hors historique.
 Le PCB reprend ces variantes par repère (voir son README).
 
 ### Cross-probing vers le PCB
@@ -453,10 +453,12 @@ renommé ou supprimé ne sont pas effacées d'office : la fenêtre les montre
 **1. L'ordre des `<script>` compte.** Ce sont des scripts classiques, pas des
 modules ES : tout le code partage la même portée globale, exactement comme
 avant. Les déclarations `const` / `let` de premier niveau (`G`, `LIB`, `S`,
-`cv`…) doivent être évaluées avant d'être lues. `../commun/session.js` ouvre la
-marche (il câble les boutons de navigation de l'entête et déclare
-`sessBrancher()`), `00-espace-config.js` le suit (il déclare `WS_CONFIG`) et
-`../commun/workspace.js` ferme (il s'initialise lui-même). Ajouter un module = ajouter une balise `<script>` à la
+`cv`…) doivent être évaluées avant d'être lues. `../commun/echappe.js` ouvre la
+marche (`esc()`), `../commun/session.js` le suit (il câble les boutons de
+navigation de l'entête et déclare `sessBrancher()`), `00-espace-config.js`
+ouvre les modules de `js/` (il déclare `WS_CONFIG`) et `../commun/workspace.js`
+vient après eux (il s'initialise lui-même), avant `tactile.js`, `menus.js`,
+`tuto.js` et le pilotage. Ajouter un module = ajouter une balise `<script>` à la
 bonne place dans `editeur-schematique.html`.
 
 **2. Chaque fichier commence par `"use strict";`.** Le mode strict ne se
@@ -507,6 +509,9 @@ Les fonctions d'export ont été scindées pour cela : `netlistText()` et
 `exportBomCsv()` se contentent de l'écrire sur le disque.
 
 ## Contrôles effectués sur ce découpage
+
+*(Relevé d'époque : 17 modules et 38 symboles alors ; il y a aujourd'hui 30
+modules et 58 symboles dans la palette.)*
 
 - La concaténation des 17 modules est **strictement identique**, octet pour
   octet, au bloc `<script>` d'origine (assertion dans le script de découpe).

@@ -1,6 +1,6 @@
 # Recherche de composants — organisation des fichiers
 
-Troisième outil du dépôt, à côté des deux éditeurs : une interface au même
+Outil du dépôt, à côté des éditeurs, de Gestion LIB et de la visionneuse : une interface au même
 thème « dashboard nocturne » pour interroger [pcbparts.dev](https://pcbparts.dev/)
 — stock JLCPCB, équivalences, brochages, modèles CAO, cartes de référence et
 règles de conception.
@@ -18,26 +18,31 @@ recherche-composants/
 └── js/                           7 modules, chargés dans l'ordre numéroté
 ```
 
-Deux fichiers viennent du dossier partagé, identiques pour les deux éditeurs :
+Des fichiers viennent du dossier partagé `../commun/`, communs aux outils :
 
 ```
 ../commun/workspace.css           habillage de l'espace de travail
 ../commun/workspace.js            panneaux détachables, paramétré par WS_CONFIG
 ../commun/session.css             habillage des boutons de navigation
 ../commun/session.js              contexte conservé en changeant d'outil
+../commun/echappe.js, profils.*, tuto.*, telephone.*
+                                  échappement, utilisateur, visite guidée, mode téléphone
 ```
+
+Le schéma s'en sert aussi : `editeur-schematique/js/22-recherche-composants.js`
+(fenêtre « Enrichissement composant ») appelle les mêmes routes `/api/tool`.
 
 ## Les modules
 
 | Fichier | Lignes | Rôle |
 |---|---:|---|
 | `js/00-espace-config.js` | 21 | `WS_CONFIG` : clé de stockage local et disposition d'usine des trois panneaux |
-| `js/01-api.js` | 98 | Découverte de la passerelle (adresse mémorisée, origine courante, secours en 8000), appels `/api/tools` et `/api/tool` |
-| `../python/passerelle_mcp.py` | 218 | Client MCP : session, liste blanche, déballage des réponses. Toute la logique de protocole est là, `web_CAO.py` ne fait que l'exposer |
+| `js/01-api.js` | 72 | Découverte de la passerelle (l'origine qui sert la page, rien d'autre), appels `/api/tools` et `/api/tool` |
+| `../python/passerelle_mcp.py` | 236 | Client MCP : session, liste blanche, déballage des réponses. Toute la logique de protocole est là, `web_CAO.py` ne fait que l'exposer |
 | `js/02-outils.js` | 284 | Catalogue des 14 outils : familles, libellés français, champs et colonnes de résultats |
-| `js/03-formulaire.js` | 231 | Formulaire construit en croisant le catalogue et le schéma d'arguments du serveur ; lecture et validation des champs |
+| `js/03-formulaire.js` | 227 | Formulaire construit en croisant le catalogue et le schéma d'arguments du serveur ; lecture et validation des champs |
 | `js/04-resultats.js` | 193 | Tableau, fiche ou bloc de texte selon la réponse ; exports `.csv` et `.json` |
-| `js/05-details.js` | 146 | Panneau de détail, enchaînements (équivalences, brochage, KiCad, distributeurs), échappement systématique |
+| `js/05-details.js` | 154 | Panneau de détail, enchaînements (équivalences, brochage, KiCad, distributeurs, import dans Gestion LIB), échappement systématique |
 | `js/06-demarrage.js` | 215 | Câblage des boutons, liste des outils, historique, session d'onglet |
 
 ## Démarrage
@@ -46,9 +51,8 @@ Deux fichiers viennent du dossier partagé, identiques pour les deux éditeurs :
 python web_CAO.py
 ```
 
-Puis l'adresse affichée au démarrage : la page d'accueil propose les deux
-éditeurs et la recherche de composants, et la recherche passe par ce même
-serveur. `--local` limite l'écoute à cette machine, `--port` change le port.
+Puis l'adresse affichée au démarrage : la page d'accueil donne accès à tous les
+outils, et la recherche passe par ce même serveur. `--local` limite l'écoute à cette machine, `--port` change le port.
 
 La passerelle est l'origine qui sert la page : ouverte depuis l'adresse
 qu'affiche `web_CAO.py`, elle la trouve d'office. `web_CAO.py` n'admet que sa
@@ -73,23 +77,25 @@ n'y a plus qu'un serveur à démarrer, et il n'a rien à installer.
   référence, fabricant, boîtier, stock, prix, type de bibliothèque).
 - **Panneau Détail** — la fiche du résultat sélectionné et les enchaînements :
   fiche complète, équivalences, brochage, modèle CAO, symbole KiCad,
-  recoupement Mouser ou DigiKey, cartes utilisant le circuit.
+  recoupement Mouser ou DigiKey, cartes utilisant le circuit, contenu d'une carte,
+  sous-catégories, « ⚡ Ajouter à Gestion LIB » (import JLCPCB / LCSC).
 - **Panneau Réponse brute** — le JSON renvoyé, replié par défaut.
-- **Exports** — `.csv` (point-virgule, comme `LIB_composants.csv`) du tableau
-  affiché, `.json` de la réponse complète.
+- **Exports** — `.csv` (point-virgule, BOM UTF-8) du tableau affiché (une fiche
+  unique donne une ligne), `.json` de la réponse complète.
 
 Les panneaux se détachent, se replient et se déplacent comme dans les éditeurs ;
 la disposition est conservée dans le stockage local.
 
 **Une recherche survit à un aller-retour vers les éditeurs.** Les boutons
-*Éditeur schématique*, *Éditeur PCB* et *Accueil* rangent le contexte dans la
+*Éditeur schématique*, *Éditeur PCB*, *Gestion LIB* et *Accueil* rangent le contexte dans la
 session de l'onglet (`commun/session.js`) : outil choisi, requête saisie,
 résultat reçu, ligne sélectionnée, filtre du panneau Outils. En revenant, tout
 est là — sans nouvelle requête à pcbparts.dev. Si la réponse est trop
 volumineuse pour la session, la requête est conservée seule : on la relance
 d'un clic plutôt que de la ressaisir. La reprise n'a lieu que si la passerelle
 répond : sinon la page garde son diagnostic à l'écran plutôt que d'afficher
-d'anciens résultats sous un serveur injoignable.
+d'anciens résultats sous un serveur injoignable. Seules les 5 dernières entrées
+de l'historique « ↶ Précédent » (30 dans la page) suivent ce voyage.
 
 
 ## Sécurité

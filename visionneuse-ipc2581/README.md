@@ -25,7 +25,7 @@ visionneuse-ipc2581/
 ├── visionneuse-ipc2581.html      structure de la page + ordre de chargement
 ├── css/
 │   └── visionneuse.css           thème « dashboard nocturne »
-├── js/                           7 modules, chargés dans l'ordre numéroté
+├── js/                           11 modules (00 à 10), chargés dans l'ordre numéroté
 └── test/
     └── banc-essai.py             banc d'essai du parseur, carte d'essai incluse
 ```
@@ -53,23 +53,33 @@ et ceux du dossier partagé, identiques aux autres outils :
                                   au serveur, courbe, exports. L'éditeur PCB
                                   charge exactement le même
 ../commun/simulation-em.css       habillage de ce panneau
+../commun/classes-interface.js    classes d'interface (USB, Ethernet…) pour la nature des nets
+../commun/dossier-meca.js         calcul et feuille du dossier mécanique (commun avec l'éditeur PCB)
+../commun/fiche-mesure.js         dessin et saisie de la fiche de mesure du technicien
+../commun/zip.js                  archive du dossier mécanique
+../commun/tactile.js              mode tactile et roulette de commandes (contexte « Carte »)
+../editeur-pcb/js/29-draftsman.js, 33-draftsman-export.js, 34-draftsman-vues.js
+                                  feuilles, PDF et DXF du Draftsman, chargés tels quels
 ```
 
 ## Les modules
 
 | Fichier | Lignes | Rôle |
 |---|---:|---|
-| `js/00-espace-config.js` | 25 | `WS_CONFIG` : clé de stockage local et disposition d'usine des cinq panneaux |
-| `js/01-api.js` | 121 | Sonde du serveur (l'origine qui sert la page, et elle seule), envoi du fichier à `/api/ipc2581`, relecture d'un `.json` déjà traduit |
-| `../python/ipc2581_json.py` | 419 | Traduction `IPCDesign` → dictionnaire JSON : couches et nets deviennent des index, les polygones des tableaux plats. Ouvre aussi les archives `.zip` |
-| `js/02-modele.js` | 804 | Table des couches et couleurs, rangement par couche et par net, placement des pastilles, assemblage des `Path2D`, et la ligne de transmission (impédance, retard, capacité, self) |
-| `js/03-rendu.js` | 374 | Canevas : repère écran/monde, ordre de dessin, couches, perçages, textes, mise en évidence, règle d'échelle |
-| `js/04-interaction.js` | 302 | Déplacement, zoom, pincement à deux doigts, désignation (piste, pastille, perçage, boîtier), clavier |
-| `js/05-panneaux.js` | 505 | Les cinq panneaux : couches, la carte, nets, composants, sélection — et la fiche de ligne de transmission |
-| `js/06-demarrage.js` | 333 | Ouverture d'un fichier (bouton, dépôt, reprise de session), exports `.json` et `.png`, réglages de l'utilisateur |
-| `js/07-simulation.js` | 3280 | Simulation EM : la portée désignée mise au format du solveur — masse coplanaire mesurée côté par côté, découpage en plages d'écart, couture de vias, **cuivre voisin joint au problème** —, la carte de chaleur d'impédance et les valeurs écrites sur les pistes ; et pour l'onglet **Crosstalk**, les trois mesures que le serveur ne peut pas deviner : positions de couture sur l'abscisse du parcours, fentes du plan sondées dessous, perçages de masse |
-| `../python/simulation_em.py` | 3312 | Pont vers `python/ligne_mom.py` : empilage à plat → section droite, résolution par tronçon, **appariement des tronçons parallèles**, cascade ABCD → JSON |
-| `test/harness-sim.js` | 2896 | Banc d'essai de la masse coplanaire, de la chute continue, du voisinage et des trois mesures du crosstalk, sous Node : `node test/harness-sim.js` |
+| `js/00-espace-config.js` | 36 | `WS_CONFIG` : clé de stockage local et disposition d'usine des sept panneaux (Simulation EM et Résultats masqués) |
+| `js/01-api.js` | 109 | Sonde du serveur (l'origine qui sert la page, et elle seule), envoi du fichier à `/api/ipc2581`, relecture d'un `.json` déjà traduit |
+| `../python/ipc2581_json.py` | 721 | Traduction `IPCDesign` → dictionnaire JSON : couches et nets deviennent des index, les polygones des tableaux plats. Ouvre aussi les archives `.zip` |
+| `js/02-modele.js` | 1757 | Table des couches et couleurs, rangement par couche et par net, placement des pastilles, assemblage des `Path2D`, et la ligne de transmission (impédance, retard, capacité, self) |
+| `js/03-rendu.js` | 506 | Canevas : repère écran/monde, ordre de dessin, couches, perçages, textes, mise en évidence, règle d'échelle |
+| `js/04-interaction.js` | 511 | Déplacement, zoom, pincement à deux doigts, règle de mesure (`M`), désignation (piste, pastille, perçage, plan, boîtier), clavier |
+| `js/05-panneaux.js` | 1221 | Les panneaux couches, la carte, nets, composants, sélection — la fiche de ligne de transmission, l'empilage du calcul et la fenêtre de classification des nets |
+| `js/06-demarrage.js` | 449 | Ouverture d'un fichier (bouton, dépôt, reprise de session et de projet), exports `.json` et `.png`, réglages de l'utilisateur |
+| `js/07-simulation.js` | 6133 | Simulation EM : la portée désignée mise au format du solveur — masse coplanaire mesurée côté par côté, découpage en plages d'écart, couture de vias, **cuivre voisin joint au problème** —, la carte de chaleur d'impédance et les valeurs écrites sur les pistes ; et pour l'onglet **Crosstalk**, les trois mesures que le serveur ne peut pas deviner : positions de couture sur l'abscisse du parcours, fentes du plan sondées dessous, perçages de masse |
+| `js/08-dossier-meca.js` | 192 | Dossier mécanique : entrée neutre tirée du modèle lu, fenêtre (hauteurs, ouvertures, aperçu) et `.zip` |
+| `js/09-fiche-mesure.js` | 113 | Fiche de mesure du technicien : pastilles du modèle lu, fenêtre et PDF (les mesures vont dans `V.modele.mesures`) |
+| `js/10-plans.js` | 170 | Plans du Draftsman (fabrication, assemblage dessus / dessous) refaits sur le modèle lu, aperçu et PDF |
+| `../python/simulation_em.py` | 8152 | Pont vers `python/ligne_mom.py` : empilage à plat → section droite, résolution par tronçon, **appariement des tronçons parallèles**, cascade ABCD → JSON |
+| `test/harness-sim.js` | 7125 | Banc d'essai de la masse coplanaire, de la chute continue, du voisinage et des trois mesures du crosstalk, sous Node : `node test/harness-sim.js` |
 
 ## Démarrage
 
@@ -78,7 +88,8 @@ python web_CAO.py
 ```
 
 puis, depuis la page d'accueil, « Visionneuse IPC-2581 ». Le fichier se choisit
-au bouton ou se dépose n'importe où sur la page.
+au bouton ou se dépose n'importe où sur la page. Le serveur refuse un fichier de
+plus de 192 Mo (`MAX_IPC`, `web_CAO.py`) et l'annonce à la sonde de la page.
 
 Formats acceptés : `.xml`, `.cvg`, `.ipc`, `.ipc2581`, l'archive `.zip` qui en
 contient un — c'est souvent sous cette forme qu'arrive un dossier de
@@ -157,7 +168,7 @@ n'est alors plus un défaut d'affichage, mais la réponse à la question posée.
 la suite de la largeur et de la longueur : topologie (microruban ou triplaque),
 plan de référence et hauteur au plan, permittivité du stratifié puis
 permittivité effective, impédance Z₀, retard et retard par millimètre,
-capacité et inductance réparties. Ce sont les chiffres et les formules de
+capacité et inductance (totales sur la longueur de la piste). Ce sont les chiffres et les formules de
 l'éditeur PCB du dépôt — Hammerstad, Wheeler, IPC-2141A — pour que les deux
 outils ne racontent pas deux histoires sur la même carte.
 
@@ -300,11 +311,15 @@ IN1, 193 fF, quart d'onde à 33,8 GHz — que le serveur laissait inconnu ;
 | Clic | Désigner ce qu'il y a dessous, sur sa couche |
 | `Maj`+clic | Suivre le net au-delà de la couche cliquée, et le chiffrer en entier |
 | `Ctrl`+clic | Ajouter à la sélection, ou en retirer ce qui y était déjà |
-| Double-clic, `F` | Voir toute la carte |
+| Double-clic | Désigner, comme un clic (ne recadre pas) |
+| `F`, bouton *Ajuster* | Voir toute la carte |
+| `+` / `-` | Zoom avant / arrière au centre de la vue |
+| `M` | Armer la règle de mesure (un clic au départ, un à l'arrivée) |
+| `Ctrl`+`S` | Exporter le modèle (`.json`) |
 | `B` | Dessus / dessous |
 | `R`, `D`, `P` | Repères, perçages, plans |
 | `O` | Ouvrir un fichier |
-| `Échap` | Ne plus rien sélectionner |
+| `Échap` | Ranger la règle si elle est armée, sinon ne plus rien sélectionner ; ferme les fenêtres méca, plans et mesure |
 
 ### Les règles que le fichier porte (classes, paires)
 
@@ -357,10 +372,13 @@ rien ne dirait laquelle croire. Ce que le fichier ne dit pas et que vous avez
 saisi dans « La carte » sert donc ici aussi, et ce qui manque encore est écrit
 sous le résultat plutôt que supposé en silence.
 
-### Quatre onglets dans SI, dont trois sur une seule réponse du serveur
+### Les onglets SI, dont trois sur une seule réponse du serveur
 
-Le panneau se range en deux familles — **SI** (intégrité du signal) et **PI**
-(intégrité de l'alimentation). SI porte notamment :
+Le panneau se range en quatre familles — **SI** (intégrité du signal), **PI**
+(intégrité de l'alimentation : chute continue, impédance du réseau), **RF** et
+**AUDIT** (toute la carte) ; ces trois dernières, et l'onglet SI *Bus*, sont
+décrites dans [le guide Simulation EM](../docs/simulation-em.md). SI porte
+notamment :
 
 | Onglet | Ce qu'il répond | Ce qu'il lit |
 | --- | --- | --- |
@@ -515,7 +533,7 @@ alors.
 | `Ctrl`+clic | **ajoute** un morceau à la sélection : chaque parcours continu est calculé séparément |
 
 Il n'y a pas de troisième portée ici, contrairement à l'éditeur PCB : le
-double-clic est pris — il cadre la carte — et une visionneuse n'a pas de
+double-clic ne fait que désigner, comme un clic, et une visionneuse n'a pas de
 « tronçon » à isoler, IPC-2581 décrivant une piste comme une polyligne
 entière. Une polyligne porte une seule largeur et une seule couche — mais pas
 forcément un seul écart au plan coplanaire : elle est donc découpée en **plages
@@ -639,7 +657,7 @@ Une ligne, avant les notes, qui dit sur QUOI l'impédance a été obtenue :
 ```
 Section Conductor-4 — microruban : plan Conductor-3, h 0,380 mm, εr 4,44,
 tan δ 0,0200, cuivre 35 µm, piste 0,520 mm → ε_eff 3,080.
-Cuivre, h, εr du fichier ; tan δ supposé, à saisir dans « La carte ».
+Cuivre, h, εr du fichier ; tan δ supposé (0,02 faute de Df dans le fichier).
 Le masque de soudure n'est pas dans l'empilage : sur une couche extérieure
 il fait baisser Z₀ de deux à trois pour cent, non comptés ici.
 ```
@@ -754,6 +772,34 @@ Ce que le fichier doit porter, et ce qui se passe sinon :
 Le calcul et la feuille sont `commun/dossier-meca.js` ; les sorties PDF et DXF
 sont celles des plans de l'éditeur (`editeur-pcb/js/29`, `33`, `34` et la
 fonte), chargées telles quelles, avec `commun/zip.js`.
+
+## Plans, fiche de mesure, règle et classification des nets
+
+- **Plans (Draftsman)** (`js/10-plans.js`) : plan de fabrication (contour coté,
+  tableau de perçage, empilage, notes types), assemblage face dessus et, s'il y
+  a des composants dessous, face dessous. Aperçu, puis `<carte>-PLANS.pdf`
+  (texte cherchable, un signet par composant). Les composants non montés sont
+  en tirets avec « NM ».
+- **Fiche de mesure** (`js/09-fiche-mesure.js`, `commun/fiche-mesure.js`) :
+  sonde + et sonde − (`U3.12`, `TP2` ou un net), type de mesure, valeur
+  attendue, tolérance, échelle des détails, note ; 40 mesures au plus, 4 par
+  feuille ; `<carte>-MESURES.pdf`. Les mesures sont gardées dans le modèle, donc
+  dans « Exporter .json ».
+- **Mesurer** (`M`, `04-interaction.js`) : un clic au départ, un à l'arrivée,
+  accroche au centre d'une pastille ou d'un perçage ; la mesure n'est pas
+  conservée.
+- **Classification des nets** (bouton *Nets (PWR/GND/Sig)*, ou *Classifier* du
+  panneau Nets) : s'ouvre d'elle-même après l'ouverture d'une carte qui a des
+  nets. Chaque choix GND / PWR / Signal (et la nature d'un signal) est pris en
+  compte et mémorisé aussitôt, par nom de fichier, dans le navigateur ;
+  *Valider* applique en plus les préréglages de simulation (plans de masse SI,
+  rail PI, signaux). Le bouton *Passer* ne les applique pas, mais n'annule pas
+  les choix déjà faits.
+- **Composants non montés** : case de la fiche du composant ; toutes les
+  simulations l'ignorent, ses pastilles restent du cuivre. La liste va dans
+  `V.modele.nonMontes`, donc dans l'export `.json`.
+- **Tactile** : pincement, glisser d'un doigt, et roulette « Carte » (Recadrer,
+  Zoom +, Zoom −, Dessous). Pas d'équivalent à `Ctrl`+clic ni à `Maj`+clic.
 
 ## La carte dans le projet
 
@@ -891,6 +937,8 @@ le foret posé sur un calque de perçage à part. Un export qui n'écrirait la
 passe que dans le nom d'un calque n'est pas lu — rien n'est deviné d'après
 un nom. Par défaut, seule la simulation d'un via **déclaré** contre-percé
 reçoit sa portée percée ; les autres vias partent comme avant, sans elle, et
-leur moignon reste « inconnu » côté serveur — sauf avec l'option « Portée
-percée de tous les vias déclarés » (voir *Les modèles de simulation de la
-carte*), et seulement quand le fichier déclare la portée.
+leur moignon reste « inconnu » côté serveur — c'était le cas avant que l'option
+« Portée percée de tous les vias déclarés » (voir *Les modèles de simulation de
+la carte*) ne soit **cochée par défaut** ; elle envoie la portée de tout via dont
+le fichier la déclare, et seulement alors. Décochée, on retrouve le comportement
+décrit ici.

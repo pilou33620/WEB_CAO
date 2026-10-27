@@ -60,7 +60,7 @@ js/19-simulation.js      simulation EM : la carte de chaleur d'impédance sur la
                          référence sondées sous la piste, et les VIAS DE MASSE
                          qui referment le retour aux changements de couche
 js/20-placement-score.js panneau Qualité de placement & rotation assistée :
-                         score HPWL en temps réel, hotspots de congestion (grille 5 mm),
+                         score HPWL recalculé après chaque modification, hotspots de congestion (grille 5 mm),
                          conformité du découplage HF (≤ 3.5 mm), groupement par bloc
                          fonctionnel schéma et optimisation d'orientation en 1 clic (✨ Auto)
                          pour minimiser les croisements de chevelu (0°, 90°, 180°, 270°)
@@ -265,8 +265,8 @@ cours le remplace, et le demande d'abord.
 
 | Carte | Empilage | Ce qu'elle montre |
 |---|---|---|
-| **Commande 12 V** (50 × 32 mm) | 2 couches, le dos entier en plan de masse | La carte du schéma de démonstration de l'éditeur schématique : régulateur 12 V → 5 V, étage de commande NPN. Aucune piste de masse ne traverse la carte — chaque pastille CMS descend au plan par son via, les pastilles traversantes des borniers y touchent sans rien de plus. Le 12 V du collecteur longe le bord : sur deux couches dont l'une est un plan, on contourne plutôt que de croiser. |
-| **Interface USB 2.0** (60 × 40 mm) | 4 couches : signal / masse / 3,3 V / signal | Connecteur micro-B, régulateur 3,3 V, TQFP-32, connecteur SWD. Les alimentations ne se routent plus : deux couches internes entières, et un via par broche pour y descendre. La **paire différentielle USB** est tracée sur le dessus, 0,25 mm de piste et 0,15 mm d'écart tenus d'un bout à l'autre, sans changement de couche — le plan de masse de L2 lui sert de référence sur toute sa longueur. Sa règle de paire (profil D90) est dans la fenêtre *Règles…*. Le bus SWD passe au dos par deux vias. |
+| **Commande 12 V — 2 couches** (50 × 32 mm, 9 empreintes de la LIB) | 2 couches, le dos entier en plan de masse | La carte du schéma de démonstration de l'éditeur schématique : régulateur 12 V → 5 V, étage de commande NPN, borniers d'entrée et de sortie. Aucune piste de masse ne traverse la carte — chaque pastille CMS descend au plan par son via, les pastilles traversantes des borniers y touchent sans rien de plus. Le 12 V du collecteur longe le bord : sur deux couches dont l'une est un plan, on contourne plutôt que de croiser. |
+| **Interface IoT & Bus Haute Vitesse — 4 couches** (66 × 42 mm) | 4 couches : signal / masse / 3,3 V / signal | Microcontrôleur STM32WL55 (TQFP-32), mémoire Flash SPI (SOIC-8), régulateur LDO 3,3 V, connecteur micro-USB, connecteur SWD et embase SMA de bord de carte. Les alimentations ne se routent plus : deux couches internes entières (masse en L2, +3,3 V en L3), et un via par broche pour y descendre. La **paire différentielle USB** est tracée sur le dessus, 0,25 mm de piste et 0,15 mm d'écart tenus d'un bout à l'autre, sans changement de couche — le plan de masse de L2 lui sert de référence sur toute sa longueur. Sa règle de paire (profil D90) est dans la fenêtre *Règles…*. Le bus SPI relie le MCU à la Flash ; la ligne RF_ANT, à 0,38 mm sur microruban au-dessus de L2 (50 Ω), rejoint l'embase SMA ; le bus SWD et des signaux de bus passent au dos. |
 
 Les deux cartes sont **construites en code**, dans `js/17-exemples.js`, et non
 rangées en `.json`. Elles suivent donc les cotes réelles des empreintes — les
@@ -529,7 +529,7 @@ répondent avec un dessin, et un dessin ne rentre pas dans une colonne.
 **Les deux panneaux ont donc disparu du dock.** Le bouton *Règles…* de la barre
 d'outils ouvre la fenêtre qui les remplace : l'arbre des contraintes à gauche,
 la règle choisie à droite, avec son nom, ce qu'elle vise, une **figure cotée**
-et ses champs. Huit familles, dix-sept règles :
+et ses champs. Huit familles, dix-neuf règles :
 
 | Famille | Règles |
 | --- | --- |
@@ -539,7 +539,7 @@ et ses champs. Huit familles, dix-sept règles :
 | Vias et perçage | style de via, via à via / trou à trou, rapport d'aspect |
 | Plans et zones | bras thermique, zone de cuivre |
 | Paires différentielles | règle et paires |
-| Fabrication | masque et pâte, marge au bord |
+| Fabrication | profil fabricant et capabilités, règles du projet (min / typique / max), masque et pâte, marge au bord |
 | Carte et repères | dimensions et origine |
 
 Le dock ne garde que ce qu'on regarde **en routant** : l'empilage, les
@@ -881,13 +881,13 @@ directe, piste ou via du net) tient le cuivre qu'elle touche et n'en fait pas
 retirer. Les arcs de piste aussi. 0 désactive.
 
 **Zones interdites et hauteurs** (`38-interdits.js`, outil « Zone interdite »
-du menu Outils, ou `cao_interdits_ecrire`) : une zone se pose sur UNE face, comme
+du menu Placer, sans raccourci, ou `cao_interdits_ecrire`) : une zone se pose sur UNE face, comme
 une découpe (un clic par sommet, ou deux coins puis Entrée). Le DRC y signale
 toute patte traversante qui en ressort — celle d'un composant posé sur l'autre
 face —, et tout composant posé sur cette face qui la touche : interdit si la
 zone n'admet aucune hauteur, trop haut sinon. Les propriétés de la carte
 donnent aussi une hauteur maximale par face. La hauteur d'un composant est
-celle du dossier mécanique (saisie, fichier, sinon « Maximun Height » de la
+celle du dossier mécanique (saisie, sinon « Maximun Height » de la
 LIB) ; inconnue, elle est signalée, jamais supposée.
 
 **Échauffement estimé** (`39-thermique.js`, propriétés d'un composant, ou
@@ -968,8 +968,8 @@ clic par sommet, retour sur le premier point ou Entrée pour fermer, deux
 coins puis Entrée pour un rectangle, Maj pour 45°/90°. Une découpe qui sort
 du contour est refusée. Un clic dans une découpe la sélectionne : ses sommets
 se tirent, Alt+clic sur une arête en ajoute un, elle se déplace avec la
-sélection, Suppr ou la gomme la retirent. (« Découpe zone », touche X, reste
-la découpe d'une zone de cuivre.)
+sélection, Suppr la retire. (« Découpe zone », touche X, reste la découpe
+d'une zone de cuivre.)
 
 **Sérigraphie automatique** : chaque empreinte imprime d'office le contour de
 son boîtier, son point de broche 1 et son repère. `fp.silk = false` (la case
@@ -1075,31 +1075,45 @@ dans **Fabrication .zip**, où le Master Drawing l'annonce avec son contenu.
 
 | Feuille | Ce qu'elle porte |
 | --- | --- |
-| Plan de fabrication | vue de dessus à une échelle normalisée (2:1, 1:1, 1:2…), contour et découpes, cotes hors tout, origine des fichiers ; un symbole de perçage par outil (diamètre, métallisation, portée) et son tableau ; trous de fixation avec leurs coordonnées ; coupe d'empilage dessinée ; notes de fabrication tirées de la carte (matériau, Tg, épaisseur, finition, vernis, vias, test électrique) puis celles qu'on ajoute |
-| Assemblage dessus / dessous | corps des composants, pastilles en gris, point de broche 1, repère centré et tourné selon le boîtier ; non-montés de la variante active en tirets, marqués NM. Dessous, la vue est en miroir : la carte retournée, comme le monteur la voit |
-| Nomenclature | groupée par valeur, boîtier et référence fabricant : quantité, repères, fabricant, face ; non-montés listés à part |
-| Couches de cuivre (option) | une feuille par couche, dans la couleur de la couche : pistes, arcs, pastilles, vias, zones |
-| Vernis épargne, pâte à braser (option) | une feuille par face : les ouvertures de masque (`maskOpenings`) ou de pochoir (`pasteOpenings`), en noir, avec le contour |
-| Points de test — PTST (option) | les points de test de la carte, pastilles en noir et repère à côté ; leur net se cherche |
+| Plan de fabrication | vue de dessus à une échelle normalisée (20:1 à 1:50, voir plus bas), contour et découpes, cotes hors tout (`100,00 mm`), origine des fichiers (`0,0`), un symbole de perçage par outil ; à droite, en blocs qui passent à une feuille « (suite) » quand la colonne déborde : **Tableau de perçage** (Symb., Ø fini, Qté, Métallisé `Oui`/`Non`, Portée `L1–L4`, Usage `pastilles` / `vias` / `fixation` / `centrage`, ligne Total ; une fente s'écrit `Ø × L oblong`), **Contre-perçage** (Ø foret, depuis, ne pas couper, profondeur, moignon, qté), **Trous non métallisés** (`H1`… avec X, Y depuis l'origine des fichiers, Ø, usage : `fixation` ou `centrage <repère>` pour un trou d'empreinte), **Impédances contrôlées** (une ligne par classe à Z cible : largeur de la classe sur chaque couche de signal), **Coupe d'empilage** dessinée (tranches lisibles, pas à l'échelle ; passes de contre-perçage en rouge), **Notes de fabrication** tirées de la carte (IPC-6012 classe 2, matériau, Tg, épaisseur, finition, vernis, vias, tolérances de perçage, contour `.GM1`, test électrique, contre-perçage) puis celles qu'on ajoute |
+| Assemblage dessus / dessous | contour, pastilles en gris, corps des composants, point de broche 1, repère centré (tourné de 90° si le boîtier est plus haut que large) ; non-montés de la variante active en tirets, repère gris et « NM ». Dessous, la vue est en miroir : la carte retournée, comme le monteur la voit. La feuille « dessous » n'existe que si une empreinte est dessous |
+| Nomenclature | titre « Nomenclature — n composant(s), m référence(s) » ; colonnes N°, Qté, Repères, Valeur, Boîtier, Réf. fabricant, Fabricant, Face ; une ligne par valeur + boîtier + référence fabricant, composants montés seulement, rangés par famille de repère puis par premier repère ; non-montés listés à part |
+| Couches de cuivre (option) | une feuille par couche, toujours vue de dessus, dans la couleur de la couche : zones en teinte claire, pistes, arcs, pastilles, vias |
+| Vernis épargne, pâte à braser (option) | une feuille par face (une seule sur une carte à une couche) : les ouvertures de masque (`maskOpenings`) ou de pochoir (`pasteOpenings`), en noir, avec le contour et leur nombre |
+| Points de test — PTST (option) | les points de test de la carte, pastilles en noir et repère à côté ; leur net se cherche ; la feuille existe même sans point de test |
 | Contour seul — BOARD (option) | le contour et les découpes, rien d'autre |
+| Fiche de mesure (option) | pour un technicien : jusqu'à 40 mesures (sonde + de la couleur de la mesure, sonde − noire, type, valeur attendue, tolérance, note), quatre par feuille ; un détail cerclé (A, B…) par point ou par paire de points, à l'échelle 2:1 à 10:1 (auto : 4:1 au moins pour une paire) ; tableau N°, Sonde +, Sonde −, Mesure, Attendu, Tol., Détails, Note, trois consignes (« d'abord hors tension » seulement si ohms et volts se mêlent) et un avertissement pour toute mesure dont un point est introuvable ; saisie dans le volet de gauche (`commun/fiche-mesure.js`, `js/42-fiche-mesure.js`) |
+| Plan mécanique (option) | voir « Dossier mécanique » |
 
 Chaque feuille a son cadre, ses repères de zones (1, 2, 3… / A, B, C…) et un
-cartouche : société, projet, titre, dessiné / vérifié / approuvé, date, n° de
-document (`<projet>-PLANS`), révision (celle du projet), échelle, format,
-feuille n / N. Les formats sont A4, A3 (par défaut) et A2 paysage.
+cartouche standard (36 mm de haut, 118 à 190 mm de large) : société, projet,
+titre de la feuille, dessiné / vérifié / approuvé par, date du jour, n° de
+document (`<projet>-PLANS`), révision (celle du projet, « A » par défaut),
+échelle, format, feuille n / N. Une case vide affiche `—`, un texte trop long
+est coupé à sa première ligne. Les formats sont A4, A3 (par défaut) et A2
+paysage. Ici, `<projet>` est le nom du document PCB (`fabBase()` : le nom du
+projet suivi de `-PCB`, ou `carte` sans projet), comme dans les noms de fichiers
+du dossier de fabrication.
 
 **Cartouche « dossier de couches »** (liste déroulante au-dessus des champs
-du cartouche) : le cartouche des dossiers de couches — à gauche la société,
-son adresse, son téléphone et son site ; au milieu DRAWN / CHECKED avec date et
-nom, et PCB NO. (`<projet>-PCB-<rév.>`) ; à droite DESIGN TITLE et DRAWING NAME
-(le nom de la feuille) ; en pied la mention de confidentialité (un texte
-standard au nom de la société si le champ est vide). Les feuilles prennent
+du cartouche ; choisi d'office quand le profil porte une société, le cartouche
+standard sinon) : le cartouche des dossiers de couches, 180 × 50 mm — à gauche
+la société en capitales, son adresse (quatre lignes), son logo, son téléphone
+et son site ; au milieu DRAWN / CHECKED avec date (saisie, sinon celle du jour)
+et nom, et PCB NO. (le numéro saisi, sinon `<projet>-<rév.>`) ; à droite DESIGN
+TITLE (le titre saisi, sinon le nom du projet) et DRAWING NAME (le nom de la
+feuille, deux lignes) ; en pied la mention de confidentialité (trois lignes ;
+un texte standard au nom de la société si le champ est vide). Il ne porte ni
+l'échelle ni « approuvé par ». Les feuilles prennent
 alors les noms de ces dossiers et leur ordre : Layer_1 (Top)… Layer_n
 (Bottom), Solder_Mask Top / Bottom, Solder_Paste Top / Bottom, Equipement
-Top / Bottom, PTST, Drilling, BOARD. Rien n'est écrit en dur dans le code :
-tout vient des champs, enregistrés avec la carte. Une
-colonne trop longue (beaucoup d'outils, une longue nomenclature) continue sur
-une feuille « (suite) », l'en-tête de tableau répété.
+Top / Bottom, PTST, Drilling, BOARD, puis la nomenclature, la fiche de mesure
+et le plan mécanique. La société, son adresse, son logo et la mention de
+confidentialité viennent du profil de l'utilisateur (communs à tous les
+projets) ; le titre, les noms, les dates et le n° de PCB sont enregistrés avec
+la carte. Une colonne trop longue (beaucoup d'outils, une longue nomenclature)
+continue sur une feuille « (suite) » en pleine largeur, l'en-tête de tableau
+répété.
 
 ### Un PDF qui se cherche
 
@@ -1116,9 +1130,10 @@ garantissent :
   un technicien l'écrirait (Ω → `Ohm`, ≥ → `>=`, εr → `er`) ;
 - ce qui ne s'affiche pas est posé en **texte invisible** (mode de rendu 3,
   celui de la couche texte d'un document numérisé) : sur le corps de chaque
-  composant, sa valeur, son boîtier, sa référence fabricant, son fabricant ;
-  sur chaque pastille, son net ; sur les feuilles de cuivre, le nom de chaque
-  net sur sa plus longue piste. Chercher `100nF` surligne les condensateurs
+  composant, sa valeur, son boîtier, sa référence fabricant, son fabricant, sa
+  description ; sur chaque pastille des assemblages, son net ; sur les
+  feuilles de cuivre, le nom de chaque net sur sa plus longue piste (et sur
+  chaque zone) ; sur la feuille PTST, le net de chaque point de test. Chercher `100nF` surligne les condensateurs
   **à leur place sur le plan**, chercher `GND` les broches où arrive la masse ;
 - des **signets** : une entrée par feuille et, sous chaque assemblage, une
   entrée par composant qui mène à lui.
@@ -1137,16 +1152,16 @@ Au-dessus de la feuille, une barre d'outils :
 | --- | --- |
 | ↖ Sélection | glisser une vue (vue de la carte, tableau de perçage, coupe d'empilage, notes, nomenclature, détail…) ou une cote ; double-clic sur une cote : sa tolérance ; `Suppr` efface la cote ou le détail choisi, ou rend sa place calculée à la vue choisie |
 | ↔ ↕ ⤢ Cote horizontale, verticale, alignée | deux points accrochés, puis la ligne de cote |
-| Ø R Diamètre, rayon | un trou de fixation, un via ou une pastille percée, puis le texte |
+| Ø R Diamètre, rayon | un trou de fixation ou d'empreinte, un via, une pastille percée ou ronde, puis le texte |
 | ∠ Cote angulaire | le sommet puis un point sur chaque côté, ou deux arêtes du contour (cliquées loin de leurs sommets) ; puis l'arc |
 | ⊢⊣ Cotes en chaîne | des points accrochés, puis un clic hors accroche (ou `Entrée`, à la souris) pour la ligne commune ; sens horizontal ou vertical à côté |
 | ⌖ Cotes d'ordonnée | l'origine (premier point cliqué, ou l'origine des fichiers de fabrication), des points, puis un clic hors accroche (ou `Entrée`) pour la ligne |
 | ◯ ▭ Détail | sur une vue de la carte, un cercle (centre puis rayon) ou un rectangle (deux coins) ; l'échelle se choisit à côté (2:1 à 20:1) |
 | Replacer automatiquement | les vues de la feuille reviennent à la disposition calculée |
 
-Les points **s'aimantent** sur la géométrie : centre d'un trou de fixation ou
-d'un via, centre ou bord (gauche, droit, haut, bas) d'une pastille, sommet
-ou bord du contour et des découpes. Le nom du point visé s'affiche sous la
+Les points **s'aimantent** (à 9 pixels d'écran) sur la géométrie : centre d'un
+trou de fixation, d'un trou d'empreinte ou d'un via, centre ou bord (gauche,
+droit, haut, bas) d'une pastille, sommet ou bord du contour et des découpes. Le nom du point visé s'affiche sous la
 souris. Une cote est enregistrée **par référence**, pas en coordonnées :
 déplacez le connecteur, la cote suit et sa valeur change. Si la référence
 disparaît (repère renommé, trou effacé), la cote ne devient pas fausse en
@@ -1181,8 +1196,12 @@ cotes sont listées :
 | ( ) de référence | `(12,00)` |
 | ▭ théoriquement exacte | `12,00` encadré |
 
-Les écarts sont signés, dans l'unité de la cote (degrés pour un angle) ; un
-écart fin garde ses décimales (`±0,005`). Les limites sont « valeur +
+Une valeur s'écrit sans unité, à la virgule, deux décimales (`12,34`, `Ø` ou
+`R` devant ; une décimale et `°` pour un angle) ; les cotes hors tout du plan
+de fabrication portent `mm`. Les écarts sont signés, dans l'unité de la cote
+(degrés pour un angle) ; un écart fin garde ses décimales (`±0,005`). Un écart
+laissé vide reprend l'écart d'avant, sinon +0,1 / −0,05 mm (±0,5° pour un
+angle) ; un écart symétrique nul revient à « aucune tolérance ». Les limites sont « valeur +
 écart » : elles suivent la géométrie comme la valeur. Chaque morceau est un
 vrai texte : au PDF, `±0,10` ou `(12,00)` se cherchent ; au DXF, ils vont
 sur le calque `COTES` (± en `%%p`, ° en `%%d`).
@@ -1235,7 +1254,9 @@ Un détail peut aussi vivre sur **une autre feuille** : choisi (outil
 Sélection), le volet « Cotes et détails » montre la liste **Feuille du
 détail** — « Feuille de la vue mère » (le défaut), ou l'une des feuilles
 (fabrication, assemblage dessus ou dessous, nomenclature, une couche, plan
-mécanique) ; l'aperçu passe sur la feuille choisie. Il s'y pose sur la
+mécanique) ; l'aperçu passe sur la feuille choisie. (La liste ne propose que
+les genres que `DF_FEUILLE_RE` retient : ni vernis, ni pâte, ni PTST, ni BOARD,
+ni fiche de mesure.) Il s'y pose sur la
 première feuille de ce genre (pas une suite), à la première place libre ; sa
 place d'avant s'oublie. Les deux feuilles se renvoient l'une à l'autre :
 « FEUILLE 2 » sous la lettre du repère sur la vue mère, « DÉTAIL A — ÉCHELLE
@@ -1253,8 +1274,10 @@ figure pas.
 
 ### Où vivent les réglages
 
-Dans le document, `dessin` : format, feuilles cochées, noms du cartouche,
-notes. `normDoc` n'en fait qu'une copie — il tourne au démarrage, avant que
+Dans le document, `dessin` : format, feuilles cochées, type de cartouche
+(`en` ou `fr`), « approuvé par », notes, option de fonte, mesures de la fiche
+(les anciens champs société / auteur / vérifié / titre ne servent plus que de
+repli : le cartouche lit le profil et `S.cartoucheInfo`, voir `dfContexte`). `normDoc` n'en fait qu'une copie — il tourne au démarrage, avant que
 `29-draftsman.js` soit chargé — et `dfCfg()` les borne à chaque usage. Une
 nouvelle carte les garde, comme les règles : ils décrivent qui dessine, pas la
 carte.
@@ -1355,7 +1378,7 @@ nom du projet avec ses accents — le tout cherchable et copiable. Mais ici en
 les autres caractères prennent les codes libres (159 par graisse, au-delà
 « ? »), la fonte est déclarée symbolique et sa `cmap` (1,0) et (3,0) dit quel
 glyphe porte quel code, la `/ToUnicode` quel caractère. Le contenu des pages
-se relit donc en clair (« SHEET: 1 / 3 », « REV: B », les noms de fichiers
+se relit donc en clair (« SHEET: 1 / 4 », « REV: B », les noms de fichiers
 annoncés) : un `grep` ou un `diff` entre deux révisions le lisent. Les chasses
 sont celles d'Helvetica : aucune ligne ne bouge, seuls « — » et « °C » sont un
 peu plus larges que les « - » et « C » d'avant, dans des cases qui ont la
@@ -1365,6 +1388,44 @@ compris (Ω → `Ohm`, ≥ → `>=`).
 Pour changer de fonte ou de jeu de caractères : `python3 outils/fonte-plans.py
 [Regular.ttf Bold.ttf]`, puis reconstruire le monofichier.
 
+### Le Master Drawing et le LISEZ-MOI.txt
+
+**Master Drawing** (`masterDrawingPdf(fabFiles)`, `04-pdf-masterdraw.js`) : A4
+portrait, en anglais, quatre pages au moins (chaque section qui ne tient pas
+passe à la page suivante ; `SHEET: n / N` compte les pages réelles), sans
+signet ni propriétés de document. Page 1 « Printed Circuit Board (PCB) Master
+Drawing » : Document information (numéro `<projet>-MASTER-DRAWING`, date,
+révision), Fabrication notes, PCB details, Material details, Pattern (minima
+relevés sur la carte : piste et isolation des classes, perçage, anneau),
+Surface details. Page 2 : Solder mask, Silk screen, Electrical test, Surface
+examination, General notes. Page 3 : Files included in data package (colonnes
+Included / Filename / Description : Gerber, perçages et contre-perçages avec
+leur `.gbr`, `.ipc`, IPC-2581, `positions.csv`, `bom.csv`, `EMPILAGE.txt`, le
+Master Drawing, les plans, les DXF, l'animation 3D), puis « Content of
+`<projet>-PLANS.pdf` » (fabrication, assemblages, nomenclature, couches de
+cuivre) si les plans sont dans l'archive. Page 4 : Stack layer, Via summary,
+Board outline drawing (contour à l'échelle dans un cadre de 110 × 64 mm). Le
+cartouche de chaque page : CHECKED, APPR., TITLE, DATE, BOARD REFERENCE
+(IdPCB), REV, SHEET, et la note d'unité, puis la mention de confidentialité
+(au nom de la société du profil, à défaut des réglages du plan ; sans nom si
+les deux sont vides). Les lignes `.ipc`, `positions.csv`, `bom.csv` et
+`EMPILAGE.txt` ne portent leur `X` que si le fichier est dans l'archive
+(`buildFabFiles` les pose avant le Master Drawing).
+
+**LISEZ-MOI.txt** (`fabReadme(files, dr)`, `04-fabrication.js`), écrit sans
+accents (UTF-8 sans BOM) et en dernier : titre et date, carte (dimensions,
+contour, découpes, couches), empilage, origine des coordonnées, conventions
+Gerber / Excellon, légende des fichiers de perçage (nature, portée, trous,
+outils ; contre-perçage et note sur le Gerber X2), contour (`GM1` fait foi,
+`GKO` en keep-out), netlist IPC-D-356, un paragraphe par fichier IPC-2581, DXF
+ou animation 3D présent, `positions.csv` / `bom.csv` (rotation horaire de 0 à
+360, convention JLCPCB), variante de montage et DNP, « Fichiers : » (tous
+ceux du zip sauf lui-même), « Regles : » (classes, dilatation du masque,
+retrait de la pâte, traitement des vias, outils et trous de perçage), polarité
+négative (LPC) des dégagements de zones. Chaque paragraphe n'est écrit que si
+son fichier est dans le zip, sous son vrai nom (`fabBase()` : `<projet>.GM1`,
+`<projet>.ipc`…, `carte` sans projet).
+
 ### Export DXF pour la mécanique
 
 Deux boutons dans la fenêtre, et deux fichiers dans **Fabrication .zip**
@@ -1373,7 +1434,7 @@ Deux boutons dans la fenêtre, et deux fichiers dans **Fabrication .zip**
 | Fichier | Contenu |
 | --- | --- |
 | `<projet>-CARTE.dxf` (**DXF carte 1:1**) | la carte seule, à l'échelle 1:1, en millimètres, dans le repère des Gerber et de l'Excellon (même origine, Y vers le haut) : contour et découpes en `LINE` et `ARC`, un `CIRCLE` par trou au diamètre fini, un calque par outil de perçage (un `POINT` par trou), encombrement (`POLYLINE` fermée, en tirets pour un non-monté) et repère (`TEXT`) de chaque composant, cotes hors tout, tableau de perçage à côté |
-| `<projet>-PLAN-FABRICATION.dxf` (**DXF feuille**, la feuille affichée) | la feuille entière : cadre, cartouche, vue cotée, symboles et tableaux, coupe, notes |
+| `<projet>-PLAN-<n>.dxf` (**DXF feuille** : la feuille affichée, `n` son rang) ; `<projet>-PLAN-FABRICATION.dxf` dans **Fabrication .zip** (feuilles de fabrication seulement) | la feuille entière : cadre, cartouche, vue cotée, symboles et tableaux, coupe, notes |
 
 Les calques : `CONTOUR`, `DECOUPES`, `TROUS_METALLISES`,
 `TROUS_NON_METALLISES`, `COMPOSANTS_DESSUS` / `_DESSOUS`, `REPERES_DESSUS` /
@@ -1397,7 +1458,9 @@ trous d'un diamètre d'un clic :
 | `CONTRE_PERCAGE_<DESSUS\|DESSOUS>_<Ø>` | contre-perçage, au Ø du foret, depuis la face indiquée — avec aussi le `CIRCLE` du foret |
 
 Le Ø s'écrit `0_30` (deux décimales, trois s'il le faut : `0_864`) : R12
-n'admet dans un nom de calque que lettres, chiffres, `$`, `-` et `_`. Chaque
+n'admet dans un nom de calque que lettres, chiffres, `$`, `-` et `_`. Une
+fente, métallisée ou non, ajoute `X<longueur>` au nom de son calque
+(`TROUS_NPTH_2_00X5_00`) et son contour remplace le cercle. Chaque
 diamètre a sa couleur (table `LAYER`), la même pour tous les calques de ce
 diamètre, et les `POINT` s'affichent en petite croix (`$PDMODE` 3,
 `$PDSIZE` 0,2 mm). Pourquoi ne pas remplacer les deux calques historiques :
@@ -1446,7 +1509,7 @@ le bouton **⬇ Dossier méca .zip** télécharge `<projet>-MECA.zip` :
 
 | Fichier | Contenu |
 | --- | --- |
-| `-PLAN-MECA.pdf` | vue de dessus cotée (hors tout, trous de fixation en ordonnée depuis l'origine), vue de face (depuis le bord S) et de côté (depuis le bord E) avec chaque composant en pavé à sa hauteur ; tableaux : carte, fixations, ouvertures ; notes et composants sans hauteur |
+| `-PLAN-MECA.pdf` | vue de dessus cotée (hors tout, trous de fixation en ordonnée depuis l'origine), vue de face (depuis le bord S) et de gauche (depuis le bord O) avec chaque composant en pavé à sa hauteur ; tableaux : carte, fixations, ouvertures ; notes et composants sans hauteur |
 | `-MECA.json` | les mêmes données pour une IA ou un script (format `web_cao-meca-1`, décrit dans `SPEC-dossier-meca.md`) |
 | `-MECA.dxf` | la carte à 1:1 : contour (arcs retrouvés), découpes, fixations et dégagements, corps sur un calque par face et par hauteur (`CORPS_DESSUS_H9_50`), ouvertures |
 
@@ -1457,13 +1520,19 @@ composant est le rectangle de son empreinte (`bodyOf`).
 - **Hauteur** : saisie dans le tableau de la fenêtre, sinon « Maximun Height »
   de la LIB (par Part Name, puis par référence fabricant). Sans l'une ni
   l'autre, le composant est cité dans les notes et dessiné en tirets.
-- **Fixation** : un trou non métallisé, ou une empreinte `H…` / `MH…` ou dont
-  le boîtier dit « MOUNT » / « TROU », à une seule pastille percée. Ø de
-  dégagement : la pastille, sinon le trou + 2 mm.
-- **Ouverture** : proposée pour tout connecteur (`J`, `P`, `CN`, `USB`, `X`)
-  et pour `SW`, `LED`, `DS`, `BT` et les `D` de LED ; sur le bord quand le
-  corps est à moins de 2 mm du contour, sinon sur sa face. La case du tableau
-  la retire ou en ajoute une.
+- **Fixation** : un trou non métallisé posé sur la carte, ou une empreinte
+  `H…` / `MH…` (suivi d'un chiffre) ou dont le boîtier dit « MOUNT » / « TROU »,
+  qui n'a qu'un seul trou (pastille percée ou trou d'empreinte). Ø de
+  dégagement : la pastille si elle dépasse le trou, sinon le trou + 2 mm.
+- **Ouverture** : proposée pour tout connecteur (`J`, `P`, `CN`, `USB`, `X`
+  suivi d'un chiffre) et pour `SW`, `LED`, `DS`, `BT` et les `D` de LED ; sur le
+  bord quand le corps est à moins de 2 mm du contour, sinon sur sa face. La case
+  du tableau la retire ou en ajoute une.
+- **Feuille « Plan mécanique »** : les trois vues à la même échelle, puis les
+  blocs Carte (encombrement, épaisseur, plus hauts composants, hauteur totale),
+  Trous de fixation (N°, X, Y, Ø, Métallisé, Ø dégagement), Ouvertures dans le
+  boîtier (Repère, Où, De, À, Z min, Z max) et Notes (repère, avertissements :
+  hauteur inconnue et encombrement estimé, 30 repères nommés au plus).
 - **Non-montés** de la variante : gardés, en tirets et « NM », comptés dans
   la hauteur maximale.
 
@@ -1509,7 +1578,7 @@ corrige dans la LIB, colonne « Position 3D » (`haut=Y+ rot=90 x=0 y=0 z=0.4` :
 l'axe du modèle qui monte, une rotation en degrés, un décalage en mm, repère
 de l'empreinte Y vers le haut) ; le script ne remplace jamais une position
 écrite. Les autres composants sont des pavés : le corps de l'empreinte à la hauteur du
-dossier mécanique (saisie, fichier, puis LIB) ; sans hauteur connue, 0,4 × le
+dossier mécanique (saisie, puis LIB ; le « fichier » IPC-2581 seulement dans la visionneuse) ; sans hauteur connue, 0,4 × le
 côté moyen du corps, entre 0,3 et 3 mm. Les zones de cuivre sont l'image que
 l'écran en peint (`zoneCanvas` à finesse fixe, jusqu'à 20 px/mm) : dégagements,
 liaisons thermiques et marge de bord compris. La barre d'état dit le format de
@@ -1648,7 +1717,7 @@ tenue, rouge sinon, gris pour un net non routé.
 | --- | --- |
 | Nets | classe (modifiable, aussi pour tous les nets cochés), longueur, délai (vias compris), vias, Z₀ ; impédance cible et tolérance, longueur min / max, vias max, couches permises. Une case vide hérite de la classe, dont la valeur s'affiche en grisé. Un clic sur le nom ferme la fenêtre et sélectionne son routage |
 | Classes | largeur, isolation, via, perçage (les règles de la fenêtre des règles, mêmes valeurs), **une largeur par couche** de signal, et les contraintes électriques de la classe. Pour une impédance cible : la largeur qui la donne sur chaque couche, d'après l'empilage, à poser d'un clic sur sa couche ou sur toutes |
-| Paires diff. | longueurs P et N, écart en mm et en ps, longueur découplée face à la règle |
+| Paires diff. | longueurs P et N, écart en mm et en ps, longueur découplée face à la règle, plages de largeur et d'écart admises par la règle (colonnes Largeur et Écart : les bornes, pas un verdict) |
 | Groupes d'appariement | des nets qui doivent avoir la même longueur ou le même délai, à une tolérance près, autour d'une référence (le plus long, ou un net choisi). Ce qui manque à chaque net est affiché ; un groupe se crée en cochant ses nets, ou depuis les pistes sélectionnées sur la carte |
 | Topologie et moignons | la forme lue sur le cuivre de chaque net, l'ordre des repères le long du cuivre, le plus long moignon et le plus long moignon de via ; la topologie exigée, l'ordre imposé, les moignons admis — par classe ou par net |
 | Isolation entre classes | une matrice classe × classe : « Alimentation ↔ RF : 0,5 mm » |
@@ -1810,10 +1879,6 @@ avec celui de la carte et n'offre rien à viser. Trois prises s'y ajoutent, dans
   sa couche, la rend visible et la rend active (`selectLayerZones`). Le menu
   *Zone cuivre* offre le même geste pour la couche active. C'est la prise sûre,
   celle qui ne dépend d'aucune visée.
-
-La gomme, elle, ignore les prises par le plein : un clic destiné à une piste
-emporterait sinon le cuivre de toute la couche. Son contour reste une cible
-franche.
 
 **Prendre une piste entière.** Sur une piste, `Maj` fait autre chose qu'ajouter
 un segment : `Maj+clic` prend la **piste entière**, tout le cuivre d'un seul
@@ -2139,7 +2204,7 @@ dépôt du segment : elle ne survit jamais à un clic.
 
 ### L'angle imposé aux pistes
 
-Le panneau *Règles de tracé* porte, à côté du pas de grille, le choix de
+La fenêtre *Règles…* (page *Routage > Angle des pistes*) porte le choix de
 l'angle — `S.rule.corner`, lu par `cornerMode()` et posé par `setCornerMode()` :
 
 | règle | ce que pose un clic |
@@ -2184,8 +2249,8 @@ Face à un obstacle, le tracé ne bute plus. Le moteur `1x-pns-*` reprend la
 méthode du routeur de KiCad — le **PNS**, *Push and Shove* — réimplémentée
 ici à partir de la description de ses algorithmes.
 
-Le choix se fait dans *Règles de tracé*, ligne **Face à un obstacle**, et se
-range avec le document (`S.rule.route`) :
+Le choix se fait dans la fenêtre *Règles…* (page *Routage > Face à un obstacle*),
+et se range avec le document (`S.rule.route`) :
 
 | Règle | Ce qui se passe |
 |---|---|
@@ -2391,7 +2456,7 @@ couple largeur/écart qui fixe l'impédance différentielle, et le peu de trajet
 il ne l'est pas. Router la P puis la N donne deux pistes qui se ressemblent ;
 router la paire donne une paire.
 
-L'outil tient dans `js/09-diffpair.js` et le panneau *Paires différentielles*.
+L'outil tient dans `js/09-diffpair.js` et la page *Règle et paires* de la fenêtre *Règles…*.
 Le reste de l'éditeur continue de ne voir que deux nets ordinaires : **une paire
 ne crée aucun objet sur la carte**, elle dit seulement comment router ces deux
 nets et ce que le contrôle DRC doit y vérifier.
@@ -2431,8 +2496,8 @@ casse se recopie : `usb_dp` appelle `usb_dm`, pas `usb_DM`.
 
 ### La règle : six cotes, trois lignes
 
-Le panneau reprend la disposition des règles de conception des logiciels du
-commerce, parce que c'est celle que connaissent ceux qui routent des paires :
+La page *Règle et paires* reprend la disposition des règles de conception des
+logiciels du commerce, parce que c'est celle que connaissent ceux qui routent des paires :
 un entête qui nomme la règle (nom, commentaire, identifiant), *Objets visés* qui
 dit à quoi elle s'applique, *Contraintes* qui aligne les six cotes en trois
 lignes — mini, préféré, maxi, pour la largeur comme pour l'écart —, puis le
@@ -2508,7 +2573,7 @@ du routeur de KiCad — `pns_diff_pair_placer.cpp`, à la racine du dépôt —,
    court-circuit franc, pas un tracé.
 
 Pendant le tracé : `/` ou Espace bascule la posture du coude, `V` pose les deux
-vias, `1`-`8` changent de couche (deux vias au passage), Retour arrière recule
+vias, `1` à `9`, `0` et Page ↑ / Page ↓ changent de couche (deux vias au passage), Retour arrière recule
 d'un coude — vias compris —, Échap ou Entrée dépose ce qui est tracé.
 
 ### Les vias en éventail
@@ -2538,13 +2603,15 @@ plus fin ne servirait : la mesure sert à décider si un contournement est trop
 long, pas à publier un chiffre. Le pas se desserre au-delà de quarante mille
 échantillons, pour qu'une carte entière reste analysable.
 
-Le contrôle DRC ajoute donc quatre entrées propres aux paires :
+Le contrôle DRC, lancé à la demande, ajoute donc cinq entrées propres aux paires :
 
 - une piste **hors des bornes de largeur** de sa règle, couche par couche ;
 - une **longueur découplée** au-delà de ce que la règle admet ;
+- deux **vias de la paire trop proches**, jugés à l'isolation ordinaire (`dpViaGap`)
+  et non à l'écart serré de la règle ;
 - un **écart de longueur** entre les deux pistes au-delà d'un demi-millimètre,
-  en remarque : c'est un décalage temporel entre les deux fronts, et le
-  corriger demande un serpentin que cet éditeur ne pose pas encore ;
+  en remarque : c'est un décalage temporel entre les deux fronts, que le
+  serpentin (touche `M`) corrige en prenant l'écart pour cible ;
 - une paire dont **un net a disparu** de la carte, en remarque également. Une
   paire orpheline n'est pas effacée pour autant : réimporter une netlist
   retouchée ne doit pas défaire des règles écrites à la main.
@@ -2572,8 +2639,10 @@ il le dit aussi plutôt que d'afficher un nombre qui ne veut rien dire.
 
 ### Ce que le module ne fait pas
 
-- **Pas de serpentin d'appariement** : l'écart de longueur entre P et N est
-  mesuré et signalé, jamais corrigé.
+- **Le serpentin d'appariement est un outil à part** (`M`, bouton *Serpentin*) :
+  le tracé couplé ne le pose pas, et l'écart de longueur entre P et N est
+  signalé par le DRC ; le serpentin pris sur une piste de la paire prend cet
+  écart pour cible, et ne se pose que sur une portion droite.
 - Une paire ne **traverse pas** du cuivre étranger qui barre tout son passage :
   la poussée déforme un voisin, elle ne le supprime pas. Il faut alors changer
   de couche par un via en éventail. Le trajet est signalé, il ne se pose pas.
@@ -3702,6 +3771,14 @@ désactive au lieu de disparaître.
 - Le retour arrière du tracé (Retour arrière) recule d'un coude, mais ne remet
   pas en place le cuivre que ce coude avait poussé. Échap ou Ctrl+Z le font,
   eux, en une fois.
+- Le **DRC n'est pas continu** : *Outils > Contrôle DRC* (ou *Contrôler
+  maintenant* dans la fenêtre *Règles…*) le lance, et la liste reste celle du
+  dernier contrôle. Il repart seul après un ECO, un rechargement d'empreinte
+  depuis la LIB ou un nettoyage de pistes en conflit. Seul le routeur applique
+  l'isolation en direct, au même seuil, tant que *Anti-collision* est actif.
+- Clavier : `S` rend la main à la Sélection, `Maj+S` active la Sérigraphie (et
+  fait tourner la forme : trait, rectangle, aplat, texte) ; le menu Placer
+  affiche `Maj+S`.
 - Pas d'auto-routeur à la main : le moteur assiste un geste. Le chercheur de
   chemin (`js/40-chemin-auto.js`, A* sur une grille par couche) propose un
   premier tracé liaison par liaison, ou l'axe d'une paire différentielle, mais

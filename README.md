@@ -26,7 +26,7 @@ Les éditeurs s'ouvrent par simple double-clic dans le navigateur, sans `npm ins
 python web_CAO.py
 ```
 
-Le navigateur s'ouvre à la bonne adresse. Sous Windows, un double-clic sur `web_CAO.py` (ou `demarrer_WEB_CAO.cmd`) suffit. Au démarrage, le serveur se met à jour depuis GitHub (`--sans-maj` pour s'en passer).
+Le navigateur s'ouvre à la bonne adresse. Sous Windows, un double-clic sur `web_CAO.py` (ou `demarrer_WEB_CAO.cmd`) suffit. Au démarrage, le serveur se met à jour depuis GitHub quand `git` est présent et que le dossier est un dépôt (mise à jour `--ff-only` ; hors ligne, il démarre quand même ; `--sans-maj` pour s'en passer).
 
 Pour les simulations numériques, ajoutez numpy et scipy : `pip install -r requirements.txt`.
 
@@ -38,7 +38,7 @@ WEB_CAO tourne dans n'importe quel navigateur récent ; seul le serveur demande 
 | :--- | :--- |
 | **Ordinateur** (Windows, macOS, Linux) | Navigateur seul, ou serveur local sur la même machine : c'est le mode complet. |
 | **Tablette, téléphone, écran tactile** | Ouvrir l'adresse affichée par un serveur lancé ailleurs sur le réseau, ou lancer le serveur sur l'appareil lui-même s'il exécute Python (par ex. [Pyto](https://pyto.app/) sur iPhone / iPad : `python web_CAO.py --local --dossier <dossier>`). Activez le **mode tactile** depuis l'accueil. |
-| **Raspberry Pi, serveur sans écran** | Le serveur détecte l'absence d'affichage et n'ouvre pas de navigateur ; on s'y connecte depuis un autre appareil du réseau. |
+| **Raspberry Pi, serveur sans écran** | Le serveur reconnaît le Raspberry Pi (ou un Linux sans affichage) et n'ouvre pas de navigateur ; on s'y connecte depuis un autre appareil du réseau (`--navigateur` force l'ouverture). |
 
 **Mode tactile** : pincement pour zoomer, deux doigts pour se déplacer, stylet reconnu (la paume est ignorée). Un appui long ouvre une **roulette de commandes** adaptée à ce qui est touché (composant, piste, vide…), personnalisable et gardée dans le profil ; le bouton **Roulette**, à côté de **Tactile**, l'ouvre aussi sans appui long, même à la souris.
 
@@ -63,7 +63,7 @@ WEB_CAO tourne dans n'importe quel navigateur récent ; seul le serveur demande 
 
 ¹ La simulation, elle, passe par le serveur.
 
-**Dossier de fabrication** (`fabrication.zip`) : Gerber RS-274X, Excellon par portée de perçage, IPC-D-356, BOM, positions, Master Drawing PDF et plans PDF.
+**Dossier de fabrication** (`fabrication.zip`) : Gerber RS-274X, Excellon par portée de perçage, IPC-D-356, BOM, positions, Master Drawing PDF et plans PDF ; le bouton « PCBA JLCPCB .zip » produit à part l'archive Gerber, la BOM et le CPL au format JLCPCB.
 
 **Gestionnaire de contraintes** (Outils) : net par net, ce qui est exigé et ce qui est mesuré, en tableur — classe, impédance cible (et la largeur qui la donne sur chaque couche), longueur min / max, vias, couches permises, groupes d'appariement en longueur ou en délai, topologie (point à point, chaîne, étoile, fly-by) et longueurs de moignon (dérivations, points de test, vias), isolation entre classes. Les contraintes de nets et les groupes se saisissent aussi dans le schéma et suivent la carte (export ⇉ PCB, ECO). Les écarts partent au DRC, l'isolation entre classes au routeur, et le serpentin prend sa cible dans les groupes ([guide](editeur-pcb/README.md#gestionnaire-de-contraintes)).
 
@@ -90,9 +90,9 @@ Physique, équations et étalons de validation : [Guide Simulation EM](docs/simu
 
 ## 🤖 Claude, par le MCP de web_suite
 
-L'ancien assistant IA intégré est retiré. **Claude Code** pilote les pages ouvertes par le serveur MCP de [web_suite](https://github.com/pilou33620/web_suite) : il lit le schéma, la carte, les simulations et la bibliothèque, lance les calculs, et propose ses écritures (valeurs, propriétés, dessin du schéma, routage, réglages de simulation depuis une datasheet, création de composants) sur une **carte** du panneau « Claude » : rien ne change avant votre clic, sauf si vous allumez l'interrupteur de l'onglet. Détail des outils : `lanceur/docs/DETAILS.md` de web_suite.
+L'ancien assistant IA intégré est retiré. **Claude Code** pilote les pages ouvertes par le serveur MCP de [web_suite](https://github.com/pilou33620/web_suite) : il lit le schéma, la carte, les simulations et la bibliothèque, lance les calculs, et propose ses écritures (valeurs et propriétés, dessin du schéma, placement et routage, classes, contour, zones, sérigraphie, réglages de simulation depuis une datasheet, création de composants dans la LIB) sur une **carte** du panneau « Claude » : rien ne change avant votre clic, sauf si vous allumez l'interrupteur « Appliquer directement » de l'onglet (les écritures dans la LIB attendent toujours le clic). Un lot appliqué est une seule étape `Ctrl+Z`. Mode d'emploi et liste des outils : `docs/manuel/11-claude-mcp.md` ; installation du serveur MCP : `lanceur/docs/DETAILS.md` de web_suite.
 
-**Lui écrire depuis la page**, sur n'importe quel appareil (iPad compris) : le panneau « Claude » a une zone « Demander à Claude ». Si l'outil a été lancé par WEB·SUITE, la demande part à Claude Code du poste qui fait tourner les outils (Pi ou PC), limité au MCP web_suite ; sa réponse s'affiche dans le panneau. On peut y joindre images, captures, PDF et fichiers texte (trombone, coller, glisser-déposer, « Vue »), choisir le modèle (Opus, Sonnet, Haiku), et une ligne d'état dit à l'ouverture si Claude Code est prêt. Il suffit que Claude Code y soit installé et connecté une fois (`lanceur/docs/SPEC-claude-pages.md` de web_suite).
+**Lui écrire depuis la page**, sur n'importe quel appareil (iPad compris) : le panneau « Claude » a une zone « Demander à Claude ». Si l'outil a été lancé par WEB·SUITE, la demande part à Claude Code du poste qui fait tourner les outils (Pi ou PC), limité au MCP web_suite ; sa réponse s'affiche dans le panneau. On peut y joindre images, captures, PDF et fichiers texte (« Joindre », coller, glisser-déposer, « Vue »), choisir le modèle (Opus, Sonnet, Haiku), et une ligne d'état dit à l'ouverture si Claude Code est prêt. Il suffit que Claude Code y soit installé et connecté une fois (`lanceur/docs/SPEC-claude-pages.md` de web_suite).
 
 ---
 
@@ -103,16 +103,16 @@ L'ancien assistant IA intégré est retiré. **Claude Code** pilote les pages ou
 
 | Option | Effet |
 | :--- | :--- |
-| `--port N` | Port d'écoute (défaut 8000, repli automatique 8001–8020) |
+| `--port N` | Port d'écoute (défaut 8000, repli automatique sur les 20 ports suivants, puis choix du système ; `0` = au choix du système) |
 | `--local` | N'écoute que la machine elle-même : projets et écriture de la LIB autorisés |
 | `--host ADR` | Adresse d'écoute explicite |
 | `--navigateur` / `--sans-navigateur` | Force l'ouverture ou non du navigateur |
 | `--sans-pause` | Rend la main sans attendre Entrée (Windows) |
 | `--sans-maj` | Pas de mise à jour depuis GitHub |
 | `--dossier DIR` | Dossier servi |
-| `--projets DIR` | Racine(s) des dossiers de projet, répétable |
+| `--projets DIR` | Racine(s) des dossiers de projet, répétable (défaut : `projets/` à côté de `index.html`) ; hors WEB·SUITE et en écoute locale, un chemin complet saisi à la main reste accepté |
 | `--projets-reseau` | En écoute réseau, ouvre quand même les projets et l'écriture dans la LIB (réseau de confiance uniquement) |
-| `--lib DIR` | Dossier de la bibliothèque centrale |
+| `--lib DIR` | Dossier de la bibliothèque centrale, pour ce lancement seulement (le choix fait depuis l'accueil, lui, est mémorisé dans `config_lib.json`) |
 
 Lancé par [WEB·SUITE](https://github.com/pilou33620/WEB_SUITE), WEB_CAO n'enregistre que dans le dossier du projet, sous `PROJETS/CAO`, et sépare deux gestes :
 
@@ -128,6 +128,7 @@ La visionneuse IPC-2581 enregistre sa carte puis l'envoie directement. La Gestio
 ```
 index.html               Accueil : outils, projet, bibliothèque, profil, mode tactile
 web_CAO.py               Serveur local et API (bibliothèque standard Python)
+appairage.py             Code d'appairage et HTTPS du mode réseau (commun aux web tools)
 editeur-schematique/     editeur-pcb/     gestion-lib/
 recherche-composants/    visionneuse-ipc2581/
 commun/                  Code partagé : panneaux, projets, profils, tactile, variantes de montage, canal de pilotage, simulation
@@ -140,7 +141,7 @@ screen/                  Captures et animations
 
 ## 🧪 Tests
 
-Zéro dépendance obligatoire : JavaScript standard côté navigateur, bibliothèque standard Python côté serveur (3.10 – 3.12). Tous les bancs tournent en CI (`.github/workflows/ci.yml`).
+Zéro dépendance obligatoire : JavaScript standard côté navigateur, bibliothèque standard Python côté serveur (Python 3, testé en 3.12). Tous les bancs tournent en CI (`.github/workflows/ci.yml`).
 
 <details>
 <summary>Lancer les bancs en local</summary>

@@ -8,12 +8,14 @@
 ## Simulation
 
 Le bouton **« Simulation EM… »** de l'éditeur PCB et de la visionneuse IPC-2581
-ouvre le même panneau, rangé en deux familles — **SI** (intégrité du signal) et
-**PI** (intégrité de l'alimentation). SI porte quatre onglets, dont **trois
-lisent la même réponse du serveur** : *Impédance*, *Z différentielle* et
+ouvre le même panneau, rangé en quatre familles — **SI** (intégrité du signal),
+**PI** (intégrité de l'alimentation), **RF** (radiofréquence) et **AUDIT**
+(audit de la carte). SI porte six onglets : *Impédance*, *Z différentielle*,
+*Crosstalk*, *Current Return Path*, *Bus synchrone* et *Diagramme de l'œil*.
+**Trois lisent la même réponse du serveur** : *Impédance*, *Z différentielle* et
 *Current Return Path*. Changer d'onglet ne relance rien.
 
-Le quatrième, ***Crosstalk***, est à part et c'est assumé : il a sa propre
+*Crosstalk* est à part et c'est assumé : il a sa propre
 route, son propre calcul et son propre résultat. Il répond seul à la question
 du couplage au **niveau 2** — le pic de bruit relatif de chaque victime,
 k_total, NEXT et FEXT en pour-cent de l'agresseur et en décibels, statut vert /
@@ -106,9 +108,11 @@ Auparavant il était **purement jeté** : la masse était repoussée au bord du
 groupe, son écart devenait négatif, on le ramenait à zéro, et deux pistes
 séparées par un plan arrosé se résolvaient comme deux pistes face à face
 au-dessus du diélectrique nu. Le couplage annoncé était celui d'un routage qu'on
-n'avait pas fait, et rien ne le disait. Sur un cas contrôlé — deux voisines à
-1,19 mm de la même piste, l'une derrière un plan, l'autre à nu — le blindage
-vaut un facteur **3 à 5** selon la largeur de la bande.
+n'avait pas fait, et rien ne le disait. Ce que le banc exige : sur une voisine
+à 2,0 mm avec du plan à 0,2 mm de chaque bord (garde posée de 1,2 à 1,4 mm),
+la capacité mutuelle tombe d'au moins un tiers (C_m avec garde < C_m sans
+garde / 1,5). Le « facteur **3 à 5** » qu'annonçait ici un cas à 1,19 mm n'a
+aucun test derrière lui : `À vérifier`.
 
 Le modèle suppose ce cuivre **tenu à zéro volt sur toute la longueur** : c'est ce
 qu'un plan cousu de vias fait, et ce qu'une garde sans vias ne fait pas — sans
@@ -122,13 +126,17 @@ déclarées dans l'éditeur. Une paire nommée `CLK`/`CLKB`, ou deux nets baptis
 par un fabricant de connecteur, n'y entrent pas : la fiche les rangeait sous
 « ce ne sont pas des paires », avec des impédances pourtant justes.
 
-La liste **« Paire »** de l'onglet *Z différentielle* laisse la désigner. Le net
-choisi part dans `doc.paires`, au même endroit et au même format que ceux de
-l'éditeur : le serveur ne les distingue pas, et c'est ce qui en fait *la* paire,
-carte de chaleur comprise. Les candidats proposés sont **ce qui longe**, avant
-même le premier calcul — sans quoi il faudrait calculer pour pouvoir demander le
-bon calcul. Une sélection à cheval sur deux nets ne peut rien déclarer : on ne
-saurait pas laquelle de ses moitiés est le « P ».
+Les deux encarts **Piste 1** et **Piste 2** de l'onglet *Z différentielle*
+(🎯 prend la sélection, ✕ vide l'encart, ⇄ les inverse, un nom de net se tape
+avec recherche) laissent la désigner. Le net de la Piste 2 part dans
+`doc.paires`, au même endroit et au même format que ceux de l'éditeur : le
+serveur ne les distingue pas, et c'est ce qui en fait *la* paire, carte de
+chaleur comprise. Deux pistes sélectionnées sur la carte remplissent seules les
+deux encarts ; une seule remplit la Piste 1 et propose son partenaire reconnu.
+Deux pistes d'un même net sont refusées. (L'ancienne liste « Paire » en haut du
+panneau, qui proposait **ce qui longe** avant le premier calcul, n'existe plus.)
+Une sélection à cheval sur deux nets sans encart rempli ne peut rien déclarer :
+on ne saurait pas laquelle de ses moitiés est le « P ».
 
 ***Z différentielle* ne demande pas de fréquence.** La section est
 quasi-statique : ni [C], ni [L], ni les modes pair et impair ne dépendent de f₀.
@@ -140,8 +148,10 @@ pas.
 **Les gestes de sélection commandent l'étendue du calcul.** Dans l'éditeur
 PCB : clic pour le tronçon seul, `Maj`+clic pour la piste entière, `Maj`+clic à
 nouveau pour la piste sur toutes les couches. Dans la visionneuse : clic pour
-la piste sur sa couche, `Maj`+clic pour tout le net. La case **« suivre »**,
-armée dès le premier calcul, relance à chaque changement de sélection.
+la piste sur sa couche, `Maj`+clic pour tout le net. Dans la visionneuse, `Ctrl`+clic
+ajoute un morceau (et `Ctrl`+`Maj`+clic un net entier). La case **« suivre »**
+(Impédance, Z différentielle, Current Return Path ; décochée d'office) relance à
+chaque changement de sélection.
 
 Le panneau donne aussi le bilan de la liaison (minimum, maximum, moyenne
 pondérée par la longueur, retard, pertes), la courbe S₁₁ / S₂₁ sur la bande
@@ -163,15 +173,31 @@ chaque exécution (`python/test/banc-ligne-mom.py`) :
 | Microruban, εr de 2,2 à 10,2, w/h de 0,5 à 5 | Hammerstad-Jensen (±1 %) | **0,42 %** |
 | Triplaque, εr 3,5 et 4,5, w/b de 0,3 à 2,5 | solution exacte, intégrales elliptiques | **0,30 %** |
 | Piste interne couverte, enterrée | ε_eff = εr et Z₀ = Z₀(air)/√εr, exacts en milieu homogène | **0,06 %** |
-| Ligne coplanaire sur plan, écarts serrés | transformation conforme (Wen) | **0,4 %** |
-| Masse coplanaire d'un seul côté | encadrée par le microruban nu et le coplanaire symétrique, et miroir gauche/droite | **exact** |
-| Paire de microruban couplée, w/h et s/h de 0,5 à 2 | Garg-Bahl (forme fermée, quelques %) | **2,2 %** |
+| Ligne coplanaire sur plan, écarts serrés (w/h de 0,6 à 3, s/h de 0,3 à 0,6) | transformation conforme (nommée « Wen » dans le banc ; attribution `À vérifier`) | **0,4 %** |
+| Masse coplanaire d'un seul côté | encadrée par le microruban nu et le coplanaire symétrique, et miroir gauche/droite (à 10⁻⁹) | **exact** |
+| Paire de triplaque couplée, w/b de 0,2 à 1, s/b de 0,05 à 1 | Cohn (solution exacte, intégrales elliptiques) : Z pair, Z impair, K_b | seuils du banc 0,5 % (Z pair), 1 à 1,5 % (Z impair), 3 % (K_b) |
+| Paire de microruban couplée, w/h de 0,5 à 2, s/h de 0,25 à 2 | Garg-Bahl (forme fermée, quelques %) | **2,2 %** |
 | Couplage avant en milieu homogène (triplaque) | il est **nul**, k_C = k_L terme à terme | **4·10⁻¹⁷** |
+| Ligne coplanaire sans plan, ligne seule et modes pair / impair d'une paire | transformation conforme (exacte dans l'air, au facteur (εr+1)/2 sur stratifié épais) ; plaque finie : capacités partielles | seuils du banc 0,5 % (ligne, paire), 1 % (plaque finie) |
+
+Les écarts en gras sont des **relevés** de l'exécution, que le banc n'imprime
+pas : il imprime seulement ok / KO contre ses **seuils**. Ceux-ci sont plus
+larges : Z₀ à 1,5 % et ε_eff à 2 % (microruban), Z₀ à 1 % et ε_eff = εr à
+10⁻⁶ (triplaque), 0,5 % (couvert enterré), 1,5 % (coplanaire sur plan), 3 % sur
+Z_diff et Z_commune et 2 % sur les ε_eff modaux (Garg-Bahl), |K_f| < 10⁻⁶ en
+triplaque. Les précisions que l'on prête aux formules (±1 % de
+Hammerstad-Jensen, « quelques % » de Garg-Bahl) sont celles que dit le banc :
+`À vérifier` contre les articles.
 
 Les topologies traitées : microruban nu (couche extérieure), **microruban
 couvert** (couche interne qui n'a de plan que d'un côté — elle a du stratifié
 au-dessus, pas de l'air, et la prendre pour un microruban nu coûtait une
-dizaine de pour cent), triplaque y compris décentrée, et **ligne coplanaire**.
+dizaine de pour cent : 47,98 → 43,73 Ω sur une couche interne courante),
+triplaque y compris décentrée, **ligne coplanaire**, le **vernis** (masque de
+soudure d'une couche extérieure : une fonction de Green à trois régions, qui
+baisse Z₀ de 2 à 3 % et monte ε_eff pour 25 µm) et la **ligne coplanaire sans
+plan dessous** (couche extérieure seule, masse arrosée pour retour ; voir
+*Crosstalk*).
 
 Cette dernière n'est pas un cas d'école : une piste noyée dans un plan arrosé
 — le tracé RF ordinaire — a du cuivre de masse sur sa propre couche à deux ou
@@ -183,9 +209,11 @@ le plus serré.
 
 Ce qu'il ne voit pas, et le panneau le dit sous chaque résultat :
 
-- **une suite de sections uniformes**, rien d'autre. Les coudes, les moignons,
-  les transitions de via et le rayonnement n'y sont pas — ce qui se passe *au
-  raccord* entre deux tronçons n'est pas modélisé ;
+- **une suite de sections uniformes** : les coudes, les vias et leurs moignons
+  sont cascadés en éléments localisés (tableau des discontinuités de la fiche),
+  mais la cavité entre plans hors du chemin de retour chiffré et le
+  rayonnement n'y sont pas — sauf celui de la boucle de retour d'un via, estimé
+  à part et donné comme un plancher ;
 - le calcul de section est **quasi-statique** ; la dispersion est ajoutée par
   le modèle de Getsinger, qui est un modèle et non un calcul. Au-delà de
   quelques gigahertz sur stratifié courant, l'écart se creuse ;
@@ -206,7 +234,11 @@ Ce qu'il ne voit pas, et le panneau le dit sous chaque résultat :
   couplent aussi, souvent plus que les mêmes côte à côte : elles sont
   désormais **cherchées et signalées** avec leur longueur en regard, leur
   décalage et le diélectrique qui les sépare, et la fiche annonce alors ses
-  chiffres comme un **plancher**. Celles qu'un **plan de référence** sépare ne
+  chiffres comme un **plancher** (le banc l'exige : aucune paire chiffrée,
+  une entrée `superposes`, un avertissement). Seuls l'onglet *Crosstalk*
+  (`section_deux_niveaux`) et, depuis `simulation_em` 5.5.0, le brin d'une
+  paire différentielle resté sur une autre couche (couplé en large face dans
+  la cascade) les chiffrent. Celles qu'un **plan de référence** sépare ne
   le sont pas — le plan est un écran, et c'est la raison d'être de l'empilage.
   **Une voisine rencontrée des deux façons est une voisine LATÉRALE** : quand
   l'agresseur change de couche en cours de route, la même piste est vue
@@ -264,8 +296,9 @@ l'analyse géométrique complétée par un front.
 - **Temps de montée de référence `t_r`** : celui de la **piste sélectionnée** —
   saisi, ou, champ vide, déduit de la **classe** de son net (Horloge 2 ns,
   Rapide 1 ns, RF 100 ps, Analogique 100 ns, Lent 10 ns, Découpage 5 ns ; les
-  fronts du tableau des classes de la vérification de carte, et 1 ns si la
-  classe n'est pas connue) — ou un **`t_r` global**, 1 ns par défaut, quand on
+  fronts du tableau des classes de la vérification de carte ; une classe sans
+  front — Masse, Alimentation… — se juge comme « Lent », le net sans aucune
+  classe prend 1 ns, et une interface a son front, borné par `0,1 / cadence`) — ou un **`t_r` global**, 1 ns par défaut, quand on
   scanne **toute la carte**.
 - **Lignes adaptées** à leurs deux bouts sur leur Z0 : on évalue le couplage
   direct, sans allers-retours de réflexions.
@@ -296,7 +329,7 @@ en images, et une section électriquement neutre — tout ce que porte le signal
 revient par la masse. La couture n'y est pas exigée : il n'y a pas de plan à
 coudre, et ce cuivre est la référence elle-même. Validé contre la
 transformation conforme (ligne seule, modes pair et impair d'une paire) à
-0,35 %. **Sans masse arrosée non plus**, rien ne porte le retour : le couplage
+0,35 % au pire (le banc de `ligne_mom` exige 0,5 %). **Sans masse arrosée non plus**, rien ne porte le retour : le couplage
 reste *non calculé*, avec sa réserve grave, et jamais un zéro. Le vernis n'est
 pas modélisé dans ce cas, une couche *interne* sans plan reste refusée, et les
 pertes R, G au genou ne sont pas calculées sur ces blocs (couplage majoré, la
@@ -325,7 +358,7 @@ La case **pertes R, G** (rangée *Statut DRC*, et la même dans la
 vérification de carte) ajoute les pertes de la ligne au niveau 2 : la
 résistance du cuivre par effet de peau (R) et la conductance du diélectrique
 par tan δ (G), évaluées au **genou du front** `f = 0,35 / t_r`
-(`ligne_mom.line_losses_detaillees`), soit une atténuation α par mm, bloc par
+(`ligne_mom.line_losses_detaillees`), soit une atténuation α (Np/m), bloc par
 bloc. La contribution de chaque bloc au NEXT, qui fait l'aller et le retour
 jusqu'à x, est pondérée par `exp(−2·A(x))` (A, l'atténuation cumulée depuis la
 source) ; le FEXT, qui co-propage sur toute la liaison, par `exp(−A(L))`.
@@ -334,7 +367,10 @@ niveau 2 sans pertes reste le pire cas normalisé. Leur effet mesuré, sur des
 microrubans FR-4 de 0,2 mm : à 1 ns, −2 % à −10 % du FEXT de 50 à 150 mm, le
 NEXT saturé presque inchangé ; à 100 ps, jusqu'à −45 % sur les longs
 longements. Elles comptent donc pour les fronts raides et les liaisons
-longues, à peine pour le reste.
+longues, à peine pour le reste. *À vérifier* : ces pourcentages ne sont repris
+par aucun banc (celui de `banc-crosstalk.py` n'exige, pour 150 mm, que ≥ 90 %
+du NEXT et du FEXT conservés à 1 ns et ≥ 60 % à 100 ps, soit au plus −40 % à
+100 ps, pas −45 %).
 
 #### L'impédance commune d'une fente du plan (Ott, `crosstalk` 4.5.0)
 
@@ -354,10 +390,12 @@ les plans qui **ferment encore** le retour sous la fente. Le serveur lit
 l'entraxe S agresseur ↔ victime au franchissement dans le profil d'espacement,
 et le Z₀ de l'agresseur dans le bloc.
 
-**La dérivation.** Ott (*EMC Engineering*, 2009) donne pour une fente de
+**La dérivation.** Ott (*EMC Engineering*, 2009 ; *À vérifier* dans l'ouvrage,
+la formule est reprise du code) donne pour une fente de
 longueur D franchie en son milieu par une piste de largeur W la self
-`L = μ₀/2π · D · ln(D/W)`. Un détour d d'un seul côté est la moitié d'une
-boucle de 2d : `L_d = μ₀/π · 2d · ln(2d/W)`, et les deux détours sont en
+`L = μ₀/2π · D · ln(D/W)`. Cette L est celle des deux détours de D/2 en
+parallèle : un détour d est une moitié de la fente D = 2d et vaut le double de
+L(2d), `L_d = μ₀/π · 2d · ln(2d/W)`, et les deux détours sont en
 **parallèle** — la forme même de `rf_reseau.z_fente`. Le flux du retour de
 l'agresseur que la boucle de la victime embrasse s'intègre de S (la piste
 victime) à 2d (le bout de la fente) : la **mutuelle** a la même forme avec
@@ -375,9 +413,12 @@ victime se partage entre ses deux bouts adaptés (2Z₀ en série) :
 | résonance (option C) | chaque détour `× |tan(βd) / βd|`, `β` au genou 0,35/t_r dans la permittivité moyenne autour du plan, perte Q ≈ 50 |
 
 Sur le cas 4 du banc de mesure (fente de ±10 mm coupant les trois plans,
-pistes de 0,35 mm à 1,4 mm d'axe à axe, 50 Ω) : `L_d ≈ 16 nH`, `M ≈ 11 nH`,
+détours mesurés d1 = 11 mm et d2 = 9,5 mm, pistes de 0,35 mm à 1,4 mm d'axe à
+axe, 50 Ω) : `L_d ≈ 17 nH` (16,8), `M ≈ 11 nH`,
 soit **≈ 11 % à chaque bout à 1 ns** (fourchette 9 à 17 %), ≈ 2 % à 5 ns —
-contre 0,9 % pour les lignes couplées seules. La résonance ne pèse qu'aux
+contre 0,9 % pour les lignes couplées seules. La carte d'essai n'a pas été
+fabriquée (mesure abandonnée le 21/10/2026, `releves.csv` vide) : ce sont des
+prévisions de l'outil, sans mesure ni SIwave pour les confirmer. La résonance ne pèse qu'aux
 fronts sous ~300 ps : la fente de 20 mm résonne vers 3,5 GHz dans le FR-4
 (× 1,01 à 1 ns, × 30 à 100 ps), et la fiche dit quand elle a compté.
 
@@ -413,7 +454,8 @@ croisent (bords exacts le long de la piste, 500 lignes au plus) ; et les vias
 de masse avec les plans qu'ils traversent.
 
 **Ce que le serveur résout** (`crosstalk.peec_fente`) : un maillage gradué
-de la fenêtre — fin (≈ la moitié de la largeur ou de la hauteur de la piste)
+de la fenêtre — fin (la moitié du plus petit de la largeur de l'agresseur et de sa hauteur au
+plan, bornée à 0,05–0,25 mm)
 aux bords de cuivre que l'agresseur franchit, sur l'axe des pistes et aux
 bouts de la fente, en croissance géométrique au-delà, 3000 branches au plus.
 Chaque maille porte un courant en u et en v ; leurs **selfs et mutuelles
@@ -446,7 +488,8 @@ d'Ott, qui suppose un détour en demi-boucle, l'ignore — une fente de 10 mm de
 large remonte à 12 nH. Le terme du cas 4 passe de ≈ 11 % à **≈ 3,7 %** à
 1 ns. Le **cas 4b** (fente sur L2, L3 intact) a enfin un terme : une part du
 retour passe par L3 (2,8 nH de détour au lieu de 4,5), et deux vias de masse
-à 3 mm de la fente le ramènent à 1,9 nH. Les limites de l'option A tombent
+à 3 mm de la fente le ramènent à 1,9 nH (*À vérifier* : ce chiffre n'est dans
+aucun banc, qui exige seulement une self réduite d'au moins 20 %). Les limites de l'option A tombent
 pour une fente imagée : forme et angle quelconques, plans partiellement
 coupés, victime **superposée** sur la couche voisine, entraxe lu dans le
 cuivre de la victime au franchissement.
@@ -468,7 +511,8 @@ leur côté :
 - **en phase** (d'office) : la somme arithmétique — tous les agresseurs
   basculent ensemble, le pire cas ;
 - **quadratique** : la racine de la somme des carrés (*power sum*) — des
-  agresseurs indépendants, ce que rend un scanner comme SIwave en mode RSS.
+  agresseurs indépendants, ce que rend un scanner comme SIwave en mode RSS
+(*À vérifier* : comportement d'un outil externe, non confirmé ici).
 
 La somme a son propre statut, aux mêmes seuils, et **le statut de la paire
 la compte** : une victime qu'aucun agresseur ne met seul en orange peut y
@@ -522,7 +566,7 @@ réglages).
 plus **sur les arêtes** des zones, découpes et contours de plan que le parcours
 coupe (une sonde de chaque côté de chaque arête) : une fente est bornée par ses
 arêtes, à sa largeur et sa position exactes, même sous 0,5 mm (une fente de
-0,2 mm est vue). Le filtre « au moins deux pas » ne s'applique plus qu'aux
+0,2 mm est vue). Le filtre « au moins un pas et demi » (0,75 mm) ne s'applique plus qu'aux
 trous qu'aucune arête ne borne.
 
 #### La coloration sur le layout
@@ -617,10 +661,10 @@ masse en direct) et pertes au genou du **crosstalk** (`crosstalk` 4.2.0).
 
 | Option | Où elle se règle | Défaut | Ce qu'elle change |
 | --- | --- | --- | --- |
-| Hauteur et topologie | lues dans la section | **active** | `topologie` toujours ; `hauteur` (h au plan, ou b entre plans) pour le ruban seul — pas pour une section coplanaire, un mode de paire ou une triplaque décentrée de plus de 20 %, où la hauteur *déduite* rend mieux le courant resserré |
-| Rugosité du cuivre | empilage, par couche | lisse (K = 1) | facteur K sur α_c : Hammerstad-Groiss (Rq) ou Huray (rayon des nodules, rapport de surface) |
-| Diélectrique causal | empilage | désactivé | Djordjevic-Sarkar calé sur la fiche à f_ref (1 GHz) : εr(f) dans les pertes **et** dans ε_eff et Z₀ (remplissage constant), donc dans la vitesse de phase |
-| Modèle de via | empilage | **« auto »** | « π », « ligne » (barreau réparti) ou « auto » : ligne quand la phase du via au haut de la bande dépasse 0,3 rad |
+| Hauteur et topologie | lues dans la section | **active** | `topologie` toujours ; `hauteur` (h au plan, ou b entre plans) pour le ruban seul — pas pour une section coplanaire, un mode de paire ou une triplaque décentrée (épaisseurs de diélectrique de part et d'autre du ruban qui diffèrent de plus de 20 % de la plus forte, `DISSYM_MAX_HAUTEUR`), où la hauteur *déduite* rend mieux le courant resserré |
+| Rugosité du cuivre | empilage, par couche | lisse (K = 1) | facteur K sur α_c : « Hammerstad-Groiss » (Rq), K = 1 + (2/π)·arctan[1,4·(Rq/δ)²], plafonné à 2 ; ou Huray (rayon a des nodules, rapport de surface SR), K = 1 + 1,5·SR / (1 + δ/a + δ²/(2a²)), borné par 1 + 1,5·SR ; δ la profondeur de peau. Le nom « Hammerstad-Groiss » est celui du code : attribution `À vérifier` |
+| Diélectrique causal | empilage | désactivé | Djordjevic-Sarkar calé sur la fiche à f_ref (1 GHz) : εr(f) dans les pertes **et** dans ε_eff et Z₀ (remplissage constant), donc dans la vitesse de phase ; somme de pôles de Debye répartis en log entre 1 kHz et 1 THz (bornes du code), εr décroissant en log f |
+| Modèle de via | empilage | **« auto »** | « π », « ligne » (barreau réparti) ou « auto » : ligne quand la phase θ = 2π·f_max·√(L·C répartie) du via au haut de la bande dépasse 0,3 rad (un via sans capacité répartie, aucun plan traversé, reste un π) |
 
 Ce que l'empilage envoyé porte en plus (le document reste `cao-sim-em-3`) :
 
@@ -655,8 +699,10 @@ d'avant au bit près. Branché dans la cascade simple (donc la RF qui passe par
 `simulation_em` **5.4.0**, dans la **cascade différentielle** (l'œil) : chaque
 tronçon de la paire lit la rugosité de son plan pour le mode impair, le mode
 commun et la section dissymétrique brin par brin, la partenaire restée sur
-sa couche et la surlongueur aussi (`_abcd_ligne_seule`) ; les vias et les
-coudes n'ont pas de résistance de surface à corriger. Une paire dont le plan
+sa couche et la surlongueur aussi (`_abcd_ligne_seule`) ; le π des vias et
+les coudes n'ont pas de résistance de surface à corriger, et le via en ligne
+porte celle de son barreau (R' du coaxial, lisse : sans facteur de
+rugosité). Une paire dont le plan
 ne déclare rien est celle d'avant au bit près (cas du banc de l'œil) ; un
 plan lisse déclaré sous une piste à Rq 1 µm perd moins, et l'œil s'ouvre
 d'autant. L'éditeur envoie la rugosité de chaque cuivre (`stack.cu[i].rug`),
@@ -716,8 +762,9 @@ L = 0,534 nH) : L_impair 0,294 nH à 0,6 mm d'écart, 0,373 à 1 mm, 0,464 à
 
 **Étalons** ([banc-ligne-mom.py](../python/test/banc-ligne-mom.py)) : la
 rugosité multiplie l'α_c de la cascade par le K attendu (Hammerstad et Huray,
-à 0,3 % près) ; le causal rend la fiche à f_ref au bit près et
-(β/β₀)² = εr(f)/εr en triplaque, paire comprise ; le via en ligne rejoint le π
+à 0,3 % près) ; le causal rend la fiche à f_ref à 10⁻¹² près (cascade simple
+et paire) et (β/β₀)² = εr(f)/εr à 10⁻⁶ en triplaque (la paire : même ABCD à
+f_ref, phase qui avance au-dessus) ; le via en ligne rejoint le π
 à 10 MHz (réactances à 10⁻⁵), garde moignon et contre-perçage, et « auto »
 rend le π au bit près sous le seuil ; la rugosité propre du plan ne touche que
 `R_plan`, égale ou absente elle rend la même ABCD au bit près ; la mutuelle baisse L_impair quand les
@@ -735,8 +782,10 @@ la courbe, et les deux sont dans le `.s2p`.
 **Au survol**, la courbe donne la fréquence, les deux modules en décibels, le
 ROS et surtout **l'impédance vue par le port** — Z = Z_réf(1+S₁₁)/(1−S₁₁), en
 complexe. C'est ce qu'un circuit d'attaque trouverait devant lui : sur une
-piste de 61 Ω lue à travers 50 Ω, le quart d'onde affiche 73,8 − j0,2 Ω, très
-exactement le Z₀²/Z_réf = 74,7 Ω du transformateur quart d'onde. La lecture se
+piste de 61 Ω lue à travers 50 Ω, le quart d'onde affiche 73,8 − j0,2 Ω, soit
+à 1,2 % du Z₀²/Z_réf du transformateur quart d'onde (74,4 Ω pour 61,0 Ω ;
+les 74,7 Ω supposent Z₀ ≈ 61,1 Ω, et l'écart restant vient des pertes et du
+point calculé le plus proche du quart d'onde : `À vérifier` à l'exécution). La lecture se
 cale sur le point **calculé** le plus proche, jamais sur une interpolation.
 
 Si le pas de la bande est trop large pour la ligne — moins de vingt points par
@@ -754,7 +803,8 @@ carte sans sélection (voir [Vérification de la carte](#vérification-de-la-car
 L'onglet *Santé liaison*, qui agrégeait les diagnostics d'UNE liaison, a été
 retiré : la vérification de la carte en reprend l'idée — un constat, sa
 sévérité, son geste — pour tous les nets à la fois. SI porte **Impédance**, **Z
-différentielle**, **Crosstalk** et **Current Return Path** ; PI
+différentielle**, **Crosstalk**, **Current Return Path**, **Bus synchrone** et
+**Diagramme de l'œil** ; PI
 porte **Chute DC** et **Z(ω) PDN**. Le découpage avait été posé quand il n'y avait qu'une
 analyse, parce qu'il coûtait moins cher à poser qu'à retailler ensuite autour
 de six. Ce qu'il resterait à y mettre est listé dans
@@ -860,7 +910,7 @@ mode différentiel, c'est la cascade du mode impair de la paire
 (`s_diff["abcd_dd"]`), ses vias et ses coudes compris (voir plus bas) — et,
 pour une paire **dissymétrique**, la cascade à quatre accès brin par brin
 (`s_diff["abcd_brins"]`, voir « La paire dissymétrique, brin par brin »).
-`python/oeil.py` (2.0.0) n'ajoute que ce qui l'entoure :
+`python/oeil.py` (2.4.1) n'ajoute que ce qui l'entoure :
 
 1. **l'émetteur**, générateur de Thévenin linéaire (ou tampon IBIS, voir plus
    bas) : tension à vide, résistance
@@ -881,10 +931,11 @@ pour une paire **dissymétrique**, la cascade à quatre accès brin par brin
    touche.
 
 **La grille.** La fenêtre temporelle doit contenir toute la réponse : trente
-traversées de la ligne, douze fronts et les constantes de temps du récepteur,
-et l'on en prend le double pour que la queue ne revienne pas par l'autre bout
-de l'IFFT. Le haut de la grille est 1,6/tᵣ, où le front gaussien ne laisse plus
-que 5·10⁻⁴. Au-delà de 8 192 points, la fenêtre est raccourcie et le résultat
+traversées de la ligne, douze fronts, deux UI et les constantes de temps du
+récepteur (celle du CTLE et la décharge des condensateurs de liaison s'y
+ajoutent), et l'on en prend le double pour que la queue ne revienne pas par
+l'autre bout de l'IFFT. Le haut de la grille est 1,6/tᵣ, où le front gaussien
+ne laisse plus que 5·10⁻⁴, ou 2/UI si c'est plus haut. Au-delà de 8 192 points, la fenêtre est raccourcie et le résultat
 le dit. Une réponse qui ne s'est pas éteinte dans la fenêtre est signalée.
 
 **L'instant d'échantillonnage** est au milieu de la plage de phases où l'œil
@@ -893,10 +944,11 @@ d'horloge le placerait et où les gabarits se posent. La largeur se mesure en
 faisant le tour de l'UI, puisque l'œil se répète.
 
 **La marge.** Pour l'œil PRBS, c'est la plus petite *jauge* des traces dans le
-polygone convexe du gabarit : la jauge vaut 1 sur le bord, et le gabarit
-agrandi d'un facteur k autour de son centre est exactement {jauge ≤ k}. Elle ne
-dépend pas des unités des axes. Pour l'œil pire cas, c'est le plus grand k tel
-que le gabarit agrandi tienne, phase par phase, entre ses deux frontières. Juger
+polygone convexe du gabarit, moins un : la jauge vaut 1 sur le bord, et le
+gabarit agrandi d'un facteur k autour de son centre est exactement
+{jauge ≤ k}. Elle ne dépend pas des unités des axes. Pour l'œil pire cas, c'est
+le plus grand k tel que le gabarit agrandi tienne, phase par phase, entre ses
+deux frontières, moins un lui aussi. Juger
 les points de ces frontières comme des traces serait faux : dans les
 croisements elles plongent sous le seuil, là où de vraies traces passent par
 zéro, et la marge pire cas dépasserait celle du PRBS.
@@ -907,9 +959,15 @@ affichée à côté du verdict, parce que les normes sont payantes :
 
 | Fiabilité | Sens | Gabarits |
 | :--- | :--- | :--- |
-| recoupé | valeurs retrouvées dans une source publique (fiche de fabricant, note d'application, procédure de test, ou la spécification elle-même quand elle est publique) | USB 2.0 HS Template 1 et Template 2 (extrémité), USB 3.x Gen 1 (après CTLE), PCIe Gen 1, Gen 2 et Gen 3 (après CTLE et DFE de référence), SATA Gen 1 à 3, SGMII, HDMI 1.4 (TP2, d'après ngscopeclient) |
+| lu dans la norme | valeurs relues dans le texte de la norme elle-même (publique) ; le contrôle reste un gabarit, pas un verdict de conformité | USB 2.0 HS Template 2 (extrémité de câble) |
+| recoupé | valeurs retrouvées dans une source publique (fiche de fabricant, note d'application, procédure de test) sans que la norme ait été lue | USB 2.0 HS Template 1 (connecteur), USB 3.x Gen 1 (après CTLE), PCIe Gen 1, Gen 2 et Gen 3 (après CTLE et DFE de référence), SATA Gen 1 à 3, SGMII, HDMI 1.4 (TP2, d'après ngscopeclient) |
 | à vérifier | valeurs de la norme non recoupées : aucune source publique ne les reproduit | — (plus aucun depuis `oeil` 2.3.0) |
 | dérivé | gabarit non officiel : seuils du récepteur (VIL/VIH, sensibilité) et sa fenêtre setup/hold | LVDS, MIPI D-PHY HS, SPI 3,3 V et 1,8 V, QSPI, SD High Speed, eMMC HS |
+
+« Recoupé » ne dit pas que toute la forme l'est : la forme en losange de PCIe
+Gen 1 et de SGMII est supposée, la largeur 0,4 UI de SGMII aussi (seule sa
+sensibilité de 100 mV est recoupée), et le HDMI 1.4 repose sur une source
+secondaire. La colonne « source » de chaque fiche le dit.
 
 **La vérification d'octobre 2026.** PCIe Gen 2 (120 mV, 0,60 UI à 10⁻¹²)
 et Gen 3 (25 mV, 0,3 UI derrière le CTLE à pôles 2 et 8 GHz, gain continu
@@ -917,13 +975,13 @@ et Gen 3 (25 mV, 0,3 UI derrière le CTLE à pôles 2 et 8 GHz, gain continu
 valeurs n'ont pas bougé. SATA garde ses hauteurs (325, 275, 240 mVppd) et sa
 largeur passe de 0,4 UI à 1 − TJ de la tolérance à la gigue du récepteur :
 0,49 UI en Gen 1, 0,43 UI en Gen 2 et 3, en losange. **USB 2.0 extrémité
-(Template 2)** passe « recoupé » en `oeil` 2.3.0 : la spécification USB 2.0
-est publique (usb.org), et ses six points (figure 7-14, et non 7-15 : 0 mV à 12,5 et
-87,5 % UI, ±175 mV de 35 à 65 % UI, limites ±525 / ±475 mV) sont ceux du
-code — concordance établie de mémoire et avec les gabarits « far end » des
-logiciels de conformité, le document n'ayant pas été relu ici ; la fiche le
-dit. **Relu le 22/10/2026** dans la copie officielle : les six points et les
-±525 mV sont justes, la fiche passe « lu dans la norme ». Le Template 1 garde ses points 2 et 3 à 37,5 et 62,5 % UI (±300 mV) :
+(Template 2)** est « lu dans la norme » depuis le 22/10/2026 : la spécification
+USB 2.0 est publique (usb.org), et ses six points (figure 7-14, et non 7-15 :
+0 mV à 12,5 et 87,5 % UI, ±175 mV de 35 à 65 % UI, limites ±525 / ±475 mV) sont
+ceux du code, les mêmes que les gabarits « far end » des logiciels de
+conformité. Ce relevé est celui que consigne la fiche du code
+(`usb2-hs-recepteur`) : le numéro de figure et les valeurs n'ont pas été
+rouverts dans la norme pour cette relecture du guide (À vérifier). Le Template 1 garde ses points 2 et 3 à 37,5 et 62,5 % UI (±300 mV) :
 deux sources indépendantes les donnent ainsi (Microchip DS00002142A,
 tableau 6-6 ; Analog Devices, « Improving USB 2.0 Switched-System
 Response », 0,375 UI et 300 mV) — le 32,5 / 67,5 % qu'on avait supposé ne se
@@ -933,8 +991,9 @@ logiciel ouvert ngscopeclient publie le masque du puits d'après la figure
 4-32 (0 mV à ±0,35 UI, ±75 mV de −0,25 à +0,25 UI, limites ±780 mV), repris
 tel quel ; source secondaire, la norme n'a pas été lue. Le gabarit dérivé
 d'avant (0,6 UI, plateau 0,2 UI, 150 mV) avait la même hauteur.
-Les gabarits PCIe et SATA portent aussi
-leur taux d'erreur (10⁻¹²) : c'est sur ce contour de l'œil statistique qu'ils
+Les gabarits PCIe Gen 2 et 3 et SATA portent aussi
+leur taux d'erreur (10⁻¹² ; PCIe Gen 1 n'en porte pas et prend 10⁻¹² par
+défaut) : c'est sur ce contour de l'œil statistique qu'ils
 se jugent quand la gigue est saisie. Les gabarits dérivés citent maintenant le
 composant réel (récepteurs LVDS SN65LVDS32 / DS90LV028A à ±100 mV, D-PHY à
 ±70 mV en v1.2 et 40 mV chez Efinix en v1.1).
@@ -1044,9 +1103,11 @@ et descendant), dont la moyenne normalisée est la réponse à un échelon dont
 le pire cas, l'œil statistique et l'égaliseur ont besoin (l'écart entre les
 deux est rendu et signalé au-delà de 5 %) ; et la **séquence PRBS** elle-même,
 en régime établi, qui fait l'œil PRBS sans aucune linéarisation (PRBS7 ou 9 :
-PRBS15 serait trop long pas à pas, et le pire cas couvre de toute façon les
-longues suites). Un récepteur IBIS sans diode n'est que son C_comp : le
-calcul reste alors linéaire.
+PRBS15 serait trop long pas à pas : le serveur le refuse dès que la liaison se
+simule dans le temps — émetteur IBIS, récepteur à diodes (ou [Rgnd]/[Rpower]),
+ou, en différentiel, brin inverse décalé —, et le pire cas couvre de toute
+façon les longues suites). Un récepteur IBIS sans diode ni [Rgnd]/[Rpower]
+n'est que son C_comp : le calcul reste alors linéaire.
 
 #### Le boîtier et les broches (`oeil` 2.1.0, `ibis` 1.1.0)
 
@@ -1086,7 +1147,9 @@ pas, et le serveur prend ceux du brin direct — ou, avec une paire de
 remplace que dans son `[Model Selector]`).
 
 **Les sections (`ibis` 1.2.0).** Chaque broche de `[Pin Numbers]` peut porter
-une suite de sections, rangées **de la broche vers le die** :
+une suite de sections, rangées dans le fichier **du die vers la broche**
+(ordre lu ainsi depuis `ibis` 1.5.0, la cascade se calculant de la broche vers
+le die ; avant, il était lu à l'envers) :
 `Len = 0 L=1.2n /` est **localisée** (valeurs totales : C et G à la broche,
 puis R et L en série — la topologie de `[Package]`, qu'une section unique
 rejoint exactement) ; `Len = 1.2 L=2.3n C=4.3p /` est une **ligne** (R, L,
@@ -1109,7 +1172,8 @@ broche jω·[[C_p, −C_m], [−C_m, C_n]] (diagonale de Maxwell). Dans la moyen
 du mode impair (paire symétrique, sans les deux brins), L − L_m, R − R_m et
 C + C_m. Les mutuelles **positives** de L baissent l'inductance vue en mode
 impair : le front différentiel se raidit (banc : 6 nH couplés à 3 nH, le
-10-90 % passe de 133 à 98 ps).
+10-90 % baisse de plus de 10 % ; l'ordre de grandeur « 133 à 98 ps » n'est pas
+une valeur que le banc vérifie).
 
 #### La paire de tampons : deux brins, et le mode commun
 
@@ -1342,8 +1406,9 @@ référence de la norme (§10.4) :
    **volts par seconde** pour une excursion pleine de l'émetteur (Σ h·Δt est
    la réponse à un échelon de pleine excursion, en volts) ;
 2. **AMI_Init de l'émetteur** la modifie en place s'il a
-   `Init_Returns_Impulse` ; la FFE de référence saisie est alors ignorée, le
-   modèle fait la sienne ;
+   `Init_Returns_Impulse` ; la FFE de référence saisie est ignorée dès que
+   l'émetteur s'exécute (impulsion modifiée ou non), le modèle fait la
+   sienne ;
 3. le **canal** : la forme d'onde PRBS à la broche du récepteur. **Depuis la
    2.4.0, un émetteur à `GetWave_Exists` la fait** : la stimulation (±0,5 par
    bit) passe par son AMI_GetWave, par blocs, puis par le canal **brut** (la
@@ -1424,20 +1489,24 @@ la ligne adaptée sans pertes rend un œil parfait (demi-excursion, 1 UI, retard
 de la ligne) ; une ligne ouverte attaquée par 30 Ω rend l'œil pire cas du
 diagramme en treillis à 0,3 % près ; avec 10 Ω, l'œil fermé se dit fermé ; le
 pire cas n'est jamais plus ouvert que le PRBS, ni en hauteur ni en marge ; un
-CTLE, une FFE ou un DFE ouvrent un œil fermé par les pertes ; la grille imposée
+CTLE (d'au moins 20 mV), une FFE ou un DFE ouvrent davantage un œil creusé par
+les pertes (6 dB à 1 GHz, 5 Gb/s) ; la grille imposée
 rend la même cascade que la grille de la page. **2.0.0** : sous RJ seule,
 l'œil se ferme de σ·Q⁻¹(2·BER) de chaque côté à 0,004 UI près, et sous
 DJ + RJ de DJ + 2σ·Q⁻¹(4·BER) (double Dirac) ; un bruit gaussien ferme
 l'ouverture de σ·Q⁻¹(2·BER) à deux cases près ; l'œil statistique du treillis
-de Bewley **est** le pire cas dès 10⁻⁶ ; un agresseur de crête A ferme le
+de Bewley **est** le pire cas dès 10⁻⁶, à deux cases de tension près ; un agresseur de crête A ferme le
 pire cas d'exactement 2A ; les voisines reprises du couplage portent le NEXT
 et le FEXT de `crosstalk.niveau2` ; un tampon IBIS aux courbes droites et au
-front gaussien rend l'œil du générateur de Thévenin à 1 % près (front composé
-avec le lissage), et sa forme d'onde PRBS simulée est, au pas près, la
+front gaussien rend l'œil du générateur de Thévenin à 10 mV près sur les
+hauteurs et les niveaux, à 1 % sur le retard (front composé avec le lissage),
+et sa forme d'onde PRBS simulée est, au pas près, la
 superposition de ses réponses à un échelon ; un récepteur IBIS sans diode
 rend l'œil de sa capacité ; des diodes franches tiennent le dépassement d'une
 ligne ouverte sous 0,55 V au-delà des rails ; deux vias traversants qui
-laissent des moignons de 2,6 mm ferment l'œil différentiel à 16 Gb/s.
+laissent des moignons de 2,6 mm abaissent d'au moins 20 mV l'œil pire cas
+différentiel à 16 Gb/s (le banc compare avec et sans vias, sans exiger la
+fermeture).
 **2.1.0** : un boîtier nul rend l'œil d'avant au bit près ; L_pkg = 5 nH
 derrière 50 Ω ralentit le front selon la loi exponentielle-gaussienne
 (τ = L/(R_s + Z₀)) à 3 % près ; C_pkg = 2 pF à la broche d'un récepteur
@@ -1446,7 +1515,7 @@ calculé à 3 % près ; `[Pin]` prime sur `[Package]` et la diagonale d'un
 `[Package Model]` sur les deux ; le tdelay de `[Diff Pin]` (40 ps) se mesure
 entre les deux brins du récepteur à 2 % près ; une paire symétrique n'a pas
 de mode commun (< 1 µV), décalée de 30 ps elle en a un de
-V_cc·erf(Δ/(2√2·σ)) à 2 % près ; une paire dessinée passe tout le chemin
+V_cc·erf(Δ/(2√2·σ)) à 2 % près (σ : front du tampon composé avec le lissage) ; une paire dessinée passe tout le chemin
 (S_cc → mode commun) ; un `.ami` d'exemple se lit et propose FFE, DFE, CTLE
 et gigue. **2.2.0** : une paire symétrique (vias et mutuelle des fûts
 compris) forcée à quatre accès rend Sdd et Scc à 10⁻⁹ près, Scd et Sdc nuls,
@@ -1469,11 +1538,13 @@ de mêmes totaux comme ℓ ; une section adaptée de 50 ps retarde le front de
 quand le plan déclare la rugosité de la piste, deux modes et quatre accès, et
 un plan lisse déclaré perd moins et ouvre l'œil ; les condensateurs de
 liaison rendent |H|/|H_sans| = −3 dB à f_c = 1/(2π·C·(Z_tx + Z_rx)) à 1 %
-près (C/2 en différentiel), rien ne change sans eux (au bit près, et le
+près (en simple ; en différentiel le banc ne vérifie que la valeur de f_c, avec
+C/2), rien ne change sans eux (au bit près, et le
 résultat n'en parle pas), R_x = T_w/C quand τ ≫ T_w ; à 100 Mb/s avec 1 nF
 dans 100 Ω le motif 1111… dérive en e^(−t/τ) à 0,5 % de l'amplitude près sur 32 bits et l'œil
-PRBS15 se ferme de plus de moitié ; fenêtre plus courte que τ, le continu
-corrigé rend la dérive de la fenêtre à 2 % près et le résultat le dit ; la
+PRBS15 se ferme de plus de moitié ; fenêtre plus courte que τ (et, depuis la
+2.4.0, de l'ordre de τ), le pôle lent séparé rend la dérive de la fenêtre à
+10⁻³ près et le résultat dit que la fenêtre ne couvre pas la décharge ; la
 chaîne `AMI_parameters_in` s'écrit et se relit, et une bibliothèque hors des
 dossiers autorisés, une URL ou un fichier qui n'en est pas sont refusés ; le
 modèle AMI d'essai (`python/test/ami_test/ami_ffe.c`, FFE à deux coefficients,
@@ -1503,6 +1574,12 @@ fichier : le fichier lu n'est pas modifié, et rouvrir la carte le retrouve.
 
 **Les ports.** 🎯 puis un clic sur une pastille, et l'impédance en R + jX. Au
 port 1, l'impédance de **sortie** de la puce ; au port 2, celle de la charge.
+Un port est **simple** (rapporté à la masse) ou **différentiel** : le bouton ±
+désigne alors la pastille de la borne − (RFI_N face à RFI_P) et la tension du
+port est V(+) − V(−), sans masse — il n'y a pas de mode commun dans ce modèle.
+Il y a **deux ports exactement** : une matrice S 2 × 2, un seul S₂₁. Les
+simulations à 3 ou 4 ports (matrice S complète, export `.sNp`) ne sont pas
+codées.
 
 **Le réseau, trouvé par la page.** Depuis le net du port 1, la marche traverse
 chaque composant qui y touche, puis les nets de ses autres broches ; la masse
@@ -1514,7 +1591,7 @@ autre en T, ou qui traverse une pastille, est **coupée** au point d'accroche
 la carte n'est pas touchée). Le contact se juge au
 CUIVRE et non aux coordonnées, parce que c'est ainsi que les exports réels
 sont faits : un bout de piste touche une pastille, une zone ou un autre bout
-dès que sa demi-largeur le recouvre. Une pastille qui n'est reliée ni par une
+dès que sa demi-largeur (20 µm au moins) le recouvre. Une pastille qui n'est reliée ni par une
 piste ni par une zone est refusée, avec son nom.
 
 **Les zones de cuivre du net** — un raccord de broche en polygone, une plage
@@ -1531,7 +1608,8 @@ subdivisé, si bien qu'un cuivre plus étroit que l'échantillonnage n'est pas
 perdu. Ce sont des volumes finis : chaque cellule porte sa capacité au plan —
 une part de SURFACE et une part de BORD libre, tirées de deux résolutions MoM
 (C′(W) = c_s W + 2 c_b) — ; chaque lien entre voisines, de tailles
-quelconques, sa résistance de peau et sa self PAR DUALITÉ QUASI-TEM,
+quelconques, sa résistance de peau (1/(σ·min(épaisseur, δ)), sans rugosité) et
+sa self PAR DUALITÉ QUASI-TEM,
 L′ = μ₀ε₀ / C′_vide : la « rangée » de cuivre que porte le lien a pour
 capacité dans le vide sa surface plus la frange de ses bords libres
 parallèles au courant — c'est ce qui donne à un cuivre étroit sa vraie self,
@@ -1539,10 +1617,11 @@ qu'une plaque surestimerait d'un facteur trois. La matrice est creuse et
 factorisée en LU creuse (scipy) : une coulée de 60 × 60 mm, 6 500 cellules et
 36 vias, se résout en moins d'une seconde ; le plafond est à 30 000 cellules,
 et la fiche dit s'il a fallu desserrer. Chaque contact — un bout de piste, une
-pastille — est un accès accroché à la cellule qui le contient. Étalonné : une
+pastille — est un accès accroché à la cellule qui le contient. Étalonné (banc, à 2,44 GHz) : une
 zone de 0,3, 1 et 3 mm de large sur 5 mm rend la phase de S₂₁ de la ligne MoM
-de même largeur à 3° près et sa Z d'entrée à 15 % près ; une plage de 3 × 20 mm
-rend son |S₂₁| à 1 % près jusqu'à 1,5 GHz.
+de même largeur à 3° près et sa Z d'entrée à 15 % près ; une plage de 3 × 20 mm,
+attaquée sur toute sa largeur, rend le |S₂₁| de la ligne MoM de 3 mm à 5 % près
+et sa phase à 12° près.
 
 **Les pastilles** portent leur capacité au plan, en dérivation à leur nœud,
 **résolue en 3D** : méthode des moments sur la plaque (panneaux serrés vers les
@@ -1555,10 +1634,12 @@ stratifié homogène et un cuivre mince ; il est donc ÉTALONNÉ sur l'empilage
 réel par la ligne infinie — C = C₃D(pastille) × C′₂D / C′₃D —, ce qui y ramène
 le vernis épargne, l'épaisseur du cuivre et les diélectriques empilés. Le
 morceau de piste qui entre dans la pastille est ôté. Étalonné : le carré
-isolé (0,36679 × 4πε₀a, Read 1997) à 0,5 % près ; la capacité par mètre du
-microruban contre Hammerstad-Jensen à 1 % près, dans le vide comme sur FR-4 ;
-l'allongement de bout ouvert entre Hammerstad-Bekkadal et Kirschning-Jansen,
-qui diffèrent déjà entre eux.
+isolé (0,36679 × 4πε₀a, Read 1997 — À vérifier, référence externe) à 0,5 % près ; la
+capacité par mètre du microruban contre Hammerstad-Jensen (forme de 1980) à 1 % près, dans le
+vide comme sur FR-4 (εr 4,2 ; W/h 1 et 5) ; l'allongement de bout ouvert à
+−15 / +20 % de la formule de Hammerstad (que le banc prend pour étalon) : les
+formules publiées, Hammerstad-Bekkadal et Kirschning-Jansen, diffèrent déjà
+entre elles.
 
 **Le couplage entre pistes du réseau.** Les tronçons droits sur la même
 couche, parallèles à 15° près, à moins de trois hauteurs au plan de cuivre à
@@ -1595,7 +1676,8 @@ son Z₀. Une voisine en arc n'entre pas dans les groupes.
 **Le couplage magnétique des selfs.** Chaque self à deux broches devient un
 **solénoïde** d'axe horizontal, d'une pastille à l'autre — la géométrie d'une
 self bobinée CMS (LQW) : diamètre 70 % de la largeur du boîtier, longueur 60 %
-de l'entraxe, centre à mi-hauteur du boîtier. Son nombre de tours se tire de
+de l'entraxe, centre à mi-hauteur du boîtier (sa hauteur est prise égale à sa
+largeur). Son nombre de tours se tire de
 sa self par Wheeler : la mutuelle ne dépend que de la géométrie et des
 valeurs. Les mutuelles se calculent par **Neumann** sur des segments, avec
 l'**image** dans le plan de référence (le banc rend la formule exacte de
@@ -1616,14 +1698,16 @@ plan qui lui sert de retour — le plus proche au-dessus et au-dessous — et
 cherche où son cuivre manque. Un manque au milieu de la branche est une
 **fente franchie** : on mesure de chaque côté la distance jusqu'où le plan se
 referme sur la ligne de la piste, c'est-à-dire le détour du courant de retour.
-Chaque détour d est une self par la formule de Ott (EMC Engineering, 2009),
+Chaque détour d est une self par la formule de Ott (EMC Engineering, 2009 —
+À vérifier : la formule n'a pas été confrontée à l'ouvrage),
 L = (μ₀/π)·2d·ln(2d/W), les deux en parallèle ; en fréquence, chacun est un
 tronçon de fente court-circuité, Z = jωL·tan(βd)/(βd), dans la permittivité
 moyenne des deux faces du plan, avec une perte (Q ≈ 50) qui tient lieu de son
 rayonnement. C'est une estimation d'ingénieur : une fente vraie rayonne. Un
 plan coupé de bord à bord plafonne le détour à 30 mm et le dit — le retour y
 passe par des condensateurs ou des coutures que le calcul ne voit pas. Un
-trou plus petit que deux largeurs de piste (un antipad) est ignoré ; un manque
+trou dont le détour, des deux côtés, reste sous deux largeurs de piste (un
+antipad) est ignoré ; un manque
 au BOUT d'une branche — la découpe d'usage sous une pastille RF — est signalé,
 pas chiffré. Un changement de plan sous la piste par un via relève déjà du
 modèle de via (retour par les vias de masse voisins, référence qui change de
@@ -1653,7 +1737,8 @@ tiré de la valeur qui le remplace. Les sous-circuits SPICE sont lus **en linéa
 (R, L, C, sous-circuits imbriqués, `PARAMS:`) : un transistor ou une diode
 SPICE est refusé — il lui faudrait un point de polarisation — et la fiche
 demande son `.sNp`. Les Touchstone v1 et v2 sont lus en S, Y ou Z, en MA, DB
-ou RI, sans extrapolation hors de leur bande. Un fichier à N ports va sur les
+ou RI, sans extrapolation hors de leur bande (paramètres G et H refusés,
+données de bruit d'un `.s2p` ignorées). Un fichier à N ports va sur les
 N broches du composant, dans l'ordre des numéros ; une puce qui a d'autres
 broches (masse, commandes) le dit dans le fichier, en commentaire :
 `! broches : 5 3 1` met le port k sur la k-ième broche nommée, `! masse : 2`
@@ -1681,7 +1766,8 @@ c'est dit.
 **Le calcul.** Une analyse nodale : chaque branche devient un quadripôle Y,
 chaque composant son admittance ; un bloc Touchstone se pose directement en S,
 ses courants de broche en inconnues — un « thru » mesuré n'a pas de matrice Y.
-Un 0 Ω fusionne ses deux nœuds. Chaque port est fermé sur sa référence et
+Un 0 Ω (ou une self nulle) se pose en très grande admittance (10⁹ S), sans fusionner
+les nœuds. Chaque port est fermé sur sa référence et
 attaqué à son tour, ce qui donne les paramètres S **généralisés** (ondes de
 puissance) :
 
@@ -1694,12 +1780,18 @@ les S ordinaires.
 
 **La fiche.** S₂₁ à f₀ et en pour-cent de la puissance disponible ; la Z vue
 par la puce face à sa **cible** (le conjugué de sa sortie) ; la perte
-d'insertion partagée entre **désadaptation** et **dissipation** — les confondre,
-c'est retoucher une self quand c'est la piste qui chauffe. Les courbes S₂₁,
-S₁₁, S₂₂ sur la bande, l'abaque de Smith de la Z vue par la puce, le tableau
-des pistes (Z₀, pertes) et des vias de masse. Le `.s2p` exporté est
-**renormalisé à 50 Ω** — Touchstone n'accepte pas de référence complexe — et
-son en-tête porte les impédances réelles du calcul.
+d'insertion partagée entre **désadaptation**, −10·log(1 − |S₁₁|²) (ce qui repart
+vers la puce), et **dissipation**, −10·log(|S₂₁|² / (1 − |S₁₁|²)) (ce qui entre
+dans le réseau sans arriver à la charge : pistes, composants, pistes voisines) —
+les deux s'ajoutent en dB pour donner −20·log|S₂₁|, et les confondre, c'est
+retoucher une self quand c'est la piste qui chauffe. La phrase de verdict est
+rouge si S₁₁ > −10 dB, une note si la dissipation passe 1 dB. Les courbes S₂₁,
+S₁₁, S₂₂ sur la bande, l'abaque de Smith (normalisé à 50 Ω) de la Z vue par la
+puce, avec sa cible entourée, le tableau
+des pistes (Z₀, pertes) et des vias de masse. Le `.s2p` exporté (bouton
+**.s2p**, module / phase, après un calcul) est **renormalisé à 50 Ω** —
+Touchstone n'accepte pas de référence complexe — et son en-tête porte les
+impédances réelles du calcul.
 
 **« Et si ».** Chaque composant du chemin accepte une autre valeur (pF, nH,
 Ω) : il devient un idéal de cette valeur le temps du calcul, la carte ne change
@@ -1714,12 +1806,15 @@ de valoir, et le dit : la coupure du premier mode supérieur de chaque piste,
 c₀ / (2 W_eff √εr), W_eff étant la largeur équivalente tirée de la capacité
 MoM ; la résonance propre de chaque pastille, au-delà de laquelle ce n'est
 plus une capacité ; le couplage fort aux ondes de surface de chaque stratifié
-en microruban (Bahl et Trivedi) et la coupure de son mode TE₁ ; et la
+en microruban (c₀·atan(εr) / (√2·π·h·√(εr − 1)), attribué à Bahl et Trivedi —
+À vérifier) et la coupure de son mode TE₁, c₀ / (4h√(εr − 1)) ; et la
 fréquence où (k₀h)², dont croissent les pertes par rayonnement des
-discontinuités, atteint 1 %. La fiche porte la plus basse (« Validité :
-quasi-statique jusqu'à … ») et un avertissement sort dès que la bande la
-dépasse. Pour une piste de 0,35 mm sur 0,2 mm de FR-4, c'est 23,9 GHz ; pour
-le réseau du SX1261 de la carte d'exemple, 12,9 GHz.
+discontinuités, atteint 1 %, soit 0,1·c₀ / (2πh). La fiche porte la plus basse
+(« Validité : quasi-statique jusqu'à … ») et un avertissement sort dès que la
+bande la dépasse. Pour une piste de 0,35 mm sur 0,2 mm de FR-4, c'est le
+rayonnement qui borne, à 23,9 GHz (0,1·c₀ / (2π·0,2 mm)) ; pour le réseau du
+SX1261 de la carte d'exemple, 12,9 GHz — ce qui correspond à h ≈ 0,37 mm sous
+la piste (À vérifier : l'empilage du fichier IPC-2581 n'a pas été relu).
 
 ### PI — Impédance fréquentielle du PDN (Z(ω))
 
@@ -1747,7 +1842,7 @@ pour n'importe quel rail d'alimentation (+3V3, +5V, VDD...) présent sur la cart
 
    | Événement | ΔI | Fréquence |
    |---|---|---|
-   | Réveil (veille → actif) | courant actif de la charge (datasheet, IDD) | $0{,}35 / t$, $t \approx 1$ µs |
+   | Réveil (veille → actif) | courant actif (datasheet, IDD) moins le courant de veille | $0{,}35 / t$, $t \approx 1$ µs |
    | Horloge | courant actif | fréquence d'horloge |
    | Sorties qui basculent ensemble | $N \cdot C \cdot V_{dd} / t$ | $0{,}35 / t$, $t$ = front (≈ 5 ns) |
    | Charge commutée (LED, relais…) | son courant | $0{,}35 / t$ |
@@ -1805,7 +1900,8 @@ pour n'importe quel rail d'alimentation (+3V3, +5V, VDD...) présent sur la cart
    Chaque condensateur connecté entre le rail et la masse est détecté automatiquement
    sur le PCB (`SIM_PCB.pdnCondensateurs(net)`, `SIM_IPC.pdnCondensateurs(net)`).
    Les deux outils appliquent les mêmes règles, qui vivent dans
-   `commun/simulation-em.js` :
+   `commun/simulation-em.js` (l'éditeur lit les parasites par
+   `pcbParasitesComposant`, qui partage `simPDNParasitesDefaut`) :
    - **ce qui est un condensateur** (`simPDNEstCondensateur`) : le type déclaré
      s'il dit quelque chose, puis une référence `C` suivie d'un chiffre, puis une
      valeur en farads si la référence ne désigne pas une autre famille ; au-delà de
@@ -1815,8 +1911,20 @@ pour n'importe quel rail d'alimentation (+3V3, +5V, VDD...) présent sur la cart
      un 100 nF ;
    - **ses parasites** (`simPDNParasitesCapa`) : la base Murata par modèle SPICE,
      MPN (le champ `part` d'un IPC-2581) ou nom de pièce, puis des valeurs typiques
-     par boîtier et par capacité. La copie embarquée de la base est dans `commun/` :
-     la visionneuse n'en avait aucune dans le navigateur ;
+     par boîtier et par capacité (ESL typique 0,20 nH en 0201 à 1,20 nH en 1206 ;
+     ESR 8 mΩ dès 10 µF, 15 mΩ dès 1 µF, 28 mΩ dès 100 nF, 30 mΩ en dessous,
+     25 mΩ pour un C0G/NP0). La copie embarquée de la base est
+     `SIM_PARASITES_MURATA_DEFAUT`, dans `commun/simulation-em.js`, identique à
+     `commun/parasites-murata.json` (110 références, dont des selfs `{l, dcr}`) :
+     la visionneuse n'en avait aucune dans le navigateur. Servie par `web_CAO.py`,
+     la table est complétée par `/api/lib/parasites`, relue dans les `.sub` de
+     `lib_simulation` : d'un MLCC Murata, C = C01, ESL = **somme des selfs de
+     l'échelle** (chaque étage L‖R ou C‖L‖R est une self en série sous la
+     résonance ; L02 seul en sous-estimait l'ESL de 1,03 à 92×), ESR = partie
+     réelle de l'échelle entière à f₀ = 1/2π√(C·ESL) ; résonance et |Z| min de
+     l'échelle complète retrouvés à 10 % près, sauf 13 références sur 84 (jusqu'à
+     +20 % d'ESL, et +126 % pour GCM0335C1E1R8CA16, 1,8 pF) ; d'une self LQW,
+     L2/R2 ;
    - **son inductance de montage** (`simPDNInductanceMontage`) : la table par
      boîtier (0,35 nH en 0201 à 1,3 nH en 1206) suppose le plan à 0,2 mm sous la
      face. Quand la cavité est connue, elle est corrigée par la longueur $h$ de la
@@ -1824,7 +1932,7 @@ pour n'importe quel rail d'alimentation (+3V3, +5V, VDD...) présent sur la cart
      $L_{mount} = L_{table} + 0{,}76\ \text{nH/mm}\cdot(h - 0{,}2\ \text{mm})$,
      soit $(\mu_0/\pi)\ln(s/r)$ pour $s = 1$ mm et $r = 0{,}15$ mm. Un
      condensateur posé sur la face qui porte elle-même un plan de la cavité a
-     $h = 0$ ;
+     $h = 0$ (la correction ne descend jamais sous 0,1 nH) ;
    - **sa piste jusqu'à la charge** (`simPDNCheminsPiste`), comptée **seulement
      sans cavité**. Le plus court chemin dans le cuivre du rail (pistes, arcs,
      jonctions en T) relie les pastilles du condensateur à celles de la charge
@@ -1835,12 +1943,12 @@ pour n'importe quel rail d'alimentation (+3V3, +5V, VDD...) présent sur la cart
      de 30 mm porte une vingtaine de nH, et sa résonance série (0603) descend
      d'environ 4 MHz à environ 1 MHz. Sans ce terme, le modèle localisé posait chaque
      condensateur au pied de la charge. Un condensateur que le cuivre ne relie
-     pas reçoit une distance à vol d'oiseau, signalée « ≈ » dans le tableau.
+     pas reçoit une distance à vol d'oiseau (piste de 0,3 mm de large), signalée « ≈ » dans le tableau.
      Les **polygones de cuivre** du rail conduisent aussi : un export réel
      dessine volontiers une piste épaisse comme un polygone. Chaque polygone
      est tramé (trous compris), les nœuds qui tombent dedans sont reliés par le
      plus court chemin *dans* le cuivre, et la largeur équivalente vaut
-     aire / plus longue traversée. Dans la visionneuse, un composant dont les
+     aire / plus long de ces chemins (bornée à 0,1–10 000 mm). Dans la visionneuse, un composant dont les
      pastilles ne sont rattachées à personne (pastilles libres de l'export) est
      relié au net par ses **broches** (`pins`), placées comme des pastilles.
      Avec une cavité, c'est l'épandage qui porte ce trajet : la piste n'est pas
@@ -1882,7 +1990,7 @@ pour n'importe quel rail d'alimentation (+3V3, +5V, VDD...) présent sur la cart
      $$\frac{1}{Q_{mn}} = \tan\delta + \frac{\delta_s(f_{mn})}{d}, \quad \Delta f_{3\text{dB}} = \frac{f_{mn}}{Q_{mn}}$$
    - **Distribution spatiale des ondes stationnaires & Points chauds HF** :
      $$V_{mn}(x, y) = V_0 \cos\left(\frac{m\pi x}{a}\right) \cos\left(\frac{n\pi y}{b}\right)$$
-     Les quatre coins $(0,0), (a,0), (0,b), (a,b)$ et les arêtes présentent systématiquement des ventres d'onde ($|V|=1$, points chauds), sources d'émission et de rayonnement CEM de bord de carte.
+     Les quatre coins $(0,0), (a,0), (0,b), (a,b)$ sont des ventres d'onde ($|V|=1$, points chauds) pour **tous** les modes ; les arêtes entières ne le sont que pour les modes purs ($TM_{m0}$ : bords $x=0$ et $x=a$ ; $TM_{0n}$ : bords $y=0$ et $y=b$). Ce sont des sources d'émission et de rayonnement CEM de bord de carte.
    - **Impédance modale vue au port, sommée en série** :
      Chaque mode se comporte comme un circuit RLC parallèle, et le développement
      d'Okoshi / Novak fait s'**additionner ces impédances** à celle de la capacité
@@ -1918,8 +2026,12 @@ pour n'importe quel rail d'alimentation (+3V3, +5V, VDD...) présent sur la cart
    **Ce modèle dégénère exactement en l'ancien** partout où la cavité est
    équipotentielle : quand seul le terme $(0,0)$ compte, tous les $Z_{ij}$ valent
    $1/(j\omega C_{plane})$, le réseau se réduit à un shunt unique et la réduction
-   redonne, au bit près, la mise en parallèle du VRM, des condensateurs et du plan.
-   C'est ce que le banc vérifie en deçà de 100 kHz. Un condensateur dont on ignore
+   redonne la mise en parallèle du VRM, des condensateurs et du plan. Le banc
+   (harnais de l'éditeur PCB) le vérifie ainsi : modes coupés, la position d'un
+   condensateur ne change rien (écart relatif < 10⁻⁹) ; modes actifs, en deçà de
+   100 kHz $Z_{pdn}$ ne bouge pas de plus de 10⁻⁶ et en deçà de 1 MHz elle reste
+   à 10⁻³ du modèle localisé (les modes d'ordre élevé et l'épandage pèsent un
+   peu dès que la fréquence monte). Un condensateur dont on ignore
    les coordonnées est posé sur le port observé : on ne lui invente pas de distance,
    il redevient simplement parallèle.
 
@@ -1932,18 +2044,24 @@ pour n'importe quel rail d'alimentation (+3V3, +5V, VDD...) présent sur la cart
    $$L_{ij}^{\infty} = \frac{\mu_0 d}{\pi^2 a b}\sum_{m,n}
      \frac{c_m^2 c_n^2\,\kappa_{i,mn}\kappa_{j,mn}}{(m/a)^2 + (n/b)^2}$$
    $\varepsilon_r$ disparaît, comme il se doit pour une inductance, et la somme est
-   symétrique et linéaire en $d$ — trois invariants que le banc éprouve.
+   symétrique et linéaire en $d$ — le banc éprouve la symétrie, la linéarité en
+   $d$, la positivité, un couplage mutuel qui ne dépasse jamais l'auto-inductance
+   et la décroissance avec la distance (la fonction n'a pas $\varepsilon_r$
+   pour argument).
 
    **Pourquoi l'ouverture du port n'est pas un détail.** L'auto-impédance d'un port
    *ponctuel* diverge : $\sum 1/((m/a)^2+(n/b)^2)$ croît sans limite, et $Z_{00}$ avec
-   elle. Mesuré sur un plan de 100 × 80 mm, $Z_{00} - Z_{0L}$ passait de 1,07 · 10⁻²
+   elle. Mesuré sur un plan de 100 × 80 mm (mesure d'étude, aucun banc ne la
+   rejoue), $Z_{00} - Z_{0L}$ passait de 1,07 · 10⁻²
    Ω à l'ordre 4 à 2,23 · 10⁻² Ω à l'ordre 45, sans se stabiliser : le chiffre
    mesurait la troncature, pas la carte. C'est la taille finie du port — l'écartement
    $w$ de la paire de vias qui traverse les plans — qui fait converger la somme, via
    le facteur $\mathrm{sinc}$ porté par $\kappa$ : il éteint les modes plus courts que
    le port lui-même. L'ordre de troncature est donc choisi d'après $w$, là où ce
-   facteur a fait son office ($\approx 1{,}6\,a/w$). Avec $w = 1{,}5$ mm par défaut,
-   l'auto-inductance d'un coin vaut 0,34 nH et celle du centre 0,07 nH : un coin est
+   facteur a fait son office ($\approx 1{,}6\,a/w$, borné entre 8 et 256 par axe).
+   Avec $w = 1{,}5$ mm par défaut, l'auto-inductance d'un coin vaut 0,34 nH et
+   celle du centre 0,07 nH (plan de 100 × 80 mm, $d$ = 100 µm ; le banc
+   n'éprouve que « coin > 3 × centre ») : un coin est
    confiné par deux bords, le centre ne l'est pas.
 
    Le solveur identifie ensuite les fréquences d'anti-résonance (pics d'impédance
@@ -1977,7 +2095,7 @@ pour n'importe quel rail d'alimentation (+3V3, +5V, VDD...) présent sur la cart
    **Ce que le modèle ne fait pas.** Le VRM n'a pas de position : il reste en
    parallèle sur le point observé (voir ci-dessus). Les modes résonants sont tous
    ceux dont la fréquence tombe sous $\max(1{,}5\,f_{max},\ 2{,}5\ \text{GHz})$, et
-   leur ordre suit donc la taille de la carte. La liste était bornée à
+   leur ordre suit donc la taille de la carte (plafonné à 64 par axe). La liste était bornée à
    $m, n \le 4$ : sur une carte de 400 mm, TM₅₀ (≈ 903 MHz) passait pour une
    inductance pure. Les pertes ohmiques du cuivre dans le plan (résistance DC
    d'épandage) ne sont pas modélisées : seules le sont les pertes diélectriques et
@@ -2009,28 +2127,34 @@ par `cao_sim_ecrire`. La méthode (pire cas, page et citation) est dans la fiche
 
 | Simulation | Ce que la datasheet règle |
 |---|---|
-| PDN, fiche de la charge | fréquence d'horloge, IDD actif / veille, temps de réveil, front et courant des sorties, VDD min |
+| PDN, fiche de la charge | fréquence d'horloge, IDD actif / veille, temps de réveil, nombre de sorties qui basculent ensemble, front, charge et courant max par sortie, VDD min |
 | PDN, cible et régulateur | Vdd, ondulation admise, R_vrm (load regulation), f_vrm (bande passante de boucle), ΔI s'il est donné tel quel |
-| PDN, stratifié et condensateurs | εr, tanδ ; ESR, ESL et capacité effective, par repère, MPN ou valeur (ces derniers saisis dans la page) |
-| SI (impédance, Z diff, crosstalk, retour, santé) | temps de montée, amplitude, marge de bruit, impédances visées et tolérances, f₀ |
+| PDN, stratifié et condensateurs | εr, tanδ ; ESR, ESL et capacité effective, par repère, MPN ou valeur (groupe `condensateurs` de `cao_sim_ecrire`, avec sa `cible`) |
+| SI (impédance, Z diff, crosstalk, retour, santé) | temps de montée, amplitude, impédances visées (simple et différentielle) et leurs tolérances, f₀ |
 | Bus synchrone | protocole, fréquence, tsu / th du récepteur, tco min / max de l'émetteur, pull-up I2C, débit UART |
-| Chute DC | budgets, ambiante, conductivité du stratifié ; courant total par composant et tension des sources, saisis dans la page |
+| Chute DC | budgets (chute admise, échauffement), ambiante, conductivité du stratifié ; courant total par composant et tension des sources (groupe `bornes_dc`, avec sa `cible` : la borne doit déjà être posée dans la page, Chute DC → ⚡ Du schéma) |
 
 **La liste est fermée** (`commun/simulation-datasheet.js`) : chaque clé a son
 unité et ses bornes physiques, que Claude lit avec les valeurs en cours. **Rien
 ne s'applique sans être vu** : la carte du panneau « Claude » montre chaque
 valeur à côté de la valeur actuelle, et une valeur hors bornes, une clé inconnue
-ou une autre unité refuse le lot entier, motif affiché.
+ou une autre unité (sans conversion : celle du catalogue) refuse le lot entier,
+motif affiché ; un lot compte 50 éléments au plus, et une clé deux fois dans le
+même lot est refusée.
 
 Après application, ce qu'un réglage invalide est oublié (f₀ ou front changé →
 résultat SI à relancer), Z(ω) se recalcule, et l'assistant ΔI s'allume si la
-fiche de la charge a été remplie. Les parasites des condensateurs et les bornes
-de la chute DC relevés dans une datasheet se saisissent encore dans la page.
+fiche de la charge a été remplie. Les parasites des condensateurs relevés dans
+une datasheet sont gardés par MPN dans le profil (sans MPN, pour la session
+seulement) ; la chute DC, elle, est à relancer après un changement de bornes ou
+de stratifié.
 
 ### Deux modes, et ils ne répondent pas à la même question
 
 Cliquer une piste donne son impédance tout de suite, sans serveur : c'est
-`ltZ0()`, Hammerstad-Jensen avec la correction d'épaisseur de Wheeler, la même
+`ltZ0()`, Hammerstad-Jensen en deux branches (W/h ≤ 1 et > 1 : la forme
+simplifiée, celle de l'étalon du banc de `ligne_mom`, et non la forme de 1980)
+avec la correction d'épaisseur de Wheeler (triplaque : IPC-2141A), la même
 expression dans les deux outils. Le panneau « Simulation EM » passe, lui, par
 le solveur de section. Sur un microruban courant les deux s'accordent à **0,2 %**
 — l'aperçu n'est pas une version dégradée, c'est la même physique par un chemin
@@ -2038,35 +2162,38 @@ plus court. Ils divergent là où la formule sort de son domaine : triplaque
 décentrée, piste interne couverte, section inhabituelle. **C'est le désaccord
 qui informe**, et c'est pourquoi les deux existent.
 
-### Pourquoi pas l'onde complète, et ce qui tient `mom_solver/` à l'écart
+### Pourquoi pas l'onde complète, et où est passé `mom_solver/`
 
-Le paquet `mom_solver/` vise la 2,5D pleine onde : maillage triangulaire,
-fonctions de base RWG, matrice d'impédance, paramètres S. Il n'est pas dans le
-chemin de calcul, et rien de la simulation n'en dépend — pas même pour
-démarrer. Mais la raison a changé, et il faut la dire à jour.
+Le paquet `mom_solver/` visait la 2,5D pleine onde : maillage triangulaire,
+fonctions de base RWG, matrice d'impédance, paramètres S. **Il n'est plus dans
+le dépôt** : le commit `ab691cb` (2026-09-16, « recentrage sur le solveur 2D
+instantané ») l'a retiré, avec `python/simulation_25d.py`, la route
+`/api/simulation-25d` et le sélecteur de moteur de l'interface. Rien de la
+simulation n'en dépendait. Le message du commit annonce une sauvegarde dans la
+branche `archive/mom-solver-25d`, qui n'existe pas dans ce clone (À vérifier sur
+le dépôt distant) ; l'historique git avant `ab691cb` contient le code.
 
-**Son noyau est désormais juste, et mesuré.** La formulation est la MPIE
-complète, terme de potentiel scalaire compris ; les deux potentiels ont chacun
-leur fonction de Green — c'était le défaut principal, et il pesait 26 % sur
-ε_eff ; les images complexes sont ajustées par un vrai GPOF à deux niveaux sur
-la Green spectrale exacte du milieu stratifié, et non posées sur des
-constantes. Le banc le mesure, dont la comparaison d'ε_eff contre
-`ligne_mom` : **0,49 %** — deux méthodes qui ne partagent aucun code tombent
-sur le même chiffre, ce qui est un certificat de validité et non un concours
-de précision.
+**Ce que ce moteur avait montré**, d'après [HISTORIQUE_DEVELOPPEMENT.md](HISTORIQUE_DEVELOPPEMENT.md)
+(ses bancs ne sont plus dans l'arbre : ces chiffres ne se rejouent pas ici, À
+vérifier en restaurant le paquet). Son noyau était juste : MPIE complète,
+terme de potentiel scalaire compris, une fonction de Green par potentiel
+(c'était le défaut principal, 26 % sur ε_eff), images complexes ajustées par un
+GPOF à deux niveaux ; l'ε_eff d'une ligne de 12 mm tombait à **0,49 %** de
+`ligne_mom` — deux méthodes qui ne partagent aucun code sur le même chiffre,
+certificat de validité plus que concours de précision. Son premier port, une
+coupe complète du conducteur, était une fente **en série** : elle ne couplait au
+mode guidé que sur une ligne longue devant la longueur d'onde (|S₂₁| = 0,007 à
+L/λ_g = 0,07, 0,540 à 1,50). Le port **vertical** — un via, ce qu'est un port de
+microruban, une tension entre la piste et le plan — a été fait le 2026-08-30 :
+|S₂₁| de 0,0065 à 0,96 sur la même ligne, ε_eff dé-embarqué à 0,93 % de
+`ligne_mom` à 5 GHz.
 
-**Ce qui le tient à l'écart est le MODÈLE DE PORT.** Un port de microruban est
-une tension entre la piste et le plan de masse : il demande un courant
-**vertical**, donc un via. Le port actuel est une coupe complète du
-conducteur, c'est-à-dire une fente **en série** — elle ne couple au mode guidé
-que sur une ligne longue devant la longueur d'onde, et c'est mesuré
-(|S₂₁| = 0,007 à L/λ_g = 0,07, 0,540 à 1,50). Tant que ce port n'existe pas,
-|S₂₁| mesure le couplage de la fente et non la ligne.
-
-Le détail, les mesures et le cas de non-régression sont dans
-[HISTORIQUE_DEVELOPPEMENT.md](HISTORIQUE_DEVELOPPEMENT.md).
-Le jour où ce port sera là, le moteur apportera ce
-que le modèle de ligne ne peut pas donner — les coudes réels, les résonances,
-le rayonnement, le couplage entre pistes non parallèles — et les deux se
-compléteront.
+**Pourquoi le panneau n'a pas besoin d'onde complète à 868 MHz** : λ_g y vaut
+environ 185 mm sur du FR-4, la physique est quasi-statique, et `ligne_mom` la résout
+(une centaine d'inconnues sur la section) au lieu de l'approcher. Une onde
+complète discrétise une surface, plus cher pour un résultat qui n'est pas
+meilleur. Elle apporterait ce que le modèle de ligne ne peut pas donner — les
+coudes réels, les résonances, le rayonnement, le couplage entre pistes non
+parallèles — ce que le simulateur dit ne pas voir (« Le domaine de validité »,
+plus haut) ; il faudrait pour cela restaurer le paquet depuis l'historique.
 
