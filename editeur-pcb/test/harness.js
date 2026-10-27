@@ -24026,7 +24026,9 @@ const FP_ORIGINE_FICHE=new Set([
   "Quectel-L80","SMA-EDGE-142-0701-801","SMA-EDGE-142-0701-801-DOS",
   "Samtec-SSW-105-02-S-RA","Samtec-SSW-106-02-S-RA",
   "Samtec-SSW-108-02-S-RA","SiliconLabs-BGX220P","SiliconLabs-WT12","TE-2305018-2",
-  "Wurth-68610614122","Wurth-693022010811"]);
+  "Wurth-68610614122","Wurth-693022010811",
+  // refaites d'après KiCad (PROJETS 9c526363, 26/10/2026) : origine KiCad, gardée
+  "SOT-89","SOT-223","TO-220","TO-247","TO-263","USB-C-6P","USB-C-16P"]);
 T("empreintes : toutes centrées sur leur origine (LIB et boîtiers intégrés)",()=>{
   /* LA GÉOMÉTRIE DES FICHIERS DE LA LIB, et plus seulement celle que le nom
      calcule : chaque fichier est posé par fpApplyDef, comme dans la page. Sans
