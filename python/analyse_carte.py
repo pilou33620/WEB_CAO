@@ -1832,7 +1832,7 @@ def empilage(doc, couches):
 # Chaque section (couche, largeur, écarts à la masse coplanaire) résolue par
 # la méthode des moments : Z₀, vitesse, C'. Par net : longueur, retard, R, L,
 # C. La masse coplanaire se mesure dans l'image de la couche, de chaque côté,
-# jusqu'à 3 mm : une ligne RF noyée dans sa masse n'est pas un microruban, et
+# jusqu'à 2 mm : une ligne RF noyée dans sa masse n'est pas un microruban, et
 # vingt pour cent d'impédance en dépendent. Une piste posée DANS une zone de
 # masse (l'éditeur envoie ses zones sans les isolations) prend l'isolement de
 # la zone. Un tronçon d'impédance Z
@@ -1860,7 +1860,7 @@ def _quantifier(e):
 
 def _ecarts_masse(doc, surf, c, x1, y1, x2, y2, w, unite):
     """(gauche, droite) : l'écart de la piste au cuivre de masse de sa
-    couche, en mm, 0 quand il n'y en a pas à moins de 3 mm."""
+    couche, en mm, 0 quand il n'y en a pas à moins de 2 mm."""
     if surf is None or c not in surf.images:
         return 0.0, 0.0
     np = surf.np
@@ -3514,8 +3514,9 @@ def analyser_document(doc):
         se = xt = None
         if not couches:
             notes.append("Pas d'empilage dans le document : empilage, impédances, chemins de"
-                         " retour, fentes, coutures, diaphonie, bord de carte et paires"
-                         " différentielles non vérifiés.")
+                         " retour, fentes, coutures, diaphonie, bord de carte, paires"
+                         " différentielles, moignons de vias et branches en T non"
+                         " vérifiés.")
         else:
             if voulue("empilage"):
                 constats += empilage(doc, couches)

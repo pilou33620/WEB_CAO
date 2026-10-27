@@ -64,7 +64,7 @@ function schCmGroupeCreer(nom,nets,mode,tol){
     let k=1;while(C.groupes.some(g=>g.id==="g"+k))k++;
     id="g"+k;
     C.groupes.push({id,nom:String(nom||"").trim()||("Groupe "+(C.groupes.length+1)),nets,
-      mode:mode==="ps"?"ps":"mm",tol:Number.isFinite(+tol)&&+tol>=0?+tol:(mode==="ps"?10:0.5),ref:""});
+      mode:mode==="ps"?"ps":"mm",tol:tol!=null&&tol!==""&&Number.isFinite(+tol)&&+tol>=0?+tol:(mode==="ps"?10:0.5),ref:""});
   });
   return schCmModele().groupes.find(g=>g.id===id)||null;
 }

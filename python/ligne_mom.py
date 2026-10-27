@@ -376,6 +376,8 @@
 #   probleme par un autre bout, et melanger les deux dans le meme dossier
 #   ferait croire a un seul solveur. Celui-ci vit donc dans python/, avec les
 #   autres modules du depot, et mom_solver/ reste entier.
+#   (Depuis le 2026-09-16, commit ab691cb, mom_solver/ n'existe plus : le
+#   moteur 2,5D a ete retire du depot ; ce module est le seul solveur.)
 #
 #   CE QU'IL FAIT. On cherche la densite de charge sur le ruban qui met tout le
 #   ruban a 1 volt. Le substrat et les plans de masse ne sont pas mailles : ils
@@ -402,7 +404,7 @@
 #     · il voit une section, donc une ligne UNIFORME et DROITE. Une suite de
 #       sections mises bout a bout, oui ; ce qui se passe au raccord, non ;
 #     · il ne rayonne pas et ne resonne pas. Pour cela il faut l'onde complete,
-#       c'est-a-dire mom_solver/.
+#       que le depot n'a plus (mom_solver/, retire le 2026-09-16).
 # Fonctions : green_spectral_micro, green_spectral_micro_couvert,
 #             green_spectral_strip, capacitance, capacitance_coplanaire,
 #             solve_line, dispersion_getsinger, line_losses, abcd_line,

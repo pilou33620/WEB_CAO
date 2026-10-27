@@ -66,8 +66,9 @@ function removePage(i){
     alert("Le projet doit conserver au moins une feuille de schématique en plus de la feuille hiérarchique.");
     return;
   }
+  storeCurrent(); // le décompte lit la feuille, pas l'état vivant de S
   const p=S.pages[i];
-  if((p.comps.length||p.wires.length)&&!confirm("Supprimer « "+p.name+" » et tout son contenu ?"))return;
+  if((p.comps.length||p.wires.length||(p.drawings||[]).length)&&!confirm("Supprimer « "+p.name+" » et tout son contenu ?"))return;
   push();storeCurrent();
   S.pages.splice(i,1);
   if(i===S.page) loadPage(Math.min(S.page,S.pages.length-1));

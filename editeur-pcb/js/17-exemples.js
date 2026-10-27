@@ -22,7 +22,7 @@
    Les deux cartes :
      1. « Commande 12 V » — 2 couches, le pendant du schéma de démonstration de
         l'éditeur schématique : régulateur, étage NPN, plan de masse au dos ;
-     2. « Interface USB 2.0 » — 4 couches, une paire différentielle routée sur
+     2. « Interface IoT & Bus Haute Vitesse — 4 couches » (paire USB 2.0), une paire différentielle routée sur
         le dessus au-dessus d'un plan de masse continu, deux plans internes, et
         un bus SWD passé au dos par vias.
    ============================================================================= */

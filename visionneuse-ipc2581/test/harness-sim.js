@@ -4537,7 +4537,7 @@ T("SIM_IPC : détection des rails PDN et extraction des condensateurs avec paras
   if (!c10) throw new Error("C10 introuvable");
   if (c10.lMount !== 0.50e-9) throw new Error("L_mount 0402 incorrect");
   if (c10.prov !== "spice") throw new Error("C10 doit utiliser le modèle spice Murata");
-  if (Math.abs(c10.esr - 0.0142) > 1e-4) throw new Error("ESR Murata invalide");
+  if (Math.abs(c10.esr - 0.0195) > 1e-4) throw new Error("ESR Murata invalide");  // ESL = somme des selfs de l'échelle .sub, ESR = Re Z à f0 (avant : L02/R03 du seul premier étage)
 
   const capsVin = SIM_IPC.pdnCondensateurs("VIN");
   if (capsVin.length !== 1) throw new Error("1 condensateur attendu sur VIN, trouvé: " + capsVin.length);
@@ -5647,7 +5647,7 @@ T("PDN (B6/B7) : point observé sur le circuit alimenté, montage selon la profo
 T("PDN : le modèle du catalogue (« lib/simulation/X.sub ») trouve la base Murata", function(){
   const p = simPDNParasitesCapa({spice:"lib/simulation/GCM155R71C104KA55.sub", mpn:"GCM155R71C104KA55D", val:"100nF"});
   if(p.prov !== "spice") throw new Error("prov « spice » attendue, obtenue " + p.prov);
-  if(Math.abs(p.esr - 0.0142) > 1e-6) throw new Error("ESR Murata attendue 0.0142, obtenue " + p.esr);
+  if(Math.abs(p.esr - 0.0195) > 1e-6) throw new Error("ESR Murata attendue 0.0195, obtenue " + p.esr);  // ESL = somme des selfs de l'échelle .sub, ESR = Re Z à f0 (avant : L02/R03 du seul premier étage)
 });
 
 T("PDN (B8) : la visionneuse trouve la base Murata par `part`, et chiffre comme l'éditeur", function(){
@@ -5657,7 +5657,8 @@ T("PDN (B8) : la visionneuse trouve la base Murata par `part`, et chiffre comme 
   const caps = SIM_IPC.pdnCondensateurs("+3V3");
   const c1 = caps.find(c => c.ref === "C1"), c2 = caps.find(c => c.ref === "C2");
   if(c1.prov !== "spice") throw new Error("C1 porte un MPN Murata dans `part` : prov « spice » attendue, obtenue " + c1.prov);
-  if(Math.abs(c1.esr - 0.0142) > 1e-6 || Math.abs(c1.esl - 0.201e-9) > 1e-15)
+  // ESL = somme des selfs de l'échelle .sub, ESR = Re Z à f0 (avant : L02/R03 du seul premier étage)
+  if(Math.abs(c1.esr - 0.0195) > 1e-6 || Math.abs(c1.esl - 0.386e-9) > 1e-15)
     throw new Error("ESR/ESL Murata attendues pour C1");
   // Sans MPN : les valeurs typiques partagées (0805, 10 µF).
   const d = simPDNParasitesDefaut("0805", 10e-6, "");
@@ -6900,6 +6901,13 @@ T("plans (Draftsman), visionneuse : fabrication, assemblage dessus et dessous, P
   if(txt(F[1]).indexOf("J1")<0||txt(F[1]).indexOf("U1")>=0)throw new Error("assemblage dessus : "+txt(F[1]).join(" | "));
   const pdf=new TextDecoder("latin1").decode(dfPdf(F,{titre:"t",auteur:"",fonte:false,sujet:"",motsCles:""}));
   if(!pdf.startsWith("%PDF-1.4"))throw new Error("PDF");
+  /* empilage sans COPPER : le nombre de couches de cuivre et le nom du fichier viennent de la visionneuse (V), pas de la vue de mesure */
+  const emp=V.modele.empilage;
+  V.modele.empilage=[];
+  try{
+    const notes=txt(plnIpcFeuilles()[0]).join(" ");
+    if(!/[1-9]\d* couche\(s\) de cuivre/.test(notes)||notes.indexOf("« "+V.fichier+" »")<0)throw new Error(notes);
+  }finally{V.modele.empilage=emp;}
 });
 
 /* Le même dossier que l'éditeur : ses exports IPC-2581 de banc, relus par la

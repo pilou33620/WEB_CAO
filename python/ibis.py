@@ -2004,8 +2004,8 @@ def instant_mi_front(k, dt):
 # l'entree (R0 contre l'impedance haute frequence du canal), retiree avant la
 # fenetre et remise a part : lissee, elle serait non causale, et la boucle
 # tampon-canal ne la verrait plus au bon instant. Le lissage se rend dans le
-# resultat ; le haut de la grille est pris pour qu'il reste sous le tiers du
-# front du tampon.
+# resultat ; le haut de la grille est pris pour qu'il reste sous la moitie du
+# front du tampon (`oeil.LISSAGE_SUR_FRONT`).
 # ==========================================================================
 
 def s_depuis_abcd(abcd, r0):

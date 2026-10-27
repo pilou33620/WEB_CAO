@@ -114,5 +114,14 @@ T("le Markdown porte les sections et ses tableaux",function(){
     if(md.indexOf(s)<0)throw new Error("absent : "+s);
 });
 
+T("simulation RF : valeurs lues en SI, C ou L illisible refusée (-1), 0 explicite gardé",function(){
+  const cas=[["4k7","R",4700],["1,5pF","C",1.5e-12],["2n2","L",2.2e-9],["10 nH","L",1e-8],["100","R",100],
+             ["100","C",-1],["10","L",-1],["abc","L",-1],["abc","R",-1],["10x","C",-1],["0 nH","L",0],["0","L",0]];
+  for(const [t,g,att] of cas){
+    const v=simRfValeurSI(t,g);
+    if(Math.abs(v-att)>Math.abs(att)*1e-12)throw new Error("« "+t+" » ("+g+") : "+v+" au lieu de "+att);
+  }
+});
+
 console.log("\n"+ok+" ok, "+ko+" KO");
 process.exit(ko?1:0);

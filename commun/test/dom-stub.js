@@ -10,7 +10,7 @@
      · un arbre parent/enfants, avec appendChild / remove / contains ;
      · classList, dataset, style, innerHTML (texte brut, non analysé) ;
      · querySelector(All) et closest sur un sous-ensemble de sélecteurs CSS
-       (tag, .classe, #id, [attr], [attr="val"], :scope, descendant et « > ») ;
+       (tag, .classe, #id, [attr], [attr="val"], :checked, :scope, descendant et « > ») ;
      · localStorage et sessionStorage en mémoire : la persistance de la
        disposition d'un côté, le travail mis de côté en changeant d'outil de
        l'autre (commun/session.js) ;
@@ -63,7 +63,8 @@ const COMPOUND_RE=/([.#]?[\w-]+)|\[([\w-]+)(?:=\"?([^\]\"]*)\"?)?\]/g;
 /* « div.cls#id[attr=val] » -> prédicat */
 function parseCompound(txt){
   if(txt===":scope")return {scope:true};
-  const c={tag:null,ids:[],classes:[],attrs:[]};
+  const c={tag:null,ids:[],classes:[],attrs:[],checked:/:checked$/.test(txt)};
+  txt=txt.replace(/:checked$/,"");
   COMPOUND_RE.lastIndex=0;
   let m;
   while((m=COMPOUND_RE.exec(txt))){
@@ -101,6 +102,7 @@ function matchCompound(c,node,scope){
   if(!node||node.nodeType!==1)return false;
   if(c.scope)return node===scope;
   if(c.tag&&node.tagName!==c.tag)return false;
+  if(c.checked&&!node.checked)return false;
   for(const id of c.ids)if(node.id!==id)return false;
   for(const k of c.classes)if(!node.classList.contains(k))return false;
   for(const a of c.attrs){

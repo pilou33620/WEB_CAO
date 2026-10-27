@@ -130,4 +130,30 @@ assert(etatCsv.colonnes[0] === "Part Name", "Le BOM d'Excel ne colle plus au pre
 assert(etatCsv.composants.length === 2 && etatCsv.composants[0].Description === "ligne 1\r\nligne 2",
   "Un champ entre guillemets sur deux lignes reste un seul composant");
 
-console.log("\nRésultat : " + passedTests + "/" + totalTests + " tests réussis avec succès !");
+// 5c. « Générer Symbole CI » dessine toutes les broches, même en nombre impair (7 = 4 + 3)
+{
+  const sbEd = { console, document: { getElementById: () => ({ value: "7" }), addEventListener: () => {} }, window: {} };
+  vm.createContext(sbEd);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "js", "05-editeur-lib.js"), "utf8"), sbEd);
+  vm.runInContext("EDITEUR_LIB.data = {}; editeurHistoriquePush = () => {}; remplirFormulaireEditeur = () => {}; basculerSousOngletEditeur = () => {}; editeurGenererCiSch();", sbEd);
+  const broches = vm.runInContext("EDITEUR_LIB.data.pins", sbEd);
+  assert(broches.length === 7 && new Set(broches.map(b => b.n)).size === 7, "Symbole CI à 7 broches : 7 broches numérotées 1 à 7");
+}
+
+// 5b. Un import n'écrase jamais un symbole existant qui n'est pas celui de la pièce (npn.json…)
+(async () => {
+  const appels = [];
+  const vals = { "Part Name": "BC847", "Part Number": "BC847", "Empreinte Schématique": "npn.json", "Reference designator Prefix": "Q" };
+  const cols = vm.runInContext("COLONNES_CATALOGUE_39", sandbox);
+  sandbox.document.getElementById = id => { const m = /^jlc_input_col_(\d+)$/.exec(id); return m ? { value: vals[cols[+m[1]]] || "" } : null; };
+  sandbox.sauvegarderFichierLib = async (t, nom, d, o) => appels.push({ nom, siAbsent: !!(o && o.si_absent) });
+  sandbox.enregistrerCatalogue = async () => {};
+  sandbox.afficherToast = () => {};
+  vm.runInContext('LIB_STATE = { composants: [], filtres: {} }; JLC_IMPORT_ETAT.pinoutActif = { pins: [{number:"1",name:"B"},{number:"2",name:"E"},{number:"3",name:"C"}] };', sandbox);
+  await vm.runInContext("validerEtEnregistrerJlc", sandbox)();
+  assert(appels.length === 1 && appels[0].nom === "npn.json" && appels[0].siAbsent, "Symbole générique partagé : écriture refusée si existant (si_absent)");
+  vals["Empreinte Schématique"] = "BC847.json";
+  await vm.runInContext("validerEtEnregistrerJlc", sandbox)();
+  assert(appels[1].nom === "BC847.json" && !appels[1].siAbsent, "Symbole propre à la pièce : réécriture permise");
+  console.log("\nRésultat : " + passedTests + "/" + totalTests + " tests réussis avec succès !");
+})().catch(e => { console.error(e); process.exit(1); });

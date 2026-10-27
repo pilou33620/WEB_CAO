@@ -1824,7 +1824,8 @@ function editeurGenererCiSch() {
   const width = parseFloat(document.getElementById("genSchWidth")?.value) || 50;
   const pinLen = parseFloat(document.getElementById("genSchPinLen")?.value) || 15;
 
-  const nSide = Math.floor(pins / 2);
+  const nSide = Math.ceil(pins / 2);   // côté gauche ; la droite porte le reste (côtés inégaux si impair)
+  const nDroite = pins - nSide;
   const bodyH = Math.max(40, (nSide + 1) * spacing);
   const halfW = width / 2;
   const halfH = bodyH / 2;
@@ -1845,9 +1846,10 @@ function editeurGenererCiSch() {
     primitives.push({ op: "line", x1: -pinStartX, y1: py, x2: -halfW, y2: py });
   }
 
-  // Droite (du bas vers le haut)
-  for (let i = 0; i < nSide; i++) {
-    const py = -startY - i * spacing;
+  // Droite (du bas vers le haut), centrée sur son propre nombre de broches
+  const startYD = -((nDroite - 1) * spacing) / 2;
+  for (let i = 0; i < nDroite; i++) {
+    const py = -startYD - i * spacing;
     pinsArr.push({ n: nSide + 1 + i, x: pinStartX, y: py });
     primitives.push({ op: "line", x1: halfW, y1: py, x2: pinStartX, y2: py });
   }

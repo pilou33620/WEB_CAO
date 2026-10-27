@@ -226,6 +226,7 @@
   }
   // après la dernière étape : comme son bouton, mode suivant ou retour à l'accueil
   function avancer(d){
+    if(i<0&&d<0)return;          // « précédent » sur la carte de départ : rien à reculer
     const n=i<0?0:i+d;
     if(n<0)return;
     if(n<etapes.length)montrer(n);

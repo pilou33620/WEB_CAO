@@ -32,20 +32,20 @@ const plnMm=(v,n)=>fmt(v,n==null?2:n).replace(".",",");
 function plnFeuillesFab(m,E,ctx){
   const F=dfNouvelle(ctx,"Plan de fabrication","fab");
   const Z=dfZone(F), colW=Z.cart.w, colX=Z.x2-colW;
-  const V=mesVue(E,{x:Z.x1+12,y:Z.y1,w:colX-Z.x1-24,h:Z.y2-Z.y1-12},false);
-  F.echelle=dfEchelleTxt(V.k);
+  const MV=mesVue(E,{x:Z.x1+12,y:Z.y1,w:colX-Z.x1-24,h:Z.y2-Z.y1-12},false);
+  F.echelle=dfEchelleTxt(MV.k);
   dfTexte(F,"VUE DE DESSUS — ÉCHELLE "+F.echelle,Z.x1,Z.y1+5,9,{gras:true,cat:"titre"});
   dfCalque(F,"CONTOUR");
-  if(E.contour.length)dfPoly(F,E.contour.map(p=>V.T(p.x,p.y)),{ferme:true,lw:0.45});
-  for(const d of E.decoupes)dfPoly(F,d.map(p=>V.T(p.x,p.y)),{ferme:true,lw:0.35});
-  const groupes=plnPercages(m), rs=clamp(V.k*0.35,0.7,1.3);
+  if(E.contour.length)dfPoly(F,E.contour.map(p=>MV.T(p.x,p.y)),{ferme:true,lw:0.45});
+  for(const d of E.decoupes)dfPoly(F,d.map(p=>MV.T(p.x,p.y)),{ferme:true,lw:0.35});
+  const groupes=plnPercages(m), rs=clamp(MV.k*0.35,0.7,1.3);
   dfCalque(F,"PERCAGE");
-  groupes.forEach((e,i)=>{for(const p of e.pts){const s=V.T(p.x,p.y);dfSymbole(F,i,s.x,s.y,rs);}});
+  groupes.forEach((e,i)=>{for(const p of e.pts){const s=MV.T(p.x,p.y);dfSymbole(F,i,s.x,s.y,rs);}});
   dfCalque(F);
   if(E.contour.length){                          // cotes hors tout, Y vers le haut : le bas est y1
     const B=mecaBoite(E.contour);
-    dfCote(F,V.T(B.x1,B.y1),V.T(B.x2,B.y1),"h",7,plnMm(B.x2-B.x1)+" mm");
-    dfCote(F,V.T(B.x1,B.y2),V.T(B.x1,B.y1),"v",7,plnMm(B.y2-B.y1)+" mm");
+    dfCote(F,MV.T(B.x1,B.y1),MV.T(B.x2,B.y1),"h",7,plnMm(B.x2-B.x1)+" mm");
+    dfCote(F,MV.T(B.x1,B.y2),MV.T(B.x1,B.y1),"v",7,plnMm(B.y2-B.y1)+" mm");
   }
 
   /* colonne de droite : perçage, empilage, notes */

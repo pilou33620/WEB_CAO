@@ -410,7 +410,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "mecaDonnees","mecaEntreeEditeur","mecaDossier","stackTotal","exCharger","mecaFeuilles",
   "mecaDxf","mecaFichiers","mecaFichiersEditeur","mecaRegler","mecaNormReglages","mecaOblong","mecaDiam",
   /* fiche de mesure du technicien (commun/fiche-mesure.js, 42-fiche-mesure.js) */
-  "mesFeuilles","mesResoudre","mesEntreeEditeur","mesNormListe","mesPadSous",
+  "mesFeuilles","mesResoudre","mesEntreeEditeur","mesNormListe","mesPadSous","mesBrancher","MES_MAX",
   /* cotes à la main, vues à la souris, détails (34-draftsman-vues.js) */
   "dfNormCotes","dfNormVues","dfNormDetails","dfResoudre","dfMesurer","dfAccroches","dfAccrocher","dfNormRef","dfRefTexte",
   "dfAjouterCote","dfModifierCote","dfSupprimerCote","dfDeplacerCote","dfAjouterDetail","dfSupprimerDetail",
@@ -21274,8 +21274,9 @@ T("Simulation SI/PI : injection des grandeurs parasites réelles (ESR/ESL Murata
   const parC = pcbParasitesComposant(compC);
   if (!parC) throw new Error("pcbParasitesComposant doit renvoyer un objet pour C1");
   if (parC.provenance !== "spice") throw new Error("Provenance attendue 'spice' pour Murata GCM0335C1E120FA16: " + parC.provenance);
-  if (Math.abs(parC.esr - 0.188) > 1e-3) throw new Error("ESR attendu ~0.188 ohm, obtenu: " + parC.esr);
-  if (Math.abs(parC.esl - 1.97e-10) > 1e-12) throw new Error("ESL attendu ~0.197 nH, obtenu: " + parC.esl);
+  // ESL = somme des selfs de l'échelle .sub, ESR = Re Z à f0 (avant : L02/R03 du seul premier étage)
+  if (Math.abs(parC.esr - 0.39) > 1e-3) throw new Error("ESR attendu ~0.39 ohm, obtenu: " + parC.esr);
+  if (Math.abs(parC.esl - 2.65e-10) > 1e-12) throw new Error("ESL attendu ~0.265 nH, obtenu: " + parC.esl);
 
   // 2. Inductance avec modèle réel Murata LQW
   const compL = {
@@ -21722,9 +21723,10 @@ T("Simulation PI : détection et injection des condensateurs du rail PCB avec mo
   const c1 = caps3v3.find(c => c.ref === "C1");
   if (!c1) throw new Error("C1 introuvable dans pdnCondensateurs(+3V3)");
   if (c1.prov !== "spice") throw new Error("C1 (GCM155R71C104KA55) doit avoir prov 'spice', trouvé: " + c1.prov);
-  // Vérifier valeurs réelles Murata pour GCM155R71C104KA55 : ESR = 0.0142 Ω, ESL = 0.201 nH
-  if (Math.abs(c1.esr - 0.0142) > 1e-4) throw new Error("ESR Murata attendue 0.0142, trouvé: " + c1.esr);
-  if (Math.abs(c1.esl - 0.201e-9) > 1e-12) throw new Error("ESL Murata attendue 0.201 nH, trouvé: " + c1.esl);
+  // Vérifier valeurs réelles Murata pour GCM155R71C104KA55 : ESR = 0.0195 Ω, ESL = 0.386 nH
+  // (ESL = somme des selfs de l'échelle .sub, ESR = Re Z à f0 (avant : L02/R03 du seul premier étage))
+  if (Math.abs(c1.esr - 0.0195) > 1e-4) throw new Error("ESR Murata attendue 0.0195, trouvé: " + c1.esr);
+  if (Math.abs(c1.esl - 0.386e-9) > 1e-12) throw new Error("ESL Murata attendue 0.386 nH, trouvé: " + c1.esl);
   if (c1.lMount !== 0.50e-9) throw new Error("L_mount pour boîtier 0402 attendue 0.50 nH, trouvé: " + c1.lMount);
 });
 
@@ -21733,7 +21735,7 @@ T("Simulation PI : le modèle du catalogue (« lib/simulation/X.sub ») trouve l
      des deux clés brutes n'est dans la table. */
   const p = pcbParasitesComposant({ spice: "lib/simulation/GCM155R71C104KA55.sub", mpn: "GCM155R71C104KA55D" });
   if (p.provenance !== "spice") throw new Error("provenance « spice » attendue, obtenue " + p.provenance);
-  if (Math.abs(p.esr - 0.0142) > 1e-6) throw new Error("ESR Murata attendue 0.0142, trouvé: " + p.esr);
+  if (Math.abs(p.esr - 0.0195) > 1e-6) throw new Error("ESR Murata attendue 0.0195, trouvé: " + p.esr);  // ESL = somme des selfs de l'échelle .sub, ESR = Re Z à f0 (avant : L02/R03 du seul premier étage)
 });
 
 T("Simulation PI : les condensateurs sont rendus dans le repère de la cavité, pas du document", () => {
@@ -21780,7 +21782,7 @@ T("Simulation PI : tracé SVG logarithmique, curseur de mesure et export CSV/JSO
   SIM_PDN.ripplePct = 5.0;
   SIM_PDN.deltaIA = 1.0;
   SIM_PDN.condensateurs = [
-    { id: 1, ref: "C1", val: "100nF", cap: 100e-9, esr: 0.0142, esl: 0.201e-9, lMount: 0.50e-9, pkg: "0402", mpn: "GCM155R71C104KA55", prov: "spice", f0: 59.8, actif: true },
+    { id: 1, ref: "C1", val: "100nF", cap: 100e-9, esr: 0.0195, esl: 0.386e-9, lMount: 0.50e-9, pkg: "0402", mpn: "GCM155R71C104KA55", prov: "spice", f0: 16.9, actif: true },
     { id: 2, ref: "C2", val: "10µF", cap: 10e-6, esr: 0.008, esl: 0.9e-9, lMount: 1.0e-9, pkg: "0805", prov: "catalogue", f0: 3.65, actif: true }
   ];
   simCalculerPDN();
@@ -21877,7 +21879,7 @@ T("Simulation PI : cartographie spatiale 2D (heatmap SVG), modes stationnaires e
 
   SIM_PDN.condensateurs = [
     { id: 1, ref: "C1", val: "10µF", cap: 10e-6, esr: 0.008, esl: 0.9e-9, lMount: 1.0e-9, pkg: "0805", prov: "catalogue", f0: 3.65, x: 2.0, y: 2.0, actif: true },
-    { id: 2, ref: "C2", val: "100nF", cap: 100e-9, esr: 0.0142, esl: 0.201e-9, lMount: 0.50e-9, pkg: "0402", mpn: "GCM155R71C104KA55", prov: "spice", f0: 59.8, x: 50.0, y: 40.0, actif: true }
+    { id: 2, ref: "C2", val: "100nF", cap: 100e-9, esr: 0.0195, esl: 0.386e-9, lMount: 0.50e-9, pkg: "0402", mpn: "GCM155R71C104KA55", prov: "spice", f0: 16.9, x: 50.0, y: 40.0, actif: true }
   ];
 
   simCalculerPDN();
@@ -23739,8 +23741,12 @@ TA("simulation RF : pastilles comptées, zone du net en nœud, broche annexe sai
      !r.doc.branches.some(b=>z.acces.some(a=>a.noeud===b.a||a.noeud===b.b)))
     throw new Error("zone : "+JSON.stringify(z));
   if(simRfValeurSI("4k7","R")!==4700||Math.abs(simRfValeurSI("1,5pF","C")-1.5e-12)>1e-24||
-     Math.abs(simRfValeurSI("2n2","L")-2.2e-9)>1e-21||simRfValeurSI("100","C")!==0)
+     Math.abs(simRfValeurSI("2n2","L")-2.2e-9)>1e-21||simRfValeurSI("100","C")!==-1)
     throw new Error("lecture des valeurs");
+  // self illisible -> refusée (-1), pas un court-circuit ; 0 explicite conservé
+  if(simRfValeurSI("10","L")!==-1||simRfValeurSI("abc","L")!==-1||
+     simRfValeurSI("0 nH","L")!==0||simRfValeurSI("0","L")!==0||simRfValeurSI("10 nH","L")!==1e-8)
+    throw new Error("self illisible");
   carteVide();S.rf={};
 });
 
@@ -26191,6 +26197,9 @@ T("contraintes : groupe d'appariement — cible, tolérance, serpentin",()=>{
   if(cmMsgs().some(x=>/^Groupe /.test(x.msg)))throw new Error("tolérance de 100 mm : rien à signaler");
   cmGroupeSupprimer(g.id);
   if(S.contraintes.groupes.length)throw new Error("groupe non supprimé");
+  /* tolérance vide (null du champ) : le défaut, pas ± 0 */
+  const d1=cmNouveauGroupe("D1",["SPI_CS","SPI_SCK"],"mm",null), d2=cmNouveauGroupe("D2",["SPI_CS","SPI_SCK"],"ps",null);
+  if(d1.tol!==0.5||d2.tol!==10)throw new Error("tolérance vide : "+d1.tol+" / "+d2.tol);
   cmRaz();
 });
 T("contraintes : règles physiques des classes, nouvelle carte, CSV, fenêtre",()=>{
@@ -26832,6 +26841,50 @@ T("contre-perçage : le Master Drawing annonce le Gerber X2 sous son Excellon",(
     if(ty.indexOf("Back-drill Gerber X2 (depth as attribute), copper layer 4, must-not-cut layer 3")<0)
       throw new Error("libellé de la seconde passe");
   }finally{S.board=bord;S.zones=[];cpRaz();}
+});
+T("LISEZ-MOI et Master Drawing : seulement ce qui est dans le zip, sous le nom du projet",()=>{
+  const saved=serialize(), avant=profLire(CARTOUCHE_PROFIL);
+  loadDoc(exemple1());
+  projOuvrir("carte PIR");
+  try{
+    const b=fabBase(), lis=()=>buildFabFiles().files.find(f=>f.name==="LISEZ-MOI.txt").text;
+    let t=lis();
+    if(/carte\.(GM1|GKO|ipc)/.test(t))throw new Error("noms en dur : "+t);
+    for(const n of [b+".GM1",b+".GKO",b+".ipc","coupe complete est dans EMPILAGE.txt",...(drillFile().files.length?["Percage Excellon"]:[])])
+      if(t.indexOf(n)<0)throw new Error("LISEZ-MOI sans « "+n+" »");
+    S.fabExclus=["contour","ipc","percage","empilage","bom"];
+    t=lis();
+    for(const n of [".GM1",".GKO",".ipc","Percage Excellon","coupe complete","bom.csv"])
+      if(t.indexOf(n)>=0)throw new Error("famille décochée décrite : « "+n+" »\n"+t);
+    if(t.indexOf("positions.csv sert a l'assemblage")<0)throw new Error("positions.csv : "+t);
+    /* le tableau « Files included » : X devant le nom seulement s'il est dans le zip */
+    cartoucheSocieteEcrire({});
+    let tx=mdTextes(mdPdf()).map(x=>x.s);
+    const x=n=>{const i=tx.indexOf(n);if(i<0)throw new Error(n+" absent du tableau");return tx[i-1]==="X";};
+    if(!x("positions.csv")||x("bom.csv")||x("EMPILAGE.txt"))throw new Error("marques : "+tx.join(" | "));
+    const conf=tx.find(s=>/^CONFIDENTIAL/.test(s))||"";
+    if(/property of it|property of \./.test(conf)||conf.indexOf("proprietary and shall not")<0)throw new Error("sans société : "+conf);
+    cartoucheSocieteEcrire({societe:"Societe Essai"});
+    tx=mdTextes(mdPdf()).map(x=>x.s);
+    if(!tx.some(s=>s.indexOf("the property of Societe Essai. It shall not")>=0))throw new Error("société absente de la mention");
+  }finally{projFermer();cartoucheSocieteEcrire(avant);loadDoc(JSON.parse(saved),true);}
+});
+T("fiche de mesure : la 41e est refusée avec un message, la saisie reste",()=>{
+  const ch={}, h={}, err={textContent:""};
+  for(const k of ["a","b","type","att","tol","note","ech"])ch[k]={value:"",dataset:{mes:k},style:{}};
+  const z={querySelector:s=>s===".mes-err"?err:ch[(/data-mes="(\w+)"/.exec(s)||[])[1]]||null,
+           addEventListener:(e,f)=>{h[e]=f;}};
+  let liste=Array.from({length:MES_MAX},(_,i)=>({a:"A"+i,b:"B"+i})), ecrit=0;
+  const E={composants:[{ref:"R1",face:0,pads:[{n:"1",x:0,y:0},{n:"2",x:1,y:0}]}]};
+  mesBrancher(z,{entree:()=>E,liste:()=>liste,ecrire:l=>{ecrit++;liste=l;}});
+  ch.a.value="R1.1";ch.b.value="R1.2";
+  h.click({target:{closest:()=>({dataset:{mesA:"ajout"}})}});
+  if(ecrit||liste.length!==MES_MAX)throw new Error("la 41e est partie : "+liste.length);
+  if(!/Fiche pleine/.test(err.textContent))throw new Error("pas de message : "+err.textContent);
+  if(ch.a.value!=="R1.1"||ch.b.value!=="R1.2")throw new Error("saisie perdue");
+  liste=liste.slice(1);   // une place libre : la même saisie passe
+  h.click({target:{closest:()=>({dataset:{mesA:"ajout"}})}});
+  if(ecrit!==1||liste.length!==MES_MAX||liste[MES_MAX-1].a!=="R1.1")throw new Error("ajout refusé avec une place libre");
 });
 
 /* ==========================================================================

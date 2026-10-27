@@ -50,11 +50,19 @@ class TestLibRoutes(unittest.TestCase):
         # figure, un modele generique ({C}, {L}) non
         with urllib.request.urlopen(f"{BASE_URL}/api/lib/parasites") as resp:
             data = json.loads(resp.read().decode("utf-8"))
-        self.assertEqual(data["GCM155R71C104KA55"], {"c": 1.02e-07, "esl": 2.01e-10, "esr": 0.0142})
+        # ESL = somme des selfs de l'echelle, ESR = Re Z a f0 (avant : L02 / R03 du seul premier etage)
+        self.assertEqual(data["GCM155R71C104KA55"], {"c": 1.02e-07, "esl": 3.86e-10, "esr": 0.0195})
         self.assertEqual(data["LQW15AN10NG00"], {"l": 1.2e-08, "dcr": 0.12})
         self.assertNotIn("CAPACITOR", data)
         self.assertEqual(web_CAO.parasites_spice("C01 Port1 N01 1e-12\nL02 N01 N02 2e-10\nR03 N02 Port2 0.3"),
                          {"c": 1e-12, "esl": 2e-10, "esr": 0.3})
+        # UNE ECHELLE A DEUX ETAGES : la self de l'etage L||R est en serie sous
+        # la resonance (ESL = L1 + L2) ; l'ESR y ajoute (wL)^2 R / (R^2 + (wL)^2) a f0.
+        p = web_CAO.parasites_spice("C01 Port1 N01 1e-7\nL02 N01 N02 2e-10\nR03 N02 N03 0.01\n"
+                                    "L04 N03 Port2 3e-10\nR04 N03 Port2 1.0")
+        self.assertEqual(p["esl"], 5e-10)
+        wl = 3e-10 / (1e-7 * 5e-10) ** 0.5
+        self.assertAlmostEqual(p["esr"], float("%.3g" % (0.01 + wl * wl / (1 + wl * wl))), places=6)
 
     def test_01_lib_fichiers(self):
         req = urllib.request.Request(f"{BASE_URL}/api/lib/fichiers")

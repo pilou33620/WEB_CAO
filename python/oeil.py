@@ -3201,8 +3201,10 @@ def preparer_ami(o, p, ctx):
                       "réponse impulsionnelle du canal, puis AMI_Init et "
                       "AMI_GetWave du récepteur, par blocs ; les paramètres "
                       "In/InOut viennent du .ami, surchargeables. "
-                      "L'instant d'échantillonnage reste celui de l'œil "
-                      "(milieu du pire cas), pas l'horloge du modèle.")
+                      "Si l'AMI_GetWave du récepteur rend ses instants "
+                      "d'horloge, ils fixent l'échantillonnage (phase moyenne, "
+                      "chaque bit lu à son instant) ; sinon l'instant reste "
+                      "celui de l'œil (milieu du pire cas).")
                      if execute else
                      ("Le modèle AMI lui-même (bibliothèque du fabricant) "
                       "n'est PAS exécuté : seul son fichier .ami est lu. "
@@ -3247,8 +3249,9 @@ def preparer_ami(o, p, ctx):
 # Le CTLE, le DFE et la FFE de reference de l'oeil s'effacent devant le
 # modele qui s'execute (l'emetteur efface la FFE, le recepteur le CTLE et
 # le DFE) ; un bout qui ne s'execute pas les garde. Les instants d'horloge
-# que le recepteur rend sont comptes et montres ; l'instant d'echantillonnage
-# de l'oeil reste le milieu du pire cas. Tout echec -- fichier absent, autre
+# que le recepteur rend FIXENT l'echantillonnage depuis la 2.4.0 (voir
+# « L'HORLOGE RECUPEREE » dans `oeil`) ; sans eux, l'instant reste le milieu
+# du pire cas. Tout echec -- fichier absent, autre
 # architecture, Init qui rend 0 -- est un AVERTISSEMENT et un repli sur
 # l'egaliseur de reference, jamais une exception.
 # ==========================================================================

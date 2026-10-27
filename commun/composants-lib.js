@@ -21,7 +21,7 @@ const COMPOSANTS_LIB = (() => {
   const STYLES = ["chip", "row", "dip", "sop", "quad", "bga"];
   const FORMES = ["rect", "sharp", "oval", "circ", "chamfer", "poly"];
   const CLES_EMPREINTE = ["format", "name", "pkg", "pins", "style", "pitch", "span",
-                          "pads", "body", "holes", "description"];
+                          "pads", "body", "holes", "lines", "description"];
   const NOM_EMPREINTE = /^[A-Za-z0-9_.+-]{1,60}$/;
   const CONTROLE = /[\x00-\x1f\x7f]/;
   /* une cellule du catalogue ne doit ni passer pour une formule à l'ouverture dans un tableur
@@ -133,6 +133,14 @@ const COMPOSANTS_LIB = (() => {
           erreurs.push("trou " + (i + 1) + " : x, y à ±" + COORD + " mm et diamètre « d » de 0,4 à 30 mm");
       });
     else if (def.holes != null) erreurs.push("« holes » : liste de trous {x, y, d}");
+    /* traits de sérigraphie écrits par l'éditeur de Gestion LIB ; l'éditeur PCB (normFpDef) ne les lit pas */
+    if (Array.isArray(def.lines)) {
+      def.lines.forEach((l, i) => {
+        if (!l || !["x1", "y1", "x2", "y2"].every(k => fini(l[k]) && Math.abs(l[k]) <= COORD) || (l.width != null && !(fini(l.width) && l.width >= 0 && l.width <= 5)))
+          erreurs.push("trait " + (i + 1) + " : x1, y1, x2, y2 à ±" + COORD + " mm et largeur « width » de 0 à 5 mm");
+      });
+      if (def.lines.length) remarques.push("traits de sérigraphie (« lines ») : visibles dans Gestion LIB seulement, l'éditeur PCB ne les lit pas");
+    } else if (def.lines != null) erreurs.push("« lines » : liste de traits {x1, y1, x2, y2, width}");
 
     const b = def.body;
     if (b == null) remarques.push("pas de corps (« body ») : le PCB n'en dessinera pas");

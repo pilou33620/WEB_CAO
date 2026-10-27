@@ -878,19 +878,38 @@ def chemin_lib_fichier(genre, nom_brut, creer=False):
 def parasites_spice(texte):
     """C/ESR/ESL d'un condensateur Murata, ou L/DCR d'une self, lus dans son .sub.
 
-    Les deux formats Murata ouvrent sur la branche principale : C01 (C
-    nominale), L02 (ESL) et R03 (ESR) pour un MLCC ; L2 (L) puis R2 (DCR) pour
-    une LQW. Le reste de l'echelle ne joue qu'au-dela de la resonance, que le
-    calcul PDN ne modelise pas. Un modele generique (valeurs {C}, {L}) ne
-    donne rien : None.
+    UN MLCC est une ECHELLE d'etages en serie de Port1 a Port2, chaque etage
+    un groupe C / L / R en parallele entre deux noeuds : C01 (C nominale, et
+    sa fuite R01), L02, R03, puis des etages L||R, C||R, C||L||R. Sous la
+    resonance, la self d'un etage court-circuite ce qui lui est parallele :
+    l'ESL est la SOMME des L de l'echelle -- L02 seul n'en est parfois qu'un
+    dixieme. L'ESR est la partie reelle de l'echelle entiere a
+    f0 = 1 / (2 pi racine(C01 ESL)) : R03 plus ce que les etages R||L et R||C
+    y ajoutent. Les deux suivent la resonance et le |Z| min de l'echelle
+    complete a 10 % pres (sauf quelques pF, dont les etages hauts resonnent
+    pres de f0). UNE LQW (branches L-R en parallele) garde L2 (L) et R2 (DCR),
+    sa branche principale. Un modele generique ({C}, {L}) ne donne rien : None.
     """
     v = {}
+    etages = {}
     for ligne in texte.splitlines():
-        m = re.match(r"\s*([CLR]\w*)\s+\S+\s+\S+\s+([-+]?[0-9.]+(?:[eE][-+]?[0-9]+)?)\s*$", ligne)
+        m = re.match(r"\s*([CLR]\w*)\s+(\S+)\s+(\S+)\s+([-+]?[0-9.]+(?:[eE][-+]?[0-9]+)?)\s*$", ligne)
         if m:
-            v.setdefault(m.group(1).upper(), float(m.group(2)))
+            nom, x = m.group(1).upper(), float(m.group(4))
+            v.setdefault(nom, x)
+            noeuds = frozenset((m.group(2).upper(), m.group(3).upper()))
+            etages.setdefault(noeuds, []).append((nom[0], x))
     if {"C01", "L02", "R03"} <= v.keys():
-        return {"c": v["C01"], "esl": v["L02"], "esr": v["R03"]}
+        esl = sum(x for g in etages.values() for k, x in g if k == "L" and x > 0)
+        if not (v["C01"] > 0 and esl > 0):
+            return {"c": v["C01"], "esl": esl, "esr": v["R03"]}
+        w = (v["C01"] * esl) ** -0.5
+        z = 0j
+        for g in etages.values():
+            y = sum((1j * w * x if k == "C" else 1 / (1j * w * x) if k == "L" else 1 / x)
+                    for k, x in g if x > 0)
+            z += 1 / y if y else 0
+        return {"c": v["C01"], "esl": float("%.3g" % esl), "esr": float("%.3g" % z.real)}
     if {"L2", "R2"} <= v.keys():
         return {"l": v["L2"], "dcr": v["R2"]}
     return None
@@ -3890,9 +3909,13 @@ def start_server(host, port, navigateur=True):
         print("  de ce poste. --local limite l'acces a cette machine.")
         GARDE.annoncer()
         print()
-        print("  Les dossiers de projet sont refuses dans ce mode : lire et")
-        print("  ecrire sur le disque ne s'ouvre pas a un reseau sans mot de")
-        print("  passe. Relancez avec --local pour les utiliser.")
+        if PROJETS_RESEAU:
+            print("  Les dossiers de projet sont ouverts au reseau (--projets-reseau),")
+            print("  confines aux racines declarees.")
+        else:
+            print("  Les dossiers de projet sont refuses dans ce mode : lire et")
+            print("  ecrire sur le disque ne s'ouvre pas a un reseau sans mot de")
+            print("  passe. Relancez avec --local, ou avec --projets-reseau.")
     print()
     print("=" * 60)
     print("(Ctrl+C pour arreter)")

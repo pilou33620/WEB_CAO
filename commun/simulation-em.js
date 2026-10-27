@@ -772,8 +772,8 @@ function simXtFentes(par,refs){
   }
   /* UN SEUL POINT SANS CUIVRE N'EST PAS UNE FENTE quand rien ne le borne :
      c'est le pas de sonde qui tombe dans un dégagement. On garde ce qui dure
-     au moins deux pas — en deçà, on inonderait la carte de marques que rien ne
-     justifie. UNE FENTE BORNÉE PAR SES DEUX ARÊTES, elle, est gardée dès
+     au moins un pas et demi (`pas*1.5`) — en deçà, on inonderait la carte de
+     marques que rien ne justifie. UNE FENTE BORNÉE PAR SES DEUX ARÊTES, elle, est gardée dès
      SIM_XT_FENTE_MIN : sa largeur est mesurée, pas devinée. */
   const r3=x=>Math.round(x*1000)/1000;
   /* `plans` PART À CÔTÉ DE `quoi`, et ce n'est pas un doublon : `quoi` est une
@@ -2111,8 +2111,8 @@ function simDCCoucheBar(){
     '<select class="simU simUSel" id="simDCCoucheSel" title="'+
     esc("La carte ne peint qu'UNE couche : superposer deux potentiels les "+
            "mélangerait sans le dire. « Auto » suit ce que l'outil propose — "+
-           "la couche active côté éditeur, celle de la charge côté "+
-           "visionneuse.")+'">';
+           "la couche de la charge la plus mal servie (celle que le "+
+           "verdict nomme), à défaut de résultat celle que l'outil propose.")+'">';
   h+='<option value="auto"'+(SIM.dcCouche==null?" selected":"")+">auto"+
      (cs.indexOf(propose)>=0?" — "+esc(simDCNomCouche(propose)):"")+
      "</option>";
@@ -5034,11 +5034,9 @@ function simPlagesDe(total,mesure){
    d'en face. Sans couture, il flotte : à partir d'une certaine fréquence il
    résonne, cesse d'être une masse, et l'impédance calculée ne décrit plus rien.
 
-   ON NE LE MODÉLISE PAS — il faudrait l'onde complète, c'est-à-dire
-   `mom_solver/`, que CE PANNEAU n'appelle pas. Le moteur, lui, n'est plus
-   bloqué : son port vertical est fait et mesuré depuis le 2026-08-30, et il
-   rend des paramètres S dé-embarqués à 0,93 % de `ligne_mom`. Ce qui manque
-   ici est la couture entre la page et lui, pas la physique. On le CONTRÔLE :
+   ON NE LE MODÉLISE PAS — il faudrait l'onde complète, et le moteur 2,5D
+   pleine onde (`mom_solver/`) a été retiré du dépôt le 2026-09-16 (commit
+   ab691cb) : rien ici ne résout la couture. On le CONTRÔLE :
    l'outil mesure
    l'espacement le plus grand entre deux coutures consécutives le long de la
    piste, et on le compare à la longueur d'onde dans le stratifié en haut de la
@@ -5352,8 +5350,8 @@ function simPointsChauds(res){
        "un changement de largeur fait tourner le courant lui aussi, et peut "+
        "donc ressortir ici — ce qui est légitime, c'en est une.</p>";
 
-  h+='<p class="simNote">· Ces endroits sont marqués sur la carte par le '+
-     "bouton <b>Maillage 2.5D</b>, avec leur abscisse.</p>";
+  h+='<p class="simNote">· Ces endroits sont listés ci-dessus, avec leur '+
+     "abscisse.</p>";
 
   return h;
 }
@@ -9107,9 +9105,10 @@ function simFicheDiff(){
        "aucune paire n’est déclarée dans l’éditeur. Les impédances ci-dessus "+
        "restent justes — deux pistes qui se longent ONT un mode impair —, "+
        "mais rien ne dit qu’elles portent un signal différentiel. "+
-       "<b>Choisissez-la vous-même</b> dans la liste « Paire » en haut du "+
-       "panneau : le net que vous y désignez est déclaré comme l’autre moitié, "+
-       "au même titre que ceux de l’éditeur.</p>";
+       "<b>Choisissez-la vous-même</b> avec les encarts « Piste 1 » et « Piste 2 » "+
+       "de l’onglet : désignez chaque piste (🎯 prend la piste sélectionnée sur la carte, ✕ "+
+       "l’efface, ⇄ les échange) ; le net désigné est déclaré comme l’autre "+
+       "moitié, au même titre que ceux de l’éditeur.</p>";
 
   /* LE MODE IMPAIR N'EST PAS LA MOITIÉ DE Z_DIFF PAR CONVENTION : la tension
      différentielle est celle qui existe ENTRE les deux conducteurs. Le dire
@@ -9947,8 +9946,9 @@ function simCorpsCrosstalk(){
     simChamp("simXtTr","Le temps de montée de l'agresseur sélectionné, en "+
       "nanosecondes. VIDE = déduit de la CLASSE de son net (Horloge 2 ns, "+
       "Rapide 1 ns, RF 100 ps, Lent 10 ns… — les fronts du tableau des "+
-      "classes de la vérification de carte), et 1 ns si la classe n'est pas "+
-      "connue. La fiche dit lequel a servi.")+
+      "classes de la vérification de carte). Une classe sans front (Masse, "+
+      "Alimentation…) se juge comme Lent, 10 ns ; 1 ns seulement pour un net "+
+      "sans classe. La fiche dit lequel a servi.")+
     '<span class="simU">ns</span>'+
     '<span class="simU simFaible" id="simXtTrDit"></span></span>'+
     '<span class="simGr"><span class="pnl-lbl">confirmation</span>'+
@@ -13542,7 +13542,7 @@ function simBusExportJson(){
    navigateur, `require` n'existe pas et parasites-murata.json n'est pas lu.
    Elle vivait dans l'éditeur PCB seul, si bien que la visionneuse ne trouvait
    jamais un MPN Murata et retombait sur les valeurs génériques. */
-const SIM_PARASITES_MURATA_DEFAUT = {"GCM0335C1E120FA16":{"c":1.2e-11,"esl":1.97e-10,"esr":0.188},"GCM0335C1E1R8CA16":{"c":1.8e-12,"esl":1.7e-10,"esr":0.28},"GCM0335C1E220JA16":{"c":2.2e-11,"esl":2e-10,"esr":0.148},"GCM0335C1E3R3CA16":{"c":3.3e-12,"esl":1.3e-10,"esr":0.248},"GCM0335C1E470FA16":{"c":4.7e-11,"esl":1.66e-10,"esr":0.126},"GCM0335C1E6R8CA16":{"c":6.8e-12,"esl":1.04e-10,"esr":0.195},"GCM033R71E102KA03":{"c":1e-09,"esl":1.38e-10,"esr":0.228},"GCM1555C1H100JA16":{"c":1e-11,"esl":2.67e-10,"esr":0.211},"GCM1555C1H101JA16":{"c":1e-10,"esl":2.65e-10,"esr":0.0787},"GCM1555C1H120JA16":{"c":1.2e-11,"esl":2.25e-10,"esr":0.108},"GCM1555C1H121JA16":{"c":1.2e-10,"esl":1.45e-10,"esr":0.12},"GCM1555C1H150JA16":{"c":1.5e-11,"esl":2.37e-10,"esr":0.106},"GCM1555C1H181JA16":{"c":1.8e-10,"esl":1.15e-10,"esr":0.1},"GCM1555C1H1R5BA16":{"c":1.5e-12,"esl":3.66e-10,"esr":0.389},"GCM1555C1H1R8CA16":{"c":1.8e-12,"esl":3.44e-10,"esr":0.35},"GCM1555C1H220JA16":{"c":2.2e-11,"esl":1.7e-10,"esr":0.101},"GCM1555C1H221JA16":{"c":2.2e-10,"esl":2.06e-10,"esr":0.095},"GCM1555C1H2R0CA16":{"c":2e-12,"esl":3.35e-10,"esr":0.318},"GCM1555C1H330JA16":{"c":3.3e-11,"esl":2.32e-10,"esr":0.0805},"GCM1555C1H331JA16":{"c":3.3e-10,"esl":1.98e-10,"esr":0.0751},"GCM1555C1H390JA16":{"c":3.9e-11,"esl":1.54e-10,"esr":0.0755},"GCM1555C1H3R0BA16":{"c":3e-12,"esl":3.17e-10,"esr":0.274},"GCM1555C1H3R3CA16":{"c":3.3e-12,"esl":2.95e-10,"esr":0.272},"GCM1555C1H3R9BA16":{"c":3.9e-12,"esl":2.6e-10,"esr":0.254},"GCM1555C1H470JA16":{"c":4.7e-11,"esl":1e-10,"esr":0.0744},"GCM1555C1H471JA16":{"c":4.7e-10,"esl":1.3e-10,"esr":0.0529},"GCM1555C1H4R0BA16":{"c":4e-12,"esl":1.31e-10,"esr":0.25},"GCM1555C1H4R7CA16":{"c":4.7e-12,"esl":2.83e-10,"esr":0.247},"GCM1555C1H560JA16":{"c":5.6e-11,"esl":2.48e-10,"esr":0.0686},"GCM1555C1H5R0CA16":{"c":5e-12,"esl":2.99e-10,"esr":0.239},"GCM1555C1H5R6DA16":{"c":5.6e-12,"esl":2.93e-10,"esr":0.232},"GCM1555C1H680JA16":{"c":6.8e-11,"esl":2.48e-10,"esr":0.127},"GCM1555C1H6R0DA16":{"c":6e-12,"esl":2.7e-10,"esr":0.23},"GCM1555C1H6R8BA16":{"c":6.8e-12,"esl":2.77e-10,"esr":0.227},"GCM1555C1H6R8DA16":{"c":6.8e-12,"esl":2.77e-10,"esr":0.227},"GCM1555C1H8R2DA16":{"c":8.2e-12,"esl":2.94e-10,"esr":0.219},"GCM1555C1H9R0DA16":{"c":9e-12,"esl":2.95e-10,"esr":0.216},"GCM155R71C104KA55":{"c":1.02e-07,"esl":2.01e-10,"esr":0.0142},"GCM155R71H102KA37":{"c":1.01e-09,"esl":1.45e-10,"esr":0.245},"GCM155R71H103KA55":{"c":9.97e-09,"esl":1.92e-10,"esr":0.0493},"GCM155R71H104KE02":{"c":9.43e-08,"esl":1.53e-10,"esr":0.0167},"GCM155R71H152KA37":{"c":1.51e-09,"esl":1.43e-10,"esr":0.21},"GCM155R71H222KA37":{"c":2.2e-09,"esl":1.96e-10,"esr":0.165},"GCM155R71H223KA55":{"c":2.13e-08,"esl":1.85e-10,"esr":0.0345},"GCM1885C1H331JA16":{"c":3.3e-10,"esl":9e-11,"esr":0.0768},"GCM1885C1H332JA16":{"c":3.31e-09,"esl":5.56e-12,"esr":0.0144},"GCM188R71E105KA64":{"c":6.98e-07,"esl":1.99e-10,"esr":0.00775},"GCM188R71E474KA49":{"c":3.76e-07,"esl":1.53e-10,"esr":0.00878},"GCM188R71H102KA37":{"c":1.05e-09,"esl":1.6e-10,"esr":0.256},"GCM188R71H104KA57":{"c":9.82e-08,"esl":2.1e-10,"esr":0.0125},"GCM188R71H224KA64":{"c":2.18e-07,"esl":1.7e-10,"esr":0.00821},"GCM188R71H682KA37":{"c":6.82e-09,"esl":9e-11,"esr":0.0984},"GCM21BR71C475KA73":{"c":2.95e-06,"esl":1.74e-10,"esr":0.00442},"GCM21BR71E105KA56":{"c":9.89e-07,"esl":1.54e-10,"esr":0.00523},"GCM32ER71E106KA57":{"c":9.74e-06,"esl":5e-11,"esr":0.00145},"GRM011R60G104ME01":{"c":8.39e-08,"esl":8.02e-11,"esr":0.0296},"GRM022R60G105ME01":{"c":6.18e-07,"esl":1.03e-10,"esr":0.00902},"GRM0335C1E180JA01":{"c":1.8e-11,"esl":1.63e-10,"esr":0.159},"GRM0335C1E1R0WA01":{"c":1e-12,"esl":2.64e-10,"esr":0.756},"GRM0335C1H1R5CA01":{"c":1.5e-12,"esl":2.46e-10,"esr":0.29},"GRM0335C1H1R6CA01":{"c":1.6e-12,"esl":2.46e-10,"esr":0.29},"GRM0335C1H2R9CA01":{"c":2.9e-12,"esl":2.27e-10,"esr":0.25},"GRM0335C1H5R9BA01":{"c":5.9e-12,"esl":2.11e-10,"esr":0.2},"GRM1555C1H180GA01":{"c":1.8e-11,"esl":1.19e-10,"esr":0.12},"GRM1555C1H1R0WA01":{"c":1e-12,"esl":1.34e-10,"esr":0.733},"GRM1555C1H240JA01":{"c":2.4e-11,"esl":1.21e-10,"esr":0.11},"GRM1555C1H2R1BA01":{"c":2.1e-12,"esl":3.26e-10,"esr":0.37},"GRM1555C1H2R4BA01":{"c":2.4e-12,"esl":3.22e-10,"esr":0.32},"GRM1555C1H3R6BA01":{"c":3.6e-12,"esl":2.74e-10,"esr":0.25},"GRM1555C1H750JA01":{"c":7.5e-11,"esl":6.13e-11,"esr":0.11},"GRM1555C1H7R5DA01":{"c":7.5e-12,"esl":2.25e-10,"esr":0.198},"GRM1555C1H910JA01":{"c":9.1e-11,"esl":1.65e-10,"esr":0.105},"GRM1555C1HR70WA01":{"c":7e-13,"esl":2.97e-10,"esr":0.804},"GRM155R61A474KE15":{"c":4.44e-07,"esl":2.01e-10,"esr":0.0112},"GRM155R61E225KE11":{"c":1.73e-06,"esl":1.79e-10,"esr":0.00635},"GRM155R71E473KA88":{"c":4.64e-08,"esl":1.46e-10,"esr":0.0219},"GRM188R61A106MAAL":{"c":7.91e-06,"esl":1.61e-10,"esr":0.00319},"GRM188R61C105KA12":{"c":9.32e-07,"esl":1.82e-11,"esr":0.00515},"GRM188R61C475KE11":{"c":3.68e-06,"esl":1.78e-10,"esr":0.00374},"GRM2165C1H471JA01":{"c":4.7e-10,"esl":1.82e-11,"esr":0.06},"GRM2165C2A221JA01":{"c":2.2e-10,"esl":2.79e-11,"esr":0.0772},"GRM21BR61A226ME44":{"c":1.7e-05,"esl":1.6e-10,"esr":0.00211},"GRM21BR61A476ME15":{"c":3.8e-05,"esl":1.67e-10,"esr":0.00237},"GRM21BR71H474KA88":{"c":4.74e-07,"esl":1.57e-10,"esr":0.00695},"LQW15AN10NG00":{"dcr":0.12,"l":1.2e-08},"LQW15AN11NG00":{"dcr":0.1,"l":1.26e-08},"LQW15AN12NG00":{"dcr":0.1,"l":1.4e-08},"LQW15AN15NH00":{"dcr":0.11,"l":1.72e-08},"LQW15AN16NG80":{"dcr":0.105,"l":1.69e-08},"LQW15AN18NG80":{"dcr":0.108,"l":1.94e-08},"LQW15AN22NJ00":{"dcr":0.21,"l":2.57e-08},"LQW15AN2N4B00":{"dcr":0.03,"l":2.49e-09},"LQW15AN2N5C00":{"dcr":0.03,"l":3.12e-09},"LQW15AN2N6C00":{"dcr":0.03,"l":2.31e-09},"LQW15AN2N7B00":{"dcr":0.03,"l":3.08e-09},"LQW15AN2N7C00":{"dcr":0.03,"l":3.08e-09},"LQW15AN33NG00":{"dcr":0.45,"l":3.87e-08},"LQW15AN39NH00":{"dcr":0.5,"l":4.5e-08},"LQW15AN3N0B00":{"dcr":0.05,"l":2.77e-09},"LQW15AN3N3C10":{"dcr":0.028,"l":3.37e-09},"LQW15AN3N6C80":{"dcr":0.025,"l":3.5e-09},"LQW15AN3N9B00":{"dcr":0.05,"l":4.39e-09},"LQW15AN47NH00":{"dcr":0.77,"l":5.51e-08},"LQW15AN4N2B80":{"dcr":0.036,"l":4.11e-09},"LQW15AN4N7C00":{"dcr":0.05,"l":5.58e-09},"LQW15AN5N6C10":{"dcr":0.0368,"l":5.72e-09},"LQW15AN7N5G00":{"dcr":0.09,"l":8.73e-09},"LQW15AN8N2G00":{"dcr":0.1,"l":8.91e-09},"LQW15AN9N1H00":{"dcr":0.1,"l":9.53e-09},"LQW15AN9N5J80":{"dcr":0.067,"l":9.93e-09}};
+const SIM_PARASITES_MURATA_DEFAUT = {"GCM0335C1E120FA16":{"c":1.2e-11,"esl":2.65e-10,"esr":0.39},"GCM0335C1E1R8CA16":{"c":1.8e-12,"esl":2.21e-10,"esr":1.37},"GCM0335C1E220JA16":{"c":2.2e-11,"esl":2.46e-10,"esr":0.289},"GCM0335C1E3R3CA16":{"c":3.3e-12,"esl":2.39e-10,"esr":0.686},"GCM0335C1E470FA16":{"c":4.7e-11,"esl":2.43e-10,"esr":0.212},"GCM0335C1E6R8CA16":{"c":6.8e-12,"esl":2.49e-10,"esr":0.454},"GCM033R71E102KA03":{"c":1e-09,"esl":2.81e-10,"esr":0.27},"GCM1555C1H100JA16":{"c":1e-11,"esl":3.31e-10,"esr":0.409},"GCM1555C1H101JA16":{"c":1e-10,"esl":3.74e-10,"esr":0.161},"GCM1555C1H120JA16":{"c":1.2e-11,"esl":3.74e-10,"esr":0.376},"GCM1555C1H121JA16":{"c":1.2e-10,"esl":3.48e-10,"esr":0.163},"GCM1555C1H150JA16":{"c":1.5e-11,"esl":4.03e-10,"esr":0.351},"GCM1555C1H181JA16":{"c":1.8e-10,"esl":3.61e-10,"esr":0.135},"GCM1555C1H1R5BA16":{"c":1.5e-12,"esl":4.02e-10,"esr":1.0},"GCM1555C1H1R8CA16":{"c":1.8e-12,"esl":3.65e-10,"esr":0.758},"GCM1555C1H220JA16":{"c":2.2e-11,"esl":4e-10,"esr":0.278},"GCM1555C1H221JA16":{"c":2.2e-10,"esl":4.11e-10,"esr":0.128},"GCM1555C1H2R0CA16":{"c":2e-12,"esl":3.48e-10,"esr":0.621},"GCM1555C1H330JA16":{"c":3.3e-11,"esl":3.88e-10,"esr":0.245},"GCM1555C1H331JA16":{"c":3.3e-10,"esl":3.91e-10,"esr":0.113},"GCM1555C1H390JA16":{"c":3.9e-11,"esl":3.82e-10,"esr":0.226},"GCM1555C1H3R0BA16":{"c":3e-12,"esl":3.26e-10,"esr":0.543},"GCM1555C1H3R3CA16":{"c":3.3e-12,"esl":3.26e-10,"esr":0.542},"GCM1555C1H3R9BA16":{"c":3.9e-12,"esl":3.3e-10,"esr":0.547},"GCM1555C1H470JA16":{"c":4.7e-11,"esl":3.83e-10,"esr":0.195},"GCM1555C1H471JA16":{"c":4.7e-10,"esl":3.55e-10,"esr":0.108},"GCM1555C1H4R0BA16":{"c":4e-12,"esl":3.42e-10,"esr":0.534},"GCM1555C1H4R7CA16":{"c":4.7e-12,"esl":3.34e-10,"esr":0.486},"GCM1555C1H560JA16":{"c":5.6e-11,"esl":3.64e-10,"esr":0.182},"GCM1555C1H5R0CA16":{"c":5e-12,"esl":3.38e-10,"esr":0.472},"GCM1555C1H5R6DA16":{"c":5.6e-12,"esl":3.34e-10,"esr":0.467},"GCM1555C1H680JA16":{"c":6.8e-11,"esl":4.15e-10,"esr":0.231},"GCM1555C1H6R0DA16":{"c":6e-12,"esl":3.39e-10,"esr":0.462},"GCM1555C1H6R8BA16":{"c":6.8e-12,"esl":3.44e-10,"esr":0.455},"GCM1555C1H6R8DA16":{"c":6.8e-12,"esl":3.44e-10,"esr":0.455},"GCM1555C1H8R2DA16":{"c":8.2e-12,"esl":3.44e-10,"esr":0.436},"GCM1555C1H9R0DA16":{"c":9e-12,"esl":3.55e-10,"esr":0.434},"GCM155R71C104KA55":{"c":1.02e-07,"esl":3.86e-10,"esr":0.0195},"GCM155R71H102KA37":{"c":1.01e-09,"esl":3.56e-10,"esr":0.279},"GCM155R71H103KA55":{"c":9.97e-09,"esl":3.26e-10,"esr":0.0555},"GCM155R71H104KE02":{"c":9.43e-08,"esl":3.49e-10,"esr":0.0219},"GCM155R71H152KA37":{"c":1.51e-09,"esl":3.41e-10,"esr":0.227},"GCM155R71H222KA37":{"c":2.2e-09,"esl":3.6e-10,"esr":0.192},"GCM155R71H223KA55":{"c":2.13e-08,"esl":3.41e-10,"esr":0.0426},"GCM1885C1H331JA16":{"c":3.3e-10,"esl":5.6e-10,"esr":0.0991},"GCM1885C1H332JA16":{"c":3.31e-09,"esl":5.1e-10,"esr":0.036},"GCM188R71E105KA64":{"c":6.98e-07,"esl":5.88e-10,"esr":0.0106},"GCM188R71E474KA49":{"c":3.76e-07,"esl":5.15e-10,"esr":0.0124},"GCM188R71H102KA37":{"c":1.05e-09,"esl":6.1e-10,"esr":0.317},"GCM188R71H104KA57":{"c":9.82e-08,"esl":4.92e-10,"esr":0.0192},"GCM188R71H224KA64":{"c":2.18e-07,"esl":5.5e-10,"esr":0.0126},"GCM188R71H682KA37":{"c":6.82e-09,"esl":5.8e-10,"esr":0.107},"GCM21BR71C475KA73":{"c":2.95e-06,"esl":6.73e-10,"esr":0.00607},"GCM21BR71E105KA56":{"c":9.89e-07,"esl":6.54e-10,"esr":0.00783},"GCM32ER71E106KA57":{"c":9.74e-06,"esl":9.58e-10,"esr":0.00265},"GRM011R60G104ME01":{"c":8.39e-08,"esl":1.44e-10,"esr":0.0335},"GRM022R60G105ME01":{"c":6.18e-07,"esl":2.24e-10,"esr":0.0114},"GRM0335C1E180JA01":{"c":1.8e-11,"esl":2.47e-10,"esr":0.302},"GRM0335C1E1R0WA01":{"c":1e-12,"esl":3.16e-10,"esr":0.842},"GRM0335C1H1R5CA01":{"c":1.5e-12,"esl":2.59e-10,"esr":1.19},"GRM0335C1H1R6CA01":{"c":1.6e-12,"esl":2.59e-10,"esr":1.15},"GRM0335C1H2R9CA01":{"c":2.9e-12,"esl":2.79e-10,"esr":0.721},"GRM0335C1H5R9BA01":{"c":5.9e-12,"esl":2.72e-10,"esr":0.463},"GRM1555C1H180GA01":{"c":1.8e-11,"esl":3.81e-10,"esr":0.321},"GRM1555C1H1R0WA01":{"c":1e-12,"esl":4.51e-10,"esr":0.994},"GRM1555C1H240JA01":{"c":2.4e-11,"esl":3.74e-10,"esr":0.284},"GRM1555C1H2R1BA01":{"c":2.1e-12,"esl":3.5e-10,"esr":0.75},"GRM1555C1H2R4BA01":{"c":2.4e-12,"esl":3.45e-10,"esr":0.721},"GRM1555C1H3R6BA01":{"c":3.6e-12,"esl":3.35e-10,"esr":0.619},"GRM1555C1H750JA01":{"c":7.5e-11,"esl":4.02e-10,"esr":0.188},"GRM1555C1H7R5DA01":{"c":7.5e-12,"esl":3.1e-10,"esr":0.457},"GRM1555C1H910JA01":{"c":9.1e-11,"esl":3.78e-10,"esr":0.177},"GRM1555C1HR70WA01":{"c":7e-13,"esl":4.56e-10,"esr":1.15},"GRM155R61A474KE15":{"c":4.44e-07,"esl":4.19e-10,"esr":0.0143},"GRM155R61E225KE11":{"c":1.73e-06,"esl":4.48e-10,"esr":0.00814},"GRM155R71E473KA88":{"c":4.64e-08,"esl":3.63e-10,"esr":0.0288},"GRM188R61A106MAAL":{"c":7.91e-06,"esl":6.81e-10,"esr":0.00452},"GRM188R61C105KA12":{"c":9.32e-07,"esl":5.91e-10,"esr":0.00848},"GRM188R61C475KE11":{"c":3.68e-06,"esl":6.04e-10,"esr":0.00532},"GRM2165C1H471JA01":{"c":4.7e-10,"esl":5.25e-10,"esr":0.0772},"GRM2165C2A221JA01":{"c":2.2e-10,"esl":4.63e-10,"esr":0.0953},"GRM21BR61A226ME44":{"c":1.7e-05,"esl":7.82e-10,"esr":0.0031},"GRM21BR61A476ME15":{"c":3.8e-05,"esl":8.64e-10,"esr":0.00307},"GRM21BR71H474KA88":{"c":4.74e-07,"esl":6.32e-10,"esr":0.0094},"LQW15AN10NG00":{"dcr":0.12,"l":1.2e-08},"LQW15AN11NG00":{"dcr":0.1,"l":1.26e-08},"LQW15AN12NG00":{"dcr":0.1,"l":1.4e-08},"LQW15AN15NH00":{"dcr":0.11,"l":1.72e-08},"LQW15AN16NG80":{"dcr":0.105,"l":1.69e-08},"LQW15AN18NG80":{"dcr":0.108,"l":1.94e-08},"LQW15AN22NJ00":{"dcr":0.21,"l":2.57e-08},"LQW15AN2N4B00":{"dcr":0.03,"l":2.49e-09},"LQW15AN2N5C00":{"dcr":0.03,"l":3.12e-09},"LQW15AN2N6C00":{"dcr":0.03,"l":2.31e-09},"LQW15AN2N7B00":{"dcr":0.03,"l":3.08e-09},"LQW15AN2N7C00":{"dcr":0.03,"l":3.08e-09},"LQW15AN33NG00":{"dcr":0.45,"l":3.87e-08},"LQW15AN39NH00":{"dcr":0.5,"l":4.5e-08},"LQW15AN3N0B00":{"dcr":0.05,"l":2.77e-09},"LQW15AN3N3C10":{"dcr":0.028,"l":3.37e-09},"LQW15AN3N6C80":{"dcr":0.025,"l":3.5e-09},"LQW15AN3N9B00":{"dcr":0.05,"l":4.39e-09},"LQW15AN47NH00":{"dcr":0.77,"l":5.51e-08},"LQW15AN4N2B80":{"dcr":0.036,"l":4.11e-09},"LQW15AN4N7C00":{"dcr":0.05,"l":5.58e-09},"LQW15AN5N6C10":{"dcr":0.0368,"l":5.72e-09},"LQW15AN7N5G00":{"dcr":0.09,"l":8.73e-09},"LQW15AN8N2G00":{"dcr":0.1,"l":8.91e-09},"LQW15AN9N1H00":{"dcr":0.1,"l":9.53e-09},"LQW15AN9N5J80":{"dcr":0.067,"l":9.93e-09}};
 var SIM_PARASITES_MURATA = (typeof window !== "undefined" && window.SIM_PARASITES_MURATA) || (typeof global !== "undefined" && global.SIM_PARASITES_MURATA) || null;
 if (!SIM_PARASITES_MURATA && typeof require === "function") {
   try {
@@ -14635,13 +14635,14 @@ function simPDNActualiserComposants(force) {
     }
   }
   // Jeu de référence réaliste par défaut avec composants Murata et coordonnées spatiales
+  // (C3-C5 : base Murata relue sur l'échelle complète -- ESL = somme des selfs ; f0 = 1/2π√((ESL+L_mount)·C))
   if (!SIM_PDN.condensateurs || !SIM_PDN.condensateurs.length || force) {
     SIM_PDN.condensateurs = [
       { id: 1, ref: "C1", val: "10µF", cap: 10e-6, esr: 0.008, esl: 0.9e-9, lMount: 1.0e-9, pkg: "0805", prov: "catalogue", f0: 3.65, x: 8.0, y: 12.0, actif: true },
       { id: 2, ref: "C2", val: "1µF", cap: 1e-6, esr: 0.015, esl: 0.45e-9, lMount: 0.75e-9, pkg: "0603", prov: "catalogue", f0: 14.5, x: 18.0, y: 22.0, actif: true },
-      { id: 3, ref: "C3", val: "100nF", cap: 100e-9, esr: 0.0142, esl: 0.201e-9, lMount: 0.50e-9, pkg: "0402", mpn: "GCM155R71C104KA55", prov: "spice", f0: 59.8, x: 25.0, y: 25.0, actif: true },
-      { id: 4, ref: "C4", val: "10nF", cap: 10e-9, esr: 0.0493, esl: 0.192e-9, lMount: 0.50e-9, pkg: "0402", mpn: "GCM155R71H103KA55", prov: "spice", f0: 191.0, x: 38.0, y: 30.0, actif: true },
-      { id: 5, ref: "C5", val: "1nF", cap: 1e-9, esr: 0.245, esl: 0.145e-9, lMount: 0.35e-9, pkg: "0201", mpn: "GCM155R71H102KA37", prov: "spice", f0: 715.0, x: 46.0, y: 44.0, actif: true }
+      { id: 3, ref: "C3", val: "100nF", cap: 100e-9, esr: 0.0195, esl: 0.386e-9, lMount: 0.50e-9, pkg: "0402", mpn: "GCM155R71C104KA55", prov: "spice", f0: 16.9, x: 25.0, y: 25.0, actif: true },
+      { id: 4, ref: "C4", val: "10nF", cap: 10e-9, esr: 0.0555, esl: 0.326e-9, lMount: 0.50e-9, pkg: "0402", mpn: "GCM155R71H103KA55", prov: "spice", f0: 55.4, x: 38.0, y: 30.0, actif: true },
+      { id: 5, ref: "C5", val: "1nF", cap: 1e-9, esr: 0.279, esl: 0.356e-9, lMount: 0.35e-9, pkg: "0201", mpn: "GCM155R71H102KA37", prov: "spice", f0: 189.4, x: 46.0, y: 44.0, actif: true }
     ];
   }
 }
@@ -16579,7 +16580,8 @@ function simRfBroche(cle,z){
 const SIM_RF_MULT={p:1e-12,n:1e-9,u:1e-6,"µ":1e-6,k:1e3,K:1e3,G:1e9,R:1,r:1};
 /* « 3.3nH », « 1,5 pF », « 4k7 », « 2R2 », « 10 kΩ » -> unités SI. Pour un
    condensateur ou une self, un nombre nu n'est pas une valeur qu'on sache
-   lire : 0 plutôt qu'un farad inventé. */
+   lire : -1 (refusé par l'appelant) plutôt qu'un farad ou un court-circuit
+   inventé ; seul un 0 explicite (« 0 nH », « 0 ») reste 0. */
 function simRfValeurSI(txt,genre){
   const s=String(txt||"").trim().replace(",",".").replace(/\s+/g,"");
   const mult=l=>l==="m"?1e-3:l==="M"?1e6:
@@ -16587,10 +16589,10 @@ function simRfValeurSI(txt,genre){
   let m=s.match(/^(\d+)([pnuµmkKMGRr])(\d+)/);
   if(m&&mult(m[2])!=null)return parseFloat(m[1]+"."+m[3])*mult(m[2]);
   m=s.match(/^(\d*\.?\d+)([pnuµmkKMGRr]?)/);
-  if(!m)return genre==="R"?-1:0;
+  if(!m)return -1;
   const v=parseFloat(m[1]);
-  if(!m[2])return genre==="R"?v:0;
-  return mult(m[2])!=null?v*mult(m[2]):0;
+  if(!m[2])return genre==="R"||v===0?v:-1;
+  return mult(m[2])!=null?v*mult(m[2]):-1;
 }
 
 function simRfIdeal(c){

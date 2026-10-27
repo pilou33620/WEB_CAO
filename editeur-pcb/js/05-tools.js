@@ -4241,31 +4241,6 @@ cv.addEventListener("pointerdown",e=>{
     placeVia(x,y,m?m.net:"",0,S.cu-1,false);
     refreshPanels();draw();return;
   }
-  if(S.mode==="erase"){
-    /* La gomme ne prend pas une zone par son plein : un plan couvre la carte,
-       et le clic destiné à une piste emporterait le cuivre de toute la couche.
-       Son contour, lui, reste une cible franche. */
-    const h=hitTest(p.x,p.y,e);
-    if(h&&!h.inside){
-      push();
-      if(h.fp)S.fps=S.fps.filter(f=>f!==h.fp);
-      else if(h.track)S.tracks=S.tracks.filter(t=>t!==h.track);
-      else if(h.via)S.vias=S.vias.filter(v=>v!==h.via);
-      else if(h.drawing)S.drawings=S.drawings.filter(d=>d!==h.drawing);
-      else if(h.hole)S.holes=S.holes.filter(hl=>hl!==h.hole);
-      else if(h.zone){detachAuto(h.zone);S.zones=S.zones.filter(z=>z!==h.zone);
-        buildLayers();buildTabs();}
-      else if(h.interdit)S.interdits=interditsListe().filter(z=>z!==h.interdit);
-      else if(h.decoupe){
-        S.board.cutouts=boardCutouts().filter(D=>D!==h.decoupe);
-        if(!S.board.cutouts.length)delete S.board.cutouts;
-        boardChanged();
-      }
-      else if(h.edge)hint("Le contour de carte ne s'efface pas : redessinez-le (E) ou repassez au rectangle.");
-      touch();refreshPanels();draw();
-    }
-    return;
-  }
   if(S.mode==="cut"){
     cutClick(p.x,p.y);draw();return;
   }
@@ -5184,6 +5159,7 @@ function setMode(m){
   if(S.dp&&m!=="dpair")dpCommit();
   if(S.coord.open&&!coordUsable())coordClose();
   if(S.zoneDraft&&m!=="zone")S.zoneDraft=null;
+  if(S.cutDraft&&m!=="cut")S.cutDraft=null;
   if(S.edgeDraft&&m!==(S.edgeDraft.decoupe?"decoupe":S.edgeDraft.interdit?"interdit":"edge"))S.edgeDraft=null;
   if(S.silkDraft&&m!=="silk")S.silkDraft=null;
   if(S.aplatDraft&&(m!=="silk"||S.silkShape!=="aplat"))S.aplatDraft=null;
@@ -5197,7 +5173,7 @@ function setMode(m){
   for(const [id,md] of [["mSelect","select"],["mTrack","track"],["mVia","via"],["mHole","hole"],
                         ["mDiff","dpair"],["mMeander","meander"],
                         ["mZone","zone"],["mSilk","silk"],["mEdge","edge"],["mDecoupe","decoupe"],["mInterdit","interdit"],["mOrigin","origin"],
-                        ["mErase","erase"],["mMesure","mesure"]]){
+                        ["mErase","cut"],["mMesure","mesure"]]){
     const b=$(id);
     if(b)b.classList.toggle("on",m===md);
   }
@@ -5205,9 +5181,9 @@ function setMode(m){
                           dpair:"Paire différentielle",meander:"Serpentin (Appariement)",
                           zone:"Zone de cuivre",silk:"Sérigraphie",edge:"Contour de carte",
                           decoupe:"Découpe de carte",interdit:"Zone interdite",
-                          origin:"Origine",erase:"Gomme",
+                          origin:"Origine",cut:"Découpe de zone",
                           mesure:"Mesure"}[m];
-  cv.style.cursor=m==="erase"?"not-allowed":"crosshair";
+  cv.style.cursor="crosshair";
   hint({
     select:"Ctrl+clic (ou Maj+clic) ajoute à la sélection · glisser une piste emmène "+
            "la portion droite entière, les coudes voisins glissent sans changer d'angle "+
@@ -5229,7 +5205,7 @@ function setMode(m){
     edge:"Dessinez le contour de la carte, sommet par sommet · retour sur le premier point pour fermer · Maj contraint à 45°.",
     interdit:"Zone interdite de la face regardée : un clic par sommet, ou deux coins puis Entrée · retour sur le premier point pour fermer · Échap abandonne.",
     origin:"Cliquez le point qui servira d'origine — une pastille proche l'attire.",
-    erase:"Clic sur une piste, un via ou une empreinte pour le supprimer.",
+    cut:"Découpe de zone de cuivre : un clic par sommet, retour sur le premier point (ou Entrée) pour fermer · Maj contraint à 45° · Retour arrière annule le dernier · Échap abandonne.",
     mesure:"Cliquez le premier point, puis le second : la cote se fige · les pastilles, "+
            "les vias et les sommets de piste de la couche active attirent le point · "+
            "un nouveau clic repart d'ailleurs · Échap efface."

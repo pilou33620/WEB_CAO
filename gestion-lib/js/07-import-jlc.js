@@ -171,6 +171,11 @@ function infererEmpreintePcb(pkgRaw) {
   return p.endsWith(".json") ? p : (p + ".json");
 }
 
+/* Nom du symbole propre à une pièce : seul fichier qu'un import a le droit de réécrire. */
+function jlcNomSymbolePropre(model) {
+  return model.replace(/[^A-Za-z0-9_\-]/g, "_") + ".json";
+}
+
 function jlcVers39Colonnes(part, pinout) {
   const p = part || {};
   const specs = p.specs || {};
@@ -233,7 +238,7 @@ function jlcVers39Colonnes(part, pinout) {
   // Symbole schématique
   let symSch = classification.sym;
   if (pins.length > 4 && !["resistor.json", "capacitor.json", "diode.json"].includes(symSch)) {
-    symSch = (model ? model.replace(/[^A-Za-z0-9_\-]/g, "_") : "ic") + ".json";
+    symSch = model ? jlcNomSymbolePropre(model) : "ic.json";
   }
 
   // Assemblage strict des 39 colonnes
@@ -781,8 +786,11 @@ async function validerEtEnregistrerJlc() {
           composantFinal["Reference designator Prefix"], 
           partName
         );
+        // Un symbole existant qui n'est pas celui de la pièce (npn.json, ic.json…) est réutilisé, jamais écrasé (409).
+        const pn = composantFinal["Part Number"];
+        const propre = !!pn && symName === jlcNomSymbolePropre(pn);
         try {
-          await sauvegarderFichierLib("schematique", symName, symData);
+          await sauvegarderFichierLib("schematique", symName, symData, { si_absent: !propre });
         } catch (e) {
           console.warn("Avertissement : impossible d'enregistrer le symbole schématique généré :", e.message);
         }

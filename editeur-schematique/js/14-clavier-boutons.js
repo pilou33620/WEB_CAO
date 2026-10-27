@@ -19,21 +19,6 @@ window.addEventListener("keydown",e=>{
   if(isField(e.target)||isField(document.activeElement))return;
   const k=e.key.toLowerCase();
   const mod=e.ctrlKey||e.metaKey;
-  /* Fenêtre de brochage ouverte : elle prend Échap pour se fermer, et rien
-     d'autre ne doit agir sur la feuille pendant ce temps. */
-  if(typeof peIsOpen==="function"&&peIsOpen()){
-    if(k==="escape"){e.preventDefault();peClose();return;}
-    /* Annuler et rétablir traversent : c'est dans la fenêtre qu'on vient de se
-       tromper. restore() recharge la feuille, donc le composant en cours de
-       brochage : peReattach() le reprend par son identifiant. */
-    if(mod&&(k==="z"||k==="y")){
-      e.preventDefault();
-      (k==="y"||e.shiftKey)?redo():undo();
-      peReattach();
-      return;
-    }
-    return;
-  }
   if(mod&&k==="z"){e.preventDefault();e.shiftKey?redo():undo();return;}
   if(mod&&k==="y"){e.preventDefault();redo();return;}
   /* Ctrl+S enregistre en local ; Ctrl+Maj+S sauvegarde le projet sur GitHub
@@ -73,14 +58,13 @@ window.addEventListener("keydown",e=>{
   if(k==="v"){setMode("select");return;}
   if(k==="w"){setMode("wire");return;}
   if(k==="b"){setMode("bus");return;}
-  if(k==="t"){if(e.shiftKey){S.drawShape=(S.drawShape==="rect"?"line":"rect");setMode("draw");draw();}else setMode("draw");return;}
+  if(k==="t"){S.drawIsZone=false;if(e.shiftKey){S.drawShape=(S.drawShape==="rect"?"line":"rect");setMode("draw");draw();}else setMode("draw");return;}
   if(k==="x"){setMode("erase");return;}
   /* K comme « kote » : M fait déjà le miroir, C le copier. */
   if(k==="k"){setMode("mesure");return;}
   if(k==="r"){if(S.place){S.placeRot=((S.placeRot||0)+90)%360;draw();}else rotateSel();return;}
   if(k==="m"){mirrorSel();return;}
   if(k==="z"&&!mod){S.drawShape="rect";S.drawIsZone=true;setMode("draw");return;}
-  if(k==="t"&&!mod){S.drawShape=e.shiftKey?"rect":"line";S.drawIsZone=false;setMode("draw");return;}
   /* Montrer la sélection sur le PCB resté ouvert dans un autre onglet.
      Le geste vit dans js/21-reperage.js, chargé après celui-ci. */
   if(k==="l"){if(typeof schMontrerAilleurs==="function")schMontrerAilleurs();return;}

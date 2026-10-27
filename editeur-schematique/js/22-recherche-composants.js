@@ -1091,13 +1091,26 @@ function crAfficherDetailsComplets() {
 
 /* ---------- Application des données au composant du schéma ---------- */
 async function crAppliquerAuComposant() {
-  const el = CR_ETAT.el;
-  const d = CR_ETAT.partDetails;
-  if (!el || !d) return;
-
   const btnApply = document.getElementById("crBtnApply");
   btnApply.disabled = true;
   btnApply.textContent = "Application en cours...";
+  try {
+    await crAppliquerDonnees();
+  } catch (e) {
+    console.error("Enrichissement du composant :", e);
+    const h = document.getElementById("fHint");
+    if (h) h.textContent = "Enrichissement impossible : " + (e.message || e);
+  } finally {
+    // la fenêtre est réutilisée : le libellé et l'état du bouton ne doivent pas rester figés (succès ou erreur)
+    btnApply.textContent = "✓ Valider et enrichir";
+    btnApply.disabled = false;
+  }
+}
+
+async function crAppliquerDonnees() {
+  const el = CR_ETAT.el;
+  const d = CR_ETAT.partDetails;
+  if (!el || !d) return;
 
   // 1. Récupération des cases cochées
   const checkMpn = document.getElementById("cp_mpn") && document.getElementById("cp_mpn").checked;
@@ -1181,6 +1194,7 @@ async function crAppliquerAuComposant() {
   }
 
   // 3. Téléchargement de la Datasheet (si cochée et présente)
+  let dsEchec = "";
   if (checkDsheet && dsheetUrl) {
     el.datasheet_web = dsheetUrl;
     try {
@@ -1197,16 +1211,19 @@ async function crAppliquerAuComposant() {
         })
       });
 
-      if (repDl.ok) {
-        const jDl = await repDl.json();
-        if (jDl && jDl.ok) {
-          el.datasheet_local = jDl.chemin_rel;
-          el.datasheet_url = jDl.url_locale;
-        }
+      const jDl = await repDl.json().catch(() => null);
+      if (repDl.ok && jDl && jDl.ok) {
+        el.datasheet_local = jDl.chemin_rel;
+        el.datasheet_url = jDl.url_locale;
+      } else {
+        // refus (403 hors --local, 422 non PDF…) : on garde le lien en ligne, qui a un bouton, et on le dit
+        el.datasheet_url = dsheetUrl;
+        dsEchec = (jDl && jDl.detail) || ("erreur " + repDl.status);
       }
     } catch (e) {
       console.warn("Échec du téléchargement local de la datasheet :", e);
       el.datasheet_url = dsheetUrl;
+      dsEchec = e.message || "réseau";
     }
   }
 
@@ -1260,7 +1277,8 @@ async function crAppliquerAuComposant() {
     if (el.pinout && el.pinout.length > 0) msg += " · ⚡ Pinout schématique (" + el.pinout.length + " broches) validé";
     if (nbRealign > 0) msg += " · ⚡ " + nbRealign + " inversion(s)/connexion(s) de fil(s) réalignée(s)";
     if (nbPropag > 0) msg += " + " + nbPropag + " autre(s) composant(s) identique(s)";
-    if (el.datasheet_local) msg += " · Fiche technique sauvegardée dans datasheets/";
+    if (el.datasheet_local && !dsEchec) msg += " · Fiche technique sauvegardée dans datasheets/";
+    if (dsEchec) msg += " · ⚠ Fiche technique non téléchargée (" + dsEchec + ") : lien en ligne conservé";
     fHint.textContent = msg;
   }
 }

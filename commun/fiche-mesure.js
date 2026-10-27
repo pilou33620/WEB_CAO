@@ -333,7 +333,9 @@ function mesBrancher(z,ops){
   activer("a");
   const ajouter=()=>{
     const E=ops.entree(), a=mesResoudre(E,val("a")), b=mesResoudre(E,val("b"));
-    const e=a.err?"Sonde + : "+a.err:b.err?"Sonde − : "+b.err:a.p.cle===b.p.cle?"Les deux sondes sont sur la même pastille.":"";
+    // mesNormListe garde les MES_MAX premières : la suivante se perdrait sans bruit
+    const e=ops.liste().length>=MES_MAX?"Fiche pleine : "+MES_MAX+" mesures au plus. Supprimez-en une pour ajouter celle-ci.":
+      a.err?"Sonde + : "+a.err:b.err?"Sonde − : "+b.err:a.p.cle===b.p.cle?"Les deux sondes sont sur la même pastille.":"";
     dire(e);
     if(e)return;
     const nom=q=>q.parNet?q.net:q.cle;       // un net reste un net : son meilleur point peut changer

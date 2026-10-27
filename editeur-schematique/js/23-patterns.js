@@ -423,9 +423,8 @@ var SCHEMA_PATTERNS = (function() {
     const btnTb = document.getElementById("bPatterns");
     if (btnTb) {
       btnTb.onclick = () => {
-        if (typeof WS !== "undefined" && WS.togglePanel) {
-          WS.togglePanel("patterns");
-        }
+        // workspace.js : rouvre le panneau s'il est fermé, le déplie s'il est replié
+        if (typeof wsReveler === "function") wsReveler("patterns");
         analyser(0);
       };
     }

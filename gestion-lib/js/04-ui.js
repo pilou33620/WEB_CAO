@@ -155,7 +155,9 @@ function initApp() {
     if (e.key === "Escape") {
       fermerModaleNouveauComposant();
       fermerModaleColonnes();
-      fermerEditeurLib();
+      // L'éditeur annule d'abord le trait en cours, puis la sélection (05-editeur-lib.js) ; ensuite seulement Échap le ferme.
+      const ed = window.EDITEUR_LIB;
+      if (!(ed && ed.actif && (ed.ligneEnCours || ed.selectionIndex >= 0))) fermerEditeurLib();
     }
   });
 
@@ -341,13 +343,18 @@ function rafraichirTable() {
   };
   const connus = {};
   for (const k in listes) connus[k] = new Set(listes[k][1]);
-  const selAssoc = (field, val, id) => `
+  // La case garde son texte ; seule la sélection affichée compare le nom nu (« lib/empreinte/X.json » ou « X »)
+  const selAssoc = (field, val, id) => {
+    const nu = nomFichierSim(val);
+    const nom = [nu, nu + ".json"].find(n => connus[field].has(n));
+    return `
           <td>
             <select class="sel-assoc ${val ? 'has-val' : 'empty'}" data-field="${field}" data-id="${id}">
-              <option value="">${listes[field][0]}</option>${connus[field].has(val) ? `<option value="${esc(val)}" selected>${esc(val)}</option>` : ""}
+              <option value="">${listes[field][0]}</option>${nom ? `<option value="${esc(nom)}" selected>${esc(nom)}</option>` : ""}
             </select>
           </td>
         `;
+  };
 
   let html = "";
   const maxRows = Math.min(250, liste.length);

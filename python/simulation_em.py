@@ -36,8 +36,11 @@
 #   que `simuler` a note dans le segment, `plan_haut` / `plan_bas`), pour le
 #   mode impair, le mode commun et la section dissymetrique brin par brin ;
 #   `_abcd_ligne_seule` (partenaire restee sur sa couche, surlongueur) la
-#   lit sur la section du brin seul. Les vias et les coudes n'ont pas de
-#   rugosite a prendre : leur modele ne porte pas de resistance de surface.
+#   lit sur la section du brin seul. Les vias et les coudes ne prennent pas
+#   de rugosite : le pi et le coude n'ont pas de resistance de surface, et le
+#   via en ligne (`abcd_via_ligne`, `pertes_conducteur=True`) en porte une,
+#   mais celle du cuivre LISSE (`resistance_surface`), sans facteur de
+#   rugosite.
 #   UN PLAN QUI NE DECLARE RIEN PREND CELLE DE LA PISTE : la paire est celle
 #   de la 5.3.0 au bit pres (cas du banc de l'oeil) ; un plan lisse declare
 #   sous une piste rugueuse perd moins.
@@ -725,8 +728,9 @@
 #   rien, puisque l'onde complete ne rendait aucun chiffre exploitable ; le
 #   jour ou son modele de port sera repare, les deux se completeront.
 #
-#   mom_solver/ N'EST PAS DANS LE CHEMIN : rien ici n'en depend. Le moteur
-#   2,5D evolue dans son dossier, avec ses propres bancs.
+#   mom_solver/ N'EST PAS DANS LE CHEMIN : rien ici n'en depend. (Le moteur
+#   2,5D et ses bancs ont depuis ete retires du depot : commit ab691cb du
+#   2026-09-16.)
 #
 #   CE QUI NE BOUGE PAS : le format d'echange, la route /api/simulation, le
 #   panneau des deux pages. C'etait l'interet de mettre un pont ici.
@@ -811,11 +815,9 @@ if _ICI not in sys.path:
 # ERREUR_SOLVEUR garde de quoi le dire a l'utilisateur, mot pour mot -- « le
 # solveur ne marche pas » n'a jamais aide personne a installer numpy.
 #
-# On importe ligne_mom, VOISIN de ce fichier dans python/, et surtout PAS
-# mom_solver : le paquet 2,5D pleine onde est laisse tel qu'il a ete livre, et
-# rien ici ne doit en dependre. Son __init__.py tire d'ailleurs tout le paquet
-# d'un coup -- numba compris -- ce qui ferait de l'onde complete une condition
-# de demarrage pour un calcul qui ne s'en sert pas.
+# On importe ligne_mom, VOISIN de ce fichier dans python/. Le paquet 2,5D
+# pleine onde mom_solver/ a ete retire du depot (commit ab691cb du
+# 2026-09-16) : rien ici n'en dependait.
 try:
     import numpy as np
     import ligne_mom as tl

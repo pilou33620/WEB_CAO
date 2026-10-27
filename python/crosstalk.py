@@ -648,7 +648,8 @@
 #   LA RESONANCE DE LA FENTE (option C) : chaque detour est un troncon de
 #   fente court-circuite, tan(beta d)/(beta d) au genou 0,35/t_r avec la
 #   perte Q = 50 de `z_fente` ; elle ne compte que sous ~300 ps (une fente
-#   de 20 mm resonne vers 4 GHz), et la fiche dit quand elle a pese.
+#   de 20 mm, enfouie dans du FR-4, resonne vers 3,5 GHz), et la fiche dit
+#   quand elle a pese.
 #
 #   CE QUE LA PAGE DOIT ENVOYER, et qu'elle seule peut mesurer : les detours
 #   d1 (a gauche du sens de marche, cote +1 de la couture) et d2 (a droite),
@@ -2431,7 +2432,8 @@ def _texte_frequence(f):
 # frequence f, beta dans la permittivite moyenne des deux faces du plan, avec
 # la perte Q = 50 de `z_fente` qui tient lieu de son rayonnement. Au genou du
 # front, 0,35 / t_r, elle ne pese que sous ~300 ps : une fente de 20 mm dans
-# du FR-4 resonne vers 4 GHz. La fiche dit quand elle a compte.
+# du FR-4 (eps 4,5 des deux faces) resonne vers 3,5 GHz. La fiche dit quand
+# elle a compte.
 #
 # LIMITES, et elles sont dites : une fente droite, franchie a peu pres
 # perpendiculairement, TOUS les plans de retour coupes. Une fente qui laisse

@@ -16,8 +16,9 @@
    de limite) : pour toute la carte.
 
    La hauteur d'un composant est celle du dossier mécanique (mecaDossier) :
-   saisie dans sa fenêtre, sinon `<Package height>` du fichier, sinon
-   « Maximun Height » de la LIB. Inconnue, elle est signalée, jamais supposée.
+   saisie dans sa fenêtre, sinon « Maximun Height » de la LIB (l'éditeur ne
+   lit pas de hauteur de fichier). Inconnue, elle est signalée, jamais
+   supposée.
    ========================================================================== */
 
 /* { id, face: "dessus" | "dessous", pts: [{x,y}…], hMax: mm | null, nom } */

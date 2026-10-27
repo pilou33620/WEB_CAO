@@ -1714,7 +1714,7 @@ function dfHtmlFeuilleDetail(cfg){
   if(!d)return "";
   const opt=(v,lib)=>'<option value="'+v+'"'+((d.feuille||"")===v?" selected":"")+'>'+esc(lib)+'</option>', g=[];
   for(const [f,lib] of DF_FEUILLES)
-    if(f!=="couches")g.push(opt(f,lib));
+    if(f!=="couches"){if(DF_FEUILLE_RE.test(f))g.push(opt(f,lib));}   // seules les feuilles où un détail se pose
     else for(let i=0;i<S.cu;i++)g.push(opt("cu"+i,"Couche "+(i+1)));
   const absente=d.feuille&&!DF.doc.feuilles.some(F=>F.genre===d.feuille);
   return '<label class="df-champ"><span>Feuille du détail '+esc(d.lettre)+'</span><select class="tbsel" data-op="detFeuille" data-id="'+d.id+'">'+

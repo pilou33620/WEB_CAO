@@ -81,6 +81,25 @@ class TestProjetsReseau(unittest.TestCase):
         self.assertEqual(self.code("POST", "/api/lib/config", {"chemin": dehors}), 403)
         self.assertEqual(self.code("GET", "/api/datasheet/ouvrir?fichier=a.pdf"), 403)
 
+    def test_console_dit_la_verite(self):
+        # le message de demarrage en reseau suit --projets-reseau
+        import contextlib, io
+        def demarrer(reseau):
+            web_CAO.PROJETS_RESEAU = reseau
+            tampon = io.StringIO()
+            origine = web_CAO.ThreadedServer.serve_forever
+            web_CAO.ThreadedServer.serve_forever = lambda self, *a, **k: (_ for _ in ()).throw(KeyboardInterrupt())
+            try:
+                with contextlib.redirect_stdout(tampon):
+                    web_CAO.start_server("0.0.0.0", 0, False)
+            finally:
+                web_CAO.ThreadedServer.serve_forever = origine
+            return tampon.getvalue()
+        self.assertIn("refuses dans ce mode", demarrer(False))
+        sortie = demarrer(True)
+        self.assertNotIn("refuses dans ce mode", sortie)
+        self.assertIn("ouverts au reseau", sortie)
+
 
 if __name__ == "__main__":
     unittest.main()

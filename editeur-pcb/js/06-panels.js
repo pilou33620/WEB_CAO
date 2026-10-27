@@ -1111,11 +1111,11 @@ function silkMenuBuild(){
   const isText=S.silkShape==="text";
   const isAplat=S.silkShape==="aplat";
   m.innerHTML=
-    '<div class="mtitle">Sérigraphie</div>'+
+    '<div class="mtitle">Sérigraphie <kbd title="Entre en Sérigraphie, puis passe à la forme suivante : trait, rectangle, aplat, texte">Maj+S</kbd></div>'+
     '<div class="prop"><div class="row">'+
-    '<button class="tb'+(isLine?' sel':'')+'" id="smLine">─ Trait (segment) <kbd>S</kbd></button>'+
+    '<button class="tb'+(isLine?' sel':'')+'" id="smLine">─ Trait (segment)</button>'+
     '</div><div class="row">'+
-    '<button class="tb'+(isRect?' sel':'')+'" id="smRect">▢ Rectangle (cadre) <kbd>Shift+S</kbd></button>'+
+    '<button class="tb'+(isRect?' sel':'')+'" id="smRect">▢ Rectangle (cadre)</button>'+
     '</div><div class="row">'+
     '<button class="tb'+(isAplat?' sel':'')+'" id="smAplat" title="Polygone plein : un clic par sommet, ou deux coins puis Entrée">▰ Aplat plein (logo, bandeau)</button>'+
     '</div><div class="row">'+

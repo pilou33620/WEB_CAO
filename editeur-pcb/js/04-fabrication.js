@@ -1131,6 +1131,9 @@ const VIA_TXT={
   filled :"bouches et plaques, via-in-pad (IPC-4761 type VII)"
 };
 function fabReadme(files,dr){
+  // un paragraphe par fichier réellement dans l'archive, sous son vrai nom (fabBase)
+  const base=fabBase(), a=n=>files.some(f=>f.name===n);
+  const gerber=files.some(f=>/\.G(TL|BL|L\d+|TS|BS|TP|BP|TO|BO|M1|KO)$/.test(f.name));
   const L=[];
   L.push("Editeur PCB — dossier de fabrication");
   L.push(new Date().toLocaleString("fr-FR"));
@@ -1140,16 +1143,19 @@ function fabReadme(files,dr){
          (boardCutouts().length?", "+boardCutouts().length+" decoupe(s) interieure(s)":"")+
          ", "+S.cu+" couche(s) de cuivre.");
   L.push("Empilage : "+fmt(stackTotal(),3)+" mm, finition "+S.stack.finish+
-         " ; la coupe complete est dans EMPILAGE.txt.");
+         (a("EMPILAGE.txt")?" ; la coupe complete est dans EMPILAGE.txt.":"."));
   L.push("Origine des coordonnees : "+(S.fabOrigin
     ? "origine utilisateur (les coordonnees peuvent etre negatives)"
     : "coin inferieur gauche de la carte")+".");
-  L.push("Gerber RS-274X, millimetres, format 4.6, polarite positive.");
-  L.push("Percage Excellon metrique, trous metallises.");
-  /* Un dossier peut porter trois .TXT : sans legende, le fabricant ne sait pas
-     lequel s'arrete en route. Les couches se comptent a partir de 1. */
-  L.push("Un fichier de percage par portee, couches numerotees a partir de 1 :");
-  for(const f of dr.files){
+  if(gerber)L.push("Gerber RS-274X, millimetres, format 4.6, polarite positive.");
+  const drl=dr.files.filter(f=>files.includes(f));
+  if(drl.length){
+    L.push("Percage Excellon metrique, trous metallises.");
+    /* Un dossier peut porter trois .TXT : sans legende, le fabricant ne sait pas
+       lequel s'arrete en route. Les couches se comptent a partir de 1. */
+    L.push("Un fichier de percage par portee, couches numerotees a partir de 1 :");
+  }
+  for(const f of drl){
     if(f.kind==="backdrill"){
       L.push("  "+f.name+" : CONTRE-PERCAGE (back-drill) depuis "+cpNomCouche(f.de)+
              ", ne pas couper "+cpNomCouche(f.garde)+", profondeur "+
@@ -1172,18 +1178,26 @@ function fabReadme(files,dr){
     L.push("sont en attributs utilisateur nommes d'apres IPC-2581 <Backdrill> :");
     L.push("  BackDrill_StartLayer, BackDrill_MustNotCutLayer (couches comptees de 1),");
     L.push("  BackDrill_MaxStubLengthMM (fichier), BackDrill_DepthMM (par outil, mm).");
-    L.push("Un outil qui n'exporte pas d'IPC-2581 n'a que ces attributs pour le dire ;");
-    L.push("ici, le fichier IPC-2581 (.xml) le porte aussi, en <Spec><Backdrill>.");
+    L.push("Un outil qui n'exporte pas d'IPC-2581 n'a que ces attributs pour le dire"+
+           (files.some(f=>f.kind==="ipc2581")?" ;":"."));
+    if(files.some(f=>f.kind==="ipc2581"))
+      L.push("ici, le fichier IPC-2581 (.xml) le porte aussi, en <Spec><Backdrill>.");
   }
-  L.push("Board Outline (carte.GM1) : Mechanical Layer 1, PROFIL DE DECOUPE.");
-  L.push("C'est ce fichier qui definit le detourage de la carte. Il porte");
-  L.push("l'attribut Gerber X2 << Profile,NP >> (bord non metallise).");
-  L.push("carte.GKO reprend la meme geometrie en Keep-Out Layer : interdiction");
-  L.push("de cuivre, et non une consigne de decoupe. En cas de doute, c'est");
-  L.push("carte.GM1 qui fait foi pour l'usinage.");
-  L.push("IPC-D-356 (carte.ipc) : netlist de test electrique (E-test / flying probe).");
-  L.push("Sans ce fichier, le fabricant ne peut pas verifier la conformite");
-  L.push("electrique de la gravure par rapport au schema.");
+  if(a(base+".GM1")){
+    L.push("Board Outline ("+base+".GM1) : Mechanical Layer 1, PROFIL DE DECOUPE.");
+    L.push("C'est ce fichier qui definit le detourage de la carte. Il porte");
+    L.push("l'attribut Gerber X2 << Profile,NP >> (bord non metallise).");
+  }
+  if(a(base+".GKO")){
+    L.push(base+".GKO reprend la meme geometrie en Keep-Out Layer : interdiction");
+    L.push("de cuivre, et non une consigne de decoupe. En cas de doute, c'est");
+    L.push(base+".GM1 qui fait foi pour l'usinage.");
+  }
+  if(a(base+".ipc")){
+    L.push("IPC-D-356 ("+base+".ipc) : netlist de test electrique (E-test / flying probe).");
+    L.push("Sans ce fichier, le fabricant ne peut pas verifier la conformite");
+    L.push("electrique de la gravure par rapport au schema.");
+  }
   for(const x of files.filter(f=>f.kind==="ipc2581"))
     L.push(x.name+" : IPC-2581 revision C, toute la carte en un fichier XML (empilage,",
            "cuivre et nets, zones remplies, percages et contre-percage, composants,",
@@ -1202,10 +1216,13 @@ function fabReadme(files,dr){
     L.push(x.name+(/\.html$/i.test(x.name)
       ?" : la carte qui s'assemble en 3D, page autonome (s'ouvre hors ligne, orientable a la souris)."
       :" : la meme animation en video.")+" Illustration seulement : elle ne fait pas foi.");
-  L.push("positions.csv et bom.csv servent a l'assemblage : millimetres,");
-  L.push("rotation en degres dans le sens horaire (convention JLCPCB), de");
-  L.push("0 a 360, meme origine que les Gerber. Ils ne concernent pas le");
-  L.push("fabricant du circuit nu.");
+  const asm=["positions.csv","bom.csv"].filter(a);
+  if(asm.length){
+    L.push(asm.join(" et ")+(asm.length>1?" servent":" sert")+" a l'assemblage : millimetres,");
+    L.push("rotation en degres dans le sens horaire (convention JLCPCB), de");
+    L.push("0 a 360, meme origine que les Gerber. "+(asm.length>1?"Ils ne concernent":"Il ne concerne")+" pas le");
+    L.push("fabricant du circuit nu.");
+  }
   {
     const vid=(S.variantes&&S.variantes.active)||"";
     const nm=varReperesNonMontes(S.fps,vid);
@@ -1227,9 +1244,11 @@ function fabReadme(files,dr){
   L.push("  retrait de la pate : "+fmt(S.rule.paste,2)+" mm");
   L.push("  traitement des vias : "+VIA_TXT[S.rule.viaFinish]);
   L.push("  percages : "+dr.tools+" outil(s), "+dr.holes+" trou(s)");
-  L.push("");
-  L.push("Les zones de cuivre utilisent la polarite negative (LPC) pour leurs");
-  L.push("degagements, conformement a la norme RS-274X.");
+  if(gerber){
+    L.push("");
+    L.push("Les zones de cuivre utilisent la polarite negative (LPC) pour leurs");
+    L.push("degagements, conformement a la norme RS-274X.");
+  }
   return L.join("\n")+"\n";
 }
 
@@ -1409,14 +1428,13 @@ function buildFabFiles(extra,veut){
      la feuille du plan de fabrication */
   if(prend("dxf")&&typeof dxfFichiers==="function")files.push(...dxfFichiers());
   if(extra)files.push(...extra);
-  const md=prend("master")&&masterDrawingPdf(files);
-  if(md)files.push({name:fabDocNum()+".pdf",data:md});
+  /* Empilage, placement et nomenclature avant le Master Drawing et le
+     LISEZ-MOI : tous deux ne marquent présent que ce qui est déjà dans la liste. */
   if(prend("empilage"))files.push({name:"EMPILAGE.txt",text:stackReport()});
-  /* Placement et nomenclature avant le LISEZ-MOI : celui-ci liste les fichiers
-     de l'archive, et une liste qui s'arrête avant les deux derniers vaudrait
-     un dossier incomplet aux yeux du monteur. */
   if(prend("positions"))files.push({name:"positions.csv",text:positionsCsvText()});
   if(prend("bom"))files.push({name:"bom.csv",text:bomPcbCsvText()});
+  const md=prend("master")&&masterDrawingPdf(files);
+  if(md)files.push({name:fabDocNum()+".pdf",data:md});
   if(prend("lisezmoi"))files.push({name:"LISEZ-MOI.txt",text:fabReadme(files,dr)});
   return {files,drill:dr};
 }

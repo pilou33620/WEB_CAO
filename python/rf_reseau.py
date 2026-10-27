@@ -1788,9 +1788,11 @@ def mutuelle_piste(bob, seg):
 # chaque bout (et plafonne a 30 mm un plan coupe de bord a bord). Chaque
 # detour est une self, par la formule de Ott (EMC Engineering, 2009) :
 # L = (mu0 / 2 pi) D ln(D / W) pour une fente de longueur D franchie en son
-# milieu par une piste de largeur W -- soit, pour un detour d, la moitie
-# d'une boucle de 2d : L_d = (mu0 / pi) 2d ln(2d / W). Les deux detours sont
-# en parallele. En frequence, chacun est un tronçon de fente COURT-CIRCUITE
+# milieu par une piste de largeur W. Cette L est celle des DEUX detours de
+# D/2 en parallele : un detour d est donc une moitie de la fente D = 2d, et
+# vaut le DOUBLE de L(2d), L_d = 2 (mu0 / 2 pi) 2d ln(2d / W) =
+# (mu0 / pi) 2d ln(2d / W) ; deux detours egaux en parallele rendent bien
+# L(2d). Les deux detours sont en parallele. En frequence, chacun est un tronçon de fente COURT-CIRCUITE
 # au bout : Z = j w L tan(beta d) / (beta d), dans la permittivite moyenne
 # des deux faces du plan, avec une perte (Q ~ 50) qui tient lieu de son
 # rayonnement. C'est une estimation d'ingenieur -- la fente vraie rayonne --,

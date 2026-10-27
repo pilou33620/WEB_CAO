@@ -15,6 +15,11 @@ const TACTILE_CLE = "cao.modeTactile";
  * Renvoie vrai si le mode tactile est actif.
  */
 function tactileEstActif(){
+  // le profil suit l'utilisateur et prime, comme pour la roulette ; le navigateur sert de repli
+  try{
+    const r = typeof profLire === "function" ? profLire("reglages:tactile") : null;
+    if(r && typeof r.actif === "boolean") return r.actif;
+  }catch(_){}
   try{
     const v = window.localStorage ? window.localStorage.getItem(TACTILE_CLE) : null;
     return v === "1";

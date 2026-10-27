@@ -354,6 +354,7 @@
       <p class="intro">Par quoi commencez-vous ?</p>
       <div class="tuto-barre">
         <button id="tutoParcours" class="tuto-parcours" type="button" hidden title="Ouvrir chaque mode l'un après l'autre, avec sa visite guidée">▶ Parcours complet</button>
+        <a class="tuto-interrupteur" href="docs/manuel/manuel.html" target="_blank" rel="noopener" title="Manuel complet : chaque outil, chaque fonction, toutes les simulations">📖 Manuel</a>
         <button id="tutoBascule" class="tuto-interrupteur" type="button" aria-pressed="false" title="Mode tuto : chaque mode s'ouvre avec sa visite guidée, et des ? expliquent les grandes fonctions"><span class="tuto-coche"></span>🎓 Mode tuto</button>
       </div>
     </header>
@@ -973,12 +974,16 @@ const bDetacher = document.getElementById("pBtnDetacher");
 if(bDetacher) {
   bDetacher.onclick = function() {
     if(!confirm("Détacher le dossier du projet ?\n\n" +
-                 "Rien n'est supprimé : les fichiers restent sur le disque, c'est le lien avec ce dossier qui se défait."))
+                 "Rien n'est supprimé : les fichiers restent sur le disque, c'est le lien avec ce dossier qui se défait.\n\n" +
+                 "Le projet sera aussi refermé : le travail non enregistré du schéma et du PCB dans cet onglet sera perdu. " +
+                 "Enregistrez-le d'abord (Annuler, puis Ctrl+S dans chaque éditeur)."))
       return;
+    // un projet sans dossier n'existe qu'en mémoire : on le referme, comme le fait la reprise au chargement
+    projFermer();
     projdDetacher();
     pRendre();
     pDosRendre();
-    pDosMsg("Dossier détaché.");
+    pDosMsg("Dossier détaché, projet refermé. Vos fichiers restent intacts sur le support.");
   };
 }
 

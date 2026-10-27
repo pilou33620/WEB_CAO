@@ -69,6 +69,12 @@ refus(d => { d.pads = []; }, /au moins une pastille/, "sans pastille");
 refus(d => { d.description = "a\u0000b"; }, /description/, "caractère de contrôle dans la description");
 verifier(CL.verifierEmpreinte(null).erreurs.length === 1, "pas un objet : refusé");
 
+const traits = copie(SOT235);
+traits.lines = [{ x1: -1, y1: -1, x2: 1, y2: -1, width: 0.15 }];
+r = CL.verifierEmpreinte(traits, "SOT-23-5.json");
+verifier(!r.erreurs.length && r.remarques.some(m => /lines/.test(m)), "traits de sérigraphie « lines » (écrits par Gestion LIB) : acceptés, remarque seulement");
+refus(d => { d.lines = [{ x1: "a", y1: 0, x2: 1, y2: 0 }]; }, /trait 1/, "trait de sérigraphie à coordonnée non numérique");
+
 const fendue = copie(SOT235);
 fendue.pads.push(Object.assign({}, fendue.pads[1], { y: 0.3, h: 0.2 }));
 r = CL.verifierEmpreinte(fendue, "SOT-23-5.json");

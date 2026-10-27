@@ -321,7 +321,7 @@ function cmNouveauGroupe(nom,nets,mode,tol){
   cmEdit(C=>{
     let k=1;while(C.groupes.some(x=>x.id==="g"+k))k++;
     g={id:"g"+k,nom,nets,mode:mode==="ps"?"ps":"mm",
-       tol:Number.isFinite(+tol)&&+tol>=0?+tol:(mode==="ps"?10:0.5),ref:""};
+       tol:tol!=null&&tol!==""&&Number.isFinite(+tol)&&+tol>=0?+tol:(mode==="ps"?10:0.5),ref:""};
     C.groupes.push(g);
   });
   return cmModele().groupes.find(x=>x.id===g.id)||null;
@@ -513,9 +513,12 @@ function cmClic(e){
   }else if(a==="grpcreer"){
     const nom=(document.getElementById("cmGrpNom")||{}).value||"";
     const mode=(document.getElementById("cmGrpMode")||{}).value||"mm";
-    const tol=cmLire("tol",(document.getElementById("cmGrpTol")||{}).value);
+    const tolTxt=(document.getElementById("cmGrpTol")||{}).value;
+    const tol=cmLire("tol",tolTxt);
     const nets=[...CM.grpSel];
     if(nets.length<2){hint("Un groupe d'appariement demande au moins deux nets cochés.");return;}
+    // vide : la tolérance par défaut ; saisie illisible ou négative : refusée
+    if(String(tolTxt||"").trim()&&!(tol>=0&&tol<=1e5)){hint("Tolérance refusée : un nombre positif ou nul (mm ou ps), ou vide pour le défaut.");return;}
     const g=cmNouveauGroupe(nom,nets,mode,tol);
     CM.grpSel.clear();
     if(g)hint("Groupe « "+g.nom+" » créé : "+g.nets.length+" nets, tolérance ± "+cmMm(g.tol,g.mode==="ps"?0:2)+" "+cmUnite(g)+".");

@@ -2,8 +2,8 @@
 /* ==========================================================================
    Master Drawing PDF — Manufacturing Data Package
    --------------------------------------------------------------------------
-   Document de référence IPC pour la commande et la fabrication : trois pages
-   (PCB Details, Files Included, Stack-up), générées en pur JavaScript sans
+   Document de référence IPC pour la commande et la fabrication : quatre pages d'office
+   (PCB Details, Finish/mask/test, Files Included, Stack-up), générées en pur JavaScript sans
    aucune dépendance. Le PDF est du texte structuré (ISO 32000) : on l'écrit
    directement.
 
@@ -15,7 +15,7 @@
    même sous-ensembleur (33-draftsman-export.js) et la même option « Fonte
    embarquée » du document (`dessin.fonte`, cochée par défaut). Mais ici en
    TrueType simple, un octet par caractère, l'ASCII à son propre code : le
-   contenu des pages se relit en clair (« SHEET: 1 / 3 », « REV: B », les
+   contenu des pages se relit en clair (« SHEET: 1 / 4 », « REV: B », les
    noms de fichiers annoncés), tandis que é, µ, ±, °, Ω, ≤, ≥ s'affichent,
    se cherchent et se copient par la /ToUnicode. Les chasses sont celles
    d'Helvetica : la mise en page ne bouge pas. Les textes ne sont donc codés
@@ -264,8 +264,9 @@ function masterDrawingPdf(fabFiles){
   }
   /* Cartouche du bas de page, sur le modèle du template : TITLE, référence
      carte, date, révision, feuille. Appelé UNE fois par page, en dernier.
-     `total` est fixe (3 pages) : pages.length croît au fil de la génération
-     et donnerait « 1 / 1 » sur la première. */
+     `total` est le nombre final de pages (4, plus les débordements), connu
+     seulement à la fin : pages.length croît au fil de la génération et
+     donnerait « 1 / 1 » sur la première. */
   function cartouche(target,docNum,boardRef,rev,sheet,total){
     const h=16, w=MD_PW-MD_ML-MD_MR, ty=MD_PH-14-h;
     /* Trois colonnes, larges d'après le texte le plus long qu'elles portent :
@@ -288,8 +289,8 @@ function masterDrawingPdf(fabFiles){
     mdText(target,"BOARD REFERENCE (IdPCB): "+boardRef,cC+2,ty+5.5,6,false,0);
     mdText(target,"REV: "+rev,cC+2,ty+13,6.5,true,0);
     mdText(target,"SHEET: "+sheet+" / "+total,cC+26,ty+13,6.5,false,0);
-    mdText(target,"CONFIDENTIAL : This document is proprietary and property of it shall not "
-            +"be reproduced, copied, lent or otherwise disposed of directly or indirectly.",
+    mdText(target,"CONFIDENTIAL : This document is proprietary"+(societe?" and the property of "+societe+". It":" and")
+            +" shall not be reproduced, copied, lent or otherwise disposed of directly or indirectly.",
            MD_ML,MD_PH-8,4.5,false,0.4);
   }
 
@@ -301,6 +302,13 @@ function masterDrawingPdf(fabFiles){
   const fbase=fabBase();
   const docNum=fabDocNum();      // même nom que le fichier dans l'archive
   const boardRef=fbase;
+  // la société du cartouche : celle du profil, à défaut celle des réglages du plan (29-draftsman.js)
+  let societe="";
+  try{
+    societe=(typeof cartoucheSociete==="function"&&cartoucheSociete().societe)||
+            (typeof dfCfg==="function"&&dfCfg().societe)||"";
+  }catch(_){}
+  societe=String(societe).trim().slice(0,60);   // la mention tient sur une ligne
   /* Révision : elle vient du fichier projet (projet.cao.json), la seule pièce
      qui survit aux deux éditeurs et à la fermeture du navigateur. Sans dossier
      de projet rattaché, c'est « A » — la première. */
@@ -524,10 +532,12 @@ function masterDrawingPdf(fabFiles){
   /* l'IPC-2581 de 35-ipc2581-export.js, s'il est dans l'archive */
   for(const f of (fabFiles||[]).filter(f=>f.kind==="ipc2581"))
     tableRow(f.name,"IPC-2581 rev. C - complete board data (stackup, copper, drills, components, BOM), XML",true,alt=!alt);
-  tableRow("positions.csv","Component positions (pick & place)",true,alt=!alt);
-  tableRow("bom.csv","Bill of materials",true,alt=!alt);
-  tableRow("EMPILAGE.txt","Stackup report",true,alt=!alt);
-  tableRow(docNum+".pdf","Master drawing (this document)",true,alt=!alt);
+  // buildFabFiles les pose avant ce document : leur présence dit s'ils sont dans l'archive
+  const dans=n=>(fabFiles||[]).some(f=>f.name===n);
+  tableRow("positions.csv","Component positions (pick & place)",dans("positions.csv"),alt=!alt);
+  tableRow("bom.csv","Bill of materials",dans("bom.csv"),alt=!alt);
+  tableRow("EMPILAGE.txt","Stackup report",dans("EMPILAGE.txt"),alt=!alt);
+  tableRow(docNum+".pdf","Master drawing (this document)",true,alt=!alt);   // produit seulement si coché
   /* Les plans du Draftsman (29-draftsman.js) : cotes, perçage, assemblage.
      Annoncés seulement s'ils sont dans l'archive, et pour ce qu'ils
      contiennent vraiment. */
@@ -556,7 +566,7 @@ function masterDrawingPdf(fabFiles){
     for(const [d,inc] of pdfRows)tableRow("",d,!!inc,alt=!alt);
   }
 
-  /* ================= PAGE 3 — Stack-up ================= */
+  /* ================= PAGE 4 — Stack-up ================= */
   startPage();
   section("Stack layer");
   mdText(L,"Stackup table:   Unit = Millimeter",MD_ML,y,8,true,0);

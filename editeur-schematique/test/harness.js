@@ -73,7 +73,7 @@ const EXPOSE=[
   /* brochage (04 + 19) */
   "icPins","icBodyOf","icSideOf","icPinLabel","icFree","icShapeOf","icStep","IC_STEP",
   "icSetCount","icSetShape","icSetBody","icFitNames","icMovePin","reshapeComp",
-  "peOpen","peClose","ceOpen","ceClose",
+  "ceOpen","ceClose",
   /* libellés déplaçables et étiquettes de net (08 + 09) */
   "compTexts","textBox","textOff","setTextOff","netLabelAt","netLabelBoxes",
   "pinContacts","reconnectContacts","resetTexts","pinContactPoints","moveSelBy",
@@ -132,7 +132,7 @@ const EXPOSE=[
   "setGrid","setGridStep","setNetLabels","setListTab",
   /* recherche de composants & conflits */
   "crDetecterConflitsCablage","crRealignerFilsBroches",
-  "CR_ETAT","crBuildModal","crRechercherDistributeurs","crTrierEtAfficherCandidats","crAppliquerAuComposant",
+  "CR_ETAT","crBuildModal","crRechercherDistributeurs","crSelectionnerCandidat","crTrierEtAfficherCandidats","crAppliquerAuComposant",
   /* synchronisation et alertes Gestion LIB */
   "SCH_LIB_ALERTE","schTrouverComposantsAmettreAJour","schComposantAlerteLib",
   "schAppliquerMajLibComposant","schAppliquerMajLibTous","sessDiffuserLibModif","sessEcouterLibModif",
@@ -2346,6 +2346,32 @@ T("feuilles hiérarchiques : feuille racine, blocs hiérarchiques dynamiques et 
   if(S.pages.length!==3)throw new Error("la feuille racine a été supprimée à tort");
 });
 
+T("touches Z puis T : le tracé suivant n'est plus une zone",()=>{
+  const k=(key,sh)=>dom.fireWin("keydown",{key,shiftKey:!!sh,target:{tagName:"BODY"}});
+  for(const [suite,sh] of [["t",false],["T",true]]){
+    k("z");
+    if(!S.drawIsZone||S.mode!=="draw")throw new Error("Z doit armer le tracé de zone");
+    k(suite,sh);
+    if(S.drawIsZone)throw new Error(suite+" après Z doit quitter le mode zone");
+  }
+  k("z");k("Escape");
+  if(S.drawIsZone)throw new Error("quitter le mode tracé doit désarmer la zone");
+});
+
+T("removePage : la confirmation compte aussi les traits et les zones",()=>{
+  const avant=serialize(), conf=global.confirm;
+  try{
+    loadDoc({format:"schemedit-2",pages:[{name:"H",isHierarchy:true,comps:[],wires:[]},
+      {name:"A",comps:[],wires:[]},
+      {name:"B",comps:[],wires:[],drawings:[{id:1,shape:"rect",type:"rect",x1:0,y1:0,x2:40,y2:40,isZone:true}]}]});
+    let demande=0;global.confirm=()=>{demande++;return false;};
+    removePage(2);
+    if(demande!==1||S.pages.length!==3)throw new Error("une feuille ne contenant qu'un dessin doit demander confirmation");
+    removePage(1);
+    if(demande!==1||S.pages.length!==2)throw new Error("une feuille vide se supprime sans confirmation");
+  }finally{global.confirm=conf;loadDoc(JSON.parse(avant),true);}
+});
+
 T("feuilles hiérarchiques : ouverture du document sur la feuille racine et navigation",()=>{
   const doc={
     format:"schemedit-2",
@@ -2458,18 +2484,16 @@ T("synoptique hiérarchique : sheet pins, bus traversants et interconnexions int
   if(!hitP || hitP.name !== "SPI") throw new Error("hitSheetPin n'a pas détecté la broche SPI");
 });
 
-T("édition des broches sur un composant non-IC (connecteur)",()=>{
+T("nombre de broches d'un composant non-IC (connecteur)",()=>{
   const j = C("header", 5, 5, {ref:"J1"});
   sheet([j], []);
   if(pinCount(j)!==2) throw new Error("un header natif a 2 broches, reçu: "+pinCount(j));
-  peOpen(j);
   icSetCount(j, 4);
   j.pinNames = ["VCC", "TX", "RX", "GND"];
   if(pinCount(j)!==4) throw new Error("le header doit avoir 4 broches après icSetCount");
   if(j.pinNames.length!==4||j.pinNames[1]!=="TX") throw new Error("noms des broches incorrects");
   const ps = pinsOf(j);
   if(ps.length!==4) throw new Error("pinsOf doit renvoyer 4 broches");
-  peClose();
 });
 
 T("édition du composant (modale CE) pour modifier ref, valeur, boîtier",()=>{
@@ -2499,9 +2523,7 @@ T("normComp : conservation des broches personnalisées et des noms pour tout com
 T("détection de conflits de câblage et réalignement assisté des broches (alim/masse critique)",()=>{
   const u1 = C("header", 10, 10, {ref:"U1", value:"TEST_IC"});
   sheet([u1], []);
-  peOpen(u1);
   icSetCount(u1, 4);
-  peClose();
 
   const pins = allPins(u1);
   if(pins.length !== 4) throw new Error("4 broches attendues pour U1, reçu: " + pins.length);
@@ -2548,9 +2570,7 @@ T("détection de conflits de câblage et réalignement assisté des broches (ali
 T("détection d'inversion de signaux de bus (SDA ⇄ SCL)",()=>{
   const u2 = C("header", 20, 20, {ref:"U2"});
   sheet([u2], []);
-  peOpen(u2);
   icSetCount(u2, 4);
-  peClose();
 
   const pins = allPins(u2);
   const wA = { x1: pins[0].x, y1: pins[0].y, x2: pins[0].x + 40, y2: pins[0].y, net: "I2C_SDA" };
@@ -2576,16 +2596,36 @@ T("détection d'inversion de signaux de bus (SDA ⇄ SCL)",()=>{
   if(wB.x1 !== pins[0].x || wB.y1 !== pins[0].y) throw new Error("SCL doit être sur pin 1");
 });
 
-T("recherche distributeurs : agrégation Mouser et DigiKey", async ()=>{
-  // Mock crApiAppel
+/* Les essais de la fenêtre de recherche partagent CR_ETAT, fetch et les cases à
+   cocher (le DOM simulé n'analyse pas l'innerHTML : une case est l'élément que
+   rend getElementById) : chacun part d'un état propre (et d'une feuille vide)
+   et rend l'ancien. */
+const CR_CASES=["cp_mpn","cp_mfr","cp_pkg","cp_dsheet","cp_lcsc","cp_mouser","cp_digikey","cp_pinout","crBatchApply"];
+function TAcr(name,fn){
+  TA(name,async()=>{
+    const etat={...CR_ETAT}, f=global.fetch, cases=CR_CASES.map(id=>document.getElementById(id).checked);
+    Object.assign(CR_ETAT,{el:null,selectedCand:null,partDetails:null,mouserData:null,digikeyData:null,pinoutData:null,pinoutMeta:null,detectedConflicts:[]});
+    CR_CASES.forEach(id=>{document.getElementById(id).checked=false;});
+    sheet([],[]);      // l'application rafraîchit les panneaux : pas de composant laissé par un autre essai
+    try{await fn();}
+    finally{
+      for(const k of Object.keys(CR_ETAT))if(!(k in etat))delete CR_ETAT[k];
+      Object.assign(CR_ETAT,etat);global.fetch=f;
+      CR_CASES.forEach((id,i)=>{document.getElementById(id).checked=cases[i];});
+    }
+  });
+}
+
+/* réponse de la passerelle POST /api/tool : {name, arguments} -> {data} (python/passerelle_mcp.py) */
+TAcr("recherche distributeurs : agrégation Mouser et DigiKey", async ()=>{
   const ancienFetch = global.fetch;
   global.fetch = async (url, opts) => {
     const body = JSON.parse(opts.body || "{}");
-    if (body.tool === "mouser_get_part") {
+    if (body.name === "mouser_get_part") {
       return {
         ok: true,
         json: async () => ({
-          result: {
+          data: {
             results: [{
               mfr_part_number: "IRA-S400ST01A01",
               manufacturer: "Murata",
@@ -2602,11 +2642,11 @@ T("recherche distributeurs : agrégation Mouser et DigiKey", async ()=>{
         })
       };
     }
-    if (body.tool === "digikey_get_part") {
+    if (body.name === "digikey_get_part") {
       return {
         ok: true,
         json: async () => ({
-          result: {
+          data: {
             results: [{
               mfr_part_number: "IRA-S400ST01A01",
               manufacturer: "Murata Electronics",
@@ -2621,7 +2661,7 @@ T("recherche distributeurs : agrégation Mouser et DigiKey", async ()=>{
         })
       };
     }
-    return { ok: true, json: async () => ({ result: {} }) };
+    return { ok: true, json: async () => ({ data: {} }) };
   };
 
   try {
@@ -2681,7 +2721,7 @@ T("recherche composants : tri, affichage et badges distributeurs", ()=>{
   }
 });
 
-T("recherche composants : application au composant schématique", async ()=>{
+TAcr("recherche composants : application au composant schématique", async ()=>{
   const comp = C("ic", 10, 10, { ref: "U1", val: "IRA-S400ST01A01", lcsc: "C99999" });
   CR_ETAT.el = comp;
   CR_ETAT.partDetails = {
@@ -2694,16 +2734,12 @@ T("recherche composants : application au composant schématique", async ()=>{
   CR_ETAT.digikeyData = { part_number: "490-IRA-ND", stock: 120, price: 3.50 };
   CR_ETAT.selectedCand = { model: "IRA-S400ST01A01" };
 
-  // Construire des checkboxes simulées
-  document.body.innerHTML += 
-    '<input type="checkbox" id="cp_mpn" checked>' +
-    '<input type="checkbox" id="cp_mfr" checked>' +
-    '<input type="checkbox" id="cp_pkg" checked>' +
-    '<input type="checkbox" id="cp_mouser" checked>' +
-    '<input type="checkbox" id="cp_digikey" checked>' +
-    '<input type="checkbox" class="cp-spec" data-spec-key="Supply Voltage" data-spec-val="2V-15V" checked>';
-
-  await crAppliquerAuComposant();
+  // cases cochées (le DOM simulé n'analyse pas l'innerHTML : on coche les éléments eux-mêmes)
+  ["cp_mpn","cp_mfr","cp_pkg","cp_mouser","cp_digikey"].forEach(id=>{document.getElementById(id).checked=true;});
+  const spec=document.createElement("input");
+  spec.className="cp-spec";spec.setAttribute("data-spec-key","Supply Voltage");spec.setAttribute("data-spec-val","2V-15V");spec.checked=true;
+  document.body.appendChild(spec);
+  try{ await crAppliquerAuComposant(); }finally{ spec.remove(); }
 
   if (comp.mpn !== "IRA-S400ST01A01") throw new Error("MPN non mis à jour: " + comp.mpn);
   if (comp.manufacturer !== "Murata") throw new Error("Fabricant non mis à jour");
@@ -2717,7 +2753,7 @@ T("recherche composants : application au composant schématique", async ()=>{
   }
 });
 
-T("recherche composants : retour systématique du pinout et conservation", async () => {
+TAcr("recherche composants : retour systématique du pinout et conservation", async () => {
   const saveFetch = global.fetch;
   const oldComp = {
     id: 10,
@@ -2726,17 +2762,18 @@ T("recherche composants : retour systématique du pinout et conservation", async
     value: "LM358",
     pkg: "SOIC-8",
     x: 100,
-    y: 100
+    y: 100,
+    rot: 0          // un composant posé a toujours son orientation (normComp) : sans elle, allPins casse
   };
-  S.comps = [oldComp];
+  sheet([oldComp], []);
 
   global.fetch = async (url, opts) => {
     const body = opts && opts.body ? JSON.parse(opts.body) : {};
-    if (body.tool === "jlc_get_pinout") {
+    if (body.name === "jlc_get_pinout") {
       return {
         ok: true,
         json: async () => ({
-          result: {
+          data: {
             lcsc: "C7950",
             model: "LM358DR2G",
             pins: [
@@ -2753,11 +2790,11 @@ T("recherche composants : retour systématique du pinout et conservation", async
         })
       };
     }
-    if (body.tool === "jlc_get_part") {
+    if (body.name === "jlc_get_part") {
       return {
         ok: true,
         json: async () => ({
-          result: {
+          data: {
             lcsc: "C7950",
             model: "LM358DR2G",
             package: "SOIC-8",
@@ -2768,7 +2805,7 @@ T("recherche composants : retour systématique du pinout et conservation", async
         })
       };
     }
-    return { ok: true, json: async () => ({ result: {} }) };
+    return { ok: true, json: async () => ({ data: {} }) };
   };
 
   try {
@@ -2786,7 +2823,7 @@ T("recherche composants : retour systématique du pinout et conservation", async
     }
 
     // Appliquer au composant
-    document.body.innerHTML += '<input type="checkbox" id="cp_pinout" checked>';
+    document.getElementById("cp_pinout").checked = true;
     await crAppliquerAuComposant();
 
     if (!Array.isArray(oldComp.pinout) || oldComp.pinout.length !== 8) {
@@ -2806,6 +2843,32 @@ T("recherche composants : retour systématique du pinout et conservation", async
     }
   } finally {
     global.fetch = saveFetch;
+  }
+});
+
+TAcr("recherche composants : bouton Valider rétabli (succès, erreur), datasheet refusée gardée en ligne", async ()=>{
+  const btn=document.getElementById("crBtnApply"), ds=document.getElementById("cp_dsheet"), hint=document.getElementById("fHint");
+  const sauve={fetch:global.fetch, el:CR_ETAT.el, d:CR_ETAT.partDetails, err:console.error, ds:ds.checked};
+  const pret=()=>btn.textContent==="✓ Valider et enrichir"&&!btn.disabled;
+  try{
+    const comp=C("ic",10,10,{ref:"U9"});
+    CR_ETAT.el=comp;
+    CR_ETAT.partDetails={model:"X1",datasheet:"https://exemple.org/x1.pdf"};
+    ds.checked=true;
+    global.fetch=async()=>({ok:false,status:403,json:async()=>({detail:"hors --local"})});
+    await crAppliquerAuComposant();
+    if(!pret())throw new Error("succès : bouton « "+btn.textContent+" », désactivé="+btn.disabled);
+    if(comp.datasheet_url!=="https://exemple.org/x1.pdf")throw new Error("refus : datasheet_url="+comp.datasheet_url);
+    if(!/hors --local/.test(hint.textContent))throw new Error("raison du refus non dite : "+hint.textContent);
+    // erreur au milieu de l'enrichissement : le bouton revient quand même
+    CR_ETAT.el=C("ic",12,10,{ref:"U10"});
+    CR_ETAT.partDetails={get model(){throw new Error("panne simulée");}};
+    console.error=()=>{};
+    await crAppliquerAuComposant();
+    if(!pret())throw new Error("erreur : bouton « "+btn.textContent+" », désactivé="+btn.disabled);
+    if(!/panne simulée/.test(hint.textContent))throw new Error("erreur non dite : "+hint.textContent);
+  }finally{
+    global.fetch=sauve.fetch;CR_ETAT.el=sauve.el;CR_ETAT.partDetails=sauve.d;console.error=sauve.err;ds.checked=sauve.ds;
   }
 });
 
@@ -3983,6 +4046,10 @@ T("contraintes de nets : groupes d'appariement, nets disparus, résumé",()=>{
   if(schCmGroupeCreer("seul",["CLK"],"mm",1))throw new Error("un groupe demande deux nets");
   const g=schCmGroupeCreer("BUS",["CLK","DATA"],"ps",15);
   if(!g||g.mode!=="ps"||g.tol!==15)throw new Error(JSON.stringify(g));
+  /* tolérance vide (null ou "" du champ) : le défaut, pas ± 0 ; un 0 saisi reste 0 */
+  const tols=[[null,"mm"],["","mm"],[null,"ps"],["","ps"],["0","mm"],[2,"mm"]].map(([t,m])=>{
+    const x=schCmGroupeCreer("T",["CLK","DATA"],m,t);schCmGroupeSupprimer(x.id);return x.tol;});
+  if(tols.join()!=="0.5,0.5,10,10,0,2")throw new Error("tolérances : "+tols.join());
   schCmGroupeModifier(g.id,x=>{x.ref="DATA";});
   if(schCmModele().groupes[0].ref!=="DATA")throw new Error("référence");
   schCmPoser("CLK","z","50");schCmPoser("CLK","topo","p2p");

@@ -19,6 +19,7 @@
 const PICK_PX=3;
 
 const POINTEURS=new Map();     // pointerId -> {x,y} en pixels page
+let CLIC_PREC=null;              // {t,x,y} du dernier clic : pointerup.detail vaut toujours 0
 let GLISSE=null;               // {x,y,ox,oy,bouge} pendant un déplacement
 let PINCE=null;                // {d, cx, cy} pendant un pincement
 
@@ -384,6 +385,8 @@ function fin(e){
      Cmd sur un Mac, comme partout ailleurs dans ce dépôt. */
   const ajouter=e.ctrlKey||e.metaKey;
   const s=designer(w.x,w.y);
+  const isDbl=!!CLIC_PREC&&e.timeStamp-CLIC_PREC.t<400&&Math.hypot(p.x-CLIC_PREC.x,p.y-CLIC_PREC.y)<6;
+  CLIC_PREC=isDbl?null:{t:e.timeStamp,x:p.x,y:p.y};
   /* LE VIDE NE VIDE PAS UNE SÉLECTION QU'ON EST EN TRAIN DE CONSTRUIRE. Un
      Ctrl+clic à côté d'une piste — cela arrive, les pistes sont fines — ferait
      autrement perdre les cinq morceaux déjà pris. Sans Ctrl, il désélectionne,
@@ -391,11 +394,10 @@ function fin(e){
   if(!s){if(!ajouter)choisirRien();return;}
   /* UN BOÎTIER RECLIQUÉ SE DÉSÉLECTIONNE, et c'était déjà le cas — un cadre
      jaune posé sur un connecteur qu'on voulait seulement regarder se retire du
-     même geste qu'il a été mis. Les autres objets, non : recliquer une piste
+     même geste qu'il a été mis, sauf au double-clic, qui désigne. Les autres objets, non : recliquer une piste
      avec Maj sert à élargir la portée, pas à la lâcher. */
-  if(!ajouter&&s.type==="composant"){choisirComp(s.ref,false);V.survol=s;
-                                     pnlDetail();dessiner();return;}
-  const isDbl=!!(e&&e.detail>=2);
+  if(!ajouter&&!isDbl&&s.type==="composant"){choisirComp(s.ref,false);V.survol=s;
+                                             pnlDetail();dessiner();return;}
   selPoser(s,porteeDe(s,e.shiftKey),ajouter,isDbl);
   pnlComps(); pnlNets();
   V.survol=s; pnlDetail(); dessiner();

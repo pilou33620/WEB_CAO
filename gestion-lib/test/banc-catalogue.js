@@ -163,4 +163,34 @@ const deja = { "Part Name": "X", "Reference designator Prefix": "Q", "Package ty
 vm.runInContext("autoAssocierCatalogue", sandbox)([deja]);
 assert(deja["Brochage"] === "B=2,E=1,C=3", "Un brochage déjà saisi n'est jamais remplacé");
 
+/* Table du catalogue (04-ui.js) : une case « lib/empreinte/X.json » sélectionne « X.json » de la liste */
+sandbox.window.addEventListener = () => {};
+for (const f of ["commun/echappe.js", "gestion-lib/js/04-ui.js"])
+  vm.runInContext(fs.readFileSync(path.join(RACINE, f), "utf8"), sandbox, { filename: f });
+{
+  const noeuds = {}, getAvant = sandbox.document.getElementById;
+  sandbox.document.getElementById = id => noeuds[id] || (noeuds[id] = {
+    textContent: "", innerHTML: "", classList: { toggle() {} }, querySelectorAll: () => [] });
+  const sauve = [etat.composants, etat.colonnesVisibles, etat.fichiers.pcb];
+  const chemin = { _id: 9001, "Part Name": "ESSAI_CHEMIN", "Empreinte PCB": "lib/empreinte/SOT-23-5.json" };
+  const nu = { _id: 9002, "Part Name": "ESSAI_NU", "Empreinte PCB": "QFN-16" };
+  const inconnu = { _id: 9003, "Part Name": "ESSAI_INCONNU", "Empreinte PCB": "lib/empreinte/ABSENT.json" };
+  try {
+    etat.composants = [chemin, nu, inconnu];
+    etat.colonnesVisibles = ["Empreinte PCB"];
+    etat.fichiers.pcb = ["QFN-16.json", "SOT-23-5.json"];
+    chercher("");
+    vm.runInContext("rafraichirTable", sandbox)();
+    const html = noeuds.tableBodyComps.innerHTML;
+    const ligne = id => html.split('<tr data-id="' + id + '"')[1].split("</tr>")[0];
+    assert(/<option value="SOT-23-5\.json" selected>/.test(ligne(9001)), "Case « lib/empreinte/SOT-23-5.json » : SOT-23-5.json sélectionné");
+    assert(/<option value="QFN-16\.json" selected>/.test(ligne(9002)), "Case « QFN-16 » (nom nu) : QFN-16.json sélectionné");
+    assert(!/selected/.test(ligne(9003)), "Case vers un fichier absent de la LIB : rien de sélectionné");
+    assert(chemin["Empreinte PCB"] === "lib/empreinte/SOT-23-5.json", "Le rendu ne réécrit pas la valeur stockée");
+  } finally {
+    [etat.composants, etat.colonnesVisibles, etat.fichiers.pcb] = sauve;
+    sandbox.document.getElementById = getAvant;
+  }
+}
+
 console.log("\nRésultat : " + reussis + "/" + total + " tests réussis.");
