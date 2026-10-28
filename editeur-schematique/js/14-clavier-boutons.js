@@ -131,6 +131,7 @@ if(typeof projdGithubBouton==="function")projdGithubBouton("bSaveGit",saveProjet
 document.getElementById("bExportPcb").onclick=exporterVersPcb;
 document.getElementById("bExportPcbBarre").onclick=exporterVersPcb;
 document.getElementById("bPng").onclick=exportPng;
+document.getElementById("bPdf").onclick=exportPdf;
 document.getElementById("bomAll").onchange=e=>{
   S.bomAll=e.target.checked;
   if(typeof profilNoter==="function")profilNoter();

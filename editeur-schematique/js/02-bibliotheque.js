@@ -24,6 +24,9 @@
    largeur de texte, qui n'a aucune raison de tomber juste. */
 function q5(v){return (v<0?-1:1)*Math.ceil(Math.abs(v)/5)*5;}
 
+/* Largeur d'un port : celle de base, allongée vers la gauche quand le nom
+   dépasserait (broche à droite inchangée). Sert au dessin et à l'emprise. */
+const portExtra=(el,min,marge)=>Math.max(0,Math.ceil(textW((el&&el.value)||"NET",13,true))+marge-min);
 const LIB = {
 /* ---------------- passifs ---------------- */
 resistor:{n:"Résistance",cat:"Passifs",p:"R",v:"10k",refIn:true,pk:"passif",pkg:"0402",pins:[[-40,0],[40,0]],
@@ -213,16 +216,17 @@ vcc:{n:"Alimentation",cat:"Alimentation",p:"#",v:"12V",noRef:true,pins:[[0,20]],
 gnd:{n:"Masse",cat:"Alimentation",p:"#",v:"GND",noRef:true,noVal:true,pins:[[0,-20]],
   d(c){c.strokeStyle=C_RED;L(c,0,-20,0,0);c.lineWidth=5;
        L(c,-20,0,20,0);L(c,-10,5,10,5);L(c,-5,10,5,10);c.lineWidth=3;c.strokeStyle=C_COMP;}},
-port:{n:"Étiquette / net",cat:"Alimentation",p:"#",v:"EN",noRef:true,noVal:true,valSelf:true,ext:[-60,-20,20,20],pins:[[20,0]],
-  d(c,el){L(c,5,0,20,0);P(c,[[-60,-15],[-10,-15],[5,0],[-10,15],[-60,15]],C_FILL);
-       TXT(c,(el&&el.value)||"NET",-30,0,13,C_TXT);}},
+port:{n:"Étiquette / net",cat:"Alimentation",p:"#",v:"EN",noRef:true,noVal:true,valSelf:true,
+  ext:el=>[-60-portExtra(el,60,30),-20,20,20],pins:[[20,0]],
+  d(c,el){const x=portExtra(el,60,30);L(c,5,0,20,0);P(c,[[-60-x,-15],[-10,-15],[5,0],[-10,15],[-60-x,15]],C_FILL);
+       TXT(c,(el&&el.value)||"NET",-30-x/2,0,13,C_TXT);}},
 /* Étiquette globale : même nom = même net sur TOUTES les feuilles. Double
    chevron pour la distinguer d'un œil de l'étiquette locale. */
 gport:{n:"Étiquette globale",cat:"Alimentation",p:"#",v:"BUS",noRef:true,noVal:true,valSelf:true,
-  propLabel:"Nom du net (toutes feuilles)",ext:[-80,-20,20,20],pins:[[20,0]],
-  d(c,el){L(c,5,0,20,0);
-       P(c,[[-75,0],[-60,-15],[-10,-15],[5,0],[-10,15],[-60,15]],C_GLOB);
-       TXT(c,(el&&el.value)||"NET",-32,0,13,C_TXT);}},
+  propLabel:"Nom du net (toutes feuilles)",ext:el=>[-80-portExtra(el,80,36),-20,20,20],pins:[[20,0]],
+  d(c,el){const x=portExtra(el,80,36);L(c,5,0,20,0);
+       P(c,[[-75-x,0],[-60-x,-15],[-10,-15],[5,0],[-10,15],[-60-x,15]],C_GLOB);
+       TXT(c,(el&&el.value)||"NET",-32-x/2,0,13,C_TXT);}},
 battery:{n:"Pile",cat:"Alimentation",p:"BT",v:"9V",pins:[[0,-40],[0,40]],
   d(c){L(c,0,-40,0,-15);L(c,0,15,0,40);c.lineWidth=4.5;
        L(c,-20,-15,20,-15);L(c,-10,-5,10,-5);L(c,-20,5,20,5);L(c,-10,15,10,15);c.lineWidth=3;}},
