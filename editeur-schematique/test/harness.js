@@ -139,7 +139,7 @@ const EXPOSE=[
   /* explorateur visuel de bibliothèque */
   "ELIB","explorateurLibOuvrir","explorateurLibFermer","elibClassifierItem","elibIsSmd","elibIsTht","elibHasSpice","elibFiltrerEtAfficher","schOuvrirExplorateurLib",
   /* schémas d'exemples */
-  "demo","demo2","demo12v","demo12v_p2","SCH_EXEMPLES","schChargerExemple","schExOuvrir",
+  "schPdfDoc","demo","demo2","demo12v","demo12v_p2","SCH_EXEMPLES","schChargerExemple","schExOuvrir",
   /* brochage par référence (commun/brochage.js + 25-brochage.js) */
   "brochageLire","brochagePartie","brochageParties","brochagePattes","brochageNom",
   "brNomBroche","brPatte","brPattes","brochageListe","BROCHAGE_PATTES","brDepuisLib","brAppliquer","brChoisirPartie","brSaisirPatte",
@@ -329,6 +329,27 @@ T("canal de pilotage : cao_valeur_composant propose, applique en une étape, Ctr
   }finally{global.Pilote=ancien;}
 });
 
+T("export PDF : une page par feuille, xref juste, textes cherchables, feuille d'origine remise",()=>{
+  const avant=serialize(), Bl=global.Blob;
+  try{
+    demo2();schCartoucheBasculer();
+    let oct=null;global.Blob=function(parts){oct=Buffer.concat(parts.map(x=>Buffer.from(x)));};
+    const o={feuilles:"toutes",papier:"auto",l:297,h:210,orient:"auto",echelle:"fit",pct:100,fond:"blanc"};
+    const page=S.page;
+    if(!schPdfDoc(o)||!oct)throw new Error("pas de PDF");
+    if(process.env.PDF_SORTIE)fs.writeFileSync(process.env.PDF_SORTIE,oct);   // pour l'ouvrir à la main
+    const t=oct.toString("latin1");
+    if(!t.startsWith("%PDF-1.4"))throw new Error("en-tête");
+    loadPage(page);
+    const xr=+/startxref\n(\d+)/.exec(t)[1];
+    const n=+/xref\n0 (\d+)/.exec(t.slice(xr))[1];
+    const ent=t.slice(xr).split("\n").slice(2,2+n);
+    ent.slice(1).forEach((l,i)=>{if(t.substr(+l.slice(0,10),(i+1+" 0 obj").length)!==(i+1)+" 0 obj")throw new Error("xref objet "+(i+1));});
+    const refs=S.comps.map(c=>c.ref).filter(Boolean);
+    if(!refs.length||!refs.some(r=>t.includes("("+r+")")))throw new Error("références absentes du texte du PDF");
+    if(S.page!==page)throw new Error("feuille d'origine non remise");
+  }finally{global.Blob=Bl;loadDoc(JSON.parse(avant),true);}
+});
 T("cartouche : aucun → A4 → A3 → aucun, par feuille, gardé à l'enregistrement",()=>{
   const avant=serialize();
   try{

@@ -189,36 +189,6 @@ function exportPng(){
     dl(b,schFile(".png","schema.png"));
   });
 }
-/* PDF d'une page A4 ou A3 (selon la taille du dessin), le schéma en image JPEG
-   (DCTDecode : pas de compression à écrire). shortcut: image, pas de texte
-   cherchable ; passer au vectoriel si on en a besoin. */
-function exportPdf(){
-  const o=schRendu(4);if(!o)return;
-  const jpg=Uint8Array.from(atob(o.toDataURL("image/jpeg",0.92).split(",")[1]),ch=>ch.charCodeAt(0));
-  if(!jpg.length){alert("Export impossible : image trop grande pour le navigateur.");return;}
-  const land=o.width>=o.height, big=Math.max(o.width,o.height)/4>1100;   // > ~A4 à l'écran
-  const [short,long]=big?[842,1191]:[595,842];                           // points PDF
-  const pw=land?long:short, ph=land?short:long, m=18;
-  const k=Math.min((pw-2*m)/o.width,(ph-2*m)/o.height), w=o.width*k, h=o.height*k;
-  const x=(pw-w)/2, y=(ph-h)/2;
-  const f=n=>n.toFixed(2);
-  const cont="q "+f(w)+" 0 0 "+f(h)+" "+f(x)+" "+f(y)+" cm /Im Do Q";
-  const enc=new TextEncoder(), parts=[], off=[];let pos=0;
-  const put=d=>{if(typeof d==="string")d=enc.encode(d);parts.push(d);pos+=d.length;};
-  const obj=(n,d,stream)=>{off[n]=pos;put(n+" 0 obj\n"+d+"\n");if(stream){put("stream\n");put(stream);put("\nendstream\n");}put("endobj\n");};
-  put("%PDF-1.4\n");
-  obj(1,"<< /Type /Catalog /Pages 2 0 R >>");
-  obj(2,"<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
-  obj(3,"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 "+pw+" "+ph+"] /Contents 4 0 R /Resources << /XObject << /Im 5 0 R >> >> >>");
-  obj(4,"<< /Length "+cont.length+" >>",cont);
-  obj(5,"<< /Type /XObject /Subtype /Image /Width "+o.width+" /Height "+o.height+" /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length "+jpg.length+" >>",jpg);
-  const xr=pos;
-  put("xref\n0 6\n0000000000 65535 f \n");
-  for(let n=1;n<=5;n++)put(String(off[n]).padStart(10,"0")+" 00000 n \n");
-  put("trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n"+xr+"\n%%EOF\n");
-  dl(new Blob(parts,{type:"application/pdf"}),schFile(".pdf","schema.pdf"));
-}
-
 /* ==========================================================================
    Étiquettes de net + netlist
    ========================================================================== */
