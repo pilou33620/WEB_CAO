@@ -9,7 +9,7 @@
    demandent.
    ========================================================================== */
 const PDF_PAPIERS={A4:[297,210],A3:[420,297],A2:[594,420],A1:[841,594],A0:[1189,841]};   // mm, paysage
-let schPdfReglages={feuilles:"toutes",papier:"auto",l:297,h:210,orient:"auto",echelle:"fit",pct:100,fond:"blanc"};
+let schPdfReglages={papier:"auto",l:297,h:210,orient:"auto",echelle:"fit",pct:100,fond:"blanc"};
 
 function pdfRgba(s){
   s=String(s).trim();let m;
@@ -30,6 +30,7 @@ function pdfPapier([r,g,b,a]){
 }
 const pdfN=v=>String(+(+v).toFixed(3));
 const PDF_W1252={"€":128,"‚":130,"ƒ":131,"„":132,"…":133,"‘":145,"’":146,"“":147,"”":148,"•":149,"–":150,"—":151,"™":153};
+const PDF_ASCII={"→":"->","←":"<-","≤":"<=","≥":">=","≈":"~","−":"-","∕":"/"};
 /* octets WinAnsi d'une chaîne, en littéral PDF */
 function pdfLit(s){
   let o="";
@@ -39,7 +40,9 @@ function pdfLit(s){
     else if(k>=32&&k<127)o+=ch;
     else if(k>=160&&k<256)o+="\\"+k.toString(8);
     else if(PDF_W1252[ch])o+="\\"+PDF_W1252[ch].toString(8);
-    else o+=ch==="→"?"->":"?";
+    else if(PDF_ASCII[ch]!==undefined)o+=PDF_ASCII[ch];
+    else if(/[\u2190-\u2BFF\u{1F000}-\u{1FFFF}]/u.test(ch))continue;        // pictogrammes de l'interface (⬡ ↗ ▣…) : rien
+    else o+="?";
   }
   return o;
 }
@@ -190,7 +193,7 @@ function schPdfDoc(o){
   storeCurrent();
   try{
     for(let i=0;i<S.pages.length;i++){
-      if(o.feuilles!=="toutes"&&i!==orig)continue;
+      if(o.feuilles!=="toutes"&&!o.feuilles.includes(i))continue;
       if(i!==S.page)loadPage(i);
       const p=schPdfPage(o,alphas);if(p)pages.push(p);
     }
@@ -204,7 +207,8 @@ function exportPdf(){
   const ligne=(l,h)=>'<label style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:6px 0;font-size:12.5px">'+l+h+'</label>';
   const m=document.createElement("div");m.className="modal";
   m.innerHTML='<div class="box" style="max-width:420px"><h3>📄 Exporter en PDF</h3>'+
-    (multi?ligne("Feuilles",sel("feuilles",[["toutes","Toutes (une page chacune)"],["courante","Feuille courante"]],R.feuilles)):"")+
+    (multi?'<div style="font-size:12.5px;margin:6px 0">Feuilles à exporter (une page chacune)<div style="max-height:150px;overflow:auto;margin-top:4px">'+
+      S.pages.map((p,i)=>'<label style="display:flex;gap:6px;align-items:center;margin:2px 0"><input type="checkbox" data-f="'+i+'"'+(i===0?"":" checked")+'>'+(i+1)+" — "+esc(p.name||"Feuille "+(i+1))+(i===0?" (vue d'ensemble de la hiérarchie)":"")+'</label>').join("")+'</div></div>':"")+
     ligne("Format",sel("papier",[["auto","Auto (cartouche, sinon A4)"],["A4","A4"],["A3","A3"],["A2","A2"],["A1","A1"],["A0","A0"],["custom","Personnalisé (mm)"]],R.papier))+
     '<div data-p="perso" style="display:none">'+ligne("Largeur × hauteur (mm)",'<span><input class="tbsel" data-p="l" type="number" min="20" max="5000" value="'+R.l+'" style="width:70px"> × <input class="tbsel" data-p="h" type="number" min="20" max="5000" value="'+R.h+'" style="width:70px"></span>')+'</div>'+
     ligne("Orientation",sel("orient",[["auto","Auto"],["paysage","Paysage"],["portrait","Portrait"]],R.orient))+
@@ -218,10 +222,12 @@ function exportPdf(){
   $("non").onclick=()=>m.remove();
   $("ok").onclick=()=>{
     const num=(id,d)=>{const v=parseFloat($(id).value);return v>0?v:d;};
-    Object.assign(R,{feuilles:multi?$("feuilles").value:"courante",papier:$("papier").value,l:num("l",R.l),h:num("h",R.h),
+    Object.assign(R,{papier:$("papier").value,l:num("l",R.l),h:num("h",R.h),
       orient:$("orient").value,echelle:$("echelle").value,pct:num("pct",100),fond:$("fond").value});
+    const f=multi?[...m.querySelectorAll("[data-f]")].filter(x=>x.checked).map(x=>+x.dataset.f):"toutes";
+    if(!f.length){alert("Choisissez au moins une feuille.");return;}
     m.remove();
-    const b=schPdfDoc(R);
+    const b=schPdfDoc(Object.assign({},R,{feuilles:f}));
     if(!b){alert("Feuille vide : rien à exporter.");return;}
     dl(b,schFile(".pdf","schema.pdf"));
     draw();
