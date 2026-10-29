@@ -186,10 +186,10 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 | Exemples… | | Ouvre le catalogue de deux cartes d'exemple | Remplace la carte en cours après confirmation |
 | Importer netlist | | Boîte d'import (voir la tâche ci-dessus) | |
 | Schéma ↔ PCB | | Fenêtre ECO ; badge orange = nombre de disparités | |
+| ⬚ Importer contour STEP… | | Le contour, les découpes et les trous ronds tirés de la carte dessinée par la mécanique (voir [04](04-editeur-pcb-fabrication.md)) | Les unités du fichier (mm, cm, m, pouce) sont converties. Un fichier d'assemblage est lu dans le repère de chaque pièce, sans ses placements. Fichier sans face plane : message, rien ne change. |
 | Exporter .png | | Image de la carte (couches visibles, orientation courante, cartouche compris) | La cote de mesure et le phare n'y figurent pas |
 | Fabrication .zip | | Archive de fabrication | Détail dans [04-editeur-pcb-fabrication.md](04-editeur-pcb-fabrication.md) |
 | 🧊 Export STEP… | | La carte en 3D pour la mécanique (`<projet>-3D.step`), éléments choisis par cases | Idem |
-| ⬚ Importer contour STEP… | | Le contour, les découpes et les trous ronds tirés de la carte dessinée par la mécanique | Idem |
 | PCBA JLCPCB .zip | | Gerber, BOM et CPL au format JLCPCB | Idem |
 | Animation 3D dans le .zip | | Ajoute l'animation 3D à l'archive de fabrication (bascule, éteinte à chaque ouverture) | Idem |
 | IPC-2581 .xml | | Export IPC-2581 révision C | Idem |

@@ -2012,7 +2012,7 @@ plus la contrainte d'angle que le schématique n'a pas besoin de tenir.
 
 ### Import du contour depuis un STEP
 
-**⬚ Importer contour STEP…** (menu Fichier, après **Export STEP…**) lit la
+**⬚ Importer contour STEP…** (menu Fichier, section « Depuis la mécanique ») lit la
 carte dessinée par la mécanique, sans dépendance : `stepLireCarte`
 (commun/export-step.js) analyse les entités du fichier, prend la plus grande
 face plane (à égalité, celle qui regarde +Z) et en tire la boucle extérieure
