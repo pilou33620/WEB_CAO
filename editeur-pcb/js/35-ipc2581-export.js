@@ -1054,7 +1054,7 @@ function ipc2581Document(opts){
         ["Circle",[["diameter",ipcN(mk.d)]],[["FillDesc",[["fillProperty","FILL"]]]]]]]);
     }
     const tr=fpTextPos(fp).ref;
-    k.push(texte(fp.ref,tr.x,tr.y,tr.size,!!fp.side,tr.rot,tr.w));
+    if(tr.imprime)k.push(texte(fp.ref,tr.x,tr.y,tr.size,!!fp.side,tr.rot,tr.w));
   }
   for(const d of (S.drawings||[])){
     const f=d.layer==="silkB"?1:0;

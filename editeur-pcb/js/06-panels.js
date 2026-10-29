@@ -1551,6 +1551,8 @@ function propsFp(box,fp){
       'title="Contour du boîtier, point de broche 1 et repère imprimés d\'office. Coupée quand '+
       'la sérigraphie de l\'empreinte est dessinée à part, dans les dessins.">'+
       '<input type="checkbox" id="pSilk"'+(fp.silk===false?"":" checked")+'> Sérigraphie automatique</label></div>'+
+    '<div class="prop"><label style="display:flex;align-items:center;gap:6px;cursor:pointer" title="Le nom seul : décoché, il n\'est plus imprimé, le contour et la broche 1 restent. Les plans d\'assemblage PDF le gardent.">'+
+      '<input type="checkbox" id="pRefShow"'+(fp.refHide||fp.silk===false?"":" checked")+(fp.silk===false?" disabled":"")+'> Nom imprimé ('+esc(fp.ref)+')</label></div>'+
     '<div class="prop"><label style="display:flex;align-items:center;gap:6px;cursor:pointer" '+
       'title="La pièce est absente de la carte : toutes les simulations l\'ignorent. Ses pastilles '+
       'restent, c\'est du cuivre. Ne change ni bom.csv ni positions.csv : pour la fabrication, ce sont les variantes.">'+
@@ -1608,6 +1610,8 @@ function propsFp(box,fp){
   upd("pRot",fpPose(v=>fp.rot=+v),true);
   upd("pRefSize",v=>{if(v>=0.5&&v<=25)fp.refSize=r4(v);else delete fp.refSize;},true);
   upd("pRefRot",v=>{if(+v)fp.refRot=+v;else delete fp.refRot;},true);
+  if($("pRefShow"))$("pRefShow").onchange=e=>{push();if(e.target.checked)delete fp.refHide;else fp.refHide=true;
+    touch();refreshPanels();draw();};
   if($("pSilk"))$("pSilk").onchange=e=>{push();if(e.target.checked)delete fp.silk;else fp.silk=false;
     touch();refreshPanels();draw();};
   if($("pSimNM"))$("pSimNM").onchange=e=>{push();if(e.target.checked)fp.simNonMonte=true;else delete fp.simNonMonte;
@@ -1754,6 +1758,8 @@ function propsRefText(box,fp){
       '<div><label>Trait (mm)</label><input id="rtW" type="number" step="0.01" min="0.05" max="5" placeholder="0.15" value="'+(fp.refWidth>0?fmt(fp.refWidth,3):"")+'"></div></div>'+
     '<div class="prop two">'+numProp("rtDx","Décalage X (mm)",fmt(fp.refOffX||0,3),0.1,-1e4)+
       numProp("rtDy","Décalage Y (mm)",fmt(fp.refOffY||0,3),0.1,-1e4)+'</div>'+
+    '<div class="prop"><label style="display:flex;align-items:center;gap:6px;cursor:pointer">'+
+      '<input type="checkbox" id="rtShow"'+(tr.imprime?" checked":"")+(fp.silk===false?" disabled":"")+'> Nom imprimé</label></div>'+
     '<div class="prop"><div class="row"><button class="tb" id="rtAll">Cette taille à tous les repères ('+S.fps.length+')</button></div>'+
       '<div class="row"><button class="tb" id="rtHome">Remettre en place</button>'+
       '<button class="tb" id="rtFp">Composant '+esc(fp.ref)+' →</button></div></div>'+
@@ -1767,6 +1773,7 @@ function propsRefText(box,fp){
   $("rtAll").onclick=()=>{push();
     for(const f of S.fps){for(const k of ["refSize","refWidth"])if(fp[k]>0)f[k]=fp[k];else delete f[k];}
     touch();refreshPanels();draw();};
+  $("rtShow").onchange=e=>{push();if(e.target.checked)delete fp.refHide;else fp.refHide=true;touch();refreshPanels();draw();};
   set("rtW",v=>{v=parseFloat(v);if(v>=0.05&&v<=5)fp.refWidth=r4(v);else delete fp.refWidth;});
   set("rtRot",v=>{if(+v)fp.refRot=+v;else delete fp.refRot;});
   for(const [id,k] of [["rtDx","refOffX"],["rtDy","refOffY"]])

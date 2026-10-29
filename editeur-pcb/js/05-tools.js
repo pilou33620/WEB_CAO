@@ -486,6 +486,7 @@ function normFp(f,i){
   /* sérigraphie automatique (contour, point, repère) coupée : une carte
      importée apporte la sienne. Absent = coupée jamais, comme avant. */
   if(f.silk===false)out.silk=false;
+  if(f.refHide)out.refHide=true;
   if(f.simNonMonte===true)out.simNonMonte=true;   // ignorée par les simulations (19-simulation.js)
   if(+f.puissance>0)out.puissance=r3(dRange(f.puissance,0,0,100));   // dissipée en service, W (39-thermique.js)
   if(f.mark===false)out.mark=false;

@@ -590,7 +590,8 @@ function drawSilk(c){
     }
     // le repère, avec les traits du Gerber (textStrokes) : ce qu'on voit est ce qui sera imprimé
     const tr = fpTextPos(fp).ref;
-    c.strokeStyle = sel?C_SEL:(!auto?"#9aa3b0":(top?C_SILK_T:C_SILK_B));
+    c.strokeStyle = sel?C_SEL:(!tr.imprime?"#9aa3b0":(top?C_SILK_T:C_SILK_B));
+    if(!tr.imprime&&!sel)c.globalAlpha*=0.3;         // pâle : ne s'imprime pas
     c.lineWidth = Math.max(tr.w, px(1)); c.lineCap = "round"; c.lineJoin = "round";
     c.beginPath();
     for(const P of textStrokes(fp.ref,tr.x,tr.y,tr.size,!top,tr.rot)){
@@ -598,6 +599,7 @@ function drawSilk(c){
       for(let k=1;k<P.length;k++)c.lineTo(P[k].x,P[k].y);
     }
     c.stroke();
+    c.globalAlpha=(S.hlNet?0.55:1)*fa;
   }
   /* traits de sérigraphie utilisateur */
   if(S.drawings){

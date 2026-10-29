@@ -569,7 +569,7 @@ function silkTraits(side){
     const tr=fpTextPos(fp).ref;
     // sur la face inférieure, le texte doit être en miroir dans le fichier
     // pour se lire à l'endroit une fois la carte retournée
-    for(const poly of textStrokes(fp.ref,tr.x,tr.y,tr.size,!!side,tr.rot))
+    if(tr.imprime)for(const poly of textStrokes(fp.ref,tr.x,tr.y,tr.size,!!side,tr.rot))
       for(let k=0;k+1<poly.length;k++)
         seg(poly[k].x,poly[k].y,poly[k+1].x,poly[k+1].y,tr.w);
   }

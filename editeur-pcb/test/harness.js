@@ -12510,6 +12510,13 @@ T("panneaux piste et via : X/Y emmènent ce qui s'y rejoint ; trait du repère j
   S.tracks=[];S.vias=[];
   const f=mkFp("R8","","0603",2);f.x=20;f.y=20;S.fps.push(f);
   const larg=()=>new Set((gerberSilk(0).match(/%ADD\d+C,[\d.]+/g)||[]).map(s=>s.split("C,")[1]));
+  const avant=gerberSilk(0).length;
+  f.refHide=true;
+  const sans=gerberSilk(0);
+  if(sans.length>=avant)throw new Error("le nom caché ne doit plus être imprimé");
+  if(!/D01\*/.test(sans))throw new Error("le contour reste imprimé quand seul le nom est caché");
+  if(normFp(JSON.parse(JSON.stringify(f))).refHide!==true)throw new Error("le nom caché doit passer l'enregistrement");
+  delete f.refHide;
   f.refWidth=0.3;
   if(!larg().has("0.300000")&&![...larg()].some(x=>Math.abs(+x-0.3)<1e-6))throw new Error("le trait 0,3 mm du repère doit être dans le Gerber");
   S.fps=S.fps.filter(o=>o!==f);clearSel();
