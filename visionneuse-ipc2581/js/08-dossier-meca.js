@@ -228,7 +228,7 @@ function stepIpcOuvrir(){
       hint(nom+" : "+r.n.pieces+" pièce(s) — "+r.n.modeles+" composant(s) avec leur modèle de la LIB, "+
            r.n.boites+" en boîte extrudée"+stepNoteTrous(r.n)+".");
     });
-  },["cuivre","seri"],{fond:"modal-overlay",boite:"modal-box step-box"});
+  },["vias","cuivre","seri"],{fond:"modal-overlay",boite:"modal-box step-box"});
 }
 (function(){
   const b=typeof document!=="undefined"&&document.getElementById&&document.getElementById("bStep");

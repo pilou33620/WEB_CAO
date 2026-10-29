@@ -25627,7 +25627,14 @@ T("STEP : lire une carte — découpes, trous, demi-trou dans le contour, face l
 T("STEP : un bouton à part ; fabrication.zip n'a plus de DXF",()=>{
   exCharger(1);
   if(buildFabFiles().files.some(f=>/\.dxf$/i.test(f.name))||FAB_GROUPES.some(([k])=>k==="dxf"))throw new Error("DXF au dossier de fabrication");
-  if(STEP_CHOIX.map(([k])=>k).join()!=="carte,dessus,dessous,cuivre,seri")throw new Error("cases : "+STEP_CHOIX.map(([k])=>k));
+  if(STEP_CHOIX.map(([k])=>k).join()!=="carte,vias,dessus,dessous,cuivre,seri")throw new Error("cases : "+STEP_CHOIX.map(([k])=>k));
+  /* carte nue légère : les vias percés seulement sur demande ; un trait = 2 droites + 2 arcs */
+  const J=stepSceneEditeur(), nv=J.trous.filter(t=>t[3]).length;
+  const cyl=o=>(stepScene(J,o,{}).texte.match(/CYLINDRICAL_SURFACE/g)||[]).length;
+  if(!nv)throw new Error("l'exemple n'a pas de via traversant");
+  if(cyl({carte:true,vias:true})<=cyl({carte:true}))throw new Error("la case vias ne perce rien de plus");
+  const seri=stepScene(J,{seri:true},{}).texte, ns=J.faces.reduce((n,F)=>n+F.seri.segs.length,0);
+  if((seri.match(/ADVANCED_FACE/g)||[]).length>6*(ns+J.faces.reduce((n,F)=>n+F.seri.pts.length,0)))throw new Error("sérigraphie encore facettée");
   const html=fs.readFileSync(path.join(__dirname,"..","editeur-pcb.html"),"utf8");
   if(!/id="bStep"/.test(html)||!/commun\/export-step\.js/.test(html))throw new Error("bouton ou script absent de la page");
 });

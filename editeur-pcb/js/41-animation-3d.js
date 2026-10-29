@@ -70,11 +70,11 @@ function anim3dZone(L,o){
 function anim3dDonnees(sansZone){
   const o=gOrigin(), P=p=>[anim3dR(p.x-o.x),anim3dR(o.y-p.y)];
   const J=mecaDossier(), ep=J.carte.epaisseur||1.6, der=S.cu-1;
-  /* tous les trous qui traversent : NPTH, pastilles percées, vias traversants */
+  /* tous les trous qui traversent : NPTH, pastilles percées, vias traversants (marqués 1, que le STEP peut laisser) */
   const trous=[];
   for(const h of trousMonde())if(h.d>0)trous.push(P(h).concat(anim3dR(h.d)));
   for(const fp of S.fps)for(const q of padsWorld(fp))if(q.drill>0)trous.push(P(q).concat(anim3dR(q.drill)));
-  for(const v of S.vias)if(v.drill>0&&v.a===0&&v.b===der)trous.push(P(v).concat(anim3dR(v.drill)));
+  for(const v of S.vias)if(v.drill>0&&v.a===0&&v.b===der)trous.push(P(v).concat(anim3dR(v.drill),1));
   const cuivre=L=>{
     const pistes=[];
     for(const t of S.tracks){

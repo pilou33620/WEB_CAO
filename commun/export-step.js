@@ -173,7 +173,8 @@ function stepNouveau(){
   W.e=t=>{W.l.push("#"+(++W.n)+"="+t+";");return "#"+W.n;};
   const v=a=>"("+a.map(stepR).join(",")+")";
   W.pt=a=>W.e("CARTESIAN_POINT('',"+v(a)+")");
-  W.dir=a=>W.e("DIRECTION('',"+v(a)+")");
+  const dirs={};      // une direction écrite une fois, partagée : le fichier en est plus léger
+  W.dir=a=>{const k=v(a);return dirs[k]||(dirs[k]=W.e("DIRECTION('',"+k+")"));};
   W.ax=(o,z,x)=>W.e("AXIS2_PLACEMENT_3D('',"+W.pt(o)+","+W.dir(z||[0,0,1])+","+W.dir(x||[1,0,0])+")");
   /* le contexte commun : AP214, millimètres, tolérance de 0,1 µm */
   const app=W.e("APPLICATION_CONTEXT('automotive_design')");
@@ -355,13 +356,14 @@ function stepPrisme(W,boucles,z0,z1){
   const faces=[plat(haut,z1,1),plat(bas,z0,-1)].concat(cotes);
   return W.e("MANIFOLD_SOLID_BREP('',"+W.e("CLOSED_SHELL('',("+faces.join(",")+"))")+")");
 }
-/* Le polygone d'un trait de largeur w, bouts ronds (n facettes par bout) */
-function stepTrait(a,b,w,n){
-  const r=w/2, t0=Math.atan2(b.y-a.y,b.x-a.x), P=[];
-  n=n||8;
-  for(let i=0;i<=n;i++){const t=t0-Math.PI/2+i*Math.PI/n;P.push({x:b.x+r*Math.cos(t),y:b.y+r*Math.sin(t)});}
-  for(let i=0;i<=n;i++){const t=t0+Math.PI/2+i*Math.PI/n;P.push({x:a.x+r*Math.cos(t),y:a.y+r*Math.sin(t)});}
-  return P;
+/* La boucle d'un trait de largeur w, bouts ronds : deux droites et deux
+   vrais arcs (4 faces de côté au lieu de 20 facettes) ; un point, un cercle */
+function stepTrait(a,b,w){
+  const r=w/2, L=Math.hypot(b.x-a.x,b.y-a.y);
+  if(L<1e-6)return stepCercle(a.x,a.y,r);
+  const nx=-(b.y-a.y)/L*r, ny=(b.x-a.x)/L*r;
+  return [{x:a.x-nx,y:a.y-ny,arc:null},{x:b.x-nx,y:b.y-ny,arc:{c:{x:b.x,y:b.y},r,ccw:true}},
+          {x:b.x+nx,y:b.y+ny,arc:null},{x:a.x+nx,y:a.y+ny,arc:{c:{x:a.x,y:a.y},r,ccw:true}}];
 }
 
 /* ---------- produits et assemblage ---------- */
@@ -451,10 +453,10 @@ function stepLier(W,racine,e,ax,nom,i){
    La scène en STEP
    --------------------------------------------------------------------------
    `J` : la scène (anim3dDonnees) — titre, ep, contour [[x,y]], decoupes,
-   trous [[x,y,d]], faces[0|1].cuivre {pistes [x1,y1,x2,y2,w], pads [[x,y]…],
+   trous [[x,y,d,via?]] (via : 1 pour un via), faces[0|1].cuivre {pistes [x1,y1,x2,y2,w], pads [[x,y]…],
    vias [x,y,d,drill], zones [{p,t}]}, faces[].seri {segs, pts [x,y,d], polys
    [{p,t}]}, composants [{ref, face 0|1, corps [[x,y]], h, m3d?}].
-   `o` : {carte, dessus, dessous, cuivre, seri} — ce qu'on veut dans le fichier.
+   `o` : {carte, vias, dessus, dessous, cuivre, seri} — ce qu'on veut dans le fichier.
    `modeles` : nom du fichier de la LIB → son texte STEP.
    Rend {texte, n:{pieces, modeles, boites, demiTrous, trousIgnores}} ; null
    si rien n'est à écrire. Un trou qui coupe le bord ou une découpe (demi-trou)
@@ -463,10 +465,11 @@ function stepLier(W,racine,e,ax,nom,i){
    ========================================================================== */
 const STEP_CHOIX=[
   ["carte","Carte (PCB) : substrat, contour, découpes et trous"],
+  ["vias","Trous des vias dans la carte (lourd sur une carte dense)"],
   ["dessus","Composants dessus"],
   ["dessous","Composants dessous"],
   ["cuivre","Cuivre extérieur (pistes, pastilles, vias, zones)"],
-  ["seri","Sérigraphie"]
+  ["seri","Sérigraphie (lourd : chaque trait est un solide)"]
 ];
 function stepScene(J,o,modeles){
   const W=stepNouveau(), ep=J.ep||1.6, P=p=>({x:p[0],y:p[1]}), enfants=[];
@@ -475,7 +478,7 @@ function stepScene(J,o,modeles){
     /* les trous qui se touchent, ou touchent un trou déjà pris, casseraient le solide : le premier reste */
     const pris=[];
     for(const t of J.trous||[])
-      if(t[2]>0&&!pris.some(u=>Math.hypot(u[0]-t[0],u[1]-t[1])<(u[2]+t[2])/2+1e-3))pris.push(t);
+      if(t[2]>0&&(o.vias||!t[3])&&!pris.some(u=>Math.hypot(u[0]-t[0],u[1]-t[1])<(u[2]+t[2])/2+1e-3))pris.push(t);
     /* bord en sens trigonométrique, découpes en sens horaire : la matière à gauche */
     const sens=(b,bord)=>(stepAire(b)>0)===bord?b:stepInverser(b);
     const B=[sens(stepBoucle(J.contour.map(P),true),true)]
@@ -512,7 +515,7 @@ function stepScene(J,o,modeles){
     const cote=f?"DESSOUS":"DESSUS";
     if(o.cuivre){
       const C=F.cuivre, L=[];
-      for(const t of C.pistes||[])L.push([stepBoucle(stepTrait(P(t),{x:t[2],y:t[3]},t[4]))]);
+      for(const t of C.pistes||[])L.push([stepTrait(P(t),{x:t[2],y:t[3]},t[4])]);
       for(const q of C.pads||[])L.push([stepBoucle(q.map(P))]);
       for(const v of C.vias||[])L.push([stepCercle(v[0],v[1],v[2]/2)].concat(v[3]>0&&v[3]<v[2]?[stepCercle(v[0],v[1],v[3]/2)]:[]));
       for(const z of C.zones||[])L.push(plein(z));
@@ -520,8 +523,8 @@ function stepScene(J,o,modeles){
     }
     if(o.seri){
       const S2=F.seri, L=[];
-      for(const t of S2.segs||[])L.push([stepBoucle(stepTrait(P(t),{x:t[2],y:t[3]},t[4]))]);
-      for(const p of S2.pts||[])L.push([stepBoucle(stepTrait(P(p),P(p),p[2]))]);
+      for(const t of S2.segs||[])L.push([stepTrait(P(t),{x:t[2],y:t[3]},t[4])]);
+      for(const p of S2.pts||[])L.push([stepCercle(p[0],p[1],p[2]/2)]);
       for(const q of S2.polys||[])L.push(plein(q));
       couche("SERIGRAPHIE_"+cote,f,STEP_CU,STEP_SERI,L,[0.95,0.95,0.95]);
     }
@@ -751,7 +754,7 @@ function stepFabriquer(J,o){
 }
 /* La fenêtre : une case par élément (`desactives` : ceux que l'outil n'a
    pas), puis `exporter(o)`. Le choix reste le temps de la page. */
-let STEP_COCHES={carte:true,dessus:true,dessous:true,cuivre:false,seri:false};
+let STEP_COCHES={carte:true,vias:false,dessus:false,dessous:false,cuivre:false,seri:false};
 function stepFenetre(exporter,desactives,classes){
   const K=classes||{fond:"modal",boite:"box"}, sans=desactives||[];
   const m=document.createElement("div");

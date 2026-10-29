@@ -1434,14 +1434,16 @@ la carte en volume, avec ses composants, au lieu d'un dessin à plat. Le
 bouton **🧊 Export STEP…** du menu Fichier, juste après **Fabrication .zip**,
 ouvre une fenêtre de cases, puis télécharge `<projet>-3D.step`
 (`carte-3D.step` sans projet). Le choix reste le temps de la page (par
-défaut : carte et composants).
+défaut : la carte nue, sans les trous des vias — quelques centaines de Ko,
+comme le STEP d'un PCB nu sorti d'un modeleur).
 
 | Case | Pièce de l'assemblage |
 | --- | --- |
 | Carte (PCB) : substrat, contour, découpes et trous | `<projet>-CARTE` : le substrat de −épaisseur à 0, contour, découpes et trous exacts (droites, arcs, cylindres) |
+| Trous des vias dans la carte | les vias traversants percés dans `<projet>-CARTE` ; décochée par défaut : inutiles à la mécanique, ils font l'essentiel du poids d'une carte dense (Leko, 1772 vias : 4,7 Mo avec, 0,17 Mo sans) |
 | Composants dessus / Composants dessous | une pièce par composant monté de la variante active, nommée par son repère (`R1`, `U3`…) |
-| Cuivre extérieur (pistes, pastilles, vias, zones) | `CUIVRE_DESSUS` / `CUIVRE_DESSOUS`, 35 µm, facettés |
-| Sérigraphie | `SERIGRAPHIE_DESSUS` / `_DESSOUS`, 15 µm posés sur le cuivre |
+| Cuivre extérieur (pistes, pastilles, vias, zones) | `CUIVRE_DESSUS` / `CUIVRE_DESSOUS`, 35 µm ; une piste est un « stade » (deux droites, deux arcs) |
+| Sérigraphie (lourd) | `SERIGRAPHIE_DESSUS` / `_DESSOUS`, 15 µm posés sur le cuivre |
 
 Le fichier est un **assemblage** nommé, en millimètres, dans le repère des
 Gerber (Y vers le haut) ; Z = 0 sur la face dessus. Couleurs : carte verte,
@@ -1464,6 +1466,11 @@ son corps extrudé à sa hauteur (LIB, fichier ou saisie ; sinon 0,4 × le côt�
 moyen, entre 0,3 et 3 mm). Les modèles viennent du serveur :
 `GET /api/lib/fichier?type=step&nom=<fichier>.stp`, en lecture seule
 (écriture et effacement refusés, `.stp` / `.step` seulement).
+
+**Le poids.** Chaque trait de cuivre ou de sérigraphie est un solide à
+part (2 droites, 2 arcs : 4 faces de côté) ; une sérigraphie de 1400 traits
+pèse encore ~8 Mo, que l'OpenCascade de WEB_3D lit lentement. Une direction
+STEP identique n'est écrite qu'une fois (`W.dir`).
 
 **Le cuivre.** Une zone sort en son contour, sans les dégagements autour du
 cuivre étranger : limite connue.

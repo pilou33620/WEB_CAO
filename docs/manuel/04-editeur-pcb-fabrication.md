@@ -154,7 +154,7 @@ Le détail technique (formats, structure des fichiers) est dans [editeur-pcb/REA
 ### Je veux exporter la carte en STEP pour la mécanique
 
 1. **Fichier → 🧊 Export STEP…** (juste après **Fabrication .zip**) ouvre une fenêtre de cases.
-2. Cochez ce qui doit partir : **Carte (PCB)**, **Composants dessus**, **Composants dessous**, **Cuivre extérieur**, **Sérigraphie**. Par défaut : carte et composants ; le choix reste le temps de la page.
+2. Cochez ce qui doit partir : **Carte (PCB)**, **Trous des vias dans la carte**, **Composants dessus**, **Composants dessous**, **Cuivre extérieur**, **Sérigraphie**. Par défaut : la carte nue (contour, découpes, trous de fixation et des pastilles traversantes, sans les vias), un fichier léger ; le choix reste le temps de la page. Les vias, le cuivre et surtout la sérigraphie alourdissent beaucoup le fichier.
 3. **Exporter le .step** télécharge `<projet>-3D.step` (`carte-3D.step` sans projet) : un assemblage en millimètres, dans le repère des Gerber, Z = 0 sur la face dessus.
 4. Chaque composant prend le modèle 3D de sa ligne de LIB (colonne « Modèle 3D ») ; sans modèle, il sort en boîte à sa hauteur. Le message de fin compte les uns et les autres.
 
