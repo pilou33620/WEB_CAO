@@ -113,7 +113,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "PAD_SHAPES","padShape","padRadius","padChamferVal","padChamferPts","polyOffset",
   "ptPolyDist","padWorldPts","padClone","padDist","padHalf","fpSetPad","gPad",
   /* sélection multiple et presse-papier */
-  "selectHit","toggleHit","altTarget","selCount","fpTextPos",
+  "selectHit","toggleHit","altTarget","selCount","fpTextPos","refTaillesPretes",
   "tactileMultiDefinir","tactileMultiActif","pcbRouletteCible","pcbPisteProche","trackRun","selectRun","deleteSel","unrouteSel","copySelPcb","cutSelPcb",
   "pasteClipPcb","pcbClipContent","pcbSetClip","pcbGetClip","freeFpRef","GRID_STEPS",
   "setGridStep","gridShownStep","gridLabel","fpById",
@@ -12480,6 +12480,14 @@ T("repère et pastille cliqués seuls ont leur panneau",()=>{
   if(normFp(JSON.parse(JSON.stringify(f))).refSize!==2.2)throw new Error("la hauteur doit passer l'enregistrement");
   $("rtSize").value="";$("rtSize").onchange({target:$("rtSize")});
   if("refSize" in f||fpTextPos(f).ref.size!==auto)throw new Error("vide rend la taille automatique");
+  const P=refTaillesPretes();
+  if(!P.liste.length||P.liste.some(o=>o.h<P.hMin||o.w<P.wMin))throw new Error("les tailles prêtes respectent le fabricant");
+  const g=mkFp("R9","","0603",2);g.x=30;g.y=20;S.fps.push(g);
+  $("rtPreset").value="0";$("rtPreset").onchange({target:$("rtPreset")});
+  if(f.refSize!==P.liste[0].h||f.refWidth!==P.liste[0].w)throw new Error("la taille prête pose hauteur et trait");
+  $("rtAll").onclick();
+  if(g.refSize!==f.refSize||g.refWidth!==f.refWidth)throw new Error("le bouton recopie la taille sur tous les repères");
+  S.fps=S.fps.filter(o=>o!==g);
   clearSel();
   if(S.selRef!==null)throw new Error("clearSel doit oublier le repère");
   S.sel.fps.add(f.id);S.selPad={id:f.id,k:1};buildProps();

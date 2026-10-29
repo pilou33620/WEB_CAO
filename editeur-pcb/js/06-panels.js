@@ -1730,25 +1730,43 @@ function propsDecoupe(box,D){
   $("bdDel").onclick=()=>{deleteSel();};
 }
 /* Le repère d'un composant cliqué seul : son texte et sa place sur la sérigraphie. */
+/* Tailles prêtes du repère : jamais sous le minimum du fabricant actif ; le
+   trait suit la hauteur (1/6, l'usage en sérigraphie), lui aussi borné. */
+function refTaillesPretes(){
+  const sk=(typeof pcbGetMfgProfile==="function"&&pcbGetMfgProfile().silkscreen)||{};
+  const hMin=sk.minTextHeight||1.0, wMin=sk.minLineWidth||0.15;
+  const hs=[...new Set([hMin,1.0,1.2,1.5,2.0,2.5].filter(h=>h>=hMin))].sort((a,b)=>a-b);
+  return {hMin,wMin,liste:hs.map(h=>({h,w:Math.max(wMin,Math.round(h/6*100)/100)}))};
+}
 function propsRefText(box,fp){
-  const tr=fpTextPos(fp).ref;
+  const tr=fpTextPos(fp).ref, P=refTaillesPretes();
   box.innerHTML=
     '<div class="cat">Repère sérigraphie — '+esc(fp.ref)+'</div>'+
     '<div class="prop"><label>Texte (repère du composant)</label><input id="rtRef" type="text" value="'+esc(fp.ref)+'"></div>'+
     '<div class="prop two"><div><label>Couche</label><input value="'+(fp.side?"B.SilkS (dessous)":"F.SilkS (dessus)")+'" disabled></div>'+
       '<div><label>Hauteur (mm)</label><input id="rtSize" type="number" step="0.1" min="0.5" max="25" placeholder="auto '+fmt(tr.size,2)+'" value="'+(fp.refSize>0?fmt(fp.refSize,2):"")+'"></div></div>'+
+    '<div class="prop"><label>Taille prête (fabricant : ≥ '+fmt(P.hMin,2)+' mm, trait ≥ '+fmt(P.wMin,2)+' mm)</label><select id="rtPreset">'+
+      '<option value="">— choisir —</option>'+
+      P.liste.map((o,i)=>'<option value="'+i+'"'+(fp.refSize===o.h&&fp.refWidth===o.w?" selected":"")+'>'+
+        fmt(o.h,1)+' mm · trait '+fmt(o.w,2)+' mm</option>').join("")+'</select></div>'+
     '<div class="prop two"><div><label>Rotation</label><select id="rtRot">'+
       rotChoix([fp.refRot||0]).map(a=>'<option value="'+a+'"'+((fp.refRot||0)===a?" selected":"")+'>'+a+'°</option>').join("")+'</select></div>'+
       '<div><label>Trait (mm)</label><input id="rtW" type="number" step="0.01" min="0.05" max="5" placeholder="0.15" value="'+(fp.refWidth>0?fmt(fp.refWidth,3):"")+'"></div></div>'+
     '<div class="prop two">'+numProp("rtDx","Décalage X (mm)",fmt(fp.refOffX||0,3),0.1,-1e4)+
       numProp("rtDy","Décalage Y (mm)",fmt(fp.refOffY||0,3),0.1,-1e4)+'</div>'+
-    '<div class="prop"><div class="row"><button class="tb" id="rtHome">Remettre en place</button>'+
+    '<div class="prop"><div class="row"><button class="tb" id="rtAll">Cette taille à tous les repères ('+S.fps.length+')</button></div>'+
+      '<div class="row"><button class="tb" id="rtHome">Remettre en place</button>'+
       '<button class="tb" id="rtFp">Composant '+esc(fp.ref)+' →</button></div></div>'+
     '<div class="pinnote">Une seule fonte de traits : celle des Gerber .GTO/.GBO. Hauteur vide = taille automatique, d\'après le boîtier ; trait vide = 0,15 mm.'+
+      (tr.size<P.hMin-1e-6||tr.w<P.wMin-1e-6?' <span class="warn">Sous le minimum du fabricant : choisissez une taille prête.</span>':'')+
       (fp.silk===false?' <b>Sérigraphie automatique coupée sur ce composant : le repère n\'est pas imprimé.</b>':'')+'</div>';
   const set=(id,fn)=>{$(id).onchange=e=>{push();fn(e.target.value);touch();refreshPanels();draw();};};
   set("rtRef",v=>{v=v.trim();if(v)fp.ref=v;});
   set("rtSize",v=>{v=parseFloat(v);if(v>=0.5&&v<=25)fp.refSize=r4(v);else delete fp.refSize;});
+  set("rtPreset",v=>{const o=P.liste[+v];if(v!==""&&o){fp.refSize=o.h;fp.refWidth=o.w;}});
+  $("rtAll").onclick=()=>{push();
+    for(const f of S.fps){for(const k of ["refSize","refWidth"])if(fp[k]>0)f[k]=fp[k];else delete f[k];}
+    touch();refreshPanels();draw();};
   set("rtW",v=>{v=parseFloat(v);if(v>=0.05&&v<=5)fp.refWidth=r4(v);else delete fp.refWidth;});
   set("rtRot",v=>{if(+v)fp.refRot=+v;else delete fp.refRot;});
   for(const [id,k] of [["rtDx","refOffX"],["rtDy","refOffY"]])
