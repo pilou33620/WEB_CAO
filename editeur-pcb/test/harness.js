@@ -4162,6 +4162,20 @@ TA("Repère en sérigraphie : sa rotation tourne les traits et survit à l'enreg
   if(normFp(JSON.parse(JSON.stringify(fp)),0).refRot!==90)throw new Error("refRot perdu");
   delete fp.refRot;
 });
+T("ordre des scripts : aucun bouton branché sur une fonction d'un fichier chargé plus tard",()=>{
+  // le banc charge un seul bundle, la page charge fichier par fichier : la fonction n'existe pas encore
+  const dir=path.join(__dirname,"..");
+  const html=fs.readFileSync(path.join(dir,"editeur-pcb.html"),"utf8");
+  const fichiers=[...html.matchAll(/<script src="(js\/[^"]+)"/g)].map(m=>m[1]);
+  const ou={};
+  fichiers.forEach((f,i)=>{for(const m of fs.readFileSync(path.join(dir,f),"utf8").matchAll(/^(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/gm))if(!(m[1] in ou))ou[m[1]]=i;});
+  const fautes=[];
+  fichiers.forEach((f,i)=>{
+    for(const m of fs.readFileSync(path.join(dir,f),"utf8").matchAll(/^\$\("[^"]+"\)\.on\w+\s*=\s*([A-Za-z_$][\w$]*)\s*;/gm))
+      if(ou[m[1]]>i)fautes.push(f+" → "+m[1]+" ("+fichiers[ou[m[1]]]+")");
+  });
+  if(fautes.length)throw new Error(fautes.join(" ; "));
+});
 TA("Vérif BOM JLCPCB : valeur, tension, stock et boîtier jugés, candidats proposés, code posé sur la carte",async()=>{
   // les valeurs telles qu'on les écrit au schéma
   const eq=(a,b)=>Math.abs(a-b)<=Math.abs(b)*1e-9;

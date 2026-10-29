@@ -677,7 +677,7 @@ $("fileIn").onchange=()=>{const f=$("fileIn").files[0];if(f)openFile(f);$("fileI
 $("bPng").onclick=exportPng;
 $("bFab").onclick=fabChoisir;
 $("bJlc").onclick=exportJlcpcb;
-$("bVerifBom").onclick=vbFenetre;
+$("bVerifBom").onclick=()=>vbFenetre();   // 43-verif-bom.js se charge après ce fichier
 $("bFabAnim").onclick=()=>fabAnimBasculer();   // 41-animation-3d.js se charge après ce fichier
 $("bVariantes").onclick=()=>pcbVarOuvrir();   // 26-variantes.js se charge après ce fichier
 $("bNew").onclick=newDoc;
