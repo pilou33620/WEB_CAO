@@ -449,6 +449,7 @@ function normFp(f,i){
   if(f.lcsc)out.lcsc=dStr(f.lcsc,50);
   if(f.refRot!=null&&padRot(f.refRot))out.refRot=padRot(f.refRot);
   if(+f.refSize>0)out.refSize=clamp(+f.refSize,0.5,25);
+  if(+f.refWidth>0)out.refWidth=clamp(+f.refWidth,0.05,5);
   /* décalages du repère et de la valeur : présents seulement si déplacés */
   for(const k of ["refOffX","refOffY","valOffX","valOffY"])
     if(f[k]!=null&&Number.isFinite(+f[k]))out[k]=clamp(+f[k],-COORD,COORD);
@@ -1142,6 +1143,19 @@ function jointAt(x,y,l){
   for(const v of S.vias)
     if(l>=v.a&&l<=v.b&&Math.abs(v.x-x)<eps&&Math.abs(v.y-y)<eps)vias.push(v);
   return {ends,vias};
+}
+/* Tout ce qui se rejoint en (x, y) sur les couches lo..hi part en (nx, ny) :
+   les vias, puis les bouts de pistes des couches que ces vias traversent. Le
+   panneau de propriétés déplace ainsi un bout sans déchirer le coude. */
+function pointDeplacer(x,y,lo,hi,nx,ny){
+  const at=(a,b)=>Math.abs(a-x)<EPS_J&&Math.abs(b-y)<EPS_J;
+  for(const v of S.vias)
+    if(at(v.x,v.y)&&v.b>=lo&&v.a<=hi){lo=Math.min(lo,v.a);hi=Math.max(hi,v.b);v.x=nx;v.y=ny;}
+  for(const t of S.tracks){
+    if(t.l<lo||t.l>hi)continue;
+    if(at(t.x1,t.y1)){t.x1=nx;t.y1=ny;}
+    if(at(t.x2,t.y2)){t.x2=nx;t.y2=ny;}
+  }
 }
 /* ==========================================================================
    Déplacer une piste : les articulations

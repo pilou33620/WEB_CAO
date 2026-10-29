@@ -591,7 +591,7 @@ function drawSilk(c){
     // le repère, avec les traits du Gerber (textStrokes) : ce qu'on voit est ce qui sera imprimé
     const tr = fpTextPos(fp).ref;
     c.strokeStyle = sel?C_SEL:(!auto?"#9aa3b0":(top?C_SILK_T:C_SILK_B));
-    c.lineWidth = Math.max(0.15, px(1)); c.lineCap = "round"; c.lineJoin = "round";
+    c.lineWidth = Math.max(tr.w, px(1)); c.lineCap = "round"; c.lineJoin = "round";
     c.beginPath();
     for(const P of textStrokes(fp.ref,tr.x,tr.y,tr.size,!top,tr.rot)){
       c.moveTo(P[0].x,P[0].y);

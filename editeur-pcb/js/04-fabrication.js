@@ -571,7 +571,7 @@ function silkTraits(side){
     // pour se lire à l'endroit une fois la carte retournée
     for(const poly of textStrokes(fp.ref,tr.x,tr.y,tr.size,!!side,tr.rot))
       for(let k=0;k+1<poly.length;k++)
-        seg(poly[k].x,poly[k].y,poly[k+1].x,poly[k+1].y,lw);
+        seg(poly[k].x,poly[k].y,poly[k+1].x,poly[k+1].y,tr.w);
   }
   if(S.drawings){
     const targetLayer = side ? "silkB" : "silkT";

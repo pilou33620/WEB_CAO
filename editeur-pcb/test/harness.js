@@ -12488,6 +12488,24 @@ T("repère et pastille cliqués seuls ont leur panneau",()=>{
   if(padsOf(f)[1].w!==1.3||padsOf(f)[0].w===1.3)throw new Error("seule la pastille 2 doit changer");
   S.fps=S.fps.filter(o=>o!==f);clearSel();
 });
+T("panneaux piste et via : X/Y emmènent ce qui s'y rejoint ; trait du repère jusqu'au Gerber",()=>{
+  carte4c();
+  const a={x1:10,y1:10,x2:20,y2:10,w:0.2,l:0,net:"N"}, b={x1:20,y1:10,x2:20,y2:20,w:0.2,l:0,net:"N"};
+  const c={x1:20,y1:10,x2:30,y2:10,w:0.2,l:S.cu-1,net:"N"}, v=mkVia(20,10,"N",0,S.cu-1);
+  S.tracks=[a,b,c];S.vias=[v];
+  clearSel();S.sel.tracks.add(a);buildProps();
+  $("tX2").value=String(ux(22));$("tX2").onchange({target:$("tX2")});
+  if(a.x2!==22||b.x1!==22||v.x!==22||c.x1!==22)throw new Error("le bout doit emmener voisin, via et piste de l'autre face");
+  clearSel();S.sel.vias.add(v);buildProps();
+  $("vY").value=String(uy(12));$("vY").onchange({target:$("vY")});
+  if(v.y!==12||a.y2!==12||b.y1!==12||c.y1!==12||a.y1!==10)throw new Error("le via doit emmener ses bouts, pas les autres");
+  S.tracks=[];S.vias=[];
+  const f=mkFp("R8","","0603",2);f.x=20;f.y=20;S.fps.push(f);
+  const larg=()=>new Set((gerberSilk(0).match(/%ADD\d+C,[\d.]+/g)||[]).map(s=>s.split("C,")[1]));
+  f.refWidth=0.3;
+  if(!larg().has("0.300000")&&![...larg()].some(x=>Math.abs(+x-0.3)<1e-6))throw new Error("le trait 0,3 mm du repère doit être dans le Gerber");
+  S.fps=S.fps.filter(o=>o!==f);clearSel();
+});
 T("sélection mêlée : une section par famille, et le cuivre se déroute à part",()=>{
   carte4c();
   S.fps=[mkFp("U1","","SOIC-8",8)];S.fps[0].x=20;S.fps[0].y=20;

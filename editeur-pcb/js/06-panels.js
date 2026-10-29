@@ -1737,21 +1737,23 @@ function propsRefText(box,fp){
     '<div class="prop"><label>Texte (repère du composant)</label><input id="rtRef" type="text" value="'+esc(fp.ref)+'"></div>'+
     '<div class="prop two"><div><label>Couche</label><input value="'+(fp.side?"B.SilkS (dessous)":"F.SilkS (dessus)")+'" disabled></div>'+
       '<div><label>Hauteur (mm)</label><input id="rtSize" type="number" step="0.1" min="0.5" max="25" placeholder="auto '+fmt(tr.size,2)+'" value="'+(fp.refSize>0?fmt(fp.refSize,2):"")+'"></div></div>'+
-    '<div class="prop"><label>Rotation</label><select id="rtRot">'+
+    '<div class="prop two"><div><label>Rotation</label><select id="rtRot">'+
       rotChoix([fp.refRot||0]).map(a=>'<option value="'+a+'"'+((fp.refRot||0)===a?" selected":"")+'>'+a+'°</option>').join("")+'</select></div>'+
+      '<div><label>Trait (mm)</label><input id="rtW" type="number" step="0.01" min="0.05" max="5" placeholder="0.15" value="'+(fp.refWidth>0?fmt(fp.refWidth,3):"")+'"></div></div>'+
     '<div class="prop two">'+numProp("rtDx","Décalage X (mm)",fmt(fp.refOffX||0,3),0.1,-1e4)+
       numProp("rtDy","Décalage Y (mm)",fmt(fp.refOffY||0,3),0.1,-1e4)+'</div>'+
     '<div class="prop"><div class="row"><button class="tb" id="rtHome">Remettre en place</button>'+
       '<button class="tb" id="rtFp">Composant '+esc(fp.ref)+' →</button></div></div>'+
-    '<div class="pinnote">Une seule fonte de traits : celle des Gerber .GTO/.GBO. Hauteur vide = taille automatique, d\'après le boîtier.'+
+    '<div class="pinnote">Une seule fonte de traits : celle des Gerber .GTO/.GBO. Hauteur vide = taille automatique, d\'après le boîtier ; trait vide = 0,15 mm.'+
       (fp.silk===false?' <b>Sérigraphie automatique coupée sur ce composant : le repère n\'est pas imprimé.</b>':'')+'</div>';
   const set=(id,fn)=>{$(id).onchange=e=>{push();fn(e.target.value);touch();refreshPanels();draw();};};
   set("rtRef",v=>{v=v.trim();if(v)fp.ref=v;});
   set("rtSize",v=>{v=parseFloat(v);if(v>=0.5&&v<=25)fp.refSize=r4(v);else delete fp.refSize;});
+  set("rtW",v=>{v=parseFloat(v);if(v>=0.05&&v<=5)fp.refWidth=r4(v);else delete fp.refWidth;});
   set("rtRot",v=>{if(+v)fp.refRot=+v;else delete fp.refRot;});
   for(const [id,k] of [["rtDx","refOffX"],["rtDy","refOffY"]])
     set(id,v=>{v=parseFloat(v);if(Number.isFinite(v)&&v)fp[k]=r3(v);else delete fp[k];});
-  $("rtHome").onclick=()=>{push();delete fp.refOffX;delete fp.refOffY;delete fp.refRot;delete fp.refSize;touch();refreshPanels();draw();};
+  $("rtHome").onclick=()=>{push();delete fp.refOffX;delete fp.refOffY;delete fp.refRot;delete fp.refSize;delete fp.refWidth;touch();refreshPanels();draw();};
   $("rtFp").onclick=()=>{clearSel();S.sel.fps.add(fp.id);refreshPanels();draw();};
 }
 /* Une pastille cliquée : ses cotes, son perçage, sa liaison, son masque. fpSetPad
@@ -2017,6 +2019,8 @@ function propsTrack(box,t){
         '<div><label>Rayon</label><input value="'+fmt(arcOf(t).r,3)+
           ' mm" disabled></div></div>'
       : '')+
+    '<div class="prop two">'+numProp("tX1","X1 (mm)",ux(t.x1),0.1,-1e4)+numProp("tY1","Y1 (mm)",uy(t.y1),0.1,-1e4)+'</div>'+
+    '<div class="prop two">'+numProp("tX2","X2 (mm)",ux(t.x2),0.1,-1e4)+numProp("tY2","Y2 (mm)",uy(t.y2),0.1,-1e4)+'</div>'+
     '<div class="prop"><label>Net</label><select id="tN"><option value="">— libre —</option>'+
       netTable().map(n=>'<option'+(n.name===t.net?" selected":"")+'>'+esc(n.name)+'</option>').join("")+
       '</select></div>'+
@@ -2039,6 +2043,12 @@ function propsTrack(box,t){
   $("tW").onchange=()=>{push();t.w=Math.max(0.05,parseFloat($("tW").value)||cl.w);
     touch();refreshPanels();draw();};
   $("tN").onchange=()=>{push();t.net=$("tN").value;touch();refreshPanels();draw();};
+  // un bout déplacé emmène les segments et vias qui s'y rejoignent
+  for(const e of [1,2])for(const ax of ["X","Y"])$("t"+ax+e).onchange=ev=>{
+    const v=parseFloat(ev.target.value), x=t["x"+e], y=t["y"+e];
+    if(!Number.isFinite(v))return refreshPanels();
+    push();pointDeplacer(x,y,t.l,t.l,ax==="X"?wxu(v):x,ax==="Y"?wyu(v):y);touch();refreshPanels();draw();
+  };
   $("tC").onchange=()=>{
     if(!t.net){alert("Cette piste n'est rattachée à aucun net : la classe ne s'applique pas.");
       buildProps();return;}
@@ -2110,6 +2120,7 @@ function propsTracks(box,list,vias){
 function propsVia(box,v){
   const lt=ltVia(v), bd=viaBuild(v.a,v.b);
   box.innerHTML=
+    '<div class="prop two">'+numProp("vX","X (mm)",ux(v.x),0.1,-1e4)+numProp("vY","Y (mm)",uy(v.y),0.1,-1e4)+'</div>'+
     '<div class="prop two">'+numProp("vD","Diamètre",v.d,0.05,0.2)+
       numProp("vDr","Perçage",v.drill,0.05,0.1)+'</div>'+
     /* La nature d'abord, les couches ensuite : on veut « borgne dessus » plus
@@ -2171,6 +2182,12 @@ function propsVia(box,v){
     touch();refreshPanels();draw();
   };
   ["vD","vDr","vA","vB","vN"].forEach(id=>$(id).onchange=f);
+  // le via emmène les bouts de pistes accrochés sur ses couches
+  for(const ax of ["X","Y"])$("v"+ax).onchange=ev=>{
+    const n=parseFloat(ev.target.value);
+    if(!Number.isFinite(n))return refreshPanels();
+    push();pointDeplacer(v.x,v.y,v.a,v.b,ax==="X"?wxu(n):v.x,ax==="Y"?wyu(n):v.y);touch();refreshPanels();draw();
+  };
   $("vLie").onchange=()=>{
     push();
     const x=$("vLie").value;
