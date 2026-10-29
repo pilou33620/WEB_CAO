@@ -146,7 +146,7 @@ const LECTURE_CAO = (function() {
     carte: {
       desc: "le contour de la carte (rectangle, disque ou polygone, avec ses sommets), ses dimensions et ses découpes",
       fn: () => {
-        const b = S.board, P = boardPoly(), segs = typeof dxfSegments === "function" ? dxfSegments(P) : [];
+        const b = S.board, P = boardPoly(), segs = typeof ctrSegments === "function" ? ctrSegments(P) : [];
         const rond = b.pts && segs.length === 2 && segs.every(x => x.t === "a");
         const L = ["Carte " + mm(b.w) + " × " + mm(b.h) + " mm, coin en (" + mm(b.x) + ", " + mm(b.y) + "), marge de bord " + S.rule.edge + " mm."];
         if (!(b.pts && b.pts.length >= 3)) L.push("Contour : rectangle.");

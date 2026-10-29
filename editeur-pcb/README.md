@@ -75,10 +75,8 @@ js/28-placement-satellites.js  « Placement auto », second temps : découplage 
 js/29-draftsman.js       plans de fabrication et d'assemblage (Draftsman) :
                          feuilles cadrées et cartouchées, PDF au texte
                          cherchable, aperçu SVG et recherche dans la fenêtre
-js/33-draftsman-export.js  plans : export DXF (carte 1:1 pour la mécanique,
-                         feuille entière, un calque par outil de perçage) et
-                         fonte TrueType embarquée en sous-ensemble dans le PDF
-                         des plans et dans le Master Drawing
+js/33-draftsman-export.js  plans : fonte TrueType embarquée en sous-ensemble
+                         dans le PDF des plans et dans le Master Drawing
 js/fontes/plans-sans.js  la fonte PlansSans (Liberation Sans pré-réduite, en
                          base64), produite par outils/fonte-plans.py ; sa
                          licence OFL à côté, js/fontes/OFL-PlansSans.txt
@@ -112,6 +110,9 @@ js/39-thermique.js       échauffement estimé des composants qui dissipent :
                          cuivre relié, appel au serveur, DRC, fiche
 js/41-animation-3d.js    animation 3D de la carte qui s'assemble, en option
                          de Fabrication .zip : vidéo et page HTML autonome
+js/44-export-step.js     Export STEP du menu Fichier : la scène de l'animation
+                         3D et les zones de cuivre, la fenêtre des cases ;
+                         voir « Export STEP pour la mécanique »
 outils/build-monofichier.py assemble le tout dans dist/
 outils/fonte-plans.py    réduit Liberation Sans à la fonte des plans
 test/harness.js          banc d'essai sans navigateur
@@ -141,8 +142,12 @@ Ces fichiers viennent du dossier partagé, à la racine du dépôt :
                          courbe, exports — paramétré par l'adaptateur de
                          js/19-simulation.js. La visionneuse IPC-2581 charge
                          exactement le même
-../commun/dossier-meca.js  dossier mécanique : le calcul, la feuille « Plan
-                         mécanique » et le DXF, communs avec la visionneuse
+../commun/dossier-meca.js  dossier mécanique : le calcul et la feuille « Plan
+                         mécanique », communs avec la visionneuse
+../commun/export-step.js la carte en STEP (assemblage 3D), commune avec la
+                         visionneuse ; aussi les arcs retrouvés d'un contour
+                         facetté (ctrSegments) et la pose d'un modèle de la
+                         LIB (anim3dPose)
 ../commun/zip.js         archive ZIP sans compression (crc32, zipBlob) :
                          fabrication.zip, dossier méca
 ../commun/vendor/three-source.js  three.js r186 en texte (THREE_SOURCE), évalué
@@ -1203,8 +1208,7 @@ de fabrication portent `mm`. Les écarts sont signés, dans l'unité de la cote
 laissé vide reprend l'écart d'avant, sinon +0,1 / −0,05 mm (±0,5° pour un
 angle) ; un écart symétrique nul revient à « aucune tolérance ». Les limites sont « valeur +
 écart » : elles suivent la géométrie comme la valeur. Chaque morceau est un
-vrai texte : au PDF, `±0,10` ou `(12,00)` se cherchent ; au DXF, ils vont
-sur le calque `COTES` (± en `%%p`, ° en `%%d`).
+vrai texte : au PDF, `±0,10` ou `(12,00)` se cherchent.
 
 Une **chaîne** ou une **ordonnée** tolère aussi chaque valeur à part. Le
 volet commence alors par la liste **Valeur** : « Toutes les valeurs » règle
@@ -1216,7 +1220,7 @@ le document, c'est `tols`, aligné sur `pts` : `null` pour la commune,
 la tolérance du point où elle aboutit, le plus loin dans le sens de la cote
 (le premier point n'en porte donc pas). Une liste de mauvaise longueur est
 écartée, une liste toute à `null` disparaît : une cote sans tolérance par
-valeur s'écrit et se relit comme avant. L'écran, le PDF et le DXF montrent
+valeur s'écrit et se relit comme avant. L'écran et le PDF montrent
 chaque valeur avec la sienne.
 
 Une vue glissée garde sa place : le coin haut gauche de sa boîte, aimanté
@@ -1264,10 +1268,7 @@ place d'avant s'oublie. Les deux feuilles se renvoient l'une à l'autre :
 textes ne changent pas. La feuille choisie décochée, le détail revient sur
 celle de sa vue mère, sans renvoi. Un seul pas d'historique. Le glisser d'une
 vue sur l'une de ces deux feuilles refait alors tout le document, pas la
-seule feuille (`dfGenreVue` rend `null`). **Au DXF :** le
-`-PLAN-FABRICATION.dxf` de Fabrication .zip ne prend que les feuilles de
-fabrication ; un détail de la vue de fabrication posé ailleurs n'y est donc
-pas (exporter sa feuille par **DXF feuille**). De même, le zip **MECA** ne
+seule feuille (`dfGenreVue` rend `null`). Le zip **MECA** ne
 construit que ses propres vues : un détail d'une autre feuille (la vue de la
 carte au plan de fabrication, par exemple) posé sur la feuille mécanique n'y
 figure pas.
@@ -1401,7 +1402,7 @@ Surface details. Page 2 : Solder mask, Silk screen, Electrical test, Surface
 examination, General notes. Page 3 : Files included in data package (colonnes
 Included / Filename / Description : Gerber, perçages et contre-perçages avec
 leur `.gbr`, `.ipc`, IPC-2581, `positions.csv`, `bom.csv`, `EMPILAGE.txt`, le
-Master Drawing, les plans, les DXF, l'animation 3D), puis « Content of
+Master Drawing, les plans, l'animation 3D), puis « Content of
 `<projet>-PLANS.pdf` » (fabrication, assemblages, nomenclature, couches de
 cuivre) si les plans sont dans l'archive. Page 4 : Stack layer, Via summary,
 Board outline drawing (contour à l'échelle dans un cadre de 110 × 64 mm). Le
@@ -1417,7 +1418,7 @@ accents (UTF-8 sans BOM) et en dernier : titre et date, carte (dimensions,
 contour, découpes, couches), empilage, origine des coordonnées, conventions
 Gerber / Excellon, légende des fichiers de perçage (nature, portée, trous,
 outils ; contre-perçage et note sur le Gerber X2), contour (`GM1` fait foi,
-`GKO` en keep-out), netlist IPC-D-356, un paragraphe par fichier IPC-2581, DXF
+`GKO` en keep-out), netlist IPC-D-356, un paragraphe par fichier IPC-2581
 ou animation 3D présent, `positions.csv` / `bom.csv` (rotation horaire de 0 à
 360, convention JLCPCB), variante de montage et DNP, « Fichiers : » (tous
 ceux du zip sauf lui-même), « Regles : » (classes, dilatation du masque,
@@ -1426,62 +1427,60 @@ négative (LPC) des dégagements de zones. Chaque paragraphe n'est écrit que si
 son fichier est dans le zip, sous son vrai nom (`fabBase()` : `<projet>.GM1`,
 `<projet>.ipc`…, `carte` sans projet).
 
-### Export DXF pour la mécanique
+### Export STEP pour la mécanique
 
-Deux boutons dans la fenêtre, et deux fichiers dans **Fabrication .zip**
-(annoncés par le Master Drawing et le LISEZ-MOI) :
+Le DXF a été remplacé par le STEP (ISO 10303-21, AP214) : le modeleur reçoit
+la carte en volume, avec ses composants, au lieu d'un dessin à plat. Le
+bouton **🧊 Export STEP…** du menu Fichier, juste après **Fabrication .zip**,
+ouvre une fenêtre de cases, puis télécharge `<projet>-3D.step`
+(`carte-3D.step` sans projet). Le choix reste le temps de la page (par
+défaut : carte et composants).
 
-| Fichier | Contenu |
+| Case | Pièce de l'assemblage |
 | --- | --- |
-| `<projet>-CARTE.dxf` (**DXF carte 1:1**) | la carte seule, à l'échelle 1:1, en millimètres, dans le repère des Gerber et de l'Excellon (même origine, Y vers le haut) : contour et découpes en `LINE` et `ARC`, un `CIRCLE` par trou au diamètre fini, un calque par outil de perçage (un `POINT` par trou), encombrement (`POLYLINE` fermée, en tirets pour un non-monté) et repère (`TEXT`) de chaque composant, cotes hors tout, tableau de perçage à côté |
-| `<projet>-PLAN-<n>.dxf` (**DXF feuille** : la feuille affichée, `n` son rang) ; `<projet>-PLAN-FABRICATION.dxf` dans **Fabrication .zip** (feuilles de fabrication seulement) | la feuille entière : cadre, cartouche, vue cotée, symboles et tableaux, coupe, notes |
+| Carte (PCB) : substrat, contour, découpes et trous | `<projet>-CARTE` : le substrat de −épaisseur à 0, contour, découpes et trous exacts (droites, arcs, cylindres) |
+| Composants dessus / Composants dessous | une pièce par composant monté de la variante active, nommée par son repère (`R1`, `U3`…) |
+| Cuivre extérieur (pistes, pastilles, vias, zones) | `CUIVRE_DESSUS` / `CUIVRE_DESSOUS`, 35 µm, facettés |
+| Sérigraphie | `SERIGRAPHIE_DESSUS` / `_DESSOUS`, 15 µm posés sur le cuivre |
 
-Les calques : `CONTOUR`, `DECOUPES`, `TROUS_METALLISES`,
-`TROUS_NON_METALLISES`, `COMPOSANTS_DESSUS` / `_DESSOUS`, `REPERES_DESSUS` /
-`_DESSOUS`, `COTES`, `ORIGINE`, `TABLEAU_PERCAGE` pour la carte ; `CADRE`,
-`CARTOUCHE`, `CONTOUR`, `PERCAGE`, `COTES`, `PASTILLES`, `COMPOSANTS`,
-`REPERES`, `TABLEAUX`, `EMPILAGE`, `NOTES`, `TEXTES`, `DESSIN` pour la
-feuille.
+Le fichier est un **assemblage** nommé, en millimètres, dans le repère des
+Gerber (Y vers le haut) ; Z = 0 sur la face dessus. Couleurs : carte verte,
+cuivre doré, sérigraphie blanche, boîtes gris foncé.
 
-**Les trous de la carte, par outil.** Les cercles restent sur les calques
-historiques `TROUS_METALLISES` et `TROUS_NON_METALLISES`, un par trou : un
-lecteur qui s'y attend les retrouve. Chaque outil a en plus son calque, avec
-un `POINT` au centre de chacun de ses trous — les positions que l'assistant
-de perçage d'un modeleur ou une FAO de perçage attend, et de quoi choisir les
-trous d'un diamètre d'un clic :
+**La carte.** Un trou est fait de deux demi-cylindres : il reste un cylindre
+qu'on cote. Deux trous qui se chevauchent casseraient le solide : seul le
+premier est gardé. Un trou qui coupe le bord ou une découpe (demi-trou,
+castellation) entaille le contour : le bord le contourne par un arc
+(`stepEntaille`), que ce bord soit droit ou arrondi (coin arrondi, carte
+ronde, découpe ronde). Un trou hors de la carte, ou qui coupe le contour en
+plus de deux points, n'est pas percé ; le message de fin compte les
+demi-trous et les trous laissés de côté.
 
-| Calque | Trous |
-| --- | --- |
-| `TROUS_PTH_<Ø>` | pastilles traversantes, métallisées |
-| `TROUS_NPTH_<Ø>` | trous de fixation, non métallisés |
-| `VIAS_<Ø>`, `VIAS_L1-L2_<Ø>` | vias traversants ; borgnes et enterrés, par portée |
-| `CONTRE_PERCAGE_<DESSUS\|DESSOUS>_<Ø>` | contre-perçage, au Ø du foret, depuis la face indiquée — avec aussi le `CIRCLE` du foret |
+**Les composants.** Un composant prend le modèle STEP de la LIB (colonne
+« Modèle 3D », fichier de `LIB/Models`), posé par « Position 3D » comme dans
+l'animation 3D. Le modèle est recopié une seule fois dans le fichier et placé
+autant de fois qu'il sert. Sans modèle, ou modèle illisible, le composant est
+son corps extrudé à sa hauteur (LIB, fichier ou saisie ; sinon 0,4 × le côté
+moyen, entre 0,3 et 3 mm). Les modèles viennent du serveur :
+`GET /api/lib/fichier?type=step&nom=<fichier>.stp`, en lecture seule
+(écriture et effacement refusés, `.stp` / `.step` seulement).
 
-Le Ø s'écrit `0_30` (deux décimales, trois s'il le faut : `0_864`) : R12
-n'admet dans un nom de calque que lettres, chiffres, `$`, `-` et `_`. Une
-fente, métallisée ou non, ajoute `X<longueur>` au nom de son calque
-(`TROUS_NPTH_2_00X5_00`) et son contour remplace le cercle. Chaque
-diamètre a sa couleur (table `LAYER`), la même pour tous les calques de ce
-diamètre, et les `POINT` s'affichent en petite croix (`$PDMODE` 3,
-`$PDSIZE` 0,2 mm). Pourquoi ne pas remplacer les deux calques historiques :
-un lecteur qui les attend les perdrait ; pourquoi pas des `CIRCLE` par
-diamètre en plus : chaque trou serait compté deux fois.
+**Le cuivre.** Une zone sort en son contour, sans les dégagements autour du
+cuivre étranger : limite connue.
 
-Le format est **AutoCAD R12** (`AC1009`), en ASCII : c'est la version que
-tout lit, des modeleurs (SolidWorks, Inventor, Fusion, FreeCAD) aux
-machines de découpe. R2000 n'apporterait que la `LWPOLYLINE`, au prix des
-poignées et de la section `OBJECTS` qu'un lecteur strict refuse au moindre
-écart. Les unités sont annoncées quand même (`$INSUNITS` = 4, millimètres ;
-`$MEASUREMENT` = 1) : un lecteur R12 les ignore, un lecteur récent ne
-demande plus l'unité. Le texte est en Windows-1252 — le jeu de WinAnsi,
-écrit de la même façon —, °, ± et Ø en `%%d`, `%%p`, `%%c`.
+Le code : `commun/export-step.js` (`stepScene`, `stepFabriquer`,
+`stepFenetre`), commun avec la visionneuse IPC-2581 ; l'entrée de l'éditeur
+est `js/44-export-step.js` (`stepSceneEditeur`, `stepExporter`,
+`stepChoisir`). La scène est celle de l'animation 3D (`anim3dDonnees`). Le
+banc d'essai relit le fichier par OpenCascade (`occt-import-js` de WEB_3D).
 
 Le contour de la carte n'est qu'une liste de sommets : un coin arrondi ou une
 carte ronde importés y sont des suites de cordes égales. L'export les
-reconnaît (cordes égales, tournant du même côté, 30° au plus chacune, sommets
-sur un même cercle) et les écrit en `ARC`, sur le cercle qui passe exactement
-par les sommets de part et d'autre : le contour reste fermé, et le modeleur
-reçoit un rayon au lieu de vingt facettes. Un octogone reste un octogone.
+reconnaît (`ctrSegments` : cordes égales, tournant du même côté, 30° au plus
+chacune, sommets sur un même cercle) et les écrit en arcs, sur le cercle qui
+passe exactement par les sommets de part et d'autre : le contour reste fermé,
+et le modeleur reçoit un rayon au lieu de vingt facettes. Un octogone reste
+un octogone.
 Le Gerber du contour (`.GM1`, `.GKO`) fait la même reconnaissance et sort ces
 arcs en `G03` (multi-quadrant, `G75`), comme l'IPC-2581 en `PolyStepCurve` —
 mais seulement si chaque corde est à moins de 10 µm de son arc (`gArcsFins`) :
@@ -1491,14 +1490,6 @@ fraise couperait plus près du cuivre que la règle.
 Le bouton **Disque** des propriétés de la carte pose un contour rond inscrit
 dans la largeur et la hauteur actuelles (`setBoardDisque`) : des cordes égales
 dont la flèche reste sous 5 µm, que ces trois sorties écrivent en cercle.
-
-La feuille est lue dans la même liste d'objets que le PDF et l'aperçu : tout
-ce qui s'y dessine passe dans le DXF. Pour ranger un nouveau dessin sur son
-calque (des cotes posées à la main, une vue de détail), il suffit de
-l'encadrer de `dfCalque(F,"NOM")` … `dfCalque(F)` ; un texte va sur le
-calque de sa catégorie (`cat`), le cadre et le cartouche se reconnaissent à
-leur place, et le reste va sur `DESSIN`. Le texte invisible du PDF n'y va
-pas : il sert la recherche du lecteur PDF, pas le modeleur.
 
 ## Dossier mécanique
 
@@ -1511,7 +1502,7 @@ le bouton **⬇ Dossier méca .zip** télécharge `<projet>-MECA.zip` :
 | --- | --- |
 | `-PLAN-MECA.pdf` | vue de dessus cotée (hors tout, trous de fixation en ordonnée depuis l'origine), vue de face (depuis le bord S) et de gauche (depuis le bord O) avec chaque composant en pavé à sa hauteur ; tableaux : carte, fixations, ouvertures ; notes et composants sans hauteur |
 | `-MECA.json` | les mêmes données pour une IA ou un script (format `web_cao-meca-1`, décrit dans `SPEC-dossier-meca.md`) |
-| `-MECA.dxf` | la carte à 1:1 : contour (arcs retrouvés), découpes, fixations et dégagements, corps sur un calque par face et par hauteur (`CORPS_DESSUS_H9_50`), ouvertures |
+| `-MECA.step` | la carte en 3D avec ses composants dessus et dessous, comme **Export STEP…** avec ces trois cases (voir « Export STEP pour la mécanique ») |
 
 Repère : celui des Gerber (origine `gOrigin`, Y vers le haut, vue de dessus) ;
 Z = 0 sur la face dessus, la face dessous à −épaisseur. Le corps d'un
@@ -1652,7 +1643,7 @@ zone d'exemple n'en arrive là).
 
 **Les arcs du contour sont gardés.** Le contour n'est qu'une liste de
 sommets ; les cordes égales d'un coin arrondi ou d'une carte ronde
-importés y sont reconnues par `dxfSegments`, comme pour le DXF, et partent en
+importés y sont reconnues par `ctrSegments`, comme pour le STEP, et partent en
 `PolyStepCurve` sur le cercle qui passe exactement par les sommets.
 
 **Les règles partent aussi** — classes de nets, paires différentielles,

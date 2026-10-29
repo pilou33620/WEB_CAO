@@ -4,6 +4,10 @@ Demande du 15/10/2026. `SPEC.md` (classes d'interface) n'est pas terminée
 (vérification TRD1_N et relecture en attente) : cette spec vit à côté, sous son
 propre nom, pour ne pas l'écraser.
 
+Mise à jour du 29/10/2026 : le DXF 1:1 du dossier est remplacé par un STEP
+3D (carte et composants), et l'export DXF a disparu de l'éditeur. La spec
+décrit l'état actuel.
+
 ## Objectif
 
 Produire, pour une carte, un **dossier mécanique** qu'on peut confier à un
@@ -22,20 +26,20 @@ Utilisateurs :
 
 - le concepteur, qui produit le dossier depuis l'éditeur PCB ou la
   visionneuse ;
-- l'ingénieur méca, qui lit le PDF et importe le DXF dans sa CAO ;
+- l'ingénieur méca, qui lit le PDF et importe le STEP dans sa CAO ;
 - une IA, qui lit le JSON.
 
 ### Décisions prises (15/10/2026)
 
 | Question | Choix |
 |---|---|
-| Livrable | Un `.zip` : PDF (feuille « Plan mécanique ») + JSON + DXF 1:1 |
+| Livrable | Un `.zip` : PDF (feuille « Plan mécanique ») + JSON + STEP 3D (DXF 1:1 à l'origine, remplacé le 29/10/2026) |
 | Hauteurs | Colonne « Maximun Height » de la LIB, corrigible à la main ; les composants sans hauteur sont signalés |
 | Ouvertures | Proposées automatiquement, avec une case par composant pour corriger |
 | Interface PCB | Dans la fenêtre Plans (Draftsman) : nouvelle feuille + bouton « Dossier méca .zip » |
 | Jeu aux parois | Aucun : le dossier donne les cotes réelles, le mécanicien choisit le jeu |
 | `fabrication.zip` | Le dossier méca reste à part (autre destinataire) |
-| Code PDF / DXF dans la visionneuse | Elle charge les fichiers du Draftsman de l'éditeur tels quels |
+| Code PDF / STEP dans la visionneuse | Elle charge les fichiers du Draftsman de l'éditeur tels quels pour le PDF, et `commun/export-step.js` pour le STEP |
 | Export IPC de l'éditeur | Écrit aussi la hauteur (`<Package height>`) |
 | Trous de fixation | NPTH, repère `H` / `MH`, boîtier « MOUNT » / « TROU » (les trois) |
 | Connecteurs | Tous proposés comme ouverture, où qu'ils soient |
@@ -44,7 +48,7 @@ Utilisateurs :
 
 ### Hypothèses (validées le 15/10/2026)
 
-1. **Repère** : celui des Gerber et du DXF existant. Millimètres, origine
+1. **Repère** : celui des Gerber. Millimètres, origine
    `gOrigin()`, X vers la droite, Y vers le haut, vue de dessus. Z = 0 sur la
    face dessus de la carte, Z positif au-dessus. Le dessous va de −épaisseur à
    −épaisseur − hauteur.
@@ -54,8 +58,9 @@ Utilisateurs :
    fabricant (« Part Number », « manufacturer part Number »). Ordre :
    saisie > fichier IPC > LIB. On ne tient pas compte de « Standoof
    Height » : un pavé plein de 0 à h suffit pour un boîtier.
-3. **Encombrement** = le corps de l'empreinte (`bodyOf(fp)`, déjà utilisé par
-   le DXF), en rectangle orienté. Pas de modèle 3D.
+3. **Encombrement** = le corps de l'empreinte (`bodyOf(fp)`), en rectangle
+   orienté, pour le PDF et le JSON. Le STEP prend le modèle 3D de la LIB
+   quand il y en a un, sinon ce corps extrudé à sa hauteur.
 4. **Trou de fixation** = un trou non métallisé `S.holes`, **ou** une empreinte
    dont le repère commence par `H` ou `MH`, ou dont le boîtier contient
    « MOUNT » ou « TROU », et qui n'a qu'une pastille percée. Le diamètre de
@@ -88,7 +93,7 @@ Utilisateurs :
 |---|---|---|
 | `<projet>-PLAN-MECA.pdf` | ingénieur | la feuille « Plan mécanique », PDF cherchable comme les autres plans |
 | `<projet>-MECA.json` | IA, scripts | toutes les données ci-dessous, en clair |
-| `<projet>-MECA.dxf` | CAO méca | carte à 1:1 (`mecaDxf`) : contour (arcs retrouvés), découpes, trous, corps par face, un calque par face et par tranche de hauteur |
+| `<projet>-MECA.step` | CAO méca | assemblage 3D (`stepFabriquer`, `commun/export-step.js`) : la carte (contour avec ses arcs retrouvés, découpes, trous en cylindres) et les composants dessus et dessous (modèle STEP de la LIB, sinon corps extrudé à sa hauteur), comme « Export STEP… » avec ces trois cases |
 
 ### Feuille « Plan mécanique » (Draftsman)
 
@@ -143,27 +148,28 @@ Pour une ouverture sur une face, `"ouverture":{"type":"face","face":"dessus"}`.
 Le Draftsman lit l'état `S` de l'éditeur et ne peut pas tourner tel quel
 dans la visionneuse. En revanche, ses sorties sont génériques : `dfPdf`,
 `dfSvg`, les primitives `dfNouvelle` / `dfLigne` / `dfTexte`… / `dfCadre`, la
-fonte, et côté DXF `dxfNouveau` / `dxfContour` (qui retrouve les arcs d'un
-contour facetté) / `dxfCercle` / `dxfOctets`. Les fichiers 29 et 33 ne font
-que des définitions au chargement (vérifié). D'où :
+fonte. Le STEP vient de `commun/export-step.js` (`stepFabriquer`, et
+`ctrSegments` qui retrouve les arcs d'un contour facetté), commun aux deux
+outils. Les fichiers 29 et 33 ne font que des définitions au chargement
+(vérifié). D'où :
 
 ```
 éditeur (S)  ──mecaEntreeEditeur()──┐
                                      ├─▶ mecaDonnees(entree, lib, reglages) ─▶ JSON
 visionneuse ──mecaEntreeIpc(modele)─┘        │
                                              ├─▶ mecaFeuille(json, ctx) ─▶ feuille Draftsman ─▶ PDF / aperçu SVG
-                                             └─▶ mecaDxf(json)          ─▶ DXF 1:1
+                                             └─▶ scène 3D ─▶ stepFabriquer(scène) ─▶ STEP 3D
 ```
 
 - **Entrée neutre** : `{contour, decoupes, epaisseur, trous:[{x,y,d,metallise,pad}],
   composants:[{id, ref, face, x, y, rot, corps, corps_estime, hauteur_fichier,
   part_name, mpn, pkg, val, monte}]}`.
-- `mecaDonnees`, `mecaFeuille` et `mecaDxf` sont dans **`commun/dossier-meca.js`**,
+- `mecaDonnees` et `mecaFeuille` sont dans **`commun/dossier-meca.js`**,
   sans `S` ni DOM : ce sont eux qui portent les essais.
-- **DXF** : le même `mecaDxf(json)` dans les deux outils (contour, découpes,
-  trous, corps par face avec leur hauteur dans le calque, cotes hors tout).
-  Le `-CARTE.dxf` existant de l'éditeur ne change pas et reste dans
-  `fabrication.zip`.
+- **STEP** : le même `stepFabriquer` dans les deux outils, sur une scène
+  tirée de l'éditeur (`stepSceneEditeur`) ou du modèle IPC
+  (`stepSceneIpc`) ; les modèles 3D viennent de LIB/Models par
+  `GET /api/lib/fichier?type=step`.
 
 ## Visionneuse IPC-2581
 
@@ -198,8 +204,8 @@ partent dans le modèle sous la clé `meca`, donc dans l'export `-IPC.json`
 comme les natures de nets.
 
 La visionneuse charge en plus `editeur-pcb/js/29-draftsman.js`,
-`33-draftsman-export.js` et la fonte `fontes/plans-sans.js` pour les sorties,
-et `commun/dossier-meca.js`. Les deux aides dont ils ont besoin hors d'eux
+`33-draftsman-export.js` et la fonte `fontes/plans-sans.js` pour le PDF,
+`commun/dossier-meca.js` et `commun/export-step.js`. Les deux aides dont ils ont besoin hors d'eux
 (`fmt`, `clamp`) et le zip (`crc32`, `zipBlob`, aujourd'hui dans
 `04-fabrication.js`) passent dans `commun/`.
 
@@ -219,7 +225,8 @@ Monofichier : python editeur-pcb/outils/build-monofichier.py
 
 | Fichier | Rôle |
 |---|---|
-| `commun/dossier-meca.js` (nouveau) | `mecaDonnees`, `mecaFeuille`, `mecaDxf`, `mecaZip` : sans `S` ni DOM |
+| `commun/dossier-meca.js` (nouveau) | `mecaDonnees`, `mecaFeuille`, `mecaZip` : sans `S` ni DOM |
+| `commun/export-step.js` | l'assemblage STEP du dossier et de « Export STEP… » |
 | `commun/zip.js` (nouveau, déplacé) | `crc32`, `zipBlob` sortis de `04-fabrication.js`, inchangés |
 | `editeur-pcb/js/29-draftsman.js` | entrée `meca` dans `DF_FEUILLES`, `dfCfg` (borne `meca`), `dfDocument`, tableau des réglages et bouton du zip |
 | `editeur-pcb/js/36-dossier-meca.js` (nouveau) | `mecaEntreeEditeur()` : l'entrée neutre tirée de `S` |
@@ -236,7 +243,7 @@ Monofichier : python editeur-pcb/outils/build-monofichier.py
 Celui de 29-draftsman.js : JS sans module, `"use strict"`, fonctions préfixées
 (`meca…`), noms et commentaires en français, commentaire de bloc qui dit le
 pourquoi, sorties construites sur les primitives existantes (`dfNouvelle`,
-`dfVue`, `dfCote`, `dfTableau`, `dfFlux`, `dxfContour`, `zipBlob`).
+`dfVue`, `dfCote`, `dfTableau`, `dfFlux`, `ctrSegments`, `zipBlob`).
 
 ```js
 /* Un trou de fixation : ceux de `S.holes`, et les empreintes qui n'ont
@@ -264,7 +271,8 @@ entrée neutre écrite à la main puis sur la carte d'exemple de l'éditeur :
 4. Un non-monté de la variante reste dans les composants avec
    `"monte": false` et compte dans la hauteur maximale.
 5. Le JSON se relit et porte son format ; le zip contient les trois fichiers ;
-   la feuille sort en PDF avec son cadre ; le DXF a un CIRCLE par trou.
+   la feuille sort en PDF avec son cadre ; le STEP se relit par OpenCascade
+   (`occt-import-js` de WEB_3D).
 6. Plans existants : les 44 essais Draftsman passent sans changement, le
    `fabrication.zip` est identique (zip déplacé, pas réécrit).
 
@@ -279,11 +287,10 @@ JSON de ce banc (face, NPTH, `corps_estime`).
 ## Limites
 
 - **Toujours** : passer `JS_PCB` (et `JS_VIS`, `PY_SRV` si touchés) avant un
-  commit ; réutiliser les primitives du Draftsman et du DXF ; repère
-  identique au DXF et aux Gerber.
-- **Demander d'abord** : un modèle 3D (STEP), une nouvelle dépendance, un
-  changement du `-CARTE.dxf` ou de `fabrication.zip`, du format du document
-  de l'éditeur.
+  commit ; réutiliser les primitives du Draftsman et du STEP commun ;
+  repère identique aux Gerber.
+- **Demander d'abord** : une nouvelle dépendance, un changement de
+  `fabrication.zip` ou du format du document de l'éditeur.
 - **Jamais** : modifier la LIB depuis le dossier (une hauteur saisie reste
   dans la carte) ; casser les plans existants ; toucher à `SPEC.md`.
 
@@ -291,7 +298,7 @@ JSON de ce banc (face, NPTH, `corps_estime`).
 
 1. **Éditeur.** Dans Plans (Draftsman), la case « Plan mécanique » ajoute la
    feuille ; le bouton « Dossier méca .zip » télécharge `<projet>-MECA.zip`
-   avec le PDF, le JSON et le DXF.
+   avec le PDF, le JSON et le STEP.
 2. Sur l'exemple 2 de l'éditeur (66 × 42 mm) : cotes hors tout 66 et 42, épaisseur de
    l'empilage, chaque trou de fixation coté en X et Y avec son Ø.
 3. Chaque composant monté a sa hauteur, ou figure parmi les avertissements ;

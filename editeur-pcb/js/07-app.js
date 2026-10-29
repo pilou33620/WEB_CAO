@@ -678,6 +678,7 @@ $("bPng").onclick=exportPng;
 $("bFab").onclick=fabChoisir;
 $("bJlc").onclick=exportJlcpcb;
 $("bVerifBom").onclick=()=>vbFenetre();   // 43-verif-bom.js se charge après ce fichier
+$("bStep").onclick=()=>stepChoisir();     // 44-export-step.js aussi
 $("bFabAnim").onclick=()=>fabAnimBasculer();   // 41-animation-3d.js se charge après ce fichier
 $("bVariantes").onclick=()=>pcbVarOuvrir();   // 26-variantes.js se charge après ce fichier
 $("bNew").onclick=newDoc;

@@ -730,7 +730,9 @@ LIB_SOUS_DOSSIERS = {
     "schematique": "lib_empreinte_schematique",
     "simulation": "lib_simulation",
     # maillages des modeles STEP de Models/, faits par python/maillages_3d.mjs
-    "modele3d": os.path.join("Models", "maillages")
+    "modele3d": os.path.join("Models", "maillages"),
+    # les modeles STEP eux-memes, que l'export STEP recopie (lecture seule)
+    "step": "Models"
 }
 
 DOSSIER_LIB_ACTIF = None
@@ -854,10 +856,11 @@ def chemin_lib_fichier(genre, nom_brut, creer=False):
         "schematique": "schematique",
         "symbole": "schematique",
         "simulation": "simulation",
-        "modele3d": "modele3d"
+        "modele3d": "modele3d",
+        "step": "step"
     }.get(genre)
     if not genre_canon or genre_canon not in LIB_SOUS_DOSSIERS:
-        raise ErreurLib(400, "Genre de bibliotheque invalide (attendu: pcb, schematique, simulation, modele3d)")
+        raise ErreurLib(400, "Genre de bibliotheque invalide (attendu: pcb, schematique, simulation, modele3d, step)")
     s = str(nom_brut or "").strip().replace("\\", "/")
     parts = [p for p in s.split("/") if p]
     if ".." in parts or s.startswith("/"):
@@ -865,6 +868,8 @@ def chemin_lib_fichier(genre, nom_brut, creer=False):
     nom = os.path.basename(s)
     if not nom or nom in ('.', '..') or NOM_INTERDIT.search(nom):
         raise ErreurLib(400, "Nom de fichier invalide")
+    if genre_canon == "step" and (creer or not STEP_EXTENSIONS.search(nom)):
+        raise ErreurLib(400, "Modele STEP : lecture seule, .stp ou .step")
     if creer and not LIB_EXTENSIONS.search(nom):
         raise ErreurLib(400, "Extension refusee : « %s » (bibliotheque = fichiers"
                              " de donnees : .json, .mod, .sub, .lib, .cir,"
@@ -1325,6 +1330,7 @@ def nom_fichier_doc(valeur):
 # Extensions qu'une route LIB accepte d'ecrire : des donnees, jamais une page
 # (.html servie sur l'origine de l'outil = script avec tous ses droits) ni un
 # executable.
+STEP_EXTENSIONS = re.compile(r"\.(stp|step)$", re.I)
 LIB_EXTENSIONS = re.compile(
     r"\.(json|mod|sub|lib|cir|sp|spi|spice|txt|ibs|s\dp|kicad_mod|kicad_sym)$",
     re.I)
@@ -2806,7 +2812,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if not os.path.exists(chemin):
             raise ErreurLib(404, "Fichier introuvable : %s" % nom)
         try:
-            with open(chemin, "r", encoding="utf-8") as f:
+            # un STEP de fabricant porte parfois du Latin-1 dans ses chaines
+            with open(chemin, "r", encoding="utf-8", errors="replace") as f:
                 contenu = f.read()
         except OSError as exc:
             raise ErreurLib(500, "Erreur de lecture : %s" % exc)
@@ -2887,6 +2894,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         nom = (params.get("nom") or [""])[0]
         if not genre or not nom:
             raise ErreurLib(400, "Parametres 'type' et 'nom' requis")
+        if genre == "step":
+            raise ErreurLib(400, "Modele STEP : lecture seule")
         chemin = chemin_lib_fichier(genre, nom)
         if not os.path.exists(chemin):
             raise ErreurLib(404, "Fichier introuvable : %s" % nom)

@@ -812,7 +812,7 @@ const ECRITURE_CAO = (function () {
   function decrireContour() {
     const b = S.board;
     if (!(b.pts && b.pts.length >= 3)) return "rectangle " + r3(b.w) + " × " + r3(b.h) + " mm en (" + r3(b.x) + ", " + r3(b.y) + ")";
-    const segs = typeof dxfSegments === "function" ? dxfSegments(b.pts) : [];
+    const segs = typeof ctrSegments === "function" ? ctrSegments(b.pts) : [];
     const rond = segs.length === 2 && segs.every(x => x.t === "a");
     return (rond ? "disque Ø " + r3(2 * segs[0].r) + " mm" : "polygone de " + b.pts.length + " sommets") + ", " + r3(b.w) + " × " + r3(b.h) + " mm";
   }

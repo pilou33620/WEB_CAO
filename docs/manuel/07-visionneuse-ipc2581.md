@@ -2,7 +2,7 @@
 
 La Visionneuse IPC-2581 ouvre une carte livrée au format IPC-2581 (un seul fichier XML : empilage, cuivre, plans, perçages, composants, nets) et l'affiche couche par couche. Elle ne modifie rien : ce n'est pas un éditeur, et le fichier d'origine n'est jamais touché.
 La lecture du fichier se fait par le parseur Python du serveur (`/api/ipc2581`) ; une fois le modèle reçu, tout se passe dans le navigateur. Le modèle traduit s'exporte en `.json` et se rouvre sans serveur.
-À partir de la carte lue, la visionneuse sert aussi à mesurer, à classer les nets, à produire des dossiers PDF/DXF (mécanique, plans, fiche de mesure) et à lancer les simulations du panneau « Simulation EM » ([chapitre 08](08-simulation-si.md), [09](09-simulation-pi-thermique-audit.md), [10](10-simulation-rf-em.md)).
+À partir de la carte lue, la visionneuse sert aussi à mesurer, à classer les nets, à produire des dossiers PDF et STEP (mécanique, plans, fiche de mesure, carte en 3D) et à lancer les simulations du panneau « Simulation EM » ([chapitre 08](08-simulation-si.md), [09](09-simulation-pi-thermique-audit.md), [10](10-simulation-rf-em.md)).
 
 > [!NOTE]
 > La page a besoin du serveur (`python web_CAO.py`) pour lire un `.xml`, `.cvg`, `.ipc`, `.ipc2581` ou `.zip`. Ouverte en double-clic (`file://`), elle ne peut relire qu'un `.json` déjà exporté de cette page.
@@ -82,7 +82,15 @@ La carte lue suit d'un outil à l'autre : en revenant d'un autre outil, elle est
 1. Cliquer **Dossier méca**.
 2. Dans le tableau « Repère / Hauteur (mm) / Ouv. », saisir la hauteur d'un composant si elle manque (le champ affiche en grisé la valeur du fichier ou de la LIB) et cocher **Ouv.** pour prévoir une ouverture dans le boîtier.
 3. Contrôler l'aperçu de la feuille ; le sous-titre de la fenêtre résume le nombre de fixations, d'ouvertures et de composants sans hauteur.
-4. Cliquer **⬇ Télécharger .zip** : `<carte>-MECA.zip` contient le plan mécanique (PDF), les données pour une IA (JSON) et la carte à 1:1 (DXF).
+4. Cliquer **⬇ Télécharger .zip** : `<carte>-MECA.zip` contient le plan mécanique (PDF), les données pour une IA (JSON) et la carte en 3D avec ses composants dessus et dessous (`<carte>-MECA.step`).
+
+### Je veux la carte en 3D pour la mécanique (STEP)
+
+1. Cliquer **Export STEP…** (après **Dossier méca**).
+2. Cocher **Carte (PCB)**, **Composants dessus**, **Composants dessous**. **Cuivre extérieur** et **Sérigraphie** sont grisés (« non disponible ici ») : la visionneuse ne les a pas en polygones.
+3. Cliquer **Exporter le .step** : `<carte>-3D.step`, un assemblage en millimètres, dans le repère des Gerber. Chaque composant prend le modèle 3D de la LIB, trouvé par la Part Name puis par la référence fabricant ; sans modèle, il sort en boîte à sa hauteur.
+
+Le contenu est le même que l'**Export STEP…** de l'éditeur PCB : voir [Éditeur PCB : fabrication](04-editeur-pcb-fabrication.md), « STEP pour la mécanique ».
 
 ### Je veux sortir les plans de fabrication et d'assemblage
 
@@ -121,6 +129,7 @@ La carte lue suit d'un outil à l'autre : en revenant d'un autre outil, elle est
 | ☁ Enregistrer (projet + GitHub) | `Ctrl`+`S` | Remplace « Exporter .json » quand la page est lancée par WEB_SUITE : range la carte dans PROJETS puis l'envoie sur GitHub | N'existe que sous WEB_SUITE ; jamais de repli en téléchargement : si l'écriture est refusée, rien n'est enregistré et le pied de page le dit |
 | Exporter .png | | Image de ce qui est affiché, rendue à 2x | Aucune carte ouverte : rien |
 | Dossier méca | | Ouvre la fenêtre du dossier mécanique | Carte ouverte requise |
+| Export STEP… | | Ouvre la fenêtre des cases, puis télécharge `<carte>-3D.step` | Carte ouverte requise ; cuivre et sérigraphie non disponibles ; modèles 3D lus par le serveur |
 | Plans (Draftsman) | | Ouvre la fenêtre des plans de fabrication et d'assemblage | Carte ouverte requise |
 | Fiche de mesure | | Ouvre la fenêtre de la fiche du technicien | Carte ouverte requise |
 | Ajuster | `F` | Cadre toute la carte | |
@@ -256,7 +265,7 @@ Une classe écrite dans le fichier (IPC-2581 de l'éditeur PCB de ce dépôt, ou
 |---|---|---|
 | Tableau Repère / Hauteur (mm) / Ouv. | Une ligne par composant : hauteur saisie (0 à 100 mm), case d'ouverture dans le boîtier | Hauteur : saisie, sinon celle du fichier (`<Package height>`), sinon celle de la LIB servie par `/api/lib/composants`. Hors serveur : fichier et saisie seulement, la fenêtre le dit |
 | Aperçu de la feuille | Se met à jour à la saisie | Sans `<Package><Outline>`, le corps est la boîte des pastilles et le dossier le signale |
-| ⬇ Télécharger .zip | `<carte>-MECA.zip` : plan mécanique (PDF), JSON pour une IA, carte à 1:1 (DXF) | |
+| ⬇ Télécharger .zip | `<carte>-MECA.zip` : plan mécanique (PDF), JSON pour une IA, carte en 3D avec ses composants (STEP) | |
 | ✕, `Échap`, clic hors de la fenêtre | Ferme | |
 
 Les trous non métallisés servent de fixations ; ceux qui tombent dans le corps d'un composant sont rattachés à lui. Les réglages (hauteurs, ouvertures) sont gardés dans le modèle, donc dans **Exporter .json**.

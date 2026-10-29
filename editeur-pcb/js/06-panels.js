@@ -1839,7 +1839,7 @@ function propsBoard(box){
       '<button class="tb" id="bpDraw">Redessiner <kbd>E</kbd></button>'+
       (S.board.pts?'<button class="tb" id="bpRect">Revenir au rectangle</button>':"")+
       '<button class="tb" id="bpDisque" title="Disque inscrit dans la largeur et la hauteur actuelles, '+
-        'écrit en arcs dans le Gerber, le DXF et l\'IPC-2581">Disque</button>'+
+        'écrit en arcs dans le Gerber, le STEP et l\'IPC-2581">Disque</button>'+
       (boardCutouts().length?'<button class="tb" id="bpCutOff">Retirer les découpes</button>':"")+
       '</div></div>';
   if($("bpCutOff"))$("bpCutOff").onclick=()=>{push();delete S.board.cutouts;boardChanged();

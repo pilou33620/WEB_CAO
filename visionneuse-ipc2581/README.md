@@ -57,9 +57,10 @@ et ceux du dossier partagé, identiques aux autres outils :
 ../commun/dossier-meca.js         calcul et feuille du dossier mécanique (commun avec l'éditeur PCB)
 ../commun/fiche-mesure.js         dessin et saisie de la fiche de mesure du technicien
 ../commun/zip.js                  archive du dossier mécanique
+../commun/export-step.js          la carte en STEP (assemblage 3D), commune avec l'éditeur PCB
 ../commun/tactile.js              mode tactile et roulette de commandes (contexte « Carte »)
 ../editeur-pcb/js/29-draftsman.js, 33-draftsman-export.js, 34-draftsman-vues.js
-                                  feuilles, PDF et DXF du Draftsman, chargés tels quels
+                                  feuilles et PDF du Draftsman, chargés tels quels
 ```
 
 ## Les modules
@@ -75,7 +76,7 @@ et ceux du dossier partagé, identiques aux autres outils :
 | `js/05-panneaux.js` | 1221 | Les panneaux couches, la carte, nets, composants, sélection — la fiche de ligne de transmission, l'empilage du calcul et la fenêtre de classification des nets |
 | `js/06-demarrage.js` | 449 | Ouverture d'un fichier (bouton, dépôt, reprise de session et de projet), exports `.json` et `.png`, réglages de l'utilisateur |
 | `js/07-simulation.js` | 6133 | Simulation EM : la portée désignée mise au format du solveur — masse coplanaire mesurée côté par côté, découpage en plages d'écart, couture de vias, **cuivre voisin joint au problème** —, la carte de chaleur d'impédance et les valeurs écrites sur les pistes ; et pour l'onglet **Crosstalk**, les trois mesures que le serveur ne peut pas deviner : positions de couture sur l'abscisse du parcours, fentes du plan sondées dessous, perçages de masse |
-| `js/08-dossier-meca.js` | 192 | Dossier mécanique : entrée neutre tirée du modèle lu, fenêtre (hauteurs, ouvertures, aperçu) et `.zip` |
+| `js/08-dossier-meca.js` | 240 | Dossier mécanique : entrée neutre tirée du modèle lu, fenêtre (hauteurs, ouvertures, aperçu) et `.zip` ; la scène de l'Export STEP (`stepSceneIpc`) |
 | `js/09-fiche-mesure.js` | 113 | Fiche de mesure du technicien : pastilles du modèle lu, fenêtre et PDF (les mesures vont dans `V.modele.mesures`) |
 | `js/10-plans.js` | 170 | Plans du Draftsman (fabrication, assemblage dessus / dessous) refaits sur le modèle lu, aperçu et PDF |
 | `../python/simulation_em.py` | 8152 | Pont vers `python/ligne_mom.py` : empilage à plat → section droite, résolution par tronçon, **appariement des tronçons parallèles**, cascade ABCD → JSON |
@@ -753,7 +754,8 @@ n'atteint pas le plan de référence compte quand même comme une couture.
 ## Dossier mécanique
 
 Le bouton **Dossier méca** ouvre le même dossier que l'éditeur PCB : le plan
-mécanique en PDF, le JSON pour une IA et la carte à 1:1 en DXF, dans
+mécanique en PDF, le JSON pour une IA et la carte en 3D avec ses composants
+dessus et dessous en STEP (`<carte>-MECA.step`), dans
 `<carte>-MECA.zip` (voir « Dossier mécanique » dans `editeur-pcb/README.md`).
 La fenêtre montre la feuille et le tableau des composants : hauteur (saisie,
 sinon celle du fichier, sinon celle de la LIB servie par `/api/lib/composants`)
@@ -769,9 +771,22 @@ Ce que le fichier doit porter, et ce qui se passe sinon :
 - **Trous NON_PLATED** : les fixations ; ceux qui tombent dans le corps d'un
   composant sont à lui (plots de centrage).
 
-Le calcul et la feuille sont `commun/dossier-meca.js` ; les sorties PDF et DXF
-sont celles des plans de l'éditeur (`editeur-pcb/js/29`, `33`, `34` et la
-fonte), chargées telles quelles, avec `commun/zip.js`.
+Le calcul et la feuille sont `commun/dossier-meca.js` ; le PDF est celui
+des plans de l'éditeur (`editeur-pcb/js/29`, `33`, `34` et la
+fonte), chargés tels quels, avec `commun/zip.js` ; le STEP, celui de
+`commun/export-step.js`.
+
+## Export STEP
+
+Le bouton **Export STEP…** de la barre, après **Dossier méca**, ouvre la même
+fenêtre de cases que l'éditeur PCB (voir « Export STEP pour la mécanique »
+dans `editeur-pcb/README.md`) et télécharge `<carte>-3D.step`. Les cases
+**Cuivre extérieur** et **Sérigraphie** y sont grisées (« non disponible
+ici ») : restent la carte (contour, découpes et trous) et les composants
+dessus / dessous. Le modèle 3D d'un composant est cherché dans la LIB par la
+Part Name, puis par la référence fabricant ; sans modèle, le composant est sa
+boîte extrudée à sa hauteur. La scène vient de `stepSceneIpc`
+(`js/08-dossier-meca.js`).
 
 ## Plans, fiche de mesure, règle et classification des nets
 

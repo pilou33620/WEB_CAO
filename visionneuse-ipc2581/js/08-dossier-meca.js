@@ -2,10 +2,10 @@
 /* ==========================================================================
    Visionneuse IPC-2581 — dossier mécanique
    --------------------------------------------------------------------------
-   Le calcul et la feuille sont communs (commun/dossier-meca.js) ; les sorties
-   PDF et DXF sont celles des plans de l'éditeur, chargées telles quelles
-   (editeur-pcb/js/29, 33, 34 et la fonte). Ce fichier fournit ce qu'elles
-   prennent ailleurs dans l'éditeur.
+   Le calcul et la feuille sont communs (commun/dossier-meca.js) ; le PDF est
+   celui des plans de l'éditeur, chargé tel quel (editeur-pcb/js/29, 33, 34 et
+   la fonte), le STEP celui de commun/export-step.js. Ce fichier fournit ce
+   qu'ils prennent ailleurs dans l'éditeur.
    ========================================================================== */
 
 /* les mêmes que 01-core.js de l'éditeur, que la visionneuse ne charge pas */
@@ -153,7 +153,7 @@ function mecaOuvrir(){
     m.setAttribute("role","dialog");m.setAttribute("aria-modal","true");m.setAttribute("aria-label","Dossier mécanique");
     m.innerHTML='<div class="modal-box meca-box"><header class="modal-head"><div>'+
       '<h3>Dossier mécanique</h3><small id="mecaEtat"></small></div><div class="meca-actions">'+
-      '<button class="tb on" type="button" data-a="zip" title="Plan mécanique (PDF), données (JSON) et carte à 1:1 (DXF), pour concevoir le boîtier">⬇ Télécharger .zip</button>'+
+      '<button class="tb on" type="button" data-a="zip" title="Plan mécanique (PDF), données (JSON) et carte en 3D avec ses composants (STEP), pour concevoir le boîtier">⬇ Télécharger .zip</button>'+
       '<button class="pnl-btn" type="button" data-a="fermer" title="Fermer (Échap)">✕</button></div></header>'+
       '<div class="modal-body meca-corps"><aside class="meca-cfg"><table class="meca-table" id="mecaTable"></table></aside>'+
       '<main class="meca-apercu" id="mecaApercu"></main></div></div>';
@@ -165,9 +165,12 @@ function mecaOuvrir(){
       if(!b)return;
       if(b.dataset.a==="fermer")mecaIpcFermer();
       else if(b.dataset.a==="zip"){
-        const nom=mecaIpcBase()+"-MECA.zip";
-        telecharger(zipBlob(mecaIpcFichiers()),nom);
-        hint("Dossier mécanique "+nom+" : plan PDF, JSON et DXF 1:1.");
+        const nom=mecaIpcBase()+"-MECA.zip", f=mecaIpcFichiers();
+        stepFabriquer(stepSceneIpc(),{carte:true,dessus:true,dessous:true}).then(r=>{
+          if(r)f.push({name:mecaIpcBase()+"-MECA.step",text:r.texte});
+          telecharger(zipBlob(f),nom);
+          hint("Dossier mécanique "+nom+" : plan PDF, JSON"+(r?" et STEP 3D":"")+".");
+        });
       }
     });
     m.addEventListener("input",ev=>{
@@ -186,6 +189,51 @@ function mecaOuvrir(){
   if(m.focus)m.focus();
   mecaIpcLib().then(mecaIpcRendre);
 }
+/* ==========================================================================
+   Export STEP
+   --------------------------------------------------------------------------
+   La scène de commun/export-step.js tirée du dossier : contour, découpes,
+   trous (libres et pastilles percées), corps et hauteurs, et le modèle 3D de
+   la LIB trouvé par la Part Name ou la référence fabricant. Ni cuivre ni
+   sérigraphie : la visionneuse ne les a pas en polygones.
+   ========================================================================== */
+function stepSceneIpc(){
+  const J=mecaIpcDossier(), E=mecaEntreeIpc(V.modele), lib=MECA_IPC.lib||[];
+  const cle=v=>String(v||"").trim().toLowerCase(), parRef=new Map(E.composants.map(c=>[c.ref,c]));
+  const ligne=e=>(cle(e.part_name)&&lib.find(l=>cle(l["Part Name"])===cle(e.part_name)))||
+    (cle(e.mpn)&&lib.find(l=>cle(l["Part Number"])===cle(e.mpn)||cle(l["manufacturer part Number"])===cle(e.mpn)))||null;
+  const aire=c=>Math.abs(c.reduce((s,p,i)=>{const q=c[(i+1)%c.length];return s+p[0]*q[1]-q[0]*p[1];},0))/2;
+  const vide={cuivre:{},seri:{}};
+  return {titre:mecaIpcBase(),ep:J.carte.epaisseur||1.6,contour:J.carte.contour,decoupes:J.carte.decoupes,
+    trous:E.trous.concat(...E.composants.map(c=>c.trous)).filter(t=>t.d>0).map(t=>[t.x,t.y,t.d]),
+    faces:[vide,vide],
+    composants:J.composants.filter(c=>c.monte&&c.corps.length>=3).map(c=>{
+      const e=parRef.get(c.ref)||{}, l=ligne(e);
+      const nom=l?String(l["Modèle 3D"]||"").trim().replace(/^Models\//,""):"";
+      /* shortcut: sans hauteur, une boîte à 0,4 × le côté moyen, comme l'animation 3D de l'éditeur */
+      const h=c.hauteur!=null?c.hauteur:Math.min(3,Math.max(0.3,0.4*Math.sqrt(aire(c.corps))));
+      /* IPC-2581 tourne en sens trigonométrique, l'éditeur (Y vers le bas) à l'inverse : anim3dPose attend le second */
+      const m3d=nom&&anim3dPosition(l["Position 3D"])?{nom,pos:l["Position 3D"],x:e.x,y:e.y,rot:-(e.rot||0)}:null;
+      return Object.assign({ref:c.ref,face:c.face==="dessous"?1:0,corps:c.corps,h},m3d?{m3d}:{});
+    })};
+}
+function stepIpcOuvrir(){
+  if(!V.modele){hint("Aucune carte ouverte : rien à exporter en STEP.");return;}
+  stepFenetre(o=>{
+    hint("Export STEP : chargement des modèles 3D de la LIB…");
+    mecaIpcLib().then(()=>stepFabriquer(stepSceneIpc(),o)).then(r=>{
+      if(!r){hint("Export STEP : rien à exporter.");return;}
+      const nom=mecaIpcBase()+"-3D.step";
+      telecharger(new Blob([r.texte],{type:"model/step"}),nom);
+      hint(nom+" : "+r.n.pieces+" pièce(s) — "+r.n.modeles+" composant(s) avec leur modèle de la LIB, "+
+           r.n.boites+" en boîte extrudée"+stepNoteTrous(r.n)+".");
+    });
+  },["cuivre","seri"],{fond:"modal-overlay",boite:"modal-box step-box"});
+}
+(function(){
+  const b=typeof document!=="undefined"&&document.getElementById&&document.getElementById("bStep");
+  if(b)b.onclick=stepIpcOuvrir;
+})();
 (function(){
   const b=typeof document!=="undefined"&&document.getElementById&&document.getElementById("bMeca");
   if(b)b.onclick=mecaOuvrir;

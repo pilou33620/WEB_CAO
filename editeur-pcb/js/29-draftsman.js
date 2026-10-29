@@ -253,8 +253,7 @@ function dfTexte(F,s,x,y,pt,o){
     rot:o.rot||0,cache:!!o.cache,cible:o.cible||null,cat:o.cat||"",lieu:o.lieu||""});
 }
 /* Calque nommé des objets qui suivent, jusqu'au dfCalque(F) qui le referme :
-   un repère dans la liste, que le PDF et l'aperçu ignorent et que l'export
-   DXF lit (33-draftsman-export.js). */
+   un repère dans la liste, que le PDF et l'aperçu ignorent. */
 function dfCalque(F,nom){F.items.push({t:"cal",nom:nom||null});}
 /* Boîte d'un texte sur la feuille, rotation comprise. */
 function dfBoiteTexte(it){
@@ -1578,7 +1577,7 @@ function dfRendreCadre(){
       '<main class="df-apercu"><div class="df-onglets" id="dfOnglets"></div><div class="df-outils" id="dfOutils"></div>'+
         '<div class="df-feuille" id="dfFeuille" tabindex="-1"></div></main>'+
     '</div></div>';
-  if(typeof dfxCadre==="function")dfxCadre(m);      // DXF et fonte (33-draftsman-export.js)
+  if(typeof dffCadre==="function")dffCadre(m);      // option de fonte (33-draftsman-export.js)
   if(typeof mecaCadre==="function")mecaCadre(m);    // dossier méca (36-dossier-meca.js)
   if(typeof mesCadre==="function")mesCadre(m);      // fiche de mesure (42-fiche-mesure.js)
 }

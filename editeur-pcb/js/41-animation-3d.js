@@ -66,7 +66,8 @@ function anim3dZone(L,o){
             l:anim3dR(r.w),h:anim3dR(r.h)};
   }catch(_){return null;}
 }
-function anim3dDonnees(){
+/* `sansZone` : sans l'image des zones (l'export STEP en prend le contour) */
+function anim3dDonnees(sansZone){
   const o=gOrigin(), P=p=>[anim3dR(p.x-o.x),anim3dR(o.y-p.y)];
   const J=mecaDossier(), ep=J.carte.epaisseur||1.6, der=S.cu-1;
   /* tous les trous qui traversent : NPTH, pastilles percées, vias traversants */
@@ -88,7 +89,7 @@ function anim3dDonnees(){
       if(padLayers(fp,q).includes(L))pads.push(padWorldPts(q).map(P));
     return {pistes,pads,
       vias:S.vias.filter(v=>v.a<=L&&L<=v.b).map(v=>P(v).concat(anim3dR(v.d),anim3dR(v.drill||0))),
-      zone:anim3dZone(L,o)};
+      zone:sansZone?null:anim3dZone(L,o)};
   };
   const seri=side=>{
     const segs=[],pts=[],polys=[];
@@ -142,31 +143,7 @@ function anim3dLigneLib(fp){
   for(const x of liste){const k=x["Modèle 3D"]+"\n"+x["Position 3D"];if(!best||n.get(k)>n.get(best[0]))best=[k,x];}
   return best?best[1]:null;
 }
-/* l'axe du modèle qui monte : lignes de la matrice qui le couche dans le repère de l'empreinte */
-const ANIM3D_HAUTS={"Z+":[1,0,0,0,1,0,0,0,1],"Z-":[1,0,0,0,-1,0,0,0,-1],"Y+":[1,0,0,0,0,-1,0,1,0],
-                    "Y-":[1,0,0,0,0,1,0,-1,0],"X+":[0,1,0,0,0,1,1,0,0],"X-":[0,1,0,0,0,-1,-1,0,0]};
-function anim3dPosition(s){
-  const o={};
-  for(const m of String(s||"").matchAll(/(haut|rot|x|y|z)\s*=\s*([^\s;]+)/gi))o[m[1].toLowerCase()]=m[2];
-  if(!ANIM3D_HAUTS[o.haut])return null;
-  const n=k=>Number.isFinite(+o[k])?+o[k]:0;
-  return {haut:o.haut,rot:n("rot"),x:n("x"),y:n("y"),z:n("z")};
-}
-/* Matrice 4×4 (colonnes, comme Matrix4.fromArray) du maillage d'unité `u` vers
-   la carte, face dessus en z = 0 : pose sur l'empreinte, puis l'empreinte à sa
-   place (rotation inverse en Y vers le haut, retournée autour de Y dessous). */
-function anim3dPose(m,face,u){
-  const p=anim3dPosition(m.pos);
-  if(!p)return null;
-  const mul=(A,B)=>{const C=[];for(let i=0;i<3;i++)for(let j=0;j<4;j++)
-    C.push(A[4*i]*B[j]+A[4*i+1]*B[4+j]+A[4*i+2]*B[8+j]+(j===3?A[4*i+3]:0));return C;};
-  const rz=(deg,tx,ty,tz)=>{const a=deg*Math.PI/180,c=Math.round(Math.cos(a)*1e12)/1e12,s=Math.round(Math.sin(a)*1e12)/1e12;
-    return [c,-s,0,tx, s,c,0,ty, 0,0,1,tz];};
-  const H=ANIM3D_HAUTS[p.haut], U=[H[0]*u,H[1]*u,H[2]*u,0, H[3]*u,H[4]*u,H[5]*u,0, H[6]*u,H[7]*u,H[8]*u,0];
-  const F=face?[-1,0,0,0, 0,1,0,0, 0,0,-1,0]:[1,0,0,0, 0,1,0,0, 0,0,1,0];
-  const M=mul(rz(-(m.rot||0),m.x,m.y,0),mul(F,mul(rz(p.rot,p.x,p.y,p.z),U)));
-  return [M[0],M[4],M[8],0, M[1],M[5],M[9],0, M[2],M[6],M[10],0, M[3],M[7],M[11],1];
-}
+/* ANIM3D_HAUTS, anim3dPosition et anim3dPose : commun/export-step.js, que le STEP partage. */
 /* Charge les maillages, pose chaque composant qui en a un (`mod`, `mat`), et
    rend leur nombre ; un maillage absent laisse la boîte extrudée. */
 async function anim3dModeles(J){

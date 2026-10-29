@@ -29,7 +29,7 @@ const MECA_FIXATION=/^M?H\d/i;
 
 function mecaR3(v){return Math.round(v*1000)/1000;}
 /* Une fente (longueur hors tout `l` > `d`, `rot` en degrés, Y vers le haut) : son contour
-   facetté, élargi de `marge` ; dxfContour en retrouve les deux arcs. */
+   facetté, élargi de `marge`. */
 function mecaOblong(f,marge){
   const r=f.d/2+marge, a=f.rot*Math.PI/180, c=Math.cos(a), s=Math.sin(a), e=(f.l-f.d)/2, pts=[];
   for(const [u0,a0] of [[e,-90],[-e,90]])
@@ -392,41 +392,11 @@ function mecaFeuilles(J,ctx,monde){
 }
 
 /* ==========================================================================
-   DXF 1:1 et fichiers du dossier
+   Fichiers du dossier
+   --------------------------------------------------------------------------
+   La carte à 1:1 en 3D (STEP) s'y ajoute dans chaque outil : ses modèles
+   viennent du serveur (commun/export-step.js).
    ========================================================================== */
-/* La carte à l'échelle 1:1 dans le repère du JSON, avec les primitives DXF
-   des plans (33-draftsman-export.js) : `dxfContour` retrouve les arcs d'un
-   contour facetté. Un calque par face et par hauteur (CORPS_DESSUS_H9_50) :
-   la CAO méca les extrude sans rien relire. */
-function mecaDxf(J){
-  const D=dxfNouveau(), xy=p=>({x:p[0],y:p[1]});
-  dxfContour(D,"CONTOUR",J.carte.contour.map(xy));
-  for(const d of J.carte.decoupes)dxfContour(D,"DECOUPES",d.map(xy));
-  for(const f of J.fixations){
-    if(f.l){
-      dxfContour(D,"FIXATIONS",mecaOblong(f,0));
-      dxfContour(D,"DEGAGEMENTS",mecaOblong(f,(f.d_degagement-f.d)/2));
-    }else{
-      dxfCercle(D,"FIXATIONS",{x:f.x,y:f.y},f.d/2);
-      dxfCercle(D,"DEGAGEMENTS",{x:f.x,y:f.y},f.d_degagement/2);
-    }
-    dxfTexte(D,"REPERES_FIXATIONS",f.id,{x:f.x+mecaDemiDeg(f)+0.5,y:f.y},1.2,0,"g");
-  }
-  for(const c of J.composants){
-    if(c.corps.length<3)continue;
-    const face=c.face==="dessus"?"DESSUS":"DESSOUS";
-    const h=c.hauteur==null?"H_INCONNUE":"H"+mecaFr(c.hauteur).replace(",","_");
-    const pts=c.corps.map(xy);
-    dxfPoly(D,"CORPS_"+face+"_"+h,pts,true,c.monte?null:"DASHED");
-    if(c.ouverture)dxfPoly(D,"OUVERTURES",pts,true);
-    const cx=pts.reduce((a,p)=>a+p.x,0)/pts.length, cy=pts.reduce((a,p)=>a+p.y,0)/pts.length;
-    dxfTexte(D,"REPERES_"+face,c.ref,{x:cx,y:cy},0.8,0,"m");
-  }
-  const E=J.carte.encombrement;
-  dxfCote(D,"COTES",{x:E.x1,y:E.y1},{x:E.x2,y:E.y1},"h",8,mecaFr(E.x2-E.x1));
-  dxfCote(D,"COTES",{x:E.x1,y:E.y1},{x:E.x1,y:E.y2},"v",8,mecaFr(E.y2-E.y1));
-  return dxfOctets(D);
-}
 /* Les feuilles prêtes à imprimer : vues replacées à la main (éditeur
    seulement, `ctx.cfg.vues`), cadre et cartouche. */
 function mecaPlan(J,ctx,monde){
@@ -441,12 +411,11 @@ function mecaPlan(J,ctx,monde){
 function mecaJsonTexte(J){
   return JSON.stringify(J,null,2).replace(/\[\s+(-?[\d.e+-]+),\s+(-?[\d.e+-]+)\s+\]/g,"[$1, $2]");
 }
-/* Les trois fichiers du zip. `fonte` : fonte embarquée dans le PDF. */
+/* Le plan et les données du zip. `fonte` : fonte embarquée dans le PDF. */
 function mecaFichiers(J,feuilles,base,fonte){
   const meta={titre:(J.projet||"Carte")+" — plan mécanique",auteur:"",fonte,
     sujet:"Dossier mécanique — "+base+" rév. "+(J.revision||"A"),
     motsCles:["PCB","boîtier","mécanique",J.projet].join(", ")};
   return [{name:base+"-PLAN-MECA.pdf",data:dfPdf(feuilles,meta)},
-          {name:base+"-MECA.json",text:mecaJsonTexte(J)},
-          {name:base+"-MECA.dxf",data:mecaDxf(J)}];
+          {name:base+"-MECA.json",text:mecaJsonTexte(J)}];
 }

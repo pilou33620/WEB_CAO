@@ -2,10 +2,10 @@
 /* ==========================================================================
    Éditeur PCB — dossier mécanique
    --------------------------------------------------------------------------
-   Le calcul, la feuille et le DXF sont communs à la visionneuse
-   (commun/dossier-meca.js). Ici : l'entrée neutre tirée de la carte, dans le
-   repère des Gerber et du DXF de la carte (origine `gOrigin`, Y vers le haut),
-   comme `dxfCarte`.
+   Le calcul et la feuille sont communs à la visionneuse
+   (commun/dossier-meca.js), le STEP aussi (commun/export-step.js). Ici :
+   l'entrée neutre tirée de la carte, dans le repère des Gerber (origine
+   `gOrigin`, Y vers le haut).
    ========================================================================== */
 
 /* champs facultatifs d'une fente pour le dossier méca : longueur hors tout
@@ -60,13 +60,17 @@ function mecaFichiersEditeur(){
   ctx.docNum=fabBase()+"-MECA";            // document à part, pas une feuille des plans
   return mecaFichiers(J,mecaPlan(J,ctx,mecaMonde()),fabBase(),ctx.cfg.fonte);
 }
+/* le STEP (carte et composants) attend les modèles de la LIB : le zip part après */
 function mecaExporter(){
   const f=mecaFichiersEditeur(), J=JSON.parse(f[1].text), nom=pcbFile("-MECA.zip","meca.zip");
-  dl(zipBlob(f),nom);
-  const n=J.composants.filter(c=>c.hauteur==null).length;
-  hint("Dossier mécanique "+nom+" : plan PDF, JSON et DXF 1:1 — "+J.fixations.length+" fixation(s), "+
-       J.composants.filter(c=>c.ouverture).length+" ouverture(s)"+
-       (n?", "+n+" composant(s) sans hauteur (voir les notes du plan)":"")+".");
+  return stepFabriquer(stepSceneEditeur(),{carte:true,dessus:true,dessous:true}).then(r=>{
+    if(r)f.push({name:fabBase()+"-MECA.step",text:r.texte});
+    dl(zipBlob(f),nom);
+    const n=J.composants.filter(c=>c.hauteur==null).length;
+    hint("Dossier mécanique "+nom+" : plan PDF, JSON"+(r?" et STEP 3D":"")+" — "+J.fixations.length+" fixation(s), "+
+         J.composants.filter(c=>c.ouverture).length+" ouverture(s)"+
+         (n?", "+n+" composant(s) sans hauteur (voir les notes du plan)":"")+".");
+  });
 }
 /* ---------- réglages posés à la main ----------
    `champ` "h" : hauteur saisie (vide = celle de la LIB ou du fichier) ;
@@ -100,15 +104,15 @@ function mecaRendreReglages(m){
         ' aria-label="Ouverture pour '+esc(c.ref)+'"></td></tr>';
     }).join("")+'</table>';
 }
-/* Appelé à la fin de dfRendreCadre() : le bouton du zip après ceux du DXF,
+/* Appelé à la fin de dfRendreCadre() : le bouton du zip après celui du PDF,
    et la place du tableau. La fenêtre refait son HTML à chaque fois ; ses
    écouteurs, eux, ne se posent qu'une fois. */
 function mecaCadre(m){
   if(!m||!m.querySelector)return;
-  const ap=m.querySelector('[data-dxf="feuille"]')||m.querySelector('[data-a="pdf"]');
+  const ap=m.querySelector('[data-a="pdf"]');
   if(ap&&ap.insertAdjacentHTML&&!m.querySelector("[data-meca]"))
     ap.insertAdjacentHTML("afterend",'<button class="tb" type="button" data-meca="zip" '+
-      'title="Dossier pour concevoir le boîtier : plan mécanique (PDF), données (JSON) et carte à 1:1 (DXF)">'+
+      'title="Dossier pour concevoir le boîtier : plan mécanique (PDF), données (JSON) et carte en 3D avec ses composants (STEP)">'+
       '⬇ Dossier méca .zip</button>');
   const cotes=m.querySelector("#dfCotes");
   if(cotes&&cotes.insertAdjacentHTML&&!m.querySelector("#mecaRegl"))

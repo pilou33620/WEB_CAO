@@ -40,7 +40,7 @@
        référence « (12,00) », cote théoriquement exacte encadrée. Écarts
        signés, dans l'unité de la cote ; saisis dans la liste « Cotes et
        détails » ou au double-clic sur la cote. Chaque morceau est un vrai
-       texte : il se cherche au PDF et part sur le calque COTES du DXF.
+       texte : il se cherche au PDF.
        Une chaîne ou une ordonnée peut tolérer chaque valeur à part :
        `tols`, aligné sur `pts` (null : la `tol` commune ; {genre:"aucune"} :
        pas de tolérance pour ce point-là), choisi dans le même volet, valeur
@@ -850,12 +850,12 @@ function dfLargeurCote(T,pt){
 }
 /* Le texte d'une cote posé comme un seul texte : ancre g / m / d sur la
    ligne de base en (x,y), rotation `o.rot`. Chaque morceau est un vrai
-   texte, qui se cherche au PDF (« ±0,10 », « (12,00) ») et part sur le
-   calque COTES du DXF ; le cadre d'une cote exacte est un trait. Rend la
+   texte, qui se cherche au PDF (« ±0,10 », « (12,00) ») ; le cadre d'une
+   cote exacte est un trait. Rend la
    largeur. */
 function dfTexteCote(F,T,x,y,pt,o){
   const L=dfLargeurCote(T,pt), rot=o.rot||0, a=rot*Math.PI/180, H=pt*DF_PT;
-  /* un seul morceau : un seul texte, ancré tel quel (le DXF garde sa justification) */
+  /* un seul morceau : un seul texte, ancré tel quel */
   if(T.haut==null&&!T.cadre&&!T.fin){dfTexte(F,T.p,x,y,pt,Object.assign({},o,{rot}));return L.w;}
   const ux=Math.cos(a), uy=-Math.sin(a), hx=-Math.sin(a), hy=-Math.cos(a);
   const P=(s,v)=>({x:x+ux*s+hx*v,y:y+uy*s+hy*v});
@@ -1054,7 +1054,7 @@ function dfCoteSimple(F,V,c){
   const src=m||c.memo, orph=!m;
   if(!src)return orph;
   const P=p=>V.T(p.x,p.y), T=dfValeurCote(c,src.v,orph);
-  dfCalque(F,"COTES");                          // calque du DXF (33-draftsman-export.js)
+  dfCalque(F,"COTES");
   if(ang){
     const g={S:P(src.s),A:P(src.a),B:P(src.b)};
     if(m&&m.ea){g.ea=[P(m.ea.p),P(m.ea.q)];g.eb=[P(m.eb.p),P(m.eb.q)];}
@@ -1171,7 +1171,7 @@ function dfCoupeLigne(pts,W){
    le long de la fenêtre) ; un aplat, comme un polygone. Un texte reste s'il
    est ancré dedans. */
 function dfDecouper(it,W){
-  if(it.t==="cal")return [it];                     // repère de calque DXF (33-draftsman-export.js)
+  if(it.t==="cal")return [it];                     // repère de calque (dfCalque)
   if(it.t==="t")return dfDansPoly(W,it)?[it]:[];
   const bw=W.boite||(W.boite=dfBoitePts(W));
   if(it.t==="c"){

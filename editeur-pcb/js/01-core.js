@@ -2650,7 +2650,7 @@ function setBoardRect(){
 }
 /* Une carte ronde : des cordes égales, assez nombreuses pour que la flèche
    reste sous 5 µm. Le contour reste un polygone pour tout le programme ; les
-   sorties (Gerber, DXF, IPC-2581) y reconnaissent le cercle (dxfSegments) et
+   sorties (Gerber, STEP, IPC-2581) y reconnaissent le cercle (ctrSegments) et
    l'écrivent en arcs. */
 function boardDisquePts(cx,cy,r){
   const n=Math.max(16,Math.min(720,Math.ceil(Math.PI/Math.acos(Math.max(-1,1-0.005/r)))));

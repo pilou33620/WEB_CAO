@@ -668,6 +668,20 @@ def test_routes():
             assert exc.code == 400
         print("[PASS] LIB : extensions de donnees seulement, racine de disque refusee")
 
+        # 31 bis. Modeles STEP de la LIB : lus pour l'export STEP, jamais ecrits ni effaces.
+        assert web_CAO.chemin_lib_fichier("step", "0402C.stp").endswith(os.path.join("Models", "0402C.stp"))
+        for nom, creer in (("x.json", False), ("x.stp", True), ("../x.stp", False)):
+            try:
+                web_CAO.chemin_lib_fichier("step", nom, creer=creer)
+                assert False, "STEP %s (creer=%s) accepte" % (nom, creer)
+            except web_CAO.ErreurLib as exc:
+                assert exc.code == 400
+        conn.request("DELETE", "/api/lib/fichier?type=step&nom=0402C.stp")
+        res = conn.getresponse()
+        res.read()
+        assert res.status in (400, 403, 405), "effacer un STEP : %d" % res.status
+        print("[PASS] LIB : modeles STEP en lecture seule (.stp, .step)")
+
         # 32. Flux NTFS : « ::$DATA » ne contourne plus la liste des caches.
         for chemin in ("/LIB_composants.csv::$DATA", "/config_lib.json::$DATA"):
             conn.request("GET", chemin)

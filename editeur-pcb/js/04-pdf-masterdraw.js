@@ -543,10 +543,6 @@ function masterDrawingPdf(fabFiles){
      contiennent vraiment. */
   const plansF=(fabFiles||[]).find(f=>/-PLANS\.pdf$/.test(f.name));
   if(plansF)tableRow(plansF.name,"Fabrication and assembly drawings (searchable text)",true,alt=!alt);
-  /* les DXF de 33-draftsman-export.js, s'ils sont dans l'archive */
-  for(const f of (fabFiles||[]).filter(f=>/\.dxf$/i.test(f.name)))
-    tableRow(f.name,/-CARTE\.dxf$/i.test(f.name)?"Board outline, holes, components - DXF R12, mm, scale 1:1"
-                                                :"Fabrication drawing sheet - DXF R12, mm",true,alt=!alt);
   /* l'animation 3D (41-animation-3d.js), si elle est dans l'archive */
   for(const f of (fabFiles||[]).filter(f=>f.kind==="anim3d"))
     tableRow(f.name,/\.html$/i.test(f.name)?"3D assembly animation - standalone HTML page (illustration only)"

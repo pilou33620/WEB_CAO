@@ -64,8 +64,7 @@ Les limites connues des guides qui restent à coder (22/10/2026) :
 - [x] **Vue de détail sur une autre feuille** (plans Draftsman, 22/10/2026) : la feuille se
   choisit dans le volet « Cotes et détails » quand le détail est sélectionné ; « FEUILLE n »
   sous la lettre du repère, « VOIR FEUILLE n » sous le détail ; feuille décochée, il revient
-  sur celle de sa vue mère. Le DXF du plan de fabrication (feuilles de fabrication seules)
-  ne prend pas un détail posé ailleurs.
+  sur celle de sa vue mère.
 
 Côté pilotage par Claude (MCP), les fonctionnalités possibles sont listées dans
 [l'A-FAIRE de web_suite](https://github.com/pilou33620/web_suite/blob/main/A-FAIRE.md).

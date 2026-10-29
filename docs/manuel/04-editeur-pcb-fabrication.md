@@ -1,6 +1,6 @@
 # Éditeur PCB : contraintes, fabrication, plans, 3D et thermique
 
-Seconde moitié de l'Éditeur PCB : ce qui se règle (gestionnaire de contraintes, zones interdites, trous NPTH, sérigraphie, échauffement) et ce qui sort de la carte (dossier de fabrication, IPC-2581, PCBA JLCPCB, plans Draftsman, DXF, dossier mécanique, fiche de mesure, animation 3D).
+Seconde moitié de l'Éditeur PCB : ce qui se règle (gestionnaire de contraintes, zones interdites, trous NPTH, sérigraphie, échauffement) et ce qui sort de la carte (dossier de fabrication, IPC-2581, PCBA JLCPCB, plans Draftsman, STEP 3D, dossier mécanique, fiche de mesure, animation 3D).
 L'édition, le placement, le routage et le DRC sont décrits dans [l'édition et le routage](03-editeur-pcb-edition-routage.md).
 Le détail technique (formats, structure des fichiers) est dans [editeur-pcb/README.md](../../editeur-pcb/README.md) ; ce chapitre dit où cliquer et ce qui en sort.
 
@@ -151,18 +151,20 @@ Le détail technique (formats, structure des fichiers) est dans [editeur-pcb/REA
 3. Choisi avec l'outil **Sélection**, la liste **Feuille du détail** le place sur une autre feuille (renvois « FEUILLE n » sous la lettre de la vue mère et « — VOIR FEUILLE n » dans le titre du détail).
 4. Pour déplacer une vue (carte, tableau de perçage, coupe, notes…), glissez-la : les vues recouvertes s'écartent, un aperçu orange montre le résultat avant de lâcher. **Replacer automatiquement** rend la disposition calculée.
 
-### Je veux exporter la carte en DXF pour la mécanique
+### Je veux exporter la carte en STEP pour la mécanique
 
-1. Dans la fenêtre Plans, **⬇ DXF carte 1:1** télécharge `<projet>-CARTE.dxf` : la carte seule, en millimètres, dans le repère des Gerber.
-2. **⬇ DXF feuille** exporte la feuille affichée (`<projet>-PLAN-<n>.dxf`).
-3. Les deux DXF sont aussi dans **Fabrication .zip** (famille **DXF pour la mécanique**) ; le zip prend `-CARTE.dxf` et `-PLAN-FABRICATION.dxf`.
-4. Chaque outil de perçage a son calque avec un `POINT` au centre de chaque trou (`TROUS_PTH_0_80`, `TROUS_NPTH_3_20`, `VIAS_0_30`…).
+1. **Fichier → 🧊 Export STEP…** (juste après **Fabrication .zip**) ouvre une fenêtre de cases.
+2. Cochez ce qui doit partir : **Carte (PCB)**, **Composants dessus**, **Composants dessous**, **Cuivre extérieur**, **Sérigraphie**. Par défaut : carte et composants ; le choix reste le temps de la page.
+3. **Exporter le .step** télécharge `<projet>-3D.step` (`carte-3D.step` sans projet) : un assemblage en millimètres, dans le repère des Gerber, Z = 0 sur la face dessus.
+4. Chaque composant prend le modèle 3D de sa ligne de LIB (colonne « Modèle 3D ») ; sans modèle, il sort en boîte à sa hauteur. Le message de fin compte les uns et les autres.
+
+L'export DXF n'existe plus : le STEP le remplace.
 
 ### Je veux donner à un mécanicien ce qu'il faut pour dessiner le boîtier
 
 1. Dans la fenêtre Plans, cochez **Plan mécanique**.
 2. Un tableau **Dossier méca : hauteurs (mm) et ouvertures** apparaît sous les réglages : saisissez la hauteur des composants qui n'en ont pas (la valeur retenue et sa source sont en grisé), cochez ou décochez **Ouv.** pour une ouverture dans le boîtier.
-3. **⬇ Dossier méca .zip** télécharge `<projet>-MECA.zip` (`meca.zip` sans projet) : `<projet>-PLAN-MECA.pdf`, `<projet>-MECA.json` et `<projet>-MECA.dxf` (`carte-…` sans projet). Le PDF est celui du plan mécanique seul, indépendamment des feuilles cochées.
+3. **⬇ Dossier méca .zip** télécharge `<projet>-MECA.zip` (`meca.zip` sans projet) : `<projet>-PLAN-MECA.pdf`, `<projet>-MECA.json` et `<projet>-MECA.step` (`carte-…` sans projet), la carte en 3D avec ses composants dessus et dessous. Le PDF est celui du plan mécanique seul, indépendamment des feuilles cochées.
 4. Le JSON (format `web_cao-meca-1`) est conçu pour un script ou une IA ; il est décrit dans [SPEC-dossier-meca.md](../../SPEC-dossier-meca.md).
 
 ### Je veux faire mesurer des points de la carte à un technicien (fiche de mesure)
@@ -194,6 +196,7 @@ Le détail technique (formats, structure des fichiers) est dans [editeur-pcb/REA
 |---|---|---|---|
 | Exporter .png | | Télécharge la vue courante en PNG, couches visibles, orientation courante. | « Export impossible : image trop grande. » si le canevas est trop grand. |
 | Fabrication .zip | | Ouvre la fenêtre **Dossier de fabrication** puis télécharge le zip. | Refusé sur une carte sans empreinte ni piste (« Rien à fabriquer : la carte est vide. »). Pendant l'enregistrement de l'animation 3D, le dossier part à la fin. |
+| 🧊 Export STEP… | | Ouvre la fenêtre des cases, puis télécharge `<projet>-3D.step`. | Voir « STEP pour la mécanique ». « Cochez au moins un élément. » si tout est décoché. |
 | PCBA JLCPCB .zip | | Dossier JLCPCB : archive Gerber, BOM, CPL, LISEZ-MOI. | Carte vide refusée. Ne prend que cuivre, vernis, pâte, sérigraphie, contour (`.GM1`) et perçage. |
 | Animation 3D dans le .zip | | Bascule : ajoute au Fabrication .zip la page HTML et la vidéo de l'assemblage 3D. | Éteinte à chaque ouverture. Enregistrement en temps réel ; sans `MediaRecorder` la page part seule. Un second Fabrication .zip pendant l'enregistrement ne relance rien. |
 | IPC-2581 .xml | | Écrit toute la carte en un fichier XML IPC-2581, révision C. | Carte vide refusée. La stratégie de remplissage des zones ne part pas (seul le résultat). |
@@ -340,7 +343,7 @@ Contraintes contrôlées par topologie :
 | Sérigraphie (aplat) | Couche sérigraphie, Largeur, Hauteur, Sommets, Trous, Supprimer l'aplat | Lecture seule sauf la couche et la suppression. | `R` fait tourner l'aplat avec la sélection. |
 | Contour de carte (sélectionné) | Hauteur max dessus (mm), Hauteur max dessous (mm) | Hauteur au-delà de laquelle le DRC signale un composant. | Vide : pas de limite. 100 mm au plus. |
 | | Échauffement max (K) | Seuil du DRC pour l'échauffement estimé. | 40 par défaut ; 1 à 500. |
-| | Disque | Contour rond inscrit dans la largeur et la hauteur actuelles. | Écrit en arcs dans Gerber, DXF et IPC-2581. |
+| | Disque | Contour rond inscrit dans la largeur et la hauteur actuelles. | Écrit en arcs dans Gerber, IPC-2581 et STEP. |
 | Composant | Sérigraphie automatique | Contour du boîtier, point de broche 1 et repère imprimés d'office. | À décocher quand l'empreinte dessine sa sérigraphie à part. |
 | | Puissance dissipée (W) | Puissance que dissipe le composant. | 100 W au plus ; vide : supprimée. |
 | | Estimer l'échauffement | Lance l'estimation sur le serveur. | Désactivé sans puissance. Erreurs : « Aucun composant ne dissipe… », « Estimation thermique refusée… ». |
@@ -368,7 +371,6 @@ Messages de contrôle ajoutés au DRC par ce chapitre :
 | Netlist de test (.ipc) | IPC-D-356, pour le test électrique. | Pastilles et vias sans net non testés. |
 | Carte complète IPC-2581 (.xml) | `<projet>.xml`. | |
 | Plans Draftsman (PDF) | `<projet>-PLANS.pdf`. | Absent du zip si aucune feuille n'est cochée dans la fenêtre Plans. |
-| DXF pour la mécanique | `-CARTE.dxf`, `-PLAN-FABRICATION.dxf`. | Le second seulement si la feuille de fabrication est cochée (suites comprises, côte à côte dans un même dessin). |
 | Master Drawing (PDF) | `<projet>-MASTER-DRAWING.pdf`. | Annonce les fichiers du zip (voir « Master Drawing »). |
 | Empilage (EMPILAGE.txt) | Coupe complète, symétrie, rapport d'aspect, laminage, contre-perçage. | |
 | Positions de placement (positions.csv) | `Designator,Value,Package,X,Y,Rotation,Side`. | Rotation horaire de 0 à 360, même origine que les Gerber, variante active respectée. |
@@ -389,7 +391,7 @@ Le fichier est écrit sans accents, dans cet ordre :
 3. Les conventions : « Gerber RS-274X, millimetres, format 4.6, polarite positive. » et « Percage Excellon metrique, trous metallises. ».
 4. La légende des fichiers de perçage, une ligne par fichier : nature (traversant, borgne, enterré, ou non métallisé NPTH), portée `L<a>-L<b>`, nombre de trous et d'outils ; pour un contre-perçage, la couche d'où l'on repasse, la couche à ne pas couper, la profondeur de chaque outil, et la ligne du `.gbr` jumeau. Dès qu'il y a un contre-perçage, une dizaine de lignes expliquent pourquoi le Gerber X2 porte la profondeur et la couche gardée en attributs utilisateur (`BackDrill_StartLayer`, `BackDrill_MustNotCutLayer`, `BackDrill_MaxStubLengthMM`, `BackDrill_DepthMM`).
 5. Le contour : le `.GM1` (Mechanical Layer 1, attribut `Profile,NP`) est le profil de découpe et fait foi pour l'usinage ; le `.GKO` reprend la même géométrie en keep-out. Puis la netlist IPC-D-356 et son utilité pour le test électrique.
-6. Un paragraphe par fichier optionnel présent dans le zip : IPC-2581 (révision C, les Gerber et l'Excellon font foi en cas de désaccord), DXF (`-CARTE.dxf` à 1:1 dans le repère des Gerber, `-PLAN-FABRICATION.dxf`, calques d'outils de perçage avec un `POINT` par trou), animation 3D (HTML et vidéo, « illustration seulement : elle ne fait pas foi »).
+6. Un paragraphe par fichier optionnel présent dans le zip : IPC-2581 (révision C, les Gerber et l'Excellon font foi en cas de désaccord), animation 3D (HTML et vidéo, « illustration seulement : elle ne fait pas foi »).
 7. `positions.csv` et `bom.csv` : millimètres, rotation en degrés dans le sens horaire (convention JLCPCB), de 0 à 360, même origine que les Gerber ; ils ne concernent pas le fabricant du circuit nu.
 8. La variante de montage (« carte complete (tout est monte) » sans variante) et, s'il y en a, la liste des composants NON MONTÉS (DNP), absents de `bom.csv` et `positions.csv`, dont les pastilles restent gravées.
 9. « Fichiers : » la liste de tous les fichiers du zip, sauf lui-même.
@@ -403,7 +405,7 @@ Chaque paragraphe n'est écrit que si son fichier est dans le zip (la légende d
 |---|---|
 | Page 1, titre « Printed Circuit Board (PCB) Master Drawing » | **Document information** : numéro (`<projet>-MASTER-DRAWING`), date du jour (`YYYY-MM-DD`), révision. **Fabrication notes** : IPC Performance Class 2, RoHS 3. **PCB details** : nombre de couches, carte rectangulaire ou « Freeform: n points », longueur × largeur (mm), épaisseur finie (±10 %), cuivre de base et cuivre final (95 % du cuivre de base, extérieur et, au-delà de 2 couches, intérieur), couleur du vernis, classe IPC 2, RoHS, sans plomb, UL94 V-0, CTI ≥ 100 V. **Material details** : matériau du premier diélectrique, Tg minimale de l'empilage, matériaux agréés. **Pattern** : largeur de piste minimale (la plus petite des classes et des pistes posées) et isolation minimale (la plus petite des classes), perçage minimal, anneau minimal (avec un petit schéma si la place le permet), types de trous et de vias, protection des vias (IPC-4761). **Surface details** : finition, nickel, or, classe de finition. |
 | Page 2 | **Solder mask (IPC-SM-840)** (couleur, ouvertures 1:1, pont minimal 100 µm), **Silk screen** (couleur), **Electrical test** (100 % E-TEST, netlist `<projet>.ipc`), **Surface examination** (IPC-A-600H classe 2), **General notes** (6 notes, dont le `.GM1` qui définit le profil de découpe). |
-| Page 3, « Files included in data package » | Tableau **Included / Filename / Description** : Gerber présents dans le zip, fichiers de perçage (nature, portée, contre-perçage et son `.gbr` juste dessous), netlist `.ipc`, IPC-2581, `positions.csv`, `bom.csv`, `EMPILAGE.txt` (la netlist et ces trois-là toujours listés, marqués `X` seulement s'ils sont dans le zip), le Master Drawing lui-même, les plans, les DXF et l'animation 3D. Si les plans sont dans le zip, un second tableau « Content of `<projet>-PLANS.pdf` » coche ce qu'ils contiennent : fabrication, assemblages, nomenclature, couches de cuivre. |
+| Page 3, « Files included in data package » | Tableau **Included / Filename / Description** : Gerber présents dans le zip, fichiers de perçage (nature, portée, contre-perçage et son `.gbr` juste dessous), netlist `.ipc`, IPC-2581, `positions.csv`, `bom.csv`, `EMPILAGE.txt` (la netlist et ces trois-là toujours listés, marqués `X` seulement s'ils sont dans le zip), le Master Drawing lui-même, les plans et l'animation 3D. Si les plans sont dans le zip, un second tableau « Content of `<projet>-PLANS.pdf` » coche ce qu'ils contiennent : fabrication, assemblages, nomenclature, couches de cuivre. |
 | Page 4 | **Stack layer** (tableau # / Name / Type / Material / Thickness / Tolerance : `Layer1_TOP`… `LayerN_BOTTOM`, diélectriques, vernis, sérigraphie, épaisseur totale), **Via summary** (traversants, borgnes, enterrés, total, laminage séquentiel et sa séquence, avertissement si un via n'est pas réalisable), **Board outline drawing** (contour et découpes mis à l'échelle dans un cadre de 110 × 64 mm, cotes largeur et hauteur en `mm`). |
 
 Chaque page porte en bas un cartouche : `CHECKED` et `APPR.` (vides), `TITLE: <numéro>`, `DATE`, `BOARD REFERENCE (IdPCB): <projet>`, `REV`, `SHEET: n / N`, la note « If not specified all dimensions are in mm » et une mention de confidentialité (au nom de la société du cartouche, sans nom si le champ est vide). Le document est entièrement en anglais, en A4 portrait ; il compte quatre pages au moins (une section qui ne tient pas passe à la page suivante, et le `SHEET: n / N` suit : la page 3 se prolonge quand la liste des fichiers est longue, et la page 4 quand il y a beaucoup de couches). La fonte est la même que celle des plans (option **Fonte embarquée**) ; sans elle, Helvetica en WinAnsi. Le texte est cherchable ; il n'y a ni signet ni titre de document.
@@ -418,8 +420,6 @@ Le tableau des fichiers coche toujours (`X`) `positions.csv`, `bom.csv`, `EMPILA
 |---|---|---|---|
 | Chercher : repère, valeur, net, référence… | `Entrée` / `Maj+Entrée` | Recherche plein texte dans les plans (invisibles compris). | Sans casse ni accents. 200 résultats au plus listés. |
 | ⬇ Exporter PDF | | Télécharge `<projet>-PLANS.pdf` (`plans.pdf` sans projet), une page par feuille. | « Aucune feuille choisie : rien à exporter. » Message de fin : nombre de feuilles exportées. |
-| ⬇ DXF carte 1:1 | | Télécharge `<projet>-CARTE.dxf` (`carte.dxf` sans projet). | Message de fin : nombre d'arcs du contour, de trous, de calques d'outil et de composants. |
-| ⬇ DXF feuille | | Télécharge la feuille affichée en DXF, entière, en millimètres, au format de la feuille. | `<projet>-PLAN-<n>.dxf` (`plan-<n>.dxf` sans projet), `n` étant le rang de la feuille dans les onglets. |
 | ⬇ Dossier méca .zip | | Télécharge `<projet>-MECA.zip` (`meca.zip` sans projet). | Voir « Dossier mécanique ». |
 | ✕ | `Échap` | Ferme la fenêtre. | Les raccourcis de l'éditeur sont inactifs dans la fenêtre. |
 | Feuilles (cases) | | **Plan de fabrication**, **Assemblage — face dessus**, **Assemblage — face dessous**, **Nomenclature** (cochées par défaut) ; **Couches de cuivre**, **Vernis épargne (Solder_Mask)**, **Pâte à braser (Solder_Paste)**, **Points de test (PTST)**, **Contour seul (BOARD)**, **Fiche de mesure (technicien)**, **Plan mécanique** (décochées par défaut). | L'assemblage dessous n'existe que si une empreinte est dessous. Les feuilles vernis et pâte n'ont une feuille « dessous » que si la carte a plus d'une couche. Cocher une feuille revient à la première page ; chaque case est une étape `Ctrl+Z`. |
@@ -505,16 +505,21 @@ L'ordre des feuilles est : fabrication, assemblage dessus, assemblage dessous, n
 | Feuille du détail | Place le détail choisi sur une autre feuille : **Feuille de la vue mère** (défaut) ou l'une des feuilles de la liste. | La liste ne propose que les feuilles qui reçoivent un détail : la fabrication, les deux assemblages, la nomenclature, une couche de cuivre et le plan mécanique. Le détail se pose sur la première feuille de ce genre (pas une « suite ») et oublie sa place d'avant ; il renvoie à l'autre feuille. Feuille décochée : le détail reste sur celle de sa vue mère. |
 
 > [!NOTE]
-> Le DXF `-PLAN-FABRICATION.dxf` du zip ne prend que les feuilles de fabrication : un détail posé sur une autre feuille n'y figure pas (exportez sa feuille par **DXF feuille**). Le zip MECA ne construit que ses propres vues.
+> Le zip MECA ne construit que ses propres vues : un détail d'une autre feuille posé sur la feuille mécanique n'y figure pas.
 
-### DXF pour la mécanique
+### STEP pour la mécanique
 
-| Fichier | Contenu | Limites |
+Fenêtre ouverte par **Fichier → 🧊 Export STEP…**.
+
+| Case | Pièce de l'assemblage | Limites |
 |---|---|---|
-| `<projet>-CARTE.dxf` | Carte à 1:1 en millimètres, repère des Gerber (Y vers le haut) : contour et découpes (arcs retrouvés), un cercle par trou (le contour d'une fente pour un trou oblong), un calque par outil de perçage avec un `POINT` par trou, encombrement (polyligne fermée) et repère de chaque composant, une croix d'origine (calque `ORIGINE`), cotes hors tout (largeur et hauteur, sans unité : `100,00`), tableau de perçage à 20 mm à droite de la carte (colonnes **Outil** `T1`…, **Ø fini (mm)**, **Qté**, **Métallisé**, **Portée**, **Usage**, ligne **Total**). | AutoCAD R12 ASCII, Windows-1252 ; `°`, `±` et `Ø` en `%%d`, `%%p`, `%%c`. Composants non montés en tirets. Une couleur par diamètre d'outil. |
-| `<projet>-PLAN-FABRICATION.dxf` (zip) / `<projet>-PLAN-<n>.dxf` (**DXF feuille**) | La feuille entière : cadre, cartouche, vue cotée, symboles et tableaux, notes. Dans le zip, toutes les feuilles de fabrication (suites comprises) côte à côte dans un même dessin, 20 mm entre elles. | Le texte invisible du PDF n'y va pas. Calques : `CADRE`, `CARTOUCHE`, `CONTOUR`, `PERCAGE`, `COTES`, `PASTILLES`, `COMPOSANTS`, `REPERES`, `TABLEAUX`, `EMPILAGE`, `NOTES`, `TEXTES`, `DESSIN`. Les textes ont le style `PLANS` (Arial). |
+| Carte (PCB) : substrat, contour, découpes et trous | `<projet>-CARTE`, verte : le substrat de −épaisseur à 0, contour, découpes et trous exacts (droites, arcs, cylindres). Les coins arrondis et les cartes rondes facettés sont reconnus en arcs. | Deux trous qui se chevauchent : seul le premier est gardé. Un demi-trou (trou qui coupe le bord ou une découpe, droit ou arrondi) entaille le contour. Un trou hors de la carte, ou qui coupe le contour en plus de deux points, n'est pas percé ; le message de fin les compte. |
+| Composants dessus / Composants dessous | Une pièce par composant, nommée par son repère (`R1`, `U3`…) : le modèle STEP de la LIB (colonne « Modèle 3D », fichier de `LIB/Models`, posé par « Position 3D » comme l'animation 3D), recopié une seule fois dans le fichier et placé autant de fois qu'il sert. | Sans modèle, ou modèle illisible : le corps extrudé à sa hauteur (LIB, fichier ou saisie ; sinon 0,4 × le côté moyen, entre 0,3 et 3 mm), gris foncé. Seuls les composants montés de la variante active sortent. |
+| Cuivre extérieur (pistes, pastilles, vias, zones) | `CUIVRE_DESSUS` / `CUIVRE_DESSOUS`, dorés, 35 µm, facettés. | Une zone sort en son contour, sans les dégagements autour du cuivre étranger. |
+| Sérigraphie | `SERIGRAPHIE_DESSUS` / `_DESSOUS`, blanches, 15 µm posés sur le cuivre. | |
+| Exporter le .step | Télécharge `<projet>-3D.step` (`carte-3D.step` sans projet). | Message de fin : nombre de pièces, de composants avec leur modèle et de boîtes. « rien à exporter » si aucune case ne donne de pièce. |
 
-Calques de la carte : `CONTOUR`, `DECOUPES`, `TROUS_METALLISES`, `TROUS_NON_METALLISES`, `COMPOSANTS_DESSUS` / `_DESSOUS`, `REPERES_DESSUS` / `_DESSOUS`, `COTES`, `ORIGINE`, `TABLEAU_PERCAGE`, et par outil : `TROUS_PTH_<Ø>`, `TROUS_NPTH_<Ø>`, `VIAS_<Ø>`, `VIAS_L1-L2_<Ø>`, `CONTRE_PERCAGE_<DESSUS|DESSOUS>_<Ø>` (Ø écrit `0_30`, trois décimales si besoin : `0_254`). Une fente ajoute `X<longueur>` au nom de son calque, métallisée ou non (`TROUS_NPTH_2_00X5_00`). Le contre-perçage a aussi un cercle au diamètre du foret.
+Le fichier est un assemblage nommé (ISO 10303-21, AP214), en millimètres, dans le repère des Gerber (Y vers le haut) ; Z = 0 sur la face dessus. Les modèles 3D sont lus par le serveur (`python web_CAO.py`) ; sans lui, tous les composants sortent en boîtes.
 
 ### Dossier mécanique
 
@@ -522,7 +527,7 @@ Calques de la carte : `CONTOUR`, `DECOUPES`, `TROUS_METALLISES`, `TROUS_NON_META
 |---|---|---|
 | Plan mécanique (case) | Ajoute la feuille aux plans : vue de dessus cotée (hors tout, et position X / Y de chaque fixation depuis l'origine des fichiers), vue de face (depuis le bord S) et vue de gauche (depuis le bord O) avec la carte à son épaisseur et chaque composant en pavé à sa hauteur (cotes de l'épaisseur, de la hauteur dessus, dessous et totale), les trois à la même échelle. À droite, quatre blocs : **Carte** (encombrement du contour X × Y, épaisseur, plus haut composant dessus et dessous, hauteur totale), **Trous de fixation** (N°, X, Y, Ø, Métallisé, Ø dégagement), **Ouvertures dans le boîtier** (Repère, Où : `bord N` ou `face dessus`, De, À, Z min, Z max ; ou « Aucune. »), **Notes** (repère utilisé, lecture de De / À, avertissements). Les composants à ouverture sont en rouge. | Décochée par défaut. Une colonne qui déborde continue sur une feuille « (suite) ». |
 | Tableau Repère / Hauteur / Ouv. | Hauteur saisie (mm) et case d'ouverture, par composant. | Hauteur strictement positive, 100 mm au plus ; une valeur hors de ces bornes est ignorée. Le texte grisé du champ vide donne la hauteur retenue et sa source (`9,50 (lib)`), ou `?` si elle est inconnue. La case **Ouv.** reflète l'ouverture proposée. Le tableau n'apparaît que si la feuille est cochée. |
-| ⬇ Dossier méca .zip | `-PLAN-MECA.pdf`, `-MECA.json`, `-MECA.dxf`. | Message de fin : nombre de fixations et d'ouvertures, composants sans hauteur. Le PDF ne contient que le plan mécanique, au format et avec le cartouche choisis. |
+| ⬇ Dossier méca .zip | `-PLAN-MECA.pdf`, `-MECA.json`, `-MECA.step`. | Message de fin : nombre de fixations et d'ouvertures, composants sans hauteur. Le PDF ne contient que le plan mécanique, au format et avec le cartouche choisis. |
 
 Règles de calcul :
 
@@ -534,7 +539,7 @@ Règles de calcul :
 | Repère | Origine des Gerber, Y vers le haut, vue de dessus ; Z = 0 sur la face dessus, face dessous à −épaisseur. |
 | Non-montés | Gardés, en tirets et « NM », comptés dans la hauteur maximale. |
 
-Calques du `-MECA.dxf` : `CONTOUR`, `DECOUPES`, `FIXATIONS`, `DEGAGEMENTS`, `REPERES_FIXATIONS`, `CORPS_DESSUS_H<h>` / `CORPS_DESSOUS_H<h>` (un par face et par hauteur, ex. `CORPS_DESSUS_H9_50` ; `_H_INCONNUE` sans hauteur), `OUVERTURES`, `REPERES_DESSUS` / `REPERES_DESSOUS` (repères des composants) et `COTES` (hors tout).
+Contenu du `-MECA.step` : le même assemblage que **Export STEP…** avec les cases **Carte**, **Composants dessus** et **Composants dessous** (voir « STEP pour la mécanique ») : la carte avec ses trous, et chaque composant nommé par son repère, en modèle de la LIB ou en boîte à sa hauteur.
 
 ### Fiche de mesure (fenêtre Plans)
 
@@ -586,7 +591,8 @@ Les zones partent remplies (cuivre calculé en géométrie exacte, dégagements 
 - Le dossier PCBA JLCPCB ne contient pas de `.GKO` (le `.GM1` seul définit le contour) ; le zéro des pièces de la bibliothèque JLCPCB n'est pas toujours celui de l'empreinte : vérifier l'orientation dans l'aperçu de JLCPCB.
 - L'animation 3D s'enregistre en temps réel dans le navigateur : l'onglet doit rester au premier plan ; un navigateur sans `MediaRecorder` ne produit que la page HTML.
 - Une cote dont la référence disparaît n'est jamais corrigée en silence : elle est signalée orpheline.
-- La feuille de fabrication du zip DXF ne prend pas les détails posés sur d'autres feuilles ; le zip MECA ne contient que ses propres vues.
+- Le zip MECA ne contient que ses propres vues.
+- Dans le STEP, une zone de cuivre sort sans ses dégagements autour du cuivre étranger.
 - Pas d'aperçu 3D interactif ni de coupe dynamique dans l'éditeur PCB en dehors de l'animation du dossier de fabrication. La visionneuse 3D de WEB_3D est un autre outil de la suite, hors de ce chapitre.
 - Les libellés des fichiers texte du dossier de fabrication (LISEZ-MOI, EMPILAGE) sont écrits sans accents ; les noms saisis (projet, classes, variante) y gardent les leurs.
 - Un détail ne se pose pas sur les feuilles vernis, pâte, PTST, BOARD ni sur la fiche de mesure : la liste « Feuille du détail » ne les propose pas.

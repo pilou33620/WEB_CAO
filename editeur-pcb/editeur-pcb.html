@@ -50,6 +50,7 @@
           <div class="mnu-h">Exporter</div>
           <button data-ic="🖼" class="tb" id="bPng">Exporter .png</button>
           <button data-ic="🏭" class="tb" id="bFab">Fabrication .zip</button>
+          <button data-ic="🧊" class="tb" id="bStep" title="La carte en 3D pour la mécanique (STEP, mm, repère des Gerber) : cochez la carte, les composants dessus / dessous (modèles 3D de la LIB, sinon boîtes à leur hauteur), le cuivre, la sérigraphie">Export STEP…</button>
           <button data-ic="🤖" class="tb" id="bJlc" title="Dossier PCBA pour JLCPCB : l'archive Gerber + perçage, la nomenclature (BOM) et le fichier de placement (CPL) aux formats que JLCPCB demande, prêts à téléverser">PCBA JLCPCB .zip</button>
           <button data-ic="🔎" class="tb" id="bVerifBom" title="Vérifie chez JLCPCB, avant de commander, que chaque ligne de la BOM a une pièce en stock pour le lot, avec la bonne valeur, la bonne tension et le bon boîtier ; propose des pièces pour les lignes sans code LCSC ou refusées">Vérif BOM JLCPCB…</button>
           <button data-ic="🎬" data-bascule class="tb" id="bFabAnim" title="Ajoute à Fabrication .zip la carte qui s'assemble en 3D : une vidéo (MP4 ou WebM, enregistrée en temps réel, une vingtaine de secondes) et une page HTML qui s'ouvre hors ligne, orientable à la souris. Éteinte à chaque ouverture de l'éditeur">Animation 3D dans le .zip</button>
@@ -377,6 +378,7 @@
 <script src="../commun/contraintes.js"></script>
 <script src="../commun/zip.js"></script>
 <script src="../commun/dossier-meca.js"></script>
+<script src="../commun/export-step.js"></script>
 <script src="../commun/fiche-mesure.js"></script>
 <script src="js/00-espace-config.js"></script>
 <script src="js/01-core.js"></script>
@@ -425,6 +427,7 @@
 <script src="js/41-animation-3d.js"></script>
 <script src="js/42-fiche-mesure.js"></script>
 <script src="js/43-verif-bom.js"></script>
+<script src="js/44-export-step.js"></script>
 <script src="../commun/explorateur-lib.js"></script>
 <script src="../commun/workspace.js"></script>
 <script src="../commun/telephone.js"></script>

@@ -59,13 +59,14 @@ const FICHIERS=[
   path.join(RACINE,"..","commun","simulation-datasheet.js"),
   path.join(RACINE,"..","commun","ecriture-cao.js"),
   path.join(RACINE,"js","07-simulation.js"),
-  /* dossier méca : la visionneuse emprunte les sorties PDF / DXF des plans
-     de l'éditeur (fonte, Draftsman, export, vues) */
+  /* dossier méca : la visionneuse emprunte le PDF des plans de l'éditeur
+     (fonte, Draftsman, vues), et l'export STEP commun */
   path.join(RACINE,"..","editeur-pcb","js","fontes","plans-sans.js"),
   path.join(RACINE,"..","editeur-pcb","js","29-draftsman.js"),
   path.join(RACINE,"..","editeur-pcb","js","33-draftsman-export.js"),
   path.join(RACINE,"..","editeur-pcb","js","34-draftsman-vues.js"),
   path.join(RACINE,"..","commun","dossier-meca.js"),
+  path.join(RACINE,"..","commun","export-step.js"),
   path.join(RACINE,"js","08-dossier-meca.js"),
   /* fiche de mesure du technicien */
   path.join(RACINE,"..","commun","fiche-mesure.js"),
@@ -206,7 +207,7 @@ const EXPOSE=["ECRITURE_CAO","simDsChamp","simDsLire","simDsEcrire","SIM_DS","SI
   /* classes d'interface (commun/classes-interface.js) */
   "CLASSES_INTERFACE","familleClasse","titreClasse",
   /* sorties empruntées au Draftsman de l'éditeur */
-  "dfNouvelle","dfTexte","dfCadre","dfPdf","dxfNouveau","dxfContour","dxfOctets",
+  "dfNouvelle","dfTexte","dfCadre","dfPdf","ctrSegments","stepScene","stepSceneIpc",
   /* dossier méca */
   "mecaDonnees","mecaEntreeIpc","mecaIpcDossier","mecaIpcRegler","mecaIpcFichiers","MECA_IPC","mecaPlan","mecaIpcCtx","dfSvg","mecaIpcLib","modeleTexte",
   /* fiche de mesure */
@@ -6795,13 +6796,11 @@ T("le Draftsman de l'éditeur sort un PDF à fonte embarquée dans la visionneus
   if(!pdf.startsWith("%PDF"))throw new Error("pas un PDF");
   if(!pdf.includes("/FontFile2"))throw new Error("la fonte n'est pas embarquée");
 });
-T("le DXF du Draftsman se fait sans l'éditeur, arcs du contour retrouvés",()=>{
-  const D=dxfNouveau(), P=[];
+T("les arcs du contour se retrouvent sans l'éditeur (commun/export-step.js)",()=>{
+  const P=[];
   for(let i=0;i<=8;i++){const a=Math.PI/2*i/8;P.push({x:10+5*Math.cos(a),y:10+5*Math.sin(a)});}
   P.push({x:0,y:15},{x:0,y:0},{x:15,y:0});
-  dxfContour(D,"CONTOUR",P);
-  const t=new TextDecoder().decode(dxfOctets(D));
-  if(!t.includes("CONTOUR")||!t.includes("ARC"))throw new Error("contour ou arc absent");
+  if(ctrSegments(P).filter(s=>s.t==="a").length!==1)throw new Error("arc absent");
 });
 
 /* ---------- dossier méca : l'entrée tirée du modèle IPC-2581 ---------- */
@@ -6992,7 +6991,7 @@ T("dossier méca, visionneuse : la saisie va dans le modèle (export .json), bor
     if(mecaIpcDossier().composants.find(c=>c.ref==="U1").source_hauteur!=="inconnue")throw new Error("réglage abîmé accepté");
   }finally{carte();}
 });
-T("dossier méca, visionneuse : la hauteur de la LIB, puis le zip à trois fichiers",()=>{
+T("dossier méca, visionneuse : la hauteur de la LIB, puis le PDF et le JSON du zip (le STEP s'y ajoute à l'export)",()=>{
   carteMeca();
   const garde=MECA_IPC.lib;
   MECA_IPC.lib=[{"Part Name":"","Part Number":"LM358","Maximun Height":"1.75"}];
@@ -7000,9 +6999,25 @@ T("dossier méca, visionneuse : la hauteur de la LIB, puis le zip à trois fichi
     const U1=mecaIpcDossier().composants.find(c=>c.ref==="U1");
     if(U1.hauteur!==1.75||U1.source_hauteur!=="lib")throw new Error(JSON.stringify(U1));
     const f=mecaIpcFichiers();
-    if(f.map(x=>x.name.replace(/^.*-/,"")).join()!=="MECA.pdf,MECA.json,MECA.dxf")throw new Error(f.map(x=>x.name).join());
+    if(f.map(x=>x.name.replace(/^.*-/,"")).join()!=="MECA.pdf,MECA.json")throw new Error(f.map(x=>x.name).join());
     if(!new TextDecoder("latin1").decode(f[0].data).startsWith("%PDF"))throw new Error("PDF");
     if(JSON.parse(f[1].text).format!=="web_cao-meca-1")throw new Error("JSON");
+  }finally{MECA_IPC.lib=garde;carte();}
+});
+T("export STEP, visionneuse : carte percée, composants en boîtes, le modèle de la LIB par sa référence",()=>{
+  carteMeca();
+  const garde=MECA_IPC.lib;
+  MECA_IPC.lib=[{"Part Name":"","Part Number":"LM358","Maximun Height":"1.75",
+                 "Modèle 3D":"Models/M.stp","Position 3D":"haut=Z+ rot=0 x=0 y=0 z=0"}];
+  try{
+    const J=stepSceneIpc(), u=J.composants.find(c=>c.ref==="U1");
+    if(!u||!u.m3d||u.m3d.nom!=="M.stp")throw new Error("modèle de U1 : "+JSON.stringify(u));
+    if(!J.trous.length)throw new Error("aucun trou");
+    const mod=stepScene({titre:"MOD",ep:1,contour:[[0,0],[1,0],[1,1],[0,1]],decoupes:[],trous:[],faces:[],composants:[]},
+                        {carte:true},{}).texte;
+    const r=stepScene(J,{carte:true,dessus:true,dessous:true},{"M.stp":mod});
+    if(!r||r.n.modeles!==1||r.n.boites!==J.composants.length-1)throw new Error(JSON.stringify(r&&r.n));
+    if(!r.texte.includes("PRODUCT('"+J.titre+"-CARTE'"))throw new Error("carte absente");
   }finally{MECA_IPC.lib=garde;carte();}
 });
 TA("dossier méca, visionneuse : sans serveur, pas de LIB, et la fenêtre le dit",async()=>{

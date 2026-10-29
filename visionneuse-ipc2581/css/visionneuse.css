@@ -245,6 +245,7 @@ footer .hint{color:var(--yellow);opacity:.9}
   padding:20px;
 }
 .modal-overlay[hidden]{display:none!important}
+.step-box{padding:14px 18px;width:460px;max-width:92vw}
 
 .modal-box{
   background:var(--panel);border:1px solid var(--border2);

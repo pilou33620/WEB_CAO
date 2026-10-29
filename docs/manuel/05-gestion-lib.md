@@ -402,7 +402,7 @@ Le catalogue est un CSV séparé par `;`, relu en UTF-8 (avec repli Latin-1 / cp
 | `Package type`, `Dimenssions`, `terminal pitch`, `mounting type`, `gender` | Boîtier et mécanique |
 | `Empreinte PCB`, `Empreinte Schématique`, `Modèle Simulation` | Fichiers associés, par chemin `lib/empreinte/<nom>.json`, `lib/symbole/<nom>.json`, `lib/simulation/<nom>` ; plusieurs modèles séparés par une barre verticale |
 | `Brochage` | Voir section précédente |
-| `Modèle 3D`, `Position 3D` | STEP de `Models` et sa pose (`haut=Y+ rot=0 x=0 y=0 z=0`) ; lus par l'animation 3D de l'Éditeur PCB |
+| `Modèle 3D`, `Position 3D` | STEP de `Models` et sa pose (`haut=Y+ rot=0 x=0 y=0 z=0`) ; lus par l'animation 3D et l'Export STEP de l'Éditeur PCB, et par l'Export STEP de la visionneuse |
 
 Une cellule qui commence comme une formule de tableur (`=`, `@`, `+` ou `-` suivi d'une lettre) ou qui cache un caractère invisible est refusée par les contrôles de création de ligne (côté Claude) ; la saisie manuelle dans la page n'a pas ce contrôle.
 

@@ -402,13 +402,13 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "fpPointTest","pointsTest","placeManuelle",
   "dfCfg","dfRegler","dfDocument","dfPdf","dfPdfOctets","dfChercher","dfSvg","dfWinAnsi","dfPdfLit",
   "dfLargeur","dfCouper","dfPercages","dfVue","dfOuvrir","dfFermer","dfExporter","DF_FORMATS","DF","dfImpedances",
-  /* export DXF et fonte embarquée (33-draftsman-export.js) */
-  "dxfCarte","dxfFeuilles","dxfFichiers","dxfSegments","dxfExporterCarte","dxfExporterFeuille","dfxCadre",
+  /* fonte embarquée (33-draftsman-export.js), export STEP (commun/export-step.js, 44-export-step.js) */
+  "ctrSegments","dffCadre","stepScene","stepSceneEditeur","stepIncorporer","stepFabriquer","STEP_CHOIX","anim3dPosition","stepR","stepNoteTrous",
   "dfCalque","dfFontePreparer","dffFonte","dffLire","dffBase64","dffGlyphes","DFF_CACHE","DF_FONTE_TTF","dfZone",
   "dfLigne",
   /* dossier mécanique (commun/dossier-meca.js) */
   "mecaDonnees","mecaEntreeEditeur","mecaDossier","stackTotal","exCharger","mecaFeuilles",
-  "mecaDxf","mecaFichiers","mecaFichiersEditeur","mecaRegler","mecaNormReglages","mecaOblong","mecaDiam",
+  "mecaFichiers","mecaFichiersEditeur","mecaRegler","mecaNormReglages","mecaOblong","mecaDiam",
   /* fiche de mesure du technicien (commun/fiche-mesure.js, 42-fiche-mesure.js) */
   "mesFeuilles","mesResoudre","mesEntreeEditeur","mesNormListe","mesPadSous","mesBrancher","MES_MAX",
   /* cotes à la main, vues à la souris, détails (34-draftsman-vues.js) */
@@ -24427,8 +24427,6 @@ T("trous NPTH d'empreinte : IPC-2581, plans et dossier méca (M1-4)",()=>{
       throw new Error("trou d'empreinte rangé sous « "+[...ge.usages].join(", ")+" »");
     if(!dfChercher(dfDocument(),"centrage "+fp.ref).length)
       throw new Error("le tableau des trous non métallisés ne nomme pas l'empreinte");
-    const D=dxfLu(dxfCarte().octets), cer=D.ents.filter(e=>e.type==="CIRCLE");
-    if(cer.length!==drillFile().holes)throw new Error(cer.length+" CIRCLE pour "+drillFile().holes+" trous");
     const apres=ipc2581Document(date);
     if(apres.stats.trousNpth!==avant.stats.trousNpth+1)throw new Error("IPC-2581 : trou d'empreinte non compté NONPLATED");
     /* contrat de commun/dossier-meca.js : `trous` = trous libres (hors empreinte),
@@ -24440,7 +24438,7 @@ T("trous NPTH d'empreinte : IPC-2581, plans et dossier méca (M1-4)",()=>{
   }finally{delete fp.holes;touch();}
   if(ipc2581Document(date).xml!==avant.xml)throw new Error("sans trou d'empreinte, l'IPC-2581 doit rester le même");
 });
-T("perçages oblongs : G85 dans l'Excellon, à part au tableau de perçage, contour au DXF (M2-3)",()=>{
+T("perçages oblongs : G85 dans l'Excellon, à part au tableau de perçage (M2-3)",()=>{
   exCharger(1);
   const avant=drillFile();
   const fp=S.fps[0], sauve=JSON.stringify({pads:fp.pads,holes:fp.holes,style:fp.style,pins:fp.pins,pitch:fp.pitch,span:fp.span,body:fp.body});
@@ -24457,21 +24455,15 @@ T("perçages oblongs : G85 dans l'Excellon, à part au tableau de perçage, cont
     const g=dfPercages(), n=g.reduce((s,e)=>s+e.pts.length,0);
     if(n!==r.holes)throw new Error(n+" trous au plan, "+r.holes+" à l'Excellon");
     if(!g.some(e=>e.plaque&&Math.abs(e.d-0.6)<1e-9&&Math.abs(e.L-1.8)<1e-9))throw new Error("fente métallisée non distinguée au tableau de perçage");
-    const D=dxfLu(dxfCarte().octets);
-    const cer=D.ents.filter(e=>e.type==="CIRCLE").length, ob=D.ents.filter(e=>e.type==="POLYLINE"&&/^TROUS_/.test(e.cal)).length;
-    if(ob!==2||cer+ob!==r.holes)throw new Error("DXF : "+cer+" CIRCLE + "+ob+" contours oblongs pour "+r.holes+" trous");
   }finally{const s=JSON.parse(sauve);Object.assign(fp,s);for(const k of ["pads","holes","body"])if(!(k in s))delete fp[k];touch();}
   if(drillFile().holes!==nBefore)throw new Error("carte rendue : même nombre de trous qu'avant");
 });
-T("fentes en vraie forme aux plans et sur leur propre calque DXF (points ouverts, T5)",()=>{
+T("fentes en vraie forme aux plans (points ouverts, T5)",()=>{
   exCharger(1);
   const fp=S.fps[0], sauve=JSON.stringify({pads:fp.pads,holes:fp.holes,style:fp.style,pins:fp.pins,pitch:fp.pitch,span:fp.span,body:fp.body});
   fpApplyDef(fp,{name:"FENTE",pins:1,style:"row",pads:[{n:1,x:0,y:0,w:2.4,h:1.2,shape:"oval",drill:0.6,slot:1.8}],
     holes:[{x:0,y:3,d:1,w:3,rot:0}]});touch();
   try{
-    const D=dxfLu(dxfCarte().octets);
-    for(const c of ["TROUS_PTH_0_60X1_80","TROUS_NPTH_1_00X3_00"])
-      if(D.calques.indexOf(c)<0)throw new Error("calque DXF "+c+" absent : "+D.calques.filter(x=>/^TROUS_/.test(x)).join(", "));
     /* contourOblong : 26 sommets ; le détail de fabrication et la feuille cuivre en portent */
     dfRegler("couches",true);
     const doc=dfDocument(), oblongs=doc.feuilles.reduce((s,f)=>s+f.items.filter(it=>it.t==="p"&&it.sp&&it.sp[0].length===26).length,0);
@@ -24944,7 +24936,7 @@ function dfOuvrirNeuf(){DF.doc=null;DF.acc=null;dfOuvrir();}
    côté 0 ; la droite du côté 1 coupe celle du côté 3 à 45° aussi. */
 function dfTrapeze(){
   const c=dfCoin(), x=c.x, y=c.y;
-  dxfPlateau([{x,y},{x:x+40,y},{x:x+40,y:y+20},{x:x+20,y:y+20}]);
+  plateauPoser([{x,y},{x:x+40,y},{x:x+40,y:y+20},{x:x+20,y:y+20}]);
   return {x,y};
 }
 T("plans : cote angulaire — trois points ou deux arêtes, valeur exacte, elle suit le contour",()=>{
@@ -24968,9 +24960,6 @@ T("plans : cote angulaire — trois points ou deux arêtes, valeur exacte, elle 
     const arc=F.items.slice(e.i0,e.i1).find(it=>it.t==="p"&&it.sp[0].length>8);
     if(!arc||arc.sp[0].some(p=>Math.abs(Math.hypot(p.x-S0.x,p.y-S0.y)-13)>1e-6))throw new Error("arc mal placé");
     if(F.items.slice(e.i0,e.i1).filter(it=>it.t==="p"&&it.plein!=null).length!==2)throw new Error("deux flèches attendues");
-    /* sur le calque COTES du DXF, le degré en %%d */
-    const D=dxfLu(dxfFeuilles([F]).octets);
-    if(D.ents.filter(x=>x.type==="TEXT"&&x.cal==="COTES"&&x.s(1)==="45,0%%d").length!==2)throw new Error("angle absent du calque COTES");
     /* posée dans l'angle opposé par le sommet : l'arc y passe, même valeur */
     const io=dfAjouterCote({vue:"fab/carte",type:"ang",s:{type:"contour",i:0},a:{type:"contour",i:1},b:{type:"contour",i:3},dx:-8,dy:-3});
     F=dfFab(dfDocument());
@@ -24985,7 +24974,7 @@ T("plans : cote angulaire — trois points ou deux arêtes, valeur exacte, elle 
     /* un sommet en moins : la cote de trois points devient orpheline, l'autre
        tient toujours (côté 3 → côté 2 renuméroté : on vérifie qu'elle se
        mesure encore, sans rien en dire de plus) */
-    dxfPlateau([{x:o.x,y:o.y},{x:o.x+40,y:o.y},{x:o.x+40,y:o.y+20}]);
+    plateauPoser([{x:o.x,y:o.y},{x:o.x+40,y:o.y},{x:o.x+40,y:o.y+20}]);
     F=dfFab(dfDocument());
     const t=dfTxtCote(F,i3);
     if(!F.cotes.find(k=>k.id===i3).orph||t[0]!=="63,4° (orpheline)")throw new Error("orpheline : "+t);
@@ -25127,7 +25116,7 @@ T("plans : cotes d'ordonnée — depuis l'origine des fichiers de fabrication, o
     }finally{dfChoisirOutil("sel");DF.sel=null;DF.origFab=false;dfFermer();}
   }finally{S.fabOrigin=fo;S.origin=so;S.holes=[];S.dessin=null;}
 });
-T("plans : tolérances portées sur la cote — écran, PDF cherchable, calque COTES du DXF",()=>{
+T("plans : tolérances portées sur la cote — écran, PDF cherchable",()=>{
   exCharger(1);
   const c0=dfCoin();
   S.holes=[mkHole(c0.x+5,c0.y+5,3.2),mkHole(c0.x+15,c0.y+5,3.2)];
@@ -25162,10 +25151,6 @@ T("plans : tolérances portées sur la cote — écran, PDF cherchable, calque C
     for(const s of ["(10,00 \\2610,10) Tj","(+0,10) Tj","(-0,05) Tj","(10,10) Tj","(9,95) Tj","(\\(10,00\\)) Tj","(\\3303,20) Tj"])
       if(pdf.indexOf(s)<0)throw new Error("absent du PDF : "+s);
     if(!dfChercher(doc,"±0,10").length||!dfChercher(doc,"(10,00)").length)throw new Error("la tolérance doit se chercher");
-    /* au DXF : sur le calque COTES, ± en %%p */
-    const D=dxfLu(dxfFeuilles([F]).octets), tx2=D.ents.filter(x=>x.type==="TEXT"&&x.cal==="COTES").map(x=>x.s(1));
-    for(const s of ["10,00 %%p0,10","+0,10","-0,05","10,10","9,95","(10,00)"])
-      if(tx2.indexOf(s)<0)throw new Error("absent du calque COTES : "+s+" ("+tx2.join(" | ")+")");
     /* saisie : changer, effacer, refuser l'absurde */
     if(!dfTolerer(sym,{genre:"asym",sup:0.2,inf:-0.1})||dfCfg().cotes[0].tol.genre!=="asym")throw new Error("tolérance non modifiée");
     if(dfTolerer(sym,{genre:"zz"})!==false)throw new Error("genre inconnu accepté");
@@ -25402,7 +25387,7 @@ T("plans : glisser une vue sur une feuille pleine — l'aperçu le signale avant
 });
 /* Tolérances par point : une ordonnée et une chaîne de trois trous, la
    tolérance commune ±0,10 et des valeurs à part. */
-T("plans : tolérance propre à chaque point d'une ordonnée et d'une chaîne — écran, PDF, DXF, aller-retour",()=>{
+T("plans : tolérance propre à chaque point d'une ordonnée et d'une chaîne — écran, PDF, aller-retour",()=>{
   exCharger(1);
   const o=gOrigin();
   S.holes=[mkHole(o.x+10,o.y-5,3.2),mkHole(o.x+30,o.y-15,3.2),mkHole(o.x+45,o.y-25,3.2)];
@@ -25432,10 +25417,6 @@ T("plans : tolérance propre à chaque point d'une ordonnée et d'une chaîne �
     for(const s of ["(10,00 \\2610,10) Tj","(+0,05) Tj","(-0,02) Tj","(20,10) Tj","(19,90) Tj","(45,00) Tj"])
       if(pdf.indexOf(s)<0)throw new Error("absent du PDF : "+s);
     if(!dfChercher(doc,"+0,05").length||!dfChercher(doc,"19,90").length)throw new Error("la tolérance de point doit se chercher");
-    /* au DXF : calque COTES */
-    const D=dxfLu(dxfFeuilles([F]).octets), tx=D.ents.filter(x=>x.type==="TEXT"&&x.cal==="COTES").map(x=>x.s(1));
-    for(const s of ["10,00 %%p0,10","+0,05","-0,02","20,10","19,90","45,00","15,00 %%p0,10"])
-      if(tx.indexOf(s)<0)throw new Error("absent du calque COTES : "+s+" ("+tx.join(" | ")+")");
     /* aller-retour : identique ; l'ancien format (sans tols) aussi */
     loadDoc(JSON.parse(serialize()),true);
     const a=serialize();
@@ -25473,189 +25454,159 @@ T("plans : tolérance propre à chaque point d'une ordonnée et d'une chaîne �
 });
 
 /* ==========================================================================
-   Plans : export DXF et fonte embarquée (33-draftsman-export.js)
+   Export STEP (commun/export-step.js, 44-export-step.js)
    ========================================================================== */
-/* Le DXF en entités : chaque « 0 » ouvre une entité, VERTEX et SEQEND sont
-   rangés sous leur POLYLINE. Les sections sont vérifiées dans l'ordre. */
-function dxfLu(octets){
-  const t=Buffer.from(octets).toString("latin1");
-  if(!t.endsWith("\r\n"))throw new Error("fin de ligne DXF attendue : CR LF");
-  const L=t.slice(0,-2).split("\r\n");
-  if(L.length%2)throw new Error("nombre impair de lignes : un code sans valeur");
-  const P=[];
-  for(let i=0;i<L.length;i+=2){
-    if(!/^ *\d+$/.test(L[i]))throw new Error("code de groupe illisible : « "+L[i]+" » ligne "+(i+1));
-    P.push([+L[i],L[i+1]]);
-  }
-  const sections=[], header={}, calques=[], ents=[];
-  let i=0;
-  while(i<P.length){
-    if(P[i][0]===0&&P[i][1]==="EOF"){sections.push("EOF");i++;continue;}
-    if(!(P[i][0]===0&&P[i][1]==="SECTION"&&P[i+1][0]===2))throw new Error("hors section : "+P[i]);
-    const nom=P[i+1][1];sections.push(nom);i+=2;
-    let cur=null, var_=null;
-    while(!(P[i][0]===0&&P[i][1]==="ENDSEC")){
-      const [c,v]=P[i];
-      if(nom==="HEADER"){if(c===9){var_=v;header[v]=[];}else if(var_)header[var_].push(v);}
-      if(nom==="TABLES"&&c===0&&v==="LAYER")calques.push(P[i+1][1]);
-      if(nom==="ENTITIES"){
-        if(c===0&&(v==="VERTEX"||v==="SEQEND")){cur={type:v,g:[],sous:true};ents[ents.length-1].pts=ents[ents.length-1].pts||[];
-          if(v==="VERTEX")ents[ents.length-1].pts.push(cur);}
-        else if(c===0){cur={type:v,g:[]};ents.push(cur);}
-        else cur.g.push([c,v]);
-      }
-      i++;
-    }
-    i++;
-  }
-  const lire=e=>{
-    e.cal=(e.g.find(x=>x[0]===8)||[])[1];
-    e.n=c=>+(e.g.find(x=>x[0]===c)||[0,NaN])[1];
-    e.s=c=>(e.g.find(x=>x[0]===c)||[0,""])[1];
-    for(const v of e.pts||[])lire(v);
-  };
-  ents.forEach(lire);
-  return {t,sections,header,calques,ents};
-}
-/* Le contour d'un calque est-il UNE boucle fermée de LINE et d'ARC ? */
-function dxfBoucle(ents,cal){
-  const el=ents.filter(e=>e.cal===cal&&(e.type==="LINE"||e.type==="ARC")).map(e=>{
-    if(e.type==="LINE")return [[e.n(10),e.n(20)],[e.n(11),e.n(21)]];
-    const c=[e.n(10),e.n(20)], r=e.n(40), a=e.n(50)*Math.PI/180, b=e.n(51)*Math.PI/180;
-    return [[c[0]+r*Math.cos(a),c[1]+r*Math.sin(a)],[c[0]+r*Math.cos(b),c[1]+r*Math.sin(b)]];
-  });
-  if(!el.length)return false;
-  const pres=(p,q)=>Math.hypot(p[0]-q[0],p[1]-q[1])<1e-4;
-  const vu=new Set([0]);
-  let bout=el[0][1];
-  while(!pres(bout,el[0][0])){
-    const k=el.findIndex((x,j)=>!vu.has(j)&&(pres(x[0],bout)||pres(x[1],bout)));
-    if(k<0)return false;
-    vu.add(k);bout=pres(el[k][0],bout)?el[k][1]:el[k][0];
-  }
-  return vu.size===el.length;
-}
-function dxfPlateau(P){S.board.pts=P;boardChanged();}
-function dxfRondRect(x1,y1,x2,y2,r,n){
+function plateauPoser(P){S.board.pts=P;boardChanged();}
+function stepRondRect(x1,y1,x2,y2,r,n){
   const P=[];
   for(const [cx,cy,a0] of [[x2-r,y1+r,-90],[x2-r,y2-r,0],[x1+r,y2-r,90],[x1+r,y1+r,180]])
     for(let i=0;i<=n;i++){const a=(a0+90*i/n)*Math.PI/180;P.push({x:r3(cx+r*Math.cos(a)),y:r3(cy+r*Math.sin(a))});}
   return P;
 }
-function dxfPolygone(cx,cy,r,n){
+function stepPolygone(cx,cy,r,n){
   const P=[];
   for(let i=0;i<n;i++){const a=2*Math.PI*i/n;P.push({x:r3(cx+r*Math.cos(a)),y:r3(cy+r*Math.sin(a))});}
   return P;
 }
-T("plans DXF : carte 1:1 bien formée — sections, calques, un CIRCLE par trou, contour fermé",()=>{
+/* Le STEP relu : chaque entité définie une fois, toute référence définie, et
+   chaque arête prise deux fois, une fois dans chaque sens (coques fermées,
+   faces orientées vers l'extérieur). */
+function stepLu(t){
+  if(!t.startsWith("ISO-10303-21;\nHEADER;")||!t.endsWith("ENDSEC;\nEND-ISO-10303-21;\n"))throw new Error("enveloppe du fichier");
+  const d=t.slice(t.indexOf("\nDATA;\n")+7,t.lastIndexOf("\nENDSEC;")), ents=new Map();
+  for(const l of d.split(/;\n/)){
+    const m=/^#(\d+)=([\s\S]*?);?$/.exec(l);
+    if(!m)throw new Error("entité illisible : "+l.slice(0,60));
+    if(ents.has(+m[1]))throw new Error("#"+m[1]+" défini deux fois");
+    ents.set(+m[1],m[2]);
+  }
+  for(const [id,v] of ents)
+    for(const r of v.replace(/'(?:[^']|'')*'/g,"''").match(/#\d+/g)||[])
+      if(!ents.has(+r.slice(1)))throw new Error("#"+id+" cite "+r+", absent");
+  const sens=new Map();
+  for(const v of ents.values()){
+    const m=/^ORIENTED_EDGE\('',\*,\*,#(\d+),\.(T|F)\.\)$/.exec(v);
+    if(m)sens.set(m[1],(sens.get(m[1])||"")+m[2]);
+  }
+  for(const [e,s] of sens)if(s.length!==2||s[0]===s[1])throw new Error("arête #"+e+" prise « "+s+" » : coque ouverte ou mal orientée");
+  const n=type=>[...ents.values()].filter(v=>v.startsWith(type+"(")).length;
+  const noms=[...ents.values()].filter(v=>v.startsWith("PRODUCT(")).map(v=>/^PRODUCT\('((?:[^']|'')*)'/.exec(v)[1]);
+  return {ents,n,noms};
+}
+function stepCarte(contour,decoupes,trous){
+  const xy=P=>P.map(p=>[p.x,p.y]);
+  return stepScene({titre:"T",ep:1.6,contour:xy(contour),decoupes:(decoupes||[]).map(xy),trous:trous||[],faces:[],composants:[]},
+                   {carte:true},{});
+}
+T("STEP : la carte seule — AP214 en mm, un solide fermé, Z = 0 dessus, trous en deux demi-cylindres",()=>{
+  const r=stepCarte([{x:0,y:0},{x:20,y:0},{x:20,y:10},{x:0,y:10}],[],[[5,5,3],[15,5,2]]), L=stepLu(r.texte);
+  if(!/FILE_SCHEMA\(\('AUTOMOTIVE_DESIGN/.test(r.texte)||!r.texte.includes("SI_UNIT(.MILLI.,.METRE.)"))throw new Error("AP214 en mm");
+  if(r.n.pieces!==1||L.n("MANIFOLD_SOLID_BREP")!==1)throw new Error(r.n.pieces+" pièce(s)");
+  if(L.noms.join()!=="T-CARTE,T")throw new Error("produits : "+L.noms.join());
+  if(L.n("CYLINDRICAL_SURFACE")!==4||L.n("ADVANCED_FACE")!==10)
+    throw new Error(L.n("CYLINDRICAL_SURFACE")+" cylindres, "+L.n("ADVANCED_FACE")+" faces");
+  for(const p of ["(5.,5.,-1.6)","(0.,0.,0.)","(0.,0.,-1.6)"])
+    if(!r.texte.includes("CARTESIAN_POINT('',"+p+")"))throw new Error("point "+p+" absent");
+  /* deux trous qui se touchent casseraient le solide : le second tombe */
+  if(stepLu(stepCarte([{x:0,y:0},{x:20,y:0},{x:20,y:10},{x:0,y:10}],[],[[5,5,3],[6,5,2]]).texte).n("CYLINDRICAL_SURFACE")!==2)
+    throw new Error("trous chevauchants");
+});
+T("STEP : demi-trous — le bord contourne le trou ; un trou hors de la carte tombe",()=>{
+  const ct=[{x:0,y:0},{x:20,y:0},{x:20,y:10},{x:0,y:10}], dec=[[{x:10,y:4},{x:12,y:4},{x:12,y:6},{x:10,y:6}]];
+  for(const [trous,attendu] of [[[[10,0,1]],"1,0,1"],[[[5,0,1],[10,0,1],[0,0,2]],"3,0,3"],[[[12,5,1]],"1,0,1"],
+                                [[[30,5,1]],"0,1,0"],[[[11,5,0.5]],"0,1,0"],[[[5,5,1]],"0,0,2"]])
+    for(const c of [ct,ct.slice().reverse()]){
+      const r=stepCarte(c,dec,trous), L=stepLu(r.texte), vu=[r.n.demiTrous,r.n.trousIgnores,L.n("CYLINDRICAL_SURFACE")].join();
+      if(vu!==attendu)throw new Error(JSON.stringify(trous)+" : "+vu+" au lieu de "+attendu);
+    }
+  /* sur un bord arrondi : coin arrondi (l'arc du coin se coupe en deux), carte ronde, découpe ronde */
+  const a=Math.PI/4, rc=stepRondRect(0,0,40,20,5,8), coin=[35+5*Math.cos(-a),5+5*Math.sin(-a),1.6];
+  for(const c of [rc,rc.slice().reverse()]){
+    const r=stepCarte(c,[],[coin]), L=stepLu(r.texte);
+    if([r.n.demiTrous,r.n.trousIgnores,L.n("CYLINDRICAL_SURFACE")].join()!=="1,0,6")
+      throw new Error("coin arrondi : "+[r.n.demiTrous,r.n.trousIgnores,L.n("CYLINDRICAL_SURFACE")]);
+  }
+  const ronde=stepCarte(stepPolygone(0,0,15,72),[],[[15,0,1],[0,15,1],[-15,0,1.2],[0,-15,1]]);
+  stepLu(ronde.texte);
+  if(ronde.n.demiTrous!==4||ronde.n.trousIgnores)throw new Error("carte ronde : "+JSON.stringify(ronde.n));
+  const dr=stepCarte(ct.map(p=>({x:p.x*2,y:p.y*2})),[stepPolygone(20,10,4,36)],[[24,10,1.5]]);
+  stepLu(dr.texte);
+  if(dr.n.demiTrous!==1)throw new Error("découpe ronde : "+JSON.stringify(dr.n));
+  /* l'entaille creuse la carte : le demi-trou du bas passe au-dessus de y = 0 */
+  const t=stepCarte(ct,[],[[10,0,1]]).texte;
+  if(!t.includes("CARTESIAN_POINT('',(9.5,0.,0.))")||!t.includes("CARTESIAN_POINT('',(10.5,0.,0.))"))throw new Error("points d'entaille");
+  if(stepNoteTrous({demiTrous:2,trousIgnores:1})!==", 2 demi-trou(s) en bord, 1 trou(s) hors carte ou à cheval sur plusieurs bords, non percé(s)")
+    throw new Error("message : "+stepNoteTrous({demiTrous:2,trousIgnores:1}));
+});
+T("STEP : arcs retrouvés — coins arrondis en quarts de cylindre, carte ronde, l'octogone reste plat",()=>{
+  const cyl=(c,d)=>{const L=stepLu(stepCarte(c,d).texte);return [L.n("CYLINDRICAL_SURFACE"),L.n("ADVANCED_FACE")].join();};
+  const rr=stepRondRect(10,10,70,50,5,8);
+  if(cyl(rr)!=="4,10")throw new Error("coins arrondis : "+cyl(rr));
+  if(cyl(rr,[stepPolygone(40,30,4,36)])!=="6,12")throw new Error("découpe ronde : "+cyl(rr,[stepPolygone(40,30,4,36)]));
+  if(cyl(stepPolygone(50,50,30,72))!=="2,4")throw new Error("carte ronde : "+cyl(stepPolygone(50,50,30,72)));
+  if(cyl(stepPolygone(50,50,30,8))!=="0,10")throw new Error("octogone : "+cyl(stepPolygone(50,50,30,8)));
+  if(ctrSegments([{x:0,y:0},{x:10,y:0},{x:10,y:10},{x:0,y:10}]).some(s=>s.t!=="l"))throw new Error("rectangle");
+  /* un arc garde le sens du parcours */
+  const a=ctrSegments(stepPolygone(50,50,30,72).reverse());
+  if(a.length!==2||a.some(s=>s.ccw!==false||!s.de||!s.vers))throw new Error("sens du parcours : "+JSON.stringify(a[0]));
+});
+T("STEP : composants — le modèle de la LIB recopié une fois et placé pour chacun, les autres en boîtes",()=>{
+  const mod=stepCarte([{x:0,y:0},{x:1,y:0},{x:1,y:0.5},{x:0,y:0.5}]).texte.replace(/'T(-CARTE)?'/g,"'MOD$1'");
+  const corps=[[0,0],[2,0],[2,1],[0,1]], pos="haut=Z+ rot=0 x=0 y=0 z=0";
+  const J={titre:"B",ep:1.6,contour:[[-10,-10],[30,-10],[30,20],[-10,20]],decoupes:[],trous:[],faces:[],
+    composants:[{ref:"R1",face:0,corps,h:0.5,m3d:{nom:"M.stp",pos,x:10,y:5,rot:0}},
+                {ref:"R2",face:1,corps,h:0.5,m3d:{nom:"M.stp",pos,x:3,y:4,rot:90}},
+                {ref:"U1",face:0,corps,h:1.2},{ref:"U2",face:1,corps,h:1.2}]};
+  const r=stepScene(J,{carte:true,dessus:true,dessous:true},{"M.stp":mod}), L=stepLu(r.texte);
+  if(JSON.stringify(r.n)!=='{"pieces":5,"modeles":2,"boites":2,"demiTrous":0,"trousIgnores":0}')throw new Error(JSON.stringify(r.n));
+  if(L.noms.filter(n=>n==="MOD").length!==1)throw new Error("le modèle doit être recopié une fois : "+L.noms.join());
+  if(L.n("NEXT_ASSEMBLY_USAGE_OCCURRENCE")!==6)throw new Error("liens : "+L.n("NEXT_ASSEMBLY_USAGE_OCCURRENCE"));
+  /* R2 dessous : en (3, 4, −1,6), son axe Z vers le bas */
+  const E=L.ents, pose=[...E.values()].some(v=>{
+    const m=/^AXIS2_PLACEMENT_3D\('',#(\d+),#(\d+),#(\d+)\)$/.exec(v);
+    return m&&E.get(+m[1])==="CARTESIAN_POINT('',(3.,4.,-1.6))"&&E.get(+m[2])==="DIRECTION('',(0.,0.,-1.))";
+  });
+  if(!pose||!r.texte.includes("CARTESIAN_POINT('',(10.,5.,0.))"))throw new Error("pose des modèles");
+  if(stepScene(J,{dessus:true},{"M.stp":mod}).n.pieces!==2)throw new Error("sans « dessous » : R1 et U1 seuls");
+  const q=stepScene(J,{dessus:true,dessous:true},{"M.stp":"pas un STEP"});
+  if(q.n.modeles!==0||q.n.boites!==4)throw new Error("modèle illisible : la boîte "+JSON.stringify(q.n));
+  if(stepScene(J,{cuivre:true},{})!==null)throw new Error("rien à écrire : null");
+});
+T("STEP : la carte de l'exemple — carte, composants, cuivre et sérigraphie, une pièce par face",()=>{
   exCharger(1);
   S.holes=[mkHole(5,5,3.2)];
   try{
-    const D=dxfLu(dxfCarte().octets);
-    if(D.sections.join(" ")!=="HEADER TABLES BLOCKS ENTITIES EOF")throw new Error("sections : "+D.sections.join(" "));
-    if(D.header.$ACADVER[0]!=="AC1009")throw new Error("R12 attendu : "+D.header.$ACADVER);
-    if(D.header.$INSUNITS[0]!=="4"||D.header.$MEASUREMENT[0]!=="1")throw new Error("unités : millimètres attendus");
-    for(const c of ["CONTOUR","TROUS_METALLISES","TROUS_NON_METALLISES","COMPOSANTS_DESSUS","REPERES_DESSUS","COTES","TABLEAU_PERCAGE"])
-      if(D.calques.indexOf(c)<0)throw new Error("calque "+c+" absent : "+D.calques.join(", "));
-    for(const e of D.ents)if(D.calques.indexOf(e.cal)<0)throw new Error("calque non déclaré : "+e.cal);
-    /* un CIRCLE par trou, pas un de plus ; le non métallisé à part */
-    const cer=D.ents.filter(e=>e.type==="CIRCLE");
-    if(cer.length!==drillFile().holes)throw new Error(cer.length+" CIRCLE pour "+drillFile().holes+" trous");
-    const np=cer.filter(e=>e.cal==="TROUS_NON_METALLISES");
-    if(np.length!==1||Math.abs(np[0].n(40)-1.6)>1e-9)throw new Error("trou de fixation : "+np.length);
-    /* au repère de l'Excellon : X = x − origine, Y vers le haut */
-    const o=gOrigin();
-    if(Math.abs(np[0].n(10)-(5-o.x))>1e-6||Math.abs(np[0].n(20)-(o.y-5))>1e-6)throw new Error("repère du trou faux");
-    if(!dxfBoucle(D.ents,"CONTOUR"))throw new Error("contour non fermé");
-    const u1=D.ents.find(e=>e.type==="TEXT"&&e.s(1)==="U1");
-    if(!u1||u1.cal!=="REPERES_DESSUS")throw new Error("repère U1 absent ou mal rangé");
-    const corps=D.ents.filter(e=>e.type==="POLYLINE"&&e.cal==="COMPOSANTS_DESSUS");
-    if(corps.length!==S.fps.length||corps.some(e=>e.n(70)!==1||e.pts.length!==4))throw new Error("un corps fermé de 4 sommets par composant");
-    if(!D.ents.some(e=>e.type==="TEXT"&&e.cal==="TABLEAU_PERCAGE"&&e.s(1)==="%%c fini (mm)"))throw new Error("en-tête du tableau de perçage (Ø en %%c)");
+    const J=stepSceneEditeur(), r=stepScene(J,{carte:true,dessus:true,dessous:true,cuivre:true,seri:true},{}), L=stepLu(r.texte);
+    for(const n of [fabBase()+"-CARTE","CUIVRE_DESSUS","SERIGRAPHIE_DESSUS"].concat(S.cu>1?["CUIVRE_DESSOUS"]:[]))
+      if(!L.noms.includes(n))throw new Error(n+" absent : "+L.noms.join());
+    if(r.n.boites!==J.composants.length)throw new Error(r.n.boites+" boîtes pour "+J.composants.length+" composants");
+    const o=gOrigin(), x=stepR(5-o.x), y=stepR(o.y-5);
+    if(!r.texte.includes("CARTESIAN_POINT('',("+x+","+y+","+stepR(-J.ep)+"))"))throw new Error("trou de fixation hors du repère des Gerber");
+    const nz=S.zones.filter(z=>(z.l===0||z.l===S.cu-1)&&z.pts.length>=3).length;
+    if(J.faces.reduce((n,F)=>n+(F.cuivre.zones||[]).length,0)!==nz)throw new Error("zones extérieures : "+nz+" attendues");
   }finally{S.holes=[];}
 });
-T("plans DXF : arcs retrouvés — coins arrondis, carte ronde, l'octogone reste droit",()=>{
+T("STEP : un bouton à part ; fabrication.zip n'a plus de DXF",()=>{
   exCharger(1);
-  try{
-    dxfPlateau(dxfRondRect(10,10,70,50,5,8));
-    let D=dxfLu(dxfCarte().octets);
-    const arcs=D.ents.filter(e=>e.cal==="CONTOUR"&&e.type==="ARC"), lig=D.ents.filter(e=>e.cal==="CONTOUR"&&e.type==="LINE");
-    if(arcs.length!==4||lig.length!==4)throw new Error("4 ARC et 4 LINE attendus : "+arcs.length+" / "+lig.length);
-    for(const a of arcs){
-      const bal=((a.n(51)-a.n(50))%360+360)%360;
-      if(Math.abs(a.n(40)-5)>0.01||Math.abs(bal-90)>0.5)throw new Error("arc r="+a.n(40)+" sur "+bal+"°");
-    }
-    if(!dxfBoucle(D.ents,"CONTOUR"))throw new Error("contour arrondi non fermé");
-    /* une découpe ronde, elle aussi en arcs */
-    S.board.cutouts=[dxfPolygone(40,30,4,36)];
-    D=dxfLu(dxfCarte().octets);
-    if(D.ents.filter(e=>e.cal==="DECOUPES"&&e.type==="ARC").length!==2||!dxfBoucle(D.ents,"DECOUPES"))
-      throw new Error("découpe ronde : deux demi-arcs fermés attendus");
-    delete S.board.cutouts;
-    dxfPlateau(dxfPolygone(50,50,30,72));
-    D=dxfLu(dxfCarte().octets);
-    const ar=D.ents.filter(e=>e.cal==="CONTOUR"&&e.type==="ARC");
-    if(ar.length!==2||D.ents.some(e=>e.cal==="CONTOUR"&&e.type==="LINE"))throw new Error("carte ronde : 2 demi-arcs, "+ar.length);
-    if(Math.abs(ar[0].n(40)-30)>0.01||!dxfBoucle(D.ents,"CONTOUR"))throw new Error("carte ronde : rayon ou fermeture");
-    dxfPlateau(dxfPolygone(50,50,30,8));
-    D=dxfLu(dxfCarte().octets);
-    if(D.ents.filter(e=>e.cal==="CONTOUR"&&e.type==="LINE").length!==8||D.ents.some(e=>e.cal==="CONTOUR"&&e.type==="ARC"))
-      throw new Error("un octogone n'est pas un cercle");
-    if(dxfSegments([{x:0,y:0},{x:10,y:0},{x:10,y:10},{x:0,y:10}]).some(s=>s.t!=="l"))throw new Error("rectangle");
-  }finally{exCharger(1);}
+  if(buildFabFiles().files.some(f=>/\.dxf$/i.test(f.name))||FAB_GROUPES.some(([k])=>k==="dxf"))throw new Error("DXF au dossier de fabrication");
+  if(STEP_CHOIX.map(([k])=>k).join()!=="carte,dessus,dessous,cuivre,seri")throw new Error("cases : "+STEP_CHOIX.map(([k])=>k));
+  const html=fs.readFileSync(path.join(__dirname,"..","editeur-pcb.html"),"utf8");
+  if(!/id="bStep"/.test(html)||!/commun\/export-step\.js/.test(html))throw new Error("bouton ou script absent de la page");
 });
-T("plans DXF : la feuille entière — calques par repère, par catégorie et par place",()=>{
+TA("STEP : relu par OpenCascade (occt-import-js de WEB_3D), si présent",async()=>{
+  const f=path.join(__dirname,"..","..","..","WEB_3D","vendor","occt","occt-import-js.js");
+  if(!fs.existsSync(f)){console.log("     (occt-import-js absent : STEP non relu)");return;}
+  const occt=await require(f)();
   exCharger(1);
-  const doc=dfDocument();
-  const fab=doc.feuilles.filter(F=>F.genre==="fab");
-  const D=dxfLu(dxfFeuilles(fab).octets);
-  for(const c of ["CADRE","CARTOUCHE","CONTOUR","COTES","PERCAGE","TABLEAUX","NOTES","EMPILAGE"])
-    if(D.calques.indexOf(c)<0)throw new Error("calque "+c+" absent : "+D.calques.join(", "));
-  if(!dxfBoucle(D.ents,"CONTOUR"))throw new Error("contour de la vue non fermé");
-  const txt=D.ents.filter(e=>e.type==="TEXT");
-  const visibles=fab.reduce((a,F)=>a+F.items.filter(it=>it.t==="t"&&!it.cache&&String(it.s).trim()).length,0);
-  if(txt.length!==visibles)throw new Error(visibles+" textes visibles, "+txt.length+" TEXT : les invisibles restent au PDF");
-  if(!txt.some(e=>e.cal==="CARTOUCHE"&&e.s(1)==="Plan de fabrication"))throw new Error("titre du cartouche");
-  if(!txt.some(e=>e.cal==="COTES"&&/ mm$/.test(e.s(1))))throw new Error("cote hors tout");
-  if(!D.ents.some(e=>e.cal==="COTES"&&e.type==="SOLID"))throw new Error("flèches de cote pleines");
-  /* Windows-1252 : É en un octet ; ≥, hors du jeu, écrit comme en WinAnsi ;
-     ° en %%d, le code DXF */
-  if(D.t.indexOf("\xC9paisseur")<0)throw new Error("É de « Épaisseur » attendu en 0xC9");
-  if(D.t.indexOf("Tg >= 150 %%dC")<0)throw new Error("≥ et ° mal codés");
-  if(D.t.indexOf("\\U+")>=0)throw new Error("pas d'échappement \\U+ : tous les modeleurs ne le lisent pas");
-  /* assemblage : pastilles, corps, repères sur leur calque */
-  const A=dxfLu(dxfFeuilles([doc.feuilles.find(F=>F.genre==="asmT")]).octets);
-  for(const c of ["PASTILLES","COMPOSANTS","REPERES"])
-    if(!A.ents.some(e=>e.cal===c))throw new Error("assemblage : calque "+c+" vide");
-  /* ce qu'une autre fonction de dessin pose sous dfCalque() arrive sur son calque */
-  const F=doc.feuilles[0];
-  dfCalque(F,"COTES_MANUELLES");dfLigne(F,20,20,60,20,0.2);dfCalque(F);
-  const M=dxfLu(dxfFeuilles([F]).octets);
-  const l=M.ents.filter(e=>e.cal==="COTES_MANUELLES");
-  if(l.length!==1||l[0].type!=="LINE"||Math.abs(l[0].n(20)-(F.h-20))>1e-9)throw new Error("extension par dfCalque");
-});
-T("plans DXF : dans fabrication.zip, annoncés par le master drawing et le LISEZ-MOI",()=>{
-  exCharger(1);
-  const files=buildFabFiles().files;
-  const c=files.find(f=>/-CARTE\.dxf$/.test(f.name)), p=files.find(f=>/-PLAN-FABRICATION\.dxf$/.test(f.name));
-  if(!c||!p||!(c.data instanceof Uint8Array))throw new Error("DXF absents de l'archive : "+files.map(f=>f.name).join(" "));
-  const md=files.find(f=>/MASTER-DRAWING\.pdf$/.test(f.name));
-  if(dfLatin(md.data).indexOf(c.name)<0||dfLatin(md.data).indexOf(p.name)<0)throw new Error("le master drawing doit les annoncer");
-  if(files.indexOf(c)>files.indexOf(md))throw new Error("les DXF précèdent le master drawing qui les liste");
-  const lm=files.find(f=>f.name==="LISEZ-MOI.txt").text;
-  if(!/\.dxf \(AutoCAD R12/.test(lm)||lm.indexOf(c.name)<0)throw new Error("LISEZ-MOI muet sur les DXF");
-  S.dessin={feuilles:{fab:false,asmT:true}};
-  try{
-    const f2=buildFabFiles().files;
-    if(!f2.some(f=>/-CARTE\.dxf$/.test(f.name))||f2.some(f=>/-PLAN-FABRICATION\.dxf$/.test(f.name)))
-      throw new Error("sans plan de fabrication : la carte seule");
-  }finally{S.dessin=null;}
-  /* les boutons de la fenêtre */
-  dfOuvrir();
-  try{
-    if(!dxfExporterCarte().trous)throw new Error("export de la carte");
-    if(!dxfExporterFeuille())throw new Error("export de la feuille affichée");
-  }finally{dfFermer();}
+  const r=stepScene(stepSceneEditeur(),{carte:true,dessus:true,dessous:true,cuivre:true,seri:true},{});
+  const res=occt.ReadStepFile(new TextEncoder().encode(r.texte),null);
+  if(!res.success||res.meshes.length<r.n.pieces)throw new Error("OpenCascade : "+res.success+", "+res.meshes.length+" maillage(s)");
+  const carte=res.meshes.find(m=>m.name===fabBase()+"-CARTE");
+  if(!carte)throw new Error("carte absente");
+  const p=carte.attributes.position.array;
+  let z1=Infinity,z2=-Infinity;
+  for(let i=2;i<p.length;i+=3){z1=Math.min(z1,p[i]);z2=Math.max(z2,p[i]);}
+  if(Math.abs(z2)>1e-6||Math.abs(z1+stackTotal())>1e-3)throw new Error("épaisseur relue : "+z1+" … "+z2);
 });
 
 /* Le texte d'un PDF tel qu'un lecteur le retrouve : chaque Tj décodé par la
@@ -25778,15 +25729,14 @@ T("plans PDF : repli sur Helvetica — option décochée, fonte absente, réglag
     if(g!=="ØOKa?")throw new Error(g);
   }finally{S.dessin=null;}
 });
-T("plans : vérification externe du PDF (pdftotext) et du DXF (ezdxf), si les outils sont là",()=>{
+T("plans : vérification externe du PDF (pdftotext), si l'outil est là",()=>{
   const cp=require("child_process"), os=require("os");
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),"plans-"));
   try{
     exCharger(1);
     S.dessin={notes:DF_NOTE_SYMB};
-    const fpdf=path.join(dir,"plans.pdf"), fdxf=path.join(dir,"carte.dxf");
+    const fpdf=path.join(dir,"plans.pdf");
     fs.writeFileSync(fpdf,dfPdfOctets());
-    fs.writeFileSync(fdxf,dxfCarte().octets);
     S.dessin=null;
     const p=cp.spawnSync("pdftotext",["-enc","UTF-8",fpdf,"-"],{encoding:"utf8"});
     if(p.error)console.log("     (pdftotext absent : PDF non vérifié)");
@@ -25794,16 +25744,6 @@ T("plans : vérification externe du PDF (pdftotext) et du DXF (ezdxf), si les ou
       if(p.status!==0)throw new Error("pdftotext : "+p.stderr);
       for(const s of ["10 kΩ","≥ 150","µF","U1","Épaisseur"])if(p.stdout.indexOf(s)<0)throw new Error("pdftotext ne retrouve pas « "+s+" »");
       if(/Syntax Error|Error/.test(p.stderr))throw new Error("pdftotext : "+p.stderr);
-    }
-    const py="import sys,ezdxf\nd=ezdxf.readfile(sys.argv[1])\na=d.audit()\nm=d.modelspace()\n"+
-             "print(len(a.errors),len(m.query('CIRCLE')),len(m.query('ARC')),d.header.get('$INSUNITS'),d.dxfversion)";
-    const e=cp.spawnSync("python3",["-c",py,fdxf],{encoding:"utf8"});
-    if(e.error||/No module named/.test(e.stderr||""))console.log("     (ezdxf absent : DXF non vérifié)");
-    else{
-      if(e.status!==0)throw new Error("ezdxf : "+e.stderr);
-      const [err,cer,,u,v]=e.stdout.trim().split(" ");
-      exCharger(1);
-      if(+err!==0||+cer!==drillFile().holes||u!=="4"||v!=="AC1009")throw new Error("ezdxf : "+e.stdout);
     }
   }finally{S.dessin=null;fs.rmSync(dir,{recursive:true,force:true});}
 });
@@ -26065,121 +26005,6 @@ T("master drawing : vérification externe (pdffonts, pdftotext, pypdf), si les o
       for(const s of ["Éclairage 10 kΩ","≥ 20 µm","εr"])if(e.stdout.indexOf(s)<0)throw new Error("pypdf ne retrouve pas « "+s+" »");
     }
   }finally{fs.rmSync(dir,{recursive:true,force:true});}
-});
-
-/* ==========================================================================
-   DXF de la carte : un calque par outil de perçage (33-draftsman-export.js)
-   ========================================================================== */
-/* La couleur de chaque calque, lue dans la table LAYER. */
-function dxfCouleurs(t){
-  const m=new Map();
-  for(const x of t.matchAll(/\r\n  0\r\nLAYER\r\n  2\r\n([^\r]*)\r\n 70\r\n0\r\n 62\r\n(\d+)\r\n/g))m.set(x[1],+x[2]);
-  return m;
-}
-T("plans DXF : un calque par outil — POINT par trou, couleur par diamètre, cercles gardés",()=>{
-  exCharger(1);
-  S.holes=[mkHole(5,5,3.2),mkHole(60,5,3.2),mkHole(5,38,2.5)];
-  try{
-    const r=dxfCarte(), D=dxfLu(r.octets);
-    /* ce que la carte perce, outil par outil ; le Ø à deux décimales, trois
-       s'il le faut (le 0,864 de l'exemple), « _ » pour la virgule */
-    const att=new Map(), plus=(k,n)=>att.set(k,(att.get(k)||0)+(n||1));
-    const dm=d=>{const s=d.toFixed(3);return (s.endsWith("0")?s.slice(0,-1):s).replace(".","_");};
-    for(const fp of S.fps)for(const q of padsWorld(fp))if(q.drill>0)plus("TROUS_PTH_"+dm(q.drill));
-    for(const v of S.vias)if(v.drill>0)plus("VIAS_"+(Math.min(v.a,v.b)===0&&Math.max(v.a,v.b)===S.cu-1?"":"L"+(Math.min(v.a,v.b)+1)+"-L"+(Math.max(v.a,v.b)+1)+"_")+dm(v.drill));
-    if(!att.has("TROUS_PTH_0_864"))throw new Error("l'exemple devait avoir un perçage de 0,864");
-    plus("TROUS_NPTH_3_20",2);plus("TROUS_NPTH_2_50");
-    const pts=new Map();
-    for(const e of D.ents)if(e.type==="POINT")pts.set(e.cal,(pts.get(e.cal)||0)+1);
-    if(JSON.stringify([...att].sort())!==JSON.stringify([...pts].sort()))
-      throw new Error("POINT par calque : "+JSON.stringify([...pts].sort())+" pour "+JSON.stringify([...att].sort()));
-    if(att.size<4)throw new Error("l'exemple doit avoir plusieurs outils : "+[...att.keys()]);
-    for(const c of pts.keys()){
-      if(!/^[A-Z0-9$_-]{1,31}$/.test(c))throw new Error("nom de calque refusé par R12 : "+c);
-      if(D.calques.indexOf(c)<0)throw new Error("calque non déclaré : "+c);
-    }
-    /* chaque POINT est au centre d'un CIRCLE du calque historique, du bon diamètre */
-    const cer=D.ents.filter(e=>e.type==="CIRCLE");
-    for(const e of D.ents.filter(e=>e.type==="POINT")){
-      const d=e.cal.replace(/^.*_(\d+_\d+)$/,"$1");
-      const hist=/^TROUS_NPTH/.test(e.cal)?"TROUS_NON_METALLISES":"TROUS_METALLISES";
-      if(!cer.some(c=>c.cal===hist&&Math.abs(c.n(10)-e.n(10))<1e-6&&Math.abs(c.n(20)-e.n(20))<1e-6&&dm(c.n(40)*2)===d))
-        throw new Error("POINT de "+e.cal+" sans son cercle sur "+hist);
-    }
-    /* les cercles par diamètre : autant que de POINT de ce diamètre */
-    const parD=new Map();
-    for(const [c,n] of pts){const d=c.replace(/^.*_(\d+_\d+)$/,"$1");parD.set(d,(parD.get(d)||0)+n);}
-    for(const [d,n] of parD){
-      const k=cer.filter(c=>dm(c.n(40)*2)===d).length;
-      if(k!==n)throw new Error(n+" trous de "+d+", "+k+" CIRCLE");
-    }
-    /* une couleur par diamètre, distincte d'un diamètre à l'autre */
-    const col=dxfCouleurs(D.t), parCouleur=new Map();
-    for(const c of pts.keys()){
-      const d=c.replace(/^.*_(\d+_\d+)$/,"$1"), k=col.get(c);
-      if(!k||k===7)throw new Error("couleur du calque "+c+" : "+k);
-      if(parCouleur.has(k)&&parCouleur.get(k)!==d)throw new Error("même couleur pour "+d+" et "+parCouleur.get(k));
-      parCouleur.set(k,d);
-    }
-    if(col.get("TROUS_METALLISES")!==1||col.get("TROUS_NON_METALLISES")!==3)throw new Error("couleurs des calques historiques changées");
-    if(D.header.$PDMODE[0]!=="3")throw new Error("POINT en croix ($PDMODE 3)");
-    if(r.outils.length!==pts.size)throw new Error("outils rendus : "+r.outils.length);
-    /* la feuille du plan n'a pas de calque d'outil */
-    const F=dxfLu(dxfFeuilles(dfDocument().feuilles.filter(F=>F.genre==="fab")).octets);
-    if(F.ents.some(e=>e.type==="POINT")||F.header.$PDMODE)throw new Error("la feuille ne change pas");
-  }finally{S.holes=[];}
-});
-T("plans DXF : contre-perçage sur son calque, CONTRE_PERCAGE_<face>_<Ø>",()=>{
-  cpCarte();
-  try{
-    let D=dxfLu(dxfCarte().octets);
-    if(D.calques.some(c=>/^CONTRE_PERCAGE/.test(c)))throw new Error("sans règle, pas de calque de contre-perçage");
-    const r=cpAjouter({cote:"dessous",garde:-1,res:0.1});
-    cmPoser("classes",className("SIG"),"cp",r.id);
-    const c=cpVia(S.vias[0]);
-    if(!c||c.faute||c.diam!==0.55)throw new Error("contre-perçage attendu, foret de 0,55");
-    D=dxfLu(dxfCarte().octets);
-    const cal="CONTRE_PERCAGE_DESSOUS_0_55";
-    const cer=D.ents.filter(e=>e.cal===cal&&e.type==="CIRCLE"), pt=D.ents.filter(e=>e.cal===cal&&e.type==="POINT");
-    if(cer.length!==2||pt.length!==2)throw new Error(cal+" : "+cer.length+" CIRCLE, "+pt.length+" POINT");
-    if(cer.some(e=>Math.abs(e.n(40)-0.275)>1e-9))throw new Error("le cercle a le Ø du foret");
-    const o=gOrigin();
-    if(!cer.some(e=>Math.abs(e.n(10)-(S.vias[0].x-o.x))<1e-6&&Math.abs(e.n(20)-(o.y-S.vias[0].y))<1e-6))throw new Error("au repère de l'Excellon");
-    /* les vias eux-mêmes restent sur leurs calques : cercle historique, outil */
-    if(D.ents.filter(e=>e.cal==="TROUS_METALLISES"&&e.type==="CIRCLE"&&Math.abs(e.n(40)-0.15)<1e-9).length!==2||
-       D.ents.filter(e=>e.cal==="VIAS_0_30"&&e.type==="POINT").length!==2)throw new Error("les vias percés à 0,30 restent où ils sont");
-    /* par-dessus */
-    cpModifier(r.id,"cote","dessus");
-    for(const t of S.tracks)t.l=t.l===1?2:3;
-    touch();
-    D=dxfLu(dxfCarte().octets);
-    if(D.ents.filter(e=>e.cal==="CONTRE_PERCAGE_DESSUS_0_55"&&e.type==="CIRCLE").length!==2)
-      throw new Error("depuis le dessus : "+D.calques.filter(c=>/CONTRE/.test(c)));
-  }finally{cpRaz();exCharger(1);}
-});
-T("plans DXF : calques par outil relus par ezdxf, si l'outil est là",()=>{
-  const cp=require("child_process"), os=require("os");
-  const dir=fs.mkdtempSync(path.join(os.tmpdir(),"dxf-"));
-  try{
-    exCharger(1);
-    S.holes=[mkHole(5,5,3.2)];
-    const f=path.join(dir,"carte.dxf"), r=dxfCarte();
-    S.holes=[];
-    fs.writeFileSync(f,r.octets);
-    const py="import sys,ezdxf\nd=ezdxf.readfile(sys.argv[1])\na=d.audit()\nm=d.modelspace()\n"+
-             "print(len(a.errors))\n"+
-             "for l in sorted({e.dxf.layer for e in m.query('POINT')}):print(l,len(m.query('POINT[layer==\"'+l+'\"]')),d.layers.get(l).color)";
-    const e=cp.spawnSync("python3",["-c",py,f],{encoding:"utf8"});
-    if(e.error||/No module named/.test(e.stderr||""))console.log("     (ezdxf absent : DXF non vérifié)");
-    else{
-      if(e.status!==0)throw new Error("ezdxf : "+e.stderr);
-      const l=e.stdout.trim().split("\n");
-      if(l[0]!=="0")throw new Error("ezdxf : erreurs d'audit "+l[0]);
-      const lu=l.slice(1).map(x=>x.split(" "));
-      if(JSON.stringify(lu.map(x=>[x[0],+x[1]]))!==JSON.stringify(r.outils.map(o=>[o.cal,o.n])))
-        throw new Error("ezdxf relit "+l.slice(1).join(" ; "));
-    }
-  }finally{S.holes=[];fs.rmSync(dir,{recursive:true,force:true});}
 });
 
 /* ==========================================================================
@@ -27312,14 +27137,14 @@ function ipcAttendu(){
     (S.drawings||[]).filter(d=>d.shape==="text"&&(d.layer!=="silkB"||n>1)).length;
   return {cuivres:S.cuL.map(L=>L.name),nets:[...nets].sort(),composants:comps,pistes,arcs,
     vias:S.vias.length,trous,
-    /* les sommets de l'éditeur, et les arcs que dxfSegments y reconnaît :
+    /* les sommets de l'éditeur, et les arcs que ctrSegments y reconnaît :
        un arc passe par les sommets, il ne s'écarte des cordes que de leur
        flèche */
     contour:{aire:r4(Math.abs(signedArea(boardPoly()))-boardCutouts().reduce((a,D)=>a+Math.abs(signedArea(D)),0)),
              decoupes:boardCutouts().length,
              bords:[boardPoly()].concat(boardCutouts()).map(P=>P.map(p=>[X(p.x),Y(p.y)])),
              arcs:[boardPoly()].concat(boardCutouts()).reduce((a,P)=>
-               a+dxfSegments(P.map(p=>({x:X(p.x),y:Y(p.y)}))).filter(s=>s.t==="a").length,0)},
+               a+ctrSegments(P.map(p=>({x:X(p.x),y:Y(p.y)}))).filter(s=>s.t==="a").length,0)},
     empilage,epaisseur:stackTotal(),rugosite:rug,rugosite_huray:huray,regles,zones,textes,
     masque:[maskOpenings(0).length,n>1?maskOpenings(1).length:0],
     pate:[pasteOpenings(0).length,n>1?pasteOpenings(1).length:0],
@@ -27678,7 +27503,7 @@ T("dossier méca : un trou non métallisé et une empreinte MH1 sont deux fixati
   if(!m||!m.metallise||m.d_degagement!==6||m.x!==40.5)throw new Error("MH1 : "+JSON.stringify(m));
   if(j.composants.some(c=>c.ref==="MH1"))throw new Error("une fixation n'est pas un composant");
 });
-T("dossier méca : une fente garde sa forme dans le JSON, le DXF et la nomenclature",()=>{
+T("dossier méca : une fente garde sa forme dans le JSON et la nomenclature",()=>{
   const e=mecaEntree();
   e.trous.push({x:20,y:10,d:1.2,l:3.2,rot:90,metallise:false});
   const J=mecaDonnees(e,[],{}), f=J.fixations.find(f=>f.l);
@@ -27688,9 +27513,6 @@ T("dossier méca : une fente garde sa forme dans le JSON, le DXF et la nomenclat
   if(Math.abs(Math.max(...ys)-Math.min(...ys)-3.2)>1e-9||Math.abs(Math.max(...xs)-Math.min(...xs)-1.2)>1e-9)
     throw new Error("contour de la fente à 90° : "+(Math.max(...xs)-Math.min(...xs))+" × "+(Math.max(...ys)-Math.min(...ys)));
   if(mecaDiam(f)!=="1,20 × 3,20"&&mecaDiam(f)!=="1,2 × 3,2")throw new Error("Ø : "+mecaDiam(f));
-  const x=mecaEntites(Buffer.from(mecaDxf(J)).toString("latin1"));
-  const arcs=x.filter(y=>y.type==="ARC"&&y.calque==="FIXATIONS"), cercles=x.filter(y=>y.type==="CIRCLE"&&y.calque==="FIXATIONS");
-  if(arcs.length!==2||cercles.length!==2)throw new Error("DXF : "+arcs.length+" arcs, "+cercles.length+" cercles de fixation");
 });
 T("dossier méca : un trou libre ne prend pas le nom d'une empreinte de fixation",()=>{
   const e=mecaEntree();
@@ -27811,14 +27633,14 @@ T("dossier méca, éditeur : le connecteur USB, au milieu sur sa face, contre le
   if(!oj()||oj().type!=="bord"||oj().bord!=="O")throw new Error("contre le bord : "+JSON.stringify(oj()));
   exCharger(1);
 });
-T("dossier méca, éditeur : un composant retourné passe dessous, corps dans le repère du DXF",()=>{
+T("dossier méca, éditeur : un composant retourné passe dessous, corps dans le repère des Gerber",()=>{
   exCharger(1);
   const fp=S.fps.find(f=>!/^(J|P|CN|USB|X|SW|LED|DS|BT)\d/i.test(f.ref)&&!f.side);
   fp.side=1;
   const j=mecaDossier();
   const r=j.composants.find(c=>c.ref===fp.ref);
   if(r.face!=="dessous")throw new Error(fp.ref+" : "+r.face);
-  /* le corps, dans le repère du DXF : même transformation que dxfCarte */
+  /* le corps, dans le repère des Gerber */
   const T=fpXform(fp), b=bodyOf(fp), o=gOrigin(), q=T(b.x1,b.y1);
   if(Math.abs(r.corps[0][0]-(q.x-o.x))>1e-3||Math.abs(r.corps[0][1]-(o.y-q.y))>1e-3)
     throw new Error("corps "+JSON.stringify(r.corps[0])+" ≠ "+JSON.stringify([q.x-o.x,o.y-q.y]));
@@ -27910,25 +27732,14 @@ T("plan mécanique : chaque composant a son pavé dans les deux vues, l'inconnu 
   }finally{S.dessin=null;}
 });
 
-/* ---------- DXF et zip du dossier ---------- */
-/* les entités d'un DXF R12 : [{type, calque}] */
-function mecaEntites(t){
-  const l=t.split(/\r?\n/).map(x=>x.trim()), out=[];
-  const i0=l.indexOf("ENTITIES");
-  for(let i=i0+1;i<l.length-1;i+=2){
-    if(l[i]==="0"&&l[i+1]!=="ENDSEC"&&l[i+1]!=="EOF"&&l[i+1]!=="VERTEX"&&l[i+1]!=="SEQEND")out.push({type:l[i+1],calque:null,i:i+1});
-    else if(l[i]==="8"&&out.length&&out[out.length-1].calque==null)out[out.length-1].calque=l[i+1];
-    if(l[i]==="0"&&l[i+1]==="ENDSEC"&&i>i0)break;
-  }
-  return out;
-}
-T("dossier méca : le zip a le PDF, le JSON et le DXF, au nom de la carte",()=>{
+/* ---------- zip du dossier ---------- */
+T("dossier méca : le zip a le PDF et le JSON au nom de la carte (le STEP s'y ajoute à l'export)",()=>{
   exCharger(1);
   S.holes=[mkHole(S.board.x+4,S.board.y+4,3.2)];
   try{
     const f=mecaFichiersEditeur(), base=fabBase();
     const noms=f.map(x=>x.name).join();
-    if(noms!==[base+"-PLAN-MECA.pdf",base+"-MECA.json",base+"-MECA.dxf"].join())throw new Error(noms);
+    if(noms!==[base+"-PLAN-MECA.pdf",base+"-MECA.json"].join())throw new Error(noms);
     if(!Buffer.from(f[0].data).toString("latin1").startsWith("%PDF"))throw new Error("PDF");
     S.dessin={fonte:false};           // Helvetica en WinAnsi : le texte se lit dans le PDF
     if(!Buffer.from(mecaFichiersEditeur()[0].data).toString("latin1").includes("("+base+"-MECA)"))
@@ -27941,22 +27752,6 @@ T("dossier méca : le zip a le PDF, le JSON et le DXF, au nom de la carte",()=>{
     if(!zipBlob(f))throw new Error("archive non produite");
   }finally{exCharger(1);}
 });
-T("dossier méca : le DXF a un cercle par fixation, les corps par face et par hauteur",()=>{
-  exCharger(1);
-  S.holes=[mkHole(S.board.x+4,S.board.y+4,3.2),mkHole(S.board.x+20,S.board.y+4,2.5)];
-  const garde=window.CSV_LIB;
-  window.CSV_LIB=[{"Part Name":"CONN_Embase_SMA_CI_Bord_de_carte","Maximun Height":"9.5"}];
-  try{
-    const J=mecaDossier();
-    const e=mecaEntites(Buffer.from(mecaDxf(J)).toString("latin1"));
-    const fix=e.filter(x=>x.type==="CIRCLE"&&x.calque==="FIXATIONS");
-    if(fix.length!==2)throw new Error(fix.length+" cercles de fixation");
-    if(!e.some(x=>x.calque==="CORPS_DESSUS_H9_50"))throw new Error("calque du SMA à 9,50 absent : "+[...new Set(e.map(x=>x.calque))].join());
-    if(!e.some(x=>x.calque==="CORPS_DESSUS_H_INCONNUE"))throw new Error("calque des hauteurs inconnues absent");
-    if(!e.some(x=>x.calque==="CONTOUR"))throw new Error("contour");
-  }finally{window.CSV_LIB=garde;exCharger(1);}
-});
-
 /* ---------- réglages posés à la main ---------- */
 T("dossier méca : une hauteur saisie l'emporte, et la case retire une ouverture",()=>{
   exCharger(1);

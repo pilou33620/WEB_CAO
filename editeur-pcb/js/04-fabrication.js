@@ -307,13 +307,13 @@ function gRegion(body,pts){
 }
 /* Une zone ou une découpe de cuivre, arcs gardés. Le modèle n'en range que
    les sommets : une zone ronde y est une suite de cordes égales, que l'on
-   reconnaît comme au contour de carte (`dxfSegments`, `edgeSegs`) et à la
+   reconnaît comme au contour de carte (`ctrSegments`, `edgeSegs`) et à la
    même finesse (`gArcsFins`) — le cuivre écrit reste celui que le DRC a
    mesuré. Dans une région, le tracé doit être continu : le sens d'un arc se
    lit au point d'où l'on arrive, comme à l'IPC-2581 (`contourArcs`), et le
    dernier pas retombe exactement sur le départ, la région restant fermée. */
 function gRegionArcs(body,pts){
-  const Q=pts.map(p=>({x:p.x,y:-p.y})), segs=pts.length>=3?dxfSegments(Q):[];
+  const Q=pts.map(p=>({x:p.x,y:-p.y})), segs=pts.length>=3?ctrSegments(Q):[];
   if(!segs.some(s=>s.t==="a")||!gArcsFins(Q,segs)){gRegion(body,pts);return;}
   const pt=(s,a)=>({x:s.c.x+s.r*Math.cos(a*Math.PI/180),y:s.c.y+s.r*Math.sin(a*Math.PI/180)});
   const i0=Math.max(0,segs.findIndex(s=>s.t==="l"));
@@ -642,7 +642,7 @@ function gerberSilk(side){
    de chacune sous 10 µm. Un polygone grossier (dodécagone de 5 mm : 0,17 mm)
    reste en cordes, celles que le DRC et le remplissage des zones mesurent ;
    sinon la fraise couperait plus près du cuivre que la marge de bord. */
-/* Le départ d'un contour rangé en droites et arcs (`dxfSegments`) : le bout
+/* Le départ d'un contour rangé en droites et arcs (`ctrSegments`) : le bout
    de L[0] partagé avec le dernier élément. Le sens d'un arc se lit au point
    d'où l'on arrive ; un arc concave tourne à rebours du contour, et partir
    de son autre bout fait arriver hors de l'arc suivant. */
@@ -671,10 +671,10 @@ function gArcsFins(Q,segs){
 function edgeSegs(body,A){
   /* le contour, puis chaque découpe intérieure : le fraisage les suit tous.
      Les suites de cordes égales (coin arrondi, carte ronde) sortent en arcs,
-     reconnus comme au DXF et à l'IPC-2581 (dxfSegments, Y vers le haut) :
+     reconnus comme au STEP et à l'IPC-2581 (ctrSegments, Y vers le haut) :
      G03 antihoraire de a1 à a2, I/J du départ au centre, en multi-quadrant. */
   for(const c of [boardPoly()].concat(boardCutouts())){
-    const Q=c.map(p=>({x:p.x,y:-p.y})), segs=dxfSegments(Q);
+    const Q=c.map(p=>({x:p.x,y:-p.y})), segs=ctrSegments(Q);
     if(!gArcsFins(Q,segs)){
       for(let k=0;k<c.length;k++)gSeg(body,A,c[k].x,c[k].y,c[(k+1)%c.length].x,c[(k+1)%c.length].y,0.1);
       continue;
@@ -1203,15 +1203,6 @@ function fabReadme(files,dr){
            "cuivre et nets, zones remplies, percages et contre-percage, composants,",
            "nomenclature), millimetres, meme origine que les Gerber. En cas de",
            "desaccord, les Gerber et l'Excellon font foi.");
-  if(files.some(f=>/\.dxf$/i.test(f.name)))
-    L.push("Les .dxf (AutoCAD R12, millimetres) servent a la mecanique : -CARTE.dxf a",
-           "l'echelle 1:1 dans le repere des Gerber (contour, trous, composants),",
-           "-PLAN-FABRICATION.dxf la feuille du plan entiere.",
-           "Dans -CARTE.dxf, les cercles des trous restent sur les calques",
-           "TROUS_METALLISES et TROUS_NON_METALLISES ; chaque outil a en plus son",
-           "calque (TROUS_PTH_0_80, TROUS_NPTH_3_20, VIAS_0_30, contre-percage",
-           "CONTRE_PERCAGE_DESSOUS_0_55...), avec un POINT au centre de chaque",
-           "trou : les positions de percage, un diametre par calque.");
   for(const x of files.filter(f=>f.kind==="anim3d"))
     L.push(x.name+(/\.html$/i.test(x.name)
       ?" : la carte qui s'assemble en 3D, page autonome (s'ouvre hors ligne, orientable a la souris)."
@@ -1367,7 +1358,6 @@ const FAB_GROUPES=[
   ["ipc","Netlist de test (.ipc)"],
   ["ipc2581","Carte complète IPC-2581 (.xml)"],
   ["plans","Plans Draftsman (PDF)"],
-  ["dxf","DXF pour la mécanique"],
   ["master","Master Drawing (PDF)"],
   ["empilage","Empilage (EMPILAGE.txt)"],
   ["positions","Positions de placement (positions.csv)"],
@@ -1424,9 +1414,6 @@ function buildFabFiles(extra,veut){
     const plans=dfPdfOctets();
     if(plans)files.push({name:fabBase()+"-PLANS.pdf",data:plans});
   }
-  /* les DXF pour la mécanique (33-draftsman-export.js) : la carte à 1:1, et
-     la feuille du plan de fabrication */
-  if(prend("dxf")&&typeof dxfFichiers==="function")files.push(...dxfFichiers());
   if(extra)files.push(...extra);
   /* Empilage, placement et nomenclature avant le Master Drawing et le
      LISEZ-MOI : tous deux ne marquent présent que ce qui est déjà dans la liste. */

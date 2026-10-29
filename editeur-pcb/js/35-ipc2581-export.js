@@ -574,8 +574,8 @@ function ipc2581Document(opts){
   };
   /* Le contour de la carte et ses découpes, arcs gardés. L'éditeur ne range
      qu'une liste de sommets : un coin arrondi ou une carte ronde importés y
-     sont des suites de cordes égales. `dxfSegments` (33-draftsman-export.js)
-     les reconnaît — c'est lui qui les rend en ARC au DXF — et elles partent
+     sont des suites de cordes égales. `ctrSegments` (commun/export-step.js)
+     les reconnaît — c'est lui qui les rend en cylindres au STEP — et elles partent
      ici en <PolyStepCurve>, sur le cercle qui passe exactement par les
      sommets : le contour reste fermé, la fraise suit un rayon. Rend aussi le
      nombre d'arcs écrits. `fins` : le cuivre (zones, découpes) ne prend
@@ -583,7 +583,7 @@ function ipc2581Document(opts){
      (`gArcsFins`) — le remplissage a été mesuré sur les cordes. */
   const contourArcs=(P0,fins)=>{
     const Q=P0.map(p=>({x:p.x-o.x,y:o.y-p.y}));
-    const segs=typeof dxfSegments==="function"?dxfSegments(Q):[];
+    const segs=typeof ctrSegments==="function"?ctrSegments(Q):[];
     if(!segs.some(s=>s.t==="a")||(fins&&!gArcsFins(Q,segs)))return {k:poly(P0,null),arcs:0};
     /* un arc y est rangé dans le sens trigonométrique, de a1 à a2 : le sens
        du parcours se lit au point d'où l'on arrive. On part donc d'un
