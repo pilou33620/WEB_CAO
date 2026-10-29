@@ -51,6 +51,7 @@
           <button data-ic="🖼" class="tb" id="bPng">Exporter .png</button>
           <button data-ic="🏭" class="tb" id="bFab">Fabrication .zip</button>
           <button data-ic="🤖" class="tb" id="bJlc" title="Dossier PCBA pour JLCPCB : l'archive Gerber + perçage, la nomenclature (BOM) et le fichier de placement (CPL) aux formats que JLCPCB demande, prêts à téléverser">PCBA JLCPCB .zip</button>
+          <button data-ic="🔎" class="tb" id="bVerifBom" title="Vérifie chez JLCPCB, avant de commander, que chaque ligne de la BOM a une pièce en stock pour le lot, avec la bonne valeur, la bonne tension et le bon boîtier ; propose des pièces pour les lignes sans code LCSC ou refusées">Vérif BOM JLCPCB…</button>
           <button data-ic="🎬" data-bascule class="tb" id="bFabAnim" title="Ajoute à Fabrication .zip la carte qui s'assemble en 3D : une vidéo (MP4 ou WebM, enregistrée en temps réel, une vingtaine de secondes) et une page HTML qui s'ouvre hors ligne, orientable à la souris. Éteinte à chaque ouverture de l'éditeur">Animation 3D dans le .zip</button>
           <button data-ic="⇪" class="tb" id="bIpc2581" title="Toute la carte en un seul fichier XML IPC-2581 (révision C) : empilage et matières, cuivre et nets, perçages et contre-perçage, composants, empreintes et nomenclature. Il est aussi dans le dossier de fabrication">IPC-2581 .xml</button>
           <button data-ic="📐" class="tb" id="bPlans" title="Draftsman : plan de fabrication coté, carte de perçage, coupe d'empilage, plans d'assemblage dessus / dessous, nomenclature. PDF au texte cherchable (repères, valeurs, références, nets)">Plans (Draftsman)…</button>
@@ -423,6 +424,7 @@
 <script src="../commun/vendor/three-source.js"></script>
 <script src="js/41-animation-3d.js"></script>
 <script src="js/42-fiche-mesure.js"></script>
+<script src="js/43-verif-bom.js"></script>
 <script src="../commun/explorateur-lib.js"></script>
 <script src="../commun/workspace.js"></script>
 <script src="../commun/telephone.js"></script>

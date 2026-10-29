@@ -569,7 +569,7 @@ function silkTraits(side){
     const tr=fpTextPos(fp).ref;
     // sur la face inférieure, le texte doit être en miroir dans le fichier
     // pour se lire à l'endroit une fois la carte retournée
-    for(const poly of textStrokes(fp.ref,tr.x,tr.y,tr.size,!!side))
+    for(const poly of textStrokes(fp.ref,tr.x,tr.y,tr.size,!!side,tr.rot))
       for(let k=0;k+1<poly.length;k++)
         seg(poly[k].x,poly[k].y,poly[k+1].x,poly[k+1].y,lw);
   }
@@ -1451,13 +1451,19 @@ function jlcGerberFiles(){
 }
 /* BOM : une ligne par pièce (valeur, empreinte, code LCSC), repères groupés.
    Le code LCSC vient du schéma (champ lcsc, ou « vendor reference » de la LIB). */
+/* points de test, mires, trous de fixation : rien à poser, JLCPCB les
+   listerait en « Unmatched components » */
+function jlcNonPose(fp){
+  return /^(TP|FID|MH|H)\d/i.test(fp.ref||"")||/test.?point|fiducial|mounting.?hole/i.test(fp.pkg||"");
+}
+function jlcFpsAPoser(){return fabFpsMontes().filter(fp=>!jlcNonPose(fp));}
 function jlcBomLignes(){
   let sch=new Map();
   try{if(typeof pcbComposantsSchema==="function")sch=pcbComposantsSchema();}catch(_){}
   const groupes=new Map();
-  for(const fp of fabFpsMontes()){
+  for(const fp of jlcFpsAPoser()){
     const c=sch.get(fp.ref)||{};
-    const val=fp.value||c.value||c.mpn||"", pkg=fp.pkg||"", lcsc=String(c.lcsc||"").trim();
+    const val=fp.value||c.value||c.mpn||"", pkg=fp.pkg||"", lcsc=String(fp.lcsc||c.lcsc||"").trim();   // fp.lcsc : choisi par la Vérif BOM
     const k=val+"|"+pkg+"|"+lcsc;
     if(!groupes.has(k))groupes.set(k,{val,pkg,lcsc,refs:[]});
     groupes.get(k).refs.push(fp.ref);
@@ -1475,18 +1481,43 @@ function jlcBomCsvText(){
 /* CPL : centre de l'empreinte (origine des Gerber, Y vers le haut), face, et
    l'angle compté dans le sens anti-horaire vu de dessus comme le veut JLCPCB —
    l'éditeur, lui, tourne dans le sens horaire (fpXform, y vers le bas). */
-function jlcCplCsvText(){
-  const o=gOrigin(), rows=["Designator,Mid X,Mid Y,Layer,Rotation"];
-  for(const fp of fabFpsMontes())
+function jlcCplLignes(){
+  const o=gOrigin(), rows=[["Designator","Mid X","Mid Y","Layer","Rotation"]];
+  for(const fp of jlcFpsAPoser())
     rows.push([fp.ref,fmt(fp.x-o.x,4)+"mm",fmt(o.y-fp.y,4)+"mm",fp.side?"Bottom":"Top",
-      String(padRot(360-(fp.rot||0)))].map(pcbCsvCell).join(","));
-  return rows.join("\r\n")+"\r\n";
+      String(padRot(360-(fp.rot||0)))]);
+  return rows;
+}
+function jlcCplCsvText(){
+  return jlcCplLignes().map(r=>r.map(pcbCsvCell).join(",")).join("\r\n")+"\r\n";
+}
+/* CPL au gabarit .xlsx de JLCPCB (JLCSMT_Sample_CPL) : en-tête jaune gras, cellules
+   centrées à bordure fine, rotation numérique. Classeur minimal, chaînes en ligne. */
+function jlcCplXlsx(){
+  const esc=t=>String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const col="ABCDE", larg=[13.56,16.22,14.44,12.33,14.11];
+  const rows=jlcCplLignes().map((r,i)=>'<row r="'+(i+1)+'">'+r.map((v,j)=>{
+    const ref=col[j]+(i+1), st=i?2:1;
+    return i&&j===4?'<c r="'+ref+'" s="2"><v>'+v+'</v></c>'
+      :'<c r="'+ref+'" s="'+st+'" t="inlineStr"><is><t>'+esc(v)+'</t></is></c>';
+  }).join("")+'</row>').join("");
+  const X='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n', NS='xmlns="http://schemas.openxmlformats.org/';
+  const R=NS+'package/2006/relationships"', RT='http://schemas.openxmlformats.org/officeDocument/2006/relationships/';
+  const al='<alignment horizontal="center" vertical="center"/>';
+  const files=[
+    {name:"[Content_Types].xml",text:X+'<Types '+NS+'package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>'},
+    {name:"_rels/.rels",text:X+'<Relationships '+R+'><Relationship Id="rId1" Type="'+RT+'officeDocument" Target="xl/workbook.xml"/></Relationships>'},
+    {name:"xl/workbook.xml",text:X+'<workbook '+NS+'spreadsheetml/2006/main" xmlns:r="'+RT.slice(0,-1)+'"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>'},
+    {name:"xl/_rels/workbook.xml.rels",text:X+'<Relationships '+R+'><Relationship Id="rId1" Type="'+RT+'worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="'+RT+'styles" Target="styles.xml"/></Relationships>'},
+    {name:"xl/styles.xml",text:X+'<styleSheet '+NS+'spreadsheetml/2006/main"><fonts count="3"><font><sz val="11"/><name val="Arial"/></font><font><b/><sz val="11"/><name val="Arial"/></font><font><sz val="11"/><name val="Arial"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFFF00"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color auto="1"/></left><right style="thin"><color auto="1"/></right><top style="thin"><color auto="1"/></top><bottom style="thin"><color auto="1"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">'+al+'</xf><xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">'+al+'</xf></cellXfs></styleSheet>'},
+    {name:"xl/worksheets/sheet1.xml",text:X+'<worksheet '+NS+'spreadsheetml/2006/main"><cols>'+larg.map((w,i)=>'<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+w+'" customWidth="1"/>').join("")+'</cols><sheetData>'+rows+'</sheetData></worksheet>'}];
+  return zipOctets(files);
 }
 function jlcLisezMoi(base,sansCode){
   const L=["Dossier PCBA JLCPCB — "+base,"",
     "1. jlcpcb.com > Order now : téléverser "+base+"-gerber.zip (Gerber + perçage).",
     "2. Cocher « PCB Assembly », choisir la face à assembler.",
-    "3. Téléverser "+base+"-BOM-JLCPCB.csv (BOM) et "+base+"-CPL-JLCPCB.csv (CPL).",
+    "3. Téléverser "+base+"-BOM-JLCPCB.csv (BOM) et "+base+"-CPL-JLCPCB.xlsx (CPL).",
     "4. Vérifier l'orientation de chaque pièce dans l'aperçu de placement : le zéro",
     "   des pièces de la bibliothèque JLCPCB n'est pas toujours celui de l'empreinte.",
     "",
@@ -1504,11 +1535,11 @@ function exportJlcpcb(){
   const gerber=zipOctets(jlcGerberFiles());
   const files=[{name:base+"-gerber.zip",data:gerber},
     {name:base+"-BOM-JLCPCB.csv",text:jlcBomCsvText()},
-    {name:base+"-CPL-JLCPCB.csv",text:jlcCplCsvText()},
+    {name:base+"-CPL-JLCPCB.xlsx",data:jlcCplXlsx()},
     {name:"LISEZ-MOI-JLCPCB.txt",text:jlcLisezMoi(base,sansCode)}];
   const nom=pcbFile("-PCBA-JLCPCB"+sl+".zip","PCBA-JLCPCB"+sl+".zip");
   dl(zipBlob(files),nom);
-  hint("Dossier JLCPCB exporté dans "+nom+" — "+fabFpsMontes().length+" composant(s) à placer"+
+  hint("Dossier JLCPCB exporté dans "+nom+" — "+jlcFpsAPoser().length+" composant(s) à placer"+
        (sansCode.length?", "+sansCode.length+" ligne(s) de BOM sans code LCSC (liste dans le LISEZ-MOI).":"."));
   return files;
 }

@@ -593,7 +593,7 @@ function drawSilk(c){
     c.strokeStyle = sel?C_SEL:(!auto?"#9aa3b0":(top?C_SILK_T:C_SILK_B));
     c.lineWidth = Math.max(0.15, px(1)); c.lineCap = "round"; c.lineJoin = "round";
     c.beginPath();
-    for(const P of textStrokes(fp.ref,tr.x,tr.y,tr.size,!top)){
+    for(const P of textStrokes(fp.ref,tr.x,tr.y,tr.size,!top,tr.rot)){
       c.moveTo(P[0].x,P[0].y);
       for(let k=1;k<P.length;k++)c.lineTo(P[k].x,P[k].y);
     }

@@ -217,7 +217,28 @@ function schMontrerAilleurs(){
 
 if(typeof sessEcouterProbe==="function")
   sessEcouterProbe("schema",function(quoi,valeur){
+    if(quoi==="lcsc")return schPoserLcsc(valeur);
     const t=schCibleAller(valeur);
     if(t)schDire("Montré depuis le PCB (autre onglet) : "+t.libelle+".");
     return !!t;
   });
+
+/* La Vérif BOM du PCB envoie {repère: code LCSC} : posés en une étape d'historique. */
+function schPoserLcsc(json){
+  let codes;
+  try{codes=JSON.parse(json);}catch(_){return false;}
+  if(!codes||typeof codes!=="object")return false;
+  const pages=(Array.isArray(S.pages)&&S.pages.length)?S.pages:[{comps:S.comps}];
+  const cibles=[];
+  pages.forEach((p,i)=>{
+    for(const c of ((i===S.page?S.comps:p.comps)||[]))
+      if(c&&typeof codes[c.ref]==="string")cibles.push(c);
+  });
+  if(!cibles.length)return false;
+  push();
+  for(const c of cibles)c.lcsc=String(codes[c.ref]).slice(0,50);
+  if(typeof refreshPanels==="function")refreshPanels();
+  if(typeof draw==="function")draw();
+  schDire(cibles.length+" code(s) LCSC reçus du PCB (Vérif BOM) — à enregistrer.");
+  return true;
+}

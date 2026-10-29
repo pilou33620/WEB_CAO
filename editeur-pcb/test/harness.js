@@ -57,7 +57,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "closeZone","fullBoardZone","zoneMask","labelMask","maskAt","classOf","setNetClass","defaultWidth",
   "clrPair","applyClasses","jointAt","splitTrack","netTracks","selectNetRouting",
   "deleteNetRouting","autoClass","classOptionsHtml","poserClasseNet","schemaPublie","listNets","mkFp","w2s","runDrc","padsOf",
-  "buildFabFiles","jlcGerberFiles","jlcBomLignes","jlcBomCsvText","jlcCplCsvText","exportJlcpcb","gerberCopper","gerberMask","gerberPaste","gerberSilk",
+  "buildFabFiles","jlcGerberFiles","jlcBomLignes","jlcBomCsvText","jlcCplCsvText","jlcCplXlsx","normFp","jlcNonPose","jlcFpsAPoser","vbValeur","vbValeurFiche","vbJuger","vbRequete","vbVerifier","vbAppliquer","exportJlcpcb","gerberCopper","gerberMask","gerberPaste","gerberSilk",
   /* animation 3D de fabrication.zip (41-animation-3d.js) */
   "anim3dDonnees","anim3dPage","anim3dModeles","anim3dPose","fabAnimBasculer","silkTraits","silkRogne","silkContour","SILK_GARDE","fabLivrer","THREE_SOURCE",
   "gerberEdge","gerberOutline","ipcNetlist","ipc317","masterDrawingPdf","noAcc",
@@ -4152,6 +4152,65 @@ TA("animation 3D : modèles de la LIB posés sur leur empreinte",async()=>{
 });
 /* Sans MediaRecorder (Node), l'animation part sans vidéo : le chemin entier
    tourne, et un second clic pendant l'enregistrement ne relance rien. */
+TA("Repère en sérigraphie : sa rotation tourne les traits et survit à l'enregistrement",async()=>{
+  const fp=S.fps[0];
+  if(!fp)throw new Error("pas d'empreinte");
+  const sans=textStrokes(fp.ref,fpTextPos(fp).ref.x,fpTextPos(fp).ref.y,1,false,0);
+  fp.refRot=90;
+  const t=fpTextPos(fp).ref, av=textStrokes(fp.ref,t.x,t.y,1,false,t.rot);
+  if(t.rot!==90||av[0][0].x===sans[0][0].x)throw new Error("rotation sans effet");
+  if(normFp(JSON.parse(JSON.stringify(fp)),0).refRot!==90)throw new Error("refRot perdu");
+  delete fp.refRot;
+});
+TA("Vérif BOM JLCPCB : valeur, tension, stock et boîtier jugés, candidats proposés, code posé sur la carte",async()=>{
+  // les valeurs telles qu'on les écrit au schéma
+  const eq=(a,b)=>Math.abs(a-b)<=Math.abs(b)*1e-9;
+  if(!eq(vbValeur("6,8µ/6,3VX5R"),6.8e-6)||!eq(vbValeur("4k7"),4700)||!eq(vbValeur("39nC0G"),39e-9)||vbValeur("VREF")!==null)
+    throw new Error("vbValeur");
+  if(!eq(vbValeurFiche("50V 6pF C0G 0805 Multilayer","F"),6e-12)||!eq(vbValeurFiche("4.7kΩ ±1% 0603","Ω"),4700))
+    throw new Error("vbValeurFiche");
+  if(!jlcNonPose({ref:"TP101"})||jlcNonPose({ref:"C1"}))throw new Error("jlcNonPose");
+  // le cas de la capture JLCPCB : 6,8 µF demandé, C67560 est un 6 pF
+  const g={refs:["C106"],val:"6,8µ/6,3VX5R",pkg:"0805",lcsc:"C67560"};
+  const faux={lcsc:"C67560",model:"0805CG6R0C500NT",package:"0805",stock:89595,library_type:"extended",
+    description:"50V 6pF C0G 0805 Multilayer Ceramic Capacitors MLCC"};
+  const j1=vbJuger(g,faux,5);
+  if(j1.statut!=="bloque"||!/valeur/.test(j1.notes.join()))throw new Error("6 pF accepté : "+JSON.stringify(j1));
+  const bon={lcsc:"C1",model:"CL21A685KQ",package:"0805",stock:3,library_type:"basic",
+    description:"6.8uF 6.3V X5R ±10% 0805 MLCC"};
+  if(vbJuger(g,bon,5).statut!=="bloque")throw new Error("stock 3 pour 5 accepté");
+  if(vbJuger(g,Object.assign({},bon,{stock:1e4})).statut!=="ok")throw new Error("bonne pièce refusée");
+  if(vbJuger(g,Object.assign({},bon,{stock:1e4,description:"6.8uF 4V X5R 0805"}),5).statut!=="bloque")throw new Error("4 V accepté pour 6,3 V");
+  if(vbJuger(g,Object.assign({},bon,{stock:1e4,package:"1206"}),5).statut!=="revoir")throw new Error("boîtier");
+  if(!/6\.8uF 6\.3V X5R 0805 capacitor/.test(vbRequete(g)))throw new Error("requête : "+vbRequete(g));
+  // de bout en bout, la passerelle simulée
+  const avant=serialize(), sch=S.schDoc, f0=global.fetch;
+  try{
+    loadDoc(EXEMPLES[0].build());
+    const [a,b]=S.fps.filter(f=>/^C\d/.test(f.ref));
+    a.value="6,8µ/6,3VX5R";a.pkg="0805";b.value="100µ/6,3VX5R";b.pkg="1206";
+    S.schDoc={pages:[{comps:[{ref:a.ref,value:a.value,lcsc:"C67560"}]}]};
+    const appels=[];
+    global.fetch=async(url,o)=>{
+      const q=JSON.parse(o.body);appels.push(q.name);
+      const data=q.name==="jlc_get_part"?faux
+        :{results:[{lcsc:"C9",model:"X",package:"1206",stock:1e5,library_type:"extended",description:"100uF 6.3V X5R 1206"},
+                   {lcsc:"C8",model:"Y",package:"1206",stock:1e5,library_type:"basic",description:"100uF 10V X5R 1206"},
+                   {lcsc:"C7",model:"Z",package:"1206",stock:1e5,library_type:"basic",description:"10uF 10V X5R 1206"},
+                   Object.assign({},bon,{lcsc:"C6",stock:1e5})]};
+      return {ok:true,json:async()=>({data})};
+    };
+    const res=await vbVerifier(5);
+    const ra=res.find(r=>r.g.refs.includes(a.ref)), rb=res.find(r=>r.g.refs.includes(b.ref));
+    if(ra.statut!=="bloque"||rb.statut!=="bloque")throw new Error("statuts : "+ra.statut+" "+rb.statut);
+    if(!appels.includes("jlc_get_part")||!appels.includes("jlc_search"))throw new Error("appels : "+appels);
+    if(rb.candidats[0].p.lcsc!=="C8")throw new Error("Basic d'abord : "+rb.candidats.map(c=>c.p.lcsc));
+    if(rb.candidats.some(c=>c.p.lcsc==="C7"))throw new Error("10 µF proposé pour 100 µF");
+    const n=vbAppliquer([[rb.g.refs,"C8"]]);
+    if(n!==1||b.lcsc!=="C8"||!jlcBomCsvText().includes(",C8"))throw new Error("code non posé");
+    if(normFp(JSON.parse(JSON.stringify(b)),0).lcsc!=="C8")throw new Error("lcsc perdu à l'enregistrement");
+  }finally{global.fetch=f0;S.schDoc=sch;loadDoc(JSON.parse(avant),true);}
+});
 TA("PCBA JLCPCB : archive Gerber, BOM et CPL aux colonnes de JLCPCB",async()=>{
   const avant=serialize(), co=URL.createObjectURL, sch=S.schDoc, zips=[];
   URL.createObjectURL=b=>{zips.push(b);return "blob:essai";};
@@ -4168,7 +4227,7 @@ TA("PCBA JLCPCB : archive Gerber, BOM et CPL aux colonnes de JLCPCB",async()=>{
     if(bom[0]!=="Comment,Designator,Footprint,JLCPCB Part #")throw new Error("en-tête BOM : "+bom[0]);
     if(!bom.some(l=>l.endsWith(",C25804")&&l.includes(a.ref)))throw new Error("code LCSC absent : "+bom.join(" | "));
     const n=jlcBomLignes().reduce((t,l)=>t+l.refs.length,0);
-    if(n!==fabFpsMontes().length)throw new Error("BOM : "+n+" repères pour "+fabFpsMontes().length);
+    if(n!==jlcFpsAPoser().length)throw new Error("BOM : "+n+" repères pour "+jlcFpsAPoser().length);
     const cpl=jlcCplCsvText().split("\r\n"), o=gOrigin();
     if(cpl[0]!=="Designator,Mid X,Mid Y,Layer,Rotation")throw new Error("en-tête CPL : "+cpl[0]);
     const la=cpl.find(l=>l.startsWith(a.ref+",")).split(","), lb=cpl.find(l=>l.startsWith(b.ref+",")).split(",");
@@ -4178,7 +4237,9 @@ TA("PCBA JLCPCB : archive Gerber, BOM et CPL aux colonnes de JLCPCB",async()=>{
     if(lb[3]!=="Bottom"||lb[4]!=="0")throw new Error("dessous : "+lb.join(","));
     const files=exportJlcpcb();
     const noms=files.map(f=>f.name);
-    if(noms.join()!==["carte-gerber.zip","carte-BOM-JLCPCB.csv","carte-CPL-JLCPCB.csv","LISEZ-MOI-JLCPCB.txt"].join())throw new Error("dossier : "+noms.join(" "));
+    if(noms.join()!==["carte-gerber.zip","carte-BOM-JLCPCB.csv","carte-CPL-JLCPCB.xlsx","LISEZ-MOI-JLCPCB.txt"].join())throw new Error("dossier : "+noms.join(" "));
+    const xl=files[2].data, xt=new TextDecoder().decode(xl);
+    if(xl[0]!==0x50||!xt.includes("xl/worksheets/sheet1.xml")||!xt.includes(a.ref)||!xt.includes("Mid X"))throw new Error("CPL .xlsx invalide");
     if(files[0].data[0]!==0x50||files[0].data[1]!==0x4b)throw new Error("l'archive Gerber n'est pas un zip");
     if(zips.length!==1)throw new Error(zips.length+" archive(s) livrée(s)");
     if(!/Sans code LCSC/.test(files[3].text)||files[3].text.includes(a.ref+" —"))throw new Error("LISEZ-MOI : "+files[3].text);

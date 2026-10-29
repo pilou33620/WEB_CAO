@@ -1539,6 +1539,9 @@ function propsFp(box,fp){
       rotChoix([fp.rot||0]).map(a=>'<option value="'+a+'"'+
         ((fp.rot||0)===a?" selected":"")+'>'+a+'°</option>').join("")+'</select>'+
       '<button id="bOptRot" class="tb" style="padding:2px 6px;font-size:11px;" title="Trouver et appliquer l\'orientation optimale pour minimiser les croisements de chevelu">✨ Auto</button></div></div>'+
+    '<div class="prop"><label>Rotation du repère (sérigraphie)</label><select id="pRefRot">'+
+      rotChoix([fp.refRot||0]).map(a=>'<option value="'+a+'"'+
+        ((fp.refRot||0)===a?" selected":"")+'>'+a+'°</option>').join("")+'</select></div>'+
     '<div class="prop"><label style="display:flex;align-items:center;gap:6px;cursor:pointer" '+
       'title="Contour du boîtier, point de broche 1 et repère imprimés d\'office. Coupée quand '+
       'la sérigraphie de l\'empreinte est dessinée à part, dans les dessins.">'+
@@ -1598,6 +1601,7 @@ function propsFp(box,fp){
   upd("pX",fpPose(v=>fp.x=wxu(v)),true);
   upd("pY",fpPose(v=>fp.y=wyu(v)),true);
   upd("pRot",fpPose(v=>fp.rot=+v),true);
+  upd("pRefRot",v=>{if(+v)fp.refRot=+v;else delete fp.refRot;},true);
   if($("pSilk"))$("pSilk").onchange=e=>{push();if(e.target.checked)delete fp.silk;else fp.silk=false;
     touch();refreshPanels();draw();};
   if($("pSimNM"))$("pSimNM").onchange=e=>{push();if(e.target.checked)fp.simNonMonte=true;else delete fp.simNonMonte;

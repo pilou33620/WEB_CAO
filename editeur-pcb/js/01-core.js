@@ -2427,7 +2427,7 @@ function fpTextPos(fp){
   const b=bodyOf(fp), bb=fpBBox(fp);
   const size=clamp((b.x2-b.x1)*0.34,0.8,1.6);
   return {
-    ref: {x: fp.x+(fp.refOffX||0), y: bb.y1-size*0.9+(fp.refOffY||0), size: size}
+    ref: {x: fp.x+(fp.refOffX||0), y: bb.y1-size*0.9+(fp.refOffY||0), size: size, rot: fp.refRot||0}
   };
 }
 function fpById(id){return S.fps.find(f=>f.id===id)||null;}

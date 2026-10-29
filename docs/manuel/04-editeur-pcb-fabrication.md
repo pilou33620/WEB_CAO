@@ -107,10 +107,11 @@ Le détail technique (formats, structure des fichiers) est dans [editeur-pcb/REA
 
 ### Je veux commander la carte montée chez JLCPCB
 
-1. **Fichier → PCBA JLCPCB .zip**.
-2. Le zip `<projet>-PCBA-JLCPCB.zip` (`PCBA-JLCPCB.zip` sans projet) contient `<projet>-gerber.zip` (Gerber et perçage), `<projet>-BOM-JLCPCB.csv`, `<projet>-CPL-JLCPCB.csv` et `LISEZ-MOI-JLCPCB.txt`. Avec une variante active, le nom du zip et des trois premiers fichiers prend le suffixe `-<variante>` (`<projet>-PCBA-JLCPCB-<variante>.zip`).
-3. Le code LCSC de chaque pièce vient du schéma (champ `lcsc`, ou « vendor reference » de la LIB). Les lignes de BOM sans code sont listées dans le `LISEZ-MOI-JLCPCB.txt` : JLCPCB ne les posera pas.
-4. Suivez les quatre étapes du `LISEZ-MOI-JLCPCB.txt` sur jlcpcb.com et vérifiez l'orientation de chaque pièce dans l'aperçu de placement.
+1. **Fichier → Vérif BOM JLCPCB…** d'abord (WEB_CAO doit tourner et avoir accès à Internet) : indiquez le nombre de cartes, puis **Vérifier**. Chaque ligne de la BOM est comparée à la base JLCPCB et marquée **OK**, **À revoir** (boîtier ou diélectrique différent, valeur illisible) ou **Bloquant** (pas de code LCSC, code inconnu, stock insuffisant pour le lot, valeur fausse, tension trop basse). Pour une ligne qui n'est pas OK, jusqu'à trois pièces en stock sont proposées, Basic d'abord ; **Appliquer les codes choisis** les pose sur la carte et, si le schéma est ouvert dans un autre onglet, dans le schéma (en une étape d'historique, à enregistrer).
+2. **Fichier → PCBA JLCPCB .zip** (aussi en bas de la fenêtre de vérification).
+3. Le zip `<projet>-PCBA-JLCPCB.zip` (`PCBA-JLCPCB.zip` sans projet) contient `<projet>-gerber.zip` (Gerber et perçage), `<projet>-BOM-JLCPCB.csv`, `<projet>-CPL-JLCPCB.xlsx` (gabarit JLCPCB) et `LISEZ-MOI-JLCPCB.txt`. Avec une variante active, le nom du zip et des trois premiers fichiers prend le suffixe `-<variante>` (`<projet>-PCBA-JLCPCB-<variante>.zip`).
+4. Le code LCSC de chaque pièce vient de la carte s'il a été choisi par la Vérif BOM, sinon du schéma (champ `lcsc`, ou « vendor reference » de la LIB). Les points de test (`TP…`), mires (`FID…`) et trous de fixation (`MH…`, `H…`) ne sont pas posés : ils sortent de la BOM et du CPL JLCPCB. Les lignes de BOM sans code sont listées dans le `LISEZ-MOI-JLCPCB.txt` : JLCPCB ne les posera pas.
+5. Suivez les quatre étapes du `LISEZ-MOI-JLCPCB.txt` sur jlcpcb.com et vérifiez l'orientation de chaque pièce dans l'aperçu de placement.
 
 ### Je veux exporter toute la carte en IPC-2581
 

@@ -1149,7 +1149,7 @@ function runDrc(){
     for(const fp of S.fps){
       if(!!fp.side!==!!side||fp.silk===false)continue;
       const tr=fpTextPos(fp).ref;
-      juger("le repère "+fp.ref,textStrokes(fp.ref,tr.x,tr.y,tr.size,!!side),0.15,tr.x,tr.y);
+      juger("le repère "+fp.ref,textStrokes(fp.ref,tr.x,tr.y,tr.size,!!side,tr.rot),0.15,tr.x,tr.y);
     }
     for(const d of S.drawings||[]){
       if((d.layer==="silkB")!==!!side||d.shape==="poly")continue;

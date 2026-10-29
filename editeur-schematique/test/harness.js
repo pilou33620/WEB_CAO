@@ -119,7 +119,7 @@ const EXPOSE=[
   /* exporter vers le PCB, enregistrer en local, sauvegarder le projet */
   "exporterVersPcb","SCH_EXPORT_PCB","saveJson","saveProjetGithub","schDocCourant",
   "sessCanalDispo","sessMontrerAilleurs","sessEcouterProbe","SESS_CANAL",
-  "schMontrerAilleurs","schCibleTrouver","schCibleAller","sessCibleAuChargement",
+  "schMontrerAilleurs","schPoserLcsc","schCibleTrouver","schCibleAller","sessCibleAuChargement",
   /* espace de travail commun */
   "wsDefault","wsApply","wsMove","wsPlaceOf","wsLabel","wsToggleFloat","wsToggleMaximize",
   "wsToggleCollapse","wsClose","wsShow","wsMenuBuild","wsLoad","wsSave","wsEl","WS_KEY",
@@ -224,6 +224,18 @@ function docLecture(){
   loadPage(0);touchWires();
 }
 const lireSch=(quoi,a)=>[].concat(LECTURE_CAO.schema[quoi].fn(a||{})).join("\n");
+T("Vérif BOM du PCB : les codes LCSC reçus se posent en une étape d'historique",()=>{
+  const avant=serialize();
+  try{
+    docLecture();
+    const n=S.hist.length;
+    // R2 est sur la feuille 2, la 1 est affichée
+    if(!schPoserLcsc(JSON.stringify({R1:"C8",R2:"C9"}))||S.hist.length!==n+1)throw new Error("code non posé");
+    const tous=S.pages.flatMap((p,i)=>i===S.page?S.comps:p.comps);
+    if(tous.find(c=>c.ref==="R1").lcsc!=="C8"||tous.find(c=>c.ref==="R2").lcsc!=="C9")throw new Error("feuilles");
+    if(schPoserLcsc(JSON.stringify({ZZ999:"C1"}))||schPoserLcsc("pas du json"))throw new Error("faux succès");
+  }finally{restore(avant);}
+});
 T("lectures du schéma : feuilles, composants, composant, nets, net",()=>{
   try{lecturesSchema();}finally{sheet([],[]);}
 });

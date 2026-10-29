@@ -578,6 +578,12 @@ function dragRotFix(alt){
   if(drag.mir)groupeCouches(drag.mir,alt);
 }
 function dragRotate(sens){
+  if(typeof drag!=="undefined"&&drag&&drag.moveText&&drag.moveText.kind==="ref"){
+    const f=drag.moveText.fpText;
+    if(!drag.moved){push();drag.moved=true;}
+    f.refRot=padRot((f.refRot||0)+90*sens);
+    touch();draw();return true;
+  }
   if(typeof drag==="undefined"||!drag||!drag.move||!S.sel.fps.size)return false;
   if(!drag.moved){push();drag.moved=true;beginMove();}
   fpsTourner([...S.sel.fps],sens);

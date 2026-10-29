@@ -446,6 +446,8 @@ function normFp(f,i){
     side:f.side?1:0,
     nets:dNets(f.nets)
   };
+  if(f.lcsc)out.lcsc=dStr(f.lcsc,50);
+  if(f.refRot!=null&&padRot(f.refRot))out.refRot=padRot(f.refRot);
   /* décalages du repère et de la valeur : présents seulement si déplacés */
   for(const k of ["refOffX","refOffY","valOffX","valOffY"])
     if(f[k]!=null&&Number.isFinite(+f[k]))out[k]=clamp(+f[k],-COORD,COORD);
