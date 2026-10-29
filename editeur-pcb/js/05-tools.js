@@ -448,6 +448,7 @@ function normFp(f,i){
   };
   if(f.lcsc)out.lcsc=dStr(f.lcsc,50);
   if(f.refRot!=null&&padRot(f.refRot))out.refRot=padRot(f.refRot);
+  if(+f.refSize>0)out.refSize=clamp(+f.refSize,0.5,25);
   /* décalages du repère et de la valeur : présents seulement si déplacés */
   for(const k of ["refOffX","refOffY","valOffX","valOffY"])
     if(f[k]!=null&&Number.isFinite(+f[k]))out[k]=clamp(+f[k],-COORD,COORD);
@@ -923,7 +924,7 @@ function redo(){
    ========================================================================== */
 function clearSel(){S.sel.fps.clear();S.sel.tracks.clear();S.sel.vias.clear();
   S.sel.zones.clear();S.sel.cuts.clear();if(S.sel.drawings)S.sel.drawings.clear();if(S.sel.holes)S.sel.holes.clear();S.sel.edge=false;
-  if(S.sel.decoupes)S.sel.decoupes.clear();if(S.sel.interdits)S.sel.interdits.clear();}
+  if(S.sel.decoupes)S.sel.decoupes.clear();if(S.sel.interdits)S.sel.interdits.clear();S.selRef=S.selPad=null;}
 function selCount(){return S.sel.fps.size+S.sel.tracks.size+S.sel.vias.size+S.sel.zones.size+S.sel.cuts.size+(S.sel.drawings?S.sel.drawings.size:0)+(S.sel.holes?S.sel.holes.size:0)+(S.sel.decoupes?S.sel.decoupes.size:0)+(S.sel.interdits?S.sel.interdits.size:0);}
 /* découpes de carte sélectionnées : les polygones eux-mêmes (tableaux de
    sommets de S.board.cutouts), sans identifiant à garder */
@@ -4383,6 +4384,7 @@ cv.addEventListener("pointerdown",e=>{
   if(h&&h.fpText&&(add||(S.sel.fps.has(h.fpText.id)&&selCount()>1)))h={fp:h.fpText};
   if(h && h.fpText) {
     if(!add) {clearSel();S.hlNet=null;}
+    S.selRef = h.fpText.id;             // le panneau montre le repère (propsRefText)
     S.hlText = h;
     drag={moveText:h, x:snapX(p.x), y:snapY(p.y), moved:false};
     refreshPanels();draw();return;
@@ -4407,6 +4409,8 @@ cv.addEventListener("pointerdown",e=>{
     else toggleHit(h);
   }else if(!hitSelected(h))selectHit(h,false);
   groupeEtendreSel();                       // un membre touché prend son groupe
+  // la pastille cliquée d'un boîtier seul : le panneau la montre (propsPad), le geste déplace le boîtier
+  S.selPad=(!add&&h.fp&&h.pad&&selCount()===1)?{id:h.fp.id,k:padsWorld(h.fp).indexOf(h.pad)}:null;
   /* Un clic sur une pastille prend le boîtier, rien d'autre : sur une carte
      routée, la mise en avant du net masquait le composant qu'on voulait
      déplacer. Alt+clic sur la pastille met son net en avant. */

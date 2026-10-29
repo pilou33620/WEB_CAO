@@ -843,6 +843,9 @@ function buildProps(){
   const dr=selDrawingsPcb();
   const hl=selHolesPcb();
   const only=n=>fps.length+tr.length+vi.length+zo.length+ct.length+dr.length+hl.length===n;
+  if(S.selRef!=null&&only(0)&&fpById(S.selRef))return propsRefText(box,fpById(S.selRef));
+  if(fps.length===1&&only(1)&&S.selPad&&S.selPad.id===fps[0].id&&padsOf(fps[0])[S.selPad.k])
+    return propsPad(box,fps[0],S.selPad.k);
   if(fps.length===1&&only(1))return propsFp(box,fps[0]);
   if(tr.length===1&&only(1))return propsTrack(box,tr[0]);
   if(vi.length===1&&only(1))return propsVia(box,vi[0]);
@@ -1542,6 +1545,8 @@ function propsFp(box,fp){
     '<div class="prop"><label>Rotation du repère (sérigraphie)</label><select id="pRefRot">'+
       rotChoix([fp.refRot||0]).map(a=>'<option value="'+a+'"'+
         ((fp.refRot||0)===a?" selected":"")+'>'+a+'°</option>').join("")+'</select></div>'+
+    '<div class="prop"><label>Hauteur du repère (mm) — vide = automatique</label>'+
+      '<input id="pRefSize" type="number" step="0.1" min="0.5" max="25" placeholder="auto" value="'+(fp.refSize>0?fmt(fp.refSize,2):"")+'"></div>'+
     '<div class="prop"><label style="display:flex;align-items:center;gap:6px;cursor:pointer" '+
       'title="Contour du boîtier, point de broche 1 et repère imprimés d\'office. Coupée quand '+
       'la sérigraphie de l\'empreinte est dessinée à part, dans les dessins.">'+
@@ -1601,6 +1606,7 @@ function propsFp(box,fp){
   upd("pX",fpPose(v=>fp.x=wxu(v)),true);
   upd("pY",fpPose(v=>fp.y=wyu(v)),true);
   upd("pRot",fpPose(v=>fp.rot=+v),true);
+  upd("pRefSize",v=>{if(v>=0.5&&v<=25)fp.refSize=r4(v);else delete fp.refSize;},true);
   upd("pRefRot",v=>{if(+v)fp.refRot=+v;else delete fp.refRot;},true);
   if($("pSilk"))$("pSilk").onchange=e=>{push();if(e.target.checked)delete fp.silk;else fp.silk=false;
     touch();refreshPanels();draw();};
@@ -1722,6 +1728,63 @@ function propsDecoupe(box,D){
       'la marge de bord.</div>'+
     '<div class="prop"><div class="row"><button class="tb" id="bdDel">Supprimer la découpe</button></div></div>';
   $("bdDel").onclick=()=>{deleteSel();};
+}
+/* Le repère d'un composant cliqué seul : son texte et sa place sur la sérigraphie. */
+function propsRefText(box,fp){
+  const tr=fpTextPos(fp).ref;
+  box.innerHTML=
+    '<div class="cat">Repère sérigraphie — '+esc(fp.ref)+'</div>'+
+    '<div class="prop"><label>Texte (repère du composant)</label><input id="rtRef" type="text" value="'+esc(fp.ref)+'"></div>'+
+    '<div class="prop two"><div><label>Couche</label><input value="'+(fp.side?"B.SilkS (dessous)":"F.SilkS (dessus)")+'" disabled></div>'+
+      '<div><label>Hauteur (mm)</label><input id="rtSize" type="number" step="0.1" min="0.5" max="25" placeholder="auto '+fmt(tr.size,2)+'" value="'+(fp.refSize>0?fmt(fp.refSize,2):"")+'"></div></div>'+
+    '<div class="prop"><label>Rotation</label><select id="rtRot">'+
+      rotChoix([fp.refRot||0]).map(a=>'<option value="'+a+'"'+((fp.refRot||0)===a?" selected":"")+'>'+a+'°</option>').join("")+'</select></div>'+
+    '<div class="prop two">'+numProp("rtDx","Décalage X (mm)",fmt(fp.refOffX||0,3),0.1,-1e4)+
+      numProp("rtDy","Décalage Y (mm)",fmt(fp.refOffY||0,3),0.1,-1e4)+'</div>'+
+    '<div class="prop"><div class="row"><button class="tb" id="rtHome">Remettre en place</button>'+
+      '<button class="tb" id="rtFp">Composant '+esc(fp.ref)+' →</button></div></div>'+
+    '<div class="pinnote">Une seule fonte de traits : celle des Gerber .GTO/.GBO. Hauteur vide = taille automatique, d\'après le boîtier.'+
+      (fp.silk===false?' <b>Sérigraphie automatique coupée sur ce composant : le repère n\'est pas imprimé.</b>':'')+'</div>';
+  const set=(id,fn)=>{$(id).onchange=e=>{push();fn(e.target.value);touch();refreshPanels();draw();};};
+  set("rtRef",v=>{v=v.trim();if(v)fp.ref=v;});
+  set("rtSize",v=>{v=parseFloat(v);if(v>=0.5&&v<=25)fp.refSize=r4(v);else delete fp.refSize;});
+  set("rtRot",v=>{if(+v)fp.refRot=+v;else delete fp.refRot;});
+  for(const [id,k] of [["rtDx","refOffX"],["rtDy","refOffY"]])
+    set(id,v=>{v=parseFloat(v);if(Number.isFinite(v)&&v)fp[k]=r3(v);else delete fp[k];});
+  $("rtHome").onclick=()=>{push();delete fp.refOffX;delete fp.refOffY;delete fp.refRot;delete fp.refSize;touch();refreshPanels();draw();};
+  $("rtFp").onclick=()=>{clearSel();S.sel.fps.add(fp.id);refreshPanels();draw();};
+}
+/* Une pastille cliquée : ses cotes, son perçage, sa liaison, son masque. fpSetPad
+   fige l'empreinte en pastilles explicites, comme le fait déjà la liaison du panneau. */
+function propsPad(box,fp,k){
+  const q=padsOf(fp)[k], w=padsWorld(fp)[k]||q;
+  const shapes=Object.keys(PAD_SHAPES).filter(s=>s!=="poly"||q.shape==="poly");
+  box.innerHTML=
+    '<div class="cat">Pastille '+esc(fp.ref)+'.'+esc(q.n)+(q.nom?' — '+esc(q.nom):'')+'</div>'+
+    '<div class="prop two">'+numProp("ppN","Numéro de broche",q.n,1,1)+
+      '<div><label>Net</label><input value="'+esc(q.net||"non connectée")+'" disabled></div></div>'+
+    '<div class="prop"><label>Forme</label><select id="ppShape">'+
+      shapes.map(s=>'<option value="'+s+'"'+(padShape(q.shape)===s?" selected":"")+'>'+esc(PAD_SHAPES[s])+'</option>').join("")+'</select></div>'+
+    '<div class="prop two">'+numProp("ppW","Largeur (mm)",fmt(q.w,3),0.05,0.05)+numProp("ppH","Hauteur (mm)",fmt(q.h,3),0.05,0.05)+'</div>'+
+    '<div class="prop two">'+numProp("ppDrill","Perçage (mm), 0 = CMS",fmt(q.drill||0,3),0.05,0)+
+      '<div><label>Rotation</label><select id="ppRot">'+
+      rotChoix([q.rot||0]).map(a=>'<option value="'+a+'"'+((q.rot||0)===a?" selected":"")+'>'+a+'°</option>').join("")+'</select></div></div>'+
+    '<div class="prop two">'+numProp("ppX","X dans l\'empreinte",fmt(q.x,3),0.05,-1e4)+numProp("ppY","Y dans l\'empreinte",fmt(q.y,3),0.05,-1e4)+'</div>'+
+    '<div class="prop"><label>Position sur la carte (X ; Y)</label><input value="'+fmt(ux(w.x),3)+' ; '+fmt(uy(w.y),3)+'" disabled></div>'+
+    '<div class="prop"><label>Liaison à la zone</label><select id="ppConn">'+
+      [["","celle de la zone"],["thermique","bras thermiques"],["directe","directe"],["aucune","aucune"]].map(([v,t])=>'<option value="'+v+'"'+((q.connexion||"")===v?" selected":"")+'>'+t+'</option>').join("")+'</select></div>'+
+    '<div class="prop two"><div><label>Masque (mm)</label><input id="ppMask" type="number" step="0.01" min="-5" max="5" placeholder="règle" value="'+(q.mask!=null?q.mask:"")+'"></div>'+
+      '<div><label>Pâte (mm)</label><input id="ppPaste" type="number" step="0.01" min="-5" max="5" placeholder="règle" value="'+(q.paste!=null?q.paste:"")+'"></div></div>'+
+    '<div class="prop"><div class="row"><button class="tb" id="ppFp">Composant '+esc(fp.ref)+' →</button></div></div>'+
+    '<div class="pinnote">Modifier une pastille fige l\'empreinte : ses cotes génériques (pas, écartement) ne la commandent plus. Ctrl+Z annule. Masque et pâte vides = règle de la carte.</div>';
+  for(const [id,key] of [["ppN","n"],["ppShape","shape"],["ppW","w"],["ppH","h"],["ppDrill","drill"],["ppRot","rot"],
+                         ["ppX","x"],["ppY","y"],["ppConn","connexion"],["ppMask","mask"],["ppPaste","paste"]])
+    $(id).onchange=e=>{
+      let v=e.target.value;
+      if(key!=="shape"&&key!=="connexion"&&!(v===""&&(key==="mask"||key==="paste"))){v=parseFloat(v);if(!Number.isFinite(v))return refreshPanels();}
+      push();fpSetPad(fp,k,key,v);touch();refreshPanels();draw();
+    };
+  $("ppFp").onclick=()=>{S.selPad=null;refreshPanels();draw();};
 }
 function propsBoard(box){
   const P=boardPoly(), out=S.fps.filter(f=>!inBoard(f.x,f.y,0));

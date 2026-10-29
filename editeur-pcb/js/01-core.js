@@ -1084,6 +1084,7 @@ const S = {
   meanderDraft:null, meanderOpts:{amplitude:1.5,pitch:1.2,side:0,targetDelta:0}, // accordéons de retard
   hlNet:null,                 // net mis en avant
   hlText:null,                // texte de composant en cours de déplacement
+  selRef:null, selPad:null,   // repère cliqué seul (id d'empreinte) ; pastille cliquée {id, k : rang dans padsOf}
   drc:[], drcRun:false,
   listTab:"nets", onlyUnrouted:false,
   mouse:{x:0,y:0},
@@ -2425,7 +2426,7 @@ function fpBBox(fp){
    sur l'anode de la LED de LED_UV). */
 function fpTextPos(fp){
   const b=bodyOf(fp), bb=fpBBox(fp);
-  const size=clamp((b.x2-b.x1)*0.34,0.8,1.6);
+  const size=fp.refSize>0?fp.refSize:clamp((b.x2-b.x1)*0.34,0.8,1.6);
   return {
     ref: {x: fp.x+(fp.refOffX||0), y: bb.y1-size*0.9+(fp.refOffY||0), size: size, rot: fp.refRot||0}
   };

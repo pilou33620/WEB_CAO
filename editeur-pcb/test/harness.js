@@ -12469,6 +12469,25 @@ T("une découpe seule a maintenant son panneau",()=>{
   if(h.indexOf('id="mpCtL"')<0)throw new Error("sa couche doit être modifiable");
   S.cuts=[];clearSel();
 });
+T("repère et pastille cliqués seuls ont leur panneau",()=>{
+  carte4c();
+  const f=mkFp("R7","","0603",2);f.x=20;f.y=20;S.fps.push(f);
+  const auto=fpTextPos(f).ref.size;
+  clearSel();S.selRef=f.id;buildProps();
+  if($("props").innerHTML.indexOf("Repère sérigraphie — R7")<0)throw new Error("le repère seul doit avoir son panneau");
+  $("rtSize").value="2.2";$("rtSize").onchange({target:$("rtSize")});
+  if(f.refSize!==2.2||fpTextPos(f).ref.size!==2.2)throw new Error("la hauteur du repère doit suivre");
+  if(normFp(JSON.parse(JSON.stringify(f))).refSize!==2.2)throw new Error("la hauteur doit passer l'enregistrement");
+  $("rtSize").value="";$("rtSize").onchange({target:$("rtSize")});
+  if("refSize" in f||fpTextPos(f).ref.size!==auto)throw new Error("vide rend la taille automatique");
+  clearSel();
+  if(S.selRef!==null)throw new Error("clearSel doit oublier le repère");
+  S.sel.fps.add(f.id);S.selPad={id:f.id,k:1};buildProps();
+  if($("props").innerHTML.indexOf("Pastille R7.2")<0)throw new Error("la pastille seule doit avoir son panneau");
+  $("ppW").value="1.3";$("ppW").onchange({target:$("ppW")});
+  if(padsOf(f)[1].w!==1.3||padsOf(f)[0].w===1.3)throw new Error("seule la pastille 2 doit changer");
+  S.fps=S.fps.filter(o=>o!==f);clearSel();
+});
 T("sélection mêlée : une section par famille, et le cuivre se déroute à part",()=>{
   carte4c();
   S.fps=[mkFp("U1","","SOIC-8",8)];S.fps[0].x=20;S.fps[0].y=20;
