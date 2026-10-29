@@ -381,10 +381,12 @@ function stepPiece(W,nom,solides){
 /* Un fichier STEP de la LIB recopié dans celui-ci : ses entités renumérotées
    (après les nôtres), son produit racine — celui qu'aucun assemblage ne
    contient — et la représentation de sa forme. null s'il ne se lit pas. */
-function stepIncorporer(W,texte){
+/* Les instructions « #n=… » de la section DATA, numéros décalés de `off`,
+   commentaires et fins de ligne ôtés (hors des chaînes). null sans DATA. */
+function stepInstructions(texte,off){
   const m=/\bDATA\s*;/.exec(texte);
   if(!m)return null;
-  const s=texte.slice(m.index+m[0].length), off=W.n, ents=[];
+  const s=texte.slice(m.index+m[0].length), ents=[];
   let cur="", dansTexte=false, max=0;
   for(let i=0;i<s.length;i++){
     const ch=s[i];
@@ -408,6 +410,12 @@ function stepIncorporer(W,texte){
     }
     if(ch!=="\n"&&ch!=="\r")cur+=ch;
   }
+  return {ents,max};
+}
+function stepIncorporer(W,texte){
+  const off=W.n, I=stepInstructions(texte,off);
+  if(!I)return null;
+  const {ents,max}=I;
   /* produit racine : PRODUCT_DEFINITION → PRODUCT_DEFINITION_SHAPE → SHAPE_DEFINITION_REPRESENTATION */
   const pds=[], contenus=new Set(), parPd=new Map(), rep=new Map();
   for(const e of ents){
@@ -545,6 +553,178 @@ function stepScene(J,o,modeles){
     "FILE_SCHEMA(('AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }'));","ENDSEC;","DATA;"]
     .concat(W.l,["ENDSEC;","END-ISO-10303-21;",""]).join("\n");
   return {texte,n};
+}
+
+/* ==========================================================================
+   STEP : lecture du contour d'une carte (import)
+   --------------------------------------------------------------------------
+   La carte dessinée par la mécanique : sa plus grande face plane donne le
+   contour (boucle extérieure), les découpes (boucles intérieures) et les
+   trous ronds (boucle faite d'arcs d'un même cercle). Droites gardées, arcs
+   et ellipses en cordes égales de 10° au plus (ctrSegments les retrouve à
+   l'export), B-splines en 48 points. Coordonnées en mm, dans le repère du
+   fichier, Y vers le haut : son origine devient celle des fichiers.
+   ========================================================================== */
+/* Une valeur d'instruction : {r} référence, nombre, chaîne, énumération
+   (".T."), null ($ ou *), liste, {t, a} entité typée. */
+function stepValeur(s){
+  let i=0;
+  const blanc=()=>{while(i<s.length&&/\s/.test(s[i]))i++;};
+  const val=()=>{
+    blanc();
+    const c=s[i];
+    if(c==="#"){const m=/^#(\d+)/.exec(s.slice(i,i+20));i+=m[0].length;return {r:+m[1]};}
+    if(c==="'"){let o="";i++;for(;i<s.length;i++){if(s[i]==="'"){if(s[i+1]==="'"){o+="'";i++;}else{i++;break;}}else o+=s[i];}return o;}
+    if(c==="."){const j=s.indexOf(".",i+1);const o=s.slice(i,j+1);i=j+1;return o;}
+    if(c==="$"||c==="*"){i++;return null;}
+    if(c==="("){
+      i++;const L=[];
+      for(;;){blanc();if(s[i]===")"){i++;return L;}L.push(val());blanc();if(s[i]===",")i++;}
+    }
+    const m=/^[A-Za-z_][A-Za-z0-9_]*/.exec(s.slice(i,i+80));
+    if(m){i+=m[0].length;blanc();const a=s[i]==="("?val():[];return {t:m[0].toUpperCase(),a};}
+    const n=/^[-+]?[0-9.]+(?:[eE][-+]?[0-9]+)?/.exec(s.slice(i,i+40));
+    if(!n)throw new Error("STEP illisible près de « "+s.slice(i,i+30)+" »");
+    i+=n[0].length;return parseFloat(n[0]);
+  };
+  return val();
+}
+function stepLireCarte(texte){
+  const I=stepInstructions(String(texte||""),0);
+  if(!I||!I.ents.length)return {erreur:"pas un fichier STEP (section DATA absente)"};
+  const E=new Map(), brut=new Map();
+  for(const e of I.ents){
+    const m=/^#(\d+)\s*=\s*([\s\S]*)$/.exec(e);
+    if(m)brut.set(+m[1],m[2]);
+  }
+  /* une entité lue à la demande ; complexe « (A(..)B(..)) » : {t:"*", p:{A:args, B:args}} */
+  const ent=r=>{
+    const id=r&&r.r!=null?r.r:r;
+    if(E.has(id))return E.get(id);
+    let v=null;
+    const b=brut.get(id);
+    if(b!=null){
+      v=stepValeur(b);
+      if(Array.isArray(v)){const p={};for(const x of v)if(x&&x.t)p[x.t]=x.a;v={t:"*",p};}
+    }
+    E.set(id,v);return v;
+  };
+  /* l'unité de longueur du fichier */
+  let k=1;
+  for(const b of brut.values())if(/LENGTH_UNIT/.test(b)){
+    if(/CONVERSION_BASED_UNIT\s*\(\s*'INCH/i.test(b))k=25.4;
+    else if(/\.CENTI\.\s*,\s*\.METRE\./.test(b))k=10;
+    else if(/\$\s*,\s*\.METRE\./.test(b))k=1000;
+    break;
+  }
+  const V3=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+  const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+  const unit=a=>{const l=Math.hypot(a[0],a[1],a[2])||1;return a.map(x=>x/l);};
+  const pt=r=>{const e=ent(r);return e&&e.t==="CARTESIAN_POINT"?e.a[1].map(x=>x*k).concat([0,0,0]).slice(0,3):[0,0,0];};
+  const dir=(r,d)=>{const e=r&&ent(r);return e&&e.t==="DIRECTION"?unit(e.a[1].concat([0,0,0]).slice(0,3)):d;};
+  const ax=r=>{
+    const e=ent(r)||{a:[]}, o=pt(e.a[1]), z=dir(e.a[2],[0,0,1]);
+    let x=dir(e.a[3],Math.abs(z[0])<0.9?[1,0,0]:[0,1,0]);
+    x=unit(x.map((v,i)=>v-dot(x,z)*z[i]));
+    return {o,z,x,y:V3(z,x)};
+  };
+  const sommet=r=>{const e=ent(r);return e&&e.t==="VERTEX_POINT"?pt(e.a[1]):[0,0,0];};
+  /* une B-spline (simple ou complexe, rationnelle ou non) en n points */
+  const bspline=e=>{
+    const P=e.t==="*"?e.p:null;
+    const bs=P?P.B_SPLINE_CURVE:e.a.slice(1,6), kn=P?P.B_SPLINE_CURVE_WITH_KNOTS:e.a.slice(6,9);
+    const w=P&&P.RATIONAL_B_SPLINE_CURVE?P.RATIONAL_B_SPLINE_CURVE[0]:null;
+    if(!bs||!kn)return null;
+    const p=bs[0], C=bs[1].map(pt), U=[];
+    kn[0].forEach((m,j)=>{for(let q=0;q<m;q++)U.push(kn[1][j]);});
+    const W=w||C.map(()=>1), out=[], u0=U[p], u1=U[U.length-p-1];
+    for(let s=0;s<=48;s++){
+      const u=Math.min(u1-1e-12,u0+(u1-u0)*s/48);
+      let j=p;while(j<U.length-p-2&&u>=U[j+1])j++;
+      const d=[];
+      for(let q=0;q<=p;q++){const c=C[j-p+q],wq=W[j-p+q];d.push([c[0]*wq,c[1]*wq,c[2]*wq,wq]);}
+      for(let r=1;r<=p;r++)for(let q=p;q>=r;q--){
+        const i0=j-p+q, a=(u-U[i0])/((U[i0+p-r+1]-U[i0])||1);
+        d[q]=d[q].map((v,t)=>(1-a)*d[q-1][t]+a*v);
+      }
+      out.push([d[p][0]/d[p][3],d[p][1]/d[p][3],d[p][2]/d[p][3]]);
+    }
+    return out;
+  };
+  /* une arête orientée en points (de son début à sa fin), et son cercle s'il en a un */
+  const arete=oe=>{
+    const o=ent(oe), ec=o&&ent(o.a[3]);
+    if(!ec||ec.t!=="EDGE_CURVE")return null;
+    const p1=sommet(ec.a[1]), p2=sommet(ec.a[2]), meme=ec.a[4]!==".F.";
+    let c=ent(ec.a[3]);
+    while(c&&(c.t==="SURFACE_CURVE"||c.t==="SEAM_CURVE"||c.t==="TRIMMED_CURVE"))c=ent(c.a[1]);   // shortcut: un TRIMMED_CURVE est pris entre ses sommets ; lire ses bornes si un fichier en a besoin
+    let P=[p1,p2], cercle=null;
+    if(c&&(c.t==="CIRCLE"||c.t==="ELLIPSE")){
+      const A=ax(c.a[1]), r1=c.a[2]*k, r2=(c.t==="ELLIPSE"?c.a[3]:c.a[2])*k;
+      const t=p=>{const d=p.map((v,i)=>v-A.o[i]);return Math.atan2(dot(d,A.y)/r2,dot(d,A.x)/r1);};
+      const sg=meme?1:-1, t1=t(p1);
+      const bal=((sg*(t(p2)-t1))%(2*Math.PI)+2*Math.PI)%(2*Math.PI)||2*Math.PI;
+      const n=Math.max(3,Math.ceil(bal/(Math.PI/18)));
+      P=[];
+      for(let i=0;i<=n;i++){const a=t1+sg*bal*i/n;P.push(A.o.map((v,q)=>v+r1*Math.cos(a)*A.x[q]+r2*Math.sin(a)*A.y[q]));}
+      P[0]=p1;P[n]=p2;
+      if(c.t==="CIRCLE")cercle={c:A.o,r:r1};
+    }else if(c&&(c.t==="B_SPLINE_CURVE_WITH_KNOTS"||(c.t==="*"&&c.p.B_SPLINE_CURVE))){
+      const B=bspline(c);
+      if(B){if(!meme)B.reverse();B[0]=p1;B[B.length-1]=p2;P=B;}
+    }else if(!meme)P=[p1,p2];
+    if(o.a[4]===".F.")P=P.slice().reverse();
+    return {P,cercle};
+  };
+  /* les faces planes et leurs boucles */
+  const faces=[];
+  for(const [id,b] of brut){
+    if(!/^ADVANCED_FACE\s*\(/.test(b))continue;
+    const f=ent(id), S=ent(f.a[2]);
+    if(!S||S.t!=="PLANE")continue;
+    const A=ax(S.a[1]), n=f.a[3]===".F."?A.z.map(v=>-v):A.z;
+    const boucles=[];
+    for(const br of f.a[1]){
+      const B=ent(br), L=B&&ent(B.a[1]);
+      if(!L||L.t!=="EDGE_LOOP")continue;
+      const ar=L.a[1].map(arete).filter(Boolean);
+      if(!ar.length)continue;
+      let P=[];
+      for(const x of ar)P=P.concat(P.length?x.P.slice(1):x.P);
+      if(B.a[2]===".F.")P.reverse();
+      boucles.push({P,ar});
+    }
+    if(boucles.length)faces.push({n,A,boucles});
+  }
+  if(!faces.length)return {erreur:"aucune face plane dans le fichier"};
+  /* projetée : (x, y) si la face regarde Z, sinon dans son plan */
+  const plan=f=>{
+    if(Math.abs(f.n[2])>0.99)return p=>({x:p[0],y:p[1]});
+    const u=f.A.x, v=V3(f.n,u);
+    return p=>({x:dot(p,u),y:dot(p,v)});
+  };
+  const aire=P=>Math.abs(P.reduce((s,p,i)=>{const q=P[(i+1)%P.length];return s+p.x*q.y-q.x*p.y;},0))/2;
+  for(const f of faces){
+    const pr=plan(f);
+    for(const b of f.boucles){b.Q=b.P.map(pr);b.aire=aire(b.Q);}
+    f.boucles.sort((a,b)=>b.aire-a.aire);
+    f.aire=f.boucles[0].aire-f.boucles.slice(1).reduce((s,b)=>s+b.aire,0);
+    f.pr=pr;
+  }
+  /* la plus grande ; à égalité (dessus / dessous), celle qui regarde +Z */
+  faces.sort((a,b)=>b.aire-a.aire);
+  const F=faces.filter(f=>f.aire>faces[0].aire*0.999).sort((a,b)=>b.n[2]-a.n[2])[0];
+  const propre=Q=>stepPropre(Q).map(p=>({x:Math.round(p.x*1e4)/1e4,y:Math.round(p.y*1e4)/1e4}));
+  const out={contour:propre(F.boucles[0].Q),decoupes:[],trous:[],aire:F.aire};
+  for(const b of F.boucles.slice(1)){
+    const c0=b.ar[0].cercle;
+    if(c0&&b.ar.every(x=>x.cercle&&Math.abs(x.cercle.r-c0.r)<1e-4&&Math.hypot(...x.cercle.c.map((v,i)=>v-c0.c[i]))<1e-4)){
+      const c=F.pr(c0.c);
+      out.trous.push({x:Math.round(c.x*1e4)/1e4,y:Math.round(c.y*1e4)/1e4,d:Math.round(2*c0.r*1e4)/1e4});
+    }else out.decoupes.push(propre(b.Q));
+  }
+  if(out.contour.length<3)return {erreur:"contour dégénéré"};
+  return out;
 }
 
 /* ==========================================================================

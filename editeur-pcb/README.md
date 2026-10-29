@@ -2003,6 +2003,29 @@ ses **articulations** — les points où ce qui bouge touche ce qui reste
 C'est le geste des fils de l'éditeur schématique, transposé au cuivre, avec en
 plus la contrainte d'angle que le schématique n'a pas besoin de tenir.
 
+### Import du contour depuis un STEP
+
+**⬚ Importer contour STEP…** (menu Fichier, après **Export STEP…**) lit la
+carte dessinée par la mécanique, sans dépendance : `stepLireCarte`
+(commun/export-step.js) analyse les entités du fichier, prend la plus grande
+face plane (à égalité, celle qui regarde +Z) et en tire la boucle extérieure
+(contour), les boucles intérieures (découpes) et celles faites d'arcs d'un
+même cercle (trous ronds). Droites gardées, cercles et ellipses en cordes
+égales de 10° au plus — `ctrSegments` les retrouve en arcs à l'export —,
+B-splines (rationnelles ou non) en 48 points. Unités converties (mm, cm, m,
+pouce). Une face qui ne regarde pas Z est lue dans son plan.
+
+`stepImporterTexte` (js/44-export-step.js) pose le tout : l'origine du STEP
+devient l'origine des fichiers, fixée là où elle était ; contour et découpes
+remplacent les anciens (les empreintes en attente suivent, `contourChanger`) ;
+les trous s'ajoutent en NPTH, sauf ceux qui tombent sur un perçage déjà là —
+réimporter un STEP exporté d'ici ne double ni pastilles ni vias. Une étape
+d'annulation.
+
+Limite : un fichier d'assemblage est lu dans le repère de chaque pièce, sans
+les placements de l'assemblage (`shortcut:` dans le code) ; un TRIMMED_CURVE
+est pris entre ses sommets.
+
 ### Déplacer un boîtier ou un via déjà routé
 
 Déplacer un boîtier laissait ses pistes derrière lui, et déplacer un via

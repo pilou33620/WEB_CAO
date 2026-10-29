@@ -403,7 +403,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "dfCfg","dfRegler","dfDocument","dfPdf","dfPdfOctets","dfChercher","dfSvg","dfWinAnsi","dfPdfLit",
   "dfLargeur","dfCouper","dfPercages","dfVue","dfOuvrir","dfFermer","dfExporter","DF_FORMATS","DF","dfImpedances",
   /* fonte embarquée (33-draftsman-export.js), export STEP (commun/export-step.js, 44-export-step.js) */
-  "ctrSegments","dffCadre","stepScene","stepSceneEditeur","stepIncorporer","stepFabriquer","STEP_CHOIX","anim3dPosition","stepR","stepNoteTrous",
+  "ctrSegments","dffCadre","stepScene","stepSceneEditeur","stepIncorporer","stepFabriquer","STEP_CHOIX","anim3dPosition","stepR","stepNoteTrous","stepLireCarte","stepImporterTexte","undo","polyBBox",
   "dfCalque","dfFontePreparer","dffFonte","dffLire","dffBase64","dffGlyphes","DFF_CACHE","DF_FONTE_TTF","dfZone",
   "dfLigne",
   /* dossier mécanique (commun/dossier-meca.js) */
@@ -25585,6 +25585,44 @@ T("STEP : la carte de l'exemple — carte, composants, cuivre et sérigraphie, u
     const nz=S.zones.filter(z=>(z.l===0||z.l===S.cu-1)&&z.pts.length>=3).length;
     if(J.faces.reduce((n,F)=>n+(F.cuivre.zones||[]).length,0)!==nz)throw new Error("zones extérieures : "+nz+" attendues");
   }finally{S.holes=[];}
+});
+T("STEP : importer le contour — aller-retour de l'exemple, origine gardée, perçages pas doublés, Ctrl+Z",()=>{
+  exCharger(1);
+  S.holes=[mkHole(S.board.x+5,S.board.y+5,3.2)];
+  touch();
+  const o=gOrigin(), bb=polyBBox(boardPoly()), nTrous=S.holes.length;
+  const t=stepScene(stepSceneEditeur(),{carte:true,dessus:true},{}).texte;
+  /* une autre carte, l'origine des fichiers restée où elle était */
+  S.origin={x:o.x,y:o.y};S.fabOrigin=true;
+  S.board.pts=[{x:o.x,y:o.y-10},{x:o.x+10,y:o.y-10},{x:o.x+10,y:o.y},{x:o.x,y:o.y}];boardChanged();
+  S.holes=[];
+  const avant=serialize();
+  const r=stepImporterTexte(t,"carte.step");
+  if(!r)throw new Error("import refusé");
+  const b2=polyBBox(boardPoly());
+  for(const k of ["x1","y1","x2","y2"])if(Math.abs(b2[k]-bb[k])>1e-3)throw new Error("contour : "+k+" "+b2[k]+" ≠ "+bb[k]);
+  if(gOrigin().x!==o.x||gOrigin().y!==o.y||!S.fabOrigin)throw new Error("l'origine des fichiers doit rester");
+  if(S.holes.length!==nTrous)throw new Error(S.holes.length+" trou(s) importé(s), "+nTrous+" attendu(s) : les pastilles et vias ne reviennent pas");
+  stepImporterTexte(t,"carte.step");
+  if(S.holes.length!==nTrous)throw new Error("réimporter ne double pas les trous");
+  undo();undo();
+  if(serialize()!==avant)throw new Error("Ctrl+Z doit rendre la carte d'avant");
+  if(stepImporterTexte("pas un STEP","x.step")!==null)throw new Error("un fichier illisible est refusé");
+  exCharger(1);
+});
+T("STEP : lire une carte — découpes, trous, demi-trou dans le contour, face la plus grande, unité pouce",()=>{
+  const ct=stepRondRect(-20,-10,40,25,5,8).map(p=>[p.x,p.y]);
+  const J={titre:"T",ep:1.6,contour:ct,decoupes:[[[0,0],[8,0],[8,4],[0,4]]],trous:[[30,15,3.2],[-15,-5,2.5],[10,-10,1]],faces:[],
+    composants:[{ref:"U1",face:0,corps:[[20,0],[30,0],[30,8],[20,8]],h:2}]};
+  const t=stepScene(J,{carte:true,dessus:true},{}).texte, r=stepLireCarte(t);
+  const arcs=ctrSegments(r.contour).filter(s=>s.t==="a").map(s=>Math.round(s.r*100)/100).sort().join();
+  if(arcs!=="0.5,5,5,5,5")throw new Error("arcs du contour : "+arcs);
+  if(r.decoupes.length!==1||JSON.stringify(r.trous)!=='[{"x":30,"y":15,"d":3.2},{"x":-15,"y":-5,"d":2.5}]')
+    throw new Error(JSON.stringify(r.decoupes)+" "+JSON.stringify(r.trous));
+  const pouce=stepLireCarte(t.replace("(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.))",
+    "(CONVERSION_BASED_UNIT('INCH',#1)LENGTH_UNIT()NAMED_UNIT(*))"));
+  if(Math.abs(Math.max(...pouce.contour.map(p=>p.x))-40*25.4)>1e-3)throw new Error("pouces");
+  if(!stepLireCarte("ISO-10303-21;\nDATA;\n#1=CARTESIAN_POINT('',(0.,0.,0.));\nENDSEC;").erreur)throw new Error("sans face plane");
 });
 T("STEP : un bouton à part ; fabrication.zip n'a plus de DXF",()=>{
   exCharger(1);

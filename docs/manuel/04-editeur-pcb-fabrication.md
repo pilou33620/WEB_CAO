@@ -160,6 +160,13 @@ Le détail technique (formats, structure des fichiers) est dans [editeur-pcb/REA
 
 L'export DXF n'existe plus : le STEP le remplace.
 
+### Je veux reprendre le contour de la carte dessinée par la mécanique (STEP)
+
+1. **Fichier → ⬚ Importer contour STEP…** (juste après **Export STEP…**) et choisissez le `.stp` / `.step` de la carte.
+2. La plus grande face plane du fichier donne le contour (droites et arcs ; un coin arrondi reste un arc à l'export), ses ouvertures non rondes deviennent des découpes, ses trous ronds des trous non métallisés (NPTH).
+3. L'origine du STEP devient l'origine des fichiers, fixée là où elle était : un **Export STEP…** retombe sur le modèle de la mécanique.
+4. Le contour et les découpes remplacent les anciens ; un trou qui tombe sur un perçage déjà là (trou, pastille, via) n'est pas ajouté. **Ctrl+Z** annule l'import.
+
 ### Je veux donner à un mécanicien ce qu'il faut pour dessiner le boîtier
 
 1. Dans la fenêtre Plans, cochez **Plan mécanique**.
@@ -196,6 +203,7 @@ L'export DXF n'existe plus : le STEP le remplace.
 |---|---|---|---|
 | Exporter .png | | Télécharge la vue courante en PNG, couches visibles, orientation courante. | « Export impossible : image trop grande. » si le canevas est trop grand. |
 | Fabrication .zip | | Ouvre la fenêtre **Dossier de fabrication** puis télécharge le zip. | Refusé sur une carte sans empreinte ni piste (« Rien à fabriquer : la carte est vide. »). Pendant l'enregistrement de l'animation 3D, le dossier part à la fin. |
+| ⬚ Importer contour STEP… | | Remplace le contour et les découpes par ceux de la plus grande face plane d'un STEP, ajoute ses trous ronds en NPTH ; l'origine du STEP devient celle des fichiers. | Les unités du fichier (mm, cm, m, pouce) sont converties. Un fichier d'assemblage est lu dans le repère de chaque pièce, sans ses placements. Fichier sans face plane : message, rien ne change. |
 | 🧊 Export STEP… | | Ouvre la fenêtre des cases, puis télécharge `<projet>-3D.step`. | Voir « STEP pour la mécanique ». « Cochez au moins un élément. » si tout est décoché. |
 | PCBA JLCPCB .zip | | Dossier JLCPCB : archive Gerber, BOM, CPL, LISEZ-MOI. | Carte vide refusée. Ne prend que cuivre, vernis, pâte, sérigraphie, contour (`.GM1`) et perçage. |
 | Animation 3D dans le .zip | | Bascule : ajoute au Fabrication .zip la page HTML et la vidéo de l'assemblage 3D. | Éteinte à chaque ouverture. Enregistrement en temps réel ; sans `MediaRecorder` la page part seule. Un second Fabrication .zip pendant l'enregistrement ne relance rien. |
