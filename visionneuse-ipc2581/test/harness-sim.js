@@ -6056,6 +6056,21 @@ TA("simulation RF : raccords d'un vrai fichier — lisière de polygone, bouts d
     throw new Error("les bouts décalés doivent faire un seul nœud");
 });
 
+TA("simulation RF : un code interne dans part n'empêche pas de trouver le .sNp par le MPN",async ()=>{
+  const avant=globalThis.fetch;
+  try{await simRfProbleme();}catch(e){}   // remet à zéro le catalogue lu
+  globalThis.fetch=async url=>({ok:true, json:async()=>
+    /composants/.test(url)?{composants:[
+      {"Part Number":"SX1261IMLTRT","Modèle Simulation":"SX1261.s2p"}]}
+    :{contenu:"# HZ S MA R 50\n868000000 0.1 0 0.9 0 0.9 0 0.1 0\n"}});
+  try{
+    const m=await simRfModele({ref:"U1",valeur:"",type:"",spice:"",mpn:"ART-00123",
+                               cles:["ART-00123","SX1261IMLTRT"],pads:[]},-1);
+    if(m.source!=="bibliothèque"||m.spec.type!=="snp"||m.nom!=="SX1261.s2p")
+      throw new Error("modèle par le MPN : "+JSON.stringify(m));
+  }finally{globalThis.fetch=avant; try{await simRfProbleme();}catch(e){}}
+});
+
 TA("simulation RF : le modèle vient de la ligne du catalogue, par le nom de pièce",async ()=>{
   /* Un fichier IPC-2581 ne porte que `part` (le nom de pièce du catalogue) :
      la colonne « Modèle Simulation » se lit dans LIB_composants.csv, et le

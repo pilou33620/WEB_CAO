@@ -16627,9 +16627,11 @@ async function simRfLireLib(nom){
    Lue une fois PAR CALCUL (`simRfProbleme` remet `null`) : une LIB modifiée
    est vue au lancement suivant, sans recharger la page. */
 let SIM_RF_CSV=null;
-async function simRfLigneLib(mpn){
-  const k=String(mpn||"").trim().toUpperCase();
-  if(!k)return null;
+async function simRfLigneLib(cles){
+  /* Plusieurs clés : un export IPC met souvent un code interne dans `part`
+     et le vrai MPN dans une propriété ; la première qui trouve sa ligne gagne. */
+  const ks=[].concat(cles).map(s=>String(s||"").trim().toUpperCase()).filter(Boolean);
+  if(!ks.length)return null;
   if(SIM_RF_CSV===null){
     SIM_RF_CSV=[];                     // un échec ne se retente pas composant par composant
     try{
@@ -16638,9 +16640,13 @@ async function simRfLigneLib(mpn){
       if(j&&Array.isArray(j.composants))SIM_RF_CSV=j.composants;
     }catch(e){}
   }
-  return (SIM_RF_CSV||[]).find(it=>
-    ["Part Number","manufacturer part Number","MPN","Part Name"].some(col=>
-      String(it[col]||"").trim().toUpperCase()===k))||null;
+  for(const k of ks){
+    const it=(SIM_RF_CSV||[]).find(it=>
+      ["Part Number","manufacturer part Number","MPN","Part Name"].some(col=>
+        String(it[col]||"").trim().toUpperCase()===k));
+    if(it)return it;
+  }
+  return null;
 }
 
 /* Le modèle d'un composant, et d'où il vient : importé dans le projet, puis
@@ -16664,7 +16670,7 @@ async function simRfModele(c,surcharge){
   const vide=s=>!s||s==="-"||s==="xx";
   let lib=String(c.spice||"").trim();
   if(vide(lib)){
-    const it=await simRfLigneLib(c.mpn);
+    const it=await simRfLigneLib([c.mpn].concat(c.cles||[]));
     if(it)lib=String(it["Modèle Simulation"]||it["Modele Simulation"]||"").trim();
   }
   /* « a.s3p | b.s3p » : plusieurs modèles pour la pièce, la variante choisie
@@ -17371,7 +17377,7 @@ function simCorpsRf(){
         "ce couplage coûte au S21.")+
     "</div>"+
     '<input type="file" id="simRfFichier" style="display:none" '+
-      'accept=".s1p,.s2p,.s3p,.s4p,.sub,.mod,.cir,.sp,.lib">';
+      'accept=".s1p,.s2p,.s3p,.s4p,.s5p,.s6p,.s7p,.s8p,.s9p,.sub,.mod,.cir,.sp,.lib">';
 }
 
 function simRfNb(el){

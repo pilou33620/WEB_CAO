@@ -5866,6 +5866,10 @@ function simRfPlateauIpc(){
              type:String(comp.type||""),
              spice:props["Modèle Simulation"]||props.SPICE||"",
              mpn:comp.mpn||comp.part||props.MPN||props["Part Number"]||"",
+             /* toutes les clés qui peuvent retrouver la ligne de la LIB */
+             cles:[comp.part].concat(Object.keys(props).filter(n=>
+               /^(mpn|part[ _]?(number|name)|manufacturer[ _]?part[ _]?number|mfr[ _]?pn)$/i
+                 .test(n.trim())).map(n=>props[n])),
              pads:[]};
     parComp.set(comp,c); composants.push(c);
   }
