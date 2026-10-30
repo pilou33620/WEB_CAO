@@ -211,7 +211,7 @@ const EXPOSE=["ECRITURE_CAO","simDsChamp","simDsLire","simDsEcrire","SIM_DS","SI
   /* dossier méca */
   "mecaDonnees","mecaEntreeIpc","mecaIpcDossier","mecaIpcRegler","mecaIpcFichiers","MECA_IPC","mecaPlan","mecaIpcCtx","dfSvg","mecaIpcLib","modeleTexte",
   /* fiche de mesure */
-  "mesEntreeIpc","mesFeuilles","mesResoudre",
+  "mesEntreeIpc","mesFeuilles","mesResoudre","retFeuilles","PLN_CHOIX",
   /* plans (Draftsman) */
   "plnIpcFeuilles","plnPercages"];
 
@@ -6899,6 +6899,22 @@ T("fiche de mesure, visionneuse : broches sans pastille rattachée, face dessous
   const F=mesFeuilles(E,[{a:"J1",b:"U1.8",type:"Continuité",ech:0}],mecaIpcCtx());
   const txt=F[0].items.filter(it=>it.t==="t").map(it=>it.s);
   if(!txt.some(t=>/^VUE DE DESSOUS/.test(t))||!txt.some(t=>/^DÉTAIL B .*DESSOUS$/.test(t)))throw new Error(txt.join(" | "));
+});
+
+T("plans (Draftsman), visionneuse : fiche de mesure et retrofit dans la même fenêtre, cochés d'office",()=>{
+  carteMeca();
+  V.modele.mesures=[{a:"J1",b:"U1.8",type:"Continuité"}];
+  V.modele.retrofit=[{ref:"u1",action:"Remplacer",val:"LM358B"},{ref:"J1",action:"Modifier"}];
+  try{
+    let t=plnIpcFeuilles().map(f=>f.titre).join("|");
+    if(!/Fiche de mesure/.test(t)||!/Retrofit/.test(t))throw new Error(t);
+    const F=plnIpcFeuilles().find(f=>f.genre==="ret"), txt=F.items.filter(it=>it.t==="t").map(it=>it.s);
+    if(!txt.some(s=>/^DÉTAIL A .*DESSOUS$/.test(s))||!txt.includes("U1 · Remplacer → LM358B"))
+      throw new Error(txt.join(" | "));
+    PLN_CHOIX.mes=false;
+    t=plnIpcFeuilles().map(f=>f.titre).join("|");
+    if(/Fiche de mesure/.test(t)||!/Retrofit/.test(t))throw new Error("case décochée : "+t);
+  }finally{PLN_CHOIX.mes=null;V.modele.mesures=[];V.modele.retrofit=[];carte();}
 });
 
 T("plans (Draftsman), visionneuse : fabrication, assemblage dessus et dessous, PDF cherchable",()=>{

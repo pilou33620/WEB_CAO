@@ -1088,6 +1088,7 @@ dans **Fabrication .zip**, où le Master Drawing l'annonce avec son contenu.
 | Points de test — PTST (option) | les points de test de la carte, pastilles en noir et repère à côté ; leur net se cherche ; la feuille existe même sans point de test |
 | Contour seul — BOARD (option) | le contour et les découpes, rien d'autre |
 | Fiche de mesure (option) | pour un technicien : jusqu'à 40 mesures (sonde + de la couleur de la mesure, sonde − noire, type, valeur attendue, tolérance, note), quatre par feuille ; un détail cerclé (A, B…) par point ou par paire de points, à l'échelle 2:1 à 10:1 (auto : 4:1 au moins pour une paire) ; tableau N°, Sonde +, Sonde −, Mesure, Attendu, Tol., Détails, Note, trois consignes (« d'abord hors tension » seulement si ohms et volts se mêlent) et un avertissement pour toute mesure dont un point est introuvable ; saisie dans le volet de gauche (`commun/fiche-mesure.js`, `js/42-fiche-mesure.js`) |
+| Retrofit (option) | les composants à reprendre sur une carte déjà faite : jusqu'à 60 repères (saisis un à un ou collés en liste, ou cliqués sur la feuille), chacun avec une action (remplacer, ajouter, retirer, modifier : orange, vert, rouge, bleu), la nouvelle valeur ou le MPN et une note ; la carte entière, chaque composant surligné et cerclé (A, B…) et relié par un trait à sa vue de détail agrandie (la « Board Detail View » d'Altium, 10:1 au plus), six par feuille ; tableau Détail, Repère, Action, Actuel, Nouveau, Note, et un avertissement pour un repère introuvable ; saisie dans le volet de gauche (`commun/fiche-mesure.js`, `js/42-fiche-mesure.js`) |
 | Plan mécanique (option) | voir « Dossier mécanique » |
 
 Chaque feuille a son cadre, ses repères de zones (1, 2, 3… / A, B, C…) et un
@@ -1112,8 +1113,8 @@ un texte standard au nom de la société si le champ est vide). Il ne porte ni
 l'échelle ni « approuvé par ». Les feuilles prennent
 alors les noms de ces dossiers et leur ordre : Layer_1 (Top)… Layer_n
 (Bottom), Solder_Mask Top / Bottom, Solder_Paste Top / Bottom, Equipement
-Top / Bottom, PTST, Drilling, BOARD, puis la nomenclature, la fiche de mesure
-et le plan mécanique. La société, son adresse, son logo et la mention de
+Top / Bottom, PTST, Drilling, BOARD, puis la nomenclature, la fiche de mesure, le
+retrofit et le plan mécanique. La société, son adresse, son logo et la mention de
 confidentialité viennent du profil de l'utilisateur (communs à tous les
 projets) ; le titre, les noms, les dates et le n° de PCB sont enregistrés avec
 la carte. Une colonne trop longue (beaucoup d'outils, une longue nomenclature)

@@ -411,6 +411,8 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "mecaFichiers","mecaFichiersEditeur","mecaRegler","mecaNormReglages","mecaOblong","mecaDiam",
   /* fiche de mesure du technicien (commun/fiche-mesure.js, 42-fiche-mesure.js) */
   "mesFeuilles","mesResoudre","mesEntreeEditeur","mesNormListe","mesPadSous","mesBrancher","MES_MAX",
+  /* retrofit (commun/fiche-mesure.js) */
+  "retFeuilles","retNormListe","retBrancher","retRefDeCle","RET_MAX","RET_COUL",
   /* cotes à la main, vues à la souris, détails (34-draftsman-vues.js) */
   "dfNormCotes","dfNormVues","dfNormDetails","dfResoudre","dfMesurer","dfAccroches","dfAccrocher","dfNormRef","dfRefTexte",
   "dfAjouterCote","dfModifierCote","dfSupprimerCote","dfDeplacerCote","dfAjouterDetail","dfSupprimerDetail",
@@ -26867,6 +26869,57 @@ T("LISEZ-MOI et Master Drawing : seulement ce qui est dans le zip, sous le nom d
     tx=mdTextes(mdPdf()).map(x=>x.s);
     if(!tx.some(s=>s.indexOf("the property of Societe Essai. It shall not")>=0))throw new Error("société absente de la mention");
   }finally{projFermer();cartoucheSocieteEcrire(avant);loadDoc(JSON.parse(saved),true);}
+});
+T("plans : retrofit, composants cerclés, reliés à leur détail, tableau et repère introuvable",()=>{
+  exCharger(1);
+  const fps=S.fps.filter(f=>f.ref&&padsWorld(f).length);
+  const non={fab:false,asmT:false,asmB:false,bom:false,couches:false,ret:true};
+  S.dessin={fonte:false,feuilles:non,retrofit:[
+    {ref:fps[0].ref.toLowerCase(),action:"Remplacer",val:"LM358B",note:"lot 2"},
+    {ref:fps[1].ref,action:"?",val:""},
+    {ref:fps[0].ref,action:"Retirer"},                  // doublon : ignoré
+    {ref:"ZZ9",action:"Ajouter"}]};
+  try{
+    if(dfCfg().retrofit.length!==3||dfCfg().retrofit[1].action!=="Remplacer")throw new Error("normalisation : "+JSON.stringify(dfCfg().retrofit));
+    const doc=dfDocument(), F=doc.feuilles.find(f=>f.genre==="ret");
+    if(!F||doc.feuilles.length!==1)throw new Error("une feuille retrofit attendue : "+doc.feuilles.map(f=>f.titre).join(" | "));
+    const txt=F.items.filter(it=>it.t==="t"&&!it.cache).map(it=>it.s);
+    for(const s of ["DÉTAIL A — ÉCHELLE","DÉTAIL B — ÉCHELLE","LM358B","lot 2","Remplacer",fps[0].ref+" · Remplacer → LM358B"])
+      if(!txt.some(t=>t.indexOf(s)>=0))throw new Error("« "+s+" » absent de la feuille : "+txt.join(" | "));
+    if(!txt.some(t=>/ATTENTION.*ZZ9/.test(t)))throw new Error("le repère introuvable doit être signalé");
+    /* un cercle sur la vue et un sur le détail par composant, et un trait de l'un à l'autre */
+    const orange=RET_COUL.Remplacer, cercles=F.items.filter(it=>it.t==="c"&&it.trait===orange);
+    if(cercles.length<1)throw new Error("cercle du composant sur la vue");
+    const traits=F.items.filter(it=>it.t==="p"&&it.trait===orange&&it.sp[0].length===2);
+    if(!traits.length)throw new Error("trait de liaison vers le détail");
+    if(!F.signets.some(s=>/^Retrofit A — /.test(s.titre)))throw new Error("signet du détail");
+    const z=F.mesZones.find(q=>q.cle.startsWith(fps[0].ref+"."));
+    if(!z||retRefDeCle(mesPadSous(F,(z.x1+z.x2)/2,(z.y1+z.y2)/2,0.5))!==fps[0].ref)throw new Error("clic sur le composant");
+    if(!dfChercher(doc,"detail b").length)throw new Error("la feuille doit se chercher");
+    if(!dfLatin(dfPdfOctets(doc)).startsWith("%PDF-1.4"))throw new Error("PDF");
+    if(process.env.RET_OUT)fs.writeFileSync(process.env.RET_OUT,dfSvg(F,[]));
+  }finally{S.dessin=null;}
+});
+T("retrofit : une liste de repères en une saisie, inconnus refusés, doublons ignorés",()=>{
+  const ch={}, h={}, err={textContent:""};
+  for(const k of ["ref","action","val","note"])ch[k]={value:"",dataset:{ret:k}};
+  ch.action.value="Ajouter";
+  const z={querySelector:s=>s===".ret-err"?err:ch[(/data-ret="(\w+)"/.exec(s)||[])[1]]||null,
+           addEventListener:(e,f)=>{h[e]=f;}};
+  const E={composants:[{ref:"R1"},{ref:"C2"},{ref:"U3"}]};
+  let liste=[{ref:"U3",action:"Retirer",val:"",note:""}];
+  const ui=retBrancher(z,{entree:()=>E,liste:()=>liste,ecrire:l=>{liste=l;}});
+  const ajout=()=>h.click({target:{closest:()=>({dataset:{retA:"ajout"}})}});
+  ch.ref.value="r1, X9";ajout();
+  if(liste.length!==1||!/X9/.test(err.textContent))throw new Error("inconnu accepté : "+err.textContent);
+  ch.ref.value="r1 c2;u3";ajout();
+  if(liste.map(l=>l.ref+l.action).join()!=="U3Retirer,R1Ajouter,C2Ajouter"||ch.ref.value!==""||!/U3/.test(err.textContent))
+    throw new Error(JSON.stringify(liste)+" "+err.textContent);
+  ui.choisir("R1");ui.choisir("R1");ui.choisir("C2");
+  if(ch.ref.value!=="R1 C2")throw new Error("clic : "+ch.ref.value);
+  liste=Array.from({length:RET_MAX},(_,i)=>({ref:"X"+i,action:"Ajouter"}));
+  E.composants.push({ref:"Q9"});ch.ref.value="Q9";ajout();
+  if(liste.length!==RET_MAX||!/plein/.test(err.textContent))throw new Error("au-delà de "+RET_MAX+" : "+err.textContent);
 });
 T("fiche de mesure : la 41e est refusée avec un message, la saisie reste",()=>{
   const ch={}, h={}, err={textContent:""};

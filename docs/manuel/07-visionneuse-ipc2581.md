@@ -100,10 +100,17 @@ Le contenu est le même que l'**Export STEP…** de l'éditeur PCB : voir [Édit
 
 ### Je veux fournir une fiche à un technicien
 
-1. Cliquer **Fiche de mesure**.
+1. Cliquer **Plans (Draftsman)** : la fiche de mesure se saisit dans le volet de gauche.
 2. Saisir la sonde + (couleur) et la sonde − (noire) : `U3.12`, `TP2` ou un net (`GND`), ou cliquer une pastille dans l'aperçu (la sonde + se remplit d'abord, puis la sonde −).
 3. Choisir le type de mesure, éventuellement la valeur attendue, la tolérance, l'échelle des détails et une note, puis **+ Ajouter la mesure** (ou `Entrée`).
-4. Répéter pour chaque mesure, puis **⬇ Télécharger le PDF** : `<carte>-MESURES.pdf`.
+4. Répéter pour chaque mesure : la case **Fiche de mesure (technicien)** se coche d'office. **⬇ Télécharger le PDF** donne `<carte>-PLANS.pdf` avec les feuilles cochées (décocher les autres pour la fiche seule).
+
+### Je veux préparer un retrofit (composants à reprendre)
+
+1. Cliquer **Plans (Draftsman)**, bloc **Retrofit (composants à reprendre)** du volet de gauche.
+2. Taper ou coller les repères (`U3 C12 R5`), ou cliquer les composants sur la feuille Retrofit de l'aperçu.
+3. Choisir l'action (Remplacer, Ajouter, Retirer, Modifier), la nouvelle valeur ou le MPN et une note, puis **+ Ajouter au retrofit** (ou `Entrée`).
+4. La feuille Retrofit montre la carte entière, chaque composant cerclé et relié par un trait à sa vue de détail agrandie, et le tableau des reprises. **⬇ Télécharger le PDF** l'inclut tant que sa case est cochée.
 
 ### Je veux lancer une simulation sur des pistes
 
@@ -130,8 +137,7 @@ Le contenu est le même que l'**Export STEP…** de l'éditeur PCB : voir [Édit
 | Exporter .png | | Image de ce qui est affiché, rendue à 2x | Aucune carte ouverte : rien |
 | Dossier méca | | Ouvre la fenêtre du dossier mécanique | Carte ouverte requise |
 | Export STEP… | | Ouvre la fenêtre des cases, puis télécharge `<carte>-3D.step` | Carte ouverte requise ; cuivre et sérigraphie non disponibles ; modèles 3D lus par le serveur |
-| Plans (Draftsman) | | Ouvre la fenêtre des plans de fabrication et d'assemblage | Carte ouverte requise |
-| Fiche de mesure | | Ouvre la fenêtre de la fiche du technicien | Carte ouverte requise |
+| Plans (Draftsman) | | Ouvre la fenêtre des plans : fabrication, assemblage, fiche de mesure, retrofit | Carte ouverte requise |
 | Ajuster | `F` | Cadre toute la carte | |
 | Dessous / Dessus | `B` | Regarde la carte par en dessous (le bouton nomme la vue vers laquelle il mène) | Image en miroir et pile inversée |
 | Repères | `R` | Affiche ou masque les repères des composants | Masqués par défaut ; les autres affichages (plans, perçages, etc.) sont actifs par défaut |
@@ -274,11 +280,12 @@ Les trous non métallisés servent de fixations ; ceux qui tombent dans le corps
 
 | Bouton ou menu | Effet | Limites |
 |---|---|---|
+| Feuilles (cases) | **Plan de fabrication**, **Assemblage — face dessus**, **Assemblage — face dessous** (cochées) ; **Fiche de mesure (technicien)** et **Retrofit (composants à reprendre)**, cochées d'office dès qu'elles ont une ligne | Un choix fait à la main est gardé jusqu'à la fermeture de la page. Aucune case : l'aperçu le dit et le PDF n'est pas produit |
 | Aperçu | Plan de fabrication : vue de dessus, contour et découpes, symboles de perçage, cotes hors tout, tableau de perçage (symbole, Ø fini, quantité, métallisé, portée, usage), empilage, notes de fabrication ; assemblage face dessus ; assemblage face dessous si elle porte des composants | Les composants non montés sont en tirets avec « NM » ; les notes de fabrication sont un texte type, matériaux et finition à confirmer avec le fabricant ; les cotes et détails posés à la main existent dans l'éditeur PCB seulement |
-| ⬇ Télécharger le PDF | `<carte>-PLANS.pdf`, texte cherchable, signets par composant | |
+| ⬇ Télécharger le PDF | `<carte>-PLANS.pdf` : les feuilles cochées, texte cherchable, signets par composant | |
 | ✕, `Échap`, clic hors de la fenêtre | Ferme | |
 
-### Fenêtre Fiche de mesure
+### Fiche de mesure (fenêtre Plans)
 
 | Champ ou bouton | Effet | Limites |
 |---|---|---|
@@ -291,10 +298,20 @@ Les trous non métallisés servent de fixations ; ceux qui tombent dans le corps
 | + Ajouter la mesure | Ajoute la mesure à la liste (`Entrée` dans un champ fait de même) | 40 mesures au plus ; 4 par feuille. Au-delà, l'ajout est refusé (« Fiche pleine ») et les champs gardent la saisie |
 | Clic sur une pastille de l'aperçu | Remplit la sonde active (+ d'abord, puis −) | |
 | ✕ (par mesure) | Supprime la mesure | |
-| ⬇ Télécharger le PDF | `<carte>-MESURES.pdf` : où poser les sondes, vues de détail agrandies, tableau des mesures | |
-| ✕, `Échap`, clic hors de la fenêtre | Ferme | |
 
-Les mesures sont gardées dans le modèle, donc dans **Exporter .json**.
+### Retrofit (fenêtre Plans)
+
+| Champ ou bouton | Effet | Limites |
+|---|---|---|
+| Repère(s) | Un repère (`U3`) ou une liste collée (`U3 C12 R5`, `U3, C12; R5`), avec suggestions. Un clic sur un composant de la feuille ajoute son repère au champ. | Majuscules ou minuscules. 400 caractères. Un repère inconnu fait refuser tout l'ajout (« Introuvable(s) sur la carte : … », en rouge) ; un repère déjà dans la liste est ignoré, et le message le dit. |
+| Action | **Remplacer** (orange), **Ajouter** (vert), **Retirer** (rouge), **Modifier** (bleu) : couleur du composant, de son cercle et de son trait. | La même pour tous les repères d'un ajout. |
+| Nouvelle valeur ou MPN | Texte libre (`10 kΩ`, `LM358B`), colonne « Nouveau » du tableau. | 80 caractères ; `—` si vide. |
+| Note | Texte libre. | 200 caractères. |
+| + Ajouter au retrofit | Ajoute les repères, coche la feuille Retrofit et l'affiche (`Entrée` dans un champ fait de même). | 60 composants au plus ; six détails par feuille, puis « Retrofit (suite) ». |
+| ✕ (liste) | Retire le composant de la liste. | Les lettres des détails suivent la liste. |
+| Feuille produite | Vue de la carte (dessous en miroir en plus si un composant y est), composants de la liste surlignés de la couleur de leur action et cerclés (lettre A, B…), chaque cercle relié par un trait à son détail agrandi (la plus grande échelle normalisée où il tient, 10:1 au plus) ; tableau Détail, Repère, Action, Actuel (valeur de la carte), Nouveau, Note ; trois consignes ; un signet par détail. | Un repère devenu introuvable reste dans la liste (« introuvable sur la carte », en rouge) mais n'est pas dessiné : une consigne « ATTENTION » le dit sur la première feuille. |
+
+Les mesures et le retrofit sont gardés dans le modèle, donc dans **Exporter .json**.
 
 ### Panneaux Simulation EM et Résultats
 

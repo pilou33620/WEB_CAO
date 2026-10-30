@@ -182,6 +182,13 @@ L'export DXF n'existe plus : le STEP le remplace.
 4. **+ Ajouter la mesure** (ou `Entrée` dans un champ). La feuille « fiche de mesure » est cochée d'office et affichée ; chaque mesure se supprime par **✕**.
 5. La feuille montre la carte (et la face dessous, en miroir, si un point y est), cercle sur la carte chaque détail agrandi (lettre A, B…), relie les deux points de chaque mesure par un trait en tirets (quand ils sont sur la même face) et une bulle numérotée, et agrandit chaque point dans un détail avec la sonde « + » (couleur de la mesure) ou « − » (noire). En bas, un tableau (N°, Sonde +, Sonde −, Mesure, Attendu, Tol., Détails, Note) et trois consignes ; la consigne « d'abord hors tension (résistance, continuité), puis sous tension » n'est ajoutée que si la feuille mêle ohms et volts. Au-delà de quatre mesures, la feuille continue sur une feuille « (suite) ».
 
+### Je veux préparer un retrofit (composants à reprendre sur une carte déjà faite)
+
+1. Fenêtre Plans, bloc **Retrofit (composants à reprendre)**.
+2. Tapez ou collez les repères dans **Repère(s)** (`U3 C12 R5`), ou cliquez les composants sur la feuille Retrofit avec l'outil Sélection.
+3. Choisissez l'**Action** (Remplacer, Ajouter, Retirer, Modifier), la **Nouvelle valeur ou MPN** et une **Note**, puis **+ Ajouter au retrofit** (ou `Entrée`).
+4. La feuille Retrofit est cochée d'office et affichée : la carte entière avec chaque composant cerclé et relié par un trait à sa vue de détail agrandie (A, B…), puis un tableau des reprises. Au-delà de six composants, elle continue sur une feuille « (suite) ».
+
 ### Je veux joindre au dossier de fabrication une animation 3D de la carte
 
 1. **Fichier → Animation 3D dans le .zip** est une bascule (bouton allumé = actif). Elle est éteinte à chaque ouverture de l'éditeur.
@@ -429,7 +436,7 @@ Le tableau des fichiers coche toujours (`X`) `positions.csv`, `bom.csv`, `EMPILA
 | ⬇ Exporter PDF | | Télécharge `<projet>-PLANS.pdf` (`plans.pdf` sans projet), une page par feuille. | « Aucune feuille choisie : rien à exporter. » Message de fin : nombre de feuilles exportées. |
 | ⬇ Dossier méca .zip | | Télécharge `<projet>-MECA.zip` (`meca.zip` sans projet). | Voir « Dossier mécanique ». |
 | ✕ | `Échap` | Ferme la fenêtre. | Les raccourcis de l'éditeur sont inactifs dans la fenêtre. |
-| Feuilles (cases) | | **Plan de fabrication**, **Assemblage — face dessus**, **Assemblage — face dessous**, **Nomenclature** (cochées par défaut) ; **Couches de cuivre**, **Vernis épargne (Solder_Mask)**, **Pâte à braser (Solder_Paste)**, **Points de test (PTST)**, **Contour seul (BOARD)**, **Fiche de mesure (technicien)**, **Plan mécanique** (décochées par défaut). | L'assemblage dessous n'existe que si une empreinte est dessous. Les feuilles vernis et pâte n'ont une feuille « dessous » que si la carte a plus d'une couche. Cocher une feuille revient à la première page ; chaque case est une étape `Ctrl+Z`. |
+| Feuilles (cases) | | **Plan de fabrication**, **Assemblage — face dessus**, **Assemblage — face dessous**, **Nomenclature** (cochées par défaut) ; **Couches de cuivre**, **Vernis épargne (Solder_Mask)**, **Pâte à braser (Solder_Paste)**, **Points de test (PTST)**, **Contour seul (BOARD)**, **Fiche de mesure (technicien)**, **Retrofit (composants à reprendre)**, **Plan mécanique** (décochées par défaut). | L'assemblage dessous n'existe que si une empreinte est dessous. Les feuilles vernis et pâte n'ont une feuille « dessous » que si la carte a plus d'une couche. Cocher une feuille revient à la première page ; chaque case est une étape `Ctrl+Z`. |
 | Format | | **A4 paysage (297 × 210 mm)**, **A3 paysage (420 × 297 mm)** (défaut), **A2 paysage (594 × 420 mm)**. | |
 | PDF : Fonte embarquée | | Embarque la fonte PlansSans (Liberation Sans) : même rendu partout, Ω ≤ ≥ écrits tels quels, texte cherchable. Vaut aussi pour le Master Drawing. | Cochée par défaut. Décochée : Helvetica en WinAnsi (Ω devient `Ohm`, ≥ devient `>=`). |
 | Cartouche | | **Mon cartouche (DESIGN TITLE, DRAWN / CHECKED…)** ou **Cartouche standard**. | Par défaut, « Mon cartouche » dès que le profil porte une société. |
@@ -450,9 +457,10 @@ Le tableau des fichiers coche toujours (`X`) `positions.csv`, `bom.csv`, `EMPILA
 | Points de test (PTST) | Contour, pastilles de test en noir (perçage en blanc), repère à côté, net en texte invisible ; la légende donne le nombre et les repères. La feuille existe même sans point de test. |
 | Contour seul (BOARD) | Contour et découpes, rien d'autre. |
 | Fiche de mesure | Voir « Fiche de mesure ». |
+| Retrofit | Voir « Retrofit (fenêtre Plans) ». |
 | Plan mécanique | Voir « Dossier mécanique ». |
 
-L'ordre des feuilles est : fabrication, assemblage dessus, assemblage dessous, nomenclature, couches de cuivre, vernis (dessus puis dessous), pâte (dessus puis dessous), PTST, BOARD, fiche de mesure, plan mécanique. Avec le cartouche « Mon cartouche », les feuilles prennent les noms et l'ordre des dossiers de couches : Layer_1 (Top)… Layer_n (Bottom) (les couches internes `Layer_2`…), Solder_Mask Top / Bottom, Solder_Paste Top / Bottom, Equipement Top / Bottom, PTST, Drilling (le plan de fabrication), BOARD, puis nomenclature, fiche de mesure et plan mécanique. Avec le cartouche standard, les titres sont « Couche n — nom », « Vernis épargne dessus / dessous », « Pâte à braser dessus / dessous », « PTST » et « Contour de carte ». Une colonne qui ne tient pas (beaucoup d'outils de perçage, longue nomenclature, notes) continue sur une feuille « (suite) » en pleine largeur, l'en-tête des tableaux répété.
+L'ordre des feuilles est : fabrication, assemblage dessus, assemblage dessous, nomenclature, couches de cuivre, vernis (dessus puis dessous), pâte (dessus puis dessous), PTST, BOARD, fiche de mesure, retrofit, plan mécanique. Avec le cartouche « Mon cartouche », les feuilles prennent les noms et l'ordre des dossiers de couches : Layer_1 (Top)… Layer_n (Bottom) (les couches internes `Layer_2`…), Solder_Mask Top / Bottom, Solder_Paste Top / Bottom, Equipement Top / Bottom, PTST, Drilling (le plan de fabrication), BOARD, puis nomenclature, fiche de mesure, retrofit et plan mécanique. Avec le cartouche standard, les titres sont « Couche n — nom », « Vernis épargne dessus / dessous », « Pâte à braser dessus / dessous », « PTST » et « Contour de carte ». Une colonne qui ne tient pas (beaucoup d'outils de perçage, longue nomenclature, notes) continue sur une feuille « (suite) » en pleine largeur, l'en-tête des tableaux répété.
 
 #### Plan de fabrication : tableaux, coupe, notes
 
@@ -561,6 +569,18 @@ Contenu du `-MECA.step` : le même assemblage que **Export STEP…** avec les ca
 | + Ajouter la mesure | Ajoute la mesure, coche la feuille et l'affiche. | 40 mesures au plus ; quatre par feuille. Au-delà, l'ajout est refusé (« Fiche pleine », en rouge) et les champs gardent la saisie. Une mesure saisie par net garde le net (son meilleur point peut changer). Une mesure dont un point est devenu introuvable reste dans la liste (message en rouge) mais n'est pas dessinée : une consigne « ATTENTION » le dit sur la première feuille. |
 | ✕ (liste) | Supprime la mesure. | La numérotation des mesures suit la liste. |
 | Clic sur une pastille de la feuille (outil Sélection) | Remplit la sonde active (+ d'abord), puis passe à l'autre ; le champ actif est entouré. | |
+
+### Retrofit (fenêtre Plans)
+
+| Champ ou bouton | Effet | Limites |
+|---|---|---|
+| Repère(s) | Un repère (`U3`) ou une liste collée (`U3 C12 R5`, `U3, C12; R5`), avec suggestions. Un clic sur un composant de la feuille ajoute son repère au champ. | Majuscules ou minuscules. 400 caractères. Un repère inconnu fait refuser tout l'ajout (« Introuvable(s) sur la carte : … », en rouge) ; un repère déjà dans la liste est ignoré, et le message le dit. |
+| Action | **Remplacer** (orange), **Ajouter** (vert), **Retirer** (rouge), **Modifier** (bleu) : couleur du composant, de son cercle et de son trait. | La même pour tous les repères d'un ajout. |
+| Nouvelle valeur ou MPN | Texte libre (`10 kΩ`, `LM358B`), colonne « Nouveau » du tableau. | 80 caractères ; `—` si vide. |
+| Note | Texte libre. | 200 caractères. |
+| + Ajouter au retrofit | Ajoute les repères, coche la feuille Retrofit et l'affiche (`Entrée` dans un champ fait de même). | 60 composants au plus ; six détails par feuille, puis « Retrofit (suite) ». |
+| ✕ (liste) | Retire le composant de la liste. | Les lettres des détails suivent la liste. |
+| Feuille produite | Vue de la carte (dessous en miroir en plus si un composant y est), composants de la liste surlignés de la couleur de leur action et cerclés (lettre A, B…), chaque cercle relié par un trait à son détail agrandi (la plus grande échelle normalisée où il tient, 10:1 au plus) ; tableau Détail, Repère, Action, Actuel (valeur de la carte), Nouveau, Note ; trois consignes ; un signet par détail. | Un repère devenu introuvable reste dans la liste (« introuvable sur la carte », en rouge) mais n'est pas dessiné : une consigne « ATTENTION » le dit sur la première feuille. |
 
 ### Animation 3D
 

@@ -65,6 +65,7 @@ const DF_FEUILLES=[
   ["ptst",   "Points de test (PTST)"],
   ["board",  "Contour seul (BOARD)"],
   ["mes",    "Fiche de mesure (technicien)"],
+  ["ret",    "Retrofit (composants à reprendre)"],
   ["meca",   "Plan mécanique"]];
 const DF_PT=25.4/72;                 // un point typographique, en mm
 const DF_CADRE=10;                   // cadre extérieur, depuis le bord
@@ -98,13 +99,14 @@ function dfCfg(){
     fonte:typeof src.fonte==="boolean"?src.fonte:true,   // fonte embarquée (33-draftsman-export.js)
     feuilles:{fab:b("fab",true), asmT:b("asmT",true), asmB:b("asmB",true),
               bom:b("bom",true), couches:b("couches",false), masques:b("masques",false),
-              pates:b("pates",false), ptst:b("ptst",false), board:b("board",false), mes:b("mes",false), meca:b("meca",false)},
+              pates:b("pates",false), ptst:b("ptst",false), board:b("board",false), mes:b("mes",false), ret:b("ret",false), meca:b("meca",false)},
     /* posés à la main (34-draftsman-vues.js) */
     cotes:dfNormCotes(src.cotes), vues:dfNormVues(src.vues), details:dfNormDetails(src.details),
     /* hauteurs et ouvertures du dossier méca (commun/dossier-meca.js) */
     meca:mecaNormReglages(src.meca,S.fps.map(fp=>fp.id)),
     /* fiche de mesure du technicien (commun/fiche-mesure.js) */
-    mesures:mesNormListe(src.mesures)
+    mesures:mesNormListe(src.mesures),
+    retrofit:retNormListe(src.retrofit)
   };
 }
 /* Une étape d'annulation par champ édité, pas par touche : la première
@@ -1429,13 +1431,14 @@ function dfDocument(genre){
     board:()=>{if(f.board&&g("board"))feuilles.push(dfFeuillePlan(ctx,en?"BOARD":"Contour de carte","board","",(F,V)=>dfContour(F,V,0.35)));},
     /* fiche de mesure (commun/fiche-mesure.js, 42-fiche-mesure.js) */
     mes:()=>{if(f.mes&&g("mes"))feuilles.push(...mesFeuilles(mesEntreeEditeur(),ctx.cfg.mesures,ctx));},
+    ret:()=>{if(f.ret&&g("ret"))feuilles.push(...retFeuilles(mesEntreeEditeur(),ctx.cfg.retrofit,ctx));},
     /* dossier mécanique (commun/dossier-meca.js, 36-dossier-meca.js) */
     meca:()=>{if(f.meca&&g("meca"))feuilles.push(...mecaFeuilles(mecaDossier(),ctx,mecaMonde()));}
   };
   /* en « en », l'ordre des dossiers de couches : cuivres, vernis, pâte,
      équipement, points de test, perçage, contour */
-  (en?["couches","masques","pates","asmT","asmB","ptst","fab","board","bom","mes","meca"]
-     :["fab","asmT","asmB","bom","couches","masques","pates","ptst","board","mes","meca"]).forEach(k=>pose[k]());
+  (en?["couches","masques","pates","asmT","asmB","ptst","fab","board","bom","mes","ret","meca"]
+     :["fab","asmT","asmB","bom","couches","masques","pates","ptst","board","mes","ret","meca"]).forEach(k=>pose[k]());
   if(en){
     const NOMS={asmT:"Equipement Top",asmB:"Equipement Bottom",fab:"Drilling"};
     for(const F of feuilles)if(NOMS[F.genre])F.titre=NOMS[F.genre];

@@ -126,6 +126,29 @@ function mesGroupes(r,R){
   return ens?[ens]:[seul(pa),seul(pb)];
 }
 
+/* La grille des détails dans Wd × Hd : le plus grand rayon qui tient n cercles. */
+function mesGrille(n,Wd,Hd){
+  let best=null;
+  for(let cols=1;cols<=Math.max(n,1);cols++){
+    const rows=Math.ceil(Math.max(n,1)/cols), R=Math.min(Wd/cols/2-3,(Hd/rows-13)/2,38);
+    if(!best||R>best.R)best={cols,rows,R};
+  }
+  return best;
+}
+/* Une vue de détail : la carte autour de (cx,cy) à l'échelle k, découpée au
+   cercle de centre (X,Y) et de rayon R sur la feuille. Rend la transformation. */
+function mesLoupe(F,E,X,Y,R,cx,cy,k,dessous,surb,zones){
+  const s=dessous?-1:1, T=(x,y)=>({x:X+s*(x-cx)*k,y:Y-(y-cy)*k}), W=[];
+  for(let i=0;i<96;i++){const a=i*Math.PI/48;W.push({x:X+R*Math.cos(a),y:Y+R*Math.sin(a)});}
+  W.sens=1;                                        // sens trigonométrique : pas besoin de signedArea (absent de la visionneuse)
+  const D={items:[]}, zd=[];
+  mesDessin(D,E,T,dessous,surb,zd);
+  if(zones)for(const q of zd)if(Math.hypot((q.x1+q.x2)/2-X,(q.y1+q.y2)/2-Y)<R)zones.push(q);
+  for(const it of D.items)for(const q of dfDecouper(it,W))F.items.push(q);
+  dfCercle(F,X,Y,R,{lw:0.5});
+  return T;
+}
+
 function mesFeuilles(E,liste,ctx){
   const res=liste.map((m,i)=>({m,i,a:mesResoudre(E,m.a),b:mesResoudre(E,m.b)}));
   const ok=res.filter(r=>r.a.p&&r.b.p), ko=res.filter(r=>!(r.a.p&&r.b.p));
@@ -186,9 +209,7 @@ function mesFeuille(E,lot,ko,ctx,suite,n0){
   const groupes=[];
   const X0=Z.x1+wV+6, Wd=Z.x2-X0, Hd=yBas-yHaut;
   let nDet=lot.reduce((s,r)=>s+(r.a.p.face===r.b.p.face&&Math.hypot(r.a.p.x-r.b.p.x,r.a.p.y-r.b.p.y)<6?1:2),0);
-  const grille=n=>{let best=null;for(let cols=1;cols<=Math.max(n,1);cols++){
-    const rows=Math.ceil(Math.max(n,1)/cols), R=Math.min(Wd/cols/2-3,(Hd/rows-13)/2,38);
-    if(!best||R>best.R)best={cols,rows,R};}return best;};
+  const grille=n=>mesGrille(n,Wd,Hd);
   let G=grille(nDet);
   for(const r of lot)for(const g of mesGroupes(r,G.R))groupes.push(Object.assign(g,{r}));
   if(groupes.length!==nDet){G=grille(groupes.length);}
@@ -236,18 +257,9 @@ function mesFeuille(E,lot,ko,ctx,suite,n0){
 
   /* les détails : la carte agrandie, découpée au cercle, et les sondes */
   for(const g of groupes){
-    const dessous=g.face==="dessous", s=dessous?-1:1, k=g.k;
-    const T=(x,y)=>({x:g.X+s*(x-g.cx)*k,y:g.Y-(y-g.cy)*k});
-    const W=[];
-    for(let i=0;i<96;i++){const a=i*Math.PI/48;W.push({x:g.X+G.R*Math.cos(a),y:g.Y+G.R*Math.sin(a)});}
-    W.sens=1;                                        // sens trigonométrique : pas besoin de signedArea (absent de la visionneuse)
-    const D={items:[]};
+    const dessous=g.face==="dessous", k=g.k;
     const sd=new Map(surb).set(g.r.a.p.cle,mesCouleur(g.r.i)).set(g.r.b.p.cle,MES_NOIR);   // le détail : les couleurs de sa mesure
-    const zd=[];
-    mesDessin(D,E,T,dessous,sd,zd);
-    for(const q of zd)if(Math.hypot((q.x1+q.x2)/2-g.X,(q.y1+q.y2)/2-g.Y)<G.R)F.mesZones.push(q);
-    for(const it of D.items)for(const q of dfDecouper(it,W))F.items.push(q);
-    dfCercle(F,g.X,g.Y,G.R,{lw:0.5});
+    const T=mesLoupe(F,E,g.X,g.Y,G.R,g.cx,g.cy,k,dessous,sd,F.mesZones);
     for(const p of g.pts){
       const plus=p===g.r.a.p, col=plus?mesCouleur(g.r.i):MES_NOIR, P=T(p.x,p.y), b=mecaBoite(p.pts.map(q=>T(q.x,q.y)));
       const rp=Math.hypot(b.x2-b.x1,b.y2-b.y1)/2+0.6;
@@ -363,3 +375,180 @@ function mesBrancher(z,ops){
     dire(k==="a"?cle+" → sonde +. Cliquez le point de la sonde −.":cle+" → sonde −. Entrée ou « Ajouter » pour valider.");
   }};
 }
+
+/* ==========================================================================
+   Retrofit : les composants à reprendre sur une carte déjà faite
+   --------------------------------------------------------------------------
+   Une liste de repères, chacun avec une action (remplacer, ajouter, retirer,
+   modifier), la nouvelle valeur ou référence et une note. La feuille montre
+   la carte entière, les composants de la liste surlignés de la couleur de
+   leur action et cerclés (lettre A, B…), chaque cercle relié par un trait à
+   sa vue de détail agrandie — la « Board Detail View » d'Altium. Un tableau
+   reprend la liste. Même entrée neutre que la fiche de mesure, plus `val`.
+   ========================================================================== */
+const RET_ACTIONS=["Remplacer","Ajouter","Retirer","Modifier"];
+const RET_COUL={Remplacer:MES_COUL[3],Ajouter:MES_COUL[2],Retirer:MES_COUL[0],Modifier:MES_COUL[1]};
+const RET_PAR_FEUILLE=6;
+const RET_MAX=60;
+
+function retNormListe(src){
+  const t=(v,n)=>String(v==null?"":v).trim().slice(0,n), vus=new Set();
+  return (Array.isArray(src)?src:[]).filter(l=>l&&typeof l==="object"&&t(l.ref,40))
+    .filter(l=>{const k=t(l.ref,40).toUpperCase();if(vus.has(k))return false;vus.add(k);return true;})
+    .slice(0,RET_MAX).map(l=>({ref:t(l.ref,40),action:RET_ACTIONS.includes(l.action)?l.action:RET_ACTIONS[0],
+      val:t(l.val,80),note:t(l.note,200)}));
+}
+function retComposant(E,ref){
+  const R=String(ref).toUpperCase();
+  return E.composants.find(c=>String(c.ref).toUpperCase()===R)||null;
+}
+
+function retFeuilles(E,liste,ctx){
+  const res=liste.map(l=>({l,c:retComposant(E,l.ref)}));
+  const ok=res.filter(r=>r.c&&r.c.corps.length>=3), ko=res.filter(r=>!(r.c&&r.c.corps.length>=3));
+  ok.forEach((r,j)=>{r.lettre=mesLettre(j);r.col=RET_COUL[r.l.action];});
+  const feuilles=[];
+  for(let i=0;i<Math.max(ok.length,1);i+=RET_PAR_FEUILLE)
+    feuilles.push(retFeuille(E,ok,ok.slice(i,i+RET_PAR_FEUILLE),i?[]:ko,ctx,feuilles.length));
+  return feuilles;
+}
+
+function retFeuille(E,tous,lot,ko,ctx,suite){
+  const F=dfNouvelle(ctx,"Retrofit"+(suite?" (suite)":""),"ret");
+  if(suite)F.suite=suite;
+  const Z=dfZone(F), surb=new Map();
+  F.mesZones=[];
+  for(const r of tous)for(const p of r.c.pads)surb.set(r.c.ref+"."+p.n,r.col);
+
+  /* en bas, à gauche du cartouche : le tableau puis les consignes */
+  const larg=Z.cart.x-6-Z.x1;
+  const lignes=lot.map(r=>[r.lettre,r.c.ref,r.l.action,r.c.val||"—",r.l.val||"—",r.l.note]);
+  const blocs=dfTableau([{t:"Détail",p:7,a:"m"},{t:"Repère",p:10},{t:"Action",p:11},{t:"Actuel",p:16},
+      {t:"Nouveau (valeur, MPN)",p:22},{t:"Note",p:34}],lignes,{cat:"retrofit"});
+  const consignes=["Chaque composant est cerclé sur la vue de la carte et agrandi dans le détail de même lettre.",
+    "Couleur de l'action : orange remplacer, vert ajouter, rouge retirer, bleu modifier.",
+    "Vérifier le repère sérigraphié avant de dessouder ; contrôler la carte après reprise."];
+  if(ko.length)consignes.push("ATTENTION — repère(s) introuvable(s) sur la carte, non dessiné(s) : "+ko.map(r=>r.l.ref).join(", "));
+  blocs.push(dfBlocEspace(3),dfBlocTitre("Consignes"),
+    ...dfBlocParagraphes(consignes.map((t,i)=>({num:(i+1)+".",texte:t,retrait:5})),6.5));
+  const hBas=blocs.reduce((s,b)=>s+b.h(larg),0);
+  let y=Z.y2-hBas;
+  const yHaut=Z.y1+2, yBas=Math.min(y,Z.cart.y)-6;
+
+  /* la carte entière, à gauche ; dessous en plus si un composant du lot y est */
+  const wV=(Z.x2-Z.x1)*0.46, faces=[false];
+  if(lot.some(r=>r.c.face==="dessous"))faces.push(true);
+  const hV=(yBas-yHaut-(faces.length-1)*4)/faces.length;
+  const vues=faces.map((dessous,j)=>{
+    const box={x:Z.x1,y:yHaut+j*(hV+4),w:wV,h:hV}, V=mesVue(E,box,dessous);
+    dfTexte(F,(dessous?"VUE DE DESSOUS (carte retournée, en miroir)":"VUE DE DESSUS")+" — ÉCHELLE "+dfEchelleTxt(V.k),
+            box.x,box.y+5,9,{gras:true,cat:"titre"});
+    mesDessin(F,E,V.T,dessous,surb,F.mesZones);
+    for(const r of tous)if((r.c.face==="dessous")===dessous)
+      dfPoly(F,r.c.corps.map(p=>V.T(p.x,p.y)),{ferme:true,lw:0.45,trait:r.col});
+    return Object.assign(V,{dessous});
+  });
+  if(!lot.length)dfTexte(F,"Aucun composant : ajoutez-en dans le panneau « Retrofit ».",Z.x1+wV+8,yHaut+12,9,{c:0.4,cat:"legende"});
+
+  /* les détails, à droite : un par composant, à la plus grande échelle (10:1 au plus) où il tient */
+  const X0=Z.x1+wV+6, Wd=Z.x2-X0, Hd=yBas-yHaut, G=mesGrille(lot.length,Wd,Hd);
+  const poses=[];
+  lot.forEach((r,j)=>{
+    const c=r.c, dessous=c.face==="dessous", V=vues.find(v=>v.dessous===dessous)||vues[0];
+    const pts=c.corps.concat(...c.pads.map(p=>p.pts)), b=mecaBoite(pts), cx=(b.x1+b.x2)/2, cy=(b.y1+b.y2)/2;
+    const ext=Math.max(...pts.map(p=>Math.hypot(p.x-cx,p.y-cy)),0.3);
+    const k=DF_ECHELLES.find(e=>e<=10&&ext*e<=G.R*0.6)||DF_ECHELLES[DF_ECHELLES.length-1];
+    const cw=Wd/G.cols, ch=Hd/G.rows, X=X0+cw*(j%G.cols+0.5), Y=yHaut+ch*Math.floor(j/G.cols)+G.R+2;
+
+    /* le cercle sur la vue de la carte, sa lettre, et le trait jusqu'au détail */
+    const C=V.T(cx,cy), rr=Math.max(G.R/k*V.k,1.2), d=Math.hypot(X-C.x,Y-C.y)||1, ux=(X-C.x)/d, uy=(Y-C.y)/d;
+    dfCercle(F,C.x,C.y,rr,{lw:0.35,trait:r.col});
+    if(d>rr+G.R)dfLigne(F,C.x+ux*rr,C.y+uy*rr,X-ux*G.R,Y-uy*G.R,0.2,r.col);
+    const lx=C.x-rr*0.71-0.4;
+    let ly=C.y-rr*0.71-0.4;
+    while(poses.some(p=>Math.abs(p.x-lx)<8&&Math.abs(p.y-ly)<3.4))ly-=3.4;   // cercles voisins : lettres décalées
+    poses.push({x:lx,y:ly});
+    dfTexte(F,r.lettre,lx,ly,9,{ancre:"d",gras:true,c:r.col,cat:"detail",lieu:"repère du détail "+r.lettre+" · "+c.ref});
+
+    /* le détail */
+    const T=mesLoupe(F,E,X,Y,G.R,cx,cy,k,dessous,surb,F.mesZones);
+    dfPoly(F,c.corps.map(p=>T(p.x,p.y)),{ferme:true,lw:0.6,trait:r.col});
+    dfTexte(F,"DÉTAIL "+r.lettre+" — ÉCHELLE "+dfEchelleTxt(k)+(dessous?" — DESSOUS":""),X,Y+G.R+4.5,8,
+            {ancre:"m",gras:true,cat:"detail",lieu:"vue de détail"});
+    dfTexte(F,c.ref+" · "+r.l.action+(r.l.val?" → "+r.l.val:""),X,Y+G.R+8.3,6.5,
+            {ancre:"m",c:r.col,cat:"retrofit",lieu:c.ref});
+    F.signets.push({titre:"Retrofit "+r.lettre+" — "+c.ref+" ("+r.l.action+")",x:X,y:Y});
+  });
+  for(const b of blocs){b.dessiner(F,Z.x1,y,larg);y+=b.h(larg);}
+  return F;
+}
+
+/* Le panneau de saisie : un ou plusieurs repères à la fois (« U3 C12 R5 »),
+   la même action, valeur et note pour chacun. */
+function retFormHtml(E){
+  const champ=(k,lib,ph,n,list)=>'<label class="df-champ"><span>'+lib+'</span><input type="text" data-ret="'+k+
+    '" maxlength="'+n+'" autocomplete="off"'+(list?' list="retRefs"':"")+' placeholder="'+ph+'"></label>';
+  return '<datalist id="retRefs">'+E.composants.slice(0,5000).map(c=>'<option value="'+esc(c.ref)+'">').join("")+'</datalist>'+
+    champ("ref","Repère(s)","U3, ou une liste : U3 C12 R5",400,true)+
+    '<label class="df-champ"><span>Action</span><select class="tbsel" data-ret="action">'+
+      RET_ACTIONS.map(a=>'<option value="'+a+'">'+a+'</option>').join("")+'</select></label>'+
+    champ("val","Nouvelle valeur ou MPN","10 kΩ, LM358B",80)+champ("note","Note","Ajouter en parallèle sur C7",200)+
+    '<button class="tb" type="button" data-ret-a="ajout" title="Entrée dans un champ fait de même ; un clic sur un composant de la feuille ajoute son repère">+ Ajouter au retrofit</button>'+
+    '<p class="ret-err" role="alert" style="color:#e05555;font-size:11px;margin:4px 0"></p><ol class="ret-liste" style="padding-left:0;list-style:none;margin:4px 0"></ol>';
+}
+function retRendreListe(z,E,liste){
+  const ol=z.querySelector(".ret-liste");
+  if(!ol)return;
+  ol.innerHTML=liste.map((l,i)=>{
+    const rgb="rgb("+RET_COUL[l.action].map(v=>Math.round(v*255)).join(",")+")";
+    return '<li style="font-size:12px;margin:3px 0"><b style="color:'+rgb+'">'+esc(l.ref)+'</b> · '+esc(l.action)+
+      (l.val?" → "+esc(l.val):"")+(l.note?" · "+esc(l.note):"")+
+      (retComposant(E,l.ref)?"":' <em style="color:#e05555">introuvable sur la carte</em>')+
+      ' <button class="tb" type="button" data-ret-sup="'+i+'" aria-label="Retirer '+esc(l.ref)+' du retrofit">✕</button></li>';
+  }).join("");
+}
+/* `ops` : entree() l'entrée neutre, liste() la liste, ecrire(liste).
+   Rend choisir(ref) : un clic sur un composant de la feuille ajoute son repère au champ. */
+function retBrancher(z,ops){
+  const champ=k=>z.querySelector('[data-ret="'+k+'"]');
+  const val=k=>{const t=champ(k);return t?t.value:"";};
+  const dire=t=>{const p=z.querySelector(".ret-err");if(p)p.textContent=t;};
+  const ajouter=()=>{
+    const E=ops.entree(), liste=ops.liste(), refs=val("ref").split(/[\s,;]+/).filter(Boolean);
+    const pris=new Set(liste.map(l=>l.ref.toUpperCase())), neufs=[], inconnus=[], doublons=[];
+    for(const r of refs){
+      const c=retComposant(E,r);
+      if(!c)inconnus.push(r);
+      else if(pris.has(c.ref.toUpperCase()))doublons.push(c.ref);
+      else{pris.add(c.ref.toUpperCase());neufs.push({ref:c.ref,action:val("action"),val:val("val"),note:val("note")});}
+    }
+    const place=RET_MAX-liste.length;
+    const e=!refs.length?"Donnez au moins un repère.":
+      neufs.length>place?"Retrofit plein : "+RET_MAX+" composants au plus ("+place+" place(s) libre(s)).":
+      inconnus.length?"Introuvable(s) sur la carte : "+inconnus.join(", ")+".":
+      !neufs.length&&doublons.length?"Déjà dans la liste : "+doublons.join(", ")+".":"";
+    dire(e);
+    if(e)return;
+    ops.ecrire(liste.concat(neufs));
+    const t=champ("ref");if(t)t.value="";
+    if(doublons.length)dire("Déjà dans la liste, ignoré(s) : "+doublons.join(", ")+".");
+  };
+  z.addEventListener("click",ev=>{
+    const t=ev.target.closest&&ev.target.closest("[data-ret-a],[data-ret-sup]");
+    if(!t)return;
+    if(t.dataset.retA==="ajout")ajouter();
+    else{const l=ops.liste().slice();l.splice(+t.dataset.retSup,1);ops.ecrire(l);}
+  });
+  z.addEventListener("keydown",ev=>{
+    if(ev.key==="Enter"&&ev.target.dataset&&ev.target.dataset.ret!=null){ev.preventDefault();ajouter();}
+  });
+  return {choisir(ref){
+    const t=champ("ref");
+    if(!t)return;
+    const deja=t.value.split(/[\s,;]+/).filter(Boolean);
+    if(!deja.some(r=>r.toUpperCase()===ref.toUpperCase()))t.value=deja.concat([ref]).join(" ");
+    dire(t.value+" : « Ajouter au retrofit » ou Entrée pour valider.");
+  }};
+}
+/* Le repère d'une clé de pastille « U3.12 » (mesPadSous). */
+function retRefDeCle(cle){const i=String(cle).lastIndexOf(".");return i>0?cle.slice(0,i):cle;}

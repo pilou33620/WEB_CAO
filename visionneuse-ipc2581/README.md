@@ -77,8 +77,8 @@ et ceux du dossier partagé, identiques aux autres outils :
 | `js/06-demarrage.js` | 449 | Ouverture d'un fichier (bouton, dépôt, reprise de session et de projet), exports `.json` et `.png`, réglages de l'utilisateur |
 | `js/07-simulation.js` | 6133 | Simulation EM : la portée désignée mise au format du solveur — masse coplanaire mesurée côté par côté, découpage en plages d'écart, couture de vias, **cuivre voisin joint au problème** —, la carte de chaleur d'impédance et les valeurs écrites sur les pistes ; et pour l'onglet **Crosstalk**, les trois mesures que le serveur ne peut pas deviner : positions de couture sur l'abscisse du parcours, fentes du plan sondées dessous, perçages de masse |
 | `js/08-dossier-meca.js` | 240 | Dossier mécanique : entrée neutre tirée du modèle lu, fenêtre (hauteurs, ouvertures, aperçu) et `.zip` ; la scène de l'Export STEP (`stepSceneIpc`) |
-| `js/09-fiche-mesure.js` | 113 | Fiche de mesure du technicien : pastilles du modèle lu, fenêtre et PDF (les mesures vont dans `V.modele.mesures`) |
-| `js/10-plans.js` | 170 | Plans du Draftsman (fabrication, assemblage dessus / dessous) refaits sur le modèle lu, aperçu et PDF |
+| `js/09-fiche-mesure.js` | 40 | Fiche de mesure et retrofit : pastilles du modèle lu (les mesures vont dans `V.modele.mesures`, le retrofit dans `V.modele.retrofit`) ; la fenêtre est celle des plans |
+| `js/10-plans.js` | 233 | Plans du Draftsman (fabrication, assemblage dessus / dessous) refaits sur le modèle lu, et la seule fenêtre des plans : cases des feuilles, volets fiche de mesure et retrofit, aperçu et PDF |
 | `../python/simulation_em.py` | 8152 | Pont vers `python/ligne_mom.py` : empilage à plat → section droite, résolution par tronçon, **appariement des tronçons parallèles**, cascade ABCD → JSON |
 | `test/harness-sim.js` | 7125 | Banc d'essai de la masse coplanaire, de la chute continue, du voisinage et des trois mesures du crosstalk, sous Node : `node test/harness-sim.js` |
 
@@ -790,16 +790,21 @@ boîte extrudée à sa hauteur. La scène vient de `stepSceneIpc`
 
 ## Plans, fiche de mesure, règle et classification des nets
 
-- **Plans (Draftsman)** (`js/10-plans.js`) : plan de fabrication (contour coté,
-  tableau de perçage, empilage, notes types), assemblage face dessus et, s'il y
-  a des composants dessous, face dessous. Aperçu, puis `<carte>-PLANS.pdf`
-  (texte cherchable, un signet par composant). Les composants non montés sont
-  en tirets avec « NM ».
-- **Fiche de mesure** (`js/09-fiche-mesure.js`, `commun/fiche-mesure.js`) :
-  sonde + et sonde − (`U3.12`, `TP2` ou un net), type de mesure, valeur
-  attendue, tolérance, échelle des détails, note ; 40 mesures au plus, 4 par
-  feuille ; `<carte>-MESURES.pdf`. Les mesures sont gardées dans le modèle, donc
-  dans « Exporter .json ».
+- **Plans (Draftsman)** (`js/10-plans.js`) : une seule fenêtre, des cases pour
+  les feuilles. Plan de fabrication (contour coté, tableau de perçage, empilage,
+  notes types), assemblage face dessus et, s'il y a des composants dessous,
+  face dessous, fiche de mesure et retrofit (ces deux-là cochés d'office dès
+  qu'ils ont une ligne). Aperçu, puis `<carte>-PLANS.pdf` (texte cherchable, un
+  signet par composant). Les composants non montés sont en tirets avec « NM ».
+- **Fiche de mesure** (volet de la fenêtre Plans ; `js/09-fiche-mesure.js`,
+  `commun/fiche-mesure.js`) : sonde + et sonde − (`U3.12`, `TP2` ou un net),
+  type de mesure, valeur attendue, tolérance, échelle des détails, note ; 40
+  mesures au plus, 4 par feuille.
+- **Retrofit** (volet de la fenêtre Plans, `commun/fiche-mesure.js`) : les
+  composants à reprendre (repères saisis, collés en liste ou cliqués), action,
+  nouvelle valeur ou MPN, note ; 60 au plus, 6 détails par feuille ; chaque
+  composant cerclé sur la carte et relié à sa vue de détail agrandie. Mesures et
+  retrofit sont gardés dans le modèle, donc dans « Exporter .json ».
 - **Mesurer** (`M`, `04-interaction.js`) : un clic au départ, un à l'arrivée,
   accroche au centre d'une pastille ou d'un perçage ; la mesure n'est pas
   conservée.

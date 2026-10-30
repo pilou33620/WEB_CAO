@@ -1,6 +1,7 @@
 "use strict";
 /* ==========================================================================
-   Visionneuse IPC-2581 — plans (Draftsman) : fabrication et assemblage
+   Visionneuse IPC-2581 — plans (Draftsman) : fabrication, assemblage,
+   fiche de mesure et retrofit, dans une seule fenêtre
    --------------------------------------------------------------------------
    Les feuilles calculées du Draftsman de l'éditeur (29-draftsman.js), refaites
    sur le modèle lu : les mêmes briques (dfNouvelle, dfTexte, dfTableau,
@@ -120,14 +121,37 @@ function plnFeuilleAsm(E,ctx,dessous){
   return F;
 }
 
+/* Les feuilles de la fenêtre : la fiche de mesure et le retrofit sont
+   cochés d'office dès qu'ils ont une ligne, tant qu'on n'y a pas touché. */
+const PLN_FEUILLES=[["fab","Plan de fabrication"],["asmT","Assemblage — face dessus"],["asmB","Assemblage — face dessous"],
+  ["mes","Fiche de mesure (technicien)"],["ret","Retrofit (composants à reprendre)"]];
+const PLN_CHOIX={fab:true,asmT:true,asmB:true,mes:null,ret:null};
+function plnCoche(k){
+  const v=PLN_CHOIX[k];
+  return v!=null?v:k==="mes"?mesIpcListe().length>0:k==="ret"?retIpcListe().length>0:true;
+}
 function plnIpcFeuilles(){
-  const m=V.modele, E=mesEntreeIpc(m), ctx=mecaIpcCtx();
+  const m=V.modele, E=mesEntreeIpc(m), ctx=mecaIpcCtx(), F=[];
   ctx.docNum=mecaIpcBase()+"-PLANS";
-  const F=plnFeuillesFab(m,E,ctx);
-  F.push(plnFeuilleAsm(E,ctx,false));
-  if(E.composants.some(c=>c.face==="dessous"))F.push(plnFeuilleAsm(E,ctx,true));
+  if(plnCoche("fab"))F.push(...plnFeuillesFab(m,E,ctx));
+  if(plnCoche("asmT"))F.push(plnFeuilleAsm(E,ctx,false));
+  if(plnCoche("asmB")&&E.composants.some(c=>c.face==="dessous"))F.push(plnFeuilleAsm(E,ctx,true));
+  if(plnCoche("mes"))F.push(...mesFeuilles(E,mesIpcListe(),ctx));
+  if(plnCoche("ret"))F.push(...retFeuilles(E,retIpcListe(),ctx));
   F.forEach((f,i)=>dfCadre(f,ctx,i+1,F.length));
   return F;
+}
+let PLN_F=[];                                    // les feuilles de l'aperçu, pour le clic
+/* `genre` : la feuille à montrer ensuite (« mes », « ret ») */
+function plnApercu(genre){
+  const m=document.getElementById("modalePlans"), z=document.getElementById("plnApercu");
+  if(!m||!z)return;
+  PLN_F=plnIpcFeuilles();
+  z.innerHTML=PLN_F.length?PLN_F.map(f=>dfSvg(f)).join(""):'<p style="color:#bbb">Aucune feuille cochée.</p>';
+  document.getElementById("plnEtat").textContent=PLN_F.map(f=>f.titre).join(" · ");
+  for(const c of m.querySelectorAll("[data-feuille]"))c.checked=plnCoche(c.dataset.feuille);
+  const i=genre?PLN_F.findIndex(f=>f.genre===genre):-1, svg=i>=0&&z.querySelectorAll("svg")[i];
+  if(svg&&svg.scrollIntoView)svg.scrollIntoView({block:"start"});
 }
 function plnIpcFermer(){const m=document.getElementById("modalePlans");if(m)m.hidden=true;}
 function plnOuvrir(){
@@ -138,31 +162,70 @@ function plnOuvrir(){
     m.id="modalePlans";m.className="modal-overlay";m.tabIndex=-1;
     m.setAttribute("role","dialog");m.setAttribute("aria-modal","true");m.setAttribute("aria-label","Plans de fabrication et d'assemblage");
     m.innerHTML='<div class="modal-box meca-box"><header class="modal-head"><div>'+
-      '<h3>Plans (Draftsman) — fabrication et assemblage</h3><small id="plnEtat"></small></div><div class="meca-actions">'+
-      '<button class="tb on" type="button" data-a="pdf" title="Les plans en PDF : texte cherchable, signets par composant">⬇ Télécharger le PDF</button>'+
+      '<h3>Plans (Draftsman) — fabrication, assemblage, mesure, retrofit</h3><small id="plnEtat"></small></div><div class="meca-actions">'+
+      '<button class="tb on" type="button" data-a="pdf" title="Les feuilles cochées en PDF : texte cherchable, signets par composant">⬇ Télécharger le PDF</button>'+
       '<button class="pnl-btn" type="button" data-a="fermer" title="Fermer (Échap)">✕</button></div></header>'+
-      '<div class="modal-body meca-corps"><main class="meca-apercu" id="plnApercu"></main></div></div>';
+      '<div class="modal-body meca-corps"><aside class="meca-cfg mes-cfg"><div class="df-h">Feuilles</div>'+
+        PLN_FEUILLES.map(([k,lib])=>'<label class="df-case"><input type="checkbox" data-feuille="'+k+'"> '+lib+'</label>').join("")+
+        '<div class="df-h">Fiche de mesure (technicien)</div><small>Un point : repère.pastille (U3.12), TP2, ou un net (GND)</small>'+
+        '<div id="mesPanneau"></div><div class="df-h">Retrofit (composants à reprendre)</div><div id="retPanneau"></div></aside>'+
+      '<main class="meca-apercu" id="plnApercu"></main></div></div>';
     document.body.appendChild(m);
     m.addEventListener("pointerdown",ev=>{if(ev.target===m)plnIpcFermer();});
     m.addEventListener("keydown",ev=>{if(ev.key==="Escape"){ev.stopPropagation();plnIpcFermer();}});
+    m.addEventListener("change",ev=>{
+      const k=ev.target.dataset&&ev.target.dataset.feuille;
+      if(k){PLN_CHOIX[k]=!!ev.target.checked;plnApercu();}
+    });
     m.addEventListener("click",ev=>{
+      /* un clic sur une pastille de l'aperçu : le point de la sonde active
+         (fiche de mesure), ou le repère du composant (retrofit) */
+      const svg=ev.target.closest&&ev.target.closest("#plnApercu svg");
+      if(svg){
+        const F=PLN_F[[...m.querySelectorAll("#plnApercu svg")].indexOf(svg)], r=svg.getBoundingClientRect();
+        const cle=F&&(F.genre==="mes"||F.genre==="ret")&&r.width&&
+          mesPadSous(F,(ev.clientX-r.left)*F.w/r.width,(ev.clientY-r.top)*F.h/r.height,9*F.w/r.width);
+        if(cle&&F.genre==="mes")m.mesChoisir(cle);
+        else if(cle)m.retChoisir(retRefDeCle(cle));
+        return;
+      }
       const b=ev.target.closest&&ev.target.closest("[data-a]");
       if(!b)return;
       if(b.dataset.a==="fermer")plnIpcFermer();
       else if(b.dataset.a==="pdf"){
         const F=plnIpcFeuilles(), nom=mecaIpcBase()+"-PLANS.pdf", refs=(V.modele.composants||[]).map(c=>c.ref);
-        telecharger(new Blob([dfPdf(F,{titre:mecaIpcBase()+" — plans de fabrication et d'assemblage",auteur:"",fonte:true,
-          sujet:"Plans de fabrication et d'assemblage — "+mecaIpcBase(),
+        if(!F.length){hint("Aucune feuille cochée : rien à exporter.");return;}
+        telecharger(new Blob([dfPdf(F,{titre:mecaIpcBase()+" — plans",auteur:"",fonte:true,
+          sujet:"Plans de fabrication, d'assemblage, de mesure et de retrofit — "+mecaIpcBase(),
           motsCles:["PCB","fabrication","assemblage"].concat(refs.slice(0,400)).join(", ")})],{type:"application/pdf"}),nom);
         hint("Plans "+nom+" : "+F.length+" feuille(s), texte cherchable.");
       }
     });
   }
-  const F=plnIpcFeuilles();
-  document.getElementById("plnApercu").innerHTML=F.map(f=>dfSvg(f)).join("");
-  document.getElementById("plnEtat").textContent=F.map(f=>f.titre).join(" · ");
+  /* les panneaux se refont à chaque ouverture : un autre fichier a pu être ouvert entre-temps */
+  const E=mesEntreeIpc(V.modele), neuf=id=>{
+    const z=m.querySelector("#"+id), n=z.cloneNode(false);   // sans les écouteurs de la carte précédente
+    z.replaceWith(n);
+    return n;
+  };
+  const zm=neuf("mesPanneau"), zr=neuf("retPanneau");
+  zm.innerHTML=mesFormHtml(E);
+  zr.innerHTML=retFormHtml(E);
+  mesRendreListe(zm,E,mesIpcListe());
+  retRendreListe(zr,E,retIpcListe());
+  m.mesChoisir=mesBrancher(zm,{entree:()=>E,liste:mesIpcListe,ecrire:l=>{
+    V.modele.mesures=mesNormListe(l);PLN_CHOIX.mes=true;
+    mesRendreListe(zm,E,V.modele.mesures);
+    plnApercu("mes");
+  }}).choisir;
+  m.retChoisir=retBrancher(zr,{entree:()=>E,liste:retIpcListe,ecrire:l=>{
+    V.modele.retrofit=retNormListe(l);PLN_CHOIX.ret=true;
+    retRendreListe(zr,E,V.modele.retrofit);
+    plnApercu("ret");
+  }}).choisir;
   m.hidden=false;
   if(m.focus)m.focus();
+  plnApercu();
 }
 (function(){
   const b=typeof document!=="undefined"&&document.getElementById&&document.getElementById("bPlansDf");
