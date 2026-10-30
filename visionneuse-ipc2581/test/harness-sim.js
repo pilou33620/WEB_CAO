@@ -6901,6 +6901,14 @@ T("fiche de mesure, visionneuse : broches sans pastille rattachée, face dessous
   if(!txt.some(t=>/^VUE DE DESSOUS/.test(t))||!txt.some(t=>/^DÉTAIL B .*DESSOUS$/.test(t)))throw new Error(txt.join(" | "));
 });
 
+T("plans (Draftsman), visionneuse : retrofit coché, liste vide : la feuille vide s'affiche quand même",()=>{
+  carteMeca();
+  PLN_CHOIX.ret=true;
+  try{
+    const F=plnIpcFeuilles().find(f=>f.genre==="ret");
+    if(!F||!F.items.some(it=>it.t==="t"&&/Aucun composant/.test(it.s)))throw new Error("feuille retrofit vide absente");
+  }finally{PLN_CHOIX.ret=null;carte();}
+});
 T("plans (Draftsman), visionneuse : fiche de mesure et retrofit dans la même fenêtre, cochés d'office",()=>{
   carteMeca();
   V.modele.mesures=[{a:"J1",b:"U1.8",type:"Continuité"}];

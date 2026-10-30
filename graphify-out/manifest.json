@@ -438,9 +438,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/test/harness.js": {
-    "mtime": 1793354904.9562335,
-    "seen": 1793355145.4702215,
-    "ast_hash": "1571e3ca2d106e7fb63fa71078d17020",
+    "mtime": 1793355584.1412992,
+    "seen": 1793355836.1300473,
+    "ast_hash": "3963eee62a43d9835ac05599089117be",
     "semantic_hash": ""
   },
   "editeur-schematique/js/00-espace-config.js": {
@@ -1026,9 +1026,9 @@
     "semantic_hash": ""
   },
   "visionneuse-ipc2581/test/harness-sim.js": {
-    "mtime": 1793351944.7625463,
-    "seen": 1793352185.9736934,
-    "ast_hash": "3ff89774b0a71c11f4be6456f69888bc",
+    "mtime": 1793355568.577458,
+    "seen": 1793355836.1310105,
+    "ast_hash": "d78d389874740d993471e6f0c42d2d68",
     "semantic_hash": ""
   },
   "web_CAO.py": {
@@ -1470,9 +1470,9 @@
     "semantic_hash": ""
   },
   "commun/fiche-mesure.js": {
-    "mtime": 1793354758.0111015,
-    "seen": 1793355145.469548,
-    "ast_hash": "8006f0ff8f6d3f3c74905422c402d2f8",
+    "mtime": 1793355584.1172996,
+    "seen": 1793355836.1294186,
+    "ast_hash": "b35373cf043ce074f1a02d2a3683c2c8",
     "semantic_hash": ""
   },
   "commun/outils/build-manuel.py": {
@@ -1524,9 +1524,9 @@
     "semantic_hash": ""
   },
   "visionneuse-ipc2581/js/10-plans.js": {
-    "mtime": 1793350319.0285883,
-    "seen": 1793351383.675085,
-    "ast_hash": "5f4fcecb1738d8c256128d455b06c78f",
+    "mtime": 1793355722.0298407,
+    "seen": 1793355836.1309924,
+    "ast_hash": "aeec2c39e7c8b79b5e5d878f0167831b",
     "semantic_hash": ""
   },
   "SPEC-manuel.md": {

@@ -516,6 +516,7 @@ function retCroise(A,B,C,D){
    cercle ; chaque trait, le chemin qui coupe le moins de textes, de cercles
    et d'autres traits, en segments droits. */
 function retLiens(F,liens,yHaut,yBas){
+  if(!liens.length)return;                              // liste vide : ni lettre ni trait (la grille n'aurait pas d'étendue)
   /* les repères et numéros de pastille, petits et dans le dessin, gênent moins qu'un titre ou une légende */
   const textes=F.items.filter(it=>it.t==="t"&&!it.cache).map(it=>{
     const b=dfBoiteTexte(it);return {x1:b.x1-0.5,y1:b.y1-0.5,x2:b.x2+0.5,y2:b.y2+0.5,w:it.cat==="repere"?0.5:6};});

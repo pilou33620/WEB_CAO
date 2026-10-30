@@ -1,7 +1,7 @@
 # Graph Report - WEB_CAO  (2026-10-30)
 
 ## Corpus Check
-- 260 files · ~1,699,480 words
+- 260 files · ~1,699,581 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 26 file(s) not represented in the graph (top: .css 19, (none) 2, .csv 2)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `f279cbff`
+- Built from commit: `7b66cf9b`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -1635,13 +1635,13 @@ Nodes (5): stepChoisir(), stepExporter(), stepImporterChoisir(), stepImporterTex
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `Verification de la carte : tutoriel` connect `Simulation EM & integrite du signal (SI / PI) - reference technique` to `simulation-em.js`, `19-simulation.js`, `07-simulation.js`, `analyser_document`, `web_CAO.py`, `WEB_CAO suite de CAO electronique`, `banc-analyse-carte.py`?**
-  _High betweenness centrality (0.173) - this node is a cross-community bridge._
+  _High betweenness centrality (0.171) - this node is a cross-community bridge._
 - **What connects `Moteur 2,5D pleine onde (mom_solver) archive`, `Panneau Simulation EM range en SI, PI, RF et Audit`, `commun/projet.js (projet)` to the rest of the system?**
   _73 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `ligne_mom.py` be split into smaller, more focused modules?**
   _Cohesion score 0.02401766004415011 - nodes in this community are weakly interconnected._
 - **Why does `editeur-pcb.html (page de l'Editeur PCB)` connect `editeur-pcb.html (page de l'Editeur PCB)` to `contraintes.js`, `simulation-em.js`, `Groupe 91`, `19-simulation.js`, `35-ipc2581-export.js`, `Groupe 124`, `01-core.js`, `variantes.js`, `simulation-datasheet.js`, `explorateur-lib.js`?**
-  _High betweenness centrality (0.091) - this node is a cross-community bridge._
+  _High betweenness centrality (0.094) - this node is a cross-community bridge._
 - **Should `simulation-em.js` be split into smaller, more focused modules?**
   _Cohesion score 0.018245341614906832 - nodes in this community are weakly interconnected._
 - **Why does `SPEC : classes d'interface` connect `autoClass` to `banc-patterns.py`, `crosstalk.py`, `os`, `Classe d'interface (front, cadence, Z_diff, famille)`, `analyse_carte.py`, `WEB_CAO suite de CAO electronique`?**

@@ -26904,6 +26904,14 @@ T("plans : retrofit, composants cerclés, reliés à leur détail, tableau et re
     if(process.env.RET_OUT)fs.writeFileSync(process.env.RET_OUT,dfSvg(F,[]));
   }finally{S.dessin=null;}
 });
+T("retrofit : feuille cochée, liste vide : une feuille qui le dit",()=>{
+  exCharger(1);
+  S.dessin={fonte:false,feuilles:{fab:false,asmT:false,asmB:false,bom:false,couches:false,ret:true}};
+  try{
+    const F=dfDocument().feuilles.find(f=>f.genre==="ret");
+    if(!F||!F.items.some(it=>it.t==="t"&&/Aucun composant/.test(it.s)))throw new Error("feuille retrofit vide absente");
+  }finally{S.dessin=null;}
+});
 T("retrofit : six détails, aucun trait sur un titre, une légende, une lettre ou un autre détail",()=>{
   exCharger(1);
   const fps=S.fps.filter(f=>f.ref&&padsWorld(f).length).slice(0,6);

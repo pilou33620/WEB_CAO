@@ -146,7 +146,12 @@ let PLN_F=[];                                    // les feuilles de l'aperçu, p
 function plnApercu(genre){
   const m=document.getElementById("modalePlans"), z=document.getElementById("plnApercu");
   if(!m||!z)return;
-  PLN_F=plnIpcFeuilles();
+  try{PLN_F=plnIpcFeuilles();}
+  catch(e){                                      // une erreur se voit : l'ancien aperçu ne reste pas affiché comme s'il était à jour
+    PLN_F=[];
+    z.innerHTML='<p style="color:#e05555">Les feuilles n\'ont pas pu être dessinées : '+esc(e.message)+'</p>';
+    throw e;
+  }
   z.innerHTML=PLN_F.length?PLN_F.map(f=>dfSvg(f)).join(""):'<p style="color:#bbb">Aucune feuille cochée.</p>';
   document.getElementById("plnEtat").textContent=PLN_F.map(f=>f.titre).join(" · ");
   for(const c of m.querySelectorAll("[data-feuille]"))c.checked=plnCoche(c.dataset.feuille);
