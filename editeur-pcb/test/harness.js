@@ -412,7 +412,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* fiche de mesure du technicien (commun/fiche-mesure.js, 42-fiche-mesure.js) */
   "mesFeuilles","mesResoudre","mesEntreeEditeur","mesNormListe","mesPadSous","mesBrancher","MES_MAX",
   /* retrofit (commun/fiche-mesure.js) */
-  "retFeuilles","retNormListe","retBrancher","retRefDeCle","RET_MAX","RET_COUL",
+  "retFeuilles","retNormListe","retBrancher","retRefDeCle","RET_MAX","RET_COUL","retCoupeBoite","retDistSeg","dfBoiteTexte",
   /* cotes à la main, vues à la souris, détails (34-draftsman-vues.js) */
   "dfNormCotes","dfNormVues","dfNormDetails","dfResoudre","dfMesurer","dfAccroches","dfAccrocher","dfNormRef","dfRefTexte",
   "dfAjouterCote","dfModifierCote","dfSupprimerCote","dfDeplacerCote","dfAjouterDetail","dfSupprimerDetail",
@@ -26894,7 +26894,7 @@ T("plans : retrofit, composants cerclés, reliés à leur détail, tableau et re
     /* un cercle sur la vue et un sur le détail par composant, et un trait de l'un à l'autre */
     const orange=RET_COUL.Remplacer, cercles=F.items.filter(it=>it.t==="c"&&it.trait===orange);
     if(cercles.length<1)throw new Error("cercle du composant sur la vue");
-    const traits=F.items.filter(it=>it.t==="p"&&it.trait===orange&&it.sp[0].length===2);
+    const traits=F.items.filter(it=>it.t==="p"&&it.trait===orange&&!it.ferme);
     if(!traits.length)throw new Error("trait de liaison vers le détail");
     if(!F.signets.some(s=>/^Retrofit A — /.test(s.titre)))throw new Error("signet du détail");
     const z=F.mesZones.find(q=>q.cle.startsWith(fps[0].ref+"."));
@@ -26902,6 +26902,30 @@ T("plans : retrofit, composants cerclés, reliés à leur détail, tableau et re
     if(!dfChercher(doc,"detail b").length)throw new Error("la feuille doit se chercher");
     if(!dfLatin(dfPdfOctets(doc)).startsWith("%PDF-1.4"))throw new Error("PDF");
     if(process.env.RET_OUT)fs.writeFileSync(process.env.RET_OUT,dfSvg(F,[]));
+  }finally{S.dessin=null;}
+});
+T("retrofit : six détails, aucun trait sur un titre, une légende, une lettre ou un autre détail",()=>{
+  exCharger(1);
+  const fps=S.fps.filter(f=>f.ref&&padsWorld(f).length).slice(0,6);
+  S.dessin={fonte:false,feuilles:{fab:false,asmT:false,asmB:false,bom:false,couches:false,ret:true},
+            retrofit:fps.map(f=>({ref:f.ref,action:"Remplacer"}))};
+  try{
+    const F=dfDocument().feuilles.find(f=>f.genre==="ret");
+    if(process.env.RET_OUT)fs.writeFileSync(process.env.RET_OUT,dfSvg(F,[]));
+    const textes=F.items.filter(it=>it.t==="t"&&!it.cache&&it.cat!=="repere").map(it=>[it.s,dfBoiteTexte(it)]);
+    const details=F.items.filter(it=>it.t==="c"&&it.lw===0.5);
+    if(details.length!==fps.length)throw new Error(details.length+" détails pour "+fps.length);
+    const traits=F.items.filter(it=>it.t==="p"&&!it.ferme&&it.lw===0.2&&Array.isArray(it.trait));
+    if(traits.length!==fps.length)throw new Error(traits.length+" traits pour "+fps.length);
+    for(const tr of traits){
+      const P=tr.sp[0];
+      for(let i=0;i+1<P.length;i++){
+        for(const [s,b] of textes)if(retCoupeBoite(P[i],P[i+1],b))
+          throw new Error("trait "+JSON.stringify(P.map(p=>[+p.x.toFixed(1),+p.y.toFixed(1)]))+" sur « "+s+" » "+JSON.stringify(b));
+        const n=details.filter(d=>retDistSeg(d,P[i],P[i+1])<d.r-0.3).length;
+        if(n)throw new Error("trait à travers un détail");
+      }
+    }
   }finally{S.dessin=null;}
 });
 T("retrofit : une liste de repères en une saisie, inconnus refusés, doublons ignorés",()=>{
