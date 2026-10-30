@@ -576,11 +576,11 @@ Contenu du `-MECA.step` : le même assemblage que **Export STEP…** avec les ca
 |---|---|---|
 | Repère(s) | Un repère (`U3`) ou une liste collée (`U3 C12 R5`, `U3, C12; R5`), avec suggestions. Un clic sur un composant de la feuille ajoute son repère au champ. | Majuscules ou minuscules. 400 caractères. Un repère inconnu fait refuser tout l'ajout (« Introuvable(s) sur la carte : … », en rouge) ; un repère déjà dans la liste est ignoré, et le message le dit. |
 | Action | **Remplacer** (orange), **Ajouter** (vert), **Retirer** (rouge), **Modifier** (bleu) : couleur du composant, de son cercle et de son trait. | La même pour tous les repères d'un ajout. |
-| Nouvelle valeur ou MPN | Texte libre (`10 kΩ`, `LM358B`), colonne « Nouveau » du tableau. | 80 caractères ; `—` si vide. |
+| Nouvelle valeur ou MPN | Texte libre (`10 kΩ`, `LM358B`), colonne « Nouveau » du tableau. Vide pour un composant grillé : un remplacement devient « À l'identique » (même référence que le composant retiré). | 80 caractères ; vide hors remplacement : `—`. |
 | Note | Texte libre. | 200 caractères. |
 | + Ajouter au retrofit | Ajoute les repères, coche la feuille Retrofit et l'affiche (`Entrée` dans un champ fait de même). | 60 composants au plus ; six détails par feuille, puis « Retrofit (suite) ». |
 | ✕ (liste) | Retire le composant de la liste. | Les lettres des détails suivent la liste. |
-| Feuille produite | Vue de la carte (dessous en miroir en plus si un composant y est), composants de la liste surlignés de la couleur de leur action et cerclés (lettre A, B…), chaque cercle relié par un trait à son détail agrandi (la plus grande échelle normalisée où il tient, 10:1 au plus) ; tableau Détail, Repère, Action, Actuel (valeur de la carte), Nouveau, Note ; trois consignes ; un signet par détail. | Un repère devenu introuvable reste dans la liste (« introuvable sur la carte », en rouge) mais n'est pas dessiné : une consigne « ATTENTION » le dit sur la première feuille. |
+| Feuille produite | Vue de la carte (dessous en miroir en plus si un composant y est), composants de la liste surlignés de la couleur de leur action et cerclés (lettre A, B…), chaque cercle relié par un trait à son détail agrandi (la plus grande échelle normalisée où il tient, 10:1 au plus) ; tableau Détail, Repère, Action, Valeur, Référence (MPN), Boîtier (ceux de la carte), Nouveau, Note ; quatre consignes ; un signet par détail. Sous chaque détail : repère, action, nouvelle valeur ou « À l'identique », et la référence actuelle quand rien ne la remplace. | Un repère devenu introuvable reste dans la liste (« introuvable sur la carte », en rouge) mais n'est pas dessiné : une consigne « ATTENTION » le dit sur la première feuille. |
 
 ### Animation 3D
 

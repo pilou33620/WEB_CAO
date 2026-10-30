@@ -26887,6 +26887,10 @@ T("plans : retrofit, composants cerclés, reliés à leur détail, tableau et re
     for(const s of ["DÉTAIL A — ÉCHELLE","DÉTAIL B — ÉCHELLE","LM358B","lot 2","Remplacer",fps[0].ref+" · Remplacer → LM358B"])
       if(!txt.some(t=>t.indexOf(s)>=0))throw new Error("« "+s+" » absent de la feuille : "+txt.join(" | "));
     if(!txt.some(t=>/ATTENTION.*ZZ9/.test(t)))throw new Error("le repère introuvable doit être signalé");
+    /* remplacement sans nouvelle valeur : à l'identique, la référence actuelle dans le tableau */
+    if(!txt.some(t=>t.startsWith(fps[1].ref+" · Remplacer → À l'identique")))throw new Error("remplacement à l'identique : "+txt.join(" | "));
+    for(const s of ["Référence (MPN)","Boîtier",fps[1].pkg].filter(Boolean))
+      if(!txt.includes(s))throw new Error("« "+s+" » absent du tableau");
     /* un cercle sur la vue et un sur le détail par composant, et un trait de l'un à l'autre */
     const orange=RET_COUL.Remplacer, cercles=F.items.filter(it=>it.t==="c"&&it.trait===orange);
     if(cercles.length<1)throw new Error("cercle du composant sur la vue");

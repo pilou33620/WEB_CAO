@@ -12,7 +12,7 @@ function mesEntreeEditeur(){
   return {contour:boardPoly().map(P),decoupes:boardCutouts().map(c=>c.map(P)),
     composants:S.fps.filter(fp=>fp.ref).map(fp=>{
       const T=fpXform(fp), b=bodyOf(fp);
-      return {ref:fp.ref,face:fp.side?"dessous":"dessus",val:fp.value||"",
+      return {ref:fp.ref,face:fp.side?"dessous":"dessus",val:fp.value||"",mpn:dfMpn(fp),pkg:fp.pkg||"",
         corps:[T(b.x1,b.y1),T(b.x2,b.y1),T(b.x2,b.y2),T(b.x1,b.y2)].map(P),
         pads:padsWorld(fp).map(q=>Object.assign(P(q),{n:q.n,net:q.net||"",trou:q.drill>0,pts:dfPadForme(q).map(P)}))};
     })};

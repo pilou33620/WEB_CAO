@@ -384,7 +384,10 @@ function mesBrancher(z,ops){
    la carte entière, les composants de la liste surlignés de la couleur de
    leur action et cerclés (lettre A, B…), chaque cercle relié par un trait à
    sa vue de détail agrandie — la « Board Detail View » d'Altium. Un tableau
-   reprend la liste. Même entrée neutre que la fiche de mesure, plus `val`.
+   reprend la liste avec la référence actuelle de chaque composant (valeur,
+   MPN, boîtier) : un composant grillé se remplace à l'identique, sans
+   nouvelle valeur. Même entrée neutre que la fiche de mesure, plus `val`,
+   `mpn` et `pkg`.
    ========================================================================== */
 const RET_ACTIONS=["Remplacer","Ajouter","Retirer","Modifier"];
 const RET_COUL={Remplacer:MES_COUL[3],Ajouter:MES_COUL[2],Retirer:MES_COUL[0],Modifier:MES_COUL[1]};
@@ -398,6 +401,8 @@ function retNormListe(src){
     .slice(0,RET_MAX).map(l=>({ref:t(l.ref,40),action:RET_ACTIONS.includes(l.action)?l.action:RET_ACTIONS[0],
       val:t(l.val,80),note:t(l.note,200)}));
 }
+/* Ce qui sera posé : la nouvelle valeur, sinon la même référence pour un remplacement. */
+function retNouveau(l){return l.val||(l.action==="Remplacer"?"À l'identique":"");}
 function retComposant(E,ref){
   const R=String(ref).toUpperCase();
   return E.composants.find(c=>String(c.ref).toUpperCase()===R)||null;
@@ -422,18 +427,19 @@ function retFeuille(E,tous,lot,ko,ctx,suite){
 
   /* en bas, à gauche du cartouche : le tableau puis les consignes */
   const larg=Z.cart.x-6-Z.x1;
-  const lignes=lot.map(r=>[r.lettre,r.c.ref,r.l.action,r.c.val||"—",r.l.val||"—",r.l.note]);
-  const blocs=dfTableau([{t:"Détail",p:7,a:"m"},{t:"Repère",p:10},{t:"Action",p:11},{t:"Actuel",p:16},
-      {t:"Nouveau (valeur, MPN)",p:22},{t:"Note",p:34}],lignes,{cat:"retrofit"});
+  const lignes=lot.map(r=>[r.lettre,r.c.ref,r.l.action,r.c.val||"—",r.c.mpn||"—",r.c.pkg||"—",retNouveau(r.l)||"—",r.l.note]);
+  const blocs=dfTableau([{t:"Détail",p:6,a:"m"},{t:"Repère",p:8},{t:"Action",p:9},{t:"Valeur",p:11},
+      {t:"Référence (MPN)",p:17},{t:"Boîtier",p:11},{t:"Nouveau",p:14},{t:"Note",p:24}],lignes,{cat:"retrofit",pt:8.5});
   const consignes=["Chaque composant est cerclé sur la vue de la carte et agrandi dans le détail de même lettre.",
     "Couleur de l'action : orange remplacer, vert ajouter, rouge retirer, bleu modifier.",
+    "« À l'identique » : reposer la même référence (MPN) que le composant retiré.",
     "Vérifier le repère sérigraphié avant de dessouder ; contrôler la carte après reprise."];
   if(ko.length)consignes.push("ATTENTION — repère(s) introuvable(s) sur la carte, non dessiné(s) : "+ko.map(r=>r.l.ref).join(", "));
   blocs.push(dfBlocEspace(3),dfBlocTitre("Consignes"),
-    ...dfBlocParagraphes(consignes.map((t,i)=>({num:(i+1)+".",texte:t,retrait:5})),6.5));
+    ...dfBlocParagraphes(consignes.map((t,i)=>({num:(i+1)+".",texte:t,retrait:5})),8));
   const hBas=blocs.reduce((s,b)=>s+b.h(larg),0);
   let y=Z.y2-hBas;
-  const yHaut=Z.y1+2, yBas=Math.min(y,Z.cart.y)-6;
+  const yHaut=Z.y1+2, yBas=Math.min(y,Z.cart.y)-9;
 
   /* la carte entière, à gauche ; dessous en plus si un composant du lot y est */
   const wV=(Z.x2-Z.x1)*0.46, faces=[false];
@@ -442,16 +448,16 @@ function retFeuille(E,tous,lot,ko,ctx,suite){
   const vues=faces.map((dessous,j)=>{
     const box={x:Z.x1,y:yHaut+j*(hV+4),w:wV,h:hV}, V=mesVue(E,box,dessous);
     dfTexte(F,(dessous?"VUE DE DESSOUS (carte retournée, en miroir)":"VUE DE DESSUS")+" — ÉCHELLE "+dfEchelleTxt(V.k),
-            box.x,box.y+5,9,{gras:true,cat:"titre"});
+            box.x,box.y+5,11,{gras:true,cat:"titre"});
     mesDessin(F,E,V.T,dessous,surb,F.mesZones);
     for(const r of tous)if((r.c.face==="dessous")===dessous)
       dfPoly(F,r.c.corps.map(p=>V.T(p.x,p.y)),{ferme:true,lw:0.45,trait:r.col});
     return Object.assign(V,{dessous});
   });
-  if(!lot.length)dfTexte(F,"Aucun composant : ajoutez-en dans le panneau « Retrofit ».",Z.x1+wV+8,yHaut+12,9,{c:0.4,cat:"legende"});
+  if(!lot.length)dfTexte(F,"Aucun composant : ajoutez-en dans le panneau « Retrofit ».",Z.x1+wV+8,yHaut+12,11,{c:0.4,cat:"legende"});
 
   /* les détails, à droite : un par composant, à la plus grande échelle (10:1 au plus) où il tient */
-  const X0=Z.x1+wV+6, Wd=Z.x2-X0, Hd=yBas-yHaut, G=mesGrille(lot.length,Wd,Hd);
+  const X0=Z.x1+wV+6, Wd=Z.x2-X0, Hd=yBas-yHaut-4, G=mesGrille(lot.length,Wd,Hd);   // −4 : les légendes agrandies
   const poses=[];
   lot.forEach((r,j)=>{
     const c=r.c, dessous=c.face==="dessous", V=vues.find(v=>v.dessous===dessous)||vues[0];
@@ -466,17 +472,19 @@ function retFeuille(E,tous,lot,ko,ctx,suite){
     if(d>rr+G.R)dfLigne(F,C.x+ux*rr,C.y+uy*rr,X-ux*G.R,Y-uy*G.R,0.2,r.col);
     const lx=C.x-rr*0.71-0.4;
     let ly=C.y-rr*0.71-0.4;
-    while(poses.some(p=>Math.abs(p.x-lx)<8&&Math.abs(p.y-ly)<3.4))ly-=3.4;   // cercles voisins : lettres décalées
+    while(poses.some(p=>Math.abs(p.x-lx)<9&&Math.abs(p.y-ly)<4.4))ly-=4.4;   // cercles voisins : lettres décalées
     poses.push({x:lx,y:ly});
-    dfTexte(F,r.lettre,lx,ly,9,{ancre:"d",gras:true,c:r.col,cat:"detail",lieu:"repère du détail "+r.lettre+" · "+c.ref});
+    dfTexte(F,r.lettre,lx,ly,12,{ancre:"d",gras:true,c:r.col,cat:"detail",lieu:"repère du détail "+r.lettre+" · "+c.ref});
 
     /* le détail */
     const T=mesLoupe(F,E,X,Y,G.R,cx,cy,k,dessous,surb,F.mesZones);
     dfPoly(F,c.corps.map(p=>T(p.x,p.y)),{ferme:true,lw:0.6,trait:r.col});
-    dfTexte(F,"DÉTAIL "+r.lettre+" — ÉCHELLE "+dfEchelleTxt(k)+(dessous?" — DESSOUS":""),X,Y+G.R+4.5,8,
+    dfTexte(F,"DÉTAIL "+r.lettre+" — ÉCHELLE "+dfEchelleTxt(k)+(dessous?" — DESSOUS":""),X,Y+G.R+5.5,10,
             {ancre:"m",gras:true,cat:"detail",lieu:"vue de détail"});
-    dfTexte(F,c.ref+" · "+r.l.action+(r.l.val?" → "+r.l.val:""),X,Y+G.R+8.3,6.5,
-            {ancre:"m",c:r.col,cat:"retrofit",lieu:c.ref});
+    const nv=retNouveau(r.l), ref=r.c.mpn||r.c.val;
+    /* la référence actuelle, seulement quand rien ne la remplace (à l'identique, retrait) */
+    dfTexte(F,c.ref+" · "+r.l.action+(nv?" → "+nv:"")+(!r.l.val&&ref?" ("+ref+")":""),X,Y+G.R+10,8.5,
+            {ancre:"m",gras:true,c:r.col,cat:"retrofit",lieu:c.ref});
     F.signets.push({titre:"Retrofit "+r.lettre+" — "+c.ref+" ("+r.l.action+")",x:X,y:Y});
   });
   for(const b of blocs){b.dessiner(F,Z.x1,y,larg);y+=b.h(larg);}
@@ -492,7 +500,7 @@ function retFormHtml(E){
     champ("ref","Repère(s)","U3, ou une liste : U3 C12 R5",400,true)+
     '<label class="df-champ"><span>Action</span><select class="tbsel" data-ret="action">'+
       RET_ACTIONS.map(a=>'<option value="'+a+'">'+a+'</option>').join("")+'</select></label>'+
-    champ("val","Nouvelle valeur ou MPN","10 kΩ, LM358B",80)+champ("note","Note","Ajouter en parallèle sur C7",200)+
+    champ("val","Nouvelle valeur ou MPN","vide : même référence",80)+champ("note","Note","Ajouter en parallèle sur C7",200)+
     '<button class="tb" type="button" data-ret-a="ajout" title="Entrée dans un champ fait de même ; un clic sur un composant de la feuille ajoute son repère">+ Ajouter au retrofit</button>'+
     '<p class="ret-err" role="alert" style="color:#e05555;font-size:11px;margin:4px 0"></p><ol class="ret-liste" style="padding-left:0;list-style:none;margin:4px 0"></ol>';
 }
@@ -502,7 +510,7 @@ function retRendreListe(z,E,liste){
   ol.innerHTML=liste.map((l,i)=>{
     const rgb="rgb("+RET_COUL[l.action].map(v=>Math.round(v*255)).join(",")+")";
     return '<li style="font-size:12px;margin:3px 0"><b style="color:'+rgb+'">'+esc(l.ref)+'</b> · '+esc(l.action)+
-      (l.val?" → "+esc(l.val):"")+(l.note?" · "+esc(l.note):"")+
+      (retNouveau(l)?" → "+esc(retNouveau(l)):"")+(l.note?" · "+esc(l.note):"")+
       (retComposant(E,l.ref)?"":' <em style="color:#e05555">introuvable sur la carte</em>')+
       ' <button class="tb" type="button" data-ret-sup="'+i+'" aria-label="Retirer '+esc(l.ref)+' du retrofit">✕</button></li>';
   }).join("");

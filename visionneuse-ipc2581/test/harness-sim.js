@@ -6909,7 +6909,7 @@ T("plans (Draftsman), visionneuse : fiche de mesure et retrofit dans la même fe
     let t=plnIpcFeuilles().map(f=>f.titre).join("|");
     if(!/Fiche de mesure/.test(t)||!/Retrofit/.test(t))throw new Error(t);
     const F=plnIpcFeuilles().find(f=>f.genre==="ret"), txt=F.items.filter(it=>it.t==="t").map(it=>it.s);
-    if(!txt.some(s=>/^DÉTAIL A .*DESSOUS$/.test(s))||!txt.includes("U1 · Remplacer → LM358B"))
+    if(!txt.some(s=>/^DÉTAIL A .*DESSOUS$/.test(s))||!txt.includes("U1 · Remplacer → LM358B")||!txt.includes("LM358")||!txt.includes("SOIC8"))
       throw new Error(txt.join(" | "));
     PLN_CHOIX.mes=false;
     t=plnIpcFeuilles().map(f=>f.titre).join("|");

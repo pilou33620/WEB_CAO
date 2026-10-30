@@ -438,9 +438,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/test/harness.js": {
-    "mtime": 1793350354.1145015,
-    "seen": 1793351383.6739821,
-    "ast_hash": "4ffda5ba8a96b86a13eedbf8ce00c3d8",
+    "mtime": 1793351795.8920443,
+    "seen": 1793352185.9727833,
+    "ast_hash": "b3cf9967ce2929e04d13fb4c097cb6f6",
     "semantic_hash": ""
   },
   "editeur-schematique/js/00-espace-config.js": {
@@ -1026,9 +1026,9 @@
     "semantic_hash": ""
   },
   "visionneuse-ipc2581/test/harness-sim.js": {
-    "mtime": 1793350354.140105,
-    "seen": 1793351383.6751018,
-    "ast_hash": "9d3ff9e69a07d77005cfe26144bcd4f9",
+    "mtime": 1793351944.7625463,
+    "seen": 1793352185.9736934,
+    "ast_hash": "3ff89774b0a71c11f4be6456f69888bc",
     "semantic_hash": ""
   },
   "web_CAO.py": {
@@ -1080,9 +1080,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/README.md": {
-    "mtime": 1793350688.4151742,
-    "seen": 1793351383.6753302,
-    "ast_hash": "87c481985ac93798524c3efcb9aa497a",
+    "mtime": 1793352080.4171803,
+    "seen": 1793352185.9739227,
+    "ast_hash": "1a30a70ef9c2eb86edbf6081e5d0521c",
     "semantic_hash": ""
   },
   "editeur-pcb/editeur-pcb.html": {
@@ -1470,9 +1470,9 @@
     "semantic_hash": ""
   },
   "commun/fiche-mesure.js": {
-    "mtime": 1793350235.347674,
-    "seen": 1793351383.6731665,
-    "ast_hash": "597686f37f648ec8419967b0fe400a6d",
+    "mtime": 1793351944.7591405,
+    "seen": 1793352185.9721017,
+    "ast_hash": "e481159d2dd74c834991146c30a20c70",
     "semantic_hash": ""
   },
   "commun/outils/build-manuel.py": {
@@ -1500,9 +1500,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/42-fiche-mesure.js": {
-    "mtime": 1793350266.3446486,
-    "seen": 1793351383.6739042,
-    "ast_hash": "25f50414544a23ac0863cf3b4a68857b",
+    "mtime": 1793351783.8453956,
+    "seen": 1793352185.972716,
+    "ast_hash": "19855bed65ac3a0e87fb6ea507b5427e",
     "semantic_hash": ""
   },
   "python/maillages_3d.mjs": {
@@ -1560,9 +1560,9 @@
     "semantic_hash": ""
   },
   "docs/manuel/04-editeur-pcb-fabrication.md": {
-    "mtime": 1793350692.8692856,
-    "seen": 1793351383.6752274,
-    "ast_hash": "a8814373275304f267c1287f1ba874f0",
+    "mtime": 1793352080.4085398,
+    "seen": 1793352185.9738216,
+    "ast_hash": "3f76410acddaf8b2a6fc0ba637c5c4d8",
     "semantic_hash": ""
   },
   "docs/manuel/05-gestion-lib.md": {
@@ -1578,9 +1578,9 @@
     "semantic_hash": ""
   },
   "docs/manuel/07-visionneuse-ipc2581.md": {
-    "mtime": 1793350688.4316645,
-    "seen": 1793351383.6752505,
-    "ast_hash": "6eb7b99c0424807d220e18e22f9df57d",
+    "mtime": 1793352080.4114022,
+    "seen": 1793352185.9738445,
+    "ast_hash": "a5be3a2ff038f86bc9b78ce54a887033",
     "semantic_hash": ""
   },
   "docs/manuel/08-simulation-si.md": {
@@ -1620,9 +1620,9 @@
     "semantic_hash": ""
   },
   "docs/manuel/manuel.html": {
-    "mtime": 1793350701.2710457,
-    "seen": 1793351383.6753068,
-    "ast_hash": "5872d2d2efdbeb9c9d2c507f98932f88",
+    "mtime": 1793352080.9611747,
+    "seen": 1793352185.9738994,
+    "ast_hash": "b52102ba04e651133090d95eb4929b72",
     "semantic_hash": ""
   },
   "tasks/plan-manuel.md": {
