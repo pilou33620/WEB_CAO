@@ -144,9 +144,9 @@
     "semantic_hash": ""
   },
   "commun/simulation-em.js": {
-    "mtime": 1793131311.671656,
-    "seen": 1793135203.8147666,
-    "ast_hash": "f3afc86702c740caf24d1342ce93efc9",
+    "mtime": 1793285570.253746,
+    "seen": 1793351383.6733148,
+    "ast_hash": "f0c39add2cea2bb27752b1844bd4521e",
     "semantic_hash": ""
   },
   "commun/tactile.js": {
@@ -192,51 +192,51 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/01-core.js": {
-    "mtime": 1792784639.9586682,
-    "seen": 1793135203.8148968,
-    "ast_hash": "bcda55689afe172c9e8c3b74725244f1",
+    "mtime": 1793280587.4300175,
+    "seen": 1793351383.673493,
+    "ast_hash": "72f862bd81ce624ffd1baa725664f792",
     "semantic_hash": ""
   },
   "editeur-pcb/js/02-connectivity.js": {
-    "mtime": 1793039214.4140708,
-    "seen": 1793135203.8149037,
-    "ast_hash": "bd4fd0d34f90f6333c6e9997cb9520b8",
+    "mtime": 1793278338.793295,
+    "seen": 1793351383.6735032,
+    "ast_hash": "dd2edc89da2d35c8b611b8556d3d4720",
     "semantic_hash": ""
   },
   "editeur-pcb/js/03-render.js": {
-    "mtime": 1793039214.4140708,
-    "seen": 1793135203.8149104,
-    "ast_hash": "af8e6fa86155c4763a08b4f59a17f525",
+    "mtime": 1793278361.8449776,
+    "seen": 1793351383.6735132,
+    "ast_hash": "bc905b7cf43a07d401fe012ac12df95d",
     "semantic_hash": ""
   },
   "editeur-pcb/js/04-fabrication.js": {
-    "mtime": 1793130769.5371945,
-    "seen": 1793135203.8149178,
-    "ast_hash": "32723fb7528d40958f5fa100b4a6dd09",
+    "mtime": 1793280602.805859,
+    "seen": 1793351383.6735241,
+    "ast_hash": "75e680c176a0daf16ed085cbf80c105c",
     "semantic_hash": ""
   },
   "editeur-pcb/js/04-pdf-masterdraw.js": {
-    "mtime": 1793130794.9649346,
-    "seen": 1793135203.814925,
-    "ast_hash": "51bd218d56fbe9a1072bfe7d2448a93f",
+    "mtime": 1793280602.8072314,
+    "seen": 1793351383.6735342,
+    "ast_hash": "c1a6e6d875c88974e4f507fa2c2ec63e",
     "semantic_hash": ""
   },
   "editeur-pcb/js/05-tools.js": {
-    "mtime": 1793130761.4412773,
-    "seen": 1793135203.8149319,
-    "ast_hash": "0e97b9c5f94cff650d5577743a64b10f",
+    "mtime": 1793278338.7844732,
+    "seen": 1793351383.6735435,
+    "ast_hash": "2a089c7456af472230f5adb9d5c177e2",
     "semantic_hash": ""
   },
   "editeur-pcb/js/06-panels.js": {
-    "mtime": 1793127112.1868076,
-    "seen": 1793135203.8149388,
-    "ast_hash": "f138c041dc29d6b1ead9db2de5af9a20",
+    "mtime": 1793280606.7138216,
+    "seen": 1793351383.6735532,
+    "ast_hash": "fdd188f4a570eeaf6b5199e61f1a5f52",
     "semantic_hash": ""
   },
   "editeur-pcb/js/07-app.js": {
-    "mtime": 1793039214.4140708,
-    "seen": 1793135203.8149457,
-    "ast_hash": "254dda9a880ec400365f0fe2f3edd69c",
+    "mtime": 1793285570.2742715,
+    "seen": 1793351383.6735644,
+    "ast_hash": "764e613c8974ffcef9d064e4b61429cb",
     "semantic_hash": ""
   },
   "editeur-pcb/js/08-empreinte.js": {
@@ -342,10 +342,10 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/25-liens.js": {
-    "mtime": 1791663035.627176,
-    "seen": 1791891802.1720912,
-    "ast_hash": "b9ba955f04f1ae2b96abe78ce6f91b43",
-    "semantic_hash": "b9ba955f04f1ae2b96abe78ce6f91b43"
+    "mtime": 1793265779.761211,
+    "seen": 1793351383.6737428,
+    "ast_hash": "e88f0aeba196fe73b79787bdda5acfd0",
+    "semantic_hash": ""
   },
   "editeur-pcb/js/26-variantes.js": {
     "mtime": 1792046641.8371067,
@@ -366,9 +366,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/29-draftsman.js": {
-    "mtime": 1793039214.4220707,
-    "seen": 1793135203.815122,
-    "ast_hash": "61f54c808607df5525fb153589b6cbba",
+    "mtime": 1793350243.5352254,
+    "seen": 1793351383.6737802,
+    "ast_hash": "39ad83bc25ff9a6cb422ccfa830c2e2c",
     "semantic_hash": ""
   },
   "editeur-pcb/js/30-contraintes.js": {
@@ -390,21 +390,21 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/33-draftsman-export.js": {
-    "mtime": 1792248131.4980667,
-    "seen": 1792250348.1057072,
-    "ast_hash": "23b586adfdbbd2f7a5e6564e4f6a7351",
+    "mtime": 1793280562.246273,
+    "seen": 1793351383.6738172,
+    "ast_hash": "ba76b54e6504cfe9b9006abfc580b193",
     "semantic_hash": ""
   },
   "editeur-pcb/js/34-draftsman-vues.js": {
-    "mtime": 1793130800.6808763,
-    "seen": 1793135203.8151617,
-    "ast_hash": "2f72f5b1e125365a86402cfd89597055",
+    "mtime": 1793280580.6775486,
+    "seen": 1793351383.6738255,
+    "ast_hash": "70260ec5eb87ef2c03b7ac148a4ad143",
     "semantic_hash": ""
   },
   "editeur-pcb/js/35-ipc2581-export.js": {
-    "mtime": 1792705742.5776434,
-    "seen": 1792732002.1854367,
-    "ast_hash": "cb7a5bd8e895b6837b4f86d03eb6c4e5",
+    "mtime": 1793280602.8104005,
+    "seen": 1793351383.6738348,
+    "ast_hash": "9fa0371f420a6b67cd7cdc6a9a092141",
     "semantic_hash": ""
   },
   "editeur-pcb/js/fontes/plans-sans.js": {
@@ -438,9 +438,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/test/harness.js": {
-    "mtime": 1793131331.9794483,
-    "seen": 1793135203.815274,
-    "ast_hash": "a2b011e9d307a10e27564ed86775ec5a",
+    "mtime": 1793350354.1145015,
+    "seen": 1793351383.6739821,
+    "ast_hash": "4ffda5ba8a96b86a13eedbf8ce00c3d8",
     "semantic_hash": ""
   },
   "editeur-schematique/js/00-espace-config.js": {
@@ -456,9 +456,9 @@
     "semantic_hash": ""
   },
   "editeur-schematique/js/02-bibliotheque.js": {
-    "mtime": 1792044452.6827407,
-    "seen": 1792051010.2931275,
-    "ast_hash": "d5452148d77b4a4be20926559888d35d",
+    "mtime": 1793180133.7044704,
+    "seen": 1793351383.6740232,
+    "ast_hash": "6eea29f8cc58f902eaefb726d621000a",
     "semantic_hash": ""
   },
   "editeur-schematique/js/03-boitiers.js": {
@@ -522,15 +522,15 @@
     "semantic_hash": ""
   },
   "editeur-schematique/js/13-fichiers.js": {
-    "mtime": 1792784640.0226676,
-    "seen": 1793135203.8153932,
-    "ast_hash": "d083ff31a193b9bd8db4987bf77cac50",
+    "mtime": 1793184399.3915346,
+    "seen": 1793351383.674134,
+    "ast_hash": "80a80ef02f69d608e5e4d0d53746984c",
     "semantic_hash": ""
   },
   "editeur-schematique/js/14-clavier-boutons.js": {
-    "mtime": 1793130861.4042559,
-    "seen": 1793135203.8154004,
-    "ast_hash": "80ded2bb6166b2c4b8cde0d848a14b7e",
+    "mtime": 1793185024.6760347,
+    "seen": 1793351383.6741436,
+    "ast_hash": "7284920bc8fb7945e0b9e24a112c17e8",
     "semantic_hash": ""
   },
   "editeur-schematique/js/15-import.js": {
@@ -570,10 +570,10 @@
     "semantic_hash": "4094defc12f9f48a2fbde1f28759b423"
   },
   "editeur-schematique/js/21-reperage.js": {
-    "mtime": 1791663035.6911755,
-    "seen": 1791891802.1723,
-    "ast_hash": "9fdd3af27642d241a9cf2e78458b1698",
-    "semantic_hash": "9fdd3af27642d241a9cf2e78458b1698"
+    "mtime": 1793266963.1028845,
+    "seen": 1793351383.6742153,
+    "ast_hash": "5f1fee65447ce2810d4b0641fdc6625f",
+    "semantic_hash": ""
   },
   "editeur-schematique/js/22-recherche-composants.js": {
     "mtime": 1793127112.5788038,
@@ -618,9 +618,9 @@
     "semantic_hash": "e2aa9993499c2cdff79bf062b5a2dbd0"
   },
   "editeur-schematique/test/harness.js": {
-    "mtime": 1793131230.8524814,
-    "seen": 1793135203.8155377,
-    "ast_hash": "5e842d37814a20d18f3e4a1404a6ba06",
+    "mtime": 1793267276.121166,
+    "seen": 1793351383.6743052,
+    "ast_hash": "8754e4dba03ce16cdc221c9be0a01882",
     "semantic_hash": ""
   },
   "gestion-lib/js/01-donnees.js": {
@@ -888,9 +888,9 @@
     "semantic_hash": ""
   },
   "python/test/banc-serveur-routes.py": {
-    "mtime": 1792704296.4445808,
-    "seen": 1792732002.1861424,
-    "ast_hash": "10d435b66f9780e9ce478b0e203222c2",
+    "mtime": 1793280735.957913,
+    "seen": 1793351383.6748848,
+    "ast_hash": "811095b05d055a829e77d44d9c6c49a0",
     "semantic_hash": ""
   },
   "python/test/banc-usimmics.py": {
@@ -1014,9 +1014,9 @@
     "semantic_hash": ""
   },
   "visionneuse-ipc2581/js/07-simulation.js": {
-    "mtime": 1792691818.5289218,
-    "seen": 1792732002.1863015,
-    "ast_hash": "23490081dbba906ba0f50b3fac333fe3",
+    "mtime": 1793285570.3017457,
+    "seen": 1793351383.675062,
+    "ast_hash": "1c200c2210642cb837fdc8b59ec0b316",
     "semantic_hash": ""
   },
   "visionneuse-ipc2581/test/banc-essai.py": {
@@ -1026,15 +1026,15 @@
     "semantic_hash": ""
   },
   "visionneuse-ipc2581/test/harness-sim.js": {
-    "mtime": 1793131332.0074482,
-    "seen": 1793135203.8161376,
-    "ast_hash": "a8fd4f521ef49e9e524385713c5aafb3",
+    "mtime": 1793350354.140105,
+    "seen": 1793351383.6751018,
+    "ast_hash": "9d3ff9e69a07d77005cfe26144bcd4f9",
     "semantic_hash": ""
   },
   "web_CAO.py": {
-    "mtime": 1793131190.5248935,
-    "seen": 1793135203.8161445,
-    "ast_hash": "b5c940130ffbfdb3b719aab768bec0be",
+    "mtime": 1793280724.5335345,
+    "seen": 1793351383.6751091,
+    "ast_hash": "56af147d64fc612ca8da00d0e1613477",
     "semantic_hash": ""
   },
   ".github/workflows/ci.yml": {
@@ -1044,15 +1044,15 @@
     "semantic_hash": ""
   },
   "A-FAIRE.md": {
-    "mtime": 1792705780.7531583,
-    "seen": 1792732002.1863458,
-    "ast_hash": "33fa74dfc8f49d940806a90f7a806e55",
+    "mtime": 1793281304.4759529,
+    "seen": 1793351383.675124,
+    "ast_hash": "19af795457f98005aebdfe6a0db908fd",
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1793127111.96281,
-    "seen": 1793135203.816167,
-    "ast_hash": "a59f38840722fd1add721407529102de",
+    "mtime": 1793350688.4331076,
+    "seen": 1793351383.675131,
+    "ast_hash": "2f10c766a6685227b86dcd58a80d1e80",
     "semantic_hash": ""
   },
   "bancs-mesure/crosstalk/README.md": {
@@ -1080,15 +1080,15 @@
     "semantic_hash": ""
   },
   "editeur-pcb/README.md": {
-    "mtime": 1793130917.471683,
-    "seen": 1793135203.8163426,
-    "ast_hash": "35eb4acbae75d5034c3a43f3086709f4",
+    "mtime": 1793350688.4151742,
+    "seen": 1793351383.6753302,
+    "ast_hash": "87c481985ac93798524c3efcb9aa497a",
     "semantic_hash": ""
   },
   "editeur-pcb/editeur-pcb.html": {
-    "mtime": 1793127112.1108086,
-    "seen": 1793135203.8163497,
-    "ast_hash": "e4653dc1e2fe7b92e31ec495f86790ef",
+    "mtime": 1793287607.5420976,
+    "seen": 1793351383.675337,
+    "ast_hash": "b80d122c165149a4b9ed269e96203b89",
     "semantic_hash": ""
   },
   "editeur-pcb/js/fontes/OFL-PlansSans.txt": {
@@ -1104,9 +1104,9 @@
     "semantic_hash": ""
   },
   "editeur-schematique/editeur-schematique.html": {
-    "mtime": 1792921115.8591373,
-    "seen": 1793135203.8163722,
-    "ast_hash": "0cea5ac04bb8ac204cf1eb9b2f05e1c7",
+    "mtime": 1793184399.3924246,
+    "seen": 1793351383.675361,
+    "ast_hash": "a3a5e3bf76be35756be3fe642af86063",
     "semantic_hash": ""
   },
   "gestion-lib/gestion-lib.html": {
@@ -1146,15 +1146,15 @@
     "semantic_hash": "f9a51bc31712e5c4f5a5e1cce22be2d3"
   },
   "visionneuse-ipc2581/README.md": {
-    "mtime": 1793127113.0547988,
-    "seen": 1793135203.816524,
-    "ast_hash": "778840f65ae900f0d4ea30d082ecd412",
+    "mtime": 1793350698.0546227,
+    "seen": 1793351383.6755195,
+    "ast_hash": "a6e074c323344d819dc054b8fc37dbc4",
     "semantic_hash": ""
   },
   "visionneuse-ipc2581/visionneuse-ipc2581.html": {
-    "mtime": 1793127113.1147983,
-    "seen": 1793135203.8165324,
-    "ast_hash": "bbc420e2d24cec8fbef4d82284e74559",
+    "mtime": 1793350319.0298893,
+    "seen": 1793351383.6755273,
+    "ast_hash": "5bd89df23013fa88b337b4041ddcfdd1",
     "semantic_hash": ""
   },
   "bancs-mesure/crosstalk/carte.png": {
@@ -1236,9 +1236,9 @@
     "semantic_hash": ""
   },
   "commun/dossier-meca.js": {
-    "mtime": 1792706109.6250997,
-    "seen": 1792732002.1849275,
-    "ast_hash": "fe2add1498df06e761605a705f30fa53",
+    "mtime": 1793280615.424879,
+    "seen": 1793351383.673107,
+    "ast_hash": "9b5dc74261c5887fe0df6b9e7881b984",
     "semantic_hash": ""
   },
   "commun/zip.js": {
@@ -1248,21 +1248,21 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/36-dossier-meca.js": {
-    "mtime": 1792184709.2940197,
-    "seen": 1792184900.1176305,
-    "ast_hash": "07e94f22b41fd4f432b280d0954eb6fc",
+    "mtime": 1793280642.033061,
+    "seen": 1793351383.6738431,
+    "ast_hash": "72ac34e80455f92f0f3ca519598c4e5f",
     "semantic_hash": ""
   },
   "visionneuse-ipc2581/js/08-dossier-meca.js": {
-    "mtime": 1792512868.4172366,
-    "seen": 1792514996.4309192,
-    "ast_hash": "cddbab5c947d01093aa885833d4f65a1",
+    "mtime": 1793286702.0567212,
+    "seen": 1793351383.6750708,
+    "ast_hash": "34799354ae3ab390c6197f087617e517",
     "semantic_hash": ""
   },
   "SPEC-dossier-meca.md": {
-    "mtime": 1792054135.5847147,
-    "seen": 1792173080.9566753,
-    "ast_hash": "5ffc1d073499d9da1e0e8c7849a461b0",
+    "mtime": 1793281300.6595814,
+    "seen": 1793351383.6751382,
+    "ast_hash": "5ae44dcd0b0bb423bfb2439944b6c85b",
     "semantic_hash": ""
   },
   "tasks/plan-dossier-meca.md": {
@@ -1326,9 +1326,9 @@
     "semantic_hash": ""
   },
   "commun/lecture-cao.js": {
-    "mtime": 1792702952.196895,
-    "seen": 1792732002.1849582,
-    "ast_hash": "e0804ab75f97723ae50e78753098f460",
+    "mtime": 1793280587.4191718,
+    "seen": 1793351383.6731765,
+    "ast_hash": "26392342a512964f781733082cc4784a",
     "semantic_hash": ""
   },
   "commun/pilote-cao.js": {
@@ -1362,9 +1362,9 @@
     "semantic_hash": ""
   },
   "commun/ecriture-cao.js": {
-    "mtime": 1792691818.4209228,
-    "seen": 1792732002.1849425,
-    "ast_hash": "24aa3e1a2eb2d5af6b3913789a6f95b2",
+    "mtime": 1793280587.4120278,
+    "seen": 1793351383.6731331,
+    "ast_hash": "23f804ede069a4a234027b0478dc10d4",
     "semantic_hash": ""
   },
   "editeur-schematique/js/28-dessin-pilote.js": {
@@ -1416,9 +1416,9 @@
     "semantic_hash": ""
   },
   "commun/pilote-aide.json": {
-    "mtime": 1792701876.9588206,
-    "seen": 1792732002.18499,
-    "ast_hash": "ebe4587abfca20870d4f9aa9521a9430",
+    "mtime": 1793285570.2396076,
+    "seen": 1793351383.6732264,
+    "ast_hash": "39dda05be0da0348c050f69906dcf1aa",
     "semantic_hash": ""
   },
   "editeur-pcb/js/38-interdits.js": {
@@ -1446,9 +1446,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/41-animation-3d.js": {
-    "mtime": 1793085535.4531162,
-    "seen": 1793135203.8152168,
-    "ast_hash": "4cf237b30804d68991f1910da49f86fd",
+    "mtime": 1793286702.055055,
+    "seen": 1793351383.6738944,
+    "ast_hash": "5ccd25dbf74b02e152089e6d5a92dc9e",
     "semantic_hash": ""
   },
   "editeur-schematique/js/29-symboles-lib.js": {
@@ -1470,9 +1470,9 @@
     "semantic_hash": ""
   },
   "commun/fiche-mesure.js": {
-    "mtime": 1793130800.820875,
-    "seen": 1793135203.8146465,
-    "ast_hash": "39e3568f7882e33e74133a92888ac5d8",
+    "mtime": 1793350235.347674,
+    "seen": 1793351383.6731665,
+    "ast_hash": "597686f37f648ec8419967b0fe400a6d",
     "semantic_hash": ""
   },
   "commun/outils/build-manuel.py": {
@@ -1500,9 +1500,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/42-fiche-mesure.js": {
-    "mtime": 1793039214.4220707,
-    "seen": 1793135203.8152244,
-    "ast_hash": "891ea275b72c31413adff2f2506b4701",
+    "mtime": 1793350266.3446486,
+    "seen": 1793351383.6739042,
+    "ast_hash": "25f50414544a23ac0863cf3b4a68857b",
     "semantic_hash": ""
   },
   "python/maillages_3d.mjs": {
@@ -1518,15 +1518,15 @@
     "semantic_hash": ""
   },
   "visionneuse-ipc2581/js/09-fiche-mesure.js": {
-    "mtime": 1793039214.4420707,
-    "seen": 1793135203.8161159,
-    "ast_hash": "b8ba54d6c5109c5c7a11ba8af5626a9f",
+    "mtime": 1793350319.0273905,
+    "seen": 1793351383.6750782,
+    "ast_hash": "4e5eace6fee3f6de25211764a2597a1c",
     "semantic_hash": ""
   },
   "visionneuse-ipc2581/js/10-plans.js": {
-    "mtime": 1793127113.0827985,
-    "seen": 1793135203.8161225,
-    "ast_hash": "a72418505fc1f14950ade349cf42f5eb",
+    "mtime": 1793350319.0285883,
+    "seen": 1793351383.675085,
+    "ast_hash": "5f4fcecb1738d8c256128d455b06c78f",
     "semantic_hash": ""
   },
   "SPEC-manuel.md": {
@@ -1554,21 +1554,21 @@
     "semantic_hash": ""
   },
   "docs/manuel/03-editeur-pcb-edition-routage.md": {
-    "mtime": 1793127191.0737703,
-    "seen": 1793135203.8162498,
-    "ast_hash": "041b70bf20944f49fe01d26f7aeb3cd2",
+    "mtime": 1793287621.504128,
+    "seen": 1793351383.67522,
+    "ast_hash": "fd5417cc662ed2cf17acae363192630e",
     "semantic_hash": ""
   },
   "docs/manuel/04-editeur-pcb-fabrication.md": {
-    "mtime": 1793130907.307787,
-    "seen": 1793135203.8162565,
-    "ast_hash": "3019c35b7bbdcb45fb07a34ea549ce53",
+    "mtime": 1793350692.8692856,
+    "seen": 1793351383.6752274,
+    "ast_hash": "a8814373275304f267c1287f1ba874f0",
     "semantic_hash": ""
   },
   "docs/manuel/05-gestion-lib.md": {
-    "mtime": 1793130959.3352554,
-    "seen": 1793135203.8162627,
-    "ast_hash": "ccb925ada34af39f19439fd383ba240f",
+    "mtime": 1793281368.7140853,
+    "seen": 1793351383.675235,
+    "ast_hash": "4a5f53140b9685f402ab5bfb397f510f",
     "semantic_hash": ""
   },
   "docs/manuel/06-recherche-composants.md": {
@@ -1578,9 +1578,9 @@
     "semantic_hash": ""
   },
   "docs/manuel/07-visionneuse-ipc2581.md": {
-    "mtime": 1793130917.0076878,
-    "seen": 1793135203.8162751,
-    "ast_hash": "81c7fa4e4f2cdf428d1316eb05df6d2a",
+    "mtime": 1793350688.4316645,
+    "seen": 1793351383.6752505,
+    "ast_hash": "6eb7b99c0424807d220e18e22f9df57d",
     "semantic_hash": ""
   },
   "docs/manuel/08-simulation-si.md": {
@@ -1620,9 +1620,9 @@
     "semantic_hash": ""
   },
   "docs/manuel/manuel.html": {
-    "mtime": 1793134062.4742196,
-    "seen": 1793135203.8163202,
-    "ast_hash": "6be9eda42cee2bec40d7f0c59b4a7a04",
+    "mtime": 1793350701.2710457,
+    "seen": 1793351383.6753068,
+    "ast_hash": "5872d2d2efdbeb9c9d2c507f98932f88",
     "semantic_hash": ""
   },
   "tasks/plan-manuel.md": {
@@ -1641,6 +1641,30 @@
     "mtime": 1793101073.5350654,
     "seen": 1793135203.8164942,
     "ast_hash": "fd7c5bcef765cd91f0389358151bbbda",
+    "semantic_hash": ""
+  },
+  "commun/export-step.js": {
+    "mtime": 1793286702.0529044,
+    "seen": 1793351383.6731546,
+    "ast_hash": "098c404f1c68e68c8818c2529db79a51",
+    "semantic_hash": ""
+  },
+  "editeur-pcb/js/43-verif-bom.js": {
+    "mtime": 1793267076.6568604,
+    "seen": 1793351383.673913,
+    "ast_hash": "63b4b0fe0fabd07473cc1a735b28df7e",
+    "semantic_hash": ""
+  },
+  "editeur-pcb/js/44-export-step.js": {
+    "mtime": 1793285570.2754118,
+    "seen": 1793351383.6739225,
+    "ast_hash": "41a23edc6ee1bbce1d6f1101a1711086",
+    "semantic_hash": ""
+  },
+  "editeur-schematique/js/30-export-pdf.js": {
+    "mtime": 1793185603.5442955,
+    "seen": 1793351383.6742892,
+    "ast_hash": "e25e6a1559d82dd0e41cfe1c4fe7d9bc",
     "semantic_hash": ""
   }
 }
