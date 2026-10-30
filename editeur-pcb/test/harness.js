@@ -230,7 +230,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simDCFinesse","simDCCuivrePris","SIM_DC_CARREAUX_MINI",
   /* Le verdict, la ligne de contexte, le tableau par net et la thermique :
      autant de morceaux de la fiche DC, eprouvables un a un. */
-  "simDCMesures","simVerdictDC","simMetaDC","simTableauNetsDC",
+  "simDCMesures","simVerdictDC","simDCTenueVia","simDCParComposant","simTableauRails","simMetaDC","simTableauNetsDC",
   /* Les unites d'une borne, et le champ de saisie commun a tout le panneau. */
   "SIM_DC_UNITES_V","SIM_DC_UNITES_A","simDCUnites","simDCUnite",
   "simDCListeUnite","simChamp","simCorpsImpedance","simCorpsDiff",
@@ -14940,7 +14940,8 @@ T("chute DC : des vias EN SERIE ne se comparent pas entre eux",()=>{
      la ou un seul chemin portait la TOTALITE. Un chiffre rassurant, et faux. */
   const h=simTableauVias({vias:[dcVia("J1.1 1→2",0,1,2), dcVia("J1.1 2→3",1,2,2),
                                 dcVia("J1.1 3→4",2,3,2)]});
-  if(/%/.test(h))
+  // la colonne « Tenue » porte son propre % : c'est la PART qu'on garde ici
+  if(/en prend|parts égales/.test(h))
     throw new Error("une part est annoncee alors qu'aucun via n'est en "+
                     "parallele : "+h.replace(/<[^>]*>/g," "));
 });
@@ -14957,6 +14958,30 @@ T("chute DC : des vias EN PARALLELE se comparent, et le chiffre est juste",()=>{
   if(!/couches 1 et 4/.test(h))
     throw new Error("le couple de couches n'est pas nomme : "+
                     h.replace(/<[^>]*>/g," "));
+});
+
+T("chute DC : la tenue d'un via, IPC-2221 sur son tube ou imposée, et le verdict",()=>{
+  const ancien=Object.assign({},SIM.dcBudget);
+  try{
+    SIM.dcBudget.via=null; SIM.dcBudget.dt=10;
+    // 0,3 mm percé, 25 µm de placage, +10 °C : 0,95 A à la main
+    const t=simDCTenueVia({percage:0.3, placage:0.025});
+    if(Math.abs(t-0.95)>0.01)throw new Error("tenue "+t+" au lieu de 0,95 A");
+    const res={vias:[dcVia("V1",0,1,0.5), Object.assign(dcVia("V2",0,1,1.2),{percage:0.3,placage:0.025})],
+               bornes:[], pire_par_net:{}};
+    let m=simDCMesures(res);
+    if(m.viasKO.length!==1||m.viasKO[0].repere!=="V2")
+      throw new Error("V2 (1,2 A) seul doit dépasser : "+m.viasKO.map(v=>v.repere));
+    if(!/Hors budget[^<]*1 via/.test(simVerdictDC(res)))throw new Error("le verdict ne nomme pas le via");
+    if(!/au-delà de\s+leur tenue/.test(simTableauVias(res)))throw new Error("pas de résumé des vias en défaut");
+    SIM.dcBudget.via=2;
+    if(simDCMesures(res).viasKO.length)throw new Error("2 A imposés : aucun via ne dépasse");
+    // la densité n'est jugée que si on la donne, et ne passe qu'en ambre
+    res.pire_par_net={VDD:{densite:80, echauffement:0}};
+    if(simDCMesures(res).densKO.length)throw new Error("densité jugée sans budget");
+    SIM.dcBudget.densite=50;
+    if(!/simVerdict limite/.test(simVerdictDC(res)))throw new Error("la densité doit mettre en ambre");
+  }finally{ SIM.dcBudget=ancien; }
 });
 
 T("chute DC : un tableau trop long est coupe, et le dit",()=>{
@@ -19616,6 +19641,87 @@ T("simulation Chute DC : préservation des personnalisations manuelles lors d'un
     throw new Error("la valeur manuelle a été écrasée lors du ré-import ! Valeur actuelle: "+chgPerso.valeur);
   if(chgPerso.provenance !== "manuel")
     throw new Error("la provenance manuelle doit être conservée");
+});
+
+T("simulation Chute DC : cascade — ferrite en série, entrée de régulateur, retour par la masse",()=>{
+  S.fps=[]; S.tracks=[]; S.vias=[]; S.zones=[];
+  pcbDefinirSchema({pages:[{comps:[
+    {ref:"J1", type:"conn", value:"CONN_2P", specs:{"Output Voltage":"5V"}, pinNames:{"1":"VBUS","2":"GND"}},
+    {ref:"U3", type:"regulator", value:"REG_3V3", specs:{"Output Voltage":"3.3V"},
+     pinNames:{"1":"VIN","2":"VOUT","3":"GND"}},
+    {ref:"FB1", type:"inductor", value:"BLM18", specs:{"DC Resistance":"0.1"}},
+    {ref:"U1", type:"ic", value:"CHARGE", specs:{"Supply Current":"200mA"}, pinNames:{"1":"VDD","2":"GND"}}
+  ]}]});
+  const pose=(ref,val,pkg,n,x,nets)=>{const f=mkFp(ref,val,pkg,n);f.x=x;f.y=10;f.nets=nets;S.fps.push(f);};
+  pose("J1","CONN_2P","HEADER-2",2,0,{1:"+5V",2:"GND"});
+  pose("U3","REG_3V3","SOT-223",3,20,{1:"+5V",2:"+3V3",3:"GND"});
+  pose("FB1","BLM18","0603",2,40,{1:"+3V3",2:"+3V3_A"});
+  pose("U1","CHARGE","SOIC-8",2,60,{1:"+3V3_A",2:"GND"});
+  SIM_DCB.masse=false;
+
+  // l'entrée du régulateur n'est plus une source sur le +5V
+  if(pcbNetComposants("+5V").sources.some(s=>s.fp.ref==="U3"))
+    throw new Error("U3.VIN pris pour une source du +5V");
+
+  // le +3V3 se prolonge par FB1 jusqu'au +3V3_A
+  let r=SIM_PCB.dcImporterSchema("+3V3");
+  if(!r.ok||r.nets.join()!=="+3V3,+3V3_A"||r.liaisons!==1)
+    throw new Error("groupe du +3V3 : "+JSON.stringify(r));
+  let p=SIM_PCB.cuivreDC();
+  if(p.erreur)throw new Error(p.erreur+" "+(p.conseil||""));
+  if(p.liaisons.length!==1||p.liaisons[0].resistance!==0.1||p.liaisons[0].b.net!=="+3V3_A")
+    throw new Error("liaison FB1 : "+JSON.stringify(p.liaisons));
+
+  // avec la masse : U1 rend 200 mA par sa broche GND, la masse de U3 est à 0 V
+  SIM_DCB.masse=true;
+  p=SIM_PCB.cuivreDC();
+  SIM_DCB.masse=false;
+  if(p.erreur)throw new Error(p.erreur);
+  const retour=p.sources.find(s=>s.net==="GND");
+  if(!retour||Math.abs(retour.courant-0.2)>1e-9||retour.composant!=="U1")
+    throw new Error("retour de U1 : "+JSON.stringify(p.sources));
+  if(!p.references.some(x=>x.net==="GND"&&x.tension===0&&x.composant==="U3"))
+    throw new Error("masse de U3 à 0 V : "+JSON.stringify(p.references));
+
+  // le +5V voit l'entrée de U3 : 3,3 V × 0,2 A / (0,85 × 5 V)
+  r=SIM_PCB.dcImporterSchema("+5V");
+  const e=SIM_DCB.bornes.find(b=>b.role==="charge"&&b.compRef==="U3");
+  if(!e||Math.abs(e.valeur-3.3*0.2/(0.85*5))>1e-6||e.provenance!=="cascade")
+    throw new Error("entrée de U3 : "+JSON.stringify(e));
+
+  // tous les rails : deux groupes, l'aval de FB1 ne repart pas seul
+  const rails=SIM_PCB.dcRails();
+  if(rails.map(x=>x.nets.join("+")).join(" | ")!=="+3V3++3V3_A | +5V")
+    throw new Error("rails : "+JSON.stringify(rails));
+  // et les bornes de l'utilisateur reviennent après le balayage
+  const avant=SIM_PCB.dcEtat();
+  SIM_PCB.dcImporterSchema("+3V3");
+  SIM_PCB.dcRestaurer(avant);
+  if(SIM_DCB.bornes.length!==avant.bornes.length||!SIM_DCB.bornes.some(b=>b.compRef==="U3"&&b.role==="charge"))
+    throw new Error("bornes non rendues");
+  SIM.dcRails={total:2, encours:null, lignes:[
+    {net:"+3V3", nets:["+3V3","+3V3_A"], courant:0.2, classe:"dehors",
+     mesures:{pire:{repere:"U1.1", chute:0.2}, pct:6, dt:1, viasKO:[], densKO:[]}},
+    {net:"+5V", nets:["+5V"], erreur:"Le net +5V ne porte aucun cuivre."}]};
+  const h=simTableauRails();
+  SIM.dcRails=null;
+  if(!/\+3V3 → \+3V3_A/.test(h)||!/non calculé/.test(h)||!/z0ko/.test(h))
+    throw new Error("tableau des rails : "+h.replace(/<[^>]*>/g," "));
+});
+
+T("chute DC : ce que voit un composant, rail moins masse, et la pire charge",()=>{
+  const res={bornes:[
+    {role:"tension", net:"+3V3", consigne:3.3, tension:3.3, chute:0, composant:"U3", repere:"U3.2"},
+    {role:"tension", net:"GND", consigne:0, tension:0, chute:0, composant:"U3", repere:"U3.3 (masse)"},
+    {role:"courant", net:"+3V3", consigne:-0.2, tension:3.25, chute:0.05, composant:"U1", repere:"U1.1"},
+    {role:"courant", net:"GND", consigne:0.2, tension:0.02, chute:-0.02, composant:"U1", repere:"U1.2 (masse)"}],
+    pire_par_net:{}, vias:[]};
+  const c=simDCParComposant(res);
+  if(c.length!==1||Math.abs(c[0].vu-3.23)>1e-9||Math.abs(c[0].perdu-0.07)>1e-9)
+    throw new Error("U1 : "+JSON.stringify(c));
+  const m=simDCMesures(res);
+  if(Math.abs(m.pire.chute-0.07)>1e-9)throw new Error("pire : "+JSON.stringify(m.pire));
+  if(!/Composant/.test(simTableauBornes(res)))throw new Error("pas de tableau par composant");
 });
 
 

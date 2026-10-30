@@ -28,7 +28,38 @@ Changer de famille n'efface pas le résultat d'une analyse.
 7. Pour décider d'ajouter un via : lire le tableau des vias (les plus chargés d'abord) et les notes sous lui.
 
 > [!NOTE]
-> Toutes les bornes doivent être sur **le même net** : le courant ne passe pas d'un net à l'autre. Sans courant dans au moins une charge, le calcul est refusé (« Aucune charge ne tire de courant. »).
+> Les bornes peuvent être sur plusieurs nets seulement si un composant en série les relie (voir ci-dessous) : sinon le courant ne passe pas d'un net à l'autre, et le calcul est refusé (« Les bornes ne sont pas toutes sur le même net »). Sans courant dans au moins une charge, le calcul est refusé (« Aucune charge ne tire de courant. »).
+
+### Je veux suivre un rail à travers une ferrite, un fusible ou un régulateur
+
+Éditeur PCB seulement.
+
+1. **⚡ Du schéma** sur le rail : l'import suit les composants **en série** à deux pastilles entre deux nets d'alimentation (ferrite ou self `FB`/`L`, fusible `F`, shunt `R` d'au plus 1 Ω). Leurs nets entrent dans le même calcul, et chacun devient une résistance entre ses deux pastilles. Le message dit « Nets +3V3 → +3V3_A ».
+2. Sur le rail qui **nourrit un régulateur**, la broche d'entrée du régulateur devient une charge (badge **cascade**). Son courant est celui que consomme le rail de sortie, ramené à l'entrée : Iin = Iout pour un régulateur linéaire, Iin = Vout·Iout/(η·Vin) avec η = 0,85 pour un régulateur à découpage.
+3. Les notes sous la fiche disent la résistance de chaque composant en série, et le calcul de chaque entrée de régulateur. Le tableau des nets est suivi d'une ligne par composant en série : son courant et sa chute.
+
+### Je veux compter le retour par la masse
+
+Éditeur PCB seulement.
+
+1. Poser les bornes du rail (par exemple **⚡ Du schéma**), puis cocher **masse** dans la rangée « Ajouter ».
+2. Cliquer **▶ Calculer**. Chaque charge rend son courant par les broches de masse de **son** composant. Les broches de masse des sources sont tenues à 0 V. Le cuivre de masse entre dans le calcul, qui s'alourdit.
+3. Lire le tableau **Composant / Rail / Masse / Vu / Perdu** : la tension que voit vraiment le composant entre ses broches, et ce qu'il perd au total. Le verdict prend ce total.
+
+### Je veux vérifier tous les rails d'un coup
+
+Éditeur PCB seulement.
+
+1. Ouvrir **PI**, onglet **Chute DC**, régler les budgets (et cocher **masse** si le retour doit compter).
+2. Cliquer **▶ Tous les rails**. Chaque rail du schéma est importé (cascade comprise) et calculé à son tour ; un rail que l'aval d'une ferrite a déjà pris ne repart pas seul.
+3. Lire le tableau : une ligne par rail, avec son courant, sa pire charge, ce qu'elle perd, l'échauffement et les vias en défaut. La teinte du nom du rail est son verdict.
+4. Cliquer une ligne pour recalculer ce rail seul, avec toute sa fiche. Les bornes posées avant le balayage sont rendues à la fin.
+
+### Je veux savoir si un via tient son courant
+
+1. Faire le calcul de chute DC.
+2. Dans le tableau des vias, la colonne **Tenue** dit le courant que chaque via tient et le pourcentage qu'il en porte (rouge au-delà, ambre à 80 %). Une note liste tous les vias en défaut, même au-delà des quinze premières lignes, et le verdict les compte.
+3. Par défaut la tenue vient d'IPC-2221 sur la section du tube (perçage et placage), en couche interne, au budget d'échauffement : 0,95 A pour un via percé à 0,3 mm avec 25 µm de placage, à +10 °C. Pour imposer une valeur, la saisir dans **Tenue** (A/via).
 
 ### Je veux savoir si une piste chauffe trop
 
@@ -106,6 +137,8 @@ La classe fixe le front, donc le verdict des règles électriques. Elle est écr
 | **+ charge (A)** | Idem pour un consommateur dont on règle le courant. | Un rail qui nourrit dix composants en porte dix. Valeur de départ : 1 A (reprise du schéma si le composant en donne une). Clic hors d'une pastille : « Aucune pastille sous le clic : visez le cuivre d'une pastille. » |
 | **⚡ Du schéma** | Importe les sources et les charges du schéma pour le net de la piste sélectionnée (à défaut, le net surligné, celui des bornes déjà posées, un rail reconnu par son nom, ou celui d'un régulateur). | Éditeur PCB seulement (masqué dans la Visionneuse). Les bornes dont la valeur a été saisie à la main (badge Manuel) sont conservées. Sans courant connu, une LED ou diode reçoit 0,015 A et les autres charges 0,030 A (badge Défaut) ; le courant d'un composant est réparti entre ses broches sur le rail. Refus : « Aucun net d'alimentation sélectionné ou détecté » et « Aucun composant (source ou charge) trouvé sur le net … dans le schéma ». |
 | **Effacer** | Oublie toutes les bornes. | |
+| Case **masse** | Ajoute le retour par la masse au calcul : chaque charge rend son courant par les broches de masse de son composant, la masse des sources est à 0 V. | Éditeur PCB seulement (masquée dans la Visionneuse). Refus si aucune source n'a de broche de masse. Une charge posée sans composant ne rend pas son courant. |
+| **▶ Tous les rails** | Importe et calcule chaque rail du schéma, puis affiche une ligne par rail. Cliquer une ligne recalcule ce rail seul. | Éditeur PCB seulement. Garde les bornes posées et les rend à la fin. |
 | Badge d'origine | Dit d'où vient la valeur : **Défaut**, **LIB**, **API**, **Motif**, **Manuel**, **DS** (datasheet). Infobulle « Origine : … » ; elle précise « Partagé sur n broches » quand une borne regroupe plusieurs broches. | Saisir la valeur à la main (Éditeur PCB) passe l'origine à **Manuel**. Dans la Visionneuse, les bornes restent « Défaut » même corrigées. |
 | Nom de la borne | Champ texte repris dans les tableaux et l'export. | Vide : retour au nom proposé par la carte. |
 | Valeur et unité | Source : **V** ou **mV**. Charge : **A**, **mA** ou **µA**. Changer l'unité garde le nombre écrit. | La valeur est stockée en V et en A. |
@@ -117,6 +150,8 @@ La classe fixe le front, donc le verdict des règles électriques. Elle est écr
 | **.json** | Le problème (cuivre envoyé, bornes, cotes thermiques) et le résultat, pour rejouer et comparer. Nom : `chute-<net>-dc.json`. | Si la sélection a changé depuis le calcul, seul le résultat est écrit. |
 | **Budget** : chute (%) | Seuil du verdict, en % de la tension de la source (5 par défaut). | Ne relance pas le calcul. |
 | **Budget** : échauffement (°C) | Seuil du verdict (10 par défaut). | Ne relance pas le calcul. |
+| **Tenue** : A/via | Courant admis par via. Vide (« auto ») : IPC-2221 sur la section du tube, couche interne, au budget d'échauffement. | Ne relance pas le calcul. |
+| **Tenue** : A/mm² | Densité de courant admise. Vide : non jugée. Un dépassement met le verdict en ambre et nomme le net, jamais en « Hors budget ». | Le pic de densité croît quand on affine la trame : c'est un endroit à regarder, pas un verdict. |
 | **Ambiante** (°C) | Sert à écrire la température absolue du point chaud. Peut être négative (20 par défaut). | Ne change aucun calcul : l'échauffement est un écart. |
 | Liste **Carte** | Grandeur peinte : **Échauffement (étalement)** (°C), **Densité** (A/mm²), **Potentiel** (mV), **Réf. IPC-2221** (°C). | Changer de grandeur ne relance rien. |
 | **estomper le reste** | Estompe le cuivre qui n'est pas dans le calcul. | Éteint d'office. |
@@ -132,7 +167,7 @@ La classe fixe le front, donc le verdict des règles électriques. Elle est écr
 | Tableau des bornes | Colonnes Borne, Couche, Réglage, Tension, Perdu (mV et %). Teinte de « Perdu » : bleu jusqu'à 80 % du budget de chute, ambre de 80 % à 100 %, rouge au-delà. | Les bornes hors de la couche peinte sont signalées : leur cuivre n'est pas coloré, mais les chiffres sont ceux de tout le calcul. |
 | Tableau des nets | Net, Courant, Chute (mV). « (réf.) » marque un net de référence. | |
 | Pire point par net | Échauffement (étalement) et température absolue, Réf. IPC-2221, Écart, Section, Densité de pointe. Infobulle de l'échauffement : lieu en mm et couche. | La densité dit où regarder, pas combien. L'échauffement prend la même teinte que « Perdu », sur le budget d'échauffement. |
-| Tableau des vias | Via, Couches, Courant, Chute, R (mΩ), les plus chargés d'abord, quinze lignes au plus. « hors calcul » pour un via non relié, « ? » sur un perçage ou une portée supposés. | Un perçage déduit de la pastille fausse R (R varie comme 1/section). |
+| Tableau des vias | Via, Couches, Courant, Tenue (et le pourcentage porté), Chute, R (mΩ), les plus chargés d'abord, quinze lignes au plus. Une note liste tous les vias au-delà de leur tenue. « hors calcul » pour un via non relié, « ? » sur un perçage ou une portée supposés. | Un perçage déduit de la pastille fausse R (R varie comme 1/section). |
 | Notes sous les tableaux | Déséquilibre entre vias du même couple de couches ; part du passage vertical portée par des portées supposées traversantes ; culs-de-sac (courant nul vérifié) ; cuivre analysé ; trame ; paramètres thermiques ; couches prises pour extérieures ; ambiante ; notes de l'outil. | Une alerte signale une forme plus étroite que quatre carreaux : sa résistance est échantillonnée, pas maillée. |
 | Avertissements du solveur | Par exemple « EMBALLEMENT THERMIQUE » (rendu en rouge) : la température rendue est un plancher, à refaire. « Aucun courant injecté… », « n via(s) n'ont pas été montés… ». | |
 | Survol de la carte | Valeur de la grandeur peinte au nœud survolé et, sur un via, une ligne « REPÈRE a→b courant, chute, résistance ». | Un via seul suffit à répondre, même sans cuivre du net sur la couche peinte. |
@@ -210,7 +245,9 @@ Le panneau cherche tout seul les rails et leurs acteurs.
 | Condensateurs d'un rail | Composants entre le rail et la masse : le type déclaré, sinon une référence `C` suivie d'un chiffre, avec une valeur en farads ; au-delà de quatre broches, ce n'est pas un condensateur. Parasites (ESR, ESL) : base Murata par modèle, MPN ou nom, sinon valeurs typiques par boîtier et capacité. | Provenance visible dans la colonne « Modèle / Provenance ». |
 | Charge observée | Le composant du rail qui a le plus de broches, hors passifs et connecteurs. | Modifiable par les champs X, Y du point observé. |
 | Cavité | Plus grand versement du rail et plus grand versement de masse (au moins 1 cm² chacun) qui se font face ; couple le plus rapproché. | Carte deux couches ou rail routé en pistes : pas de cavité, le solveur reste localisé. |
-| Sources et charges de la Chute DC | Voir **⚡ Du schéma**. | |
+| Sources et charges de la Chute DC | Voir **⚡ Du schéma**. L'entrée d'un régulateur (broche `VIN`, `IN`, `VCC`…, ou net dont la tension écrite n'est pas sa sortie) n'est plus prise pour une source. | Sans nom de broche ni tension lisible dans le nom du net, la broche reste une source. |
+| Composants en série (cascade) | Deux pastilles sur deux nets d'alimentation : ferrite ou self (DCR du catalogue, sinon 50 mΩ), fusible (sinon 100 mΩ), shunt `R` ≤ 1 Ω. | Une valeur supposée est dite dans les notes. |
+| Rendement d'un régulateur | 1 (linéaire) si son nom évoque un LDO (`LDO`, `1117`, `78xx`, `LM317`, `TPS7…`…), sinon 0,85. | Reconnu au nom seulement. |
 | Rails jugés par l'Audit | Nets de classe **Alimentation** ou **Découpage**. | Voir « Courant et largeur des rails ». |
 
 ### Estimation d'échauffement d'un composant (Éditeur PCB)
@@ -333,7 +370,7 @@ Ce n'est pas une règle de la vérification de carte mais un panneau de l'Édite
 
 ## Limites connues
 
-- **Chute DC** : problème résistif sans fréquence, sur un seul net à la fois. Les courants viennent de l'utilisateur ou du schéma, jamais du PCB. Les perçages supposés (déduits de la pastille) et les portées supposées traversantes sont signalés mais restent des hypothèses. La densité de pointe croît avec le raffinement du maillage. L'échauffement dépend de la conductivité du stratifié, de l'épaisseur de stratifié et du cuivre étaleur ; le cuivre étaleur est pris nul s'il n'est pas déclaré (carte la plus chaude que le modèle décrive).
+- **Chute DC** : problème résistif sans fréquence. Plusieurs nets ne se calculent ensemble que reliés par un composant en série, ou avec la masse. Avec la masse, un plan est pris plein dans son contour : le cuivre des nets hors du calcul n'y est pas découpé. Les courants viennent de l'utilisateur ou du schéma, jamais du PCB. Les perçages supposés (déduits de la pastille) et les portées supposées traversantes sont signalés mais restent des hypothèses. La densité de pointe croît avec le raffinement du maillage. L'échauffement dépend de la conductivité du stratifié, de l'épaisseur de stratifié et du cuivre étaleur ; le cuivre étaleur est pris nul s'il n'est pas déclaré (carte la plus chaude que le modèle décrive).
 - **Chute DC dans la Visionneuse** : le fichier IPC-2581 ne dit pas toujours entre quelles couches court un perçage ; il est alors supposé traversant (notes dans le résultat). Le bouton **⚡ Du schéma** n'existe pas dans la Visionneuse. Elle refuse le calcul tant que l'**Empilage du calcul** (panneau « La carte ») n'est pas complet : sans épaisseur de cuivre, une résistance n'a pas de valeur. Les bornes y se posent à la pastille la plus proche, à moins d'un millimètre du clic.
 - **Z(ω) PDN** : le VRM n'a pas de position (en parallèle sur le point observé). Le développement modal suppose un rectangle plein : un plan partiel ou découpé est traité comme le rectangle de même emprise, avec la capacité de sa surface réelle. Un condensateur hors de l'emprise est ramené sur son bord. Les pertes ohmiques du cuivre dans le plan ne sont pas modélisées. Le fichier IPC-2581 ne porte pas de consommation : dans la Visionneuse, la fiche de la charge se remplit à la main la première fois.
 - **Estimation d'échauffement d'un composant** : un ordre de grandeur (±30 %), îlot pris rond, carte uniforme, sans voisin qui chauffe. Éditeur PCB seulement.

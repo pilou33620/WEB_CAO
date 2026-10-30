@@ -2023,7 +2023,7 @@ function simRetourClicPcb(wx, wy){
    composants, et la chute que chacun voit dépend de ce que tirent les autres :
    c'est même tout l'intérêt du calcul. Deux cases obligeaient à autant de
    calculs séparés, dont aucun n'aurait été juste. */
-const SIM_DCB={bornes:[], attente:null};
+const SIM_DCB={bornes:[], attente:null, liaisons:[], notesGroupe:[], masse:false};
 
 
 /* Une pastille en polygone, dans ses coordonnées monde et sa rotation.
@@ -2172,19 +2172,90 @@ function simDCThermiquePcb(){
   return {epaisseur_stratifie:stackDiT(), cuivre_etaleur:etaleur};
 }
 
-function simDCCouchesTouchees(x,y,a,b,polygones){
+/* `net` restreint au cuivre de ce net : avec la masse dans le même calcul, le
+   tube d'un via du rail ne doit pas compter le plan de masse qu'il traverse. */
+function simDCCouchesTouchees(x,y,a,b,polygones,net){
   const lo=Math.min(a,b), hi=Math.max(a,b), out=[];
   for(let c=lo;c<=hi;c++)
-    if(polygones.some(g=>!g.trou&&g.couche===c&&simDCDedans(x,y,g.vertices)))
+    if(polygones.some(g=>!g.trou&&g.couche===c&&(net==null||g.net===net)&&
+                         simDCDedans(x,y,g.vertices)))
       out.push(c);
   return out;
+}
+
+/* LE CUIVRE D'UN ENSEMBLE DE NETS, sur toutes ses couches, et ce qui le fait
+   changer de couche.
+
+   LES ZONES D'ABORD. Sur une couche, le solveur donne le carreau à la DERNIÈRE
+   forme posée : une piste du rail tirée dans le contour d'un plan de masse
+   doit rester au rail, donc le plan passe avant elle. */
+function simDCCuivreDesNets(nets){
+  const polygones=[], vias=[];
+  for(const z of S.zones){
+    if(!nets.has(z.net)||!z.pts||z.pts.length<3)continue;
+    polygones.push({vertices:z.pts.map(q=>[q.x,q.y]), couche:z.l, net:z.net,
+                    epaisseur:cuT(z.l)});
+  }
+  for(const t of S.tracks){
+    if(!nets.has(t.net))continue;
+    for(const pts of simDCPolysPiste(t))
+      polygones.push({vertices:pts, couche:t.l, net:t.net, epaisseur:cuT(t.l)});
+  }
+  for(const fp of S.fps)
+    for(const q of padsWorld(fp)){
+      if(!nets.has(q.net))continue;
+      const pts=simDCPolyPastille(q);
+      for(const cu of padLayers(fp,q))
+        polygones.push({vertices:pts, couche:cu, net:q.net, epaisseur:cuT(cu)});
+    }
+  /* LES DÉCOUPES EN DERNIER, et en `trou` : elles retirent du cuivre. Une
+     découpe ne porte pas de net — elle évide ce qu'elle recouvre. */
+  const net0=[...nets][0];
+  for(const ct of S.cuts){
+    if(!ct.pts||ct.pts.length<3)continue;
+    polygones.push({vertices:ct.pts.map(q=>[q.x,q.y]), couche:ct.l,
+                    net:net0, epaisseur:cuT(ct.l), trou:true});
+  }
+
+  /* CE QUI FAIT CHANGER DE COUCHE : les VIAS, et le PERÇAGE MÉTALLISÉ D'UNE
+     PASTILLE TRAVERSANTE, dont le tube relie l'anneau que la pastille pose
+     sur chaque couche.
+
+     UN VIA DE COUTURE SANS NET NE RELIE RIEN : monté, il relierait le premier
+     cuivre venu, celui d'un autre net compris. On le COMPTE, s'il aurait joint
+     deux couches d'un net du calcul, pour que la fiche le dise. */
+  let n=0, orphelins=0;
+  for(const v of S.vias){
+    if(!nets.has(v.net)){
+      if(!v.net&&[...nets].some(nn=>
+           simDCCouchesTouchees(v.x,v.y,v.a,v.b,polygones,nn).length>=2))
+        orphelins++;
+      continue;
+    }
+    n++;
+    /* LE PERÇAGE D'UN VIA EST UNE COTE DE L'ÉDITEUR quand il est là. À
+       défaut — un via importé sans perçage —, on le déduit de la pastille,
+       et c'est un repli : il est marqué comme tel. */
+    simDCTube(v.x, v.y, v.a, v.b,
+              v.drill||Math.max((v.d||0.8)-0.1,0.1),
+              v.net, "V"+n, polygones, vias, !(v.drill>0));
+  }
+  for(const fp of S.fps)
+    for(const q of padsWorld(fp)){
+      if(!nets.has(q.net)||!(q.drill>0))continue;
+      const cs=padLayers(fp,q);
+      if(cs.length<2)continue;
+      simDCTube(q.x, q.y, cs[0], cs[cs.length-1], q.drill, q.net,
+                (fp.ref||"?")+"."+(q.n==null?"?":q.n), polygones, vias);
+    }
+  return {polygones:polygones, vias:vias, orphelins:orphelins};
 }
 
 /* Le tube, en autant de liaisons qu'il y a d'intervalles entre les couches
    qu'il touche. Chacune porte SA hauteur : deux couches voisines sont bien
    plus proches que les deux faces de la carte. */
 function simDCTube(x,y,a,b,percage,net,repere,polygones,vias,suppose){
-  const cs=simDCCouchesTouchees(x,y,a,b,polygones);
+  const cs=simDCCouchesTouchees(x,y,a,b,polygones,net);
   if(cs.length<2)return 0;
   let n=0;
   for(let k=0;k<cs.length-1;k++){
@@ -2236,7 +2307,7 @@ function simDCBornePastille(x,y){
             }
           }
         }
-        best={nom:nom,
+        best={nom:nom, compRef:fp.ref||"",
               x:q.x, y:q.y, couche:cu, net:q.net||"",
               w:q.w, h:q.h, shape:q.shape, rot:q.rot,
               couches:couches.slice(),
@@ -3540,9 +3611,9 @@ function pcbVerifierPinout(doc) {
 
 function pcbNetComposants(net){
   const schMap=pcbComposantsSchema();
-  const sources=[], charges=[], resistances=[], ics=[], autres=[];
+  const sources=[], charges=[], resistances=[], ics=[], autres=[], regulateurs=[];
   if(!net||typeof S==="undefined"||!Array.isArray(S.fps))
-    return {sources, charges, resistances, ics, autres};
+    return {sources, charges, resistances, ics, autres, regulateurs};
 
   for(const fp of simFpsMontes()){
     const c=schMap.get(fp.ref)||{ref:fp.ref, value:fp.value, pkg:fp.pkg, type:"comp"};
@@ -3557,7 +3628,17 @@ function pcbNetComposants(net){
       
       let isSource=false;
       let isCharge=false;
-      
+      const cuQ=padLayers(fp,q)[0]||0;
+
+      /* L'ENTRÉE D'UN RÉGULATEUR N'EST PAS UNE SOURCE. Sans ce tri, la
+         broche VIN d'un 1V8 posée sur le +3V3 devenait une source à 1,8 V sur
+         le +3V3. Elle est rendue à part : la cascade en fait une charge. */
+      if(sp.estSource&&simDCRoleRegulateur(fp,c,sp,pinNom,net)==="entree"){
+        regulateurs.push({fp:fp, pad:q, comp:c, specs:sp, couche:cuQ,
+                          pinNom:pinNom, nom:fp.ref+"."+(q.n!=null?q.n:"?")+
+                          (pinNom?" ("+pinNom+")":" (entrée)")});
+        continue;
+      }
       if(sp.estSource){
         if(/^(VOUT|OUT|\+V|3V3|5V|VBUS|VIN_EXT|VDD_EXT|1\b)/i.test(pinNom)||
            c.type==="vcc"||/^(J|CON|BAT|PWR)/i.test(fp.ref)||padsNet.length===1||
@@ -3624,7 +3705,152 @@ function pcbNetComposants(net){
       }
     }
   }
-  return {sources, charges, resistances, ics, autres};
+  return {sources, charges, resistances, ics, autres, regulateurs};
+}
+
+/* ==========================================================================
+   LA CASCADE DES RAILS, comme le Power Analyzer d'Altium
+   --------------------------------------------------------------------------
+   Un rail ne s'arrête pas à son net : une ferrite, un fusible ou un shunt le
+   prolonge sur un autre net (« liaison », une résistance dans le même calcul),
+   et un régulateur en tire son courant pour en nourrir un autre (une charge à
+   sa broche d'entrée, Iout·Vout/(η·Vin)). `simDCGroupe` rassemble les nets
+   reliés en série et pose ces charges, en descendant l'arbre des régulateurs
+   pour connaître Iout.
+   ========================================================================== */
+
+/* La tension écrite dans un nom de net : +3V3, 1V8, 5V, VCC_3.3V. */
+function simDCTensionNet(n){
+  const s=String(n||"");
+  let m=s.match(/(\d+)[Vv](\d+)/);
+  if(m)return parseFloat(m[1]+"."+m[2]);
+  m=s.match(/(\d+(?:[.,]\d+)?)\s*[Vv](?![A-Za-z])/);
+  return m?parseFloat(m[1].replace(",",".")):null;
+}
+
+/* Une broche de régulateur est-elle son entrée ou sa sortie ? Le nom de
+   broche d'abord, puis la tension lue dans le nom du net face à Vout.
+   ponytail: heuristique de noms ; sans nom de broche ni tension lisible, la
+   broche reste une sortie, comme avant. */
+function simDCRoleRegulateur(fp,c,sp,pinNom,net){
+  if(!sp||!sp.estSource||c.type==="vcc"||/^(J|CON|BAT|PWR)/i.test(fp.ref))return "sortie";
+  if(/^(P?VIN|IN\b|VI\b|VCC|VBAT|VDD|VS\b|VSUP)/i.test(pinNom||""))return "entree";
+  if(/^(VOUT|OUT|VO\b|SW|LX)/i.test(pinNom||""))return "sortie";
+  const v=simDCTensionNet(net), vo=sp.voltOut;
+  if(v!=null&&vo!=null)return Math.abs(v-vo)<=0.1*vo?"sortie":"entree";
+  return "sortie";
+}
+
+/* Un composant EN SÉRIE sur un rail : deux pastilles, sur deux nets qui ne
+   sont pas la masse. Shunt (R ≤ 1 Ω), ferrite ou self (sa DCR), fusible.
+   La résistance vient du catalogue ; à défaut, une valeur courante, dite. */
+const SIM_DC_SERIE_DEFAUT={ferrite:0.05, fusible:0.1};
+function simDCSerie(fp,schM){
+  const pads=padsWorld(fp).filter(q=>q.net&&!pcbNomEstMasse(q.net));
+  if(padsWorld(fp).length!==2||pads.length!==2||pads[0].net===pads[1].net)return null;
+  const c=schM.get(fp.ref)||{ref:fp.ref, value:fp.value, pkg:fp.pkg};
+  const sp=pcbSpecsComposant(c);
+  let ohms=null, quoi="", prov="catalogue";
+  if(/^(FB|L|BEAD|SELF)/i.test(fp.ref)||c.type==="inductor"){
+    quoi="ferrite"; ohms=sp.resistance;
+  }else if(/^F\d/i.test(fp.ref)||c.type==="fuse"){
+    quoi="fusible"; ohms=sp.resistance;
+  }else if(/^R/i.test(fp.ref)||c.type==="resistor"){
+    if(!(sp.resistance!=null&&sp.resistance<=1))return null;
+    quoi="shunt"; ohms=sp.resistance;
+  }else return null;
+  if(ohms==null){ohms=SIM_DC_SERIE_DEFAUT[quoi]; prov="defaut";}
+  return {fp:fp, pads:pads, ohms:ohms, quoi:quoi, provenance:prov};
+}
+
+/* Le rendement d'un régulateur : 1 pour un linéaire (Iin = Iout), 0,85 pour
+   un découpage. ponytail: reconnu au nom ; un champ par régulateur si ça ne
+   suffit pas. */
+function simDCRendement(c){
+  const s=[c.mpn,c.value,c.ref,c.type].join(" ");
+  return /LDO|78\d\d|79\d\d|1117|LP29|LP59|AP21|AP7|MCP17|XC62|TLV7|LM317|LT30|ADP1[67]|TPS7[0-9A]/i.test(s)
+    ? 1 : 0.85;
+}
+
+/* Les nets que la cascade a le droit de suivre : ceux qui ressemblent à une
+   alimentation. Un 0 Ω sur une ligne de signal ne doit pas embarquer les
+   broches d'entrée des circuits de cette ligne comme des consommateurs. */
+function simDCEstRail(n){
+  if(!n||pcbNomEstMasse(n))return false;
+  if(pcbNomEstAlim(n))return true;
+  const r=SIM_PCB&&SIM_PCB.pdnRails?SIM_PCB.pdnRails():[];
+  return r.indexOf(n)>=0;
+}
+
+/* Le groupe d'un rail : ses nets reliés en série, ses liaisons, ses sources,
+   ses charges — dont les entrées des régulateurs qu'il nourrit. `pile` garde
+   les nets déjà en cours de descente : une boucle d'alimentation ne fait pas
+   tourner la récursion. */
+function simDCGroupe(net,pile){
+  pile=pile||new Set();
+  const nets=[net], liaisons=[], vus=new Set();
+  const schM=pcbComposantsSchema();
+  const series=simFpsMontes().map(fp=>simDCSerie(fp,schM)).filter(Boolean);
+  for(let k=0;k<nets.length;k++)
+    for(const s of series){
+      const fp=s.fp;
+      if(vus.has(fp.ref))continue;
+      const [a,b]=s.pads;
+      const ici=(a.net===nets[k])?a:((b.net===nets[k])?b:null);
+      if(!ici)continue;
+      const la=(ici===a)?b:a;
+      if(!simDCEstRail(la.net))continue;
+      vus.add(fp.ref);
+      liaisons.push({ref:fp.ref, ohms:s.ohms, quoi:s.quoi, provenance:s.provenance,
+                     a:{pad:ici, couche:padLayers(fp,ici)[0]||0},
+                     b:{pad:la, couche:padLayers(fp,la)[0]||0}});
+      if(nets.indexOf(la.net)<0)nets.push(la.net);
+    }
+  nets.forEach(n=>pile.add(n));
+  const sources=[], charges=[], notes=[];
+  const regs=new Map();       // ref -> {comp, specs, pads d'entrée}
+  for(const n of nets){
+    const r=pcbNetComposants(n);
+    r.sources.forEach(s=>sources.push(Object.assign(s,{net:n})));
+    r.charges.forEach(c=>charges.push(Object.assign(c,{net:n})));
+    for(const e of r.regulateurs){
+      if(!regs.has(e.fp.ref))regs.set(e.fp.ref,{fp:e.fp, comp:e.comp, specs:e.specs, entrees:[]});
+      regs.get(e.fp.ref).entrees.push(Object.assign(e,{net:n}));
+    }
+  }
+  /* CE QUE TIRE CHAQUE RÉGULATEUR NOURRI PAR CE GROUPE : la consommation de
+     son rail de sortie, ramenée à l'entrée. */
+  for(const [ref,g] of regs){
+    const fp=g.fp;
+    const sorties=[...new Set(padsWorld(fp).map(q=>q.net)
+      .filter(n=>n&&simDCEstRail(n)&&nets.indexOf(n)<0))];
+    let iOut=0, vOut=g.specs.voltOut||simDCTensionNet(sorties[0])||0;
+    for(const so of sorties){
+      if(pile.has(so))continue;
+      const aval=simDCGroupe(so,pile);
+      iOut+=aval.charges.reduce((x,c)=>x+(+c.valeur||0),0);
+    }
+    const vIn=simDCTensionNet(g.entrees[0].net)||
+              (sources[0]&&sources[0].valeur)||vOut||1;
+    const eta=simDCRendement(g.comp);
+    const iIn=(eta>=1)?iOut:(vOut*iOut)/(eta*vIn);
+    if(!(iIn>0)){
+      notes.push(ref+" : aucun consommateur trouvé sur sa sortie ("+
+                 (sorties.join(", ")||"?")+") — son entrée ne tire rien.");
+      continue;
+    }
+    const nb=g.entrees.length;
+    for(const e of g.entrees)
+      charges.push({fp:fp, pad:e.pad, comp:g.comp, specs:g.specs, couche:e.couche,
+                    net:e.net, role:"charge", valeur:iIn/nb,
+                    unite:(iIn/nb)<1?"mA":"A", provenance:"cascade",
+                    compRef:ref, totalCompI:iIn, nbBroches:nb,
+                    nom:e.nom+(nb>1?" ["+(g.entrees.indexOf(e)+1)+"/"+nb+"]":""),
+                    cascade:(eta>=1?"linéaire : Iin = Iout = ":"découpage, η = "+eta+
+                             " : Iin = Vout·Iout/(η·Vin) = "+simNb(vOut,2)+" V × ")+
+                            simNb(iOut*1e3,1)+" mA"+(eta>=1?"":" / ("+eta+" × "+simNb(vIn,2)+" V)")});
+  }
+  return {nets:nets, liaisons:liaisons, sources:sources, charges:charges, notes:notes};
 }
 
 /* Récupère toutes les pastilles d'une empreinte avec leur net associé (nets direct ou piste touchant la pastille) */
@@ -4398,11 +4624,16 @@ const SIM_PCB={
       return {erreur:"Aucun net d'alimentation sélectionné ou détecté. "+
                      "Cliquez une piste ou pastille du rail d'alimentation à analyser."};
     }
-    const {sources,charges}=pcbNetComposants(net);
+    /* LE GROUPE DU RAIL, PAS SEULEMENT SON NET : les nets qu'un composant en
+       série prolonge, et les entrées des régulateurs qu'il nourrit. */
+    const g=simDCGroupe(net);
+    const {sources,charges}=g;
     if(!sources.length&&!charges.length){
       return {erreur:"Aucun composant (source ou charge) trouvé sur le net "+net+" dans le schéma."};
     }
-    
+    SIM_DCB.liaisons=g.liaisons;
+    SIM_DCB.notesGroupe=g.notes;
+
     const prevBornes = SIM_DCB.bornes.slice();
     SIM_DCB.bornes=[];
     for(const s of sources){
@@ -4415,7 +4646,7 @@ const SIM_PCB={
           renomme: !!(exist && exist.renomme),
           x: s.pad.x, y: s.pad.y,
           couche: s.couche,
-          net: net,
+          net: s.net||net,
           w: s.pad.w, h: s.pad.h, shape: s.pad.shape, rot: s.pad.rot,
           couches: padLayers(s.fp,s.pad).slice(),
           role: "source",
@@ -4437,7 +4668,7 @@ const SIM_PCB={
           renomme: !!(exist && exist.renomme),
           x: c.pad.x, y: c.pad.y,
           couche: c.couche,
-          net: net,
+          net: c.net||net,
           w: c.pad.w, h: c.pad.h, shape: c.pad.shape, rot: c.pad.rot,
           couches: padLayers(c.fp,c.pad).slice(),
           role: "charge",
@@ -4446,6 +4677,7 @@ const SIM_PCB={
           provenance: c.provenance||"catalogue",
           compRef: c.compRef||(c.comp?c.comp.ref:""),
           totalCompI: c.totalCompI,
+          cascade: c.cascade||"",
           nbBroches: c.nbBroches||1
         });
       }
@@ -4456,8 +4688,11 @@ const SIM_PCB={
       ok:true, net:net,
       nSources:sources.length, nCharges:charges.length,
       totalCourant:totI,
-      message:"⚡ Net "+net+" : "+sources.length+" source(s) et "+
-              charges.length+" charge(s) importées ("+totTxt+" total)."
+      nets:g.nets, liaisons:g.liaisons.length,
+      message:"⚡ "+(g.nets.length>1?"Nets "+g.nets.join(" → "):"Net "+net)+" : "+
+              sources.length+" source(s) et "+charges.length+
+              " charge(s) importées ("+totTxt+" total)"+
+              (g.liaisons.length?", "+g.liaisons.length+" composant(s) en série":"")+"."
     };
   },
 
@@ -4498,9 +4733,46 @@ const SIM_PCB={
   },
 
   dcOublier:function(k){
-    if(k==null)SIM_DCB.bornes=[];
+    if(k==null){SIM_DCB.bornes=[];SIM_DCB.liaisons=[];SIM_DCB.notesGroupe=[];}
     else SIM_DCB.bornes.splice(k,1);
     SIM_DCB.attente=null;
+  },
+
+  /* LE RETOUR PAR LA MASSE : lu ou posé par la case du panneau. */
+  dcMasse:function(oui){
+    if(oui!==undefined)SIM_DCB.masse=!!oui;
+    return SIM_DCB.masse;
+  },
+
+  /* TOUS LES RAILS DE LA CARTE, un groupe par rail : un net déjà pris dans le
+     groupe d'un autre (l'aval d'une ferrite) ne repart pas seul. Seuls restent
+     les groupes qui ont une source et une charge. */
+  dcRails:function(){
+    if(typeof pcbSchemaDoc==="function")pcbSchemaDoc();
+    const tous=new Set();
+    for(const t of S.tracks)if(t.net)tous.add(t.net);
+    for(const z of S.zones)if(z.net)tous.add(z.net);
+    for(const fp of simFpsMontes())for(const q of padsWorld(fp))if(q.net)tous.add(q.net);
+    const pris=new Set(), out=[];
+    for(const n of [...tous].filter(simDCEstRail)
+                     .sort((a,b)=>a.localeCompare(b,"fr",{numeric:true}))){
+      if(pris.has(n))continue;
+      const g=simDCGroupe(n);
+      g.nets.forEach(x=>pris.add(x));
+      if(g.sources.length&&g.charges.length)out.push({net:n, nets:g.nets});
+    }
+    return out;
+  },
+  /* Les bornes de l'utilisateur, gardées pendant le balayage de tous les
+     rails, puis rendues telles quelles. */
+  dcEtat:function(){
+    return {bornes:SIM_DCB.bornes.slice(), liaisons:SIM_DCB.liaisons.slice(),
+            notesGroupe:SIM_DCB.notesGroupe.slice()};
+  },
+  dcRestaurer:function(e){
+    if(!e)return;
+    SIM_DCB.bornes=e.bornes; SIM_DCB.liaisons=e.liaisons;
+    SIM_DCB.notesGroupe=e.notesGroupe;
   },
 
   /* Le problème résistif complet, tiré des deux bornes.
@@ -4522,93 +4794,72 @@ const SIM_PCB={
       return {erreur:"Sans net : "+sansNet.map(b=>b.nom).join(", ")+".",
               conseil:"La chute se calcule le long d'un net : reliez ces "+
                       "pastilles, ou retirez-les des bornes."};
-    const nets=[...new Set(B.map(b=>b.net))];
-    if(nets.length>1)
+
+    /* PLUSIEURS NETS, MAIS RELIÉS. Les bornes peuvent tomber sur des nets
+       différents quand un composant en série les relie (la cascade) ; sans
+       lui, le courant ne passe pas d'un net à l'autre et le net sans source
+       serait flottant. */
+    const liaisons=(SIM_DCB.liaisons||[]).filter(l=>
+      B.some(b=>b.net===l.a.pad.net||b.net===l.b.pad.net));
+    const nets=new Set(B.map(b=>b.net));
+    liaisons.forEach(l=>{nets.add(l.a.pad.net);nets.add(l.b.pad.net);});
+    const relies=new Set(alims.map(b=>b.net));
+    for(let k=0;k<liaisons.length;k++)
+      for(const l of liaisons)
+        if(relies.has(l.a.pad.net)||relies.has(l.b.pad.net)){
+          relies.add(l.a.pad.net);relies.add(l.b.pad.net);
+        }
+    const seuls=[...nets].filter(n=>!relies.has(n));
+    if(seuls.length)
       return {erreur:"Les bornes ne sont pas toutes sur le même net ("+
-                     nets.join(", ")+").",
-              conseil:"Le courant ne passe pas d'un net à l'autre : "+
-                      "n'en gardez qu'un."};
+                     [...nets].join(", ")+").",
+              conseil:"Le courant ne passe pas d'un net à l'autre sans "+
+                      "composant en série : « ⚡ Du schéma » les trouve, sinon "+
+                      "n'en gardez qu'un ("+seuls.join(", ")+" n'a pas de source)."};
 
-    const net=nets[0];
-    const polygones=[], vias=[];
-
-    /* LE CUIVRE DU NET, sur toutes ses couches. */
-    for(const t of S.tracks){
-      if(t.net!==net)continue;
-      for(const pts of simDCPolysPiste(t))
-        polygones.push({vertices:pts, couche:t.l, net:net,
-                        epaisseur:cuT(t.l)});
-    }
-    for(const z of S.zones){
-      if(z.net!==net||!z.pts||z.pts.length<3)continue;
-      polygones.push({vertices:z.pts.map(q=>[q.x,q.y]), couche:z.l, net:net,
-                      epaisseur:cuT(z.l)});
-    }
-    for(const fp of S.fps)
-      for(const q of padsWorld(fp)){
-        if(q.net!==net)continue;
-        const pts=simDCPolyPastille(q);
-        for(const cu of padLayers(fp,q))
-          polygones.push({vertices:pts, couche:cu, net:net,
-                          epaisseur:cuT(cu)});
+    /* LE RETOUR PAR LA MASSE, sur demande. Chaque charge rend son courant par
+       les broches de masse de SON composant ; les broches de masse des sources
+       sont la référence à 0 V. Ces bornes-là ne vont pas dans la liste du
+       panneau : elles se déduisent des autres à chaque calcul. */
+    const retours=[], zeros=[], notes=[];
+    if(SIM_DCB.masse){
+      const parComp=new Map();
+      for(const b of charges){
+        if(!b.compRef)continue;
+        parComp.set(b.compRef,(parComp.get(b.compRef)||0)+Math.abs(+b.valeur||0));
       }
-    /* LES DÉCOUPES EN DERNIER, et en `trou` : elles retirent du cuivre. Une
-       découpe ne porte pas de net — elle évide ce qu'elle recouvre —, donc on
-       prend celles de la couche, quel que soit le net dessous. */
-    for(const ct of S.cuts){
-      if(!ct.pts||ct.pts.length<3)continue;
-      polygones.push({vertices:ct.pts.map(q=>[q.x,q.y]), couche:ct.l,
-                      net:net, epaisseur:cuT(ct.l), trou:true});
+      const masseDe=ref=>{
+        const fp=S.fps.find(f=>f.ref===ref);
+        return fp?padsWorld(fp).filter(q=>q.net&&pcbNomEstMasse(q.net))
+                    .map(q=>({q:q, fp:fp})):[];
+      };
+      const sansMasse=[];
+      for(const [ref,i] of parComp){
+        const m=masseDe(ref);
+        if(!m.length){sansMasse.push(ref);continue;}
+        m.forEach(({q,fp})=>retours.push({q:q, fp:fp, courant:i/m.length, ref:ref}));
+      }
+      for(const ref of new Set(alims.map(b=>b.compRef).filter(Boolean)))
+        masseDe(ref).forEach(({q,fp})=>zeros.push({q:q, fp:fp, ref:ref}));
+      if(!zeros.length)
+        return {erreur:"Aucune broche de masse sur les sources ("+
+                       (alims.map(b=>b.compRef||b.nom).join(", "))+").",
+                conseil:"Le retour se mesure depuis la masse de la source : "+
+                        "reliez-la à un net de masse, ou décochez « masse »."};
+      if(sansMasse.length)
+        notes.push(sansMasse.join(", ")+" : aucune broche de masse, leur "+
+                   "retour n'est pas compté.");
+      if(charges.some(b=>!b.compRef))
+        notes.push("Les charges posées sans composant ne rendent pas leur "+
+                   "courant à la masse.");
+      retours.forEach(r=>nets.add(r.q.net));
+      zeros.forEach(r=>nets.add(r.q.net));
     }
 
-    if(!polygones.length)
-      return {erreur:"Le net "+net+" ne porte aucun cuivre.",
+    const {polygones, vias, orphelins}=simDCCuivreDesNets(nets);
+    if(!polygones.some(p=>!p.trou))
+      return {erreur:"Le net "+[...nets].join(", ")+" ne porte aucun cuivre.",
               conseil:"Routez-le avant d'en calculer la chute."};
-
-    /* CE QUI FAIT CHANGER DE COUCHE, et c'est DEUX choses, pas une.
-
-       Les VIAS, évidemment. Mais aussi le PERÇAGE MÉTALLISÉ D'UNE PASTILLE
-       TRAVERSANTE : son tube est un conducteur au même titre, et c'est lui
-       qui relie l'anneau de cuivre que la pastille pose sur chaque couche.
-       L'oublier laissait ces anneaux flottants, et le solveur refusait tout
-       le calcul plutôt que de rendre un chiffre sur un cuivre en morceaux. */
-    let n=0, orphelins=0;
-    for(const v of S.vias){
-      if(v.net!==net){
-        /* UN VIA DE COUTURE SANS NET NE RELIE RIEN, ET LE SILENCE COÛTAIT LE
-           CALCUL ENTIER. C'est le cas ordinaire d'un plan cousu à un autre
-           plan : on pose les vias en mode « via », sans net actif, et ils
-           ressortent avec un net vide. Ce filtre les écartait sans un mot, le
-           cuivre de la couche d'arrivée devenait flottant, et le solveur
-           refusait tout en parlant de « nœuds qui n'atteignent aucune
-           référence » — un message juste, dont la CAUSE était ailleurs.
-
-           On ne les monte pas pour autant : un via sans net relierait le
-           premier cuivre venu, celui d'un autre net compris, et un
-           court-circuit inventé est pire qu'un chemin manquant. On les
-           COMPTE, et seulement ceux qui auraient effectivement joint deux
-           couches de ce net-là. */
-        if(!v.net&&
-           simDCCouchesTouchees(v.x,v.y,v.a,v.b,polygones).length>=2)
-          orphelins++;
-        continue;
-      }
-      n++;
-      /* LE PERÇAGE D'UN VIA EST UNE COTE DE L'ÉDITEUR quand il est là. À
-         défaut — un via importé sans perçage —, on le déduit de la pastille,
-         et c'est un repli : il est marqué comme tel. */
-      simDCTube(v.x, v.y, v.a, v.b,
-                v.drill||Math.max((v.d||0.8)-0.1,0.1),
-                net, "V"+n, polygones, vias, !(v.drill>0));
-    }
-    for(const fp of S.fps)
-      for(const q of padsWorld(fp)){
-        if(q.net!==net||!(q.drill>0))continue;
-        const cs=padLayers(fp,q);
-        if(cs.length<2)continue;
-        simDCTube(q.x, q.y, cs[0], cs[cs.length-1], q.drill, net,
-                  (fp.ref||"?")+"."+(q.n==null?"?":q.n), polygones, vias);
-      }
 
     /* LA BORNE, EN BOÎTE ET NON EN POINT. Une pastille couvre plusieurs
        carreaux ; l'injecter en un point ferait entrer tout l'ampérage par un
@@ -4617,43 +4868,55 @@ const SIM_PCB={
       const r=Math.max(b.w||0,b.h||0)/2;
       return [b.x-r, b.y-r, b.x+r, b.y+r];
     };
+    const plot=(q,fp)=>({couche:padLayers(fp,q)[0]||0, net:q.net, boite:boite(q)});
     /* LA TRADUCTION, et c'est le seul endroit qui la fait.
        `sources` est la liste NEUMANN du solveur — les courants imposés —, donc
        elle porte les CHARGES, et leur courant est NÉGATIF : il sort du cuivre.
        `references` est la liste DIRICHLET — les potentiels imposés —, donc
        elle porte les SOURCES. Les noms du document sont ceux du solveur ; ceux
        du panneau sont ceux du schéma. */
+    const sources=charges.map(b=>({couche:b.couche, net:b.net,
+                               courant:-Math.abs((+b.valeur)||0),
+                               boite:boite(b), repere:b.nom,
+                               composant:b.compRef||""}))
+      .concat(retours.map(r=>Object.assign(plot(r.q,r.fp),
+        {courant:r.courant, repere:r.ref+"."+r.q.n+" (masse)", composant:r.ref})));
+    const references=alims.map(b=>({couche:b.couche, net:b.net,
+                                tension:(+b.valeur)||0, boite:boite(b),
+                                repere:b.nom, composant:b.compRef||""}))
+      .concat(zeros.map(r=>Object.assign(plot(r.q,r.fp),
+        {tension:0, repere:r.ref+"."+r.q.n+" (masse)", composant:r.ref})));
+    const net=alims[0].net;
     return {
       polygones:polygones,
       vias:vias,
-      sources:charges.map(b=>({couche:b.couche, net:net,
-                               courant:-Math.abs((+b.valeur)||0),
-                               boite:boite(b), repere:b.nom})),
-      references:alims.map(b=>({couche:b.couche, net:net,
-                                tension:(+b.valeur)||0, boite:boite(b),
-                                repere:b.nom})),
-      net:net,
-      /* QUELLES COUCHES SONT A L'AIR LIBRE. IPC-2221 leur donne le double du
-         coefficient d'une interne, et un coefficient double rend une
-         température presque CINQ FOIS plus basse (2^(1/0,44) = 4,83). Se
-         tromper là-dessus ne se rattrape pas : l'éditeur connaît son
-         empilage, il le dit. La première et la dernière couche de cuivre,
-         par définition. */
+      sources:sources,
+      references:references,
+      liaisons:liaisons.map(l=>({
+        a:{couche:l.a.couche, net:l.a.pad.net, boite:boite(l.a.pad)},
+        b:{couche:l.b.couche, net:l.b.pad.net, boite:boite(l.b.pad)},
+        resistance:l.ohms, repere:l.ref})),
+      net:net, nets:[...nets],
+      /* QUELLES COUCHES SONT A L'AIR LIBRE. La première et la dernière couche
+         de cuivre, par définition : l'éditeur connaît son empilage. */
       couches_externes:[0, S.cu-1],
       /* CE QUE LA CARTE EMPORTE DE CHALEUR. Voir `simDCThermique` dans
-         `../commun/simulation-em.js` : le solveur résout l'étalement dans le
-         stratifié, et ces trois cotes sont les seules qu'il ne peut pas
-         deviner. L'éditeur les a toutes — c'est LUI qui dessine l'empilage. */
+         `../commun/simulation-em.js`. */
       thermique:simDCThermiquePcb(),
-      /* CE QUE L'OUTIL SAIT ET QUE LE SERVEUR NE PEUT PAS DEVINER. La fiche
-         les affiche ; les taire laissait un refus du solveur sans sa cause. */
+      /* CE QUE L'OUTIL SAIT ET QUE LE SERVEUR NE PEUT PAS DEVINER. */
       notes:(orphelins
         ? [orphelins+" via(s) posé(s) sur ce cuivre n'ont PAS de net : ils "+
            "joindraient deux couches du net "+net+", et ils sont écartés du "+
            "calcul. Assignez-leur le net — un via sans net relierait le "+
            "premier cuivre venu, et un court-circuit inventé serait pire "+
            "qu'un chemin manquant."]
-        : []),
+        : []).concat(liaisons.map(l=>l.ref+" en série ("+l.quoi+", "+
+           simNb(l.ohms*1e3,1)+" mΩ"+(l.provenance==="defaut"?", valeur courante supposée":"")+
+           ") : "+l.a.pad.net+" → "+l.b.pad.net+"."),
+           charges.filter(b=>b.cascade).map(b=>b.nom+" : entrée de régulateur, "+b.cascade+"."),
+           SIM_DCB.notesGroupe||[], notes,
+           SIM_DCB.masse?["Masse : un plan est pris plein dans son contour ; le "+
+             "cuivre des nets hors du calcul n'y est pas découpé."]:[]),
       bornes:B.map(b=>b.nom)
     };
   },

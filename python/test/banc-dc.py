@@ -1555,6 +1555,82 @@ essai("echauffement d'un composant : plus de cuivre, plus froid ; dT proportionn
 essai("echauffement d'un composant : la carte est finie (plancher 2hA)", cas_echauffement_composant_carte_finie)
 essai("echauffement d'un composant : les refus", cas_echauffement_composant_refus)
 
+
+def doc_deux_nets(liaisons=None, net_b="VB", sources=None):
+    """Deux barreaux de 10 x 1 mm, nets VA (y 0..1) et `net_b` (y 2..3)."""
+    return {
+        "format": "cao-sim-dc-1",
+        "polygones": [{"vertices": [[0, 0], [10, 0], [10, 1], [0, 1]], "couche": 0, "net": "VA", "epaisseur": 0.035},
+                      {"vertices": [[0, 2], [10, 2], [10, 3], [0, 3]], "couche": 0, "net": net_b, "epaisseur": 0.035}],
+        "references": [{"couche": 0, "net": "VA", "tension": 3.3, "boite": [0, 0, 0.2, 1], "repere": "U1.OUT"}],
+        "sources": sources or [{"couche": 0, "net": net_b, "courant": -1.0, "boite": [0, 2, 0.2, 3], "repere": "U2.VDD"}],
+        "liaisons": liaisons or [],
+        "pas": 0.1,
+    }
+
+
+def cas_un_composant_en_serie_relie_deux_nets():
+    """Une ferrite de 0,1 ohm entre VA et VB : tout le courant la traverse, et
+    sa chute I*R s'ajoute au cuivre des deux barreaux."""
+    li = [{"a": {"couche": 0, "net": "VA", "boite": [9.8, 0, 10, 1]},
+           "b": {"couche": 0, "net": "VB", "boite": [9.8, 2, 10, 3]},
+           "resistance": 0.1, "repere": "FB1"}]
+    r = resoudre_document(doc_deux_nets(li))
+    l0 = r["liaisons"][0]
+    assert abs(abs(l0["courant"]) - 1.0) < 1e-6, l0
+    cuivre = 2 * RESISTIVITE_CUIVRE * 9.8e-3 / (1e-3 * 35e-6)
+    chute = [b for b in r["bornes"] if b["repere"] == "U2.VDD"][0]["chute"]
+    assert abs(chute - (0.1 + cuivre)) / (0.1 + cuivre) < 0.05, (chute, 0.1 + cuivre)
+    return "chute %.1f mV dont 100 mV dans FB1" % (chute * 1e3)
+
+
+def cas_une_liaison_hors_cuivre_est_refusee():
+    li = [{"a": {"couche": 0, "net": "AUTRE", "x": 5, "y": 0.5}, "b": {"couche": 0, "net": "VB", "x": 5, "y": 2.5},
+           "resistance": 0.1, "repere": "FB9"}]
+    try:
+        resoudre_document(doc_deux_nets(li))
+    except ErreurDC as e:
+        assert "FB9" in e.message, e.message
+        return
+    raise AssertionError("aurait du refuser")
+
+
+def cas_la_masse_se_mesure_a_ses_zero_volts():
+    """Rail et masse dans le meme calcul : la charge tire 1 A du rail et le rend
+    a la masse. La borne de masse remonte de R*I au-dessus de 0 V, et sa chute
+    se lit contre SA reference (0 V), pas contre les 3,3 V du rail."""
+    sources = [{"couche": 0, "net": "VB", "courant": -1.0, "boite": [9.8, 2, 10, 3], "repere": "U2.VDD", "composant": "U2"},
+               {"couche": 0, "net": "GND", "courant": 1.0, "boite": [9.8, 4, 10, 5], "repere": "U2.GND", "composant": "U2"}]
+    doc = doc_deux_nets(net_b="VB", sources=sources)
+    del doc["polygones"][0]
+    doc["polygones"].append({"vertices": [[0, 4], [10, 4], [10, 5], [0, 5]], "couche": 0, "net": "GND", "epaisseur": 0.035})
+    doc["references"] = [{"couche": 0, "net": "VB", "tension": 3.3, "boite": [0, 2, 0.2, 3], "repere": "U1.OUT"},
+                         {"couche": 0, "net": "GND", "tension": 0.0, "boite": [0, 4, 0.2, 5], "repere": "U1.GND"}]
+    r = resoudre_document(doc)
+    b = {x["repere"]: x for x in r["bornes"]}
+    attendu = RESISTIVITE_CUIVRE * 9.8e-3 / (1e-3 * 35e-6)
+    assert abs(b["U2.GND"]["tension"] - attendu) / attendu < 0.05, (b["U2.GND"], attendu)
+    assert abs(-b["U2.GND"]["chute"] - attendu) / attendu < 0.05, b["U2.GND"]
+    assert abs(b["U2.VDD"]["chute"] - attendu) / attendu < 0.05, b["U2.VDD"]
+    assert b["U2.GND"]["composant"] == "U2" and b["U2.GND"]["net"] == "GND"
+    return "rail -%.1f mV, masse +%.1f mV" % (b["U2.VDD"]["chute"] * 1e3, b["U2.GND"]["tension"] * 1e3)
+
+
+def cas_le_placage_repart_en_mm():
+    doc = doc_deux_nets()
+    del doc["polygones"][1]
+    doc["polygones"].append({"vertices": [[0, 0], [10, 0], [10, 1], [0, 1]], "couche": 1, "net": "VA", "epaisseur": 0.035})
+    doc["sources"] = [{"couche": 1, "net": "VA", "courant": -1.0, "boite": [9.8, 0, 10, 1]}]
+    doc["vias"] = [{"x": 5, "y": 0.5, "couche_a": 0, "couche_b": 1, "net": "VA", "percage": 0.3, "placage": 0.02}]
+    r = resoudre_document(doc)
+    assert abs(r["vias"][0]["placage"] - 0.02) < 1e-12, r["vias"][0]
+
+
+essai("un composant en serie relie deux nets, et sa chute I*R s'ajoute", cas_un_composant_en_serie_relie_deux_nets)
+essai("un composant en serie hors du cuivre est un refus qui le nomme", cas_une_liaison_hors_cuivre_est_refusee)
+essai("la masse se mesure a ses 0 V, dans le meme calcul que le rail", cas_la_masse_se_mesure_a_ses_zero_volts)
+essai("le placage de chaque via repart en mm", cas_le_placage_repart_en_mm)
+
 print("\n" + "-" * 62)
 if ECHECS:
     print("  %d cas passes, %d EN ECHEC" % (len(REUSSIS), len(ECHECS)))

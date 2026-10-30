@@ -2,6 +2,14 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.2.0
+# Date: 2026-10-30
+# Explication: PLUSIEURS NETS DANS LE MEME CALCUL, comme le Power Analyzer
+#   d'Altium. `liaisons` monte un composant EN SERIE (ferrite, fusible, shunt)
+#   entre deux nets et rend son courant ; chaque borne garde son `net` et son
+#   `composant`, et sa chute se lit contre la consigne de SON net -- la masse
+#   contre ses 0 V. Chaque via rend son `placage`, d'ou la page tire sa tenue.
+#
 # Version: 2.1.0
 # Date: 2026-09-03
 # Explication: L'ECHAUFFEMENT NE VIENT PLUS D'UNE SEULE CHARTE. IPC-2221
@@ -94,7 +102,7 @@ PLACAGE_DEFAUT = 25e-6              # placage de trou metallise courant
 MAX_NOEUDS = 400000
 FORMAT = "cao-sim-dc-1"
 FORMAT_RESULTAT = "cao-sim-dc-resultat-1"
-VERSION = "2.1.0"
+VERSION = "2.2.0"
 VERSION_MOTEURS = {
     "dc_solver": VERSION,
 }
@@ -1012,13 +1020,17 @@ def _culs_de_sac(maillage, vias_montes, fixes, injecte, potentiel):
 
 
 def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=None,
-                pas=None, rho=RESISTIVITE_CUIVRE, thermique=None, journal=None):
+                pas=None, rho=RESISTIVITE_CUIVRE, thermique=None, journal=None,
+                liaisons=None):
     """Le potentiel dans le cuivre, et la chute par net.
 
     `polygones`  [{vertices, couche, net, epaisseur}] -- en METRES
     `sources`    [{x, y, couche, net, courant, rayon}] -- courant INJECTE, en A
     `references` [{x, y, couche, net, tension, rayon}] -- Dirichlet, en V
     `vias`       [{x, y, couche_a, couche_b, percage, placage, hauteur}]
+    `liaisons`   [{a: plot, b: plot, resistance, repere}] -- un composant EN
+                 SERIE entre deux nets (ferrite, fusible, shunt) : une
+                 resistance localisee entre les noeuds de ses deux pastilles
     `pas`        cote du carreau, en metres ; par defaut un centieme de la
                  plus grande dimension du cuivre analyse
     `thermique`  {modele, k_stratifie, epaisseur_stratifie, cuivre_etaleur,
@@ -1163,6 +1175,33 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
             "resistance": r, "g": g, "liens": liens,
         })
 
+    # -- LES COMPOSANTS EN SERIE ---------------------------------------------
+    # Meme montage qu'un via : la resistance se repartit entre les paires de
+    # noeuds des deux pastilles, et les liens sont gardes pour rendre le
+    # courant apres coup. Une pastille hors du cuivre est un refus : sans elle,
+    # le net d'aval n'est plus alimente et le calcul tomberait sur un ilot
+    # flottant, avec un message qui ne nommerait pas la cause.
+    liaisons_montees = []
+    for li in (liaisons or []):
+        na = _noeuds_du_point(maillage, li.get("a") or {})
+        nb = _noeuds_du_point(maillage, li.get("b") or {})
+        repere = str(li.get("repere") or "?")
+        if not na or not nb:
+            raise ErreurDC(
+                "Le composant en série %s ne touche pas le cuivre de ses deux"
+                " nets." % repere,
+                "Vérifiez que ses deux pastilles sont routées.")
+        r = max(float(li.get("resistance") or 0.0), 1e-6)
+        paires = max(len(na), len(nb))
+        g = 1.0 / (r * paires)
+        liens = []
+        for k in range(paires):
+            ia, ib = na[k % len(na)], nb[k % len(nb)]
+            relier(ia, ib, g)
+            liens.append((ia, ib))
+        liaisons_montees.append({"repere": repere, "resistance": r, "g": g,
+                                 "liens": liens})
+
     # -- les references (Dirichlet) et les sources (Neumann) ----------------
     fixes = {}
     refs_nets = set()
@@ -1185,6 +1224,7 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
             fixes[i] = tension
             refs_nets.add(nets[i])
         points.append({"repere": str(ref.get("repere") or ""),
+                       "composant": str(ref.get("composant") or ""),
                        "role": "tension", "couche": couche,
                        "consigne": tension, "noeuds": list(noeuds)})
 
@@ -1212,6 +1252,7 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
             courant_par_net[nets[i]] = (courant_par_net.get(nets[i], 0.0)
                                         + courant / len(noeuds))
         points.append({"repere": str(src.get("repere") or ""),
+                       "composant": str(src.get("composant") or ""),
                        "role": "courant", "couche": couche,
                        "consigne": courant, "noeuds": list(noeuds)})
 
@@ -1311,6 +1352,9 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
             "net": str((m["via"].get("net") or "?")),
             "repere": str(m["via"].get("repere") or ""),
             "percage": percage_de(m["via"]),
+            # le placage avec le percage : la page en tire la tenue du tube
+            "placage": float(m["via"].get("placage", m["via"].get("plating", PLACAGE_DEFAUT))
+                             or PLACAGE_DEFAUT),
             # UN PERCAGE SUPPOSE N'EST PAS UNE COTE, et la resistance qui en
             # decoule non plus : R va comme 1/A, donc un diametre devine a
             # cinquante pour cent pres se paie double sur l'ohm. Le drapeau
@@ -1416,20 +1460,41 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
     # pastille en couvre plusieurs, et ils ne sont pas tous au meme potentiel
     # exactement. L'ECART A LA CONSIGNE est ce qu'on lit : pour un
     # consommateur, c'est ce que le cuivre lui a coute.
+    # LA CONSIGNE DE SON PROPRE NET : la masse se mesure a ses 0 V, pas aux
+    # 3,3 V du rail calcule avec elle. Un net sans reference (l'aval d'une
+    # ferrite) se rapporte a la plus haute du calcul, celle qui l'alimente.
     reference_haute = max((p["consigne"] for p in points
                            if p["role"] == "tension"), default=0.0)
+    consigne_du_net = {}
+    for p in points:
+        if p["role"] == "tension":
+            net = nets[p["noeuds"][0]]
+            consigne_du_net[net] = max(consigne_du_net.get(net, p["consigne"]),
+                                       p["consigne"])
     bornes = []
     for pt in points:
         vs = [potentiel[i] for i in pt["noeuds"]]
         v = sum(vs) / len(vs) if vs else 0.0
+        net = nets[pt["noeuds"][0]]
         bornes.append({
             "repere": pt["repere"],
+            "composant": pt["composant"],
+            "net": net,
             "role": pt["role"],
             "couche": pt["couche"],
             "consigne": pt["consigne"],
             "tension": float(v),
-            "chute": float(reference_haute - v),
+            "chute": float(consigne_du_net.get(net, reference_haute) - v),
         })
+
+    detail_liaisons = []
+    for m in liaisons_montees:
+        i_li = sum(m["g"] * (potentiel[ia] - potentiel[ib])
+                   for ia, ib in m["liens"])
+        detail_liaisons.append({"repere": m["repere"],
+                                "resistance": m["resistance"],
+                                "courant": float(i_li),
+                                "chute": float(abs(i_li) * m["resistance"])})
 
     # Le pire point de chaque net, et OU il est : c'est ce qu'on lit d'abord,
     # et le chercher soi-meme dans dix mille nombres n'est pas une lecture.
@@ -1523,6 +1588,7 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
         "n_aretes": len(maillage["aretes"]),
         "n_vias": vias_relies,
         "vias": detail_vias,
+        "liaisons": detail_liaisons,
         "avertissements": avertissements,
     }
 
@@ -1677,31 +1743,39 @@ def resoudre_document(doc, journal=None):
         })
 
     def points(cle, cle_en):
-        out = []
-        for s in (doc.get(cle) or doc.get(cle_en) or []):
-            p = {
-                "couche": int(s.get("couche", s.get("layer", 0)) or 0),
-                "net": str(s.get("net") or "?"),
-                "courant": float(s.get("courant", s.get("current", 0.0)) or 0.0),
-                "tension": float(s.get("tension", s.get("voltage", 0.0)) or 0.0),
-                "rayon": float(s.get("rayon", s.get("radius", 0.0)) or 0.0) * mm,
-                # LE REPERE VOYAGE : c'est lui qui permet au panneau de dire
-                # « il reste 3,29 V a U5.1 » plutot que « a une borne ». Perdu
-                # ici, le resultat rendait des lignes anonymes.
-                "repere": str(s.get("repere") or s.get("ref") or ""),
-            }
-            # `x` N'EST RECOPIE QUE S'IL EST DONNE : poser un zero par defaut
-            # ferait taire le centre de la boite, et un plot rectangulaire se
-            # replierait sur le noeud le plus proche de l'origine.
-            if s.get("x") is not None:
-                p["x"] = float(s["x"]) * mm
-            if s.get("y") is not None:
-                p["y"] = float(s["y"]) * mm
-            boite = s.get("boite") or s.get("box")
-            if boite and len(boite) >= 4:
-                p["boite"] = [float(b) * mm for b in boite[:4]]
-            out.append(p)
-        return out
+        return [point(s) for s in (doc.get(cle) or doc.get(cle_en) or [])]
+
+    def point(s):
+        p = {
+            "couche": int(s.get("couche", s.get("layer", 0)) or 0),
+            "net": str(s.get("net") or "?"),
+            "courant": float(s.get("courant", s.get("current", 0.0)) or 0.0),
+            "tension": float(s.get("tension", s.get("voltage", 0.0)) or 0.0),
+            "rayon": float(s.get("rayon", s.get("radius", 0.0)) or 0.0) * mm,
+            # LE REPERE VOYAGE : c'est lui qui permet au panneau de dire
+            # « il reste 3,29 V a U5.1 » plutot que « a une borne ». Perdu
+            # ici, le resultat rendait des lignes anonymes.
+            "repere": str(s.get("repere") or s.get("ref") or ""),
+            # le composant qui porte la borne : la page apparie ainsi la
+            # broche d'alimentation et la broche de masse d'un meme boitier
+            "composant": str(s.get("composant") or ""),
+        }
+        # `x` N'EST RECOPIE QUE S'IL EST DONNE : poser un zero par defaut
+        # ferait taire le centre de la boite, et un plot rectangulaire se
+        # replierait sur le noeud le plus proche de l'origine.
+        if s.get("x") is not None:
+            p["x"] = float(s["x"]) * mm
+        if s.get("y") is not None:
+            p["y"] = float(s["y"]) * mm
+        boite = s.get("boite") or s.get("box")
+        if boite and len(boite) >= 4:
+            p["boite"] = [float(b) * mm for b in boite[:4]]
+        return p
+
+    liaisons = [{"a": point(li.get("a") or {}), "b": point(li.get("b") or {}),
+                 "resistance": float(li.get("resistance") or 0.0),
+                 "repere": str(li.get("repere") or "")}
+                for li in (doc.get("liaisons") or [])]
 
     vias = []
     for v in (doc.get("vias") or []):
@@ -1752,7 +1826,7 @@ def resoudre_document(doc, journal=None):
     pas = doc.get("pas", doc.get("pitch"))
     resultat = resoudre_dc(polys, sources=points("sources", "sources"),
                            references=points("references", "references"),
-                           vias=vias,
+                           vias=vias, liaisons=liaisons,
                            externes=doc.get("couches_externes"),
                            pas=(float(pas) * mm if pas else None),
                            thermique=thermique, journal=journal)
@@ -1765,8 +1839,9 @@ def resoudre_document(doc, journal=None):
         d["y"] = d["y"] / mm
         # Le PERCAGE est une longueur, il repart donc en millimetres comme la
         # position. La RESISTANCE est en ohms et ne se convertit pas.
-        if d.get("percage") is not None:
-            d["percage"] = d["percage"] / mm
+        for cle in ("percage", "placage"):
+            if d.get(cle) is not None:
+                d[cle] = d[cle] / mm
     # La DENSITE est deja en A/mm2 et l'ECHAUFFEMENT en kelvins : ni l'une ni
     # l'autre ne se convertit. Seules les POSITIONS du pire point le font.
     for d in (resultat.get("pire_par_net") or {}).values():

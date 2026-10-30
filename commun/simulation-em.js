@@ -999,6 +999,11 @@ function simCorpsDC(){
             'title="Importer automatiquement les sources et charges depuis les composants du schéma pour le net sélectionné">⚡ Du schéma</button>'+
     '<button class="tb mini" id="simDCRaz" '+
             'title="Oublier toutes les bornes">Effacer</button>'+
+    simXtCase("simDCMasse","masse",
+      "Calculer aussi le RETOUR par la masse : chaque charge rend son courant "+
+      "par les broches de masse de son composant, la masse des sources est à "+
+      "0 V. On lit alors la tension que voit vraiment le composant, rail moins "+
+      "masse. Le cuivre de masse entre dans le calcul, qui s'alourdit.")+
   '</div>'+
   '<div id="simDCListe"></div>'+
   /* LA RANGÉE QUI PORTE « Calculer » RESTE quand les réglages se replient :
@@ -1034,6 +1039,11 @@ function simCorpsDC(){
     '<span class="simU">mm</span>'+
     '<button class="tb mini on" id="simDCGo" '+
             'title="Calculer la chute de tension continue">▶ Calculer</button>'+
+    '<button class="tb mini" id="simDCTous" '+
+            'title="Chaque rail du schéma, l\'un après l\'autre : sources, '+
+            'charges, composants en série et entrées de régulateur importées, '+
+            'puis une ligne par rail avec son verdict. Vos bornes sont rendues '+
+            'à la fin.">▶ Tous les rails</button>'+
     /* L'EXPORT : le .csv pour joindre à un dossier, le .json pour rejouer.
        Les deux vivent sur la rangée qui RESTE quand les réglages se replient :
        on exporte le résultat qu'on regarde, pas celui d'avant. */
@@ -1064,6 +1074,23 @@ function simCorpsDC(){
                           "température vaut autant en kelvins qu'en degrés "+
                           "Celsius : c'est le même nombre.")+
     '<span class="simU">°C</span>'+
+  '</div>'+
+  /* LA TENUE DES VIAS ET LA DENSITÉ ADMISE, comme les « propriétés de carte »
+     du Power Analyzer d'Altium. Vide : chaque via est jugé sur SON tube
+     (IPC-2221, couche interne, au budget d'échauffement), et la densité ne
+     l'est pas — son pic dépend de la trame. */
+  '<div class="pnl-bar">'+
+    '<span class="pnl-lbl">Tenue</span>'+
+    simChamp("simDCMaxVia","Le courant admis par via, en ampères. LAISSEZ "+
+                           "VIDE : chaque via est jugé sur la section de son "+
+                           "tube (perçage et placage), par IPC-2221 en couche "+
+                           "interne, au budget d'échauffement ci-dessus.")+
+    '<span class="simU">A/via</span>'+
+    simChamp("simDCMaxJ","La densité de courant admise, en A/mm². Vide : non "+
+                         "jugée. Le pic de densité croît quand on affine la "+
+                         "trame (angle vif) : un dépassement est une alerte "+
+                         "sur l'endroit, pas un verdict.")+
+    '<span class="simU">A/mm²</span>'+
   '</div>'+
   /* L'AMBIANTE NE CHANGE AUCUN CALCUL — l'échauffement est un ÉCART, et il ne
      dépend pas de la température de départ tant que la conductivité du cuivre
@@ -1110,6 +1137,11 @@ function simCarteDCListe(){
 function simBrancherDC(){
   const btn=simEl("simDCGo");
   if(btn)btn.onclick=simDCLancer;
+  const tous=simEl("simDCTous");
+  if(tous){
+    if(!(SIM_ED&&typeof SIM_ED.dcRails==="function"))tous.style.display="none";
+    else tous.onclick=simDCTousLesRails;
+  }
   const q=simEl("simDCQuoi");
   if(q){
     q.value=SIM.dcQuoi;
@@ -1140,6 +1172,20 @@ function simBrancherDC(){
   if(js)js.onclick=simDCExportJson;
   nb("simDCMaxChute","chute");
   nb("simDCMaxDT","dt");
+  /* VIDE VEUT DIRE « PAS DE VALEUR IMPOSÉE », donc pas par `nb`, qui garde
+     l'ancienne valeur quand on efface le champ. */
+  for(const [id,cle] of [["simDCMaxVia","via"],["simDCMaxJ","densite"]]){
+    const e=simEl(id);
+    if(!e)continue;
+    e.placeholder=(cle==="via")?"auto":"—";
+    e.value=SIM.dcBudget[cle]>0?simNb(SIM.dcBudget[cle],2):"";
+    e.onchange=()=>{
+      const v=parseFloat(String(e.value||"").replace(",","."));
+      SIM.dcBudget[cle]=(v>0)?v:null;
+      e.value=SIM.dcBudget[cle]?simNb(SIM.dcBudget[cle],2):"";
+      simRendre();
+    };
+  }
   /* L'AMBIANTE PEUT ÊTRE NÉGATIVE — une carte dans un coffret extérieur —,
      donc elle ne passe pas par `nb`, qui refuse ce qui n'est pas positif. */
   const amb=simEl("simDCAmbiante");
@@ -1178,6 +1224,16 @@ function simBrancherDC(){
         }
         simRendre();
       };
+    }
+  }
+  const masse=simEl("simDCMasse");
+  if(masse){
+    const lab=masse.parentNode;
+    if(!(SIM_ED&&typeof SIM_ED.dcMasse==="function")){
+      if(lab)lab.style.display="none";
+    }else{
+      masse.checked=!!SIM_ED.dcMasse();
+      masse.onchange=()=>{SIM_ED.dcMasse(masse.checked);simRendre();};
     }
   }
   const raz=simEl("simDCRaz");
@@ -2135,6 +2191,9 @@ function simDCCoucheBar(){
    gestionnaires partent avec l'ancien DOM. C'est le crochet `apres` du
    registre, comme pour les boutons de la fiche du crosstalk. */
 function simDCBrancherFiche(){
+  if(typeof document!=="undefined")
+    for(const tr of document.querySelectorAll(".simDCRail"))
+      tr.onclick=()=>simDCOuvrirRail(+tr.getAttribute("data-k"));
   const sel=simEl("simDCCoucheSel");
   if(!sel)return;
   sel.onchange=()=>{
@@ -2187,13 +2246,14 @@ function simRendreDC(){
   const nSrc=bornes.filter(b=>b.role==="source").length;
   const nCharge=bornes.filter(b=>b.role==="charge").length;
 
+  const rails=simTableauRails();
   if(SIM.occupeDC)
     return simProgres("Un réseau résistif sur tout le cuivre du net, puis un "+
-      "gradient conjugué, puis la densité et l'échauffement.");
+      "gradient conjugué, puis la densité et l'échauffement.")+rails;
   if(SIM.erreurDC)
-    return '<p class="simErr">'+esc(SIM.erreurDC)+'</p>';
+    return '<p class="simErr">'+esc(SIM.erreurDC)+'</p>'+rails;
   if(!SIM.resDC){
-    return '<p class="simEtat">'+
+    return rails+'<p class="simEtat">'+
       (nSrc&&nCharge
         ? 'Pas encore de calcul.'
         : (!nSrc?'Il manque une <b>source</b> — l\'alimentation, dont on '+
@@ -2211,7 +2271,7 @@ function simRendreDC(){
      contexte, la légende de la carte, puis les tableaux, puis les réserves.
      Voir `simFiche`. */
   const res=SIM.resDC;
-  let html=simVerdictDC(res);
+  let html=rails+simVerdictDC(res);
   html+=simMetaDC(res);
   html+=simDCLegende();
   html+=simDCCoucheBar();
@@ -2256,8 +2316,16 @@ function simDCMesures(res){
   const alims=bornes.filter(b=>b.role==="tension");
   const charges=bornes.filter(b=>b.role==="courant");
   const ref=alims.length?Math.max.apply(null,alims.map(b=>b.consigne)):0;
-  const pire=charges.length
-    ? charges.reduce((a,b)=>(b.chute>a.chute?b:a)) : null;
+  const masses=simDCNetsMasse(res);
+  const parComp=simDCParComposant(res);
+  const surRail=charges.filter(b=>!masses.has(b.net));
+  let pire=surRail.length
+    ? surRail.reduce((a,b)=>(b.chute>a.chute?b:a)) : null;
+  /* AVEC LA MASSE, LA PIRE CHARGE EST CELLE QUI VOIT LE MOINS ENTRE SES DEUX
+     BROCHES : la chute du rail plus la remontée de sa masse. */
+  for(const c of parComp)
+    if(!pire||c.perdu>pire.chute)
+      pire={repere:c.composant+" (rail + masse)", chute:c.perdu};
   let dt=0, dtNet="", dtCharte=0;
   for(const net of Object.keys(res&&res.pire_par_net||{})){
     const p=res.pire_par_net[net];
@@ -2266,8 +2334,72 @@ function simDCMesures(res){
       dtCharte=p.echauffement_ipc2221||0;
     }
   }
+  const bud=SIM.dcBudget;
+  const viasKO=((res&&res.vias)||[]).filter(v=>v.relie&&
+                 Math.abs(v.courant)>simDCTenueVia(v));
+  const densKO=bud.densite>0
+    ? Object.keys((res&&res.pire_par_net)||{})
+        .filter(n=>res.pire_par_net[n].densite>bud.densite) : [];
   return {ref:ref, pire:pire, dt:dt, dtNet:dtNet, dtCharte:dtCharte,
-          pct:(pire&&ref>0)?100*pire.chute/ref:null};
+          pct:(pire&&ref>0)?100*pire.chute/ref:null,
+          viasKO:viasKO, densKO:densKO};
+}
+
+/* LES NETS DE MASSE DU CALCUL : ceux qu'une source tient à 0 V. */
+function simDCNetsMasse(res){
+  return new Set(((res&&res.bornes)||[])
+    .filter(b=>b.role==="tension"&&b.consigne===0&&b.net).map(b=>b.net));
+}
+
+/* CE QUE VOIT CHAQUE COMPOSANT, ENTRE SA BROCHE D'ALIMENTATION ET SA MASSE.
+   C'est la question du retour par la masse : un rail qui perd 40 mV et une
+   masse qui remonte de 30 mV laissent 70 mV de moins au composant, pas 40.
+   La pire broche de chaque côté : un boîtier à plusieurs broches d'un même
+   rail est aussi mal servi que la plus mal servie. */
+function simDCParComposant(res){
+  const masses=simDCNetsMasse(res);
+  if(!masses.size)return [];
+  const ref=Math.max.apply(null,((res.bornes||[]).filter(b=>b.role==="tension")
+                                 .map(b=>b.consigne)).concat([0]));
+  const comps=new Map();
+  for(const b of (res.bornes||[])){
+    if(b.role!=="courant"||!b.composant)continue;
+    if(!comps.has(b.composant))comps.set(b.composant,{rail:null, masse:null});
+    const c=comps.get(b.composant);
+    if(masses.has(b.net)){
+      if(c.masse==null||b.tension>c.masse)c.masse=b.tension;
+    }else if(c.rail==null||b.tension<c.rail)c.rail=b.tension;
+  }
+  const out=[];
+  for(const [nom,c] of comps)
+    if(c.rail!=null&&c.masse!=null)
+      out.push({composant:nom, rail:c.rail, masse:c.masse, vu:c.rail-c.masse,
+                perdu:ref-(c.rail-c.masse), chuteRail:ref-c.rail, remontee:c.masse});
+  return out.sort((a,b)=>b.perdu-a.perdu);
+}
+
+/* CE QU'UN VIA TIENT, en ampères. Le champ « Tenue » s'il est rempli ; sinon
+   IPC-2221 sur la section du TUBE, en couche interne (le tube est enfoui dans
+   la carte), au budget d'échauffement : 0,3 mm percé, 25 µm de placage,
+   +10 °C donnent 0,95 A. Le perçage et le placage viennent du solveur. */
+function simDCTenueVia(v){
+  if(SIM.dcBudget.via>0)return SIM.dcBudget.via;
+  const d=(v&&v.percage)||0.3, p=(v&&v.placage)||0.025;
+  const mm2=Math.PI*((d/2+p)*(d/2+p)-(d/2)*(d/2));
+  return 0.024*Math.pow(SIM.dcBudget.dt,0.44)*
+         Math.pow(mm2/(0.0254*0.0254),0.725);
+}
+
+/* LA ZONE LIMITE : à quatre-vingts pour cent d'un budget, on ne l'a pas
+   dépassé et il n'y a plus de marge. LA DENSITÉ NE PASSE JAMAIS « HORS
+   BUDGET » : son pic dépend de la trame, elle met en ambre et dit où
+   regarder. */
+function simDCClasse(m){
+  const bud=SIM.dcBudget;
+  if((m.pct!=null&&m.pct>bud.chute)||m.dt>bud.dt||m.viasKO.length)return "dehors";
+  if((m.pct!=null&&m.pct>0.8*bud.chute)||m.dt>0.8*bud.dt||m.densKO.length)
+    return "limite";
+  return "dedans";
 }
 
 function simVerdictDC(res){
@@ -2275,18 +2407,13 @@ function simVerdictDC(res){
   const bud=SIM.dcBudget;
   const chuteDehors=(m.pct!=null&&m.pct>bud.chute);
   const dtDehors=(m.dt>bud.dt);
-  /* LA ZONE LIMITE : à quatre-vingts pour cent d'un budget, on ne l'a pas
-     dépassé et il n'y a plus de marge — c'est le moment de le savoir, pas
-     après le premier prototype. Même graduation que le balayage du crosstalk,
-     et même teinte ambre, qui ne désigne aucun sens. */
-  const chuteLimite=(m.pct!=null&&m.pct>0.8*bud.chute);
-  const dtLimite=(m.dt>0.8*bud.dt);
-  const cls=(chuteDehors||dtDehors)?"dehors"
-           :((chuteLimite||dtLimite)?"limite":"dedans");
+  const viasDehors=m.viasKO.length>0;
+  const cls=simDCClasse(m);
 
   const sortis=[];
   if(chuteDehors)sortis.push("la chute");
   if(dtDehors)sortis.push("l'échauffement");
+  if(viasDehors)sortis.push(m.viasKO.length+" via(s)");
   let tete;
   if(sortis.length)
     tete="Hors budget : "+sortis.join(" et ");
@@ -2313,6 +2440,15 @@ function simVerdictDC(res){
                " (budget "+simNb(bud.dt,0)+" °C"+
                (m.dtCharte>0?", IPC-2221 en annoncerait "+
                   simNb(m.dtCharte,1)+" °C":"")+")");
+  if(viasDehors){
+    const v=m.viasKO[0];
+    bouts.push(m.viasKO.length+" via(s) au-delà de leur tenue, dont "+
+               (v.repere||"?")+" à "+simNb(Math.abs(v.courant),2)+" A pour "+
+               simNb(simDCTenueVia(v),2)+" A");
+  }
+  if(m.densKO.length)
+    bouts.push("densité de pointe au-delà de "+simNb(bud.densite,0)+
+               " A/mm² sur "+m.densKO.join(", "));
   return '<p class="simVerdict '+cls+'">'+esc(tete)+
          " <span>"+esc(bouts.join(" · ")||"rien à mesurer")+"</span></p>";
 }
@@ -2325,8 +2461,14 @@ function simVerdictDC(res){
 function simMetaDC(res){
   const nets=Object.keys(res.chute_par_net||{});
   const cour=res.courant_par_net||{};
-  let total=0;
-  for(const n of Object.keys(cour))total+=Math.abs(cour[n]);
+  /* UN SENS, PAS LES DEUX : avec la masse, le même ampère sort du rail et
+     rentre dans la masse, et la somme des valeurs absolues le compterait deux
+     fois. */
+  let tire=0, rendu=0;
+  for(const n of Object.keys(cour)){
+    if(cour[n]<0)tire-=cour[n]; else rendu+=cour[n];
+  }
+  const total=Math.max(tire,rendu);
   const couches=(res.couches||[]).length;
   return '<div class="simMeta"><span>'+
     esc(nets.join(", ")||SIM.portee||"—")+"</span>"+
@@ -2364,7 +2506,14 @@ function simTableauNetsDC(res){
           "<td>"+(i?simNb(i,3)+" A":"—")+"</td>"+
           "<td>"+simNb(ch[net]*1e3,2)+" mV</td></tr>";
   }
-  return html+"</table>";
+  html+="</table>";
+  /* LES COMPOSANTS EN SÉRIE : ce qui passe d'un net à l'autre, et ce que ça
+     coûte. */
+  for(const l of (res.liaisons||[]))
+    html+='<p class="simNote">· <b>'+esc(l.repere)+'</b> en série : '+
+          simNb(Math.abs(l.courant),3)+' A, '+simNb(l.chute*1e3,2)+' mV ('+
+          simNb(l.resistance*1e3,1)+' mΩ).</p>';
+  return html;
 }
 
 
@@ -2464,9 +2613,15 @@ function simTableauBornes(res){
   const vue=simDCCoucheVoulue();
   let html='<table class="simTab simTabDC"><tr><th>Borne</th><th>Couche</th>'+
            "<th>Réglage</th><th>Tension</th><th>Perdu</th></tr>";
+  const masses=simDCNetsMasse(res);
   const ligne=(b,src)=>{
     let perdu="—", cls="";
-    if(!src){
+    /* UNE BROCHE DE MASSE NE PERD PAS, ELLE REMONTE : sa tension se lit
+       au-dessus de ses 0 V. Le verdict, lui, est dans le tableau par
+       composant, qui ajoute les deux. */
+    if(!src&&masses.has(b.net)){
+      perdu="+"+simNb(b.tension*1e3,2)+" mV<small>remontée</small>";
+    }else if(!src){
       const pct=(ref>0)?100*b.chute/ref:null;
       perdu="−"+simNb(b.chute*1e3,2)+" mV";
       if(pct!=null){
@@ -2487,13 +2642,15 @@ function simTableauBornes(res){
                      "qu'elle ne porte rien")+'">'+
           esc(simDCNomCouche(b.couche))+"</td>"+
           "<td>"+(src?simNb(b.consigne,3)+" V"
-                     :simNb(Math.abs(b.consigne),3)+" A")+"</td>"+
+                     :simNb(Math.abs(b.consigne),3)+" A"+
+                      (masses.has(b.net)?"<small>rendus</small>":""))+"</td>"+
           "<td>"+simNb(b.tension,4)+" V</td>"+
           "<td"+(cls?' class="'+cls+'"':"")+">"+perdu+"</td></tr>";
   };
   alims.forEach(b=>ligne(b,true));
   charges.forEach(b=>ligne(b,false));
   html+="</table>";
+  html+=simTableauParComposant(res,ref,bud);
   /* CE QUE LA CARTE NE MONTRE PAS. Une borne hors de la couche peinte n'a
      aucune couleur autour d'elle, et c'est le piège : on lit un défaut là où
      il n'y a qu'un changement de point de vue. */
@@ -2517,6 +2674,31 @@ function simTableauBornes(res){
           (ref?" ("+simNb(100*pire.chute/ref,2)+" %)":"")+".</p>";
   }
   return html;
+}
+
+/* Ce que voit chaque composant quand la masse est dans le calcul. */
+function simTableauParComposant(res,ref,bud){
+  const comps=simDCParComposant(res);
+  if(!comps.length)return '';
+  let h='<table class="simTab simTabDC"><tr><th>Composant</th><th>Rail</th>'+
+        "<th>Masse</th><th>Vu</th><th>Perdu</th></tr>";
+  for(const c of comps){
+    const pct=ref>0?100*c.perdu/ref:null;
+    const cls=pct==null?"":((pct>bud)?"z0ko":((pct>0.8*bud)?"z0limite":"z0ok"));
+    h+="<tr><td>"+esc(c.composant)+"</td>"+
+       "<td>−"+simNb(c.chuteRail*1e3,2)+" mV</td>"+
+       "<td>+"+simNb(c.remontee*1e3,2)+" mV</td>"+
+       "<td>"+simNb(c.vu,4)+" V</td>"+
+       '<td'+(cls?' class="'+cls+'"':"")+">−"+simNb(c.perdu*1e3,2)+" mV"+
+       (pct!=null?"<small>"+simNb(pct,2)+" %</small>":"")+"</td></tr>";
+  }
+  h+="</table>";
+  const p=comps[0];
+  if(p.perdu>0)
+    h+='<p class="simNote">· Entre ses broches, <b>'+esc(p.composant)+'</b> voit '+
+       simNb(p.vu,4)+' V : la masse compte pour '+
+       simNb(100*p.remontee/p.perdu,0)+' % de ce qu’il perd.</p>';
+  return h;
 }
 
 /* ===========================================================================
@@ -2685,12 +2867,12 @@ function simTableauVias(res){
   const melangePercage=vias.some(v=>v.percage_suppose)&&
                        vias.some(v=>!v.percage_suppose);
   let html='<table class="simTab simTabDC"><tr><th>Via</th><th>Couches</th>'+
-           "<th>Courant</th><th>Chute</th><th>R</th></tr>";
+           "<th>Courant</th><th>Tenue</th><th>Chute</th><th>R</th></tr>";
   vias.slice(0,SIM_DC_VIAS_MAX).forEach(v=>{
     if(!v.relie){
       html+="<tr><td>"+esc(v.repere||"—")+"</td>"+
             "<td>"+(v.couche_a+1)+"→"+(v.couche_b+1)+"</td>"+
-            '<td colspan="3" class="z0ko">hors calcul<small>'+
+            '<td colspan="4" class="z0ko">hors calcul<small>'+
             esc(v.motif||"non relié")+"</small></td></tr>";
       return;
     }
@@ -2722,6 +2904,7 @@ function simTableauVias(res){
                    "et le courant qui la traverse non plus.")+'"':"")+">"+
           (v.couche_a+1)+"→"+(v.couche_b+1)+(por?" ?":"")+"</td>"+
           "<td>"+ia+"</td>"+
+          simDCCelluleTenue(v,i)+
           "<td>"+simNb(v.chute*1e3,3)+" mV</td>"+
           '<td'+(sup?' class="simFaible" title="'+
             esc("Perçage SUPPOSÉ (déduit de la pastille) : la résistance "+
@@ -2733,6 +2916,18 @@ function simTableauVias(res){
   if(vias.length>SIM_DC_VIAS_MAX)
     html+='<p class="simNote">· '+(vias.length-SIM_DC_VIAS_MAX)+
           " via(s) de plus, moins chargés que ceux-ci.</p>";
+  /* LE RÉSUMÉ DES VIAS EN DÉFAUT, tous : un via fin peut être au-delà de sa
+     tenue sans être dans les quinze plus chargés. */
+  const ko=relies.filter(v=>Math.abs(v.courant)>simDCTenueVia(v));
+  if(ko.length)
+    html+='<p class="simNote simAlerte">· '+ko.length+' via(s) au-delà de '+
+          'leur tenue ('+(SIM.dcBudget.via>0
+            ? simNb(SIM.dcBudget.via,2)+' A imposés'
+            : 'IPC-2221 sur le tube, +'+simNb(SIM.dcBudget.dt,0)+' °C')+
+          ') : '+ko.slice(0,8).map(v=>esc(v.repere||"?")+" ("+
+            simNb(Math.abs(v.courant),2)+" / "+simNb(simDCTenueVia(v),2)+
+            " A)").join(", ")+(ko.length>8?"…":"")+
+          '. Doublez-les, ou élargissez leur perçage.</p>';
   /* CE QUE LES MARQUES NE DISENT PLUS PARCE QU'ELLES SERAIENT PARTOUT. */
   if(!melangePortee&&vias.length&&vias.every(v=>v.portee_supposee))
     html+='<p class="simNote">· <b>Aucune</b> de ces portées n\'est déclarée '+
@@ -2913,6 +3108,18 @@ function simDesequilibreVias(relies){
          " % s'ils travaillaient à parts égales. Les "+
          (pire.n-pire.actifs)+" autres ne sont sur aucun chemin.</p>";
 }
+/* La tenue d'un via et sa teinte : rouge au-delà, ambre à 80 %, comme
+   « Perdu ». */
+function simDCCelluleTenue(v,i){
+  const t=simDCTenueVia(v);
+  const cls=(i>t)?"z0ko":((i>0.8*t)?"z0limite":"z0ok");
+  return '<td class="'+cls+'" title="'+esc(SIM.dcBudget.via>0
+           ? "Tenue imposée dans le champ « Tenue »."
+           : "IPC-2221 sur la section du tube ("+simNb(v.percage||0.3,2)+
+             " mm percé, "+simNb((v.placage||0.025)*1e3,0)+" µm de placage), "+
+             "couche interne, +"+simNb(SIM.dcBudget.dt,0)+" °C.")+'">'+
+         simNb(t,2)+" A<small>"+simNb(100*i/t,0)+" %</small></td>";
+}
 /* Le seuil en ampères, tiré du passage du groupe. Une fonction plutôt qu'une
    multiplication en ligne : le seuil se lit une fois, et il se conteste. */
 function SIM_DC_ACTIF_SEUIL(total){return SIM_DC_VIA_ACTIF*total;}
@@ -3018,6 +3225,10 @@ function simDCCsvTexte(){
   L.push(simCsvLigne(["ambiante (°C)",simNb(SIM.dcAmbiante,1)]));
   L.push(simCsvLigne(["budget de chute (%)",simNb(SIM.dcBudget.chute,1)]));
   L.push(simCsvLigne(["budget d'échauffement (°C)",simNb(SIM.dcBudget.dt,1)]));
+  L.push(simCsvLigne(["tenue par via (A)",SIM.dcBudget.via>0
+    ?simNb(SIM.dcBudget.via,3):"IPC-2221 sur le tube"]));
+  L.push(simCsvLigne(["densité admise (A/mm²)",SIM.dcBudget.densite>0
+    ?simNb(SIM.dcBudget.densite,1):"non jugée"]));
   L.push(simCsvLigne(["trame (mm)",simNb(res.pas,4)]));
   L.push(simCsvLigne(["nœuds",res.n_noeuds]));
   L.push(simCsvLigne(["liaisons",res.n_aretes]));
@@ -3053,11 +3264,12 @@ function simDCCsvTexte(){
               simNb(p.densite,2), simNb(o[0],3), simNb(o[1],3), o[2]+1];
     }));
 
-  bloc("Vias",["via","couches","courant (mA)","chute (mV)","R (mOhm)",
+  bloc("Vias",["via","couches","courant (mA)","tenue (mA)","chute (mV)","R (mOhm)",
                "perçage (mm)","perçage supposé","x (mm)","y (mm)","état"],
     (res.vias||[]).map(v=>[
       v.repere||"", (v.couche_a+1)+" -> "+(v.couche_b+1),
-      simNb(Math.abs(v.courant)*1e3,3), simNb(v.chute*1e3,4),
+      simNb(Math.abs(v.courant)*1e3,3), simNb(simDCTenueVia(v)*1e3,1),
+      simNb(v.chute*1e3,4),
       simNb(v.resistance*1e3,4), simNb(v.percage||0,3),
       v.percage_suppose?"oui":"non", simNb(v.x,3), simNb(v.y,3),
       v.relie?"relié":("hors calcul : "+(v.motif||""))]));
@@ -3101,7 +3313,8 @@ function simDCJsonTexte(){
     reglages:{
       lambda_saisi:SIM.dcLambda||null,
       ambiante:SIM.dcAmbiante,
-      budget:{chute_pct:SIM.dcBudget.chute, echauffement_c:SIM.dcBudget.dt},
+      budget:{chute_pct:SIM.dcBudget.chute, echauffement_c:SIM.dcBudget.dt,
+              tenue_via_a:SIM.dcBudget.via, densite_a_mm2:SIM.dcBudget.densite},
       trame:SIM.dcFinesse||null,
       grandeur_peinte:SIM.dcQuoi,
       couche_peinte:SIM.dcCouche
@@ -3175,13 +3388,8 @@ async function simDCLancer(){
       simDCOublier();
       return;
     }
-    /* LA FINESSE : celle qu'on a écrite, sinon celle que le cuivre impose. */
-    const fin=simDCFinesse(probleme.polygones);
-    const saisi=parseFloat(String((simEl("simDCPas")||{}).value||"")
-                             .replace(",","."));
-    const pas=(saisi>0)?saisi:(fin?fin.pas:0);
-    SIM.dcFinesse=fin?Object.assign({},fin,{choisi:pas,
-                                            impose:(saisi>0)}):null;
+    const d=simDCDocument(probleme);
+    SIM.dcFinesse=d.finesse;
     /* LES NOTES DE L'OUTIL, retenues AVANT l'aller-retour : elles décrivent le
        document envoyé, pas la réponse, et une requête qui échoue ne doit pas
        les faire disparaître de la fiche — c'est justement quand le solveur
@@ -3189,16 +3397,7 @@ async function simDCLancer(){
        refus. */
     SIM.dcNotes=(probleme.notes||[]).slice();
     const rev=simRevision();
-    SIM.resDC=await simDCCalculer({
-      format:SIM_DC_FORMAT,
-      polygones:probleme.polygones||[],
-      vias:probleme.vias||[],
-      sources:probleme.sources||[],
-      references:probleme.references||[],
-      couches_externes:probleme.couches_externes,
-      thermique:simDCThermique(probleme),
-      pas:(pas>0?pas:(probleme.pas||undefined))
-    });
+    SIM.resDC=await simDCCalculer(d.doc);
     /* LES IMAGES SE CONSTRUISENT ICI, une fois — pas à chaque redessin. Le
        canevas hors écran vient de l'outil : c'est lui qui sait comment en
        fabriquer un (un navigateur, un banc d'essai, ce n'est pas le même). */
@@ -3219,6 +3418,132 @@ async function simDCLancer(){
     if(btn)btn.disabled=false;
     simRendre();
   }
+}
+
+/* LE DOCUMENT ENVOYÉ, tiré du problème de l'outil. La finesse : celle qu'on
+   a écrite, sinon celle que le cuivre impose. */
+function simDCDocument(probleme){
+  const fin=simDCFinesse(probleme.polygones);
+  const saisi=parseFloat(String((simEl("simDCPas")||{}).value||"")
+                           .replace(",","."));
+  const pas=(saisi>0)?saisi:(fin?fin.pas:0);
+  return {
+    finesse:fin?Object.assign({},fin,{choisi:pas, impose:(saisi>0)}):null,
+    doc:{
+      format:SIM_DC_FORMAT,
+      polygones:probleme.polygones||[],
+      vias:probleme.vias||[],
+      sources:probleme.sources||[],
+      references:probleme.references||[],
+      liaisons:probleme.liaisons||[],
+      couches_externes:probleme.couches_externes,
+      thermique:simDCThermique(probleme),
+      pas:(pas>0?pas:(probleme.pas||undefined))
+    }
+  };
+}
+
+/* ==========================================================================
+   TOUS LES RAILS D'UN COUP, comme le Power Analyzer d'Altium
+   --------------------------------------------------------------------------
+   Chaque rail que l'outil sait nommer (`dcRails`) est importé du schéma,
+   calculé, et résumé en une ligne : sa pire charge, son échauffement, ses
+   vias. Les bornes de l'utilisateur sont gardées et rendues à la fin. Cliquer
+   une ligne relance ce rail seul, avec toute sa fiche.
+   ========================================================================== */
+async function simDCTousLesRails(){
+  if(SIM.occupeDC||!(SIM_ED&&SIM_ED.dcRails))return;
+  const rails=SIM_ED.dcRails();
+  SIM.erreurDC="";
+  if(!rails.length){
+    SIM.erreurDC="Aucun rail avec une source et une charge.\nLe schéma doit "+
+                 "dire qui alimente et qui consomme : « ⚡ Du schéma » sur un "+
+                 "rail montre ce qu'il trouve.";
+    simRendre();
+    return;
+  }
+  const garde=SIM_ED.dcEtat?SIM_ED.dcEtat():null;
+  SIM.occupeDC=true;
+  SIM.dcRails={lignes:[], total:rails.length, encours:null};
+  simProgresDemarrer();
+  try{
+    for(const r of rails){
+      SIM.dcRails.encours=r.net;
+      simRendre();
+      const l={net:r.net, nets:r.nets};
+      try{
+        const imp=await SIM_ED.dcImporterSchema(r.net);
+        if(imp&&imp.erreur)throw new Error(imp.erreur);
+        const p=SIM_ED.cuivreDC();
+        if(!p||p.erreur)throw new Error((p&&p.erreur)||"Rien à analyser.");
+        const res=await simDCCalculer(simDCDocument(p).doc);
+        const m=simDCMesures(res);
+        Object.assign(l,{mesures:m, classe:simDCClasse(m),
+                         courant:simDCCourantTire(res)});
+      }catch(e){
+        l.erreur=(e&&e.message)||String(e);
+      }
+      SIM.dcRails.lignes.push(l);
+    }
+  }finally{
+    if(SIM_ED.dcRestaurer)SIM_ED.dcRestaurer(garde);
+    SIM.dcRails.encours=null;
+    SIM.occupeDC=false;
+    simProgresFini();
+    simRendre();
+  }
+}
+
+/* Le courant tiré : un sens, pas les deux — avec la masse, le même ampère
+   sort du rail et rentre dans la masse. */
+function simDCCourantTire(res){
+  const cour=(res&&res.courant_par_net)||{};
+  let tire=0, rendu=0;
+  for(const n of Object.keys(cour)){
+    if(cour[n]<0)tire-=cour[n]; else rendu+=cour[n];
+  }
+  return Math.max(tire,rendu);
+}
+
+function simTableauRails(){
+  const R=SIM.dcRails;
+  if(!R||!R.lignes.length)return '';
+  const bud=SIM.dcBudget;
+  const teinte=(v,b)=>(v>b)?"z0ko":((v>0.8*b)?"z0limite":"z0ok");
+  let h='<p class="simNote">· <b>Tous les rails</b> : '+R.lignes.length+' sur '+
+        R.total+(R.encours?' (calcul de '+esc(R.encours)+'…)':'')+
+        '. Cliquez une ligne pour sa fiche complète.</p>'+
+        '<table class="simTab simTabDC"><tr><th>Rail</th><th>Courant</th>'+
+        "<th>Pire charge</th><th>Perdu</th><th>Échauf.</th><th>Vias</th></tr>";
+  R.lignes.forEach((l,k)=>{
+    const nom=esc(l.nets.join(" → "));
+    const tr='<tr class="simDCRail" data-k="'+k+'" style="cursor:pointer">';
+    if(l.erreur){
+      h+=tr+'<td>'+nom+'</td><td colspan="5" class="z0ko">non calculé<small>'+
+         esc(l.erreur)+"</small></td></tr>";
+      return;
+    }
+    const m=l.mesures;
+    h+=tr+'<td class="'+({dehors:"z0ko",limite:"z0limite"}[l.classe]||"z0ok")+'">'+
+       nom+"</td><td>"+simNb(l.courant,3)+" A</td>"+
+       "<td>"+esc((m.pire&&m.pire.repere)||"—")+"</td>"+
+       '<td class="'+(m.pct==null?"":teinte(m.pct,bud.chute))+'">'+
+       (m.pire?"−"+simNb(m.pire.chute*1e3,1)+" mV":"—")+
+       (m.pct!=null?"<small>"+simNb(m.pct,2)+" %</small>":"")+"</td>"+
+       '<td class="'+teinte(m.dt,bud.dt)+'">+'+simNb(m.dt,1)+" °C</td>"+
+       '<td class="'+(m.viasKO.length?"z0ko":"z0ok")+'">'+
+       (m.viasKO.length?m.viasKO.length+" en défaut":"ok")+"</td></tr>";
+  });
+  return h+"</table>";
+}
+
+/* Une ligne cliquée : ce rail seul, avec sa fiche. */
+async function simDCOuvrirRail(k){
+  const l=SIM.dcRails&&SIM.dcRails.lignes[k];
+  if(!l||SIM.occupeDC)return;
+  const imp=await SIM_ED.dcImporterSchema(l.net);
+  if(imp&&imp.erreur){SIM.erreurDC=imp.erreur;simRendre();return;}
+  await simDCLancer();
 }
 
 /* Le transport. Même forme que `simLancerCalcul` : le refus du serveur arrive
@@ -3279,6 +3604,8 @@ const SIM={
      document, ni son verrou avec l'impedance. Les melanger ferait qu'un calcul
      de section en cours bloquerait un calcul de chute, et l'inverse. */
   resDC:null, occupeDC:false, erreurDC:"",
+  /* Le balayage de tous les rails : une ligne par rail, voir `simDCTousLesRails`. */
+  dcRails:null,
   /* Ce que le cuivre a imposé comme finesse de trame, et ce qu'il porte. */
   dcFinesse:null,
   /* CE QUE L'OUTIL SAIT DU MODÈLE et que le serveur ne peut pas deviner :
@@ -3300,7 +3627,7 @@ const SIM={
      serait qu'un chiffre repete. `dt` est en DEGRES CELSIUS, comme tout ce qui
      est thermique dans ce panneau : un ecart de temperature vaut autant en
      kelvins qu'en degres Celsius, et les deux normes l'ecrivent en °C. */
-  dcBudget:{chute:5, dt:10},
+  dcBudget:{chute:5, dt:10, via:null, densite:null},
   /* L'ambiante, en °C. Elle ne change aucun calcul -- l'echauffement est un
      ECART -- et sert a ecrire le point chaud en ABSOLU. */
   dcAmbiante:20,
