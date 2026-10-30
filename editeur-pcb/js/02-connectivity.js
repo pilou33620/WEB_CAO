@@ -1028,9 +1028,11 @@ function runDrc(){
     if(!trkSegs(t,0.01).every(s=>axeDansCarte(s,S.rule.edge+t.w/2+(arcOf(t)?0.01:0))))
       out.push({x:m.x,y:m.y,l:t.l,msg:"Piste hors du contour de carte ou trop près du bord"});
   }
+  /* une pastille peut venir au ras du bord (embase SMA de bord de carte, connecteur
+     de tranche) : seule celle qui déborde du contour est une erreur */
   for(const p of pads)
-    if(!padWorldPts(p.q).every(c=>inBoard(c.x,c.y,S.rule.edge)))
-      out.push({x:p.q.x,y:p.q.y,l:p.layers[0],msg:"Pastille "+p.tag+" hors du contour ou trop près du bord"});
+    if(!padWorldPts(p.q).every(c=>inBoard(c.x,c.y,0)))
+      out.push({x:p.q.x,y:p.q.y,l:p.layers[0],msg:"Pastille "+p.tag+" hors du contour de carte"});
 
   /* ---------- échardes de gravure ----------
      Un décrochement plus court que la piste qu'il prolonge n'est pas un coude :

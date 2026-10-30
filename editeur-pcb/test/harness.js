@@ -7993,13 +7993,15 @@ T("DRC : pistes, vias et pastilles tiennent la marge au bord",()=>{
   S.tracks.push({l:0,net:"A",w:0.2,x1:0.3,y1:10,x2:10,y2:10},{l:0,net:"A",w:0.2,x1:5,y1:15,x2:10,y2:15});
   S.vias.push({x:0.6,y:20,d:0.8,drill:0.4,a:0,b:1,net:"A"});
   const fp=mkFp("R9","1k","0603",1);fp.x=10;fp.y=30;
-  fp.pads=[{n:1,x:-9.1,y:0,w:2,h:1,shape:"sharp"}];S.fps.push(fp);
+  fp.pads=[{n:1,x:-9.1,y:0,w:2,h:1,shape:"sharp"},
+           {n:2,x:-8.75,y:3,w:2,h:1,shape:"sharp"}];S.fps.push(fp);   // 2 : à 0,25 mm du bord, comme une embase SMA
   touch();
   const m=runDrc().map(e=>e.msg).filter(t=>/contour/.test(t));
   S.rule.edge=edge;S.board=bd;carteVide();
   if(m.filter(t=>/^Piste hors du contour/.test(t)).length!==1)throw new Error("piste à 0,2 mm du bord : "+m.join(" | "));
   if(!m.some(t=>/^Via hors du contour/.test(t)))throw new Error("via à 0,2 mm du bord : "+m.join(" | "));
   if(!m.some(t=>/^Pastille R9\.1 hors du contour/.test(t)))throw new Error("pastille qui déborde : "+m.join(" | "));
+  if(m.some(t=>/^Pastille R9\.2/.test(t)))throw new Error("pastille au ras du bord, dans la carte : "+m.join(" | "));
 });
 T("pastille chanfreinée sous la carte : le coin suit le miroir",()=>{
   carteVide();
