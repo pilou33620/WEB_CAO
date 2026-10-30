@@ -459,70 +459,57 @@ function retFeuille(E,tous,lot,ko,ctx,suite){
 
   /* les détails, à droite : un par composant, à la plus grande échelle (10:1 au plus) où il tient */
   const X0=Z.x1+wV+6, Wd=Z.x2-X0, Hd=yBas-yHaut, G=mesGrille(lot.length,Wd,Hd,19);   // 19 : titre et légende sur deux lignes
-  const liens=[];
-  lot.forEach((r,j)=>{
+  /* d'abord la place de chaque détail et son cercle sur la vue */
+  const cw=Wd/G.cols, ch=Hd/G.rows;
+  const liens=lot.map((r,j)=>{
     const c=r.c, dessous=c.face==="dessous", V=vues.find(v=>v.dessous===dessous)||vues[0];
     const pts=c.corps.concat(...c.pads.map(p=>p.pts)), b=mecaBoite(pts), cx=(b.x1+b.x2)/2, cy=(b.y1+b.y2)/2;
     const ext=Math.max(...pts.map(p=>Math.hypot(p.x-cx,p.y-cy)),0.3);
     const k=DF_ECHELLES.find(e=>e<=10&&ext*e<=G.R*0.6)||DF_ECHELLES[DF_ECHELLES.length-1];
-    const cw=Wd/G.cols, ch=Hd/G.rows, X=X0+cw*(j%G.cols+0.5), Y=yHaut+ch*Math.floor(j/G.cols)+G.R+2;
-
-    /* le cercle sur la vue de la carte ; sa lettre et le trait viennent après, une fois tous les textes posés */
     const C=V.T(cx,cy), rr=Math.max(G.R/k*V.k,1.2);
     dfCercle(F,C.x,C.y,rr,{lw:0.35,trait:r.col});
-    liens.push({r,C,rr,D:{x:X,y:Y},R:G.R});
-
-    /* le détail */
-    const T=mesLoupe(F,E,X,Y,G.R,cx,cy,k,dessous,surb,F.mesZones);
+    return {r,C,rr,D:{x:X0+cw*(j%G.cols+0.5),y:yHaut+ch*Math.floor(j/G.cols)+G.R+2},R:G.R,k,cx,cy,dessous};
+  });
+  /* les traits droits, tracés AVANT les détails et les légendes : ce qui suit
+     les recouvre (disque blanc, fond blanc), un texte n'est jamais barré */
+  for(const L of liens){
+    const d=Math.hypot(L.D.x-L.C.x,L.D.y-L.C.y), ux=(L.D.x-L.C.x)/(d||1), uy=(L.D.y-L.C.y)/(d||1);
+    if(d>L.rr+L.R)dfLigne(F,L.C.x+ux*L.rr,L.C.y+uy*L.rr,L.D.x-ux*L.R,L.D.y-uy*L.R,0.2,L.r.col);
+  }
+  for(const L of liens){
+    const {r,D:{x:X,y:Y},k,dessous}=L, c=r.c;
+    dfCercle(F,X,Y,G.R,{plein:1,trait:null});
+    const T=mesLoupe(F,E,X,Y,G.R,L.cx,L.cy,k,dessous,surb,F.mesZones);
     dfPoly(F,c.corps.map(p=>T(p.x,p.y)),{ferme:true,lw:0.6,trait:r.col});
-    dfTexte(F,"DÉTAIL "+r.lettre+" — ÉCHELLE "+dfEchelleTxt(k)+(dessous?" — DESSOUS":""),X,Y+G.R+5.5,10,
-            {ancre:"m",gras:true,cat:"detail",lieu:"vue de détail"});
+    retTexteFond(F,"DÉTAIL "+r.lettre+" — ÉCHELLE "+dfEchelleTxt(k)+(dessous?" — DESSOUS":""),X,Y+G.R+5.5,10,
+                 {ancre:"m",gras:true,cat:"detail",lieu:"vue de détail"});
     const nv=retNouveau(r.l), ref=r.c.mpn||r.c.val;
     /* la référence actuelle, seulement quand rien ne la remplace (à l'identique, retrait) ;
        sur une seconde ligne si la légende déborde de sa colonne */
     const l1=c.ref+" · "+r.l.action+(nv?" → "+nv:""), l2=!r.l.val&&ref?"("+ref+")":"", wMax=cw-5;
     const lignesL=dfLargeur(l1+" "+l2,8.5,true)<=wMax?[(l1+" "+l2).trim()]:[l1,l2].filter(Boolean);
     const ptL=Math.max(5.5,Math.min(8.5,...lignesL.map(t=>8.5*wMax/dfLargeur(t,8.5,true))));
-    lignesL.forEach((t,i)=>dfTexte(F,t,X,Y+G.R+10+i*ptL*DF_PT*1.25,ptL,{ancre:"m",gras:true,c:r.col,cat:"retrofit",lieu:c.ref}));
+    lignesL.forEach((t,i)=>retTexteFond(F,t,X,Y+G.R+10+i*ptL*DF_PT*1.25,ptL,{ancre:"m",gras:true,c:r.col,cat:"retrofit",lieu:c.ref}));
     F.signets.push({titre:"Retrofit "+r.lettre+" — "+c.ref+" ("+r.l.action+")",x:X,y:Y});
-  });
+  }
   for(const b of blocs){b.dessiner(F,Z.x1,y,larg);y+=b.h(larg);}
-  retLiens(F,liens,yHaut,yBas);
+  retLettres(F,liens);
   return F;
 }
 
-/* Un segment coupe-t-il la boîte b ? (découpage de Liang-Barsky) */
-function retCoupeBoite(A,B,b){
-  let t0=0, t1=1;
-  const dx=B.x-A.x, dy=B.y-A.y;
-  for(const [p,q] of [[-dx,A.x-b.x1],[dx,b.x2-A.x],[-dy,A.y-b.y1],[dy,b.y2-A.y]]){
-    if(p===0){if(q<0)return false;continue;}
-    const t=q/p;
-    if(p<0){if(t>t1)return false;if(t>t0)t0=t;}else{if(t<t0)return false;if(t<t1)t1=t;}
-  }
-  return true;
+/* Un texte sur un fond blanc : un trait qui passe dessous ne le barre pas. */
+function retTexteFond(F,s,x,y,pt,o){
+  dfTexte(F,s,x,y,pt,o);
+  const it=F.items.pop(), b=dfBoiteTexte(it);
+  dfRect(F,b.x1-0.6,b.y1-0.3,b.x2-b.x1+1.2,b.y2-b.y1+0.6,{plein:1,trait:null});
+  F.items.push(it);
 }
-function retDistSeg(P,A,B){
-  const dx=B.x-A.x, dy=B.y-A.y, L=dx*dx+dy*dy, t=L?clamp(((P.x-A.x)*dx+(P.y-A.y)*dy)/L,0,1):0;
-  return Math.hypot(A.x+t*dx-P.x,A.y+t*dy-P.y);
-}
-function retCroise(A,B,C,D){
-  const s=(P,Q,R)=>Math.sign((Q.x-P.x)*(R.y-P.y)-(Q.y-P.y)*(R.x-P.x));
-  return s(A,B,C)*s(A,B,D)<0&&s(C,D,A)*s(C,D,B)<0;
-}
-/* Les lettres et les traits des détails, posés en dernier pour éviter ce qui
-   est déjà sur la feuille. `liens` : {r, C (centre sur la vue), rr, D (centre
-   du détail), R}. Chaque lettre prend la place la plus dégagée autour de son
-   cercle ; chaque trait, le chemin qui coupe le moins de textes, de cercles
-   et d'autres traits, en segments droits. */
-function retLiens(F,liens,yHaut,yBas){
-  if(!liens.length)return;                              // liste vide : ni lettre ni trait (la grille n'aurait pas d'étendue)
-  /* les repères et numéros de pastille, petits et dans le dessin, gênent moins qu'un titre ou une légende */
-  const textes=F.items.filter(it=>it.t==="t"&&!it.cache).map(it=>{
-    const b=dfBoiteTexte(it);return {x1:b.x1-0.5,y1:b.y1-0.5,x2:b.x2+0.5,y2:b.y2+0.5,w:it.cat==="repere"?0.5:6};});
+/* La lettre de chaque cercle de la vue, à la plus dégagée de huit places
+   autour de lui : ni sur un texte, ni sur un autre cercle, ni sur un détail. */
+function retLettres(F,liens){
+  const textes=F.items.filter(it=>it.t==="t"&&!it.cache).map(it=>Object.assign(dfBoiteTexte(it),{w:it.cat==="repere"?0.5:6}));
   const chevauche=(a,b)=>a.x1<b.x2&&b.x1<a.x2&&a.y1<b.y2&&b.y1<a.y2;
   const dansCercle=(b,C,r)=>Math.hypot(clamp(C.x,b.x1,b.x2)-C.x,clamp(C.y,b.y1,b.y2)-C.y)<r;
-  /* les lettres : huit places autour du cercle, la première sans gêne */
   for(const L of liens){
     let best=null;
     for(const a of [-135,-45,135,45,180,0,-90,90]){
@@ -533,110 +520,9 @@ function retLiens(F,liens,yHaut,yBas){
         liens.filter(o=>o!==L&&dansCercle(b,o.C,o.rr)).length*2+liens.filter(o=>dansCercle(b,o.D,o.R)).length*5;
       if(!best||note<best.note)best={note,it,b};
     }
-    dfTexte(F,L.r.lettre,best.it.x,best.it.y,12,{ancre:best.it.ancre,gras:true,c:L.r.col,cat:"detail",
-            lieu:"repère du détail "+L.r.lettre+" · "+L.r.c.ref});
+    retTexteFond(F,L.r.lettre,best.it.x,best.it.y,12,{ancre:best.it.ancre,gras:true,c:L.r.col,cat:"detail",
+                 lieu:"repère du détail "+L.r.lettre+" · "+L.r.c.ref});
     textes.push(Object.assign(best.b,{w:6}));
-  }
-  const surCercle=(C,r,vers)=>{const d=Math.hypot(vers.x-C.x,vers.y-C.y)||1;return {x:C.x+(vers.x-C.x)/d*r,y:C.y+(vers.y-C.y)/d*r};};
-  /* les traits : un plus court chemin sur une grille de PAS mm qui contourne
-     textes, détails et cercles, puis tendu en segments droits */
-  const poses=[];
-  /* ce que touche un segment droit : textes, détails, cercles de la vue, traits déjà posés */
-  const touche=(A,B,L)=>{
-    const g=new Set();
-    textes.forEach((t,k)=>{if(retCoupeBoite(A,B,t))g.add("t"+k);});
-    liens.forEach((o,k)=>{
-      if(retDistSeg(o.D,A,B)<o.R-(o===L?0.3:-0.5))g.add("d"+k);
-      if(o!==L&&retDistSeg(o.C,A,B)<o.rr)g.add("c"+k);
-    });
-    poses.forEach(([C,D],k)=>{
-      /* deux traits qui se croisent, se touchent ou se longent : on ne sait plus lequel va où */
-      if(retCroise(A,B,C,D)||Math.min(retDistSeg(A,C,D),retDistSeg(B,C,D),retDistSeg(C,A,B),retDistSeg(D,A,B))<1.5)g.add("p"+k);
-    });
-    return g;
-  };
-  const PAS=3, x0=Math.min(...liens.map(L=>L.C.x-L.rr))-PAS;
-  const x1=Math.max(...liens.map(L=>L.D.x+L.R))+PAS, y0=yHaut-PAS, y1=yBas+PAS;
-  const nx=Math.ceil((x1-x0)/PAS)+1, ny=Math.ceil((y1-y0)/PAS)+1, pt=i=>({x:x0+(i%nx)*PAS,y:y0+Math.floor(i/nx)*PAS});
-  /* chaque obstacle est marqué sur les seules cases qu'il couvre */
-  const cases=(xa,ya,xb,yb,f)=>{
-    for(let cy=Math.max(0,Math.ceil((ya-y0)/PAS));cy<=Math.min(ny-1,Math.floor((yb-y0)/PAS));cy++)
-      for(let cx=Math.max(0,Math.ceil((xa-x0)/PAS));cx<=Math.min(nx-1,Math.floor((xb-x0)/PAS));cx++)f(cy*nx+cx);
-  };
-  const disque=(C,r,f)=>cases(C.x-r,C.y-r,C.x+r,C.y+r,i=>{const P=pt(i);if(Math.hypot(P.x-C.x,P.y-C.y)<r)f(i);});
-  const h=PAS/2+0.3, fixe=new Float64Array(nx*ny);      // ce qui ne bouge pas : textes, détails
-  for(const t of textes)cases(t.x1-h,t.y1-h,t.x2+h,t.y2+h,i=>{fixe[i]+=t.w*20;});
-  for(const o of liens)disque(o.D,o.R+0.5,i=>{fixe[i]+=1000;});
-  for(const L of liens){
-    const pen=Float64Array.from(fixe);
-    disque(L.D,L.R+0.5,i=>{pen[i]-=1000;});            // son propre détail : on s'y arrête au bord
-    for(const o of liens)if(o!==L)disque(o.C,o.rr,i=>{pen[i]+=8;});
-    const pres=new Uint8Array(nx*ny);                   // le long des traits déjà posés
-    for(const [C,D] of poses){
-      const n=Math.ceil(Math.hypot(D.x-C.x,D.y-C.y)/(PAS/2))+1;
-      for(let k=0;k<=n;k++)disque({x:C.x+(D.x-C.x)*k/n,y:C.y+(D.y-C.y)*k/n},1.5+PAS/2,i=>{pres[i]=1;});
-    }
-    for(let i=0;i<nx*ny;i++)if(pres[i])pen[i]+=80;
-    const dep=[], arr=new Set();
-    disque(L.C,L.rr+PAS,i=>{const P=pt(i);if(Math.hypot(P.x-L.C.x,P.y-L.C.y)>=L.rr)dep.push(i);});
-    disque(L.D,L.R+PAS,i=>{const P=pt(i);if(Math.hypot(P.x-L.D.x,P.y-L.D.y)>=L.R)arr.add(i);});
-    /* Dijkstra, tas binaire de cases (tableaux typés : pas d'objet par case) */
-    const N=nx*ny, dist=new Float64Array(N).fill(Infinity), prec=new Int32Array(N).fill(-1);
-    const tas=new Int32Array(N*9+dep.length), cle=new Float64Array(N*9+dep.length);
-    let nt=0;
-    const echange=(a,b)=>{const t=tas[a];tas[a]=tas[b];tas[b]=t;const c=cle[a];cle[a]=cle[b];cle[b]=c;};
-    const pousser=(d,i)=>{let k=nt++;tas[k]=i;cle[k]=d;while(k){const m=(k-1)>>1;if(cle[m]<=cle[k])break;echange(m,k);k=m;}};
-    const tirer=()=>{
-      const i=tas[0], d=cle[0];
-      nt--;tas[0]=tas[nt];cle[0]=cle[nt];
-      for(let k=0;;){const a=2*k+1, b=a+1;let m=k;
-        if(a<nt&&cle[a]<cle[m])m=a;if(b<nt&&cle[b]<cle[m])m=b;if(m===k)break;echange(m,k);k=m;}
-      return [d,i];
-    };
-    /* A* : chaque pas coûte au moins 1, la distance au bord du détail en pas ne surestime jamais */
-    const reste=new Float64Array(N);
-    for(let i=0;i<N;i++){const P=pt(i);reste[i]=Math.max(0,Math.hypot(P.x-L.D.x,P.y-L.D.y)-L.R)/PAS;}
-    for(const i of dep){dist[i]=pen[i];pousser(dist[i]+reste[i],i);}
-    let fin=-1;
-    while(nt){
-      const [f,i]=tirer(), d=f-reste[i];
-      if(d>dist[i]+1e-9)continue;
-      if(arr.has(i)){fin=i;break;}
-      const cx=i%nx, cy=(i-cx)/nx;
-      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
-        const ux=cx+dx, uy=cy+dy;
-        if((!dx&&!dy)||ux<0||uy<0||ux>=nx||uy>=ny)continue;
-        const j=uy*nx+ux, n=d+(dx&&dy?1.4142:1)*(1+pen[j]);
-        if(n<dist[j]){dist[j]=n;prec[j]=i;pousser(n+reste[j],j);}
-      }
-    }
-    let P=[];
-    for(let i=fin;i>=0;i=prec[i])P.unshift(pt(i));
-    if(P.length<2)P=[L.C,L.D];
-    /* les bouts sur les cercles, puis tendre : le plus loin qu'on voit sans coûter plus que le chemin */
-    P[0]=surCercle(L.C,L.rr,P[1]);P[P.length-1]=surCercle(L.D,L.R,P[P.length-2]);
-    const T=[P[0]];
-    /* les coins seulement : la grille avance par pas alignés */
-    const Q=[P[0]];
-    for(let k=1;k+1<P.length;k++){
-      const a=P[k-1], b=P[k], c=P[k+1];
-      if(Math.abs((b.x-a.x)*(c.y-b.y)-(b.y-a.y)*(c.x-b.x))>1e-9)Q.push(b);
-    }
-    Q.push(P[P.length-1]);
-    const pas=Q.slice(0,-1).map((A,k)=>touche(A,Q[k+1],L));
-    for(let i=0;i<Q.length-1;){
-      let j=Q.length-1;
-      for(;j>i+1;j--){                                    // un raccourci ne touche rien que le chemin ne touchait déjà
-        const u=new Set();
-        for(let k=i;k<j;k++)for(const g of pas[k])u.add(g);
-        if([...touche(Q[i],Q[j],L)].every(g=>u.has(g)))break;
-      }
-      T.push(Q[j]);i=j;
-    }
-    T[T.length-1]=surCercle(L.D,L.R,T[T.length-2]);
-    T[0]=surCercle(L.C,L.rr,T[1]);
-    if(Math.hypot(L.D.x-L.C.x,L.D.y-L.C.y)>L.rr+L.R)dfPoly(F,T,{lw:0.2,trait:L.r.col});
-    for(let i=0;i+1<T.length;i++)poses.push([T[i],T[i+1]]);
   }
 }
 

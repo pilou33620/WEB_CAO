@@ -412,7 +412,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* fiche de mesure du technicien (commun/fiche-mesure.js, 42-fiche-mesure.js) */
   "mesFeuilles","mesResoudre","mesEntreeEditeur","mesNormListe","mesPadSous","mesBrancher","MES_MAX",
   /* retrofit (commun/fiche-mesure.js) */
-  "retFeuilles","retNormListe","retBrancher","retRefDeCle","RET_MAX","RET_COUL","retCoupeBoite","retDistSeg","dfBoiteTexte",
+  "retFeuilles","retNormListe","retBrancher","retRefDeCle","RET_MAX","RET_COUL","dfBoiteTexte",
   /* cotes à la main, vues à la souris, détails (34-draftsman-vues.js) */
   "dfNormCotes","dfNormVues","dfNormDetails","dfResoudre","dfMesurer","dfAccroches","dfAccrocher","dfNormRef","dfRefTexte",
   "dfAjouterCote","dfModifierCote","dfSupprimerCote","dfDeplacerCote","dfAjouterDetail","dfSupprimerDetail",
@@ -26912,7 +26912,7 @@ T("retrofit : feuille cochée, liste vide : une feuille qui le dit",()=>{
     if(!F||!F.items.some(it=>it.t==="t"&&/Aucun composant/.test(it.s)))throw new Error("feuille retrofit vide absente");
   }finally{S.dessin=null;}
 });
-T("retrofit : six détails, aucun trait sur un titre, une légende, une lettre ou un autre détail",()=>{
+T("retrofit : six détails, les traits droits passent sous les détails, titres, légendes et lettres",()=>{
   exCharger(1);
   const fps=S.fps.filter(f=>f.ref&&padsWorld(f).length).slice(0,6);
   S.dessin={fonte:false,feuilles:{fab:false,asmT:false,asmB:false,bom:false,couches:false,ret:true},
@@ -26920,20 +26920,22 @@ T("retrofit : six détails, aucun trait sur un titre, une légende, une lettre o
   try{
     const F=dfDocument().feuilles.find(f=>f.genre==="ret");
     if(process.env.RET_OUT)fs.writeFileSync(process.env.RET_OUT,dfSvg(F,[]));
-    const textes=F.items.filter(it=>it.t==="t"&&!it.cache&&it.cat!=="repere").map(it=>[it.s,dfBoiteTexte(it)]);
-    const details=F.items.filter(it=>it.t==="c"&&it.lw===0.5);
-    if(details.length!==fps.length)throw new Error(details.length+" détails pour "+fps.length);
-    const traits=F.items.filter(it=>it.t==="p"&&!it.ferme&&it.lw===0.2&&Array.isArray(it.trait));
-    if(traits.length!==fps.length)throw new Error(traits.length+" traits pour "+fps.length);
-    for(const tr of traits){
-      const P=tr.sp[0];
-      for(let i=0;i+1<P.length;i++){
-        for(const [s,b] of textes)if(retCoupeBoite(P[i],P[i+1],b))
-          throw new Error("trait "+JSON.stringify(P.map(p=>[+p.x.toFixed(1),+p.y.toFixed(1)]))+" sur « "+s+" » "+JSON.stringify(b));
-        const n=details.filter(d=>retDistSeg(d,P[i],P[i+1])<d.r-0.3).length;
-        if(n)throw new Error("trait à travers un détail");
-      }
-    }
+    const I=F.items, traits=[], disques=[];
+    I.forEach((it,i)=>{
+      if(it.t==="p"&&!it.ferme&&it.lw===0.2&&Array.isArray(it.trait))traits.push(i);
+      if(it.t==="c"&&it.plein===1&&it.trait===null&&it.r>10)disques.push(i);
+    });
+    if(traits.length!==fps.length||disques.length!==fps.length)throw new Error(traits.length+" traits, "+disques.length+" détails pour "+fps.length);
+    if(traits.some(i=>I[i].sp[0].length!==2))throw new Error("les traits sont droits");
+    if(Math.max(...traits)>Math.min(...disques))throw new Error("un trait est tracé par-dessus un détail");
+    /* chaque titre, légende et lettre : un fond blanc juste avant, qui le couvre */
+    I.forEach((it,i)=>{
+      if(it.t!=="t"||it.cache||!/^(detail|retrofit)$/.test(it.cat)||!it.lieu||i<Math.min(...disques))return;   // pas les cases du tableau
+      const f=I[i-1], b=dfBoiteTexte(it);
+      if(!f||f.t!=="p"||f.plein!==1||f.trait!==null)throw new Error("« "+it.s+" » sans fond blanc");
+      const xs=f.sp[0].map(p=>p.x), ys=f.sp[0].map(p=>p.y);
+      if(Math.min(...xs)>b.x1||Math.max(...xs)<b.x2||Math.min(...ys)>b.y1||Math.max(...ys)<b.y2)throw new Error("fond trop petit pour « "+it.s+" »");
+    });
   }finally{S.dessin=null;}
 });
 T("retrofit : une liste de repères en une saisie, inconnus refusés, doublons ignorés",()=>{

@@ -438,9 +438,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/test/harness.js": {
-    "mtime": 1793355584.1412992,
-    "seen": 1793355836.1300473,
-    "ast_hash": "3963eee62a43d9835ac05599089117be",
+    "mtime": 1793356576.7499979,
+    "seen": 1793356820.0468938,
+    "ast_hash": "55c4184edc2bcae061eed8348f41e21f",
     "semantic_hash": ""
   },
   "editeur-schematique/js/00-espace-config.js": {
@@ -1080,9 +1080,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/README.md": {
-    "mtime": 1793354904.997616,
-    "seen": 1793355145.471345,
-    "ast_hash": "81b0e276eb7104a056017cfa7695b686",
+    "mtime": 1793356714.1285236,
+    "seen": 1793356820.0479708,
+    "ast_hash": "c7776d81a1fe887cad4abbef4319381f",
     "semantic_hash": ""
   },
   "editeur-pcb/editeur-pcb.html": {
@@ -1470,9 +1470,9 @@
     "semantic_hash": ""
   },
   "commun/fiche-mesure.js": {
-    "mtime": 1793355584.1172996,
-    "seen": 1793355836.1294186,
-    "ast_hash": "b35373cf043ce074f1a02d2a3683c2c8",
+    "mtime": 1793356413.1965194,
+    "seen": 1793356820.0462,
+    "ast_hash": "e8abf9ebd108e22e6b611caa4971ddc4",
     "semantic_hash": ""
   },
   "commun/outils/build-manuel.py": {
@@ -1560,9 +1560,9 @@
     "semantic_hash": ""
   },
   "docs/manuel/04-editeur-pcb-fabrication.md": {
-    "mtime": 1793354904.9697924,
-    "seen": 1793355145.471244,
-    "ast_hash": "112b3ff082ba9d1d8571b6d4f26cb0c3",
+    "mtime": 1793356714.1182165,
+    "seen": 1793356820.0478723,
+    "ast_hash": "605dfa2afba8ea4b163eb0f62b7451b0",
     "semantic_hash": ""
   },
   "docs/manuel/05-gestion-lib.md": {
@@ -1578,9 +1578,9 @@
     "semantic_hash": ""
   },
   "docs/manuel/07-visionneuse-ipc2581.md": {
-    "mtime": 1793354904.9895985,
-    "seen": 1793355145.471268,
-    "ast_hash": "559c6bc0ae880b6cbef2f7eb64c9d573",
+    "mtime": 1793356714.1218195,
+    "seen": 1793356820.0478952,
+    "ast_hash": "a3d46bd4d82e53427efa534b31a2cf25",
     "semantic_hash": ""
   },
   "docs/manuel/08-simulation-si.md": {
@@ -1620,9 +1620,9 @@
     "semantic_hash": ""
   },
   "docs/manuel/manuel.html": {
-    "mtime": 1793354905.5242276,
-    "seen": 1793355145.471322,
-    "ast_hash": "5bee066acac390ca622d241038932048",
+    "mtime": 1793356714.6525178,
+    "seen": 1793356820.0479486,
+    "ast_hash": "44270976b8ee4746821e9d65eed42e02",
     "semantic_hash": ""
   },
   "tasks/plan-manuel.md": {
