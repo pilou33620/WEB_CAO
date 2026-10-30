@@ -91,7 +91,7 @@ async function apiGet(url) {
 async function apiPost(url, data) {
   const resp = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: Object.assign({ "Content-Type": "application/json" }, ENTETE_WEB),
     body: JSON.stringify(data)
   });
   if (!resp.ok) {
@@ -117,6 +117,7 @@ async function chargerDonneesBibliotheque() {
     // 2. Catalogue de composants
     const cat = await apiGet("/api/lib/composants");
     LIB_STATE.colonnes = cat.colonnes || [];
+    LIB_STATE.mtime = cat.mtime_ms;      // renvoyée à l'enregistrement : 409 si le fichier a changé depuis
     initialiserColonnesVisibles();
     LIB_STATE.composants = (cat.composants || []).map((c, i) => {
       c._id = i;
@@ -273,9 +274,22 @@ async function enregistrerCatalogue() {
     throw new Error("enregistrement annulé : recharge la page pour reprendre le catalogue à jour");
   const payload = {
     colonnes: LIB_STATE.colonnes,
-    composants: LIB_STATE.composants
+    composants: LIB_STATE.composants,
+    mtime_ms: LIB_STATE.mtime          // le serveur refuse (409) si le fichier a changé depuis la lecture
   };
-  const res = await apiPost("/api/lib/composants", payload);
+  let res;
+  try {
+    res = await apiPost("/api/lib/composants", payload);
+  } catch (e) {
+    /* 409 : un autre appareil (ou Claude) a écrit le catalogue. Rien n'est perdu ici : la page
+       garde tout ce qui a été tapé (toujours « modifié ») ; recharger reprend le fichier à jour. */
+    if (e.status === 409)
+      throw new Error("le catalogue a été modifié ailleurs (autre appareil, autre onglet ou Claude) " +
+                      "depuis son chargement. Rien n'est écrit : notez vos changements, rechargez la page " +
+                      "puis refaites-les.");
+    throw e;
+  }
+  LIB_STATE.mtime = res.mtime_ms;
   LIB_STATE.sale = false;
   LIB_STATE.perime = false;
   libSuiteNoter("catalogue");

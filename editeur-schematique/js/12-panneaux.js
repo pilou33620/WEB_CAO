@@ -515,7 +515,7 @@ function refreshPanels(){
     bindNetCells(box);
     const r=document.getElementById("pRef"), v=document.getElementById("pVal");
     const etape=()=>{if(PROP_FRAPPE!==el){push();PROP_FRAPPE=el;}};
-    if(r)r.oninput=()=>{etape();el.ref=r.value;draw();buildList();};
+    if(r)r.oninput=()=>{etape();el.ref=r.value.trim();draw();buildList();};
     // la valeur d'un symbole d'alimentation ou d'une étiquette renomme le net :
     // le panneau des connexions doit suivre la frappe
     /* La valeur d'un symbole d'alimentation ou d'une étiquette renomme le net :

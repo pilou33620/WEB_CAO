@@ -223,6 +223,9 @@ function brControles() {
 
   for (const x of tous) {
     const el = x.el, def = defOf(el.type);
+    /* 0. repère que le PCB ne sait pas lire dans la netlist (espace, accent…) */
+    if (el.ref && !/^[A-Za-z_][\w$-]*$/.test(el.ref))
+      dire(x, "erreur", "repère « " + el.ref + " » : une lettre ou _, puis lettres sans accent, chiffres, _, $ ou - (le PCB ne le relierait pas).");
     const n = pinsOf(el).length;
     if (!n) continue;
     const table = brAUneTable(el);

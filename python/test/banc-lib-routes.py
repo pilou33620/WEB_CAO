@@ -157,7 +157,7 @@ class TestLibRoutes(unittest.TestCase):
         }
         req = urllib.request.Request(f"{BASE_URL}/api/lib/fichier",
                                      data=json.dumps(body_data).encode("utf-8"),
-                                     headers={"Content-Type": "application/json"},
+                                     headers={"Content-Type": "application/json", "X-WEB_CAO": "1"},
                                      method="POST")
         with urllib.request.urlopen(req) as resp:
             self.assertEqual(resp.status, 200)
@@ -172,7 +172,8 @@ class TestLibRoutes(unittest.TestCase):
             self.assertEqual(data["data"]["name"], "TEST_FP")
 
         # 3. Supprimer le fichier de test pour laisser le dossier propre
-        req_del = urllib.request.Request(f"{BASE_URL}/api/lib/fichier?type=pcb&nom={nom_test}", method="DELETE")
+        req_del = urllib.request.Request(f"{BASE_URL}/api/lib/fichier?type=pcb&nom={nom_test}",
+                                         headers={"X-WEB_CAO": "1"}, method="DELETE")
         with urllib.request.urlopen(req_del) as resp:
             self.assertEqual(resp.status, 200)
 
@@ -225,7 +226,7 @@ class TestLibRoutes(unittest.TestCase):
         try:
             # 1. Configurer un dossier personnalisé avec initialisation automatique
             payload = json.dumps({"chemin": dossier_tmp, "initialiser": True}).encode("utf-8")
-            req = urllib.request.Request(f"{BASE_URL}/api/lib/config", data=payload, headers={"Content-Type": "application/json"}, method="POST")
+            req = urllib.request.Request(f"{BASE_URL}/api/lib/config", data=payload, headers={"Content-Type": "application/json", "X-WEB_CAO": "1"}, method="POST")
             with urllib.request.urlopen(req) as resp:
                 self.assertEqual(resp.status, 200)
                 data = json.loads(resp.read().decode("utf-8"))
@@ -243,7 +244,7 @@ class TestLibRoutes(unittest.TestCase):
 
             # 3. Réinitialiser par défaut
             payload_reset = json.dumps({"chemin": "", "initialiser": False}).encode("utf-8")
-            req_reset = urllib.request.Request(f"{BASE_URL}/api/lib/config", data=payload_reset, headers={"Content-Type": "application/json"}, method="POST")
+            req_reset = urllib.request.Request(f"{BASE_URL}/api/lib/config", data=payload_reset, headers={"Content-Type": "application/json", "X-WEB_CAO": "1"}, method="POST")
             with urllib.request.urlopen(req_reset) as resp:
                 self.assertEqual(resp.status, 200)
                 data = json.loads(resp.read().decode("utf-8"))
@@ -312,7 +313,7 @@ class TestLibDossierTemporaire(unittest.TestCase):
         req = urllib.request.Request(
             self.base + url,
             data=None if corps is None else json.dumps(corps).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", "X-WEB_CAO": "1"},
             method="GET" if corps is None else "POST")
         with urllib.request.urlopen(req) as resp:
             return json.loads(resp.read().decode("utf-8"))

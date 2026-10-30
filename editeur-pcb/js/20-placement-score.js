@@ -577,7 +577,7 @@ var PLACEMENT_SCORE = (function() {
       try {
         const res = await fetch("/api/pcb/score-placement", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: Object.assign({ "Content-Type": "application/json" }, ENTETE_WEB),
           body: JSON.stringify(doc)
         });
 
@@ -624,7 +624,7 @@ var PLACEMENT_SCORE = (function() {
         if (sDoc && (sDoc.components || sDoc.parts)) {
           const res = await fetch("/api/schema/patterns", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: Object.assign({ "Content-Type": "application/json" }, ENTETE_WEB),
             body: JSON.stringify(sDoc)
           });
           if (res.ok) {

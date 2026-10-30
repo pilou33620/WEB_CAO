@@ -359,7 +359,7 @@ function routageScoreRoutage(){
 async function routageScorePlacement(){
   const doc = PLACEMENT_SCORE.documentPcb();
   if(!doc || !doc.footprints || !doc.footprints.length) throw new Error("Aucune empreinte sur la carte.");
-  const rep = await fetch("/api/pcb/score-placement", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(doc),
+  const rep = await fetch("/api/pcb/score-placement", {method:"POST", headers:Object.assign({"Content-Type":"application/json"},ENTETE_WEB), body:JSON.stringify(doc),
                                                          signal:typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(20000) : undefined});
   let d = null;
   try{ d = await rep.json(); }catch(e){}

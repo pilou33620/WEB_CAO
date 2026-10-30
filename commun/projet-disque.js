@@ -151,19 +151,26 @@ function projdApi(methode, route, params, corps){
         q.push(encodeURIComponent(k)+"="+encodeURIComponent(params[k]));
     if(q.length) url += "?"+q.join("&");
   }
-  const opt = {method:methode, headers:{}};
+  const opt = {method:methode, headers:Object.assign({}, ENTETE_WEB)};
   if(corps !== undefined){
     opt.headers["Content-Type"] = "application/json";
     opt.body = JSON.stringify(corps);
   }
   return fetch(url, opt).then(function(rep){
     return rep.text().then(function(txt){
-      let obj = {};
-      try{ obj = txt ? JSON.parse(txt) : {}; }catch(_){}
+      let obj = null;
+      try{ obj = JSON.parse(txt); }catch(_){}
       if(!rep.ok){
         /* Le serveur explique ses refus (hors racine, ecoute reseau, format) :
            on fait remonter son message plutot qu'un « erreur 403 » muet. */
-        const e = new Error(obj.detail || ("Erreur "+rep.status));
+        const e = new Error((obj && obj.detail) || ("Erreur "+rep.status));
+        e.code = rep.status;
+        throw e;
+      }
+      /* Une reponse 2xx tronquee ou illisible n'est pas « rien » : rendre {}
+         ouvrait un document vide, que l'enregistrement suivant ecrasait. */
+      if(!obj || typeof obj !== "object"){
+        const e = new Error("Reponse illisible du serveur ("+route+")");
         e.code = rep.status;
         throw e;
       }
@@ -374,8 +381,10 @@ function projdCreerServeur(nom, dest){
     chemin = sous ? sous + "/" + v : v;
   }
   const f = projdNeuf(v);
+  /* creer : le serveur refuse (409) un dossier qui a deja son projet.cao.json,
+     au lieu de l'ecraser ; l'appelant affiche son message. */
   return projdApi("PUT","/api/projet",
-                  {chemin:chemin, racine:(d && d.racine) || ""}, f)
+                  {chemin:chemin, racine:(d && d.racine) || "", creer:1}, f)
     .then(function(r){
       if(d && d.sous) projdDestinationPoser((d && d.racine) || "", d.sous);
       /* Un projet qui vient de naitre n'a ni schema ni carte : on le dit, plutot
@@ -496,7 +505,12 @@ function projdDocLire(outil){
       .then(function(r){ PROJD_VU[outil] = r.modifie || 0; return r.document||null; })
       .catch(function(e){ if(e.code === 404) return null; throw e; });
   if(!PROJD_HANDLE) return Promise.resolve(null);
-  return projdLireFichierHandle(PROJD_HANDLE,nom).catch(function(){ return null; });
+  /* Seul un fichier absent vaut « rien » : un fichier tronque ou plein de
+     marqueurs de conflit git ouvert vide serait ensuite ecrase. */
+  return projdLireFichierHandle(PROJD_HANDLE,nom).catch(function(e){
+    if(e && e.name === "NotFoundError") return null;
+    throw e;
+  });
 }
 function projdDocEcrire(outil, obj){
   const nom = projdNomDoc(outil);

@@ -262,7 +262,7 @@ function crFmtPrix(p, devise) {
 async function crApiAppel(outil, args) {
   const resp = await fetch("/api/tool", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    headers: Object.assign({ "Content-Type": "application/json", "Accept": "application/json" }, ENTETE_WEB),
     body: JSON.stringify({ name: outil, arguments: args || {} })
   });
   if (!resp.ok) {
@@ -731,6 +731,7 @@ async function crSelectionnerCandidat(cand) {
       digikeyPromise,
       pinoutPromise
     ]);
+    if (CR_ETAT.selectedCand !== cand) return;      // un autre candidat a été choisi entre-temps
 
     CR_ETAT.mouserData = (mouserRes && mouserRes.results && mouserRes.results[0]) || cand.mouserData || null;
     CR_ETAT.digikeyData = (digikeyRes && digikeyRes.results && digikeyRes.results[0]) || cand.digikeyData || null;
@@ -761,6 +762,7 @@ async function crSelectionnerCandidat(cand) {
 
     crAfficherDetailsComplets();
   } catch (err) {
+    if (CR_ETAT.selectedCand !== cand) return;
     pnl.innerHTML = '<div class="cr-error">Erreur lors de la récupération des détails : ' + esc(err.message || err) + '</div>';
   }
 }
@@ -1203,7 +1205,7 @@ async function crAppliquerDonnees() {
 
       const repDl = await fetch("/api/datasheet/telecharger", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: Object.assign({ "Content-Type": "application/json" }, ENTETE_WEB),
         body: JSON.stringify({
           url: dsheetUrl,
           mpn: mpn || el.ref || "datasheet",

@@ -84,7 +84,7 @@ function fpLibFichier(name){
 }
 function fpLibApi(methode,params,corps){
   const q=Object.keys(params||{}).map(k=>k+"="+encodeURIComponent(params[k])).join("&");
-  const opt={method:methode,headers:{}};
+  const opt={method:methode,headers:Object.assign({},ENTETE_WEB)};
   if(corps){opt.headers["Content-Type"]="application/json";opt.body=JSON.stringify(corps);}
   return fetch("/api/lib/fichier"+(q?"?"+q:""),opt).then(r=>r.text().then(t=>{
     if(!r.ok){let m="";try{m=JSON.parse(t).detail;}catch(_){}throw new Error(m||"erreur "+r.status);}

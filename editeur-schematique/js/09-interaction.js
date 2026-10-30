@@ -1079,7 +1079,7 @@ function schPoserDepuisCatalogue(el, it){
   }
   const nPins = parseInt(it["Number Of pins"], 10);
   if((el.type === "ic" || el.type === "connector") && nPins > 0) {
-    el.pins = nPins;
+    el.npins = Math.min(64, nPins);             // la géométrie lit npins (icCount, 1..64)
   }
   const fp = it["Empreinte PCB"] || "";
   if(fp) {

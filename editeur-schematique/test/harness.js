@@ -134,7 +134,7 @@ const EXPOSE=[
   "crDetecterConflitsCablage","crRealignerFilsBroches",
   "CR_ETAT","crBuildModal","crRechercherDistributeurs","crSelectionnerCandidat","crTrierEtAfficherCandidats","crAppliquerAuComposant",
   /* synchronisation et alertes Gestion LIB */
-  "SCH_LIB_ALERTE","schTrouverComposantsAmettreAJour","schComposantAlerteLib",
+  "SCH_LIB_ALERTE","schTrouverComposantsAmettreAJour","schComposantAlerteLib","schCleLib",
   "schAppliquerMajLibComposant","schAppliquerMajLibTous","sessDiffuserLibModif","sessEcouterLibModif",
   /* explorateur visuel de bibliothèque */
   "ELIB","explorateurLibOuvrir","explorateurLibFermer","elibClassifierItem","elibIsSmd","elibIsTht","elibHasSpice","elibFiltrerEtAfficher","schOuvrirExplorateurLib",
@@ -559,6 +559,11 @@ T("symboles de la LIB (schsym-1) : contrôlés, posés depuis le catalogue, gard
     // posé depuis le catalogue par Claude, relié par nom de broche
     window.CSV_LIB=[{"Part Name":"MCU_ESSAI","Reference designator Prefix":"U","Empreinte Schématique":"lib/symbole/mcu_essai.json"}];
     if(schTypeDuCatalogue(window.CSV_LIB[0])!=="mcu_essai")throw new Error("le catalogue ne trouve pas le symbole de la LIB");
+    // un symbole JLC garde la casse de son MPN : cherché tel quel avant les minuscules
+    if(schSymboleDefinir(Object.assign({},MCU,{id:"LM358DR_ESSAI"}))!=="LM358DR_ESSAI"
+       ||schTypeDuCatalogue({"Reference designator Prefix":"U","Empreinte Schématique":"lib/symbole/LM358DR_ESSAI.json"})!=="LM358DR_ESSAI")
+      throw new Error("symbole en majuscules non trouvé");
+    delete LIB.LM358DR_ESSAI; SYM_LIB_LUS.delete("LM358DR_ESSAI");
     piloteCao("schema");
     sheet([],[]);S.symboles={};S.hist.length=0;
     const r1=addComp("resistor",-200,-20);r1.ref="R1";
@@ -2277,6 +2282,18 @@ T("trait graphique : normalisation, style et libellé",()=>{
   if(d2.style!=="dashed")throw new Error("repli du style invalide");
 });
 
+T("dupliquer, copier, recharger : le bus et les attributs de la LIB suivent",()=>{
+  const bus=W(2,2,10,2,"D[0..7]");bus.bus=true;
+  sheet([],[bus]);S.selW.add(bus);
+  if(!clipContent().wires[0].bus)throw new Error("copier perd le bus");
+  dupSel();
+  if(S.wires.length!==2||!S.wires[1].bus)throw new Error("dupliquer perd le bus : "+JSON.stringify(S.wires));
+  const champs={fpPcb:"lib/empreinte/0603.json",symSch:"lib/symbole/LM358DR.json",simModel:"LM358.lib",desc:"AOP double",specsProvenance:"catalogue"};
+  const r=normComp(Object.assign({type:"resistor",ref:"R1",x:0,y:0},champs),0);
+  for(const [k,v] of Object.entries(champs))if(r[k]!==v)throw new Error("normComp perd "+k+" : "+r[k]);
+  if(normComp({type:"resistor",ref:"R1",desc:"x".repeat(9999)},0).desc.length!==500)throw new Error("desc non bornée");
+});
+
 T("trait graphique : cycle de sauvegarde, sélection et déplacement",()=>{
   S.comps=[];S.wires=[];S.drawings=[];clearSel();
   const d={id:S.uid++,type:"line",x1:20,y1:20,x2:200,y2:20,style:"dashed",width:2,color:"#6b7280",label:"BLOC 1"};
@@ -2461,6 +2478,17 @@ T("feuilles hiérarchiques : ancien projet mono-feuille gagne sa feuille hiérar
   }
   if(!alertTriggered)throw new Error("dupliquer la feuille hiérarchique doit être interdit");
   if(S.pages.length!==2)throw new Error("la feuille hiérarchique ne doit pas être dupliquée");
+});
+
+T("dupliquer une feuille renumérote ses repères, les parties d'un boîtier restent ensemble",()=>{
+  loadDoc({pages:[{name:"Une",comps:[C("resistor",2,2,{ref:"R1"}),C("resistor",6,2,{ref:"R2"}),
+    C("ic",10,2,{ref:"U1",part:"A"}),C("ic",20,2,{ref:"U1",part:"B"}),C("gnd",2,8,{})],wires:[]}]});
+  gotoPage(1);addPage(true);
+  const avant=S.pages[1].comps.map(c=>c.ref), apres=S.comps.map(c=>c.ref);
+  if(S.page!==2||apres.slice(0,4).some(r=>avant.includes(r))||new Set(apres.slice(0,2)).size!==2
+     ||apres[2]!==apres[3]||apres[4])
+    throw new Error("repères de la copie : "+apres.join()+" (source "+avant.join()+")");
+  sheet([],[]);                                   // l'essai suivant part de la feuille 0
 });
 
 T("synoptique hiérarchique : sheet pins, bus traversants et interconnexions inter-blocs",()=>{
@@ -2879,6 +2907,21 @@ TAcr("recherche composants : retour systématique du pinout et conservation", as
   }
 });
 
+TAcr("recherche composants : une réponse en retard n'écrase pas le candidat choisi ensuite", async ()=>{
+  let lacher;
+  const retard=new Promise(r=>lacher=r);
+  global.fetch=async(url,opt)=>{
+    const b=JSON.parse(opt.body);
+    if(b.name==="jlc_get_part"&&b.arguments.lcsc==="C1")await retard;
+    const data=b.name==="jlc_get_part"?{lcsc:b.arguments.lcsc,model:"M"+b.arguments.lcsc}:null;
+    return {ok:true,json:async()=>({data})};
+  };
+  const a=crSelectionnerCandidat({lcsc:"C1",model:"MC1"});
+  await crSelectionnerCandidat({lcsc:"C2",model:"MC2"});
+  lacher();await a;
+  if(!CR_ETAT.partDetails||CR_ETAT.partDetails.lcsc!=="C2")throw new Error("détails écrasés : "+JSON.stringify(CR_ETAT.partDetails));
+});
+
 TAcr("recherche composants : bouton Valider rétabli (succès, erreur), datasheet refusée gardée en ligne", async ()=>{
   const btn=document.getElementById("crBtnApply"), ds=document.getElementById("cp_dsheet"), hint=document.getElementById("fHint");
   const sauve={fetch:global.fetch, el:CR_ETAT.el, d:CR_ETAT.partDetails, err:console.error, ds:ds.checked};
@@ -3049,7 +3092,7 @@ T("Gestion LIB Schématique : réception d'alerte de modification et mise à jou
 
   // Simulation d'une alerte reçue
   SCH_LIB_ALERTE.active = true;
-  SCH_LIB_ALERTE.compIds = new Set([r1.id]);
+  SCH_LIB_ALERTE.compIds = new Set(["0:" + r1.id]);
   if(!schComposantAlerteLib(r1)) {
     throw new Error("schComposantAlerteLib doit indiquer une alerte active pour R1");
   }
@@ -3071,6 +3114,23 @@ T("Gestion LIB Schématique : réception d'alerte de modification et mise à jou
   if(schComposantAlerteLib(r1)) {
     throw new Error("L'alerte doit être levée après la mise à jour de R1");
   }
+
+  // les id sont propres à chaque feuille : le même id sur une autre feuille n'est pas concerné ;
+  // le lot entier s'annule d'un seul Ctrl+Z
+  const a = C("resistor", 10, 10, { id: 7, ref: "R1", csvPartName: "RES_0603_10K", symSch: "resistor.json" });
+  const b = C("capacitor", 10, 10, { id: 7, ref: "C2", csvPartName: "AUTRE", symSch: "autre.json" });
+  const c = C("resistor", 14, 10, { id: 8, ref: "R3", csvPartName: "RES_0603_10K", symSch: "resistor.json" });
+  sheet([a, c], []);
+  const p2 = newPage("Deux"); p2.comps = [b]; S.pages.push(p2);
+  SCH_LIB_ALERTE.active = true;
+  SCH_LIB_ALERTE.compIds = new Set(schTrouverComposantsAmettreAJour({ genre: "fichier", nom: "resistor.json" }).map(schCleLib));
+  if([...SCH_LIB_ALERTE.compIds].join() !== "0:7,0:8" || schComposantAlerteLib(b))
+    throw new Error("clés feuille:id : " + [...SCH_LIB_ALERTE.compIds].join());
+  S.hist.length = 0;
+  window.CSV_LIB.push({ "Part Name": "AUTRE", "Manufacturer": "PAS_MOI" });
+  if(schAppliquerMajLibTous({ genre: "fichier", nom: "resistor.json" }) !== 2 || b.manufacturer)
+    throw new Error("la mise à jour touche une autre feuille : " + JSON.stringify(b));
+  if(S.hist.length !== 1) throw new Error("le lot doit tenir en une étape d'annulation : " + S.hist.length);
 });
 
 T("Zones fonctionnelles schématiques : inclusion géométrique et capture des composants", () => {
@@ -3156,6 +3216,7 @@ T("Explorateur visuel pop-up : initialisation, recherche, classification et pose
       "Reference designator Prefix": "U",
       "Value": "STM32F103",
       "Package type": "LQFP-48",
+      "Number Of pins": "48",
       "Empreinte PCB": "LQFP-48.json",
       "Empreinte Schématique": "ic",
       "Description": "Microcontrôleur ARM Cortex-M3 72MHz 64KB Flash",
@@ -3228,6 +3289,7 @@ T("Explorateur visuel pop-up : initialisation, recherche, classification et pose
     if(JSON.stringify(garde.map(k=>c2[k]))!==JSON.stringify(garde.map(k=>el[k])))
       throw new Error("Claude et la souris ne posent pas le même composant : "+JSON.stringify([garde.map(k=>c2[k]),garde.map(k=>el[k])]));
     if(u.type!=="ic"||!/^U\d+$/.test(u.ref)||u.pkg!=="LQFP-48")throw new Error("CI du catalogue : "+JSON.stringify(u));
+    if(u.npins!==48||pinsOf(u).length!==48)throw new Error("nombre de broches du catalogue : "+u.npins+", "+pinsOf(u).length);
     let m="";try{d.proposer({lot:[{op:"poser",catalogue:"INCONNU"}]});}catch(e){m=e.message;}
     if(!/absent du catalogue \(voir lib_composants\)/.test(m))throw new Error("Part Name inconnue : "+m);
     const lib=window.CSV_LIB; delete window.CSV_LIB;
@@ -3673,6 +3735,11 @@ T("brochage : le bug relevé — AOP en SOIC-8 sans référence, V+ sur la masse
   const c=brControles().filter(x=>x.ref==="U1");
   if(!c.some(x=>x.niveau==="erreur"&&/5 broches sur un boîtier SOIC-8 à 8 pattes/.test(x.texte)))
     throw new Error("l'alerte « symbole plus petit que le boîtier » manque : "+JSON.stringify(c));
+});
+T("brochage : un repère que le PCB ne lit pas (espace, accent) est une erreur",()=>{
+  sheet([C("resistor",2,2,{ref:"R 1"}),C("resistor",8,2,{ref:"Ré2"}),C("resistor",14,2,{ref:"R_3-a$"})],[]);
+  const fautifs=brControles().filter(x=>x.niveau==="erreur"&&/^repère « /.test(x.texte)).map(x=>x.ref);
+  if(fautifs.join()!=="R 1,Ré2")throw new Error("repères signalés : "+fautifs.join());
 });
 T("brochage : la référence MCP6001 applique la datasheet, la netlist suit",()=>brAvecLib(()=>{
   const {el,ws}=brAop(10,10,{id:++_uid,ref:"U1",pkg:"SOT-23-5"},["FB","VIN","VOUT","3V3","GND"]);

@@ -1651,7 +1651,11 @@ function reBind(){
   const num=(id,fn)=>{
     const el=$(id);
     if(!el)return;
-    el.onchange=()=>reEdit(()=>fn(parseFloat(el.value)||0));
+    el.onchange=()=>{
+      const v=parseFloat(el.value);
+      if(!Number.isFinite(v)){reSync();return;}   // champ vidé : la règle ne bouge pas, le champ la remontre
+      reEdit(()=>fn(v));
+    };
   };
   const sel=(id,fn)=>{
     const el=$(id);

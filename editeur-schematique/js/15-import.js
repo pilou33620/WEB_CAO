@@ -32,6 +32,12 @@ function normComp(c,i){
     if(c.mpn) el.mpn = String(c.mpn).slice(0, 100);
     if(c.manufacturer) el.manufacturer = String(c.manufacturer).slice(0, 100);
     if(c.specs && typeof c.specs === "object") el.specs = c.specs;
+    if(c.specsProvenance) el.specsProvenance = String(c.specsProvenance).slice(0, 40);
+    // ce que la LIB a posé (09-interaction.js, 24-lib-sync.js) : empreinte, symbole, modèle, description
+    if(c.fpPcb) el.fpPcb = String(c.fpPcb).slice(0, 260);
+    if(c.symSch) el.symSch = String(c.symSch).slice(0, 260);
+    if(c.simModel) el.simModel = String(c.simModel).slice(0, 260);
+    if(c.desc) el.desc = String(c.desc).slice(0, 500);
     if(c.datasheet_local) el.datasheet_local = String(c.datasheet_local).slice(0, 260);
     if(c.datasheet_url) el.datasheet_url = String(c.datasheet_url).slice(0, 500);
     if(c.datasheet_web) el.datasheet_web = String(c.datasheet_web).slice(0, 500);

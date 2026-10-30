@@ -903,8 +903,8 @@ function runDrc(){
     }
   }
   for(const v of S.vias)
-    if(!inBoard(v.x,v.y,S.rule.edge))
-      out.push({x:v.x,y:v.y,l:v.a,msg:"Via hors du contour de carte"});
+    if(!inBoard(v.x,v.y,S.rule.edge+v.d/2))
+      out.push({x:v.x,y:v.y,l:v.a,msg:"Via hors du contour de carte ou trop près du bord"});
   /* trous de carte et trous d'empreinte, contrôlés de la même façon. Une
      pastille de l'empreinte qui porte le trou peut en être plus près que
      l'écartement — la fiche l'a voulu (couronne d'une entretoise, pattes d'un
@@ -1024,10 +1024,13 @@ function runDrc(){
             " mm de la classe "+cl.name+(cl.wL&&cl.wL[t.l]>0?" sur "+cuId(t.l,S.cu):"")});
     if(!t.net)
       out.push({x:m.x,y:m.y,l:t.l,msg:"Piste sans net"});
+    /* l'arc par ses cordes, la flèche ajoutée à la marge */
+    if(!trkSegs(t,0.01).every(s=>axeDansCarte(s,S.rule.edge+t.w/2+(arcOf(t)?0.01:0))))
+      out.push({x:m.x,y:m.y,l:t.l,msg:"Piste hors du contour de carte ou trop près du bord"});
   }
   for(const p of pads)
-    if(!inBoard(p.q.x,p.q.y,0))
-      out.push({x:p.q.x,y:p.q.y,l:p.layers[0],msg:"Pastille "+p.tag+" hors du contour"});
+    if(!padWorldPts(p.q).every(c=>inBoard(c.x,c.y,S.rule.edge)))
+      out.push({x:p.q.x,y:p.q.y,l:p.layers[0],msg:"Pastille "+p.tag+" hors du contour ou trop près du bord"});
 
   /* ---------- échardes de gravure ----------
      Un décrochement plus court que la piste qu'il prolonge n'est pas un coude :

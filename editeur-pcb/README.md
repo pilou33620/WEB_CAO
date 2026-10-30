@@ -1420,8 +1420,8 @@ contour, découpes, couches), empilage, origine des coordonnées, conventions
 Gerber / Excellon, légende des fichiers de perçage (nature, portée, trous,
 outils ; contre-perçage et note sur le Gerber X2), contour (`GM1` fait foi,
 `GKO` en keep-out), netlist IPC-D-356, un paragraphe par fichier IPC-2581
-ou animation 3D présent, `positions.csv` / `bom.csv` (rotation horaire de 0 à
-360, convention JLCPCB), variante de montage et DNP, « Fichiers : » (tous
+ou animation 3D présent, `positions.csv` / `bom.csv` (rotation anti-horaire vue de
+dessus, de 0 à 360, IPC-7351 comme le CPL JLCPCB), variante de montage et DNP, « Fichiers : » (tous
 ceux du zip sauf lui-même), « Regles : » (classes, dilatation du masque,
 retrait de la pâte, traitement des vias, outils et trous de perçage), polarité
 négative (LPC) des dégagements de zones. Chaque paragraphe n'est écrit que si

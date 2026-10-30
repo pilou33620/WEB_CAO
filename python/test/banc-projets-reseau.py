@@ -52,7 +52,7 @@ class TestProjetsReseau(unittest.TestCase):
         req = urllib.request.Request(
             self.base + route, method=methode,
             data=json.dumps(corps).encode("utf-8") if corps is not None else None,
-            headers={"Content-Type": "application/json"})
+            headers={"Content-Type": "application/json", "X-WEB_CAO": "1"})
         try:
             with urllib.request.urlopen(req) as rep:
                 return rep.status

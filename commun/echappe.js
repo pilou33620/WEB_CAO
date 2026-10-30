@@ -4,7 +4,10 @@
    Échappement HTML d'un texte avant innerHTML ou un attribut entre guillemets,
    pour toutes les pages de WEB_CAO. Chargé en premier par chacune d'elles.
    null et undefined donnent une chaîne vide ; un nombre s'écrit (0 compris).
+   Aussi ENTETE_WEB : l'en-tête maison que web_CAO.py exige sur tout POST/PUT/DELETE
+   (une autre page ne peut pas l'ajouter sans pré-vol CORS) ; commun/pilote.js le lit.
    ============================================================================= */
+const ENTETE_WEB={"X-WEB_CAO":"1"};
 const ESC_HTML={"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;","`":"&#96;"};
 function esc(s){
   return s==null?"":String(s).replace(/[&<>"'`]/g,ch=>ESC_HTML[ch]);

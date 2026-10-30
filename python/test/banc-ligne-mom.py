@@ -141,6 +141,19 @@ for er in (3.5, 4.5):
             assert abs(r["eps_eff"] - er) < 1e-6, r["eps_eff"]
         T("er=%4.1f  w/b=%3.1f" % (er, u), essai)
 
+# LE CUIVRE EPAIS D'UNE TRIPLAQUE reduit l'ecart entre plans a b - t : traite
+# comme un microruban dans b entier, 35 um sous 0,20 mm donnaient 41,7 ohms
+# au lieu des 35,7 de Wheeler 1978 a w/b = 0,5.
+print("\nTriplaque en cuivre epais contre Wheeler 1978")
+for u in (0.3, 0.5, 1.0, 2.0):
+    def essai(u=u):
+        b, t, er = 0.2e-3, 35e-6, 4.3
+        r = solve_line({"kind": "strip", "w": u * b, "t": t, "b": b,
+                        "y0": b / 2, "epsilon_r": er})
+        proche(r["z0"], _tl._z_air_triplaque(u * b, t, b) / np.sqrt(er),
+               0.02, "Z0")
+    T("t=35um  b=0,20  w/b=%3.1f" % u, essai)
+
 
 # ==========================================================================
 # Les lignes COUPLEES, contre deux etalons exterieurs
@@ -516,6 +529,20 @@ def le_coude_sannule_a_angle_nul():
 
 T("un raccord aligne ne coute rien, un coude a 45 la moitie d'un coude droit",
   le_coude_sannule_a_angle_nul)
+
+
+def un_troncon_trace_a_l_envers_n_est_pas_un_demi_tour():
+    """`_ruptures` accepte un troncon dans n'importe quel sens ; `_coudes`
+    doit donc l'orienter par le raccord, pas par start -> end."""
+    def o(a, b):
+        return {"start": a, "end": b, "layer": 0, "width": 0.2}
+    assert _se._coudes([o((0, 0), (10, 0)), o((20, 0), (10, 0))]) == []
+    assert _se._coudes([o((10, 0), (0, 0)), o((10, 0), (10, 5))]) == \
+        [{"troncon": 1, "angle_deg": 90.0}]
+
+
+T("un troncon trace a l'envers n'est pas un demi-tour",
+  un_troncon_trace_a_l_envers_n_est_pas_un_demi_tour)
 
 
 def les_discontinuites_sont_reciproques():
@@ -2833,7 +2860,7 @@ def le_rayonnement_suit_l_aire_de_la_boucle_et_le_rythme():
 
     A 12 MHz avec un front de 13 ns, une boucle de quelques millimetres carres
     est a plus de trente decibels sous la limite -- il n'y a rien a faire. Le
-    MEME routage a 100 MHz avec un front de 300 ps passe au-dessus. C'est le
+    MEME routage a 100 MHz avec un front de 300 ps frole la limite. C'est le
     rythme du signal qui decide, pas le dessin, et c'est ce que la fiche doit
     faire comprendre.
     """
@@ -3135,6 +3162,39 @@ T("le rayonnement de la boucle est le dipôle magnétique",
   le_rayonnement_de_la_boucle_est_le_dipole_magnetique)
 T("le rayonnement suit l'aire de la boucle et le rythme",
   le_rayonnement_suit_l_aire_de_la_boucle_et_le_rythme)
+
+
+def le_spectre_est_celui_d_un_signal_0_v0():
+    """v0 EST L'EXCURSION 0 -> V d'un signal logique (i = v0 / Z0), pas un
+    signal +-v0 : la fondamentale d'un carre 0 -> 1 V vaut 2/pi, et 4/pi
+    surestimait tout le rayonnement de 6,02 dB -- boucle comme cavite."""
+    h1 = _tl.spectre_signal_trapeze(1e6, 1e-15, v0=1.0)[0]
+    proche(h1["amplitude"], 2.0 / np.pi, 1e-9, "fondamentale 0 -> 1 V")
+    # La cavite, sur un rayonnement unitaire : seul le spectre reste.
+    vrai = _tl.rayonnement_cavite
+    _tl.rayonnement_cavite = lambda fs, param: (np.ones_like(fs), None)
+    try:
+        p = _se._rayonnement_cavite({}, 50e6, 1e-15, 3.3, 50.0, 3.0)["pire"]
+    finally:
+        _tl.rayonnement_cavite = vrai
+    i_eff = 2.0 * 3.3 * 50e6 / (np.pi * p["freq_hz"]) / 50.0 / np.sqrt(2.0)
+    proche(p["champ_dbuv_m"], 20 * np.log10(2.0 * i_eff / 3.0 * 1e6), 0.002,
+           "champ de la cavite")
+
+
+def une_horloge_lente_a_un_verdict():
+    """DIX HARMONIQUES NE DEPASSAIENT PAS 30 MHZ sous 1,58 MHz : la boucle
+    sortait hors bande, sans verdict. Les harmoniques vont jusqu'a 1 GHz,
+    l'enveloppe au-dela de 400 dans la bande."""
+    for f0, calcul in ((1.5e6, "harmoniques"), (10e3, "enveloppe")):
+        r = _tl.rayonnement_boucle(f0, 5e-9, 8.5e-6)
+        assert not r["hors_bande"] and r["pire"], (f0, r["pire"])
+        assert r["calcul"] == calcul, (f0, r["calcul"])
+    assert _tl.rayonnement_boucle(1.5e6, 5e-9, 8.5e-6)["pire"]["freq_hz"] >= 30e6
+
+
+T("le spectre est celui d'un signal 0 -> v0", le_spectre_est_celui_d_un_signal_0_v0)
+T("une horloge lente a un verdict", une_horloge_lente_a_un_verdict)
 T("l'aire de la boucle se lit dans la géométrie",
   l_aire_de_la_boucle_se_lit_dans_la_geometrie)
 T("une référence absente ne se dit pas comme une référence qui change",
@@ -3753,7 +3813,7 @@ def un_conducteur_par_la_matrice_redonne_la_ligne_seule():
     geo = {"kind": "micro", "w": 0.35e-3, "t": 35e-6, "h": H, "epsilon_r": 4.3}
     seul = solve_line(geo)
     m = _tl._milieu(geo)
-    places = _tl._conducteurs_places([{"w": 0.35e-3}], 35e-6, m["distance"])
+    places = _tl._conducteurs_places([{"w": 0.35e-3}], 35e-6, _tl._elargir(m))
     c = _tl.capacitance_matrice(places, 0.0, 0.0, m["g_diel"], m["distance"],
                                 m["eps_moyen"])
     c0 = _tl.capacitance_matrice(places, 0.0, 0.0, m["g_vide"], m["distance"],
@@ -3764,6 +3824,30 @@ def un_conducteur_par_la_matrice_redonne_la_ligne_seule():
 
 T("N = 1 par la matrice redonne solve_line au bit pres",
   un_conducteur_par_la_matrice_redonne_la_ligne_seule)
+
+
+def la_pose_d_une_triplaque_elargit_comme_le_solveur():
+    """`_poser_section` mesure avec `largeur_effective` ; le solveur elargit
+    par `_milieu`. En triplaque les deux doivent dire le meme chiffre, sans
+    quoi une voisine acceptee a la pose fait lever la section entiere."""
+    b, t, w = 0.3e-3, 35e-6, 0.12e-3
+    m = _tl._milieu({"kind": "strip", "t": t, "b": b, "y0": 0.1e-3,
+                     "epsilon_r": 4.3})
+    proche(_tl.largeur_effective(w * 1e3, t * 1e3, 0.1, b * 1e3) * 1e-3,
+           _tl._elargir(m)(w, t), 1e-9, "largeur effective")
+    sc = {"net": "SIG", "largeur": 0.12, "epaisseur": 0.035, "gap_g": 0.0,
+          "gap_d": 0.0, "voisins": [
+              {"net": "V", "x": 0.156, "largeur": 0.12, "garde": False,
+               "longueur": 1.0, "ecart": 0.036, "ecart_min": 0.036,
+               "troncons": 1, "cote": "droite", "deux_cotes": False}]}
+    # 0,036 mm de cuivre nu : Wheeler microruban (h = 0,1) en ajoute 0,031
+    # et laisse passer, celui de la triplaque (b = 0,3, y0 = 0,1) 0,037.
+    assert not _se._poser_section(sc, 0.1)[1]
+    assert _se._poser_section(sc, 0.1, 0.0, 0.3)[1]
+
+
+T("la pose d'une triplaque elargit comme le solveur",
+  la_pose_d_une_triplaque_elargit_comme_le_solveur)
 
 
 def la_matrice_porte_ses_quatre_invariants():
@@ -3787,7 +3871,7 @@ def la_matrice_porte_ses_quatre_invariants():
            "conducteurs": [{"w": 0.25e-3}, {"w": 0.4e-3, "s": 0.18e-3},
                            {"w": 0.25e-3, "s": 0.3e-3}]}
     m = _tl._milieu(geo)
-    places = _tl._conducteurs_places(geo["conducteurs"], 35e-6, m["distance"])
+    places = _tl._conducteurs_places(geo["conducteurs"], 35e-6, _tl._elargir(m))
     brute = _tl.capacitance_matrice(places, 0.0, 0.0, m["g_diel"],
                                     m["distance"], m["eps_moyen"],
                                     symetriser=False)

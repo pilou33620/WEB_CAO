@@ -1323,7 +1323,7 @@ async function libAppliquer(nouveauChemin, initialiser){
   try {
     const res = await fetch("/api/lib/config", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: Object.assign({ "Content-Type": "application/json" }, ENTETE_WEB),
       body: JSON.stringify({ chemin: nouveauChemin, initialiser: !!initialiser })
     });
     const data = await res.json();

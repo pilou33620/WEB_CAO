@@ -94,7 +94,7 @@ const EXPOSE=["ECRITURE_CAO","simDsChamp","simDsLire","simDsEcrire","SIM_DS","SI
   /* La portée percée de tous les vias, et les options de modèle de la carte. */
   "simPorteeTrouIpc","simPorteeEnvoyeeIpc","simModelesIpc","simModelesIpcPoser",
   "simModelesIpcNorm","simModelesIpcRelire","simModelesIpcForm","SIM_MODELES_VIA_IPC",
-  "mdlArc","mdlArcAngle","mdlArcLongueur","ltArc","ltNet","ltPiste",
+  "mdlArc","mdlArcAngle","mdlArcLongueur","mdlPadPlace","mdlPlacer","ltArc","ltNet","ltPiste",
   "simCheveluRes","simRetourCouleurRes","simRetourActifIpc",
   "simRetourTrace",
   "simRetoursIpc","SIM_RAYON_RETOUR_IPC","SIM_RAYON_RETOUR_OPTIMAL_IPC",
@@ -213,7 +213,9 @@ const EXPOSE=["ECRITURE_CAO","simDsChamp","simDsLire","simDsEcrire","SIM_DS","SI
   /* fiche de mesure */
   "mesEntreeIpc","mesFeuilles","mesResoudre","retFeuilles","PLN_CHOIX",
   /* plans (Draftsman) */
-  "plnIpcFeuilles","plnPercages"];
+  "plnIpcFeuilles","plnPercages",
+  /* formule légère et lecture des valeurs */
+  "ltZ0","simParseResistance"];
 
 /* Un seul `eval`, sur les fichiers concaténés : ils se voient l'un
    l'autre comme dans la page, où ils partagent la portée globale. Le "use
@@ -7294,6 +7296,41 @@ TA("chute DC, visionneuse : tous les rails, un groupe par rail, bornes rendues",
 
 TA("chute DC, visionneuse : le bouton d'import dit d'où viennent les bornes",async()=>{
   if(SIM_IPC.dcImporterNom!=="⚡ Des composants")throw new Error(SIM_IPC.dcImporterNom);
+});
+
+T("pastille d'un composant posé dessous : la forme tourne comme sa position",()=>{
+  const m0=V.modele;
+  try{
+    V.modele=Object.assign({},m0,{couches:["Top"],padstacks:{P:{pads:[{c:"Top",d:1,f:"R"}]}}});
+    const u=0.5, w=0.2;                       // un sommet de la forme, dans le repère de la pastille
+    for(const [hm,pm] of [[true,false],[false,true],[true,true],[false,false]]){
+      const hote={x:10,y:5,r:30,m:hm,c:0}, pad={x:2,y:1,r:20,m:pm,ps:"P"};
+      const out=[];mdlPadPlace(pad,hote,[{}],out);
+      const q=out[0], a=q.rot*Math.PI/180, k=q.mir?-1:1;
+      const vu={x:q.x+Math.cos(a)*k*u-Math.sin(a)*w, y:q.y+Math.sin(a)*k*u+Math.cos(a)*w};
+      // le même sommet par le corps : pastille dans le composant, puis composant sur la carte
+      const b=mdlPlacer(pm?-u:u,w,pad.x,pad.y,pad.r,false), vrai=mdlPlacer(b.x,b.y,hote.x,hote.y,hote.r,hm);
+      if(Math.hypot(vu.x-vrai.x,vu.y-vrai.y)>1e-9)
+        throw new Error("miroir composant "+hm+", pastille "+pm+" : "+JSON.stringify([vu,vrai]));
+    }
+  }finally{V.modele=m0;}
+});
+
+T("simParseResistance : la tolérance après un blanc ne change pas la valeur",()=>{
+  const cas={"4.7k 1%":4700,"2.2M 5%":2.2e6,"0.47R 1%":0.47,"4K7":4700,"R47":0.47,"10":10};
+  for(const v in cas){
+    const r=simParseResistance(v);
+    if(!(Math.abs(r-cas[v])<=1e-9*cas[v]))throw new Error(v+" → "+r+" au lieu de "+cas[v]);
+  }
+});
+
+T("ltZ0 triplaque : Wheeler 1978, le chiffre du Python, aussi hors IPC-2141A",()=>{
+  // python/ligne_mom.py : _z_air_triplaque(w, t, b) / sqrt(4,3)
+  for(const [w,b,t,z] of [[0.5,0.4,0.035,23.36422862789895],[0.1,0.2,0.035,35.710662990321495],
+                          [0.06,0.6,0.035,75.64880331304208],[0.2,0.3,0,40.975872770984545]]){
+    const r=ltZ0({kind:"strip",h:b/2,b:b,t:t,er:4.3},w);
+    if(!(Math.abs(r-z)<1e-9*z))throw new Error("w="+w+" b="+b+" : "+r+" au lieu de "+z);
+  }
 });
 
 (async()=>{

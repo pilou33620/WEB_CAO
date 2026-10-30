@@ -69,7 +69,7 @@ async function apiImporter(fichier){
                     " (maximum "+moPoids(etat.max)+").");
   const rep=await fetch(API_BASE+API_ROUTE+"?nom="+encodeURIComponent(fichier.name),{
     method:"POST",
-    headers:{"Content-Type":"application/octet-stream"},
+    headers:Object.assign({"Content-Type":"application/octet-stream"},ENTETE_WEB),
     body:fichier
   });
   if(!rep.ok)throw new Error(await apiErreur(rep));

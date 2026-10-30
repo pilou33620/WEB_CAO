@@ -405,7 +405,7 @@ async function jlcRechercher(query) {
   };
   const resp = await fetch("/api/tool", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    headers: Object.assign({ "Content-Type": "application/json", "Accept": "application/json" }, ENTETE_WEB),
     body: JSON.stringify(payload)
   });
   if (!resp.ok) {
@@ -422,7 +422,7 @@ async function jlcObtenirDetails(lcsc) {
   // 1. Fiche détaillée
   const respPart = await fetch("/api/tool", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    headers: Object.assign({ "Content-Type": "application/json", "Accept": "application/json" }, ENTETE_WEB),
     body: JSON.stringify({ name: "jlc_get_part", arguments: { lcsc: lcsc } })
   });
   if (!respPart.ok) throw new Error("Impossible de récupérer la fiche " + lcsc);
@@ -434,7 +434,7 @@ async function jlcObtenirDetails(lcsc) {
   try {
     const respPin = await fetch("/api/tool", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      headers: Object.assign({ "Content-Type": "application/json", "Accept": "application/json" }, ENTETE_WEB),
       body: JSON.stringify({ name: "jlc_get_pinout", arguments: { lcsc: lcsc } })
     });
     if (respPin.ok) {
@@ -757,6 +757,20 @@ function lierChampsPrincipaux() {
   }
 }
 
+/* L'enregistrement n'écrit que LIB_STATE.colonnes : la ligne prend l'en-tête du catalogue
+   chargé (« Empreinte Schematique » sans accent), et une colonne qu'il n'a pas s'y ajoute,
+   comme « Brochage » dans 08-pilote-lib.js. */
+function jlcAccorderColonnes(ligne) {
+  const cols = LIB_STATE.colonnes;
+  for (const [avec, sans] of [["Empreinte Schématique", "Empreinte Schematique"], ["Modèle Simulation", "Modele Simulation"]])
+    if (avec in ligne && !cols.includes(avec) && cols.includes(sans)) {
+      ligne[sans] = ligne[avec];
+      delete ligne[avec];
+    }
+  for (const k of Object.keys(ligne)) if (k !== "_id" && !cols.includes(k)) cols.push(k);
+  return ligne;
+}
+
 async function validerEtEnregistrerJlc() {
   const btn = document.getElementById("btnConfirmerImport");
   if (btn) {
@@ -806,6 +820,7 @@ async function validerEtEnregistrerJlc() {
     if (!LIB_STATE.colonnes || LIB_STATE.colonnes.length === 0) {
       LIB_STATE.colonnes = [...COLONNES_CATALOGUE_39];
     }
+    jlcAccorderColonnes(composantFinal);
 
     // 4. Enregistrer le catalogue CSV sur le serveur
     await enregistrerCatalogue();

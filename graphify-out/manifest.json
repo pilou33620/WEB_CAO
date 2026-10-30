@@ -6,9 +6,9 @@
     "semantic_hash": "dc37cad77327d16b9ee4e4043b9064da"
   },
   "appairage.py": {
-    "mtime": 1792705630.046029,
-    "seen": 1792732002.1847825,
-    "ast_hash": "aa04730cea8450db5bd97abe43abf203",
+    "mtime": 1793381843.8628166,
+    "seen": 1793384848.6218197,
+    "ast_hash": "bedb91bec42a1bd26cd140a0da567f43",
     "semantic_hash": ""
   },
   "bancs-mesure/crosstalk/banc-crosstalk-mesure.py": {
@@ -108,15 +108,15 @@
     "semantic_hash": ""
   },
   "commun/profils.js": {
-    "mtime": 1792512868.3541636,
-    "seen": 1792514996.429688,
-    "ast_hash": "6abeb61cbb0d98b42e9586f9b20a5fe5",
+    "mtime": 1793381843.86533,
+    "seen": 1793384848.6222174,
+    "ast_hash": "f6c2f0e29804f358e37721d65726bca3",
     "semantic_hash": ""
   },
   "commun/projet-disque.js": {
-    "mtime": 1792705769.6127155,
-    "seen": 1792732002.1850202,
-    "ast_hash": "426b4665d2889ae0907701f2d312d20e",
+    "mtime": 1793381843.865992,
+    "seen": 1793384848.6222272,
+    "ast_hash": "ed16d95a57971f45923702e632964718",
     "semantic_hash": ""
   },
   "commun/projet.js": {
@@ -144,9 +144,9 @@
     "semantic_hash": ""
   },
   "commun/simulation-em.js": {
-    "mtime": 1793285570.253746,
-    "seen": 1793351383.6733148,
-    "ast_hash": "f0c39add2cea2bb27752b1844bd4521e",
+    "mtime": 1793381843.877692,
+    "seen": 1793384848.622283,
+    "ast_hash": "e10da9d02d357c1222923b5a7760d65b",
     "semantic_hash": ""
   },
   "commun/tactile.js": {
@@ -192,15 +192,15 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/01-core.js": {
-    "mtime": 1793280587.4300175,
-    "seen": 1793351383.673493,
-    "ast_hash": "72f862bd81ce624ffd1baa725664f792",
+    "mtime": 1793381843.885692,
+    "seen": 1793384848.622468,
+    "ast_hash": "28e151cd8a524d875081a22fe9ea6592",
     "semantic_hash": ""
   },
   "editeur-pcb/js/02-connectivity.js": {
-    "mtime": 1793278338.793295,
-    "seen": 1793351383.6735032,
-    "ast_hash": "dd2edc89da2d35c8b611b8556d3d4720",
+    "mtime": 1793381843.890265,
+    "seen": 1793384848.6224778,
+    "ast_hash": "d05e7402391944ddd967e3951d24c515",
     "semantic_hash": ""
   },
   "editeur-pcb/js/03-render.js": {
@@ -210,9 +210,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/04-fabrication.js": {
-    "mtime": 1793280602.805859,
-    "seen": 1793351383.6735241,
-    "ast_hash": "75e680c176a0daf16ed085cbf80c105c",
+    "mtime": 1793381843.8918188,
+    "seen": 1793384848.6224983,
+    "ast_hash": "ff160ca7b6633d6a60e8308f43132984",
     "semantic_hash": ""
   },
   "editeur-pcb/js/04-pdf-masterdraw.js": {
@@ -240,9 +240,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/08-empreinte.js": {
-    "mtime": 1792514449.5180247,
-    "seen": 1792514996.429886,
-    "ast_hash": "b3cca8474a65017a153d98abe1e49723",
+    "mtime": 1793381843.8932884,
+    "seen": 1793384848.6225505,
+    "ast_hash": "872c4619fe8ad2a3c63694acedd81385",
     "semantic_hash": ""
   },
   "editeur-pcb/js/09-diffpair.js": {
@@ -282,9 +282,9 @@
     "semantic_hash": "afe7ec090ff1c53f8f5e1674cb07d504"
   },
   "editeur-pcb/js/15-regles.js": {
-    "mtime": 1792702293.2276816,
-    "seen": 1792732002.1852787,
-    "ast_hash": "1a84763ed78f433c0178c1317ba29b67",
+    "mtime": 1793381843.8938658,
+    "seen": 1793384848.6226287,
+    "ast_hash": "99d782ceccd3089bc5207222d35802ec",
     "semantic_hash": ""
   },
   "editeur-pcb/js/16-profil.js": {
@@ -306,15 +306,15 @@
     "semantic_hash": "ce775d10e4bcea17ca37ac3759a8c3b6"
   },
   "editeur-pcb/js/19-simulation.js": {
-    "mtime": 1793039214.4180708,
-    "seen": 1793135203.8150415,
-    "ast_hash": "be2fe807b746c2fd519068b312d28e4e",
+    "mtime": 1793381843.3725886,
+    "seen": 1793384848.622676,
+    "ast_hash": "824e8498dd160c1141f2a76af5565386",
     "semantic_hash": ""
   },
   "editeur-pcb/js/20-placement-score.js": {
-    "mtime": 1792512868.374304,
-    "seen": 1792514996.4299762,
-    "ast_hash": "4390232d7bf49e0f1f5c7ee6246e835b",
+    "mtime": 1793381843.895489,
+    "seen": 1793384848.6226861,
+    "ast_hash": "01f467793dad4d2722e0feea8a5fa201",
     "semantic_hash": ""
   },
   "editeur-pcb/js/21-lib-sync.js": {
@@ -438,9 +438,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/test/harness.js": {
-    "mtime": 1793356576.7499979,
-    "seen": 1793356820.0468938,
-    "ast_hash": "55c4184edc2bcae061eed8348f41e21f",
+    "mtime": 1793381843.913692,
+    "seen": 1793384848.623032,
+    "ast_hash": "51c8ae4002a3c524b8585d91361adb65",
     "semantic_hash": ""
   },
   "editeur-schematique/js/00-espace-config.js": {
@@ -474,9 +474,9 @@
     "semantic_hash": ""
   },
   "editeur-schematique/js/05-feuilles.js": {
-    "mtime": 1793127112.4348052,
-    "seen": 1793135203.8153298,
-    "ast_hash": "b1e47f8758090396d8752858732861af",
+    "mtime": 1793381843.9195547,
+    "seen": 1793384848.623108,
+    "ast_hash": "48b1aa838d02fec015fb849e449481d3",
     "semantic_hash": ""
   },
   "editeur-schematique/js/06-rendu-fond.js": {
@@ -498,15 +498,15 @@
     "semantic_hash": ""
   },
   "editeur-schematique/js/09-interaction.js": {
-    "mtime": 1792427940.42947,
-    "seen": 1792428646.899903,
-    "ast_hash": "3c02f62c677931667fd970566dd2f79c",
+    "mtime": 1793381843.9201674,
+    "seen": 1793384848.6231518,
+    "ast_hash": "6587f0d9645dba57d88dd0a2f73aa75b",
     "semantic_hash": ""
   },
   "editeur-schematique/js/10-actions.js": {
-    "mtime": 1793127112.4868047,
-    "seen": 1793135203.8153694,
-    "ast_hash": "cdec14d0cd747da27ced9c9109593f9c",
+    "mtime": 1793381843.9212422,
+    "seen": 1793384848.623162,
+    "ast_hash": "1a0f857b9256db07584a52f41f022359",
     "semantic_hash": ""
   },
   "editeur-schematique/js/11-palette.js": {
@@ -516,9 +516,9 @@
     "semantic_hash": "f052e64f48ebccf767ac6e900e444f2f"
   },
   "editeur-schematique/js/12-panneaux.js": {
-    "mtime": 1792613927.2936406,
-    "seen": 1792732002.185634,
-    "ast_hash": "616344e7f6cc7d4dfe7219765556a3cb",
+    "mtime": 1793381843.9221375,
+    "seen": 1793384848.623183,
+    "ast_hash": "db0a0f5037d95ed2824b61359c7c13e1",
     "semantic_hash": ""
   },
   "editeur-schematique/js/13-fichiers.js": {
@@ -528,15 +528,15 @@
     "semantic_hash": ""
   },
   "editeur-schematique/js/14-clavier-boutons.js": {
-    "mtime": 1793185024.6760347,
-    "seen": 1793351383.6741436,
-    "ast_hash": "7284920bc8fb7945e0b9e24a112c17e8",
+    "mtime": 1793381843.923471,
+    "seen": 1793384848.623203,
+    "ast_hash": "9cefcdd21be8ebab8a78105195807280",
     "semantic_hash": ""
   },
   "editeur-schematique/js/15-import.js": {
-    "mtime": 1792784640.0278807,
-    "seen": 1793135203.8154085,
-    "ast_hash": "e1eac4ae3cde8b47ac4bbd06f5f7608d",
+    "mtime": 1793381843.924328,
+    "seen": 1793384848.6232138,
+    "ast_hash": "64b03940c150d1ef36e36b20a7e351e2",
     "semantic_hash": ""
   },
   "editeur-schematique/js/16-demo.js": {
@@ -576,27 +576,27 @@
     "semantic_hash": ""
   },
   "editeur-schematique/js/22-recherche-composants.js": {
-    "mtime": 1793127112.5788038,
-    "seen": 1793135203.815466,
-    "ast_hash": "8d17ab38a1ee56669f7a1eec66cbec43",
+    "mtime": 1793381843.9252315,
+    "seen": 1793384848.623293,
+    "ast_hash": "34d23ee9550a192957d29a4205b89640",
     "semantic_hash": ""
   },
   "editeur-schematique/js/23-patterns.js": {
-    "mtime": 1793127112.6228032,
-    "seen": 1793135203.815473,
-    "ast_hash": "19337179991c8b02633e5e824bf34aa0",
+    "mtime": 1793381843.926363,
+    "seen": 1793384848.6233048,
+    "ast_hash": "a52bbff213a96be3515248d1dc7ddf45",
     "semantic_hash": ""
   },
   "editeur-schematique/js/24-lib-sync.js": {
-    "mtime": 1792139278.020843,
-    "seen": 1792173080.9560187,
-    "ast_hash": "cd1ecaf9c3471560d82a12d08547db48",
+    "mtime": 1793381843.926868,
+    "seen": 1793384848.6233146,
+    "ast_hash": "67045fa4037f828b7557013dcace3a53",
     "semantic_hash": ""
   },
   "editeur-schematique/js/25-brochage.js": {
-    "mtime": 1792514508.3125873,
-    "seen": 1792514996.4303532,
-    "ast_hash": "eddea472ba0b84817b1ca85d02804bbb",
+    "mtime": 1793381843.9274695,
+    "seen": 1793384848.623326,
+    "ast_hash": "0dbece0eab1cb05391ae31508739c1fa",
     "semantic_hash": ""
   },
   "editeur-schematique/js/26-variantes.js": {
@@ -618,15 +618,15 @@
     "semantic_hash": "e2aa9993499c2cdff79bf062b5a2dbd0"
   },
   "editeur-schematique/test/harness.js": {
-    "mtime": 1793267276.121166,
-    "seen": 1793351383.6743052,
-    "ast_hash": "8754e4dba03ce16cdc221c9be0a01882",
+    "mtime": 1793381843.9274695,
+    "seen": 1793384848.6234107,
+    "ast_hash": "aaa2189e6f9ecb41495251af5197f91b",
     "semantic_hash": ""
   },
   "gestion-lib/js/01-donnees.js": {
-    "mtime": 1792512024.1674142,
-    "seen": 1792514996.4303985,
-    "ast_hash": "67b6576210a7ce814a8c2f40f8265c5a",
+    "mtime": 1793381843.931789,
+    "seen": 1793384848.6234233,
+    "ast_hash": "f43a1b3a967e1056e2ea45ab338cf8d8",
     "semantic_hash": ""
   },
   "gestion-lib/js/02-rendu-pcb.js": {
@@ -654,9 +654,9 @@
     "semantic_hash": ""
   },
   "gestion-lib/js/07-import-jlc.js": {
-    "mtime": 1793127112.8148012,
-    "seen": 1793135203.8155842,
-    "ast_hash": "e23ed20ba24495cf664a1f47f04c5316",
+    "mtime": 1793381843.932515,
+    "seen": 1793384848.6234815,
+    "ast_hash": "1704883a055787901dee512dcfa2dda3",
     "semantic_hash": ""
   },
   "gestion-lib/test/banc-catalogue.js": {
@@ -666,9 +666,9 @@
     "semantic_hash": ""
   },
   "gestion-lib/test/banc-import-jlc.js": {
-    "mtime": 1793127112.9108002,
-    "seen": 1793135203.815614,
-    "ast_hash": "c46651b1ec3d3b5b56269d31a20c7d98",
+    "mtime": 1793381843.9349039,
+    "seen": 1793384848.6235254,
+    "ast_hash": "4f2b21ba634a72002f93f6928a70c3b8",
     "semantic_hash": ""
   },
   "profils/fabricants/eurocircuits.json": {
@@ -702,15 +702,15 @@
     "semantic_hash": ""
   },
   "python/crosstalk.py": {
-    "mtime": 1793130660.3617532,
-    "seen": 1793135203.8156772,
-    "ast_hash": "1a8edffb384f0d7b7a4456d5a7b87f67",
+    "mtime": 1793384242.052309,
+    "seen": 1793384848.6236222,
+    "ast_hash": "a6c6737f25d24ee5e4562882257b652c",
     "semantic_hash": ""
   },
   "python/dc_solver.py": {
-    "mtime": 1792583129.2345226,
-    "seen": 1792583992.3126228,
-    "ast_hash": "271edd248807f4498d3893be7fbaa272",
+    "mtime": 1793381843.3986478,
+    "seen": 1793384848.623634,
+    "ast_hash": "007f02665a030235f5efc49e61a6c637",
     "semantic_hash": ""
   },
   "python/extraire_bibliotheques.js": {
@@ -756,9 +756,9 @@
     "semantic_hash": "5a46ff32eaca1705de19641272bd6ea1"
   },
   "python/ligne_mom.py": {
-    "mtime": 1793130693.253974,
-    "seen": 1793135203.8157468,
-    "ast_hash": "aebf497e0eac6195afeafa64c06529b1",
+    "mtime": 1793381843.9376917,
+    "seen": 1793384848.6237273,
+    "ast_hash": "548c3761b68ca52aaa7a7d1798b33b26",
     "semantic_hash": ""
   },
   "python/oeil.py": {
@@ -792,9 +792,9 @@
     "semantic_hash": ""
   },
   "python/simulation_em.py": {
-    "mtime": 1793130716.7737336,
-    "seen": 1793135203.8158007,
-    "ast_hash": "c2317c5a7a56967e809be76a20d1abf5",
+    "mtime": 1793381843.9416919,
+    "seen": 1793384848.6238072,
+    "ast_hash": "d775aed7d331de9e389c610db1d72be7",
     "semantic_hash": ""
   },
   "python/standardiser_catalogue.py": {
@@ -822,9 +822,9 @@
     "semantic_hash": ""
   },
   "python/test/banc-dc.py": {
-    "mtime": 1792583129.2398608,
-    "seen": 1792583992.3127701,
-    "ast_hash": "96d421d724b5c1beab7fd79bb4c62990",
+    "mtime": 1793381843.4003887,
+    "seen": 1793384848.623867,
+    "ast_hash": "950e0871b2be2aacedf055011296c5e5",
     "semantic_hash": ""
   },
   "python/test/banc-detection-plateforme.py": {
@@ -834,22 +834,22 @@
     "semantic_hash": "2ba74cc066e4eb36c4eeed2538d160ab"
   },
   "python/test/banc-github-relai.py": {
-    "mtime": 1791663035.7315648,
-    "seen": 1791891802.1725438,
-    "ast_hash": "c3830b7539c44922fda3ec021ee76800",
-    "semantic_hash": "c3830b7539c44922fda3ec021ee76800"
+    "mtime": 1793381843.9416919,
+    "seen": 1793384848.6238902,
+    "ast_hash": "095271b0d6ab6ff4c85a02f4a4284b61",
+    "semantic_hash": ""
   },
   "python/test/banc-lib-routes.py": {
-    "mtime": 1793131353.747226,
-    "seen": 1793135203.8158636,
-    "ast_hash": "a70b6f252c554ac7db87f00ea991de60",
+    "mtime": 1793381843.9456918,
+    "seen": 1793384848.623901,
+    "ast_hash": "51997b428aa2adbb917c308c7f7eb222",
     "semantic_hash": ""
   },
   "python/test/banc-ligne-mom.py": {
-    "mtime": 1791815115.0284739,
-    "seen": 1791891802.172555,
-    "ast_hash": "733ef25ce850768f6afbb6a2969b5869",
-    "semantic_hash": "733ef25ce850768f6afbb6a2969b5869"
+    "mtime": 1793381843.9520159,
+    "seen": 1793384848.6239119,
+    "ast_hash": "5f368c57e6afe07346cd85922a3cdbf7",
+    "semantic_hash": ""
   },
   "python/test/banc-maj-github.py": {
     "mtime": 1791663035.7351751,
@@ -858,9 +858,9 @@
     "semantic_hash": "5c1d29ade71be6895fd0650dc69e426f"
   },
   "python/test/banc-oeil.py": {
-    "mtime": 1792691818.516922,
-    "seen": 1792732002.1861053,
-    "ast_hash": "724f6b54f3aed1f521bc4383d0ebc527",
+    "mtime": 1793383725.2604952,
+    "seen": 1793384848.623949,
+    "ast_hash": "fec622106b6ae2b466c6520c4902cf8b",
     "semantic_hash": ""
   },
   "python/test/banc-patterns.py": {
@@ -876,9 +876,9 @@
     "semantic_hash": "621a09aacb8256c7977fb6bad01f1196"
   },
   "python/test/banc-projets-reseau.py": {
-    "mtime": 1793127113.0267992,
-    "seen": 1793135203.815918,
-    "ast_hash": "0759ab9a692ba6d79dd798689a7b8e84",
+    "mtime": 1793381843.9520159,
+    "seen": 1793384848.6239831,
+    "ast_hash": "a0660a516a946c2c92031499e40fbb63",
     "semantic_hash": ""
   },
   "python/test/banc-rf.py": {
@@ -888,9 +888,9 @@
     "semantic_hash": ""
   },
   "python/test/banc-serveur-routes.py": {
-    "mtime": 1793280735.957913,
-    "seen": 1793351383.6748848,
-    "ast_hash": "811095b05d055a829e77d44d9c6c49a0",
+    "mtime": 1793381843.9520159,
+    "seen": 1793384848.6240053,
+    "ast_hash": "15c85aafe8766e34adb9a6a1df629adb",
     "semantic_hash": ""
   },
   "python/test/banc-usimmics.py": {
@@ -912,9 +912,9 @@
     "semantic_hash": "01ba81334f68a30c90849f3376356b6c"
   },
   "recherche-composants/js/01-api.js": {
-    "mtime": 1792514820.481977,
-    "seen": 1792514996.4307878,
-    "ast_hash": "39a12e0944d41225d70a93dde83c97b6",
+    "mtime": 1793381843.9536917,
+    "seen": 1793384848.624052,
+    "ast_hash": "10799f3a299d3a9232acf0de4fb4b69a",
     "semantic_hash": ""
   },
   "recherche-composants/js/02-outils.js": {
@@ -930,10 +930,10 @@
     "semantic_hash": ""
   },
   "recherche-composants/js/04-resultats.js": {
-    "mtime": 1791663035.7430334,
-    "seen": 1791891802.1726308,
-    "ast_hash": "dc9b5de4eb012bd787408fc92d3fdec6",
-    "semantic_hash": "dc9b5de4eb012bd787408fc92d3fdec6"
+    "mtime": 1793381843.9536917,
+    "seen": 1793384848.6240888,
+    "ast_hash": "d1f39e1dffda9139d91da51dfe1763fe",
+    "semantic_hash": ""
   },
   "recherche-composants/js/05-details.js": {
     "mtime": 1791663035.7430334,
@@ -978,15 +978,15 @@
     "semantic_hash": ""
   },
   "visionneuse-ipc2581/js/01-api.js": {
-    "mtime": 1792512257.4136722,
-    "seen": 1792514996.4308712,
-    "ast_hash": "eddfca6b71a4b7d6ecf12ca965685bde",
+    "mtime": 1793381843.9536917,
+    "seen": 1793384848.6241775,
+    "ast_hash": "9ba8c8bddb35837157f41c0c696adf4b",
     "semantic_hash": ""
   },
   "visionneuse-ipc2581/js/02-modele.js": {
-    "mtime": 1792691818.520922,
-    "seen": 1792732002.1862664,
-    "ast_hash": "e3f987ab3afd283029e688158c26377f",
+    "mtime": 1793381843.9589534,
+    "seen": 1793384848.6241896,
+    "ast_hash": "0084c17b286bdf602cab486edcd06b84",
     "semantic_hash": ""
   },
   "visionneuse-ipc2581/js/03-rendu.js": {
@@ -1014,9 +1014,9 @@
     "semantic_hash": ""
   },
   "visionneuse-ipc2581/js/07-simulation.js": {
-    "mtime": 1793285570.3017457,
-    "seen": 1793351383.675062,
-    "ast_hash": "1c200c2210642cb837fdc8b59ec0b316",
+    "mtime": 1793381843.4019408,
+    "seen": 1793384848.6242487,
+    "ast_hash": "75e4d40d972180102e44874528347cb3",
     "semantic_hash": ""
   },
   "visionneuse-ipc2581/test/banc-essai.py": {
@@ -1026,15 +1026,15 @@
     "semantic_hash": ""
   },
   "visionneuse-ipc2581/test/harness-sim.js": {
-    "mtime": 1793355568.577458,
-    "seen": 1793355836.1310105,
-    "ast_hash": "d78d389874740d993471e6f0c42d2d68",
+    "mtime": 1793381901.545469,
+    "seen": 1793384848.6243088,
+    "ast_hash": "c2ca060912e08acdd3d8d51567b561af",
     "semantic_hash": ""
   },
   "web_CAO.py": {
-    "mtime": 1793280724.5335345,
-    "seen": 1793351383.6751091,
-    "ast_hash": "56af147d64fc612ca8da00d0e1613477",
+    "mtime": 1793381843.9662035,
+    "seen": 1793384848.6243193,
+    "ast_hash": "1e4d7e2be5aa60ca74032abd73db5ba8",
     "semantic_hash": ""
   },
   ".github/workflows/ci.yml": {
@@ -1080,9 +1080,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/README.md": {
-    "mtime": 1793356714.1285236,
-    "seen": 1793356820.0479708,
-    "ast_hash": "c7776d81a1fe887cad4abbef4319381f",
+    "mtime": 1793381843.881692,
+    "seen": 1793384848.6246314,
+    "ast_hash": "f06ec31b608eb2aa4fcd0074fb08f8cb",
     "semantic_hash": ""
   },
   "editeur-pcb/editeur-pcb.html": {
@@ -1116,9 +1116,9 @@
     "semantic_hash": ""
   },
   "index.html": {
-    "mtime": 1793130968.8751578,
-    "seen": 1793135203.8163857,
-    "ast_hash": "9042caf3e99b9244bfb6494f89ce18b4",
+    "mtime": 1793381843.9354057,
+    "seen": 1793384848.6247778,
+    "ast_hash": "afba986974ee73c86782b327cfc970ca",
     "semantic_hash": ""
   },
   "profils/LISEZ-MOI.md": {
@@ -1338,9 +1338,9 @@
     "semantic_hash": ""
   },
   "commun/pilote.js": {
-    "mtime": 1792862890.5996056,
-    "seen": 1793135203.8147106,
-    "ast_hash": "bf183ee8c5012f9424e7143f30f4a590",
+    "mtime": 1793381843.864223,
+    "seen": 1793384848.6222062,
+    "ast_hash": "fce37091cb4bfe82b1e1d5e9e9798b95",
     "semantic_hash": ""
   },
   "commun/test/banc-pilote-cao.js": {
@@ -1356,9 +1356,9 @@
     "semantic_hash": ""
   },
   "pilote.py": {
-    "mtime": 1792740817.1293633,
-    "seen": 1793135203.8156292,
-    "ast_hash": "28ccfc72311381639e81fa18105a3de5",
+    "mtime": 1793381843.9364722,
+    "seen": 1793384848.6235523,
+    "ast_hash": "c82b80602c36bf259e10e6a9cf25715f",
     "semantic_hash": ""
   },
   "commun/ecriture-cao.js": {
@@ -1380,21 +1380,21 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/37-routage-pilote.js": {
-    "mtime": 1792706317.146042,
-    "seen": 1792732002.1854525,
-    "ast_hash": "068b65855e8158d159a920601c73aa79",
+    "mtime": 1793381843.8962193,
+    "seen": 1793384848.6228812,
+    "ast_hash": "a9eb2a3fadba5b074e9fe3c988e8355f",
     "semantic_hash": ""
   },
   "gestion-lib/js/08-pilote-lib.js": {
-    "mtime": 1792691818.488922,
-    "seen": 1792732002.1858292,
-    "ast_hash": "218b1b0609b6bfe41f05ccf170fee863",
+    "mtime": 1793381843.9332845,
+    "seen": 1793384848.6234937,
+    "ast_hash": "66548abe04ed0692218e387449154a12",
     "semantic_hash": ""
   },
   "gestion-lib/test/banc-composants.js": {
-    "mtime": 1793127112.8628008,
-    "seen": 1793135203.8156073,
-    "ast_hash": "45aa1bb65186cad33d011c316c7b0dc1",
+    "mtime": 1793381843.9332845,
+    "seen": 1793384848.6235156,
+    "ast_hash": "de1c499f5f4c3bfae7af9dbd45ebae04",
     "semantic_hash": ""
   },
   "commun/csv.js": {
@@ -1404,9 +1404,9 @@
     "semantic_hash": ""
   },
   "commun/echappe.js": {
-    "mtime": 1792512516.9876738,
-    "seen": 1792514996.4296145,
-    "ast_hash": "8de86c4b3953c44b808615284d4ba164",
+    "mtime": 1793381843.863699,
+    "seen": 1793384848.622062,
+    "ast_hash": "189ed40fcc6187196e6a92dd68c77638",
     "semantic_hash": ""
   },
   "commun/test/essai-lots-ztrace.js": {
@@ -1428,9 +1428,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/39-thermique.js": {
-    "mtime": 1792583229.2614384,
-    "seen": 1792583992.3121905,
-    "ast_hash": "b67313d914802b40fb941424eb88b3f3",
+    "mtime": 1793381843.8968453,
+    "seen": 1793384848.622906,
+    "ast_hash": "60c735c6c90414d8218631d9335fffd7",
     "semantic_hash": ""
   },
   "commun/vendor/three-source.js": {
@@ -1590,9 +1590,9 @@
     "semantic_hash": ""
   },
   "docs/manuel/09-simulation-pi-thermique-audit.md": {
-    "mtime": 1793112255.6289105,
-    "seen": 1793135203.8162882,
-    "ast_hash": "430bb9eff85a11b88febb719e66a5f70",
+    "mtime": 1793381843.361666,
+    "seen": 1793384848.6245458,
+    "ast_hash": "6489bbdeeac6e23bb6008ae528bce513",
     "semantic_hash": ""
   },
   "docs/manuel/10-simulation-rf-em.md": {
@@ -1620,9 +1620,9 @@
     "semantic_hash": ""
   },
   "docs/manuel/manuel.html": {
-    "mtime": 1793356714.6525178,
-    "seen": 1793356820.0479486,
-    "ast_hash": "44270976b8ee4746821e9d65eed42e02",
+    "mtime": 1793381843.365694,
+    "seen": 1793384848.6246011,
+    "ast_hash": "fd5f19a189cefd6132fe1e376d2b495e",
     "semantic_hash": ""
   },
   "tasks/plan-manuel.md": {
@@ -1650,9 +1650,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/43-verif-bom.js": {
-    "mtime": 1793267076.6568604,
-    "seen": 1793351383.673913,
-    "ast_hash": "63b4b0fe0fabd07473cc1a735b28df7e",
+    "mtime": 1793381843.8973184,
+    "seen": 1793384848.6229525,
+    "ast_hash": "b3323c055e61125cb557d8745523f283",
     "semantic_hash": ""
   },
   "editeur-pcb/js/44-export-step.js": {

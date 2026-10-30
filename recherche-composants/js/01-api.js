@@ -63,7 +63,7 @@ async function apiAppel(nom,args){
   if(API_BASE===null)await apiConnecter();
   const rep=await fetch(API_BASE+"/api/tool",{
     method:"POST",
-    headers:{"Content-Type":"application/json",Accept:"application/json"},
+    headers:Object.assign({"Content-Type":"application/json",Accept:"application/json"},ENTETE_WEB),
     body:JSON.stringify({name:nom,arguments:args||{}})
   });
   if(!rep.ok)throw new Error(await apiErreur(rep));

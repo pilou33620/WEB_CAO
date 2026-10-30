@@ -130,6 +130,7 @@ function dupSel(){
   const copies=wires.map(w=>{
     const c={x1:w.x1+40,y1:w.y1+40,x2:w.x2+40,y2:w.y2+40};
     if(w.net)c.net=w.net;          // même nom = même net, la copie reste raccordée
+    if(w.bus)c.bus=true;
     return c;
   });
   const copyDrawings=drawings.map(d=>{
@@ -263,6 +264,7 @@ function clipContent(){
     wires:wires.map(w=>{
       const c={x1:w.x1-x,y1:w.y1-y,x2:w.x2-x,y2:w.y2-y};
       if(w.net)c.net=w.net;
+      if(w.bus)c.bus=true;
       return c;
     }),
     drawings:drawings.map(d=>{

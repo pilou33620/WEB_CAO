@@ -54,6 +54,15 @@ function addPage(copyCurrent){
     p.uid=src.uid;p.scale=src.scale;p.ox=src.ox;p.oy=src.oy;
   }
   S.pages.push(p);p.viewed=true;loadPage(S.pages.length-1);
+  if(copyCurrent){
+    /* nouveaux repères, comme dupSel ; les parties d'un même boîtier (U1A, U1B) en gardent un seul */
+    const neuf=new Map();
+    for(const c of S.comps){
+      if(defOf(c.type).noRef||!c.ref)continue;
+      if(!neuf.has(c.ref))neuf.set(c.ref,nextRef(defOf(c.type).p));
+      c.ref=neuf.get(c.ref);
+    }
+  }
   buildTabs();refreshPanels();
   if(copyCurrent)draw();else fit();
 }

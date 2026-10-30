@@ -1378,8 +1378,8 @@ ANGLE_COUDE_MINIMAL = 0.1               # degres
 def _coudes(objets):
     """Les coudes de la sélection : leur rang de tronçon et leur ANGLE SEUL.
 
-    L'angle à chaque raccord est calculé à partir des vecteurs start→end de
-    deux tronçons consécutifs. Rien d'autre n'est calculé ici : la capacité
+    L'angle à chaque raccord est calculé sur les directions de deux tronçons
+    consécutifs, orientées dans le sens du parcours (`_raccord`). Rien d'autre n'est calculé ici : la capacité
     d'excès et l'inductance série demandent la hauteur au plan et l'epsilon
     du tronçon, que seule la section résolue connaît. Elles sont ajoutées
     plus bas par `tl.elements_coude`, qui est AUSSI ce que la cascade
@@ -1431,8 +1431,12 @@ def _coudes(objets):
                 return None, None
             return dx, dy
 
-        v1 = vecteur(obj_prev)
-        v2 = vecteur(obj_curr)
+        # LE SENS DU PARCOURS, PAS CELUI DU DESSIN : `_ruptures` accepte un
+        # troncon trace a l'envers, et start->end brut faisait de
+        # (0,0)->(10,0) puis (20,0)->(10,0) un coude de 180 degres. A defaut
+        # de raccord (bouts a plus de TOLERANCE_RACCORD_MM), le dessin.
+        r = _raccord(obj_prev, obj_curr)
+        v1, v2 = (r[2], r[3]) if r else (vecteur(obj_prev), vecteur(obj_curr))
         if v1[0] is None or v2[0] is None:
             continue
 
@@ -2370,7 +2374,7 @@ def _rayonnement_cavite(param, f0, tr, v0, z0, distance=DISTANCE_MESURE_REPLI,
         mode = "enveloppe"
     if not fs.size:
         return {"hors_bande": True}
-    amp = 4 * v0 * f0 / (np.pi * fs) * np.abs(np.sinc(fs * tr))
+    amp = 2 * v0 * f0 / (np.pi * fs) * np.abs(np.sinc(fs * tr))
     i_eff = amp / max(z0, 1e-6) / math.sqrt(2.0)
     e1, _ = tl.rayonnement_cavite(fs, param)
     e = e1 / float(distance) * 2.0 * i_eff                  # 1/r, sol, courant
@@ -5034,7 +5038,7 @@ def _masse_interposee(scene, v):
     return {"x": -milieu if a_gauche else milieu, "w": largeur}
 
 
-def _poser_section(scene, distance_plan=0.0, couture_max=0.0):
+def _poser_section(scene, distance_plan=0.0, couture_max=0.0, ecart_plans=0.0):
     """La scene, ramenee a une liste de conducteurs qui ne se chevauchent pas.
 
     Rend (conducteurs, ecartes) en MILLIMETRES : le premier element est la
@@ -5062,7 +5066,8 @@ def _poser_section(scene, distance_plan=0.0, couture_max=0.0):
 
     `distance_plan` est la hauteur au plan de reference, en MILLIMETRES ; a
     zero, l'elargissement n'est pas calculable et l'on retombe sur le cuivre
-    nu, comme avant.
+    nu, comme avant. `ecart_plans` est l'ecart b d'une triplaque en mm (0
+    sinon) : c'est sur lui que `ligne_mom` elargit le cuivre d'une triplaque.
     """
     poses = [{"net": scene["net"], "x": 0.0, "w": scene["largeur"],
               "selection": True, "garde": False}]
@@ -5074,7 +5079,7 @@ def _poser_section(scene, distance_plan=0.0, couture_max=0.0):
         """De combien ce ruban depasse son cuivre, de chaque cote."""
         if not (ep > 0) or not (h > 0):
             return 0.0
-        return (tl.largeur_effective(w, ep, h) - w) / 2.0
+        return (tl.largeur_effective(w, ep, h, ecart_plans) - w) / 2.0
     # LE PLAFOND EST CELUI DU SOLVEUR, et il est lu chez lui : deux constantes
     # pour une meme limite finiraient par diverger, et c'est `solve_multiline`
     # qui refuse.
@@ -5350,7 +5355,7 @@ MAX_SECTIONS_LOCALES = 24       # resolutions de section locales par calcul
 PAS_ECART_LOCAL = 0.005         # mm ; le pas auquel les ecarts se regroupent
 
 def _hauteur_de_couche(couches, indice, largeur, epaisseur, plans_ignores=(),
-                       sans_plan=False):
+                       sans_plan=False, ecart=False):
     """La hauteur au plan de reference d'une couche, en mm ; 0 si elle n'en a
     pas.
 
@@ -5366,6 +5371,9 @@ def _hauteur_de_couche(couches, indice, largeur, epaisseur, plans_ignores=(),
 
     `sans_plan` SUIT AUSSI `section_de_couche` : la hauteur rendue est alors
     l'epaisseur de la plaque, ce qui sert a l'elargissement du cuivre epais.
+
+    `ecart` rend a la place l'ecart b entre plans d'une triplaque (0 sinon) :
+    son cuivre epais s'elargit selon b, pas selon la hauteur.
     """
     geo, info = section_de_couche(couches, indice, largeur, epaisseur, 0.0, 0.0,
                                   plans_ignores, sans_plan)
@@ -5373,7 +5381,8 @@ def _hauteur_de_couche(couches, indice, largeur, epaisseur, plans_ignores=(),
     # c'est le seul chiffre de cette page qui ne soit pas en millimetres, et le
     # melanger a des largeurs en millimetres donne un logarithme negatif, donc
     # un elargissement de Wheeler NEGATIF -- une correction qui retrecit.
-    return 1e3 * _nombre(info.get("h"), 0.0) if geo is not None else 0.0
+    cle = "b" if ecart else "h"
+    return 1e3 * _nombre(info.get(cle), 0.0) if geo is not None else 0.0
 
 
 def _section_locale(couches, scene, w_v, w_a, ecart, cote, t_r, cache):
@@ -5669,7 +5678,10 @@ def _couplage(couches, objets, doc, analyse, avertissements):
         # pour ecarter la voisine de trop AU LIEU de perdre la section entiere.
         h_couche = _hauteur_de_couche(couches, scene["couche"],
                                       scene["largeur"], scene["epaisseur"])
-        poses, ecartes = _poser_section(scene, h_couche, _couture_max(t_r))
+        b_couche = _hauteur_de_couche(couches, scene["couche"], scene["largeur"],
+                                      scene["epaisseur"], ecart=True)
+        poses, ecartes = _poser_section(scene, h_couche, _couture_max(t_r),
+                                        b_couche)
         e_g, e_d = _ecarts_masse_du_groupe(poses, scene, _couture_max(t_r))
         # LES COTES OU LE PLAN BORDE SANS ETRE COUSU : l'ecart y a ete annule,
         # et un zero ne se distingue pas tout seul d'un « pas de plan a

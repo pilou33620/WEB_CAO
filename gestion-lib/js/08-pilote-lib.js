@@ -22,6 +22,13 @@
    commandes ne font que calculer.
    ============================================================================= */
 
+/* La page garde la date du catalogue lu (LIB_STATE.mtime) pour son « Enregistrer » complet.
+   Une écriture faite ici depuis cette date-là la suit ; si quelqu'un d'autre a écrit entre-temps,
+   la date reste périmée et l'enregistrement complet sera refusé (409), comme il se doit. */
+function libSuivreDate(rep) {
+  if (rep && rep.mtime_avant != null && rep.mtime_avant === LIB_STATE.mtime) LIB_STATE.mtime = rep.mtime_ms;
+}
+
 function libPiloteCommandes() {
   const CL = COMPOSANTS_LIB;
   const objet = (v, nom) => {
@@ -135,7 +142,7 @@ function libPiloteCommandes() {
   }
 
   async function retirer(fichier, type = "pcb") {
-    const r = await fetch("/api/lib/fichier?type=" + type + "&nom=" + encodeURIComponent(fichier), { method: "DELETE" });
+    const r = await fetch("/api/lib/fichier?type=" + type + "&nom=" + encodeURIComponent(fichier), { method: "DELETE", headers: ENTETE_WEB });
     if (!r.ok) throw new Error("erreur " + r.status);
     LIB_STATE.cacheFichiers.delete(type + ":" + fichier);
     if (Array.isArray(LIB_STATE.fichiers[type])) LIB_STATE.fichiers[type] = LIB_STATE.fichiers[type].filter(f => f !== fichier);
@@ -181,7 +188,7 @@ function libPiloteCommandes() {
       const ajout = {};
       for (const [k, v] of Object.entries(L)) if (v !== "") ajout[k] = v;
       try {
-        await apiPost("/api/lib/composants", { ajouter: ajout });
+        libSuivreDate(await apiPost("/api/lib/composants", { ajouter: ajout }));
       } catch (e) {
         // pas d'empreinte orpheline : celle-ci vient d'être créée par cette carte (si_absent), on la
         // retire, mais seulement sur un vrai refus du serveur ; une réponse perdue a pu écrire la ligne
@@ -283,6 +290,7 @@ function libPiloteCommandes() {
       let rep;
       try {
         rep = await apiPost("/api/lib/composants", { lier_simulation: { part: p.comp["Part Name"], modele: "lib/simulation/" + p.nom } });
+        libSuivreDate(rep);
       } catch (e) {
         // même règle que la création : on ne retire que le fichier écrit par cette carte, et sur un vrai refus
         let retire = "";
@@ -410,6 +418,7 @@ function libPiloteCommandes() {
       let rep;
       try {
         rep = await apiPost("/api/lib/composants", { modifier: { part: p.comp["Part Name"], champs: p.changements, avant } });
+        libSuivreDate(rep);
       } catch (e) {
         throw new Error("Modification refusée par le serveur : " + e.message +
                         await retirerEcrits(e, [[fichier, "pcb", "empreinte"], [symFichier, "schematique", "symbole"]], "la ligne"));

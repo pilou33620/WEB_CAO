@@ -181,13 +181,14 @@ function schTypeDuCatalogue(item) {
   else if(cat === "pwr") compType = "vcc";
   else compType = "ic";
 
-  const symRaw = String(item["Empreinte Schématique"] || item["Empreinte Schematique"] || "").toLowerCase();
+  const symRaw = String(item["Empreinte Schématique"] || item["Empreinte Schematique"] || "");
   // « lib/symbole/regulator.json » → « regulator », comme l'empreinte PCB dans schPoserDepuisCatalogue
   const sym = symRaw.replace(/^.*[\\/]/, "").replace(/\.json$/i, "").trim();
+  // nom exact d'abord : les symboles de la LIB gardent leur casse (MPN, ex. LM358DR)
   if(sym && typeof defOf === "function" && typeof DEF_UNKNOWN !== "undefined") {
     try {
-      const d = defOf(sym);
-      if(d && d !== DEF_UNKNOWN) compType = sym;
+      for(const t of [sym, sym.toLowerCase()])
+        if(defOf(t) !== DEF_UNKNOWN) { compType = t; break; }
     } catch(_) {}
   }
   return compType;

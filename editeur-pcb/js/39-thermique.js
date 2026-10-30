@@ -92,7 +92,7 @@ function pcbThermiqueDocument(){
 async function pcbThermiqueEstimer(){
   const doc=pcbThermiqueDocument(), ver=S.ver;
   if(!doc.composants.length)throw new Error("Aucun composant ne dissipe : donnez sa puissance (W) dans ses propriétés.");
-  const rep=await fetch("/api/thermique-composants",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(doc)});
+  const rep=await fetch("/api/thermique-composants",{method:"POST",headers:Object.assign({"Content-Type":"application/json"},ENTETE_WEB),body:JSON.stringify(doc)});
   let d=null;
   try{d=await rep.json();}catch(e){}
   if(!rep.ok||!d||!Array.isArray(d.composants)){

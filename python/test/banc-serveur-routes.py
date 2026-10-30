@@ -27,6 +27,19 @@ import lib_essai
 # Une copie jetable de la LIB sert de LIB par defaut (voir lib_essai.py)
 LIB = lib_essai.brancher(web_CAO)
 
+# Toute ecriture du banc porte l'en-tete maison que web_CAO.py exige (REGLES §2.3),
+# comme les pages ; urllib passe aussi par ici. Le cas « sans en-tete » (30c) appelle REQUETE_BRUTE.
+REQUETE_BRUTE = http.client.HTTPConnection.request
+
+
+def _avec_entete(self, method, url, body=None, headers={}, **kw):
+    if method not in ("GET", "HEAD"):
+        headers = {"X-WEB_CAO": "1", **headers}
+    return REQUETE_BRUTE(self, method, url, body, headers, **kw)
+
+
+http.client.HTTPConnection.request = _avec_entete
+
 def test_routes():
     # Démarre le serveur sur un port aléatoire libre
     httpd, _ = web_CAO.make_server("127.0.0.1", 0)
@@ -142,7 +155,7 @@ def test_routes():
             web_CAO.analyse_carte.analyser_document = lambda d: (time.sleep(0.5), vrai_analyser(d))[1]
             corps = json.dumps(doc).encode("utf-8")
             s = socket.create_connection(("127.0.0.1", port))
-            s.sendall(b"POST /api/analyse-carte HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+            s.sendall(b"POST /api/analyse-carte HTTP/1.1\r\nHost: 127.0.0.1\r\nX-WEB_CAO: 1\r\n"
                       b"Content-Type: application/json\r\nContent-Length: %d\r\n\r\n"
                       % len(corps) + corps)
             s.close()                       # la page se ferme pendant le calcul
@@ -619,6 +632,23 @@ def test_routes():
         assert res.getheader("Access-Control-Allow-Origin") is None, "LIB lisible par une page d'un autre appareil du LAN"
         assert res.getheader("X-Content-Type-Options") == "nosniff"
         print("[PASS] CORS/CSRF : seule l'origine du serveur est admise, nosniff pose")
+        # 30c. En-tete maison : sans « X-WEB_CAO: 1 », aucune ecriture (403), canal de pilotage compris.
+        for methode, route, corps in (
+                ("POST", "/api/lib/fichier", {"type": "pcb", "nom": "sans-entete.json", "data": {}}),
+                ("PUT", "/api/lib/fichier", {"type": "pcb", "nom": "sans-entete.json", "data": {}}),
+                ("DELETE", "/api/lib/fichier?type=pcb&nom=0603.json", None),
+                ("POST", "/api/pilote/battement", {"navigateur": "n", "onglets": []})):
+            for valeur in (None, "0"):
+                h = {"Content-Type": "application/json"}
+                if valeur:
+                    h["X-WEB_CAO"] = valeur
+                REQUETE_BRUTE(conn, methode, route, None if corps is None else json.dumps(corps).encode("utf-8"), h)
+                res = conn.getresponse()
+                res.read()
+                assert res.status == 403, "%s %s sans en-tete : %d au lieu de 403" % (methode, route, res.status)
+        assert not os.path.exists(os.path.join(LIB, "lib_empreinte_pcb", "sans-entete.json")), "ecrit sans en-tete"
+        assert os.path.exists(os.path.join(LIB, "lib_empreinte_pcb", "0603.json")), "efface sans en-tete"
+        print("[PASS] En-tete maison X-WEB_CAO exige : sans lui, rien n'est ecrit (403)")
         # 30a. Datasheet en local : un corps JSON qui n'est pas un objet est un
         # refus (400), pas une « Erreur interne » 500.
         for corps in (b"null", b"[1]"):
@@ -815,7 +845,7 @@ def test_routes():
         import socket
         s = socket.create_connection(("127.0.0.1", port), timeout=5)
         try:
-            s.sendall(b"PUT /api/profil?nom=neg HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+            s.sendall(b"PUT /api/profil?nom=neg HTTP/1.1\r\nHost: 127.0.0.1\r\nX-WEB_CAO: 1\r\n"
                       b"Content-Type: application/json\r\nContent-Length: -1\r\n\r\n")
             ligne = s.recv(64)                  # avant : aucune reponse, fil bloque
             assert b" 400 " in ligne.split(b"\r\n")[0], ligne
@@ -824,11 +854,30 @@ def test_routes():
         assert not os.path.exists(os.path.join(web_CAO.dossier_profils(), "neg.json"))
         print("[PASS] Content-Length negatif refuse")
 
-        # 39. Fichiers caches insensibles a la casse (disques macOS / Windows).
+        # 39. Fichiers statiques par liste blanche (REGLES §3.1) : ce que les pages
+        # chargent sort, le reste est 404 -- casse changee comprise (macOS, Windows).
         h = web_CAO.CustomHandler.__new__(web_CAO.CustomHandler)
-        for nom in ("API_KEY_free_ia_studio.txt", "Profils/x.json", "LIB_COMPOSANTS.CSV"):
-            assert h._hidden(os.path.join(web_CAO.ROOT, nom)), nom
-        print("[PASS] Fichiers caches : casse ignoree")
+        for nom in ("/API_KEY_free_ia_studio.txt", "/Profils/x.json", "/LIB_COMPOSANTS.CSV",
+                    "/graphify-out/GRAPH_REPORT.md", "/exports/a.json", "/tasks/todo.md",
+                    "/bancs-mesure/crosstalk/banc-crosstalk-mesure.py", "/README.md", "/SPEC.md",
+                    "/python/oeil.py", "/commun/test/dom-stub.js", "/editeur-pcb/test/harness.js",
+                    "/editeur-pcb/outils/build-monofichier.py", "/screen/pcb.png", "/simulations-si-pi.json",
+                    "/docs/manuel/index.md", "/commun/%2e%2e/web_CAO.py", "/commun/.env",
+                    "/commun/menus.js::$DATA", "/LIB/x.py", "/LIB/.git/config", "/LIB/LIB_composants.csv"):
+            assert not h._statique_permis(nom), nom
+        for nom in ("/", "/index.html", "/editeur-pcb/", "/editeur-pcb/editeur-pcb.html",
+                    "/commun/menus.js", "/commun/pilote-aide.json", "/commun/vendor/three-source.js",
+                    "/editeur-pcb/js/fontes/plans-sans.js", "/gestion-lib/css/gestion-lib.css",
+                    "/docs/manuel/manuel.html", "/profils/fabricants/jlcpcb.json",
+                    "/LIB/lib_empreinte_pcb/0603.json", "/LIB/Models/R%C3%A9ed%20SMD.step"):
+            assert h._statique_permis(nom), nom
+        for nom, attendu in (("/README.md", 404), ("/graphify-out/GRAPH_REPORT.md", 404),
+                             ("/python/test/lib_essai.py", 404), ("/commun/menus.js", 200)):
+            conn.request("GET", nom)
+            res = conn.getresponse()
+            res.read()
+            assert res.status == attendu, (nom, res.status)
+        print("[PASS] Fichiers statiques : liste blanche (graphify-out/, *.md, python/... -> 404)")
 
         # 40. Appairage : la pause double a chaque code brule d'affilee, plafond
         # 1 h, et repart de 60 s apres un succes.
@@ -954,6 +1003,122 @@ def test_routes():
         finally:
             web_CAO.DOSSIER_LIB_ACTIF = actif
         print("[PASS] LIB : modifier une reference reecrit ses seules cases, refuse une ligne qui a change")
+
+        # 45. Catalogue entier : la date lue (mtime_ms) revient avec l'enregistrement ; changee
+        # depuis (autre appareil) -> 409 et rien d'ecrit. Plus de copie a la racine du depot.
+        web_CAO.definir_dossier_lib(lib, initialiser=False, persister=False)
+        try:
+            conn.request("GET", "/api/lib/composants")
+            res = conn.getresponse()
+            cat = json.loads(res.read().decode("utf-8"))
+            assert res.status == 200 and isinstance(cat.get("mtime_ms"), int) and cat["mtime_ms"] > 0, cat
+            avant = open(csv_, "rb").read()
+
+            def tout(mtime):
+                corps = {"colonnes": cat["colonnes"], "composants": cat["composants"][:1]}
+                if mtime is not None:
+                    corps["mtime_ms"] = mtime
+                conn.request("POST", "/api/lib/composants", headers={"Content-Type": "application/json"},
+                             body=json.dumps(corps).encode("utf-8"))
+                r = conn.getresponse()
+                return r.status, json.loads(r.read().decode("utf-8"))
+            code, rep = tout(cat["mtime_ms"] - 5000)
+            assert code == 409 and open(csv_, "rb").read() == avant, (code, rep)
+            code, rep = tout(cat["mtime_ms"])
+            assert code == 200 and rep["mtime_ms"] == web_CAO.mtime_ms(csv_), rep
+            assert tout(cat["mtime_ms"])[0] == 409               # la date d'avant ne vaut plus
+            assert tout(rep["mtime_ms"])[0] == 200 and tout(None)[0] == 200   # sans date : comme avant
+            # une ligne ajoutee rend la date d'avant et celle d'apres : la page qui l'a ecrite suit
+            lu = web_CAO.mtime_ms(csv_)
+            time.sleep(0.01)
+            conn.request("POST", "/api/lib/composants", headers={"Content-Type": "application/json"},
+                         body=json.dumps({"ajouter": {"Part Name": "ZZ_SUIVI_DATE"}}).encode("utf-8"))
+            r = conn.getresponse()
+            aj = json.loads(r.read().decode("utf-8"))
+            assert r.status == 200 and aj["mtime_avant"] == lu and aj["mtime_ms"] == web_CAO.mtime_ms(csv_), aj
+            assert tout(aj["mtime_ms"])[0] == 200
+            assert not os.path.exists(os.path.join(web_CAO.ROOT, "LIB_composants.csv"))
+        finally:
+            web_CAO.DOSSIER_LIB_ACTIF = actif
+        print("[PASS] LIB : catalogue change ailleurs -> 409, plus de copie a la racine")
+
+        # 46. Client du reseau : /api/lib/config ne donne que des noms de dossier, et un 500
+        # ne porte ni le texte de l'exception ni un chemin du poste (REGLES §3.3).
+        local = web_CAO.CustomHandler._client_local
+        web_CAO.CustomHandler._client_local = lambda self: False
+        web_CAO.definir_dossier_lib(lib, initialiser=False, persister=False)
+        try:
+            conn.request("GET", "/api/lib/config")
+            res = conn.getresponse()
+            cfg = json.loads(res.read().decode("utf-8"))
+            assert cfg["chemin"] == os.path.basename(lib) and os.sep not in cfg["defaut"], cfg
+            if os.name != "nt" and os.geteuid() != 0:
+                os.chmod(lib, 0o555)                            # catalogue impossible a ecrire
+                try:
+                    conn.request("POST", "/api/lib/composants", headers={"Content-Type": "application/json"},
+                                 body=b'{"colonnes": ["Part Name"], "composants": []}')
+                    res = conn.getresponse()
+                    rep = json.loads(res.read().decode("utf-8"))
+                    assert res.status == 500 and rep["detail"] == web_CAO.DETAIL_INTERNE, rep
+                finally:
+                    os.chmod(lib, 0o755)
+        finally:
+            web_CAO.CustomHandler._client_local = local
+            web_CAO.DOSSIER_LIB_ACTIF = actif
+        print("[PASS] Reseau : ni chemin absolu ni texte d'exception dans les reponses")
+
+        # 47. Projet : NaN/Infinity (pas du JSON) et caractere non encodable -> 400, rien
+        # d'ecrit, aucun .tmp laisse ; creer=1 refuse un nom pris (409) au lieu d'ecraser.
+        url = "/api/projet/doc?doc=schema&chemin=" + _up.quote(dossier)
+        avant = open(os.path.join(dossier, "carte-SCH.json"), "rb").read()
+        for corps in (b'{"a": NaN}', b'{"a": -Infinity}', b'{"a": "\\ud800"}'):
+            st, rep = req("PUT", url, corps)
+            assert st == 400, (corps, st, rep)
+        assert open(os.path.join(dossier, "carte-SCH.json"), "rb").read() == avant
+        assert not [n for n in os.listdir(dossier) if n.endswith(".tmp")]
+        projet = open(os.path.join(dossier, "projet.cao.json"), "rb").read()
+        neuf = json.dumps({"format": "cao-projet-1", "nom": "carte"}).encode("utf-8")
+        st, rep = req("PUT", "/api/projet?creer=1&chemin=" + _up.quote(dossier), neuf)
+        assert st == 409 and "pris" in rep["detail"], (st, rep)
+        assert open(os.path.join(dossier, "projet.cao.json"), "rb").read() == projet
+        autre = os.path.join(os.path.dirname(dossier), "autre")
+        st, rep = req("PUT", "/api/projet?creer=1&chemin=" + _up.quote(autre),
+                      json.dumps({"format": "cao-projet-1", "nom": "autre"}).encode("utf-8"))
+        assert st == 200 and os.path.isfile(os.path.join(autre, "projet.cao.json")), (st, rep)
+        assert not [n for n in os.listdir(autre) if n.endswith(".tmp")]
+        print("[PASS] Projet : NaN et texte non encodable refuses, creation sans ecrasement (409)")
+
+        # 48. Liste des projets : un sous-dossier illisible ne la vide plus ; ni lien
+        # symbolique ni dossier cache.
+        racine = _tf.mkdtemp(prefix="webcao_index_")
+        for d in ("a_ferme", "ok", ".cache/x"):
+            os.makedirs(os.path.join(racine, d))
+        for d in ("ok", ".cache/x"):
+            with open(os.path.join(racine, d, "projet.cao.json"), "w", encoding="utf-8") as f:
+                json.dump({"format": "cao-projet-1", "nom": os.path.basename(d)}, f)
+        if hasattr(os, "symlink"):
+            os.symlink(os.path.join(racine, "ok"), os.path.join(racine, "lien"))
+        os.chmod(os.path.join(racine, "a_ferme"), 0)
+        try:
+            trouves = []
+            h._explorer_projets(racine, racine, 0, trouves)
+            assert [p["chemin"] for p in trouves] == ["ok"], trouves
+        finally:
+            os.chmod(os.path.join(racine, "a_ferme"), 0o755)
+        print("[PASS] Projets : dossier illisible saute, liens et dossiers caches ignores")
+
+        # 49. Ecriture exclusive (datasheets, si_absent, creation de projet) : un nom pris
+        # n'est jamais ecrase, et rien de temporaire ne reste.
+        cible = os.path.join(racine, "fiche.pdf")
+        web_CAO.ecrire_exclusif(cible, b"%PDF-1")
+        try:
+            web_CAO.ecrire_exclusif(cible, b"%PDF-2")
+            raise AssertionError("nom pris ecrase")
+        except FileExistsError:
+            pass
+        assert open(cible, "rb").read() == b"%PDF-1"
+        assert not [n for n in os.listdir(racine) if n.endswith(".tmp")]
+        print("[PASS] Ecriture exclusive : nom pris -> FileExistsError, aucun .tmp")
 
     finally:
         conn.close()

@@ -388,7 +388,7 @@ async function profServeurEcrire(){
   try{ octets = new TextEncoder().encode(corps).length; }catch(_){}
   const j = await profJson("/api/profil?nom=" + encodeURIComponent(PROF_NOM), {
     method:"PUT",
-    headers:{"Content-Type":"application/json"},
+    headers:Object.assign({"Content-Type":"application/json"},ENTETE_WEB),
     body:corps,
     keepalive:octets < 60 * 1024
   });
@@ -396,7 +396,7 @@ async function profServeurEcrire(){
 }
 function profServeurSupprimer(nom){
   if(!profEnLigne()) return;
-  profJson("/api/profil?nom=" + encodeURIComponent(nom), {method:"DELETE"});
+  profJson("/api/profil?nom=" + encodeURIComponent(nom), {method:"DELETE", headers:ENTETE_WEB});
 }
 /* Écriture différée : déplacer un panneau, c'est des dizaines de wsSave()
    pendant le glissé. Le fichier n'a pas besoin de suivre le curseur. */

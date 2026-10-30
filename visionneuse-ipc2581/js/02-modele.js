@@ -435,10 +435,10 @@ function mdlPadPlace(pad,hote,couches,sortie){
     ? mdlPlacer(pad.x,pad.y,hote.x,hote.y,hote.r,!!hote.m)
     : {x:pad.x,y:pad.y};
   const mir=(hote&&hote.m?1:0)^(pad.m?1:0);
-  /* La forme tourne avec le composant ET avec la pastille ; un miroir change
-     le sens de la rotation, sans quoi une empreinte posée dessous tourne à
-     l'envers. */
-  const rot=(hote?(hote.m?-hote.r:hote.r):0)+(mir?-(pad.r||0):(pad.r||0));
+  /* La forme tourne avec le composant ET avec la pastille. Comme mdlPlacer,
+     le composant applique son miroir puis sa rotation : son miroir inverse le
+     sens de la rotation de la pastille, pas la sienne. */
+  const rot=(hote?hote.r:0)+((hote&&hote.m)?-(pad.r||0):(pad.r||0));
 
   const defauts=hote&&hote.c>=0?[hote.c]:null;
   const pads=(ps&&ps.pads&&ps.pads.length)?ps.pads:null;

@@ -177,7 +177,10 @@ function exportCsv(){
   if(!RESULTAT.lignes.length){hint("Rien à exporter.");return;}
   const cols=RESULTAT.colonnes.length?RESULTAT.colonnes:Object.keys(RESULTAT.lignes[0]);
   const cell=function(v){
-    const t=valeurTexte(v).replace(/"/g,'""');
+    let t=valeurTexte(v);
+    // même règle que csvCell (schéma, 13-fichiers.js) : « =… », « +… », « @… » serait lu comme une formule
+    if(/^[=+@\t\r]|^-(?![\d.])/.test(t))t="'"+t;
+    t=t.replace(/"/g,'""');
     return /[";\r\n]/.test(t)?'"'+t+'"':t;
   };
   const lignes=[cols.map(c=>cell((COLONNES[c]||{}).lib||c)).join(";")];

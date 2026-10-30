@@ -218,8 +218,10 @@ function apForPad(A,q,grow){
   if(q.shape==="circ")return A.get("C,"+fmt(Math.max(0.01,Math.max(q.w,q.h)+2*g),4));
   let w=Math.max(0.01,q.w+2*g), h=Math.max(0.01,q.h+2*g);
   /* au millième de degré, comme la pastille elle-même : un composant posé à
-     12,5° ne doit pas sortir à 13° chez le fabricant */
-  let deg=padRot((q.rot||0)*180/Math.PI);
+     12,5° ne doit pas sortir à 13° chez le fabricant. q.rot tourne en sens
+     horaire à l'écran (y vers le bas), la macro en trigonométrique (y vers le
+     haut) : le signe s'inverse, comme pour l'IPC-2581. */
+  let deg=padRot(-(q.rot||0)*180/Math.PI);
   if(deg>=360)deg=0;
   if(q.shape==="oval"){
     /* le grand axe passe en x, quitte à tourner d'un quart de tour : c'est la
@@ -796,14 +798,14 @@ function ipcNetlist(){
      pastilles sans net ne se testent pas — un point isolé n'a rien à vérifier
      — et les vias sans net non plus. */
   const byNet=new Map();
-  const add=(net,rec)=>{
+  const add=(net,...rec)=>{
     if(!net)return;
     if(!byNet.has(net))byNet.set(net,[]);
     byNet.get(net).push(rec);
   };
   for(const fp of S.fps)
     for(const q of padsWorld(fp))
-      add(q.net,ipc317(q.net,fp.ref,q.n,q.drill,true,padLayers(fp,q),q.x,q.y));
+      add(q.net,fp.ref,q.n,q.drill,true,padLayers(fp,q),q.x,q.y);
   /* Un via recouvert de vernis n'est pas piquable : le testeur ne traverse pas
      le masque. On le déclare quand même — il porte la continuité du net entre
      deux couches, et le fabricant en a besoin pour bâtir son modèle — mais
@@ -811,14 +813,24 @@ function ipcNetlist(){
   for(const v of S.vias){
     const ls=[];
     for(let i=Math.min(v.a,v.b);i<=Math.max(v.a,v.b);i++)ls.push(i);
-    add(v.net,ipc317(v.net,"","",v.drill,true,ls,v.x,v.y));
+    add(v.net,"","",v.drill,true,ls,v.x,v.y);
+  }
+  /* Un nom par net : tronqués à 14 caractères et en majuscules,
+     « /ALIM/VBUS_PROT » et « /ALIM/VBUS_PROT2 », ou « Vcc » et « VCC », n'en
+     feraient qu'un pour le testeur. Le suivant prend un suffixe ; les nets sont
+     pris dans l'ordre trié pour que le nom ne change pas d'un export à l'autre. */
+  const noms=new Map(), pris=new Set();
+  for(const n of [...byNet.keys()].sort()){
+    let s=ipcName(n);
+    for(let k=2;pris.has(s);k++)s=ipcName(n).slice(0,13-String(k).length)+"_"+k;
+    pris.add(s);noms.set(n,s);
   }
   const nets=netTable().map(n=>n.name);
   for(const n of byNet.keys())if(nets.indexOf(n)<0)nets.push(n);
   for(const n of nets){
     const recs=byNet.get(n);
     if(!recs||!recs.length)continue;
-    for(const r of recs)L.push(r);
+    for(const r of recs)L.push(ipc317(noms.get(n),...r));
   }
   L.push("999");
   return L.join("\n")+"\n";
@@ -1210,7 +1222,7 @@ function fabReadme(files,dr){
   const asm=["positions.csv","bom.csv"].filter(a);
   if(asm.length){
     L.push(asm.join(" et ")+(asm.length>1?" servent":" sert")+" a l'assemblage : millimetres,");
-    L.push("rotation en degres dans le sens horaire (convention JLCPCB), de");
+    L.push("rotation en degres dans le sens anti-horaire vu de dessus (IPC-7351), de");
     L.push("0 a 360, meme origine que les Gerber. "+(asm.length>1?"Ils ne concernent":"Il ne concerne")+" pas le");
     L.push("fabricant du circuit nu.");
   }
@@ -1262,7 +1274,8 @@ function pcbCsvCell(v){
 
 /* Fichier de placement : une ligne par empreinte.
    Colonnes : Designator, Value, Package, X (mm), Y (mm), Rotation (°), Side.
-   La rotation est positive dans le sens horaire (convention JLCPCB).
+   La rotation est positive dans le sens anti-horaire vu de dessus
+   (IPC-7351, KiCad, CPL JLCPCB).
    La face est "Top" ou "Bottom" comme sur la plupart des assembleurs.
    L'origine est la même que pour les Gerber. */
 /* Variante de montage (26-variantes.js) : les empreintes qu'elle ne pose pas
@@ -1277,7 +1290,9 @@ function positionsCsvText(){
   for(const fp of fabFpsMontes()){
     const x=fmt(fp.x-o.x,4);
     const y=fmt(o.y-fp.y,4);   // Y Gerber monte, le document descend
-    const rot=padRot(fp.rot||0);   // -90 ou 450 saisis au panneau sortent en 270 / 90
+    /* anti-horaire vu de dessus (IPC-7351, KiCad), comme le CPL JLCPCB ;
+       l'éditeur tourne en horaire. -90 ou 450 saisis sortent en 90 / 270 */
+    const rot=padRot(360-(fp.rot||0));
     const side=fp.side?"Bottom":"Top";
     rows.push([
       fp.ref,

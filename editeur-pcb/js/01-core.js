@@ -1812,17 +1812,18 @@ function padWorldPts(q,grow){
       localPts.push({x:r*Math.cos(a),y:r*Math.sin(a)});
     }
   }else if(q.shape==="oval"){
-    const w=q.w+2*g, h=q.h+2*g, r=Math.min(w,h)/2;
+    /* couchée (grand axe en x), puis dressée d'un quart de tour si h>w */
+    const w=q.w+2*g, h=q.h+2*g, r=Math.min(w,h)/2, d=Math.max(w,h)/2-r;
     localPts=[];
-    const dx=Math.max(0,w/2-r), dy=Math.max(0,h/2-r);
     for(let i=0;i<=12;i++){
       const a=-Math.PI/2+Math.PI*i/12;
-      localPts.push({x:dx+r*Math.cos(a),y:r*Math.sin(a)+dy});
+      localPts.push({x:d+r*Math.cos(a),y:r*Math.sin(a)});
     }
     for(let i=0;i<=12;i++){
       const a=Math.PI/2+Math.PI*i/12;
-      localPts.push({x:-dx+r*Math.cos(a),y:-dy+r*Math.sin(a)});
+      localPts.push({x:-d+r*Math.cos(a),y:r*Math.sin(a)});
     }
+    if(h>w)localPts=localPts.map(p=>({x:-p.y,y:p.x}));
   }else{
     const w=q.w+2*g, h=q.h+2*g;
     localPts=[{x:-w/2,y:-h/2},{x:w/2,y:-h/2},{x:w/2,y:h/2},{x:-w/2,y:h/2}];
@@ -2325,7 +2326,11 @@ function padsWorldCalc(fp){
              drill:q.drill, net:q.net, rot:a+m*(q.rot||0)*Math.PI/180, fp};
     if(q.pts)o.pts=fp.side?q.pts.map(p=>({x:-p.x,y:p.y})):q.pts;
     if(q.chamfer!=null)o.chamfer=q.chamfer;
-    if(q.chamferCorners)o.chamferCorners=q.chamferCorners;
+    /* coins 0..3 = haut-gauche, haut-droit, bas-droit, bas-gauche : le miroir
+       en x échange 0↔1 et 2↔3, comme l'IPC-2581 (empreinte + mirror) */
+    const cc=q.chamferCorners;
+    if(cc)o.chamferCorners=!fp.side?cc:cc==="pin1"?[false,true,false,false]
+      :Array.isArray(cc)?[cc[1],cc[0],cc[3],cc[2]]:cc;
     if(q.slot)o.slot=q.slot;
     for(const k of ["thermalSpokes","thermalAngle","thermalWidth","thermalGap","connexion",
                     "mask","noMask","paste","noPaste","parCouche"])

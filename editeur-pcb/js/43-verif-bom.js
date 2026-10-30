@@ -103,7 +103,7 @@ function vbRequete(g){
 }
 async function vbAppel(nom,args){
   const r=await fetch("/api/tool",{method:"POST",
-    headers:{"Content-Type":"application/json",Accept:"application/json"},
+    headers:Object.assign({"Content-Type":"application/json",Accept:"application/json"},ENTETE_WEB),
     body:JSON.stringify({name:nom,arguments:args||{}})});
   if(!r.ok){
     let d="";try{const j=await r.json();d=j&&(j.detail||j.message)||"";}catch(_){}

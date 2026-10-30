@@ -155,5 +155,13 @@ assert(etatCsv.composants.length === 2 && etatCsv.composants[0].Description === 
   vals["Empreinte Schématique"] = "BC847.json";
   await vm.runInContext("validerEtEnregistrerJlc", sandbox)();
   assert(appels[1].nom === "BC847.json" && !appels[1].siAbsent, "Symbole propre à la pièce : réécriture permise");
+  // un catalogue à l'en-tête sans accent, et sans « tolerance » : rien de la ligne importée ne se perd
+  vm.runInContext('LIB_STATE = { composants: [], filtres: {}, colonnes: ["Part Name", "Empreinte Schematique"] };', sandbox);
+  await vm.runInContext("validerEtEnregistrerJlc", sandbox)();
+  const etatJ = vm.runInContext("LIB_STATE", sandbox), ligneJ = etatJ.composants[0];
+  assert(ligneJ["Empreinte Schematique"] === "BC847.json" && !("Empreinte Schématique" in ligneJ),
+    "En-tête sans accent : la ligne importée prend l'en-tête du catalogue");
+  assert(Object.keys(ligneJ).every(k => k === "_id" || etatJ.colonnes.includes(k)) && etatJ.colonnes.includes("tolerance")
+    && !etatJ.colonnes.includes("Empreinte Schématique"), "Les colonnes manquantes s'ajoutent au catalogue, sans doublon d'accent");
   console.log("\nRésultat : " + passedTests + "/" + totalTests + " tests réussis avec succès !");
 })().catch(e => { console.error(e); process.exit(1); });

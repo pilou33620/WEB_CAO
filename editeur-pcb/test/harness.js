@@ -555,6 +555,11 @@ NET "N$2"
    que voit l'utilisateur qui ouvre l'éditeur. */
 const USINE={grid:S.grid,corner:S.rule.corner};
 
+/* Tracés d'essai posés sans souci du contour de la carte courante : la marge
+   au bord des pistes est vraie, mais hors du sujet de ces essais. */
+function HORS_SUJET_BORD(e){
+  return /^Piste hors du contour/.test(e.msg);
+}
 let ok=0,ko=0;
 function T(name,fn){
   try{fn();console.log("  ok  "+name);ok++;}
@@ -3319,7 +3324,7 @@ T("le chanfrein recule devant le cuivre pris dans le coude (U3.2, essai du 21/10
   const dia=S.tracks.find(t=>t.net==="T"&&Math.abs(t.x2-t.x1)>1e-6&&Math.abs(t.y2-t.y1)>1e-6);
   if(!dia||Math.abs(dia.x2-dia.x1)>=20)throw new Error("diagonale raccourcie attendue : "+JSON.stringify(dia));
   runDrc();
-  const fautes=S.drc.filter(e=>!e.info);
+  const fautes=S.drc.filter(e=>!e.info&&!HORS_SUJET_BORD(e));
   if(fautes.length)throw new Error("le chanfrein a créé : "+fautes.map(e=>e.msg).join(" ; "));
   undo();
 });
@@ -6457,7 +6462,7 @@ T("règle arrondi : un arc tangent à chaque coude, raccordé aux deux droites",
     if(S.tracks.length!==2*coudes.length+1)throw new Error(nom+" : droites et arcs en alternance attendus, "+S.tracks.length+" pistes");
     for(const t of S.tracks)t.net="T";        // tracé dans le vide, sans net : le DRC les verrait tous étrangers
     touch();
-    const fautes=runDrc().filter(e=>!e.info);
+    const fautes=runDrc().filter(e=>!e.info&&!HORS_SUJET_BORD(e));
     if(fautes.length)throw new Error(nom+" : "+fautes.map(e=>e.msg).join(" ; "));
     if(S.sel.tracks.size)throw new Error(nom+" : un dépôt ne doit rien sélectionner");
   };
@@ -6484,7 +6489,7 @@ T("règle arrondi : un arc tangent à chaque coude, raccordé aux deux droites",
   if(!coude({l:0,net:"X",w:0.3,x1:19.4,y1:0.6,x2:19.4,y2:0.61}))throw new Error("le coude devait s'arrondir, plus serré");
   const r=arcOf(S.tracks.find(isArc)).r;
   if(r>=MITRE_AUTO*0.3-1e-6)throw new Error("rayon réduit attendu : "+r);
-  const fautes=runDrc().filter(e=>!e.info);
+  const fautes=runDrc().filter(e=>!e.info&&!HORS_SUJET_BORD(e));
   if(fautes.length)throw new Error("l'arc a créé : "+fautes.map(e=>e.msg).join(" ; "));
   if(coude({l:0,net:"X",w:0.3,x1:19.6,y1:0.4,x2:19.6,y2:0.41})||S.tracks.some(isArc)||S.tracks.length!==3)
     throw new Error("sans place, le coude reste tel quel");
@@ -7955,8 +7960,77 @@ T("forme par couche de bibliothèque : couches internes et dessous",()=>{
 T("ouverture Gerber : un angle non entier n'est pas arrondi au degré",()=>{
   const A=apSet();
   apForPad(A,{x:0,y:0,w:2,h:1,shape:"sharp",rot:12.5*Math.PI/180},0);
-  if(!/RRECT,2\.0*X1\.0*X12\.5\b/.test(A.defs.join(" ")))
+  // 12,5° horaire à l'écran = 347,5° trigonométrique dans le Gerber (y vers le haut)
+  if(!/RRECT,2\.0*X1\.0*X347\.5\b/.test(A.defs.join(" ")))
     throw new Error("angle de flash : "+A.defs.join(" "));
+});
+T("ouverture Gerber : les coins flashés sont ceux dessinés, y retourné",()=>{
+  const q={x:0,y:0,w:2,h:1,shape:"sharp",rot:30*Math.PI/180};
+  const A=apSet();apForPad(A,q,0);
+  const a=+A.defs[0].match(/X([\d.]+)\*%$/)[1]*Math.PI/180;
+  const k=p=>p.map(([x,y])=>x.toFixed(3)+","+y.toFixed(3)).sort().join(" ");
+  const dessin=k(padWorldPts(q,0).map(p=>[p.x,-p.y]));
+  const macro=k([[-1,-.5],[1,-.5],[1,.5],[-1,.5]].map(([x,y])=>[x*Math.cos(a)-y*Math.sin(a),x*Math.sin(a)+y*Math.cos(a)]));
+  if(dessin!==macro)throw new Error("coins : dessin "+dessin+" / Gerber "+macro);
+  // oblong dressé : les disques de la macro sur le grand axe dessiné
+  const o={x:0,y:0,w:1,h:3,shape:"oval",rot:30*Math.PI/180}, B=apSet();apForPad(B,o,0);
+  const v=B.defs[0].match(/OBR,[^X]+X[^X]+X([-\d.]+)X([-\d.]+)X/);
+  const P=padWorldPts(o,0), bout=P.reduce((m,p)=>Math.hypot(p.x,p.y)>Math.hypot(m.x,m.y)?p:m);
+  if(!v||Math.abs(bout.x*+v[2]-(-bout.y)*+v[1])>1e-3)throw new Error("oblong : "+B.defs[0]+" bout "+bout.x+","+bout.y);
+});
+T("pastille oblongue dressée : un vrai contour de gélule",()=>{
+  const q={x:0,y:0,w:1,h:3,shape:"oval",rot:0};
+  const aire=Math.abs(signedArea(padWorldPts(q,0)));
+  if(Math.abs(aire-(3-(4-Math.PI)*0.25))>0.02)throw new Error("aire "+aire.toFixed(3)+" pour ≈ 2,785");
+  // piste qui entre par le bout bas et ressort par le flanc droit, bouts dehors
+  const d=segPadDist({x1:0.1,y1:-1.7,x2:0.8,y2:0.4,w:0.1},q);
+  if(d>-0.049)throw new Error("la piste traverse la pastille : écart "+d);
+});
+T("DRC : pistes, vias et pastilles tiennent la marge au bord",()=>{
+  carteVide();
+  const edge=S.rule.edge, bd=S.board;S.rule.edge=0.4;
+  S.board={x:0,y:0,w:50,h:50,pts:null};
+  S.tracks.push({l:0,net:"A",w:0.2,x1:0.3,y1:10,x2:10,y2:10},{l:0,net:"A",w:0.2,x1:5,y1:15,x2:10,y2:15});
+  S.vias.push({x:0.6,y:20,d:0.8,drill:0.4,a:0,b:1,net:"A"});
+  const fp=mkFp("R9","1k","0603",1);fp.x=10;fp.y=30;
+  fp.pads=[{n:1,x:-9.1,y:0,w:2,h:1,shape:"sharp"}];S.fps.push(fp);
+  touch();
+  const m=runDrc().map(e=>e.msg).filter(t=>/contour/.test(t));
+  S.rule.edge=edge;S.board=bd;carteVide();
+  if(m.filter(t=>/^Piste hors du contour/.test(t)).length!==1)throw new Error("piste à 0,2 mm du bord : "+m.join(" | "));
+  if(!m.some(t=>/^Via hors du contour/.test(t)))throw new Error("via à 0,2 mm du bord : "+m.join(" | "));
+  if(!m.some(t=>/^Pastille R9\.1 hors du contour/.test(t)))throw new Error("pastille qui déborde : "+m.join(" | "));
+});
+T("pastille chanfreinée sous la carte : le coin suit le miroir",()=>{
+  carteVide();
+  const d=JSON.parse(serialize());
+  const pad={n:1,x:0,y:0,w:2,h:1,shape:"chamfer",chamfer:0.3,chamferCorners:"pin1"};
+  d.fps=[{id:1,ref:"J1",x:10,y:10,pins:1,pads:[pad]},{id:2,ref:"J2",x:30,y:10,pins:1,side:1,pads:[pad]}];
+  loadDoc(d,true);
+  const k=(fp,sx)=>padWorldPts(padsWorld(fp)[0]).map(p=>((p.x-fp.x)*sx).toFixed(3)+","+(p.y-fp.y).toFixed(3)).sort().join(" ");
+  const [h,b]=S.fps;
+  carteVide();
+  if(!b.side)throw new Error("J2 devait être dessous");
+  if(k(h,1)!==k(b,-1))throw new Error("dessus "+k(h,1)+" / dessous retourné "+k(b,-1));
+});
+T("positions.csv : rotation anti-horaire, comme le CPL",()=>{
+  carteVide();
+  for(const [i,r] of [[1,90],[2,0],[3,-90]]){const f=mkFp("R"+i,"1k","0603",2);f.x=5*i;f.y=5;f.rot=r;S.fps.push(f);}
+  touch();
+  const rot=positionsCsvText().trim().split(/\r?\n/).slice(1).map(l=>l.split(",")[5]).join(" ");
+  carteVide();
+  if(rot!=="270 0 90")throw new Error("rotations : "+rot);
+});
+T("IPC-D-356 : deux nets ne partagent jamais un nom tronqué",()=>{
+  carteVide();
+  ["/ALIM/VBUS_PROT","/ALIM/VBUS_PROT2","Vcc","VCC"].forEach((n,i)=>S.vias.push({x:5+5*i,y:5,d:0.8,drill:0.4,a:0,b:1,net:n}));
+  touch();
+  const t=ipcNetlist(), noms=t.split("\n").filter(l=>/^3[12]7/.test(l)).map(l=>l.slice(3,17));
+  const t2=ipcNetlist();
+  carteVide();
+  if(new Set(noms).size!==4)throw new Error("noms : "+noms.join("|"));
+  if(noms.some(n=>n.trim().length>14))throw new Error("plus de 14 caractères");
+  if(t.split("\n").slice(2).join("\n")!==t2.split("\n").slice(2).join("\n"))throw new Error("deux exports différents");
 });
 T("historique : borné en mémoire autant qu'en nombre",()=>{
   const gros="x".repeat(Math.ceil(UNDO_BUDGET/4));
@@ -11216,6 +11290,10 @@ T("règles : les champs de la fenêtre écrivent dans le document, annulables",(
   undo();
   if(Math.abs(holeClr()-av)>1e-9)
     throw new Error("Ctrl+Z devait rendre la règle d'avant : "+holeClr());
+  // un champ vidé ne met pas la règle à 0
+  const e2=$("reHole");e2.value="";
+  if(e2.onchange)e2.onchange();
+  if(Math.abs(holeClr()-av)>1e-9)throw new Error("champ vidé : la règle est passée à "+holeClr());
   reClose();
 });
 

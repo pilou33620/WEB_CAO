@@ -453,6 +453,7 @@ import http.cookies
 import http.server
 import ipaddress
 import json
+import math
 import os
 import posixpath
 import re
@@ -788,8 +789,7 @@ def enregistrer_config_lib(chemin):
             "chemin": os.path.abspath(chemin),
             "date": datetime.datetime.now().isoformat()
         }
-        with open(cfg_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+        ecrire_texte_atomique(cfg_path, json.dumps(data, indent=2, ensure_ascii=False))
     except OSError as exc:
         raise ErreurLib(500, "Impossible d'enregistrer config_lib.json : %s" % exc)
 
@@ -835,12 +835,57 @@ def ecrire_texte_atomique(chemin, texte, encodage="utf-8"):
         with open(temp, "w", encoding=encodage, newline="") as f:
             f.write(texte)
         os.replace(temp, chemin)
-    except OSError:
+    except BaseException:           # UnicodeEncodeError, KeyboardInterrupt... : pas de .tmp laisse
         try:
             os.remove(temp)
         except OSError:
             pass
         raise
+
+
+def sans_non_finis(v):
+    """Copie de `v` ou NaN et +-inf deviennent None (null en JSON)."""
+    if isinstance(v, float):
+        return v if math.isfinite(v) else None
+    if isinstance(v, dict):
+        return {k: sans_non_finis(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [sans_non_finis(x) for x in v]
+    return v
+
+
+def ecrire_exclusif(chemin, contenu):
+    """Cree `chemin` avec `contenu` (str en UTF-8, ou bytes), complet ou pas du tout.
+
+    FileExistsError si le nom est pris : c'est le systeme qui refuse (lien ou
+    O_EXCL), pas un « lire puis ecrire ». Le texte est ecrit a part puis lie
+    sous son nom.
+    """
+    mode = {"mode": "wb"} if isinstance(contenu, bytes) else \
+        {"mode": "w", "encoding": "utf-8", "newline": ""}
+    temp = "%s.%d.%d.tmp" % (chemin, os.getpid(), threading.get_ident())
+    try:
+        with open(temp, **mode) as f:
+            f.write(contenu)
+        try:
+            os.link(temp, chemin)
+        except FileExistsError:
+            raise
+        except OSError:
+            # systeme de fichiers sans liens (FAT, exFAT) : creation exclusive, puis ecriture ;
+            # un echec en cours d'ecriture retire le fichier, pour ne pas laisser un vide
+            fd = os.open(chemin, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+            try:
+                with os.fdopen(fd, **mode) as f:
+                    f.write(contenu)
+            except BaseException:
+                os.remove(chemin)
+                raise
+    finally:
+        try:
+            os.remove(temp)
+        except OSError:
+            pass
 
 
 def chemin_lib_fichier(genre, nom_brut, creer=False):
@@ -955,8 +1000,6 @@ def initialiser_lib_dans_dossier(cible):
     fichiers_copies = 0
 
     src_csv = os.path.join(source_lib, "LIB_composants.csv")
-    if not os.path.exists(src_csv):
-        src_csv = os.path.join(ROOT, "LIB_composants.csv")
     dst_csv = os.path.join(cible, "LIB_composants.csv")
     if os.path.exists(src_csv) and not os.path.exists(dst_csv):
         shutil.copy2(src_csv, dst_csv)
@@ -1757,17 +1800,31 @@ def attendre_touche():
         pass
 
 
+# Fichiers statiques : liste blanche (REGLES-NOUVEAU-WEB-TOOL §3.1). Ne sort que
+# ce que les pages chargent : leur .html, leurs js/ et css/, commun/, le manuel,
+# les regles des fabricants (24-pcb-capabilities.js) et les monofichiers dist/.
+# Le reste est 404 : python/, tests, bancs-mesure/, tasks/, graphify-out/,
+# *.md, profils d'utilisateur, projets/ (ils ont leurs routes /api/...).
+# Un segment commence par une lettre, un chiffre, « _ » ou « - » : ni « .. »,
+# ni fichier cache, ni « : » (flux NTFS ::$DATA), ni « \ ».
+DETAIL_INTERNE = "Erreur interne (details dans le terminal du serveur)"
+_PAGES = r"(?:editeur-pcb|editeur-schematique|gestion-lib|visionneuse-ipc2581|recherche-composants)"
+STATIQUE = re.compile(
+    r"^/(?:index\.html)?$"
+    r"|^/" + _PAGES + r"/?$"                                    # dossier -> <dossier>.html
+    r"|^/" + _PAGES + r"/[\w-]+\.html$"
+    r"|^/editeur-(?:pcb|schematique)/dist/[\w-]+\.html$"
+    r"|^/" + _PAGES + r"/(?:js|css)(?:/[\w-]+)*/[\w-][\w.-]*\.(?:js|css|json|png|svg|gif|woff2?|ttf|wasm)$"
+    r"|^/commun(?:/vendor)?/[\w-][\w.-]*\.(?:js|css|json)$"
+    r"|^/docs/manuel/manuel\.html$"
+    r"|^/profils/fabricants/[\w-][\w.-]*\.json$")
+# /LIB/ : les fichiers de donnees de la bibliotheque active (memes extensions que
+# l'API) ; son catalogue passe par /api/lib/composants.
+STATIQUE_LIB = re.compile(r"^/LIB(?:/[^/.:\\][^/:\\]*)+$")
+
+
 class CustomHandler(http.server.SimpleHTTPRequestHandler):
     """Sert ROOT, sans cache, avec redirection vers <dossier>/<dossier>.html."""
-
-    # les fichiers de travail n'ont rien a faire sur le reseau
-    # profils/ n'est pas cache par pudeur : il n'a qu'une porte, /api/profil,
-    # qui verifie le nom demande. Servir le dossier en plus n'ajouterait
-    # rien et donnerait un second chemin a surveiller.
-    HIDDEN = ('.git', '.github', '.gitignore', '.venv', '__pycache__', '.env',
-              'profils', 'api_key_free_ia_studio.txt', 'LIB_composants.csv',
-              'mom_solver.log', 'config_lib.json')
-    HIDDEN_MIN = tuple(h.lower() for h in HIDDEN)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=ROOT, **kwargs)
@@ -1818,46 +1875,30 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return cible
         return None
 
-    def _hidden(self, path):
-        """Vrai si le chemin sort de ROOT ou touche un fichier de travail."""
+    def _hors_racine(self, path):
+        """Vrai si le fichier (liens resolus) sort de ROOT, ou de la
+        bibliotheque active quand elle vit ailleurs : un lien symbolique
+        d'un dossier permis ne doit pas ouvrir le reste du disque."""
         try:
             real = os.path.realpath(path)
-        except OSError:
-            return True
-        root = os.path.realpath(ROOT)
-        base = root
-        if real != root and not real.startswith(root + os.sep):
+            root = os.path.realpath(ROOT)
+            if real == root or real.startswith(root + os.sep):
+                return False
             # hors du depot, seule la bibliotheque active peut etre servie
             # (_chemin_lib a deja verifie qu'elle en a le droit)
-            try:
-                lib = os.path.realpath(dossier_lib())
-            except OSError:
-                return True
-            dans_lib = real == lib or real.startswith(lib + os.sep)
-            if not (PROJETS_OUVERT or PROJETS_RESEAU) or not dans_lib:
-                return True        # remontee hors du depot
-            base = lib
-        rel = os.path.relpath(real, base)
-        # en minuscules : sur macOS (et tout disque insensible a la casse),
-        # /API_KEY_free_ia_studio.txt ou /Projets/ designent les memes
-        # fichiers et passaient les regles ci-dessous
-        parts = [p.lower() for p in rel.split(os.sep) if p not in ('.', '..')]
-        # Si l'ecoute n'est pas locale, le dossier des projets n'est pas servi statiquement
-        if not PROJETS_OUVERT and parts and parts[0] == PROJETS:
+            lib = os.path.realpath(dossier_lib())
+        except OSError:
             return True
-        # profils/fabricants/ n'est pas un profil d'utilisateur : ce sont les
-        # regles des fabricants, versionnees, que l'editeur PCB lit en statique
-        # (24-pcb-capabilities.js). Le reste de profils/ reste cache.
-        if base == root and len(parts) >= 3 and \
-                parts[0] == PROFILS and parts[1] == "fabricants":
-            parts = parts[2:]
-        # « : » : un flux NTFS (config_lib.json::$DATA) designe le meme
-        # fichier sous un nom qui echappait a toutes les regles ci-dessous
-        return any(part in self.HIDDEN_MIN or part.startswith('.') or ':' in part or
-                   part.startswith('api_key') or part.endswith('.key') or
-                   part.endswith('.py') or part.endswith('.pyc') or
-                   part.endswith('.log')
-                   for part in parts)
+        dans_lib = real == lib or real.startswith(lib + os.sep)
+        return not ((PROJETS_OUVERT or PROJETS_RESEAU) and dans_lib)
+
+    def _statique_permis(self, rel):
+        """Le chemin d'URL `rel` est-il un fichier que les pages chargent ?"""
+        chemin = urllib.parse.unquote(rel)
+        if STATIQUE.match(chemin):
+            return True
+        return bool(STATIQUE_LIB.match(chemin)
+                    and (LIB_EXTENSIONS.search(chemin) or STEP_EXTENSIONS.search(chemin)))
 
     def translate_path(self, path):
         """Chemin URL -> fichier : /LIB/ vers la bibliotheque active, le reste
@@ -1892,8 +1933,11 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(204)
             self.end_headers()
             return None
+        if not self._statique_permis(rel):
+            self.send_error(404, "File not found")
+            return None
         target = self.translate_path(posixpath.normpath(rel))
-        if self._hidden(target):
+        if self._hors_racine(target):
             self.send_error(404, "File not found")
             return None
         return super().send_head()
@@ -1925,7 +1969,13 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                     and origine.lower() in ("http://" + hote, "https://" + hote))
 
     def _valider_csrf(self):
-        """Rejette les requetes modificatrices provenant d'une origine non autorisee."""
+        """Rejette les requetes modificatrices provenant d'une origine non autorisee.
+
+        En-tete maison X-WEB_CAO exige (REGLES §2.3) : une page d'un autre site ne
+        peut pas l'ajouter sans pre-vol CORS, que ce serveur ne valide pas."""
+        if self.headers.get("X-WEB_CAO") != "1":
+            self._envoyer_json({"detail": "Requete refusee"}, 403)
+            return False
         origine = self.headers.get("Origin")
         if origine and not self._origine_permise(origine):
             self._envoyer_json({"detail": "Origine inter-site refusee (protection CSRF)"}, 403)
@@ -1933,7 +1983,13 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         return True
 
     def _envoyer_json(self, charge, code=200):
-        corps = json.dumps(charge).encode("utf-8")
+        # allow_nan=False : NaN/Infinity ne sont pas du JSON, la page ne relirait
+        # pas la reponse (rep.json() echoue) ; un calcul qui en rend (une
+        # frequence limite infinie...) part avec null a leur place
+        try:
+            corps = json.dumps(charge, allow_nan=False).encode("utf-8")
+        except ValueError:
+            corps = json.dumps(sans_non_finis(charge), allow_nan=False).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(corps)))
@@ -1942,13 +1998,11 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(corps)
 
     def _detail_interne(self, exc):
-        """Le texte d'une erreur imprevue : entier en local, generique sur le
-        reseau (il porte des chemins absolus du poste). La trace complete
-        part toujours dans le terminal."""
+        """Le texte d'une erreur imprevue : toujours generique (le texte brut
+        porte des chemins absolus du poste, REGLES §3.3). La trace complete
+        part dans le terminal."""
         traceback.print_exc()
-        if PROJETS_OUVERT:
-            return "Erreur interne : %s" % exc
-        return "Erreur interne (details dans le terminal du serveur)"
+        return DETAIL_INTERNE
 
     def _json_api(self, action, erreur, fermer=True):
         """Execute action() et traduit les refus `erreur` (et l'imprevu, en
@@ -1959,7 +2013,12 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         except erreur as exc:
             if fermer:
                 self.close_connection = True
-            self._envoyer_json({"detail": exc.message}, exc.code)
+            detail = exc.message
+            if exc.code == 500 and not self._client_local():
+                # « Impossible d'ecrire /home/... : [Errno 13] » : le chemin reste dans le terminal
+                sys.stderr.write("  ERREUR 500 %s : %s\n" % (self._route(), detail))
+                detail = DETAIL_INTERNE
+            self._envoyer_json({"detail": detail}, exc.code)
         except Exception as exc:                       # noqa: BLE001
             if fermer:
                 self.close_connection = True
@@ -1973,8 +2032,12 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             raise erreur(400, "Content-Length invalide")
         if taille > plafond:
             raise erreur(413, trop)
+        def refuser(nom):
+            raise erreur(400, "Corps JSON illisible (%s n'est pas du JSON)" % nom)
         try:
-            return json.loads(self.rfile.read(taille) or b"{}")
+            # NaN/Infinity : Python les accepte, mais un fichier qui en contient
+            # n'est plus du JSON et la page ne le rouvrirait pas
+            return json.loads(self.rfile.read(taille) or b"{}", parse_constant=refuser)
         except (ValueError, UnicodeDecodeError):
             raise erreur(400, "Corps JSON illisible")
 
@@ -2145,7 +2208,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         except ValueError:
             raise ErreurProjet(422, "%s : ce n'est pas du JSON" % quoi)
 
-    def _projet_fichier_ecrire(self, chemin, charge, quoi):
+    def _projet_fichier_ecrire(self, chemin, charge, quoi, creer=False):
         try:
             os.makedirs(os.path.dirname(chemin), exist_ok=True)
         except OSError as exc:
@@ -2154,7 +2217,15 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         # courant laisse l'ancien fichier entier plutot qu'un fichier a
         # moitie ecrit -- et un schema a moitie ecrit, c'est du travail perdu
         try:
-            ecrire_texte_atomique(chemin, json.dumps(charge, ensure_ascii=False, indent=1))
+            texte = json.dumps(charge, ensure_ascii=False, indent=1, allow_nan=False)
+            if creer:
+                ecrire_exclusif(chemin, texte)
+            else:
+                ecrire_texte_atomique(chemin, texte)
+        except FileExistsError:
+            raise ErreurProjet(409, "%s existe deja : ce nom de projet est pris" % quoi)
+        except ValueError:      # NaN, ou UnicodeEncodeError (« \ud800 » seul)
+            raise ErreurProjet(400, "%s : contenu impossible a ecrire en JSON UTF-8" % quoi)
         except OSError as exc:
             raise ErreurProjet(500, "%s : non enregistre (%s)" % (quoi, exc))
 
@@ -2235,9 +2306,14 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         """Parcourt recursivement un dossier pour trouver les projets."""
         if niveau > PROJETS_PROFONDEUR:
             return
-        for entree in sorted(os.listdir(courant)):
+        try:
+            entrees = sorted(os.listdir(courant))
+        except OSError:
+            return              # dossier illisible (droits) : les autres projets restent listes
+        for entree in entrees:
             chemin = os.path.join(courant, entree)
-            if not os.path.isdir(chemin):
+            # ni dossier cache (.git...) ni lien symbolique (il sortirait de la racine)
+            if entree.startswith(".") or os.path.islink(chemin) or not os.path.isdir(chemin):
                 continue
             principal = os.path.join(chemin, PROJET_FICHIER)
             if lisible(principal):
@@ -2275,8 +2351,10 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                                     " attendu : %s)" % PROJET_FORMAT)
         if not nom_projet(charge.get("nom")):
             raise ErreurProjet(400, "Le fichier projet n'a pas de nom valide")
+        # creer=1 (creation depuis l'accueil) : jamais d'ecrasement d'un projet existant, 409
+        creer = (self._projet_params().get("creer") or [""])[0] == "1"
         self._projet_fichier_ecrire(os.path.join(dossier, PROJET_FICHIER),
-                                    charge, "Le fichier projet")
+                                    charge, "Le fichier projet", creer)
         return {"ok": True, "dossier": dossier, "nom": charge.get("nom")}
 
     # -- envoi sur GitHub, relaye au lanceur WEB_SUITE --------------------
@@ -2462,9 +2540,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         """Lit LIB/LIB_composants.csv et renvoie colonnes + liste de composants en JSON."""
         chemin = os.path.join(dossier_lib(), "LIB_composants.csv")
         if not os.path.exists(chemin):
-            chemin = os.path.join(ROOT, "LIB_composants.csv")
-        if not os.path.exists(chemin):
             raise ErreurLib(404, "Fichier LIB_composants.csv introuvable")
+        # date du fichier lu : l'enregistrement complet la renvoie (409 si elle a change)
+        mtime = mtime_ms(chemin)
 
         contenu = None
         for enc in ("utf-8-sig", "latin1", "cp1252"):
@@ -2493,7 +2571,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         try:
             colonnes = [c.strip() for c in next(lecteur)]
         except StopIteration:
-            return {"colonnes": [], "composants": [], "total": 0}
+            return {"colonnes": [], "composants": [], "total": 0, "mtime_ms": mtime}
 
         composants = []
         for i, row in enumerate(lecteur):
@@ -2503,7 +2581,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             item["_id"] = i
             composants.append(item)
 
-        return {"colonnes": colonnes, "composants": composants, "total": len(composants)}
+        return {"colonnes": colonnes, "composants": composants, "total": len(composants),
+                "mtime_ms": mtime}
 
     def _lib_composants_ecrire(self):
         """Ecrit la liste des composants dans LIB/LIB_composants.csv."""
@@ -2544,19 +2623,24 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         dossier = dossier_lib()
         os.makedirs(dossier, exist_ok=True)
         cible = os.path.join(dossier, "LIB_composants.csv")
+        vu = charge.get("mtime_ms")
         with VERROU_CATALOGUE:      # un ajout de ligne en cours ne doit pas reecrire l'ancien texte par-dessus
+            # `mtime_ms` : la date du catalogue que la page a lu. Il a change depuis (autre
+            # appareil, ajout par Claude) : 409, sinon on effacerait ce changement. Sans
+            # date (ancienne page, script), ecriture comme avant.
+            if isinstance(vu, int) and not isinstance(vu, bool) and mtime_ms(cible) != vu:
+                raise ErreurLib(409, "Le catalogue a ete modifie ailleurs depuis son chargement :"
+                                     " rien n'est enregistre, recharge la page pour le reprendre")
             try:
                 ecrire_texte_atomique(cible, texte)
+            except UnicodeEncodeError:
+                raise ErreurLib(400, "Texte invalide (caractere non encodable en UTF-8)")
             except OSError as exc:
                 raise ErreurLib(500, "Impossible d'ecrire %s : %s" % (cible, exc))
+            mtime = mtime_ms(cible)
 
-            racine_csv = os.path.join(ROOT, "LIB_composants.csv")
-            try:
-                ecrire_texte_atomique(racine_csv, texte)
-            except OSError:
-                pass
-
-        return {"ok": True, "total": len(composants), "message": "Composants enregistres"}
+        return {"ok": True, "total": len(composants), "message": "Composants enregistres",
+                "mtime_ms": mtime}
 
     def _lib_composants_ajouter(self, ligne):
         """Ajoute UNE ligne au catalogue sans reecrire les autres : le texte existant reste tel
@@ -2568,6 +2652,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         import io
         with VERROU_CATALOGUE:
             chemin, brut, texte, enc = self._catalogue_brut()
+            vu = mtime_ms(chemin)   # la page qui a lu cette date peut la suivre (pas de faux 409)
             lignes = [r for r in csv.reader(io.StringIO(texte), delimiter=';') if any(c.strip() for c in r)]
             if not lignes:
                 raise ErreurLib(500, "Catalogue sans en-tete")
@@ -2604,7 +2689,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                 neuf += fin
             neuf += sortie.getvalue()
             self._catalogue_ecrire(chemin, brut, enc, neuf)
-            return {"ok": True, "ajoute": nom, "total": len(lignes)}
+            return {"ok": True, "ajoute": nom, "total": len(lignes),
+                    "mtime_avant": vu, "mtime_ms": mtime_ms(chemin)}
 
     @staticmethod
     def _valeur_catalogue(k, v):
@@ -2682,7 +2768,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
     @staticmethod
     def _catalogue_ecrire(chemin, brut, enc, neuf):
-        """Reecrit le catalogue dans son encodage d'origine (BOM compris), puis sa copie a la racine."""
+        """Reecrit le catalogue dans son encodage d'origine (BOM compris)."""
         ecrit = "utf-8" if enc == "utf-8-sig" else enc
         prefixe = "\ufeff" if brut.startswith(b"\xef\xbb\xbf") else ""
         try:
@@ -2693,10 +2779,6 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             ecrire_texte_atomique(chemin, prefixe + neuf, ecrit)
         except OSError as exc:
             raise ErreurLib(500, "Impossible d'ecrire %s : %s" % (chemin, exc))
-        try:
-            ecrire_texte_atomique(os.path.join(ROOT, "LIB_composants.csv"), prefixe + neuf, ecrit)
-        except OSError:
-            pass
 
     def _lib_composants_lier_simulation(self, demande):
         """Lie un modele de lib_simulation a UNE reference : sa case « Modèle Simulation » recoit
@@ -2718,6 +2800,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         import io
         with VERROU_CATALOGUE:
             chemin, brut, texte, enc = self._catalogue_brut()
+            vu = mtime_ms(chemin)   # la page qui a lu cette date peut la suivre (pas de faux 409)
             physiques, lignes, colonnes = self._catalogue_lignes(texte)
             ligne, d, f = self._catalogue_viser(lignes, colonnes, nom)
             col = next((c for c in ("Modèle Simulation", "Modele Simulation") if c in colonnes), None)
@@ -2744,7 +2827,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             ligne[j] = valeur
             self._catalogue_remplacer(physiques, ligne, d, f)
             self._catalogue_ecrire(chemin, brut, enc, "".join(physiques))
-            return {"ok": True, "part": nom, "modeles": liste}
+            return {"ok": True, "part": nom, "modeles": liste,
+                    "mtime_avant": vu, "mtime_ms": mtime_ms(chemin)}
 
     def _lib_composants_modifier(self, demande):
         """Modifie des cases d'UNE reference existante : `champs` {colonne: valeur} remplace ces cases,
@@ -2765,6 +2849,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         valeurs = {k: self._valeur_catalogue(k, v).strip() for k, v in champs.items()}
         with VERROU_CATALOGUE:
             chemin, brut, texte, enc = self._catalogue_brut()
+            vu = mtime_ms(chemin)   # la page qui a lu cette date peut la suivre (pas de faux 409)
             physiques, lignes, colonnes = self._catalogue_lignes(texte)
             inconnues = [k for k in list(valeurs) + list(avant) if k not in colonnes]
             if inconnues:
@@ -2778,7 +2863,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                 ligne[colonnes.index(k)] = v
             self._catalogue_remplacer(physiques, ligne, d, f)
             self._catalogue_ecrire(chemin, brut, enc, "".join(physiques))
-            return {"ok": True, "part": nom, "champs": valeurs}
+            return {"ok": True, "part": nom, "champs": valeurs,
+                    "mtime_avant": vu, "mtime_ms": mtime_ms(chemin)}
 
     def _lib_fichiers_liste(self):
         """Liste les fichiers d'empreintes PCB, symboles schematiques et modeles de simulation."""
@@ -2846,37 +2932,15 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             raise ErreurLib(400, "Champ 'data' ou 'contenu' requis")
 
         if charge.get("si_absent") is True:
-            # jamais d'ecrasement : c'est le systeme qui refuse (lien ou O_EXCL), pas un « lire puis
-            # ecrire » ; le fichier est ecrit a part puis lie sous son nom, complet ou pas du tout
-            temp = "%s.%d.%d.tmp" % (chemin, os.getpid(), threading.get_ident())
+            # jamais d'ecrasement : complet ou pas du tout (ecrire_exclusif)
             try:
-                with open(temp, "w", encoding="utf-8", newline="") as f:
-                    f.write(contenu)
-                try:
-                    os.link(temp, chemin)
-                except FileExistsError:
-                    raise ErreurLib(409, "Le fichier existe deja : %s (jamais d'ecrasement)" % nom)
-                except OSError:
-                    # systeme de fichiers sans liens (FAT, exFAT) : creation exclusive, puis ecriture ;
-                    # un echec en cours d'ecriture retire le fichier, pour ne pas laisser un vide
-                    fd = os.open(chemin, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
-                    try:
-                        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
-                            f.write(contenu)
-                    except BaseException:
-                        os.remove(chemin)
-                        raise
+                ecrire_exclusif(chemin, contenu)
             except FileExistsError:
                 raise ErreurLib(409, "Le fichier existe deja : %s (jamais d'ecrasement)" % nom)
             except UnicodeEncodeError:
                 raise ErreurLib(400, "Texte invalide (caractere non encodable en UTF-8) : %s" % nom)
             except OSError as exc:
                 raise ErreurLib(500, "Erreur d'ecriture : %s" % exc)
-            finally:
-                try:
-                    os.remove(temp)
-                except OSError:
-                    pass
             return {"ok": True, "type": genre, "nom": nom}
 
         try:
@@ -2911,6 +2975,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         defaut = dossier_lib_defaut()
         est_defaut = os.path.realpath(dossier) == os.path.realpath(defaut) if os.path.exists(dossier) and os.path.exists(defaut) else (dossier == defaut)
         info = statistiques_lib(dossier)
+        if not self._client_local():
+            # un appareil du reseau n'a pas a connaitre l'arborescence du poste
+            dossier, defaut = os.path.basename(dossier), os.path.basename(defaut)
         return {
             "chemin": dossier,
             "defaut": defaut,
@@ -3431,8 +3498,6 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if not nom_base.lower().endswith(".pdf"):
             nom_base += ".pdf"
 
-        chemin_cible = os.path.join(dossier_datasheets, nom_base)
-
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "application/pdf,*/*"
@@ -3483,11 +3548,21 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                                           " (page web sans lien vers la fiche ?)."}, 422)
             return
 
-        try:
-            with open(chemin_cible, "wb") as f:
-                f.write(contenu)
-        except OSError as exc:
-            self._envoyer_json({"detail": "Ecriture disque impossible : %s" % exc}, 500)
+        # jamais d'ecrasement (REGLES §3.2) : « nom (2).pdf » si le nom est pris
+        racine_nom = nom_base[:-4]
+        for n in range(1, 100):
+            nom_base = racine_nom + (" (%d)" % n if n > 1 else "") + ".pdf"
+            try:
+                ecrire_exclusif(os.path.join(dossier_datasheets, nom_base), contenu)
+                break
+            except FileExistsError:
+                continue
+            except OSError as exc:
+                self._envoyer_json({"detail": "Ecriture disque impossible : %s" % exc}, 500)
+                return
+        else:
+            self._envoyer_json({"detail": "Trop de datasheets de ce nom : faites le menage"
+                                          " dans datasheets/"}, 409)
             return
 
         # Le lien doit redesigner CE dossier : le seul nom du dernier dossier

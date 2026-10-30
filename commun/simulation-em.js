@@ -259,7 +259,7 @@ function ltEeff(g,w){
 /* Impédance caractéristique. Microruban : Hammerstad-Jensen, en deux branches
    selon que la piste est plus étroite ou plus large que la hauteur du
    diélectrique — c'est la même courbe, mais aucune des deux expressions ne la
-   suit sur toute sa longueur. Triplaque : l'approximation de l'IPC-2141A.
+   suit sur toute sa longueur. Triplaque : Wheeler 1978, celle du Python.
 
    UNE SEULE FORMULE LÉGÈRE pour l'éditeur PCB et la visionneuse (et `dpZ0()`
    des paires différentielles) : deux copies avaient divergé — arrondi d'ε_eff
@@ -276,9 +276,22 @@ function ltEeff(g,w){
 function ltZ0(g,w){
   if(!(w>0))return 0;
   if(g.kind==="strip"){
-    const b=Math.max(g.b,1e-4);
-    const x=4*b/(0.67*Math.PI*(0.8*w+g.t));
-    return x>1?60/Math.sqrt(g.er)*Math.log(x):0;
+    /* Wheeler 1978 (Wadell 3.5.1), mot pour mot `_z_air_triplaque()` de
+       python/ligne_mom.py, divisée par √εr. L'IPC-2141A ne vaut que sous
+       w/b ≈ 0,35 et rendait 0 dès que son logarithme passait sous 1 — une
+       piste large sur un stratifié mince. b est l'écart entre les plans. */
+    const b=Math.max(g.b,1e-4), t=g.t||0, x=t/b;
+    if(!(t<b))return 0;
+    let wp=w/b;
+    if(x>0){
+      const m=2/(1+(2/3)*x/(1-x));
+      wp=w/(b-t)+(x/(Math.PI*(1-x)))*(1-0.5*Math.log(
+        Math.pow(x/(2-x),2)+Math.pow(0.0796*x/(w/b+1.1*x),m)));
+    }
+    if(!(wp>0))return 0;
+    const a=4/(Math.PI*wp);
+    return 376.730313668/(4*Math.PI)/Math.sqrt(g.er)
+      *Math.log(1+a*(2*a+Math.sqrt(4*a*a+6.27)));
   }
   if(!(g.h>0))return 0;
   const h=g.h, e=Math.sqrt(ltEeff(g,w)), u=ltWeff(g,w)/h;
@@ -1077,7 +1090,9 @@ function simParseResistance(val){
   //     (7000 Ω), « 2.2M » 2 MΩ, « 10 kohm » 10 Ω.
   //     « m » minuscule vaut milli, comme en SPICE : un shunt « 10m » ou
   //     « 10 mΩ » fait 0,01 Ω ; le méga s'écrit « M » ou « meg ».
-  const mDec = s.match(/^(\d+(?:[.,]\d+)?)\s*(k|K|MEG|Meg|meg|M|m)?\s*(?:ohms?|Ohms?|OHMS?|Ω|R)?$/);
+  //     La valeur s'arrête au premier blanc : « 4.7k 1% » est 4,7 kΩ, sa
+  //     tolérance ne la fait pas retomber sur les codes ci-dessous (7000 Ω).
+  const mDec = s.match(/^(\d+(?:[.,]\d+)?)\s*(k|K|MEG|Meg|meg|M|m)?\s*(?:ohms?|Ohms?|OHMS?|Ω|R)?(?=\s|$)/);
   if(mDec){
     const u = mDec[2] || "";
     const mult = (u === "k" || u === "K") ? 1e3 : (u === "m" ? 1e-3 : (u ? 1e6 : 1));
@@ -3858,7 +3873,7 @@ async function simDCCalculer(doc){
   await simConnecter();     // comme les autres analyses : le serveur trouvé, ou son refus expliqué
   const rep=await fetch((SIM_BASE||"")+SIM_DC_ROUTE,{
     method:"POST",
-    headers:{"Content-Type":"application/json"},
+    headers:Object.assign({"Content-Type":"application/json"},ENTETE_WEB),
     body:JSON.stringify(doc)
   });
   let corps=null;
@@ -4455,7 +4470,7 @@ async function simCorpsJson(doc){
   const corps = ids.size && texte[0] === "{"
     ? '{"cavites_grilles":' + JSON.stringify(table) + (texte.length > 2 ? "," : "") + texte.slice(1)
     : texte;
-  const headers = {"Content-Type": "application/json"};
+  const headers = Object.assign({"Content-Type": "application/json"}, ENTETE_WEB);
   if(corps.length < 262144 || typeof CompressionStream !== "function")
     return {body: corps, headers: headers};
   try{
@@ -4464,7 +4479,7 @@ async function simCorpsJson(doc){
     headers["Content-Encoding"] = "gzip";
     return {body: gz, headers: headers};
   }catch(e){
-    return {body: corps, headers: {"Content-Type": "application/json"}};
+    return {body: corps, headers: Object.assign({"Content-Type": "application/json"}, ENTETE_WEB)};
   }
 }
 
@@ -10435,7 +10450,7 @@ function simXtAvanceAppliquer(){
 async function simXtLancer(doc){
   await simConnecter();
   const rep=await fetch(SIM_BASE+SIM_XT_ROUTE,{
-    method:"POST", headers:{"Content-Type":"application/json"},
+    method:"POST", headers:Object.assign({"Content-Type":"application/json"},ENTETE_WEB),
     body:JSON.stringify(doc)
   });
   if(!rep.ok)throw new Error(await simErreur(rep));
@@ -18128,7 +18143,7 @@ async function simRfGo(){
     await simConnecter();
     const rev=simRevision();
     const rep=await fetch((SIM_BASE||"")+SIM_RF_ROUTE,{
-      method:"POST", headers:{"Content-Type":"application/json"},
+      method:"POST", headers:Object.assign({"Content-Type":"application/json"},ENTETE_WEB),
       body:JSON.stringify(p.doc)});
     let corps=null;
     try{corps=await rep.json();}catch(e){corps=null;}

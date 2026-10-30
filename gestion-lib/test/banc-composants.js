@@ -25,7 +25,7 @@ const bac = {
   fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
 };
 vm.createContext(bac);
-for (const f of ["commun/brochage.js", "gestion-lib/js/07-import-jlc.js", "commun/composants-lib.js"])
+for (const f of ["commun/echappe.js", "commun/brochage.js", "gestion-lib/js/07-import-jlc.js", "commun/composants-lib.js"])
   vm.runInContext(lire(f), bac, { filename: f });
 const CL = vm.runInContext("COMPOSANTS_LIB", bac);
 const copie = o => JSON.parse(JSON.stringify(o));
@@ -424,7 +424,7 @@ Object.assign(bac, {
     SRV.ecrits.push(["empreinte", nom, opt]);
     SRV.pcb.push(nom);
   },
-  fetch: async (url, opt) => { SRV.ecrits.push(["retrait", url, opt.method]); return { ok: true }; },
+  fetch: async (url, opt) => { SRV.ecrits.push(["retrait", url, opt.method, opt.headers]); return { ok: true }; },
   libSuiteNoter() {}, rafraichirTout() {}, selectionnerComposant() {}
 });
 vm.runInContext(lire("gestion-lib/js/08-pilote-lib.js"), bac, { filename: "08-pilote-lib.js" });
@@ -463,8 +463,9 @@ const asyncTests = (async () => {
   SRV.refusLigne = null;
   verifier(refuse && /empreinte SOT-23-5-B.json retirée/.test(refuse) &&
            JSON.stringify(SRV.ecrits.map(e => e[0])) === JSON.stringify(["empreinte", "retrait"]) &&
-           SRV.ecrits[1][1] === "/api/lib/fichier?type=pcb&nom=SOT-23-5-B.json" && SRV.ecrits[1][2] === "DELETE",
-    "ligne refusée : empreinte retirée (" + refuse + ")");
+           SRV.ecrits[1][1] === "/api/lib/fichier?type=pcb&nom=SOT-23-5-B.json" && SRV.ecrits[1][2] === "DELETE" &&
+           SRV.ecrits[1][3]["X-WEB_CAO"] === "1",
+    "ligne refusée : empreinte retirée, avec l'en-tête maison (" + refuse + ")");
 
   // réponse perdue (pas de statut HTTP) : la ligne a pu être écrite, l'empreinte reste
   SRV.ecrits.length = 0;

@@ -29,6 +29,15 @@ function schTousLesComposants() {
   return list;
 }
 
+/* Les id sont propres à chaque feuille : un composant est repéré par « feuille:id »,
+   comme dans brNetsParBroche. */
+function schCleLib(c) {
+  const pages = (typeof S !== "undefined" && Array.isArray(S.pages)) ? S.pages : [];
+  for (let i = 0; i < pages.length; i++)
+    if (((i === S.page) ? S.comps : pages[i].comps || []).includes(c)) return i + ":" + c.id;
+  return ((typeof S !== "undefined" && S.page) | 0) + ":" + c.id;
+}
+
 function schTrouverComposantsAmettreAJour(detail) {
   if (!detail) return [];
   const comps = schTousLesComposants();
@@ -61,7 +70,7 @@ function schTrouverComposantsAmettreAJour(detail) {
 
 function schComposantAlerteLib(comp) {
   if (!comp || !SCH_LIB_ALERTE.active) return false;
-  return SCH_LIB_ALERTE.compIds.has(comp.id);
+  return SCH_LIB_ALERTE.compIds.has(schCleLib(comp));
 }
 
 function schAfficherAlerteLib(titre, msg, onMaj, onIgnorer) {
@@ -126,9 +135,11 @@ function schAfficherToast(msg, succes) {
   }, 4000);
 }
 
-function schAppliquerMajLibComposant(comp, dataFichier) {
+/* dansUnLot : schAppliquerMajLibTous a déjà poussé l'étape d'annulation du lot */
+function schAppliquerMajLibComposant(comp, dataFichier, dansUnLot) {
   if (!comp) return false;
-  if (typeof push === "function") push();
+  const cle = schCleLib(comp);                      // avant toute retouche du document
+  if (!dansUnLot && typeof push === "function") push();
 
   // 1. Mise à jour depuis le catalogue CSV
   if (window.CSV_LIB && Array.isArray(window.CSV_LIB)) {
@@ -203,7 +214,7 @@ function schAppliquerMajLibComposant(comp, dataFichier) {
     }
   }
 
-  SCH_LIB_ALERTE.compIds.delete(comp.id);
+  SCH_LIB_ALERTE.compIds.delete(cle);
   if (SCH_LIB_ALERTE.compIds.size === 0) {
     SCH_LIB_ALERTE.active = false;
     const t = document.getElementById("schLibToast");
@@ -220,14 +231,14 @@ function schAppliquerMajLibComposant(comp, dataFichier) {
 }
 
 function schAppliquerMajLibTous(detail) {
-  const comps = schTousLesComposants().filter(c => SCH_LIB_ALERTE.compIds.has(c.id));
+  const comps = schTousLesComposants().filter(c => SCH_LIB_ALERTE.compIds.has(schCleLib(c)));
   if (comps.length === 0) return 0;
 
   if (typeof push === "function") push();
 
   let modifs = 0;
   for (const c of comps) {
-    if (schAppliquerMajLibComposant(c, detail ? detail.data : null)) {
+    if (schAppliquerMajLibComposant(c, detail ? detail.data : null, true)) {
       modifs++;
     }
   }
@@ -256,7 +267,7 @@ function schInitialiserLibSync() {
     if (matches.length > 0) {
       SCH_LIB_ALERTE.active = true;
       SCH_LIB_ALERTE.detail = detail;
-      SCH_LIB_ALERTE.compIds = new Set(matches.map(c => c.id));
+      SCH_LIB_ALERTE.compIds = new Set(matches.map(schCleLib));
 
       const nom = detail.nom ? detail.nom.replace(/\.json$/i, "") : "Catalogue";
       const titre = "Bibliothèque modifiée";

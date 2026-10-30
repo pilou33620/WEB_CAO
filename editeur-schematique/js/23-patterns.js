@@ -371,7 +371,7 @@ var SCHEMA_PATTERNS = (function() {
       try {
         const res = await fetch("/api/schema/patterns", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: Object.assign({ "Content-Type": "application/json" }, ENTETE_WEB),
           body: JSON.stringify(doc)
         });
 

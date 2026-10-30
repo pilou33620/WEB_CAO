@@ -2063,7 +2063,10 @@ def _matrices_bloc(couches, seg, presents, conducteurs, refs, couture_max,
         hauteur = se._hauteur_de_couche(couches, seg["couche"], seg["largeur"],
                                         seg["epaisseur"], nus,
                                         sans_plan=True)
-        poses, hors = se._poser_section(scene, hauteur, couture_max)
+        # l'ecart entre plans d'une triplaque : la pose elargit comme le solveur
+        ecart = se._hauteur_de_couche(couches, seg["couche"], seg["largeur"],
+                                      seg["epaisseur"], nus, sans_plan=True, ecart=True)
+        poses, hors = se._poser_section(scene, hauteur, couture_max, ecart)
         for e in hors:
             ecartes.setdefault(e["net"], e["raison"])
         # LA COUTURE DU BORD EST DANS LA CLEF depuis qu'elle decide de l'effet

@@ -1055,9 +1055,10 @@ def _milieu(geometry):
     """Ce que la section impose au solveur, avant tout conducteur.
 
     Rend {kind, distance, eps_moyen, eps_vide, g_diel, g_vide, echelles,
-    couvert, masque} -- `distance` est la hauteur au plan qui sert de longueur
-    de reference (la plus courte des deux pour une triplaque), `masque` porte
-    le vernis retenu ou None.
+    couvert, masque, elargir} -- `distance` est la hauteur au plan qui sert de
+    longueur de reference (la plus courte des deux pour une triplaque),
+    `masque` porte le vernis retenu ou None, `elargir(w, t)` la largeur du
+    ruban mince qui remplace un ruban de cuivre epais.
     """
     kind = geometry.get("kind", "micro")
     epsilon_r = float(geometry.get("epsilon_r", 4.3))
@@ -1065,10 +1066,28 @@ def _milieu(geometry):
     if kind == "strip":
         b = float(geometry.get("b", 0.0))
         y0 = float(geometry.get("y0", b / 2.0))
+        t = float(geometry.get("t", 0.0) or 0.0)
         if not (b > 0) or not (0 < y0 < b):
             raise ValueError("triplaque : ecart entre plans invalide")
+        # LE CUIVRE EPAIS D'UNE TRIPLAQUE MANGE L'ECART ENTRE PLANS : le ruban
+        # mince equivalent vit dans b - t, a y0 - t/2 du plan bas, elargi du
+        # dW de Wheeler 1978 (celui de `_z_air_triplaque`). L'elargissement
+        # du microruban, pose sur un ruban mince dans b entier, oubliait
+        # l'ecart reduit : 41,7 ohms au lieu de 35,7 sur 0,10 / 0,20 mm.
+        # Le dW de Wheeler est celui d'un ruban CENTRE : decentre, ce sont les
+        # flancs face au plan le plus proche qui comptent, et l'on prend
+        # l'ecart equivalent 2 min(y0, b - y0) -- b lui-meme quand il est
+        # centre. shortcut: pas de reference publiee hors du centre ; a
+        # recaler sur un solveur a cuivre epais si une triplaque decentree
+        # doit tenir mieux que quelques pour cent.
+        b_eq = 2.0 * min(y0, b - y0)
+        if t > 0:
+            if not (t / 2.0 < y0 < b - t / 2.0):
+                raise ValueError("triplaque : le cuivre touche un plan")
+            b, y0 = b - t, y0 - t / 2.0
         return {
             "kind": "strip",
+            "elargir": lambda w, ep: w + _elargissement_triplaque(w, ep, b_eq),
             "distance": min(y0, b - y0),
             "eps_moyen": EPSILON_0 * epsilon_r,
             "eps_vide": EPSILON_0,
@@ -1191,7 +1210,13 @@ def _largeur_effective(largeur, epaisseur, distance_plan):
         1.0 + np.log(2.0 * distance_plan / epaisseur))
 
 
-def largeur_effective(largeur, epaisseur, distance_plan):
+def _elargir(m):
+    """L'elargissement du milieu `m` : le sien (triplaque), sinon Wheeler."""
+    return m.get("elargir") or (
+        lambda w, ep: _largeur_effective(w, ep, m["distance"]))
+
+
+def largeur_effective(largeur, epaisseur, distance_plan, ecart_plans=0.0):
     """L'elargissement de Wheeler, offert a qui pose une section.
 
     C'EST LA MEME FONCTION QUE `_largeur_effective`, et elle est publique parce
@@ -1199,7 +1224,14 @@ def largeur_effective(largeur, epaisseur, distance_plan):
     poser, de combien le cuivre epais va les elargir. Sans cela il les pose a
     un ecart nu qui parait suffisant, et c'est `_conducteurs_places` qui refuse
     la section entiere -- un refus qu'il ne pouvait pas prevoir.
+
+    `ecart_plans` non nul (l'ecart b d'une triplaque) donne l'elargissement
+    de la triplaque, celui que `_milieu` applique : sur l'ecart equivalent
+    2 x `distance_plan`, la hauteur au plan le plus proche.
     """
+    if ecart_plans > 0:
+        return float(largeur + _elargissement_triplaque(
+            largeur, epaisseur, min(ecart_plans, 2.0 * distance_plan)))
     return float(_largeur_effective(largeur, epaisseur, distance_plan))
 
 
@@ -1232,7 +1264,7 @@ def solve_line(geometry, n=N_PANNEAUX, n_quadrature=N_QUADRATURE):
     eps_moyen, eps_vide = m["eps_moyen"], m["eps_vide"]
     g_diel, g_vide = m["g_diel"], m["g_vide"]
     echelles = m["echelles"]
-    w = _largeur_effective(float(geometry["w"]), t, distance)
+    w = _elargir(m)(float(geometry["w"]), t)
 
     if not (w > 0):
         raise ValueError("largeur de ruban nulle")
@@ -1331,7 +1363,7 @@ def solve_line(geometry, n=N_PANNEAUX, n_quadrature=N_QUADRATURE):
 # section : la, et la seulement, il faut le 2,5D.
 # ==========================================================================
 
-def _conducteurs_places(conducteurs, epaisseur, distance_plan):
+def _conducteurs_places(conducteurs, epaisseur, elargir):
     """Les rubans, ramenes a (centre, largeur effective) en metres.
 
     Chaque conducteur porte sa largeur `w` et, au choix, son centre `x` ou son
@@ -1364,7 +1396,7 @@ def _conducteurs_places(conducteurs, epaisseur, distance_plan):
             centre = x + places[-1]["w_nue"] / 2.0 + ecart + w / 2.0
         t = float(cond.get("t", epaisseur) or 0.0)
         places.append({"x": centre, "w_nue": w, "rang": k,
-                       "w": _largeur_effective(w, t, distance_plan),
+                       "w": elargir(w, t),
                        # UNE PISTE DE GARDE EST UN CONDUCTEUR TENU A ZERO
                        # VOLT, et rien d'autre : elle entre dans la matrice
                        # comme les plans coplanaires, avec ses panneaux et sa
@@ -1568,7 +1600,7 @@ def solve_multiline(geometry, n=N_PANNEAUX, n_quadrature=N_QUADRATURE):
 
     m = _milieu(geometry)
     t = float(geometry.get("t", 0.0))
-    places = _conducteurs_places(conducteurs, t, m["distance"])
+    places = _conducteurs_places(conducteurs, t, _elargir(m))
     # NI UNE GARDE NI UN FLOTTANT N'EST UN PORT : on ne demande son impedance
     # ni a l'un ni a l'autre. Les deux occupent la place et prennent du champ,
     # et c'est justement pour cela qu'on les pose.
@@ -1988,6 +2020,20 @@ def _z_air_microruban(w, t, h):
     return (ETA_0 / (2.0 * math.pi)) * math.log(fu / u + math.sqrt(1.0 + 4.0 / (u * u)))
 
 
+def _elargissement_triplaque(w, t, b):
+    """Le dW de Wheeler 1978 (Wadell, eq. 3.5.1), en unites de w : ce dont un
+    ruban d'epaisseur t entre deux plans a b s'elargit en ruban mince dans
+    b - t. Nul a t = 0."""
+    x = t / b
+    if not (x > 0):
+        return 0.0
+    m = 2.0 / (1.0 + (2.0 / 3.0) * x / (1.0 - x))
+    dw = (x / (math.pi * (1.0 - x))) * (
+        1.0 - 0.5 * math.log((x / (2.0 - x)) ** 2
+                             + (0.0796 * x / (w / b + 1.1 * x)) ** m))
+    return dw * (b - t)
+
+
 def _z_air_triplaque(w, t, b):
     """Z0 d'une triplaque centree dans l'air, Wheeler 1978 (Wadell, eq. 3.5.1).
 
@@ -2002,15 +2048,7 @@ def _z_air_triplaque(w, t, b):
     """
     if not (w > 0 and b > 0 and 0.0 <= t < b):
         return None
-    x = t / b
-    if x > 0:
-        m = 2.0 / (1.0 + (2.0 / 3.0) * x / (1.0 - x))
-        dw = (x / (math.pi * (1.0 - x))) * (
-            1.0 - 0.5 * math.log((x / (2.0 - x)) ** 2
-                                 + (0.0796 * x / (w / b + 1.1 * x)) ** m))
-        wp = w / (b - t) + dw
-    else:
-        wp = w / b
+    wp = (w + _elargissement_triplaque(w, t, b)) / (b - t)
     if not (wp > 0):
         return None
     a = 4.0 / (math.pi * wp)
@@ -4680,7 +4718,7 @@ def limite_cispr32(freq, distance=3.0, classe="B"):
 
 
 def rayonnement_boucle(f0, tr, aire, z0=50.0, v0=3.3, distance=3.0,
-                       classe="B", nb_harmoniques=10):
+                       classe="B"):
     """Ce qu'une boucle de retour d'aire `aire` rayonne, harmonique par
     harmonique, et ce qu'il reste de marge sur la limite. EN SI.
 
@@ -4690,6 +4728,11 @@ def rayonnement_boucle(f0, tr, aire, z0=50.0, v0=3.3, distance=3.0,
     que ce soit le meme : deux spectres pour un meme signal, ce sont deux
     verdicts le jour ou l'un bouge.
 
+    LES HARMONIQUES IMPAIRES JUSQU'A 1 GHZ, comme `_rayonnement_cavite` de
+    simulation_em : dix seulement laissaient une horloge sous 1,58 MHz sans
+    une harmonique dans la bande, donc sans verdict. Au-dela de 400 dans la
+    bande, l'enveloppe, comme si une harmonique tombait partout -- le pire.
+
     Rend un dict avec la liste des harmoniques et la PIRE marge -- celle qui
     decide. `marge_db` positive veut dire sous la limite.
     """
@@ -4697,8 +4740,13 @@ def rayonnement_boucle(f0, tr, aire, z0=50.0, v0=3.3, distance=3.0,
     if not (aire > 0):
         return None
     z0 = float(z0) if z0 and z0 > 0 else 50.0
-    spectre = spectre_signal_trapeze(f0, tr, v0=v0,
-                                     nb_harmoniques=nb_harmoniques)
+    f_lo, f_hi = 30e6, 1e9
+    f0 = max(float(f0 or 0.0), 1.0)
+    if (f_hi - f_lo) / (2 * f0) <= 400:
+        ordres, calcul = list(range(1, int(f_hi / f0) + 1, 2)) or [1], "harmoniques"
+    else:
+        ordres, calcul = list(np.geomspace(f_lo, f_hi, 160) / f0), "enveloppe"
+    spectre = spectre_signal_trapeze(f0, tr, v0=v0, ordres=ordres)
     r = float(distance)
     lignes, pire = [], None
     for item in spectre:
@@ -4729,6 +4777,7 @@ def rayonnement_boucle(f0, tr, aire, z0=50.0, v0=3.3, distance=3.0,
         "aire_boucle_mm2": round(aire * 1e6, 4),
         "distance_m": r,
         "classe": str(classe).upper(),
+        "calcul": calcul,
         "harmoniques": lignes,
         "pire": pire,
         # Aucune harmonique dans la bande reglementee : c'est une information,
@@ -4737,10 +4786,12 @@ def rayonnement_boucle(f0, tr, aire, z0=50.0, v0=3.3, distance=3.0,
     }
 
 
-def spectre_signal_trapeze(f0, tr, v0=3.3, nb_harmoniques=10):
-    """Amplitudes des harmoniques impaires d'un signal carre a fronts finis.
+def spectre_signal_trapeze(f0, tr, v0=3.3, nb_harmoniques=10, ordres=None):
+    """Amplitudes des harmoniques impaires d'un signal carre a fronts finis,
+    d'excursion 0 -> v0 (la fondamentale d'un carre 0 -> 1 V vaut 2/pi).
 
-    Rend une liste de dicts pour les premieres harmoniques impaires :
+    Rend une liste de dicts pour les premieres harmoniques impaires, ou pour
+    les `ordres` donnes (non entiers pour suivre l'enveloppe) :
     [{"harmonique": n, "freq": f_n, "amplitude": A_n, "puissance_relative": P_n}]
     """
     f0 = float(f0)
@@ -4748,12 +4799,13 @@ def spectre_signal_trapeze(f0, tr, v0=3.3, nb_harmoniques=10):
     v0 = float(v0)
     harmoniques = []
     p_totale = 0.0
-    for k in range(nb_harmoniques):
-        n = 2 * k + 1  # 1, 3, 5, 7, ...
+    if ordres is None:
+        ordres = range(1, 2 * nb_harmoniques, 2)  # 1, 3, 5, 7, ...
+    for n in ordres:
         fn = n * f0
         arg = np.pi * n * f0 * tr
         sinc = np.sin(arg) / arg if abs(arg) > 1e-12 else 1.0
-        an = abs(4.0 * v0 / (n * np.pi) * sinc)
+        an = abs(2.0 * v0 / (n * np.pi) * sinc)
         pn = an ** 2
         p_totale += pn
         harmoniques.append({"harmonique": n, "freq": fn, "amplitude": an, "p": pn})
