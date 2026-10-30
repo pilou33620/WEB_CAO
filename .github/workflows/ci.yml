@@ -111,6 +111,7 @@ jobs:
           else echo "::warning title=Banc sauté::banc-catalogue.js : la LIB privée n'est pas disponible ici (voir l'étape LIB)."; fi
           node gestion-lib/test/banc-import-jlc.js
           node gestion-lib/test/banc-composants.js
+          node recherche-composants/test/banc-export-csv.js
 
       - name: Gestion LIB — repère des empreintes (y vers le bas, comme l'éditeur PCB)
         run: node gestion-lib/test/banc-repere-pcb.js

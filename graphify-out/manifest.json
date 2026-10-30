@@ -198,9 +198,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/02-connectivity.js": {
-    "mtime": 1793381843.890265,
-    "seen": 1793384848.6224778,
-    "ast_hash": "d05e7402391944ddd967e3951d24c515",
+    "mtime": 1793388740.0814228,
+    "seen": 1793394407.4544196,
+    "ast_hash": "3678488d7ee3aa9de8f7bda67b547561",
     "semantic_hash": ""
   },
   "editeur-pcb/js/03-render.js": {
@@ -438,9 +438,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/test/harness.js": {
-    "mtime": 1793381843.913692,
-    "seen": 1793384848.623032,
-    "ast_hash": "51c8ae4002a3c524b8585d91361adb65",
+    "mtime": 1793388740.1061373,
+    "seen": 1793394407.4547997,
+    "ast_hash": "b50d07681e7a5b550311af6ff4c8eeee",
     "semantic_hash": ""
   },
   "editeur-schematique/js/00-espace-config.js": {
@@ -588,9 +588,9 @@
     "semantic_hash": ""
   },
   "editeur-schematique/js/24-lib-sync.js": {
-    "mtime": 1793381843.926868,
-    "seen": 1793384848.6233146,
-    "ast_hash": "67045fa4037f828b7557013dcace3a53",
+    "mtime": 1793394228.1875243,
+    "seen": 1793394407.454993,
+    "ast_hash": "68a99d2ffdaa931839ff38231b4eb39f",
     "semantic_hash": ""
   },
   "editeur-schematique/js/25-brochage.js": {
@@ -618,9 +618,9 @@
     "semantic_hash": "e2aa9993499c2cdff79bf062b5a2dbd0"
   },
   "editeur-schematique/test/harness.js": {
-    "mtime": 1793381843.9274695,
-    "seen": 1793384848.6234107,
-    "ast_hash": "aaa2189e6f9ecb41495251af5197f91b",
+    "mtime": 1793394259.603209,
+    "seen": 1793394407.4550524,
+    "ast_hash": "cd87b1ce70c887be8fe3e9c8203563ce",
     "semantic_hash": ""
   },
   "gestion-lib/js/01-donnees.js": {
@@ -930,8 +930,8 @@
     "semantic_hash": ""
   },
   "recherche-composants/js/04-resultats.js": {
-    "mtime": 1793381843.9536917,
-    "seen": 1793384848.6240888,
+    "mtime": 1793394307.2404177,
+    "seen": 1793394407.4554842,
     "ast_hash": "d1f39e1dffda9139d91da51dfe1763fe",
     "semantic_hash": ""
   },
@@ -1038,9 +1038,9 @@
     "semantic_hash": ""
   },
   ".github/workflows/ci.yml": {
-    "mtime": 1793086026.0416734,
-    "seen": 1793135203.816152,
-    "ast_hash": "fcc28392c2bbde1b72b8f8b5c2800eb7",
+    "mtime": 1793394299.562178,
+    "seen": 1793394407.4556496,
+    "ast_hash": "febb96231dbefb7fd934cd66092c0914",
     "semantic_hash": ""
   },
   "A-FAIRE.md": {
@@ -1665,6 +1665,12 @@
     "mtime": 1793185603.5442955,
     "seen": 1793351383.6742892,
     "ast_hash": "e25e6a1559d82dd0e41cfe1c4fe7d9bc",
+    "semantic_hash": ""
+  },
+  "recherche-composants/test/banc-export-csv.js": {
+    "mtime": 1793394299.560251,
+    "seen": 1793394407.4555075,
+    "ast_hash": "1b03d82d30d3f47f896df4dc86bf1e4d",
     "semantic_hash": ""
   }
 }

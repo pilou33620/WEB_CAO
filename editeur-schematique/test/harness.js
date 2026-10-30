@@ -3092,7 +3092,7 @@ T("Gestion LIB Schématique : réception d'alerte de modification et mise à jou
 
   // Simulation d'une alerte reçue
   SCH_LIB_ALERTE.active = true;
-  SCH_LIB_ALERTE.compIds = new Set(["0:" + r1.id]);
+  SCH_LIB_ALERTE.compIds = new Set([schCleLib(r1)]);
   if(!schComposantAlerteLib(r1)) {
     throw new Error("schComposantAlerteLib doit indiquer une alerte active pour R1");
   }
@@ -3124,12 +3124,15 @@ T("Gestion LIB Schématique : réception d'alerte de modification et mise à jou
   const p2 = newPage("Deux"); p2.comps = [b]; S.pages.push(p2);
   SCH_LIB_ALERTE.active = true;
   SCH_LIB_ALERTE.compIds = new Set(schTrouverComposantsAmettreAJour({ genre: "fichier", nom: "resistor.json" }).map(schCleLib));
-  if([...SCH_LIB_ALERTE.compIds].join() !== "0:7,0:8" || schComposantAlerteLib(b))
+  if(SCH_LIB_ALERTE.compIds.size !== 2 || !schComposantAlerteLib(a) || !schComposantAlerteLib(c) || schComposantAlerteLib(b))
     throw new Error("clés feuille:id : " + [...SCH_LIB_ALERTE.compIds].join());
+  // une feuille insérée devant, entre l'alerte et le clic : son R1 (même id 7) n'est pas visé
+  const d = C("resistor", 10, 10, { id: 7, ref: "R9", csvPartName: "RES_0603_10K", symSch: "resistor.json" });
+  const p0 = newPage("Zéro"); p0.comps = [d]; S.pages.unshift(p0); S.page++;
   S.hist.length = 0;
   window.CSV_LIB.push({ "Part Name": "AUTRE", "Manufacturer": "PAS_MOI" });
-  if(schAppliquerMajLibTous({ genre: "fichier", nom: "resistor.json" }) !== 2 || b.manufacturer)
-    throw new Error("la mise à jour touche une autre feuille : " + JSON.stringify(b));
+  if(schAppliquerMajLibTous({ genre: "fichier", nom: "resistor.json" }) !== 2 || b.manufacturer || d.manufacturer)
+    throw new Error("la mise à jour touche une autre feuille : " + JSON.stringify([b, d]));
   if(S.hist.length !== 1) throw new Error("le lot doit tenir en une étape d'annulation : " + S.hist.length);
 });
 

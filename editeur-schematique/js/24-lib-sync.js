@@ -29,13 +29,19 @@ function schTousLesComposants() {
   return list;
 }
 
-/* Les id sont propres à chaque feuille : un composant est repéré par « feuille:id »,
-   comme dans brNetsParBroche. */
+/* Les id sont propres à chaque feuille : un composant est repéré par « feuille:id ».
+   La feuille est repérée par l'objet lui-même, pas par son rang : ajouter ou retirer une
+   feuille entre l'alerte et le clic ne fait pas viser la voisine. Une feuille recréée
+   (annulation, rechargement) reçoit un repère neuf : ses composants ne sont plus visés,
+   jamais ceux d'une autre. */
+const SCH_LIB_FEUILLES = new WeakMap();
+let SCH_LIB_FEUILLE_N = 0;
 function schCleLib(c) {
   const pages = (typeof S !== "undefined" && Array.isArray(S.pages)) ? S.pages : [];
-  for (let i = 0; i < pages.length; i++)
-    if (((i === S.page) ? S.comps : pages[i].comps || []).includes(c)) return i + ":" + c.id;
-  return ((typeof S !== "undefined" && S.page) | 0) + ":" + c.id;
+  const p = pages.find((pg, i) => ((i === S.page) ? S.comps : pg.comps || []).includes(c));
+  if (!p) return "?:" + c.id;
+  if (!SCH_LIB_FEUILLES.has(p)) SCH_LIB_FEUILLES.set(p, ++SCH_LIB_FEUILLE_N);
+  return SCH_LIB_FEUILLES.get(p) + ":" + c.id;
 }
 
 function schTrouverComposantsAmettreAJour(detail) {
