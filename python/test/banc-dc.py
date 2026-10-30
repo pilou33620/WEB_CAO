@@ -1626,7 +1626,51 @@ def cas_le_placage_repart_en_mm():
     assert abs(r["vias"][0]["placage"] - 0.02) < 1e-12, r["vias"][0]
 
 
+
+def cas_un_trou_de_plan_n_evide_que_son_net():
+    """Le plan GND, pose d'abord, et son degagement autour du barreau VA : le
+    degagement porte le net GND et laisse le barreau entier. Sans net, il
+    l'evide, et VA n'a plus de cuivre."""
+    def doc(net_trou):
+        return {
+            "format": "cao-sim-dc-1",
+            "polygones": [
+                {"vertices": [[0, 0], [10, 0], [10, 3], [0, 3]], "couche": 0, "net": "GND", "epaisseur": 0.035},
+                {"vertices": [[0, 0], [10, 0], [10, 1], [0, 1]], "couche": 0, "net": "VA", "epaisseur": 0.035},
+                {"vertices": [[0, 0], [10, 0], [10, 1.5], [0, 1.5]], "couche": 0, "net": net_trou,
+                 "epaisseur": 0.035, "trou": True}],
+            "references": [{"couche": 0, "net": "VA", "tension": 3.3, "boite": [0, 0, 0.2, 1], "repere": "U1.OUT"},
+                           {"couche": 0, "net": "GND", "tension": 0, "boite": [0, 2, 0.2, 3], "repere": "U1.GND"}],
+            "sources": [{"couche": 0, "net": "VA", "courant": -1.0, "boite": [9.8, 0, 10, 1], "repere": "U2.VDD"}],
+            "pas": 0.1,
+        }
+    r = resoudre_document(doc("GND"))
+    chute = [b for b in r["bornes"] if b["repere"] == "U2.VDD"][0]["chute"]
+    attendu = RESISTIVITE_CUIVRE * 9.8e-3 / (1e-3 * 35e-6)
+    assert abs(chute - attendu) / attendu < 0.05, (chute, attendu)
+    r = resoudre_document(doc(""))
+    assert not any(b["net"] == "VA" for b in r["bornes"]), r["bornes"]
+    return "barreau intact : -%.1f mV ; sans net, le trou l'evide" % (chute * 1e3)
+
+
+def cas_un_ilot_sans_courant_ne_bloque_pas():
+    """Un morceau de VB que rien ne relie et qui ne porte rien : tenu a sa
+    consigne et signale. Le meme morceau avec une charge reste un refus."""
+    doc = doc_deux_nets(net_b="VA", sources=[{"couche": 0, "net": "VA", "courant": -1.0,
+                                              "boite": [9.8, 0, 10, 1], "repere": "U2.VDD"}])
+    r = resoudre_document(doc)
+    assert any("isolé" in a for a in r["avertissements"]), r["avertissements"]
+    doc["sources"].append({"couche": 0, "net": "VA", "courant": -0.1, "boite": [9.8, 2, 10, 3]})
+    try:
+        resoudre_document(doc)
+    except ErreurDC as e:
+        assert "aucune référence" in e.message, e.message
+        return "ilot tolere, ilot charge refuse"
+    raise AssertionError("un ilot charge aurait du etre refuse")
+
 essai("un composant en serie relie deux nets, et sa chute I*R s'ajoute", cas_un_composant_en_serie_relie_deux_nets)
+essai("un ilot sans courant ni reference ne bloque pas le calcul", cas_un_ilot_sans_courant_ne_bloque_pas)
+essai("un trou de plan n'evide que son net, un trou sans net evide tout", cas_un_trou_de_plan_n_evide_que_son_net)
 essai("un composant en serie hors du cuivre est un refus qui le nomme", cas_une_liaison_hors_cuivre_est_refusee)
 essai("la masse se mesure a ses 0 V, dans le meme calcul que le rail", cas_la_masse_se_mesure_a_ses_zero_volts)
 essai("le placage de chaque via repart en mm", cas_le_placage_repart_en_mm)

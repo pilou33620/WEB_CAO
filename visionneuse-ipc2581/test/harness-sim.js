@@ -7174,6 +7174,128 @@ T("canal de pilotage : cao_sim_ecrire écrit les condensateurs et les bornes DC,
   } finally { SIM_DCB.bornes = b0; SIM_IPC.dcBornes = cuivre; }
 });
 
+/* ==========================================================================
+   LA CASCADE, LA MASSE ET TOUS LES RAILS, SANS SCHÉMA
+   --------------------------------------------------------------------------
+   J1 (+5V) -> U3, régulateur linéaire 3,3 V -> FB1 (100 mΩ) -> U1, 0,8 A.
+   Les broches de masse traversent jusqu'au plan GND du dessous. Tout se lit
+   dans la nomenclature : valeur, propriétés, numéros de broche.
+   ========================================================================== */
+function dcCarteCascadeIpc(){
+  const smd={x:0, y:0, r:0, m:0, ps:"SMD"}, th={x:0, y:0, r:0, m:0, ps:"TH"};
+  const pad=(b,x,y,pin,n)=>Object.assign({},b,{x:x, y:y, pin:pin, n:n});
+  const comp=(ref,val,props,pads)=>({ref:ref, c:0, x:0, y:0, r:0, m:0,
+                                      val:val, props:props, pads:pads});
+  carte({
+    nets:["+5V","GND","+3V3","+3V3_A"],
+    piste:{c:0, n:0, w:1, p:[5,10, 20,10]},
+    pistes:[{c:0, n:0, w:1, p:[5,10, 20,10]},
+            {c:0, n:2, w:1, p:[24,10, 35,10]},
+            {c:0, n:3, w:1, p:[38,10, 50,10]}],
+    plans:[{c:1, n:1, g:[{o:rect(1,1,59,39), t:[]}]}],
+    formes:{rond:{t:"CIRCLE", d:1.4}},
+    padstacks:{SMD:{pad:1.4, pads:[{c:"Top", d:1.4, f:"rond"}]},
+               TH:{pad:1.4, pads:[{c:"Top", d:1.4, f:"rond"},
+                                  {c:"Bottom", d:1.4, f:"rond"}]}},
+    composants:[
+      comp("J1","CONN",{},[pad(smd,5,10,"1",0), pad(th,5,14,"2",1)]),
+      comp("U3","LDO 3.3V",{},[pad(smd,20,10,"1",0), pad(th,22,14,"2",1),
+                               pad(smd,24,10,"3",2)]),
+      comp("FB1","600R@100MHz",{"DC Resistance":"0.1 Ohm"},
+           [pad(smd,35,10,"1",2), pad(smd,38,10,"2",3)]),
+      comp("U1","MCU",{"Current Rating":"800mA"},
+           [pad(smd,50,10,"1",3), pad(th,50,14,"2",1)])
+    ]
+  });
+  ltPreparer();
+  SIM_IPC.dcOublier();
+  SIM_IPC.dcMasse(false);
+}
+
+TA("chute DC, visionneuse : le rail suit la ferrite, le régulateur est une source",async()=>{
+  dcCarteCascadeIpc();
+  const r=await SIM_IPC.dcImporterSchema("+3V3");
+  if(!r.ok)throw new Error("import refusé : "+r.erreur);
+  if(r.nets.join()!=="+3V3,+3V3_A")throw new Error("nets : "+r.nets);
+  const B=SIM_IPC.dcBornes();
+  const src=B.filter(b=>b.role==="source"), chg=B.filter(b=>b.role==="charge");
+  if(src.length!==1||src[0].compRef!=="U3"||Math.abs(src[0].valeur-3.3)>1e-9)
+    throw new Error("source : "+JSON.stringify(src.map(b=>[b.nom,b.valeur])));
+  if(chg.length!==1||chg[0].compRef!=="U1"||Math.abs(chg[0].valeur-0.8)>1e-9)
+    throw new Error("charge : "+JSON.stringify(chg.map(b=>[b.nom,b.valeur])));
+  const p=SIM_IPC.cuivreDC();
+  if(p.erreur)throw new Error(p.erreur);
+  if(p.liaisons.length!==1||p.liaisons[0].repere!=="FB1"||
+     Math.abs(p.liaisons[0].resistance-0.1)>1e-12)
+    throw new Error("liaison : "+JSON.stringify(p.liaisons));
+  if(p.liaisons[0].a.net!=="+3V3"||p.liaisons[0].b.net!=="+3V3_A")
+    throw new Error("sens de FB1");
+  if(p.polygones.some(g=>g.net==="GND"))throw new Error("la masse sans la case");
+  if(p.sources[0].composant!=="U1")throw new Error("le composant de la charge");
+});
+
+TA("chute DC, visionneuse : l'entrée du régulateur tire le courant de sa sortie",async()=>{
+  dcCarteCascadeIpc();
+  const r=await SIM_IPC.dcImporterSchema("+5V");
+  if(!r.ok)throw new Error("import refusé : "+r.erreur);
+  const chg=SIM_IPC.dcBornes().filter(b=>b.role==="charge");
+  if(chg.length!==1||chg[0].compRef!=="U3"||chg[0].provenance!=="cascade")
+    throw new Error("charge : "+JSON.stringify(chg.map(b=>[b.nom,b.provenance])));
+  /* LDO : Iin = Iout */
+  if(Math.abs(chg[0].valeur-0.8)>1e-9)throw new Error("Iin = "+chg[0].valeur);
+  const src=SIM_IPC.dcBornes().filter(b=>b.role==="source");
+  if(src.length!==1||src[0].compRef!=="J1"||src[0].valeur!==5)
+    throw new Error("source : "+JSON.stringify(src.map(b=>[b.nom,b.valeur])));
+  const p=SIM_IPC.cuivreDC();
+  if(!p.notes.some(t=>/entrée de régulateur, linéaire/.test(t)))
+    throw new Error("note de cascade absente");
+});
+
+TA("chute DC, visionneuse : la masse rend le courant par les broches du composant",async()=>{
+  dcCarteCascadeIpc();
+  await SIM_IPC.dcImporterSchema("+3V3");
+  SIM_IPC.dcMasse(true);
+  try{
+    const p=SIM_IPC.cuivreDC();
+    if(p.erreur)throw new Error(p.erreur);
+    if(p.nets.indexOf("GND")<0)throw new Error("nets : "+p.nets);
+    const ret=p.sources.filter(s=>s.net==="GND");
+    if(ret.length!==1||ret[0].composant!=="U1"||Math.abs(ret[0].courant-0.8)>1e-9)
+      throw new Error("retour : "+JSON.stringify(ret));
+    const zero=p.references.filter(s=>s.net==="GND");
+    if(zero.length!==1||zero[0].composant!=="U3"||zero[0].tension!==0)
+      throw new Error("référence de masse : "+JSON.stringify(zero));
+    if(!p.polygones.some(g=>g.net==="GND"))throw new Error("pas de cuivre de masse");
+    /* LA MASSE ROGNÉE AU RAIL : le cuivre du rail s'arrête vers y = 10,7 mm ;
+       le plan GND (jusqu'à y = 39) ne garde que ses 5 mm autour. */
+    const yMax=Math.max(...p.polygones.filter(g=>g.net==="GND")
+                         .map(g=>Math.max(...g.vertices.map(v=>v[1]))));
+    if(!(yMax<16))throw new Error("masse non rognée : y max "+yMax);
+    if(!p.notes.some(t=>/Masse : seul son cuivre à moins de 5 mm/.test(t)))
+      throw new Error("note de rognage absente");
+    if(!p.vias.some(v=>v.net==="GND"))throw new Error("pas de tube de masse");
+    const reperes=p.vias.map(v=>v.repere);
+    if(new Set(reperes).size!==reperes.length)throw new Error("tubes en double : "+reperes);
+  }finally{SIM_IPC.dcMasse(false);}
+});
+
+TA("chute DC, visionneuse : tous les rails, un groupe par rail, bornes rendues",async()=>{
+  dcCarteCascadeIpc();
+  const rails=await SIM_IPC.dcRails();
+  const noms=rails.map(r=>r.nets.join(" → "));
+  if(noms.join(" | ")!=="+3V3 → +3V3_A | +5V")throw new Error("rails : "+noms.join(" | "));
+  SIM_IPC.dcChoisir("source"); simDCClic(5,10);
+  const e=SIM_IPC.dcEtat();
+  await SIM_IPC.dcImporterSchema("+5V");
+  SIM_IPC.dcRestaurer(e);
+  const B=SIM_IPC.dcBornes();
+  if(B.length!==1||B[0].nom!=="J1.1")throw new Error("bornes rendues : "+B.map(b=>b.nom));
+});
+
+TA("chute DC, visionneuse : le bouton d'import dit d'où viennent les bornes",async()=>{
+  if(SIM_IPC.dcImporterNom!=="⚡ Des composants")throw new Error(SIM_IPC.dcImporterNom);
+});
+
 (async()=>{
   for(const [nom,fn] of T_ASYNC){
     try{await fn();console.log("  ok  "+nom);ok++;}

@@ -2,6 +2,17 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.2.1
+# Date: 2026-10-30
+# Explication (suite): UN ILOT SANS COURANT NI REFERENCE NE BLOQUE PLUS LE
+#   CALCUL. Le cuivre de masse d'une vraie carte a des ilots que seules des
+#   coutures sans net raccordent ; il ne porte rien, on le tient a la consigne
+#   de son net et on le dit. Un ilot qui porte une charge reste un refus.
+# Explication: UN TROU QUI PORTE UN NET N'EVIDE QUE CE NET. Avec la masse dans
+#   le calcul, le degagement du plan GND autour d'une pastille VDD effacait la
+#   pastille VDD elle-meme, et le rail devenait flottant. Un trou sans net (une
+#   decoupe de l'editeur) evide toujours tout.
+#
 # Version: 2.2.0
 # Date: 2026-10-30
 # Explication: PLUSIEURS NETS DANS LE MEME CALCUL, comme le Power Analyzer
@@ -102,7 +113,7 @@ PLACAGE_DEFAUT = 25e-6              # placage de trou metallise courant
 MAX_NOEUDS = 400000
 FORMAT = "cao-sim-dc-1"
 FORMAT_RESULTAT = "cao-sim-dc-resultat-1"
-VERSION = "2.2.0"
+VERSION = "2.2.1"
 VERSION_MOTEURS = {
     "dc_solver": VERSION,
 }
@@ -278,7 +289,11 @@ def mailler(polygones, pas):
         j1 = min(ny - 1, int((max(sy) - y0) / pas) + 1)
         for ix, iy in _cases_dedans(sommets, x0, y0, pas, i0, i1, j0, j1):
             if p.get("trou"):
-                cases.pop((p["couche"], ix, iy), None)
+                # Un trou qui porte un net n'evide que ce net : le
+                # degagement d'un plan ne mange pas la pastille qu'il entoure.
+                cle = (p["couche"], ix, iy)
+                if p["net"] == "?" or cases.get(cle, ("",))[0] == p["net"]:
+                    cases.pop(cle, None)
             else:
                 cases[(p["couche"], ix, iy)] = (p["net"],
                                                 p["epaisseur"])
@@ -1205,6 +1220,7 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
     # -- les references (Dirichlet) et les sources (Neumann) ----------------
     fixes = {}
     refs_nets = set()
+    tension_net = {}
     # CHAQUE BORNE GARDE SES NOEUDS. Sans cela on ne saurait pas dire, apres
     # coup, QUELLE TENSION ARRIVE a un consommateur donne -- et c'est
     # exactement la question qu'on pose a ce calcul : « j'ai 3,3 V au
@@ -1223,6 +1239,7 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
         for i in noeuds:
             fixes[i] = tension
             refs_nets.add(nets[i])
+            tension_net.setdefault(nets[i], tension)
         points.append({"repere": str(ref.get("repere") or ""),
                        "composant": str(ref.get("composant") or ""),
                        "role": "tension", "couche": couche,
@@ -1293,11 +1310,33 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
                 vus[j] = 1
                 pile.append(j)
     orphelins = [i for i in range(n) if not vus[i]]
+    # UN ILOT QUI NE PORTE AUCUN COURANT n'a pas de potentiel defini, mais il
+    # n'en a pas besoin : rien n'y circule. On le tient a la consigne de son
+    # net, et on le dit. Seul un ilot qui porte une charge est un refus.
+    if orphelins and not any(injecte[i] != 0.0 for i in orphelins):
+        for i in orphelins:
+            fixes[i] = tension_net.get(nets[i], 0.0)
+        avertissements.append(
+            "%d nœud(s) de cuivre isolé(s) (%s) : ni référence ni courant, ils"
+            " sont tenus à la consigne de leur net et ne portent rien. Ce sont"
+            " des îlots que rien de relié au net ne raccorde — souvent des vias"
+            " de couture sans net, écartés." % (
+                len(orphelins), ", ".join(sorted({nets[i] for i in orphelins})[:4])))
+        orphelins = []
     if orphelins:
         nets_orphelins = sorted({nets[i] for i in orphelins})
+        # LES BORNES POSEES SUR LE CUIVRE DETACHE : c'est par elles qu'on
+        # retrouve l'ilot sur la carte, un compte de noeuds ne se cherche pas.
+        isoles = set(orphelins)
+        detachees = [p["repere"] for p in points
+                     if p["repere"] and any(i in isoles for i in p["noeuds"])]
         raise ErreurDC(
-            "%d nœud(s) de cuivre n'atteignent aucune référence : %s."
-            % (len(orphelins), ", ".join(nets_orphelins[:4])),
+            "%d nœud(s) de cuivre n'atteignent aucune référence : %s.%s"
+            % (len(orphelins), ", ".join(nets_orphelins[:4]),
+               (" Bornes sur ce cuivre : %s%s." % (
+                   ", ".join(detachees[:6]),
+                   ", et %d autre(s)" % (len(detachees) - 6)
+                   if len(detachees) > 6 else "")) if detachees else ""),
             "Ce cuivre est électriquement flottant — une couche sans via qui"
             " la relie, ou un morceau détaché par une découpe. Ajoutez une"
             " référence sur cet îlot, un via qui le raccorde, ou retirez-le"

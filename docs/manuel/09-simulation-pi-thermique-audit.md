@@ -20,10 +20,12 @@ Changer de famille n'efface pas le résultat d'une analyse.
 1. Ouvrir **PI**, onglet **Chute DC**.
 2. Poser les bornes :
    - dans l'Éditeur PCB, sélectionner d'abord une piste du rail (ou surligner son net), puis **⚡ Du schéma** : les sources et les charges des composants du schéma sont importées avec leurs valeurs ;
+   - dans la Visionneuse, choisir le net du rail, puis **⚡ Des composants** : les sources et les charges sont lues dans la nomenclature du fichier et dans le catalogue ;
    - ou à la main : **+ source (V)**, cliquer la pastille de l'alimentation, puis **+ charge (A)**, cliquer la pastille de chaque consommateur. Une borne posée ainsi part à 3,3 V (source) ou 1 A (charge), à corriger tout de suite.
 3. Régler la **tension** de chaque source et le **courant** de chaque charge dans la liste des bornes (les badges d'origine disent d'où vient chaque valeur). Renommer une borne si besoin (« U7 VDD » se lit mieux que « pastille 32.1 ; 72.34 »).
 4. Régler les budgets (**Budget** : chute en %, échauffement en °C) et l'**Ambiante**.
 5. Cliquer **▶ Calculer**. Lire d'abord la ligne de verdict, puis le tableau des bornes (colonne « Perdu »).
+   Refus « nœud(s) de cuivre n'atteignent aucune référence » : il nomme les bornes posées sur le cuivre détaché. Avec la masse, il dit aussi si la trame s'est trop élargie pour les pastilles fines du rail : décocher **masse** pour ce rail. Un îlot sans borne (par exemple une masse cousue par des vias sans net) ne bloque pas : il est tenu à la consigne de son net, et un avertissement le compte.
 6. Pour voir **où** : choisir dans la liste « Carte » la grandeur peinte (**Échauffement (étalement)**, **Densité**, **Potentiel**, **Réf. IPC-2221**), survoler le cuivre pour lire la valeur, et choisir la **Couche peinte** si le rail est sur plusieurs couches.
 7. Pour décider d'ajouter un via : lire le tableau des vias (les plus chargés d'abord) et les notes sous lui.
 
@@ -32,26 +34,20 @@ Changer de famille n'efface pas le résultat d'une analyse.
 
 ### Je veux suivre un rail à travers une ferrite, un fusible ou un régulateur
 
-Éditeur PCB seulement.
-
-1. **⚡ Du schéma** sur le rail : l'import suit les composants **en série** à deux pastilles entre deux nets d'alimentation (ferrite ou self `FB`/`L`, fusible `F`, shunt `R` d'au plus 1 Ω). Leurs nets entrent dans le même calcul, et chacun devient une résistance entre ses deux pastilles. Le message dit « Nets +3V3 → +3V3_A ».
+1. **⚡ Du schéma** (Éditeur PCB) ou **⚡ Des composants** (Visionneuse) sur le rail : l'import suit les composants **en série** à deux pastilles entre deux nets d'alimentation (ferrite ou self `FB`/`L`, fusible `F`, shunt `R` d'au plus 1 Ω). Leurs nets entrent dans le même calcul, et chacun devient une résistance entre ses deux pastilles. Le message dit « Nets +3V3 → +3V3_A ».
 2. Sur le rail qui **nourrit un régulateur**, la broche d'entrée du régulateur devient une charge (badge **cascade**). Son courant est celui que consomme le rail de sortie, ramené à l'entrée : Iin = Iout pour un régulateur linéaire, Iin = Vout·Iout/(η·Vin) avec η = 0,85 pour un régulateur à découpage.
 3. Les notes sous la fiche disent la résistance de chaque composant en série, et le calcul de chaque entrée de régulateur. Le tableau des nets est suivi d'une ligne par composant en série : son courant et sa chute.
 
 ### Je veux compter le retour par la masse
 
-Éditeur PCB seulement.
-
-1. Poser les bornes du rail (par exemple **⚡ Du schéma**), puis cocher **masse** dans la rangée « Ajouter ».
-2. Cliquer **▶ Calculer**. Chaque charge rend son courant par les broches de masse de **son** composant. Les broches de masse des sources sont tenues à 0 V. Le cuivre de masse entre dans le calcul, qui s'alourdit.
+1. Poser les bornes du rail (par exemple **⚡ Du schéma** ou **⚡ Des composants**), puis cocher **masse** dans la rangée « Ajouter ».
+2. Cliquer **▶ Calculer**. Chaque charge rend son courant par les broches de masse de **son** composant. Les broches de masse des sources sont tenues à 0 V. Le cuivre de masse entre dans le calcul, rogné à 5 mm autour du cuivre du rail (une note le dit).
 3. Lire le tableau **Composant / Rail / Masse / Vu / Perdu** : la tension que voit vraiment le composant entre ses broches, et ce qu'il perd au total. Le verdict prend ce total.
 
 ### Je veux vérifier tous les rails d'un coup
 
-Éditeur PCB seulement.
-
 1. Ouvrir **PI**, onglet **Chute DC**, régler les budgets (et cocher **masse** si le retour doit compter).
-2. Cliquer **▶ Tous les rails**. Chaque rail du schéma est importé (cascade comprise) et calculé à son tour ; un rail que l'aval d'une ferrite a déjà pris ne repart pas seul.
+2. Cliquer **▶ Tous les rails**. Chaque rail du schéma (Éditeur PCB) ou de classe Alimentation (Visionneuse) est importé (cascade comprise) et calculé à son tour ; un rail que l'aval d'une ferrite a déjà pris ne repart pas seul.
 3. Lire le tableau : une ligne par rail, avec son courant, sa pire charge, ce qu'elle perd, l'échauffement et les vias en défaut. La teinte du nom du rail est son verdict.
 4. Cliquer une ligne pour recalculer ce rail seul, avec toute sa fiche. Les bornes posées avant le balayage sont rendues à la fin.
 
@@ -135,10 +131,11 @@ La classe fixe le front, donc le verdict des règles électriques. Elle est écr
 |---|---|---|
 | **+ source (V)** | Arme la désignation : le clic suivant sur une pastille de la carte pose une source (alimentation dont on règle la tension). | Éditeur PCB : l'aide dit « Cliquez la pastille de la SOURCE ». Autant de sources qu'on veut ; plusieurs sources tiennent chacune leur tension. Valeur de départ : 3,3 V (reprise du schéma si le composant en donne une). Recliquer la même pastille remplace la borne en gardant sa valeur, son unité et son nom. |
 | **+ charge (A)** | Idem pour un consommateur dont on règle le courant. | Un rail qui nourrit dix composants en porte dix. Valeur de départ : 1 A (reprise du schéma si le composant en donne une). Clic hors d'une pastille : « Aucune pastille sous le clic : visez le cuivre d'une pastille. » |
-| **⚡ Du schéma** | Importe les sources et les charges du schéma pour le net de la piste sélectionnée (à défaut, le net surligné, celui des bornes déjà posées, un rail reconnu par son nom, ou celui d'un régulateur). | Éditeur PCB seulement (masqué dans la Visionneuse). Les bornes dont la valeur a été saisie à la main (badge Manuel) sont conservées. Sans courant connu, une LED ou diode reçoit 0,015 A et les autres charges 0,030 A (badge Défaut) ; le courant d'un composant est réparti entre ses broches sur le rail. Refus : « Aucun net d'alimentation sélectionné ou détecté » et « Aucun composant (source ou charge) trouvé sur le net … dans le schéma ». |
+| **⚡ Du schéma** | Importe les sources et les charges du schéma pour le net de la piste sélectionnée (à défaut, le net surligné, celui des bornes déjà posées, un rail reconnu par son nom, ou celui d'un régulateur). | Éditeur PCB (dans la Visionneuse, le bouton devient **⚡ Des composants**). Les bornes dont la valeur a été saisie à la main (badge Manuel) sont conservées. Sans courant connu, une LED ou diode reçoit 0,015 A et les autres charges 0,030 A (badge Défaut) ; le courant d'un composant est réparti entre ses broches sur le rail. Refus : « Aucun net d'alimentation sélectionné ou détecté » et « Aucun composant (source ou charge) trouvé sur le net … dans le schéma ». |
 | **Effacer** | Oublie toutes les bornes. | |
-| Case **masse** | Ajoute le retour par la masse au calcul : chaque charge rend son courant par les broches de masse de son composant, la masse des sources est à 0 V. | Éditeur PCB seulement (masquée dans la Visionneuse). Refus si aucune source n'a de broche de masse. Une charge posée sans composant ne rend pas son courant. |
-| **▶ Tous les rails** | Importe et calcule chaque rail du schéma, puis affiche une ligne par rail. Cliquer une ligne recalcule ce rail seul. | Éditeur PCB seulement. Garde les bornes posées et les rend à la fin. |
+| **⚡ Des composants** | Visionneuse : importe les sources, les charges, les composants en série et les entrées de régulateur du rail, lus dans la nomenclature IPC-2581 (valeur, référence, propriétés) puis dans le catalogue. Le rail : le net choisi s'il est de classe Alimentation, sinon celui des bornes, sinon le premier rail. | Les broches du fichier n'ont qu'un numéro : leur nom vient de la colonne « Brochage » du catalogue. Un connecteur (`J`, `CON`, `BAT`) est une source, à la tension écrite dans le nom du net (3,3 V sinon). Un circuit (`U`, `IC`) est une charge, à 30 mA sans courant connu. Un régulateur se reconnaît à sa description (`LDO`, `régulateur`, `DC-DC`, `buck`, `boost`). |
+| Case **masse** | Ajoute le retour par la masse au calcul : chaque charge rend son courant par les broches de masse de son composant, la masse des sources est à 0 V. Le cuivre de masse est rogné à 5 mm autour du cuivre du rail. | Refus si aucune source n'a de broche de masse. Une charge posée sans composant ne rend pas son courant. Avec la masse, la trame s'élargit : un rail aux pastilles très fines peut s'en détacher (le refus le dit). |
+| **▶ Tous les rails** | Importe et calcule chaque rail, puis affiche une ligne par rail. Cliquer une ligne recalcule ce rail seul. | Garde les bornes posées et les rend à la fin. Visionneuse : un rail est un net de classe Alimentation (à corriger dans la fenêtre des nets). |
 | Badge d'origine | Dit d'où vient la valeur : **Défaut**, **LIB**, **API**, **Motif**, **Manuel**, **DS** (datasheet). Infobulle « Origine : … » ; elle précise « Partagé sur n broches » quand une borne regroupe plusieurs broches. | Saisir la valeur à la main (Éditeur PCB) passe l'origine à **Manuel**. Dans la Visionneuse, les bornes restent « Défaut » même corrigées. |
 | Nom de la borne | Champ texte repris dans les tableaux et l'export. | Vide : retour au nom proposé par la carte. |
 | Valeur et unité | Source : **V** ou **mV**. Charge : **A**, **mA** ou **µA**. Changer l'unité garde le nombre écrit. | La valeur est stockée en V et en A. |
@@ -246,7 +243,7 @@ Le panneau cherche tout seul les rails et leurs acteurs.
 | Charge observée | Le composant du rail qui a le plus de broches, hors passifs et connecteurs. | Modifiable par les champs X, Y du point observé. |
 | Cavité | Plus grand versement du rail et plus grand versement de masse (au moins 1 cm² chacun) qui se font face ; couple le plus rapproché. | Carte deux couches ou rail routé en pistes : pas de cavité, le solveur reste localisé. |
 | Sources et charges de la Chute DC | Voir **⚡ Du schéma**. L'entrée d'un régulateur (broche `VIN`, `IN`, `VCC`…, ou net dont la tension écrite n'est pas sa sortie) n'est plus prise pour une source. | Sans nom de broche ni tension lisible dans le nom du net, la broche reste une source. |
-| Composants en série (cascade) | Deux pastilles sur deux nets d'alimentation : ferrite ou self (DCR du catalogue, sinon 50 mΩ), fusible (sinon 100 mΩ), shunt `R` ≤ 1 Ω. | Une valeur supposée est dite dans les notes. |
+| Composants en série (cascade) | Deux pastilles sur deux nets d'alimentation : ferrite ou self (DCR du catalogue ou de la nomenclature, sinon 50 mΩ), fusible (sinon 100 mΩ), shunt `R` ≤ 1 Ω, strap `R` de 0 Ω. | Une valeur supposée est dite dans les notes. |
 | Rendement d'un régulateur | 1 (linéaire) si son nom évoque un LDO (`LDO`, `1117`, `78xx`, `LM317`, `TPS7…`…), sinon 0,85. | Reconnu au nom seulement. |
 | Rails jugés par l'Audit | Nets de classe **Alimentation** ou **Découpage**. | Voir « Courant et largeur des rails ». |
 
@@ -370,7 +367,7 @@ Ce n'est pas une règle de la vérification de carte mais un panneau de l'Édite
 
 ## Limites connues
 
-- **Chute DC** : problème résistif sans fréquence. Plusieurs nets ne se calculent ensemble que reliés par un composant en série, ou avec la masse. Avec la masse, un plan est pris plein dans son contour : le cuivre des nets hors du calcul n'y est pas découpé. Les courants viennent de l'utilisateur ou du schéma, jamais du PCB. Les perçages supposés (déduits de la pastille) et les portées supposées traversantes sont signalés mais restent des hypothèses. La densité de pointe croît avec le raffinement du maillage. L'échauffement dépend de la conductivité du stratifié, de l'épaisseur de stratifié et du cuivre étaleur ; le cuivre étaleur est pris nul s'il n'est pas déclaré (carte la plus chaude que le modèle décrive).
+- **Chute DC** : problème résistif sans fréquence. Plusieurs nets ne se calculent ensemble que reliés par un composant en série, ou avec la masse. Avec la masse, seul le cuivre de masse à moins de 5 mm du rail compte. Dans l'Éditeur PCB, un plan est alors pris plein dans son contour : le cuivre des nets hors du calcul n'y est pas découpé. Dans la Visionneuse, les dégagements des plans viennent du fichier. Les courants viennent de l'utilisateur, du schéma, ou de la nomenclature et du catalogue, jamais du cuivre. Les perçages supposés (déduits de la pastille) et les portées supposées traversantes sont signalés mais restent des hypothèses. La densité de pointe croît avec le raffinement du maillage. L'échauffement dépend de la conductivité du stratifié, de l'épaisseur de stratifié et du cuivre étaleur ; le cuivre étaleur est pris nul s'il n'est pas déclaré (carte la plus chaude que le modèle décrive).
 - **Chute DC dans la Visionneuse** : le fichier IPC-2581 ne dit pas toujours entre quelles couches court un perçage ; il est alors supposé traversant (notes dans le résultat). Le bouton **⚡ Du schéma** n'existe pas dans la Visionneuse. Elle refuse le calcul tant que l'**Empilage du calcul** (panneau « La carte ») n'est pas complet : sans épaisseur de cuivre, une résistance n'a pas de valeur. Les bornes y se posent à la pastille la plus proche, à moins d'un millimètre du clic.
 - **Z(ω) PDN** : le VRM n'a pas de position (en parallèle sur le point observé). Le développement modal suppose un rectangle plein : un plan partiel ou découpé est traité comme le rectangle de même emprise, avec la capacité de sa surface réelle. Un condensateur hors de l'emprise est ramené sur son bord. Les pertes ohmiques du cuivre dans le plan ne sont pas modélisées. Le fichier IPC-2581 ne porte pas de consommation : dans la Visionneuse, la fiche de la charge se remplit à la main la première fois.
 - **Estimation d'échauffement d'un composant** : un ordre de grandeur (±30 %), îlot pris rond, carte uniforme, sans voisin qui chauffe. Éditeur PCB seulement.

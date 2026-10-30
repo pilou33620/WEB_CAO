@@ -2188,10 +2188,13 @@ function simDCCouchesTouchees(x,y,a,b,polygones,net){
 
    LES ZONES D'ABORD. Sur une couche, le solveur donne le carreau à la DERNIÈRE
    forme posée : une piste du rail tirée dans le contour d'un plan de masse
-   doit rester au rail, donc le plan passe avant elle. */
+   doit rester au rail, donc le plan passe avant elle. Et parmi les zones,
+   LA MASSE D'ABORD : une zone de masse qui englobe celle du rail la
+   recouvrirait. */
 function simDCCuivreDesNets(nets){
   const polygones=[], vias=[];
-  for(const z of S.zones){
+  const masseDabord=(a,b)=>(pcbNomEstMasse(b.net)?1:0)-(pcbNomEstMasse(a.net)?1:0);
+  for(const z of S.zones.slice().sort(masseDabord)){
     if(!nets.has(z.net)||!z.pts||z.pts.length<3)continue;
     polygones.push({vertices:z.pts.map(q=>[q.x,q.y]), couche:z.l, net:z.net,
                     epaisseur:cuT(z.l)});
@@ -2209,12 +2212,12 @@ function simDCCuivreDesNets(nets){
         polygones.push({vertices:pts, couche:cu, net:q.net, epaisseur:cuT(cu)});
     }
   /* LES DÉCOUPES EN DERNIER, et en `trou` : elles retirent du cuivre. Une
-     découpe ne porte pas de net — elle évide ce qu'elle recouvre. */
-  const net0=[...nets][0];
+     découpe ne porte pas de net — elle évide ce qu'elle recouvre, tous nets
+     confondus (un trou AVEC net n'évide que le sien). */
   for(const ct of S.cuts){
     if(!ct.pts||ct.pts.length<3)continue;
     polygones.push({vertices:ct.pts.map(q=>[q.x,q.y]), couche:ct.l,
-                    net:net0, epaisseur:cuT(ct.l), trou:true});
+                    net:"", epaisseur:cuT(ct.l), trou:true});
   }
 
   /* CE QUI FAIT CHANGER DE COUCHE : les VIAS, et le PERÇAGE MÉTALLISÉ D'UNE
@@ -3001,52 +3004,6 @@ function simZCurseurTrace(c,dpr){
      · projdDocLire("schema") sur le disque du projet courant.
    ========================================================================== */
 
-function pcbParseVolt(val){
-  if(val==null)return null;
-  const m=String(val).match(/(\d+(?:[.,]\d+)?)\s*V\b/i);
-  return m?parseFloat(m[1].replace(",",".")):null;
-}
-
-function pcbParseCourant(val){
-  if(val==null)return null;
-  const m=String(val).match(/(\d+(?:[.,]\d+)?)\s*(µA|uA|mA|A)\b/i);
-  if(!m)return null;
-  const n=parseFloat(m[1].replace(",","."));
-  const u=m[2].toLowerCase();
-  if(u.includes("u")||u.includes("µ"))return n*1e-6;
-  if(u.includes("m"))return n*1e-3;
-  return n;
-}
-
-function pcbParsePuissance(val){
-  if(val==null)return null;
-  const s=String(val).trim();
-  const frac=s.match(/(\d+(?:[.,]\d+)?)\s*\/\s*(\d+(?:[.,]\d+)?)\s*(mW|W)\b/i);
-  if(frac){
-    const num=parseFloat(frac[1].replace(",","."));
-    const den=parseFloat(frac[2].replace(",","."));
-    const factor=frac[3].toLowerCase()==="mw"?1e-3:1.0;
-    return den!==0?(num/den)*factor:null;
-  }
-  const m=s.match(/(\d+(?:[.,]\d+)?)\s*(mW|W)\b/i);
-  if(!m)return null;
-  const n=parseFloat(m[1].replace(",","."));
-  return m[2].toLowerCase()==="mw"?n*1e-3:n;
-}
-
-
-function pcbParseFrequence(val){
-  if(val==null)return null;
-  const m=String(val).match(/(\d+(?:[.,]\d+)?)\s*(kHz|MHz|GHz|Hz)\b/i);
-  if(!m)return null;
-  const n=parseFloat(m[1].replace(",","."));
-  const u=m[2].toLowerCase();
-  if(u==="ghz")return n*1e9;
-  if(u==="mhz")return n*1e6;
-  if(u==="khz")return n*1e3;
-  return n;
-}
-
 function pcbDefinirSchema(doc){
   if(typeof S!=="undefined")S.schDoc=doc;
 }
@@ -3142,158 +3099,6 @@ function pcbRangerBroches(e,c){
   });
 }
 const pcbPattes=n=>String(n==null?"":n).split("/").map(x=>x.trim()).filter(Boolean);
-
-function pcbSpecsComposant(c){
-  if(!c)return null;
-  const sp=c.specs||{};
-  let voltOut=null, voltIn=null, curr=null, power=null, res=null, freq=null;
-  let prov=c.specsProvenance || null;
-  
-  for(const [k,v] of Object.entries(sp)){
-    if(v==null || v==="" || v==="xx" || v==="-") continue;
-    const kl=k.toLowerCase();
-    if((kl.includes("output")||kl.includes("out"))&&kl.includes("volt"))voltOut=voltOut||pcbParseVolt(v);
-    else if((kl.includes("supply")||kl.includes("operating")||kl.includes("input")||kl.includes("forward")||kl.includes("rating")||kl.includes("rated")||kl.includes("nom")||kl.includes("tension"))&&kl.includes("volt"))voltIn=voltIn||pcbParseVolt(v);
-    else if(kl.includes("resistance"))res=res||simParseResistance(v);
-    else if((kl.includes("current")||kl.includes("courant"))&&(kl.includes("supply")||kl.includes("operating")||kl.includes("max")||kl.includes("output")||kl.includes("forward")||kl.includes("rating")||kl.includes("rated")||kl.includes("consommation")||kl.includes("load")||kl.includes("charge")||kl.includes("nom")))curr=curr||pcbParseCourant(v);
-    else if(kl.includes("power")||kl.includes("watt")||kl.includes("puissance"))power=power||pcbParsePuissance(v);
-    else if(kl.includes("freq")||kl.includes("speed")||kl.includes("clock"))freq=freq||pcbParseFrequence(v);
-  }
-
-  if(!prov && (curr!=null || voltOut!=null || voltIn!=null)){
-    prov = (sp["Current Rating"]||sp["Voltage Rating"]||sp["current Rating"]||sp["voltage rating"]) ? "catalogue" : "schema";
-  }
-
-  // Repli direct sur le catalogue CSV en mémoire si présent
-  if((curr==null || (voltOut==null && voltIn==null)) && typeof window!=="undefined" && Array.isArray(window.CSV_LIB)){
-    const targetPart=(c.csvPartName||c.mpn||c.value||"").toLowerCase().trim();
-    const targetMpn=(c.mpn||c.csvMpn||"").toLowerCase().trim();
-    if(targetPart || targetMpn){
-      const entry=window.CSV_LIB.find(it=>{
-        const p=(it["Part Name"]||"").toLowerCase().trim();
-        const pn=(it["Part Number"]||it["Part Number "]||it["MPN"]||"").toLowerCase().trim();
-        return (targetPart && p===targetPart) || (targetMpn && pn===targetMpn) || (targetPart && pn===targetPart);
-      });
-      if(entry){
-        const vRating=entry["Voltage Rating"]||entry["voltage rating"]||entry["Voltage"]||"";
-        const cRating=entry["current Rating"]||entry["Current Rating"]||entry["current rating"]||"";
-        const wRating=entry["wattage"]||entry["Wattage"]||"";
-        const fRating=entry["fréquency"]||entry["frequency"]||entry["Frequency"]||"";
-        
-        if(voltOut==null && voltIn==null && vRating && vRating!=="xx" && vRating!=="-"){
-          const parsedV=pcbParseVolt(vRating);
-          if(parsedV!=null){
-            if(c.type==="regulator"||/^(VR|REG)/i.test(c.ref)) voltOut=parsedV;
-            else voltIn=parsedV;
-            prov="catalogue";
-          }
-        }
-        if(curr==null && cRating && cRating!=="xx" && cRating!=="-"){
-          const parsedI=pcbParseCourant(cRating);
-          if(parsedI!=null){
-            curr=parsedI;
-            prov="catalogue";
-          }
-        }
-        if(power==null && wRating && wRating!=="xx" && wRating!=="-"){
-          power=pcbParsePuissance(wRating);
-        }
-        if(freq==null && fRating && fRating!=="xx" && fRating!=="-"){
-          freq=pcbParseFrequence(fRating);
-        }
-      }
-    }
-  }
-  
-  if(voltOut==null&&(c.type==="regulator"||/^(VR|REG|U_REG)/i.test(c.ref))){
-    voltOut=pcbParseVolt(c.value)||pcbParseVolt(c.mpn);
-    if(voltOut!=null && !prov) prov="schema";
-  }
-  if(voltIn==null){
-    voltIn=pcbParseVolt(c.value);
-    if(voltIn!=null && !prov) prov="schema";
-  }
-  if(res==null&&(c.type==="resistor"||/^R/i.test(c.ref))){
-    res=simParseResistance(c.value);
-  }
-  
-  const estSource=(c.type==="vcc"||c.type==="regulator"||
-                   /^(VR|REG|PWR|BAT|J|CON|U_REG)/i.test(c.ref)||
-                   (voltOut!=null&&voltOut>0));
-  const estCharge=!estSource&&(c.type==="ic"||c.type==="led"||c.type==="diode"||/^(U|IC|MCU|D|LED)/i.test(c.ref));
-  
-  let courantConsomme=curr;
-  if(courantConsomme==null&&power!=null&&(voltIn||voltOut||3.3)>0){
-    courantConsomme=power/(voltIn||voltOut||3.3);
-    if(courantConsomme!=null && !prov) prov="schema";
-  }
-
-  /* Surcharge issue de l'analyse des motifs de circuits du schéma */
-  try {
-    const rawDc = typeof sessionStorage !== "undefined" && sessionStorage.getItem("web_cao_courants_dc");
-    if (rawDc) {
-      const listDc = JSON.parse(rawDc);
-      if (Array.isArray(listDc)) {
-        const match = listDc.find(x => (x.composant === c.ref || x.source === c.ref));
-        if (match) {
-          if (courantConsomme == null && match.courant_ma != null) {
-            if (estCharge || match.role === "charge") {
-              courantConsomme = match.courant_ma / 1000.0;
-              prov="motif";
-            }
-          }
-          if (match.tension_v != null) {
-            if (estSource) { voltOut = match.tension_v; prov="motif"; }
-            else if (voltIn == null) { voltIn = match.tension_v; prov="motif"; }
-          }
-        }
-      }
-    }
-  } catch (_) {}
-
-  if(courantConsomme==null&&estCharge){
-    if(c.type==="led"||/^D/i.test(c.ref))courantConsomme=0.015;
-    else courantConsomme=0.030;
-    prov="defaut";
-  } else if(!prov) {
-    prov="defaut";
-  }
-  
-  const par = typeof pcbParasitesComposant === "function" ? pcbParasitesComposant(c) : null;
-  if (par) {
-    if (par.dcr != null && res == null && (c.type === "inductor" || /^(L|FB|BEAD|SELF)/i.test(c.ref))) {
-      res = par.dcr;
-      if (!prov || prov === "defaut") prov = par.provenance;
-    }
-  }
-
-  return {
-    ref:c.ref,
-    type:c.type,
-    value:c.value,
-    mpn:c.mpn||"",
-    manufacturer:c.manufacturer||"",
-    voltOut:voltOut,
-    voltIn:voltIn,
-    tension:voltOut||voltIn||3.3,
-    courant:courantConsomme,
-    courantSortie:estSource?(curr||1.0):null,
-    resistance:res,
-    dcr: par ? par.dcr : null,
-    isat: par ? par.isat : null,
-    esr: par ? par.esr : null,
-    esl: par ? par.esl : null,
-    inductance: par ? par.l : null,
-    capacite: par ? par.c : null,
-    puissance:power,
-    frequence:freq,
-    estSource:estSource,
-    estCharge:estCharge,
-    specs:sp,
-    provenance:prov,
-    pinNames:c.pinNames||{}
-  };
-}
 
 /* ==========================================================================
    VÉRIFICATION DU PINOUT, DE LA TAILLE DU BOÎTIER ET DES DISTANCES ENTRE PINS
@@ -3719,32 +3524,9 @@ function pcbNetComposants(net){
    pour connaître Iout.
    ========================================================================== */
 
-/* La tension écrite dans un nom de net : +3V3, 1V8, 5V, VCC_3.3V. */
-function simDCTensionNet(n){
-  const s=String(n||"");
-  let m=s.match(/(\d+)[Vv](\d+)/);
-  if(m)return parseFloat(m[1]+"."+m[2]);
-  m=s.match(/(\d+(?:[.,]\d+)?)\s*[Vv](?![A-Za-z])/);
-  return m?parseFloat(m[1].replace(",",".")):null;
-}
-
-/* Une broche de régulateur est-elle son entrée ou sa sortie ? Le nom de
-   broche d'abord, puis la tension lue dans le nom du net face à Vout.
-   ponytail: heuristique de noms ; sans nom de broche ni tension lisible, la
-   broche reste une sortie, comme avant. */
-function simDCRoleRegulateur(fp,c,sp,pinNom,net){
-  if(!sp||!sp.estSource||c.type==="vcc"||/^(J|CON|BAT|PWR)/i.test(fp.ref))return "sortie";
-  if(/^(P?VIN|IN\b|VI\b|VCC|VBAT|VDD|VS\b|VSUP)/i.test(pinNom||""))return "entree";
-  if(/^(VOUT|OUT|VO\b|SW|LX)/i.test(pinNom||""))return "sortie";
-  const v=simDCTensionNet(net), vo=sp.voltOut;
-  if(v!=null&&vo!=null)return Math.abs(v-vo)<=0.1*vo?"sortie":"entree";
-  return "sortie";
-}
-
 /* Un composant EN SÉRIE sur un rail : deux pastilles, sur deux nets qui ne
    sont pas la masse. Shunt (R ≤ 1 Ω), ferrite ou self (sa DCR), fusible.
    La résistance vient du catalogue ; à défaut, une valeur courante, dite. */
-const SIM_DC_SERIE_DEFAUT={ferrite:0.05, fusible:0.1};
 function simDCSerie(fp,schM){
   const pads=padsWorld(fp).filter(q=>q.net&&!pcbNomEstMasse(q.net));
   if(padsWorld(fp).length!==2||pads.length!==2||pads[0].net===pads[1].net)return null;
@@ -3757,19 +3539,10 @@ function simDCSerie(fp,schM){
     quoi="fusible"; ohms=sp.resistance;
   }else if(/^R/i.test(fp.ref)||c.type==="resistor"){
     if(!(sp.resistance!=null&&sp.resistance<=1))return null;
-    quoi="shunt"; ohms=sp.resistance;
+    quoi=(sp.resistance>0)?"shunt":"strap 0 Ω"; ohms=sp.resistance;
   }else return null;
   if(ohms==null){ohms=SIM_DC_SERIE_DEFAUT[quoi]; prov="defaut";}
   return {fp:fp, pads:pads, ohms:ohms, quoi:quoi, provenance:prov};
-}
-
-/* Le rendement d'un régulateur : 1 pour un linéaire (Iin = Iout), 0,85 pour
-   un découpage. ponytail: reconnu au nom ; un champ par régulateur si ça ne
-   suffit pas. */
-function simDCRendement(c){
-  const s=[c.mpn,c.value,c.ref,c.type].join(" ");
-  return /LDO|78\d\d|79\d\d|1117|LP29|LP59|AP21|AP7|MCP17|XC62|TLV7|LM317|LT30|ADP1[67]|TPS7[0-9A]/i.test(s)
-    ? 1 : 0.85;
 }
 
 /* Les nets que la cascade a le droit de suivre : ceux qui ressemblent à une
@@ -4856,7 +4629,15 @@ const SIM_PCB={
       zeros.forEach(r=>nets.add(r.q.net));
     }
 
-    const {polygones, vias, orphelins}=simDCCuivreDesNets(nets);
+    let {polygones, vias, orphelins}=simDCCuivreDesNets(nets);
+    if(SIM_DCB.masse){
+      const r=simDCRognerMasse(polygones,vias,pcbNomEstMasse,SIM_DC_MARGE_MASSE);
+      polygones=r.polygones; vias=r.vias;
+      if(r.rognes)
+        notes.push("Masse : seul son cuivre à moins de "+SIM_DC_MARGE_MASSE+
+                   " mm du rail entre dans le calcul ("+r.rognes+
+                   " forme(s) rognée(s)) — le retour passe sous le rail.");
+    }
     if(!polygones.some(p=>!p.trou))
       return {erreur:"Le net "+[...nets].join(", ")+" ne porte aucun cuivre.",
               conseil:"Routez-le avant d'en calculer la chute."};

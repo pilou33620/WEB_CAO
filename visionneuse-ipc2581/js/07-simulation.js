@@ -2698,7 +2698,7 @@ function simRetourClicIpc(wx,wy){
    métallisé, lui, ne conduit rien : il est écarté.
    ========================================================================== */
 
-const SIM_DCB={bornes:[], attente:null};
+const SIM_DCB={bornes:[], attente:null, liaisons:[], notesGroupe:[], masse:false};
 
 
 /* Les contours d'une forme de padstack, en coordonnées LOCALES.
@@ -2930,6 +2930,582 @@ function simDCClic(x,y){
     else SIM_DCB.bornes.push(b);
   }
   if(typeof simDCBorneChoisie==="function")simDCBorneChoisie();
+}
+
+/* ==========================================================================
+   LA CASCADE DES RAILS, LUE DANS LA NOMENCLATURE
+   --------------------------------------------------------------------------
+   Ce que l'éditeur PCB fait avec le schéma (`simDCGroupe`), la visionneuse le
+   fait sans lui : les caractéristiques d'un composant viennent de la
+   nomenclature IPC-2581 (`val`, `part`, `props`) puis du catalogue, que
+   `pcbSpecsComposant` (commun) lit ; les noms de broches, de la colonne
+   « Brochage » du catalogue. Le fichier ne porte que des numéros de broche :
+   sans catalogue, l'entrée d'un régulateur se reconnaît à la tension écrite
+   dans le nom de son net.
+   ========================================================================== */
+
+/* Le catalogue, une fois, pour les courants et tensions que la nomenclature
+   ne porte pas. Sans serveur (un .json rouvert), on s'en passe. */
+async function simDCCatalogueIpc(){
+  if(typeof window==="undefined"||Array.isArray(window.CSV_LIB))return;
+  if(typeof mecaIpcLib!=="function")return;
+  await mecaIpcLib();
+  if(Array.isArray(MECA_IPC.lib)&&MECA_IPC.lib.length)window.CSV_LIB=MECA_IPC.lib;
+}
+
+/* La ligne du catalogue d'un composant : même clé que `pcbSpecsComposant`. */
+function simDCEntreeCatalogueIpc(c){
+  const L=(typeof window!=="undefined"&&Array.isArray(window.CSV_LIB))?window.CSV_LIB:[];
+  const cles=[c.csvPartName,c.mpn,c.value].map(s=>String(s||"").toLowerCase().trim())
+                                          .filter(Boolean);
+  if(!cles.length)return null;
+  const bas=s=>String(s||"").toLowerCase().trim();
+  return L.find(it=>cles.indexOf(bas(it["Part Name"]))>=0||
+                    cles.indexOf(bas(it["Part Number"]||it.MPN))>=0)||null;
+}
+
+/* « IN=1,GND=2,OUT=3 » -> {1:"IN", 2:"GND", 3:"OUT"} ; « 2/3 » : une broche
+   sur deux pattes. */
+function simDCBrochesIpc(entree){
+  const out={};
+  for(const m of String((entree&&entree.Brochage)||"").split(/[,;]/)){
+    const [nom,nums]=m.split("=");
+    if(nom&&nums)for(const n of nums.split("/"))out[n.trim()]=nom.trim();
+  }
+  return out;
+}
+
+/* Un composant de la nomenclature, sous la forme que `pcbSpecsComposant`
+   attend. Le type « regulator » se lit dans sa description : c'est lui qui
+   fait d'un U3 une source. ponytail: reconnu au texte. */
+function simDCCompIpc(comp){
+  const props=comp.props||{};
+  const c={ref:String(comp.ref), value:comp.val||"", type:"",
+           mpn:comp.part||props.MPN||props["Part Number"]||"",
+           csvPartName:props["Part Name"]||props.PART_NAME||"", specs:props};
+  const e=simDCEntreeCatalogueIpc(c);
+  const texte=[c.value,c.mpn,c.csvPartName,comp.type,
+               e&&(e.Description||e.description)]
+    .concat(Object.values(props)).join(" ");
+  if(/r[ée]gulat|\bLDO\b|dc.?dc|buck|boost|convertisseur/i.test(texte))
+    c.type="regulator";
+  c.pinNames=simDCBrochesIpc(e);
+  return c;
+}
+
+/* Les pastilles de chaque composant, avec net et rang de conducteur ; une
+   pastille traversante une seule fois, au premier conducteur. */
+function simDCPadsParRefIpc(){
+  const parRef=new Map();
+  if(LT.pret)LT.cu.forEach((cu,rang)=>{
+    const c=V.couches[cu.couche];
+    for(const q of ((c&&c.pads)||[])){
+      if(!q.hote||!q.hote.ref)continue;
+      const ref=String(q.hote.ref);
+      if(!parRef.has(ref))parRef.set(ref,[]);
+      const l=parRef.get(ref);
+      if(l.some(o=>Math.abs(o.q.x-q.x)<1e-9&&Math.abs(o.q.y-q.y)<1e-9))continue;
+      l.push({q:q, couche:rang,
+              pin:(q.pad&&q.pad.pin!=null)?String(q.pad.pin):"",
+              net:(q.pad&&q.pad.n>=0)?mdlNetNom(q.pad.n):""});
+    }
+  });
+  /* UN EXPORT RÉEL NE RATTACHE PAS SES PASTILLES AU COMPOSANT : il liste les
+     broches (numéro, position locale, net) et pose le cuivre en pastilles
+     libres. La broche placée sur la carte retrouve la pastille libre posée au
+     même endroit, au premier conducteur — le geste de la fiche de mesure. */
+  const cle=(x,y)=>Math.round(x*100)+","+Math.round(y*100), libres=new Map();
+  if(LT.pret)LT.cu.forEach((cu,rang)=>{
+    const c=V.couches[cu.couche];
+    for(const q of ((c&&c.pads)||[]))
+      if(!q.hote&&!libres.has(cle(q.x,q.y)))libres.set(cle(q.x,q.y),{q:q, rang:rang});
+  });
+  for(const comp of (V.modele.composants||[])){
+    if(!comp.pins||!comp.pins.length)continue;
+    const ref=String(comp.ref);
+    const l=parRef.get(ref)||[];
+    for(const p of comp.pins){
+      if(l.some(o=>o.pin===String(p.num)))continue;
+      const w=mdlPlacer(p.x,p.y,comp.x,comp.y,comp.r,!!comp.m);
+      const t=libres.get(cle(w.x,w.y));
+      if(!t)continue;
+      const n=(p.n>=0)?p.n:((t.q.pad&&t.q.pad.n>=0)?t.q.pad.n:-1);
+      l.push({q:t.q, couche:t.rang, pin:String(p.num), net:n>=0?mdlNetNom(n):""});
+    }
+    if(l.length)parRef.set(ref,l);
+  }
+  return parRef;
+}
+
+/* Ce que la cascade lit de la carte, une fois par import : les composants
+   montés, leurs specs et leurs pastilles, et les rails. */
+function simDCContexteIpc(){
+  const parRef=simDCPadsParRefIpc();
+  const comps=[];
+  for(const comp of mdlComposantsMontes()){
+    const pads=parRef.get(String(comp.ref));
+    if(!pads||!pads.length)continue;
+    const c=simDCCompIpc(comp);
+    comps.push({ref:c.ref, comp:c, specs:pcbSpecsComposant(c), pads:pads});
+  }
+  /* UN RAIL EST UN NET DE CLASSE « ALIMENTATION » — détectée ou saisie dans
+     la fenêtre des nets. `pdnRails` ratisse plus large (le net choisi, les
+     nets découplés) et embarquait des lignes de signal dans la cascade. */
+  const rails=new Set((V.parNet||[]).filter(o=>o&&o.classe==="pwr").map(o=>o.nom));
+  return {comps:comps,
+          estRail:n=>!!n&&!simPDNEstMasseIpc(n)&&rails.has(n)};
+}
+
+/* Les sources, charges et entrées de régulateur d'un net. */
+function simDCNetIpc(ctx,net){
+  const sources=[], charges=[], regulateurs=[];
+  for(const o of ctx.comps){
+    const sur=o.pads.filter(p=>p.net===net);
+    if(!sur.length)continue;
+    const sp=o.specs, c=o.comp, nb=sur.length;
+    sur.forEach((p,i)=>{
+      const pinNom=c.pinNames[p.pin]||"";
+      const nom=o.ref+"."+(p.pin||"?")+(pinNom?" ("+pinNom+")":"");
+      const rang=(nb>1)?" ["+(i+1)+"/"+nb+"]":"";
+      const base={p:p, o:o, couche:p.couche, net:net, compRef:o.ref, nbBroches:nb};
+      if(sp.estSource&&simDCRoleRegulateur({ref:o.ref},c,sp,pinNom,net)==="entree"){
+        regulateurs.push(Object.assign(base,{nom:nom+(pinNom?"":" (entrée)")}));
+      }else if(sp.estSource&&!/^(GND|VSS|0V|ADJ|FB|EN|NC|SHDN)/i.test(pinNom)){
+        sources.push(Object.assign(base,{role:"source", unite:"V",
+          valeur:sp.voltOut||simDCTensionNet(net)||sp.tension,
+          provenance:sp.provenance||"catalogue",
+          nom:nom+(pinNom?"":" (source)")+rang}));
+      }else if(sp.estCharge){
+        const i=(sp.courant||0.03)/nb;
+        charges.push(Object.assign(base,{role:"charge", valeur:i,
+          unite:i<0.001?"µA":(i<1?"mA":"A"),
+          provenance:sp.provenance||"catalogue", totalCompI:sp.courant||0.03,
+          nom:nom+(!pinNom&&sp.mpn?" ("+sp.mpn+")":"")+rang}));
+      }
+    });
+  }
+  return {sources, charges, regulateurs};
+}
+
+/* Un composant EN SÉRIE sur un rail : deux pastilles sur deux nets qui ne
+   sont pas la masse. Mêmes familles et mêmes valeurs supposées que l'éditeur
+   (`simDCSerie`). */
+function simDCSerieIpc(o){
+  if(o.pads.length!==2)return null;
+  const [a,b]=o.pads;
+  if(!a.net||!b.net||a.net===b.net||simPDNEstMasseIpc(a.net)||simPDNEstMasseIpc(b.net))
+    return null;
+  const r=o.specs.resistance;
+  let quoi;
+  if(/^(FB|L(?!ED)|BEAD|SELF)/i.test(o.ref))quoi="ferrite";
+  else if(/^F\d/i.test(o.ref))quoi="fusible";
+  else if(/^R/i.test(o.ref)&&r!=null&&r<=1)quoi=(r>0)?"shunt":"strap 0 Ω";
+  else return null;
+  const defaut=(r==null);
+  return {ref:o.ref, pads:o.pads, quoi:quoi,
+          ohms:defaut?SIM_DC_SERIE_DEFAUT[quoi]:r,
+          provenance:defaut?"defaut":"catalogue"};
+}
+
+/* Le groupe d'un rail : ses nets reliés en série, ses liaisons, ses sources,
+   ses charges — dont les entrées des régulateurs qu'il nourrit, au courant de
+   leur rail de sortie ramené à l'entrée. `pile` garde les nets déjà descendus. */
+function simDCGroupeIpc(ctx,net,pile){
+  pile=pile||new Set();
+  if(!ctx.series)ctx.series=ctx.comps.map(simDCSerieIpc).filter(Boolean);
+  const nets=[net], liaisons=[], vus=new Set();
+  for(let k=0;k<nets.length;k++)
+    for(const s of ctx.series){
+      if(vus.has(s.ref))continue;
+      const [a,b]=s.pads;
+      const ici=(a.net===nets[k])?a:((b.net===nets[k])?b:null);
+      if(!ici)continue;
+      const la=(ici===a)?b:a;
+      if(!ctx.estRail(la.net))continue;
+      vus.add(s.ref);
+      liaisons.push({ref:s.ref, ohms:s.ohms, quoi:s.quoi,
+                     provenance:s.provenance, a:ici, b:la});
+      if(nets.indexOf(la.net)<0)nets.push(la.net);
+    }
+  nets.forEach(n=>pile.add(n));
+  const sources=[], charges=[], notes=[], regs=new Map();
+  for(const n of nets){
+    const r=simDCNetIpc(ctx,n);
+    sources.push(...r.sources);
+    charges.push(...r.charges);
+    for(const e of r.regulateurs){
+      if(!regs.has(e.compRef))regs.set(e.compRef,{o:e.o, entrees:[]});
+      regs.get(e.compRef).entrees.push(e);
+    }
+  }
+  for(const [ref,g] of regs){
+    const sorties=[...new Set(g.o.pads.map(p=>p.net)
+      .filter(n=>n&&ctx.estRail(n)&&nets.indexOf(n)<0))];
+    let iOut=0;
+    const vOut=g.o.specs.voltOut||simDCTensionNet(sorties[0])||0;
+    for(const so of sorties){
+      if(pile.has(so))continue;
+      iOut+=simDCGroupeIpc(ctx,so,pile).charges.reduce((x,c)=>x+(+c.valeur||0),0);
+    }
+    const vIn=simDCTensionNet(g.entrees[0].net)||
+              (sources[0]&&sources[0].valeur)||vOut||1;
+    const eta=simDCRendement(g.o.comp);
+    const iIn=(eta>=1)?iOut:(vOut*iOut)/(eta*vIn);
+    if(!(iIn>0)){
+      notes.push(ref+" : aucun consommateur trouvé sur sa sortie ("+
+                 (sorties.join(", ")||"?")+") — son entrée ne tire rien.");
+      continue;
+    }
+    const nb=g.entrees.length;
+    g.entrees.forEach((e,i)=>charges.push(Object.assign(e,{
+      role:"charge", valeur:iIn/nb, unite:(iIn/nb)<1?"mA":"A",
+      provenance:"cascade", totalCompI:iIn,
+      nom:e.nom+(nb>1?" ["+(i+1)+"/"+nb+"]":""),
+      cascade:(eta>=1?"linéaire : Iin = Iout = ":"découpage, η = "+eta+
+               " : Iin = Vout·Iout/(η·Vin) = "+simNb(vOut,2)+" V × ")+
+              simNb(iOut*1e3,1)+" mA"+
+              (eta>=1?"":" / ("+eta+" × "+simNb(vIn,2)+" V)")})));
+  }
+  return {nets:nets, liaisons:liaisons, sources:sources, charges:charges, notes:notes};
+}
+
+/* Tous les rails, un groupe par rail : un net déjà pris dans le groupe d'un
+   autre (l'aval d'une ferrite) ne repart pas seul. */
+function simDCRailsIpc(ctx){
+  const pris=new Set(), out=[];
+  const noms=[...new Set((V.modele.nets||[]).filter(ctx.estRail))]
+    .sort((a,b)=>a.localeCompare(b,"fr",{numeric:true}));
+  for(const n of noms){
+    if(pris.has(n))continue;
+    const g=simDCGroupeIpc(ctx,n);
+    g.nets.forEach(x=>pris.add(x));
+    if(g.sources.length&&g.charges.length)out.push({net:n, nets:g.nets});
+  }
+  return out;
+}
+
+/* Une entrée du groupe, en borne du panneau. */
+function simDCBorneIpc(e){
+  const q=e.p.q;
+  return {nom:e.nom, x:q.x, y:q.y, couche:e.couche, net:e.net,
+          d:Math.max(q.d||0,0.1), q:q, role:e.role, valeur:e.valeur,
+          unite:e.unite, provenance:e.provenance, compRef:e.compRef,
+          totalCompI:e.totalCompI, cascade:e.cascade||"", nbBroches:e.nbBroches};
+}
+
+/* LE CUIVRE D'UN NET pour la chute DC : ses polygones, ses tubes et ce qui
+   en a été écarté. `cpt` numérote les tubes d'un calcul à plusieurs nets. */
+function simDCCuivreNetIpc(net,k,cpt){
+  const rang=V.modele.nets.indexOf(net);
+  const N=(rang>=0)?V.parNet[rang]:null;
+  if(!N)
+    return {erreur:"Le net "+net+" n'est pas dans le fichier."};
+
+  const polygones=[], creux=[], vias=[], notes=[];
+  /* CE QUI EST ÉCARTÉ, ET SUR QUELLE COUCHE. « 90 forme(s) écartée(s) » ne
+     se corrige pas : il faut savoir LAQUELLE des couches manque à l'empilage
+     de calcul pour aller la compléter. Et le compte par couche dit s'il
+     s'agit d'un oubli — une couche de cuivre entière absente — ou du cas
+     normal : du cuivre sur une couche technique, masque ou sérigraphie, qui
+     n'a rien à faire dans un réseau résistif. */
+  let horsEmpilage=0;
+  const ecartees=new Map();
+  const pose=(couche,pts,plan)=>{
+    const r=simDCRangIpc(couche);
+    if(r<0){
+      horsEmpilage++;
+      ecartees.set(couche,(ecartees.get(couche)||0)+1);
+      return;
+    }
+    polygones.push(Object.assign({vertices:pts, couche:r, net:net,
+                                  epaisseur:LT.cu[r].ep}, plan?{plan:true}:{}));
+  };
+
+  for(const pi of N.pistes)
+    for(const g of simDCPolysPisteIpc(pi,k))pose(pi.c,g);
+  for(const a of N.arcs)
+    for(const g of simDCPolysArcIpc(a,k))pose(a.c,g);
+  for(const pl of N.plans)
+    for(const contour of (pl.g||[])){
+      const plat=o=>{const t=[];for(let i=0;i+1<o.length;i+=2)
+                       t.push([o[i]*k,o[i+1]*k]);return t;};
+      if(contour.o&&contour.o.length>=6)pose(pl.c,plat(contour.o),true);
+      /* LES DÉCOUPES DU PLAN partent en `trou` : un plan évidé qu'on
+         calculerait plein rendrait une chute trop faible — du côté qui
+         rassure, le pire. */
+      for(const t of (contour.t||[]))
+        if(t&&t.length>=6){
+          const r=simDCRangIpc(pl.c);
+          if(r>=0)creux.push({vertices:plat(t), couche:r, net:net,
+                              epaisseur:LT.cu[r].ep, trou:true});
+        }
+    }
+  for(const q of N.pads){
+    const g=simDCPadPolysIpc(q,k);
+    for(const pts of g.plein)pose(q.c,pts);
+    for(const pts of g.creux){
+      const r=simDCRangIpc(q.c);
+      if(r>=0)creux.push({vertices:pts, couche:r, net:net,
+                          epaisseur:LT.cu[r].ep, trou:true});
+    }
+  }
+  if(horsEmpilage){
+    /* LA PLUS FOURNIE D'ABORD : c'est celle qui pèse, et celle qu'on va
+       chercher à compléter. */
+    const detail=[...ecartees.entries()]
+      .sort((a,b)=>b[1]-a[1])
+      .map(([c,n])=>{
+        const nom=(V.couches&&V.couches[c])?V.couches[c].nom:("couche "+c);
+        return nom+" ("+n+")";
+      });
+    notes.push(horsEmpilage+" forme(s) écartée(s), leur couche n'étant pas "+
+               "dans l'empilage de calcul : "+detail.slice(0,6).join(", ")+
+               (detail.length>6?", et "+(detail.length-6)+" autre(s)":"")+
+               ". Si l'une de ces couches porte du CUIVRE, le chemin "+
+               "qu'elle offre n'est pas dans ce résultat — complétez "+
+               "l'empilage dans « La carte ». Si ce sont des couches "+
+               "techniques (masque, sérigraphie, pâte), c'est normal : "+
+               "elles ne conduisent pas.");
+  }
+  if(!polygones.length)
+    return {erreur:"Le net "+net+" ne porte aucun cuivre sur les couches "+
+                   "de l'empilage.",
+            conseil:"Complétez l'empilage de calcul, ou choisissez un "+
+                    "autre net."};
+
+  /* CE QUI FAIT CHANGER DE COUCHE, ET C'EST DEUX CHOSES.
+
+     1. LES PERÇAGES métallisés que le fichier liste, CHACUN SUR SA PORTÉE.
+        IPC-2581 la déclare sur le CALQUE de perçage
+        (`<Layer layerFunction="DRILL"><Span fromLayer toLayer/>`), et le
+        parseur la fait voyager en rangs de couche sous `sa` / `sb` — voir
+        `_lire_span` dans `python/ipc2581_parser.py`. Un via borgne ou
+        enterré ne relie donc plus que les couches qu'il traverse.
+
+        CE QUE ÇA CORRIGEAIT, ET DANS LES DEUX SENS. Tous les trous étaient
+        pris TRAVERSANTS. Sur une carte à six couches, un borgne 1-2 était
+        monté en CHAÎNE 1→2→3→4→5→6 : cinq résistances en série là où il en
+        faut une, donc une résistance de passage largement surestimée — le
+        côté prudent —, mais aussi QUATRE liaisons verticales inventées entre
+        des couches que rien ne joint. Un courant pouvait alors descendre par
+        un chemin qui n'existe pas, et la chute ressortait trop FAIBLE : le
+        côté qui rassure.
+
+        SANS `sa` / `sb`, ON SUPPOSE ENCORE TRAVERSANT, et le panneau le dit.
+        C'est l'hypothèse qui ne perd aucun chemin : la supposer borgne
+        couperait une liaison réelle, laisserait du cuivre flottant et ferait
+        refuser tout le calcul. Les deux comptes sont séparés dans les notes
+        — déclarés d'un côté, supposés de l'autre —, parce que ce ne sont pas
+        les mêmes chiffres qui se défendent.
+
+        Un perçage NON métallisé ne conduit rien : il est écarté, et compté.
+
+     2. LE TUBE D'UNE PASTILLE POSÉE SUR PLUSIEURS COUCHES. Un padstack qui
+        place du cuivre sur deux conducteurs DÉCRIT un trou métallisé : c'est
+        le tube qui joint ses anneaux. Ne pas l'envoyer laissait ces anneaux
+        électriquement flottants, et le solveur refusait tout le calcul —
+        « 1240 nœuds n'atteignent aucune référence ». Ce défaut ne s'est vu
+        qu'en envoyant au serveur le document que la visionneuse produit
+        vraiment ; le côté éditeur avait eu exactement le même, pour
+        exactement la même raison.
+
+     DANS LES DEUX CAS on ne relie que les couches qui portent effectivement
+     du cuivre du net sous le trou : relier une couche vide ne servirait à
+     rien et ferait une ligne « hors calcul » de plus dans le tableau. */
+  const dedans=(x,y,pts)=>{
+    let d=false;
+    for(let i=0,j=pts.length-1;i<pts.length;j=i++){
+      const yi=pts[i][1], yj=pts[j][1];
+      if((yi>y)!==(yj>y)&&
+         x<(pts[j][0]-pts[i][0])*(y-yi)/(yj-yi)+pts[i][0])d=!d;
+    }
+    return d;
+  };
+  /* LES EMPLACEMENTS DE TUBE, DÉDOUBLONNÉS PAR DISTANCE — et non par case
+     d'arrondi, ce qui était le défaut. Un perçage tombe presque toujours
+     SOUS une pastille, et le compter deux fois mettrait deux résistances en
+     parallèle là où il n'y a qu'un tube : le courant s'y partagerait, et
+     chacune des deux lignes du tableau annoncerait la moitié du passage
+     réel.
+
+     CE QUI NE MARCHAIT PAS. La clé était `Math.round(x*100)` : deux
+     emplacements distants de DEUX MICRONS mais posés de part et d'autre d'un
+     demi-centième — 32,1049 et 32,1051 — tombaient dans deux cases
+     différentes et échappaient au dédoublonnage. Sur une carte de mille
+     pastilles, quelques-unes tombent forcément sur cette frontière, et rien
+     ne le signalait.
+
+     ON REGARDE DONC LES NEUF CASES VOISINES et on compare les distances
+     vraies. La tolérance est large — un dixième de millimètre — parce que
+     deux perçages DISTINCTS ne sont jamais si proches : aucune règle de
+     fabrication ne laisse deux trous à moins de deux ou trois dixièmes. */
+  const tubes=new Map();
+  const TOL=0.1;                       // mm entre deux trous « le même »
+  const cle=(x,y)=>Math.round(x/TOL)+"/"+Math.round(y/TOL);
+  /* Le tube déjà posé à cet endroit, à la tolérance près, ou null. */
+  const dejaLa=(x,y)=>{
+    const ix=Math.round(x/TOL), iy=Math.round(y/TOL);
+    for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){
+      const t=tubes.get((ix+dx)+"/"+(iy+dy));
+      if(t&&Math.hypot(t.x-x,t.y-y)<=TOL)return t;
+    }
+    return null;
+  };
+  /* Et le même voisinage pour les trous NUS : une pastille posée sur un trou
+     déclaré non métallisé ne joint rien, et l'arrondi ne doit pas laisser
+     passer un tube là-dessus. */
+  const nuLa=(x,y)=>{
+    const ix=Math.round(x/TOL), iy=Math.round(y/TOL);
+    for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++)
+      if(nus.has((ix+dx)+"/"+(iy+dy)))return true;
+    return false;
+  };
+  let nonMetallises=0;
+  /* UN TROU NON MÉTALLISÉ INTERDIT LE TUBE À SON EMPLACEMENT, et pas
+     seulement pour lui-même : une pastille posée là-dessus sur deux couches
+     ne les joint pas non plus, puisque rien n'est plaqué dans le trou. Sans
+     cette liste, la règle de pastille ci-dessous aurait métallisé un trou
+     que le fichier déclare nu. */
+  const nus=new Set();
+  for(const t of (N.trous||[])){
+    if(/NON/i.test(t.p||"")){
+      nonMetallises++;
+      nus.add(cle(t.x*k,t.y*k));
+      continue;
+    }
+    /* LA PORTÉE, TRADUITE EN RANGS DE CONDUCTEUR. `sa` / `sb` sont des
+       index de COUCHE du modèle ; le document DC parle en rangs de `LT.cu`.
+       Une portée qui désigne une couche absente de l'empilage de calcul —
+       un diélectrique, une couche masquée — ne se traduit pas : on la laisse
+       tomber plutôt que de borner le tube n'importe où. */
+    const ra=(t.sa!=null)?simDCRangIpc(t.sa):-1;
+    const rb=(t.sb!=null)?simDCRangIpc(t.sb):-1;
+    const borne=(ra>=0&&rb>=0)
+      ? {lo:Math.min(ra,rb), hi:Math.max(ra,rb), src:t.ss||"fichier"}
+      : null;
+    tubes.set(cle(t.x*k,t.y*k),
+              {x:t.x*k, y:t.y*k, d:Math.max((t.d||0)*k,0.05), perce:true,
+               borne:borne});
+  }
+  /* Les pastilles du net, groupées par emplacement : plus d'une couche, donc
+     un tube. Le diamètre de perçage n'est pas dans le modèle ici — on prend
+     la pastille moins un anneau de 0,25 mm de part et d'autre, jamais moins
+     de 0,05 : c'est un repli, et il est marqué comme tel dans les notes. */
+  const parLieu=new Map();
+  for(const q of N.pads){
+    const c=cle(q.x*k,q.y*k);
+    if(!parLieu.has(c))parLieu.set(c,{x:q.x*k, y:q.y*k, d:0, n:0});
+    const g=parLieu.get(c);
+    g.n++;
+    g.d=Math.max(g.d,(q.d||0)*k);
+  }
+  let supposes=0;
+  for(const [c,g] of parLieu){
+    if(g.n<2||dejaLa(g.x,g.y)||nuLa(g.x,g.y))continue;
+    tubes.set(c,{x:g.x, y:g.y, d:Math.max(g.d-0.5,0.05), perce:false});
+    supposes++;
+  }
+
+  let nTube=0, nBorne=0, nSuppose=0, nHorsPortee=0;
+  for(const t of tubes.values()){
+    const touchees=[];
+    for(let r=0;r<LT.cu.length;r++){
+      /* HORS DE LA PORTÉE DU TROU, IL N'Y A PAS DE TUBE. Un anneau de cuivre
+         du bon net sur une couche que le perçage ne traverse pas n'est PAS
+         relié par lui : c'est un anneau d'un autre trou, ou du cuivre qui
+         passe par là. Le compter serait inventer la liaison verticale que
+         tout ce bloc s'efforce de ne plus inventer. */
+      if(t.borne&&(r<t.borne.lo||r>t.borne.hi)){
+        if(polygones.some(g=>g.couche===r&&dedans(t.x,t.y,g.vertices)))
+          nHorsPortee++;
+        continue;
+      }
+      if(polygones.some(g=>g.couche===r&&dedans(t.x,t.y,g.vertices)))
+        touchees.push(r);
+    }
+    if(touchees.length<2)continue;
+    nTube++; cpt.tube++;
+    /* UN TUBE DÉDUIT D'UNE PASTILLE (`perce` faux) N'EST PAS « SUPPOSÉ
+       TRAVERSANT » : sa portée est celle des couches où le padstack pose du
+       cuivre, ce qui est une lecture du fichier et non une hypothèse. Il a
+       déjà sa note, sur son perçage supposé. Le compter ici mélangerait deux
+       réserves qui ne portent pas sur la même chose. */
+    if(t.borne)nBorne++; else if(t.perce)nSuppose++;
+    for(let i=0;i<touchees.length-1;i++)
+      vias.push({x:t.x, y:t.y, couche_a:touchees[i], couche_b:touchees[i+1],
+                 percage:t.d, placage:0.025,
+                 /* UN PERÇAGE DÉDUIT D'UNE PASTILLE N'EST PAS UNE COTE. Le
+                    drapeau voyage jusqu'au résultat pour que le tableau
+                    MARQUE ces lignes : R va comme 1/A, donc un diamètre
+                    deviné à cinquante pour cent près se paie double sur
+                    l'ohm, et « 0,076 mΩ » se lisait avec le même aplomb que
+                    « 0,295 mΩ » mesuré. */
+                 percage_suppose:!t.perce,
+                 /* LA PORTEE EST-ELLE LUE OU SUPPOSEE ? C'est le SEUL
+                    endroit ou l'outil peut inventer du courant : si le trou
+                    est en realite borgne, cette liaison n'existe pas, et le
+                    courant qui la traverse n'existe pas non plus. Le drapeau
+                    voyage jusqu'au resultat pour que la fiche MARQUE ces
+                    lignes et chiffre ce qui depend de l'hypothese. */
+                 portee_supposee:!t.borne,
+                 hauteur:simDCHauteurIpc(touchees[i],touchees[i+1]),
+                 net:net,
+                 repere:"T"+cpt.tube+(touchees.length>2
+                   ?(" "+(touchees[i]+1)+"→"+(touchees[i+1]+1)):"")});
+  }
+  /* DEUX COMPTES, ET ILS NE SE DÉFENDENT PAS PAREIL : ce qui est déclaré se
+     vérifie contre le fichier, ce qui est supposé penche du côté prudent
+     pour la résistance et du côté qui rassure pour les chemins inventés. */
+  if(nBorne)
+    notes.push(nBorne+" trou(s) métallisé(s) montés sur leur PORTÉE "+
+               "déclarée : le fichier dit entre quelles couches ils "+
+               "courent, et les vias borgnes ou enterrés ne relient que "+
+               "celles-là."+
+               (nHorsPortee?" "+nHorsPortee+" anneau(x) du net rencontré(s) "+
+                 "hors de la portée d'un trou n'y sont donc PAS raccordés.":""));
+  if(nSuppose)
+    notes.push(nSuppose+" trou(s) métallisé(s) pris pour TRAVERSANTS : le "+
+               "fichier ne déclare pas leur portée. Un borgne compté ainsi "+
+               "est monté en chaîne sur toute la hauteur — résistance "+
+               "surestimée — et ajoute des liaisons verticales qui "+
+               "n'existent pas.");
+  if(supposes)
+    notes.push(supposes+" tube(s) déduit(s) d'une pastille posée sur "+
+               "plusieurs couches, avec un perçage SUPPOSÉ.");
+  if(nonMetallises)
+    notes.push(nonMetallises+" perçage(s) non métallisé(s) écarté(s) : ils "+
+               "ne conduisent pas.");
+  /* LES PERÇAGES QUE LE FICHIER NE RATTACHE À AUCUN NET, et qui joindraient
+     pourtant deux couches de celui-ci. C'est le cas ordinaire d'un plan
+     cousu à un autre plan : l'export ne met de net que sur ce qui vient du
+     routage, et les coutures ressortent nues. `N.trous` ne porte que les
+     perçages du net, donc ceux-là étaient écartés SANS UN MOT — le cuivre
+     de la couche d'arrivée devenait flottant, et le solveur refusait tout en
+     parlant de « nœuds qui n'atteignent aucune référence », un message juste
+     dont la CAUSE était ailleurs.
+
+     ON NE LES MONTE PAS POUR AUTANT : un perçage sans net relierait le
+     premier cuivre venu, celui d'un autre net compris, et un court-circuit
+     inventé est pire qu'un chemin manquant. On les COMPTE. */
+  let nus2=0;
+  for(const t of (V.modele.percages||[])){
+    if(t.n===rang)continue;                  // déjà dans N.trous
+    if(/NON/i.test(t.p||""))continue;
+    const tx=t.x*k, ty=t.y*k;
+    let touchees=0;
+    for(let r=0;r<LT.cu.length&&touchees<2;r++)
+      if(polygones.some(g=>g.couche===r&&dedans(tx,ty,g.vertices)))touchees++;
+    if(touchees>=2)nus2++;
+  }
+  if(nus2)
+    notes.push(nus2+" perçage(s) que le fichier ne rattache pas au net "+
+               net+" joindraient pourtant deux de ses couches : ils sont "+
+               "écartés du calcul. Un perçage sans net relierait le premier "+
+               "cuivre venu, et un court-circuit inventé serait pire qu'un "+
+               "chemin manquant — mais si ce sont des coutures de ce plan, "+
+               "le chemin vertical qu'elles portent n'est PAS dans ce "+
+               "résultat.");
+  return {polygones:polygones.concat(creux), vias:vias, notes:notes};
 }
 
 /* ==========================================================================
@@ -4479,13 +5055,82 @@ const SIM_IPC={
 
   dcValeur:function(k,v){
     const b=SIM_DCB.bornes[k];
-    if(b)b.valeur=(+v)||0;
+    if(b){b.valeur=(+v)||0;b.provenance="manuel";}
   },
 
   dcOublier:function(k){
-    if(k==null)SIM_DCB.bornes=[];
+    if(k==null){SIM_DCB.bornes=[];SIM_DCB.liaisons=[];SIM_DCB.notesGroupe=[];}
     else SIM_DCB.bornes.splice(k,1);
     SIM_DCB.attente=null;
+  },
+
+  /* LES BORNES D'UN RAIL, lues dans la nomenclature et le catalogue (voir
+     « La cascade des rails » plus haut) : sources, charges, composants en
+     série et entrées des régulateurs qu'il nourrit. Le net : celui qu'on
+     demande, sinon le net choisi s'il est un rail, sinon celui des bornes,
+     sinon le premier rail. */
+  dcImporterNom:"⚡ Des composants",
+  dcImporterSchema:async function(netChoisi){
+    if(!V.modele)return {erreur:"Aucune carte ouverte."};
+    if(!LT.pret)
+      return {erreur:"L'empilage de calcul n'est pas prêt : complétez-le dans "+
+                     "le panneau « La carte »."};
+    await simDCCatalogueIpc();
+    const ctx=simDCContexteIpc();
+    let net=netChoisi;
+    const choisi=(V.net!=null&&V.net>=0)?mdlNetNom(V.net):"";
+    if(!net&&ctx.estRail(choisi))net=choisi;
+    if(!net&&SIM_DCB.bornes.length)net=SIM_DCB.bornes[0].net;
+    if(!net)net=(simDCRailsIpc(ctx)[0]||{}).net;
+    if(!net)
+      return {erreur:"Aucun rail d'alimentation choisi ou reconnu. Choisissez "+
+                     "le net du rail à analyser."};
+    const g=simDCGroupeIpc(ctx,net);
+    if(!g.sources.length&&!g.charges.length)
+      return {erreur:"Aucun composant (source ou charge) reconnu sur le net "+
+                     net+"."};
+    SIM_DCB.liaisons=g.liaisons;
+    SIM_DCB.notesGroupe=g.notes;
+    const avant=SIM_DCB.bornes.slice();
+    SIM_DCB.bornes=g.sources.concat(g.charges).map(e=>{
+      const b=simDCBorneIpc(e);
+      const av=avant.find(o=>Math.abs(o.x-b.x)<1e-9&&Math.abs(o.y-b.y)<1e-9&&
+                             o.couche===b.couche);
+      if(av&&av.provenance==="manuel")return av;
+      if(av&&av.renomme){b.nom=av.nom;b.renomme=true;}
+      return b;
+    });
+    const totI=g.charges.reduce((x,c)=>x+(+c.valeur||0),0);
+    return {ok:true, net:net, nets:g.nets, liaisons:g.liaisons.length,
+            nSources:g.sources.length, nCharges:g.charges.length,
+            totalCourant:totI,
+            message:"⚡ "+(g.nets.length>1?"Nets "+g.nets.join(" → "):"Net "+net)+
+                    " : "+g.sources.length+" source(s) et "+g.charges.length+
+                    " charge(s) importées ("+simNb(totI*1e3,1)+" mA total)"+
+                    (g.liaisons.length?", "+g.liaisons.length+
+                                       " composant(s) en série":"")+"."};
+  },
+
+  /* LE RETOUR PAR LA MASSE : lu ou posé par la case du panneau. */
+  dcMasse:function(oui){
+    if(oui!==undefined)SIM_DCB.masse=!!oui;
+    return SIM_DCB.masse;
+  },
+
+  /* TOUS LES RAILS DE LA CARTE qui ont une source et une charge. */
+  dcRails:async function(){
+    if(!V.modele||!LT.pret)return [];
+    await simDCCatalogueIpc();
+    return simDCRailsIpc(simDCContexteIpc());
+  },
+  dcEtat:function(){
+    return {bornes:SIM_DCB.bornes.slice(), liaisons:SIM_DCB.liaisons.slice(),
+            notesGroupe:SIM_DCB.notesGroupe.slice()};
+  },
+  dcRestaurer:function(e){
+    if(!e)return;
+    SIM_DCB.bornes=e.bornes; SIM_DCB.liaisons=e.liaisons;
+    SIM_DCB.notesGroupe=e.notesGroupe;
   },
 
   /* LA COUCHE QUE CET OUTIL PROPOSE DE PEINDRE. Cette page affiche toutes les
@@ -4537,341 +5182,115 @@ const SIM_IPC={
       return {erreur:"Sans net : "+sansNet.map(b=>b.nom).join(", ")+".",
               conseil:"La chute se calcule le long d'un net : choisissez des "+
                       "pastilles que le fichier rattache à un net."};
-    const nets=[...new Set(B.map(b=>b.net))];
-    if(nets.length>1)
-      return {erreur:"Les bornes ne sont pas toutes sur le même net ("+
-                     nets.join(", ")+").",
-              conseil:"Le courant ne passe pas d'un net à l'autre : "+
-                      "n'en gardez qu'un."};
 
-    const net=nets[0], k=simKUnite();
-    const rang=V.modele.nets.indexOf(net);
-    const N=(rang>=0)?V.parNet[rang]:null;
-    if(!N)
-      return {erreur:"Le net "+net+" n'est pas dans le fichier."};
-
-    const polygones=[], creux=[], vias=[], notes=[];
-    /* CE QUI EST ÉCARTÉ, ET SUR QUELLE COUCHE. « 90 forme(s) écartée(s) » ne
-       se corrige pas : il faut savoir LAQUELLE des couches manque à l'empilage
-       de calcul pour aller la compléter. Et le compte par couche dit s'il
-       s'agit d'un oubli — une couche de cuivre entière absente — ou du cas
-       normal : du cuivre sur une couche technique, masque ou sérigraphie, qui
-       n'a rien à faire dans un réseau résistif. */
-    let horsEmpilage=0;
-    const ecartees=new Map();
-    const pose=(couche,pts)=>{
-      const r=simDCRangIpc(couche);
-      if(r<0){
-        horsEmpilage++;
-        ecartees.set(couche,(ecartees.get(couche)||0)+1);
-        return;
-      }
-      polygones.push({vertices:pts, couche:r, net:net, epaisseur:LT.cu[r].ep});
-    };
-
-    for(const pi of N.pistes)
-      for(const g of simDCPolysPisteIpc(pi,k))pose(pi.c,g);
-    for(const a of N.arcs)
-      for(const g of simDCPolysArcIpc(a,k))pose(a.c,g);
-    for(const pl of N.plans)
-      for(const contour of (pl.g||[])){
-        const plat=o=>{const t=[];for(let i=0;i+1<o.length;i+=2)
-                         t.push([o[i]*k,o[i+1]*k]);return t;};
-        if(contour.o&&contour.o.length>=6)pose(pl.c,plat(contour.o));
-        /* LES DÉCOUPES DU PLAN partent en `trou` : un plan évidé qu'on
-           calculerait plein rendrait une chute trop faible — du côté qui
-           rassure, le pire. */
-        for(const t of (contour.t||[]))
-          if(t&&t.length>=6){
-            const r=simDCRangIpc(pl.c);
-            if(r>=0)creux.push({vertices:plat(t), couche:r, net:net,
-                                epaisseur:LT.cu[r].ep, trou:true});
-          }
-      }
-    for(const q of N.pads){
-      const g=simDCPadPolysIpc(q,k);
-      for(const pts of g.plein)pose(q.c,pts);
-      for(const pts of g.creux){
-        const r=simDCRangIpc(q.c);
-        if(r>=0)creux.push({vertices:pts, couche:r, net:net,
-                            epaisseur:LT.cu[r].ep, trou:true});
-      }
-    }
-    if(horsEmpilage){
-      /* LA PLUS FOURNIE D'ABORD : c'est celle qui pèse, et celle qu'on va
-         chercher à compléter. */
-      const detail=[...ecartees.entries()]
-        .sort((a,b)=>b[1]-a[1])
-        .map(([c,n])=>{
-          const nom=(V.couches&&V.couches[c])?V.couches[c].nom:("couche "+c);
-          return nom+" ("+n+")";
-        });
-      notes.push(horsEmpilage+" forme(s) écartée(s), leur couche n'étant pas "+
-                 "dans l'empilage de calcul : "+detail.slice(0,6).join(", ")+
-                 (detail.length>6?", et "+(detail.length-6)+" autre(s)":"")+
-                 ". Si l'une de ces couches porte du CUIVRE, le chemin "+
-                 "qu'elle offre n'est pas dans ce résultat — complétez "+
-                 "l'empilage dans « La carte ». Si ce sont des couches "+
-                 "techniques (masque, sérigraphie, pâte), c'est normal : "+
-                 "elles ne conduisent pas.");
-    }
-    if(!polygones.length)
-      return {erreur:"Le net "+net+" ne porte aucun cuivre sur les couches "+
-                     "de l'empilage.",
-              conseil:"Complétez l'empilage de calcul, ou choisissez un "+
-                      "autre net."};
-
-    /* CE QUI FAIT CHANGER DE COUCHE, ET C'EST DEUX CHOSES.
-
-       1. LES PERÇAGES métallisés que le fichier liste, CHACUN SUR SA PORTÉE.
-          IPC-2581 la déclare sur le CALQUE de perçage
-          (`<Layer layerFunction="DRILL"><Span fromLayer toLayer/>`), et le
-          parseur la fait voyager en rangs de couche sous `sa` / `sb` — voir
-          `_lire_span` dans `python/ipc2581_parser.py`. Un via borgne ou
-          enterré ne relie donc plus que les couches qu'il traverse.
-
-          CE QUE ÇA CORRIGEAIT, ET DANS LES DEUX SENS. Tous les trous étaient
-          pris TRAVERSANTS. Sur une carte à six couches, un borgne 1-2 était
-          monté en CHAÎNE 1→2→3→4→5→6 : cinq résistances en série là où il en
-          faut une, donc une résistance de passage largement surestimée — le
-          côté prudent —, mais aussi QUATRE liaisons verticales inventées entre
-          des couches que rien ne joint. Un courant pouvait alors descendre par
-          un chemin qui n'existe pas, et la chute ressortait trop FAIBLE : le
-          côté qui rassure.
-
-          SANS `sa` / `sb`, ON SUPPOSE ENCORE TRAVERSANT, et le panneau le dit.
-          C'est l'hypothèse qui ne perd aucun chemin : la supposer borgne
-          couperait une liaison réelle, laisserait du cuivre flottant et ferait
-          refuser tout le calcul. Les deux comptes sont séparés dans les notes
-          — déclarés d'un côté, supposés de l'autre —, parce que ce ne sont pas
-          les mêmes chiffres qui se défendent.
-
-          Un perçage NON métallisé ne conduit rien : il est écarté, et compté.
-
-       2. LE TUBE D'UNE PASTILLE POSÉE SUR PLUSIEURS COUCHES. Un padstack qui
-          place du cuivre sur deux conducteurs DÉCRIT un trou métallisé : c'est
-          le tube qui joint ses anneaux. Ne pas l'envoyer laissait ces anneaux
-          électriquement flottants, et le solveur refusait tout le calcul —
-          « 1240 nœuds n'atteignent aucune référence ». Ce défaut ne s'est vu
-          qu'en envoyant au serveur le document que la visionneuse produit
-          vraiment ; le côté éditeur avait eu exactement le même, pour
-          exactement la même raison.
-
-       DANS LES DEUX CAS on ne relie que les couches qui portent effectivement
-       du cuivre du net sous le trou : relier une couche vide ne servirait à
-       rien et ferait une ligne « hors calcul » de plus dans le tableau. */
-    const dedans=(x,y,pts)=>{
-      let d=false;
-      for(let i=0,j=pts.length-1;i<pts.length;j=i++){
-        const yi=pts[i][1], yj=pts[j][1];
-        if((yi>y)!==(yj>y)&&
-           x<(pts[j][0]-pts[i][0])*(y-yi)/(yj-yi)+pts[i][0])d=!d;
-      }
-      return d;
-    };
-    /* LES EMPLACEMENTS DE TUBE, DÉDOUBLONNÉS PAR DISTANCE — et non par case
-       d'arrondi, ce qui était le défaut. Un perçage tombe presque toujours
-       SOUS une pastille, et le compter deux fois mettrait deux résistances en
-       parallèle là où il n'y a qu'un tube : le courant s'y partagerait, et
-       chacune des deux lignes du tableau annoncerait la moitié du passage
-       réel.
-
-       CE QUI NE MARCHAIT PAS. La clé était `Math.round(x*100)` : deux
-       emplacements distants de DEUX MICRONS mais posés de part et d'autre d'un
-       demi-centième — 32,1049 et 32,1051 — tombaient dans deux cases
-       différentes et échappaient au dédoublonnage. Sur une carte de mille
-       pastilles, quelques-unes tombent forcément sur cette frontière, et rien
-       ne le signalait.
-
-       ON REGARDE DONC LES NEUF CASES VOISINES et on compare les distances
-       vraies. La tolérance est large — un dixième de millimètre — parce que
-       deux perçages DISTINCTS ne sont jamais si proches : aucune règle de
-       fabrication ne laisse deux trous à moins de deux ou trois dixièmes. */
-    const tubes=new Map();
-    const TOL=0.1;                       // mm entre deux trous « le même »
-    const cle=(x,y)=>Math.round(x/TOL)+"/"+Math.round(y/TOL);
-    /* Le tube déjà posé à cet endroit, à la tolérance près, ou null. */
-    const dejaLa=(x,y)=>{
-      const ix=Math.round(x/TOL), iy=Math.round(y/TOL);
-      for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){
-        const t=tubes.get((ix+dx)+"/"+(iy+dy));
-        if(t&&Math.hypot(t.x-x,t.y-y)<=TOL)return t;
-      }
-      return null;
-    };
-    /* Et le même voisinage pour les trous NUS : une pastille posée sur un trou
-       déclaré non métallisé ne joint rien, et l'arrondi ne doit pas laisser
-       passer un tube là-dessus. */
-    const nuLa=(x,y)=>{
-      const ix=Math.round(x/TOL), iy=Math.round(y/TOL);
-      for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++)
-        if(nus.has((ix+dx)+"/"+(iy+dy)))return true;
-      return false;
-    };
-    let nonMetallises=0;
-    /* UN TROU NON MÉTALLISÉ INTERDIT LE TUBE À SON EMPLACEMENT, et pas
-       seulement pour lui-même : une pastille posée là-dessus sur deux couches
-       ne les joint pas non plus, puisque rien n'est plaqué dans le trou. Sans
-       cette liste, la règle de pastille ci-dessous aurait métallisé un trou
-       que le fichier déclare nu. */
-    const nus=new Set();
-    for(const t of (N.trous||[])){
-      if(/NON/i.test(t.p||"")){
-        nonMetallises++;
-        nus.add(cle(t.x*k,t.y*k));
-        continue;
-      }
-      /* LA PORTÉE, TRADUITE EN RANGS DE CONDUCTEUR. `sa` / `sb` sont des
-         index de COUCHE du modèle ; le document DC parle en rangs de `LT.cu`.
-         Une portée qui désigne une couche absente de l'empilage de calcul —
-         un diélectrique, une couche masquée — ne se traduit pas : on la laisse
-         tomber plutôt que de borner le tube n'importe où. */
-      const ra=(t.sa!=null)?simDCRangIpc(t.sa):-1;
-      const rb=(t.sb!=null)?simDCRangIpc(t.sb):-1;
-      const borne=(ra>=0&&rb>=0)
-        ? {lo:Math.min(ra,rb), hi:Math.max(ra,rb), src:t.ss||"fichier"}
-        : null;
-      tubes.set(cle(t.x*k,t.y*k),
-                {x:t.x*k, y:t.y*k, d:Math.max((t.d||0)*k,0.05), perce:true,
-                 borne:borne});
-    }
-    /* Les pastilles du net, groupées par emplacement : plus d'une couche, donc
-       un tube. Le diamètre de perçage n'est pas dans le modèle ici — on prend
-       la pastille moins un anneau de 0,25 mm de part et d'autre, jamais moins
-       de 0,05 : c'est un repli, et il est marqué comme tel dans les notes. */
-    const parLieu=new Map();
-    for(const q of N.pads){
-      const c=cle(q.x*k,q.y*k);
-      if(!parLieu.has(c))parLieu.set(c,{x:q.x*k, y:q.y*k, d:0, n:0});
-      const g=parLieu.get(c);
-      g.n++;
-      g.d=Math.max(g.d,(q.d||0)*k);
-    }
-    let supposes=0;
-    for(const [c,g] of parLieu){
-      if(g.n<2||dejaLa(g.x,g.y)||nuLa(g.x,g.y))continue;
-      tubes.set(c,{x:g.x, y:g.y, d:Math.max(g.d-0.5,0.05), perce:false});
-      supposes++;
-    }
-
-    let nTube=0, nBorne=0, nSuppose=0, nHorsPortee=0;
-    for(const t of tubes.values()){
-      const touchees=[];
-      for(let r=0;r<LT.cu.length;r++){
-        /* HORS DE LA PORTÉE DU TROU, IL N'Y A PAS DE TUBE. Un anneau de cuivre
-           du bon net sur une couche que le perçage ne traverse pas n'est PAS
-           relié par lui : c'est un anneau d'un autre trou, ou du cuivre qui
-           passe par là. Le compter serait inventer la liaison verticale que
-           tout ce bloc s'efforce de ne plus inventer. */
-        if(t.borne&&(r<t.borne.lo||r>t.borne.hi)){
-          if(polygones.some(g=>g.couche===r&&dedans(t.x,t.y,g.vertices)))
-            nHorsPortee++;
-          continue;
+    /* PLUSIEURS NETS, MAIS RELIÉS par un composant en série (la cascade) ;
+       sans lui, le net sans source serait flottant. Même règle que l'éditeur
+       PCB. */
+    const liaisons=(SIM_DCB.liaisons||[]).filter(l=>
+      B.some(b=>b.net===l.a.net||b.net===l.b.net));
+    const nets=new Set(B.map(b=>b.net));
+    liaisons.forEach(l=>{nets.add(l.a.net);nets.add(l.b.net);});
+    const relies=new Set(alims.map(b=>b.net));
+    for(let i=0;i<liaisons.length;i++)
+      for(const l of liaisons)
+        if(relies.has(l.a.net)||relies.has(l.b.net)){
+          relies.add(l.a.net);relies.add(l.b.net);
         }
-        if(polygones.some(g=>g.couche===r&&dedans(t.x,t.y,g.vertices)))
-          touchees.push(r);
+    const seuls=[...nets].filter(n=>!relies.has(n));
+    if(seuls.length)
+      return {erreur:"Les bornes ne sont pas toutes sur le même net ("+
+                     [...nets].join(", ")+").",
+              conseil:"Le courant ne passe pas d'un net à l'autre sans "+
+                      "composant en série : « ⚡ Des composants » les trouve, "+
+                      "sinon n'en gardez qu'un ("+seuls.join(", ")+
+                      " n'a pas de source)."};
+
+    /* LE RETOUR PAR LA MASSE, sur demande : chaque charge rend son courant
+       par les broches de masse de SON composant, les broches de masse des
+       sources sont à 0 V. */
+    const retours=[], zeros=[], notesMasse=[];
+    if(SIM_DCB.masse){
+      const pads=simDCPadsParRefIpc();
+      const masseDe=ref=>(pads.get(ref)||[]).filter(p=>p.net&&simPDNEstMasseIpc(p.net));
+      const parComp=new Map();
+      for(const b of charges)
+        if(b.compRef)
+          parComp.set(b.compRef,(parComp.get(b.compRef)||0)+Math.abs(+b.valeur||0));
+      const sansMasse=[];
+      for(const [ref,i] of parComp){
+        const m=masseDe(ref);
+        if(!m.length){sansMasse.push(ref);continue;}
+        m.forEach(p=>retours.push({p:p, courant:i/m.length, ref:ref}));
       }
-      if(touchees.length<2)continue;
-      nTube++;
-      /* UN TUBE DÉDUIT D'UNE PASTILLE (`perce` faux) N'EST PAS « SUPPOSÉ
-         TRAVERSANT » : sa portée est celle des couches où le padstack pose du
-         cuivre, ce qui est une lecture du fichier et non une hypothèse. Il a
-         déjà sa note, sur son perçage supposé. Le compter ici mélangerait deux
-         réserves qui ne portent pas sur la même chose. */
-      if(t.borne)nBorne++; else if(t.perce)nSuppose++;
-      for(let i=0;i<touchees.length-1;i++)
-        vias.push({x:t.x, y:t.y, couche_a:touchees[i], couche_b:touchees[i+1],
-                   percage:t.d, placage:0.025,
-                   /* UN PERÇAGE DÉDUIT D'UNE PASTILLE N'EST PAS UNE COTE. Le
-                      drapeau voyage jusqu'au résultat pour que le tableau
-                      MARQUE ces lignes : R va comme 1/A, donc un diamètre
-                      deviné à cinquante pour cent près se paie double sur
-                      l'ohm, et « 0,076 mΩ » se lisait avec le même aplomb que
-                      « 0,295 mΩ » mesuré. */
-                   percage_suppose:!t.perce,
-                   /* LA PORTEE EST-ELLE LUE OU SUPPOSEE ? C'est le SEUL
-                      endroit ou l'outil peut inventer du courant : si le trou
-                      est en realite borgne, cette liaison n'existe pas, et le
-                      courant qui la traverse n'existe pas non plus. Le drapeau
-                      voyage jusqu'au resultat pour que la fiche MARQUE ces
-                      lignes et chiffre ce qui depend de l'hypothese. */
-                   portee_supposee:!t.borne,
-                   hauteur:simDCHauteurIpc(touchees[i],touchees[i+1]),
-                   net:net,
-                   repere:"T"+nTube+(touchees.length>2
-                     ?(" "+(touchees[i]+1)+"→"+(touchees[i+1]+1)):"")});
+      for(const ref of new Set(alims.map(b=>b.compRef).filter(Boolean)))
+        masseDe(ref).forEach(p=>zeros.push({p:p, ref:ref}));
+      if(!zeros.length)
+        return {erreur:"Aucune broche de masse sur les sources ("+
+                       alims.map(b=>b.compRef||b.nom).join(", ")+").",
+                conseil:"Le retour se mesure depuis la masse de la source : "+
+                        "importez les bornes par « ⚡ Des composants », ou "+
+                        "décochez « masse »."};
+      if(sansMasse.length)
+        notesMasse.push(sansMasse.join(", ")+" : aucune broche de masse, leur "+
+                        "retour n'est pas compté.");
+      if(charges.some(b=>!b.compRef))
+        notesMasse.push("Les charges posées sans composant ne rendent pas leur "+
+                        "courant à la masse.");
+      retours.forEach(r=>nets.add(r.p.net));
+      zeros.forEach(r=>nets.add(r.p.net));
     }
-    /* DEUX COMPTES, ET ILS NE SE DÉFENDENT PAS PAREIL : ce qui est déclaré se
-       vérifie contre le fichier, ce qui est supposé penche du côté prudent
-       pour la résistance et du côté qui rassure pour les chemins inventés. */
-    if(nBorne)
-      notes.push(nBorne+" trou(s) métallisé(s) montés sur leur PORTÉE "+
-                 "déclarée : le fichier dit entre quelles couches ils "+
-                 "courent, et les vias borgnes ou enterrés ne relient que "+
-                 "celles-là."+
-                 (nHorsPortee?" "+nHorsPortee+" anneau(x) du net rencontré(s) "+
-                   "hors de la portée d'un trou n'y sont donc PAS raccordés.":""));
-    if(nSuppose)
-      notes.push(nSuppose+" trou(s) métallisé(s) pris pour TRAVERSANTS : le "+
-                 "fichier ne déclare pas leur portée. Un borgne compté ainsi "+
-                 "est monté en chaîne sur toute la hauteur — résistance "+
-                 "surestimée — et ajoute des liaisons verticales qui "+
-                 "n'existent pas.");
-    if(supposes)
-      notes.push(supposes+" tube(s) déduit(s) d'une pastille posée sur "+
-                 "plusieurs couches, avec un perçage SUPPOSÉ.");
-    if(nonMetallises)
-      notes.push(nonMetallises+" perçage(s) non métallisé(s) écarté(s) : ils "+
-                 "ne conduisent pas.");
-    /* LES PERÇAGES QUE LE FICHIER NE RATTACHE À AUCUN NET, et qui joindraient
-       pourtant deux couches de celui-ci. C'est le cas ordinaire d'un plan
-       cousu à un autre plan : l'export ne met de net que sur ce qui vient du
-       routage, et les coutures ressortent nues. `N.trous` ne porte que les
-       perçages du net, donc ceux-là étaient écartés SANS UN MOT — le cuivre
-       de la couche d'arrivée devenait flottant, et le solveur refusait tout en
-       parlant de « nœuds qui n'atteignent aucune référence », un message juste
-       dont la CAUSE était ailleurs.
 
-       ON NE LES MONTE PAS POUR AUTANT : un perçage sans net relierait le
-       premier cuivre venu, celui d'un autre net compris, et un court-circuit
-       inventé est pire qu'un chemin manquant. On les COMPTE. */
-    let nus2=0;
-    for(const t of (V.modele.percages||[])){
-      if(t.n===rang)continue;                  // déjà dans N.trous
-      if(/NON/i.test(t.p||""))continue;
-      const tx=t.x*k, ty=t.y*k;
-      let touchees=0;
-      for(let r=0;r<LT.cu.length&&touchees<2;r++)
-        if(polygones.some(g=>g.couche===r&&dedans(tx,ty,g.vertices)))touchees++;
-      if(touchees>=2)nus2++;
+    const k=simKUnite(), polygones=[], vias=[], notes=[], cpt={tube:0};
+    for(const n of nets){
+      const r=simDCCuivreNetIpc(n,k,cpt);
+      if(r.erreur)return r;
+      polygones.push(...r.polygones);
+      vias.push(...r.vias);
+      r.notes.forEach(t=>notes.push(nets.size>1?n+" : "+t:t));
     }
-    if(nus2)
-      notes.push(nus2+" perçage(s) que le fichier ne rattache pas au net "+
-                 net+" joindraient pourtant deux de ses couches : ils sont "+
-                 "écartés du calcul. Un perçage sans net relierait le premier "+
-                 "cuivre venu, et un court-circuit inventé serait pire qu'un "+
-                 "chemin manquant — mais si ce sont des coutures de ce plan, "+
-                 "le chemin vertical qu'elles portent n'est PAS dans ce "+
-                 "résultat.");
-
+    /* LES PLANS D'ABORD, LA MASSE AVANT LE RAIL : sur une couche, la dernière
+       forme posée gagne le carreau. Le contour d'un plan GND couvre souvent la
+       zone d'un plan VDD qu'un de ses dégagements exclut : posé après, il
+       prenait les carreaux VDD, puis son dégagement (qui n'évide que GND) les
+       laissait vides, et le rail se coupait. */
+    const rangPose=g=>(g.plan?0:2)+(simPDNEstMasseIpc(g.net)?0:1);
+    polygones.sort((a,b)=>rangPose(a)-rangPose(b));
+    let cuivre={polygones:polygones, vias:vias, rognes:0};
+    if(SIM_DCB.masse){
+      cuivre=simDCRognerMasse(polygones,vias,simPDNEstMasseIpc,SIM_DC_MARGE_MASSE);
+      if(cuivre.rognes)
+        notesMasse.push("Masse : seul son cuivre à moins de "+SIM_DC_MARGE_MASSE+
+                        " mm du rail entre dans le calcul ("+cuivre.rognes+
+                        " forme(s) rognée(s)) — le retour passe sous le rail.");
+    }
     const boite=b=>{
       const r=Math.max((b.d||0)*k,0.1)/2;
       return [b.x*k-r, b.y*k-r, b.x*k+r, b.y*k+r];
     };
+    const plot=p=>({couche:p.couche, net:p.net, boite:boite(p.q)});
+    const net=alims[0].net;
     return {
-      polygones:polygones.concat(creux),
-      vias:vias,
+      polygones:cuivre.polygones,
+      vias:cuivre.vias,
       /* LA TRADUCTION vers les deux listes du solveur : `sources` est celle
          de NEUMANN (courants imposés), donc elle porte les CHARGES, avec un
          courant NÉGATIF puisqu'il sort du cuivre ; `references` est celle de
          DIRICHLET (potentiels imposés), donc elle porte les SOURCES. */
-      sources:charges.map(b=>({couche:b.couche, net:net,
+      sources:charges.map(b=>({couche:b.couche, net:b.net,
                                courant:-Math.abs((+b.valeur)||0),
-                               boite:boite(b), repere:b.nom})),
-      references:alims.map(b=>({couche:b.couche, net:net,
+                               boite:boite(b), repere:b.nom,
+                               composant:b.compRef||""}))
+        .concat(retours.map(r=>Object.assign(plot(r.p),
+          {courant:r.courant, repere:r.ref+"."+r.p.pin+" (masse)",
+           composant:r.ref}))),
+      references:alims.map(b=>({couche:b.couche, net:b.net,
                                 tension:(+b.valeur)||0, boite:boite(b),
-                                repere:b.nom})),
-      net:net,
+                                repere:b.nom, composant:b.compRef||""}))
+        .concat(zeros.map(r=>Object.assign(plot(r.p),
+          {tension:0, repere:r.ref+"."+r.p.pin+" (masse)", composant:r.ref}))),
+      liaisons:liaisons.map(l=>({a:plot(l.a), b:plot(l.b),
+                                 resistance:l.ohms, repere:l.ref})),
+      net:net, nets:[...nets],
       /* Les couches à l'air libre, pour IPC-2221 : la première et la dernière
          de l'empilage de CALCUL. Un coefficient double rend une température
          presque cinq fois plus basse, donc s'en remettre au repli du solveur
@@ -4879,7 +5298,13 @@ const SIM_IPC={
       couches_externes:(LT.cu.length>1)?[0, LT.cu.length-1]:[0],
       /* CE QUE LA CARTE EMPORTE DE CHALEUR : voir `simDCThermiqueIpc`. */
       thermique:simDCThermiqueIpc(),
-      notes:notes,
+      notes:notes.concat(
+        liaisons.map(l=>l.ref+" en série ("+l.quoi+", "+simNb(l.ohms*1e3,1)+
+          " mΩ"+(l.provenance==="defaut"?", valeur courante supposée":"")+
+          ") : "+l.a.net+" → "+l.b.net+"."),
+        charges.filter(b=>b.cascade).map(b=>b.nom+" : entrée de régulateur, "+
+          b.cascade+"."),
+        SIM_DCB.notesGroupe||[], notesMasse),
       bornes:B.map(b=>b.nom)
     };
   },
