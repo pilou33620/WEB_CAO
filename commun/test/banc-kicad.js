@@ -103,7 +103,7 @@ const refuse = async (f, motif) => { try { await f(); return false; } catch (e) 
       // tout le dossier, sous-dossiers compris (feuilles rangées dans sch/), comme « Archiver le projet »
       const fichiers = fs.readdirSync(dossier, { recursive: true }).map(String).filter(f => /\.kicad_(pro|sch|pcb)$/.test(f));
       if (!fichiers.some(f => !f.includes(path.sep) && f.endsWith(".kicad_pro"))) continue;
-      if (fichiers.some(f => fs.statSync(path.join(dossier, f)).size > 64 * 1024 * 1024)) { lignes.push(d + " : fichier de plus de 64 Mo, sauté"); continue; }
+      if (fichiers.some(f => fs.statSync(path.join(dossier, f)).size > 128 * 1024 * 1024)) { lignes.push(d + " : fichier de plus de 128 Mo, sauté"); continue; }
       const zip = zipOctets(fichiers.map(f => ({ name: d + "/" + f, data: fs.readFileSync(path.join(dossier, f)) })));
       const imp = await K.importer(zip);
       const ex = K.exporter({ nom: imp.nom, schema: imp.schema && JSON.parse(JSON.stringify(imp.schema)), pcb: imp.pcb && JSON.parse(JSON.stringify(imp.pcb)) });

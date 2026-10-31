@@ -922,7 +922,7 @@ async function pKicadVersLib(imp) {
 async function pImporterKicad(fichier) {
   pDosMsg("Lecture de « " + esc(fichier.name) + " »…");
   try {
-    if(fichier.size > 256 * 1024 * 1024) throw new Error("archive de plus de 256 Mo : refusée");
+    if(fichier.size > 512 * 1024 * 1024) throw new Error("archive de plus de 512 Mo : refusée");
     const imp = await KICAD.importer(await fichier.arrayBuffer());
     const nom = projNomValide((inNomNouveau && inNomNouveau.value.trim()) || imp.nom);
     if(!nom) throw new Error("Nom de projet refusé (« " + imp.nom + " ») : donnez-en un au champ 1.");

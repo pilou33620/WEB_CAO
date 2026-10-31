@@ -18,9 +18,11 @@
 const KICAD = (() => {
   const { lireS, Refus } = COMPOSANTS_LIB;
   const ZIP_ENTREES_MAX = 5000;
-  const FICHIER_MAX = 64 * 1024 * 1024;
-  const TOTAL_MAX = 256 * 1024 * 1024;
-  const NOEUDS_MAX = 20000000;
+  /* la mémoire décide : un fichier de 70 Mo occupe ~1,2 Go une fois lu (~110 000 nœuds par Mo),
+     un onglet tient vers 4 Go ; au-delà de 128 Mo l'onglet tomberait avant la fin */
+  const FICHIER_MAX = 128 * 1024 * 1024;
+  const TOTAL_MAX = 512 * 1024 * 1024;
+  const NOEUDS_MAX = 30000000;
   const VERSION_PCB = 20241229, VERSION_SCH = 20250114;      // KiCad 9 : KiCad 10 les ouvre
 
   /* ---------- rapport d'écarts : chaque écart une fois, avec son compte ---------- */
@@ -121,8 +123,8 @@ const KICAD = (() => {
       const chemin = cheminSur(nom);
       if (!chemin || nom.endsWith("/") || !garder(chemin)) continue;
       if (drap & 1) throw new Refus("archive chiffrée : refusée");
-      if (taille > FICHIER_MAX) throw new Refus("« " + chemin + " » dépasse 64 Mo : refusé");
-      if ((total += taille) > TOTAL_MAX) throw new Refus("archive de plus de 256 Mo une fois décompressée : refusée");
+      if (taille > FICHIER_MAX) throw new Refus("« " + chemin + " » dépasse 128 Mo : refusé");
+      if ((total += taille) > TOTAL_MAX) throw new Refus("archive de plus de 512 Mo une fois décompressée : refusée");
       if (local + 30 > u8.length || dv.getUint32(local, true) !== 0x04034b50) throw new Refus("archive .zip abîmée");
       const debut = local + 30 + dv.getUint16(local + 26, true) + dv.getUint16(local + 28, true);
       const data = u8.subarray(debut, debut + tComp);

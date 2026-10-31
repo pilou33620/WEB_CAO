@@ -732,7 +732,10 @@ const COMPOSANTS_LIB = (() => {
   function lireS(texte, quoi = "kicad_mod", maxNoeuds = 200000) {
     let i = 0, noeuds = 0;
     const n = texte.length;
-    function blanc() { while (i < n && /\s/.test(texte[i])) i++; }
+    /* codes de caractères plutôt qu'une expression par caractère : une carte de 70 Mo
+       se lit en secondes. Même blanc que \s (ASCII d'abord, Unicode au besoin). */
+    const estBlanc = c => c === 32 || (c >= 9 && c <= 13) || (c >= 128 && /\s/.test(String.fromCharCode(c)));
+    function blanc() { while (i < n && estBlanc(texte.charCodeAt(i))) i++; }
     function liste(prof) {
       if (prof > 40) throw new Refus(quoi + " illisible : imbrication trop profonde");
       i++;                                                   // « ( »
@@ -740,23 +743,31 @@ const COMPOSANTS_LIB = (() => {
       for (;;) {
         blanc();
         if (i >= n) throw new Refus(quoi + " illisible : parenthèse non fermée");
-        const c = texte[i];
+        const c = texte.charCodeAt(i);
         if (++noeuds > maxNoeuds) throw new Refus(quoi + " illisible : trop d'éléments");
-        if (c === ")") { i++; return out; }
-        if (c === "(") out.push(liste(prof + 1));
-        else if (c === '"') {
+        if (c === 41) { i++; return out; }                   // « ) »
+        if (c === 40) out.push(liste(prof + 1));             // « ( »
+        else if (c === 34) {                                 // « " » : les morceaux sans échappement passent en tranches
           let v = "";
           i++;
-          while (i < n && texte[i] !== '"') {
-            if (texte[i] === "\\" && i + 1 < n) { i++; if (texte[i] === "n") { v += "\n"; i++; continue; } }
-            v += texte[i++];
+          for (;;) {
+            const d = i;
+            let k;
+            while (i < n && (k = texte.charCodeAt(i)) !== 34 && k !== 92) i++;
+            v += texte.slice(d, i);
+            if (i >= n) throw new Refus(quoi + " illisible : guillemet non fermé");
+            if (k === 34) break;
+            if (i + 1 >= n) { v += "\\"; i++; continue; }     // « \ » final : gardé tel quel
+            i++;
+            v += texte[i] === "n" ? "\n" : texte[i];
+            i++;
           }
-          if (i >= n) throw new Refus(quoi + " illisible : guillemet non fermé");
           i++;
           out.push(v);
         } else {
           const d = i;
-          while (i < n && !/[\s()"]/.test(texte[i])) i++;
+          let k;
+          while (i < n && (k = texte.charCodeAt(i)) !== 40 && k !== 41 && k !== 34 && !estBlanc(k)) i++;
           out.push(texte.slice(d, i));
         }
       }
