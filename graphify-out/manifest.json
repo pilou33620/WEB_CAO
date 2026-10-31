@@ -192,27 +192,27 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/01-core.js": {
-    "mtime": 1793381843.885692,
-    "seen": 1793384848.622468,
-    "ast_hash": "28e151cd8a524d875081a22fe9ea6592",
+    "mtime": 1793476047.9593616,
+    "seen": 1793477373.756889,
+    "ast_hash": "c7a06f61fe511aa816e1bb4cff18b976",
     "semantic_hash": ""
   },
   "editeur-pcb/js/02-connectivity.js": {
-    "mtime": 1793388740.0814228,
-    "seen": 1793394407.4544196,
-    "ast_hash": "3678488d7ee3aa9de8f7bda67b547561",
+    "mtime": 1793475208.8073416,
+    "seen": 1793477373.7568982,
+    "ast_hash": "b2689ef2268ed817d7739c738b0b2c7d",
     "semantic_hash": ""
   },
   "editeur-pcb/js/03-render.js": {
-    "mtime": 1793278361.8449776,
-    "seen": 1793351383.6735132,
-    "ast_hash": "bc905b7cf43a07d401fe012ac12df95d",
+    "mtime": 1793475208.811373,
+    "seen": 1793477373.7569067,
+    "ast_hash": "5f353da5ed615867c20fae1a134d060f",
     "semantic_hash": ""
   },
   "editeur-pcb/js/04-fabrication.js": {
-    "mtime": 1793381843.8918188,
-    "seen": 1793384848.6224983,
-    "ast_hash": "ff160ca7b6633d6a60e8308f43132984",
+    "mtime": 1793476047.9633615,
+    "seen": 1793477373.756915,
+    "ast_hash": "4e55a07a4e304b5831906b57fcca9bd9",
     "semantic_hash": ""
   },
   "editeur-pcb/js/04-pdf-masterdraw.js": {
@@ -222,15 +222,15 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/05-tools.js": {
-    "mtime": 1793453635.0346284,
-    "seen": 1793460079.0687463,
-    "ast_hash": "08210766525976c07898dd172e8f34d1",
+    "mtime": 1793476047.9673615,
+    "seen": 1793477373.7569323,
+    "ast_hash": "cbd112e29f7f61098da7d29f553bfa53",
     "semantic_hash": ""
   },
   "editeur-pcb/js/06-panels.js": {
-    "mtime": 1793280606.7138216,
-    "seen": 1793351383.6735532,
-    "ast_hash": "fdd188f4a570eeaf6b5199e61f1a5f52",
+    "mtime": 1793476047.9673615,
+    "seen": 1793477373.7569413,
+    "ast_hash": "279d3544b0525fbfc7f7f087b9c6df23",
     "semantic_hash": ""
   },
   "editeur-pcb/js/07-app.js": {
@@ -240,9 +240,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/08-empreinte.js": {
-    "mtime": 1793381843.8932884,
-    "seen": 1793384848.6225505,
-    "ast_hash": "872c4619fe8ad2a3c63694acedd81385",
+    "mtime": 1793475208.8193414,
+    "seen": 1793477373.7569594,
+    "ast_hash": "8307ac32953de641e508c77fee68d080",
     "semantic_hash": ""
   },
   "editeur-pcb/js/09-diffpair.js": {
@@ -330,15 +330,15 @@
     "semantic_hash": "ee852a1e58f5c9eef0004d576b1c5459"
   },
   "editeur-pcb/js/23-eco-sync.js": {
-    "mtime": 1792784639.982668,
-    "seen": 1793135203.8150728,
-    "ast_hash": "99737cebb907c5a97eccec50b8ad1a0a",
+    "mtime": 1793476047.9673615,
+    "seen": 1793477373.7571075,
+    "ast_hash": "d5d6a8635d6bb9efba04bfe3f9ceff78",
     "semantic_hash": ""
   },
   "editeur-pcb/js/24-pcb-capabilities.js": {
-    "mtime": 1792182995.2221377,
-    "seen": 1792184900.1175406,
-    "ast_hash": "17b0e54a2a52e33b9cb6b47e94e41161",
+    "mtime": 1793475208.8233414,
+    "seen": 1793477373.757116,
+    "ast_hash": "e91fc8a9c75d2bf4a625c295ed69d865",
     "semantic_hash": ""
   },
   "editeur-pcb/js/25-liens.js": {
@@ -354,10 +354,10 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/27-groupes.js": {
-    "mtime": 1791663035.627176,
-    "seen": 1791891802.1721017,
-    "ast_hash": "9d3604e7b439a9ac5de8e8ecd5a40e6d",
-    "semantic_hash": "9d3604e7b439a9ac5de8e8ecd5a40e6d"
+    "mtime": 1793475208.8233414,
+    "seen": 1793477373.7571452,
+    "ast_hash": "292456132a8b9f09e5f7777de486f831",
+    "semantic_hash": ""
   },
   "editeur-pcb/js/28-placement-satellites.js": {
     "mtime": 1792784639.9866712,
@@ -402,9 +402,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/35-ipc2581-export.js": {
-    "mtime": 1793432560.6032526,
-    "seen": 1793441035.0176563,
-    "ast_hash": "edae90d6ed82c56ecc5a14304f90222c",
+    "mtime": 1793476047.9713614,
+    "seen": 1793477373.7572246,
+    "ast_hash": "ca585f337c77cf147e9d88cb0856a4b6",
     "semantic_hash": ""
   },
   "editeur-pcb/js/fontes/plans-sans.js": {
@@ -438,9 +438,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/test/harness.js": {
-    "mtime": 1793388740.1061373,
-    "seen": 1793394407.4547997,
-    "ast_hash": "b50d07681e7a5b550311af6ff4c8eeee",
+    "mtime": 1793476047.995361,
+    "seen": 1793477373.7573755,
+    "ast_hash": "1385bcd9b0cba1ab69372bcb80ce93c0",
     "semantic_hash": ""
   },
   "editeur-schematique/js/00-espace-config.js": {
@@ -534,9 +534,9 @@
     "semantic_hash": ""
   },
   "editeur-schematique/js/15-import.js": {
-    "mtime": 1793454904.3062441,
-    "seen": 1793460079.0692282,
-    "ast_hash": "84254b88fcfa2a9ab8d96e21e0900a33",
+    "mtime": 1793466060.784816,
+    "seen": 1793477373.757542,
+    "ast_hash": "f9d223a310c0b3b2089f8cbada9de8f4",
     "semantic_hash": ""
   },
   "editeur-schematique/js/16-demo.js": {
@@ -1116,9 +1116,9 @@
     "semantic_hash": ""
   },
   "index.html": {
-    "mtime": 1793457798.8349102,
-    "seen": 1793460079.070224,
-    "ast_hash": "f7b4b09f36ae8b454f89cec9135de74c",
+    "mtime": 1793465918.6369586,
+    "seen": 1793477373.7588239,
+    "ast_hash": "7eccef8b65e9b717f5ba6dcf23dfe702",
     "semantic_hash": ""
   },
   "profils/LISEZ-MOI.md": {
@@ -1326,9 +1326,9 @@
     "semantic_hash": ""
   },
   "commun/lecture-cao.js": {
-    "mtime": 1793280587.4191718,
-    "seen": 1793351383.6731765,
-    "ast_hash": "26392342a512964f781733082cc4784a",
+    "mtime": 1793475208.7833416,
+    "seen": 1793477373.7565556,
+    "ast_hash": "60b25847706970599946d5b22e2cee60",
     "semantic_hash": ""
   },
   "commun/pilote-cao.js": {
@@ -1374,9 +1374,9 @@
     "semantic_hash": ""
   },
   "commun/composants-lib.js": {
-    "mtime": 1793451865.5890923,
-    "seen": 1793460079.0683386,
-    "ast_hash": "780110ec5af71833ca306fefa42d4d16",
+    "mtime": 1793475208.7795208,
+    "seen": 1793477373.7564304,
+    "ast_hash": "78d27d4568299ff29f652722d8fed47d",
     "semantic_hash": ""
   },
   "editeur-pcb/js/37-routage-pilote.js": {
@@ -1446,9 +1446,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/41-animation-3d.js": {
-    "mtime": 1793286702.055055,
-    "seen": 1793351383.6738944,
-    "ast_hash": "5ccd25dbf74b02e152089e6d5a92dc9e",
+    "mtime": 1793476047.9751694,
+    "seen": 1793477373.7572846,
+    "ast_hash": "04b5c672892cf194c1c5a87422930f37",
     "semantic_hash": ""
   },
   "editeur-schematique/js/29-symboles-lib.js": {
@@ -1542,9 +1542,9 @@
     "semantic_hash": ""
   },
   "docs/manuel/01-accueil-projets-tactile.md": {
-    "mtime": 1793455432.213026,
-    "seen": 1793460079.0700607,
-    "ast_hash": "3136ce671b4a30e20c874f504210fd89",
+    "mtime": 1793476111.165255,
+    "seen": 1793477373.758607,
+    "ast_hash": "bed0a3b42ed0a94ef2b3ab34a0e6ae79",
     "semantic_hash": ""
   },
   "docs/manuel/02-editeur-schematique.md": {
@@ -1554,9 +1554,9 @@
     "semantic_hash": ""
   },
   "docs/manuel/03-editeur-pcb-edition-routage.md": {
-    "mtime": 1793287621.504128,
-    "seen": 1793351383.67522,
-    "ast_hash": "fd5417cc662ed2cf17acae363192630e",
+    "mtime": 1793476047.9353619,
+    "seen": 1793477373.7586277,
+    "ast_hash": "a429f950796a8a430626f1267c928036",
     "semantic_hash": ""
   },
   "docs/manuel/04-editeur-pcb-fabrication.md": {
@@ -1620,9 +1620,9 @@
     "semantic_hash": ""
   },
   "docs/manuel/manuel.html": {
-    "mtime": 1793455432.6903787,
-    "seen": 1793460079.0701585,
-    "ast_hash": "43bf59dbbee896b4169ad2b901d41020",
+    "mtime": 1793476111.6265614,
+    "seen": 1793477373.758736,
+    "ast_hash": "0fd5656721df078f17d0559ed97aeb98",
     "semantic_hash": ""
   },
   "tasks/plan-manuel.md": {
@@ -1674,39 +1674,39 @@
     "semantic_hash": ""
   },
   "commun/kicad-pcb.js": {
-    "mtime": 1793457784.0148795,
-    "seen": 1793460079.0684154,
-    "ast_hash": "4a6bbeeba0c028c4882cfaf9133277e7",
+    "mtime": 1793476285.6572607,
+    "seen": 1793477373.7565267,
+    "ast_hash": "1746cdd8d1893c46f8335a752af52565",
     "semantic_hash": ""
   },
   "commun/kicad-sch.js": {
-    "mtime": 1793457756.846841,
-    "seen": 1793460079.0684226,
-    "ast_hash": "196bf580667fa15ddb78ceae10a8c1a2",
+    "mtime": 1793474349.0659235,
+    "seen": 1793477373.7565355,
+    "ast_hash": "173c3be03ca7b847303d91d24476c154",
     "semantic_hash": ""
   },
   "commun/kicad.js": {
-    "mtime": 1793457974.2830217,
-    "seen": 1793460079.0684292,
-    "ast_hash": "255dbf5b9c22255fddefee0910667ad0",
+    "mtime": 1793476047.927362,
+    "seen": 1793477373.7565455,
+    "ast_hash": "89fe7d21eddd3a74f5b6c15a8c6a03a4",
     "semantic_hash": ""
   },
   "commun/test/banc-kicad-pcb.js": {
-    "mtime": 1793453473.8179717,
-    "seen": 1793460079.0685816,
-    "ast_hash": "f5c36004cf92cda67f902aa7f2e2e429",
+    "mtime": 1793476314.096524,
+    "seen": 1793477373.7567308,
+    "ast_hash": "6e0f39a91ed2daae98880534a1591b9a",
     "semantic_hash": ""
   },
   "commun/test/banc-kicad-sch.js": {
-    "mtime": 1793458257.1598623,
-    "seen": 1793460079.0685885,
-    "ast_hash": "b31c9d466e039548ba7b9b9f6fe745c3",
+    "mtime": 1793476087.785465,
+    "seen": 1793477373.7567406,
+    "ast_hash": "333e6fc202cb83b36e26b7848e286498",
     "semantic_hash": ""
   },
   "commun/test/banc-kicad.js": {
-    "mtime": 1793457816.6022575,
-    "seen": 1793460079.0685947,
-    "ast_hash": "8a474e7e20c9448a2af4491c523dce9e",
+    "mtime": 1793476087.7863214,
+    "seen": 1793477373.7567503,
+    "ast_hash": "2782b4e5b31d8d3210197fd22dbcc048",
     "semantic_hash": ""
   }
 }
