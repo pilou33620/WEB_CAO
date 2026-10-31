@@ -404,7 +404,21 @@ function gerberCopper(i){
   const zs=S.zones.filter(z=>z.l===i&&z.pts.length>=3);
   const b=S.board, m=S.rule.edge;
   if(zs.length){
-    for(const z of zs)gRegionArcs(body,z.pts);
+    /* de la priorité la plus basse à la plus haute (tri stable : sans priorité,
+       l'ordre du document) ; les trous d'une zone recoupée s'effacent avant que
+       la zone plus prioritaire ne s'y peigne.
+       shortcut: ces trous effacent aussi une zone moins prioritaire du net de
+       la zone qui recoupe (anneau d'isolement), cas rare ; sinon, aplatir les trous en coupures */
+    for(const z of zs.slice().sort((a,b)=>zonePrio(a)-zonePrio(b))){
+      const il=zoneDecoupee(z);
+      if(!il){gRegionArcs(body,z.pts);continue;}
+      for(const o of il)gRegionArcs(body,o.o);
+      if(il.some(o=>o.t.length)){
+        body.push("%LPC*%");
+        for(const o of il)for(const t of o.t)gRegion(body,t);
+        body.push("%LPD*%");
+      }
+    }
     /* hors carte : on rogne comme à l'écran, contour libre compris */
     body.push("%LPC*%");
     let zx1=1e9,zy1=1e9,zx2=-1e9,zy2=-1e9;
@@ -1288,6 +1302,7 @@ function positionsCsvText(){
   const o=gOrigin(), rows=[];
   rows.push("Designator,Value,Package,X,Y,Rotation,Side");
   for(const fp of fabFpsMontes()){
+    if(fpSansCuivre(fp))continue;   // trou de fixation, logo : rien à poser (KiCad les exclut aussi)
     const x=fmt(fp.x-o.x,4);
     const y=fmt(o.y-fp.y,4);   // Y Gerber monte, le document descend
     /* anti-horaire vu de dessus (IPC-7351, KiCad), comme le CPL JLCPCB ;
@@ -1311,7 +1326,7 @@ function positionsCsvText(){
 function bomPcbCsvText(){
   const rows=[];
   for(const fp of fabFpsMontes())
-    rows.push({ref:fp.ref||"", value:fp.value||"", pkg:fp.pkg||""});
+    if(!fpSansCuivre(fp))rows.push({ref:fp.ref||"", value:fp.value||"", pkg:fp.pkg||""});
   rows.sort((a,b)=>String(a.ref).localeCompare(String(b.ref),"fr",{numeric:true}));
   const out=["Reference,Value,Package"];
   for(const r of rows)
@@ -1456,7 +1471,7 @@ function jlcGerberFiles(){
 /* points de test, mires, trous de fixation : rien à poser, JLCPCB les
    listerait en « Unmatched components » */
 function jlcNonPose(fp){
-  return /^(TP|FID|MH|H)\d/i.test(fp.ref||"")||/test.?point|fiducial|mounting.?hole/i.test(fp.pkg||"");
+  return fpSansCuivre(fp)||/^(TP|FID|MH|H)\d/i.test(fp.ref||"")||/test.?point|fiducial|mounting.?hole/i.test(fp.pkg||"");
 }
 function jlcFpsAPoser(){return fabFpsMontes().filter(fp=>!jlcNonPose(fp));}
 function jlcBomLignes(){

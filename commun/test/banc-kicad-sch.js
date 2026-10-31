@@ -495,8 +495,7 @@ if (fs.existsSync(DEMOS)) {
    la netlist du vrai éditeur de schéma, la comparaison du vrai éditeur PCB
    ====================================================================== */
 /* écarts des démos qui ne tiennent pas aux nets : projet KiCad où schéma et carte divergent
-   (empreintes « board_only », valeur changée d'un côté), ou trou de fixation au symbole muni d'une
-   broche dont l'empreinte sans cuivre est retirée par la lecture de la carte */
+   (empreintes « board_only », valeur changée d'un côté) */
 const CONNUS = { "custom_pads_test/custom_pads_test": "suppressions 1", "multichannel/multichannel_mixer": "valeurs 1",
                  "tiny_tapeout/tinytapeout-demo": "suppressions 152" };
 (async () => {

@@ -397,6 +397,23 @@ function ipcBooleen(polys,dedans){
    n'a pas pu se calculer (les dégagements partent alors en <Cutout> qui
    peuvent se recouvrir).
    ========================================================================== */
+/* L'appartenance d'un point à l'un des polygones [{P, b}], par une grille. */
+function ipcGrille(L){
+  const pas=2, G=new Map();
+  L.forEach((o,k)=>{
+    for(let x=Math.floor(o.b.x1/pas);x<=Math.floor(o.b.x2/pas);x++)
+      for(let y=Math.floor(o.b.y1/pas);y<=Math.floor(o.b.y2/pas);y++){
+        const c=x+","+y;let A=G.get(c);if(!A)G.set(c,A=[]);A.push(k);
+      }
+  });
+  return (x,y)=>{
+    for(const k of (G.get(Math.floor(x/pas)+","+Math.floor(y/pas))||[])){
+      const o=L[k];
+      if(x>=o.b.x1&&x<=o.b.x2&&y>=o.b.y1&&y<=o.b.y2&&inPoly(x,y,o.P))return true;
+    }
+    return false;
+  };
+}
 function ipcRemplir(z){
   const i=z.l, zn=z.net||"", Z=z.pts, bz=ipcBoite(Z), m=S.rule.edge;
   const moins=[], plus=[];
@@ -415,6 +432,8 @@ function ipcRemplir(z){
     }
   }
   for(const ct of S.cuts)if(ct.l===i)prendre(moins,ct.pts);
+  const dessus=zoneDessus(z);                          // zones plus prioritaires d'un autre net
+  if(dessus)for(const P of dessus.polys)prendre(moins,P);
   for(const P of zoneLanieres(i))prendre(moins,P);     // les lanières, comme au Gerber
   const fichier=zoneFichier(z);
   if(fichier&&Array.isArray(z.trous))for(const t of z.trous)prendre(moins,t);
@@ -452,24 +471,7 @@ function ipcRemplir(z){
                       {x:q.x+len*c-nx,y:q.y+len*s-ny},{x:q.x-nx,y:q.y-ny}]);
       }
     }
-  /* l'appartenance d'un point, par une grille sur les polygones */
-  const grille=(L)=>{
-    const pas=2, G=new Map();
-    L.forEach((o,k)=>{
-      for(let x=Math.floor(o.b.x1/pas);x<=Math.floor(o.b.x2/pas);x++)
-        for(let y=Math.floor(o.b.y1/pas);y<=Math.floor(o.b.y2/pas);y++){
-          const c=x+","+y;let A=G.get(c);if(!A)G.set(c,A=[]);A.push(k);
-        }
-    });
-    return (x,y)=>{
-      for(const k of (G.get(Math.floor(x/pas)+","+Math.floor(y/pas))||[])){
-        const o=L[k];
-        if(x>=o.b.x1&&x<=o.b.x2&&y>=o.b.y1&&y<=o.b.y2&&inPoly(x,y,o.P))return true;
-      }
-      return false;
-    };
-  };
-  const dansMoins=grille(moins), dansPlus=grille(plus);
+  const dansMoins=ipcGrille(moins), dansPlus=ipcGrille(plus);
   const dedans=(x,y)=>inPoly(x,y,Z)&&((inPoly(x,y,B)&&!dansMoins(x,y))||dansPlus(x,y));
   const polys=[Z,B].concat(moins.map(o=>o.P),plus.map(o=>o.P));
   let ilots=null;
@@ -782,7 +784,7 @@ function ipc2581Document(opts){
                  ["PACKAGE",fp.pkg],["NOT_MOUNTED_IN",nm.join(" ; ")]]
       .filter(([,v])=>v).map(([k,v])=>["NonstandardAttribute",[["name",k],["type","STRING"],["value",v]]]);
     comps.push(["Component",[["refDes",ref],["packageRef",pkg],["part",part],
-      ["layerRef",cuN[fp.side?n-1:0]],["mountType",ps.some(q=>q.drill>0)?"THMT":"SMT"]],
+      ["layerRef",cuN[fp.side?n-1:0]],["mountType",!ps.length?"OTHER":ps.some(q=>q.drill>0)?"THMT":"SMT"]],
       attrs.concat([xform(-(fp.rot||0),!!fp.side),["Location",[["x",X(fp.x)],["y",Y(fp.y)]]]])]);
     stats.composants++;
     /* la ligne de nomenclature : même référence, même valeur, même boîtier */
