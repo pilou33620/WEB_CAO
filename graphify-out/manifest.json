@@ -222,9 +222,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/05-tools.js": {
-    "mtime": 1793278338.7844732,
-    "seen": 1793351383.6735435,
-    "ast_hash": "2a089c7456af472230f5adb9d5c177e2",
+    "mtime": 1793453635.0346284,
+    "seen": 1793460079.0687463,
+    "ast_hash": "08210766525976c07898dd172e8f34d1",
     "semantic_hash": ""
   },
   "editeur-pcb/js/06-panels.js": {
@@ -534,9 +534,9 @@
     "semantic_hash": ""
   },
   "editeur-schematique/js/15-import.js": {
-    "mtime": 1793381843.924328,
-    "seen": 1793384848.6232138,
-    "ast_hash": "64b03940c150d1ef36e36b20a7e351e2",
+    "mtime": 1793454904.3062441,
+    "seen": 1793460079.0692282,
+    "ast_hash": "84254b88fcfa2a9ab8d96e21e0900a33",
     "semantic_hash": ""
   },
   "editeur-schematique/js/16-demo.js": {
@@ -1038,9 +1038,9 @@
     "semantic_hash": ""
   },
   ".github/workflows/ci.yml": {
-    "mtime": 1793394299.562178,
-    "seen": 1793394407.4556496,
-    "ast_hash": "febb96231dbefb7fd934cd66092c0914",
+    "mtime": 1793455379.190173,
+    "seen": 1793460079.0699794,
+    "ast_hash": "37c6ae8836222ee480c0563b47b9c7e5",
     "semantic_hash": ""
   },
   "A-FAIRE.md": {
@@ -1116,9 +1116,9 @@
     "semantic_hash": ""
   },
   "index.html": {
-    "mtime": 1793381843.9354057,
-    "seen": 1793384848.6247778,
-    "ast_hash": "afba986974ee73c86782b327cfc970ca",
+    "mtime": 1793457798.8349102,
+    "seen": 1793460079.070224,
+    "ast_hash": "f7b4b09f36ae8b454f89cec9135de74c",
     "semantic_hash": ""
   },
   "profils/LISEZ-MOI.md": {
@@ -1374,9 +1374,9 @@
     "semantic_hash": ""
   },
   "commun/composants-lib.js": {
-    "mtime": 1793127111.9788098,
-    "seen": 1793135203.8145883,
-    "ast_hash": "a0827ef0a3d04d4922e71f6cc616e06b",
+    "mtime": 1793451865.5890923,
+    "seen": 1793460079.0683386,
+    "ast_hash": "780110ec5af71833ca306fefa42d4d16",
     "semantic_hash": ""
   },
   "editeur-pcb/js/37-routage-pilote.js": {
@@ -1542,9 +1542,9 @@
     "semantic_hash": ""
   },
   "docs/manuel/01-accueil-projets-tactile.md": {
-    "mtime": 1793130977.9230654,
-    "seen": 1793135203.816237,
-    "ast_hash": "0c97bd95d36b19010e5f61dc34cd4629",
+    "mtime": 1793455432.213026,
+    "seen": 1793460079.0700607,
+    "ast_hash": "3136ce671b4a30e20c874f504210fd89",
     "semantic_hash": ""
   },
   "docs/manuel/02-editeur-schematique.md": {
@@ -1620,9 +1620,9 @@
     "semantic_hash": ""
   },
   "docs/manuel/manuel.html": {
-    "mtime": 1793381843.365694,
-    "seen": 1793384848.6246011,
-    "ast_hash": "fd5f19a189cefd6132fe1e376d2b495e",
+    "mtime": 1793455432.6903787,
+    "seen": 1793460079.0701585,
+    "ast_hash": "43bf59dbbee896b4169ad2b901d41020",
     "semantic_hash": ""
   },
   "tasks/plan-manuel.md": {
@@ -1671,6 +1671,42 @@
     "mtime": 1793394299.560251,
     "seen": 1793394407.4555075,
     "ast_hash": "1b03d82d30d3f47f896df4dc86bf1e4d",
+    "semantic_hash": ""
+  },
+  "commun/kicad-pcb.js": {
+    "mtime": 1793457784.0148795,
+    "seen": 1793460079.0684154,
+    "ast_hash": "4a6bbeeba0c028c4882cfaf9133277e7",
+    "semantic_hash": ""
+  },
+  "commun/kicad-sch.js": {
+    "mtime": 1793457756.846841,
+    "seen": 1793460079.0684226,
+    "ast_hash": "196bf580667fa15ddb78ceae10a8c1a2",
+    "semantic_hash": ""
+  },
+  "commun/kicad.js": {
+    "mtime": 1793457974.2830217,
+    "seen": 1793460079.0684292,
+    "ast_hash": "255dbf5b9c22255fddefee0910667ad0",
+    "semantic_hash": ""
+  },
+  "commun/test/banc-kicad-pcb.js": {
+    "mtime": 1793453473.8179717,
+    "seen": 1793460079.0685816,
+    "ast_hash": "f5c36004cf92cda67f902aa7f2e2e429",
+    "semantic_hash": ""
+  },
+  "commun/test/banc-kicad-sch.js": {
+    "mtime": 1793458257.1598623,
+    "seen": 1793460079.0685885,
+    "ast_hash": "b31c9d466e039548ba7b9b9f6fe745c3",
+    "semantic_hash": ""
+  },
+  "commun/test/banc-kicad.js": {
+    "mtime": 1793457816.6022575,
+    "seen": 1793460079.0685947,
+    "ast_hash": "8a474e7e20c9448a2af4491c523dce9e",
     "semantic_hash": ""
   }
 }
