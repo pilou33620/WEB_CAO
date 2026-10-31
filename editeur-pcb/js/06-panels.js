@@ -1873,6 +1873,8 @@ function propsZone(box,z){
       [["thermique","Bras thermiques"],["cms-directe","Directe pour les CMS, bras pour les traversantes"],
        ["directe","Directe pour toutes"],["aucune","Aucune (pastilles dégagées, non reliées)"]].map(([v,t])=>'<option value="'+v+'"'+((z.connexion||"thermique")===v?" selected":"")+'>'+t+'</option>').join("")+
       '</select></div>'+
+    '<div class="prop"><label>Priorité</label><input id="zP" type="number" min="0" max="2147483647" step="1" value="'+zonePrio(z)+'" '+
+      'title="Sur la couche, une zone d\'un autre net plus prioritaire est retirée de celle-ci, isolement compris"></div>'+
     '<div class="prop two">'+
       '<div><label>Sommets</label><input value="'+z.pts.length+'" disabled></div>'+
       '<div><label>Emprise</label><input value="'+fmt(b.x2-b.x1,1)+" × "+fmt(b.y2-b.y1,1)+
@@ -1897,6 +1899,9 @@ function propsZone(box,z){
     touch();buildLayers();buildTabs();refreshPanels();draw();
   };
   $("zC").onchange=()=>{push();const v=$("zC").value;if(v==="thermique")delete z.connexion;else z.connexion=v;
+    touch();refreshPanels();draw();};
+  $("zP").onchange=()=>{push();const v=Math.min(2147483647,Math.max(0,Math.round(+$("zP").value)||0));
+    if(v)z.priorite=v;else delete z.priorite;
     touch();refreshPanels();draw();};
   $("zFull").onclick=()=>{push();z.pts=boardZonePts();touch();refreshPanels();draw();};
   $("zDel").onclick=()=>{push();detachAuto(z);S.zones=S.zones.filter(o=>o!==z);clearSel();

@@ -57,12 +57,27 @@ const KICAD = (() => {
   }
   const guillemets = s => '"' + s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n") + '"';
   function ecrireS(arbre, retrait = "") {
-    const mot = e => typeof e === "number" ? nombre(e) : typeof e === "string" ? e : guillemets(e.q);
-    if (!arbre.some(Array.isArray)) return "(" + arbre.map(mot).join(" ") + ")";
-    // les feuilles en tête restent sur la ligne, chaque sous-liste prend la sienne (comme KiCad)
-    const r2 = retrait + "\t";
-    return "(" + arbre.map((e, i) => Array.isArray(e) ? "\n" + r2 + ecrireS(e, r2) : (i ? " " : "") + mot(e)).join("")
-      + "\n" + retrait + ")";
+    // une seule liste de morceaux, jointe à la fin : pas de chaîne refaite à chaque niveau
+    const out = [], estListe = Array.isArray, rond = Math.round, fini = Number.isFinite, texte = String;
+    /* nombre() et guillemets() aux globales tenues en local (un contexte vm, celui des bancs, les fait
+       passer par un intercepteur) et sans remplacement quand rien n'est à échapper ; même texte */
+    const num = v => { const r = rond(v * 1e6) / 1e6; if (!fini(r) || r === 0) return "0"; const s = texte(r); return s.includes("e") ? nombre(v) : s; };
+    const mot = e => typeof e === "number" ? num(e) : typeof e === "string" ? e : /[\\"\n]/.test(e.q) ? guillemets(e.q) : '"' + e.q + '"';
+    (function ecrit(l, r) {
+      let n = 0;
+      while (n < l.length && !estListe(l[n])) n++;
+      if (n === l.length) { out.push("(" + l.map(mot).join(" ") + ")"); return; }
+      // les feuilles en tête restent sur la ligne, chaque sous-liste prend la sienne (comme KiCad)
+      const r2 = r + "\t";
+      out.push("(");
+      for (let i = 0; i < l.length; i++) {
+        const e = l[i];
+        if (estListe(e)) { out.push("\n" + r2); ecrit(e, r2); }
+        else out.push(i ? " " + mot(e) : mot(e));
+      }
+      out.push("\n" + r + ")");
+    })(arbre, retrait);
+    return out.join("");
   }
 
   /* ---------- identifiants stables : le même projet donne la même archive ---------- */
@@ -195,13 +210,6 @@ const KICAD = (() => {
       schema = KICAD_SCH.lire(feuilles, base + ".kicad_sch", rap);
     }
     if (schema && pcb) {
-      // une empreinte sans cuivre devient de simples trous sur la carte : son symbole suit, sinon l'ECO voudrait la rajouter
-      const retires = new Set(pcb.retires);
-      for (const p of schema.doc.pages) {
-        const n = p.comps.length;
-        p.comps = p.comps.filter(c => !(c.ref && retires.has(c.ref)));
-        if (p.comps.length < n) rap.ecart("symbole d'une empreinte sans cuivre (trou de fixation) : retiré du schéma aussi");
-      }
       relierBroches(schema.doc, pcb.doc, rap);
       KICAD_SCH.harmoniser(schema.doc, pcb.doc, rap);
     }

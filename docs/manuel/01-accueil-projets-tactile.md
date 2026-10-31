@@ -44,7 +44,7 @@ L'accueil (`index.html`) s'ouvre en double-clic, sans serveur ; le serveur ajout
 2. Sur l'accueil, bloc « Projet », onglet « ➕ Nouveau projet ». Le « 1. Nom du projet » est facultatif : vide, le projet prend le nom du projet KiCad. Le chemin se choisit comme pour une création.
 3. Cocher « Ajouter ses symboles et empreintes à la LIB » pour les verser aussi dans la bibliothèque centrale. Un nom déjà présent dans la LIB n'est jamais remplacé. Le projet importé garde de toute façon ses propres définitions et s'ouvre sans elles.
 4. Cliquer sur « 📥 Importer un projet KiCad (.zip)… » et choisir l'archive. Le projet est créé, puis le schéma et la carte convertis y sont enregistrés.
-5. Le message liste chaque écart de conversion, avec son nombre. Exemples : couches Fab et Courtyard non reprises, teardrops non repris, priorité de zone ignorée, labels hiérarchiques devenus des labels globaux préfixés par la feuille, drapeaux de non-connexion non repris. Rien ne se perd sans être dit.
+5. Le message liste chaque écart de conversion, avec son nombre. Exemples : teardrops non repris, cercles et arcs repris en segments, zone hachurée reprise pleine, labels hiérarchiques devenus des labels globaux préfixés par la feuille, drapeaux de non-connexion non repris. Rien ne se perd sans être dit.
 
 ### Je veux exporter le projet vers KiCad
 

@@ -472,6 +472,8 @@ function normFp(f,i){
     let m=1;
     for(const q of pads)m=Math.max(m,q.n);
     out.pins=clamp(m,1,4096);
+  }else if(Array.isArray(f.pads)&&!f.pads.length){
+    out.pads=[];out.pins=0;         // empreinte SANS CUIVRE (trou de fixation, logo) : rien n'en est inventé (fpFree)
   }
   const body=dBody(f.body);
   if(body)out.body=body;
@@ -557,6 +559,8 @@ function normZone(z,cu,i){
              l:dInt(z.l,0,0,cu-1),net:dNet(z.net),pts:pts};
   if(z.auto)out.auto=true;
   if(["directe","cms-directe","aucune"].includes(z.connexion))out.connexion=z.connexion;
+  const pr=dInt(z.priorite,0,0,2147483647);        // absente = 0 ; KiCad va au-delà de 30000 (zonePrio, 01-core.js)
+  if(pr)out.priorite=pr;
   /* cuivre du fichier : les trous et la signature du contour d'origine
      (posée à la première lecture si le fichier ne la porte pas) */
   if(z.fichier){

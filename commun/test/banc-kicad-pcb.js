@@ -73,9 +73,9 @@ const aireCarte = d => aire(d.board.pts) - (d.board.cutouts || []).reduce((s, c)
 
 /* chaque pastille de l'éditeur au monde = KiCad (position, angle modulo 180°, sommets d'un polygone) */
 function comparerMonde(arbre, doc, quoi) {
-  const ref = padsKicad(arbre);
-  verifier(ref.length === doc.fps.length, quoi + " : autant d'empreintes à cuivre (" + ref.length + " / " + doc.fps.length + ")");
-  doc.fps.forEach((fp, i) => {
+  const ref = padsKicad(arbre), aCuivre = l => l.filter(f => f.pads.length);    // sans cuivre : rien à comparer
+  verifier(ref.length === aCuivre(doc.fps).length, quoi + " : autant d'empreintes à cuivre (" + ref.length + " / " + aCuivre(doc.fps).length + ")");
+  aCuivre(doc.fps).forEach((fp, i) => {
     verifier(ref[i].length === fp.pads.length, quoi + " " + fp.ref + " : nombre de pastilles");
     fp.pads.forEach((q, j) => {
       const k = ref[i][j], [x, y] = mondeOutil(fp, q.x, q.y);
@@ -92,10 +92,11 @@ function comparerMonde(arbre, doc, quoi) {
       }
     });
   });
-  /* chaque fp_line de sérigraphie, Fab, Courtyard ou User d'une empreinte à cuivre : au monde KiCad = dessin de l'éditeur, même couche */
+  /* chaque fp_line de sérigraphie, Fab, Courtyard ou User d'une empreinte (avec ou sans cuivre) : au monde KiCad = dessin de l'éditeur, même couche */
   const COUCHE = { "F.SilkS": "silkT", "B.SilkS": "silkB", "F.Fab": "fabT", "B.Fab": "fabB", "F.CrtYd": "crtT", "B.CrtYd": "crtB", "Dwgs.User": "dwgs", "Cmts.User": "cmts" };
   const autre = l => /^(silk|fab|crt)[TB]$/.test(l) ? l.slice(0, -1) + (l.endsWith("B") ? "T" : "B") : l;
-  const fpsK = enfs(arbre, "footprint").filter(f => enfs(f, "pad").some(p => p[2] !== "np_thru_hole" && (enf(p, "layers") || []).some(c => /Cu$/.test(c))));
+  const fpsK = enfs(arbre, "footprint");
+  verifier(fpsK.length === doc.fps.length, quoi + " : une empreinte de l'éditeur par empreinte KiCad");
   const nf = PCB ? PCB.normDoc(JSON.parse(JSON.stringify(doc))).fps : null;
   let traits = 0;
   doc.fps.forEach((fp, i) => {
@@ -116,7 +117,8 @@ function comparerMonde(arbre, doc, quoi) {
   if (PCB) {                                       // le vrai calcul de l'éditeur, sur le document normalisé
     const n = PCB.normDoc(JSON.parse(JSON.stringify(doc)));
     verifier(n.fps.length === doc.fps.length && n.tracks.length <= doc.tracks.length, quoi + " : normDoc garde les composants");
-    n.fps.forEach((fp, i) => PCB.padsWorldCalc(fp).forEach((q, j) => {
+    verifier(n.fps.every((f, i) => f.pads.length === doc.fps[i].pads.length), quoi + " : normDoc n'invente aucune pastille");
+    aCuivre(n.fps).forEach((fp, i) => PCB.padsWorldCalc(fp).forEach((q, j) => {
       const k = ref[i][j];
       verifier(proche(q.x, k.x, 1.5e-3) && proche(q.y, k.y, 1.5e-3), quoi + " " + fp.ref + " pastille " + j + " (padsWorldCalc)");
     }));
@@ -198,10 +200,15 @@ function fixture(k10) {
     (pad "2" thru_hole oval (at 0 2.54) (size 1.7 1.7) (drill 1) (layers "*.Cu" "*.Mask") ${n(1, true)})
     (pad "MP" thru_hole circle (at 0 5.08) (size 2 2) (drill 1.2) (layers "*.Cu" "*.Mask"))
     (pad "" np_thru_hole circle (at 2 5.08) (size 1 1) (drill 1) (layers "*.Cu" "*.Mask")))
+  (footprint "MountingHole:MountingHole_3.2mm_M3" (layer "B.Cu") (at 5 20 90)
+    (property "Reference" "H1" (at 0 -4 90) (layer "B.SilkS") (hide yes))
+    (property "Value" "MountingHole" (at 0 4 90) (layer "B.Fab"))
+    (attr exclude_from_pos_files exclude_from_bom)
+    (pad "" np_thru_hole oval (at 0 1) (size 3.2 4) (drill oval 3.2 4) (layers "*.Cu" "*.Mask")))
   (segment (start 10 10.825) (end 18.627276 9.522372) (width 0.25) (layer "F.Cu") ${n(2)})
   (arc (start 30 0) (mid 31 1) (end 32 0) (width 0.3) (layer "B.Cu") ${n(1)})
   (via (at 15 12) (size 0.6) (drill 0.3) (layers "F.Cu" "B.Cu") ${n(1)})
-  (zone ${k10 ? "" : "(net 1)"} (net_name "GND") (layer "B.Cu") (connect_pads (clearance 0.3)) (min_thickness 0.25)
+  (zone ${k10 ? "" : "(net 1)"} (net_name "GND") (layer "B.Cu") (priority 2) (connect_pads (clearance 0.3)) (min_thickness 0.25)
     (fill yes (thermal_gap 0.5) (thermal_bridge_width 0.4)) (polygon (pts (xy 0 0) (xy 40 0) (xy 40 20) (xy 0 20))))
   (zone (net 0) (net_name "") (layers "F&B.Cu") (keepout (tracks not_allowed) (vias allowed) (pads allowed) (copperpour not_allowed) (footprints allowed))
     (polygon (pts (xy 1 1) (xy 3 1) (xy 3 3))))
@@ -227,7 +234,10 @@ for (const k10 of [false, true]) {
   const arbre = K.lire(fixture(k10), "kicad_pcb"), rap = K.rapport();
   const { doc, empreintes } = P.lire(arbre, PRO, rap);
   const [r1, q1, j1] = doc.fps;
-  verifier(doc.fps.length === 3 && doc.cu === 2, quoi + " : trois composants, deux couches");
+  verifier(doc.fps.length === 4 && doc.cu === 2, quoi + " : quatre composants, deux couches");
+  const h1 = doc.fps[3];
+  verifier(h1.ref === "H1" && h1.pads.length === 0 && h1.pins === 0 && h1.side === 1 && h1.holes.length === 1 && h1.holes[0].y === -1 && h1.holes[0].w === 4 &&
+           !h1.holes[0].rot && h1.body.y1 === -3 && doc.holes.length === 0 && !rap.liste().some(e => /sans pastille/.test(e)), quoi + " : H1 sans cuivre gardé, trou oblong dans son repère");
   verifier(r1.ref === "R1" && r1.pkg === "R_0603_1608Metric" && r1.value === "10k" && r1.x === 10 && r1.y === 10 && r1.rot === 270 && r1.side === 0,
            quoi + " : R1 dessus, tourné de 90° KiCad → 270° éditeur");
   verifier(r1.pads[0].x === -0.825 && r1.pads[0].y === 0 && r1.pads[0].rot === 0 && r1.pads[0].shape === "rect" && r1.nets[1] === "VCC" && r1.nets[2] === "SIG",
@@ -244,7 +254,7 @@ for (const k10 of [false, true]) {
   verifier(doc.tracks.length === 2 && doc.tracks[0].net === "VCC" && doc.tracks[1].l === 1 && proche(doc.tracks[1].ca, -Math.PI, 1e-4) && doc.tracks[1].net === "GND",
            quoi + " : piste droite et arc (balayage −π, sens trigonométrique à l'écran)");
   verifier(doc.vias.length === 1 && doc.vias[0].net === "GND" && doc.vias[0].a === 0 && doc.vias[0].b === 1 && doc.vias[0].d === 0.6, quoi + " : via");
-  verifier(doc.zones.length === 1 && doc.zones[0].l === 1 && doc.zones[0].net === "GND" && doc.cuts.length === 2 && doc.cuts[1].l === 1, quoi + " : zone et zone interdite (deux couches)");
+  verifier(doc.zones.length === 1 && doc.zones[0].l === 1 && doc.zones[0].net === "GND" && doc.zones[0].priorite === 2 && !rap.liste().some(e => /priorité/.test(e)) && doc.cuts.length === 2 && doc.cuts[1].l === 1, quoi + " : zone et zone interdite (deux couches)");
   verifier(proche(aire(doc.board.pts), 1000 - 100 + Math.PI * 25, 0.1) && doc.board.cutouts.length === 1 && proche(aire(doc.board.cutouts[0]), 9),
            quoi + " : contour avec un arc, découpe intérieure");
   const couche = (fp, l) => (fp.dessins || []).filter(d => d.layer === l);
@@ -274,7 +284,11 @@ for (const k10 of [false, true]) {
            quoi + " : trois empreintes de LIB valides");
   comparerMonde(arbre, doc, quoi);
   const out = allerRetour(doc, quoi);
-  verifier(/\(footprint "essai:R_0603_1608Metric"/.test(out.texte) && out.librairie.get("Q1") === "essai:SOT-23" && out.empreintes.length === 3 &&
+  const d2 = P.lire(K.lire(out.texte, "kicad_pcb"), null, K.rapport()).doc, h2 = d2.fps[3];
+  verifier(/\(priority 2\)/.test(out.texte) && d2.zones[0].priorite === 2 && h2.ref === "H1" && h2.pads.length === 0 && JSON.stringify(h2.holes) === JSON.stringify(h1.holes) &&
+           /\(attr board_only exclude_from_pos_files exclude_from_bom\)/.test(out.texte) &&
+           /\(attr exclude_from_pos_files exclude_from_bom\)/.test(P.ecrire(doc, "essai", K.rapport(), new Map([["H1", "/h"]])).texte), quoi + " : priorité de zone et empreinte sans cuivre au retour");
+  verifier(/\(footprint "essai:R_0603_1608Metric"/.test(out.texte) && out.librairie.get("Q1") === "essai:SOT-23" && out.empreintes.length === 4 &&
            out.pro.net_settings.classes[0].name === "Default" && out.pro.board.design_settings.rules.min_copper_edge_clearance === 0.3,
            quoi + " : identifiants de bibliothèque et .kicad_pro partiel");
   verifier(P.ecrire(doc, "essai", K.rapport(), null).texte === out.texte.replace('\n\t\t(path "/a/b")', ""), quoi + " : écriture déterministe");
@@ -308,7 +322,7 @@ if (fs.existsSync(dossier)) {
   })(dossier, 0);
   for (const f of cartes.sort()) {
     const nom = path.relative(dossier, f), taille = fs.statSync(f).size;
-    if (taille > 64 * 1024 * 1024) { console.log(nom + " : plus de 64 Mo (limite de l'archive), sauté"); continue; }
+    if (taille > 128 * 1024 * 1024) { console.log(nom + " : plus de 128 Mo (limite de l'archive), sauté"); continue; }
     const t0 = Date.now();
     let arbre;
     try { arbre = K.lire(fs.readFileSync(f, "utf8"), "kicad_pcb"); }

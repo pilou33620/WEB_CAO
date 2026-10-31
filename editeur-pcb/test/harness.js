@@ -447,6 +447,8 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "roomsPeindre","roomsPeindreFond","roomsVisibles","ctx","profilEtat",
   /* export IPC-2581 (35-ipc2581-export.js) */
   "ipc2581Document","ipc2581Fichier","exportIpc2581","ipcFonctionCuivre",
+  /* priorité de zone (01-core.js) */
+  "zoneDecoupee","zoneAt","ipcRemplir","clrK",
   /* classes d'interface (commun/classes-interface.js) */
   "CLASSES_INTERFACE","familleClasse","simNaturePcb",
   /* lectures du canal de pilotage (commun/lecture-cao.js) */
@@ -6953,8 +6955,9 @@ T("document : une empreinte dessinée fait l'aller-retour sans rien perdre",()=>
     throw new Error("sept broches attendues d'après les pastilles : "+bricole.fps[0].pins);
   if(bricole.fps[0].pads.length!==2)
     throw new Error("la pastille sans centre devait être écartée");
-  if(normDoc({fps:[{ref:"U9",pins:8,pads:[]}]}).fps[0].pads)
-    throw new Error("une liste vide rend l'empreinte au calcul");
+  const vide=normDoc({fps:[{ref:"U9",pins:8,pads:[]}]}).fps[0];
+  if(!vide.pads||vide.pads.length||vide.pins!==0)
+    throw new Error("une liste vide est une empreinte sans cuivre, sans pastille calculée");
 });
 T("empreinte dessinée : ni le boîtier ni la netlist ne la refont",()=>{
   S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
@@ -7819,6 +7822,72 @@ T("zone importée : cuivre du fichier, puis recalcul dès qu'on la modifie",()=>
   S.zones[0].pts[2].x=45;touch();
   if(zoneFichier(S.zones[0]))throw new Error("contour modifié : la zone doit se recalculer");
   if(/X14000000Y\d+D01/.test(gerberCopper(0)))throw new Error("le trou ne doit plus sortir");
+  carteVide();
+});
+/* PRIORITÉ DE ZONE : la zone d'un autre net plus prioritaire se retire de la
+   moins prioritaire, isolement compris ; à priorité égale ou même net, rien ne change. */
+T("zones : priorité, la plus prioritaire d'un autre net recoupe l'autre avec l'isolement",()=>{
+  carteVide();
+  const d=JSON.parse(serialize()), R=(x1,y1,x2,y2)=>[{x:x1,y:y1},{x:x2,y:y1},{x:x2,y:y2},{x:x1,y:y2}];
+  d.zones=[{id:1,l:0,net:"GND",pts:R(2,2,40,30)},{id:2,l:0,net:"VCC",pts:R(10,10,20,20),priorite:1},
+           {id:3,l:0,net:"VCC",pts:R(50,2,60,10),priorite:-4}];
+  loadDoc(d,true);
+  const a=serialize();loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("aller-retour non neutre");
+  const [g,v,w]=S.zones;
+  if(v.priorite!==1||"priorite" in g||"priorite" in w)throw new Error("normZone : "+JSON.stringify(S.zones.map(z=>z.priorite)));
+  const il=zoneDecoupee(g), clr=clrK("GND","VCC","cu","cu");
+  if(!il||il.length!==1||il[0].t.length!==1||zoneDecoupee(v)!==null)throw new Error("découpe : "+JSON.stringify(il));
+  const hb=polyBBox(il[0].t[0]);
+  if(Math.abs(hb.x1-(10-clr))>0.02||Math.abs(hb.y2-(20+clr))>0.02)throw new Error("trou ≠ VCC + isolement "+clr+" : "+JSON.stringify(hb));
+  if(zoneAt(0,15,15)!==v||zoneAt(0,5,5)!==g)throw new Error("zoneAt suit la priorité");
+  const gb=gerberCopper(0), c=gb.indexOf("%LPC*%"), vcc=gb.indexOf("X10000000Y70000000D02");   // Y du Gerber vers le haut
+  if(c<0||vcc<c||gb.indexOf("%LPD*%",c)>vcc)throw new Error("Gerber : le trou de GND s'efface avant que VCC ne s'y peigne");
+  const r=ipcRemplir(g);
+  if(r.approx||r.ilots.length!==1||r.ilots[0].t.length!==1)throw new Error("IPC-2581 : "+JSON.stringify(r));
+  S.zones[1].priorite=0;touch();
+  if(zoneDecoupee(S.zones[0])!==null||zoneAt(0,15,15)!==S.zones[1])throw new Error("priorité égale : comme avant");
+  const ge=gerberCopper(0);
+  if(ge.slice(0,ge.indexOf("%LPC*%")).includes("X9"))throw new Error("priorité égale : pas de trou");
+  S.zones[1].priorite=1;S.zones[1].net="GND";touch();
+  if(zoneDecoupee(S.zones[0])!==null)throw new Error("même net : les zones se fondent");
+  carteVide();
+});
+/* EMPREINTE SANS CUIVRE (trou de fixation, logo, mire) : `pads: []` dit qu'elle
+   n'a aucune pastille ; rien n'en est inventé, et chaque consommateur s'en accommode. */
+T("empreinte sans cuivre : aucune pastille inventée, gardée par le document et ses consommateurs",()=>{
+  carteVide();
+  importNetlist(NET,false);
+  const d=JSON.parse(serialize());
+  d.fps.push({id:900,ref:"H1",value:"MountingHole",pkg:"MountingHole_3.2mm_M3",pins:4,style:"chip",x:5,y:5,rot:30,side:0,nets:{},pads:[],holes:[{x:0,y:0,d:3.2}]},
+             {id:901,ref:"LOGO1",value:"Logo",pkg:"Logo",style:"sop",x:30,y:5,side:1,nets:{},pads:[],body:{x1:-2,y1:-1,x2:2,y2:1}});
+  loadDoc(d,true);
+  const a=serialize();loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("aller-retour non neutre");
+  const h=S.fps.find(f=>f.ref==="H1"), lg=S.fps.find(f=>f.ref==="LOGO1");
+  if(h.pads.length||lg.pads.length||h.pins!==0||lg.pins!==0||padsOf(h).length||padsWorld(lg).length||h.holes.length!==1)
+    throw new Error("pastilles inventées : "+JSON.stringify(h));
+  const b=fpBBox(h);
+  if(!(b.x2-b.x1>=3.2&&b.x2-b.x1<5.5))throw new Error("le corps couvre le trou : "+JSON.stringify(b));
+  draw();conn();runDrc();
+  if(S.drc.some(e=>/H1|LOGO1/.test(e.msg)))throw new Error("DRC : "+S.drc.map(e=>e.msg).join(" ; "));
+  const np=buildFabFiles().files.find(f=>/NPTH/.test(f.name));
+  if(!np||!/T1C3\.200/.test(np.text))throw new Error("le trou de H1 manque au perçage");
+  if(/H1|LOGO1/.test(positionsCsvText()+bomPcbCsvText()+jlcBomCsvText()+jlcCplCsvText()))throw new Error("rien à poser ni à acheter");
+  if(!/refDes="H1"[^>]*mountType="OTHER"/.test(ipc2581Fichier().text))throw new Error("IPC-2581 : composant sans broche");
+  if(anim3dDonnees(true).composants.some(c=>/H1|LOGO1/.test(c.ref)))throw new Error("3D : pas de boîtier à dresser");
+  /* ECO : présente des deux côtés, aucune disparité ; absente du schéma (logo), rien à supprimer */
+  const comps=new Map(), pinNet=new Map();
+  for(const f of S.fps)if(f.ref!=="LOGO1"){
+    comps.set(f.ref,{value:f.value,pkg:f.pkg,pins:f.pins});
+    for(const [n,net] of Object.entries(f.nets))pinNet.set(f.ref+"."+n,net);
+  }
+  const eco=pcbDetecterDisparitesEco({disponible:true,comps,pinNet,sourceNom:"essai"});
+  if(eco.total!==0)throw new Error("ECO : "+JSON.stringify(eco.items.map(i=>i.id)));
+  autoPlace();
+  if(!S.fps.every(f=>Number.isFinite(f.x)&&Number.isFinite(f.y)))throw new Error("placement : position perdue");
+  fpSetPins(h,1);
+  if(h.pads.length!==1||h.pads[0].x!==0||h.pins!==1)throw new Error("première pastille ajoutée : "+JSON.stringify(h.pads));
   carteVide();
 });
 /* UNE PASTILLE TELLE QUE LE FICHIER LA DONNE : forme par couche (couronne

@@ -236,7 +236,7 @@ const KICAD_PCB = (() => {
     };
 
     let id = 1;
-    const fps = [], tracks = [], vias = [], zones = [], cuts = [], holes = [], drawings = [], defs = new Map(), retires = [];
+    const fps = [], tracks = [], vias = [], zones = [], cuts = [], holes = [], drawings = [], defs = new Map();
     const bords = [], bordsFermes = [];
     const regle = {};
 
@@ -312,7 +312,7 @@ const KICAD_PCB = (() => {
       const cp = enfant(z, "connect_pads"), mode = cp && typeof cp[1] === "string" ? cp[1] : "";
       const connexion = mode === "yes" ? "directe" : mode === "no" ? "aucune" : null;
       if (mode === "thru_hole_only") rap.ecart("zone reliée aux seules pastilles traversantes : reprise avec bras thermiques partout");
-      if (nb(val(z, "priority"), 0) > 0) rap.ecart("priorité de zone : non reprise (l'éditeur remplit dans l'ordre)");
+      const priorite = Math.round(borne(val(z, "priority"), 0, 2147483647));
       const fill = enfant(z, "fill");
       if (val(fill, "mode") === "hatch") rap.ecart("zone hachurée : reprise pleine");
       if (regle.thermal == null && enfant(fill, "thermal_bridge_width")) regle.thermal = borne(val(fill, "thermal_bridge_width"), 0, 100, 0.5);
@@ -320,6 +320,7 @@ const KICAD_PCB = (() => {
       for (const l of ls) for (const p of polys) {
         const o = { id: id++, l, net, pts: pts(p) };
         if (connexion) o.connexion = connexion;
+        if (priorite) o.priorite = priorite;
         zones.push(o);
       }
     };
@@ -341,6 +342,7 @@ const KICAD_PCB = (() => {
       /* pastilles */
       const lus = [], trousL = [], noms = new Map();
       const cote = bas ? "B.Cu" : "F.Cu", autre = bas ? "F.Cu" : "B.Cu";
+      const pmF = enfant(f, "solder_paste_margin"), prF = enfant(f, "solder_paste_margin_ratio");   // une fois par empreinte, pas par pastille
       for (const p of enfants(f, "pad")) {
         const num = String(p[1] == null ? "" : p[1]), genre = String(p[2]), forme = String(p[3]);
         const at = enfant(p, "at"), px = co(at && at[1]), py = co(at && at[2]), P = nb(at && at[3]);
@@ -354,7 +356,7 @@ const KICAD_PCB = (() => {
         if (genre === "np_thru_hole") {
           const t = { x: r4(x), y: r4(y), d: r4(Math.min(dx, dy) || Math.min(w, h)) };
           if (Math.max(dx, dy) > t.d + 1e-6) { t.w = r4(Math.max(dx, dy)); t.rot = deg(rot + (dy > dx ? 90 : 0)); }
-          trousL.push({ t, monde: monde(px, py), rotMonde: deg(-P - (dy > dx ? 90 : 0)) });
+          trousL.push(t);
           continue;
         }
         const traversant = genre === "thru_hole";
@@ -410,10 +412,10 @@ const KICAD_PCB = (() => {
             o.h = r4(Math.max(0.05, 2 * maxi(o.pts.map(c => Math.abs(c.y)))));
           } else if (rond) { o.shape = "circ"; o.h = o.w; } else o.shape = "sharp";
         } else rap.ecart("forme de pastille inconnue : reprise en rectangle arrondi");
-        const mm = enfant(p, "solder_mask_margin"), pm = enfant(p, "solder_paste_margin") || enfant(f, "solder_paste_margin");
+        const mm = enfant(p, "solder_mask_margin"), pm = enfant(p, "solder_paste_margin") || pmF;
         if (mm) o.mask = r4(borne(mm[1], -5, 5));
         if (pm) o.paste = r4(borne(pm[1], -5, 5));
-        if (enfant(p, "solder_paste_margin_ratio") || enfant(f, "solder_paste_margin_ratio")) rap.ecart("retrait de pâte en proportion : non repris");
+        if (enfant(p, "solder_paste_margin_ratio") || prF) rap.ecart("retrait de pâte en proportion : non repris");
         if (!ls.some(c => /Mask$/.test(c))) o.noMask = true;
         if (!traversant && !ls.some(c => /Paste$/.test(c))) o.noPaste = true;
         const zc = val(p, "zone_connect");
@@ -436,9 +438,9 @@ const KICAD_PCB = (() => {
         pads.push(pad);
       }
 
-      /* tracés et textes dans le repère de l'empreinte, qui les emporte (fp.dessins, couches vues posé dessus) ;
-         sans cuivre elle est retirée et ils restent sur la carte, au monde. Fab (sinon Courtyard) donne le corps. */
-      const des = [], F = pads.length ? { T: vu, monde, liste: des, couche: c => bas ? autreFace(c) : c } : Object.assign({}, CARTE, { T: monde, monde });
+      /* tracés et textes dans le repère de l'empreinte, qui les emporte (fp.dessins, couches vues posé dessus),
+         sans cuivre comme avec. Fab (sinon Courtyard) donne le corps. */
+      const des = [], F = { T: vu, monde, liste: des, couche: c => bas ? autreFace(c) : c };
       const corps = { F: [], C: [] };
       for (const e of f) {
         if (!Array.isArray(e) || !/^fp_(line|arc|circle|rect|poly|curve|text_box)$/.test(e[0])) continue;
@@ -453,33 +455,25 @@ const KICAD_PCB = (() => {
         const c = coucheL(String(val(e, "layer", "")));
         if (!c || cache(e)) continue;
         const k = e[0] === "fp_text" ? e[1] : e[1] === "Reference" ? "reference" : e[1] === "Value" ? "value" : "";
-        // ${REFERENCE} et ${VALUE} suivent le composant dans l'éditeur ; sur la carte, le texte figé
+        // ${REFERENCE} et ${VALUE} suivent le composant dans l'éditeur
         let t = k === "reference" ? "${REFERENCE}" : k === "value" ? "${VALUE}" : String(e[2] == null ? "" : e[2]);
-        if (!pads.length) t = t.replace(/\$\{REFERENCE\}/g, ref).replace(/\$\{VALUE\}/g, value);
         const a = enfant(e, "at"), ak = nb(a && a[3]);
         if (!t) continue;
-        texte(t, F.T(co(a && a[1]), co(a && a[2])), !pads.length ? -ak : bas ? 180 - A + ak : A - ak, e, F.couche(c), F.liste);
+        texte(t, F.T(co(a && a[1]), co(a && a[2])), bas ? 180 - A + ak : A - ak, e, F.couche(c), F.liste);
       }
       for (const z of enfants(f, "zone")) lireZone(z);
 
-      if (!pads.length) {
-        for (const t of trousL) {
-          const o = { id: id++, x: r4(t.monde[0]), y: r4(t.monde[1]), d: t.t.d };
-          if (t.t.w) { o.w = t.t.w; o.rot = t.rotMonde; }
-          holes.push(o);
-        }
-        rap.ecart("empreinte sans pastille de cuivre (trou de fixation, logo) : trous et dessins gardés sur la carte, composant retiré");
-        if (ref) retires.push(ref);
-        continue;
-      }
       const src = corps.F.length ? corps.F : corps.C;
       let body;
       if (src.length) {
         const xs = src.map(p => p[0]), ys = src.map(p => p[1]);
         body = { x1: r4(mini(xs)), y1: r4(mini(ys)), x2: r4(maxi(xs)), y2: r4(maxi(ys)) };
       } else {
-        body = { x1: r4(mini(pads.map(q => q.x - q.w / 2))), y1: r4(mini(pads.map(q => q.y - q.h / 2))),
-                 x2: r4(maxi(pads.map(q => q.x + q.w / 2))), y2: r4(maxi(pads.map(q => q.y + q.h / 2))) };
+        /* sans cuivre (trou de fixation, logo) : les trous, sinon un point */
+        const bx = pads.length ? pads.map(q => [q.x - q.w / 2, q.y - q.h / 2, q.x + q.w / 2, q.y + q.h / 2])
+          : trousL.map(t => { const r = Math.max(t.d, t.w || 0) / 2; return [t.x - r, t.y - r, t.x + r, t.y + r]; });
+        if (!bx.length) bx.push([0, 0, 0, 0]);
+        body = { x1: r4(mini(bx.map(c => c[0]))), y1: r4(mini(bx.map(c => c[1]))), x2: r4(maxi(bx.map(c => c[2]))), y2: r4(maxi(bx.map(c => c[3]))) };
       }
       if (body.x2 - body.x1 < 0.1) body.x2 = r4(body.x1 + 0.1);
       if (body.y2 - body.y1 < 0.1) body.y2 = r4(body.y1 + 0.1);
@@ -487,15 +481,15 @@ const KICAD_PCB = (() => {
       const xs = new Set(pads.map(q => q.x)).size, ys = new Set(pads.map(q => q.y)).size;
       const style = pads.every(q => q.drill > 0) ? (xs === 1 || ys === 1 ? "row" : "dip")
         : distincts <= 2 ? "chip" : (xs <= 2 || ys <= 2) ? "sop" : pads.length >= xs * ys * 0.8 ? "bga" : "quad";
-      const pins = maxi(pads.map(q => q.n));
+      const pins = pads.length ? maxi(pads.map(q => q.n)) : 0;      // sans cuivre : pads [] (fpFree, 01-core.js)
       const fp = { id: id++, ref, value, pkg: nomK.slice(0, 120), pins, style, x: X, y: Y,
                    rot: bas ? deg(180 - A) : deg(-A), side: bas ? 1 : 0, nets, pads, body, silk: false };
-      if (trousL.length) fp.holes = trousL.map(t => t.t);
+      if (trousL.length) fp.holes = trousL;
       if (des.length) fp.dessins = des;
       fps.push(fp);
 
       /* empreinte de LIB : la première pose de chaque nom KiCad */
-      if (nomK && !defs.has(nomK)) {
+      if (nomK && pads.length && !defs.has(nomK)) {               // la LIB veut au moins une pastille
         const name = nomPropre(nomK);
         const def = { format: "pcbfp-1", name, pkg: nomK.slice(0, 80), pins: distincts, style,
                       pads: pads.map(q => JSON.parse(JSON.stringify(q))), body };
@@ -646,7 +640,7 @@ const KICAD_PCB = (() => {
       if (r.erreurs.length) rap.ecart("empreinte refusée par le contrôle de la LIB (pastilles qui se recouvrent, numérotation à trous…) : non proposée à l'ajout");
       else empreintes.push(def);
     }
-    return { doc, empreintes, retires };
+    return { doc, empreintes };
   }
 
   /* =========================================================================
@@ -697,7 +691,7 @@ const KICAD_PCB = (() => {
     }
     return out;
   }
-  const padsDe = fp => Array.isArray(fp.pads) && fp.pads.length ? fp.pads : STYLES_PADS[fp.style] ? padsCalcules(fp) : [];
+  const padsDe = fp => Array.isArray(fp.pads) ? fp.pads : STYLES_PADS[fp.style] ? padsCalcules(fp) : [];   // [] : sans cuivre
 
   function ecrire(doc, nomLib, rap, chemins) {
     rap = rap || KICAD.rapport();
@@ -750,7 +744,8 @@ const KICAD_PCB = (() => {
       // valeur montrée en Fab pour une empreinte née dans l'éditeur seulement : une importée porte son état KiCad dans ses dessins
       out.push(champ("Reference", o.ref, bx.y1 - 1, "SilkS", o.cacherRef, dRef), champ("Value", o.value, bx.y2 + 1, "Fab", des.length > 0 || !pads.length || fp.silk === false, dVal));
       if (o.chemin) out.push(["path", q(o.chemin)]);
-      const attr = ["attr", pads.length && pads.every(q => q.drill > 0) ? "through_hole" : pads.length ? "smd" : "board_only"];
+      // sans cuivre : « board_only » seulement hors schéma, sinon la mise à jour depuis le schéma la reposerait
+      const attr = ["attr"].concat(pads.length ? [pads.every(q => q.drill > 0) ? "through_hole" : "smd"] : o.chemin ? [] : ["board_only"]);
       if (!pads.length) attr.push("exclude_from_pos_files", "exclude_from_bom");
       out.push(attr);
       if (b && !des.some(x => /^fab/.test(x.layer))) out.push(["fp_rect", ["start", ...fl(b.x1, b.y1)], ["end", ...fl(b.x2, b.y2)], trait(0.1), ["fill", "no"], ["layer", q(Lc + "Fab")], u("corps")]);
@@ -884,7 +879,7 @@ const KICAD_PCB = (() => {
       const net = z.net ? String(z.net) : "", clr = clrDe(net);
       if (z.connexion === "cms-directe") cmsDirecte++;
       items.push(["zone", netK(net), ["net_name", q(net)], ["layer", q(nomCu(Math.max(0, Math.min(cu - 1, Math.round(nb(z.l))))))], ["uuid", q(uuid("zone:" + i))],
-        ["hatch", "edge", 0.5], ["connect_pads"].concat(z.connexion === "directe" ? ["yes"] : z.connexion === "aucune" ? ["no"] : [], [["clearance", clr]]),
+        ["hatch", "edge", 0.5], ...(nb(z.priorite) > 0 ? [["priority", Math.round(nb(z.priorite))]] : []), ["connect_pads"].concat(z.connexion === "directe" ? ["yes"] : z.connexion === "aucune" ? ["no"] : [], [["clearance", clr]]),
         ["min_thickness", nb(rule.cuMin, 0.2)], ["filled_areas_thickness", "no"],
         ["fill", ["thermal_gap", clr], ["thermal_bridge_width", nb(rule.thermal, 0.5)]], pts(z.pts)]);
     });

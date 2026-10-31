@@ -1843,9 +1843,13 @@ function padWorldPts(q,grow){
   const ca=Math.cos(q.rot||0), sa=Math.sin(q.rot||0);
   return localPts.map(p=>({x:q.x+p.x*ca-p.y*sa, y:q.y+p.x*sa+p.y*ca}));
 }
+/* Les pastilles dessinées de l'empreinte, ou null si elle est calculée. Une
+   liste vide est une empreinte SANS CUIVRE (trou de fixation, logo, mire) :
+   aucune pastille, rien n'en est inventé. */
 function fpFree(fp){
-  return (fp&&Array.isArray(fp.pads)&&fp.pads.length)?fp.pads:null;
+  return (fp&&Array.isArray(fp.pads))?fp.pads:null;
 }
+function fpSansCuivre(fp){const f=fpFree(fp);return !!f&&!f.length;}
 /* Copie normalisée d'une pastille. */
 function padClone(q){
   const out={n:Math.max(1,Math.round(q.n)||1), x:r4(q.x), y:r4(q.y),
@@ -2031,6 +2035,10 @@ function fpAutoBody(fp){
     x1=Math.min(x1,q.x-hf.x);x2=Math.max(x2,q.x+hf.x);
     y1=Math.min(y1,q.y-hf.y);y2=Math.max(y2,q.y+hf.y);
   }
+  if(!ps.length)for(const h of fp.holes||[]){        // sans cuivre : le corps couvre ses trous
+    const r=Math.max(h.d,h.w||0)/2;
+    x1=Math.min(x1,h.x-r);x2=Math.max(x2,h.x+r);y1=Math.min(y1,h.y-r);y2=Math.max(y2,h.y+r);
+  }
   if(x1>x2)return {x1:-1,y1:-1,x2:1,y2:1};
   /* Le contour s'arrondit comme les pastilles dont il se déduit : figer une
      empreinte recopie ce rectangle, et deux arrondis différents feraient
@@ -2062,7 +2070,7 @@ function fpSyncPins(fp){
   if(!free)return;
   let m=1;
   for(const q of free)m=Math.max(m,Math.round(q.n)||1);
-  fp.pins=clamp(m,1,4096);
+  fp.pins=free.length?clamp(m,1,4096):0;
 }
 /* Passage en liste explicite. Rien ne bouge à l'écran : les pastilles
    calculées sont figées telles quelles, contour compris. Ce qui change, c'est
@@ -2180,7 +2188,7 @@ function fpAddPad(fp){
     mn=Math.max(mn,q.n);
   }
   const ref=ps[ps.length-1]||{w:1,h:1,shape:"rect",drill:0};
-  ps.push(padClone({n:mn+1, x:mx+Math.max(0.6,ref.w), y:my,
+  ps.push(padClone({n:mn+1, x:ps.length?mx+Math.max(0.6,ref.w):0, y:my,
                     w:ref.w, h:ref.h, shape:ref.shape, drill:ref.drill}));
   fpSyncPins(fp);
   return ps.length-1;
@@ -2590,8 +2598,63 @@ function zoneFichier(z){
   if(r.fic===undefined)r.fic=z.sig===zoneSig(z.pts);
   return r.fic;
 }
+/* PRIORITÉ DE ZONE, comme KiCad : sur une couche, une zone d'un autre net de
+   priorité plus haute est retirée d'une zone plus basse, isolement compris.
+   À priorité égale rien ne change : les zones se superposent dans l'ordre du
+   document. Une zone au cuivre du fichier n'est pas recoupée : ce cuivre
+   respecte déjà les priorités de l'outil qui l'a calculé. */
+function zonePrio(z){return z.priorite|0;}
+let ZONE_PRIO_VER=-1, ZONE_PRIO=false;
+function zonesPrio(){
+  if(ZONE_PRIO_VER!==S.ver){ZONE_PRIO_VER=S.ver;ZONE_PRIO=S.zones.some(z=>z.priorite>0);}
+  return ZONE_PRIO;
+}
+/* Ce que les zones plus prioritaires retirent de z : chacune, et une gélule
+   d'isolement par arête proche (35-ipc2581-export.js). null si rien. */
+function zoneDessus(z){
+  if(!zonesPrio()||zoneFichier(z)||typeof ipcGelule!=="function")return null;
+  const p=zonePrio(z), bb=zoneCalc(z).bb, polys=[];
+  let cle=zoneSig(z.pts);
+  for(const h of S.zones){
+    if(h.l!==z.l||zonePrio(h)<=p||(h.net||"")===(z.net||"")||h.pts.length<3)continue;
+    const g=clrK(z.net,h.net,"cu","cu"), b=zoneCalc(h).bb;
+    if(b.x1-g>bb.x2||b.x2+g<bb.x1||b.y1-g>bb.y2||b.y2+g<bb.y1)continue;
+    cle+="|"+zoneSig(h.pts)+":"+g;
+    polys.push(h.pts);
+    for(let k=0,j=h.pts.length-1;k<h.pts.length;j=k++){
+      const a=h.pts[j], c=h.pts[k];
+      if(Math.max(a.x,c.x)+g<bb.x1||Math.min(a.x,c.x)-g>bb.x2||Math.max(a.y,c.y)+g<bb.y1||Math.min(a.y,c.y)-g>bb.y2)continue;
+      polys.push(ipcGelule(a.x,a.y,c.x,c.y,g));
+    }
+  }
+  return polys.length?{cle,polys}:null;
+}
+/* Le cuivre d'une zone recoupée par une plus prioritaire : ses îlots [{o, t}],
+   gardés tant que les contours en jeu ne changent pas. null si rien ne la
+   recoupe — ou si le calcul échoue : elle reste alors entière, comme avant. */
+const ZONE_DECOUPE=new WeakMap();
+function zoneDecoupee(z){
+  const d=zoneDessus(z);
+  if(!d)return null;
+  const r=ZONE_DECOUPE.get(z);
+  if(r&&r.cle===d.cle)return r.ilots;
+  const dansMoins=ipcGrille(d.polys.map(P=>({P,b:ipcBoite(P)})));
+  let ilots=null;
+  try{ilots=ipcBooleen([z.pts].concat(d.polys),(x,y)=>zoneContient(z,x,y)&&!dansMoins(x,y));}catch(_){ilots=null;}
+  ZONE_DECOUPE.set(z,{cle:d.cle,ilots});
+  return ilots;
+}
 /* contour de la zone, puis ses trous du fichier : à remplir en « evenodd » */
 function zonePath(c,z){
+  const il=zoneDecoupee(z);
+  if(il){
+    for(const o of il)for(const P of [o.o].concat(o.t)){
+      c.moveTo(P[0].x,P[0].y);
+      for(let k=1;k<P.length;k++)c.lineTo(P[k].x,P[k].y);
+      c.closePath();
+    }
+    return;
+  }
   c.moveTo(z.pts[0].x,z.pts[0].y);
   for(let k=1;k<z.pts.length;k++)c.lineTo(z.pts[k].x,z.pts[k].y);
   c.closePath();
@@ -2610,20 +2673,24 @@ function zonePath(c,z){
 const ZONE_PATH=new WeakMap();
 function zoneFill(c,z){
   if(typeof Path2D!=="function"){c.beginPath();zonePath(c,z);c.fill("evenodd");return;}
-  const sig=zoneSig(z.pts), fic=zoneFichier(z);
+  const sig=zoneSig(z.pts), fic=zoneFichier(z), il=zoneDecoupee(z);
   let r=ZONE_PATH.get(z);
-  if(!r||r.sig!==sig||r.fic!==fic||r.trous!==z.trous){
+  if(!r||r.sig!==sig||r.fic!==fic||r.trous!==z.trous||r.il!==il){
     const p=new Path2D();zonePath(p,z);
-    ZONE_PATH.set(z,r={sig,fic,trous:z.trous,p});
+    ZONE_PATH.set(z,r={sig,fic,trous:z.trous,il,p});
   }
   c.fill(r.p,"evenodd");
 }
+/* La zone qui tient le point : la plus prioritaire, puis la dernière posée. */
 function zoneAt(l,x,y){
+  let best=null;
   for(let i=S.zones.length-1;i>=0;i--){
     const z=S.zones[i];
-    if(z.l===l&&zoneContient(z,x,y))return z;
+    if(z.l!==l||(best&&zonePrio(z)<=zonePrio(best))||!zoneContient(z,x,y))continue;
+    best=z;
+    if(!zonesPrio())break;
   }
-  return null;
+  return best;
 }
 /* Le rôle « plan de cuivre » d'une couche n'est qu'un raccourci : il entretient
    une zone pleine carte, marquée auto, qui suit le contour et le net choisis.

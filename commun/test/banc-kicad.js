@@ -68,6 +68,7 @@ function liaisons(ex, d, pcbLu) {
     const pins = symboles.get(pth[1]), ref = (E(fp, "property").find(p => p[1] === "Reference") || [])[2];
     verifier(pins, d + " : l'empreinte " + ref + " désigne un symbole du schéma (" + pth[1] + ")");
     const pads = new Set(E(fp, "pad").map(p => p[1]));
+    if (!E(fp, "pad").some(p => p[2] !== "np_thru_hole")) continue;   // sans cuivre (trou de fixation) : rien à relier, comme dans KiCad
     const seules = pins.filter(n => !pads.has(n) && (!origine.has(ref) || origine.get(ref).has(n)));
     verifier(!seules.length, d + " : " + ref + ", broches sans pastille du même nom : " + seules.slice(0, 5).join(" "));
   }

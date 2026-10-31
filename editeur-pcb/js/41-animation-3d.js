@@ -102,7 +102,7 @@ function anim3dDonnees(sansZone){
   };
   const aire=c=>Math.abs(c.reduce((s,p,i)=>{const q=c[(i+1)%c.length];return s+p[0]*q[1]-q[0]*p[1];},0))/2;
   const parRef=new Map(S.fps.map(fp=>[fp.ref,fp]));
-  const composants=J.composants.filter(c=>c.monte&&c.corps.length>=3).map(c=>{
+  const composants=J.composants.filter(c=>c.monte&&c.corps.length>=3&&!(parRef.has(c.ref)&&fpSansCuivre(parRef.get(c.ref)))).map(c=>{   // sans cuivre : pas de boîtier à dresser
     const s=aire(c.corps);
     /* shortcut: sans hauteur (LIB, fichier ou saisie), une boîte à 0,4 × le côté moyen ; la renseigner dans la LIB */
     const h=c.hauteur!=null?c.hauteur:anim3dR(Math.min(3,Math.max(0.3,0.4*Math.sqrt(s))));
