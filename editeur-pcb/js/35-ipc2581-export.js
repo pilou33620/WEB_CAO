@@ -1061,8 +1061,9 @@ function ipc2581Document(opts){
     const tr=fpTextPos(fp).ref;
     if(tr.imprime)k.push(texte(fp.ref,tr.x,tr.y,tr.size,!!fp.side,tr.rot,tr.w));
   }
-  for(const d of (S.drawings||[])){
-    const f=d.layer==="silkB"?1:0;
+  for(const d of dessinsMonde()){
+    const f=drwFace(d.layer);
+    if(f<0||!/^silk/.test(d.layer))continue;          // Fab, Courtyard, utilisateur : pas de sérigraphie
     if(f&&n<2)continue;
     const k=set(SILK[f],"S",[]), w=d.width||0.15;
     if(d.shape==="poly"){if(d.pts&&d.pts.length>=3)k.push(["Features",[],[contour(d.pts,d.trous)]]);}

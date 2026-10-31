@@ -255,7 +255,7 @@ function dragRetournerPas(){
   const mir=fpsRetourner([...S.sel.fps]);
   if(!drag.mir)drag.mir=new Set();
   for(const id of mir)if(drag.mir.has(id))drag.mir.delete(id);else drag.mir.add(id);
-  for(const d of selDrawingsPcb())d.layer=d.layer==="silkB"?"silkT":"silkB";
+  for(const d of selDrawingsPcb())d.layer=drwAutreFace(d.layer);
   drag.rot=true;
   dragRotFix();
   applyJoints(drag.joints,drag.dx,drag.dy,false);

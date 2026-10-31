@@ -172,7 +172,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* empreintes dessinees a la main et bibliotheque personnelle */
   "fpFree","padClone","fpAutoBody","fpFreeze","fpGeneric","fpSyncPins",
   "fpMovePad","fpSetPad","fpAddPad","fpDelPad","fpSetPins","fpSetBody",
-  "dPads","dHoles","trousMonde","fpTrousDe","axePercage","followBase","followWorld","fpLibRelire","pcbSurModifLib","drawHoles","dBody","normFpDef","fpApplyDef","fpLibAll","fpLibWrite",
+  "dPads","dHoles","trousMonde","fpTrousDe","axePercage","followBase","followWorld","fpLibRelire","pcbSurModifLib","drawHoles","dBody","normFpDef","fpApplyDef","fpDessinsMonde","dessinsMonde","fpLibAll","fpLibWrite",
   "fpLibGet",
   "fpLibMerge","FPLIB_KEY","FPLIB_FORMAT",
   "FPLIB","FPLIB_FICHIER","fpLibCharger","fpLibFichier","fpLibPourBoitier",
@@ -7735,6 +7735,47 @@ T("sérigraphie automatique coupée : seule celle des dessins s'imprime",()=>{
   const tout=gerberSilk(0);
   const n=g=>(g.match(/D01\*/g)||[]).length;
   if(!(n(tout)>n(avec)))throw new Error("R7 ne devait rien imprimer d'office : "+n(avec)+" / "+n(tout));
+  carteVide();
+});
+/* DESSINS D'EMPREINTE (fp.dessins) : repère local, ils suivent le composant
+   comme ses pastilles ; dessous, miroir et faces échangées. Seule la
+   sérigraphie part au Gerber. */
+T("dessins d'empreinte : normalisés, suivent le composant, faces échangées dessous",()=>{
+  carteVide();
+  const d=JSON.parse(serialize());
+  d.fps=[{id:1,ref:"U1",value:"10k",x:10,y:20,rot:90,pins:2,style:"chip",silk:false,dessins:[
+    {layer:"silkT",shape:"line",x1:-1,y1:3,x2:1,y2:3,width:0.12},
+    {layer:"crtT",shape:"rect",x1:-1,y1:-0.5,x2:1,y2:0.5,width:0.05},
+    {layer:"fabT",shape:"text",text:"${REFERENCE}",x1:0,y1:1,size:0.5,rot:0},
+    {layer:"Zorg",shape:"line",x1:0,y1:0,x2:1,y2:1},null,
+    {layer:"dwgs",shape:"poly",pts:[{x:0,y:0},{x:1,y:0},{x:1,y:1}]},
+    {layer:"silkT",shape:"line",x1:"a",y1:0,x2:1e9,y2:0}]}];
+  loadDoc(d,true);
+  const f=S.fps[0], prox=(a,b)=>Math.abs(a-b)<1e-6;
+  if(f.dessins.length!==5||f.dessins.some(x=>x.id!=null))throw new Error("couche inconnue écartée, sans id : "+JSON.stringify(f.dessins));
+  if(f.dessins[4].x1!==0||Math.abs(f.dessins[4].x2)>1e5)throw new Error("coordonnées bornées");
+  f.dessins.pop();
+  const a=serialize();loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("aller-retour non neutre");
+  const g=S.fps[0], trait=W=>W.find(x=>x.shape==="line"&&/^silk/.test(x.layer));
+  let W=fpDessinsMonde(g), t=trait(W);
+  // rot 90 : (x,y) → (10−y, 20+x)
+  if(t.layer!=="silkT"||!prox(t.x1,7)||!prox(t.y1,19)||!prox(t.x2,7)||!prox(t.y2,21))throw new Error("dessus tourné : "+JSON.stringify(t));
+  if(W.filter(x=>x.layer==="crtT").length!==4)throw new Error("cadre tourné en quatre traits");
+  const tx=W.find(x=>x.shape==="text");
+  if(tx.text!=="U1"||tx.layer!=="fabT"||tx.rot!==90||!prox(tx.x1,9))throw new Error("texte : "+JSON.stringify(tx));
+  if(dessinsMonde().length!==S.drawings.length+W.length)throw new Error("dessinsMonde");
+  // dessous, déplacé : miroir de x local puis rotation (x,y) → (30−y, 20−x)
+  S.sel.fps=new Set([g.id]);flipSel();g.x=30;g.y=20;g.rot=90;
+  W=fpDessinsMonde(g);t=trait(W);
+  if(g.side!==1||t.layer!=="silkB"||!prox(t.x1,27)||!prox(t.y1,21)||!prox(t.x2,27)||!prox(t.y2,19))throw new Error("dessous : "+JSON.stringify(t));
+  if(!W.some(x=>x.layer==="crtB")||!W.some(x=>x.layer==="fabB")||!W.some(x=>x.layer==="dwgs"))throw new Error("faces échangées, couche sans face gardée");
+  if(g.dessins[0].layer!=="silkT")throw new Error("le repère local ne change pas au retournement");
+  const segs=silkTraits(1).filter(s=>s.k==="seg");
+  if(segs.length!==1||!prox(segs[0].x1,27)||silkTraits(0).some(s=>s.k==="seg"&&prox(s.x1,27)))throw new Error("Gerber : sérigraphie seule, sur sa face : "+JSON.stringify(segs));
+  /* « lines » d'une empreinte de LIB : sérigraphie de l'empreinte */
+  const def=normFpDef({name:"X",style:"chip",pins:2,lines:[{x1:0,y1:2,x2:1,y2:2,width:0.1},{x1:"z"}]});
+  if(!def.dessins||def.dessins.length!==1||def.dessins[0].layer!=="silkT"||def.dessins[0].shape!=="line")throw new Error("lines de LIB : "+JSON.stringify(def.dessins));
   carteVide();
 });
 /* JUSQU'À 32 COUCHES, nombre impair compris : un document les garde, et

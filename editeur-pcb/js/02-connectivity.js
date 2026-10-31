@@ -1156,14 +1156,17 @@ function runDrc(){
       const tr=fpTextPos(fp).ref;
       if(tr.imprime)juger("le repère "+fp.ref,textStrokes(fp.ref,tr.x,tr.y,tr.size,!!side,tr.rot),tr.w,tr.x,tr.y);
     }
-    for(const d of S.drawings||[]){
-      if((d.layer==="silkB")!==!!side||d.shape==="poly")continue;
+    const parFp=new Map();         // celle d'un composant : un jugement par composant et par largeur
+    for(const d of dessinsMonde()){
+      if(d.layer!==(side?"silkB":"silkT")||d.shape==="poly")continue;
       const w=d.width||0.15;
       const P=d.shape==="text"?textStrokes(d.text||"TEXT",d.x1,d.y1,d.size||1.5,!!side,d.rot||0)
         :d.shape==="rect"?[[{x:d.x1,y:d.y1},{x:d.x2,y:d.y1},{x:d.x2,y:d.y2},{x:d.x1,y:d.y2},{x:d.x1,y:d.y1}]]
         :[[{x:d.x1,y:d.y1},{x:d.x2,y:d.y2}]];
+      if(d.fp){const k=d.fp.id+"|"+w;if(!parFp.has(k))parFp.set(k,{fp:d.fp,w,P:[]});parFp.get(k).P.push(...P);continue;}
       juger(d.shape==="text"?"le texte « "+d.text+" »":"le "+(d.shape==="rect"?"cadre":"trait")+" "+d.id,P,w,d.x1,d.y1);
     }
+    for(const g of parFp.values())juger("la sérigraphie de "+g.fp.ref,g.P,g.w,g.fp.x,g.fp.y);
   }
   for(const z of S.zones){
     const b=polyBBox(z.pts);
@@ -1391,7 +1394,7 @@ function fpReposerBoitier(fp,pkg,pins){
   const lib=dessin?null:((typeof fpLibPourBoitier==="function")?fpLibPourBoitier(pkg):null);
   if(lib&&fpApplyDef(fp,lib)){fp.lib=lib.name;return "lib";}
   if(dessin)return "";
-  if(fp.lib){delete fp.pads;delete fp.body;delete fp.lib;}
+  if(fp.lib){delete fp.pads;delete fp.body;delete fp.lib;delete fp.dessins;}
   const g=fpGeomFor(pkg,pins);
   fp.style=g.style;fp.pitch=g.pitch;fp.span=g.span;fp.pins=g.pins;
   fpTrousDe(fp,g);

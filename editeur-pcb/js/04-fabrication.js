@@ -558,7 +558,7 @@ function silkTraits(side){
   const seg=(x1,y1,x2,y2,w)=>out.push({k:"seg",x1,y1,x2,y2,w});
   for(const fp of S.fps){
     if(!!fp.side!==!!side)continue;
-    if(fp.silk===false)continue;          // sérigraphie importée : dans les dessins
+    if(fp.silk===false)continue;          // sérigraphie importée : dans ses dessins (fp.dessins)
     const T=fpXform(fp);
     for(const s of silkContour(fp,ouv,lw))seg(s[0],s[1],s[2],s[3],lw);
     /* point de repère de la broche 1, là où l'écran le montre — un composant
@@ -577,7 +577,7 @@ function silkTraits(side){
   }
   if(S.drawings){
     const targetLayer = side ? "silkB" : "silkT";
-    for(const d of S.drawings){
+    for(const d of dessinsMonde()){
       if(d.layer !== targetLayer) continue;
       const w = d.width || lw;
       if(d.shape === "poly"){

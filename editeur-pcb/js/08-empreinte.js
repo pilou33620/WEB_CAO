@@ -41,6 +41,10 @@ function normFpDef(d){
   if(body)out.body=body;
   const holes=dHoles(d.holes);
   if(holes)out.holes=holes;
+  /* traits de sérigraphie dessinés dans Gestion LIB (« lines ») : dessins de l'empreinte */
+  const des=(Array.isArray(d.lines)?d.lines:[]).slice(0,FPD_MAX)
+    .map((l,k)=>normDrawingPcb(Object.assign({},l,{shape:"line",type:"line",layer:"silkT"}),k)).filter(Boolean);
+  if(des.length)out.dessins=des.map(o=>{delete o.id;return o;});
   return out;
 }
 /* Pose d'une définition sur une empreinte de la carte. Le repère, la valeur,
@@ -64,6 +68,10 @@ function fpApplyDef(fp,def){
      viennent avec la définition et partent avec elle */
   if(d.holes)fp.holes=d.holes.map(h=>({...h}));
   else delete fp.holes;
+  /* les dessins suivent la forme ; une sérigraphie importée qui s'en va rend la main à l'automatique */
+  if(fp.silk===false&&(fp.dessins||[]).some(o=>/^silk/.test(o.layer)))delete fp.silk;
+  if(d.dessins)fp.dessins=d.dessins.map(o=>({...o}));
+  else delete fp.dessins;
   /* une broche câblée ne doit jamais se retrouver sans pastille */
   const w=fpWiredPins(fp);
   if(w>fp.pins)fpSetPins(fp,w);

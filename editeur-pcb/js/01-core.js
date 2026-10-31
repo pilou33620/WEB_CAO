@@ -18,6 +18,17 @@ const C_SUB     = "#182120";        // substrat de la carte
 const C_EDGE    = "#e6e8ec";        // contour de carte
 const C_SILK_T  = "#eef1f5";
 const C_SILK_B  = "#7e8794";
+/* Couches de dessin : [clé, nom, couche KiCad, couleur]. Seule la sérigraphie
+   part au Gerber ; Fab, Courtyard et les couches utilisateur documentent,
+   comme chez KiCad qui ne les trace pas d'office. Suffixe T/B = face. */
+const DRW_COUCHES=[["silkT","Sérigraphie dessus","F.SilkS",C_SILK_T],["silkB","Sérigraphie dessous","B.SilkS",C_SILK_B],
+  ["fabT","Fab dessus","F.Fab","#c8b06a"],["fabB","Fab dessous","B.Fab","#8c7a48"],
+  ["crtT","Courtyard dessus","F.CrtYd","#e46ad6"],["crtB","Courtyard dessous","B.CrtYd","#9c4a92"],
+  ["dwgs","Dessins utilisateur","Dwgs.User","#b4bcc8"],["cmts","Commentaires","Cmts.User","#6fa8e0"],
+  ["user","Utilisateur","User.1","#9ccf86"]];
+const DRW_COUL=Object.fromEntries(DRW_COUCHES.map(c=>[c[0],c[3]]));
+const drwFace=l=>/^(silk|fab|crt)[TB]$/.test(l)?(l.endsWith("B")?1:0):-1;   // -1 : sans face
+const drwAutreFace=l=>drwFace(l)<0?l:l.slice(0,-1)+(drwFace(l)?"T":"B");
 const C_THRU    = "#f2c744";        // pastille traversante : toutes couches
 const C_DRILL   = "#0c0d0f";
 const C_SEL     = "#8af0ff";
@@ -1035,7 +1046,8 @@ const S = {
   active:0,                   // couche cuivre active (indice)
   pair:[0,1],                 // paire de couches pour le changement rapide
   show:{silkT:true,silkB:true,edge:true,rats:true,plane:true,drc:true,
-        maskT:false,maskB:false,pasteT:false,pasteB:false,ptst:false},
+        maskT:false,maskB:false,pasteT:false,pasteB:false,ptst:false,
+        fabT:false,fabB:false,crtT:false,crtB:false,dwgs:true,cmts:true,user:true},
   board:{x:0,y:0,w:100,h:80,pts:null},   // pts = contour libre, sinon rectangle
   fps:[], tracks:[], vias:[], zones:[], cuts:[], holes:[], drawings:[], interdits:[],
   /* `corner` : l'angle imposé aux pistes tracées — « 45 » par défaut, c'est la
@@ -2298,6 +2310,49 @@ function fpXform(fp){
   const a=(fp.rot||0)*Math.PI/180, ca=Math.cos(a), sa=Math.sin(a), m=fp.side?-1:1;
   return (x,y)=>({x:fp.x+(m*x)*ca-y*sa, y:fp.y+(m*x)*sa+y*ca});
 }
+/* Dessins de l'empreinte (fp.dessins : repère local, couches vues posé dessus)
+   au monde, en enregistrements de S.drawings : dessous, miroir et face
+   échangée comme les pastilles ; le cadre tourne, il part en quatre traits.
+   Un texte sans face (couche utilisateur) d'un composant dessous garde son
+   miroir dans `mir`. ${REFERENCE} et ${VALUE} suivent le composant (KiCad).
+   Gardé par composant tant qu'il ne bouge pas : lecture seule. */
+const FPD_CACHE=new WeakMap();
+function fpDessinsMonde(fp){
+  if(!fp.dessins||!fp.dessins.length)return [];
+  const cle=[fp.x,fp.y,fp.rot,fp.side,fp.ref,fp.value].join("|"), c=FPD_CACHE.get(fp);
+  if(c&&c.cle===cle&&c.src===fp.dessins)return c.out;
+  const T=fpXform(fp), m=fp.side?-1:1, out=[];
+  const P=p=>{const w=T(p.x,p.y);return {x:r4(w.x),y:r4(w.y)};};
+  for(const d of fp.dessins){
+    const layer=fp.side?drwAutreFace(d.layer):d.layer;
+    if(d.shape==="poly"){
+      const pts=d.pts.map(P), b=polyBBox(pts), o={shape:"poly",type:"poly",layer,pts,x1:b.x1,y1:b.y1,x2:b.x2,y2:b.y2,fp};
+      if(d.trous)o.trous=d.trous.map(t=>t.map(P));
+      out.push(o);
+    }else if(d.shape==="text"){
+      const w=P({x:d.x1,y:d.y1});
+      const o={shape:"text",type:"text",layer,fp,x1:w.x,y1:w.y,x2:w.x,y2:w.y,size:d.size,height:d.size,width:d.width,
+               text:String(d.text).replace(/\$\{REFERENCE\}/g,fp.ref).replace(/\$\{VALUE\}/g,fp.value||""),
+               rot:r4((((fp.rot||0)+m*(d.rot||0))%360+360)%360)};
+      if(fp.side&&drwFace(d.layer)<0)o.mir=true;
+      out.push(o);
+    }else{
+      const Q=(d.shape==="rect"?[[d.x1,d.y1],[d.x2,d.y1],[d.x2,d.y2],[d.x1,d.y2],[d.x1,d.y1]]:[[d.x1,d.y1],[d.x2,d.y2]])
+        .map(q=>P({x:q[0],y:q[1]}));
+      for(let i=1;i<Q.length;i++)
+        out.push({shape:"line",type:"line",layer,fp,x1:Q[i-1].x,y1:Q[i-1].y,x2:Q[i].x,y2:Q[i].y,width:d.width});
+    }
+  }
+  FPD_CACHE.set(fp,{cle,src:fp.dessins,out});
+  return out;
+}
+/* tous les dessins au monde : ceux de la carte puis ceux des empreintes */
+function dessinsMonde(){
+  const out=(S.drawings||[]).slice();
+  for(const fp of S.fps)for(const d of fpDessinsMonde(fp))out.push(d);
+  return out;
+}
+const drwMiroir=d=>!!d.mir||drwFace(d.layer)===1;
 /* Pastilles en coordonnées monde. `rot` y est en RADIANS : c'est l'angle du
    dessin, empreinte et pastille cumulées, tel que l'attendent padPath(),
    padDist() et les ouvertures Gerber. Sur une empreinte retournée, la

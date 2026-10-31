@@ -262,6 +262,7 @@ function dBody(b){
   return o;
 }
 const COORD=1e5;                    // garde-fou de coordonnée, en mm
+const FPD_MAX=5000;                  // dessins par empreinte (normFp)
 
 /* polygone : les sommets exploitables, ou null s'il en reste moins de `min` */
 function dPts(a,min){
@@ -486,6 +487,11 @@ function normFp(f,i){
   /* sérigraphie automatique (contour, point, repère) coupée : une carte
      importée apporte la sienne. Absent = coupée jamais, comme avant. */
   if(f.silk===false)out.silk=false;
+  /* dessins attachés (sérigraphie, Fab, Courtyard, utilisateur) : repère local,
+     ils suivent le composant ; couche inconnue écartée, nombre borné */
+  const des=(Array.isArray(f.dessins)?f.dessins:[]).slice(0,FPD_MAX)
+    .filter(d=>d&&drwConnue(d.layer)).map(normDrawingPcb).filter(Boolean);
+  if(des.length)out.dessins=des.map(o=>{delete o.id;return o;});
   if(f.refHide)out.refHide=true;
   if(f.simNonMonte===true)out.simNonMonte=true;   // ignorée par les simulations (19-simulation.js)
   if(+f.puissance>0)out.puissance=r3(dRange(f.puissance,0,0,100));   // dissipée en service, W (39-thermique.js)
@@ -590,6 +596,8 @@ function drwSuivre(o,dx,dy){
   if(o.pts)o.d.pts=o.pts.map(p=>({x:r4(p.x+dx),y:r4(p.y+dy)}));
   if(o.trous)o.d.trous=o.trous.map(t=>t.map(p=>({x:r4(p.x+dx),y:r4(p.y+dy)})));
 }
+const drwConnue=l=>DRW_COUCHES.some(c=>c[0]===l);
+const drwCouche=l=>drwConnue(l)?l:"silkT";      // couche inconnue : la sérigraphie dessus, comme avant
 function normDrawingPcb(d,i){
   if(!d||typeof d!=="object")return null;
   /* Aplat de sérigraphie : un polygone plein, avec ses trous (le logo, le
@@ -601,7 +609,7 @@ function normDrawingPcb(d,i){
     const P=pts.map(p=>({x:r4(p.x),y:r4(p.y)}));
     const b=polyBBox(P);
     const out={id:dInt(d.id,i+1,1,Number.MAX_SAFE_INTEGER),shape:"poly",type:"poly",
-               layer:d.layer==="silkB"?"silkB":"silkT",pts:P,
+               layer:drwCouche(d.layer),pts:P,
                x1:r4(b.x1),y1:r4(b.y1),x2:r4(b.x2),y2:r4(b.y2)};
     const tr=(Array.isArray(d.trous)?d.trous:[]).map(t=>dPts(t,3)).filter(Boolean)
       .map(t=>t.map(p=>({x:r4(p.x),y:r4(p.y)})));
@@ -610,7 +618,7 @@ function normDrawingPcb(d,i){
   }
   const isText=(d.shape==="text"||d.type==="text");
   const shape=isText?"text":((d.shape==="rect"||d.type==="rect")?"rect":"line");
-  const layer=d.layer==="silkB"?"silkB":"silkT";
+  const layer=drwCouche(d.layer);
   const x1=dRange(d.x1,0,-COORD,COORD);
   const y1=dRange(d.y1,0,-COORD,COORD);
   if(shape==="text"){
@@ -975,9 +983,7 @@ function hitTest(x,y,e){
   if(S.drawings){
     for(let i=S.drawings.length-1;i>=0;i--){
       const d=S.drawings[i];
-      if(d.layer==="silkT"&&!S.show.silkT)continue;
-      if(d.layer==="silkB"&&!S.show.silkB)continue;
-      if(!faceAlpha(d.layer!=="silkB"))continue;     // face opposée masquée : rien à prendre
+      if(!drwAlpha(d))continue;     // couche cachée, face opposée masquée : rien à prendre
       const tol=Math.max((d.width||0)/2,px(3.5));
       if(d.shape==="poly"){
         if(inPoly(x,y,d.pts)||polyEdgeDist(x,y,d.pts)<=tol)return {drawing:d};
@@ -2943,7 +2949,7 @@ function flipSel(){
      son cuivre interne sur la couche miroir (`fpsRetourner`, `groupeCouches`) */
   const mir={ids:null};
   transformFps(list,()=>{mir.ids=fpsRetourner(list);},{miroir:mir});
-  for(const d of drw){d.layer=d.layer==="silkB"?"silkT":"silkB";}
+  for(const d of drw)d.layer=drwAutreFace(d.layer);
   touch();refreshPanels();draw();
 }
 
@@ -4834,9 +4840,7 @@ cv.addEventListener("pointerup",e=>{
       }
       if(S.drawings){
         for(const d of S.drawings){
-          if(d.layer==="silkT"&&!S.show.silkT)continue;
-          if(d.layer==="silkB"&&!S.show.silkB)continue;
-          if(!faceAlpha(d.layer!=="silkB"))continue;
+          if(!drwAlpha(d))continue;
           const minX=Math.min(d.x1,d.x2), maxX=Math.max(d.x1,d.x2);
           const minY=Math.min(d.y1,d.y2), maxY=Math.max(d.y1,d.y2);
           if(minX>=x1&&maxX<=x2&&minY>=y1&&maxY<=y2){

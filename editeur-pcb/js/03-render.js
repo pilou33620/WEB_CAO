@@ -114,6 +114,8 @@ function layerOrder(){
    c'est le dessous, et inversement. « Face opposée » la laisse, l'atténue ou
    la retire, comme une carte qu'on tient vraiment dans la main. */
 function faceAlpha(top){return top===!S.flip?1:[1,0.3,0][S.faceOpp|0];}
+/* un dessin : sa couche affichée, sa face non masquée ; une couche sans face se voit des deux côtés */
+function drwAlpha(d){const f=drwFace(d.layer);return !S.show[d.layer]?0:f<0?1:faceAlpha(!f);}
 function layerAlpha(i){
   if(!S.cuL[i]||!S.cuL[i].vis)return 0;
   if(i===S.active||S.contrast===0)return 1;
@@ -601,23 +603,21 @@ function drawSilk(c){
     c.stroke();
     c.globalAlpha=(S.hlNet?0.55:1)*fa;
   }
-  /* traits de sérigraphie utilisateur */
+  /* dessins de la carte et des empreintes, couche par couche */
   if(S.drawings){
     /* Les traits simples non sélectionnés partent en un lot par face et par
        largeur : une carte importée en compte des dizaines de milliers, et un
        trait = un save/stroke/restore la figeait. */
     const lots=new Map();
-    for(const d of S.drawings){
-      const top = d.layer !== "silkB";
-      if(top&&!S.show.silkT)continue;
-      if(!top&&!S.show.silkB)continue;
-      const sel = S.sel.drawings && S.sel.drawings.has(d.id);
-      const fa = sel ? 1 : faceAlpha(top);
+    for(const d of dessinsMonde()){
+      const sel = !d.fp && S.sel.drawings && S.sel.drawings.has(d.id);
+      const fa = sel ? 1 : drwAlpha(d);
       if(!fa)continue;
+      const coul = DRW_COUL[d.layer];
       if(!sel&&d.shape!=="rect"&&d.shape!=="text"&&d.shape!=="poly"){
         const e=(d.width||0)/2;
         if(horsVue(Math.min(d.x1,d.x2)-e,Math.min(d.y1,d.y2)-e,Math.max(d.x1,d.x2)+e,Math.max(d.y1,d.y2)+e))continue;
-        const k=(top?"T":"B")+(d.width||0.15);
+        const k=d.layer+"|"+(d.width||0.15);
         let p=lots.get(k);if(!p)lots.set(k,p=[]);
         p.push(d);
         continue;
@@ -629,7 +629,7 @@ function drawSilk(c){
       const isText = d.shape === "text";
       if(d.shape === "poly"){
         c.globalAlpha = (S.hlNet ? 0.55 : 1) * fa;
-        c.fillStyle = sel ? C_SEL : (top ? C_SILK_T : C_SILK_B);
+        c.fillStyle = sel ? C_SEL : coul;
         c.beginPath();
         for(const P of [d.pts].concat(d.trous||[])){
           c.moveTo(P[0].x,P[0].y);
@@ -641,7 +641,7 @@ function drawSilk(c){
         continue;
       }
       if(isText){
-        const mirror = d.layer === "silkB";   // miroir du fichier ; la vue dessous retourne déjà tout le canevas
+        const mirror = drwMiroir(d);   // miroir du fichier ; la vue dessous retourne déjà tout le canevas
         const strokes = (typeof textStrokes === "function")
           ? textStrokes(d.text != null ? d.text : "TEXT", d.x1, d.y1, d.size || d.height || 1.5, mirror, d.rot || 0)
           : [];
@@ -658,7 +658,7 @@ function drawSilk(c){
           }
         }
         c.globalAlpha = (S.hlNet ? 0.55 : 1) * fa;
-        c.strokeStyle = sel ? C_SEL : (top ? C_SILK_T : C_SILK_B);
+        c.strokeStyle = sel ? C_SEL : coul;
         c.lineWidth = Math.max(d.width || 0.15, px(1));
         for(const poly of strokes){
           if(poly.length < 2) continue;
@@ -703,7 +703,7 @@ function drawSilk(c){
         }
       }
       c.globalAlpha = (S.hlNet ? 0.55 : 1) * fa;
-      c.strokeStyle = sel ? C_SEL : (top ? C_SILK_T : C_SILK_B);
+      c.strokeStyle = sel ? C_SEL : coul;
       c.lineWidth = Math.max(d.width || 0.15, px(1));
       if(isRect){
         const rx=Math.min(d.x1,d.x2), ry=Math.min(d.y1,d.y2);
@@ -734,9 +734,9 @@ function drawSilk(c){
     c.save();
     c.lineCap="round";c.lineJoin="round";
     for(const [k,p] of lots){
-      c.globalAlpha=(S.hlNet?0.55:1)*faceAlpha(k[0]==="T");
-      c.strokeStyle=k[0]==="T"?C_SILK_T:C_SILK_B;
-      c.lineWidth=Math.max(+k.slice(1),px(1));
+      c.globalAlpha=(S.hlNet?0.55:1)*drwAlpha(p[0]);
+      c.strokeStyle=DRW_COUL[p[0].layer];
+      c.lineWidth=Math.max(+k.split("|")[1],px(1));
       c.beginPath();
       for(const d of p){c.moveTo(d.x1,d.y1);c.lineTo(d.x2,d.y2);}
       c.stroke();

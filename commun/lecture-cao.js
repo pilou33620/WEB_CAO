@@ -192,11 +192,13 @@ const LECTURE_CAO = (function() {
     serigraphie: {
       desc: "les dessins de sérigraphie (id, face, texte, trait, rectangle, aplat) et les repères déplacés ou sans sérigraphie automatique",
       fn: () => {
-        const face = d => d.layer === "silkB" ? "dessous" : "dessus";
+        const face = d => d.layer === "silkB" ? "dessous" : d.layer === "silkT" ? "dessus" : "couche " + d.layer + ", non imprimée";
         const L = (S.drawings || []).map(d => "- dessin " + d.id + " (" + face(d) + ") : " +
           (d.shape === "text" ? "texte « " + d.text + " » en (" + mm(d.x1) + ", " + mm(d.y1) + "), " + d.size + " mm" + (d.rot ? ", " + d.rot + "°" : "")
            : d.shape === "poly" ? "aplat de " + d.pts.length + " sommets"
            : (d.shape === "rect" ? "rectangle" : "trait") + " (" + mm(d.x1) + ", " + mm(d.y1) + ") → (" + mm(d.x2) + ", " + mm(d.y2) + ")"));
+        const propres = S.fps.filter(f => f.dessins && f.dessins.length).length;
+        if (propres) L.push("- " + propres + " composants portent leurs propres dessins (sérigraphie, Fab, Courtyard), qui les suivent");
         for (const f of S.fps) {
           if (f.refOffX || f.refOffY) L.push("- repère " + f.ref + " décalé de (" + mm(f.refOffX || 0) + ", " + mm(f.refOffY || 0) + ") mm");
           if (f.silk === false) L.push("- " + f.ref + " : sérigraphie automatique coupée");
