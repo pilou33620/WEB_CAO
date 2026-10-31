@@ -101,7 +101,7 @@ function comparer(a, b, quoi) {
 
 /* ---------- vérificateur « éditeur » : sur le document, sans rien normaliser ---------- */
 const BROCHES = {   // ceux dont le banc a besoin, recopiés de 02-bibliotheque.js
-  vcc: [[0, 20]], gnd: [[0, -20]], port: [[20, 0]], gport: [[20, 0]], annot_volt: [[0, 20]], annot_text: [], annot_note: [], annot_curr: [],
+  fiducial: [], vcc: [[0, 20]], gnd: [[0, -20]], port: [[20, 0]], gport: [[20, 0]], annot_volt: [[0, 20]], annot_text: [], annot_note: [], annot_curr: [],
   resistor: [[-40, 0], [40, 0]], capacitor: [[-40, 0], [40, 0]], opamp: [[-40, -20], [-40, 20], [60, 0], [0, -40], [0, 40]]
 };
 const SANS_REP = new Set(["vcc", "gnd", "port", "gport", "annot_volt", "annot_text", "annot_note", "annot_curr"]);
@@ -165,18 +165,18 @@ function matrice(A, miroir) {
   if (miroir === "y") app([-1, 0, 0, 1]);
   return m;
 }
-/* membres d'un bus selon KiCad : vecteur apparié par indice, groupe par nom de membre, alias développés */
+/* membres d'un bus selon KiCad : vecteur apparié par rang (la carte de vme-wren le montre), groupe par nom de membre, alias développés */
 let ALIAS = new Map();
 function membresBus(nom, prof = 0) {
   const v = /^(.*)\[(\d+)\.\.(\d+)\]$/.exec(nom), out = [];
-  if (v) { for (let i = Math.min(+v[2], +v[3]); i <= Math.max(+v[2], +v[3]); i++) out.push(["#" + i, v[1] + i]); return out; }
+  if (v) { const a = +v[2], z = +v[3], d = a <= z ? 1 : -1; for (let i = a, k = 0; ; i += d, k++) { out.push([String(k), v[1] + i]); if (i === z) break; } return out; }
   const g = /^(.*?)\{(.*)\}$/.exec(nom);
   const l = g && !g[1].endsWith("~") ? g[2].split(/[\s,]+/).filter(Boolean) : ALIAS.get(nom);
   if (!l || prof > 4) return out;
   for (const m of l) {
     const p = g && g[1] ? g[1] + "." : "";
     if (ALIAS.has(m)) membresBus(m, prof + 1).forEach(([k, n]) => out.push([k, p + n]));
-    else if (/\[\d+\.\.\d+\]$/.test(m)) membresBus(m, prof + 1).forEach(([k, n]) => out.push([m + k, p + n]));
+    else if (/\[\d+\.\.\d+\]$/.test(m)) membresBus(m, prof + 1).forEach(([k, n]) => out.push([m + "#" + k, p + n]));
     else out.push([m, p + m]);
   }
   return out;
@@ -494,11 +494,11 @@ if (fs.existsSync(DEMOS)) {
    4. importer le projet entier, puis l'ECO du PCB entre schéma et carte importés :
    la netlist du vrai éditeur de schéma, la comparaison du vrai éditeur PCB
    ====================================================================== */
-/* écarts des démos qui ne tiennent pas aux nets : projet KiCad où schéma et carte divergent
-   (empreintes « board_only », valeur changée d'un côté), ou trou de fixation au symbole muni d'une
-   broche dont l'empreinte sans cuivre est retirée par la lecture de la carte */
+/* écarts propres aux projets KiCad, où schéma et carte divergent : empreintes « board_only »,
+   valeur changée d'un côté, et vme-wren dont le symbole Cage3 a 20 broches de masse quand son
+   empreinte (wren.pretty/MOLEX_74737-0009) n'a qu'une pastille, la 2 */
 const CONNUS = { "custom_pads_test/custom_pads_test": "suppressions 1", "multichannel/multichannel_mixer": "valeurs 1",
-                 "tiny_tapeout/tinytapeout-demo": "suppressions 152" };
+                 "tiny_tapeout/tinytapeout-demo": "suppressions 149", "vme-wren/vme-wren": "nets 19" };
 (async () => {
   const lots = [];
   if (ED && fs.existsSync(DEMOS) && fs.existsSync(path.join(RACINE, "editeur-pcb", "dist", "pcb.js"))) {
@@ -518,8 +518,7 @@ const CONNUS = { "custom_pads_test/custom_pads_test": "suppressions 1", "multich
         ED.loadDoc(copie(imp.schema));
         lots.push({ nom, pcb: imp.pcb, schema: imp.schema, netlist: ED.netlistText("banc") });
       } catch (e) {
-        if (/dépasse 64 Mo/.test(e.message)) console.log("  ok  " + nom + " — carte de plus de 64 Mo, refusée par l'import : ECO sauté");
-        else { ko++; console.log("  KO  " + nom + " → import : " + e.message); }
+        ko++; console.log("  KO  " + nom + " → import : " + e.message);
       }
     }
     const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "eco-")), "lots.json");

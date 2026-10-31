@@ -125,7 +125,7 @@ function dNum(v,def){const n=+v;return Number.isFinite(n)?n:def;}
 function dRange(v,def,min,max){return clamp(dNum(v,def),min,max);}
 function dInt(v,def,min,max){return Math.round(dRange(v,def,min,max));}
 function dStr(v,max){return String(v==null?"":v).slice(0,max);}
-function dNet(v){return dStr(v,64).trim();}
+function dNet(v){return dStr(v,255).trim();}   // KiCad ne borne pas ses noms de nets
 /* une couleur de couche finit dans un attribut style : on n'accepte que la
    notation produite par le sélecteur de couleur */
 const HEX_COLOR=/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;

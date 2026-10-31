@@ -42,7 +42,9 @@ function zipDeflate(nom, contenu, tailleAnnoncee) {
 }
 /* Ce que KiCad relie dans l'export : le (path) de chaque empreinte désigne un symbole du
    schéma (sans l'uuid de la racine), et chaque broche de ce symbole a sa pastille. */
-function liaisons(ex, d) {
+function liaisons(ex, d, pcbLu) {
+  // une broche sans pastille dès le projet KiCad (Cage3 de vme-wren) n'est pas une faute de l'export
+  const origine = new Map(pcbLu.fps.map(f => [f.ref, new Set((f.pads || []).map(q => q.nom != null ? String(q.nom) : String(q.n)))]));
   const E = (l, n) => l.filter(e => Array.isArray(e) && e[0] === n), E1 = (l, n) => E(l, n)[0];
   const symboles = new Map();                     // chemin → numéros de broches de son unité
   for (const f of ex.fichiers) if (f.name.endsWith(".kicad_sch")) {
@@ -66,7 +68,7 @@ function liaisons(ex, d) {
     const pins = symboles.get(pth[1]), ref = (E(fp, "property").find(p => p[1] === "Reference") || [])[2];
     verifier(pins, d + " : l'empreinte " + ref + " désigne un symbole du schéma (" + pth[1] + ")");
     const pads = new Set(E(fp, "pad").map(p => p[1]));
-    const seules = pins.filter(n => !pads.has(n));
+    const seules = pins.filter(n => !pads.has(n) && (!origine.has(ref) || origine.get(ref).has(n)));
     verifier(!seules.length, d + " : " + ref + ", broches sans pastille du même nom : " + seules.slice(0, 5).join(" "));
   }
 }
@@ -112,7 +114,7 @@ const refuse = async (f, motif) => { try { await f(); return false; } catch (e) 
       // les composants repérés : un titre de bloc de feuille revient en texte, sans rien perdre
       const nbComp = x => x.schema ? x.schema.pages.reduce((n, p) => n + p.comps.filter(c => c.ref).length, 0) : 0;
       verifier(nbFp(imp) === nbFp(imp2) && nbComp(imp) === nbComp(imp2), d + " : aller-retour, mêmes empreintes et symboles");
-      if (imp.pcb && imp.schema) liaisons(ex, d);
+      if (imp.pcb && imp.schema) liaisons(ex, d, imp.pcb);
       if (kicadCli) {
         const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kicad-"));
         for (const f of ex.fichiers) { fs.mkdirSync(path.dirname(path.join(tmp, f.name)), { recursive: true }); fs.writeFileSync(path.join(tmp, f.name), f.text); }

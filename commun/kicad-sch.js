@@ -18,6 +18,7 @@
    ============================================================================= */
 
 const KICAD_SCH = (() => {
+  const NOM_NET = 255;      // nom porté par un fil (normWire) et par un net du PCB (dNet)
   const { enfant, enfants, nb, val, xy, q, ecrireS, uuid, Refus, VERSION_SCH } = KICAD;
   const K = 20 / 2.54;                                   // unités du schéma par mm
   const r4 = v => Math.round(v * 1e4) / 1e4 || 0;        // comme snap() : des égalités exactes
@@ -287,7 +288,9 @@ const KICAD_SCH = (() => {
     function membres(nom, prof = 0) {
       const v = /^(.*)\[(\d+)\.\.(\d+)\]$/.exec(nom), out = [];
       if (v) {
-        for (let i = Math.min(+v[2], +v[3]); i <= Math.max(+v[2], +v[3]) && out.length < 1024; i++) out.push(["#" + i, v[1] + i]);
+        // appariement par rang : PP_OUT[8..15] côté feuille mère porte PP_OUT[0..7] de la fille (vme-wren)
+        const a = +v[2], z = +v[3], pas = a <= z ? 1 : -1;
+        for (let i = a, k = 0; out.length < 1024; i += pas, k++) { out.push([String(k), v[1] + i]); if (i === z) break; }
         return out;
       }
       const g = /^(.*?)\{(.*)\}$/.exec(nom);
@@ -297,7 +300,7 @@ const KICAD_SCH = (() => {
       for (const m of liste) {
         if (alias.has(m)) { for (const [k, n] of membres(m, prof + 1)) out.push([k, pfx + n]); continue; }
         const sous = /\[\d+\.\.\d+\]$/.test(m) ? membres(m, prof + 1) : null;
-        if (sous) for (const [k, n] of sous) out.push([m + k, pfx + n]);
+        if (sous) for (const [k, n] of sous) out.push([m + "#" + k, pfx + n]);
         else out.push([m, pfx + m]);
       }
       return out.slice(0, 1024);
@@ -440,7 +443,14 @@ const KICAD_SCH = (() => {
           alims.push([local ? "port" : MASSE.test(nom) ? "gnd" : "vcc", pinsMonde[k], O.rot, O.mir, nom, true]);
           continue;
         }
-        if (!sym.ok) { if (!sym.pins.length) rap.ecart("symbole sans broche (logo, trou…) : écarté"); continue; }
+        if (!sym.ok && !sym.pins.length && ref && !ref.startsWith("#")) {
+          // symbole sans broche (mire, trou) : le composant reste, pour la nomenclature et la carte
+          rap.ecart("symbole sans broche (mire, trou…) : repris comme une mire, son dessin est perdu");
+          comps.push({ id: ++id, type: "fiducial", x: O.x, y: O.y, rot: O.rot, mir: O.mir, ref: ref.slice(0, 32), value: valeur.slice(0, 240),
+                       ...(prop(s, "Footprint") ? { pkg: prop(s, "Footprint").replace(/^.*:/, "").slice(0, 120) } : {}) });
+          continue;
+        }
+        if (!sym.ok) { if (!sym.pins.length) rap.ecart("symbole sans broche ni repère (logo) : écarté"); continue; }
         const c = { id: ++id, type: sym.id, x: O.x, y: O.y, rot: O.rot, mir: O.mir, ref: ref.slice(0, 32), value: valeur.slice(0, 240) };
         const fp = prop(s, "Footprint");
         // sans le surnom de bibliothèque, comme la carte (KICAD_PCB) : le boîtier relie les deux éditeurs
@@ -468,7 +478,7 @@ const KICAD_SCH = (() => {
       const normaux = () => fils.filter(f => !f.bus);
       const nf = normaux();
       for (const c of comps) {
-        for (const p of symboles[c.type].pins) {
+        for (const p of (symboles[c.type] || { pins: [] }).pins) {
           const m = monde(c, p.x, p.y);
           if (nf.some(f => !extremite(m, f) && surSegment(m, f)))
             rap.ecart("broche posée au milieu d'un fil sans jonction : KiCad ne la relie pas, l'éditeur si");
@@ -505,8 +515,8 @@ const KICAD_SCH = (() => {
         const nomE = sansEchap(e[1]), [x, y, A] = xy(e), P = soude([px(x), px(y)]);
         if (!nomE) continue;
         if (busEn(P)) {
-          if (nomE.length > 32) rap.ecart("nom de bus de plus de 32 caractères tronqué à l'affichage");
-          for (const f of fils) if (f.bus && surSegment(P, f)) f.net = nomE.slice(0, 32);
+          if (nomE.length > NOM_NET) rap.ecart("nom de bus de plus de " + NOM_NET + " caractères : raccourci");
+          for (const f of fils) if (f.bus && surSegment(P, f)) f.net = nomE.slice(0, NOM_NET);
           // priorité des pilotes de KiCad : globale > locale > hiérarchique > broche de feuille
           surBus.push([P, nomE, t === "global_label" ? 3 : t === "label" ? 2 : 1, t === "global_label" ? "@" + nomE : t === "hierarchical_label" ? nomChem + nomE : null]);
         } else if (t === "hierarchical_label") {
@@ -532,7 +542,7 @@ const KICAD_SCH = (() => {
       }
       /* ---- bus : chaque membre passe d'une feuille à l'autre par une paire d'étiquettes, locale
          (le nom du membre sur la feuille) et globale (le pont), posée à droite de la feuille ;
-         KiCad apparie les membres d'un vecteur par leur indice, ceux d'un groupe par leur nom ---- */
+         KiCad apparie les membres d'un vecteur par leur rang, ceux d'un groupe par leur nom ---- */
       const bus = fils.filter(f => f.bus), gr = bus.map((_, i) => i);
       const rac = i => { while (gr[i] !== i) i = gr[i] = gr[gr[i]]; return i; };
       const bouts = f => [[f.x1, f.y1], [f.x2, f.y2]];
@@ -578,7 +588,7 @@ const KICAD_SCH = (() => {
       if (enfants(arbre, "no_connect").length) rap.ecart("drapeaux de non-connexion (no_connect) non repris");
       const CONNUS = new Set(["version", "generator", "generator_version", "uuid", "paper", "title_block", "lib_symbols", "junction", "no_connect",
         "wire", "bus", "bus_entry", "label", "global_label", "hierarchical_label", "symbol", "sheet", "sheet_instances", "symbol_instances",
-        "embedded_fonts", "embedded_files", "text", "text_box", "polyline", "rectangle"]);
+        "embedded_fonts", "embedded_files", "text", "text_box", "polyline", "rectangle", "bus_alias"]);
       for (const e of arbre) if (Array.isArray(e) && !CONNUS.has(e[0])) rap.ecart("élément KiCad non repris : " + String(e[0]).slice(0, 30));
       // racine qui ne fait que porter des feuilles : pas de page
       if (comps.some(c => !ANNOT.has(c.type)) || fils.length) {
@@ -927,7 +937,7 @@ const KICAD_SCH = (() => {
       });
     }
     for (const w of fils) {
-      const n = String(w.net == null ? "" : w.net).trim().slice(0, 32).trim();
+      const n = String(w.net == null ? "" : w.net).trim().slice(0, NOM_NET).trim();
       if (n && !NET_AUTO.test(n)) revend.push({ k: K(w.x1, w.y1), nom: n, prio: 1, glob: false });
     }
     const premier = new Map(), noms = new Set();
@@ -991,41 +1001,64 @@ const KICAD_SCH = (() => {
     const emb = sch.symboles || {}, pages = Array.isArray(sch.pages) ? sch.pages : [];
     const fps = new Map((pcb.fps || []).map(f => [f.ref, f]));
     const netPcb = nd => { const i = nd.lastIndexOf("."), f = fps.get(nd.slice(0, i)); return f ? String((f.nets || {})[nd.slice(i + 1)] || "") : undefined; };
-    /* 1. un net du schéma sans nom prend celui de la carte (sur un fil ; sans fil, sur un bout de fil ajouté) */
+    /* 0. une mire (symbole KiCad sans broche) dont la carte n'a pas l'empreinte (trou, logo sans cuivre) part aussi */
+    for (const p of pages) {
+      const avant = (p.comps || []).length;
+      p.comps = (p.comps || []).filter(c => !c || c.type !== "fiducial" || !c.ref || fps.has(c.ref));
+      if (p.comps.length < avant) rap.ecart("symbole sans broche dont la carte n'a pas d'empreinte : retiré du schéma");
+    }
+    /* 1. un net du schéma sans nom prend celui de la carte (sur un fil ; sans fil, sur un bout de fil ajouté) ;
+       une patte libre au schéma dont le net de la carte, à elle seule, est routé, aussi */
+    const tousO = [].concat(pcb.tracks || [], pcb.vias || [], pcb.zones || []);
+    const routesP = new Set(tousO.map(o => o && o.net).filter(Boolean)), nbPads = new Map();
+    for (const f of pcb.fps || []) for (const P of Object.values(f.nets || {})) nbPads.set(P, (nbPads.get(P) || 0) + 1);
+    function bout(p, m, nom, broches, fils) {
+      const pts = broches.map(b => b.m).concat(fils.flatMap(w => [[w.x1, w.y1], [w.x2, w.y2]]));
+      const Q = [[10, 0], [-10, 0], [0, 10], [0, -10], [20, 0], [-20, 0], [0, 20], [0, -20]].map(d => [m[0] + d[0], m[1] + d[1]]).find(q2 => {
+        const s = { x1: m[0], y1: m[1], x2: q2[0], y2: q2[1] };
+        return !pts.some(t => (t[0] === q2[0] && t[1] === q2[1]) || dedans(t, s)) && !fils.some(w => surSegment(q2, w));
+      });
+      if (!Q) { rap.ecart("patte sans place pour un bout de fil : nom de net non aligné"); return; }
+      p.wires.push({ x1: m[0], y1: m[1], x2: Q[0], y2: Q[1], net: nom });
+      fils.push(p.wires[p.wires.length - 1]);
+      rap.ecart("patte sans fil : un bout de fil porte le nom du net de la carte");
+    }
     for (const p of pages) {
       const { liste, noms, broches, fils } = netsPage(p, emb);
+      const relie = new Set(liste.flatMap(n => n.noeuds));
+      for (const b of broches) {
+        if (SANS_REPERE.has(b.c.type)) continue;
+        const nds = pattes(b.c, b.i).map(pad => (b.c.ref || "?") + "." + pad);
+        if (nds.length !== 1 || relie.has(nds[0])) continue;
+        const P = netPcb(nds[0]);
+        if (!P || !routesP.has(P) || nbPads.get(P) !== 1 || noms.has(P.toUpperCase()) || P.length > NOM_NET) continue;
+        noms.add(P.toUpperCase());
+        bout(p, b.m, P, broches, fils);
+      }
       for (const n of liste) {
         if (n.prio || !n.noeuds.length) continue;
         const ps = new Set(n.noeuds.map(netPcb).filter(Boolean));
         if (ps.size !== 1) { if (ps.size > 1) rap.ecart("net du schéma relié à plusieurs nets de la carte (connectivité différente) : à vérifier"); continue; }
         const P = [...ps][0];
-        let nom = P.slice(0, 32).trim();
-        for (let k = 2; !nom || noms.has(nom.toUpperCase()) || NET_AUTO.test(nom); k++) nom = P.slice(0, 28).trim() + "_" + k;
+        let nom = P.slice(0, NOM_NET).trim();
+        for (let k = 2; !nom || noms.has(nom.toUpperCase()) || NET_AUTO.test(nom); k++) nom = P.slice(0, NOM_NET - 6).trim() + "_" + k;
         noms.add(nom.toUpperCase());
-        if (n.fils.length) { n.fils[0].net = nom; continue; }
-        const m = n.pts[0], pts = broches.map(b => b.m).concat(fils.flatMap(w => [[w.x1, w.y1], [w.x2, w.y2]]));
-        const Q = [[10, 0], [-10, 0], [0, 10], [0, -10], [20, 0], [-20, 0], [0, 20], [0, -20]].map(d => [m[0] + d[0], m[1] + d[1]]).find(q2 => {
-          const s = { x1: m[0], y1: m[1], x2: q2[0], y2: q2[1] };
-          return !pts.some(t => (t[0] === q2[0] && t[1] === q2[1]) || dedans(t, s)) && !fils.some(w => surSegment(q2, w));
-        });
-        if (!Q) { rap.ecart("pattes reliées sans fil et sans place pour un bout de fil : nom de net non aligné"); continue; }
-        p.wires.push({ x1: m[0], y1: m[1], x2: Q[0], y2: Q[1], net: nom });
-        fils.push(p.wires[p.wires.length - 1]);
-        rap.ecart("pattes reliées sans fil : un bout de fil porte le nom du net de la carte");
+        if (n.fils.length) n.fils[0].net = nom;
+        else bout(p, n.pts[0], nom, broches, fils);
       }
     }
     /* 2. le nom que la netlist du schéma donnera à chaque patte, et le net de la carte en face */
     const { parNoeud, relies, doubles } = nomsNetlist(pages, emb);
     if (doubles.size) rap.ecart("patte dans deux nets du schéma : laissée telle quelle");
     const eDeP = new Map(), pDeE = new Map(), ajoute = (m, k, v) => { if (!m.has(k)) m.set(k, new Set()); m.get(k).add(v); };
-    for (const [nd, E] of parNoeud) { const P = netPcb(nd); if (P !== undefined) { ajoute(eDeP, P, E); ajoute(pDeE, E, P); } }
+    for (const [nd, E] of parNoeud) { const P = netPcb(nd); if (P !== undefined) { ajoute(eDeP, P, E); if (P) ajoute(pDeE, E, P); } }
     if (eDeP.has("")) rap.ecart("patte reliée au schéma mais libre sur la carte : à vérifier");
     const renommer = new Map();
     for (const [P, es] of eDeP) {
       if (!P) continue;
       const E = [...es][0];
       if (es.size > 1 || pDeE.get(E).size > 1) { rap.ecart("net de la carte et nets du schéma qui ne se recouvrent pas (connectivité différente) : à vérifier"); continue; }
-      if (E.length > 64) { rap.ecart("nom de net du schéma de plus de 64 caractères : la carte ne peut pas le porter"); continue; }
+      if (E.length > NOM_NET) { rap.ecart("nom de net du schéma de plus de " + NOM_NET + " caractères : la carte ne peut pas le porter"); continue; }
       if (P !== E) renommer.set(P, E);
     }
     /* patte libre au schéma : son net « unconnected-… » de la carte s'efface, s'il n'est ni routé ni partagé */

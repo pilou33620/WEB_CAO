@@ -119,7 +119,7 @@ function normWire(w){
   if(x1===x2&&y1===y2)return null;
   const o={x1,y1,x2,y2};
   if(w.bus)o.bus=true;
-  const nm=String(w.net==null?"":w.net).trim().slice(0,32);
+  const nm=String(w.net==null?"":w.net).trim().slice(0,255);   // même borne que les nets du PCB (dNet)
   if(nm)o.net=nm;
   // réglages d'affichage de l'étiquette du net portée par ce fil
   if(w.lblHide)o.lblHide=1;

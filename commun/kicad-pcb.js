@@ -22,7 +22,7 @@
 
 const KICAD_PCB = (() => {
   const { enfant, enfants, nb, val, xy, q, ecrireS, uuid, Refus, VERSION_PCB } = KICAD;
-  const COORD = 1e5, FLECHE = 0.005, TOUR = 2 * Math.PI, NET_MAX = 64;
+  const COORD = 1e5, FLECHE = 0.005, TOUR = 2 * Math.PI, NET_MAX = 255;
   const r4 = v => Math.round(v * 1e4) / 1e4;
   const borne = (v, min, max, d = 0) => Math.min(max, Math.max(min, nb(v, d)));
   const co = v => borne(v, -COORD, COORD);
