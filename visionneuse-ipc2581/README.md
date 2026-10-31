@@ -895,6 +895,15 @@ fichier les nomme — le côté du composant n'est pas utilisé pour les deviner
 fichier qui décrit un boîtier du dessous avec un padstack ne mentionnant que
 `TOP` verra donc ses pastilles sur le dessus. C'est ce que dit le fichier.
 
+**Formes et placements venus d'autres outils (parseur 1.84).** Toutes les
+formes standard de la révision C sont lues, et le `<Location>` / `<Xform>` d'un
+`<Features>` place ce qu'il contient, comme le veut la norme. Trois lectures
+restent à confirmer sur un fichier réel : l'`Octagon` (`length` lu d'un sommet
+à l'opposé), un `Thermal` non rond (dessiné rond) et le pas des anneaux d'un
+`Moire`. Le bout carré ou nu d'une piste (`lineEnd`) se voit à l'écran ; les
+simulations le prennent rond. La polarité négative d'une couche
+(`polarity="NEGATIVE"`) n'est pas lue.
+
 **Une triplaque décentrée passe au solveur.** La formule IPC-2141A de la
 triplaque ne connaît que l'écart entre les deux plans, pas la position de la
 piste entre eux : sur un empilage 4 couches courant — âme épaisse d'un côté,

@@ -898,22 +898,24 @@ function mdlChemins(){
 
 /* Les traits d'une couche, groupés par largeur. Les largeurs sont arrondies au
    micron : deux pistes à 0,2000001 et 0,2 sont la même piste pour l'œil, et
-   les distinguer ferait deux groupes là où un suffit. */
+   les distinguer ferait deux groupes là où un suffit. Un bout carré ou nu
+   (« b », le lineEnd du fichier) fait son propre groupe : « 0.2|SQUARE »
+   (voir `poserTrait`). */
 function mdlCheminsDe(c){
   const traits=new Map();
-  const brin=function(w){
-    const cle=Math.round((w||0)*1000)/1000;
+  const brin=function(w,b){
+    const cle=Math.round((w||0)*1000)/1000+(b?"|"+b:"");
     let p=traits.get(cle);
     if(!p){p=new Path2D();traits.set(cle,p);}
     return p;
   };
   for(const t of c.pistes){
-    const p=brin(t.w), pts=t.p;
+    const p=brin(t.w,t.b), pts=t.p;
     p.moveTo(pts[0],pts[1]);
     for(let i=2;i+1<pts.length;i+=2)p.lineTo(pts[i],pts[i+1]);
   }
   for(const a of c.arcs){
-    const g=mdlArc(a), p=brin(a.w);
+    const g=mdlArc(a), p=brin(a.w,a.b);
     p.moveTo(g.cx+g.r*Math.cos(g.d),g.cy+g.r*Math.sin(g.d));
     p.arc(g.cx,g.cy,g.r,g.d,g.f,g.h);
   }
@@ -985,8 +987,8 @@ function mdlCheminsNet(i,mev){
   const garde=n.chemins.get(cle);
   if(garde)return garde;
 
-  const traits=new Map(), brin=function(w){
-    const k=Math.round((w||0)*1000)/1000;
+  const traits=new Map(), brin=function(w,b){
+    const k=Math.round((w||0)*1000)/1000+(b?"|"+b:"");
     let p2=traits.get(k);
     if(!p2){p2=new Path2D();traits.set(k,p2);}
     return p2;
@@ -1005,13 +1007,13 @@ function mdlCheminsNet(i,mev){
 
   for(const t of n.pistes){
     if(couche>=0&&t.c!==couche)continue;
-    const p2=brin(t.w), pts=t.p;
+    const p2=brin(t.w,t.b), pts=t.p;
     p2.moveTo(pts[0],pts[1]);
     for(let k=2;k+1<pts.length;k+=2)p2.lineTo(pts[k],pts[k+1]);
   }
   for(const a of n.arcs){
     if(couche>=0&&a.c!==couche)continue;
-    const arc=mdlArc(a), p2=brin(a.w);
+    const arc=mdlArc(a), p2=brin(a.w,a.b);
     p2.moveTo(arc.cx+arc.r*Math.cos(arc.d),arc.cy+arc.r*Math.sin(arc.d));
     p2.arc(arc.cx,arc.cy,arc.r,arc.d,arc.f,arc.h);
   }

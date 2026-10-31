@@ -234,6 +234,14 @@ function peindre(c,dpr,W,H){
   peindreEchelle(c,dpr,W,H);
 }
 
+/* Un groupe de traits (`mdlCheminsDe`) : sa clé est la largeur, suivie du
+   bout quand le fichier ne le dit pas rond (« 0.2|SQUARE », « 0.2|NONE »). */
+function poserTrait(c,cle,min){
+  const [w,b]=String(cle).split("|");
+  c.lineCap=b==="SQUARE"?"square":b==="NONE"?"butt":"round";
+  c.lineWidth=Math.max(+w||0,min);
+}
+
 function peindreCouche(c,dpr,couche){
   poserMonde(c,dpr);
   const min=1/V.vue.scale;                   // un trait ne descend pas sous 1 px
@@ -252,9 +260,9 @@ function peindreCouche(c,dpr,couche){
   }
   if(V.aff.pistes){
     c.strokeStyle=couche.couleur;
-    c.lineCap="round"; c.lineJoin="round";
-    for(const [w,chemin] of couche.chemins.traits){
-      c.lineWidth=Math.max(w||0,min);
+    c.lineJoin="round";
+    for(const [cle,chemin] of couche.chemins.traits){
+      poserTrait(c,cle,min);
       c.stroke(chemin);
     }
   }
@@ -320,8 +328,8 @@ function peindreNet(c,dpr,net,mev){
   c.globalAlpha=xtSurCuivre?0.35:0.85; c.lineCap="round"; c.lineJoin="round";
   if(g.plans)for(const p of g.plans)c.fill(p,"evenodd");
   if(g.pads)c.fill(g.pads,"nonzero");
-  for(const [w,chemin] of g.traits){
-    c.lineWidth=Math.max(w||0,min);
+  for(const [cle,chemin] of g.traits){
+    poserTrait(c,cle,min);
     c.stroke(chemin);
   }
   if(g.trous){

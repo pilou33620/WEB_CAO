@@ -971,10 +971,13 @@ function ipc2581Document(opts){
     return s.k;
   };
   const ligne=(x1,y1,x2,y2,w)=>["Features",[],[["Line",[["startX",X(x1)],["startY",Y(y1)],["endX",X(x2)],["endY",Y(y2)]],[trait(w)]]]];
-  const polyligne=(P,w,ferme)=>{
-    const k=[["PolyBegin",[["x",X(P[0].x)],["y",Y(P[0].y)]]]];
-    for(let i=1;i<P.length;i++)k.push(["PolyStepSegment",[["x",X(P[i].x)],["y",Y(P[i].y)]]]);
-    if(ferme)k.push(["PolyStepSegment",[["x",X(P[0].x)],["y",Y(P[0].y)]]]);
+  /* `local` : P relatif au <Location> du <Features> (Y vers le bas, comme
+     l'éditeur), et non en coordonnées de la carte. */
+  const polyligne=(P,w,ferme,local)=>{
+    const tx=local?(p=>ipcN(p.x)):(p=>X(p.x)), ty=local?(p=>ipcN(-p.y)):(p=>Y(p.y));
+    const k=[["PolyBegin",[["x",tx(P[0])],["y",ty(P[0])]]]];
+    for(let i=1;i<P.length;i++)k.push(["PolyStepSegment",[["x",tx(P[i])],["y",ty(P[i])]]]);
+    if(ferme)k.push(["PolyStepSegment",[["x",tx(P[0])],["y",ty(P[0])]]]);
     k.push(trait(w));
     return ["Polyline",[],k];
   };
@@ -982,10 +985,12 @@ function ipc2581Document(opts){
     (trous||[]).map(t=>["Cutout",[],poly(t,null)]))];
   /* Un texte : ses traits, ceux du Gerber (`textStrokes`), et le texte
      lui-même, pour qu'un outil le lise et le cherche. Traits et texte vont
-     ensemble dans un <UserSpecial>. */
+     ensemble dans un <UserSpecial>, RELATIFS au <Location> du <Features>
+     comme le veut le XSD (ils étaient en absolu jusqu'à la révision 1 du
+     <SoftwarePackage>, que le lecteur reconnaît). */
   const texte=(txt,x,y,h,mir,rot,w)=>{
     const k=[];
-    for(const P of textStrokes(txt,x,y,h,mir,rot||0))if(P.length>=2)k.push(polyligne(P,w,false));
+    for(const P of textStrokes(txt,0,0,h,mir,rot||0))if(P.length>=2)k.push(polyligne(P,w,false,true));
     const lg=Math.max(h,String(txt).length*h*5/6-h/6);
     k.push(["Text",[["textString",txt],["fontSize",String(Math.max(1,Math.round(h/0.3528)))]],
       [xform(-(rot||0),mir),["BoundingBox",[["lowerLeftX",ipcN(-lg/2)],["lowerLeftY",ipcN(-h/2)],
@@ -1267,7 +1272,7 @@ function ipc2581Document(opts){
       ["Person",[["name",String(auteur)],["enterpriseRef","WEB_CAO"],["roleRef","Proprietaire"]]]]],
     ["HistoryRecord",[["number","1"],["origination",date],["software","Editeur PCB (WEB_CAO)"],["lastChange",date]],[
       ["FileRevision",[["fileRevisionId",String(revision)],["comment","Export IPC-2581 de l'editeur PCB"]],[
-        ["SoftwarePackage",[["name","Editeur PCB"],["vendor","WEB_CAO"],["revision","1"]],[
+        ["SoftwarePackage",[["name","Editeur PCB"],["vendor","WEB_CAO"],["revision","2"]],[
           ["Certification",[["certificationStatus","SELFTEST"]]]]]]]]],
     avecBom?["Bom",[["name",BOM]],[["BomHeader",[["assembly",STEP],["revision",String(revision)]],[["StepRef",[["name",STEP]]]]]]
       .concat(bomItems)]:null,

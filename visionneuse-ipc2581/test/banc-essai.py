@@ -1346,6 +1346,230 @@ T(u"un .sNp en matrice Upper est refuse au lieu d'etre mal lu", touchstone_trian
 
 
 # =============================================================================
+# Compatibilite avec les autres outils de CAO (parseur 1.84)
+# -----------------------------------------------------------------------------
+# Une carte minimale par sujet. Chaque valeur se verifie a la main : un trait
+# de 2 mm pose en (10, 5) et tourne de 90 degres finit en (10, 7) ; un Donut
+# de 2 et 1 mm couvre pi * (1 - 0,25) mm2.
+# =============================================================================
+def _mini(dico=u"", step=u"", unites=u"MILLIMETER", logiciel=u"", lignes=u""):
+    return (u"""<?xml version="1.0" encoding="UTF-8"?>
+<IPC-2581 revision="C" xmlns="http://webstds.ipc.org/2581">
+ <Content roleRef="owner">
+  <DictionaryLineDesc units="MILLIMETER">
+   <EntryLineDesc id="l2"><LineDesc lineEnd="SQUARE" lineWidth="0.2"/></EntryLineDesc>%s
+  </DictionaryLineDesc>
+  %s
+ </Content>%s
+ <Ecad name="mini">
+  <CadHeader units="%s"/>
+  <CadData>
+   <Layer name="TOP" layerFunction="SIGNAL" side="TOP"/>
+   <Step name="MINI">%s</Step>
+  </CadData>
+ </Ecad>
+</IPC-2581>""" % (lignes, dico, logiciel, unites, step)).encode("utf-8")
+
+
+def _modele(octets):
+    return ipc2581_json.ipc2581_en_dict(octets, "mini.xml")
+
+
+def _aire(pl):
+    pts = list(zip(pl[0::2], pl[1::2]))
+    return abs(sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(pts, pts[1:] + pts[:1]))) / 2
+
+
+def features_place_son_contenu():
+    m = _modele(_mini(step=u"""
+    <LayerFeature layerRef="TOP"><Set net="A">
+     <Features><Xform rotation="90"/><Location x="10" y="5"/>
+      <Line startX="0" startY="0" endX="2" endY="0"><LineDesc lineWidth="0.1"/></Line>
+     </Features>
+     <Features><Location x="1" y="1"/>
+      <Contour><Polygon><PolyBegin x="0" y="0"/><PolyStepSegment x="1" y="0"/>
+       <PolyStepSegment x="1" y="1"/><PolyStepSegment x="0" y="0"/></Polygon></Contour>
+     </Features>
+     <Features><Xform mirror="true"/><Location x="20" y="0"/>
+      <Arc startX="1" startY="0" endX="0" endY="1" centerX="0" centerY="0" clockwise="false">
+       <LineDesc lineWidth="0.1"/></Arc>
+     </Features>
+    </Set></LayerFeature>"""))
+    p = m["pistes"][0]["p"]
+    for vu, attendu, quoi in zip(p, [10, 5, 10, 7], ("x1", "y1", "x2", "y2")):
+        proche(vu, attendu, u"trait pose et tourne (%s)" % quoi)
+    proche(m["plans"][0]["g"][0]["o"][0], 1.0, u"contour decale (x du premier sommet)")
+    a = m["arcs"][0]
+    proche(a["s"][0], 19.0, u"arc miroite : debut en x = 20 - 1")
+    egal(a["h"], 1, u"le miroir inverse le sens de l'arc")
+
+
+T(u"<Features> : son Location et son Xform placent ce qu'il contient", features_place_son_contenu)
+
+
+def features_forme_posee():
+    m = _modele(_mini(dico=u"""<DictionaryStandard units="MILLIMETER">
+   <EntryStandard id="r"><RectCenter width="2" height="1"/></EntryStandard>
+  </DictionaryStandard>""", step=u"""
+    <LayerFeature layerRef="TOP"><Set net="A">
+     <Features><Xform rotation="45"/><Location x="3" y="4"/><StandardPrimitiveRef id="r"/></Features>
+     <Features><Location x="7" y="8"/><Circle diameter="0.5"/></Features>
+    </Set></LayerFeature>"""))
+    egal(len(m["pads"]), 2, u"deux formes posees -> deux pastilles")
+    q, c = m["pads"]
+    egal((q["x"], q["y"], q["r"]), (3, 4, 45), u"place et rotation de la forme par reference")
+    forme = m["padstacks"][c["ps"]]["pads"][0]["f"]
+    egal(m["formes"][forme]["t"], "CIRCLE", u"la forme en ligne est rangee comme forme")
+    proche(m["formes"][forme]["d"], 0.5, u"son diametre")
+
+
+T(u"<Features> : une forme par reference ou en ligne devient une pastille", features_forme_posee)
+
+
+_TEXTE_US = u"""
+    <LayerFeature layerRef="TOP"><Set>
+     <Features><Location x="10" y="10"/><UserSpecial>
+      <Polyline><PolyBegin x="%s" y="0"/><PolyStepSegment x="%s" y="1"/><LineDescRef id="l2"/></Polyline>
+     </UserSpecial></Features>
+    </Set></LayerFeature>"""
+
+
+def userspecial_editeur_revision_1():
+    logiciel = (u'<HistoryRecord number="1"><FileRevision fileRevisionId="1">'
+                u'<SoftwarePackage name="Editeur PCB" vendor="WEB_CAO" revision="%s"/>'
+                u'</FileRevision></HistoryRecord>')
+    ancien = _modele(_mini(step=_TEXTE_US % (u"10", u"10"), logiciel=logiciel % u"1"))
+    proche(ancien["pistes"][0]["p"][0], 10.0, u"revision 1 : traits en absolu, non decales")
+    neuf = _modele(_mini(step=_TEXTE_US % (u"0", u"0"), logiciel=logiciel % u"2"))
+    proche(neuf["pistes"][0]["p"][0], 10.0, u"revision 2 : traits relatifs au Location")
+    egal(neuf["pistes"][0].get("b"), "SQUARE", u"lineEnd SQUARE du dictionnaire -> \"b\"")
+
+
+T(u"<UserSpecial> : l'export de l'editeur revision 1 garde ses traits absolus", userspecial_editeur_revision_1)
+
+
+_FORMES = u"""<DictionaryStandard units="MILLIMETER">
+   <EntryStandard id="oct"><Octagon length="2"/></EntryStandard>
+   <EntryStandard id="hex"><Hexagon length="2"/></EntryStandard>
+   <EntryStandard id="ell"><Ellipse width="4" height="2"/></EntryStandard>
+   <EntryStandard id="dia"><Diamond width="2" height="1"/></EntryStandard>
+   <EntryStandard id="tri"><Triangle base="2" height="1"/></EntryStandard>
+   <EntryStandard id="rco"><RectCorner lowerLeftX="0" lowerLeftY="0" upperRightX="2" upperRightY="1"/></EntryStandard>
+   <EntryStandard id="but"><Butterfly shape="SQUARE" side="2"/></EntryStandard>
+   <EntryStandard id="don"><Donut shape="ROUND" outerDiameter="2" innerDiameter="1"/></EntryStandard>
+   <EntryStandard id="thm"><Thermal shape="ROUND" outerDiameter="2" innerDiameter="1"
+                   spokeCount="4" spokeWidth="0.2" spokeStartAngle="45"/></EntryStandard>
+   <EntryStandard id="moi"><Moire diameter="4" ringWidth="0.2" ringGap="0.3" ringNumber="3"
+                   lineWidth="0.1" lineLength="5" lineAngle="0"/></EntryStandard>
+   <EntryStandard id="trou"><Contour><Polygon><PolyBegin x="-1" y="-1"/><PolyStepSegment x="1" y="-1"/>
+     <PolyStepSegment x="1" y="1"/><PolyStepSegment x="-1" y="1"/><PolyStepSegment x="-1" y="-1"/></Polygon>
+     <Cutout><PolyBegin x="-0.5" y="-0.5"/><PolyStepSegment x="0.5" y="-0.5"/>
+     <PolyStepSegment x="0.5" y="0.5"/><PolyStepSegment x="-0.5" y="-0.5"/></Cutout></Contour></EntryStandard>
+  </DictionaryStandard>"""
+
+
+def formes_standard_du_xsd():
+    import math
+    m = _modele(_mini(dico=_FORMES))
+    f, u = m["formes"], m["formesuser"]
+    for i in ("oct", "hex", "ell", "dia", "tri", "rco", "but"):
+        egal(f[i]["t"], "POLYGON", u"%s rendu en POLYGON" % i)
+    proche(_aire(f["dia"]["p"]), 1.0, u"aire du losange 2 x 1")
+    proche(_aire(f["tri"]["p"]), 1.0, u"aire du triangle 2 x 1")
+    proche(_aire(f["rco"]["p"]), 2.0, u"aire du RectCorner 2 x 1")
+    proche(_aire(f["oct"]["p"]), 2 * math.sqrt(2), u"octogone de 2 d'un sommet a l'oppose", tol=1e-4)
+    proche(_aire(f["ell"]["p"]), math.pi * 2, u"aire de l'ellipse 4 x 2", tol=0.02)
+    d = u["don"]["plans"][0]
+    egal(len(d["t"]), 1, u"le Donut a son trou")
+    proche(_aire(d["o"]) - _aire(d["t"][0]), math.pi * 0.75, u"aire du Donut", tol=0.01)
+    secteurs = u["thm"]["plans"]
+    egal(len(secteurs), 4, u"Thermal : un secteur entre deux fentes")
+    vrai(sum(_aire(s["o"]) for s in secteurs) < math.pi * 0.75, u"les fentes retirent du cuivre")
+    egal(len(u["moi"]["plans"]), 5, u"Moire : trois anneaux et deux traits")
+    egal(len(u["trou"]["plans"][0]["t"]), 1, u"Contour a decoupe : forme utilisateur avec son trou")
+
+
+T(u"toutes les formes standard du XSD rev. C sont lues", formes_standard_du_xsd)
+
+
+def taille_d_une_forme_utilisateur():
+    m = _modele(_mini(dico=_FORMES, step=u"""
+    <LayerFeature layerRef="TOP"><Set net="A"><Pad>
+     <Location x="0" y="0"/><StandardPrimitiveRef id="don"/></Pad></Set></LayerFeature>"""))
+    ps = m["padstacks"][m["pads"][0]["ps"]]
+    proche(ps["pads"][0]["d"], 2.0, u"une pastille Donut mesure son diametre exterieur", tol=1e-3)
+
+
+T(u"une pastille de forme utilisateur (Donut) a une taille", taille_d_une_forme_utilisateur)
+
+
+def pastille_thermique_n_ecrase_pas():
+    m = _modele(_mini(dico=_FORMES.replace(u"</DictionaryStandard>",
+                u'<EntryStandard id="c1"><Circle diameter="1"/></EntryStandard></DictionaryStandard>'),
+                step=u"""
+    <PadStackDef name="PS1">
+     <PadstackHoleDef name="h" diameter="0.5" platingStatus="PLATED"/>
+     <PadstackPadDef layerRef="TOP" padUse="REGULAR"><StandardPrimitiveRef id="c1"/></PadstackPadDef>
+     <PadstackPadDef layerRef="TOP" padUse="THERMAL"><StandardPrimitiveRef id="thm"/></PadstackPadDef>
+    </PadStackDef>"""))
+    pad = m["padstacks"]["PS1"]["pads"][0]
+    egal(pad["f"], "c1", u"la pastille REGULAR reste celle de la couche")
+
+
+T(u"padUse=\"THERMAL\" n'ecrase plus la pastille de sa couche", pastille_thermique_n_ecrase_pas)
+
+
+def broches_en_repli():
+    seul = _r1(ipc2581_json.ipc2581_en_dict(OCTETS, "carte.xml"))
+    egal(len(seul.get("pads", [])), 2, u"R1 sans pastille dans les calques : la forme de ses broches")
+    xml = CARTE.replace(u'<StandardPrimitiveRef id="c100"/>\n      </Pad>',
+                        u'<StandardPrimitiveRef id="c100"/>\n       <PinRef componentRef="R1" pin="1"/>\n      </Pad>')
+    vrai(xml != CARTE, u"la carte d'essai a bien ete modifiee")
+    pose = _r1(ipc2581_json.ipc2581_en_dict(xml.encode("utf-8"), "carte.xml"))
+    egal(len(pose.get("pads", [])), 0, u"R1 a une pastille dans les calques : rien en double")
+
+
+T(u"la forme d'une broche de <Package> ne sert qu'en repli", broches_en_repli)
+
+
+def remplissage_par_reference():
+    m = _modele(_mini(dico=u"""<DictionaryFillDesc units="MILLIMETER">
+   <EntryFillDesc id="creux"><FillDesc fillProperty="HOLLOW"/></EntryFillDesc>
+  </DictionaryFillDesc>
+  <DictionaryStandard units="MILLIMETER">
+   <EntryStandard id="c"><Circle diameter="1"><FillDescRef id="creux"/></Circle></EntryStandard>
+  </DictionaryStandard>"""))
+    egal(m["formes"]["c"].get("f"), "HOLLOW", u"<FillDescRef> lu dans DictionaryFillDesc")
+
+
+T(u"<FillDescRef> renvoie au dictionnaire des remplissages", remplissage_par_reference)
+
+
+def unites_propres_d_un_dictionnaire():
+    m = _modele(_mini(dico=u"""<DictionaryStandard units="INCH">
+   <EntryStandard id="c"><Circle diameter="0.04"/></EntryStandard>
+  </DictionaryStandard>"""))
+    proche(m["formes"]["c"]["d"], 1.016, u"0,04 pouce dans un fichier en millimetres", tol=1e-3)
+
+
+T(u"un dictionnaire en pouces dans un fichier en millimetres est converti", unites_propres_d_un_dictionnaire)
+
+
+def arc_decoupe_selon_l_unite():
+    import xml.etree.ElementTree as ET
+    from ipc2581_parser import IPC2581Parser
+    lecteur = IPC2581Parser("x.xml")
+    lecteur.design.units = "INCH"
+    poly = ET.fromstring(u'<Polygon><PolyBegin x="1" y="0"/>'
+                         u'<PolyStepCurve x="0" y="1" centerX="0" centerY="0" clockwise="false"/></Polygon>')
+    # un quart de cercle de 1 pouce : 40 mm d'arc, une corde par 0,05 mm (360 au plus)
+    vrai(len(lecteur._parse_polygon(poly)) > 300, u"arc en pouces decoupe finement")
+
+
+T(u"un arc de polygone se decoupe tous les 0,05 mm, meme en pouces", arc_decoupe_selon_l_unite)
+
+
+# =============================================================================
 print(u"-" * 62)
 if ECHECS:
     print(u"%d cas, %d ECHEC(S)" % (len(CAS), len(ECHECS)))
