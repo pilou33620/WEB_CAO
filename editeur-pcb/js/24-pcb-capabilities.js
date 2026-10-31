@@ -1190,7 +1190,8 @@ function pcbAuditBoardAgainstMfg(profile){
   let minSilkLineWidth = Infinity;
   let minSilkTextH = Infinity;
   if(Array.isArray(S.drawings)){
-    for(const d of S.drawings){
+    for(const d of dessinsMonde()){
+      if(!/^silk/.test(d.layer)) continue;       // Fab, Courtyard, utilisateur : pas imprimés
       if(d.shape === "text" || d.type === "text"){
         const h = d.height || d.size || 1.5;
         if(h < minSilkTextH) minSilkTextH = h;

@@ -37,7 +37,7 @@ if (fs.existsSync(bundle)) {
     require(path.join(RACINE, "commun", "test", "dom-stub.js")).install({ panels: { props: "Propriétés" }, canvasId: "board" });
     global.BroadcastChannel = function () {};
     global.BroadcastChannel.prototype.postMessage = global.BroadcastChannel.prototype.close = function () {};
-    (0, eval)(fs.readFileSync(bundle, "utf8").replace(/^"use strict";/, "") + "\nglobalThis.__pcb={normDoc,padsWorldCalc};");
+    (0, eval)(fs.readFileSync(bundle, "utf8").replace(/^"use strict";/, "") + "\nglobalThis.__pcb={normDoc,padsWorldCalc,fpDessinsMonde};");
     PCB = global.__pcb;
   } catch (e) { PCB = null; }
 }
@@ -92,6 +92,27 @@ function comparerMonde(arbre, doc, quoi) {
       }
     });
   });
+  /* chaque fp_line de sérigraphie, Fab, Courtyard ou User d'une empreinte à cuivre : au monde KiCad = dessin de l'éditeur, même couche */
+  const COUCHE = { "F.SilkS": "silkT", "B.SilkS": "silkB", "F.Fab": "fabT", "B.Fab": "fabB", "F.CrtYd": "crtT", "B.CrtYd": "crtB", "Dwgs.User": "dwgs", "Cmts.User": "cmts" };
+  const autre = l => /^(silk|fab|crt)[TB]$/.test(l) ? l.slice(0, -1) + (l.endsWith("B") ? "T" : "B") : l;
+  const fpsK = enfs(arbre, "footprint").filter(f => enfs(f, "pad").some(p => p[2] !== "np_thru_hole" && (enf(p, "layers") || []).some(c => /Cu$/.test(c))));
+  const nf = PCB ? PCB.normDoc(JSON.parse(JSON.stringify(doc))).fps : null;
+  let traits = 0;
+  doc.fps.forEach((fp, i) => {
+    const at = enf(fpsK[i], "at"), X = +at[1], Y = +at[2], A = +(at[3] || 0);
+    const lignes = (fp.dessins || []).filter(d => d.shape === "line").map(d => ({ l: fp.side ? autre(d.layer) : d.layer, a: mondeOutil(fp, d.x1, d.y1), b: mondeOutil(fp, d.x2, d.y2) }));
+    const reel = nf ? PCB.fpDessinsMonde(nf[i]).filter(d => d.shape === "line") : null;
+    for (const e of enfs(fpsK[i], "fp_line")) {
+      const l = COUCHE[(enf(e, "layer") || [])[1]], s = enf(e, "start"), f = enf(e, "end");
+      if (!l || (+s[1] === +f[1] && +s[2] === +f[2])) continue;
+      const [u1, v1] = rk(+s[1], +s[2], A), [u2, v2] = rk(+f[1], +f[2], A), a = [X + u1, Y + v1], b = [X + u2, Y + v2];
+      const ok = g => g.l === l && proche(g.a[0], a[0]) && proche(g.a[1], a[1]) && proche(g.b[0], b[0]) && proche(g.b[1], b[1]);
+      verifier(lignes.some(ok), quoi + " " + fp.ref + " : trait " + l + " au monde ≠ KiCad");
+      if (reel) verifier(reel.some(d => ok({ l: d.layer, a: [d.x1, d.y1], b: [d.x2, d.y2] })), quoi + " " + fp.ref + " : trait " + l + " (fpDessinsMonde)");
+      traits++;
+    }
+  });
+  if (/fixture/.test(quoi)) verifier(traits === 4, quoi + " : traits d'empreinte comparés");
   if (PCB) {                                       // le vrai calcul de l'éditeur, sur le document normalisé
     const n = PCB.normDoc(JSON.parse(JSON.stringify(doc)));
     verifier(n.fps.length === doc.fps.length && n.tracks.length <= doc.tracks.length, quoi + " : normDoc garde les composants");
@@ -116,7 +137,17 @@ function allerRetour(doc, quoi) {
       verifier(proche(a[0], b[0]) && proche(a[1], b[1]), quoi + " retour : " + fp.ref + " pastille " + j + " déplacée");
       verifier((fp.nets[q.n] || "") === (f2.nets[f2.pads[j].n] || ""), quoi + " retour : " + fp.ref + " pastille " + j + " net");
     });
+    // dessins d'empreinte : autant par couche et par forme, aux mêmes places ; le corps écrit en Fab s'ajoute s'il n'y en avait pas
+    const compte = f => { const m = {}; for (const g of f.dessins || []) m[g.layer + g.shape] = (m[g.layer + g.shape] || 0) + 1; return m; };
+    const c1 = compte(fp), c2 = compte(f2);
+    for (const k of new Set(Object.keys(c1).concat(Object.keys(c2))))
+      verifier((c1[k] || 0) === (c2[k] || 0) || (k === "fabTrect" && !Object.keys(c1).some(x => /^fab/.test(x)) && c2[k] === 1),
+               quoi + " retour : " + fp.ref + " dessins " + k + " " + (c1[k] || 0) + " / " + (c2[k] || 0));
+    const l1 = (fp.dessins || []).find(g => g.shape === "line"), l2 = l1 && (f2.dessins || []).find(g => g.shape === "line" && g.layer === l1.layer);
+    if (l1) verifier(l2 && proche(mondeOutil(fp, l1.x1, l1.y1)[0], mondeOutil(f2, l2.x1, l2.y1)[0]) && proche(mondeOutil(fp, l1.x1, l1.y1)[1], mondeOutil(f2, l2.x1, l2.y1)[1]),
+                     quoi + " retour : " + fp.ref + " premier trait déplacé");
   });
+  verifier(doc2.drawings.length === doc.drawings.length && doc.drawings.every((g, i) => g.layer === doc2.drawings[i].layer), quoi + " retour : dessins de carte");
   verifier(doc2.tracks.length === doc.tracks.length && doc.tracks.every((t, i) => t.net === doc2.tracks[i].net && t.l === doc2.tracks[i].l &&
            Math.abs((t.ca || 0) - (doc2.tracks[i].ca || 0)) * Math.hypot(t.x2 - t.x1, t.y2 - t.y1) <= 1e-3), quoi + " retour : pistes");
   verifier(doc2.vias.length === doc.vias.length && doc.vias.every((v, i) => v.net === doc2.vias[i].net && v.a === doc2.vias[i].a && v.b === doc2.vias[i].b), quoi + " retour : vias");
@@ -146,12 +177,17 @@ function fixture(k10) {
     (fp_line (start -0.8 -0.4) (end 0.8 -0.4) (stroke (width 0.1) (type solid)) (layer "F.Fab"))
     (fp_line (start -0.8 0.4) (end 0.8 0.4) (stroke (width 0.1) (type solid)) (layer "F.Fab"))
     (fp_line (start -0.2 -0.7) (end 0.2 -0.7) (stroke (width 0.12) (type solid)) (layer "F.SilkS"))
+    (fp_rect (start -1.5 -0.75) (end 1.5 0.75) (stroke (width 0.05) (type solid)) (fill no) (layer "F.CrtYd"))
+    (fp_circle (center 0 0) (end 0.3 0) (stroke (width 0.1) (type solid)) (fill no) (layer "F.Fab"))
     (pad "1" smd roundrect (at -0.825 0 90) (size 0.8 0.95) (layers "F.Cu" "F.Mask" "F.Paste") (roundrect_rratio 0.25) ${n(2, true)})
     (pad "2" smd roundrect (at 0.825 0 90) (size 0.8 0.95) (layers "F.Cu" "F.Mask" "F.Paste") (roundrect_rratio 0.25) ${n(3, true)}))
   (footprint "Package_TO_SOT_SMD:SOT-23" (layer "B.Cu") (at 20 10 30)
     (property "Reference" "Q1" (at 0 -2.5 30) (layer "B.SilkS") (effects (font (size 1 1) (thickness 0.15)) (justify mirror)))
     (property "Value" "BSS138" (at 0 2.5 30) (layer "B.Fab"))
     (fp_rect (start -0.7 -1.5) (end 0.7 1.5) (stroke (width 0.1) (type solid)) (fill no) (layer "B.Fab"))
+    (fp_poly (pts (xy -1 -2) (xy 1 -2) (xy 1 2) (xy -1 2)) (stroke (width 0.05) (type solid)) (fill no) (layer "B.CrtYd"))
+    (fp_line (start -0.5 -1.8) (end 0.5 -1.6) (stroke (width 0.12) (type solid)) (layer "B.SilkS"))
+    (fp_text user "\${REFERENCE}" (at 0 0.5 30) (layer "B.Fab") (effects (font (size 0.5 0.5) (thickness 0.08)) (justify mirror)))
     (pad "1" smd rect (at -0.95 -1.1 30) (size 0.6 0.7) (layers "B.Cu" "B.Mask" "B.Paste") ${n(3, true)})
     (pad "2" smd rect (at 0.95 -1.1 30) (size 0.6 0.7) (layers "B.Cu" "B.Mask" "B.Paste") ${n(1, true)})
     (pad "3" smd rect (at 0 1.1 75) (size 0.6 0.7) (layers "B.Cu" "B.Mask" "B.Paste") ${n(2, true)}))
@@ -176,6 +212,9 @@ function fixture(k10) {
   (gr_line (start 30 25) (end 0 25) (stroke (width 0.05) (type solid)) (layer "Edge.Cuts"))
   (gr_rect (start 5 5) (end 8 8) (stroke (width 0.05) (type solid)) (fill no) (layer "Edge.Cuts"))
   (gr_text "TEST" (at 20 20 90) (layer "F.SilkS") (effects (font (size 1.2 1.2) (thickness 0.2))))
+  (gr_line (start 2 22) (end 10 22) (stroke (width 0.1) (type solid)) (layer "Cmts.User"))
+  (gr_rect (start 1 18) (end 4 20) (stroke (width 0.1) (type solid)) (fill no) (layer "F.Fab"))
+  (gr_text "NOTE" (at 5 23) (layer "User.3") (effects (font (size 1 1) (thickness 0.15))))
 )`;
 }
 const PRO = { board: { design_settings: { rules: { min_copper_edge_clearance: 0.3, min_hole_to_hole: 0.2 } } },
@@ -208,9 +247,23 @@ for (const k10 of [false, true]) {
   verifier(doc.zones.length === 1 && doc.zones[0].l === 1 && doc.zones[0].net === "GND" && doc.cuts.length === 2 && doc.cuts[1].l === 1, quoi + " : zone et zone interdite (deux couches)");
   verifier(proche(aire(doc.board.pts), 1000 - 100 + Math.PI * 25, 0.1) && doc.board.cutouts.length === 1 && proche(aire(doc.board.cutouts[0]), 9),
            quoi + " : contour avec un arc, découpe intérieure");
-  verifier(doc.drawings.some(d => d.text === "TEST" && d.rot === 270 && d.size === 1.2) && doc.drawings.some(d => d.text === "R1" && d.layer === "silkT") &&
-           doc.drawings.some(d => d.text === "Q1" && d.layer === "silkB") && !doc.drawings.some(d => d.text === "J1") && doc.drawings.some(d => d.shape === "line" && d.width === 0.12),
-           quoi + " : sérigraphie des composants et de la carte dans les dessins");
+  const couche = (fp, l) => (fp.dessins || []).filter(d => d.layer === l);
+  verifier(couche(r1, "silkT").some(d => d.shape === "line" && d.width === 0.12 && d.x1 === -0.2 && d.y1 === -0.7) &&
+           couche(r1, "silkT").some(d => d.text === "${REFERENCE}" && d.rot === 0) && couche(r1, "fabT").some(d => d.text === "${VALUE}") &&
+           couche(r1, "crtT").length === 1 && couche(r1, "crtT")[0].shape === "rect" && couche(r1, "fabT").filter(d => d.shape === "line").length > 10,
+           quoi + " : sérigraphie, Fab (cercle en cordes) et Courtyard de R1 dans ses dessins, repère local");
+  verifier(couche(q1, "silkT").some(d => d.text === "${REFERENCE}" && d.rot === 180) && couche(q1, "fabT").some(d => d.shape === "rect" && d.y1 === 1.5 && d.y2 === -1.5) &&
+           couche(q1, "fabT").some(d => d.text === "${REFERENCE}" && d.size === 0.5) && couche(q1, "crtT").filter(d => d.shape === "line").length === 4 &&
+           !q1.dessins.some(d => /B$/.test(d.layer)) && !j1.dessins.some(d => d.text === "${REFERENCE}"),
+           quoi + " : Q1 dessous, dessins vus posé dessus (y opposé, faces échangées) ; repère caché de J1 écarté");
+  verifier(doc.drawings.some(d => d.text === "TEST" && d.rot === 270 && d.size === 1.2) && doc.drawings.some(d => d.layer === "cmts" && d.shape === "line") &&
+           doc.drawings.some(d => d.layer === "fabT" && d.shape === "rect") && doc.drawings.some(d => d.layer === "user" && d.text === "NOTE") &&
+           doc.drawings.length === 4 && rap.liste().some(m => /regroupées/.test(m)) && !rap.liste().some(m => /Fab, Courtyard/.test(m)),
+           quoi + " : dessins de carte sur leurs couches, écarts à jour");
+  /* dessins au monde = KiCad : le trait de sérigraphie de Q1 (dessous, 30°) et le texte de R1 */
+  const sq = couche(q1, "silkT").find(d => d.shape === "line"), [ka, kb] = [rk(-0.5, -1.8, 30), rk(0.5, -1.6, 30)];
+  const [wa, wb] = [mondeOutil(q1, sq.x1, sq.y1), mondeOutil(q1, sq.x2, sq.y2)];
+  verifier(proche(wa[0], 20 + ka[0]) && proche(wa[1], 10 + ka[1]) && proche(wb[0], 20 + kb[0]) && proche(wb[1], 10 + kb[1]), quoi + " : trait de Q1 au monde = KiCad");
   verifier(doc.fps.every(f => f.silk === false), quoi + " : sérigraphie automatique coupée");
   verifier(doc.classes[0].name === "Default" && doc.classes[1].clr === 0.15 && doc.classes[1].w === 0.5 &&
            doc.netClass.SIG === "pwr" && doc.netClass.VCC === "pwr" && doc.netClass.GND === "pwr" && doc.rule.edge === 0.3 && doc.rule.hole === 0.2,

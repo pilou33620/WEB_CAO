@@ -55,16 +55,16 @@ function buildLayers(){
        '<span class="eye" data-eye="'+i+'">'+(L.vis?"◉":"○")+'</span></div>';
   }
   h+='<div class="cat">Couches techniques</div>';
-  const tech=[["silkT","Sérigraphie dessus","F.SilkS"],["silkB","Sérigraphie dessous","B.SilkS"],
+  const tech=DRW_COUCHES.map(c=>c.slice(0,3)).concat([
               ["maskT","Masque dessus","F.Mask"],["maskB","Masque dessous","B.Mask"],
               ["pasteT","Pâte dessus","F.Paste"],["pasteB","Pâte dessous","B.Paste"],
               ["ptst","Points de test","PTST"],
               ["edge","Contour de carte","Board Outline"],["plane","Zones de cuivre","Zones"],
-              ["rats","Chevelu","Ratsnest"],["drc","Erreurs DRC","DRC"]];
+              ["rats","Chevelu","Ratsnest"],["drc","Erreurs DRC","DRC"]]);
   for(const [k,n,id] of tech)
     h+='<div class="lay'+(S.show[k]?"":" off")+'" data-show="'+k+'">'+
        '<i class="sw" style="background:'+
-       ({silkT:C_SILK_T,silkB:C_SILK_B,maskT:C_MASK,maskB:C_MASK,
+       (DRW_COUL[k]||{maskT:C_MASK,maskB:C_MASK,
          pasteT:C_PASTE,pasteB:C_PASTE,ptst:C_PTST,edge:C_EDGE,plane:"#3a6b58",
          rats:C_RATS,drc:C_ERR}[k])+'"></i>'+
        '<span class="nm">'+n+'</span><span class="tp">'+id+'</span>'+
@@ -96,7 +96,7 @@ function buildLayers(){
    IPC-2581. Cuivre seul garde les zones et le contour de carte comme repère. */
 function couchesToutes(v,cuivreSeul){
   for(const L of S.cuL)L.vis=cuivreSeul||v;
-  for(const k of ["silkT","silkB","maskT","maskB","pasteT","pasteB","edge","plane","rats","drc"])
+  for(const k of DRW_COUCHES.map(c=>c[0]).concat(["maskT","maskB","pasteT","pasteB","edge","plane","rats","drc"]))
     S.show[k]=cuivreSeul?(k==="edge"||k==="plane"):v;
   $("bRats").classList.toggle("on",S.show.rats);
   touch();buildLayers();buildTabs();draw();
@@ -953,15 +953,15 @@ function propsHole(box, h){
   const bDel=$("pHoleDel");
   if(bDel)bDel.onclick=deleteSel;
 }
+const drwCouchesOptions=l=>DRW_COUCHES.map(c=>'<option value="'+c[0]+'"'+(l===c[0]?" selected":"")+'>'+c[2]+" ("+c[1]+")</option>").join("");
 function propsDrawing(box, d){
   /* aplat de sérigraphie : sa face, sa taille, et le retirer */
   if(d.shape==="poly"){
     const b=polyBBox(d.pts);
     box.innerHTML=
       '<div class="cat">Aplat de sérigraphie</div>'+
-      '<div class="prop"><label>Couche sérigraphie</label><select id="pDrwLayer">'+
-      '<option value="silkT"'+(d.layer==="silkT"?" selected":"")+'>F.SilkS (Dessus / Composants)</option>'+
-      '<option value="silkB"'+(d.layer==="silkB"?" selected":"")+'>B.SilkS (Dessous / Cuivre)</option>'+
+      '<div class="prop"><label>Couche</label><select id="pDrwLayer">'+
+      drwCouchesOptions(d.layer)+
       '</select></div>'+
       '<div class="prop two"><div><label>Largeur (mm)</label><input value="'+fmt(b.x2-b.x1,2)+'" disabled></div>'+
       '<div><label>Hauteur (mm)</label><input value="'+fmt(b.y2-b.y1,2)+'" disabled></div></div>'+
@@ -970,7 +970,7 @@ function propsDrawing(box, d){
       '<div class="prop"><div class="row"><button class="tb" id="pDrwDel">Supprimer l\'aplat</button></div></div>'+
       '<div class="pinnote">Encre pleine, exportée en région dans les Gerber .GTO / .GBO. '+
       'Se déplace avec la sélection, tourne avec R.</div>';
-    $("pDrwLayer").onchange=e=>{push();d.layer=e.target.value;touch();draw();};
+    $("pDrwLayer").onchange=e=>{push();d.layer=e.target.value;S.show[d.layer]=true;buildLayers();touch();draw();};
     $("pDrwDel").onclick=()=>{push();S.drawings=S.drawings.filter(o=>o!==d);clearSel();touch();refreshPanels();draw();};
     return;
   }
@@ -986,10 +986,9 @@ function propsDrawing(box, d){
       '</select></div>'+
       '<div class="prop"><label>Texte de sérigraphie</label>'+
       '<input id="pDrwTxt" type="text" value="'+esc(d.text||"")+'"></div>'+
-      '<div class="prop"><label>Couche sérigraphie</label>'+
+      '<div class="prop"><label>Couche</label>'+
       '<select id="pDrwLayer">'+
-      '<option value="silkT"'+(d.layer==="silkT"?" selected":"")+'>F.SilkS (Dessus / Composants)</option>'+
-      '<option value="silkB"'+(d.layer==="silkB"?" selected":"")+'>B.SilkS (Dessous / Cuivre)</option>'+
+      drwCouchesOptions(d.layer)+
       '</select></div>'+
       '<div class="prop"><label>Hauteur de police (mm)</label>'+
       '<input id="pDrwSize" type="number" step="0.1" min="0.5" max="25" value="'+fmt(d.size||d.height||1.5,2)+'"></div>'+
@@ -1017,7 +1016,7 @@ function propsDrawing(box, d){
     };
     const sLayer=$("pDrwLayer");
     if(sLayer)sLayer.onchange=e=>{
-      push();d.layer=e.target.value;touch();draw();
+      push();d.layer=e.target.value;S.show[d.layer]=true;buildLayers();touch();draw();
     };
     const inSize=$("pDrwSize");
     if(inSize)inSize.onchange=e=>{
@@ -1060,10 +1059,9 @@ function propsDrawing(box, d){
     '<option value="rect"' + (isRect ? " selected" : "") + '>Rectangle (cadre)</option>' +
     '<option value="text">Texte libre</option>' +
     '</select></div>' +
-    '<div class="prop"><label>Couche sérigraphie</label>' +
+    '<div class="prop"><label>Couche</label>' +
     '<select id="pDrwLayer">' +
-    '<option value="silkT"' + (d.layer === "silkT" ? " selected" : "") + '>F.SilkS (Dessus / Composants)</option>' +
-    '<option value="silkB"' + (d.layer === "silkB" ? " selected" : "") + '>B.SilkS (Dessous / Cuivre)</option>' +
+    drwCouchesOptions(d.layer)+
     '</select></div>' +
     '<div class="prop"><label>Épaisseur de trait</label>' +
     '<select id="pDrwWidth">' +
@@ -1086,7 +1084,7 @@ function propsDrawing(box, d){
   const sShape = $("pDrwShape");
   if(sShape) sShape.onchange = e => { push(); d.shape = e.target.value; d.type = d.shape; touch(); buildProps(); draw(); };
   const sLayer = $("pDrwLayer");
-  if(sLayer) sLayer.onchange = e => { push(); d.layer = e.target.value; touch(); draw(); };
+  if(sLayer) sLayer.onchange = e => { push(); d.layer = e.target.value; S.show[d.layer] = true; buildLayers(); touch(); draw(); };
   const sWidth = $("pDrwWidth");
   if(sWidth) sWidth.onchange = e => { push(); d.width = +e.target.value; touch(); draw(); };
   const bindCoord = (id, key) => {

@@ -133,13 +133,13 @@ const COMPOSANTS_LIB = (() => {
           erreurs.push("trou " + (i + 1) + " : x, y à ±" + COORD + " mm et diamètre « d » de 0,4 à 30 mm");
       });
     else if (def.holes != null) erreurs.push("« holes » : liste de trous {x, y, d}");
-    /* traits de sérigraphie écrits par l'éditeur de Gestion LIB ; l'éditeur PCB (normFpDef) ne les lit pas */
+    /* traits de sérigraphie écrits par l'éditeur de Gestion LIB ; l'éditeur PCB (normFpDef) les pose en dessins de l'empreinte */
     if (Array.isArray(def.lines)) {
       def.lines.forEach((l, i) => {
         if (!l || !["x1", "y1", "x2", "y2"].every(k => fini(l[k]) && Math.abs(l[k]) <= COORD) || (l.width != null && !(fini(l.width) && l.width >= 0 && l.width <= 5)))
           erreurs.push("trait " + (i + 1) + " : x1, y1, x2, y2 à ±" + COORD + " mm et largeur « width » de 0 à 5 mm");
       });
-      if (def.lines.length) remarques.push("traits de sérigraphie (« lines ») : visibles dans Gestion LIB seulement, l'éditeur PCB ne les lit pas");
+      if (def.lines.length) remarques.push("traits de sérigraphie (« lines ») : imprimés par l'éditeur PCB en plus du contour du corps");
     } else if (def.lines != null) erreurs.push("« lines » : liste de traits {x1, y1, x2, y2, width}");
 
     const b = def.body;

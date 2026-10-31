@@ -347,7 +347,7 @@ Les touches d'une seule lettre se taisent quand un champ de saisie a le focus. T
 | Couches cuivre (liste 1 à 32) | Nombre de couches de cuivre | Un changement garde l'épaisseur visée tant qu'elle laisse 60 µm par isolant ; annulable |
 | Tout / Rien / Cuivre seul | Affiche toutes les couches, aucune, ou le cuivre avec zones et contour | |
 | Ligne de couche | Un clic rend la couche active ; ◉/○ la masque ou l'affiche ; le pastillon `PLAN`/`GND`/`PWR` ou le compte de zones sélectionne tout le cuivre plein de la couche | |
-| Couches techniques | Sérigraphie dessus/dessous (F.SilkS, B.SilkS), Masque dessus/dessous (F.Mask, B.Mask), Pâte dessus/dessous (F.Paste, B.Paste), Points de test (PTST), Contour de carte (Board Outline), Zones de cuivre (Zones), Chevelu (Ratsnest), Erreurs DRC (DRC) : un clic les affiche ou les masque | PTST marque les composants « Point de test » du schéma (repère `TP…` ou `PTST…`) |
+| Couches techniques | Sérigraphie dessus/dessous (F.SilkS, B.SilkS), Fab dessus/dessous (F.Fab, B.Fab), Courtyard dessus/dessous (F.CrtYd, B.CrtYd), Dessins utilisateur (Dwgs.User), Commentaires (Cmts.User), Utilisateur (User.1), Masque dessus/dessous (F.Mask, B.Mask), Pâte dessus/dessous (F.Paste, B.Paste), Points de test (PTST), Contour de carte (Board Outline), Zones de cuivre (Zones), Chevelu (Ratsnest), Erreurs DRC (DRC) : un clic les affiche ou les masque | PTST marque les composants « Point de test » du schéma (repère `TP…` ou `PTST…`). Fab et Courtyard sont masquées au départ ; seule la sérigraphie part au Gerber, Fab, Courtyard et les couches utilisateur documentent. Ces couches montrent aussi les dessins propres aux composants (importés de KiCad, ou traits « lines » d'une empreinte de la LIB), qui suivent le composant déplacé, tourné ou retourné (le retournement échange dessus et dessous) |
 | Nom de la couche, Couleur | Renomme, recolore la couche active | |
 | Rôle de la couche | Signal ; Mixte (signal + cuivre) ; GND (Plan de masse) ; PWR (Plan d'alimentation) ; Blindage | Les trois derniers entretiennent une zone pleine carte ; le rôle ne peut pas contredire le cuivre posé |
 | Net du plan | Net du plan pour GND, PWR, Blindage | |
@@ -391,8 +391,8 @@ Le contenu dépend de la sélection.
 | Une découpe de carte | Largeur, Hauteur, Sommets, Coin ; **Supprimer la découpe** | Sommets tirables, `Alt+clic` sur une arête en ajoute un |
 | Une zone interdite | Nom, Face (Dessus, Dessous), Hauteur permise (mm), Emprise, Sommets ; **Supprimer la zone** | |
 | Un trou NPTH | Diamètre de perçage (mm), **M2 (2,2 mm)**, **M2.5 (2,7 mm)**, **M3 (3,2 mm)**, **M4 (4,2 mm)**, Longueur, Angle, X, Y, Verrouiller la position, **Supprimer le trou NPTH** | Diamètre de 0,4 à 30 mm ; une longueur supérieure au diamètre fait une fente (jusqu'à 60 mm) ; exporté dans le fichier Excellon `*-NPTH.TXT` |
-| Un trait, un cadre de sérigraphie | Forme, Couche sérigraphie (F.SilkS, B.SilkS), Épaisseur de trait (0,10 à 0,50 mm), X1, Y1, X2, Y2, Dimensions ; **Supprimer** | |
-| Un texte de sérigraphie | Forme, Texte, Couche, Hauteur de police (0,5 à 25 mm), Épaisseur de trait, Orientation (0°, 90°, 180°, 270°), X, Y ; **Supprimer le texte** | |
+| Un trait, un cadre de sérigraphie | Forme, Couche (F.SilkS, B.SilkS, F.Fab, B.Fab, F.CrtYd, B.CrtYd, Dwgs.User, Cmts.User, User.1), Épaisseur de trait (0,10 à 0,50 mm), X1, Y1, X2, Y2, Dimensions ; **Supprimer** | |
+| Un texte de sérigraphie | Forme, Texte, Couche (mêmes couches), Hauteur de police (0,5 à 25 mm), Épaisseur de trait, Orientation (0°, 90°, 180°, 270°), X, Y ; **Supprimer le texte** | |
 | Un aplat de sérigraphie | Couche, Largeur, Hauteur, Sommets, Trous ; **Supprimer l'aplat** | Sort en région dans les Gerber `.GTO` / `.GBO` |
 
 ### Panneau Nets & composants

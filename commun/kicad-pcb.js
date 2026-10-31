@@ -188,6 +188,12 @@ const KICAD_PCB = (() => {
     return j === p.length;
   }
   const mini = a => a.reduce((m, v) => v < m ? v : m, Infinity), maxi = a => a.reduce((m, v) => v > m ? v : m, -Infinity);
+  /* couches de dessin de l'éditeur (DRW_COUCHES, 01-core.js) ⇄ KiCad ; Eco et User.N vont sur « user » */
+  const COUCHES_K = { silkT: "F.SilkS", silkB: "B.SilkS", fabT: "F.Fab", fabB: "B.Fab", crtT: "F.CrtYd", crtB: "B.CrtYd",
+                      dwgs: "Dwgs.User", cmts: "Cmts.User", user: "User.1" };
+  const DE_K = new Map(Object.entries(COUCHES_K).map(([k, v]) => [v, k]));
+  const coucheDe = n => DE_K.get(n) || (/^(Eco[12]\.User|User\.\d+)$/.test(n) ? "user" : null);
+  const autreFace = l => /^(silk|fab|crt)[TB]$/.test(l) ? l.slice(0, -1) + (l.endsWith("B") ? "T" : "B") : l;
 
   /* =========================================================================
      LECTURE : arbre .kicad_pcb (+ .kicad_pro) → { doc, empreintes }
@@ -234,40 +240,54 @@ const KICAD_PCB = (() => {
     const bords = [], bordsFermes = [];
     const regle = {};
 
-    const dessin = (t, couche) => {
+    /* dessins : ceux de la carte (identifiés) ou ceux d'une empreinte (fp.dessins, repère local) */
+    const poser = (liste, o) => liste.push(liste === drawings ? Object.assign({ id: id++ }, o) : o);
+    const dessin = (e, T, layer, liste) => {
+      if (/_rect$/.test(e[0]) && !plein(e)) {                 // cadre droit dans son repère : il reste un cadre
+        const [x1, y1] = T(...pt(e, "start")), [x2, y2] = T(...pt(e, "end"));
+        if (Math.abs(x2 - x1) > 1e-4 && Math.abs(y2 - y1) > 1e-4) {
+          poser(liste, { shape: "rect", type: "rect", layer, x1: r4(x1), y1: r4(y1), x2: r4(x2), y2: r4(y2), width: r4(Math.max(0.05, largeur(e))) });
+          return;
+        }
+      }
+      const t = trace(e, T);
       if (!t || t.pts.length < 2) return;
-      const layer = couche === "B.SilkS" ? "silkB" : "silkT";
       if (t.ferme && t.plein && t.pts.length >= 3) {
-        drawings.push({ id: id++, shape: "poly", type: "poly", layer, pts: t.pts.map(p => ({ x: r4(p[0]), y: r4(p[1]) })) });
+        poser(liste, { shape: "poly", type: "poly", layer, pts: t.pts.map(p => ({ x: r4(p[0]), y: r4(p[1]) })) });
         return;
       }
       const P = t.ferme ? t.pts.concat([t.pts[0]]) : t.pts;
       for (let i = 1; i < P.length; i++)
         if (Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]) > 1e-6)
-          drawings.push({ id: id++, shape: "line", type: "line", layer, x1: r4(P[i - 1][0]), y1: r4(P[i - 1][1]),
-                          x2: r4(P[i][0]), y2: r4(P[i][1]), width: r4(Math.max(0.05, t.w)) });
+          poser(liste, { shape: "line", type: "line", layer, x1: r4(P[i - 1][0]), y1: r4(P[i - 1][1]),
+                         x2: r4(P[i][0]), y2: r4(P[i][1]), width: r4(Math.max(0.05, t.w)) });
     };
-    const texte = (txt, x, y, a, l, couche) => {
+    const texte = (txt, [x, y], rot, l, layer, liste) => {
       const f = enfant(enfant(l, "effects"), "font"), s = enfant(f, "size");
       const j = enfant(enfant(l, "effects"), "justify");
       if (j && (j.includes("left") || j.includes("right"))) rap.ecart("texte : justification à gauche ou à droite reprise centrée");
-      drawings.push({ id: id++, shape: "text", type: "text", layer: couche === "B.SilkS" ? "silkB" : "silkT",
-                      text: String(txt).slice(0, 200), x1: r4(x), y1: r4(y), x2: r4(x), y2: r4(y),
-                      size: r4(borne(s && s[1], 0.5, 25, 1)), height: r4(borne(s && s[1], 0.5, 25, 1)),
-                      rot: deg(-a), width: r4(borne(val(f, "thickness"), 0.05, 5, 0.15)) });
+      poser(liste, { shape: "text", type: "text", layer, text: String(txt).slice(0, 200), x1: r4(x), y1: r4(y), x2: r4(x), y2: r4(y),
+                     size: r4(borne(s && s[1], 0.5, 25, 1)), height: r4(borne(s && s[1], 0.5, 25, 1)),
+                     rot: deg(rot), width: r4(borne(val(f, "thickness"), 0.05, 5, 0.15)) });
     };
-    /* un tracé selon sa couche : contour, sérigraphie, ou écarté avec son motif */
-    const ranger = (e, T, coucheNom) => {
-      const n = String(coucheNom || "");
+    const CARTE = { T: (x, y) => [x, y], monde: (x, y) => [x, y], liste: drawings, couche: c => c };
+    const coucheL = n => {
+      const c = coucheDe(n);
+      if (c === "user" && n !== "User.1") rap.ecart("couches Eco1, Eco2 et User.2 et suivantes : regroupées sur la couche utilisateur (User.1)");
+      return c;
+    };
+    /* un tracé selon sa couche : contour, dessin (carte ou empreinte F), ou écarté avec son motif */
+    const ranger = (e, coucheNom, F) => {
+      const n = String(coucheNom || ""), c = coucheL(n);
       if (n === "Edge.Cuts") {
-        const t = trace(e, T);
+        const t = trace(e, F.monde);
         if (t && t.pts.length >= 2) (t.ferme ? bordsFermes : bords).push(t.pts);
-      } else if (n === "F.SilkS" || n === "B.SilkS") {
-        if (/_text_box$|_textbox$/.test(e[0])) rap.ecart("boîte de texte de sérigraphie : non reprise");
-        else dessin(trace(e, T), n);
+      } else if (c) {
+        if (/_text_box$|_textbox$/.test(e[0])) rap.ecart("boîte de texte : non reprise");
+        else dessin(e, F.T, F.couche(c), F.liste);
       } else if (/\.Cu$/.test(n)) rap.ecart("dessin sur une couche de cuivre (hors piste et zone) : non repris");
       else if (/Mask$|Paste$/.test(n)) rap.ecart("dessin sur le masque ou la pâte : non repris");
-      else if (n !== "Margin") rap.ecart("dessins des couches Fab, Courtyard et User : non repris (l'éditeur n'a pas ces couches)");
+      else if (n !== "Margin") rap.ecart("dessin sur la couche de colle ou une couche inconnue : non repris");
     };
 
     /* zones : cuivre, zone interdite (découpe de cuivre) ou goutte écartée */
@@ -416,7 +436,9 @@ const KICAD_PCB = (() => {
         pads.push(pad);
       }
 
-      /* tracés : sérigraphie et contour au monde ; Fab (sinon Courtyard) donne le corps */
+      /* tracés et textes dans le repère de l'empreinte, qui les emporte (fp.dessins, couches vues posé dessus) ;
+         sans cuivre elle est retirée et ils restent sur la carte, au monde. Fab (sinon Courtyard) donne le corps. */
+      const des = [], F = pads.length ? { T: vu, monde, liste: des, couche: c => bas ? autreFace(c) : c } : Object.assign({}, CARTE, { T: monde, monde });
       const corps = { F: [], C: [] };
       for (const e of f) {
         if (!Array.isArray(e) || !/^fp_(line|arc|circle|rect|poly|curve|text_box)$/.test(e[0])) continue;
@@ -425,17 +447,18 @@ const KICAD_PCB = (() => {
           const t = trace(e, vu);
           if (t) (L.endsWith("Fab") ? corps.F : corps.C).push(...t.pts);
         }
-        if (e[0] !== "fp_text_box" || /SilkS$/.test(L)) ranger(e, monde, L);
+        ranger(e, L, F);
       }
       for (const e of enfants(f, "property").concat(enfants(f, "fp_text"))) {
-        const L = String(val(e, "layer", ""));
-        if (!/SilkS$/.test(L) || cache(e)) continue;
+        const c = coucheL(String(val(e, "layer", "")));
+        if (!c || cache(e)) continue;
         const k = e[0] === "fp_text" ? e[1] : e[1] === "Reference" ? "reference" : e[1] === "Value" ? "value" : "";
-        const t = k === "reference" ? ref : k === "value" ? value : String(e[2] == null ? "" : e[2])
-          .replace(/\$\{REFERENCE\}/g, ref).replace(/\$\{VALUE\}/g, value);
-        const a = enfant(e, "at");
+        // ${REFERENCE} et ${VALUE} suivent le composant dans l'éditeur ; sur la carte, le texte figé
+        let t = k === "reference" ? "${REFERENCE}" : k === "value" ? "${VALUE}" : String(e[2] == null ? "" : e[2]);
+        if (!pads.length) t = t.replace(/\$\{REFERENCE\}/g, ref).replace(/\$\{VALUE\}/g, value);
+        const a = enfant(e, "at"), ak = nb(a && a[3]);
         if (!t) continue;
-        texte(t, ...monde(co(a && a[1]), co(a && a[2])), nb(a && a[3]), e, L);
+        texte(t, F.T(co(a && a[1]), co(a && a[2])), !pads.length ? -ak : bas ? 180 - A + ak : A - ak, e, F.couche(c), F.liste);
       }
       for (const z of enfants(f, "zone")) lireZone(z);
 
@@ -468,6 +491,7 @@ const KICAD_PCB = (() => {
       const fp = { id: id++, ref, value, pkg: nomK.slice(0, 120), pins, style, x: X, y: Y,
                    rot: bas ? deg(180 - A) : deg(-A), side: bas ? 1 : 0, nets, pads, body, silk: false };
       if (trousL.length) fp.holes = trousL.map(t => t.t);
+      if (des.length) fp.dessins = des;
       fps.push(fp);
 
       /* empreinte de LIB : la première pose de chaque nom KiCad */
@@ -506,12 +530,12 @@ const KICAD_PCB = (() => {
         vias.push({ id: id++, x, y, d: r4(d), drill: r4(borne(val(e, "drill"), 0.05, Math.max(0.05, d - 0.05), 0.3)),
                     a: ls.length ? ls[0] : 0, b: ls.length > 1 ? ls[ls.length - 1] : cu - 1, net: netDe(e) });
       } else if (k === "zone") lireZone(e);
-      else if (/^gr_(line|arc|circle|rect|poly|curve|text_box)$/.test(k)) ranger(e, (x, y) => [x, y], val(e, "layer", ""));
+      else if (/^gr_(line|arc|circle|rect|poly|curve|text_box)$/.test(k)) ranger(e, val(e, "layer", ""), CARTE);
       else if (k === "gr_text") {
-        const L = String(val(e, "layer", ""));
-        if (/SilkS$/.test(L)) { const a = enfant(e, "at"); texte(e[1] == null ? "" : e[1], co(a && a[1]), co(a && a[2]), nb(a && a[3]), e, L); }
+        const L = String(val(e, "layer", "")), c = coucheL(L);
+        if (c) { const a = enfant(e, "at"); texte(e[1] == null ? "" : e[1], [co(a && a[1]), co(a && a[2])], -nb(a && a[3]), e, c, drawings); }
         else if (/\.Cu$/.test(L)) rap.ecart("texte sur une couche de cuivre : non repris");
-        else rap.ecart("textes des couches Fab, Courtyard et User : non repris");
+        else rap.ecart("texte sur le masque, la pâte, la colle ou une couche inconnue : non repris");
       } else if (k === "dimension") rap.ecart("cote (dimension) : non reprise");
       else if (k === "target") rap.ecart("mire (target) : non reprise");
       else if (k === "image") rap.ecart("image de référence : non reprise");
@@ -631,7 +655,7 @@ const KICAD_PCB = (() => {
   const COUCHES_UTILISATEUR = [[9, "F.Adhes", "F.Adhesive"], [11, "B.Adhes", "B.Adhesive"], [13, "F.Paste"], [15, "B.Paste"],
     [5, "F.SilkS", "F.Silkscreen"], [7, "B.SilkS", "B.Silkscreen"], [1, "F.Mask"], [3, "B.Mask"], [17, "Dwgs.User", "User.Drawings"],
     [19, "Cmts.User", "User.Comments"], [21, "Eco1.User", "User.Eco1"], [23, "Eco2.User", "User.Eco2"], [25, "Edge.Cuts"],
-    [27, "Margin"], [31, "F.CrtYd", "F.Courtyard"], [29, "B.CrtYd", "B.Courtyard"], [35, "F.Fab"], [33, "B.Fab"]];
+    [27, "Margin"], [31, "F.CrtYd", "F.Courtyard"], [29, "B.CrtYd", "B.Courtyard"], [35, "F.Fab"], [33, "B.Fab"], [39, "User.1"]];
   const COULEURS_K = Object.fromEntries(Object.entries(COULEURS).map(([k, v]) => [v, k]));
   const FINITIONS_K = { "ENIG (or chimique)": "ENIG", "HASL étain-plomb": "HAL SnPb", "HASL sans plomb": "HAL lead-free",
     "OSP": "OSP", "Argent chimique": "Immersion silver", "Or dur (contacts)": "Hard gold" };
@@ -696,6 +720,7 @@ const KICAD_PCB = (() => {
     for (const o of tracksD.concat(viasD, zonesD)) if (o && o.net) tous.add(String(o.net));
     const code = new Map([...tous].sort().map((n, i) => [n, i + 1]));
     const netK = n => n && code.has(n) ? ["net", code.get(n)] : ["net", 0];
+    let troues = 0;                                    // aplats troués (carte et empreintes) : KiCad n'en a pas
 
     /* empreinte : arbre commun à la carte et à la bibliothèque */
     function arbreFp(fp, libId, o) {
@@ -708,15 +733,37 @@ const KICAD_PCB = (() => {
                                           x2: maxi(pads.map(q => q.x + q.w / 2)), y2: maxi(pads.map(q => q.y + q.h / 2)) }
                                       : { x1: -0.5, y1: -0.5, x2: 0.5, y2: 0.5 };
       const g = o.graine, u = k => ["uuid", q(uuid(g + ":" + k))];
-      const champ = (nom, v, y, L, cacher) => ["property", q(nom), q(v), at(...fl(0, y), A), ["layer", q(Lc + L)]]
+      /* dessins de l'empreinte : couche vue posé dessus → couche du fichier ; texte en angle absolu, miroir dessous */
+      const des = arr(fp.dessins).filter(x => x && typeof x === "object");
+      const Lk = l => COUCHES_K[bas ? autreFace(l) : l] || Lc + "SilkS";
+      const angleT = x => bas ? deg(nb(x.rot) - 180 + A) : deg(A - nb(x.rot));
+      const mir = x => /^B\./.test(Lk(x.layer)) || (bas && !/^(silk|fab|crt)/.test(x.layer));
+      const ecrit = x => police(nb(x.size, 1), nb(x.width, 0.15), mir(x));
+      // le repère et la valeur posés dans KiCad (${REFERENCE} imprimé, ${VALUE}) redeviennent ses champs
+      const dRef = des.find(x => x.shape === "text" && x.text === "${REFERENCE}" && /^silk/.test(x.layer));
+      const dVal = des.find(x => x.shape === "text" && x.text === "${VALUE}");
+      const champ = (nom, v, y, L, cacher, x) => x
+        ? ["property", q(nom), q(v), at(...fl(nb(x.x1), nb(x.y1)), angleT(x)), ["layer", q(Lk(x.layer))], u(nom), ecrit(x)]
+        : ["property", q(nom), q(v), at(...fl(0, y), A), ["layer", q(Lc + L)]]
         .concat(cacher ? [["hide", "yes"]] : [], [u(nom), police(L === "SilkS" ? (nb(fp.refSize) || 1) : 1, L === "SilkS" ? (nb(fp.refWidth) || 0.15) : 0.15, bas)]);
       const out = ["footprint", q(libId)].concat(o.entete || [], [["layer", q(Lc + "Cu")]], o.mod ? [] : [u("fp"), at(nb(fp.x), nb(fp.y), A)]);
-      out.push(champ("Reference", o.ref, bx.y1 - 1, "SilkS", o.cacherRef), champ("Value", o.value, bx.y2 + 1, "Fab", false));
+      // valeur montrée en Fab pour une empreinte née dans l'éditeur seulement : une importée porte son état KiCad dans ses dessins
+      out.push(champ("Reference", o.ref, bx.y1 - 1, "SilkS", o.cacherRef, dRef), champ("Value", o.value, bx.y2 + 1, "Fab", des.length > 0 || !pads.length || fp.silk === false, dVal));
       if (o.chemin) out.push(["path", q(o.chemin)]);
       const attr = ["attr", pads.length && pads.every(q => q.drill > 0) ? "through_hole" : pads.length ? "smd" : "board_only"];
       if (!pads.length) attr.push("exclude_from_pos_files", "exclude_from_bom");
       out.push(attr);
-      if (b) out.push(["fp_rect", ["start", ...fl(b.x1, b.y1)], ["end", ...fl(b.x2, b.y2)], trait(0.1), ["fill", "no"], ["layer", q(Lc + "Fab")], u("corps")]);
+      if (b && !des.some(x => /^fab/.test(x.layer))) out.push(["fp_rect", ["start", ...fl(b.x1, b.y1)], ["end", ...fl(b.x2, b.y2)], trait(0.1), ["fill", "no"], ["layer", q(Lc + "Fab")], u("corps")]);
+      des.forEach((x, i) => {
+        if (x === dRef || x === dVal) return;
+        const L = ["layer", q(Lk(x.layer))], xy1 = fl(nb(x.x1), nb(x.y1)), xy2 = fl(nb(x.x2), nb(x.y2));
+        if (x.shape === "text") out.push(["fp_text", "user", q(x.text || ""), at(...xy1, angleT(x)), L, u("d" + i), ecrit(x)]);
+        else if (x.shape === "poly" && arr(x.pts).length >= 3) {
+          if (arr(x.trous).length) troues++;
+          out.push(["fp_poly", ["pts", ...x.pts.map(c => ["xy", ...fl(nb(c.x), nb(c.y))])], trait(0), ["fill", "yes"], L, u("d" + i)]);
+        } else if (x.shape === "rect") out.push(["fp_rect", ["start", ...xy1], ["end", ...xy2], trait(nb(x.width, 0.15)), ["fill", "no"], L, u("d" + i)]);
+        else if (x.shape === "line") out.push(["fp_line", ["start", ...xy1], ["end", ...xy2], trait(nb(x.width, 0.15)), L, u("d" + i)]);
+      });
       pads.forEach((p, i) => {
         const th = nb(p.drill) > 0, w = nb(p.w, 1), h = nb(p.h, 1);
         const forme = { sharp: "rect", oval: "oval", circ: Math.abs(w - h) < 1e-6 ? "circle" : "oval", chamfer: "roundrect", poly: "custom" }[p.shape] || "roundrect";
@@ -757,7 +804,7 @@ const KICAD_PCB = (() => {
     const parSig = new Map(), prisNoms = new Set(), empreintes = [], librairie = new Map();
     const definir = (fp, base) => {
       const sig = JSON.stringify([padsDe(fp).map(p => [p.n, p.nom, p.x, p.y, p.w, p.h, p.shape, p.drill, p.slot, p.rot, p.pts, p.chamfer, p.chamferCorners, p.noMask, p.noPaste, p.mask, p.paste]),
-                                  fp.holes || null, fp.body || null]);
+                                  fp.holes || null, fp.body || null, arr(fp.dessins).filter(x => x && x.shape !== "text")]);
       if (parSig.has(sig)) return parSig.get(sig);
       const b = nomPropre(base || "EMPREINTE");
       // sans égard à la casse : « SOT23 » et « sot23 » feraient un seul fichier sous Windows et macOS
@@ -797,14 +844,13 @@ const KICAD_PCB = (() => {
     items.push(gpoly(ext, "Edge.Cuts", 0.05, false, "bord"));
     arr(b.cutouts).forEach((P, i) => { if (arr(P).length >= 3) items.push(gpoly(P, "Edge.Cuts", 0.05, false, "decoupe:" + i)); });
 
-    /* sérigraphie de carte */
-    let troues = 0;
+    /* dessins de carte, chacun sur sa couche */
     arr(d.drawings).forEach((g, i) => {
       if (!g || typeof g !== "object") return;
-      const L = g.layer === "silkB" ? "B.SilkS" : "F.SilkS", u = ["uuid", q(uuid("dessin:" + i))];
+      const L = COUCHES_K[g.layer] || "F.SilkS", u = ["uuid", q(uuid("dessin:" + i))];
       if (g.shape === "poly" && arr(g.pts).length >= 3) { if (arr(g.trous).length) troues++; items.push(gpoly(g.pts, L, 0, true, "dessin:" + i)); }
       else if (g.shape === "text")
-        items.push(["gr_text", q(g.text || ""), ["at", nb(g.x1), nb(g.y1), deg(-nb(g.rot))], ["layer", q(L)], u, police(nb(g.size, 1.5), nb(g.width, 0.15), L === "B.SilkS")]);
+        items.push(["gr_text", q(g.text || ""), ["at", nb(g.x1), nb(g.y1), deg(-nb(g.rot))], ["layer", q(L)], u, police(nb(g.size, 1.5), nb(g.width, 0.15), /^B\./.test(L))]);
       else if (g.shape === "rect")
         items.push(["gr_rect", ["start", nb(g.x1), nb(g.y1)], ["end", nb(g.x2), nb(g.y2)], trait(nb(g.width, 0.15)), ["fill", "no"], ["layer", q(L)], u]);
       else items.push(["gr_line", ["start", nb(g.x1), nb(g.y1)], ["end", nb(g.x2), nb(g.y2)], trait(nb(g.width, 0.15)), ["layer", q(L)], u]);
