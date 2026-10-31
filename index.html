@@ -417,6 +417,7 @@
                 <div id="pActifSauve" class="p-sauve"></div>
               </div>
               <div style="display:flex; gap:6px; align-items:center;">
+                <button id="pBtnKicadExport" class="btn-sm" type="button" title="Télécharger le projet au format KiCad 9 (.zip) : schéma, PCB, bibliothèques et règles, tels qu'enregistrés">⇪ KiCad (.zip)</button>
                 <button id="pBtnFermer" class="btn-sm" type="button" title="Fermer ce projet sans supprimer les fichiers">✕ Fermer</button>
                 <button id="pBtnDetacher" class="btn-sm danger" type="button" title="Détacher le dossier du support">🔗 Détacher</button>
               </div>
@@ -531,6 +532,22 @@
               <button id="pBtnCreerNouveau" class="fort" style="padding:8px 18px; font-size:13px;" type="button">
                 ✨ Créer et initialiser le projet
               </button>
+            </div>
+
+            <!-- Import d'un projet KiCad 9/10 archivé (commun/kicad.js) -->
+            <div id="pBlocKicad" style="margin-top:14px; padding-top:12px; border-top:1px dashed var(--border2);">
+              <div style="font-size:12px; color:var(--txt-dim); margin-bottom:8px;">
+                Ou créer le projet depuis un <b>projet KiCad 9 ou 10</b> archivé en <code>.zip</code> (schéma, PCB, règles).
+                Sans nom au champ 1, il prend celui du projet KiCad.
+              </div>
+              <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+                <button id="pBtnKicadImport" type="button">📥 Importer un projet KiCad (.zip)…</button>
+                <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--txt-dim); cursor:pointer; user-select:none;">
+                  <input type="checkbox" id="pKicadLib" style="accent-color:var(--blue); cursor:pointer;">
+                  <span>Ajouter ses symboles et empreintes à la LIB (sans remplacer ceux qui existent)</span>
+                </label>
+              </div>
+              <input type="file" id="pKicadFichier" accept=".zip,application/zip" hidden>
             </div>
           </div>
 
@@ -660,6 +677,11 @@
 <script src="commun/profils.js"></script>
 <script src="commun/projet.js"></script>
 <script src="commun/projet-disque.js"></script>
+<script src="commun/zip.js"></script>
+<script src="commun/composants-lib.js"></script>
+<script src="commun/kicad.js"></script>
+<script src="commun/kicad-pcb.js"></script>
+<script src="commun/kicad-sch.js"></script>
 <script src="commun/tactile.js"></script>
 <script src="commun/tuto.js" data-outil="accueil"></script>
 <script>
@@ -824,68 +846,46 @@ if(bCreerNouveau) {
     }
 
     pDosMsg("Création du projet « " + esc(nom) + " »…");
-
-    // Lancé par WEB_SUITE : toujours dans PROJETS, jamais ailleurs
-    if(typeof projdSuite === "function" && projdSuite()) {
-      projdCreerServeur(nom, { chemin: nom })
-        .then(function(etat) {
-          if(inNomNouveau) inNomNouveau.value = "";
-          pDosFait(etat);
-        })
-        .catch(function(e) { pDosMsg(esc(e.message), true); });
-      return;
-    }
-
-    // Si on a un dossier parent sélectionné via File System Access
-    if(PROJ_PARENT_HANDLE && typeof projdCreerDansParent === "function") {
-      projdCreerDansParent(PROJ_PARENT_HANDLE, nom)
-        .then(function(etat) {
-          if(inNomNouveau) inNomNouveau.value = "";
-          pDosFait(etat);
-        })
-        .catch(function(e) {
-          pDosMsg(esc(e.message), true);
-        });
-      return;
-    }
-
-    // Sinon si serveur disponible
-    projdServeurDispo().then(function(dispo) {
-      if(dispo) {
-        const chemBrut = inChemNouveau ? inChemNouveau.value.trim() : "";
-        const destChemin = chemBrut ? (chemBrut.replace(/[\\/]+$/, "") + "/" + nom) : nom;
-        projdCreerServeur(nom, { chemin: destChemin })
-          .then(function(etat) {
-            if(inNomNouveau) inNomNouveau.value = "";
-            pDosFait(etat);
-          })
-          .catch(function(e) {
-            pDosMsg(esc(e.message), true);
-          });
-        return;
-      }
-
-      // Sinon via sélecteur direct
-      if(projdSelecteurDispo()) {
-        projdChoisirDossier(true, nom)
-          .then(function(etat) {
-            if(inNomNouveau) inNomNouveau.value = "";
-            pDosFait(etat);
-          })
-          .catch(function(e) {
-            if(e && e.name === "AbortError") { pDosRendre(); return; }
-            pDosMsg(esc(e.message), true);
-          });
-        return;
-      }
-
-      // Aucun moyen d'accès disque
-      projOuvrir(nom);
-      if(inNomNouveau) inNomNouveau.value = "";
-      pRendre();
-      pDosMsg("Projet virtuel « <b>" + esc(nom) + "</b> » créé en mémoire (aucun dossier rattaché).", true);
-    });
+    pCreer(nom)
+      .then(function(etat) {
+        if(etat === null) { pDosRendre(); return; }
+        if(inNomNouveau) inNomNouveau.value = "";
+        if(etat === "virtuel") {
+          // Aucun moyen d'accès disque
+          projOuvrir(nom);
+          pRendre();
+          pDosMsg("Projet virtuel « <b>" + esc(nom) + "</b> » créé en mémoire (aucun dossier rattaché).", true);
+          return;
+        }
+        pDosFait(etat);
+      })
+      .catch(function(e) { pDosMsg(esc(e.message), true); });
   };
+}
+/* Crée le projet par le premier moyen d'accès disponible. Rend l'état du projet,
+   null si l'utilisateur renonce au sélecteur, "virtuel" s'il n'y a aucun accès disque. */
+function pCreer(nom) {
+  // Lancé par WEB_SUITE : toujours dans PROJETS, jamais ailleurs
+  if(typeof projdSuite === "function" && projdSuite())
+    return projdCreerServeur(nom, { chemin: nom });
+  // Si on a un dossier parent sélectionné via File System Access
+  if(PROJ_PARENT_HANDLE && typeof projdCreerDansParent === "function")
+    return projdCreerDansParent(PROJ_PARENT_HANDLE, nom);
+  return projdServeurDispo().then(function(dispo) {
+    // Sinon si serveur disponible
+    if(dispo) {
+      const chemBrut = inChemNouveau ? inChemNouveau.value.trim() : "";
+      const destChemin = chemBrut ? (chemBrut.replace(/[\\/]+$/, "") + "/" + nom) : nom;
+      return projdCreerServeur(nom, { chemin: destChemin });
+    }
+    // Sinon via sélecteur direct
+    if(projdSelecteurDispo())
+      return projdChoisirDossier(true, nom).catch(function(e) {
+        if(e && e.name === "AbortError") return null;
+        throw e;
+      });
+    return "virtuel";
+  });
 }
 if(inNomNouveau) {
   inNomNouveau.addEventListener("keydown", function(e) {
@@ -895,6 +895,82 @@ if(inNomNouveau) {
     }
   });
 }
+
+/* ---------- Projet KiCad (commun/kicad.js) ----------
+   L'import crée un projet puis y écrit le schéma et la carte convertis ; l'export
+   lit les documents enregistrés et télécharge le dossier KiCad en .zip. Chaque
+   écart de conversion est listé : rien ne se perd en silence. */
+function pKicadRapport(titre, lignes) {
+  pDosMsg(esc(titre) + (lignes.length
+    ? "<details open style='margin-top:6px;'><summary>" + lignes.length + " écart(s) de conversion</summary><ul style='margin:4px 0 0 18px;'>" +
+      lignes.map(function(l) { return "<li>" + esc(l) + "</li>"; }).join("") + "</ul></details>"
+    : " : aucun écart."));
+}
+// jamais d'écrasement : un nom déjà dans la LIB garde sa définition (si_absent → 409)
+async function pKicadVersLib(imp) {
+  if(!(await projdServeurDispo())) return ["LIB : serveur absent, symboles et empreintes non ajoutés"];
+  let neufs = 0, deja = 0;
+  const ennuis = [];
+  async function envoyer(type, nom, data) {
+    try { await projdApi("PUT", "/api/lib/fichier", null, { type: type, nom: nom + ".json", data: data, si_absent: true }); neufs++; }
+    catch(e) { if(e.code === 409) deja++; else ennuis.push("LIB : " + nom + " non ajouté (" + e.message + ")"); }
+  }
+  for(const e of imp.empreintes) await envoyer("pcb", e.name, e);
+  for(const s of imp.symboles) await envoyer("schematique", s.id, s);
+  return ["LIB : " + neufs + " ajouté(s), " + deja + " déjà présent(s) gardé(s) tels quels"].concat(ennuis);
+}
+async function pImporterKicad(fichier) {
+  pDosMsg("Lecture de « " + esc(fichier.name) + " »…");
+  try {
+    if(fichier.size > 256 * 1024 * 1024) throw new Error("archive de plus de 256 Mo : refusée");
+    const imp = await KICAD.importer(await fichier.arrayBuffer());
+    const nom = projNomValide((inNomNouveau && inNomNouveau.value.trim()) || imp.nom);
+    if(!nom) throw new Error("Nom de projet refusé (« " + imp.nom + " ») : donnez-en un au champ 1.");
+    pDosMsg("Création du projet « " + esc(nom) + " »…");
+    const etat = await pCreer(nom);
+    if(etat === null) { pDosRendre(); return; }
+    if(etat === "virtuel") throw new Error("Aucun dossier accessible pour enregistrer le projet importé.");
+    // le sélecteur et le dossier parent peuvent tomber sur un projet existant : on ne remplace rien
+    const d = projdDocuments();
+    if((d.schema && d.schema.present) || (d.pcb && d.pcb.present)) {
+      pDosFait(etat);
+      throw new Error("Le dossier « " + projdChemin() + " » contient déjà un schéma ou une carte : import annulé, rien n'a été remplacé.");
+    }
+    try {
+      if(imp.pcb) await projdDocEcrire("pcb", imp.pcb);
+      if(imp.schema) await projdDocEcrire("schema", imp.schema);
+    } catch(e) {
+      pDosFait(etat);
+      throw new Error("Projet « " + nom + " » créé dans « " + projdChemin() + " » mais incomplet (" + e.message + ") : supprimez-le ou réimportez sous un autre nom.");
+    }
+    const lib = document.getElementById("pKicadLib").checked ? await pKicadVersLib(imp) : [];
+    if(inNomNouveau) inNomNouveau.value = "";
+    pDosFait(etat);
+    pKicadRapport("Projet KiCad importé dans « " + nom + " »", imp.rapport.concat(lib));
+  } catch(e) {
+    pDosMsg(esc(e.message), true);
+  }
+}
+async function pExporterKicad() {
+  pDosMsg("Export KiCad : lecture du projet…");
+  try {
+    const docs = await Promise.all([projdDocLire("schema"), projdDocLire("pcb")]);
+    const ex = KICAD.exporter({ nom: projNom() || projdChemin().split(/[\\/]/).pop(), schema: docs[0], pcb: docs[1] });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(zipBlob(ex.fichiers));
+    a.download = ex.nom + "-kicad.zip";
+    a.click();
+    setTimeout(function() { URL.revokeObjectURL(a.href); }, 10000);
+    pKicadRapport("Projet exporté vers KiCad (" + ex.nom + "-kicad.zip, documents tels qu'enregistrés)",
+      ex.rapport.concat(docs[1] ? ["dans KiCad : remplir les zones (touche B) puis lancer le DRC"] : []));
+  } catch(e) {
+    pDosMsg(esc(e.message), true);
+  }
+}
+const inKicad = document.getElementById("pKicadFichier");
+document.getElementById("pBtnKicadImport").onclick = function() { inKicad.value = ""; inKicad.click(); };
+inKicad.onchange = function() { if(inKicad.files[0]) pImporterKicad(inKicad.files[0]); };
+document.getElementById("pBtnKicadExport").onclick = pExporterKicad;
 
 // Ouvrir un projet existant : Choisir le dossier sur le support
 function pChoisirDossierExistant() {

@@ -727,26 +727,31 @@ const COMPOSANTS_LIB = (() => {
      Repris : les pastilles (pad), les trous non métallisés et le contour de fabrication
      (F.Fab) qui devient le corps. Le reste est compté dans les remarques. */
   const KICAD_MAX = 200 * 1024;
-  function lireS(texte) {
+  /* quoi : le genre de fichier pour les messages ; maxNoeuds : un projet entier (kicad_pcb,
+     kicad_sch, commun/kicad.js) en compte bien plus qu'une empreinte */
+  function lireS(texte, quoi = "kicad_mod", maxNoeuds = 200000) {
     let i = 0, noeuds = 0;
     const n = texte.length;
     function blanc() { while (i < n && /\s/.test(texte[i])) i++; }
     function liste(prof) {
-      if (prof > 40) throw new Refus("kicad_mod illisible : imbrication trop profonde");
+      if (prof > 40) throw new Refus(quoi + " illisible : imbrication trop profonde");
       i++;                                                   // « ( »
       const out = [];
       for (;;) {
         blanc();
-        if (i >= n) throw new Refus("kicad_mod illisible : parenthèse non fermée");
+        if (i >= n) throw new Refus(quoi + " illisible : parenthèse non fermée");
         const c = texte[i];
-        if (++noeuds > 200000) throw new Refus("kicad_mod illisible : trop d'éléments");
+        if (++noeuds > maxNoeuds) throw new Refus(quoi + " illisible : trop d'éléments");
         if (c === ")") { i++; return out; }
         if (c === "(") out.push(liste(prof + 1));
         else if (c === '"') {
           let v = "";
           i++;
-          while (i < n && texte[i] !== '"') { if (texte[i] === "\\" && i + 1 < n) i++; v += texte[i++]; }
-          if (i >= n) throw new Refus("kicad_mod illisible : guillemet non fermé");
+          while (i < n && texte[i] !== '"') {
+            if (texte[i] === "\\" && i + 1 < n) { i++; if (texte[i] === "n") { v += "\n"; i++; continue; } }
+            v += texte[i++];
+          }
+          if (i >= n) throw new Refus(quoi + " illisible : guillemet non fermé");
           i++;
           out.push(v);
         } else {
@@ -757,10 +762,11 @@ const COMPOSANTS_LIB = (() => {
       }
     }
     blanc();
-    if (texte[i] !== "(") throw new Refus("kicad_mod illisible : il doit commencer par « (footprint » ou « (module »");
+    if (texte[i] !== "(") throw new Refus(quoi === "kicad_mod" ? "kicad_mod illisible : il doit commencer par « (footprint » ou « (module »"
+                                                               : quoi + " illisible : il doit commencer par « ( »");
     const racine = liste(0);
     blanc();
-    if (i < n) throw new Refus("kicad_mod illisible : texte après la dernière parenthèse");
+    if (i < n) throw new Refus(quoi + " illisible : texte après la dernière parenthèse");
     return racine;
   }
   const enfant = (l, nom) => l.find(e => Array.isArray(e) && e[0] === nom);
@@ -885,5 +891,5 @@ const COMPOSANTS_LIB = (() => {
   }
 
   return { SYMBOLES, CHAMPS, nomDeChemin, verifierEmpreinte, verifierBrochage, verifierSymbole, verifierLigne, genererEmpreinte,
-           lireParametres, convertirKicad, portsTouchstone, lireBranchement, brancherTouchstone };
+           lireParametres, convertirKicad, lireS, Refus, portsTouchstone, lireBranchement, brancherTouchstone };
 })();

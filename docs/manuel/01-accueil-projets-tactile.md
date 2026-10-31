@@ -38,6 +38,21 @@ L'accueil (`index.html`) s'ouvre en double-clic, sans serveur ; le serveur ajout
 5. Cliquer sur « ✨ Créer et initialiser le projet » (ou Entrée dans le champ du nom). Un message confirme la création.
 6. Lancé par WEB·SUITE, le champ de chemin disparaît : le projet est toujours créé sous `PROJETS/CAO`.
 
+### Je veux importer un projet KiCad
+
+1. Dans KiCad 9 ou 10 : « Fichier → Archiver le projet » donne un `.zip` (schéma avec ses feuilles, carte, `.kicad_pro`).
+2. Sur l'accueil, bloc « Projet », onglet « ➕ Nouveau projet ». Le « 1. Nom du projet » est facultatif : vide, le projet prend le nom du projet KiCad. Le chemin se choisit comme pour une création.
+3. Cocher « Ajouter ses symboles et empreintes à la LIB » pour les verser aussi dans la bibliothèque centrale. Un nom déjà présent dans la LIB n'est jamais remplacé. Le projet importé garde de toute façon ses propres définitions et s'ouvre sans elles.
+4. Cliquer sur « 📥 Importer un projet KiCad (.zip)… » et choisir l'archive. Le projet est créé, puis le schéma et la carte convertis y sont enregistrés.
+5. Le message liste chaque écart de conversion, avec son nombre. Exemples : couches Fab et Courtyard non reprises, teardrops non repris, priorité de zone ignorée, labels hiérarchiques devenus des labels globaux préfixés par la feuille, drapeaux de non-connexion non repris. Rien ne se perd sans être dit.
+
+### Je veux exporter le projet vers KiCad
+
+1. Enregistrer le schéma et la carte dans leurs éditeurs : l'export lit les documents tels qu'ils sont enregistrés dans le dossier du projet.
+2. Sur l'accueil, carte « Projet en cours », cliquer sur « ⇪ KiCad (.zip) ». Le navigateur télécharge `<nom>-kicad.zip`.
+3. L'archive contient un dossier KiCad 9 complet : `.kicad_pro` (règles, classes de réseaux), `.kicad_sch` (une feuille par page), `.kicad_pcb`, la bibliothèque de symboles `.kicad_sym`, la bibliothèque d'empreintes `.pretty` et les tables `sym-lib-table` et `fp-lib-table`. KiCad 10 l'ouvre aussi.
+4. Dans KiCad : remplir les zones (touche `B`), puis lancer le DRC et l'ERC. Les écarts de l'export sont listés dans le message de l'accueil.
+
 ### Je veux ouvrir un projet existant
 
 1. Bloc « Projet », onglet « 📁 Ouvrir un projet existant ».
@@ -199,6 +214,7 @@ L'accueil (`index.html`) s'ouvre en double-clic, sans serveur ; le serveur ajout
 | Badge « 🟢 nom » / « ⚪ Aucun projet » | | Dit si un projet est ouvert | |
 | Carte « Projet en cours » | | Affiche le nom, « REV » (révision lue dans `projet.cao.json`, « A » à défaut), le dossier, « Dernière sauvegarde » et « Envoyé sur GitHub » | L'heure d'envoi GitHub est gardée dans ce navigateur : un envoi fait depuis un autre appareil n'y figure pas |
 | Cases « SCHÉMA », « PCB », « IPC-2581 » | | Fichier présent (✓ nom, heure d'enregistrement) ou « non créé » / « absent » | |
+| « ⇪ KiCad (.zip) » | | Télécharge `<nom>-kicad.zip` : le projet au format KiCad 9 (schéma, carte, bibliothèques, règles), puis liste les écarts | Lit les documents enregistrés, pas le travail en cours des éditeurs ; les zones sont à remplir dans KiCad (touche `B`) |
 | « ✕ Fermer » | | Ferme le projet et détache le dossier ; message « Vos fichiers restent intacts » | |
 | « 🔗 Détacher » | | Défait le lien avec le dossier après confirmation | Rien n'est supprimé sur le disque ; le projet est aussi refermé, comme au chargement suivant de la page, et le travail non enregistré du schéma et du PCB de l'onglet est perdu (la confirmation le dit) |
 | Onglet « ➕ Nouveau projet » | | Affiche le formulaire de création | |
@@ -208,6 +224,8 @@ L'accueil (`index.html`) s'ouvre en double-clic, sans serveur ; le serveur ajout
 | « Emplacements : » / « Emplacements rapides : » | | « Emplacements : » (sans serveur) porte le seul bouton « 📁 Projets locaux (dépôt) » ; « Emplacements rapides : » (serveur joignable) le remplace par un bouton par racine déclarée, nommé d'après le dernier élément du chemin | Les racines viennent de `--projets` |
 | Aperçu « 👁️ Dossier et fichiers qui seront créés » | | Montre `projet.cao.json`, `<nom>-SCH.json`, `<nom>-PCB.json` | |
 | « ✨ Créer et initialiser le projet » | | Crée le projet. Ordre : WEB·SUITE (dans `PROJETS`), sinon dossier parent choisi au sélecteur, sinon serveur (chemin parent + nom), sinon sélecteur de dossier, sinon projet virtuel | Un projet virtuel n'existe qu'en mémoire (« aucun dossier rattaché ») et se referme à la reprise suivante |
+| « 📥 Importer un projet KiCad (.zip)… » | | Lit l'archive dans la page, crée le projet (même ordre que « ✨ Créer et initialiser le projet » ; sans nom saisi, prend celui du projet KiCad), y enregistre le schéma et la carte convertis, puis liste les écarts | KiCad 9 et 10 ; un fichier plus ancien est lu au mieux et le message le dit. Archive de 256 Mo au plus, 64 Mo par fichier, ZIP64 et archives chiffrées refusés. Sans dossier accessible (projet virtuel) : refusé |
+| Case « Ajouter ses symboles et empreintes à la LIB » | | Décochée par défaut. Cochée, verse les symboles (`lib_empreinte_schematique`) et les empreintes (`lib_empreinte_pcb`) du projet KiCad dans la LIB | Demande le serveur ; un nom existant est gardé tel quel (jamais d'écrasement) ; une empreinte que le contrôle de la LIB refuse n'est pas proposée |
 | Onglet « 📁 Ouvrir un projet existant » | | Affiche les trois façons d'ouvrir | |
 | « Choisir le dossier du projet sur le support… » / « 📁 Parcourir les dossiers… » | | Sélecteur de dossier ; s'il contient `projet.cao.json`, il s'ouvre | Dossier non vide sans `projet.cao.json` : confirmation « initialiser comme nouveau projet » ; dossier vide : initialisé sans question |
 | « Ou saisir directement le chemin du dossier » + « Ouvrir ce dossier » | `Entrée` | Ouvre par le serveur : un nom ou un chemin relatif se lit sous la première racine ; un chemin complet aussi | Demande le serveur ; en écoute locale un chemin complet hors des racines est accepté pour cet appel ; en réseau (`--projets-reseau`), et lancé par WEB·SUITE, seules les racines comptent. Dossier sans `projet.cao.json` : refusé, message « Le fichier projet (projet.cao.json) : introuvable » |

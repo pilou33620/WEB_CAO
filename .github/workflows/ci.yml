@@ -187,6 +187,24 @@ jobs:
           node --check editeur-schematique/dist/schema.js
           node editeur-schematique/test/harness.js
 
+      # Deux démos de KiCad 9 (révision figée), téléchargées : données étrangères,
+      # lues par les convertisseurs, jamais exécutées. Injoignables, les bancs
+      # tournent sur leurs seuls cas écrits à la main et le disent.
+      - name: Projet KiCad — import et export (commun/kicad*.js)
+        run: |
+          REV=ce707d0a6c8736cbf4689560be4fee3d6a7f7f5e
+          D=/tmp/kicad-demos
+          for f in pic_programmer/pic_programmer.kicad_pro pic_programmer/pic_programmer.kicad_sch \
+                   pic_programmer/pic_sockets.kicad_sch pic_programmer/pic_programmer.kicad_pcb \
+                   complex_hierarchy/complex_hierarchy.kicad_pro complex_hierarchy/complex_hierarchy.kicad_sch \
+                   complex_hierarchy/ampli_ht.kicad_sch complex_hierarchy/complex_hierarchy.kicad_pcb; do
+            mkdir -p "$D/$(dirname $f)"
+            curl -fsSL -o "$D/$f" "https://gitlab.com/kicad/code/kicad/-/raw/$REV/demos/$f" || { echo "::warning title=Démos KiCad injoignables::cas écrits à la main seulement"; rm -rf "$D"; mkdir -p "$D"; break; }
+          done
+          node commun/test/banc-kicad.js "$D"
+          node commun/test/banc-kicad-pcb.js "$D"
+          node commun/test/banc-kicad-sch.js "$D"
+
       - name: Le monofichier doit être reproductible
         run: |
           # deux assemblages d'affilée donnent le même résultat : rien

@@ -432,7 +432,7 @@ function normFp(f,i){
     id:dInt(f.id,i+1,1,Number.MAX_SAFE_INTEGER),
     ref:dStr(f.ref,32).trim()||("U"+(i+1)),
     value:dStr(f.value,240),
-    pkg:dStr(f.pkg,40),
+    pkg:dStr(f.pkg,120),            // PKG_MAX du schéma : le boîtier relie les deux éditeurs
     pins:dInt(f.pins,2,1,4096),
     style:style,
     pitch:dRange(f.pitch,g.pitch,0.05,100),
