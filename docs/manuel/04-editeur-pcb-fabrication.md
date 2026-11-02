@@ -189,11 +189,12 @@ L'export DXF n'existe plus : le STEP le remplace.
 3. Choisissez l'**Action** (Remplacer, Ajouter, Retirer, Modifier), la **Nouvelle valeur ou MPN** et une **Note**, puis **+ Ajouter au retrofit** (ou `Entrée`).
 4. La feuille Retrofit est cochée d'office et affichée : la carte entière avec chaque composant cerclé et relié par un trait à sa vue de détail agrandie (A, B…), puis un tableau des reprises. Au-delà de six composants, elle continue sur une feuille « (suite) ».
 
-### Je veux joindre au dossier de fabrication une animation 3D de la carte
+### Je veux une vidéo 3D de la carte
 
-1. **Fichier → Animation 3D dans le .zip** est une bascule (bouton allumé = actif). Elle est éteinte à chaque ouverture de l'éditeur.
-2. Lancez **Fichier → Fabrication .zip**, puis **Exporter le .zip**. Une animation joue dans un voile (une vingtaine de secondes, en temps réel) : gardez l'onglet au premier plan.
-3. Le dossier contient en plus `<projet>-ASSEMBLAGE-3D.html` (page autonome, orientable à la souris) et `<projet>-ASSEMBLAGE-3D.mp4` ou `.webm` (vidéo 1280 × 720).
+1. **Fichier → Animation 3D…** : cochez les composants à présenter en gros plan (les plus gros composants actifs le sont d'office ; **Choix d'office** y revient). Le choix est gardé avec la carte.
+2. **Enregistrer la vidéo** : l'animation joue dans un voile, en temps réel : gardez l'onglet au premier plan.
+3. Deux fichiers sont téléchargés, à part du dossier de fabrication : `<projet>-ASSEMBLAGE-3D.mp4` ou `.webm` (vidéo 1280 × 720) et `<projet>-ASSEMBLAGE-3D.html` (page autonome, orientable à la souris).
+4. Chaque composant coché a son gros plan : une étiquette (nom de la LIB ou valeur, repère, colonne « Description » de la LIB) et ses pistes qui s'allument en cyan. Toutes les étiquettes restent pendant le tour final ; des impulsions lumineuses parcourent les autres pistes.
 4. Les composants dont la LIB a un « Modèle 3D » (STEP) sont dessinés avec ce modèle ; les autres sont des pavés à la hauteur du dossier mécanique.
 5. Un modèle mal posé se corrige dans la LIB, colonne « Position 3D » (voir [05](05-gestion-lib.md)).
 
@@ -209,10 +210,10 @@ L'export DXF n'existe plus : le STEP le remplace.
 | Bouton ou menu | Raccourci | Effet | Limites |
 |---|---|---|---|
 | Exporter .png | | Télécharge la vue courante en PNG, couches visibles, orientation courante. | « Export impossible : image trop grande. » si le canevas est trop grand. |
-| Fabrication .zip | | Ouvre la fenêtre **Dossier de fabrication** puis télécharge le zip. | Refusé sur une carte sans empreinte ni piste (« Rien à fabriquer : la carte est vide. »). Pendant l'enregistrement de l'animation 3D, le dossier part à la fin. |
+| Fabrication .zip | | Ouvre la fenêtre **Dossier de fabrication** puis télécharge le zip. | Refusé sur une carte sans empreinte ni piste (« Rien à fabriquer : la carte est vide. »). |
 | 🧊 Export STEP… | | Ouvre la fenêtre des cases, puis télécharge `<projet>-3D.step`. | Voir « STEP pour la mécanique ». « Cochez au moins un élément. » si tout est décoché. |
 | PCBA JLCPCB .zip | | Dossier JLCPCB : archive Gerber, BOM, CPL, LISEZ-MOI. | Carte vide refusée. Ne prend que cuivre, vernis, pâte, sérigraphie, contour (`.GM1`) et perçage. |
-| Animation 3D dans le .zip | | Bascule : ajoute au Fabrication .zip la page HTML et la vidéo de l'assemblage 3D. | Éteinte à chaque ouverture. Enregistrement en temps réel ; sans `MediaRecorder` la page part seule. Un second Fabrication .zip pendant l'enregistrement ne relance rien. |
+| 🎬 Animation 3D… | | Fenêtre des composants présentés, puis télécharge la vidéo et la page HTML de l'assemblage 3D. | À part du dossier de fabrication. Enregistrement en temps réel ; sans `MediaRecorder` la page part seule. Un second clic pendant l'enregistrement ne relance rien. |
 | IPC-2581 .xml | | Écrit toute la carte en un fichier XML IPC-2581, révision C. | Carte vide refusée. La stratégie de remplissage des zones ne part pas (seul le résultat). |
 | Plans (Draftsman)… | | Ouvre la fenêtre des plans. | Voir « Fenêtre Plans ». |
 | Variante de montage… | | Choisit la variante active : ses empreintes non montées sont barrées sur la carte et retirées de `bom.csv`, `positions.csv` et des fichiers JLCPCB. Choix : **Carte complète** (aucune variante) ou une variante du schéma ; boutons **⟳ Reprendre du schéma**, **Fermer**. | Les variantes se créent dans le schéma (Fichier → Variantes de montage…). Le cuivre ne change pas : les pastilles restent gravées. |
@@ -586,12 +587,13 @@ Contenu du `-MECA.step` : le même assemblage que **Export STEP…** avec les ca
 
 | Élément | Effet | Limites |
 |---|---|---|
-| Fichier → Animation 3D dans le .zip | Bascule (bouton allumé). | Éteinte à chaque ouverture de l'éditeur. |
+| Fichier → Animation 3D… | Une case par composant présenté (d'office : les 6 plus gros composants actifs), puis **Enregistrer la vidéo**. | Le choix est gardé avec la carte ; égal au choix d'office, il suit la carte. |
 | `<projet>-ASSEMBLAGE-3D.html` | Animation en boucle, orientable (glisser, molette, double-clic pour revenir), three.js embarqué. | S'ouvre hors ligne. Illustration seulement : ne fait pas foi. |
 | `<projet>-ASSEMBLAGE-3D.mp4` / `.webm` | Vidéo 1280 × 720, enregistrée dans le navigateur. | MP4 (H.264) si le navigateur l'encode, sinon WebM. Sans `MediaRecorder`, pas de vidéo. |
-| Ordre de la scène | Carte nue, cuivre des faces externes, vernis et sérigraphie, composants du plus gros au plus petit (dessus puis dessous), tour complet. | |
+| Ordre de la scène | Carte nue, cuivre des faces externes, vernis et sérigraphie, composants du plus gros au plus petit (dessus puis dessous), gros plan de 3,4 s sur chaque composant présenté, tour complet avec toutes les étiquettes. | |
+| Étiquettes et pistes | Nom (Part Name de la LIB, sinon valeur), repère, « Description » de la LIB ; les pistes des nets du composant s'allument en cyan, des impulsions parcourent les autres. | Description coupée à 44 caractères. Les nets qui touchent plus de 30 % des composants (masse, alimentations) ne s'allument pas. Vidéo en 16:9. |
 | Modèles de composants | « Modèle 3D » (STEP de `LIB/Models`, maillé d'avance dans `LIB/Models/maillages`) posé selon « Position 3D » ; sinon pavé extrudé du corps. | Maillages demandés au serveur. Un maillage absent laisse le pavé. Hauteur du pavé : dossier mécanique, sinon 0,4 × le côté moyen entre 0,3 et 3 mm. |
-| Message de fin | Format de la vidéo, images par seconde, nombre de composants avec modèle. | |
+| Message de fin | Noms des fichiers, format de la vidéo, images par seconde, nombre de composants présentés et avec modèle. | |
 
 ### Export IPC-2581
 

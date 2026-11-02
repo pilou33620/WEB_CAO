@@ -148,6 +148,8 @@ Ces fichiers viennent du dossier partagé, à la racine du dépôt :
                          visionneuse ; aussi les arcs retrouvés d'un contour
                          facetté (ctrSegments) et la pose d'un modèle de la
                          LIB (anim3dPose)
+../commun/animation-3d.js l'animation 3D (fenêtre, scène three.js, vidéo,
+                         page HTML), commune avec la visionneuse
 ../commun/zip.js         archive ZIP sans compression (crc32, zipBlob) :
                          fabrication.zip, dossier méca
 ../commun/vendor/three-source.js  three.js r186 en texte (THREE_SOURCE), évalué
@@ -1545,13 +1547,16 @@ bornés par `dfCfg` (`mecaNormReglages` : identifiants existants, hauteur de 0
 à 100 mm). L'export IPC-2581 écrit la hauteur connue en `<Package height>`.
 La visionneuse IPC-2581 donne le même dossier depuis un fichier IPC.
 
-## Animation 3D dans le dossier de fabrication
+## Animation 3D
 
-**Fichier → Animation 3D dans le .zip** est une bascule, éteinte à chaque
-ouverture de l'éditeur. Allumée, **Fabrication .zip** joue d'abord la carte
-qui s'assemble dans un voile (une vingtaine de secondes, en temps réel : il
-faut garder l'onglet au premier plan), puis livre le dossier avec deux
-fichiers de plus, annoncés par le Master Drawing et le LISEZ-MOI :
+**Fichier → Animation 3D…** ouvre une fenêtre : une case par composant, ceux
+à présenter en gros plan. D'office, les 6 plus gros composants actifs (ni R,
+C, L, FB, D, LED, TP, trous, repères, logos, cavaliers) sont cochés ;
+**Choix d'office** y revient. Le choix part avec la carte (`anim3dEtiq`, une
+étape d'historique) ; s'il est égal au choix d'office, la carte ne garde
+rien et le choix suit les changements de la carte. **Enregistrer la vidéo**
+joue l'animation dans un voile (en temps réel : il faut garder l'onglet au
+premier plan), puis télécharge deux fichiers, à part du dossier de fabrication :
 
 | fichier | contenu |
 | --- | --- |
@@ -1562,7 +1567,17 @@ L'ordre : carte nue (le substrat à l'épaisseur de l'empilage, contour,
 découpes et trous) → cuivre des faces externes (les pistes se posent de
 gauche à droite, puis zones, pastilles et vias) → vernis et sérigraphie →
 composants un par un, du plus gros au plus petit, dessus puis dessous (la
-caméra passe sous la carte) → un tour complet de la carte finie. Le titre (le
+caméra passe sous la carte) → un gros plan de 3,4 s sur chaque composant
+présenté → un tour complet de la carte finie. Pendant le gros plan, une
+étiquette (point sur le composant, trait, cartouche : la Part Name de la LIB
+ou la valeur, le repère, la colonne « Description » de la LIB coupée à 44
+caractères) apparaît, et les pistes de ses nets s'allument en cyan, une onde
+partant du composant ; les nets qui touchent plus de 30 % des composants (au
+moins 4 : masse, alimentations) restent éteints. Pendant le tour, toutes les
+étiquettes de la face vue sont affichées, à gauche ou à droite selon le côté
+de la carte, et les nets présentés restent allumés. Dès la carte assemblée,
+des impulsions plus discrètes parcourent toutes les pistes, chaque net à son
+heure. Le titre (le
 nom du projet), « L × l mm » et l'étape sont en bandeau ; les cotes hors tout
 sont dessinées à côté de la carte, avec la carte nue puis pour le tour final.
 
@@ -1581,13 +1596,19 @@ dossier mécanique (saisie, puis LIB ; le « fichier » IPC-2581 seulement dans 
 côté moyen du corps, entre 0,3 et 3 mm. Les zones de cuivre sont l'image que
 l'écran en peint (`zoneCanvas` à finesse fixe, jusqu'à 20 px/mm) : dégagements,
 liaisons thermiques et marge de bord compris. La barre d'état dit le format de
-la vidéo et le nombre d'images par seconde du rendu. Un second **Fabrication
-.zip** pendant l'enregistrement ne relance rien : le dossier part à la fin.
+la vidéo, le nombre d'images par seconde du rendu et le nombre de composants
+présentés. Un second clic pendant l'enregistrement ne relance rien.
 
-Le code : `js/41-animation-3d.js`. `anim3dDonnees` relève la carte dans le
-repère des Gerber (le dossier méca, `silkTraits` pour la sérigraphie, que le
-Gerber lit aussi) ; `anim3dLancer` construit et joue la scène, sans rien
-d'autre que THREE et ces données, d'où sa recopie telle quelle dans la page.
+`test/banc-anim3d-images.py` prend des images de la page que le banc d'essai
+écrit dans `dist/essai-anim3d/` (Chromium sans fenêtre, instants figés) et
+n'imprime qu'une ligne par image.
+
+Le code : `js/41-animation-3d.js` relève la carte (`anim3dDonnees`, repère
+des Gerber : le dossier méca, `silkTraits` pour la sérigraphie, que le Gerber
+lit aussi) ; `../commun/animation-3d.js`, partagé avec la visionneuse
+IPC-2581, fait le reste : la fenêtre des composants, `anim3dVedettes`,
+`anim3dLancer` qui construit et joue la scène sans rien d'autre que THREE et
+ces données (d'où sa recopie telle quelle dans la page), la vidéo et la page.
 
 ## Export IPC-2581
 

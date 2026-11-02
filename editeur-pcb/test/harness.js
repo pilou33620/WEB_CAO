@@ -59,7 +59,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "deleteNetRouting","autoClass","classOptionsHtml","poserClasseNet","schemaPublie","listNets","mkFp","w2s","runDrc","padsOf",
   "buildFabFiles","jlcGerberFiles","jlcBomLignes","jlcBomCsvText","jlcCplCsvText","jlcCplXlsx","normFp","jlcNonPose","jlcFpsAPoser","vbValeur","vbValeurFiche","vbJuger","vbRequete","vbVerifier","vbAppliquer","exportJlcpcb","gerberCopper","gerberMask","gerberPaste","gerberSilk",
   /* animation 3D de fabrication.zip (41-animation-3d.js) */
-  "anim3dDonnees","anim3dPage","anim3dModeles","anim3dPose","fabAnimBasculer","silkTraits","silkRogne","silkContour","SILK_GARDE","fabLivrer","THREE_SOURCE",
+  "anim3dDonnees","anim3dPage","anim3dModeles","anim3dPose","anim3dAuto","anim3dExporter","silkTraits","silkRogne","silkContour","SILK_GARDE","fabLivrer","THREE_SOURCE",
   "gerberEdge","gerberOutline","ipcNetlist","ipc317","masterDrawingPdf","noAcc",
   "drillFile","buildFabFiles","FAB_GROUPES","fabChoisir","pcbCartouche","pcbCartouchePage","cartoucheSocieteEcrire","CARTOUCHE_PROFIL","dfCfg","cartoucheSuivant","CARTOUCHE_FORMATS","maskOpenings","pasteOpenings","textStrokes","crc32","zipBlob","exportFab",
   "positionsCsvText","bomPcbCsvText","pcbCsvCell","fabReadme",
@@ -4108,20 +4108,53 @@ T("animation 3D : données de la scène, page autonome, dossier qui l'annonce",(
     if(html.indexOf(THREE_SOURCE)<0)throw new Error("three.js absent de la page");
     if(html.split("</script>").length!==3)throw new Error("une balise </script> de trop");
     if(html.indexOf("<title>&lt;/script&gt;")<0)throw new Error("titre non échappé");
-    /* le dossier : la page et la vidéo annoncées par le LISEZ-MOI */
-    const ex=[{name:"carte-ASSEMBLAGE-3D.html",text:"x",kind:"anim3d"},{name:"carte-ASSEMBLAGE-3D.webm",data:new Uint8Array(3),kind:"anim3d"}];
-    const {files}=buildFabFiles(ex), noms=files.map(f=>f.name);
-    if(noms.indexOf("carte-ASSEMBLAGE-3D.webm")<0||noms.indexOf("carte-ASSEMBLAGE-3D.webm")>noms.indexOf(fabDocNum()+".pdf"))
-      throw new Error("la vidéo doit précéder le Master Drawing : "+noms.join(" "));
-    const rm=files.find(f=>f.name==="LISEZ-MOI.txt").text;
-    for(const n of ["carte-ASSEMBLAGE-3D.html","carte-ASSEMBLAGE-3D.webm"])
-      if(rm.indexOf(n+" : ")<0)throw new Error("le LISEZ-MOI ne décrit pas "+n);
-    if(buildFabFiles().files.some(f=>f.kind==="anim3d"))throw new Error("animation sans la bascule");
-    /* la bascule : éteinte au départ, allumée au clic */
-    if($("bFabAnim").classList.contains("on"))throw new Error("bascule allumée d'office");
-    fabAnimBasculer();
-    if(!$("bFabAnim").classList.contains("on"))throw new Error("bascule non allumée");
-    fabAnimBasculer();
+    /* l'animation est à part du dossier de fabrication */
+    if(/ASSEMBLAGE-3D/.test(buildFabFiles().files.map(f=>f.name+(f.text||"")).join()))throw new Error("animation dans le dossier de fabrication");
+  }finally{loadDoc(JSON.parse(avant),true);}
+});
+/* Les composants présentés : choisis d'office (les plus gros actifs), ou cochés et
+   gardés avec la carte ; leurs nets allumés, sauf ceux de presque toute la carte. */
+T("animation 3D : composants présentés, nets allumés, choix gardé avec la carte",()=>{
+  const avant=serialize();
+  try{
+    loadDoc(EXEMPLES[0].build());
+    S.anim3dEtiq=null;
+    const auto=anim3dAuto();
+    if(!auto.length||auto.length>6||auto.some(r=>/^(R|C|L|D|LED)\d/i.test(r)))throw new Error("choix d'office : "+auto.join());
+    let J=anim3dDonnees();
+    /* la page, pour test/banc-anim3d-images.py qui en prend des images dans Chromium */
+    fs.mkdirSync(path.join(__dirname,"..","dist","essai-anim3d"),{recursive:true});
+    fs.writeFileSync(path.join(__dirname,"..","dist","essai-anim3d","carte-ASSEMBLAGE-3D.html"),anim3dPage(J));
+    if(J.vedettes.map(v=>v.ref).sort().join()!==J.composants.filter(c=>auto.includes(c.ref)).map(c=>c.ref).sort().join())throw new Error("vedettes : "+J.vedettes.map(v=>v.ref).join());
+    const nNets=Math.max(-1,...J.faces.flatMap(F=>F.cuivre.pistes.map(p=>p[5])));
+    if(nNets<0)throw new Error("pistes sans net");
+    for(const v of J.vedettes){
+      if(!v.nom&&!v.ref)throw new Error("vedette sans nom");
+      if(!(v.taille>0)||v.nets.some(n=>n<0||n>nNets))throw new Error("vedette "+v.ref+" : "+JSON.stringify(v));
+    }
+    /* le net qui touche presque tout (masse) ne s'allume pas */
+    const tous=new Map();
+    for(const fp of S.fps)for(const q of padsWorld(fp))if(q.net){if(!tous.has(q.net))tous.set(q.net,new Set());tous.get(q.net).add(fp.ref);}
+    const gros=[...tous].filter(([,r])=>r.size>Math.max(4,0.3*S.fps.length)).map(([n])=>n);
+    if(gros.length){
+      const idx=new Set(J.faces.flatMap(F=>F.cuivre.pistes).filter(p=>p[5]>=0).map(p=>p[5]));
+      for(const v of J.vedettes)for(const n of v.nets)if(!idx.has(n))throw new Error("net sans piste allumé");
+    }
+    /* choix coché : gardé, relu, rejoué ; une liste vide ne présente rien */
+    const ref=S.fps.find(f=>/^R\d/.test(f.ref)).ref;
+    S.anim3dEtiq=[ref];
+    const relu=JSON.parse(serialize());
+    loadDoc(relu,true);
+    if(JSON.stringify(S.anim3dEtiq)!==JSON.stringify([ref]))throw new Error("choix perdu : "+JSON.stringify(S.anim3dEtiq));
+    J=anim3dDonnees();
+    if(J.vedettes.length!==1||J.vedettes[0].ref!==ref)throw new Error("choix non suivi");
+    S.anim3dEtiq=[];
+    if(anim3dDonnees().vedettes.length)throw new Error("liste vide");
+    const d=JSON.parse(serialize());d.anim3dEtiq=[ref,"\u0001x",42];
+    loadDoc(d,true);
+    if(JSON.stringify(S.anim3dEtiq)!==JSON.stringify([ref]))throw new Error("repères piégés gardés : "+JSON.stringify(S.anim3dEtiq));
+    J=anim3dDonnees();J.vedettes[0].nom="</script>";
+    if(anim3dPage(J).split("</script>").length!==3)throw new Error("une balise </script> de trop");
   }finally{loadDoc(JSON.parse(avant),true);}
 });
 /* Les modèles 3D de la LIB : la ligne du composant (Part Name), son maillage
@@ -4268,26 +4301,22 @@ TA("PCBA JLCPCB : archive Gerber, BOM et CPL aux colonnes de JLCPCB",async()=>{
     if(!/Sans code LCSC/.test(files[3].text)||files[3].text.includes(a.ref+" —"))throw new Error("LISEZ-MOI : "+files[3].text);
   }finally{URL.createObjectURL=co;S.schDoc=sch;loadDoc(JSON.parse(avant),true);}
 });
-TA("animation 3D : un second Fabrication .zip pendant l'enregistrement ne relance rien",async()=>{
-  const avant=serialize(), co=URL.createObjectURL, zips=[], notes=[];
-  /* la barre d'état lue juste après la livraison : d'autres essais l'écrivent ensuite */
-  URL.createObjectURL=b=>{zips.push(b);queueMicrotask(()=>notes.push($("fHint").textContent));return "blob:essai";};
+TA("animation 3D : enregistrée à part, un second clic pendant l'enregistrement ne relance rien",async()=>{
+  const avant=serialize(), co=URL.createObjectURL, blobs=[];
+  URL.createObjectURL=b=>{blobs.push(b);return "blob:essai";};
   try{
     loadDoc(EXEMPLES[0].build());
-    fabAnimBasculer();
-    if(exportFab()!==null||exportFab()!==null)throw new Error("l'export avec animation rend la main tout de suite");
-    if(!/en cours d'enregistrement/.test($("fHint").textContent))throw new Error("second clic : "+$("fHint").textContent);
-    for(let k=0;k<200&&!zips.length;k++)await new Promise(r=>setTimeout(r,25));
-    await new Promise(r=>setTimeout(r,25));
-    if(zips.length!==1)throw new Error(zips.length+" archive(s) livrée(s)");
-    if(!/Animation 3D : pas de vidéo/.test(notes[0]))throw new Error("barre d'état : "+notes[0]);
-    /* la garde retombe : un nouvel export repart */
-    exportFab();
-    for(let k=0;k<200&&zips.length<2;k++)await new Promise(r=>setTimeout(r,25));
-    if(zips.length!==2)throw new Error("la garde n'est pas retombée");
+    const p1=anim3dExporter(), p2=anim3dExporter();
+    if(!/déjà en cours/.test($("fHint").textContent))throw new Error("second clic : "+$("fHint").textContent);
+    if(await p2!==null)throw new Error("le second clic a relancé");
+    const r=await p1;
+    /* sans MediaRecorder (banc), la page seule, et pas de dossier de fabrication */
+    if(!r||blobs.length!==1)throw new Error(blobs.length+" fichier(s)");
+    if(!/Animation 3D enregistrée : .*ASSEMBLAGE-3D\.html — pas de vidéo/.test($("fHint").textContent))throw new Error("barre d'état : "+$("fHint").textContent);
+    /* la garde retombe : un nouvel enregistrement repart */
+    if(!await anim3dExporter()||blobs.length!==2)throw new Error("la garde n'est pas retombée");
   }finally{
     URL.createObjectURL=co;
-    if($("bFabAnim").classList.contains("on"))fabAnimBasculer();
     loadDoc(JSON.parse(avant),true);
   }
 });

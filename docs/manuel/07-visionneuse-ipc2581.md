@@ -92,6 +92,14 @@ La carte lue suit d'un outil à l'autre : en revenant d'un autre outil, elle est
 
 Le contenu est le même que l'**Export STEP…** de l'éditeur PCB : voir [Éditeur PCB : fabrication](04-editeur-pcb-fabrication.md), « STEP pour la mécanique ».
 
+### Je veux une vidéo 3D de la carte
+
+1. Cliquer **🎬 Animation 3D…** (après **Export STEP…**).
+2. Cocher les composants à présenter en gros plan (les plus gros composants actifs le sont d'office ; **Choix d'office** y revient). Le choix vaut tant que le même fichier est ouvert.
+3. Cliquer **Enregistrer la vidéo** : l'animation joue en temps réel (gardez l'onglet au premier plan), puis `<carte>-ASSEMBLAGE-3D.mp4` ou `.webm` et `<carte>-ASSEMBLAGE-3D.html` sont téléchargés.
+
+La vidéo est la même que celle de l'éditeur PCB : voir [Éditeur PCB : fabrication](04-editeur-pcb-fabrication.md), « Animation 3D ». Les textes de sérigraphie n'y sont pas (le fichier ne donne que leur chaîne) ; le nom et la description viennent de la LIB, sinon du fichier.
+
 ### Je veux sortir les plans de fabrication et d'assemblage
 
 1. Cliquer **Plans (Draftsman)**.
@@ -137,6 +145,7 @@ Le contenu est le même que l'**Export STEP…** de l'éditeur PCB : voir [Édit
 | Exporter .png | | Image de ce qui est affiché, rendue à 2x | Aucune carte ouverte : rien |
 | Dossier méca | | Ouvre la fenêtre du dossier mécanique | Carte ouverte requise |
 | Export STEP… | | Ouvre la fenêtre des cases, puis télécharge `<carte>-3D.step` | Carte ouverte requise ; cuivre et sérigraphie non disponibles ; modèles 3D lus par le serveur |
+| 🎬 Animation 3D… | | Fenêtre des composants présentés, puis télécharge la vidéo et la page HTML de l'assemblage 3D | Carte ouverte requise ; enregistrement en temps réel ; sans `MediaRecorder`, la page part seule |
 | Plans (Draftsman) | | Ouvre la fenêtre des plans : fabrication, assemblage, fiche de mesure, retrofit | Carte ouverte requise |
 | Ajuster | `F` | Cadre toute la carte | |
 | Dessous / Dessus | `B` | Regarde la carte par en dessous (le bouton nomme la vue vers laquelle il mène) | Image en miroir et pile inversée |

@@ -1229,10 +1229,6 @@ function fabReadme(files,dr){
            "cuivre et nets, zones remplies, percages et contre-percage, composants,",
            "nomenclature), millimetres, meme origine que les Gerber. En cas de",
            "desaccord, les Gerber et l'Excellon font foi.");
-  for(const x of files.filter(f=>f.kind==="anim3d"))
-    L.push(x.name+(/\.html$/i.test(x.name)
-      ?" : la carte qui s'assemble en 3D, page autonome (s'ouvre hors ligne, orientable a la souris)."
-      :" : la meme animation en video.")+" Illustration seulement : elle ne fait pas foi.");
   const asm=["positions.csv","bom.csv"].filter(a);
   if(asm.length){
     L.push(asm.join(" et ")+(asm.length>1?" servent":" sert")+" a l'assemblage : millimetres,");
@@ -1570,18 +1566,7 @@ function exportFab(){
   }
   // les variantes du schéma ont pu changer depuis que la carte les a copiées
   if(typeof pcbVarDepuisSchema==="function")pcbVarDepuisSchema();
-  /* l'animation s'enregistre en temps réel : le dossier part quand elle est finie */
-  if(FAB_ANIM){
-    /* un second clic pendant l'enregistrement ne relance rien : le dossier part à la fin */
-    if(ANIM3D_EN_COURS){hint("Animation 3D en cours d'enregistrement : le dossier partira à la fin.");return null;}
-    ANIM3D_EN_COURS=true;
-    anim3dFichiers().then(r=>fabLivrer(r.fichiers,r.note),e=>{
-      alert("Animation 3D impossible : "+(e&&e.message||e)+"\nLe dossier part sans elle.");
-      fabLivrer([],"");
-    }).finally(()=>{ANIM3D_EN_COURS=false;});
-    return null;
-  }
-  return fabLivrer([],"");
+  return fabLivrer();
 }
 /* Le bouton « Fabrication .zip » : une case par famille de fichiers, puis
    l'export. Le choix part avec la carte, en une étape d'historique. */
@@ -1613,8 +1598,8 @@ function fabChoisir(){
     exportFab();
   };
 }
-function fabLivrer(extra,note){
-  const {files,drill}=buildFabFiles(extra);
+function fabLivrer(){
+  const {files,drill}=buildFabFiles();
   const vid=(S.variantes&&S.variantes.active)||"";
   const sl=vid?varSlug(S.variantes,vid):"";
   const zipNom=pcbFile("-fabrication"+(sl?"-"+sl:"")+".zip","fabrication"+(sl?"-"+sl:"")+".zip");
@@ -1622,7 +1607,6 @@ function fabLivrer(extra,note){
   hint(files.length+" fichier(s) exportés dans "+zipNom+" — "+
        drill.holes+" trou(s), "+drill.tools+" outil(s) de perçage, "+
        S.fps.length+" empreinte(s)"+
-       (vid?" — variante « "+varNom(S.variantes,vid)+" », "+(S.fps.length-fabFpsMontes().length)+" non montée(s).":".")+
-       (note?" Animation 3D : "+note+".":""));
+       (vid?" — variante « "+varNom(S.variantes,vid)+" », "+(S.fps.length-fabFpsMontes().length)+" non montée(s).":"."));
   return files;
 }

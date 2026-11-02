@@ -191,7 +191,7 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 | Fabrication .zip | | Archive de fabrication | Détail dans [04-editeur-pcb-fabrication.md](04-editeur-pcb-fabrication.md) |
 | 🧊 Export STEP… | | La carte en 3D pour la mécanique (`<projet>-3D.step`), éléments choisis par cases | Idem |
 | PCBA JLCPCB .zip | | Gerber, BOM et CPL au format JLCPCB | Idem |
-| Animation 3D dans le .zip | | Ajoute l'animation 3D à l'archive de fabrication (bascule, éteinte à chaque ouverture) | Idem |
+| 🎬 Animation 3D… | | Vidéo et page HTML de la carte qui s'assemble, gros plans sur les composants cochés | À part du dossier de fabrication. Idem |
 | IPC-2581 .xml | | Export IPC-2581 révision C | Idem |
 | Plans (Draftsman)… | | Plans de fabrication et d'assemblage en PDF | Idem |
 | Variante de montage… | | Choisit la variante de montage (voir plus bas) | Les variantes se créent dans le schéma |

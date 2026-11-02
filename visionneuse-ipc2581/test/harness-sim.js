@@ -68,6 +68,9 @@ const FICHIERS=[
   path.join(RACINE,"..","commun","dossier-meca.js"),
   path.join(RACINE,"..","commun","export-step.js"),
   path.join(RACINE,"js","08-dossier-meca.js"),
+  /* animation 3D (la scène commune, la carte relevée ici) */
+  path.join(RACINE,"..","commun","animation-3d.js"),
+  path.join(RACINE,"js","11-animation-3d.js"),
   /* fiche de mesure du technicien */
   path.join(RACINE,"..","commun","fiche-mesure.js"),
   path.join(RACINE,"js","09-fiche-mesure.js"),
@@ -207,7 +210,7 @@ const EXPOSE=["ECRITURE_CAO","simDsChamp","simDsLire","simDsEcrire","SIM_DS","SI
   /* classes d'interface (commun/classes-interface.js) */
   "CLASSES_INTERFACE","familleClasse","titreClasse",
   /* sorties empruntées au Draftsman de l'éditeur */
-  "dfNouvelle","dfTexte","dfCadre","dfPdf","ctrSegments","stepScene","stepSceneIpc",
+  "dfNouvelle","dfTexte","dfCadre","dfPdf","ctrSegments","stepScene","stepSceneIpc","ipcAnimDonnees","ipcAnimVedettes","anim3dPage",
   /* dossier méca */
   "mecaDonnees","mecaEntreeIpc","mecaIpcDossier","mecaIpcRegler","mecaIpcFichiers","MECA_IPC","mecaPlan","mecaIpcCtx","dfSvg","mecaIpcLib","modeleTexte",
   /* fiche de mesure */
@@ -7059,6 +7062,40 @@ T("export STEP, visionneuse : carte percée, composants en boîtes, le modèle d
     const r=stepScene(J,{carte:true,dessus:true,dessous:true},{"M.stp":mod});
     if(!r||r.n.modeles!==1||r.n.boites!==J.composants.length-1)throw new Error(JSON.stringify(r&&r.n));
     if(!r.texte.includes("PRODUCT('"+J.titre+"-CARTE'"))throw new Error("carte absente");
+  }finally{MECA_IPC.lib=garde;carte();}
+});
+T("animation 3D, visionneuse : cuivre, pastilles, vias et sérigraphie par face, composants présentés",()=>{
+  /* J1 dessus (2 pastilles rondes, net 0 et 1), une piste et un arc du net 0 sur Top, un plan sur Bottom,
+     un trait de sérigraphie dessous, un via traversant */
+  const ps={P:{pad:1,pads:[{c:"Top",f:"R1",d:1}]}};
+  carte({couches:["Top","Bottom","SilkBot"],
+    pistes:[{c:0,n:0,w:0.2,p:[1,1,5,1,5,4]},{c:2,n:-1,w:0.15,p:[0,0,3,0]}],
+    plans:[{c:1,n:1,g:[{o:[0,0,10,0,10,10,0,10],t:[]}]}],
+    formes:{R1:{t:"CIRCLE",d:1}}, padstacks:ps,
+    composants:[{ref:"J1",pkg:"USB",c:0,x:20,y:20,r:0,m:0,pins:[],props:{PART_NAME:"USB_B",DESCRIPTION:"Prise USB"},part:"",val:"",
+      corps:[-2,-3,2,-3,2,3,-2,3,-2,-3],hauteur:3,
+      pads:[{ps:"P",x:-1,y:0,r:0,n:0},{ps:"P",x:1,y:0,r:0,n:1}]}],
+    percages:[{x:5,y:5,d:0.3,p:"VIA",ps:"P"}]});
+  V.modele.arcs=[{c:0,n:0,w:0.2,s:[5,4],e:[5,6],m:[5,5],h:0}];V.couches[0].arcs=V.modele.arcs;
+  const garde=MECA_IPC.lib;
+  MECA_IPC.lib=[{"Part Name":"USB_B","Description":"Connecteur USB type B","Part Number":""}];
+  try{
+    const J=ipcAnimDonnees(), D=J.faces[0].cuivre;
+    if(D.pistes.filter(s=>s[5]===0).length<4)throw new Error("piste + arc : "+JSON.stringify(D.pistes));
+    const fin=D.pistes[D.pistes.length-1];
+    if(Math.abs(fin[2]-5)>1e-3||Math.abs(fin[3]-6)>1e-3)throw new Error("arc mal échantillonné : "+fin);
+    if(D.pads.length!==2||Math.abs(Math.max(...D.pads[1].map(p=>p[0]))-21.5)>1e-3)throw new Error("pastilles : "+JSON.stringify(D.pads));
+    if(D.vias.length!==1||J.faces[1].cuivre.vias.length!==1||D.vias[0][2]!==1||D.vias[0][3]!==0.3)throw new Error("vias : "+JSON.stringify(D.vias));
+    if(J.faces[1].cuivre.pistes.length)throw new Error("une piste dessous de trop");
+    if(J.faces[1].seri.segs.length!==1||J.faces[0].seri.segs.length)throw new Error("sérigraphie : "+JSON.stringify(J.faces.map(F=>F.seri.segs)));
+    const j=J.composants.find(c=>c.ref==="J1");
+    if(!j||j.couleur!==0x9ea3a8||j.face!==0)throw new Error("J1 : "+JSON.stringify(j));
+    J.vedettes=ipcAnimVedettes(J,["J1"]);
+    const v=J.vedettes[0];
+    if(J.vedettes.length!==1||v.nom!=="USB_B"||v.desc!=="Connecteur USB type B")throw new Error("vedette : "+JSON.stringify(J.vedettes));
+    if(v.nets.join()!=="0")throw new Error("nets allumés (le net 1 n'a pas de piste) : "+v.nets);
+    globalThis.THREE_SOURCE=globalThis.THREE_SOURCE||"/* three.js */";   // commun/vendor/three-source.js, hors du banc
+    if(anim3dPage(J).split("</script>").length!==3)throw new Error("page");
   }finally{MECA_IPC.lib=garde;carte();}
 });
 TA("dossier méca, visionneuse : sans serveur, pas de LIB, et la fenêtre le dit",async()=>{

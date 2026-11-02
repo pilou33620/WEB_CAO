@@ -543,10 +543,6 @@ function masterDrawingPdf(fabFiles){
      contiennent vraiment. */
   const plansF=(fabFiles||[]).find(f=>/-PLANS\.pdf$/.test(f.name));
   if(plansF)tableRow(plansF.name,"Fabrication and assembly drawings (searchable text)",true,alt=!alt);
-  /* l'animation 3D (41-animation-3d.js), si elle est dans l'archive */
-  for(const f of (fabFiles||[]).filter(f=>f.kind==="anim3d"))
-    tableRow(f.name,/\.html$/i.test(f.name)?"3D assembly animation - standalone HTML page (illustration only)"
-                                          :"3D assembly animation - video (illustration only)",true,alt=!alt);
   y+=MD_LH*1.2;
 
   if(plansF){

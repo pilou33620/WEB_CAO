@@ -78,6 +78,7 @@ et ceux du dossier partagé, identiques aux autres outils :
 | `js/07-simulation.js` | 6133 | Simulation EM : la portée désignée mise au format du solveur — masse coplanaire mesurée côté par côté, découpage en plages d'écart, couture de vias, **cuivre voisin joint au problème** —, la carte de chaleur d'impédance et les valeurs écrites sur les pistes ; et pour l'onglet **Crosstalk**, les trois mesures que le serveur ne peut pas deviner : positions de couture sur l'abscisse du parcours, fentes du plan sondées dessous, perçages de masse |
 | `js/08-dossier-meca.js` | 240 | Dossier mécanique : entrée neutre tirée du modèle lu, fenêtre (hauteurs, ouvertures, aperçu) et `.zip` ; la scène de l'Export STEP (`stepSceneIpc`) |
 | `js/09-fiche-mesure.js` | 40 | Fiche de mesure et retrofit : pastilles du modèle lu (les mesures vont dans `V.modele.mesures`, le retrofit dans `V.modele.retrofit`) ; la fenêtre est celle des plans |
+| `js/11-animation-3d.js` | 150 | Animation 3D : le modèle lu relevé dans la scène de `commun/animation-3d.js` (cuivre, pastilles, vias, plans en image, sérigraphie, composants présentés) |
 | `js/10-plans.js` | 233 | Plans du Draftsman (fabrication, assemblage dessus / dessous) refaits sur le modèle lu, et la seule fenêtre des plans : cases des feuilles, volets fiche de mesure et retrofit, aperçu et PDF |
 | `../python/simulation_em.py` | 8152 | Pont vers `python/ligne_mom.py` : empilage à plat → section droite, résolution par tronçon, **appariement des tronçons parallèles**, cascade ABCD → JSON |
 | `test/harness-sim.js` | 7125 | Banc d'essai de la masse coplanaire, de la chute continue, du voisinage et des trois mesures du crosstalk, sous Node : `node test/harness-sim.js` |
@@ -787,6 +788,23 @@ dessus / dessous. Le modèle 3D d'un composant est cherché dans la LIB par la
 Part Name, puis par la référence fabricant ; sans modèle, le composant est sa
 boîte extrudée à sa hauteur. La scène vient de `stepSceneIpc`
 (`js/08-dossier-meca.js`).
+
+## Animation 3D
+
+Le bouton **🎬 Animation 3D…**, après **Export STEP…**, fait la même vidéo
+que l'éditeur PCB (voir « Animation 3D » dans `editeur-pcb/README.md`) :
+fenêtre des composants présentés (les 6 plus gros composants actifs cochés
+d'office ; le choix vaut pour la séance et le fichier ouvert), puis
+`<carte>-ASSEMBLAGE-3D.mp4` ou `.webm` et `<carte>-ASSEMBLAGE-3D.html`.
+`js/11-animation-3d.js` relève la carte, en mm (`mdlK`), repère du fichier
+comme le dossier méca : contour, trous et composants de `stepSceneIpc` ; le
+cuivre des couches dessus et dessous (pistes, arcs coupés en morceaux de
+0,5 mm, pastilles des formes de `mdlForme` en polygones, vias, plans en
+image) ; la sérigraphie (couches de genre « serigraphie », face déclarée
+par le fichier sinon par le nom : traits, contours, pastilles — pas les
+textes, dont le fichier ne donne que la chaîne). Étiquettes : Part Name et
+Description de la LIB (Part Name, référence fabricant, puis valeur), sinon
+la Part Name et la `DESCRIPTION` du fichier ; nets des pastilles et broches.
 
 ## Plans, fiche de mesure, règle et classification des nets
 
