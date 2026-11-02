@@ -1573,7 +1573,9 @@ présenté → un tour complet de la carte finie. Pendant le gros plan, une
 ou la valeur, le repère, la colonne « Description » de la LIB coupée à 44
 caractères) apparaît, et les pistes de ses nets s'allument en cyan, une onde
 partant du composant ; les nets qui touchent plus de 30 % des composants (au
-moins 4 : masse, alimentations) restent éteints. Pendant le tour, toutes les
+moins 4 : masse, alimentations) restent éteints. Un composant qui se dresse entre la caméra et le
+composant présenté (support de pile, boîtier haut) s'efface le temps du gros
+plan. Pendant le tour, toutes les
 étiquettes de la face vue sont affichées, à gauche ou à droite selon le côté
 de la carte, et les nets présentés restent allumés. Dès la carte assemblée,
 des impulsions plus discrètes parcourent toutes les pistes, chaque net à son

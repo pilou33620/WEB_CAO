@@ -243,8 +243,10 @@ function anim3dLancer(THREE,J,canvas,o){
       base=c.face?-ep-0.045-c.h:0.045;
     }
     m.position.z=base;m.visible=false;carte.add(m);
+    m.updateWorldMatrix(true,true);                          // la carte comprise : la boîte est dans le repère du monde
+    const boite=new THREE.Box3().setFromObject(m);          // posé : ce qu'il cache pendant un gros plan
     hmax=Math.max(hmax,c.h);
-    return {m,mats,base,face:c.face,t:c.face?t0B+(i-nD)*pas:t0D+i*pas};
+    return {m,mats,base,boite,ref:c.ref,face:c.face,t:c.face?t0B+(i-nD)*pas:t0D+i*pas};
   });
   const tPose=(nB?t0B+nB*pas:t0D+nD*pas)+chute+0.4;              // carte assemblée
   /* les gros plans : PL s par composant présenté, dont TR de trajet, puis le retour et le tour */
@@ -269,7 +271,7 @@ function anim3dLancer(THREE,J,canvas,o){
   /* pendant les gros plans : la valeur f(v) tenue sur le composant, puis `fin` au retour */
   const visite=(f,fin)=>V.flatMap((v,i)=>[[debut(i)+TR,f(v)],[debut(i+1),f(v)]]).concat(V.length?[[tTour,fin]]:[]);
   const EL=[[0,1.05],[t0D,0.8]].concat(nB?[[t0B-1.4,0.8],[t0B,-0.8],[tPose,-0.8]]:[[tPose,0.7]],
-    visite(v=>v.face?-0.8:0.85,0.62),[[duree,0.55]]);
+    visite(v=>v.face?-1:1,0.62),[[duree,0.55]]);
   const az0=-1.2, azT=az0+0.05*tPose, azR=azT+0.1*(tTour-tPose);
   const AZ=[[0,az0],[tPose,azT]].concat(V.length?[[tTour,azR]]:[],[[duree,azR+2*Math.PI]]);
   const DI=[[0,1.5],[3,1.05],[tPose,0.95]].concat(visite(v=>Math.max(0.42,Math.min(0.75,1.8*v.taille/rayon)),0.95),[[duree,0.95]]);
@@ -411,22 +413,32 @@ function anim3dLancer(THREE,J,canvas,o){
     M.seri.opacity=lisse(e(5,6));
     mc.opacity=lisse(e(0.6,1.4))*(1-lisse(e(5.4,6)))+lisse(e(tTour,tTour+1));
     for(const m of mcT)m.opacity=mc.opacity;
-    for(const c of comps){
-      const u=e(c.t,c.t+chute);
-      c.m.visible=u>0;
-      for(const x of c.mats){x.opacity=Math.min(1,u*3);x.transparent=x.opacity<1;}   // opaque, un modèle se trie bien
-      c.m.position.z=c.base+(c.face?-1:1)*Math.pow(1-u,3)*rayon*0.6;   // tombe et ralentit en se posant
-    }
     const el=Math.max(-1.45,Math.min(1.45,cle(EL,t)+vue.el)), az=cle(AZ,t)+vue.az, d=dist*cle(DI,t)*vue.zoom;
     const [cX,cY,cZ]=CI.map(K=>cle(K,t));
     camera.position.set(cX+d*Math.cos(el)*Math.cos(az),cY+d*Math.cos(el)*Math.sin(az),cZ+d*Math.sin(el));
     camera.lookAt(cX,cY,cZ);
     camera.updateMatrixWorld();
     l1.position.copy(camera.position).add(new THREE.Vector3(0,0,dist));
+    const plans=V.map((v,i)=>lisse(e(debut(i)+TR*0.6,debut(i)+TR+0.3))*(1-lisse(e(debut(i+1)-0.3,debut(i+1)+0.3))));
+    /* pendant un gros plan, un composant qui se dresse entre la caméra et le composant
+       présenté (un support de pile, un boîtier haut) s'efface au lieu de boucher la vue */
+    const iv=plans.findIndex(p=>p>0), cam=camera.position, T=new THREE.Vector3(cX,cY,cZ), pt=new THREE.Vector3();
+    const rai=iv>=0?new THREE.Ray(cam.clone(),T.clone().sub(cam).normalize()):null, loin=cam.distanceTo(T);
+    for(const c of comps){
+      const u=e(c.t,c.t+chute);
+      const cache=!!rai&&c.ref!==V[iv].ref&&(c.boite.containsPoint(cam)||(!!rai.intersectBox(c.boite,pt)&&cam.distanceTo(pt)<loin));
+      const op=Math.min(1,u*3)*(cache?1-0.85*plans[iv]:1);
+      c.m.visible=u>0;
+      for(const x of c.mats){        // opaque, un modèle se trie bien ; changer `transparent` recompile le matériau
+        x.opacity=op;x.depthWrite=!cache;
+        if(x.transparent!==(op<1)){x.transparent=op<1;x.needsUpdate=true;}
+      }
+      c.m.position.z=c.base+(c.face?-1:1)*Math.pow(1-u,3)*rayon*0.6;   // tombe et ralentit en se posant
+    }
     for(const f of partout)f(t,0.4*lisse(e(tPose,tPose+1)));
     const vis=[], tour=lisse(e(tTour,tTour+1));
     V.forEach((v,i)=>{
-      const a0=debut(i)+TR*0.6, plan=lisse(e(a0,debut(i)+TR+0.3))*(1-lisse(e(debut(i+1)-0.3,debut(i+1)+0.3)));
+      const a0=debut(i)+TR*0.6, plan=plans[i];
       for(const f of allume[i])f(t>=debut(i+1)?t-tTour:t-a0,Math.max(plan,0.6*tour));
       const a=Math.max(plan,lisse(e(tTour+0.3,tTour+1.3)))*Math.min(1,Math.max(0,(v.face?-el:el)*4));   // la face tournée vers la caméra
       if(a>0.01)vis.push([v,a]);
