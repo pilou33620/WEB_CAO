@@ -84,8 +84,21 @@ function mesDessin(F,E,T,dessous,surb,zones){
     if(c.face!==face||c.corps.length<3)continue;
     const pts=c.corps.map(p=>T(p.x,p.y)), b=mecaBoite(pts);
     dfPoly(F,pts,{ferme:true,lw:0.12,trait:0.6});
-    const h=clamp(Math.min(b.x2-b.x1,b.y2-b.y1)*0.4,0.8,2.5);
-    dfTexte(F,c.ref,(b.x1+b.x2)/2,(b.y1+b.y2)/2+h*0.35,h/DF_PT,{ancre:"m",c:0.5,cat:"repere",lieu:c.ref});
+    /* le repère va dans la place libre entre les pastilles, qui le couvrent sinon,
+       couché ou debout selon le sens où il tient le plus grand */
+    const cx=(b.x1+b.x2)/2, cy=(b.y1+b.y2)/2;
+    let gx1=b.x1,gx2=b.x2,gy1=b.y1,gy2=b.y2;
+    for(const p of c.pads){
+      const q=mecaBoite(p.pts.map(v=>T(v.x,v.y))), dx=(q.x1+q.x2)/2-cx, dy=(q.y1+q.y2)/2-cy;
+      if(Math.abs(dx)>Math.abs(dy)){if(dx<0)gx1=Math.max(gx1,q.x2);else gx2=Math.min(gx2,q.x1);}
+      else if(dy<0)gy1=Math.max(gy1,q.y2);else if(dy>0)gy2=Math.min(gy2,q.y1);
+    }
+    if(gx2<=gx1||gy2<=gy1){gx1=b.x1;gx2=b.x2;gy1=b.y1;gy2=b.y2;}
+    const gw=gx2-gx1, gh=gy2-gy1, k=dfLargeur(c.ref,1/DF_PT)||1;
+    const hC=Math.min(gh*0.7,gw*0.9/k), hD=Math.min(gw*0.7,gh*0.9/k), debout=hD>hC*1.15;
+    const h=clamp(debout?hD:hC,0.8,2.5), gcx=(gx1+gx2)/2, gcy=(gy1+gy2)/2;
+    if(debout)dfTexte(F,c.ref,gcx+h*0.35,gcy,h/DF_PT,{ancre:"m",rot:90,c:0.5,cat:"repere",lieu:c.ref});
+    else dfTexte(F,c.ref,gcx,gcy+h*0.35,h/DF_PT,{ancre:"m",c:0.5,cat:"repere",lieu:c.ref});
   }
   dfCalque(F,"PASTILLES");
   for(const c of E.composants)for(const p of c.pads){
@@ -403,6 +416,14 @@ function retNormListe(src){
       val:t(l.val,80),note:t(l.note,200)}));
 }
 /* Ce qui sera posé : la nouvelle valeur, sinon la même référence pour un remplacement. */
+/* Le MPN d'un composant pour les plans : le sien, sinon la colonne « Part Number »
+   de sa ligne LIB trouvée par son nom de pièce ; le nom de pièce en dernier recours. */
+function mesMpn(lib,mpn,nom){
+  if(mpn)return String(mpn);
+  const k=String(nom||"").trim().toLowerCase();
+  const l=k&&(Array.isArray(lib)?lib:[]).find(l=>String(l["Part Name"]||"").trim().toLowerCase()===k);
+  return String((l&&(l["Part Number"]||l["manufacturer part Number"]))||nom||"").trim();
+}
 function retNouveau(l){return l.val||(l.action==="Remplacer"?"À l'identique":"");}
 function retComposant(E,ref){
   const R=String(ref).toUpperCase();

@@ -32,7 +32,7 @@ function mesEntreeIpc(m){
       const w=mdlPlacer(p.x,p.y,c.x,c.y,c.r,!!c.m);
       poser(p.num,p.n,libres.get(cle(w.x,w.y)),w.x,w.y);
     }
-    return {ref:o.ref,face:o.face,corps:o.corps,pads,val:o.val,pkg:o.pkg,mpn:o.mpn,monte:o.monte};   // les trois derniers : les plans (10-plans.js)
+    return {ref:o.ref,face:o.face,corps:o.corps,pads,val:o.val,pkg:o.pkg,mpn:mesMpn(MECA_IPC.lib,(c.props||{}).MPN||(o.part_name&&c.part!==o.part_name?c.part:""),o.part_name||c.part),monte:o.monte};   // les trois derniers : les plans (10-plans.js)
   });
   return E;
 }

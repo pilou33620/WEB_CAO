@@ -410,7 +410,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "mecaDonnees","mecaEntreeEditeur","mecaDossier","stackTotal","exCharger","mecaFeuilles",
   "mecaFichiers","mecaFichiersEditeur","mecaRegler","mecaNormReglages","mecaOblong","mecaDiam",
   /* fiche de mesure du technicien (commun/fiche-mesure.js, 42-fiche-mesure.js) */
-  "mesFeuilles","mesResoudre","mesEntreeEditeur","mesNormListe","mesPadSous","mesBrancher","MES_MAX",
+  "mesFeuilles","mesDessin","mesMpn","mesResoudre","mesEntreeEditeur","mesNormListe","mesPadSous","mesBrancher","MES_MAX",
   /* retrofit (commun/fiche-mesure.js) */
   "retFeuilles","retNormListe","retBrancher","retRefDeCle","RET_MAX","RET_COUL","dfBoiteTexte",
   /* cotes à la main, vues à la souris, détails (34-draftsman-vues.js) */
@@ -24632,6 +24632,23 @@ T("plans : fiche de mesure, points par repère.pastille ou par net, détails et 
     if(!dfLatin(dfPdfOctets(doc)).startsWith("%PDF-1.4"))throw new Error("PDF");
     if(process.env.MES_OUT)fs.writeFileSync(process.env.MES_OUT,dfSvg(F,[]));
   }finally{S.dessin=null;}
+});
+T("fiche de mesure : le repère d'un composant couché tient entre ses pastilles",()=>{
+  const rect=(x1,y1,x2,y2)=>[{x:x1,y:y1},{x:x2,y:y1},{x:x2,y:y2},{x:x1,y:y2}];
+  const E={contour:[],decoupes:[],composants:[{ref:"C402",face:"dessus",corps:rect(0,0,6,2.6),
+    pads:[{n:"1",pts:rect(0,0,2.2,2.6)},{n:"2",pts:rect(3.8,0,6,2.6)}]}]};
+  const F={items:[]};
+  mesDessin(F,E,(x,y)=>({x,y}),false,new Map(),null);
+  const t=F.items.find(it=>it.t==="t"&&it.s==="C402");
+  if(!t||t.rot!==90)throw new Error("repère debout attendu : "+JSON.stringify(t));
+  const bt=dfBoiteTexte(t);
+  if(bt.x1<2.2-1e-6||bt.x2>3.8+1e-6)throw new Error("le repère déborde sur les pastilles : "+JSON.stringify(bt));
+});
+T("retrofit : le MPN vient de la LIB quand le composant n'a que son nom de pièce",()=>{
+  const lib=[{"Part Name":"L0402_Bead_110R800M_MURATA","Part Number":"BLM15PX111SN1"}];
+  const r=[mesMpn(lib,"","l0402_bead_110r800m_murata "),mesMpn(lib,"GRM155","L0402_Bead_110R800M_MURATA"),
+           mesMpn(lib,"","INCONNU"),mesMpn(null,"","")].join("|");
+  if(r!=="BLM15PX111SN1|GRM155|INCONNU|")throw new Error(r);
 });
 T("plans : PDF valide, chaque entrée de la table xref tombe sur son objet",()=>{
   exCharger(1);

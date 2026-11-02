@@ -230,7 +230,7 @@ function plnOuvrir(){
   }}).choisir;
   m.hidden=false;
   if(m.focus)m.focus();
-  plnApercu();
+  mecaIpcLib().then(()=>plnApercu());   // la LIB donne le MPN d'un composant qui n'a que son nom de pièce
 }
 (function(){
   const b=typeof document!=="undefined"&&document.getElementById&&document.getElementById("bPlansDf");
