@@ -673,10 +673,10 @@ cv.addEventListener("pointerdown",e=>{
     const sb=hitSheetBlock(p.x,p.y);
     if(sb){
       if(!addSel)clearSel();
-      S.selBlock=sb.sheetIndex;
+      S.selBlock=sb.key;
       S.drag={sx:p.x,sy:p.y,moved:false,before:null,handle:false,items:[],
               probes:[],probe:null,ends:[],contacts:[],
-              sheetBlock:{sheetIndex:sb.sheetIndex,x0:sb.x,y0:sb.y}};
+              sheetBlock:{key:sb.key,x0:sb.x,y0:sb.y}};
       document.getElementById("fHint").textContent=
         "Bloc « "+sb.name+" » sélectionné · glisser pour déplacer · double-clic pour ouvrir la feuille.";
       refreshPanels();draw();return;
@@ -758,10 +758,7 @@ cv.addEventListener("pointermove",e=>{
       draw();return;
     }
     if(S.drag.sheetBlock){
-      const targetPage=S.pages[S.drag.sheetBlock.sheetIndex];
-      if(targetPage){
-        targetPage.blockPos={x:snap(S.drag.sheetBlock.x0+dx),y:snap(S.drag.sheetBlock.y0+dy)};
-      }
+      synPosSet(S.drag.sheetBlock.key,S.drag.sheetBlock.x0+dx,S.drag.sheetBlock.y0+dy);
       draw();return;
     }
     if(S.drag.text){
@@ -810,7 +807,7 @@ cv.addEventListener("pointermove",e=>{
   if(S.page === 0){
     const hb = typeof hitSheetBlock === "function" ? hitSheetBlock(p.x, p.y) : null;
     const hl = (!hb && typeof hitSheetLink === "function") ? hitSheetLink(p.x, p.y) : null;
-    const hbIdx = hb ? hb.sheetIndex : null;
+    const hbIdx = hb ? hb.key : null;
     if(hl !== S.hoverSheetLink || hbIdx !== S.hoverSheetBlock){
       S.hoverSheetLink = hl;
       S.hoverSheetBlock = hbIdx;
@@ -863,7 +860,9 @@ cv.addEventListener("dblclick",e=>{
   if(S.page===0 && typeof hitSheetBlock==="function"){
     const sb=hitSheetBlock(p.x,p.y);
     if(sb){
-      gotoPage(sb.sheetIndex);
+      gotoPage(sb.sheetIndex);           // ouvre la feuille du composant, sélectionné
+      for(const el of S.comps) if(el.ref===sb.key) S.sel.add(el.id);
+      refreshPanels();draw();
       return;
     }
   }

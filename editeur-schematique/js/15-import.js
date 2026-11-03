@@ -185,7 +185,19 @@ function normPage(p,i){
   if(src.blockPos && typeof src.blockPos==="object" && Number.isFinite(+src.blockPos.x) && Number.isFinite(+src.blockPos.y)){
     pObj.blockPos = {x: snap(+src.blockPos.x), y: snap(+src.blockPos.y)};
   }
-  if(typeof src.blockSub==="string" && src.blockSub.trim()) pObj.blockSub = src.blockSub.trim().slice(0, 60);
+  // synoptique (feuille racine) : positions et titres saisis, par repère
+  if(src.synPos && typeof src.synPos==="object"){
+    const o={};
+    for(const [k,v] of Object.entries(src.synPos).slice(0,2000))
+      if(k!=="__proto__" && v && Number.isFinite(+v.x) && Number.isFinite(+v.y)) o[k.slice(0,40)]={x:snap(+v.x),y:snap(+v.y)};
+    pObj.synPos=o;
+  }
+  if(src.synTitres && typeof src.synTitres==="object"){
+    const o={};
+    for(const [k,v] of Object.entries(src.synTitres).slice(0,2000))
+      if(k!=="__proto__" && typeof v==="string" && v.trim()) o[k.slice(0,40)]=v.trim().slice(0,40);
+    pObj.synTitres=o;
+  }
   return pObj;
 }
 function loadDoc(o, keepPage){

@@ -2375,14 +2375,16 @@ T("feuilles hiérarchiques : feuille racine, blocs hiérarchiques dynamiques et 
   S.pages[2].name="Microcontrôleur";
 
   gotoPage(0);
+  S.pages[1].comps=[C("ic",2,2,{ref:"U1",value:"ME6211",npins:5}),C("resistor",8,2,{ref:"R1"})];
+  S.pages[2].comps=[C("ic",2,2,{ref:"U2",value:"STM32F722",npins:8})];
   const blocks=sheetBlocks();
-  if(blocks.length!==2)throw new Error("deux blocs hiérarchiques attendus sur la feuille racine, trouvé "+blocks.length);
-  if(blocks[0].name!=="Alimentation"||blocks[0].sheetIndex!==1)throw new Error("premier bloc hiérarchique incorrect");
-  if(blocks[1].name!=="Microcontrôleur"||blocks[1].sheetIndex!==2)throw new Error("second bloc hiérarchique incorrect");
+  if(blocks.length!==2)throw new Error("un bloc par composant important (passifs cachés), trouvé "+blocks.length);
+  if(blocks[0].key!=="U1"||blocks[0].name!=="RÉGULATEUR"||blocks[0].sheetIndex!==1)throw new Error("premier bloc incorrect");
+  if(blocks[1].key!=="U2"||blocks[1].name!=="MCU"||blocks[1].sheetIndex!==2)throw new Error("second bloc incorrect");
 
   const b0=blocks[0];
   const hit=hitSheetBlock(b0.x+10,b0.y+10);
-  if(!hit||hit.sheetIndex!==1)throw new Error("hitSheetBlock n'a pas trouvé le bloc");
+  if(!hit||hit.key!=="U1")throw new Error("hitSheetBlock n'a pas trouvé le bloc");
 
   let alertShown=false;
   const oldAlert=global.alert;
@@ -2455,7 +2457,7 @@ T("feuilles hiérarchiques : ancien projet mono-feuille gagne sa feuille hiérar
   const oldDoc={
     format:"schemedit-2",
     pages:[
-      {name:"01 Commande NPN",comps:[C("resistor",2,2,{ref:"R1"})],wires:[]}
+      {name:"01 Commande NPN",comps:[C("resistor",2,2,{ref:"R1"}),C("npn",8,2,{ref:"Q1",value:"MMBT3904"})],wires:[]}
     ]
   };
   loadDoc(oldDoc);
@@ -2464,8 +2466,8 @@ T("feuilles hiérarchiques : ancien projet mono-feuille gagne sa feuille hiérar
   if(S.pages[1].name!=="01 Commande NPN")throw new Error("la page 1 doit être l'ancienne feuille 01 Commande NPN");
   if(S.page!==0)throw new Error("le schéma doit s'ouvrir sur la feuille hiérarchique (page 0)");
   const blocks=sheetBlocks();
-  if(blocks.length!==1)throw new Error("un bloc attendu pour la feuille 01 Commande NPN");
-  if(blocks[0].name!=="01 Commande NPN"||blocks[0].sheetIndex!==1)throw new Error("bloc incorrect");
+  if(blocks.length!==1)throw new Error("un bloc attendu : le transistor de la feuille 01 Commande NPN");
+  if(blocks[0].name!=="TRANSISTOR"||blocks[0].sub!=="MMBT3904"||blocks[0].sheetIndex!==1)throw new Error("bloc incorrect");
 
   // Duplication de la feuille hiérarchique interdite
   let alertTriggered=false;
@@ -2491,11 +2493,32 @@ T("dupliquer une feuille renumérote ses repères, les parties d'un boîtier res
   sheet([],[]);                                   // l'essai suivant part de la feuille 0
 });
 
-/* Feuille d'essai du synoptique : une étiquette globale câblée par nom (un fil la rend réelle). */
-function synFeuille(nom,ports,comps){
-  const pg=newPage(nom);
-  pg.comps=(comps||[]).slice();pg.wires=[];
-  ports.forEach((n,k)=>{pg.comps.push(C("gport",4,4+k*3,{value:n}));pg.wires.push(W(5,4+k*3,8,4+k*3));});
+/* Synoptique d'essai : une carte PIR en miniature.
+   Pile → VBAT ; AOP U2 → R1 en série → TRIG du 555 U1 ; OUT du 555 → R2 → base de Q1 ;
+   collecteur de Q1 → LED_K → LED D1 → R3 → VBAT ; C1 découple VBAT à la masse. */
+function synCarte(){
+  const pg=newPage("Carte"), w=pg.wires, P=(el,i)=>allPins(el)[i];
+  const fil=(a,b)=>w.push({x1:a.x,y1:a.y,x2:b.x,y2:b.y});
+  const bt=C("battery",2,2,{ref:"BT1",value:"2xAA"}),
+        u1=C("ic",40,10,{ref:"U1",value:"TLC555",mpn:"TLC555CDR",npins:8,pinNames:["GND","TRIG","OUT","RST","CV","THR","DIS","VCC"]}),
+        u2=C("ic",10,10,{ref:"U2",value:"MCP6002",npins:8,pinNames:["OUTA","INA-","INA+","VSS","INB+","INB-","OUTB","VDD"]}),
+        q1=C("npn",70,10,{ref:"Q1",value:"MMBT3904"}), d1=C("led",90,10,{ref:"D1",value:"rouge"}),
+        r1=C("resistor",25,30,{ref:"R1"}), r2=C("resistor",55,30,{ref:"R2"}), r3=C("resistor",90,30,{ref:"R3"}),
+        c1=C("capacitor",2,30,{ref:"C1"});
+  const vb=[0,1,2,3,4].map(k=>C("vcc",5+k*20,40,{value:"VBAT"})), gn=[0,1,2,3,4].map(k=>C("gnd",5+k*20,50,{}));
+  const lk=[C("port",75,20,{value:"LED_K"}),C("port",85,20,{value:"LED_K"})];
+  pg.comps=[bt,u1,u2,q1,d1,r1,r2,r3,c1,...vb,...gn,...lk];
+  fil(P(bt,0),P(vb[0],0)); fil(P(bt,1),P(gn[0],0));
+  fil(P(c1,0),P(vb[0],0)); fil(P(c1,1),P(gn[0],0));
+  fil(P(u2,7),P(vb[1],0)); fil(P(u2,3),P(gn[1],0));
+  fil(P(u1,7),P(vb[2],0)); fil(P(u1,0),P(gn[2],0));
+  fil(P(u2,0),P(r1,0)); fil(P(r1,1),P(u1,1));
+  fil(P(u1,2),P(r2,0));
+  const qb=brNomBroche(q1,0)==="B"?0:allPins(q1).findIndex((_,i)=>brNomBroche(q1,i)==="B");
+  const qc=allPins(q1).findIndex((_,i)=>brNomBroche(q1,i)==="C"), qe=allPins(q1).findIndex((_,i)=>brNomBroche(q1,i)==="E");
+  fil(P(r2,1),P(q1,qb)); fil(P(q1,qe),P(gn[3],0));
+  fil(P(q1,qc),P(lk[0],0)); fil(P(lk[1],0),P(d1,1));
+  fil(P(d1,0),P(r3,0)); fil(P(r3,1),P(vb[3],0));
   return pg;
 }
 /* Aucun fil ne partage une voie avec un autre, aucun ne traverse un bloc. */
@@ -2522,61 +2545,54 @@ function synVerifier(routes,blocks){
       throw new Error(r.link.name+" traverse le bloc "+B.sheetIndex);
 }
 
-T("synoptique : liaisons tirées des nets globaux, masse exclue, bus regroupé, sens des alimentations",()=>{
-  S.pages=[newHierPage("Hiérarchie"),
-    synFeuille("Régulateur",["+5V","+3V3","GND"]),
-    synFeuille("MCU",["+3V3","SPI_MOSI","SPI_MISO","SPI_SCK","GND"],[C("ic",20,4,{ref:"U1",value:"STM32F722",npins:48})]),
-    synFeuille("Flash",["+3V3","SPI_MOSI","SPI_MISO","SPI_SCK","GND"])];
+T("synoptique : un bloc par composant important, passifs traversés, masse exclue, sens et titres",()=>{
+  S.pages=[newHierPage("Hiérarchie"),synCarte()];
   gotoPage(0);
-  const L=sheetLinks();
-  if(L.length!==3)throw new Error("3 liaisons attendues, trouvé "+L.map(l=>l.name).join(" | "));
+  const blocks=sheetBlocks(), par=Object.fromEntries(blocks.map(b=>[b.key,b]));
+  if(blocks.map(b=>b.key).sort().join()!=="BT1,D1,Q1,U1,U2")throw new Error("blocs : "+blocks.map(b=>b.key).join());
+  const titres={BT1:"BATTERIE",U1:"TIMER",U2:"AMPLI",Q1:"TRANSISTOR",D1:"LED"};
+  for(const k in titres)if(par[k].name!==titres[k])throw new Error(k+" : titre « "+par[k].name+" »");
+  if(par.U1.sub!=="TLC555CDR")throw new Error("le sous-titre est le MPN");
+  const L=sheetLinks(), lien=(a,b)=>L.find(l=>l.a===a&&l.b===b);
+  const d=JSON.stringify(L.map(l=>[l.a,l.b,l.dir,l.kind,l.name]));
+  if(!lien("U2","U1")||lien("U2","U1").dir!=="a"||lien("U2","U1").isPower)throw new Error("U2 → U1 à travers R1 : "+d);
+  if(!lien("U1","Q1")||lien("U1","Q1").dir!=="a")throw new Error("OUT du 555 → Q1 à travers R2 : "+d);
+  if(!lien("Q1","D1")||lien("Q1","D1").name!=="LED_K")throw new Error("collecteur de Q1 → LED_K → D1 : "+d);
+  for(const k of ["U1","U2","D1"]){const l=lien("BT1",k);if(!l||!l.isPower||l.name!=="VBAT"||l.dir!=="a")throw new Error("VBAT de la pile vers "+k+" : "+d);}
   if(L.some(l=>/GND/.test(l.name)))throw new Error("la masse ne doit pas être dessinée");
-  const alim=L.filter(l=>l.isPower);
-  if(alim.length!==2||alim.some(l=>l.a!==1||l.dir!=="a"||l.name!=="+3V3"))
-    throw new Error("+3V3 doit partir du régulateur vers MCU et Flash : "+JSON.stringify(alim.map(l=>[l.a,l.b,l.dir])));
-  const spi=L.find(l=>!l.isPower);
-  if(spi.name!=="SPI"||!spi.isBus||spi.dir!=="ab"||spi.names.length!==3)throw new Error("les trois nets SPI font une liaison « SPI » à double sens");
-  const blocks=sheetBlocks();
-  if(blocks[1].sub!=="STM32F722")throw new Error("sous-titre : le composant principal, reçu « "+blocks[1].sub+" »");
-  S.pages[2].blockSub="Cortex-M7";
-  if(sheetBlocks()[1].sub!=="Cortex-M7")throw new Error("le sous-titre saisi l'emporte");
-  delete S.pages[2].blockSub;
+  S.pages[0].synTitres={U1:"MONOSTABLE"};
+  if(sheetBlocks().find(b=>b.key==="U1").name!=="MONOSTABLE")throw new Error("le titre saisi l'emporte");
+  delete S.pages[0].synTitres;
   const R=sheetRoutes();
   synVerifier(R,blocks);
   const r0=R[0], [a,b]=[r0.pts[0],r0.pts[1]];
   if(hitSheetLink((a[0]+b[0])/2,(a[1]+b[1])/2)!==r0.link)throw new Error("le survol d'un fil désigne sa liaison");
-  const st=synStats();
-  if(st.parts!==1||st.blocs!==3)throw new Error("chiffres clés : "+JSON.stringify(st));
+  if(synStats().blocs!==1)throw new Error("une sous-feuille");
   draw();
+  // positions et titres passent par le fichier, filtrés
+  const doc=JSON.parse(serialize());
+  doc.pages[0].synPos={U1:{x:400,y:200},__proto__x:1,Q1:{x:"a",y:2}};
+  doc.pages[0].synTitres={U1:"  TIMER 5 s  ",Q1:7};
+  loadDoc(doc);
+  if(S.pages[0].synPos.U1.x!==400||S.pages[0].synPos.Q1||S.pages[0].synTitres.U1!=="TIMER 5 s"||S.pages[0].synTitres.Q1)
+    throw new Error("synPos/synTitres mal relus : "+JSON.stringify([S.pages[0].synPos,S.pages[0].synTitres]));
 });
 
-T("synoptique : Ranger place sans chevauchement, s'annule, garde des fils propres",()=>{
-  S.pages=[newHierPage("Hiérarchie"),
-    synFeuille("Batterie",["VBAT"]),
-    synFeuille("Buck",["VBAT","+5V"]),
-    synFeuille("LDO",["+5V","+3V3"]),
-    synFeuille("MCU",["+3V3","SPI_IMU","I2C_SDA","I2C_SCL","UART_RX","VIDEO_SPI"]),
-    synFeuille("IMU",["+3V3","SPI_IMU"]),
-    synFeuille("Baro",["+3V3","I2C_SDA","I2C_SCL"]),
-    synFeuille("RX",["+5V","UART_RX"]),
-    synFeuille("Camera",["+5V","CAM_VIDEO"]),
-    synFeuille("OSD",["+3V3","VIDEO_SPI","CAM_VIDEO","OSD_VIDEO"]),
-    synFeuille("VTX",["+5V","OSD_VIDEO"])];
+T("synoptique : Ranger place sans chevauchement, la chaîne dans le sens du signal, s'annule",()=>{
+  S.pages=[newHierPage("Hiérarchie"),synCarte()];
   gotoPage(0);
   const avant=serialize();
   arrangeSheetBlocks();
-  const blocks=sheetBlocks();
-  if(!blocks.find(b=>b.name==="MCU").big)throw new Error("le MCU est le bloc central");
+  const blocks=sheetBlocks(), par=Object.fromEntries(blocks.map(b=>[b.key,b]));
   for(let i=0;i<blocks.length;i++)for(let j=i+1;j<blocks.length;j++){
     const p=blocks[i],q=blocks[j];
     if(p.x<q.x+q.w+20&&q.x<p.x+p.w+20&&p.y<q.y+q.h+20&&q.y<p.y+p.h+20)
-      throw new Error("blocs trop proches : "+p.name+" / "+q.name);
+      throw new Error("blocs trop proches : "+p.key+" / "+q.key);
   }
-  const haut=blocks.filter(b=>["Batterie","Buck","LDO"].includes(b.name));
-  if(haut.some(b=>b.y!==haut[0].y)||!(haut[0].x<haut[1].x&&haut[1].x<haut[2].x))
-    throw new Error("la chaîne d'alimentation va en haut, dans l'ordre Batterie → Buck → LDO");
+  if(!blocks.every(b=>b===par.BT1||b.y>par.BT1.y))throw new Error("la pile va en haut");
+  if(!(par.U2.x<par.U1.x&&par.U1.x<par.Q1.x&&par.Q1.x<par.D1.x))throw new Error("chaîne U2 → U1 → Q1 → D1 de gauche à droite");
   synVerifier(sheetRoutes(),blocks);
-  S.drag={sheetBlock:{sheetIndex:1},moved:true};
+  S.drag={sheetBlock:{key:"U1"},moved:true};
   const glisse=sheetRoutes();
   S.drag=null;
   if(!glisse.length||!glisse.every(r=>r.direct))throw new Error("pendant le glisser, traits directs sans routage");
@@ -2585,7 +2601,7 @@ T("synoptique : Ranger place sans chevauchement, s'annule, garde des fils propre
 });
 
 T("routeur du synoptique : le contrôleur de vol de la maquette, sans voie partagée",()=>{
-  const B=(sheetIndex,x,y,w,h)=>({sheetIndex,x,y,w,h});
+  const B=(key,x,y,w,h)=>({key,x,y,w,h});
   const blocks=[B(1,20,20,150,64),B(2,230,20,170,64),B(3,500,20,150,64),B(4,730,20,200,64),B(5,1030,20,160,64),
     B(6,20,180,170,60),B(7,20,270,170,60),B(8,440,175,310,150),B(9,1010,180,180,60),B(10,1010,270,180,60),
     B(11,50,420,140,64),B(12,300,420,150,64),B(13,550,420,150,64),B(14,800,420,140,64)];

@@ -225,10 +225,13 @@ function buildTabs(){
   }
 }
 
-/* ---------- Synoptique : les sous-feuilles en blocs sur la feuille racine (page 0) ----------
-   Un bloc par sous-feuille ; une liaison par paire de blocs reliés par des nets globaux
-   (étiquettes globales, symboles d'alimentation). La masse relierait tout : elle n'est pas
-   dessinée. Les fils sont routés en équerre sans jamais partager une voie (synRouter). */
+/* ---------- Synoptique : les composants importants en blocs sur la feuille racine (page 0) ----------
+   Un bloc par composant qui compte (circuit intégré, transistor, connecteur, pile, LED…) ;
+   les passifs sont cachés. Une liaison relie deux blocs dont les broches tombent sur le
+   même net, en traversant les passifs en série (une résistance ou un condensateur entre
+   deux signaux), jamais ceux qui vont à une alimentation ou à la masse. La masse n'est pas
+   dessinée. Positions et titres saisis vivent sur la feuille racine (synPos, synTitres).
+   Les fils sont routés en équerre sans jamais partager une voie (synRouter). */
 function isPortBusName(nm){
   if(!nm) return false;
   return /(\[|\{|\.\.|BUS|^SPI|^I2C|^UART|^CAN|^USB|^DATA|^ADDR|^GPIO|^PWM)/i.test(nm);
@@ -240,16 +243,40 @@ function isPortPowerName(nm){
          nm.toUpperCase().includes("GND");
 }
 const SYN_MASSE=/GND|VSS|MASSE|^0V$/i;
-
-/* Le composant qui a le plus de broches donne le sous-titre du bloc. */
-function synPrincipal(comps){
-  let best=null,n=0;
-  for(const el of comps){
-    if(defOf(el.type).noRef)continue;
-    const k=pinCount(el);
-    if(k>n){n=k;best=el;}
-  }
-  return best?String(best.mpn||best.value||best.ref||""):"";
+// passifs à deux pattes : traversés par les liaisons ; les autres types listés sont ignorés
+const SYN_PASSIF=/^(resistor|capacitor|cap_pol|inductor|ferrite_bead|fuse|crystal|varistor|diode|zener|schottky|tvs_diode|strap)$/;
+const SYN_IGNORE=/^(potentiometer|esd_\w+|testpoint\w*|hole|fiducial|annot_\w+|vcc|gnd|port|gport)$/;
+const SYN_TYPE_TITRE={led:"LED",npn:"TRANSISTOR",pnp:"TRANSISTOR",nmos:"MOSFET",pmos:"MOSFET",mos_np:"MOSFET",
+  opamp:"AMPLI",regulator:"RÉGULATEUR",battery:"BATTERIE",acsource:"SECTEUR",button:"BOUTON",relay:"RELAIS",
+  motor:"MOTEUR",buzzer:"BUZZER",lamp:"LAMPE",antenna:"ANTENNE",transformer:"TRANSFO",filter:"FILTRE",
+  usb_c:"USB-C",usb_c_pwr:"USB-C",usb_micro:"USB"};
+const SYN_MOTS=[[/555/,"TIMER"],[/STM32|ATMEGA|ATTINY|ESP32|ESP8266|RP2040|PIC1|PIC3|NRF5|SAMD|MSP430/,"MCU"],
+  [/PIR|IRA-S/,"CAPTEUR PIR"],[/LDO|AMS1117|ME6211|MCP17\d\d|LM317|LM78|L78|TPS7|AP2112|XC6206/,"RÉGULATEUR"],
+  [/LMR\d|TPS5|TPS6|MP1584|MP2\d{3}|LM2596|BUCK|BOOST/,"CONVERTISSEUR"],[/MCP6|LM358|LM324|OPA\d|TL07|TL08|LMV\d|TLV\d/,"AMPLI"],
+  [/W25Q|AT25|MX25|FLASH|EEPROM|24C\d/,"MÉMOIRE"],[/ICM-|MPU-?\d|BMI\d|LSM\d|ADXL/,"IMU"],[/BMP\d|BME\d|MS5611|LPS\d/,"BARO"],
+  [/CH340|CP210|FT232/,"USB-UART"],[/SX12|RFM9|CC1101|NRF24/,"RADIO"],[/MAX7456|AT7456/,"OSD"]];
+function synTitreAuto(el){
+  const t=String((el.mpn||"")+" "+(el.value||"")).toUpperCase();
+  for(const [re,nom] of SYN_MOTS)if(re.test(t))return nom;
+  if(SYN_TYPE_TITRE[el.type])return SYN_TYPE_TITRE[el.type];
+  if(/^header/.test(el.type))return "CONNECTEUR";
+  return String(el.ref||"?");
+}
+function synEstImportant(el){
+  return !!el.ref&&!defOf(el.type).noRef&&!SYN_PASSIF.test(el.type)&&!SYN_IGNORE.test(el.type);
+}
+/* Composants importants, un par repère (les parties U1A/U1B ne font qu'un bloc). */
+function synComposants(){
+  const par=new Map();
+  S.pages.forEach((p,i)=>{
+    if(!i)return;
+    for(const el of (i===S.page?S.comps:(p.comps||[]))){
+      if(!synEstImportant(el))continue;
+      if(!par.has(el.ref))par.set(el.ref,{key:el.ref,sheetIndex:i,el,ids:new Set()});
+      par.get(el.ref).ids.add(el.id);
+    }
+  });
+  return par;
 }
 
 /* Tension lue dans le nom (5V, +3V3, 3.3V…) ; un nom sans chiffre (VBAT, VIN) est une
@@ -261,6 +288,7 @@ function synVolt(nm){
 /* Noms regroupés par famille : SPI2_MOSI, SPI2_MISO → « SPI2 » ; DSHOT1…4 → « DSHOT ×4 » ;
    au-delà de trois familles, leur nombre. */
 function synLibelle(noms){
+  if(!noms.length)return "";
   if(noms.length===1)return noms[0];
   const fam=new Map();
   for(const n of noms){
@@ -272,51 +300,86 @@ function synLibelle(noms){
   return [...fam].map(([k,l])=>l.length===1?l[0]:(l.every(n=>/^\d+$/.test(n.slice(k.length)))?k+" ×"+l.length:k)).join(", ");
 }
 
-/* Liaisons entre sous-feuilles : {a, b, name, names, kind:"power"|"signal", isBus,
-   dir:"a" (de a vers b) | "ab" | ""}. Le sens d'une alimentation va de la feuille qui la
-   produit (elle porte une tension plus haute, ou le connecteur d'entrée) vers les autres ;
-   celui d'un signal, de la broche TX/OUT vers les autres ; un bus va dans les deux sens. */
+/* Liaisons entre composants importants : {a, b, name, names, kind:"power"|"signal", isBus,
+   isPower, dir:"a" (de a vers b) | "ab" | ""}. Une alimentation part de la pile, du
+   connecteur ou de la broche OUT qui la produit ; un signal, de la broche de sortie (OUT,
+   TX, Q, collecteur C, source S d'un capteur) ; un bus va dans les deux sens. */
 function sheetLinks(){
-  if(!S.pages||S.pages.length<3||typeof docNets!=="function")return [];
-  const nets=[], deg=new Map(), alims=new Map();
-  for(const g of docNets().groups){
-    const pages=g.pages.filter(p=>p>0).sort((a,b)=>a-b);
-    if(!g.global||!pages.length||SYN_MASSE.test(g.name))continue;
-    const power=isPortPowerName(g.name)||g.members.some(m=>m.net.powers.some(el=>el.type==="vcc"));
-    // toutes les alims d'une feuille comptent pour le sens, même celles qui n'en sortent pas
-    if(power)for(const p of pages){if(!alims.has(p))alims.set(p,[]);alims.get(p).push(g.name);}
-    if(pages.length<2)continue;
-    nets.push({g,pages,power,bus:!power&&(g.members.some(m=>m.net.isBus)||isPortBusName(g.name))});
-    for(const p of pages)deg.set(p,(deg.get(p)||0)+1);
+  if(!S.pages||S.pages.length<2||typeof docNets!=="function")return [];
+  const comps=synComposants();
+  if(comps.size<2)return [];
+  const dn=docNets(), parent=new Map();
+  const find=n=>{while(parent.get(n)!==n)n=parent.get(n);return n;};
+  const uni=(a,b)=>{a=find(a);b=find(b);if(a!==b)parent.set(a,b);};
+  const alim=n=>isPortPowerName(n.name)||n.powers.some(el=>el.type==="vcc"||el.type==="gnd");
+  for(const sh of dn.sheets)if(sh.page>0)for(const n of sh.nets.list)parent.set(n,n);
+  // un même nom global relie les feuilles
+  for(const g of dn.groups)if(g.global)for(let k=1;k<g.members.length;k++)
+    if(parent.has(g.members[k].net)&&parent.has(g.members[0].net))uni(g.members[k].net,g.members[0].net);
+  // les passifs en série entre deux signaux sont traversés ; entre une alim et un signal,
+  // ils alimentent ce signal sans s'y fondre (filtre RC d'un capteur, résistance de LED)
+  const nourrit=[];
+  for(const sh of dn.sheets){
+    if(!sh.page)continue;
+    const pg=S.pages[sh.page], els=sh.page===S.page?S.comps:(pg.comps||[]);
+    const netDe=new Map();
+    for(const n of sh.nets.list)for(const d of n.nodes){if(!netDe.has(d.id))netDe.set(d.id,new Set());netDe.get(d.id).add(n);}
+    for(const el of els){
+      if(!SYN_PASSIF.test(el.type))continue;
+      const ns=[...(netDe.get(el.id)||[])];
+      if(ns.length!==2)continue;
+      if(!alim(ns[0])&&!alim(ns[1]))uni(ns[0],ns[1]);
+      else for(const [a,b] of [[ns[0],ns[1]],[ns[1],ns[0]]])
+        if(alim(a)&&!alim(b)&&!SYN_MASSE.test(a.name)&&!a.powers.some(el=>el.type==="gnd"))nourrit.push([a,b]);
+    }
   }
-  const source=n=>{
-    const v=synVolt(n.g.name), au=p=>(alims.get(p)||[]).filter(m=>m!==n.g.name).map(synVolt);
-    let c;
-    if(!n.power){
-      c=n.pages.filter(p=>n.g.nodes.some(d=>d.page===p&&/(^|[_\/])(TXD?|DOUT|OUT\d*|PWM\d*)$/i.test(d.label||"")));
-      return c.length===1?c[0]:null;
+  // chaque classe : les composants importants qu'elle touche, avec le nom de leur broche
+  const classes=new Map();
+  for(const n of parent.keys()){
+    const r=find(n);
+    if(!classes.has(r))classes.set(r,{nets:[],touche:new Map()});
+    const c=classes.get(r);
+    c.nets.push(n);
+    for(const d of n.nodes){
+      if(!comps.has(d.ref)||!comps.get(d.ref).ids.has(d.id))continue;
+      if(!c.touche.has(d.ref))c.touche.set(d.ref,[]);
+      c.touche.get(d.ref).push(String(d.label||""));
     }
-    if(v<Infinity){
-      c=n.pages.filter(p=>au(p).some(u=>u>v));
-      c.sort((p,q)=>Math.min(...au(p).filter(u=>u>v))-Math.min(...au(q).filter(u=>u>v)));
-    }else{
-      c=n.pages.filter(p=>n.g.nodes.some(d=>d.page===p&&/^(J|P|BT|CN|X)\d/i.test(d.ref)));
-      if(!c.length)c=n.pages.filter(p=>au(p).includes(Infinity));
-    }
-    return c.length?c[0]:null;
-  };
+  }
+  for(const [a,b] of nourrit){                       // les composants nourris comptent pour l'alim
+    const ca=classes.get(find(a)), cb=classes.get(find(b));
+    if(ca&&cb&&ca!==cb)for(const r of cb.touche.keys())if(!ca.touche.has(r))ca.touche.set(r,[]);
+  }
+  const SORTIE=/^(V?OUT[A-Z0-9]*|DOUT|DO|TXD?|Q|C|S)$/i;
+  const nets=[], deg=new Map();
+  for(const c of classes.values()){
+    if(c.touche.size<2)continue;
+    const noms=[...new Set(c.nets.filter(n=>n.named&&!NET_AUTO.test(n.name)).map(n=>n.name))];
+    if(c.nets.some(n=>SYN_MASSE.test(n.name)||n.powers.some(el=>el.type==="gnd")))continue;
+    const power=c.nets.some(alim);
+    const refs=[...c.touche.keys()];
+    let src=refs.filter(r=>power
+      ? (comps.get(r).el.type==="battery"||/^(header|usb)/.test(comps.get(r).el.type)||c.touche.get(r).some(l=>/^(V?OUT\d*|VO|SW)$/i.test(l)))
+      : c.touche.get(r).some(l=>SORTIE.test(l)));
+    if(power&&src.length>1)src.sort((p,q)=>(comps.get(q).el.type==="battery")-(comps.get(p).el.type==="battery"));
+    const s0=src.length?src[0]:null, ids=s0!==null?comps.get(s0).ids:null;
+    const nommes=c.nets.filter(n=>n.named&&!NET_AUTO.test(n.name)).sort((p,q)=>q.src-p.src);
+    const aSrc=ids&&nommes.find(n=>n.nodes.some(d=>ids.has(d.id)&&SORTIE.test(String(d.label||""))));
+    const nom=power?noms:(aSrc?[aSrc.name]:nommes.length?[nommes[0].name]:[]);
+    nets.push({refs,noms:nom,power,src:s0,bus:!power&&noms.some(isPortBusName)});
+    if(!power)for(const r of refs)deg.set(r,(deg.get(r)||0)+1);
+  }
   const paires=new Map();
   for(const n of nets){
-    const src=source(n);
-    const hub=src!==null?src:(n.power?n.pages[0]:n.pages.reduce((m,p)=>deg.get(p)>deg.get(m)?p:m));
-    for(const q of n.pages){
+    const hub=n.src!==null?n.src:n.refs.reduce((m,r)=>(deg.get(r)||0)>(deg.get(m)||0)?r:m);
+    for(const q of n.refs){
       if(q===hub)continue;
-      const lo=Math.min(hub,q), hi=Math.max(hub,q), cle=lo+"-"+hi+(n.power?"p":"s");
+      const [lo,hi]=hub<q?[hub,q]:[q,hub], cle=lo+"\u0000"+hi+(n.power?"p":"s");
       let l=paires.get(cle);
       if(!l)paires.set(cle,l={lo,hi,names:[],power:n.power,isBus:false,sens:new Set()});
-      l.names.push(n.g.name);
+      for(const nm of n.noms)if(!l.names.includes(nm))l.names.push(nm);
       l.isBus=l.isBus||n.bus;
-      l.sens.add(n.bus?"ab":src===null?"":(hub===lo?"+":"-"));
+      l.sens.add(n.bus?"ab":n.src===null?"":(hub===lo?"+":"-"));
     }
   }
   return [...paires.values()].map(l=>{
@@ -330,29 +393,37 @@ function sheetLinks(){
 
 function sheetBlocks(){
   if(!S.pages||S.pages.length<=1)return [];
+  const comps=synComposants(), racine=S.pages[0]||{};
+  const pos=racine.synPos||{}, titres=racine.synTitres||{};
   const deg=new Map();
   // le bloc central est celui qui échange le plus de signaux : les alims n'en font pas un centre
   for(const l of sheetLinks())if(!l.isPower){deg.set(l.a,(deg.get(l.a)||0)+1);deg.set(l.b,(deg.get(l.b)||0)+1);}
   let hub=null;
-  for(const [p,d] of deg)if(d>=3&&(hub===null||d>deg.get(hub)))hub=p;
+  for(const [k,d] of deg)if(d>=3&&(hub===null||d>deg.get(hub)))hub=k;
   const blocks=[];
-  for(let i=1;i<S.pages.length;i++){
-    const p=S.pages[i];
-    const comps=(i===S.page)?S.comps:(p.comps||[]);
-    const wires=(i===S.page)?S.wires:(p.wires||[]);
-    const name=String(p.name||"").replace(/^Feuille\s*\d+\s*:\s*/i,"");
-    const sub=(p.blockSub!=null&&String(p.blockSub).trim()!=="")?String(p.blockSub):synPrincipal(comps);
-    const big=(i===hub);
+  let n=0;
+  for(const c of comps.values()){
+    const name=String(titres[c.key]||"").trim()||synTitreAuto(c.el);
+    let sub=String(c.el.mpn||c.el.value||"");
+    if(sub.toUpperCase()===name.toUpperCase())sub=String(c.key);
+    const big=(c.key===hub);
     // chasse fixe : la largeur se déduit du nombre de caractères (titre 19 px, sous-titre 13 px)
     const lt=big?17:11.5, ls=big?10.3:7.9;
     const w=Math.max(big?300:160,Math.ceil((Math.max(name.length*lt,sub.length*ls)+40)/20)*20);
     const h=big?140:60;
-    const col=(i-1)%3, row=Math.floor((i-1)/3);
-    const x=(p.blockPos&&Number.isFinite(p.blockPos.x))?p.blockPos.x:60+col*340;
-    const y=(p.blockPos&&Number.isFinite(p.blockPos.y))?p.blockPos.y:60+row*160;
-    blocks.push({sheetIndex:i,page:p,name,sub,big,x,y,w,h,nComps:comps.length,nWires:wires.length});
+    const p=pos[c.key];
+    const x=(p&&Number.isFinite(p.x))?p.x:60+(n%4)*280;
+    const y=(p&&Number.isFinite(p.y))?p.y:60+Math.floor(n/4)*160;
+    n++;
+    blocks.push({key:c.key,sheetIndex:c.sheetIndex,page:S.pages[c.sheetIndex],ref:c.key,name,sub,big,x,y,w,h});
   }
   return blocks;
+}
+function synPosSet(key,x,y){
+  const r=S.pages[0];
+  if(!r||key==="__proto__")return;
+  if(!r.synPos||typeof r.synPos!=="object")r.synPos={};
+  r.synPos[key]={x:snap(x),y:snap(y)};
 }
 
 function hitSheetBlock(wx,wy){
@@ -447,7 +518,7 @@ function synRouter(blocks,links){
     }
     return null;
   }
-  const par=new Map(blocks.map(b=>[b.sheetIndex,b]));
+  const par=new Map(blocks.map(b=>[b.key,b]));
   const dist=l=>{const a=par.get(l.a),b=par.get(l.b);return Math.abs(a.x+a.w/2-b.x-b.w/2)+Math.abs(a.y+a.h/2-b.y-b.h/2);};
   const out=[];
   for(const l of links.filter(l=>par.has(l.a)&&par.has(l.b)).sort((p,q)=>dist(p)-dist(q))){
@@ -475,10 +546,10 @@ let _synCle="", _synRoutes=[];
 function sheetRoutes(){
   const blocks=sheetBlocks(), links=sheetLinks();
   if(S.drag&&S.drag.sheetBlock&&S.drag.moved){   // pendant le glisser, traits directs : on route au lâcher
-    const c=new Map(blocks.map(b=>[b.sheetIndex,[b.x+b.w/2,b.y+b.h/2]]));
+    const c=new Map(blocks.map(b=>[b.key,[b.x+b.w/2,b.y+b.h/2]]));
     return links.filter(l=>c.has(l.a)&&c.has(l.b)).map(l=>({link:l,pts:[c.get(l.a),c.get(l.b)],direct:true}));
   }
-  const cle=JSON.stringify([blocks.map(b=>[b.sheetIndex,b.x,b.y,b.w,b.h]),links.map(l=>[l.a,l.b,l.kind,l.name,l.dir])]);
+  const cle=JSON.stringify([blocks.map(b=>[b.key,b.x,b.y,b.w,b.h]),links.map(l=>[l.a,l.b,l.kind,l.name,l.dir])]);
   if(cle!==_synCle){_synCle=cle;_synRoutes=blocks.length>1?synRouter(blocks,links):[];}
   return _synRoutes;
 }
@@ -504,49 +575,57 @@ function synStats(){
 }
 
 /* Ranger : alimentations en haut dans l'ordre de la chaîne, bloc central au milieu, ses
-   périphériques simples à gauche et à droite, les chaînes (caméra → OSD → VTX) en bas. */
+   périphériques simples à gauche et à droite, les chaînes en bas dans le sens du signal. */
 function arrangeSheetBlocks(){
   if(S.page!==0)return;
   const blocks=sheetBlocks();
   if(!blocks.length)return;
   push();
-  const links=sheetLinks(), par=new Map(blocks.map(b=>[b.sheetIndex,b]));
-  const voisins=i=>links.filter(l=>l.a===i||l.b===i);
-  const hub=blocks.find(b=>b.big)||null;
+  const links=sheetLinks(), par=new Map(blocks.map(b=>[b.key,b]));
+  const voisins=k=>links.filter(l=>l.a===k||l.b===k);
+  const hub=blocks.find(b=>b.big)||null, hk=hub?hub.key:null;
   const haut=[], gauche=[], droite=[], bas=[];
   // rang dans la chaîne d'alimentation : nombre d'étages en amont
-  const rang=new Map(blocks.map(b=>[b.sheetIndex,0]));
+  const rang=new Map(blocks.map(b=>[b.key,0]));
   for(let n=0;n<blocks.length;n++)
     for(const l of links)if(l.isPower&&l.dir==="a")rang.set(l.b,Math.max(rang.get(l.b),rang.get(l.a)+1));
   for(const b of blocks){
     if(b===hub)continue;
-    const v=voisins(b.sheetIndex);
-    if(!v.some(l=>!l.isPower)&&v.length)haut.push(b);
-    else if(!hub||!v.some(l=>!l.isPower&&(l.a===hub.sheetIndex||l.b===hub.sheetIndex))||
-            v.some(l=>!l.isPower&&l.a!==hub.sheetIndex&&l.b!==hub.sheetIndex))bas.push(b);
+    const v=voisins(b.key), sig=v.filter(l=>!l.isPower);
+    if(!sig.length&&v.some(l=>l.isPower&&l.a===b.key&&l.dir==="a"))haut.push(b);
+    else if(!hub||!sig.some(l=>l.a===hk||l.b===hk)||sig.some(l=>l.a!==hk&&l.b!==hk))bas.push(b);
     else (gauche.length<=droite.length?gauche:droite).push(b);
   }
-  haut.sort((p,q)=>rang.get(p.sheetIndex)-rang.get(q.sheetIndex));
-  // en bas, les blocs reliés entre eux restent côte à côte
+  haut.sort((p,q)=>rang.get(p.key)-rang.get(q.key));
+  // en bas, les blocs reliés restent côte à côte, en partant de ceux qui ne reçoivent rien
   const ordre=[], vus=new Set();
+  const recoit=b=>links.some(l=>!l.isPower&&l.dir==="a"&&l.b===b.key&&bas.includes(par.get(l.a)));
   const suivre=b=>{if(vus.has(b))return;vus.add(b);ordre.push(b);
-    for(const l of voisins(b.sheetIndex)){const o=par.get(l.a===b.sheetIndex?l.b:l.a);if(bas.includes(o))suivre(o);}};
+    const v=voisins(b.key).filter(l=>!l.isPower).sort((p,q)=>(q.a===b.key)-(p.a===b.key));
+    for(const l of v){const o=par.get(l.a===b.key?l.b:l.a);if(bas.includes(o))suivre(o);}};
+  bas.filter(b=>!recoit(b)).forEach(suivre);
   bas.forEach(suivre);
   const ligne=(liste,y,cx)=>{
     const W=liste.reduce((s,b)=>s+b.w,0)+120*Math.max(0,liste.length-1);
     let x=cx-W/2;
-    for(const b of liste){b.page.blockPos={x:snap(x),y:snap(y)};x+=b.w+120;}
+    for(const b of liste){synPosSet(b.key,x,y);x+=b.w+120;}
   };
   const pas=90, hMil=Math.max(hub?hub.h:0,gauche.length*pas-30,droite.length*pas-30);
   const yMil=60+(haut.length?160:0), cx=hub?hub.w/2+400:600;
   ligne(haut,60,cx);
-  if(hub)hub.page.blockPos={x:snap(cx-hub.w/2),y:snap(yMil+(hMil-hub.h)/2)};
+  if(hub)synPosSet(hub.key,cx-hub.w/2,yMil+(hMil-hub.h)/2);
   const hw=hub?hub.w/2:0;
-  gauche.forEach((b,k)=>{b.page.blockPos={x:snap(cx-hw-200-b.w),y:snap(yMil+(hMil-(gauche.length*pas-30))/2+k*pas)};});
-  droite.forEach((b,k)=>{b.page.blockPos={x:snap(cx+hw+200),y:snap(yMil+(hMil-(droite.length*pas-30))/2+k*pas)};});
-  ligne(ordre,yMil+hMil+120,cx);
+  gauche.forEach((b,k)=>synPosSet(b.key,cx-hw-200-b.w,yMil+(hMil-(gauche.length*pas-30))/2+k*pas));
+  droite.forEach((b,k)=>synPosSet(b.key,cx+hw+200,yMil+(hMil-(droite.length*pas-30))/2+k*pas));
+  // la chaîne serpente par rangées de quatre : la rangée suivante repart du bout de la précédente
+  const yBas=yMil+(hMil?hMil+120:0);
+  for(let k=0;k*4<ordre.length;k++){
+    const r=ordre.slice(k*4,k*4+4);
+    ligne(k%2?r.reverse():r,yBas+k*160,cx);
+  }
   if(typeof fit==="function")fit();else draw();
 }
+
 /* ---------- historique (document entier) ---------- */
 function serialize(){
   storeCurrent();

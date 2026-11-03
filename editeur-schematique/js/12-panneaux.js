@@ -358,28 +358,27 @@ function refreshPanels(){
     return;
   }
   if(S.selBlock!==null&&!els.length&&!wires.length&&!drawings.length){
-    const idx=S.selBlock;
-    const p=S.pages[idx];
-    if(p){
-      const comps=p.comps||[], wiresList=p.wires||[];
+    const b=sheetBlocks().find(x=>x.key===S.selBlock), racine=S.pages[0];
+    if(b&&racine){
+      const c=synComposants().get(b.key), titres=racine.synTitres||{};
       box.innerHTML=
-        '<div class="prop"><label>Bloc hiérarchique</label><input value="Feuille '+(idx+1)+' : '+esc(p.name)+'" disabled></div>'+
-        '<div class="prop"><label>Nom de la sous-feuille</label><input id="pBlockName" value="'+esc(p.name)+'"></div>'+
-        '<div class="prop"><label>Sous-titre du synoptique</label><input id="pBlockSub" value="'+esc(p.blockSub||"")+'" placeholder="'+esc(synPrincipal(comps))+'" title="Vide : le composant qui a le plus de broches"></div>'+
-        '<div class="prop"><label>Contenu</label><input value="'+comps.length+' composant(s) · '+wiresList.length+' fil(s)" disabled></div>'+
-        '<div class="prop"><div class="row"><button class="tb on" id="pBlockOpen">Ouvrir cette feuille ➔</button></div>'+
-        '<div class="row"><button class="tb" id="pBlockDel">Supprimer cette feuille</button></div></div>'+
-        '<div class="pinnote">Feuille hiérarchique : double-cliquez sur le bloc ou cliquez sur « Ouvrir » pour entrer dans le schéma correspondant.</div>';
-      const iName=document.getElementById("pBlockName");
-      if(iName){
-        iName.onchange=e=>{push();p.name=e.target.value.trim()||p.name;buildTabs();draw();};
-      }
-      const iSub=document.getElementById("pBlockSub");
-      if(iSub)iSub.onchange=e=>{push();p.blockSub=e.target.value.trim();draw();};
-      const bOpen=document.getElementById("pBlockOpen");
-      if(bOpen)bOpen.onclick=()=>gotoPage(idx);
-      const bDel=document.getElementById("pBlockDel");
-      if(bDel)bDel.onclick=()=>removePage(idx);
+        '<div class="prop"><label>Bloc du synoptique</label><input value="'+esc(b.key)+' · '+esc(c.el.mpn||c.el.value||"")+'" disabled></div>'+
+        '<div class="prop"><label>Titre</label><input id="pBlockTitre" value="'+esc(titres[b.key]||"")+'" placeholder="'+esc(synTitreAuto(c.el))+'" title="Vide : titre deviné d\'après le type et la référence du composant"></div>'+
+        '<div class="prop"><label>Feuille</label><input value="'+esc(S.pages[b.sheetIndex].name)+'" disabled></div>'+
+        '<div class="prop"><div class="row"><button class="tb on" id="pBlockOpen">Ouvrir sa feuille ➔</button></div></div>'+
+        '<div class="pinnote">Double-cliquez sur le bloc pour ouvrir sa feuille, le composant sélectionné.</div>';
+      document.getElementById("pBlockTitre").onchange=e=>{
+        push();
+        if(!racine.synTitres||typeof racine.synTitres!=="object")racine.synTitres={};
+        const v=e.target.value.trim().slice(0,40);
+        if(v&&b.key!=="__proto__")racine.synTitres[b.key]=v;else delete racine.synTitres[b.key];
+        draw();
+      };
+      document.getElementById("pBlockOpen").onclick=()=>{
+        gotoPage(b.sheetIndex);
+        for(const el of S.comps)if(el.ref===b.key)S.sel.add(el.id);
+        refreshPanels();draw();
+      };
       return;
     }
   }

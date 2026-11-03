@@ -279,7 +279,7 @@ function drawDrawings(c){
     c.restore();
   }
 }
-/* ---------- Synoptique de la feuille racine (page 0) : blocs, liaisons routées, chiffres clés ---------- */
+/* ---------- Synoptique de la feuille racine (page 0) : blocs des composants, liaisons routées, chiffres clés ---------- */
 const SYN_MONO='"DejaVu Sans Mono","JetBrains Mono",Consolas,monospace';
 const SYN_COL={power:"#9c7f88", signal:"#4f8f95", lblPower:"#b89aa2", lblSignal:"#7fb3b8"};
 function drawRoundRectPath(c, x, y, w, h, r){
@@ -361,11 +361,14 @@ function drawSheetBlocks(c){
   const coupeFil = bx => segs.some(({a, b}) => touche(bx,
     [Math.min(a[0], b[0]) - 1, Math.min(a[1], b[1]) - 1, Math.abs(a[0] - b[0]) + 2, Math.abs(a[1] - b[1]) + 2]));
   c.font = "12px " + SYN_MONO; c.textBaseline = "middle";
+  const dejaNomme = new Set();
   for(const r of routes){
     if(r.direct) continue;                      // trait provisoire (glisser en cours) : ni flèche ni étiquette
     const p = r.pts, n = p.length, col = couleur(r);
     if(r.link.dir) fleche(p[n-1], p[n-2], col);
     if(r.link.dir === "ab") fleche(p[0], p[1], col);
+    if(!r.link.name || dejaNomme.has(r.link.name)) continue;   // sans nom, ou alim déjà nommée une fois
+    if(r.link.isPower) dejaNomme.add(r.link.name);
     const tw = c.measureText(r.link.name).width, cand = [];
     for(let k = 0; k < n - 1; k++){
       const a = p[k], b = p[k+1], len = Math.abs(b[0] - a[0]) + Math.abs(b[1] - a[1]);
@@ -392,7 +395,7 @@ function drawSheetBlocks(c){
 
   // 4. blocs : nom de la feuille, composant principal en dessous
   for(const b of blocks){
-    const isSel = (S.selBlock === b.sheetIndex), isHover = (S.hoverSheetBlock === b.sheetIndex);
+    const isSel = (S.selBlock === b.key), isHover = (S.hoverSheetBlock === b.key);
     if(isSel){
       c.save(); c.strokeStyle = C_SEL; c.globalAlpha = 0.35; c.lineWidth = 10;
       drawRoundRectPath(c, b.x - 2, b.y - 2, b.w + 4, b.h + 4, 8); c.stroke(); c.restore();
