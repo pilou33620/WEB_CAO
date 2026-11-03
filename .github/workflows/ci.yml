@@ -88,6 +88,9 @@ jobs:
       - name: Reconnaissance de motifs schématiques — banc d'essai
         run: python python/test/banc-patterns.py
 
+      - name: Entrées malformées des solveurs — banc d'essai
+        run: python python/test/banc-entrees-malformees.py
+
       - name: Vérification de la carte — banc d'essai
         run: python python/test/banc-analyse-carte.py
 

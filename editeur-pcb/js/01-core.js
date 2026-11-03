@@ -3180,6 +3180,9 @@ try{
     bc.onmessage=ev=>{
       const d=ev.data;
       if(!d||d.type!=="netclasses_updated"||!d.classes||typeof d.classes!=="object")return;
+      // le schéma d'un autre projet, ouvert à côté, ne touche pas cette carte
+      const ici=(typeof projNom==="function"&&projNom())||"";
+      if(d.projet&&ici&&d.projet!==ici)return;
       try{
         sessionStorage.setItem("web_cao_netclasses",JSON.stringify(d.classes));
         if(Array.isArray(d.paires))sessionStorage.setItem("web_cao_paires_diff",JSON.stringify(d.paires));
@@ -3190,6 +3193,7 @@ try{
       const avant=JSON.stringify(S.classes);
       const n=autoClass();
       if(!n&&avant===JSON.stringify(S.classes))return;
+      if(typeof push==="function")push();       // une étape Ctrl+Z, comme toute écriture
       pcbAppliquerClassesSuggerees();
       if(typeof hint==="function")hint("Classes de nets et paires mises à jour depuis le schéma ("+n+" changement(s)).");
     };

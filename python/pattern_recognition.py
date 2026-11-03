@@ -679,6 +679,10 @@ def analyser_motifs_schema(data: Dict[str, Any]) -> Dict[str, Any]:
     """
     components = data.get("components", {})
     nets = data.get("nets", {})
+    if not isinstance(components, dict) or not all(isinstance(c, dict) for c in components.values()):
+        raise ValueError("« components » : objet repère -> composant attendu")
+    if not isinstance(nets, dict) or not all(isinstance(n, list) for n in nets.values()):
+        raise ValueError("« nets » : objet nom -> liste de broches attendu")
     zones_brutes = data.get("zones") or data.get("rooms") or []
 
     alims = identifier_alimentations(components, nets)

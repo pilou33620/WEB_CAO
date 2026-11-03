@@ -1561,7 +1561,26 @@ def _params(o, g):
     p["ffe"], p["ffe_principal"] = ffe, principal
 
     eg = ((g or {}).get("egaliseur") or {}) if o.get("egaliseur", True) else {}
-    p["ctle"] = o.get("ctle") or eg.get("ctle")
+    ctl = o.get("ctle") or eg.get("ctle")
+    if ctl is not None:
+        # il vient du navigateur : un objet, des poles et un zero positifs,
+        # sinon KeyError / division par zero plus bas (500 au lieu d'un refus)
+        if not isinstance(ctl, dict):
+            raise ErreurOeil("Réglage « ctle » illisible : objet attendu.",
+                             "Donnez fp1, fp2 et fz en Hz (ou forme pcie3 avec adc_db).")
+        ctl = dict(ctl)
+        for cle in ("fp1", "fp2") + (() if ctl.get("forme") == "pcie3" else ("fz",)):
+            ctl[cle] = _nombre(ctl.get(cle), 0.0)
+            if not ctl[cle] > 0:
+                raise ErreurOeil("CTLE : « %s » absent, nul ou négatif." % cle,
+                                 "Une fréquence en Hz, strictement positive.")
+        # adc_db : un gain, ou la liste des gains a essayer (_candidats_ctle)
+        gains = ctl.get("adc_db", 0.0)
+        ctl["adc_db"] = ([_nombre(x, 0.0) for x in gains] if isinstance(gains, (list, tuple))
+                         else _nombre(gains, 0.0))
+        if "adc" in ctl:
+            ctl["adc"] = _nombre(ctl["adc"], 1.0)
+    p["ctle"] = ctl
     dfe = eg.get("dfe") or {}
     p["dfe_prises"] = int(_nombre(o.get("dfe_prises"), dfe.get("prises", 0)))
     p["dfe_prises"] = max(0, min(p["dfe_prises"], 8))

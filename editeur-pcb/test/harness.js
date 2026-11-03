@@ -5210,6 +5210,20 @@ T("import : rattachement de classe orphelin écarté",()=>{
   if(S.netClass["SIG"])throw new Error("le rattachement par défaut ne se stocke pas");
   if(classOf("+5V").name!=="Défaut")throw new Error("classe de repli inattendue");
 });
+T("classes du schéma : celui d'un autre projet ne touche pas la carte, l'application s'annule",()=>{
+  S.netClass={};S.netClassAuto={};S.undo.length=0;
+  importNetlist(NET,true);
+  projOuvrir("carte PIR");
+  try{
+    const bc=new BroadcastChannel("web_cao_patterns_sync");
+    bc.postMessage({type:"netclasses_updated",projet:"autre carte",classes:{"N$2":"RF"}});
+    if(S.netClass["N$2"])throw new Error("classe d'un autre projet appliquée");
+    bc.postMessage({type:"netclasses_updated",projet:"carte PIR",classes:{"N$2":"RF"}});
+    bc.close();
+    if(S.netClass["N$2"]!=="RF")throw new Error("classe du même projet non appliquée");
+    if(!S.undo.length)throw new Error("pas d'étape Ctrl+Z");
+  }finally{sessionStorage.removeItem("web_cao_netclasses");projFermer();S.netClass={};S.netClassAuto={};}
+});
 T("classes du schéma : une correction faite après coup atteint la carte",()=>{
   S.classes=[{name:"Défaut",w:0.3,clr:0.25,via:0.8,drill:0.4},
              {name:"Alimentation",w:0.6,clr:0.25,via:0.9,drill:0.45}];

@@ -2,6 +2,15 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.2.2
+# Date: 2026-11-03
+# Explication: la lecture du document passe dans _lire_document_dc ; un champ
+#   d'un autre type que prevu (polygones, pas, epaisseur, sources en texte)
+#   sort en ErreurDC et non en TypeError/ValueError (500). Un pas de maillage
+#   sous 1 um est refuse : 1e-310 mm passait « pas > 0 » puis debordait
+#   int(ceil(l / pas)).
+# Fonctions ajoutees/modifiees : _lire_document_dc (nouvelle), resoudre_document
+#
 # Version: 2.2.1
 # Date: 2026-10-30
 # Explication (suite): UN ILOT SANS COURANT NI REFERENCE NE BLOQUE PLUS LE
@@ -1763,6 +1772,52 @@ def resoudre_document(doc, journal=None):
         raise ErreurDC("Format inattendu : « %s » au lieu de « %s »."
                        % (doc.get("format"), FORMAT))
 
+    try:
+        polys, sources, references, vias, liaisons, thermique, pas = _lire_document_dc(doc)
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise ErreurDC("Document illisible : %s" % exc,
+                       "Les sommets sont des couples de nombres, les autres champs des nombres.")
+    mm = 1e-3
+    resultat = resoudre_dc(polys, sources=sources, references=references,
+                           vias=vias, liaisons=liaisons,
+                           externes=doc.get("couches_externes"),
+                           pas=pas, thermique=thermique, journal=journal)
+    # Ce qui repart est en millimetres, comme ce qui est arrive. Les VOLTS,
+    # les AMPERES et les OHMS ne se convertissent pas : seules les longueurs.
+    resultat["noeuds"] = [[x / mm, y / mm, c] for x, y, c in resultat["noeuds"]]
+    resultat["pas"] = resultat["pas"] / mm
+    for d in resultat.get("vias") or []:
+        d["x"] = d["x"] / mm
+        d["y"] = d["y"] / mm
+        # Le PERCAGE est une longueur, il repart donc en millimetres comme la
+        # position. La RESISTANCE est en ohms et ne se convertit pas.
+        for cle in ("percage", "placage"):
+            if d.get(cle) is not None:
+                d[cle] = d[cle] / mm
+    # La DENSITE est deja en A/mm2 et l'ECHAUFFEMENT en kelvins : ni l'une ni
+    # l'autre ne se convertit. Seules les POSITIONS du pire point le font.
+    for d in (resultat.get("pire_par_net") or {}).values():
+        for cle in ("densite_en", "echauffement_en"):
+            p = d.get(cle)
+            if p:
+                d[cle] = [p[0] / mm, p[1] / mm, p[2]]
+    # LES COTES THERMIQUES REPARTENT EN MILLIMETRES, comme elles sont arrivees.
+    # Le panneau les affiche pour qu'on les conteste : les lui rendre en metres
+    # ferait ecrire « 0,0016 mm de stratifié ».
+    th = resultat.get("thermique")
+    if th:
+        for cle in ("epaisseur_stratifie", "cuivre_etaleur",
+                    "longueur_etalement"):
+            if th.get(cle) is not None:
+                th[cle] = th[cle] / mm
+    return resultat
+
+
+def _lire_document_dc(doc):
+    """Les champs du document (en millimetres) -> ceux de resoudre_dc (en metres).
+
+    TypeError / ValueError / AttributeError si un champ n'a pas le type attendu :
+    resoudre_document les traduit en ErreurDC."""
     mm = 1e-3
 
     polys = []
@@ -1863,41 +1918,13 @@ def resoudre_document(doc, journal=None):
                 thermique[cle] = float(th_doc[cle]) * mm
 
     pas = doc.get("pas", doc.get("pitch"))
-    resultat = resoudre_dc(polys, sources=points("sources", "sources"),
-                           references=points("references", "references"),
-                           vias=vias, liaisons=liaisons,
-                           externes=doc.get("couches_externes"),
-                           pas=(float(pas) * mm if pas else None),
-                           thermique=thermique, journal=journal)
-    # Ce qui repart est en millimetres, comme ce qui est arrive. Les VOLTS,
-    # les AMPERES et les OHMS ne se convertissent pas : seules les longueurs.
-    resultat["noeuds"] = [[x / mm, y / mm, c] for x, y, c in resultat["noeuds"]]
-    resultat["pas"] = resultat["pas"] / mm
-    for d in resultat.get("vias") or []:
-        d["x"] = d["x"] / mm
-        d["y"] = d["y"] / mm
-        # Le PERCAGE est une longueur, il repart donc en millimetres comme la
-        # position. La RESISTANCE est en ohms et ne se convertit pas.
-        for cle in ("percage", "placage"):
-            if d.get(cle) is not None:
-                d[cle] = d[cle] / mm
-    # La DENSITE est deja en A/mm2 et l'ECHAUFFEMENT en kelvins : ni l'une ni
-    # l'autre ne se convertit. Seules les POSITIONS du pire point le font.
-    for d in (resultat.get("pire_par_net") or {}).values():
-        for cle in ("densite_en", "echauffement_en"):
-            p = d.get(cle)
-            if p:
-                d[cle] = [p[0] / mm, p[1] / mm, p[2]]
-    # LES COTES THERMIQUES REPARTENT EN MILLIMETRES, comme elles sont arrivees.
-    # Le panneau les affiche pour qu'on les conteste : les lui rendre en metres
-    # ferait ecrire « 0,0016 mm de stratifié ».
-    th = resultat.get("thermique")
-    if th:
-        for cle in ("epaisseur_stratifie", "cuivre_etaleur",
-                    "longueur_etalement"):
-            if th.get(cle) is not None:
-                th[cle] = th[cle] / mm
-    return resultat
+    pas = float(pas) * mm if pas else None
+    if pas is not None and pas < 1e-6:
+        # 1e-310 mm passait « pas > 0 » puis debordait int(ceil(l / pas))
+        raise ErreurDC("Pas de maillage de %g mm : trop fin." % (pas / mm),
+                       "Un micromètre au moins.")
+    return (polys, points("sources", "sources"), points("references", "references"),
+            vias, liaisons, thermique, pas)
 
 
 def carte_chaleur(resultat, resolution=120, couche=None):

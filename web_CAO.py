@@ -2,6 +2,22 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.24.0
+# Date: 2026-11-03
+# Explication: revue de securite (audit du 03/11/2026).
+#   - L'enregistrement complet du catalogue suit la regle des cases
+#     (_valeur_catalogue) : plus de formule de tableur ecrite dans le CSV.
+#   - /api/pcb/score-placement et /api/schema/patterns lisent leur corps par
+#     _lire_document (vidange du corps refuse) et rendent 422, pas 500, sur un
+#     champ d'un autre type que prevu.
+#   - _client_parti : SSLSocket.recv refuse MSG_PEEK (ValueError), traite
+#     comme une page partie.
+#   - Une seule classe ErreurHTTP ; ErreurIPC, ErreurProfil, ErreurLib et
+#     ErreurProjet en sont des alias.
+# Fonctions modifiees :
+# - ErreurHTTP (nouvelle), CustomHandler._lib_composants_ecrire,
+#   _scoring_lancer, _patterns_lancer, _client_parti
+#
 # Version: 2.23.0
 # Date: 2026-10-22
 # Explication: sauvegarde automatique des editeurs sur disque. /api/projet/doc
@@ -664,13 +680,17 @@ def _deplier_grilles(doc):
 MAX_IPC = 192 * 1024 * 1024
 
 
-class ErreurIPC(Exception):
-    """Refus explicite de la route d'import : code HTTP + message lisible."""
+class ErreurHTTP(Exception):
+    """Refus explicite d'une route : code HTTP + message lisible. Les noms
+    ci-dessous disent de quelle famille de routes vient le refus."""
 
     def __init__(self, code, message):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+ErreurIPC = ErreurHTTP           # routes d'import et de calcul
 
 # -- profils utilisateur ----------------------------------------------------
 # Un fichier par utilisateur, portant son nom : profils/Pilou.json. Le
@@ -683,13 +703,7 @@ NOM_INTERDIT = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 NOMS_RESERVES = re.compile(r"^(con|prn|aux|nul|com[1-9]|lpt[1-9])$", re.I)
 
 
-class ErreurProfil(Exception):
-    """Refus explicite d'une route de profil : code HTTP + message lisible."""
-
-    def __init__(self, code, message):
-        super().__init__(message)
-        self.code = code
-        self.message = message
+ErreurProfil = ErreurHTTP        # routes de profil
 
 
 def dossier_profils():
@@ -740,13 +754,7 @@ DOSSIER_LIB_ACTIF = None
 DOSSIER_LIB_IMPOSE = False
 
 
-class ErreurLib(Exception):
-    """Refus explicite d'une route de bibliotheque : code HTTP + message lisible."""
-
-    def __init__(self, code, message):
-        super().__init__(message)
-        self.code = code
-        self.message = message
+ErreurLib = ErreurHTTP           # routes de bibliotheque
 
 
 def chemin_config_lib():
@@ -1190,13 +1198,7 @@ def adresse_lanceur():
         return None
 
 
-class ErreurProjet(Exception):
-    """Refus explicite d'une route de projet : code HTTP + message lisible."""
-
-    def __init__(self, code, message):
-        super().__init__(message)
-        self.code = code
-        self.message = message
+ErreurProjet = ErreurHTTP        # routes de projet
 
 
 # controle de date + ecriture d'un document de projet, d'un seul tenant
@@ -2616,7 +2618,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         ecrivain.writerow(colonnes)
         for comp in composants:
             if isinstance(comp, dict):
-                ligne = [str(comp.get(col, "")) for col in colonnes]
+                ligne = [self._valeur_catalogue(col, comp.get(col, ""), multiligne=True) for col in colonnes]
                 ecrivain.writerow(ligne)
 
         texte = sortie.getvalue()
@@ -2693,13 +2695,14 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                     "mtime_avant": vu, "mtime_ms": mtime_ms(chemin)}
 
     @staticmethod
-    def _valeur_catalogue(k, v):
+    def _valeur_catalogue(k, v, multiligne=False):
         """Une case du catalogue telle qu'elle s'ecrit : texte d'une ligne, sans formule de tableur ni
-        caractere invisible (memes regles que la page, commun/composants-lib.js)."""
+        caractere invisible (memes regles que la page, commun/composants-lib.js). `multiligne` :
+        l'enregistrement complet garde une description sur deux lignes (champ entre guillemets)."""
         if not isinstance(v, (str, int, float)) or isinstance(v, bool):
             raise ErreurLib(400, "Colonne « %s » : texte attendu" % k)
         v = str(v)
-        if len(v) > 500 or re.search(r"[\x00-\x1f\x7f]", v):
+        if len(v) > 500 or re.search(r"[\x00-\x09\x0b\x0c\x0e-\x1f\x7f]" if multiligne else r"[\x00-\x1f\x7f]", v):
             raise ErreurLib(400, "Colonne « %s » : une seule ligne, 500 caracteres au plus" % k)
         if re.match(r"\s*([=@]|[+-]\s*[A-Za-z(])", v):
             raise ErreurLib(400, "Colonne « %s » : commence comme une formule de tableur" % k)
@@ -3325,26 +3328,17 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         """POST /api/pcb/score-placement : calcule les metriques de placement."""
         if pcb_scoring is None:
             raise ErreurIPC(503, "Scoring PCB indisponible : %s" % ERREUR_SCORING)
-        try:
-            taille = self._taille_corps()
-        except ValueError:
-            raise ErreurIPC(400, "Content-Length invalide")
-        if taille <= 0:
-            raise ErreurIPC(400, "Document vide")
-        if taille > MAX_SCORING:
-            raise ErreurIPC(413, "Document trop grand : %.1f Mo, maximum %d Mo"
-                                 % (taille / 1048576.0, MAX_SCORING // 1048576))
-        corps = self.rfile.read(taille)
-        try:
-            doc = json.loads(corps.decode("utf-8"))
-        except (ValueError, UnicodeDecodeError) as exc:
-            raise ErreurIPC(400, "Document JSON illisible : %s" % exc)
+        doc = self._lire_document(MAX_SCORING)
         if not isinstance(doc, dict):
             raise ErreurIPC(400, "Document JSON (objet) attendu")
-        if doc.get("composant_cible"):
-            res = pcb_scoring.evaluer_rotation_composant(doc["composant_cible"], doc.get("footprints", []))
-            return {"succes": True, "composant": res}
-        return pcb_scoring.evaluer_placement_pcb(doc)
+        # un champ d'un autre type que prevu (liste au lieu d'objet...) : un refus, pas un 500
+        try:
+            if doc.get("composant_cible"):
+                res = pcb_scoring.evaluer_rotation_composant(doc["composant_cible"], doc.get("footprints", []))
+                return {"succes": True, "composant": res}
+            return pcb_scoring.evaluer_placement_pcb(doc)
+        except (TypeError, ValueError, AttributeError, KeyError) as exc:
+            raise ErreurIPC(422, "Document de placement illisible : %s" % exc)
 
     # -- reconnaissance de motifs de schema -------------------------------
     def _patterns_etat(self):
@@ -3358,23 +3352,13 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         """POST /api/schema/patterns : analyse les motifs et blocs fonctionnels."""
         if pattern_recognition is None:
             raise ErreurIPC(503, "Reconnaissance de motifs indisponible : %s" % ERREUR_PATTERNS)
-        try:
-            taille = self._taille_corps()
-        except ValueError:
-            raise ErreurIPC(400, "Content-Length invalide")
-        if taille <= 0:
-            raise ErreurIPC(400, "Document vide")
-        if taille > MAX_PATTERNS:
-            raise ErreurIPC(413, "Document trop grand : %.1f Mo, maximum %d Mo"
-                                 % (taille / 1048576.0, MAX_PATTERNS // 1048576))
-        corps = self.rfile.read(taille)
-        try:
-            doc = json.loads(corps.decode("utf-8"))
-        except (ValueError, UnicodeDecodeError) as exc:
-            raise ErreurIPC(400, "Document JSON illisible : %s" % exc)
+        doc = self._lire_document(MAX_PATTERNS)
         if not isinstance(doc, dict):
             raise ErreurIPC(400, "Document JSON (objet) attendu")
-        return pattern_recognition.analyser_motifs_schema(doc)
+        try:
+            return pattern_recognition.analyser_motifs_schema(doc)
+        except (TypeError, ValueError, AttributeError, KeyError) as exc:
+            raise ErreurIPC(422, "Document de schema illisible : %s" % exc)
 
     # -- verification de la carte entiere --------------------------------
     def _analyse_etat(self):
@@ -3444,7 +3428,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         try:
             lisible = select.select([self.connection], [], [], 0)[0]
             return bool(lisible) and not self.connection.recv(1, socket.MSG_PEEK)
-        except OSError:
+        except (OSError, ValueError):    # ValueError : SSLSocket.recv refuse MSG_PEEK
             return True
 
     # -- datasheets composants --------------------------------------------

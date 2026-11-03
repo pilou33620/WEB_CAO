@@ -140,14 +140,14 @@ var SCHEMA_PATTERNS = (function() {
       sessionStorage.setItem("web_cao_paires_diff", JSON.stringify(paires));
       sessionStorage.setItem("web_cao_nets_bruyants", JSON.stringify(bruyants));
       sessionStorage.setItem("web_cao_netclasses_partiel", partiel ? "1" : "0");
+      const projet = (typeof projNom === "function" && projNom()) || "";
       try {
-        const projet = (typeof projNom === "function" && projNom()) || "";
         if (projet) localStorage.setItem("web_cao_netclasses." + projet, JSON.stringify(
           { t: Date.now(), classes: classes, paires: paires, bruyants: bruyants, partiel: partiel }));
       } catch (_) {}
       if (typeof BroadcastChannel !== "undefined") {
         const bc = new BroadcastChannel("web_cao_patterns_sync");
-        bc.postMessage({ type: "netclasses_updated", classes: classes, paires: paires,
+        bc.postMessage({ type: "netclasses_updated", projet: projet, classes: classes, paires: paires,
                          bruyants: bruyants, partiel: partiel });
         bc.close();
       }

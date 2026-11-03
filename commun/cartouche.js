@@ -249,7 +249,7 @@ function cartoucheDialogue(o){
     '</div>'+
     champ("confid","Mention de confidentialité (cartouche du PCB ; vide : texte d'usage)",soc.confid,"")+
     '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px">Logo '+
-      '<img data-c="apercu" alt="" style="max-height:32px;max-width:140px;background:#fff;padding:2px;border-radius:3px'+(soc.logo?"":";display:none")+'"'+(soc.logo?' src="'+soc.logo+'"':"")+'>'+
+      '<img data-c="apercu" alt="" style="max-height:32px;max-width:140px;background:#fff;padding:2px;border-radius:3px'+(soc.logo?"":";display:none")+'">'+
       '<button class="tb mini" data-c="logoChoisir">Choisir une image…</button>'+
       '<button class="tb mini" data-c="logoRetirer">Retirer</button>'+
       '<input type="file" accept="image/*" data-c="logoFichier" style="display:none"></div>'+
@@ -260,6 +260,7 @@ function cartoucheDialogue(o){
   const q=k=>m.querySelector('[data-c="'+k+'"]');
   let logo=soc.logo;
   const apercu=()=>{const i=q("apercu");if(logo){i.src=logo;i.style.display="";}else{i.removeAttribute("src");i.style.display="none";}};
+  apercu();                      // en propriete, jamais dans le HTML : un logo du profil ne peut pas fermer l'attribut
   const fermer=()=>m.remove();
   m.onclick=ev=>{if(ev.target===m)fermer();};
   q("annuler").onclick=fermer;

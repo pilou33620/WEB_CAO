@@ -358,6 +358,8 @@ def evaluer_rotation_composant(
     footprints: List[Dict[str, Any]]
 ) -> Optional[Dict[str, Any]]:
     """Évalue les 4 rotations (0°, 90°, 180°, 270°) d'un composant pour minimiser les croisements."""
+    if not isinstance(footprints, list) or not all(isinstance(f, dict) for f in footprints):
+        raise ValueError("« footprints » : liste d'objets attendue")
     target_fp = next((f for f in footprints if f.get("ref") == ref), None)
     if not target_fp:
         return None
@@ -505,6 +507,8 @@ def evaluer_placement_pcb(data: Dict[str, Any]) -> Dict[str, Any]:
         Dictionnaire avec les résultats de scoring complets.
     """
     footprints = data.get("footprints", [])
+    if not isinstance(footprints, list) or not all(isinstance(f, dict) for f in footprints):
+        raise ValueError("« footprints » : liste d'objets attendue")
     board = data.get("board")
 
     hpwl_total, hpwl_nets = calculer_hpwl(footprints)

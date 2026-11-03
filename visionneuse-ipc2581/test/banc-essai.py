@@ -851,6 +851,9 @@ T(u"un fichier qui n'est pas de l'XML est refuse",
   lambda: refus(b"ceci n'est pas un fichier IPC-2581", u"texte quelconque"))
 T(u"une archive illisible est refusee",
   lambda: refus(b"PK\x03\x04 pas vraiment une archive", u"ZIP tronque"))
+T(u"une entite XML declaree apres 64 Ko de commentaire est refusee",
+  lambda: refus(b'<?xml version="1.0"?><!--' + b"x" * 70000 + b'--><!DOCTYPE IPC-2581 '
+                b'[<!ENTITY a "aaaa">]><IPC-2581>&a;</IPC-2581>', u"entite tardive"))
 
 
 # -- Le contre-percage (back-drill) ------------------------------------------

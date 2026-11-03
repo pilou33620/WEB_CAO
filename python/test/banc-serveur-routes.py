@@ -1037,6 +1037,13 @@ def test_routes():
             aj = json.loads(r.read().decode("utf-8"))
             assert r.status == 200 and aj["mtime_avant"] == lu and aj["mtime_ms"] == web_CAO.mtime_ms(csv_), aj
             assert tout(aj["mtime_ms"])[0] == 200
+            # l'enregistrement complet suit la regle des cases d'« ajouter » : pas de formule
+            avant, piege = open(csv_, "rb").read(), dict(cat["composants"][0])
+            piege[cat["colonnes"][-1]] = "=HYPERLINK(\"http://x\")"
+            conn.request("POST", "/api/lib/composants", headers={"Content-Type": "application/json"},
+                         body=json.dumps({"colonnes": cat["colonnes"], "composants": [piege]}).encode("utf-8"))
+            r = conn.getresponse()
+            assert r.status == 400 and b"formule" in r.read() and open(csv_, "rb").read() == avant
             assert not os.path.exists(os.path.join(web_CAO.ROOT, "LIB_composants.csv"))
         finally:
             web_CAO.DOSSIER_LIB_ACTIF = actif
