@@ -474,9 +474,9 @@
     "semantic_hash": ""
   },
   "editeur-schematique/js/05-feuilles.js": {
-    "mtime": 1793381843.9195547,
-    "seen": 1793384848.623108,
-    "ast_hash": "48b1aa838d02fec015fb849e449481d3",
+    "mtime": 1793717905.2016985,
+    "seen": 1793719442.1787179,
+    "ast_hash": "58b6670fcf7039f821fa0cb1630cf1ff",
     "semantic_hash": ""
   },
   "editeur-schematique/js/06-rendu-fond.js": {
@@ -492,21 +492,21 @@
     "semantic_hash": ""
   },
   "editeur-schematique/js/08-rendu-schema.js": {
-    "mtime": 1792784640.0194998,
-    "seen": 1793135203.8153539,
-    "ast_hash": "8d8c0f51b9110a714dc98d9f7447af46",
+    "mtime": 1793717915.1617897,
+    "seen": 1793719442.1787438,
+    "ast_hash": "a1ecaaa3456bf8b4203c957984ac79b9",
     "semantic_hash": ""
   },
   "editeur-schematique/js/09-interaction.js": {
-    "mtime": 1793381843.9201674,
-    "seen": 1793384848.6231518,
-    "ast_hash": "6587f0d9645dba57d88dd0a2f73aa75b",
+    "mtime": 1793717555.248045,
+    "seen": 1793719442.178751,
+    "ast_hash": "5918592c8284e70ce64d7ab8dd10daa1",
     "semantic_hash": ""
   },
   "editeur-schematique/js/10-actions.js": {
-    "mtime": 1793381843.9212422,
-    "seen": 1793384848.623162,
-    "ast_hash": "1a0f857b9256db07584a52f41f022359",
+    "mtime": 1793717826.626033,
+    "seen": 1793719442.1787581,
+    "ast_hash": "7da5ad52e14b3b6a6f53895ea6595d8c",
     "semantic_hash": ""
   },
   "editeur-schematique/js/11-palette.js": {
@@ -516,9 +516,9 @@
     "semantic_hash": "f052e64f48ebccf767ac6e900e444f2f"
   },
   "editeur-schematique/js/12-panneaux.js": {
-    "mtime": 1793381843.9221375,
-    "seen": 1793384848.623183,
-    "ast_hash": "db0a0f5037d95ed2824b61359c7c13e1",
+    "mtime": 1793717565.832688,
+    "seen": 1793719442.1787732,
+    "ast_hash": "b8e90847fdca7ae1aa141c342f935ab1",
     "semantic_hash": ""
   },
   "editeur-schematique/js/13-fichiers.js": {
@@ -528,15 +528,15 @@
     "semantic_hash": ""
   },
   "editeur-schematique/js/14-clavier-boutons.js": {
-    "mtime": 1793381843.923471,
-    "seen": 1793384848.623203,
-    "ast_hash": "9cefcdd21be8ebab8a78105195807280",
+    "mtime": 1793717565.828466,
+    "seen": 1793719442.178788,
+    "ast_hash": "916e97e7a0e1d394d2c8512410817e07",
     "semantic_hash": ""
   },
   "editeur-schematique/js/15-import.js": {
-    "mtime": 1793466060.784816,
-    "seen": 1793477373.757542,
-    "ast_hash": "f9d223a310c0b3b2089f8cbada9de8f4",
+    "mtime": 1793717570.8380435,
+    "seen": 1793719442.178795,
+    "ast_hash": "c1541a55cd2154f912ca59c35ca2d4cb",
     "semantic_hash": ""
   },
   "editeur-schematique/js/16-demo.js": {
@@ -618,9 +618,9 @@
     "semantic_hash": "e2aa9993499c2cdff79bf062b5a2dbd0"
   },
   "editeur-schematique/test/harness.js": {
-    "mtime": 1793394259.603209,
-    "seen": 1793394407.4550524,
-    "ast_hash": "cd87b1ce70c887be8fe3e9c8203563ce",
+    "mtime": 1793717915.1673465,
+    "seen": 1793719442.1789248,
+    "ast_hash": "22ede86620020f8037007192214ba158",
     "semantic_hash": ""
   },
   "gestion-lib/js/01-donnees.js": {
@@ -1098,15 +1098,15 @@
     "semantic_hash": "5d5be1b5ee7b1b6301b12ccf243f9094"
   },
   "editeur-schematique/README.md": {
-    "mtime": 1793130905.7838025,
-    "seen": 1793135203.8163652,
-    "ast_hash": "410942379af389f574ed9a8cebca8a04",
+    "mtime": 1793717872.0082247,
+    "seen": 1793719442.1798365,
+    "ast_hash": "9372dfc44448f780431e5b7fea780809",
     "semantic_hash": ""
   },
   "editeur-schematique/editeur-schematique.html": {
-    "mtime": 1793184399.3924246,
-    "seen": 1793351383.675361,
-    "ast_hash": "a3a5e3bf76be35756be3fe642af86063",
+    "mtime": 1793717565.8275478,
+    "seen": 1793719442.1798437,
+    "ast_hash": "17077424a7c06b21cc9d3cdf5490177c",
     "semantic_hash": ""
   },
   "gestion-lib/gestion-lib.html": {
@@ -1548,9 +1548,9 @@
     "semantic_hash": ""
   },
   "docs/manuel/02-editeur-schematique.md": {
-    "mtime": 1793130900.2118595,
-    "seen": 1793135203.816243,
-    "ast_hash": "4667fdf38b57f0cd3a14d34a069ab565",
+    "mtime": 1793717866.589937,
+    "seen": 1793719442.1796324,
+    "ast_hash": "33c994ef30d2bdfe663fcb79b178d328",
     "semantic_hash": ""
   },
   "docs/manuel/03-editeur-pcb-edition-routage.md": {
