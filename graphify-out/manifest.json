@@ -6,9 +6,9 @@
     "semantic_hash": "dc37cad77327d16b9ee4e4043b9064da"
   },
   "appairage.py": {
-    "mtime": 1793381843.8628166,
-    "seen": 1793384848.6218197,
-    "ast_hash": "bedb91bec42a1bd26cd140a0da567f43",
+    "mtime": 1793566483.7540293,
+    "seen": 1793716237.5292552,
+    "ast_hash": "82e72123ab362a385b095618556842b2",
     "semantic_hash": ""
   },
   "bancs-mesure/crosstalk/banc-crosstalk-mesure.py": {
@@ -210,21 +210,21 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/04-fabrication.js": {
-    "mtime": 1793476047.9633615,
-    "seen": 1793477373.756915,
-    "ast_hash": "4e55a07a4e304b5831906b57fcca9bd9",
+    "mtime": 1793628509.9269445,
+    "seen": 1793716237.5297723,
+    "ast_hash": "d426765db40629d8f5a14b3803992faa",
     "semantic_hash": ""
   },
   "editeur-pcb/js/04-pdf-masterdraw.js": {
-    "mtime": 1793280602.8072314,
-    "seen": 1793351383.6735342,
-    "ast_hash": "c1a6e6d875c88974e4f507fa2c2ec63e",
+    "mtime": 1793628509.928385,
+    "seen": 1793716237.5297794,
+    "ast_hash": "75dbc9b0a42113e58b502b67d155f25d",
     "semantic_hash": ""
   },
   "editeur-pcb/js/05-tools.js": {
-    "mtime": 1793476047.9673615,
-    "seen": 1793477373.7569323,
-    "ast_hash": "cbd112e29f7f61098da7d29f553bfa53",
+    "mtime": 1793712992.0415835,
+    "seen": 1793716237.529786,
+    "ast_hash": "373d08fe874a5e01ffbe2968d3b90a56",
     "semantic_hash": ""
   },
   "editeur-pcb/js/06-panels.js": {
@@ -234,9 +234,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/07-app.js": {
-    "mtime": 1793285570.2742715,
-    "seen": 1793351383.6735644,
-    "ast_hash": "764e613c8974ffcef9d064e4b61429cb",
+    "mtime": 1793712749.4887214,
+    "seen": 1793716237.5298011,
+    "ast_hash": "311bac8f81612fbbb85290f4c65317b2",
     "semantic_hash": ""
   },
   "editeur-pcb/js/08-empreinte.js": {
@@ -438,9 +438,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/test/harness.js": {
-    "mtime": 1793476047.995361,
-    "seen": 1793477373.7573755,
-    "ast_hash": "1385bcd9b0cba1ab69372bcb80ce93c0",
+    "mtime": 1793713100.2701068,
+    "seen": 1793716237.5301373,
+    "ast_hash": "1f11e9d63ca1268ba7ba43e6b3e0f265",
     "semantic_hash": ""
   },
   "editeur-schematique/js/00-espace-config.js": {
@@ -1026,9 +1026,9 @@
     "semantic_hash": ""
   },
   "visionneuse-ipc2581/test/harness-sim.js": {
-    "mtime": 1793381901.545469,
-    "seen": 1793384848.6243088,
-    "ast_hash": "c2ca060912e08acdd3d8d51567b561af",
+    "mtime": 1793630078.2510514,
+    "seen": 1793716237.530983,
+    "ast_hash": "902970001fe134728790f6d77cbb9afb",
     "semantic_hash": ""
   },
   "web_CAO.py": {
@@ -1080,15 +1080,15 @@
     "semantic_hash": ""
   },
   "editeur-pcb/README.md": {
-    "mtime": 1793381843.881692,
-    "seen": 1793384848.6246314,
-    "ast_hash": "f06ec31b608eb2aa4fcd0074fb08f8cb",
+    "mtime": 1793713210.5248692,
+    "seen": 1793716237.5311978,
+    "ast_hash": "fb5fffb1448643a09c9d79bfe4bfd2ca",
     "semantic_hash": ""
   },
   "editeur-pcb/editeur-pcb.html": {
-    "mtime": 1793287607.5420976,
-    "seen": 1793351383.675337,
-    "ast_hash": "b80d122c165149a4b9ed269e96203b89",
+    "mtime": 1793712749.4841526,
+    "seen": 1793716237.5312045,
+    "ast_hash": "c14d37af7ca57bbfad42a9f609a984de",
     "semantic_hash": ""
   },
   "editeur-pcb/js/fontes/OFL-PlansSans.txt": {
@@ -1146,15 +1146,15 @@
     "semantic_hash": "f9a51bc31712e5c4f5a5e1cce22be2d3"
   },
   "visionneuse-ipc2581/README.md": {
-    "mtime": 1793432792.4423947,
-    "seen": 1793441035.0190213,
-    "ast_hash": "888ebf46c053646502a342599575a540",
+    "mtime": 1793630426.8606482,
+    "seen": 1793716237.5313787,
+    "ast_hash": "5e6e1dd9e4b0fc37befc73328af2b276",
     "semantic_hash": ""
   },
   "visionneuse-ipc2581/visionneuse-ipc2581.html": {
-    "mtime": 1793350319.0298893,
-    "seen": 1793351383.6755273,
-    "ast_hash": "5bd89df23013fa88b337b4041ddcfdd1",
+    "mtime": 1793630062.544757,
+    "seen": 1793716237.5313857,
+    "ast_hash": "99baaa9d8ab3447bd5daf0583eaa0c42",
     "semantic_hash": ""
   },
   "bancs-mesure/crosstalk/carte.png": {
@@ -1446,9 +1446,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/41-animation-3d.js": {
-    "mtime": 1793476047.9751694,
-    "seen": 1793477373.7572846,
-    "ast_hash": "04b5c672892cf194c1c5a87422930f37",
+    "mtime": 1793630037.9968603,
+    "seen": 1793716237.5300608,
+    "ast_hash": "8dcc8713187f3c8a271ad58aa81021cd",
     "semantic_hash": ""
   },
   "editeur-schematique/js/29-symboles-lib.js": {
@@ -1470,9 +1470,9 @@
     "semantic_hash": ""
   },
   "commun/fiche-mesure.js": {
-    "mtime": 1793356413.1965194,
-    "seen": 1793356820.0462,
-    "ast_hash": "e8abf9ebd108e22e6b611caa4971ddc4",
+    "mtime": 1793636356.8776631,
+    "seen": 1793716237.529451,
+    "ast_hash": "be70e78fc8e3878fe4b856ea26ee87bf",
     "semantic_hash": ""
   },
   "commun/outils/build-manuel.py": {
@@ -1500,9 +1500,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/42-fiche-mesure.js": {
-    "mtime": 1793351783.8453956,
-    "seen": 1793352185.972716,
-    "ast_hash": "19855bed65ac3a0e87fb6ea507b5427e",
+    "mtime": 1793636356.8797357,
+    "seen": 1793716237.5300684,
+    "ast_hash": "7960513b692311276ffdaa8bded0fe17",
     "semantic_hash": ""
   },
   "python/maillages_3d.mjs": {
@@ -1518,15 +1518,15 @@
     "semantic_hash": ""
   },
   "visionneuse-ipc2581/js/09-fiche-mesure.js": {
-    "mtime": 1793350319.0273905,
-    "seen": 1793351383.6750782,
-    "ast_hash": "4e5eace6fee3f6de25211764a2597a1c",
+    "mtime": 1793636370.879323,
+    "seen": 1793716237.5309553,
+    "ast_hash": "cf4020c8eb79609c1608ad6fb8c1642a",
     "semantic_hash": ""
   },
   "visionneuse-ipc2581/js/10-plans.js": {
-    "mtime": 1793355722.0298407,
-    "seen": 1793355836.1309924,
-    "ast_hash": "aeec2c39e7c8b79b5e5d878f0167831b",
+    "mtime": 1793636356.8808951,
+    "seen": 1793716237.5309618,
+    "ast_hash": "416a181069db5aba8e4d6deee0a19412",
     "semantic_hash": ""
   },
   "SPEC-manuel.md": {
@@ -1554,15 +1554,15 @@
     "semantic_hash": ""
   },
   "docs/manuel/03-editeur-pcb-edition-routage.md": {
-    "mtime": 1793476047.9353619,
-    "seen": 1793477373.7586277,
-    "ast_hash": "a429f950796a8a430626f1267c928036",
+    "mtime": 1793629430.4737232,
+    "seen": 1793716237.5310938,
+    "ast_hash": "fd7f5f2800d98277c2569d0fde1cf302",
     "semantic_hash": ""
   },
   "docs/manuel/04-editeur-pcb-fabrication.md": {
-    "mtime": 1793356714.1182165,
-    "seen": 1793356820.0478723,
-    "ast_hash": "605dfa2afba8ea4b163eb0f62b7451b0",
+    "mtime": 1793629436.3539453,
+    "seen": 1793716237.5311007,
+    "ast_hash": "50ea3ba424d6a98a966a69f9c38d2940",
     "semantic_hash": ""
   },
   "docs/manuel/05-gestion-lib.md": {
@@ -1578,9 +1578,9 @@
     "semantic_hash": ""
   },
   "docs/manuel/07-visionneuse-ipc2581.md": {
-    "mtime": 1793356714.1218195,
-    "seen": 1793356820.0478952,
-    "ast_hash": "a3d46bd4d82e53427efa534b31a2cf25",
+    "mtime": 1793630426.86223,
+    "seen": 1793716237.5311232,
+    "ast_hash": "ed6a67dd885945e5b3044f5093d83512",
     "semantic_hash": ""
   },
   "docs/manuel/08-simulation-si.md": {
@@ -1620,9 +1620,9 @@
     "semantic_hash": ""
   },
   "docs/manuel/manuel.html": {
-    "mtime": 1793476111.6265614,
-    "seen": 1793477373.758736,
-    "ast_hash": "0fd5656721df078f17d0559ed97aeb98",
+    "mtime": 1793630427.3913312,
+    "seen": 1793716237.5311759,
+    "ast_hash": "72d35268e1eb196c0df51bb6b6a09bf3",
     "semantic_hash": ""
   },
   "tasks/plan-manuel.md": {
@@ -1707,6 +1707,24 @@
     "mtime": 1793476087.7863214,
     "seen": 1793477373.7567503,
     "ast_hash": "2782b4e5b31d8d3210197fd22dbcc048",
+    "semantic_hash": ""
+  },
+  "commun/animation-3d.js": {
+    "mtime": 1793636047.1828709,
+    "seen": 1793716237.5293531,
+    "ast_hash": "24fe0ad37ea5476d1be0f3dff1227fbd",
+    "semantic_hash": ""
+  },
+  "editeur-pcb/test/banc-anim3d-images.py": {
+    "mtime": 1793630254.4561532,
+    "seen": 1793716237.5301137,
+    "ast_hash": "cf15e21b05ff3b4b6e99709253f8d3b8",
+    "semantic_hash": ""
+  },
+  "visionneuse-ipc2581/js/11-animation-3d.js": {
+    "mtime": 1793630245.614102,
+    "seen": 1793716237.5309684,
+    "ast_hash": "520bf32d881ef2a526c8063c47b9b67f",
     "semantic_hash": ""
   }
 }
