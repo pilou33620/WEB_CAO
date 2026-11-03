@@ -2665,6 +2665,40 @@ T("synoptique : gros schéma, rail à travers un fusible, alims en étiquette, c
   draw();
 });
 
+T("synoptique : corrections de la revue (mémoire, survol en biais, mémo, clés longues, centre unique)",()=>{
+  // un bloc égaré à 100 000 px : traits directs, pas d'allocation géante
+  const B=[{key:"A",x:0,y:0,w:160,h:60},{key:"B",x:100000,y:100000,w:160,h:60}];
+  const R=synRouter(B,[{a:"A",b:"B",name:"X",kind:"signal",dir:""}]);
+  if(R.length!==1||!R[0].direct)throw new Error("grille démesurée : trait direct attendu");
+  // survol d'un trait direct en biais : seulement près du trait, pas dans tout son rectangle
+  S.pages=[newHierPage("Hiérarchie"),synCarte()];
+  gotoPage(0);
+  S.drag={sheetBlock:{key:"U1"},moved:true};
+  try{
+    const d=sheetRoutes().find(r=>r.pts[0][0]!==r.pts[1][0]&&r.pts[0][1]!==r.pts[1][1]);
+    if(!d)throw new Error("pas de trait en biais dans l'essai");
+    const [[ax,ay],[bx,by]]=d.pts;
+    if(hitSheetLink((ax+bx)/2,(ay+by)/2,5)!==d.link)throw new Error("le milieu du trait le désigne");
+    const coin=hitSheetLink(ax+(bx-ax)*0.9,ay+(by-ay)*0.1,5);
+    if(coin===d.link)throw new Error("un coin du rectangle ne doit pas désigner le trait");
+  }finally{S.drag=null;}
+  // la pièce LIB change le rôle sans toucher à la connectivité : liaisons et blocs suivent
+  if(!sheetBlocks().some(b=>b.key==="U2"))throw new Error("U2 est un bloc");
+  S.pages[1].comps.find(el=>el.ref==="U2").csvPartName="ESD_PESD5V";
+  if(sheetBlocks().some(b=>b.key==="U2")||sheetLinks().some(l=>l.a==="U2"||l.b==="U2"))throw new Error("U2 devenu ESD reste affiché (mémo périmé)");
+  // clés longues gardées entières, positions aberrantes refusées
+  const doc=JSON.parse(serialize()), long="U"+"9".repeat(60);
+  doc.pages[0].synPos={[long]:{x:10,y:20},U1:{x:5e6,y:0}};
+  doc.pages[0].synTitres={[long]:"LONG"};
+  loadDoc(doc);
+  if(!S.pages[0].synPos[long]||S.pages[0].synTitres[long]!=="LONG"||S.pages[0].synPos.U1)
+    throw new Error("synPos/synTitres : "+JSON.stringify([Object.keys(S.pages[0].synPos),S.pages[0].synTitres]));
+  // un seul centre : celui des liaisons est le grand bloc
+  S.pages=synGrosDoc();gotoPage(0);
+  const big=sheetBlocks().filter(b=>b.big).map(b=>b.key);
+  if((sheetLinks().centre||null)!==(big[0]||null)||big.length>1)throw new Error("centre "+sheetLinks().centre+" / grand bloc "+big);
+});
+
 T("routeur du synoptique : le contrôleur de vol de la maquette, sans voie partagée",()=>{
   const B=(key,x,y,w,h)=>({key,x,y,w,h});
   const blocks=[B(1,20,20,150,64),B(2,230,20,170,64),B(3,500,20,150,64),B(4,730,20,200,64),B(5,1030,20,160,64),

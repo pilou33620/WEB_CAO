@@ -317,12 +317,6 @@ function synComposants(){
   return par;
 }
 
-/* Tension lue dans le nom (5V, +3V3, 3.3V…) ; un nom sans chiffre (VBAT, VIN) est une
-   source brute, donc la plus haute. */
-function synVolt(nm){
-  const m=/(\d+)(?:[.,V](\d+))?/i.exec(String(nm).replace(/^\+/,""));
-  return m?parseFloat(m[1]+"."+(m[2]||"0")):Infinity;
-}
 /* Noms regroupés par famille : SPI2_MOSI, SPI2_MISO → « SPI2 » ; DSHOT1…4 → « DSHOT ×4 » ;
    au-delà de trois familles, leur nombre. */
 function synLibelle(noms){
@@ -342,14 +336,25 @@ function synLibelle(noms){
    isPower, dir:"a" (de a vers b) | "ab" | ""}. Une alimentation part de la pile, du
    connecteur ou de la broche OUT qui la produit ; un signal, de la broche de sortie (OUT,
    TX, Q, collecteur C, source S d'un capteur) ; un bus va dans les deux sens. */
-/* Mémo : les liaisons ne dépendent que de la connectivité, que docNets() met déjà en cache. */
-let _synLiensDe=null, _synLiens=[];
+/* Mémos : les liaisons dépendent de la connectivité (docNets() la met en cache) et des champs qui
+   décident du rôle d'un composant ; les blocs, en plus, des positions et titres de la racine. */
+let _synLiensDe=null, _synLiensSig="", _synLiens=[], _synBlocsCle="", _synBlocs=[];
 const SYN_RAIL_MAX=4;            // au-delà, une alim ne tire plus un fil vers chaque consommateur
+function synSig(){
+  let s=S.pages.length+"";
+  S.pages.forEach((p,i)=>{
+    if(!i)return;
+    for(const el of (i===S.page?S.comps:(p.comps||[])))
+      s+="|"+el.ref+","+el.type+","+(el.npins||"")+","+(el.csvPartName||"")+","+(el.value||"")+","+
+         (el.mpn||"")+","+(el.csvMpn||"")+","+(el.desc||"");
+  });
+  return s;
+}
 function sheetLinks(){
   if(!S.pages||S.pages.length<2||typeof docNets!=="function")return [];
-  const dn=docNets();
-  if(dn===_synLiensDe)return _synLiens;
-  _synLiensDe=dn;
+  const dn=docNets(), sig=synSig();
+  if(dn===_synLiensDe&&sig===_synLiensSig)return _synLiens;
+  _synLiensDe=dn;_synLiensSig=sig;
   _synLiens=synCalculerLiens(dn);
   return _synLiens;
 }
@@ -426,14 +431,22 @@ function synCalculerLiens(dn){
   // une alim très partagée ne relie par fil que la chaîne d'alimentation (les blocs qui produisent
   // une autre alim) et le bloc central ; les autres consommateurs la portent en étiquette
   const producteurs=new Set(nets.filter(n=>n.power&&n.src!==null).map(n=>n.src));
-  const centre=[...deg].reduce((m,e)=>e[1]>=3&&(!m||e[1]>m[1])?e:m,null);
   const paires=new Map();
+  // signaux d'abord : le bloc central est celui qui a le plus de liaisons de signal (trois au moins)
+  nets.sort((p,q)=>p.power-q.power);
+  let centre=null;
   for(const n of nets){
+    if(n.power&&centre===null){
+      const d=new Map();
+      for(const l of paires.values()){d.set(l.lo,(d.get(l.lo)||0)+1);d.set(l.hi,(d.get(l.hi)||0)+1);}
+      centre=[...d].reduce((m,e)=>e[1]>=3&&(!m||e[1]>m[1])?e:m,null)||false;
+      liens.centre=centre?centre[0]:null;
+    }
     const hub=n.src!==null?n.src:n.refs.reduce((m,r)=>(deg.get(r)||0)>(deg.get(m)||0)?r:m);
     const etiquette=n.power&&n.refs.length-1>SYN_RAIL_MAX&&comps.size>SYN_GROUPER;
     for(const q of n.refs){
       if(q===hub)continue;
-      if(etiquette&&!producteurs.has(q)&&!(centre&&centre[0]===q)){
+      if(etiquette&&!producteurs.has(q)&&q!==liens.centre){
         if(!liens.rails.has(q))liens.rails.set(q,[]);
         for(const nm of n.noms)if(!liens.rails.get(q).includes(nm))liens.rails.get(q).push(nm);
         continue;
@@ -446,6 +459,12 @@ function synCalculerLiens(dn){
       l.sens.add(n.bus?"ab":n.src===null?"":(hub===lo?"+":"-"));
     }
   }
+  if(centre===null){       // aucune alim : le centre se calcule sur les seuls signaux
+    const d=new Map();
+    for(const l of paires.values()){d.set(l.lo,(d.get(l.lo)||0)+1);d.set(l.hi,(d.get(l.hi)||0)+1);}
+    const m=[...d].reduce((m,e)=>e[1]>=3&&(!m||e[1]>m[1])?e:m,null);
+    liens.centre=m?m[0]:null;
+  }
   for(const l of paires.values()){
     l.sens.delete("");
     const s=l.sens.size===1?[...l.sens][0]:(l.sens.size?"ab":"");
@@ -456,15 +475,15 @@ function synCalculerLiens(dn){
   return liens;
 }
 
-function sheetBlocks(){
+/* `links` évite de redemander sheetLinks() (et docNets(), 5 ms sur un gros schéma) à qui l'a déjà. */
+function sheetBlocks(links){
   if(!S.pages||S.pages.length<=1)return [];
-  const comps=synComposants(), racine=S.pages[0]||{};
+  const racine=S.pages[0]||{};
+  links=links||sheetLinks();
   const pos=racine.synPos||{}, titres=racine.synTitres||{};
-  const deg=new Map();
-  // le bloc central est celui qui échange le plus de signaux : les alims n'en font pas un centre
-  for(const l of sheetLinks())if(!l.isPower){deg.set(l.a,(deg.get(l.a)||0)+1);deg.set(l.b,(deg.get(l.b)||0)+1);}
-  let hub=null;
-  for(const [k,d] of deg)if(d>=3&&(hub===null||d>deg.get(hub)))hub=k;
+  const cle=_synLiensSig+"#"+JSON.stringify(pos)+"#"+JSON.stringify(titres);
+  if(links===_synLiens&&cle===_synBlocsCle)return _synBlocs;
+  const comps=synComposants(), hub=links.centre||null;
   const blocks=[];
   let n=0;
   for(const c of comps.values()){
@@ -480,8 +499,9 @@ function sheetBlocks(){
     const x=(p&&Number.isFinite(p.x))?p.x:60+(n%4)*280;
     const y=(p&&Number.isFinite(p.y))?p.y:60+Math.floor(n/4)*160;
     n++;
-    blocks.push({key:c.key,sheetIndex:c.sheetIndex,page:S.pages[c.sheetIndex],ref:c.key,name,sub,big,x,y,w,h});
+    blocks.push({key:c.key,sheetIndex:c.sheetIndex,ref:c.key,name,sub,big,x,y,w,h});
   }
+  if(links===_synLiens){_synBlocsCle=cle;_synBlocs=blocks;}
   return blocks;
 }
 function synPosSet(key,x,y){
@@ -491,9 +511,9 @@ function synPosSet(key,x,y){
   r.synPos[key]={x:snap(x),y:snap(y)};
 }
 
-function hitSheetBlock(wx,wy){
+function hitSheetBlock(wx,wy,blocks){
   if(S.page!==0)return null;
-  const blocks=sheetBlocks();
+  blocks=blocks||sheetBlocks();
   for(let i=blocks.length-1;i>=0;i--){
     const b=blocks[i];
     if(wx>=b.x&&wx<=b.x+b.w&&wy>=b.y&&wy<=b.y+b.h)return b;
@@ -502,7 +522,7 @@ function hitSheetBlock(wx,wy){
 }
 
 /* ---------- Routage orthogonal : A* sur une grille, voies exclusives, croisements chers ---------- */
-const SYN_G=10, SYN_BUDGET_MS=2500;   // au-delà du budget, les liaisons restantes sont tracées en direct
+const SYN_G=10, SYN_BUDGET_MS=2500, SYN_CASES_MAX=400000;   // au-delà du budget, les liaisons restantes sont tracées en direct
 function synRouter(blocks,links){
   // gros synoptique : maille de 20 px, quatre fois moins de cases à fouiller
   const G=blocks.length>SYN_GROUPER?2*SYN_G:SYN_G, M=Math.round(160/G), AB=Math.round(50/G);
@@ -510,6 +530,12 @@ function synRouter(blocks,links){
   for(const b of blocks){x1=Math.min(x1,b.x);y1=Math.min(y1,b.y);x2=Math.max(x2,b.x+b.w);y2=Math.max(y2,b.y+b.h);}
   const oi=Math.floor(x1/G)-M, oj=Math.floor(y1/G)-M;
   const nx=Math.ceil(x2/G)+M-oi+1, ny=Math.ceil(y2/G)+M-oj+1, N=nx*ny;
+  // un bloc égaré très loin ferait allouer des centaines de Mo : au-delà, traits directs
+  if(!(N<=SYN_CASES_MAX)){
+    const par=new Map(blocks.map(b=>[b.key,b]));
+    return links.filter(l=>par.has(l.a)&&par.has(l.b)).map(l=>{const a=par.get(l.a),b=par.get(l.b);
+      return {link:l,pts:[[a.x+a.w/2,a.y+a.h/2],[b.x+b.w/2,b.y+b.h/2]],direct:true};});
+  }
   const id=(i,j)=>j*nx+i, dans=(i,j)=>i>=0&&j>=0&&i<nx&&j<ny;
   const bloque=new Uint8Array(N), abord=new Uint8Array(N), occ=new Uint8Array(N);   // occ : 1 voie horizontale, 2 verticale
   const marque=(t,b,m)=>{
@@ -626,23 +652,24 @@ function synRouter(blocks,links){
   return out;
 }
 let _synCle="", _synRoutes=[];
-function sheetRoutes(){
-  const blocks=sheetBlocks(), links=sheetLinks();
+function sheetRoutes(blocks,links){
+  links=links||sheetLinks();blocks=blocks||sheetBlocks(links);
   if(S.drag&&S.drag.sheetBlock&&S.drag.moved){   // pendant le glisser, traits directs : on route au lâcher
     const c=new Map(blocks.map(b=>[b.key,[b.x+b.w/2,b.y+b.h/2]]));
     return links.filter(l=>c.has(l.a)&&c.has(l.b)).map(l=>({link:l,pts:[c.get(l.a),c.get(l.b)],direct:true}));
   }
-  const cle=JSON.stringify([blocks.map(b=>[b.key,b.x,b.y,b.w,b.h]),links.map(l=>[l.a,l.b,l.kind,l.name,l.dir])]);
+  const cle=JSON.stringify([blocks.map(b=>[b.key,b.x,b.y,b.w,b.h]),links.map(l=>[l.a,l.b,l.kind,l.names,l.dir,l.isBus])]);
   if(cle!==_synCle){_synCle=cle;_synRoutes=blocks.length>1?synRouter(blocks,links):[];}
   return _synRoutes;
 }
-function hitSheetLink(wx,wy,tol){
+function hitSheetLink(wx,wy,tol,routes){
   if(S.page!==0)return null;
   tol=tol||5/(S.scale||1);
-  for(const r of sheetRoutes())
+  for(const r of routes||sheetRoutes())
     for(let k=1;k<r.pts.length;k++){
-      const [ax,ay]=r.pts[k-1],[bx,by]=r.pts[k];
-      if(wx>=Math.min(ax,bx)-tol&&wx<=Math.max(ax,bx)+tol&&wy>=Math.min(ay,by)-tol&&wy<=Math.max(ay,by)+tol)return r.link;
+      const [ax,ay]=r.pts[k-1],[bx,by]=r.pts[k], dx=bx-ax, dy=by-ay, L2=dx*dx+dy*dy;
+      const t=L2?Math.max(0,Math.min(1,((wx-ax)*dx+(wy-ay)*dy)/L2)):0;
+      if(Math.hypot(wx-ax-t*dx,wy-ay-t*dy)<=tol)return r.link;
     }
   return null;
 }
@@ -666,13 +693,14 @@ function synCadres(blocks){
   return cadres;
 }
 /* Chiffres clés : composants (repères distincts), nets, sous-feuilles. */
-function synStats(){
+function synStats(dn){
   const refs=new Set();
   S.pages.forEach((p,i)=>{
     if(!i)return;
     for(const el of (i===S.page?S.comps:(p.comps||[])))if(!defOf(el.type).noRef)refs.add(el.ref||el.id);
   });
-  const nNets=typeof docNets==="function"?docNets().groups.filter(g=>g.pages.some(p=>p>0)).length:0;
+  dn=dn||(typeof docNets==="function"?docNets():null);
+  const nNets=dn?dn.groups.filter(g=>g.pages.some(p=>p>0)).length:0;
   return {parts:refs.size,nets:nNets,blocs:Math.max(0,S.pages.length-1)};
 }
 

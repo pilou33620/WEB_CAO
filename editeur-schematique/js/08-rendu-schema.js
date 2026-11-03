@@ -299,9 +299,75 @@ function drawRoundRectPath(c, x, y, w, h, r){
     c.closePath();
   }
 }
+/* Ce qui ne dépend que de la géométrie : cadres, points de saut, places des étiquettes. Gardé sur
+   le jeu de routes tant que les blocs et les liaisons sont les mêmes (sheetRoutes et sheetBlocks
+   rendent alors les mêmes objets). */
+function synDeco(c, blocks, routes, links){
+  if(routes._deco && routes._decoBlocs === blocks && routes._decoLiens === links) return routes._deco;
+  const cadres = synCadres(blocks), sauts = [], rails = [], etiquettes = [];
+  const segs = [];
+  for(const r of routes) if(!r.direct) for(let k = 1; k < r.pts.length; k++) segs.push({a:r.pts[k-1], b:r.pts[k], r});
+  for(const h of segs){
+    if(h.a[1] !== h.b[1]) continue;
+    for(const v of segs){
+      if(v.r === h.r || v.a[0] !== v.b[0]) continue;
+      const x = v.a[0], y = h.a[1];
+      if(x <= Math.min(h.a[0], h.b[0]) + 6 || x >= Math.max(h.a[0], h.b[0]) - 6 ||
+         y <= Math.min(v.a[1], v.b[1]) + 6 || y >= Math.max(v.a[1], v.b[1]) - 6) continue;
+      sauts.push({x, y, v:v.r, h:h.r});
+    }
+  }
+  const boites = blocks.map(b => [b.x - 4, b.y - 4, b.w + 8, b.h + 8]);
+  for(const f of cadres) boites.push([f.x + 8, f.y + 6, f.nom.length * 8.5 + 12, 20]);
+  const parRail = links.rails || new Map();
+  c.save();
+  c.font = "11px " + SYN_MONO;
+  for(const b of blocks){
+    const r = parRail.get(b.key);
+    if(!r || !r.length) continue;
+    const t = "⚡ " + r.join(" · "), tw = c.measureText(t).width;
+    rails.push({t, x:b.x + b.w - 4, y:b.y - 9});
+    boites.push([b.x + b.w - tw - 6, b.y - 17, tw + 4, 15]);
+  }
+  const touche = (r, s) => r[0] < s[0] + s[2] && s[0] < r[0] + r[2] && r[1] < s[1] + s[3] && s[1] < r[1] + r[3];
+  const coupeFil = bx => segs.some(({a, b}) => touche(bx,
+    [Math.min(a[0], b[0]) - 1, Math.min(a[1], b[1]) - 1, Math.abs(a[0] - b[0]) + 2, Math.abs(a[1] - b[1]) + 2]));
+  c.font = "12px " + SYN_MONO;
+  const dejaNomme = new Set();
+  for(const r of routes){
+    if(r.direct || !r.link.name || dejaNomme.has(r.link.name)) continue;   // sans nom, ou alim déjà nommée
+    if(r.link.isPower) dejaNomme.add(r.link.name);
+    const p = r.pts, n = p.length, tw = c.measureText(r.link.name).width, cand = [];
+    for(let k = 0; k < n - 1; k++){
+      const a = p[k], b = p[k+1], len = Math.abs(b[0] - a[0]) + Math.abs(b[1] - a[1]);
+      for(const t of [0.5, 0.35, 0.65, 0.2, 0.8]){
+        const mx = a[0] + (b[0] - a[0])*t, my = a[1] + (b[1] - a[1])*t;
+        if(a[1] === b[1]){
+          if(len < tw + 16) continue;
+          cand.push({len, box:[mx - tw/2 - 3, my - 19, tw + 6, 15], x:mx, y:my - 11, al:"center"});
+          cand.push({len:len - 1, box:[mx - tw/2 - 3, my + 4, tw + 6, 15], x:mx, y:my + 11, al:"center"});
+        } else {
+          if(len < 24) continue;
+          cand.push({len, box:[mx + 5, my - 8, tw + 6, 15], x:mx + 8, y:my, al:"left"});
+          cand.push({len:len - 1, box:[mx - tw - 11, my - 8, tw + 6, 15], x:mx - 8, y:my, al:"right"});
+        }
+      }
+    }
+    cand.sort((u, v) => v.len - u.len);
+    const ok = cand.find(e => !boites.some(b => touche(e.box, b)) && !coupeFil(e.box)) || cand[0];
+    if(!ok) continue;
+    boites.push(ok.box);
+    etiquettes.push({r, x:ok.x, y:ok.y, al:ok.al});
+  }
+  c.restore();
+  routes._deco = {cadres, sauts, rails, etiquettes};
+  routes._decoBlocs = blocks; routes._decoLiens = links;
+  return routes._deco;
+}
 function drawSheetBlocks(c){
   if(S.page !== 0) return;
-  const blocks = typeof sheetBlocks === "function" ? sheetBlocks() : [];
+  const links = typeof sheetLinks === "function" ? sheetLinks() : [];
+  const blocks = typeof sheetBlocks === "function" ? sheetBlocks(links) : [];
   if(!blocks.length){
     c.save();
     c.strokeStyle = "#00c4df"; c.globalAlpha = 0.55; c.lineWidth = 1.5; c.setLineDash([6, 4]);
@@ -312,16 +378,18 @@ function drawSheetBlocks(c){
     c.restore();
     return;
   }
-  const routes = sheetRoutes();
+  const routes = sheetRoutes(blocks, links);
   const actif = r => r.link === S.hoverSheetLink ||
     (S.selBlock !== null && (r.link.a === S.selBlock || r.link.b === S.selBlock));
   const couleur = r => actif(r) ? "#ffffff" : SYN_COL[r.link.kind];
   c.save();
   c.lineJoin = "round"; c.lineCap = "butt";
 
+  // décor (cadres, sauts, étiquettes) : calculé une fois par jeu de routes, le survol ne fait que recolorer
+  const deco = synDeco(c, blocks, routes, links);
+
   // 0. un cadre nommé par feuille de deux blocs ou plus, si les cadres ne se chevauchent pas
-  const cadres = synCadres(blocks);
-  for(const f of cadres){
+  for(const f of deco.cadres){
     c.strokeStyle = "#2c323a"; c.lineWidth = 1.2; c.setLineDash([6, 5]);
     drawRoundRectPath(c, f.x, f.y, f.w, f.h, 10); c.stroke();
     c.setLineDash([]);
@@ -342,75 +410,34 @@ function drawSheetBlocks(c){
   c.setLineDash([]);
 
   // 2. croisements : le fil horizontal saute par-dessus le vertical, aucun ne se confond
-  const segs = [];
-  for(const r of routes) if(!r.direct) for(let k = 1; k < r.pts.length; k++) segs.push({a:r.pts[k-1], b:r.pts[k], r});
-  for(const h of segs){
-    if(h.a[1] !== h.b[1]) continue;
-    for(const v of segs){
-      if(v.r === h.r || v.a[0] !== v.b[0]) continue;
-      const x = v.a[0], y = h.a[1];
-      if(x <= Math.min(h.a[0], h.b[0]) + 6 || x >= Math.max(h.a[0], h.b[0]) - 6 ||
-         y <= Math.min(v.a[1], v.b[1]) + 6 || y >= Math.max(v.a[1], v.b[1]) - 6) continue;
-      c.fillStyle = C_BG; c.fillRect(x - 6.5, y - 2.5, 13, 5);
-      c.lineWidth = v.r.link.isBus ? 2.4 : 1.6;
-      c.strokeStyle = couleur(v.r); c.beginPath(); c.moveTo(x, y - 7); c.lineTo(x, y + 7); c.stroke();
-      c.lineWidth = h.r.link.isBus ? 2.4 : 1.6;
-      c.strokeStyle = couleur(h.r); c.beginPath(); c.arc(x, y, 5.5, Math.PI, 0); c.stroke();
-    }
+  for(const {x, y, v, h} of deco.sauts){
+    c.fillStyle = C_BG; c.fillRect(x - 6.5, y - 2.5, 13, 5);
+    c.lineWidth = v.link.isBus ? 2.4 : 1.6;
+    c.strokeStyle = couleur(v); c.beginPath(); c.moveTo(x, y - 7); c.lineTo(x, y + 7); c.stroke();
+    c.lineWidth = h.link.isBus ? 2.4 : 1.6;
+    c.strokeStyle = couleur(h); c.beginPath(); c.arc(x, y, 5.5, Math.PI, 0); c.stroke();
   }
 
-  // 3. flèches, puis étiquettes là où elles ne gênent ni bloc, ni fil, ni autre étiquette
+  // 3. flèches, alims en étiquette sur les blocs, noms des liaisons
   const fleche = (q, p, col) => {
     const dx = Math.sign(q[0] - p[0]), dy = Math.sign(q[1] - p[1]);
     c.fillStyle = col; c.beginPath(); c.moveTo(q[0], q[1]);
     c.lineTo(q[0] - dx*8 - dy*4.5, q[1] - dy*8 - dx*4.5);
     c.lineTo(q[0] - dx*8 + dy*4.5, q[1] - dy*8 + dx*4.5); c.closePath(); c.fill();
   };
-  const boites = blocks.map(b => [b.x - 4, b.y - 4, b.w + 8, b.h + 8]);
-  for(const f of cadres) boites.push([f.x + 8, f.y + 6, f.nom.length * 8.5 + 12, 20]);
-  const rails = sheetLinks().rails || new Map();
-  c.font = "11px " + SYN_MONO; c.textBaseline = "middle"; c.textAlign = "right";
-  for(const b of blocks){
-    const r = rails.get(b.key);
-    if(!r || !r.length) continue;
-    const t = "⚡ " + r.join(" · "), tw = c.measureText(t).width;
-    c.fillStyle = SYN_COL.lblPower; c.fillText(t, b.x + b.w - 4, b.y - 9);
-    boites.push([b.x + b.w - tw - 6, b.y - 17, tw + 4, 15]);
-  }
-  const touche = (r, s) => r[0] < s[0] + s[2] && s[0] < r[0] + r[2] && r[1] < s[1] + s[3] && s[1] < r[1] + r[3];
-  const coupeFil = bx => segs.some(({a, b}) => touche(bx,
-    [Math.min(a[0], b[0]) - 1, Math.min(a[1], b[1]) - 1, Math.abs(a[0] - b[0]) + 2, Math.abs(a[1] - b[1]) + 2]));
-  c.font = "12px " + SYN_MONO; c.textBaseline = "middle";
-  const dejaNomme = new Set();
   for(const r of routes){
     if(r.direct) continue;                      // trait provisoire (glisser en cours) : ni flèche ni étiquette
     const p = r.pts, n = p.length, col = couleur(r);
     if(r.link.dir) fleche(p[n-1], p[n-2], col);
     if(r.link.dir === "ab") fleche(p[0], p[1], col);
-    if(!r.link.name || dejaNomme.has(r.link.name)) continue;   // sans nom, ou alim déjà nommée une fois
-    if(r.link.isPower) dejaNomme.add(r.link.name);
-    const tw = c.measureText(r.link.name).width, cand = [];
-    for(let k = 0; k < n - 1; k++){
-      const a = p[k], b = p[k+1], len = Math.abs(b[0] - a[0]) + Math.abs(b[1] - a[1]);
-      for(const t of [0.5, 0.35, 0.65, 0.2, 0.8]){
-        const mx = a[0] + (b[0] - a[0])*t, my = a[1] + (b[1] - a[1])*t;
-        if(a[1] === b[1]){
-          if(len < tw + 16) continue;
-          cand.push({len, box:[mx - tw/2 - 3, my - 19, tw + 6, 15], x:mx, y:my - 11, al:"center"});
-          cand.push({len:len - 1, box:[mx - tw/2 - 3, my + 4, tw + 6, 15], x:mx, y:my + 11, al:"center"});
-        } else {
-          if(len < 24) continue;
-          cand.push({len, box:[mx + 5, my - 8, tw + 6, 15], x:mx + 8, y:my, al:"left"});
-          cand.push({len:len - 1, box:[mx - tw - 11, my - 8, tw + 6, 15], x:mx - 8, y:my, al:"right"});
-        }
-      }
-    }
-    cand.sort((u, v) => v.len - u.len);
-    const ok = cand.find(e => !boites.some(b => touche(e.box, b)) && !coupeFil(e.box)) || cand[0];
-    if(!ok) continue;
-    boites.push(ok.box);
-    c.fillStyle = actif(r) ? "#ffffff" : (r.link.isPower ? SYN_COL.lblPower : SYN_COL.lblSignal);
-    c.textAlign = ok.al; c.fillText(r.link.name, ok.x, ok.y);
+  }
+  c.textBaseline = "middle";
+  c.font = "11px " + SYN_MONO; c.textAlign = "right"; c.fillStyle = SYN_COL.lblPower;
+  for(const e of deco.rails) c.fillText(e.t, e.x, e.y);
+  c.font = "12px " + SYN_MONO;
+  for(const e of deco.etiquettes){
+    c.fillStyle = actif(e.r) ? "#ffffff" : (e.r.link.isPower ? SYN_COL.lblPower : SYN_COL.lblSignal);
+    c.textAlign = e.al; c.fillText(e.r.link.name, e.x, e.y);
   }
 
   // 4. blocs : nom de la feuille, composant principal en dessous
@@ -435,7 +462,7 @@ function drawSheetBlocks(c){
   }
 
   // 5. chiffres clés sous le synoptique
-  const st = synStats();
+  const st = synStats(_synLiensDe);
   let x2 = -1e9, y2 = -1e9, x1 = 1e9;
   for(const b of blocks){ x1 = Math.min(x1, b.x); x2 = Math.max(x2, b.x + b.w); y2 = Math.max(y2, b.y + b.h); }
   for(const r of routes) for(const q of r.pts) y2 = Math.max(y2, q[1]);   // sous le dernier fil aussi

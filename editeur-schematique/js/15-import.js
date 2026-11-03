@@ -182,20 +182,19 @@ function normPage(p,i){
     if(Number.isFinite(+src.pageX))pObj.pageX=+src.pageX;
     if(Number.isFinite(+src.pageY))pObj.pageY=+src.pageY;
   }
-  if(src.blockPos && typeof src.blockPos==="object" && Number.isFinite(+src.blockPos.x) && Number.isFinite(+src.blockPos.y)){
-    pObj.blockPos = {x: snap(+src.blockPos.x), y: snap(+src.blockPos.y)};
-  }
-  // synoptique (feuille racine) : positions et titres saisis, par repère
+  // synoptique (feuille racine) : positions et titres saisis, par repère complet (une clé
+  // tronquée ne retrouverait plus son composant) ; positions bornées à ±100 000
+  const cleOk=k=>k!=="__proto__"&&k.length<=100;
   if(src.synPos && typeof src.synPos==="object"){
     const o={};
     for(const [k,v] of Object.entries(src.synPos).slice(0,2000))
-      if(k!=="__proto__" && v && Number.isFinite(+v.x) && Number.isFinite(+v.y)) o[k.slice(0,40)]={x:snap(+v.x),y:snap(+v.y)};
+      if(cleOk(k) && v && Math.abs(+v.x)<=1e5 && Math.abs(+v.y)<=1e5) o[k]={x:snap(+v.x),y:snap(+v.y)};
     pObj.synPos=o;
   }
   if(src.synTitres && typeof src.synTitres==="object"){
     const o={};
     for(const [k,v] of Object.entries(src.synTitres).slice(0,2000))
-      if(k!=="__proto__" && typeof v==="string" && v.trim()) o[k.slice(0,40)]=v.trim().slice(0,40);
+      if(cleOk(k) && typeof v==="string" && v.trim()) o[k]=v.trim().slice(0,40);
     pObj.synTitres=o;
   }
   return pObj;

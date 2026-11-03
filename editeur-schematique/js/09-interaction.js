@@ -803,10 +803,13 @@ cv.addEventListener("pointermove",e=>{
   }
 
   // Survol des blocs et broches sur la feuille hiérarchique racine (page 0)
-  let hoverHierChanged = false;
+  let hoverHierChanged = false, synHb = null;
   if(S.page === 0){
-    const hb = typeof hitSheetBlock === "function" ? hitSheetBlock(p.x, p.y) : null;
-    const hl = (!hb && typeof hitSheetLink === "function") ? hitSheetLink(p.x, p.y) : null;
+    // une seule lecture du synoptique par mouvement : liaisons, blocs, routes
+    const synL = sheetLinks(), synB = sheetBlocks(synL);
+    const hb = hitSheetBlock(p.x, p.y, synB);
+    const hl = hb ? null : hitSheetLink(p.x, p.y, 0, sheetRoutes(synB, synL));
+    synHb = hb;
     const hbIdx = hb ? hb.key : null;
     if(hl !== S.hoverSheetLink || hbIdx !== S.hoverSheetBlock){
       S.hoverSheetLink = hl;
@@ -814,7 +817,8 @@ cv.addEventListener("pointermove",e=>{
       hoverHierChanged = true;
       const fNet = document.getElementById("fNet");
       if(hl && fNet){
-        const nom = i => (S.pages[i] && S.pages[i].name) || ("Feuille " + i);
+        const blocs = new Map(synB.map(b => [b.key, b]));
+        const nom = k => blocs.has(k) ? blocs.get(k).name + " " + k : k;
         fNet.textContent = (hl.isPower ? "Alim : " : (hl.isBus ? "Bus : " : "Liaison : ")) + hl.names.join(", ") +
           " (" + nom(hl.a) + (hl.dir === "a" ? " → " : " ↔ ") + nom(hl.b) + ")";
       }
@@ -824,7 +828,7 @@ cv.addEventListener("pointermove",e=>{
   if(S.mode==="select"){
     // indice de survol : le curseur annonce ce qui est saisissable — libellés
     // compris, sans quoi personne ne devinerait qu'ils se déplacent
-    const isHierTarget = (S.page === 0 && ((typeof hitSheetBlock==="function" && hitSheetBlock(p.x,p.y))));
+    const isHierTarget = !!synHb;
     cv.style.cursor=(hitText(p.x,p.y)||hitNetLabel(p.x,p.y)||hitComp(p.x,p.y)||wi>=0||hitDrawing(p.x,p.y)||isHierTarget)
       ? "pointer" : "crosshair";
   }
