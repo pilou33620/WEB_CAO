@@ -62,7 +62,7 @@ const EXPOSE=[
   /* canal de pilotage du MCP de web_suite (commun/pilote-cao.js) */
   "piloteCao",
   /* bus et hiérarchie */
-  "C_BUS","BUS_WIDTH","sheetBlocks","hitSheetBlock","hitSheetPin","sheetInterconnections","newHierPage",
+  "C_BUS","BUS_WIDTH","sheetBlocks","hitSheetBlock","sheetLinks","sheetRoutes","synRouter","hitSheetLink","arrangeSheetBlocks","synStats","newHierPage",
   "schDevelopperSignauxBus","schBusDuPoint","schPiquageSurFil","schTousLesPiquages",
   "schSignauxOccupesSurBus","schSuggererProchainSignal","schPiquerSignal","schOuvrirPiquageModal","schFermerPiquageModal",
   "SCH_PIQUAGE_MEMOIRE",
@@ -2491,58 +2491,112 @@ T("dupliquer une feuille renumérote ses repères, les parties d'un boîtier res
   sheet([],[]);                                   // l'essai suivant part de la feuille 0
 });
 
-T("synoptique hiérarchique : sheet pins, bus traversants et interconnexions inter-blocs",()=>{
-  S.pages = [
-    newHierPage("Hiérarchie"),
-    newPage("Microcontrôleur"),
-    newPage("Mémoire Flash")
-  ];
-  // Feuille 1 (MCU)
-  S.pages[1].comps = [
-    C("gport", 10, 10, {value: "SPI"}),
-    C("gport", 10, 20, {value: "+3V3"}),
-    C("gport", 10, 30, {value: "GND"}),
-    C("gport", 10, 40, {value: "IRQ_FLASH"})
-  ];
-  // Feuille 2 (Flash)
-  S.pages[2].comps = [
-    C("gport", 20, 10, {value: "SPI"}),
-    C("gport", 20, 20, {value: "+3V3"}),
-    C("gport", 20, 30, {value: "GND"}),
-    C("gport", 20, 40, {value: "HOLD_WP"})
-  ];
+/* Feuille d'essai du synoptique : une étiquette globale câblée par nom (un fil la rend réelle). */
+function synFeuille(nom,ports,comps){
+  const pg=newPage(nom);
+  pg.comps=(comps||[]).slice();pg.wires=[];
+  ports.forEach((n,k)=>{pg.comps.push(C("gport",4,4+k*3,{value:n}));pg.wires.push(W(5,4+k*3,8,4+k*3));});
+  return pg;
+}
+/* Aucun fil ne partage une voie avec un autre, aucun ne traverse un bloc. */
+function synVerifier(routes,blocks){
+  const segs=[];
+  for(const r of routes){
+    if(r.direct)throw new Error("liaison non routée : "+r.link.name);
+    for(let k=1;k<r.pts.length;k++){
+      const a=r.pts[k-1],b=r.pts[k];
+      if(a[0]!==b[0]&&a[1]!==b[1])throw new Error("segment en biais : "+r.link.name);
+      segs.push({a,b,r});
+    }
+  }
+  const lap=(p,q,u,v)=>Math.min(Math.max(p,q),Math.max(u,v))-Math.max(Math.min(p,q),Math.min(u,v));
+  for(let i=0;i<segs.length;i++)for(let j=i+1;j<segs.length;j++){
+    const s=segs[i],t=segs[j];
+    if(s.r===t.r)continue;
+    if(s.a[1]===s.b[1]&&t.a[1]===t.b[1]&&s.a[1]===t.a[1]&&lap(s.a[0],s.b[0],t.a[0],t.b[0])>0||
+       s.a[0]===s.b[0]&&t.a[0]===t.b[0]&&s.a[0]===t.a[0]&&lap(s.a[1],s.b[1],t.a[1],t.b[1])>0)
+      throw new Error("deux fils sur la même voie : "+s.r.link.name+" / "+t.r.link.name);
+  }
+  for(const {a,b,r} of segs)for(const B of blocks)
+    if(Math.max(a[0],b[0])>B.x+1&&Math.min(a[0],b[0])<B.x+B.w-1&&Math.max(a[1],b[1])>B.y+1&&Math.min(a[1],b[1])<B.y+B.h-1)
+      throw new Error(r.link.name+" traverse le bloc "+B.sheetIndex);
+}
 
+T("synoptique : liaisons tirées des nets globaux, masse exclue, bus regroupé, sens des alimentations",()=>{
+  S.pages=[newHierPage("Hiérarchie"),
+    synFeuille("Régulateur",["+5V","+3V3","GND"]),
+    synFeuille("MCU",["+3V3","SPI_MOSI","SPI_MISO","SPI_SCK","GND"],[C("ic",20,4,{ref:"U1",value:"STM32F722",npins:48})]),
+    synFeuille("Flash",["+3V3","SPI_MOSI","SPI_MISO","SPI_SCK","GND"])];
   gotoPage(0);
-  const blocks = sheetBlocks();
-  if(blocks.length !== 2) throw new Error("2 blocs attendus sur la feuille racine");
+  const L=sheetLinks();
+  if(L.length!==3)throw new Error("3 liaisons attendues, trouvé "+L.map(l=>l.name).join(" | "));
+  if(L.some(l=>/GND/.test(l.name)))throw new Error("la masse ne doit pas être dessinée");
+  const alim=L.filter(l=>l.isPower);
+  if(alim.length!==2||alim.some(l=>l.a!==1||l.dir!=="a"||l.name!=="+3V3"))
+    throw new Error("+3V3 doit partir du régulateur vers MCU et Flash : "+JSON.stringify(alim.map(l=>[l.a,l.b,l.dir])));
+  const spi=L.find(l=>!l.isPower);
+  if(spi.name!=="SPI"||!spi.isBus||spi.dir!=="ab"||spi.names.length!==3)throw new Error("les trois nets SPI font une liaison « SPI » à double sens");
+  const blocks=sheetBlocks();
+  if(blocks[1].sub!=="STM32F722")throw new Error("sous-titre : le composant principal, reçu « "+blocks[1].sub+" »");
+  S.pages[2].blockSub="Cortex-M7";
+  if(sheetBlocks()[1].sub!=="Cortex-M7")throw new Error("le sous-titre saisi l'emporte");
+  delete S.pages[2].blockSub;
+  const R=sheetRoutes();
+  synVerifier(R,blocks);
+  const r0=R[0], [a,b]=[r0.pts[0],r0.pts[1]];
+  if(hitSheetLink((a[0]+b[0])/2,(a[1]+b[1])/2)!==r0.link)throw new Error("le survol d'un fil désigne sa liaison");
+  const st=synStats();
+  if(st.parts!==1||st.blocs!==3)throw new Error("chiffres clés : "+JSON.stringify(st));
+  draw();
+});
 
-  const bMcu = blocks[0];
-  const bFlash = blocks[1];
+T("synoptique : Ranger place sans chevauchement, s'annule, garde des fils propres",()=>{
+  S.pages=[newHierPage("Hiérarchie"),
+    synFeuille("Batterie",["VBAT"]),
+    synFeuille("Buck",["VBAT","+5V"]),
+    synFeuille("LDO",["+5V","+3V3"]),
+    synFeuille("MCU",["+3V3","SPI_IMU","I2C_SDA","I2C_SCL","UART_RX","VIDEO_SPI"]),
+    synFeuille("IMU",["+3V3","SPI_IMU"]),
+    synFeuille("Baro",["+3V3","I2C_SDA","I2C_SCL"]),
+    synFeuille("RX",["+5V","UART_RX"]),
+    synFeuille("Camera",["+5V","CAM_VIDEO"]),
+    synFeuille("OSD",["+3V3","VIDEO_SPI","CAM_VIDEO","OSD_VIDEO"]),
+    synFeuille("VTX",["+5V","OSD_VIDEO"])];
+  gotoPage(0);
+  const avant=serialize();
+  arrangeSheetBlocks();
+  const blocks=sheetBlocks();
+  if(!blocks.find(b=>b.name==="MCU").big)throw new Error("le MCU est le bloc central");
+  for(let i=0;i<blocks.length;i++)for(let j=i+1;j<blocks.length;j++){
+    const p=blocks[i],q=blocks[j];
+    if(p.x<q.x+q.w+20&&q.x<p.x+p.w+20&&p.y<q.y+q.h+20&&q.y<p.y+p.h+20)
+      throw new Error("blocs trop proches : "+p.name+" / "+q.name);
+  }
+  const haut=blocks.filter(b=>["Batterie","Buck","LDO"].includes(b.name));
+  if(haut.some(b=>b.y!==haut[0].y)||!(haut[0].x<haut[1].x&&haut[1].x<haut[2].x))
+    throw new Error("la chaîne d'alimentation va en haut, dans l'ordre Batterie → Buck → LDO");
+  synVerifier(sheetRoutes(),blocks);
+  S.drag={sheetBlock:{sheetIndex:1},moved:true};
+  const glisse=sheetRoutes();
+  S.drag=null;
+  if(!glisse.length||!glisse.every(r=>r.direct))throw new Error("pendant le glisser, traits directs sans routage");
+  undo();
+  if(serialize()!==avant)throw new Error("Ctrl+Z doit rendre les positions d'avant");
+});
 
-  // Vérification de la classification des pins du MCU
-  const pinSpi = bMcu.pins.find(p => p.name === "SPI");
-  if(!pinSpi || pinSpi.type !== "bus" || !pinSpi.isBus) throw new Error("port SPI doit être classé en bus");
-  if(pinSpi.side !== "right") throw new Error("port bus SPI doit être placé sur le côté droit du bloc");
-
-  const pin3v3 = bMcu.pins.find(p => p.name === "+3V3");
-  if(!pin3v3 || pin3v3.type !== "power" || !pin3v3.isPower) throw new Error("port +3V3 doit être classé en power");
-  if(pin3v3.side !== "left") throw new Error("port alim +3V3 doit être placé sur le côté gauche du bloc");
-
-  // Détection des interconnexions
-  const inters = sheetInterconnections();
-  if(!inters || inters.length < 3) throw new Error("au moins 3 interconnexions attendues (SPI, +3V3, GND), trouvé: " + inters.length);
-
-  const linkSpi = inters.find(l => l.name === "SPI");
-  if(!linkSpi || !linkSpi.isBus) throw new Error("liaison SPI doit être un bus traversant");
-  if(linkSpi.pins.length !== 2) throw new Error("liaison SPI doit interconnecter 2 broches");
-  if(linkSpi.blocks.length !== 2) throw new Error("liaison SPI doit interconnecter 2 blocs distincts");
-
-  const linkGnd = inters.find(l => l.name === "GND");
-  if(!linkGnd || !linkGnd.isPower) throw new Error("liaison GND doit être une alimentation");
-
-  // Test de hitSheetPin
-  const hitP = hitSheetPin(pinSpi.x, pinSpi.y, 10);
-  if(!hitP || hitP.name !== "SPI") throw new Error("hitSheetPin n'a pas détecté la broche SPI");
+T("routeur du synoptique : le contrôleur de vol de la maquette, sans voie partagée",()=>{
+  const B=(sheetIndex,x,y,w,h)=>({sheetIndex,x,y,w,h});
+  const blocks=[B(1,20,20,150,64),B(2,230,20,170,64),B(3,500,20,150,64),B(4,730,20,200,64),B(5,1030,20,160,64),
+    B(6,20,180,170,60),B(7,20,270,170,60),B(8,440,175,310,150),B(9,1010,180,180,60),B(10,1010,270,180,60),
+    B(11,50,420,140,64),B(12,300,420,150,64),B(13,550,420,150,64),B(14,800,420,140,64)];
+  const l=(a,b,name)=>({a,b,name,kind:"signal",dir:"a"});
+  const links=[l(2,3,"VBAT"),l(3,4,"VBAT_P"),l(4,5,"5V"),l(5,8,"3V3"),l(4,14,"5V"),l(4,12,"5V"),l(1,8,"USB"),
+    l(6,8,"SPI"),l(7,8,"I2C"),l(8,9,"DSHOT"),l(9,8,"TLM"),l(8,10,"SPI"),l(11,8,"UART"),l(8,13,"SPI"),
+    l(8,14,"UART"),l(12,13,"video"),l(13,14,"video")];
+  const t0=Date.now(), R=synRouter(blocks,links);
+  synVerifier(R,blocks);
+  if(R.length!==links.length)throw new Error("une route par liaison");
+  if(Date.now()-t0>3000)throw new Error("routage trop lent : "+(Date.now()-t0)+" ms");
 });
 
 T("nombre de broches d'un composant non-IC (connecteur)",()=>{

@@ -212,6 +212,8 @@ function buildTabs(){
   dup.className="tabbtn";dup.textContent="Dupliquer";dup.title="Copier la feuille courante";
   dup.onclick=()=>addPage(true);
   box.appendChild(dup);
+  const br=document.getElementById("bRanger");
+  if(br)br.disabled=S.page!==0;
   const fp=document.getElementById("fPage");
   if(fp){
     if(S.page===0){
@@ -223,121 +225,132 @@ function buildTabs(){
   }
 }
 
-/* ---------- Blocs hiérarchiques (représentation des sous-feuilles sur la feuille 1) ---------- */
+/* ---------- Synoptique : les sous-feuilles en blocs sur la feuille racine (page 0) ----------
+   Un bloc par sous-feuille ; une liaison par paire de blocs reliés par des nets globaux
+   (étiquettes globales, symboles d'alimentation). La masse relierait tout : elle n'est pas
+   dessinée. Les fils sont routés en équerre sans jamais partager une voie (synRouter). */
 function isPortBusName(nm){
   if(!nm) return false;
   return /(\[|\{|\.\.|BUS|^SPI|^I2C|^UART|^CAN|^USB|^DATA|^ADDR|^GPIO|^PWM)/i.test(nm);
 }
+/* Alimentation : +…, VCC/VDD/VBAT/VBUS/VIN/VSYS… et leurs variantes (VBAT_F, VCC_3V3), 5V, 3V3_A… */
 function isPortPowerName(nm){
   if(!nm) return false;
-  return /^(VCC|GND|VDD|VSS|VBAT|VBUS|\+?\d+(\.\d+)?V|\-?\d+(\.\d+)?V|VIN|VOUT)$/i.test(nm) ||
-         nm.toUpperCase().includes("GND") || nm.startsWith("+");
+  return /^(\+|-?\d+([.,]\d+)?V\d*($|[_\-])|V((CC|DD|SS)[A-Z]{0,2}|BAT|BUS|IN|SYS|OUT|MAIN)($|[_\-\d]))/i.test(nm) ||
+         nm.toUpperCase().includes("GND");
+}
+const SYN_MASSE=/GND|VSS|MASSE|^0V$/i;
+
+/* Le composant qui a le plus de broches donne le sous-titre du bloc. */
+function synPrincipal(comps){
+  let best=null,n=0;
+  for(const el of comps){
+    if(defOf(el.type).noRef)continue;
+    const k=pinCount(el);
+    if(k>n){n=k;best=el;}
+  }
+  return best?String(best.mpn||best.value||best.ref||""):"";
+}
+
+/* Tension lue dans le nom (5V, +3V3, 3.3V…) ; un nom sans chiffre (VBAT, VIN) est une
+   source brute, donc la plus haute. */
+function synVolt(nm){
+  const m=/(\d+)(?:[.,V](\d+))?/i.exec(String(nm).replace(/^\+/,""));
+  return m?parseFloat(m[1]+"."+(m[2]||"0")):Infinity;
+}
+/* Noms regroupés par famille : SPI2_MOSI, SPI2_MISO → « SPI2 » ; DSHOT1…4 → « DSHOT ×4 » ;
+   au-delà de trois familles, leur nombre. */
+function synLibelle(noms){
+  if(noms.length===1)return noms[0];
+  const fam=new Map();
+  for(const n of noms){
+    const t=n.split(/[_\-.\/\s]/), k=(t.length>1?t[0]:t[0].replace(/\d+$/,""))||n;
+    if(!fam.has(k))fam.set(k,[]);
+    fam.get(k).push(n);
+  }
+  if(fam.size>3)return noms.length+" signaux";
+  return [...fam].map(([k,l])=>l.length===1?l[0]:(l.every(n=>/^\d+$/.test(n.slice(k.length)))?k+" ×"+l.length:k)).join(", ");
+}
+
+/* Liaisons entre sous-feuilles : {a, b, name, names, kind:"power"|"signal", isBus,
+   dir:"a" (de a vers b) | "ab" | ""}. Le sens d'une alimentation va de la feuille qui la
+   produit (elle porte une tension plus haute, ou le connecteur d'entrée) vers les autres ;
+   celui d'un signal, de la broche TX/OUT vers les autres ; un bus va dans les deux sens. */
+function sheetLinks(){
+  if(!S.pages||S.pages.length<3||typeof docNets!=="function")return [];
+  const nets=[], deg=new Map(), alims=new Map();
+  for(const g of docNets().groups){
+    const pages=g.pages.filter(p=>p>0).sort((a,b)=>a-b);
+    if(!g.global||!pages.length||SYN_MASSE.test(g.name))continue;
+    const power=isPortPowerName(g.name)||g.members.some(m=>m.net.powers.some(el=>el.type==="vcc"));
+    // toutes les alims d'une feuille comptent pour le sens, même celles qui n'en sortent pas
+    if(power)for(const p of pages){if(!alims.has(p))alims.set(p,[]);alims.get(p).push(g.name);}
+    if(pages.length<2)continue;
+    nets.push({g,pages,power,bus:!power&&(g.members.some(m=>m.net.isBus)||isPortBusName(g.name))});
+    for(const p of pages)deg.set(p,(deg.get(p)||0)+1);
+  }
+  const source=n=>{
+    const v=synVolt(n.g.name), au=p=>(alims.get(p)||[]).filter(m=>m!==n.g.name).map(synVolt);
+    let c;
+    if(!n.power){
+      c=n.pages.filter(p=>n.g.nodes.some(d=>d.page===p&&/(^|[_\/])(TXD?|DOUT|OUT\d*|PWM\d*)$/i.test(d.label||"")));
+      return c.length===1?c[0]:null;
+    }
+    if(v<Infinity){
+      c=n.pages.filter(p=>au(p).some(u=>u>v));
+      c.sort((p,q)=>Math.min(...au(p).filter(u=>u>v))-Math.min(...au(q).filter(u=>u>v)));
+    }else{
+      c=n.pages.filter(p=>n.g.nodes.some(d=>d.page===p&&/^(J|P|BT|CN|X)\d/i.test(d.ref)));
+      if(!c.length)c=n.pages.filter(p=>au(p).includes(Infinity));
+    }
+    return c.length?c[0]:null;
+  };
+  const paires=new Map();
+  for(const n of nets){
+    const src=source(n);
+    const hub=src!==null?src:(n.power?n.pages[0]:n.pages.reduce((m,p)=>deg.get(p)>deg.get(m)?p:m));
+    for(const q of n.pages){
+      if(q===hub)continue;
+      const lo=Math.min(hub,q), hi=Math.max(hub,q), cle=lo+"-"+hi+(n.power?"p":"s");
+      let l=paires.get(cle);
+      if(!l)paires.set(cle,l={lo,hi,names:[],power:n.power,isBus:false,sens:new Set()});
+      l.names.push(n.g.name);
+      l.isBus=l.isBus||n.bus;
+      l.sens.add(n.bus?"ab":src===null?"":(hub===lo?"+":"-"));
+    }
+  }
+  return [...paires.values()].map(l=>{
+    l.sens.delete("");
+    const s=l.sens.size===1?[...l.sens][0]:(l.sens.size?"ab":"");
+    return {a:s==="-"?l.hi:l.lo, b:s==="-"?l.lo:l.hi, name:synLibelle(l.names), names:l.names,
+            kind:l.power?"power":"signal", isBus:l.isBus, isPower:l.power,
+            dir:s==="ab"?"ab":(s?"a":"")};
+  });
 }
 
 function sheetBlocks(){
   if(!S.pages||S.pages.length<=1)return [];
+  const deg=new Map();
+  // le bloc central est celui qui échange le plus de signaux : les alims n'en font pas un centre
+  for(const l of sheetLinks())if(!l.isPower){deg.set(l.a,(deg.get(l.a)||0)+1);deg.set(l.b,(deg.get(l.b)||0)+1);}
+  let hub=null;
+  for(const [p,d] of deg)if(d>=3&&(hub===null||d>deg.get(hub)))hub=p;
   const blocks=[];
   for(let i=1;i<S.pages.length;i++){
     const p=S.pages[i];
     const comps=(i===S.page)?S.comps:(p.comps||[]);
     const wires=(i===S.page)?S.wires:(p.wires||[]);
-    const col=(i-1)%2, row=Math.floor((i-1)/2);
-    const defX=60+col*300, defY=60+row*220;
-    const x=(p.blockPos&&Number.isFinite(p.blockPos.x))?p.blockPos.x:defX;
-    const y=(p.blockPos&&Number.isFinite(p.blockPos.y))?p.blockPos.y:defY;
-
-    // Détection des ports et de leur type
-    const portMap=new Map();
-    for(const c of comps){
-      if(c.type==="gport"||c.type==="port"){
-        const nm=(c.value||(c.type==="gport"?"GPORT":"PORT")).trim();
-        if(!portMap.has(nm)){
-          // Vérifier si connecté à un bus dans la feuille
-          let connectedToBus = false;
-          if(wires && wires.length){
-            for(const w of wires){
-              if(w.bus && ((Math.hypot(w.x1 - c.x, w.y1 - c.y) < 15) || (Math.hypot(w.x2 - c.x, w.y2 - c.y) < 15))){
-                connectedToBus = true;
-                break;
-              }
-            }
-          }
-          const isBus = connectedToBus || isPortBusName(nm);
-          const isPower = !isBus && isPortPowerName(nm);
-          const type = isBus ? "bus" : (isPower ? "power" : "signal");
-          portMap.set(nm, { name: nm, type, isBus, isPower });
-        }
-      }
-    }
-
-    const uniquePorts = Array.from(portMap.values());
-    const leftPorts = [];
-    const rightPorts = [];
-
-    // Répartition logique : Alim et entrées à gauche, Bus et sorties à droite
-    for(const port of uniquePorts){
-      if(port.type === "bus"){
-        rightPorts.push(port);
-      } else if(port.type === "power"){
-        leftPorts.push(port);
-      } else {
-        if(leftPorts.length <= rightPorts.length) leftPorts.push(port);
-        else rightPorts.push(port);
-      }
-    }
-
-    const maxPins = Math.max(leftPorts.length, rightPorts.length);
-    const pinPitch = 22;
-    const w = 240;
-    const h = Math.max(130, 48 + maxPins * pinPitch + 22);
-
-    const b = {
-      sheetIndex: i,
-      page: p,
-      name: p.name,
-      x, y, w, h,
-      nComps: comps.length,
-      nWires: wires.length,
-      ports: uniquePorts.map(pt => pt.name),
-      pins: [],
-      leftPins: [],
-      rightPins: []
-    };
-
-    // Calcul des coordonnées géométriques précises des sheet pins
-    leftPorts.forEach((pt, idx) => {
-      const pinObj = {
-        name: pt.name,
-        type: pt.type,
-        isBus: pt.isBus,
-        isPower: pt.isPower,
-        side: "left",
-        x: x,
-        y: y + 44 + idx * pinPitch,
-        block: b,
-        sheetIndex: i
-      };
-      b.leftPins.push(pinObj);
-      b.pins.push(pinObj);
-    });
-
-    rightPorts.forEach((pt, idx) => {
-      const pinObj = {
-        name: pt.name,
-        type: pt.type,
-        isBus: pt.isBus,
-        isPower: pt.isPower,
-        side: "right",
-        x: x + w,
-        y: y + 44 + idx * pinPitch,
-        block: b,
-        sheetIndex: i
-      };
-      b.rightPins.push(pinObj);
-      b.pins.push(pinObj);
-    });
-
-    blocks.push(b);
+    const name=String(p.name||"").replace(/^Feuille\s*\d+\s*:\s*/i,"");
+    const sub=(p.blockSub!=null&&String(p.blockSub).trim()!=="")?String(p.blockSub):synPrincipal(comps);
+    const big=(i===hub);
+    // chasse fixe : la largeur se déduit du nombre de caractères (titre 19 px, sous-titre 13 px)
+    const lt=big?17:11.5, ls=big?10.3:7.9;
+    const w=Math.max(big?300:160,Math.ceil((Math.max(name.length*lt,sub.length*ls)+40)/20)*20);
+    const h=big?140:60;
+    const col=(i-1)%3, row=Math.floor((i-1)/3);
+    const x=(p.blockPos&&Number.isFinite(p.blockPos.x))?p.blockPos.x:60+col*340;
+    const y=(p.blockPos&&Number.isFinite(p.blockPos.y))?p.blockPos.y:60+row*160;
+    blocks.push({sheetIndex:i,page:p,name,sub,big,x,y,w,h,nComps:comps.length,nWires:wires.length});
   }
   return blocks;
 }
@@ -352,49 +365,188 @@ function hitSheetBlock(wx,wy){
   return null;
 }
 
-function hitSheetPin(wx,wy,tolerance=9){
-  if(S.page!==0)return null;
-  const blocks=sheetBlocks();
-  for(const b of blocks){
-    for(const pin of (b.pins||[])){
-      if(Math.hypot(wx - pin.x, wy - pin.y) <= tolerance) return pin;
+/* ---------- Routage orthogonal : A* sur une grille, voies exclusives, croisements chers ---------- */
+const SYN_G=10;
+function synRouter(blocks,links){
+  const G=SYN_G, M=16;
+  let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;
+  for(const b of blocks){x1=Math.min(x1,b.x);y1=Math.min(y1,b.y);x2=Math.max(x2,b.x+b.w);y2=Math.max(y2,b.y+b.h);}
+  const oi=Math.floor(x1/G)-M, oj=Math.floor(y1/G)-M;
+  const nx=Math.ceil(x2/G)+M-oi+1, ny=Math.ceil(y2/G)+M-oj+1, N=nx*ny;
+  const id=(i,j)=>j*nx+i, dans=(i,j)=>i>=0&&j>=0&&i<nx&&j<ny;
+  const bloque=new Uint8Array(N), abord=new Uint8Array(N), occ=new Uint8Array(N);   // occ : 1 voie horizontale, 2 verticale
+  const marque=(t,b,m)=>{
+    for(let j=Math.floor(b.y/G)-oj-m;j<=Math.ceil((b.y+b.h)/G)-oj+m;j++)
+      for(let i=Math.floor(b.x/G)-oi-m;i<=Math.ceil((b.x+b.w)/G)-oi+m;i++)if(dans(i,j))t[id(i,j)]=1;
+  };
+  for(const b of blocks){marque(bloque,b,1);marque(abord,b,5);}   // abord : on n'y croise pas les fils des autres
+  const D=[[1,0],[0,1],[-1,0],[0,-1]], axe=d=>d%2===0?1:2;
+  const voisinPris=(i,j,ax)=>{          // fil parallèle collé : on écarte les voies
+    const [di,dj]=ax===1?[0,1]:[1,0];
+    let n=0;
+    for(const s of [1,-1])if(dans(i+di*s,j+dj*s)&&(occ[id(i+di*s,j+dj*s)]&ax))n++;
+    return n;
+  };
+  // départs possibles : à deux mailles du bord, direction sortante, point du bord, écart au milieu
+  function accroches(b){
+    const r=[], i0=Math.ceil(b.x/G)-oi+1, i1=Math.floor((b.x+b.w)/G)-oi-1,
+          j0=Math.ceil(b.y/G)-oj+1, j1=Math.floor((b.y+b.h)/G)-oj-1,
+          ci=(i0+i1)/2, cj=(j0+j1)/2;
+    for(let i=i0;i<=i1;i++){
+      r.push({i,j:Math.floor(b.y/G)-oj-2,d:3,x:(i+oi)*G,y:b.y,ex:Math.abs(i-ci)});
+      r.push({i,j:Math.ceil((b.y+b.h)/G)-oj+2,d:1,x:(i+oi)*G,y:b.y+b.h,ex:Math.abs(i-ci)});
     }
+    for(let j=j0;j<=j1;j++){
+      r.push({i:Math.floor(b.x/G)-oi-2,j,d:2,x:b.x,y:(j+oj)*G,ex:Math.abs(j-cj)});
+      r.push({i:Math.ceil((b.x+b.w)/G)-oi+2,j,d:0,x:b.x+b.w,y:(j+oj)*G,ex:Math.abs(j-cj)});
+    }
+    return r.filter(a=>dans(a.i,a.j)&&!bloque[id(a.i,a.j)]&&!occ[id(a.i,a.j)]);
   }
+  function astar(src,dst){
+    const goals=new Map();
+    for(const g of accroches(dst))goals.set(id(g.i,g.j)*4+((g.d+2)%4),g);
+    const cost=new Float64Array(N*4).fill(Infinity), from=new Int32Array(N*4).fill(-1);
+    // distance au cadre des arrivées : ne surestime jamais, donc le chemin trouvé reste le moins cher
+    const gi0=Math.floor(dst.x/G)-oi-2, gi1=Math.ceil((dst.x+dst.w)/G)-oi+2,
+          gj0=Math.floor(dst.y/G)-oj-2, gj1=Math.ceil((dst.y+dst.h)/G)-oj+2;
+    const h=(i,j)=>Math.max(0,gi0-i,i-gi1)+Math.max(0,gj0-j,j-gj1);
+    const tas=[];
+    const pousse=(f,s)=>{tas.push([f,s]);let k=tas.length-1;
+      while(k){const p=(k-1)>>1;if(tas[p][0]<=tas[k][0])break;[tas[p],tas[k]]=[tas[k],tas[p]];k=p;}};
+    const tire=()=>{const top=tas[0],last=tas.pop();
+      if(tas.length){tas[0]=last;let k=0;
+        for(;;){const l=2*k+1,r=l+1;let m=k;
+          if(l<tas.length&&tas[l][0]<tas[m][0])m=l;if(r<tas.length&&tas[r][0]<tas[m][0])m=r;
+          if(m===k)break;[tas[m],tas[k]]=[tas[k],tas[m]];k=m;}}
+      return top;};
+    const debut=new Map();
+    for(const a of accroches(src)){
+      const s=id(a.i,a.j)*4+a.d, c=a.ex*0.6+voisinPris(a.i,a.j,axe(a.d))*6;
+      if(c<cost[s]){cost[s]=c;debut.set(s,a);pousse(c+h(a.i,a.j),s);}
+    }
+    while(tas.length){
+      const [f,s]=tire(), c=cost[s];
+      if(f-h((s>>2)%nx,((s>>2)/nx)|0)>c+1e-9)continue;   // entrée périmée du tas
+      const cell=s>>2, d=s&3, i=cell%nx, j=(cell/nx)|0;
+      if(goals.has(s)){
+        const pts=[];
+        for(let k=s;k>=0;k=from[k])pts.push(k);
+        pts.reverse();
+        return {cells:pts, a:debut.get(pts[0]), b:goals.get(s)};
+      }
+      for(let nd=0;nd<4;nd++){
+        if(nd===(d+2)%4||(nd!==d&&occ[cell]))continue;   // pas de demi-tour, pas de virage sur une case prise
+        const ni=i+D[nd][0], nj=j+D[nd][1];
+        if(!dans(ni,nj))continue;
+        const nc=id(ni,nj);
+        if(bloque[nc]||(occ[nc]&axe(nd)))continue;     // jamais deux fils sur la même voie
+        const k=c+1+(nd!==d?12:0)+(occ[nc]?(abord[nc]?70:25):0)+(abord[nc]?2:0)+voisinPris(ni,nj,axe(nd))*4;
+        const ns=nc*4+nd;
+        if(k<cost[ns]){cost[ns]=k;from[ns]=s;pousse(k+h(ni,nj),ns);}
+      }
+    }
+    return null;
+  }
+  const par=new Map(blocks.map(b=>[b.sheetIndex,b]));
+  const dist=l=>{const a=par.get(l.a),b=par.get(l.b);return Math.abs(a.x+a.w/2-b.x-b.w/2)+Math.abs(a.y+a.h/2-b.y-b.h/2);};
+  const out=[];
+  for(const l of links.filter(l=>par.has(l.a)&&par.has(l.b)).sort((p,q)=>dist(p)-dist(q))){
+    const a=par.get(l.a), b=par.get(l.b), r=astar(a,b);
+    if(!r){                                   // rien de libre : trait direct, signalé en pointillé
+      out.push({link:l,pts:[[a.x+a.w/2,a.y+a.h/2],[b.x+b.w/2,b.y+b.h/2]],direct:true});
+      continue;
+    }
+    r.cells.forEach((s,k)=>{
+      occ[s>>2]|=axe(s&3);
+      if(k+1<r.cells.length&&(r.cells[k+1]&3)!==(s&3))occ[s>>2]|=axe(r.cells[k+1]&3);
+    });
+    const p=[[r.a.x,r.a.y],...r.cells.map(s=>[((s>>2)%nx+oi)*G,((((s>>2)/nx)|0)+oj)*G]),[r.b.x,r.b.y]];
+    const coins=[p[0]];                       // on ne garde que les coins
+    for(let k=1;k<p.length-1;k++){
+      const a0=coins[coins.length-1], b0=p[k], c0=p[k+1];
+      if(!((a0[0]===b0[0]&&b0[0]===c0[0])||(a0[1]===b0[1]&&b0[1]===c0[1])))coins.push(b0);
+    }
+    coins.push(p[p.length-1]);
+    out.push({link:l,pts:coins});
+  }
+  return out;
+}
+let _synCle="", _synRoutes=[];
+function sheetRoutes(){
+  const blocks=sheetBlocks(), links=sheetLinks();
+  if(S.drag&&S.drag.sheetBlock&&S.drag.moved){   // pendant le glisser, traits directs : on route au lâcher
+    const c=new Map(blocks.map(b=>[b.sheetIndex,[b.x+b.w/2,b.y+b.h/2]]));
+    return links.filter(l=>c.has(l.a)&&c.has(l.b)).map(l=>({link:l,pts:[c.get(l.a),c.get(l.b)],direct:true}));
+  }
+  const cle=JSON.stringify([blocks.map(b=>[b.sheetIndex,b.x,b.y,b.w,b.h]),links.map(l=>[l.a,l.b,l.kind,l.name,l.dir])]);
+  if(cle!==_synCle){_synCle=cle;_synRoutes=blocks.length>1?synRouter(blocks,links):[];}
+  return _synRoutes;
+}
+function hitSheetLink(wx,wy,tol){
+  if(S.page!==0)return null;
+  tol=tol||5/(S.scale||1);
+  for(const r of sheetRoutes())
+    for(let k=1;k<r.pts.length;k++){
+      const [ax,ay]=r.pts[k-1],[bx,by]=r.pts[k];
+      if(wx>=Math.min(ax,bx)-tol&&wx<=Math.max(ax,bx)+tol&&wy>=Math.min(ay,by)-tol&&wy<=Math.max(ay,by)+tol)return r.link;
+    }
   return null;
 }
-
-/* Extraction de l'ensemble des interconnexions entre blocs de feuilles */
-function sheetInterconnections(){
-  const blocks = sheetBlocks();
-  if(!blocks || blocks.length < 2) return [];
-  const mapByName = new Map();
-  for(const b of blocks){
-    for(const pin of (b.pins || [])){
-      if(!mapByName.has(pin.name)){
-        mapByName.set(pin.name, []);
-      }
-      mapByName.get(pin.name).push(pin);
-    }
-  }
-  const inters = [];
-  for(const [name, pins] of mapByName.entries()){
-    if(pins.length >= 2){
-      const isBus = pins.some(p => p.type === "bus");
-      const isPower = pins.some(p => p.type === "power");
-      const type = isBus ? "bus" : (isPower ? "power" : "signal");
-      inters.push({
-        name,
-        type,
-        isBus,
-        isPower,
-        pins,
-        blocks: [...new Set(pins.map(p => p.block))]
-      });
-    }
-  }
-  return inters;
+/* Chiffres clés : composants (repères distincts), nets, sous-feuilles. */
+function synStats(){
+  const refs=new Set();
+  S.pages.forEach((p,i)=>{
+    if(!i)return;
+    for(const el of (i===S.page?S.comps:(p.comps||[])))if(!defOf(el.type).noRef)refs.add(el.ref||el.id);
+  });
+  const nNets=typeof docNets==="function"?docNets().groups.filter(g=>g.pages.some(p=>p>0)).length:0;
+  return {parts:refs.size,nets:nNets,blocs:Math.max(0,S.pages.length-1)};
 }
 
+/* Ranger : alimentations en haut dans l'ordre de la chaîne, bloc central au milieu, ses
+   périphériques simples à gauche et à droite, les chaînes (caméra → OSD → VTX) en bas. */
+function arrangeSheetBlocks(){
+  if(S.page!==0)return;
+  const blocks=sheetBlocks();
+  if(!blocks.length)return;
+  push();
+  const links=sheetLinks(), par=new Map(blocks.map(b=>[b.sheetIndex,b]));
+  const voisins=i=>links.filter(l=>l.a===i||l.b===i);
+  const hub=blocks.find(b=>b.big)||null;
+  const haut=[], gauche=[], droite=[], bas=[];
+  // rang dans la chaîne d'alimentation : nombre d'étages en amont
+  const rang=new Map(blocks.map(b=>[b.sheetIndex,0]));
+  for(let n=0;n<blocks.length;n++)
+    for(const l of links)if(l.isPower&&l.dir==="a")rang.set(l.b,Math.max(rang.get(l.b),rang.get(l.a)+1));
+  for(const b of blocks){
+    if(b===hub)continue;
+    const v=voisins(b.sheetIndex);
+    if(!v.some(l=>!l.isPower)&&v.length)haut.push(b);
+    else if(!hub||!v.some(l=>!l.isPower&&(l.a===hub.sheetIndex||l.b===hub.sheetIndex))||
+            v.some(l=>!l.isPower&&l.a!==hub.sheetIndex&&l.b!==hub.sheetIndex))bas.push(b);
+    else (gauche.length<=droite.length?gauche:droite).push(b);
+  }
+  haut.sort((p,q)=>rang.get(p.sheetIndex)-rang.get(q.sheetIndex));
+  // en bas, les blocs reliés entre eux restent côte à côte
+  const ordre=[], vus=new Set();
+  const suivre=b=>{if(vus.has(b))return;vus.add(b);ordre.push(b);
+    for(const l of voisins(b.sheetIndex)){const o=par.get(l.a===b.sheetIndex?l.b:l.a);if(bas.includes(o))suivre(o);}};
+  bas.forEach(suivre);
+  const ligne=(liste,y,cx)=>{
+    const W=liste.reduce((s,b)=>s+b.w,0)+120*Math.max(0,liste.length-1);
+    let x=cx-W/2;
+    for(const b of liste){b.page.blockPos={x:snap(x),y:snap(y)};x+=b.w+120;}
+  };
+  const pas=90, hMil=Math.max(hub?hub.h:0,gauche.length*pas-30,droite.length*pas-30);
+  const yMil=60+(haut.length?160:0), cx=hub?hub.w/2+400:600;
+  ligne(haut,60,cx);
+  if(hub)hub.page.blockPos={x:snap(cx-hub.w/2),y:snap(yMil+(hMil-hub.h)/2)};
+  const hw=hub?hub.w/2:0;
+  gauche.forEach((b,k)=>{b.page.blockPos={x:snap(cx-hw-200-b.w),y:snap(yMil+(hMil-(gauche.length*pas-30))/2+k*pas)};});
+  droite.forEach((b,k)=>{b.page.blockPos={x:snap(cx+hw+200),y:snap(yMil+(hMil-(droite.length*pas-30))/2+k*pas)};});
+  ligne(ordre,yMil+hMil+120,cx);
+  if(typeof fit==="function")fit();else draw();
+}
 /* ---------- historique (document entier) ---------- */
 function serialize(){
   storeCurrent();

@@ -122,6 +122,7 @@ document.getElementById("bPaste").onclick=pasteClip;
 document.getElementById("bGrid").onclick=()=>setGrid(!S.showGrid);
 document.getElementById("selGrid").onchange=e=>setGridStep(+e.target.value);
 document.getElementById("bFit").onclick=fit;
+document.getElementById("bRanger").onclick=arrangeSheetBlocks;
 document.getElementById("bSave").onclick=saveJson;
 /* Lancé par WEB_SUITE, « Enregistrer » écrit en local dans le projet et
    « Sauvegarder le projet » apparaît : c'est lui qui envoie sur GitHub

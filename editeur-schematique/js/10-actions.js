@@ -197,6 +197,10 @@ function schContenu(){
   for(const w of S.wires){x1=Math.min(x1,w.x1,w.x2);y1=Math.min(y1,w.y1,w.y2);x2=Math.max(x2,w.x1,w.x2);y2=Math.max(y2,w.y1,w.y2);}
   for(const d of (S.drawings||[])){x1=Math.min(x1,d.x1,d.x2);y1=Math.min(y1,d.y1,d.y2);x2=Math.max(x2,d.x1,d.x2);y2=Math.max(y2,d.y1,d.y2);}
   for(const sb of blocks){x1=Math.min(x1,sb.x);y1=Math.min(y1,sb.y);x2=Math.max(x2,sb.x+sb.w);y2=Math.max(y2,sb.y+sb.h);}
+  if(blocks.length){                       // synoptique : fils de contournement et chiffres clés dessous
+    for(const r of sheetRoutes())for(const q of r.pts){x1=Math.min(x1,q[0]);y1=Math.min(y1,q[1]);x2=Math.max(x2,q[0]);y2=Math.max(y2,q[1]);}
+    y2+=110;
+  }
   return x1>x2?null:{x1,y1,x2,y2};
 }
 function fit(){

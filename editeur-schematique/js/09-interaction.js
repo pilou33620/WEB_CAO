@@ -808,16 +808,18 @@ cv.addEventListener("pointermove",e=>{
   // Survol des blocs et broches sur la feuille hiérarchique racine (page 0)
   let hoverHierChanged = false;
   if(S.page === 0){
-    const hp = typeof hitSheetPin === "function" ? hitSheetPin(p.x, p.y) : null;
     const hb = typeof hitSheetBlock === "function" ? hitSheetBlock(p.x, p.y) : null;
+    const hl = (!hb && typeof hitSheetLink === "function") ? hitSheetLink(p.x, p.y) : null;
     const hbIdx = hb ? hb.sheetIndex : null;
-    if(hp !== S.hoverSheetPort || hbIdx !== S.hoverSheetBlock){
-      S.hoverSheetPort = hp;
+    if(hl !== S.hoverSheetLink || hbIdx !== S.hoverSheetBlock){
+      S.hoverSheetLink = hl;
       S.hoverSheetBlock = hbIdx;
       hoverHierChanged = true;
-      if(hp){
-        const fNet = document.getElementById("fNet");
-        if(fNet) fNet.textContent = (hp.isBus ? "Bus : " : (hp.isPower ? "Alim : " : "Port : ")) + hp.name + " (Feuille " + hp.sheetIndex + ")";
+      const fNet = document.getElementById("fNet");
+      if(hl && fNet){
+        const nom = i => (S.pages[i] && S.pages[i].name) || ("Feuille " + i);
+        fNet.textContent = (hl.isPower ? "Alim : " : (hl.isBus ? "Bus : " : "Liaison : ")) + hl.names.join(", ") +
+          " (" + nom(hl.a) + (hl.dir === "a" ? " → " : " ↔ ") + nom(hl.b) + ")";
       }
     }
   }
@@ -825,7 +827,7 @@ cv.addEventListener("pointermove",e=>{
   if(S.mode==="select"){
     // indice de survol : le curseur annonce ce qui est saisissable — libellés
     // compris, sans quoi personne ne devinerait qu'ils se déplacent
-    const isHierTarget = (S.page === 0 && ((typeof hitSheetBlock==="function" && hitSheetBlock(p.x,p.y)) || (typeof hitSheetPin==="function" && hitSheetPin(p.x,p.y))));
+    const isHierTarget = (S.page === 0 && ((typeof hitSheetBlock==="function" && hitSheetBlock(p.x,p.y))));
     cv.style.cursor=(hitText(p.x,p.y)||hitNetLabel(p.x,p.y)||hitComp(p.x,p.y)||wi>=0||hitDrawing(p.x,p.y)||isHierTarget)
       ? "pointer" : "crosshair";
   }

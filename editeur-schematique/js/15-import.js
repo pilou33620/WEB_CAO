@@ -185,6 +185,7 @@ function normPage(p,i){
   if(src.blockPos && typeof src.blockPos==="object" && Number.isFinite(+src.blockPos.x) && Number.isFinite(+src.blockPos.y)){
     pObj.blockPos = {x: snap(+src.blockPos.x), y: snap(+src.blockPos.y)};
   }
+  if(typeof src.blockSub==="string" && src.blockSub.trim()) pObj.blockSub = src.blockSub.trim().slice(0, 60);
   return pObj;
 }
 function loadDoc(o, keepPage){

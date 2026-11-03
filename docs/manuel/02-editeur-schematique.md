@@ -42,8 +42,8 @@ Cette page décrit chaque tâche, puis chaque menu, bouton, raccourci et option,
 
 1. L'onglet de gauche **Hiérarchie** (⬡) est la feuille racine : elle montre un bloc par sous-feuille. Il ne peut être ni supprimé ni dupliqué.
 2. **+ Feuille** ajoute une feuille ; **Dupliquer** copie la feuille courante. Un double-clic sur l'onglet la renomme ; ✕ la supprime (confirmation si elle contient des composants, des fils, des traits ou des zones). Il reste toujours au moins une feuille de schéma.
-3. Dans une sous-feuille, poser des **Étiquette / net** ou **Étiquette globale** : elles deviennent des broches du bloc sur la feuille Hiérarchie (alimentations à gauche, bus à droite, signaux répartis).
-4. Sur la feuille Hiérarchie : glisser un bloc le déplace, double-clic (ou **Ouvrir cette feuille ➔**) l'ouvre. `PageUp` / `PageDown` passent d'une feuille à l'autre.
+3. Dans une sous-feuille, câbler des **Étiquette globale** ou des symboles d'alimentation : sur la feuille Hiérarchie (le synoptique), deux blocs qui partagent un net global sont reliés par un fil en équerre. Les nets d'une même famille font une seule liaison (`SPI2_MOSI`, `SPI2_MISO`, `SPI2_SCK` → « SPI2 » ; `DSHOT1…4` → « DSHOT ×4 »). La masse n'est pas dessinée. Les alimentations sont en rose, avec une flèche partant de la feuille qui les produit : celle qui porte aussi une tension plus haute, ou le connecteur d'entrée pour une tension sans chiffre (VBAT). Les signaux sont en bleu-vert ; un bus a une flèche à chaque bout. Deux fils ne partagent jamais une voie, et un croisement inévitable se dessine en saut. Sous chaque bloc, le composant qui a le plus de broches (modifiable : **Sous-titre du synoptique**). Sous le synoptique : composants, nets et sous-feuilles.
+4. Sur la feuille Hiérarchie : glisser un bloc le déplace (les fils se re-routent), double-clic (ou **Ouvrir cette feuille ➔**) l'ouvre. **Affichage → Ranger le synoptique** place les blocs : la chaîne d'alimentation en haut, le bloc qui échange le plus de signaux au milieu, ses périphériques à gauche et à droite, les chaînes en bas (`Ctrl+Z` annule). `PageUp` / `PageDown` passent d'une feuille à l'autre.
 5. Clic droit sur un onglet : premier numéro des repères de la feuille (par défaut 100 pour la feuille 1, 200 pour la 2…), avec renumération facultative des composants déjà posés.
 
 ### Je veux renseigner un composant (valeur, boîtier, référence du catalogue)
@@ -236,6 +236,7 @@ Menu **Forme du tracé** : **─ Trait (segment)** (`T`), **▢ Rectangle (cadre
 | Nets : … | `N` | Cycle l'affichage des noms de net : `aucun`, `nommés`, `tous`. | `tous` par défaut ; enregistré dans le profil. |
 | Cartouche : … | | Le libellé du bouton donne le format de la feuille (`Cartouche : aucun`, `A4` ou `A3`). Fenêtre **Cartouche** : format (`aucun`, `A4 paysage`, `A3 paysage`), titre, dessiné par, date, vérifié par, date, n° du schéma, n° du PCB, société, adresse, téléphone, site web, mention de confidentialité, logo (**Choisir une image…**, **Retirer**), **Annuler**, **Appliquer**. | Réglé feuille par feuille pour le format ; la société vit dans le profil. Le logo est limité à 200 Ko. |
 | Recadrer | | Cadre la vue sur la page entière si un cartouche est défini, sinon sur le contenu. | Zoom de 25 % à 250 % au recadrage. |
+| Ranger le synoptique | | Feuille Hiérarchie : place les blocs (alimentations en haut, bloc central, périphériques autour, chaînes en bas). | Grisé hors de la feuille Hiérarchie. `Ctrl+Z` annule. |
 | Espace de travail ▾ | | Liste des panneaux (coche = visible) : Bibliothèque, Propriétés, Nomenclature & Nets, Blocs et Motifs ; **Tout afficher**, **Disposition en colonnes**, **Réinitialiser la disposition**. | |
 
 ### Menu Outils
@@ -384,7 +385,7 @@ Le panneau change selon la sélection. Chaque panneau (Bibliothèque, Propriét�
 | Dimensions | Coordonnées et taille en mm (lecture seule) |
 | **Supprimer le rectangle** / **Supprimer le trait** | Supprime l'élément |
 
-**Bloc hiérarchique** (feuille Hiérarchie) : **Nom de la sous-feuille**, Contenu (composants et fils), **Ouvrir cette feuille ➔**, **Supprimer cette feuille**.
+**Bloc hiérarchique** (feuille Hiérarchie) : **Nom de la sous-feuille**, **Sous-titre du synoptique** (vide : le composant qui a le plus de broches), Contenu (composants et fils), **Ouvrir cette feuille ➔**, **Supprimer cette feuille**.
 
 **Brochage par référence.** Un symbole générique (AOP, transistor, régulateur) ne connaît que ses broches ; la colonne `Brochage` du catalogue dit sur quelle patte du boîtier chacune tombe (par exemple `OUT=1,V-=2,IN+=3,IN-=4,V+=5` ; `A:…|B:…|*:…` pour un composant à parties ; `OUT=2/4` pour une languette). Le choix de la référence copie cette table sur le composant ; la netlist écrit alors la patte et non plus le numéro de broche. Sans table, la broche n va sur la patte n.
 
@@ -522,7 +523,7 @@ Quand une fiche est modifiée dans la Gestion LIB, un bandeau **Bibliothèque mo
 | Zoom | Niveau de zoom |
 | Grille | Valeur d'une case affichée et pas d'accrochage |
 | Composants · Fils · Nets | Compteurs de la feuille |
-| Net | Nom et nombre de nœuds du net survolé ; sur la feuille Hiérarchie, la broche de bloc survolée |
+| Net | Nom et nombre de nœuds du net survolé ; sur la feuille Hiérarchie, les nets et les feuilles de la liaison survolée |
 | Astuce | Conseil du mode en cours et messages d'état |
 
 ### Profil

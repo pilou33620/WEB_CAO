@@ -365,6 +365,7 @@ function refreshPanels(){
       box.innerHTML=
         '<div class="prop"><label>Bloc hiérarchique</label><input value="Feuille '+(idx+1)+' : '+esc(p.name)+'" disabled></div>'+
         '<div class="prop"><label>Nom de la sous-feuille</label><input id="pBlockName" value="'+esc(p.name)+'"></div>'+
+        '<div class="prop"><label>Sous-titre du synoptique</label><input id="pBlockSub" value="'+esc(p.blockSub||"")+'" placeholder="'+esc(synPrincipal(comps))+'" title="Vide : le composant qui a le plus de broches"></div>'+
         '<div class="prop"><label>Contenu</label><input value="'+comps.length+' composant(s) · '+wiresList.length+' fil(s)" disabled></div>'+
         '<div class="prop"><div class="row"><button class="tb on" id="pBlockOpen">Ouvrir cette feuille ➔</button></div>'+
         '<div class="row"><button class="tb" id="pBlockDel">Supprimer cette feuille</button></div></div>'+
@@ -373,6 +374,8 @@ function refreshPanels(){
       if(iName){
         iName.onchange=e=>{push();p.name=e.target.value.trim()||p.name;buildTabs();draw();};
       }
+      const iSub=document.getElementById("pBlockSub");
+      if(iSub)iSub.onchange=e=>{push();p.blockSub=e.target.value.trim();draw();};
       const bOpen=document.getElementById("pBlockOpen");
       if(bOpen)bOpen.onclick=()=>gotoPage(idx);
       const bDel=document.getElementById("pBlockDel");
