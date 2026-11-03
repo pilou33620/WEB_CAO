@@ -6,9 +6,9 @@
     "semantic_hash": "dc37cad77327d16b9ee4e4043b9064da"
   },
   "appairage.py": {
-    "mtime": 1793566483.7540293,
-    "seen": 1793716237.5292552,
-    "ast_hash": "82e72123ab362a385b095618556842b2",
+    "mtime": 1793721224.523004,
+    "seen": 1793721411.740994,
+    "ast_hash": "831187a9f34364de5f03d869be3b6134",
     "semantic_hash": ""
   },
   "bancs-mesure/crosstalk/banc-crosstalk-mesure.py": {
@@ -474,9 +474,9 @@
     "semantic_hash": ""
   },
   "editeur-schematique/js/05-feuilles.js": {
-    "mtime": 1793717905.2016985,
-    "seen": 1793719442.1787179,
-    "ast_hash": "58b6670fcf7039f821fa0cb1630cf1ff",
+    "mtime": 1793723254.5907047,
+    "seen": 1793723704.5162117,
+    "ast_hash": "4543852aa7699fc4d279ec60f7cac13d",
     "semantic_hash": ""
   },
   "editeur-schematique/js/06-rendu-fond.js": {
@@ -492,21 +492,21 @@
     "semantic_hash": ""
   },
   "editeur-schematique/js/08-rendu-schema.js": {
-    "mtime": 1793717915.1617897,
-    "seen": 1793719442.1787438,
-    "ast_hash": "a1ecaaa3456bf8b4203c957984ac79b9",
+    "mtime": 1793723135.3782954,
+    "seen": 1793723704.5162377,
+    "ast_hash": "a5dafaded7535d8925ee079bca140dce",
     "semantic_hash": ""
   },
   "editeur-schematique/js/09-interaction.js": {
-    "mtime": 1793717555.248045,
-    "seen": 1793719442.178751,
-    "ast_hash": "5918592c8284e70ce64d7ab8dd10daa1",
+    "mtime": 1793720649.532779,
+    "seen": 1793721411.7422042,
+    "ast_hash": "5106307f59212d9311bdc367b56947b6",
     "semantic_hash": ""
   },
   "editeur-schematique/js/10-actions.js": {
-    "mtime": 1793717826.626033,
-    "seen": 1793719442.1787581,
-    "ast_hash": "7da5ad52e14b3b6a6f53895ea6595d8c",
+    "mtime": 1793723135.3805017,
+    "seen": 1793723704.5162535,
+    "ast_hash": "abbd5c9437e51d56a993270304b30987",
     "semantic_hash": ""
   },
   "editeur-schematique/js/11-palette.js": {
@@ -516,9 +516,9 @@
     "semantic_hash": "f052e64f48ebccf767ac6e900e444f2f"
   },
   "editeur-schematique/js/12-panneaux.js": {
-    "mtime": 1793717565.832688,
-    "seen": 1793719442.1787732,
-    "ast_hash": "b8e90847fdca7ae1aa141c342f935ab1",
+    "mtime": 1793722510.6777086,
+    "seen": 1793723704.5162685,
+    "ast_hash": "55bd299a2e09d597dd754985c006298d",
     "semantic_hash": ""
   },
   "editeur-schematique/js/13-fichiers.js": {
@@ -534,9 +534,9 @@
     "semantic_hash": ""
   },
   "editeur-schematique/js/15-import.js": {
-    "mtime": 1793717570.8380435,
-    "seen": 1793719442.178795,
-    "ast_hash": "c1541a55cd2154f912ca59c35ca2d4cb",
+    "mtime": 1793720649.5343642,
+    "seen": 1793721411.742259,
+    "ast_hash": "ce7306b644ce157d02f9259eccd9f6b7",
     "semantic_hash": ""
   },
   "editeur-schematique/js/16-demo.js": {
@@ -618,9 +618,9 @@
     "semantic_hash": "e2aa9993499c2cdff79bf062b5a2dbd0"
   },
   "editeur-schematique/test/harness.js": {
-    "mtime": 1793717915.1673465,
-    "seen": 1793719442.1789248,
-    "ast_hash": "22ede86620020f8037007192214ba158",
+    "mtime": 1793723384.2829142,
+    "seen": 1793723704.516431,
+    "ast_hash": "7106c64d184db0e970c5f2fca4d7a535",
     "semantic_hash": ""
   },
   "gestion-lib/js/01-donnees.js": {
@@ -1050,9 +1050,9 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1793350688.4331076,
-    "seen": 1793351383.675131,
-    "ast_hash": "2f10c766a6685227b86dcd58a80d1e80",
+    "mtime": 1793723607.586068,
+    "seen": 1793723704.517079,
+    "ast_hash": "467d3a413e24e3be1c7f27142243fdeb",
     "semantic_hash": ""
   },
   "bancs-mesure/crosstalk/README.md": {
@@ -1098,9 +1098,9 @@
     "semantic_hash": "5d5be1b5ee7b1b6301b12ccf243f9094"
   },
   "editeur-schematique/README.md": {
-    "mtime": 1793717872.0082247,
-    "seen": 1793719442.1798365,
-    "ast_hash": "9372dfc44448f780431e5b7fea780809",
+    "mtime": 1793723418.9185612,
+    "seen": 1793723704.517299,
+    "ast_hash": "edc18f7a908799b82a60e582da1c519a",
     "semantic_hash": ""
   },
   "editeur-schematique/editeur-schematique.html": {
@@ -1548,9 +1548,9 @@
     "semantic_hash": ""
   },
   "docs/manuel/02-editeur-schematique.md": {
-    "mtime": 1793717866.589937,
-    "seen": 1793719442.1796324,
-    "ast_hash": "33c994ef30d2bdfe663fcb79b178d328",
+    "mtime": 1793723418.8985615,
+    "seen": 1793723704.5171564,
+    "ast_hash": "cf9d404313b8346dfd1fee79faee3e90",
     "semantic_hash": ""
   },
   "docs/manuel/03-editeur-pcb-edition-routage.md": {
@@ -1725,6 +1725,12 @@
     "mtime": 1793630245.614102,
     "seen": 1793716237.5309684,
     "ast_hash": "520bf32d881ef2a526c8063c47b9b67f",
+    "semantic_hash": ""
+  },
+  "editeur-schematique/test/banc-synoptique.py": {
+    "mtime": 1793723554.169181,
+    "seen": 1793723704.5164235,
+    "ast_hash": "0a783762f9c7cb150d396227efc2979b",
     "semantic_hash": ""
   }
 }
