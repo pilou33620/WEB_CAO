@@ -2429,6 +2429,98 @@ function mitreSel(){
   return n;
 }
 /* ==========================================================================
+   Miter, l'outil de Fusion et d'Eagle
+   --------------------------------------------------------------------------
+   Un clic sur un coin l'arrondit au rayon choisi ; un rayon négatif le coupe
+   d'une droite entre les mêmes points de tangence. Sur le contour et les
+   découpes, l'arc devient des cordes égales, comme le disque
+   (`boardDisquePts`) : les sorties les reconnaissent (`ctrSegments`) et les
+   écrivent en arcs. Sur une piste, c'est l'arc tangent du mode « arrondi »
+   (`mitreAt`).
+   ========================================================================== */
+let miterR=1;   // shortcut: rayon de la session, pas rangé avec le document ; le ranger si on le regrette d'une ouverture à l'autre
+/* Les sommets qui remplacent P[i], et le plus grand rayon que le coin admet :
+   les points de tangence reculent de L = r/tan(φ/2), φ l'angle du coin, et
+   ne peuvent pas dépasser les sommets voisins. `pts` est nul s'il n'y a pas
+   de coin (sommet sur une droite, pointe) ou si le rayon est trop grand. */
+function miterCoin(P,i,r){
+  const n=P.length, V=P[i], A=P[(i-1+n)%n], B=P[(i+1)%n];
+  const la=dist(V.x,V.y,A.x,A.y), lb=dist(V.x,V.y,B.x,B.y);
+  if(!(la>1e-9&&lb>1e-9&&r))return {pts:null,rMax:0};
+  const ua={x:(A.x-V.x)/la,y:(A.y-V.y)/la}, ub={x:(B.x-V.x)/lb,y:(B.y-V.y)/lb};
+  const phi=Math.acos(clamp(ua.x*ub.x+ua.y*ub.y,-1,1));
+  if(phi<1e-3||phi>Math.PI-1e-3)return {pts:null,rMax:0};
+  const tg=Math.tan(phi/2), rMax=r3(Math.min(la,lb)*tg), R=Math.abs(r), L=R/tg;
+  if(L>Math.min(la,lb)+1e-6)return {pts:null,rMax};
+  const T1={x:V.x+ua.x*L,y:V.y+ua.y*L}, T2={x:V.x+ub.x*L,y:V.y+ub.y*L};
+  let pts;
+  if(r<0)pts=[T1,T2];
+  else{
+    const bx=ua.x+ub.x, by=ua.y+ub.y, nb=Math.hypot(bx,by), k=R/Math.sin(phi/2);
+    const C={x:V.x+bx/nb*k,y:V.y+by/nb*k};
+    const a1=Math.atan2(T1.y-C.y,T1.x-C.x);
+    let d=Math.atan2(T2.y-C.y,T2.x-C.x)-a1;
+    if(d>Math.PI)d-=2*Math.PI;else if(d<-Math.PI)d+=2*Math.PI;
+    // la flèche sous 5 µm comme le disque, 30° au plus par corde pour `ctrSegments`, et assez de cordes pour qu'il y voie un arc
+    const nTour=Math.PI/Math.acos(Math.max(-1,1-0.005/R));
+    const m=Math.max(4,Math.ceil(Math.abs(d)/(2*Math.PI)*nTour),Math.ceil(Math.abs(d)/(Math.PI/6)));
+    pts=[];
+    for(let j=0;j<=m;j++){const a=a1+d*j/m;pts.push({x:C.x+R*Math.cos(a),y:C.y+R*Math.sin(a)});}
+  }
+  pts=pts.map(p=>({x:r3(p.x),y:r3(p.y)}));
+  // un point de tangence posé sur un voisin (le côté entier consommé) ne se double pas
+  const pareil=(p,q)=>dist(p.x,p.y,q.x,q.y)<0.0015;
+  if(pareil(pts[0],A))pts.shift();
+  if(pts.length&&pareil(pts[pts.length-1],B))pts.pop();
+  return {pts,rMax};
+}
+function miterClick(x,y,r=miterR){
+  const tol=px(8);
+  if(!r){hint("Rayon nul : rien à arrondir.");return false;}
+  /* un coude de piste de la couche active passe devant le contour */
+  let tr=null, bd=tol;
+  for(const t of S.tracks){
+    if(t.l!==S.active)continue;
+    for(const [ex,ey] of [[t.x1,t.y1],[t.x2,t.y2]]){
+      const d=dist(x,y,ex,ey);
+      if(d<bd){bd=d;tr={t,x:ex,y:ey};}
+    }
+  }
+  if(tr){
+    const cap=Math.abs(r)/tr.t.w;
+    if(mitreAt(tr.t.l,tr.x,tr.y,true,cap,r>0)){
+      push();mitreAt(tr.t.l,tr.x,tr.y,false,cap,r>0);
+      touch();refreshPanels();draw();
+      hint(r>0?"Coude de piste arrondi.":"Coude de piste chanfreiné.");
+      return true;
+    }
+  }
+  let co=null;bd=tol;
+  const polys=[{P:boardPoly(),bord:true}].concat(boardCutouts().map(P=>({P})));
+  for(const o of polys)
+    for(let i=0;i<o.P.length;i++){
+      const d=dist(x,y,o.P[i].x,o.P[i].y);
+      if(d<bd){bd=d;co={o,i};}
+    }
+  if(!co){
+    hint(tr?"Ce coude de piste ne s'arrondit pas : il faut deux portions droites de même largeur et de même net, sans via ni pastille au coude."
+           :"Cliquez sur un coin du contour, d'une découpe ou d'un coude de piste de la couche active.");
+    return false;
+  }
+  const res=miterCoin(co.o.P,co.i,r);
+  if(!res.pts){
+    hint(res.rMax>0?"Rayon trop grand pour ce coin : "+fmt(res.rMax,2)+" mm au plus."
+                   :"Ce sommet n'est pas un coin : ses deux côtés sont alignés.");
+    return false;
+  }
+  push();
+  if(co.o.bord&&!S.board.pts)S.board.pts=co.o.P;   // le rectangle devient un contour libre
+  co.o.P.splice(co.i,1,...res.pts);
+  boardChanged();refreshPanels();draw();
+  hint((r>0?"Coin arrondi":"Coin chanfreiné")+", rayon "+fmt(Math.abs(r),2)+" mm.");
+  return true;
+}
+/* ==========================================================================
    Le crochet
    --------------------------------------------------------------------------
    Quand un coude est mangé, ses deux voisins se retrouvent bout à bout. S'ils
@@ -4276,6 +4368,9 @@ cv.addEventListener("pointerdown",e=>{
   if(S.mode==="cut"){
     cutClick(p.x,p.y);draw();return;
   }
+  if(S.mode==="miter"){
+    miterClick(p.x,p.y);return;
+  }
   /* Au doigt, la commande « Multi » de la roulette tactile tient lieu de Ctrl : chaque
      toucher ajoute à la sélection ou en retire. */
   const multi=typeof tactileMultiActif==="function"&&tactileMultiActif();
@@ -5206,7 +5301,7 @@ function setMode(m){
   for(const [id,md] of [["mSelect","select"],["mTrack","track"],["mVia","via"],["mHole","hole"],
                         ["mDiff","dpair"],["mMeander","meander"],
                         ["mZone","zone"],["mSilk","silk"],["mEdge","edge"],["mDecoupe","decoupe"],["mInterdit","interdit"],["mOrigin","origin"],
-                        ["mErase","cut"],["mMesure","mesure"]]){
+                        ["mErase","cut"],["mMiter","miter"],["mMesure","mesure"]]){
     const b=$(id);
     if(b)b.classList.toggle("on",m===md);
   }
@@ -5214,7 +5309,7 @@ function setMode(m){
                           dpair:"Paire différentielle",meander:"Serpentin (Appariement)",
                           zone:"Zone de cuivre",silk:"Sérigraphie",edge:"Contour de carte",
                           decoupe:"Découpe de carte",interdit:"Zone interdite",
-                          origin:"Origine",cut:"Découpe de zone",
+                          origin:"Origine",cut:"Découpe de zone",miter:"Miter",
                           mesure:"Mesure"}[m];
   cv.style.cursor="crosshair";
   hint({
@@ -5239,6 +5334,8 @@ function setMode(m){
     interdit:"Zone interdite de la face regardée : un clic par sommet, ou deux coins puis Entrée · retour sur le premier point pour fermer · Échap abandonne.",
     origin:"Cliquez le point qui servira d'origine — une pastille proche l'attire.",
     cut:"Découpe de zone de cuivre : un clic par sommet, retour sur le premier point (ou Entrée) pour fermer · Maj contraint à 45° · Retour arrière annule le dernier · Échap abandonne.",
+    miter:"Clic sur un coin du contour, d'une découpe ou d'un coude de piste de la couche active : il s'arrondit "+
+          "au rayon du menu Placer (négatif : chanfrein droit) · Ctrl+Z annule · Échap revient à la sélection.",
     mesure:"Cliquez le premier point, puis le second : la cote se fige · les pastilles, "+
            "les vias et les sommets de piste de la couche active attirent le point · "+
            "un nouveau clic repart d'ailleurs · Échap efface."

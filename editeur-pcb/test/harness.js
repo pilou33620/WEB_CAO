@@ -70,7 +70,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "boardChanged","polyEdgeDist","segDist","orient","signedArea",
   "coordOpen","coordClose","coordApply","coordMode","coordPoint","coordAnchor",
   "placeOrigin","ux","uy","wxu","wyu","snapX","snapY","gOrigin","routeToPoint","hint",
-  "pushClear","magnet","projOnSeg","trkAt","mitreSel","mitreAt","collinearRun","runFrom","segClearBad","setActive","segSegDist","segCross","routeBad","focusNet","cancelRoute","updateRoute","classOf","syncAutoZones","detachAuto","zoneCanvas","zoneCache","inPoly","hitTest","px","dist","boardZonePts",
+  "pushClear","magnet","projOnSeg","trkAt","mitreSel","mitreAt","miterCoin","miterClick","collinearRun","runFrom","segClearBad","setActive","segSegDist","segCross","routeBad","focusNet","cancelRoute","updateRoute","classOf","syncAutoZones","detachAuto","zoneCanvas","zoneCache","inPoly","hitTest","px","dist","boardZonePts",
   "selectLayerZones","couchesToutes","zoneContient","inPoly","zoneUnder",
   /* repérage commun : chercher un repère, mesurer une distance
      (commun/reperage.js + le module d'adaptation de l'éditeur) */
@@ -3364,6 +3364,37 @@ T("un 45° déjà en place n'est pas retouché",()=>{
   const n=S.tracks.length;
   if(mitreSel()!==0)throw new Error("un 45° n'est pas un angle droit");
   if(S.tracks.length!==n)throw new Error("rien ne devait changer");
+});
+/* Miter : un coin du contour s'arrondit en cordes que l'export reconnaît en arc */
+T("miter : coin de carte arrondi, chanfrein, rayon trop grand, coude de piste",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];
+  S.board.pts=null;delete S.board.cutouts;setBoardSize(40,30);
+  const b=S.board, P0=boardPoly();
+  setMode("miter");S.active=0;
+  if(!miterClick(P0[0].x,P0[0].y,5))throw new Error("le coin devait s'arrondir");
+  const P=S.board.pts;
+  if(!P||P.length<8)throw new Error("le rectangle devait devenir un contour libre arrondi");
+  if(P.some(p=>dist(p.x,p.y,b.x,b.y)<1e-6))throw new Error("le sommet du coin devait disparaître");
+  const arcs=ctrSegments(P).filter(s=>s.t==="a");
+  if(arcs.length!==1||Math.abs(arcs[0].r-5)>0.01)throw new Error("un arc de 5 mm attendu : "+JSON.stringify(arcs.map(a=>a.r)));
+  undo();
+  if(S.board.pts)throw new Error("Ctrl+Z devait rendre le rectangle");
+  // chanfrein : deux points de tangence à 5 mm du coin
+  const c=miterCoin(P0,0,-5);
+  if(c.pts.length!==2||dist(c.pts[0].x,c.pts[0].y,b.x,b.y+5)>1e-6||dist(c.pts[1].x,c.pts[1].y,b.x+5,b.y)>1e-6)
+    throw new Error("chanfrein : "+JSON.stringify(c.pts));
+  // le côté entier consommé : rayon égal au demi-côté, pas de point doublé
+  const d=miterCoin(P0,0,31);
+  if(d.pts||d.rMax!==30)throw new Error("rayon trop grand : "+JSON.stringify(d));
+  const e=miterCoin(P0,0,30), A=P0[P0.length-1];
+  if(!e.pts||e.pts.some(p=>dist(p.x,p.y,A.x,A.y)<0.0015))throw new Error("le voisin atteint ne doit pas être doublé");
+  // coude de piste à angle droit : l'arc tangent de mitreAt
+  const h={l:0,net:"T",w:0.3,x1:0,y1:0,x2:20,y2:0}, v={l:0,net:"T",w:0.3,x1:20,y1:0,x2:20,y2:30};
+  S.tracks.push(h,v);touch();
+  if(!miterClick(20,0,2))throw new Error("le coude devait s'arrondir");
+  const arc=S.tracks.find(t=>t.ca);
+  if(!arc||Math.abs(arcOf(arc).r-2)>0.01)throw new Error("arc de 2 mm attendu");
+  setMode("select");S.tracks=[];touch();
 });
 /* Un champ garde ses lettres pour lui — sans quoi taper « 0,3 » dans l'isolation
    basculerait de couche. Mais le canevas n'est pas focusable : cliquer dessus ne

@@ -270,7 +270,7 @@
   .prop label{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;
     text-transform:uppercase;color:var(--txt-dim);margin-bottom:4px}
   /* ---------- menu déroulant de la barre d'outils ---------- */
-  select.tbsel{
+  select.tbsel,input.tbsel{
     background:var(--panel2);color:var(--txt);border:1px solid var(--border2);
     padding:6px 8px;border-radius:5px;font-size:12px;cursor:pointer;font-family:var(--ui);
   }

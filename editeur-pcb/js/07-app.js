@@ -622,6 +622,8 @@ $("mDecoupe").onclick=()=>setMode("decoupe");
 $("mInterdit").onclick=()=>setMode("interdit");
 $("mOrigin").onclick=()=>setMode("origin");
 $("mErase").onclick=()=>setMode("cut");
+$("mMiter").onclick=()=>setMode("miter");
+$("miterR").onchange=e=>{const v=parseFloat(e.target.value);miterR=Number.isFinite(v)?clamp(v,-100,100):1;e.target.value=miterR;};
 if($("bAddFp")) $("bAddFp").onclick=()=>pcbOuvrirExplorateurLib();
 if($("bFootprint")) $("bFootprint").onclick=()=>pcbOuvrirExplorateurLib();
 $("bRot").onclick=rotateSel;

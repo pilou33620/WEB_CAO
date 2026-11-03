@@ -961,6 +961,18 @@ gardent leur nom sur la pastille (l'empreinte devient dessinée). Une seconde
 importation retrouve les mêmes numéros ; la synchronisation ECO résout les
 mêmes noms.
 
+**Miter** (menu Placer, comme l'outil de Fusion et d'Eagle ; `miterCoin`,
+`miterClick`) : un clic sur un coin du contour, d'une découpe ou d'un coude
+de piste de la couche active l'arrondit au rayon réglé sous le bouton
+(1 mm par défaut, gardé pour la séance seulement) ; un rayon négatif le coupe
+d'une droite entre les mêmes points de tangence. Sur le contour, l'arc devient
+des cordes égales comme le disque — flèche sous 5 µm, 30° au plus par corde —
+que `ctrSegments` reconnaît et que le Gerber, le STEP et l'IPC-2581 écrivent
+en arcs ; un contour rectangulaire devient libre. Un rayon trop grand pour le
+coin est refusé avec le plus grand permis. Sur une piste, c'est l'arc tangent
+du mode « arrondi » (`mitreAt`). Les zones suivent sans rien faire : leur
+remplissage est rogné au contour, on peut les tracer grossièrement.
+
 **Découpes intérieures de carte** (`board.cutouts`, une liste de polygones) :
 une fenêtre fraisée dans le substrat. Elles sont dessinées comme le contour,
 exclues de la carte pour tout ce qui demande « est-ce dedans ? » (`inBoard` :
