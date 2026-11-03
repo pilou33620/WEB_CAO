@@ -362,7 +362,7 @@ function refreshPanels(){
     if(b&&racine){
       const c=synComposants().get(b.key), titres=racine.synTitres||{};
       box.innerHTML=
-        '<div class="prop"><label>Bloc du synoptique</label><input value="'+esc(b.key)+' · '+esc(c.el.mpn||c.el.value||"")+'" disabled></div>'+
+        '<div class="prop"><label>Bloc du synoptique</label><input value="'+esc(b.key)+' · '+esc(synSousTitre(c.el))+'" disabled></div>'+
         '<div class="prop"><label>Titre</label><input id="pBlockTitre" value="'+esc(titres[b.key]||"")+'" placeholder="'+esc(synTitreAuto(c.el))+'" title="Vide : titre deviné d\'après le type et la référence du composant"></div>'+
         '<div class="prop"><label>Feuille</label><input value="'+esc(S.pages[b.sheetIndex].name)+'" disabled></div>'+
         '<div class="prop"><div class="row"><button class="tb on" id="pBlockOpen">Ouvrir sa feuille ➔</button></div></div>'+

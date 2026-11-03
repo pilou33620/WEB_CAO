@@ -319,6 +319,16 @@ function drawSheetBlocks(c){
   c.save();
   c.lineJoin = "round"; c.lineCap = "butt";
 
+  // 0. un cadre nommé par feuille de deux blocs ou plus, si les cadres ne se chevauchent pas
+  const cadres = synCadres(blocks);
+  for(const f of cadres){
+    c.strokeStyle = "#2c323a"; c.lineWidth = 1.2; c.setLineDash([6, 5]);
+    drawRoundRectPath(c, f.x, f.y, f.w, f.h, 10); c.stroke();
+    c.setLineDash([]);
+    c.font = "bold 13px " + SYN_MONO; c.fillStyle = "#6f747a"; c.textAlign = "left"; c.textBaseline = "middle";
+    c.fillText(f.nom.toUpperCase(), f.x + 14, f.y + 16);
+  }
+
   // 1. fils, coins arrondis
   for(const r of routes){
     const p = r.pts;
@@ -357,6 +367,16 @@ function drawSheetBlocks(c){
     c.lineTo(q[0] - dx*8 + dy*4.5, q[1] - dy*8 + dx*4.5); c.closePath(); c.fill();
   };
   const boites = blocks.map(b => [b.x - 4, b.y - 4, b.w + 8, b.h + 8]);
+  for(const f of cadres) boites.push([f.x + 8, f.y + 6, f.nom.length * 8.5 + 12, 20]);
+  const rails = sheetLinks().rails || new Map();
+  c.font = "11px " + SYN_MONO; c.textBaseline = "middle"; c.textAlign = "right";
+  for(const b of blocks){
+    const r = rails.get(b.key);
+    if(!r || !r.length) continue;
+    const t = "⚡ " + r.join(" · "), tw = c.measureText(t).width;
+    c.fillStyle = SYN_COL.lblPower; c.fillText(t, b.x + b.w - 4, b.y - 9);
+    boites.push([b.x + b.w - tw - 6, b.y - 17, tw + 4, 15]);
+  }
   const touche = (r, s) => r[0] < s[0] + s[2] && s[0] < r[0] + r[2] && r[1] < s[1] + s[3] && s[1] < r[1] + r[3];
   const coupeFil = bx => segs.some(({a, b}) => touche(bx,
     [Math.min(a[0], b[0]) - 1, Math.min(a[1], b[1]) - 1, Math.abs(a[0] - b[0]) + 2, Math.abs(a[1] - b[1]) + 2]));

@@ -199,6 +199,7 @@ function schContenu(){
   for(const sb of blocks){x1=Math.min(x1,sb.x);y1=Math.min(y1,sb.y);x2=Math.max(x2,sb.x+sb.w);y2=Math.max(y2,sb.y+sb.h);}
   if(blocks.length){                       // synoptique : fils de contournement et chiffres clés dessous
     for(const r of sheetRoutes())for(const q of r.pts){x1=Math.min(x1,q[0]);y1=Math.min(y1,q[1]);x2=Math.max(x2,q[0]);y2=Math.max(y2,q[1]);}
+    for(const f of synCadres(blocks)){x1=Math.min(x1,f.x);y1=Math.min(y1,f.y);x2=Math.max(x2,f.x+f.w);y2=Math.max(y2,f.y+f.h);}
     y2+=110;
   }
   return x1>x2?null:{x1,y1,x2,y2};

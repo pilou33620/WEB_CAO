@@ -49,7 +49,7 @@ identiques pour l'éditeur PCB :
 | `js/02-bibliotheque.js` | 348 | `LIB` : définition et tracé de chaque symbole, plus `CATS` |
 | `js/03-boitiers.js` | 155 | `PKG_BASES`, nommage et filtrage des empreintes, accès sûr à la bibliothèque (`defOf`) |
 | `js/04-etat.js` | 370 | `S` (état global), sélection mixte, canvas, géométrie des symboles et des broches (rectangle, carré, disposition libre) |
-| `js/05-feuilles.js` | 711 | Feuilles et onglets, synoptique par composants (liaisons, routage, Ranger), cartouche, historique undo/redo, `addComp` / `nextRef` |
+| `js/05-feuilles.js` | 841 | Feuilles et onglets, synoptique par composants (liaisons, routage, Ranger), cartouche, historique undo/redo, `addComp` / `nextRef` |
 | `js/06-rendu-fond.js` | 128 | Cadrage, conversions monde↔écran, grille et son échelle en millimètres, fils, cache des jonctions |
 | `js/07-connectivite.js` | 582 | Découpe automatique des segments + extraction des nets (feuille et document) |
 | `js/08-rendu-schema.js` | 664 | Jonctions, halo de net, étiquettes, symboles, sélection, boucle `draw()` |

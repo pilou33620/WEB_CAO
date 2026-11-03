@@ -62,7 +62,7 @@ const EXPOSE=[
   /* canal de pilotage du MCP de web_suite (commun/pilote-cao.js) */
   "piloteCao",
   /* bus et hiérarchie */
-  "C_BUS","BUS_WIDTH","sheetBlocks","hitSheetBlock","sheetLinks","sheetRoutes","synRouter","hitSheetLink","arrangeSheetBlocks","synStats","newHierPage",
+  "C_BUS","BUS_WIDTH","sheetBlocks","hitSheetBlock","sheetLinks","sheetRoutes","synRouter","hitSheetLink","arrangeSheetBlocks","synStats","synRole","synTitreAuto","synSousTitre","synCadres","newHierPage",
   "schDevelopperSignauxBus","schBusDuPoint","schPiquageSurFil","schTousLesPiquages",
   "schSignauxOccupesSurBus","schSuggererProchainSignal","schPiquerSignal","schOuvrirPiquageModal","schFermerPiquageModal",
   "SCH_PIQUAGE_MEMOIRE",
@@ -2598,6 +2598,71 @@ T("synoptique : Ranger place sans chevauchement, la chaîne dans le sens du sign
   if(!glisse.length||!glisse.every(r=>r.direct))throw new Error("pendant le glisser, traits directs sans routage");
   undo();
   if(serialize()!==avant)throw new Error("Ctrl+Z doit rendre les positions d'avant");
+});
+
+T("synoptique : symboles génériques importés, classés par pièce LIB et repère",()=>{
+  const I=(ref,n,o)=>C("ic",0,0,Object.assign({ref,npins:n},o));
+  const cas=[
+    [I("R1",2,{csvPartName:"RES_0603",value:"10K"}),"passif"],[I("C1",2,{value:"1mF"}),"passif"],
+    [I("JP1",2,{}),"passif"],[I("D1",2,{csvPartName:"DIODE_B320-13-F"}),"passif"],[I("D2",3,{csvPartName:"DIODE_BAR43"}),"ignore"],
+    [I("ESD1",2,{csvPartName:"ESD_SMBJ18CA"}),"ignore"],[I("Y1",4,{csvPartName:"QUARTZ-12MHz"}),"ignore"],
+    [I("V1",2,{csvPartName:"VAR_0603_24V"}),"ignore"],[C("testpoint",0,0,{ref:"TP1"}),"ignore"],
+    [I("LED1",2,{csvPartName:"LED_CMS_1206"}),"important"],[I("U1",8,{}),"important"],[I("J1",2,{}),"important"]];
+  for(const [el,r] of cas)if(synRole(el)!==r)throw new Error(el.ref+" : rôle "+synRole(el)+", attendu "+r);
+  const titre=[
+    [I("U1",3,{csvPartName:"REG_LP2950CDTX-5.0",value:"5V"}),"RÉGULATEUR","LP2950CDTX-5.0"],
+    [I("Q1",3,{csvPartName:"TRAN_MOS-BSS131",value:"N_MOS"}),"MOSFET","BSS131"],
+    [I("U2",64,{desc:"ARM MCU EFM32 PG23, 32-bit ARM Cortex -M33",csvMpn:"EFM32PG23B310F512IM48-C"}),"MCU","EFM32PG23B310F512IM48-C"],
+    [I("J2",2,{csvPartName:"CONN_2-3.81mm-Bornier-TR",value:"3.81mm"}),"BORNIER","2-3.81mm-Bornier-TR"],
+    [I("U3",64,{csvPartName:"RF_SIM7600G-H_R2"}),"MODEM",null],[I("U4",8,{value:"PCF8563T"}),"RTC",null],
+    [I("J3",10,{value:"MicroSIM",csvPartName:"CONN_USIM_693022010811"}),"CARTE SIM",null],[I("U9",8,{value:"XYZ"}),"U9","XYZ"],
+    [I("J4",2,{csvMpn:"xx",value:"Cavalier"}),"CONNECTEUR","Cavalier"]];
+  for(const [el,t,sub] of titre){
+    if(synTitreAuto(el)!==t)throw new Error(el.ref+" : titre « "+synTitreAuto(el)+" », attendu « "+t+" »");
+    if(sub!==null&&synSousTitre(el)!==sub)throw new Error(el.ref+" : sous-titre « "+synSousTitre(el)+" », attendu « "+sub+" »");
+  }
+});
+
+/* Gros synoptique d'essai : un régulateur sur VBAT tire +3V3 à travers un fusible (le rail le
+   traverse) vers 20 circuits répartis sur deux feuilles ; une chaîne de signaux SIGk les relie. */
+function synGrosDoc(){
+  const fil=(pg,a,b)=>pg.wires.push({x1:a.x,y1:a.y,x2:b.x,y2:b.y});
+  const p1=newPage("Alim"), p2=newPage("Capteurs"), p3=newPage("Traitement");
+  for(const p of [p1,p2,p3]){p.comps=[];p.wires=[];}
+  const bt=C("battery",2,2,{ref:"BT1"}), u0=C("ic",20,2,{ref:"U0",value:"LDO",npins:4,pinNames:["VIN","GND","VOUT","EN"]});
+  const f1=C("fuse",40,2,{ref:"F1"}), v=[0,1,2,3].map(k=>C("vcc",5+k*10,20,{value:k<2?"VBAT":"+3V3_F"}));
+  const g=C("gnd",5,30,{});
+  p1.comps.push(bt,u0,f1,...v,g);
+  fil(p1,allPins(bt)[0],allPins(v[0])[0]);fil(p1,allPins(bt)[1],allPins(g)[0]);
+  fil(p1,allPins(u0)[0],allPins(v[1])[0]);fil(p1,allPins(u0)[2],allPins(f1)[0]);
+  // le fusible relie VOUT (net « +3V3 ») au rail global +3V3_F
+  const nom=C("port",30,8,{value:"+3V3"});p1.comps.push(nom);fil(p1,allPins(nom)[0],allPins(u0)[2]);
+  fil(p1,allPins(f1)[1],allPins(v[2])[0]);
+  let k=0;
+  for(const pg of [p2,p3])for(let i=0;i<10;i++,k++){
+    const u=C("ic",10+i*12,10,{ref:"U"+(10+k),value:"CAPT"+k,npins:4,pinNames:["VDD","IN","OUT","GND"]});
+    const a=C("vcc",10+i*12,2,{value:"+3V3_F"}), si=C("gport",10+i*12,30,{value:"SIG"+k}), so=C("gport",10+i*12,40,{value:"SIG"+(k+1)});
+    pg.comps.push(u,a,si,so);
+    fil(pg,allPins(u)[0],allPins(a)[0]);fil(pg,allPins(u)[1],allPins(si)[0]);fil(pg,allPins(u)[2],allPins(so)[0]);
+  }
+  return [newHierPage("Hiérarchie"),p1,p2,p3];
+}
+
+T("synoptique : gros schéma, rail à travers un fusible, alims en étiquette, cadres par feuille",()=>{
+  S.pages=synGrosDoc();
+  gotoPage(0);
+  const L=sheetLinks();
+  if(!L.some(l=>l.isPower&&l.a==="BT1"&&l.b==="U0"))throw new Error("VBAT : pile → régulateur");
+  if(L.filter(l=>l.isPower&&l.a==="U0").length>1)throw new Error("+3V3 vers 20 circuits : en étiquette, pas en fils");
+  if(!L.rails||L.rails.size<19||!L.rails.get("U15").some(n=>/3V3/.test(n)))throw new Error("étiquettes de rail : "+(L.rails&&L.rails.size));
+  if(!L.some(l=>!l.isPower&&l.a==="U10"&&l.b==="U11"&&l.name==="SIG1"&&l.dir==="a"))throw new Error("chaîne SIG1 : U10 → U11");
+  arrangeSheetBlocks();
+  const B=sheetBlocks(), cadres=synCadres(B);
+  if(cadres.map(f=>f.nom).join()!=="Alim,Capteurs,Traitement")throw new Error("un cadre par feuille, trouvé "+cadres.map(f=>f.nom));
+  const t0=Date.now(), R=sheetRoutes();
+  synVerifier(R,B);
+  if(Date.now()-t0>3000)throw new Error("routage trop lent : "+(Date.now()-t0)+" ms");
+  draw();
 });
 
 T("routeur du synoptique : le contrôleur de vol de la maquette, sans voie partagée",()=>{

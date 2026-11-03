@@ -243,28 +243,66 @@ function isPortPowerName(nm){
          nm.toUpperCase().includes("GND");
 }
 const SYN_MASSE=/GND|VSS|MASSE|^0V$/i;
-// passifs à deux pattes : traversés par les liaisons ; les autres types listés sont ignorés
 const SYN_PASSIF=/^(resistor|capacitor|cap_pol|inductor|ferrite_bead|fuse|crystal|varistor|diode|zener|schottky|tvs_diode|strap)$/;
-const SYN_IGNORE=/^(potentiometer|esd_\w+|testpoint\w*|hole|fiducial|annot_\w+|vcc|gnd|port|gport)$/;
+const SYN_IGNORE=/^(potentiometer|esd_\w+|testpoint\w*|hole|fiducial|annot_\w+|vcc|gnd|port|gport|crystal_4p|oscillator_4p)$/;
 const SYN_TYPE_TITRE={led:"LED",npn:"TRANSISTOR",pnp:"TRANSISTOR",nmos:"MOSFET",pmos:"MOSFET",mos_np:"MOSFET",
   opamp:"AMPLI",regulator:"RÉGULATEUR",battery:"BATTERIE",acsource:"SECTEUR",button:"BOUTON",relay:"RELAIS",
   motor:"MOTEUR",buzzer:"BUZZER",lamp:"LAMPE",antenna:"ANTENNE",transformer:"TRANSFO",filter:"FILTRE",
   usb_c:"USB-C",usb_c_pwr:"USB-C",usb_micro:"USB"};
-const SYN_MOTS=[[/555/,"TIMER"],[/STM32|ATMEGA|ATTINY|ESP32|ESP8266|RP2040|PIC1|PIC3|NRF5|SAMD|MSP430/,"MCU"],
-  [/PIR|IRA-S/,"CAPTEUR PIR"],[/LDO|AMS1117|ME6211|MCP17\d\d|LM317|LM78|L78|TPS7|AP2112|XC6206/,"RÉGULATEUR"],
-  [/LMR\d|TPS5|TPS6|MP1584|MP2\d{3}|LM2596|BUCK|BOOST/,"CONVERTISSEUR"],[/MCP6|LM358|LM324|OPA\d|TL07|TL08|LMV\d|TLV\d/,"AMPLI"],
-  [/W25Q|AT25|MX25|FLASH|EEPROM|24C\d/,"MÉMOIRE"],[/ICM-|MPU-?\d|BMI\d|LSM\d|ADXL/,"IMU"],[/BMP\d|BME\d|MS5611|LPS\d/,"BARO"],
-  [/CH340|CP210|FT232/,"USB-UART"],[/SX12|RFM9|CC1101|NRF24/,"RADIO"],[/MAX7456|AT7456/,"OSD"]];
+/* Titre deviné : cherché dans le MPN, la pièce LIB, la valeur et la description, dans cet ordre de règles. */
+const SYN_MOTS=[[/555/,"TIMER"],[/\bPMIC\b|EFP01/,"PMIC"],
+  [/\bMCU\b|MICROCONTR|CORTEX|STM32|EFM32|LPC\d|ATMEGA|ATTINY|ESP32|ESP8266|RP2040|PIC1\d|PIC3\d|NRF5|SAMD|MSP430/,"MCU"],
+  [/\bPIR\b|IRA-S/,"CAPTEUR PIR"],[/GNSS|\bGPS\b|LC86/,"GNSS"],[/SIM7\d|SIM8\d|MODEM|\bLTE\b|\bGSM\b/,"MODEM"],
+  [/TRANSCEIVER|LORA|SX12\d|LR11\d|LR20\d|RFM9|CC1101|NRF24|^RF_/,"RADIO"],[/\bRTC\b|PCF85|DS13\d|DS32\d/,"RTC"],
+  [/USB25\d\d|USB HUB|HUB USB/,"HUB USB"],[/FSUSB|\bMUX/,"MUX"],[/ZXCT|INA\d{3}|CURRENT SENS/,"MESURE COURANT"],
+  [/MCP150|LM4040|TL431|VOLTAGE REF/,"RÉFÉRENCE"],
+  [/LMR\d|TPS5\d|TPS6\d|MP1584|MP2\d{3}|LM2596|BD9E|BUCK|BOOST|DC-?DC/,"CONVERTISSEUR"],
+  [/LDO|AMS1117|ME6211|MCP17\d\d|LM317|LM78|L78|LP29\d|TPS7\d|AP2112|XC6206|^REG_|REGULAT/,"RÉGULATEUR"],
+  [/MCP6\d|LM358|LM324|OPA\d|TL07|TL08|LMV\d|TLV\d|OP-?AMP/,"AMPLI"],
+  [/W25Q|AT25|MX25|\bFLASH\b|EEPROM|24C\d/,"MÉMOIRE"],[/ICM-|MPU-?\d|BMI\d|LSM\d|ADXL/,"IMU"],[/BMP\d|BME\d|MS5611|LPS\d/,"BARO"],
+  [/CH340|CP210|FT232/,"USB-UART"],[/MAX7456|AT7456/,"OSD"],[/RJ45|ETHERNET|^CONN_ETH/,"ETHERNET"],
+  [/USIM|SIM CARD|MICROSIM|NANOSIM/,"CARTE SIM"],[/UFL|U\.FL|\bSMA\b|EMBASE_SMA|ANTENN/,"ANTENNE"],
+  [/COIN|BATTERY|BATTERIE|\bPILE\b/,"PILE"],[/BORNIER|TERMINAL BLOCK/,"BORNIER"],[/USB-?C\b|TYPE-C/,"USB-C"],
+  [/^TRAN_MOS|MOSFET/,"MOSFET"],[/^TRAN_|TRANSISTOR|\bNPN|\bPNP/,"TRANSISTOR"],[/^LED|\bLED\b/,"LED"],
+  [/^INTP_|BUTTON|BOUTON|TACT/,"BOUTON"],[/^CONN|CONNECT|HEADER|EMBASE/,"CONNECTEUR"]];
+const SYN_PREFIXE_TITRE={J:"CONNECTEUR",P:"CONNECTEUR",CN:"CONNECTEUR",X:"CONNECTEUR",Q:"TRANSISTOR",T:"TRANSFO",
+  SW:"BOUTON",K:"RELAIS",BT:"PILE",LED:"LED",ANT:"ANTENNE",AE:"ANTENNE",BZ:"BUZZER",LS:"HAUT-PARLEUR"};
+const synPrefixe=el=>(String(el.ref||"").match(/^[A-Za-z]+/)||[""])[0].toUpperCase();
 function synTitreAuto(el){
-  const t=String((el.mpn||"")+" "+(el.value||"")).toUpperCase();
-  for(const [re,nom] of SYN_MOTS)if(re.test(t))return nom;
+  const champs=[el.mpn,el.csvMpn,el.csvPartName,el.value,el.desc].map(v=>String(v||"").toUpperCase());
+  for(const [re,nom] of SYN_MOTS)if(champs.some(t=>re.test(t)))return nom;
   if(SYN_TYPE_TITRE[el.type])return SYN_TYPE_TITRE[el.type];
   if(/^header/.test(el.type))return "CONNECTEUR";
-  return String(el.ref||"?");
+  return SYN_PREFIXE_TITRE[synPrefixe(el)]||String(el.ref||"?");
 }
-function synEstImportant(el){
-  return !!el.ref&&!defOf(el.type).noRef&&!SYN_PASSIF.test(el.type)&&!SYN_IGNORE.test(el.type);
+/* Sous-titre : le MPN, sinon la pièce LIB sans sa famille (REG_LP2950… → LP2950…) quand la
+   valeur n'est qu'un réglage (ADJ, 5V, N_MOS, 3.81mm), sinon la valeur. */
+function synSousTitre(el){
+  const mpn=[el.mpn,el.csvMpn].map(v=>String(v||"").trim()).find(v=>v.length>2&&!/^x+$/i.test(v));
+  const lib=String(el.csvPartName||"").replace(/^((IC|REG|TRAN|MOS|DNPN|NPN|PNP|MCU|RF|CONN|DIODE|INTP|LED|SW|USB)[_-])+/i,"");
+  const v=String(el.value||"").trim();
+  const t=mpn||(lib&&(!v||/^(ADJ|[NP]_MOS|[NP]PN\w*|[\d.,]+\s*V|[\d.,]+\s*mm)$/i.test(v))?lib:v||lib);
+  return t.length>26?t.slice(0,25)+"…":t;
 }
+/* Rôle d'un composant : « important » (un bloc), « passif » (traversé par les liaisons s'il a
+   deux pattes) ou « ignore ». Le type de symbole décide d'abord ; un symbole générique (ic,
+   importé d'eCADSTAR ou de KiCad) se reconnaît à sa pièce LIB, puis au préfixe de son repère. */
+function synRole(el){
+  if(!el.ref||defOf(el.type).noRef)return "ignore";
+  if(SYN_PASSIF.test(el.type))return "passif";
+  if(SYN_IGNORE.test(el.type))return "ignore";
+  const pre=synPrefixe(el), lib=String(el.csvPartName||"").toUpperCase(), n=pinCount(el);
+  const deux=n<=2?"passif":"ignore";
+  if(pre==="JP"||pre==="SJ")return deux;                      // cavaliers, ponts de soudure
+  if(SYN_TYPE_TITRE[el.type]||/^header/.test(el.type))return "important";
+  if(/^LED/.test(lib)||pre==="LED")return "important";
+  if(/^(RES|CAP|IND|FERRITE|BEAD|FUSE|JUMPER|SHUNT)/.test(lib)||/^(R|RN|C|L|FB|F|FL)$/.test(pre))return deux;
+  if(/^(ESD|TVS|VAR|QUARTZ|XTAL|CRYSTAL|OSC|TP|TEST|MIRE|FID|MECA|HOLE)/.test(lib)||
+     /^(ESD|TVS|V|VR|RV|TP|PTST|MH|MECA|LOC|FID|H|Y|XT)$/.test(pre)||(pre==="X"&&/HZ/i.test(el.value||"")))return "ignore";
+  if(/^DIODE/.test(lib)||pre==="D")return deux;
+  return "important";
+}
+function synEstImportant(el){return synRole(el)==="important";}
 /* Composants importants, un par repère (les parties U1A/U1B ne font qu'un bloc). */
 function synComposants(){
   const par=new Map();
@@ -304,14 +342,26 @@ function synLibelle(noms){
    isPower, dir:"a" (de a vers b) | "ab" | ""}. Une alimentation part de la pile, du
    connecteur ou de la broche OUT qui la produit ; un signal, de la broche de sortie (OUT,
    TX, Q, collecteur C, source S d'un capteur) ; un bus va dans les deux sens. */
+/* Mémo : les liaisons ne dépendent que de la connectivité, que docNets() met déjà en cache. */
+let _synLiensDe=null, _synLiens=[];
+const SYN_RAIL_MAX=4;            // au-delà, une alim ne tire plus un fil vers chaque consommateur
 function sheetLinks(){
   if(!S.pages||S.pages.length<2||typeof docNets!=="function")return [];
-  const comps=synComposants();
-  if(comps.size<2)return [];
-  const dn=docNets(), parent=new Map();
+  const dn=docNets();
+  if(dn===_synLiensDe)return _synLiens;
+  _synLiensDe=dn;
+  _synLiens=synCalculerLiens(dn);
+  return _synLiens;
+}
+function synCalculerLiens(dn){
+  const comps=synComposants(), liens=[];
+  liens.rails=new Map();          // repère → alims affichées en étiquette sur le bloc
+  if(comps.size<2)return liens;
+  const parent=new Map();
   const find=n=>{while(parent.get(n)!==n)n=parent.get(n);return n;};
   const uni=(a,b)=>{a=find(a);b=find(b);if(a!==b)parent.set(a,b);};
   const alim=n=>isPortPowerName(n.name)||n.powers.some(el=>el.type==="vcc"||el.type==="gnd");
+  const masse=n=>SYN_MASSE.test(n.name)||n.powers.some(el=>el.type==="gnd");
   for(const sh of dn.sheets)if(sh.page>0)for(const n of sh.nets.list)parent.set(n,n);
   // un même nom global relie les feuilles
   for(const g of dn.groups)if(g.global)for(let k=1;k<g.members.length;k++)
@@ -325,12 +375,14 @@ function sheetLinks(){
     const netDe=new Map();
     for(const n of sh.nets.list)for(const d of n.nodes){if(!netDe.has(d.id))netDe.set(d.id,new Set());netDe.get(d.id).add(n);}
     for(const el of els){
-      if(!SYN_PASSIF.test(el.type))continue;
+      if(synRole(el)!=="passif")continue;
       const ns=[...(netDe.get(el.id)||[])];
       if(ns.length!==2)continue;
-      if(!alim(ns[0])&&!alim(ns[1]))uni(ns[0],ns[1]);
-      else for(const [a,b] of [[ns[0],ns[1]],[ns[1],ns[0]]])
-        if(alim(a)&&!alim(b)&&!SYN_MASSE.test(a.name)&&!a.powers.some(el=>el.type==="gnd"))nourrit.push([a,b]);
+      const [a,b]=ns, ma=masse(a), mb=masse(b);
+      if(!alim(a)&&!alim(b))uni(a,b);
+      // un rail traverse un fusible, une ferrite, un cavalier, une diode série — pas un condensateur
+      else if(alim(a)&&alim(b)){if(!ma&&!mb&&!/^(capacitor|cap_pol)$/.test(el.type)&&synPrefixe(el)!=="C")uni(a,b);}
+      else if(!(alim(a)?ma:mb))nourrit.push(alim(a)?[a,b]:[b,a]);
     }
   }
   // chaque classe : les composants importants qu'elle touche, avec le nom de leur broche
@@ -358,10 +410,12 @@ function sheetLinks(){
     if(c.nets.some(n=>SYN_MASSE.test(n.name)||n.powers.some(el=>el.type==="gnd")))continue;
     const power=c.nets.some(alim);
     const refs=[...c.touche.keys()];
-    let src=refs.filter(r=>power
-      ? (comps.get(r).el.type==="battery"||/^(header|usb)/.test(comps.get(r).el.type)||c.touche.get(r).some(l=>/^(V?OUT\d*|VO|SW)$/i.test(l)))
-      : c.touche.get(r).some(l=>SORTIE.test(l)));
-    if(power&&src.length>1)src.sort((p,q)=>(comps.get(q).el.type==="battery")-(comps.get(p).el.type==="battery"));
+    // source d'une alim : la pile, puis la broche OUT d'un régulateur, puis le connecteur d'entrée
+    const rangAlim=r=>{const el=comps.get(r).el;
+      return el.type==="battery"||synPrefixe(el)==="BT"?0:c.touche.get(r).some(l=>/^(V?OUT\d*|VO|SW)$/i.test(l))?1:
+        /^(header|usb)/.test(el.type)||/^(J|P|CN|X)$/.test(synPrefixe(el))?2:9;};
+    const src=power?refs.filter(r=>rangAlim(r)<9).sort((p,q)=>rangAlim(p)-rangAlim(q))
+                   :refs.filter(r=>c.touche.get(r).some(l=>SORTIE.test(l)));
     const s0=src.length?src[0]:null, ids=s0!==null?comps.get(s0).ids:null;
     const nommes=c.nets.filter(n=>n.named&&!NET_AUTO.test(n.name)).sort((p,q)=>q.src-p.src);
     const aSrc=ids&&nommes.find(n=>n.nodes.some(d=>ids.has(d.id)&&SORTIE.test(String(d.label||""))));
@@ -369,11 +423,21 @@ function sheetLinks(){
     nets.push({refs,noms:nom,power,src:s0,bus:!power&&noms.some(isPortBusName)});
     if(!power)for(const r of refs)deg.set(r,(deg.get(r)||0)+1);
   }
+  // une alim très partagée ne relie par fil que la chaîne d'alimentation (les blocs qui produisent
+  // une autre alim) et le bloc central ; les autres consommateurs la portent en étiquette
+  const producteurs=new Set(nets.filter(n=>n.power&&n.src!==null).map(n=>n.src));
+  const centre=[...deg].reduce((m,e)=>e[1]>=3&&(!m||e[1]>m[1])?e:m,null);
   const paires=new Map();
   for(const n of nets){
     const hub=n.src!==null?n.src:n.refs.reduce((m,r)=>(deg.get(r)||0)>(deg.get(m)||0)?r:m);
+    const etiquette=n.power&&n.refs.length-1>SYN_RAIL_MAX&&comps.size>SYN_GROUPER;
     for(const q of n.refs){
       if(q===hub)continue;
+      if(etiquette&&!producteurs.has(q)&&!(centre&&centre[0]===q)){
+        if(!liens.rails.has(q))liens.rails.set(q,[]);
+        for(const nm of n.noms)if(!liens.rails.get(q).includes(nm))liens.rails.get(q).push(nm);
+        continue;
+      }
       const [lo,hi]=hub<q?[hub,q]:[q,hub], cle=lo+"\u0000"+hi+(n.power?"p":"s");
       let l=paires.get(cle);
       if(!l)paires.set(cle,l={lo,hi,names:[],power:n.power,isBus:false,sens:new Set()});
@@ -382,13 +446,14 @@ function sheetLinks(){
       l.sens.add(n.bus?"ab":n.src===null?"":(hub===lo?"+":"-"));
     }
   }
-  return [...paires.values()].map(l=>{
+  for(const l of paires.values()){
     l.sens.delete("");
     const s=l.sens.size===1?[...l.sens][0]:(l.sens.size?"ab":"");
-    return {a:s==="-"?l.hi:l.lo, b:s==="-"?l.lo:l.hi, name:synLibelle(l.names), names:l.names,
-            kind:l.power?"power":"signal", isBus:l.isBus, isPower:l.power,
-            dir:s==="ab"?"ab":(s?"a":"")};
-  });
+    liens.push({a:s==="-"?l.hi:l.lo, b:s==="-"?l.lo:l.hi, name:synLibelle(l.names), names:l.names,
+                kind:l.power?"power":"signal", isBus:l.isBus, isPower:l.power,
+                dir:s==="ab"?"ab":(s?"a":"")});
+  }
+  return liens;
 }
 
 function sheetBlocks(){
@@ -404,7 +469,7 @@ function sheetBlocks(){
   let n=0;
   for(const c of comps.values()){
     const name=String(titres[c.key]||"").trim()||synTitreAuto(c.el);
-    let sub=String(c.el.mpn||c.el.value||"");
+    let sub=synSousTitre(c.el);
     if(sub.toUpperCase()===name.toUpperCase())sub=String(c.key);
     const big=(c.key===hub);
     // chasse fixe : la largeur se déduit du nombre de caractères (titre 19 px, sous-titre 13 px)
@@ -437,9 +502,10 @@ function hitSheetBlock(wx,wy){
 }
 
 /* ---------- Routage orthogonal : A* sur une grille, voies exclusives, croisements chers ---------- */
-const SYN_G=10;
+const SYN_G=10, SYN_BUDGET_MS=2500;   // au-delà du budget, les liaisons restantes sont tracées en direct
 function synRouter(blocks,links){
-  const G=SYN_G, M=16;
+  // gros synoptique : maille de 20 px, quatre fois moins de cases à fouiller
+  const G=blocks.length>SYN_GROUPER?2*SYN_G:SYN_G, M=Math.round(160/G), AB=Math.round(50/G);
   let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;
   for(const b of blocks){x1=Math.min(x1,b.x);y1=Math.min(y1,b.y);x2=Math.max(x2,b.x+b.w);y2=Math.max(y2,b.y+b.h);}
   const oi=Math.floor(x1/G)-M, oj=Math.floor(y1/G)-M;
@@ -450,7 +516,7 @@ function synRouter(blocks,links){
     for(let j=Math.floor(b.y/G)-oj-m;j<=Math.ceil((b.y+b.h)/G)-oj+m;j++)
       for(let i=Math.floor(b.x/G)-oi-m;i<=Math.ceil((b.x+b.w)/G)-oi+m;i++)if(dans(i,j))t[id(i,j)]=1;
   };
-  for(const b of blocks){marque(bloque,b,1);marque(abord,b,5);}   // abord : on n'y croise pas les fils des autres
+  for(const b of blocks){marque(bloque,b,1);marque(abord,b,AB);}   // abord : on n'y croise pas les fils des autres
   const D=[[1,0],[0,1],[-1,0],[0,-1]], axe=d=>d%2===0?1:2;
   const voisinPris=(i,j,ax)=>{          // fil parallèle collé : on écarte les voies
     const [di,dj]=ax===1?[0,1]:[1,0];
@@ -473,33 +539,50 @@ function synRouter(blocks,links){
     }
     return r.filter(a=>dans(a.i,a.j)&&!bloque[id(a.i,a.j)]&&!occ[id(a.i,a.j)]);
   }
+  // tableaux partagés par toutes les liaisons : une génération périmée vaut « jamais visité »
+  const cost=new Float64Array(N*4), from=new Int32Array(N*4), vu=new Uint32Array(N*4), but=new Uint32Array(N*4);
+  let gen=0, essais=0;
+  // tas binaire en tableaux typés : aucune allocation par case visitée
+  let hk=new Float64Array(4096), hv=new Int32Array(4096), hn=0;
+  const pousse=(f,s)=>{
+    if(hn===hk.length){const k2=new Float64Array(hn*2),v2=new Int32Array(hn*2);k2.set(hk);v2.set(hv);hk=k2;hv=v2;}
+    let k=hn++;
+    while(k){const p=(k-1)>>1;if(hk[p]<=f)break;hk[k]=hk[p];hv[k]=hv[p];k=p;}
+    hk[k]=f;hv[k]=s;
+  };
+  let tireF=0;
+  const tire=()=>{
+    const s=hv[0];tireF=hk[0];hn--;
+    if(hn){const lf=hk[hn],lv=hv[hn];let k=0;
+      for(;;){let c=2*k+1;if(c>=hn)break;if(c+1<hn&&hk[c+1]<hk[c])c++;if(hk[c]>=lf)break;hk[k]=hk[c];hv[k]=hv[c];k=c;}
+      hk[k]=lf;hv[k]=lv;}
+    return s;
+  };
+  const t0=Date.now();
   function astar(src,dst){
+    if(Date.now()-t0>SYN_BUDGET_MS)return null;
     const goals=new Map();
-    for(const g of accroches(dst))goals.set(id(g.i,g.j)*4+((g.d+2)%4),g);
-    const cost=new Float64Array(N*4).fill(Infinity), from=new Int32Array(N*4).fill(-1);
-    // distance au cadre des arrivées : ne surestime jamais, donc le chemin trouvé reste le moins cher
+    gen++;hn=0;
+    for(const g of accroches(dst)){const k=id(g.i,g.j)*4+((g.d+2)%4);goals.set(k,g);but[k]=gen;}
+    const C=s=>vu[s]===gen?cost[s]:Infinity, pose=(s,c,f)=>{vu[s]=gen;cost[s]=c;from[s]=f;};
+    // distance au cadre des arrivées
     const gi0=Math.floor(dst.x/G)-oi-2, gi1=Math.ceil((dst.x+dst.w)/G)-oi+2,
           gj0=Math.floor(dst.y/G)-oj-2, gj1=Math.ceil((dst.y+dst.h)/G)-oj+2;
-    const h=(i,j)=>Math.max(0,gi0-i,i-gi1)+Math.max(0,gj0-j,j-gj1);
-    const tas=[];
-    const pousse=(f,s)=>{tas.push([f,s]);let k=tas.length-1;
-      while(k){const p=(k-1)>>1;if(tas[p][0]<=tas[k][0])break;[tas[p],tas[k]]=[tas[k],tas[p]];k=p;}};
-    const tire=()=>{const top=tas[0],last=tas.pop();
-      if(tas.length){tas[0]=last;let k=0;
-        for(;;){const l=2*k+1,r=l+1;let m=k;
-          if(l<tas.length&&tas[l][0]<tas[m][0])m=l;if(r<tas.length&&tas[r][0]<tas[m][0])m=r;
-          if(m===k)break;[tas[m],tas[k]]=[tas[k],tas[m]];k=m;}}
-      return top;};
-    const debut=new Map();
-    for(const a of accroches(src)){
+    // pondérée ×1,5 : un chemin parfois un peu plus long, une recherche bien plus courte
+    const h=(i,j)=>1.5*(Math.max(0,gi0-i,i-gi1)+Math.max(0,gj0-j,j-gj1));
+    const debut=new Map(), departs=accroches(src);
+    if(!goals.size||!departs.length)return null;          // plus une accroche libre : inutile de chercher
+    for(const a of departs){
       const s=id(a.i,a.j)*4+a.d, c=a.ex*0.6+voisinPris(a.i,a.j,axe(a.d))*6;
-      if(c<cost[s]){cost[s]=c;debut.set(s,a);pousse(c+h(a.i,a.j),s);}
+      if(c<C(s)){pose(s,c,-1);debut.set(s,a);pousse(c+h(a.i,a.j),s);}
     }
-    while(tas.length){
-      const [f,s]=tire(), c=cost[s];
+    while(hn){
+      // shortcut: budget de temps global, puis trait direct ; à revoir si de très gros synoptiques en souffrent
+      if((++essais&4095)===0&&Date.now()-t0>SYN_BUDGET_MS)return null;
+      const s=tire(), f=tireF, c=cost[s];
       if(f-h((s>>2)%nx,((s>>2)/nx)|0)>c+1e-9)continue;   // entrée périmée du tas
       const cell=s>>2, d=s&3, i=cell%nx, j=(cell/nx)|0;
-      if(goals.has(s)){
+      if(but[s]===gen){
         const pts=[];
         for(let k=s;k>=0;k=from[k])pts.push(k);
         pts.reverse();
@@ -513,7 +596,7 @@ function synRouter(blocks,links){
         if(bloque[nc]||(occ[nc]&axe(nd)))continue;     // jamais deux fils sur la même voie
         const k=c+1+(nd!==d?12:0)+(occ[nc]?(abord[nc]?70:25):0)+(abord[nc]?2:0)+voisinPris(ni,nj,axe(nd))*4;
         const ns=nc*4+nd;
-        if(k<cost[ns]){cost[ns]=k;from[ns]=s;pousse(k+h(ni,nj),ns);}
+        if(k<C(ns)){pose(ns,k,s);pousse(k+h(ni,nj),ns);}
       }
     }
     return null;
@@ -563,6 +646,25 @@ function hitSheetLink(wx,wy,tol){
     }
   return null;
 }
+/* Cadres des feuilles : un par feuille de deux blocs ou plus, autour de ses blocs ; aucun si deux
+   cadres se chevauchent ou si un cadre couvre le bloc d'une autre feuille (il mentirait). */
+function synCadres(blocks){
+  if(S.pages.length<3)return [];
+  const par=new Map();
+  for(const b of blocks){
+    if(!par.has(b.sheetIndex))par.set(b.sheetIndex,{n:0,x1:1e9,y1:1e9,x2:-1e9,y2:-1e9});
+    const f=par.get(b.sheetIndex);
+    f.n++;f.x1=Math.min(f.x1,b.x);f.y1=Math.min(f.y1,b.y);f.x2=Math.max(f.x2,b.x+b.w);f.y2=Math.max(f.y2,b.y+b.h);
+  }
+  const cadres=[...par].filter(([,f])=>f.n>=2).map(([i,f])=>
+    ({feuille:i,nom:String(S.pages[i].name||""),x:f.x1-40,y:f.y1-56,w:f.x2-f.x1+80,h:f.y2-f.y1+96}));
+  const dedans=(f,b)=>b.x<f.x+f.w&&f.x<b.x+b.w&&b.y<f.y+f.h&&f.y<b.y+b.h;
+  for(let i=0;i<cadres.length;i++){
+    for(let j=i+1;j<cadres.length;j++)if(dedans(cadres[i],cadres[j]))return [];
+    if(blocks.some(b=>b.sheetIndex!==cadres[i].feuille&&dedans(cadres[i],b)))return [];
+  }
+  return cadres;
+}
 /* Chiffres clés : composants (repères distincts), nets, sous-feuilles. */
 function synStats(){
   const refs=new Set();
@@ -574,16 +676,18 @@ function synStats(){
   return {parts:refs.size,nets:nNets,blocs:Math.max(0,S.pages.length-1)};
 }
 
-/* Ranger : alimentations en haut dans l'ordre de la chaîne, bloc central au milieu, ses
-   périphériques simples à gauche et à droite, les chaînes en bas dans le sens du signal. */
-function arrangeSheetBlocks(){
-  if(S.page!==0)return;
-  const blocks=sheetBlocks();
-  if(!blocks.length)return;
-  push();
-  const links=sheetLinks(), par=new Map(blocks.map(b=>[b.key,b]));
+/* Placement d'un groupe de blocs : alimentations en haut dans l'ordre de la chaîne, bloc central
+   au milieu, ses périphériques simples à gauche et à droite (six au plus de chaque côté), les
+   chaînes en bas dans le sens du signal, par rangées de quatre qui serpentent. Rend repère →
+   {x, y}, coin haut gauche du groupe en (0, 0). */
+function synPlacer(blocks,links){
+  const par=new Map(blocks.map(b=>[b.key,b])), pos=new Map();
+  links=links.filter(l=>par.has(l.a)&&par.has(l.b));
   const voisins=k=>links.filter(l=>l.a===k||l.b===k);
-  const hub=blocks.find(b=>b.big)||null, hk=hub?hub.key:null;
+  const degSig=k=>voisins(k).filter(l=>!l.isPower).length;
+  let hub=blocks.find(b=>b.big)||null;
+  if(!hub){const m=blocks.reduce((m,b)=>!m||degSig(b.key)>degSig(m.key)?b:m,null);if(m&&degSig(m.key)>=3)hub=m;}
+  const hk=hub?hub.key:null;
   const haut=[], gauche=[], droite=[], bas=[];
   // rang dans la chaîne d'alimentation : nombre d'étages en amont
   const rang=new Map(blocks.map(b=>[b.key,0]));
@@ -594,7 +698,8 @@ function arrangeSheetBlocks(){
     const v=voisins(b.key), sig=v.filter(l=>!l.isPower);
     if(!sig.length&&v.some(l=>l.isPower&&l.a===b.key&&l.dir==="a"))haut.push(b);
     else if(!hub||!sig.some(l=>l.a===hk||l.b===hk)||sig.some(l=>l.a!==hk&&l.b!==hk))bas.push(b);
-    else (gauche.length<=droite.length?gauche:droite).push(b);
+    else if(gauche.length<6||droite.length<6)(gauche.length<=droite.length?gauche:droite).push(b);
+    else bas.push(b);
   }
   haut.sort((p,q)=>rang.get(p.key)-rang.get(q.key));
   // en bas, les blocs reliés restent côte à côte, en partant de ceux qui ne reçoivent rien
@@ -608,20 +713,45 @@ function arrangeSheetBlocks(){
   const ligne=(liste,y,cx)=>{
     const W=liste.reduce((s,b)=>s+b.w,0)+120*Math.max(0,liste.length-1);
     let x=cx-W/2;
-    for(const b of liste){synPosSet(b.key,x,y);x+=b.w+120;}
+    for(const b of liste){pos.set(b.key,{x,y});x+=b.w+120;}
   };
   const pas=90, hMil=Math.max(hub?hub.h:0,gauche.length*pas-30,droite.length*pas-30);
-  const yMil=60+(haut.length?160:0), cx=hub?hub.w/2+400:600;
-  ligne(haut,60,cx);
-  if(hub)synPosSet(hub.key,cx-hub.w/2,yMil+(hMil-hub.h)/2);
+  const yMil=haut.length?160:0, cx=0;
+  for(let k=0;k*4<haut.length;k++)ligne(haut.slice(k*4,k*4+4),-160*(Math.ceil(haut.length/4)-1-k),cx);
+  if(hub)pos.set(hub.key,{x:cx-hub.w/2,y:yMil+(hMil-hub.h)/2});
   const hw=hub?hub.w/2:0;
-  gauche.forEach((b,k)=>synPosSet(b.key,cx-hw-200-b.w,yMil+(hMil-(gauche.length*pas-30))/2+k*pas));
-  droite.forEach((b,k)=>synPosSet(b.key,cx+hw+200,yMil+(hMil-(droite.length*pas-30))/2+k*pas));
-  // la chaîne serpente par rangées de quatre : la rangée suivante repart du bout de la précédente
+  gauche.forEach((b,k)=>pos.set(b.key,{x:cx-hw-200-b.w,y:yMil+(hMil-(gauche.length*pas-30))/2+k*pas}));
+  droite.forEach((b,k)=>pos.set(b.key,{x:cx+hw+200,y:yMil+(hMil-(droite.length*pas-30))/2+k*pas}));
   const yBas=yMil+(hMil?hMil+120:0);
   for(let k=0;k*4<ordre.length;k++){
     const r=ordre.slice(k*4,k*4+4);
     ligne(k%2?r.reverse():r,yBas+k*160,cx);
+  }
+  let x0=1e9,y0=1e9;
+  for(const p of pos.values()){x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);}
+  for(const p of pos.values()){p.x-=x0;p.y-=y0;}
+  return pos;
+}
+const SYN_GROUPER=16;            // au-delà de ce nombre de blocs, Ranger regroupe par feuille
+/* Ranger : un seul groupe pour un petit schéma ; au-delà, un groupe par feuille, encadré et
+   nommé, les groupes rangés en lignes. */
+function arrangeSheetBlocks(){
+  if(S.page!==0)return;
+  const blocks=sheetBlocks();
+  if(!blocks.length)return;
+  push();
+  const links=sheetLinks();
+  const feuilles=[...new Set(blocks.map(b=>b.sheetIndex))];
+  const groupes=blocks.length>SYN_GROUPER&&feuilles.length>1
+    ? feuilles.map(f=>blocks.filter(b=>b.sheetIndex===f)) : [blocks];
+  let x=60, y=60, hLigne=0;
+  for(const g of groupes){
+    const pos=synPlacer(g,links);
+    let w=0,h=0;
+    for(const b of g){const p=pos.get(b.key);w=Math.max(w,p.x+b.w);h=Math.max(h,p.y+b.h);}
+    if(x>60&&x+w>2600){x=60;y+=hLigne+240;hLigne=0;}
+    for(const b of g){const p=pos.get(b.key);synPosSet(b.key,x+p.x,y+p.y);}
+    x+=w+240;hLigne=Math.max(hLigne,h);
   }
   if(typeof fit==="function")fit();else draw();
 }
