@@ -1388,7 +1388,7 @@ function brochesResoudre(fp,pins){
    (pastilles explicites qui ne viennent pas de la LIB) garde son dessin : la refaire
    effacerait un travail qu'aucun boîtier ne sait reproduire. Rend "lib", "table" ou ""
    (rien de refait). À appeler dans fpReshape, pour que les pistes suivent les pastilles.
-   L'import de la netlist et l'écriture de Claude (commun/ecriture-cao.js) s'en servent. */
+   L'import de la netlist s'en sert. */
 function fpReposerBoitier(fp,pkg,pins){
   const dessin=fpFree(fp)&&!fp.lib;
   const lib=dessin?null:((typeof fpLibPourBoitier==="function")?fpLibPourBoitier(pkg):null);

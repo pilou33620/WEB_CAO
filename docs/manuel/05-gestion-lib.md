@@ -199,7 +199,7 @@ Scripts en ligne de commande, hors de la page : voir [Scripts de maintenance](#s
 | Ligne du tableau (clic) | — | Sélectionne la référence, remplit l'inspecteur (en téléphone portrait, la fiche passe devant la liste) | — |
 | Ligne du tableau (double-clic) | — | Ouvre l'éditeur de l'empreinte PCB liée, sinon du symbole lié | Aucun effet sans empreinte ni symbole |
 | Liste « Empreinte PCB » / « Empreinte Schématique » / « Modèle Simulation » | — | Choisit le fichier associé (liste chargée à l'ouverture) ; « -- Aucune -- » / « -- Aucun -- » vide la case | Une case « Modèle Simulation » à plusieurs fichiers devient l'étiquette « N modèles » (infobulle : la liste) |
-| Autres colonnes | — | Affichage seul (les valeurs longues sont tronquées, infobulle complète) | Pas d'édition dans le tableau : le CSV, l'import ou Claude (lib_composant_modifier) |
+| Autres colonnes | — | Affichage seul (les valeurs longues sont tronquées, infobulle complète) | Pas d'édition dans le tableau : le CSV ou l'import |
 
 ### Inspecteur de la référence
 
@@ -384,7 +384,7 @@ IN=3,OUT=2/4,GND=1                                   une broche sur plusieurs pa
 | Erreurs signalées | `=` manquant, nom de broche vide, nom de partie illisible, patte illisible, broche donnée deux fois avec deux pattes différentes, patte prise par deux broches d'une même partie, aucune broche `NOM=patte` |
 | Valeurs de remplissage | Vide, `xx`, `-`, `none`, `n/a` : lus comme « pas de brochage » |
 
-Le contrôle complet face à une empreinte et à un symbole (`verifierBrochage` de `commun/composants-lib.js`) est celui de l'outil MCP `lib_brochage_verifier` et des cartes de création : chaque patte doit exister dans l'empreinte, chaque broche dans le symbole ; une pastille sans broche ni `NC`, ou une broche du symbole sans patte, est une remarque. Dans l'inspecteur, seule la lecture de la syntaxe est faite à la saisie. Le schéma applique le brochage aux composants : voir [Éditeur Schématique](02-editeur-schematique.md). Code de lecture : [commun/brochage.js](../../commun/brochage.js).
+Le contrôle complet face à une empreinte et à un symbole (`verifierBrochage` de `commun/composants-lib.js`) est celui de l'outil MCP `lib_brochage_verifier` : chaque patte doit exister dans l'empreinte, chaque broche dans le symbole ; une pastille sans broche ni `NC`, ou une broche du symbole sans patte, est une remarque. Dans l'inspecteur, seule la lecture de la syntaxe est faite à la saisie. Le schéma applique le brochage aux composants : voir [Éditeur Schématique](02-editeur-schematique.md). Code de lecture : [commun/brochage.js](../../commun/brochage.js).
 
 ### Colonnes du catalogue
 
@@ -424,7 +424,7 @@ Fenêtre « Explorateur Visuel de Bibliothèque » (schéma) ou « Bibliothèque
 
 ### Pilotage par Claude
 
-`gestion-lib/js/08-pilote-lib.js` branche sur la page les commandes du canal de pilotage. Le code métier est dans `commun/composants-lib.js` ; il n'y a pas de bouton correspondant dans la page, sauf l'aperçu et la carte.
+`gestion-lib/js/08-pilote-lib.js` branche sur la page les commandes du canal de pilotage, qui ne font que calculer. Le code métier est dans `commun/composants-lib.js`. Claude écrit dans la LIB par les gestes de cette page (`pilote_interface`), comme l'utilisateur.
 
 | Commande MCP | Effet | Limites |
 |---|---|---|
@@ -432,11 +432,7 @@ Fenêtre « Explorateur Visuel de Bibliothèque » (schéma) ou « Bibliothèque
 | `lib_empreinte_verifier` | Contrôle d'une empreinte `pcbfp-1` | Calcul seul |
 | `lib_kicad_convertir` | `.kicad_mod` vers `pcbfp-1` : pastilles, trous non métallisés, contour F.Fab devenu corps | Texte de 200 Ko au plus, lu sans être exécuté ; pastilles personnalisées (`custom`) refusées ; tracés, textes, modèles 3D et arcs comptés dans les remarques mais non repris ; pastilles tournées d'un angle quelconque à vérifier |
 | `lib_brochage_verifier` | Brochage face à l'empreinte (nommée ou donnée) et au symbole | Calcul seul |
-| `lib_composant_creer` | Carte : symbole neuf éventuel, empreinte neuve éventuelle, puis ligne de catalogue ajoutée | Toujours au clic ; jamais d'écrasement d'un fichier ni d'une `Part Name` ; fichiers écrits retirés si le serveur refuse la ligne |
-| `lib_composant_modifier` | Carte : remplace des cases d'une référence existante | Toujours au clic ; la `Part Name` ne change pas ; refus si la ligne a changé entre la carte et le clic ; empreinte neuve sous un nom neuf |
-| `lib_simulation_lier` | Carte : range un modèle `.sNp` ou SPICE dans `lib_simulation` et l'ajoute à la case « Modèle Simulation » | Toujours au clic ; un fichier de même nom n'est repris que s'il est identique |
-
-Pendant la carte, l'aperçu « EMPREINTE PCB » de l'inspecteur montre l'empreinte proposée (« Aperçu (carte de Claude) : nom »). D'autres outils du serveur (`lib_composants`, `lib_fichiers`, `lib_fichier_lire`, `lib_fichier_ecrire`, `lib_parasites`) lisent et écrivent la LIB sans passer par la page : voir [Claude et le MCP](11-claude-mcp.md).
+D'autres outils du serveur (`lib_composants`, `lib_fichiers`, `lib_fichier_lire`, `lib_parasites`) lisent la LIB sans passer par la page.
 
 ### Bibliothèque centrale : dossier, réseau, lecture seule
 

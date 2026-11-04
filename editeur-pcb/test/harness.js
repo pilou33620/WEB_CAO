@@ -28383,181 +28383,6 @@ TA("canal de pilotage : cao_vue cadre et masque sans écrire, cao_drc rend le DR
   }finally{global.Pilote=ancien;}
 });
 
-TA("canal de pilotage : cao_composants_ecrire au PCB, un lot en une étape, DRC avant → après",async()=>{
-  const cmds={}, ancien=global.Pilote;
-  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
-  const refus=(a,motif)=>{
-    const n=S.undo.length, avant=serialize();
-    let m="";try{cmds.cao_composants_ecrire.proposer(a);}catch(e){m=e.message;}
-    if(!motif.test(m))throw new Error("refus attendu "+motif+", lu « "+m+" »");
-    if(S.undo.length!==n||serialize()!==avant)throw new Error("un refus a écrit : "+motif);
-  };
-  try{
-    piloteCao("pcb");
-    loadDoc(exemple1());
-    S.undo.length=0;                       // la pile est pleine (80) après les essais précédents : sa longueur ne bougerait plus
-    const d=cmds.cao_composants_ecrire;
-    if(!(d&&d.ecriture&&d.historique))throw new Error("écriture par l'historique attendue");
-    const u1=S.fps.find(f=>f.ref==="U1"), x0=u1.x;
-    S.origin={x:7,y:3};                    // une origine deplacee ne change pas le repere de Claude (celui des lectures)
-    const avant=serialize(), n=S.undo.length;
-    const lot=[{ref:"u1",champs:{x:x0+5,rotation:450}},
-               {ref:"R2",champs:{face:"dessous",valeur:"2k2",ref:"R20"}},
-               {ref:"R1",champs:{boitier:"0805"}}];
-    const prop=d.proposer({lot});
-    if(serialize()!==avant)throw new Error("proposer a écrit");
-    if(!/^U1\.rotation : 90$/m.test(prop.apres)||!/^U1\.x : /m.test(prop.avant)||!/^R2\.face : dessus$/m.test(prop.avant)||!/^R1\.boitier : 0805$/m.test(prop.apres))
-      throw new Error("carte : "+JSON.stringify(prop));
-    d.appliquer({lot},prop);
-    const fp=r=>S.fps.find(f=>f.ref===r);
-    if(S.undo.length!==n+1)throw new Error("une seule étape attendue, "+(S.undo.length-n));
-    if(fp("U1").x!==r3(x0+5)||!new RegExp("^- U1 .* x "+r3(x0+5)+" ","m").test([].concat(LECTURE_CAO.pcb.composants.fn({filtre:"U1"})).join("\n"))||fp("U1").rot!==90||!fp("R20")||fp("R20").side!==1||fp("R20").value!=="2k2"||fp("R1").pkg!=="0805")
-      throw new Error("lot mal appliqué");
-    const drc=runDrc().filter(x=>!x.info).length;
-    if(!new RegExp("^DRC : \\d+ erreurs? avant → "+drc+" après\\.$","m").test(prop.apres))throw new Error("bilan DRC : "+prop.apres);
-    // déplacer U1 ne crée pas d'erreur « neuve » à elle seule : les mêmes messages, ailleurs
-    const p2=d.proposer({lot:[{ref:"U1",champs:{x:x0+6}}]}); d.appliquer({lot:[{ref:"U1",champs:{x:x0+6}}]},p2);
-    if(/Nouvelles erreurs/.test(p2.apres)&&runDrc().filter(x=>!x.info).length<=drc)throw new Error("erreurs déplacées comptées neuves : "+p2.apres);
-    undo();
-    undo();
-    if(!fp("R2")||fp("R2").side||fp("U1").x!==x0||fp("R1").pkg!=="0603")throw new Error("Ctrl+Z ne remet pas tout");
-    S.origin={x:0,y:0};
-    refus({lot:[{ref:"R1",champs:{boitier:"ZZZ-99"}}]},/« ZZZ-99 » inconnu des empreintes/);
-    // une empreinte dessinée à la main (pastilles qui ne viennent pas de la LIB) garde son dessin
-    const r3fp=fp("R3"); r3fp.pads=padsOf(r3fp).map(padClone); delete r3fp.lib; touch();
-    refus({lot:[{ref:"R3",champs:{boitier:"0805"}}]},/dessinée à la main/);
-    refus({lot:[{ref:"R1",champs:{ref:"r3"}}]},/« r3 » est déjà pris/);
-    refus({lot:[{ref:"R1",champs:{x:2000}}]},/à ±1000/);
-    refus({lot:[{ref:"R1",champs:{face:"gauche"}}]},/dessus ou dessous/);
-    refus({lot:[{ref:"R1",champs:{rotation:"90"}}]},/nombre de degrés/);
-    refus({lot:[{ref:"Z9",champs:{valeur:"1"}},{ref:"R1",champs:{valeur:"2"}}]},/Z9.*introuvable/);
-    refus({lot:[{ref:"",champs:{valeur:"1"}}]},/introuvable/);
-    /* le document bouge sous la carte : refus au clic */
-    const pp=d.proposer({lot:[{ref:"U1",champs:{x:1}}]});
-    fp("U1").x+=3; touch();
-    let mm="";try{d.appliquer({lot:[{ref:"U1",champs:{x:1}}]},pp);}catch(e){mm=e.message;}
-    if(!/a changé depuis la carte/.test(mm))throw new Error("carte périmée au PCB : « "+mm+" »");
-  }finally{global.Pilote=ancien;}
-});
-
-TA("canal de pilotage : cao_pistes_ecrire, largeur d'un net (une couche) et réalignement sur la classe",async()=>{
-  const cmds={}, ancien=global.Pilote;
-  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
-  const refus=(a,motif)=>{
-    const n=S.undo.length, avant=serialize();
-    let m="";try{cmds.cao_pistes_ecrire.proposer(a);}catch(e){m=e.message;}
-    if(!motif.test(m))throw new Error("refus attendu "+motif+", lu « "+m+" »");
-    if(S.undo.length!==n||serialize()!==avant)throw new Error("un refus a écrit : "+motif);
-  };
-  try{
-    piloteCao("pcb");
-    loadDoc(exemple1());
-    S.undo.length=0;
-    const d=cmds.cao_pistes_ecrire;
-    const parNet={};
-    for(const t of S.tracks)if(t.net)(parNet[t.net]=parNet[t.net]||[]).push(t);
-    const [na,nb]=Object.keys(parNet).filter(k=>parNet[k].length>=2);
-    if(!na||!nb)throw new Error("exemple : deux nets routés attendus");
-    const l0=parNet[na][0].l, couche=LECTURE_CAO.aides.nomCouchePcb(l0);
-    const autres=S.tracks.filter(t=>!(t.net===na&&t.l===l0)).map(t=>t.w);
-    const ver=S.ver;
-    const prop=d.proposer({lot:[{net:na,largeur:0.8,couche:couche.toLowerCase()}]});
-    d.appliquer({lot:[{net:na,largeur:0.8,couche}]},prop);
-    if(S.undo.length!==1||S.ver===ver)throw new Error("une étape et touch() attendus");
-    if(S.tracks.some(t=>t.net===na&&t.l===l0&&t.w!==0.8))throw new Error("largeur non posée");
-    if(String(S.tracks.filter(t=>!(t.net===na&&t.l===l0)).map(t=>t.w))!==String(autres))throw new Error("d'autres pistes ont bougé");
-    if(!/^DRC : /m.test(prop.apres))throw new Error("bilan DRC manquant");
-    undo();
-    /* réaligner nb seulement : même résultat qu'applyClasses pour lui, les autres nets intacts */
-    for(const t of S.tracks)if(t.net===nb||t.net===na)t.w=1.234;
-    touch();
-    d.appliquer({lot:[{net:nb,realigner:true}]},d.proposer({lot:[{net:nb,realigner:true}]}));
-    if(S.tracks.some(t=>t.net===nb&&t.w!==classWidth(t.net,t.l)))throw new Error("nb non réaligné");
-    if(S.tracks.some(t=>t.net===na&&t.w!==1.234))throw new Error("na touché par le réalignement de nb");
-    refus({lot:[{net:"PAS_DE_NET",largeur:0.3}]},/aucune piste/);
-    refus({lot:[{net:na,largeur:0.01}]},/0,05 à 10 mm/);
-    refus({lot:[{net:na,largeur:0.3,couche:"Milieu"}]},/couche « Milieu » inconnue/);
-    refus({lot:[{net:na,largeur:0.3},{net:na,largeur:0.4}]},/deux fois/);
-    refus({lot:[{net:nb,realigner:true}]},/Rien à changer/);
-    /* perçage de classe entre via-0,1 et via-0,05 : réaligné une fois, puis plus rien à changer */
-    const cl=classOf(nb); cl.drill=r3(cl.via-0.07);
-    if(S.vias.some(v=>v.net===nb)){
-      d.appliquer({lot:[{net:nb,realigner:true}]},d.proposer({lot:[{net:nb,realigner:true}]}));
-      refus({lot:[{net:nb,realigner:true}]},/Rien à changer/);
-    }
-  }finally{global.Pilote=ancien;}
-});
-
-/* La géométrie de la carte par le canal : contour, zones, sérigraphie, pastilles. Chaque
-   lot est une étape d'historique ; un refus ne touche à rien. */
-function pilotePcbCmds(){
-  const cmds={}, ancien=global.Pilote;
-  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
-  piloteCao("pcb");
-  global.Pilote=ancien;
-  const jouer=(nom,lot)=>{const a={lot},p=cmds[nom].proposer(a);cmds[nom].appliquer(a,p);return p;};
-  const refus=(nom,lot,motif)=>{
-    const n=S.undo.length, avant=serialize();
-    let m="";try{cmds[nom].proposer({lot});}catch(e){m=e.message;}
-    if(!motif.test(m))throw new Error(nom+" : refus attendu "+motif+", lu « "+m+" »");
-    if(S.undo.length!==n||serialize()!==avant)throw new Error(nom+" : un refus a écrit");
-  };
-  return {cmds,jouer,refus};
-}
-TA("canal de pilotage : cao_contour_ecrire, rectangle, disque et polygone ; lecture « carte »",async()=>{
-  const {cmds,jouer,refus}=pilotePcbCmds();
-  loadDoc(exemple1());S.undo.length=0;
-  const d=cmds.cao_contour_ecrire;
-  if(!(d&&d.ecriture&&d.historique))throw new Error("écriture par l'historique attendue");
-  const p=jouer("cao_contour_ecrire",[{forme:"disque",x:30,y:20,rayon:15}]);
-  if(S.undo.length!==1||!S.board.pts||Math.abs(S.board.w-30)>0.01)throw new Error("disque non posé");
-  if(!/disque Ø 30 mm/.test(p.apres)||!/^DRC : /m.test(p.apres))throw new Error("carte : "+p.apres);
-  const lu=[].concat(LECTURE_CAO.pcb.carte.fn({})).join("\n");
-  if(!/Contour : disque Ø 30 mm, centre \(30, 20\)/.test(lu))throw new Error("lecture carte : "+lu);
-  jouer("cao_contour_ecrire",[{forme:"rectangle",x:0,y:0,largeur:60,hauteur:40}]);
-  if(S.board.pts||S.board.w!==60||S.board.h!==40)throw new Error("rectangle");
-  jouer("cao_contour_ecrire",[{forme:"polygone",points:[{x:0,y:0},{x:50,y:0},{x:50,y:30},{x:25,y:45},{x:0,y:30}]}]);
-  if(boardPoly().length!==5)throw new Error("polygone");
-  undo();undo();undo();
-  if(S.board.pts||S.undo.length)throw new Error("Ctrl+Z défait chaque contour");
-  // les empreintes en attente à côté de la carte suivent le contour ; celles posées dessus restent
-  loadDoc(exemple1());S.undo.length=0;
-  const pose=S.fps[0], attente=S.fps.slice(1,3), b0=S.board;
-  attente.forEach((f,k)=>{f.x=b0.x+b0.w+40;f.y=b0.y+5+k*6;});touch();
-  const xy=[pose.x,pose.y];
-  const pc=jouer("cao_contour_ecrire",[{forme:"disque",x:pose.x,y:pose.y,rayon:12}]);
-  if(pose.x!==xy[0]||pose.y!==xy[1])throw new Error("une empreinte posée ne bouge pas");
-  if(attente.some(f=>f.x>pose.x+12+30))throw new Error("l'attente suit le contour : "+attente.map(f=>f.x).join(", "));
-  if(!/en attente rangée\(s\) à côté du nouveau contour/.test(pc.apres))throw new Error("la carte le dit : "+pc.apres);
-  // un connecteur de bord routé dont l'origine dépasse ne part pas : ses pistes resteraient pendantes
-  const J=S.fps.find(f=>pcbPistesConnecteesFp(f).length);
-  if(!J)throw new Error("le décor : une empreinte routée");
-  const b1=JSON.parse(JSON.stringify(S.board)), jx=J.x;
-  S.board.pts=null;S.board.x=J.x+1;touch();               // J dehors, ses pistes avec lui
-  contourChanger(()=>{Object.assign(S.board,b1);boardChanged();});
-  if(J.x!==jx)throw new Error("une empreinte routée hors du contour ne bouge pas");
-  refus("cao_contour_ecrire",[{forme:"polygone",points:[{x:0,y:0},{x:20,y:10},{x:20,y:0},{x:0,y:20}]}],/se coupent/);
-  refus("cao_contour_ecrire",[{forme:"rectangle",x:0,y:0,largeur:2,hauteur:40}],/5 mm au moins/);
-  refus("cao_contour_ecrire",[{forme:"ovale"}],/rectangle, disque ou polygone/);
-  refus("cao_contour_ecrire",[{forme:"disque",x:0,y:0,rayon:10},{forme:"disque",x:0,y:0,rayon:20}],/au plus|un seul contour/);
-});
-TA("canal de pilotage : cao_decoupes_ecrire, créer dans le contour, supprimer par numéro ; lecture « carte »",async()=>{
-  const {jouer,refus}=pilotePcbCmds();
-  loadDoc(exemple1());S.undo.length=0;delete S.board.cutouts;touch();
-  const b=S.board, cx=b.x+b.w/2, cy=b.y+b.h/2;
-  jouer("cao_decoupes_ecrire",[{action:"creer",forme:"rectangle",x:cx-2,y:cy-1,largeur:4,hauteur:2},
-                               {action:"creer",forme:"disque",x:cx+6,y:cy,rayon:1.5}]);
-  if(S.undo.length!==1||boardCutouts().length!==2)throw new Error("deux découpes en une étape");
-  const lu=[].concat(LECTURE_CAO.pcb.carte.fn({})).join("\n");
-  if(!/Découpes : 1\) 4 sommets de \(/.test(lu)||!/2\) \d+ sommets/.test(lu))throw new Error("lecture : "+lu);
-  jouer("cao_decoupes_ecrire",[{action:"supprimer",numero:1}]);
-  if(boardCutouts().length!==1||boardCutouts()[0].length===4)throw new Error("la première supprimée, le disque reste");
-  undo();undo();
-  if(boardCutouts().length)throw new Error("Ctrl+Z");
-  refus("cao_decoupes_ecrire",[{action:"creer",forme:"rectangle",x:b.x-5,y:cy,largeur:10,hauteur:2}],/sort du contour/);
-  refus("cao_decoupes_ecrire",[{action:"supprimer",numero:3}],/« numero »/);
-  refus("cao_decoupes_ecrire",[{action:"percer"}],/creer ou supprimer/);
-});
 TA("échauffement estimé : cuivre relié mesuré, serveur, DRC tant que la carte n'a pas bougé, cao_thermique",async()=>{
   const saved=serialize(), reg=suiviDecor(), fetchGarde=global.fetch;
   try{
@@ -28593,208 +28418,41 @@ TA("échauffement estimé : cuivre relié mesuré, serveur, DRC tant que la cart
     try{piloteCao("pcb");}finally{global.Pilote=ancien;}
     const t=await cmds.cao_thermique.executer({});
     if(!/- LED1 : 55 K pour 1\.00 W/.test(t))throw new Error("cao_thermique : "+t);
-    // la puissance part au fichier, et se règle par le canal
+    // la puissance part au fichier
     loadDoc(JSON.parse(serialize()),true);
     if(S.fps.find(f=>f.ref==="LED1").puissance!==1)throw new Error("puissance relue");
   }finally{global.fetch=fetchGarde;suiviFin(reg);loadDoc(JSON.parse(saved),true);}
 });
-TA("canal de pilotage : cao_interdits_ecrire, zones d'une face et hauteurs ; lecture « interdits »",async()=>{
-  const {jouer,refus}=pilotePcbCmds();
-  loadDoc(exemple1());S.undo.length=0;S.interdits=[];touch();
-  const p=jouer("cao_interdits_ecrire",[{action:"creer",forme:"disque",x:20,y:15,rayon:6,face:"dessous",nom:"Côté LED"},
-                                        {action:"hauteurs",dessus:12}]);
-  const z=interditsListe()[0];
-  if(S.undo.length!==1||!z||z.face!=="dessous"||z.hMax!==null||S.rule.hDessus!==12)throw new Error("lot mal appliqué");
-  if(!new RegExp("Zones interdites créées : "+z.id).test(p.apres))throw new Error("id : "+p.apres);
-  const lu=[].concat(LECTURE_CAO.pcb.interdits.fn({})).join("\n");
-  if(!/dessus 12 mm, dessous pas de limite/.test(lu)||!new RegExp("zone interdite "+z.id+" « Côté LED » : dessous, aucun composant").test(lu))throw new Error("lecture : "+lu);
-  jouer("cao_interdits_ecrire",[{action:"modifier",id:z.id,hauteur_max:2},{action:"hauteurs",dessus:null}]);
-  if(z.hMax!==2||S.rule.hDessus!==null)throw new Error("modifier, hauteurs null");
-  jouer("cao_interdits_ecrire",[{action:"supprimer",id:z.id}]);
-  undo();undo();undo();
-  if(interditsListe().length||S.rule.hDessus)throw new Error("Ctrl+Z");
-  refus("cao_interdits_ecrire",[{action:"creer",forme:"disque",x:0,y:0,rayon:3,face:"cote"}],/dessus ou dessous/);
-  refus("cao_interdits_ecrire",[{action:"creer",forme:"disque",x:0,y:0,rayon:3,hauteur_max:500}],/0,1 à 100 mm/);
-  refus("cao_interdits_ecrire",[{action:"modifier",id:99999,face:"dessus"}],/introuvable/);
-  refus("cao_interdits_ecrire",[{action:"hauteurs",dessous:-1}],/0,1 à 100 mm/);
-});
-TA("canal de pilotage : cao_zones_ecrire, créer, modifier, supprimer ; liaison directe ; lecture « zones »",async()=>{
-  const {jouer,refus}=pilotePcbCmds();
-  loadDoc(exemple1());S.undo.length=0;
-  const n0=S.zones.length, net=netTable()[0].name;
-  const p=jouer("cao_zones_ecrire",[{action:"creer",couche:LECTURE_CAO.aides.nomCouchePcb(0),net,forme:"carte",liaison:"cms-directe"}]);
-  if(S.undo.length!==1||S.zones.length!==n0+1)throw new Error("zone non créée");
-  const z=S.zones[S.zones.length-1];
-  if(z.net!==net||z.connexion!=="cms-directe"||z.pts.length!==boardPoly().length)throw new Error("zone : "+JSON.stringify(z).slice(0,200));
-  if(!new RegExp("Zones créées : "+z.id).test(p.apres))throw new Error("id de la zone créée : "+p.apres);
-  const lu=[].concat(LECTURE_CAO.pcb.zones.fn({})).join("\n");
-  if(!lu.split("\n").some(l=>l.startsWith("- zone "+z.id+" : "+net+" sur ")&&/liaison cms-directe/.test(l)))throw new Error("lecture zones : "+lu);
-  jouer("cao_zones_ecrire",[{action:"modifier",id:z.id,liaison:"thermique",forme:"rectangle",x:2,y:2,largeur:10,hauteur:8}]);
-  if(z.connexion||z.pts.length!==4||S.undo.length!==2)throw new Error("modifier : "+JSON.stringify(z.pts));
-  // la forme seule : même couche, même net, même nombre de sommets, même liaison
-  const pm=jouer("cao_zones_ecrire",[{action:"modifier",id:z.id,forme:"rectangle",x:20,y:12,largeur:10,hauteur:8}]);
-  if(S.undo.length!==3||z.pts[0].x!==20||z.pts[0].y!==12)throw new Error("déplacer seulement : "+JSON.stringify(z.pts[0]));
-  if(!pm.avant.includes("de (2, 2) à (12, 10)")||!pm.apres.includes("de (20, 12) à (30, 20)"))throw new Error("emprise sur la carte : "+pm.avant+" → "+pm.apres);
-  jouer("cao_zones_ecrire",[{action:"supprimer",id:z.id}]);
-  if(S.zones.some(o=>o.id===z.id))throw new Error("supprimer");
-  undo();undo();undo();undo();
-  if(S.zones.length!==n0)throw new Error("Ctrl+Z");
-  refus("cao_zones_ecrire",[{action:"creer",couche:"Nulle",net,forme:"carte"}],/couche « Nulle » inconnue/);
-  refus("cao_zones_ecrire",[{action:"creer",couche:LECTURE_CAO.aides.nomCouchePcb(0),net:"PAS_UN_NET",forme:"carte"}],/net « PAS_UN_NET » inconnu/);
-  refus("cao_zones_ecrire",[{action:"modifier",id:99999,net}],/introuvable/);
-  refus("cao_zones_ecrire",[{action:"creer",couche:LECTURE_CAO.aides.nomCouchePcb(0),net}],/« forme »/);
-  refus("cao_zones_ecrire",[{action:"creer",couche:LECTURE_CAO.aides.nomCouchePcb(0),net,forme:"carte",liaison:"soudée"}],/liaison/);
-});
-TA("canal de pilotage : cao_serigraphie_ecrire, texte, trait, repère, auto, supprimer ; lecture « serigraphie »",async()=>{
-  const {jouer,refus}=pilotePcbCmds();
-  loadDoc(exemple1());S.undo.length=0;
-  const fp=S.fps[0], n0=(S.drawings||[]).length;
-  const p=jouer("cao_serigraphie_ecrire",[{action:"texte",face:"dessus",texte:"LED_UV v1",x:10,y:5,hauteur:1.2},
-                                          {action:"trait",face:"dessous",x1:0,y1:0,x2:10,y2:0},
-                                          {action:"repere",ref:fp.ref,dx:1.5,dy:-2},
-                                          {action:"auto",ref:fp.ref,actif:false}]);
-  if(S.undo.length!==1||S.drawings.length!==n0+2)throw new Error("une étape, deux dessins");
-  const t=S.drawings.find(d=>d.text==="LED_UV v1");
-  if(!t||t.layer!=="silkT"||t.size!==1.2||S.drawings.find(d=>d.shape==="line").layer!=="silkB")throw new Error("dessins");
-  if(fp.refOffX!==1.5||fp.refOffY!==-2||fp.silk!==false)throw new Error("repère et auto");
-  if(!/Dessins posés : /.test(p.apres))throw new Error("ids : "+p.apres);
-  const lu=[].concat(LECTURE_CAO.pcb.serigraphie.fn({})).join("\n");
-  if(!new RegExp("dessin "+t.id+" \\(dessus\\) : texte « LED_UV v1 »").test(lu)||!new RegExp("repère "+fp.ref+" décalé de \\(1.5, -2\\)").test(lu))
-    throw new Error("lecture serigraphie : "+lu);
-  jouer("cao_serigraphie_ecrire",[{action:"supprimer",id:t.id},{action:"repere",ref:fp.ref,dx:0,dy:0}]);
-  if(S.drawings.some(d=>d.id===t.id)||"refOffX" in fp)throw new Error("supprimer, repère remis");
-  undo();undo();
-  if(S.drawings.length!==n0||S.fps.find(f=>f.ref===fp.ref).silk===false)throw new Error("Ctrl+Z");
-  refus("cao_serigraphie_ecrire",[{action:"texte",face:"dessus",texte:"  ",x:0,y:0}],/vide/);
-  refus("cao_serigraphie_ecrire",[{action:"texte",face:"cote",texte:"A",x:0,y:0}],/dessus ou dessous/);
-  refus("cao_serigraphie_ecrire",[{action:"repere",ref:"ZZ9",dx:0,dy:1}],/introuvable/);
-  refus("cao_serigraphie_ecrire",[{action:"supprimer",id:424242}],/introuvable/);
-  refus("cao_serigraphie_ecrire",[{action:"peindre"}],/« action »/);
-});
-TA("canal de pilotage : cao_pastille_regler, liaison, bras, masque ; null rend la règle",async()=>{
-  const {jouer,refus}=pilotePcbCmds();
-  loadDoc(exemple1());S.undo.length=0;
-  const fp=S.fps.find(f=>padsOf(f).some(q=>q.net)), q0=padsOf(fp).find(q=>q.net), nom=fp.ref+"."+q0.n;
-  jouer("cao_pastille_regler",[{pastille:nom,liaison:"directe",bras_largeur:0.8,bras_nombre:2,bras_angle:-45,masque:0.1}]);
-  const q=()=>padsOf(fp).find(x=>String(x.n)===String(q0.n));
-  if(S.undo.length!==1||q().connexion!=="directe"||q().thermalWidth!==0.8||q().thermalSpokes!==2||q().thermalAngle!==315||q().mask!==0.1)
-    throw new Error("réglages : "+JSON.stringify(q()));
-  const lu=[].concat(LECTURE_CAO.pcb.composant.fn({ref:fp.ref})).join("\n");
-  if(!new RegExp("- "+q0.n+" → .*\\(liaison directe, bras 0.8 mm, 2 bras, bras à 315°, masque 0.1 mm\\)").test(lu))throw new Error("lecture : "+lu);
-  jouer("cao_pastille_regler",[{pastille:nom.toLowerCase(),liaison:"zone",bras_largeur:null,masque:null}]);
-  if(q().connexion||q().thermalWidth||q().mask!=null||q().thermalSpokes!==2)throw new Error("null rend la règle : "+JSON.stringify(q()));
-  refus("cao_pastille_regler",[{pastille:nom,bras_nombre:2}],/Rien à changer/);
-  refus("cao_pastille_regler",[{pastille:fp.ref+".999",liaison:"directe"}],/introuvable/);
-  refus("cao_pastille_regler",[{pastille:nom,bras_nombre:12}],/1 à 8/);
-  refus("cao_pastille_regler",[{pastille:nom,soudure:1}],/inconnu/);
-  refus("cao_pastille_regler",[{pastille:nom}],/rien à régler/);
-});
-TA("canal de pilotage : cao_classes_ecrire, créer puis rattacher en une étape ; refus sans rien toucher",async()=>{
-  const cmds={}, ancien=global.Pilote;
-  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
-  const refus=(a,motif)=>{
-    const n=S.undo.length, avant=serialize();
-    let m="";try{cmds.cao_classes_ecrire.proposer(a);}catch(e){m=e.message;}
-    if(!motif.test(m))throw new Error("refus attendu "+motif+", lu « "+m+" »");
-    if(S.undo.length!==n||serialize()!==avant)throw new Error("un refus a écrit : "+motif);
-  };
-  try{
-    piloteCao("pcb");
-    loadDoc(exemple1());
-    S.undo.length=0;
-    const d=cmds.cao_classes_ecrire;
-    const [na,nb]=netTable().map(n=>n.name);
-    const largeurs=String(S.tracks.map(t=>t.w)), avant=serialize();
-    const lot=[{action:"creer",nom:"Puissance",largeur:0.8,isolation:0.3,via:1,percage:0.5,largeur_couches:{[LECTURE_CAO.aides.nomCouchePcb(0)]:0.9}},
-               {action:"affecter",net:na,classe:"puissance"},{action:"affecter",net:nb,classe:"Puissance"},
-               {action:"modifier",nom:S.classes[0].name,isolation:0.21}];
-    const prop=d.proposer({lot});
-    if(!/routage posé ne bouge pas/.test(prop.titre)||!prop.apres.split("\n").includes("net "+na+", classe : Puissance")||!/\(4 changements\)/.test(prop.titre))throw new Error("carte : "+JSON.stringify(prop));
-    d.appliquer({lot},prop);
-    if(S.undo.length!==1)throw new Error("une étape attendue");
-    if(classOf(na).name!=="Puissance"||classWidth(na,0)!==0.9||classWidth(na,1)!==0.8||S.classes[0].clr!==0.21)throw new Error("classes mal posées");
-    if(String(S.tracks.map(t=>t.w))!==largeurs)throw new Error("les pistes posées ont bougé");
-    undo();
-    if(serialize()!==avant)throw new Error("Ctrl+Z ne remet pas tout");
-    d.appliquer({lot},d.proposer({lot}));
-    refus({lot:[{action:"supprimer",nom:"Puissance"}]},/supprimée alors que le net .* y est encore rattaché/);
-    refus({lot:[{action:"supprimer",nom:S.classes[0].name}]},/classe par défaut/);
-    refus({lot:[{action:"creer",nom:"puissance"}]},/existe déjà/);
-    refus({lot:[{action:"modifier",nom:"Puissance",via:0.6,percage:0.6}]},/perçage 0.6 trop grand/);
-    refus({lot:[{action:"modifier",nom:"Puissance",largeur:20}]},/largeur : de 0.05 à 10 mm/);
-    refus({lot:[{action:"affecter",net:"ZZ",classe:"Puissance"}]},/net « ZZ » inconnu/);
-    refus({lot:[{action:"renommer",nom:"Puissance"}]},/action « renommer » inconnue/);
-    refus({lot:[{action:"creer",nom:"Q"},{action:"affecter",net:na,classe:"Q"},{action:"supprimer",nom:"Q"}]},/supprimée alors que le net/);
-    refus({lot:[{action:"supprimer",nom:"Puissance"},{action:"creer",nom:"puissance"}]},/supprimée alors que le net/);   // casse différente
-    /* supprimer après avoir rattaché ailleurs ses nets, dans le même lot : accepté */
-    const lot2=[{action:"affecter",net:na,classe:S.classes[0].name},{action:"affecter",net:nb,classe:S.classes[0].name},{action:"supprimer",nom:"Puissance"}];
-    d.appliquer({lot:lot2},d.proposer({lot:lot2}));
-    if(S.classes.some(c=>c.name==="Puissance")||S.netClass[na])throw new Error("suppression mal faite");
-    /* une classe que le schéma connaît et que la carte n'a pas : créée au rattachement, comme dans le menu */
-    const sch=classesAProposer()[0];
-    if(!sch)throw new Error("l'exemple devrait avoir des classes du schéma à proposer");
-    const nCl=S.classes.length, lot3=[{action:"affecter",net:na,classe:sch.toLowerCase()}];
-    const p3=d.proposer({lot:lot3});
-    if(S.classes.length!==nCl)throw new Error("proposer a créé la classe");
-    if(!p3.apres.split("\n").some(l=>l.indexOf("classe "+sch+" : ")===0&&/\(classe du schéma\)$/.test(l))||!p3.apres.includes("net "+na+", classe : "+sch))
-      throw new Error("carte : "+p3.apres);
-    const av3=serialize();
-    d.appliquer({lot:lot3},p3);
-    if(classOf(na).name!==sch||S.classes.length!==nCl+1)throw new Error("classe du schéma non créée ou non rattachée");
-    undo();
-    if(serialize()!==av3)throw new Error("Ctrl+Z ne retire pas la classe du schéma");
-    refus({lot:[{action:"affecter",net:na,classe:"Inexistante"}]},new RegExp("ni sur la carte, ni parmi celles du schéma : "+sch));
-  }finally{global.Pilote=ancien;}
-});
-
-TA("canal de pilotage : cao_contraintes_ecrire, règle de paire et contraintes de net en une étape",async()=>{
-  const cmds={}, ancien=global.Pilote;
-  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
-  const refus=(a,motif)=>{
-    const n=S.undo.length, avant=serialize();
-    let m="";try{cmds.cao_contraintes_ecrire.proposer(a);}catch(e){m=e.message;}
-    if(!motif.test(m))throw new Error("refus attendu "+motif+", lu « "+m+" »");
-    if(S.undo.length!==n||serialize()!==avant)throw new Error("un refus a écrit : "+motif);
-  };
-  try{
-    piloteCao("pcb");
-    loadDoc(exemple1());
-    S.undo.length=0;
-    S.contraintes.schema={nets:{SCH:{lMax:5}},groupes:[]};
-    const d=cmds.cao_contraintes_ecrire;
-    const [na,nb]=netTable().map(n=>n.name), top=LECTURE_CAO.aides.nomCouchePcb(0);
-    const avant=serialize();
-    const lot=[{action:"paire",nom:"USB",largeur_min:0.15,largeur_pref:0.18,largeur_max:0.25,ecart_pref:0.16,impedance:"D90",portee:""},
-               {action:"net",net:na,l_max:40,vias_max:2,couches:[top]},{action:"net",net:nb,z:50,z_tol:10}];
-    const prop=d.proposer({lot});
-    d.appliquer({lot},prop);
-    if(S.undo.length!==1)throw new Error("une étape attendue");
-    const r=S.dpRules.find(x=>x.name==="USB");
-    if(!r||r.prefW!==0.18||r.imp!=="D90"||!r.useImp||!/^[A-Z]{8}$/.test(r.uid))throw new Error("règle de paire : "+JSON.stringify(r));
-    if(S.contraintes.nets[na].lMax!==40||String(S.contraintes.nets[na].couches)!=="0"||S.contraintes.nets[nb].z!==50)throw new Error("contraintes : "+JSON.stringify(S.contraintes.nets));
-    if(!S.contraintes.schema.nets.SCH)throw new Error("les contraintes du schéma ont été touchées");
-    // le gestionnaire de contraintes et le routeur les voient
-    const rg=cmRegleDe(na);
-    if(!rg.lMax||rg.lMax.v!==40||rg.lMax.src!=="net")throw new Error("cmRegleDe : "+JSON.stringify(rg.lMax));
-    if(S.dpRules.length===1&&dpRuleFor({name:"PAIRE"})!==r)throw new Error("dpRuleFor ne rend pas la règle sans portée");
-    undo();
-    if(serialize()!==avant)throw new Error("Ctrl+Z ne remet pas tout");
-    d.appliquer({lot},d.proposer({lot}));
-    /* modifier puis effacer une clé */
-    const l2=[{action:"paire",nom:"usb",ecart_pref:0.17},{action:"net",net:na,l_max:null}];
-    d.appliquer({lot:l2},d.proposer({lot:l2}));
-    if(S.dpRules.find(x=>x.name==="USB").prefGap!==0.17||"lMax" in S.contraintes.nets[na])throw new Error("modification");
-    const l3=[{action:"paire",nom:"HDMI",ecart_pref:0.18},{action:"paire",nom:"HDMI",largeur_pref:0.19}];
-    d.appliquer({lot:l3},d.proposer({lot:l3}));
-    if(!/^[A-Z]{8}$/.test(S.dpRules.find(x=>x.name==="HDMI").uid))throw new Error("règle créée puis modifiée sans identifiant");
-    refus({lot:[{action:"paire",nom:"USB",largeur_min:0.3}]},/min ≤ préférée ≤ max/);
-    refus({lot:[{action:"paire",nom:"USB",impedance:"D77"}]},/impédance « D77 » inconnue/);
-    refus({lot:[{action:"paire",nom:"USB",portee:"NOPE"}]},/paire « NOPE » inconnue/);
-    refus({lot:[{action:"net",net:na,l_min:50,l_max:10}]},/l_min plus grand que l_max/);
-    refus({lot:[{action:"net",net:na,z:5000}]},/valeurs refusées par la page/);
-    refus({lot:[{action:"net",net:na,couches:["Milieu"]}]},/couche inconnue/);
-    refus({lot:[{action:"net",net:"ZZ",z:50}]},/net « ZZ » inconnu/);
-  }finally{global.Pilote=ancien;}
+T("lectures de la carte : contour, découpes, interdits, zones, sérigraphie, réglages de pastille",()=>{
+  const lire=(q,a)=>[].concat(LECTURE_CAO.pcb[q].fn(a||{})).join("\n");
+  loadDoc(exemple1());
+  S.board.pts=boardDisquePts(30,20,15);boardChanged();
+  if(!/Contour : disque Ø 30 mm, centre \(30, 20\)/.test(lire("carte")))throw new Error("lecture carte : "+lire("carte"));
+  loadDoc(exemple1());
+  const b=S.board,cx=b.x+b.w/2,cy=b.y+b.h/2;
+  S.board.cutouts=[[{x:cx-2,y:cy-1},{x:cx+2,y:cy-1},{x:cx+2,y:cy+1},{x:cx-2,y:cy+1}],boardDisquePts(cx+6,cy,1.5)];
+  if(!/Découpes : 1\) 4 sommets de \(/.test(lire("carte"))||!/2\) \d+ sommets/.test(lire("carte")))throw new Error("lecture découpes : "+lire("carte"));
+  loadDoc(exemple1());
+  S.interdits=[{id:S.nextId++,face:"dessous",pts:boardDisquePts(20,15,6),hMax:null,nom:"Côté LED"}];
+  S.rule.hDessus=12;S.rule.hDessous=null;
+  const zi=S.interdits[0],luI=lire("interdits");
+  if(!/dessus 12 mm, dessous pas de limite/.test(luI)||!new RegExp("zone interdite "+zi.id+" « Côté LED » : dessous, aucun composant").test(luI))throw new Error("lecture interdits : "+luI);
+  loadDoc(exemple1());
+  const net=netTable()[0].name,z={id:S.nextId++,l:0,net,pts:boardPoly().map(q=>({x:q.x,y:q.y})),connexion:"cms-directe"};
+  S.zones.push(z);
+  if(!lire("zones").split("\n").some(l=>l.startsWith("- zone "+z.id+" : "+net+" sur ")&&/liaison cms-directe/.test(l)))throw new Error("lecture zones : "+lire("zones"));
+  loadDoc(exemple1());
+  const fp=S.fps[0],t={id:S.nextId++,shape:"text",text:"LED_UV v1",layer:"silkT",x1:10,y1:5,size:1.2,rot:0,width:0.15};
+  S.drawings=(S.drawings||[]).concat(t);fp.refOffX=1.5;fp.refOffY=-2;fp.silk=false;
+  const luS=lire("serigraphie");
+  if(!new RegExp("dessin "+t.id+" \\(dessus\\) : texte « LED_UV v1 »").test(luS)||!new RegExp("repère "+fp.ref+" décalé de \\(1.5, -2\\)").test(luS))throw new Error("lecture sérigraphie : "+luS);
+  loadDoc(exemple1());
+  const fq=S.fps.find(f=>padsOf(f).some(q=>q.net)),q0=padsOf(fq).find(q=>q.net);
+  fpFreeze(fq);
+  fq.pads.forEach((q,i)=>{if(String(q.n)===String(q0.n))Object.entries({connexion:"directe",thermalWidth:0.8,thermalSpokes:2,thermalAngle:315,mask:0.1}).forEach(([k,v])=>fpSetPad(fq,i,k,v));});
+  const luC=lire("composant",{ref:fq.ref});
+  if(!new RegExp("- "+q0.n+" → .*\\(liaison directe, bras 0.8 mm, 2 bras, bras à 315°, masque 0.1 mm\\)").test(luC))throw new Error("lecture pastille : "+luC);
+  loadDoc(exemple1());
 });
 
 T("écritures en lot : un échec en cours d'application remet le document d'avant ; CSV sans formule",()=>{
@@ -28964,56 +28622,6 @@ TA("canal de pilotage : cao_paire, une paire declaree routee en un lot",async()=
     await refus({paire:"USB",depart:{x:-400,y:-400},arrivee:{x:bouts[1].x,y:bouts[1].y}},/pas de départ de la paire/);
     await refus({paire:"USB",depart:{x:bouts[0].x,y:bouts[0].y},arrivee:{x:bouts[1].x,y:bouts[1].y},mode:"sauter"},/pousser ou contourner/);
     if(S.undo.length!==0||serialize()!==avant)throw new Error("un refus a laisse une trace");
-  }finally{global.Pilote=ancien;}
-});
-
-TA("canal de pilotage : cao_placement_auto, forces et satellites en une etape ; blocs sans motif refuse",async()=>{
-  const cmds={}, ancien=global.Pilote;
-  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
-  try{
-    piloteCao("pcb");
-    const d=cmds.cao_placement_auto;
-    if(!(d&&d.ecriture&&d.historique))throw new Error("ecriture par l'historique attendue");
-    for(const methode of ["forces","satellites"]){
-      loadDoc(exemple1()); S.undo.length=0;
-      const avant=serialize();
-      let prop, m="";
-      try{ prop=d.proposer({methode}); }catch(e){ m=e.message; }
-      // forces deplace toujours l'exemple ; satellites peut le trouver deja en place (0 empreinte : refus clair)
-      if(!prop){ if(methode==="forces"||!/Rien n'est posé : placement \w+ : 0 empreinte/.test(m))throw new Error(methode+" : "+m); continue; }
-      if(serialize()!==avant)throw new Error(methode+" : proposer a ecrit");
-      if(!new RegExp("^placement "+methode+" : [1-9]\\d* empreinte\\(s\\) déplacée\\(s\\)").test(prop.apres))throw new Error(methode+" : "+prop.apres);
-      // l'aperçu dessiné : une boîte et un trajet par empreinte déplacée
-      const nb=+/: (\d+) empreinte/.exec(prop.apres)[1], A=ROUTAGE.apercu;
-      if(!A||!A.fps||A.fps.length!==nb||!A.fps.every(f=>f.b.x2>f.b.x1&&Number.isFinite(f.x0)))throw new Error(methode+" : aperçu "+JSON.stringify(A&&A.fps));
-      d.appliquer({methode},prop);
-      if(ROUTAGE.apercu)throw new Error(methode+" : l'aperçu doit partir au clic");
-      if(S.undo.length!==1||serialize()===avant)throw new Error(methode+" : une etape qui deplace attendue");
-      undo();
-      if(serialize()!==avant)throw new Error(methode+" : Ctrl+Z");
-    }
-    for(const [a,motif] of [[{methode:"tirage"},/forces, satellites ou blocs/],[{methode:"blocs"},/donne « motif »/],[{methode:"blocs",motif:"ZZZ"},/Motif « ZZZ » inconnu/]]){
-      let m="";try{d.proposer(a);}catch(e){m=e.message;}
-      if(!motif.test(m))throw new Error("refus attendu "+motif+" : "+m);
-    }
-    /* blocs : un motif publié par le schéma (un buck), compacté autour de son régulateur, en une étape */
-    loadDoc(exemple1());
-    const u1=mkFp("U1","TPS5430","SOIC-8",8), c1=mkFp("C1","10uF","0805",2), l1=mkFp("L1","10uH","IND_SMD_6x6",2);
-    Object.assign(u1,{x:25,y:25}); Object.assign(c1,{x:5,y:5}); Object.assign(l1,{x:5,y:10});
-    S.fps=[u1,c1,l1]; touch(); S.undo.length=0;
-    BLOC_PLACEMENT.injecterMotifs({motifs:[{id:"pat_buck",label:"Buck 5V",layout_template:"buck_compact",
-      components:["U1","C1","L1"],role_map:{cin:["C1"],sw_inductor:"L1"}}]});
-    try{
-      const avant=serialize(), p=d.proposer({methode:"blocs",motif:"Buck 5V"});
-      if(serialize()!==avant||S.undo.length)throw new Error("blocs : proposer a écrit");
-      if(!/^placement blocs : 2 empreinte\(s\) déplacée\(s\) \(C1, L1\) ; motif Buck 5V$/.test(p.apres))throw new Error("blocs : "+p.apres);
-      if(ROUTAGE.apercu.fps.length!==2)throw new Error("blocs : aperçu");
-      d.appliquer({methode:"blocs",motif:"Buck 5V"},p);
-      const C1=S.fps.find(f=>f.ref==="C1"), U1=S.fps.find(f=>f.ref==="U1");
-      if(S.undo.length!==1||Math.hypot(C1.x-U1.x,C1.y-U1.y)>15||U1.x!==25)throw new Error("blocs : C1 compacté près de U1, en une étape");
-      undo();
-      if(serialize()!==avant)throw new Error("blocs : Ctrl+Z");
-    }finally{BLOC_PLACEMENT.injecterMotifs(null);BLOC_PLACEMENT.injecterZones(null);}
   }finally{global.Pilote=ancien;}
 });
 

@@ -925,84 +925,14 @@ def test_routes():
         assert "frame-ancestors 'self'" in (r.getheader("Content-Security-Policy") or "")
         print("[PASS] Cadres : même origine seulement (X-Frame-Options, frame-ancestors)")
 
-        # 43. Lier un modele de simulation a une reference (MCP lib_simulation_lier) : seule la case
-        # « Modèle Simulation » de cette ligne change, les autres lignes restent octet pour octet.
         import tempfile as _tf
-        lib = _tf.mkdtemp(prefix="webcao_lier_")
-        os.makedirs(os.path.join(lib, "lib_simulation"))
-        for f in ("as179_b.s3p", "r.sub"):
-            open(os.path.join(lib, "lib_simulation", f), "w").close()
+        lib = _tf.mkdtemp(prefix="webcao_cat_")
         csv_ = os.path.join(lib, "LIB_composants.csv")
-        brut = ("Part Name;Value;Description;Modèle Simulation\r\nR1;1k;\"sur\r\ndeux lignes\";\r\n"
-                "AS179;;switch;lib/simulation/as179_a.s3p\r\nC1;;\"a;b\";-\r\n").encode("latin1")
-        with open(csv_, "wb") as f:
-            f.write(brut)
-        actif = web_CAO.DOSSIER_LIB_ACTIF
-        web_CAO.definir_dossier_lib(lib, initialiser=False, persister=False)
-
-        def lier(part, modele):
-            conn.request("POST", "/api/lib/composants", headers={"Content-Type": "application/json"},
-                         body=json.dumps({"lier_simulation": {"part": part, "modele": modele}}).encode("utf-8"))
-            r = conn.getresponse()
-            return r.status, json.loads(r.read().decode("utf-8"))
-        try:
-            code, rep = lier("as179", "lib/simulation/as179_b.s3p")
-            assert code == 200 and rep["modeles"] == ["lib/simulation/as179_a.s3p", "lib/simulation/as179_b.s3p"], rep
-            apres = open(csv_, "rb").read()
-            assert apres == brut.replace(b"as179_a.s3p\r\n", b"as179_a.s3p | lib/simulation/as179_b.s3p\r\n"), apres
-            code, rep = lier("AS179", "lib/simulation/as179_b.s3p")
-            assert code == 200 and rep.get("deja") and open(csv_, "rb").read() == apres, rep
-            code, rep = lier("C1", "lib/simulation/r.sub")       # « - » vaut « rien de lie »
-            assert code == 200 and rep["modeles"] == ["lib/simulation/r.sub"], rep
-            assert open(csv_, "rb").read().endswith(b'C1;;"a;b";lib/simulation/r.sub\r\n')
-            avant = open(csv_, "rb").read()
-            for part, modele, attendu in (("X", "lib/simulation/r.sub", 404), ("R1", "lib/simulation/absent.s2p", 404),
-                                          ("R1", "lib/simulation/../r.sub", 400), ("R1", "r.sub", 400),
-                                          ("R1", "lib/simulation/x.html", 400), ("", "lib/simulation/r.sub", 400)):
-                code, rep = lier(part, modele)
-                assert code == attendu, (part, modele, code, rep)
-            assert open(csv_, "rb").read() == avant, "un refus a ecrit"
-            with open(csv_, "wb") as f:                             # colonne absente : ajoutee en fin d'en-tete
-                f.write(b"Part Name;Value\nR1;1k\nR2;2k\n")
-            code, rep = lier("R2", "lib/simulation/r.sub")
-            assert code == 200 and open(csv_, "rb").read() == (
-                "Part Name;Value;Modèle Simulation\nR1;1k\nR2;2k;lib/simulation/r.sub\n").encode("utf-8"), rep
-        finally:
-            web_CAO.DOSSIER_LIB_ACTIF = actif
-        print("[PASS] LIB : lier un modele de simulation reecrit une seule case (octets des autres lignes gardes)")
-
-        # 44. Modifier une reference existante (MCP lib_composant_modifier) : seules les cases donnees
-        # changent, la ligne lue a change = 409, les autres lignes restent octet pour octet.
         brut = ("Part Name;Value;Description;Brochage\r\nR1;1k;\"sur\r\ndeux lignes\";\r\n"
                 "U1;;ldo;IN=1,GND=2\r\nC1;;\"a;b\";\r\n").encode("latin1")
         with open(csv_, "wb") as f:
             f.write(brut)
-        web_CAO.definir_dossier_lib(lib, initialiser=False, persister=False)
-
-        def modifier(demande):
-            conn.request("POST", "/api/lib/composants", headers={"Content-Type": "application/json"},
-                         body=json.dumps({"modifier": demande}).encode("utf-8"))
-            r = conn.getresponse()
-            return r.status, json.loads(r.read().decode("utf-8"))
-        try:
-            code, rep = modifier({"part": "u1", "champs": {"Brochage": "IN=1,GND=2,OUT=3", "Value": " 3.3V "},
-                                  "avant": {"Brochage": "IN=1,GND=2", "Value": ""}})
-            assert code == 200 and rep["champs"] == {"Brochage": "IN=1,GND=2,OUT=3", "Value": "3.3V"}, rep
-            apres = open(csv_, "rb").read()
-            assert apres == brut.replace(b"U1;;ldo;IN=1,GND=2\r\n", b"U1;3.3V;ldo;IN=1,GND=2,OUT=3\r\n"), apres
-            for demande, attendu in (
-                    ({"part": "U1", "champs": {"Value": "5V"}, "avant": {"Value": ""}}, 409),     # lue avant le changement
-                    ({"part": "X", "champs": {"Value": "1"}}, 404),
-                    ({"part": "U1", "champs": {"Part Name": "U2"}}, 400),
-                    ({"part": "U1", "champs": {"Inconnue": "1"}}, 400),
-                    ({"part": "U1", "champs": {"Value": "=1+1"}}, 400),
-                    ({"part": "U1", "champs": {}}, 400)):
-                code, rep = modifier(demande)
-                assert code == attendu, (demande, code, rep)
-            assert open(csv_, "rb").read() == apres, "un refus a ecrit"
-        finally:
-            web_CAO.DOSSIER_LIB_ACTIF = actif
-        print("[PASS] LIB : modifier une reference reecrit ses seules cases, refuse une ligne qui a change")
+        actif = web_CAO.DOSSIER_LIB_ACTIF
 
         # 45. Catalogue entier : la date lue (mtime_ms) revient avec l'enregistrement ; changee
         # depuis (autre appareil) -> 409 et rien d'ecrit. Plus de copie a la racine du depot.
@@ -1028,16 +958,15 @@ def test_routes():
             assert code == 200 and rep["mtime_ms"] == web_CAO.mtime_ms(csv_), rep
             assert tout(cat["mtime_ms"])[0] == 409               # la date d'avant ne vaut plus
             assert tout(rep["mtime_ms"])[0] == 200 and tout(None)[0] == 200   # sans date : comme avant
-            # une ligne ajoutee rend la date d'avant et celle d'apres : la page qui l'a ecrite suit
-            lu = web_CAO.mtime_ms(csv_)
-            time.sleep(0.01)
-            conn.request("POST", "/api/lib/composants", headers={"Content-Type": "application/json"},
-                         body=json.dumps({"ajouter": {"Part Name": "ZZ_SUIVI_DATE"}}).encode("utf-8"))
-            r = conn.getresponse()
-            aj = json.loads(r.read().decode("utf-8"))
-            assert r.status == 200 and aj["mtime_avant"] == lu and aj["mtime_ms"] == web_CAO.mtime_ms(csv_), aj
-            assert tout(aj["mtime_ms"])[0] == 200
-            # l'enregistrement complet suit la regle des cases d'« ajouter » : pas de formule
+            # les routes retirees (decision du 2026-11-04) : un corps sans « composants » est refuse
+            for vieux in ({"ajouter": {"Part Name": "X"}}, {"lier_simulation": {"part": "R1", "modele": "x"}},
+                          {"modifier": {"part": "R1", "champs": {"Value": "1"}}}):
+                conn.request("POST", "/api/lib/composants", headers={"Content-Type": "application/json"},
+                             body=json.dumps(vieux).encode("utf-8"))
+                r = conn.getresponse()
+                assert r.status == 400, (vieux, r.status)
+                r.read()
+            # l'enregistrement complet refuse une formule
             avant, piege = open(csv_, "rb").read(), dict(cat["composants"][0])
             piege[cat["colonnes"][-1]] = "=HYPERLINK(\"http://x\")"
             conn.request("POST", "/api/lib/composants", headers={"Content-Type": "application/json"},

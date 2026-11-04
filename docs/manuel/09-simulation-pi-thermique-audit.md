@@ -382,6 +382,6 @@ Ce n'est pas une règle de la vérification de carte mais un panneau de l'Édite
 - [Éditeur PCB : édition et routage](03-editeur-pcb-edition-routage.md) et [Éditeur PCB : contraintes et fabrication](04-editeur-pcb-fabrication.md) : classes de nets, DRC, propriétés des composants et de la carte.
 - [Visionneuse IPC-2581](07-visionneuse-ipc2581.md) : ouverture d'un fichier, classification des nets.
 - [Éditeur schématique](02-editeur-schematique.md) : motifs, classes de nets.
-- [Claude et le MCP](11-claude-mcp.md) : `cao_thermique`, `cao_score`, `cao_sim_lire`, `cao_sim_ecrire`.
+- [Claude et le MCP](11-claude-mcp.md) : `cao_thermique`, `cao_score`, `cao_sim_lire`.
 - [../verification-carte.md](../verification-carte.md) : tutoriel détaillé de l'audit.
 - [../simulation-em.md](../simulation-em.md) : physique du PDN et des moteurs.

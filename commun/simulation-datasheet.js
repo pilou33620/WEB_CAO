@@ -2,9 +2,9 @@
    commun/simulation-datasheet.js
    DE LA DATASHEET AUX RÉGLAGES DES SIMULATIONS
    -----------------------------------------------------------------------------
-   Claude (par le MCP de web_suite, cao_sim_ecrire) lit une datasheet et propose
-   des valeurs pour les simulations. Ce fichier est tout ce qui se trouve entre
-   sa proposition et le panneau : la LISTE FERMÉE de ce qui peut être réglé, dans quelle unité, entre
+   Claude (par le MCP de web_suite) lit une datasheet et relève des valeurs pour
+   les simulations, qu'il saisit dans le panneau. simDsCatalogue (cao_sim_lire
+   catalogue) lui donne : la LISTE FERMÉE de ce qui peut être réglé, dans quelle unité, entre
    quelles bornes, et le geste qui l'applique proprement — fiche ΔI remise à
    jour, résultat devenu faux oublié, onglet redessiné.
 
@@ -16,10 +16,12 @@
    physiques est refusée avant même d'être proposée.
 
    RIEN NE S'APPLIQUE SANS ÊTRE VU. `simDsPreparer` rend des lignes — valeur
-   actuelle, valeur proposée, page et citation de la datasheet — que
-   l'assistant affiche en tableau à cocher. Seules les lignes cochées passent
-   par `simDsAppliquer`. Un LLM confond volontiers typique et max, ou lit la
-   colonne voisine : la citation est là pour que cela se voie.
+   actuelle, valeur proposée, page et citation de la datasheet — et
+   `simDsAppliquer` les écrit. Un LLM confond volontiers typique et max, ou lit
+   la colonne voisine : la citation est là pour que cela se voie.
+   Aucune page ne les appelle pour l'instant (décision du 2026-11-04) : un panneau
+   à cocher dans l'interface les branchera (seule voie vers ESR, ESL et capacité
+   des condensateurs, qui n'ont pas de champ). Le banc harness-sim les éprouve.
 
    Chargé après commun/simulation-em.js, dans l'éditeur PCB et la visionneuse
    IPC-2581. L'assistant ne s'en sert que si `simDsCatalogue` existe.
@@ -315,7 +317,7 @@ function simDsCatalogue() {
       const act = simDsLire(c);
       const sup = (typeof c.suppose === "function" && c.suppose()) ? ", supposée" : "";
       const u = c.choix ? "un de : " + c.choix.join(", ") : (c.unite || "sans unité");
-      // les bornes que cao_sim_ecrire applique : les annoncer évite un refus « hors des bornes »
+      // les bornes physiques du paramètre
       const bornes = !c.choix && c.min != null && c.max != null ? " [bornes : " + simDsTexte(c.min) + " … " + simDsTexte(c.max) + "]" : "";
       L.push("- " + g.cle + "." + c.cle + " (" + u + ") [actuel : " + simDsTexte(act) + sup + "]" + bornes + " " +
              c.lib + ". Où : " + c.ou);
@@ -324,7 +326,7 @@ function simDsCatalogue() {
 
   L.push("");
   L.push("[condensateurs] Parasites des condensateurs de découplage du rail PDN, par repère, MPN ou valeur " +
-         "(cao_sim_ecrire : {groupe: \"condensateurs\", cle, valeur, unite, cible: {refs: [repères]} ou {mpn} ou {valeur: \"100nF\", boitier?}}). " +
+         "(pas de champ à l'interface : à donner à l'utilisateur). " +
          "Clés : esr_mohm (mΩ, à la fréquence de résonance), esl_nh (nH), cap_nf (nF, capacité EFFECTIVE sous la tension du rail si la datasheet donne la courbe DC-bias).");
   const capas = SIM_PDN.condensateurs || [];
   if (capas.length) {
@@ -338,7 +340,7 @@ function simDsCatalogue() {
   }
 
   L.push("");
-  L.push("[bornes_dc] Bornes de la chute DC, par repère de composant (cao_sim_ecrire : {groupe: \"bornes_dc\", cle, valeur, unite, cible: {composant: repère}} ; la borne doit déjà être posée dans la page). Clés : courant_ma (charge : courant TOTAL tiré par le composant sur ce rail, en mA, réparti ensuite sur ses broches) ou tension_v (source : tension imposée, en V).");
+  L.push("[bornes_dc] Bornes de la chute DC, par repère de composant (onglet Chute DC : la borne doit déjà être posée, ⚡ Du schéma). Clés : courant_ma (charge : courant TOTAL tiré par le composant sur ce rail, en mA, réparti ensuite sur ses broches) ou tension_v (source : tension imposée, en V).");
   const bornes = simDsBornes();
   if (bornes.length) {
     L.push("Bornes posées : " + bornes.map(b => (b.role === "source" ? "source " : "charge ") +
@@ -358,7 +360,7 @@ function simDsCatalogue() {
 }
 
 /* ==========================================================================
-   LA PROPOSITION (cao_sim_ecrire), VÉRIFIÉE LIGNE PAR LIGNE
+   LA PROPOSITION, VÉRIFIÉE LIGNE PAR LIGNE
    --------------------------------------------------------------------------
    `act` : {type:"sim_params", source, composant,
             valeurs:[{sim, cle, valeur, page, citation, confiance}],

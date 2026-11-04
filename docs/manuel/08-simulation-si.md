@@ -137,10 +137,10 @@ Deux pistes d'un même net sont refusées (« Piste 1 et Piste 2 ont le même ne
 
 ### Je veux régler les simulations depuis une datasheet
 
-1. Dans le panneau « Claude » (voir le [chapitre 11](11-claude-mcp.md)), demander à Claude de lire la datasheet et de proposer les réglages de simulation.
-2. Claude lit le catalogue (`cao_sim_lire`) et propose un lot (`cao_sim_ecrire`) : une carte du panneau « Claude » montre chaque valeur proposée à côté de la valeur actuelle.
-3. Cliquer **Appliquer** sur la carte (ou **Refuser**). Rien ne change avant ce clic, sauf si l'interrupteur « Appliquer directement (cet onglet) » est allumé.
-4. Le bouton **Annuler** de la carte remet les valeurs d'avant, tant qu'aucun de ces paramètres n'a été retouché depuis.
+1. Dans le panneau « Claude » (voir le [chapitre 11](11-claude-mcp.md)), demander à Claude de lire la datasheet et de relever les réglages de simulation.
+2. Claude lit le catalogue (`cao_sim_lire`), puis saisit chaque valeur dans son champ du panneau : une carte par geste.
+3. Cliquer **Appliquer** sur chaque carte (ou **Refuser**). Rien ne change avant ce clic, sauf si l'interrupteur « Appliquer directement (cet onglet) » est allumé, utile pour enchaîner.
+4. ESR, ESL et capacité des condensateurs n'ont pas de champ : Claude les relève et vous les donne.
 
 ### Je veux garder une trace d'une simulation
 

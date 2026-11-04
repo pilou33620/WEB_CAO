@@ -633,7 +633,7 @@ Les zones partent remplies (cuivre calculé en géométrie exacte, dégagements 
 - [Gestion LIB](05-gestion-lib.md) : colonnes « Maximun Height », « Modèle 3D », « Position 3D » ; empreintes à trous NPTH.
 - [Visionneuse IPC-2581](07-visionneuse-ipc2581.md) : relecture du fichier exporté, même dossier mécanique.
 - [Simulation SI](08-simulation-si.md) et [Simulation PI, thermique, audit](09-simulation-pi-thermique-audit.md) : Z₀ par la méthode des moments, échauffement.
-- [Claude et le MCP](11-claude-mcp.md) : outils `cao_contraintes_ecrire`, `cao_interdits_ecrire`, `cao_serigraphie_ecrire`, `cao_thermique`.
+- [Claude et le MCP](11-claude-mcp.md) : gestes de l'interface (`pilote_interface`), `cao_thermique`.
 - [editeur-pcb/README.md](../../editeur-pcb/README.md) : détail technique.
 - [SPEC-dossier-meca.md](../../SPEC-dossier-meca.md), [SPEC-trous-npth.md](../../SPEC-trous-npth.md).
 - [Simulation EM (calcul)](../simulation-em.md).

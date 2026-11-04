@@ -57,7 +57,6 @@ const FICHIERS=[
   path.join(RACINE,"js","02-modele.js"),
   path.join(RACINE,"..","commun","simulation-em.js"),
   path.join(RACINE,"..","commun","simulation-datasheet.js"),
-  path.join(RACINE,"..","commun","ecriture-cao.js"),
   path.join(RACINE,"js","07-simulation.js"),
   /* dossier méca : la visionneuse emprunte le PDF des plans de l'éditeur
      (fonte, Draftsman, vues), et l'export STEP commun */
@@ -77,7 +76,7 @@ const FICHIERS=[
   /* plans (Draftsman) : fabrication et assemblage */
   path.join(RACINE,"js","10-plans.js")
 ];
-const EXPOSE=["ECRITURE_CAO","simDsChamp","simDsLire","simDsEcrire","SIM_DS","SIM_PDN","simPDNAssistantActif","SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
+const EXPOSE=["simDsChamp","simDsLire","simDsEcrire","SIM_DS","SIM_PDN","simPDNAssistantActif","SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simSaisie","simPorts","SIM_FORMAT",
   "V","LT","ltAire","ltPreparer","LT_SEUIL_PLAN","mdlLongueur",
   "mdlNetNom","mdlNb","mdlCharger","mdlCouches","mdlPlansDans",
@@ -7113,104 +7112,6 @@ T("dossier méca, visionneuse : l'aperçu SVG de la feuille se dessine",()=>{
     const svg=mecaPlan(mecaIpcDossier(),mecaIpcCtx(),null).map(F=>dfSvg(F)).join("");
     if(!/^<svg/.test(svg)||svg.indexOf("Plan mécanique")<0)throw new Error(svg.slice(0,120));
   }finally{carte();}
-});
-
-T("canal de pilotage : cao_sim_ecrire, unité du catalogue, une carte qu'Annuler défait", function(){
-  pdnDeLabo();
-  const d = ECRITURE_CAO.simulation;
-  if (!d.ecriture || d.historique || typeof d.annuler !== "function" || typeof d.etat !== "function")
-    throw new Error("écriture annulable par la carte attendue (pas d'historique d'éditeur)");
-  const etat = () => JSON.stringify(d.etat());
-  const refus = (lot, motif) => {
-    const avant = etat();
-    let m = ""; try { d.proposer({ lot }); } catch (e) { m = e.message; }
-    if (!motif.test(m)) throw new Error("refus attendu " + motif + ", lu « " + m + " »");
-    if (etat() !== avant) throw new Error("un refus a écrit : " + motif);
-  };
-  const uR = simDsChamp("pdn", "rVrmMOhm").unite, uI = simDsChamp("pdn_fiche", "iActifMa").unite;
-  const r0 = SIM_PDN.rVrmMOhm;
-  const lot = [{ groupe: "pdn", cle: "rVrmMOhm", valeur: r0 + 5, unite: uR }, { groupe: "pdn_fiche", cle: "iActifMa", valeur: 40, unite: uI }];
-  const avant = etat();
-  const prop = d.proposer({ lot });
-  if (etat() !== avant) throw new Error("proposer a écrit");
-  if (!new RegExp("^pdn\\.rVrmMOhm .* : " + (r0 + 5) + " " + uR + "$", "m").test(prop.apres)) throw new Error("carte : " + prop.apres);
-  const jeton = d.appliquer({ lot }, prop);
-  if (SIM_PDN.rVrmMOhm !== r0 + 5 || SIM_PDN.fiche.iActifMa !== 40) throw new Error("lot non appliqué");
-  if (!/Assistant ΔI activé/.test(prop.apres)) throw new Error("l'assistant ΔI allumé doit être écrit sur la carte : " + prop.apres);
-  // pilote.js n'annule que si etat() n'a pas bougé : une retouche à la main doit le changer
-  const apres = etat(); SIM_PDN.rVrmMOhm += 1;
-  if (etat() === apres) throw new Error("etat() ne voit pas une retouche de R_vrm");
-  SIM_PDN.rVrmMOhm -= 1;
-  d.annuler({ lot }, jeton);
-  if (SIM_PDN.rVrmMOhm !== r0) throw new Error("Annuler ne remet pas R_vrm : " + SIM_PDN.rVrmMOhm);
-  // une valeur d'avant hors des bornes (0 = non renseigné) revient telle quelle
-  const chTr = simDsChamp("si", "tr"), tr0 = simDsLire(chTr);
-  simDsEcrire(chTr, 0);
-  const lt = [{ groupe: "si", cle: "tr", valeur: 0.5, unite: chTr.unite }];
-  const jt = d.appliquer({ lot: lt }, d.proposer({ lot: lt }));
-  if (simDsLire(chTr) !== 0.5) throw new Error("tr non écrit");
-  d.annuler({ lot: lt }, jt);
-  if (simDsLire(chTr) !== 0) throw new Error("Annuler doit remettre tr à 0, lu " + simDsLire(chTr));
-  simDsEcrire(chTr, tr0);
-  // la fiche de la charge allume l'assistant ΔI et part dans le profil : Annuler remet l'un et l'autre
-  pdnDeLabo();
-  const asst0 = simPDNAssistantActif(), dI0 = SIM_PDN.deltaIA, sup0 = JSON.stringify(SIM_PDN.fiche && SIM_PDN.fiche.suppose);
-  const lf = [{ groupe: "pdn_fiche", cle: "iActifMa", valeur: 55, unite: uI }];
-  const pf = d.proposer({ lot: lf }), jf = d.appliquer({ lot: lf }, pf);
-  if (!/gardée dans ton profil/.test(pf.apres)) throw new Error("la carte doit dire que la fiche part dans le profil : " + pf.apres);
-  d.annuler({ lot: lf }, jf);
-  if (simPDNAssistantActif() !== asst0 || SIM_PDN.deltaIA !== dI0 || JSON.stringify(SIM_PDN.fiche && SIM_PDN.fiche.suppose) !== sup0)
-    throw new Error("Annuler ne remet pas l'assistant, ΔI ou la fiche : " + [simPDNAssistantActif(), SIM_PDN.deltaIA, JSON.stringify(SIM_PDN.fiche && SIM_PDN.fiche.suppose)] + " ; attendu " + [asst0, dI0, sup0]);
-  // ΔI tapé : le mode « manuel » revient aussi
-  const man0 = !!SIM_PDN.deltaIManuel, ld = [{ groupe: "pdn", cle: "deltaIA", valeur: 0.3, unite: "A" }];
-  const jd = d.appliquer({ lot: ld }, d.proposer({ lot: ld }));
-  if (!SIM_PDN.deltaIManuel) throw new Error("ΔI tapé : mode manuel attendu");
-  d.annuler({ lot: ld }, jd);
-  if (!!SIM_PDN.deltaIManuel !== man0 || SIM_PDN.deltaIA !== dI0) throw new Error("Annuler ne remet pas le mode de ΔI");
-  refus([{ groupe: "pdn", cle: "rVrmMOhm", valeur: 7, unite: "Ω" }], /unité « Ω », le catalogue attend « mΩ »/);
-  refus([{ groupe: "pdn", cle: "rVrm", valeur: 7, unite: uR }], /paramètre « rVrm » inconnu/);
-  refus([{ groupe: "pdn", cle: "rVrmMOhm", valeur: 1e9, unite: uR }], /hors des bornes/);
-  refus([{ groupe: "rf", cle: "x", valeur: 1 }], /groupe « rf » inconnu/);
-  refus([{ groupe: "pdn", cle: "rVrmMOhm", valeur: r0, unite: uR }], /Rien à changer/);
-  const chP = simDsChamp("bus", "protocole");
-  if (chP && chP.choix) refus([{ groupe: "bus", cle: "protocole", valeur: simDsLire(chP), unite: chP.unite }], /Rien à changer/);
-  refus([{ groupe: "pdn", cle: "rVrmMOhm", valeur: 9, unite: uR }, { groupe: "pdn", cle: "rVrmMOhm", valeur: 8, unite: uR }], /deux fois/);
-});
-
-T("canal de pilotage : cao_sim_ecrire écrit les condensateurs et les bornes DC, et Annuler les remet", function(){
-  pdnDeLabo();
-  const d = ECRITURE_CAO.simulation, b0 = SIM_DCB.bornes;
-  const prof = typeof profLire === "function" ? JSON.stringify(profLire("dsCapas") || {}) : null;
-  SIM_DCB.bornes = [{ role: "charge", compRef: "U1", nom: "U1.3", valeur: 0.01, unite: "mA", provenance: "manuel" },
-                    { role: "charge", compRef: "U1", nom: "U1.7", valeur: 0.01, unite: "mA", provenance: "manuel" },
-                    { role: "source", compRef: "U9", nom: "U9.2", valeur: 3.3, provenance: "manuel" }];
-  const cuivre = SIM_IPC.dcBornes; SIM_IPC.dcBornes = () => SIM_DCB.bornes;   // pas de carte ouverte : les bornes telles quelles
-  try {
-    const [c1, c2] = SIM_PDN.condensateurs;
-    const lot = [{ groupe: "condensateurs", cle: "esl_nh", valeur: 0.3, unite: "nH", cible: { refs: ["C1"] } },
-                 { groupe: "condensateurs", cle: "esr_mohm", valeur: 5, unite: "mΩ", cible: { mpn: "GRM188R61A106MAAL" } },
-                 { groupe: "bornes_dc", cle: "courant_ma", valeur: 80, unite: "mA", cible: { composant: "U1" } },
-                 { groupe: "bornes_dc", cle: "tension_v", valeur: 5, unite: "V", cible: { composant: "U9" } }];
-    const prop = d.proposer({ lot });
-    if (!/condensateurs\.esl_nh \(C1\) ESL/.test(prop.apres) || !/bornes_dc\.courant_ma \(U1\)/.test(prop.apres)) throw new Error("carte : " + prop.apres);
-    const avant = JSON.stringify(d.etat());
-    const jeton = d.appliquer({ lot }, prop);
-    if (Math.abs(c1.esl - 0.3e-9) > 1e-15 || Math.abs(c2.esr - 0.005) > 1e-12 || c2.prov !== "datasheet") throw new Error("parasites non écrits");
-    const [u3, u7, u9] = SIM_DCB.bornes;
-    if (Math.abs(u3.valeur - 0.04) > 1e-12 || Math.abs(u7.valeur - 0.04) > 1e-12 || u9.valeur !== 5) throw new Error("bornes non écrites : " + [u3.valeur, u7.valeur, u9.valeur]);
-    if (JSON.stringify(d.etat()) === avant) throw new Error("etat() ne voit pas l'écriture");
-    d.annuler({ lot }, jeton);
-    if (Math.abs(c1.esl - 0.45e-9) > 1e-15 || c2.esr !== 0.008 || c2.prov !== "defaut" || u3.valeur !== 0.01 || u9.valeur !== 3.3 || u3.unite !== "mA")
-      throw new Error("Annuler ne remet pas tout");
-    if (JSON.stringify(d.etat()) !== avant) throw new Error("etat() d'après Annuler différent d'avant");
-    if (prof !== null && JSON.stringify(profLire("dsCapas") || {}) !== prof) throw new Error("Annuler ne remet pas le profil des condensateurs");
-    const refus = (l, motif) => { let m = ""; try { d.proposer({ lot: l }); } catch (e) { m = e.message; } if (!motif.test(m)) throw new Error("refus attendu " + motif + ", lu « " + m + " »"); };
-    refus([{ groupe: "condensateurs", cle: "esl_nh", valeur: 0.3, unite: "pH", cible: { refs: ["C1"] } }], /attendue « nH »/);
-    refus([{ groupe: "condensateurs", cle: "esl_nh", valeur: 0.3, unite: "nH", cible: { refs: ["C99"] } }], /aucun condensateur/);
-    refus([{ groupe: "condensateurs", cle: "esl_nh", valeur: 0.3, unite: "nH" }], /« cible » attendue/);
-    refus([{ groupe: "bornes_dc", cle: "courant_ma", valeur: 1, unite: "mA", cible: { composant: "U5" } }], /aucune borne/);
-    refus([{ groupe: "bornes_dc", cle: "ohms", valeur: 1, unite: "Ω", cible: { composant: "U1" } }], /inconnu/);
-  } finally { SIM_DCB.bornes = b0; SIM_IPC.dcBornes = cuivre; }
 });
 
 /* ==========================================================================

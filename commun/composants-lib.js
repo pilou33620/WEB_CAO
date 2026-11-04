@@ -1,19 +1,19 @@
 "use strict";
 /* =============================================================================
    commun/composants-lib.js
-   Création de composants dans la LIB (module « composants » du MCP web_suite,
-   lanceur/docs/SPEC-mcp-composants.md) : contrôles d'une empreinte pcbfp-1,
-   d'une ligne de catalogue et d'un brochage.
+   Préparation de composants de la LIB (module « composants » du MCP web_suite,
+   lanceur/docs/SPEC-mcp-composants.md) : contrôles d'une empreinte pcbfp-1 et
+   d'un brochage, générateurs IPC-7351B, conversion KiCad, branchement Touchstone.
 
    Rien ici ne touche au DOM ni au serveur : on lit des objets, on rend
    { erreurs, remarques }. Une erreur refuse ; une remarque se montre et laisse
-   passer. Gestion LIB s'en sert (commandes du canal-pilote, carte de
-   création) ; le banc gestion-lib/test/banc-composants.js l'éprouve sous Node.
+   passer. Gestion LIB s'en sert (commandes du canal-pilote, éditeur
+   d'empreinte, fiche de la référence) ; le banc gestion-lib/test/banc-composants.js l'éprouve sous Node.
 
    Les contrôles d'empreinte suivent la lecture du PCB (normFpDef,
    editeur-pcb/js/08-empreinte.js) : ce que la lecture corrigerait en silence
    (numéro de pastille non entier, perçage rogné, forme inconnue devenue
-   rectangle) est refusé ici, pour que le PCB pose ce que la carte a montré.
+   rectangle) est refusé ici, pour que le PCB pose ce que l'éditeur a montré.
    ============================================================================= */
 
 const COMPOSANTS_LIB = (() => {
@@ -24,11 +24,6 @@ const COMPOSANTS_LIB = (() => {
                           "pads", "body", "holes", "lines", "description"];
   const NOM_EMPREINTE = /^[A-Za-z0-9_.+-]{1,60}$/;
   const CONTROLE = /[\x00-\x1f\x7f]/;
-  /* une cellule du catalogue ne doit ni passer pour une formule à l'ouverture dans un tableur
-     (« =HYPERLINK(… », « @SUM », « +cmd|… » ; « -40 » et « +/-20% » restent permis), ni cacher
-     des caractères invisibles qui feraient un sosie d'une référence existante */
-  const FORMULE = /^\s*([=@]|[+-]\s*[A-Za-z(])/;
-  const INVISIBLE = /[\u0080-\u009f\u00a0\u00ad\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/;
   const COORD = 100, COURONNE = 0.1, PASTILLE_MIN = 0.05;
 
   /* Symboles intégrés du schéma (clés de LIB, editeur-schematique/js/02-bibliotheque.js) :
@@ -229,119 +224,7 @@ const COMPOSANTS_LIB = (() => {
     return { erreurs, remarques };
   }
 
-  /* ---------- symbole schsym-1 ----------
-     Les règles du schéma qui le dessinera (editeur-schematique/js/29-symboles-lib.js) : broches
-     numérotées de 1 à N sans trou, coordonnées finies, primitives connues. */
-  const OPS_SYMBOLE = { line: ["x1", "y1", "x2", "y2"], rect: ["x", "y", "w", "h"], arc: ["cx", "cy", "r", "start", "end"],
-                        circle: ["x", "y", "r"], text: ["x", "y"], arrow: ["x", "y"], poly: [] };
-  function verifierSymbole(sym, nomFichier) {
-    const erreurs = [], remarques = [];
-    const coord = v => fini(v) && Math.abs(v) <= 4000;
-    if (!sym || typeof sym !== "object" || Array.isArray(sym)) return { erreurs: ["le symbole doit être un objet schsym-1"], remarques };
-    if (sym.format !== "schsym-1") erreurs.push("« format » doit valoir « schsym-1 »");
-    if (typeof sym.id !== "string" || !NOM_EMPREINTE.test(sym.id)) erreurs.push("« id » : le nom du fichier, [A-Za-z0-9_.+-]");
-    else if (nomFichier && sym.id + ".json" !== nomFichier) erreurs.push("« id » doit être le nom du fichier (" + nomFichier + ")");
-    if (typeof sym.id === "string" && Object.prototype.hasOwnProperty.call(SYMBOLES, sym.id.toLowerCase()))
-      erreurs.push("« " + sym.id + " » est un symbole intégré : un fichier de ce nom ne le remplacerait pas");
-    const pins = Array.isArray(sym.pins) ? sym.pins : [];
-    if (!pins.length || pins.length > 1024) erreurs.push("« pins » : de 1 à 1024 broches {n, x, y, name?}");
-    const vus = new Set();
-    for (const p of pins) {
-      if (!p || !Number.isInteger(p.n) || p.n < 1 || !coord(p.x) || !coord(p.y)) { erreurs.push("broche illisible : " + JSON.stringify(p).slice(0, 60)); continue; }
-      if (vus.has(p.n)) erreurs.push("broche " + p.n + " en double");
-      vus.add(p.n);
-      if ((p.x % 20 || p.y % 20) && remarques.length < 5) remarques.push("broche " + p.n + " hors du pas de 1 mm (20) : moins facile à câbler");
-    }
-    for (let n = 1; n <= vus.size; n++) if (!vus.has(n)) { erreurs.push("broches numérotées de 1 à " + vus.size + " sans trou : la " + n + " manque"); break; }
-    const prims = Array.isArray(sym.primitives) ? sym.primitives : [];
-    if (prims.length > 5000) erreurs.push("« primitives » : 5000 au plus");
-    for (const q of prims) {
-      const cles = q && Object.prototype.hasOwnProperty.call(OPS_SYMBOLE, q.op) ? OPS_SYMBOLE[q.op] : null;
-      if (!cles) { erreurs.push("primitive inconnue : « " + String(q && q.op).slice(0, 20) + " » (" + Object.keys(OPS_SYMBOLE).join(", ") + ")"); break; }
-      if (cles.some(k => !coord(q[k]))) { erreurs.push(q.op + " : coordonnées numériques finies"); break; }
-      if (q.op === "poly" && !(Array.isArray(q.pts) && q.pts.length >= 2 && q.pts.length <= 500 && q.pts.every(p => Array.isArray(p) && coord(p[0]) && coord(p[1])))) {
-        erreurs.push("poly : de 2 à 500 points [x, y]"); break;
-      }
-      if (q.op === "text" && typeof (q.text != null ? q.text : q.txt) !== "string") { erreurs.push("text : un texte"); break; }
-    }
-    if (sym.prefix != null && !(typeof sym.prefix === "string" && /^[A-Za-z]{1,4}$/.test(sym.prefix))) erreurs.push("« prefix » : 1 à 4 lettres");
-    if (!prims.length) remarques.push("aucune primitive : le symbole n'aura que ses broches");
-    return { erreurs, remarques };
-  }
-
-  /* ---------- ligne de catalogue ---------- */
-  const OBLIGATOIRES = ["Part Name", "Reference designator Prefix", "Number Of pins",
-                        "Empreinte PCB", "Empreinte Schématique"];
   const nomDeChemin = v => String(v == null ? "" : v).trim().replace(/^.*[\\/]/, "").replace(/\.json$/i, "");
-
-  /* contexte : { partNames: [...], empreintes: [noms sans .json], nouvelle: def pcbfp-1 créée
-     par la même carte (ou null), empreinteDef: def de l'empreinte visée si elle existe }.
-     Rend aussi la ligne complète (39 colonnes + Brochage), chemins au format du catalogue. */
-  function verifierLigne(ligne, contexte) {
-    const erreurs = [], remarques = [];
-    const colonnes = COLONNES_CATALOGUE_39.concat("Brochage");
-    const ctx = contexte || {};
-    if (!ligne || typeof ligne !== "object" || Array.isArray(ligne))
-      return { erreurs: ["la ligne doit être un objet colonne → valeur"], remarques, ligne: null };
-    const inconnues = Object.keys(ligne).filter(k => !colonnes.includes(k));
-    if (inconnues.length) erreurs.push("colonne(s) inconnue(s) du catalogue : " + inconnues.join(", "));
-    const sortie = {};
-    for (const c of colonnes) {
-      let v = ligne[c] == null ? "" : ligne[c];
-      if (typeof v === "number" && Number.isFinite(v)) v = String(v);
-      if (typeof v !== "string") { erreurs.push("« " + c + " » : texte attendu"); v = ""; }
-      else if (CONTROLE.test(v) || v.length > 500) erreurs.push("« " + c + " » : une ligne, 500 caractères au plus");
-      else if (FORMULE.test(v)) erreurs.push("« " + c + " » : commence comme une formule de tableur (=, @, +lettre, -lettre)");
-      else if (INVISIBLE.test(v)) erreurs.push("« " + c + " » : caractère invisible ou de contrôle Unicode");
-      sortie[c] = v.trim();
-    }
-    for (const c of OBLIGATOIRES) if (!sortie[c]) erreurs.push("colonne obligatoire vide ou manquante : « " + c + " »");
-
-    const part = sortie["Part Name"];
-    if (part) {
-      if (part.length > 80) erreurs.push("« Part Name » : 80 caractères au plus");
-      const pris = new Set((ctx.partNames || []).map(n => String(n).trim().toUpperCase()));
-      if (pris.has(part.toUpperCase())) erreurs.push("« " + part + " » est déjà au catalogue (jamais d'écrasement)");
-    }
-    const pref = sortie["Reference designator Prefix"];
-    if (pref && !/^[A-Za-z]{1,4}$/.test(pref)) erreurs.push("préfixe de repère : 1 à 4 lettres (R, C, U, J…)");
-    const nb = sortie["Number Of pins"];
-    if (nb && !(/^\d+$/.test(nb) && +nb >= 1 && +nb <= 4096)) erreurs.push("« Number Of pins » : entier de 1 à 4096");
-
-    let fpDef = null;
-    if (sortie["Empreinte PCB"]) {
-      const fp = nomDeChemin(sortie["Empreinte PCB"]);
-      const nouvelle = ctx.nouvelle && ctx.nouvelle.name === fp ? ctx.nouvelle : null;
-      if (!NOM_EMPREINTE.test(fp)) erreurs.push("« Empreinte PCB » : nom d'empreinte illisible");
-      else if (!nouvelle && !(ctx.empreintes || []).includes(fp))
-        erreurs.push("empreinte « " + fp + " » absente de la LIB (ni existante, ni créée par cette carte)");
-      sortie["Empreinte PCB"] = "lib/empreinte/" + fp + ".json";
-      fpDef = nouvelle || ctx.empreinteDef || null;
-      if (fpDef && nb && /^\d+$/.test(nb) && +nb !== fpDef.pins)
-        remarques.push("« Number Of pins » (" + nb + ") ≠ pastilles de l'empreinte (" + fpDef.pins + ")");
-    }
-    let type = "", symDef = null;
-    if (sortie["Empreinte Schématique"]) {
-      const nom = nomDeChemin(sortie["Empreinte Schématique"]);
-      const neuf = ctx.nouveauSymbole && ctx.nouveauSymbole.id === nom ? ctx.nouveauSymbole : null;
-      type = nom.toLowerCase();
-      if (Object.prototype.hasOwnProperty.call(SYMBOLES, type)) sortie["Empreinte Schématique"] = "lib/symbole/" + type + ".json";
-      else if (neuf || (ctx.symboles || []).includes(nom)) {
-        // un symbole de la LIB (schsym-1), dessiné par le schéma (29-symboles-lib.js) : son nom garde sa casse
-        type = nom;
-        symDef = neuf || (ctx.symboleDefs && ctx.symboleDefs[nom]) || null;
-        sortie["Empreinte Schématique"] = "lib/symbole/" + nom + ".json";
-      } else
-        erreurs.push("symbole inconnu : « " + nom + " » (intégré : " + Object.keys(SYMBOLES).join(", ") +
-                     " ; ou un symbole de la LIB, ou créé par cette carte)");
-    }
-    if (sortie["Brochage"] && type && (Object.prototype.hasOwnProperty.call(SYMBOLES, type) || symDef)) {
-      const br = verifierBrochage(sortie["Brochage"], fpDef, type, symDef);
-      erreurs.push(...br.erreurs.filter(e => !/^symbole intégré inconnu/.test(e)));
-      remarques.push(...br.remarques);
-    }
-    return { erreurs, remarques, ligne: sortie };
-  }
 
   /* ---------- générateurs IPC-7351B ----------
      Pastille CMS (IPC-7351B, § 3.1) à partir des cotes min/max de la datasheet :
@@ -901,6 +784,6 @@ const COMPOSANTS_LIB = (() => {
     }
   }
 
-  return { SYMBOLES, CHAMPS, nomDeChemin, verifierEmpreinte, verifierBrochage, verifierSymbole, verifierLigne, genererEmpreinte,
+  return { SYMBOLES, CHAMPS, nomDeChemin, verifierEmpreinte, verifierBrochage, genererEmpreinte,
            lireParametres, convertirKicad, lireS, Refus, portsTouchstone, lireBranchement, brancherTouchstone };
 })();

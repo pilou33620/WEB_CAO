@@ -1,8 +1,8 @@
 "use strict";
 /* =============================================================================
    gestion-lib/test/banc-composants.js
-   Banc de commun/composants-lib.js : contrôles d'empreinte, de ligne de
-   catalogue et de brochage (module « composants » du MCP web_suite).
+   Banc de commun/composants-lib.js : contrôles d'empreinte et de brochage,
+   générateurs, conversion KiCad (module « composants » du MCP web_suite).
    ============================================================================= */
 const fs = require("fs");
 const path = require("path");
@@ -115,64 +115,6 @@ r = CL.verifierBrochage("1=1,2=2,3=3,4=4,5=5,6=6", null, "ic");
 verifier(!r.erreurs.length, "ic : toutes les broches numérotées acceptées");
 verifier(CL.verifierBrochage("A=1;K=2", SOT235, "diode").erreurs.length > 0, "point-virgule refusé");
 verifier(CL.verifierBrochage("A=1", SOT235, "inconnu").erreurs.some(e => /inconnu/.test(e)), "symbole inconnu refusé");
-
-/* ---------- ligne de catalogue ---------- */
-console.log("— ligne de catalogue —");
-const LDO = {
-  "Part Name": "LDO_ESSAI_3V3", "Reference designator Prefix": "U", "Number Of pins": "5",
-  "Value": "3V3", "Empreinte PCB": "SOT-23-5", "Empreinte Schématique": "regulator",
-  "Brochage": "IN=1,GND=2,OUT=5,NC=3/4"
-};
-const ctx = { partNames: ["R0402_10K", "ldo_deja"], empreintes: ["0603", "SOT-23-5"], empreinteDef: SOT235 };
-r = CL.verifierLigne(LDO, ctx);
-verifier(!r.erreurs.length, "ligne juste (" + r.erreurs.join(" | ") + ")");
-verifier(Object.keys(r.ligne).length === 40 && Object.keys(r.ligne)[39] === "Brochage", "39 colonnes + Brochage, dans l'ordre");
-verifier(r.ligne["Empreinte PCB"] === "lib/empreinte/SOT-23-5.json" &&
-         r.ligne["Empreinte Schématique"] === "lib/symbole/regulator.json", "chemins au format du catalogue");
-function refusLigne(modif, motif, libelle, c) {
-  const l = Object.assign({}, LDO);
-  modif(l);
-  const res = CL.verifierLigne(l, c || ctx);
-  verifier(res.erreurs.some(e => motif.test(e)), libelle + " : refusé (" + res.erreurs.join(" | ") + ")");
-}
-refusLigne(l => { delete l["Reference designator Prefix"]; }, /obligatoire.*Prefix/, "colonne obligatoire manquante");
-refusLigne(l => { l["Part Name"] = "LDO_DEJA"; }, /déjà au catalogue/, "Part Name déjà prise (casse ignorée)");
-refusLigne(l => { l["Empreinte PCB"] = "SOT-89"; }, /absente de la LIB/, "empreinte absente");
-refusLigne(l => { l["Empreinte Schématique"] = "lib/symbole/ldo.json"; }, /symbole inconnu : « ldo »/, "symbole inconnu");
-refusLigne(l => { l["Couleur"] = "bleu"; }, /colonne\(s\) inconnue/, "colonne inconnue");
-
-/* ---------- symboles de la LIB (schsym-1) ---------- */
-const SYM = { format: "schsym-1", id: "LDO_SYM", name: "LDO", prefix: "U",
-  pins: [{ n: 1, x: -40, y: 0, name: "VIN" }, { n: 2, x: 0, y: 40, name: "GND" }, { n: 3, x: 40, y: 0, name: "VOUT" }],
-  primitives: [{ op: "rect", x: -20, y: -20, w: 40, h: 40, r: 2, fill: true }, { op: "text", text: "LDO", x: 0, y: 0, size: 10 }] };
-r = CL.verifierSymbole(SYM, "LDO_SYM.json");
-verifier(!r.erreurs.length, "symbole juste (" + r.erreurs.join(" | ") + ")");
-for (const [modif, motif, quoi] of [
-    [s => { s.format = "x"; }, /schsym-1/, "format"], [s => { s.pins = [{ n: 1, x: 0, y: 0 }, { n: 3, x: 20, y: 0 }]; }, /la 2 manque/, "numérotation trouée"],
-    [s => { s.primitives = [{ op: "img", x: 0, y: 0 }]; }, /primitive inconnue/, "primitive inconnue"],
-    [s => { s.id = "regulator"; }, /symbole intégré/, "nom d'un intégré"], [s => {}, /nom du fichier/, "id ≠ fichier", "AUTRE.json"]]) {
-  const s = copie(SYM); modif(s);
-  const e = CL.verifierSymbole(s, quoi === "id ≠ fichier" ? "AUTRE.json" : s.id + ".json").erreurs;
-  verifier(e.some(x => motif.test(x)), "symbole refusé : " + quoi + " (" + e.join(" | ") + ")");
-}
-// une ligne qui désigne un symbole de la LIB : brochage contrôlé par ses noms de broches
-const ctxSym = Object.assign({}, ctx, { symboles: ["LDO_SYM"], symboleDefs: { LDO_SYM: SYM } });
-r = CL.verifierLigne(Object.assign({}, LDO, { "Empreinte Schématique": "LDO_SYM", "Brochage": "VIN=1,GND=2,VOUT=5,NC=3/4" }), ctxSym);
-verifier(!r.erreurs.length && r.ligne["Empreinte Schématique"] === "lib/symbole/LDO_SYM.json", "ligne sur un symbole de la LIB (" + r.erreurs.join(" | ") + ")");
-refusLigne(l => { l["Empreinte Schématique"] = "LDO_SYM"; l["Brochage"] = "IN=1,GND=2,OUT=5"; }, /broche « IN » inconnue du symbole LDO_SYM/, "brochage face au symbole de la LIB", ctxSym);
-r = CL.verifierLigne(Object.assign({}, LDO, { "Empreinte Schématique": "LDO_SYM", "Brochage": "VIN=1,GND=2,VOUT=5" }), Object.assign({}, ctx, { nouveauSymbole: SYM }));
-verifier(!r.erreurs.length, "ligne sur un symbole créé par la même carte (" + r.erreurs.join(" | ") + ")");
-refusLigne(l => { l["Value"] = "a\nb"; }, /une ligne/, "valeur sur deux lignes");
-refusLigne(l => { l["Brochage"] = "IN=1,GND=2,OUT=8"; }, /absente\(s\) de l'empreinte/, "brochage incohérent");
-refusLigne(l => { l["Number Of pins"] = "cinq"; }, /entier/, "nombre de broches illisible");
-refusLigne(l => { l["Description"] = '=HYPERLINK("http://x","y")'; }, /formule/, "formule de tableur");
-refusLigne(l => { l["Manufacturer"] = "@SUM(1+1)"; }, /formule/, "formule « @ »");
-refusLigne(l => { l["Part Name"] = "LDO\u200b_ESSAI"; }, /invisible/, "caractère invisible");
-r = CL.verifierLigne(Object.assign({}, LDO, { "Minimum operating temperature": "-40", tolerance: "+/-20%" }), ctx);
-verifier(!r.erreurs.length, "« -40 » et « +/-20% » restent permis");
-r = CL.verifierLigne(Object.assign({}, LDO, { "Empreinte PCB": "SOT-23-5-NEUF" }),
-  Object.assign({}, ctx, { nouvelle: Object.assign(copie(SOT235), { name: "SOT-23-5-NEUF" }) }));
-verifier(!r.erreurs.length, "empreinte créée par la même carte : acceptée");
 
 /* ---------- générateurs IPC-7351B ---------- */
 console.log("— générateurs —");
@@ -406,121 +348,12 @@ verifier(r.empreinte && r.empreinte.name === "a_.._b_c" && r.remarques.some(m =>
 
 /* ---------- commandes de Gestion LIB (08-pilote-lib.js), faux serveur ---------- */
 console.log("— commandes de Gestion LIB —");
-const SRV = { parts: ["R0402_10K"], pcb: ["0603.json", "SOT-23-5.json"], ecrits: [], refusLigne: null, refusFichier: null };
-Object.assign(bac, {
-  LIB_STATE: { colonnes: ["Part Name"], composants: [{ _id: 0, "Part Name": "R0402_10K" }], selection: null,
-               fichiers: { pcb: [] }, cacheFichiers: new Map() },
-  apiGet: async url => url === "/api/lib/composants" ? { composants: SRV.parts.map(p => ({ "Part Name": p })) }
-                     : url === "/api/lib/fichiers" ? { pcb: SRV.pcb.slice() } : null,
-  apiPost: async (url, corps) => {
-    if (SRV.refusLigne) throw Object.assign(new Error(SRV.refusLigne), { status: SRV.statutLigne });
-    SRV.ecrits.push(["ligne", corps.ajouter]);
-    SRV.parts.push(corps.ajouter["Part Name"]);
-    return { ok: true };
-  },
-  obtenirFichierLib: async (type, nom) => nom === "SOT-23-5.json" ? SOT235 : null,
-  sauvegarderFichierLib: async (type, nom, data, opt) => {
-    if (SRV.refusFichier) throw new Error(SRV.refusFichier);
-    SRV.ecrits.push(["empreinte", nom, opt]);
-    SRV.pcb.push(nom);
-  },
-  fetch: async (url, opt) => { SRV.ecrits.push(["retrait", url, opt.method, opt.headers]); return { ok: true }; },
-  libSuiteNoter() {}, rafraichirTout() {}, selectionnerComposant() {}
-});
+bac.obtenirFichierLib = async (type, nom) => nom === "SOT-23-5.json" ? SOT235 : null;
 vm.runInContext(lire("gestion-lib/js/08-pilote-lib.js"), bac, { filename: "08-pilote-lib.js" });
 const CMD = vm.runInContext("libPiloteCommandes()", bac);
 const asyncTests = (async () => {
-  const neuve = Object.assign(copie(SOT235), { name: "SOT-23-5-LDO" });
-  const ligneLdo = Object.assign({}, LDO, { "Empreinte PCB": "SOT-23-5-LDO" });
-  const C = CMD.lib_composant_creer;
-  const prop = await C.proposer({ ligne: ligneLdo, empreinte: neuve });
-  verifier(SRV.ecrits.length === 0, "proposer n'écrit rien");
-  verifier(/Créer « LDO_ESSAI_3V3 »/.test(prop.titre) && /empreinte neuve SOT-23-5-LDO \(5 pastilles\)/.test(prop.apres),
-    "la carte dit ce qui sera créé (" + prop.apres + ")");
-  await C.appliquer({ ligne: ligneLdo, empreinte: neuve }, prop);
-  verifier(JSON.stringify(SRV.ecrits.map(e => e.slice(0, 2))) === JSON.stringify([["empreinte", "SOT-23-5-LDO.json"], ["ligne", SRV.ecrits[1] && SRV.ecrits[1][1]]]) &&
-           SRV.ecrits[0][2].si_absent === true, "au clic : empreinte (si_absent) puis ligne");
-  verifier(SRV.ecrits[1][1]["Empreinte PCB"] === "lib/empreinte/SOT-23-5-LDO.json" && !("Description" in SRV.ecrits[1][1]),
-    "ligne envoyée : chemins du catalogue, colonnes vides omises");
-  verifier(bac.LIB_STATE.composants.some(c => c["Part Name"] === "LDO_ESSAI_3V3" && c._id === 1) &&
-           bac.LIB_STATE.colonnes.includes("Brochage"), "le miroir de la page reçoit la ligne (un Enregistrer ne l'effacera pas)");
-
-  // second essai, même nom : refusé sans rien écrire
-  SRV.ecrits.length = 0;
-  let refuse = null;
-  try { await C.proposer({ ligne: ligneLdo, empreinte: Object.assign(copie(neuve), { name: "SOT-23-5-LDO" }) }); } catch (e) { refuse = e.message; }
-  verifier(refuse && /déjà au catalogue/.test(refuse) && /déjà dans la LIB/.test(refuse) && !SRV.ecrits.length,
-    "second essai du même composant : refusé, rien d'écrit (" + refuse + ")");
-
-  // ligne refusée par le serveur au clic : l'empreinte créée par la carte est retirée
-  const l2 = Object.assign({}, LDO, { "Part Name": "LDO_2", "Empreinte PCB": "SOT-23-5-B" });
-  const n2 = Object.assign(copie(SOT235), { name: "SOT-23-5-B" });
-  const p2 = await C.proposer({ ligne: l2, empreinte: n2 });
-  SRV.refusLigne = "Colonne(s) inconnue(s) du catalogue : Brochage";
-  SRV.statutLigne = 400;
-  refuse = null;
-  try { await C.appliquer({ ligne: l2, empreinte: n2 }, p2); } catch (e) { refuse = e.message; }
-  SRV.refusLigne = null;
-  verifier(refuse && /empreinte SOT-23-5-B.json retirée/.test(refuse) &&
-           JSON.stringify(SRV.ecrits.map(e => e[0])) === JSON.stringify(["empreinte", "retrait"]) &&
-           SRV.ecrits[1][1] === "/api/lib/fichier?type=pcb&nom=SOT-23-5-B.json" && SRV.ecrits[1][2] === "DELETE" &&
-           SRV.ecrits[1][3]["X-WEB_CAO"] === "1",
-    "ligne refusée : empreinte retirée, avec l'en-tête maison (" + refuse + ")");
-
-  // réponse perdue (pas de statut HTTP) : la ligne a pu être écrite, l'empreinte reste
-  SRV.ecrits.length = 0;
-  SRV.pcb = SRV.pcb.filter(f => f !== "SOT-23-5-B.json");
-  const p2b = await C.proposer({ ligne: l2, empreinte: n2 });
-  SRV.refusLigne = "Failed to fetch";
-  SRV.statutLigne = undefined;
-  refuse = null;
-  try { await C.appliquer({ ligne: l2, empreinte: n2 }, p2b); } catch (e) { refuse = e.message; }
-  SRV.refusLigne = null;
-  verifier(refuse && /gardée/.test(refuse) && JSON.stringify(SRV.ecrits.map(e => e[0])) === JSON.stringify(["empreinte"]),
-    "réponse perdue : empreinte gardée, l'utilisateur prévenu (" + refuse + ")");
-
-  // empreinte déjà là au clic (409) : rien d'autre n'est écrit
-  SRV.ecrits.length = 0;
-  SRV.pcb = SRV.pcb.filter(f => f !== "SOT-23-5-B.json");
-  const l3 = Object.assign({}, l2, { "Part Name": "LDO_3" });
-  const p3 = await C.proposer({ ligne: l3, empreinte: n2 });
-  SRV.refusFichier = "Le fichier existe deja : SOT-23-5-B.json (jamais d'ecrasement)";
-  refuse = null;
-  try { await C.appliquer({ ligne: l3, empreinte: n2 }, p3); } catch (e) { refuse = e.message; }
-  SRV.refusFichier = null;
-  verifier(refuse && /Empreinte non écrite/.test(refuse) && !SRV.ecrits.length, "fichier existant : refus, rien d'écrit");
-
-  // la LIB change entre la carte et le clic : refus au clic
-  const l4 = Object.assign({}, LDO, { "Part Name": "LDO_4", "Empreinte PCB": "SOT-23-5" });
-  const p4 = await C.proposer({ ligne: l4 });
-  verifier(/empreinte existante SOT-23-5/.test(p4.apres), "empreinte existante désignée : pas de fichier à créer");
-  SRV.parts.push("ldo_4");
-  refuse = null;
-  try { await C.appliquer({ ligne: l4 }, p4); } catch (e) { refuse = e.message; }
-  verifier(refuse && /Refusé au clic/.test(refuse) && !SRV.ecrits.length, "Part Name prise entre la carte et le clic : refus au clic");
-
-  // ligne qui ne désigne pas l'empreinte donnée
-  refuse = null;
-  try { await C.proposer({ ligne: Object.assign({}, l4, { "Part Name": "LDO_5" }), empreinte: Object.assign(copie(SOT235), { name: "AUTRE" }) }); }
-  catch (e) { refuse = e.message; }
-  verifier(refuse && /doit désigner l'empreinte créée/.test(refuse), "la ligne doit désigner l'empreinte créée");
-
-  // un symbole neuf (schsym-1) avec la ligne : écrit si_absent, avant la ligne qui le désigne
-  SRV.ecrits.length = 0;
-  const lSym = Object.assign({}, LDO, { "Part Name": "LDO_SYMB", "Empreinte PCB": "SOT-23-5", "Empreinte Schématique": "LDO_SYM",
-                                        "Brochage": "VIN=1,GND=2,VOUT=5,NC=3/4" });
-  const pSym = await C.proposer({ ligne: lSym, symbole: SYM });
-  verifier(/symbole neuf LDO_SYM \(3 broches\)/.test(pSym.apres) && !SRV.ecrits.length, "la carte annonce le symbole neuf (" + pSym.apres + ")");
-  await C.appliquer({ ligne: lSym, symbole: SYM }, pSym);
-  verifier(JSON.stringify(SRV.ecrits.map(e => e.slice(0, 2))) === JSON.stringify([["empreinte", "LDO_SYM.json"], ["ligne", SRV.ecrits[1] && SRV.ecrits[1][1]]]) &&
-           SRV.ecrits[0][2].si_absent === true && SRV.ecrits[1][1]["Empreinte Schématique"] === "lib/symbole/LDO_SYM.json",
-    "au clic : le symbole (si_absent), puis la ligne qui le désigne");
-  refuse = null;
-  try { await C.proposer({ ligne: Object.assign({}, lSym, { "Part Name": "LDO_SYMC" }), symbole: Object.assign(copie(SYM), { primitives: [{ op: "img" }] }) }); }
-  catch (e) { refuse = e.message; }
-  verifier(refuse && /symbole : primitive inconnue/.test(refuse), "symbole fautif : refusé (" + refuse + ")");
-
-  // calculs
+  verifier(Object.keys(CMD).sort().join() === "lib_brochage_verifier,lib_empreinte_generer,lib_empreinte_verifier,lib_kicad_convertir" &&
+           Object.values(CMD).every(c => !c.ecriture), "les commandes ne font que calculer : aucune n'écrit");
   r = await CMD.lib_brochage_verifier.executer({ brochage: "IN=1,GND=2,OUT=9", empreinte: "SOT-23-5", symbole: "regulator" });
   verifier(r.erreurs.some(e => /absente/.test(e)), "lib_brochage_verifier : empreinte lue dans la LIB par son nom");
   r = await CMD.lib_empreinte_generer.executer({ famille: "chip", parametres: { code: "0603" } });
@@ -529,120 +362,6 @@ const asyncTests = (async () => {
   verifier(!r.erreurs.length, "lib_empreinte_verifier : nom de fichier tiré du nom");
   r = await CMD.lib_kicad_convertir.executer({ texte: KICAD_SOT235 });
   verifier(r.empreinte && r.empreinte.pads.length === 5, "lib_kicad_convertir");
-
-  /* lib_simulation_lier : un faux serveur qui tient le catalogue, lib_simulation et la liaison */
-  const SIM = { fichiers: { "as179_a.s3p": "! broches : 5 3 1\n# GHz S DB R 50\n" }, ecrits: [], refusLier: null };
-  const CAT = [{ "Part Name": "AS179", "Number Of pins": "6", "Brochage": "J3=1,GND=2,J2=3,V1=4,J1=5,V2=6",
-                 "Modèle Simulation": "lib/simulation/as179_a.s3p" }, { "Part Name": "R1", "Number Of pins": "2" }];
-  const sauve = { apiGet: bac.apiGet, apiPost: bac.apiPost, sauvegarderFichierLib: bac.sauvegarderFichierLib, fetch: bac.fetch };
-  Object.assign(bac, {
-    apiGet: async url => {
-      if (url === "/api/lib/composants") return { composants: CAT.map(c => Object.assign({}, c)) };
-      const nom = decodeURIComponent(url.replace(/^.*nom=/, ""));
-      if (nom in SIM.fichiers) return { contenu: SIM.fichiers[nom] };
-      throw Object.assign(new Error("introuvable"), { status: 404 });
-    },
-    apiPost: async (url, corps) => {
-      if (SIM.refusLier) throw Object.assign(new Error(SIM.refusLier), { status: 404 });
-      const l = corps.lier_simulation, c = CAT.find(x => x["Part Name"] === l.part);
-      SIM.ecrits.push(["lier", l.part, l.modele]);
-      c["Modèle Simulation"] = [c["Modèle Simulation"], l.modele].filter(Boolean).join(" | ");
-      return { ok: true, modeles: c["Modèle Simulation"].split(" | ") };
-    },
-    sauvegarderFichierLib: async (type, nom, texte, opt) => { SIM.ecrits.push(["fichier", type, nom, opt.si_absent]); SIM.fichiers[nom] = texte; },
-    fetch: async (url, opt) => { SIM.ecrits.push(["retrait", url, opt.method]); return { ok: true }; }
-  });
-  bac.LIB_STATE.colonnes = ["Part Name", "Modèle Simulation"];
-  bac.LIB_STATE.composants = [{ _id: 0, "Part Name": "AS179", "Modèle Simulation": "lib/simulation/as179_a.s3p" }];
-  bac.LIB_STATE.fichiers.simulation = ["as179_a.s3p"];
-  const S3P_B = "! fabricant\n# GHz S DB R 50\n0.1 -20 0 -0.2 0 -40 0 -0.2 0 -20 0 -40 0 -40 0 -40 0 -1 0\n";
-  const L = CMD.lib_simulation_lier;
-  verifier(L.ecriture && L.clic && typeof L.irreversible === "string", "lib_simulation_lier : toujours au clic, irréversible");
-  const argsB = { reference: "as179", fichier: "as179 b.s3p", texte: S3P_B, ports: ["J1", "J2", "J3"], masse: "GND" };
-  const pB = await L.proposer(argsB);
-  verifier(!SIM.ecrits.length && /Lier « as179_b\.s3p » à « AS179 »/.test(pB.titre) &&
-           /pattes 5, 3, 1, masse 2/.test(pB.apres) && /as179_a\.s3p \| lib\/simulation\/as179_b\.s3p/.test(pB.apres),
-    "proposer n'écrit rien ; la carte dit le fichier, les pattes et la case après (" + pB.apres + ")");
-  const rB = await L.appliquer(argsB, pB);
-  verifier(JSON.stringify(SIM.ecrits) === JSON.stringify([["fichier", "simulation", "as179_b.s3p", true],
-                                                           ["lier", "AS179", "lib/simulation/as179_b.s3p"]]) &&
-           SIM.fichiers["as179_b.s3p"].startsWith("! broches : 5 3 1\n! masse : 2\n! fabricant"),
-    "au clic : fichier branché (si_absent), puis la liaison");
-  verifier(rB.modeles.length === 2 && bac.LIB_STATE.composants[0]["Modèle Simulation"] === "lib/simulation/as179_a.s3p | lib/simulation/as179_b.s3p" &&
-           bac.LIB_STATE.fichiers.simulation.includes("as179_b.s3p"), "le miroir de la page suit (un Enregistrer ne l'effacera pas)");
-  const refusSim = async (a, motif, quoi) => {
-    SIM.ecrits.length = 0;
-    let m = null;
-    try { await L.proposer(a); } catch (e) { m = e.message; }
-    verifier(m && motif.test(m) && !SIM.ecrits.length, "lib_simulation_lier refusé : " + quoi + " (" + m + ")");
-  };
-  await refusSim(argsB, /déjà lié/, "déjà lié");
-  await refusSim(Object.assign({}, argsB, { texte: S3P_B + "1 2 3\n" }), /autre contenu/, "même nom, autre contenu : jamais d'écrasement");
-  await refusSim(Object.assign({}, argsB, { reference: "INCONNU" }), /pas au catalogue/, "référence inconnue");
-  await refusSim(Object.assign({}, argsB, { fichier: "x.s3p", ports: ["J1", "J2"] }), /3 port/, "une patte par port");
-  await refusSim(Object.assign({}, argsB, { fichier: "x.txt" }), /Touchstone.*SPICE/, "ni Touchstone ni SPICE");
-  await refusSim({ reference: "R1", fichier: "r.sub", texte: ".SUBCKT R 1 2\n", ports: ["1"] }, /Touchstone seulement/, "ports pour un SPICE");
-  // un SPICE se range tel quel ; la liaison refusée au clic retire le fichier que la carte vient d'écrire
-  const argsS = { reference: "R1", fichier: "r.sub", texte: ".SUBCKT R 1 2\nR1 1 2 1k\n.ENDS\n" };
-  const pS = await L.proposer(argsS);
-  verifier(/modèle SPICE/.test(pS.apres) && /aucun modèle/.test(pS.avant), "SPICE : rangé tel quel (" + pS.apres + ")");
-  SIM.ecrits.length = 0;
-  SIM.refusLier = "« R1 » n'est pas au catalogue";
-  let mS = null;
-  try { await L.appliquer(argsS, pS); } catch (e) { mS = e.message; }
-  SIM.refusLier = null;
-  verifier(mS && /r\.sub retiré/.test(mS) && JSON.stringify(SIM.ecrits.map(e => e[0])) === JSON.stringify(["fichier", "retrait"]) &&
-           /type=simulation&nom=r\.sub/.test(SIM.ecrits[1][1]), "liaison refusée : le fichier écrit par la carte est retiré (" + mS + ")");
-
-  /* lib_composant_modifier : la ligne relue, les seules cases changées envoyées avec ce qui était lu */
-  const MOD = { cat: [Object.assign({}, LDO, { "Empreinte PCB": "lib/empreinte/SOT-23-5.json",
-                                               "Empreinte Schématique": "lib/symbole/regulator.json",
-                                               "Description": "=ancienne formule" }),
-                      { "Part Name": "R1", "Number Of pins": "2" }],
-                pcb: ["SOT-23-5.json"], ecrits: [] };
-  Object.assign(bac, {
-    apiGet: async url => url === "/api/lib/composants" ? { composants: MOD.cat.map(c => Object.assign({}, c)) }
-                       : { pcb: MOD.pcb.slice() },
-    apiPost: async (url, corps) => {
-      MOD.ecrits.push(["modifier", corps.modifier]);
-      const c = MOD.cat.find(x => x["Part Name"] === corps.modifier.part);
-      Object.assign(c, corps.modifier.champs);
-      return { ok: true, part: c["Part Name"], champs: corps.modifier.champs };
-    },
-    sauvegarderFichierLib: async (type, nom, data, opt) => { MOD.ecrits.push(["empreinte", nom, opt.si_absent]); MOD.pcb.push(nom); }
-  });
-  bac.LIB_STATE.composants = [{ _id: 0, "Part Name": "LDO_ESSAI_3V3", "Value": "3V3" }];
-  const M = CMD.lib_composant_modifier;
-  verifier(M.ecriture && M.clic && typeof M.irreversible === "string", "lib_composant_modifier : toujours au clic, irréversible");
-  const argsM = { reference: "ldo_essai_3v3", champs: { "Value": "3V3 500 mA", "Brochage": "IN=1,GND=2,OUT=4,NC=3/5" } };
-  const pM = await M.proposer(argsM);
-  verifier(!MOD.ecrits.length && /Value = 3V3 ·/.test(pM.avant) && /Value = 3V3 500 mA/.test(pM.apres) &&
-           /déjà avant : .*formule/.test(pM.details),
-    "proposer n'écrit rien ; avant / après par case ; une faute déjà là reste une remarque (" + pM.details + ")");
-  await M.appliquer(argsM, pM);
-  verifier(MOD.ecrits.length === 1 && JSON.stringify(MOD.ecrits[0][1].avant) === JSON.stringify({ "Value": "3V3", "Brochage": LDO["Brochage"] }) &&
-           Object.keys(MOD.ecrits[0][1].champs).join() === "Value,Brochage" && bac.LIB_STATE.composants[0]["Value"] === "3V3 500 mA",
-    "au clic : les seules cases changées, avec ce qui était lu ; le miroir de la page suit");
-  const refusMod = async (a, motif, quoi) => {
-    MOD.ecrits.length = 0;
-    let m = null;
-    try { await M.proposer(a); } catch (e) { m = e.message; }
-    verifier(m && motif.test(m) && !MOD.ecrits.length, "lib_composant_modifier refusé : " + quoi + " (" + m + ")");
-  };
-  await refusMod(argsM, /rien ne change/, "valeurs déjà en place");
-  await refusMod({ reference: "LDO_ESSAI_3V3", champs: { "Part Name": "X" } }, /ne se modifie pas/, "renommer");
-  await refusMod({ reference: "LDO_ESSAI_3V3", champs: { "Empreinte PCB": "ABSENTE" } }, /absente de la LIB/, "empreinte absente");
-  await refusMod({ reference: "LDO_ESSAI_3V3", champs: { "Value": "=1+1" } }, /formule/, "nouvelle formule de tableur");
-  await refusMod({ reference: "INCONNU", champs: { "Value": "1" } }, /pas au catalogue/, "référence inconnue");
-  // une empreinte neuve : créée sous son nom (si_absent), la ligne la désigne
-  MOD.ecrits.length = 0;
-  const argsE = { reference: "LDO_ESSAI_3V3", empreinte: Object.assign(copie(SOT235), { name: "SOT-23-5-NEUVE" }) };
-  const pE = await M.proposer(argsE);
-  await M.appliquer(argsE, pE);
-  verifier(JSON.stringify(MOD.ecrits.map(e => e.slice(0, 2))) === JSON.stringify([["empreinte", "SOT-23-5-NEUVE.json"], ["modifier", MOD.ecrits[1] && MOD.ecrits[1][1]]]) &&
-           MOD.ecrits[0][2] === true && MOD.ecrits[1][1].champs["Empreinte PCB"] === "lib/empreinte/SOT-23-5-NEUVE.json",
-    "empreinte neuve : écrite si_absent, puis la ligne la désigne");
-  Object.assign(bac, sauve);
 })();
 
 /* ---------- esc (commun/echappe.js) : protège ?nom= avant innerHTML dans l'éditeur ---------- */

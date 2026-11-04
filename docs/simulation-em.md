@@ -2120,19 +2120,19 @@ elle appartient à l'analyse d'impédance et n'a rien à dire sous un autre ongl
 ### Régler les simulations depuis une datasheet
 
 Dans l'éditeur PCB et la visionneuse, Claude Code (par le MCP de web_suite) lit
-la datasheet lui-même et propose des valeurs pour les simulations :
-il lit d'abord le catalogue (`cao_sim_lire`, quoi=catalogue), puis propose le lot
-par `cao_sim_ecrire`. La méthode (pire cas, page et citation) est dans la fiche
+la datasheet lui-même et règle les simulations :
+il lit d'abord le catalogue (`cao_sim_lire`, quoi=catalogue), puis saisit chaque valeur
+dans son champ du panneau (`pilote_interface`). La méthode (pire cas, page et citation) est dans la fiche
 `simulation.md` du skill `web-suite`.
 
 | Simulation | Ce que la datasheet règle |
 |---|---|
 | PDN, fiche de la charge | fréquence d'horloge, IDD actif / veille, temps de réveil, nombre de sorties qui basculent ensemble, front, charge et courant max par sortie, VDD min |
 | PDN, cible et régulateur | Vdd, ondulation admise, R_vrm (load regulation), f_vrm (bande passante de boucle), ΔI s'il est donné tel quel |
-| PDN, stratifié et condensateurs | εr, tanδ ; ESR, ESL et capacité effective, par repère, MPN ou valeur (groupe `condensateurs` de `cao_sim_ecrire`, avec sa `cible`) |
+| PDN, stratifié et condensateurs | εr, tanδ ; ESR, ESL et capacité effective, par repère, MPN ou valeur (relevés et donnés à l'utilisateur : pas de champ à l'interface) |
 | SI (impédance, Z diff, crosstalk, retour, santé) | temps de montée, amplitude, impédances visées (simple et différentielle) et leurs tolérances, f₀ |
 | Bus synchrone | protocole, fréquence, tsu / th du récepteur, tco min / max de l'émetteur, pull-up I2C, débit UART |
-| Chute DC | budgets (chute admise, échauffement), ambiante, conductivité du stratifié ; courant total par composant et tension des sources (groupe `bornes_dc`, avec sa `cible` : la borne doit déjà être posée dans la page, Chute DC → ⚡ Du schéma) |
+| Chute DC | budgets (chute admise, échauffement), ambiante, conductivité du stratifié ; courant et tension de chaque borne, dans l'onglet Chute DC (une borne doit déjà être posée) |
 
 **La liste est fermée** (`commun/simulation-datasheet.js`) : chaque clé a son
 unité et ses bornes physiques, que Claude lit avec les valeurs en cours. **Rien

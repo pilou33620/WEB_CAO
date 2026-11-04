@@ -888,7 +888,7 @@ directe, piste ou via du net) tient le cuivre qu'elle touche et n'en fait pas
 retirer. Les arcs de piste aussi. 0 désactive.
 
 **Zones interdites et hauteurs** (`38-interdits.js`, outil « Zone interdite »
-du menu Placer, sans raccourci, ou `cao_interdits_ecrire`) : une zone se pose sur UNE face, comme
+du menu Placer, sans raccourci) : une zone se pose sur UNE face, comme
 une découpe (un clic par sommet, ou deux coins puis Entrée). Le DRC y signale
 toute patte traversante qui en ressort — celle d'un composant posé sur l'autre
 face —, et tout composant posé sur cette face qui la touche : interdit si la

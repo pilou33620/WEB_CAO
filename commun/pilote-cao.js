@@ -34,37 +34,6 @@ async function piloteCaoCalcul(args) {
   return { analyse, rapport: simRapMarkdown(simRapCollecter()) };
 }
 
-/* cao_valeur_composant (schéma) : la recherche et le rafraîchissement de l'ancienne action
-   schema_values de l'assistant IA (retiré), en une étape d'historique. Le repère
-   est cherché AVANT push() : un repère inconnu ne laisse pas d'étape vide à défaire. */
-function piloteTrouverComp(ref) {
-  const cible = String(ref || "").trim().toUpperCase();
-  const meme = c => (c.ref || "").trim().toUpperCase() === cible;
-  let c = S.comps.find(meme);
-  for (const p of S.pages || []) { if (c) break; if (Array.isArray(p.comps)) c = p.comps.find(meme); }
-  if (!c) throw new Error("Repère « " + ref + " » introuvable dans le schéma.");
-  return c;
-}
-
-const PILOTE_VALEUR = {
-  ecriture: true, historique: true,      // une étape dans l'historique de l'éditeur : Ctrl+Z la défait
-  proposer: a => {
-    const c = piloteTrouverComp(a.ref);
-    return { titre: c.ref + " : valeur", avant: c.value || "", apres: String(a.valeur).trim() };
-  },
-  appliquer: a => {
-    const c = piloteTrouverComp(a.ref);
-    const v = String(a.valeur).trim();
-    ECRITURE_CAO.pousser();
-    const def = typeof defOf === "function" ? defOf(c.type) : null;
-    if (def && typeof def.pins === "function" && typeof reshapeComp === "function") reshapeComp(c, () => { c.value = v; });
-    else c.value = v;
-    if (typeof buildList === "function") buildList();
-    if (typeof refreshPanels === "function") refreshPanels();
-    if (typeof draw === "function") draw();
-  },
-};
-
 /* Lectures (commun/lecture-cao.js) : le registre de la page, choisi par « quoi », rendu
    en texte. Rien n'est écrit, donc pas de carte ; la trace vient de pilote.js. */
 const PILOTE_LIRE = { schema: ["schema"], pcb: ["pcb", "sim"], "visionneuse-ipc": ["ipc", "sim"] };
@@ -231,26 +200,11 @@ function piloteCao(page) {
   if (TOILES[page]) Pilote.capture(() => document.getElementById(TOILES[page]));
   if (page === "pcb" || page === "visionneuse-ipc") {
     Pilote.commande("cao_calcul", { executer: piloteCaoCalcul });
-    Pilote.commande("cao_sim_ecrire", ECRITURE_CAO.simulation);
   }
-  if (page === "schema") Pilote.commande("cao_valeur_composant", PILOTE_VALEUR);
-  if (page === "schema") Pilote.commande("cao_composants_ecrire", ECRITURE_CAO.composantsSch);
-  if (page === "schema") Pilote.commande("cao_classes_ecrire", ECRITURE_CAO.classesSch);
-  if (page === "schema") Pilote.commande("cao_contraintes_ecrire", ECRITURE_CAO.contraintesSch);
   if (page === "schema" && typeof dessinPiloteCommande === "function") Pilote.commande("cao_schema_dessiner", dessinPiloteCommande());
   if (page === "pcb") {
-    Pilote.commande("cao_composants_ecrire", ECRITURE_CAO.composantsPcb);
-    Pilote.commande("cao_pistes_ecrire", ECRITURE_CAO.pistes);
-    Pilote.commande("cao_classes_ecrire", ECRITURE_CAO.classes);
-    Pilote.commande("cao_contraintes_ecrire", ECRITURE_CAO.contraintes);
-    Pilote.commande("cao_contour_ecrire", ECRITURE_CAO.contour);
-    Pilote.commande("cao_decoupes_ecrire", ECRITURE_CAO.decoupes);
-    Pilote.commande("cao_interdits_ecrire", ECRITURE_CAO.interdits);
     if (typeof pcbThermiqueEstimer === "function")
       Pilote.commande("cao_thermique", { executer: async () => thermiqueTexte(await pcbThermiqueEstimer()) });
-    Pilote.commande("cao_zones_ecrire", ECRITURE_CAO.zones);
-    Pilote.commande("cao_serigraphie_ecrire", ECRITURE_CAO.serigraphie);
-    Pilote.commande("cao_pastille_regler", ECRITURE_CAO.pastilles);
     if (typeof routagePiloteCommandes === "function")
       for (const [nom, def] of Object.entries(routagePiloteCommandes())) Pilote.commande(nom, def);
   }

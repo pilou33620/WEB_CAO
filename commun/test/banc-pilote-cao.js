@@ -8,9 +8,9 @@
    ============================================================================= */
 "use strict";
 const fs = require("fs"), path = require("path"), vm = require("vm");
-// lecture-cao.js et ecriture-cao.js d'abord, comme dans les pages : les commandes s'en servent
+// lecture-cao.js d'abord, comme dans les pages : les commandes s'en servent
 // et, pour Gestion LIB, ses commandes (08-pilote-lib.js) et leur code métier
-const CODE = ["lecture-cao.js", "ecriture-cao.js", "composants-lib.js", "../gestion-lib/js/08-pilote-lib.js", "pilote-cao.js"]
+const CODE = ["lecture-cao.js", "composants-lib.js", "../gestion-lib/js/08-pilote-lib.js", "pilote-cao.js"]
   .map(f => fs.readFileSync(path.join(__dirname, "..", f), "utf8")).join("\n");
 
 function page(nom, sim) {
@@ -63,20 +63,14 @@ async function refuse(promesse, motif) {
     }
   });
 
-  await T("Gestion LIB : quatre calculs et deux cartes (création, liaison), jamais directes", () => {
-    const LIB = ["lib_empreinte_generer", "lib_empreinte_verifier", "lib_kicad_convertir", "lib_brochage_verifier", "lib_composant_creer",
-                 "lib_simulation_lier"];
+  await T("Gestion LIB : quatre calculs, aucune écriture", () => {
+    const LIB = ["lib_empreinte_generer", "lib_empreinte_verifier", "lib_kicad_convertir", "lib_brochage_verifier"];
     for (const p of ["pcb", "schema", "visionneuse-ipc", "gestion-lib"]) {
       const c = page(p).declare.commandes;
       egal(LIB.map(n => !!c[n]), LIB.map(() => p === "gestion-lib"), p);
     }
     const c = page("gestion-lib").declare.commandes;
-    egal(LIB.map(n => !!c[n].ecriture), [false, false, false, false, true, true], "seules la création et la liaison écrivent");
-    for (const n of ["lib_composant_creer", "lib_simulation_lier"]) {
-      const d = c[n];
-      egal([d.clic, typeof d.irreversible, !!d.annuler, !!d.historique], [true, "string", false, false],
-           n + " : toujours au clic, irréversible");
-    }
+    egal(Object.values(c).filter(d => d.ecriture).length, 0, "Gestion LIB n'écrit que par l'interface");
   });
 
   await T("cao_calcul déclaré dans le PCB et la visionneuse seulement", () => {
@@ -202,16 +196,13 @@ async function refuse(promesse, motif) {
          [[true, false], [true, true], [true, false], [false, false]]);
   });
 
-  await T("écritures en lot (ecriture-cao) : déclarées dans les bonnes pages, annulables", () => {
-    const ecrire = ["cao_composants_ecrire", "cao_pistes_ecrire", "cao_classes_ecrire", "cao_contraintes_ecrire", "cao_sim_ecrire",
-                    "cao_contour_ecrire", "cao_decoupes_ecrire", "cao_interdits_ecrire", "cao_zones_ecrire", "cao_serigraphie_ecrire", "cao_pastille_regler"];
+  await T("écritures : aucune hors du routage et du dessin (leurs fichiers, absents ici, ont leur banc)", () => {
     const vues = {};
     for (const p of ["schema", "pcb", "visionneuse-ipc", "gestion-lib"]) {
       const c = page(p).declare.commandes;
-      vues[p] = ecrire.filter(n => c[n]);
-      for (const n of vues[p]) egal(!!(c[n].ecriture && (c[n].historique || c[n].annuler)), true, n + " : écriture annulable");
+      vues[p] = Object.keys(c).filter(n => c[n].ecriture).sort();
     }
-    egal(vues, { schema: ["cao_composants_ecrire", "cao_classes_ecrire", "cao_contraintes_ecrire"], pcb: ecrire, "visionneuse-ipc": ["cao_sim_ecrire"], "gestion-lib": [] });
+    egal(vues, { schema: [], pcb: [], "visionneuse-ipc": [], "gestion-lib": [] });
   });
 
   await T("Pilote.aide : commandes de la page, description et arguments tirés du MCP (pilote-aide.json)", async () => {
@@ -220,7 +211,7 @@ async function refuse(promesse, motif) {
     ctx.Pilote.commandes = declare.commandes;          // pilote.js les range là
     const liste = await ctx.Pilote.aide();
     egal(lu, "../commun/pilote-aide.json", "fichier lu");
-    egal(/- cao_contour_ecrire : Contour de la carte/.test(liste) && /Par l'API seulement \(MCP\) : .*cao_projets/.test(liste), true, "liste : " + liste.slice(0, 300));
+    egal(/- cao_calcul : Lance un calcul/.test(liste) && /Par l'API seulement \(MCP\) : .*cao_projets/.test(liste), true, "liste : " + liste.slice(0, 300));
     const un = await ctx.Pilote.aide("cao_schema_dessiner");
     egal(/pas déclarée dans cette page/.test(un) && /"operations"/.test(un), true, "schéma au PCB : " + un.slice(0, 200));
     egal(/pas une commande connue/.test(await ctx.Pilote.aide("cao_inventee")), true, "inconnue");

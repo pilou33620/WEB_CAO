@@ -269,7 +269,7 @@ async function sauvegarderFichierLib(type, nom, dataOuContenu, options) {
 async function enregistrerCatalogue() {
   if (!LIB_STATE.sale) return { ok: true, message: "Aucune modification à enregistrer" };
   // l'enregistrement réécrit tout le catalogue : ce qu'un autre onglet y a mis serait perdu
-  if (LIB_STATE.perime && !confirm("Le catalogue a changé ailleurs (autre onglet, carte de Claude) depuis " +
+  if (LIB_STATE.perime && !confirm("Le catalogue a changé ailleurs (autre onglet ou appareil) depuis " +
       "son chargement. L'enregistrer maintenant effacera ces changements. Continuer ?"))
     throw new Error("enregistrement annulé : recharge la page pour reprendre le catalogue à jour");
   const payload = {
@@ -304,7 +304,7 @@ async function enregistrerCatalogue() {
   return res;
 }
 
-/* Le catalogue changé ailleurs (autre onglet, carte de Claude) : sans modification en cours, on
+/* Le catalogue changé ailleurs (autre onglet ou appareil) : sans modification en cours, on
    le relit ; sinon on le note, et « Enregistrer » demandera avant d'écraser. */
 function libSurCatalogueAilleurs(m) {
   if (!m || m.genre !== "catalogue") return;

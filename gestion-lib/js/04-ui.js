@@ -6,7 +6,6 @@
 
 let pcbRendererMain = null;
 let schRendererMain = null;
-let currentTab = "composants";
 
 function initApp() {
   // Instanciation des moteurs de rendu de l'inspecteur
@@ -210,7 +209,6 @@ function initApp() {
 }
 
 function basculerOnglet(tabName) {
-  currentTab = tabName;
   document.querySelectorAll(".tab-btn").forEach(b => {
     b.classList.toggle("active", b.getAttribute("data-tab") === tabName);
   });

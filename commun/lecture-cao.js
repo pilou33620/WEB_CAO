@@ -80,7 +80,7 @@ const LECTURE_CAO = (function() {
                    ", x " + mm(f.x) + " y " + mm(f.y) + " mm, rotation " + (f.rot || 0) + "°."];
         const pads = padsOf(f);
         L.push("Broches (" + pads.length + ") :");
-        // les réglages propres à la pastille (cao_pastille_regler), quand il y en a
+        // les réglages propres à la pastille, quand il y en a
         const reglages = q => [q.connexion && "liaison " + q.connexion, q.thermalWidth > 0 && "bras " + q.thermalWidth + " mm",
                                q.thermalSpokes > 0 && q.thermalSpokes + " bras", q.thermalAngle && "bras à " + q.thermalAngle + "°",
                                q.mask != null && "masque " + q.mask + " mm", q.paste != null && "pâte " + q.paste + " mm"].filter(Boolean);

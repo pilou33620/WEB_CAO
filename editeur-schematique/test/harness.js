@@ -313,34 +313,6 @@ TA("canal de pilotage : cao_schema_lire lit sans rien écrire",async()=>{
     if(S.hist.length!==hist||S.dirty!==dirty||S.page!==page)throw new Error("une lecture a écrit");
   }finally{global.Pilote=ancien;sheet([],[]);}
 });
-T("canal de pilotage : cao_valeur_composant propose, applique en une étape, Ctrl+Z la défait",()=>{
-  const cmds={}, ancien=global.Pilote;
-  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
-  try{
-    piloteCao("schema");
-    const d=cmds.cao_valeur_composant;
-    if(!(d&&d.ecriture&&d.historique))throw new Error("écriture par l'historique de l'éditeur attendue");
-    const c=addComp("resistor",100,100); c.ref="R7"; c.value="1k";
-    const prop=d.proposer({ref:"r7",valeur:"4k7"});      // repère sans tenir compte de la casse
-    if(prop.avant!=="1k"||prop.apres!=="4k7"||!/R7/.test(prop.titre))throw new Error("carte : "+JSON.stringify(prop));
-    if(c.value!=="1k")throw new Error("proposer ne doit rien écrire");
-    const n=S.hist.length;
-    d.appliquer({ref:"R7",valeur:"4k7"});
-    const apres=S.comps.find(x=>x.ref==="R7");
-    if(apres.value!=="4k7")throw new Error("valeur non appliquée : "+apres.value);
-    if(S.hist.length!==n+1)throw new Error("une seule étape d'undo attendue, "+(S.hist.length-n)+" poussée(s)");
-    undo();
-    if(S.comps.find(x=>x.ref==="R7").value!=="1k")throw new Error("Ctrl+Z ne défait pas la valeur");
-    for(const f of [()=>d.proposer({ref:"R99",valeur:"1k"}),()=>d.appliquer({ref:"R99",valeur:"1k"})]){
-      const avant=S.hist.length;
-      let msg="";
-      try{f();}catch(e){msg=e.message;}
-      if(!/R99/.test(msg))throw new Error("repère inconnu : message attendu, lu « "+msg+" »");
-      if(S.hist.length!==avant)throw new Error("repère inconnu : rien ne doit être poussé");
-    }
-  }finally{global.Pilote=ancien;}
-});
-
 T("export PDF : une page par feuille, xref juste, textes cherchables, feuille d'origine remise",()=>{
   const avant=serialize(), Bl=global.Blob;
   try{
@@ -446,74 +418,6 @@ T("historique : un flot de lots de Claude se fond, les étapes de l'utilisateur 
   if(S.hist.length!==n+1||S.hist[n]!==doc+" ")throw new Error("instantané de Claude non marqué");
   undo();
   if(serialize()!==doc)throw new Error("Ctrl+Z ne relit pas l'instantané marqué");
-});
-
-T("canal de pilotage : cao_composants_ecrire, un lot en une étape, refus sans rien toucher",()=>{
-  const cmds={}, ancien=global.Pilote;
-  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
-  const refus=(a,motif)=>{
-    const n=S.hist.length, avant=serialize();
-    let m="";try{cmds.cao_composants_ecrire.proposer(a);}catch(e){m=e.message;}
-    if(!motif.test(m))throw new Error("refus attendu "+motif+", lu « "+m+" »");
-    if(S.hist.length!==n||serialize()!==avant)throw new Error("un refus a écrit : "+motif);
-  };
-  try{
-    piloteCao("schema");
-    const d=cmds.cao_composants_ecrire;
-    if(!(d&&d.ecriture&&d.historique))throw new Error("écriture par l'historique attendue");
-    docLecture();
-    const lot=[{ref:"r1",champs:{valeur:"4k7",mpn:"ERJ-3EKF4701V",fabricant:"Panasonic"}},
-               {ref:"R2",champs:{ref:"R20",non_monte:true}},                 // sur la feuille 2, la 1 est affichée
-               {ref:"R3",champs:{specs:{tolerance:"1%"},boitier:"0402"}}];
-    const avant=serialize(), n=S.hist.length;
-    const prop=d.proposer({lot});
-    if(serialize()!==avant)throw new Error("proposer a écrit");
-    if(!/Composants du schéma \(7 changements\)/.test(prop.titre)||!/^R1\.valeur : 10k$/m.test(prop.avant)||
-       !/^R1\.valeur : 4k7$/m.test(prop.apres)||!/^R2\.ref : R20$/m.test(prop.apres)||!/^R3\.specs\.tolerance : —$/m.test(prop.avant))
-      throw new Error("carte : "+JSON.stringify(prop));
-    d.appliquer({lot},prop);
-    const c=r=>[...S.comps,...S.pages.flatMap((p,i)=>i===S.page?[]:p.comps)].find(x=>x.ref===r);
-    if(S.hist.length!==n+1)throw new Error("une seule étape attendue, "+(S.hist.length-n));
-    if(c("R1").value!=="4k7"||c("R1").manufacturer!=="Panasonic"||!c("R20")||!c("R20").nonMonte||c("R3").pkg!=="0402"||c("R3").specs.tolerance!=="1%")
-      throw new Error("lot mal appliqué");
-    undo();
-    if(serialize()!==avant)throw new Error("Ctrl+Z ne remet pas tout");
-    /* refus : tout le lot, rien d'écrit */
-    refus({lot:[{ref:"R1",champs:{valeur:"1k"}},{ref:"R9",champs:{valeur:"1k"}}]},/R9.*introuvable/);
-    refus({lot:[{ref:"R1",champs:{ref:"r3"}}]},/« r3 » est déjà pris/);
-    refus({lot:[{ref:"R1",champs:{couleur:"bleu"}}]},/champ « couleur » inconnu/);
-    refus({lot:[{ref:"R1",champs:{valeur:"x".repeat(201)}}]},/200 caractères/);
-    refus({lot:[{ref:"R1",champs:{valeur:"a\nb"}}]},/une ligne/);
-    refus({lot:[{ref:"R1",champs:{specs:Object.fromEntries(Array.from({length:31},(_,i)=>["k"+i,"v"]))}}]},/30 clés/);
-    refus({lot:Array.from({length:51},()=>({ref:"R1",champs:{valeur:"1k"}}))},/51 éléments, 50 au plus/);
-    refus({lot:[{ref:"R1",champs:{valeur:"10k"}}]},/Rien à changer/);
-    refus({lot:[]},/au moins un élément/);
-    refus({lot:[{ref:"",champs:{valeur:"x"}}]},/introuvable/);                 // un port n'a pas de repère : jamais visé
-    refus({lot:[{ref:"R1",champs:{specs:JSON.parse('{"__proto__":"x"}')}}]},/clé « __proto__ » invalide/);   // tel que le JSON du MCP l'apporte
-    /* le document bouge sous la carte : refus au clic */
-    const p2=d.proposer({lot:[{ref:"R1",champs:{valeur:"22k"}}]});
-    c("R1").value="33k";
-    let m="";try{d.appliquer({lot:[{ref:"R1",champs:{valeur:"22k"}}]},p2);}catch(e){m=e.message;}
-    if(!/a changé depuis la carte/.test(m)||c("R1").value!=="33k"||S.hist.length!==n)throw new Error("carte périmée : « "+m+" »");
-    /* un CI sur la feuille 2 : les fils de la feuille affichée ne bougent pas, même posés sur ses
-       anciennes coordonnées de broche (reshapeComp ne fait suivre que S.wires) */
-    docLecture();
-    const ci=addComp("ic",600,200); ci.ref="U9";
-    S.comps.splice(S.comps.indexOf(ci),1); S.pages[1].comps.push(ci);
-    const pins=allPins(ci), bout=pins[pins.length-1];
-    const leurre={x1:bout.x,y1:bout.y,x2:bout.x+40,y2:bout.y};                 // feuille 1, sur une broche du CI
-    const sien={x1:bout.x,y1:bout.y,x2:bout.x+40,y2:bout.y}; S.pages[1].wires.push(sien);   // feuille 2, son fil
-    S.wires.push(leurre); const copie=JSON.stringify(leurre);
-    d.appliquer({lot:[{ref:"U9",champs:{valeur:"CIRCUIT-INTEGRE-AU-NOM-TRES-LONG-1234"}}]});   // un texte long élargit le corps
-    const apres=allPins(ci);
-    if(JSON.stringify(apres[apres.length-1])===JSON.stringify(bout))throw new Error("valeur longue : les broches devaient bouger");
-    if(JSON.stringify(leurre)!==copie)throw new Error("un fil de la feuille affichée a suivi le CI de la feuille 2");
-    if(!apres.some(p=>p.x===sien.x1&&p.y===sien.y1))throw new Error("le fil du CI, sur sa feuille, n'a pas suivi sa broche");
-    /* un CI : la valeur passe par reshapeComp, sans erreur */
-    const u=addComp("ic",200,200); u.ref="U1";
-    d.appliquer({lot:[{ref:"U1",champs:{valeur:"LM358"}}]});
-    if(S.comps.find(x=>x.ref==="U1").value!=="LM358")throw new Error("valeur du CI");
-  }finally{global.Pilote=ancien;sheet([],[]);}
 });
 
 T("canal de pilotage : cao_schema_dessiner, texte libre (annot_text) et cadre, note ou zone",()=>{
@@ -4337,38 +4241,6 @@ T("contraintes de nets : groupes d'appariement, nets disparus, résumé",()=>{
     if(SCM.filtre!=="CLK")throw new Error("la fenêtre s'ouvre filtrée sur le net");
   }finally{schCmFermer();}
   S.contraintes={nets:{},groupes:[]};
-});
-T("canal de pilotage : cao_classes_ecrire et cao_contraintes_ecrire au schéma, un lot une étape",()=>{
-  const cmds={}, ancien=global.Pilote;
-  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
-  try{
-    piloteCao("schema");
-    scmFeuille();
-    S.netClasses={};S.contraintes={nets:{},groupes:[]};S.hist.length=0;
-    const K=cmds.cao_classes_ecrire, C=cmds.cao_contraintes_ecrire;
-    const pk=K.proposer({lot:[{action:"affecter",net:"CLK",classe:"horloge"}]});
-    if(!/net CLK, classe : Horloge/.test(pk.apres)||S.netClasses.CLK)throw new Error("carte des classes : "+pk.apres);
-    K.appliquer({lot:[{action:"affecter",net:"CLK",classe:"horloge"}]},pk);
-    if(S.netClasses.CLK!=="Horloge"||S.hist.length!==1)throw new Error("classe non posée en une étape");
-    const lot=[{action:"net",net:"CLK",z:50,l_max:40,couches:[1,4],topologie:"chaine",ordre:["U1","U2"]},
-               {action:"net",net:"DATA",vias_max:2}];
-    const pc=C.proposer({lot});
-    if(!/contraintes CLK : z 50, l_max 40, couches 1,4, topologie chaine, ordre U1 → U2/.test(pc.apres))throw new Error("carte : "+pc.apres);
-    C.appliquer({lot},pc);
-    const n=schCmModele().nets;
-    if(n.CLK.z!==50||n.CLK.couches.join()!=="0,3"||n.CLK.topo!=="chaine"||n.DATA.viasMax!==2||S.hist.length!==2)
-      throw new Error("contraintes : "+JSON.stringify(n));
-    undo();
-    if(schCmModele().nets.CLK)throw new Error("Ctrl+Z ne remet pas les contraintes");
-    const refus=(cmd,l,motif)=>{let m="";try{cmd.proposer({lot:l});}catch(e){m=e.message;}if(!motif.test(m))throw new Error("refus attendu "+motif+" : "+m);};
-    refus(K,[{action:"affecter",net:"NUL",classe:"RF"}],/inconnu : un net nommé/);
-    refus(K,[{action:"affecter",net:"CLK",classe:"Licorne"}],/inconnue du schéma/);
-    refus(K,[{action:"creer",nom:"X"}],/seule l'action « affecter »/);
-    refus(C,[{action:"paire",nom:"USB"}],/règles de paire sont au PCB/);
-    refus(C,[{action:"net",net:"CLK",couches:["Top"]}],/rangs de couche/);
-    refus(C,[{action:"net",net:"CLK",l_min:5,l_max:2}],/l_min plus grand/);
-    refus(C,[{action:"net",net:"CLK",topologie:"anneau"}],/p2p, chaine, etoile, flyby/);
-  }finally{global.Pilote=ancien;S.netClasses={};S.contraintes={nets:{},groupes:[]};}
 });
 
 (async()=>{

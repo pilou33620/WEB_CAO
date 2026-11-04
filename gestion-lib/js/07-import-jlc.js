@@ -758,8 +758,7 @@ function lierChampsPrincipaux() {
 }
 
 /* L'enregistrement n'écrit que LIB_STATE.colonnes : la ligne prend l'en-tête du catalogue
-   chargé (« Empreinte Schematique » sans accent), et une colonne qu'il n'a pas s'y ajoute,
-   comme « Brochage » dans 08-pilote-lib.js. */
+   chargé (« Empreinte Schematique » sans accent), et une colonne qu'il n'a pas s'y ajoute. */
 function jlcAccorderColonnes(ligne) {
   const cols = LIB_STATE.colonnes;
   for (const [avec, sans] of [["Empreinte Schématique", "Empreinte Schematique"], ["Modèle Simulation", "Modele Simulation"]])
