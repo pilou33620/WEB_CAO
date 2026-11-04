@@ -385,6 +385,39 @@ class TestLibDossierTemporaire(unittest.TestCase):
         self.assertEqual([f for f in os.listdir(os.path.dirname(chemin)) if f.endswith(".tmp")], [],
                          "fichier temporaire laisse")
 
+    def _modifier_garde_les_octets(self, encodage, fin, bom=False):
+        chemin = os.path.join(self.tmp, "LIB_composants.csv")
+        texte = open(chemin, "rb").read().decode("utf-8-sig").replace("\r\n", "\n").rstrip("\n")
+        texte = texte.replace("\n", fin) + fin
+        brut = (b"\xef\xbb\xbf" if bom else b"") + texte.encode(encodage, errors="replace")
+        with open(chemin, "wb") as f:
+            f.write(brut)
+        web_CAO.definir_dossier_lib(self.tmp, initialiser=False, persister=False)
+        cat = self._json("/api/lib/composants")
+        visee = cat["composants"][1]
+        r = self._json("/api/lib/composants", {"modifier": {
+            "part": visee["Part Name"], "champs": {"Value": "3V3 é"}, "avant": {"Value": visee["Value"]}}})
+        self.assertEqual((r["champs"], r["mtime_avant"]), ({"Value": "3V3 é"}, cat["mtime_ms"]))
+        apres = open(chemin, "rb").read()
+        self.assertEqual(apres[:3] == b"\xef\xbb\xbf", bom, "BOM")
+        relu = self._json("/api/lib/composants")
+        self.assertEqual(relu["composants"][1]["Value"], "3V3 é")
+        visee["Value"] = "3V3 é"
+        self.assertEqual(relu["composants"], cat["composants"], "une autre case a change")
+        avant_l, apres_l = brut.split(fin.encode()), apres.split(fin.encode())
+        self.assertEqual(len(avant_l), len(apres_l))
+        self.assertEqual(sum(a != b for a, b in zip(avant_l, apres_l)), 1, "une autre ligne a change")
+        return chemin, visee["Part Name"]
+
+    def test_13c_modifier_utf8_crlf_octet_pour_octet(self):
+        self._modifier_garde_les_octets("utf-8", "\r\n", bom=True)
+
+    def test_13d_modifier_latin1_lf_octet_pour_octet(self):
+        chemin, nom = self._modifier_garde_les_octets("latin1", "\n")
+        avant = open(chemin, "rb").read()
+        self.assertEqual(self._refus("/api/lib/composants", {"modifier": {"part": nom, "champs": {"Value": "\u20ac"}}}), 400)
+        self.assertEqual(open(chemin, "rb").read(), avant, "un refus a ecrit")
+
     def test_13h_si_absent_texte_non_encodable_ne_laisse_rien(self):
         web_CAO.definir_dossier_lib(self.tmp, initialiser=False, persister=False)
         corps = {"type": "pcb", "nom": "BRISE.json", "si_absent": True,

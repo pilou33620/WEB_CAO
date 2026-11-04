@@ -934,6 +934,57 @@ def test_routes():
             f.write(brut)
         actif = web_CAO.DOSSIER_LIB_ACTIF
 
+        # 44. Modifier une reference existante (fiche de Gestion LIB) : seules les cases donnees
+        # changent, la ligne lue a change = 409, les autres lignes restent octet pour octet.
+        web_CAO.definir_dossier_lib(lib, initialiser=False, persister=False)
+
+        def modifier(demande):
+            conn.request("POST", "/api/lib/composants", headers={"Content-Type": "application/json"},
+                         body=json.dumps({"modifier": demande}).encode("utf-8"))
+            r = conn.getresponse()
+            return r.status, json.loads(r.read().decode("utf-8"))
+        try:
+            lu = web_CAO.mtime_ms(csv_)
+            time.sleep(0.01)
+            code, rep = modifier({"part": "u1", "champs": {"Brochage": "IN=1,GND=2,OUT=3", "Value": " 3.3V "},
+                                  "avant": {"Brochage": "IN=1,GND=2", "Value": ""}})
+            assert code == 200 and rep["champs"] == {"Brochage": "IN=1,GND=2,OUT=3", "Value": "3.3V"}, rep
+            assert rep["mtime_avant"] == lu and rep["mtime_ms"] == web_CAO.mtime_ms(csv_) != lu, rep   # la page suit la date
+            apres = open(csv_, "rb").read()
+            assert apres == brut.replace(b"U1;;ldo;IN=1,GND=2\r\n", b"U1;3.3V;ldo;IN=1,GND=2,OUT=3\r\n"), apres
+            for demande, attendu in (
+                    ({"part": "U1", "champs": {"Value": "5V"}, "avant": {"Value": ""}}, 409),     # lue avant le changement
+                    ({"part": "X", "champs": {"Value": "1"}}, 404),
+                    ({"part": "U1", "champs": {"Part Name": "U2"}}, 400),
+                    ({"part": "U1", "champs": {"Inconnue": "1"}}, 400),
+                    ({"part": "U1", "champs": {"Value": "=1+1"}}, 400),
+                    ({"part": "U1", "champs": {"Value": "+cmd|' /C calc'!A0"}}, 400),
+                    ({"part": "U1", "champs": {"Value": "AMS1117\u200b-3.3"}}, 400),
+                    ({"part": "U1", "champs": {"Value": "x" * 501}}, 400),
+                    ({"part": "U1", "champs": {"Value": ["a"]}}, 400),
+                    ({"part": "U1", "champs": {}}, 400),
+                    ({"part": "U1"}, 400)):
+                code, rep = modifier(demande)
+                assert code == attendu, (demande, code, rep)
+            assert open(csv_, "rb").read() == apres, "un refus a ecrit"
+            # plusieurs lignes : la case lue en CRLF se reconnait, la neuve reste entre guillemets, un \r seul ne coupe pas la ligne
+            conn.request("GET", "/api/lib/composants")
+            r = conn.getresponse()
+            lue = next(c for c in json.loads(r.read().decode("utf-8"))["composants"] if c["Part Name"] == "R1")
+            code, rep = modifier({"part": "R1", "champs": {"Description": "trois\r\nlignes\rici"},
+                                  "avant": {"Description": lue["Description"]}})
+            assert code == 200 and rep["champs"]["Description"] == "trois\nlignes\nici", rep
+            assert open(csv_, "rb").read() == apres.replace(b'"sur\r\ndeux lignes"', b'"trois\nlignes\nici"')
+            conn.request("GET", "/api/lib/composants")
+            r = conn.getresponse()
+            noms = [(c["Part Name"], c["Description"]) for c in json.loads(r.read().decode("utf-8"))["composants"]]
+            assert noms == [("R1", "trois\nlignes\nici"), ("U1", "ldo"), ("C1", "a;b")], noms
+        finally:
+            web_CAO.DOSSIER_LIB_ACTIF = actif
+        with open(csv_, "wb") as f:
+            f.write(brut)
+        print("[PASS] LIB : modifier une reference reecrit ses seules cases, refuse une ligne qui a change")
+
         # 45. Catalogue entier : la date lue (mtime_ms) revient avec l'enregistrement ; changee
         # depuis (autre appareil) -> 409 et rien d'ecrit. Plus de copie a la racine du depot.
         web_CAO.definir_dossier_lib(lib, initialiser=False, persister=False)
@@ -959,8 +1010,7 @@ def test_routes():
             assert tout(cat["mtime_ms"])[0] == 409               # la date d'avant ne vaut plus
             assert tout(rep["mtime_ms"])[0] == 200 and tout(None)[0] == 200   # sans date : comme avant
             # les routes retirees (decision du 2026-11-04) : un corps sans « composants » est refuse
-            for vieux in ({"ajouter": {"Part Name": "X"}}, {"lier_simulation": {"part": "R1", "modele": "x"}},
-                          {"modifier": {"part": "R1", "champs": {"Value": "1"}}}):
+            for vieux in ({"ajouter": {"Part Name": "X"}}, {"lier_simulation": {"part": "R1", "modele": "x"}}):
                 conn.request("POST", "/api/lib/composants", headers={"Content-Type": "application/json"},
                              body=json.dumps(vieux).encode("utf-8"))
                 r = conn.getresponse()

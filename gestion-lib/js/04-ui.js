@@ -471,6 +471,7 @@ async function selectionnerComposant(id) {
   document.getElementById("inspMpn").textContent = comp["manufacturer part Number"] || comp["Part Number "] || "—";
   document.getElementById("inspVal").textContent = comp["Value"] || "—";
 
+  inspColonnesAfficher(comp);
   inspBrochageAfficher(comp);
 
   const colPcb = "Empreinte PCB";
@@ -509,6 +510,59 @@ async function selectionnerComposant(id) {
   inspSimAfficher(comp);
 }
 
+/* ---------- Colonnes de la référence ----------
+   Toutes les cases de la ligne se corrigent ici ; « Enregistrer ces colonnes » écrit celles qui
+   ont changé (route « modifier » : cette ligne seule, refus si une case a changé ailleurs).
+   Part Name désigne la ligne ; associations, modèles et brochage ont leurs propres contrôles. */
+const COLONNES_HORS_FICHE = ["Part Name", "Empreinte PCB", "Empreinte Schématique", "Empreinte Schematique",
+                             "Modèle Simulation", "Modele Simulation", "Brochage"];
+const caseNue = v => String(v == null ? "" : v).replace(/\r\n?/g, "\n").trim();
+function inspColonnesAfficher(comp) {
+  const box = document.getElementById("inspColonnes");
+  if (!box) return;
+  box.innerHTML = LIB_STATE.colonnes.filter(c => c && !COLONNES_HORS_FICHE.includes(c)).map(col => {
+    const v = caseNue(comp[col]);
+    const id = "inspCol-" + col.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9]+/g, "-");
+    const attrs = 'id="' + id + '" data-col="' + esc(col) + '" autocomplete="off" spellcheck="false"';
+    // un <input> perdrait les retours à la ligne, et la case passerait pour modifiée
+    return '<label for="' + id + '">' + esc(col) + "</label>" + (col === "Description" || v.includes("\n")
+      ? "<textarea " + attrs + ' rows="2">' + esc(v) + "</textarea>" : "<input " + attrs + ' value="' + esc(v) + '">');
+  }).join("");
+  document.getElementById("inspColonnesMessage").textContent = "";
+  document.getElementById("bColonnesEnregistrer").onclick = () => inspColonnesEnregistrer(comp);
+}
+function inspColonnesChangees(comp) {
+  const champs = {};
+  document.getElementById("inspColonnes").querySelectorAll("[data-col]").forEach(el => {
+    const v = caseNue(el.value);
+    if (v !== caseNue(comp[el.dataset.col])) champs[el.dataset.col] = v;
+  });
+  return champs;
+}
+async function inspColonnesEnregistrer(comp) {
+  const msg = document.getElementById("inspColonnesMessage"), bouton = document.getElementById("bColonnesEnregistrer");
+  const champs = inspColonnesChangees(comp), cles = Object.keys(champs);
+  if (!cles.length) { msg.textContent = "Aucune colonne modifiée."; return; }
+  const refus = cles.map(k => COMPOSANTS_LIB.verifierCase(k, champs[k])).filter(Boolean);
+  if (refus.length) { msg.textContent = "⛔ " + refus.join("\n⛔ "); return; }
+  bouton.disabled = true;
+  try {
+    await modifierCasesCatalogue(comp, champs);
+  } catch (e) {
+    msg.textContent = "⛔ Rien n'est écrit. " + (e.status === 404 && LIB_STATE.sale
+      ? "Cette référence n'est pas encore au catalogue : clique d'abord « 💾 Enregistrer »."
+      : e.status === 409 ? e.message + " Recharge la page pour reprendre la ligne à jour." : e.message);
+    return;
+  } finally {
+    bouton.disabled = false;
+  }
+  remplirFiltresPrefixes();
+  rafraichirTout();
+  selectionnerComposant(comp._id);
+  msg.textContent = cles.length + " colonne(s) enregistrée(s) : " + cles.join(", ");
+  afficherToast("Colonnes de " + (comp["Part Name"] || "la référence") + " enregistrées", "success");
+}
+
 /* ---------- Modèles de simulation de la référence ----------
    La colonne « Modèle Simulation » peut en lier plusieurs, séparés par « | » (les
    états d'un commutateur) : la simulation RF prend le premier et propose les autres.
@@ -544,6 +598,8 @@ function inspSimAfficher(comp) {
   if (!box) return;
   const liste = inspSimListe(comp);
   document.getElementById("inspSimForm").hidden = true;
+  document.getElementById("simModeleMessage").textContent = "";
+  document.getElementById("bSimModeleEcrire").onclick = () => inspSimEcrire(comp);
   box.innerHTML = liste.length ? liste.map((nom, i) =>
     '<div class="insp-sim-ligne"><button class="nom" data-voir="' + i + '" title="' + esc(nom) + '">' +
     esc(nomFichierSim(nom)) + "</button>" + (i === 0 && liste.length > 1 ? "<span>par défaut</span>" : "") +
@@ -566,11 +622,24 @@ function inspSimAfficher(comp) {
     lr.readAsText(f);
   };
 }
+/* Le modèle collé dans la page : mêmes extensions que le sélecteur de fichier, même suite que
+   « Lier », mais un nom déjà pris est un refus. */
+function inspSimEcrire(comp) {
+  const msg = document.getElementById("simModeleMessage");
+  const nom = document.getElementById("simModeleNom").value.trim();
+  const permises = document.getElementById("inspSimFichier").accept.split(",");
+  const ext = (nom.match(/\.[^.]+$/) || [""])[0].toLowerCase();
+  if (!permises.includes(ext)) { msg.textContent = "⛔ Le nom doit finir par " + permises.join(" "); return; }
+  const texte = document.getElementById("simModeleTexte").value;
+  if (!texte.trim()) { msg.textContent = "⛔ Colle d'abord le texte du modèle."; return; }
+  msg.textContent = "";
+  inspSimPreparer(comp, nom, texte, true);
+}
 /* Un Touchstone demande ses pattes ; un autre modèle se range tel quel. */
-function inspSimPreparer(comp, nomBrut, texte) {
+function inspSimPreparer(comp, nomBrut, texte, sansEcraser) {
   const nom = nomBrut.replace(/[^A-Za-z0-9_.+-]/g, "_");
   const n = COMPOSANTS_LIB.portsTouchstone(nom);
-  if (!n) { inspSimRanger(comp, nom, texte); return; }
+  if (!n) { inspSimRanger(comp, nom, texte, sansEcraser); return; }
   const pins = parseInt(comp["Number Of pins"], 10);
   const deja = COMPOSANTS_LIB.lireBranchement(texte);
   const lu = typeof brochageLire === "function" ? brochageLire(comp["Brochage"]) : null;
@@ -600,27 +669,34 @@ function inspSimPreparer(comp, nomBrut, texte) {
       masse: form.querySelector("[data-masse]").value,
       brochage: comp["Brochage"], pins: Number.isInteger(pins) ? pins : 0 });
     form.querySelector(".err").innerHTML = r.erreurs.map(e => "⛔ " + esc(e)).join("<br>");
-    if (r.texte) inspSimRanger(comp, nom, r.texte);
+    if (r.texte) inspSimRanger(comp, nom, r.texte, sansEcraser);
   };
   const premier = form.querySelector("[data-port]");
   if (premier) premier.focus();
 }
-async function inspSimRanger(comp, nom, texte) {
+async function inspSimRanger(comp, nom, texte, sansEcraser) {
+  const msg = document.getElementById("simModeleMessage");
   try {
     try {
       await sauvegarderFichierLib("simulation", nom, texte, { si_absent: true });
     } catch (e) {
       if (e.status !== 409) throw e;
+      if (sansEcraser) { msg.textContent = "⛔ " + nom + " existe déjà dans la LIB : rien n'est écrit, choisis un autre nom."; return; }
       if (!confirm(nom + " existe déjà dans la LIB. Le remplacer ?")) return;
       await sauvegarderFichierLib("simulation", nom, texte);
     }
   } catch (e) {
     afficherToast("Impossible de ranger " + nom + " : " + e.message, "error");
+    if (sansEcraser) msg.textContent = "⛔ Impossible de ranger " + nom + " : " + e.message;
     return;
   }
   const liste = inspSimListe(comp).filter(x => nomFichierSim(x) !== nom);
   inspSimModifier(comp, liste.concat("lib/simulation/" + nom), nom + " rangé dans la LIB et lié à " +
                   (comp["Part Name"] || "la référence"));
+  if (sansEcraser) {
+    document.getElementById("simModeleNom").value = document.getElementById("simModeleTexte").value = "";
+    msg.textContent = nom + " rangé dans la LIB et lié : clique « 💾 Enregistrer » pour garder la liaison.";
+  }
 }
 
 /* ---------- Brochage de la référence ----------
@@ -639,12 +715,34 @@ function inspBrochageApercu(texte) {
     (p.nc.length ? "  NC→" + esc(p.nc.join("/")) : "")).join("<br>");
   return { ok: true, html: html };
 }
+/* Le brochage confronté au symbole et à l'empreinte de la référence : les écarts, en lignes de
+   texte (ce qu'on n'a pas pu contrôler y est dit). Rien n'est écrit. */
+async function inspBrochageEcarts(comp, texte) {
+  const CL = COMPOSANTS_LIB, lignes = [];
+  const nomSym = CL.nomDeChemin(comp[LIB_STATE.colonnes.includes("Empreinte Schématique") ? "Empreinte Schématique" : "Empreinte Schematique"]);
+  const nomPcb = CL.nomDeChemin(comp["Empreinte PCB"]);
+  const integre = Object.prototype.hasOwnProperty.call(CL.SYMBOLES, nomSym.toLowerCase());
+  const symDef = nomSym && !integre ? await obtenirFichierLib("schematique", nomSym + ".json") : null;
+  const empreinte = nomPcb ? await obtenirFichierLib("pcb", nomPcb + ".json") : null;
+  if (!integre && !symDef) lignes.push("Symbole " + (nomSym ? "« " + nomSym + " » introuvable dans la LIB" : "non associé") + " : broches non contrôlées.");
+  if (!empreinte) lignes.push("Empreinte " + (nomPcb ? "« " + nomPcb + " » introuvable dans la LIB" : "non associée") + " : pattes non contrôlées.");
+  const r = CL.verifierBrochage(texte, empreinte, integre ? nomSym.toLowerCase() : nomSym, symDef);
+  const erreurs = r.erreurs.filter(e => !/^symbole intégré inconnu/.test(e));
+  lignes.push(...erreurs.map(e => "⛔ " + e), ...r.remarques.map(e => "ℹ️ " + e));
+  if (!erreurs.length && !r.remarques.length && (integre || symDef) && empreinte) lignes.push("✓ Aucun écart avec le symbole et l'empreinte.");
+  return lignes;
+}
 function inspBrochageAfficher(comp) {
   const inp = document.getElementById("inspBrochage");
   const ap = document.getElementById("inspBrochageApercu");
   if (!inp || !ap) return;
   inp.value = comp["Brochage"] || "";
+  const ecarts = document.getElementById("inspBrochageEcarts");
+  document.getElementById("bBrochageVerifier").onclick = async () => {
+    ecarts.textContent = (await inspBrochageEcarts(comp, inp.value)).join("\n");
+  };
   const montrer = () => {
+    ecarts.textContent = "";
     const r = inspBrochageApercu(inp.value);
     ap.innerHTML = r.html;
     inp.classList.toggle("invalide", !r.ok);

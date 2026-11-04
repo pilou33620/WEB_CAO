@@ -401,6 +401,192 @@ console.log("— Touchstone —");
   verifier(!CL.brancherTouchstone("1 2 3", "a.s1p", { broches: ["1"] }).texte, "Touchstone refusé : sans ligne « # »");
 }
 
+/* ---------- case du catalogue ---------- */
+console.log("— case du catalogue —");
+for (const [col, v, motif, quoi] of [
+  ["Value", '=HYPERLINK("http://x")', /formule/, "formule ="], ["Value", "@SUM(1)", /formule/, "formule @"],
+  ["Value", "+cmd|' /C calc'!A0", /formule/, "formule +lettre"], ["Value", "AMS1117\u200b-3.3", /invisible/, "caractère invisible"],
+  ["Value", "x".repeat(501), /500/, "501 caractères"], ["Value", "a\tb", /contrôle/, "tabulation"],
+  ["Reference designator Prefix", "", /préfixe/, "préfixe vide"], ["Reference designator Prefix", "R1", /préfixe/, "préfixe à chiffre"],
+  ["Number Of pins", "0", /entier/, "zéro patte"], ["Number Of pins", "8a", /entier/, "pattes non entières"]])
+  verifier(motif.test(CL.verifierCase(col, v) || ""), "case refusée : " + quoi);
+for (const [col, v] of [["Value", "-40"], ["tolerance", "+/-20%"], ["Description", "sur\ndeux lignes"], ["Value", ""],
+                        ["Reference designator Prefix", "U"], ["Number Of pins", "8"]])
+  verifier(CL.verifierCase(col, v) === null, "case acceptée : " + col + " = " + JSON.stringify(v));
+
+/* ---------- les contrôles de la page ----------
+   Les vraies fonctions de Gestion LIB, sur un faux DOM et un faux serveur : ce que chaque contrôle
+   envoie, écrit et affiche. Pas de navigateur. */
+const banc = (async () => {
+  await asyncTests;
+  console.log("— contrôles de la page —");
+  const noeuds = {};
+  const noeud = id => noeuds[id] || (noeuds[id] = {
+    id, value: "", textContent: "", innerHTML: "", hidden: false, disabled: false, style: {}, dataset: {}, onclick: null,
+    classList: { toggle() {}, add() {}, remove() {} }, accept: "", champs: [], querySelectorAll() { return this.champs; },
+    querySelector: q => noeud("q:" + q), addEventListener() {}, getAttribute: () => null, setAttribute() {}, appendChild() {}, focus() {} });
+  const appels = [], fichiersLib = {}, confirmes = [];
+  const serveur = { reponse: () => ({ ok: true, mtime_ms: 2, mtime_avant: 1, champs: {} }) };
+  const page = {
+    console,
+    document: { getElementById: noeud, querySelector: () => null, querySelectorAll: () => [], createElement: () => noeud("?"),
+                body: { appendChild() {}, classList: { add() {}, remove() {}, toggle() {} } }, addEventListener() {} },
+    window: { location: { search: "" }, addEventListener() {} },
+    localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+    confirm: m => { confirmes.push(m); return false; },
+    setTimeout: () => 0, clearTimeout() {},
+    fetch: async (url, o) => {
+      const corps = o && o.body ? JSON.parse(o.body) : null;
+      if (!o || o.method !== "POST") {
+        const u = new URL(url, "http://x"), nom = u.searchParams.get("nom");
+        if (nom in fichiersLib) return { ok: true, json: async () => ({ data: fichiersLib[nom] }) };
+        return { ok: false, status: 404, json: async () => ({ detail: "absent" }) };
+      }
+      appels.push({ url, corps });
+      const r = serveur.reponse(url, corps);
+      return r.status ? { ok: false, status: r.status, json: async () => ({ detail: r.detail }) } : { ok: true, json: async () => r };
+    }
+  };
+  vm.createContext(page);
+  for (const f of ["commun/echappe.js", "commun/csv.js", "commun/brochage.js", "gestion-lib/js/07-import-jlc.js", "commun/composants-lib.js",
+                   "gestion-lib/js/01-donnees.js", "gestion-lib/js/04-ui.js", "gestion-lib/js/05-editeur-lib.js"])
+    vm.runInContext(lire(f), page, { filename: f });
+  const ici = code => vm.runInContext(code, page);
+  const etat = ici("LIB_STATE");
+  etat.colonnes = ici("COLONNES_CATALOGUE_39").concat("Brochage");
+  etat.mtime = 1;
+
+  /* les ids que les fonctions et Claude visent existent dans la page */
+  const html = lire("gestion-lib/gestion-lib.html");
+  for (const id of ["bImportKicad", "kicadZone", "kicadTexte", "kicadFichier", "bKicadConvertir", "kicadMessage", "bBrochageVerifier",
+                    "inspBrochageEcarts", "inspColonnes", "bColonnesEnregistrer", "inspColonnesMessage", "simModeleTexte",
+                    "simModeleNom", "bSimModeleEcrire", "simModeleMessage", "inspSimFichier"])
+    verifier(new RegExp('id="' + id + '"').test(html), "#" + id + " est dans la page");
+
+  /* 1. import KiCad : remplit sans écrire ; un échec ne change rien */
+  const data0 = { format: "pcbfp-1", name: "AVANT", pads: [] };
+  const edit = ici("EDITEUR_LIB");
+  edit.type = "pcb"; edit.data = data0; edit.historique = []; edit.pileRedo = [];
+  noeud("editeurNomFichier").value = "AVANT.json";
+  noeud("editeurCodeJson").value = "AVANT";
+  noeud("kicadTexte").value = "(rien du tout)";
+  ici("editeurKicadConvertir()");
+  verifier(edit.data === data0 && noeud("editeurCodeJson").value === "AVANT" && noeud("editeurNomFichier").value === "AVANT.json" &&
+           /Rien n'a changé/.test(noeud("kicadMessage").textContent), "KiCad illisible : éditeur inchangé, message (" + noeud("kicadMessage").textContent.replace(/\n/g, " ") + ")");
+  noeud("kicadTexte").value = '(footprint "Lib:R<img src=x>" (fp_text reference R1 (at 0 0)) ' +
+    '(pad 1 smd rect (at -1 0) (size 1 1) (layers F.Cu)) (pad 2 smd rect (at 1 0) (size 1 1) (layers F.Cu)))';
+  ici("editeurKicadConvertir()");
+  const conv = JSON.parse(noeud("editeurCodeJson").value);
+  verifier(edit.data.pads.length === 2 && conv.pads.length === 2 && edit.historique.length === 1, "KiCad converti : l'éditeur reçoit les 2 pastilles, Ctrl+Z possible");
+  verifier(/^[A-Za-z0-9_.+-]+\.json$/.test(noeud("editeurNomFichier").value), "KiCad : le nom de fichier suit (nettoyé) : " + noeud("editeurNomFichier").value);
+  verifier(/ramené/.test(noeud("kicadMessage").textContent) && noeud("kicadMessage").innerHTML === "", "KiCad : remarques montrées, en texte seulement");
+  verifier(!appels.length, "KiCad : rien n'est écrit sur le serveur");
+  edit.type = "schematique"; edit.data = "SYM";
+  ici("editeurKicadConvertir()");
+  verifier(edit.data === "SYM", "KiCad : sans effet sur un symbole");
+
+  /* 2. brochage face au symbole et à l'empreinte : lecture seule */
+  fichiersLib["FP8.json"] = { pads: [1, 2, 3].map(n => ({ n })) };
+  fichiersLib["MONSYM.json"] = { pins: [{ n: 1, name: "IN" }, { n: 2, name: "OUT" }] };
+  const ecarts = (comp, texte) => ici("inspBrochageEcarts")(comp, texte);
+  const nu = { "Empreinte Schématique": "lib/symbole/monsym.json", "Empreinte PCB": "lib/empreinte/FP8.json" };
+  let l = await ecarts({ "Empreinte Schématique": "MONSYM.json", "Empreinte PCB": "FP8.json" }, "IN=1,OUT=2,NC=3");
+  verifier(l.length === 1 && /Aucun écart/.test(l[0]), "brochage juste : aucun écart (" + l.join(" | ") + ")");
+  l = await ecarts({ "Empreinte Schématique": "MONSYM.json", "Empreinte PCB": "FP8.json" }, "IN=1,XX=9");
+  verifier(l.some(x => /⛔.*patte\(s\) absente.*9/.test(x)) && l.some(x => /⛔.*« XX »/.test(x)) && l.some(x => /ℹ️.*OUT/.test(x)), "brochage faux : patte et broche signalées (" + l.join(" | ") + ")");
+  l = await ecarts({ "Empreinte Schématique": "ic.json", "Empreinte PCB": "" }, "A=1");
+  verifier(l.length === 1 && /non associée.*non contrôlées/.test(l[0]), "symbole intégré sans empreinte : dit que les pattes ne sont pas contrôlées");
+  l = await ecarts(nu, "IN=1");
+  verifier(l.some(x => /« monsym » introuvable/.test(x)), "symbole absent de la LIB : dit, pas d'erreur inventée");
+  verifier(!appels.length, "brochage : rien n'est écrit");
+
+  /* 3. colonnes de la fiche : seules les cases changées partent, avec leur valeur lue */
+  const COMP = { _id: 7, "Part Name": "U1", Value: "1k", Description: 'sur\r\ndeux "lignes"', Manufacturer: "<b>x</b>", "Number Of pins": "8" };
+  etat.composants = [COMP];
+  ici("inspColonnesAfficher")(COMP);
+  const fiche = noeud("inspColonnes").innerHTML;
+  verifier(fiche.includes('id="inspCol-Value"') && fiche.includes('id="inspCol-frequency"') && fiche.includes('data-col="manufacturer part Number"'), "fiche : #id stables");
+  verifier(!fiche.includes("<b>x") && fiche.includes("&lt;b&gt;x"), "fiche : le contenu d'une case est échappé");
+  verifier(/<textarea[^>]*data-col="Description"/.test(fiche), "fiche : la description garde ses lignes");
+  const champ = (col, value) => ({ value, dataset: { col } });
+  noeud("inspColonnes").champs = [champ("Value", " 2k "), champ("Description", 'sur\ndeux "lignes"'), champ("Manufacturer", "<b>x</b>"), champ("Vendor", "")];
+  verifier(JSON.stringify(ici("inspColonnesChangees")(COMP)) === '{"Value":"2k"}', "fiche : seule la case changée part (fin de ligne et espaces ignorés)");
+
+  serveur.reponse = () => ({ status: 409, detail: "La reference a change depuis sa lecture (Value) : relis-la" });
+  await ici("inspColonnesEnregistrer")(COMP);
+  const envoi = appels[appels.length - 1].corps.modifier;
+  verifier(JSON.stringify(envoi) === '{"part":"U1","champs":{"Value":"2k"},"avant":{"Value":"1k"}}', "fiche : route « modifier » avec la valeur lue");
+  verifier(/Rien n'est écrit.*a change.*Recharge/.test(noeud("inspColonnesMessage").textContent) && COMP.Value === "1k" && etat.mtime === 1 && !noeud("bColonnesEnregistrer").disabled,
+           "fiche : conflit lisible, miroir et date inchangés");
+  const diffuses = [], envois = [];
+  page.sessDiffuserLibModif = m => diffuses.push(m);
+  page.projdSuiteDispo = () => ({ then: f => { envois.push(1); f(false); } });
+  serveur.reponse = (_, c) => ({ ok: true, champs: c.modifier.champs, mtime_avant: 1, mtime_ms: 2 });
+  await ici("inspColonnesEnregistrer")(COMP);
+  verifier(COMP.Value === "2k" && etat.mtime === 2, "fiche : le miroir et la date suivent l'écriture");
+  verifier(diffuses.length === 1 && diffuses[0].genre === "catalogue" && envois.length === 1, "fiche : les autres pages sont prévenues (sessDiffuserLibModif, libSuiteNoter)");
+  verifier(etat.sale !== true, "fiche : pas de modification en attente après l'écriture");
+  serveur.reponse = (_, c) => ({ ok: true, champs: c.modifier.champs, mtime_avant: 99, mtime_ms: 100 });
+  noeud("inspColonnes").champs = [champ("Value", "3k")];
+  await ici("inspColonnesEnregistrer")(COMP);
+  verifier(etat.mtime === 2, "fiche : quelqu'un d'autre a écrit entre-temps, la date reste périmée (l'enregistrement complet sera refusé)");
+  const nb = appels.length;
+  noeud("inspColonnes").champs = [champ("Value", "=1+1")];
+  await ici("inspColonnesEnregistrer")(COMP);
+  verifier(appels.length === nb && /formule/.test(noeud("inspColonnesMessage").textContent), "fiche : une formule est refusée avant d'appeler le serveur");
+  noeud("inspColonnes").champs = [champ("Value", "3k")];
+  await ici("inspColonnesEnregistrer")(COMP);
+  verifier(appels.length === nb && /Aucune colonne/.test(noeud("inspColonnesMessage").textContent), "fiche : rien de modifié, rien d'envoyé");
+
+  /* 4. une création suivie de l'édition couvre toutes les colonnes */
+  etat.composants = [];
+  etat.sale = false;
+  etat.fichiers = { pcb: [], schematique: [], simulation: [] };
+  noeud("newPartName").value = "NOUVEAU"; noeud("newPrefix").value = "u";
+  ici("creerNouveauComposant()");
+  const neuf = etat.composants[0];
+  verifier(neuf["Part Name"] === "NOUVEAU" && etat.sale === true, "création : la ligne attend « Enregistrer »");
+  serveur.reponse = () => ({ status: 404, detail: "« NOUVEAU » n'est pas au catalogue" });
+  noeud("inspColonnes").champs = [champ("Part Type", "IC")];
+  await ici("inspColonnesEnregistrer")(neuf);
+  verifier(/clique d'abord « 💾 Enregistrer »/.test(noeud("inspColonnesMessage").textContent), "création puis édition sans enregistrer : le refus dit quoi faire");
+  ici("inspColonnesAfficher")(neuf);
+  const ouverte = noeud("inspColonnes").innerHTML, hors = ici("COLONNES_HORS_FICHE");
+  const manque = etat.colonnes.filter(c => !hors.includes(c) && !ouverte.includes('data-col="' + c + '"'));
+  verifier(!manque.length, "création puis édition : " + (etat.colonnes.length - hors.filter(c => etat.colonnes.includes(c)).length) + " colonnes dans la fiche" + (manque.length ? ", manquent " + manque : ""));
+  const ui = lire("gestion-lib/js/04-ui.js");
+  verifier(html.includes('id="newPartName"') && html.includes('id="inspBrochage"') && /selAssoc\(colPcb/.test(ui) && /selAssoc\(colSch/.test(ui) && /selAssoc\(colSim/.test(ui),
+           "les colonnes hors fiche ont leur contrôle (Part Name : création ; associations : listes du tableau ; Brochage : inspecteur)");
+
+  /* 5. modèle écrit dans la page : mêmes extensions, jamais d'écrasement, puis même liaison */
+  noeud("inspSimFichier").accept = html.match(/id="inspSimFichier"[^>]*accept="([^"]+)"/)[1];
+  const C5 = { _id: 9, "Part Name": "R1", "Number Of pins": "2", "Modèle Simulation": "lib/simulation/a.sub" };
+  etat.composants = [C5];
+  etat.colonnes = ["Part Name", "Number Of pins", "Modèle Simulation"];
+  etat.sale = false;
+  ici("inspSimAfficher")(C5);
+  const a0 = appels.length;
+  const ecrire = async (nom, texte) => { noeud("simModeleNom").value = nom; noeud("simModeleTexte").value = texte; ici("inspSimEcrire")(C5); await new Promise(r => setImmediate(r)); };
+  await ecrire("x.html", ".subckt x");
+  verifier(appels.length === a0 && /doit finir par/.test(noeud("simModeleMessage").textContent), "modèle : extension hors du sélecteur refusée");
+  await ecrire("x.sub", "  ");
+  verifier(appels.length === a0 && /texte du modèle/.test(noeud("simModeleMessage").textContent), "modèle : texte vide refusé");
+  serveur.reponse = () => ({ status: 409, detail: "existe" });
+  confirmes.length = 0;
+  await ecrire("pris.sub", ".subckt x");
+  const c5 = appels[appels.length - 1].corps;
+  verifier(appels.length === a0 + 1 && c5.si_absent === true && c5.type === "simulation" && !confirmes.length && /existe déjà/.test(noeud("simModeleMessage").textContent) && !etat.sale,
+           "modèle : nom pris refusé, sans proposer de remplacer ni lier");
+  serveur.reponse = () => ({ ok: true });
+  await ecrire("mon modele.sub", ".subckt m");
+  const c6 = appels[appels.length - 1].corps;
+  verifier(c6.nom === "mon_modele.sub" && c6.contenu === ".subckt m" && c6.si_absent === true, "modèle : rangé sous un nom nettoyé, en si_absent");
+  verifier(C5["Modèle Simulation"] === "lib/simulation/a.sub | lib/simulation/mon_modele.sub" && etat.sale === true, "modèle : lié comme « Lier » (à la suite, à enregistrer)");
+  verifier(noeud("simModeleTexte").value === "" && /à enregistrer|Enregistrer/.test(noeud("simModeleMessage").textContent), "modèle : la zone se vide, le message dit de quoi enregistrer");
+  await ecrire("t.s2p", "# GHZ S MA R 50\n1 0 0 0 0 0 0 0 0");
+  verifier(/Port 2/.test(noeud("inspSimForm").innerHTML) && !noeud("inspSimForm").hidden, "modèle : un Touchstone passe par le formulaire des ports");
+})();
+
 /* ---------- la LIB réelle passe les contrôles ---------- */
 const LIB = [process.env.WEB_CAO_LIB, path.join(RACINE, "LIB"), path.join(RACINE, "..", "PROJETS", "LIB_CAO")]
   .find(d => d && fs.existsSync(path.join(d, "lib_empreinte_pcb")));
@@ -417,5 +603,5 @@ else {
   verifier(!fautives.length, n + " empreintes de la LIB passent les contrôles" + (fautives.length ? " — " + fautives.slice(0, 5).join(" ; ") : ""));
 }
 
-asyncTests.then(() => console.log("— " + total + " contrôles —"),
+banc.then(() => console.log("— " + total + " contrôles —"),
                 e => { console.error("  ÉCHEC : " + e.message); process.exitCode = 1; });

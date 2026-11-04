@@ -16383,8 +16383,9 @@ function simRendrePDN() {
           '<th style="text-align:left">Réf</th>' +
           '<th style="text-align:left">Valeur</th>' +
           '<th style="text-align:left">Boîtier</th>' +
-          '<th style="text-align:right">ESR</th>' +
-          '<th style="text-align:right">ESL</th>' +
+          '<th style="text-align:right">C (nF)</th>' +
+          '<th style="text-align:right">ESR (mΩ)</th>' +
+          '<th style="text-align:right">ESL (nH)</th>' +
           '<th style="text-align:right">L_mount</th>' +
           '<th style="text-align:right" title="Piste entre le condensateur et la charge : longueur et inductance. Comptée seulement sans plan : avec une cavité, c’est l’épandage qui porte ce trajet.">Piste</th>' +
           '<th style="text-align:right">f₀ (SRF)</th>' +
@@ -16398,11 +16399,13 @@ function simRendrePDN() {
     } else if (cp.prov === "catalogue") {
       provBadge = '<span class="simBadge" style="background:rgba(59,130,246,0.18);color:#60a5fa" title="Caractéristiques extraites du catalogue de composants">Catalogue</span>';
     } else if (cp.prov === "datasheet") {
-      provBadge = '<span class="simBadge" style="background:rgba(236,72,153,0.16);color:#f472b6" title="Parasites relevés dans la datasheet, validés à la main (commun/simulation-datasheet.js)">Datasheet</span>';
+      provBadge = '<span class="simBadge" style="background:rgba(236,72,153,0.16);color:#f472b6" title="Parasites relevés dans la datasheet, validés à la main (commun/simulation-datasheet.js)' + (String(cp.mpn || "").trim() ? '' : ' Sans MPN : valable pour cette session seulement.') + '">Datasheet</span>';
     }
 
-    const esrTxt = cp.esr < 1 ? (cp.esr * 1000).toFixed(1) + " mΩ" : cp.esr.toFixed(2) + " Ω";
-    const eslTxt = ((cp.esl || 0) * 1e9).toFixed(2) + " nH";
+    // C, ESR, ESL : modifiables, dans l'unité et les bornes du catalogue (une valeur tapée passe la ligne en « Datasheet »)
+    const capChamp = d => '<td class="n"><input class="simChamp simPDNCapChamp" type="text" inputmode="decimal" spellcheck="false" data-id="' + cp.id + '" data-cle="' + d.cle + '"' +
+      ' value="' + simDsTexte((cp[d.prop] || 0) / d.f) + '" style="width:52px"' +
+      ' title="' + esc(simDsTitre(d) + (String(cp.mpn || "").trim() ? " Vaut pour tous les condensateurs de ce MPN, et revient à chaque détection." : " Sans MPN : valable pour cette session seulement.")) + '"/></td>';
     const lMountTxt = ((cp.lMount || 0) * 1e9).toFixed(2) + " nH";
     const f0Txt = (cp.f0 >= 1000 ? (cp.f0 / 1000).toFixed(2) + " GHz" : (cp.f0 || 0).toFixed(1) + " MHz");
 
@@ -16411,8 +16414,7 @@ function simRendrePDN() {
       '<td style="font-weight:600;color:var(--txt)">' + esc(cp.ref) + '</td>' +
       '<td>' + esc(cp.val) + '</td>' +
       '<td style="color:var(--txt-dim)">' + esc(cp.pkg) + '</td>' +
-      '<td class="n">' + esrTxt + '</td>' +
-      '<td class="n">' + eslTxt + '</td>' +
+      ["cap_nf", "esr_mohm", "esl_nh"].map(k => capChamp(SIM_DS_CHAMPS_CAPA.find(d => d.cle === k))).join("") +
       '<td class="n" style="color:var(--txt-dim)">' + lMountTxt + '</td>' +
       '<td class="n" style="color:' + (r.multiport ? 'var(--txt-dim);opacity:0.5' : 'var(--txt)') + '"' +
         (cp.pisteSource === "estimee" ? ' title="Pas de chemin de cuivre trouvé jusqu’à la charge : distance à vol d’oiseau"' : '') + '>' +
@@ -16425,6 +16427,8 @@ function simRendrePDN() {
   }
 
   html += '</tbody></table></div>';
+  if (SIM_PDN.capaRefus) html += '<p class="simNote simAlerte" id="simPDNCapRefus">· Rien n\'est changé : ' + esc(SIM_PDN.capaRefus) + '</p>';
+  html += simPDNTableParasites();
 
   // SECTION : RÉSONANCES SPATIALES 2D DE CAVITÉ
   if (r.caviteModes && r.caviteModes.length) {
@@ -16517,6 +16521,18 @@ function simRendrePDN() {
    charges ajoutées à la main (LED, relais…) se renseignent ligne par ligne.
    Les champs portent `data-cle` (fiche) ou `data-id` / `data-champ`
    (charges) ; simPDNApres les branche. */
+/* La table des parasites (/api/lib/parasites, complétée en place dans SIM_PARASITES_MURATA), en lecture seule. */
+function simPDNTableParasites() {
+  const t = SIM_PARASITES_MURATA || {};
+  const nb = (v, k, u) => v == null ? "—" : simDsTexte(Number((v * k).toPrecision(4))) + " " + u;
+  const lignes = Object.keys(t).sort().map(k => '<tr><td style="font-family:var(--mono)">' + esc(k) + '</td>' +
+    (t[k].l != null ? '<td class="n" colspan="3">L ' + nb(t[k].l, 1e9, "nH") + ', DCR ' + nb(t[k].dcr, 1e3, "mΩ") + '</td>'
+                    : '<td class="n">' + nb(t[k].c, 1e9, "nF") + '</td><td class="n">' + nb(t[k].esr, 1e3, "mΩ") + '</td><td class="n">' + nb(t[k].esl, 1e9, "nH") + '</td>') + '</tr>').join("");
+  return '<details class="simCarteAPart" id="simPDNParasites"' + (SIM_PDN.parasitesOuvert ? ' open' : '') + '><summary>Parasites par boîtier · ' + Object.keys(t).length + ' références</summary>' +
+    '<div style="max-height:260px;overflow-y:auto"><table class="simTab" style="width:100%"><thead><tr><th style="text-align:left">Référence</th>' +
+    '<th style="text-align:right">C</th><th style="text-align:right">ESR</th><th style="text-align:right">ESL</th></tr></thead><tbody>' + lignes + '</tbody></table></div></details>';
+}
+
 function simPDNRendreEvenements(r) {
   const info = SIM_PDN.chargeInfo || { ref: SIM_PDN.portRef };
   if (!SIM_PDN.fiche) SIM_PDN.fiche = simPDNFicheCharger(info);
@@ -16764,6 +16780,15 @@ function simPDNApres() {
       simPDNSynchroDeltaI();
       simCalculerPDN();
     };
+    box.querySelectorAll(".simPDNCapChamp").forEach(inp => {
+      inp.onchange = function() {
+        const r = simDsCapaSaisir(parseInt(this.getAttribute("data-id")), this.getAttribute("data-cle"), this.value);
+        SIM_PDN.capaRefus = r.ok ? "" : r.motif;
+        simRendre();                                  // un refus : la valeur d'avant revient, le motif s'affiche
+      };
+    });
+    const parasites = simEl("simPDNParasites");
+    if (parasites) parasites.ontoggle = function() { SIM_PDN.parasitesOuvert = this.open; };
     box.querySelectorAll(".simPDNCapToggle").forEach(cb => {
       cb.onchange = function() {
         const id = parseInt(this.getAttribute("data-id"));
@@ -20344,6 +20369,7 @@ function simRendre(){
      muets — visiblement là, armés du bon état, et sans effet au clic. C'est le
      genre de panne qui ne se voit pas en relisant : il faut cliquer. */
   if(a.apres)a.apres();
+  if(typeof simDsTitres==="function")simDsTitres();
   simSurveillerLargeur(box);
   simSortieSiNouveau();
 }

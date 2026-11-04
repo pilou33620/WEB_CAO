@@ -2,8 +2,9 @@
 /* =============================================================================
    commun/composants-lib.js
    Préparation de composants de la LIB (module « composants » du MCP web_suite,
-   lanceur/docs/SPEC-mcp-composants.md) : contrôles d'une empreinte pcbfp-1 et
-   d'un brochage, générateurs IPC-7351B, conversion KiCad, branchement Touchstone.
+   lanceur/docs/SPEC-mcp-composants.md) : contrôles d'une empreinte pcbfp-1, d'un
+   brochage et d'une case du catalogue, générateurs IPC-7351B, conversion KiCad,
+   branchement Touchstone.
 
    Rien ici ne touche au DOM ni au serveur : on lit des objets, on rend
    { erreurs, remarques }. Une erreur refuse ; une remarque se montre et laisse
@@ -24,6 +25,11 @@ const COMPOSANTS_LIB = (() => {
                           "pads", "body", "holes", "lines", "description"];
   const NOM_EMPREINTE = /^[A-Za-z0-9_.+-]{1,60}$/;
   const CONTROLE = /[\x00-\x1f\x7f]/;
+  /* une cellule du catalogue ne doit ni passer pour une formule à l'ouverture dans un tableur
+     (« =HYPERLINK(… », « @SUM », « +cmd|… » ; « -40 » et « +/-20% » restent permis), ni cacher
+     des caractères invisibles qui feraient un sosie d'une référence existante */
+  const FORMULE = /^\s*([=@]|[+-]\s*[A-Za-z(])/;
+  const INVISIBLE = /[\u0080-\u009f\u00a0\u00ad\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/;
   const COORD = 100, COURONNE = 0.1, PASTILLE_MIN = 0.05;
 
   /* Symboles intégrés du schéma (clés de LIB, editeur-schematique/js/02-bibliotheque.js) :
@@ -225,6 +231,20 @@ const COMPOSANTS_LIB = (() => {
   }
 
   const nomDeChemin = v => String(v == null ? "" : v).trim().replace(/^.*[\\/]/, "").replace(/\.json$/i, "");
+
+  /* ---------- case du catalogue ----------
+     Une case que la fiche va écrire : les règles du serveur (_valeur_catalogue de web_CAO.py), plus
+     la forme du préfixe et du nombre de pattes. Rend le refus en texte, ou null. Une case peut
+     tenir sur plusieurs lignes : le catalogue la garde entre guillemets. */
+  function verifierCase(colonne, valeur) {
+    const v = String(valeur == null ? "" : valeur), nu = v.trim();
+    if (v.length > 500 || /[\x00-\x09\x0b\x0c\x0e-\x1f\x7f]/.test(v)) return "« " + colonne + " » : 500 caractères au plus, sans caractère de contrôle";
+    if (FORMULE.test(v)) return "« " + colonne + " » : commence comme une formule de tableur (=, @, +lettre, -lettre)";
+    if (INVISIBLE.test(v)) return "« " + colonne + " » : caractère invisible ou de contrôle Unicode";
+    if (colonne === "Reference designator Prefix" && !/^[A-Za-z]{1,4}$/.test(nu)) return "préfixe de repère : 1 à 4 lettres (R, C, U, J…)";
+    if (colonne === "Number Of pins" && !(/^\d+$/.test(nu) && +nu >= 1 && +nu <= 4096)) return "« Number Of pins » : entier de 1 à 4096";
+    return null;
+  }
 
   /* ---------- générateurs IPC-7351B ----------
      Pastille CMS (IPC-7351B, § 3.1) à partir des cotes min/max de la datasheet :
@@ -784,6 +804,6 @@ const COMPOSANTS_LIB = (() => {
     }
   }
 
-  return { SYMBOLES, CHAMPS, nomDeChemin, verifierEmpreinte, verifierBrochage, genererEmpreinte,
+  return { SYMBOLES, CHAMPS, KICAD_MAX, nomDeChemin, verifierEmpreinte, verifierBrochage, verifierCase, genererEmpreinte,
            lireParametres, convertirKicad, lireS, Refus, portsTouchstone, lireBranchement, brancherTouchstone };
 })();

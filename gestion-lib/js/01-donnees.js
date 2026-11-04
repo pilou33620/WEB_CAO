@@ -304,6 +304,21 @@ async function enregistrerCatalogue() {
   return res;
 }
 
+/* Des cases d'UNE référence écrites sur le serveur, sans toucher aux autres lignes : le serveur
+   refuse (409) si l'une d'elles a changé depuis sa lecture. La page garde la date du catalogue lu
+   pour son « Enregistrer » complet : elle la suit si personne n'a écrit entre-temps ; sinon elle
+   reste périmée, et l'enregistrement complet sera refusé (409), comme il se doit. */
+async function modifierCasesCatalogue(comp, champs) {
+  const avant = {};
+  for (const k of Object.keys(champs)) avant[k] = comp[k] == null ? "" : String(comp[k]);
+  const rep = await apiPost("/api/lib/composants", { modifier: { part: comp["Part Name"], champs, avant } });
+  if (rep.mtime_avant != null && rep.mtime_avant === LIB_STATE.mtime) LIB_STATE.mtime = rep.mtime_ms;
+  Object.assign(comp, rep.champs);     // sinon un « Enregistrer » complet remettrait les anciennes valeurs
+  libSuiteNoter("catalogue");
+  if (typeof sessDiffuserLibModif === "function") sessDiffuserLibModif({ genre: "catalogue", action: "sauvegarde" });
+  return rep;
+}
+
 /* Le catalogue changé ailleurs (autre onglet ou appareil) : sans modification en cours, on
    le relit ; sinon on le note, et « Enregistrer » demandera avant d'écraser. */
 function libSurCatalogueAilleurs(m) {

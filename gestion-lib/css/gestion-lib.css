@@ -1288,6 +1288,26 @@ table.lib-table tr.selected td {
 .insp-sim-form .aide { color: var(--txt-dim); font-size: 10.5px; line-height: 1.4; }
 .insp-sim-form .err { color: var(--red); }
 .insp-sim-form .actions { display: flex; gap: 6px; justify-content: flex-end; }
+.insp-sim-texte { display: flex; flex-direction: column; gap: 5px; padding: 8px 10px; font-size: 11.5px;
+  border-top: 1px solid var(--border); color: var(--txt-dim); }
+.insp-sim-texte input, .insp-sim-texte textarea, .insp-colonnes-grille input, .insp-colonnes-grille textarea {
+  background: var(--bg); border: 1px solid var(--border2); color: var(--txt); border-radius: 4px; padding: 3px 6px;
+  font-family: var(--mono); font-size: 11.5px; min-width: 0; resize: vertical; }
+.insp-sim-texte .tb, .insp-brochage .tb { align-self: flex-start; }
+.insp-texte-message { white-space: pre-line; font-size: 11px; line-height: 1.4; color: var(--txt-dim); }
+.insp-texte-message:empty { display: none; }
+
+/* Colonnes du composant (inspecteur) */
+.insp-colonnes { font-size: 11.5px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+.insp-colonnes summary { cursor: pointer; font-weight: 600; color: var(--txt-dim); }
+.insp-colonnes-grille { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 4px 8px; align-items: center;
+  margin: 8px 0; color: var(--txt-dim); }
+.insp-colonnes .tb { margin-bottom: 6px; }
+
+/* Import KiCad (vue JSON de l'éditeur) : la zone du code garde la place */
+.editor-json-pane .editor-kicad { display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; font-size: 11.5px; color: var(--txt-dim); }
+.editor-json-pane .editor-kicad textarea { flex: none; resize: vertical; }
+.editor-kicad-actions { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
 
 /* ---------- Téléphone (classes posées par commun/telephone.js) ----------
    Portrait : onglets et statistiques sur une ligne qui défile ; la fiche du

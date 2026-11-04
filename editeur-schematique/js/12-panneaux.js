@@ -419,12 +419,6 @@ function refreshPanels(){
     let enrichHtml = "";
     if (!def.noRef) {
       const hasEnrich = !!(el.mpn || el.manufacturer || el.specs || el.datasheet_local || el.datasheet_url);
-      let specsRows = "";
-      if (el.specs && typeof el.specs === "object") {
-        for (const sk in el.specs) {
-          specsRows += '<tr><td style="color:var(--txt-dim); padding:2px 4px; border-bottom:1px solid rgba(255,255,255,0.05);">' + esc(sk) + '</td><td style="font-weight:600; padding:2px 4px; border-bottom:1px solid rgba(255,255,255,0.05);">' + esc(el.specs[sk]) + '</td></tr>';
-        }
-      }
       enrichHtml =
         '<div style="margin-top:10px; border-top:1px solid var(--border); padding-top:10px;">' +
           '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">' +
@@ -438,7 +432,6 @@ function refreshPanels(){
             '<div style="background:var(--panel2); border:1px solid var(--border); border-radius:6px; padding:8px; font-size:11px; margin-bottom:8px;">' +
               (el.mpn ? '<div style="margin-bottom:3px;"><span style="color:var(--txt-dim)">MPN :</span> <b style="color:var(--txt)">' + esc(el.mpn) + '</b></div>' : '') +
               (el.manufacturer ? '<div style="margin-bottom:3px;"><span style="color:var(--txt-dim)">Fabricant :</span> <b>' + esc(el.manufacturer) + '</b></div>' : '') +
-              (specsRows ? '<table style="width:100%; font-size:10.5px; margin-top:5px; border-collapse:collapse;">' + specsRows + '</table>' : '') +
               ((el.pinout && el.pinout.length) || (el.pinNames && el.pinNames.some(x=>x)) ? (
                 '<div style="margin-top:8px; padding-top:6px; border-top:1px dashed var(--border); font-size:10.5px;">' +
                   '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">' +
@@ -461,6 +454,7 @@ function refreshPanels(){
               ) : '') +
             '</div>'
           ) : '') +
+          specsHtml(el) +
         '</div>';
 
       const isLoaded = window.CSV_LIB && window.CSV_LIB.length > 0;
@@ -712,6 +706,8 @@ function refreshPanels(){
     // ---------------------------------
     const bEnrich = document.getElementById("pEnrichBtn");
     if (bEnrich) bEnrich.onclick = () => { if (typeof crOuvrir === "function") crOuvrir(el); };
+
+    specsBrancher(el);
 
     const bClearEnrich = document.getElementById("pEnrichClear");
     if (bClearEnrich) bClearEnrich.onclick = () => {
@@ -1065,4 +1061,52 @@ function drawMenuClose(){
 function drawMenuToggle(){
   const m=document.getElementById("drawMenu");
   if(m&&m.classList.contains("on"))drawMenuClose();else drawMenuOpen();
+}
+
+/* ---------- Les specs d'un composant, à la main ----------
+   Changer une valeur, ajouter une clé, retirer une ligne : une étape Ctrl+Z par changement.
+   Une clé déjà là (recherche en ligne, catalogue) reste modifiable même hors bornes : seul l'ajout les contrôle. */
+const SPECS_MAX=30;
+/* val null : retire la ligne. Rend le motif d'un refus, "" sinon (rien n'est poussé si rien ne change). */
+function specEcrire(el,cle,val){
+  const t=el.specs||{}, existe=Object.prototype.hasOwnProperty.call(t,cle);
+  if(!existe&&val!==null){
+    if(!/^[^\x00-\x1f]{1,60}$/.test(cle)||!cle.trim()||DESSIN_RESERVES.has(cle.trim().toLowerCase()))return "clé : texte d'une ligne, 60 caractères au plus";
+    if(Object.keys(t).length>=SPECS_MAX)return SPECS_MAX+" clés au plus";
+  }
+  if(val!==null&&!/^[^\x00-\x1f\x7f]{0,200}$/.test(val))return "valeur : texte d'une ligne, 200 caractères au plus";
+  if(val===null?!existe:(existe&&String(t[cle])===val))return "";
+  push();
+  el.specs=Object.assign({},t);
+  if(val===null)delete el.specs[cle];else el.specs[cle]=val;
+  if(!Object.keys(el.specs).length)delete el.specs;
+  return "";
+}
+function specsHtml(el){
+  const td='padding:2px 4px; border-bottom:1px solid rgba(255,255,255,0.05);';
+  const lignes=Object.keys(el.specs||{}).map((k,i)=>'<tr><td style="color:var(--txt-dim);'+td+'">'+esc(k)+'</td>'+
+    '<td style="'+td+'"><input id="pSpecV'+i+'" value="'+esc(el.specs[k])+'" maxlength="200" title="Valeur de « '+esc(k)+' » : 200 caractères au plus" style="width:100%"></td>'+
+    '<td style="'+td+'"><button class="pnl-btn" id="pSpecX'+i+'" title="Retirer la ligne « '+esc(k)+' »">✕</button></td></tr>').join("");
+  return '<div class="prop" id="pSpecs"><label>Specs</label>'+
+    '<table style="width:100%; font-size:10.5px; border-collapse:collapse;">'+lignes+'</table>'+
+    '<div class="row"><input id="pSpecCle" placeholder="Clé" maxlength="60" title="Nom de la spec à ajouter : 60 caractères au plus, '+SPECS_MAX+' clés au plus" style="flex:1;min-width:0">'+
+    '<input id="pSpecNouv" placeholder="Valeur" maxlength="200" title="Sa valeur : 200 caractères au plus" style="flex:1;min-width:0">'+
+    '<button class="tb mini" id="pSpecAjout" title="Ajouter cette spec au composant">＋</button></div></div>';
+}
+function specsBrancher(el){
+  const fin=m=>{
+    refreshPanels();draw();
+    if(m)document.getElementById("fHint").textContent="Specs : "+m;
+  };
+  Object.keys(el.specs||{}).forEach((k,i)=>{
+    const v=document.getElementById("pSpecV"+i), x=document.getElementById("pSpecX"+i);
+    if(v)v.onchange=()=>fin(specEcrire(el,k,v.value));
+    if(x)x.onclick=()=>fin(specEcrire(el,k,null));
+  });
+  const a=document.getElementById("pSpecAjout");
+  if(a)a.onclick=()=>{
+    const k=document.getElementById("pSpecCle").value.trim();
+    fin(el.specs&&Object.prototype.hasOwnProperty.call(el.specs,k)?"« "+k+" » existe déjà : changez sa valeur dans sa ligne"
+                                                                  :specEcrire(el,k,document.getElementById("pSpecNouv").value));
+  };
 }

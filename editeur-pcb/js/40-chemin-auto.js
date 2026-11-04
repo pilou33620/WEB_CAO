@@ -10,6 +10,7 @@
 
    Rien n'est écrit : la réponse est la liste de points de passage qu'attend
    cao_router, qui fait le détail (contournement, poussée) et passe par sa carte.
+   Le bouton « Chemin auto » (cheminGeste, en bas) enchaîne les deux à la main.
    Les liaisons d'un appel se cherchent dans l'ordre, chaque chemin trouvé
    devenant un obstacle pour les suivantes. Le routeur lui-même n'est pas touché.
 
@@ -382,4 +383,42 @@ function cheminCommande(a){
   if(paires.length) conseil.push("Donne chaque élément de « paires » à cao_paire (une carte par paire) : il fait les éventails jusqu'aux pastilles.");
   return {pas_mm:g.pas, resultats, routes, paires,
           conseil:conseil.join(" ") || "Aucun chemin : vois les raisons, et la carte par pilote_capture."};
+}
+
+/* La liaison que vise le bouton : le chevelu du net de la pastille cliquée (S.selPad), celui qui en part ou
+   le plus proche d'elle ; sans pastille, le premier du net mis en avant (Alt+clic, liste des nets). */
+function cheminLiaisonChoisie(){
+  const fp = S.selPad && S.fps.find(f => f.id === S.selPad.id);
+  const pad = fp && padsWorld(fp)[S.selPad.k];
+  const net = pad ? pad.net : S.hlNet;
+  if(!net) throw new Error(pad ? "cette pastille n'est sur aucun net" : "cliquez d'abord une pastille de la liaison à router (ou Alt+clic pour un net)");
+  const rats = conn(true).rats.filter(r => r.net === net);
+  if(!rats.length) throw new Error("le net " + routagePropre(net) + " n'a plus de liaison à router");
+  const ecart = r => pad ? Math.min(dist(pad.x, pad.y, r.x1, r.y1), dist(pad.x, pad.y, r.x2, r.y2)) : 0;
+  const r = rats.reduce((m, x) => ecart(x) < ecart(m) ? x : m);
+  // les bouts d'un chevelu sont toujours des pastilles (conn) : cao_chemin les veut sous leur nom
+  const nom = (x, y) => {
+    for(const f of S.fps) for(const q of padsWorld(f)) if(q.net === net && dist(q.x, q.y, x, y) < 1e-6) return f.ref + "." + q.n;
+    throw new Error("pastille du chevelu introuvable en (" + r3(x) + ", " + r3(y) + ")");
+  };
+  return {depart:nom(r.x1, r.y1), arrivee:nom(r.x2, r.y2)};
+}
+
+/* Le bouton « Chemin auto » : le chemin, puis le routeur de cao_router (simuler, relever, charger en une
+   étape Ctrl+Z). En contournement : aucune poussée du cuivre voisin sans carte pour la montrer. Rien n'est
+   posé en cas d'échec, et le pied de page dit pourquoi. */
+function cheminGeste(){
+  try{
+    const li = cheminLiaisonChoisie(), c = cheminCommande({liaisons:[li]}), res = c.resultats[0];
+    if(!c.routes.length) throw new Error(res.raison);
+    const routeur = routagePiloteCommandes().cao_router, args = {routes:c.routes, mode:"contourner"};
+    const prop = routeur.proposer(args);
+    routeur.appliquer(args, prop);
+    hint("Chemin auto : " + routagePropre(li.depart) + " → " + routagePropre(li.arrivee) + ", " + res.longueur_mm + " mm, " + res.vias + " via(s). " +
+         prop.apres.split("\n").filter(l => /^DRC/.test(l)).join(" ") + " Ctrl+Z pour défaire.");
+    return true;
+  }catch(e){
+    hint("Chemin auto : rien n'est posé — " + String((e && e.message) || e).replace(/^Rien n'est posé : /, ""));
+    return false;
+  }
 }

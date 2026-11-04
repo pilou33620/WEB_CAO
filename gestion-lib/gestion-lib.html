@@ -186,6 +186,14 @@
           </div>
         </div>
 
+        <!-- Toutes les colonnes de la ligne, écrites d'un coup sans réécrire les autres lignes -->
+        <details class="insp-colonnes" id="inspColonnesBloc">
+          <summary id="inspColonnesOuvrir" title="Corriger les colonnes de cette référence (Value, Description, Manufacturer, MPN…)">Colonnes du composant</summary>
+          <div id="inspColonnes" class="insp-colonnes-grille"></div>
+          <button type="button" class="tb success" id="bColonnesEnregistrer" title="Écrit dans la LIB les colonnes modifiées de cette référence, les autres lignes ne changent pas. Refusé si l'une d'elles a changé ailleurs.">💾 Enregistrer ces colonnes</button>
+          <div id="inspColonnesMessage" class="insp-texte-message"></div>
+        </details>
+
         <!-- Brochage : broche du symbole → patte de l'empreinte, d'après la
              datasheet de la référence (commun/brochage.js pour la syntaxe) -->
         <div class="insp-brochage">
@@ -194,6 +202,8 @@
                  placeholder="OUT=1,IN-=2,IN+=3,V-=4,V+=8"
                  title="NOM=patte, séparés par des virgules. Plusieurs parties : A:…|B:…|*:V-=4,V+=8 (« * » vaut pour toutes). Pattes libres : NC=5/6. Une broche sur plusieurs pattes : OUT=2/4">
           <div id="inspBrochageApercu" class="insp-brochage-apercu"></div>
+          <button type="button" class="tb mini" id="bBrochageVerifier" title="Confronte ce brochage au symbole et à l'empreinte de la référence et affiche les écarts. Rien n'est écrit.">Vérifier le brochage</button>
+          <div id="inspBrochageEcarts" class="insp-texte-message"></div>
         </div>
 
         <!-- Aperçu Symbole Schématique -->
@@ -235,6 +245,15 @@
           </div>
           <div id="inspSimListe" class="insp-sim-liste"></div>
           <div id="inspSimForm" class="insp-sim-form" hidden></div>
+          <div class="insp-sim-texte">
+            <label for="simModeleNom">Ou écrire le modèle ici</label>
+            <input id="simModeleNom" autocomplete="off" spellcheck="false" placeholder="nom du fichier, ex. R0603_10K.sub"
+                   title="Nom du fichier dans lib_simulation, mêmes extensions que « Lier un fichier ». Un nom déjà pris est refusé.">
+            <textarea id="simModeleTexte" rows="3" spellcheck="false" placeholder="texte du modèle SPICE ou Touchstone"
+                      title="Le texte complet du modèle (sous-circuit SPICE ou paramètres S)"></textarea>
+            <button type="button" class="tb" id="bSimModeleEcrire" title="Range ce texte dans la LIB, sans jamais écraser un fichier, puis le lie à cette référence comme « Lier un fichier ».">Ranger dans la LIB et lier</button>
+            <div id="simModeleMessage" class="insp-texte-message"></div>
+          </div>
           <pre style="margin:0; padding:10px; font-family:var(--mono); font-size:11px; background:#090a0c; color:#93c5fd; overflow-x:auto; max-height:220px;" id="inspSimCode" hidden></pre>
         </div>
 
@@ -380,7 +399,19 @@
       <div class="editor-json-pane" id="editeurPaneJson" hidden>
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
           <span style="color:var(--txt-dim); font-size:11px;">Éditeur JSON en direct — Toute modification syntaxiquement valide met à jour le modèle</span>
-          <button class="tb mini" onclick="const ta=document.getElementById('editeurCodeJson'); try{ ta.value = JSON.stringify(JSON.parse(ta.value), null, 2); }catch(_){}">Formatage auto</button>
+          <div style="display:flex; gap:6px;">
+            <button class="tb mini" id="bImportKicad" onclick="editeurKicadBasculer()" title="Remplir l'éditeur à partir d'un fichier KiCad .kicad_mod (rien n'est enregistré)">📥 Importer KiCad…</button>
+            <button class="tb mini" onclick="const ta=document.getElementById('editeurCodeJson'); try{ ta.value = JSON.stringify(JSON.parse(ta.value), null, 2); }catch(_){}">Formatage auto</button>
+          </div>
+        </div>
+        <div class="editor-kicad" id="kicadZone" hidden>
+          <label for="kicadTexte">Texte du fichier .kicad_mod (200 Ko au plus)</label>
+          <textarea id="kicadTexte" rows="5" spellcheck="false" placeholder="(footprint &quot;NOM&quot; …)" title="Colle ici le texte d'un fichier .kicad_mod, ou choisis le fichier"></textarea>
+          <div class="editor-kicad-actions">
+            <input type="file" id="kicadFichier" accept=".kicad_mod" onchange="editeurKicadFichier(this)" title="Charger le texte d'un fichier .kicad_mod">
+            <button class="tb mini success" id="bKicadConvertir" onclick="editeurKicadConvertir()" title="Remplace le contenu de l'éditeur par la conversion, sans enregistrer. Si elle échoue, rien ne change.">Convertir dans l'éditeur</button>
+          </div>
+          <div id="kicadMessage" class="insp-texte-message"></div>
         </div>
         <div class="editor-json-err" id="editeurJsonErr"></div>
         <textarea id="editeurCodeJson" spellcheck="false"></textarea>

@@ -75,6 +75,12 @@ Changer de famille n'efface pas le résultat d'une analyse.
 6. Survoler la courbe pour lire la fréquence, |Z| et la marge ou le dépassement par rapport à Z_target.
 7. Pour renforcer le découplage, décocher un condensateur dans le tableau (colonne **Actif**) et observer la déformation de la courbe.
 
+### Je veux corriger la capacité ou les parasites d'un condensateur (PDN)
+
+1. Calculer Z(ω) une première fois : le tableau des condensateurs apparaît sous la courbe.
+2. Taper C (nF), ESR (mΩ) ou ESL (nH) dans la ligne, puis quitter le champ. Le survol du champ donne ses bornes et où lire la valeur dans la datasheet.
+3. La courbe se recalcule et la ligne passe en **Datasheet**. Les références de la LIB et leurs valeurs sont dans « Parasites par boîtier », sous le tableau.
+
 ### Je veux vérifier chaque appel de courant à sa fréquence (assistant ΔI)
 
 1. Dans l'onglet **Z(ω) PDN**, cocher **Calculer ΔI (assistant)**. Le choix est gardé dans le profil.
@@ -204,7 +210,8 @@ La classe fixe le front, donc le verdict des règles électriques. Elle est écr
 | Courbe | \|Z_pdn(ω)\| total (cyan), Z_target (rouge, pointillés), VRM (orange, pointillés), Plan (violet, pointillés), repères des Modes 2D (violet). Axes logarithmiques. Repères numérotés des appels de courant, verts s'ils tiennent, orange sinon, posés à la hauteur de leur propre cible. | Plage fixe 10 kHz à 1 GHz. |
 | Lecture au survol | « f = … · \|Z\| = … (marge +x % ou dépassement +x %) ». | |
 | Bloc assistant | « Fiche de la charge » (9 champs), puis « Appels de courant sur le rail » : colonnes #, Événement, Comment il est calculé, ΔI, Fréquence, Z carte, ΔV = ΔI × Z, Verdict. | Voir le tableau suivant. |
-| Tableau « Condensateurs de découplage du rail (n) » | Actif (case), Réf, Valeur, Boîtier, ESR, ESL, L_mount, Piste, f₀ (SRF), Modèle / Provenance (**Murata SPICE**, **Catalogue**, **Datasheet**, **Générique**). Cocher ou décocher recalcule. | « ≈ » devant une piste : distance à vol d'oiseau faute de chemin de cuivre. Un composant marqué « Non monté » est ignoré. |
+| Tableau « Condensateurs de découplage du rail (n) » | Actif (case), Réf, Valeur, Boîtier, C (nF), ESR (mΩ), ESL (nH), L_mount, Piste, f₀ (SRF), Modèle / Provenance (**Murata SPICE**, **Catalogue**, **Datasheet**, **Générique**). Cocher ou décocher recalcule. C, ESR et ESL se modifient dans la ligne : la courbe et f₀ se recalculent, la ligne passe en **Datasheet**. Avec un MPN, la valeur vaut pour tous les condensateurs de ce MPN et revient à chaque **⚡ Détecter** (mémorisée dans le profil) ; sans MPN, elle ne vaut que pour la session. | Bornes : C de 0,0001 nF à 10 000 µF, ESR de 0,1 mΩ à 10 Ω, ESL de 0,01 à 50 nH ; hors bornes, rien n'est changé et le motif s'affiche sous le tableau. Hors du document : pas de `Ctrl+Z`. « ≈ » devant une piste : distance à vol d'oiseau faute de chemin de cuivre. Un composant marqué « Non monté » est ignoré. |
+| « Parasites par boîtier · n références » (dépliable, sous le tableau) | La table entière des parasites de la LIB, relue dans ses modèles fabricant : Référence, C, ESR, ESL ; L et DCR pour une self. | Lecture seule. Une ligne par référence fabricant, pas par taille de boîtier. |
 | Résonances 2D de cavité | Boutons des huit premiers modes (`TM10 (f)`), fiche du mode actif (fréquence propre, facteur Q, bande passante, impédance crête, type, ventres), cartographie de \|V(x, y)\| avec lignes nodales, points chauds, point observé et condensateurs, tableau de tous les modes. | La cartographie donne l'efficacité d'amortissement locale d'un condensateur : sur une ligne nodale, elle est nulle. |
 
 #### Les appels de courant de l'assistant

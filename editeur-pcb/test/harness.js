@@ -452,7 +452,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* classes d'interface (commun/classes-interface.js) */
   "CLASSES_INTERFACE","familleClasse","simNaturePcb",
   /* lectures du canal de pilotage (commun/lecture-cao.js) */
-  "LECTURE_CAO","piloteCao","ECRITURE_CAO","ROUTAGE","PLACEMENT_SCORE","CHEMIN","cheminCommande"];
+  "LECTURE_CAO","piloteCao","ECRITURE_CAO","ROUTAGE","PLACEMENT_SCORE","CHEMIN","cheminCommande","cheminGeste"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -4975,6 +4975,28 @@ T("réimport (fusion)",()=>{
 /* Satellites (28-placement-satellites.js) : le découplage contre la broche
    d'alimentation, le plus petit devant ; la résistance série contre la sortie,
    la LED derrière elle ; le point de test ne bouge pas. */
+T("bouton Satellites : seuls les satellites bougent, une étape, et aucune quand rien ne change",()=>{
+  const saved=serialize();
+  try{
+    S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.holes=[];touch();
+    S.board={x:0,y:0,w:60,h:40};
+    const mk=(ref,val,pkg,pins,nets,x,y)=>{const f=mkFp(ref,val,pkg,pins);f.x=x;f.y=y;f.nets=nets;S.fps.push(f);return f;};
+    const u=mk("U1","NE555","SOIC-8",8,{1:"GND",3:"OUT",8:"VCC",4:"VCC"},30,20);
+    const c=mk("C1","100n","0603",2,{1:"VCC",2:"GND"},5,5);
+    touch();clearSel();S.undo.length=0;
+    refreshPanels();
+    document.getElementById("pAutoSat").onclick();
+    if(u.x!==30||u.y!==20)throw new Error("le circuit a bougé");
+    if(c.x===5&&c.y===5)throw new Error("le découplage n'a pas bougé");
+    if(S.undo.length!==1)throw new Error("une étape attendue : "+S.undo.length);
+    if(!/découplage/.test(document.getElementById("fHint").textContent))throw new Error("bilan : "+document.getElementById("fHint").textContent);
+    document.getElementById("pAutoSat").onclick();
+    if(S.undo.length!==1)throw new Error("rien de neuf : pas d'étape de plus, "+S.undo.length);
+    undo();
+    const c2=S.fps.find(f=>f.ref==="C1");
+    if(c2.x!==5||c2.y!==5)throw new Error("Ctrl+Z ne rend pas le placement");
+  }finally{loadDoc(JSON.parse(saved),true);}
+});
 T("placement auto : découplage et série contre leur broche",()=>{
   const saved=serialize();
   S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.holes=[];touch();
@@ -28623,6 +28645,42 @@ TA("canal de pilotage : cao_paire, une paire declaree routee en un lot",async()=
     await refus({paire:"USB",depart:{x:bouts[0].x,y:bouts[0].y},arrivee:{x:bouts[1].x,y:bouts[1].y},mode:"sauter"},/pousser ou contourner/);
     if(S.undo.length!==0||serialize()!==avant)throw new Error("un refus a laisse une trace");
   }finally{global.Pilote=ancien;}
+});
+
+T("bouton Chemin auto : la liaison de la pastille cliquée en une étape ; sinon la raison, et rien de posé",()=>{
+  const garde=serialize(), pied=()=>document.getElementById("fHint").textContent;
+  try{
+    loadDoc(exemple1());
+    S.tracks=[];S.vias=[];touch();clearSel();S.hlNet=null;S.undo.length=0;
+    const avant=serialize(), refus=re=>{
+      if(cheminGeste()||!re.test(pied()))throw new Error("refus "+re+" : "+pied());
+      if(serialize()!==avant||S.undo.length)throw new Error("un refus a écrit ("+re+")");
+    };
+    refus(/rien n'est posé — cliquez d'abord une pastille/);
+    // une liaison assez longue pour y enfermer un bout
+    const c=conn(true), rat=c.rats.find(r=>dist(r.x1,r.y1,r.x2,r.y2)>6), reste=c.rats.length;
+    const fp=S.fps.find(f=>padsWorld(f).some(q=>q.net===rat.net&&dist(q.x,q.y,rat.x1,rat.y1)<1e-6));
+    S.sel.fps.add(fp.id);
+    S.selPad={id:fp.id,k:padsWorld(fp).findIndex(q=>q.net===rat.net&&dist(q.x,q.y,rat.x1,rat.y1)<1e-6)};
+    S.route={};refus(/Un tracé est en cours/);S.route=null;
+    // enfermé par un mur sur toutes les couches : pas de chemin, et la raison
+    const mur=[];
+    for(let l=0;l<S.cu;l++)for(const [a,b,e,f] of [[-2,-2,2,-2],[2,-2,2,2],[2,2,-2,2],[-2,2,-2,-2]])
+      mur.push({l,net:"MUR",w:0.3,x1:rat.x1+a,y1:rat.y1+b,x2:rat.x1+e,y2:rat.y1+f});
+    const seul=S.tracks;S.tracks=mur;touch();
+    if(cheminGeste()||!/rien n'est posé — aucun chemin/.test(pied())||S.undo.length)throw new Error("enfermé : "+pied());
+    S.tracks=seul;touch();
+    if(serialize()!==avant)throw new Error("le mur n'est pas retiré");
+    if(!cheminGeste())throw new Error("liaison non posée : "+pied());
+    if(!/^Chemin auto : .+ → .+ mm, \d+ via\(s\)\. DRC/.test(pied()))throw new Error("bilan : "+pied());
+    if(conn(true).rats.length!==reste-1)throw new Error("liaisons : "+conn(true).rats.length+", "+(reste-1)+" attendues");
+    if(S.undo.length!==1||!S.tracks.length)throw new Error("une étape et du cuivre attendus : "+S.undo.length);
+    undo();
+    if(serialize()!==avant)throw new Error("Ctrl+Z ne retire pas la piste");
+    // un net tout routé (ou sans liaison) : rien à faire, et il le dit
+    S.hlNet="NET_QUI_N_EXISTE_PAS";clearSel();
+    refus(/plus de liaison à router/);
+  }finally{S.route=null;loadDoc(JSON.parse(garde),true);}
 });
 
 TA("chemin-auto : cao_chemin propose des points que cao_router pose, sans rien écrire",async()=>{

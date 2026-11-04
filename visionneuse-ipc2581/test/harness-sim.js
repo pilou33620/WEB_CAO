@@ -193,7 +193,7 @@ const EXPOSE=["simDsChamp","simDsLire","simDsEcrire","SIM_DS","SIM_PDN","simPDNA
   "simPDNEstMasse","simPDNEstCondensateur","simPDNParasitesCapa","simPDNParasitesDefaut","simPDNInductanceMontage","simPDNChoisirCavite","simPDNAppliquerCavite","simPDNChoisirCharge","SIM_PARASITES_MURATA_DEFAUT",
   "simPDNEstMasseIpc","simFaceDessousIpc","simRendrePDN","simPDNCheminsPiste","simPDNInductanceLineique","simPDNHauteursRetour","simPDNPistesIpc",
   /* De la datasheet aux réglages : commun/simulation-datasheet.js. */
-  "simDsCatalogue","simDsPreparer","simDsAppliquer","simDsGroupes","simDsNb",
+  "simDsCatalogue","simDsPreparer","simDsAppliquer","simDsGroupes","simDsNb","simDsCapaSaisir","simDsTitres","simPDNTableParasites",
   "simDsBorneDe","simDsReappliquerCapas","SIM_DS","simPDNAssistantActif",
   /* La simulation RF : la carte lue, décrite pour le panneau commun. */
   "simRfProbleme","simRfClic","SIM_RF_ATTENTE","simRfPlateauIpc","simRfZ","simRfModele","simRfVariante","simRfEtat","simRfDesigner","simRfPorts",
@@ -5913,6 +5913,72 @@ T("Datasheet : parasites de condensateurs par repère ou par valeur, f₀ recalc
   if (c1.prov !== "datasheet" || c2.prov !== "datasheet") throw new Error("provenance « datasheet » attendue");
   const f0 = 1 / (2 * Math.PI * Math.sqrt((0.3e-9 + 0.5e-9) * 100e-9)) * 1e-6;
   if (Math.abs(c1.f0 - f0) > 0.1) throw new Error("f₀ de C1 : " + f0.toFixed(1) + " MHz attendus, obtenu " + c1.f0);
+});
+
+T("Tableau PDN : C, ESR, ESL modifiables, bornes, provenance, mémoire par MPN", function(){
+  const memoire = {}, garde = [globalThis.profLire, globalThis.profEcrire];
+  globalThis.profLire = k => memoire[k]; globalThis.profEcrire = (k, v) => { memoire[k] = v; return true; };
+  try {
+    pdnDeLabo();
+    const [c1, c2] = SIM_PDN.condensateurs;
+    c2.prov = "catalogue";
+    // la ligne affiche ses trois champs, dans l'unité du catalogue
+    simCalculerPDN();
+    const h = simRendrePDN();
+    for (const t of ['data-id="2" data-cle="cap_nf"', 'data-id="2" data-cle="esr_mohm"', 'data-id="2" data-cle="esl_nh"', 'value="10000"', 'value="8"', 'Bornes : 0,01 … 50 nH'])
+      if (!h.includes(t)) throw new Error("tableau : « " + t + " » manque");
+    // refus : bornes, texte illisible ; rien ne change, la provenance non plus
+    for (const v of ["0", "abc", "", "60"]) {
+      const r = simDsCapaSaisir(2, "esl_nh", v);
+      if (r.ok || !r.motif) throw new Error("ESL « " + v + " » devait être refusée");
+    }
+    if (simDsCapaSaisir(2, "inconnu", "1").ok || simDsCapaSaisir(99, "esr_mohm", "1").ok) throw new Error("champ ou ligne inconnus");
+    if (c2.prov !== "catalogue" || c2.esl !== 0.7e-9 || memoire.dsCapas) throw new Error("un refus a écrit");
+    // la même valeur retapée ne passe pas la ligne en « Datasheet »
+    if (!simDsCapaSaisir(2, "esr_mohm", "8").ok || c2.prov !== "catalogue") throw new Error("même valeur : provenance changée");
+    // une vraie valeur, virgule décimale : la ligne, sa f₀, la mémoire par MPN, le badge
+    if (!simDsCapaSaisir(2, "esl_nh", "0,5").ok) throw new Error("0,5 nH refusée");
+    if (Math.abs(c2.esl - 0.5e-9) > 1e-18 || c2.prov !== "datasheet") throw new Error("ESL : " + c2.esl + ", " + c2.prov);
+    const f0 = 1 / (2 * Math.PI * Math.sqrt((0.5e-9 + 0.6e-9) * 10e-6)) * 1e-6;
+    if (Math.abs(c2.f0 - f0) > 0.1) throw new Error("f₀ : " + c2.f0);
+    const m = memoire.dsCapas && memoire.dsCapas.GRM188R61A106MAAL;
+    if (!m || m.esl !== c2.esl || m.esr !== c2.esr || m.cap !== c2.cap) throw new Error("dsCapas : " + JSON.stringify(memoire.dsCapas));
+    if (!simRendrePDN().includes(">Datasheet</span>")) throw new Error("badge Datasheet absent");
+    // même MPN sur deux lignes : la saisie les prend toutes les deux, sans quoi la détection les ferait diverger
+    const c3 = Object.assign({}, c2, { id: 3, ref: "C3", esr: 0.05 }); SIM_PDN.condensateurs.push(c3);
+    if (!simDsCapaSaisir(2, "esr_mohm", "20").ok || Math.abs(c3.esr - 0.02) > 1e-12) throw new Error("même MPN : " + c3.esr);
+    // ce qu'une détection refait : la mémoire reprend le pas sur la valeur typique
+    const neuf = [Object.assign({}, c2, { esl: 1e-9, prov: "defaut" })];
+    simDsReappliquerCapas(neuf);
+    if (neuf[0].esl !== c2.esl || neuf[0].prov !== "datasheet") throw new Error("redétection : " + JSON.stringify(neuf[0]));
+    // sans MPN : la ligne seule, rien en mémoire, et le badge le dit
+    const dans = Object.keys(memoire.dsCapas).length;
+    if (!simDsCapaSaisir(1, "cap_nf", "82").ok || Math.abs(c1.cap - 82e-9) > 1e-15 || Object.keys(memoire.dsCapas).length !== dans) throw new Error("sans MPN : " + c1.cap);
+    if (!simRendrePDN().includes("Sans MPN : valable pour cette session seulement.\">Datasheet")) throw new Error("badge sans MPN");
+  } finally { globalThis.profLire = garde[0]; globalThis.profEcrire = garde[1]; }
+});
+
+T("Catalogue et parasites visibles : title des champs, table entière en lecture seule", function(){
+  const champs = { simPDNVdd: { title: "Tension" }, simBusProtocole: { title: "" }, simFc: { title: "" } };
+  const fiche = { title: "" };
+  const sortie = { querySelector: s => s.includes('"iActifMa"') ? fiche : null };
+  const garde = globalThis.document;
+  globalThis.document = { getElementById: id => id === "simSortie" ? sortie : (champs[id] || null) };
+  try {
+    simDsTitres(); simDsTitres();                      // deux rendus : pas deux fois le complément
+    if (champs.simPDNVdd.title !== "Tension\nBornes : 0,3 … 60 V. Où la lire : VDD typique de la charge, ou tension de sortie du régulateur.")
+      throw new Error("title : " + champs.simPDNVdd.title);
+    if (!/^Bornes : 0,001 … 100000 MHz\. Où la lire : /.test(champs.simFc.title)) throw new Error("title simFc : " + champs.simFc.title);
+    if (!/^Où la lire : /.test(champs.simBusProtocole.title)) throw new Error("une liste n'a pas de bornes : " + champs.simBusProtocole.title);
+    if (!/^Bornes : 0 … 200000 mA\. Où la lire : Datasheet/.test(fiche.title)) throw new Error("fiche : " + fiche.title);
+  } finally { globalThis.document = garde; }
+  const t = simPDNTableParasites(), n = Object.keys(SIM_PARASITES_MURATA).length;
+  if (n < 100 || (t.match(/<tr>/g) || []).length !== n + 1) throw new Error("table entière : " + n + " références");
+  if (!/^<details[^>]* id="simPDNParasites">/.test(t) || !t.includes("Parasites par boîtier") || /<input|<button/.test(t)) throw new Error("détail en lecture seule : " + t.slice(0, 120));
+  if (!t.includes("GCM0335C1E120FA16") || !t.includes("0,012 nF") || !t.includes("390 mΩ") || !t.includes("0,265 nH")) throw new Error("une ligne de condensateur");
+  SIM_PARASITES_MURATA.ESSAI_SELF = { l: 1e-8, dcr: 0.5 };
+  try { if (!simPDNTableParasites().includes("L 10 nH, DCR 500 mΩ")) throw new Error("une ligne de self"); }
+  finally { delete SIM_PARASITES_MURATA.ESSAI_SELF; }
 });
 
 T("Datasheet : une borne DC se reconnaît à son composant, par compRef ou par son nom", function(){

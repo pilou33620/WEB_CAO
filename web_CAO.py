@@ -2593,6 +2593,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if not isinstance(charge, dict):
             raise ErreurLib(400, "Corps JSON invalide (objet attendu)")
 
+        if "modifier" in charge:
+            return self._lib_composants_modifier(charge["modifier"])
+
         composants = charge.get("composants")
         if not isinstance(composants, list):
             raise ErreurLib(400, "Liste de composants manquante ou invalide")
@@ -2651,6 +2654,116 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if re.search("[\u0080-\u009f\u00a0\u00ad\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]", v):
             raise ErreurLib(400, "Colonne « %s » : caractere invisible ou de controle Unicode" % k)
         return v
+
+    @staticmethod
+    def _catalogue_lignes(texte):
+        """(physiques, lignes, colonnes) : les lignes physiques du texte, chacune avec sa fin, et les
+        lignes CSV non vides sous la forme (cellules, premiere physique, apres la derniere). On sait
+        ainsi lesquelles portent une ligne, meme si un champ entre guillemets court sur plusieurs."""
+        import csv
+        physiques = re.findall(r"[^\n]*\n|[^\n]+$", texte)
+        lues = [0]
+
+        def suivante():
+            while lues[0] < len(physiques):
+                lues[0] += 1
+                yield physiques[lues[0] - 1]
+        lignes, debut = [], 0
+        for r in csv.reader(suivante(), delimiter=';'):
+            if any(c.strip() for c in r):
+                lignes.append((r, debut, lues[0]))
+            debut = lues[0]
+        if not lignes:
+            raise ErreurLib(500, "Catalogue sans en-tete")
+        return physiques, lignes, [c.strip() for c in lignes[0][0]]
+
+    @staticmethod
+    def _catalogue_viser(lignes, colonnes, nom):
+        """La ligne (cellules, debut, fin) dont la Part Name est `nom` (casse ignoree) ; 404 si
+        absente, 409 si elle est en double."""
+        i_nom = colonnes.index("Part Name") if "Part Name" in colonnes else -1
+        visees = [l for l in lignes[1:] if 0 <= i_nom < len(l[0]) and l[0][i_nom].strip().upper() == nom.upper()]
+        if not visees:
+            raise ErreurLib(404, "« %s » n'est pas au catalogue" % nom)
+        if len(visees) > 1:
+            raise ErreurLib(409, "« %s » est %d fois au catalogue : a corriger dans Gestion LIB" % (nom, len(visees)))
+        return visees[0]
+
+    @staticmethod
+    def _catalogue_remplacer(physiques, ligne, d, f):
+        """Remplace les lignes physiques [d, f) par `ligne`, ecrite avec la fin de ligne du fichier."""
+        import csv
+        import io
+        derniere = physiques[f - 1]
+        fin = derniere[len(derniere.rstrip("\r\n")):] or physiques[0][len(physiques[0].rstrip("\r\n")):] or "\r\n"
+        sortie = io.StringIO()
+        csv.writer(sortie, delimiter=';', quoting=csv.QUOTE_MINIMAL, lineterminator=fin).writerow(ligne)
+        physiques[d:f] = [sortie.getvalue()]
+
+    @staticmethod
+    def _catalogue_brut():
+        """(chemin, octets, texte, encodage) du catalogue ; l'appelant tient VERROU_CATALOGUE."""
+        chemin = os.path.join(dossier_lib(), "LIB_composants.csv")
+        if not os.path.exists(chemin):
+            raise ErreurLib(404, "Fichier LIB_composants.csv introuvable")
+        with open(chemin, "rb") as f:
+            brut = f.read()
+        for enc in ("utf-8-sig", "latin1"):
+            try:
+                return chemin, brut, brut.decode(enc), enc
+            except UnicodeDecodeError:
+                continue
+
+    @staticmethod
+    def _catalogue_ecrire(chemin, brut, enc, neuf):
+        """Reecrit le catalogue dans son encodage d'origine (BOM compris)."""
+        ecrit = "utf-8" if enc == "utf-8-sig" else enc
+        prefixe = "\ufeff" if brut.startswith(b"\xef\xbb\xbf") else ""
+        try:
+            (prefixe + neuf).encode(ecrit)
+        except UnicodeEncodeError:
+            raise ErreurLib(400, "Un caractere ne passe pas dans l'encodage du catalogue (%s)" % ecrit)
+        try:
+            ecrire_texte_atomique(chemin, prefixe + neuf, ecrit)
+        except OSError as exc:
+            raise ErreurLib(500, "Impossible d'ecrire %s : %s" % (chemin, exc))
+
+    def _lib_composants_modifier(self, demande):
+        """Modifie des cases d'UNE reference existante : `champs` {colonne: valeur} remplace ces cases,
+        les autres restent. `avant` {colonne: valeur} donne ce que le demandeur a lu : une case qui a
+        change depuis est un refus (409, a relire), jamais un ecrasement a l'aveugle. La Part Name ne
+        change pas (elle designe la ligne) ; une colonne absente de l'en-tete est refusee. Les autres
+        lignes restent octet pour octet."""
+        if (not isinstance(demande, dict) or not isinstance(demande.get("part"), str)
+                or not isinstance(demande.get("champs"), dict) or not isinstance(demande.get("avant", {}), dict)):
+            raise ErreurLib(400, "« modifier » : {part, champs, avant} attendus")
+        nom, champs, avant = demande["part"].strip(), demande["champs"], demande.get("avant", {})
+        if not nom:
+            raise ErreurLib(400, "« part » : la Part Name de la reference")
+        if not champs or len(champs) > 41:
+            raise ErreurLib(400, "« champs » : de 1 a 41 cases a modifier")
+        if any(k.strip().upper() == "PART NAME" for k in champs):
+            raise ErreurLib(400, "« Part Name » ne se modifie pas : elle designe la ligne")
+        # un \r seul (hors \r\n) ne serait pas mis entre guillemets par csv avant Python 3.13 : il couperait la ligne
+        valeurs = {k: re.sub(r"\r\n?", "\n", self._valeur_catalogue(k, v)).strip() for k, v in champs.items()}
+        with VERROU_CATALOGUE:
+            chemin, brut, texte, enc = self._catalogue_brut()
+            vu = mtime_ms(chemin)   # la page qui a lu cette date peut la suivre (pas de faux 409)
+            physiques, lignes, colonnes = self._catalogue_lignes(texte)
+            inconnues = [k for k in list(valeurs) + list(avant) if k not in colonnes]
+            if inconnues:
+                raise ErreurLib(400, "Colonne(s) inconnue(s) du catalogue : %s" % ", ".join(sorted(set(inconnues))))
+            ligne, d, f = self._catalogue_viser(lignes, colonnes, nom)
+            ligne = ligne + [""] * (len(colonnes) - len(ligne))
+            changees = [k for k, v in avant.items() if str(v).strip() != ligne[colonnes.index(k)].strip()]
+            if changees:
+                raise ErreurLib(409, "La reference a change depuis sa lecture (%s) : relis-la" % ", ".join(changees))
+            for k, v in valeurs.items():
+                ligne[colonnes.index(k)] = v
+            self._catalogue_remplacer(physiques, ligne, d, f)
+            self._catalogue_ecrire(chemin, brut, enc, "".join(physiques))
+            return {"ok": True, "part": nom, "champs": valeurs,
+                    "mtime_avant": vu, "mtime_ms": mtime_ms(chemin)}
 
     def _lib_fichiers_liste(self):
         """Liste les fichiers d'empreintes PCB, symboles schematiques et modeles de simulation."""

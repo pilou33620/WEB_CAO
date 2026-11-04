@@ -55,7 +55,7 @@ Formats acceptés : images (PNG, JPEG, GIF, WebP ; les autres formats lisibles p
 1. Ouvrir l'éditeur PCB (ou la visionneuse IPC-2581) et joindre la datasheet (PDF) au panneau, ou la citer.
 2. Demander par exemple les paramètres du PDN ou des condensateurs depuis la fiche. Claude lit le catalogue des paramètres réglables (`cao_sim_lire` `catalogue` : `groupe.clé`, unité ou choix, valeur actuelle, où la lire dans la datasheet), puis saisit chaque valeur dans son champ du panneau de simulation (une carte par geste).
 3. La valeur est dans l'unité du catalogue (aucune conversion) ; bornes et choix sont ceux du catalogue.
-4. ESR, ESL et capacité des condensateurs n'ont pas de champ : Claude les relève et vous les donne.
+4. ESR, ESL et capacité des condensateurs se saisissent comme les autres valeurs : leurs champs sont dans le tableau des condensateurs du PDN, une ligne par condensateur (voir le [chapitre 09](09-simulation-pi-thermique-audit.md)).
 5. Relancer le calcul : `cao_calcul` le lance dans la page et rend son rapport (voir [Simulation SI](08-simulation-si.md), [PI, thermique, audit](09-simulation-pi-thermique-audit.md) et [RF et EM](10-simulation-rf-em.md)).
 
 ### Je veux faire dessiner ou compléter un schéma
@@ -73,7 +73,7 @@ Voir [Éditeur schématique](02-editeur-schematique.md).
 2. Demander le routage d'un net ou d'une paire. Claude lit les liaisons à router (`cao_pcb_lire` `liaisons`, `zone`), peut demander des points de passage à `cao_chemin` (rien n'est écrit), puis propose `cao_router` ou `cao_paire`.
 3. La carte annonce le résultat et dessine un aperçu en pointillés sur la carte tant qu'elle attend. Une route bloquée ne laisse rien ; les autres routes du lot restent.
 4. Appliquer charge le tracé vu, en une étape (`Ctrl+Z`). Seuls le cuivre et les empreintes sont repris : réglages, couche active et couches visibles restent les vôtres.
-5. `cao_score` (routage ou placement) mesure l'avancement sans rien modifier ; `cao_drc` relance le DRC. Le placement automatique est un geste : `#pAuto` (Placement auto), ou « 📐 Disposer » du panneau Qualité de placement.
+5. `cao_score` (routage ou placement) mesure l'avancement sans rien modifier ; `cao_drc` relance le DRC. Le placement automatique est un geste : `#pAuto` (Placement auto), `#pAutoSat` (Satellites seuls), ou « 📐 Disposer » du panneau Qualité de placement.
 
 Voir [Éditeur PCB : édition et routage](03-editeur-pcb-edition-routage.md).
 

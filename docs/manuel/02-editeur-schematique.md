@@ -246,6 +246,7 @@ Menu **Forme du tracé** : **─ Trait (segment)** (`T`), **▢ Rectangle (cadre
 | Rechercher | `Ctrl+F` | Cherche un repère (toutes feuilles) ou un net par son nom. | Voir ci-dessous. |
 | Montrer au PCB | `L` | Fait sauter le PCB ouvert dans un autre onglet sur la sélection. | Désactivé si le navigateur ne partage rien entre onglets (`file://`). |
 | Contraintes de nets… | | Fenêtre des contraintes pour le PCB. | Nets nommés seulement. |
+| Renuméroter… | | Après confirmation, refait tous les repères par préfixe : feuille par feuille, de haut en bas puis de gauche à droite. Les parties d'un même boîtier gardent un seul repère. Une étape d'annulation. | Le PCB garde les anciens repères jusqu'à sa resynchronisation ; le pied de page signale les repères repris par un autre composant. |
 | Motifs & Blocs | | Relance l'analyse du panneau **Blocs et Motifs** et rouvre ce panneau s'il était fermé. | Demande le serveur. |
 
 **Boîte de recherche** (`Ctrl+F`) : champ « Repere ou nom de net » ; flèches pour choisir, `Entrée` pour y aller, `Échap` ferme, ✕ ferme. Classement : saisie exacte, puis « commence par », puis « contient » ; le texte tapé est aussi cherché dans la valeur du composant et le nom de la feuille. 14 résultats au plus. Une ligne d'une autre feuille l'annonce et change de feuille. Un symbole sans repère n'est pas listé.
@@ -336,7 +337,8 @@ Le panneau change selon la sélection. Chaque panneau (Bibliothèque, Propriét�
 | Référence | Repère | Absent pour les masses, alimentations et étiquettes. |
 | Valeur (ou **Nom du net**, **Tension du rail**, **Nom du net (toutes feuilles)**, **Tension mesurée**, **Courant annoté**, **Texte (\| = nouvelle ligne)**, **Note (\| = nouvelle ligne)**) | Valeur du composant ; pour une étiquette ou une alimentation, elle nomme le net | Une saisie = une étape d'historique. |
 | Recherche en ligne : **⌕ Rechercher & Enrichir** / **⌕ Modifier / Ré-enrichir**, ✕ | Ouvre la fenêtre d'enrichissement ; ✕ efface MPN, fabricant, caractéristiques, datasheet, références distributeurs | Voir la fenêtre d'enrichissement. |
-| MPN, Fabricant, caractéristiques, **⚡ Brochage validé** | Résumé des données enrichies | |
+| MPN, Fabricant, **⚡ Brochage validé** | Résumé des données enrichies | |
+| Specs | Une ligne par caractéristique : sa clé, sa valeur modifiable, ✕ pour la retirer ; dessous, « Clé », « Valeur » et **＋** pour en ajouter une. Chaque changement est une étape d'annulation | Clé : une ligne, 60 caractères au plus, 30 clés au plus ; valeur : une ligne, 200 caractères au plus. Une clé déjà présente ne s'ajoute pas : changer sa valeur dans sa ligne. Un refus s'affiche au pied de page |
 | **📄 Ouvrir la Datasheet** (« (locale) » ou ↗) | Ouvre la datasheet liée | Visible si une datasheet est connue. |
 | Catalogue LIB (n réf) : recherche, liste | Associe une référence du catalogue (valeur, boîtier, empreinte, symbole, simulation, fabricant, MPN, caractéristiques, brochage) | Une centaine de résultats affichés au plus (101). Un symbole générique propose d'abord les références de la LIB qui l'utilisent. |
 | Case « toutes les références « P », pas seulement celles du symbole … » | Élargit la liste à tout le préfixe | Visible pour un symbole générique. |

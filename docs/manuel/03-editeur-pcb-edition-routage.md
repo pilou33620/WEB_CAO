@@ -51,7 +51,7 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 
 1. À la main : sélectionner une empreinte, la glisser ; `R` la tourne, `F` la retourne sur l'autre face. Les pistes accrochées la suivent (voir « Je veux déplacer des composants déjà routés »).
 2. Ajouter une empreinte : **Placer > Empreinte…** (`A`) ouvre le catalogue de la LIB ; l'empreinte choisie est posée sous le pointeur avec un repère libre (`U1`, `R2`…).
-3. En masse : sans rien sélectionner, le panneau **Propriétés** propose **Placement auto** (ensemble puis satellites, un seul `Ctrl+Z` pour tout défaire) et **Ranger à côté**.
+3. En masse : sans rien sélectionner, le panneau **Propriétés** propose **Placement auto** (ensemble puis satellites, un seul `Ctrl+Z` pour tout défaire), **Satellites** (seulement les découplages et composants série contre leur broche, le reste ne bouge pas, un `Ctrl+Z`) et **Ranger à côté**.
 4. Par blocs fonctionnels : **Outils > Score Placement** ouvre le panneau « Qualité de placement ». Dans « Groupes de placement & Zones », chaque bloc du schéma offre **Grouper** (sélectionner), **Disposer** (compacter autour de son ancre) et **Déposer** (poser en grappe dans une zone libre).
 5. Contrôler : HPWL (longueur de chevelu), congestion, découplage HF, orientation optimale de chaque composant (voir la référence du panneau).
 
@@ -71,6 +71,7 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 5. Face à un obstacle, le comportement dépend de la « Conduite » choisie dans **Outils > Règles… > Face à un obstacle** : pousser le cuivre, contourner ou signaler. Une pastille n'est jamais poussée.
 6. `Tab` ouvre la saisie de coordonnées au clavier (Absolu, Relatif, Polaire) : taper X/Y, `Entrée` pose le point.
 7. `D` (ou « Angle droit → 45° » dans Propriétés) adoucit un angle droit de la piste sélectionnée.
+8. Pour laisser l'outil trouver le chemin d'une liaison : cliquer une pastille de cette liaison (ou `Alt`+clic sur une pastille, ou un net de la liste, pour viser un net), puis **Placer > Chemin auto**. La liaison du chevelu la plus proche de la pastille est routée d'un coup, en contournant le cuivre existant ; un `Ctrl+Z` la défait. S'il n'y a pas de chemin, rien n'est posé et le pied de page dit pourquoi.
 
 ### Je veux router une paire différentielle
 
@@ -220,6 +221,7 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 | Paire diff. | `P` | Trace deux nets en paire différentielle | Une paire n'est tracée que sur une couche à la fois |
 | Serpentin ▾ | `M` | Génère un serpentin d'appariement ; ▾ ouvre les réglages | Ne se pose que sur une piste droite (une piste en arc est refusée) |
 | Via | `V` | Pose un via traversant ; en plein tracé, pose un via et change de couche | |
+| Chemin auto | | Route seule la liaison du chevelu de la pastille cliquée (ou du net mis en avant) : A* sur grille, puis le routeur, en contournement ; une étape d'annulation | Une liaison à la fois, jamais une paire ; la page se fige le temps du calcul (8 s au plus pour le chemin, 10 s pour la pose). Échec : rien n'est posé, la raison au pied de page |
 | Anti-collision | | Bascule : le tracé se tient (ou non) à la distance d'isolation | Actif d'office ; réglage du profil utilisateur |
 | Zone cuivre ▾ | `Z` | Trace une zone de cuivre ; ▾ ouvre le menu de la couche | |
 | Sérigraphie ▾ | `Maj+S` | Trait, rectangle, aplat ou texte de sérigraphie | `S` seule active la Sélection (voir la note ci-dessous) |
@@ -380,7 +382,7 @@ Le contenu dépend de la sélection.
 
 | Sélection | Champs et boutons | Limites |
 |---|---|---|
-| Rien | « n empreinte(s) · n liaison(s) restant à router ». **Placement auto**, **Ranger à côté** | **Placement auto** laisse les points de test (`TP…`, `PTST…`) à la main ; **Ranger à côté** groupe par grappes fonctionnelles ou aligne le long du bord droit |
+| Rien | « n empreinte(s) · n liaison(s) restant à router ». **Placement auto**, **Satellites**, **Ranger à côté** | **Placement auto** laisse les points de test (`TP…`, `PTST…`) à la main ; **Satellites** ne déplace que les composants à deux pattes attachés à un circuit, et ne fait pas d'étape si rien ne bouge ; **Ranger à côté** groupe par grappes fonctionnelles ou aligne le long du bord droit |
 | Une empreinte | Repère, Valeur, Boîtier ; note du boîtier ; bloc Pinout (**Inspecter…**) ; **📄 Ouvrir la Datasheet** ; Empreinte générique ; Empreinte Catalogue LIB (**Appliquer**, **🔍**) ; **⚠️ Version LIB plus récente** et **🔄 Recharger depuis la LIB** ; **📐 Ouvrir dans Gestion LIB ↗** ; Broches, Pas (mm), Écartement, Face (Dessus, Dessous), X, Y, Rotation, **✨ Auto** ; Sérigraphie automatique ; Non monté (ignoré par les simulations) ; Puissance dissipée (W), **Estimer l'échauffement** ; tableau « Broches et nets » (liaison à la zone : zone, bras, directe, aucune) ; Bras thermiques (mm), Nombre de bras ; Groupe (**Dissoudre**) | Pas et Écartement sont grisés quand l'empreinte est dessinée à la main ; la Datasheet n'apparaît que si le schéma en fournit une ; « Non monté » n'agit que sur les simulations, pas sur `bom.csv` ni `positions.csv` (voir Variantes) |
 | Une piste | Couche, Largeur, Longueur, Arc et Rayon (piste courbe), Net, Classe du net ; **Angle droit → 45° (D)**, **Largeur au net**, **Largeur de classe**, **Sélectionner le net (n)**, **Dérouter le net** ; section « Ligne de transmission » | **Dérouter le net** demande confirmation ; la ligne de transmission est décrite dans [08-simulation-si.md](08-simulation-si.md) |
 | Une piste entière ou plusieurs segments | Nombre de segments et de vias, nets ; **⚡ Simuler l'appariement du bus (n nets)…** (2 nets ou plus) ; Couche (« — inchangée — »), Largeur (« mixte » si les largeurs diffèrent), Longueur totale ; **Angle droit → 45° (D)**, **Largeur de classe**, **Supprimer** ; tableau de groupes de vias ; « Ligne de transmission » | Un champ resté sur « mixte » n'écrit rien |
@@ -560,7 +562,7 @@ La conduite « Pistes au déplacement d'un boîtier » (Règles > Face à un obs
 | Fonction | Effet | Limites |
 |---|---|---|
 | Carte de routage (lot de routes) | Claude fournit des points de passage ; le routeur de la page fait le détail (poussée, contournement). Aperçu en pointillés, cuivre poussé en rouge, application au clic en une étape d'annulation | Jusqu'à 20 routes par lot, 200 points par route, 50 vias (constantes du code) ; seulement quand Claude pilote la page |
-| Chemin automatique (`cao_chemin`) | A* sur une grille par couche, huit directions, via là où les couches traversées sont libres ; propose les points de passage d'une liaison ou l'axe d'une paire | N'écrit rien ; les liaisons sont cherchées dans l'ordre donné, sans ordonnancement ni reprise d'ensemble ; ne consulte pas la faisabilité d'un via borgne ou enterré |
+| Chemin automatique (`cao_chemin`, ou **Placer > Chemin auto** à la main) | A* sur une grille par couche, huit directions, via là où les couches traversées sont libres ; propose les points de passage d'une liaison ou l'axe d'une paire | `cao_chemin` n'écrit rien (le bouton, lui, pose la piste) ; les liaisons sont cherchées dans l'ordre donné, sans ordonnancement ni reprise d'ensemble ; ne consulte pas la faisabilité d'un via borgne ou enterré |
 
 Voir [11-claude-mcp.md](11-claude-mcp.md) pour le protocole de pilotage.
 

@@ -224,6 +224,10 @@ function basculerVueEditeur(vue) {
   if (splitPane) splitPane.hidden = (vue !== "visuel");
   if (jsonPane) jsonPane.hidden = (vue !== "json");
 
+  const bKicad = document.getElementById("bImportKicad"), zoneKicad = document.getElementById("kicadZone");
+  if (bKicad) bKicad.hidden = EDITEUR_LIB.type !== "pcb";
+  if (zoneKicad) zoneKicad.hidden = true;
+
   if (vue === "json") {
     const txtArea = document.getElementById("editeurCodeJson");
     if (txtArea && EDITEUR_LIB.data) {
@@ -1866,6 +1870,51 @@ function editeurGenererCiSch() {
   if (EDITEUR_LIB.renderer) EDITEUR_LIB.renderer.autoFit();
 }
 
+/* ---------- Import KiCad (vue JSON de l'empreinte) ----------
+   La conversion remplit l'éditeur sans rien écrire : les défauts de contrôle restent à la
+   décision de l'utilisateur, comme à l'enregistrement. Le texte du fichier est une donnée :
+   ce qu'il en reste dans les messages passe par textContent. */
+function editeurKicadBasculer() {
+  const zone = document.getElementById("kicadZone");
+  zone.hidden = !zone.hidden;
+  document.getElementById("kicadMessage").textContent = "";
+}
+function editeurKicadFichier(entree) {
+  const f = entree.files && entree.files[0];
+  entree.value = "";
+  if (!f) return;
+  const msg = document.getElementById("kicadMessage");
+  msg.textContent = "";
+  if (f.size > COMPOSANTS_LIB.KICAD_MAX) { msg.textContent = "⛔ kicad_mod de plus de 200 Ko : refusé"; return; }
+  const lr = new FileReader();
+  lr.onload = () => { document.getElementById("kicadTexte").value = String(lr.result || ""); };
+  lr.onerror = () => { msg.textContent = "⛔ Fichier illisible."; };
+  lr.readAsText(f);
+}
+function editeurKicadConvertir() {
+  const msg = document.getElementById("kicadMessage");
+  if (EDITEUR_LIB.type !== "pcb") return;
+  let r;
+  try {
+    r = COMPOSANTS_LIB.convertirKicad(document.getElementById("kicadTexte").value);
+  } catch (e) {
+    r = { empreinte: null, erreurs: [String(e.message || e)], remarques: [] };
+  }
+  const lignes = r.erreurs.map(e => "⛔ " + e).concat(r.remarques.map(e => "ℹ️ " + e));
+  if (!r.empreinte) { msg.textContent = "Rien n'a changé.\n" + lignes.join("\n"); return; }
+  editeurHistoriquePush();
+  EDITEUR_LIB.data = r.empreinte;
+  EDITEUR_LIB.selectionIndex = -1;
+  EDITEUR_LIB.trouSel = -1;
+  // le nom suit : à l'enregistrement, un fichier du même nom demande avant d'être remplacé
+  document.getElementById("editeurNomFichier").value = r.empreinte.name + ".json";
+  document.getElementById("editeurCodeJson").value = JSON.stringify(r.empreinte, null, 2);
+  document.getElementById("editeurJsonErr").textContent = "";
+  if (EDITEUR_LIB.renderer) EDITEUR_LIB.renderer.setFootprint(r.empreinte);
+  msg.textContent = "Converti : " + r.empreinte.pads.length + " pastille(s), rien n'est encore enregistré." +
+                    (lignes.length ? "\n" + lignes.join("\n") : "");
+}
+
 /* ---------- Synchronisation et Sauvegarde ---------- */
 async function editeurEnregistrer() {
   let nom = (document.getElementById("editeurNomFichier")?.value || "").trim();
@@ -1954,7 +2003,7 @@ if (typeof window !== "undefined" && typeof window.addEventListener === "functio
     if (!EDITEUR_LIB.actif) return;
 
     // Si l'utilisateur tape dans le textarea JSON brut, laisser l'undo/redo natif du navigateur agir
-    if (e.target && e.target.id === "editeurCodeJson") {
+    if (e.target && (e.target.id === "editeurCodeJson" || e.target.id === "kicadTexte")) {
       return;
     }
 

@@ -870,18 +870,28 @@ function buildProps(){
     '</div>'+
     '<div class="prop"><div class="row">'+
     '<button class="tb" id="pAuto">Placement auto</button>'+
+    '<button class="tb" id="pAutoSat" title="Seulement les satellites : chaque découplage et composant série va contre sa broche, le reste ne bouge pas">Satellites</button>'+
     '<button class="tb" id="pArr">Ranger à côté</button></div></div>';
-  const a=$("pAuto");
-  if(a)a.onclick=()=>{
-    const r=autoPlace(150)||{};
-    refreshPanels();draw();
+  const satDit=r=>{
     const sat=[];
     if(r.decouplage)sat.push(r.decouplage+" découplage(s)");
     if(r.serie)sat.push(r.serie+" composant(s) série");
     if(r.chaine)sat.push(r.chaine+" en chaîne");
-    hint("Placement dégrossi"+(sat.length?" — contre leur broche : "+sat.join(", "):"")+
-      (r.sansPlace&&r.sansPlace.length?" — sans place : "+r.sansPlace.join(", "):"")+
-      ". Points de test laissés à la main. Ajustez, rien n'est figé.");
+    return (sat.length?" — contre leur broche : "+sat.join(", "):"")+
+      (r.sansPlace&&r.sansPlace.length?" — sans place : "+r.sansPlace.join(", "):"");
+  };
+  const a=$("pAuto");
+  if(a)a.onclick=()=>{
+    const r=autoPlace(150)||{};
+    refreshPanels();draw();
+    hint("Placement dégrossi"+satDit(r)+". Points de test laissés à la main. Ajustez, rien n'est figé.");
+  };
+  const as=$("pAutoSat");
+  if(as)as.onclick=()=>{
+    const avant=serialize(), r=placerSatellites();
+    // rien n'a bougé : pas d'étape Ctrl+Z pour rien
+    if(serialize()!==avant){pushSnap(avant);touch();refreshPanels();draw();}
+    hint("Satellites"+(satDit(r)||" : rien à placer")+". Ajustez, rien n'est figé.");
   };
   const b=$("pArr");
   if(b)b.onclick=()=>{push();arrange(S.fps.slice());touch();draw();};

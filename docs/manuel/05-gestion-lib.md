@@ -30,9 +30,10 @@ Elle passe par le serveur local (`python web_CAO.py`) : la page ne s'ouvre pas e
 2. Remplir « Part Name * » (obligatoire), « Préfixe (Ref Des) * », « Boîtier (Package) », « Valeur », « Fabricant », « Description ».
 3. Cliquer « Ajouter et auto-associer » : la ligne est ajoutée en tête du catalogue et l'association automatique est appliquée à cette seule ligne (symbole d'après le préfixe, empreinte d'après le boîtier si le fichier existe dans la LIB, modèle générique).
 4. Corriger les associations dans la ligne (listes déroulantes) puis « 💾 Enregistrer ».
+5. Compléter les autres colonnes dans la fiche : voir [Je veux corriger les colonnes d'une référence](#je-veux-corriger-les-colonnes-dune-référence).
 
 > [!NOTE]
-> Sans préfixe saisi, le code retient `U`. Il ne vérifie pas que la `Part Name` est libre : deux lignes de même nom sont possibles (contrairement à la création par Claude, qui refuse un nom pris).
+> Sans préfixe saisi, le code retient `U`. Il ne vérifie pas que la `Part Name` est libre : deux lignes de même nom sont possibles.
 
 ### Je veux importer un composant JLCPCB / LCSC
 
@@ -44,6 +45,15 @@ Elle passe par le serveur local (`python web_CAO.py`) : la page ne s'ouvre pas e
 
 > [!NOTE]
 > L'enregistrement de l'import écrit tout le catalogue, y compris les modifications en attente faites avant l'import. Un symbole existant qui n'est pas celui de la pièce (`npn.json`, `ic.json`…) est réutilisé sans être écrasé ; seul le symbole nommé d'après la pièce est écrit (ou réécrit).
+
+### Je veux corriger les colonnes d'une référence
+
+1. Sélectionner la ligne du catalogue ; dans l'inspecteur, ouvrir « Colonnes du composant ». Toutes les colonnes de l'en-tête y sont, sauf `Part Name` (elle désigne la ligne), les associations (listes du tableau, modèles de simulation) et `Brochage` (son propre champ).
+2. Corriger les cases voulues : `Description`, et toute case qui contient déjà un retour à la ligne, gardent leurs lignes.
+3. Cliquer « 💾 Enregistrer ces colonnes » : seules les cases changées sont écrites dans `LIB_composants.csv`, tout de suite ; les autres lignes restent octet pour octet et les autres pages sont prévenues. Les modifications en attente ailleurs dans le catalogue ne sont pas écrites et restent à enregistrer.
+
+> [!NOTE]
+> Une référence créée à la main doit d'abord être enregistrée : avant, elle n'est pas dans le fichier et le refus le dit. Si l'une des cases changées a été modifiée ailleurs depuis sa lecture, rien n'est écrit et le refus demande de recharger la page.
 
 ### Je veux associer empreinte, symbole et modèle à une référence
 
@@ -77,6 +87,13 @@ Lancée par WEB·SUITE, la page ne propose plus l'export CSV : « Enregistrer »
 4. Saisir les cotes de la datasheet en mm : « 5,8 6,2 » pour un minimum et un maximum, « 3,9 x 4,9 » pour largeur × longueur. Un champ vide prend la cote JEDEC courante pour SOT, SOIC, TSSOP, MSOP, DIP, BARRETTE et pour CHIP avec un code de puce, à vérifier sur la datasheet ; en revanche CHIP sans code, SOIC / TSSOP / MSOP sans nombre de broches, QFN et DFN (broches, pas, corps, longueur de plot, largeur de plot) refusent un champ vide.
 5. Cliquer « Générer » : l'empreinte remplace le contenu de l'éditeur, avec les cotes Z, G, X calculées et les remarques. Rien n'est écrit dans la LIB avant « 💾 Enregistrer ».
 
+### Je veux importer une empreinte KiCad
+
+1. Ouvrir ou créer l'empreinte, vue « 📝 Code JSON », puis « 📥 Importer KiCad… ».
+2. Coller le texte du `.kicad_mod` dans la zone, ou choisir le fichier (200 Ko au plus).
+3. Cliquer « Convertir dans l'éditeur » : l'éditeur reçoit l'empreinte et le nom de fichier suit celui de l'empreinte KiCad, rien n'est enregistré. Le message liste les remarques (ce qui n'est pas repris) et les défauts de contrôle. Si la conversion échoue, rien ne change.
+4. Vérifier, puis « 💾 Enregistrer le fichier » : les contrôles habituels s'appliquent, et un fichier du même nom demande avant d'être remplacé.
+
 ### Je veux poser des trous non métallisés, régler le masque, la pâte ou la forme par couche
 
 1. Dans l'éditeur d'empreinte, cliquer « ⊕ Trou » puis cliquer le plan : un trou est posé sur la grille, au diamètre du dernier trou (3,2 mm pour le premier). X, Y, Ø, L (trou oblong) et Rot se règlent dans la table « Trous non métallisés » de l'onglet « Pastilles / Broches ».
@@ -96,7 +113,8 @@ Lancée par WEB·SUITE, la page ne propose plus l'export CSV : « Enregistrer »
 1. Sélectionner la ligne du catalogue ; dans l'inspecteur, champ « Brochage » (symbole → empreinte).
 2. Saisir `NOM=patte` séparés par des virgules, par exemple `OUT=1,IN-=2,IN+=3,V-=4,V+=8`. L'aperçu sous le champ montre le résultat ou les erreurs (cadre rouge si la saisie est illisible).
 3. Valider par Entrée ou en quittant le champ : une saisie illisible n'est pas reportée dans le catalogue. Un champ vide est permis (la broche n du symbole va sur la patte n).
-4. « 💾 Enregistrer ». La colonne `Brochage` est ajoutée au catalogue si elle n'existe pas encore.
+4. « Vérifier le brochage » confronte ce qui est dans le champ au symbole et à l'empreinte de la référence et affiche les écarts, ou dit ce qui n'a pas pu être contrôlé (symbole ou empreinte absents). Rien n'est écrit.
+5. « 💾 Enregistrer ». La colonne `Brochage` est ajoutée au catalogue si elle n'existe pas encore.
 
 Syntaxe complète : voir la section [Brochage](#brochage-colonne-brochage).
 
@@ -107,6 +125,8 @@ Syntaxe complète : voir la section [Brochage](#brochage-colonne-brochage).
 3. Un modèle SPICE est rangé tel quel. Un Touchstone ouvre un formulaire : pour chaque « Port k » du fichier, la patte de l'empreinte (son numéro, ou le nom d'une broche du brochage), et la « Masse », la patte à laquelle les ports se rapportent (vide : la masse de la carte). Le formulaire est prérempli : d'après les lignes `! broches :` / `! masse :` déjà présentes dans le fichier, sinon ports 1 à N si la référence a N pattes, et masse = la broche GND / VSS / AGND / PGND / EP du brochage quand le fichier a moins de ports que la référence n'a de pattes.
 4. Cliquer « Ranger dans la LIB et lier ». Le fichier est écrit dans `lib_simulation`, ses lignes `! broches :` et `! masse :` sont ajoutées pour le Touchstone, et son chemin `lib/simulation/<nom>` est ajouté à la case « Modèle Simulation » de la référence.
 5. Cliquer « 💾 Enregistrer » : le fichier est déjà écrit dans la LIB, mais la liaison dans le catalogue reste en mémoire jusqu'à l'enregistrement.
+
+Sans fichier sous la main : « Ou écrire le modèle ici », donner un nom (mêmes extensions) et coller le texte, puis « Ranger dans la LIB et lier ». La suite est la même (formulaire des ports pour un Touchstone, liaison à enregistrer), mais un nom déjà pris dans la LIB est refusé : jamais d'écrasement.
 
 Détail du calcul qui lit ces fichiers : [guide de la simulation EM](../simulation-em.md) et chapitre [Simulation RF et EM](10-simulation-rf-em.md).
 
@@ -130,8 +150,8 @@ Le choix est mémorisé dans `config_lib.json`, à la racine de l'outil. Lancée
 
 1. Déposer le fichier STEP dans le dossier `Models` de la LIB (aucun bouton de Gestion LIB ne le fait).
 2. Lancer `node python/maillages_3d.mjs <dossier LIB>` : chaque STEP devient un maillage léger dans `Models/maillages`, et la colonne `Position 3D` est calculée pour chaque ligne qui a un `Modèle 3D`.
-3. Renseigner la colonne `Modèle 3D` (`Models/<fichier>`) : affichée dans le tableau par « ⚙️ Colonnes », éditable dans le fichier CSV seulement.
-4. Un modèle mal posé se corrige à la main dans `Position 3D` (`haut=Y+ rot=90 x=0 y=0 z=0.4`). Le script ne remplace jamais une position écrite.
+3. Renseigner la colonne `Modèle 3D` (`Models/<fichier>`) : affichée dans le tableau par « ⚙️ Colonnes », éditable dans « Colonnes du composant » de la fiche.
+4. Un modèle mal posé se corrige au même endroit dans `Position 3D` (`haut=Y+ rot=90 x=0 y=0 z=0.4`). Le script ne remplace jamais une position écrite.
 
 Le rendu est celui de l'animation 3D de l'Éditeur PCB : voir [Éditeur PCB : fabrication](04-editeur-pcb-fabrication.md).
 
@@ -150,8 +170,8 @@ Référence : [Explorateur de bibliothèque](#explorateur-de-bibliothèque-commu
 ### Je veux que Claude crée ou corrige un composant
 
 1. Laisser Gestion LIB ouverte (le pilotage passe par la page).
-2. Demander à Claude : créer une référence avec son empreinte (générée en IPC-7351B, convertie depuis un `.kicad_mod`, ou existante), corriger des cases d'une référence, lier un modèle de simulation.
-3. Une carte apparaît dans le panneau « Claude » : elle montre ce qui sera écrit. Rien n'est écrit dans la LIB avant le clic de l'utilisateur, même si l'interrupteur « Appliquer directement » de l'onglet est allumé.
+2. Demander à Claude : créer une référence, importer une empreinte KiCad, corriger des colonnes, vérifier un brochage, écrire et lier un modèle de simulation. Il passe par les mêmes contrôles de la page que l'utilisateur (`pilote_interface`).
+3. Une carte apparaît dans le panneau « Claude » pour chaque geste : elle montre ce qui sera fait. Voir l'interrupteur « Appliquer directement » de l'onglet au chapitre MCP.
 
 Détail : chapitre [Claude et le MCP](11-claude-mcp.md) et section [Pilotage par Claude](#pilotage-par-claude).
 
@@ -206,8 +226,11 @@ Scripts en ligne de commande, hors de la page : voir [Scripts de maintenance](#s
 | Élément | Raccourci | Effet | Limites |
 |---|---|---|---|
 | ‹ Liste | — | Revient à la liste | Visible en téléphone portrait seulement |
-| Fiche : Boîtier, Valeur, Fabricant, MPN | — | Rappel de `Package type`, `Value`, `Manufacturer`, `manufacturer part Number` | Lecture seule |
+| Fiche : Boîtier, Valeur, Fabricant, MPN | — | Rappel de `Package type`, `Value`, `Manufacturer`, `manufacturer part Number` | Lecture seule ; se corrigent dans « Colonnes du composant » |
+| Colonnes du composant | — | Un champ par colonne de l'en-tête (`#inspCol-<colonne>`), sauf `Part Name`, associations et `Brochage` | Replié par défaut ; changer de référence abandonne une saisie non enregistrée |
+| 💾 Enregistrer ces colonnes | — | Écrit tout de suite les cases changées de cette ligne, sans réécrire les autres | 500 caractères au plus, sans caractère de contrôle ni invisible, pas de formule de tableur (`=`, `@`, `+lettre`, `-lettre`) ; préfixe de 1 à 4 lettres ; `Number Of pins` de 1 à 4096 ; refus si une case a changé ailleurs, ou si la référence n'est pas encore enregistrée |
 | Brochage (symbole → empreinte) | — | Saisie de la colonne `Brochage`, vérifiée à la frappe ; l'aperçu liste `BROCHE→patte` par partie, ou les erreurs | Valeur reportée au catalogue au « change » (Entrée, perte de focus), si lisible ; à enregistrer |
+| Vérifier le brochage | — | Confronte le champ au symbole et à l'empreinte de la référence (`verifierBrochage`) et affiche les écarts | Lecture seule ; ne contrôle pas ce qui manque (symbole ou empreinte absents), et le dit |
 | SYMBOLE SCHÉMA (aperçu) / ⊡ | Double-clic | ⊡ recadre ; double-clic ouvre l'éditeur du symbole | Aucun effet sur « Non associé » |
 | EMPREINTE PCB (aperçu) / ⊡ | Double-clic | ⊡ recadre ; double-clic ouvre l'éditeur de l'empreinte | Aucun effet sur « Non associée » |
 | Aperçus : glisser, molette | — | Déplace et zoome l'aperçu | Zoom borné (empreinte 2 à 200, symbole 0,4 à 10) |
@@ -215,6 +238,7 @@ Scripts en ligne de commande, hors de la page : voir [Scripts de maintenance](#s
 | par défaut | — | Marque le premier modèle quand il y en a plusieurs | — |
 | ✕ (Délier) | — | Retire le modèle de la case ; le fichier reste dans la LIB | À enregistrer |
 | 📎 Lier un fichier… | — | Choisit un fichier `.sub .mod .cir .lib .sp .spi .spice .s1p … .s9p` | Nom nettoyé (caractères hors `A-Z a-z 0-9 _ . + -` remplacés par `_`) ; un fichier de même nom demande « Le remplacer ? » |
+| Ou écrire le modèle ici : nom, texte, Ranger dans la LIB et lier | — | Range le texte collé dans `lib_simulation` puis le lie, comme « Lier un fichier » | Mêmes extensions, même nettoyage du nom ; nom déjà pris refusé, jamais d'écrasement ; texte vide refusé ; la liaison attend « Enregistrer » |
 | Port k / Masse | — | Patte de chaque port d'un Touchstone, et patte de masse | Numéro de patte, ou nom d'une broche du brochage qui va sur une seule patte ; patte dans 1 à N si le nombre de pattes est connu ; pas de patte donnée deux fois ; fichier sans ligne `#` refusé |
 | Annuler / Ranger dans la LIB et lier | — | Ferme le formulaire / écrit le fichier avec ses lignes `! broches :` et `! masse :`, puis lie | Le fichier est écrit tout de suite ; la liaison attend « Enregistrer » |
 
@@ -343,6 +367,8 @@ Règles du calcul IPC-7351B : voir les commentaires de `commun/composants-lib.js
 |---|---|---|---|
 | Zone de texte | — | Toute modification qui est du JSON valide met le modèle et le plan à jour | Erreur affichée : « Syntaxe JSON : … » ; le modèle garde la dernière version valide |
 | Formatage auto | — | Réindente le JSON | Sans effet si le JSON est invalide |
+| 📥 Importer KiCad… | — | Ouvre la zone du texte `.kicad_mod` et le sélecteur de fichier | Empreintes seulement ; 200 Ko au plus |
+| Convertir dans l'éditeur | — | Remplace le contenu de l'éditeur par la conversion, le nom de fichier suit ; Ctrl+Z revient en arrière sur le contenu | Rien n'est enregistré ; conversion impossible : message, rien ne change ; pastilles personnalisées refusées, tracés, textes, arcs et modèles 3D non repris (remarques) |
 | Enregistrer en vue JSON | Ctrl+S | Relit la zone de texte avant d'écrire | Alerte « Erreur dans le code JSON » et arrêt si illisible |
 
 ### Éditeur : contrôles à l'enregistrement
@@ -384,7 +410,7 @@ IN=3,OUT=2/4,GND=1                                   une broche sur plusieurs pa
 | Erreurs signalées | `=` manquant, nom de broche vide, nom de partie illisible, patte illisible, broche donnée deux fois avec deux pattes différentes, patte prise par deux broches d'une même partie, aucune broche `NOM=patte` |
 | Valeurs de remplissage | Vide, `xx`, `-`, `none`, `n/a` : lus comme « pas de brochage » |
 
-Le contrôle complet face à une empreinte et à un symbole (`verifierBrochage` de `commun/composants-lib.js`) est celui de l'outil MCP `lib_brochage_verifier` : chaque patte doit exister dans l'empreinte, chaque broche dans le symbole ; une pastille sans broche ni `NC`, ou une broche du symbole sans patte, est une remarque. Dans l'inspecteur, seule la lecture de la syntaxe est faite à la saisie. Le schéma applique le brochage aux composants : voir [Éditeur Schématique](02-editeur-schematique.md). Code de lecture : [commun/brochage.js](../../commun/brochage.js).
+Le contrôle complet face à une empreinte et à un symbole (`verifierBrochage` de `commun/composants-lib.js`) est celui de l'outil MCP `lib_brochage_verifier` : chaque patte doit exister dans l'empreinte, chaque broche dans le symbole ; une pastille sans broche ni `NC`, ou une broche du symbole sans patte, est une remarque. Dans l'inspecteur, seule la lecture de la syntaxe est faite à la saisie ; « Vérifier le brochage » fait le contrôle complet. Le schéma applique le brochage aux composants : voir [Éditeur Schématique](02-editeur-schematique.md). Code de lecture : [commun/brochage.js](../../commun/brochage.js).
 
 ### Colonnes du catalogue
 
@@ -468,11 +494,12 @@ Les modifications de la LIB sont diffusées aux autres outils ouverts : un catal
 ## Limites connues
 
 - Le tableau du catalogue dessine 250 lignes au plus (voir note plus haut) ; les galeries sont paginées.
-- Le catalogue est réécrit en entier à chaque « Enregistrer » : deux onglets modifiés en même temps risquent de s'écraser. La page prévient seulement quand le catalogue a changé ailleurs.
+- Le catalogue est réécrit en entier à chaque « 💾 Enregistrer » (pas à « Enregistrer ces colonnes », qui n'écrit que ses cases) : deux onglets modifiés en même temps risquent de s'écraser. La page prévient seulement quand le catalogue a changé ailleurs.
 - Sans trait en cours ni sélection, Échap ferme l'éditeur sans confirmation, modifications non enregistrées perdues, même depuis un champ ou la vue JSON.
 - Modifier le numéro dans la colonne « # » de la table des pastilles ou des broches enregistre un texte (champ texte), alors que le contrôle d'empreinte exige un entier de 1 à 4096 : la question « Enregistrer quand même ? » apparaît. Les traits de sérigraphie (clé `lines`, écrite par l'onglet « Traits / Lignes » et le tracé au pointeur) sont acceptés par le contrôle, avec une remarque : l'éditeur PCB (`normFpDef`) ne lit pas `lines`, ces traits ne sont visibles que dans Gestion LIB.
 - L'import JLCPCB ne contrôle pas qu'une `Part Name` existe déjà. L'empreinte nommée par l'import (`Empreinte PCB liée`) n'est jamais créée : aucun code ne l'écrit, elle reste un nom (`SOT-23.json`) qui peut ne pas exister dans la LIB.
-- Aucun bouton ne range un fichier STEP ou ne règle `Modèle 3D` / `Position 3D` : édition du CSV et script `maillages_3d.mjs`.
+- Aucun bouton ne range un fichier STEP : dépôt dans `Models` et script `maillages_3d.mjs`.
+- `Part Name` ne se renomme pas dans la fiche (elle désigne la ligne).
 - La rotation d'une pastille (`rot`), les formes « Rect. angles droits » et « Chanfreiné » pour la forme principale, et les primitives de symbole autres que les traits ne se règlent que dans le code JSON.
 - Un modèle SPICE lié est lu en linéaire par la simulation (R, L, C, sous-circuits) : un transistor ou une diode SPICE est refusé par la simulation RF. Voir [Simulation RF et EM](10-simulation-rf-em.md).
 - Les valeurs de soudure des puces du générateur IPC-7351B viennent de KiCad ; la norme n'a pas été lue (voir le commentaire de `commun/composants-lib.js`). Les cotes JEDEC par défaut sont à vérifier sur la datasheet.

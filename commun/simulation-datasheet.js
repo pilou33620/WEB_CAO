@@ -19,9 +19,9 @@
    actuelle, valeur proposée, page et citation de la datasheet — et
    `simDsAppliquer` les écrit. Un LLM confond volontiers typique et max, ou lit
    la colonne voisine : la citation est là pour que cela se voie.
-   Aucune page ne les appelle pour l'instant (décision du 2026-11-04) : un panneau
-   à cocher dans l'interface les branchera (seule voie vers ESR, ESL et capacité
-   des condensateurs, qui n'ont pas de champ). Le banc harness-sim les éprouve.
+   Le tableau des condensateurs du PDN y passe (simDsCapaSaisir) : c'est la voie
+   vers ESR, ESL et capacité. Les autres réglages ont leurs champs, qui reprennent
+   bornes et consigne de lecture du catalogue dans leur title (simDsTitres).
 
    Chargé après commun/simulation-em.js, dans l'éditeur PCB et la visionneuse
    IPC-2581. L'assistant ne s'en sert que si `simDsCatalogue` existe.
@@ -262,9 +262,12 @@ function simDsCapasVisees(e) {
 }
 
 const SIM_DS_CHAMPS_CAPA = [
-  { cle: "esr_mohm", lib: "ESR", unite: "mΩ", f: 1e-3, min: 0.1, max: 10000, prop: "esr" },
-  { cle: "esl_nh",   lib: "ESL", unite: "nH", f: 1e-9, min: 0.01, max: 50,   prop: "esl" },
-  { cle: "cap_nf",   lib: "Capacité effective", unite: "nF", f: 1e-9, min: 0.0001, max: 1e7, prop: "cap" }
+  { cle: "esr_mohm", lib: "ESR", unite: "mΩ", f: 1e-3, min: 0.1, max: 10000, prop: "esr",
+    ou: "Datasheet du condensateur : ESR à la fréquence de résonance." },
+  { cle: "esl_nh",   lib: "ESL", unite: "nH", f: 1e-9, min: 0.01, max: 50,   prop: "esl",
+    ou: "Datasheet du condensateur : ESL, ou la courbe |Z| au-delà de la résonance." },
+  { cle: "cap_nf",   lib: "Capacité effective", unite: "nF", f: 1e-9, min: 0.0001, max: 1e7, prop: "cap",
+    ou: "Datasheet du condensateur : capacité EFFECTIVE sous la tension du rail, si elle donne la courbe DC-bias." }
 ];
 
 /* LES PARASITES LUS DANS UNE DATASHEET SURVIVENT À LA DÉTECTION. « ⚡ Détecter »
@@ -326,7 +329,7 @@ function simDsCatalogue() {
 
   L.push("");
   L.push("[condensateurs] Parasites des condensateurs de découplage du rail PDN, par repère, MPN ou valeur " +
-         "(pas de champ à l'interface : à donner à l'utilisateur). " +
+         "(champs C, ESR et ESL du tableau des condensateurs, sous la courbe Z(ω)). " +
          "Clés : esr_mohm (mΩ, à la fréquence de résonance), esl_nh (nH), cap_nf (nF, capacité EFFECTIVE sous la tension du rail si la datasheet donne la courbe DC-bias).");
   const capas = SIM_PDN.condensateurs || [];
   if (capas.length) {
@@ -580,6 +583,46 @@ function simDsAppliquer(prep, ids) {
   }
 
   return { n: fait.length, lignes: fait, simulations: Array.from(touche), analyses: anas, messages: messages };
+}
+
+/* UNE VALEUR TAPÉE DANS LE TABLEAU DES CONDENSATEURS (cle : esr_mohm, esl_nh, cap_nf). Mêmes bornes et même
+   écriture qu'une proposition. Par MPN s'il y en a un : la mémoire du profil est par MPN, et tous ses condensateurs
+   doivent dire la même chose qu'elle. Rend {ok, motif}. */
+function simDsCapaSaisir(id, cle, texte) {
+  const c = (SIM_PDN.condensateurs || []).find(x => x.id === id);
+  if (!c) return { ok: false, motif: "condensateur introuvable" };
+  const cible = String(c.mpn || "").trim() ? { mpn: c.mpn } : { refs: [c.ref] };
+  const prep = simDsPreparer({ type: "sim_params", source: "tableau PDN", condensateurs: [Object.assign(cible, { [cle]: texte })] });
+  const l = prep.lignes[0];
+  if (!l) return { ok: false, motif: "champ inconnu" };
+  if (!l.ok) return { ok: false, motif: c.ref + " " + l.lib + " : " + l.motif };
+  // la même valeur retapée n'est pas une valeur relevée : la provenance ne change pas
+  if (simDsTexte((c[l.def.prop] || 0) / l.def.f) !== simDsTexte(l.nouveau)) simDsAppliquer(prep, [l.id]);
+  return { ok: true, motif: "" };
+}
+
+/* Bornes et consigne de lecture d'un champ du catalogue, pour son title. */
+function simDsTitre(ch) {
+  const b = !ch.choix && ch.min != null && ch.max != null
+    ? "Bornes : " + simDsTexte(ch.min) + " … " + simDsTexte(ch.max) + (ch.unite ? " " + ch.unite : "") + ". " : "";
+  return b + "Où la lire : " + ch.ou;
+}
+// Les champs de la page, par groupe du catalogue. La fiche de la charge, elle, se retrouve par son data-cle.
+const SIM_DS_CHAMPS_PAGE = {
+  pdn: { vdd: "simPDNVdd", ripplePct: "simPDNRipple", deltaIA: "simPDNDeltaI", rVrmMOhm: "simPDNRvrm", fVrmKhz: "simPDNFvrm", planEr: "simPDNPlaneEr", planTanD: "simPDNPlaneTanD" },
+  si: { tr: "simTr", swing: "simSwing", cible: "simZCible", tolPct: "simZTol", cibleDiff: "simZDiffCible", tolDiffPct: "simZDiffTol", fc: "simFc" },
+  bus: { protocole: "simBusProtocole", freqMhz: "simBusFreq", tsu: "simBusTsu", th: "simBusTh", tcoMin: "simBusTcoMin", tcoMax: "simBusTcoMax", rpuK: "simBusRpu", baudrate: "simBusBaud" },
+  dc: { chute: "simDCMaxChute", dt: "simDCMaxDT", ambiante: "simDCAmbiante", lambda: "simDCLambda" }
+};
+/* Rappelé après chaque rendu (simRendre) : un champ refait a perdu son title complété, un champ gardé le garde. */
+function simDsTitres() {
+  const sortie = simEl("simSortie");
+  for (const g of simDsGroupes())
+    for (const ch of g.champs) {
+      const el = g.cle === "pdn_fiche" ? sortie && sortie.querySelector('.simPDNFiche[data-cle="' + ch.cle + '"]')
+                                       : simEl((SIM_DS_CHAMPS_PAGE[g.cle] || {})[ch.cle]);
+      if (el && !String(el.title || "").includes("Où la lire : ")) el.title = (el.title ? el.title + "\n" : "") + simDsTitre(ch);
+    }
 }
 
 /* L'état propre à ce module : le journal de ce qui a été appliqué, et d'où.

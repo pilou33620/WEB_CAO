@@ -606,6 +606,7 @@ function openImport(){
 $("mSelect").onclick=()=>setMode("select");
 $("mTrack").onclick=()=>setMode("track");
 $("mVia").onclick=()=>setMode("via");
+$("bCheminAuto").onclick=()=>cheminGeste();
 if($("mHole")) $("mHole").onclick=()=>setMode("hole");
 $("mDiff").onclick=()=>setMode("dpair");
 if($("mMeander")) $("mMeander").onclick=e=>{

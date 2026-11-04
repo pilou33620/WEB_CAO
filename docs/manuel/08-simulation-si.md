@@ -140,7 +140,7 @@ Deux pistes d'un même net sont refusées (« Piste 1 et Piste 2 ont le même ne
 1. Dans le panneau « Claude » (voir le [chapitre 11](11-claude-mcp.md)), demander à Claude de lire la datasheet et de relever les réglages de simulation.
 2. Claude lit le catalogue (`cao_sim_lire`), puis saisit chaque valeur dans son champ du panneau : une carte par geste.
 3. Cliquer **Appliquer** sur chaque carte (ou **Refuser**). Rien ne change avant ce clic, sauf si l'interrupteur « Appliquer directement (cet onglet) » est allumé, utile pour enchaîner.
-4. ESR, ESL et capacité des condensateurs n'ont pas de champ : Claude les relève et vous les donne.
+4. ESR, ESL et capacité des condensateurs se saisissent dans le tableau des condensateurs du PDN (voir le [chapitre 09](09-simulation-pi-thermique-audit.md)). Le survol de chaque champ de réglage donne ses bornes et où lire la valeur dans la datasheet.
 
 ### Je veux garder une trace d'une simulation
 

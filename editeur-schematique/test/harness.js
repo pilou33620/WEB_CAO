@@ -58,7 +58,7 @@ const EXPOSE=[
   "S","G","newPage","refStartPage","refStartDe","usedRefs","schCartoucheBasculer","schCartouche","schPage","schContenu","CARTOUCHE_FORMATS","cartoucheSuivant","loadPage","storeCurrent","gotoPage","addPage","removePage","clearSel",
   "SCHEMA_PATTERNS","NET_CLASSES","netClassSelect",
   "addComp","schComposantsDansZone","schToutesLesZones",
-  "push","undo","redo","histBorner","HIST_MAX","touchWires","buildTabs","draw","fit","resize",
+  "specEcrire","push","undo","redo","histBorner","HIST_MAX","touchWires","buildTabs","draw","fit","resize",
   /* canal de pilotage du MCP de web_suite (commun/pilote-cao.js) */
   "piloteCao",
   /* bus et hiérarchie */
@@ -404,6 +404,66 @@ T("Propriétés : repère, valeur et boîtier font une étape, que Ctrl+Z défai
   if(S.hist.length!==m+1||serialize()===doc)throw new Error("boîtier : une étape attendue, "+(S.hist.length-m));
   undo();
   if(serialize()!==doc)throw new Error("Ctrl+Z ne défait pas le boîtier");
+});
+
+T("Propriétés : specs à la main, une étape par changement, bornes de l'ancien outil",()=>{
+  const avant=serialize(), pied=()=>document.getElementById("fHint").textContent, $=id=>document.getElementById(id);
+  try{
+    const el=addComp("resistor",320,320); el.ref="R55"; el.specs={Tolerance:"1%"};
+    clearSel();S.sel.add(el.id);refreshPanels();
+    const n=S.hist.length, doc=serialize();
+    $("pSpecV0").value="5%"; $("pSpecV0").onchange();
+    if(el.specs.Tolerance!=="5%"||S.hist.length!==n+1)throw new Error("valeur : "+JSON.stringify(el.specs)+", "+(S.hist.length-n)+" étape(s)");
+    $("pSpecV0").value="5%"; $("pSpecV0").onchange();
+    if(S.hist.length!==n+1)throw new Error("même valeur : pas d'étape");
+    const ajout=(k,v)=>{$("pSpecCle").value=k;$("pSpecNouv").value=v;$("pSpecAjout").onclick();};
+    ajout(" Puissance ","0,25 W");
+    if(el.specs.Puissance!=="0,25 W"||S.hist.length!==n+2)throw new Error("ajout : "+JSON.stringify(el.specs));
+    const refus=(k,v,re)=>{
+      const m=S.hist.length, s=JSON.stringify(el.specs);
+      ajout(k,v);
+      if(S.hist.length!==m||JSON.stringify(el.specs)!==s||!re.test(pied()))throw new Error("refus attendu pour « "+k+" » : "+pied());
+    };
+    refus("Puissance","1 W",/existe déjà/);
+    refus("","x",/clé/);
+    refus("k".repeat(61),"x",/clé/);
+    refus("__proto__","x",/clé/);
+    refus("Longue","v".repeat(201),/valeur/);
+    refus("Deux\nlignes","x",/clé/);
+    $("pSpecX1").onclick();
+    if("Puissance" in el.specs||S.hist.length!==n+3)throw new Error("retrait : "+JSON.stringify(el.specs));
+    undo();undo();undo();
+    if(serialize()!==doc)throw new Error("trois Ctrl+Z ne rendent pas le composant");
+    // la dernière ligne retirée, plus de specs ; et trente clés au plus
+    const e2=S.comps.find(c=>c.ref==="R55"); clearSel();S.sel.add(e2.id);refreshPanels();
+    $("pSpecX0").onclick();
+    if("specs" in e2)throw new Error("specs vides : à retirer");
+    undo();
+    const e3=S.comps.find(c=>c.ref==="R55"); e3.specs={}; for(let i=0;i<30;i++)e3.specs["k"+i]="v";
+    if(!/30 clés/.test(specEcrire(e3,"k30","v"))||specEcrire(e3,"k3","w")!=="")throw new Error("borne de 30 clés");
+  }finally{loadDoc(JSON.parse(avant),true);}
+});
+T("bouton Renuméroter : confirmation, une étape, et rien à faire le dit",()=>{
+  const avant=serialize(), conf=global.confirm, pied=()=>document.getElementById("fHint").textContent;
+  try{
+    docLecture();
+    S.comps.find(c=>c.ref==="R1").ref="R7";
+    storeCurrent();
+    const n=S.hist.length, doc=serialize();
+    let dit="";
+    global.confirm=t=>{dit=t;return false;};
+    document.getElementById("bRenumeroter").onclick();
+    if(!/TOUS les repères changent/.test(dit)||serialize()!==doc||S.hist.length!==n)throw new Error("le refus de confirmer a écrit : "+dit);
+    global.confirm=()=>true;
+    document.getElementById("bRenumeroter").onclick();
+    if(S.hist.length!==n+1||S.comps.some(c=>c.ref==="R7"))throw new Error("renumérotation : "+(S.hist.length-n)+" étape(s)");
+    if(!/^Repères renumérotés.*PCB : garde les anciens repères/.test(pied()))throw new Error("pied : "+pied());
+    const faite=serialize();
+    document.getElementById("bRenumeroter").onclick();
+    if(serialize()!==faite||S.hist.length!==n+1||!/déjà dans l'ordre/.test(pied()))throw new Error("rien à faire : "+pied());
+    undo();
+    if(serialize().trim()!==doc)throw new Error("Ctrl+Z ne rend pas les repères");
+  }finally{global.confirm=conf;loadDoc(JSON.parse(avant),true);}
 });
 
 T("historique : un flot de lots de Claude se fond, les étapes de l'utilisateur restent",()=>{

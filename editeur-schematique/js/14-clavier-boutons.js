@@ -155,6 +155,17 @@ document.getElementById("bXlsx").onclick=exportBomXlsx;
 document.getElementById("bVariantes").onclick=()=>schVarOuvrir();
 document.getElementById("bomVarGerer").onclick=()=>schVarOuvrir();
 document.getElementById("bomVar").onchange=e=>schVarChoisir(e.target.value);
+/* la même opération que le dessin par Claude (28-dessin-pilote.js, chargé après) : une étape Ctrl+Z */
+document.getElementById("bRenumeroter").onclick=()=>{
+  if(!confirm("Renuméroter tout le schéma ?\n\nTOUS les repères changent, feuille par feuille, de haut en bas puis de gauche à droite. "+
+              "Le PCB garde les anciens jusqu'à sa resynchronisation."))return;
+  const c=dessinPiloteCommande(), a={lot:[{op:"renumeroter"}]}, pied=document.getElementById("fHint");
+  try{
+    const p=c.proposer(a);
+    c.appliquer(a,p);
+    pied.textContent="Repères renumérotés (Ctrl+Z pour revenir). "+p.apres.split("\n").pop();
+  }catch(e){pied.textContent=e.message;}
+};
 document.getElementById("bNew").onclick=()=>{
   if(!confirm("Effacer le contenu de la feuille « "+S.pages[S.page].name+" » ?"))return;
   push();
