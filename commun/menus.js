@@ -54,7 +54,7 @@
   });
 
   document.addEventListener("pointerdown",function(e){
-    if(ouvert&&!ouvert.contains(e.target))fermer();
+    if(ouvert&&!ouvert.contains(e.target)&&!e.target.closest(".pilote"))fermer();  /* carte de Claude : le geste suivant vise ce menu */
   },true);
   document.addEventListener("keydown",function(e){
     if(e.key==="Escape"&&ouvert){fermer();e.stopPropagation();}
