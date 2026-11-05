@@ -192,21 +192,21 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/01-core.js": {
-    "mtime": 1793728227.2592175,
-    "seen": 1793797917.7316453,
-    "ast_hash": "3af4eb19dc0dc64711391219cf90f6ee",
+    "mtime": 1793863723.1486974,
+    "seen": 1793868252.1257374,
+    "ast_hash": "879f448dafbbcccc8a15e7b0d4631451",
     "semantic_hash": ""
   },
   "editeur-pcb/js/02-connectivity.js": {
-    "mtime": 1793792647.6918201,
-    "seen": 1793797917.731652,
-    "ast_hash": "2c046be436be52b0a5aa40c82ed11daf",
+    "mtime": 1793876118.4414842,
+    "seen": 1793878239.3745584,
+    "ast_hash": "a2206ae6d00f49e0621203bdd8a1c11a",
     "semantic_hash": ""
   },
   "editeur-pcb/js/03-render.js": {
-    "mtime": 1793475208.811373,
-    "seen": 1793477373.7569067,
-    "ast_hash": "5f353da5ed615867c20fae1a134d060f",
+    "mtime": 1793864256.3324766,
+    "seen": 1793868252.1257539,
+    "ast_hash": "0944284a8d050f42af1487767f1e94a0",
     "semantic_hash": ""
   },
   "editeur-pcb/js/04-fabrication.js": {
@@ -222,21 +222,21 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/05-tools.js": {
-    "mtime": 1793712992.0415835,
-    "seen": 1793716237.529786,
-    "ast_hash": "373d08fe874a5e01ffbe2968d3b90a56",
+    "mtime": 1793877509.031254,
+    "seen": 1793878239.3746061,
+    "ast_hash": "acfa34ebedbc685a529f7f515b5d9b69",
     "semantic_hash": ""
   },
   "editeur-pcb/js/06-panels.js": {
-    "mtime": 1793794304.2848594,
-    "seen": 1793797917.7316916,
-    "ast_hash": "cc4c729e55d8320adf96c9146a538bd2",
+    "mtime": 1793877509.0410137,
+    "seen": 1793878239.3746197,
+    "ast_hash": "9a98586112aa4a5494b8c17c41b11170",
     "semantic_hash": ""
   },
   "editeur-pcb/js/07-app.js": {
-    "mtime": 1793794626.895149,
-    "seen": 1793797917.7316988,
-    "ast_hash": "7d21065726cb3e11b69a34058eeaeb56",
+    "mtime": 1793877161.0333006,
+    "seen": 1793878239.3746316,
+    "ast_hash": "fd3627f4704d77bfe888b3b71f803da1",
     "semantic_hash": ""
   },
   "editeur-pcb/js/08-empreinte.js": {
@@ -246,9 +246,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/09-diffpair.js": {
-    "mtime": 1793127112.2228074,
-    "seen": 1793135203.814961,
-    "ast_hash": "e569a815695156ffb0e716156f5a7c81",
+    "mtime": 1793863723.1697233,
+    "seen": 1793868252.1258628,
+    "ast_hash": "ecb9f6cd80d69e965735fcefcbfd4ae0",
     "semantic_hash": ""
   },
   "editeur-pcb/js/10-pns-geom.js": {
@@ -288,15 +288,15 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/16-profil.js": {
-    "mtime": 1792784639.9825504,
-    "seen": 1793135203.8150182,
-    "ast_hash": "e2c14e9764bd6450a3bd10da708f7730",
+    "mtime": 1793861586.5140178,
+    "seen": 1793868252.1259172,
+    "ast_hash": "053d75df5697be255bbbede14947e9cd",
     "semantic_hash": ""
   },
   "editeur-pcb/js/17-exemples.js": {
-    "mtime": 1793127112.250807,
-    "seen": 1793135203.8150253,
-    "ast_hash": "006301c2eee2a79ea7b6a9d926152ab7",
+    "mtime": 1793876634.9508238,
+    "seen": 1793878239.37474,
+    "ast_hash": "6f2e5fe0da32d0740317139e3f4a2c71",
     "semantic_hash": ""
   },
   "editeur-pcb/js/18-reperage.js": {
@@ -324,10 +324,10 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/22-bloc-placement.js": {
-    "mtime": 1791663035.627176,
-    "seen": 1791891802.1720755,
-    "ast_hash": "ee852a1e58f5c9eef0004d576b1c5459",
-    "semantic_hash": "ee852a1e58f5c9eef0004d576b1c5459"
+    "mtime": 1793876118.4502335,
+    "seen": 1793878239.3747907,
+    "ast_hash": "8ed59244870f0ba5747298275ada12d1",
+    "semantic_hash": ""
   },
   "editeur-pcb/js/23-eco-sync.js": {
     "mtime": 1793476047.9673615,
@@ -342,9 +342,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/25-liens.js": {
-    "mtime": 1793265779.761211,
-    "seen": 1793351383.6737428,
-    "ast_hash": "e88f0aeba196fe73b79787bdda5acfd0",
+    "mtime": 1793872591.6296391,
+    "seen": 1793878239.3748207,
+    "ast_hash": "3ad74786d6d4073eed4330d7143135c2",
     "semantic_hash": ""
   },
   "editeur-pcb/js/26-variantes.js": {
@@ -354,9 +354,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/27-groupes.js": {
-    "mtime": 1793475208.8233414,
-    "seen": 1793477373.7571452,
-    "ast_hash": "292456132a8b9f09e5f7777de486f831",
+    "mtime": 1793876118.436848,
+    "seen": 1793878239.374838,
+    "ast_hash": "d7a1674ea039b27f552d93b4a77dcb18",
     "semantic_hash": ""
   },
   "editeur-pcb/js/28-placement-satellites.js": {
@@ -438,9 +438,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/test/harness.js": {
-    "mtime": 1793794627.0572736,
-    "seen": 1793797917.7320468,
-    "ast_hash": "f54f053cfc0def93410fa3e5395294d0",
+    "mtime": 1793877509.0632536,
+    "seen": 1793878239.375099,
+    "ast_hash": "5b8dd41500f2ea55d3bd2683b350462b",
     "semantic_hash": ""
   },
   "editeur-schematique/js/00-espace-config.js": {
@@ -1080,15 +1080,15 @@
     "semantic_hash": ""
   },
   "editeur-pcb/README.md": {
-    "mtime": 1793793508.852756,
-    "seen": 1793797917.7331402,
-    "ast_hash": "4ca79a56b1dc5317529ca9314014d7bf",
+    "mtime": 1793877161.1733217,
+    "seen": 1793878239.3766162,
+    "ast_hash": "c432fd099cc34d94849999ddd003e35d",
     "semantic_hash": ""
   },
   "editeur-pcb/editeur-pcb.html": {
-    "mtime": 1793794327.8123312,
-    "seen": 1793797917.733147,
-    "ast_hash": "e3d41f54d37d922be471691215b75e00",
+    "mtime": 1793863723.1747997,
+    "seen": 1793868252.127317,
+    "ast_hash": "653c86b04b3e4dc00719f34e0fb4fc6c",
     "semantic_hash": ""
   },
   "editeur-pcb/js/fontes/OFL-PlansSans.txt": {
@@ -1350,9 +1350,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/test/releve-lecture-pcb.json": {
-    "mtime": 1792386907.8141158,
-    "seen": 1792389842.48686,
-    "ast_hash": "0c5b4260cfece197d2ca56b9e5c86614",
+    "mtime": 1793876778.7695494,
+    "seen": 1793878239.3751092,
+    "ast_hash": "8392c83c1bc3f6982a487f1c2b8d2f0f",
     "semantic_hash": ""
   },
   "pilote.py": {
@@ -1380,9 +1380,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/37-routage-pilote.js": {
-    "mtime": 1793792647.697926,
-    "seen": 1793797917.7319362,
-    "ast_hash": "5e11f33fa4f26b6d249ce5c0d0099e7e",
+    "mtime": 1793863723.1601675,
+    "seen": 1793868252.1260803,
+    "ast_hash": "7e287fb309a2b2cc28d583328924a6b8",
     "semantic_hash": ""
   },
   "gestion-lib/js/08-pilote-lib.js": {
@@ -1554,9 +1554,9 @@
     "semantic_hash": ""
   },
   "docs/manuel/03-editeur-pcb-edition-routage.md": {
-    "mtime": 1793794673.2638586,
-    "seen": 1793797917.7330399,
-    "ast_hash": "46b74f2b9e058a0beaf0b008d96d8ddc",
+    "mtime": 1793877161.1864889,
+    "seen": 1793878239.3764405,
+    "ast_hash": "94031c7d9bb8158e08a7204adfc1e205",
     "semantic_hash": ""
   },
   "docs/manuel/04-editeur-pcb-fabrication.md": {
@@ -1620,9 +1620,9 @@
     "semantic_hash": ""
   },
   "docs/manuel/manuel.html": {
-    "mtime": 1793795032.1252565,
-    "seen": 1793797917.733119,
-    "ast_hash": "73d7b9c009546e44f18fdd1a49f5e9ae",
+    "mtime": 1793877749.151649,
+    "seen": 1793878239.37658,
+    "ast_hash": "1f08bea31ecbc8d26ac3357cad2a6c49",
     "semantic_hash": ""
   },
   "tasks/plan-manuel.md": {
@@ -1737,6 +1737,12 @@
     "mtime": 1793728305.514473,
     "seen": 1793797917.73263,
     "ast_hash": "9f935f884fd168337ec6621d6b30f9e4",
+    "semantic_hash": ""
+  },
+  "editeur-pcb/js/41-larmes.js": {
+    "mtime": 1793864256.3092995,
+    "seen": 1793868252.1261199,
+    "ast_hash": "8d4afdac171c0a4a209c5561a96f007e",
     "semantic_hash": ""
   }
 }
