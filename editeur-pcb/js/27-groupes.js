@@ -265,6 +265,7 @@ function dragRetourner(){
   if(typeof drag==="undefined"||!drag||!drag.move||!S.sel.fps.size)return false;
   if(!drag.moved){push();drag.moved=true;beginMove();}
   dragRetournerPas();
+  if(fpStop()){dragRetournerPas();touch();draw();return true;}
   (drag.gestes||(drag.gestes=[])).push("F");
   touch();draw();
   return true;

@@ -587,6 +587,7 @@ function dragRotate(sens){
   if(typeof drag==="undefined"||!drag||!drag.move||!S.sel.fps.size)return false;
   if(!drag.moved){push();drag.moved=true;beginMove();}
   fpsTourner([...S.sel.fps],sens);
+  if(fpStop()){fpsTourner([...S.sel.fps],-sens);touch();draw();return true;}
   (drag.gestes||(drag.gestes=[])).push(sens);
   drag.rot=true;
   dragRotFix();

@@ -44,7 +44,7 @@ global.BroadcastChannel.prototype.close=function(){
 };
 
 const code=fs.readFileSync(path.join(__dirname,"..","dist","pcb.js"),"utf8");
-const EXPOSE=["gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
+const EXPOSE=["copySelPcb","fpEssai","fpChevauchements","placementDegage","placementBilan","fpPlaceLibre","pasteClipPcb","rotateSel","flipSel","fpGene","routeRetouche","dragMoveBy","beginMove","dragRotate","gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
   "updateRoute","stepRoute","commitRoute","routeToLayer","runDrc","buildTabs",
   "buildLayers","refreshPanels","buildList","buildProps","clearSel","rotateSel",
   "BLOC_PLACEMENT","PLACEMENT_SCORE","fpBBox",
@@ -8773,6 +8773,284 @@ T("une paire s'accroche au corps de ses deux pistes, au départ comme à l'arriv
     S.tracks=[{x1:30,y1:30,x2:50,y2:30,l:0,w:g.w,net:"USB_DP"}];touch();
     if(dpCorps(q,40,30,0))throw new Error("il faut les deux pistes");
   }finally{S.dp=null;S.tracks=[];touch();S.avoid=reg.avoid;S.grid=reg.grid;setMode("select");}
+});
+T("l'arrivée entre dans l'axe de sa pastille, dans les deux sens du tracé",()=>{
+  const reg={avoid:S.avoid,grid:S.grid};
+  try{
+    S.fps=[];S.tracks=[];S.zones=[];S.origin={x:0,y:0};S.avoid=true;S.grid=0.5;
+    // deux vias hors grille, comme des centres de pastilles
+    S.vias=[{x:10.13,y:5.07,d:1.2,drill:0.4,a:0,b:S.cu-1,net:"N"},{x:2.11,y:20.07,d:1.2,drill:0.4,a:0,b:S.cu-1,net:"N"}];touch();
+    setMode("track");S.active=0;
+    const w=()=>S.tracks.reduce((m,t)=>Math.min(m,dist(t.x1,t.y1,t.x2,t.y2)),1e9);
+    // de 2 vers 1 : coude sur la grille à portée de l'axe, puis arrivée
+    startRoute(2.11,20.07);
+    const W=S.route.w;
+    S.mouse={x:10,y:12};updateRoute(10,12);stepRoute();
+    updateRoute(10.13,5.07);
+    if(!S.route.retouche)throw new Error("le coude devait glisser sur l'axe");
+    const av=S.route.done.length;
+    stepRoute();
+    if(S.route)throw new Error("l'arrivée devait fermer le tracé ("+av+")");
+    const fin=S.tracks.filter(t=>Math.abs(t.x1-10.13)<1e-6&&Math.abs(t.x2-10.13)<1e-6);
+    if(!fin.length)throw new Error("la dernière jambe devait suivre l'axe : "+JSON.stringify(S.tracks));
+    if(w()<W-1e-6)throw new Error("écharde posée : "+JSON.stringify(S.tracks));
+    if(!S.tracks.some(t=>t.x2===10.13&&t.y2===5.07||t.x1===10.13&&t.y1===5.07))throw new Error("centre manqué");
+    undo();
+    // un décrochement franc, plus long que la piste, reste un coude voulu
+    startRoute(2.11,20.07);
+    updateRoute(8,12);stepRoute();
+    updateRoute(10.13,5.07);
+    if(S.route.retouche)throw new Error("rien à retoucher pour un vrai coude");
+    cancelRoute();
+    // du cuivre étranger sur le chemin du coude déplacé : on ne retouche pas
+    startRoute(2.11,20.07);
+    updateRoute(10,12);stepRoute();
+    S.tracks.push({x1:9.9,y1:10,x2:10.6,y2:10,l:0,w:0.2,net:"M"});touch();
+    updateRoute(10.13,5.07);
+    if(S.route.retouche)throw new Error("le coude ne doit pas glisser dans le cuivre voisin");
+    cancelRoute();
+  }finally{S.route=null;S.tracks=[];S.vias=[];touch();S.avoid=reg.avoid;S.grid=reg.grid;setMode("select");}
+});
+T("un boîtier tiré bute sur les pastilles et le corps d'un autre, et reste réparable",()=>{
+  const c=carteDp();
+  const reg={avoid:S.avoid,grid:S.grid};
+  const A=c.j1,B=c.j2;
+  // un vrai geste : saisi par son centre, tiré, relâché
+  const tire=(f,x,y)=>{
+    setMode("select");clearSel();S.sel.fps.add(f.id);
+    fire("pointerdown",sc(f.x,f.y));
+    fire("pointermove",sc(x,y));
+    fire("pointerup",sc(x,y));
+    return {x:f.x,y:f.y};
+  };
+  try{
+    S.avoid=true;S.grid=0.5;S.origin={x:0,y:0};touch();
+    if(fpGene(B,new Set([B]))||fpGene(A,new Set([A])))throw new Error("carte d'essai déjà en faute");
+    const libre=tire(B,55,40);
+    if(libre.x!==55||libre.y!==40)throw new Error("un chemin libre devait passer : "+JSON.stringify(libre));
+    const sur=tire(B,A.x,A.y);
+    if(sur.x===A.x&&sur.y===A.y)throw new Error("le boîtier devait buter sur l'autre");
+    if(fpGene(B,new Set([B])))throw new Error("il s'est arrêté en faute : "+fpGene(B,new Set([B])));
+    if(dist(sur.x,sur.y,A.x,A.y)>20)throw new Error("il devait venir au plus près : "+JSON.stringify(sur));
+    tire(B,55,40);
+    S.avoid=false;
+    const force=tire(B,A.x,A.y);
+    if(force.x!==A.x||force.y!==A.y)throw new Error("coupée, l'anti-collision laisse forcer : "+JSON.stringify(force));
+    S.avoid=true;
+    const sort=tire(B,60,40);
+    if(sort.x!==60||sort.y!==40)throw new Error("une faute d'avant le geste reste réparable : "+JSON.stringify(sort));
+    // du cuivre étranger sous la destination : une piste d'un autre net bloque aussi
+    const q=padsWorld(B)[0], qx=40+q.x-B.x;
+    for(const l of padCuLayers(B,q))S.tracks.push({x1:qx,y1:25,x2:qx,y2:55,l,w:0.3,net:"AUTRE"});
+    touch();
+    // sans poussée, la piste sous sa pastille l'arrête
+    S.rule.route="mark";touch();
+    const piste=tire(B,40,40);
+    if(piste.x===40)throw new Error("une piste d'un autre net sous sa pastille devait l'arrêter");
+    // en poussée, elle s'écarte : le boîtier passe, et il ne reste aucune faute
+    S.rule.route="shove";touch();
+    const pousse=tire(B,40,40);
+    if(pousse.x!==40)throw new Error("en poussée, la piste devait s'écarter : "+JSON.stringify(pousse));
+    if(fpGene(B,new Set([B])))throw new Error("poussée : il reste "+fpGene(B,new Set([B])));
+  }finally{S.tracks=[];S.rule.route="shove";touch();S.avoid=reg.avoid;S.grid=reg.grid;clearSel();}
+});
+T("un boîtier s'arrête au même endroit, que la souris aille vite ou lentement",()=>{
+  const c=carteDp();
+  const reg={avoid:S.avoid,grid:S.grid};
+  const A=c.j1,B=c.j2;
+  try{
+    S.avoid=true;S.grid=0.5;S.origin={x:0,y:0};touch();
+    setMode("select");clearSel();S.sel.fps.add(B.id);
+    const X0=B.x,Y0=B.y;
+    fire("pointerdown",sc(B.x,B.y));fire("pointermove",sc(A.x,A.y));fire("pointerup",sc(A.x,A.y));
+    const vite={x:B.x,y:B.y};
+    B.x=X0;B.y=Y0;touch();
+    clearSel();S.sel.fps.add(B.id);
+    fire("pointerdown",sc(B.x,B.y));
+    for(let k=1;k<=120;k++){
+      const x=X0+(A.x-X0)*k/120, y=Y0+(A.y-Y0)*k/120;
+      fire("pointermove",sc(x,y));
+    }
+    fire("pointerup",sc(A.x,A.y));
+    if(dist(vite.x,vite.y,B.x,B.y)>1.5)throw new Error("vite "+JSON.stringify(vite)+" / lent "+B.x+";"+B.y);
+    // au-delà de l'obstacle, il passe : une carte dense ne l'enferme pas
+    clearSel();S.sel.fps.add(B.id);
+    fire("pointerdown",sc(B.x,B.y));fire("pointermove",sc(5,20));fire("pointerup",sc(5,20));
+    if(fpGene(B,new Set([B])))throw new Error("il ne doit pas finir en faute");
+    if(B.x>A.x)throw new Error("il devait passer de l'autre côté : "+B.x);
+  }finally{S.avoid=reg.avoid;S.grid=reg.grid;clearSel();}
+});
+T("R, F et les coordonnées refusent une collision, sans rien changer",()=>{
+  const reg={avoid:S.avoid,grid:S.grid};
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();S.origin={x:0,y:0};
+  try{
+    S.avoid=true;S.grid=0.5;setMode("select");
+    const a=mkFp("R1","","",2), b=mkFp("R2","","",2);
+    a.x=50;a.y=50;a.rot=0;b.x=50;b.y=50;b.rot=0;
+    S.fps.push(a,b);touch();
+    // b juste au-dessus de a : tourner a l'y ferait entrer
+    const bc=bodyOf(a), H=(bc.y2-bc.y1)/2, L=(bc.x2-bc.x1)/2;
+    if(L<=H+0.2)throw new Error("empreinte d'essai trop carrée : "+L+" / "+H);
+    b.y=r3(50-(2*H+(L-H)/2));touch();
+    if(fpGene(a,new Set([a])))throw new Error("départ : a et b ne devaient pas se gêner : "+fpGene(a,new Set([a])));
+    clearSel();S.sel.fps.add(a.id);
+    const n=S.undo.length;
+    rotateSel();
+    if(a.rot!==0)throw new Error("R devait être refusé : rot="+a.rot);
+    if(S.undo.length!==n)throw new Error("un refus ne laisse pas d'étape Ctrl+Z");
+    S.avoid=false;rotateSel();
+    if(a.rot!==90)throw new Error("coupée, l'anti-collision laisse tourner");
+    a.rot=0;touch();S.avoid=true;
+    // loin de b : R passe
+    b.y=20;touch();rotateSel();
+    if(a.rot!==90)throw new Error("R libre refusé : "+a.rot);
+    a.rot=0;
+    // F : un boîtier de l'autre face, juste sous a, le ferait entrer dans son corps
+    b.x=50;b.y=50;b.side=a.side?0:1;touch();
+    if(padsWorld(a).every(q=>!(q.drill>0))){
+      if(fpGene(a,new Set([a])))throw new Error("faces opposées : "+fpGene(a,new Set([a])));
+      clearSel();S.sel.fps.add(a.id);
+      const face=a.side;
+      flipSel();
+      if(a.side!==face)throw new Error("F devait être refusé");
+    }
+    // l'essai à blanc rend tout comme il l'a trouvé
+    b.side=a.side;b.x=80;b.y=80;touch();
+    const avant=JSON.stringify([a.x,a.y,a.rot,a.side]);
+    fpEssai(()=>{a.x=80;a.y=80;a.rot=90;});
+    if(JSON.stringify([a.x,a.y,a.rot,a.side])!==avant)throw new Error("fpEssai a laissé une trace");
+    if(!fpEssai(()=>{a.x=80;a.y=80;}))throw new Error("fpEssai devait voir la gêne");
+  }finally{S.fps=[];touch();S.avoid=reg.avoid;S.grid=reg.grid;clearSel();}
+});
+T("le collage et la bibliothèque vont au nœud libre le plus proche",()=>{
+  const reg={avoid:S.avoid,grid:S.grid,mouse:S.mouse};
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();S.origin={x:0,y:0};
+  try{
+    S.avoid=true;S.grid=0.5;setMode("select");
+    const a=mkFp("R1","","",2);a.x=50;a.y=50;S.fps.push(a);touch();
+    const n=mkFp("R2","","",2);n.x=50;n.y=50;
+    const p=fpPlaceLibre([n]);
+    if(!p.dx&&!p.dy)throw new Error("le point visé était occupé");
+    n.x=r3(n.x+p.dx);n.y=r3(n.y+p.dy);
+    if(fpGene(n,new Set([n])))throw new Error("place proposée en faute : "+fpGene(n,new Set([n])));
+    if(Math.abs(n.x/0.5-Math.round(n.x/0.5))>1e-9||Math.abs(n.y/0.5-Math.round(n.y/0.5))>1e-9)throw new Error("hors grille");
+    if(dist(n.x,n.y,50,50)>6)throw new Error("trop loin : "+n.x+";"+n.y);
+    const l=mkFp("R3","","",2);l.x=20;l.y=20;
+    const q=fpPlaceLibre([l]);
+    if(q.dx||q.dy)throw new Error("un point libre ne bouge pas");
+    S.avoid=false;
+    const f=mkFp("R4","","",2);f.x=50;f.y=50;
+    const r=fpPlaceLibre([f]);
+    if(r.dx||r.dy)throw new Error("coupée, l'anti-collision pose où l'on vise");
+  }finally{S.fps=[];touch();S.avoid=reg.avoid;S.grid=reg.grid;S.mouse=reg.mouse;clearSel();}
+});
+T("le DRC signale deux corps superposés, et le placement les écarte",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();S.origin={x:0,y:0};
+  const reg={grid:S.grid};
+  try{
+    S.grid=0.5;
+    const a=mkFp("R1","","",2), b=mkFp("R2","","",2), c=mkFp("R3","","",2);
+    a.x=30;a.y=30;b.x=30.2;b.y=30.1;c.x=70;c.y=70;
+    S.fps.push(a,b,c);touch();
+    const msg=()=>runDrc().map(e=>e.msg).filter(m=>/Composants qui se chevauchent/.test(m));
+    if(msg().length!==1||!/R1/.test(msg()[0])||!/R2/.test(msg()[0]))throw new Error("DRC : "+msg().join(" / "));
+    if(!/2 composants/.test(placementBilan()))throw new Error("bilan : "+placementBilan());
+    placementDegage();touch();
+    if(fpChevauchements().length)throw new Error("le placement devait les écarter");
+    if(c.x!==70||c.y!==70)throw new Error("ce qui ne gêne pas ne bouge pas");
+    if(placementBilan())throw new Error("rien à reprendre : "+placementBilan());
+    // au plus près : une seule pièce bouge, de peu, et elle reste sur la carte
+    if(dist(a.x,a.y,30,30)>1e-9&&dist(b.x,b.y,30.2,30.1)>1e-9)throw new Error("une seule devait bouger");
+    if(dist(a.x,a.y,b.x,b.y)>8)throw new Error("écartés trop loin : "+dist(a.x,a.y,b.x,b.y));
+    // faces opposées : ni signalé, ni écarté
+    a.x=30;a.y=30;b.x=30;b.y=30;b.side=a.side?0:1;touch();
+    if(padsWorld(a).every(q=>!(q.drill>0))){
+      if(msg().length)throw new Error("faces opposées signalées : "+msg().join(" / "));
+      placementDegage();
+      if(b.x!==30||b.y!==30)throw new Error("faces opposées : rien à écarter");
+    }
+  }finally{S.fps=[];touch();S.grid=reg.grid;}
+});
+T("carte pleine : collage et bibliothèque refusent, le placement le dit",()=>{
+  const reg={avoid:S.avoid,grid:S.grid,mouse:S.mouse,b:Object.assign({},S.board),pts:S.board.pts};
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();S.origin={x:0,y:0};
+  try{
+    S.avoid=true;S.grid=0.5;setMode("select");
+    const a=mkFp("R1","","",2);a.x=50;a.y=50;S.fps.push(a);touch();
+    // une place à plus de 60 pas : la recherche la trouve quand même
+    S.board.x=-50;S.board.y=-50;S.board.w=300;S.board.h=300;delete S.board.pts;touch();
+    const loin=mkFp("R2","","",2);loin.x=50;loin.y=50;
+    const pleins=[];
+    for(let i=-16;i<=16;i++)for(let j=-16;j<=16;j++){
+      const f=mkFp("Z"+(i+16)+"_"+(j+16),"","",2);f.id=S.nextId++;f.x=50+i*4;f.y=50+j*4;
+      if(i||j){pleins.push(f);S.fps.push(f);}
+    }
+    touch();
+    const p=fpPlaceLibre([loin]);
+    if(!p)throw new Error("une place existait hors de ce bloc");
+    if(Math.hypot(p.dx,p.dy)<30)throw new Error("place trop proche, donc en faute : "+JSON.stringify(p));
+    S.fps=[a];touch();
+    // carte minuscule : plus aucune place
+    const tient=fpBBox(a);
+    S.board.x=tient.x1;S.board.y=tient.y1;S.board.w=tient.x2-tient.x1;S.board.h=tient.y2-tient.y1;delete S.board.pts;touch();
+    const n=mkFp("R3","","",2);n.x=50;n.y=50;
+    if(fpPlaceLibre([n])!==null)throw new Error("la carte est pleine : il fallait null");
+    // le vrai collage : refusé, sans étape Ctrl+Z
+    clearSel();S.sel.fps.add(a.id);copySelPcb();
+    S.mouse={x:50,y:50};
+    const nb=S.fps.length, un=S.undo.length;
+    pasteClipPcb();
+    if(S.fps.length!==nb||S.undo.length!==un)throw new Error("collage sur carte pleine : refus attendu");
+    // anti-collision coupée : on force
+    S.avoid=false;
+    pasteClipPcb();
+    if(S.fps.length!==nb+1)throw new Error("coupée, l'anti-collision laisse coller");
+    S.avoid=true;
+    // le placement ne peut rien : il le dit
+    touch();
+    placementDegage();touch();
+    if(!/sans place libre/.test(placementBilan()))throw new Error("bilan : "+placementBilan());
+  }finally{Object.assign(S.board,reg.b);S.fps=[];touch();S.avoid=reg.avoid;S.grid=reg.grid;S.mouse=reg.mouse;clearSel();}
+});
+T("un refus dans Propriétés ne laisse ni étape Ctrl+Z ni valeur saisie",()=>{
+  const reg={avoid:S.avoid,grid:S.grid};
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();S.origin={x:0,y:0};
+  try{
+    S.avoid=true;S.grid=0.5;setMode("select");
+    const a=mkFp("R1","","",2), b=mkFp("R2","","",2);
+    a.x=20;a.y=20;b.x=60;b.y=60;
+    S.fps.push(a,b);touch();
+    clearSel();S.sel.fps.add(a.id);refreshPanels();
+    S.undo.length=0;
+    const pris=$("pX");
+    if(!pris||!pris.onchange)throw new Error("le champ X du panneau est introuvable");
+    const un=S.undo.length;
+    pris.value="60";$("pY").value="60";
+    pris.onchange();
+    if(a.x!==60)throw new Error("un X libre devait passer : "+a.x);
+    if(S.undo.length!==un+1)throw new Error("un geste accepté fait une étape Ctrl+Z");
+    const un2=S.undo.length;
+    $("pY").value="20";buildProps();           // le panneau tel qu'il est bâti : Y vaut 20
+    const champY=$("pY");champY.value="60";
+    champY.onchange();
+    if(a.y!==20)throw new Error("Y sur l'autre composant : refus attendu, y="+a.y);
+    if(S.undo.length!==un2)throw new Error("un refus ne laisse pas d'étape Ctrl+Z");
+    if(parseFloat($("pY").value)!==20)throw new Error("le panneau devait reprendre 20 : "+$("pY").value);
+  }finally{S.fps=[];touch();S.avoid=reg.avoid;S.grid=reg.grid;clearSel();}
+});
+T("seule la même face fait buter deux corps",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();
+  const a=mkFp("R1","","",2), b=mkFp("R2","","",2);
+  a.x=20;a.y=20;b.x=20;b.y=20;
+  S.fps.push(a,b);touch();
+  const cms=padsWorld(a).every(q=>!(q.drill>0));
+  b.side=a.side;touch();
+  if(!fpGene(b,new Set([b])))throw new Error("même face : il devait buter");
+  if(cms){
+    b.side=a.side?0:1;touch();
+    if(fpGene(b,new Set([b])))throw new Error("faces opposées : "+fpGene(b,new Set([b])));
+  }
+  S.fps=[];touch();
 });
 T("tracé couplé : deux pistes au pas, de même longueur",()=>{
   const c=carteDp();

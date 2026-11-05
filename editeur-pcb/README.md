@@ -3330,6 +3330,31 @@ rondes sont traités, quand une piste droite sort de leur centre. Le détourage 
 plan se calcule une fois par pose ou au chargement : environ 4,5 s pour 400 larmes
 sur un Raspberry Pi, en cache ensuite.
 
+## Anti-collision des boîtiers
+
+Un boîtier tiré ou tourné en plein geste bute (`fpGene()`, `fpStop()`,
+`js/05-tools.js`) : ses pastilles contre le cuivre des autres nets, à l'isolation
+du DRC, et son corps contre celui d'un boîtier de la même face. Deux faces opposées
+se superposent légitimement, et une piste peut passer entre ses pastilles. En mode
+*pousser*, pistes et vias s'écartent s'ils le peuvent : seules les pastilles et les
+corps arrêtent le geste (`F.shove`). Un boîtier
+déjà en faute au départ reste libre, pour qu'une carte fautive se répare à la main ;
+l'anti-collision coupée laisse forcer.
+
+Tous les gestes y passent. Un geste d'un coup (`R`, `F`, X, Y, face et rotation des
+Propriétés, coordonnées au clavier) est essayé à blanc (`fpEssai()`), et refusé sans
+laisser d'étape Ctrl+Z. Ce qui arrive (collage, bibliothèque) va au nœud libre le
+plus proche du curseur (`fpPlaceLibre()`), cherché sur toute la carte ; carte pleine,
+le geste est refusé. Un placement automatique repasse chaque composant au même
+contrôle, le plus petit d'abord, et l'envoie au nœud libre le plus proche
+(`placementDegage()`) ; il dit ce que rien n'a pu séparer (`placementBilan()`). Le DRC signale dans tous les cas deux corps superposés
+sur une même face (`fpChevauchements()`), même forcés.
+
+**Vite ou lentement, le résultat est le même** (`dragMoveVers()`) : refusé, le
+boîtier vient au plus près sur sa ligne, au lieu de rester loin derrière. Il passe
+par-dessus un obstacle dès que la souris est au-delà : seule la place où il finit
+compte, et l'en empêcher l'enfermerait sur une carte dense.
+
 ## Pendant le tracé
 
 - **Le via suit le curseur** : `V` l'attache au bout de l'aperçu (`R.viaNext`), le
@@ -3341,6 +3366,10 @@ sur un Raspberry Pi, en cache ensuite.
   plus proche hors de l'îlot de départ (`routeCible()`) et la longueur du tracé.
 - **La croix du point de pose** (`curseurPose()`) marque où le clic posera, et X/Y
   donnent ses coordonnées : la croix du pointeur, elle, suit la souris.
+- **L'arrivée entre dans l'axe de sa pastille** (`routeRetouche()`) : le dernier
+  coude glisse sur sa direction jusqu'à l'axe, au lieu de laisser un décrochement
+  au pied de la pastille. C'est ce que `smartPadsSingle` fait dans KiCad. Le tracé
+  ne dépend donc plus du sens. Un vrai coude, plus long que la piste, reste à sa place.
 - **Les points restent sur la grille** : une diagonale presque à 45° s'arrête sur
   un nœud (`routeDiagGrille()`), et un point repoussé retombe sur le nœud libre le
   plus proche (`pushClear()`). Les points imposés (clavier, pilote) restent exacts.

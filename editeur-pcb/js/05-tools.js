@@ -2097,9 +2097,174 @@ function beginMove(){
   // l'angle aigu reste surveillé : la piste qui suit en règle « libre » s'étire
   // d'un trait, et passé le coude précédent elle repartirait en V.
   if(S.sel.fps.size||S.sel.zones.size||S.sel.cuts.size||(S.sel.holes&&S.sel.holes.size)){drag.clear=null;drag.cross=null;}
+  armFpClear();
   if(fol.fps.length)
     hint("Pistes : « "+MOVE_ETCH[moveEtch()]+" » (Maj+Espace pour changer) · R ou Espace : "+
          "quart de tour · Alt : les pistes restent en place.");
+}
+/* L'anti-collision d'un boîtier : ses pastilles contre le cuivre des autres nets,
+   à l'isolation (la mesure du DRC, `colliding`), et son corps contre celui d'un
+   boîtier de la même face. Deux faces opposées se superposent légitimement, tant
+   que les pastilles traversantes ne se gênent pas. Rend la gêne en clair, ou "". */
+function fpGene(fp,skip,duresSeules){
+  const N=pnsWorld();
+  for(const q of padsWorld(fp))
+    for(const probe of pnsItemsPad(fp,q))
+      for(const o of N.colliding(probe,skip)){
+        if(duresSeules&&o.k!=="P")continue;          // le cuivre qui s'écarte ne bute pas
+        return o.k==="V"?"un via"+(o.net?" de "+o.net:""):
+               o.npth?"un trou NPTH":
+               o.k==="P"?"la pastille "+o.fp.ref+"."+o.q.n:
+                         "une piste"+(o.net?" de "+o.net:"");
+      }
+  const A=fpCorps(fp), ab=polyBBox(A), I=fpCorpsIndex(), C=FP_CASE;
+  for(let i=Math.floor(ab.x1/C);i<=Math.floor(ab.x2/C);i++)
+    for(let j=Math.floor(ab.y1/C);j<=Math.floor(ab.y2/C);j++)
+      for(const o of I.get(i+"|"+j)||[]){
+        const g=o.f, bb=o.b;
+        if(g===fp||skip.has(g)||!!g.side!==!!fp.side)continue;
+        if(bb.x1>ab.x2||bb.x2<ab.x1||bb.y1>ab.y2||bb.y2<ab.y1)continue;
+        if(polysTouchent(A,o.P))return "le corps de "+g.ref;
+      }
+  return "";
+}
+/* Les corps rangés par cases, refaits quand la carte change (`S.ver`), comme le
+   monde du routeur. Ce qu'un geste déplace sans `touch()` est dans son `skip` :
+   une case en retard ne le gêne donc pas. */
+const FP_CASE=5;
+let FP_INDEX=null, FP_INDEX_VER=-1;
+function fpCorpsIndex(){
+  if(FP_INDEX&&FP_INDEX_VER===S.ver)return FP_INDEX;
+  const m=new Map(), C=FP_CASE;
+  for(const f of S.fps){
+    const P=fpCorps(f), b=polyBBox(P), o={f,P,b};
+    for(let i=Math.floor(b.x1/C);i<=Math.floor(b.x2/C);i++)
+      for(let j=Math.floor(b.y1/C);j<=Math.floor(b.y2/C);j++){
+        const k=i+"|"+j;
+        if(m.has(k))m.get(k).push(o);else m.set(k,[o]);
+      }
+  }
+  FP_INDEX=m;FP_INDEX_VER=S.ver;
+  return m;
+}
+/* Le corps posé sur la carte. Un micron de moins par côté : deux corps qui se
+   touchent ne se chevauchent pas. */
+function fpCorps(g){
+  const T=fpXform(g), b=bodyOf(g), m=1e-3;
+  return [T(b.x1+m,b.y1+m),T(b.x2-m,b.y1+m),T(b.x2-m,b.y2-m),T(b.x1+m,b.y2-m)];
+}
+/* Tous les couples de corps qui se chevauchent sur une même face : le DRC les
+   signale, quel que soit le geste qui les a produits. */
+function fpChevauchements(){
+  const L=S.fps.map(f=>{const P=fpCorps(f);return {f,P,b:polyBBox(P)};}).sort((a,c)=>a.b.x1-c.b.x1);
+  const out=[];
+  for(let i=0;i<L.length;i++)
+    for(let j=i+1;j<L.length&&L[j].b.x1<=L[i].b.x2;j++){
+      const a=L[i], c=L[j];
+      if(!!a.f.side!==!!c.f.side||c.b.y1>a.b.y2||c.b.y2<a.b.y1)continue;
+      if(polysTouchent(a.P,c.P))out.push([a.f,c.f]);
+    }
+  return out;
+}
+/* Ce que laisse un placement automatique : l'accrochage à la grille vient après
+   sa relaxation, et peut remettre deux boîtiers l'un sur l'autre. Chacun passe au
+   vrai contrôle du geste (`fpGene`), le plus petit d'abord : c'est lui qui va au
+   nœud libre le plus proche, le gros circuit reste. Ce qui est posé à la main ne
+   bouge pas. */
+function placementDegage(){
+  const fixe=fp=>typeof placeManuelle==="function"&&placeManuelle(fp);
+  const surface=f=>{const b=fpBBox(f);return (b.x2-b.x1)*(b.y2-b.y1);};
+  touch();
+  for(const f of S.fps.filter(o=>!fixe(o)).sort((a,c)=>surface(a)-surface(c))){
+    if(!fpGene(f,new Set([f])))continue;
+    const p=fpPlaceLibre([f],true);
+    if(p&&(p.dx||p.dy)){f.x=r3(f.x+p.dx);f.y=r3(f.y+p.dy);touch();}
+  }
+}
+/* Le reste à dire après un placement : ce que rien n'a pu séparer. */
+function placementBilan(){
+  const n=S.fps.filter(f=>fpGene(f,new Set([f]))).length;
+  return n?" — "+n+" composant"+(n>1?"s":"")+" sans place libre, à reprendre à la main (DRC)":"";
+}
+/* Un geste d'un coup (R, F, Propriétés, coordonnées) : on l'essaie à blanc avant de
+   le faire. `mutate` ne doit toucher qu'à la pose des boîtiers. Rend la gêne en
+   clair, ou "" : rien n'a bougé dans tous les cas. */
+function fpEssai(mutate){
+  if(!S.avoid)return "";
+  const avant=S.fps.map(f=>({f,x:f.x,y:f.y,rot:f.rot,side:f.side,r:f.refOffX,v:f.valOffX}));
+  mutate();
+  const bouges=avant.filter(a=>a.f.x!==a.x||a.f.y!==a.y||a.f.rot!==a.rot||a.f.side!==a.side).map(a=>a.f);
+  const skip=new Set(bouges);
+  const apres=bouges.map(f=>({f,g:fpGene(f,skip)}));
+  for(const a of avant){
+    a.f.x=a.x;a.f.y=a.y;a.f.rot=a.rot;a.f.side=a.side;
+    if(a.r!==undefined)a.f.refOffX=a.r;
+    if(a.v!==undefined)a.f.valOffX=a.v;
+  }
+  for(const o of apres)
+    if(o.g&&!fpGene(o.f,skip))return o.f.ref+" buterait sur "+o.g;   // déjà en faute avant : réparable
+  return "";
+}
+function fpRefus(gene){
+  hint("Geste refusé : "+gene+". Faites-lui de la place, ou coupez l'anti-collision pour forcer.");
+}
+/* Où poser ce qui arrive (collage, bibliothèque) : le point visé s'il est libre,
+   sinon le nœud libre le plus proche, sur la carte. Les boîtiers `fps` sont déjà à
+   la place visée. Rend le décalage, ou null si toute la carte est prise : l'appelant
+   refuse, plutôt que de poser une faute. Par anneaux, au pas de la grille autour du
+   point, puis de quatre en quatre : sur une carte pleine, le pas fin ne finirait pas.
+   `force` : cherche même anti-collision coupée (placement automatique). */
+function fpPlaceLibre(fps,force){
+  if((!S.avoid&&!force)||!fps.length)return {dx:0,dy:0};
+  const skip=new Set(fps), s=Math.max(S.grid>0?S.grid:0.5,0.5), b=S.board;
+  const essai=(dx,dy,carte)=>{
+    for(const f of fps){f.x=r3(f.x+dx);f.y=r3(f.y+dy);}
+    const ok=(!carte||fps.every(f=>padsWorld(f).every(q=>inBoard(q.x,q.y,0))))&&fps.every(f=>!fpGene(f,skip));
+    for(const f of fps){f.x=r3(f.x-dx);f.y=r3(f.y-dy);}
+    return ok;
+  };
+  if(essai(0,0,false))return {dx:0,dy:0};
+  const f0=fps[0];
+  const portee=Math.hypot(b.w,b.h)+dist(f0.x,f0.y,b.x+b.w/2,b.y+b.h/2);
+  for(let r=1,st=1;r*s<=portee;r+=st){
+    if(r===61){st=4;r=64;}
+    let best=null,bd=Infinity;
+    for(let i=-r;i<=r;i+=st)for(let j=-r;j<=r;j+=st){
+      if(Math.max(Math.abs(i),Math.abs(j))!==r)continue;     // l'anneau seulement
+      const d=Math.hypot(i,j);
+      if(d<bd&&essai(r3(i*s),r3(j*s),true)){bd=d;best={dx:r3(i*s),dy:r3(j*s)};}
+    }
+    if(best)return best;
+  }
+  return null;
+}
+/* Ce qui bouge ne se juge pas contre soi-même, et un boîtier déjà en faute avant
+   le geste reste libre : une carte en faute doit rester réparable à la main. */
+function fpClearSkip(){
+  const fps=[...S.sel.fps].map(fpById).filter(Boolean);
+  return {fps,skip:new Set([...fps,...movedTracks(),...S.sel.vias])};
+}
+function armFpClear(){
+  drag.fpClear=null;
+  if(!S.avoid||!S.sel.fps.size)return;
+  const {fps,skip}=fpClearSkip();
+  drag.fpClear={was:new Set(fps.filter(f=>fpGene(f,skip))),warned:false};
+}
+function fpStop(){
+  const c=drag&&drag.fpClear;
+  if(!c||!S.avoid)return false;
+  const {fps,skip}=fpClearSkip();
+  for(const f of fps){
+    if(c.was.has(f))continue;
+    const gene=fpGene(f,skip,drag.follow&&drag.follow.shove);
+    if(!gene)continue;
+    if(!c.warned){
+      c.warned=true;
+      hint(f.ref+" bute sur "+gene+". Tirez-le ailleurs, ou coupez l'anti-collision pour forcer.");
+    }
+    return true;
+  }
+  return false;
 }
 /* État de départ de l'anti-collision : ce que le geste emmène, et ce qui était
    déjà en faute avant qu'il ne commence. */
@@ -2910,7 +3075,15 @@ function pasteClipPcb(){
   const arr=v=>Array.isArray(v)?v:[];
   if(!arr(c.fps).length&&!arr(c.tracks).length&&!arr(c.vias).length&&
      !arr(c.zones).length&&!arr(c.cuts).length&&!arr(c.drawings).length&&!arr(c.holes).length&&!arr(c.interdits).length){hint("Presse-papier vide.");return;}
-  const bx=snapX(S.mouse.x), by=snapY(S.mouse.y);
+  let bx=snapX(S.mouse.x), by=snapY(S.mouse.y);
+  // le curseur est souvent sur l'original : ce qu'on colle va au nœud libre le plus proche
+  const libre=fpPlaceLibre(arr(c.fps).map(s=>{
+    const f=normFp(s,0);
+    if(f){f.x=r3(f.x+bx);f.y=r3(f.y+by);}
+    return f;
+  }).filter(Boolean));
+  if(!libre){hint("Collage refusé : aucune place libre sur la carte. Faites de la place, ou coupez l'anti-collision pour forcer.");return;}
+  bx=r3(bx+libre.dx);by=r3(by+libre.dy);
   push();
   clearSel();
   let dropped=0;
@@ -2997,6 +3170,8 @@ function rotateSel(){
   const drw=selDrawingsPcb();
   const hls=selHolesPcb();
   if(!list.length&&!drw.length&&!hls.length)return;
+  const gene=fpEssai(()=>fpsTourner(list,1));
+  if(gene){fpRefus(gene);return;}
   push();
   // autour du centre de chaque boîtier, son cuivre avec lui
   // un boîtier autour de son centre, plusieurs ensemble (`fpsTourner`)
@@ -3045,6 +3220,8 @@ function flipSel(){
   if(!list.length&&!drw.length)return;
   // en plein glissement, comme R : le geste continue (`27-groupes.js`)
   if(dragRetourner())return;
+  const gene=fpEssai(()=>fpsRetourner(list));
+  if(gene){fpRefus(gene);return;}
   push();
   /* chaque boîtier sur place ; un groupe entier en miroir autour de son axe,
      son cuivre interne sur la couche miroir (`fpsRetourner`, `groupeCouches`) */
@@ -3511,19 +3688,53 @@ function routeJog(R,t){
    ce n'est qu'un aperçu — que le rendu dessine, pour qu'on voie le cuivre
    s'écarter avant de s'engager.
    ========================================================================== */
+/* L'arrivée entre dans l'axe de sa pastille. Le coude d'avant est tombé sur la
+   grille, le centre de la pastille rarement : la piste longerait l'axe de quelques
+   dixièmes, puis y rentrerait par un décrochement plus court qu'elle, au pied de
+   la pastille. Le départ, lui, garde son axe (`snapNear`) : d'où un tracé qui
+   dépend du sens. C'est le travail de `smartPadsSingle` dans KiCad ; ici il suffit
+   de faire glisser ce coude sur sa propre direction jusqu'à l'axe. Rend le coude
+   déplacé, ou null s'il n'y a rien à faire ou que ça ne passe pas. */
+function routeRetouche(R,t){
+  const m=cornerMode();
+  if(m==="free"||!t||!(t.obj||t.net)||t.off||t.jog!=null||!R.done.length)return null;
+  const a=R.pt, p=R.done[R.done.length-1];
+  if(isArc(p)||p.l!==R.layer||viaAt(R.layer,a.x,a.y))return null;
+  const dx=t.x-a.x, dy=t.y-a.y, adx=Math.abs(dx), ady=Math.abs(dy);
+  const seuil=minJog(R.w), d=Math.min(adx,ady), s=Math.abs(adx-ady);
+  let v=null;
+  if(d>1e-9&&d<seuil)v=adx<ady?{x:0,y:Math.sign(dy)}:{x:Math.sign(dx),y:0};
+  else if(m!=="90"&&s>1e-9&&s<seuil)v={x:Math.sign(dx),y:Math.sign(dy)};
+  if(!v)return null;
+  // le coude reste sur la droite du segment d'avant, et l'arrivée sur la droite `v`
+  const u={x:p.x2-p.x1,y:p.y2-p.y1}, c=u.x*v.y-u.y*v.x;
+  if(Math.abs(c)<1e-9)return null;                 // même direction : le coude n'y peut rien
+  const k=((t.x-p.x1)*v.y-(t.y-p.y1)*v.x)/c;
+  const q={x:r3(p.x1+u.x*k),y:r3(p.y1+u.y*k)};
+  if(k<=0||dist(p.x1,p.y1,q.x,q.y)<seuil)return null;   // le segment d'avant y passerait entier
+  if(dist(q.x,q.y,t.x,t.y)<1e-9||dist(q.x,q.y,a.x,a.y)>2*seuil)return null;
+  if(S.avoid&&R.net){
+    const skip=new Set();
+    if(t.obj)skip.add(t.obj);
+    const pts=[{x:p.x1,y:p.y1},q,{x:t.x,y:t.y}];
+    if(pnsWorld().firstObstacle({l:R.layer,net:R.net,w:R.w,pts},skip))return null;
+  }
+  return q;
+}
 function routeSegsTo(R,t){
   const seg=s=>Object.assign({l:R.layer},s);
   // `jog` imposé : c'est la saisie au clavier qui décide, pas l'aimant angulaire
   const jog=(t&&t.jog!=null)?t.jog:routeJog(R,t);
-  const direct=routeCorner(R.pt,{x:t.x,y:t.y},routePosture(R,t),null,jog);
+  const ret=routeRetouche(R,t);
+  const direct=routeCorner(ret||R.pt,{x:t.x,y:t.y},routePosture(R,t),null,jog);
   if(!direct.length)return {segs:[],bad:false};
-  if(!S.avoid||!R.net)return {segs:direct.map(seg),bad:false};
+  if(!S.avoid||!R.net)return {segs:direct.map(seg),bad:false,retouche:ret};
   const N=pnsWorld();
   // l'arrivée accrochée est une destination, pas un obstacle
   const skip=new Set();
   if(t&&t.obj)skip.add(t.obj);
   const line={l:R.layer,net:R.net,w:R.w,pts:pnsPts(direct)};
-  if(!N.firstObstacle(line,skip))return {segs:direct.map(seg),bad:false};
+  if(!N.firstObstacle(line,skip))return {segs:direct.map(seg),bad:false,retouche:ret};
   const mode=routeMode();
   if(mode==="shove"){
     const r=pnsShove(N,line,skip,Date.now());
@@ -3557,6 +3768,7 @@ function updateRoute(x,y){
   routeDiagGrille(R,t);
   const r=routeSegsTo(R,t);
   R.preview=r.segs;
+  R.retouche=r.retouche||null;
   R.end=t;R.pushed=!!t.pushed;R.contourne=!!r.contourne;R.shove=r.shove||null;
   const last=R.preview[R.preview.length-1];
   if(last){R.end.x=last.x2;R.end.y=last.y2;}     // l'aimant a pu déplacer l'arrivée
@@ -3647,6 +3859,7 @@ function routeToPoint(pt){
   const t={x:pt.x,y:pt.y,net:(at||{}).net||null,pad:false,jog:at?0:minJog(R.w)};
   const r=routeSegsTo(R,t);
   R.preview=r.segs;
+  R.retouche=null;
   const last=R.preview[R.preview.length-1];
   R.end={x:last?last.x2:pt.x,y:last?last.y2:pt.y,net:t.net,pad:false};
   R.pushed=false;R.contourne=!!r.contourne;R.shove=r.shove||null;
@@ -3674,6 +3887,12 @@ function stepRoute(){
      d'enveloppe, une poussée. Un coude posé au doigt est une intention, pas un
      détour : le raccourcir serait manger le clic de l'utilisateur. */
   const auto=!!R.contourne||!!R.shove;
+  if(R.retouche&&R.done.length){
+    const p=R.done[R.done.length-1];
+    p.x2=R.retouche.x;p.y2=R.retouche.y;
+    R.pt={x:p.x2,y:p.y2};
+    R.retouche=null;
+  }
   if(R.shove&&pnsApply(R.shove)){R.shoved=true;R.shove=null;refreshPanels();}
   const ajout=R.preview.length;
   for(const s of R.preview)R.done.push(s.w!=null?s:Object.assign({w:R.w},s));
@@ -4289,7 +4508,9 @@ function coordApply(){
     edgeClick(pt.x,pt.y,true);
   }else if(S.mode==="select"&&S.sel.fps.size===1){
     const f=fpById([...S.sel.fps][0]);
-    if(f){push();transformFps([f.id],()=>{f.x=pt.x;f.y=pt.y;});touch();refreshPanels();}
+    const gene=f?fpEssai(()=>{f.x=pt.x;f.y=pt.y;}):"";
+    if(gene)fpRefus(gene);
+    else if(f){push();transformFps([f.id],()=>{f.x=pt.x;f.y=pt.y;});touch();refreshPanels();}
   }
   S.mouse={x:pt.x,y:pt.y};
   if(S.coord.mode!=="abs"){$("ciA").value="0";$("ciB").value="0";}
@@ -4723,7 +4944,31 @@ cv.addEventListener("pointerdown",e=>{
    gestionnaire de souris pour être rejoué : un changement de comportement en
    plein geste repart de l'état d'avant et refait le chemin parcouru
    (`dragRestart`). */
+/* Le pas d'un boîtier tiré. Refusé, il vient au plus près sur sa ligne plutôt que
+   de rester où il était : sans cela, plus la souris va vite, plus il s'arrête loin
+   de l'obstacle. Il passe par-dessus dès que la souris est au-delà : seule la place
+   où il finit compte, et une carte dense ne doit pas l'enfermer. */
+function dragMoveVers(dx,dy,alt){
+  dragMoveBy(dx,dy,alt);
+  if(!drag.bute||!drag.fpClear)return;
+  const fa=drag.anc!=null?fpById(drag.anc):null, g=S.grid>0?S.grid:0.05;
+  // au pas de la grille sur le grand axe : ce que la souris lente aurait visité
+  const n=Math.min(400,Math.ceil(Math.max(Math.abs(dx),Math.abs(dy))/g));
+  const {fps,skip}=fpClearSkip(), c=drag.fpClear, dures=drag.follow&&drag.follow.shove;
+  const cale=(v,x0,cal)=>fa?r3(cal(x0+v)-x0):r3(Math.round(v/g)*g);
+  for(let k=n-1;k>=1;k--){
+    const sx=cale(dx*k/n,fa?fa.x:0,snapX), sy=cale(dy*k/n,fa?fa.y:0,snapY);
+    if(!sx&&!sy)continue;
+    for(const f of fps){f.x=r3(f.x+sx);f.y=r3(f.y+sy);}
+    const ok=fps.every(f=>c.was.has(f)||!fpGene(f,skip,dures));
+    for(const f of fps){f.x=r3(f.x-sx);f.y=r3(f.y-sy);}
+    if(!ok)continue;
+    dragMoveBy(sx,sy,alt);
+    if(!drag.bute)return;
+  }
+}
 function dragMoveBy(dx,dy,alt){
+  drag.bute=false;
   const kx=drag.dx, ky=drag.dy;               // dernière position sans faute
   drag.dx=r3(drag.dx+dx);drag.dy=r3(drag.dy+dy);
   for(const id of S.sel.fps){const f=fpById(id);if(f){f.x=r3(f.x+dx);f.y=r3(f.y+dy);}}
@@ -4769,7 +5014,8 @@ function dragMoveBy(dx,dy,alt){
   applyFollow(drag.follow,drag.dx,drag.dy,alt);
   /* Le déplacement s'applique en absolu : revenir au décalage précédent
      suffit à replacer tout ce que le geste avait touché, coudes compris. */
-  if(clearStop()||crossStop()||acuteStop()){
+  if(fpStop()||clearStop()||crossStop()||acuteStop()){
+    drag.bute=true;
     drag.dx=kx;drag.dy=ky;drag.x-=dx;drag.y-=dy;
     // boîtiers, zones et découpes bougent en relatif : on défait ce pas
     for(const id of S.sel.fps){const f=fpById(id);if(f){f.x=r3(f.x-dx);f.y=r3(f.y-dy);}}
@@ -4920,7 +5166,7 @@ cv.addEventListener("pointermove",e=>{
     const dy=fa?r3(snapY(fa.y+p.y-drag.y)-fa.y):snapY(p.y)-snapY(drag.y);
     if(dx||dy){
       if(!drag.moved){push();drag.moved=true;beginMove();}
-      dragMoveBy(dx,dy,e.altKey);
+      dragMoveVers(dx,dy,e.altKey);
       touch();draw();
     }
     return;

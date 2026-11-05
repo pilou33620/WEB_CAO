@@ -293,7 +293,7 @@ function exemple2(){
     refOffX:-3,                        // au-dessus, le repère tombait sur la pastille de C1
     nets:{1:"+5V",2:"USB_DM",3:"USB_DP",5:"GND",6:"GND",7:"GND"},
     csvPartName:"CONN-USB_Mini_651005136421",
-    body:{x1:-1.6,y1:-4.6,x2:1,y2:4.6},
+    body:{x1:-1.6,y1:-4.57,x2:1,y2:4.6},   // 0,03 mm de moins : son corps chevauchait celui de C1
     pads:[
       {n:1,x:0,y:-1.3,w:1.4,h:0.4,shape:"rect",drill:0},
       {n:2,x:0,y:-0.65,w:1.4,h:0.4,shape:"rect",drill:0},

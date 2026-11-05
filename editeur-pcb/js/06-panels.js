@@ -884,17 +884,21 @@ function buildProps(){
   if(a)a.onclick=()=>{
     const r=autoPlace(150)||{};
     refreshPanels();draw();
-    hint("Placement dégrossi"+satDit(r)+". Points de test laissés à la main. Ajustez, rien n'est figé.");
+    hint("Placement dégrossi"+satDit(r)+placementBilan()+". Points de test laissés à la main. Ajustez, rien n'est figé.");
   };
   const as=$("pAutoSat");
   if(as)as.onclick=()=>{
     const avant=serialize(), r=placerSatellites();
     // rien n'a bougé : pas d'étape Ctrl+Z pour rien
     if(serialize()!==avant){pushSnap(avant);touch();refreshPanels();draw();}
-    hint("Satellites"+(satDit(r)||" : rien à placer")+". Ajustez, rien n'est figé.");
+    hint("Satellites"+(satDit(r)||" : rien à placer")+placementBilan()+". Ajustez, rien n'est figé.");
   };
   const b=$("pArr");
-  if(b)b.onclick=()=>{push();arrange(S.fps.slice());touch();draw();};
+  if(b)b.onclick=()=>{
+    push();arrange(S.fps.slice());placementDegage();touch();draw();
+    const reste=placementBilan();
+    if(reste)hint("Rangement"+reste+".");
+  };
 }
 function propsHole(box, h){
   box.innerHTML=
@@ -1611,11 +1615,21 @@ function propsFp(box,fp){
   upd("pPitch",fpForme(v=>fp.pitch=Math.max(0.2,v)),true);
   upd("pSpan",fpForme(v=>fp.span=Math.max(0.2,v)),true);
   // position, face, rotation : le cuivre accroché suit (`transformFps`)
-  const fpPose=fn=>v=>transformFps([fp.id],()=>fn(v));
-  upd("pSide",fpPose(v=>fp.side=+v),true);
-  upd("pX",fpPose(v=>fp.x=wxu(v)),true);
-  upd("pY",fpPose(v=>fp.y=wyu(v)),true);
-  upd("pRot",fpPose(v=>fp.rot=+v),true);
+  // refusé : ni étape Ctrl+Z, et le panneau reprend la valeur en vigueur
+  const updPose=(id,fn)=>{
+    const el=$(id);
+    if(!el)return;
+    const enVigueur=el.value;
+    el.onchange=()=>{
+      const v=parseFloat(el.value)||0, gene=fpEssai(()=>fn(v));
+      if(gene){el.value=enVigueur;fpRefus(gene);return;}
+      push();transformFps([fp.id],()=>fn(v));touch();refreshPanels();draw();
+    };
+  };
+  updPose("pSide",v=>fp.side=+v);
+  updPose("pX",v=>fp.x=wxu(v));
+  updPose("pY",v=>fp.y=wyu(v));
+  updPose("pRot",v=>fp.rot=+v);
   upd("pRefSize",v=>{if(v>=0.5&&v<=25)fp.refSize=r4(v);else delete fp.refSize;},true);
   upd("pRefRot",v=>{if(+v)fp.refRot=+v;else delete fp.refRot;},true);
   if($("pRefShow"))$("pRefShow").onchange=e=>{push();if(e.target.checked)delete fp.refHide;else fp.refHide=true;

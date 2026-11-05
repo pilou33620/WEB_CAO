@@ -293,6 +293,6 @@
   "famille": "pcb",
   "quoi": "drc",
   "args": {},
-  "sortie": "- [erreur] Isolation piste/piste 0.000 mm (12V / GND) : la règle en exige 0.200 mm (x 4.05, y 14.46)\n- [erreur] Isolation piste/piste 0.000 mm (12V / GND) : la règle en exige 0.200 mm (x 3.55, y 18.095)\n- [erreur] Isolation piste/pastille J1.1 : 0.000 mm : la règle en exige 0.200 mm (x 5, y 13.46)\n- [remarque] Net 12V : 2 liaison(s) non routée(s) (x 5, y 13.46)\n- [remarque] Net GND : 1 liaison(s) non routée(s) (x 5, y 16)\n- [remarque] Piste GND : entre dans J1.1 à 0.10 mm de son centre (x 5.1, y 13.46)"
+  "sortie": "- [erreur] Isolation piste/piste 0.000 mm (12V / GND) : la règle en exige 0.200 mm (x 4.05, y 14.46)\n- [erreur] Isolation piste/piste 0.000 mm (12V / GND) : la règle en exige 0.200 mm (x 3.55, y 18.095)\n- [erreur] Isolation piste/pastille J1.1 : 0.000 mm : la règle en exige 0.200 mm (x 5, y 13.46)\n- [erreur] Composants qui se chevauchent : U1 et C1 (dessus) (x 14, y 11)\n- [remarque] Net 12V : 2 liaison(s) non routée(s) (x 5, y 13.46)\n- [remarque] Net GND : 1 liaison(s) non routée(s) (x 5, y 16)\n- [remarque] Piste GND : entre dans J1.1 à 0.10 mm de son centre (x 5.1, y 13.46)"
  }
 ]

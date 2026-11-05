@@ -1032,6 +1032,13 @@ function pcbPlacerEmpreinteDepuisLib(item) {
 
   fp.x = posX;
   fp.y = posY;
+  const libre = fpPlaceLibre([fp]);
+  if (!libre) {
+    hint("Empreinte " + fp.ref + " non posée : aucune place libre sur la carte. Faites de la place, ou coupez l'anti-collision pour forcer.");
+    return;
+  }
+  fp.x = r3(fp.x + libre.dx);
+  fp.y = r3(fp.y + libre.dy);
 
   push();
   S.fps.push(fp);

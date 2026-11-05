@@ -629,6 +629,7 @@ var BLOC_PLACEMENT = (function() {
   }
 
   function finaliserAction(motif, actionNom) {
+    if (typeof placementDegage === "function") placementDegage();
     // Reconnexion & chevelu
     if (typeof conn === "function") conn();
     if (typeof refreshPanels === "function") refreshPanels();
@@ -643,6 +644,8 @@ var BLOC_PLACEMENT = (function() {
     // Message console / notification
     const nom = motif.label || motif.nom || motif.zone_name || "Bloc";
     console.log(`[PCB BLOC] Bloc « ${nom} » ${actionNom} avec succès.`);
+    const reste = typeof placementBilan === "function" ? placementBilan() : "";
+    if (reste && typeof hint === "function") hint(`Bloc « ${nom} » ${actionNom}${reste}.`);
   }
 
   function init() {

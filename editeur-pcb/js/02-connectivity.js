@@ -1186,6 +1186,9 @@ function runDrc(){
         msg:"Zone débordant du contour de carte (le remplissage y est rogné)"});
   }
   larmesPerimees(out);
+  for(const [a,b] of fpChevauchements())
+    out.push({x:r3((a.x+b.x)/2),y:r3((a.y+b.y)/2),l:a.side?S.cu-1:0,
+      msg:"Composants qui se chevauchent : "+a.ref+" et "+b.ref+" ("+(a.side?"dessous":"dessus")+")"});
   const c=conn(true);
   for(const zi of (c.zoneIslands||[])){
     if(zi.approx||zi.islands<2)continue;
@@ -1694,6 +1697,7 @@ function autoPlace(iter){
     const p=pos.get(fp.id);
     if(p&&!p.fixe){fp.x=snapX(p.x);fp.y=snapY(p.y);}
   }
+  placementDegage();
   const res=typeof placerSatellites==="function"?placerSatellites():null;
   touch();
   return res||{};
