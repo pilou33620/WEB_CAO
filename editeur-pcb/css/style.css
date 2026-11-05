@@ -527,6 +527,7 @@
     border-color: #f59e0b;
     color: #fffbeb;
   }
+  .pcb-toast-actions { display: flex; align-items: center; gap: 6px; flex: none; }
 
   .pcb-fp-pinout-box {
     margin: 6px 0 10px;
