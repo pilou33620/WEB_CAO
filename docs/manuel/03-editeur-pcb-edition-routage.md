@@ -66,7 +66,7 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 
 1. Choisir **Placer > Piste** (`T`) ou l'onglet de la couche voulue.
 2. Cliquer une pastille pour partir. Chaque clic suivant pose un coude ; le tracé suit l'angle imposé (45° par défaut) et se tient à l'isolation exigée tant que **Anti-collision** est actif.
-3. `/` ou `Espace` bascule l'arrangement du coude (diagonale d'abord ou portion droite d'abord). `V` pose un via et bascule entre la couche du dessus et celle du dessous (depuis une couche interne, vers le dessus) ; `1` à `9`, `0`, `Page ↑`/`Page ↓` changent de couche en posant un via, tout comme un clic sur un onglet de couche en plein tracé.
+3. `/` ou `Espace` bascule l'arrangement du coude (diagonale d'abord ou portion droite d'abord). `V` attache un via au curseur, avec son isolation visible : le clic le pose au bout du segment et bascule entre la couche du dessus et celle du dessous (depuis une couche interne, vers le dessus) ; curseur déjà sur le dernier point, le via se pose tout de suite ; `V` à nouveau y renonce. `F` finit le tracé jusqu'à la pastille à relier, que montre une ligne pointillée ; `1` à `9`, `0`, `Page ↑`/`Page ↓` changent de couche en posant un via, tout comme un clic sur un onglet de couche en plein tracé.
 4. Terminer avec `Entrée`, `Échap`, le double-clic ou le clic droit. `Retour arrière` recule d'un coude.
 5. Face à un obstacle, le comportement dépend de la « Conduite » choisie dans **Outils > Règles… > Face à un obstacle** : pousser le cuivre, contourner ou signaler. Une pastille n'est jamais poussée.
 6. `Tab` ouvre la saisie de coordonnées au clavier (Absolu, Relatif, Polaire) : taper X/Y, `Entrée` pose le point.
@@ -220,8 +220,10 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 | Piste | `T` | Trace une piste (voir la tâche) | |
 | Paire diff. | `P` | Trace deux nets en paire différentielle | Une paire n'est tracée que sur une couche à la fois |
 | Serpentin ▾ | `M` | Génère un serpentin d'appariement ; ▾ ouvre les réglages | Ne se pose que sur une piste droite (une piste en arc est refusée) |
-| Via | `V` | Pose un via traversant ; en plein tracé, pose un via et change de couche | |
+| Via | `V` | Pose un via traversant ; en plein tracé, l'attache au curseur et le clic le pose en changeant de couche | Refusé dans l'isolation : rien n'est posé, ni le segment ni le via |
 | Chemin auto | | Route seule la liaison du chevelu de la pastille cliquée (ou du net mis en avant) : A* sur grille, puis le routeur, en contournement ; une étape d'annulation | Une liaison à la fois, jamais une paire ; la page se fige le temps du calcul (8 s au plus pour le chemin, 10 s pour la pose). Échec : rien n'est posé, la raison au pied de page |
+| Larmes | | Pose ou refait les larmes : un renfort de cuivre entre une piste droite et le via ou la pastille ronde où elle s'arrête en son centre ; une étape d'annulation | Rien n'est posé si la place manque. Elles ne suivent pas le cuivre : si du cuivre bouge, le DRC dit « Larmes à refaire » et ce bouton les refait |
+| Retirer les larmes | | Retire toutes les larmes de la carte | |
 | Anti-collision | | Bascule : le tracé se tient (ou non) à la distance d'isolation | Actif d'office ; réglage du profil utilisateur |
 | Zone cuivre ▾ | `Z` | Trace une zone de cuivre ; ▾ ouvre le menu de la couche | |
 | Sérigraphie ▾ | `Maj+S` | Trait, rectangle, aplat ou texte de sérigraphie | `S` seule active la Sélection (voir la note ci-dessous) |
@@ -286,7 +288,7 @@ Les touches d'une seule lettre se taisent quand un champ de saisie a le focus. T
 | `S` | Sélection | Voir la note du menu Placer |
 | `Maj+S` | Sérigraphie ; fait tourner la forme (trait, rectangle, aplat, texte) | |
 | `T` | Piste | |
-| `V` | Via ; en tracé de piste ou de paire, pose le via (ou les deux) | |
+| `V` | Via ; en tracé de piste, attache le via au curseur (le clic le pose) ; en tracé de paire, pose les deux vias | |
 | `P` | Paire différentielle | |
 | `M` | Serpentin | |
 | `Z` | Zone cuivre | |
@@ -297,7 +299,7 @@ Les touches d'une seule lettre se taisent quand un champ de saisie a le focus. T
 | `K` | Mesure | |
 | `L` | Montrer au schéma | |
 | `R` / `Maj+R` | Pivoter ; en plein glissement d'un boîtier, tourne et continue | `Maj+R` : sens inverse en plein glissement |
-| `F` | Retourner (miroir pour un groupe) | |
+| `F` | Retourner (miroir pour un groupe) ; en tracé de piste, finit le tracé jusqu'à la pastille à relier | Tout ou rien, en contournement : un échec rend le tracé tel quel |
 | `D` | Adoucit un angle droit en 45° (chanfrein maximal) | Refuse un coude portant un via ou une pastille, ou deux largeurs différentes |
 | `U` | Dérouter la sélection | |
 | `G` | Grille | |
@@ -331,6 +333,8 @@ Les touches d'une seule lettre se taisent quand un champ de saisie a le focus. T
 | Appui long (tactile) | Équivaut au clic droit | Environ 0,55 s |
 | Deux doigts | Pincer pour zoomer, glisser pour déplacer la vue | |
 | `Ctrl` (ou `Cmd`) enfoncé à la pose d'un bout de piste, au départ comme à l'arrivée | Le bout se pose là où l'on vise dans le cuivre de la pastille (sur la grille si elle tombe dans la pastille, au point exact sinon) au lieu d'être attiré au centre ; il garde ce décalage si le boîtier tourne ou se retourne | Hors du cuivre de la pastille, `Ctrl` ne change rien : l'aimant ramène au centre |
+| Pendant un tracé de piste | L'aperçu montre l'isolation à tenir, le via attendu, une ligne vers la pastille à relier et la longueur du tracé. En tracé de piste, de via ou de paire, une petite croix marque le point où le clic posera, et X/Y donnent ses coordonnées | La croix du pointeur, elle, suit la souris |
+| Outil Paire : clic sur le corps des deux pistes de la paire, au départ comme à l'arrivée | Les deux bouts se posent sur l'axe de leur piste | Une arrivée par le côté croiserait l'autre piste : elle passe au rouge et reste refusée |
 | Outil Piste : clic sur le corps d'une piste, au départ comme à l'arrivée | Le bout se pose sur l'axe de la piste, au plus près du nœud de grille visé, et prend son net ; à l'arrivée, le tracé se termine en T | Une piste d'un autre net n'accroche pas, ni celle d'où le tracé repart |
 | Clic sur le repère (texte) d'une empreinte | Déplace le texte seul quand son empreinte est seule sélectionnée ou pas du tout ; sinon c'est l'empreinte qui part | |
 | Clic sur l'étiquette d'une room | Prend tout le bloc ; glisser le déplace d'une pièce, `R` le tourne | `Ctrl`/`Maj` l'ajoute à la sélection |

@@ -89,6 +89,8 @@
           <button data-ic="∿" class="tb" id="mMeander" title="Générer un serpentin d'appariement de longueur (accordéon) pour compenser le retard d'une piste ou d'une paire différentielle">Serpentin <kbd>M</kbd> <span class="car">▾</span></button>
           <button data-ic="◉" class="tb" id="mVia">Via <kbd>V</kbd></button>
           <button data-ic="⤳" class="tb" id="bCheminAuto" title="Route seul une liaison du chevelu : cliquez d'abord une pastille (ou Alt+clic pour un net). Le chemin évite le cuivre des autres nets ; s'il n'y en a pas, rien n'est posé et le pied de page dit pourquoi. Ctrl+Z défait la piste.">Chemin auto</button>
+          <button data-ic="◣" class="tb" id="bLarmes" title="Pose ou refait les larmes : un renfort de cuivre entre une piste et le via ou la pastille ronde où elle s'arrête">Larmes</button>
+          <button data-ic="◁" class="tb" id="bLarmesRetirer" title="Retire toutes les larmes de la carte">Retirer les larmes</button>
           <button data-ic="⛨" data-bascule class="tb" id="bAvoid">Anti-collision</button>
           <div class="mnu-h">Formes et mécanique</div>
           <button data-ic="▦" class="tb" id="mZone">Zone cuivre <kbd>Z</kbd> <span class="car">▾</span></button>
@@ -428,6 +430,7 @@
 <script src="js/38-interdits.js"></script>
 <script src="js/39-thermique.js"></script>
 <script src="js/40-chemin-auto.js"></script>
+<script src="js/41-larmes.js"></script>
 <script src="../commun/vendor/three-source.js"></script>
 <script src="../commun/animation-3d.js"></script>
 <script src="js/41-animation-3d.js"></script>

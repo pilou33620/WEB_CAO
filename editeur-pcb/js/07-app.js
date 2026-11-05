@@ -607,6 +607,8 @@ $("mSelect").onclick=()=>setMode("select");
 $("mTrack").onclick=()=>setMode("track");
 $("mVia").onclick=()=>setMode("via");
 $("bCheminAuto").onclick=()=>cheminGeste();
+$("bLarmes").onclick=()=>larmesPoser();
+$("bLarmesRetirer").onclick=()=>larmesRetirer();
 if($("mHole")) $("mHole").onclick=()=>setMode("hole");
 $("mDiff").onclick=()=>setMode("dpair");
 if($("mMeander")) $("mMeander").onclick=e=>{

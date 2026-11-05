@@ -559,6 +559,7 @@ function normZone(z,cu,i){
   const out={id:dInt(z.id,i+1,1,Number.MAX_SAFE_INTEGER),
              l:dInt(z.l,0,0,cu-1),net:dNet(z.net),pts:pts};
   if(z.auto)out.auto=true;
+  if(z.larme)out.larme=true;
   if(["directe","cms-directe","aucune"].includes(z.connexion))out.connexion=z.connexion;
   const pr=dInt(z.priorite,0,0,2147483647);        // absente = 0 ; KiCad va au-delà de 30000 (zonePrio, 01-core.js)
   if(pr)out.priorite=pr;
@@ -1020,7 +1021,7 @@ function hitTest(x,y,e){
   /* une zone s'attrape par son contour, sauf si on maintient Ctrl/Shift pour l'attraper de l'intérieur */
   for(let i=S.zones.length-1;i>=0;i--){
     const z=S.zones[i];
-    if(layerAlpha(z.l)<=0||z.pts.length<2)continue;
+    if(z.larme||layerAlpha(z.l)<=0||z.pts.length<2)continue;
     if(polyEdgeDist(x,y,z.pts)<=px(5))return {zone:z};
     if(e&&(e.ctrlKey||e.shiftKey||e.metaKey||e.altKey)&&inPoly(x,y,z.pts))return {zone:z};
   }
@@ -1054,7 +1055,7 @@ function zoneUnder(x,y){
   let best=null;
   for(let i=S.zones.length-1;i>=0;i--){
     const z=S.zones[i];
-    if(layerAlpha(z.l)<=0||z.pts.length<3)continue;
+    if(z.larme||layerAlpha(z.l)<=0||z.pts.length<3)continue;
     if(!inPoly(x,y,z.pts))continue;
     if(S.cuts.some(c=>c.l===z.l&&c.pts.length>2&&inPoly(x,y,c.pts)))continue;
     if(z.l===S.active)return z;
@@ -1065,7 +1066,7 @@ function zoneUnder(x,y){
 /* Tout le cuivre plein d'une couche, pris d'un coup : c'est la poignée du plan
    de masse ou d'alimentation, qui n'a pas de bord commode à viser. */
 function selectLayerZones(i){
-  const zs=S.zones.filter(z=>z.l===i);
+  const zs=S.zones.filter(z=>!z.larme&&z.l===i);
   if(!zs.length){hint("Aucune zone de cuivre sur "+cuId(i,S.cu)+".");return;}
   if(S.cuL[i]&&!S.cuL[i].vis)S.cuL[i].vis=true;   // sélectionner ce qu'on ne voit pas n'apprend rien
   clearSel();
@@ -3080,9 +3081,10 @@ function flipSel(){
    à la chaîne sous une piste de trois dixièmes.
    D'où `minSeg`, le seuil d'écrasement : en deçà, on ne supprime pas le point
    milieu — ça laisserait un angle bâtard — on **déplace l'arrivée** pour forcer
-   le 45° pur ou l'orthogonal pur. C'est l'aimant angulaire du routeur de KiCad :
-   la piste colle aux huit rails, et le décrochement ne peut plus naître dans la
-   zone morte. `minSeg` absent ou nul rend la géométrie pure, sans aimant. */
+   le 45° pur ou l'orthogonal pur : la piste colle aux huit rails, et le
+   décrochement ne peut plus naître dans la zone morte. Sous le curseur,
+   `routeDiagGrille` a déjà ramené la diagonale sur un nœud ; ce seuil reste pour
+   les points imposés. `minSeg` absent ou nul rend la géométrie pure, sans aimant. */
 function route45(a,b,posture,minSeg){
   const dx=b.x-a.x, dy=b.y-a.y;
   const adx=Math.abs(dx), ady=Math.abs(dy);
@@ -3294,12 +3296,12 @@ function trackAlign(t,g){
    du cuivre partait sans net, et une arrivée y laissait le tracé ouvert. Seul le
    cuivre visé accroche, à quelques pixels près : avec la portée de l'aimant, une
    piste longeant son propre net se refermerait dessus sans qu'on le veuille. */
-function trackBody(x,y,l,net,ancre){
+function trackBody(x,y,l,net,ancre,portee){
   let best=null,bd=Infinity;
   for(const t of S.tracks){
     if(t.l!==l||!t.net||(net&&t.net!==net))continue;
     const d=trkDist(x,y,t);
-    if(d>t.w/2+px(4)||d>=bd)continue;
+    if(d>t.w/2+(portee!=null?portee:px(4))||d>=bd)continue;
     if(ancre&&trkDist(ancre.x,ancre.y,t)<=t.w/2)continue;   // le cuivre d'où l'on repart n'est pas une arrivée
     best=t;bd=d;
   }
@@ -3320,6 +3322,10 @@ function pushClear(pt,l,net,w){
   if(!S.avoid||!net)return {x:pt.x,y:pt.y,pushed:false};
   const dur=routeMode()==="shove"?"P":"PSV";
   const N=pnsWorld();
+  const libre=q=>{
+    for(const o of N.colliding(pnsItemSeg(l,net,w,q.x,q.y,q.x,q.y,null)))if(dur.indexOf(o.k)>=0)return false;
+    return true;
+  };
   let p={x:pt.x,y:pt.y}, moved=false;
   for(let k=0;k<8;k++){
     const sonde=pnsItemSeg(l,net,w,p.x,p.y,p.x,p.y,null);
@@ -3332,6 +3338,17 @@ function pushClear(pt,l,net,w){
     if(!best)break;
     p={x:r3(p.x+best.dx*(best.def+0.005)),y:r3(p.y+best.dy*(best.def+0.005))};
     moved=true;
+  }
+  /* Repoussé, le point retombe sur le nœud libre le plus proche. Sans nœud libre
+     autour de lui, il reste où il est : passer vaut mieux que tomber juste. */
+  if(moved&&S.grid>0){
+    const nx=snapX(p.x), ny=snapY(p.y);
+    let bd=Infinity,noeud=null;
+    for(let i=-1;i<=1;i++)for(let j=-1;j<=1;j++){
+      const q={x:r3(nx+i*S.grid),y:r3(ny+j*S.grid)}, d=dist(q.x,q.y,p.x,p.y);
+      if(d<bd&&libre(q)){bd=d;noeud=q;}
+    }
+    if(noeud)p=noeud;
   }
   return {x:p.x,y:p.y,pushed:moved};
 }
@@ -3433,7 +3450,8 @@ function routeTarget(x,y){
   const c=trackBody(x,y,l,net,a);
   if(c){S.hover={x:c.x,y:c.y};return c;}
   S.hover=null;
-  const w=S.route?S.route.w:defaultWidth(net,l);
+  // un via attendu au bout du curseur tient plus de place que la piste qui l'amène
+  const w=S.route?(S.route.viaNext?classOf(net).via:S.route.w):defaultWidth(net,l);
   const p=pushClear({x:snapXn(x,a?a.x:null),y:snapYn(y,a?a.y:null)},l,net,w);
   return {x:p.x,y:p.y,net:null,pushed:p.pushed};
 }
@@ -3445,7 +3463,8 @@ function startRoute(x,y,exact){
      le premier clic ; sans cet instantané, ni l'abandon ni le Ctrl+Z ne
      sauraient le remettre en place. */
   S.route={layer:S.active,net,w:defaultWidth(net,S.active),
-           pt:{x:t.x,y:t.y},done:[],vias:[],preview:[],flip:false,bad:false,pushed:false,
+           pt:{x:t.x,y:t.y},dep:{x:t.x,y:t.y,l:S.active},
+           done:[],vias:[],preview:[],flip:false,bad:false,pushed:false,
            shove:null,shoved:false,snap:serialize()};
   if(net)buildList();
   /* Un départ qui n'accroche rien donne une piste SANS NET, et une piste sans
@@ -3462,8 +3481,8 @@ function startRoute(x,y,exact){
          "ou de la piste à prolonger.");
     return;
   }
-  hint("Clic pour poser un coude · « / » bascule la posture du coude · V pose un via et "+
-       "change de couche · touches 1-9, 0, Page ↑/↓ : couche · Échap termine.");
+  hint("Clic pour poser un coude · « / » bascule la posture du coude · V : un via au bout du "+
+       "curseur, posé au clic · F finit le tracé · touches 1-9, 0, Page ↑/↓ : couche · Échap termine.");
 }
 /* L'aimant angulaire ne joue qu'en l'air. Une arrivée ancrée — pastille, via,
    bout de piste — se pose au point exact : déplacer l'arrivée de quelques
@@ -3518,16 +3537,106 @@ function routeSegsTo(R,t){
   }
   return {segs:direct.map(seg),bad:true};
 }
+/* L'aimant angulaire déplace l'arrivée sur la diagonale, à mi-chemin entre les
+   deux axes : un demi-pas hors grille, puis une piste qui en repart de travers.
+   Sous le curseur, on prend donc d'abord le nœud de cette diagonale. */
+function routeDiagGrille(R,t){
+  if(t.obj||t.net||t.pushed||!(S.grid>0))return;
+  const m=cornerMode();
+  if(m!=="45"&&m!=="arc")return;
+  const dx=t.x-R.pt.x, dy=t.y-R.pt.y, adx=Math.abs(dx), ady=Math.abs(dy), s=Math.abs(adx-ady);
+  if(adx<1e-9||ady<1e-9||s<1e-9||s>=minJog(R.w))return;
+  const sx=Math.sign(dx), sy=Math.sign(dy);
+  const L=Math.abs(snapX(R.pt.x+sx*(adx+ady)/2)-R.pt.x);
+  t.x=r3(R.pt.x+sx*L);t.y=r3(R.pt.y+sy*L);
+}
 function updateRoute(x,y){
   const R=S.route;
   if(!R)return;
   const t=routeTarget(x,y);
+  routeDiagGrille(R,t);
   const r=routeSegsTo(R,t);
   R.preview=r.segs;
   R.end=t;R.pushed=!!t.pushed;R.contourne=!!r.contourne;R.shove=r.shove||null;
   const last=R.preview[R.preview.length-1];
   if(last){R.end.x=last.x2;R.end.y=last.y2;}     // l'aimant a pu déplacer l'arrivée
   R.bad=r.bad;
+  R.viaGene=R.viaNext&&!R.end.net?viaObstacle(routeViaVise(R)):"";
+}
+/* Le via tel qu'il serait posé au bout de l'aperçu. */
+function routeViaVise(R){
+  const o=routeAutreCouche(R), e=R.end||R.pt;
+  return mkVia(e.x,e.y,R.net,Math.min(R.layer,o),Math.max(R.layer,o));
+}
+function routeAutreCouche(R){return R.layer===S.pair[0]?S.pair[1]:S.pair[0];}
+/* La touche V. Curseur sur le dernier point : le via se pose là, tout de suite.
+   Ailleurs il s'attache au curseur, et le clic le pose au bout du segment. */
+function routeViaCurseur(){
+  const R=S.route;
+  if(!R||S.cu<2)return;
+  if(!R.preview.length){routeVia();return;}
+  R.viaNext=!R.viaNext;
+  updateRoute(S.mouse.x,S.mouse.y);
+  hint(R.viaNext?"Via au bout du curseur : le clic le pose et change de couche. V pour y renoncer."
+                :"Via retiré du curseur.");
+}
+/* Les pastilles du net qui restent à relier à l'îlot d'où part le tracé. */
+function routeCibles(R){
+  if(!R.net)return [];
+  const c=conn();
+  if(R.cibleVer===S.ver)return R.cibles;
+  const {x,y,l}=R.dep, n=c.nets.get(R.net);
+  let ile=null;
+  for(const p of n?n.pads:[])
+    if(p.layers.includes(l)&&padDist(x,y,padSurCouche(p.q,l)||p.q)<=0){ile=c.find(p.k);break;}
+  if(ile===null)
+    S.tracks.forEach((t,i)=>{if(ile===null&&t.l===l&&t.net===R.net&&trkDist(x,y,t)<=t.w/2)ile=c.find("T"+i+"a");});
+  if(ile===null)
+    S.vias.forEach((v,i)=>{if(ile===null&&v.net===R.net&&l>=v.a&&l<=v.b&&dist(x,y,v.x,v.y)<=v.d/2)ile=c.find("V"+i);});
+  R.cibles=(n?n.pads:[]).filter(p=>c.find(p.k)!==ile);
+  R.cibleVer=S.ver;
+  return R.cibles;
+}
+/* La plus proche : le chevelu de l'aperçu la montre, la touche F y va. */
+function routeCible(R){
+  const a=R.end||R.pt;
+  let best=null,bd=Infinity;
+  for(const p of routeCibles(R)){
+    const d=dist(a.x,a.y,p.q.x,p.q.y);
+    if(d<bd){bd=d;best=p;}
+  }
+  return best;
+}
+/* La touche F : du dernier point à la cible, par le chercheur de chemin puis le
+   routeur, en contournement. Tout ou rien : un échec rend le tracé tel quel. */
+function finirTrace(){
+  const R=S.route;
+  if(!R)return;
+  const cible=routeCible(R);
+  if(!cible){hint("Finir le tracé : "+(R.net?"ce net n'a plus rien à relier.":"ce tracé n'a pas de net."));return;}
+  const nom=cible.fp.ref+"."+cible.q.n;
+  const avant={done:R.done.slice(),pt:R.pt,layer:R.layer,w:R.w,vias:R.vias.slice()};
+  R.viaNext=false;
+  const regle=S.rule.route;
+  S.rule.route="walk";
+  try{
+    const c=cheminCommande({liaisons:[{depart:{x:R.pt.x,y:R.pt.y,couche:LECTURE_CAO.aides.nomCouchePcb(R.layer)},
+                                       arrivee:nom,largeur:R.w}]});
+    if(!c.routes.length)throw routageRefus(c.resultats[0].raison);
+    const arr=routagePoint(nom);
+    routageMarche(c.routes[0].points.map(routagePoint).concat([arr]),R.w,R.pt,arr,R.net);
+    hint("Tracé fini jusqu'à "+nom+".");
+  }catch(err){
+    if(!(err instanceof RoutageRefus))throw err;
+    if(S.route===R){                               // sinon il a touché son net en chemin : il est posé
+      for(const v of R.vias)if(avant.vias.indexOf(v)<0){const i=S.vias.indexOf(v);if(i>=0)S.vias.splice(i,1);}
+      Object.assign(R,avant);
+      R.preview=[];R.bad=false;
+      setActive(R.layer);touch();
+      hint("Finir le tracé : rien n'est posé — "+routagePropre(err.message));
+    }
+  }finally{S.rule.route=regle;}
+  draw();
 }
 /* même chose qu'updateRoute, mais vers un point imposé : c'est la saisie au
    clavier qui décide, pas le curseur */
@@ -3545,7 +3654,15 @@ function routeToPoint(pt){
 }
 function stepRoute(){
   const R=S.route;
-  if(!R||!R.preview.length)return;
+  if(!R)return;
+  if(!R.preview.length){
+    if(R.viaNext&&routeVia())R.viaNext=false;      // revenu sur le dernier point : le via se pose là
+    return;
+  }
+  if(R.viaNext&&R.viaGene){
+    hint("Via refusé : il passerait "+R.viaGene+". Décalez-le, ou V pour y renoncer.");
+    return;
+  }
   if(R.bad){
     hint("Ce trajet passe sous l'isolation de "+fmt(classOf(R.net).clr,2)+
          " mm : contournez l'obstacle, ou coupez l'anti-collision pour forcer.");
@@ -3575,16 +3692,18 @@ function stepRoute(){
     }
     if (R.end.net && (!R.net || R.end.net === R.net)) commitRoute();
   }
+  if(S.route===R&&R.viaNext){R.viaNext=false;routeVia();}
 }
 function routeVia(){
   const R=S.route;
-  if(!R||S.cu<2)return;
-  const other=(R.layer===S.pair[0])?S.pair[1]:S.pair[0];
+  if(!R||S.cu<2)return false;
+  const other=routeAutreCouche(R);
   /* Le via refusé ne fait pas changer de couche : sans ce garde-fou la piste
      repartait sur l'autre face sans rien pour l'y amener. */
-  if(!placeVia(R.pt.x,R.pt.y,R.net,Math.min(R.layer,other),Math.max(R.layer,other),true))return;
+  if(!placeVia(R.pt.x,R.pt.y,R.net,Math.min(R.layer,other),Math.max(R.layer,other),true))return false;
   R.layer=other;S.active=other;
   buildTabs();buildLayers();refreshPanels();
+  return true;
 }
 function routeToLayer(i){
   const R=S.route;
@@ -4861,26 +4980,28 @@ cv.addEventListener("pointermove",e=>{
   if(S.mode==="zone"&&S.zoneDraft){zoneMove(p.x,p.y,e.shiftKey);draw();return;}
   if(S.mode==="cut"&&S.cutDraft){cutMove(p.x,p.y,e.shiftKey);draw();return;}
   if((S.mode==="edge"||S.mode==="decoupe"||S.mode==="interdit")&&S.edgeDraft){edgeMove(p.x,p.y,e.shiftKey);draw();return;}
-  if(S.mode==="track"&&S.route){updateRoute(p.x,p.y);draw();return;}
-  if(S.mode==="dpair"&&S.dp){dpUpdate(p.x,p.y);draw();return;}
+  if(S.mode==="track"&&S.route){updateRoute(p.x,p.y);curseurPose(S.route.end||S.route.pt);draw();return;}
+  if(S.mode==="dpair"&&S.dp){dpUpdate(p.x,p.y);curseurPose(S.dp.end||S.dp.pt);draw();return;}
   if(S.mode==="dpair"){
     /* Sans tracé en cours, on montre où la paire s'accrocherait : le milieu du
        couple d'ancres, et non la pastille la plus proche — une paire part
        d'entre les deux. */
     const q=dpPairAt(p.x,p.y,S.active);
-    const a=q?dpPrimPair(q,p.x,p.y,S.active,Math.max(px(20),20)):null;
+    const a=q?dpAccroche(q,p.x,p.y,S.active,Math.max(px(20),20)):null;
     const h=a?{x:r3((a.P.x+a.N.x)/2),y:r3((a.P.y+a.N.y)/2)}:null;
+    const bouge=curseurPose(h||{x:snapX(p.x),y:snapY(p.y)});
     if((h&&!S.hover)||(!h&&S.hover)||(h&&S.hover&&(h.x!==S.hover.x||h.y!==S.hover.y))){
       S.hover=h;draw();
-    }
+    }else if(bouge)draw();
     return;
   }
   if(S.mode==="track"||S.mode==="via"){
     const m=magnet(p.x,p.y,S.active)||(S.mode==="track"?trackBody(p.x,p.y,S.active,""):null);
     const h=m?{x:m.x,y:m.y}:null;
+    const bouge=curseurPose(h||{x:snapX(p.x),y:snapY(p.y)});
     if((h&&!S.hover)||(!h&&S.hover)||(h&&S.hover&&(h.x!==S.hover.x||h.y!==S.hover.y))){
       S.hover=h;draw();
-    }
+    }else if(bouge)draw();
   }
 });
 cv.addEventListener("pointerup",e=>{
@@ -5221,7 +5342,7 @@ document.addEventListener("keydown",e=>{
     case "t":setMode("track");break;
     case "v":
       if(S.dp){dpVia();dpUpdate(S.mouse.x,S.mouse.y);draw();}
-      else if(S.route){routeVia();draw();}
+      else if(S.route){routeViaCurseur();draw();}
       else setMode("via");
       break;
     /* P comme paire : le tracé couplé. Le raccourci ne prend rien à personne —
@@ -5242,7 +5363,7 @@ document.addEventListener("keydown",e=>{
     case "l":if(typeof pcbMontrerAilleurs==="function")pcbMontrerAilleurs();break;
     // en plein glissement, le boîtier tourne et le geste continue (`25-liens.js`)
     case "r":if(!dragRotate(e.shiftKey?-1:1))rotateSel();break;
-    case "f":flipSel();break;
+    case "f":if(S.route)finirTrace();else flipSel();break;
     case "d":mitreSel();break;
     case "u":unrouteSel();break;
     case "g":if(e.shiftKey)gridRapide();else setGrid(!S.showGrid);break;
@@ -5341,7 +5462,7 @@ function setMode(m){
   /* La cote appartient au mode : la garder affichee en revenant a la selection
      laisserait une annotation qu'aucun geste ne reprend. */
   if(m!=="mesure"&&typeof rpMesRaz==="function")rpMesRaz();
-  S.mode=m;S.hover=null;
+  S.mode=m;S.hover=null;S.curseur=null;
   if(m!=="zone")zoneMenuClose();
   if(m!=="meander"&&typeof meanderMenuClose==="function")meanderMenuClose();
   for(const [id,md] of [["mSelect","select"],["mTrack","track"],["mVia","via"],["mHole","hole"],
@@ -5400,6 +5521,15 @@ function setGrid(v){
    pas se passer : 1,27 et 2,54 mm (0,05 et 0,1 pouce), l'écartement des
    broches de la plupart des boîtiers traversants. */
 const GRID_STEPS=[0.05,0.1,0.25,0.5,1,1.27,2,2.54,5];
+/* Le point où le clic posera vraiment, et ses coordonnées dans le pied de page :
+   la croix du pointeur, elle, suit la souris entre les nœuds. Rend vrai s'il a bougé. */
+function curseurPose(q){
+  const a=S.curseur, bouge=!a||a.x!==q.x||a.y!==q.y;
+  S.curseur={x:q.x,y:q.y};
+  $("fX").textContent=fmt(ux(q.x),2);
+  $("fY").textContent=fmt(uy(q.y),2);
+  return bouge;
+}
 function setGridStep(v){
   const g=parseFloat(v);
   if(!Number.isFinite(g)||g<=0||g===S.grid)return;

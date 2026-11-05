@@ -13,7 +13,7 @@
 function zoneGroups(){
   const m=new Map();
   for(const z of S.zones){
-    if(!z.net||z.pts.length<3)continue;
+    if(z.larme||!z.net||z.pts.length<3)continue;       // ce qu'une larme renforce est déjà relié
     const k=z.l+"|"+z.net;
     if(!m.has(k))m.set(k,{l:z.l,net:z.net,zs:[]});
     m.get(k).zs.push(z);
@@ -57,7 +57,7 @@ function maskLabels(M,x,y,r,rot){
   return out;
 }
 function zoneMask(l,net){
-  const zs=S.zones.filter(z=>z.l===l&&(z.net||"")===net&&z.pts.length>=3);
+  const zs=S.zones.filter(z=>!z.larme&&z.l===l&&(z.net||"")===net&&z.pts.length>=3);
   if(!zs.length)return null;
   const clr=classOf(net).clr;
   const res=clamp(1/Math.max(0.08,maxClr()*0.6),4,14);   // ~2 pixels par isolation
@@ -1185,6 +1185,7 @@ function runDrc(){
       out.push({x:(b.x1+b.x2)/2,y:(b.y1+b.y2)/2,l:z.l,
         msg:"Zone débordant du contour de carte (le remplissage y est rogné)"});
   }
+  larmesPerimees(out);
   const c=conn(true);
   for(const zi of (c.zoneIslands||[])){
     if(zi.approx||zi.islands<2)continue;

@@ -3316,13 +3316,43 @@ chemin de calcul** et ne doit pas y revenir en l'état : sa formulation EFIE a
 perdu tout son terme de potentiel scalaire, celui qui porte les charges. C'est
 écrit en tête du fichier et détaillé dans [../docs/HISTORIQUE_DEVELOPPEMENT.md](../docs/HISTORIQUE_DEVELOPPEMENT.md).
 
+## Larmes
+
+**Une larme est une zone**, comme dans KiCad (`js/41-larmes.js`) : rendu, Gerber et
+IPC-2581 savent la sortir. Son cuivre est figé (`fichier`), et sa priorité oblige
+un plan d'un autre net à se détourer autour d'elle (`zoneDessus`). Elle n'est pas
+une zone pour le reste : ni liaison ni îlot (`zoneGroups`, `zoneAt`), ni clic, ni
+compteur. Le bouton *Larmes* les recalcule toutes ; rien ne les suit ensuite, et le
+DRC compare à ce que le geste poserait aujourd'hui (« Larmes à refaire »). Une larme
+s'amincit devant le cuivre voisin, puis renonce ; il n'y en a pas dans une zone
+figée d'un autre net, qui ne se détourerait pas. Seuls les vias et les pastilles
+rondes sont traités, quand une piste droite sort de leur centre. Le détourage du
+plan se calcule une fois par pose ou au chargement : environ 4,5 s pour 400 larmes
+sur un Raspberry Pi, en cache ensuite.
+
+## Pendant le tracé
+
+- **Le via suit le curseur** : `V` l'attache au bout de l'aperçu (`R.viaNext`), le
+  clic le pose. Le curseur est repoussé à sa largeur, et un via refusé ne pose ni
+  le segment ni le via (`R.viaGene`). Sur le dernier point, `V` le pose aussitôt.
+- **`F` finit le tracé** (`finirTrace()`) : le chercheur de chemin, puis la même
+  marche que le pilote (`routageMarche()`), en contournement. Tout ou rien.
+- **L'aperçu** montre l'isolation, le via attendu, une ligne vers la pastille la
+  plus proche hors de l'îlot de départ (`routeCible()`) et la longueur du tracé.
+- **La croix du point de pose** (`curseurPose()`) marque où le clic posera, et X/Y
+  donnent ses coordonnées : la croix du pointeur, elle, suit la souris.
+- **Les points restent sur la grille** : une diagonale presque à 45° s'arrête sur
+  un nœud (`routeDiagGrille()`), et un point repoussé retombe sur le nœud libre le
+  plus proche (`pushClear()`). Les points imposés (clavier, pilote) restent exacts.
+
 ## Pas de grille
 
 **Le corps d'une piste accroche.** Départ et arrivée se posent aussi au milieu
 d'une piste du net (`trackBody()`, `js/05-tools.js`), sur son axe et au plus près
 du nœud visé (`trackAlign()`, comme `AlignToSegment` de KiCad) : le point reste
 sur le cuivre à tous les pas, et l'arrivée ferme le tracé en T. Seul le cuivre visé
-accroche, à 4 pixels près, et jamais la piste d'où l'on repart.
+accroche, à 4 pixels près, et jamais la piste d'où l'on repart. Une paire fait de
+même sur ses deux pistes (`dpCorps()`, `js/09-diffpair.js`), portée d'un pas de paire.
 
 L'éditeur ouvre sur un pas de **0,5 mm**, le défaut de KiCad : à 0,1 mm un cran
 vaut à peine un pixel à faible zoom, et la piste semble aller où elle veut. Le

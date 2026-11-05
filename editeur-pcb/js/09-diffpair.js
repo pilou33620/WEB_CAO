@@ -192,6 +192,27 @@ function dpPrimPair(pair,x,y,layer,rad,skip){
   const m=dpNearest(lp,n.x,n.y,null,skip);
   return m?{P:m,N:n}:null;
 }
+/* Le couple pris sur le CORPS des deux pistes. Le curseur est entre elles, d'où
+   la portée d'un pas de paire. On part de la plus proche ; sa jumelle se prend au
+   plus près d'elle, et doit rester à portée de paire. `ancres` : le départ, dont
+   les pistes ne sont pas une arrivée. */
+function dpCorps(pair,x,y,layer,ancres){
+  const g=dpGeom(pair,layer), pas=g.w+g.gap;
+  const p=trackBody(x,y,layer,pair.p,ancres?ancres[0]:null,pas);
+  const n=trackBody(x,y,layer,pair.n,ancres?ancres[1]:null,pas);
+  if(!p||!n)return null;
+  const prem=dist(x,y,p.x,p.y)<=dist(x,y,n.x,n.y);
+  const a=prem?p:n, b=prem?n:p;
+  const q=trackAlign(b.obj,a);
+  if(dist(a.x,a.y,q.x,q.y)>3*pas)return null;
+  const c={x:q.x,y:q.y,obj:b.obj}, d={x:a.x,y:a.y,obj:a.obj};
+  return prem?{P:d,N:c}:{P:c,N:d};
+}
+/* Le couple d'un geste à la souris : une ancre à portée de la main d'abord, puis
+   le corps des pistes, enfin une ancre plus lointaine (`loin`). */
+function dpAccroche(pair,x,y,layer,loin){
+  return dpPrimPair(pair,x,y,layer,px(14))||dpCorps(pair,x,y,layer)||dpPrimPair(pair,x,y,layer,loin);
+}
 /* La paire visée par un clic : celle d'un net sous le curseur, sinon celle que
    le panneau a mise en avant. */
 function dpPairAt(x,y,layer){
@@ -370,6 +391,11 @@ function dpTarget(D,x,y){
     S.hover={x:r3((tgt.P.x+tgt.N.x)/2),y:r3((tgt.P.y+tgt.N.y)/2)};
     return {x:S.hover.x,y:S.hover.y,snap:true,tP:tgt.P,tN:tgt.N,pushed:false};
   }
+  const co=dpCorps(pair,x,y,D.layer,skip);
+  if(co){
+    S.hover={x:r3((co.P.x+co.N.x)/2),y:r3((co.P.y+co.N.y)/2)};
+    return {x:S.hover.x,y:S.hover.y,snap:true,tP:co.P,tN:co.N,pushed:false};
+  }
   S.hover=null;
   const p=dpPush({x:snapXn(x,mid.x),y:snapYn(y,mid.y)},D.layer,pair,pitch+D.w);
   return {x:p.x,y:p.y,snap:false,pushed:p.pushed};
@@ -384,11 +410,11 @@ function dpStart(x,y){
         "panneau puis « Créer la paire », ou « Détecter ».");
     return false;
   }
-  const a=dpPrimPair(pair,x,y,S.active,Math.max(px(20),5));
+  const a=dpAccroche(pair,x,y,S.active,Math.max(px(20),5));
   if(!a){
     hint("Paire "+pair.name+" : pas de point de départ ici. Il faut un bout libre "+
          "des deux nets sur la couche "+cuId(S.active,S.cu)+" — une pastille, un via, "+
-         "ou la fin d'une piste déjà posée.");
+         "ou une piste déjà posée.");
     return false;
   }
   const g=dpGeom(pair,S.active);

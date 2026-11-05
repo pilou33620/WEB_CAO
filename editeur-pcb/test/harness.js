@@ -44,7 +44,7 @@ global.BroadcastChannel.prototype.close=function(){
 };
 
 const code=fs.readFileSync(path.join(__dirname,"..","dist","pcb.js"),"utf8");
-const EXPOSE=["gridRapide","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
+const EXPOSE=["gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
   "updateRoute","stepRoute","commitRoute","routeToLayer","runDrc","buildTabs",
   "buildLayers","refreshPanels","buildList","buildProps","clearSel","rotateSel",
   "BLOC_PLACEMENT","PLACEMENT_SCORE","fpBBox",
@@ -1039,6 +1039,132 @@ T("Maj+G bascule entre les deux pas rapides, tracé en cours compris",()=>{
     if(S.route.end.x!==3.1)throw new Error("le tracé en cours devait suivre le pas : "+S.route.end.x);
     cancelRoute();
   }finally{S.grid=reg.grid;S.avoid=reg.avoid;S.mouse=reg.mouse;setMode("select");}
+});
+T("V attache le via au curseur, le clic le pose au bout du segment",()=>{
+  const reg={avoid:S.avoid,grid:S.grid,mouse:S.mouse};
+  try{
+    S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.origin={x:0,y:0};S.avoid=true;S.grid=0.5;touch();
+    S.tracks.push({x1:0,y1:0,x2:2,y2:0,l:0,w:0.3,net:"N"});touch();
+    setMode("track");S.active=0;
+    startRoute(2,0);
+    S.mouse={x:6,y:0};updateRoute(6,0);
+    const n=S.vias.length;
+    key("v");
+    if(!S.route.viaNext||S.vias.length!==n)throw new Error("V ne doit encore rien poser");
+    draw();
+    key("v");
+    if(S.route.viaNext)throw new Error("un second V y renonce");
+    key("v");
+    stepRoute();
+    if(S.vias.length!==n+1)throw new Error("le clic devait poser le via");
+    const v=S.vias[S.vias.length-1];
+    if(v.x!==6||v.y!==0)throw new Error("via hors du bout : "+v.x+";"+v.y);
+    if(S.route.layer===0||S.route.viaNext)throw new Error("la couche devait changer");
+    commitRoute();
+    // du cuivre étranger sur l'autre couche : le curseur n'y est pas repoussé, le
+    // via y passerait, et le clic ne pose alors ni le segment ni le via
+    S.tracks=[{x1:0,y1:0,x2:2,y2:0,l:0,w:0.3,net:"N"},{x1:0,y1:5,x2:12,y2:5,l:1,w:0.3,net:"M"}];
+    S.vias=[];S.rule.route="mark";touch();
+    S.active=0;startRoute(2,0);
+    S.mouse={x:6,y:5};updateRoute(6,5);
+    key("v");
+    if(!S.route.viaGene)throw new Error("la gêne du via devait se voir dans l'aperçu : "+JSON.stringify(S.route.end));
+    const nb=S.route.done.length;
+    stepRoute();
+    if(S.vias.length||S.route.done.length!==nb)throw new Error("un via refusé ne pose rien");
+    cancelRoute();
+  }finally{S.vias=[];S.tracks=[];touch();S.rule.route="shove";S.avoid=reg.avoid;S.grid=reg.grid;S.mouse=reg.mouse;setMode("select");}
+});
+T("le curseur reste sur la grille : coudes et points repoussés, à tous les pas",()=>{
+  const reg={avoid:S.avoid,grid:S.grid};
+  const hors=(v,g)=>Math.abs(v/g-Math.round(v/g))*g>1e-6;
+  let graine=7;const alea=()=>(graine=(graine*1664525+1013904223)>>>0)/4294967296;
+  try{
+    for(const g of GRID_STEPS){
+      S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.origin={x:0,y:0};S.avoid=false;S.grid=g;touch();
+      setMode("track");S.active=0;
+      for(let e=0;e<8;e++){
+        startRoute(100,100);
+        const R=S.route;
+        for(let k=0;k<12;k++){
+          const L=2+alea()*8;
+          updateRoute(R.pt.x+L+alea()*0.6-0.3,R.pt.y+L);stepRoute();
+          if(hors(R.pt.x,g)||hors(R.pt.y,g))throw new Error(g+" mm : coude hors grille "+JSON.stringify(R.pt));
+        }
+        S.route=null;
+      }
+      // repoussé par un via étranger : un nœud libre, et jamais dans l'isolation
+      S.avoid=true;S.rule.route="walk";
+      S.vias=[{x:50,y:50,d:0.8,drill:0.4,a:0,b:S.cu-1,net:"B"}];touch();
+      for(let i=0;i<16;i++){
+        const a=i/16*6.28;
+        const p=pushClear({x:50+0.5*Math.cos(a),y:50+0.5*Math.sin(a)},0,"A",0.3);
+        if(p.pushed&&(hors(p.x,g)||hors(p.y,g)))throw new Error(g+" mm : point repoussé hors grille "+JSON.stringify(p));
+        if(p.pushed&&dist(p.x,p.y,50,50)<0.4+0.15+classOf("A").clr-1e-6)throw new Error(g+" mm : repoussé dans l'isolation");
+      }
+      S.rule.route="shove";
+    }
+  }finally{S.vias=[];S.tracks=[];touch();S.rule.route="shove";S.avoid=reg.avoid;S.grid=reg.grid;setMode("select");}
+});
+T("les larmes : posées, relues, exportées, détourées par le plan, et signalées périmées",()=>{
+  S.fps=[];S.vias=[];S.zones=[];S.cuts=[];S.origin={x:0,y:0};clearSel();
+  S.vias=[{x:10,y:10,d:0.8,drill:0.4,a:0,b:S.cu-1,net:"N"}];
+  S.tracks=[{x1:10,y1:10,x2:20,y2:10,l:0,w:0.25,net:"N"}];touch();
+  const zlarmes=()=>S.zones.filter(z=>z.larme);
+  larmesPoser();
+  if(zlarmes().length!==1)throw new Error("une larme attendue : "+zlarmes().length);
+  const z=zlarmes()[0];
+  if(z.net!=="N"||z.l!==0||!zoneFichier(z))throw new Error("zone mal faite : "+JSON.stringify(z));
+  for(const p of z.pts){
+    if(p.x<10-1e-6||p.x>10.4+0.6+1e-3)throw new Error("sommet hors de la portée : "+JSON.stringify(p));
+    if(Math.abs(p.y-10)>0.4*Math.sin(Math.PI/3)+1e-3)throw new Error("plus large que le via : "+JSON.stringify(p));
+  }
+  if(zoneGroups().length)throw new Error("une larme ne compte pas dans les liaisons");
+  if(zoneAt(0,10.5,10))throw new Error("une larme n'est pas une zone pour la logique");
+  const drc=()=>runDrc().map(e=>e.msg);
+  const propre=drc();
+  if(propre.some(m=>/larme|zone/i.test(m)))throw new Error("DRC : "+propre.join(" / "));
+  // relue d'un fichier
+  const doc=JSON.parse(serialize());
+  loadDoc(doc,true);
+  if(zlarmes().length!==1||!zoneFichier(zlarmes()[0]))throw new Error("larme perdue à la relecture");
+  // au Gerber et à l'IPC-2581
+  const gAvec=gerberCopper(0), date={date:"2026-10-16T00:00:00Z"}, iAvec=ipc2581Document(date).xml;
+  larmesRetirer();
+  if(zlarmes().length)throw new Error("Retirer devait les enlever");
+  if(gerberCopper(0)===gAvec)throw new Error("la larme devait être au Gerber");
+  if(ipc2581Document(date).xml===iAvec)throw new Error("la larme devait être à l'IPC-2581");
+  undo();
+  if(zlarmes().length!==1)throw new Error("Ctrl+Z devait la remettre");
+  // un plan d'un autre net se détoure autour d'elle
+  const plan={id:S.nextId++,l:0,net:"GND",pts:[{x:0,y:0},{x:40,y:0},{x:40,y:40},{x:0,y:40}]};
+  S.zones.unshift(plan);touch();
+  if(!zoneDessus(plan))throw new Error("le plan devait se détourer autour de la larme");
+  S.zones=S.zones.filter(o=>o!==plan);touch();
+  // un plan au cuivre figé ne se détoure pas : pas de larme dedans
+  const fige={id:S.nextId++,l:0,net:"GND",pts:plan.pts,fichier:true,trous:[],sig:zoneSig(plan.pts)};
+  S.zones.push(fige);touch();
+  if(larmesCalc().length)throw new Error("un plan figé d'un autre net interdit la larme");
+  S.zones=S.zones.filter(o=>o!==fige);touch();
+  // le cuivre bouge : le DRC le dit, et le geste répare
+  S.tracks[0].y2=14;touch();
+  if(!drc().some(m=>/Larmes à refaire/.test(m)))throw new Error("la larme périmée devait se signaler");
+  larmesPoser();
+  if(drc().some(m=>/Larmes à refaire/.test(m)))throw new Error("refaite, elle ne doit plus se signaler");
+  S.tracks[0].y2=10;touch();larmesRetirer();
+  // un voisin à l'isolement : la larme s'amincit ou renonce, jamais dans l'isolation
+  const clr=classOf("N").clr;
+  S.tracks.push({x1:10,y1:10.75,x2:20,y2:10.75,l:0,w:0.25,net:"M"});touch();
+  for(const o of larmesCalc())
+    for(const p of o.pts)
+      if(Math.abs(p.y-10.75)-0.125<clr-0.01)throw new Error("larme dans l'isolation : "+JSON.stringify(p));
+  S.tracks.pop();touch();
+  // ne se pose pas : via plus étroit que la piste, piste qui s'arrête dans le via, pastille non ronde
+  S.tracks=[{x1:10,y1:10,x2:20,y2:10,l:0,w:0.9,net:"N"}];touch();
+  if(larmesCalc().length)throw new Error("piste plus large que le via");
+  S.tracks=[{x1:10,y1:10,x2:10.45,y2:10,l:0,w:0.25,net:"N"}];touch();
+  if(larmesCalc().length)throw new Error("piste trop courte");
+  S.tracks=[];S.vias=[];S.zones=[];touch();
 });
 /* Celles qu'un ancien clic a posées, ou qu'une arrivée sur une pastille hors
    grille impose, ne se voient qu'au contrôle. */
@@ -8591,6 +8717,62 @@ T("l'écart d'une paire passe devant l'isolation de sa classe",()=>{
   dpDelete(q);
   if(clrPair("USB_DP","USB_DM")!==0.25)
     throw new Error("la paire supprimée, l'isolation de classe reprend");
+});
+T("F finit le tracé jusqu'à la cible, et un échec le rend tel quel",()=>{
+  const c=carteDp();
+  const reg={avoid:S.avoid,grid:S.grid};
+  try{
+    S.avoid=true;S.grid=0.5;setMode("track");S.active=0;
+    const avant=conn(true).nets.get("USB_DP").miss;
+    if(!avant)throw new Error("la carte d'essai devait avoir USB_DP à relier");
+    startRoute(c.a.p.x,c.a.p.y);
+    if(S.route.net!=="USB_DP")throw new Error("mauvais net : "+S.route.net);
+    const k=routeCible(S.route);
+    if(!k||k.q.net!=="USB_DP"||dist(k.q.x,k.q.y,c.b.p.x,c.b.p.y)>1e-6)throw new Error("cible : "+JSON.stringify(k&&k.q));
+    updateRoute(30,25);stepRoute();
+    const faits=S.route.done.length;
+    draw();
+    // largeur hors bornes : le chercheur refuse, rien ne doit bouger
+    const w=S.route.w;S.route.w=20;
+    finirTrace();
+    if(!S.route||S.route.done.length!==faits||S.route.w!==20)throw new Error("l'échec devait rendre le tracé");
+    S.route.w=w;
+    key("f");
+    if(S.route)throw new Error("F devait poser le tracé jusqu'à la cible");
+    if(conn(true).nets.get("USB_DP").miss!==0)throw new Error("USB_DP devait être relié");
+    undo();
+    if(S.tracks.length!==0)throw new Error("Ctrl+Z défait tout le tracé");
+  }finally{S.route=null;S.avoid=reg.avoid;S.grid=reg.grid;setMode("select");}
+});
+T("une paire s'accroche au corps de ses deux pistes, au départ comme à l'arrivée",()=>{
+  const c=carteDp();
+  dpAutoAll();
+  const q=S.dpPairs[0], g=dpGeom(q,0), pas=g.w+g.gap;
+  const reg={avoid:S.avoid,grid:S.grid};
+  try{
+    S.avoid=true;
+    for(const pasG of GRID_STEPS){
+      S.grid=pasG;
+      S.tracks=[{x1:30,y1:30,x2:50,y2:30,l:0,w:g.w,net:"USB_DP"},
+                {x1:30,y1:30+pas,x2:50,y2:30+pas,l:0,w:g.w,net:"USB_DM"}];touch();
+      const a=dpCorps(q,40.02,30+pas/2,0);
+      if(!a)throw new Error(pasG+" mm : couple non trouvé");
+      if(Math.abs(a.P.y-30)>1e-3||Math.abs(a.N.y-30-pas)>1e-3)throw new Error(pasG+" mm : hors des axes "+JSON.stringify(a));
+      if(Math.abs(a.P.x-a.N.x)>1e-3)throw new Error(pasG+" mm : couple de travers "+JSON.stringify(a));
+    }
+    S.grid=0.5;
+    setMode("dpair");
+    if(!dpStart(c.a.p.x,c.a.p.y))throw new Error("départ sur les pastilles refusé");
+    dpUpdate(40.02,30+pas/2);
+    if(!S.dp.snap)throw new Error("l'arrivée sur le corps devait accrocher");
+    dpCancel();
+    if(!dpStart(40.02,30+pas/2))throw new Error("départ sur le corps refusé");
+    if(Math.abs(S.dp.aP.y-30)>1e-3||Math.abs(S.dp.aN.y-30-pas)>1e-3)throw new Error("ancres hors des axes");
+    dpCancel();
+    // une seule des deux pistes : pas de couple
+    S.tracks=[{x1:30,y1:30,x2:50,y2:30,l:0,w:g.w,net:"USB_DP"}];touch();
+    if(dpCorps(q,40,30,0))throw new Error("il faut les deux pistes");
+  }finally{S.dp=null;S.tracks=[];touch();S.avoid=reg.avoid;S.grid=reg.grid;setMode("select");}
 });
 T("tracé couplé : deux pistes au pas, de même longueur",()=>{
   const c=carteDp();

@@ -868,7 +868,7 @@ function drawZones(c,i,a){
   c.setLineDash([px(5),px(4)]);
   c.beginPath();
   for(const z of S.zones){
-    if(z.l!==i||z.pts.length<2||S.sel.zones.has(z))continue;
+    if(z.larme||z.l!==i||z.pts.length<2||S.sel.zones.has(z))continue;
     if(z.pts.length>=3){const b=zoneCalc(z).bb;if(horsVue(b.x1,b.y1,b.x2,b.y2))continue;}
     c.moveTo(z.pts[0].x,z.pts[0].y);
     for(let k=1;k<z.pts.length;k++)c.lineTo(z.pts[k].x,z.pts[k].y);
@@ -987,12 +987,37 @@ function drawRoute(c){
     c.strokeStyle=layerColor(+p[0]);c.lineWidth=+p[1];
     strokeRuns(c,segs);
   }
+  const clr=R.net?classOf(R.net).clr:0, bout=R.end||R.pt;
+  if(clr>0){                          // l'isolation qu'il faut tenir autour de l'aperçu
+    c.globalAlpha=0.16;c.strokeStyle=col;c.lineWidth=R.w+2*clr;
+    strokeRuns(c,R.preview);
+    c.globalAlpha=0.85;
+  }
   c.strokeStyle=col;c.lineWidth=R.w;
   c.setLineDash([px(6),px(4)]);
   if(R.bad)c.strokeStyle=C_ERR;       // l'aperçu passe au rouge s'il ne respecte pas l'isolation
   strokeRuns(c,R.preview);
   c.setLineDash([]);
+  if(R.viaNext&&!bout.net){           // le via attendu au bout du curseur, avec son isolation
+    const v=routeViaVise(R), teinte=R.viaGene?C_ERR:col;
+    c.fillStyle=teinte;
+    c.globalAlpha=0.16;c.beginPath();c.arc(v.x,v.y,v.d/2+clr,0,Math.PI*2);c.fill();
+    c.globalAlpha=0.85;c.beginPath();c.arc(v.x,v.y,v.d/2,0,Math.PI*2);c.fill();
+    c.fillStyle=C_BG;c.beginPath();c.arc(v.x,v.y,v.drill/2,0,Math.PI*2);c.fill();
+  }
+  const cible=routeCible(R);
+  if(cible){                          // le chevelu du tracé : où il lui reste à aller
+    c.strokeStyle=C_RATS;c.lineWidth=px(1);
+    c.setLineDash([px(4),px(4)]);
+    c.beginPath();c.moveTo(bout.x,bout.y);c.lineTo(cible.q.x,cible.q.y);c.stroke();
+    c.setLineDash([]);
+    c.beginPath();c.arc(cible.q.x,cible.q.y,px(7),0,Math.PI*2);c.stroke();
+  }
   c.globalAlpha=1;
+  let long=0;
+  for(const s of R.done)long+=dist(s.x1,s.y1,s.x2,s.y2);
+  for(const s of R.preview)long+=dist(s.x1,s.y1,s.x2,s.y2);
+  if(long>0)TXT(c,fmt(long,2)+" mm",bout.x,bout.y-px(16),px(11),"#fff");
   c.fillStyle=C_SEL;
   c.beginPath();c.arc(R.pt.x,R.pt.y,px(3),0,Math.PI*2);c.fill();
   if(R.end&&R.pushed){                // repoussé : on montre où le point a été ramené
@@ -1052,6 +1077,17 @@ function drawTextLink(c){
   c.lineTo(tx,ty);
   c.stroke();
   c.setLineDash([]);
+}
+/* Le point où le clic posera : une petite croix, nœud de grille ou point accroché. */
+function drawCurseur(c){
+  const h=S.curseur;
+  if(!h||S.mode==="select")return;
+  const r=px(6);
+  c.strokeStyle=C_SEL;c.lineWidth=px(1);
+  c.beginPath();
+  c.moveTo(h.x-r,h.y);c.lineTo(h.x+r,h.y);
+  c.moveTo(h.x,h.y-r);c.lineTo(h.x,h.y+r);
+  c.stroke();
 }
 function drawHover(c){
   if(S.mode==="select"||!S.hover)return;
@@ -1142,7 +1178,7 @@ function paintCarte(c,dpr,w,h,noGrid){
     if(S.show.plane||fin){
       const o=zoneCanvas(i);
       if(o){
-        const zn=S.zones.find(z=>z.l===i&&z.net);
+        const zn=S.zones.find(z=>!z.larme&&z.l===i&&z.net);
         c.globalAlpha=fin?1:a*(S.hlNet&&(!zn||zn.net!==S.hlNet)?0.2:0.85);
         c.drawImage(o.cvs,o.x,o.y,o.w,o.h);
         c.globalAlpha=1;
@@ -1175,6 +1211,7 @@ function paintCarte(c,dpr,w,h,noGrid){
   if(typeof drawMeanderDraft==="function")drawMeanderDraft(c);
   drawTextLink(c);
   drawHover(c);
+  drawCurseur(c);
   if(!fin)drawDrc(c);
   if(S.marquee){
     const m=S.marquee;

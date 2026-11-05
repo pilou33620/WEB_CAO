@@ -2686,7 +2686,7 @@ function zoneAt(l,x,y){
   let best=null;
   for(let i=S.zones.length-1;i>=0;i--){
     const z=S.zones[i];
-    if(z.l!==l||(best&&zonePrio(z)<=zonePrio(best))||!zoneContient(z,x,y))continue;
+    if(z.larme||z.l!==l||(best&&zonePrio(z)<=zonePrio(best))||!zoneContient(z,x,y))continue;
     best=z;
     if(!zonesPrio())break;
   }

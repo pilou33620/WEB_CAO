@@ -68,6 +68,33 @@ function routagePoint(p){
   return {x:r3(p.x), y:r3(p.y), couche:p.couche != null ? routageCouche(p.couche) : null, nom:"(" + r3(p.x) + ", " + r3(p.y) + ")"};
 }
 
+/* La marche du tracé en cours, étape par étape : la route du pilote, et la touche F. */
+function routageMarche(etapes, largeur, dep, arr, net){
+  for(const [k, e] of etapes.entries()){
+    if(!S.route) break;                                    // arrivé sur le cuivre du net : la route s'est posée
+    const voulue = e.couche != null ? e.couche : (e.couches && !e.couches.includes(S.route.layer) ? e.couches[0] : null);
+    if(voulue != null && voulue !== S.route.layer){
+      // une via sur la pastille de départ n'est pas un choix à faire en silence
+      if(e.couche == null && S.route.pt.x === dep.x && S.route.pt.y === dep.y)
+        throw routageRefus(e.nom + " n'est pas sur la couche de départ : donne un point avec « couche » là où poser la via");
+      routeToLayer(voulue);
+      if(S.route.layer !== voulue) throw routageRefus("via refusée en (" + r3(S.route.pt.x) + ", " + r3(S.route.pt.y) + ") pour passer sur " + LECTURE_CAO.aides.nomCouchePcb(voulue));
+      if(largeur != null) S.route.w = largeur;            // routeToLayer reprend la largeur de la classe
+    }
+    routeToPoint({x:e.x, y:e.y});
+    if(S.route.bad) throw routageRefus("bloquée vers " + e.nom + " : l'isolation de " + classOf(net).clr + " mm n'y passe pas");
+    if(!S.route.preview.length) continue;               // déjà au point
+    const n0 = S.route.done.length;
+    stepRoute();
+    if(S.route && S.route.done.length === n0) throw routageRefus("bloquée vers " + e.nom);
+    if(!S.route && k < etapes.length - 1) throw routageRefus("elle a touché le cuivre de " + net + " avant le point " + (k + 1) + " : raccourcis-la");
+  }
+  if(S.route){
+    if(arr.couches) throw routageRefus("l'arrivée " + arr.nom + " n'est pas atteinte sur une de ses couches");
+    commitRoute();                                         // une arrivée libre : la route s'arrête là
+  }
+}
+
 /* Une route : tout ou rien. L'instantané du départ la défait entière si un pas échoue. */
 function routageUneRoute(r){
   const avant = serialize();
@@ -92,29 +119,7 @@ function routageUneRoute(r){
       R.w = largeur = r3(r.largeur);
     }
     const net = R.net;
-    for(const [k, e] of etapes.entries()){
-      if(!S.route) break;                                    // arrivé sur le cuivre du net : la route s'est posée
-      const voulue = e.couche != null ? e.couche : (e.couches && !e.couches.includes(S.route.layer) ? e.couches[0] : null);
-      if(voulue != null && voulue !== S.route.layer){
-        // une via sur la pastille de départ n'est pas un choix à faire en silence
-        if(e.couche == null && S.route.pt.x === dep.x && S.route.pt.y === dep.y)
-          throw routageRefus(e.nom + " n'est pas sur la couche de départ : donne un point avec « couche » là où poser la via");
-        routeToLayer(voulue);
-        if(S.route.layer !== voulue) throw routageRefus("via refusée en (" + r3(S.route.pt.x) + ", " + r3(S.route.pt.y) + ") pour passer sur " + LECTURE_CAO.aides.nomCouchePcb(voulue));
-        if(largeur != null) S.route.w = largeur;            // routeToLayer reprend la largeur de la classe
-      }
-      routeToPoint({x:e.x, y:e.y});
-      if(S.route.bad) throw routageRefus("bloquée vers " + e.nom + " : l'isolation de " + classOf(net).clr + " mm n'y passe pas");
-      if(!S.route.preview.length) continue;               // déjà au point
-      const n0 = S.route.done.length;
-      stepRoute();
-      if(S.route && S.route.done.length === n0) throw routageRefus("bloquée vers " + e.nom);
-      if(!S.route && k < etapes.length - 1) throw routageRefus("elle a touché le cuivre de " + net + " avant le point " + (k + 1) + " : raccourcis-la");
-    }
-    if(S.route){
-      if(arr.couches) throw routageRefus("l'arrivée " + arr.nom + " n'est pas atteinte sur une de ses couches");
-      commitRoute();                                         // une arrivée libre : la route s'arrête là
-    }
+    routageMarche(etapes, largeur, dep, arr, net);
     return {net:routagePropre(net), ok:true};
   }catch(err){
     if(S.route) cancelRoute();

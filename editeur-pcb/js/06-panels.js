@@ -9,7 +9,7 @@
 function buildTabs(){
   const box=$("tabs");
   const zn=new Array(S.cu).fill(0);
-  for(const z of S.zones)if(z.l<S.cu)zn[z.l]++;
+  for(const z of S.zones)if(!z.larme&&z.l<S.cu)zn[z.l]++;
   let h="";
   for(let i=0;i<S.cu;i++){
     const L=S.cuL[i];
@@ -23,7 +23,7 @@ function buildTabs(){
        '<span class="num">'+cuId(i,S.cu)+' · '+(i+1)+'</span></div>';
   }
   h+='<span class="tabinfo">'+S.cu+' couches · '+S.tracks.length+' segments · '+
-     S.vias.length+' vias · '+S.zones.length+' zones</span>';
+     S.vias.length+' vias · '+S.zones.filter(z=>!z.larme).length+' zones</span>';
   box.innerHTML=h;
   box.querySelectorAll(".tab").forEach(el=>{
     el.onclick=()=>{routeToLayer(+el.dataset.i);draw();};
@@ -38,7 +38,7 @@ function buildLayers(){
   const box=$("layers");
   const cnt=new Array(S.cu).fill(0), zn=new Array(S.cu).fill(0);
   for(const t of S.tracks)if(t.l<S.cu)cnt[t.l]++;
-  for(const z of S.zones)if(z.l<S.cu)zn[z.l]++;
+  for(const z of S.zones)if(!z.larme&&z.l<S.cu)zn[z.l]++;
   let h="";
   for(let i=0;i<S.cu;i++){
     const L=S.cuL[i];
@@ -105,7 +105,7 @@ function buildActiveLayer(){
   const box=$("actLay");
   if(!box)return;
   const L=S.cuL[S.active];
-  const n=S.zones.filter(z=>z.l===S.active).length;
+  const n=S.zones.filter(z=>!z.larme&&z.l===S.active).length;
   const role=layerRole(S.active);
   const nets=netTable();
   box.innerHTML=
@@ -168,7 +168,7 @@ function zoneMenuBuild(){
     '<div class="prop"><div class="row">'+
       '<button class="tb" id="zmZone">Zone à main levée <kbd>Z</kbd></button></div>'+
       '<div class="row"><button class="tb" id="zmFull">Zone pleine carte (libre)</button></div>'+
-      (S.zones.some(z=>z.l===S.active)
+      (S.zones.some(z=>!z.larme&&z.l===S.active)
         ? '<div class="row"><button class="tb" id="zmSel">Sélectionner le cuivre de la couche</button></div>'
         : "")+'</div>';
   const rl=$("zmRole");
