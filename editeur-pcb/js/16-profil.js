@@ -40,7 +40,7 @@ var PCB_PROFIL_PRET=false;
    ne dit rien de la grille ou du contraste ne doit pas hériter de ceux du
    précédent : sans elles, changer d'utilisateur replacerait les panneaux mais
    laisserait la barre d'outils telle quelle. */
-const PCB_PROFIL_USINE={grille:0.1,accroche:true,antiCollision:true,
+const PCB_PROFIL_USINE={grille:0.5,accroche:true,antiCollision:true,
                         vue:"dessus",contraste:1,faceOpp:1,liste:"nets",nonRoutes:false,rooms:true};
 
 function profilEtat(){

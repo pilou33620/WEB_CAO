@@ -3318,9 +3318,17 @@ perdu tout son terme de potentiel scalaire, celui qui porte les charges. C'est
 
 ## Pas de grille
 
-L'éditeur ouvre sur un pas de **0,1 mm** : assez fin pour tomber sur le centre
-d'une pastille sans se battre avec l'accrochage, assez rond pour que les
-coordonnées restent lisibles. Il se règle ensuite à deux endroits, qui restent
+**Le corps d'une piste accroche.** Départ et arrivée se posent aussi au milieu
+d'une piste du net (`trackBody()`, `js/05-tools.js`), sur son axe et au plus près
+du nœud visé (`trackAlign()`, comme `AlignToSegment` de KiCad) : le point reste
+sur le cuivre à tous les pas, et l'arrivée ferme le tracé en T. Seul le cuivre visé
+accroche, à 4 pixels près, et jamais la piste d'où l'on repart.
+
+L'éditeur ouvre sur un pas de **0,5 mm**, le défaut de KiCad : à 0,1 mm un cran
+vaut à peine un pixel à faible zoom, et la piste semble aller où elle veut. Le
+centre d'une pastille reste atteint par l'aimant, quel que soit le pas.
+**Maj+G** bascule entre 0,5 et 0,1 mm (`gridRapide()`), pour sortir d'un boîtier
+serré, y compris pendant un tracé. Le pas se règle aussi à deux endroits, qui restent
 d'accord : *Pas de grille* dans le menu *Affichage*, sous *Grille*, et le
 panneau *Règles*. Les deux passent par `setGridStep()`, dans `js/05-tools.js`. Des millimètres ronds
 d'abord — 0,05 · 0,1 · 0,25 · 0,5 · 1 · 2 · 5 mm — plus les deux pas impériaux

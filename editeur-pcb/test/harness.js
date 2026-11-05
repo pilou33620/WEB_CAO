@@ -44,7 +44,7 @@ global.BroadcastChannel.prototype.close=function(){
 };
 
 const code=fs.readFileSync(path.join(__dirname,"..","dist","pcb.js"),"utf8");
-const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
+const EXPOSE=["gridRapide","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
   "updateRoute","stepRoute","commitRoute","routeToLayer","runDrc","buildTabs",
   "buildLayers","refreshPanels","buildList","buildProps","clearSel","rotateSel",
   "BLOC_PLACEMENT","PLACEMENT_SCORE","fpBBox",
@@ -978,6 +978,67 @@ T("le tracé ne pose plus d'écharde sous la largeur de piste",()=>{
       throw new Error("écharde de "+L.toFixed(3)+" mm posée : "+JSON.stringify(t));
   }
   setMode("select");
+});
+/* Le départ et l'arrivée sur le corps d'une piste : à chaque pas proposé, le point
+   reste sur l'axe, même quand la piste passe entre deux nœuds. */
+T("le corps d'une piste accroche départ et arrivée, à tous les pas",()=>{
+  const reg={grid:S.grid,avoid:S.avoid};
+  try{
+    for(const g of GRID_STEPS){
+      S.fps=[];S.vias=[];S.zones=[];S.origin={x:0,y:0};S.avoid=true;
+      setMode("track");S.active=0;S.grid=g;
+      const P={x1:0,y1:0.2,x2:20,y2:0.2,l:0,w:0.3,net:"N"};
+      S.tracks=[P,{x1:30,y1:10,x2:30,y2:8,l:0,w:0.3,net:"N"},
+                  {x1:40,y1:10,x2:40,y2:8,l:0,w:0.3,net:"M"}];
+      touch();
+      startRoute(10.02,0.25);
+      if(S.route.net!=="N")throw new Error(g+" mm : départ sans net");
+      if(Math.abs(S.route.pt.y-0.2)>1e-3)throw new Error(g+" mm : départ hors de l'axe");
+      // le cuivre d'où l'on repart n'est pas une arrivée
+      updateRoute(14,0.2);stepRoute();
+      if(!S.route)throw new Error(g+" mm : refermé sur sa propre piste de départ");
+      cancelRoute();
+      const nb=S.tracks.length;
+      startRoute(30,8);updateRoute(10.02,0.25);stepRoute();
+      if(S.route)throw new Error(g+" mm : arrivée sur le corps non reconnue");
+      // le chanfrein range ses segments à la suite : le dernier n'est pas forcément l'arrivée
+      const posee=S.tracks.slice(nb);
+      if(!posee.some(t=>trkDist(t.x2,t.y2,P)<=1e-3))
+        throw new Error(g+" mm : arrivée hors de l'axe "+JSON.stringify(posee));
+      // un net étranger ne ferme rien
+      startRoute(40,8);updateRoute(10.02,0.25);
+      if(S.route.end.net)throw new Error(g+" mm : accroché sur un net étranger");
+      cancelRoute();
+    }
+    S.grid=0.5;
+    S.tracks=[{x1:0,y1:0,x2:10,y2:10,l:0,w:0.3,net:"N"}];touch();
+    startRoute(5.03,4.98);
+    if(S.route.pt.x!==5||S.route.pt.y!==5)throw new Error("diagonale : "+JSON.stringify(S.route.pt));
+    cancelRoute();
+    const arc={x1:0,y1:5,x2:10,y2:5,ca:Math.PI/2,l:0,w:0.3,net:"N"};
+    S.tracks=[arc];touch();
+    const mi=trkMid(arc);
+    startRoute(mi.x+0.02,mi.y+0.02);
+    if(S.route.net!=="N"||trkDist(S.route.pt.x,S.route.pt.y,arc)>1e-3)
+      throw new Error("arc : "+JSON.stringify(S.route.pt));
+    cancelRoute();
+  }finally{S.tracks=[];touch();S.grid=reg.grid;S.avoid=reg.avoid;setMode("select");}
+});
+T("Maj+G bascule entre les deux pas rapides, tracé en cours compris",()=>{
+  const reg={grid:S.grid,avoid:S.avoid,mouse:S.mouse};
+  try{
+    S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.origin={x:0,y:0};S.avoid=false;touch();
+    setMode("track");S.grid=2.54;
+    gridRapide();if(S.grid!==0.5)throw new Error("un autre pas revient au premier pas rapide");
+    gridRapide();if(S.grid!==0.1)throw new Error("second pas rapide attendu");
+    gridRapide();if(S.grid!==0.5)throw new Error("retour au premier pas rapide attendu");
+    startRoute(0,0);
+    S.mouse={x:3.07,y:0};updateRoute(3.07,0);
+    if(S.route.end.x!==3)throw new Error("au pas de 0,5 : "+S.route.end.x);
+    gridRapide();
+    if(S.route.end.x!==3.1)throw new Error("le tracé en cours devait suivre le pas : "+S.route.end.x);
+    cancelRoute();
+  }finally{S.grid=reg.grid;S.avoid=reg.avoid;S.mouse=reg.mouse;setMode("select");}
 });
 /* Celles qu'un ancien clic a posées, ou qu'une arrivée sur une pastille hors
    grille impose, ne se voient qu'au contrôle. */
@@ -6419,8 +6480,8 @@ T("repère libre : R12 devient R13 puis R14",()=>{
   if(freeFpRef("Q1",used)!=="Q1")throw new Error("un repère libre ne doit pas changer");
   if(freeFpRef("",used)!=="U1")throw new Error("un repère vide reçoit un numéro");
 });
-T("réglages d'usine : grille 0,1 mm et pistes à 45°",()=>{
-  if(USINE.grid!==0.1)throw new Error("grille d'usine attendue à 0,1 mm : "+USINE.grid);
+T("réglages d'usine : grille 0,5 mm et pistes à 45°",()=>{
+  if(USINE.grid!==0.5)throw new Error("grille d'usine attendue à 0,5 mm : "+USINE.grid);
   if(USINE.corner!=="45")throw new Error("angle d'usine attendu à 45° : "+USINE.corner);
   if(!GRID_STEPS.includes(0.1))throw new Error("0,1 mm doit rester dans les pas proposés");
 });

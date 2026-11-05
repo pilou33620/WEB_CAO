@@ -241,7 +241,7 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 | Bouton ou menu | Raccourci | Effet | Limites |
 |---|---|---|---|
 | Grille | `G` | Affiche ou masque la grille d'accrochage | |
-| Pas de grille | | Liste : 0,05 · 0,1 · 0,25 · 0,5 · 1 · 1,27 · 2 · 2,54 · 5 mm (« Grille … mm ») | Pas de 0,1 mm au démarrage ; trop serrée à l'écran, la grille n'est tracée que sur une case sur deux, cinq… (le pied de page dit la case visible) |
+| Pas de grille | | Liste : 0,05 · 0,1 · 0,25 · 0,5 · 1 · 1,27 · 2 · 2,54 · 5 mm (« Grille … mm ») | Pas de 0,5 mm au démarrage ; `Maj+G` bascule entre 0,5 et 0,1 mm, même pendant un tracé ; trop serrée à l'écran, la grille n'est tracée que sur une case sur deux, cinq… (le pied de page dit la case visible) |
 | Chevelu | `N` | Affiche ou masque les liaisons non routées | |
 | Cartouche : aucun | | Cadre de page et cartouche : aucun, A4 ou A3 paysage, titre, noms, dates, numéro, société | |
 | Vue : dessus / dessous | `Y` | Retourne la carte vue de dessous | Retourner la vue en couche externe passe aussi la couche active à l'autre face |
@@ -301,6 +301,7 @@ Les touches d'une seule lettre se taisent quand un champ de saisie a le focus. T
 | `D` | Adoucit un angle droit en 45° (chanfrein maximal) | Refuse un coude portant un via ou une pastille, ou deux largeurs différentes |
 | `U` | Dérouter la sélection | |
 | `G` | Grille | |
+| `Maj+G` | Bascule le pas de grille entre 0,5 et 0,1 mm | Depuis un autre pas, revient à 0,5 mm ; le tracé en cours suit aussitôt |
 | `N` | Chevelu | |
 | `Y` | Vue dessus / dessous | |
 | `H` | Contraste | |
@@ -330,6 +331,7 @@ Les touches d'une seule lettre se taisent quand un champ de saisie a le focus. T
 | Appui long (tactile) | Équivaut au clic droit | Environ 0,55 s |
 | Deux doigts | Pincer pour zoomer, glisser pour déplacer la vue | |
 | `Ctrl` (ou `Cmd`) enfoncé à la pose d'un bout de piste, au départ comme à l'arrivée | Le bout se pose là où l'on vise dans le cuivre de la pastille (sur la grille si elle tombe dans la pastille, au point exact sinon) au lieu d'être attiré au centre ; il garde ce décalage si le boîtier tourne ou se retourne | Hors du cuivre de la pastille, `Ctrl` ne change rien : l'aimant ramène au centre |
+| Outil Piste : clic sur le corps d'une piste, au départ comme à l'arrivée | Le bout se pose sur l'axe de la piste, au plus près du nœud de grille visé, et prend son net ; à l'arrivée, le tracé se termine en T | Une piste d'un autre net n'accroche pas, ni celle d'où le tracé repart |
 | Clic sur le repère (texte) d'une empreinte | Déplace le texte seul quand son empreinte est seule sélectionnée ou pas du tout ; sinon c'est l'empreinte qui part | |
 | Clic sur l'étiquette d'une room | Prend tout le bloc ; glisser le déplace d'une pièce, `R` le tourne | `Ctrl`/`Maj` l'ajoute à la sélection |
 | `Alt+clic` sur une pastille | Met en évidence le net de la pastille | Un clic simple sur une pastille prend le boîtier, rien d'autre |

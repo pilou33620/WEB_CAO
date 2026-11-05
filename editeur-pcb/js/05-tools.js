@@ -3263,6 +3263,50 @@ function magnet(x,y,layer,skip){
   }
   return best;
 }
+/* Le point d'accroche sur l'axe d'une piste, depuis le nœud de grille `g`. Comme
+   `AlignToSegment` de KiCad : le plus proche de ceux que croisent les quatre
+   directions issues du nœud. Sans croisement sur la piste, ou sur un arc, on
+   projette : le point reste sur le cuivre quel que soit le pas. */
+function trackAlign(t,g){
+  const A=arcOf(t);
+  if(A){
+    const a=Math.atan2(g.y-A.cy,g.x-A.cx);
+    if(arcOn(A,a))return {x:r3(A.cx+A.r*Math.cos(a)),y:r3(A.cy+A.r*Math.sin(a))};
+    return dist(g.x,g.y,t.x1,t.y1)<dist(g.x,g.y,t.x2,t.y2)?{x:t.x1,y:t.y1}:{x:t.x2,y:t.y2};
+  }
+  const dx=t.x2-t.x1, dy=t.y2-t.y1;
+  let best=null,bd=Infinity;
+  for(const [u,v] of [[1,0],[0,1],[1,1],[1,-1]]){
+    const c=dx*v-dy*u;
+    if(Math.abs(c)<1e-9)continue;              // parallèle à la piste
+    const k=((g.x-t.x1)*v-(g.y-t.y1)*u)/c;
+    if(k<0||k>1)continue;
+    const p={x:t.x1+dx*k,y:t.y1+dy*k}, d=dist(p.x,p.y,g.x,g.y);
+    if(d<bd){bd=d;best=p;}
+  }
+  if(!best){
+    const L=dx*dx+dy*dy, k=L>0?clamp(((g.x-t.x1)*dx+(g.y-t.y1)*dy)/L,0,1):0;
+    best={x:t.x1+dx*k,y:t.y1+dy*k};
+  }
+  return {x:r3(best.x),y:r3(best.y)};
+}
+/* Le corps d'une piste. `magnet` n'en connaît que les bouts : un clic au milieu
+   du cuivre partait sans net, et une arrivée y laissait le tracé ouvert. Seul le
+   cuivre visé accroche, à quelques pixels près : avec la portée de l'aimant, une
+   piste longeant son propre net se refermerait dessus sans qu'on le veuille. */
+function trackBody(x,y,l,net,ancre){
+  let best=null,bd=Infinity;
+  for(const t of S.tracks){
+    if(t.l!==l||!t.net||(net&&t.net!==net))continue;
+    const d=trkDist(x,y,t);
+    if(d>t.w/2+px(4)||d>=bd)continue;
+    if(ancre&&trkDist(ancre.x,ancre.y,t)<=t.w/2)continue;   // le cuivre d'où l'on repart n'est pas une arrivée
+    best=t;bd=d;
+  }
+  if(!best)return null;
+  const p=trackAlign(best,{x:snapXn(x,ancre?ancre.x:null),y:snapYn(y,ancre?ancre.y:null)});
+  return {x:p.x,y:p.y,net:best.net,obj:best};
+}
 /* Repousse un point hors des obstacles de sa couche : on cherche à chaque
    passe le manque d'isolation le plus criant et on s'en écarte, jusqu'à ce que
    plus rien ne dépasse. Quelques passes suffisent, même dans un couloir.
@@ -3383,11 +3427,13 @@ function routeTarget(x,y){
     if(off){S.hover=off;return Object.assign({},m,off,{off:true});}
     S.hover={x:m.x,y:m.y};return m;
   }
-  S.hover=null;
-  const w=S.route?S.route.w:defaultWidth(net,l);
   // le point de départ sert d'ancre : depuis un centre de pastille hors grille,
   // le quadrillage seul ferait sortir la piste de travers dès le premier segment
   const a=S.route?S.route.pt:null;
+  const c=trackBody(x,y,l,net,a);
+  if(c){S.hover={x:c.x,y:c.y};return c;}
+  S.hover=null;
+  const w=S.route?S.route.w:defaultWidth(net,l);
   const p=pushClear({x:snapXn(x,a?a.x:null),y:snapYn(y,a?a.y:null)},l,net,w);
   return {x:p.x,y:p.y,net:null,pushed:p.pushed};
 }
@@ -3413,7 +3459,7 @@ function startRoute(x,y,exact){
   if(!net){
     hint("Départ sur rien : cette piste n'aura aucun net, et ne reliera donc "+
          "rien. Échap pour reprendre — visez le cuivre de la pastille, du via "+
-         "ou du bout de piste à prolonger.");
+         "ou de la piste à prolonger.");
     return;
   }
   hint("Clic pour poser un coude · « / » bascule la posture du coude · V pose un via et "+
@@ -4830,7 +4876,7 @@ cv.addEventListener("pointermove",e=>{
     return;
   }
   if(S.mode==="track"||S.mode==="via"){
-    const m=magnet(p.x,p.y,S.active);
+    const m=magnet(p.x,p.y,S.active)||(S.mode==="track"?trackBody(p.x,p.y,S.active,""):null);
     const h=m?{x:m.x,y:m.y}:null;
     if((h&&!S.hover)||(!h&&S.hover)||(h&&S.hover&&(h.x!==S.hover.x||h.y!==S.hover.y))){
       S.hover=h;draw();
@@ -5199,7 +5245,7 @@ document.addEventListener("keydown",e=>{
     case "f":flipSel();break;
     case "d":mitreSel();break;
     case "u":unrouteSel();break;
-    case "g":setGrid(!S.showGrid);break;
+    case "g":if(e.shiftKey)gridRapide();else setGrid(!S.showGrid);break;
     case "n":S.show.rats=!S.show.rats;$("bRats").classList.toggle("on",S.show.rats);draw();break;
     case "y":setFlip(!S.flip);break;
     case "h":setContrast((S.contrast+1)%4);break;
@@ -5361,7 +5407,15 @@ function setGridStep(v){
   updateGridInfo();
   if(typeof profilNoter==="function")profilNoter();
   hint("Grille d'accrochage : "+String(r3(g)).replace(".",",")+" mm.");
+  if(S.route)updateRoute(S.mouse.x,S.mouse.y);
+  if(S.dp)dpUpdate(S.mouse.x,S.mouse.y);
   draw();
+}
+/* Les deux pas rapides (Maj+G), comme les « fast grids » de KiCad : le pas de
+   travail, et le pas fin pour sortir d'un boîtier serré sans passer par le menu. */
+const GRID_RAPIDES=[0.5,0.1];
+function gridRapide(){
+  setGridStep(S.grid===GRID_RAPIDES[0]?GRID_RAPIDES[1]:GRID_RAPIDES[0]);
 }
 /* L'angle imposé aux pistes se range avec le document : il décrit la carte, au
    même titre que l'isolation ou la marge de bord, et se défait donc d'un
