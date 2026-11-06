@@ -2,7 +2,7 @@
 /* ==========================================================================
    Éditeur PCB — animation 3D de la carte qui s'assemble
    --------------------------------------------------------------------------
-   Fichier → Animation 3D… : on coche les composants à présenter (les plus gros
+   Fabriquer → Animation 3D… : on coche les composants à présenter (les plus gros
    composants actifs le sont d'office), puis deux fichiers partent, à part du
    dossier de fabrication : <projet>-ASSEMBLAGE-3D.mp4 ou .webm (la vidéo) et
    <projet>-ASSEMBLAGE-3D.html (la même animation, orientable, hors ligne).
@@ -146,7 +146,7 @@ function anim3dLigneLib(fp){
   return best?best[1]:null;
 }
 /* ANIM3D_HAUTS, anim3dPosition et anim3dPose : commun/export-step.js, que le STEP partage. */
-/* Fichier → Animation 3D… : les fichiers partent dès la vidéo finie. */
+/* Fabriquer → Animation 3D… : les fichiers partent dès la vidéo finie. */
 function anim3dExporter(){
   return anim3dEnregistrer(anim3dDonnees,ext=>pcbFile("-ASSEMBLAGE-3D."+ext,"ASSEMBLAGE-3D."+ext),dl,hint);
 }

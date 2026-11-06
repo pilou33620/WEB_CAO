@@ -6,8 +6,8 @@ function cas(gauche, largeur, tel){
   const h={}, pop={style:{left:""}, addEventListener(){},
     getBoundingClientRect(){const l=gauche+(parseFloat(this.style.left)||0);return{left:l,right:l+largeur};}};
   const t={addEventListener(k,f){h[k]=f;}};
-  const m={classList:{add(){},remove(){}},querySelector:s=>s===".mnu-t"?t:pop};
-  const document={querySelectorAll:()=>[m],getElementById:()=>null,addEventListener(){},
+  const m={classList:{add(){},remove(){},contains(){return false;}},querySelector:s=>s===".mnu-t"?t:pop};
+  const document={querySelectorAll:s=>s===".mnu"?[m]:[],querySelector:()=>null,getElementById:()=>null,addEventListener(){},
     body:{classList:{contains:c=>c==="tel"&&tel}},documentElement:{clientWidth:1000}};
   vm.runInNewContext(src,{document,window:{addEventListener(){}},setTimeout});
   h.click({stopPropagation(){}});

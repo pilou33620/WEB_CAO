@@ -54,19 +54,19 @@
        texte:"La première feuille est la hiérarchie, les suivantes les blocs. Un double-clic sur un bloc ouvre sa feuille."},
       {sel:'[data-pnl="palette"]',titre:"Bibliothèque",
        texte:"Clic sur un composant puis clic sur la feuille pour le poser. <kbd>A</kbd> ouvre la recherche dans toute la LIB."},
-      {sel:"#mWire",menu:"placer",titre:"Câbler",
+      {sel:"#mWire",titre:"Câbler",
        texte:"<kbd>W</kbd>, puis clic de broche à broche. Un fil qui touche une broche s'y connecte ; le net prend le nom de son étiquette."},
-      {sel:"#mBus",menu:"placer",titre:"Bus",
+      {sel:"#mBus",titre:"Bus",
        texte:"<kbd>B</kbd> trace un bus : plusieurs signaux (SPI, données) dans un seul trait épais."},
       {sel:"#sheet",titre:"La feuille",
        texte:"Les étiquettes de net relient sans fil ; les sondes affichent tension et courant calculés. Survolez un fil pour voir tout son net s'allumer."},
       {sel:'[data-pnl="list"]',titre:"Nomenclature et nets",
        texte:"La BOM se tient à jour toute seule ; l'onglet <b>Nets</b> liste chaque net et ses broches."},
-      {sel:"#bPatterns",menu:"outils",titre:"Motifs & blocs",
+      {sel:"#bPatterns",titre:"Motifs & blocs",
        texte:"Reconnaît alimentations, bus rapides, filtres… et qualifie les nets pour les règles du PCB."},
-      {sel:"#bProbe",menu:"outils",titre:"Montrer au PCB",
+      {sel:"#bProbe",titre:"Montrer au PCB",
        texte:"<kbd>L</kbd> : le PCB ouvert dans un autre onglet saute sur la sélection. Le PCB fait de même vers le schéma."},
-      {sel:"#bNetlist",menu:"fichier",titre:"Passer au PCB",
+      {sel:"#bNetlist",titre:"Passer au PCB",
        texte:"La netlist est ce que l'éditeur PCB importe : c'est la suite du parcours."}
     ],
     pcb:[
@@ -79,19 +79,19 @@
        texte:"Un onglet par couche. Le clic choisit la couche active, celle où se posent les pistes. Ici L2 est un plan de masse, L3 le +3,3 V."},
       {sel:'[data-pnl="stack"]',titre:"Empilage",
        texte:"Afficher ou masquer chaque couche, cuivre et technique (sérigraphie, masque, DRC). Le nombre de couches se change ici."},
-      {sel:"#bImport",menu:"fichier",titre:"Partir du schéma",
+      {sel:"#bImport",titre:"Partir du schéma",
        texte:"Le point de départ habituel : importer la netlist exportée par l'éditeur schématique. <b>Schéma ↔ PCB</b> remet ensuite la carte à jour sans perdre le routage."},
-      {sel:"#mTrack",menu:"placer",titre:"Router une piste",
+      {sel:"#mTrack",titre:"Router une piste",
        texte:"<kbd>T</kbd>, clic sur une pastille, puis clic à clic. Les pistes voisines <b>s'écartent</b> (Push & Shove) au lieu de bloquer. <kbd>V</kbd> pendant le tracé pose un via."},
-      {sel:"#mDiff",menu:"placer",titre:"Paire différentielle",
+      {sel:"#mDiff",titre:"Paire différentielle",
        texte:"<kbd>P</kbd> route les deux nets d'une paire (USB D+/D−) ensemble, écart tenu. <b>Serpentin</b> égalise ensuite leurs longueurs."},
-      {sel:"#mZone",menu:"placer",titre:"Zone de cuivre",
+      {sel:"#mZone",titre:"Zone de cuivre",
        texte:"<kbd>Z</kbd> dessine un polygone rempli, rattaché à un net (souvent GND). Il contourne tout seul les autres nets."},
-      {sel:"#bDrc",menu:"outils",titre:"Contrôle DRC",
+      {sel:"#bDrc",titre:"Contrôle DRC",
        texte:"Vérifie isolations, largeurs, perçages, bord de carte. Les erreurs s'allument sur la carte et se listent dans le panneau <b>DRC</b>."},
-      {sel:"#bRules",menu:"outils",titre:"Règles",
+      {sel:"#bRules",titre:"Règles",
        texte:"Classes de net, largeurs, vias, paires différentielles : chaque règle avec sa figure cotée. Le profil fabricant (JLCPCB…) donne les minimums."},
-      {sel:"#bFab",menu:"fichier",titre:"Fabrication",
+      {sel:"#bFab",titre:"Fabrication",
        texte:"Un .zip prêt à envoyer : Gerber, perçage, IPC-D-356, nomenclature, positions et plan PDF."},
       {sel:"#fHint",titre:"La barre d'état",
        texte:"Elle dit toujours quoi faire ensuite pour l'outil actif."}
@@ -167,11 +167,8 @@
   bulle.hidden=spot.hidden=calque.hidden=info.hidden=true;
 
   const visible=e=>{if(!e)return false;const r=e.getBoundingClientRect();return r.width>0&&r.height>0;};
-  function menu(nom){
-    const m=nom&&document.querySelector('.mnu[data-mnu="'+nom+'"]');
-    for(const o of document.querySelectorAll(".mnu.open"))
-      if(o!==m)o.querySelector(".mnu-t").click();     // menus.js tient son état
-    if(m&&!m.classList.contains("open"))m.querySelector(".mnu-t").click();
+  function menu(sel){
+    if(typeof menusMontrer==="function")menusMontrer(sel?document.querySelector(sel):null);
   }
   function aller(page){
     if(typeof sessEnregistrer==="function")sessEnregistrer();   // le mode retrouve son travail au retour
@@ -197,7 +194,7 @@
   /* ---------------- visite guidée ---------------- */
   function montrer(n){
     i=n;const e=etapes[i];
-    menu(e.menu);
+    menu(e.sel);
     if(e.faire){e.faire();setTimeout(afficher,80);}   // la page se remet en place après l'action
     else afficher();
   }

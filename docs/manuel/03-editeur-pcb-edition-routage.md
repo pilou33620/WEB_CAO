@@ -9,9 +9,9 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 ### Je veux me repérer dans l'écran
 
 1. La barre du haut porte, à gauche, quatre boutons de navigation : ⬅ (éditeur schématique), ⌕ (composants), 📚 (Gestion LIB), ⌂ (accueil). Le travail en cours reste dans l'onglet quand on change d'outil et revient tel quel (carte, vue, état « modifié »).
-2. Viennent ensuite le bouton du profil utilisateur (👤), le bouton 📱 Tactile, puis les menus **Fichier**, **Édition**, **Placer**, **Affichage**, **Outils**. La pastille « OUTIL » à droite des menus rappelle l'outil actif ; un clic dessus ouvre le menu Placer.
+2. Viennent ensuite le bouton du profil utilisateur (👤), le bouton 📱 Tactile, puis la pastille « OUTIL », qui rappelle l'outil actif ; un clic dessus montre son bouton. À côté du titre de l'éditeur, le menu **Fichier** et la barre rapide (Enregistrer, Annuler, Rétablir). Dessous, le ruban et ses onglets **Placer & router**, **Carte & zones**, **Vérifier**, **Fabriquer** ; le ▴ à droite le replie. La barre de vue est en bas du canevas, le cube de vue en haut à droite.
 3. Sous la barre, la rangée d'onglets liste les couches de cuivre (nom, repère `F.Cu`/`In1.Cu`…/`B.Cu`, rang) et le total « n couches · n segments · n vias · n zones ». Un clic sur un onglet rend la couche active.
-4. Le canevas occupe le centre. Les panneaux (Empilage, Propriétés, Nets & composants, Empilage physique…) sont rangés à gauche, à droite et en bas ; le menu **Affichage > Espace de travail** les affiche, les masque et remet la disposition d'usine.
+4. Le canevas occupe le centre. Les panneaux (Empilage, Propriétés, Nets & composants, Empilage physique…) sont rangés à gauche, à droite et en bas ; le menu **Barre de vue > Affichage > Espace de travail** les affiche, les masque et remet la disposition d'usine.
 5. Le pied de page donne la couche, le mode (outil actif), les coordonnées du pointeur en mm, le zoom, la grille, les compteurs (empreintes, pistes, vias, non routés), le net sous le pointeur et une ligne d'aide qui change avec l'outil.
 
 ### Je veux ouvrir ou démarrer une carte
@@ -25,14 +25,14 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 ### Je veux importer le schéma sur la carte
 
 1. Dans l'éditeur schématique, la netlist est prête (voir [02-editeur-schematique.md](02-editeur-schematique.md)).
-2. **Fichier > Importer netlist** ouvre la boîte « Importer une netlist ». Trois façons de la remplir : **Synchroniser directement depuis le schéma ouvert**, coller le texte dans la zone, ou **Choisir un fichier…**. La case « supprimer les empreintes absentes de la netlist » retire de la carte les composants qui n'existent plus au schéma.
+2. **Placer & router > Importer netlist** ouvre la boîte « Importer une netlist ». Trois façons de la remplir : **Synchroniser directement depuis le schéma ouvert**, coller le texte dans la zone, ou **Choisir un fichier…**. La case « supprimer les empreintes absentes de la netlist » retire de la carte les composants qui n'existent plus au schéma.
 3. Cliquer **Importer**. Les empreintes déjà posées gardent leur position ; les nouvelles sont créées à droite de la carte à partir du boîtier nommé au schéma. Le pied de page donne le bilan (créées, mises à jour, nets, renommées, refaites sur un nouveau boîtier).
 4. Si des pastilles déjà routées changent de net, la boîte « Changement de brochage sur pistes routées » propose **Conserver les pistes (ignorer)** ou **Supprimer les pistes en conflit**.
-5. Pour la suite des modifications du schéma, préférer **Fichier > Schéma ↔ PCB** (voir « Je veux mettre la carte à jour après un changement du schéma »).
+5. Pour la suite des modifications du schéma, préférer **Placer & router > Schéma ↔ PCB** (voir « Je veux mettre la carte à jour après un changement du schéma »).
 
 ### Je veux mettre la carte à jour après un changement du schéma
 
-1. Un badge orange sur **Fichier > Schéma ↔ PCB** (et sur le titre du menu Fichier) indique le nombre de disparités détectées.
+1. Un badge orange sur **Placer & router > Schéma ↔ PCB** (et sur l'onglet Placer & router) indique le nombre de disparités détectées.
 2. Ouvrir **Schéma ↔ PCB**. La fenêtre « Mise à jour interactive (ECO) · Schéma ↔ PCB » liste les actions avec une case chacune.
 3. Filtrer par catégorie (Nouveaux, Renommés, Boîtiers, Nets, Valeurs, Absents, Contraintes) ou utiliser **Tout cocher** / **Tout décocher**. Les composants « Absents » (sur la carte, pas au schéma) sont décochés d'office.
 4. Cocher « Détacher les pistes en conflit direct de net » si des pastilles changent de net sous des pistes existantes.
@@ -50,9 +50,9 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 ### Je veux placer les composants
 
 1. À la main : sélectionner une empreinte, la glisser ; `R` la tourne, `F` la retourne sur l'autre face. Les pistes accrochées la suivent (voir « Je veux déplacer des composants déjà routés »).
-2. Ajouter une empreinte : **Placer > Empreinte…** (`A`) ouvre le catalogue de la LIB ; l'empreinte choisie est posée sous le pointeur avec un repère libre (`U1`, `R2`…).
+2. Ajouter une empreinte : **Placer & router > Empreinte…** (`A`) ouvre le catalogue de la LIB ; l'empreinte choisie est posée sous le pointeur avec un repère libre (`U1`, `R2`…).
 3. En masse : sans rien sélectionner, le panneau **Propriétés** propose **Placement auto** (ensemble puis satellites, un seul `Ctrl+Z` pour tout défaire), **Satellites** (seulement les découplages et composants série contre leur broche, le reste ne bouge pas, un `Ctrl+Z`) et **Ranger à côté**.
-4. Par blocs fonctionnels : **Outils > Score Placement** ouvre le panneau « Qualité de placement ». Dans « Groupes de placement & Zones », chaque bloc du schéma offre **Grouper** (sélectionner), **Disposer** (compacter autour de son ancre) et **Déposer** (poser en grappe dans une zone libre).
+4. Par blocs fonctionnels : **Vérifier > Score Placement** ouvre le panneau « Qualité de placement ». Dans « Groupes de placement & Zones », chaque bloc du schéma offre **Grouper** (sélectionner), **Disposer** (compacter autour de son ancre) et **Déposer** (poser en grappe dans une zone libre).
 5. Contrôler : HPWL (longueur de chevelu), congestion, découplage HF, orientation optimale de chaque composant (voir la référence du panneau).
 
 ### Je veux déplacer des composants déjà routés
@@ -64,33 +64,33 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 
 ### Je veux router une piste
 
-1. Choisir **Placer > Piste** (`T`) ou l'onglet de la couche voulue.
+1. Choisir **Placer & router > Piste** (`T`) ou l'onglet de la couche voulue.
 2. Cliquer une pastille pour partir. Chaque clic suivant pose un coude ; le tracé suit l'angle imposé (45° par défaut) et se tient à l'isolation exigée tant que **Anti-collision** est actif.
 3. `/` ou `Espace` bascule l'arrangement du coude (diagonale d'abord ou portion droite d'abord). `V` attache un via au curseur, avec son isolation visible : le clic le pose au bout du segment et bascule entre la couche du dessus et celle du dessous (depuis une couche interne, vers le dessus) ; curseur déjà sur le dernier point, le via se pose tout de suite ; `V` à nouveau y renonce. `F` finit le tracé jusqu'à la pastille à relier, que montre une ligne pointillée ; `1` à `9`, `0`, `Page ↑`/`Page ↓` changent de couche en posant un via, tout comme un clic sur un onglet de couche en plein tracé.
 4. Terminer avec `Entrée`, `Échap`, le double-clic ou le clic droit. `Retour arrière` recule d'un coude.
-5. Face à un obstacle, le comportement dépend de la « Conduite » choisie dans **Outils > Règles… > Face à un obstacle** : pousser le cuivre, contourner ou signaler. Une pastille n'est jamais poussée.
+5. Face à un obstacle, le comportement dépend de la « Conduite » choisie dans **Vérifier > Règles… > Face à un obstacle** : pousser le cuivre, contourner ou signaler. Une pastille n'est jamais poussée.
 6. `Tab` ouvre la saisie de coordonnées au clavier (Absolu, Relatif, Polaire) : taper X/Y, `Entrée` pose le point.
 7. `D` (ou « Angle droit → 45° » dans Propriétés) adoucit un angle droit de la piste sélectionnée.
-8. Pour laisser l'outil trouver le chemin d'une liaison : cliquer une pastille de cette liaison (ou `Alt`+clic sur une pastille, ou un net de la liste, pour viser un net), puis **Placer > Chemin auto**. La liaison du chevelu la plus proche de la pastille est routée d'un coup, en contournant le cuivre existant ; un `Ctrl+Z` la défait. S'il n'y a pas de chemin, rien n'est posé et le pied de page dit pourquoi.
+8. Pour laisser l'outil trouver le chemin d'une liaison : cliquer une pastille de cette liaison (ou `Alt`+clic sur une pastille, ou un net de la liste, pour viser un net), puis **Placer & router > Chemin auto**. La liaison du chevelu la plus proche de la pastille est routée d'un coup, en contournant le cuivre existant ; un `Ctrl+Z` la défait. S'il n'y a pas de chemin, rien n'est posé et le pied de page dit pourquoi.
 
 ### Je veux router une paire différentielle
 
-1. Déclarer la paire : **Outils > Règles… > Règle et paires**. Choisir « Net P » et « Net N » puis **Créer la paire**, ou cliquer **Détecter** pour reconnaître les noms usuels (`USB_DP`/`USB_DM`, `CAN-P`/`CAN-N`…).
+1. Déclarer la paire : **Vérifier > Règles… > Règle et paires**. Choisir « Net P » et « Net N » puis **Créer la paire**, ou cliquer **Détecter** pour reconnaître les noms usuels (`USB_DP`/`USB_DM`, `CAN-P`/`CAN-N`…).
 2. Vérifier la règle (largeur et écart mini / préféré / maxi, longueur découplée maxi, profil d'impédance). Sans règle écrite, la règle d'usine s'applique (0,20 mm de piste, 0,15 mm d'écart).
-3. Choisir **Placer > Paire diff.** (`P`) et cliquer sur une pastille de la paire : l'autre net est trouvé tout seul.
+3. Choisir **Placer & router > Paire diff.** (`P`) et cliquer sur une pastille de la paire : l'autre net est trouvé tout seul.
 4. Tracer comme une piste. `V` pose les deux vias en éventail, `/` bascule la posture, `1` à `9`, `0`, `Page ↑`/`Page ↓` changent de couche (deux vias au passage), `Retour arrière` recule d'un coude.
 5. Arriver sur les deux pastilles d'en face pour terminer ; `Échap` ou `Entrée` dépose ce qui est tracé. Si les pastilles d'arrivée sont dans l'ordre inverse, l'aperçu passe au rouge et le dépôt est refusé.
 6. Le DRC signale les largeurs hors bornes, la longueur découplée excessive, les deux vias de la paire trop proches (jugés à l'isolation ordinaire, pas à l'écart de la paire), puis en remarque l'écart de longueur entre les deux pistes (au-delà de 0,5 mm) et un net de la paire absent de la carte. L'écart de longueur se corrige avec le serpentin (voir la tâche suivante).
 
 ### Je veux égaliser des longueurs
 
-1. Choisir **Placer > Serpentin** (`M`). Le triangle ▾ du bouton ouvre « Réglages du Serpentin » : amplitude max, pas, allongement forcé ΔL.
+1. Choisir **Placer & router > Serpentin** (`M`). Le triangle ▾ du bouton ouvre « Réglages du Serpentin » : amplitude max, pas, allongement forcé ΔL.
 2. Cliquer une portion droite de piste et étirer : un accordéon est généré. La cible vient de l'écart de la paire si elle en a un, sinon de la longueur qui manque au net pour rejoindre son groupe d'appariement (Gestionnaire de contraintes), sinon de ΔL (0 = étirement libre à la souris).
 3. Pour un bus synchrone, **Simuler appariement de bus (Skew)…** (ou le bouton du même nom dans les propriétés de plusieurs pistes) calcule les marges de Setup et de Hold et arme le serpentin sur le net à corriger (bouton **Régler serpentin**).
 
 ### Je veux poser un via, y compris borgne ou enterré
 
-1. **Placer > Via** (`V`) : un clic pose un via traversant accroché à la pastille ou à la piste la plus proche. Diamètre et perçage viennent de la classe du net.
+1. **Placer & router > Via** (`V`) : un clic pose un via traversant accroché à la pastille ou à la piste la plus proche. Diamètre et perçage viennent de la classe du net.
 2. Sélectionner le via ; dans Propriétés, la liste « Type de via » propose Traversant, Borgne dessus, Borgne dessous, Enterré (borgne à partir de 3 couches, enterré à partir de 4). « De la couche » et « À la couche » affinent la portée.
 3. Le texte sous les champs dit comment la portée sera fabriquée (par exemple borgne au laser dans le prépreg extérieur) et prévient quand un seul pressage ne suffit pas.
 4. Voir les erreurs de portée avec **Contrôle DRC**. La séquence de pressages se décrit dans l'Empilage physique (voir [04-editeur-pcb-fabrication.md](04-editeur-pcb-fabrication.md)).
@@ -98,26 +98,26 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 ### Je veux poser un plan ou une zone de cuivre
 
 1. Plan pleine carte : dans « Couche active », régler le rôle sur GND ou PWR et choisir le « Net du plan ». La zone suit le contour de la carte.
-2. Zone libre : **Placer > Zone cuivre** (`Z`) puis cliquer chaque sommet ; retour sur le premier point ou `Entrée` ferme, `Maj` contraint à 45°, `Échap` abandonne. Une fenêtre demande le « Net de la zone de cuivre ».
+2. Zone libre : **Carte & zones > Zone cuivre** (`Z`) puis cliquer chaque sommet ; retour sur le premier point ou `Entrée` ferme, `Maj` contraint à 45°, `Échap` abandonne. Une fenêtre demande le « Net de la zone de cuivre ».
 3. Le triangle ▾ du bouton ouvre le menu de la couche : rôle, net du plan, **Zone à main levée**, **Zone pleine carte (libre)**, **Sélectionner le cuivre de la couche**.
 4. Propriétés d'une zone : couche, net rattaché, « Liaison des pastilles du net » (bras thermiques, directe pour les CMS, directe pour toutes, aucune), « Priorité ». Sur une même couche, une zone d'un autre net de priorité plus haute est retirée de celle-ci, isolement compris ; à priorité égale, les zones se superposent dans l'ordre où elles ont été posées.
-5. Pour percer un trou dans une zone sans la supprimer : **Placer > Découpe zone** (`X`), même geste de tracé.
+5. Pour percer un trou dans une zone sans la supprimer : **Carte & zones > Découpe zone** (`X`), même geste de tracé.
 
 ### Je veux contrôler la carte (DRC)
 
-1. **Outils > Contrôle DRC** lance le contrôle. La liste « DRC » du panneau Nets & composants s'ouvre ; les erreurs sont aussi peintes sur la carte.
+1. **Vérifier > Contrôle DRC** lance le contrôle. La liste « DRC » du panneau Nets & composants s'ouvre ; les erreurs sont aussi peintes sur la carte.
 2. Cliquer une ligne centre la vue sur l'écart, sélectionne le via ou passe sur la couche fautive.
-3. Pour savoir à quelle règle se rattache un écart, ouvrir **Outils > Règles…** : chaque page affiche le nombre de défauts relevés au dernier contrôle, et **Contrôler maintenant** relance sans quitter la fenêtre.
+3. Pour savoir à quelle règle se rattache un écart, ouvrir **Vérifier > Règles…** : chaque page affiche le nombre de défauts relevés au dernier contrôle, et **Contrôler maintenant** relance sans quitter la fenêtre.
 
 > [!NOTE]
 > Le contrôle DRC n'est pas continu : il se lance par le bouton (ou par « Contrôler maintenant »), et la liste reste celle du dernier contrôle tant qu'on ne le relance pas. Il repart aussi de lui-même après certaines opérations : application d'un ECO, rechargement d'une empreinte depuis la LIB, suppression des pistes en conflit après un import, action « DRC » du Gestionnaire de contraintes. Ce qui agit en continu, c'est le routeur, qui juge au même seuil que le contrôle tant que **Anti-collision** est actif.
 
 ### Je veux régler les règles et les aligner sur un fabricant
 
-1. **Outils > Règles…** : la fenêtre « Règles & Fabrication » a deux onglets, « Règles de conception » (arbre des règles) et « Capabilités Fabricant ».
+1. **Vérifier > Règles…** : la fenêtre « Règles & Fabrication » a deux onglets, « Règles de conception » (arbre des règles) et « Capabilités Fabricant ».
 2. Dans « Classe de net », régler piste, isolation, via et perçage de chaque classe ; **Recaler le routage posé** aligne les pistes et vias déjà posés sur leur classe ; **Classes du schéma** déduit les classes depuis les motifs du schéma.
 3. Dans « Capabilités Fabricant », choisir le « Profil de fabrication actif » (JLCPCB, Générique, Eurocircuits, PCBWay ou profil importé), lire les limites d'usine, puis **Aligner règles du projet aux minima …**.
-4. **Outils > Capabilités & Règles…** ouvre la même fenêtre directement sur ce profil.
+4. **Vérifier > Capabilités & Règles…** ouvre la même fenêtre directement sur ce profil.
 
 ### Je veux changer ou recharger l'empreinte d'un composant
 
@@ -128,25 +128,25 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 
 ### Je veux vérifier le brochage schéma contre carte
 
-1. Le bouton **⚡ Pinout : Vérifier** (menu Outils) change d'état tout seul : « Schéma en attente », « Conforme ✓ » ou « n anomalie(s) ».
+1. Le bouton **⚡ Pinout : Vérifier** (onglet Vérifier) change d'état tout seul : « Schéma en attente », « Conforme ✓ » ou « n anomalie(s) ».
 2. Un clic ouvre « Inspection & Conformité du Pinout » : par composant, pas des pastilles, taille du boîtier, nombre de pastilles, puis table des broches.
 3. Pour une anomalie : **Reposer l'empreinte sur les cotes du boîtier**, **Acquitter (faux positif)** ou **Copier le rapport**.
 
 ### Je veux poser un trou de fixation (NPTH)
 
-1. **Placer > Trou NPTH**, cliquer : un trou non métallisé est posé et sélectionné (3,2 mm la première fois, puis le dernier diamètre réglé).
+1. **Carte & zones > Trou NPTH**, cliquer : un trou non métallisé est posé et sélectionné (3,2 mm la première fois, puis le dernier diamètre réglé).
 2. Dans Propriétés, régler le diamètre (boutons M2, M2.5, M3, M4), une fente éventuelle (Longueur, Angle), la position, et cocher « Verrouiller la position » si besoin.
 
 ### Je veux dessiner le contour, une découpe ou une zone interdite
 
-1. **Placer > Contour carte** (`E`) : un clic par sommet, retour sur le premier point pour fermer, `Maj` contraint à 45°.
-2. **Placer > Découpe carte** (`Maj+E`) : fenêtre intérieure fraisée ; un clic par sommet, ou deux coins puis `Entrée` pour un rectangle. Une découpe qui sort du contour est refusée.
-3. **Placer > Zone interdite** : zone posée sur une face ; le DRC signale toute patte traversante qui en ressort et tout composant qui la touche.
+1. **Carte & zones > Contour carte** (`E`) : un clic par sommet, retour sur le premier point pour fermer, `Maj` contraint à 45°.
+2. **Carte & zones > Découpe carte** (`Maj+E`) : fenêtre intérieure fraisée ; un clic par sommet, ou deux coins puis `Entrée` pour un rectangle. Une découpe qui sort du contour est refusée.
+3. **Carte & zones > Zone interdite** : zone posée sur une face ; le DRC signale toute patte traversante qui en ressort et tout composant qui la touche.
 4. Sélectionner le contour (clic sur son trait) pour régler largeur et hauteur, ou utiliser les boutons **Redessiner**, **Revenir au rectangle**, **Disque**.
 
 ### Je veux ajouter de la sérigraphie
 
-1. **Placer > Sérigraphie** ouvre un menu : Trait (segment), Rectangle (cadre), Aplat plein (logo, bandeau), Texte libre.
+1. **Carte & zones > Sérigraphie** ouvre un menu : Trait (segment), Rectangle (cadre), Aplat plein (logo, bandeau), Texte libre.
 2. Trait et rectangle : cliquer-glisser ou deux clics. Texte : un clic, puis saisie dans une boîte. Aplat : un clic par sommet, ou deux coins puis `Entrée`.
 3. La face est B.SilkS quand la vue est retournée ou que la couche active est la dernière, F.SilkS sinon ; elle se change dans Propriétés. Texte posé : 1,5 mm de haut, trait de 0,15 mm au départ (modifiables dans Propriétés).
 
@@ -174,9 +174,11 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 | ⌂ | | Va à l'accueil | Idem |
 | 👤 … | | Profil utilisateur : panneaux, réglages et derniers documents lui appartiennent | Voir [01-accueil-projets-tactile.md](01-accueil-projets-tactile.md) |
 | 📱 Tactile | | Mode tactile (iPad / tablette) | Voir [01-accueil-projets-tactile.md](01-accueil-projets-tactile.md) |
-| OUTIL (pastille) | | Rappelle l'outil actif ; un clic ouvre le menu Placer | |
+| OUTIL (pastille) | | Rappelle l'outil actif ; un clic montre son bouton dans le ruban | |
 
-### Menu Fichier
+### Menu Fichier et commandes d'échange
+
+Le menu **Fichier** garde Nouveau, Ouvrir, Enregistrer, Sauvegarder le projet et Exemples. Les exports sont dans l'onglet **Fabriquer**, le lien au schéma dans **Placer & router**, l'import du contour STEP dans **Carte & zones**.
 
 | Bouton ou menu | Raccourci | Effet | Limites |
 |---|---|---|---|
@@ -197,7 +199,9 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 | Plans (Draftsman)… | | Plans de fabrication et d'assemblage en PDF | Idem |
 | Variante de montage… | | Choisit la variante de montage (voir plus bas) | Les variantes se créent dans le schéma |
 
-### Menu Édition
+### Onglet Placer & router : modifier
+
+Groupe **Modifier** ; Annuler et Rétablir sont dans la barre rapide.
 
 | Bouton ou menu | Raccourci | Effet | Limites |
 |---|---|---|---|
@@ -211,7 +215,7 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 | Dérouter | `U` | Supprime les pistes et les vias de la sélection, laisse les empreintes | Les zones, contours et découpes restent ; sans piste ni via sélectionné, rien n'est supprimé |
 | Supprimer | `Suppr` | Supprime la sélection | |
 
-### Menu Placer
+### Onglets Placer & router et Carte & zones
 
 | Bouton ou menu | Raccourci | Effet | Limites |
 |---|---|---|---|
@@ -236,9 +240,11 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 | Mesure | `K` | Mesure une distance | |
 
 > [!NOTE]
-> Le bouton Sérigraphie du menu Placer et le titre de son menu déroulant affichent `Maj+S`, ce que fait la touche : `Maj+S` active la Sérigraphie en faisant tourner la forme (trait, rectangle, aplat, texte), et `S` seule active la Sélection. Les entrées Trait et Rectangle n'ont pas de raccourci propre.
+> Le bouton Sérigraphie de l'onglet Carte & zones et le titre de son menu déroulant affichent `Maj+S`, ce que fait la touche : `Maj+S` active la Sérigraphie en faisant tourner la forme (trait, rectangle, aplat, texte), et `S` seule active la Sélection. Les entrées Trait et Rectangle n'ont pas de raccourci propre.
 
-### Menu Affichage
+### Barre de vue
+
+Recadrer, Grille et Chevelu y sont en icônes ; les autres réglages sont dans son menu Affichage. Le cube de vue équivaut au bouton Vue.
 
 | Bouton ou menu | Raccourci | Effet | Limites |
 |---|---|---|---|
@@ -253,7 +259,7 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 | Recadrer | | Cadre la carte entière | |
 | Espace de travail ▾ | | Liste les panneaux (case cochée = visible), **Tout afficher**, **Disposition en colonnes**, **Réinitialiser la disposition** | |
 
-### Menu Outils
+### Onglet Vérifier
 
 | Bouton ou menu | Raccourci | Effet | Limites |
 |---|---|---|---|
@@ -285,7 +291,7 @@ Les touches d'une seule lettre se taisent quand un champ de saisie a le focus. T
 | `Tab` | Ouvre ou ferme la saisie de coordonnées | Fonctionne en mode Piste, Zone, Contour, Découpe, Zone interdite, et en Sélection d'une seule empreinte |
 | `1` à `9`, `0` | Couche 1 à 10 (pose un via si un tracé est en cours) | Seules les couches existantes répondent |
 | `Page ↑` / `Page ↓` | Couche voisine | Seule façon d'atteindre les couches au-delà de dix au clavier |
-| `S` | Sélection | Voir la note du menu Placer |
+| `S` | Sélection | Voir la note de l'onglet Carte & zones |
 | `Maj+S` | Sérigraphie ; fait tourner la forme (trait, rectangle, aplat, texte) | |
 | `T` | Piste | |
 | `V` | Via ; en tracé de piste, attache le via au curseur (le clic le pose) ; en tracé de paire, pose les deux vias | |
@@ -329,7 +335,7 @@ Les touches d'une seule lettre se taisent quand un champ de saisie a le focus. T
 | `Alt+glisser` dans le vide, ou bouton du milieu | Déplace la vue | |
 | Molette | Zoom autour du pointeur | Échelle bornée |
 | Double-clic | Termine piste, paire, zone ou contour en cours ; sinon, sur une piste, la prend en entier sur toutes les couches et met son net en évidence | Ne termine pas un aplat, une découpe de zone ni un tracé de sérigraphie |
-| Clic droit | Termine la piste, la zone ou le contour en cours ; sinon efface la sélection et la mise en évidence du net | Ne dépose pas une paire en cours (`Entrée`, `Échap` ou double-clic) |
+| Clic droit | Termine la piste, la zone ou le contour en cours ; sinon ouvre la roulette sur ce qui est dessous, et efface la sélection et la mise en évidence du net s'il n'y a rien | Ne dépose pas une paire en cours (`Entrée`, `Échap` ou double-clic) |
 | Appui long (tactile) | Équivaut au clic droit | Environ 0,55 s |
 | Deux doigts | Pincer pour zoomer, glisser pour déplacer la vue | |
 | `Ctrl` (ou `Cmd`) enfoncé à la pose d'un bout de piste, au départ comme à l'arrivée | Le bout se pose là où l'on vise dans le cuivre de la pastille (sur la grille si elle tombe dans la pastille, au point exact sinon) au lieu d'être attiré au centre ; il garde ce décalage si le boîtier tourne ou se retourne | Hors du cuivre de la pastille, `Ctrl` ne change rien : l'aimant ramène au centre |
@@ -419,7 +425,7 @@ Le contenu dépend de la sélection.
 
 ### Panneau Qualité de placement
 
-Ouvert par **Outils > Score Placement** (le même bouton le referme) ; il est masqué à l'ouverture de l'éditeur. Il se recalcule de lui-même peu après chaque modification de la carte.
+Ouvert par **Vérifier > Score Placement** (le même bouton le referme) ; il est masqué à l'ouverture de l'éditeur. Il se recalcule de lui-même peu après chaque modification de la carte.
 
 | Bouton ou élément | Effet | Limites |
 |---|---|---|
@@ -434,7 +440,7 @@ Ouvert par **Outils > Score Placement** (le même bouton le referme) ; il est ma
 
 ### Fenêtre Règles & Fabrication
 
-Ouverte par **Outils > Règles…** (onglet « Règles de conception ») ou **Capabilités & Règles…** (onglet « Capabilités Fabricant »). `Échap` la ferme ; `Ctrl+Z` et `Ctrl+Y` la traversent. Tout champ affiché se modifie ; ce qui ne se règle pas est montré en valeur lue. Chaque page porte le nombre de défauts du dernier contrôle, **Contrôler maintenant** et **Voir dans la liste**.
+Ouverte par **Vérifier > Règles…** (onglet « Règles de conception ») ou **Capabilités & Règles…** (onglet « Capabilités Fabricant »). `Échap` la ferme ; `Ctrl+Z` et `Ctrl+Y` la traversent. Tout champ affiché se modifie ; ce qui ne se règle pas est montré en valeur lue. Chaque page porte le nombre de défauts du dernier contrôle, **Contrôler maintenant** et **Voir dans la liste**.
 
 | Famille et page | Champs et boutons | Limites |
 |---|---|---|
@@ -529,7 +535,7 @@ Ouverte par **Simuler appariement de bus (Skew)…** : « Analyse de Bus Synchro
 
 | Élément | Effet | Limites |
 |---|---|---|
-| Badge de `Fichier > Schéma ↔ PCB` | Nombre de disparités détectées | |
+| Badge de `Placer & router > Schéma ↔ PCB` | Nombre de disparités détectées | |
 | Catégories : Nouveaux, Renommés, Boîtiers, Nets, Valeurs, Absents, Contraintes | Cochent ou décochent tout un type | « Absents » est décoché d'office |
 | Case de chaque action | Choisit les actions à appliquer | |
 | Tout cocher / Tout décocher | | |
@@ -556,13 +562,13 @@ Une carte décrit un circuit ; une manière de travailler appartient à la perso
 
 | Réglage | Origine |
 |---|---|
-| Pas d'accrochage et affichage de la grille | Affichage > Grille, Pas de grille |
-| Anti-collision | Placer > Anti-collision |
-| Vue dessus / dessous | Affichage > Vue |
+| Pas d'accrochage et affichage de la grille | Barre de vue > Grille ; Barre de vue > Affichage > Pas de grille |
+| Anti-collision | Placer & router > Anti-collision |
+| Vue dessus / dessous | Barre de vue > Affichage > Vue |
 | Contraste, Face opposée | Affichage |
-| Rooms affichées ou masquées | Affichage > Rooms |
+| Rooms affichées ou masquées | Barre de vue > Affichage > Rooms |
 | Onglet du panneau de listes, filtre « non routés » | Panneau Nets & composants |
-| Disposition des panneaux | Affichage > Espace de travail |
+| Disposition des panneaux | Barre de vue > Affichage > Espace de travail |
 
 La conduite « Pistes au déplacement d'un boîtier » (Règles > Face à un obstacle) est, elle, gardée dans le stockage du navigateur (clé `pcb.moveEtch`).
 
@@ -573,7 +579,7 @@ La conduite « Pistes au déplacement d'un boîtier » (Règles > Face à un obs
 | Fonction | Effet | Limites |
 |---|---|---|
 | Carte de routage (lot de routes) | Claude fournit des points de passage ; le routeur de la page fait le détail (poussée, contournement). Aperçu en pointillés, cuivre poussé en rouge, application au clic en une étape d'annulation | Jusqu'à 20 routes par lot, 200 points par route, 50 vias (constantes du code) ; seulement quand Claude pilote la page |
-| Chemin automatique (`cao_chemin`, ou **Placer > Chemin auto** à la main) | A* sur une grille par couche, huit directions, via là où les couches traversées sont libres ; propose les points de passage d'une liaison ou l'axe d'une paire | `cao_chemin` n'écrit rien (le bouton, lui, pose la piste) ; les liaisons sont cherchées dans l'ordre donné, sans ordonnancement ni reprise d'ensemble ; ne consulte pas la faisabilité d'un via borgne ou enterré |
+| Chemin automatique (`cao_chemin`, ou **Placer & router > Chemin auto** à la main) | A* sur une grille par couche, huit directions, via là où les couches traversées sont libres ; propose les points de passage d'une liaison ou l'axe d'une paire | `cao_chemin` n'écrit rien (le bouton, lui, pose la piste) ; les liaisons sont cherchées dans l'ordre donné, sans ordonnancement ni reprise d'ensemble ; ne consulte pas la faisabilité d'un via borgne ou enterré |
 
 Voir [11-claude-mcp.md](11-claude-mcp.md) pour le protocole de pilotage.
 

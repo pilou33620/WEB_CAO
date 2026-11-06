@@ -683,7 +683,7 @@ function cmHtmlClasses(){
   h+='</tbody></table></div><p class="cm-note">La largeur pour Z cible est calculée couche par couche d\'après l\'empilage '+
     '(diélectrique et plans de référence), sur les couches de signal ; un clic la pose sur sa couche. Une largeur par couche l\'emporte sur '+
     'la largeur de la classe : le routeur la prend en changeant de couche, le DRC la contrôle, « aligner sur la classe » la suit. '+
-    'Les classes à impédance cible figurent au plan de fabrication (Fichier → Plans).</p>';
+    'Les classes à impédance cible figurent au plan de fabrication (Fabriquer → Plans).</p>';
   return h;
 }
 function cmHtmlPaires(){
@@ -712,7 +712,7 @@ function cmHtmlPaires(){
       '<td>'+cmMm(v.minW,3)+" – "+cmMm(v.maxW,3)+'</td><td>'+cmMm(v.minGap,3)+" – "+cmMm(v.maxGap,3)+'</td></tr>';
   }
   return h+'</tbody></table></div><p class="cm-note">Écart de longueur signalé au-delà de 0,5 mm, comme au DRC. '+
-    'Le serpentin (Placer → Serpentin) prend l\'écart de la paire pour cible.</p>';
+    'Le serpentin (Placer & router → Serpentin) prend l\'écart de la paire pour cible.</p>';
 }
 function cmHtmlGroupes(){
   const C=cmModele(), M=cmMesures();
@@ -776,7 +776,7 @@ function cmHtmlGroupes(){
     '<input type="search" id="cmGrpFiltre" class="cm-filtre" placeholder="Filtrer les nets (ex. DQ)" value="'+esc(CM.grpFiltre)+'">'+
     '<div class="cm-liste">'+nets.slice(0,600).map(n=>'<label class="cm-case"><input type="checkbox" data-grpnet="'+esc(n)+'"'+
       (CM.grpSel.has(n)?" checked":"")+'> '+esc(n)+'</label>').join("")+'</div></div>'+
-    '<p class="cm-note">Le serpentin (Placer → Serpentin), posé sur un net d\'un groupe, propose d\'ajouter ce qui lui manque. '+
+    '<p class="cm-note">Le serpentin (Placer & router → Serpentin), posé sur un net d\'un groupe, propose d\'ajouter ce qui lui manque. '+
     'En délai, la longueur à ajouter se déduit du retard par millimètre du net.</p>';
   return h;
 }

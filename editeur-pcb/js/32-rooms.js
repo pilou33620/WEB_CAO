@@ -25,7 +25,7 @@
    (22-bloc-placement.js).
 
    Rien de cela n'est gravé ni exporté : c'est un repère de placement, que le
-   menu Affichage montre ou cache (réglage du profil, comme la grille).
+   menu Affichage de la barre de vue montre ou cache (réglage du profil, comme la grille).
    ========================================================================== */
 
 const ROOM_MARGE=0.8;          // mm autour des boîtiers

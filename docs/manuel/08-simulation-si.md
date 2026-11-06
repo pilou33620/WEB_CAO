@@ -11,7 +11,7 @@ Les familles PI, thermique et Audit sont dans le [chapitre 09](09-simulation-pi-
 
 ### Je veux ouvrir le panneau et choisir une analyse
 
-1. Éditeur PCB : menu **Outils**, rubrique **Analyser**, bouton **Simulation EM…**. Visionneuse IPC-2581 : bouton **Simulation EM…** de la barre d'outils. Le panneau « Simulation EM » s'ouvre (ou se déplie s'il était replié).
+1. Éditeur PCB : onglet **Vérifier**, groupe **Simuler**, bouton **Simulation EM…**. Visionneuse IPC-2581 : bouton **Simulation EM…** de la barre d'outils. Le panneau « Simulation EM » s'ouvre (ou se déplie s'il était replié).
 2. Choisir la famille dans la première rangée : **SI** Intégrité du signal, **PI** Intégrité de l'alimentation, **RF** Radiofréquence, **AUDIT** Audit de la carte.
 3. Choisir l'analyse dans la seconde rangée. Pour SI : **Impédance**, **Z différentielle**, **Crosstalk**, **Current Return Path**, **Bus synchrone**, **Diagramme de l'œil**.
 4. Les résultats s'écrivent dans la section « Résultats », séparée du panneau de réglages. Elle reparaît d'elle-même à la fin du premier calcul ; on la place, on l'agrandit ou on la détache comme les autres sections.
@@ -158,7 +158,7 @@ Deux pistes d'un même net sont refusées (« Piste 1 et Piste 2 ont le même ne
 
 | Bouton ou champ | Effet | Limites |
 |---|---|---|
-| **Simulation EM…** | Éditeur PCB : menu Outils, rubrique Analyser. Visionneuse : barre d'outils. Ouvre ou déplie le panneau « Simulation EM ». | Le panneau démarre masqué (éditeur PCB comme visionneuse) ; déjà ouvert, le bouton le déplie s'il était replié. Le menu de l'espace de travail le rend aussi trouvable. |
+| **Simulation EM…** | Éditeur PCB : onglet Vérifier, groupe Simuler. Visionneuse : barre d'outils. Ouvre ou déplie le panneau « Simulation EM ». | Le panneau démarre masqué (éditeur PCB comme visionneuse) ; déjà ouvert, le bouton le déplie s'il était replié. Le menu de l'espace de travail le rend aussi trouvable. |
 | En-tête du panneau : **▾** Replier, **□** Plein écran, **⬒** Détacher / rattacher, **✕** Fermer | Gestion de la section comme les autres sections du dock. | La section « Résultats » a les mêmes quatre boutons. |
 | Rangée des familles : **SI** Intégrité du signal, **PI** Intégrité de l'alimentation, **RF** Radiofréquence, **AUDIT** Audit de la carte | Choisit la famille ; l'info-bulle de chaque bouton dit à quelle question elle répond. | Changer de famille ouvre la première analyse de la famille. |
 | Rangée des analyses (SI) : **Impédance**, **Z différentielle**, **Crosstalk**, **Current Return Path**, **Bus synchrone**, **Diagramme de l'œil** | Ouvre l'analyse. Le résultat de chaque analyse est gardé quand on change d'onglet. | Impédance, Z différentielle et Current Return Path lisent la même réponse du serveur (une sélection, un calcul). Crosstalk et Diagramme de l'œil ont chacun leur route et leur résultat. |

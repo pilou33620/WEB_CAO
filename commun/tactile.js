@@ -578,6 +578,15 @@ function trCible(x, y, type, sansPoint){
   return c || {ctx:"vide", titre:TR_OUTILS[TR.outil].nomVide};
 }
 function trOuvrirSur(x, y){ trOuvrir(x, y, trCible(x, y, "pen")); }
+/* Clic droit sur la feuille, sans tracé en cours : la roulette de ce qui est
+   dessous. Rend son contexte (« vide » : l'éditeur lâche la sélection, comme
+   avant), ou null si la roulette n'est pas branchée. */
+function tactileRouletteClicDroit(x, y){
+  if(!TR.outil || !TR.cv) return null;
+  const c = trCible(x, y, "mouse");
+  trOuvrir(x, y, c);
+  return c.ctx;
+}
 
 /* ---------- Dessin de la roulette ---------- */
 function trPol(r, a){ return [r*Math.sin(a), -r*Math.cos(a)]; }

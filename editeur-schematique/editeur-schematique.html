@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="../commun/variantes.css">
 <link rel="stylesheet" href="../commun/tactile.css">
 <link rel="stylesheet" href="../commun/menus.css">
+<link rel="stylesheet" href="../commun/ruban-icones.css">
 <link rel="stylesheet" href="../commun/tuto.css">
 <link rel="stylesheet" href="../commun/explorateur-lib.css">
 <link rel="stylesheet" href="../commun/pilote.css">
@@ -23,6 +24,21 @@
 <header>
   <div class="brand"><i></i><b>Éditeur schématique</b><span>V1.7 · BOÎTIERS</span><span class="proj" data-cao-projet="schema" hidden></span></div>
   <div class="tools">
+    <div class="barre-rapide">
+      <div class="mnu" data-mnu="fichier">
+        <button class="mnu-t" type="button">Fichier <span class="car">▾</span></button>
+        <div class="mnu-pop">
+          <button data-ic="＋" class="tb" id="bNew">Nouveau</button>
+          <button data-ic="📂" class="tb" id="bOpen">Ouvrir</button>
+          <button data-ic="💾" class="tb" id="bSave">Enregistrer .json <kbd>Ctrl+S</kbd></button>
+          <button data-ic="☁" class="tb" id="bSaveGit" style="display:none" title="Lancé par WEB_SUITE : enregistre, puis envoie tout le projet sur GitHub en un seul commit (commit + push par le lanceur). Enregistrer et l'export vers le PCB, eux, restent en local">Sauvegarder le projet → GitHub <kbd>Ctrl+Maj+S</kbd></button>
+          <button data-ic="★" class="tb" id="bExemples" title="Deux schémas complets à ouvrir : Interface IoT 4 couches (paire diff, bus SPI, RF 50 Ω) ou Commande 12 V 2 couches">Exemples…</button>
+        </div>
+      </div>
+      <button class="tb" id="bSaveRapide" type="button" data-proxy="bSave" title="Enregistrer .json (Ctrl+S)"></button>
+      <button data-ic="↶" class="tb" id="bUndo">Annuler <kbd>Ctrl+Z</kbd></button>
+      <button data-ic="↷" class="tb" id="bRedo">Rétablir <kbd>Ctrl+Y</kbd></button>
+    </div>
     <div class="nav-gauche">
       <nav class="nav-rapide" aria-label="Aller à">
         <button type="button" data-cao-nav="pcb" title="Éditeur PCB — le schéma en cours reste dans l'onglet">➔</button>
@@ -33,90 +49,100 @@
       <button class="tb" id="bProfil" data-cao-profil title="Utilisateur : panneaux, réglages et derniers documents lui appartiennent">👤 …</button>
       <button class="tb tb-tactile-indicator" id="bTactileToggle" title="Mode tactile (iPad / tablette)"><span class="tactile-dot"></span> 📱 Tactile</button>
     </div>
-    <nav class="menubar">
-      <div class="mnu" data-mnu="fichier">
-        <button class="mnu-t" type="button">Fichier <span class="car">▾</span></button>
-        <div class="mnu-pop">
-          <button data-ic="＋" class="tb" id="bNew">Nouveau</button>
-          <button data-ic="📂" class="tb" id="bOpen">Ouvrir</button>
-          <button data-ic="💾" class="tb" id="bSave">Enregistrer .json <kbd>Ctrl+S</kbd></button>
-          <button data-ic="☁" class="tb" id="bSaveGit" style="display:none" title="Lancé par WEB_SUITE : enregistre, puis envoie tout le projet sur GitHub en un seul commit (commit + push par le lanceur). Enregistrer et l'export vers le PCB, eux, restent en local">Sauvegarder le projet → GitHub <kbd>Ctrl+Maj+S</kbd></button>
-          <button data-ic="★" class="tb" id="bExemples" title="Deux schémas complets à ouvrir : Interface IoT 4 couches (paire diff, bus SPI, RF 50 Ω) ou Commande 12 V 2 couches">Exemples…</button>
-          <div class="mnu-h">Exporter</div>
-          <button data-ic="➔" class="tb" id="bExportPcb" title="Met à jour la carte du projet avec ce schéma (empreintes, boîtiers, valeurs, nets ; placement et routage gardés), l'écrit en local, sans GitHub, puis ouvre l'éditeur PCB">Exporter vers le PCB</button>
-          <button data-ic="🖼" class="tb" id="bPng">Exporter .png</button>
-          <button data-ic="📄" class="tb" id="bPdf" title="PDF vectoriel, texte cherchable (références, valeurs, nets) : feuilles, format, orientation, échelle et fond au choix">Exporter .pdf…</button>
-          <button data-ic="≣" class="tb" id="bNetlist">Netlist .txt</button>
-          <button data-ic="▦" class="tb" id="bCsv" title="Nomenclature de la variante de montage active">Nomenclature .csv</button>
-          <button data-ic="▦" class="tb" id="bXlsx" title="Nomenclature Excel au format BOM (onglets Presentation, History, BOM) de la variante de montage active">Nomenclature .xlsx</button>
-          <button data-ic="◫" class="tb" id="bVariantes" title="Variantes de montage : quels composants sont posés dans chaque version de la carte (BOM, DNP)">Variantes de montage…</button>
-        </div>
-      </div>
-      <div class="mnu" data-mnu="edition">
-        <button class="mnu-t" type="button">Édition <span class="car">▾</span></button>
-        <div class="mnu-pop">
-          <button data-ic="↶" class="tb" id="bUndo">Annuler <kbd>Ctrl+Z</kbd></button>
-          <button data-ic="↷" class="tb" id="bRedo">Rétablir <kbd>Ctrl+Y</kbd></button>
-          <div class="mnu-s"></div>
-          <button data-ic="⧉" class="tb" id="bCopy">Copier <kbd>Ctrl+C</kbd></button>
-          <button data-ic="📋" class="tb" id="bPaste">Coller <kbd>Ctrl+V</kbd></button>
-          <button data-ic="❐" class="tb" id="bDup">Dupliquer <kbd>D</kbd></button>
-          <div class="mnu-s"></div>
-          <button data-ic="⟳" class="tb" id="bRot">Pivoter <kbd>R</kbd></button>
-          <button data-ic="⇋" class="tb" id="bMir">Miroir <kbd>M</kbd></button>
-          <div class="mnu-s"></div>
-          <button data-ic="✂" class="tb" id="bDelW" title="Supprimer les fils de la sélection, sans toucher aux composants">Supprimer les fils <kbd>U</kbd></button>
-          <button data-ic="🗑" class="tb" id="bDel">Supprimer <kbd>Suppr</kbd></button>
-        </div>
-      </div>
-      <div class="mnu" data-mnu="placer">
-        <button class="mnu-t" type="button">Placer <span class="car">▾</span></button>
-        <div class="mnu-pop">
-          <button data-ic="↖" class="tb on" id="mSelect">Sélection <kbd>V</kbd></button>
-          <div class="mnu-h">Composants</div>
-          <button data-ic="➕" class="tb" id="bAddComp" title="Ajouter un composant depuis la bibliothèque (A)">Composant… <kbd>A</kbd></button>
-          <div class="mnu-h">Liaisons</div>
-          <button data-ic="╱" class="tb" id="mWire">Fil <kbd>W</kbd></button>
-          <button data-ic="═" class="tb" id="mBus" title="Tracer un bus de signaux (trait épais)">Bus <kbd>B</kbd></button>
-          <div class="mnu-h">Dessin</div>
-          <button data-ic="✎" class="tb" id="mDraw" title="Dessiner un trait ou un rectangle de délimitation">Trait <kbd>T</kbd> <span class="car">▾</span></button>
-          <button data-ic="✕" class="tb" id="mErase">Gomme <kbd>X</kbd></button>
-          <div class="mnu-h">Repères</div>
-          <button data-ic="📏" class="tb" id="mMesure" title="Mesurer une distance : deux points, la cote et les deltas X/Y">Mesure <kbd>K</kbd></button>
-        </div>
-      </div>
-      <div class="mnu" data-mnu="affichage">
-        <button class="mnu-t" type="button">Affichage <span class="car">▾</span></button>
-        <div class="mnu-pop">
-          <button data-ic="#" data-bascule class="tb" id="bGrid">Grille</button>
-          <label class="mnu-row" data-ic="⋯">Pas de grille <select class="tbsel" id="selGrid" title="Pas d'accrochage de la grille"></select></label>
-          <div class="mnu-s"></div>
-          <button data-ic="⋰" data-bascule class="tb on" id="bNets">Nets : tous <kbd>N</kbd></button>
-          <button data-ic="▭" class="tb" id="bCartouche" title="Cadre de page et cartouche : format de la feuille (aucun, A4 ou A3 paysage), titre, noms et dates, numéros, société">Cartouche : aucun</button>
-          <div class="mnu-s"></div>
-          <button data-ic="⤢" class="tb" id="bFit">Recadrer</button>
-          <button data-ic="⊞" class="tb" id="bRanger" title="Feuille racine : place les blocs du synoptique (alimentations en haut, bloc central au milieu, chaînes en bas). Ctrl+Z annule.">Ranger le synoptique</button>
-          <button data-ic="▤" class="tb" id="bWs">Espace de travail ▾</button>
-        </div>
-      </div>
-      <div class="mnu" data-mnu="outils">
-        <button class="mnu-t" type="button">Outils <span class="car">▾</span></button>
-        <div class="mnu-pop">
-          <div class="mnu-h">Chercher</div>
-          <button data-ic="⌕" class="tb" id="bFind" title="Chercher un composant par son repère (toutes feuilles), ou un net par son nom">Rechercher <kbd>Ctrl+F</kbd></button>
-          <button data-ic="⇱" class="tb" id="bProbe" title="Montrer la sélection sur le PCB resté ouvert dans un autre onglet — il saute dessus sans que celui-ci bouge">Montrer au PCB <kbd>L</kbd></button>
-          <div class="mnu-h">Contraintes</div>
-          <button data-ic="⊞" class="tb" id="bSchContraintes" title="Contraintes de nets pour le PCB : impédance, longueur, vias, couches, topologie, moignons, groupes d'appariement — reprises par le gestionnaire de contraintes du PCB">Contraintes de nets…</button>
-          <div class="mnu-h">Repères</div>
-          <button data-ic="⇅" class="tb" id="bRenumeroter" title="Refaire tous les repères, préfixe par préfixe : feuille par feuille, de haut en bas puis de gauche à droite. Le PCB garde les anciens jusqu'à sa resynchronisation. Ctrl+Z défait le tout.">Renuméroter…</button>
-          <div class="mnu-h">Analyser</div>
-          <button data-ic="⚡" class="tb" id="bPatterns" title="Détecter les blocs fonctionnels (alimentations, bus rapides, filtres...) et qualifier les nets">Motifs & Blocs</button>
-        </div>
-      </div>
-    </nav>
     <button class="tb" id="bExportPcbBarre" type="button" title="Exporter vers le PCB : met à jour la carte du projet avec ce schéma, l'écrit en local (sans GitHub), puis ouvre l'éditeur PCB">⇉ PCB</button>
-    <button class="mnu-chip" id="mnuChip" type="button" title="Outil actif — un clic ouvre le menu Placer"></button>
+    <button class="mnu-chip" id="mnuChip" type="button" title="Outil actif — un clic montre son bouton dans le ruban"></button>
   </div>
+  <nav class="menubar ruban" aria-label="Ruban de commandes">
+    <div class="ruban-ongs">
+      <div class="ong actif" data-mnu="dessin">
+        <button class="mnu-t" type="button">Dessin</button>
+        <div class="band">
+          <div class="rg">
+            <div class="rg-cmds">
+              <button data-ic="↖" class="tb on" id="mSelect">Sélection <kbd>V</kbd></button>
+            </div>
+            <div class="rg-t">Sélectionner</div>
+          </div>
+          <div class="rg">
+            <div class="rg-cmds">
+              <button data-ic="➕" class="tb" id="bAddComp" title="Ajouter un composant depuis la bibliothèque (A)">Composant… <kbd>A</kbd></button>
+              <button data-ic="╱" class="tb" id="mWire">Fil <kbd>W</kbd></button>
+              <button data-ic="═" class="tb" id="mBus" title="Tracer un bus de signaux (trait épais)">Bus <kbd>B</kbd></button>
+              <button data-ic="✎" class="tb" id="mDraw" title="Dessiner un trait ou un rectangle de délimitation">Trait <kbd>T</kbd> <span class="car">▾</span></button>
+            </div>
+            <div class="rg-t">Créer</div>
+          </div>
+          <div class="rg mnu">
+            <div class="rg-cmds">
+              <button data-ic="⟳" class="tb" id="bRot">Pivoter <kbd>R</kbd></button>
+              <button data-ic="⇋" class="tb" id="bMir">Miroir <kbd>M</kbd></button>
+              <button data-ic="❐" class="tb" id="bDup">Dupliquer <kbd>D</kbd></button>
+              <button data-ic="🗑" class="tb" id="bDel">Supprimer <kbd>Suppr</kbd></button>
+            </div>
+            <button class="mnu-t rg-t" type="button">Modifier <span class="car">▾</span></button>
+            <div class="mnu-pop">
+              <button data-ic="⧉" class="tb" id="bCopy">Copier <kbd>Ctrl+C</kbd></button>
+              <button data-ic="📋" class="tb" id="bPaste">Coller <kbd>Ctrl+V</kbd></button>
+              <button data-ic="✕" class="tb" id="mErase">Gomme <kbd>X</kbd></button>
+              <button data-ic="✂" class="tb" id="bDelW" title="Supprimer les fils de la sélection, sans toucher aux composants">Supprimer les fils <kbd>U</kbd></button>
+            </div>
+          </div>
+          <div class="rg mnu">
+            <div class="rg-cmds">
+              <button data-ic="⇅" class="tb" id="bRenumeroter" title="Refaire tous les repères, préfixe par préfixe : feuille par feuille, de haut en bas puis de gauche à droite. Le PCB garde les anciens jusqu'à sa resynchronisation. Ctrl+Z défait le tout.">Renuméroter…</button>
+              <button data-ic="⚡" class="tb" id="bPatterns" title="Détecter les blocs fonctionnels (alimentations, bus rapides, filtres...) et qualifier les nets">Motifs & Blocs</button>
+            </div>
+            <button class="mnu-t rg-t" type="button">Organiser <span class="car">▾</span></button>
+            <div class="mnu-pop">
+              <button data-ic="⊞" class="tb" id="bRanger" title="Feuille racine : place les blocs du synoptique (alimentations en haut, bloc central au milieu, chaînes en bas). Ctrl+Z annule.">Ranger le synoptique</button>
+            </div>
+          </div>
+          <div class="rg">
+            <div class="rg-cmds">
+              <button data-ic="📏" class="tb" id="mMesure" title="Mesurer une distance : deux points, la cote et les deltas X/Y">Mesure <kbd>K</kbd></button>
+              <button data-ic="⌕" class="tb" id="bFind" title="Chercher un composant par son repère (toutes feuilles), ou un net par son nom">Rechercher <kbd>Ctrl+F</kbd></button>
+              <button data-ic="⊞" class="tb" id="bSchContraintes" title="Contraintes de nets pour le PCB : impédance, longueur, vias, couches, topologie, moignons, groupes d'appariement — reprises par le gestionnaire de contraintes du PCB">Contraintes de nets…</button>
+            </div>
+            <div class="rg-t">Inspecter</div>
+          </div>
+          <div class="rg">
+            <div class="rg-cmds">
+              <button data-ic="➔" class="tb" id="bExportPcb" title="Met à jour la carte du projet avec ce schéma (empreintes, boîtiers, valeurs, nets ; placement et routage gardés), l'écrit en local, sans GitHub, puis ouvre l'éditeur PCB">Exporter vers le PCB</button>
+              <button data-ic="⇱" class="tb" id="bProbe" title="Montrer la sélection sur le PCB resté ouvert dans un autre onglet — il saute dessus sans que celui-ci bouge">Montrer au PCB <kbd>L</kbd></button>
+            </div>
+            <div class="rg-t">PCB</div>
+          </div>
+        </div>
+      </div>
+      <div class="ong" data-mnu="sorties">
+        <button class="mnu-t" type="button">Sorties</button>
+        <div class="band">
+          <div class="rg">
+            <div class="rg-cmds">
+              <button data-ic="🖼" class="tb" id="bPng">Exporter .png</button>
+              <button data-ic="📄" class="tb" id="bPdf" title="PDF vectoriel, texte cherchable (références, valeurs, nets) : feuilles, format, orientation, échelle et fond au choix">Exporter .pdf…</button>
+            </div>
+            <div class="rg-t">Images</div>
+          </div>
+          <div class="rg">
+            <div class="rg-cmds">
+              <button data-ic="≣" class="tb" id="bNetlist">Netlist .txt</button>
+              <button data-ic="▦" class="tb" id="bCsv" title="Nomenclature de la variante de montage active">Nomenclature .csv</button>
+              <button data-ic="▦" class="tb" id="bXlsx" title="Nomenclature Excel au format BOM (onglets Presentation, History, BOM) de la variante de montage active">Nomenclature .xlsx</button>
+            </div>
+            <div class="rg-t">Listes</div>
+          </div>
+          <div class="rg">
+            <div class="rg-cmds">
+              <button data-ic="◫" class="tb" id="bVariantes" title="Variantes de montage : quels composants sont posés dans chaque version de la carte (BOM, DNP)">Variantes de montage…</button>
+            </div>
+            <div class="rg-t">Montage</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <button class="ruban-pli" id="rubanPli" type="button"></button>
+  </nav>
   <input type="file" id="fileIn" accept=".json,application/json" style="display:none">
 </header>
 
@@ -128,6 +154,20 @@
 
   <div class="ctr" id="ctr">
     <div id="canvasWrap"><canvas id="sheet"></canvas>
+      <div class="vue-bar" id="vueBar">
+        <button data-ic="⤢" class="tb" id="bFit">Recadrer</button>
+        <button data-ic="#" data-bascule class="tb" id="bGrid">Grille</button>
+        <i></i>
+        <div class="mnu" data-mnu="affichage">
+          <button class="mnu-t" type="button" title="Affichage" aria-label="Affichage"><span class="car">▾</span></button>
+          <div class="mnu-pop">
+            <label class="mnu-row" data-ic="⋯">Pas de grille <select class="tbsel" id="selGrid" title="Pas d'accrochage de la grille"></select></label>
+            <button data-ic="⋰" data-bascule class="tb on" id="bNets">Nets : tous <kbd>N</kbd></button>
+            <button data-ic="▭" class="tb" id="bCartouche" title="Cadre de page et cartouche : format de la feuille (aucun, A4 ou A3 paysage), titre, noms et dates, numéros, société">Cartouche : aucun</button>
+            <button data-ic="▤" class="tb" id="bWs">Espace de travail ▾</button>
+          </div>
+        </div>
+      </div>
       <div id="rpBox">
         <div class="rphead">
           <span class="rpico">&#8981;</span>
@@ -288,6 +328,7 @@
 <script src="../commun/lecture-cao.js"></script>
 <script src="../commun/tactile.js"></script>
 <script src="../commun/menus.js"></script>
+<script src="../commun/options.js"></script>
 <script src="../commun/tuto.js" data-outil="schema"></script>
 <script>if(typeof tactileInitialiser==="function")tactileInitialiser({outil:"schema",roulette:true});</script>
 <script src="../commun/pilote.js"></script>

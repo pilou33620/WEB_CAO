@@ -121,7 +121,7 @@ function pcbVarRendre(){
     '<b>bom.csv</b> et <b>positions.csv</b> du dossier de fabrication. Le cuivre, lui, ne change pas : '+
     'leurs pastilles restent gravées.</p>'+
     (mod.liste.length?"":'<p>Aucune variante pour l\'instant : elles se créent dans l\'éditeur schématique '+
-      '(Fichier → Variantes de montage…), puis s\'enregistrent avec le schéma.</p>')+
+      '(Sorties → Variantes de montage…), puis s\'enregistrent avec le schéma.</p>')+
     '<div class="var-choix">'+ligne("","Carte complète")+mod.liste.map(e=>ligne(e.id,e.nom)).join("")+'</div>'+
     '<div class="row" style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">'+
       '<button class="tb" type="button" data-a="schema" title="Relire les variantes dans le schéma enregistré du projet">⟳ Reprendre du schéma</button>'+

@@ -8,7 +8,7 @@ Cette page décrit chaque tâche, puis chaque menu, bouton, raccourci et option,
 
 ### Je veux poser un composant
 
-1. Appuyer sur `A`, ou choisir **Placer → Composant…** : l'**Explorateur Visuel de Bibliothèque** s'ouvre (recherche par référence, valeur, boîtier ou MPN ; filtres « Modèle SPICE », « CMS / SMD », « Traversant / THT »).
+1. Appuyer sur `A`, ou choisir **Dessin → Composant…** : l'**Explorateur Visuel de Bibliothèque** s'ouvre (recherche par référence, valeur, boîtier ou MPN ; filtres « Modèle SPICE », « CMS / SMD », « Traversant / THT »).
 2. Sélectionner une carte du catalogue, puis **✔ Placer sur le schéma** (ou double-clic sur la carte : pose immédiate).
 3. Cliquer sur la feuille pour poser le composant. `R` pivote le symbole avant la pose ; `Maj`+clic en pose plusieurs à la suite ; `Échap` ou clic droit annule.
 4. Autre voie : le panneau **Bibliothèque** (à gauche) liste les symboles intégrés par catégorie ; un clic sur un symbole, puis un clic sur la feuille.
@@ -16,7 +16,7 @@ Cette page décrit chaque tâche, puis chaque menu, bouton, raccourci et option,
 
 ### Je veux tracer un fil
 
-1. Appuyer sur `W` (ou **Placer → Fil**).
+1. Appuyer sur `W` (ou **Dessin → Fil**).
 2. Cliquer pour démarrer, cliquer pour poser un coude, cliquer sur une broche pour terminer. Les fils sont orthogonaux (en L). Une broche proche (12 px à la souris, 20 px au toucher) attire le point.
 3. `Échap`, clic droit ou double-clic arrête le tracé en cours.
 4. Une extrémité de fil posée en plein milieu d'un autre segment le scinde ; deux fils qui se croisent sans extrémité commune restent distincts (le point rouge indique une jonction réelle).
@@ -32,7 +32,7 @@ Cette page décrit chaque tâche, puis chaque menu, bouton, raccourci et option,
 
 ### Je veux tracer un bus et y piquer des signaux
 
-1. Appuyer sur `B` (**Placer → Bus**) et tracer le bus (trait épais).
+1. Appuyer sur `B` (**Dessin → Bus**) et tracer le bus (trait épais).
 2. Sélectionner le segment, nommer le bus dans **Net** avec une syntaxe développable : `D[0..7]` (ou `D[0:7]`) donne `D0` à `D7` ; `SPI{MOSI,MISO,SCK,CS}` donne `SPI_MOSI`, `SPI_MISO`… ; `CLK,DATA,EN` ; ou un protocole nu (`SPI`, `I2C`, `UART`, `CAN`, `USB`, qui développent leurs signaux usuels, par exemple `SPI_MOSI`, `SPI_MISO`, `SPI_SCK`, `SPI_CS`). Un bus non nommé s'appelle `BUS$n`.
 3. Le panneau **Propriétés** liste le **Faisceau de bus (n signaux)** ; le bouton **⚡ Piquer un signal** ouvre la fenêtre **Piquage de bus**.
 4. Autre voie : en mode Fil, partir d'un bus ou y arriver ouvre la même fenêtre. Un clic sur un signal (suggestion en surbrillance, signaux déjà pris marqués « (occupé) ») le valide aussitôt ; sinon saisir le nom dans **Signal à dériver :** (pré-rempli avec la suggestion), puis **✓ Valider le piquage** (`Entrée`). `Échap`, **Annuler** ou ✕ ferment sans nommer.
@@ -43,7 +43,7 @@ Cette page décrit chaque tâche, puis chaque menu, bouton, raccourci et option,
 1. L'onglet de gauche **Hiérarchie** (⬡) est la feuille racine : elle montre le synoptique de la carte : un bloc par composant important. Il ne peut être ni supprimé ni dupliqué.
 2. **+ Feuille** ajoute une feuille ; **Dupliquer** copie la feuille courante. Un double-clic sur l'onglet la renomme ; ✕ la supprime (confirmation si elle contient des composants, des fils, des traits ou des zones). Il reste toujours au moins une feuille de schéma.
 3. Le synoptique se construit seul depuis le schéma. Chaque circuit intégré, transistor, connecteur, pile ou LED devient un bloc ; les passifs (résistances, condensateurs, bobines, fusibles, cavaliers, diodes à deux pattes…) sont cachés, comme les protections ESD/TVS, varistances, quartz, points de test et trous. Un symbole générique (importé d'eCADSTAR ou de KiCad) se reconnaît à sa pièce LIB (`REG_`, `TRAN_MOS-`, `CONN_`, `ESD_`, `QUARTZ-`…), puis au préfixe de son repère (R, C, L, JP, D, ESD, TP, Y…). Le titre du bloc est deviné d'après le MPN, la pièce LIB, la valeur et la description (TIMER, AMPLI, MCU, PMIC, RÉGULATEUR, CONVERTISSEUR, RADIO, MODEM, GNSS, RTC, MOSFET, BORNIER, CARTE SIM…), sinon le repère ; il se modifie dans **Titre**. Dessous : le MPN, sinon la pièce LIB quand la valeur n'est qu'un réglage (ADJ, 5V, N_MOS), sinon la valeur. Deux blocs sont reliés quand leurs broches tombent sur le même net, en traversant les passifs en série entre deux signaux (OUT → R → TRIG), jamais ceux qui vont à une alimentation ou à la masse. Entre feuilles, seuls les noms globaux (**Étiquette globale**, symboles d'alimentation) relient. La masse n'est pas dessinée. Les alimentations sont en rose, avec une flèche partant de la pile, du connecteur ou de la broche OUT qui les produit ; un composant alimenté à travers une résistance (filtre RC, résistance de LED) compte comme alimenté. Un rail traverse un fusible, une ferrite, un cavalier ou une diode série sans changer d'alim. Sur un gros synoptique (plus de 16 blocs), une alim qui va à plus de quatre blocs ne tire de fil que vers la chaîne d'alimentation et le bloc central ; les autres la portent en étiquette ⚡ au-dessus du bloc. Les signaux sont en bleu-vert, fléchés depuis la broche de sortie (OUT, TX, Q, collecteur C, source S d'un capteur) et nommés d'après son net ; un bus a une flèche à chaque bout. Deux fils ne partagent jamais une voie, et un croisement inévitable se dessine en saut. Le routage s'arrête au bout de 2,5 s (il reprend à chaque déplacement de bloc, chaque Ranger ou chaque titre qui change la largeur d'un bloc) : les liaisons restantes sont alors tracées en pointillé direct. Sous le synoptique : composants, nets et sous-feuilles.
-4. Sur la feuille Hiérarchie : glisser un bloc le déplace (les fils se re-routent), double-clic (ou **Ouvrir sa feuille ➔**) ouvre la feuille du composant, sélectionné. **Affichage → Ranger le synoptique** place les blocs : la chaîne d'alimentation en haut, le bloc qui échange le plus de signaux au milieu, ses périphériques à gauche et à droite, les chaînes en bas dans le sens du signal, par rangées de quatre qui serpentent. Au-delà de 16 blocs, chaque feuille est rangée à part et encadrée sous son nom (`Ctrl+Z` annule). `PageUp` / `PageDown` passent d'une feuille à l'autre.
+4. Sur la feuille Hiérarchie : glisser un bloc le déplace (les fils se re-routent), double-clic (ou **Ouvrir sa feuille ➔**) ouvre la feuille du composant, sélectionné. **Dessin → Ranger le synoptique** place les blocs : la chaîne d'alimentation en haut, le bloc qui échange le plus de signaux au milieu, ses périphériques à gauche et à droite, les chaînes en bas dans le sens du signal, par rangées de quatre qui serpentent. Au-delà de 16 blocs, chaque feuille est rangée à part et encadrée sous son nom (`Ctrl+Z` annule). `PageUp` / `PageDown` passent d'une feuille à l'autre.
 5. Clic droit sur un onglet : premier numéro des repères de la feuille (par défaut 100 pour la feuille 1, 200 pour la 2…), avec renumération facultative des composants déjà posés.
 
 ### Je veux renseigner un composant (valeur, boîtier, référence du catalogue)
@@ -82,7 +82,7 @@ Cette page décrit chaque tâche, puis chaque menu, bouton, raccourci et option,
 
 ### Je veux monter une carte en plusieurs variantes (DNP)
 
-1. **Fichier → Variantes de montage…** (ou **◫** dans le panneau Nomenclature).
+1. **Sorties → Variantes de montage…** (ou **◫** dans le panneau Nomenclature).
 2. À gauche, saisir un nom (« Lite », « Pro »…, 40 caractères au plus), choisir « vierge » ou « copie de … », **＋ Ajouter**. 20 variantes au plus. La variante créée devient la variante active.
 3. À droite, décocher « monté » pour chaque composant retiré de la variante ; ✓ / ✗ en tête de colonne montent ou retirent tous les composants affichés.
 4. Choisir la variante active (rond à gauche de son nom, ou menu déroulant du panneau Nomenclature). Ses non-montés sont barrés (NM) dans la liste et voilés d'une croix rouge sur la feuille.
@@ -91,7 +91,7 @@ Cette page décrit chaque tâche, puis chaque menu, bouton, raccourci et option,
 
 ### Je veux exporter la nomenclature, la netlist ou une image
 
-1. **Fichier → Exporter → Netlist .txt** : une section par feuille, nets globaux à part, boîtier en troisième colonne, remarques de brochage en commentaire. Les numéros de feuille de la netlist, du CSV (colonne Feuille) et des cartes de Claude comptent la Hiérarchie pour 1 : la première feuille de schéma y est la feuille 2 (`f2`), alors que son onglet porte `01`.
+1. **Sorties → Netlist .txt** : une section par feuille, nets globaux à part, boîtier en troisième colonne, remarques de brochage en commentaire. Les numéros de feuille de la netlist, du CSV (colonne Feuille) et des cartes de Claude comptent la Hiérarchie pour 1 : la première feuille de schéma y est la feuille 2 (`f2`), alors que son onglet porte `01`.
 2. **Nomenclature .csv** : une ligne par composant, récapitulatif des quantités (composants montés seulement), liste des non-montés.
 3. **Nomenclature .xlsx** : classeur à trois onglets (Presentation, History, BOM), non-montés en rouge `[Not Fitted]`.
 4. **Exporter .png** : image de la feuille courante (page entière si un cartouche est défini).
@@ -99,7 +99,7 @@ Cette page décrit chaque tâche, puis chaque menu, bouton, raccourci et option,
 
 ### Je veux envoyer le schéma à l'éditeur PCB
 
-1. Cliquer sur **⇉ PCB** (barre d'en-tête) ou **Fichier → Exporter → Exporter vers le PCB**.
+1. Cliquer sur **⇉ PCB** (barre d'en-tête) ou **Dessin → Exporter vers le PCB**.
 2. Le schéma est enregistré en local dans le dossier du projet, puis l'éditeur PCB s'ouvre et met la carte à jour (empreintes, boîtiers, valeurs, nets) ; placement et routage sont conservés.
 3. Rien n'est envoyé sur GitHub : **Sauvegarder le projet → GitHub** (`Ctrl+Maj+S`) le fait, en un seul commit. Ce bouton n'apparaît que lorsque l'éditeur est lancé par WEB_SUITE.
 4. Autre voie : exporter la netlist `.txt` et l'importer dans l'éditeur PCB. Détails côté PCB : [03-editeur-pcb-edition-routage.md](03-editeur-pcb-edition-routage.md).
@@ -108,11 +108,11 @@ Cette page décrit chaque tâche, puis chaque menu, bouton, raccourci et option,
 
 1. Sélectionner un composant (un seul) ou un fil.
 2. Cliquer sur **➔** (en-tête) : le PCB s'ouvre dans l'onglet, sur ce repère ou ce net. Sans sélection, le bouton change simplement de page.
-3. PCB déjà ouvert dans un autre onglet : **Outils → Montrer au PCB** (`L`) le fait sauter sur la sélection sans que celui-ci bouge. Le pied de page dit si l'élément a été montré, s'il n'est pas sur la carte, ou si aucun onglet PCB n'est ouvert.
+3. PCB déjà ouvert dans un autre onglet : **Dessin → Montrer au PCB** (`L`) le fait sauter sur la sélection sans que celui-ci bouge. Le pied de page dit si l'élément a été montré, s'il n'est pas sur la carte, ou si aucun onglet PCB n'est ouvert.
 
 ### Je veux détecter les blocs fonctionnels et classer les nets
 
-1. Le panneau **Blocs et Motifs** (dock de droite, sous Propriétés et Nomenclature & Nets) affiche l'analyse, lancée au chargement de la page ; elle se relance seule à chaque modification de zone ou annulation. **Outils → Motifs & Blocs** la relance et rouvre le panneau s'il était fermé ou replié.
+1. Le panneau **Blocs et Motifs** (dock de droite, sous Propriétés et Nomenclature & Nets) affiche l'analyse, lancée au chargement de la page ; elle se relance seule à chaque modification de zone ou annulation. **Dessin → Motifs & Blocs** la relance et rouvre le panneau s'il était fermé ou replié.
 2. Chaque bloc reconnu liste ses composants (un clic les sélectionne sur le schéma), ses nets, la classe suggérée et, pour une alimentation, la tension inférée.
 3. Dépliant **Classes de nets** : un menu par net nommé (`Auto (…)` ou une classe imposée). Une correction manuelle ressort en jaune et part avec le document.
 4. **Valider pour PI** enregistre les courants DC estimés pour le solveur d'intégrité d'alimentation.
@@ -120,7 +120,7 @@ Cette page décrit chaque tâche, puis chaque menu, bouton, raccourci et option,
 
 ### Je veux saisir des contraintes de nets pour le PCB
 
-1. **Outils → Contraintes de nets…**, ou **Contraintes du net…** dans les propriétés d'un net nommé.
+1. **Dessin → Contraintes de nets…**, ou **Contraintes du net…** dans les propriétés d'un net nommé.
 2. Filtrer la liste, puis saisir pour chaque net : classe, topologie, impédance, tolérance, longueurs, vias, couches, ordre des repères, moignons.
 3. En bas, créer un **groupe d'appariement** : nom, mode (en longueur mm / en délai ps), tolérance, référence (« le plus long » ou un net), puis cocher les nets et **Créer avec les nets cochés**.
 4. Les contraintes partent au PCB avec le schéma (export **⇉ PCB**, ECO, gestionnaire de contraintes). Les valeurs hors bornes sont écartées.
@@ -134,8 +134,8 @@ Cette page décrit chaque tâche, puis chaque menu, bouton, raccourci et option,
 
 ### Je veux poser un cadre, un cartouche, un trait ou une zone
 
-1. **Affichage → Cartouche : …** : choisir le format de page (aucun, A4 paysage, A3 paysage), le titre, les noms, les dates, les numéros et la société (la société est mémorisée dans le profil).
-2. **Placer → Trait** (`T`) : cliquer deux points. Le menu **Forme du tracé** (flèche ▾) choisit trait, rectangle ou zone fonctionnelle.
+1. **Barre de vue → Affichage → Cartouche : …** : choisir le format de page (aucun, A4 paysage, A3 paysage), le titre, les noms, les dates, les numéros et la société (la société est mémorisée dans le profil).
+2. **Dessin → Trait** (`T`) : cliquer deux points. Le menu **Forme du tracé** (flèche ▾) choisit trait, rectangle ou zone fonctionnelle.
 3. Une **zone fonctionnelle (Room)** a une catégorie (Alimentation, Microcontrôleur, Analogique, Puissance, Communication, Filtrage) : elle entre dans l'analyse des blocs fonctionnels.
 
 ### Je veux mesurer une distance
@@ -177,9 +177,11 @@ Cette page décrit chaque tâche, puis chaque menu, bouton, raccourci et option,
 | 📱 Tactile | | Active le mode tactile (adaptation CSS, stylet, roulette). | |
 | Roulette | | Ouvre la roulette de commandes au centre de la feuille, sur ce qui est sélectionné ; un second clic la ferme. | Voir *Roulette tactile*. |
 | ⇉ PCB | | Met à jour la carte du projet avec ce schéma, en local, puis ouvre l'éditeur PCB. | Version un seul fichier : message d'erreur, passer par la netlist. |
-| OUTIL (pastille) | | Rappelle l'outil actif ; un clic ouvre le menu Placer. | |
+| OUTIL (pastille) | | Rappelle l'outil actif ; un clic montre son bouton dans le ruban. | |
 
-### Menu Fichier
+### Menu Fichier et onglet Sorties
+
+Le menu **Fichier** garde Nouveau, Ouvrir, Enregistrer, Sauvegarder le projet et Exemples. Les exports et la nomenclature sont dans l'onglet **Sorties**. **Exporter vers le PCB** est dans l'onglet **Dessin**, groupe PCB.
 
 | Bouton | Raccourci | Effet | Limites |
 |---|---|---|---|
@@ -197,7 +199,9 @@ Cette page décrit chaque tâche, puis chaque menu, bouton, raccourci et option,
 
 Colonnes du CSV : Repère, Composant, Valeur, Boîtier, Empreinte PCB, Réf Bibliothèque, Part Number, Fabricant, Code LCSC, Réf Mouser, Réf DigiKey, Spécifications, Datasheet, Feuille, Montage (« Monté » ou « Non monté (DNP) »). Fin de fichier : récapitulatif `Qté`, puis variante, composants montés et non montés (DNP).
 
-### Menu Édition
+### Onglet Dessin : modifier
+
+Groupe **Modifier** ; Annuler et Rétablir sont dans la barre rapide.
 
 | Bouton | Raccourci | Effet | Limites |
 |---|---|---|---|
@@ -213,7 +217,7 @@ Colonnes du CSV : Repère, Composant, Valeur, Boîtier, Empreinte PCB, Réf Bibl
 | Supprimer | `Suppr` ou `Retour arrière` | Supprime la sélection. | |
 | (Tout sélectionner) | `Ctrl+A` | Sélectionne composants, fils et traits de la feuille. | Pas de bouton de menu. |
 
-### Menu Placer
+### Onglet Dessin : créer et mesurer
 
 | Bouton | Raccourci | Effet | Limites |
 |---|---|---|---|
@@ -227,7 +231,9 @@ Colonnes du CSV : Repère, Composant, Valeur, Boîtier, Empreinte PCB, Réf Bibl
 
 Menu **Forme du tracé** : **─ Trait (segment)** (`T`), **▢ Rectangle (cadre)** (`Maj+T`), **🔲 Zone fonctionnelle (Room)** (`Z`).
 
-### Menu Affichage
+### Barre de vue
+
+Recadrer et Grille y sont en icônes ; les autres réglages sont dans son menu Affichage. **Ranger le synoptique** est dans l'onglet **Dessin**, liste du groupe Organiser.
 
 | Bouton | Raccourci | Effet | Limites |
 |---|---|---|---|
@@ -239,7 +245,7 @@ Menu **Forme du tracé** : **─ Trait (segment)** (`T`), **▢ Rectangle (cadre
 | Ranger le synoptique | | Feuille Hiérarchie : place les blocs (alimentations en haut, bloc central, périphériques autour, chaînes en bas dans le sens du signal). | Grisé hors de la feuille Hiérarchie. `Ctrl+Z` annule. |
 | Espace de travail ▾ | | Liste des panneaux (coche = visible) : Bibliothèque, Propriétés, Nomenclature & Nets, Blocs et Motifs ; **Tout afficher**, **Disposition en colonnes**, **Réinitialiser la disposition**. | |
 
-### Menu Outils
+### Onglet Dessin : organiser, inspecter, lien au PCB
 
 | Bouton | Raccourci | Effet | Limites |
 |---|---|---|---|
@@ -292,7 +298,7 @@ Les raccourcis sont inactifs pendant une saisie dans un champ. Toute autre combi
 | Glisser un bloc (feuille Hiérarchie) | Déplace le bloc |
 | Double-clic pendant un tracé de fil, de bus ou de trait | Arrête le tracé |
 | Mode Mesure : clic | Pose le départ, puis l'arrivée ; un troisième clic repart d'ailleurs |
-| Clic droit | Annule le fil, le trait ou la pose en cours ; sinon vide la sélection |
+| Clic droit | Annule le fil, le trait ou la pose en cours ; sinon ouvre la roulette sur ce qui est dessous, et vide la sélection s'il n'y a rien |
 | Poignée d'extrémité d'un fil seul sélectionné | Étire le segment |
 | Poignée de coin d'un trait ou rectangle seul sélectionné | Redimensionne |
 | Stylet : glisser sur le vide | Lasso (le doigt déplace la vue) |

@@ -34,7 +34,7 @@
    S'y ajoutent les signets : une entrée par feuille, et sous chaque feuille
    d'assemblage une entrée par composant qui y mène.
 
-   La fenêtre (Fichier → Plans (Draftsman)…) cherche de la même façon, dans
+   La fenêtre (Fabriquer → Plans (Draftsman)…) cherche de la même façon, dans
    le même index : la liste des résultats, la feuille, et les endroits
    surlignés sur l'aperçu.
 

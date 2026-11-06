@@ -77,7 +77,7 @@ const SCH_EXPORT_PCB="cao.export.pcb.v1";
 function exporterVersPcb(){
   if(typeof sessAller!=="function"||(typeof sessAutonome==="function"&&sessAutonome())){
     alert("Version un seul fichier : l'éditeur PCB n'est pas à côté.\n\n"+
-          "Exportez la netlist (Fichier → Netlist .txt) et importez-la dans l'éditeur PCB.");
+          "Exportez la netlist (Sorties → Netlist .txt) et importez-la dans l'éditeur PCB.");
     return Promise.resolve(false);
   }
   const doc=schDocCourant();

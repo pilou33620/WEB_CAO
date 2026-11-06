@@ -855,7 +855,10 @@ cv.addEventListener("contextmenu",e=>{
   if(S.wireStart){S.wireStart=null;draw();}
   else if(S.drawStart){S.drawStart=null;draw();}
   else if(S.place){S.place=null;S.placeLibItem=null;setPalette(null);draw();}
-  else{clearSel(); refreshPanels(); draw();}
+  else{
+    const ctx=typeof tactileRouletteClicDroit==="function"?tactileRouletteClicDroit(e.clientX,e.clientY):null;
+    if(!ctx||ctx==="vide"){clearSel(); refreshPanels(); draw();}
+  }
 });
 cv.addEventListener("dblclick",e=>{
   if(S.wireStart){S.wireStart=null;draw();return;}

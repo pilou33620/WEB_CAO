@@ -1126,7 +1126,7 @@ async function pcbExportDepuisSchema(dem) {
   const nl = etat && typeof etat.netlist === "string" ? etat.netlist : "";
   if (!nl) {
     pcbExportAvis("erreur", "Export vers le PCB impossible",
-      "la netlist du schéma n'a pas suivi (stockage de session plein ?). Passez par Fichier → Importer netlist.");
+      "la netlist du schéma n'a pas suivi (stockage de session plein ?). Passez par Placer & router → Importer netlist.");
     return false;
   }
   if (etat.doc && typeof pcbDefinirSchema === "function")

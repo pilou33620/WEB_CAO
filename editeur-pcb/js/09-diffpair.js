@@ -858,7 +858,7 @@ function dpDrc(out){
       }
     /* Deux pistes de longueurs franchement différentes, c'est un décalage
        temporel entre les deux fronts — le désappariement. On le signale pour
-       information : le corriger demande un serpentin (touche M, Placer →
+       information : le corriger demande un serpentin (touche M, Placer & router →
        Serpentin). */
     if(cp.len>0&&cp.lenN>0&&Math.abs(cp.len-cp.lenN)>0.5)
       out.push({info:true,x:anchor().x,y:anchor().y,l:anchor().l,

@@ -1299,7 +1299,7 @@ function ipc2581Fichier(){
   const d=ipc2581Document();
   return {name:fabBase()+".xml",text:d.xml,kind:"ipc2581",stats:d.stats};
 }
-/* Le bouton « IPC-2581 » du menu Fichier. */
+/* Le bouton « IPC-2581 » de l'onglet Fabriquer. */
 function exportIpc2581(){
   if(!S.fps.length&&!S.tracks.length){alert("Rien à exporter : la carte est vide.");return null;}
   if(typeof pcbVarDepuisSchema==="function")pcbVarDepuisSchema();

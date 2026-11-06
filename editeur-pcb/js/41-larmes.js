@@ -112,5 +112,5 @@ function larmesPerimees(out){
   if(!fausses.length&&manquent<=0)return;
   const z=fausses[0]||Z[0], b=polyBBox(z.pts);
   out.push({x:(b.x1+b.x2)/2,y:(b.y1+b.y2)/2,l:z.l,
-    msg:"Larmes à refaire : du cuivre a bougé depuis leur pose (Placer > Larmes)"});
+    msg:"Larmes à refaire : du cuivre a bougé depuis leur pose (Placer & router > Larmes)"});
 }

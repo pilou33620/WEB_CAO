@@ -1,9 +1,10 @@
 /* =============================================================================
    commun/menus.css
-   Barre de menus des deux éditeurs : Fichier · Édition · Placer · Affichage ·
-   Outils. La navigation entre outils (schéma/PCB, composants, LIB, accueil)
-   est en icônes à gauche, avec le profil et le mode tactile. Les entrées sont les boutons .tb d'origine (mêmes id, mêmes
-   handlers), simplement présentés en lignes de menu déroulant.
+   Commandes des deux éditeurs : menu Fichier et barre rapide en haut, ruban à
+   onglets dessous, barre de vue et cube dans le canevas. La navigation entre
+   outils (schéma/PCB, composants, LIB, accueil) reste en icônes, avec le profil
+   et le mode tactile. Les entrées sont les boutons .tb d'origine (mêmes id, mêmes
+   handlers), simplement présentés autrement.
    ============================================================================= */
 
 /* l'en-tête passe au-dessus des panneaux flottants (70) et sous les petits
@@ -12,8 +13,6 @@
    des menus déroulants (vu sur iPad, dock droit sous le menu Placer) */
 body>header{position:relative;z-index:75}
 
-.menubar{display:flex;flex-wrap:wrap;gap:2px;background:var(--panel2);
-  border:1px solid var(--border2);border-radius:6px;padding:2px}
 .mnu{position:relative}
 .mnu-t{background:none;border:0;color:var(--txt);padding:5px 11px;border-radius:4px;cursor:pointer;
   font:12px var(--ui);display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
@@ -41,7 +40,7 @@ body>header{position:relative;z-index:75}
 .mnu-pop button.tb.on{background:rgba(63,160,234,.16);color:#fff}
 .mnu-pop button.tb::before{content:attr(data-ic);width:16px;flex:none;text-align:center;color:var(--txt-dim)}
 .mnu-pop button.tb.on::before{color:var(--blue)}
-.mnu-pop button.tb[data-bascule].on::before{content:"✓";color:var(--blue)}
+.mnu-pop button.tb[data-bascule].on::before{content:"✓";color:var(--blue);background:none}
 .mnu-pop button.tb kbd{margin-left:auto}
 .mnu-pop button.tb .car{margin-left:auto;font-size:10px;color:var(--txt-dim)}
 .mnu-pop button.tb kbd+.car{margin-left:0}
@@ -55,8 +54,8 @@ body>header{position:relative;z-index:75}
   background:var(--blue-deep);border:1px solid var(--blue);color:#fff;font:12px var(--ui);white-space:nowrap}
 .mnu-chip small{font-family:var(--mono);font-size:9px;letter-spacing:.14em;opacity:.75}
 .mnu-chip kbd{font-family:var(--mono);font-size:9px;color:#dff0ff;border:1px solid #5cb4f0;border-radius:3px;padding:0 3px}
-/* groupe de gauche : navigation en icônes, profil, tactile */
-.nav-gauche{display:inline-flex;align-items:center;gap:6px}
+/* navigation en icônes, profil, tactile : à droite de la barre rapide */
+.nav-gauche{display:inline-flex;align-items:center;gap:6px;margin-left:auto}
 .nav-rapide{display:inline-flex;gap:2px;background:var(--panel2);border:1px solid var(--border2);
   border-radius:6px;padding:2px}
 .nav-rapide:not(:has(button:not([hidden]))){display:none}
@@ -68,3 +67,113 @@ body.mode-tactile .nav-rapide button{width:38px;height:38px;font-size:16px}
 header .tools{flex:1}
 
 body.mode-tactile .mnu-t{min-height:38px;font-size:13px}
+
+/* ---------- barre rapide : Fichier, Enregistrer, Annuler, Rétablir ---------- */
+body>header{padding:5px 10px 0;gap:5px 14px}
+.barre-rapide{display:inline-flex;align-items:center;gap:2px}
+.barre-rapide>.mnu{margin-right:4px}
+.barre-rapide>button.tb{font-size:0;width:30px;height:27px;padding:0;justify-content:center;background:none;border-color:transparent}
+.barre-rapide>button.tb:hover{background:#262a31}
+.barre-rapide>button.tb kbd{display:none}
+.barre-rapide>button.tb::before{content:"";width:17px;height:17px;background:var(--ri) center/contain no-repeat}
+
+/* ---------- ruban ---------- */
+:root{--ruban-h:70px}
+.menubar.ruban{position:relative;flex:0 0 calc(100% + 20px);margin:0 -10px;padding-bottom:var(--ruban-h);min-width:0}
+body.ruban-replie .menubar.ruban{padding-bottom:0}
+/* le défilement des onglets ne coupe pas les bandes : elles se placent sur .menubar */
+.ruban-ongs{display:flex;gap:2px;padding:0 38px 0 6px;overflow-x:auto;scrollbar-width:none}
+.ruban-ongs::-webkit-scrollbar{display:none}
+.ong{flex:none}
+.ong>.mnu-t{padding:5px 12px 4px;border-radius:0;border-bottom:2px solid transparent;color:var(--txt-dim);
+  font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+.ong>.mnu-t:hover{background:none;color:var(--txt)}
+.ong.actif>.mnu-t{color:#fff;border-bottom-color:var(--blue)}
+.ruban-pli{position:absolute;right:6px;top:2px;width:26px;height:22px;background:var(--panel);border:0;border-radius:4px;
+  color:var(--txt-dim);cursor:pointer;font-size:11px}
+.ruban-pli:hover{background:#262a31;color:#fff}
+
+.band{display:none;position:absolute;left:0;right:0;bottom:0;height:var(--ruban-h);padding:0 4px;
+  background:var(--panel2);border-top:1px solid var(--border);overflow:auto hidden;scrollbar-width:thin}
+body:not(.ruban-replie) .ong.actif>.band,.ong.deroule>.band{display:flex}
+/* replié : un clic sur un onglet pose sa bande par-dessus le canevas, le temps d'une commande */
+body.ruban-replie .band{top:100%;bottom:auto;border-bottom:1px solid var(--border2);box-shadow:0 12px 24px rgba(0,0,0,.45)}
+
+.rg{flex:none;display:flex;flex-direction:column;padding:2px 5px 0;border-right:1px solid var(--border)}
+.rg.mnu{position:static}
+.rg-cmds{display:flex;gap:1px;flex:1;min-height:0}
+.rg-t,.rg .mnu-t.rg-t{display:block;width:100%;height:15px;padding:0;background:none;border-radius:2px;text-align:center;
+  font:600 9.5px/15px var(--ui);letter-spacing:.05em;text-transform:uppercase;color:var(--txt-dim);box-shadow:none;white-space:nowrap}
+.rg .mnu-t.rg-t:hover,.rg.open .mnu-t.rg-t{background:#262a31;color:#fff}
+.rg .mnu-t.rg-t .car{font-size:8px}
+
+.rg-cmds button.tb,body.tel .band .mnu-pop button.tb{position:relative;flex:none;flex-direction:column;justify-content:flex-start;gap:2px;
+  width:auto;min-width:54px;max-width:78px;height:50px;padding:3px 3px 0;background:none;border:1px solid transparent;border-radius:4px;
+  font-size:9.5px;line-height:1.1;white-space:normal;text-align:center;text-wrap:balance;color:var(--txt-dim);overflow:hidden}
+.rg-cmds button.tb:hover,body.tel .band .mnu-pop button.tb:hover{background:#262a31;border-color:transparent;color:#fff}
+.rg-cmds button.tb.on,body.tel .band .mnu-pop button.tb.on{background:rgba(63,160,234,.18);border-color:var(--blue);color:#fff}
+.rg-cmds button.tb::before,body.tel .band .mnu-pop button.tb::before,.rg .mnu-pop button.tb::before{content:"";flex:none;
+  width:24px;height:24px;background:var(--ri) center/contain no-repeat}
+.rg-cmds button.tb kbd,body.tel .band .mnu-pop button.tb kbd{display:none}
+.rg-cmds button.tb .car,body.tel .band .mnu-pop button.tb .car{position:absolute;right:3px;top:3px;margin:0;font-size:9px}
+#ecoBadge{position:absolute;left:2px;top:2px;margin:0 !important}
+/* commandes de plus d'un groupe : liste fixe, pour sortir d'une bande qui défile */
+.rg .mnu-pop{position:fixed;top:0;left:0;z-index:90}
+.rg .mnu-pop button.tb::before{width:16px;height:16px}
+
+/* ---------- barre de vue et cube, dans le canevas ---------- */
+.vue-bar{position:absolute;left:0;right:0;bottom:12px;margin:0 auto;width:fit-content;z-index:15;display:flex;align-items:center;
+  gap:1px;padding:3px 5px;background:var(--panel);border:1px solid var(--border2);border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.45)}
+.vue-bar>i{width:1px;height:18px;margin:0 3px;background:var(--border2)}
+.vue-bar>button.tb{width:30px;height:27px;padding:0;justify-content:center;font-size:0;background:none;border-color:transparent}
+.vue-bar>button.tb:hover{background:#262a31}
+.vue-bar>button.tb.on{background:rgba(63,160,234,.2);border-color:transparent}
+.vue-bar>button.tb kbd{display:none}
+.vue-bar>button.tb::before{content:"";width:17px;height:17px;background:var(--ri) center/contain no-repeat}
+.vue-bar .mnu-t{height:27px;padding:0 5px;gap:2px}
+.vue-bar .mnu-t::before{content:"";width:17px;height:17px;background:var(--ri) center/contain no-repeat}
+.vue-bar .mnu-pop{top:auto;bottom:calc(100% + 8px);left:auto;right:0}
+#coordBox.on{bottom:56px}
+.vue-cube{position:absolute;top:10px;right:14px;z-index:15;width:70px;height:70px;padding:0;background:none;border:0;cursor:pointer}
+.vue-cube svg{display:block;width:100%;height:100%;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))}
+.vue-cube .c1{fill:#d9dee6;stroke:#6e7682}.vue-cube .c2{fill:#9aa2ae;stroke:#6e7682}.vue-cube .c3{fill:#7d8592;stroke:#6e7682}
+.vue-cube:hover .c1{fill:#bfe0f8}
+.vue-cube text{font:700 6.5px var(--ui);fill:#25282d}
+.vue-cube.dessous .c1{fill:#f2c744}
+
+/* ---------- fenêtre d'options ---------- */
+.opt-fen{position:absolute;top:12px;right:14px;z-index:30;width:300px;max-height:calc(100% - 70px);display:flex;flex-direction:column;
+  background:var(--panel);border:1px solid var(--border2);border-top:2px solid var(--blue);border-radius:4px;box-shadow:0 10px 28px rgba(0,0,0,.55)}
+.opt-fen[hidden]{display:none}
+#canvasWrap:has(#vueCube) .opt-fen{top:90px;max-height:calc(100% - 148px)}
+.opt-tete{flex:none;display:flex;align-items:center;gap:8px;height:27px;padding:0 6px 0 10px;cursor:move;touch-action:none;
+  background:var(--panel2);border-bottom:1px solid var(--border);font:700 10.5px var(--ui);letter-spacing:.06em;user-select:none}
+.opt-tete span{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.opt-tete button{background:none;border:0;color:var(--txt-dim);cursor:pointer;font-size:13px;padding:2px 5px;border-radius:3px}
+.opt-tete button:hover{background:#262a31;color:#fff}
+.opt-fen .pnl-body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.opt-fen #props{flex:1;min-height:0;max-height:none;overflow-y:auto}
+.opt-pied{flex:none;display:flex;justify-content:flex-end;gap:6px;padding:7px 9px;border-top:1px solid var(--border)}
+.opt-pied button.pri{background:var(--blue-deep);border-color:var(--blue);color:#fff}
+
+/* ---------- tactile ---------- */
+body.mode-tactile .barre-rapide>button.tb,body.mode-tactile .vue-bar>button.tb,body.mode-tactile .vue-bar .mnu-t{width:38px;height:38px}
+body.mode-tactile .ruban-pli{height:30px;width:34px}
+
+/* ---------- téléphone : le ruban reste, replié d'usine (menus.js), bande en bandeau défilant ---------- */
+body.tel>header .menubar.ruban{flex:none;margin:0 -8px;width:calc(100% + 16px)}
+body.tel .ruban-ongs{padding-right:0;margin-right:42px}
+body.tel .ruban-pli{height:40px;width:38px;top:0;right:2px}
+body.tel .rg .mnu-pop{display:contents}
+body.tel .rg .mnu-t.rg-t{pointer-events:none}
+body.tel .rg .mnu-t.rg-t .car{display:none}
+body.tel .band .rg:has(.mnu-pop){display:grid;grid-auto-flow:column;grid-template-rows:1fr 15px;justify-items:start}
+body.tel .band .rg:has(.mnu-pop) .rg-t{grid-row:2;grid-column:1/span 9}
+body.tel .band .rg:has(.mnu-pop) .rg-cmds{grid-row:1}
+body.tel .band .rg:has(.mnu-pop) .mnu-pop>*{grid-row:1}
+body.tel .band .mnu-row{height:50px;padding:0 6px;font-size:10px;grid-row:1}
+body.tel-paysage>header .menubar.ruban{margin:0;width:auto;padding-bottom:0}
+body.tel-paysage .ruban-ongs{flex-direction:column;padding:0;overflow:visible}
+body.tel-paysage .ruban-pli{position:static;width:100%}
+body.tel-paysage .band{position:fixed;left:calc(var(--tel-rail) + env(safe-area-inset-left,0px));right:0;top:0;bottom:auto;z-index:50}
+body.tel-paysage:not(.ruban-replie){padding-top:var(--ruban-h)}

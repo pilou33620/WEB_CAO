@@ -179,6 +179,7 @@ Côté navigateur, JavaScript standard, sans dépendance. Côté serveur, Python
 ```bash
 python editeur-pcb/outils/build-monofichier.py && node editeur-pcb/test/harness.js
 python editeur-schematique/outils/build-monofichier.py && node editeur-schematique/test/harness.js
+python commun/test/banc-ruban.py          # le ruban des deux éditeurs, dans Chromium s'il est installé
 node visionneuse-ipc2581/test/harness-sim.js
 node gestion-lib/test/banc-catalogue.js
 python python/test/banc-ligne-mom.py      # et les autres banc-*.py de python/test/

@@ -8,7 +8,7 @@ Le détail technique (formats, structure des fichiers) est dans [editeur-pcb/REA
 
 ### Je veux fixer une impédance cible pour une classe de nets et obtenir la bonne largeur de piste
 
-1. Ouvrez **Outils → Gestionnaire de contraintes…**, onglet **Classes**.
+1. Ouvrez **Vérifier → Gestionnaire de contraintes…**, onglet **Classes**.
 2. Dans la ligne de la classe, saisissez **Z cible Ω** (et **Tol. %** si les 10 % par défaut ne conviennent pas).
 3. La colonne **Largeur pour Z cible** propose, pour chaque couche de signal, la largeur qui donne cette impédance d'après l'empilage (`L1 0,120`, `L2 0,090`…). Un clic sur une couche la pose pour la classe sur cette couche ; **→ toutes** les pose sur toutes les couches de signal où la cible est atteignable.
 4. Une couche notée `L3 —` n'a pas de plan de référence, ou la cible est hors d'atteinte (entre 0,03 et 5 mm).
@@ -36,7 +36,7 @@ Le détail technique (formats, structure des fichiers) est dans [editeur-pcb/REA
 3. Cochez au moins deux nets dans la liste (filtre : `DQ`), ou cliquez **Depuis la sélection** après avoir sélectionné des pistes sur la carte.
 4. Cliquez **Créer le groupe (n)**.
 5. Chaque groupe affiche, net par net, la longueur, le délai, l'**Écart** à la référence et **À ajouter (mm)**. La référence est le plus long net routé, ou le net choisi dans la liste **référence**.
-6. Pour rattraper le retard, posez un serpentin (Placer → Serpentin, voir [03](03-editeur-pcb-edition-routage.md)) sur le net court : il prend pour cible ce qui lui manque.
+6. Pour rattraper le retard, posez un serpentin (Placer & router → Serpentin, voir [03](03-editeur-pcb-edition-routage.md)) sur le net court : il prend pour cible ce qui lui manque.
 
 ### Je veux exiger une forme de net (point à point, chaîne, étoile, fly-by) et limiter les moignons
 
@@ -60,13 +60,13 @@ Le détail technique (formats, structure des fichiers) est dans [editeur-pcb/REA
 
 ### Je veux reprendre les contraintes saisies dans le schéma
 
-1. Dans l'éditeur schématique, saisissez-les dans **Outils → Contraintes de nets…** (voir [02](02-editeur-schematique.md)).
+1. Dans l'éditeur schématique, saisissez-les dans **Dessin → Contraintes de nets…** (voir [02](02-editeur-schematique.md)).
 2. Elles sont reprises à l'ouverture du gestionnaire (message `Contraintes du schéma reprises : …`), par la synchronisation Schéma ↔ PCB (ligne `⊞ CONTRAINTES`) et à l'export vers le PCB.
 3. Un champ rempli dans le PCB passe devant celui du schéma ; un champ vide prend celui du schéma, puis celui de la classe. Les groupes du schéma (étiquette `schéma`) se modifient dans le schéma. Chaque reprise s'annule par `Ctrl+Z`.
 
 ### Je veux interdire une zone d'une face (boîtier, LED, pièce voisine)
 
-1. **Placer → Zone interdite** (bouton `⊘`).
+1. **Carte & zones → Zone interdite** (bouton `⊘`).
 2. Cliquez un sommet après l'autre, ou deux coins opposés puis `Entrée` pour un rectangle ; revenez sur le premier point pour fermer. `Échap` abandonne. La face est celle que vous regardez (dessous si la vue est retournée ou si la couche active est la dernière).
 3. La zone est sélectionnée : dans **Propriétés**, réglez **Nom**, **Face** (Dessus / Dessous) et **Hauteur permise (mm)**. Vide : aucun composant n'y est permis.
 4. Lancez le **Contrôle DRC** : une patte traversante qui ressort sur la face de la zone, un composant posé dans la zone, ou un composant trop haut sont signalés.
@@ -77,7 +77,7 @@ Le détail technique (formats, structure des fichiers) est dans [editeur-pcb/REA
 
 ### Je veux poser un trou de fixation (NPTH) sur la carte
 
-1. **Placer → Trou NPTH** (`○`), puis un clic à l'endroit voulu (accroché à la grille).
+1. **Carte & zones → Trou NPTH** (`○`), puis un clic à l'endroit voulu (accroché à la grille).
 2. Dans **Propriétés**, réglez **Diamètre de perçage (mm)** (0,4 à 30) ou cliquez **M2 (2,2 mm)**, **M2.5 (2,7 mm)**, **M3 (3,2 mm)**, **M4 (4,2 mm)**.
 3. Une **Longueur (mm)** supérieure au diamètre en fait une fente, avec son **Angle (°)** ; 0 ou moins que le diamètre : trou rond.
 4. Réglez **X (mm)** / **Y (mm)**, cochez **Verrouiller la position** si besoin.
@@ -85,7 +85,7 @@ Le détail technique (formats, structure des fichiers) est dans [editeur-pcb/REA
 
 ### Je veux dessiner de la sérigraphie
 
-1. **Placer → Sérigraphie** ouvre un petit menu : **Trait (segment)**, **Rectangle (cadre)**, **Aplat plein (logo, bandeau)**, **Texte libre**. Au clavier, `Maj+S` entre dans le mode et passe à la forme suivante dans cet ordre : trait, rectangle, aplat, texte. `S` seul ramène à la sélection ; le bouton et le titre du menu affichent `Maj+S`.
+1. **Carte & zones → Sérigraphie** ouvre un petit menu : **Trait (segment)**, **Rectangle (cadre)**, **Aplat plein (logo, bandeau)**, **Texte libre**. Au clavier, `Maj+S` entre dans le mode et passe à la forme suivante dans cet ordre : trait, rectangle, aplat, texte. `S` seul ramène à la sélection ; le bouton et le titre du menu affichent `Maj+S`.
 2. Trait : cliquez-glissez (ou deux clics), `Maj` contraint à l'horizontale, la verticale ou 45°. Rectangle : deux coins. Aplat : un clic par sommet (retour sur le premier point pour fermer), ou deux coins puis `Entrée`. Texte : un clic, puis une boîte demande le texte (`TEXT` proposé).
 3. Dans **Propriétés**, choisissez la couche (**F.SilkS** dessus, **B.SilkS** dessous), l'épaisseur de trait et, pour un texte, le texte, la hauteur de police et l'orientation.
 4. Le contour du boîtier, le point de broche 1 et le repère de chaque composant sont imprimés d'office (case **Sérigraphie automatique** des propriétés du composant). Le contour est rogné autour des ouvertures du vernis : l'encre ne couvre pas les pastilles.
@@ -99,29 +99,29 @@ Le détail technique (formats, structure des fichiers) est dans [editeur-pcb/REA
 
 ### Je veux produire le dossier de fabrication
 
-1. Par défaut, l'origine des fichiers est le coin inférieur gauche de la carte. Pour la prendre ailleurs : posez l'origine avec **Placer → Origine** (`O`), puis, dans **Outils → Règles…**, page **Dimensions et origine**, réglez **Repère des fichiers de fabrication** sur **origine utilisateur**.
-2. Si le projet a des variantes de montage, choisissez-en une dans **Fichier → Variante de montage…** : les empreintes non montées sortent de `bom.csv` et `positions.csv`.
-3. **Fichier → Fabrication .zip** ouvre la fenêtre **Dossier de fabrication** : cochez les familles de fichiers voulues (**Tout cocher** les rétablit), puis **Exporter le .zip**. Le choix est gardé avec la carte.
+1. Par défaut, l'origine des fichiers est le coin inférieur gauche de la carte. Pour la prendre ailleurs : posez l'origine avec **Placer & router → Origine** (`O`), puis, dans **Vérifier → Règles…**, page **Dimensions et origine**, réglez **Repère des fichiers de fabrication** sur **origine utilisateur**.
+2. Si le projet a des variantes de montage, choisissez-en une dans **Fabriquer → Variante de montage…** : les empreintes non montées sortent de `bom.csv` et `positions.csv`.
+3. **Fabriquer → Fabrication .zip** ouvre la fenêtre **Dossier de fabrication** : cochez les familles de fichiers voulues (**Tout cocher** les rétablit), puis **Exporter le .zip**. Le choix est gardé avec la carte.
 4. Le navigateur télécharge `<projet>-fabrication.zip` (`<projet>-fabrication-<variante>.zip` avec une variante). Ici et plus bas, `<projet>` est le nom du document PCB, c'est-à-dire le nom du projet suivi de `-PCB` (« carte PIR-PCB ») ; sans projet ouvert, le zip s'appelle `fabrication.zip` et les fichiers qu'il contient commencent par `carte` (`carte.GTL`, `carte-PLANS.pdf`…). La barre d'état donne le nombre de fichiers, de trous, d'outils de perçage et d'empreintes, et, avec une variante, son nom et le nombre de composants non montés.
 5. Le `LISEZ-MOI.txt` du zip décrit les fichiers de perçage, le contour, la netlist de test, les fichiers d'assemblage, la variante, liste les fichiers du zip puis les règles de la carte (voir « LISEZ-MOI.txt : contenu »).
 
 ### Je veux commander la carte montée chez JLCPCB
 
-1. **Fichier → Vérif BOM JLCPCB…** d'abord (WEB_CAO doit tourner et avoir accès à Internet) : indiquez le nombre de cartes, puis **Vérifier**. Chaque ligne de la BOM est comparée à la base JLCPCB et marquée **OK**, **À revoir** (boîtier ou diélectrique différent, valeur illisible) ou **Bloquant** (pas de code LCSC, code inconnu, stock insuffisant pour le lot, valeur fausse, tension trop basse). Pour une ligne qui n'est pas OK, jusqu'à trois pièces en stock sont proposées, Basic d'abord ; **Appliquer les codes choisis** les pose sur la carte et, si le schéma est ouvert dans un autre onglet, dans le schéma (en une étape d'historique, à enregistrer).
-2. **Fichier → PCBA JLCPCB .zip** (aussi en bas de la fenêtre de vérification).
+1. **Fabriquer → Vérif BOM JLCPCB…** d'abord (WEB_CAO doit tourner et avoir accès à Internet) : indiquez le nombre de cartes, puis **Vérifier**. Chaque ligne de la BOM est comparée à la base JLCPCB et marquée **OK**, **À revoir** (boîtier ou diélectrique différent, valeur illisible) ou **Bloquant** (pas de code LCSC, code inconnu, stock insuffisant pour le lot, valeur fausse, tension trop basse). Pour une ligne qui n'est pas OK, jusqu'à trois pièces en stock sont proposées, Basic d'abord ; **Appliquer les codes choisis** les pose sur la carte et, si le schéma est ouvert dans un autre onglet, dans le schéma (en une étape d'historique, à enregistrer).
+2. **Fabriquer → PCBA JLCPCB .zip** (aussi en bas de la fenêtre de vérification).
 3. Le zip `<projet>-PCBA-JLCPCB.zip` (`PCBA-JLCPCB.zip` sans projet) contient `<projet>-gerber.zip` (Gerber et perçage), `<projet>-BOM-JLCPCB.csv`, `<projet>-CPL-JLCPCB.xlsx` (gabarit JLCPCB) et `LISEZ-MOI-JLCPCB.txt`. Avec une variante active, le nom du zip et des trois premiers fichiers prend le suffixe `-<variante>` (`<projet>-PCBA-JLCPCB-<variante>.zip`).
 4. Le code LCSC de chaque pièce vient de la carte s'il a été choisi par la Vérif BOM, sinon du schéma (champ `lcsc`, ou « vendor reference » de la LIB). Les points de test (`TP…`), mires (`FID…`) et trous de fixation (`MH…`, `H…`) ne sont pas posés : ils sortent de la BOM et du CPL JLCPCB. Les lignes de BOM sans code sont listées dans le `LISEZ-MOI-JLCPCB.txt` : JLCPCB ne les posera pas.
 5. Suivez les quatre étapes du `LISEZ-MOI-JLCPCB.txt` sur jlcpcb.com et vérifiez l'orientation de chaque pièce dans l'aperçu de placement.
 
 ### Je veux exporter toute la carte en IPC-2581
 
-1. **Fichier → IPC-2581 .xml** télécharge `<projet>.xml` (`carte.xml` sans projet), révision C.
+1. **Fabriquer → IPC-2581 .xml** télécharge `<projet>.xml` (`carte.xml` sans projet), révision C.
 2. Le même fichier est dans **Fabrication .zip** (famille **Carte complète IPC-2581 (.xml)**).
 3. Il peut être rouvert dans la [visionneuse IPC-2581](07-visionneuse-ipc2581.md) : classes et paires sont retrouvées sans reclassement.
 
 ### Je veux produire les plans de fabrication et d'assemblage (Draftsman)
 
-1. **Fichier → Plans (Draftsman)…** ouvre une fenêtre à deux volets : réglages à gauche, feuille à droite.
+1. **Fabriquer → Plans (Draftsman)…** ouvre une fenêtre à deux volets : réglages à gauche, feuille à droite.
 2. Dans **Feuilles**, cochez celles à produire (le plan de fabrication, les deux assemblages et la nomenclature sont cochés par défaut). La feuille « face dessous » n'est produite que si une empreinte est posée dessous ; les feuilles « vernis » et « pâte » comptent une feuille par face (une seule sur une carte à une couche).
 3. Choisissez le **Format** (A4, A3 ou A2 paysage) et le **Cartouche** ; **▭ Cartouche…** ouvre la saisie société, titre, noms et dates. Le cartouche « Mon cartouche » est choisi d'office dès que votre profil porte un nom de société, le cartouche standard sinon.
 4. Ajoutez des **Notes ajoutées au plan de fabrication** (une par ligne) : elles sont numérotées à la suite des notes tirées de la carte.
@@ -153,7 +153,7 @@ Le détail technique (formats, structure des fichiers) est dans [editeur-pcb/REA
 
 ### Je veux exporter la carte en STEP pour la mécanique
 
-1. **Fichier → 🧊 Export STEP…** (juste après **Fabrication .zip**) ouvre une fenêtre de cases.
+1. **Fabriquer → 🧊 Export STEP…** (juste après **Fabrication .zip**) ouvre une fenêtre de cases.
 2. Cochez ce qui doit partir : **Carte (PCB)**, **Trous des vias dans la carte**, **Composants dessus**, **Composants dessous**, **Cuivre extérieur**, **Sérigraphie**. Par défaut : la carte nue (contour, découpes, trous de fixation et des pastilles traversantes, sans les vias), un fichier léger ; le choix reste le temps de la page. Les vias, le cuivre et surtout la sérigraphie alourdissent beaucoup le fichier.
 3. **Exporter le .step** télécharge `<projet>-3D.step` (`carte-3D.step` sans projet) : un assemblage en millimètres, dans le repère des Gerber, Z = 0 sur la face dessus.
 4. Chaque composant prend le modèle 3D de sa ligne de LIB (colonne « Modèle 3D ») ; sans modèle, il sort en boîte à sa hauteur. Le message de fin compte les uns et les autres.
@@ -162,7 +162,7 @@ L'export DXF n'existe plus : le STEP le remplace.
 
 ### Je veux reprendre le contour de la carte dessinée par la mécanique (STEP)
 
-1. **Fichier → ⬚ Importer contour STEP…** (section **Depuis la mécanique**, avant les exports) et choisissez le `.stp` / `.step` de la carte.
+1. **Carte & zones → ⬚ Importer contour STEP…** (section **Depuis la mécanique**, avant les exports) et choisissez le `.stp` / `.step` de la carte.
 2. La plus grande face plane du fichier donne le contour (droites et arcs ; un coin arrondi reste un arc à l'export), ses ouvertures non rondes deviennent des découpes, ses trous ronds des trous non métallisés (NPTH).
 3. L'origine du STEP devient l'origine des fichiers, fixée là où elle était : un **Export STEP…** retombe sur le modèle de la mécanique.
 4. Le contour et les découpes remplacent les anciens ; un trou qui tombe sur un perçage déjà là (trou, pastille, via) n'est pas ajouté. **Ctrl+Z** annule l'import.
@@ -191,7 +191,7 @@ L'export DXF n'existe plus : le STEP le remplace.
 
 ### Je veux une vidéo 3D de la carte
 
-1. **Fichier → Animation 3D…** : cochez les composants à présenter en gros plan (les plus gros composants actifs le sont d'office ; **Choix d'office** y revient). Le choix est gardé avec la carte.
+1. **Fabriquer → Animation 3D…** : cochez les composants à présenter en gros plan (les plus gros composants actifs le sont d'office ; **Choix d'office** y revient). Le choix est gardé avec la carte.
 2. **Enregistrer la vidéo** : l'animation joue dans un voile, en temps réel : gardez l'onglet au premier plan.
 3. Deux fichiers sont téléchargés, à part du dossier de fabrication : `<projet>-ASSEMBLAGE-3D.mp4` ou `.webm` (vidéo 1280 × 720) et `<projet>-ASSEMBLAGE-3D.html` (page autonome, orientable à la souris).
 4. Chaque composant coché a son gros plan : une étiquette (nom de la LIB ou valeur, repère, colonne « Description » de la LIB) et ses pistes qui s'allument en cyan. Toutes les étiquettes restent pendant le tour final ; des impulsions lumineuses parcourent les autres pistes.
@@ -200,12 +200,12 @@ L'export DXF n'existe plus : le STEP le remplace.
 
 ### Je veux exporter une image de la carte
 
-1. **Fichier → Exporter .png** : image de la vue courante (couches visibles, orientation courante) à 12 px/mm, avec le cartouche si la page en a un.
+1. **Fabriquer → Exporter .png** : image de la vue courante (couches visibles, orientation courante) à 12 px/mm, avec le cartouche si la page en a un.
 2. Le fichier est `<projet>.png` (`carte.png` sans projet).
 
 ## Référence
 
-### Menu Fichier : exports
+### Onglet Fabriquer : exports
 
 | Bouton ou menu | Raccourci | Effet | Limites |
 |---|---|---|---|
@@ -216,16 +216,16 @@ L'export DXF n'existe plus : le STEP le remplace.
 | 🎬 Animation 3D… | | Fenêtre des composants présentés, puis télécharge la vidéo et la page HTML de l'assemblage 3D. | À part du dossier de fabrication. Enregistrement en temps réel ; sans `MediaRecorder` la page part seule. Un second clic pendant l'enregistrement ne relance rien. |
 | IPC-2581 .xml | | Écrit toute la carte en un fichier XML IPC-2581, révision C. | Carte vide refusée. La stratégie de remplissage des zones ne part pas (seul le résultat). |
 | Plans (Draftsman)… | | Ouvre la fenêtre des plans. | Voir « Fenêtre Plans ». |
-| Variante de montage… | | Choisit la variante active : ses empreintes non montées sont barrées sur la carte et retirées de `bom.csv`, `positions.csv` et des fichiers JLCPCB. Choix : **Carte complète** (aucune variante) ou une variante du schéma ; boutons **⟳ Reprendre du schéma**, **Fermer**. | Les variantes se créent dans le schéma (Fichier → Variantes de montage…). Le cuivre ne change pas : les pastilles restent gravées. |
+| Variante de montage… | | Choisit la variante active : ses empreintes non montées sont barrées sur la carte et retirées de `bom.csv`, `positions.csv` et des fichiers JLCPCB. Choix : **Carte complète** (aucune variante) ou une variante du schéma ; boutons **⟳ Reprendre du schéma**, **Fermer**. | Les variantes se créent dans le schéma (Sorties → Variantes de montage…). Le cuivre ne change pas : les pastilles restent gravées. |
 
-### Menu Placer : zones et mécanique
+### Onglet Carte & zones : zones et mécanique
 
 | Bouton ou menu | Raccourci | Effet | Limites |
 |---|---|---|---|
 | Zone interdite | | Mode de tracé d'un polygone interdit sur la face regardée. | Pas de raccourci clavier. Un clic par sommet, ou deux coins puis `Entrée` ; rectangle de moins de 0,05 mm de côté : « Rectangle trop fin : zone interdite abandonnée. » |
 | Trou NPTH | | Pose un trou mécanique non métallisé autonome, hors empreinte. | Pas de raccourci clavier. Diamètre posé : dernier diamètre utilisé, 3,2 mm au départ. Un trou d'empreinte se pose depuis la LIB, pas ici. |
 | Sérigraphie | `Maj+S` | Ouvre le menu des formes de sérigraphie et passe en mode sérigraphie. | Voir « Menu Sérigraphie ». `S` seul revient à la sélection ; `Maj+S` passe d'une forme à la suivante. |
-| Origine | `O` | Pose l'origine utilisateur, un clic (une pastille proche l'attire, sinon accrochée à la grille), puis revient à la sélection. | Les fichiers de fabrication ne la prennent que si **Outils → Règles… → Dimensions et origine → Repère des fichiers de fabrication** vaut **origine utilisateur** (par défaut : **coin de la carte**). Le bouton **Remettre à zéro** de la même page ramène l'origine en (0 ; 0) ; **Placer l'origine** y refait le geste. Voir [03](03-editeur-pcb-edition-routage.md). |
+| Origine | `O` | Pose l'origine utilisateur, un clic (une pastille proche l'attire, sinon accrochée à la grille), puis revient à la sélection. | Les fichiers de fabrication ne la prennent que si **Vérifier → Règles… → Dimensions et origine → Repère des fichiers de fabrication** vaut **origine utilisateur** (par défaut : **coin de la carte**). Le bouton **Remettre à zéro** de la même page ramène l'origine en (0 ; 0) ; **Placer l'origine** y refait le geste. Voir [03](03-editeur-pcb-edition-routage.md). |
 | Serpentin | `M` | Pose un serpentin d'appariement ; la flèche ▾ règle amplitude, pas et allongement forcé. | Cible : ce qui manque au net dans son groupe d'appariement. |
 
 #### Menu Sérigraphie
@@ -237,11 +237,11 @@ L'export DXF n'existe plus : le STEP le remplace.
 | ▰ Aplat plein (logo, bandeau) | | Polygone plein (région Gerber). | Un clic par sommet, ou deux coins puis `Entrée` ; `Maj` : 45°/90° ; `Échap` abandonne. |
 | T Texte libre | | Pose un texte vectoriel. | Un clic, puis une boîte de saisie (`TEXT` proposé) ; hauteur 1,5 mm et trait 0,15 mm au départ. |
 
-### Outils → Gestionnaire de contraintes… : fenêtre
+### Vérifier → Gestionnaire de contraintes… : fenêtre
 
 | Bouton ou champ | Raccourci | Effet | Limites |
 |---|---|---|---|
-| Gestionnaire de contraintes… (menu Outils) | | Ouvre la fenêtre, reprend d'abord les contraintes du schéma. | Pas de raccourci clavier. |
+| Gestionnaire de contraintes… (onglet Vérifier) | | Ouvre la fenêtre, reprend d'abord les contraintes du schéma. | Pas de raccourci clavier. |
 | Résumé (en-tête) | | Compte les nets tenus / en faute. | |
 | ⬇ CSV | | Exporte `<projet>-contraintes.csv` (séparateur `;`, UTF-8 avec BOM). | Contenu : nets, contraintes, mesures, forme, moignons, contre-perçage, état, écarts. |
 | ✔ DRC | | Ferme la fenêtre et lance le contrôle DRC. | |
@@ -373,7 +373,7 @@ Messages de contrôle ajoutés au DRC par ce chapitre :
 | Hauteur de carte | `<ref> (dessus) trop haut : … mm pour … mm permis sur la carte`. |
 | Thermique | `<ref> : échauffement estimé … K pour … W (limite … K)` ; information si l'estimation date d'avant la dernière retouche. |
 
-### Fenêtre « Dossier de fabrication » (Fichier → Fabrication .zip)
+### Fenêtre « Dossier de fabrication » (Fabriquer → Fabrication .zip)
 
 | Case ou bouton | Fichiers concernés | Limites |
 |---|---|---|
@@ -427,7 +427,7 @@ Chaque page porte en bas un cartouche : `CHECKED` et `APPR.` (vides), `TITLE: <n
 
 Le tableau des fichiers coche toujours (`X`) `positions.csv`, `bom.csv`, `EMPILAGE.txt` et le Master Drawing, même si leur famille est décochée dans la fenêtre ; les autres lignes ne figurent que si le fichier est dans le zip (la ligne `.ipc` figure toujours, cochée seulement si le fichier est présent).
 
-### Fenêtre Plans (Fichier → Plans (Draftsman)…)
+### Fenêtre Plans (Fabriquer → Plans (Draftsman)…)
 
 #### En-tête et volet de gauche
 
@@ -525,7 +525,7 @@ L'ordre des feuilles est : fabrication, assemblage dessus, assemblage dessous, n
 
 ### STEP pour la mécanique
 
-Fenêtre ouverte par **Fichier → 🧊 Export STEP…**.
+Fenêtre ouverte par **Fabriquer → 🧊 Export STEP…**.
 
 | Case | Pièce de l'assemblage | Limites |
 |---|---|---|
@@ -587,7 +587,7 @@ Contenu du `-MECA.step` : le même assemblage que **Export STEP…** avec les ca
 
 | Élément | Effet | Limites |
 |---|---|---|
-| Fichier → Animation 3D… | Une case par composant présenté (d'office : les 6 plus gros composants actifs), puis **Enregistrer la vidéo**. | Le choix est gardé avec la carte ; égal au choix d'office, il suit la carte. |
+| Fabriquer → Animation 3D… | Une case par composant présenté (d'office : les 6 plus gros composants actifs), puis **Enregistrer la vidéo**. | Le choix est gardé avec la carte ; égal au choix d'office, il suit la carte. |
 | `<projet>-ASSEMBLAGE-3D.html` | Animation en boucle, orientable (glisser, molette, double-clic pour revenir), three.js embarqué. | S'ouvre hors ligne. Illustration seulement : ne fait pas foi. |
 | `<projet>-ASSEMBLAGE-3D.mp4` / `.webm` | Vidéo 1280 × 720, enregistrée dans le navigateur. | MP4 (H.264) si le navigateur l'encode, sinon WebM. Sans `MediaRecorder`, pas de vidéo. |
 | Ordre de la scène | Carte nue, cuivre des faces externes, vernis et sérigraphie, composants du plus gros au plus petit (dessus puis dessous), gros plan de 3,4 s sur chaque composant présenté, tour complet avec toutes les étiquettes. | |
