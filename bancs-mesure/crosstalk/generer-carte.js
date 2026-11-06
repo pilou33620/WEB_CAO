@@ -14,7 +14,7 @@
    connectivité et le DRC : un fichier qui sort d'ici s'ouvre dans l'éditeur
    comme une carte dessinée à la main.
 
-   LA CARTE (130 × 176 mm, 4 couches JLC04161H-7628) :
+   LA CARTE (130 × 204 mm, 4 couches JLC04161H-7628) :
      · Top : les pistes, rien d'autre (pas de cuivre coulé : la diaphonie
        mesurée est celle d'un microruban, pas d'une coplanaire) ;
      · L2, L3 et Bottom : masse pleine, cousue par des vias ;

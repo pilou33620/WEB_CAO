@@ -5,7 +5,7 @@
     python bancs-mesure/crosstalk/banc-crosstalk-mesure.py
     python bancs-mesure/crosstalk/banc-crosstalk-mesure.py --tr 2.5   # un front en ns
 
-A QUOI IL SERT. La carte d'essai (generer-carte.js) porte cinq couples
+A QUOI IL SERT. La carte d'essai (generer-carte.js) porte six couples
 agresseur / victime. Pour chacun, ce script :
   1. calcule ce que WEB_CAO predit -- par le MEME chemin que le bouton
      « Analyser la piste » de l'onglet Crosstalk : le document que la page

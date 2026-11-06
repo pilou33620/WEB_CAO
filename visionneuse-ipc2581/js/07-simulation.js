@@ -757,8 +757,8 @@ function simPlagesIpc(piste,coucheIdx,refs,cum,total){
    latéral n'a pas de couture à avoir, et le compter ferait crier à tort sur
    toutes les pistes qui longent un bord de carte.
 
-   CE QUE CE CONTRÔLE NE VOIT PAS. Un perçage IPC-2581 ne dit pas ici quelle
-   plage de couches il relie : un via borgne qui s'arrête avant le plan de
+   CE QUE CE CONTRÔLE NE VOIT PAS. Il ne lit pas la portée d'un perçage, même
+   déclarée (`sa`, `sb`) : un via borgne qui s'arrête avant le plan de
    référence compte donc comme une couture. C'est optimiste, et c'est dit.
    ========================================================================== */
 const SIM_COULOIR=2.0;          // mm ; largeur du couloir, depuis le bord du cuivre
@@ -1056,9 +1056,9 @@ const SIM_RAYON_RETOUR_OPTIMAL_IPC = 1.8;
 
 /* Les vias de masse autour d'un via de signal.
 
-   CE QUE L'IPC-2581 NE DIT PAS, ET IL FAUT LE DIRE. Un perçage y porte sa
-   position, son diamètre et son net — mais PAS SA PORTÉE : rien n'y distingue
-   un via traversant d'un via enterré. On les envoie donc en les supposant
+   CE QU'ON NE LIT PAS ICI, ET IL FAUT LE DIRE. Un perçage porte sa position,
+   son diamètre et son net, mais ce relevé ne regarde pas sa portée, même
+   déclarée (`sa`, `sb`). On les envoie donc en les supposant
    traversants, avec `portee_supposee`, et le panneau le répète. Supposer sans
    le dire ferait passer un via enterré — qui ne referme pas la boucle et qui
    donnerait une inductance trop petite de près de vingt pour cent — pour un
@@ -1141,8 +1141,8 @@ function simRetoursIpc(x, y, cuMax){
    vias sans ordre, pour le retour. Le serveur écarte ceux que la chaîne a déjà
    pris — un même via chiffré deux fois donnerait deux valeurs.
 
-   LA PORTÉE EST SUPPOSÉE TRAVERSANTE, comme partout ailleurs sur cette page :
-   l'IPC-2581 ne déclare pas les couches d'un perçage. */
+   LA PORTÉE EST SUPPOSÉE TRAVERSANTE, comme pour les vias de masse ci-dessus,
+   même quand le fichier la déclare. */
 /* Le rayon de recherche d'un pont entre deux plans, en millimètres. MÊME
    VALEUR QUE `SIM_RAYON_PONT` côté éditeur, et bien plus large que celui des
    vias de masse : un découplage est posé au pied d'un composant, pas au pied
