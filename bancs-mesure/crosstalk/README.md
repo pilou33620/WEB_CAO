@@ -126,7 +126,7 @@ Reporter chaque relevé dans `releves.csv`, source `MESURE`.
 
 Les noms de menus changent d'une version à l'autre : ce qui suit donne **les réglages à reproduire**. Les intitulés exacts sont à retrouver dans votre version.
 
-1. **Exporter la carte depuis WEB_CAO** : ouvrir le projet dans l'Éditeur PCB, *Fichier → Fabrication*. On obtient les Gerber (`.GTL`, `.GL2`, `.GL3`, `.GBL`), le perçage Excellon, le contour (`.GM1`), la netlist **IPC-D-356** (`.ipc`) et `EMPILAGE.txt`.
+1. **Exporter la carte depuis WEB_CAO** : ouvrir le projet dans l'Éditeur PCB, *Fichier → Fabrication .zip*. On obtient les Gerber (`.GTL`, `.GL2`, `.GL3`, `.GBL`), le perçage Excellon, le contour (`.GM1`), la netlist **IPC-D-356** (`.ipc`) et `EMPILAGE.txt`.
 2. **Importer dans SIwave** (ou dans HFSS 3D Layout, puis ouvrir l'`.aedb` dans SIwave) par l'import Gerber, avec le perçage et la netlist IPC-356 pour retrouver les noms de nets (`XT1_A`, `XT1_V`… `GND`).
 3. **L'empilage**, recopié de `EMPILAGE.txt` : Top 35 µm, 7628 0,2104 mm εr 4,4 tan δ 0,02, L2 15,2 µm, âme 1,065 mm εr 4,6, L3 15,2 µm, 7628 0,2104 mm, Bottom 35 µm, vernis 10 µm εr 3,8. Cuivre lisse : WEB_CAO calcule sans rugosité par défaut. **Une fois la carte reçue, remplacer les εr par ceux que JLC a mesurés, ou par l'εeff des lignes d'étalonnage**, dans les deux simulateurs.
 4. **Les extrémités des nets** : déclarer un composant (ou un groupe de broches) sur la pastille d'âme de chaque SMA, avec `GND` en référence. Le **driver** est en J{n}1, les **récepteurs** en J{n}2, J{n}3 et J{n}4, tous en **50 Ω**.
@@ -155,7 +155,7 @@ Ordre de lecture conseillé :
 2. **le cas 0** : le plancher ;
 3. **les cas 1 et 2** : le moteur MoM et les formules du niveau 2. Les trois sources doivent s'accorder à 1 ou 2 dB près ;
 4. **le cas 3 contre le cas 2** : ce que la garde retire. WEB_CAO prévoit −3,8 dB ;
-5. **le cas 4 contre le cas 2** : ce que la fente ajoute. WEB_CAO prévoit **+3,7 % à 1 ns** par le retour résolu (option B, PEEC), et Ott **+11 %** : la fourchette va de l'un à l'autre. C'est ce que la mesure doit trancher ; un écart de plus de 3 dB aux deux appelle la référence pleine onde (option D d'`A-FAIRE.md`).
+5. **le cas 4 contre le cas 2** : ce que la fente ajoute. WEB_CAO prévoit **+3,7 % à 1 ns** par le retour résolu (option B, PEEC), et Ott **+11 %** : la fourchette va de l'un à l'autre. C'est ce que la mesure doit trancher ; un écart de plus de 3 dB aux deux appelle une référence pleine onde.
 6. **le cas 4b contre le cas 4** : fente sur un seul plan contre sur les trois. WEB_CAO prévoit pour le 4b 2,31 % de NEXT à 1 ns : le Kb local de la portion où le retour passe sur L3 (1,34 %) **et**, depuis `crosstalk` 4.6.0, le terme du détour résolu avec L3 dessous (+0,97 %), environ quatre fois plus petit que celui du 4. Si le 4b mesure autant que le 4, L3 ne ferme pas le retour aussi bien que le modèle le dit.
 
 ---

@@ -105,12 +105,7 @@ import time
 
 logger = logging.getLogger(__name__)
 
-try:
-    import numpy as np
-    ERREUR_SOLVEUR = None
-except Exception as _exc:                              # noqa: BLE001
-    np = None
-    ERREUR_SOLVEUR = _exc
+import numpy as np
 
 RESISTIVITE_CUIVRE = 1.724e-8       # ohm.m a 20 degres, cuivre recuit (IPC)
 EPAISSEUR_DEFAUT = 35e-6            # une once de cuivre
@@ -139,22 +134,6 @@ class ErreurDC(Exception):
 
 def etat():
     """Ce que le serveur sait calculer : la page le demande avant de lancer."""
-    if ERREUR_SOLVEUR is not None:
-        return {"dispo": False,
-                "version": VERSION,
-                "moteurs": VERSION_MOTEURS,
-                "detail": "Solveur DC indisponible : %s" % ERREUR_SOLVEUR,
-                "conseil": "Le solveur a besoin de numpy et de scipy :"
-                           " « pip install numpy scipy »."}
-    try:
-        import scipy.sparse                            # noqa: F401
-    except Exception as exc:                           # noqa: BLE001
-        return {"dispo": False,
-                "version": VERSION,
-                "moteurs": VERSION_MOTEURS,
-                "detail": "Solveur DC indisponible : %s" % exc,
-                "conseil": "Le solveur a besoin de scipy :"
-                           " « pip install scipy »."}
     return {"dispo": True, "format": FORMAT, "resultat": FORMAT_RESULTAT,
             "version": VERSION,
             "moteurs": VERSION_MOTEURS,
@@ -185,12 +164,9 @@ def _dans_polygone(x, y, sommets):
 
 def _cases_dedans(sommets, x0, y0, pas, i0, i1, j0, j1):
     """Les cases (ix, iy) de la fenetre dont le centre est dans le polygone,
-    ix puis iy croissants. Avec numpy, le test est vectorise sur la fenetre --
+    ix puis iy croissants. Le test est vectorise sur la fenetre --
     meme parite, meme formule que `_dans_polygone` : un plan de 1000 sommets
     au pas de 0,5 mm prenait 22 s en Python pur."""
-    if np is None:
-        return [(ix, iy) for ix in range(i0, i1 + 1) for iy in range(j0, j1 + 1)
-                if _dans_polygone(x0 + ix * pas, y0 + iy * pas, sommets)]
     x = (x0 + np.arange(i0, i1 + 1) * pas)[:, None]
     y = (y0 + np.arange(j0, j1 + 1) * pas)[None, :]
     dedans = np.zeros((i1 - i0 + 1, j1 - j0 + 1), dtype=bool)
@@ -1071,16 +1047,7 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
     Rend {potentiel, chute_par_net, courant_par_net, noeuds, aretes, pas,
     reference_nets, avertissements}.
     """
-    if ERREUR_SOLVEUR is not None:
-        raise ErreurDC("Solveur DC indisponible : %s" % ERREUR_SOLVEUR,
-                       "Le solveur a besoin de numpy :"
-                       " « pip install numpy ».")
-    try:
-        from scipy.sparse import csr_matrix
-    except ImportError as exc:
-        raise ErreurDC("Solveur DC indisponible : %s" % exc,
-                       "Le solveur a besoin de scipy :"
-                       " « pip install scipy ».")
+    from scipy.sparse import csr_matrix
 
     polys = _normaliser(polygones)
     if not polys:

@@ -393,18 +393,6 @@ def _er_entre(couches, a, b):
     return sum(ers) / len(ers) if ers else 4.3
 
 
-def _moteurs(notes):
-    """simulation_em et crosstalk, ou (None, None) : ils demandent numpy et scipy."""
-    try:
-        import simulation_em
-        import crosstalk
-        return simulation_em, crosstalk
-    except Exception as exc:                            # noqa: BLE001
-        notes.append("Chemins de retour et diaphonie non vérifiés : le moteur de"
-                     " simulation ne se charge pas (%s). pip install numpy scipy." % exc)
-        return None, None
-
-
 def retours(doc, couches, reg, unite, notes, se):
     """Chaque via de signal qui change de couche : son courant de retour
     trouve-t-il un chemin court, et que coûte-t-il à la cadence de son net ?
@@ -1700,12 +1688,7 @@ def _surfaces(doc, unite, notes):
     plans = [p for p in (doc.get("plans") or ()) if isinstance(p, dict)]
     if not plans:
         return None
-    try:
-        import numpy
-    except Exception:                                   # noqa: BLE001
-        notes.append("Surfaces de cuivre non lues : numpy manque (pip install numpy).")
-        return None
-    s = _Surfaces(plans, unite, numpy)
+    s = _Surfaces(plans, unite, np)
     return s if s.images else None
 
 
@@ -2130,11 +2113,7 @@ BANDE_BORD_MM = 2.0
 
 
 def coutures(doc, couches, reg, unite, notes, surf):
-    try:
-        from scipy import ndimage
-    except Exception:                                   # noqa: BLE001
-        notes.append("Vias de couture non vérifiés : scipy manque.")
-        return [], {}
+    from scipy import ndimage
     np, a2 = surf.np, surf.pas ** 2
     rang = _rangs(couches)
     nets = {str(p.get("n") or "") for p in
@@ -2611,10 +2590,7 @@ def bords(doc, couches, reg, unite, notes, se, troncons, surf):
 
 
 def _vingt_h(doc, couches, unite, surf):
-    try:
-        from scipy import ndimage
-    except Exception:                                   # noqa: BLE001
-        return []
+    from scipy import ndimage
     out = []
     cu = [i for i, c in enumerate(couches) if c.get("type") == "copper"]
     for i in cu:
@@ -3520,26 +3496,26 @@ def analyser_document(doc):
         else:
             if voulue("empilage"):
                 constats += empilage(doc, couches)
-            se, xt = _moteurs(notes)
-            if se:
+            import simulation_em as se
+            import crosstalk as xt
+            etapes += [
+                ("retour", lambda: retours(doc, couches, reg, unite, notes, se)),
+                ("diaphonie", lambda: diaphonie(doc, couches, reg, unite, notes, se, xt,
+                                                 troncons, surf)),
+                ("impedance", lambda: impedances(doc, couches, reg, unite, notes, se, troncons,
+                                                 surf)),
+                ("bord", lambda: bords(doc, couches, reg, unite, notes, se, troncons, surf)),
+                ("paire", lambda: paires_diff(doc, couches, reg, unite, notes, se, troncons,
+                                              surf)),
+                ("moignon_via", lambda: moignons_vias(doc, couches, reg, unite, troncons)),
+                ("branche", lambda: branches_t(doc, couches, reg, unite, troncons))]
+            if surf is not None:
                 etapes += [
-                    ("retour", lambda: retours(doc, couches, reg, unite, notes, se)),
-                    ("diaphonie", lambda: diaphonie(doc, couches, reg, unite, notes, se, xt,
-                                                     troncons, surf)),
-                    ("impedance", lambda: impedances(doc, couches, reg, unite, notes, se, troncons,
-                                                     surf)),
-                    ("bord", lambda: bords(doc, couches, reg, unite, notes, se, troncons, surf)),
-                    ("paire", lambda: paires_diff(doc, couches, reg, unite, notes, se, troncons,
-                                                  surf)),
-                    ("moignon_via", lambda: moignons_vias(doc, couches, reg, unite, troncons)),
-                    ("branche", lambda: branches_t(doc, couches, reg, unite, troncons))]
-                if surf is not None:
-                    etapes += [
-                        ("fente", lambda: fentes(doc, couches, reg, unite, notes, surf, troncons)),
-                        ("couture", lambda: coutures(doc, couches, reg, unite, notes, surf))]
-                else:
-                    notes.append("Pas de plans ni de versements dans le document : fentes et"
-                                 " vias de couture non vérifiés.")
+                    ("fente", lambda: fentes(doc, couches, reg, unite, notes, surf, troncons)),
+                    ("couture", lambda: coutures(doc, couches, reg, unite, notes, surf))]
+            else:
+                notes.append("Pas de plans ni de versements dans le document : fentes et"
+                             " vias de couture non vérifiés.")
         for regle, etape in etapes:
             if not voulue(regle):
                 continue

@@ -9,9 +9,9 @@ L'accueil (`index.html`) s'ouvre en double-clic, sans serveur ; le serveur ajout
 ### Je veux lancer WEB_CAO
 
 1. Sans rien installer : ouvrir `index.html` dans un navigateur récent. Schéma, routage et exports de fabrication fonctionnent ; chaque outil s'ouvre dans un nouvel onglet et l'accueil reste ouvert.
-2. Avec le serveur local (Python 3, bibliothèque standard) : lancer `python web_CAO.py`. Le navigateur s'ouvre à la bonne adresse, sauf sur un Raspberry Pi ou un poste Linux sans affichage graphique (voir `--navigateur` / `--sans-navigateur`).
+2. Avec le serveur local (Python 3, numpy et scipy) : installer d'abord numpy et scipy (`pip install -r requirements.txt`, ou `sudo apt install python3-numpy python3-scipy` sur Raspberry Pi), puis lancer `python web_CAO.py`. Le navigateur s'ouvre à la bonne adresse, sauf sur un Raspberry Pi ou un poste Linux sans affichage graphique (voir `--navigateur` / `--sans-navigateur`).
 3. Sous Windows, un double-clic sur `web_CAO.py` ou sur `demarrer_WEB_CAO.cmd` suffit. Le premier démarre en mode local ; le second passe `--local` explicitement et garde le message à l'écran si Python ne démarre pas.
-4. Pour les solveurs numériques (SI / PI), installer numpy et scipy : `pip install -r requirements.txt`.
+4. Sans numpy ou scipy, le serveur s'arrête aussitôt en disant quoi installer (code de sortie 3).
 5. Au démarrage, le serveur cherche une mise à jour sur GitHub (si `git` est présent et le dossier est un dépôt) et se relance si elle est appliquée ; hors ligne, ou si l'application échoue, il démarre quand même avec la version en place. `--sans-maj` désactive cette étape.
 
 > [!NOTE]
@@ -266,7 +266,6 @@ L'accueil (`index.html`) s'ouvre en double-clic, sans serveur ; le serveur ajout
 | `--navigateur` / `--sans-navigateur` | Force l'ouverture du navigateur ou non | Par défaut : ouvert sous Windows et sur un bureau Linux ou macOS ; non ouvert sur Raspberry Pi ou Linux sans affichage |
 | `--sans-pause` | Rend la main sans attendre Entrée à la fermeture | Windows, double-clic |
 | `--sans-maj` | Pas de mise à jour GitHub au démarrage | La mise à jour se fait en `--ff-only`, après mise de côté des modifications locales |
-| `--dossier DIR` | Dossier servi | Utile quand `__file__` ne le désigne pas (Pyto) |
 | `--projets DIR` | Racine(s) des dossiers de projet, répétable, ou plusieurs chemins séparés par le séparateur de chemins du système | Défaut : `projets/` à côté de `index.html` ; un nom ou un chemin relatif se lit sous la première racine, qui sert de défaut à la création ; un chemin complet saisi à la main hors des racines n'est accepté qu'en écoute locale, hors WEB·SUITE |
 | `--projets-reseau` | En écoute réseau, ouvre quand même les projets sous les racines et l'écriture dans la LIB active | Sans mot de passe : réseau de confiance uniquement ; déplacer la LIB et télécharger des datasheets restent locaux ; la console affiche malgré tout « Les dossiers de projet sont refusés dans ce mode » |
 | `--lib DIR` | Dossier de la bibliothèque centrale | Pour ce lancement seulement (non mémorisé) ; défaut `LIB/` du dépôt, sinon `../PROJETS/LIB_CAO` |
@@ -284,7 +283,7 @@ L'accueil (`index.html`) s'ouvre en double-clic, sans serveur ; le serveur ajout
 | Code à 6 chiffres | Affiché dans la console du serveur au démarrage en mode réseau ; la page « Code d'appairage » (`/appairage`) le demande à un nouvel appareil | Valable 10 min, usage unique ; un nouveau code s'affiche à l'expiration ; 5 erreurs le brûlent, puis pause de 60 s doublée à chaque code brûlé d'affilée (plafond 1 h) |
 | Bouton « Valider » | Envoie le code ; bon code : l'appareil reçoit le cookie du jeton | |
 | Jeton partagé | `~/.web_tools/jeton-reseau.txt`, commun aux web tools du poste ; supprimer le fichier en crée un neuf | Dossier personnel en lecture seule : jeton valable pour la session seulement |
-| HTTPS | Autorité propre au poste créée une fois dans `~/.web_tools/tls/` par la commande `openssl`, qui signe le certificat du serveur ; même port pour HTTP et HTTPS | Sans `openssl` (Pyto, Windows sans Git) ou avec `WEB_TOOLS_HTTP=1` : tout reste en HTTP et le terminal le dit |
+| HTTPS | Autorité propre au poste créée une fois dans `~/.web_tools/tls/` par la commande `openssl`, qui signe le certificat du serveur ; même port pour HTTP et HTTPS | Sans `openssl` (Windows sans Git) ou avec `WEB_TOOLS_HTTP=1` : tout reste en HTTP et le terminal le dit |
 | `/appairage/ca.pem` | Certificat de l'autorité, à installer une fois par appareil | Comparer l'empreinte SHA-256 avec celle du terminal |
 
 ### Fichiers sur disque
@@ -503,7 +502,7 @@ Les autres raccourcis (tracé, zone, serpentin, coordonnées avec `Tab`, `Ctrl+G
 - **Brouillons** : écrits toutes les 30 s seulement avec un projet ouvert ; pas à la fermeture de page.
 - **Travail mis de côté** : propre à l'onglet, 3 Mo au plus, perdu à la fermeture de l'onglet. Un document plus gros n'est pas mis de côté ; la confirmation avant de changer d'outil le dit.
 - **Profils** : un profil est une habitude de travail, jamais un document. Le renommer à la main dans `profils/` ne renomme pas la copie du navigateur ; passer par « Supprimer celui-ci » pour effacer les deux.
-- **Tactile** : la roulette et « Tactile » n'existent que dans le schéma, le PCB et la visionneuse IPC-2581. Le serveur prévoit Pyto sur iPad (détection `sur_ios`, rappel de garder Pyto au premier plan, repli sans `ssl`, option `--dossier` « utile sous Pyto ») ; la commande `python web_CAO.py --local --dossier <dossier>` est celle du README, et un en-tête du code consigne un diagnostic confirmé sur iPad (Pyto 19.0.1, Python 3.10).
+- **Tactile** : la roulette et « Tactile » n'existent que dans le schéma, le PCB et la visionneuse IPC-2581.
 - **Recherche et mesure** : la visionneuse IPC-2581 n'utilise pas ce panneau de repérage : pas de `L`, `Ctrl+F` y reste celui du navigateur, et sa mesure est sur `M`. Au schéma, la mesure n'est pas une cote.
 - **Cross-probing** : exact seulement (une correspondance partielle n'est pas tentée) ; il faut que l'autre onglet soit ouvert et que la cible y soit.
 - **Variantes** : elles se définissent au schéma seulement ; la carte en garde une copie à la synchronisation. Une variante ne change pas le cuivre.

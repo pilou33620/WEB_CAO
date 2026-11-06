@@ -37,7 +37,7 @@ moments (`python/ligne_mom.py`), rend son impédance caractéristique
 cascade. La page peint le résultat **sur la piste** et y écrit la valeur.
 
 ```bash
-pip install numpy scipy      # les deux seules dépendances du dépôt, facultatives
+pip install -r requirements.txt      # numpy et scipy, obligatoires
 python web_CAO.py
 ```
 

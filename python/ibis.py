@@ -74,10 +74,7 @@ import bisect
 import math
 import re
 
-try:
-    import numpy as np
-except Exception:                                      # noqa: BLE001
-    np = None
+import numpy as np
 
 VERSION = "1.5.0"
 COINS = {"typ": 0, "min": 1, "max": 2}

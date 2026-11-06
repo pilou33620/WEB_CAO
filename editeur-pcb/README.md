@@ -11,7 +11,9 @@ de la netlist produite par l'éditeur schématique.
   `python` : `python3` y renvoie vers le raccourci du Microsoft Store).
 
 Les scripts sont des scripts classiques, pas des modules : `editeur-pcb.html`
-s'ouvre directement depuis le disque, sans serveur local.
+s'ouvre directement depuis le disque, sans serveur local, et n'a alors besoin de
+rien. Les calculs Python (simulation EM, échauffement) demandent en revanche le
+serveur `web_CAO.py`, qui exige numpy et scipy.
 
 ## Arborescence
 
@@ -64,6 +66,10 @@ js/20-placement-score.js panneau Qualité de placement & rotation assistée :
                          conformité du découplage HF (≤ 3.5 mm), groupement par bloc
                          fonctionnel schéma et optimisation d'orientation en 1 clic (✨ Auto)
                          pour minimiser les croisements de chevelu (0°, 90°, 180°, 270°)
+js/21-lib-sync.js        synchronisation des empreintes avec la Gestion LIB, et ses alertes
+js/22-bloc-placement.js  pré-placement par blocs fonctionnels et zones du schéma
+js/23-eco-sync.js        synchronisation Schéma ↔ PCB (ECO)
+js/24-pcb-capabilities.js  capabilités de fabrication et profils de fabricants
 js/26-variantes.js       variantes de montage reprises du schéma : choix de la
                          variante, empreintes non montées barrées, bom.csv et
                          positions.csv sans elles
@@ -108,8 +114,13 @@ js/38-interdits.js       zones interdites par face et hauteurs maximales :
                          données, tracé, fiche et DRC
 js/39-thermique.js       échauffement estimé des composants qui dissipent :
                          cuivre relié, appel au serveur, DRC, fiche
+js/40-chemin-auto.js     chercheur de chemin : A* sur une grille par couche
+js/41-larmes.js          larmes de piste ; voir « Larmes »
 js/41-animation-3d.js    animation 3D de la carte qui s'assemble, en option
                          de Fabrication .zip : vidéo et page HTML autonome
+js/42-fiche-mesure.js    fiche de mesure et retrofit des plans (le dessin est
+                         dans ../commun/fiche-mesure.js)
+js/43-verif-bom.js       vérification de la nomenclature JLCPCB avant envoi
 js/44-export-step.js     Export STEP du menu Fichier : la scène de l'animation
                          3D et les zones de cuivre, la fenêtre des cases ;
                          voir « Export STEP pour la mécanique »
@@ -120,6 +131,8 @@ test/banc-ipc2581-export.py  relit les exports IPC-2581 écrits par le banc
                          d'essai par la chaîne de la visionneuse
                          (python/ipc2581_parser.py → ipc2581_json.py),
                          et les valide contre le XSD s'il est fourni
+test/banc-anim3d-images.py  images de la page d'animation 3D écrite par le banc
+test/banc-trois-ponts.js  blocs, courants DC et classes passés du schéma au PCB
 ```
 
 Ces fichiers viennent du dossier partagé, à la racine du dépôt :
@@ -159,8 +172,15 @@ Ces fichiers viennent du dossier partagé, à la racine du dépôt :
 ../commun/outils/monofichier.py  mécanique d'assemblage
 ```
 
-L'éditeur schématique charge exactement les mêmes : tout ce qui les distingue
-tient dans `js/00-espace-config.js`.
+S'y ajoutent, sans plus de détail ici : `echappe.js`, `projet.js`,
+`projet-disque.js`, `cartouche.js`, `classes-interface.js`,
+`simulation-rapport.js`, `simulation-datasheet.js`, `fiche-mesure.js`,
+`explorateur-lib.js`, `telephone.js`, `lecture-cao.js`, `tactile.js`,
+`menus.js`, `tuto.js`, `pilote.js`, `ecriture-cao.js` et `pilote-cao.js`.
+
+L'éditeur schématique charge les mêmes pour ce qu'ils partagent, sans la
+simulation, le dossier mécanique, le STEP ni l'animation 3D : pour l'espace de
+travail, tout ce qui les distingue tient dans `js/00-espace-config.js`.
 
 ## L'ordre de chargement compte
 
@@ -168,12 +188,13 @@ Les scripts partagent une seule portée globale ; les `const` de haut
 niveau d'un fichier sont visibles des suivants, mais **pas** des précédents au
 moment où ils s'exécutent. La règle pratique :
 
-1. `../commun/session.js` ouvre la marche : il câble les boutons de
+1. `../commun/echappe.js` ouvre la marche (l'échappement HTML), suivi de
+   `../commun/session.js` : celui-ci câble les boutons de
    navigation dès que l'entête est là, et déclare `sessBrancher()` dont
    `07-app` se sert à la dernière ligne de `init()`.
 2. `00-espace-config` déclare `WS_CONFIG`, lu par `../commun/workspace.js`
-   chargé en dernier.
-3. `01-core` déclare `S`, l'état commun. Rien avant lui, hors la config.
+   chargé après tous les fichiers de `js/`.
+3. `01-core` déclare `S`, l'état commun. Rien de `js/` avant lui, hors la config.
 4. `03-render` récupère le canevas (`cv`, `ctx`) : il lui faut le DOM, d'où les
    scripts en fin de `<body>`.
 5. `05-tools` pose les écouteurs sur `cv` : il vient donc après `03-render`.
@@ -213,13 +234,15 @@ moment où ils s'exécutent. La règle pratique :
    réglage dans le profil — passe par un `typeof profilNoter === "function"`,
    et le drapeau `PCB_PROFIL_PRET` est un `var` pour la raison exposée au
    point précédent.
-12. `17-exemples` construit les cartes d'exemple. Il vient après tout le reste
-   parce qu'il s'en sert : `routeCorner` de `05-tools` pour la géométrie 45°,
+12. `17-exemples` construit les cartes d'exemple. Il vient après ce dont il se
+   sert : `routeCorner` de `05-tools` pour la géométrie 45°,
    `dpOffset` et `dpLeg` de `09-diffpair` pour la paire, `fpGeomFor` et
    `padsWorld` de `01-core` pour les empreintes. Au chargement il ne fait qu'une
    chose, câbler son bouton ; les cartes ne se construisent qu'au clic.
 13. `../commun/workspace.js` s'initialise tout seul et appelle `resize()` puis
-   `fit()` : il ferme la marche.
+   `fit()` : seuls le suivent les modules d'interface communs (`telephone`,
+   `lecture-cao`, `tactile`, `menus`, `tuto`, `pilote`, `ecriture-cao`,
+   `pilote-cao`).
 
 À l'intérieur d'un fichier, une fonction peut en appeler une autre définie
 n'importe où : seules les instructions de haut niveau sont sensibles à l'ordre.
@@ -533,8 +556,8 @@ pas ce que chaque cote mesure. Une isolation de 0,25 mm entre quoi et quoi ? Un
 rapport d'aspect de 10 : 1, compté sur quelle épaisseur ? Ces questions se
 répondent avec un dessin, et un dessin ne rentre pas dans une colonne.
 
-**Les deux panneaux ont donc disparu du dock.** Le bouton *Règles…* de la barre
-d'outils ouvre la fenêtre qui les remplace : l'arbre des contraintes à gauche,
+**Les deux panneaux ont donc disparu du dock.** L'entrée *Règles…* du menu
+*Outils* ouvre la fenêtre qui les remplace : l'arbre des contraintes à gauche,
 la règle choisie à droite, avec son nom, ce qu'elle vise, une **figure cotée**
 et ses champs. Huit familles, dix-neuf règles :
 
@@ -1950,8 +1973,8 @@ un `Maj+clic` tombant sur un bout sélectionne au lieu de partir en glissement.
 Le pied de page dit ce qui vient d'être pris — nombre de segments, et de vias
 au doublé.
 
-**Dérouter la sélection seule.** `U`, ou le bouton *Dérouter* de la barre
-d'outils, ou celui que le panneau Propriétés propose sur une sélection mêlée
+**Dérouter la sélection seule.** `U`, ou l'entrée *Dérouter* du menu *Édition*,
+ou le bouton que le panneau Propriétés propose sur une sélection mêlée
 (`unrouteSel`, `js/05-tools.js`). C'est la touche `U` de l'éditeur schématique,
 portée sur la carte. Un lasso prend tout — empreintes, pistes, vias, zones ;
 `U` vide le routage de la sélection et laisse les empreintes en place, et
@@ -2592,8 +2615,8 @@ l'impédance qui la décide, et ce sont les bornes de la règle qui la vérifien
 
 ### Le tracé couplé
 
-Touche **P**, ou le bouton *Paire diff.* de la barre. L'algorithme reprend celui
-du routeur de KiCad — `pns_diff_pair_placer.cpp`, à la racine du dépôt —, ramené
+Touche **P**, ou l'entrée *Paire diff.* du menu *Placer*. L'algorithme reprend
+celui du routeur de KiCad — `pns_diff_pair_placer.cpp` —, ramené
 à ce que cet éditeur sait faire :
 
 1. **Le couple d'ancres** (`FindDpPrimitivePair`). On clique près d'une pastille
@@ -2798,14 +2821,18 @@ ne répond ne veut rien dire.
 ## Le panneau « Simulation EM » : l'impédance, peinte sur la piste
 
 La section précédente dégrossit — une formule fermée, une piste, un plan. Le
-panneau **« Simulation EM »**, ouvert par le bouton du même nom dans la barre
-d'outils, fait l'autre calcul : la **section droite** de chaque tronçon
+panneau **« Simulation EM »**, ouvert par l'entrée du même nom dans le menu
+*Outils*, fait l'autre calcul : la **section droite** de chaque tronçon
 sélectionné part au solveur `python/ligne_mom.py`, qui la résout
 par méthode des moments et rend son impédance caractéristique. La carte se
 colore, et la valeur s'écrit dessus.
 
+numpy et scipy sont obligatoires pour le serveur : sans eux, `web_CAO.py`
+s'arrête dès le démarrage (code 3) en disant quoi installer. À la racine du
+dépôt :
+
 ```bash
-pip install numpy scipy
+pip install -r requirements.txt
 ```
 
 Le solveur est en Python et en numpy : le navigateur ne peut pas l'exécuter, et
@@ -2828,8 +2855,9 @@ suit sans les connaître :
 
 ### Les onglets de SI, et trois lisent la même réponse du serveur
 
-Le panneau se range en deux familles — **SI** (intégrité du signal) et **PI**
-(intégrité de l'alimentation). SI porte notamment :
+Le panneau se range en quatre familles — **SI** (intégrité du signal), **PI**
+(intégrité de l'alimentation), **RF** (radiofréquence) et **AUDIT** (audit de la
+carte). SI porte notamment :
 
 | Onglet | Ce qu'il répond | Ce qu'il lit |
 | --- | --- | --- |
@@ -3022,7 +3050,7 @@ pas ne penche d'aucun côté ; un manque qu'on voit penche du côté rassurant, 
 il faut le dire.
 
 Aller plus loin demande, pour le couplage entre couches, un solveur de section
-à **conducteurs empilés**, ou le moteur 2,5D, qui discrétise une surface et non
+à **conducteurs empilés**, ou un moteur 2,5D, qui discrétise une surface et non
 une section droite.
 
 Ce bloc est rendu par le serveur et apparaît en dernier sous chaque fiche : il
@@ -3067,10 +3095,11 @@ trois gestes du tableau ci-dessus ne changent pas de comportement. Au-delà de
 seize lots — un `Ctrl+A`, un lasso sur la carte entière — tout repart dans un
 seul document, et la note dit que la comparaison n'a pas eu lieu.
 
-La case **« suivre »** s'arme au premier calcul réussi : à partir de là,
-changer de sélection relance tout seul, après un court repos — déplacer la
+La case **« suivre »**, une fois cochée, relance tout seul à chaque changement
+de sélection, après un court repos — déplacer la
 sélection à la souris déclenche des dizaines de rafraîchissements, et on
-n'envoie pas dix requêtes pour un geste. Avant ce premier calcul, non : on ne
+n'envoie pas dix requêtes pour un geste. Elle ne s'arme que cochée à la main :
+cliquer sur la carte est un geste de lecture, et on ne
 lance pas de requête réseau dans le dos de quelqu'un qui n'a rien demandé.
 
 ### La carte de chaleur
@@ -3299,9 +3328,10 @@ banc d'essai le refait à chaque exécution
 
 Ce qu'il ne voit pas, et le panneau le dit sous chaque résultat :
 
-- **une suite de sections uniformes**, rien d'autre. Les coudes, les moignons,
-  les transitions de via et le rayonnement n'y sont pas — ce qui se passe *au
-  raccord* entre deux tronçons n'est pas modélisé ;
+- **une suite de sections uniformes**, avec ses coudes, ses vias et leurs
+  moignons cascadés en éléments localisés. N'y sont pas : la cavité entre plans
+  hors du chemin de retour chiffré au raccord, et le rayonnement — sauf celui de
+  la boucle de retour d'un via, estimé à part et donné comme un plancher ;
 - le calcul est **quasi-statique** ; la dispersion vient du modèle de
   Getsinger, qui est un modèle et non un calcul ;
 - le **masque de soudure** n'est pas dans l'empilage envoyé. L'ajouter en tête
@@ -3311,10 +3341,9 @@ Ce qu'il ne voit pas, et le panneau le dit sous chaque résultat :
   diffèrent — un trait le long de la piste contre des croix —, mais sur une
   carte qui affiche des erreurs DRC, mieux vaut le savoir.
 
-La 2,5D pleine onde — `mom_engine.py`, `green_layered.py` — **n'est pas dans le
-chemin de calcul** et ne doit pas y revenir en l'état : sa formulation EFIE a
-perdu tout son terme de potentiel scalaire, celui qui porte les charges. C'est
-écrit en tête du fichier et détaillé dans [../docs/HISTORIQUE_DEVELOPPEMENT.md](../docs/HISTORIQUE_DEVELOPPEMENT.md).
+La 2,5D pleine onde — `mom_engine.py`, `green_layered.py` — **n'est plus dans le
+dépôt** : elle a été retirée au profit du solveur de section 2D. Son histoire
+est détaillée dans [../docs/HISTORIQUE_DEVELOPPEMENT.md](../docs/HISTORIQUE_DEVELOPPEMENT.md).
 
 ## Larmes
 
@@ -3625,8 +3654,8 @@ de la ligne et au marquage de la colonne « Rôle » dans la coupe.
 
 Le Dk de chaque diélectrique, lui, a fini par servir : c'est
 `dpStripGeom()`/`dpZdiff()` qui le lisent, pour l'impédance différentielle des
-paires (voir *Paires différentielles*). Le Df ne sert toujours à rien ici — il
-décrit la matière commandée, et il faudrait un calcul de pertes pour l'exploiter.
+paires (voir *Paires différentielles*). Le Df sert aux pertes de la simulation :
+`simStackup()` l'envoie au solveur (`tan_delta`) ; le contrôle, lui, ne le lit pas.
 
 `EMPILAGE.txt` reprend tout cela dans l'archive de fabrication : les Gerber ne
 portent pas l'empilage, il faut donc l'écrire à côté. Le panneau sait aussi
@@ -3875,8 +3904,7 @@ désactive au lieu de disparaître.
   style et les cotes (`PKG_LIB`). Les languettes de dissipation (DPAK,
   SOT-223), les pastilles thermiques centrales (QFN) et le brochage réel d'un
   BGA — lettres et colonnes — ne sont pas dessinés d'avance ; ils se dessinent
-  à la main dans la fenêtre d'empreinte, et s'enregistrent ensuite dans la
-  bibliothèque personnelle.
+  dans l'éditeur d'empreintes de la Gestion LIB, qui les enregistre dans la LIB.
 - Gestionnaire de contraintes : le moignon d'un via se compte en épaisseur
   d'empilage, contre-perçage déduit. Les contraintes de classe, l'isolation
   entre classes et les largeurs se règlent au PCB, qui connaît l'empilage ; le
@@ -3903,12 +3931,13 @@ désactive au lieu de disparaître.
 - Clavier : `S` rend la main à la Sélection, `Maj+S` active la Sérigraphie (et
   fait tourner la forme : trait, rectangle, aplat, texte) ; le menu Placer
   affiche `Maj+S`.
-- Pas d'auto-routeur à la main : le moteur assiste un geste. Le chercheur de
+- Pas d'auto-routeur d'ensemble : le moteur assiste un geste. Le chercheur de
   chemin (`js/40-chemin-auto.js`, A* sur une grille par couche) propose un
-  premier tracé liaison par liaison, ou l'axe d'une paire différentielle, mais
-  seulement quand Claude pilote la page (`cao_chemin`, puis `cao_router` ou
-  `cao_paire`) ; les liaisons se cherchent dans l'ordre donné, sans
-  ordonnancement des nets ni reprise d'ensemble.
+  premier tracé liaison par liaison : *Chemin auto* du menu *Placer*
+  (`cheminGeste()`), `F` pendant un tracé (`finirTrace()`), ou, quand Claude
+  pilote la page, `cao_chemin` puis `cao_router` ou `cao_paire`, qui donne aussi
+  l'axe d'une paire différentielle ; les liaisons se cherchent dans l'ordre
+  donné, sans ordonnancement des nets ni reprise d'ensemble.
 - Sauvegarde automatique sans projet ouvert : aucune. Le brouillon (voir plus
   haut) ne s'écrit que dans un dossier de projet ; hors projet, fermer l'onglet
   sans « Enregistrer .json » perd le travail, et seul l'avertissement de

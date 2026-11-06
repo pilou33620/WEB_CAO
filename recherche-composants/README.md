@@ -8,14 +8,17 @@ règles de conception.
 Contrairement aux éditeurs, **cette page a besoin d'un serveur** : le
 navigateur ne peut pas appeler le serveur MCP de pcbparts.dev directement (ni
 le CORS ni le protocole ne le permettent). `../web_CAO.py` fait le relais —
-c'est le même serveur que celui des éditeurs, aucune dépendance à installer.
+c'est le même serveur que celui des éditeurs, rien à installer de plus que
+ses numpy et scipy.
 
 ```
 recherche-composants/
 ├── recherche-composants.html     structure de la page + ordre de chargement
 ├── css/
 │   └── recherche.css             thème « dashboard nocturne »
-└── js/                           7 modules, chargés dans l'ordre numéroté
+├── js/                           7 modules, chargés dans l'ordre numéroté
+└── test/
+    └── banc-export-csv.js        export .csv, sans navigateur
 ```
 
 Des fichiers viennent du dossier partagé `../commun/`, communs aux outils :
@@ -41,7 +44,7 @@ Le schéma s'en sert aussi : `editeur-schematique/js/22-recherche-composants.js`
 | `../python/passerelle_mcp.py` | 236 | Client MCP : session, liste blanche, déballage des réponses. Toute la logique de protocole est là, `web_CAO.py` ne fait que l'exposer |
 | `js/02-outils.js` | 284 | Catalogue des 14 outils : familles, libellés français, champs et colonnes de résultats |
 | `js/03-formulaire.js` | 227 | Formulaire construit en croisant le catalogue et le schéma d'arguments du serveur ; lecture et validation des champs |
-| `js/04-resultats.js` | 193 | Tableau, fiche ou bloc de texte selon la réponse ; exports `.csv` et `.json` |
+| `js/04-resultats.js` | 196 | Tableau, fiche ou bloc de texte selon la réponse ; exports `.csv` et `.json` |
 | `js/05-details.js` | 154 | Panneau de détail, enchaînements (équivalences, brochage, KiCad, distributeurs, import dans Gestion LIB), échappement systématique |
 | `js/06-demarrage.js` | 215 | Câblage des boutons, liste des outils, historique, session d'onglet |
 
@@ -64,7 +67,7 @@ supprimé. Il exposait exactement les mêmes routes `/api/tools` et `/api/tool`
 que `web_CAO.py`, au prix de `fastapi`, `uvicorn` et `pydantic`, alors que la
 logique de protocole vit dans `../python/passerelle_mcp.py` — en bibliothèque
 standard, donc partageable. Si la page affiche « Passerelle introuvable », il
-n'y a plus qu'un serveur à démarrer, et il n'a rien à installer.
+n'y a plus qu'un serveur à démarrer : `web_CAO.py`.
 
 ## Ce que fait l'interface
 

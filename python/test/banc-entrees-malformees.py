@@ -16,11 +16,7 @@ CAS, ECHECS = [], []
 
 def refus(module, fonction, erreur, docs, **kw):
     """Chaque document doit lever `erreur`, et rien d'autre."""
-    try:
-        m = __import__(module)
-    except Exception as exc:                                  # noqa: BLE001  numpy absent
-        print("  saute  %s (%s)" % (module, exc))
-        return
+    m = __import__(module)
     for doc in docs:
         CAS.append((module, doc))
         try:

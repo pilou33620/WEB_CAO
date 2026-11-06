@@ -811,28 +811,18 @@ _ICI = os.path.dirname(os.path.abspath(__file__))
 if _ICI not in sys.path:
     sys.path.insert(0, _ICI)
 
-# Import a l'essai : numpy, scipy et le module de ligne peuvent manquer.
-# ERREUR_SOLVEUR garde de quoi le dire a l'utilisateur, mot pour mot -- « le
-# solveur ne marche pas » n'a jamais aide personne a installer numpy.
-#
 # On importe ligne_mom, VOISIN de ce fichier dans python/. Le paquet 2,5D
 # pleine onde mom_solver/ a ete retire du depot (commit ab691cb du
 # 2026-09-16) : rien ici n'en dependait.
-try:
-    import numpy as np
-    import ligne_mom as tl
-    ERREUR_SOLVEUR = None
-except Exception as _exc:                              # noqa: BLE001
-    np = None
-    tl = None
-    ERREUR_SOLVEUR = _exc
+import numpy as np
+import ligne_mom as tl
 
 FORMAT = "cao-sim-em-3"
 FORMAT_RESULTAT = "cao-sim-em-resultat-5"
 VERSION = "5.5.0"
 VERSION_MOTEURS = {
     "simulation_em": VERSION,
-    "ligne_mom": getattr(tl, "VERSION", "2.5.0") if tl is not None else "indisponible",
+    "ligne_mom": getattr(tl, "VERSION", "2.5.0"),
 }
 
 # -- les garde-fous ---------------------------------------------------------
@@ -864,13 +854,6 @@ class ErreurSimulation(Exception):
 
 def etat():
     """Ce que le serveur sait faire : les pages le demandent avant de lancer."""
-    if ERREUR_SOLVEUR is not None:
-        return {"dispo": False,
-                "version": VERSION,
-                "moteurs": VERSION_MOTEURS,
-                "detail": "Solveur EM indisponible : %s" % ERREUR_SOLVEUR,
-                "conseil": "Le solveur a besoin de numpy :"
-                           " « pip install numpy »."}
     return {"dispo": True, "format": FORMAT, "resultat": FORMAT_RESULTAT,
             "version": VERSION,
             "moteurs": VERSION_MOTEURS,
@@ -7636,11 +7619,6 @@ def simuler(doc, journal=None, garder_abcd=False, freqs_imposees=None):
     centrale inseree au milieu, ni le plafond MAX_POINTS de la page. Le reste
     du calcul (sections, discontinuites, cascade) est exactement le meme.
     """
-    if ERREUR_SOLVEUR is not None:
-        raise ErreurSimulation("Solveur EM indisponible : %s" % ERREUR_SOLVEUR,
-                               "Le solveur a besoin de numpy :"
-                               " « pip install numpy ».")
-
     couches, objets, analyse = doc_valide(doc)
 
     objets = _partager_paire(doc, objets)

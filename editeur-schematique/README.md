@@ -10,11 +10,12 @@ editeur-schematique/
 ├── editeur-schematique.html      structure de la page + ordre de chargement
 ├── css/
 │   └── editeur.css               thème « dashboard nocturne »
-├── js/                           30 modules (00 à 29), chargés dans l'ordre numéroté
+├── js/                           31 modules (00 à 30), chargés dans l'ordre numéroté
 ├── outils/
 │   └── build-monofichier.py      recompose un HTML unique dans dist/
 ├── test/
-│   └── harness.js                banc d'essai sans navigateur
+│   ├── harness.js                banc d'essai sans navigateur
+│   └── banc-synoptique.py        synoptique de chaque schématique de PROJETS/CAO (Chromium, hors CI)
 └── dist/
     ├── editeur-schematique.html  version un-seul-fichier (générée)
     └── schema.js                 bundle JavaScript seul (banc d'essai)
@@ -46,35 +47,36 @@ identiques pour l'éditeur PCB :
 |---|---:|---|
 | `js/00-espace-config.js` | 22 | `WS_CONFIG` : clé de stockage local et disposition d'usine des panneaux, lus par `../commun/workspace.js` |
 | `js/01-noyau.js` | 103 | Constantes de style (couleurs, pas de grille) et helpers de dessin (`L`, `P`, `RR`, `CIR`, `TXT`…) |
-| `js/02-bibliotheque.js` | 348 | `LIB` : définition et tracé de chaque symbole, plus `CATS` |
+| `js/02-bibliotheque.js` | 352 | `LIB` : définition et tracé de chaque symbole, plus `CATS` |
 | `js/03-boitiers.js` | 155 | `PKG_BASES`, nommage et filtrage des empreintes, accès sûr à la bibliothèque (`defOf`) |
 | `js/04-etat.js` | 370 | `S` (état global), sélection mixte, canvas, géométrie des symboles et des broches (rectangle, carré, disposition libre) |
-| `js/05-feuilles.js` | 841 | Feuilles et onglets, synoptique par composants (liaisons, routage, Ranger), cartouche, historique undo/redo, `addComp` / `nextRef` |
+| `js/05-feuilles.js` | 869 | Feuilles et onglets, synoptique par composants (liaisons, routage, Ranger), cartouche, historique undo/redo, `addComp` / `nextRef` |
 | `js/06-rendu-fond.js` | 128 | Cadrage, conversions monde↔écran, grille et son échelle en millimètres, fils, cache des jonctions |
 | `js/07-connectivite.js` | 582 | Découpe automatique des segments + extraction des nets (feuille et document) |
-| `js/08-rendu-schema.js` | 664 | Jonctions, halo de net, étiquettes, symboles, sélection, boucle `draw()` |
-| `js/09-interaction.js` | 1114 | Souris/tactile : pose, tracé de fils et de bus, glisser, sondes, marquee, zoom, pan, fenêtre de piquage de bus |
-| `js/10-actions.js` | 376 | Pivoter, miroir, dupliquer, supprimer, recadrer, pas de grille, presse-papier (copier/couper/coller), changement de mode |
+| `js/08-rendu-schema.js` | 644 | Jonctions, halo de net, étiquettes, symboles, sélection, boucle `draw()` |
+| `js/09-interaction.js` | 1119 | Souris/tactile : pose, tracé de fils et de bus, glisser, sondes, marquee, zoom, pan, fenêtre de piquage de bus |
+| `js/10-actions.js` | 384 | Pivoter, miroir, dupliquer, supprimer, recadrer, pas de grille, presse-papier (copier/couper/coller), changement de mode |
 | `js/11-palette.js` | 52 | Icônes de la bibliothèque et construction du panneau de gauche |
-| `js/12-panneaux.js` | 1066 | Propriétés, champ boîtier, nomenclature, liste des nets, menu du bouton Trait |
-| `js/13-fichiers.js` | 686 | Export JSON, PNG, netlist `.txt`, nomenclature `.csv` et `.xlsx` (format BOM : onglets Presentation, History, BOM) |
-| `js/14-clavier-boutons.js` | 213 | Raccourcis clavier et branchement de la barre d'outils |
-| `js/15-import.js` | 349 | Import JSON défensif (normalisation), sauvegarde automatique (brouillon) et reprise de la session d'onglet (`sessionSchema`) |
+| `js/12-panneaux.js` | 1137 | Propriétés, champ boîtier, nomenclature, liste des nets, menu du bouton Trait |
+| `js/13-fichiers.js` | 690 | Export JSON, PNG, netlist `.txt`, nomenclature `.csv` et `.xlsx` (format BOM : onglets Presentation, History, BOM) |
+| `js/14-clavier-boutons.js` | 227 | Raccourcis clavier et branchement de la barre d'outils |
+| `js/15-import.js` | 367 | Import JSON défensif (normalisation), sauvegarde automatique (brouillon) et reprise de la session d'onglet (`sessionSchema`) |
 | `js/16-demo.js` | 462 | Les deux schémas d'exemple (« Interface IoT & Bus Haute Vitesse — 4 couches », « Commande 12 V — 2 couches »), la fenêtre **Fichier → Exemples…** ; le premier sert de démonstration au démarrage sans projet |
 | `js/17-demarrage.js` | 94 | Séquence de démarrage des données et de l'affichage, puis reprise du travail laissé dans l'onglet |
 | `js/18-csv.js` | 90 | Bibliothèque `LIB_composants.csv` : chargement HTTP ou manuel (la lecture du fichier est dans `../commun/csv.js`) |
 | `js/19-broches.js` | 406 | Fenêtre **Édition du composant** (`ceOpen`, ouverte par double-clic) ; retouches du brochage (`icSetCount`, `icSetShape`, `icSetBody`, `icMovePin`) : nombre de broches, représentation, taille du corps, placement des pattes à la grille |
 | `js/20-profil.js` | 83 | Réglages d'affichage rangés dans le profil de l'utilisateur : grille, étiquettes de net, onglet de liste |
-| `js/21-reperage.js` | 223 | Ce que la recherche et la mesure valent sur un schéma : aimant sur les broches, cibles de toutes les feuilles, cadrage, cross-probing vers le PCB |
-| `js/22-recherche-composants.js` | 1266 | Fenêtre « Enrichissement composant » : recherche JLCPCB puis distributeurs (Mouser/DigiKey), brochage officiel et vérification du câblage |
-| `js/23-patterns.js` | 450 | Reconnaissance des motifs de circuits, estimation des courants DC et pont vers le placement/DRC PCB |
-| `js/24-lib-sync.js` | 277 | Synchronisation et alertes avec Gestion LIB |
-| `js/25-brochage.js` | 412 | Brochage par référence : broche du symbole → patte de l'empreinte (`el.pinMap`), parties d'un composant multiple (`U3A`, `U3B`), choix de la référence, contrôle du brochage |
+| `js/21-reperage.js` | 244 | Ce que la recherche et la mesure valent sur un schéma : aimant sur les broches, cibles de toutes les feuilles, cadrage, cross-probing vers le PCB |
+| `js/22-recherche-composants.js` | 1286 | Fenêtre « Enrichissement composant » : recherche JLCPCB puis distributeurs (Mouser/DigiKey), brochage officiel et vérification du câblage |
+| `js/23-patterns.js` | 449 | Reconnaissance des motifs de circuits, estimation des courants DC et pont vers le placement/DRC PCB |
+| `js/24-lib-sync.js` | 294 | Synchronisation et alertes avec Gestion LIB |
+| `js/25-brochage.js` | 415 | Brochage par référence : broche du symbole → patte de l'empreinte (`el.pinMap`), parties d'un composant multiple (`U3A`, `U3B`), choix de la référence, contrôle du brochage |
 | `../commun/brochage.js` | 158 | Lecture de la colonne « Brochage » de `LIB_composants.csv`, partagée avec Gestion LIB |
 | `js/26-variantes.js` | 302 | Variantes de montage : fenêtre des variantes, choix dans la nomenclature, section du panneau Propriétés, non-montés barrés sur la feuille |
 | `js/27-contraintes.js` | 290 | Contraintes de nets pour le PCB : fenêtre (Outils → Contraintes de nets…), section du panneau Propriétés d'un net, groupes d'appariement |
 | `js/28-dessin-pilote.js` | 554 | Dessin par Claude : les cartes d'opérations (poser, fil, relier, étiqueter, feuille…) appliquées par le canal de pilotage, 40 opérations au plus |
 | `js/29-symboles-lib.js` | 136 | Symboles de la LIB (fichiers `schsym-1`) : lus au chargement du catalogue, ajoutés à `LIB`, recopiés dans le document (`S.symboles`) |
+| `js/30-export-pdf.js` | 235 | Export PDF vectoriel (menu Fichier) : une page par feuille, références, valeurs et noms de nets en vrai texte cherchable |
 | `../commun/variantes.js` | 147 | Le modèle des variantes de montage, partagé avec le PCB — **chargé avant `js/`** |
 | `../commun/contraintes.js` | 109 | Ce qu'est une contrainte de net et un groupe d'appariement, et comment se lit une saisie : les mêmes bornes que le PCB — **chargé avant `js/`** |
 | `../commun/reperage.js` | 290 | Chercher un repère, mesurer une distance — le geste, partagé avec l'éditeur PCB et paramétré par l'adaptateur de `21-reperage.js` |
@@ -231,8 +233,7 @@ comprises. Nommer un composant `IRA-S400st01A01` élargit donc son symbole au
 lieu de laisser le texte déborder sur les fils voisins. Les broches s'écartent
 d'autant — c'est ce qui garde le texte à l'intérieur — et le câblage suit
 (`reshapeComp`), de sorte qu'un symbole déjà relié ne se décroche pas. Une
-largeur saisie à la main ne fait qu'agrandir davantage ; le bouton *Largeur
-automatique* rend la main au calcul.
+largeur saisie à la main ne fait qu'agrandir davantage.
 
 **Pas de grille et échelle.** Une case de grille vaut **1 mm**. C'est une
 convention de dessin, pas une cote de fabrication — un schéma n'a pas d'échelle
@@ -510,7 +511,7 @@ Les fonctions d'export ont été scindées pour cela : `netlistText()` et
 
 ## Contrôles effectués sur ce découpage
 
-*(Relevé d'époque : 17 modules et 38 symboles alors ; il y a aujourd'hui 30
+*(Relevé d'époque : 17 modules et 38 symboles alors ; il y a aujourd'hui 31
 modules et 58 symboles dans la palette.)*
 
 - La concaténation des 17 modules est **strictement identique**, octet pour

@@ -18,16 +18,22 @@ se passe dans le navigateur.
 
 Ce modèle JSON s'exporte (« Exporter .json ») et se rouvre ici **sans serveur**,
 en double-clic : de quoi archiver une carte lue à un instant donné, ou la
-consulter sur une machine sans Python.
+consulter sur une machine sans Python. La page ouverte ainsi fait tout ce qui
+se passe dans le navigateur : dessin, fiches, exports, plans, dossier méca (sans
+la LIB, et la fenêtre le dit). Elle annonce à l'ouverture qu'elle ne trouve pas
+de serveur : ni lecture d'un XML ou d'un `.zip`, ni Simulation EM, dont le
+solveur est lui aussi côté serveur.
 
 ```
 visionneuse-ipc2581/
 ├── visionneuse-ipc2581.html      structure de la page + ordre de chargement
 ├── css/
 │   └── visionneuse.css           thème « dashboard nocturne »
-├── js/                           11 modules (00 à 10), chargés dans l'ordre numéroté
+├── js/                           12 modules (00 à 11), chargés dans l'ordre de la page (11 avant 09)
 └── test/
-    └── banc-essai.py             banc d'essai du parseur, carte d'essai incluse
+    ├── banc-essai.py             banc d'essai du parseur, carte d'essai incluse
+    ├── carte-contre-percage.xml  carte d'essai du contre-perçage
+    └── harness-sim.js            banc d'essai de la simulation, sous Node
 ```
 
 Côté Python, trois fichiers dans python/, à la racine du dépôt :
@@ -46,20 +52,30 @@ et ceux du dossier partagé, identiques aux autres outils :
 ../commun/workspace.js            panneaux détachables, paramétré par WS_CONFIG
 ../commun/session.css             habillage des boutons de navigation
 ../commun/session.js              contexte conservé en changeant d'outil
-../commun/profils.js              réglages d'affichage propres à l'utilisateur
+../commun/profils.css, profils.js réglages d'affichage propres à l'utilisateur
 ../commun/projet.js               le nom du projet, d'où découlent les exports
 ../commun/projet-disque.js        le dossier du projet, où la carte se range
 ../commun/simulation-em.js        le panneau de simulation EM : saisie, envoi
                                   au serveur, courbe, exports. L'éditeur PCB
                                   charge exactement le même
 ../commun/simulation-em.css       habillage de ce panneau
+../commun/simulation-rapport.css, simulation-rapport.js
+                                  le rapport d'une simulation (copier, imprimer, enregistrer)
+../commun/simulation-datasheet.js réglages des simulations relevés dans une datasheet (MCP)
 ../commun/classes-interface.js    classes d'interface (USB, Ethernet…) pour la nature des nets
 ../commun/dossier-meca.js         calcul et feuille du dossier mécanique (commun avec l'éditeur PCB)
 ../commun/fiche-mesure.js         dessin et saisie de la fiche de mesure du technicien
 ../commun/zip.js                  archive du dossier mécanique
 ../commun/export-step.js          la carte en STEP (assemblage 3D), commune avec l'éditeur PCB
-../commun/tactile.js              mode tactile et roulette de commandes (contexte « Carte »)
-../editeur-pcb/js/29-draftsman.js, 33-draftsman-export.js, 34-draftsman-vues.js
+../commun/animation-3d.js         la vidéo d'assemblage 3D, avec vendor/three-source.js
+../commun/tactile.css, tactile.js mode tactile et roulette de commandes (contexte « Carte »)
+../commun/telephone.css, telephone.js
+                                  disposition sur un petit écran
+../commun/tuto.css, tuto.js       mode tuto de la suite
+../commun/lecture-cao.js          lectures de la page servies au canal de pilotage
+../commun/pilote.css, pilote.js, pilote-cao.js
+                                  canal de pilotage (MCP de web_suite)
+../editeur-pcb/js/29-draftsman.js, 33-draftsman-export.js, 34-draftsman-vues.js, fontes/plans-sans.js
                                   feuilles et PDF du Draftsman, chargés tels quels
 ```
 
@@ -69,19 +85,19 @@ et ceux du dossier partagé, identiques aux autres outils :
 |---|---:|---|
 | `js/00-espace-config.js` | 36 | `WS_CONFIG` : clé de stockage local et disposition d'usine des sept panneaux (Simulation EM et Résultats masqués) |
 | `js/01-api.js` | 109 | Sonde du serveur (l'origine qui sert la page, et elle seule), envoi du fichier à `/api/ipc2581`, relecture d'un `.json` déjà traduit |
-| `../python/ipc2581_json.py` | 721 | Traduction `IPCDesign` → dictionnaire JSON : couches et nets deviennent des index, les polygones des tableaux plats. Ouvre aussi les archives `.zip` |
-| `js/02-modele.js` | 1757 | Table des couches et couleurs, rangement par couche et par net, placement des pastilles, assemblage des `Path2D`, et la ligne de transmission (impédance, retard, capacité, self) |
-| `js/03-rendu.js` | 506 | Canevas : repère écran/monde, ordre de dessin, couches, perçages, textes, mise en évidence, règle d'échelle |
-| `js/04-interaction.js` | 511 | Déplacement, zoom, pincement à deux doigts, règle de mesure (`M`), désignation (piste, pastille, perçage, plan, boîtier), clavier |
+| `../python/ipc2581_json.py` | 731 | Traduction `IPCDesign` → dictionnaire JSON : couches et nets deviennent des index, les polygones des tableaux plats. Ouvre aussi les archives `.zip` |
+| `js/02-modele.js` | 1759 | Table des couches et couleurs, rangement par couche et par net, placement des pastilles, assemblage des `Path2D`, et la ligne de transmission (impédance, retard, capacité, self) |
+| `js/03-rendu.js` | 514 | Canevas : repère écran/monde, ordre de dessin, couches, perçages, textes, mise en évidence, règle d'échelle |
+| `js/04-interaction.js` | 513 | Déplacement, zoom, pincement à deux doigts, règle de mesure (`M`), désignation (piste, pastille, perçage, plan, boîtier), clavier |
 | `js/05-panneaux.js` | 1221 | Les panneaux couches, la carte, nets, composants, sélection — la fiche de ligne de transmission, l'empilage du calcul et la fenêtre de classification des nets |
 | `js/06-demarrage.js` | 449 | Ouverture d'un fichier (bouton, dépôt, reprise de session et de projet), exports `.json` et `.png`, réglages de l'utilisateur |
-| `js/07-simulation.js` | 6133 | Simulation EM : la portée désignée mise au format du solveur — masse coplanaire mesurée côté par côté, découpage en plages d'écart, couture de vias, **cuivre voisin joint au problème** —, la carte de chaleur d'impédance et les valeurs écrites sur les pistes ; et pour l'onglet **Crosstalk**, les trois mesures que le serveur ne peut pas deviner : positions de couture sur l'abscisse du parcours, fentes du plan sondées dessous, perçages de masse |
+| `js/07-simulation.js` | 6562 | Simulation EM : la portée désignée mise au format du solveur — masse coplanaire mesurée côté par côté, découpage en plages d'écart, couture de vias, **cuivre voisin joint au problème** —, la carte de chaleur d'impédance et les valeurs écrites sur les pistes ; et pour l'onglet **Crosstalk**, les trois mesures que le serveur ne peut pas deviner : positions de couture sur l'abscisse du parcours, fentes du plan sondées dessous, perçages de masse |
 | `js/08-dossier-meca.js` | 240 | Dossier mécanique : entrée neutre tirée du modèle lu, fenêtre (hauteurs, ouvertures, aperçu) et `.zip` ; la scène de l'Export STEP (`stepSceneIpc`) |
 | `js/09-fiche-mesure.js` | 40 | Fiche de mesure et retrofit : pastilles du modèle lu (les mesures vont dans `V.modele.mesures`, le retrofit dans `V.modele.retrofit`) ; la fenêtre est celle des plans |
-| `js/11-animation-3d.js` | 150 | Animation 3D : le modèle lu relevé dans la scène de `commun/animation-3d.js` (cuivre, pastilles, vias, plans en image, sérigraphie, composants présentés) |
-| `js/10-plans.js` | 233 | Plans du Draftsman (fabrication, assemblage dessus / dessous) refaits sur le modèle lu, et la seule fenêtre des plans : cases des feuilles, volets fiche de mesure et retrofit, aperçu et PDF |
-| `../python/simulation_em.py` | 8152 | Pont vers `python/ligne_mom.py` : empilage à plat → section droite, résolution par tronçon, **appariement des tronçons parallèles**, cascade ABCD → JSON |
-| `test/harness-sim.js` | 7125 | Banc d'essai de la masse coplanaire, de la chute continue, du voisinage et des trois mesures du crosstalk, sous Node : `node test/harness-sim.js` |
+| `js/11-animation-3d.js` | 153 | Animation 3D : le modèle lu relevé dans la scène de `commun/animation-3d.js` (cuivre, pastilles, vias, plans en image, sérigraphie, composants présentés) |
+| `js/10-plans.js` | 238 | Plans du Draftsman (fabrication, assemblage dessus / dessous) refaits sur le modèle lu, et la seule fenêtre des plans : cases des feuilles, volets fiche de mesure et retrofit, aperçu et PDF |
+| `../python/simulation_em.py` | 8144 | Pont vers `python/ligne_mom.py` : empilage à plat → section droite, résolution par tronçon, **appariement des tronçons parallèles**, cascade ABCD → JSON |
+| `test/harness-sim.js` | 7350 | Banc d'essai de la masse coplanaire, de la chute continue, du voisinage et des trois mesures du crosstalk, sous Node : `node test/harness-sim.js` |
 
 ## Démarrage
 
@@ -92,6 +108,7 @@ python web_CAO.py
 puis, depuis la page d'accueil, « Visionneuse IPC-2581 ». Le fichier se choisit
 au bouton ou se dépose n'importe où sur la page. Le serveur refuse un fichier de
 plus de 192 Mo (`MAX_IPC`, `web_CAO.py`) et l'annonce à la sonde de la page.
+Le serveur ne démarre pas sans numpy et scipy, voir « Simuler » plus bas.
 
 Formats acceptés : `.xml`, `.cvg`, `.ipc`, `.ipc2581`, l'archive `.zip` qui en
 contient un — c'est souvent sous cette forme qu'arrive un dossier de
@@ -298,8 +315,8 @@ déclare pas ne s'invente pas. **Elle est activée par défaut** depuis le
 12/10/2026 (elle était décochée) : la portée déclarée est une donnée du
 fichier, au même titre que celle du contre-perçage. Décochée, la fiche d'un
 via sans contre-perçage redevient celle d'avant, à l'identique — l'essai du
-banc (`harness-sim.js`, « sans contre-perçage, la fiche d'avant, à
-l'identique ») le tient, option décochée. Sur la carte d'essai
+banc (`harness-sim.js`, « contre-perçage : sans portée, sans couche gardée, ou
+sans contre-perçage, rien ne change ») le tient, option décochée. Sur la carte d'essai
 ([test/carte-contre-percage.xml](test/carte-contre-percage.xml)), elle fait
 chiffrer le moignon de V3 — traversant, emprunté de TOP à IN1 : 1,07 mm sous
 IN1, 193 fF, quart d'onde à 33,8 GHz — que le serveur laissait inconnu ;
@@ -321,7 +338,7 @@ IN1, 193 fF, quart d'onde à 33,8 GHz — que le serveur laissait inconnu ;
 | `B` | Dessus / dessous |
 | `R`, `D`, `P` | Repères, perçages, plans |
 | `O` | Ouvrir un fichier |
-| `Échap` | Ranger la règle si elle est armée, sinon ne plus rien sélectionner ; ferme les fenêtres méca, plans et mesure |
+| `Échap` | Ranger la règle si elle est armée, sinon ne plus rien sélectionner ; ferme les fenêtres méca et plans (la fiche de mesure en est un volet) |
 
 ### Les règles que le fichier porte (classes, paires)
 
@@ -362,8 +379,13 @@ est dans `../commun/simulation-em.js`, et seul l'adaptateur
 `js/07-simulation.js` change — il décrit une carte lue là où l'autre décrit
 une carte routée.
 
+Le solveur demande numpy et scipy, et ils sont **obligatoires** pour
+`web_CAO.py` : sans eux le serveur s'arrête au démarrage (code 3) en disant quoi
+installer. Une fois lancé, ses routes de solveurs ne répondent jamais
+« indisponible ».
+
 ```bash
-pip install numpy scipy
+pip install -r requirements.txt   # ou : sudo apt install python3-numpy python3-scipy
 python web_CAO.py
 ```
 
@@ -378,7 +400,7 @@ sous le résultat plutôt que supposé en silence.
 
 Le panneau se range en quatre familles — **SI** (intégrité du signal), **PI**
 (intégrité de l'alimentation : chute continue, impédance du réseau), **RF** et
-**AUDIT** (toute la carte) ; ces trois dernières, et l'onglet SI *Bus*, sont
+**AUDIT** (toute la carte) ; ces trois dernières, et l'onglet SI *Bus synchrone*, sont
 décrites dans [le guide Simulation EM](../docs/simulation-em.md). SI porte
 notamment :
 
@@ -428,13 +450,14 @@ la piste, et les **perçages de masse** aux changements de couche.
 
 Deux différences avec l'éditeur PCB, qui tiennent au format et non à l'outil :
 
-- **un perçage IPC-2581 ne déclare pas sa portée.** Le format porte sa position,
-  son diamètre et son net, jamais les couches qu'il traverse. On le suppose
-  **traversant** — comme partout ailleurs sur cette page — et la note du
-  document le dit. Un via enterré compté comme traversant fait passer pour
-  refermé un retour qui ne l'est pas : le contrôle des changements de couche est
-  donc **optimiste**, et c'est le sens qu'il faut connaître avant de lire la
-  carte ;
+- **un perçage IPC-2581 ne déclare pas toujours sa portée.** Le format la porte
+  sur le calque de perçage et non sur le trou (`<Span fromLayer toLayer>`, lu
+  depuis le parseur 1.73, `sa` / `sb` du perçage), et un fichier peut la taire.
+  Déclarée, elle sert (`simXtPortee`) ; sinon on suppose le perçage
+  **traversant**, et la note du document compte ceux-là. Un via enterré compté
+  comme traversant fait passer pour refermé un retour qui ne l'est pas : sur ces
+  perçages, le contrôle des changements de couche est donc **optimiste**, et
+  c'est le sens qu'il faut connaître avant de lire la carte ;
 - **le plan est un contour, pas une grille de cases.** La mesure d'écart
   coplanaire range les *arêtes* du plan ; ici la question est « y a-t-il du
   cuivre de masse **sous** ce point », qui est une question d'appartenance. Le
@@ -494,37 +517,34 @@ Sous ses deux formes, et sans rien mesurer de plus :
   tombe de **3,15 % à 0,96 %**, et Z₀ des signaux de 57,6 à 50,7 Ω — ce qui est
   affiché, parce qu'on ne pose pas une garde sans revoir la largeur.
 
-### Reçu et émis : les deux sens du bruit
+### Le temps de montée et l'amplitude
 
-La piste sélectionnée est **victime et agresseur à la fois**, et la fiche donne
-les deux — même matrice, agresseur et victime échangés :
+Ces fiches ne donnent plus de bruit « reçu » et « émis » : ils sont partis avec
+l'ancienne analyse, et ce qu'une voisine prend se lit sous *Crosstalk*.
 
-- **reçu** : ce que la sélection subit. C'est lui qui juge, parce que c'est la
-  question qu'on pose en sélectionnant une piste ;
-- **émis** : ce qu'elle injecte dans la voisine.
-
-Les deux ne sont égaux que si les deux pistes ont la même largeur : le bruit se
-compte en fraction de l'amplitude de **l'agresseur** et se rapporte à ses termes
-propres. Mesuré sur une voisine quatre fois plus large : **5,50 % reçu contre
-4,51 % émis**, et le bruit avant **change de signe** d'un sens à l'autre. Quand
-la sélection émet au-dessus du budget sans rien recevoir, la fiche le dit — le
-défaut est réel, mais il est chez la voisine.
-
-**Le temps de montée** et **l'amplitude** ont chacun leur unité — ps / ns / µs
-et mV / V —, choisie dans une liste comme celle des fréquences : la valeur vit
-en secondes et en volts jusqu'au solveur, et en changer *convertit* ce qui est
-écrit sans le réinterpréter. Le front ne change ni [C] ni [L] : il décide si le
-bruit arrière **sature** — passé une certaine longueur de longement, il ne monte
-plus — et ce que vaut le bruit avant, qui lui ne sature pas. Laissé vide, il est
+**Le temps de montée** et **l'amplitude** de *Current Return Path* ont chacun
+leur unité — ps / ns / µs et mV / V —, choisie dans une liste comme celle des
+fréquences : la valeur vit en secondes et en volts jusqu'au solveur, et en
+changer *convertit* ce qui est écrit sans le réinterpréter. Le front ne change
+ni [C] ni [L] et n'entre pas dans la Z différentielle : il fixe le genou
+(0,35 / t_r), donc le seuil de couture et l'excitation de la cavité entre plans ;
+l'amplitude fixe le rayonnement de la boucle de retour. Laissé vide, le front est
 déduit du haut de la bande par la règle du genou (0,35 / f_max), et la fiche le
 dit.
 
-**Ce que ça ne couvre pas, et qui est écrit sous chaque fiche** : le couplage
-entre pistes de **couches différentes**, les **croisements**, et le couplage par
-champ de vias — ce n'est plus une section droite. Et quand aucun plan n'est
-trouvé à portée du groupe — la sonde va jusqu'à trois millimètres —, le couplage
-est calculé sans lui, donc **majoré** ; la fiche le dit alors, et seulement
-alors.
+Sous *Crosstalk*, t_r a son propre champ, en nanosecondes : vide, il vient de la
+classe du net de l'agresseur. C'est lui qui décide si le bruit arrière
+**sature** — passé une certaine longueur de longement, il ne monte plus — et ce
+que vaut le bruit avant, qui lui ne sature pas.
+
+**Ce que ça ne couvre pas, et qui est écrit sous la fiche de Z différentielle** :
+le couplage n'y est chiffré qu'entre pistes de la même couche. Les pistes
+**superposées** sur deux couches sont cherchées et signalées (longueur en regard,
+décalage, diélectrique) sans chiffre — *Crosstalk* les chiffre —, celles qu'un
+plan sépare seulement comptées, et les **croisements** ne sont ni chiffrés ni
+cherchés. Et quand aucun plan n'est trouvé à portée du groupe — la sonde va
+jusqu'à trois millimètres —, le couplage est calculé sans lui, donc **majoré** ;
+la fiche le dit alors, et seulement alors.
 
 ### Les gestes commandent l'étendue du calcul
 
@@ -749,8 +769,9 @@ côté, dans un couloir de 2 mm, et le compare à λ/20 et λ/10 dans le stratif
 et un quatrième dit en toutes lettres quand aucun via de masse ne borde la
 piste. Ce n'est pas une modélisation, c'est un contrôle : ses limites sont dans
 `../docs/HISTORIQUE_DEVELOPPEMENT.md`, section *« Ce que la masse coplanaire suppose »*. La principale
-ici : un perçage IPC-2581 ne dit pas sa plage de couches, donc un via borgne qui
-n'atteint pas le plan de référence compte quand même comme une couture.
+ici : ce contrôle ne regarde pas la plage de couches d'un perçage, même déclarée,
+donc un via borgne qui n'atteint pas le plan de référence compte quand même comme
+une couture.
 
 ## Dossier mécanique
 
@@ -783,8 +804,8 @@ Le bouton **Export STEP…** de la barre, après **Dossier méca**, ouvre la mê
 fenêtre de cases que l'éditeur PCB (voir « Export STEP pour la mécanique »
 dans `editeur-pcb/README.md`) et télécharge `<carte>-3D.step`. Les cases
 **Cuivre extérieur** et **Sérigraphie** y sont grisées (« non disponible
-ici ») : restent la carte (contour, découpes et trous) et les composants
-dessus / dessous. Le modèle 3D d'un composant est cherché dans la LIB par la
+ici »), comme **Trous des vias dans la carte** : restent la carte (contour,
+découpes et trous) et les composants dessus / dessous. Le modèle 3D d'un composant est cherché dans la LIB par la
 Part Name, puis par la référence fabricant ; sans modèle, le composant est sa
 boîte extrudée à sa hauteur. La scène vient de `stepSceneIpc`
 (`js/08-dossier-meca.js`).
@@ -972,20 +993,18 @@ portent un plan de masse. C'est alors le cuivre posé qui tranche, et la fiche
 d'une piste écrit le taux de couverture à côté du nom du plan — « Conductor-2
 (80 % de cuivre) » — pour qu'on puisse juger de l'assimilation.
 
-**Les plans d'une même couche sont remplis d'un seul tenant** (règle du
-pair-impair), ce qui est exact pour un plan et ses découpes. Deux plans qui se
-chevauchent sur la même couche — cas rare et déjà douteux dans le fichier —
-laisseraient un vide à leur intersection.
+**Les plans d'une même couche sont remplis contour par contour** (règle du
+pair-impair à l'intérieur de chacun), ce qui est exact pour un plan et ses
+découpes. Deux plans qui se chevauchent sur la même couche — cas rare et déjà
+douteux dans le fichier — s'additionnent : leur intersection reste du cuivre.
 
 **Le contre-perçage n'est lu que sous deux formes**, celles décrites plus haut :
 la `<Spec><Backdrill>` d'IPC-2581 (forme vérifiée sur le code de l'export de
 KiCad, pas sur le texte de la norme, que nous n'avons pas pu consulter), et
 le foret posé sur un calque de perçage à part. Un export qui n'écrirait la
 passe que dans le nom d'un calque n'est pas lu — rien n'est deviné d'après
-un nom. Par défaut, seule la simulation d'un via **déclaré** contre-percé
-reçoit sa portée percée ; les autres vias partent comme avant, sans elle, et
-leur moignon reste « inconnu » côté serveur — c'était le cas avant que l'option
-« Portée percée de tous les vias déclarés » (voir *Les modèles de simulation de
-la carte*) ne soit **cochée par défaut** ; elle envoie la portée de tout via dont
-le fichier la déclare, et seulement alors. Décochée, on retrouve le comportement
-décrit ici.
+un nom. L'option « Portée percée de tous les vias déclarés » (voir *Les modèles
+de simulation de la carte*) est **cochée par défaut** : elle envoie la portée de
+tout via dont le fichier la déclare, et seulement alors. Décochée, seule la
+simulation d'un via **déclaré** contre-percé reçoit sa portée percée ; les autres
+vias partent sans elle, et leur moignon reste « inconnu » côté serveur.

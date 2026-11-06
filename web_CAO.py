@@ -2,6 +2,17 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.25.0
+# Date: 2026-11-06
+# Explication: numpy et scipy deviennent obligatoires : sans eux le serveur
+#   s'arrete des le demarrage en disant quoi installer (code de sortie 3). Les
+#   routes des solveurs ne repondent donc plus jamais « indisponible ». Pyto
+#   n'est plus pris en charge : sur_ios, --dossier, la recherche d'un dossier de
+#   secours et le repli sans ssl sont retires, ainsi que les notes des versions
+#   2.3.0, 2.4.0, 2.4.2 et 2.5.0 qui ne parlaient que de lui (historique git).
+# Fonctions retirees : sur_ios, repertoire_courant, chemin_absolu,
+#   trouver_dossier, verifier_dossier
+#
 # Version: 2.24.0
 # Date: 2026-11-03
 # Explication: revue de securite (audit du 03/11/2026).
@@ -304,28 +315,6 @@
 # - CustomHandler.do_GET / do_HEAD / do_OPTIONS (routage), do_PUT / do_DELETE
 #   (nouvelles), HIDDEN (profils)
 #
-# Version: 2.5.0
-# Date: 2026-08-23
-# Explication: verifier_dossier jugeait le dossier servi sur os.listdir, et
-#   trouver_dossier cherchait index.html dans un listage. Or servir un fichier
-#   ne demande jamais de lister son dossier : sous Pyto (iPad), un dossier peut
-#   etre non listable et parfaitement lisible -- c'est ainsi que les versions
-#   2.2.0 et anterieures fonctionnaient la ou la 2.3.0 renoncait. Le verdict se
-#   fonde desormais sur la lecture reelle d'index.html, et le message distingue
-#   les deux causes : autorisation refusee, ou chemin faux.
-# Fonctions ajoutees/modifiees :
-# - lisible (nouvelle), verifier_dossier (verdict par open, plus par listdir),
-#   trouver_dossier (idem)
-#
-# Version: 2.4.2
-# Date: 2026-08-23
-# Explication: la page d'erreur conseillait « relancez avec --dossier » la ou
-#   le systeme refuse une autorisation -- --dossier ne peut rien contre un
-#   EPERM. Elle nomme desormais les deux vraies issues (« Ouvrir dossier »
-#   dans Pyto, ou depot deplace dans le dossier propre a Pyto) et precise
-#   qu'un script Python ne peut pas faire la copie lui-meme.
-# Fonctions modifiees : CustomHandler.list_directory (texte)
-#
 # Version: 2.4.1
 # Date: 2026-08-23
 # Explication: sous Windows, le port 8000 refuse (WinError 10013, courant en
@@ -336,55 +325,6 @@
 #   Les tentatives sont designees par « IPv4 »/« IPv6 » plutot que par le nom
 #   des classes internes.
 # Fonctions modifiees : make_server (renvoie un couple), start_server
-#
-# Version: 2.4.0
-# Date: 2026-08-23
-# Explication: diagnostic confirme sur l'iPad (Pyto 19.0.1, Python 3.10,
-#   sys.platform == "ios"). Le depot etait dans iCloud Drive, hors du
-#   conteneur de l'application : os.listdir y repond « [Errno 1] Operation not
-#   permitted ». Le serveur servait donc un dossier illisible -- d'ou le
-#   « 404 -- No permission to list directory » dans Safari. Ce n'est pas un
-#   defaut de chemin : c'est une autorisation, que seul Pyto peut accorder
-#   (« Ouvrir dossier » dans la barre laterale, ou depot place dans le dossier
-#   de Pyto). Le message le dit maintenant, et la page d'erreur aussi.
-#   Corrige au passage un defaut introduit par la version precedente : sous
-#   Pyto, os.getcwd() leve PermissionError des que le repertoire courant est
-#   hors de portee. trouver_dossier() plantait donc la ou il devait aider.
-# Fonctions ajoutees/modifiees :
-# - repertoire_courant, chemin_absolu (nouvelles : plus aucun getcwd nu)
-# - trouver_dossier (renvoie un chemin ou "", la decision revient a
-#   start_server), verifier_dossier (message : autorisation, pas --dossier)
-# - CustomHandler.list_directory (nouvelle : la page d'erreur nomme le dossier,
-#   l'erreur systeme et la marche a suivre)
-#
-# Version: 2.3.0
-# Date: 2026-08-23
-# Explication: le serveur ne demarrait plus sous Pyto (iPad), et quand il
-#   demarrait il repondait « 404 -- No permission to list directory ». Cette
-#   page vient de list_directory : os.listdir(ROOT) a leve une OSError, donc le
-#   dossier servi n'etait pas le depot (bac a sable iOS, ou __file__ relatif
-#   resolu depuis un autre repertoire courant). Meme cause pour le non-
-#   demarrage : le fichier voisin passerelle_mcp.py etait illisible lui aussi.
-#   D'ou --dossier et un diagnostic explicite au demarrage. Autres causes :
-#   1. « import passerelle_mcp » en tete de fichier : sous Pyto le dossier du
-#      script n'est pas toujours dans sys.path et le module ssl peut manquer.
-#      Un import rate empechait TOUT le serveur de demarrer, alors que seules
-#      les deux routes /api/* en dependent. L'import est desormais tolerant et
-#      /api/* repond 503 « passerelle indisponible » le cas echeant.
-#   2. make_server n'essayait QUE la double pile IPv6 quand --host est vide :
-#      si AF_INET6 n'est pas disponible, on retombait en silence sur
-#      127.0.0.1 et un port aleatoire (« inaccessible depuis l'iPad »).
-#      IPv4 est maintenant essaye en second, et la vraie erreur est affichee
-#      au lieu d'etre avalee par « except OSError: continue ».
-#   3. get_local_ip : la ruse UDP vers 10.255.255.255 echoue sur iOS sans
-#      l'autorisation « Reseau local » et l'adresse affichee etait inutilisable.
-#   L'ouverture automatique du navigateur, elle, fonctionne sous Pyto (browser
-#   integre, l'application reste au premier plan) : elle est conservee, avec un
-#   rappel a l'ecran puisque quitter Pyto met le serveur en pause.
-# Fonctions modifiees/ajoutees :
-# - sur_ios, verifier_dossier (nouvelles), get_local_ip, make_server
-# - start_server, main (--dossier)
-# - CustomHandler._api (passerelle absente -> 503)
 #
 # Version: 2.2.0
 # Date: 2026-08-21
@@ -485,19 +425,25 @@ import urllib.parse
 import urllib.request
 import webbrowser
 import zlib
+import ssl
+
+# numpy et scipy sont obligatoires (requirements.txt) : sans eux, autant le dire
+# tout de suite que laisser les solveurs echouer un par un.
 try:
-    # Sous Pyto (iPad), ssl peut manquer : le serveur doit demarrer quand
-    # meme, seuls les telechargements https s'en passeront.
-    import ssl
-except ImportError:                                    # pragma: no cover
-    ssl = None
+    import numpy  # noqa: F401
+    import scipy.sparse  # noqa: F401
+except ImportError as _exc:
+    print("[X] WEB_CAO a besoin de numpy et de scipy : %s" % _exc, flush=True)
+    print("    Installez-les avec, selon le systeme :", flush=True)
+    print("      pip install -r requirements.txt", flush=True)
+    print("      sudo apt install python3-numpy python3-scipy   (Raspberry Pi, Debian)", flush=True)
+    print("      pkg install python-numpy python-scipy          (Termux)", flush=True)
+    if os.name == "nt" and sys.stdin and sys.stdin.isatty() and "--sans-pause" not in sys.argv:
+        input("Appuyez sur Entree pour fermer cette fenetre...")
+    sys.exit(3)
 
 DEFAULT_PORT = 8000
-# Le chemin evident, dont depend l'import de la passerelle. start_server peut
-# le remplacer par un repli si le depot n'est pas la -- sauf si --dossier a
-# tranche explicitement, auquel cas on obeit sans discuter.
 ROOT = os.path.dirname(os.path.abspath(__file__))
-DOSSIER_IMPOSE = False
 
 # La passerelle et le parseur IPC-2581 vivent dans python/, a cote de ce
 # fichier : web_CAO.py reste seul a la racine, double-cliquable, pendant que
@@ -506,10 +452,6 @@ DOSSIER_IMPOSE = False
 # « import ipc2581_json » possibles sans les faire bouger de la : ce sont des
 # imports de module ordinaires, pas des imports de paquet -- python/ n'a pas
 # de __init__.py et n'en a pas besoin.
-#
-# La passerelle composants n'est pas indispensable pour servir les editeurs :
-# sous Pyto (iPad) le dossier du script n'est pas toujours dans sys.path et le
-# module ssl peut manquer. On ne laisse plus cet import faire tomber le serveur.
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 DOSSIER_PYTHON = os.path.join(ROOT, "python")
@@ -523,12 +465,7 @@ import appairage  # noqa: E402
 GARDE = appairage.Garde("WEB_CAO", actif=False)
 import pilote  # noqa: E402  (canal de pilotage des pages par le MCP de web_suite)
 PILOTE = pilote.Pilote()
-try:
-    import passerelle_mcp
-    ERREUR_PASSERELLE = None
-except Exception as _exc:                              # noqa: BLE001
-    passerelle_mcp = None
-    ERREUR_PASSERELLE = _exc
+import passerelle_mcp  # noqa: E402
 
 # Taille maximale d'un corps POST : les arguments d'outil sont minuscules.
 MAX_CORPS = 64 * 1024
@@ -536,8 +473,7 @@ MAX_CORPS = 64 * 1024
 # -- import IPC-2581 --------------------------------------------------------
 # Le parseur est en Python : un navigateur ne peut pas l'executer, d'ou la
 # route /api/ipc2581 que la visionneuse appelle avec le fichier tel quel.
-# Import tolerant, pour la meme raison que la passerelle : ces trois modules
-# ne doivent pas empecher les editeurs d'etre servis s'ils manquent.
+# Import tolerant : ce module ne doit pas empecher les editeurs d'etre servis.
 try:
     import ipc2581_json
     ERREUR_IPC2581 = None
@@ -545,79 +481,38 @@ except Exception as _exc:                              # noqa: BLE001
     ipc2581_json = None
     ERREUR_IPC2581 = _exc
 
-# -- solveur electromagnetique ---------------------------------------------
-# Meme motif que le parseur IPC-2581, et une raison de plus d'etre tolerant :
-# le solveur de section a besoin de numpy, que le depot ne demande a personne
-# d'installer. Sans lui, /api/simulation repond 503 en le disant, et tout le
-# reste du serveur continue comme avant.
-try:
-    import simulation_em
-    ERREUR_SIM = None
-except Exception as _exc:                              # noqa: BLE001
-    simulation_em = None
-    ERREUR_SIM = _exc
-
-# Solveur DC pour l'IR drop (famille PI). Comme simulation_em, il est
-# facultatif : sans scipy, /api/simulation-dc repond 503 en le disant et le
-# reste du serveur ne s'en apercoit pas.
-try:
-    import dc_solver
-    ERREUR_DC = None
-except Exception as _exc:                              # noqa: BLE001
-    dc_solver = None
-    ERREUR_DC = _exc
-
-# Analyse de crosstalk (section « Crosstalk » du panneau SI). Meme motif que
-# les deux precedents. ELLE A SA PROPRE ROUTE ET NON UN CHAMP DE PLUS SUR
-# /api/simulation, et c'est deliberé : son document porte le PARCOURS ENTIER de
-# l'agresseur et tout le cuivre qui passe a portee -- des centaines de troncons
-# la ou une simulation d'impedance n'en porte qu'un --, et sa reponse porte la
-# carte, les profils d'espacement et le reseau au format Touchstone. Les
-# melanger obligerait a relever le plafond de taille de la route commune pour
-# tout le monde.
-try:
-    import crosstalk
-    ERREUR_CROSSTALK = None
-except Exception as _exc:                              # noqa: BLE001
-    crosstalk = None
-    ERREUR_CROSSTALK = _exc
-
-# Simulation RF (famille RF du panneau) : le S21 d'un reseau pistes +
-# composants entre deux ports d'impedance complexe. Meme motif ; ses pistes
-# passent par simulation_em, ses composants par leurs modeles SPICE ou .sNp.
-try:
-    import rf_reseau
-    ERREUR_RF = rf_reseau.ERREUR_RF
-except Exception as _exc:                              # noqa: BLE001
-    rf_reseau = None
-    ERREUR_RF = _exc
-
-# Diagramme de l'oeil (onglet « Diagramme de l'œil » de la famille SI) : la
-# liaison de simulation_em repassee en temporel, et les gabarits des
-# protocoles. Meme motif que les precedents : sans numpy, /api/oeil repond 503
-# en le disant.
-try:
-    import oeil
-    ERREUR_OEIL = oeil.ERREUR_OEIL
-except Exception as _exc:                              # noqa: BLE001
-    oeil = None
-    ERREUR_OEIL = _exc
+# -- solveurs --------------------------------------------------------------
+# simulation_em : electromagnetique ; dc_solver : IR drop (famille PI) ;
+# crosstalk : section « Crosstalk » du panneau SI ; rf_reseau : S21 d'un reseau
+# pistes + composants ; oeil : diagramme de l'oeil.
+#
+# LE CROSSTALK A SA PROPRE ROUTE ET NON UN CHAMP DE PLUS SUR /api/simulation, et
+# c'est deliberé : son document porte le PARCOURS ENTIER de l'agresseur et tout
+# le cuivre qui passe a portee -- des centaines de troncons la ou une simulation
+# d'impedance n'en porte qu'un --, et sa reponse porte la carte, les profils
+# d'espacement et le reseau au format Touchstone. Les melanger obligerait a
+# relever le plafond de taille de la route commune pour tout le monde.
+import simulation_em  # noqa: E402
+import dc_solver  # noqa: E402
+import crosstalk  # noqa: E402
+import rf_reseau  # noqa: E402
+import oeil  # noqa: E402
 
 # Un document de simulation ne porte qu'un net et son empilage : il est petit.
-MAX_SIM = getattr(simulation_em, "MAX_CORPS", 4 * 1024 * 1024)
+MAX_SIM = simulation_em.MAX_CORPS
 # Celui du crosstalk porte un parcours et son voisinage : meme ordre de
 # grandeur, et le plafond reste le sien pour pouvoir bouger seul.
-MAX_CROSSTALK = getattr(crosstalk, "MAX_CORPS", 4 * 1024 * 1024)
+MAX_CROSSTALK = crosstalk.MAX_CORPS
 # Celui de l'oeil est celui de la simulation, plus le TEXTE d'un ou deux
 # fichiers IBIS : son plafond est le sien.
-MAX_OEIL = max(MAX_SIM, getattr(oeil, "MAX_CORPS", 16 * 1024 * 1024))
+MAX_OEIL = max(MAX_SIM, oeil.MAX_CORPS)
 # Celui du RF porte le TEXTE des modeles .sNp, qui pesent vite des megaoctets.
-MAX_RF = getattr(rf_reseau, "MAX_CORPS", 8 * 1024 * 1024)
+MAX_RF = rf_reseau.MAX_CORPS
 # ET CELUI DU DC, QUI N'EN AVAIT AUCUN. Les trois autres routes refusaient un
 # corps trop gros ; celle-la lisait ce qui venait, et son document porte les
 # POLYGONES de cuivre d'une ou plusieurs couches entieres -- de loin le plus
 # gros des quatre. Un plafond plus haut que les autres, donc, mais un plafond.
-MAX_DC = getattr(dc_solver, "MAX_CORPS", 16 * 1024 * 1024)
+MAX_DC = 16 * 1024 * 1024
 
 # -- scoring PCB et reconnaissance de motifs --------------------------------
 try:
@@ -638,12 +533,7 @@ MAX_SCORING = 16 * 1024 * 1024
 MAX_PATTERNS = 16 * 1024 * 1024
 
 # -- verification de la carte entiere ---------------------------------------
-try:
-    import analyse_carte
-    ERREUR_ANALYSE = None
-except Exception as _exc:                              # noqa: BLE001
-    analyse_carte = None
-    ERREUR_ANALYSE = _exc
+import analyse_carte  # noqa: E402
 
 # Toutes les pistes et toutes les pastilles placees d'une carte : 12 000
 # pastilles sur quatre couches font quelques mega-octets de JSON.
@@ -1502,8 +1392,7 @@ def ouvreur_telechargement(url):
         return urllib.request.build_opener(_SecRedirectHandler())
     gestionnaires = [urllib.request.ProxyHandler({}), _HTTPVerifie(),
                      _SecRedirectHandler()]
-    if ssl is not None:
-        gestionnaires.append(_HTTPSVerifie())
+    gestionnaires.append(_HTTPSVerifie())
     return urllib.request.build_opener(*gestionnaires)
 
 
@@ -1527,31 +1416,12 @@ def get_local_ip():
     finally:
         s.close()
     if ip in ('', '0.0.0.0'):
-        # iOS refuse la sortie vers le reseau local tant que l'autorisation
-        # « Reseau local » n'est pas accordee : la ruse UDP ne renvoie rien.
+        # Aucune route vers le reseau local : la ruse UDP ne renvoie rien.
         try:
             ip = socket.gethostbyname(socket.gethostname())
         except OSError:
             ip = '127.0.0.1'
     return ip
-
-
-def sur_ios():
-    """Vrai sous Pyto (iPad/iPhone) : le systeme suspend l'interpreteur des que
-    l'application passe en arriere-plan, ce qui merite un rappel a l'ecran."""
-    if sys.platform in ("ios", "ipados"):
-        return True
-    # Pyto ne se signale pas autrement que par ses modules maison ; ils sont
-    # integres a l'interpreteur, donc deja charges ou trouvables.
-    marqueurs = ("pyto", "pyto_ui", "pyto_core", "pythonista", "objc_util")
-    if any(nom in sys.modules for nom in marqueurs):
-        return True
-    try:
-        import importlib.util
-        return any(importlib.util.find_spec(nom) is not None
-                   for nom in marqueurs)
-    except Exception:                                  # noqa: BLE001
-        return False
 
 
 def sur_raspberry_pi():
@@ -1595,96 +1465,14 @@ def doit_ouvrir_navigateur_par_defaut():
     return True
 
 
-def repertoire_courant():
-    """Repertoire courant, ou chaine vide s'il est hors de portee.
-
-    Sous Pyto (iPad), os.getcwd() lui-meme leve PermissionError [Errno 1]
-    quand le repertoire courant appartient a un dossier auquel l'application
-    n'a pas acces : aucun appel nu a getcwd dans ce fichier.
-    """
-    try:
-        return os.getcwd()
-    except OSError:
-        return ""
-
-
-def chemin_absolu(brut):
-    """dirname(abspath(brut)), ou chaine vide si le systeme s'y oppose."""
-    if not brut:
-        return ""
-    try:
-        return os.path.dirname(os.path.abspath(brut))
-    except OSError:                       # abspath appelle getcwd si relatif
-        return ""
-
-
 def lisible(fichier):
-    """Vrai si ce fichier peut vraiment etre ouvert et lu.
-
-    Le service des fichiers ne liste jamais le dossier : sous Pyto (iPad),
-    os.listdir peut etre refuse alors que open() fonctionne. Juger sur le
-    listage ferait renoncer un serveur qui aurait tres bien fonctionne.
-    """
+    """Vrai si ce fichier peut vraiment etre ouvert et lu."""
     try:
         with open(fichier, "rb") as flux:
             flux.read(1)
         return True
     except OSError:
         return False
-
-
-def trouver_dossier():
-    """Dossier du depot, avec repli quand __file__ ne le designe pas.
-
-    Sous Pyto (iPad), le script peut etre execute depuis une copie temporaire
-    ou avec un __file__ relatif resolu depuis un tout autre repertoire : le
-    dossier deduit ne contient alors pas index.html, et le serveur repondait
-    « No permission to list directory ». On regarde les autres candidats
-    plausibles avant de renoncer. Renvoie "" si aucun ne tient debout.
-    """
-    candidats = []
-    for chemin in (chemin_absolu(__file__),
-                   repertoire_courant(),
-                   chemin_absolu(sys.argv[0] if sys.argv else "")):
-        if chemin and chemin not in candidats:
-            candidats.append(chemin)
-    for chemin in candidats:
-        if lisible(os.path.join(chemin, "index.html")):
-            return chemin
-    return ""                     # rien de lisible : le message suffira
-
-
-def verifier_dossier(root):
-    """Dit a l'ecran pourquoi le dossier servi ne donnera rien de bon.
-
-    Le verdict se fonde sur la lecture d'index.html, seule chose dont le
-    serveur ait besoin : un dossier non listable mais lisible fonctionne, et
-    l'ancienne version le declarait perdu a tort. Quand la lecture echoue, on
-    distingue les deux causes -- autorisation refusee, ou mauvais chemin.
-    """
-    accueil = os.path.join(root, "index.html")
-    if lisible(accueil):
-        return True
-
-    print("[X] Page d'accueil illisible : %s" % accueil)
-    try:
-        with open(accueil, "rb"):
-            pass
-    except OSError as exc:
-        print("    %s" % exc)
-    try:
-        os.listdir(root)
-    except OSError as exc:
-        print("    Le dossier n'est pas listable non plus : %s" % exc)
-        print("    C'est une autorisation qui manque, non un chemin : sous")
-        print("    Pyto, barre laterale > « Ouvrir dossier » > ce dossier, ou")
-        print("    deplacer le depot dans le dossier propre a Pyto")
-        print("    (Fichiers > Sur mon iPad > Pyto).")
-    else:
-        print("    Le dossier est lisible mais index.html n'y est pas : le")
-        print("    chemin deduit de __file__ n'est pas celui du depot.")
-        print("    --dossier <chemin> le corrige.")
-    return False
 
 
 def adresse_locale(host, port):
@@ -2045,10 +1833,6 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
     def _api(self, action):
         """Execute action() et traduit les erreurs en JSON {"detail": ...}."""
-        if passerelle_mcp is None:
-            self._envoyer_json({"detail": "Passerelle composants indisponible"
-                                          " : %s" % ERREUR_PASSERELLE}, 503)
-            return
         self._json_api(action, passerelle_mcp.ErreurPasserelle, fermer=False)
 
     def _taille_corps(self):
@@ -2964,30 +2748,14 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
     def _simulation_etat(self):
         """GET /api/simulation : etat du solveur EM."""
-        if simulation_em is None:
-            return {"dispo": False,
-                    "detail": "Solveur EM indisponible : %s" % ERREUR_SIM,
-                    "conseil": "Le solveur a besoin de numpy :"
-                               " « pip install numpy »."}
         return simulation_em.etat()
 
     def _dc_etat(self):
         """GET /api/simulation-dc : ce que le solveur DC sait calculer."""
-        if dc_solver is None:
-            return {"dispo": False,
-                    "detail": "Solveur DC indisponible : %s" % ERREUR_DC,
-                    "conseil": "Le solveur a besoin de numpy et de scipy :"
-                               " « pip install numpy scipy »."}
         return dc_solver.etat()
 
     def _crosstalk_etat(self):
         """GET /api/crosstalk : ce que l'analyse de crosstalk sait faire."""
-        if crosstalk is None:
-            return {"dispo": False,
-                    "detail": "Analyse de crosstalk indisponible : %s"
-                              % ERREUR_CROSSTALK,
-                    "conseil": "Elle a besoin de numpy :"
-                               " « pip install numpy »."}
         return crosstalk.etat()
 
     def _crosstalk_lancer(self):
@@ -3003,9 +2771,6 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         REFUSE par le module, jamais ignore -- l'ignorer ferait lire une carte
         obtenue sur autre chose que ce que la page croit avoir envoye.
         """
-        if crosstalk is None:
-            raise ErreurIPC(503, "Analyse de crosstalk indisponible : %s"
-                                 % ERREUR_CROSSTALK)
         doc = self._lire_document(MAX_CROSSTALK)
         try:
             return crosstalk.analyser(doc, journal=sys.stderr.write)
@@ -3020,11 +2785,6 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
     def _rf_etat(self):
         """GET /api/simulation-rf : ce que la simulation RF sait faire."""
-        if rf_reseau is None or ERREUR_RF is not None:
-            return {"dispo": False,
-                    "detail": "Simulation RF indisponible : %s" % ERREUR_RF,
-                    "conseil": "Elle a besoin de numpy :"
-                               " « pip install numpy »."}
         return rf_reseau.etat()
 
     def _rf_lancer(self):
@@ -3034,8 +2794,6 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         aucun chemin fourni par la page : un .sNp importe dans un projet et un
         .sub de la bibliotheque passent par le meme champ.
         """
-        if rf_reseau is None or ERREUR_RF is not None:
-            raise ErreurIPC(503, "Simulation RF indisponible : %s" % ERREUR_RF)
         doc = self._lire_document(MAX_RF)
         try:
             return rf_reseau.analyser(doc, journal=sys.stderr.write)
@@ -3050,19 +2808,10 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
     def _oeil_etat(self):
         """GET /api/oeil : disponibilite et liste des gabarits."""
-        if oeil is None or ERREUR_OEIL is not None:
-            return {"dispo": False,
-                    "detail": "Diagramme de l'œil indisponible : %s"
-                              % ERREUR_OEIL,
-                    "conseil": "Il a besoin de numpy :"
-                               " « pip install numpy »."}
         return oeil.etat()
 
     def _oeil_lancer(self):
         """POST /api/oeil : l'oeil d'une liaison et son gabarit."""
-        if oeil is None or ERREUR_OEIL is not None:
-            raise ErreurIPC(503, "Diagramme de l'œil indisponible : %s"
-                                 % ERREUR_OEIL)
         doc = self._lire_document(MAX_OEIL)
         # UNE BIBLIOTHEQUE AMI ne s'execute que depuis la LIB ou une racine
         # de projets declaree (oeil 2.3.0, `ibis.chemin_bibliotheque_ami`) :
@@ -3144,8 +2893,6 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
     def _simulation_lancer(self):
         """Corps de la requete (document JSON) -> parametres S de la ligne."""
-        if simulation_em is None:
-            raise ErreurIPC(503, "Solveur EM indisponible : %s" % ERREUR_SIM)
         doc = self._lire_document(MAX_SIM)
 
         try:
@@ -3164,8 +2911,6 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
     def _thermique_lancer(self):
         """POST /api/thermique-composants : echauffement estime des composants qui dissipent
         (dc_solver.echauffement_composants, le modele d'etalement de la chute DC)."""
-        if dc_solver is None:
-            raise ErreurIPC(503, "Solveur DC indisponible : %s" % ERREUR_DC)
         doc = self._lire_document(1024 * 1024)
         try:
             return dc_solver.echauffement_composants(doc)
@@ -3174,8 +2919,6 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
     def _dc_lancer(self):
         """POST /api/simulation-dc : calcul DC (IR drop)."""
-        if dc_solver is None:
-            raise ErreurIPC(503, "Solveur DC indisponible : %s" % ERREUR_DC)
         # UN PLAFOND, ENFIN. Cette route lisait ce qui venait, seule des quatre
         # a n'avoir aucune borne, alors que son document est le plus gros : il
         # porte les polygones de cuivre de couches entieres.
@@ -3259,15 +3002,10 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
     # -- verification de la carte entiere --------------------------------
     def _analyse_etat(self):
         """GET /api/analyse-carte : verifie la disponibilite de l'analyse."""
-        if analyse_carte is None:
-            return {"dispo": False,
-                    "detail": "Analyse de carte indisponible : %s" % ERREUR_ANALYSE}
         return {"dispo": True, "format": analyse_carte.FORMAT}
 
     def _analyse_lancer(self):
         """POST /api/analyse-carte : les constats de la carte entiere."""
-        if analyse_carte is None:
-            raise ErreurIPC(503, "Analyse de carte indisponible : %s" % ERREUR_ANALYSE)
         doc = self._lire_document(MAX_ANALYSE)
         # la ligne de la requete ne sort qu'a la reponse : dire qu'on calcule
         pistes = doc.get("pistes") if isinstance(doc, dict) else None
@@ -3723,7 +3461,7 @@ def make_server(host, port):
     """
     if host in ("", "::"):
         # Double pile d'abord, IPv4 seule ensuite : AF_INET6 n'est pas
-        # disponible partout (Pyto sur iPad, certains conteneurs). Sans ce
+        # disponible partout (certains conteneurs). Sans ce
         # repli, on retombait en silence sur un acces local uniquement.
         families = [DualStackServer, ThreadedServer]
     else:
@@ -3740,15 +3478,6 @@ def make_server(host, port):
 
 
 def start_server(host, port, navigateur=True):
-    # Avant toute chose : le dossier servi est-il exploitable ? On previent et
-    # on continue -- un serveur qui repond, meme mal, reste diagnosticable.
-    global ROOT
-    if not verifier_dossier(ROOT) and not DOSSIER_IMPOSE:
-        secours = trouver_dossier()
-        if secours and secours != ROOT:
-            print("[*] Dossier de secours retenu (il contient index.html) :")
-            print("    %s" % secours)
-            ROOT = secours
     def detailler(echecs):
         for ligne in echecs:
             print("      %s" % ligne)
@@ -3805,32 +3534,15 @@ def start_server(host, port, navigateur=True):
     print("=" * 60)
     print("  dossier servi : %s" % ROOT)
     print("  passerelle    : /api/tools et /api/tool -> pcbparts.dev")
-    # Le solveur EM n'est pas une dependance du depot : la ligne dit lequel des
-    # deux etats est en vigueur plutot que de laisser la page le decouvrir.
-    if simulation_em is None:
-        print("  simulation EM : /api/simulation -> indisponible (%s)"
-              % ERREUR_SIM)
-    else:
-        print("  simulation EM : /api/simulation ->"
-              " MoM sur la section droite (python/ligne_mom.py)")
-    if crosstalk is None:
-        print("  crosstalk     : /api/crosstalk -> indisponible (%s)"
-              % ERREUR_CROSSTALK)
-    else:
-        print("  crosstalk     : /api/crosstalk ->"
-              " matrice S synthetisee depuis le design + IFFT"
-              " (python/crosstalk.py)")
-    if rf_reseau is None or ERREUR_RF is not None:
-        print("  simulation RF : /api/simulation-rf -> indisponible (%s)"
-              % ERREUR_RF)
-    else:
-        print("  simulation RF : /api/simulation-rf ->"
-              " S21 port a port, pistes + composants (python/rf_reseau.py)")
-    if oeil is None or ERREUR_OEIL is not None:
-        print("  oeil          : /api/oeil -> indisponible (%s)" % ERREUR_OEIL)
-    else:
-        print("  oeil          : /api/oeil ->"
-              " reponse a un bit, PRBS, pire cas, gabarits (python/oeil.py)")
+    print("  simulation EM : /api/simulation ->"
+          " MoM sur la section droite (python/ligne_mom.py)")
+    print("  crosstalk     : /api/crosstalk ->"
+          " matrice S synthetisee depuis le design + IFFT"
+          " (python/crosstalk.py)")
+    print("  simulation RF : /api/simulation-rf ->"
+          " S21 port a port, pistes + composants (python/rf_reseau.py)")
+    print("  oeil          : /api/oeil ->"
+          " reponse a un bit, PRBS, pire cas, gabarits (python/oeil.py)")
     if pcb_scoring is None:
         print("  scoring PCB   : /api/pcb/score-placement -> indisponible (%s)"
               % ERREUR_SCORING)
@@ -3884,14 +3596,6 @@ def start_server(host, port, navigateur=True):
     print("=" * 60)
     print("(Ctrl+C pour arreter)")
     print()
-
-    if navigateur and sur_ios():
-        # Pyto ouvre l'URL dans un navigateur integre : l'application reste au
-        # premier plan et le serveur continue de repondre. En revanche, si l'on
-        # quitte Pyto, iOS suspend l'interpreteur -- d'ou le rappel.
-        print("  iOS : gardez Pyto au premier plan, le systeme met le serveur")
-        print("  en pause des que l'application passe en arriere-plan.")
-        print()
 
     if navigateur:
         print("  Ouverture du navigateur sur %s" % url)
@@ -4103,9 +3807,6 @@ def main(argv=None):
                          " (Windows)")
     ap.add_argument("--sans-maj", dest="verifier_maj", action="store_false", default=True,
                     help="ne pas verifier les mises a jour GitHub au demarrage")
-    ap.add_argument("--dossier", default=None,
-                    help="dossier a servir (defaut : celui de ce script ;"
-                         " utile quand __file__ ne le designe pas, sous Pyto)")
     ap.add_argument("--projets", action="append", default=None, metavar="DOSSIER",
                     help="racine des dossiers de projet (defaut : projets/ a"
                          " cote d'index.html). Repetable, ou plusieurs chemins"
@@ -4124,10 +3825,6 @@ def main(argv=None):
     # lancant le script a la main -- il ne s'obtient donc pas par accident.
     argv_recu = sys.argv[1:] if argv is None else list(argv)
     double_clic = not argv_recu and lance_par_double_clic()
-    if args.dossier:
-        global ROOT, DOSSIER_IMPOSE
-        ROOT = os.path.abspath(os.path.expanduser(args.dossier))
-        DOSSIER_IMPOSE = True
     if args.verifier_maj and os.environ.get("WEB_CAO_DEJA_MAJ") != "1":
         # la mise a jour est un plus : son echec, quel qu'il soit, ne doit
         # jamais empecher l'outil de demarrer

@@ -56,11 +56,10 @@ jobs:
       # Les solveurs d'impédance 2D MoM, de diaphonie, d'IR drop, les routes
       # du serveur et les sécurités sont systématiquement éprouvés ici.
       #
-      # numpy et scipy sont ceux de requirements.txt : facultatifs pour
-      # l'application (web_CAO.py démarre sans eux, en bibliothèque standard),
-      # indispensables aux solveurs éprouvés ici. Voir son en-tête.
+      # numpy et scipy sont ceux de requirements.txt : web_CAO.py ne démarre
+      # pas sans eux.
       - name: Solveurs — dépendances de calcul
-        run: pip install --quiet numpy scipy
+        run: pip install --quiet -r requirements.txt
 
       - name: Solveur de section (MoM 2D) — banc d'essai
         run: python python/test/banc-ligne-mom.py

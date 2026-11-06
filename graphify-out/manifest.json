@@ -144,9 +144,9 @@
     "semantic_hash": ""
   },
   "commun/simulation-em.js": {
-    "mtime": 1793794423.687425,
-    "seen": 1793797917.731488,
-    "ast_hash": "2448085612ffb8b856be81a0b8f1ddf4",
+    "mtime": 1793960155.8122787,
+    "seen": 1793963905.4898367,
+    "ast_hash": "00df111736b8a4449342fb9c808c699a",
     "semantic_hash": ""
   },
   "commun/tactile.js": {
@@ -690,21 +690,21 @@
     "semantic_hash": "35afa4fdc956cf7ded97e89924de00fd"
   },
   "python/analyse_carte.py": {
-    "mtime": 1793127113.0147994,
-    "seen": 1793135203.8156703,
-    "ast_hash": "f948cdcfd6ca429ab43afc0899b62d72",
+    "mtime": 1793960831.9171724,
+    "seen": 1793963905.4907975,
+    "ast_hash": "b5b42a529210e65d14926fd48c11a2e9",
     "semantic_hash": ""
   },
   "python/crosstalk.py": {
-    "mtime": 1793384242.052309,
-    "seen": 1793384848.6236222,
-    "ast_hash": "a6c6737f25d24ee5e4562882257b652c",
+    "mtime": 1793960155.7930484,
+    "seen": 1793963905.4908059,
+    "ast_hash": "72dbb5be701a0955159f72b3325fe550",
     "semantic_hash": ""
   },
   "python/dc_solver.py": {
-    "mtime": 1793728359.585908,
-    "seen": 1793797917.7324631,
-    "ast_hash": "83bc5c99df3e8e3093d1bc78d44c18de",
+    "mtime": 1793960155.7974715,
+    "seen": 1793963905.4908133,
+    "ast_hash": "9893307674790c722042efa411b5e883",
     "semantic_hash": ""
   },
   "python/extraire_bibliotheques.js": {
@@ -720,9 +720,9 @@
     "semantic_hash": "8a3c73cd1324c1de9dea6243643fd7d1"
   },
   "python/ibis.py": {
-    "mtime": 1793130631.2426076,
-    "seen": 1793135203.8157077,
-    "ast_hash": "aabd181adf38c732b8e574ad1a7d1714",
+    "mtime": 1793960155.801194,
+    "seen": 1793963905.4908364,
+    "ast_hash": "731685f02e6c2bd241b09be1f2768af5",
     "semantic_hash": ""
   },
   "python/ipc2581_data.py": {
@@ -756,9 +756,9 @@
     "semantic_hash": ""
   },
   "python/oeil.py": {
-    "mtime": 1793741302.062055,
-    "seen": 1793797917.732539,
-    "ast_hash": "d62c40341f187481385ac0a733d9e776",
+    "mtime": 1793960155.8027673,
+    "seen": 1793963905.4908895,
+    "ast_hash": "d255c7cd0d8c5153e57b4be11d4bf763",
     "semantic_hash": ""
   },
   "python/passerelle_mcp.py": {
@@ -780,15 +780,15 @@
     "semantic_hash": ""
   },
   "python/rf_reseau.py": {
-    "mtime": 1793130838.0244946,
-    "seen": 1793135203.815793,
-    "ast_hash": "03a1ca206ece871fc286aff2086bbb96",
+    "mtime": 1793960155.8039606,
+    "seen": 1793963905.4909198,
+    "ast_hash": "d40e35623468f03ffba34a788df97d18",
     "semantic_hash": ""
   },
   "python/simulation_em.py": {
-    "mtime": 1793381843.9416919,
-    "seen": 1793384848.6238072,
-    "ast_hash": "d775aed7d331de9e389c610db1d72be7",
+    "mtime": 1793960155.790732,
+    "seen": 1793963905.4909265,
+    "ast_hash": "d5fc1cfb90f576c8810d8191854f0f1c",
     "semantic_hash": ""
   },
   "python/standardiser_catalogue.py": {
@@ -882,9 +882,9 @@
     "semantic_hash": ""
   },
   "python/test/banc-serveur-routes.py": {
-    "mtime": 1793794513.0128555,
-    "seen": 1793797917.7327158,
-    "ast_hash": "9cbbf51bad2c6d0d94b8d2ac751a4a7a",
+    "mtime": 1793960219.654847,
+    "seen": 1793963905.491063,
+    "ast_hash": "61d5984cda932b3ecd26c3b501f56303",
     "semantic_hash": ""
   },
   "python/test/banc-usimmics.py": {
@@ -1002,15 +1002,15 @@
     "semantic_hash": ""
   },
   "web_CAO.py": {
-    "mtime": 1793794390.6357741,
-    "seen": 1793797917.732937,
-    "ast_hash": "0bae34b194de9a35cca2ffba9819038d",
+    "mtime": 1793960155.7883594,
+    "seen": 1793963905.4912527,
+    "ast_hash": "69d4e37a1778a14c17663975a37e89ac",
     "semantic_hash": ""
   },
   ".github/workflows/ci.yml": {
-    "mtime": 1793728305.5005398,
-    "seen": 1793797917.7329445,
-    "ast_hash": "c18579ef12ce17cc428f47aba4c95887",
+    "mtime": 1793960155.8109384,
+    "seen": 1793963905.4912596,
+    "ast_hash": "cfa46b8a394f612316b4f810b250067c",
     "semantic_hash": ""
   },
   "A-FAIRE.md": {
@@ -1020,15 +1020,15 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1793793619.8489547,
-    "seen": 1793797917.7329586,
-    "ast_hash": "60fc069155c980d4a1ca38df7e9dcd3c",
+    "mtime": 1793960795.0976052,
+    "seen": 1793963905.4912736,
+    "ast_hash": "7c8e9fae664e8f01ec7077c9769a9a71",
     "semantic_hash": ""
   },
   "bancs-mesure/crosstalk/README.md": {
-    "mtime": 1792569813.320733,
-    "seen": 1792573897.3604574,
-    "ast_hash": "3a1b99a92dd8de6184b7676ac81823d2",
+    "mtime": 1793960783.6241112,
+    "seen": 1793963905.4912965,
+    "ast_hash": "08cf8defc3e22775c9282232561fb180",
     "semantic_hash": ""
   },
   "docs/HISTORIQUE_DEVELOPPEMENT.md": {
@@ -1038,9 +1038,9 @@
     "semantic_hash": ""
   },
   "docs/simulation-em.md": {
-    "mtime": 1793793508.8450203,
-    "seen": 1793797917.7331257,
-    "ast_hash": "4d7e32e3a8a56f035fcc2fc99d42c55c",
+    "mtime": 1793960219.6615655,
+    "seen": 1793963905.4914217,
+    "ast_hash": "35e72cc6d990b9ef25173e4840ab8d98",
     "semantic_hash": ""
   },
   "docs/verification-carte.md": {
@@ -1050,9 +1050,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/README.md": {
-    "mtime": 1793877161.1733217,
-    "seen": 1793878239.3766162,
-    "ast_hash": "c432fd099cc34d94849999ddd003e35d",
+    "mtime": 1793960679.5548408,
+    "seen": 1793963905.4914362,
+    "ast_hash": "58de38914be80569218c955653c564ef",
     "semantic_hash": ""
   },
   "editeur-pcb/editeur-pcb.html": {
@@ -1068,9 +1068,9 @@
     "semantic_hash": "5d5be1b5ee7b1b6301b12ccf243f9094"
   },
   "editeur-schematique/README.md": {
-    "mtime": 1793723418.9185612,
-    "seen": 1793723704.517299,
-    "ast_hash": "edc18f7a908799b82a60e582da1c519a",
+    "mtime": 1793960783.6177616,
+    "seen": 1793963905.4914594,
+    "ast_hash": "20047aacbf51ba4721b5d7f75bf3171c",
     "semantic_hash": ""
   },
   "editeur-schematique/editeur-schematique.html": {
@@ -1098,9 +1098,9 @@
     "semantic_hash": "02c734483a485e337d9328157457a67e"
   },
   "recherche-composants/README.md": {
-    "mtime": 1793127113.038799,
-    "seen": 1793135203.816402,
-    "ast_hash": "003170af242457b91e41bfd294dc82f1",
+    "mtime": 1793960783.6213074,
+    "seen": 1793963905.4914966,
+    "ast_hash": "2a771137f87ea9af0e6f59130edd2808",
     "semantic_hash": ""
   },
   "recherche-composants/recherche-composants.html": {
@@ -1110,15 +1110,15 @@
     "semantic_hash": ""
   },
   "requirements.txt": {
-    "mtime": 1791663035.7430334,
-    "seen": 1791891802.1728284,
-    "ast_hash": "f9a51bc31712e5c4f5a5e1cce22be2d3",
-    "semantic_hash": "f9a51bc31712e5c4f5a5e1cce22be2d3"
+    "mtime": 1793960155.8267264,
+    "seen": 1793963905.4915116,
+    "ast_hash": "c6fcabb94d0b0a6325b5d19dff7147a2",
+    "semantic_hash": ""
   },
   "visionneuse-ipc2581/README.md": {
-    "mtime": 1793630426.8606482,
-    "seen": 1793716237.5313787,
-    "ast_hash": "5e6e1dd9e4b0fc37befc73328af2b276",
+    "mtime": 1793960700.2066267,
+    "seen": 1793963905.4915335,
+    "ast_hash": "b578edeb1591208f1968536eb637acac",
     "semantic_hash": ""
   },
   "visionneuse-ipc2581/visionneuse-ipc2581.html": {
@@ -1434,9 +1434,9 @@
     "semantic_hash": ""
   },
   "docs/manuel/01-accueil-projets-tactile.md": {
-    "mtime": 1793476111.165255,
-    "seen": 1793477373.758607,
-    "ast_hash": "bed0a3b42ed0a94ef2b3ab34a0e6ae79",
+    "mtime": 1793960219.657163,
+    "seen": 1793963905.4913182,
+    "ast_hash": "aef6c5f946bf547c26c4837d89acbd5e",
     "semantic_hash": ""
   },
   "docs/manuel/02-editeur-schematique.md": {
@@ -1470,15 +1470,15 @@
     "semantic_hash": ""
   },
   "docs/manuel/07-visionneuse-ipc2581.md": {
-    "mtime": 1793630426.86223,
-    "seen": 1793716237.5311232,
-    "ast_hash": "ed6a67dd885945e5b3044f5093d83512",
+    "mtime": 1793960219.6586974,
+    "seen": 1793963905.4913633,
+    "ast_hash": "9b41abd02bfd8104ebd5ab19eb248f8b",
     "semantic_hash": ""
   },
   "docs/manuel/08-simulation-si.md": {
-    "mtime": 1793794661.2124984,
-    "seen": 1793797917.733075,
-    "ast_hash": "4bcb0ee1e33942821ca7a251cf82c70c",
+    "mtime": 1793960219.6595426,
+    "seen": 1793963905.4913707,
+    "ast_hash": "48cacea3384f87e4b2c13e9dc2452a79",
     "semantic_hash": ""
   },
   "docs/manuel/09-simulation-pi-thermique-audit.md": {
@@ -1488,9 +1488,9 @@
     "semantic_hash": ""
   },
   "docs/manuel/10-simulation-rf-em.md": {
-    "mtime": 1793127282.7730658,
-    "seen": 1793135203.8162947,
-    "ast_hash": "0092bc59958aac4a4d86a937dab7bb87",
+    "mtime": 1793960219.6600351,
+    "seen": 1793963905.4913855,
+    "ast_hash": "9db1c236f7cdcb9c3bacdd65857f3b64",
     "semantic_hash": ""
   },
   "docs/manuel/10b-rf-acces-des-broches.md": {
@@ -1512,9 +1512,9 @@
     "semantic_hash": ""
   },
   "docs/manuel/manuel.html": {
-    "mtime": 1793958401.8107083,
-    "seen": 1793959126.0168343,
-    "ast_hash": "1273587f2f8d77c2a2138c4b6104c332",
+    "mtime": 1793960240.8294942,
+    "seen": 1793963905.4914153,
+    "ast_hash": "63a73acf1333753fc45c7b6bdfcb6db0",
     "semantic_hash": ""
   },
   "tasks/plan-rf-multiports.md": {
@@ -1620,9 +1620,9 @@
     "semantic_hash": ""
   },
   "python/test/banc-entrees-malformees.py": {
-    "mtime": 1793728305.514473,
-    "seen": 1793797917.73263,
-    "ast_hash": "9f935f884fd168337ec6621d6b30f9e4",
+    "mtime": 1793960155.807618,
+    "seen": 1793963905.4909787,
+    "ast_hash": "791dbac796f86339411044fc3ede1f59",
     "semantic_hash": ""
   },
   "editeur-pcb/js/41-larmes.js": {

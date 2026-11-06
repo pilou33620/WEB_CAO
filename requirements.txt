@@ -1,17 +1,15 @@
 # =============================================================================
 # WEB_CAO -- Dépendances Python
 #
-# Le cœur de l'application (les éditeurs PCB et Schématique, web_CAO.py, la
-# passerelle MCP et le lecteur IPC-2581) fonctionne exclusivement avec la
-# bibliothèque standard Python, sans aucune dépendance externe obligatoire.
-#
-# Les paquets listés ci-dessous activent l'ensemble des solveurs numériques
-# avancés (SI / PI) ainsi que les bancs d'essai de calcul :
+# numpy et scipy sont obligatoires : web_CAO.py ne démarre pas sans eux.
 #
 #   pip install -r requirements.txt
+#   sudo apt install python3-numpy python3-scipy    (Raspberry Pi, Debian)
+#   pkg install python-numpy python-scipy           (Termux)
 #
-# Détail des composants activés :
-#   - numpy   : solveur d'impédance 2D MoM (ligne_mom.py) et diaphonie (crosstalk.py)
+# À quoi ils servent :
+#   - numpy   : solveur d'impédance 2D MoM (ligne_mom.py), diaphonie (crosstalk.py),
+#               simulation RF et diagramme de l'œil
 #   - scipy   : solveur de chute DC / échauffement (dc_solver.py), matrices creuses,
 #               intégrales et étalons de validation
 # =============================================================================

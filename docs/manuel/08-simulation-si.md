@@ -354,7 +354,7 @@ Question posée : que voit le récepteur quand les bits se superposent ? La liai
 
 | Bouton ou champ | Effet | Limites |
 |---|---|---|
-| **Protocole** | Gabarit du protocole ; préremplit débit, front, émetteur, récepteur, FFE, DFE, égaliseur, setup/hold, BER et le mode. « Aucun gabarit — œil libre » : pas de contrôle de gabarit. | Liste fournie par le serveur (`GET /api/oeil`) ; sans réponse, un message l'indique. Voir « Gabarits ». Le serveur doit disposer de numpy. |
+| **Protocole** | Gabarit du protocole ; préremplit débit, front, émetteur, récepteur, FFE, DFE, égaliseur, setup/hold, BER et le mode. « Aucun gabarit — œil libre » : pas de contrôle de gabarit. | Liste fournie par le serveur (`GET /api/oeil`) ; sans réponse, un message l'indique. Voir « Gabarits ». |
 | Lignes sous le protocole | Le lieu de mesure du gabarit (connecteur ou récepteur) et sa note. | Apparaissent avec un gabarit choisi. |
 | Badge de fiabilité | « lu dans la norme », « recoupé », « à vérifier », « dérivé ». | Un gabarit n'est jamais un verdict de conformité. |
 | **Mode** | « simple » (une piste contre la masse) ou « différentiel » (les deux pistes d'une paire). | Changer de mode efface le résultat. |

@@ -836,31 +836,21 @@ _ICI = os.path.dirname(os.path.abspath(__file__))
 if _ICI not in sys.path:
     sys.path.insert(0, _ICI)
 
-# MEME IMPORT A L'ESSAI QUE `simulation_em`, et pour la meme raison : numpy
-# peut manquer, et « le solveur ne marche pas » n'a jamais aide personne a
-# l'installer. On importe `simulation_em` avec, parce que toute la geometrie
-# -- l'appariement, la section droite, la pose des conducteurs -- est chez lui
-# et doit le rester : deux implementations de la meme regle auraient derive, et
-# l'onglet Diaphonie et l'onglet Crosstalk auraient cesse de designer le meme
-# cuivre.
-try:
-    import numpy as np
-    import ligne_mom as tl
-    import simulation_em as se
-    ERREUR_SOLVEUR = None
-except Exception as _exc:                              # noqa: BLE001
-    np = None
-    tl = None
-    se = None
-    ERREUR_SOLVEUR = _exc
+# On importe `simulation_em` parce que toute la geometrie -- l'appariement, la
+# section droite, la pose des conducteurs -- est chez lui et doit le rester :
+# deux implementations de la meme regle auraient derive, et l'onglet Diaphonie
+# et l'onglet Crosstalk auraient cesse de designer le meme cuivre.
+import numpy as np
+import ligne_mom as tl
+import simulation_em as se
 
 FORMAT = "cao-crosstalk-1"
 FORMAT_RESULTAT = "cao-crosstalk-resultat-1"
 VERSION = "4.6.0"
 VERSION_MOTEURS = {
     "crosstalk": VERSION,
-    "simulation_em": getattr(se, "VERSION", "4.2.0") if se is not None else "indisponible",
-    "ligne_mom": getattr(tl, "VERSION", "2.5.0") if tl is not None else "indisponible",
+    "simulation_em": getattr(se, "VERSION", "4.2.0"),
+    "ligne_mom": getattr(tl, "VERSION", "2.5.0"),
 }
 
 C_0 = 299792458.0
@@ -970,13 +960,6 @@ class ErreurCrosstalk(Exception):
 
 def etat():
     """Ce que le serveur sait faire ; la page le demande avant de lancer."""
-    if ERREUR_SOLVEUR is not None:
-        return {"dispo": False,
-                "version": VERSION,
-                "moteurs": VERSION_MOTEURS,
-                "detail": "Analyse de crosstalk indisponible : %s"
-                          % ERREUR_SOLVEUR,
-                "conseil": "Elle a besoin de numpy : « pip install numpy »."}
     return {"dispo": True, "format": FORMAT, "resultat": FORMAT_RESULTAT,
             "version": VERSION,
             "moteurs": VERSION_MOTEURS,
@@ -4603,10 +4586,6 @@ def analyser(doc, journal=None):
     porterait pas laisserait croire qu'aucune piste ne longe alors qu'on n'a
     peut-etre rien pu simuler.
     """
-    if ERREUR_SOLVEUR is not None:
-        raise ErreurCrosstalk(
-            "Analyse de crosstalk indisponible : %s" % ERREUR_SOLVEUR,
-            "Elle a besoin de numpy : « pip install numpy ».")
     couches, objets, nets_agresseurs = _doc_valide(doc)
     reglages = _reglages(doc)
     refs = set(str(x) for x in (doc.get("reference_nets") or []) if str(x))

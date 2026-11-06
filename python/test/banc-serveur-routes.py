@@ -12,7 +12,9 @@ import http.client
 import json
 import math
 import os
+import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -878,6 +880,19 @@ def test_routes():
             res.read()
             assert res.status == attendu, (nom, res.status)
         print("[PASS] Fichiers statiques : liste blanche (graphify-out/, *.md, python/... -> 404)")
+
+        # 39 bis. numpy ou scipy absent : le serveur s'arrete en disant quoi installer
+        for module in ("numpy", "scipy"):
+            with tempfile.TemporaryDirectory() as faux:
+                os.makedirs(os.path.join(faux, module))
+                with open(os.path.join(faux, module, "__init__.py"), "w") as f:
+                    f.write("raise ImportError('%s absent')\n" % module)
+                r = subprocess.run([sys.executable, web_CAO.__file__, "--help"],
+                                   env=dict(os.environ, PYTHONPATH=faux), timeout=120,
+                                   stdin=subprocess.DEVNULL, capture_output=True, text=True)
+            assert r.returncode == 3, (module, r.returncode, r.stderr[-300:])
+            assert module + " absent" in r.stdout and "requirements.txt" in r.stdout, r.stdout
+        print("[PASS] numpy ou scipy absent : arret au demarrage, code 3, commande donnee")
 
         # 40. Appairage : la pause double a chaque code brule d'affilee, plafond
         # 1 h, et repart de 60 s apres un succes.

@@ -4444,8 +4444,7 @@ async function simConnecter(){
   }
   throw new Error("Aucun serveur pour calculer.\n\n"+
     "Le solveur est en Python : lancez « python web_CAO.py » depuis le dossier "+
-    "du dépôt, puis ouvrez cette page par l'adresse qu'il affiche. Il lui faut "+
-    "numpy — « pip install numpy ».\n\n"+
+    "du dépôt, puis ouvrez cette page par l'adresse qu'il affiche.\n\n"+
     "Tentatives :\n  "+essais.join("\n  "));
 }
 /* LE CORPS D'UN ENVOI : le document en JSON, la grille de chaque cavité une

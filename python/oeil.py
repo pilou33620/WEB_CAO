@@ -169,13 +169,8 @@ _ICI = os.path.dirname(os.path.abspath(__file__))
 if _ICI not in sys.path:
     sys.path.insert(0, _ICI)
 
-try:
-    import numpy as np
-    import simulation_em as se
-    ERREUR_OEIL = se.ERREUR_SOLVEUR
-except Exception as _exc:                              # noqa: BLE001
-    np = se = None
-    ERREUR_OEIL = _exc
+import numpy as np
+import simulation_em as se
 
 VERSION = "2.4.1"
 FORMAT_RESULTAT = "cao-oeil-resultat-1"
@@ -686,10 +681,6 @@ def polygone(g, ui=None, setup=None, hold=None):
 
 
 def etat():
-    if ERREUR_OEIL is not None:
-        return {"dispo": False, "version": VERSION,
-                "detail": "Diagramme de l'œil indisponible : %s" % ERREUR_OEIL,
-                "conseil": "Il a besoin de numpy : « pip install numpy »."}
     liste = []
     for g in GABARITS:
         d = dict(g)
@@ -3753,9 +3744,6 @@ def analyser(doc, journal=None, racines_ami=None):
     `racines_ami` : les dossiers sous lesquels une bibliotheque AMI designee
     par la requete peut etre chargee (la LIB, les racines de projets) ;
     aucun, et rien ne s'execute."""
-    if ERREUR_OEIL is not None:
-        raise ErreurOeil("Diagramme de l'œil indisponible : %s" % ERREUR_OEIL,
-                         "Il a besoin de numpy : « pip install numpy ».")
     if not isinstance(doc, dict):
         raise ErreurOeil("Le document envoyé n'est pas un objet JSON.")
     o = doc.get("oeil") or {}

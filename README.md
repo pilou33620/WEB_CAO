@@ -1,6 +1,6 @@
 # WEB_CAO
 
-**Suite de CAO électronique en HTML5 / JavaScript, 100 % locale, sans compilation ni dépendance obligatoire.**
+**Suite de CAO électronique en HTML5 / JavaScript, 100 % locale, sans compilation ni dépendance côté navigateur.**
 
 Du schéma au dossier de fabrication : saisie multi-feuilles, routage *Push & Shove*, bibliothèque de composants, inspection de fichiers IPC-2581 et simulation d'intégrité du signal et de l'alimentation (SI / PI / RF). Claude Code, par le serveur MCP de web_suite, lit vos datasheets et propose les réglages de simulation, valeur par valeur.
 
@@ -20,7 +20,7 @@ Les éditeurs s'ouvrent par simple double-clic dans le navigateur, sans `npm ins
 
 **Sans rien installer** : ouvrez `index.html` dans un navigateur récent. Schéma, routage et exports de fabrication fonctionnent tels quels. Chaque outil s'ouvre dans un nouvel onglet : l'accueil reste ouvert.
 
-**Avec le serveur local** (recommandé, Python 3 standard) : il ajoute la recherche de composants en ligne, le parseur IPC-2581, les solveurs de simulation, les dossiers de projet sur disque et la bibliothèque centrale.
+**Avec le serveur local** (recommandé ; Python 3, numpy et scipy) : il ajoute la recherche de composants en ligne, le parseur IPC-2581, les solveurs de simulation, les dossiers de projet sur disque et la bibliothèque centrale.
 
 ```bash
 python web_CAO.py
@@ -28,26 +28,40 @@ python web_CAO.py
 
 Le navigateur s'ouvre à la bonne adresse. Sous Windows, un double-clic sur `web_CAO.py` (ou `demarrer_WEB_CAO.cmd`) suffit. Au démarrage, le serveur se met à jour depuis GitHub quand `git` est présent et que le dossier est un dépôt (mise à jour `--ff-only` ; hors ligne, il démarre quand même ; `--sans-maj` pour s'en passer).
 
-Pour les simulations numériques, ajoutez numpy et scipy : `pip install -r requirements.txt`.
+Sans numpy ou scipy, le serveur s'arrête au démarrage (code de sortie 3) en disant quoi installer.
+
+## 📦 Installation
+
+Ouvrir `index.html` sans serveur ne demande rien. Le serveur demande Python 3, numpy et scipy (`requirements.txt`) ; `git` et `openssl` sont facultatifs (mises à jour, HTTPS).
+
+| Système | Installer | Lancer |
+| :--- | :--- | :--- |
+| **Raspberry Pi, Debian** | `sudo apt install git python3-numpy python3-scipy` puis `git clone https://github.com/pilou33620/WEB_CAO.git` (pip y refuse la Python du système : apt, ou un venv) | `python3 web_CAO.py` |
+| **Windows** | Python 3 et Git, `git clone https://github.com/pilou33620/WEB_CAO.git`, puis `pip install -r requirements.txt` | double-clic sur `web_CAO.py` ou `demarrer_WEB_CAO.cmd` (mode local) ; `python web_CAO.py` dans un terminal pour le réseau |
+| **Android (Termux)** | `pkg install python git python-numpy python-scipy` puis `git clone https://github.com/pilou33620/WEB_CAO.git` (numpy et scipy passent par `pkg`, pas par pip) | `python web_CAO.py --local`, puis ouvrir l'adresse affichée dans le navigateur |
 
 ## 💻 Sur quels appareils ?
 
-WEB_CAO tourne dans n'importe quel navigateur récent ; seul le serveur demande Python.
+WEB_CAO tourne dans n'importe quel navigateur récent ; seul le serveur demande Python, numpy et scipy.
 
 | Appareil | Comment l'utiliser |
 | :--- | :--- |
 | **Ordinateur** (Windows, macOS, Linux) | Navigateur seul, ou serveur local sur la même machine : c'est le mode complet. |
-| **Tablette, téléphone, écran tactile** | Ouvrir l'adresse affichée par un serveur lancé ailleurs sur le réseau, ou lancer le serveur sur l'appareil lui-même s'il exécute Python (par ex. [Pyto](https://pyto.app/) sur iPhone / iPad : `python web_CAO.py --local --dossier <dossier>`). Activez le **mode tactile** depuis l'accueil. |
+| **Tablette, téléphone, écran tactile** | Ouvrir l'adresse affichée par un serveur lancé ailleurs sur le réseau, ou lancer le serveur sur l'appareil lui-même sous Android, avec Termux (voir [Installation](#-installation)). L'iPad et l'iPhone restent des clients : ils ouvrent l'adresse d'un serveur. Activez le **mode tactile** depuis l'accueil. |
 | **Raspberry Pi, serveur sans écran** | Le serveur reconnaît le Raspberry Pi (ou un Linux sans affichage) et n'ouvre pas de navigateur ; on s'y connecte depuis un autre appareil du réseau (`--navigateur` force l'ouverture). |
 
 **Mode tactile** : pincement pour zoomer, deux doigts pour se déplacer, stylet reconnu (la paume est ignorée). Un appui long ouvre une **roulette de commandes** adaptée à ce qui est touché (composant, piste, vide…), personnalisable et gardée dans le profil ; le bouton **Roulette**, à côté de **Tactile**, l'ouvre aussi sans appui long, même à la souris.
 
+## 📱 Utiliser depuis un autre appareil
+
+Lancez le serveur depuis un terminal, sans `--local` : il affiche l'adresse Réseau du poste (ligne `adresse`, et ligne `tailscale` si Tailscale est actif). Ouvrez-la dans le navigateur de l'autre appareil, sur le même réseau.
+
+Depuis un autre appareil, la page demande une fois un **code d'appairage** à 6 chiffres, affiché dans la console du serveur (ou dans les logs de WEB_CAO, dans WEB·SUITE). L'appareil s'en souvient ensuite, pour tous les web tools de ce poste (`appairage.py`, commun aux web tools) ; la machine elle-même n'en a jamais besoin.
+
+En mode réseau, la connexion est **chiffrée (HTTPS)** quand la commande `openssl` est présente sur le poste (Raspberry Pi, Linux, macOS ; sous Windows, celle de Git) : une autorité propre au poste, créée une fois dans `~/.web_tools/tls/`, signe le certificat du serveur. Chaque appareil l'installe une fois, depuis le lien de la page du code (`/appairage/ca.pem`) ; sur iPad : Réglages › Profil téléchargé › Installer, puis Général › Informations › Réglages des certificats › activer. Comparer son empreinte SHA-256 avec celle du terminal. Sans `openssl` (ou avec `WEB_TOOLS_HTTP=1`), tout reste en HTTP et le terminal le dit.
+
 > [!NOTE]
 > Lancé **depuis un terminal**, le serveur écoute sur tout le réseau. Par prudence (pas de mot de passe), les dossiers de projet y sont alors refusés et la bibliothèque passe en lecture seule, sauf avec `--projets-reseau` sur un réseau de confiance. Lancé par double-clic ou avec `--local`, il n'écoute que la machine elle-même et tout est permis.
->
-> Depuis un autre appareil, la page demande une fois un **code d'appairage** à 6 chiffres, affiché dans la console du serveur (ou dans les logs de WEB_CAO, dans WEB·SUITE). L'appareil s'en souvient ensuite, pour tous les web tools de ce poste (`appairage.py`, commun aux web tools) ; la machine elle-même n'en a jamais besoin.
->
-> En mode réseau, la connexion est **chiffrée (HTTPS)** quand la commande `openssl` est présente sur le poste (Raspberry Pi, Linux, macOS ; sous Windows, celle de Git) : une autorité propre au poste, créée une fois dans `~/.web_tools/tls/`, signe le certificat du serveur. Chaque appareil l'installe une fois, depuis le lien de la page du code (`/appairage/ca.pem`) ; sur iPad : Réglages › Profil téléchargé › Installer, puis Général › Informations › Réglages des certificats › activer. Comparer son empreinte SHA-256 avec celle du terminal. Sans `openssl` (ou avec `WEB_TOOLS_HTTP=1`), tout reste en HTTP et le terminal le dit.
 
 ---
 
@@ -109,7 +123,6 @@ L'ancien assistant IA intégré est retiré. **Claude Code** pilote les pages ou
 | `--navigateur` / `--sans-navigateur` | Force l'ouverture ou non du navigateur |
 | `--sans-pause` | Rend la main sans attendre Entrée (Windows) |
 | `--sans-maj` | Pas de mise à jour depuis GitHub |
-| `--dossier DIR` | Dossier servi |
 | `--projets DIR` | Racine(s) des dossiers de projet, répétable (défaut : `projets/` à côté de `index.html`) ; hors WEB·SUITE et en écoute locale, un chemin complet saisi à la main reste accepté |
 | `--projets-reseau` | En écoute réseau, ouvre quand même les projets et l'écriture dans la LIB (réseau de confiance uniquement) |
 | `--lib DIR` | Dossier de la bibliothèque centrale, pour ce lancement seulement (le choix fait depuis l'accueil, lui, est mémorisé dans `config_lib.json`) |
@@ -123,35 +136,54 @@ La visionneuse IPC-2581 enregistre sa carte puis l'envoie directement. La Gestio
 
 </details>
 
+## 🔄 Mises à jour
+
+Au démarrage, quand `git` est présent et que le dossier est un dépôt, `web_CAO.py` interroge GitHub (`git fetch`, 10 s au plus). S'il y a du nouveau, il applique `git pull --ff-only` puis redémarre seul avec les mêmes options ; un historique réécrit ou divergent est refusé, jamais fusionné. Des fichiers suivis modifiés sur le poste passent par `git stash` le temps du pull, puis reviennent ; en cas de conflit, ils restent dans la réserve et le terminal le dit. Hors ligne ou sur un échec, l'outil démarre avec sa version actuelle. `--sans-maj` coupe cette vérification : le lanceur WEB·SUITE, qui cherche lui-même les mises à jour, la passe aux outils déjà vérifiés.
+
+## 🗄️ Où vivent les données
+
+| Données | Emplacement |
+| :--- | :--- |
+| **Projets** | `projets/` à côté de `index.html`, ou les racines de `--projets` ; lancé par WEB·SUITE, `PROJETS/CAO`. Un dossier par projet : `projet.cao.json`, documents (`-SCH.json`, `-PCB.json`, `-IPC.json`), brouillons de la sauvegarde automatique, `datasheets/` |
+| **Bibliothèque** | `LIB/` à côté de l'outil, sinon `../PROJETS/LIB_CAO`, ou le dossier de `--lib` ; le choix fait depuis l'accueil est gardé dans `config_lib.json` |
+| **Profils** | `profils/<nom>.json`, avec une copie dans le stockage local du navigateur ([détails](profils/LISEZ-MOI.md)) |
+| **Appairage et HTTPS** | `~/.web_tools/` (`jeton-reseau.txt`, `tls/`), communs aux web tools du poste |
+
+`LIB/`, `config_lib.json` et `profils/*.json` sont ignorés par git : une mise à jour ne les touche pas.
+
 ## 📂 Organisation du dépôt
 
 ```
 index.html               Accueil : outils, projet, bibliothèque, profil, mode tactile
-web_CAO.py               Serveur local et API (bibliothèque standard Python)
+web_CAO.py               Serveur local et API
+requirements.txt         numpy et scipy, obligatoires pour le serveur
 appairage.py             Code d'appairage et HTTPS du mode réseau (commun aux web tools)
+pilote.py                Canal de pilotage des pages par le MCP de web_suite
 editeur-schematique/     editeur-pcb/     gestion-lib/
 recherche-composants/    visionneuse-ipc2581/
 commun/                  Code partagé : panneaux, projets, profils, tactile, variantes de montage, canal de pilotage, simulation
 python/                  Solveurs (MoM, diaphonie, DC, RF), parseur IPC-2581, bancs d'essai
 bancs-mesure/            Cartes d'essai à fabriquer et comparaison simulation / mesure (crosstalk)
 profils/                 Profils utilisateurs et fabricants
-docs/                    Guides de simulation et historique de développement
+docs/                    Manuel, guides de simulation et historique de développement
 screen/                  Captures et animations
 ```
 
 ## 🧪 Tests
 
-Zéro dépendance obligatoire : JavaScript standard côté navigateur, bibliothèque standard Python côté serveur (Python 3, testé en 3.12). Tous les bancs tournent en CI (`.github/workflows/ci.yml`).
+Côté navigateur, JavaScript standard, sans dépendance. Côté serveur, Python 3 (testé en 3.12) avec numpy et scipy. Les bancs tournent en CI (`.github/workflows/ci.yml`), sauf `banc-synoptique.py` et `editeur-pcb/test/banc-anim3d-images.py` (Chromium), `python/test/banc-detection-plateforme.py`, `python/test/banc-usimmics.py`, `commun/test/banc-tactile-tuto.js`, à lancer à la main. `appairage.py` et `pilote.py` se vérifient en les exécutant ; la CI de web_suite passe ces vérifications sur ses originaux et compare les copies.
 
 <details>
 <summary>Lancer les bancs en local</summary>
 
 ```bash
-node editeur-pcb/test/harness.js
-node editeur-schematique/test/harness.js
+python editeur-pcb/outils/build-monofichier.py && node editeur-pcb/test/harness.js
+python editeur-schematique/outils/build-monofichier.py && node editeur-schematique/test/harness.js
 node visionneuse-ipc2581/test/harness-sim.js
 node gestion-lib/test/banc-catalogue.js
 python python/test/banc-ligne-mom.py      # et les autres banc-*.py de python/test/
+python appairage.py
+python pilote.py
 python3 editeur-schematique/test/banc-synoptique.py [--captures]   # synoptique de chaque schématique de PROJETS/CAO (Chromium)
 ```
 
@@ -160,7 +192,7 @@ Les bancs lisent la LIB à son emplacement par défaut (`../PROJETS/LIB_CAO`). W
 </details>
 
 > [!IMPORTANT]
-> `dist/` n'est pas versionné. Après une modification de `js/`, régénérez le monofichier de l'éditeur (`python editeur-pcb/outils/build-monofichier.py`, idem pour le schématique) : c'est lui qu'on ouvre en double-clic ou qu'on envoie par courriel.
+> `dist/` n'est pas versionné. Après une modification de `js/`, régénérez le monofichier de l'éditeur (`python editeur-pcb/outils/build-monofichier.py`, idem pour le schématique) : c'est lui que lisent les bancs `harness.js`, et c'est le fichier autonome qu'on ouvre en double-clic ou qu'on envoie par courriel. `index.html`, lui, ouvre les pages non assemblées, qui chargent `js/` directement.
 
 ## 🗺️ Feuille de route
 

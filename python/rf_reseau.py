@@ -77,19 +77,10 @@ _ICI = os.path.dirname(os.path.abspath(__file__))
 if _ICI not in sys.path:
     sys.path.insert(0, _ICI)
 
-try:
-    import numpy as np
-    import simulation_em as se
-    import ligne_mom as tl
-    ERREUR_RF = se.ERREUR_SOLVEUR
-except Exception as _exc:                              # noqa: BLE001
-    np = se = tl = None
-    ERREUR_RF = _exc
-
-try:
-    import scipy.sparse as _SPARSE
-except Exception:                                      # noqa: BLE001
-    _SPARSE = None
+import numpy as np
+import scipy.sparse as _SPARSE
+import simulation_em as se
+import ligne_mom as tl
 
 # 1.6.0 (2026-10-10) : les options de `ligne_mom` 2.7.0 -- topologie, hauteur
 # et rugosite de la couche dans les pertes du cuivre (piste de masse et
@@ -129,10 +120,6 @@ class ErreurRF(Exception):
 
 
 def etat():
-    if ERREUR_RF is not None:
-        return {"dispo": False, "version": VERSION,
-                "detail": "Simulation RF indisponible : %s" % ERREUR_RF,
-                "conseil": "Elle a besoin de numpy : « pip install numpy »."}
     return {"dispo": True, "format": FORMAT, "resultat": FORMAT_RESULTAT,
             "version": VERSION, "max": MAX_CORPS,
             "methode": "pistes par simulation_em (MoM + cascade ABCD),"
@@ -1669,8 +1656,7 @@ BOBINE_SPIRES = 6
 BOBINE_COTES = 12
 COUPLAGE_BOBINES_MM = 6.0      # entraxe au-dela duquel deux selfs sont seules
 COUPLAGE_PISTE_MM = 3.0        # piste au-dela de laquelle une self est seule
-_GL_X, _GL_W = (np.polynomial.legendre.leggauss(6) if ERREUR_RF is None
-                else (None, None))
+_GL_X, _GL_W = np.polynomial.legendre.leggauss(6)
 
 
 def _neumann(pa, qa, wa, pb, qb, wb):
@@ -1899,9 +1885,6 @@ def _doc_branche(doc, br):
 
 def analyser(doc, journal=None):
     """Document « cao-sim-rf-1 » -> S generalises entre les deux ports."""
-    if ERREUR_RF is not None:
-        raise ErreurRF("Simulation RF indisponible : %s" % ERREUR_RF,
-                       "Elle a besoin de numpy : « pip install numpy ».")
     debut = time.time()
     z_ports, noeuds_ports = _valider(doc)
     try:
@@ -2481,7 +2464,7 @@ class _Assemblage(object):
         r = np.concatenate(r + [di[:, 0]])
         c = np.concatenate(c + [di[:, 1]])
         v = np.concatenate(v + [np.array(list(diag.values()), dtype=complex)])
-        if self.n > 400 and _SPARSE is not None:
+        if self.n > 400 and _SPARSE is not None:      # None : banc-rf compare au calcul plein
             return _SPARSE.coo_matrix((v, (r, c)),
                                       shape=(self.n, self.n)).tocsc(), True
         m = np.zeros((self.n, self.n), dtype=complex)

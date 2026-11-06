@@ -5,7 +5,7 @@ Elle porte un seul onglet, **S21**, entre deux ports d'impédance complexe (R + 
 Ce chapitre suit la famille RF seule ; l'ouverture du panneau, les réglages communs et les familles SI et PI sont au chapitre [08 Simulation SI](08-simulation-si.md). Le traitement de chaque broche d'une puce radio est dans [Simulation RF : que faire de chaque broche](10b-rf-acces-des-broches.md), à lire avant de poser les ports.
 
 > [!NOTE]
-> Le calcul passe par le serveur (`python web_CAO.py`) et a besoin de numpy. Sans eux, le panneau l'indique. Le principe, les étalonnages et les formules sont dans [../simulation-em.md](../simulation-em.md), section « RF — le S₂₁ d'un réseau entre deux ports ». Ce chapitre dit comment s'en servir.
+> Le calcul passe par le serveur (`python web_CAO.py`). Le principe, les étalonnages et les formules sont dans [../simulation-em.md](../simulation-em.md), section « RF — le S₂₁ d'un réseau entre deux ports ». Ce chapitre dit comment s'en servir.
 
 ## Guide par tâche
 
