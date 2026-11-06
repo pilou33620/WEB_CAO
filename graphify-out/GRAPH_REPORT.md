@@ -1,30 +1,30 @@
 # Graph Report - WEB_CAO  (2026-11-06)
 
 ## Corpus Check
-- 254 files · ~1,720,835 words
+- 256 files · ~1,723,590 words
 - Verdict: corpus is large enough that graph structure adds value.
-- Unclassified: 26 file(s) not represented in the graph (top: .css 19, (none) 2, .csv 2)
+- Unclassified: 27 file(s) not represented in the graph (top: .css 20, (none) 2, .csv 2)
 
 ## Summary
-- 9334 nodes · 20475 edges · 356 communities (307 shown, 49 thin omitted)
-- Extraction: 97% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 695 edges (avg confidence: 0.87)
+- 9348 nodes · 20508 edges · 344 communities (302 shown, 42 thin omitted)
+- Extraction: 97% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 694 edges (avg confidence: 0.87)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `6b76c990`
+- Built from commit: `760ddc71`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
-- ligne_mom.py
+- numpy
 - simulation-em.js
 - editeur-pcb/test/harness.js
 - oeil.py
 - export-step.js
-- solve_line
-- simEl
+- banc-ligne-mom.py
+- simRendre
 - banc-crosstalk-mesure.py
-- dossier_lib
+- simuler
 - 06-panels.js
 - simBrancherRf
 - 01-core.js
@@ -32,13 +32,13 @@
 - cornerMode
 - tactile.js
 - _cascade_differentielle
-- simOeilGo
+- simChamp
 - Guide par tâche
 - ibis.py
-- simXtCurseurPoints
+- analyser
 - 05-tools.js
 - 03-rendu.js
-- coefficients_couple
+- solve_multiline
 - banc-kicad-sch.js
 - projet-disque.js
 - analyser
@@ -48,28 +48,28 @@
 - 15-regles.js
 - banc-oeil.py
 - 09-diffpair.js
-- web_CAO.py
+- json
 - 04-fabrication.js
 - 08-empreinte.js
-- simZpLecture
+- simFiche
 - CustomHandler
 - 30-contraintes.js
 - 33-draftsman-export.js
-- rf_reseau.py
+- math
 - 05-editeur-lib.js
 - profils.js
 - 03-render.js
-- .do_POST
+- _doc_via
 - crosstalk.py
 - 07-simulation.js
-- test_routes
+- web_CAO.py
 - harness-sim.js
 - 02-modele.js
 - IPC2581Parser
 - 25-liens.js
-- math
-- ClientMCP
-- simBrancherPDN
+- analyser_document
+- passerelle_mcp.py
+- simEl
 - essai
 - editeur-schematique/test/harness.js
 - banc-pcb-scoring.py
@@ -86,7 +86,7 @@
 - 07-app.js
 - 19-simulation.js
 - banc-dc.py
-- hint
+- push
 - dfFeuillesFab
 - resoudre_document
 - simXtCarte
@@ -94,7 +94,7 @@
 - dc_solver.py
 - Groupe 70
 - LiaisonPaire
-- simBrancherCarte
+- simBrancherCrosstalk
 - simulation-rapport.js
 - 34-draftsman-vues.js
 - cas_export
@@ -102,12 +102,11 @@
 - 19-broches.js
 - Groupe 87
 - 13-fichiers.js
-- vrai
+- simCarteQuoi
 - dossier-meca.js
 - WEB_CAO suite de CAO electronique
-- ._lire_document
 - simulation-datasheet.js
-- banc-ligne-mom.py
+- _pis
 - refreshPanels
 - normDoc
 - 04-ui.js
@@ -120,10 +119,10 @@
 - 01-donnees.js
 - executer_ami
 - 10-actions.js
-- re
-- 27-contraintes.js
+- os
+- simuler_non_lineaire
 - 06-rendu-fond.js
-- bruit
+- Tampon
 - banc-kicad-pcb.js
 - Groupe 105
 - Groupe 106
@@ -131,9 +130,9 @@
 - 22-recherche-composants.js
 - banc-catalogue.js
 - Pilote
-- numpy
+- la_mutuelle_du_boitier_ouvre_l_oeil_differentiel
 - 05-feuilles.js
-- simDCLancer
+- simOeilGo
 - 29-draftsman.js
 - ipc2581_json.py
 - reperage.js
@@ -146,7 +145,7 @@
 - simSegments
 - fonte-plans.py
 - editeur-pcb.html (page de l'Editeur PCB)
-- push
+- endFar
 - ErreurCrosstalk
 - au_dela_du_budget_ott_reprend_et_le_dit
 - appairage.py
@@ -156,11 +155,11 @@
 - 08-rendu-schema.js
 - buildStackup
 - Groupe 131
-- l_ami_lit_la_forme_d_onde_des_tampons_ibis
+- _brin
 - 11-pns-node.js
 - Groupe 137
 - impedance_commune_fente
-- main
+- brochage.js
 - simKUnite
 - Groupe 140
 - Guide par tâche
@@ -179,7 +178,7 @@
 - simProjPoly
 - Groupe 149
 - clamp
-- rayonnement_boucle
+- paires_diff
 - 03-formulaire.js
 - arcOf
 - Groupe 153
@@ -191,7 +190,7 @@
 - ltSection
 - Groupe 157
 - C
-- maillage_zone
+- _doc_vias_seuls
 - variantes.js
 - 38-interdits.js
 - Groupe 162
@@ -205,10 +204,10 @@
 - mdlCharger
 - Groupe 170
 - mdlPoserNature
-- Groupe 172
-- ModeleSpice
-- beginMove
-- ErreurOeil
+- tuto.js
+- ltPreparer
+- fpGene
+- options.js
 - Groupe 175
 - Groupe 176
 - recherche-composants/js/06-demarrage.js
@@ -217,7 +216,7 @@
 - Groupe 181
 - Groupe 182
 - Référence
-- Point
+- Element
 - simPlagesIpc
 - TestLibDossierTemporaire
 - mdlK
@@ -235,7 +234,7 @@
 - simRfPlateauPcb
 - 24-lib-sync.js
 - fiche-mesure.js
-- rectangle
+- carte_chaleur
 - Guide par tâche
 - mdlCheminsDe
 - _bande
@@ -249,11 +248,12 @@
 - busSkewSync
 - oeil_statistique
 - r4
+- djordjevic_sarkar
 - Référence
-- IPCDesign
-- _milieu
+- menus.js
+- NoyauSansPlan
 - Groupe 215
-- loadDoc
+- _seuil_couture
 - _FauxAmi
 - propsFp
 - Groupe 218
@@ -266,7 +266,7 @@
 - Groupe 227
 - Groupe 228
 - tous_les_ponts_comptent_pas_seulement_le_plus_proche
-- lire_touchstone
+- Spec : simulation RF à plus de deux ports
 - tryNextPath
 - Guide par tâche
 - Groupe 233
@@ -274,16 +274,16 @@
 - Groupe 236
 - Groupe 237
 - Groupe 238
-- Référence
-- _resoudre_peec
+- Guide par tâche
+- _echantillonner
 - setCuCount
 - ecriture-cao.js
 - simArcEnPolyligne
 - 02-bibliotheque.js
 - Groupe 243
 - cas_un_cul_de_sac_ne_porte_aucun_courant
-- phi_mtl
-- _ratio
+- inductance_etalement_via_anneau
+- la_mutuelle_des_futs_baisse_l_impair
 - 29-symboles-lib.js
 - _Chemins
 - Groupe 248
@@ -291,9 +291,9 @@
 - Référence
 - simZoneEn
 - Groupe 251
-- 31-topologie.js
+- alpha_genou
 - scene_plans
-- elements_coude
+- _trans
 - Guide par tâche
 - analyse_carte.py
 - banc-export-csv.js
@@ -305,32 +305,24 @@
 - PI : impedance frequentielle du PDN Z(om
 - lecture-cao.js
 - angles
-- _Index
+- les_deux_coefficients_ne_dependent_que_de_la_geometrie
 - À faire : simulation RF à plus de deux ports
-- Guide par tâche
+- cas_un_trou_de_plan_n_evide_que_son_net
 - empilage
-- profils_espacement
-- cascade_to_s
 - ref_fs
-- dispersion_modale
-- Appairage
 - Gestion LIB
 - Guide par tâche
-- simFicheDiff
-- contraintes.js
 - 30-export-pdf.js
 - dfTrapeze
 - docLecture
 - 21-lib-sync.js
-- coordApply
-- TestLibRoutes
+- beginMove
 - cartouche.js
 - banc-tactile-tuto.js
 - Simulation EM & integrite du signal (SI / PI) - reference technique
 - Référence
 - Référence
 - zoneDessus
-- _neumann
 - Guide par tâche
 - diCount
 - boitierFin
@@ -338,16 +330,14 @@
 - dcResDeuxCouches
 - r3
 - simEspacement
-- Spec : dossier mécanique (éditeur PCB et visionneuse IPC-2581)
+- Architecture : un calcul commun, deux entrées
 - telephone.js
-- ErreurRF
 - simRfPlateauIpc
 - niveau2
 - dcResSonde
 - simDCCuivreDesNets
 - 10-plans.js
-- ErreurHTTP
-- inductance_boucle_vias
+- _modele_transition
 - decouplageRelie
 - TestProjetsReseau
 - 41-larmes.js
@@ -362,7 +352,6 @@
 - etat
 - simModelesIpc
 - firstDiff
-- couche
 - Manuel de WEB_CAO
 - ErreurSimulation
 - le_plan_qui_borde_ne_compte_que_s_il_est_cousu
@@ -389,8 +378,8 @@
   docs/manuel/07-visionneuse-ipc2581.md → editeur-schematique/js/01-noyau.js
 - `Limites connues` --references--> `F()`  [INFERRED]
   docs/manuel/07-visionneuse-ipc2581.md → python/ligne_mom.py
-- `Identification des alimentations` --references--> `masse()`  [INFERRED]
-  docs/manuel/09-simulation-pi-thermique-audit.md → python/test/banc-analyse-carte.py
+- `Critères de réussite (vérifiés par `python/test/banc-rf.py` et les bancs de page)` --references--> `lire_touchstone()`  [INFERRED]
+  SPEC-rf-multiports.md → python/rf_reseau.py
 
 ## Import Cycles
 - None detected.
@@ -407,15 +396,15 @@
 - **Blocs fonctionnels de la carte USB 4 couches** — screen_schematique_carte_usb_j1_usb_micro_b, screen_schematique_carte_usb_u3_usblc6, screen_schematique_carte_usb_u2_ap2112k, screen_schematique_carte_usb_u1_stm32g431kb, screen_schematique_carte_usb_u4_w25q32jv [INFERRED 0.85]
 - **Demo PCB components (USB, regulator, MCU, SWD)** — screen_pcb_j1_usb, screen_pcb_u3_regulator, screen_pcb_u1_mcu, screen_pcb_j2_swd [INFERRED 0.85]
 
-## Communities (356 total, 49 thin omitted)
+## Communities (344 total, 42 thin omitted)
 
-### Community 0 - "ligne_mom.py"
+### Community 0 - "numpy"
 Cohesion: 0.02
-Nodes (69): Moteur 2,5D pleine onde (mom_solver) archive, admittance_moignon(), capacitance(), capacitance_coplanaire(), capacitance_matrice(), capacite_paire_plans(), cavite_grille(), cavite_modale() (+61 more)
+Nodes (97): Moteur 2,5D pleine onde (mom_solver) archive, abcd_coude(), abcd_line(), abcd_via_complet(), abcd_via_ligne(), admittance_moignon(), bilan_sante_transition(), capacitance() (+89 more)
 
 ### Community 1 - "simulation-em.js"
 Cohesion: 0.02
-Nodes (145): ltEeff(), ltWeff(), ltZ0(), pcbParseCourant(), pcbParseFrequence(), pcbParsePuissance(), pcbParseVolt(), pcbSpecsComposant() (+137 more)
+Nodes (152): ltEeff(), ltWeff(), ltZ0(), pcbParseCourant(), pcbParseFrequence(), pcbParsePuissance(), pcbParseVolt(), pcbSpecsComposant() (+144 more)
 
 ### Community 2 - "editeur-pcb/test/harness.js"
 Cohesion: 0.01
@@ -423,35 +412,35 @@ Nodes (14): bcBus, code, dom, EXPOSE, FP_ORIGINE_FICHE, fs, MECA_LIB, NET_MANUEL
 
 ### Community 3 - "oeil.py"
 Cohesion: 0.03
-Nodes (53): abcd_couplage_ac(), abcd_depuis_s(), agresseurs_du_couplage(), analyser(), asymetries(), _candidats_ctle(), continu_couplage_ac(), _continu_couplage_ac() (+45 more)
+Nodes (42): est_emetteur(), abcd_couplage_ac(), asymetries(), _candidats_ctle(), _charger_ibis(), erreur(), continu_couplage_ac(), _continu_couplage_ac() (+34 more)
 
 ### Community 4 - "export-step.js"
 Cohesion: 0.13
-Nodes (34): ANIM3D_HAUTS, anim3dPose(), anim3dPosition(), ctrAjuste(), ctrCercle3(), ctrSegments(), STEP_CHOIX, STEP_COCHES (+26 more)
+Nodes (32): ANIM3D_HAUTS, anim3dPose(), anim3dPosition(), ctrAjuste(), ctrCercle3(), ctrSegments(), STEP_CHOIX, STEP_COCHES (+24 more)
 
-### Community 5 - "solve_line"
-Cohesion: 0.04
-Nodes (28): solve_line(), asym_deux_zeros_est_microruban(), asym_ecarts_egaux_est_lancien(), asym_repousser_un_cote_monte_z0(), asym_un_seul_cote(), convergence(), coplanaire_contre_conforme(), coplanaire_loin_est_microruban() (+20 more)
+### Community 5 - "banc-ligne-mom.py"
+Cohesion: 0.03
+Nodes (44): solve_line(), asym_deux_zeros_est_microruban(), asym_ecarts_egaux_est_lancien(), asym_repousser_un_cote_monte_z0(), asym_un_seul_cote(), convergence(), coplanaire_contre_conforme(), coplanaire_loin_est_microruban() (+36 more)
 
-### Community 6 - "simEl"
-Cohesion: 0.05
-Nodes (96): simAjusterBandePourFc(), simAllerAnalyse(), simAllerFamille(), simAnalyse(), simBrancherCrosstalk(), simBrancherDC(), simBrancherDiff(), simBrancherImpedance() (+88 more)
+### Community 6 - "simRendre"
+Cohesion: 0.06
+Nodes (68): simAjusterBandePourFc(), simBrancherDC(), simBrancherDiff(), simBrancherImpedance(), simBrancherLots(), simBrancherOeil(), simBrancherRetour(), simBrancherRetourFiche() (+60 more)
 
 ### Community 7 - "banc-crosstalk-mesure.py"
-Cohesion: 0.17
-Nodes (12): comparaison(), db(), lire_releves(), main(), pc(), prevoir(), tableau_previsions(), Banc de mesure crosstalk (README) (+4 more)
+Cohesion: 0.18
+Nodes (11): comparaison(), db(), lire_releves(), main(), pc(), prevoir(), tableau_previsions(), Mesure a l'oscilloscope (4 ports sur 50 ohm, moyennage) (+3 more)
 
-### Community 8 - "dossier_lib"
-Cohesion: 0.07
-Nodes (9): charger_config_lib(), chemin_config_lib(), definir_dossier_lib(), dossier_lib(), dossier_lib_defaut(), enregistrer_config_lib(), initialiser_lib_dans_dossier(), parasites_lib() (+1 more)
+### Community 8 - "simuler"
+Cohesion: 0.06
+Nodes (40): simuler(), bilan_impact_physique_hf_et_zone_de_vigilance(), _cu(), current_return_path_passe_par_la_cavite_modale(), deux_noms_de_plan_ne_font_pas_deux_nets(), _di(), distance_du_plus_proche_pont_hors_rayon_est_conservee(), _doc_moignon() (+32 more)
 
 ### Community 9 - "06-panels.js"
 Cohesion: 0.10
 Nodes (21): _bsState, cpAjouter(), cpBrancherEmpilage(), cpModifier(), cpSupprimer(), LT_KIND, MP_KINDS, mpChoix() (+13 more)
 
 ### Community 10 - "simBrancherRf"
-Cohesion: 0.11
-Nodes (36): simBrancherRf(), simRendreRf(), simRfApres(), simRfAstuce(), simRfBilan(), simRfBroche(), simRfBrochesSnp(), simRfClic() (+28 more)
+Cohesion: 0.16
+Nodes (25): simBrancherRf(), simRfApres(), simRfAstuce(), simRfBroche(), simRfBrochesSnp(), simRfClic(), simRfDansPastille(), simRfDesigner() (+17 more)
 
 ### Community 11 - "01-core.js"
 Cohesion: 0.03
@@ -463,43 +452,43 @@ Nodes (42): analyser(), deux_victimes_de_part_et_d_autre_ne_se_melangent_pas(), 
 
 ### Community 13 - "cornerMode"
 Cohesion: 0.08
-Nodes (37): applyFollow(), cornerMode(), dirGap(), dirIdx(), followChains(), followGrow(), followLegs(), followPath() (+29 more)
+Nodes (35): applyFollow(), cornerMode(), dirGap(), dirIdx(), followChains(), followGrow(), followLegs(), followPath() (+27 more)
 
 ### Community 14 - "tactile.js"
 Cohesion: 0.07
-Nodes (74): tactileAntiSelection(), tactileDefinir(), tactileEstActif(), tactileInitialiser(), tactileMultiActif(), tactileMultiDefinir(), tactileRouletteBrancher(), tactileRouletteFermer() (+66 more)
+Nodes (75): tactileAntiSelection(), tactileDefinir(), tactileEstActif(), tactileInitialiser(), tactileMultiActif(), tactileMultiDefinir(), tactileRouletteBrancher(), tactileRouletteClicDroit() (+67 more)
 
 ### Community 15 - "_cascade_differentielle"
-Cohesion: 0.08
-Nodes (19): _abcd_deux_brins(), _abcd_ligne_couplee(), _abcd_ligne_seule(), _bases_des_modes(), _brins_des_modes(), _cascade_differentielle(), bloc(), couplee() (+11 more)
+Cohesion: 0.07
+Nodes (21): sections_couplees(), _abcd_deux_brins(), _abcd_ligne_couplee(), _abcd_ligne_seule(), _bases_des_modes(), _brins_des_modes(), _cascade_differentielle(), bloc() (+13 more)
 
-### Community 16 - "simOeilGo"
+### Community 16 - "simChamp"
 Cohesion: 0.08
-Nodes (41): simApresPerime(), simCarteDCListe(), simCarteIdClasse(), simChamp(), simChampPisteDiff(), simChampTexte(), simChampUnite(), simCorpsCarte() (+33 more)
+Nodes (40): simCarteDCListe(), simCarteIdClasse(), simChamp(), simChampPisteDiff(), simChampTexte(), simChampUnite(), simCorpsCarte(), simCorpsCrosstalk() (+32 more)
 
 ### Community 17 - "Guide par tâche"
 Cohesion: 0.09
 Nodes (22): Ce que Claude écrit, avec une carte, Claude et le MCP de web_suite, Garde-fous, Guide par tâche, Interface, Je veux créer un composant ou lier un modèle dans la LIB, Je veux demander quelque chose à Claude depuis la page, Je veux faire dessiner ou compléter un schéma (+14 more)
 
 ### Community 18 - "ibis.py"
-Cohesion: 0.04
-Nodes (37): Diagramme de l'oeil (PRBS, statistique, IBIS, IBIS-AMI, couplage AC), abcd_sections(), _cascade(), _Chaine, charger_brins(), _cle(), duree_front(), est_emetteur() (+29 more)
+Cohesion: 0.03
+Nodes (45): Diagramme de l'oeil (PRBS, statistique, IBIS, IBIS-AMI, couplage AC), abcd_boitier(), abcd_sections(), boitier_broche(), boitier_nul(), _cascade(), _Chaine, _cle() (+37 more)
 
-### Community 19 - "simXtCurseurPoints"
-Cohesion: 0.15
-Nodes (20): simXtCorridor(), simXtCouleur(), simXtCouleurVictime(), simXtCourbeDe(), simXtCurseurAgresseur(), simXtCurseurPoints(), simXtFiches(), simXtGeomBrute() (+12 more)
+### Community 19 - "analyser"
+Cohesion: 0.06
+Nodes (36): abcd_brins(), abcd_depuis_s(), agresseurs_du_couplage(), analyser(), appliquer_boitiers(), _continu_ac_simple(), _echelon_canal(), grille() (+28 more)
 
 ### Community 20 - "05-tools.js"
 Cohesion: 0.05
-Nodes (52): ACUTE_COS, applyJoints(), armClear(), autoPosture(), backRoute(), clearStop(), coordClose(), coordMode() (+44 more)
+Nodes (50): ACUTE_COS, armClear(), autoPosture(), backRoute(), clearStop(), coordClose(), coordMode(), coordOpen() (+42 more)
 
 ### Community 21 - "03-rendu.js"
 Cohesion: 0.05
 Nodes (73): bcx(), centrerSur(), compCorpsChemin(), ctx, cv, dansFenetre(), dessiner(), fenetre() (+65 more)
 
-### Community 22 - "coefficients_couple"
-Cohesion: 0.20
-Nodes (5): coefficients_couple(), kb_superposees(), deux_niveaux_tient_cohn_et_rejoint_le_fil_fin(), les_deux_coefficients_ne_dependent_que_de_la_geometrie(), grandeurs_outil()
+### Community 22 - "solve_multiline"
+Cohesion: 0.08
+Nodes (16): coefficients_couple(), ep(), kb_superposees(), _conducteurs_places(), _elargir(), solve_multiline(), gene_par(), marge() (+8 more)
 
 ### Community 23 - "banc-kicad-sch.js"
 Cohesion: 0.08
@@ -510,36 +499,36 @@ Cohesion: 0.07
 Nodes (60): PROJD, PROJD_BROU, PROJD_SUFFIXE, PROJD_VU, projdAdopter(), projdAdopterHandle(), projdApi(), projdAvis() (+52 more)
 
 ### Community 25 - "analyser"
-Cohesion: 0.08
-Nodes (47): analyser(), _doc_branche(), au_dela_de_3h_rien_ne_se_couple(), deux_pistes_proches_se_couplent(), deux_pistes_qui_s_ecartent_sont_recoupees(), deux_ports_relies_donnent_le_gain_de_desadaptation(), deux_selfs_bout_a_bout_s_ajoutent_leur_mutuelle(), _doc() (+39 more)
+Cohesion: 0.05
+Nodes (62): analyser(), _doc_branche(), ModeleSpice, frequences(), au_dela_de_3h_rien_ne_se_couple(), deux_pistes_proches_se_couplent(), deux_pistes_qui_s_ecartent_sont_recoupees(), deux_ports_relies_donnent_le_gain_de_desadaptation() (+54 more)
 
 ### Community 26 - "simNb"
-Cohesion: 0.05
-Nodes (83): ENTETE_WEB, esc(), ESC_HTML, SIM_DC_ACTIF_SEUIL(), simBrancherCourbe(), simBrancherCourbeDiff(), simCascadeRefusee(), simCoteSource() (+75 more)
+Cohesion: 0.04
+Nodes (93): ENTETE_WEB, esc(), ESC_HTML, SIM_DC_ACTIF_SEUIL(), simBrancherCourbe(), simBrancherCourbeDiff(), simCascadeRefusee(), simCoteSource() (+85 more)
 
 ### Community 27 - "simulation_em.py"
 Cohesion: 0.02
-Nodes (109): Contre-percage (back-drill) : empilage, DRC, Excellon, Gerber X2, visionneuse, Moignon d'un via et son contre-percage, candidats_geometriques(), _ligne_seule(), _matrices_bloc(), _projection_sur(), sections_couplees(), y_section() (+101 more)
+Nodes (84): Contre-percage (back-drill) : empilage, DRC, Excellon, Gerber X2, visionneuse, Moignon d'un via et son contre-percage, candidats_geometriques(), _ligne_seule(), _matrices_bloc(), _projection_sur(), _abscisse_sur_la_piste(), _aire_boucle_retour() (+76 more)
 
 ### Community 28 - "banc-essai.py"
-Cohesion: 0.13
-Nodes (28): _aire(), _anneau_avoue(), cercle_complet(), contraintes_du_net(), _cp_incomplet(), _cp_modele(), _cp_par_foret(), _cp_par_spec() (+20 more)
+Cohesion: 0.07
+Nodes (51): _actifs_et_connecteurs(), _aire(), _anneau_avoue(), arc_decoupe_selon_l_unite(), boitier_muet(), broches_en_repli(), carte_avec_regles(), cercle_complet() (+43 more)
 
 ### Community 29 - "15-regles.js"
 Cohesion: 0.11
 Nodes (55): figAngle(), figAspect(), figBoard(), figClass(), figClr(), figEdge(), figHole(), figMask() (+47 more)
 
 ### Community 30 - "banc-oeil.py"
-Cohesion: 0.03
-Nodes (75): q_inverse(), _brin(), _canal(), _cascade_et_forcee(), _cu(), des_brins_superposes_couplent_en_large_face(), paire(), _di() (+67 more)
+Cohesion: 0.04
+Nodes (51): ctle(), _de_emphase(), gabarit(), q_inverse(), _canal(), _croisement(), _dix_quatre_vingt_dix(), _ex_gauss() (+43 more)
 
 ### Community 31 - "09-diffpair.js"
 Cohesion: 0.07
 Nodes (54): buildDiffPairs(), BUS_PRESETS, busSkewAnalyze(), dpAccroche(), dpAnchors(), dpAxis(), dpAxisDirect(), dpBack() (+46 more)
 
-### Community 32 - "web_CAO.py"
-Cohesion: 0.04
-Nodes (21): chromium(), battement(), commander(), H, req(), main(), appeler_outil(), liste_outils() (+13 more)
+### Community 32 - "json"
+Cohesion: 0.06
+Nodes (15): essai(), image(), main(), battement(), commander(), H, req(), main() (+7 more)
 
 ### Community 33 - "04-fabrication.js"
 Cohesion: 0.07
@@ -549,25 +538,25 @@ Nodes (78): apForPad(), apSet(), bomPcbCsvText(), buildFabFiles(), contourDepart
 Cohesion: 0.20
 Nodes (14): fpApplyDef(), FPLIB, FPLIB_ENVOI, FPLIB_FICHIER, FPLIB_PRET, fpLibAll(), fpLibApi(), fpLibCharger() (+6 more)
 
-### Community 35 - "simZpLecture"
+### Community 35 - "simFiche"
 Cohesion: 0.07
-Nodes (54): simCarteActive(), simCarteDiffLegende(), simCarteDiffPartenaire(), simCarteQuoi(), simCarteRetenir(), simCarteSegment(), simChaleurLots(), simChaleurRes() (+46 more)
+Nodes (50): simCarteDiffLegende(), simCouleurBande(), simCouplage(), simCouplagePaires(), simCouplageVide(), simCoupleGeom(), simCoupleHypotheses(), simCoupleNoms() (+42 more)
 
 ### Community 36 - "CustomHandler"
-Cohesion: 0.03
-Nodes (14): adresse_lanceur(), chemin_brouillon(), chemin_lib_fichier(), CustomHandler, refuser(), appel(), derniere_sauvegarde(), dossier_profils() (+6 more)
+Cohesion: 0.02
+Nodes (17): adresse_lanceur(), chemin_brouillon(), chemin_lib_fichier(), CustomHandler, refuser(), appel(), derniere_sauvegarde(), dossier_lib() (+9 more)
 
 ### Community 37 - "30-contraintes.js"
-Cohesion: 0.12
-Nodes (52): CM_ONGLETS, cmAncre(), cmAppliquerLargeurZ(), cmCache, cmChamp(), cmChangement(), cmCleCarte(), cmClic() (+44 more)
+Cohesion: 0.06
+Nodes (91): Gestionnaire de contraintes (nets, classes, paires, appariement, isolation), CM_TOPO_NOMS, CM_TOPOS, cmLireChamp(), cmLireCp(), cmNormNets(), cmNormRegle(), CM_ONGLETS (+83 more)
 
 ### Community 38 - "33-draftsman-export.js"
 Cohesion: 0.18
 Nodes (19): dffBase64(), dffCmap(), dffCmap4(), dffCmap6(), dffComposants(), dffEtiquette(), dffFonte(), dffGlyphe() (+11 more)
 
-### Community 39 - "rf_reseau.py"
-Cohesion: 0.07
-Nodes (31): Fentes option C : resonance de la fente (tan(bd)/bd, Q ~ 50), RF : S21 d'un reseau entre deux ports (zones maillees adaptatives), admittance_masse(), pres_d_une_self(), bobine(), _bouts(), capacite_pastille(), capacite_surface() (+23 more)
+### Community 39 - "math"
+Cohesion: 0.02
+Nodes (89): Etat des lieux (plus de 1 700 essais automatises), Fentes option C : resonance de la fente (tan(bd)/bd, Q ~ 50), RF : S21 d'un reseau entre deux ports (zones maillees adaptatives), _commande_rampe(), _onde_lineaire(), _admittance(), admittance_masse(), mailler() (+81 more)
 
 ### Community 40 - "05-editeur-lib.js"
 Cohesion: 0.08
@@ -581,41 +570,45 @@ Nodes (44): PROF_ABO, PROF_ABO_L, PROF_LISTE, profAdopter(), profBarre(), profBr
 Cohesion: 0.08
 Nodes (61): arcsVias(), boardClipPx(), clipToBoard(), ctx, cv, draw(), drawBoard(), drawCurseur() (+53 more)
 
+### Community 43 - "_doc_via"
+Cohesion: 0.07
+Nodes (22): distance_du_plus_proche_via_hors_rayon_est_conservee(), _doc_retour(), _doc_via(), _doc_via_options(), _en_T(), la_cascade_ne_disperse_qu_une_fois(), la_discontinuite_se_pose_entre_les_deux_troncons(), la_page_qui_n_envoie_rien_le_dit() (+14 more)
+
 ### Community 44 - "crosstalk.py"
-Cohesion: 0.04
-Nodes (38): actions(), _effet(), alpha_genou(), _avertir_masse(), controle_masse(), _couvert(), couverture_calcul(), decouper() (+30 more)
+Cohesion: 0.03
+Nodes (47): actions(), _effet(), _avertir_masse(), _bords_maille(), controle_masse(), _couvert(), couverture_calcul(), decouper() (+39 more)
 
 ### Community 45 - "07-simulation.js"
 Cohesion: 0.06
 Nodes (33): SIM_AIRE_CACHE, SIM_BOITES, SIM_CHAINE_IPC, SIM_DCB, SIM_GRILLES, SIM_IPC, SIM_MODELES_VIA_IPC, SIM_RF_IPC (+25 more)
 
-### Community 46 - "test_routes"
-Cohesion: 0.06
-Nodes (15): IPC2581ParseError, test_routes(), chemin_projet(), ecrire_exclusif(), _HTTPSVerifie, _HTTPVerifie, make_server(), nom_projet() (+7 more)
+### Community 46 - "web_CAO.py"
+Cohesion: 0.03
+Nodes (43): test_routes(), adresse_locale(), attendre_touche(), charger_config_lib(), chemin_config_lib(), chemin_projet(), _ConnexionVerifiee, _ConnexionVerifieeTLS (+35 more)
 
 ### Community 47 - "harness-sim.js"
 Cohesion: 0.08
-Nodes (39): Je veux tracer un fil, Menu Placer, Je veux produire le dossier de fabrication, W(), avecPlan(), bancRisque(), carte(), carteArc() (+31 more)
+Nodes (39): Je veux tracer un fil, Onglet Dessin : créer et mesurer, Je veux produire le dossier de fabrication, W(), avecPlan(), bancRisque(), carte(), carteArc() (+31 more)
 
 ### Community 48 - "02-modele.js"
-Cohesion: 0.09
-Nodes (25): CU_PALETTE, GENRE_COULEUR, LT, ltAire(), ltAutoRole(), ltCleGap(), ltEstPlan(), ltPreparer() (+17 more)
+Cohesion: 0.10
+Nodes (16): CU_PALETTE, GENRE_COULEUR, LT, MDL_CLASSES_NATURE, MDL_FORMES, MDL_NATURES_SIGNAL, mdlBoitePlan(), mdlCleXY() (+8 more)
 
 ### Community 50 - "25-liens.js"
 Cohesion: 0.10
-Nodes (37): Liens du cuivre et suivi des boitiers (a1/a2, via de sortie, fpReshape), cycleMoveEtch(), dragRestart(), dragRotate(), dragRotFix(), dragSelRestore(), fanoutChains(), fanoutTake() (+29 more)
+Nodes (38): Liens du cuivre et suivi des boitiers (a1/a2, via de sortie, fpReshape), fpById(), cycleMoveEtch(), dragRestart(), dragRotate(), dragRotFix(), dragSelRestore(), fanoutChains() (+30 more)
 
-### Community 51 - "math"
-Cohesion: 0.09
-Nodes (41): Document cao-analyse-carte-1 (pistes, plans, percages, composants, natures, reglages), analyser_document(), bords(), branches_t(), _cases(), _classe(), courants(), coutures() (+33 more)
+### Community 51 - "analyser_document"
+Cohesion: 0.10
+Nodes (37): Document cao-analyse-carte-1 (pistes, plans, percages, composants, natures, reglages), analyser_document(), bords(), juge(), branches_t(), _cases(), _classe(), coutures() (+29 more)
 
-### Community 52 - "ClientMCP"
-Cohesion: 0.18
-Nodes (3): ClientMCP, deballer(), ErreurPasserelle
+### Community 52 - "passerelle_mcp.py"
+Cohesion: 0.13
+Nodes (5): appeler_outil(), ClientMCP, deballer(), ErreurPasserelle, liste_outils()
 
-### Community 53 - "simBrancherPDN"
-Cohesion: 0.09
-Nodes (40): simBrancherPDN(), simCalculerPDN(), simCorpsPDN(), simCourbePDN(), simEstMonte(), simPDNActualiserBadgeTarget(), simPDNActualiserComposants(), simPDNAppliquerCavite() (+32 more)
+### Community 53 - "simEl"
+Cohesion: 0.06
+Nodes (61): simAllerAnalyse(), simAllerFamille(), simAnalyse(), simBrancherPDN(), simBusApres(), simBusClassifierNets(), simBusLierComposants(), simCalculable() (+53 more)
 
 ### Community 54 - "essai"
 Cohesion: 0.13
@@ -626,12 +619,12 @@ Cohesion: 0.05
 Nodes (10): bcBus, BR_LIB, code, CR_CASES, dom, EXPOSE, fs, path (+2 more)
 
 ### Community 56 - "banc-pcb-scoring.py"
-Cohesion: 0.09
-Nodes (29): Etat des lieux (plus de 1 700 essais automatises), analyser_congestion(), analyser_decouplage(), calculer_hpwl(), evaluer_placement_pcb(), evaluer_rotation_composant(), optimiser_rotations_placement(), ordonnancer_placement() (+21 more)
+Cohesion: 0.10
+Nodes (28): analyser_congestion(), analyser_decouplage(), calculer_hpwl(), evaluer_placement_pcb(), evaluer_rotation_composant(), optimiser_rotations_placement(), ordonnancer_placement(), _segments_croisent() (+20 more)
 
 ### Community 57 - "diaphonie"
-Cohesion: 0.06
-Nodes (18): Cas 3 : S = 3W avec piste de garde cousue, Crosstalk niveau 2 : scan normalise (k_total, Kb, Kf, NEXT, FEXT), _decalage(), diaphonie(), face(), intercales(), joue(), resoudre_fente() (+10 more)
+Cohesion: 0.07
+Nodes (15): Cas 3 : S = 3W avec piste de garde cousue, Crosstalk niveau 2 : scan normalise (k_total, Kb, Kf, NEXT, FEXT), _decalage(), diaphonie(), face(), intercales(), joue(), resoudre_fente() (+7 more)
 
 ### Community 58 - "09-interaction.js"
 Cohesion: 0.09
@@ -642,8 +635,8 @@ Cohesion: 0.20
 Nodes (29): masterDrawingPdf(), cartouche(), kv(), section(), stackHead(), stackRow(), tableHead(), tableRow() (+21 more)
 
 ### Community 60 - "ipc2581_parser.py"
-Cohesion: 0.08
-Nodes (13): Arc, Component, CopperPlane, Drill, Net, Package, PadDef, PadInstance (+5 more)
+Cohesion: 0.06
+Nodes (14): A recopier dans WEB_ANTENNA : ipc2581_parser.py et ipc2581_json.py, Arc, CopperPlane, Drill, Net, Package, PadDef, PadInstance (+6 more)
 
 ### Community 61 - "banc-analyse-carte.py"
 Cohesion: 0.17
@@ -666,8 +659,8 @@ Cohesion: 0.09
 Nodes (53): mdlContrePercage(), mdlCoucheNom(), BOUTON_AFF, ELEMENTS, fermerModalNets(), l3(), LT_MOM, LT_TOPO (+45 more)
 
 ### Community 66 - "25-brochage.js"
-Cohesion: 0.11
-Nodes (31): 93 references semi-conducteurs sans brochage, brochageLire(), brochageListe(), brochageNom(), brochagePattes(), COMPOSANTS_LIB, brAjouterPartie(), brAppliquer() (+23 more)
+Cohesion: 0.18
+Nodes (25): brAjouterPartie(), brAppliquer(), brAUneTable(), brCandidats(), brChoisirPartie(), brColonne(), brComposants(), brControles() (+17 more)
 
 ### Community 67 - "07-app.js"
 Cohesion: 0.08
@@ -678,32 +671,32 @@ Cohesion: 0.08
 Nodes (27): pcbSchemaDoc(), pcbSyncSchema(), SIM_CHAINE_PCB, SIM_DCB, SIM_PCB, SIM_SONDES, simBoucleVias(), simChevelu() (+19 more)
 
 ### Community 69 - "banc-dc.py"
-Cohesion: 0.09
-Nodes (16): carte_chaleur(), barreau(), cas_barreau(), cas_carte(), cas_convergence(), cas_courant_nul(), cas_courant_proportionnel(), cas_deux_fois_plus_epais() (+8 more)
+Cohesion: 0.07
+Nodes (21): barreau(), cas_barreau(), cas_chemin_parallele(), cas_convergence(), cas_courant_nul(), cas_courant_proportionnel(), cas_deux_fois_plus_epais(), cas_deux_fois_plus_large() (+13 more)
 
-### Community 70 - "hint"
-Cohesion: 0.13
-Nodes (23): aplatClick(), askZoneNet(), clearSel(), closeAplat(), closeCut(), closeDecoupe(), closeEdge(), closeZone() (+15 more)
+### Community 70 - "push"
+Cohesion: 0.11
+Nodes (34): aplatClick(), askZoneNet(), cancelRoute(), clearSel(), closeAplat(), closeCut(), closeDecoupe(), closeEdge() (+26 more)
 
 ### Community 71 - "dfFeuillesFab"
 Cohesion: 0.16
-Nodes (40): dfBlocEspace(), dfBlocParagraphes(), dfBlocTitre(), dfCadre(), dfCalque(), dfCartoucheEn(), dfCercle(), dfContour() (+32 more)
+Nodes (39): dfBlocEspace(), dfBlocParagraphes(), dfBlocTitre(), dfCadre(), dfCalque(), dfCartoucheEn(), dfCercle(), dfContour() (+31 more)
 
 ### Community 72 - "resoudre_document"
 Cohesion: 0.08
-Nodes (18): resoudre_document(), cas_densite_est_le_calcul_a_la_main(), cas_echauffement_est_la_charte_ipc2221(), cas_echauffement_est_le_modele_d_etalement(), cas_l_echauffement_lui_NE_BOUGE_PAS(), cas_l_emballement_thermique_se_refuse_au_lieu_de_se_rendre(), cas_le_modele_thermique_se_nomme(), cas_le_pic_de_densite_ne_converge_pas_et_c_est_normal() (+10 more)
+Nodes (17): resoudre_document(), cas_densite_est_le_calcul_a_la_main(), cas_echauffement_est_la_charte_ipc2221(), cas_echauffement_est_le_modele_d_etalement(), cas_l_echauffement_lui_NE_BOUGE_PAS(), cas_l_emballement_thermique_se_refuse_au_lieu_de_se_rendre(), cas_le_modele_thermique_se_nomme(), cas_le_pic_de_densite_ne_converge_pas_et_c_est_normal() (+9 more)
 
 ### Community 73 - "simXtCarte"
 Cohesion: 0.10
-Nodes (41): simDureeXt(), simRendreCrosstalk(), simXtActions(), simXtAvertissements(), simXtBoutonChaleur(), simXtBoutonRisques(), simXtCalculDit(), simXtCarte() (+33 more)
+Nodes (42): simDuree(), simDureeXt(), simProgres(), simRendreCrosstalk(), simRendreDiff(), simXtActions(), simXtAvertissements(), simXtBoutonChaleur() (+34 more)
 
 ### Community 74 - "02-connectivity.js"
 Cohesion: 0.10
 Nodes (46): applyNetlist(), arrange(), autoPlace(), axeDansCarte(), bgaRangee(), BRAS_MEMO, brasObstacles(), brocheNum() (+38 more)
 
 ### Community 75 - "dc_solver.py"
-Cohesion: 0.07
-Nodes (18): _boite(), _cases_dedans(), _culs_de_sac(), _dans_polygone(), _densite_et_echauffement(), conductance(), coupe(), _echauffement_etalement() (+10 more)
+Cohesion: 0.06
+Nodes (20): _boite(), _cases_dedans(), _culs_de_sac(), _dans_polygone(), _densite_et_echauffement(), conductance(), coupe(), _echauffement_etalement() (+12 more)
 
 ### Community 76 - "Groupe 70"
 Cohesion: 0.06
@@ -713,9 +706,9 @@ Nodes (27): calculateBody(), calculatePads(), csvOutputLines, finalCsvContent, f
 Cohesion: 0.07
 Nodes (4): _Commande, Courbe, Liaison, LiaisonPaire
 
-### Community 78 - "simBrancherCarte"
-Cohesion: 0.10
-Nodes (34): simBrancherCarte(), simCarteApres(), simCarteAvertEcrire(), simCarteClasse(), simCarteCle(), simCarteDerogations(), simCarteExporter(), simCarteF() (+26 more)
+### Community 78 - "simBrancherCrosstalk"
+Cohesion: 0.09
+Nodes (39): simBrancherCarte(), simBrancherCrosstalk(), simCarteApres(), simCarteAvertEcrire(), simCarteClasse(), simCarteCle(), simCarteDerogations(), simCarteExporter() (+31 more)
 
 ### Community 79 - "simulation-rapport.js"
 Cohesion: 0.12
@@ -745,9 +738,9 @@ Nodes (30): bundle, CAL_COURT, CAS, centres, classe50(), couture(), D, dom (+22 
 Cohesion: 0.10
 Nodes (43): bomCsvNom(), bomCsvText(), bomRows(), BOMX_FILLS, bomxDateSerie(), bomxFeuille(), bomxLib(), bomxLigne() (+35 more)
 
-### Community 86 - "vrai"
-Cohesion: 0.11
-Nodes (17): arc_decoupe_selon_l_unite(), boitier_muet(), broches_en_repli(), carte_avec_regles(), corps_du_boitier(), couche_de_pastilles_seules(), hauteur_du_boitier(), hauteur_non_finie() (+9 more)
+### Community 86 - "simCarteQuoi"
+Cohesion: 0.14
+Nodes (25): simCarteActive(), simCarteDiffPartenaire(), simCarteQuoi(), simCarteRetenir(), simCarteSegment(), simChaleurLots(), simChaleurRes(), simLotsMultiples() (+17 more)
 
 ### Community 87 - "dossier-meca.js"
 Cohesion: 0.16
@@ -755,15 +748,15 @@ Nodes (24): MECA_OUV, MECA_OUV_FOND, mecaBoite(), mecaBordProche(), mecaCroise()
 
 ### Community 88 - "WEB_CAO suite de CAO electronique"
 Cohesion: 0.09
-Nodes (28): A-FAIRE : roadmap et backlog WEB_CAO, Historique des developpements, Licence OFL fonte PlansSans (Liberation Sans modifiee), Guide Editeur PCB, DRC et empilage physique, Export IPC-2581, Gestionnaire de contraintes, Routeur pousser contourner signaler (+20 more)
+Nodes (29): A-FAIRE : roadmap et backlog WEB_CAO, Banc de mesure crosstalk (README), Historique des developpements, Licence OFL fonte PlansSans (Liberation Sans modifiee), Guide Editeur PCB, DRC et empilage physique, Export IPC-2581, Gestionnaire de contraintes (+21 more)
 
 ### Community 90 - "simulation-datasheet.js"
 Cohesion: 0.17
 Nodes (26): SIM_DS, SIM_DS_BORNES_FICHE, SIM_DS_CHAMPS_CAPA, SIM_DS_CHAMPS_PAGE, simDsAppliquer(), simDsBorneDe(), simDsBornes(), simDsCapaF0() (+18 more)
 
-### Community 91 - "banc-ligne-mom.py"
-Cohesion: 0.02
-Nodes (99): _partager_paire(), simuler(), bilan_impact_physique_hf_et_zone_de_vigilance(), ce_que_le_calcul_ne_couvre_pas_est_rassemble_et_oriente(), ce_qui_longe_par_dessus_est_vu_sans_etre_chiffre(), ce_qui_ne_longe_pas_est_ecarte(), ce_qui_ne_tient_pas_dans_la_section_est_nomme(), couverture_et_masque_ne_sont_jamais_les_deux() (+91 more)
+### Community 91 - "_pis"
+Cohesion: 0.04
+Nodes (38): _partager_paire(), ce_que_le_calcul_ne_couvre_pas_est_rassemble_et_oriente(), ce_qui_longe_par_dessus_est_vu_sans_etre_chiffre(), ce_qui_ne_longe_pas_est_ecarte(), ce_qui_ne_tient_pas_dans_la_section_est_nomme(), deux_pistes_qui_se_longent_sont_appariees(), deux_voisines_jointives_n_emportent_plus_la_section(), _doc_couplage() (+30 more)
 
 ### Community 92 - "refreshPanels"
 Cohesion: 0.25
@@ -806,24 +799,28 @@ Cohesion: 0.12
 Nodes (21): apiGet(), apiPost(), AUTO_PCB_BOITIERS, autoAssocierCatalogue(), brochageConnu(), BROCHAGES_REFERENCES, chargerDonneesBibliotheque(), chargerRepliCsv() (+13 more)
 
 ### Community 102 - "executer_ami"
-Cohesion: 0.07
-Nodes (15): chemin_bibliotheque_ami(), ErreurIbis, ModeleAmi, parametres_ami_in(), ecrire(), _ref(), reserve_ami(), _texte_ami() (+7 more)
+Cohesion: 0.08
+Nodes (12): chemin_bibliotheque_ami(), ErreurIbis, modele_broche(), ModeleAmi, _decaler_ffe(), executer_ami(), _circulaire(), _flot() (+4 more)
 
 ### Community 103 - "10-actions.js"
 Cohesion: 0.12
 Nodes (21): clipContent(), clipHint(), copySel(), cutSel(), deleteComps(), delSel(), delWiresSel(), fit() (+13 more)
 
-### Community 104 - "re"
+### Community 104 - "os"
 Cohesion: 0.05
-Nodes (23): Convertisseur, main(), slug(), build(), _read(), Résultats, image(), main() (+15 more)
+Nodes (23): Gestion des bibliotheques (lib/empreinte, lib/symbole, lib/simulation), Convertisseur, main(), slug(), build(), _read(), Résultats, chromium() (+15 more)
 
-### Community 105 - "27-contraintes.js"
-Cohesion: 0.24
-Nodes (20): SCH_CM_CHAMPS, schCmChamp(), schCmChangement(), schCmClic(), schCmDire(), schCmEdit(), schCmFermer(), schCmFocus() (+12 more)
+### Community 105 - "simuler_non_lineaire"
+Cohesion: 0.15
+Nodes (11): commandes(), instant_mi_front(), s_depuis_abcd(), tampon_lineaire(), _fronts_et_onde(), onde(), _mode_commun(), _pas() (+3 more)
 
 ### Community 106 - "06-rendu-fond.js"
 Cohesion: 0.11
 Nodes (17): drawGrid(), fmtMm(), GRID_STEPS, gridLabel(), gridMm(), gridShownStep(), resize(), updateGridInfo() (+9 more)
+
+### Community 107 - "Tampon"
+Cohesion: 0.20
+Nodes (3): _ref(), Tampon, la_lecture_ibis()
 
 ### Community 108 - "banc-kicad-pcb.js"
 Cohesion: 0.12
@@ -853,25 +850,25 @@ Nodes (22): autre, avec2nde, br(), candidate, chercher(), csv, deja, etat (+14 m
 Cohesion: 0.09
 Nodes (17): PILOTE_CALCULS, PILOTE_LIRE, piloteAfficherAnalyse(), piloteAideTexte(), piloteAller(), piloteCao(), piloteCaoCalcul(), piloteCible() (+9 more)
 
-### Community 115 - "numpy"
-Cohesion: 0.04
-Nodes (42): abcd_boitier(), abcd_boitier_couple(), abcd_boitier_paire(), abcd_brins(), abcd_par_brin(), _commande_deux_ondes(), _commande_rampe(), _commande_une_onde() (+34 more)
+### Community 115 - "la_mutuelle_du_boitier_ouvre_l_oeil_differentiel"
+Cohesion: 0.08
+Nodes (15): abcd_boitier_couple(), abcd_boitier_paire(), abcd_par_brin(), charger_brins(), _matrice_boitier(), reponses_impulsionnelles(), s_depuis_abcd_4(), _tronquer() (+7 more)
 
 ### Community 116 - "05-feuilles.js"
 Cohesion: 0.09
 Nodes (53): addComp(), addPage(), arrangeSheetBlocks(), buildTabs(), gotoPage(), histBorner(), hitSheetBlock(), hitSheetLink() (+45 more)
 
-### Community 117 - "simDCLancer"
+### Community 117 - "simOeilGo"
 Cohesion: 0.11
-Nodes (30): simCandidats(), simCarteCourants(), simCarteCourantsDC(), simCarteGo(), simCarteParNet(), simCarteReglagesDoc(), simConnecter(), simCorpsJson() (+22 more)
+Nodes (33): simApresPerime(), simCandidats(), simCarteCourants(), simCarteCourantsDC(), simCarteGo(), simCarteParNet(), simCarteReglagesDoc(), simConnecter() (+25 more)
 
 ### Community 118 - "29-draftsman.js"
-Cohesion: 0.08
-Nodes (46): Plans de fabrication et d'assemblage (Draftsman, PDF, DXF), DF_CAT, DF_ECHELLES, DF_FEUILLES, DF_FORMATS, DF_HELV, DF_SUBST, DF_SYMBOLES (+38 more)
+Cohesion: 0.07
+Nodes (49): Plans de fabrication et d'assemblage (Draftsman, PDF, DXF), DF_CAT, DF_ECHELLES, DF_FEUILLES, DF_FORMATS, DF_HELV, DF_SUBST, DF_SYMBOLES (+41 more)
 
 ### Community 119 - "ipc2581_json.py"
-Cohesion: 0.06
-Nodes (23): A recopier dans WEB_ANTENNA : ipc2581_parser.py et ipc2581_json.py, _contour(), _contre_percage(), design_en_dict(), _Flux, _forme_en_dict(), ipc2581_en_dict(), _metallisation() (+15 more)
+Cohesion: 0.07
+Nodes (20): IPCDesign, charger_octets(), _contour(), _contre_percage(), design_en_dict(), _Flux, _forme_en_dict(), _Index (+12 more)
 
 ### Community 120 - "reperage.js"
 Cohesion: 0.19
@@ -886,8 +883,8 @@ Cohesion: 0.12
 Nodes (13): bac, { execFileSync }, fs, K, liaisons(), os, path, RACINE (+5 more)
 
 ### Community 123 - "proche"
-Cohesion: 0.03
-Nodes (61): djordjevic_sarkar(), facteur_rugosite(), _facteur_rugosite_plan(), _hauteur_deduite(), line_losses(), line_losses_detaillees(), _pertes(), profondeur_peau() (+53 more)
+Cohesion: 0.04
+Nodes (36): abcd_via_boucle(), line_losses(), line_losses_detaillees(), ds_dans_line_losses(), _gamma(), l_ancien_modele_reste_disponible(), la_fiche_et_la_courbe_portent_le_meme_via(), la_hauteur_du_via_se_lit_dans_l_empilage() (+28 more)
 
 ### Community 124 - "Groupe 117"
 Cohesion: 0.22
@@ -909,9 +906,9 @@ Nodes (14): assembler(), cmap4(), composants(), glyphes(), jeu_de_caracteres(), 
 Cohesion: 0.18
 Nodes (14): Bibliothèque centrale (LIB), CLASSES_INTERFACE, commun/projet.js (projet), commun/tuto.js (tutoriel), Pertes, rugosite (Hammerstad/Huray), dielectrique causal (Djordjevic-Sarkar), via en ligne, editeur-pcb.html (page de l'Editeur PCB), Panneau Empilage physique (data-pnl=stackup), Panneau Simulation EM (data-pnl=sim) de l'Editeur PCB (+6 more)
 
-### Community 130 - "push"
+### Community 130 - "endFar"
 Cohesion: 0.19
-Nodes (30): acutePairs(), anchorKey(), chamferPosed(), collinearRun(), commitRoute(), crossN(), endDir(), endFar() (+22 more)
+Nodes (27): acutePairs(), anchorKey(), chamferPosed(), collinearRun(), commitRoute(), crossN(), endDir(), endFar() (+19 more)
 
 ### Community 131 - "ErreurCrosstalk"
 Cohesion: 0.11
@@ -923,7 +920,7 @@ Nodes (10): au_dela_du_budget_ott_reprend_et_le_dit(), fente_droite(), fente_ima
 
 ### Community 133 - "appairage.py"
 Cohesion: 0.04
-Nodes (34): _a_refaire(), adresses_poste(), appairer(), brancher_tls(), C, _ca_a_refaire(), _cnf(), contexte_tls() (+26 more)
+Nodes (32): _a_refaire(), adresses_poste(), Appairage, appairer(), brancher_tls(), C, _ca_a_refaire(), _cnf() (+24 more)
 
 ### Community 134 - "Groupe 124"
 Cohesion: 0.24
@@ -945,9 +942,9 @@ Nodes (20): compTexts(), draw(), drawComp(), drawDrawings(), drawJunctions(), dr
 Cohesion: 0.19
 Nodes (13): buildStackup(), cpGardesPossibles(), cpHtmlEmpilage(), numProp(), stkBindModeles(), stkBindPressages(), stkBindRugosite(), stkColor() (+5 more)
 
-### Community 140 - "l_ami_lit_la_forme_d_onde_des_tampons_ibis"
-Cohesion: 0.16
-Nodes (13): un_troncon_trace_a_l_envers_n_est_pas_un_demi_tour(), o(), _avec_faux_ami(), _faux(), l_ami_getwave_de_l_emetteur_fait_la_forme_d_onde(), doc(), essai(), l_ami_lit_la_forme_d_onde_des_tampons_ibis() (+5 more)
+### Community 140 - "_brin"
+Cohesion: 0.08
+Nodes (27): un_troncon_trace_a_l_envers_n_est_pas_un_demi_tour(), o(), _avec_faux_ami(), _brin(), _cu(), des_brins_superposes_couplent_en_large_face(), paire(), _di() (+19 more)
 
 ### Community 141 - "11-pns-node.js"
 Cohesion: 0.17
@@ -961,9 +958,9 @@ Nodes (17): agencerListeNouveauxComposants(), calculerAgencement(), chargerCache
 Cohesion: 0.08
 Nodes (14): hauteur(), facteur_resonance(), impedance_commune_fente(), self_detour(), ott(), fente_mesuree(), l_impedance_commune_retrouve_l_estimation_de_ott(), la_resonance_de_la_fente_ne_compte_que_sous_300_ps() (+6 more)
 
-### Community 144 - "main"
-Cohesion: 0.11
-Nodes (10): attendre_touche(), console_interactive(), doit_ouvrir_navigateur_par_defaut(), lance_par_double_clic(), lancer(), main(), processus_de_la_console(), redemarrer_application() (+2 more)
+### Community 144 - "brochage.js"
+Cohesion: 0.24
+Nodes (6): 93 references semi-conducteurs sans brochage, brochageLire(), brochageListe(), brochageNom(), brochagePattes(), COMPOSANTS_LIB
 
 ### Community 145 - "simKUnite"
 Cohesion: 0.14
@@ -1002,8 +999,8 @@ Cohesion: 0.13
 Nodes (19): cellule(), champs(), echantillon(), ecrirePosition(), grillePastilles(), HAUTS, hex(), lirePosition() (+11 more)
 
 ### Community 155 - "explorateur-lib.js"
-Cohesion: 0.28
-Nodes (15): Gestion des bibliotheques (lib/empreinte, lib/symbole, lib/simulation), ELIB, ELIB_CATS, elibAfficherDetails(), elibBuildDom(), elibClassifierItem(), elibDessinerEmpreinte(), elibDessinerSymbole() (+7 more)
+Cohesion: 0.31
+Nodes (14): ELIB, ELIB_CATS, elibAfficherDetails(), elibBuildDom(), elibClassifierItem(), elibDessinerEmpreinte(), elibDessinerSymbole(), elibFiltrerEtAfficher() (+6 more)
 
 ### Community 156 - "Guide par tâche"
 Cohesion: 0.09
@@ -1033,9 +1030,9 @@ Nodes (15): PCB_ECO, pcbAppliquerEco(), pcbChoisirFichierSchemaPourEco(), pcbDet
 Cohesion: 0.11
 Nodes (36): applyPkgGeom(), applyPkgGeomBrut(), bodyOf(), clamp(), defaultGeom(), defaultStyle(), fpAddPad(), fpAutoBody() (+28 more)
 
-### Community 163 - "rayonnement_boucle"
-Cohesion: 0.11
-Nodes (10): champ_boucle_rayonnant(), distance_champ_lointain(), en_dbuv_par_metre(), limite_cispr32(), rayonnement_boucle(), spectre_signal_trapeze(), le_rayonnement_de_la_boucle_est_le_dipole_magnetique(), le_rayonnement_suit_l_aire_de_la_boucle_et_le_rythme() (+2 more)
+### Community 163 - "paires_diff"
+Cohesion: 0.27
+Nodes (10): juge(), _gamma(), juge(), paires_diff(), desequilibre(), epaisseur(), juge(), plan_sous() (+2 more)
 
 ### Community 164 - "03-formulaire.js"
 Cohesion: 0.22
@@ -1081,9 +1078,9 @@ Nodes (15): WEB_CAO PCB editor screenshot: 4-layer board (carte_usb_4c), Board o
 Cohesion: 0.24
 Nodes (10): brAop(), C(), groupeTroisR(), scmFeuille(), sheet(), synCarte(), synGrosDoc(), TA() (+2 more)
 
-### Community 175 - "maillage_zone"
-Cohesion: 0.12
-Nodes (7): mailler(), _croise(), lire_masque(), maillage_zone(), cuivre(), _poly_np(), le_masque_ote_le_degagement()
+### Community 175 - "_doc_vias_seuls"
+Cohesion: 0.20
+Nodes (5): _doc_vias_seuls(), la_hauteur_vient_de_l_empilage_sans_troncon(), le_via_hors_chaine_emporte_le_doute_sur_ses_cotes(), un_via_hors_chaine_a_quand_meme_un_retour(), un_via_sans_changement_de_couche_n_en_est_pas_un()
 
 ### Community 176 - "variantes.js"
 Cohesion: 0.25
@@ -1126,32 +1123,32 @@ Cohesion: 0.17
 Nodes (16): pcbParasitesComposant(), simAireEnRegard(), simAntipadVia(), simCotesVia(), simEtalementViaVia(), simHauteurCavite(), simNetPlanEn(), simPartsPonts() (+8 more)
 
 ### Community 186 - "mdlCharger"
-Cohesion: 0.16
-Nodes (15): mdlBoite(), mdlBoiteComp(), mdlCharger(), mdlCleMemoireNets(), mdlCleNonMontes(), mdlCorpsComp(), mdlCoucheDe(), mdlCuivres() (+7 more)
+Cohesion: 0.19
+Nodes (13): mdlBoite(), mdlBoiteComp(), mdlCharger(), mdlCleNonMontes(), mdlCorpsComp(), mdlCoucheDe(), mdlCuivres(), mdlMemoireNonMontes() (+5 more)
 
 ### Community 187 - "Groupe 170"
 Cohesion: 0.27
 Nodes (13): afficherResultat(), blocsTexte(), celluleHTML(), choisirLigne(), colonnesDe(), exportCsv(), exportJson(), horodatage() (+5 more)
 
 ### Community 188 - "mdlPoserNature"
-Cohesion: 0.24
-Nodes (13): mdlAppliquerClassesNets(), mdlAutoDetecterClassesNets(), mdlClasseFichier(), mdlDetecterClasseNet(), mdlDetecterTensionNet(), mdlMemoriserNets(), mdlNatureDeClasse(), mdlNetPoserClasse() (+5 more)
+Cohesion: 0.20
+Nodes (15): mdlAppliquerClassesNets(), mdlAutoDetecterClassesNets(), mdlClasseFichier(), mdlCleMemoireNets(), mdlDetecterClasseNet(), mdlDetecterTensionNet(), mdlMemoireNets(), mdlMemoriserNets() (+7 more)
 
-### Community 189 - "Groupe 172"
-Cohesion: 0.26
-Nodes (10): fermer(), ouvrir(), afficher(), aller(), avancer(), finir(), menu(), montrer() (+2 more)
+### Community 189 - "tuto.js"
+Cohesion: 0.36
+Nodes (8): afficher(), aller(), avancer(), finir(), menu(), montrer(), placer(), proposer()
 
-### Community 190 - "ModeleSpice"
-Cohesion: 0.21
-Nodes (8): ModeleSpice, _poser(), le_modele_generique_prend_ses_parametres(), _murata(), un_actif_spice_est_refuse_avec_la_consigne(), un_condensateur_murata_vaut_son_reseau_calcule_a_la_main(), une_self_et_une_capa_en_parallele_comptent_toutes_les_deux(), une_self_murata_se_charge()
+### Community 190 - "ltPreparer"
+Cohesion: 0.22
+Nodes (9): ltAire(), ltAutoRole(), ltCleGap(), ltEstPlan(), ltPreparer(), ltSaisi(), mdlAirePlan(), mdlCouches() (+1 more)
 
-### Community 191 - "beginMove"
-Cohesion: 0.15
-Nodes (19): fpById(), acuteStop(), armFpClear(), beginMove(), diagTracks(), dragMoveBy(), dragMoveVers(), drwSuivre() (+11 more)
+### Community 191 - "fpGene"
+Cohesion: 0.13
+Nodes (19): acuteStop(), applyJoints(), armFpClear(), dragMoveBy(), dragMoveVers(), drwSuivre(), fpChevauchements(), fpClearSkip() (+11 more)
 
-### Community 192 - "ErreurOeil"
-Cohesion: 0.08
-Nodes (15): boitier_broche(), boitier_nul(), couplage_boitier(), modele_broche(), paire_diff(), _totaux_sections(), voisins_boitier(), _charger_ibis() (+7 more)
+### Community 192 - "options.js"
+Cohesion: 0.57
+Nodes (6): annuler(), cacher(), ident(), maj(), montrer(), signature()
 
 ### Community 193 - "Groupe 175"
 Cohesion: 0.21
@@ -1179,19 +1176,19 @@ Nodes (10): DEF_UNKNOWN, defOf(), hasType(), pinCount(), PKG_BASES, PKG_FAMS, pk
 
 ### Community 200 - "Référence"
 Cohesion: 0.07
-Nodes (32): Cross-probing et session de travail, Je veux voir dans l'autre éditeur ce que je regarde ici, Raccourcis communs aux éditeurs, Roulette : commandes disponibles, En-tête, Fenêtre Contraintes de nets — pour le PCB, Fenêtre d'enrichissement composant (Rechercher & Enrichir), Fenêtre Variantes de montage (BOM) (+24 more)
+Nodes (32): Cross-probing et session de travail, Je veux voir dans l'autre éditeur ce que je regarde ici, Raccourcis communs aux éditeurs, Roulette : commandes disponibles, Barre de vue, En-tête, Fenêtre Contraintes de nets — pour le PCB, Fenêtre d'enrichissement composant (Rechercher & Enrichir) (+24 more)
 
-### Community 201 - "Point"
-Cohesion: 0.17
-Nodes (4): Contour, Point, UserShape, arc()
+### Community 201 - "Element"
+Cohesion: 0.10
+Nodes (6): Contour, Point, Track, UserShape, simples(), arc()
 
 ### Community 202 - "simPlagesIpc"
 Cohesion: 0.40
 Nodes (6): simCleCase(), simDistSeg(), simEcartsEn(), simGrilleCuivre(), simLargeurSienne(), simPlagesIpc()
 
 ### Community 204 - "mdlK"
-Cohesion: 0.31
-Nodes (10): ltArc(), ltEntre(), ltGeom(), ltNet(), ajouterMorceau(), ltPiste(), mdlArcAngle(), mdlArcLongueur() (+2 more)
+Cohesion: 0.24
+Nodes (12): ltArc(), ltEntre(), ltGeom(), ltNet(), ajouterMorceau(), ltPiste(), mdlArcAngle(), mdlArcLongueur() (+4 more)
 
 ### Community 205 - "37-routage-pilote.js"
 Cohesion: 0.22
@@ -1218,8 +1215,8 @@ Cohesion: 0.18
 Nodes (12): carteRf(), carteVariantes(), carteVerif(), carteVide(), cheminPaireMur(), cmRaz(), cpCarte(), cpRaz() (+4 more)
 
 ### Community 211 - "_plaque_3d"
-Cohesion: 0.24
-Nodes (7): capacite_plaque_3d(), _plaque_3d(), image(), ln_plus(), noyau(), prim(), la_plaque_3d_retrouve_ses_etalons()
+Cohesion: 0.43
+Nodes (5): _plaque_3d(), image(), ln_plus(), noyau(), prim()
 
 ### Community 212 - "Groupe 192"
 Cohesion: 0.31
@@ -1249,9 +1246,9 @@ Nodes (11): SCH_LIB_ALERTE, SCH_LIB_FEUILLES, schAfficherAlerteLib(), schAffiche
 Cohesion: 0.10
 Nodes (31): MES_COUL, MES_ECHELLES, MES_NOIR, MES_TYPES, mesBrancher(), mesCouleur(), mesDemi(), mesDessin() (+23 more)
 
-### Community 219 - "rectangle"
-Cohesion: 0.15
-Nodes (7): cas_chemin_parallele(), cas_nets_isoles(), cas_sans_reference(), cas_sans_via_pas_de_chemin(), cas_trame_trop_grossiere(), cas_via(), rectangle()
+### Community 219 - "carte_chaleur"
+Cohesion: 0.24
+Nodes (3): carte_chaleur(), cas_carte(), cas_echauffement_composant_sens()
 
 ### Community 220 - "Guide par tâche"
 Cohesion: 0.08
@@ -1295,27 +1292,27 @@ Nodes (9): busSkewArmMeander(), busSkewBuild(), busSkewClose(), busSkewOpen(), b
 
 ### Community 231 - "oeil_statistique"
 Cohesion: 0.13
-Nodes (8): _curseurs(), _masse_gauss(), _noyau_gauss(), oeil_statistique(), largeur(), poids_gigue(), q_gauss(), _quantifier()
+Nodes (9): _masse_gauss(), _noyau_gauss(), oeil_statistique(), demi(), largeur(), poids_gigue(), q_gauss(), _quantifier() (+1 more)
 
 ### Community 232 - "r4"
 Cohesion: 0.13
 Nodes (28): cpCouchesEmpruntees(), cpCouchesZones(), cpVia(), cuT(), diAt(), dpDiBetween(), fpMark(), fpMarkAuto() (+20 more)
 
+### Community 233 - "djordjevic_sarkar"
+Cohesion: 0.29
+Nodes (4): djordjevic_sarkar(), ds_er_decroit(), ds_kramers_kronig(), ds_rend_la_fiche_a_f_ref()
+
 ### Community 234 - "Référence"
 Cohesion: 0.06
-Nodes (33): H, H2, Animation 3D, Barre d'outils au-dessus de la feuille, Dossier mécanique, En-tête et volet de gauche, Export IPC-2581, Fenêtre « Dossier de fabrication » (Fichier → Fabrication .zip) (+25 more)
+Nodes (33): H, H2, Animation 3D, Barre d'outils au-dessus de la feuille, Dossier mécanique, En-tête et volet de gauche, Export IPC-2581, Fenêtre « Dossier de fabrication » (Fabriquer → Fabrication .zip) (+25 more)
 
-### Community 235 - "IPCDesign"
-Cohesion: 0.17
-Nodes (4): IPCDesign, Track, simples(), parse_ipc2581_file()
+### Community 235 - "menus.js"
+Cohesion: 0.53
+Nodes (5): fermer(), ongChoisir(), ongFermer(), ongPlier(), ouvrir()
 
-### Community 236 - "_milieu"
-Cohesion: 0.07
-Nodes (16): ep(), green_spectral_micro(), green_spectral_micro_couvert(), green_spectral_micro_masque(), green_spectral_strip(), _milieu(), NoyauSansPlan, gene_par() (+8 more)
-
-### Community 238 - "loadDoc"
-Cohesion: 0.32
-Nodes (8): cancelRoute(), docObj(), histBorner(), loadDoc(), redo(), rfTexteId(), serialize(), undo()
+### Community 238 - "_seuil_couture"
+Cohesion: 0.33
+Nodes (3): _seuil_couture(), _tr_signal(), le_seuil_de_couture_dit_de_quelle_regle_il_sort()
 
 ### Community 240 - "propsFp"
 Cohesion: 0.32
@@ -1358,12 +1355,12 @@ Cohesion: 0.47
 Nodes (5): PCB_PROFIL_USINE, profilAppliquer(), profilEtat(), profilListe(), profilNoter()
 
 ### Community 250 - "tous_les_ponts_comptent_pas_seulement_le_plus_proche"
-Cohesion: 0.13
-Nodes (8): _branches_traversee(), impedance_traversee_plans(), impedance_traversee_ponts(), repartition_retour_plans(), repartition_traversee(), la_repartition_spectrale_est_une_division_de_courant_complexe(), la_traversee_ne_diverge_ni_en_bas_ni_en_haut(), tous_les_ponts_comptent_pas_seulement_le_plus_proche()
+Cohesion: 0.29
+Nodes (4): impedance_traversee_plans(), impedance_traversee_ponts(), la_traversee_ne_diverge_ni_en_bas_ni_en_haut(), tous_les_ponts_comptent_pas_seulement_le_plus_proche()
 
-### Community 251 - "lire_touchstone"
-Cohesion: 0.07
-Nodes (30): lire_touchstone(), _resoudre(), _s_ports(), _valider(), _zy_vers_s(), energie(), touchstone(), touchstone_en_y_revient_en_s() (+22 more)
+### Community 251 - "Spec : simulation RF à plus de deux ports"
+Cohesion: 0.20
+Nodes (9): Ce qui change, Compatibilité, Critères de réussite (vérifiés par `python/test/banc-rf.py` et les bancs de page), Demander d'abord, Décisions (utilisateur, validées), Hors périmètre, Objectif, Page (`commun/simulation-em.js`, onglet S21) (+1 more)
 
 ### Community 252 - "tryNextPath"
 Cohesion: 0.70
@@ -1393,13 +1390,13 @@ Nodes (5): simPaireEssai(), simResChaleur(), simResCouplage(), simResScan(), sim
 Cohesion: 0.50
 Nodes (3): profilEtat(), profilNoter(), SCH_PROFIL_USINE
 
-### Community 259 - "Référence"
-Cohesion: 0.17
-Nodes (12): Commandes, Fiche de résultat, Fréquence et bande, Limites connues, Modèles lus, Ports, Refus fréquents, Référence (+4 more)
+### Community 259 - "Guide par tâche"
+Cohesion: 0.09
+Nodes (22): Commandes, Fiche de résultat, Fréquence et bande, Guide par tâche, Je veux donner l'impédance d'une broche annexe, Je veux essayer une autre valeur de composant (« et si »), Je veux exporter le résultat, Je veux lier un modèle à un composant (+14 more)
 
-### Community 260 - "_resoudre_peec"
-Cohesion: 0.13
-Nodes (10): _bords_maille(), _decouper(), _ln_gmd(), _m_barres(), _maillage_peec(), peec_fente(), _resoudre_peec(), bout() (+2 more)
+### Community 260 - "_echantillonner"
+Cohesion: 0.33
+Nodes (3): _commande_deux_ondes(), _commande_une_onde(), _echantillonner()
 
 ### Community 261 - "setCuCount"
 Cohesion: 0.15
@@ -1413,13 +1410,13 @@ Nodes (7): simArcEnPolyligne(), simPistesChaineMemeCouche(), simPistesDuNetIpc()
 Cohesion: 0.83
 Nodes (3): buildPalette(), iconFor(), setPalette()
 
-### Community 267 - "phi_mtl"
-Cohesion: 0.20
-Nodes (5): _expm(), phi_mtl(), _phi_un(), la_ligne_couplee_sans_pertes_est_celle_du_crosstalk(), les_pertes_du_cuivre_attenuent_en_exp()
+### Community 267 - "inductance_etalement_via_anneau"
+Cohesion: 0.33
+Nodes (3): inductance_etalement_via_anneau(), l_etalement_via_via_reste_au_dessus_de_la_forme_fermee(), les_formules_de_cavite_rendent_les_exemples_du_livre()
 
-### Community 268 - "_ratio"
-Cohesion: 0.29
-Nodes (6): juge(), juge(), juge_b(), juge(), juge(), _ratio()
+### Community 268 - "la_mutuelle_des_futs_baisse_l_impair"
+Cohesion: 0.33
+Nodes (4): _doc_paire_vias(), piste(), la_mutuelle_des_futs_baisse_l_impair(), le_dielectrique_causal_entre_dans_la_paire()
 
 ### Community 269 - "29-symboles-lib.js"
 Cohesion: 0.31
@@ -1437,49 +1434,41 @@ Nodes (16): Fenêtre de classification des nets, Fenêtre Dossier mécanique, Fe
 Cohesion: 0.43
 Nodes (7): simCoteDepuis(), simCoteEn(), simXtAretes(), simXtImagePlans(), simXtNus(), simXtZoneMasse(), simZoneEn()
 
-### Community 276 - "31-topologie.js"
-Cohesion: 0.28
-Nodes (12): TOPO_FORMES, topoAnalyser(), topoAnalyser0(), topoCache, topoChemin(), topoDistances(), topoEstPointTest(), topoGraphe() (+4 more)
+### Community 276 - "alpha_genou"
+Cohesion: 0.40
+Nodes (3): alpha_genou(), les_pertes_ne_font_que_retirer_du_bruit(), doc()
 
 ### Community 277 - "scene_plans"
 Cohesion: 0.16
 Nodes (8): chaine_piste(), explorer(), _coupe_fenetre(), _eps_entre(), scene_plans(), local(), pieces(), _z_couche()
 
-### Community 278 - "elements_coude"
-Cohesion: 0.10
-Nodes (10): abcd_coude(), abcd_via(), capacite_coude(), capacite_pastille(), elements_coude(), inductance_via(), le_coude_sannule_a_angle_nul(), le_coude_suit_gupta() (+2 more)
+### Community 278 - "_trans"
+Cohesion: 0.07
+Nodes (14): abcd_via(), capacite_pastille(), inductance_via(), l_antipad_et_les_pastilles_entrent_dans_la_capacite(), la_meme_carte_avec_deux_plans_de_masse_se_referme(), la_reference_qui_change_sans_retour_est_nommee(), les_discontinuites_sont_reciproques(), linductance_du_via_est_en_metres() (+6 more)
 
 ### Community 279 - "Guide par tâche"
 Cohesion: 0.07
 Nodes (30): Audit : les règles, une par une, Audit : lire le rapport, Audit : réglages, Estimation d'échauffement d'un composant (Éditeur PCB), Guide par tâche, Identification des alimentations, Je veux accepter un constat, comparer deux révisions, exporter, Je veux compter le retour par la masse (+22 more)
 
 ### Community 280 - "analyse_carte.py"
-Cohesion: 0.07
-Nodes (17): Verification de la carte entiere (backlog), Seize familles de regles (angles, retour, fentes, diaphonie, paires, decouplage...), _contre_percage(), _dist_segments(), _ecart_cote(), ErreurAnalyse, _farads(), _graphe_topo() (+9 more)
+Cohesion: 0.06
+Nodes (23): Verification de la carte entiere (backlog), Seize familles de regles (angles, retour, fentes, diaphonie, paires, decouplage...), analyser_modele(), _contre_percage(), _couches_cuivre(), courants(), _dist_segments(), _ecart_cote() (+15 more)
 
 ### Community 281 - "banc-export-csv.js"
 Cohesion: 0.15
 Nodes (10): KICAD, exporter(), fs, ICI, L, lignes, path, sources (+2 more)
 
 ### Community 291 - "angles"
-Cohesion: 0.16
-Nodes (15): _accrocher(), analyser_modele(), angles(), branche(), _constat(), _couches_cuivre(), _rayon_inscrit(), piste() (+7 more)
+Cohesion: 0.24
+Nodes (12): _accrocher(), angles(), branche(), _constat(), piste(), regles(), test_arcs(), test_coudes() (+4 more)
 
 ### Community 293 - "À faire : simulation RF à plus de deux ports"
 Cohesion: 0.29
 Nodes (6): Phase 2 : page, Phase 3 : documentation, T4 : ports dynamiques et marche (critère 5), T5 : lecture du résultat, T6, À faire : simulation RF à plus de deux ports
 
-### Community 294 - "Guide par tâche"
-Cohesion: 0.20
-Nodes (10): Guide par tâche, Je veux donner l'impédance d'une broche annexe, Je veux essayer une autre valeur de composant (« et si »), Je veux exporter le résultat, Je veux lier un modèle à un composant, Je veux lire la fiche et savoir quoi retoucher, Je veux ouvrir l'onglet S21, Je veux poser les deux ports et calculer le S₂₁ (+2 more)
-
 ### Community 295 - "empilage"
-Cohesion: 0.20
-Nodes (5): empilage(), compte(), _ep(), _vingt_h(), famille()
-
-### Community 297 - "cascade_to_s"
-Cohesion: 0.06
-Nodes (21): abcd_line(), abcd_via_boucle(), abcd_via_complet(), abcd_via_ligne(), bilan_sante_transition(), capacite_antipad(), capacite_pastille_au_plan(), capacite_via_complete() (+13 more)
+Cohesion: 0.22
+Nodes (4): empilage(), compte(), _ep(), famille()
 
 ### Community 298 - "ref_fs"
 Cohesion: 0.05
@@ -1492,14 +1481,6 @@ Nodes (3): Gestion LIB, Limites connues, Voir aussi
 ### Community 302 - "Guide par tâche"
 Cohesion: 0.10
 Nodes (20): Guide par tâche, Je veux calculer plusieurs morceaux d'une même ligne, Je veux classer un net par interface, Je veux compter la gigue, le bruit et le taux d'erreur, Je veux contrôler le chemin de retour d'un via, Je veux dire quels nets sont de la masse, Je veux estimer le crosstalk d'une piste, Je veux garder une trace d'une simulation (+12 more)
-
-### Community 303 - "simFicheDiff"
-Cohesion: 0.36
-Nodes (9): simCouplage(), simCouplagePaires(), simCouplageVide(), simCoupleGeom(), simCoupleHypotheses(), simCoupleNoms(), simCoupleSections(), simCoupleSuperposes() (+1 more)
-
-### Community 304 - "contraintes.js"
-Cohesion: 0.31
-Nodes (7): Gestionnaire de contraintes (nets, classes, paires, appariement, isolation), CM_TOPO_NOMS, CM_TOPOS, cmLireChamp(), cmLireCp(), cmNormNets(), cmNormRegle()
 
 ### Community 305 - "30-export-pdf.js"
 Cohesion: 0.24
@@ -1517,9 +1498,9 @@ Nodes (3): docLecture(), lecturesSchema(), lireSch()
 Cohesion: 0.36
 Nodes (8): PCB_LIB_ALERTE, pcbAfficherAlerteLib(), pcbAfficherToastFeedback(), pcbAppliquerMajLib(), pcbChargerCsvLib(), pcbInitialiserLibSync(), pcbSurModifLib(), pcbTrouverEmpreintesAmettreAJour()
 
-### Community 309 - "coordApply"
-Cohesion: 0.15
-Nodes (19): altTarget(), coordAnchor(), coordApply(), coordFill(), coordPoint(), copySelPcb(), cutSelPcb(), deleteSel() (+11 more)
+### Community 309 - "beginMove"
+Cohesion: 0.13
+Nodes (22): altTarget(), beginMove(), coordAnchor(), coordApply(), coordFill(), coordPoint(), copySelPcb(), cutSelPcb() (+14 more)
 
 ### Community 311 - "cartouche.js"
 Cohesion: 0.18
@@ -1531,7 +1512,7 @@ Nodes (5): fs, document, path, srcTactile, vm
 
 ### Community 315 - "Référence"
 Cohesion: 0.10
-Nodes (20): Accueil, projets, profils et gestes communs, Appairage et HTTPS, Espace de travail et panneaux, Fichiers sur disque, Limites connues, Menus de l'entête des éditeurs, Mode tactile et roulette, Mode tuto (+12 more)
+Nodes (20): Accueil, projets, profils et gestes communs, Appairage et HTTPS, Espace de travail et panneaux, Fichiers sur disque, Limites connues, Mode tactile et roulette, Mode tuto, Page d'accueil : bloc « Bibliothèque centrale (LIB) » (+12 more)
 
 ### Community 316 - "Référence"
 Cohesion: 0.12
@@ -1540,10 +1521,6 @@ Nodes (17): Bus synchrone (setup & hold), Classes d'interface, Crosstalk (niveau
 ### Community 317 - "zoneDessus"
 Cohesion: 0.19
 Nodes (18): bandesPoly(), dansPolyIndexe(), dansTrouZone(), inPoly(), inPolyBandes(), padLiaison(), polyBBox(), zoneAt() (+10 more)
-
-### Community 318 - "_neumann"
-Cohesion: 0.25
-Nodes (5): _image(), mutuelle_bobines(), mutuelle_piste(), _neumann(), la_mutuelle_de_neumann_rend_celle_de_maxwell()
 
 ### Community 319 - "Guide par tâche"
 Cohesion: 0.11
@@ -1561,25 +1538,21 @@ Nodes (26): boardChanged(), boardCutouts(), boardDisquePts(), dpSolveGap(), dpSo
 Cohesion: 0.32
 Nodes (8): simCouturePcb(), simEspacement(), simProjU(), simTangente(), simXtAbscisse(), simXtCotes(), simXtCouture(), simXtTronconPcb()
 
-### Community 326 - "Spec : dossier mécanique (éditeur PCB et visionneuse IPC-2581)"
-Cohesion: 0.14
-Nodes (17): crc32(), CRC_T, zipBlob(), zipOctets(), Commandes, Contenu du dossier, Critères de réussite, Décisions prises (15/10/2026) (+9 more)
+### Community 326 - "Architecture : un calcul commun, deux entrées"
+Cohesion: 0.15
+Nodes (17): stepChargerModeles(), stepFabriquer(), crc32(), CRC_T, zipBlob(), zipOctets(), Architecture : un calcul commun, deux entrées, Commandes (+9 more)
 
 ### Community 327 - "telephone.js"
 Cohesion: 0.38
 Nodes (9): appliquer(), construire(), mesurer(), ouvrir(), panneaux(), redimensionner(), remplir(), rendre() (+1 more)
-
-### Community 328 - "ErreurRF"
-Cohesion: 0.06
-Nodes (17): demi(), _admittance(), _aplatir(), g(), _Assemblage, ErreurRF, _interpoler(), lire_spice() (+9 more)
 
 ### Community 329 - "simRfPlateauIpc"
 Cohesion: 0.25
 Nodes (8): simIpcValeurComp(), simNetDuConducteurIpc(), simNetDuPlanIpc(), simNetPlanSupposeIpc(), simRfFormeIpc(), simRfNetIpc(), simRfPlateauIpc(), simStackupIpc()
 
 ### Community 330 - "niveau2"
-Cohesion: 0.09
-Nodes (18): Fentes option A : impedance commune analytique (Ott) avec fourchette, Fentes option B : courant de retour resolu (PEEC, crosstalk 4.6.0), Fentes option D : reference pleine onde externe (openEMS, SIwave SYZ, HFSS), Fentes option E : borne haute M = L du detour, Cas 4 : fente de 2 mm dans L2, L3 et Bottom, Cas 4b : fente sur L2 seulement (retour par L3), Ott, EMC Engineering (2009), Impedance commune d'une fente du plan (Ott, crosstalk 4.5.0) (+10 more)
+Cohesion: 0.13
+Nodes (15): Fentes option A : impedance commune analytique (Ott) avec fourchette, Fentes option B : courant de retour resolu (PEEC, crosstalk 4.6.0), Fentes option D : reference pleine onde externe (openEMS, SIwave SYZ, HFSS), Fentes option E : borne haute M = L du detour, Cas 4 : fente de 2 mm dans L2, L3 et Bottom, Cas 4b : fente sur L2 seulement (retour par L3), Ott, EMC Engineering (2009), Impedance commune d'une fente du plan (Ott, crosstalk 4.5.0) (+7 more)
 
 ### Community 332 - "simDCCuivreDesNets"
 Cohesion: 0.33
@@ -1589,17 +1562,17 @@ Nodes (7): simDCCouchesTouchees(), simDCCuivreDesNets(), simDCDedans(), simDCHau
 Cohesion: 0.20
 Nodes (15): mesIpcListe(), retIpcListe(), PLN_CHOIX, PLN_F, PLN_FEUILLES, plnApercu(), plnCoche(), plnEchelle() (+7 more)
 
-### Community 335 - "inductance_boucle_vias"
-Cohesion: 0.13
-Nodes (9): _grover_f(), inductance_boucle_vias(), inductance_partielle_propre(), mutuelle_partielle(), _inductances_paire_vias(), _doc_paire_vias(), piste(), la_mutuelle_des_futs_baisse_l_impair() (+1 more)
+### Community 335 - "_modele_transition"
+Cohesion: 0.04
+Nodes (30): _branches_traversee(), capacite_paire_plans(), cavite_modale(), inductance_boucle_vias(), inductance_partielle_propre(), mutuelle_partielle(), repartition_retour_plans(), repartition_traversee() (+22 more)
 
 ### Community 338 - "41-larmes.js"
 Cohesion: 0.39
 Nodes (6): LARME_ANGLES, larmeForme(), larmeLibre(), larmesCalc(), larmesPerimees(), larmesPoser()
 
 ### Community 340 - "mdlMevTout"
-Cohesion: 0.50
-Nodes (5): mdlChainePistesMemeCouche(), mdlMevTout(), selMeme(), selPoser(), selRefleter()
+Cohesion: 1.00
+Nodes (3): mdlMevTout(), selPoser(), selRefleter()
 
 ### Community 341 - "le_mode_simple_retrouve_la_triplaque_exacte"
 Cohesion: 0.25
@@ -1616,10 +1589,6 @@ Nodes (4): La suite, Les autres cas, et ce qui existe, Pour chaque broche : que 
 ### Community 346 - "propsRefText"
 Cohesion: 0.50
 Nodes (4): propsPad(), propsRefText(), refTaillesPretes(), rotChoix()
-
-### Community 347 - "etat"
-Cohesion: 0.24
-Nodes (3): etat(), cas_echauffement_composant_sens(), cas_etat()
 
 ### Community 348 - "simModelesIpc"
 Cohesion: 0.33
@@ -1639,23 +1608,23 @@ Nodes (5): stepChoisir(), stepExporter(), stepImporterChoisir(), stepImporterTex
 
 ## Knowledge Gaps
 - **66 isolated node(s):** `Moteur 2,5D pleine onde (mom_solver) archive`, `Panneau Simulation EM range en SI, PI, RF et Audit`, `Plans de fabrication et d'assemblage (Draftsman, PDF, DXF)`, `commun/projet.js (projet)`, `commun/tuto.js (tutoriel)` (+61 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 3050 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **49 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 3051 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **42 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Verification de la carte : tutoriel` connect `Simulation EM & integrite du signal (SI / PI) - reference technique` to `web_CAO.py`, `simulation-em.js`, `19-simulation.js`, `07-simulation.js`, `math`, `WEB_CAO suite de CAO electronique`, `banc-analyse-carte.py`?**
-  _High betweenness centrality (0.216) - this node is a cross-community bridge._
+- **Why does `Verification de la carte : tutoriel` connect `Simulation EM & integrite du signal (SI / PI) - reference technique` to `simulation-em.js`, `19-simulation.js`, `07-simulation.js`, `web_CAO.py`, `analyser_document`, `WEB_CAO suite de CAO electronique`, `banc-analyse-carte.py`?**
+  _High betweenness centrality (0.225) - this node is a cross-community bridge._
 - **What connects `Moteur 2,5D pleine onde (mom_solver) archive`, `Panneau Simulation EM range en SI, PI, RF et Audit`, `Plans de fabrication et d'assemblage (Draftsman, PDF, DXF)` to the rest of the system?**
   _66 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `ligne_mom.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.02156997931645819 - nodes in this community are weakly interconnected._
-- **Why does `editeur-pcb.html (page de l'Editeur PCB)` connect `editeur-pcb.html (page de l'Editeur PCB)` to `simulation-em.js`, `35-ipc2581-export.js`, `Groupe 91`, `19-simulation.js`, `Groupe 124`, `01-core.js`, `contraintes.js`, `variantes.js`, `simulation-datasheet.js`, `explorateur-lib.js`?**
-  _High betweenness centrality (0.103) - this node is a cross-community bridge._
+- **Should `numpy` be split into smaller, more focused modules?**
+  _Cohesion score 0.018336268517559307 - nodes in this community are weakly interconnected._
+- **Why does `editeur-pcb.html (page de l'Editeur PCB)` connect `editeur-pcb.html (page de l'Editeur PCB)` to `simulation-em.js`, `35-ipc2581-export.js`, `Groupe 91`, `19-simulation.js`, `30-contraintes.js`, `Groupe 124`, `01-core.js`, `variantes.js`, `simulation-datasheet.js`, `explorateur-lib.js`?**
+  _High betweenness centrality (0.117) - this node is a cross-community bridge._
 - **Should `simulation-em.js` be split into smaller, more focused modules?**
-  _Cohesion score 0.019364375461936437 - nodes in this community are weakly interconnected._
-- **Why does `docObj()` connect `loadDoc` to `editeur-pcb/test/harness.js`, `07-app.js`, `05-tools.js`, `normDoc`?**
-  _High betweenness centrality (0.039) - this node is a cross-community bridge._
+  _Cohesion score 0.01903984768121855 - nodes in this community are weakly interconnected._
+- **Why does `docObj()` connect `push` to `editeur-pcb/test/harness.js`, `07-app.js`, `05-tools.js`, `normDoc`?**
+  _High betweenness centrality (0.046) - this node is a cross-community bridge._
 - **Should `editeur-pcb/test/harness.js` be split into smaller, more focused modules?**
   _Cohesion score 0.014388489208633094 - nodes in this community are weakly interconnected._
