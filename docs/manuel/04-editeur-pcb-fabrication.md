@@ -614,7 +614,7 @@ Les zones partent remplies (cuivre calculé en géométrie exacte, dégagements 
 - Les groupes d'appariement du schéma se lisent mais ne se modifient que dans le schéma.
 - L'estimation thermique est un ordre de grandeur (±30 %), calculée par le serveur (`python web_CAO.py`) : sans lui, elle est refusée. Elle ne vaut que pour la révision de carte courante. Voir aussi [09](09-simulation-pi-thermique-audit.md).
 - Une zone interdite se pose sur une face seule ; sa hauteur permise vaut pour toute la zone. Une hauteur de composant inconnue n'est jamais supposée : elle est signalée.
-- Le trou NPTH autonome ne se pose que sur la carte ; les trous d'une empreinte viennent de la LIB et ne se modifient pas dans l'éditeur PCB (voir [SPEC-trous-npth.md](../../SPEC-trous-npth.md)). Aucun trou NPTH ne figure dans l'IPC-D-356.
+- Le trou NPTH autonome ne se pose que sur la carte ; les trous d'une empreinte viennent de la LIB et ne se modifient pas dans l'éditeur PCB. Aucun trou NPTH ne figure dans l'IPC-D-356.
 - Les Gerber ne dégagent pas les zones autour d'un trou NPTH ; l'IPC-2581 non plus.
 - Le fichier IPC-2581 est écrit en révision C ; si Gerber et IPC-2581 divergent, les Gerber et l'Excellon font foi.
 - Le dossier PCBA JLCPCB ne contient pas de `.GKO` (le `.GM1` seul définit le contour) ; le zéro des pièces de la bibliothèque JLCPCB n'est pas toujours celui de l'empreinte : vérifier l'orientation dans l'aperçu de JLCPCB.
@@ -635,5 +635,5 @@ Les zones partent remplies (cuivre calculé en géométrie exacte, dégagements 
 - [Simulation SI](08-simulation-si.md) et [Simulation PI, thermique, audit](09-simulation-pi-thermique-audit.md) : Z₀ par la méthode des moments, échauffement.
 - [Claude et le MCP](11-claude-mcp.md) : gestes de l'interface (`pilote_interface`), `cao_thermique`.
 - [editeur-pcb/README.md](../../editeur-pcb/README.md) : détail technique.
-- [SPEC-dossier-meca.md](../../SPEC-dossier-meca.md), [SPEC-trous-npth.md](../../SPEC-trous-npth.md).
+- [SPEC-dossier-meca.md](../../SPEC-dossier-meca.md).
 - [Simulation EM (calcul)](../simulation-em.md).

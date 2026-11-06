@@ -1,8 +1,6 @@
 # Spec : dossier mécanique (éditeur PCB et visionneuse IPC-2581)
 
-Demande du 15/10/2026. `SPEC.md` (classes d'interface) n'est pas terminée
-(vérification TRD1_N et relecture en attente) : cette spec vit à côté, sous son
-propre nom, pour ne pas l'écraser.
+Demande du 15/10/2026.
 
 Mise à jour du 29/10/2026 : le DXF 1:1 du dossier est remplacé par un STEP
 3D (carte et composants), et l'export DXF a disparu de l'éditeur. La spec
@@ -292,7 +290,7 @@ JSON de ce banc (face, NPTH, `corps_estime`).
 - **Demander d'abord** : une nouvelle dépendance, un changement de
   `fabrication.zip` ou du format du document de l'éditeur.
 - **Jamais** : modifier la LIB depuis le dossier (une hauteur saisie reste
-  dans la carte) ; casser les plans existants ; toucher à `SPEC.md`.
+  dans la carte) ; casser les plans existants.
 
 ## Critères de réussite
 

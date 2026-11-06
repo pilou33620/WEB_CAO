@@ -155,12 +155,6 @@
     "ast_hash": "b26aef3e962772eab1c8403ac1e1baa8",
     "semantic_hash": ""
   },
-  "commun/test/benchmark-cao.js": {
-    "mtime": 1791663035.5911314,
-    "seen": 1791891802.1719215,
-    "ast_hash": "cb54c00f63725b1e137d89e6dccf9b66",
-    "semantic_hash": "cb54c00f63725b1e137d89e6dccf9b66"
-  },
   "commun/test/dom-stub.js": {
     "mtime": 1793131417.783414,
     "seen": 1793135203.8148336,
@@ -228,9 +222,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/js/06-panels.js": {
-    "mtime": 1793877509.0410137,
-    "seen": 1793878239.3746197,
-    "ast_hash": "9a98586112aa4a5494b8c17c41b11170",
+    "mtime": 1793953854.3247378,
+    "seen": 1793959126.015446,
+    "ast_hash": "d5ff89588088517b11b34e85affcbcfd",
     "semantic_hash": ""
   },
   "editeur-pcb/js/07-app.js": {
@@ -438,9 +432,9 @@
     "semantic_hash": ""
   },
   "editeur-pcb/test/harness.js": {
-    "mtime": 1793877509.0632536,
-    "seen": 1793878239.375099,
-    "ast_hash": "5b8dd41500f2ea55d3bd2683b350462b",
+    "mtime": 1793953972.856198,
+    "seen": 1793959126.0158129,
+    "ast_hash": "74b1e0fde0fd630d2004cd850f178d20",
     "semantic_hash": ""
   },
   "editeur-schematique/js/00-espace-config.js": {
@@ -516,9 +510,9 @@
     "semantic_hash": "f052e64f48ebccf767ac6e900e444f2f"
   },
   "editeur-schematique/js/12-panneaux.js": {
-    "mtime": 1793794381.4056575,
-    "seen": 1793797917.732155,
-    "ast_hash": "07eef87fd79fe22aa21f084f1fee7bf1",
+    "mtime": 1793953815.1283317,
+    "seen": 1793959126.01592,
+    "ast_hash": "a0ac879fc18b66bb69b528a385b33a21",
     "semantic_hash": ""
   },
   "editeur-schematique/js/13-fichiers.js": {
@@ -618,9 +612,9 @@
     "semantic_hash": "e2aa9993499c2cdff79bf062b5a2dbd0"
   },
   "editeur-schematique/test/harness.js": {
-    "mtime": 1793794482.7252553,
-    "seen": 1793797917.732318,
-    "ast_hash": "0f5207286c92926a62fa3fb1e120bd97",
+    "mtime": 1793953854.4202366,
+    "seen": 1793959126.01608,
+    "ast_hash": "439c047a7a5e088054cd20cee6e53132",
     "semantic_hash": ""
   },
   "gestion-lib/js/01-donnees.js": {
@@ -947,30 +941,6 @@
     "ast_hash": "949e2bed9eeb6d50417fb388976a6955",
     "semantic_hash": ""
   },
-  "screen/generer_animation_pcb.py": {
-    "mtime": 1791663035.7430334,
-    "seen": 1791891802.1726463,
-    "ast_hash": "862e1c74a03e36e6b3ef54d7566c437d",
-    "semantic_hash": "862e1c74a03e36e6b3ef54d7566c437d"
-  },
-  "screen/generer_animation_schema.py": {
-    "mtime": 1791663035.743175,
-    "seen": 1791891802.172652,
-    "ast_hash": "a125d4c51424264259a2a8f05fbd9c00",
-    "semantic_hash": "a125d4c51424264259a2a8f05fbd9c00"
-  },
-  "screen/svg_vers_gif.js": {
-    "mtime": 1791663035.763175,
-    "seen": 1791891802.1726575,
-    "ast_hash": "5b9bc3f7b6a3821446e872580f4f6584",
-    "semantic_hash": "5b9bc3f7b6a3821446e872580f4f6584"
-  },
-  "simulations-si-pi.json": {
-    "mtime": 1792691818.516922,
-    "seen": 1792732002.1862435,
-    "ast_hash": "e540ff608b5174a28f1d7f94ea69029b",
-    "semantic_hash": ""
-  },
   "visionneuse-ipc2581/js/00-espace-config.js": {
     "mtime": 1792424561.0292988,
     "seen": 1792428646.900603,
@@ -1217,24 +1187,6 @@
     "ast_hash": "e322ad7c76133fc661da211970d47a41",
     "semantic_hash": ""
   },
-  "SPEC.md": {
-    "mtime": 1791922513.761875,
-    "seen": 1791924345.2560225,
-    "ast_hash": "d0124e73c9c7bf31d6415f0b12e76815",
-    "semantic_hash": "d0124e73c9c7bf31d6415f0b12e76815"
-  },
-  "tasks/plan.md": {
-    "mtime": 1792691818.520922,
-    "seen": 1792732002.186533,
-    "ast_hash": "479c8c9522e57bb0bdadc549c3aaffe4",
-    "semantic_hash": ""
-  },
-  "tasks/todo.md": {
-    "mtime": 1792691818.520922,
-    "seen": 1792732002.1865673,
-    "ast_hash": "5a0bc6ea295794734efc04fd832b1a43",
-    "semantic_hash": ""
-  },
   "commun/dossier-meca.js": {
     "mtime": 1793280615.424879,
     "seen": 1793351383.673107,
@@ -1260,69 +1212,15 @@
     "semantic_hash": ""
   },
   "SPEC-dossier-meca.md": {
-    "mtime": 1793281300.6595814,
-    "seen": 1793351383.6751382,
-    "ast_hash": "5ae44dcd0b0bb423bfb2439944b6c85b",
-    "semantic_hash": ""
-  },
-  "tasks/plan-dossier-meca.md": {
-    "mtime": 1792053660.933271,
-    "seen": 1792173080.9568162,
-    "ast_hash": "d817a50eeb52a2f9f5338d8f6987e19d",
-    "semantic_hash": ""
-  },
-  "tasks/todo-dossier-meca.md": {
-    "mtime": 1792613927.303488,
-    "seen": 1792732002.1865392,
-    "ast_hash": "5d9566437114fe5ba7317a2c63aa9e4b",
+    "mtime": 1793958382.2229095,
+    "seen": 1793959126.0166984,
+    "ast_hash": "39ad2293aa35e03f89086ccda435ae61",
     "semantic_hash": ""
   },
   "gestion-lib/test/banc-repere-pcb.js": {
     "mtime": 1792569813.3767326,
     "seen": 1792573897.359901,
     "ast_hash": "e35c3e8fe5066e03c69042a058c69bf1",
-    "semantic_hash": ""
-  },
-  "SPEC-trous-npth.md": {
-    "mtime": 1792185594.2518313,
-    "seen": 1792218445.1059499,
-    "ast_hash": "a075cd46ae4d1210b23015609d88fb76",
-    "semantic_hash": ""
-  },
-  "tasks/plan-trous-npth.md": {
-    "mtime": 1792180101.109733,
-    "seen": 1792181703.235292,
-    "ast_hash": "ca5344602e7b3e4b8e5fddbe7363ddc1",
-    "semantic_hash": ""
-  },
-  "tasks/todo-trous-npth.md": {
-    "mtime": 1792180848.5877056,
-    "seen": 1792181703.2353137,
-    "ast_hash": "db5ff70b8be49466805aa71305a75b0c",
-    "semantic_hash": ""
-  },
-  "tasks/plan-trous-oblongs.md": {
-    "mtime": 1792613927.3004212,
-    "seen": 1792732002.186526,
-    "ast_hash": "06759368cdae74e6e9abed0f908e6133",
-    "semantic_hash": ""
-  },
-  "tasks/todo-trous-oblongs.md": {
-    "mtime": 1792184807.56344,
-    "seen": 1792184900.118673,
-    "ast_hash": "94b69d4434fe72a2bd6114b342525619",
-    "semantic_hash": ""
-  },
-  "tasks/plan-points-ouverts.md": {
-    "mtime": 1792241224.9415174,
-    "seen": 1792250348.1067579,
-    "ast_hash": "1288f4c525f136e3b0b1edea92fc0b9f",
-    "semantic_hash": ""
-  },
-  "tasks/todo-points-ouverts.md": {
-    "mtime": 1792250259.9907372,
-    "seen": 1792250348.1067963,
-    "ast_hash": "07eccd2787617b0f7f9e08ca27058a69",
     "semantic_hash": ""
   },
   "commun/lecture-cao.js": {
@@ -1529,12 +1427,6 @@
     "ast_hash": "416a181069db5aba8e4d6deee0a19412",
     "semantic_hash": ""
   },
-  "SPEC-manuel.md": {
-    "mtime": 1793110587.6923726,
-    "seen": 1793135203.8161817,
-    "ast_hash": "1eb3a0547daacbf9301eb4ef54b75a19",
-    "semantic_hash": ""
-  },
   "SPEC-rf-multiports.md": {
     "mtime": 1793101073.2388191,
     "seen": 1793135203.8161883,
@@ -1560,9 +1452,9 @@
     "semantic_hash": ""
   },
   "docs/manuel/04-editeur-pcb-fabrication.md": {
-    "mtime": 1793793508.8551433,
-    "seen": 1793797917.7330463,
-    "ast_hash": "24c4280804237f7e9a096b9e62d558bf",
+    "mtime": 1793958384.9708812,
+    "seen": 1793959126.0167594,
+    "ast_hash": "2a31ec875af74dc2a75289021e6b27a8",
     "semantic_hash": ""
   },
   "docs/manuel/05-gestion-lib.md": {
@@ -1620,15 +1512,9 @@
     "semantic_hash": ""
   },
   "docs/manuel/manuel.html": {
-    "mtime": 1793877749.151649,
-    "seen": 1793878239.37658,
-    "ast_hash": "1f08bea31ecbc8d26ac3357cad2a6c49",
-    "semantic_hash": ""
-  },
-  "tasks/plan-manuel.md": {
-    "mtime": 1793110587.6938462,
-    "seen": 1793135203.8164308,
-    "ast_hash": "bb7bd8ced826e99851110b243867ad0f",
+    "mtime": 1793958401.8107083,
+    "seen": 1793959126.0168343,
+    "ast_hash": "1273587f2f8d77c2a2138c4b6104c332",
     "semantic_hash": ""
   },
   "tasks/plan-rf-multiports.md": {
