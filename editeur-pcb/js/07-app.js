@@ -65,6 +65,11 @@ function saveJsonProjet(doc,repli){
     if(e.annule){hint(e.message); return false;}
     /* On ne fait pas semblant : si l'écriture échoue, le travail n'est pas
        sauvé, et on le dit avant de proposer le téléchargement s'il est permis. */
+    if(!repli&&projdInjoignable(e)){
+      hint("Serveur injoignable : rien n'est enregistré.");
+      projdAvisInjoignable();
+      return false;
+    }
     if(!repli){
       hint("Écriture refusée : "+e.message+" — rien n'est enregistré.");
       if(typeof projdAvis==="function")
@@ -84,6 +89,13 @@ function saveJsonTelecharger(doc){
   S.dirty=false;
   if(typeof profNoterDocument==="function")profNoterDocument("pcb",nom);
   hint("Carte enregistrée dans "+nom+".");
+}
+/* Serveur arrêté (projdAvisInjoignable) : la carte du moment, sans la marquer
+   enregistrée, puisque le projet n'est pas à jour. */
+function projdCopieDeSecours(){
+  const nom=pcbFile(".json","carte.json");
+  dl(new Blob([JSON.stringify(docObj(),null,1)],{type:"application/json"}),nom);
+  hint("Copie téléchargée ("+nom+") : le projet n'est pas à jour tant que le serveur est arrêté.");
 }
 /* LE NOM DE LA CARTE OUVERTE HORS PROJET : celui du fichier, ou le titre de
    l'exemple. Sans lui, toutes les cartes sans projet s'appelaient « carte »,

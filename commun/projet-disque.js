@@ -720,7 +720,10 @@ function projdGithubEnvoyerFile(message){
    vrai si un projet du serveur est ouvert a la sortie. */
 function projdProjetSuite(libelle){
   if(PROJD.mode === "serveur") return Promise.resolve(true);
-  return projdListerServeur().catch(function(){ return {projets:[]}; }).then(function(r){
+  return projdListerServeur().catch(function(e){
+    if(projdInjoignable(e)) throw e;     // demander un nom ne servirait a rien
+    return {projets:[]};
+  }).then(function(r){
     const projets = (r && r.projets) || [];
     const ici = PROJD.mode ? "Le dossier ouvert n'est pas dans PROJETS (il ne serait pas envoyé sur GitHub).\n"
                            : "Aucun projet ouvert.\n";
@@ -746,8 +749,9 @@ function projdProjetSuite(libelle){
     }
     return projdCreerServeur(nom, {chemin:nom}).then(function(){ return true; });
   }).catch(function(e){
-    projdAvis("erreur", "Rien n'est enregistré", "Projet impossible à ouvrir ou créer : " + e.message);
-    return false;
+    if(projdInjoignable(e)) projdAvisInjoignable();
+    else projdAvis("erreur", "Rien n'est enregistré", "Projet impossible à ouvrir ou créer : " + e.message);
+    return null;                         // la raison est affichee : l'appelant ne la recouvre pas
   });
 }
 /* Enregistrer en mode WEB_SUITE : dans un projet de PROJETS, sur le disque du
@@ -761,6 +765,7 @@ function projdEnregistrerLocal(enregistrer, dire, libelle, envoi){
   const quoi = libelle || "le document";
   dire = dire || function(){};
   return projdProjetSuite(quoi).then(function(ok){
+    if(ok === null) return false;
     if(!ok){
       dire("Rien n'est enregistré : aucun projet choisi.");
       projdAvis("erreur", "Rien n'est enregistré",
@@ -860,7 +865,7 @@ function projdDernierEnvoi(){
    `etat` : "ok" (vert), "partiel" (orange : enregistre mais pas tout), "info",
    "encours", "erreur" (rouge, reste jusqu'a ce qu'on le touche).
    ========================================================================== */
-function projdAvis(etat, titre, detail){
+function projdAvis(etat, titre, detail, action){
   if(typeof document === "undefined" || !document.body || !document.createElement) return;
   let a = document.getElementById("projdAvis");
   if(!a){
@@ -876,9 +881,29 @@ function projdAvis(etat, titre, detail){
   a.innerHTML = '<span class="pa-ico">' + ico + '</span><span class="pa-txt"><b></b><small></small></span>';
   a.querySelector("b").textContent = titre || "";
   a.querySelector("small").textContent = detail || "";
+  if(action){
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "pa-action";
+    b.textContent = action.libelle;
+    b.onclick = action.faire;
+    a.querySelector(".pa-txt").appendChild(b);
+  }
   clearTimeout(projdAvis.minuterie);
   if(etat !== "erreur" && etat !== "encours")
     projdAvis.minuterie = setTimeout(function(){ a.classList.remove("on"); }, etat === "partiel" ? 9000 : 5000);
+}
+/* fetch rejette par un TypeError quand le serveur ne repond pas ; ses refus,
+   eux, portent un code (projdApi). */
+function projdInjoignable(e){ return e instanceof TypeError; }
+/* Serveur arrete : le travail n'existe plus que dans la page. C'est la seule
+   exception au « jamais en telechargement » de WEB_SUITE : la copie ne compte
+   pas comme enregistree, le document reste « modifie ». Chaque editeur fournit
+   sa projdCopieDeSecours. */
+function projdAvisInjoignable(){
+  projdAvis("erreur", "Serveur injoignable : rien n'est enregistré",
+    "Votre travail reste dans cette page, ne la rechargez pas. Téléchargez une copie, ou relancez le serveur et enregistrez de nouveau.",
+    typeof projdCopieDeSecours === "function" ? {libelle:"Télécharger une copie", faire:projdCopieDeSecours} : null);
 }
 /* Les boutons d'enregistrement. « Enregistrer » (`idSave`) reste toujours :
    lance par WEB_SUITE, il ecrit en local dans le projet, et son titre le dit.

@@ -13184,6 +13184,20 @@ TA("dossier : brouillon écrit par la minuterie, effacé à l'enregistrement, pr
     pcbChargerProjet();await PCB_PROJET_P;
     if(question||S.dirty||!disque.brouillon)throw new Error("un brouillon plus ancien ne se propose ni ne s'efface");
     await new Promise(r=>setTimeout(r,400));   // la synchro du schéma part après 350 ms : sous ce fetch-ci
+    /* serveur arrêté : rien d'écrit, la carte reste modifiée, l'avis offre une copie ; un refus n'en offre pas */
+    let bouton=null;
+    avis.querySelector=()=>({textContent:"",appendChild:b=>{bouton=b;}});
+    try{
+      global.fetch=()=>rep(403,{detail:"refus"});
+      if(await saveJsonProjet(docObj(),false)||bouton)throw new Error("un refus du serveur n'offre pas de copie");
+      global.fetch=()=>Promise.reject(new TypeError("Failed to fetch"));
+      if(await saveJsonProjet(docObj(),false))throw new Error("serveur arrêté : rien n'est enregistré");
+    }finally{ avis.querySelector=qs; }
+    if(!S.dirty||!bouton)throw new Error("serveur arrêté : carte modifiée et bouton attendus");
+    const co=URL.createObjectURL, blobs=[];
+    URL.createObjectURL=b=>{blobs.push(b);return "blob:essai";};
+    try{ bouton.onclick(); }finally{ URL.createObjectURL=co; }
+    if(blobs.length!==1||!S.dirty)throw new Error("la copie part sans marquer la carte enregistrée");
   }finally{
     global.fetch=avant;global.confirm=conf;PCB_PROJET_LU=luAvant;PCB_REPRISE=repAvant;
     projdDetacher();projFermer();carteVide();S.dirty=false;

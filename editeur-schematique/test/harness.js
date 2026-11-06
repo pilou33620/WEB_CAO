@@ -1830,6 +1830,18 @@ TA("brouillon : écrit si modifié et changé, effacé à l'enregistrement, repr
     if(projdNomBrouillon("schema")!=="")throw new Error("sans .json : "+projdNomBrouillon("schema"));
     const n=appels.length;
     if(await tic()||appels.length!==n)throw new Error("sans .json : rien ne s'écrit");
+    /* serveur arrêté : rien d'écrit, le schéma reste modifié, l'avis offre une copie ; un refus n'en offre pas */
+    let bouton=null;
+    avis.querySelector=()=>({textContent:"",appendChild:b=>{bouton=b;}});
+    global.fetch=()=>rep(403,{detail:"refus"});
+    if(await saveJsonProjet(schDocCourant(),false)||bouton)throw new Error("un refus du serveur n'offre pas de copie");
+    global.fetch=()=>Promise.reject(new TypeError("Failed to fetch"));
+    if(await saveJsonProjet(schDocCourant(),false))throw new Error("serveur arrêté : rien n'est enregistré");
+    if(!S.dirty||!bouton)throw new Error("serveur arrêté : schéma modifié et bouton attendus");
+    const co=URL.createObjectURL, blobs=[];
+    URL.createObjectURL=b=>{blobs.push(b);return "blob:essai";};
+    try{ bouton.onclick(); }finally{ URL.createObjectURL=co; }
+    if(blobs.length!==1||!S.dirty)throw new Error("la copie part sans marquer le schéma enregistré");
   }finally{
     global.fetch=avant;global.confirm=conf;avis.querySelector=qs;SCH_PROJET_LU=luAvant;
     projdDetacher();projFermer();S.dirty=false;dom.storage.clear();

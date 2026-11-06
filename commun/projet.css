@@ -44,6 +44,7 @@
 #projdAvis .pa-txt { display: grid; gap: 2px; min-width: 0; }
 #projdAvis b { font-weight: 600; }
 #projdAvis small { color: #b9bec7; font-size: 12.5px; overflow-wrap: anywhere; }
+#projdAvis .pa-action { justify-self: start; margin-top: 6px; padding: 6px 12px; font: inherit; cursor: pointer; }
 #projdAvis.ok { border-left-color: #3fb27f; }
 #projdAvis.ok .pa-ico { background: #3fb27f; }
 #projdAvis.partiel { border-left-color: #f0a030; }

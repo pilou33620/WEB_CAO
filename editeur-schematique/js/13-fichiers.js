@@ -132,6 +132,11 @@ function saveJsonProjet(doc,repli){
     if(e.annule){document.getElementById("fHint").textContent=e.message; return false;}
     /* Rien n'est sauvé : on le dit, puis on retombe sur le téléchargement
        s'il est permis. */
+    if(!repli&&projdInjoignable(e)){
+      document.getElementById("fHint").textContent="Serveur injoignable : rien n'est enregistré.";
+      projdAvisInjoignable();
+      return false;
+    }
     if(!repli){
       document.getElementById("fHint").textContent="Écriture refusée : "+e.message+" — rien n'est enregistré.";
       if(typeof projdAvis==="function")
@@ -157,6 +162,13 @@ function saveJsonTelecharger(doc){
   clearBackup();
   if(typeof profNoterDocument==="function")profNoterDocument("schema",nom);
   document.getElementById("fHint").textContent="Document enregistré dans "+nom+".";
+}
+/* Serveur arrêté (projdAvisInjoignable) : le schéma du moment, sans le marquer
+   enregistré, puisque le projet n'est pas à jour. */
+function projdCopieDeSecours(){
+  const nom=schFile(".json","schema.json");
+  dl(new Blob([JSON.stringify(schDocCourant(),null,1)],{type:"application/json"}),nom);
+  document.getElementById("fHint").textContent="Copie téléchargée ("+nom+") : le projet n'est pas à jour tant que le serveur est arrêté.";
 }
 function dl(blob,name){
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();
