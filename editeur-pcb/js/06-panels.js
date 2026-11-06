@@ -842,7 +842,9 @@ function buildProps(){
   const ct=[...S.sel.cuts];
   const dr=selDrawingsPcb();
   const hl=selHolesPcb();
-  const only=n=>fps.length+tr.length+vi.length+zo.length+ct.length+dr.length+hl.length===n;
+  const dc=selDecoupes(), zi=selInterdits();
+  const only=n=>fps.length+tr.length+vi.length+zo.length+ct.length+dr.length+hl.length+
+    dc.length+zi.length+(S.sel.edge?1:0)===n;
   if(S.selRef!=null&&only(0)&&fpById(S.selRef))return propsRefText(box,fpById(S.selRef));
   if(fps.length===1&&only(1)&&S.selPad&&S.selPad.id===fps[0].id&&padsOf(fps[0])[S.selPad.k])
     return propsPad(box,fps[0],S.selPad.k);
@@ -850,9 +852,9 @@ function buildProps(){
   if(tr.length===1&&only(1))return propsTrack(box,tr[0]);
   if(vi.length===1&&only(1))return propsVia(box,vi[0]);
   if(hl.length===1&&only(1))return propsHole(box,hl[0]);
-  if(S.sel.edge&&only(0))return propsBoard(box);
-  if(S.sel.decoupes&&S.sel.decoupes.size===1&&only(1))return propsDecoupe(box,[...S.sel.decoupes][0]);
-  if(S.sel.interdits&&S.sel.interdits.size===1&&only(1))return propsInterdit(box,[...S.sel.interdits][0]);
+  if(S.sel.edge&&only(1))return propsBoard(box);
+  if(dc.length===1&&only(1))return propsDecoupe(box,dc[0]);
+  if(zi.length===1&&only(1))return propsInterdit(box,zi[0]);
   if(zo.length===1&&only(1))return propsZone(box,zo[0]);
   if(dr.length===1&&only(1))return propsDrawing(box,dr[0]);
   /* Une piste prise entière — Maj+clic, ou Maj+double-clic qui la suit d'une
@@ -862,7 +864,7 @@ function buildProps(){
   /* Tout le reste — cinq vias au lasso, dix empreintes, un mélange — passe par
      le panneau de groupes : une ligne par jeu de cotes identiques, et les
      champs commandent le groupe entier. */
-  if(!only(0))return propsMulti(box,fps,tr,vi,zo,ct);
+  if(!only(0))return propsMulti(box,fps,tr,vi,zo,ct,dr,hl,dc,zi);
   const c=conn();
   box.innerHTML='<div class="empty">Rien de sélectionné.<br><br>'+
     S.fps.length+' empreinte(s) · '+c.unrouted+' liaison(s) restant à router.'+
@@ -2384,7 +2386,10 @@ function mpViaFix(v){
   v.d=Math.max(0.2,v.d);
   v.drill=Math.max(0.1,Math.min(v.drill,v.d-0.1));
 }
-/* Les cinq familles d'objets qu'un lasso ramène. Chacune dit comment grouper
+const mpDrwQuoi=d=>d.shape==="text"?"Texte":d.shape==="rect"?"Rectangle":d.shape==="poly"?"Aplat":"Trait";
+const mpDecoupeDim=D=>{const b=polyBBox(D);return fmt(b.x2-b.x1,2)+" × "+fmt(b.y2-b.y1,2)+" mm";};
+const mpExtrait=(noms,n)=>noms.slice(0,n).join(", ")+(noms.length>n?" … +"+(noms.length-n):"");
+/* Les familles d'objets qu'un lasso ramène. Chacune dit comment grouper
    (`sig`), ce qu'une ligne montre (`cell`), et quels champs commandent le
    groupe (`form` / `wire`). */
 const MP_KINDS={
@@ -2493,7 +2498,43 @@ const MP_KINDS={
     cell:list=>esc(mpDit(list,c=>c.l,v=>cuId(v,S.cu)))+
       '<span class="pkgcell">'+list.reduce((a,c)=>a+c.pts.length,0)+' sommets</span>',
     form:list=>'<div class="prop">'+mpChoix("mpCtL","Couche",list,c=>c.l,mpCouches())+'</div>',
-    wire:list=>{mpBranche("mpCtL",list,(c,v)=>{c.l=+v;},1,()=>{buildLayers();});}}
+    wire:list=>{mpBranche("mpCtL",list,(c,v)=>{c.l=+v;},1,()=>{buildLayers();});}},
+  drawings:{titre:"Dessins et textes",nom:["dessin","dessins"],
+    sig:d=>mpDrwQuoi(d)+"|"+d.layer+"|"+fmt(d.width||0,3),
+    cell:list=>{
+      const textes=list.filter(d=>d.shape==="text").map(d=>String(d.text!=null?d.text:""));
+      return esc(mpDit(list,mpDrwQuoi)+(textes.length?" « "+mpExtrait(textes,4)+" »":""))+
+        '<span class="pkgcell">'+esc(mpDit(list,d=>d.layer))+' · trait '+
+        esc(mpDit(list,d=>d.width||0,v=>fmt(v,2)+" mm"))+'</span>';
+    },
+    form:list=>'<div class="prop">'+mpChoix("mpDrL","Couche",list,d=>d.layer,
+      DRW_COUCHES.map(c=>[c[0],c[2]+" ("+c[1]+")"]))+'</div>',
+    wire:list=>{mpBranche("mpDrL",list,(d,v)=>{d.layer=v;S.show[v]=true;},0,()=>{buildLayers();});}},
+  holes:{titre:"Trous NPTH",nom:["trou","trous"],
+    sig:h=>fmt(h.d,3)+"|"+(h.w>h.d?fmt(h.w,3):""),
+    cell:list=>'Ø '+esc(mpDit(list,h=>h.d,v=>fmt(v,2)))+' mm'+
+      '<span class="pkgcell">'+esc(mpDit(list,h=>h.w>h.d?h.w:0,v=>v?"fente "+fmt(v,2)+" mm":"rond"))+
+      (list.length===1?' · '+fmt(ux(list[0].x),2)+' ; '+fmt(uy(list[0].y),2)+' mm':"")+'</span>',
+    form:list=>'<div class="prop">'+mpNum("mpHlD","Diamètre de perçage (mm)",list,h=>h.d,2,0.1,0.4)+'</div>',
+    wire:list=>{mpBranche("mpHlD",list,(h,v)=>{h.d=r4(Math.max(0.4,Math.min(30,v)));},1);}},
+  interdits:{titre:"Zones interdites",nom:["zone interdite","zones interdites"],
+    sig:z=>z.face+"|"+(z.hMax==null?"":fmt(z.hMax,3)),
+    cell:list=>esc(mpExtrait(list.map(z=>z.nom),4))+
+      '<span class="pkgcell">'+esc(mpDit(list,z=>z.face))+' · '+
+      esc(mpDit(list,z=>z.hMax,v=>v==null?"aucun composant":"h ≤ "+fmt(v,2)+" mm"))+'</span>',
+    form:list=>'<div class="prop two">'+
+      mpChoix("mpZiF","Face",list,z=>z.face,[["dessus","Dessus"],["dessous","Dessous"]])+
+      mpNum("mpZiH","Hauteur permise (0 : aucun)",list,z=>z.hMax||0,2,0.1,0)+'</div>',
+    wire:list=>{
+      mpBranche("mpZiF",list,(z,v)=>{z.face=v==="dessous"?"dessous":"dessus";});
+      mpBranche("mpZiH",list,(z,v)=>{z.hMax=v>0?r3(Math.min(v,100)):null;},1);
+    }},
+  decoupes:{titre:"Découpes de carte",nom:["découpe de carte","découpes de carte"],
+    sig:mpDecoupeDim,
+    cell:list=>esc(mpDit(list,mpDecoupeDim))+
+      '<span class="pkgcell">'+list.reduce((a,D)=>a+D.length,0)+' sommets</span>',
+    form:()=>"",   // ses cotes se règlent aux sommets, sur le canevas
+    wire:()=>{}}
 };
 /* Les groupes d'un type, du plus nombreux au plus rare, précédés de la ligne
    « tous » quand il y en a plusieurs. Le groupe déplié se retrouve par l'objet
@@ -2530,7 +2571,7 @@ function mpSection(k,list){
          '<td class="n">'+(r.ancre==="tous"?"tous":"×"+r.list.length)+'</td>'+
          '<td class="net">'+D.cell(r.list)+'</td></tr>';
     h+='</tbody></table>';
-  }
+  }else h+='<div class="pinnote">'+D.cell(list)+'</div>';   // rien à choisir, mais on dit quoi
   h+=D.form(cur.list);
   if(list.length>1)
     h+='<div class="empty" style="padding:2px 12px 8px">'+
@@ -2557,13 +2598,15 @@ function mpBrancher(box){
     if(r.ouvert)MP_KINDS[r.k].wire(r.list);
   }
 }
-function propsMulti(box,fps,tr,vi,zo,ct){
+function propsMulti(box,fps,tr,vi,zo,ct,dr,hl,dc,zi){
   const cu=tr.length+vi.length;
-  const dire=(n,s)=>n?n+" "+s+(n>1?"s":""):"";
+  const dire=(n,s,p)=>n?n+" "+(n>1?p||s+"s":s):"";
   mpNeuf();
   box.innerHTML='<div class="empty">Sélection : '+
       [dire(fps.length,"empreinte"),dire(tr.length,"segment"),dire(vi.length,"via"),
-       dire(zo.length,"zone"),dire(ct.length,"découpe")].filter(Boolean).join(" · ")+
+       dire(zo.length,"zone"),dire(ct.length,"découpe"),dire(dr.length,"dessin"),
+       dire(hl.length,"trou"),dire(dc.length,"découpe de carte","découpes de carte"),
+       dire(zi.length,"zone interdite","zones interdites"),S.sel.edge?"contour de carte":""].filter(Boolean).join(" · ")+
       '.<br>R pivote · F retourne · Suppr supprime.</div>'+
     /* Le cuivre routé de la sélection se retire à part : c'est le geste qu'on
        fait avant de replacer un boîtier, et un lasso ne sait pas le distinguer.
@@ -2578,7 +2621,8 @@ function propsMulti(box,fps,tr,vi,zo,ct){
         'Les zones de cuivre ne sont pas du routage, elles ne partent pas.</div></div>'
       :"")+
     mpSection("fps",fps)+mpSection("tracks",tr)+mpSection("vias",vi)+
-    mpSection("zones",zo)+mpSection("cuts",ct);
+    mpSection("zones",zo)+mpSection("cuts",ct)+mpSection("drawings",dr)+
+    mpSection("holes",hl)+mpSection("decoupes",dc)+mpSection("interdits",zi);
   const pu=$("pUnroute");
   if(pu)pu.onclick=unrouteSel;
   mpBrancher(box);

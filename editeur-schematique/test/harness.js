@@ -380,6 +380,26 @@ T("feuille : premier numéro des repères, renumérotation sur demande, gardé �
     if(refStartDe(k)!==1)throw new Error("le départ 1 doit pouvoir se choisir : "+refStartDe(k));
   }finally{global.prompt=pr;global.confirm=conf;loadDoc(JSON.parse(avant),true);}
 });
+T("Propriétés : une sélection mêlée dit qui est dedans",()=>{
+  const avant=serialize();
+  try{
+    const a=addComp("resistor",300,300), b=addComp("resistor",500,300);
+    a.ref="R71";a.value="1k";b.ref="<img src=x>";b.value="2k2";
+    const w={x1:1000,y1:1000,x2:1100,y2:1000};
+    S.wires.push(w);touchWires();
+    S.drawings.push({id:9901,shape:"rect",x1:0,y1:0,x2:100,y2:50,label:"ALIM"});
+    const vu=(...f)=>{clearSel();for(const x of f)x();refreshPanels();return document.getElementById("props").innerHTML;};
+    let h=vu(()=>S.sel.add(a.id),()=>S.sel.add(b.id));
+    if(h.indexOf("R71 · 1k")<0||h.indexOf("Composants · 2")<0)throw new Error("composants non dits : "+h);
+    if(h.indexOf("<img")>=0)throw new Error("repère non échappé");
+    h=vu(()=>S.sel.add(a.id),()=>S.selW.add(w));
+    if(h.indexOf("R71")<0||h.indexOf("Nets · 1")<0)throw new Error("composant + fil : "+h);
+    h=vu(()=>S.selD.add(9901),()=>S.sel.add(a.id));
+    if(h.indexOf("Dessins · 1")<0||h.indexOf("ALIM")<0||h.indexOf("R71")<0)throw new Error("composant + dessin : "+h);
+    clearSel();refreshPanels();
+    if(document.getElementById("props").innerHTML.indexOf("Aucune sélection")<0)throw new Error("le vide doit rester dit");
+  }finally{clearSel();loadDoc(JSON.parse(avant),true);}
+});
 T("Propriétés : repère, valeur et boîtier font une étape, que Ctrl+Z défait",()=>{
   const el=addComp("resistor",300,300); el.ref="R41"; el.value="1k";
   clearSel();S.sel.add(el.id);refreshPanels();

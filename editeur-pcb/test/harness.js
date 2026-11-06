@@ -5256,6 +5256,53 @@ T("carte d'impédance à deux lots : chaque lot peint avec son état, le cuivre 
   const vu=essaiLotsZTrace().join();
   if(vu!=="cuivre 1,cuivre 2,valeurs 1,numéro 1,valeurs 2,numéro 2")throw new Error("ordre ou état des lots : "+vu);
 });
+T("Propriétés : tout ce qui se sélectionne se lit dans le panneau",()=>{
+  const saved=serialize();
+  try{
+    const zA={id:901,face:"dessus",pts:[{x:0,y:0},{x:5,y:0},{x:5,y:5}],hMax:null,nom:"Garde A"};
+    const zB={id:902,face:"dessous",pts:[{x:0,y:0},{x:5,y:0},{x:5,y:5}],hMax:2,nom:"Garde B"};
+    S.interdits=[zA,zB];
+    S.board.cutouts=[[{x:1,y:1},{x:3,y:1},{x:3,y:3}]];
+    S.holes=[{id:903,x:1,y:1,d:2.2},{id:904,x:2,y:2,d:3.2}];
+    S.drawings=[{id:905,shape:"text",layer:"silkT",text:"LOGO",x1:1,y1:1,x2:1,y2:1,size:1.5,width:0.15},
+                {id:906,shape:"line",layer:"silkT",x1:0,y1:0,x2:5,y2:0,width:0.15}];
+    const D=boardCutouts()[0], [h1,h2]=S.holes, [d1,d2]=S.drawings, fp=S.fps[0];
+    const vu=(...hits)=>{
+      clearSel();for(const h of hits)selectHit(h,true);
+      buildProps();
+      return $("props").innerHTML;
+    };
+    const attend=(html,...mots)=>{
+      if(html.indexOf("Rien de sélectionné")>=0)throw new Error("panneau vide pour "+mots[0]);
+      for(const m of mots)if(html.indexOf(m)<0)throw new Error("manque « "+m+" »");
+    };
+    // seuls : chacun a sa fiche
+    attend(vu({interdit:zA}),"Zone interdite","Garde A");
+    attend(vu({decoupe:D}),"Découpe de carte");
+    attend(vu({hole:h1}),"Trou NPTH");
+    attend(vu({drawing:d1}),"LOGO");
+    attend(vu({edge:true}));
+    // à plusieurs de la même famille, ou mêlés : tous sont dits
+    attend(vu({interdit:zA},{interdit:zB}),"Zones interdites · 2","Garde A","Garde B","2 zones interdites");
+    attend(vu({hole:h1},{hole:h2}),"Trous NPTH · 2","2 trous");
+    attend(vu({drawing:d1},{drawing:d2}),"Dessins et textes · 2","LOGO");
+    attend(vu({fp},{interdit:zA},{hole:h1},{decoupe:D},{edge:true}),
+      "Empreintes · 1","Zones interdites · 1","Trous NPTH · 1","Découpes de carte · 1",
+      "1 découpe de carte","contour de carte",String(fp.ref));
+    // une famille homogène se lit sans ligne à choisir
+    attend(vu({fp}),String(fp.ref));
+    // et le champ commande le groupe (« tous », ouvert d'office sans ligne retenue)
+    mpRaz();vu({interdit:zA},{interdit:zB});
+    $("mpZiH").value="2.5";$("mpZiH").onchange();
+    if(zA.hMax!==2.5||zB.hMax!==2.5)throw new Error("hauteur non appliquée au groupe");
+    mpRaz();vu({hole:h1},{hole:h2});
+    $("mpHlD").value="99";$("mpHlD").onchange();
+    if(h1.d!==30||h2.d!==30)throw new Error("diamètre hors bornes : "+h1.d);
+    // ce qui n'existe plus ne se montre pas (annulation, suppression)
+    vu({interdit:zA});S.interdits=[];buildProps();
+    if($("props").innerHTML.indexOf("Rien de sélectionné")<0)throw new Error("fiche fantôme d'une zone disparue");
+  }finally{clearSel();loadDoc(JSON.parse(saved),true);}
+});
 T("esc() couvre les caractères dangereux",()=>{
   const got=esc('<&>"\'`');
   if(got!=="&lt;&amp;&gt;&quot;&#39;&#96;")throw new Error("échappement : "+got);

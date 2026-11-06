@@ -51,6 +51,27 @@ function netBlock(net){
      '</div>';
   return h;
 }
+/* Le détail d'une sélection mêlée : qui est dedans, pas seulement combien. */
+function selResume(els,wires,drawings){
+  const bloc=(titre,ls)=>ls.length?'<div class="pinnote"><b>'+titre+' · '+ls.length+'</b><br>'+
+    ls.slice(0,30).map(esc).join("<br>")+(ls.length>30?"<br>… +"+(ls.length-30):"")+'</div>':"";
+  const N=nets(), parNet=new Map();
+  for(const w of wires){
+    const n=N.byWire.get(w), nom=n?n.name:"sans net", r=parNet.get(nom)||{n:0,l:0};
+    r.n++;r.l+=(Math.abs(w.x2-w.x1)+Math.abs(w.y2-w.y1))/G;
+    parNet.set(nom,r);
+  }
+  return bloc("Composants",els.map(el=>{
+      const def=defOf(el.type);
+      return [def.noRef?"":el.ref,el.value,def.n].filter(Boolean).join(" · ");
+    }))+
+    bloc("Nets",[...parNet].map(([nom,r])=>nom+" · "+r.n+(r.n>1?" fils":" fil")+" · "+(Math.round(r.l*10)/10)+" pas"))+
+    bloc("Dessins",drawings.map(d=>{
+      const w=Math.abs(d.x2-d.x1)/G, h=Math.abs(d.y2-d.y1)/G;
+      return (d.shape==="rect"?"Rectangle "+w.toFixed(1)+" × "+h.toFixed(1):"Trait "+Math.hypot(w,h).toFixed(1))+" mm"+
+        (d.label?" · "+d.label:"");
+    }));
+}
 function wireInfo(wires){
   const isBus=wires.some(w=>w.bus);
   const total=wires.reduce((s,w)=>s+Math.abs(w.x2-w.x1)+Math.abs(w.y2-w.y1),0)/G;
@@ -68,7 +89,8 @@ function wireInfo(wires){
       '<div class="row"><button class="tb" id="pDel">Supprimer</button></div></div>'+
       '<div class="pinnote">Glisser un '+(isBus?'bus':'fil')+' le déplace ; les segments raccordés à ses '+
       'extrémités s\'étirent pour rester connectés. Ctrl+clic ajoute ou retire un '+
-      'élément de la sélection.</div>';
+      'élément de la sélection.</div>'+
+      (own.size>1?selResume([],wires,[]):"");
   }
   const w=wires[0];
   const kind=w.bus?"Bus":"Fil";
@@ -382,19 +404,22 @@ function refreshPanels(){
       return;
     }
   }
-  if(wires.length&&!els.length&&!drawings.length){
+  const blocPris=S.selBlock!==null&&sheetBlocks().some(x=>x.key===S.selBlock);
+  if(wires.length&&!els.length&&!drawings.length&&!blocPris){
     box.innerHTML=wireInfo(wires);
     document.getElementById("pDel").onclick=delSel;
     bindNetBlock(wires);
-  }else if(els.length!==1||wires.length||drawings.length){
+  }else if(els.length!==1||wires.length||drawings.length||blocPris){
     const parts=[];
+    if(blocPris)parts.push("le bloc "+S.selBlock);
     if(els.length)parts.push(els.length+(els.length>1?" composants":" composant"));
     if(wires.length)parts.push(wires.length+(wires.length>1?" fils":" fil"));
     if(drawings.length)parts.push(drawings.length+(drawings.length>1?" traits":" trait"));
-    box.innerHTML='<div class="empty">'+(parts.length?parts.join(" et ")+" sélectionnés.":"Aucune sélection.")+
+    box.innerHTML='<div class="empty">'+(parts.length?esc(parts.join(" et "))+" sélectionnés.":"Aucune sélection.")+
       '<br><br>Raccourcis : <b>R</b> pivoter · <b>M</b> miroir · <b>D</b> dupliquer · '+
       '<b>Ctrl+C</b>/<b>Ctrl+V</b> copier-coller · <b>Suppr</b> supprimer · '+
       '<b>U</b> n\'effacer que les fils.</div>'+
+      selResume(els,wires,drawings)+
       (wires.length
         ? '<div class="prop"><div class="row"><button class="tb" id="pDelW">'+
           'Supprimer les '+wires.length+' fil'+(wires.length>1?'s':'')+' <kbd>U</kbd>'+
