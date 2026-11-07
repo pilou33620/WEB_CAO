@@ -55,6 +55,7 @@ header.app-header {
   justify-content: space-between;
   padding: 6px 16px;
   gap: 12px;
+  flex-wrap: wrap;   /* écran étroit : la barre d'outils passe sous le titre */
   user-select: none;
 }
 .brand {
@@ -93,9 +94,13 @@ header.app-header {
      barre passe à la ligne, comme dans les autres outils : un défilement sans
      barre visible (iPad) cachait Enregistrer sans le dire. */
   min-width: 0;
+  flex: 1 1 560px;   /* moins de place à côté du titre : la barre passe dessous, en entier */
   flex-wrap: wrap;
   justify-content: flex-end;
 }
+/* téléphone : barre sur une ligne qui défile (telephone.css) ; alignée à droite,
+   son début sortait à gauche, hors d'atteinte */
+body.tel .header-tools { justify-content: flex-start; }
 .header-tools > * {
   flex-shrink: 0;
   white-space: nowrap;

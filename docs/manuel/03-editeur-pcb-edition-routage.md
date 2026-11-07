@@ -128,7 +128,7 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 
 ### Je veux vérifier le brochage schéma contre carte
 
-1. Le bouton **⚡ Pinout : Vérifier** (onglet Vérifier) change d'état tout seul : « Schéma en attente », « Conforme ✓ » ou « n anomalie(s) ».
+1. Le bouton **⚡ Pinout : Vérifier** (onglet Vérifier) change d'état tout seul : « en attente », « Conforme ✓ » ou « n anomalie(s) ».
 2. Un clic ouvre « Inspection & Conformité du Pinout » : par composant, pas des pastilles, taille du boîtier, nombre de pastilles, puis table des broches.
 3. Pour une anomalie : **Reposer l'empreinte sur les cotes du boîtier**, **Acquitter (faux positif)** ou **Copier le rapport**.
 
