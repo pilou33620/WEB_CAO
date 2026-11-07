@@ -47,6 +47,9 @@ function tactileDefinir(actif){
   // Application de la classe sur le body
   if(document.body){
     document.body.classList.toggle("mode-tactile", on);
+    // l'en-tête change de hauteur : le canevas reprend la place qu'on lui laisse
+    if(typeof requestAnimationFrame === "function")
+      requestAnimationFrame(function(){ window.dispatchEvent(new Event("resize")); });
   }
   // la roulette disparaît avec le mode, et « Multi » ne doit pas rester pris
   if(!on){ tactileMultiDefinir(false); tactileRouletteFermer(); }

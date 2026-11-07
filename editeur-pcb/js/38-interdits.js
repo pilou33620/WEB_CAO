@@ -101,6 +101,7 @@ function interditsDessiner(c){
   const Z=interditsListe();
   if(!Z.length)return;
   c.save();
+  const poses=new Map();   // zones superposées (garde dessus + dessous d'un trou) : un nom par ligne
   for(const z of Z){
     const sel=S.sel.interdits&&S.sel.interdits.has(z);
     c.beginPath();c.moveTo(z.pts[0].x,z.pts[0].y);
@@ -112,7 +113,8 @@ function interditsDessiner(c){
     const b=polyBBox(z.pts);
     c.globalAlpha=1;c.fillStyle=sel?C_SEL:C_ERR;
     c.font=px(11)+'px "Segoe UI",system-ui,sans-serif';c.textAlign="left";c.textBaseline="top";
-    c.save();c.translate(b.x1+px(3),b.y1+px(3));if(S.flip)c.scale(-1,1);
+    const cle=Math.round(b.x1*10)+","+Math.round(b.y1*10), n=poses.get(cle)||0;poses.set(cle,n+1);
+    c.save();c.translate(b.x1+px(3),b.y1+px(3)+n*px(14));if(S.flip)c.scale(-1,1);
     c.fillText(z.nom+" · "+z.face+(z.hMax!=null?" · h ≤ "+fmt(z.hMax,1)+" mm":" · aucun composant"),0,0);
     c.restore();
   }

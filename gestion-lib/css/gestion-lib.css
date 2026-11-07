@@ -47,13 +47,13 @@ body > .stats-band {
 
 /* Header */
 header.app-header {
-  height: 48px;
+  min-height: 48px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
+  padding: 6px 16px;
   gap: 12px;
   user-select: none;
 }
@@ -90,11 +90,11 @@ header.app-header {
   align-items: center;
   gap: 6px;
   /* Une douzaine de boutons : environ 1 700 px. Sur un écran plus étroit, la
-     barre défile sur elle-même au lieu de pousser Enregistrer et l'assistant
-     hors de la page. */
+     barre passe à la ligne, comme dans les autres outils : un défilement sans
+     barre visible (iPad) cachait Enregistrer sans le dire. */
   min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: thin;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 .header-tools > * {
   flex-shrink: 0;

@@ -159,6 +159,11 @@ body.ruban-replie .band{top:100%;bottom:auto;border-bottom:1px solid var(--borde
 /* ---------- tactile ---------- */
 body.mode-tactile .barre-rapide>button.tb,body.mode-tactile .vue-bar>button.tb,body.mode-tactile .vue-bar .mnu-t{width:38px;height:38px}
 body.mode-tactile .ruban-pli{height:30px;width:34px}
+/* tactile.css grossit les .tb et .mnu-t de l'en-tête (38 px, 13 px) : le ruban garde sa mesure,
+   sinon les titres de groupe montent sur les libellés et la barre rapide rallume ses textes */
+body.mode-tactile .barre-rapide>button.tb{min-height:0;padding:0;font-size:0}
+body.mode-tactile .rg-cmds button.tb,body.mode-tactile.tel .band .mnu-pop button.tb{min-height:0;padding:3px 3px 0;font-size:9.5px}
+body.mode-tactile .rg .mnu-t.rg-t{min-height:0;font-size:9.5px}
 
 /* ---------- téléphone : le ruban reste, replié d'usine (menus.js), bande en bandeau défilant ---------- */
 body.tel>header .menubar.ruban{flex:none;margin:0 -8px;width:calc(100% + 16px)}
