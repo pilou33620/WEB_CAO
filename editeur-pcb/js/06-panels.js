@@ -842,7 +842,7 @@ function buildProps(){
   const ct=[...S.sel.cuts];
   const dr=selDrawingsPcb();
   const hl=selHolesPcb();
-  const dc=selDecoupes(), zi=selInterdits();
+  const dc=selDecoupes(), zi=typeof selInterdits==="function"?selInterdits():[];   // 38-interdits.js se charge après init()
   const only=n=>fps.length+tr.length+vi.length+zo.length+ct.length+dr.length+hl.length+
     dc.length+zi.length+(S.sel.edge?1:0)===n;
   if(S.selRef!=null&&only(0)&&fpById(S.selRef))return propsRefText(box,fpById(S.selRef));

@@ -8,7 +8,7 @@ Le détail technique (formats, structure des fichiers) est dans [editeur-pcb/REA
 
 ### Je veux fixer une impédance cible pour une classe de nets et obtenir la bonne largeur de piste
 
-1. Ouvrez **Vérifier → Gestionnaire de contraintes…**, onglet **Classes**.
+1. Ouvrez **Vérifier → Contraintes…**, onglet **Classes**.
 2. Dans la ligne de la classe, saisissez **Z cible Ω** (et **Tol. %** si les 10 % par défaut ne conviennent pas).
 3. La colonne **Largeur pour Z cible** propose, pour chaque couche de signal, la largeur qui donne cette impédance d'après l'empilage (`L1 0,120`, `L2 0,090`…). Un clic sur une couche la pose pour la classe sur cette couche ; **→ toutes** les pose sur toutes les couches de signal où la cible est atteignable.
 4. Une couche notée `L3 —` n'a pas de plan de référence, ou la cible est hors d'atteinte (entre 0,03 et 5 mm).
@@ -237,11 +237,11 @@ L'export DXF n'existe plus : le STEP le remplace.
 | ▰ Aplat plein (logo, bandeau) | | Polygone plein (région Gerber). | Un clic par sommet, ou deux coins puis `Entrée` ; `Maj` : 45°/90° ; `Échap` abandonne. |
 | T Texte libre | | Pose un texte vectoriel. | Un clic, puis une boîte de saisie (`TEXT` proposé) ; hauteur 1,5 mm et trait 0,15 mm au départ. |
 
-### Vérifier → Gestionnaire de contraintes… : fenêtre
+### Vérifier → Contraintes… : fenêtre
 
 | Bouton ou champ | Raccourci | Effet | Limites |
 |---|---|---|---|
-| Gestionnaire de contraintes… (onglet Vérifier) | | Ouvre la fenêtre, reprend d'abord les contraintes du schéma. | Pas de raccourci clavier. |
+| Contraintes… (onglet Vérifier) | | Ouvre la fenêtre, reprend d'abord les contraintes du schéma. | Pas de raccourci clavier. |
 | Résumé (en-tête) | | Compte les nets tenus / en faute. | |
 | ⬇ CSV | | Exporte `<projet>-contraintes.csv` (séparateur `;`, UTF-8 avec BOM). | Contenu : nets, contraintes, mesures, forme, moignons, contre-perçage, état, écarts. |
 | ✔ DRC | | Ferme la fenêtre et lance le contrôle DRC. | |

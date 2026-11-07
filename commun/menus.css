@@ -23,7 +23,7 @@ body>header{position:relative;z-index:75}
   font-weight:700;display:inline-flex;align-items:center;justify-content:center;padding:0 4px}
 .mnu-dot[hidden]{display:none}
 
-.mnu-pop{position:absolute;top:calc(100% + 6px);left:0;min-width:260px;display:none;flex-direction:column;
+.mnu-pop{position:absolute;z-index:90;top:calc(100% + 6px);left:0;min-width:260px;display:none;flex-direction:column;
   background:var(--panel);border:1px solid var(--border2);border-radius:7px;padding:5px;
   box-shadow:0 12px 32px rgba(0,0,0,.55);max-height:calc(100vh - 80px);overflow-y:auto;
   max-width:calc(100vw - 12px)}
@@ -169,6 +169,8 @@ body.mode-tactile .rg .mnu-t.rg-t{min-height:0;font-size:9.5px}
 body.tel>header .menubar.ruban{flex:none;margin:0 -8px;width:calc(100% + 16px)}
 body.tel .ruban-ongs{padding-right:0;margin-right:42px}
 body.tel .ruban-pli{height:40px;width:38px;top:0;right:2px}
+/* telephone.css met les .tb de l'en-tête en nowrap : un libellé du ruban passe à la ligne */
+body.tel .rg-cmds button.tb{white-space:normal}
 body.tel .rg .mnu-pop{display:contents}
 body.tel .rg .mnu-t.rg-t{pointer-events:none}
 body.tel .rg .mnu-t.rg-t .car{display:none}
