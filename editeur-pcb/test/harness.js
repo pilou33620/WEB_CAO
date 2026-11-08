@@ -66,7 +66,7 @@ const EXPOSE=["copySelPcb","fpEssai","fpChevauchements","placementDegage","place
   /* variantes de montage (commun/variantes.js + 26-variantes.js) */
   "varNorm","varVide","varEstMonte","pcbVarDepuisSchema","pcbVarChoisir","pcbVarDessiner",
   "pcbVarOuvrir","pcbVarFermer","fabFpsMontes","listComps",
-  "edgeClick","edgeMove","closeEdge","interditsListe","pcbThermiqueDocument","pcbThermiqueEstimer","boardPoly","setBoardSize","setBoardRect","setBoardDisque","boardDisquePts","contourChanger","inBoard","boardCutouts",
+  "edgeClick","edgeMove","closeEdge","interditsListe","interditEtiquetteY","pcbThermiqueDocument","pcbThermiqueEstimer","boardPoly","setBoardSize","setBoardRect","setBoardDisque","boardDisquePts","contourChanger","inBoard","boardCutouts",
   "boardChanged","polyEdgeDist","segDist","orient","signedArea",
   "coordOpen","coordClose","coordApply","coordMode","coordPoint","coordAnchor",
   "placeOrigin","ux","uy","wxu","wyu","snapX","snapY","gOrigin","routeToPoint","hint",
@@ -29553,6 +29553,15 @@ TA("canal de pilotage : cao_score, routage (liaisons, DRC, vias, longueur) et pl
     m="";try{await d.executer({quoi:"tout"});}catch(e){m=e.message;}
     if(!/routage ou placement/.test(m))throw new Error("quoi inconnu : "+m);
   }finally{global.Pilote=ancien; global.fetch=fetchGarde;}
+});
+
+T("zones interdites : les noms voisins ne se chevauchent pas",()=>{
+  const o=[], h=1;
+  const a=interditEtiquetteY(o,0,30,0,h);     // garde MH100, nom long
+  const b=interditEtiquetteY(o,0,30,0,h);     // même trou, autre face : ligne suivante
+  const c=interditEtiquetteY(o,20,50,0,h);    // MH101 à droite, son nom croise les deux
+  const d=interditEtiquetteY(o,60,80,0,h);    // assez loin : reste en haut
+  if(a!==0||b!==1||c!==2||d!==0)throw new Error([a,b,c,d].join(","));
 });
 
 (async()=>{
