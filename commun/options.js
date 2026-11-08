@@ -1,7 +1,8 @@
 /* =============================================================================
    commun/options.js
-   Fenêtre d'options des deux éditeurs : une sélection pose ses propriétés dans
-   une fenêtre flottante, au-dessus du canevas. C'est le #props du panneau
+   Fenêtre d'options des deux éditeurs : quand le panneau Propriétés est replié
+   ou fermé, une sélection pose ses propriétés dans une fenêtre flottante,
+   au-dessus du canevas. Panneau déplié : elles restent dans le panneau. C'est le #props du panneau
    Propriétés qui s'y déplace, handlers compris ; il y revient à la fermeture.
 
      · les champs s'appliquent en direct, chacun avec son étape Ctrl+Z, comme au
@@ -62,8 +63,11 @@
     renvoi.replaceWith(box);
     fen.hidden=true;
   }
+  /* panneau Propriétés déplié à l'écran : #props y reste, pas de doublon flottant */
+  const pnl=document.querySelector('[data-pnl="props"]');
+  const lisible=()=>!!pnl&&!pnl.classList.contains("collapsed")&&!pnl.closest("[hidden]");
   function maj(){
-    if(document.body.classList.contains("tel")||!selCount()){vue=null;cacher();return;}
+    if(document.body.classList.contains("tel")||!selCount()||lisible()){vue=null;cacher();return;}
     const s=signature();
     if(s===vue)return;
     vue=s;
@@ -100,4 +104,8 @@
   });
 
   new MutationObserver(maj).observe(box,{childList:true});
+  // replier, fermer ou rouvrir le panneau rebascule #props aussitôt
+  if(pnl)new MutationObserver(maj).observe(pnl,{attributes:true,attributeFilter:["class"]});
+  const store=document.getElementById("pnlStore");
+  if(store)new MutationObserver(maj).observe(store,{childList:true});
 })();

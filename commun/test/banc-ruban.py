@@ -100,7 +100,9 @@ ESSAIS = r"""
   if(PCB){el={x:10,y:10,d:.6,dr:.3,net:""};S.vias.push(el);S.sel.vias.add(el);}
   else{el={x1:0,y1:0,x2:40,y2:0};S.wires.push(el);S.selW.add(el);}
   refreshPanels();await pause();
-  T("sélection : la fenêtre s'ouvre avec #props",!fen.hidden&&vu(fen)&&fen.contains(props));
+  T("panneau Propriétés déplié : #props y reste, pas de fenêtre",fen.hidden&&panneau());
+  wsToggleCollapse("props");await pause();
+  T("sélection, panneau replié : la fenêtre s'ouvre avec #props",!fen.hidden&&vu(fen)&&fen.contains(props));
   const rf=fen.getBoundingClientRect(), rw=$("canvasWrap").getBoundingClientRect();
   T("fenêtre : dans le canevas",rf.right<=rw.right&&rf.bottom<=rw.bottom&&rf.top>=rw.top);
   const pile=S.undo||S.hist, n0=pile.length;
@@ -118,6 +120,22 @@ ESSAIS = r"""
   T("OK : même sélection, elle ne revient pas",fen.hidden);
   clearSel();refreshPanels();await pause();
   T("sans sélection : pas de fenêtre",fen.hidden&&panneau());
+  if(PCB){const v=S.vias[S.vias.length-1];S.sel.vias.add(v);}else{S.selW.add(S.wires[S.wires.length-1]);}
+  refreshPanels();await pause();
+  const ouverte=!fen.hidden;
+  wsToggleCollapse("props");await pause();
+  T("déplier le panneau : la fenêtre lui rend #props",ouverte&&fen.hidden&&panneau());
+  clearSel();refreshPanels();await pause();
+
+  // tactile : le ruban garde sa mesure (titres de groupe sous les libellés, barre rapide en icônes)
+  document.body.classList.add("mode-tactile");clic(ongs[0].querySelector(".mnu-t"));await pause();
+  const chev=[...document.querySelectorAll(".ong.actif .rg")].filter(g=>{
+    const t=g.querySelector(".rg-t").getBoundingClientRect();
+    return [...g.querySelectorAll(".rg-cmds button.tb")].some(b=>vu(b)&&b.getBoundingClientRect().bottom>t.top+1);
+  }).map(g=>g.querySelector(".rg-t").textContent.trim());
+  T("tactile : aucun titre de groupe sur les boutons "+chev,!chev.length);
+  T("tactile : barre rapide sans texte",[...document.querySelectorAll(".barre-rapide>button.tb")].every(b=>getComputedStyle(b).fontSize==="0px"));
+  document.body.classList.remove("mode-tactile");
 
   const pre=document.createElement("pre");pre.id="bilan-ruban";pre.textContent=JSON.stringify(R);
   document.documentElement.appendChild(pre);

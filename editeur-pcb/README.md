@@ -1765,7 +1765,7 @@ le dit.
 
 ## Gestionnaire de contraintes
 
-**Outils → Gestionnaire de contraintes…** rassemble en tableur ce qui était
+**Vérifier → Contraintes…** rassemble en tableur ce qui était
 réparti entre la fenêtre des règles, le panneau des paires et le serpentin,
 et met à côté de chaque contrainte la valeur **mesurée** : vert si elle est
 tenue, rouge sinon, gris pour un net non routé.

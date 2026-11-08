@@ -96,11 +96,22 @@ function interditsDrc(out){
           inconnues.slice(0,10).join(", ")+(inconnues.length>10?"…":"")+") — saisissez-la (dossier mécanique) ou dans la LIB"});
 }
 
-/* Le tracé : un cadre hachuré, rouge, et son nom (face, hauteur permise). */
+/* Où poser une étiquette : à partir de y, une ligne plus bas tant qu'elle
+   touche une étiquette déjà posée. occupes : [{x1,x2,y1,y2}], complété. */
+function interditEtiquetteY(occupes,x1,x2,y,h){
+  for(let k=0;k<40&&occupes.some(o=>x1<o.x2&&x2>o.x1&&y<o.y2&&y+h>o.y1);k++)y+=h;
+  occupes.push({x1,x2,y1:y,y2:y+h});
+  return y;
+}
+
+/* Le tracé : un cadre hachuré, rouge, et son nom (face, hauteur permise).
+   Les noms ne se chevauchent pas : gardes dessus + dessous d'un même trou, ou
+   noms longs de trous voisins, passent l'un sous l'autre. */
 function interditsDessiner(c){
   const Z=interditsListe();
   if(!Z.length)return;
   c.save();
+  const occupes=[];
   for(const z of Z){
     const sel=S.sel.interdits&&S.sel.interdits.has(z);
     c.beginPath();c.moveTo(z.pts[0].x,z.pts[0].y);
@@ -112,8 +123,13 @@ function interditsDessiner(c){
     const b=polyBBox(z.pts);
     c.globalAlpha=1;c.fillStyle=sel?C_SEL:C_ERR;
     c.font=px(11)+'px "Segoe UI",system-ui,sans-serif';c.textAlign="left";c.textBaseline="top";
-    c.save();c.translate(b.x1+px(3),b.y1+px(3));if(S.flip)c.scale(-1,1);
-    c.fillText(z.nom+" · "+z.face+(z.hMax!=null?" · h ≤ "+fmt(z.hMax,1)+" mm":" · aucun composant"),0,0);
+    // la face n'est pas répétée quand le nom la dit déjà (« Garde MH100 (dessous) »)
+    const txt=z.nom+(String(z.nom).includes(z.face)?"":" · "+z.face)+
+      (z.hMax!=null?" · h ≤ "+fmt(z.hMax,1)+" mm":" · aucun composant");
+    const x=b.x1+px(3), w=c.measureText(txt).width;
+    const y=interditEtiquetteY(occupes,S.flip?x-w:x,S.flip?x:x+w,b.y1+px(3),px(14));
+    c.save();c.translate(x,y);if(S.flip)c.scale(-1,1);
+    c.fillText(txt,0,0);
     c.restore();
   }
   c.restore();

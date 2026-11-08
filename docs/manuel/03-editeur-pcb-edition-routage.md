@@ -128,7 +128,7 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 
 ### Je veux vérifier le brochage schéma contre carte
 
-1. Le bouton **⚡ Pinout : Vérifier** (onglet Vérifier) change d'état tout seul : « Schéma en attente », « Conforme ✓ » ou « n anomalie(s) ».
+1. Le bouton **⚡ Pinout : Vérifier** (onglet Vérifier) change d'état tout seul : « en attente », « Conforme ✓ » ou « n anomalie(s) ».
 2. Un clic ouvre « Inspection & Conformité du Pinout » : par composant, pas des pastilles, taille du boîtier, nombre de pastilles, puis table des broches.
 3. Pour une anomalie : **Reposer l'empreinte sur les cotes du boîtier**, **Acquitter (faux positif)** ou **Copier le rapport**.
 
@@ -269,7 +269,7 @@ Recadrer, Grille et Chevelu y sont en icônes ; les autres réglages sont dans s
 | ⚡ Pinout : Vérifier | | Contrôle brochage, pas et dimensions du boîtier contre le schéma | |
 | Score Placement | | Ouvre le panneau « Qualité de placement » | Voir la référence du panneau |
 | Règles… | | Fenêtre « Règles & Fabrication », onglet Règles de conception | |
-| Gestionnaire de contraintes… | | Contraintes par net | Voir [04-editeur-pcb-fabrication.md](04-editeur-pcb-fabrication.md) |
+| Contraintes… (Vérifier) | | Contraintes par net | Voir [04-editeur-pcb-fabrication.md](04-editeur-pcb-fabrication.md) |
 | Capabilités & Règles… | | Fenêtre « Règles & Fabrication », onglet Capabilités Fabricant | |
 | Simulation EM… | | Paramètres S d'un net par la méthode des moments | Calcul sur le serveur (`python web_CAO.py`) ; voir [08-simulation-si.md](08-simulation-si.md) |
 

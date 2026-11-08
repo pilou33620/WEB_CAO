@@ -217,7 +217,7 @@ function pcbVerifierEtNotifierPinout(autoOuvrirSiErreur) {
 
   if (btn) {
     if (res.nbComposants === 0) {
-      btn.innerHTML = "⚡ Pinout : Schéma en attente";
+      btn.innerHTML = "⚡ Pinout : en attente";
       btn.className = "tb";
       btn.title = "Aucun composant avec schéma ou netlist rattaché";
     } else if (res.conforme) {
