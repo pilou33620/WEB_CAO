@@ -1153,3 +1153,25 @@
   .cm-wl .cm-in{width:52px}
   .cm-tag.cm-sch{color:var(--cyan)}
   .cm-grp-sch{border-style:dashed}
+
+  /* ---------- fenêtre de gestion du DRC (45-drc-gestion.js) ---------- */
+  .drcw{position:fixed;top:70px;right:16px;width:380px;max-width:calc(100vw - 32px);max-height:70vh;
+    display:flex;flex-direction:column;z-index:900;background:var(--panel);border:1px solid var(--border2);
+    border-radius:6px;box-shadow:0 8px 28px rgba(0,0,0,.5);font-size:12px}
+  .drcw-head{display:flex;align-items:center;gap:6px;padding:7px 10px;border-bottom:1px solid var(--border);cursor:move;user-select:none}
+  .drcw-head b{color:var(--red)}
+  .drcw-head span{flex:1;color:var(--txt-dim)}
+  .drcw-bar{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--border)}
+  .drcw-bar span{font-family:var(--mono);min-width:64px;text-align:center}
+  .drcw-bar label{margin-left:auto;color:var(--txt-dim);display:flex;align-items:center;gap:4px}
+  .drcw button.tb{padding:3px 8px;font-size:11px}
+  #drcwIlots:not(:empty){padding:6px 10px;border-bottom:1px solid var(--border)}
+  #drcwIlots button{width:100%;justify-content:center}
+  .drcw-list{overflow:auto;flex:1;min-height:60px}
+  .drcw-cat{padding:5px 10px;background:var(--panel2);border-bottom:1px solid var(--border);cursor:pointer;font-weight:600;position:sticky;top:0}
+  .drcw-cat span{float:right;font-family:var(--mono);color:var(--red)}
+  .drcw-row{padding:4px 10px 4px 18px;border-bottom:1px solid var(--border);cursor:pointer;color:var(--red);line-height:1.35}
+  .drcw-row.info{color:var(--txt-dim)}
+  .drcw-row:hover{background:var(--blue-dim)}
+  .drcw-row.on{background:var(--blue-dim);outline:1px solid var(--yellow)}
+  .drcw-row span{display:block;font-family:var(--mono);font-size:10.5px;color:var(--txt-dim)}

@@ -56,6 +56,27 @@ function maskLabels(M,x,y,r,rot){
   }
   return out;
 }
+/* Les îlots qu'aucune broche, via ni piste du net ne touche : du cuivre mort,
+   que le contrôle signale et que `ilotsSupprimer` (45-drc-gestion.js) retire.
+   Un seul balayage du masque : surface, boîte et un pixel de repère par îlot. */
+function ilotsMorts(M,seen){
+  const n=M.count, nb=new Int32Array(n+1), sx=new Float64Array(n+1), sy=new Float64Array(n+1);
+  for(let p=0;p<M.lab.length;p++){
+    const lb=M.lab[p];
+    if(!lb||seen.has(lb))continue;
+    const x=p%M.W;
+    nb[lb]++;sx[lb]+=x;sy[lb]+=(p-x)/M.W;
+  }
+  const out=[];
+  for(let lb=1;lb<=n;lb++){
+    if(!nb[lb])continue;
+    // le repère : le centre de gravité s'il tombe dans l'îlot, sinon un pixel de l'îlot
+    let cx=Math.floor(sx[lb]/nb[lb]), cy=Math.floor(sy[lb]/nb[lb]);
+    if(M.lab[cy*M.W+cx]!==lb){const p=M.lab.indexOf(lb);cx=p%M.W;cy=(p-cx)/M.W;}
+    out.push({lb,x:r3(M.x+(cx+0.5)/M.res),y:r3(M.y+(cy+0.5)/M.res),aire:nb[lb]/(M.res*M.res)});
+  }
+  return out;
+}
 function zoneMask(l,net){
   const zs=S.zones.filter(z=>!z.larme&&z.l===l&&(z.net||"")===net&&z.pts.length>=3);
   if(!zs.length)return null;
@@ -387,7 +408,8 @@ function computeConn(exact){
         .concat(maskLabels(M,m.x,m.y,t.w/2,0));
       link("T"+i+"a",labs);
     });
-    zoneIslands.push({l:g.l,net:g.net,islands:seen.size,total:M.count});
+    zoneIslands.push({l:g.l,net:g.net,islands:seen.size,total:M.count,
+                      morts:g.zs.some(zoneFichier)?[]:ilotsMorts(M,seen)});
   }
 
   /* regroupement par net + chevelu */
@@ -1198,6 +1220,11 @@ function runDrc(){
       msg:"Zone "+zi.net+" sur "+cuId(zi.l,S.cu)+" : cuivre coupé en "+zi.islands+
           " îlots reliés à des broches"});
   }
+  for(const zi of (c.zoneIslands||[]))
+    for(const m of (zi.morts||[]))
+      // la surface reste hors du message : il ne change pas quand l'îlot se retaille
+      out.push({x:m.x,y:m.y,l:zi.l,ilot:true,aire:m.aire,
+        msg:"Îlot de cuivre isolé : zone "+zi.net+" sur "+cuId(zi.l,S.cu)+", relié à rien (à supprimer)"});
   /* ---------- ce que l'empilage impose ----------
      Le rapport d'aspect et la nature des vias ne se voient pas sur le dessin :
      c'est la pile qui les décide, d'où leur place ici plutôt que dans le seul
@@ -1269,6 +1296,7 @@ function runDrc(){
   if(typeof linkHorsCentreDrc==="function")linkHorsCentreDrc(out);
 
   S.drc=out; S.drcRun=true;
+  if(typeof drcFenetreMaj==="function")drcFenetreMaj();   // la fenêtre DRC, si elle est ouverte
   return out;
 }
 

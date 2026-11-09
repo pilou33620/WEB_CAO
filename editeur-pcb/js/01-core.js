@@ -1097,7 +1097,7 @@ const S = {
   hlNet:null,                 // net mis en avant
   hlText:null,                // texte de composant en cours de déplacement
   selRef:null, selPad:null,   // repère cliqué seul (id d'empreinte) ; pastille cliquée {id, k : rang dans padsOf}
-  drc:[], drcRun:false,
+  drc:[], drcRun:false, drcSel:null,
   listTab:"nets", onlyUnrouted:false,
   mouse:{x:0,y:0},
   ver:0, nextId:1,

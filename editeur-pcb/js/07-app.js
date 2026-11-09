@@ -675,9 +675,10 @@ $("bDrc").onclick=()=>{
   for(const [id,t] of [["tabNets","nets"],["tabComps","comps"],["tabDrc","drc"]])
     $(id).classList.toggle("on",t==="drc");
   buildList();draw();
+  drcFenetre();             // 45-drc-gestion.js se charge après ce fichier
   const hard=e.filter(x=>!x.info).length;
   if(typeof reIsOpen==="function"&&reIsOpen())reSync();
-  hint(hard?hard+" erreur(s) de règles détectée(s).":"Contrôle DRC : aucune erreur de règles.");
+  hint(hard?hard+" erreur(s) de règles détectée(s) : la fenêtre DRC les liste, ◀ ▶ pour les parcourir.":"Contrôle DRC : aucune erreur de règles.");
 };
 /* La fenêtre des règles. Elle a remplacé les panneaux « Règles de tracé » et
    « Paires différentielles » du dock : c'est désormais le seul endroit où une

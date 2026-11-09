@@ -44,7 +44,7 @@ global.BroadcastChannel.prototype.close=function(){
 };
 
 const code=fs.readFileSync(path.join(__dirname,"..","dist","pcb.js"),"utf8");
-const EXPOSE=["copySelPcb","fpEssai","fpChevauchements","placementDegage","placementBilan","fpPlaceLibre","pasteClipPcb","rotateSel","flipSel","fpGene","routeRetouche","dragMoveBy","beginMove","dragRotate","gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
+const EXPOSE=["ilotsSupprimer","ilotContour","drcRangs","drcCategorie","drcFenetre","drcPas","copySelPcb","fpEssai","fpChevauchements","placementDegage","placementBilan","fpPlaceLibre","pasteClipPcb","rotateSel","flipSel","fpGene","routeRetouche","dragMoveBy","beginMove","dragRotate","gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
   "updateRoute","stepRoute","commitRoute","routeToLayer","runDrc","buildTabs",
   "buildLayers","refreshPanels","buildList","buildProps","clearSel","rotateSel",
   "BLOC_PLACEMENT","PLACEMENT_SCORE","fpBBox",
@@ -820,6 +820,37 @@ T("un faisceau qui coupe un plan le coupe vraiment",()=>{
     throw new Error("le passage rouvert devrait rétablir GND");
   const e=runDrc();
   if(e.some(x=>/îlots/.test(x.msg)))throw new Error("plus de coupure : plus d'erreur d'îlot");
+  loadDoc(JSON.parse(saved),true);
+});
+T("îlot de cuivre isolé : signalé au DRC, retiré par une découpe, le reste du plan intact",()=>{
+  if(!realCanvas){console.log("     (canvas absent : essai ignoré)");return;}
+  const saved=serialize();
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.cuts=[];touch();
+  setCuCount(2);
+  S.board={x:0,y:0,w:60,h:40};
+  const f=mkFp("J1","","",2);f.style="row";f.pitch=2.54;f.x=8;f.y=8;f.nets={1:"GND",2:"GND"};S.fps.push(f);
+  S.zones.push({id:999,l:0,net:"GND",pts:boardZonePts()});
+  // une piste SIG en carré fermé : le GND qu'elle enferme n'est relié à rien
+  const c=[[30,15],[45,15],[45,30],[30,30]];
+  for(let i=0;i<4;i++){const a=c[i],b=c[(i+1)%4];S.tracks.push({l:0,net:"SIG",w:0.5,x1:a[0],y1:a[1],x2:b[0],y2:b[1]});}
+  touch();
+  let e=runDrc().filter(x=>x.ilot);
+  if(e.length!==1)throw new Error("un îlot isolé attendu, "+e.length);
+  if(!(e[0].x>30&&e[0].x<45&&e[0].y>15&&e[0].y<30))throw new Error("repère hors de l'îlot : "+e[0].x+" ; "+e[0].y);
+  if(!drcRangs().has(drcCategorie(e[0])))throw new Error("l'îlot devrait figurer dans une catégorie de la fenêtre");
+  drcFenetre();drcPas(1);
+  if(!S.drcSel)throw new Error("◀ ▶ devrait choisir un écart");
+  const n=S.cuts.length;
+  if(ilotsSupprimer()!==1||S.cuts.length!==n+1)throw new Error("une découpe attendue");
+  const ct=S.cuts[S.cuts.length-1];
+  if(!ct.ilot||ct.l!==0)throw new Error("découpe mal posée");
+  // la découpe couvre l'îlot et ne déborde pas sur le plan au-delà de la piste
+  if(!inPoly(37.5,22.5,ct.pts))throw new Error("le centre de l'îlot devrait être découpé");
+  if(inPoly(20,22.5,ct.pts)||inPoly(50,22.5,ct.pts))throw new Error("la découpe déborde sur le plan vivant");
+  if(runDrc().some(x=>x.ilot))throw new Error("plus d'îlot isolé après suppression");
+  if(conn().nets.get("GND").miss!==0)throw new Error("GND devrait rester relié");
+  undo();
+  if(S.cuts.length!==n)throw new Error("Ctrl+Z devrait retirer la découpe");
   loadDoc(JSON.parse(saved),true);
 });
 T("classes de net",()=>{

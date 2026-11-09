@@ -861,6 +861,12 @@ function drawDrc(c){
     c.moveTo(e.x+b,e.y-b);c.lineTo(e.x-b,e.y+b);
   }
   c.stroke();
+  /* l'écart choisi dans la fenêtre DRC : un anneau jaune autour du marqueur */
+  const e=S.drcSel;
+  if(e&&S.drc.indexOf(e)>=0){
+    c.strokeStyle="#f2c744";c.lineWidth=px(2.4);
+    c.beginPath();c.arc(e.x,e.y,px(16),0,Math.PI*2);c.stroke();
+  }
 }
 function drawZones(c,i,a){
   /* les contours non sélectionnés : un seul tracé pointillé pour la couche */
