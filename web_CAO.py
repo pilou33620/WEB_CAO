@@ -437,7 +437,6 @@ except ImportError as _exc:
     print("    Installez-les avec, selon le systeme :", flush=True)
     print("      pip install -r requirements.txt", flush=True)
     print("      sudo apt install python3-numpy python3-scipy   (Raspberry Pi, Debian)", flush=True)
-    print("      pkg install python-numpy python-scipy          (Termux)", flush=True)
     if os.name == "nt" and sys.stdin and sys.stdin.isatty() and "--sans-pause" not in sys.argv:
         input("Appuyez sur Entree pour fermer cette fenetre...")
     sys.exit(3)

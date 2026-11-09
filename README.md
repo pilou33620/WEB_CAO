@@ -38,7 +38,6 @@ Ouvrir `index.html` sans serveur ne demande rien. Le serveur demande Python 3, n
 | :--- | :--- | :--- |
 | **Raspberry Pi, Debian** | `sudo apt install git python3-numpy python3-scipy` puis `git clone https://github.com/pilou33620/WEB_CAO.git` (pip y refuse la Python du système : apt, ou un venv) | `python3 web_CAO.py` |
 | **Windows** | Python 3 et Git, `git clone https://github.com/pilou33620/WEB_CAO.git`, puis `pip install -r requirements.txt` | double-clic sur `web_CAO.py` ou `demarrer_WEB_CAO.cmd` (mode local) ; `python web_CAO.py` dans un terminal pour le réseau |
-| **Android (Termux)** | `pkg install python git python-numpy python-scipy` puis `git clone https://github.com/pilou33620/WEB_CAO.git` (numpy et scipy passent par `pkg`, pas par pip) | `python web_CAO.py --local`, puis ouvrir l'adresse affichée dans le navigateur |
 
 ## 💻 Sur quels appareils ?
 
@@ -47,7 +46,7 @@ WEB_CAO tourne dans n'importe quel navigateur récent ; seul le serveur demande 
 | Appareil | Comment l'utiliser |
 | :--- | :--- |
 | **Ordinateur** (Windows, macOS, Linux) | Navigateur seul, ou serveur local sur la même machine : c'est le mode complet. |
-| **Tablette, téléphone, écran tactile** | Ouvrir l'adresse affichée par un serveur lancé ailleurs sur le réseau, ou lancer le serveur sur l'appareil lui-même sous Android, avec Termux (voir [Installation](#-installation)). L'iPad et l'iPhone restent des clients : ils ouvrent l'adresse d'un serveur. Activez le **mode tactile** depuis l'accueil. |
+| **Tablette, téléphone, écran tactile** | Ouvrir l'adresse affichée par un serveur lancé ailleurs sur le réseau. L'iPad et l'iPhone restent des clients : ils ouvrent l'adresse d'un serveur. Activez le **mode tactile** depuis l'accueil. |
 | **Raspberry Pi, serveur sans écran** | Le serveur reconnaît le Raspberry Pi (ou un Linux sans affichage) et n'ouvre pas de navigateur ; on s'y connecte depuis un autre appareil du réseau (`--navigateur` force l'ouverture). |
 
 **Mode tactile** : pincement pour zoomer, deux doigts pour se déplacer, stylet reconnu (la paume est ignorée). Un appui long ouvre une **roulette de commandes** adaptée à ce qui est touché (composant, piste, vide…), personnalisable et gardée dans le profil ; le bouton **Roulette**, à côté de **Tactile**, l'ouvre aussi sans appui long, même à la souris.

@@ -5,7 +5,6 @@
 #
 #   pip install -r requirements.txt
 #   sudo apt install python3-numpy python3-scipy    (Raspberry Pi, Debian)
-#   pkg install python-numpy python-scipy           (Termux)
 #
 # À quoi ils servent :
 #   - numpy   : solveur d'impédance 2D MoM (ligne_mom.py), diaphonie (crosstalk.py),
