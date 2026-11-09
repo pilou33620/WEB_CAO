@@ -135,11 +135,14 @@ function pnsDejog(node,line,pts,skip,mode,i0){
           let libre=true;
           for(let m=i+1;m<j&&libre;m++)if(anc.has(m))libre=false;
           if(!libre)continue;
-          for(const post of [false,true]){
-            const legs=routeCorner(pts[i],pts[j],post,mode,0);
+          /* Le coude à 45° (les deux sens), puis l'équerre droite : descendre droit
+             sur une pastille entre deux voisines n'a souvent que celle-là de libre. */
+          const A=pts[i],Bp=pts[j];
+          const essais=[false,true].map(post=>routeCorner(A,Bp,post,mode,0).map(s=>({x:s.x2,y:s.y2})))
+            .concat([[{x:Bp.x,y:A.y},Bp],[{x:A.x,y:Bp.y},Bp]]);
+          for(const legs of essais){
             if(!legs.length)continue;
-            const cand=pnsSimplify(pts.slice(0,i+1)
-                                      .concat(legs.map(s=>({x:s.x2,y:s.y2})),pts.slice(j+1)));
+            const cand=pnsSimplify(pts.slice(0,i+1).concat(legs,pts.slice(j+1)));
             if(cand.length<2||pnsLen(cand)>L0+line.w)continue;
             const n=pnsEchardes(cand,line.w);
             if(n>=nbMieux)continue;

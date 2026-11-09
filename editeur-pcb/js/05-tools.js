@@ -3922,6 +3922,8 @@ function routeVia(){
   if(!placeVia(R.pt.x,R.pt.y,R.net,Math.min(R.layer,other),Math.max(R.layer,other),true))return false;
   R.layer=other;S.active=other;
   buildTabs();buildLayers();refreshPanels();
+  // « Via au bout du curseur… » restait affiché après la pose, et même après la fin du tracé
+  hint("Via posé : le tracé continue sur "+cuId(other,S.cu)+".");
   return true;
 }
 function routeToLayer(i){

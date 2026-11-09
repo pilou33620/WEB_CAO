@@ -495,7 +495,11 @@ cv.addEventListener("pointerdown",e=>{
     const el=addComp(S.place,p.x,p.y);
     el.rot=S.placeRot||0;
     if(S.placeLibItem)schPoserDepuisCatalogue(el,S.placeLibItem);
-    if(!e.shiftKey){S.place=null;S.placeLibItem=null;setPalette(null);}
+    if(!e.shiftKey){
+      S.place=null;S.placeLibItem=null;setPalette(null);
+      // « Clic sur la feuille pour poser… » restait affiché après la pose
+      document.getElementById("fHint").textContent=(el.ref||"Composant")+" posé · Ctrl+Z pour annuler.";
+    }
     clearSel();S.sel.add(el.id);
     refreshPanels();draw();return;
   }
@@ -668,8 +672,9 @@ cv.addEventListener("pointerdown",e=>{
       "le panneau des propriétés permet de la masquer.";
     draw();return;
   }
-  // bloc hiérarchique sur la feuille racine (page 0)
-  if(S.page===0 && typeof hitSheetBlock==="function"){
+  // bloc hiérarchique sur la feuille racine (page 0) ; un composant posé par-dessus
+  // passe avant : sinon il n'était plus sélectionnable
+  if(S.page===0 && typeof hitSheetBlock==="function" && !hitComp(p.x,p.y)){
     const sb=hitSheetBlock(p.x,p.y);
     if(sb){
       if(!addSel)clearSel();
@@ -864,7 +869,7 @@ cv.addEventListener("dblclick",e=>{
   if(S.wireStart){S.wireStart=null;draw();return;}
   if(S.drawStart){S.drawStart=null;draw();return;}
   const p=mpos(e);
-  if(S.page===0 && typeof hitSheetBlock==="function"){
+  if(S.page===0 && typeof hitSheetBlock==="function" && !hitComp(p.x,p.y)){
     const sb=hitSheetBlock(p.x,p.y);
     if(sb){
       gotoPage(sb.sheetIndex);           // ouvre la feuille du composant, sélectionné

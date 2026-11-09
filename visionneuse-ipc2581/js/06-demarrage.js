@@ -289,9 +289,12 @@ function exportPng(){
     }
   });
   document.getElementById("bPng").onclick=exportPng;
-  document.getElementById("bFit").onclick=fit;
+  /* sans carte, Ajuster et Dessous ne font rien : on le dit, au lieu de laisser le message
+     d'un autre bouton (« pas de plans ») au pied de page */
+  const sansCarte=f=>function(){ if(!V.modele)hint("Aucune carte ouverte : ouvrez un fichier IPC-2581."); f(); };
+  document.getElementById("bFit").onclick=sansCarte(fit);
   document.getElementById("bMesure").onclick=function(){mesurer();};
-  document.getElementById("bFlip").onclick=basculerFace;
+  document.getElementById("bFlip").onclick=sansCarte(basculerFace);
   document.getElementById("bRefs").onclick=function(){basculer("refs","bRefs");};
   document.getElementById("bTrous").onclick=function(){basculer("trous","bTrous");};
   document.getElementById("bPlans").onclick=function(){basculer("plans","bPlans");};

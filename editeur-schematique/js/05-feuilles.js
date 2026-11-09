@@ -34,6 +34,9 @@ function loadPage(i){
 function gotoPage(i){
   if(i===S.page||i<0||i>=S.pages.length)return;
   storeCurrent();loadPage(i);buildTabs();refreshPanels();
+  // le net survolé appartenait à l'autre feuille
+  S.hoverNet=null;
+  const fn=document.getElementById("fNet");if(fn)fn.textContent="—";
   const p=S.pages[S.page];
   if(!p.viewed){p.viewed=true;fit();}else draw();
 }
@@ -221,7 +224,7 @@ function buildTabs(){
       const nSub=Math.max(0,S.pages.length-1);
       fp.textContent="Hiérarchie ("+nSub+" feuille"+(nSub>1?"s":"")+")";
     }else{
-      fp.textContent="Feuille "+S.page+"/"+Math.max(1,S.pages.length-1);
+      fp.textContent=S.page+"/"+Math.max(1,S.pages.length-1);   // « Feuille » est déjà écrit devant
     }
   }
 }

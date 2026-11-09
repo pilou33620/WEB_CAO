@@ -527,6 +527,7 @@ function autoAssocierCatalogue(liste) {
   let modifs = 0;
   const pcbFiles = LIB_STATE.fichiers.pcb;
   const simFiles = LIB_STATE.fichiers.simulation || [];
+  const schFiles = LIB_STATE.fichiers.schematique || [];
 
   for (const c of (Array.isArray(liste) ? liste : LIB_STATE.composants)) {
     const pkg = (c["Package type"] || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -566,7 +567,10 @@ function autoAssocierCatalogue(liste) {
       else if (pref === "MECA") c[colSch] = "hole.json";
       else if (pref === "BZ") c[colSch] = "buzzer.json";
       else c[colSch] = "ic.json";
-      modifs++;
+      /* comme pour le PCB : n'associer qu'un symbole qui existe vraiment ; sinon la fiche
+         affichait « symboles associés 100 % » et chaque sélection partait en 404 */
+      if (!schFiles.includes(c[colSch])) c[colSch] = "";
+      else modifs++;
     }
 
     // 2. PCB
@@ -592,7 +596,7 @@ function autoAssocierCatalogue(liste) {
       else if (symBase === "pmos") c[colSim] = "mosfet_p.sub";
       else if (symBase === "opamp") c[colSim] = "opamp_ideal.sub";
       // comme pour le PCB : n'associer qu'un modèle qui existe vraiment
-      if (c[colSim] && simFiles.length && !simFiles.includes(c[colSim])) c[colSim] = "";
+      if (c[colSim] && !simFiles.includes(c[colSim])) c[colSim] = "";
       if (c[colSim]) modifs++;
     }
   }

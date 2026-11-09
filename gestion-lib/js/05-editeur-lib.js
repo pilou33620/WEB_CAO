@@ -1097,7 +1097,7 @@ function remplirFormulaireEditeur() {
         </div>
         <div style="border-top:1px solid var(--border); padding-top:10px;">
           <label style="font-weight:600; font-size:11.5px; color:var(--txt);">Corps sérigraphie (mm)</label>
-          <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:6px; margin-top:6px;">
+          <div style="display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:6px; margin-top:6px;">
             <div class="form-group"><label>X1</label><input type="number" step="0.05" id="edBodyX1" value="${+(data.body ? data.body.x1 : -1) || 0}"></div>
             <div class="form-group"><label>Y1</label><input type="number" step="0.05" id="edBodyY1" value="${+(data.body ? data.body.y1 : -1) || 0}"></div>
             <div class="form-group"><label>X2</label><input type="number" step="0.05" id="edBodyX2" value="${+(data.body ? data.body.x2 : 1) || 0}"></div>

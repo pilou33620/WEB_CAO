@@ -157,6 +157,17 @@ body.ws-resize-h *{cursor:row-resize !important}
 #wsMenu .msep{height:1px;background:var(--border);margin:4px 2px}
 #wsMenu .mi .ck{width:11px;flex:none;color:var(--yellow);font-size:10px}
 
+/* max-width et non width : wsApply() pose la largeur en ligne, qui l'emportait — en 800 px
+   la carte de la visionneuse tombait à 238 × 49 px. La largeur retenue n'est pas touchée. */
 @media (max-width:980px){
-  #dockL{width:176px}#dockR{width:214px}
+  #dockL{max-width:min(26vw,212px)}#dockR{max-width:min(26vw,260px)}
 }
+/* Fenêtre basse : le dock du bas ne mange plus la vue. */
+@media (max-height:700px){
+  #dockB{max-height:24vh}
+}
+/* La pastille « Claude » (pilote.css) est fixe en bas à droite : le pied de page lui laisse
+   sa place, et le bas du dock droit la vingtaine de pixels dont elle le dépasse. */
+body>footer{padding-right:130px}
+#dockR{box-sizing:border-box;padding-bottom:24px}
+body.tel #dockR{padding-bottom:0}
