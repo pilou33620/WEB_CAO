@@ -30,7 +30,11 @@ function zoneReglagesLire(z,out){
   const h=z.hachure;
   if(h&&typeof h==="object"){
     const pas=n(h.pas,0.2,20);
-    if(pas)out.hachure={pas,larg:r4(clamp(+h.larg||0.25,0.05,pas-0.05))};
+    if(pas){
+      out.hachure={pas,larg:r4(clamp(+h.larg||0.25,0.05,pas-0.05))};
+      const an=((Math.round(+h.angle||0)%180)+180)%180;
+      if(an)out.hachure.angle=an;
+    }
   }
 }
 
@@ -40,28 +44,65 @@ function zoneReglagesLire(z,out){
    zone à une largeur de trait au moins de son bord — le cadre reste plein,
    comme dans Altium. Une maille sous un autre cuivre plus prioritaire n'est pas
    creusée : elle ne toucherait pas la bonne zone.
-   shortcut: hachures à 90° seulement, et le bord n'est jugé qu'aux coins des
-   mailles (une zone très concave peut perdre un bout de cadre) ; tourner la
-   grille et tester les arêtes si on en a besoin. */
+   La grille tourne de `hachure.angle` (0° ou 45° comme Altium, ou tout autre
+   angle). Une maille n'est creusée que si son cadre, élargi d'une largeur de
+   trait, tient entier dans la zone : ses coins dedans, et aucune arête de la
+   zone ni de ses trous qui le traverse — une zone concave garde son bord. */
 const HACH_MEMO={ver:-1,m:new Map()}, HACH_MAX=200000;
 function zoneHachures(z,l){
   if(!z||!z.hachure||z.plein||z.l!==l||z.pts.length<3)return [];
   if(HACH_MEMO.ver!==S.ver){HACH_MEMO.ver=S.ver;HACH_MEMO.m.clear();}
   const vu=HACH_MEMO.m.get(z);
   if(vu)return vu;
-  const {pas,larg}=z.hachure, c=pas-larg, b=polyBBox(z.pts), out=[];
-  const n=((b.x2-b.x1)/pas+1)*((b.y2-b.y1)/pas+1);
+  const {pas,larg}=z.hachure, c=pas-larg, out=[];
+  const an=(z.hachure.angle||0)*Math.PI/180, ux=Math.cos(an), uy=Math.sin(an);
+  const W=(s,t)=>({x:r4(s*ux-t*uy),y:r4(s*uy+t*ux)});          // repère de la grille → carte
+  const loc=p=>({s:p.x*ux+p.y*uy,t:-p.x*uy+p.y*ux});            // carte → repère de la grille
+  const L=z.pts.map(loc);
+  const s0=Math.min(...L.map(p=>p.s)), s1=Math.max(...L.map(p=>p.s));
+  const t0=Math.min(...L.map(p=>p.t)), t1=Math.max(...L.map(p=>p.t));
+  // les arêtes de la zone et de ses trous, avec leur boîte, pour le test du cadre
+  const aretes=[];
+  for(const R of [z.pts].concat(Array.isArray(z.trous)?z.trous:[]))
+    for(let k=0;k<R.length;k++){const a=R[k], b=R[(k+1)%R.length];
+      aretes.push({x1:a.x,y1:a.y,x2:b.x,y2:b.y,bx1:Math.min(a.x,b.x),by1:Math.min(a.y,b.y),bx2:Math.max(a.x,b.x),by2:Math.max(a.y,b.y)});}
+  const cadreLibre=E=>{
+    const b=polyBBox(E);
+    for(const e of aretes){
+      if(e.bx2<b.x1||e.bx1>b.x2||e.by2<b.y1||e.by1>b.y2)continue;
+      if(inPoly(e.x1,e.y1,E)||inPoly(e.x2,e.y2,E))return false;
+      for(let k=0;k<4;k++){const p=E[k], q=E[(k+1)%4];if(segCross(e,{x1:p.x,y1:p.y,x2:q.x,y2:q.y}))return false;}
+    }
+    return true;
+  };
+  const n=((s1-s0)/pas+1)*((t1-t0)/pas+1);
   if(n<=HACH_MAX)
-    for(let gx=Math.floor(b.x1/pas)*pas;gx<b.x2;gx+=pas)
-      for(let gy=Math.floor(b.y1/pas)*pas;gy<b.y2;gy+=pas){
-        const x1=r4(gx+larg/2), y1=r4(gy+larg/2), x2=r4(x1+c), y2=r4(y1+c);
-        const P=[{x:x1,y:y1},{x:x2,y:y1},{x:x2,y:y2},{x:x1,y:y2}];
-        if(!P.every(p=>zoneContient(z,p.x,p.y)&&polyEdgeDist(p.x,p.y,z.pts)>=larg-1e-9))continue;
-        if(zoneAt(l,(x1+x2)/2,(y1+y2)/2)!==z)continue;
+    for(let gs=Math.floor(s0/pas)*pas;gs<s1;gs+=pas)
+      for(let gt=Math.floor(t0/pas)*pas;gt<t1;gt+=pas){
+        const a=gs+larg/2, b=gt+larg/2;
+        const P=[W(a,b),W(a+c,b),W(a+c,b+c),W(a,b+c)];
+        const E=[W(a-larg,b-larg),W(a+c+larg,b-larg),W(a+c+larg,b+c+larg),W(a-larg,b+c+larg)];
+        if(!E.every(p=>zoneContient(z,p.x,p.y))||!cadreLibre(E))continue;
+        const m=W(a+c/2,b+c/2);
+        if(zoneAt(l,m.x,m.y)!==z)continue;
         out.push(P);
       }
   HACH_MEMO.m.set(z,out);
   return out;
+}
+/* Un contour et ses trous en UN seul contour, chaque trou rattaché par une
+   coupure aller-retour au sommet le plus proche (le « cut-in » que la norme
+   Gerber admet) : le contour extérieur dans un sens, les trous dans l'autre. */
+function contourTroue(O,T){
+  let R=O.slice();if(signedArea(R)<0)R.reverse();
+  for(const H0 of T){
+    const H=H0.slice();if(signedArea(H)>0)H.reverse();
+    let bi=0,bj=0,bd=Infinity;
+    for(let i=0;i<R.length;i++)for(let j=0;j<H.length;j++){
+      const d=(R[i].x-H[j].x)**2+(R[i].y-H[j].y)**2;if(d<bd){bd=d;bi=i;bj=j;}}
+    R=R.slice(0,bi+1).concat(H.slice(bj),H.slice(0,bj+1),R.slice(bi));
+  }
+  return R;
 }
 /* creuse les mailles dans un canevas de zones (écran, masque des îlots) */
 function zonesHachurer(c,zs,l){
@@ -93,13 +134,14 @@ function zonesDrc(out){
     const nom="Région pleine "+(net||"sans net")+" sur "+cuId(l,S.cu);
     const autre=n=>!net||(n||"")!==net;
     const dPt=(x,y)=>zoneContient(z,x,y)?0:polyEdgeDist(x,y,P);
-    const dSeg=s=>{
+    const dSeg1=s=>{
       if(zoneContient(z,s.x1,s.y1)||zoneContient(z,s.x2,s.y2))return 0;
       let d=1e9;
       for(let k=0;k<P.length;k++){const a=P[k], b=P[(k+1)%P.length];
         d=Math.min(d,segSegDist(s,{x1:a.x,y1:a.y,x2:b.x,y2:b.y}));}
       return d;
     };
+    const dSeg=t=>Math.min(...trkSegs(t).map(dSeg1));   // un arc : ses cordes (trkSegs, 01-core.js)
     /* la pastille contre la région : 0 si elle y entre, sinon la plus courte
        distance de son contour au bord de la région (arêtes parcourues au 1/20 mm) */
     const dPad=q=>{
@@ -120,7 +162,6 @@ function zonesDrc(out){
                                  :" à "+fmt(d,3)+" mm, sous l'isolement de "+fmt(e,3)+" mm")});};
     for(const t of S.tracks){
       if(t.l!==l||!autre(t.net))continue;
-      // shortcut: un arc est jugé sur sa corde
       const m=trkMid(t);juger(Math.max(0,dSeg(t)-t.w/2),clrZone(z,t.net,"cu","trk"),m.x,m.y,"la piste "+(t.net||"sans net"));
     }
     for(const v of S.vias){
@@ -176,7 +217,8 @@ function zoneReglagesProps(box,z){
       [["","plein"],["hach","hachuré"],["region","région pleine (sans dégagement)"]].map(([k,t])=>
         '<option value="'+k+'"'+(k===remp?" selected":"")+'>'+t+'</option>').join("")+'</select></div>'+
     (z.hachure?'<div class="prop two"><div><label>Pas des hachures (mm)</label><input id="zHp" type="number" step="0.1" min="0.2" value="'+z.hachure.pas+'"></div>'+
-      '<div><label>Largeur des traits (mm)</label><input id="zHl" type="number" step="0.05" min="0.05" value="'+z.hachure.larg+'"></div></div>':"")+
+      '<div><label>Largeur des traits (mm)</label><input id="zHl" type="number" step="0.05" min="0.05" value="'+z.hachure.larg+'"></div></div>'+
+      '<div class="prop"><label>Angle des hachures (°)</label><input id="zHa" type="number" step="45" min="0" max="179" value="'+(z.hachure.angle||0)+'"></div>':"")+
     '<div class="prop"><label>Isolement propre (mm)</label><input id="zIsol" type="number" step="0.01" min="0" value="'+v(z.isol)+'" placeholder="celui des classes ('+fmt(clrK(z.net||"","","cu","trk"),2)+')" '+
       'title="Écart minimal autour du cuivre des autres nets dans cette zone ; jamais moins que les classes"></div>'+
     '<div class="prop two"><div><label>Bras thermiques</label><input id="zBn" type="number" min="1" max="8" step="1" value="'+v(z.brasNb)+'" placeholder="4"></div>'+
@@ -202,8 +244,9 @@ function zoneReglagesProps(box,z){
     delete z.plein;
     if(rp.value==="hach"){if(!z.hachure)z.hachure={pas:1,larg:0.25};}else delete z.hachure;
     if(rp.value==="region")z.plein=true;});
-  const hachure=()=>{const pas=clamp(num("zHp")||1,0.2,20);z.hachure={pas:r4(pas),larg:r4(clamp(num("zHl")||0.25,0.05,pas-0.05))};};
-  for(const id of ["zHp","zHl"]){const e=$(id);if(e)e.onchange=maj(hachure);}
+  const hachure=()=>{const pas=clamp(num("zHp")||1,0.2,20);z.hachure={pas:r4(pas),larg:r4(clamp(num("zHl")||0.25,0.05,pas-0.05))};
+    const an=((Math.round(parseFloat($("zHa").value)||0)%180)+180)%180;if(an)z.hachure.angle=an;};
+  for(const id of ["zHp","zHl","zHa"]){const e=$(id);if(e)e.onchange=maj(hachure);}
 }
 
 /* ---------- gestionnaire de zones ---------- */
@@ -234,7 +277,7 @@ function zonesGestionnaire(){
         '<td><input data-a="nom" value="'+esc(z.nom||"")+'" placeholder="'+esc(zoneNom(z))+'"></td>'+
         '<td>'+esc(cuId(z.l,S.cu))+'</td><td>'+esc(z.net||"—")+'</td>'+
         '<td>'+zonePrio(z)+' <button class="tb" data-a="haut" title="Remplie avant les autres de la couche">▲</button><button class="tb" data-a="bas">▼</button></td>'+
-        '<td>'+(z.plein?"région pleine":z.hachure?"hachuré "+z.hachure.pas+" mm":"plein")+(z.locked?" 🔒":"")+'</td>'+
+        '<td>'+(z.plein?"région pleine":z.hachure?"hachuré "+z.hachure.pas+" mm"+(z.hachure.angle?" à "+z.hachure.angle+"°":""):"plein")+(z.locked?" 🔒":"")+'</td>'+
         '<td>'+fmt(zoneAire(z),1)+'</td>'+
         '<td><button class="tb" data-a="voir">Sélectionner</button></td></tr>').join("")+
       '</table></div>'+

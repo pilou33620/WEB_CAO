@@ -489,9 +489,12 @@ function gerberCopper(i){
       }
     body.push("%LPD*%");
     /* région pleine : son cuivre exact, par-dessus les dégagements (47-zones.js).
-       shortcut: les trous qu'y creuse une zone plus prioritaire sont ignorés ;
-       les écrire en %LPC% si une région pleine en recoupe une */
-    for(const z of zs)if(z.plein){const il=zoneDecoupee(z);if(!il)gRegionArcs(body,z.pts);else for(const o of il)gRegionArcs(body,o.o);}
+       Les trous qu'y creuse une zone plus prioritaire entrent dans le même
+       contour par des coupures (cut-in) : un %LPC% effacerait aussi le cuivre
+       de cette zone-là, déjà peint. */
+    for(const z of zs)if(z.plein){const il=zoneDecoupee(z);
+      if(!il)gRegionArcs(body,z.pts);
+      else for(const o of il){if(o.t.length)gRegion(body,contourTroue(o.o,o.t));else gRegionArcs(body,o.o);}}
     for(const q of thermals){          // liaisons thermiques : les bras qui ne touchent aucun autre net (padBras)
       for(const b of padBras(q,i).ok)gSeg(body,A,b.ax.x1,b.ax.y1,b.ax.x2,b.ax.y2,b.tw);
       if(q.drill>0){

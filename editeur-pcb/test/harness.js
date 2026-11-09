@@ -54,7 +54,7 @@ const EXPOSE=[
   "mecaNomsAppliquer","mecaGerbers","gerberDessin","keepoutDrc","keepoutCuts","normInterdit","planNegatif",
   "setLayerRole","buildFabFiles","DRW_COUCHES","closeInterdit",
   "busClic","busTouche","busPlan","polyDecalee","busPoser",
-  "pnsWorld","pnsItemsKeepout","distSegPoly","drwBBox","drwPoints","gerberSilk","viaObstacle","placeVia",
+  "pnsWorld","pnsItemsKeepout","distSegPoly","contourTroue","zoneDecoupee","gOrigin","gXY","drwBBox","drwPoints","gerberSilk","viaObstacle","placeVia",
   "coutureZone","cloturePistes","fanoutFps","coutureRetirer","viaEssai","netMasseDefaut","fmtU","uLue","uAff","RP_PCB","hitTest","deleteSel","startRoute",
   "cutsCuivre","ilotContour","drcRangs","drcCategorie","drcFenetre","drcPas","copySelPcb","fpEssai","fpChevauchements","placementDegage","placementBilan","fpPlaceLibre","pasteClipPcb","rotateSel","flipSel","fpGene","routeRetouche","dragMoveBy","beginMove","dragRotate","gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
   "updateRoute","stepRoute","commitRoute","routeToLayer","runDrc","buildTabs",
@@ -30055,6 +30055,56 @@ TA("keep-out : le chemin auto le contourne",async()=>{
     global.Pilote=ancien;
     loadDoc(JSON.parse(garde.doc),true);S.undo=garde.undo;S.redo=garde.redo;
   }
+});
+
+/* ---------- hachures tournées, contour troué, arcs au DRC ---------- */
+T("hachures à 45° et zone en L : chaque maille garde le cadre, coin rentrant compris",()=>{
+  const {z}=zonesDecor();
+  z.pts=[{x:5,y:5},{x:45,y:5},{x:45,y:20},{x:25,y:20},{x:25,y:35},{x:5,y:35}];   // un L, coin rentrant en (25,20)
+  z.hachure={pas:2,larg:0.4,angle:45};S.tracks=[];touch();
+  const H=zoneHachures(z,0);
+  if(H.length<100)throw new Error("mailles : "+H.length);
+  const P=H[0], dx=P[1].x-P[0].x, dy=P[1].y-P[0].y;
+  if(Math.abs(Math.abs(dx)-Math.abs(dy))>1e-3)throw new Error("la maille doit être tournée de 45° : "+JSON.stringify(P));
+  for(const M of H){
+    if(M.some(p=>!inPoly(p.x,p.y,z.pts)))throw new Error("une maille sort de la zone");
+    // la distance du bord de la zone à la maille : au moins une largeur de trait
+    for(const v of z.pts)if(!inPoly(v.x,v.y,M)&&polyEdgeDist(v.x,v.y,M)<0.4-1e-3)throw new Error("le cadre mord au sommet "+v.x+","+v.y);
+    if(M.some(p=>polyEdgeDist(p.x,p.y,z.pts)<0.4-1e-3))throw new Error("une maille trop près du bord");
+  }
+  const o={};zoneReglagesLire({hachure:{pas:2,larg:0.4,angle:225}},o);
+  if(o.hachure.angle!==45)throw new Error("angle ramené dans [0, 180[ : "+o.hachure.angle);
+});
+T("région pleine trouée par une zone prioritaire : un seul contour à coupures",()=>{
+  const O=[{x:0,y:0},{x:10,y:0},{x:10,y:10},{x:0,y:10}], T1=[{x:3,y:3},{x:6,y:3},{x:6,y:6},{x:3,y:6}];
+  const R=contourTroue(O,[T1]);
+  if(inPoly(4.5,4.5,R)||!inPoly(1,1,R)||!inPoly(8,8,R))throw new Error("le trou doit rester vide, le reste plein");
+  const {z}=zonesDecor();
+  z.plein=true;
+  S.zones.push({id:S.nextId++,l:0,net:"SIG",priorite:5,pts:[{x:15,y:12},{x:25,y:12},{x:25,y:18},{x:15,y:18}]});
+  touch();
+  const g=gerberCopper(0);
+  const il=zoneDecoupee(z);
+  if(!il||!il.some(x=>x.t.length))throw new Error("la zone prioritaire devait trouer la région");
+  // la région part en un contour qui passe par les sommets du trou
+  const t=il.find(x=>x.t.length).t[0][0];
+  // le dernier bloc de la couche : la région repeinte, qui passe par un sommet du trou
+  const k=g.lastIndexOf("G36*"), bloc=g.slice(k,g.indexOf("G37*",k));
+  if(!bloc.includes(gXY(t.x,t.y)))throw new Error("le contour de la région doit contourner le trou");
+});
+T("keep-out et région pleine : un arc jugé sur son renflement, pas sa corde",()=>{
+  zonesDecor();S.tracks=[];
+  S.interdits=[normInterdit({pts:[{x:18,y:28},{x:22,y:28},{x:22,y:32},{x:18,y:32}],ko:{l:0}},0)];
+  // corde de (10,20) à (30,20), arc qui descend jusqu'à y≈30 : la corde passe hors du keep-out
+  S.tracks.push({l:0,net:"SIG",w:0.3,x1:10,y1:20,x2:30,y2:20,ca:-Math.PI});touch();
+  const A=arcOf(S.tracks[0]);
+  if(!A||Math.abs(A.cy-20)>1e-6)throw new Error("décor : demi-cercle attendu");
+  const bas=A.cy+A.r*Math.sin(A.a1+A.ca/2);
+  const out=[];keepoutDrc(out);
+  if(!(bas>28&&bas<32))throw new Error("décor : le renflement doit tomber dans le keep-out, y="+bas);
+  if(!out.some(e=>/Piste SIG dans le keep-out/.test(e.msg)))throw new Error("l'arc entre par son renflement : rien de signalé");
+  S.tracks[0].ca=0;touch();              // la même corde droite : hors du keep-out
+  const o2=[];keepoutDrc(o2);if(o2.length)throw new Error("la corde seule est dehors");
 });
 
 (async()=>{

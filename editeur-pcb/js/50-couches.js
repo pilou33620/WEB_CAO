@@ -150,8 +150,8 @@ function keepoutDrc(out){
     const L=new Set(koCouches(z));
     if(z.ko.pistes)
       for(const t of S.tracks){
-        // shortcut: un arc est jugé sur sa corde
-        if(!L.has(t.l)||distSegPoly(t,z.pts)-t.w/2>-1e-6)continue;
+        // un arc : ses cordes (trkSegs, 01-core.js)
+        if(!L.has(t.l)||Math.min(...trkSegs(t).map(s=>distSegPoly(s,z.pts)))-t.w/2>-1e-6)continue;
         const m=trkMid(t);
         out.push({x:r3(m.x),y:r3(m.y),l:t.l,msg:"Piste "+(t.net||"sans net")+" dans le keep-out « "+z.nom+" » ("+cuId(t.l,S.cu)+")"});
       }
