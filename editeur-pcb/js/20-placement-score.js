@@ -241,16 +241,19 @@ var PLACEMENT_SCORE = (function() {
   }
 
   /* ---------- Rendu HTML du panneau ---------- */
-  function rendrePanneau(data, erreur) {
+  function rendrePanneau(data, erreur, exc) {
     const el = document.getElementById("pnlPlacementBody");
     if (!el) return;
 
     if (erreur) {
       el.innerHTML = `
         <div style="padding:12px;color:var(--txt-dim);font-size:12px;line-height:1.5;">
-          <div style="color:var(--yellow);font-weight:600;margin-bottom:6px;">⚠️ Serveur d'analyse non disponible</div>
+          <div style="color:var(--yellow);font-weight:600;margin-bottom:6px;">⚠️ ${exc && exc.repondu ? "Analyse refusée par le serveur" : "Serveur d'analyse non disponible"}</div>
           <div>${esc(erreur)}</div>
-          <div style="margin-top:8px;font-size:11px;color:var(--txt-dim);">Lancez <code>python web_CAO.py</code> en console pour activer le calcul en temps réel.</div>
+          <div style="margin-top:8px;font-size:11px;color:var(--txt-dim);">${
+            exc && exc.appairer ? 'Cet appareil n\'est plus reconnu (serveur relancé ?) : <a href="/appairage" target="_blank" rel="noopener">ressaisir le code d\'appairage</a>, puis Réessayer.'
+            : exc && exc.repondu ? "Le serveur a refusé la requête : voir le motif ci-dessus."
+            : "Lancez <code>python web_CAO.py</code> en console pour activer le calcul en temps réel."}</div>
           <button class="tb" id="bPlacementRefresh" style="margin-top:10px;width:100%;justify-content:center;">🔄 Réessayer</button>
         </div>
       `;
@@ -582,7 +585,13 @@ var PLACEMENT_SCORE = (function() {
         });
 
         if (!res.ok) {
-          throw new Error("HTTP " + res.status + " : " + res.statusText);
+          // le serveur a répondu : son motif ({"detail"}) dit pourquoi, pas « lancez web_CAO.py »
+          let detail = "";
+          try { detail = (await res.json()).detail || ""; } catch (_) {}
+          const e = new Error("HTTP " + res.status + (detail ? " : " + detail : ""));
+          e.repondu = true;
+          e.appairer = res.status === 403 && /appair/i.test(detail);
+          throw e;
         }
 
         const data = await res.json();
@@ -594,7 +603,7 @@ var PLACEMENT_SCORE = (function() {
           rendrePanneau(null, (data && data.detail) || "Échec du calcul de scoring.");
         }
       } catch (err) {
-        rendrePanneau(null, err.message);
+        rendrePanneau(null, err.message, err);
       } finally {
         _chargementEnCours = false;
       }
