@@ -437,17 +437,18 @@ function ipcRemplir(z){
   for(const P of zoneLanieres(i))prendre(moins,P);     // les lanières, comme au Gerber
   const fichier=zoneFichier(z);
   if(fichier&&Array.isArray(z.trous))for(const t of z.trous)prendre(moins,t);
-  /* le cuivre d'un autre net */
-  for(const t of S.tracks){
+  for(const P of zoneHachures(z,i))prendre(moins,P);   // mailles d'une zone hachurée (47-zones.js)
+  /* le cuivre d'un autre net — une région pleine n'en dégage rien */
+  for(const t of (z.plein?[]:S.tracks)){
     if(t.l!==i||(t.net||"")===zn)continue;
-    for(const P of ipcPisteDegagee(t,t.w/2+clrK(zn,t.net,"cu","trk")))prendre(moins,P);
+    for(const P of ipcPisteDegagee(t,t.w/2+clrZone(z,t.net,"cu","trk")))prendre(moins,P);
   }
-  for(const v of S.vias){
+  for(const v of (z.plein?[]:S.vias)){
     if(i<v.a||i>v.b||(v.net||"")===zn)continue;
-    prendre(moins,ipcCercle(v.x,v.y,v.d/2+clrK(zn,v.net,"cu","via"),true));
+    prendre(moins,ipcCercle(v.x,v.y,v.d/2+clrZone(z,v.net,"cu","via"),true));
   }
   for(const h of trousMonde())prendre(moins,ipcPercage(h,classOf(zn).clr));
-  for(const fp of S.fps)
+  for(const fp of (z.plein?[]:S.fps))
     for(const q of padsWorld(fp)){
       if(!padLayers(fp,q).includes(i))continue;
       const meme=!!q.net&&q.net===zn;
@@ -455,16 +456,16 @@ function ipcRemplir(z){
       if(meme&&padLiaison(q,i,z)==="directe")continue;   // la zone la recouvre, sans bras
       const qc=padSurCouche(q,i);
       if(!qc){
-        if(q.drill>0)prendre(moins,ipcPercage(q,clrK(zn,q.net,"cu","th")));
+        if(q.drill>0)prendre(moins,ipcPercage(q,clrZone(z,q.net,"cu","th")));
         continue;
       }
       if(!meme){
-        prendre(moins,ipcPastilleDegagee(qc,clrK(zn,q.net,"cu",q.drill>0?"th":"smd")));
-        if(q.drill>0)prendre(moins,ipcPercage(q,clrK(zn,q.net,"cu","th")));
+        prendre(moins,ipcPastilleDegagee(qc,clrZone(z,q.net,"cu",q.drill>0?"th":"smd")));
+        if(q.drill>0)prendre(moins,ipcPercage(q,clrZone(z,q.net,"cu","th")));
         continue;
       }
       /* liaison thermique : l'anneau de l'isolement de la zone, et ses bras */
-      prendre(moins,ipcPastilleDegagee(qc,classOf(zn).clr));
+      prendre(moins,ipcPastilleDegagee(qc,ecartThermique(q,i)));
       for(const {a,len,tw} of padBras(q,i).ok){       // ceux du Gerber
         const c=Math.cos(a), s=Math.sin(a), nx=-s*tw/2, ny=c*tw/2;
         prendre(plus,[{x:q.x+nx,y:q.y+ny},{x:q.x+len*c+nx,y:q.y+len*s+ny},

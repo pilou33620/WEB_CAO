@@ -1183,3 +1183,11 @@
   .ed-dlg .row{display:flex;justify-content:flex-end;gap:8px;padding:10px 12px}
   .mnu-t.filtre-on{color:var(--yellow)}
   .verrou-info{color:var(--yellow);display:flex;align-items:center;gap:8px}
+  .zg-dlg{width:min(760px,96vw)}
+  .zg-liste{max-height:60vh;overflow:auto;padding:0 12px}
+  .zg-liste table{border-collapse:collapse;width:100%;font-size:12px}
+  .zg-liste th{text-align:left;color:var(--txt-dim);font-weight:500;padding:4px 6px}
+  .zg-liste td{padding:3px 6px;border-top:1px solid var(--border);white-space:nowrap}
+  .zg-liste tr.on td{background:var(--blue-dim)}
+  .zg-liste input{width:130px}
+  .zg-liste button.tb{padding:1px 6px}

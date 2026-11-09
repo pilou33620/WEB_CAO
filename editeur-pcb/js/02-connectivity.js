@@ -209,7 +209,9 @@ function zoneMask(l,net){
   for(const z of zs){
     zoneFill(c,z);
   }
+  zonesHachurer(c,zs,l);                         // les mailles d'une zone hachurée (47-zones.js)
   clipToBoard(c,x1,y1,x2,y2);
+  const zr={net,isol:Math.max(0,...zs.map(z=>z.isol||0))};   // l'isolement propre des zones du net
   /* une zone d'un autre net posée par-dessus recouvre celle-ci à l'écran :
      le masque doit refléter le même ordre de peinture */
   const i0=S.zones.indexOf(zs[0]);
@@ -239,13 +241,13 @@ function zoneMask(l,net){
     if(t.l!==l||t.net===net)continue;
     const tb=trkBBox(t);
     if(hors(tb.x1,tb.y1,tb.x2,tb.y2))continue;
-    c.lineWidth=t.w+2*clrK(net,t.net,"cu","trk");
+    c.lineWidth=t.w+2*clrZone(zr,t.net,"cu","trk");
     c.beginPath();trkPath(c,t);c.stroke();
   }
   for(const v of S.vias){
     if(l<v.a||l>v.b||hors(v.x-v.d,v.y-v.d,v.x+v.d,v.y+v.d))continue;
     c.beginPath();
-    c.arc(v.x,v.y,v.net===net?v.drill/2:v.d/2+clrK(net,v.net,"cu","via"),0,Math.PI*2);
+    c.arc(v.x,v.y,v.net===net?v.drill/2:v.d/2+clrZone(zr,v.net,"cu","via"),0,Math.PI*2);
     c.fill();
   }
   for(const h of trousMonde()){
@@ -265,15 +267,16 @@ function zoneMask(l,net){
       }
       const qc=padSurCouche(q,l);
       if(!qc){
-        if(q.drill>0){c.beginPath();cheminPercage(c,q,clrK(net,q.net,"cu","th"));c.fill();}
+        if(q.drill>0){c.beginPath();cheminPercage(c,q,clrZone(zr,q.net,"cu","th"));c.fill();}
         continue;
       }
-      padFill(c,qc,q.net===net?clr:clrK(net,q.net,"cu",q.drill>0?"th":"smd"));
+      padFill(c,qc,q.net===net?ecartThermique(q,l):clrZone(zr,q.net,"cu",q.drill>0?"th":"smd"));
       if(q.net===net)thermals.push(q);
       else if(q.drill>0){c.beginPath();cheminPercage(c,q,clr);c.fill();}
     }
   c.globalCompositeOperation="source-over";
   c.fillStyle="#fff";
+  zonesPleinesPeindre(c,zs,x1,y1,x2,y2);           // région pleine : son cuivre exact, sans dégagement (47-zones.js)
   for(const q of thermals){
     for(const b of padBras(q,l).ok){                 // les bras que le Gerber trace, pas plus
       c.save();c.translate(q.x,q.y);c.rotate(b.a);c.fillRect(0,-b.tw/2,b.len,b.tw);c.restore();
@@ -476,8 +479,11 @@ function computeConn(exact){
   for(const g of zoneGroups()){
     const M=exact?zoneMask(g.l,g.net):null;
     const seen=new Set();
+    /* les îlots sous l'aire minimale des zones du groupe (47-zones.js) ne
+       relient rien : ils tombent avec le cuivre mort */
+    const petits=zoneIlotsPetits(M,g.zs);
     const link=(k,labs)=>{
-      for(const lb of labs){seen.add(lb);uni(k,"Z"+g.l+"|"+g.net+"|"+lb);}
+      for(const lb of labs){if(petits.has(lb))continue;seen.add(lb);uni(k,"Z"+g.l+"|"+g.net+"|"+lb);}
     };
     if(!M){
       /* analyse différée, ou carte trop grande pour la rasterisation : on
@@ -523,7 +529,7 @@ function computeConn(exact){
        encore (plan posé avant le routage) reste entière : on ne retire que
        les îlots d'une zone qui en a au moins un de vivant. */
     const decoupes=[], morts=[];
-    for(const m of (!seen.size||g.zs.some(zoneFichier)?[]:ilotsMorts(M,seen))){
+    for(const m of (!seen.size||g.zs.some(zoneFichier)||g.zs.some(z=>z.mortGarde||z.plein)?[]:ilotsMorts(M,seen))){
       const P=ilotContour(M,m,g.l,g.net);
       if(P)decoupes.push(P);else morts.push(m);
     }
@@ -743,10 +749,12 @@ function padBras(q,l){
   const cle=l+"|"+(q.fp?q.fp.id:"")+"|"+q.n+"|"+q.x+"|"+q.y;
   const vu=BRAS_MEMO.m.get(cle);
   if(vu)return vu;
-  const tw=(q.thermalWidth>0)?q.thermalWidth:S.rule.thermal;
-  const n=padLiaison(q,l)==="aucune"?0:(q.thermalSpokes>0)?q.thermalSpokes:4;
-  const a0=(q.rot||0)+((q.thermalAngle||0)*Math.PI/180);
-  const len=Math.max(q.w,q.h)/2+classOf(q.net).clr+0.2;
+  // la pastille impose ses bras, sinon sa zone (47-zones.js), sinon la règle
+  const zb=zoneDuPad(q,l);
+  const tw=(q.thermalWidth>0)?q.thermalWidth:(zb&&zb.brasLarg>0)?zb.brasLarg:S.rule.thermal;
+  const n=padLiaison(q,l)==="aucune"?0:(q.thermalSpokes>0)?q.thermalSpokes:(zb&&zb.brasNb>0)?zb.brasNb:4;
+  const a0=(q.rot||0)+(((q.thermalAngle!=null)?q.thermalAngle:(zb&&zb.brasAngle)||0)*Math.PI/180);
+  const len=Math.max(q.w,q.h)/2+ecartThermique(q,l)+0.2;
   const loin=len+tw+maxClr()+0.1;              // au-delà, rien ne peut gêner
   // les voisins, une fois pour tous les bras ; la pastille elle-même et son net ne gênent pas
   const voisins=n?brasObstacles(l).pres(q.x-loin,q.y-loin,q.x+loin,q.y+loin).filter(o=>o.k==="trou"||o.net!==q.net||!q.net):[];
@@ -816,7 +824,7 @@ function zoneLanieres(l){
       const qc=padSurCouche(q,l), z=qc&&zoneAt(l,q.x,q.y);
       if(!z||zoneFichier(z))continue;
       const meme=!!q.net&&q.net===z.net;
-      const e=meme?(padLiaison(q,l,z)==="directe"?0:classOf(q.net).clr):clrK(z.net,q.net,"cu",q.drill>0?"th":"smd");
+      const e=meme?(padLiaison(q,l,z)==="directe"?0:ecartThermique(q,l)):clrZone(z,q.net,"cu",q.drill>0?"th":"smd");
       if(meme&&e===0)continue;
       const r=Math.hypot(qc.w,qc.h)/2+e;
       ajouter({fait:()=>bord(padWorldPts(qc,e)),d:(x,y)=>padDist(x,y,qc)-e,net:q.net},q.x-r,q.y-r,q.x+r,q.y+r);
@@ -825,7 +833,7 @@ function zoneLanieres(l){
     if(l<v.a||l>v.b)continue;
     const z=zoneAt(l,v.x,v.y);
     if(!z||zoneFichier(z)||(v.net&&v.net===z.net))continue;
-    const r=v.d/2+clrK(z.net,v.net,"cu","via");
+    const r=v.d/2+clrZone(z,v.net,"cu","via");
     ajouter({fait:()=>cercle(v.x,v.y,r,0,2*Math.PI),d:(x,y)=>Math.hypot(x-v.x,y-v.y)-r,net:v.net},v.x-r,v.y-r,v.x+r,v.y+r);
   }
   /* les pistes, par TRONÇONS (2 mm au plus ; un arc : 1 mm ou 15° au plus) : l'enveloppe d'une
@@ -841,7 +849,7 @@ function zoneLanieres(l){
       const t=A0?{l:t0.l,net:t0.net,w:t0.w,x1:p1.x,y1:p1.y,x2:p2.x,y2:p2.y,ca:t0.ca/n}:{l:t0.l,net:t0.net,w:t0.w,x1:p1.x,y1:p1.y,x2:p2.x,y2:p2.y};
       const m=trkMid(t), z=zoneAt(l,m.x,m.y);
       if(!z||zoneFichier(z)||(t.net&&t.net===z.net))continue;
-      const r=t.w/2+clrK(z.net,t.net,"cu","trk"), A=arcOf(t);
+      const r=t.w/2+clrZone(z,t.net,"cu","trk"), A=arcOf(t);
       if(A){
         const b=trkBBox(t);
         ajouter({piste:true,net:t.net,d:(x,y)=>trkDist(x,y,t)-r,
@@ -1326,6 +1334,7 @@ function runDrc(){
         msg:"Zone débordant du contour de carte (le remplissage y est rogné)"});
   }
   larmesPerimees(out);
+  zonesDrc(out);                 // régions pleines contre le cuivre des autres nets (47-zones.js)
   for(const [a,b] of fpChevauchements())
     out.push({x:r3((a.x+b.x)/2),y:r3((a.y+b.y)/2),l:a.side?S.cu-1:0,
       msg:"Composants qui se chevauchent : "+a.ref+" et "+b.ref+" ("+(a.side?"dessous":"dessus")+")"});

@@ -433,6 +433,7 @@ function gerberCopper(i){
       if(ct.l===i&&ct.pts.length>=3)gRegionArcs(body,ct.pts);
     }
     for(const P of zoneLanieres(i))gRegion(body,P);   // cuivre plus étroit que cuMin entre deux dégagements
+    for(const z of zs)for(const P of zoneHachures(z,i))gRegion(body,P);   // mailles des zones hachurées (47-zones.js)
     /* les trous du cuivre d'une zone importée, tels que le fabricant les a */
     for(const z of zs)
       if(zoneFichier(z)&&Array.isArray(z.trous))
@@ -446,7 +447,7 @@ function gerberCopper(i){
       if(z===null)z=zoneEtrangereProche(zs,t.net,(a,b)=>segSegDist(t,seg(a,b)),
         q=>t.w/2+clrK(q.net,t.net,"cu","trk"));
       if(z===null||z===t.net)continue;
-      gTrk(body,A,t,t.w+2*clrK(z,t.net,"cu","trk"));
+      gTrk(body,A,t,t.w+2*clrZone(zoneAt(i,m.x,m.y)||z,t.net,"cu","trk"));
     }
     for(const v of S.vias){
       if(i<v.a||i>v.b)continue;
@@ -455,7 +456,7 @@ function gerberCopper(i){
         q=>v.d/2+clrK(q.net,v.net,"cu","via"));
       if(z===null)continue;
       if(z===v.net)gFlash(body,A,A.get("C,"+fmt(v.drill,4)),v.x,v.y);
-      else gFlash(body,A,A.get("C,"+fmt(v.d+2*clrK(z,v.net,"cu","via"),4)),v.x,v.y);
+      else gFlash(body,A,A.get("C,"+fmt(v.d+2*clrZone(zoneAt(i,v.x,v.y)||z,v.net,"cu","via"),4)),v.x,v.y);
     }
     /* trou NPTH (carte ou empreinte) : la zone s'en écarte de l'écartement de
        sa classe — le foret ne doit pas mordre le cuivre ni le laisser à vif */
@@ -477,16 +478,20 @@ function gerberCopper(i){
         if(same&&padLiaison(q,i)==="directe")continue;       // la zone la recouvre, sans bras
         const qc=padSurCouche(q,i);
         if(!qc){                       // pas de cuivre ici : le trou seul se dégage
-          if(q.drill>0)gPercage(body,A,q,clrK(z,q.net,"cu","th"));
+          if(q.drill>0)gPercage(body,A,q,clrZone(zoneAt(i,q.x,q.y)||z,q.net,"cu","th"));
           continue;
         }
-        gPad(body,A,qc,same?classOf(z).clr:
-          clrK(z,q.net,"cu",q.drill>0?"th":"smd"));
+        gPad(body,A,qc,same?ecartThermique(q,i):
+          clrZone(zoneAt(i,q.x,q.y)||z,q.net,"cu",q.drill>0?"th":"smd"));
         if(same)thermals.push(q);
         else if(q.drill>0)
-          gPercage(body,A,q,clrK(z,q.net,"cu","th"));
+          gPercage(body,A,q,clrZone(zoneAt(i,q.x,q.y)||z,q.net,"cu","th"));
       }
     body.push("%LPD*%");
+    /* région pleine : son cuivre exact, par-dessus les dégagements (47-zones.js).
+       shortcut: les trous qu'y creuse une zone plus prioritaire sont ignorés ;
+       les écrire en %LPC% si une région pleine en recoupe une */
+    for(const z of zs)if(z.plein){const il=zoneDecoupee(z);if(!il)gRegionArcs(body,z.pts);else for(const o of il)gRegionArcs(body,o.o);}
     for(const q of thermals){          // liaisons thermiques : les bras qui ne touchent aucun autre net (padBras)
       for(const b of padBras(q,i).ok)gSeg(body,A,b.ax.x1,b.ax.y1,b.ax.x2,b.ax.y2,b.tw);
       if(q.drill>0){

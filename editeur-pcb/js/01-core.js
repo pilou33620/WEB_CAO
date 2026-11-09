@@ -2993,6 +2993,24 @@ function clrPair(a,b){
 /* La même, natures comprises : c'est celle-ci que le contrôle, le routeur et
    les zones de cuivre appliquent. `ka` et `kb` disent de quoi il s'agit —
    piste, pastille CMS, pastille traversante, via, cuivre plein. */
+/* L'ISOLEMENT D'UNE ZONE : celui des classes et de la matrice, au moins celui
+   que la zone impose (`z.isol`). `z` : la zone, ou le seul nom de son net. */
+function clrZone(z,net,ka,kb){
+  const o=z&&typeof z==="object"?z:null;
+  return Math.max(clrK(o?(o.net||""):(z||""),net,ka,kb),o&&o.isol>0?o.isol:0);
+}
+/* la zone du net de la pastille qui la recouvre sur la couche l */
+function zoneDuPad(q,l){
+  if(!q.net)return null;
+  return S.zones.find(o=>o.l===l&&o.net===q.net&&!o.larme&&zoneContient(o,q.x,q.y))||null;
+}
+/* L'anneau autour d'une pastille reliée par bras : l'écart de la pastille,
+   sinon celui de sa zone, sinon l'isolement de sa classe. */
+function ecartThermique(q,l){
+  if(q.thermalGap>0)return q.thermalGap;
+  const z=zoneDuPad(q,l);
+  return z&&z.brasEcart>0?z.brasEcart:classOf(q.net).clr;
+}
 function clrK(a,b,ka,kb){
   const g=dpGapPair(a,b);
   if(g!=null)return g;

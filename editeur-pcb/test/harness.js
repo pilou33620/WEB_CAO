@@ -47,7 +47,8 @@ const code=fs.readFileSync(path.join(__dirname,"..","dist","pcb.js"),"utf8");
 const EXPOSE=[
   /* édition à la Altium (46-edition.js et suivants) */
   "filtreOk","filtreAppliquer","verrouPoser","verrousRetirer","alignerFps","semblables","collageReseau",
-  "largeurSuivante","uniteBasculer","fmtU","uLue","uAff","RP_PCB","hitTest","deleteSel","startRoute",
+  "largeurSuivante","uniteBasculer","clrZone","ecartThermique","zoneHachures","zonesDrc","zoneNouvelle",
+  "zoneOutil","zonePrioDecaler","zoneReglagesLire","gerberCopper","padBras","normZone","zoneIlotsPetits","ipcRemplir","fpSetPad","fmtU","uLue","uAff","RP_PCB","hitTest","deleteSel","startRoute",
   "cutsCuivre","ilotContour","drcRangs","drcCategorie","drcFenetre","drcPas","copySelPcb","fpEssai","fpChevauchements","placementDegage","placementBilan","fpPlaceLibre","pasteClipPcb","rotateSel","flipSel","fpGene","routeRetouche","dragMoveBy","beginMove","dragRotate","gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
   "updateRoute","stepRoute","commitRoute","routeToLayer","runDrc","buildTabs",
   "buildLayers","refreshPanels","buildList","buildProps","clearSel","rotateSel",
@@ -29703,6 +29704,93 @@ T("unité mil : barre d'état, mesure et saisie de coordonnées",()=>{
       throw new Error("conversions mil");
   }finally{uniteBasculer("mm");}
   if(fmtU(1.234)!=="1.23")throw new Error("retour au mm");
+});
+
+/* ---------- réglages de zone (47-zones.js) ---------- */
+function zonesDecor(){
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.cuts=[];S.drawings=[];S.holes=[];clearSel();S.filtre={};
+  S.board={x:0,y:0,w:60,h:40,pts:null};
+  setGridStep(0.5);S.scale=20;S.ox=0;S.oy=0;S.avoid=false;
+  const J=mkFp("J1","","",2);J.style="row";J.pitch=2.54;J.x=20;J.y=20;J.nets={1:"GND",2:"SIG"};S.fps.push(J);
+  const z={id:S.nextId++,l:0,net:"GND",pts:[{x:5,y:5},{x:45,y:5},{x:45,y:35},{x:5,y:35}]};
+  S.zones.push(z);
+  S.tracks.push({l:0,net:"SIG",w:0.3,x1:10,y1:30,x2:40,y2:30});
+  touch();
+  return {J,z};
+}
+T("zone : isolement propre, au moins celui des classes, jusqu'au Gerber",()=>{
+  const {z}=zonesDecor();
+  const base=clrZone(z,"SIG","cu","trk");
+  if(Math.abs(base-clrK("GND","SIG","cu","trk"))>1e-9)throw new Error("sans réglage, l'isolement des classes");
+  z.isol=1.2;touch();
+  if(clrZone(z,"SIG","cu","trk")!==1.2)throw new Error("isolement propre ignoré");
+  if(!gerberCopper(0).includes("C,2.7000"))throw new Error("le Gerber devait dégager la piste de 1,2 mm (Ø 2,7)");
+  z.isol=0.01;touch();
+  if(clrZone(z,"SIG","cu","trk")!==base)throw new Error("jamais sous les classes");
+});
+T("zone : bras thermiques réglés par la zone, la pastille garde le dernier mot",()=>{
+  const {J,z}=zonesDecor();
+  const q=padsWorld(J).find(p=>p.net==="GND");
+  z.brasNb=2;z.brasLarg=0.6;z.brasEcart=0.7;touch();
+  const b=padBras(q,0);
+  if(b.bras.length!==2||b.tw!==0.6)throw new Error("bras de la zone : "+b.bras.length+" × "+b.tw);
+  if(ecartThermique(q,0)!==0.7)throw new Error("écart de la zone");
+  fpSetPad(J,padsOf(J).findIndex(o=>String(o.n)===String(q.n)),"thermalSpokes",3);touch();
+  const q2=padsWorld(J).find(p=>p.net==="GND");
+  if(q2.thermalSpokes!==3||padBras(q2,0).bras.length!==3)throw new Error("la pastille impose ses bras");
+});
+T("zone : hachures creusées à l'écran comme au Gerber, cadre gardé",()=>{
+  const {z}=zonesDecor();
+  const avant=gerberCopper(0);
+  z.hachure={pas:2,larg:0.4};touch();
+  const H=zoneHachures(z,0);
+  if(H.length<200)throw new Error("trop peu de mailles : "+H.length);
+  if(H.some(P=>P.some(p=>p.x<5.4-1e-9||p.y<5.4-1e-9)))throw new Error("une maille mord le cadre");
+  const apres=gerberCopper(0);
+  const n=t=>(t.match(/G36\*/g)||[]).length;
+  if(!(n(apres)>=n(avant)+H.length))throw new Error("les mailles devaient partir au Gerber : "+n(avant)+" → "+n(apres));
+  if(zoneHachures(z,1).length)throw new Error("pas de maille sur une autre couche");
+});
+T("région pleine : rien ne la dégage, le DRC voit l'autre cuivre",()=>{
+  const {z}=zonesDecor();
+  const nG=t=>(t.match(/G36\*/g)||[]).length, g0=nG(gerberCopper(0));
+  z.plein=true;touch();
+  const out=[];zonesDrc(out);
+  if(!out.some(e=>/Région pleine GND.*la piste SIG la touche/.test(e.msg)))throw new Error("piste SIG non signalée : "+out.map(e=>e.msg).join(" | "));
+  if(!out.some(e=>/pastille J1\.2/.test(e.msg)))throw new Error("pastille SIG non signalée");
+  if(nG(gerberCopper(0))!==g0+1)throw new Error("la région pleine devait être repeinte après les dégagements");
+  const r=ipcRemplir(z);
+  if(!r||!r.ilots.length||r.ilots.some(o=>o.t.length))throw new Error("IPC-2581 : la région ne doit porter aucun trou");
+  delete z.plein;touch();
+  const o2=[];zonesDrc(o2);if(o2.length)throw new Error("zone ordinaire : rien à dire ici");
+});
+T("zone : réglages relus à l'identique, fill rectangle et plan divisé",()=>{
+  const {z}=zonesDecor();
+  Object.assign(z,{isol:0.5,brasNb:2,brasLarg:0.4,brasEcart:0.6,brasAngle:45,hachure:{pas:1.5,larg:0.3},
+                   ilotMin:2,mortGarde:true,nom:"Masse nord"});
+  loadDoc(JSON.parse(serialize()),true);
+  const r=S.zones[0];
+  for(const k of ["isol","brasNb","brasLarg","brasEcart","brasAngle","ilotMin","mortGarde","nom"])
+    if(r[k]!==z[k])throw new Error(k+" perdu : "+r[k]);
+  if(!r.hachure||r.hachure.pas!==1.5||r.hachure.larg!==0.3)throw new Error("hachure perdue");
+  const o={};zoneReglagesLire({isol:-3,brasNb:12,hachure:{pas:0.5,larg:9}},o);
+  if(o.isol||o.brasNb||o.hachure.larg!==0.45)throw new Error("valeurs absurdes non bornées : "+JSON.stringify(o));
+  // fill : deux coins puis Entrée
+  zoneOutil({plein:true,rect:true});
+  zoneClick(10,10);zoneClick(20,16);
+  closeZone();zoneDialog("GND");
+  const nz=S.zones[S.zones.length-1];
+  if(!nz.plein||nz.pts.length!==4)throw new Error("fill : rectangle plein attendu");
+  // plan divisé : passe devant tout ce qui est sur la couche
+  r.priorite=3;touch();
+  zoneOutil({divise:true});
+  zoneClick(30,10);zoneClick(40,10);zoneClick(40,20);
+  closeZone();zoneDialog("SIG");
+  const pd=S.zones[S.zones.length-1];
+  if(pd.priorite!==4||pd.plein)throw new Error("plan divisé : priorité "+pd.priorite);
+  setMode("select");
+  if(S.zoneSuivante)throw new Error("l'outil devait s'oublier");
+  zonePrioDecaler(pd,-1);if(pd.priorite!==3)throw new Error("ordre de remplissage");
 });
 
 (async()=>{

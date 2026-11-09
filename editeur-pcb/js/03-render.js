@@ -188,6 +188,7 @@ function zoneCanvas(i,fixe){
     if(b.x2<x1||b.x1>x2||b.y2<y1||b.y1>y2)continue;   // hors de la région
     zoneFill(c,z);
   }
+  zonesHachurer(c,zs,i);                    // les mailles d'une zone hachurée (47-zones.js)
   /* le cuivre s'arrête à la marge de bord, quoi qu'ait tracé la main */
   clipToBoard(c,x1,y1,x2,y2);
 
@@ -219,14 +220,14 @@ function zoneCanvas(i,fixe){
     if(hors(tb.x1,tb.y1,tb.x2,tb.y2,t.w))continue;
     const m=trkMid(t);
     if(sameNet(m.x,m.y,t.net))continue;
-    c.lineWidth=t.w+2*clrK(zoneNetAt(i,m.x,m.y),t.net,"cu","trk");
+    c.lineWidth=t.w+2*clrZone(zoneAt(i,m.x,m.y),t.net,"cu","trk");
     c.beginPath();trkPath(c,t);c.stroke();
   }
   for(const v of S.vias){
     if(i<v.a||i>v.b||hors(v.x,v.y,v.x,v.y,v.d))continue;
     const same=sameNet(v.x,v.y,v.net);
     c.beginPath();
-    c.arc(v.x,v.y,same?v.drill/2:v.d/2+clrK(zoneNetAt(i,v.x,v.y),v.net,"cu","via"),0,Math.PI*2);
+    c.arc(v.x,v.y,same?v.drill/2:v.d/2+clrZone(zoneAt(i,v.x,v.y),v.net,"cu","via"),0,Math.PI*2);
     c.fill();
   }
   for(const h of trousMonde()){       // trou NPTH : la zone choisie comme au Gerber (zoneDuTrou)
@@ -249,16 +250,17 @@ function zoneCanvas(i,fixe){
       }
       const qc=padSurCouche(q,i);
       if(!qc){                         // pas de cuivre sur cette couche : le trou seul
-        if(q.drill>0){c.beginPath();cheminPercage(c,q,clrK(zoneNetAt(i,q.x,q.y),q.net,"cu","th"));c.fill();}
+        if(q.drill>0){c.beginPath();cheminPercage(c,q,clrZone(zoneAt(i,q.x,q.y),q.net,"cu","th"));c.fill();}
         continue;
       }
-      padFill(c,qc,same?classOf(q.net).clr:clrK(zoneNetAt(i,q.x,q.y),q.net,"cu",q.drill>0?"th":"smd"));
+      padFill(c,qc,same?ecartThermique(q,i):clrZone(zoneAt(i,q.x,q.y),q.net,"cu",q.drill>0?"th":"smd"));
       if(same)thermals.push(q);
-      else if(q.drill>0){c.beginPath();cheminPercage(c,q,clrK(zoneNetAt(i,q.x,q.y),q.net,"cu","th"));c.fill();}
+      else if(q.drill>0){c.beginPath();cheminPercage(c,q,clrZone(zoneAt(i,q.x,q.y),q.net,"cu","th"));c.fill();}
     }
   /* liaisons thermiques : quatre bras par défaut, ou configuration personnalisée */
   c.globalCompositeOperation="source-over";
   c.fillStyle=col;
+  zonesPleinesPeindre(c,zs,x1,y1,x2,y2);    // région pleine : son cuivre exact, sans dégagement (47-zones.js)
   for(const q of thermals){
     // padBras : un bras qui toucherait le cuivre d'un autre net n'est pas tracé
     for(const b of padBras(q,i).ok){

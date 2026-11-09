@@ -567,6 +567,7 @@ function normZone(z,cu,i){
   const pr=dInt(z.priorite,0,0,2147483647);        // absente = 0 ; KiCad va au-delà de 30000 (zonePrio, 01-core.js)
   if(pr)out.priorite=pr;
   if(z.locked)out.locked=true;
+  zoneReglagesLire(z,out);                         // isolement, bras, hachures, îlots (47-zones.js)
   /* cuivre du fichier : les trous et la signature du contour d'origine
      (posée à la première lecture si le fichier ne la porte pas) */
   if(z.fichier){
@@ -4242,7 +4243,7 @@ function askZoneNet(def, Z, isFullBoard){
   
   const btnC = document.createElement("button");
   btnC.className = "tb"; btnC.textContent = "Annuler";
-  btnC.onclick = () => { d.close(); d.remove(); if(!isFullBoard){ S.zoneDraft=Z; draw(); } };
+  btnC.onclick = () => { d.close(); d.remove(); if(!isFullBoard){ S.zoneDraft=Z; draw(); } else S.zoneSuivante=null; };
   // Échap ferme un <dialog> tout seul : il doit annuler comme le bouton (polygone rendu, dialogue retiré)
   d.addEventListener("cancel", e => { e.preventDefault(); btnC.onclick(); });
   
@@ -4255,10 +4256,11 @@ function askZoneNet(def, Z, isFullBoard){
     // fullBoardZone() n'a pas d'esquisse : le plan se pose sur la couche active
     const z = {id:S.nextId++, l:Z?Z.l:S.active, net:val,
                pts: isFullBoard ? boardZonePts() : Z.pts.map(p=>({x:r3(p.x),y:r3(p.y)}))};
+    zoneNouvelle(z);                // région pleine, plan divisé : ce que l'outil a demandé (47-zones.js)
     S.zones.push(z);
     clearSel();S.sel.zones.add(z);
     touch();refreshPanels();draw();
-    hint((isFullBoard?"Plan pleine carte":"Zone")+" sur "+cuId(z.l,S.cu)+(val?" rattaché au net "+val:"")+" — modifiable dans les Propriétés.");
+    hint((z.plein?"Région pleine":z.priorite&&S.cuL[z.l]&&S.cuL[z.l].plane?"Plan divisé":isFullBoard?"Plan pleine carte":"Zone")+" sur "+cuId(z.l,S.cu)+(val?" rattaché au net "+val:"")+" — modifiable dans les Propriétés.");
   };
   
   row.appendChild(btnC); row.appendChild(btnO);
@@ -4270,7 +4272,10 @@ function askZoneNet(def, Z, isFullBoard){
 function closeZone(){
   const Z=S.zoneDraft;
   S.zoneDraft=null;
-  if(!Z||Z.pts.length<3){draw();return;}
+  // deux coins puis Entrée : un rectangle, comme la découpe et la zone interdite (le fill d'Altium)
+  if(Z&&Z.pts.length===2){const [a,b]=Z.pts;
+    if(Math.abs(a.x-b.x)>1e-6&&Math.abs(a.y-b.y)>1e-6)Z.pts=[a,{x:b.x,y:a.y},b,{x:a.x,y:b.y}];}
+  if(!Z||Z.pts.length<3){S.zoneSuivante=null;draw();return;}
   const nets=netTable();
   let def=S.hlNet||(nets.find(n=>isPower(n.name))||{}).name||"";
   askZoneNet(def, Z, false);
@@ -5727,6 +5732,7 @@ function setMode(m){
   if(S.dp&&m!=="dpair")dpCommit();
   if(S.coord.open&&!coordUsable())coordClose();
   if(S.zoneDraft&&m!=="zone")S.zoneDraft=null;
+  if(m!=="zone")S.zoneSuivante=null;     // région pleine, plan divisé : le temps de l'outil (47-zones.js)
   if(S.cutDraft&&m!=="cut")S.cutDraft=null;
   if(S.edgeDraft&&m!==(S.edgeDraft.decoupe?"decoupe":S.edgeDraft.interdit?"interdit":"edge"))S.edgeDraft=null;
   if(S.silkDraft&&m!=="silk")S.silkDraft=null;

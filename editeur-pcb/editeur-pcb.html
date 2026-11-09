@@ -173,6 +173,18 @@
             </div>
             <div class="rg-t">Zones</div>
           </div>
+          <div class="rg mnu">
+            <div class="rg-cmds">
+              <button data-ic="■" class="tb" id="mFill" title="Fill : un rectangle de cuivre plein (deux coins puis Entrée), que rien ne dégage">Fill</button>
+              <button data-ic="⬟" class="tb" id="mRegion" title="Région pleine : un polygone de cuivre exact (antenne, pastille spéciale), que rien ne dégage ; le DRC surveille l'autre cuivre">Région pleine</button>
+              <button data-ic="☰" class="tb" id="bZonesGest" title="Toutes les zones : nom, couche, net, ordre de remplissage, remplissage ; tout recalculer">Gestionnaire de zones…</button>
+            </div>
+            <button class="mnu-t rg-t" type="button">Cuivre <span class="car">▾</span></button>
+            <div class="mnu-pop">
+              <button data-ic="◧" class="tb" id="bPlanDivise" title="Sur une couche plan : donner une partie du plan à un autre net, qui passe devant, isolement compris">Plan divisé</button>
+              <button data-ic="⟳" class="tb" id="bZonesCalc">Recalculer toutes les zones</button>
+            </div>
+          </div>
           <div class="rg">
             <div class="rg-cmds">
               <button data-ic="✎" class="tb" id="mSilk" title="Tracer un trait, rectangle ou texte libre de sérigraphie (F.SilkS / B.SilkS)">Sérigraphie <kbd>Maj+S</kbd> <span class="car">▾</span></button>
@@ -567,6 +579,7 @@
 <script src="js/44-export-step.js"></script>
 <script src="js/45-drc-gestion.js"></script>
 <script src="js/46-edition.js"></script>
+<script src="js/47-zones.js"></script>
 <script src="../commun/explorateur-lib.js"></script>
 <script src="../commun/workspace.js"></script>
 <script src="../commun/telephone.js"></script>

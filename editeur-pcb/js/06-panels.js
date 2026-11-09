@@ -168,6 +168,7 @@ function zoneMenuBuild(){
     '<div class="prop"><div class="row">'+
       '<button class="tb" id="zmZone">Zone à main levée <kbd>Z</kbd></button></div>'+
       '<div class="row"><button class="tb" id="zmFull">Zone pleine carte (libre)</button></div>'+
+      (rolePlane(role)?'<div class="row"><button class="tb" id="zmDivise" title="Donner une partie du plan à un autre net">Plan divisé (autre net)</button></div>':"")+
       (S.zones.some(z=>!z.larme&&z.l===S.active)
         ? '<div class="row"><button class="tb" id="zmSel">Sélectionner le cuivre de la couche</button></div>'
         : "")+'</div>';
@@ -190,6 +191,8 @@ function zoneMenuBuild(){
   if(z)z.onclick=()=>{setMode("zone");zoneMenuClose();};
   const f=$("zmFull");
   if(f)f.onclick=()=>{zoneMenuClose();fullBoardZone();};
+  const dv=$("zmDivise");
+  if(dv)dv.onclick=()=>{zoneMenuClose();zoneOutil({divise:true});};
   const sl=$("zmSel");
   if(sl)sl.onclick=()=>{zoneMenuClose();selectLayerZones(S.active);};
   return m;
@@ -1930,6 +1933,7 @@ function propsZone(box,z){
     if(v)z.priorite=v;else delete z.priorite;
     touch();refreshPanels();draw();};
   $("zFull").onclick=()=>{push();z.pts=boardZonePts();touch();refreshPanels();draw();};
+  zoneReglagesProps(box,z);       // isolement, bras, hachures, région pleine, îlots (47-zones.js)
   $("zDel").onclick=()=>{push();detachAuto(z);S.zones=S.zones.filter(o=>o!==z);clearSel();
     touch();buildLayers();buildTabs();refreshPanels();draw();};
 }
