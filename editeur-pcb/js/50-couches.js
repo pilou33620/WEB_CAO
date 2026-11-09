@@ -118,6 +118,25 @@ function keepoutCuts(){
   for(const z of koListe())if(z.ko.zones)for(const l of koCouches(z))out.push({l,pts:z.pts,ko:true});
   return out;
 }
+/* Le keep-out dans le monde du routeur : une pastille polygonale fixe, qu'on
+   ne pousse pas et qu'on contourne, d'isolement nul (`pnsClr`). Le shove, le
+   contournement, la touche V et l'anti-collision la voient donc d'eux-mêmes ;
+   le DRC d'isolation l'ignore, `keepoutDrc` s'en charge. */
+const PNS_KO="(keep-out)";
+function pnsItemsKeepout(){
+  const out=[];
+  for(const z of koListe()){
+    if(!z.ko.pistes&&!z.ko.vias)continue;
+    const L=koCouches(z);
+    if(!L.length)continue;
+    const b=polyBBox(z.pts), cx=(b.x1+b.x2)/2, cy=(b.y1+b.y2)/2;
+    const q={n:0,x:cx,y:cy,w:b.x2-b.x1,h:b.y2-b.y1,shape:"poly",rot:0,drill:0,net:PNS_KO,
+             pts:z.pts.map(p=>({x:p.x-cx,y:p.y-cy}))};
+    out.push({k:"P",q,fp:{ref:"keep-out « "+z.nom+" »",id:-2},net:PNS_KO,l0:Math.min(...L),l1:Math.max(...L),
+              src:z,ko:true,koPistes:z.ko.pistes,koVias:z.ko.vias,bx1:b.x1,by1:b.y1,bx2:b.x2,by2:b.y2});
+  }
+  return out;
+}
 /* La distance d'un segment au polygone P : 0 s'il y entre ou le croise. */
 function distSegPoly(s,P){
   if(inPoly(s.x1,s.y1,P)||inPoly(s.x2,s.y2,P))return 0;

@@ -54,6 +54,7 @@ const EXPOSE=[
   "mecaNomsAppliquer","mecaGerbers","gerberDessin","keepoutDrc","keepoutCuts","normInterdit","planNegatif",
   "setLayerRole","buildFabFiles","DRW_COUCHES","closeInterdit",
   "busClic","busTouche","busPlan","polyDecalee","busPoser",
+  "pnsWorld","pnsItemsKeepout","distSegPoly","viaObstacle","placeVia",
   "coutureZone","cloturePistes","fanoutFps","coutureRetirer","viaEssai","netMasseDefaut","fmtU","uLue","uAff","RP_PCB","hitTest","deleteSel","startRoute",
   "cutsCuivre","ilotContour","drcRangs","drcCategorie","drcFenetre","drcPas","copySelPcb","fpEssai","fpChevauchements","placementDegage","placementBilan","fpPlaceLibre","pasteClipPcb","rotateSel","flipSel","fpGene","routeRetouche","dragMoveBy","beginMove","dragRotate","gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
   "updateRoute","stepRoute","commitRoute","routeToLayer","runDrc","buildTabs",
@@ -29993,6 +29994,51 @@ T("polyligne décalée : onglet aux coudes",()=>{
   const Q=polyDecalee([{x:0,y:0},{x:10,y:0},{x:10,y:10}],1);
   if(Math.abs(Q[0].y-1)>1e-9||Math.abs(Q[1].x-9)>1e-9||Math.abs(Q[1].y-1)>1e-9||Math.abs(Q[2].x-9)>1e-9)
     throw new Error(JSON.stringify(Q));
+});
+
+/* ---------- keep-out dans le routeur et le chemin auto ---------- */
+T("keep-out : le routeur refuse d'y entrer, la touche V aussi ; le DRC d'isolation l'ignore",()=>{
+  zonesDecor();S.avoid=true;
+  S.interdits=[normInterdit({pts:[{x:20,y:10},{x:26,y:10},{x:26,y:20},{x:20,y:20}],ko:{l:0}},0)];touch();
+  const W=pnsWorld();
+  if(!W.segBad({x1:15,y1:15,x2:30,y2:15},0,"SIG",0.3,new Set()))throw new Error("une piste qui traverse devait buter");
+  if(W.segBad({x1:15,y1:8,x2:30,y2:8},0,"SIG",0.3,new Set()))throw new Error("une piste à côté ne doit pas buter");
+  if(W.segBad({x1:15,y1:15,x2:30,y2:15},1,"SIG",0.3,new Set()))throw new Error("keep-out du dessus seul : le dessous est libre");
+  if(!/du keep-out « Keep-out 1 »/.test(viaObstacle(mkVia(23,15,"SIG"))))
+    throw new Error("via dans le keep-out : "+viaObstacle(mkVia(23,15,"SIG")));
+  S.interdits[0].ko.vias=false;touch();
+  if(viaObstacle(mkVia(23,15,"SIG")))throw new Error("vias permis : le via passe");
+  S.tracks.push({l:0,net:"SIG",w:0.3,x1:15,y1:15,x2:30,y2:15});touch();
+  const d=runDrc();
+  if(d.some(e=>/keep-out/.test(e.msg)&&/Isolation/.test(e.msg)))throw new Error("le DRC d'isolation ne doit pas voir le keep-out");
+  if(!d.some(e=>/Piste SIG dans le keep-out/.test(e.msg)))throw new Error("keepoutDrc doit le dire");
+});
+TA("keep-out : le chemin auto le contourne",async()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  const garde={doc:serialize(),undo:S.undo.slice(),redo:S.redo.slice()};
+  try{
+    piloteCao("pcb");
+    loadDoc(exemple1());carteVide();
+    S.board={x:0,y:0,w:50,h:30,pts:null};
+    const A=mkFp("R1","","0603",2);A.x=10;A.y=15;A.nets={1:"SIG",2:"Z1"};
+    const B=mkFp("R2","","0603",2);B.x=40;B.y=15;B.nets={1:"SIG",2:"Z2"};
+    S.fps.push(A,B);
+    // un keep-out sur toutes les couches, du bord haut à y = 22 : il reste un passage en bas
+    S.interdits=[normInterdit({pts:[{x:22,y:0},{x:28,y:0},{x:28,y:22},{x:22,y:22}],ko:{}},0)];
+    touch();
+    const r=await cmds.cao_chemin.executer({liaisons:[{depart:"R1.1",arrivee:"R2.1"}]});
+    const rt=r.routes[0];
+    if(!r.resultats[0].trouve||!rt)throw new Error("chemin : "+JSON.stringify(r.resultats));
+    const P=S.interdits[0].pts;
+    for(let k=1;k<rt.points.length;k++){
+      const a=rt.points[k-1], b=rt.points[k];
+      if(distSegPoly({x1:a.x,y1:a.y,x2:b.x,y2:b.y},P)<0.15-1e-6)throw new Error("le chemin entre dans le keep-out : "+JSON.stringify(rt.points));
+    }
+  }finally{
+    global.Pilote=ancien;
+    loadDoc(JSON.parse(garde.doc),true);S.undo=garde.undo;S.redo=garde.redo;
+  }
 });
 
 (async()=>{

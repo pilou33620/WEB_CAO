@@ -4015,6 +4015,7 @@ function viaIsole(v,nets,skip){
   const it=pire.it;
   const quoi=it.k==="V"?("d'un via "+(it.net?"de "+it.net:"sans net")):
              it.npth?"d'un trou NPTH":
+             it.ko?"du keep-out « "+it.src.nom+" »":
              it.k==="P"?("de la pastille "+it.fp.ref+"."+it.q.n):
                         ("de la piste "+(it.net||"sans net"));
   return "à "+fmt(Math.max(0,pire.g),3)+" mm "+quoi+", l'isolation en exige "+

@@ -127,6 +127,14 @@ function cheminObstacles(g, nets, larg, extra, bouts, Rv){
       for(const [G, R] of [[T, a.d / 2 + Rt + cl.clr], [V, a.d / 2 + Rv + cl.clr]])
         cheminSegment(G, g, l, a, R);
     }
+    /* les keep-out cuivre : ni l'axe d'une piste (à sa demi-largeur), ni le centre d'une via (50-couches.js) */
+    for(const z of (typeof koListe === "function" ? koListe() : [])){
+      if(!koCouches(z).includes(l)) continue;
+      const b = polyBBox(z.pts);
+      for(const [G, R, on] of [[T, Rt, z.ko.pistes], [V, Rv, z.ko.vias]])
+        if(on) cheminBoite(G, g, l, b.x1 - R, b.y1 - R, b.x2 + R, b.y2 + R,
+                           (x, y) => inPoly(x, y, z.pts) || polyEdgeDist(x, y, z.pts) < R);
+    }
   }
   return {T, V};
 }
