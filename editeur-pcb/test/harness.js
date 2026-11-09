@@ -48,7 +48,8 @@ const EXPOSE=[
   /* édition à la Altium (46-edition.js et suivants) */
   "filtreOk","filtreAppliquer","verrouPoser","verrousRetirer","alignerFps","semblables","collageReseau",
   "largeurSuivante","uniteBasculer","clrZone","ecartThermique","zoneHachures","zonesDrc","zoneNouvelle",
-  "zoneOutil","zonePrioDecaler","zoneReglagesLire","gerberCopper","padBras","normZone","zoneIlotsPetits","ipcRemplir","fpSetPad","fmtU","uLue","uAff","RP_PCB","hitTest","deleteSel","startRoute",
+  "zoneOutil","zonePrioDecaler","zoneReglagesLire","gerberCopper","padBras","normZone","zoneIlotsPetits","ipcRemplir","fpSetPad",
+  "coutureZone","cloturePistes","fanoutFps","coutureRetirer","viaEssai","netMasseDefaut","fmtU","uLue","uAff","RP_PCB","hitTest","deleteSel","startRoute",
   "cutsCuivre","ilotContour","drcRangs","drcCategorie","drcFenetre","drcPas","copySelPcb","fpEssai","fpChevauchements","placementDegage","placementBilan","fpPlaceLibre","pasteClipPcb","rotateSel","flipSel","fpGene","routeRetouche","dragMoveBy","beginMove","dragRotate","gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
   "updateRoute","stepRoute","commitRoute","routeToLayer","runDrc","buildTabs",
   "buildLayers","refreshPanels","buildList","buildProps","clearSel","rotateSel",
@@ -29791,6 +29792,49 @@ T("zone : réglages relus à l'identique, fill rectangle et plan divisé",()=>{
   setMode("select");
   if(S.zoneSuivante)throw new Error("l'outil devait s'oublier");
   zonePrioDecaler(pd,-1);if(pd.priorite!==3)throw new Error("ordre de remplissage");
+});
+
+/* ---------- vias en série (48-vias.js) ---------- */
+T("vias de couture : réseau au pas, retrait du bord, aucun via en faute",()=>{
+  const {z}=zonesDecor();
+  push();
+  const n=coutureZone(z,{pas:3,pasY:3,retrait:1});
+  if(n<50)throw new Error("trop peu de vias : "+n);
+  const vs=S.vias.filter(v=>v.couture);
+  if(vs.length!==n||vs.some(v=>v.net!=="GND"))throw new Error("vias de couture : net ou marque");
+  if(vs.some(v=>polyEdgeDist(v.x,v.y,z.pts)<1+v.d/2-1e-9))throw new Error("retrait du bord non tenu");
+  // aucun n'empiète sur la piste SIG (y = 30) ni sur J1
+  if(vs.some(v=>segDist(v.x,v.y,10,30,40,30)<0.15+v.d/2+clrK("GND","SIG","cu","via")-1e-6))throw new Error("via trop près de la piste SIG");
+  const fautes=runDrc().filter(e=>e.via&&e.via.couture);
+  if(fautes.length)throw new Error("DRC : "+fautes[0].msg);
+  loadDoc(JSON.parse(serialize()),true);
+  if(S.vias.filter(v=>v.couture).length!==n)throw new Error("marque couture perdue à la relecture");
+  if(coutureRetirer()!==n||S.vias.length)throw new Error("retrait d'un coup");
+  undo();
+});
+T("clôture de vias : deux rangées le long de la piste, net de masse",()=>{
+  zonesDecor();
+  if(netMasseDefaut()!=="GND")throw new Error("masse par défaut : "+netMasseDefaut());
+  const t=S.tracks[0];
+  const n=cloturePistes([t],{pas:2});
+  if(n<20)throw new Error("rangées incomplètes : "+n);
+  const vs=S.vias;
+  if(!vs.some(v=>v.y<30)||!vs.some(v=>v.y>30))throw new Error("il faut les deux côtés");
+  const e=t.w/2+clrK("GND","SIG","cu","via")+vs[0].d/2;
+  if(vs.some(v=>Math.abs(Math.abs(v.y-30)-e)>0.02))throw new Error("écart à l'axe");
+});
+T("fanout : chaque pastille CMS sort par un via, sans faute",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.cuts=[];clearSel();
+  S.board={x:0,y:0,w:60,h:40,pts:null};S.avoid=true;
+  const U=mkFp("U1","","SOIC-8",8);U.x=30;U.y=20;
+  U.nets={1:"A",2:"B",3:"C",4:"GND",5:"E",6:"F",7:"G",8:""};S.fps.push(U);touch();
+  const r=fanoutFps([U]);
+  if(r.vias!==7)throw new Error("7 pastilles à sortir, "+r.vias+" (refus "+r.refus+")");
+  if(S.tracks.length!==7||S.vias.some(v=>!v.net))throw new Error("pistes / vias");
+  const d=runDrc().filter(e=>!/Piste hors|non rout|liaison|Composants/i.test(e.msg));
+  const iso=d.filter(e=>/isol|trou à trou|Isolation/i.test(e.msg));
+  if(iso.length)throw new Error("DRC : "+iso[0].msg);
+  if(fanoutFps([U]).vias!==0)throw new Error("déjà sorties : rien à refaire");
 });
 
 (async()=>{

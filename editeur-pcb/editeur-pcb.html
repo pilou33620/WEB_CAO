@@ -95,6 +95,7 @@
             <button class="mnu-t rg-t" type="button">Router <span class="car">▾</span></button>
             <div class="mnu-pop">
               <button data-ic="⛨" data-bascule class="tb" id="bAvoid">Anti-collision</button>
+              <button data-ic="⋇" class="tb" id="bFanout" title="Fanout : chaque pastille CMS des composants sélectionnés reçoit son via au bout d'une piste courte (entre quatre billes pour un BGA)">Fanout</button>
               <button data-ic="⇔" class="tb" id="bLargeur" title="En plein tracé : passe à la largeur suivante (W), Maj+W pour la précédente">Largeur suivante <kbd>W</kbd></button>
               <button data-ic="◣" class="tb" id="bLarmes" title="Pose ou refait les larmes : un renfort de cuivre entre une piste et le via ou la pastille ronde où elle s'arrête">Larmes</button>
               <button data-ic="◁" class="tb" id="bLarmesRetirer" title="Retire toutes les larmes de la carte">Retirer les larmes</button>
@@ -183,6 +184,9 @@
             <div class="mnu-pop">
               <button data-ic="◧" class="tb" id="bPlanDivise" title="Sur une couche plan : donner une partie du plan à un autre net, qui passe devant, isolement compris">Plan divisé</button>
               <button data-ic="⟳" class="tb" id="bZonesCalc">Recalculer toutes les zones</button>
+              <button data-ic="⁘" class="tb" id="bCouture" title="Coudre les zones sélectionnées : un réseau de vias de leur net, au pas voulu, là où la place est libre">Vias de couture…</button>
+              <button data-ic="⫶" class="tb" id="bCloture" title="Clôture de vias de part et d'autre des pistes sélectionnées (blindage RF, horloge)">Clôture de vias…</button>
+              <button data-ic="⊖" class="tb" id="bCoutureRetirer">Retirer couture et clôture</button>
             </div>
           </div>
           <div class="rg">
@@ -580,6 +584,7 @@
 <script src="js/45-drc-gestion.js"></script>
 <script src="js/46-edition.js"></script>
 <script src="js/47-zones.js"></script>
+<script src="js/48-vias.js"></script>
 <script src="../commun/explorateur-lib.js"></script>
 <script src="../commun/workspace.js"></script>
 <script src="../commun/telephone.js"></script>

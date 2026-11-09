@@ -553,6 +553,7 @@ function normVia(v,cu){
   const cp=cmLireCp(v.cp);
   if(cp)out.cp=cp;
   if(v.locked)out.locked=true;
+  if(v.couture)out.couture=true;                   // posé par la couture ou la clôture (48-vias.js)
   return out;
 }
 function normZone(z,cu,i){
