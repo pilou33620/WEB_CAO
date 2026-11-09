@@ -499,6 +499,7 @@ function normFp(f,i){
   if(f.simNonMonte===true)out.simNonMonte=true;   // ignorée par les simulations (19-simulation.js)
   if(+f.puissance>0)out.puissance=r3(dRange(f.puissance,0,0,100));   // dissipée en service, W (39-thermique.js)
   if(f.mark===false)out.mark=false;
+  if(f.locked)out.locked=true;
   else if(f.mark&&typeof f.mark==="object"){
     const mx=+f.mark.x, my=+f.mark.y;
     if(Number.isFinite(mx)&&Number.isFinite(my))
@@ -528,6 +529,7 @@ function normTrack(t,cu){
   const a1=linkNorm(t.a1), a2=linkNorm(t.a2);
   if(a1)out.a1=a1;
   if(a2)out.a2=a2;
+  if(t.locked)out.locked=true;
   return out;
 }
 function normVia(v,cu){
@@ -550,6 +552,7 @@ function normVia(v,cu){
   // contre-perçage imposé au via : une règle de l'empilage, ou « non » (01-core.js)
   const cp=cmLireCp(v.cp);
   if(cp)out.cp=cp;
+  if(v.locked)out.locked=true;
   return out;
 }
 function normZone(z,cu,i){
@@ -563,6 +566,7 @@ function normZone(z,cu,i){
   if(["directe","cms-directe","aucune"].includes(z.connexion))out.connexion=z.connexion;
   const pr=dInt(z.priorite,0,0,2147483647);        // absente = 0 ; KiCad va au-delà de 30000 (zonePrio, 01-core.js)
   if(pr)out.priorite=pr;
+  if(z.locked)out.locked=true;
   /* cuivre du fichier : les trous et la signature du contour d'origine
      (posée à la première lecture si le fichier ne la porte pas) */
   if(z.fichier){
@@ -814,7 +818,7 @@ function normDoc(d){
   out.zones=arr(src.zones).map((z,i)=>normZone(z,cu,i)).filter(Boolean);
   out.cuts=arr(src.cuts).map((c,i)=>normCut(c,cu,i)).filter(Boolean);
   out.holes=arr(src.holes).map((h,i)=>normHole(h,i)).filter(Boolean);
-  out.drawings=arr(src.drawings).map((d,i)=>normDrawingPcb(d,i)).filter(Boolean);
+  out.drawings=arr(src.drawings).map((d,i)=>{const o=normDrawingPcb(d,i);if(o&&d.locked)o.locked=true;return o;}).filter(Boolean);
   out.interdits=arr(src.interdits).map((z,i)=>normInterdit(z,i)).filter(Boolean);
   /* anomalies de brochage acquittées : repère → leur texte exact, pour qu'un
      changement les fasse revenir (pcbVerifierPinout) */
@@ -956,8 +960,8 @@ function selHolesPcb(){return (S.holes||[]).filter(h=>S.sel.holes&&S.sel.holes.h
 function hitTest(x,y,e){
   const tol=px(3);
   for(const v of S.vias)
-    if(layerAlpha(v.a)>0&&dist(x,y,v.x,v.y)<=v.d/2+tol)return {via:v};
-  if(S.holes){
+    if(filtreOk("vias")&&layerAlpha(v.a)>0&&dist(x,y,v.x,v.y)<=v.d/2+tol)return {via:v};
+  if(S.holes&&filtreOk("holes")){
     for(let i=S.holes.length-1;i>=0;i--){
       const h=S.holes[i], a=axePercage(h);
       if(segDist(x,y,a.x1,a.y1,a.x2,a.y2)<=h.d/2+tol)return {hole:h};
@@ -969,13 +973,13 @@ function hitTest(x,y,e){
   const surUnePastille=()=>surPastille!==null?surPastille:(surPastille=S.fps.some(fp=>
     padsWorld(fp).some(q=>padCuLayers(fp,q).includes(S.active)&&padDist(x,y,q)<=0)));
   for(const t of S.tracks)
-    if(t.l===S.active&&trkDist(x,y,t)<=t.w/2+tol&&!surUnePastille())return {track:t};
+    if(filtreOk("tracks")&&t.l===S.active&&trkDist(x,y,t)<=t.w/2+tol&&!surUnePastille())return {track:t};
   /* Les pastilles avant les repères : sur une carte importée, le repère est
      souvent posé sur le boîtier, et le clic prenait le texte au lieu du composant. */
-  for(let i=S.fps.length-1;i>=0;i--)
+  if(filtreOk("fps"))for(let i=S.fps.length-1;i>=0;i--)
     for(const q of padsWorld(S.fps[i]))
       if(padDist(x,y,q)<=tol)return {fp:S.fps[i],pad:q};
-  for(let i=S.fps.length-1;i>=0;i--){
+  if(filtreOk("fps"))for(let i=S.fps.length-1;i>=0;i--){
     const fp=S.fps[i];
     const tp = fpTextPos(fp);
     // textStrokes : 5/6 de la hauteur par caractère
@@ -987,9 +991,9 @@ function hitTest(x,y,e){
     if(lx>=b.x1&&lx<=b.x2&&ly>=b.y1&&ly<=b.y2)return {fp};
   }
   for(const t of S.tracks)
-    if(layerAlpha(t.l)>0&&trkDist(x,y,t)<=t.w/2+tol)return {track:t};
+    if(filtreOk("tracks")&&layerAlpha(t.l)>0&&trkDist(x,y,t)<=t.w/2+tol)return {track:t};
   /* traits et textes de sérigraphie */
-  if(S.drawings){
+  if(S.drawings&&filtreOk("drawings")){
     for(let i=S.drawings.length-1;i>=0;i--){
       const d=S.drawings[i];
       if(!drwAlpha(d))continue;     // couche cachée, face opposée masquée : rien à prendre
@@ -1019,30 +1023,30 @@ function hitTest(x,y,e){
     }
   }
   /* une zone s'attrape par son contour, sauf si on maintient Ctrl/Shift pour l'attraper de l'intérieur */
-  for(let i=S.zones.length-1;i>=0;i--){
+  if(filtreOk("zones"))for(let i=S.zones.length-1;i>=0;i--){
     const z=S.zones[i];
     if(z.larme||layerAlpha(z.l)<=0||z.pts.length<2)continue;
     if(polyEdgeDist(x,y,z.pts)<=px(5))return {zone:z};
     if(e&&(e.ctrlKey||e.shiftKey||e.metaKey||e.altKey)&&inPoly(x,y,z.pts))return {zone:z};
   }
-  for(let i=S.cuts.length-1;i>=0;i--){
+  if(filtreOk("zones"))for(let i=S.cuts.length-1;i>=0;i--){
     const c=S.cuts[i];
     if(layerAlpha(c.l)>0&&c.pts.length>1&&polyEdgeDist(x,y,c.pts)<=px(5))return {cut:c};
   }
   /* une zone interdite se prend par son bord : son intérieur laisse passer le clic */
-  for(const z of interditsListe())if(polyEdgeDist(x,y,z.pts)<=px(5))return {interdit:z};
+  if(filtreOk("autres"))for(const z of interditsListe())if(polyEdgeDist(x,y,z.pts)<=px(5))return {interdit:z};
   /* une découpe de carte se prend par son bord ou par son vide */
-  if(S.show.edge)
+  if(S.show.edge&&filtreOk("autres"))
     for(const D of boardCutouts())
       if(polyEdgeDist(x,y,D)<=px(5)||inPoly(x,y,D))return {decoupe:D};
-  if(S.show.edge&&polyEdgeDist(x,y,boardPoly())<=px(5))return {edge:true};
+  if(S.show.edge&&filtreOk("autres")&&polyEdgeDist(x,y,boardPoly())<=px(5))return {edge:true};
   /* Dernier recours : le plein d'une zone. Un plan de masse ou d'alimentation
      couvre toute la carte — son contour se confond avec celui de la carte et
      n'offre rien à viser. On le rend donc attrapable par son intérieur, mais
      seulement une fois tout le reste écarté, et marqué `inside` : l'appelant
      attend le relâchement pour trancher, sinon le moindre lasso tiré au-dessus
      d'un plan commencerait par emporter le plan. */
-  if(S.show.plane){
+  if(S.show.plane&&filtreOk("zones")){
     const zi=zoneUnder(x,y);
     if(zi)return {zone:zi,inside:true};
   }
@@ -2061,6 +2065,7 @@ function beginMove(){
   if(!drag.selSnap)drag.selSnap=dragSelSnap();
   for(const t of [...S.sel.tracks])
     for(const o of collinearRun(t))S.sel.tracks.add(o);
+  verrousRetirer();                // les objets verrouillés restent où ils sont (46-edition.js)
   // les vias de sortie des boîtiers tirés partent avec eux (`25-liens.js`)
   drag.fanout=fanoutTake();
   // l'état des boîtiers au départ : une rotation en plein geste en part
@@ -2908,6 +2913,7 @@ function deleteNetRouting(net){
    Sans piste ni via dans la sélection, rien n'est supprimé : le pied de page le
    dit plutôt que d'emporter les empreintes. */
 function unrouteSel(){
+  verrousRetirer();
   const tr=S.tracks.filter(t=>S.sel.tracks.has(t));
   const vi=S.vias.filter(v=>S.sel.vias.has(v));
   if(!tr.length&&!vi.length){
@@ -2931,6 +2937,7 @@ function unrouteSel(){
   return tr.length+vi.length;
 }
 function deleteSel(){
+  verrousRetirer();
   if(!selCount())return;
   push();
   S.fps=S.fps.filter(f=>!S.sel.fps.has(f.id));
@@ -3004,6 +3011,7 @@ function pcbClipContent(){
   const lien=a=>!a?null:a.f!=null?(fi.has(a.f)?{fi:fi.get(a.f),p:a.p}:null)
                                  :(vi.has(a.v)?{vi:vi.get(a.v)}:null);
   return {
+    ox:r3(x), oy:r3(y),            // le coin d'origine : le collage en réseau en repart (46-edition.js)
     fps:fps.map(f=>{const c=cp(f);c.x=r3(c.x-x);c.y=r3(c.y-y);delete c.id;return c;}),
     tracks:tracks.map(t=>{const c=cp(t);
       c.x1=r3(c.x1-x);c.y1=r3(c.y1-y);c.x2=r3(c.x2-x);c.y2=r3(c.y2-y);
@@ -3063,28 +3071,33 @@ function copySelPcb(){
   return true;
 }
 function cutSelPcb(){
+  verrousRetirer();
   // couper un groupe emporte aussi le cuivre interne que la copie a pris
   const gc=groupesCopie();
   if(!copySelPcb())return;
   gc.tracks.forEach(t=>S.sel.tracks.add(t));gc.vias.forEach(v=>S.sel.vias.add(v));
   deleteSel();
 }
-function pasteClipPcb(){
-  const c=pcbGetClip();
+/* `opt` ({exact:true, x, y, clip, sansPush}) : le collage en réseau pose la copie
+   au point dit, sans chercher de place libre (46-edition.js). Un clic sur le
+   bouton passe l'événement : sans `exact`, c'est le collage sous le pointeur. */
+function pasteClipPcb(opt){
+  if(!(opt&&opt.exact))opt=null;
+  const c=opt&&opt.clip?opt.clip:pcbGetClip();
   if(!c||typeof c!=="object"){hint("Presse-papier vide : copiez d'abord une sélection (Ctrl+C).");return;}
   const arr=v=>Array.isArray(v)?v:[];
   if(!arr(c.fps).length&&!arr(c.tracks).length&&!arr(c.vias).length&&
      !arr(c.zones).length&&!arr(c.cuts).length&&!arr(c.drawings).length&&!arr(c.holes).length&&!arr(c.interdits).length){hint("Presse-papier vide.");return;}
-  let bx=snapX(S.mouse.x), by=snapY(S.mouse.y);
+  let bx=opt?r3(opt.x):snapX(S.mouse.x), by=opt?r3(opt.y):snapY(S.mouse.y);
   // le curseur est souvent sur l'original : ce qu'on colle va au nœud libre le plus proche
-  const libre=fpPlaceLibre(arr(c.fps).map(s=>{
+  const libre=opt?{dx:0,dy:0}:fpPlaceLibre(arr(c.fps).map(s=>{
     const f=normFp(s,0);
     if(f){f.x=r3(f.x+bx);f.y=r3(f.y+by);}
     return f;
   }).filter(Boolean));
   if(!libre){hint("Collage refusé : aucune place libre sur la carte. Faites de la place, ou coupez l'anti-collision pour forcer.");return;}
   bx=r3(bx+libre.dx);by=r3(by+libre.dy);
-  push();
+  if(!(opt&&opt.sansPush))push();
   clearSel();
   let dropped=0;
   const used=new Set(S.fps.map(f=>f.ref));
@@ -3166,6 +3179,7 @@ function pasteClipPcb(){
        (dropped?" "+dropped+" élément(s) ignoré(s).":""));
 }
 function rotateSel(){
+  verrousRetirer();
   const list=[...S.sel.fps];
   const drw=selDrawingsPcb();
   const hls=selHolesPcb();
@@ -3215,6 +3229,7 @@ function rotateSel(){
   touch();refreshPanels();draw();
 }
 function flipSel(){
+  verrousRetirer();
   const list=[...S.sel.fps];
   const drw=selDrawingsPcb();
   if(!list.length&&!drw.length)return;
@@ -4464,13 +4479,13 @@ function coordMode(m){
 }
 function coordFill(){
   const m=S.coord.mode, a=coordAnchor(), c=S.mouse;
-  if(m==="abs"){$("ciA").value=fmt(ux(c.x),3);$("ciB").value=fmt(uy(c.y),3);}
+  if(m==="abs"){$("ciA").value=fmt(uAff(ux(c.x)),3);$("ciB").value=fmt(uAff(uy(c.y)),3);}
   else if(m==="rel"){
-    $("ciA").value=a?fmt(c.x-a.x,3):"0";
-    $("ciB").value=a?fmt(c.y-a.y,3):"0";
+    $("ciA").value=a?fmt(uAff(c.x-a.x),3):"0";
+    $("ciB").value=a?fmt(uAff(c.y-a.y),3):"0";
   }else{
     const dx=a?c.x-a.x:0, dy=a?c.y-a.y:0;
-    $("ciA").value=fmt(Math.hypot(dx,dy),3);
+    $("ciA").value=fmt(uAff(Math.hypot(dx,dy)),3);
     $("ciB").value=fmt(Math.atan2(-dy,dx)*180/Math.PI,2);
   }
 }
@@ -4491,9 +4506,10 @@ function coordClose(){
 }
 function coordPoint(){
   const m=S.coord.mode, a=coordAnchor();
-  const va=parseFloat(String($("ciA").value).replace(",","."));
-  const vb=parseFloat(String($("ciB").value).replace(",","."));
+  const va=uLue(parseFloat(String($("ciA").value).replace(",",".")));
+  let vb=parseFloat(String($("ciB").value).replace(",","."));
   if(isNaN(va)||isNaN(vb))return null;
+  if(m!=="pol")vb=uLue(vb);                 // l'angle polaire reste en degrés
   if(m==="abs")return {x:wxu(va),y:wyu(vb)};
   const base=a||{x:S.origin.x,y:S.origin.y};
   if(m==="rel")return {x:r3(base.x+va),y:r3(base.y+vb)};
@@ -5078,8 +5094,8 @@ cv.addEventListener("pointermove",e=>{
 
   const p=evPos(e);
   S.mouse=p;
-  $("fX").textContent=fmt(ux(p.x),2);
-  $("fY").textContent=fmt(uy(p.y),2);
+  $("fX").textContent=fmtU(ux(p.x));
+  $("fY").textContent=fmtU(uy(p.y));
   const at=netAtPoint(p.x,p.y,S.active);
   $("fNet").textContent=at&&at.net?at.net:"—";
   if(drag&&drag.pan){
@@ -5383,6 +5399,7 @@ cv.addEventListener("pointerup",e=>{
       else S.sel.zones.add(drag.zone);
       if(drag.zone.net){S.hlNet=drag.zone.net;revealNet(drag.zone.net);}
     }
+    filtreAppliquer();
     groupeEtendreSel();
     S.marquee=null;refreshPanels();draw();
   }
@@ -5544,6 +5561,7 @@ document.addEventListener("keydown",e=>{
     if(S.drawings&&S.sel.drawings)S.drawings.forEach(d=>S.sel.drawings.add(d.id));
     if(!S.sel.holes)S.sel.holes=new Set();
     if(S.holes)S.holes.forEach(h=>S.sel.holes.add(h.id));
+    filtreAppliquer();
     refreshPanels();draw();return;
   }
   // Ctrl+C sur du texte sélectionné appartient au navigateur : on ne lui prend
@@ -5593,6 +5611,8 @@ document.addEventListener("keydown",e=>{
       else setMode("select");
       break;
     case "t":setMode("track");break;
+    case "w":largeurSuivante(e.shiftKey?-1:1);break;      // largeur suivante en plein tracé (46-edition.js)
+    case "q":uniteBasculer();break;                       // mm ↔ mil, comme Q dans Altium
     case "v":
       if(S.dp){dpVia();dpUpdate(S.mouse.x,S.mouse.y);draw();}
       else if(S.route){routeViaCurseur();draw();}
@@ -5779,8 +5799,8 @@ const GRID_STEPS=[0.05,0.1,0.25,0.5,1,1.27,2,2.54,5];
 function curseurPose(q){
   const a=S.curseur, bouge=!a||a.x!==q.x||a.y!==q.y;
   S.curseur={x:q.x,y:q.y};
-  $("fX").textContent=fmt(ux(q.x),2);
-  $("fY").textContent=fmt(uy(q.y),2);
+  $("fX").textContent=fmtU(ux(q.x));
+  $("fY").textContent=fmtU(uy(q.y));
   return bouge;
 }
 function setGridStep(v){

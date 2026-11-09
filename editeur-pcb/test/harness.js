@@ -44,7 +44,11 @@ global.BroadcastChannel.prototype.close=function(){
 };
 
 const code=fs.readFileSync(path.join(__dirname,"..","dist","pcb.js"),"utf8");
-const EXPOSE=["cutsCuivre","ilotContour","drcRangs","drcCategorie","drcFenetre","drcPas","copySelPcb","fpEssai","fpChevauchements","placementDegage","placementBilan","fpPlaceLibre","pasteClipPcb","rotateSel","flipSel","fpGene","routeRetouche","dragMoveBy","beginMove","dragRotate","gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
+const EXPOSE=[
+  /* édition à la Altium (46-edition.js et suivants) */
+  "filtreOk","filtreAppliquer","verrouPoser","verrousRetirer","alignerFps","semblables","collageReseau",
+  "largeurSuivante","uniteBasculer","fmtU","uLue","uAff","RP_PCB","hitTest","deleteSel","startRoute",
+  "cutsCuivre","ilotContour","drcRangs","drcCategorie","drcFenetre","drcPas","copySelPcb","fpEssai","fpChevauchements","placementDegage","placementBilan","fpPlaceLibre","pasteClipPcb","rotateSel","flipSel","fpGene","routeRetouche","dragMoveBy","beginMove","dragRotate","gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
   "updateRoute","stepRoute","commitRoute","routeToLayer","runDrc","buildTabs",
   "buildLayers","refreshPanels","buildList","buildProps","clearSel","rotateSel",
   "BLOC_PLACEMENT","PLACEMENT_SCORE","fpBBox",
@@ -29598,6 +29602,107 @@ T("zones interdites : les noms voisins ne se chevauchent pas",()=>{
   const c=interditEtiquetteY(o,20,50,0,h);    // MH101 à droite, son nom croise les deux
   const d=interditEtiquetteY(o,60,80,0,h);    // assez loin : reste en haut
   if(a!==0||b!==1||c!==2||d!==0)throw new Error([a,b,c,d].join(","));
+});
+
+/* ---------- édition à la Altium (46-edition.js) ---------- */
+function editionDecor(){
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.cuts=[];S.drawings=[];S.holes=[];clearSel();S.filtre={};
+  setGridStep(0.5);S.scale=20;S.ox=0;S.oy=0;S.origin.x=0;S.origin.y=0;S.avoid=false;S.flip=false;
+  const mk=(ref,x,y)=>{const f=mkFp(ref,"10k","R_0603",2);f.x=x;f.y=y;f.nets={1:"A",2:""};S.fps.push(f);return f;};
+  const R1=mk("R1",10,10), R2=mk("R2",23,14), R3=mk("R3",30,20);
+  S.tracks.push({l:0,net:"A",w:0.3,x1:5,y1:40,x2:15,y2:40},{l:0,net:"B",w:0.5,x1:5,y1:45,x2:15,y2:45},
+                {l:0,net:"A",w:0.3,x1:20,y1:40,x2:30,y2:40});
+  setMode("select");S.active=0;touch();
+  return {R1,R2,R3};
+}
+T("filtre de sélection : le clic et le lasso ignorent les types exclus",()=>{
+  editionDecor();
+  if(!(hitTest(10,40)||{}).track)throw new Error("la piste devait se prendre");
+  S.filtre.tracks=false;
+  const h=hitTest(10,40);
+  if(h&&h.track)throw new Error("piste exclue par le filtre, prise quand même");
+  S.tracks.forEach(t=>S.sel.tracks.add(t));S.sel.fps.add(S.fps[0].id);
+  filtreAppliquer();
+  if(S.sel.tracks.size||S.sel.fps.size!==1)throw new Error("le filtre devait retirer les pistes seules");
+  setMode("meander");
+  if(!filtreOk("tracks"))throw new Error("hors Sélection, le filtre ne doit pas jouer");
+  setMode("select");S.filtre={};
+});
+T("verrou : ni supprimé ni déplacé, gardé à l'enregistrement",()=>{
+  const {R1}=editionDecor();
+  clearSel();S.sel.fps.add(R1.id);verrouPoser(true);
+  const t=S.tracks[0];clearSel();S.sel.tracks.add(t);verrouPoser(true);
+  S.sel.fps.add(R1.id);deleteSel();
+  if(!fpById(R1.id)||S.tracks.indexOf(t)<0)throw new Error("un objet verrouillé a été supprimé");
+  const x=R1.x;clearSel();S.sel.fps.add(R1.id);alignerFps("gauche");rotateSel();
+  if(R1.x!==x||R1.rot)throw new Error("un composant verrouillé a bougé");
+  loadDoc(JSON.parse(serialize()),true);
+  const f=S.fps.find(o=>o.ref==="R1");
+  if(!f||!f.locked||!S.tracks[0].locked)throw new Error("le verrou s'est perdu à la relecture");
+  clearSel();S.sel.fps.add(f.id);verrouPoser(false);deleteSel();
+  if(S.fps.find(o=>o.ref==="R1"))throw new Error("déverrouillé, il devait partir");
+});
+T("aligner et répartir les composants",()=>{
+  const {R1,R2,R3}=editionDecor();
+  clearSel();[R1,R2,R3].forEach(f=>S.sel.fps.add(f.id));
+  alignerFps("gauche");
+  const x1=[R1,R2,R3].map(f=>fpBBox(f).x1);
+  if(Math.max(...x1)-Math.min(...x1)>1e-3)throw new Error("bords gauches : "+x1);
+  alignerFps("centreY");
+  const cy=[R1,R2,R3].map(f=>{const b=fpBBox(f);return (b.y1+b.y2)/2;});
+  if(Math.max(...cy)-Math.min(...cy)>1e-3)throw new Error("centres : "+cy);
+  R2.x=12;R3.x=40;touch();
+  alignerFps("repH");
+  const B=[R1,R2,R3].map(fpBBox).sort((a,b)=>a.x1-b.x1);
+  const g1=B[1].x1-B[0].x2, g2=B[2].x1-B[1].x2;
+  if(Math.abs(g1-g2)>2e-3)throw new Error("vides inégaux : "+g1+" / "+g2);
+  undo();
+});
+T("sélectionner les semblables : même net, même largeur",()=>{
+  editionDecor();
+  clearSel();S.sel.tracks.add(S.tracks[0]);
+  if(semblables("net")!==1||!S.sel.tracks.has(S.tracks[2]))throw new Error("même net");
+  clearSel();S.sel.tracks.add(S.tracks[1]);
+  if(semblables("taille")!==0)throw new Error("aucune autre piste de 0,5 mm");
+  clearSel();S.sel.fps.add(S.fps[0].id);
+  if(semblables("valeur")!==2)throw new Error("même valeur : deux autres résistances");
+});
+T("collage en réseau : en ligne puis en cercle",()=>{
+  const {R1}=editionDecor();
+  clearSel();S.sel.fps.add(R1.id);
+  if(collageReseau({n:3,mode:"ligne",dx:10,dy:0})!==2)throw new Error("deux copies attendues");
+  const xs=S.fps.filter(f=>f.value==="10k").map(f=>r3(f.x)).sort((a,b)=>a-b);
+  if(!xs.includes(20)||!xs.includes(30)||S.fps.length!==5)throw new Error("positions : "+xs);
+  if(new Set(S.fps.map(f=>f.ref)).size!==S.fps.length)throw new Error("repères en double");
+  undo();
+  if(S.fps.length!==3)throw new Error("Ctrl+Z devait tout retirer");
+  clearSel();S.sel.fps.add(R1.id);
+  collageReseau({n:4,mode:"cercle",angle:90,cx:0,cy:0});
+  const c=S.fps.slice(3);
+  if(c.length!==3||!c.some(f=>Math.abs(f.x-10)<1e-3&&Math.abs(f.y+10)<1e-3)||!c.some(f=>f.rot===180))
+    throw new Error("cercle : "+c.map(f=>f.x+","+f.y+"@"+f.rot).join(" "));
+});
+T("largeur suivante en plein tracé (W)",()=>{
+  const {R1,R2}=editionDecor();
+  S.tracks=[];touch();
+  const a=padsWorld(R1)[0];
+  setMode("track");S.active=0;startRoute(a.x,a.y);
+  const w0=S.route.w;
+  largeurSuivante(1);
+  if(!(S.route.w>w0))throw new Error("la largeur devait monter : "+S.route.w);
+  const w1=S.route.w;
+  updateRoute(a.x+8,a.y);stepRoute();if(S.route)commitRoute();
+  setMode("select");
+  if(!S.tracks.length||Math.abs(S.tracks[0].w-w1)>1e-9)throw new Error("piste posée à "+(S.tracks[0]||{}).w);
+  largeurSuivante(-1);   // hors tracé : sans effet
+});
+T("unité mil : barre d'état, mesure et saisie de coordonnées",()=>{
+  uniteBasculer("mil");
+  try{
+    if(fmtU(25.4)!=="1000.0"||uLue(100)!==2.54||RP_PCB.mm(2.54)!==100||RP_PCB.unite()!=="mil")
+      throw new Error("conversions mil");
+  }finally{uniteBasculer("mm");}
+  if(fmtU(1.234)!=="1.23")throw new Error("retour au mm");
 });
 
 (async()=>{

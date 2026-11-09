@@ -1173,3 +1173,13 @@
   .drcw-row:hover{background:var(--blue-dim)}
   .drcw-row.on{background:var(--blue-dim);outline:1px solid var(--yellow)}
   .drcw-row span{display:block;font-family:var(--mono);font-size:10.5px;color:var(--txt-dim)}
+  /* ---------- outils d'édition à la Altium (46-edition.js et suivants) ---------- */
+  .ed-dlg{padding:0;width:320px;background:var(--panel);color:var(--txt);
+    border:1px solid var(--border2);border-radius:7px;box-shadow:0 18px 40px rgba(0,0,0,.55)}
+  .ed-dlg::backdrop{background:rgba(0,0,0,.45)}
+  .ed-dlg .mtitle,.mnu-pop .mtitle{font-family:var(--mono);font-size:9px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--txt-dim);padding:8px 12px 6px}
+  .ed-dlg .prop{border-bottom:1px solid var(--border)}
+  .ed-dlg .row{display:flex;justify-content:flex-end;gap:8px;padding:10px 12px}
+  .mnu-t.filtre-on{color:var(--yellow)}
+  .verrou-info{color:var(--yellow);display:flex;align-items:center;gap:8px}

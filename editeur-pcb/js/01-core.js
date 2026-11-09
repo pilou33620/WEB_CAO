@@ -53,6 +53,13 @@ const r3 = v => Math.round(v*1000)/1000;
    millimètre ne suffisent pas à écrire 17,5 µm sans le déformer */
 const r4 = v => Math.round(v*10000)/10000;
 const fmt = (v,n) => Number(v).toFixed(n==null?2:n);
+/* UNITÉ D'AFFICHAGE : le modèle reste en millimètres ; seuls la barre d'état,
+   la mesure et la saisie de coordonnées parlent en mil quand on bascule (Q). */
+const MIL = 0.0254;
+const uAff = v => S.unite==="mil"?v/MIL:v;
+const uLue = v => S.unite==="mil"?v*MIL:v;
+const uNom = () => S.unite==="mil"?"mil":"mm";
+const fmtU = v => S.unite==="mil"?fmt(v/MIL,1):fmt(v,2);
 function dist(x1,y1,x2,y2){return Math.hypot(x2-x1,y2-y1);}
 /* ---------- les huit sens du tracé ----------
    Un segment qui ne tombe pas sur un multiple de 45° est un **angle bâtard**
@@ -1086,6 +1093,8 @@ const S = {
   coord:{open:false,mode:"abs"},       // saisie de coordonnées au clavier
   avoid:true,                          // le tracé se tient à distance des obstacles
   mode:"select",
+  unite:"mm",                 // affichage seulement : « mm » ou « mil » (Q)
+  filtre:{},                  // filtre de sélection : type → false s'il est exclu (46-edition.js)
   sel:{fps:new Set(),tracks:new Set(),vias:new Set(),zones:new Set(),cuts:new Set(),holes:new Set(),drawings:new Set(),interdits:new Set(),edge:false},
   route:null,                 // tracé de piste en cours
   dp:null,                    // tracé de paire différentielle en cours
