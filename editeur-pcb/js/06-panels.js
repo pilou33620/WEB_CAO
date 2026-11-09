@@ -168,7 +168,8 @@ function zoneMenuBuild(){
     '<div class="prop"><div class="row">'+
       '<button class="tb" id="zmZone">Zone à main levée <kbd>Z</kbd></button></div>'+
       '<div class="row"><button class="tb" id="zmFull">Zone pleine carte (libre)</button></div>'+
-      (rolePlane(role)?'<div class="row"><button class="tb" id="zmDivise" title="Donner une partie du plan à un autre net">Plan divisé (autre net)</button></div>':"")+
+      (rolePlane(role)?'<div class="row"><button class="tb" id="zmDivise" title="Donner une partie du plan à un autre net">Plan divisé (autre net)</button></div>'+
+        '<div class="row"><label title="Écrire cette couche plan en polarité négative au Gerber, comme un Internal Plane d\'Altium"><input type="checkbox" id="zmNeg"'+(L.negatif?" checked":"")+'> Plan négatif au Gerber</label></div>':"")+
       (S.zones.some(z=>!z.larme&&z.l===S.active)
         ? '<div class="row"><button class="tb" id="zmSel">Sélectionner le cuivre de la couche</button></div>'
         : "")+'</div>';
@@ -191,6 +192,8 @@ function zoneMenuBuild(){
   if(z)z.onclick=()=>{setMode("zone");zoneMenuClose();};
   const f=$("zmFull");
   if(f)f.onclick=()=>{zoneMenuClose();fullBoardZone();};
+  const ng=$("zmNeg");
+  if(ng)ng.onchange=()=>{planNegatif(S.active,ng.checked);};
   const dv=$("zmDivise");
   if(dv)dv.onclick=()=>{zoneMenuClose();zoneOutil({divise:true});};
   const sl=$("zmSel");

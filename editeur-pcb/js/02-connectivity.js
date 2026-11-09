@@ -91,11 +91,12 @@ function ilotsMorts(M,seen){
 let _cutsCu=null;
 function cutsCuivre(force){
   const c=force?conn(true):(_conn&&_connVer===S.ver&&_connExact?_conn:null);
-  if(!c)return S.cuts;
-  if(_cutsCu&&_cutsCu.c===c&&_cutsCu.n===S.cuts.length)return _cutsCu.a;
-  const a=S.cuts.slice();
+  // les keep-out cuivre interdits aux zones s'y découpent comme une découpe de zone (50-couches.js)
+  if(!c)return S.cuts.concat(keepoutCuts());
+  if(_cutsCu&&_cutsCu.c===c&&_cutsCu.n===S.cuts.length&&_cutsCu.ver===S.ver)return _cutsCu.a;
+  const a=S.cuts.concat(keepoutCuts());
   for(const zi of (c.zoneIslands||[]))for(const pts of (zi.decoupes||[]))a.push({l:zi.l,pts,ilot:true});
-  _cutsCu={c,n:S.cuts.length,a};
+  _cutsCu={c,n:S.cuts.length,ver:S.ver,a};
   return a;
 }
 /* Contour extérieur de l'îlot m (de `ilotsMorts`) du masque M, en mm, ou null s'il n'est pas
@@ -224,7 +225,7 @@ function zoneMask(l,net){
   }
   /* les découpes de zone retirent le cuivre, comme à l'écran (`zoneCanvas`) :
      un via posé dans une découpe n'est pas relié au plan qui l'entoure */
-  for(const ct of S.cuts){
+  for(const ct of S.cuts.concat(keepoutCuts())){
     if(ct.l!==l||ct.pts.length<3)continue;
     c.beginPath();c.moveTo(ct.pts[0].x,ct.pts[0].y);
     for(let k=1;k<ct.pts.length;k++)c.lineTo(ct.pts[k].x,ct.pts[k].y);
@@ -1335,6 +1336,7 @@ function runDrc(){
   }
   larmesPerimees(out);
   zonesDrc(out);                 // régions pleines contre le cuivre des autres nets (47-zones.js)
+  keepoutDrc(out);               // pistes et vias dans un keep-out cuivre (50-couches.js)
   for(const [a,b] of fpChevauchements())
     out.push({x:r3((a.x+b.x)/2),y:r3((a.y+b.y)/2),l:a.side?S.cu-1:0,
       msg:"Composants qui se chevauchent : "+a.ref+" et "+b.ref+" ("+(a.side?"dessous":"dessus")+")"});

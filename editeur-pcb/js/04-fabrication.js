@@ -512,6 +512,8 @@ function gerberCopper(i){
         if(qc)gPad(body,A,qc,0);
       }
   const fn="Copper,L"+(i+1)+","+(i===0?"Top":(i===S.cu-1?"Bot":"Inr"));
+  if(S.cuL[i]&&S.cuL[i].negatif&&rolePlane(layerRole(i)))   // plan négatif (50-couches.js)
+    return gAssemble(gHeader(fn,"Negative"),A,gerberNegatif(body));
   return gAssemble(gHeader(fn),A,body);
 }
 function gerberMask(side){
@@ -1385,6 +1387,7 @@ const FAB_GROUPES=[
   ["pate","Pâte à braser (.GTP, .GBP)"],
   ["serigraphie","Sérigraphie (.GTO, .GBO)"],
   ["contour","Contour de découpe (.GM1, .GKO)"],
+  ["mecanique","Couches mécaniques dessinées (.GM2 à .GM9)"],
   ["percage","Perçage (Excellon, contre-perçage)"],
   ["ipc","Netlist de test (.ipc)"],
   ["ipc2581","Carte complète IPC-2581 (.xml)"],
@@ -1423,6 +1426,7 @@ function buildFabFiles(extra,veut){
     files.push({name:base+".GM1",text:gerberOutline()});   // profil de découpe
     files.push({name:base+".GKO",text:gerberEdge()});      // keepout (même géométrie)
   }
+  if(prend("mecanique"))for(const f of mecaGerbers(base))files.push(f);   // couches mécaniques dessinées (50-couches.js)
   const dr=drillFile();
   if(prend("percage")){
     for(const f of dr.files)files.push(f);

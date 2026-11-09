@@ -51,6 +51,8 @@ const EXPOSE=[
   "zoneOutil","zonePrioDecaler","zoneReglagesLire","gerberCopper","padBras","normZone","zoneIlotsPetits","ipcRemplir","fpSetPad",
   "dessinOutil","dessinClic","arcGeom","arcPoser","texteCuivre","texteSpecial","dessinsMonde","pastilleLibre",
   "coteLineaire","jlcNonPose","arcOf","boardCutouts",
+  "mecaNomsAppliquer","mecaGerbers","gerberDessin","keepoutDrc","keepoutCuts","normInterdit","planNegatif",
+  "setLayerRole","buildFabFiles","DRW_COUCHES","closeInterdit",
   "coutureZone","cloturePistes","fanoutFps","coutureRetirer","viaEssai","netMasseDefaut","fmtU","uLue","uAff","RP_PCB","hitTest","deleteSel","startRoute",
   "cutsCuivre","ilotContour","drcRangs","drcCategorie","drcFenetre","drcPas","copySelPcb","fpEssai","fpChevauchements","placementDegage","placementBilan","fpPlaceLibre","pasteClipPcb","rotateSel","flipSel","fpGene","routeRetouche","dragMoveBy","beginMove","dragRotate","gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
   "updateRoute","stepRoute","commitRoute","routeToLayer","runDrc","buildTabs",
@@ -29901,6 +29903,57 @@ T("cote linéaire posée sur la carte",()=>{
   if(!t||t.text!=="10.00 mm"||t.layer!=="dwgs"||Math.abs(t.rot)>1e-9)throw new Error("texte de cote : "+JSON.stringify(t));
   if(r.filter(d=>d.shape==="line").length!==7)throw new Error("traits de cote : "+r.length);
   if(!r.some(d=>d.shape==="line"&&Math.abs(d.y1+3)<1e-6&&Math.abs(d.y2+3)<1e-6))throw new Error("ligne de cote à y = −3");
+});
+
+/* ---------- couches (50-couches.js) ---------- */
+T("couches mécaniques : nommées, dessinées, parties au Gerber",()=>{
+  zonesDecor();S.drawings=[];S.mecaNoms={};mecaNomsAppliquer();touch();
+  if(buildFabFiles(null,k=>k==="mecanique").files.some(f=>/\.GM\d$/.test(f.name)))throw new Error("aucune couche dessinée : aucun fichier");
+  S.drawings.push({id:S.nextId++,shape:"line",type:"line",layer:"mec2",x1:0,y1:0,x2:10,y2:0,width:0.2});
+  S.mecaNoms={mec2:"Découpe boîtier"};mecaNomsAppliquer();
+  if(DRW_COUCHES.find(c=>c[0]==="mec2")[1]!=="Découpe boîtier")throw new Error("nom non appliqué");
+  const f=buildFabFiles(null,k=>k==="mecanique").files.find(x=>/\.GM3$/.test(x.name));
+  if(!f||!f.text.includes("%TF.FileFunction,Other,Decoupe-boitier*%")||!f.text.includes("D01*"))throw new Error("Gerber mécanique : "+(f&&f.text.slice(0,300)));
+  loadDoc(JSON.parse(serialize()),true);
+  if(S.mecaNoms.mec2!=="Découpe boîtier"||S.drawings[0].layer!=="mec2")throw new Error("relecture");
+  S.mecaNoms={};mecaNomsAppliquer();
+  if(DRW_COUCHES.find(c=>c[0]==="mec2")[1]!=="Mécanique 2")throw new Error("nom d'usine");
+});
+T("keep-out cuivre : les zones s'y découpent, le DRC y voit pistes et vias",()=>{
+  const {z}=zonesDecor();
+  const g0=(gerberCopper(0).match(/G36\*/g)||[]).length;
+  S.interdits=[normInterdit({face:"dessus",pts:[{x:8,y:28},{x:20,y:28},{x:20,y:33},{x:8,y:33}],ko:{l:0}},0)];
+  S.vias.push(mkVia(12,31,"SIG"));touch();
+  if(!S.interdits[0].ko||S.interdits[0].ko.l!==0||!S.interdits[0].ko.zones)throw new Error("lecture du keep-out");
+  if(keepoutCuts().length!==1)throw new Error("une découpe par couche visée");
+  if(!((gerberCopper(0).match(/G36\*/g)||[]).length>g0))throw new Error("la zone devait se découper au Gerber");
+  const out=[];keepoutDrc(out);
+  if(!out.some(e=>/Piste SIG dans le keep-out/.test(e.msg))||!out.some(e=>/Via SIG dans le keep-out/.test(e.msg)))
+    throw new Error("DRC : "+out.map(e=>e.msg).join(" | "));
+  S.interdits[0].ko.l=1;touch();
+  const o2=[];keepoutDrc(o2);
+  if(o2.some(e=>/Piste/.test(e.msg))||!o2.some(e=>/Via/.test(e.msg)))throw new Error("couche 2 seule : le via traversant y passe, pas la piste");
+  // l'outil Zone interdite en mode keep-out
+  S.interdits=[];setMode("interdit");S.interditKo=true;
+  closeInterdit({pts:[{x:1,y:1},{x:4,y:4}]});
+  if(!S.interdits[0]||!S.interdits[0].ko||!/^Keep-out/.test(S.interdits[0].nom))throw new Error("l'outil devait poser un keep-out");
+  setMode("select");if(S.interditKo)throw new Error("l'outil devait s'oublier");
+});
+T("plan négatif : polarité inversée au Gerber, cadre sombre d'abord",()=>{
+  zonesDecor();
+  if(S.cu<2)setCuCount(2);
+  setLayerRole(1,"gnd","GND");touch();
+  const pos=gerberCopper(1);
+  if(!planNegatif(1,true))throw new Error("refusé");
+  const neg=gerberCopper(1);
+  if(!neg.includes("%TF.FilePolarity,Negative*%")||pos.includes("Negative"))throw new Error("polarité du fichier");
+  const nL=(t,k)=>(t.match(new RegExp("%LP"+k+"\\*%","g"))||[]).length;
+  if(nL(neg,"C")!==nL(pos,"D"))throw new Error("polarités non inversées : "+nL(neg,"C")+" / "+nL(pos,"D"));
+  loadDoc(JSON.parse(serialize()),true);
+  if(!S.cuL[1].negatif)throw new Error("relecture");
+  if(planNegatif(0,true))throw new Error("une couche signal ne s'écrit pas en négatif");
+  planNegatif(1,false);
+  if(gerberCopper(1).includes("Negative"))throw new Error("retour au positif");
 });
 
 (async()=>{

@@ -25,7 +25,13 @@ const DRW_COUCHES=[["silkT","Sérigraphie dessus","F.SilkS",C_SILK_T],["silkB","
   ["fabT","Fab dessus","F.Fab","#c8b06a"],["fabB","Fab dessous","B.Fab","#8c7a48"],
   ["crtT","Courtyard dessus","F.CrtYd","#e46ad6"],["crtB","Courtyard dessous","B.CrtYd","#9c4a92"],
   ["dwgs","Dessins utilisateur","Dwgs.User","#b4bcc8"],["cmts","Commentaires","Cmts.User","#6fa8e0"],
-  ["user","Utilisateur","User.1","#9ccf86"]];
+  ["user","Utilisateur","User.1","#9ccf86"],
+  /* couches mécaniques libres (50-couches.js) : leur nom se change, elles partent
+     au Gerber (.GM2 à .GM9) quand elles portent un dessin */
+  ["mec1","Mécanique 1","User.2","#d9a066"],["mec2","Mécanique 2","User.3","#66c2d9"],
+  ["mec3","Mécanique 3","User.4","#c58fd9"],["mec4","Mécanique 4","User.5","#a3d966"],
+  ["mec5","Mécanique 5","User.6","#d96680"],["mec6","Mécanique 6","User.7","#66d9a6"],
+  ["mec7","Mécanique 7","User.8","#d9cf66"],["mec8","Mécanique 8","User.9","#8fa3d9"]];
 const DRW_COUL=Object.fromEntries(DRW_COUCHES.map(c=>[c[0],c[3]]));
 const drwFace=l=>/^(silk|fab|crt)[TB]$/.test(l)?(l.endsWith("B")?1:0):-1;   // -1 : sans face
 const drwAutreFace=l=>drwFace(l)<0?l:l.slice(0,-1)+(drwFace(l)?"T":"B");
@@ -1054,7 +1060,8 @@ const S = {
   pair:[0,1],                 // paire de couches pour le changement rapide
   show:{silkT:true,silkB:true,edge:true,rats:true,plane:true,drc:true,
         maskT:false,maskB:false,pasteT:false,pasteB:false,ptst:false,
-        fabT:false,fabB:false,crtT:false,crtB:false,dwgs:true,cmts:true,user:true},
+        fabT:false,fabB:false,crtT:false,crtB:false,dwgs:true,cmts:true,user:true,
+        mec1:true,mec2:true,mec3:true,mec4:true,mec5:true,mec6:true,mec7:true,mec8:true},
   board:{x:0,y:0,w:100,h:80,pts:null},   // pts = contour libre, sinon rectangle
   fps:[], tracks:[], vias:[], zones:[], cuts:[], holes:[], drawings:[], interdits:[],
   /* `corner` : l'angle imposé aux pistes tracées — « 45 » par défaut, c'est la
@@ -1135,7 +1142,8 @@ function setCuCount(n,silent){
       vis:src?src.vis!==false:true,
       plane:!!(src&&src.plane),
       net:(src&&src.net)||"GND",
-      role:coherentRole(src&&src.role,src&&src.plane,(src&&src.net)||"")
+      role:coherentRole(src&&src.role,src&&src.plane,(src&&src.net)||""),
+      negatif:!!(src&&src.negatif)       // plan écrit en négatif au Gerber (50-couches.js)
     });
   }
   const map=i=>{

@@ -169,6 +169,7 @@
           <div class="rg">
             <div class="rg-cmds">
               <button data-ic="▦" class="tb" id="mZone">Zone cuivre <kbd>Z</kbd> <span class="car">▾</span></button>
+              <button data-ic="⛔" class="tb" id="mKeepout" title="Keep-out cuivre : une zone où ni piste, ni via, ni zone n'entre, sur une couche ou toutes. Un clic par sommet, ou deux coins puis Entrée">Keep-out cuivre</button>
               <button data-ic="⊘" class="tb" id="mInterdit" title="Zone interdite d'une face : aucune patte traversante n'en ressort, aucun composant n'y dépasse la hauteur permise. Un clic par sommet, ou deux coins puis Entrée">Zone interdite</button>
               <button data-ic="✕" class="tb" id="mErase" title="Découper une zone de cuivre : un polygone où la zone ne se remplit pas">Découpe zone <kbd>X</kbd></button>
             </div>
@@ -224,6 +225,7 @@
             <div class="rg-cmds">
               <button data-ic="T" class="tb" id="mTexteCu" title="Texte sur la couche de cuivre active, droit ou inversé ; chaînes spéciales .Date .Titre .Revision .Couches…">Texte cuivre</button>
               <button data-ic="⦿" class="tb" id="mPastille" title="Pastille libre hors schéma : point de test, pastille traversante, mire de centrage (fiducial)">Pastille</button>
+              <button data-ic="▤" class="tb" id="bMeca" title="Les huit couches mécaniques : leur nom, leur affichage ; celles qui portent un dessin partent au Gerber (.GM2 à .GM9)">Couches méca…</button>
               <button data-ic="↔" class="tb" id="mCote" title="Cote linéaire posée sur la carte : deux points, puis la position de la ligne">Cote</button>
             </div>
             <button class="mnu-t rg-t" type="button">Repères <span class="car">▾</span></button>
@@ -633,6 +635,7 @@
 <script src="js/47-zones.js"></script>
 <script src="js/48-vias.js"></script>
 <script src="js/49-dessin.js"></script>
+<script src="js/50-couches.js"></script>
 <script src="../commun/explorateur-lib.js"></script>
 <script src="../commun/workspace.js"></script>
 <script src="../commun/telephone.js"></script>

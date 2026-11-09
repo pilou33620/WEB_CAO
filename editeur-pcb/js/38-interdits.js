@@ -31,9 +31,12 @@ function normInterdit(z,i){
   const pts=dPts(z.pts,3);
   if(!pts)return null;
   const h=+z.hMax;
-  return {id:dInt(z.id,i+1,1,Number.MAX_SAFE_INTEGER),face:z.face==="dessous"?"dessous":"dessus",
+  const out={id:dInt(z.id,i+1,1,Number.MAX_SAFE_INTEGER),face:z.face==="dessous"?"dessous":"dessus",
           pts:pts.map(p=>({x:r3(p.x),y:r3(p.y)})),hMax:Number.isFinite(h)&&h>0&&h<=100?r3(h):null,
           nom:dStr(z.nom!=null?z.nom:"Zone interdite "+(i+1),60)};
+  const ko=koLire(z.ko);                // keep-out cuivre (50-couches.js)
+  if(ko)out.ko=ko;
+  return out;
 }
 
 /* Deux polygones se touchent-ils ? Un sommet de l'un dans l'autre, ou deux
@@ -67,6 +70,7 @@ function interditsDrc(out){
     const T=fpXform(fp), b=bodyOf(fp), corps=[T(b.x1,b.y1),T(b.x2,b.y1),T(b.x2,b.y2),T(b.x1,b.y2)];
     const h=H.get(fp.ref);
     for(const z of Z){
+      if(z.ko)continue;                // keep-out cuivre : jugé par keepoutDrc (50-couches.js)
       /* les pattes traversantes ressortent sur l'autre face que celle du composant */
       if(z.face===autre)
         for(const q of padsWorld(fp))
@@ -117,14 +121,15 @@ function interditsDessiner(c){
     c.beginPath();c.moveTo(z.pts[0].x,z.pts[0].y);
     for(let k=1;k<z.pts.length;k++)c.lineTo(z.pts[k].x,z.pts[k].y);
     c.closePath();
-    c.globalAlpha=0.08;c.fillStyle=C_ERR;c.fill();
-    c.globalAlpha=sel?1:0.75;c.strokeStyle=sel?C_SEL:C_ERR;c.lineWidth=px(sel?1.8:1.2);
+    const coul=z.ko?C_KO:C_ERR;      // keep-out cuivre : ambre (50-couches.js)
+    c.globalAlpha=0.08;c.fillStyle=coul;c.fill();
+    c.globalAlpha=sel?1:0.75;c.strokeStyle=sel?C_SEL:coul;c.lineWidth=px(sel?1.8:1.2);
     c.setLineDash(z.face==="dessous"?[px(2),px(3)]:[px(6),px(3)]);c.stroke();c.setLineDash([]);
     const b=polyBBox(z.pts);
-    c.globalAlpha=1;c.fillStyle=sel?C_SEL:C_ERR;
+    c.globalAlpha=1;c.fillStyle=sel?C_SEL:coul;
     c.font=px(11)+'px "Segoe UI",system-ui,sans-serif';c.textAlign="left";c.textBaseline="top";
     // la face n'est pas répétée quand le nom la dit déjà (« Garde MH100 (dessous) »)
-    const txt=z.nom+(String(z.nom).includes(z.face)?"":" · "+z.face)+
+    const txt=z.ko?z.nom+" · "+koResume(z):z.nom+(String(z.nom).includes(z.face)?"":" · "+z.face)+
       (z.hMax!=null?" · h ≤ "+fmt(z.hMax,1)+" mm":" · aucun composant");
     const x=b.x1+px(3), w=c.measureText(txt).width;
     const y=interditEtiquetteY(occupes,S.flip?x-w:x,S.flip?x:x+w,b.y1+px(3),px(14));
@@ -149,9 +154,11 @@ function closeInterdit(Z){
   if(!Array.isArray(S.interdits))S.interdits=[];
   const z={id:S.nextId++,face:(S.flip||S.active===S.cu-1)?"dessous":"dessus",pts,hMax:null,
            nom:"Zone interdite "+(S.interdits.length+1)};
+  if(S.interditKo){z.ko={l:-1,pistes:true,vias:true,zones:true};z.nom="Keep-out "+(koListe().length+1);}
   S.interdits.push(z);
   clearSel();if(!S.sel.interdits)S.sel.interdits=new Set();S.sel.interdits.add(z);
   touch();refreshPanels();draw();
+  if(z.ko){hint("Keep-out cuivre posé sur toutes les couches : ni piste, ni via, ni zone. Réglez sa couche dans les propriétés.");return;}
   hint("Zone interdite posée sur le "+z.face+" : aucun composant, aucune patte qui ressorte. Réglez sa face et sa hauteur dans les propriétés.");
 }
 function selInterdits(){
@@ -161,6 +168,7 @@ function selInterdits(){
 
 /* La fiche d'une zone interdite sélectionnée. */
 function propsInterdit(box,z){
+  if(z.ko)return propsKeepout(box,z);   // keep-out cuivre (50-couches.js)
   const b=polyBBox(z.pts);
   box.innerHTML=
     '<div class="cat">Zone interdite</div>'+

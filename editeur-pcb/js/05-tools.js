@@ -18,6 +18,7 @@ function docObj(){
           holes:S.holes||[],
           drawings:S.drawings||[],
           interdits:interditsListe(),
+          mecaNoms:S.mecaNoms||{},
           pinoutAcquits:S.pinoutAcquits||{},
           fabExclus:S.fabExclus||[],
           anim3dEtiq:Array.isArray(S.anim3dEtiq)?S.anim3dEtiq:null,
@@ -308,6 +309,7 @@ function normLayer(L,i,n){
   /* le rôle est la lecture humaine de ce couple : signal, mixte, plan de masse,
      plan d'alimentation, blindage. Il ne peut pas contredire `plane`. */
   out.role=coherentRole(dStr(src.role,16),out.plane,out.net);
+  out.negatif=!!src.negatif;      // plan écrit en négatif au Gerber (50-couches.js)
   return out;
 }
 /* Empilage physique. Les longueurs sont imposées par le nombre de couches,
@@ -823,6 +825,7 @@ function normDoc(d){
   out.holes=arr(src.holes).map((h,i)=>normHole(h,i)).filter(Boolean);
   out.drawings=arr(src.drawings).map((d,i)=>{const o=normDrawingPcb(d,i);if(o&&d.locked)o.locked=true;return o;}).filter(Boolean);
   out.interdits=arr(src.interdits).map((z,i)=>normInterdit(z,i)).filter(Boolean);
+  out.mecaNoms=mecaNomsLire(src.mecaNoms);          // noms des couches mécaniques (50-couches.js)
   /* anomalies de brochage acquittées : repère → leur texte exact, pour qu'un
      changement les fasse revenir (pcbVerifierPinout) */
   out.pinoutAcquits={};
@@ -900,6 +903,7 @@ function loadDoc(d,keepView){
   S.contraintes=d.contraintes;
   S.fps=d.fps;S.tracks=d.tracks;S.vias=d.vias;
   S.zones=d.zones;S.cuts=d.cuts;S.holes=d.holes||[];S.drawings=d.drawings||[];S.pinoutAcquits=d.pinoutAcquits||{};S.interdits=d.interdits||[];
+  S.mecaNoms=d.mecaNoms||{};mecaNomsAppliquer();
   S.fabExclus=d.fabExclus||[];
   S.anim3dEtiq=d.anim3dEtiq||null;
   S.cartouche=d.cartouche||"";
@@ -5738,6 +5742,7 @@ function setMode(m){
   if(S.coord.open&&!coordUsable())coordClose();
   if(S.zoneDraft&&m!=="zone")S.zoneDraft=null;
   if(m!=="zone")S.zoneSuivante=null;     // région pleine, plan divisé : le temps de l'outil (47-zones.js)
+  if(m!=="interdit")S.interditKo=false;  // keep-out cuivre : le temps de l'outil (50-couches.js)
   if(S.cutDraft&&m!=="cut")S.cutDraft=null;
   if(S.edgeDraft&&m!==(S.edgeDraft.decoupe?"decoupe":S.edgeDraft.interdit?"interdit":"edge"))S.edgeDraft=null;
   if(S.silkDraft&&m!=="silk")S.silkDraft=null;
