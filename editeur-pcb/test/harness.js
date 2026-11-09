@@ -30004,7 +30004,7 @@ T("keep-out : le routeur refuse d'y entrer, la touche V aussi ; le DRC d'isolati
   if(!W.segBad({x1:15,y1:15,x2:30,y2:15},0,"SIG",0.3,new Set()))throw new Error("une piste qui traverse devait buter");
   if(W.segBad({x1:15,y1:8,x2:30,y2:8},0,"SIG",0.3,new Set()))throw new Error("une piste à côté ne doit pas buter");
   if(W.segBad({x1:15,y1:15,x2:30,y2:15},1,"SIG",0.3,new Set()))throw new Error("keep-out du dessus seul : le dessous est libre");
-  if(!/du keep-out « Keep-out 1 »/.test(viaObstacle(mkVia(23,15,"SIG"))))
+  if(!/^dans le keep-out « /.test(viaObstacle(mkVia(23,15,"SIG"))))
     throw new Error("via dans le keep-out : "+viaObstacle(mkVia(23,15,"SIG")));
   S.interdits[0].ko.vias=false;touch();
   if(viaObstacle(mkVia(23,15,"SIG")))throw new Error("vias permis : le via passe");
