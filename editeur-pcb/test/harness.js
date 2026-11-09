@@ -54,7 +54,7 @@ const EXPOSE=[
   "mecaNomsAppliquer","mecaGerbers","gerberDessin","keepoutDrc","keepoutCuts","normInterdit","planNegatif",
   "setLayerRole","buildFabFiles","DRW_COUCHES","closeInterdit",
   "busClic","busTouche","busPlan","polyDecalee","busPoser",
-  "pnsWorld","pnsItemsKeepout","distSegPoly","viaObstacle","placeVia",
+  "pnsWorld","pnsItemsKeepout","distSegPoly","drwBBox","drwPoints","gerberSilk","viaObstacle","placeVia",
   "coutureZone","cloturePistes","fanoutFps","coutureRetirer","viaEssai","netMasseDefaut","fmtU","uLue","uAff","RP_PCB","hitTest","deleteSel","startRoute",
   "cutsCuivre","ilotContour","drcRangs","drcCategorie","drcFenetre","drcPas","copySelPcb","fpEssai","fpChevauchements","placementDegage","placementBilan","fpPlaceLibre","pasteClipPcb","rotateSel","flipSel","fpGene","routeRetouche","dragMoveBy","beginMove","dragRotate","gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
   "updateRoute","stepRoute","commitRoute","routeToLayer","runDrc","buildTabs",
@@ -29862,7 +29862,23 @@ T("arc de sérigraphie, découpe ronde, zone ronde",()=>{
   zonesDecor();S.drawings=[];S.board.cutouts=undefined;touch();
   S.arcCible="silk";
   arcPoser(arcGeom({x:10,y:10},{x:14,y:10},{x:10,y:6}));
-  if(S.drawings.length!==18||S.drawings.some(d=>d.layer!=="silkT"))throw new Error("arc de sérigraphie : "+S.drawings.length);
+  const d0=S.drawings[0];
+  if(S.drawings.length!==1||d0.layer!=="silkT"||Math.abs(d0.ca+Math.PI/2)>1e-3)throw new Error("arc de sérigraphie natif : "+JSON.stringify(S.drawings));
+  // sélection sur le renflement, Gerber en cordes fines, relecture et copie qui gardent l'arc
+  const m={x:10+4*Math.cos(-Math.PI/4),y:10+4*Math.sin(-Math.PI/4)};
+  setMode("select");
+  if(!(hitTest(m.x,m.y)||{}).drawing)throw new Error("l'arc se prend sur son milieu");
+  if(drwBBox(d0).y1>6.01)throw new Error("boîte de l'arc : "+JSON.stringify(drwBBox(d0)));
+  const g=gerberSilk(0), nTraits=(g.match(/D01\*/g)||[]).length;
+  if(nTraits<20)throw new Error("Gerber : l'arc en cordes fines, "+nTraits+" traits");
+  loadDoc(JSON.parse(serialize()),true);
+  if(Math.abs(S.drawings[0].ca+Math.PI/2)>1e-3)throw new Error("l'arc se perd à la relecture");
+  clearSel();S.sel.drawings=new Set([S.drawings[0].id]);
+  collageReseau({n:2,mode:"ligne",dx:10,dy:0});
+  if(S.drawings.length!==2||Math.abs(S.drawings[1].ca+Math.PI/2)>1e-3)throw new Error("l'arc se perd à la copie");
+  S.arcCible="silk";
+  arcPoser(arcGeom({x:30,y:10},{x:33,y:10},null));
+  if(S.drawings.length!==4)throw new Error("cercle de sérigraphie : deux demi-arcs");
   S.arcCible="decoupe";
   arcPoser(arcGeom({x:30,y:20},{x:32,y:20},null));
   if(boardCutouts().length!==1)throw new Error("découpe ronde absente");

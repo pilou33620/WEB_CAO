@@ -114,13 +114,15 @@ function arcPoser(g){
     }
   }else{
     const layer=cible==="silk"?"silk"+dessinFace():cible;
-    const P=arcPoints(g,5);
     if(!S.sel.drawings)S.sel.drawings=new Set();
     res={drawings:[]};
-    // shortcut: l'arc de dessin est une suite de traits de 5° ; une forme « arc » native s'il faut l'éditer comme tel
-    for(let k=0;k+1<P.length;k++){
-      const d={id:S.nextId++,shape:"line",type:"line",layer,x1:P[k].x,y1:P[k].y,x2:P[k+1].x,y2:P[k+1].y,width:0.15};
-      S.drawings.push(d);S.sel.drawings.add(d.id);res.drawings.push(d);
+    // un vrai trait en arc (drwArc, 01-core.js) ; un cercle : deux demi-arcs
+    let a=g.a1, P={x:g.c.x+g.r*Math.cos(a),y:g.c.y+g.r*Math.sin(a)};
+    for(const ca of (plein?[g.ca/2,g.ca/2]:[g.ca])){
+      a+=ca;
+      const B={x:g.c.x+g.r*Math.cos(a),y:g.c.y+g.r*Math.sin(a)};
+      const d={id:S.nextId++,shape:"line",type:"line",layer,x1:r4(P.x),y1:r4(P.y),x2:r4(B.x),y2:r4(B.y),ca:r4(ca),width:0.15};
+      S.drawings.push(d);S.sel.drawings.add(d.id);res.drawings.push(d);P=B;
     }
   }
   touch();refreshPanels();draw();

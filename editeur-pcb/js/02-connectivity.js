@@ -1312,7 +1312,7 @@ function runDrc(){
       const w=d.width||0.15;
       const P=d.shape==="text"?textStrokes(d.text||"TEXT",d.x1,d.y1,d.size||1.5,!!side,d.rot||0)
         :d.shape==="rect"?[[{x:d.x1,y:d.y1},{x:d.x2,y:d.y1},{x:d.x2,y:d.y2},{x:d.x1,y:d.y2},{x:d.x1,y:d.y1}]]
-        :[[{x:d.x1,y:d.y1},{x:d.x2,y:d.y2}]];
+        :[drwPoints(d)];
       if(d.fp){const k=d.fp.id+"|"+w;if(!parFp.has(k))parFp.set(k,{fp:d.fp,w,P:[]});parFp.get(k).P.push(...P);continue;}
       juger(d.shape==="text"?"le texte « "+d.text+" »":"le "+(d.shape==="rect"?"cadre":"trait")+" "+d.id,P,w,d.x1,d.y1);
     }

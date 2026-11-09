@@ -619,7 +619,8 @@ function silkTraits(side){
         seg(d.x2, d.y2, d.x1, d.y2, w);
         seg(d.x1, d.y2, d.x1, d.y1, w);
       }else{
-        seg(d.x1, d.y1, d.x2, d.y2, w);
+        const P=drwPoints(d);           // un arc en cordes fines (01-core.js)
+        for(let k=0;k+1<P.length;k++)seg(P[k].x, P[k].y, P[k+1].x, P[k+1].y, w);
       }
     }
   }

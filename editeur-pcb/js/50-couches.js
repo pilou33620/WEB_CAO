@@ -78,7 +78,7 @@ function gerberDessin(layer,nom){
     }else if(d.shape==="rect"){
       gSeg(body,A,d.x1,d.y1,d.x2,d.y1,w);gSeg(body,A,d.x2,d.y1,d.x2,d.y2,w);
       gSeg(body,A,d.x2,d.y2,d.x1,d.y2,w);gSeg(body,A,d.x1,d.y2,d.x1,d.y1,w);
-    }else gSeg(body,A,d.x1,d.y1,d.x2,d.y2,w);
+    }else{const P=drwPoints(d);for(let k=0;k+1<P.length;k++)gSeg(body,A,P[k].x,P[k].y,P[k+1].x,P[k+1].y,w);}
   }
   if(!body.length)return null;
   // le nom en ASCII : la fonction de fichier X2 ne prend ni accent ni virgule

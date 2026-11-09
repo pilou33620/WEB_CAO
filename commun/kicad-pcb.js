@@ -848,6 +848,13 @@ const KICAD_PCB = (() => {
         items.push(["gr_text", q(g.text || ""), ["at", nb(g.x1), nb(g.y1), deg(-nb(g.rot))], ["layer", q(L)], u, police(nb(g.size, 1.5), nb(g.width, 0.15), /^B\./.test(L))]);
       else if (g.shape === "rect")
         items.push(["gr_rect", ["start", nb(g.x1), nb(g.y1)], ["end", nb(g.x2), nb(g.y2)], trait(nb(g.width, 0.15)), ["fill", "no"], ["layer", q(L)], u]);
+      else if (Math.abs(nb(g.ca)) > 1e-4 && Math.hypot(nb(g.x2) - nb(g.x1), nb(g.y2) - nb(g.y1)) > 1e-9) {
+        // un trait en arc : le point milieu déduit de la corde et de l'angle, comme les pistes
+        const dx = nb(g.x2) - nb(g.x1), dy = nb(g.y2) - nb(g.y1), dl = Math.hypot(dx, dy), h = nb(g.ca) / 2, k = (dl / 2) / Math.tan(h);
+        const cx = (nb(g.x1) + nb(g.x2)) / 2 - (dy / dl) * k, cy = (nb(g.y1) + nb(g.y2)) / 2 + (dx / dl) * k;
+        const r = Math.abs(dl / (2 * Math.sin(h))), a = Math.atan2(nb(g.y1) - cy, nb(g.x1) - cx) + h;
+        items.push(["gr_arc", ["start", nb(g.x1), nb(g.y1)], ["mid", cx + r * Math.cos(a), cy + r * Math.sin(a)], ["end", nb(g.x2), nb(g.y2)], trait(nb(g.width, 0.15)), ["layer", q(L)], u]);
+      }
       else items.push(["gr_line", ["start", nb(g.x1), nb(g.y1)], ["end", nb(g.x2), nb(g.y2)], trait(nb(g.width, 0.15)), ["layer", q(L)], u]);
     });
     if (troues) rap.ecart("aplat de sérigraphie troué : écrit sans ses trous (KiCad n'en a pas)");

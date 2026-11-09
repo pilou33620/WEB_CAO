@@ -660,7 +660,7 @@ function normDrawingPcb(d,i){
   if(Math.hypot(x2-x1,y2-y1)<1e-6)return null;
   if(shape==="rect"&&(Math.abs(x2-x1)<1e-4||Math.abs(y2-y1)<1e-4))return null;
   const width=dRange(d.width,0.15,0.05,10);
-  return {
+  const out={
     id:dInt(d.id,i+1,1,Number.MAX_SAFE_INTEGER),
     shape:shape,
     type:shape,
@@ -669,6 +669,10 @@ function normDrawingPcb(d,i){
     x2:r4(x2),y2:r4(y2),
     width:r4(width)
   };
+  // un trait en arc : l'angle balayé, comme une piste (drwArc, 01-core.js)
+  const ca=+d.ca;
+  if(shape==="line"&&Number.isFinite(ca)&&Math.abs(ca)>ARC_MIN)out.ca=r4(clamp(ca,-ARC_MAX,ARC_MAX));
+  return out;
 }
 function normHole(h,i){
   if(!h||typeof h!=="object")return null;
@@ -1025,7 +1029,8 @@ function hitTest(x,y,e){
         const lx=dx*c-dy*s, ly=dx*s+dy*c;
         if(Math.abs(lx)<=hw+tol&&Math.abs(ly)<=hh+tol) return {drawing:d};
       }else{
-        if(segDist(x,y,d.x1,d.y1,d.x2,d.y2)<=tol)return {drawing:d};
+        const P=drwPoints(d);
+        for(let k=0;k+1<P.length;k++)if(segDist(x,y,P[k].x,P[k].y,P[k+1].x,P[k+1].y)<=tol)return {drawing:d};
       }
     }
   }
@@ -3041,7 +3046,7 @@ function pcbClipContent(){
       height:d.height,
       rot:d.rot,
       x1:r3(d.x1-x),y1:r3(d.y1-y),x2:r3(d.x2-x),y2:r3(d.y2-y),
-      width:d.width,
+      width:d.width,ca:d.ca,
       pts:d.pts?d.pts.map(p=>({x:r3(p.x-x),y:r3(p.y-y)})):undefined,
       trous:d.trous?d.trous.map(t=>t.map(p=>({x:r3(p.x-x),y:r3(p.y-y)}))):undefined
     }))
@@ -5393,8 +5398,7 @@ cv.addEventListener("pointerup",e=>{
       if(S.drawings){
         for(const d of S.drawings){
           if(!drwAlpha(d))continue;
-          const minX=Math.min(d.x1,d.x2), maxX=Math.max(d.x1,d.x2);
-          const minY=Math.min(d.y1,d.y2), maxY=Math.max(d.y1,d.y2);
+          const bb=drwBBox(d), minX=bb.x1, maxX=bb.x2, minY=bb.y1, maxY=bb.y2;
           if(minX>=x1&&maxX<=x2&&minY>=y1&&maxY<=y2){
             if(!S.sel.drawings)S.sel.drawings=new Set();
             S.sel.drawings.add(d.id);

@@ -621,8 +621,8 @@ function drawSilk(c){
       if(!fa)continue;
       const coul = DRW_COUL[d.layer];
       if(!sel&&d.shape!=="rect"&&d.shape!=="text"&&d.shape!=="poly"){
-        const e=(d.width||0)/2;
-        if(horsVue(Math.min(d.x1,d.x2)-e,Math.min(d.y1,d.y2)-e,Math.max(d.x1,d.x2)+e,Math.max(d.y1,d.y2)+e))continue;
+        const e=(d.width||0)/2, bb=drwBBox(d);
+        if(horsVue(bb.x1-e,bb.y1-e,bb.x2+e,bb.y2+e))continue;
         const k=d.layer+"|"+(d.width||0.15);
         let p=lots.get(k);if(!p)lots.set(k,p=[]);
         p.push(d);
@@ -703,8 +703,7 @@ function drawSilk(c){
           c.strokeRect(rx, ry, rw, rh);
         }else{
           c.beginPath();
-          c.moveTo(d.x1, d.y1);
-          c.lineTo(d.x2, d.y2);
+          drwTrait(c, d);
           c.stroke();
         }
       }
@@ -717,8 +716,7 @@ function drawSilk(c){
         c.strokeRect(rx, ry, rw, rh);
       }else{
         c.beginPath();
-        c.moveTo(d.x1, d.y1);
-        c.lineTo(d.x2, d.y2);
+        drwTrait(c, d);
         c.stroke();
       }
       if(sel){
@@ -744,7 +742,7 @@ function drawSilk(c){
       c.strokeStyle=DRW_COUL[p[0].layer];
       c.lineWidth=Math.max(+k.split("|")[1],px(1));
       c.beginPath();
-      for(const d of p){c.moveTo(d.x1,d.y1);c.lineTo(d.x2,d.y2);}
+      for(const d of p)drwTrait(c,d);
       c.stroke();
     }
     c.restore();

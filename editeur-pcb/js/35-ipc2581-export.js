@@ -1073,6 +1073,7 @@ function ipc2581Document(opts){
     else if(d.shape==="text")k.push(texte(d.text||"TEXT",d.x1,d.y1,d.size||1.5,!!f,d.rot||0,w));
     else if(d.shape==="rect")
       k.push(["Features",[],[polyligne([{x:d.x1,y:d.y1},{x:d.x2,y:d.y1},{x:d.x2,y:d.y2},{x:d.x1,y:d.y2}],w,true)]]);
+    else if(drwArc(d))k.push(["Features",[],[polyligne(drwPoints(d),w,false)]]);
     else k.push(ligne(d.x1,d.y1,d.x2,d.y2,w));
   }
   /* masque et pâte : une ouverture par pastille, à sa dilatation */

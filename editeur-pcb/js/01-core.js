@@ -155,6 +155,28 @@ function arcSweep(A,a){
   return ((d%(2*Math.PI))+2*Math.PI)%(2*Math.PI);
 }
 function arcOn(A,a){return arcSweep(A,a)<=Math.abs(A.ca);}
+/* UN TRAIT DE DESSIN peut être un arc, comme une piste : même corde, même
+   angle balayé `ca` (`arcOf` le lit). `drwTrait` le met dans le chemin d'un
+   canevas, `drwPoints` le rend en cordes de 3° au plus pour le Gerber, le DRC
+   et la sélection, `drwBBox` en donne la boîte, renflement compris. */
+const drwArc=d=>!!d&&d.shape!=="rect"&&d.shape!=="text"&&d.shape!=="poly"&&isArc(d);
+function drwTrait(c,d){
+  c.moveTo(d.x1,d.y1);
+  const A=drwArc(d)?arcOf(d):null;
+  if(A)c.arc(A.cx,A.cy,A.r,A.a1,A.a2,A.ca<0);else c.lineTo(d.x2,d.y2);
+}
+function drwPoints(d){
+  const A=drwArc(d)?arcOf(d):null;
+  if(!A)return [{x:d.x1,y:d.y1},{x:d.x2,y:d.y2}];
+  const n=Math.max(2,Math.ceil(Math.abs(A.ca)/(Math.PI/60))), out=[];
+  for(let k=0;k<=n;k++){const a=A.a1+A.ca*k/n;out.push({x:A.cx+A.r*Math.cos(a),y:A.cy+A.r*Math.sin(a)});}
+  out[0]={x:d.x1,y:d.y1};out[n]={x:d.x2,y:d.y2};
+  return out;
+}
+function drwBBox(d){
+  if(!drwArc(d))return {x1:Math.min(d.x1,d.x2),y1:Math.min(d.y1,d.y2),x2:Math.max(d.x1,d.x2),y2:Math.max(d.y1,d.y2)};
+  return polyBBox(drwPoints(d));
+}
 /* Longueur de cuivre : la corde pour une droite, le rayon fois l'angle pour un
    arc. C'est cette longueur-là que réclament la ligne de transmission et le
    tableau des nets — mesurer la corde raccourcirait un demi-tour d'un tiers. */
