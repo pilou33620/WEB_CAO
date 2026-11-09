@@ -241,7 +241,7 @@ function simZoneEn(l,x,y){
     const z=S.zones[i];
     if(z.l!==l||!z.pts||z.pts.length<3)continue;
     if(!inPoly(x,y,z.pts))continue;
-    if(S.cuts.some(c=>c.l===l&&c.pts.length>2&&inPoly(x,y,c.pts)))continue;
+    if(cutsCuivre(true).some(c=>c.l===l&&c.pts.length>2&&inPoly(x,y,c.pts)))continue;
     return z;
   }
   return null;
@@ -927,7 +927,7 @@ function simAireEnRegard(cuA, cuB, x, y){
   const cuivre = (l, net) => ({
     plein: S.zones.filter(z => z.l === l && z.net === net && z.pts && z.pts.length >= 3)
                   .map(z => [plat(z.pts)]),
-    vide: S.cuts.filter(c => c.l === l && c.pts && c.pts.length > 2).map(c => [plat(c.pts)])
+    vide: cutsCuivre(true).filter(c => c.l === l && c.pts && c.pts.length > 2).map(c => [plat(c.pts)])
   });
   const A = cuivre(pA, zA.net), B = cuivre(pB, zB.net);
   const r = simAireCommune(A, B, 0.25);
@@ -2214,7 +2214,7 @@ function simDCCuivreDesNets(nets){
   /* LES DÉCOUPES EN DERNIER, et en `trou` : elles retirent du cuivre. Une
      découpe ne porte pas de net — elle évide ce qu'elle recouvre, tous nets
      confondus (un trou AVEC net n'évide que le sien). */
-  for(const ct of S.cuts){
+  for(const ct of cutsCuivre(true)){
     if(!ct.pts||ct.pts.length<3)continue;
     polygones.push({vertices:ct.pts.map(q=>[q.x,q.y]), couche:ct.l,
                     net:"", epaisseur:cuT(ct.l), trou:true});
@@ -2770,7 +2770,7 @@ function simXtAretes(couche){
     }
   };
   for(const z of S.zones)if(z.l===couche&&z.pts&&z.pts.length>=3)pousse(z.pts);
-  for(const c of (S.cuts||[]))if(c.l===couche&&c.pts&&c.pts.length>=3)pousse(c.pts);
+  for(const c of cutsCuivre(true))if(c.l===couche&&c.pts&&c.pts.length>=3)pousse(c.pts);
   return out;
 }
 
@@ -4083,7 +4083,7 @@ const SIM_PCB={
       const zones=[];
       for(const z of (S.zones||[])){
         if(!z||!isTargetNet(z.net)||!Array.isArray(z.pts)||z.pts.length<3) continue;
-        const trous=(S.cuts||[]).filter(c=>c&&c.l===z.l&&Array.isArray(c.pts)&&c.pts.length>=3&&
+        const trous=cutsCuivre(true).filter(c=>c&&c.l===z.l&&Array.isArray(c.pts)&&c.pts.length>=3&&
                                          inPoly(c.pts[0].x,c.pts[0].y,z.pts)).map(c=>c.pts);
         zones.push({pts:z.pts,trous,h:h[z.l]||1.5,t:cuT(z.l)});
       }
@@ -4172,7 +4172,7 @@ const SIM_PCB={
       if(!z||!z.net||!Array.isArray(z.pts)||z.pts.length<3) continue;
       let aire=Math.abs(signedArea(z.pts));
       // Les découpes posées dans la zone retirent du cuivre.
-      for(const c of (S.cuts||[])){
+      for(const c of cutsCuivre(true)){
         if(c&&c.l===z.l&&Array.isArray(c.pts)&&c.pts.length>=3&&inPoly(c.pts[0].x,c.pts[0].y,z.pts))
           aire-=Math.abs(signedArea(c.pts));
       }
@@ -4887,7 +4887,7 @@ const SIM_PCB={
           if((zn&&q.net===zn)||!padLayers(fp,q).includes(z.l)||!dans(q.x,q.y))continue;
           trous.push(rect(q,clrK(zn,q.net,"cu",q.drill>0?"th":"smd")));
         }
-      for(const c of S.cuts||[])if(c.l===z.l&&c.pts.length>2)trous.push(plat(c.pts));
+      for(const c of cutsCuivre(true))if(c.l===z.l&&c.pts.length>2)trous.push(plat(c.pts));
       for(const P of zoneLanieres(z.l))trous.push(plat(P));   // les lanières, comme au Gerber
       return {c:nom(z.l),n:zn,o:plat(z.pts),isolement:clrK(zn,"","cu","trk"),t:trous};
     }).concat(liaisons);
@@ -5306,7 +5306,7 @@ function simRfPlateauPcb(){
       .filter(z=>z&&z.net===n&&Array.isArray(z.pts)&&z.pts.length>=3)
       .map(z=>{
         const pts=poly(z.pts);
-        const trous=(S.cuts||[])
+        const trous=cutsCuivre(true)
           .filter(c=>c&&c.l===z.l&&Array.isArray(c.pts)&&c.pts.length>=3&&
                      inPoly(c.pts[0].x,c.pts[0].y,z.pts))
           .map(c=>poly(c.pts));

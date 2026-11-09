@@ -429,7 +429,7 @@ function gerberCopper(i){
     }
     zx1-=1;zy1-=1;zx2+=1;zy2+=1;
     gOutside(body,A,zx1,zy1,zx2,zy2);
-    for(const ct of S.cuts){
+    for(const ct of cutsCuivre(true)){      // découpes du document et cuivre mort
       if(ct.l===i&&ct.pts.length>=3)gRegionArcs(body,ct.pts);
     }
     for(const P of zoneLanieres(i))gRegion(body,P);   // cuivre plus étroit que cuMin entre deux dégagements

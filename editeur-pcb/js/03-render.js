@@ -167,7 +167,11 @@ function zoneCanvas(i,fixe){
   const res=fixe?fixe.res:Math.max(3,Math.min(S.scale*Math.max(2,dpr),Math.sqrt(6e6/((x2-x1)*(y2-y1)))));
   const old=zoneCache.get(i);
   const couvre=o=>vx1>=o.x&&vy1>=o.y&&vx2<=o.x+o.w&&vy2<=o.y+o.h;
-  if(!fixe&&old&&old.ver===S.ver&&old.res>=res*0.85&&old.res<=res*2.5&&couvre(old))return old;
+  /* l'analyse fine arrive après coup sur une grosse carte : le plan est refait
+     quand elle apporte le cuivre mort à retirer */
+  if(!fixe)conn();                         // l'analyse fine, tout de suite sur une petite carte
+  const connFin=!!(_conn&&_connVer===S.ver&&_connExact);
+  if(!fixe&&old&&old.ver===S.ver&&old.fin===connFin&&old.res>=res*0.85&&old.res<=res*2.5&&couvre(old))return old;
   /* En plein geste (boîtier tiré, extrémité étirée, vue qui glisse), l'ancien
      plan reste : le recalcul coûte des centaines de millisecondes sur une
      grosse carte, il attend que le geste se pose. */
@@ -199,7 +203,7 @@ function zoneCanvas(i,fixe){
   // ce qui tombe hors de la région rastérisée n'y laisse rien (marge : l'isolation)
   const hors=(a,b,c2,d,r)=>c2+r+2<x1||a-r-2>x2||d+r+2<y1||b-r-2>y2;
   c.strokeStyle="#000";c.fillStyle="#000";c.lineCap="round";c.lineJoin="round";
-  for(const ct of S.cuts){
+  for(const ct of cutsCuivre(!!fixe)){      // découpes du document et cuivre mort
     if(ct.l!==i||ct.pts.length<2)continue;
     c.beginPath();
     c.moveTo(ct.pts[0].x,ct.pts[0].y);
@@ -265,7 +269,7 @@ function zoneCanvas(i,fixe){
       c.beginPath();cheminPercage(c,q);c.fill();c.restore();
     }
   }
-  const rec={ver:S.ver,res,cvs:o,x:x1,y:y1,w:W/res,h:H/res};
+  const rec={ver:S.ver,fin:connFin,res,cvs:o,x:x1,y:y1,w:W/res,h:H/res};
   if(!fixe)zoneCache.set(i,rec);
   return rec;
 }

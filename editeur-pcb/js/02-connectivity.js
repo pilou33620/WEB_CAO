@@ -57,15 +57,17 @@ function maskLabels(M,x,y,r,rot){
   return out;
 }
 /* Les îlots qu'aucune broche, via ni piste du net ne touche : du cuivre mort,
-   que le contrôle signale et que `ilotsSupprimer` (45-drc-gestion.js) retire.
-   Un seul balayage du masque : surface, boîte et un pixel de repère par îlot. */
+   retiré d'office au remplissage (`cutsCuivre`). Un seul balayage du masque :
+   surface, boîte et un pixel de repère par îlot. */
 function ilotsMorts(M,seen){
   const n=M.count, nb=new Int32Array(n+1), sx=new Float64Array(n+1), sy=new Float64Array(n+1);
+  const bx1=new Int32Array(n+1).fill(M.W), by1=new Int32Array(n+1).fill(M.H), bx2=new Int32Array(n+1), by2=new Int32Array(n+1);
   for(let p=0;p<M.lab.length;p++){
     const lb=M.lab[p];
     if(!lb||seen.has(lb))continue;
-    const x=p%M.W;
-    nb[lb]++;sx[lb]+=x;sy[lb]+=(p-x)/M.W;
+    const x=p%M.W, y=(p-x)/M.W;
+    nb[lb]++;sx[lb]+=x;sy[lb]+=y;
+    if(x<bx1[lb])bx1[lb]=x;if(x>bx2[lb])bx2[lb]=x;if(y<by1[lb])by1[lb]=y;if(y>by2[lb])by2[lb]=y;
   }
   const out=[];
   for(let lb=1;lb<=n;lb++){
@@ -73,10 +75,118 @@ function ilotsMorts(M,seen){
     // le repère : le centre de gravité s'il tombe dans l'îlot, sinon un pixel de l'îlot
     let cx=Math.floor(sx[lb]/nb[lb]), cy=Math.floor(sy[lb]/nb[lb]);
     if(M.lab[cy*M.W+cx]!==lb){const p=M.lab.indexOf(lb);cx=p%M.W;cy=(p-cx)/M.W;}
-    out.push({lb,x:r3(M.x+(cx+0.5)/M.res),y:r3(M.y+(cy+0.5)/M.res),aire:nb[lb]/(M.res*M.res)});
+    out.push({lb,x:r3(M.x+(cx+0.5)/M.res),y:r3(M.y+(cy+0.5)/M.res),aire:nb[lb]/(M.res*M.res),
+              bb:[bx1[lb],by1[lb],bx2[lb],by2[lb]]});
   }
   return out;
 }
+/* Le cuivre mort s'en va comme sous une découpe de zone : écran, Gerber,
+   IPC-2581 et simulation lisent les découpes par `cutsCuivre`, qui ajoute à
+   celles du document une découpe par îlot mort de l'analyse fine (contour du
+   masque élargi d'un pixel sur le vide, pour ne pas laisser de liseré). Rien
+   n'est écrit dans le document : l'îlot revient si on le relie.
+   `force` : demander l'analyse fine (export) ; sinon, celle déjà faite.
+   shortcut: sur une carte trop grosse pour que l'analyse fine se relance seule
+   (`_connExactCout`), l'écran garde les îlots jusqu'au DRC ; les fichiers non. */
+let _cutsCu=null;
+function cutsCuivre(force){
+  const c=force?conn(true):(_conn&&_connVer===S.ver&&_connExact?_conn:null);
+  if(!c)return S.cuts;
+  if(_cutsCu&&_cutsCu.c===c&&_cutsCu.n===S.cuts.length)return _cutsCu.a;
+  const a=S.cuts.slice();
+  for(const zi of (c.zoneIslands||[]))for(const pts of (zi.decoupes||[]))a.push({l:zi.l,pts,ilot:true});
+  _cutsCu={c,n:S.cuts.length,a};
+  return a;
+}
+/* Contour extérieur de l'îlot m (de `ilotsMorts`) du masque M, en mm, ou null s'il n'est pas
+   sûr d'y poser une découpe : un autre cuivre (îlot vivant du net, zone d'un
+   autre net) logé dans un de ses trous serait effacé avec lui.
+   shortcut: un îlot à trou habité est laissé tel quel, à retirer à la main ;
+   découper les trous (polygone en trou de serrure) si le cas devient courant. */
+function ilotContour(M,m,l,net){
+  const {W,H,lab}=M, lb=m.lb;
+  let [x1,y1,x2,y2]=m.bb;
+  x1=Math.max(0,x1-1);y1=Math.max(0,y1-1);x2=Math.min(W-1,x2+1);y2=Math.min(H-1,y2+1);
+  const bw=x2-x1+1, bh=y2-y1+1;
+  const L=(x,y)=>x<0||y<0||x>=W||y>=H?0:lab[y*W+x];
+  /* l'îlot, plus le vide qui le touche (8 voisins) : jamais un pixel d'un autre îlot */
+  const D=new Uint8Array(bw*bh);
+  for(let y=0;y<bh;y++)for(let x=0;x<bw;x++){
+    const X=x+x1, Y=y+y1, v=L(X,Y);
+    if(v===lb){D[y*bw+x]=1;continue;}
+    if(v)continue;
+    let k=false;
+    for(let dy=-1;dy<=1&&!k;dy++)for(let dx=-1;dx<=1;dx++)if(L(X+dx,Y+dy)===lb){k=true;break;}
+    if(k)D[y*bw+x]=1;
+  }
+  const inD=(x,y)=>x>=0&&y>=0&&x<bw&&y<bh&&D[y*bw+x]===1;
+  /* arêtes du bord, dans le sens horaire à l'écran (y vers le bas) : l'îlot à
+     droite. Un sommet en porte au plus deux (deux pixels qui se touchent par
+     un coin). */
+  const VW=bw+1, V=VW*(bh+1);
+  const e1=new Int8Array(V).fill(-1), e2=new Int8Array(V).fill(-1);
+  const add=(x,y,d)=>{const v=y*VW+x;if(e1[v]<0)e1[v]=d;else e2[v]=d;};
+  for(let y=0;y<bh;y++)for(let x=0;x<bw;x++){
+    if(!D[y*bw+x])continue;
+    if(!inD(x,y-1))add(x,y,0);
+    if(!inD(x+1,y))add(x+1,y,1);
+    if(!inD(x,y+1))add(x+1,y+1,2);
+    if(!inD(x-1,y))add(x,y+1,3);
+  }
+  const DX=[1,0,-1,0], DY=[0,1,0,-1];
+  const prendre=(v,d)=>{
+    // au coin partagé, on tourne à droite : on longe le même pixel
+    const ordre=d<0?[e1[v],e2[v]]:[(d+1)%4,d,(d+3)%4];
+    for(const c of ordre){
+      if(c<0)continue;
+      if(e1[v]===c){e1[v]=e2[v];e2[v]=-1;return c;}
+      if(e2[v]===c){e2[v]=-1;return c;}
+    }
+    return -1;
+  };
+  let best=null, bestA=0;
+  for(let v0=0;v0<V;v0++){
+    while(e1[v0]>=0){
+      const P=[];
+      let v=v0, d=-1, n=0;
+      do{
+        const nd=prendre(v,d);
+        if(nd<0)break;
+        if(nd!==d)P.push(v);
+        d=nd;
+        v+=DX[d]+DY[d]*VW;
+      }while(v!==v0&&++n<4*V);
+      let a=0;
+      for(let i=0,j=P.length-1;i<P.length;j=i++){
+        const xi=P[i]%VW, yi=(P[i]-xi)/VW, xj=P[j]%VW, yj=(P[j]-xj)/VW;
+        a+=xj*yi-xi*yj;
+      }
+      if(Math.abs(a)>bestA){bestA=Math.abs(a);best=P;}
+    }
+  }
+  if(!best||best.length<4)return null;
+  const loc=best.map(v=>{const x=v%VW;return {x,y:(v-x)/VW};});
+  /* ce que le contour enferme sans être l'îlot : balayage ligne à ligne */
+  const vert=[];
+  for(let i=0,j=loc.length-1;i<loc.length;j=i++)
+    if(loc[i].x===loc[j].x)vert.push({x:loc[i].x,ya:Math.min(loc[i].y,loc[j].y),yb:Math.max(loc[i].y,loc[j].y)});
+  const wx=x=>M.x+(x+x1)/M.res, wy=y=>M.y+(y+y1)/M.res;
+  const bb={x1:wx(0),y1:wy(0),x2:wx(bw),y2:wy(bh)};
+  const autres=S.zones.filter(z=>z.l===l&&(z.net||"")!==net&&z.pts.length>=3&&(()=>{
+    const b=zoneCalc(z).bb;return !(b.x2<bb.x1||b.x1>bb.x2||b.y2<bb.y1||b.y1>bb.y2);})());
+  for(let y=0;y<bh;y++){
+    const xs=vert.filter(e=>e.ya<=y&&y<e.yb).map(e=>e.x).sort((a,b)=>a-b);
+    for(let k=0;k+1<xs.length;k+=2)
+      for(let x=xs[k];x<xs[k+1];x++){
+        if(D[y*bw+x])continue;
+        if(L(x+x1,y+y1))return null;                       // un autre îlot du net
+        const px=wx(x+0.5), py=wy(y+0.5);
+        if(autres.some(z=>zoneContient(z,px,py)))return null;   // une zone d'un autre net
+      }
+  }
+  return loc.map(p=>({x:r3(wx(p.x)),y:r3(wy(p.y))}));
+}
+
 function zoneMask(l,net){
   const zs=S.zones.filter(z=>!z.larme&&z.l===l&&(z.net||"")===net&&z.pts.length>=3);
   if(!zs.length)return null;
@@ -408,8 +518,16 @@ function computeConn(exact){
         .concat(maskLabels(M,m.x,m.y,t.w/2,0));
       link("T"+i+"a",labs);
     });
-    zoneIslands.push({l:g.l,net:g.net,islands:seen.size,total:M.count,
-                      morts:g.zs.some(zoneFichier)?[]:ilotsMorts(M,seen)});
+    /* le cuivre mort tombe ; reste signalé celui qu'on ne peut découper sans
+       effacer un autre cuivre logé dans ses trous. Une zone que rien ne relie
+       encore (plan posé avant le routage) reste entière : on ne retire que
+       les îlots d'une zone qui en a au moins un de vivant. */
+    const decoupes=[], morts=[];
+    for(const m of (!seen.size||g.zs.some(zoneFichier)?[]:ilotsMorts(M,seen))){
+      const P=ilotContour(M,m,g.l,g.net);
+      if(P)decoupes.push(P);else morts.push(m);
+    }
+    zoneIslands.push({l:g.l,net:g.net,islands:seen.size,total:M.count,morts,decoupes});
   }
 
   /* regroupement par net + chevelu */
@@ -1224,7 +1342,8 @@ function runDrc(){
     for(const m of (zi.morts||[]))
       // la surface reste hors du message : il ne change pas quand l'îlot se retaille
       out.push({x:m.x,y:m.y,l:zi.l,ilot:true,aire:m.aire,
-        msg:"Îlot de cuivre isolé : zone "+zi.net+" sur "+cuId(zi.l,S.cu)+", relié à rien (à supprimer)"});
+        msg:"Îlot de cuivre isolé : zone "+zi.net+" sur "+cuId(zi.l,S.cu)+
+            ", relié à rien, un autre cuivre loge dans ses trous : à retirer à la main (découpe)"});
   /* ---------- ce que l'empilage impose ----------
      Le rapport d'aspect et la nature des vias ne se voient pas sur le dessin :
      c'est la pile qui les décide, d'où leur place ici plutôt que dans le seul

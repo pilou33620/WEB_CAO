@@ -1165,8 +1165,6 @@
   .drcw-bar span{font-family:var(--mono);min-width:64px;text-align:center}
   .drcw-bar label{margin-left:auto;color:var(--txt-dim);display:flex;align-items:center;gap:4px}
   .drcw button.tb{padding:3px 8px;font-size:11px}
-  #drcwIlots:not(:empty){padding:6px 10px;border-bottom:1px solid var(--border)}
-  #drcwIlots button{width:100%;justify-content:center}
   .drcw-list{overflow:auto;flex:1;min-height:60px}
   .drcw-cat{padding:5px 10px;background:var(--panel2);border-bottom:1px solid var(--border);cursor:pointer;font-weight:600;position:sticky;top:0}
   .drcw-cat span{float:right;font-family:var(--mono);color:var(--red)}

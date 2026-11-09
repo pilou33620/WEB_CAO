@@ -431,7 +431,7 @@ function ipcRemplir(z){
       prendre(moins,ipcGelule(a.x,a.y,b.x,b.y,m));
     }
   }
-  for(const ct of S.cuts)if(ct.l===i)prendre(moins,ct.pts);
+  for(const ct of cutsCuivre(true))if(ct.l===i)prendre(moins,ct.pts);   // cuivre mort compris
   const dessus=zoneDessus(z);                          // zones plus prioritaires d'un autre net
   if(dessus)for(const P of dessus.polys)prendre(moins,P);
   for(const P of zoneLanieres(i))prendre(moins,P);     // les lanières, comme au Gerber

@@ -653,9 +653,8 @@ var PLACEMENT_SCORE = (function() {
     const btnTb = document.getElementById("bPlacementScore");
     if (btnTb) {
       btnTb.onclick = () => {
-        if (typeof WS !== "undefined" && WS.togglePanel) {
-          WS.togglePanel("placement");
-        }
+        // le panneau est caché d'office (00-espace-config.js) : le bouton le fait paraître
+        if (typeof wsReveler === "function") wsReveler("placement");
         actualiser(0);
       };
     }
