@@ -143,6 +143,13 @@ def test_routes():
                      headers={"Content-Type": "application/json", "Content-Encoding": "gzip"})
         res = conn.getresponse()
         assert res.status == 400 and "gzip" in json.loads(res.read().decode("utf-8"))["detail"]
+        # une epaisseur de cuivre absurde (1e9 mm) faisait mailler la diaphonie
+        # jusqu'a ce que le systeme tue le serveur : refus net, avant tout calcul
+        doc_e = dict(doc, stackup={"layers": [{"type": "copper", "name": "TOP", "thickness": 1e9}]})
+        conn.request("POST", "/api/analyse-carte", body=json.dumps(doc_e).encode("utf-8"),
+                     headers={"Content-Type": "application/json"})
+        res = conn.getresponse()
+        assert res.status == 422 and "hors bornes" in json.loads(res.read().decode("utf-8"))["detail"]
         print("[PASS] GET/POST /api/analyse-carte")
 
         # 4c. Les echecs d'un calcul s'ecrivent dans le terminal avec leur

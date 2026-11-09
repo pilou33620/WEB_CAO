@@ -475,6 +475,9 @@ eval(code.replace(/^"use strict";/,"")+"\n"
      +'Object.defineProperty(globalThis,"PCB_REPRISE",'
      +'{get:()=>PCB_REPRISE,set:v=>{PCB_REPRISE=v;},configurable:true});'
      +'Object.defineProperty(globalThis,"PCB_PROJET_P",{get:()=>PCB_PROJET_P,configurable:true});');
+/* Le navigateur envoie « load » une fois tous les scripts lus : la reprise de session
+   (07-app.js) l'attend, comme le saut du cross-probing. */
+dom.fireWin("load",{});
 
 const fire=dom.fire, key=dom.key;
 /* Première différence entre deux documents, ou null s'ils sont équivalents.

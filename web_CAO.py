@@ -540,6 +540,26 @@ import analyse_carte  # noqa: E402
 MAX_ANALYSE = 32 * 1024 * 1024
 
 
+def _borner_empilage(doc):
+    """Refuse une epaisseur d'empilage hors bornes physiques (mm).
+
+    Une epaisseur de cuivre de 1e9 mm, acceptee par la page, faisait mailler
+    la diaphonie sans fin : 11 Go, puis le serveur tue par le systeme."""
+    pile = doc.get("stackup") if isinstance(doc, dict) else None
+    couches = pile.get("layers") if isinstance(pile, dict) else None
+    for c in couches if isinstance(couches, list) else ():
+        if not isinstance(c, dict) or c.get("thickness") in (None, ""):
+            continue
+        try:
+            t = float(c["thickness"])
+        except (TypeError, ValueError):
+            raise ErreurIPC(422, "Epaisseur illisible pour la couche %s" % c.get("name"))
+        plafond = 1.0 if c.get("type") == "copper" else 20.0
+        if not 0 <= t <= plafond:
+            raise ErreurIPC(422, "Epaisseur de la couche %s hors bornes : %g mm "
+                                 "(0 a %g mm)" % (c.get("name"), t, plafond))
+
+
 def _deplier_grilles(doc):
     """La grille de chaque cavite part UNE fois, dans `cavites_grilles` ; les
     vias n'en portent que la cle (`simCorpsJson`). On la remet en place, le
@@ -2385,11 +2405,17 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             raise ErreurLib(400, "Liste de composants manquante ou invalide")
 
         colonnes = charge.get("colonnes")
-        if not colonnes or not isinstance(colonnes, list):
-            if composants and isinstance(composants[0], dict):
-                colonnes = [k for k in composants[0].keys() if k != "_id"]
-            else:
-                raise ErreurLib(400, "Colonnes non definies")
+        if not isinstance(colonnes, list):
+            colonnes = []
+        # Une colonne oubliee par la liste ne doit pas effacer ce que portent
+        # les composants (catalogue vide au depart : seule « Modele Simulation »
+        # etait annoncee, et tout le reste partait).
+        colonnes = list(colonnes)
+        for comp in composants:
+            if isinstance(comp, dict):
+                colonnes += [k for k in comp if k not in colonnes and not str(k).startswith("_")]
+        if not colonnes:
+            raise ErreurLib(400, "Colonnes non definies")
 
         import csv
         import io
@@ -2887,9 +2913,11 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                                      % (8 * plafond // 1048576))
             corps = brut
         try:
-            return _deplier_grilles(json.loads(corps.decode("utf-8")))
+            doc = _deplier_grilles(json.loads(corps.decode("utf-8")))
         except (ValueError, UnicodeDecodeError) as exc:
             raise ErreurIPC(400, "Document JSON illisible : %s" % exc)
+        _borner_empilage(doc)
+        return doc
 
     def _simulation_lancer(self):
         """Corps de la requete (document JSON) -> parametres S de la ligne."""

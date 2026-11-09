@@ -113,9 +113,21 @@ async function connecter(){
     hint("Prêt. Saisissez une requête puis Entrée.");
     return true;
   }catch(e){
-    majEtatApi(false,"injoignable");
     construireListeOutils("");
     construireFormulaire(OUTIL_DEFAUT);     // le formulaire reste utilisable
+    if(e&&e.serveurRepond){
+      /* Le serveur local tourne : lui dire de le relancer enverrait chercher au mauvais endroit. */
+      majEtatApi(false,"pcbparts.dev injoignable");
+      q("formResume").textContent="Le serveur local répond, mais il n'atteint pas pcbparts.dev.";
+      q("resultats").innerHTML='<div class="vide"><b>pcbparts.dev injoignable.</b><br>'+
+        "Le serveur local (<b>web_CAO.py</b>) fonctionne, mais sa requête vers pcbparts.dev "+
+        "a échoué : connexion Internet, proxy ou pare-feu du poste, ou service momentanément "+
+        "indisponible. Réessayez plus tard ; inutile de relancer le serveur.<br><br>"+
+        '<span class="err">'+esc(e.message)+"</span></div>";
+      hint("pcbparts.dev injoignable.");
+      return false;
+    }
+    majEtatApi(false,"injoignable");
     q("formResume").textContent=
       "La passerelle ne répond pas : les recherches sont impossibles tant qu'elle "+
       "n'est pas démarrée.";

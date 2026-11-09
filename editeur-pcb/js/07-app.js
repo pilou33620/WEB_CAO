@@ -829,6 +829,7 @@ function sessionPcb(){
   }
   PCB_FICHIER=String(repris.etat.fichier||"");
   const v=repris.etat.vue||{};
+  if(typeof v.flip==="boolean")setFlip(v.flip);   // le profil, appliqué avant, ne l'impose plus
   const cadree=Number.isFinite(+v.scale)&&+v.scale>0;
   if(cadree){
     S.scale=+v.scale;S.ox=+v.ox||0;S.oy=+v.oy||0;
@@ -860,8 +861,11 @@ function init(){
   $("bAvoid").classList.toggle("on",S.avoid);
   refreshPanels();
   resize();fit();
-  PCB_REPRISE=sessionPcb();   // en dernier : reprend la carte laissée dans l'onglet
-  pcbChargerProjet();
+  /* En dernier : reprend la carte laissée dans l'onglet. Différé à « load » :
+     loadDoc() s'appuie sur des fichiers chargés après celui-ci (groupes,
+     liens…), absents à cet instant en pages séparées — la reprise levait et
+     la session était effacée à chaque aller-retour avec le schéma. */
+  sessCibleAuChargement(function(){ PCB_REPRISE=sessionPcb(); pcbChargerProjet(); });
   setTimeout(() => {
     if (typeof pcbSyncSchema === "function") {
       pcbSyncSchema().then(() => {

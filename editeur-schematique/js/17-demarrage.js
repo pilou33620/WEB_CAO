@@ -39,7 +39,10 @@ S.dirty=false;
    quelques secondes dans un autre outil, et se reprend sans rien demander.
    L'ancienne sauvegarde automatique du navigateur, elle, n'est plus reprise :
    elle pouvait dater, et ressusciter une version que le dossier a dépassée. */
-const SCH_REPRISE=sessionSchema();
+/* Différée à « load » (plus bas) : loadDoc() s'appuie sur des fichiers chargés
+   après celui-ci (29-symboles-lib.js…), absents à cet instant en pages
+   séparées — la reprise levait et la session était effacée sans un mot. */
+let SCH_REPRISE=false;
 clearBackup();
 
 /* Ensuite, et c'est lui qui fait foi : le dossier du projet. La session n'est
@@ -91,4 +94,4 @@ function schChargerProjet(){
   });
 }
 try{ projSurChangement(schChargerProjet); }catch(_){}
-schChargerProjet();
+sessCibleAuChargement(function(){ SCH_REPRISE=sessionSchema(); schChargerProjet(); });

@@ -537,6 +537,15 @@ function refreshPanels(){
     const r=document.getElementById("pRef"), v=document.getElementById("pVal");
     const etape=()=>{if(PROP_FRAPPE!==el){push();PROP_FRAPPE=el;}};
     if(r)r.oninput=()=>{etape();el.ref=r.value.trim();draw();buildList();};
+    /* Vide pendant la frappe, oui ; vide une fois validé, non : la netlist sortait des
+       nœuds « ?.1 » et la BOM une ligne sans repère. On rend le repère d'avant. */
+    const refAvant=el.ref;
+    if(r&&refAvant)r.onchange=()=>{
+      if(r.value.trim())return;
+      el.ref=r.value=refAvant;draw();buildList();
+      const h=document.getElementById("fHint");
+      if(h)h.textContent="Un repère ne peut pas être vide : « "+refAvant+" » est rendu.";
+    };
     // la valeur d'un symbole d'alimentation ou d'une étiquette renomme le net :
     // le panneau des connexions doit suivre la frappe
     /* La valeur d'un symbole d'alimentation ou d'une étiquette renomme le net :

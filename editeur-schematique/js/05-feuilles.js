@@ -38,14 +38,15 @@ function gotoPage(i){
   if(!p.viewed){p.viewed=true;fit();}else draw();
 }
 function addPage(copyCurrent){
+  // refus avant push() : sinon une étape d'annulation vide s'ajoutait
+  if(copyCurrent&&S.page===0){
+    alert("La feuille hiérarchique racine ne peut pas être dupliquée.");
+    return;
+  }
   push();storeCurrent();
   const nextNum = Math.max(1, S.pages.length);
   const p=newPage("Feuille "+nextNum);
   if(copyCurrent){
-    if(S.page===0 || (S.pages[0]&&S.pages[0].isHierarchy&&S.page===0)){
-      alert("La feuille hiérarchique racine ne peut pas être dupliquée.");
-      return;
-    }
     const src=S.pages[S.page];
     p.name=src.name+" (copie)";
     p.comps=JSON.parse(JSON.stringify(src.comps));

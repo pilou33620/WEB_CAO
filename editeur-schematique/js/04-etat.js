@@ -124,8 +124,10 @@ function icCount(el){
   if(!el)return 8;
   if(Number.isFinite(el.npins))return Math.max(1,Math.min(64,Math.round(el.npins)));
   if(Array.isArray(el.pinPos)&&el.pinPos.length)return Math.max(1,Math.min(64,el.pinPos.length));
-  const cnt=pinCount(el);
-  if(cnt>0)return Math.max(1,Math.min(64,cnt));
+  /* Pas pinCount() : pour un « ic », pinsOf() repasse par icPins → icGeom → icCount,
+     sans fin (aperçu de pose de la palette, qui n'a ni npins ni pinPos). */
+  const p=defOf(el.type).pins;
+  if(Array.isArray(p)&&p.length)return Math.max(1,Math.min(64,p.length));
   return 8;
 }
 function icAutoBody(pins){

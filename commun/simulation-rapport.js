@@ -685,7 +685,7 @@ function simRapMarkdown(d){
   L.push("- **Carte :** "+(d.carte||"—"));
   L.push("- **Outil :** "+(d.outil||"—"));
   L.push("- **Famille :** "+d.famille);
-  L.push("- **Date :** "+d.date.toLocaleDateString()+" "+d.date.toLocaleTimeString());
+  L.push("- **Date :** "+d.date.toLocaleDateString("fr-FR")+" "+d.date.toLocaleTimeString("fr-FR"));
   L.push("- **Statut :** "+d.statutTxt);
   if(d.quoi)L.push("- **Ce qui est calculé :** "+d.quoi);
   L.push("");
@@ -822,7 +822,7 @@ function simRapTitre(d){
 }
 function simRapSousTitre(d){
   return esc([d.carte||"carte sans nom", d.famille,
-    d.date.toLocaleDateString()+" "+d.date.toLocaleTimeString(),
+    d.date.toLocaleDateString("fr-FR")+" "+d.date.toLocaleTimeString("fr-FR"),
     d.outil||"WEB_CAO"].filter(Boolean).join(" · "));
 }
 

@@ -1086,6 +1086,10 @@ function creerNouveauComposant() {
   };
 
   LIB_STATE.composants.unshift(newComp);
+  // catalogue vide (première installation) : sans ses colonnes, la table ne montrait rien
+  const vide = !LIB_STATE.colonnes.length;
+  Object.keys(newComp).forEach(k => { if (k[0] !== "_" && !LIB_STATE.colonnes.includes(k)) LIB_STATE.colonnes.push(k); });
+  if (vide) initialiserColonnesVisibles();
   LIB_STATE.sale = true;
   fermerModaleNouveauComposant();
   // Le nouveau composant seulement : l'appel sans argument réassociait tout le

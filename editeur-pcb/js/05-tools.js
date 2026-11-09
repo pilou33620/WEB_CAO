@@ -4226,6 +4226,8 @@ function askZoneNet(def, Z, isFullBoard){
   const btnC = document.createElement("button");
   btnC.className = "tb"; btnC.textContent = "Annuler";
   btnC.onclick = () => { d.close(); d.remove(); if(!isFullBoard){ S.zoneDraft=Z; draw(); } };
+  // Échap ferme un <dialog> tout seul : il doit annuler comme le bouton (polygone rendu, dialogue retiré)
+  d.addEventListener("cancel", e => { e.preventDefault(); btnC.onclick(); });
   
   const btnO = document.createElement("button");
   btnO.className = "tb"; btnO.textContent = "Valider";

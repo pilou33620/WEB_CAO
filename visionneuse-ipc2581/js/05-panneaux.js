@@ -252,6 +252,14 @@ function pnlEmpilageCabler(box){
       /* Un champ vidé n'est pas un zéro : c'est le retour à ce que dit le
          fichier, ou au défaut s'il ne dit rien. */
       const v=parseFloat(String(inp.value).replace(",","."));
+      const b=LT_BORNES[inp.dataset.lt];
+      if(isFinite(v)&&b&&(v<b[0]||v>b[1])){
+        /* 1e9 mm passait, restait dans le profil, et l'audit faisait mourir le serveur */
+        inp.setCustomValidity("Hors bornes : entre "+mdlNb(b[0],4)+" et "+mdlNb(b[1],4)+".");
+        inp.reportValidity(); inp.setCustomValidity("");
+        inp.value=""; ltSurcharger(inp.dataset.lt,inp.dataset.cle,null);
+        return;
+      }
       ltSurcharger(inp.dataset.lt,inp.dataset.cle,
                    (isFinite(v)&&v>0)?v:null);
     };
@@ -272,6 +280,9 @@ function pnlEmpilageCabler(box){
     hint("Empilage revenu à ce que dit le fichier.");
   };
 }
+/* Bornes physiques des saisies d'empilage : épaisseur de cuivre et de
+   diélectrique en mm, εr sans unité. */
+const LT_BORNES={cu:[0.001,1],gap_t:[0.005,20],gap_er:[1,100]};
 function ltSurcharger(quoi,cle,valeur){
   if(!V.sur[quoi])V.sur[quoi]={};
   if(valeur==null)delete V.sur[quoi][cle];

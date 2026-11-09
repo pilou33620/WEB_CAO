@@ -162,6 +162,9 @@ eval(code.replace(/^"use strict";/,"")+"\n"
      +'{get:()=>WS,set:v=>{WS=v;},configurable:true});'
      +'Object.defineProperty(globalThis,"SCH_PROJET_LU",'
      +'{get:()=>SCH_PROJET_LU,set:v=>{SCH_PROJET_LU=v;},configurable:true});');
+/* Le navigateur envoie « load » une fois tous les scripts lus : la reprise de session
+   (17-demarrage.js) l'attend, comme le saut du cross-probing. */
+dom.fireWin("load",{});
 
 /* ==========================================================================
    Outils du banc

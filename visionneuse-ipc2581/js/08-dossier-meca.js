@@ -128,7 +128,7 @@ function mecaIpcApercu(){
   document.getElementById("mecaEtat").textContent=J.fixations.length+" fixation(s) · "+
     J.composants.filter(c=>c.ouverture).length+" ouverture(s) · "+
     (n?n+" composant(s) sans hauteur":"toutes les hauteurs connues")+
-    (MECA_IPC.libKo?" · LIB indisponible (hors serveur) : hauteurs du fichier et saisies seulement":"");
+    (MECA_IPC.libKo?" · LIB indisponible (serveur absent ou bibliothèque vide) : hauteurs du fichier et saisies seulement":"");
 }
 function mecaIpcRendre(){
   const J=mecaIpcDossier(), r=mecaIpcReglages(), e=esc;

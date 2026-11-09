@@ -516,10 +516,10 @@
             <!-- Aperçu interactif du dossier et des fichiers créés -->
             <div class="p-preview-box" id="pApercuNouveau">
               <div style="font-size:11px; font-family:var(--mono); color:var(--txt-dim); margin-bottom:6px; font-weight:600;">
-                👁️ Dossier et fichiers qui seront créés :
+                👁️ Dossier créé (le schéma et le PCB s'y écrivent au premier enregistrement) :
               </div>
               <div style="font-family:var(--mono); font-size:12px; color:var(--yellow); font-weight:bold;">
-                📁 <span id="pPrevDossier">D:\projets\NouveauProjet\</span>
+                📁 <span id="pPrevDossier">NouveauProjet/</span>
               </div>
               <div style="padding-left:18px; margin-top:4px; font-size:11px; font-family:var(--mono); color:var(--txt-dim); display:flex; flex-direction:column; gap:2px;">
                 <div>📄 <span style="color:var(--blue);">projet.cao.json</span> <span style="opacity:0.7;">(manifeste du projet)</span></div>
@@ -750,6 +750,7 @@ let PROJ_PARENT_HANDLE = null; // DirectoryHandle sélectionné pour un nouveau 
 /* Lancé par WEB_SUITE : la racine des projets (PROJETS/CAO), seul endroit
    où l'on crée et ouvre un projet -- c'est le dossier envoyé sur GitHub. */
 let PROJ_SUITE_RACINE = "";
+let PROJ_RACINE_SERVEUR = "";        // première racine de /api/projets, pour l'aperçu
 
 // Gestion des onglets : Nouveau Projet vs Ouvrir un projet
 const tabNouveau = document.getElementById("pTabNouveau");
@@ -782,11 +783,12 @@ const elPrevPcb = document.getElementById("pPrevPcb");
 
 function pMajApercuNouveau() {
   const nom = (inNomNouveau && inNomNouveau.value.trim()) || "NouveauProjet";
-  let chem = (PROJ_SUITE_RACINE || (inChemNouveau && inChemNouveau.value.trim())) || "D:\\projets";
-  if(!chem.endsWith("\\") && !chem.endsWith("/")) {
-    chem += (chem.includes("/") ? "/" : "\\");
+  // la racine du serveur, pas un « D:\projets » inventé (faux sous Linux, faux ailleurs)
+  let chem = PROJ_SUITE_RACINE || (inChemNouveau && inChemNouveau.value.trim()) || PROJ_RACINE_SERVEUR;
+  if(chem && !chem.endsWith("\\") && !chem.endsWith("/")) {
+    chem += (chem.includes("\\") ? "\\" : "/");
   }
-  if(elPrevDossier) elPrevDossier.textContent = chem + nom + (chem.includes("/") ? "/" : "\\");
+  if(elPrevDossier) elPrevDossier.textContent = chem + nom + (chem.includes("\\") ? "\\" : "/");
   if(elPrevSch) elPrevSch.textContent = nom + "-SCH.json";
   if(elPrevPcb) elPrevPcb.textContent = nom + "-PCB.json";
 }
@@ -1258,6 +1260,11 @@ function pAppliquerSuite() {
 }
 
 pMajApercuNouveau();
+if(typeof projdListerServeur === "function" && location.protocol !== "file:")
+  projdListerServeur().then(function(r) {
+    PROJ_RACINE_SERVEUR = (r && r.racines && r.racines[0]) || "";
+    pMajApercuNouveau();
+  }).catch(function(_) {});
 pRendre();
 pAppliquerSuite();
 /* La reprise du dossier est asynchrone : projet-disque.js s'en occupe au
@@ -1406,7 +1413,8 @@ async function libAppliquer(nouveauChemin, initialiser){
     if(!res.ok){
       throw new Error(data.detail || ("Erreur " + res.status));
     }
-    libRendreEtat(data);
+    // la réponse du POST ne dit ni si le dossier existe ni ce qu'il contient : on relit l'état
+    await libChargerConfig();
     libMsg("✓ " + esc(data.message || "Bibliothèque mise à jour avec succès."));
   } catch(err) {
     libMsg(err.message, true);

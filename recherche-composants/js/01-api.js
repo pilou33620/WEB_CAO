@@ -34,7 +34,11 @@ async function apiErreur(rep){
 /* Interroge une racine : renvoie la liste des outils, ou lève. */
 async function apiListe(base){
   const rep=await fetch(base+"/api/tools",{headers:{Accept:"application/json"}});
-  if(!rep.ok)throw new Error(await apiErreur(rep));
+  if(!rep.ok){
+    const e=new Error(await apiErreur(rep));
+    e.serveurRepond=true;              // le serveur local est là : c'est son relais qui a échoué
+    throw e;
+  }
   const j=await rep.json();
   if(!j||!Array.isArray(j.tools))throw new Error("Réponse inattendue");
   return j;
@@ -43,6 +47,7 @@ async function apiListe(base){
 /* Trouve la passerelle et mémorise ses schémas. Lève si aucune ne répond. */
 async function apiConnecter(){
   const essais=[];
+  let serveurRepond=false;
   for(const base of apiCandidats()){
     try{
       const j=await apiListe(base);
@@ -53,9 +58,12 @@ async function apiConnecter(){
       return API_BASE;
     }catch(e){
       essais.push((base||location.origin)+" : "+(e&&e.message||e));
+      serveurRepond=serveurRepond||!!(e&&e.serveurRepond);
     }
   }
-  throw new Error("Aucune passerelle joignable.\n"+essais.join("\n"));
+  const err=new Error((serveurRepond?"":"Aucune passerelle joignable.\n")+essais.join("\n"));
+  err.serveurRepond=serveurRepond;
+  throw err;
 }
 
 /* Appel d'un outil. Renvoie la charge utile déjà déballée par le serveur. */

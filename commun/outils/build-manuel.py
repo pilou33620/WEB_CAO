@@ -25,6 +25,7 @@ import sys
 RACINE = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 SRC = os.path.join(RACINE, "docs", "manuel")
 SORTIE = os.path.join(SRC, "manuel.html")
+DEPOT_WEB = "https://github.com/pilou33620/WEB_CAO/blob/main/"
 
 
 def slug(texte):
@@ -55,7 +56,11 @@ class Convertisseur:
             return '<a href="#%s%s">%s</a>' % (autre, "--" + frag if frag else "", texte)
         if not os.path.exists(cible_abs):
             self.erreurs.append("%s : fichier introuvable : %s" % (self.stem, cible))
-        return '<a href="%s">%s</a>' % (html.escape(cible, quote=True), texte)
+        # Un fichier du dépôt : web_CAO.py ne sert que manuel.html de ce dossier (liste
+        # blanche), le lien relatif tombait en 404. On renvoie à sa page sur GitHub.
+        rel = os.path.relpath(cible_abs, RACINE).replace(os.sep, "/")
+        url = DEPOT_WEB + rel + ("#" + frag if frag else "")
+        return '<a href="%s" target="_blank" rel="noopener">%s</a>' % (html.escape(url, quote=True), texte)
 
     def en_ligne(self, s):
         codes = []
@@ -218,7 +223,9 @@ def main():
         for k, morceau in enumerate(m for m in morceaux if m.strip()):
             cv.titres = []
             sec = "s-%s-%d" % (stem, k)
-            corps.append('<section id="%s">%s</section>' % (sec, cv.convertir(morceau)))
+            # « x.md » sans ancre vise #x : le premier morceau du chapitre porte ce nom
+            debut = '<span id="%s"></span>' % stem if k == 0 else ""
+            corps.append('<section id="%s">%s%s</section>' % (sec, debut, cv.convertir(morceau)))
             for niv, id_, titre in cv.titres:
                 if niv <= 2:
                     nav.append('<a class="%s" href="#%s" data-s="%s">%s</a>'

@@ -52,7 +52,7 @@ function prefSurcharges(){
     if(!t||typeof t!=="object")continue;
     for(const cle in t){
       const v=+t[cle];
-      if(isFinite(v)&&v>0)V.sur[quoi][cle]=v;
+      if(isFinite(v)&&v>=LT_BORNES[quoi][0]&&v<=LT_BORNES[quoi][1])V.sur[quoi][cle]=v;
     }
   }
   if(p.sur.role&&typeof p.sur.role==="object"){
