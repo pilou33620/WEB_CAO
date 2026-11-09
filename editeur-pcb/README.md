@@ -127,16 +127,20 @@ js/44-export-step.js     Export STEP du menu Fichier : la scène de l'animation
 js/45-drc-gestion.js     fenêtre de gestion du DRC
 js/46-edition.js         édition à la Altium : filtre de sélection, verrou,
                          aligner / répartir, objets semblables, collage en
-                         réseau, largeur suivante (W), unité mm / mil (Q)
+                         réseau, largeur (W) et via (Maj+V) suivants en tracé,
+                         unité mm / mil (Q, panneau Propriétés compris),
+                         cadenas des objets verrouillés
 js/47-zones.js           réglages par zone : isolement propre, bras thermiques,
-                         hachures, région pleine et fill, aire min des îlots,
+                         hachures à angle libre, région pleine et fill,
+                         aire min des îlots,
                          plan divisé, gestionnaire de zones
 js/48-vias.js            vias de couture, clôture de vias, fanout
 js/49-dessin.js          arcs et cercles, texte cuivre (droit, inversé),
                          chaînes spéciales (.Date, .Titre…), pastille libre,
                          cotes posées sur la carte
 js/50-couches.js         couches mécaniques (Gerber .GM2 à .GM9), keep-out
-                         cuivre, plans négatifs
+                         cuivre (respecté par le routeur et le chemin auto),
+                         plans négatifs
 js/51-bus.js             routage de plusieurs pistes à la fois (bus)
 outils/build-monofichier.py assemble le tout dans dist/
 outils/fonte-plans.py    réduit Liberation Sans à la fonte des plans

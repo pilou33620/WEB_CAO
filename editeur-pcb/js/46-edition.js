@@ -276,6 +276,30 @@ function largeurSuivante(sens){
   return true;
 }
 
+/* ---------- taille de via suivante en plein tracé (Maj+V) ---------- */
+/* Les tailles proposées : celles des classes, puis les usuelles, de la plus
+   petite à la plus grosse ; le perçage suit (`viaDrill`). */
+const VIAS_USUELLES=[[0.45,0.2],[0.5,0.25],[0.6,0.3],[0.7,0.35],[0.8,0.4],[1,0.5],[1.2,0.6]];
+function viaTailles(net){
+  const L=S.classes.map(c=>[c.via,viaDrill(c)]).concat(VIAS_USUELLES);
+  const vu=new Set(), out=[];
+  for(const [d,dr] of L){const k=r3(d)+"/"+r3(dr);if(!vu.has(k)){vu.add(k);out.push({d:r3(d),drill:r3(dr)});}}
+  return out.sort((a,b)=>a.d-b.d||a.drill-b.drill);
+}
+function viaSuivante(sens){
+  const R=S.route;
+  if(!R){hint("Maj+V change la taille du via en plein tracé de piste (T).");return null;}
+  const cl=classOf(R.net), L=viaTailles(R.net);
+  const cur=R.viaTaille||{d:r3(cl.via),drill:r3(viaDrill(cl))};
+  let i=L.findIndex(o=>o.d===cur.d&&o.drill===cur.drill);
+  if(i<0)i=0;
+  R.viaTaille=L[(i+(sens<0?L.length-1:1))%L.length];
+  updateRoute(S.mouse.x,S.mouse.y);draw();
+  hint("Via : Ø "+fmt(R.viaTaille.d,2)+" mm, perçage "+fmt(R.viaTaille.drill,2)+" mm (Maj+V pour la suivante)"+
+       (R.viaTaille.d<cl.via-1e-6?" — sous celui de la classe ("+fmt(cl.via,2)+" mm)":"")+".");
+  return R.viaTaille;
+}
+
 /* ---------- unité mm / mil ---------- */
 function uniteBasculer(u){
   S.unite=u||(S.unite==="mil"?"mm":"mil");
@@ -289,16 +313,79 @@ function uniteBasculer(u){
        " — barre d'état, mesure et saisie de coordonnées. Les fichiers restent en mm.");
 }
 
-/* ---------- le cadenas dans le panneau Propriétés ---------- */
+/* ---------- le panneau Propriétés : cadenas et unité ---------- */
+/* Les champs de longueur du panneau parlent l'unité choisie : leur libellé dit
+   « (mm) » — ou c'est un diamètre, un perçage, un rayon, un écartement. Leur
+   valeur s'affiche en mil, et se reconvertit en mm AVANT que le champ ne la
+   lise (écoute en capture sur le panneau) : aucun gestionnaire n'a à le savoir. */
+const PROPS_LONGUEUR=/\(mm[)\/,]|^(Diamètre|Perçage|Rayon|Écartement|Épaisseur de trait)$/;
+function propsLongueurs(box){
+  if(!box||!box.querySelectorAll)return [];
+  const out=[];
+  for(const i of box.querySelectorAll("input")){
+    if(i.type==="checkbox"||i.type==="color"||i.disabled)continue;
+    const p=i.closest&&(i.closest("div")||i.parentNode), lab=p&&p.querySelector&&p.querySelector("label");
+    if(lab&&PROPS_LONGUEUR.test(String(lab.textContent).trim()))out.push({i,lab});
+  }
+  return out;
+}
+function propsEnMil(box){
+  for(const {i,lab} of propsLongueurs(box)){
+    const v=parseFloat(String(i.value).replace(",","."));
+    if(Number.isFinite(v))i.value=fmt(v/MIL,1);
+    const st=parseFloat(i.step);if(Number.isFinite(st)&&st>0)i.step=String(Math.max(0.1,Math.round(st/MIL*10)/10));
+    const ph=parseFloat(String(i.placeholder||"").replace(",","."));
+    if(Number.isFinite(ph)&&String(+ph)===String(i.placeholder).replace(",","."))i.placeholder=fmt(ph/MIL,1);
+    for(const k of ["min","max"]){const m=parseFloat(i[k]);if(Number.isFinite(m)&&i[k]!=="")i[k]=String(m/MIL);}
+    const t=String(lab.textContent);
+    lab.textContent=/\(mm/.test(t)?t.replace(/\(mm/,"(mil"):t+" (mil)";
+    i.dataset.mil="1";
+  }
+  if(!box._milEcoute&&box.addEventListener){
+    box._milEcoute=true;
+    box.addEventListener("change",e=>{
+      const i=e.target;
+      if(S.unite!=="mil"||!i||!i.dataset||!i.dataset.mil)return;
+      const v=parseFloat(String(i.value).replace(",","."));
+      if(Number.isFinite(v))i.value=String(r4(v*MIL));
+    },true);
+  }
+}
 const _buildPropsSansVerrou=buildProps;
 buildProps=function(){
   _buildPropsSansVerrou.apply(this,arguments);
-  const n=selVerrouillables().filter(o=>o.locked).length, box=$("props");
+  const box=$("props");
+  if(box&&S.unite==="mil")propsEnMil(box);
+  const n=selVerrouillables().filter(o=>o.locked).length;
   if(!n||!box||!box.insertAdjacentHTML)return;
   box.insertAdjacentHTML("afterbegin",'<div class="prop verrou-info">🔒 '+n+' objet(s) verrouillé(s) — '+
     '<button class="tb" id="pDeverrou">Déverrouiller</button></div>');
   const b=$("pDeverrou");if(b)b.onclick=()=>verrouPoser(false);
 };
+
+/* ---------- le cadenas sur la carte ---------- */
+/* Un petit cadenas ambre au coin de chaque objet verrouillé, à taille d'écran. */
+function verrouIcone(c,x,y){
+  const u=px(1);
+  c.save();c.translate(x,y);
+  c.lineWidth=1.6*u;c.strokeStyle="#111";c.fillStyle="#f59e0b";
+  c.beginPath();c.rect(-4.5*u,-1*u,9*u,7*u);c.fill();c.stroke();
+  c.beginPath();c.arc(0,-1*u,3*u,Math.PI,0);c.strokeStyle="#f59e0b";c.lineWidth=1.8*u;c.stroke();
+  c.restore();
+}
+function verrousCoins(){
+  const out=[], coin=b=>({x:b.x2,y:b.y1});
+  for(const f of S.fps)if(f.locked)out.push(coin(fpBBox(f)));
+  for(const t of S.tracks)if(t.locked)out.push(trkMid(t));
+  for(const v of S.vias)if(v.locked)out.push({x:v.x+v.d/2,y:v.y-v.d/2});
+  for(const z of S.zones)if(z.locked&&z.pts.length)out.push(coin(polyBBox(z.pts)));
+  for(const d of (S.drawings||[]))if(d.locked)out.push(d.pts?coin(polyBBox(d.pts)):coin(drwBBox(d)));
+  for(const h of (S.holes||[]))if(h.locked)out.push({x:h.x+h.d/2,y:h.y-h.d/2});
+  return out;
+}
+function verrousDessiner(c){
+  for(const p of verrousCoins())verrouIcone(c,p.x,p.y);
+}
 
 /* ---------- branchement des boutons ---------- */
 (function(){
@@ -307,6 +394,7 @@ buildProps=function(){
   on("bDeverrou",()=>verrouPoser(false));
   on("bCollageReseau",collageReseauDialogue);
   on("bLargeur",()=>largeurSuivante(1));
+  on("bViaSuiv",()=>viaSuivante(1));
   on("bUnite",()=>uniteBasculer());
   on("bFiltreTout",()=>{S.filtre={};filtreSync();refreshPanels();draw();hint("Filtre de sélection : tout est sélectionnable.");});
   const pop=$("filtrePop");

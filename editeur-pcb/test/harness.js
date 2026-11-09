@@ -54,6 +54,7 @@ const EXPOSE=[
   "mecaNomsAppliquer","mecaGerbers","gerberDessin","keepoutDrc","keepoutCuts","normInterdit","planNegatif",
   "setLayerRole","buildFabFiles","DRW_COUCHES","closeInterdit",
   "busClic","busTouche","busPlan","polyDecalee","busPoser",
+  "viaSuivante","viaTailles","verrousCoins","routeViaCurseur","mkVia",
   "pnsWorld","pnsItemsKeepout","distSegPoly","contourTroue","zoneDecoupee","gOrigin","gXY","drwBBox","drwPoints","gerberSilk","viaObstacle","placeVia",
   "coutureZone","cloturePistes","fanoutFps","coutureRetirer","viaEssai","netMasseDefaut","fmtU","uLue","uAff","RP_PCB","hitTest","deleteSel","startRoute",
   "cutsCuivre","ilotContour","drcRangs","drcCategorie","drcFenetre","drcPas","copySelPcb","fpEssai","fpChevauchements","placementDegage","placementBilan","fpPlaceLibre","pasteClipPcb","rotateSel","flipSel","fpGene","routeRetouche","dragMoveBy","beginMove","dragRotate","gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
@@ -30105,6 +30106,35 @@ T("keep-out et région pleine : un arc jugé sur son renflement, pas sa corde",(
   if(!out.some(e=>/Piste SIG dans le keep-out/.test(e.msg)))throw new Error("l'arc entre par son renflement : rien de signalé");
   S.tracks[0].ca=0;touch();              // la même corde droite : hors du keep-out
   const o2=[];keepoutDrc(o2);if(o2.length)throw new Error("la corde seule est dehors");
+});
+
+/* ---------- Maj+V et cadenas ---------- */
+T("Maj+V : taille de via suivante en plein tracé, posée telle quelle",()=>{
+  const {R1}=editionDecor();
+  S.tracks=[];S.vias=[];S.avoid=false;touch();
+  const a=padsWorld(R1)[0], cl=classOf("A");
+  setMode("track");S.active=0;startRoute(a.x,a.y);
+  const t=viaSuivante(1);
+  if(!t||(t.d===r3(cl.via)&&t.drill===r3(viaDrill(cl))))throw new Error("la taille devait changer : "+JSON.stringify(t));
+  if(mkVia(0,0,"A",0,1).d!==t.d)throw new Error("mkVia doit suivre la taille choisie pendant le tracé");
+  updateRoute(a.x+6,a.y);stepRoute();
+  routeViaCurseur();
+  if(S.route)commitRoute();
+  setMode("select");
+  const v=S.vias[S.vias.length-1];
+  if(!v||v.d!==t.d||v.drill!==t.drill)throw new Error("via posé : "+JSON.stringify(v));
+  if(mkVia(0,0,"A",0,1).d!==cl.via)throw new Error("hors tracé : la taille de la classe");
+  const L=viaTailles("A");
+  for(let k=1;k<L.length;k++)if(L[k].d<L[k-1].d)throw new Error("tailles non triées");
+});
+T("verrou : un cadenas au coin de chaque objet verrouillé",()=>{
+  const {R1}=editionDecor();
+  if(verrousCoins().length)throw new Error("rien de verrouillé");
+  clearSel();S.sel.fps.add(R1.id);S.sel.tracks.add(S.tracks[0]);verrouPoser(true);
+  const P=verrousCoins();
+  if(P.length!==2)throw new Error("deux cadenas attendus : "+P.length);
+  const b=fpBBox(R1);
+  if(!P.some(p=>p.x===b.x2&&p.y===b.y1))throw new Error("cadenas du composant à son coin haut droit");
 });
 
 (async()=>{

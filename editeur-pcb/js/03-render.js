@@ -793,7 +793,8 @@ function drawSilk(c){
     c.restore();
   }
   if(typeof dessinApercu==="function")dessinApercu(c);   // arc, cercle, cote en cours (49-dessin.js)
-  if(typeof busApercu==="function")busApercu(c);         // bus en cours (51-bus.js)
+  if(typeof busApercu==="function")busApercu(c);
+  if(typeof verrousDessiner==="function")verrousDessiner(c);   // cadenas des objets verrouillés (46-edition.js)         // bus en cours (51-bus.js)
   c.globalAlpha=1;
 }
 function TXT(c,t,x,y,size,col){

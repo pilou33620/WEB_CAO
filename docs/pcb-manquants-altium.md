@@ -75,7 +75,7 @@ fabrication, Draftsman, STEP, IPC-2581) est au niveau d'Altium ou au-delà.
 | ✅ Sélectionner les objets semblables puis les modifier ensemble (même largeur, même net, même couche) | Find Similar Objects | 2 | M |
 | ✅ Collage en réseau linéaire ou circulaire | Paste Array | 2 | P |
 | Repositionner les repères de sérigraphie de toute la sélection (au-dessus, au centre…) | Position Component Text | 2 | P |
-| ✅ Changer de largeur ou de via en cours de tracé, passer à la couche suivante au clavier | Shift+W, Shift+V, `*` | 2 | P |
+| ✅ Changer de largeur (W) ou de via (Maj+V) en cours de tracé, passer à la couche suivante au clavier | Shift+W, Shift+V, `*` | 2 | P |
 | ✅ Routage de plusieurs pistes à la fois (bus) | Interactive Multi-Routing | 2 | G |
 | ✅ Fanout automatique des BGA et CMS (via en éventail sous chaque broche) | Fanout | 2 | M |
 | ✅ Unité mm / mil basculable (aucune trace dans le code) | Q | 3 | P |
@@ -104,16 +104,17 @@ texte cuivre, keep-out cuivre, couches mécaniques, gestionnaire de zones, vias 
 Lot 3 : plans divisés, hachures, vue 3D en direct, fanout. Les gros (plans négatifs, bus,
 panélisation, DXF, ODB++) après.
 
-## Limites connues de ce qui a été fait
+## Limites levées le 09/11/2026
 
-- Arcs sur la sérigraphie et les couches de dessin : une suite de traits de 5°, pas
-  une forme « arc » éditable comme telle (sur le cuivre, c'est une vraie piste en arc).
-- Hachures à 90° seulement ; le cadre n'est jugé qu'aux coins des mailles.
-- Région pleine recoupée par une zone plus prioritaire : les trous qu'elle y laisse
-  sont ignorés au Gerber.
-- Keep-out cuivre : le DRC et les zones le respectent, pas encore le routeur
-  interactif ni le chemin auto.
-- Unité mil : barre d'état, mesure et saisie de coordonnées ; le panneau Propriétés
-  reste en mm.
-- Changer de via en plein tracé (Maj+V d'Altium) n'est pas fait ; la largeur (W) l'est.
-- Le verrou n'a pas de marque visible sur la carte : le panneau Propriétés l'affiche.
+Les limites relevées après la première livraison sont corrigées :
+
+- keep-out cuivre respecté par le routeur interactif (tracé, poussée, contournement),
+  la touche V et le chemin auto ;
+- arcs natifs sur la sérigraphie et les couches de dessin (angle réglable dans les
+  Propriétés), exportés en cordes fines au Gerber et à l'IPC-2581, en `gr_arc` vers KiCad ;
+- hachures à angle libre (0°, 45°…), le cadre tenu au bord exact de la zone ;
+- région pleine recoupée par une zone prioritaire : ses trous partent au Gerber ;
+- unité mil aussi dans le panneau Propriétés (affichage et saisie) ;
+- Maj+V : taille de via suivante en plein tracé ;
+- cadenas dessiné sur la carte au coin de chaque objet verrouillé ;
+- DRC de la région pleine et du keep-out : un arc jugé sur ses cordes, plus sur sa corde.

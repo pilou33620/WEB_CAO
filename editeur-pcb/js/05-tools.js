@@ -3655,7 +3655,7 @@ function routeTarget(x,y){
   if(c){S.hover={x:c.x,y:c.y};return c;}
   S.hover=null;
   // un via attendu au bout du curseur tient plus de place que la piste qui l'amène
-  const w=S.route?(S.route.viaNext?classOf(net).via:S.route.w):defaultWidth(net,l);
+  const w=S.route?(S.route.viaNext?(S.route.viaTaille?S.route.viaTaille.d:classOf(net).via):S.route.w):defaultWidth(net,l);
   const p=pushClear({x:snapXn(x,a?a.x:null),y:snapYn(y,a?a.y:null)},l,net,w);
   return {x:p.x,y:p.y,net:null,pushed:p.pushed};
 }
@@ -3970,6 +3970,9 @@ function mkVia(x,y,net,a,b){
   const cl=classOf(net||"");
   const v={x:r3(x),y:r3(y),d:cl.via,drill:viaDrill(cl),
            a:a==null?0:a,b:b==null?S.cu-1:b,net:net||""};
+  // Maj+V en plein tracé : la taille choisie remplace celle de la classe (46-edition.js)
+  const vt=S.route&&S.route.viaTaille;
+  if(vt){v.d=vt.d;v.drill=vt.drill;}
   if(v.a===v.b){v.a=0;v.b=S.cu-1;}
   return v;
 }
@@ -5636,6 +5639,7 @@ document.addEventListener("keydown",e=>{
     case "q":uniteBasculer();break;                       // mm ↔ mil, comme Q dans Altium
     case "v":
       if(S.dp){dpVia();dpUpdate(S.mouse.x,S.mouse.y);draw();}
+      else if(S.route&&e.shiftKey)viaSuivante(1);        // taille de via suivante (46-edition.js)
       else if(S.route){routeViaCurseur();draw();}
       else setMode("via");
       break;
