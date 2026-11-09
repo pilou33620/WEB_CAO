@@ -535,6 +535,7 @@ function autoAssocierCatalogue(liste) {
     const desc = (c["Description"] || "").toUpperCase();
 
     // 1. Schéma
+    let symVoulu = c[colSch];     // le symbole qui convient, même si son fichier manque dans la LIB
     if (!c[colSch]) {
       if (pref === "R") c[colSch] = "resistor.json";
       else if (pref === "RV") c[colSch] = "potentiometer.json";
@@ -567,6 +568,7 @@ function autoAssocierCatalogue(liste) {
       else if (pref === "MECA") c[colSch] = "hole.json";
       else if (pref === "BZ") c[colSch] = "buzzer.json";
       else c[colSch] = "ic.json";
+      symVoulu = c[colSch];
       /* comme pour le PCB : n'associer qu'un symbole qui existe vraiment ; sinon la fiche
          affichait « symboles associés 100 % » et chaque sélection partait en 404 */
       if (!schFiles.includes(c[colSch])) c[colSch] = "";
@@ -583,9 +585,10 @@ function autoAssocierCatalogue(liste) {
       }
     }
 
-    // 3. Simulation
-    if (!c[colSim] && c[colSch]) {
-      const symBase = c[colSch].replace(/\.json$/i, "");
+    // 3. Simulation : déduite du symbole qui convient, même si son fichier manque (un
+    // symbole absent ne retire pas son modèle à une résistance) ; le modèle, lui, doit exister
+    if (!c[colSim] && symVoulu) {
+      const symBase = symVoulu.replace(/\.json$/i, "");
       if (symBase === "resistor" || symBase === "potentiometer") c[colSim] = "resistor.sub";
       else if (symBase === "capacitor" || symBase === "cap_pol") c[colSim] = "capacitor.sub";
       else if (symBase === "inductor" || symBase === "ferrite_bead") c[colSim] = "inductor.sub";

@@ -7,7 +7,12 @@ complet jusqu'au 22/10/2026 y est recopié).
 
 ## Bugs
 
-Aucun bug connu ouvert. Corrigés le 22/10/2026 : le canal de pilotage (`pilote.py`, copie de
+Aucun bug connu ouvert. Corrigés le 09/11/2026, relevés par web_bench (banc d'essai de web_suite) :
+le bouton « Plans (P) » de la visionneuse IPC-2581 ouvrait le Draftsman de l'éditeur PCB, qui
+plantait (`S is not defined`), car `29-draftsman.js` branchait `#bPlans` même hors de l'éditeur ;
+la Gestion LIB ne donnait plus son modèle de simulation à un composant dont le fichier symbole
+manque (régression de « LIB sans fichiers fantômes », vue par `banc-catalogue.js` sur la vraie LIB,
+que la CI saute sans le dépôt privé). Corrigés le 22/10/2026 : le canal de pilotage (`pilote.py`, copie de
 web_suite) qui refusait les pages servies en HTTPS, donc celles de l'iPad en mode réseau ; l'empreinte SOT-89-5 de la LIB, refaite
 selon le plan de pastilles Torex (dans `WEB_SUITE_PROJETS`), et la description du Template 4
 USB dans `oeil.py`. Le 21/10/2026 : le chanfrein du routeur qui entrait dans une pastille d'un

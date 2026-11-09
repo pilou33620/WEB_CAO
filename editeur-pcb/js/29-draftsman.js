@@ -1661,7 +1661,11 @@ function dfExporter(){
   return pdf;
 }
 (function dfBrancher(){
-  if(typeof document==="undefined"||!document.getElementById)return;
+  // Ce fichier est aussi chargé par la visionneuse IPC-2581 (feuilles du Draftsman, 10-plans.js) :
+  // là, #bPlans est le bouton des plans de cuivre et il n'y a pas d'éditeur (S). Le brancher sur
+  // dfOuvrir remplaçait ce bouton par un Draftsman qui plantait (« S is not defined », relevé par
+  // web_bench) : on ne branche le Draftsman que dans l'éditeur PCB.
+  if(typeof document==="undefined"||!document.getElementById||typeof S==="undefined")return;
   const b=document.getElementById("bPlans");
   if(b)b.onclick=dfOuvrir;
 })();
