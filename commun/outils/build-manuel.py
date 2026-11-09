@@ -57,10 +57,12 @@ class Convertisseur:
         if not os.path.exists(cible_abs):
             self.erreurs.append("%s : fichier introuvable : %s" % (self.stem, cible))
         # Un fichier du dépôt : web_CAO.py ne sert que manuel.html de ce dossier (liste
-        # blanche), le lien relatif tombait en 404. On renvoie à sa page sur GitHub.
+        # blanche), le lien relatif tombait en 404. On renvoie à sa page sur GitHub, et
+        # data-local garde le chemin relatif que le script reprend en double-clic (file://).
         rel = os.path.relpath(cible_abs, RACINE).replace(os.sep, "/")
         url = DEPOT_WEB + rel + ("#" + frag if frag else "")
-        return '<a href="%s" target="_blank" rel="noopener">%s</a>' % (html.escape(url, quote=True), texte)
+        return '<a href="%s" data-local="%s" target="_blank" rel="noopener">%s</a>' % (
+            html.escape(url, quote=True), html.escape(cible, quote=True), texte)
 
     def en_ligne(self, s):
         codes = []
@@ -193,6 +195,8 @@ hr{border:0;border-top:1px solid var(--bord)}mark{background:var(--jaune);color:
 """
 
 SCRIPT = """
+// ouvert par double-clic, hors ligne : les fichiers du dépôt sont juste à côté
+if(location.protocol==='file:')[].forEach.call(document.querySelectorAll('a[data-local]'),function(a){a.href=a.getAttribute('data-local');});
 (function(){
  var q=document.getElementById('q'),secs=[].slice.call(document.querySelectorAll('main section')),
      liens=[].slice.call(document.querySelectorAll('nav a[data-s]')),vide=document.getElementById('vide');
