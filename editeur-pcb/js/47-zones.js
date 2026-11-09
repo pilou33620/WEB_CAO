@@ -100,6 +100,20 @@ function zonesDrc(out){
         d=Math.min(d,segSegDist(s,{x1:a.x,y1:a.y,x2:b.x,y2:b.y}));}
       return d;
     };
+    /* la pastille contre la région : 0 si elle y entre, sinon la plus courte
+       distance de son contour au bord de la région (arêtes parcourues au 1/20 mm) */
+    const dPad=q=>{
+      const qc=padSurCouche(q,l)||q, R=Math.max(qc.w,qc.h)/2+5;
+      if(zoneContient(z,q.x,q.y)||P.some(p=>padDist(p.x,p.y,qc)<=0))return 0;
+      let d=1e9;
+      for(let k=0;k<P.length;k++){
+        const a=P[k], b=P[(k+1)%P.length];
+        if(segDist(q.x,q.y,a.x,a.y,b.x,b.y)>R)continue;
+        const n=Math.min(2000,Math.ceil(dist(a.x,a.y,b.x,b.y)/0.05));
+        for(let j=0;j<=n;j++)d=Math.min(d,padDist(a.x+(b.x-a.x)*j/n,a.y+(b.y-a.y)*j/n,qc));
+      }
+      return Math.max(0,d);
+    };
     // `d` : la distance du bord du cuivre à la région ; `e` : l'isolement exigé
     const juger=(d,e,x,y,quoi)=>{if(d-e<-1e-6)out.push({x:r3(x),y:r3(y),l,
       msg:nom+" : "+quoi+(d<=1e-6?" la touche — rien ne dégage une région pleine"
@@ -116,8 +130,7 @@ function zonesDrc(out){
     for(const fp of S.fps)
       for(const q of padsWorld(fp)){
         if(!padLayers(fp,q).includes(l)||!padSurCouche(q,l)||!autre(q.net))continue;
-        // shortcut: la pastille est jugée sur son cercle circonscrit
-        juger(Math.max(0,dPt(q.x,q.y)-Math.max(q.w,q.h)/2),clrZone(z,q.net,"cu",q.drill>0?"th":"smd"),q.x,q.y,
+        juger(dPad(q),clrZone(z,q.net,"cu",q.drill>0?"th":"smd"),q.x,q.y,
               "la pastille "+fp.ref+"."+q.n+" ("+(q.net||"sans net")+")");
       }
   }

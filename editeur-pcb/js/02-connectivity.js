@@ -92,9 +92,9 @@ let _cutsCu=null;
 function cutsCuivre(force){
   const c=force?conn(true):(_conn&&_connVer===S.ver&&_connExact?_conn:null);
   // les keep-out cuivre interdits aux zones s'y découpent comme une découpe de zone (50-couches.js)
-  if(!c)return S.cuts.concat(keepoutCuts());
+  if(!c)return S.cuts.concat((typeof keepoutCuts==="function"?keepoutCuts():[]));
   if(_cutsCu&&_cutsCu.c===c&&_cutsCu.n===S.cuts.length&&_cutsCu.ver===S.ver)return _cutsCu.a;
-  const a=S.cuts.concat(keepoutCuts());
+  const a=S.cuts.concat((typeof keepoutCuts==="function"?keepoutCuts():[]));
   for(const zi of (c.zoneIslands||[]))for(const pts of (zi.decoupes||[]))a.push({l:zi.l,pts,ilot:true});
   _cutsCu={c,n:S.cuts.length,ver:S.ver,a};
   return a;
@@ -210,7 +210,7 @@ function zoneMask(l,net){
   for(const z of zs){
     zoneFill(c,z);
   }
-  zonesHachurer(c,zs,l);                         // les mailles d'une zone hachurée (47-zones.js)
+  if(typeof zonesHachurer==="function")zonesHachurer(c,zs,l);                         // les mailles d'une zone hachurée (47-zones.js)
   clipToBoard(c,x1,y1,x2,y2);
   const zr={net,isol:Math.max(0,...zs.map(z=>z.isol||0))};   // l'isolement propre des zones du net
   /* une zone d'un autre net posée par-dessus recouvre celle-ci à l'écran :
@@ -225,7 +225,7 @@ function zoneMask(l,net){
   }
   /* les découpes de zone retirent le cuivre, comme à l'écran (`zoneCanvas`) :
      un via posé dans une découpe n'est pas relié au plan qui l'entoure */
-  for(const ct of S.cuts.concat(keepoutCuts())){
+  for(const ct of S.cuts.concat((typeof keepoutCuts==="function"?keepoutCuts():[]))){
     if(ct.l!==l||ct.pts.length<3)continue;
     c.beginPath();c.moveTo(ct.pts[0].x,ct.pts[0].y);
     for(let k=1;k<ct.pts.length;k++)c.lineTo(ct.pts[k].x,ct.pts[k].y);
@@ -277,7 +277,7 @@ function zoneMask(l,net){
     }
   c.globalCompositeOperation="source-over";
   c.fillStyle="#fff";
-  zonesPleinesPeindre(c,zs,x1,y1,x2,y2);           // région pleine : son cuivre exact, sans dégagement (47-zones.js)
+  if(typeof zonesPleinesPeindre==="function")zonesPleinesPeindre(c,zs,x1,y1,x2,y2);           // région pleine : son cuivre exact, sans dégagement (47-zones.js)
   for(const q of thermals){
     for(const b of padBras(q,l).ok){                 // les bras que le Gerber trace, pas plus
       c.save();c.translate(q.x,q.y);c.rotate(b.a);c.fillRect(0,-b.tw/2,b.len,b.tw);c.restore();
@@ -482,7 +482,7 @@ function computeConn(exact){
     const seen=new Set();
     /* les îlots sous l'aire minimale des zones du groupe (47-zones.js) ne
        relient rien : ils tombent avec le cuivre mort */
-    const petits=zoneIlotsPetits(M,g.zs);
+    const petits=typeof zoneIlotsPetits==="function"?zoneIlotsPetits(M,g.zs):new Set();
     const link=(k,labs)=>{
       for(const lb of labs){if(petits.has(lb))continue;seen.add(lb);uni(k,"Z"+g.l+"|"+g.net+"|"+lb);}
     };
@@ -1335,8 +1335,8 @@ function runDrc(){
         msg:"Zone débordant du contour de carte (le remplissage y est rogné)"});
   }
   larmesPerimees(out);
-  zonesDrc(out);                 // régions pleines contre le cuivre des autres nets (47-zones.js)
-  keepoutDrc(out);               // pistes et vias dans un keep-out cuivre (50-couches.js)
+  if(typeof zonesDrc==="function")zonesDrc(out);                 // régions pleines contre le cuivre des autres nets (47-zones.js)
+  if(typeof keepoutDrc==="function")keepoutDrc(out);               // pistes et vias dans un keep-out cuivre (50-couches.js)
   for(const [a,b] of fpChevauchements())
     out.push({x:r3((a.x+b.x)/2),y:r3((a.y+b.y)/2),l:a.side?S.cu-1:0,
       msg:"Composants qui se chevauchent : "+a.ref+" et "+b.ref+" ("+(a.side?"dessous":"dessus")+")"});

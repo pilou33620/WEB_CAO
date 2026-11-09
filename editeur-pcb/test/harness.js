@@ -53,6 +53,7 @@ const EXPOSE=[
   "coteLineaire","jlcNonPose","arcOf","boardCutouts",
   "mecaNomsAppliquer","mecaGerbers","gerberDessin","keepoutDrc","keepoutCuts","normInterdit","planNegatif",
   "setLayerRole","buildFabFiles","DRW_COUCHES","closeInterdit",
+  "busClic","busTouche","busPlan","polyDecalee","busPoser",
   "coutureZone","cloturePistes","fanoutFps","coutureRetirer","viaEssai","netMasseDefaut","fmtU","uLue","uAff","RP_PCB","hitTest","deleteSel","startRoute",
   "cutsCuivre","ilotContour","drcRangs","drcCategorie","drcFenetre","drcPas","copySelPcb","fpEssai","fpChevauchements","placementDegage","placementBilan","fpPlaceLibre","pasteClipPcb","rotateSel","flipSel","fpGene","routeRetouche","dragMoveBy","beginMove","dragRotate","gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
   "updateRoute","stepRoute","commitRoute","routeToLayer","runDrc","buildTabs",
@@ -29954,6 +29955,44 @@ T("plan négatif : polarité inversée au Gerber, cadre sombre d'abord",()=>{
   if(planNegatif(0,true))throw new Error("une couche signal ne s'écrit pas en négatif");
   planNegatif(1,false);
   if(gerberCopper(1).includes("Negative"))throw new Error("retour au positif");
+});
+
+/* ---------- bus (51-bus.js) ---------- */
+T("bus : quatre pistes parallèles au pas largeur + isolement, sans croisement",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.cuts=[];clearSel();
+  S.board={x:0,y:0,w:80,h:60,pts:null};S.active=0;setGridStep(0.5);S.scale=20;S.ox=0;S.oy=0;
+  const J=mkFp("J1","","",4);J.style="row";J.pitch=2.54;J.x=10;J.y=20;J.nets={1:"D0",2:"D1",3:"D2",4:"D3"};
+  S.fps.push(J);touch();
+  setMode("bus");
+  for(const q of padsWorld(J))busClic(q.x,q.y);
+  if(S.bus.pads.length!==4)throw new Error("4 pastilles attendues");
+  const P=padsWorld(J), ys=P.map(q=>q.y), xs=P.map(q=>q.x);
+  const vertical=Math.abs(xs[0]-xs[3])<1e-6;
+  // trajet perpendiculaire à la rangée, puis un coude
+  const ax=vertical?{x:20,y:(ys[0]+ys[3])/2}:{x:(xs[0]+xs[3])/2,y:30};
+  const bx=vertical?{x:40,y:ax.y}:{x:ax.x,y:45};
+  const cx=vertical?{x:50,y:ax.y+10}:{x:ax.x+10,y:55};
+  busClic(ax.x,ax.y);busClic(bx.x,bx.y);busClic(cx.x,cx.y);
+  busTouche("enter");
+  if(S.bus)throw new Error("le bus devait se poser");
+  const nets=new Set(S.tracks.map(t=>t.net));
+  if(nets.size!==4||S.tracks.length!==12)throw new Error("pistes : "+S.tracks.length+" sur "+nets.size+" nets");
+  // le tronçon central de chaque net : parallèles, au pas
+  const mil=[...nets].map(n=>S.tracks.filter(t=>t.net===n)[1]);
+  const pos=mil.map(t=>vertical?t.y1:t.x1).sort((a,b)=>a-b);
+  const pas=defaultWidth("D0",0)+clrK("D0","D1","trk","trk");
+  for(let k=1;k<pos.length;k++)if(Math.abs(pos[k]-pos[k-1]-pas)>2e-3)throw new Error("pas : "+pos.join(" "));
+  for(let a=0;a<S.tracks.length;a++)for(let b=a+1;b<S.tracks.length;b++){
+    const A=S.tracks[a],B=S.tracks[b];
+    if(A.net!==B.net&&segCross(A,B))throw new Error("deux pistes du bus se croisent : "+A.net+" / "+B.net);
+  }
+  setMode("select");
+  undo();if(S.tracks.length)throw new Error("Ctrl+Z retire le bus entier");
+});
+T("polyligne décalée : onglet aux coudes",()=>{
+  const Q=polyDecalee([{x:0,y:0},{x:10,y:0},{x:10,y:10}],1);
+  if(Math.abs(Q[0].y-1)>1e-9||Math.abs(Q[1].x-9)>1e-9||Math.abs(Q[1].y-1)>1e-9||Math.abs(Q[2].x-9)>1e-9)
+    throw new Error(JSON.stringify(Q));
 });
 
 (async()=>{

@@ -571,7 +571,7 @@ function normZone(z,cu,i){
   const pr=dInt(z.priorite,0,0,2147483647);        // absente = 0 ; KiCad va au-delà de 30000 (zonePrio, 01-core.js)
   if(pr)out.priorite=pr;
   if(z.locked)out.locked=true;
-  zoneReglagesLire(z,out);                         // isolement, bras, hachures, îlots (47-zones.js)
+  if(typeof zoneReglagesLire==="function")zoneReglagesLire(z,out);                         // isolement, bras, hachures, îlots (47-zones.js)
   /* cuivre du fichier : les trous et la signature du contour d'origine
      (posée à la première lecture si le fichier ne la porte pas) */
   if(z.fichier){
@@ -825,7 +825,7 @@ function normDoc(d){
   out.holes=arr(src.holes).map((h,i)=>normHole(h,i)).filter(Boolean);
   out.drawings=arr(src.drawings).map((d,i)=>{const o=normDrawingPcb(d,i);if(o&&d.locked)o.locked=true;return o;}).filter(Boolean);
   out.interdits=arr(src.interdits).map((z,i)=>normInterdit(z,i)).filter(Boolean);
-  out.mecaNoms=mecaNomsLire(src.mecaNoms);          // noms des couches mécaniques (50-couches.js)
+  out.mecaNoms=typeof mecaNomsLire==="function"?mecaNomsLire(src.mecaNoms):{};          // noms des couches mécaniques (50-couches.js)
   /* anomalies de brochage acquittées : repère → leur texte exact, pour qu'un
      changement les fasse revenir (pcbVerifierPinout) */
   out.pinoutAcquits={};
@@ -903,7 +903,7 @@ function loadDoc(d,keepView){
   S.contraintes=d.contraintes;
   S.fps=d.fps;S.tracks=d.tracks;S.vias=d.vias;
   S.zones=d.zones;S.cuts=d.cuts;S.holes=d.holes||[];S.drawings=d.drawings||[];S.pinoutAcquits=d.pinoutAcquits||{};S.interdits=d.interdits||[];
-  S.mecaNoms=d.mecaNoms||{};mecaNomsAppliquer();
+  S.mecaNoms=d.mecaNoms||{};if(typeof mecaNomsAppliquer==="function")mecaNomsAppliquer();
   S.fabExclus=d.fabExclus||[];
   S.anim3dEtiq=d.anim3dEtiq||null;
   S.cartouche=d.cartouche||"";
@@ -4640,6 +4640,7 @@ cv.addEventListener("pointerdown",e=>{
   if(e.button!==0)return;
   if(S.mode==="mesure"){rpMesClic(p.x,p.y);draw();return;}
   if(dessinClic(p.x,p.y,e)){draw();return;}          // arc, cercle, texte cuivre, pastille, cote (49-dessin.js)
+  if(busClic(p.x,p.y)){draw();return;}               // plusieurs pistes à la fois (51-bus.js)
   if(S.mode==="meander"){
     const hit=hitTest(p.x,p.y);
     if(hit&&hit.track&&!isArc(hit.track)){
@@ -5225,6 +5226,7 @@ cv.addEventListener("pointermove",e=>{
   }
   if(S.mode==="mesure"){if(rpMesBouge(p.x,p.y))draw();return;}
   if(dessinBouge(p.x,p.y,e)){draw();return;}
+  if(busBouge(p.x,p.y)){draw();return;}
   if(S.mode==="meander"&&S.meanderDraft){
     const trk=S.meanderDraft.track;
     const L=Math.hypot(trk.x2-trk.x1,trk.y2-trk.y1);
@@ -5613,6 +5615,7 @@ document.addEventListener("keydown",e=>{
       return;
     }
   }
+  if(busTouche(k)){e.preventDefault();return;}       // Entrée, Échap, Retour arrière du bus (51-bus.js)
   switch(k){
     case "s":
       if(e.shiftKey){
@@ -5749,6 +5752,7 @@ function setMode(m){
   if(S.aplatDraft&&(m!=="silk"||S.silkShape!=="aplat"))S.aplatDraft=null;
   if(S.meanderDraft&&m!=="meander")S.meanderDraft=null;
   if(S.dessinDraft&&m!==S.mode)S.dessinDraft=null;   // arc, cote en cours (49-dessin.js)
+  if(S.bus&&m!=="bus")S.bus=null;                     // bus en cours (51-bus.js)
   /* La cote appartient au mode : la garder affichee en revenant a la selection
      laisserait une annotation qu'aucun geste ne reprend. */
   if(m!=="mesure"&&typeof rpMesRaz==="function")rpMesRaz();
@@ -5759,7 +5763,7 @@ function setMode(m){
                         ["mDiff","dpair"],["mMeander","meander"],
                         ["mZone","zone"],["mSilk","silk"],["mEdge","edge"],["mDecoupe","decoupe"],["mInterdit","interdit"],["mOrigin","origin"],
                         ["mErase","cut"],["mMiter","miter"],["mMesure","mesure"],
-                        ["mArc","arc"],["mTexteCu","texteCu"],["mPastille","pastille"],["mCote","cote"]]){
+                        ["mArc","arc"],["mTexteCu","texteCu"],["mPastille","pastille"],["mCote","cote"],["mBus","bus"]]){
     const b=$(id);
     if(b)b.classList.toggle("on",m===md);
   }
@@ -5769,7 +5773,7 @@ function setMode(m){
                           decoupe:"Découpe de carte",interdit:"Zone interdite",
                           origin:"Origine",cut:"Découpe de zone",miter:"Miter",
                           mesure:"Mesure",arc:"Arc / cercle",texteCu:"Texte sur cuivre",
-                          pastille:"Pastille libre",cote:"Cote"}[m]||m;
+                          pastille:"Pastille libre",cote:"Cote",bus:"Bus (multi-pistes)"}[m]||m;
   cv.style.cursor="crosshair";
   hint({
     select:"Ctrl+clic (ou Maj+clic) ajoute à la sélection · glisser une piste emmène "+

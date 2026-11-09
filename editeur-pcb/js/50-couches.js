@@ -13,7 +13,7 @@
      restant ce que le fabricant n'a pas noirci.
    ========================================================================== */
 
-const C_KO="#f59e0b";             // le keep-out cuivre, en ambre, à côté du rouge des zones interdites
+
 
 /* ---------- couches mécaniques ---------- */
 const MECA_DEFAUT=Object.fromEntries(DRW_COUCHES.filter(c=>/^mec\d$/.test(c[0])).map(c=>[c[0],c[1]]));

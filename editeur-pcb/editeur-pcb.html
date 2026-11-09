@@ -72,7 +72,7 @@
               <label class="mnu-row"><input type="checkbox" data-filtre="drawings" checked> Dessins, textes, cotes</label>
               <label class="mnu-row"><input type="checkbox" data-filtre="holes" checked> Trous NPTH</label>
               <label class="mnu-row"><input type="checkbox" data-filtre="autres" checked> Contour, découpes, interdits</label>
-              <button data-ic="✓" class="tb" id="bFiltreTout">Tout sélectionnable</button>
+              <button data-ic="✓" class="tb ic-glyphe" id="bFiltreTout">Tout sélectionnable</button>
             </div>
           </div>
           <div class="rg mnu">
@@ -90,13 +90,14 @@
               <button data-ic="╱" class="tb" id="mTrack">Piste <kbd>T</kbd></button>
               <button data-ic="═" class="tb" id="mDiff" title="Router deux nets en paire différentielle : écart tenu, coudes couplés, vias en éventail">Paire diff. <kbd>P</kbd></button>
               <button data-ic="∿" class="tb" id="mMeander" title="Générer un serpentin d'appariement de longueur (accordéon) pour compenser le retard d'une piste ou d'une paire différentielle">Serpentin <kbd>M</kbd> <span class="car">▾</span></button>
+              <button data-ic="☰" class="tb" id="mBus" title="Router plusieurs pistes à la fois : cliquez les pastilles de départ, puis les sommets du trajet ; Entrée pose les pistes parallèles">Bus</button>
               <button data-ic="⤳" class="tb" id="bCheminAuto" title="Route seul une liaison du chevelu : cliquez d'abord une pastille (ou Alt+clic pour un net). Le chemin évite le cuivre des autres nets ; s'il n'y en a pas, rien n'est posé et le pied de page dit pourquoi. Ctrl+Z défait la piste.">Chemin auto</button>
             </div>
             <button class="mnu-t rg-t" type="button">Router <span class="car">▾</span></button>
             <div class="mnu-pop">
               <button data-ic="⛨" data-bascule class="tb" id="bAvoid">Anti-collision</button>
-              <button data-ic="⋇" class="tb" id="bFanout" title="Fanout : chaque pastille CMS des composants sélectionnés reçoit son via au bout d'une piste courte (entre quatre billes pour un BGA)">Fanout</button>
-              <button data-ic="⇔" class="tb" id="bLargeur" title="En plein tracé : passe à la largeur suivante (W), Maj+W pour la précédente">Largeur suivante <kbd>W</kbd></button>
+              <button data-ic="⋇" class="tb ic-glyphe" id="bFanout" title="Fanout : chaque pastille CMS des composants sélectionnés reçoit son via au bout d'une piste courte (entre quatre billes pour un BGA)">Fanout</button>
+              <button data-ic="⇔" class="tb ic-glyphe" id="bLargeur" title="En plein tracé : passe à la largeur suivante (W), Maj+W pour la précédente">Largeur suivante <kbd>W</kbd></button>
               <button data-ic="◣" class="tb" id="bLarmes" title="Pose ou refait les larmes : un renfort de cuivre entre une piste et le via ou la pastille ronde où elle s'arrête">Larmes</button>
               <button data-ic="◁" class="tb" id="bLarmesRetirer" title="Retire toutes les larmes de la carte">Retirer les larmes</button>
             </div>
@@ -123,20 +124,20 @@
             <button class="mnu-t rg-t" type="button">Aligner &amp; sélectionner <span class="car">▾</span></button>
             <div class="mnu-pop">
               <div class="mtitle">Aligner les composants sélectionnés</div>
-              <button data-ic="⇤" class="tb" data-aligner="gauche">Aligner à gauche</button>
-              <button data-ic="⇥" class="tb" data-aligner="droite">Aligner à droite</button>
-              <button data-ic="⤒" class="tb" data-aligner="haut">Aligner en haut</button>
-              <button data-ic="⤓" class="tb" data-aligner="bas">Aligner en bas</button>
-              <button data-ic="⇹" class="tb" data-aligner="centreX">Centres sur une verticale</button>
-              <button data-ic="⇳" class="tb" data-aligner="centreY">Centres sur une horizontale</button>
-              <button data-ic="↔" class="tb" data-aligner="repH">Répartir horizontalement</button>
-              <button data-ic="↕" class="tb" data-aligner="repV">Répartir verticalement</button>
+              <button data-ic="⇤" class="tb ic-glyphe" data-aligner="gauche">Aligner à gauche</button>
+              <button data-ic="⇥" class="tb ic-glyphe" data-aligner="droite">Aligner à droite</button>
+              <button data-ic="⤒" class="tb ic-glyphe" data-aligner="haut">Aligner en haut</button>
+              <button data-ic="⤓" class="tb ic-glyphe" data-aligner="bas">Aligner en bas</button>
+              <button data-ic="⇹" class="tb ic-glyphe" data-aligner="centreX">Centres sur une verticale</button>
+              <button data-ic="⇳" class="tb ic-glyphe" data-aligner="centreY">Centres sur une horizontale</button>
+              <button data-ic="↔" class="tb ic-glyphe" data-aligner="repH">Répartir horizontalement</button>
+              <button data-ic="↕" class="tb ic-glyphe" data-aligner="repV">Répartir verticalement</button>
               <div class="mtitle">Sélectionner les objets semblables</div>
-              <button data-ic="≈" class="tb" data-semblable="net">Même net</button>
-              <button data-ic="≈" class="tb" data-semblable="couche">Même couche / face</button>
-              <button data-ic="≈" class="tb" data-semblable="taille">Même largeur / taille</button>
-              <button data-ic="≈" class="tb" data-semblable="boitier">Même boîtier / forme</button>
-              <button data-ic="≈" class="tb" data-semblable="valeur">Même valeur</button>
+              <button data-ic="≈" class="tb ic-glyphe" data-semblable="net">Même net</button>
+              <button data-ic="≈" class="tb ic-glyphe" data-semblable="couche">Même couche / face</button>
+              <button data-ic="≈" class="tb ic-glyphe" data-semblable="taille">Même largeur / taille</button>
+              <button data-ic="≈" class="tb ic-glyphe" data-semblable="boitier">Même boîtier / forme</button>
+              <button data-ic="≈" class="tb ic-glyphe" data-semblable="valeur">Même valeur</button>
             </div>
           </div>
           <div class="rg mnu">
@@ -183,11 +184,11 @@
             </div>
             <button class="mnu-t rg-t" type="button">Cuivre <span class="car">▾</span></button>
             <div class="mnu-pop">
-              <button data-ic="◧" class="tb" id="bPlanDivise" title="Sur une couche plan : donner une partie du plan à un autre net, qui passe devant, isolement compris">Plan divisé</button>
-              <button data-ic="⟳" class="tb" id="bZonesCalc">Recalculer toutes les zones</button>
-              <button data-ic="⁘" class="tb" id="bCouture" title="Coudre les zones sélectionnées : un réseau de vias de leur net, au pas voulu, là où la place est libre">Vias de couture…</button>
-              <button data-ic="⫶" class="tb" id="bCloture" title="Clôture de vias de part et d'autre des pistes sélectionnées (blindage RF, horloge)">Clôture de vias…</button>
-              <button data-ic="⊖" class="tb" id="bCoutureRetirer">Retirer couture et clôture</button>
+              <button data-ic="◧" class="tb ic-glyphe" id="bPlanDivise" title="Sur une couche plan : donner une partie du plan à un autre net, qui passe devant, isolement compris">Plan divisé</button>
+              <button data-ic="⟳" class="tb ic-glyphe" id="bZonesCalc">Recalculer toutes les zones</button>
+              <button data-ic="⁘" class="tb ic-glyphe" id="bCouture" title="Coudre les zones sélectionnées : un réseau de vias de leur net, au pas voulu, là où la place est libre">Vias de couture…</button>
+              <button data-ic="⫶" class="tb ic-glyphe" id="bCloture" title="Clôture de vias de part et d'autre des pistes sélectionnées (blindage RF, horloge)">Clôture de vias…</button>
+              <button data-ic="⊖" class="tb ic-glyphe" id="bCoutureRetirer">Retirer couture et clôture</button>
             </div>
           </div>
           <div class="rg">
@@ -636,6 +637,7 @@
 <script src="js/48-vias.js"></script>
 <script src="js/49-dessin.js"></script>
 <script src="js/50-couches.js"></script>
+<script src="js/51-bus.js"></script>
 <script src="../commun/explorateur-lib.js"></script>
 <script src="../commun/workspace.js"></script>
 <script src="../commun/telephone.js"></script>

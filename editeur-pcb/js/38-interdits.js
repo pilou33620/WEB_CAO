@@ -34,7 +34,7 @@ function normInterdit(z,i){
   const out={id:dInt(z.id,i+1,1,Number.MAX_SAFE_INTEGER),face:z.face==="dessous"?"dessous":"dessus",
           pts:pts.map(p=>({x:r3(p.x),y:r3(p.y)})),hMax:Number.isFinite(h)&&h>0&&h<=100?r3(h):null,
           nom:dStr(z.nom!=null?z.nom:"Zone interdite "+(i+1),60)};
-  const ko=koLire(z.ko);                // keep-out cuivre (50-couches.js)
+  const ko=typeof koLire==="function"?koLire(z.ko):null;                // keep-out cuivre (50-couches.js)
   if(ko)out.ko=ko;
   return out;
 }
@@ -121,7 +121,7 @@ function interditsDessiner(c){
     c.beginPath();c.moveTo(z.pts[0].x,z.pts[0].y);
     for(let k=1;k<z.pts.length;k++)c.lineTo(z.pts[k].x,z.pts[k].y);
     c.closePath();
-    const coul=z.ko?C_KO:C_ERR;      // keep-out cuivre : ambre (50-couches.js)
+    const coul=z.ko?"#f59e0b":C_ERR;      // keep-out cuivre : ambre (50-couches.js)
     c.globalAlpha=0.08;c.fillStyle=coul;c.fill();
     c.globalAlpha=sel?1:0.75;c.strokeStyle=sel?C_SEL:coul;c.lineWidth=px(sel?1.8:1.2);
     c.setLineDash(z.face==="dessous"?[px(2),px(3)]:[px(6),px(3)]);c.stroke();c.setLineDash([]);
@@ -129,7 +129,7 @@ function interditsDessiner(c){
     c.globalAlpha=1;c.fillStyle=sel?C_SEL:coul;
     c.font=px(11)+'px "Segoe UI",system-ui,sans-serif';c.textAlign="left";c.textBaseline="top";
     // la face n'est pas répétée quand le nom la dit déjà (« Garde MH100 (dessous) »)
-    const txt=z.ko?z.nom+" · "+koResume(z):z.nom+(String(z.nom).includes(z.face)?"":" · "+z.face)+
+    const txt=z.ko&&typeof koResume==="function"?z.nom+" · "+koResume(z):z.nom+(String(z.nom).includes(z.face)?"":" · "+z.face)+
       (z.hMax!=null?" · h ≤ "+fmt(z.hMax,1)+" mm":" · aucun composant");
     const x=b.x1+px(3), w=c.measureText(txt).width;
     const y=interditEtiquetteY(occupes,S.flip?x-w:x,S.flip?x:x+w,b.y1+px(3),px(14));

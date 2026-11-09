@@ -20,9 +20,13 @@ autre net, la Gestion LIB qui montait à environ 890 Mo au chargement.
 
 ## Fonctionnalités
 
-- [ ] **Éditeur PCB : outils manquants par rapport à Altium** (09/11/2026) : dessin (arcs,
-  fill, texte cuivre), couches mécaniques et keep-out, réglages de zones, vias de couture,
-  alignement, verrouillage, filtre de sélection… Liste classée par priorité et effort dans
+- [x] **Éditeur PCB : outils manquants par rapport à Altium** (09/11/2026) : dessin (arcs,
+  cercles, fill, région pleine, texte cuivre droit ou inversé, chaînes spéciales, pastille
+  libre, cotes), couches mécaniques, keep-out cuivre, plans divisés et négatifs, réglages
+  par zone (isolement, bras, hachures, îlots), gestionnaire de zones, vias de couture,
+  clôture, fanout, alignement, verrou, filtre de sélection, semblables, collage en réseau,
+  largeur W, unité mil, bus (`editeur-pcb/js/46-edition.js` à `51-bus.js`). Ce qui reste
+  (panélisation, ODB++, DXF, vue 3D en direct…) et les limites connues :
   [docs/pcb-manquants-altium.md](docs/pcb-manquants-altium.md).
 - [x] **Rugosité de Huray selon Simonovich** (22/10/2026) : les préréglages « Huray · ED
   standard » et « Huray · HVLP » (`editeur-pcb/js/01-core.js`) suivent la méthode

@@ -188,7 +188,7 @@ function zoneCanvas(i,fixe){
     if(b.x2<x1||b.x1>x2||b.y2<y1||b.y1>y2)continue;   // hors de la région
     zoneFill(c,z);
   }
-  zonesHachurer(c,zs,i);                    // les mailles d'une zone hachurée (47-zones.js)
+  if(typeof zonesHachurer==="function")zonesHachurer(c,zs,i);                    // les mailles d'une zone hachurée (47-zones.js)
   /* le cuivre s'arrête à la marge de bord, quoi qu'ait tracé la main */
   clipToBoard(c,x1,y1,x2,y2);
 
@@ -260,7 +260,7 @@ function zoneCanvas(i,fixe){
   /* liaisons thermiques : quatre bras par défaut, ou configuration personnalisée */
   c.globalCompositeOperation="source-over";
   c.fillStyle=col;
-  zonesPleinesPeindre(c,zs,x1,y1,x2,y2);    // région pleine : son cuivre exact, sans dégagement (47-zones.js)
+  if(typeof zonesPleinesPeindre==="function")zonesPleinesPeindre(c,zs,x1,y1,x2,y2);    // région pleine : son cuivre exact, sans dégagement (47-zones.js)
   for(const q of thermals){
     // padBras : un bras qui toucherait le cuivre d'un autre net n'est pas tracé
     for(const b of padBras(q,i).ok){
@@ -794,7 +794,8 @@ function drawSilk(c){
     }
     c.restore();
   }
-  dessinApercu(c);              // arc, cercle, cote en cours (49-dessin.js)
+  if(typeof dessinApercu==="function")dessinApercu(c);   // arc, cercle, cote en cours (49-dessin.js)
+  if(typeof busApercu==="function")busApercu(c);         // bus en cours (51-bus.js)
   c.globalAlpha=1;
 }
 function TXT(c,t,x,y,size,col){
