@@ -415,7 +415,8 @@ function pcbDetecterDisparitesEco(schData) {
   // 2. Composants orphelins (sur le PCB mais absents du schéma)
   for (const fp of S.fps) {
     // sans cuivre et hors schéma (logo, trou de fixation) : propre à la carte, l'ECO n'a rien à en dire
-    if (!schData.comps.has(fp.ref) && !renommees.has(fp) && !fpSansCuivre(fp)) {
+    // pastille libre (point de test, mire) : posée exprès sur la carte (49-dessin.js)
+    if (!schData.comps.has(fp.ref) && !renommees.has(fp) && !fpSansCuivre(fp) && !fp.libre) {
       const trks = pcbPistesConnecteesFp(fp);
       const item = {
         id: "del_" + fp.ref,

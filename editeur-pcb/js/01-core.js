@@ -2365,7 +2365,9 @@ function fpDessinsMonde(fp){
 }
 /* tous les dessins au monde : ceux de la carte puis ceux des empreintes */
 function dessinsMonde(){
-  const out=(S.drawings||[]).slice();
+  // les chaînes spéciales (.Date, .Titre…) se lisent remplacées partout où l'on dessine (49-dessin.js)
+  const out=(S.drawings||[]).map(d=>d.shape==="text"&&typeof d.text==="string"&&d.text.indexOf(".")>=0
+    ?Object.assign({},d,{text:texteSpecial(d.text)}):d);
   for(const fp of S.fps)for(const d of fpDessinsMonde(fp))out.push(d);
   return out;
 }

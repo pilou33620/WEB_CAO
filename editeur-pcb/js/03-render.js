@@ -794,6 +794,7 @@ function drawSilk(c){
     }
     c.restore();
   }
+  dessinApercu(c);              // arc, cercle, cote en cours (49-dessin.js)
   c.globalAlpha=1;
 }
 function TXT(c,t,x,y,size,col){

@@ -198,6 +198,53 @@
           </div>
         </div>
       </div>
+      <div class="ong" data-mnu="dessin">
+        <button class="mnu-t" type="button">Dessin</button>
+        <div class="band">
+          <div class="rg mnu">
+            <div class="rg-cmds">
+              <button data-ic="◠" class="tb" id="mArc" title="Arc : le centre, puis le départ, puis la fin (Maj : l'autre sens)">Arc</button>
+              <button data-ic="◯" class="tb" id="mCercle" title="Cercle : le centre, puis un point du cercle">Cercle</button>
+            </div>
+            <button class="mnu-t rg-t" type="button">Formes <span class="car">▾</span></button>
+            <div class="mnu-pop">
+              <label class="mnu-row" data-ic="◎">Arc et cercle sur
+                <select class="tbsel" id="arcCible">
+                  <option value="cuivre">le cuivre (couche active)</option>
+                  <option value="silk">la sérigraphie (face vue)</option>
+                  <option value="dwgs">Dessins utilisateur</option>
+                  <option value="cmts">Commentaires</option>
+                  <option value="user">Utilisateur</option>
+                  <option value="decoupe">une découpe de carte (cercle)</option>
+                  <option value="zone">une zone de cuivre (cercle)</option>
+                </select></label>
+            </div>
+          </div>
+          <div class="rg mnu">
+            <div class="rg-cmds">
+              <button data-ic="T" class="tb" id="mTexteCu" title="Texte sur la couche de cuivre active, droit ou inversé ; chaînes spéciales .Date .Titre .Revision .Couches…">Texte cuivre</button>
+              <button data-ic="⦿" class="tb" id="mPastille" title="Pastille libre hors schéma : point de test, pastille traversante, mire de centrage (fiducial)">Pastille</button>
+              <button data-ic="↔" class="tb" id="mCote" title="Cote linéaire posée sur la carte : deux points, puis la position de la ligne">Cote</button>
+            </div>
+            <button class="mnu-t rg-t" type="button">Repères <span class="car">▾</span></button>
+            <div class="mnu-pop">
+              <label class="mnu-row" data-ic="⦿">Pastille
+                <select class="tbsel" id="pastilleType">
+                  <option value="cms">point de test CMS</option>
+                  <option value="traversante">pastille traversante</option>
+                  <option value="fiducial">mire (fiducial)</option>
+                </select></label>
+              <label class="mnu-row" data-ic="↔">Cotes sur
+                <select class="tbsel" id="coteCouche">
+                  <option value="dwgs">Dessins utilisateur</option>
+                  <option value="cmts">Commentaires</option>
+                  <option value="user">Utilisateur</option>
+                  <option value="fabT">Fab dessus</option>
+                </select></label>
+            </div>
+          </div>
+        </div>
+      </div>
       <div class="ong" data-mnu="verifier">
         <button class="mnu-t" type="button">Vérifier</button>
         <div class="band">
@@ -585,6 +632,7 @@
 <script src="js/46-edition.js"></script>
 <script src="js/47-zones.js"></script>
 <script src="js/48-vias.js"></script>
+<script src="js/49-dessin.js"></script>
 <script src="../commun/explorateur-lib.js"></script>
 <script src="../commun/workspace.js"></script>
 <script src="../commun/telephone.js"></script>

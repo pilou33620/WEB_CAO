@@ -500,6 +500,7 @@ function normFp(f,i){
   if(+f.puissance>0)out.puissance=r3(dRange(f.puissance,0,0,100));   // dissipée en service, W (39-thermique.js)
   if(f.mark===false)out.mark=false;
   if(f.locked)out.locked=true;
+  if(f.libre)out.libre=true;                      // pastille libre, posée hors schéma (49-dessin.js)
   else if(f.mark&&typeof f.mark==="object"){
     const mx=+f.mark.x, my=+f.mark.y;
     if(Number.isFinite(mx)&&Number.isFinite(my))
@@ -4634,6 +4635,7 @@ cv.addEventListener("pointerdown",e=>{
   }
   if(e.button!==0)return;
   if(S.mode==="mesure"){rpMesClic(p.x,p.y);draw();return;}
+  if(dessinClic(p.x,p.y,e)){draw();return;}          // arc, cercle, texte cuivre, pastille, cote (49-dessin.js)
   if(S.mode==="meander"){
     const hit=hitTest(p.x,p.y);
     if(hit&&hit.track&&!isArc(hit.track)){
@@ -5218,6 +5220,7 @@ cv.addEventListener("pointermove",e=>{
     draw();return;
   }
   if(S.mode==="mesure"){if(rpMesBouge(p.x,p.y))draw();return;}
+  if(dessinBouge(p.x,p.y,e)){draw();return;}
   if(S.mode==="meander"&&S.meanderDraft){
     const trk=S.meanderDraft.track;
     const L=Math.hypot(trk.x2-trk.x1,trk.y2-trk.y1);
@@ -5677,6 +5680,7 @@ document.addEventListener("keydown",e=>{
       // Échap termine ce qui est en cours puis rend la main à la sélection
       if(S.dp)dpCommit();
       else if(S.route)commitRoute();
+      else if(dessinAnnuler()){}
       else if(S.meanderDraft){S.meanderDraft=null;hint("Serpentin annulé.");}
       else if(S.zoneDraft){S.zoneDraft=null;hint("Zone abandonnée.");}
       else if(S.cutDraft){S.cutDraft=null;hint("Découpe abandonnée.");}
@@ -5739,6 +5743,7 @@ function setMode(m){
   if(S.silkDraft&&m!=="silk")S.silkDraft=null;
   if(S.aplatDraft&&(m!=="silk"||S.silkShape!=="aplat"))S.aplatDraft=null;
   if(S.meanderDraft&&m!=="meander")S.meanderDraft=null;
+  if(S.dessinDraft&&m!==S.mode)S.dessinDraft=null;   // arc, cote en cours (49-dessin.js)
   /* La cote appartient au mode : la garder affichee en revenant a la selection
      laisserait une annotation qu'aucun geste ne reprend. */
   if(m!=="mesure"&&typeof rpMesRaz==="function")rpMesRaz();
@@ -5748,7 +5753,8 @@ function setMode(m){
   for(const [id,md] of [["mSelect","select"],["mTrack","track"],["mVia","via"],["mHole","hole"],
                         ["mDiff","dpair"],["mMeander","meander"],
                         ["mZone","zone"],["mSilk","silk"],["mEdge","edge"],["mDecoupe","decoupe"],["mInterdit","interdit"],["mOrigin","origin"],
-                        ["mErase","cut"],["mMiter","miter"],["mMesure","mesure"]]){
+                        ["mErase","cut"],["mMiter","miter"],["mMesure","mesure"],
+                        ["mArc","arc"],["mTexteCu","texteCu"],["mPastille","pastille"],["mCote","cote"]]){
     const b=$(id);
     if(b)b.classList.toggle("on",m===md);
   }
@@ -5757,7 +5763,8 @@ function setMode(m){
                           zone:"Zone de cuivre",silk:"Sérigraphie",edge:"Contour de carte",
                           decoupe:"Découpe de carte",interdit:"Zone interdite",
                           origin:"Origine",cut:"Découpe de zone",miter:"Miter",
-                          mesure:"Mesure"}[m];
+                          mesure:"Mesure",arc:"Arc / cercle",texteCu:"Texte sur cuivre",
+                          pastille:"Pastille libre",cote:"Cote"}[m]||m;
   cv.style.cursor="crosshair";
   hint({
     select:"Ctrl+clic (ou Maj+clic) ajoute à la sélection · glisser une piste emmène "+

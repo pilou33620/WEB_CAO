@@ -49,6 +49,8 @@ const EXPOSE=[
   "filtreOk","filtreAppliquer","verrouPoser","verrousRetirer","alignerFps","semblables","collageReseau",
   "largeurSuivante","uniteBasculer","clrZone","ecartThermique","zoneHachures","zonesDrc","zoneNouvelle",
   "zoneOutil","zonePrioDecaler","zoneReglagesLire","gerberCopper","padBras","normZone","zoneIlotsPetits","ipcRemplir","fpSetPad",
+  "dessinOutil","dessinClic","arcGeom","arcPoser","texteCuivre","texteSpecial","dessinsMonde","pastilleLibre",
+  "coteLineaire","jlcNonPose","arcOf","boardCutouts",
   "coutureZone","cloturePistes","fanoutFps","coutureRetirer","viaEssai","netMasseDefaut","fmtU","uLue","uAff","RP_PCB","hitTest","deleteSel","startRoute",
   "cutsCuivre","ilotContour","drcRangs","drcCategorie","drcFenetre","drcPas","copySelPcb","fpEssai","fpChevauchements","placementDegage","placementBilan","fpPlaceLibre","pasteClipPcb","rotateSel","flipSel","fpGene","routeRetouche","dragMoveBy","beginMove","dragRotate","gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
   "updateRoute","stepRoute","commitRoute","routeToLayer","runDrc","buildTabs",
@@ -29835,6 +29837,70 @@ T("fanout : chaque pastille CMS sort par un via, sans faute",()=>{
   const iso=d.filter(e=>/isol|trou à trou|Isolation/i.test(e.msg));
   if(iso.length)throw new Error("DRC : "+iso[0].msg);
   if(fanoutFps([U]).vias!==0)throw new Error("déjà sorties : rien à refaire");
+});
+
+/* ---------- outils de dessin (49-dessin.js) ---------- */
+T("arc et cercle sur le cuivre : de vraies pistes en arc",()=>{
+  zonesDecor();S.tracks=[];S.active=0;touch();
+  dessinOutil("arc",{arcForme:"arc",arcCible:"cuivre"});
+  dessinClic(10,10);dessinClic(15,10);dessinClic(10,5);
+  const t=S.tracks[0], A=arcOf(t);
+  if(!A||Math.abs(A.r-5)>1e-3||Math.abs(t.ca+Math.PI/2)>1e-3)throw new Error("arc : "+JSON.stringify(t));
+  if(Math.abs(t.x2-10)>1e-3||Math.abs(t.y2-5)>1e-3)throw new Error("fin de l'arc : "+t.x2+","+t.y2);
+  dessinOutil("arc",{arcForme:"cercle"});
+  dessinClic(30,20);dessinClic(33,20);
+  const c=S.tracks.slice(1);
+  if(c.length!==2||Math.abs(c[0].ca+c[1].ca+2*Math.PI)>1e-3)throw new Error("cercle : deux demi-arcs attendus");
+  if(Math.abs(c[1].x2-c[0].x1)>1e-3||Math.abs(c[1].y2-c[0].y1)>1e-3)throw new Error("le cercle doit se refermer");
+  setMode("select");
+});
+T("arc de sérigraphie, découpe ronde, zone ronde",()=>{
+  zonesDecor();S.drawings=[];S.board.cutouts=undefined;touch();
+  S.arcCible="silk";
+  arcPoser(arcGeom({x:10,y:10},{x:14,y:10},{x:10,y:6}));
+  if(S.drawings.length!==18||S.drawings.some(d=>d.layer!=="silkT"))throw new Error("arc de sérigraphie : "+S.drawings.length);
+  S.arcCible="decoupe";
+  arcPoser(arcGeom({x:30,y:20},{x:32,y:20},null));
+  if(boardCutouts().length!==1)throw new Error("découpe ronde absente");
+  S.arcCible="zone";
+  const n=S.zones.length;
+  arcPoser(arcGeom({x:12,y:12},{x:15,y:12},null));zoneDialog("GND");
+  if(S.zones.length!==n+1||S.zones[n].pts.length<16)throw new Error("zone ronde");
+  S.arcCible="decoupe";
+  if(arcPoser(arcGeom({x:30,y:20},{x:32,y:20},{x:30,y:18})))throw new Error("une découpe en arc ouvert doit être refusée");
+  S.arcCible="cuivre";
+});
+T("texte sur cuivre, droit puis inversé ; chaînes spéciales",()=>{
+  zonesDecor();S.tracks=[];touch();
+  if(texteSpecial(".Couches couches")!==S.cu+" couches")throw new Error("chaîne spéciale : "+texteSpecial(".Couches couches"));
+  if(texteSpecial("v.Inconnu")!=="v.Inconnu")throw new Error("une chaîne inconnue reste telle quelle");
+  const r=texteCuivre({texte:"AB",x:20,y:20,h:2,ep:0.25,l:0});
+  if(!r||r.tracks.length<6||r.tracks.some(t=>t.net!==""||t.l!==0||t.w!==0.25))throw new Error("texte droit");
+  const ri=texteCuivre({texte:"OK",x:20,y:10,h:2,ep:0.25,l:0,inverse:true});
+  if(!ri.zone||ri.zone.net!==""||!ri.cuts.length||!(ri.zone.priorite>=1))throw new Error("texte inversé");
+  if(!gerberCopper(0).includes("G36*"))throw new Error("l'aplat du texte inversé doit partir au Gerber");
+  S.drawings=[{id:S.nextId++,shape:"text",type:"text",layer:"silkT",text:"Rév .Couches",x1:5,y1:5,x2:5,y2:5,size:1.5,height:1.5,rot:0,width:0.15}];
+  const m=dessinsMonde().find(d=>d.shape==="text");
+  if(m.text!=="Rév "+S.cu||S.drawings[0].text!=="Rév .Couches")throw new Error("substitution : "+m.text);
+});
+T("pastille libre : point de test et mire, hors schéma",()=>{
+  zonesDecor();S.hlNet=null;
+  const f=pastilleLibre(10,10,"fiducial","GND");
+  if(!f||f.ref!=="FID1"||!f.libre||(f.nets[1]||"")!==""||!jlcNonPose(f))throw new Error("mire : "+JSON.stringify(f&&{ref:f.ref,libre:f.libre}));
+  const q=padsWorld(f)[0];
+  if(q.drill||q.mask!==0.5)throw new Error("mire : CMS, ouverture de vernis élargie");
+  const tp=pastilleLibre(14,10,"traversante","GND");
+  if(tp.ref!=="TP1"||padsWorld(tp)[0].drill!==1||padsWorld(tp)[0].net!=="GND")throw new Error("point de test traversant");
+  loadDoc(JSON.parse(serialize()),true);
+  if(!S.fps.find(o=>o.ref==="FID1").libre)throw new Error("marque libre perdue");
+});
+T("cote linéaire posée sur la carte",()=>{
+  zonesDecor();S.drawings=[];touch();
+  const r=coteLineaire({x:0,y:0},{x:10,y:0},{x:5,y:-3});
+  const t=r.find(d=>d.shape==="text");
+  if(!t||t.text!=="10.00 mm"||t.layer!=="dwgs"||Math.abs(t.rot)>1e-9)throw new Error("texte de cote : "+JSON.stringify(t));
+  if(r.filter(d=>d.shape==="line").length!==7)throw new Error("traits de cote : "+r.length);
+  if(!r.some(d=>d.shape==="line"&&Math.abs(d.y1+3)<1e-6&&Math.abs(d.y2+3)<1e-6))throw new Error("ligne de cote à y = −3");
 });
 
 (async()=>{
