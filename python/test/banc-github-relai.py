@@ -96,14 +96,15 @@ try:
     # -- sans lanceur : la route n'existe pas ---------------------------
     regler(lanceur=False)
     s, d = req("GET", "/api/github")
-    verifier("sans lanceur, GET /api/github -> 404", s == 404, (s, d))
+    verifier("sans lanceur, GET /api/github -> mode WEB_SUITE absent", s == 200
+             and d.get("suite") is False and d.get("disponible") is False, (s, d))
     s, d = req("POST", "/api/github/envoyer", {"message": "x"})
     verifier("sans lanceur, rien n'est relaye", s == 404 and not RECUS, (s, d))
 
     # -- un « lanceur » hors de ce poste n'est jamais appele ------------
     regler(lanceur="http://192.168.1.50:8100")
     s, d = req("GET", "/api/github")
-    verifier("lanceur hors boucle locale refuse", s == 404, (s, d))
+    verifier("lanceur hors boucle locale refuse", s == 200 and d.get("suite") is False, (s, d))
 
     # -- ce poste, ecoute locale ------------------------------------------
     regler()

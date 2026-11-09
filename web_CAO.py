@@ -2224,10 +2224,12 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         alors qu'une sauvegarde, dans le projet puis sur GitHub, meme si
         l'envoi est refuse a cet appareil (`disponible` faux, `detail` dit
         pourquoi) -- le refus s'affiche a l'enregistrement, sans repli sur un
-        telechargement. Sans lanceur, 404 comme avant."""
+        telechargement. Sans lanceur, `suite` faux : chaque page pose la
+        question au chargement, un 404 la faisait passer pour une panne."""
         if not adresse_lanceur():
-            raise ErreurProjet(404, "Envoi sur GitHub indisponible : cet outil n'a pas"
-                                    " ete lance par WEB_SUITE.")
+            return {"suite": False, "disponible": False,
+                    "detail": "Envoi sur GitHub indisponible : cet outil n'a pas"
+                              " ete lance par WEB_SUITE."}
         try:
             self._github_garde()
         except ErreurProjet as exc:
