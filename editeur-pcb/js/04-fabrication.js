@@ -433,6 +433,7 @@ function gerberCopper(i){
       if(ct.l===i&&ct.pts.length>=3)gRegionArcs(body,ct.pts);
     }
     for(const P of zoneLanieres(i))gRegion(body,P);   // cuivre plus étroit que cuMin entre deux dégagements
+    for(const z of zs)for(const P of zoneHachures(z,i))gRegion(body,P);   // mailles des zones hachurées (47-zones.js)
     /* les trous du cuivre d'une zone importée, tels que le fabricant les a */
     for(const z of zs)
       if(zoneFichier(z)&&Array.isArray(z.trous))
@@ -446,7 +447,7 @@ function gerberCopper(i){
       if(z===null)z=zoneEtrangereProche(zs,t.net,(a,b)=>segSegDist(t,seg(a,b)),
         q=>t.w/2+clrK(q.net,t.net,"cu","trk"));
       if(z===null||z===t.net)continue;
-      gTrk(body,A,t,t.w+2*clrK(z,t.net,"cu","trk"));
+      gTrk(body,A,t,t.w+2*clrZone(zoneAt(i,m.x,m.y)||z,t.net,"cu","trk"));
     }
     for(const v of S.vias){
       if(i<v.a||i>v.b)continue;
@@ -455,7 +456,7 @@ function gerberCopper(i){
         q=>v.d/2+clrK(q.net,v.net,"cu","via"));
       if(z===null)continue;
       if(z===v.net)gFlash(body,A,A.get("C,"+fmt(v.drill,4)),v.x,v.y);
-      else gFlash(body,A,A.get("C,"+fmt(v.d+2*clrK(z,v.net,"cu","via"),4)),v.x,v.y);
+      else gFlash(body,A,A.get("C,"+fmt(v.d+2*clrZone(zoneAt(i,v.x,v.y)||z,v.net,"cu","via"),4)),v.x,v.y);
     }
     /* trou NPTH (carte ou empreinte) : la zone s'en écarte de l'écartement de
        sa classe — le foret ne doit pas mordre le cuivre ni le laisser à vif */
@@ -477,16 +478,23 @@ function gerberCopper(i){
         if(same&&padLiaison(q,i)==="directe")continue;       // la zone la recouvre, sans bras
         const qc=padSurCouche(q,i);
         if(!qc){                       // pas de cuivre ici : le trou seul se dégage
-          if(q.drill>0)gPercage(body,A,q,clrK(z,q.net,"cu","th"));
+          if(q.drill>0)gPercage(body,A,q,clrZone(zoneAt(i,q.x,q.y)||z,q.net,"cu","th"));
           continue;
         }
-        gPad(body,A,qc,same?classOf(z).clr:
-          clrK(z,q.net,"cu",q.drill>0?"th":"smd"));
+        gPad(body,A,qc,same?ecartThermique(q,i):
+          clrZone(zoneAt(i,q.x,q.y)||z,q.net,"cu",q.drill>0?"th":"smd"));
         if(same)thermals.push(q);
         else if(q.drill>0)
-          gPercage(body,A,q,clrK(z,q.net,"cu","th"));
+          gPercage(body,A,q,clrZone(zoneAt(i,q.x,q.y)||z,q.net,"cu","th"));
       }
     body.push("%LPD*%");
+    /* région pleine : son cuivre exact, par-dessus les dégagements (47-zones.js).
+       Les trous qu'y creuse une zone plus prioritaire entrent dans le même
+       contour par des coupures (cut-in) : un %LPC% effacerait aussi le cuivre
+       de cette zone-là, déjà peint. */
+    for(const z of zs)if(z.plein){const il=zoneDecoupee(z);
+      if(!il)gRegionArcs(body,z.pts);
+      else for(const o of il){if(o.t.length)gRegion(body,contourTroue(o.o,o.t));else gRegionArcs(body,o.o);}}
     for(const q of thermals){          // liaisons thermiques : les bras qui ne touchent aucun autre net (padBras)
       for(const b of padBras(q,i).ok)gSeg(body,A,b.ax.x1,b.ax.y1,b.ax.x2,b.ax.y2,b.tw);
       if(q.drill>0){
@@ -507,6 +515,8 @@ function gerberCopper(i){
         if(qc)gPad(body,A,qc,0);
       }
   const fn="Copper,L"+(i+1)+","+(i===0?"Top":(i===S.cu-1?"Bot":"Inr"));
+  if(S.cuL[i]&&S.cuL[i].negatif&&rolePlane(layerRole(i)))   // plan négatif (50-couches.js)
+    return gAssemble(gHeader(fn,"Negative"),A,gerberNegatif(body));
   return gAssemble(gHeader(fn),A,body);
 }
 function gerberMask(side){
@@ -612,7 +622,8 @@ function silkTraits(side){
         seg(d.x2, d.y2, d.x1, d.y2, w);
         seg(d.x1, d.y2, d.x1, d.y1, w);
       }else{
-        seg(d.x1, d.y1, d.x2, d.y2, w);
+        const P=drwPoints(d);           // un arc en cordes fines (01-core.js)
+        for(let k=0;k+1<P.length;k++)seg(P[k].x, P[k].y, P[k+1].x, P[k+1].y, w);
       }
     }
   }
@@ -1380,6 +1391,7 @@ const FAB_GROUPES=[
   ["pate","Pâte à braser (.GTP, .GBP)"],
   ["serigraphie","Sérigraphie (.GTO, .GBO)"],
   ["contour","Contour de découpe (.GM1, .GKO)"],
+  ["mecanique","Couches mécaniques dessinées (.GM2 à .GM9)"],
   ["percage","Perçage (Excellon, contre-perçage)"],
   ["ipc","Netlist de test (.ipc)"],
   ["ipc2581","Carte complète IPC-2581 (.xml)"],
@@ -1418,6 +1430,7 @@ function buildFabFiles(extra,veut){
     files.push({name:base+".GM1",text:gerberOutline()});   // profil de découpe
     files.push({name:base+".GKO",text:gerberEdge()});      // keepout (même géométrie)
   }
+  if(prend("mecanique"))for(const f of mecaGerbers(base))files.push(f);   // couches mécaniques dessinées (50-couches.js)
   const dr=drillFile();
   if(prend("percage")){
     for(const f of dr.files)files.push(f);

@@ -91,6 +91,8 @@ function rpMesRaz(){
 }
 /* Les quatre nombres de la cote. L'angle est celui qu'on lit à l'écran —
    direct, l'axe Y du document descendant — comme la saisie polaire. */
+/* l'unité des cotes : l'éditeur peut afficher autre chose que des mm (PCB : Q → mil) */
+function rpUnite(){return (RP_ED&&RP_ED.unite&&RP_ED.unite())||"mm";}
 function rpMesCotes(){
   const P=rpMesPaire();
   if(!P||!RP_ED)return null;
@@ -108,7 +110,7 @@ function rpMesLecture(){
   if(!c)return RP.mes.a
     ? "Mesure : point de départ posé — cliquez le second point · Échap efface."
     : "Mesure : cliquez le premier point.";
-  const t="Mesure "+rpNb(c.d)+" mm · ΔX "+rpNb(c.dx)+" · ΔY "+rpNb(c.dy)+
+  const t="Mesure "+rpNb(c.d)+" "+rpUnite()+" · ΔX "+rpNb(c.dx)+" · ΔY "+rpNb(c.dy)+
           " · "+rpNb(Math.round(c.ang*100)/100)+"°";
   return t+(RP_ED&&RP_ED.physique
     ? (RP.mes.b?" — cote figée ; un clic repart d'ailleurs, Échap efface."
@@ -154,7 +156,7 @@ function rpMesTrace(c,dpr){
   }
   const co=rpMesCotes();
   if(co)rpMesEtiquette(c,(A.x+B.x)/2,(A.y+B.y)/2,
-    rpNb(co.d)+" mm",
+    rpNb(co.d)+" "+rpUnite(),
     "ΔX "+rpNb(co.dx)+"  ΔY "+rpNb(co.dy));
   c.restore();
 }

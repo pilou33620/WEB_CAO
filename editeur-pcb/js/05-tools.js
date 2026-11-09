@@ -18,6 +18,7 @@ function docObj(){
           holes:S.holes||[],
           drawings:S.drawings||[],
           interdits:interditsListe(),
+          mecaNoms:S.mecaNoms||{},
           pinoutAcquits:S.pinoutAcquits||{},
           fabExclus:S.fabExclus||[],
           anim3dEtiq:Array.isArray(S.anim3dEtiq)?S.anim3dEtiq:null,
@@ -308,6 +309,7 @@ function normLayer(L,i,n){
   /* le rôle est la lecture humaine de ce couple : signal, mixte, plan de masse,
      plan d'alimentation, blindage. Il ne peut pas contredire `plane`. */
   out.role=coherentRole(dStr(src.role,16),out.plane,out.net);
+  out.negatif=!!src.negatif;      // plan écrit en négatif au Gerber (50-couches.js)
   return out;
 }
 /* Empilage physique. Les longueurs sont imposées par le nombre de couches,
@@ -499,6 +501,8 @@ function normFp(f,i){
   if(f.simNonMonte===true)out.simNonMonte=true;   // ignorée par les simulations (19-simulation.js)
   if(+f.puissance>0)out.puissance=r3(dRange(f.puissance,0,0,100));   // dissipée en service, W (39-thermique.js)
   if(f.mark===false)out.mark=false;
+  if(f.locked)out.locked=true;
+  if(f.libre)out.libre=true;                      // pastille libre, posée hors schéma (49-dessin.js)
   else if(f.mark&&typeof f.mark==="object"){
     const mx=+f.mark.x, my=+f.mark.y;
     if(Number.isFinite(mx)&&Number.isFinite(my))
@@ -528,6 +532,7 @@ function normTrack(t,cu){
   const a1=linkNorm(t.a1), a2=linkNorm(t.a2);
   if(a1)out.a1=a1;
   if(a2)out.a2=a2;
+  if(t.locked)out.locked=true;
   return out;
 }
 function normVia(v,cu){
@@ -550,6 +555,8 @@ function normVia(v,cu){
   // contre-perçage imposé au via : une règle de l'empilage, ou « non » (01-core.js)
   const cp=cmLireCp(v.cp);
   if(cp)out.cp=cp;
+  if(v.locked)out.locked=true;
+  if(v.couture)out.couture=true;                   // posé par la couture ou la clôture (48-vias.js)
   return out;
 }
 function normZone(z,cu,i){
@@ -563,6 +570,8 @@ function normZone(z,cu,i){
   if(["directe","cms-directe","aucune"].includes(z.connexion))out.connexion=z.connexion;
   const pr=dInt(z.priorite,0,0,2147483647);        // absente = 0 ; KiCad va au-delà de 30000 (zonePrio, 01-core.js)
   if(pr)out.priorite=pr;
+  if(z.locked)out.locked=true;
+  if(typeof zoneReglagesLire==="function")zoneReglagesLire(z,out);                         // isolement, bras, hachures, îlots (47-zones.js)
   /* cuivre du fichier : les trous et la signature du contour d'origine
      (posée à la première lecture si le fichier ne la porte pas) */
   if(z.fichier){
@@ -651,7 +660,7 @@ function normDrawingPcb(d,i){
   if(Math.hypot(x2-x1,y2-y1)<1e-6)return null;
   if(shape==="rect"&&(Math.abs(x2-x1)<1e-4||Math.abs(y2-y1)<1e-4))return null;
   const width=dRange(d.width,0.15,0.05,10);
-  return {
+  const out={
     id:dInt(d.id,i+1,1,Number.MAX_SAFE_INTEGER),
     shape:shape,
     type:shape,
@@ -660,6 +669,10 @@ function normDrawingPcb(d,i){
     x2:r4(x2),y2:r4(y2),
     width:r4(width)
   };
+  // un trait en arc : l'angle balayé, comme une piste (drwArc, 01-core.js)
+  const ca=+d.ca;
+  if(shape==="line"&&Number.isFinite(ca)&&Math.abs(ca)>ARC_MIN)out.ca=r4(clamp(ca,-ARC_MAX,ARC_MAX));
+  return out;
 }
 function normHole(h,i){
   if(!h||typeof h!=="object")return null;
@@ -814,8 +827,9 @@ function normDoc(d){
   out.zones=arr(src.zones).map((z,i)=>normZone(z,cu,i)).filter(Boolean);
   out.cuts=arr(src.cuts).map((c,i)=>normCut(c,cu,i)).filter(Boolean);
   out.holes=arr(src.holes).map((h,i)=>normHole(h,i)).filter(Boolean);
-  out.drawings=arr(src.drawings).map((d,i)=>normDrawingPcb(d,i)).filter(Boolean);
+  out.drawings=arr(src.drawings).map((d,i)=>{const o=normDrawingPcb(d,i);if(o&&d.locked)o.locked=true;return o;}).filter(Boolean);
   out.interdits=arr(src.interdits).map((z,i)=>normInterdit(z,i)).filter(Boolean);
+  out.mecaNoms=typeof mecaNomsLire==="function"?mecaNomsLire(src.mecaNoms):{};          // noms des couches mécaniques (50-couches.js)
   /* anomalies de brochage acquittées : repère → leur texte exact, pour qu'un
      changement les fasse revenir (pcbVerifierPinout) */
   out.pinoutAcquits={};
@@ -893,6 +907,7 @@ function loadDoc(d,keepView){
   S.contraintes=d.contraintes;
   S.fps=d.fps;S.tracks=d.tracks;S.vias=d.vias;
   S.zones=d.zones;S.cuts=d.cuts;S.holes=d.holes||[];S.drawings=d.drawings||[];S.pinoutAcquits=d.pinoutAcquits||{};S.interdits=d.interdits||[];
+  S.mecaNoms=d.mecaNoms||{};if(typeof mecaNomsAppliquer==="function")mecaNomsAppliquer();
   S.fabExclus=d.fabExclus||[];
   S.anim3dEtiq=d.anim3dEtiq||null;
   S.cartouche=d.cartouche||"";
@@ -956,8 +971,8 @@ function selHolesPcb(){return (S.holes||[]).filter(h=>S.sel.holes&&S.sel.holes.h
 function hitTest(x,y,e){
   const tol=px(3);
   for(const v of S.vias)
-    if(layerAlpha(v.a)>0&&dist(x,y,v.x,v.y)<=v.d/2+tol)return {via:v};
-  if(S.holes){
+    if(filtreOk("vias")&&layerAlpha(v.a)>0&&dist(x,y,v.x,v.y)<=v.d/2+tol)return {via:v};
+  if(S.holes&&filtreOk("holes")){
     for(let i=S.holes.length-1;i>=0;i--){
       const h=S.holes[i], a=axePercage(h);
       if(segDist(x,y,a.x1,a.y1,a.x2,a.y2)<=h.d/2+tol)return {hole:h};
@@ -969,13 +984,13 @@ function hitTest(x,y,e){
   const surUnePastille=()=>surPastille!==null?surPastille:(surPastille=S.fps.some(fp=>
     padsWorld(fp).some(q=>padCuLayers(fp,q).includes(S.active)&&padDist(x,y,q)<=0)));
   for(const t of S.tracks)
-    if(t.l===S.active&&trkDist(x,y,t)<=t.w/2+tol&&!surUnePastille())return {track:t};
+    if(filtreOk("tracks")&&t.l===S.active&&trkDist(x,y,t)<=t.w/2+tol&&!surUnePastille())return {track:t};
   /* Les pastilles avant les repères : sur une carte importée, le repère est
      souvent posé sur le boîtier, et le clic prenait le texte au lieu du composant. */
-  for(let i=S.fps.length-1;i>=0;i--)
+  if(filtreOk("fps"))for(let i=S.fps.length-1;i>=0;i--)
     for(const q of padsWorld(S.fps[i]))
       if(padDist(x,y,q)<=tol)return {fp:S.fps[i],pad:q};
-  for(let i=S.fps.length-1;i>=0;i--){
+  if(filtreOk("fps"))for(let i=S.fps.length-1;i>=0;i--){
     const fp=S.fps[i];
     const tp = fpTextPos(fp);
     // textStrokes : 5/6 de la hauteur par caractère
@@ -987,9 +1002,9 @@ function hitTest(x,y,e){
     if(lx>=b.x1&&lx<=b.x2&&ly>=b.y1&&ly<=b.y2)return {fp};
   }
   for(const t of S.tracks)
-    if(layerAlpha(t.l)>0&&trkDist(x,y,t)<=t.w/2+tol)return {track:t};
+    if(filtreOk("tracks")&&layerAlpha(t.l)>0&&trkDist(x,y,t)<=t.w/2+tol)return {track:t};
   /* traits et textes de sérigraphie */
-  if(S.drawings){
+  if(S.drawings&&filtreOk("drawings")){
     for(let i=S.drawings.length-1;i>=0;i--){
       const d=S.drawings[i];
       if(!drwAlpha(d))continue;     // couche cachée, face opposée masquée : rien à prendre
@@ -1014,35 +1029,36 @@ function hitTest(x,y,e){
         const lx=dx*c-dy*s, ly=dx*s+dy*c;
         if(Math.abs(lx)<=hw+tol&&Math.abs(ly)<=hh+tol) return {drawing:d};
       }else{
-        if(segDist(x,y,d.x1,d.y1,d.x2,d.y2)<=tol)return {drawing:d};
+        const P=drwPoints(d);
+        for(let k=0;k+1<P.length;k++)if(segDist(x,y,P[k].x,P[k].y,P[k+1].x,P[k+1].y)<=tol)return {drawing:d};
       }
     }
   }
   /* une zone s'attrape par son contour, sauf si on maintient Ctrl/Shift pour l'attraper de l'intérieur */
-  for(let i=S.zones.length-1;i>=0;i--){
+  if(filtreOk("zones"))for(let i=S.zones.length-1;i>=0;i--){
     const z=S.zones[i];
     if(z.larme||layerAlpha(z.l)<=0||z.pts.length<2)continue;
     if(polyEdgeDist(x,y,z.pts)<=px(5))return {zone:z};
     if(e&&(e.ctrlKey||e.shiftKey||e.metaKey||e.altKey)&&inPoly(x,y,z.pts))return {zone:z};
   }
-  for(let i=S.cuts.length-1;i>=0;i--){
+  if(filtreOk("zones"))for(let i=S.cuts.length-1;i>=0;i--){
     const c=S.cuts[i];
     if(layerAlpha(c.l)>0&&c.pts.length>1&&polyEdgeDist(x,y,c.pts)<=px(5))return {cut:c};
   }
   /* une zone interdite se prend par son bord : son intérieur laisse passer le clic */
-  for(const z of interditsListe())if(polyEdgeDist(x,y,z.pts)<=px(5))return {interdit:z};
+  if(filtreOk("autres"))for(const z of interditsListe())if(polyEdgeDist(x,y,z.pts)<=px(5))return {interdit:z};
   /* une découpe de carte se prend par son bord ou par son vide */
-  if(S.show.edge)
+  if(S.show.edge&&filtreOk("autres"))
     for(const D of boardCutouts())
       if(polyEdgeDist(x,y,D)<=px(5)||inPoly(x,y,D))return {decoupe:D};
-  if(S.show.edge&&polyEdgeDist(x,y,boardPoly())<=px(5))return {edge:true};
+  if(S.show.edge&&filtreOk("autres")&&polyEdgeDist(x,y,boardPoly())<=px(5))return {edge:true};
   /* Dernier recours : le plein d'une zone. Un plan de masse ou d'alimentation
      couvre toute la carte — son contour se confond avec celui de la carte et
      n'offre rien à viser. On le rend donc attrapable par son intérieur, mais
      seulement une fois tout le reste écarté, et marqué `inside` : l'appelant
      attend le relâchement pour trancher, sinon le moindre lasso tiré au-dessus
      d'un plan commencerait par emporter le plan. */
-  if(S.show.plane){
+  if(S.show.plane&&filtreOk("zones")){
     const zi=zoneUnder(x,y);
     if(zi)return {zone:zi,inside:true};
   }
@@ -2061,6 +2077,7 @@ function beginMove(){
   if(!drag.selSnap)drag.selSnap=dragSelSnap();
   for(const t of [...S.sel.tracks])
     for(const o of collinearRun(t))S.sel.tracks.add(o);
+  verrousRetirer();                // les objets verrouillés restent où ils sont (46-edition.js)
   // les vias de sortie des boîtiers tirés partent avec eux (`25-liens.js`)
   drag.fanout=fanoutTake();
   // l'état des boîtiers au départ : une rotation en plein geste en part
@@ -2908,6 +2925,7 @@ function deleteNetRouting(net){
    Sans piste ni via dans la sélection, rien n'est supprimé : le pied de page le
    dit plutôt que d'emporter les empreintes. */
 function unrouteSel(){
+  verrousRetirer();
   const tr=S.tracks.filter(t=>S.sel.tracks.has(t));
   const vi=S.vias.filter(v=>S.sel.vias.has(v));
   if(!tr.length&&!vi.length){
@@ -2931,6 +2949,7 @@ function unrouteSel(){
   return tr.length+vi.length;
 }
 function deleteSel(){
+  verrousRetirer();
   if(!selCount())return;
   push();
   S.fps=S.fps.filter(f=>!S.sel.fps.has(f.id));
@@ -3004,6 +3023,7 @@ function pcbClipContent(){
   const lien=a=>!a?null:a.f!=null?(fi.has(a.f)?{fi:fi.get(a.f),p:a.p}:null)
                                  :(vi.has(a.v)?{vi:vi.get(a.v)}:null);
   return {
+    ox:r3(x), oy:r3(y),            // le coin d'origine : le collage en réseau en repart (46-edition.js)
     fps:fps.map(f=>{const c=cp(f);c.x=r3(c.x-x);c.y=r3(c.y-y);delete c.id;return c;}),
     tracks:tracks.map(t=>{const c=cp(t);
       c.x1=r3(c.x1-x);c.y1=r3(c.y1-y);c.x2=r3(c.x2-x);c.y2=r3(c.y2-y);
@@ -3026,7 +3046,7 @@ function pcbClipContent(){
       height:d.height,
       rot:d.rot,
       x1:r3(d.x1-x),y1:r3(d.y1-y),x2:r3(d.x2-x),y2:r3(d.y2-y),
-      width:d.width,
+      width:d.width,ca:d.ca,
       pts:d.pts?d.pts.map(p=>({x:r3(p.x-x),y:r3(p.y-y)})):undefined,
       trous:d.trous?d.trous.map(t=>t.map(p=>({x:r3(p.x-x),y:r3(p.y-y)}))):undefined
     }))
@@ -3063,28 +3083,33 @@ function copySelPcb(){
   return true;
 }
 function cutSelPcb(){
+  verrousRetirer();
   // couper un groupe emporte aussi le cuivre interne que la copie a pris
   const gc=groupesCopie();
   if(!copySelPcb())return;
   gc.tracks.forEach(t=>S.sel.tracks.add(t));gc.vias.forEach(v=>S.sel.vias.add(v));
   deleteSel();
 }
-function pasteClipPcb(){
-  const c=pcbGetClip();
+/* `opt` ({exact:true, x, y, clip, sansPush}) : le collage en réseau pose la copie
+   au point dit, sans chercher de place libre (46-edition.js). Un clic sur le
+   bouton passe l'événement : sans `exact`, c'est le collage sous le pointeur. */
+function pasteClipPcb(opt){
+  if(!(opt&&opt.exact))opt=null;
+  const c=opt&&opt.clip?opt.clip:pcbGetClip();
   if(!c||typeof c!=="object"){hint("Presse-papier vide : copiez d'abord une sélection (Ctrl+C).");return;}
   const arr=v=>Array.isArray(v)?v:[];
   if(!arr(c.fps).length&&!arr(c.tracks).length&&!arr(c.vias).length&&
      !arr(c.zones).length&&!arr(c.cuts).length&&!arr(c.drawings).length&&!arr(c.holes).length&&!arr(c.interdits).length){hint("Presse-papier vide.");return;}
-  let bx=snapX(S.mouse.x), by=snapY(S.mouse.y);
+  let bx=opt?r3(opt.x):snapX(S.mouse.x), by=opt?r3(opt.y):snapY(S.mouse.y);
   // le curseur est souvent sur l'original : ce qu'on colle va au nœud libre le plus proche
-  const libre=fpPlaceLibre(arr(c.fps).map(s=>{
+  const libre=opt?{dx:0,dy:0}:fpPlaceLibre(arr(c.fps).map(s=>{
     const f=normFp(s,0);
     if(f){f.x=r3(f.x+bx);f.y=r3(f.y+by);}
     return f;
   }).filter(Boolean));
   if(!libre){hint("Collage refusé : aucune place libre sur la carte. Faites de la place, ou coupez l'anti-collision pour forcer.");return;}
   bx=r3(bx+libre.dx);by=r3(by+libre.dy);
-  push();
+  if(!(opt&&opt.sansPush))push();
   clearSel();
   let dropped=0;
   const used=new Set(S.fps.map(f=>f.ref));
@@ -3166,6 +3191,7 @@ function pasteClipPcb(){
        (dropped?" "+dropped+" élément(s) ignoré(s).":""));
 }
 function rotateSel(){
+  verrousRetirer();
   const list=[...S.sel.fps];
   const drw=selDrawingsPcb();
   const hls=selHolesPcb();
@@ -3215,6 +3241,7 @@ function rotateSel(){
   touch();refreshPanels();draw();
 }
 function flipSel(){
+  verrousRetirer();
   const list=[...S.sel.fps];
   const drw=selDrawingsPcb();
   if(!list.length&&!drw.length)return;
@@ -3628,7 +3655,7 @@ function routeTarget(x,y){
   if(c){S.hover={x:c.x,y:c.y};return c;}
   S.hover=null;
   // un via attendu au bout du curseur tient plus de place que la piste qui l'amène
-  const w=S.route?(S.route.viaNext?classOf(net).via:S.route.w):defaultWidth(net,l);
+  const w=S.route?(S.route.viaNext?(S.route.viaTaille?S.route.viaTaille.d:classOf(net).via):S.route.w):defaultWidth(net,l);
   const p=pushClear({x:snapXn(x,a?a.x:null),y:snapYn(y,a?a.y:null)},l,net,w);
   return {x:p.x,y:p.y,net:null,pushed:p.pushed};
 }
@@ -3943,6 +3970,9 @@ function mkVia(x,y,net,a,b){
   const cl=classOf(net||"");
   const v={x:r3(x),y:r3(y),d:cl.via,drill:viaDrill(cl),
            a:a==null?0:a,b:b==null?S.cu-1:b,net:net||""};
+  // Maj+V en plein tracé : la taille choisie remplace celle de la classe (46-edition.js)
+  const vt=S.route&&S.route.viaTaille;
+  if(vt){v.d=vt.d;v.drill=vt.drill;}
   if(v.a===v.b){v.a=0;v.b=S.cu-1;}
   return v;
 }
@@ -3991,6 +4021,7 @@ function viaIsole(v,nets,skip){
   }
   if(!pire)return "";
   const it=pire.it;
+  if(it.ko)return "dans le keep-out « "+it.src.nom+" »";       // 50-couches.js
   const quoi=it.k==="V"?("d'un via "+(it.net?"de "+it.net:"sans net")):
              it.npth?"d'un trou NPTH":
              it.k==="P"?("de la pastille "+it.fp.ref+"."+it.q.n):
@@ -4227,7 +4258,7 @@ function askZoneNet(def, Z, isFullBoard){
   
   const btnC = document.createElement("button");
   btnC.className = "tb"; btnC.textContent = "Annuler";
-  btnC.onclick = () => { d.close(); d.remove(); if(!isFullBoard){ S.zoneDraft=Z; draw(); } };
+  btnC.onclick = () => { d.close(); d.remove(); if(!isFullBoard){ S.zoneDraft=Z; draw(); } else S.zoneSuivante=null; };
   // Échap ferme un <dialog> tout seul : il doit annuler comme le bouton (polygone rendu, dialogue retiré)
   d.addEventListener("cancel", e => { e.preventDefault(); btnC.onclick(); });
   
@@ -4240,10 +4271,11 @@ function askZoneNet(def, Z, isFullBoard){
     // fullBoardZone() n'a pas d'esquisse : le plan se pose sur la couche active
     const z = {id:S.nextId++, l:Z?Z.l:S.active, net:val,
                pts: isFullBoard ? boardZonePts() : Z.pts.map(p=>({x:r3(p.x),y:r3(p.y)}))};
+    zoneNouvelle(z);                // région pleine, plan divisé : ce que l'outil a demandé (47-zones.js)
     S.zones.push(z);
     clearSel();S.sel.zones.add(z);
     touch();refreshPanels();draw();
-    hint((isFullBoard?"Plan pleine carte":"Zone")+" sur "+cuId(z.l,S.cu)+(val?" rattaché au net "+val:"")+" — modifiable dans les Propriétés.");
+    hint((z.plein?"Région pleine":z.priorite&&S.cuL[z.l]&&S.cuL[z.l].plane?"Plan divisé":isFullBoard?"Plan pleine carte":"Zone")+" sur "+cuId(z.l,S.cu)+(val?" rattaché au net "+val:"")+" — modifiable dans les Propriétés.");
   };
   
   row.appendChild(btnC); row.appendChild(btnO);
@@ -4255,7 +4287,10 @@ function askZoneNet(def, Z, isFullBoard){
 function closeZone(){
   const Z=S.zoneDraft;
   S.zoneDraft=null;
-  if(!Z||Z.pts.length<3){draw();return;}
+  // deux coins puis Entrée : un rectangle, comme la découpe et la zone interdite (le fill d'Altium)
+  if(Z&&Z.pts.length===2){const [a,b]=Z.pts;
+    if(Math.abs(a.x-b.x)>1e-6&&Math.abs(a.y-b.y)>1e-6)Z.pts=[a,{x:b.x,y:a.y},b,{x:a.x,y:b.y}];}
+  if(!Z||Z.pts.length<3){S.zoneSuivante=null;draw();return;}
   const nets=netTable();
   let def=S.hlNet||(nets.find(n=>isPower(n.name))||{}).name||"";
   askZoneNet(def, Z, false);
@@ -4464,13 +4499,13 @@ function coordMode(m){
 }
 function coordFill(){
   const m=S.coord.mode, a=coordAnchor(), c=S.mouse;
-  if(m==="abs"){$("ciA").value=fmt(ux(c.x),3);$("ciB").value=fmt(uy(c.y),3);}
+  if(m==="abs"){$("ciA").value=fmt(uAff(ux(c.x)),3);$("ciB").value=fmt(uAff(uy(c.y)),3);}
   else if(m==="rel"){
-    $("ciA").value=a?fmt(c.x-a.x,3):"0";
-    $("ciB").value=a?fmt(c.y-a.y,3):"0";
+    $("ciA").value=a?fmt(uAff(c.x-a.x),3):"0";
+    $("ciB").value=a?fmt(uAff(c.y-a.y),3):"0";
   }else{
     const dx=a?c.x-a.x:0, dy=a?c.y-a.y:0;
-    $("ciA").value=fmt(Math.hypot(dx,dy),3);
+    $("ciA").value=fmt(uAff(Math.hypot(dx,dy)),3);
     $("ciB").value=fmt(Math.atan2(-dy,dx)*180/Math.PI,2);
   }
 }
@@ -4491,9 +4526,10 @@ function coordClose(){
 }
 function coordPoint(){
   const m=S.coord.mode, a=coordAnchor();
-  const va=parseFloat(String($("ciA").value).replace(",","."));
-  const vb=parseFloat(String($("ciB").value).replace(",","."));
+  const va=uLue(parseFloat(String($("ciA").value).replace(",",".")));
+  let vb=parseFloat(String($("ciB").value).replace(",","."));
   if(isNaN(va)||isNaN(vb))return null;
+  if(m!=="pol")vb=uLue(vb);                 // l'angle polaire reste en degrés
   if(m==="abs")return {x:wxu(va),y:wyu(vb)};
   const base=a||{x:S.origin.x,y:S.origin.y};
   if(m==="rel")return {x:r3(base.x+va),y:r3(base.y+vb)};
@@ -4612,6 +4648,8 @@ cv.addEventListener("pointerdown",e=>{
   }
   if(e.button!==0)return;
   if(S.mode==="mesure"){rpMesClic(p.x,p.y);draw();return;}
+  if(dessinClic(p.x,p.y,e)){draw();return;}          // arc, cercle, texte cuivre, pastille, cote (49-dessin.js)
+  if(busClic(p.x,p.y)){draw();return;}               // plusieurs pistes à la fois (51-bus.js)
   if(S.mode==="meander"){
     const hit=hitTest(p.x,p.y);
     if(hit&&hit.track&&!isArc(hit.track)){
@@ -5078,8 +5116,8 @@ cv.addEventListener("pointermove",e=>{
 
   const p=evPos(e);
   S.mouse=p;
-  $("fX").textContent=fmt(ux(p.x),2);
-  $("fY").textContent=fmt(uy(p.y),2);
+  $("fX").textContent=fmtU(ux(p.x));
+  $("fY").textContent=fmtU(uy(p.y));
   const at=netAtPoint(p.x,p.y,S.active);
   $("fNet").textContent=at&&at.net?at.net:"—";
   if(drag&&drag.pan){
@@ -5196,6 +5234,8 @@ cv.addEventListener("pointermove",e=>{
     draw();return;
   }
   if(S.mode==="mesure"){if(rpMesBouge(p.x,p.y))draw();return;}
+  if(dessinBouge(p.x,p.y,e)){draw();return;}
+  if(busBouge(p.x,p.y)){draw();return;}
   if(S.mode==="meander"&&S.meanderDraft){
     const trk=S.meanderDraft.track;
     const L=Math.hypot(trk.x2-trk.x1,trk.y2-trk.y1);
@@ -5361,8 +5401,7 @@ cv.addEventListener("pointerup",e=>{
       if(S.drawings){
         for(const d of S.drawings){
           if(!drwAlpha(d))continue;
-          const minX=Math.min(d.x1,d.x2), maxX=Math.max(d.x1,d.x2);
-          const minY=Math.min(d.y1,d.y2), maxY=Math.max(d.y1,d.y2);
+          const bb=drwBBox(d), minX=bb.x1, maxX=bb.x2, minY=bb.y1, maxY=bb.y2;
           if(minX>=x1&&maxX<=x2&&minY>=y1&&maxY<=y2){
             if(!S.sel.drawings)S.sel.drawings=new Set();
             S.sel.drawings.add(d.id);
@@ -5383,6 +5422,7 @@ cv.addEventListener("pointerup",e=>{
       else S.sel.zones.add(drag.zone);
       if(drag.zone.net){S.hlNet=drag.zone.net;revealNet(drag.zone.net);}
     }
+    filtreAppliquer();
     groupeEtendreSel();
     S.marquee=null;refreshPanels();draw();
   }
@@ -5544,6 +5584,7 @@ document.addEventListener("keydown",e=>{
     if(S.drawings&&S.sel.drawings)S.drawings.forEach(d=>S.sel.drawings.add(d.id));
     if(!S.sel.holes)S.sel.holes=new Set();
     if(S.holes)S.holes.forEach(h=>S.sel.holes.add(h.id));
+    filtreAppliquer();
     refreshPanels();draw();return;
   }
   // Ctrl+C sur du texte sélectionné appartient au navigateur : on ne lui prend
@@ -5582,6 +5623,7 @@ document.addEventListener("keydown",e=>{
       return;
     }
   }
+  if(busTouche(k)){e.preventDefault();return;}       // Entrée, Échap, Retour arrière du bus (51-bus.js)
   switch(k){
     case "s":
       if(e.shiftKey){
@@ -5593,8 +5635,11 @@ document.addEventListener("keydown",e=>{
       else setMode("select");
       break;
     case "t":setMode("track");break;
+    case "w":largeurSuivante(e.shiftKey?-1:1);break;      // largeur suivante en plein tracé (46-edition.js)
+    case "q":uniteBasculer();break;                       // mm ↔ mil, comme Q dans Altium
     case "v":
       if(S.dp){dpVia();dpUpdate(S.mouse.x,S.mouse.y);draw();}
+      else if(S.route&&e.shiftKey)viaSuivante(1);        // taille de via suivante (46-edition.js)
       else if(S.route){routeViaCurseur();draw();}
       else setMode("via");
       break;
@@ -5651,6 +5696,7 @@ document.addEventListener("keydown",e=>{
       // Échap termine ce qui est en cours puis rend la main à la sélection
       if(S.dp)dpCommit();
       else if(S.route)commitRoute();
+      else if(dessinAnnuler()){}
       else if(S.meanderDraft){S.meanderDraft=null;hint("Serpentin annulé.");}
       else if(S.zoneDraft){S.zoneDraft=null;hint("Zone abandonnée.");}
       else if(S.cutDraft){S.cutDraft=null;hint("Découpe abandonnée.");}
@@ -5707,11 +5753,15 @@ function setMode(m){
   if(S.dp&&m!=="dpair")dpCommit();
   if(S.coord.open&&!coordUsable())coordClose();
   if(S.zoneDraft&&m!=="zone")S.zoneDraft=null;
+  if(m!=="zone")S.zoneSuivante=null;     // région pleine, plan divisé : le temps de l'outil (47-zones.js)
+  if(m!=="interdit")S.interditKo=false;  // keep-out cuivre : le temps de l'outil (50-couches.js)
   if(S.cutDraft&&m!=="cut")S.cutDraft=null;
   if(S.edgeDraft&&m!==(S.edgeDraft.decoupe?"decoupe":S.edgeDraft.interdit?"interdit":"edge"))S.edgeDraft=null;
   if(S.silkDraft&&m!=="silk")S.silkDraft=null;
   if(S.aplatDraft&&(m!=="silk"||S.silkShape!=="aplat"))S.aplatDraft=null;
   if(S.meanderDraft&&m!=="meander")S.meanderDraft=null;
+  if(S.dessinDraft&&m!==S.mode)S.dessinDraft=null;   // arc, cote en cours (49-dessin.js)
+  if(S.bus&&m!=="bus")S.bus=null;                     // bus en cours (51-bus.js)
   /* La cote appartient au mode : la garder affichee en revenant a la selection
      laisserait une annotation qu'aucun geste ne reprend. */
   if(m!=="mesure"&&typeof rpMesRaz==="function")rpMesRaz();
@@ -5721,7 +5771,8 @@ function setMode(m){
   for(const [id,md] of [["mSelect","select"],["mTrack","track"],["mVia","via"],["mHole","hole"],
                         ["mDiff","dpair"],["mMeander","meander"],
                         ["mZone","zone"],["mSilk","silk"],["mEdge","edge"],["mDecoupe","decoupe"],["mInterdit","interdit"],["mOrigin","origin"],
-                        ["mErase","cut"],["mMiter","miter"],["mMesure","mesure"]]){
+                        ["mErase","cut"],["mMiter","miter"],["mMesure","mesure"],
+                        ["mArc","arc"],["mTexteCu","texteCu"],["mPastille","pastille"],["mCote","cote"],["mBus","bus"]]){
     const b=$(id);
     if(b)b.classList.toggle("on",m===md);
   }
@@ -5730,7 +5781,8 @@ function setMode(m){
                           zone:"Zone de cuivre",silk:"Sérigraphie",edge:"Contour de carte",
                           decoupe:"Découpe de carte",interdit:"Zone interdite",
                           origin:"Origine",cut:"Découpe de zone",miter:"Miter",
-                          mesure:"Mesure"}[m];
+                          mesure:"Mesure",arc:"Arc / cercle",texteCu:"Texte sur cuivre",
+                          pastille:"Pastille libre",cote:"Cote",bus:"Bus (multi-pistes)"}[m]||m;
   cv.style.cursor="crosshair";
   hint({
     select:"Ctrl+clic (ou Maj+clic) ajoute à la sélection · glisser une piste emmène "+
@@ -5779,8 +5831,8 @@ const GRID_STEPS=[0.05,0.1,0.25,0.5,1,1.27,2,2.54,5];
 function curseurPose(q){
   const a=S.curseur, bouge=!a||a.x!==q.x||a.y!==q.y;
   S.curseur={x:q.x,y:q.y};
-  $("fX").textContent=fmt(ux(q.x),2);
-  $("fY").textContent=fmt(uy(q.y),2);
+  $("fX").textContent=fmtU(ux(q.x));
+  $("fY").textContent=fmtU(uy(q.y));
   return bouge;
 }
 function setGridStep(v){

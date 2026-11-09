@@ -44,7 +44,20 @@ global.BroadcastChannel.prototype.close=function(){
 };
 
 const code=fs.readFileSync(path.join(__dirname,"..","dist","pcb.js"),"utf8");
-const EXPOSE=["cutsCuivre","ilotContour","drcRangs","drcCategorie","drcFenetre","drcPas","copySelPcb","fpEssai","fpChevauchements","placementDegage","placementBilan","fpPlaceLibre","pasteClipPcb","rotateSel","flipSel","fpGene","routeRetouche","dragMoveBy","beginMove","dragRotate","gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
+const EXPOSE=[
+  /* édition à la Altium (46-edition.js et suivants) */
+  "filtreOk","filtreAppliquer","verrouPoser","verrousRetirer","alignerFps","semblables","collageReseau",
+  "largeurSuivante","uniteBasculer","clrZone","ecartThermique","zoneHachures","zonesDrc","zoneNouvelle",
+  "zoneOutil","zonePrioDecaler","zoneReglagesLire","gerberCopper","padBras","normZone","zoneIlotsPetits","ipcRemplir","fpSetPad",
+  "dessinOutil","dessinClic","arcGeom","arcPoser","texteCuivre","texteSpecial","dessinsMonde","pastilleLibre",
+  "coteLineaire","jlcNonPose","arcOf","boardCutouts",
+  "mecaNomsAppliquer","mecaGerbers","gerberDessin","keepoutDrc","keepoutCuts","normInterdit","planNegatif",
+  "setLayerRole","buildFabFiles","DRW_COUCHES","closeInterdit",
+  "busClic","busTouche","busPlan","polyDecalee","busPoser",
+  "viaSuivante","viaTailles","verrousCoins","routeViaCurseur","mkVia",
+  "pnsWorld","pnsItemsKeepout","distSegPoly","contourTroue","zoneDecoupee","gOrigin","gXY","drwBBox","drwPoints","gerberSilk","viaObstacle","placeVia",
+  "coutureZone","cloturePistes","fanoutFps","coutureRetirer","viaEssai","netMasseDefaut","fmtU","uLue","uAff","RP_PCB","hitTest","deleteSel","startRoute",
+  "cutsCuivre","ilotContour","drcRangs","drcCategorie","drcFenetre","drcPas","copySelPcb","fpEssai","fpChevauchements","placementDegage","placementBilan","fpPlaceLibre","pasteClipPcb","rotateSel","flipSel","fpGene","routeRetouche","dragMoveBy","beginMove","dragRotate","gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
   "updateRoute","stepRoute","commitRoute","routeToLayer","runDrc","buildTabs",
   "buildLayers","refreshPanels","buildList","buildProps","clearSel","rotateSel",
   "BLOC_PLACEMENT","PLACEMENT_SCORE","fpBBox",
@@ -29598,6 +29611,530 @@ T("zones interdites : les noms voisins ne se chevauchent pas",()=>{
   const c=interditEtiquetteY(o,20,50,0,h);    // MH101 à droite, son nom croise les deux
   const d=interditEtiquetteY(o,60,80,0,h);    // assez loin : reste en haut
   if(a!==0||b!==1||c!==2||d!==0)throw new Error([a,b,c,d].join(","));
+});
+
+/* ---------- édition à la Altium (46-edition.js) ---------- */
+function editionDecor(){
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.cuts=[];S.drawings=[];S.holes=[];clearSel();S.filtre={};
+  setGridStep(0.5);S.scale=20;S.ox=0;S.oy=0;S.origin.x=0;S.origin.y=0;S.avoid=false;S.flip=false;
+  const mk=(ref,x,y)=>{const f=mkFp(ref,"10k","R_0603",2);f.x=x;f.y=y;f.nets={1:"A",2:""};S.fps.push(f);return f;};
+  const R1=mk("R1",10,10), R2=mk("R2",23,14), R3=mk("R3",30,20);
+  S.tracks.push({l:0,net:"A",w:0.3,x1:5,y1:40,x2:15,y2:40},{l:0,net:"B",w:0.5,x1:5,y1:45,x2:15,y2:45},
+                {l:0,net:"A",w:0.3,x1:20,y1:40,x2:30,y2:40});
+  setMode("select");S.active=0;touch();
+  return {R1,R2,R3};
+}
+T("filtre de sélection : le clic et le lasso ignorent les types exclus",()=>{
+  editionDecor();
+  if(!(hitTest(10,40)||{}).track)throw new Error("la piste devait se prendre");
+  S.filtre.tracks=false;
+  const h=hitTest(10,40);
+  if(h&&h.track)throw new Error("piste exclue par le filtre, prise quand même");
+  S.tracks.forEach(t=>S.sel.tracks.add(t));S.sel.fps.add(S.fps[0].id);
+  filtreAppliquer();
+  if(S.sel.tracks.size||S.sel.fps.size!==1)throw new Error("le filtre devait retirer les pistes seules");
+  setMode("meander");
+  if(!filtreOk("tracks"))throw new Error("hors Sélection, le filtre ne doit pas jouer");
+  setMode("select");S.filtre={};
+});
+T("verrou : ni supprimé ni déplacé, gardé à l'enregistrement",()=>{
+  const {R1}=editionDecor();
+  clearSel();S.sel.fps.add(R1.id);verrouPoser(true);
+  const t=S.tracks[0];clearSel();S.sel.tracks.add(t);verrouPoser(true);
+  S.sel.fps.add(R1.id);deleteSel();
+  if(!fpById(R1.id)||S.tracks.indexOf(t)<0)throw new Error("un objet verrouillé a été supprimé");
+  const x=R1.x;clearSel();S.sel.fps.add(R1.id);alignerFps("gauche");rotateSel();
+  if(R1.x!==x||R1.rot)throw new Error("un composant verrouillé a bougé");
+  loadDoc(JSON.parse(serialize()),true);
+  const f=S.fps.find(o=>o.ref==="R1");
+  if(!f||!f.locked||!S.tracks[0].locked)throw new Error("le verrou s'est perdu à la relecture");
+  clearSel();S.sel.fps.add(f.id);verrouPoser(false);deleteSel();
+  if(S.fps.find(o=>o.ref==="R1"))throw new Error("déverrouillé, il devait partir");
+});
+T("aligner et répartir les composants",()=>{
+  const {R1,R2,R3}=editionDecor();
+  clearSel();[R1,R2,R3].forEach(f=>S.sel.fps.add(f.id));
+  alignerFps("gauche");
+  const x1=[R1,R2,R3].map(f=>fpBBox(f).x1);
+  if(Math.max(...x1)-Math.min(...x1)>1e-3)throw new Error("bords gauches : "+x1);
+  alignerFps("centreY");
+  const cy=[R1,R2,R3].map(f=>{const b=fpBBox(f);return (b.y1+b.y2)/2;});
+  if(Math.max(...cy)-Math.min(...cy)>1e-3)throw new Error("centres : "+cy);
+  R2.x=12;R3.x=40;touch();
+  alignerFps("repH");
+  const B=[R1,R2,R3].map(fpBBox).sort((a,b)=>a.x1-b.x1);
+  const g1=B[1].x1-B[0].x2, g2=B[2].x1-B[1].x2;
+  if(Math.abs(g1-g2)>2e-3)throw new Error("vides inégaux : "+g1+" / "+g2);
+  undo();
+});
+T("sélectionner les semblables : même net, même largeur",()=>{
+  editionDecor();
+  clearSel();S.sel.tracks.add(S.tracks[0]);
+  if(semblables("net")!==1||!S.sel.tracks.has(S.tracks[2]))throw new Error("même net");
+  clearSel();S.sel.tracks.add(S.tracks[1]);
+  if(semblables("taille")!==0)throw new Error("aucune autre piste de 0,5 mm");
+  clearSel();S.sel.fps.add(S.fps[0].id);
+  if(semblables("valeur")!==2)throw new Error("même valeur : deux autres résistances");
+});
+T("collage en réseau : en ligne puis en cercle",()=>{
+  const {R1}=editionDecor();
+  clearSel();S.sel.fps.add(R1.id);
+  if(collageReseau({n:3,mode:"ligne",dx:10,dy:0})!==2)throw new Error("deux copies attendues");
+  const xs=S.fps.filter(f=>f.value==="10k").map(f=>r3(f.x)).sort((a,b)=>a-b);
+  if(!xs.includes(20)||!xs.includes(30)||S.fps.length!==5)throw new Error("positions : "+xs);
+  if(new Set(S.fps.map(f=>f.ref)).size!==S.fps.length)throw new Error("repères en double");
+  undo();
+  if(S.fps.length!==3)throw new Error("Ctrl+Z devait tout retirer");
+  clearSel();S.sel.fps.add(R1.id);
+  collageReseau({n:4,mode:"cercle",angle:90,cx:0,cy:0});
+  const c=S.fps.slice(3);
+  if(c.length!==3||!c.some(f=>Math.abs(f.x-10)<1e-3&&Math.abs(f.y+10)<1e-3)||!c.some(f=>f.rot===180))
+    throw new Error("cercle : "+c.map(f=>f.x+","+f.y+"@"+f.rot).join(" "));
+});
+T("largeur suivante en plein tracé (W)",()=>{
+  const {R1,R2}=editionDecor();
+  S.tracks=[];touch();
+  const a=padsWorld(R1)[0];
+  setMode("track");S.active=0;startRoute(a.x,a.y);
+  const w0=S.route.w;
+  largeurSuivante(1);
+  if(!(S.route.w>w0))throw new Error("la largeur devait monter : "+S.route.w);
+  const w1=S.route.w;
+  updateRoute(a.x+8,a.y);stepRoute();if(S.route)commitRoute();
+  setMode("select");
+  if(!S.tracks.length||Math.abs(S.tracks[0].w-w1)>1e-9)throw new Error("piste posée à "+(S.tracks[0]||{}).w);
+  largeurSuivante(-1);   // hors tracé : sans effet
+});
+T("unité mil : barre d'état, mesure et saisie de coordonnées",()=>{
+  uniteBasculer("mil");
+  try{
+    if(fmtU(25.4)!=="1000.0"||uLue(100)!==2.54||RP_PCB.mm(2.54)!==100||RP_PCB.unite()!=="mil")
+      throw new Error("conversions mil");
+  }finally{uniteBasculer("mm");}
+  if(fmtU(1.234)!=="1.23")throw new Error("retour au mm");
+});
+
+/* ---------- réglages de zone (47-zones.js) ---------- */
+function zonesDecor(){
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.cuts=[];S.drawings=[];S.holes=[];clearSel();S.filtre={};
+  S.board={x:0,y:0,w:60,h:40,pts:null};
+  setGridStep(0.5);S.scale=20;S.ox=0;S.oy=0;S.avoid=false;
+  const J=mkFp("J1","","",2);J.style="row";J.pitch=2.54;J.x=20;J.y=20;J.nets={1:"GND",2:"SIG"};S.fps.push(J);
+  const z={id:S.nextId++,l:0,net:"GND",pts:[{x:5,y:5},{x:45,y:5},{x:45,y:35},{x:5,y:35}]};
+  S.zones.push(z);
+  S.tracks.push({l:0,net:"SIG",w:0.3,x1:10,y1:30,x2:40,y2:30});
+  touch();
+  return {J,z};
+}
+T("zone : isolement propre, au moins celui des classes, jusqu'au Gerber",()=>{
+  const {z}=zonesDecor();
+  const base=clrZone(z,"SIG","cu","trk");
+  if(Math.abs(base-clrK("GND","SIG","cu","trk"))>1e-9)throw new Error("sans réglage, l'isolement des classes");
+  z.isol=1.2;touch();
+  if(clrZone(z,"SIG","cu","trk")!==1.2)throw new Error("isolement propre ignoré");
+  if(!gerberCopper(0).includes("C,2.7000"))throw new Error("le Gerber devait dégager la piste de 1,2 mm (Ø 2,7)");
+  z.isol=0.01;touch();
+  if(clrZone(z,"SIG","cu","trk")!==base)throw new Error("jamais sous les classes");
+});
+T("zone : bras thermiques réglés par la zone, la pastille garde le dernier mot",()=>{
+  const {J,z}=zonesDecor();
+  const q=padsWorld(J).find(p=>p.net==="GND");
+  z.brasNb=2;z.brasLarg=0.6;z.brasEcart=0.7;touch();
+  const b=padBras(q,0);
+  if(b.bras.length!==2||b.tw!==0.6)throw new Error("bras de la zone : "+b.bras.length+" × "+b.tw);
+  if(ecartThermique(q,0)!==0.7)throw new Error("écart de la zone");
+  fpSetPad(J,padsOf(J).findIndex(o=>String(o.n)===String(q.n)),"thermalSpokes",3);touch();
+  const q2=padsWorld(J).find(p=>p.net==="GND");
+  if(q2.thermalSpokes!==3||padBras(q2,0).bras.length!==3)throw new Error("la pastille impose ses bras");
+});
+T("zone : hachures creusées à l'écran comme au Gerber, cadre gardé",()=>{
+  const {z}=zonesDecor();
+  const avant=gerberCopper(0);
+  z.hachure={pas:2,larg:0.4};touch();
+  const H=zoneHachures(z,0);
+  if(H.length<200)throw new Error("trop peu de mailles : "+H.length);
+  if(H.some(P=>P.some(p=>p.x<5.4-1e-9||p.y<5.4-1e-9)))throw new Error("une maille mord le cadre");
+  const apres=gerberCopper(0);
+  const n=t=>(t.match(/G36\*/g)||[]).length;
+  if(!(n(apres)>=n(avant)+H.length))throw new Error("les mailles devaient partir au Gerber : "+n(avant)+" → "+n(apres));
+  if(zoneHachures(z,1).length)throw new Error("pas de maille sur une autre couche");
+});
+T("région pleine : rien ne la dégage, le DRC voit l'autre cuivre",()=>{
+  const {z}=zonesDecor();
+  const nG=t=>(t.match(/G36\*/g)||[]).length, g0=nG(gerberCopper(0));
+  z.plein=true;touch();
+  const out=[];zonesDrc(out);
+  if(!out.some(e=>/Région pleine GND.*la piste SIG la touche/.test(e.msg)))throw new Error("piste SIG non signalée : "+out.map(e=>e.msg).join(" | "));
+  if(!out.some(e=>/pastille J1\.2/.test(e.msg)))throw new Error("pastille SIG non signalée");
+  if(nG(gerberCopper(0))!==g0+1)throw new Error("la région pleine devait être repeinte après les dégagements");
+  const r=ipcRemplir(z);
+  if(!r||!r.ilots.length||r.ilots.some(o=>o.t.length))throw new Error("IPC-2581 : la région ne doit porter aucun trou");
+  delete z.plein;touch();
+  const o2=[];zonesDrc(o2);if(o2.length)throw new Error("zone ordinaire : rien à dire ici");
+});
+T("zone : réglages relus à l'identique, fill rectangle et plan divisé",()=>{
+  const {z}=zonesDecor();
+  Object.assign(z,{isol:0.5,brasNb:2,brasLarg:0.4,brasEcart:0.6,brasAngle:45,hachure:{pas:1.5,larg:0.3},
+                   ilotMin:2,mortGarde:true,nom:"Masse nord"});
+  loadDoc(JSON.parse(serialize()),true);
+  const r=S.zones[0];
+  for(const k of ["isol","brasNb","brasLarg","brasEcart","brasAngle","ilotMin","mortGarde","nom"])
+    if(r[k]!==z[k])throw new Error(k+" perdu : "+r[k]);
+  if(!r.hachure||r.hachure.pas!==1.5||r.hachure.larg!==0.3)throw new Error("hachure perdue");
+  const o={};zoneReglagesLire({isol:-3,brasNb:12,hachure:{pas:0.5,larg:9}},o);
+  if(o.isol||o.brasNb||o.hachure.larg!==0.45)throw new Error("valeurs absurdes non bornées : "+JSON.stringify(o));
+  // fill : deux coins puis Entrée
+  zoneOutil({plein:true,rect:true});
+  zoneClick(10,10);zoneClick(20,16);
+  closeZone();zoneDialog("GND");
+  const nz=S.zones[S.zones.length-1];
+  if(!nz.plein||nz.pts.length!==4)throw new Error("fill : rectangle plein attendu");
+  // plan divisé : passe devant tout ce qui est sur la couche
+  r.priorite=3;touch();
+  zoneOutil({divise:true});
+  zoneClick(30,10);zoneClick(40,10);zoneClick(40,20);
+  closeZone();zoneDialog("SIG");
+  const pd=S.zones[S.zones.length-1];
+  if(pd.priorite!==4||pd.plein)throw new Error("plan divisé : priorité "+pd.priorite);
+  setMode("select");
+  if(S.zoneSuivante)throw new Error("l'outil devait s'oublier");
+  zonePrioDecaler(pd,-1);if(pd.priorite!==3)throw new Error("ordre de remplissage");
+});
+
+/* ---------- vias en série (48-vias.js) ---------- */
+T("vias de couture : réseau au pas, retrait du bord, aucun via en faute",()=>{
+  const {z}=zonesDecor();
+  push();
+  const n=coutureZone(z,{pas:3,pasY:3,retrait:1});
+  if(n<50)throw new Error("trop peu de vias : "+n);
+  const vs=S.vias.filter(v=>v.couture);
+  if(vs.length!==n||vs.some(v=>v.net!=="GND"))throw new Error("vias de couture : net ou marque");
+  if(vs.some(v=>polyEdgeDist(v.x,v.y,z.pts)<1+v.d/2-1e-9))throw new Error("retrait du bord non tenu");
+  // aucun n'empiète sur la piste SIG (y = 30) ni sur J1
+  if(vs.some(v=>segDist(v.x,v.y,10,30,40,30)<0.15+v.d/2+clrK("GND","SIG","cu","via")-1e-6))throw new Error("via trop près de la piste SIG");
+  const fautes=runDrc().filter(e=>e.via&&e.via.couture);
+  if(fautes.length)throw new Error("DRC : "+fautes[0].msg);
+  loadDoc(JSON.parse(serialize()),true);
+  if(S.vias.filter(v=>v.couture).length!==n)throw new Error("marque couture perdue à la relecture");
+  if(coutureRetirer()!==n||S.vias.length)throw new Error("retrait d'un coup");
+  undo();
+});
+T("clôture de vias : deux rangées le long de la piste, net de masse",()=>{
+  zonesDecor();
+  if(netMasseDefaut()!=="GND")throw new Error("masse par défaut : "+netMasseDefaut());
+  const t=S.tracks[0];
+  const n=cloturePistes([t],{pas:2});
+  if(n<20)throw new Error("rangées incomplètes : "+n);
+  const vs=S.vias;
+  if(!vs.some(v=>v.y<30)||!vs.some(v=>v.y>30))throw new Error("il faut les deux côtés");
+  const e=t.w/2+clrK("GND","SIG","cu","via")+vs[0].d/2;
+  if(vs.some(v=>Math.abs(Math.abs(v.y-30)-e)>0.02))throw new Error("écart à l'axe");
+});
+T("fanout : chaque pastille CMS sort par un via, sans faute",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.cuts=[];clearSel();
+  S.board={x:0,y:0,w:60,h:40,pts:null};S.avoid=true;
+  const U=mkFp("U1","","SOIC-8",8);U.x=30;U.y=20;
+  U.nets={1:"A",2:"B",3:"C",4:"GND",5:"E",6:"F",7:"G",8:""};S.fps.push(U);touch();
+  const r=fanoutFps([U]);
+  if(r.vias!==7)throw new Error("7 pastilles à sortir, "+r.vias+" (refus "+r.refus+")");
+  if(S.tracks.length!==7||S.vias.some(v=>!v.net))throw new Error("pistes / vias");
+  const d=runDrc().filter(e=>!/Piste hors|non rout|liaison|Composants/i.test(e.msg));
+  const iso=d.filter(e=>/isol|trou à trou|Isolation/i.test(e.msg));
+  if(iso.length)throw new Error("DRC : "+iso[0].msg);
+  if(fanoutFps([U]).vias!==0)throw new Error("déjà sorties : rien à refaire");
+});
+
+/* ---------- outils de dessin (49-dessin.js) ---------- */
+T("arc et cercle sur le cuivre : de vraies pistes en arc",()=>{
+  zonesDecor();S.tracks=[];S.active=0;touch();
+  dessinOutil("arc",{arcForme:"arc",arcCible:"cuivre"});
+  dessinClic(10,10);dessinClic(15,10);dessinClic(10,5);
+  const t=S.tracks[0], A=arcOf(t);
+  if(!A||Math.abs(A.r-5)>1e-3||Math.abs(t.ca+Math.PI/2)>1e-3)throw new Error("arc : "+JSON.stringify(t));
+  if(Math.abs(t.x2-10)>1e-3||Math.abs(t.y2-5)>1e-3)throw new Error("fin de l'arc : "+t.x2+","+t.y2);
+  dessinOutil("arc",{arcForme:"cercle"});
+  dessinClic(30,20);dessinClic(33,20);
+  const c=S.tracks.slice(1);
+  if(c.length!==2||Math.abs(c[0].ca+c[1].ca+2*Math.PI)>1e-3)throw new Error("cercle : deux demi-arcs attendus");
+  if(Math.abs(c[1].x2-c[0].x1)>1e-3||Math.abs(c[1].y2-c[0].y1)>1e-3)throw new Error("le cercle doit se refermer");
+  setMode("select");
+});
+T("arc de sérigraphie, découpe ronde, zone ronde",()=>{
+  zonesDecor();S.drawings=[];S.board.cutouts=undefined;touch();
+  S.arcCible="silk";
+  arcPoser(arcGeom({x:10,y:10},{x:14,y:10},{x:10,y:6}));
+  const d0=S.drawings[0];
+  if(S.drawings.length!==1||d0.layer!=="silkT"||Math.abs(d0.ca+Math.PI/2)>1e-3)throw new Error("arc de sérigraphie natif : "+JSON.stringify(S.drawings));
+  // sélection sur le renflement, Gerber en cordes fines, relecture et copie qui gardent l'arc
+  const m={x:10+4*Math.cos(-Math.PI/4),y:10+4*Math.sin(-Math.PI/4)};
+  setMode("select");
+  if(!(hitTest(m.x,m.y)||{}).drawing)throw new Error("l'arc se prend sur son milieu");
+  if(drwBBox(d0).y1>6.01)throw new Error("boîte de l'arc : "+JSON.stringify(drwBBox(d0)));
+  const g=gerberSilk(0), nTraits=(g.match(/D01\*/g)||[]).length;
+  if(nTraits<20)throw new Error("Gerber : l'arc en cordes fines, "+nTraits+" traits");
+  loadDoc(JSON.parse(serialize()),true);
+  if(Math.abs(S.drawings[0].ca+Math.PI/2)>1e-3)throw new Error("l'arc se perd à la relecture");
+  clearSel();S.sel.drawings=new Set([S.drawings[0].id]);
+  collageReseau({n:2,mode:"ligne",dx:10,dy:0});
+  if(S.drawings.length!==2||Math.abs(S.drawings[1].ca+Math.PI/2)>1e-3)throw new Error("l'arc se perd à la copie");
+  S.arcCible="silk";
+  arcPoser(arcGeom({x:30,y:10},{x:33,y:10},null));
+  if(S.drawings.length!==4)throw new Error("cercle de sérigraphie : deux demi-arcs");
+  S.arcCible="decoupe";
+  arcPoser(arcGeom({x:30,y:20},{x:32,y:20},null));
+  if(boardCutouts().length!==1)throw new Error("découpe ronde absente");
+  S.arcCible="zone";
+  const n=S.zones.length;
+  arcPoser(arcGeom({x:12,y:12},{x:15,y:12},null));zoneDialog("GND");
+  if(S.zones.length!==n+1||S.zones[n].pts.length<16)throw new Error("zone ronde");
+  S.arcCible="decoupe";
+  if(arcPoser(arcGeom({x:30,y:20},{x:32,y:20},{x:30,y:18})))throw new Error("une découpe en arc ouvert doit être refusée");
+  S.arcCible="cuivre";
+});
+T("texte sur cuivre, droit puis inversé ; chaînes spéciales",()=>{
+  zonesDecor();S.tracks=[];touch();
+  if(texteSpecial(".Couches couches")!==S.cu+" couches")throw new Error("chaîne spéciale : "+texteSpecial(".Couches couches"));
+  if(texteSpecial("v.Inconnu")!=="v.Inconnu")throw new Error("une chaîne inconnue reste telle quelle");
+  const r=texteCuivre({texte:"AB",x:20,y:20,h:2,ep:0.25,l:0});
+  if(!r||r.tracks.length<6||r.tracks.some(t=>t.net!==""||t.l!==0||t.w!==0.25))throw new Error("texte droit");
+  const ri=texteCuivre({texte:"OK",x:20,y:10,h:2,ep:0.25,l:0,inverse:true});
+  if(!ri.zone||ri.zone.net!==""||!ri.cuts.length||!(ri.zone.priorite>=1))throw new Error("texte inversé");
+  if(!gerberCopper(0).includes("G36*"))throw new Error("l'aplat du texte inversé doit partir au Gerber");
+  S.drawings=[{id:S.nextId++,shape:"text",type:"text",layer:"silkT",text:"Rév .Couches",x1:5,y1:5,x2:5,y2:5,size:1.5,height:1.5,rot:0,width:0.15}];
+  const m=dessinsMonde().find(d=>d.shape==="text");
+  if(m.text!=="Rév "+S.cu||S.drawings[0].text!=="Rév .Couches")throw new Error("substitution : "+m.text);
+});
+T("pastille libre : point de test et mire, hors schéma",()=>{
+  zonesDecor();S.hlNet=null;
+  const f=pastilleLibre(10,10,"fiducial","GND");
+  if(!f||f.ref!=="FID1"||!f.libre||(f.nets[1]||"")!==""||!jlcNonPose(f))throw new Error("mire : "+JSON.stringify(f&&{ref:f.ref,libre:f.libre}));
+  const q=padsWorld(f)[0];
+  if(q.drill||q.mask!==0.5)throw new Error("mire : CMS, ouverture de vernis élargie");
+  const tp=pastilleLibre(14,10,"traversante","GND");
+  if(tp.ref!=="TP1"||padsWorld(tp)[0].drill!==1||padsWorld(tp)[0].net!=="GND")throw new Error("point de test traversant");
+  loadDoc(JSON.parse(serialize()),true);
+  if(!S.fps.find(o=>o.ref==="FID1").libre)throw new Error("marque libre perdue");
+});
+T("cote linéaire posée sur la carte",()=>{
+  zonesDecor();S.drawings=[];touch();
+  const r=coteLineaire({x:0,y:0},{x:10,y:0},{x:5,y:-3});
+  const t=r.find(d=>d.shape==="text");
+  if(!t||t.text!=="10.00 mm"||t.layer!=="dwgs"||Math.abs(t.rot)>1e-9)throw new Error("texte de cote : "+JSON.stringify(t));
+  if(r.filter(d=>d.shape==="line").length!==7)throw new Error("traits de cote : "+r.length);
+  if(!r.some(d=>d.shape==="line"&&Math.abs(d.y1+3)<1e-6&&Math.abs(d.y2+3)<1e-6))throw new Error("ligne de cote à y = −3");
+});
+
+/* ---------- couches (50-couches.js) ---------- */
+T("couches mécaniques : nommées, dessinées, parties au Gerber",()=>{
+  zonesDecor();S.drawings=[];S.mecaNoms={};mecaNomsAppliquer();touch();
+  if(buildFabFiles(null,k=>k==="mecanique").files.some(f=>/\.GM\d$/.test(f.name)))throw new Error("aucune couche dessinée : aucun fichier");
+  S.drawings.push({id:S.nextId++,shape:"line",type:"line",layer:"mec2",x1:0,y1:0,x2:10,y2:0,width:0.2});
+  S.mecaNoms={mec2:"Découpe boîtier"};mecaNomsAppliquer();
+  if(DRW_COUCHES.find(c=>c[0]==="mec2")[1]!=="Découpe boîtier")throw new Error("nom non appliqué");
+  const f=buildFabFiles(null,k=>k==="mecanique").files.find(x=>/\.GM3$/.test(x.name));
+  if(!f||!f.text.includes("%TF.FileFunction,Other,Decoupe-boitier*%")||!f.text.includes("D01*"))throw new Error("Gerber mécanique : "+(f&&f.text.slice(0,300)));
+  loadDoc(JSON.parse(serialize()),true);
+  if(S.mecaNoms.mec2!=="Découpe boîtier"||S.drawings[0].layer!=="mec2")throw new Error("relecture");
+  S.mecaNoms={};mecaNomsAppliquer();
+  if(DRW_COUCHES.find(c=>c[0]==="mec2")[1]!=="Mécanique 2")throw new Error("nom d'usine");
+});
+T("keep-out cuivre : les zones s'y découpent, le DRC y voit pistes et vias",()=>{
+  const {z}=zonesDecor();
+  const g0=(gerberCopper(0).match(/G36\*/g)||[]).length;
+  S.interdits=[normInterdit({face:"dessus",pts:[{x:8,y:28},{x:20,y:28},{x:20,y:33},{x:8,y:33}],ko:{l:0}},0)];
+  S.vias.push(mkVia(12,31,"SIG"));touch();
+  if(!S.interdits[0].ko||S.interdits[0].ko.l!==0||!S.interdits[0].ko.zones)throw new Error("lecture du keep-out");
+  if(keepoutCuts().length!==1)throw new Error("une découpe par couche visée");
+  if(!((gerberCopper(0).match(/G36\*/g)||[]).length>g0))throw new Error("la zone devait se découper au Gerber");
+  const out=[];keepoutDrc(out);
+  if(!out.some(e=>/Piste SIG dans le keep-out/.test(e.msg))||!out.some(e=>/Via SIG dans le keep-out/.test(e.msg)))
+    throw new Error("DRC : "+out.map(e=>e.msg).join(" | "));
+  S.interdits[0].ko.l=1;touch();
+  const o2=[];keepoutDrc(o2);
+  if(o2.some(e=>/Piste/.test(e.msg))||!o2.some(e=>/Via/.test(e.msg)))throw new Error("couche 2 seule : le via traversant y passe, pas la piste");
+  // l'outil Zone interdite en mode keep-out
+  S.interdits=[];setMode("interdit");S.interditKo=true;
+  closeInterdit({pts:[{x:1,y:1},{x:4,y:4}]});
+  if(!S.interdits[0]||!S.interdits[0].ko||!/^Keep-out/.test(S.interdits[0].nom))throw new Error("l'outil devait poser un keep-out");
+  setMode("select");if(S.interditKo)throw new Error("l'outil devait s'oublier");
+});
+T("plan négatif : polarité inversée au Gerber, cadre sombre d'abord",()=>{
+  zonesDecor();
+  if(S.cu<2)setCuCount(2);
+  setLayerRole(1,"gnd","GND");touch();
+  const pos=gerberCopper(1);
+  if(!planNegatif(1,true))throw new Error("refusé");
+  const neg=gerberCopper(1);
+  if(!neg.includes("%TF.FilePolarity,Negative*%")||pos.includes("Negative"))throw new Error("polarité du fichier");
+  const nL=(t,k)=>(t.match(new RegExp("%LP"+k+"\\*%","g"))||[]).length;
+  if(nL(neg,"C")!==nL(pos,"D"))throw new Error("polarités non inversées : "+nL(neg,"C")+" / "+nL(pos,"D"));
+  loadDoc(JSON.parse(serialize()),true);
+  if(!S.cuL[1].negatif)throw new Error("relecture");
+  if(planNegatif(0,true))throw new Error("une couche signal ne s'écrit pas en négatif");
+  planNegatif(1,false);
+  if(gerberCopper(1).includes("Negative"))throw new Error("retour au positif");
+});
+
+/* ---------- bus (51-bus.js) ---------- */
+T("bus : quatre pistes parallèles au pas largeur + isolement, sans croisement",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.cuts=[];clearSel();
+  S.board={x:0,y:0,w:80,h:60,pts:null};S.active=0;setGridStep(0.5);S.scale=20;S.ox=0;S.oy=0;
+  const J=mkFp("J1","","",4);J.style="row";J.pitch=2.54;J.x=10;J.y=20;J.nets={1:"D0",2:"D1",3:"D2",4:"D3"};
+  S.fps.push(J);touch();
+  setMode("bus");
+  for(const q of padsWorld(J))busClic(q.x,q.y);
+  if(S.bus.pads.length!==4)throw new Error("4 pastilles attendues");
+  const P=padsWorld(J), ys=P.map(q=>q.y), xs=P.map(q=>q.x);
+  const vertical=Math.abs(xs[0]-xs[3])<1e-6;
+  // trajet perpendiculaire à la rangée, puis un coude
+  const ax=vertical?{x:20,y:(ys[0]+ys[3])/2}:{x:(xs[0]+xs[3])/2,y:30};
+  const bx=vertical?{x:40,y:ax.y}:{x:ax.x,y:45};
+  const cx=vertical?{x:50,y:ax.y+10}:{x:ax.x+10,y:55};
+  busClic(ax.x,ax.y);busClic(bx.x,bx.y);busClic(cx.x,cx.y);
+  busTouche("enter");
+  if(S.bus)throw new Error("le bus devait se poser");
+  const nets=new Set(S.tracks.map(t=>t.net));
+  if(nets.size!==4||S.tracks.length!==12)throw new Error("pistes : "+S.tracks.length+" sur "+nets.size+" nets");
+  // le tronçon central de chaque net : parallèles, au pas
+  const mil=[...nets].map(n=>S.tracks.filter(t=>t.net===n)[1]);
+  const pos=mil.map(t=>vertical?t.y1:t.x1).sort((a,b)=>a-b);
+  const pas=defaultWidth("D0",0)+clrK("D0","D1","trk","trk");
+  for(let k=1;k<pos.length;k++)if(Math.abs(pos[k]-pos[k-1]-pas)>2e-3)throw new Error("pas : "+pos.join(" "));
+  for(let a=0;a<S.tracks.length;a++)for(let b=a+1;b<S.tracks.length;b++){
+    const A=S.tracks[a],B=S.tracks[b];
+    if(A.net!==B.net&&segCross(A,B))throw new Error("deux pistes du bus se croisent : "+A.net+" / "+B.net);
+  }
+  setMode("select");
+  undo();if(S.tracks.length)throw new Error("Ctrl+Z retire le bus entier");
+});
+T("polyligne décalée : onglet aux coudes",()=>{
+  const Q=polyDecalee([{x:0,y:0},{x:10,y:0},{x:10,y:10}],1);
+  if(Math.abs(Q[0].y-1)>1e-9||Math.abs(Q[1].x-9)>1e-9||Math.abs(Q[1].y-1)>1e-9||Math.abs(Q[2].x-9)>1e-9)
+    throw new Error(JSON.stringify(Q));
+});
+
+/* ---------- keep-out dans le routeur et le chemin auto ---------- */
+T("keep-out : le routeur refuse d'y entrer, la touche V aussi ; le DRC d'isolation l'ignore",()=>{
+  zonesDecor();S.avoid=true;
+  S.interdits=[normInterdit({pts:[{x:20,y:10},{x:26,y:10},{x:26,y:20},{x:20,y:20}],ko:{l:0}},0)];touch();
+  const W=pnsWorld();
+  if(!W.segBad({x1:15,y1:15,x2:30,y2:15},0,"SIG",0.3,new Set()))throw new Error("une piste qui traverse devait buter");
+  if(W.segBad({x1:15,y1:8,x2:30,y2:8},0,"SIG",0.3,new Set()))throw new Error("une piste à côté ne doit pas buter");
+  if(W.segBad({x1:15,y1:15,x2:30,y2:15},1,"SIG",0.3,new Set()))throw new Error("keep-out du dessus seul : le dessous est libre");
+  if(!/^dans le keep-out « /.test(viaObstacle(mkVia(23,15,"SIG"))))
+    throw new Error("via dans le keep-out : "+viaObstacle(mkVia(23,15,"SIG")));
+  S.interdits[0].ko.vias=false;touch();
+  if(viaObstacle(mkVia(23,15,"SIG")))throw new Error("vias permis : le via passe");
+  S.tracks.push({l:0,net:"SIG",w:0.3,x1:15,y1:15,x2:30,y2:15});touch();
+  const d=runDrc();
+  if(d.some(e=>/keep-out/.test(e.msg)&&/Isolation/.test(e.msg)))throw new Error("le DRC d'isolation ne doit pas voir le keep-out");
+  if(!d.some(e=>/Piste SIG dans le keep-out/.test(e.msg)))throw new Error("keepoutDrc doit le dire");
+});
+TA("keep-out : le chemin auto le contourne",async()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  const garde={doc:serialize(),undo:S.undo.slice(),redo:S.redo.slice()};
+  try{
+    piloteCao("pcb");
+    loadDoc(exemple1());carteVide();
+    S.board={x:0,y:0,w:50,h:30,pts:null};
+    const A=mkFp("R1","","0603",2);A.x=10;A.y=15;A.nets={1:"SIG",2:"Z1"};
+    const B=mkFp("R2","","0603",2);B.x=40;B.y=15;B.nets={1:"SIG",2:"Z2"};
+    S.fps.push(A,B);
+    // un keep-out sur toutes les couches, du bord haut à y = 22 : il reste un passage en bas
+    S.interdits=[normInterdit({pts:[{x:22,y:0},{x:28,y:0},{x:28,y:22},{x:22,y:22}],ko:{}},0)];
+    touch();
+    const r=await cmds.cao_chemin.executer({liaisons:[{depart:"R1.1",arrivee:"R2.1"}]});
+    const rt=r.routes[0];
+    if(!r.resultats[0].trouve||!rt)throw new Error("chemin : "+JSON.stringify(r.resultats));
+    const P=S.interdits[0].pts;
+    for(let k=1;k<rt.points.length;k++){
+      const a=rt.points[k-1], b=rt.points[k];
+      if(distSegPoly({x1:a.x,y1:a.y,x2:b.x,y2:b.y},P)<0.15-1e-6)throw new Error("le chemin entre dans le keep-out : "+JSON.stringify(rt.points));
+    }
+  }finally{
+    global.Pilote=ancien;
+    loadDoc(JSON.parse(garde.doc),true);S.undo=garde.undo;S.redo=garde.redo;
+  }
+});
+
+/* ---------- hachures tournées, contour troué, arcs au DRC ---------- */
+T("hachures à 45° et zone en L : chaque maille garde le cadre, coin rentrant compris",()=>{
+  const {z}=zonesDecor();
+  z.pts=[{x:5,y:5},{x:45,y:5},{x:45,y:20},{x:25,y:20},{x:25,y:35},{x:5,y:35}];   // un L, coin rentrant en (25,20)
+  z.hachure={pas:2,larg:0.4,angle:45};S.tracks=[];touch();
+  const H=zoneHachures(z,0);
+  if(H.length<100)throw new Error("mailles : "+H.length);
+  const P=H[0], dx=P[1].x-P[0].x, dy=P[1].y-P[0].y;
+  if(Math.abs(Math.abs(dx)-Math.abs(dy))>1e-3)throw new Error("la maille doit être tournée de 45° : "+JSON.stringify(P));
+  for(const M of H){
+    if(M.some(p=>!inPoly(p.x,p.y,z.pts)))throw new Error("une maille sort de la zone");
+    // la distance du bord de la zone à la maille : au moins une largeur de trait
+    for(const v of z.pts)if(!inPoly(v.x,v.y,M)&&polyEdgeDist(v.x,v.y,M)<0.4-1e-3)throw new Error("le cadre mord au sommet "+v.x+","+v.y);
+    if(M.some(p=>polyEdgeDist(p.x,p.y,z.pts)<0.4-1e-3))throw new Error("une maille trop près du bord");
+  }
+  const o={};zoneReglagesLire({hachure:{pas:2,larg:0.4,angle:225}},o);
+  if(o.hachure.angle!==45)throw new Error("angle ramené dans [0, 180[ : "+o.hachure.angle);
+});
+T("région pleine trouée par une zone prioritaire : un seul contour à coupures",()=>{
+  const O=[{x:0,y:0},{x:10,y:0},{x:10,y:10},{x:0,y:10}], T1=[{x:3,y:3},{x:6,y:3},{x:6,y:6},{x:3,y:6}];
+  const R=contourTroue(O,[T1]);
+  if(inPoly(4.5,4.5,R)||!inPoly(1,1,R)||!inPoly(8,8,R))throw new Error("le trou doit rester vide, le reste plein");
+  const {z}=zonesDecor();
+  z.plein=true;
+  S.zones.push({id:S.nextId++,l:0,net:"SIG",priorite:5,pts:[{x:15,y:12},{x:25,y:12},{x:25,y:18},{x:15,y:18}]});
+  touch();
+  const g=gerberCopper(0);
+  const il=zoneDecoupee(z);
+  if(!il||!il.some(x=>x.t.length))throw new Error("la zone prioritaire devait trouer la région");
+  // la région part en un contour qui passe par les sommets du trou
+  const t=il.find(x=>x.t.length).t[0][0];
+  // le dernier bloc de la couche : la région repeinte, qui passe par un sommet du trou
+  const k=g.lastIndexOf("G36*"), bloc=g.slice(k,g.indexOf("G37*",k));
+  if(!bloc.includes(gXY(t.x,t.y)))throw new Error("le contour de la région doit contourner le trou");
+});
+T("keep-out et région pleine : un arc jugé sur son renflement, pas sa corde",()=>{
+  zonesDecor();S.tracks=[];
+  S.interdits=[normInterdit({pts:[{x:18,y:28},{x:22,y:28},{x:22,y:32},{x:18,y:32}],ko:{l:0}},0)];
+  // corde de (10,20) à (30,20), arc qui descend jusqu'à y≈30 : la corde passe hors du keep-out
+  S.tracks.push({l:0,net:"SIG",w:0.3,x1:10,y1:20,x2:30,y2:20,ca:-Math.PI});touch();
+  const A=arcOf(S.tracks[0]);
+  if(!A||Math.abs(A.cy-20)>1e-6)throw new Error("décor : demi-cercle attendu");
+  const bas=A.cy+A.r*Math.sin(A.a1+A.ca/2);
+  const out=[];keepoutDrc(out);
+  if(!(bas>28&&bas<32))throw new Error("décor : le renflement doit tomber dans le keep-out, y="+bas);
+  if(!out.some(e=>/Piste SIG dans le keep-out/.test(e.msg)))throw new Error("l'arc entre par son renflement : rien de signalé");
+  S.tracks[0].ca=0;touch();              // la même corde droite : hors du keep-out
+  const o2=[];keepoutDrc(o2);if(o2.length)throw new Error("la corde seule est dehors");
+});
+
+/* ---------- Maj+V et cadenas ---------- */
+T("Maj+V : taille de via suivante en plein tracé, posée telle quelle",()=>{
+  const {R1}=editionDecor();
+  S.tracks=[];S.vias=[];S.avoid=false;touch();
+  const a=padsWorld(R1)[0], cl=classOf("A");
+  setMode("track");S.active=0;startRoute(a.x,a.y);
+  const t=viaSuivante(1);
+  if(!t||(t.d===r3(cl.via)&&t.drill===r3(viaDrill(cl))))throw new Error("la taille devait changer : "+JSON.stringify(t));
+  if(mkVia(0,0,"A",0,1).d!==t.d)throw new Error("mkVia doit suivre la taille choisie pendant le tracé");
+  updateRoute(a.x+6,a.y);stepRoute();
+  routeViaCurseur();
+  if(S.route)commitRoute();
+  setMode("select");
+  const v=S.vias[S.vias.length-1];
+  if(!v||v.d!==t.d||v.drill!==t.drill)throw new Error("via posé : "+JSON.stringify(v));
+  if(mkVia(0,0,"A",0,1).d!==cl.via)throw new Error("hors tracé : la taille de la classe");
+  const L=viaTailles("A");
+  for(let k=1;k<L.length;k++)if(L[k].d<L[k-1].d)throw new Error("tailles non triées");
+});
+T("verrou : un cadenas au coin de chaque objet verrouillé",()=>{
+  const {R1}=editionDecor();
+  if(verrousCoins().length)throw new Error("rien de verrouillé");
+  clearSel();S.sel.fps.add(R1.id);S.sel.tracks.add(S.tracks[0]);verrouPoser(true);
+  const P=verrousCoins();
+  if(P.length!==2)throw new Error("deux cadenas attendus : "+P.length);
+  const b=fpBBox(R1);
+  if(!P.some(p=>p.x===b.x2&&p.y===b.y1))throw new Error("cadenas du composant à son coin haut droit");
 });
 
 (async()=>{

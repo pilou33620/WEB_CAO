@@ -168,6 +168,8 @@ function zoneMenuBuild(){
     '<div class="prop"><div class="row">'+
       '<button class="tb" id="zmZone">Zone à main levée <kbd>Z</kbd></button></div>'+
       '<div class="row"><button class="tb" id="zmFull">Zone pleine carte (libre)</button></div>'+
+      (rolePlane(role)?'<div class="row"><button class="tb" id="zmDivise" title="Donner une partie du plan à un autre net">Plan divisé (autre net)</button></div>'+
+        '<div class="row"><label title="Écrire cette couche plan en polarité négative au Gerber, comme un Internal Plane d\'Altium"><input type="checkbox" id="zmNeg"'+(L.negatif?" checked":"")+'> Plan négatif au Gerber</label></div>':"")+
       (S.zones.some(z=>!z.larme&&z.l===S.active)
         ? '<div class="row"><button class="tb" id="zmSel">Sélectionner le cuivre de la couche</button></div>'
         : "")+'</div>';
@@ -190,6 +192,10 @@ function zoneMenuBuild(){
   if(z)z.onclick=()=>{setMode("zone");zoneMenuClose();};
   const f=$("zmFull");
   if(f)f.onclick=()=>{zoneMenuClose();fullBoardZone();};
+  const ng=$("zmNeg");
+  if(ng)ng.onchange=()=>{planNegatif(S.active,ng.checked);};
+  const dv=$("zmDivise");
+  if(dv)dv.onclick=()=>{zoneMenuClose();zoneOutil({divise:true});};
   const sl=$("zmSel");
   if(sl)sl.onclick=()=>{zoneMenuClose();selectLayerZones(S.active);};
   return m;
@@ -1071,7 +1077,7 @@ function propsDrawing(box, d){
   box.innerHTML =
     '<div class="prop"><label>Forme</label>' +
     '<select id="pDrwShape">' +
-    '<option value="line"' + (!isRect ? " selected" : "") + '>Trait (segment)</option>' +
+    '<option value="line"' + (!isRect ? " selected" : "") + '>' + (drwArc(d) ? "Arc" : "Trait (segment)") + '</option>' +
     '<option value="rect"' + (isRect ? " selected" : "") + '>Rectangle (cadre)</option>' +
     '<option value="text">Texte libre</option>' +
     '</select></div>' +
@@ -1092,7 +1098,9 @@ function propsDrawing(box, d){
     '<div><label>Y1 (mm)</label><input id="pDrwY1" value="' + fmt(d.y1, 3) + '"></div></div>' +
     '<div class="prop two"><div><label>X2 (mm)</label><input id="pDrwX2" value="' + fmt(d.x2, 3) + '"></div>' +
     '<div><label>Y2 (mm)</label><input id="pDrwY2" value="' + fmt(d.y2, 3) + '"></div></div>' +
-    '<div class="prop"><label>Dimensions</label><input value="' + (isRect ? ("L: " + fmt(dx, 3) + " mm · H: " + fmt(dy, 3) + " mm") : (fmt(len, 3) + " mm")) + '" disabled></div>' +
+    (isRect ? "" : '<div class="prop"><label>Angle de l\'arc (°, 0 = droit)</label><input id="pDrwCa" type="number" step="15" value="' +
+      (drwArc(d) ? r1(-d.ca * 180 / Math.PI) : 0) + '" title="Positif : sens trigonométrique à l\'écran ; négatif : l\'autre sens"></div>') +
+    '<div class="prop"><label>Dimensions</label><input value="' + (isRect ? ("L: " + fmt(dx, 3) + " mm · H: " + fmt(dy, 3) + " mm") : (fmt(len, 3) + " mm" + (drwArc(d) ? " de corde · rayon " + fmt(arcOf(d).r, 3) + " mm" : ""))) + '" disabled></div>' +
     '<div class="prop"><div class="row"><button class="tb" id="pDrwDel">Supprimer le ' + (isRect ? "rectangle" : "trait") + '</button></div></div>' +
     '<div class="pinnote">Tracé sur les couches de sérigraphie F.SilkS / B.SilkS. ' +
     'Exporté dans les fichiers Gerber .GTO et .GBO. Glissez les coins pour ajuster les cotes.</div>';
@@ -1112,6 +1120,16 @@ function propsDrawing(box, d){
   };
   bindCoord("pDrwX1", "x1"); bindCoord("pDrwY1", "y1");
   bindCoord("pDrwX2", "x2"); bindCoord("pDrwY2", "y2");
+  // l'arc : l'angle balayé, en degrés à l'écran (ca est compté dans l'autre sens, y vers le bas)
+  const iCa = $("pDrwCa");
+  if(iCa) iCa.onchange = e => {
+    const v = parseFloat(String(e.target.value).replace(",", "."));
+    if(!Number.isFinite(v)) return;
+    push();
+    const ca = clamp(-v * Math.PI / 180, -ARC_MAX, ARC_MAX);
+    if(Math.abs(ca) > ARC_MIN) d.ca = r4(ca); else delete d.ca;
+    touch(); buildProps(); draw();
+  };
   const bDel = $("pDrwDel");
   if(bDel) bDel.onclick = deleteSel;
 }
@@ -1930,6 +1948,7 @@ function propsZone(box,z){
     if(v)z.priorite=v;else delete z.priorite;
     touch();refreshPanels();draw();};
   $("zFull").onclick=()=>{push();z.pts=boardZonePts();touch();refreshPanels();draw();};
+  zoneReglagesProps(box,z);       // isolement, bras, hachures, région pleine, îlots (47-zones.js)
   $("zDel").onclick=()=>{push();detachAuto(z);S.zones=S.zones.filter(o=>o!==z);clearSel();
     touch();buildLayers();buildTabs();refreshPanels();draw();};
 }

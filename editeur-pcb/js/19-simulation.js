@@ -348,7 +348,7 @@ function simCoteDepuis(t,x,y,nx,ny,refs,w2){
        plan autour de la piste, donc elle qui commande quand la piste est
        dedans ; c'est la distance mesurée qui commande quand le plan ne commence
        que plus loin. */
-    const e=Math.max(r3(clrK(z.net,t.net,"cu","trk")),hi);
+    const e=Math.max(r3(clrZone(z,t.net,"cu","trk")),hi);
     return e>SIM_ECART_MAX
       ? {ecart:0, net:"", hors:""}
       : {ecart:r3(e), net:z.net, hors:""};
@@ -4870,7 +4870,7 @@ const SIM_PCB={
         }
       for(const t of S.tracks){
         if(t.l!==z.l||(zn&&t.net===zn))continue;
-        const r=t.w/2+clrK(zn,t.net,"cu","trk"), m=trkMid(t);
+        const r=t.w/2+clrZone(z,t.net,"cu","trk"), m=trkMid(t);
         if(!dans(m.x,m.y)&&!dans(t.x1,t.y1)&&!dans(t.x2,t.y2))continue;
         if(!arcOf(t)){trous.push(gelule(t.x1,t.y1,t.x2,t.y2,r));continue;}
         for(let k=0;k<8;k++){
@@ -4880,16 +4880,16 @@ const SIM_PCB={
       }
       for(const v of S.vias){
         if(z.l<v.a||z.l>v.b||(zn&&v.net===zn)||!dans(v.x,v.y))continue;
-        trous.push(cercle(v.x,v.y,v.d/2+clrK(zn,v.net,"cu","via")));
+        trous.push(cercle(v.x,v.y,v.d/2+clrZone(z,v.net,"cu","via")));
       }
       for(const fp of S.fps)
         for(const q of padsWorld(fp)){
           if((zn&&q.net===zn)||!padLayers(fp,q).includes(z.l)||!dans(q.x,q.y))continue;
-          trous.push(rect(q,clrK(zn,q.net,"cu",q.drill>0?"th":"smd")));
+          trous.push(rect(q,clrZone(z,q.net,"cu",q.drill>0?"th":"smd")));
         }
       for(const c of cutsCuivre(true))if(c.l===z.l&&c.pts.length>2)trous.push(plat(c.pts));
       for(const P of zoneLanieres(z.l))trous.push(plat(P));   // les lanières, comme au Gerber
-      return {c:nom(z.l),n:zn,o:plat(z.pts),isolement:clrK(zn,"","cu","trk"),t:trous};
+      return {c:nom(z.l),n:zn,o:plat(z.pts),isolement:clrZone(z,"","cu","trk"),t:trous};
     }).concat(liaisons);
     const routes=new Set(S.tracks.map(t=>t.net));
     const parDefaut=netTable().map(n=>n.name).filter(n=>

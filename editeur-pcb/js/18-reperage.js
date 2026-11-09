@@ -60,7 +60,8 @@ function rpNetBox(net){
    ========================================================================== */
 const RP_PCB={
   physique:true,
-  mm:d=>d,                        // le monde du PCB est déjà en millimètres
+  mm:d=>uAff(d),                  // le monde du PCB est en millimètres ; Q l'affiche en mil
+  unite:()=>uNom(),
   w2s:(x,y)=>w2s(x,y),
   redessiner:()=>draw(),
   astuce:t=>hint(t),

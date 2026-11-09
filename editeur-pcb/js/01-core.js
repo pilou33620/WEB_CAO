@@ -25,7 +25,13 @@ const DRW_COUCHES=[["silkT","Sérigraphie dessus","F.SilkS",C_SILK_T],["silkB","
   ["fabT","Fab dessus","F.Fab","#c8b06a"],["fabB","Fab dessous","B.Fab","#8c7a48"],
   ["crtT","Courtyard dessus","F.CrtYd","#e46ad6"],["crtB","Courtyard dessous","B.CrtYd","#9c4a92"],
   ["dwgs","Dessins utilisateur","Dwgs.User","#b4bcc8"],["cmts","Commentaires","Cmts.User","#6fa8e0"],
-  ["user","Utilisateur","User.1","#9ccf86"]];
+  ["user","Utilisateur","User.1","#9ccf86"],
+  /* couches mécaniques libres (50-couches.js) : leur nom se change, elles partent
+     au Gerber (.GM2 à .GM9) quand elles portent un dessin */
+  ["mec1","Mécanique 1","User.2","#d9a066"],["mec2","Mécanique 2","User.3","#66c2d9"],
+  ["mec3","Mécanique 3","User.4","#c58fd9"],["mec4","Mécanique 4","User.5","#a3d966"],
+  ["mec5","Mécanique 5","User.6","#d96680"],["mec6","Mécanique 6","User.7","#66d9a6"],
+  ["mec7","Mécanique 7","User.8","#d9cf66"],["mec8","Mécanique 8","User.9","#8fa3d9"]];
 const DRW_COUL=Object.fromEntries(DRW_COUCHES.map(c=>[c[0],c[3]]));
 const drwFace=l=>/^(silk|fab|crt)[TB]$/.test(l)?(l.endsWith("B")?1:0):-1;   // -1 : sans face
 const drwAutreFace=l=>drwFace(l)<0?l:l.slice(0,-1)+(drwFace(l)?"T":"B");
@@ -53,6 +59,13 @@ const r3 = v => Math.round(v*1000)/1000;
    millimètre ne suffisent pas à écrire 17,5 µm sans le déformer */
 const r4 = v => Math.round(v*10000)/10000;
 const fmt = (v,n) => Number(v).toFixed(n==null?2:n);
+/* UNITÉ D'AFFICHAGE : le modèle reste en millimètres ; seuls la barre d'état,
+   la mesure et la saisie de coordonnées parlent en mil quand on bascule (Q). */
+const MIL = 0.0254;
+const uAff = v => S.unite==="mil"?v/MIL:v;
+const uLue = v => S.unite==="mil"?v*MIL:v;
+const uNom = () => S.unite==="mil"?"mil":"mm";
+const fmtU = v => S.unite==="mil"?fmt(v/MIL,1):fmt(v,2);
 function dist(x1,y1,x2,y2){return Math.hypot(x2-x1,y2-y1);}
 /* ---------- les huit sens du tracé ----------
    Un segment qui ne tombe pas sur un multiple de 45° est un **angle bâtard**
@@ -142,6 +155,28 @@ function arcSweep(A,a){
   return ((d%(2*Math.PI))+2*Math.PI)%(2*Math.PI);
 }
 function arcOn(A,a){return arcSweep(A,a)<=Math.abs(A.ca);}
+/* UN TRAIT DE DESSIN peut être un arc, comme une piste : même corde, même
+   angle balayé `ca` (`arcOf` le lit). `drwTrait` le met dans le chemin d'un
+   canevas, `drwPoints` le rend en cordes de 3° au plus pour le Gerber, le DRC
+   et la sélection, `drwBBox` en donne la boîte, renflement compris. */
+const drwArc=d=>!!d&&d.shape!=="rect"&&d.shape!=="text"&&d.shape!=="poly"&&isArc(d);
+function drwTrait(c,d){
+  c.moveTo(d.x1,d.y1);
+  const A=drwArc(d)?arcOf(d):null;
+  if(A)c.arc(A.cx,A.cy,A.r,A.a1,A.a2,A.ca<0);else c.lineTo(d.x2,d.y2);
+}
+function drwPoints(d){
+  const A=drwArc(d)?arcOf(d):null;
+  if(!A)return [{x:d.x1,y:d.y1},{x:d.x2,y:d.y2}];
+  const n=Math.max(2,Math.ceil(Math.abs(A.ca)/(Math.PI/60))), out=[];
+  for(let k=0;k<=n;k++){const a=A.a1+A.ca*k/n;out.push({x:A.cx+A.r*Math.cos(a),y:A.cy+A.r*Math.sin(a)});}
+  out[0]={x:d.x1,y:d.y1};out[n]={x:d.x2,y:d.y2};
+  return out;
+}
+function drwBBox(d){
+  if(!drwArc(d))return {x1:Math.min(d.x1,d.x2),y1:Math.min(d.y1,d.y2),x2:Math.max(d.x1,d.x2),y2:Math.max(d.y1,d.y2)};
+  return polyBBox(drwPoints(d));
+}
 /* Longueur de cuivre : la corde pour une droite, le rayon fois l'angle pour un
    arc. C'est cette longueur-là que réclament la ligne de transmission et le
    tableau des nets — mesurer la corde raccourcirait un demi-tour d'un tiers. */
@@ -1047,7 +1082,8 @@ const S = {
   pair:[0,1],                 // paire de couches pour le changement rapide
   show:{silkT:true,silkB:true,edge:true,rats:true,plane:true,drc:true,
         maskT:false,maskB:false,pasteT:false,pasteB:false,ptst:false,
-        fabT:false,fabB:false,crtT:false,crtB:false,dwgs:true,cmts:true,user:true},
+        fabT:false,fabB:false,crtT:false,crtB:false,dwgs:true,cmts:true,user:true,
+        mec1:true,mec2:true,mec3:true,mec4:true,mec5:true,mec6:true,mec7:true,mec8:true},
   board:{x:0,y:0,w:100,h:80,pts:null},   // pts = contour libre, sinon rectangle
   fps:[], tracks:[], vias:[], zones:[], cuts:[], holes:[], drawings:[], interdits:[],
   /* `corner` : l'angle imposé aux pistes tracées — « 45 » par défaut, c'est la
@@ -1086,6 +1122,8 @@ const S = {
   coord:{open:false,mode:"abs"},       // saisie de coordonnées au clavier
   avoid:true,                          // le tracé se tient à distance des obstacles
   mode:"select",
+  unite:"mm",                 // affichage seulement : « mm » ou « mil » (Q)
+  filtre:{},                  // filtre de sélection : type → false s'il est exclu (46-edition.js)
   sel:{fps:new Set(),tracks:new Set(),vias:new Set(),zones:new Set(),cuts:new Set(),holes:new Set(),drawings:new Set(),interdits:new Set(),edge:false},
   route:null,                 // tracé de piste en cours
   dp:null,                    // tracé de paire différentielle en cours
@@ -1126,7 +1164,8 @@ function setCuCount(n,silent){
       vis:src?src.vis!==false:true,
       plane:!!(src&&src.plane),
       net:(src&&src.net)||"GND",
-      role:coherentRole(src&&src.role,src&&src.plane,(src&&src.net)||"")
+      role:coherentRole(src&&src.role,src&&src.plane,(src&&src.net)||""),
+      negatif:!!(src&&src.negatif)       // plan écrit en négatif au Gerber (50-couches.js)
     });
   }
   const map=i=>{
@@ -2356,7 +2395,9 @@ function fpDessinsMonde(fp){
 }
 /* tous les dessins au monde : ceux de la carte puis ceux des empreintes */
 function dessinsMonde(){
-  const out=(S.drawings||[]).slice();
+  // les chaînes spéciales (.Date, .Titre…) se lisent remplacées partout où l'on dessine (49-dessin.js)
+  const out=(S.drawings||[]).map(d=>d.shape==="text"&&typeof d.text==="string"&&d.text.indexOf(".")>=0&&typeof texteSpecial==="function"
+    ?Object.assign({},d,{text:texteSpecial(d.text)}):d);
   for(const fp of S.fps)for(const d of fpDessinsMonde(fp))out.push(d);
   return out;
 }
@@ -2984,6 +3025,24 @@ function clrPair(a,b){
 /* La même, natures comprises : c'est celle-ci que le contrôle, le routeur et
    les zones de cuivre appliquent. `ka` et `kb` disent de quoi il s'agit —
    piste, pastille CMS, pastille traversante, via, cuivre plein. */
+/* L'ISOLEMENT D'UNE ZONE : celui des classes et de la matrice, au moins celui
+   que la zone impose (`z.isol`). `z` : la zone, ou le seul nom de son net. */
+function clrZone(z,net,ka,kb){
+  const o=z&&typeof z==="object"?z:null;
+  return Math.max(clrK(o?(o.net||""):(z||""),net,ka,kb),o&&o.isol>0?o.isol:0);
+}
+/* la zone du net de la pastille qui la recouvre sur la couche l */
+function zoneDuPad(q,l){
+  if(!q.net)return null;
+  return S.zones.find(o=>o.l===l&&o.net===q.net&&!o.larme&&zoneContient(o,q.x,q.y))||null;
+}
+/* L'anneau autour d'une pastille reliée par bras : l'écart de la pastille,
+   sinon celui de sa zone, sinon l'isolement de sa classe. */
+function ecartThermique(q,l){
+  if(q.thermalGap>0)return q.thermalGap;
+  const z=zoneDuPad(q,l);
+  return z&&z.brasEcart>0?z.brasEcart:classOf(q.net).clr;
+}
 function clrK(a,b,ka,kb){
   const g=dpGapPair(a,b);
   if(g!=null)return g;

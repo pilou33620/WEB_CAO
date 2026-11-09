@@ -196,7 +196,7 @@ const LECTURE_CAO = (function() {
         const L = (S.drawings || []).map(d => "- dessin " + d.id + " (" + face(d) + ") : " +
           (d.shape === "text" ? "texte « " + d.text + " » en (" + mm(d.x1) + ", " + mm(d.y1) + "), " + d.size + " mm" + (d.rot ? ", " + d.rot + "°" : "")
            : d.shape === "poly" ? "aplat de " + d.pts.length + " sommets"
-           : (d.shape === "rect" ? "rectangle" : "trait") + " (" + mm(d.x1) + ", " + mm(d.y1) + ") → (" + mm(d.x2) + ", " + mm(d.y2) + ")"));
+           : (d.shape === "rect" ? "rectangle" : d.ca ? "arc de " + Math.round(Math.abs(d.ca) * 180 / Math.PI) + "°" : "trait") + " (" + mm(d.x1) + ", " + mm(d.y1) + ") → (" + mm(d.x2) + ", " + mm(d.y2) + ")"));
         const propres = S.fps.filter(f => f.dessins && f.dessins.length).length;
         if (propres) L.push("- " + propres + " composants portent leurs propres dessins (sérigraphie, Fab, Courtyard), qui les suivent");
         for (const f of S.fps) {

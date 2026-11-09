@@ -58,11 +58,22 @@
       <div class="ong actif" data-mnu="placer">
         <button class="mnu-t" type="button">Placer &amp; router</button>
         <div class="band">
-          <div class="rg">
+          <div class="rg mnu">
             <div class="rg-cmds">
               <button data-ic="↖" class="tb on" id="mSelect">Sélection <kbd>Échap</kbd></button>
             </div>
-            <div class="rg-t">Sélectionner</div>
+            <button class="mnu-t rg-t" type="button" title="Filtre de sélection : ce que le clic et le lasso peuvent prendre">Sélectionner <span class="car">▾</span></button>
+            <div class="mnu-pop" id="filtrePop">
+              <div class="mtitle">Filtre de sélection</div>
+              <label class="mnu-row"><input type="checkbox" data-filtre="fps" checked> Composants</label>
+              <label class="mnu-row"><input type="checkbox" data-filtre="tracks" checked> Pistes</label>
+              <label class="mnu-row"><input type="checkbox" data-filtre="vias" checked> Vias</label>
+              <label class="mnu-row"><input type="checkbox" data-filtre="zones" checked> Zones et découpes de zone</label>
+              <label class="mnu-row"><input type="checkbox" data-filtre="drawings" checked> Dessins, textes, cotes</label>
+              <label class="mnu-row"><input type="checkbox" data-filtre="holes" checked> Trous NPTH</label>
+              <label class="mnu-row"><input type="checkbox" data-filtre="autres" checked> Contour, découpes, interdits</label>
+              <button data-ic="✓" class="tb ic-glyphe" id="bFiltreTout">Tout sélectionnable</button>
+            </div>
           </div>
           <div class="rg mnu">
             <div class="rg-cmds">
@@ -79,11 +90,15 @@
               <button data-ic="╱" class="tb" id="mTrack">Piste <kbd>T</kbd></button>
               <button data-ic="═" class="tb" id="mDiff" title="Router deux nets en paire différentielle : écart tenu, coudes couplés, vias en éventail">Paire diff. <kbd>P</kbd></button>
               <button data-ic="∿" class="tb" id="mMeander" title="Générer un serpentin d'appariement de longueur (accordéon) pour compenser le retard d'une piste ou d'une paire différentielle">Serpentin <kbd>M</kbd> <span class="car">▾</span></button>
+              <button data-ic="☰" class="tb" id="mBus" title="Router plusieurs pistes à la fois : cliquez les pastilles de départ, puis les sommets du trajet ; Entrée pose les pistes parallèles">Bus</button>
               <button data-ic="⤳" class="tb" id="bCheminAuto" title="Route seul une liaison du chevelu : cliquez d'abord une pastille (ou Alt+clic pour un net). Le chemin évite le cuivre des autres nets ; s'il n'y en a pas, rien n'est posé et le pied de page dit pourquoi. Ctrl+Z défait la piste.">Chemin auto</button>
             </div>
             <button class="mnu-t rg-t" type="button">Router <span class="car">▾</span></button>
             <div class="mnu-pop">
               <button data-ic="⛨" data-bascule class="tb" id="bAvoid">Anti-collision</button>
+              <button data-ic="⋇" class="tb ic-glyphe" id="bFanout" title="Fanout : chaque pastille CMS des composants sélectionnés reçoit son via au bout d'une piste courte (entre quatre billes pour un BGA)">Fanout</button>
+              <button data-ic="◉" class="tb ic-glyphe" id="bViaSuiv" title="En plein tracé : passe à la taille de via suivante (Maj+V)">Via suivant <kbd>Maj+V</kbd></button>
+              <button data-ic="⇔" class="tb ic-glyphe" id="bLargeur" title="En plein tracé : passe à la largeur suivante (W), Maj+W pour la précédente">Largeur suivante <kbd>W</kbd></button>
               <button data-ic="◣" class="tb" id="bLarmes" title="Pose ou refait les larmes : un renfort de cuivre entre une piste et le via ou la pastille ronde où elle s'arrête">Larmes</button>
               <button data-ic="◁" class="tb" id="bLarmesRetirer" title="Retire toutes les larmes de la carte">Retirer les larmes</button>
             </div>
@@ -99,6 +114,31 @@
             <div class="mnu-pop">
               <button data-ic="⧉" class="tb" id="bCopy">Copier <kbd>Ctrl+C</kbd></button>
               <button data-ic="📋" class="tb" id="bPaste">Coller <kbd>Ctrl+V</kbd></button>
+            </div>
+          </div>
+          <div class="rg mnu">
+            <div class="rg-cmds">
+              <button data-ic="🔒" class="tb" id="bVerrou" title="Verrouiller la sélection : ni déplacée, ni tournée, ni supprimée tant qu'elle l'est">Verrouiller</button>
+              <button data-ic="🔓" class="tb" id="bDeverrou" title="Déverrouiller la sélection">Déverrouiller</button>
+              <button data-ic="▦" class="tb" id="bCollageReseau" title="Coller la sélection en réseau : N copies en ligne (pas X / Y) ou en cercle (angle, centre)">Collage en réseau…</button>
+            </div>
+            <button class="mnu-t rg-t" type="button">Aligner &amp; sélectionner <span class="car">▾</span></button>
+            <div class="mnu-pop">
+              <div class="mtitle">Aligner les composants sélectionnés</div>
+              <button data-ic="⇤" class="tb ic-glyphe" data-aligner="gauche">Aligner à gauche</button>
+              <button data-ic="⇥" class="tb ic-glyphe" data-aligner="droite">Aligner à droite</button>
+              <button data-ic="⤒" class="tb ic-glyphe" data-aligner="haut">Aligner en haut</button>
+              <button data-ic="⤓" class="tb ic-glyphe" data-aligner="bas">Aligner en bas</button>
+              <button data-ic="⇹" class="tb ic-glyphe" data-aligner="centreX">Centres sur une verticale</button>
+              <button data-ic="⇳" class="tb ic-glyphe" data-aligner="centreY">Centres sur une horizontale</button>
+              <button data-ic="↔" class="tb ic-glyphe" data-aligner="repH">Répartir horizontalement</button>
+              <button data-ic="↕" class="tb ic-glyphe" data-aligner="repV">Répartir verticalement</button>
+              <div class="mtitle">Sélectionner les objets semblables</div>
+              <button data-ic="≈" class="tb ic-glyphe" data-semblable="net">Même net</button>
+              <button data-ic="≈" class="tb ic-glyphe" data-semblable="couche">Même couche / face</button>
+              <button data-ic="≈" class="tb ic-glyphe" data-semblable="taille">Même largeur / taille</button>
+              <button data-ic="≈" class="tb ic-glyphe" data-semblable="boitier">Même boîtier / forme</button>
+              <button data-ic="≈" class="tb ic-glyphe" data-semblable="valeur">Même valeur</button>
             </div>
           </div>
           <div class="rg mnu">
@@ -131,10 +171,26 @@
           <div class="rg">
             <div class="rg-cmds">
               <button data-ic="▦" class="tb" id="mZone">Zone cuivre <kbd>Z</kbd> <span class="car">▾</span></button>
+              <button data-ic="⛔" class="tb" id="mKeepout" title="Keep-out cuivre : une zone où ni piste, ni via, ni zone n'entre, sur une couche ou toutes. Un clic par sommet, ou deux coins puis Entrée">Keep-out cuivre</button>
               <button data-ic="⊘" class="tb" id="mInterdit" title="Zone interdite d'une face : aucune patte traversante n'en ressort, aucun composant n'y dépasse la hauteur permise. Un clic par sommet, ou deux coins puis Entrée">Zone interdite</button>
               <button data-ic="✕" class="tb" id="mErase" title="Découper une zone de cuivre : un polygone où la zone ne se remplit pas">Découpe zone <kbd>X</kbd></button>
             </div>
             <div class="rg-t">Zones</div>
+          </div>
+          <div class="rg mnu">
+            <div class="rg-cmds">
+              <button data-ic="■" class="tb" id="mFill" title="Fill : un rectangle de cuivre plein (deux coins puis Entrée), que rien ne dégage">Fill</button>
+              <button data-ic="⬟" class="tb" id="mRegion" title="Région pleine : un polygone de cuivre exact (antenne, pastille spéciale), que rien ne dégage ; le DRC surveille l'autre cuivre">Région pleine</button>
+              <button data-ic="☰" class="tb" id="bZonesGest" title="Toutes les zones : nom, couche, net, ordre de remplissage, remplissage ; tout recalculer">Gestionnaire de zones…</button>
+            </div>
+            <button class="mnu-t rg-t" type="button">Cuivre <span class="car">▾</span></button>
+            <div class="mnu-pop">
+              <button data-ic="◧" class="tb ic-glyphe" id="bPlanDivise" title="Sur une couche plan : donner une partie du plan à un autre net, qui passe devant, isolement compris">Plan divisé</button>
+              <button data-ic="⟳" class="tb ic-glyphe" id="bZonesCalc">Recalculer toutes les zones</button>
+              <button data-ic="⁘" class="tb ic-glyphe" id="bCouture" title="Coudre les zones sélectionnées : un réseau de vias de leur net, au pas voulu, là où la place est libre">Vias de couture…</button>
+              <button data-ic="⫶" class="tb ic-glyphe" id="bCloture" title="Clôture de vias de part et d'autre des pistes sélectionnées (blindage RF, horloge)">Clôture de vias…</button>
+              <button data-ic="⊖" class="tb ic-glyphe" id="bCoutureRetirer">Retirer couture et clôture</button>
+            </div>
           </div>
           <div class="rg">
             <div class="rg-cmds">
@@ -142,6 +198,54 @@
               <button data-ic="○" class="tb" id="mHole" title="Poser un trou mécanique non métallisé autonome hors empreinte (NPTH)">Trou NPTH</button>
             </div>
             <div class="rg-t">Marquage</div>
+          </div>
+        </div>
+      </div>
+      <div class="ong" data-mnu="dessin">
+        <button class="mnu-t" type="button">Dessin</button>
+        <div class="band">
+          <div class="rg mnu">
+            <div class="rg-cmds">
+              <button data-ic="◠" class="tb" id="mArc" title="Arc : le centre, puis le départ, puis la fin (Maj : l'autre sens)">Arc</button>
+              <button data-ic="◯" class="tb" id="mCercle" title="Cercle : le centre, puis un point du cercle">Cercle</button>
+            </div>
+            <button class="mnu-t rg-t" type="button">Formes <span class="car">▾</span></button>
+            <div class="mnu-pop">
+              <label class="mnu-row" data-ic="◎">Arc et cercle sur
+                <select class="tbsel" id="arcCible">
+                  <option value="cuivre">le cuivre (couche active)</option>
+                  <option value="silk">la sérigraphie (face vue)</option>
+                  <option value="dwgs">Dessins utilisateur</option>
+                  <option value="cmts">Commentaires</option>
+                  <option value="user">Utilisateur</option>
+                  <option value="decoupe">une découpe de carte (cercle)</option>
+                  <option value="zone">une zone de cuivre (cercle)</option>
+                </select></label>
+            </div>
+          </div>
+          <div class="rg mnu">
+            <div class="rg-cmds">
+              <button data-ic="T" class="tb" id="mTexteCu" title="Texte sur la couche de cuivre active, droit ou inversé ; chaînes spéciales .Date .Titre .Revision .Couches…">Texte cuivre</button>
+              <button data-ic="⦿" class="tb" id="mPastille" title="Pastille libre hors schéma : point de test, pastille traversante, mire de centrage (fiducial)">Pastille</button>
+              <button data-ic="▤" class="tb" id="bMeca" title="Les huit couches mécaniques : leur nom, leur affichage ; celles qui portent un dessin partent au Gerber (.GM2 à .GM9)">Couches méca…</button>
+              <button data-ic="↔" class="tb" id="mCote" title="Cote linéaire posée sur la carte : deux points, puis la position de la ligne">Cote</button>
+            </div>
+            <button class="mnu-t rg-t" type="button">Repères <span class="car">▾</span></button>
+            <div class="mnu-pop">
+              <label class="mnu-row" data-ic="⦿">Pastille
+                <select class="tbsel" id="pastilleType">
+                  <option value="cms">point de test CMS</option>
+                  <option value="traversante">pastille traversante</option>
+                  <option value="fiducial">mire (fiducial)</option>
+                </select></label>
+              <label class="mnu-row" data-ic="↔">Cotes sur
+                <select class="tbsel" id="coteCouche">
+                  <option value="dwgs">Dessins utilisateur</option>
+                  <option value="cmts">Commentaires</option>
+                  <option value="user">Utilisateur</option>
+                  <option value="fabT">Fab dessus</option>
+                </select></label>
+            </div>
           </div>
         </div>
       </div>
@@ -240,6 +344,7 @@
             <label class="mnu-row" data-ic="⋯">Pas de grille <select class="tbsel" id="selGrid" title="Pas d'accrochage de la grille"></select></label>
             <button data-ic="▭" class="tb" id="bCartouche" title="Cadre de page et cartouche autour de la carte : format (aucun, A4 ou A3 paysage), titre, noms et dates, numéro, société">Cartouche : aucun</button>
             <button data-ic="◐" data-bascule class="tb" id="bView">Vue : dessus <kbd>Y</kbd></button>
+            <button data-ic="📏" data-bascule class="tb" id="bUnite" title="Unité de la barre d'état, de la mesure et de la saisie de coordonnées">Unité : mm <kbd>Q</kbd></button>
             <button data-ic="◑" data-bascule class="tb" id="bContrast">Contraste : atténué <kbd>H</kbd></button>
             <button data-ic="◒" data-bascule class="tb on" id="bFaceOpp" title="Sérigraphie, masque et pâte de la face qu'on ne regarde pas : laissés, atténués ou masqués">Face opposée : atténuée</button>
             <button data-ic="▢" data-bascule class="tb on" id="bRooms" title="Rooms : les blocs fonctionnels du schéma (zones étiquetées) encadrés sur la carte, comme les rooms d'Altium. Un clic sur l'étiquette prend le bloc entier.">Rooms : affichées</button>
@@ -451,7 +556,7 @@
 <footer>
   <span>Couche <b id="fLayer">F.Cu</b></span>
   <span>Mode <b id="fMode">Sélection</b></span>
-  <span>X <b id="fX">0</b> · Y <b id="fY">0</b> mm</span>
+  <span>X <b id="fX">0</b> · Y <b id="fY">0</b> <span id="fUnite">mm</span></span>
   <span>Zoom <b id="fZoom">100%</b></span>
   <span>Grille <b id="fGrid">1 carré = 0,5 mm</b></span>
   <span>Empreintes <b id="fN">0</b> · Pistes <b id="fT">0</b> · Vias <b id="fV">0</b></span>
@@ -528,6 +633,12 @@
 <script src="js/43-verif-bom.js"></script>
 <script src="js/44-export-step.js"></script>
 <script src="js/45-drc-gestion.js"></script>
+<script src="js/46-edition.js"></script>
+<script src="js/47-zones.js"></script>
+<script src="js/48-vias.js"></script>
+<script src="js/49-dessin.js"></script>
+<script src="js/50-couches.js"></script>
+<script src="js/51-bus.js"></script>
 <script src="../commun/explorateur-lib.js"></script>
 <script src="../commun/workspace.js"></script>
 <script src="../commun/telephone.js"></script>

@@ -188,6 +188,7 @@ function zoneCanvas(i,fixe){
     if(b.x2<x1||b.x1>x2||b.y2<y1||b.y1>y2)continue;   // hors de la région
     zoneFill(c,z);
   }
+  if(typeof zonesHachurer==="function")zonesHachurer(c,zs,i);                    // les mailles d'une zone hachurée (47-zones.js)
   /* le cuivre s'arrête à la marge de bord, quoi qu'ait tracé la main */
   clipToBoard(c,x1,y1,x2,y2);
 
@@ -219,14 +220,14 @@ function zoneCanvas(i,fixe){
     if(hors(tb.x1,tb.y1,tb.x2,tb.y2,t.w))continue;
     const m=trkMid(t);
     if(sameNet(m.x,m.y,t.net))continue;
-    c.lineWidth=t.w+2*clrK(zoneNetAt(i,m.x,m.y),t.net,"cu","trk");
+    c.lineWidth=t.w+2*clrZone(zoneAt(i,m.x,m.y),t.net,"cu","trk");
     c.beginPath();trkPath(c,t);c.stroke();
   }
   for(const v of S.vias){
     if(i<v.a||i>v.b||hors(v.x,v.y,v.x,v.y,v.d))continue;
     const same=sameNet(v.x,v.y,v.net);
     c.beginPath();
-    c.arc(v.x,v.y,same?v.drill/2:v.d/2+clrK(zoneNetAt(i,v.x,v.y),v.net,"cu","via"),0,Math.PI*2);
+    c.arc(v.x,v.y,same?v.drill/2:v.d/2+clrZone(zoneAt(i,v.x,v.y),v.net,"cu","via"),0,Math.PI*2);
     c.fill();
   }
   for(const h of trousMonde()){       // trou NPTH : la zone choisie comme au Gerber (zoneDuTrou)
@@ -249,16 +250,17 @@ function zoneCanvas(i,fixe){
       }
       const qc=padSurCouche(q,i);
       if(!qc){                         // pas de cuivre sur cette couche : le trou seul
-        if(q.drill>0){c.beginPath();cheminPercage(c,q,clrK(zoneNetAt(i,q.x,q.y),q.net,"cu","th"));c.fill();}
+        if(q.drill>0){c.beginPath();cheminPercage(c,q,clrZone(zoneAt(i,q.x,q.y),q.net,"cu","th"));c.fill();}
         continue;
       }
-      padFill(c,qc,same?classOf(q.net).clr:clrK(zoneNetAt(i,q.x,q.y),q.net,"cu",q.drill>0?"th":"smd"));
+      padFill(c,qc,same?ecartThermique(q,i):clrZone(zoneAt(i,q.x,q.y),q.net,"cu",q.drill>0?"th":"smd"));
       if(same)thermals.push(q);
-      else if(q.drill>0){c.beginPath();cheminPercage(c,q,clrK(zoneNetAt(i,q.x,q.y),q.net,"cu","th"));c.fill();}
+      else if(q.drill>0){c.beginPath();cheminPercage(c,q,clrZone(zoneAt(i,q.x,q.y),q.net,"cu","th"));c.fill();}
     }
   /* liaisons thermiques : quatre bras par défaut, ou configuration personnalisée */
   c.globalCompositeOperation="source-over";
   c.fillStyle=col;
+  if(typeof zonesPleinesPeindre==="function")zonesPleinesPeindre(c,zs,x1,y1,x2,y2);    // région pleine : son cuivre exact, sans dégagement (47-zones.js)
   for(const q of thermals){
     // padBras : un bras qui toucherait le cuivre d'un autre net n'est pas tracé
     for(const b of padBras(q,i).ok){
@@ -619,8 +621,8 @@ function drawSilk(c){
       if(!fa)continue;
       const coul = DRW_COUL[d.layer];
       if(!sel&&d.shape!=="rect"&&d.shape!=="text"&&d.shape!=="poly"){
-        const e=(d.width||0)/2;
-        if(horsVue(Math.min(d.x1,d.x2)-e,Math.min(d.y1,d.y2)-e,Math.max(d.x1,d.x2)+e,Math.max(d.y1,d.y2)+e))continue;
+        const e=(d.width||0)/2, bb=drwBBox(d);
+        if(horsVue(bb.x1-e,bb.y1-e,bb.x2+e,bb.y2+e))continue;
         const k=d.layer+"|"+(d.width||0.15);
         let p=lots.get(k);if(!p)lots.set(k,p=[]);
         p.push(d);
@@ -701,8 +703,7 @@ function drawSilk(c){
           c.strokeRect(rx, ry, rw, rh);
         }else{
           c.beginPath();
-          c.moveTo(d.x1, d.y1);
-          c.lineTo(d.x2, d.y2);
+          drwTrait(c, d);
           c.stroke();
         }
       }
@@ -715,8 +716,7 @@ function drawSilk(c){
         c.strokeRect(rx, ry, rw, rh);
       }else{
         c.beginPath();
-        c.moveTo(d.x1, d.y1);
-        c.lineTo(d.x2, d.y2);
+        drwTrait(c, d);
         c.stroke();
       }
       if(sel){
@@ -742,7 +742,7 @@ function drawSilk(c){
       c.strokeStyle=DRW_COUL[p[0].layer];
       c.lineWidth=Math.max(+k.split("|")[1],px(1));
       c.beginPath();
-      for(const d of p){c.moveTo(d.x1,d.y1);c.lineTo(d.x2,d.y2);}
+      for(const d of p)drwTrait(c,d);
       c.stroke();
     }
     c.restore();
@@ -792,6 +792,9 @@ function drawSilk(c){
     }
     c.restore();
   }
+  if(typeof dessinApercu==="function")dessinApercu(c);   // arc, cercle, cote en cours (49-dessin.js)
+  if(typeof busApercu==="function")busApercu(c);
+  if(typeof verrousDessiner==="function")verrousDessiner(c);   // cadenas des objets verrouillés (46-edition.js)         // bus en cours (51-bus.js)
   c.globalAlpha=1;
 }
 function TXT(c,t,x,y,size,col){

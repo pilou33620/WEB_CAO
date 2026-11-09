@@ -144,12 +144,14 @@ function pnsKind(it){
    du moteur où les classes de net et la matrice entrent en jeu ; le reste ne
    connaît que des polygones. */
 function pnsClr(it,net,kind){
+  if(it&&it.ko)return 0;                     // un keep-out : n'y pas entrer suffit (50-couches.js)
   if(it&&it.npth)return classOf(net).clr;   // un trou : la classe du cuivre, comme le bloc NPTH du contrôle
   return clrK(net,it.net,kind||"trk",pnsKind(it));
 }
 /* L'isolation exigée entre deux items quelconques : les deux natures viennent
    de l'index. C'est la mesure du contrôle DRC. */
 function pnsClrPair(a,b){
+  if(a.ko||b.ko)return 0;
   if(a.npth)return classOf(b.net).clr;     // un trou : la classe du cuivre d'en face, comme le bloc NPTH du contrôle
   if(b.npth)return classOf(a.net).clr;
   return clrK(a.net,b.net,pnsKind(a),pnsKind(b));
@@ -305,6 +307,10 @@ function pnsNode(parent){
     for(const it of N.query(probe.l0,probe.l1,probe.bx1-r,probe.by1-r,
                                               probe.bx2+r,probe.by2+r)){
       if(it===probe)continue;
+      /* un keep-out ne gêne que ce qu'il interdit — piste ou via ; jamais une
+         pastille, qu'un composant posé dessus emporte (50-couches.js) */
+      if(it.ko&&(probe.k==="P"||!(probe.k==="V"?it.koVias:it.koPistes)))continue;
+      if(probe.ko)continue;
       /* Deux cordes d'un même arc sont un seul trait de cuivre. Sans net pour
          les reconnaître reliées, elles se seraient déclarées en défaut
          d'isolation l'une contre l'autre — elles se touchent par construction. */
@@ -359,7 +365,7 @@ function pnsNode(parent){
         else if(dist(x,y,it.seg.x2,it.seg.y2)<=e)j.ends.push({it,e:2});
       }else if(it.k==="V"){
         if(dist(x,y,it.v.x,it.v.y)<=e)j.vias.push(it);
-      }else if(!it.npth&&padDist(x,y,it.q)<=e)j.pads.push(it);   // un trou n'est pas un raccord
+      }else if(!it.npth&&!it.ko&&padDist(x,y,it.q)<=e)j.pads.push(it);   // un trou n'est pas un raccord
     }
     return j;
   };
@@ -433,6 +439,7 @@ function pnsBuild(){
   for(const v of S.vias)N.add(pnsItemVia(v));
   for(const t of S.tracks)for(const it of pnsItemsTrack(t))N.add(it);
   for(const h of trousMonde())if(h.d>0)N.add(pnsItemTrou(h));
+  if(typeof pnsItemsKeepout==="function")for(const it of pnsItemsKeepout())N.add(it);   // 50-couches.js
   return N;
 }
 function pnsWorld(){
