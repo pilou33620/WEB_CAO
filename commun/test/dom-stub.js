@@ -306,6 +306,7 @@ function install(opts){
         /* canevas logiciel : la rasterisation des îlots est testée pour de vrai */
         const cv=realCanvas.createCanvas(1,1);
         cv.toBlob=cb=>cb({});
+        cv.style={};                 // la palette du schématique règle sa taille CSS
         return cv;
       }
       const e=el(t,"");

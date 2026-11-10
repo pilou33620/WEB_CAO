@@ -895,8 +895,19 @@ T("un via traversant se prend au clic quand le Top est masqué, au lieu du plan 
   const v=mkVia(10,10,"GND",0,1);S.vias.push(v);
   S.active=1;S.cuL[0].vis=false;touch();
   const h=hitTest(10,10,null);
+  // un CMS du dessus, cuivre et sérigraphie masqués : invisible, il ne vole pas le clic
+  const f=mkFp("R9","","",2);f.style="chip";f.x=20;f.y=10;S.fps.push(f);touch();
+  const q=padsWorld(f)[0], silk=S.show.silkT;
+  const cms=!(q.drill>0);
+  S.show.silkT=false;
+  const hp=hitTest(q.x,q.y,null);
   S.cuL[0].vis=true;
+  const hv=hitTest(q.x,q.y,null);
+  S.show.silkT=silk;
   if(!h||h.via!==v)throw new Error("le via devrait être pris, pas "+JSON.stringify(h&&Object.keys(h)));
+  if(!cms)throw new Error("l'essai attend un boîtier CMS");
+  if(hp&&hp.fp)throw new Error("un CMS du Top masqué ne doit pas être pris");
+  if(!hv||hv.fp!==f)throw new Error("Top visible, le boîtier doit être pris");
   loadDoc(JSON.parse(saved),true);
 });
 T("classes de net",()=>{

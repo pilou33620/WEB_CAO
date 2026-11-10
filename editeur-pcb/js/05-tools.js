@@ -976,6 +976,15 @@ function viaVisible(v){
   for(let l=v.a;l<=v.b;l++)if(layerAlpha(l)>0)return true;
   return false;
 }
+/* Une pastille se prend si son cuivre se voit : traversante, ou CMS sur une
+   couche visible (comme `drawSmdPads`). Un boîtier, si une de ses pastilles se
+   voit, si la sérigraphie de sa face est montrée, ou s'il est déjà pris : Top
+   masqué, un CMS du dessus qu'on ne voit pas ne vole plus le clic. */
+function padVisible(fp,q){return q.drill>0||layerAlpha(padLayers(fp,q)[0])>0;}
+function fpVisible(fp){
+  return S.sel.fps.has(fp.id)||!!((fp.side?S.show.silkB:S.show.silkT)&&faceAlpha(!fp.side))||
+    padsWorld(fp).some(q=>padVisible(fp,q));
+}
 function hitTest(x,y,e){
   const tol=px(3);
   for(const v of S.vias)
@@ -997,9 +1006,10 @@ function hitTest(x,y,e){
      souvent posé sur le boîtier, et le clic prenait le texte au lieu du composant. */
   if(filtreOk("fps"))for(let i=S.fps.length-1;i>=0;i--)
     for(const q of padsWorld(S.fps[i]))
-      if(padDist(x,y,q)<=tol)return {fp:S.fps[i],pad:q};
+      if(padDist(x,y,q)<=tol&&padVisible(S.fps[i],q))return {fp:S.fps[i],pad:q};
   if(filtreOk("fps"))for(let i=S.fps.length-1;i>=0;i--){
     const fp=S.fps[i];
+    if(!fpVisible(fp))continue;
     const tp = fpTextPos(fp);
     // textStrokes : 5/6 de la hauteur par caractère
     if(Math.abs(x-tp.ref.x)<=(fp.ref.length||0)*tp.ref.size*0.42 && Math.abs(y-tp.ref.y)<=tp.ref.size*0.6) return {fpText:fp, kind:"ref"};

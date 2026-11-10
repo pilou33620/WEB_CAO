@@ -10,6 +10,17 @@
 /* Deux noms pour le même en-tête : un relais peut retirer celui qui porte un « _ »
    (nginx par défaut) ; web_CAO.py accepte l'un ou l'autre. */
 const ENTETE_WEB={"X-WEB_CAO":"1","X-Web-Cao":"1"};
+/* Sous un relais (launcher : la page est à /o/web_cao/…), un fetch("/api/x") perd le
+   préfixe de l'outil : le relais devait deviner l'outil visé d'après le Referer ou un
+   cookie. La racine de l'outil se lit dans l'adresse de ce script ; toute adresse
+   absolue du site la reprend. Servie en direct, la racine est vide : rien ne change. */
+(function(){
+  let racine="";
+  try{racine=new URL(document.currentScript.src).pathname.replace(/\/commun\/echappe\.js$/,"");}catch(_){}
+  if(!racine||racine.endsWith(".js")||typeof window.fetch!=="function")return;
+  const f=window.fetch.bind(window);
+  window.fetch=(u,o)=>f(typeof u==="string"&&u[0]==="/"&&u[1]!=="/"&&!u.startsWith(racine+"/")?racine+u:u,o);
+})();
 const ESC_HTML={"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;","`":"&#96;"};
 function esc(s){
   return s==null?"":String(s).replace(/[&<>"'`]/g,ch=>ESC_HTML[ch]);
