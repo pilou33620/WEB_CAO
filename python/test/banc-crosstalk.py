@@ -2648,6 +2648,22 @@ T("classes d'interface : la table des pages est celle du serveur",
   la_table_des_pages_est_celle_du_serveur)
 
 
+def deux_instances_spice_ne_partagent_pas_leurs_noeuds():
+    """rf_reseau : deux X d'un meme sous-circuit en serie doublent son
+    impedance. Ici et non dans banc-rf.py, que la CI saute sans la LIB."""
+    import rf_reseau
+    texte = ("\n.SUBCKT CELL a b\nR1 a mid 10\nC1 mid b 1n\n.ENDS\n"
+             ".SUBCKT TOP 1 2\nX1 1 m CELL\nX2 m 2 CELL\n.ENDS\n")
+    f = 1e6
+    z = -1 / rf_reseau.ModeleSpice(texte, "essai").y(f)[0, 1]
+    attendu = 2 * (10 + 1 / (2j * math.pi * f * 1e-9))
+    assert abs(z - attendu) < 1e-6 * abs(attendu), (z, attendu)
+
+
+T("rf_reseau : deux instances SPICE ont chacune leurs noeuds internes",
+  deux_instances_spice_ne_partagent_pas_leurs_noeuds)
+
+
 print("\n" + "-" * 62)
 print("  %d cas, %s" % (ok + ko, "tous passes" if not ko
                         else "%d en echec" % ko))

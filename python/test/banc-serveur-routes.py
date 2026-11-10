@@ -1050,6 +1050,22 @@ def test_routes():
             web_CAO.DOSSIER_LIB_ACTIF = actif
         print("[PASS] LIB : catalogue change ailleurs -> 409, plus de copie a la racine")
 
+        # 45b. Catalogue enregistre par Excel en cp1252 : « – » et « ’ » se lisent tels quels
+        # (pas \x96 / \x92, refuses ensuite), et une modification le reecrit en cp1252.
+        with open(csv_, "wb") as f:
+            f.write("Part Name;Value;Description\r\nR1;1k;r’sistance – 0603\r\n".encode("cp1252"))
+        web_CAO.definir_dossier_lib(lib, initialiser=False, persister=False)
+        try:
+            conn.request("GET", "/api/lib/composants")
+            lue = json.loads(conn.getresponse().read().decode("utf-8"))["composants"][0]
+            assert lue["Description"] == "r’sistance – 0603", lue
+            code, rep = modifier({"part": "R1", "champs": {"Value": "2k"}, "avant": {"Description": lue["Description"]}})
+            assert code == 200, rep
+            assert open(csv_, "rb").read() == "Part Name;Value;Description\r\nR1;2k;r’sistance – 0603\r\n".encode("cp1252")
+        finally:
+            web_CAO.DOSSIER_LIB_ACTIF = actif
+        print("[PASS] LIB : catalogue cp1252 (Excel) lu et reecrit dans son encodage")
+
         # 46. Client du reseau : /api/lib/config ne donne que des noms de dossier, et un 500
         # ne porte ni le texte de l'exception ni un chemin du poste (REGLES §3.3).
         local = web_CAO.CustomHandler._client_local
@@ -1097,10 +1113,13 @@ def test_routes():
         print("[PASS] Projet : NaN et texte non encodable refuses, creation sans ecrasement (409)")
 
         # 48. Liste des projets : un sous-dossier illisible ne la vide plus ; ni lien
-        # symbolique ni dossier cache.
+        # symbolique ni dossier cache ; un projet.cao.json qui n'est pas un objet est liste
+        # sous son nom de dossier (plus d'AttributeError, donc plus de 500).
         racine = _tf.mkdtemp(prefix="webcao_index_")
-        for d in ("a_ferme", "ok", ".cache/x"):
+        for d in ("a_ferme", "ok", ".cache/x", "liste"):
             os.makedirs(os.path.join(racine, d))
+        with open(os.path.join(racine, "liste", "projet.cao.json"), "w", encoding="utf-8") as f:
+            f.write("[1, 2]")
         for d in ("ok", ".cache/x"):
             with open(os.path.join(racine, d, "projet.cao.json"), "w", encoding="utf-8") as f:
                 json.dump({"format": "cao-projet-1", "nom": os.path.basename(d)}, f)
@@ -1110,10 +1129,10 @@ def test_routes():
         try:
             trouves = []
             h._explorer_projets(racine, racine, 0, trouves)
-            assert [p["chemin"] for p in trouves] == ["ok"], trouves
+            assert [(p["chemin"], p["nom"]) for p in trouves] == [("liste", "liste"), ("ok", "ok")], trouves
         finally:
             os.chmod(os.path.join(racine, "a_ferme"), 0o755)
-        print("[PASS] Projets : dossier illisible saute, liens et dossiers caches ignores")
+        print("[PASS] Projets : dossier illisible saute, liens et dossiers caches ignores, JSON non objet liste")
 
         # 49. Ecriture exclusive (datasheets, si_absent, creation de projet) : un nom pris
         # n'est jamais ecrase, et rien de temporaire ne reste.

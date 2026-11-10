@@ -369,6 +369,16 @@ def parse_ipc2581_file(xml_file: str) -> IPCDesign:
 # MIXED, CONDFILM, CONDFOIL, POWER_GROUND...). Meme famille que celle que la
 # page reconnait (js/02-modele.js).
 _RE_FONCTION_CUIVRE = re.compile(r"COND|SIGNAL|PLANE|POWER|GROUND|MIXED")
+# Le type d'un composant d'apres ses proprietes TYPE / CATEGORY / DEVICE (mots entiers)
+_MOTS_TYPE = (
+    ("RESISTOR", {"RES", "RESISTOR", "RESISTORS", "RESISTANCE"}),
+    ("CAPACITOR", {"CAP", "CAPS", "CAPACITOR", "CAPACITORS"}),
+    ("INDUCTOR", {"IND", "INDUCTOR", "INDUCTORS", "COIL", "COILS", "CHOKE", "CHOKES"}),
+    ("DIODE", {"DIODE", "DIODES", "LED", "LEDS"}),
+    ("TRANSISTOR", {"TRANSISTOR", "TRANSISTORS", "MOSFET", "MOSFETS"}),
+    ("IC", {"IC", "ICS", "CIRCUIT", "CIRCUITS"}),
+    ("CONNECTOR", {"CONN", "CONNECTOR", "CONNECTORS", "HEADER", "HEADERS"}),
+)
 
 
 class IPC2581Parser:
@@ -601,21 +611,14 @@ class IPC2581Parser:
             for k in ("TYPE", "COMPONENT_TYPE", "CATEGORY", "DEVICE"):
                 for prop_k, prop_v in props.items():
                     if prop_k.upper() == k:
-                        pv = prop_v.upper()
-                        if "RES" in pv:
-                            return "RESISTOR"
-                        if "CAP" in pv:
-                            return "CAPACITOR"
-                        if "IND" in pv or "COIL" in pv or "CHOKE" in pv:
-                            return "INDUCTOR"
-                        if "DIODE" in pv or "LED" in pv:
-                            return "DIODE"
-                        if "TRANS" in pv or "MOSFET" in pv:
-                            return "TRANSISTOR"
-                        if "IC" in pv or "CIRCUIT" in pv:
-                            return "IC"
-                        if "CONN" in pv or "HEADER" in pv:
-                            return "CONNECTOR"
+                        # des mots entiers : « Resonators » n'est pas RES, « CERAMIC » pas IC,
+                        # « Transformer » pas TRANS(istor)
+                        mots = set(re.findall(r"[A-Z]+", prop_v.upper()))
+                        if mots & {"TRANSFORMER", "TRANSFORMERS"}:
+                            return "UNKNOWN"     # sinon le préfixe T le ferait transistor
+                        for genre, noms in _MOTS_TYPE:
+                            if mots & noms:
+                                return genre
 
         # 2. Préfixe du RefDes (norme IEEE 315 / ASME Y14.44 / usage CAO)
         m = re.match(r"^([A-Z]+)", rd)
@@ -629,7 +632,7 @@ class IPC2581Parser:
             return "INDUCTOR"
         if pfx in ("D", "CR", "LED", "TVS", "ZD"):
             return "DIODE"
-        if pfx in ("Q", "TR", "MOS", "FET", "T"):
+        if pfx in ("Q", "TR", "MOS", "FET", "T"):    # T : transistor dans l'usage français
             return "TRANSISTOR"
         if pfx in ("U", "IC"):
             return "IC"

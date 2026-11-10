@@ -329,174 +329,6 @@ def ordonnancer_placement(footprints: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def _segments_croisent(
-    p1: Tuple[float, float], p2: Tuple[float, float],
-    p3: Tuple[float, float], p4: Tuple[float, float]
-) -> bool:
-    """Vérifie si deux segments 2D [p1, p2] et [p3, p4] se croisent strictement."""
-    x1, y1 = p1
-    x2, y2 = p2
-    x3, y3 = p3
-    x4, y4 = p4
-
-    tol = 1e-4
-    if ((abs(x1 - x3) < tol and abs(y1 - y3) < tol) or
-        (abs(x1 - x4) < tol and abs(y1 - y4) < tol) or
-        (abs(x2 - x3) < tol and abs(y2 - y3) < tol) or
-        (abs(x2 - x4) < tol and abs(y2 - y4) < tol)):
-        return False
-
-    def ccw(ax, ay, bx, by, cx, cy):
-        return (cy - ay) * (bx - ax) > (by - ay) * (cx - ax)
-
-    return (ccw(x1, y1, x3, y3, x4, y4) != ccw(x2, y2, x3, y3, x4, y4)) and \
-           (ccw(x1, y1, x2, y2, x3, y3) != ccw(x1, y1, x2, y2, x4, y4))
-
-
-def evaluer_rotation_composant(
-    ref: str,
-    footprints: List[Dict[str, Any]]
-) -> Optional[Dict[str, Any]]:
-    """Évalue les 4 rotations (0°, 90°, 180°, 270°) d'un composant pour minimiser les croisements."""
-    if not isinstance(footprints, list) or not all(isinstance(f, dict) for f in footprints):
-        raise ValueError("« footprints » : liste d'objets attendue")
-    target_fp = next((f for f in footprints if f.get("ref") == ref), None)
-    if not target_fp:
-        return None
-
-    pads_target = target_fp.get("pads", [])
-    connected_pads = [p for p in pads_target if p.get("net")]
-    if len(connected_pads) < 2:
-        return None
-
-    fx = float(target_fp.get("x", 0.0))
-    fy = float(target_fp.get("y", 0.0))
-    frot = float(target_fp.get("rot", 0.0)) % 360
-
-    # Pastilles locales (lx, ly)
-    a_cur = math.radians(frot)
-    pads_loc = []
-    for p in connected_pads:
-        if "lx" in p and "ly" in p:
-            lx, ly = float(p["lx"]), float(p["ly"])
-        else:
-            px, py = float(p.get("x", fx)), float(p.get("y", fy))
-            # Dé-rotation
-            dx = px - fx
-            dy = py - fy
-            lx = dx * math.cos(-a_cur) - dy * math.sin(-a_cur)
-            ly = dx * math.sin(-a_cur) + dy * math.cos(-a_cur)
-        pads_loc.append({
-            "n": p.get("n", 1),
-            "net": p.get("net"),
-            "lx": lx,
-            "ly": ly
-        })
-
-    # Indexation des pastilles externes par net
-    ext_pads_by_net: Dict[str, List[Tuple[float, float]]] = defaultdict(list)
-    for fp in footprints:
-        if fp.get("ref") == ref:
-            continue
-        for p in fp.get("pads", []):
-            net = p.get("net")
-            if net:
-                ext_pads_by_net[net].append((float(p.get("x", 0.0)), float(p.get("y", 0.0))))
-
-    angles_eval = [0, 90, 180, 270]
-    # Une rotation hors quart de tour s'évalue telle quelle : la comparer à 0°
-    # annoncerait un gain qui n'existe pas
-    if int(round(frot)) not in angles_eval:
-        angles_eval.append(int(round(frot)))
-    resultats_angles = []
-
-    for angle in angles_eval:
-        a_rad = math.radians(angle)
-        cos_a = math.cos(a_rad)
-        sin_a = math.sin(a_rad)
-
-        segments = []
-        longueur_totale = 0.0
-
-        for p in pads_loc:
-            net = p["net"]
-            targets = ext_pads_by_net.get(net, [])
-            if not targets:
-                continue
-
-            wx = fx + p["lx"] * cos_a - p["ly"] * sin_a
-            wy = fy + p["lx"] * sin_a + p["ly"] * cos_a
-
-            # Cible la plus proche
-            best_t = min(targets, key=lambda t: math.hypot(wx - t[0], wy - t[1]))
-            dist_t = math.hypot(wx - best_t[0], wy - best_t[1])
-            longueur_totale += dist_t
-            segments.append({
-                "p1": (wx, wy),
-                "p2": best_t,
-                "net": net
-            })
-
-        # Compter les croisements entre segments de nets différents
-        nb_croisements = 0
-        n_seg = len(segments)
-        for i in range(n_seg):
-            for j in range(i + 1, n_seg):
-                if segments[i]["net"] != segments[j]["net"]:
-                    if _segments_croisent(segments[i]["p1"], segments[i]["p2"],
-                                          segments[j]["p1"], segments[j]["p2"]):
-                        nb_croisements += 1
-
-        score = nb_croisements * 1000.0 + longueur_totale
-        resultats_angles.append({
-            "angle": angle,
-            "croisements": nb_croisements,
-            "longueur_mm": round(longueur_totale, 2),
-            "score": round(score, 2)
-        })
-
-    # Trouver l'angle optimal
-    meilleur = min(resultats_angles, key=lambda r: r["score"])
-    actuel = next((r for r in resultats_angles if r["angle"] == int(round(frot))), resultats_angles[0])
-
-    gain_croisements = actuel["croisements"] - meilleur["croisements"]
-    gain_longueur_mm = round(actuel["longueur_mm"] - meilleur["longueur_mm"], 2)
-
-    return {
-        "ref": ref,
-        "rotation_actuelle": int(round(frot)),
-        "rotation_optimale": meilleur["angle"],
-        "croisements_actuels": actuel["croisements"],
-        "croisements_optimaux": meilleur["croisements"],
-        "gain_croisements": gain_croisements,
-        "longueur_actuelle_mm": actuel["longueur_mm"],
-        "longueur_optimale_mm": meilleur["longueur_mm"],
-        "gain_longueur_mm": gain_longueur_mm,
-        "rotations": resultats_angles
-    }
-
-
-def optimiser_rotations_placement(
-    footprints: List[Dict[str, Any]],
-    seuil_gain_croisements: int = 1
-) -> List[Dict[str, Any]]:
-    """Identifie tous les composants dont la rotation réduit les croisements de chevelu."""
-    suggestions = []
-    for fp in footprints:
-        ref = fp.get("ref", "")
-        if not ref:
-            continue
-        eval_rot = evaluer_rotation_composant(ref, footprints)
-        if not eval_rot:
-            continue
-        # Retenir si gain de croisement ou gain de longueur significatif (> 8 mm)
-        if eval_rot["gain_croisements"] >= seuil_gain_croisements or (eval_rot["gain_croisements"] == 0 and eval_rot["gain_longueur_mm"] >= 8.0 and eval_rot["rotation_actuelle"] != eval_rot["rotation_optimale"]):
-            suggestions.append(eval_rot)
-
-    suggestions.sort(key=lambda s: (s["gain_croisements"], s["gain_longueur_mm"]), reverse=True)
-    return suggestions
-
-
 def evaluer_placement_pcb(data: Dict[str, Any]) -> Dict[str, Any]:
     """Point d'entrée principal pour évaluer un document PCB.
 
@@ -516,7 +348,6 @@ def evaluer_placement_pcb(data: Dict[str, Any]) -> Dict[str, Any]:
     congestion = analyser_congestion(footprints, board=board, grille_mm=5.0)
     decouplage = analyser_decouplage(footprints, distance_cible_mm=3.5)
     ordonnancement = ordonnancer_placement(footprints)
-    rotations_suggerees = optimiser_rotations_placement(footprints)
 
     return {
         "succes": True,
@@ -524,6 +355,5 @@ def evaluer_placement_pcb(data: Dict[str, Any]) -> Dict[str, Any]:
         "top_contributeurs": worst,
         "congestion": congestion,
         "decouplage": decouplage,
-        "ordonnancement": ordonnancement,
-        "rotations_suggerees": rotations_suggerees
+        "ordonnancement": ordonnancement
     }

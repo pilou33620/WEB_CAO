@@ -294,6 +294,10 @@ def test_ferrite_pas_un_oscillateur():
     # Un oscillateur actif sans repère Y/X reste reconnu par sa fréquence
     oscs = identifier_oscillateurs({"U4": {"val": "SG-8002 25MHz"}}, {})
     assert len(oscs) == 1 and oscs[0]["main_component"] == "U4"
+    # X1 connecteur n'est pas un quartz ; un X qui porte sa fréquence, oui
+    assert identifier_oscillateurs({"X1": {"val": "USB-C"}, "J2": {"val": "HDR"}}, {}) == []
+    oscs = identifier_oscillateurs({"X2": {"val": "16MHz"}, "XTAL1": {"val": "?"}}, {})
+    assert sorted(o["main_component"] for o in oscs) == ["X2", "XTAL1"], oscs
     print("[PASS] test_ferrite_pas_un_oscillateur")
 
 

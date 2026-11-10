@@ -2243,7 +2243,7 @@ def _farads(txt):
     if not m:
         return 0.0
     return float(m.group(1).replace(",", ".")) * {"p": 1e-12, "n": 1e-9, "u": 1e-6,
-                                                   "µ": 1e-6, "m": 1e-3}[m.group(2).lower()]
+                                                   "µ": 1e-6, "μ": 1e-6, "m": 1e-3}[m.group(2).lower()]
 
 
 def _l_montage(pkg):

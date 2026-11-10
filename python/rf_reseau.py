@@ -405,11 +405,12 @@ def _aplatir(circuits, nom, noeuds, params, prefixe, sortie, profondeur=0):
             return MASSE
         return carte.get(n, prefixe + n)
 
-    for el in c["elements"]:
+    for i, el in enumerate(c["elements"]):
         if el[0] == "x":
             _, ns, sous, surch = el
+            # un préfixe par instance : deux X d'un même circuit ne partagent pas leurs nœuds internes
             _aplatir(circuits, sous, [g(n) for n in ns], _params(surch, p),
-                     prefixe + "x.", sortie, profondeur + 1)
+                     prefixe + "x%d." % i, sortie, profondeur + 1)
         else:
             sortie.append((el[0], g(el[1]), g(el[2]), valeur_spice(el[3], p)))
 

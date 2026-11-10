@@ -2127,8 +2127,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                 try:
                     with open(principal, encoding="utf-8") as flux:
                         nom = nom_projet(json.load(flux).get("nom")) or relatif
-                except (OSError, ValueError):
-                    pass               # illisible : liste sous son nom de dossier
+                except (OSError, ValueError, AttributeError):
+                    pass               # illisible ou pas un objet : liste sous son nom de dossier
                 accumule.append({"nom": nom, "chemin": relatif, "racine": racine,
                                  "t": derniere_sauvegarde(chemin)})
             else:
@@ -2352,7 +2352,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         mtime = mtime_ms(chemin)
 
         contenu = None
-        for enc in ("utf-8-sig", "latin1", "cp1252"):
+        for enc in ("utf-8-sig", "cp1252", "latin1"):
             try:
                 # newline="" : le module csv lit lui-meme les fins de ligne,
                 # y compris celles qui vivent a l'interieur d'un champ entre
@@ -2519,7 +2519,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             raise ErreurLib(404, "Fichier LIB_composants.csv introuvable")
         with open(chemin, "rb") as f:
             brut = f.read()
-        for enc in ("utf-8-sig", "latin1"):
+        for enc in ("utf-8-sig", "cp1252", "latin1"):
             try:
                 return chemin, brut, brut.decode(enc), enc
             except UnicodeDecodeError:
@@ -3001,9 +3001,6 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             raise ErreurIPC(400, "Document JSON (objet) attendu")
         # un champ d'un autre type que prevu (liste au lieu d'objet...) : un refus, pas un 500
         try:
-            if doc.get("composant_cible"):
-                res = pcb_scoring.evaluer_rotation_composant(doc["composant_cible"], doc.get("footprints", []))
-                return {"succes": True, "composant": res}
             return pcb_scoring.evaluer_placement_pcb(doc)
         except (TypeError, ValueError, AttributeError, KeyError) as exc:
             raise ErreurIPC(422, "Document de placement illisible : %s" % exc)

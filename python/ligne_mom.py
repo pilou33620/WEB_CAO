@@ -3074,35 +3074,6 @@ def frequence_resonance_moignon(longueur, epsilon_r):
     return C_0 / (4.0 * lg * np.sqrt(float(epsilon_r)))
 
 
-def inductance_cavite(hauteur_plans, ecart, rayon):
-    """Inductance de boucle d'un retour dans une paire de plans. EN METRES.
-
-        L = (mu0 h / 2pi) * ln(s / r)
-
-    LA GEOMETRIE QU'ELLE DECRIT. Le courant descend par le via -- rayon `r` --,
-    s'etale dans le plan du haut, remonte par un pont situe a la distance `s`,
-    et revient par le plan du bas. `hauteur_plans` est l'ecart entre les deux
-    plans, et c'est lui qui commande : deux plans colles n'enferment aucune
-    surface, deux plans separes par un coeur de 1 mm en enferment.
-
-    CE N'EST PAS UNE INDUCTANCE A AJOUTER A CELLE DU VIA -- c'en est UNE AUTRE,
-    en serie avec elle, et l'appelant les additionne en le disant. La mutuelle
-    entre les deux boucles est negligee ; elles sont dans des plans differents
-    et se recoupent peu, mais la negliger reste une approximation, et elle est
-    nommee.
-
-    Ordre de grandeur : 1 mm entre plans, un pont a 2 mm, un percage de
-    0,25 mm -> 0,55 nH. C'est le meme ordre que le via lui-meme : changer de
-    reference DOUBLE l'inductance, meme quand on decouple bien.
-    """
-    h = float(hauteur_plans)
-    s = float(ecart)
-    r = float(rayon)
-    if not (h > 0 and r > 0 and s > r):
-        return 0.0
-    return (MU_0 * h / (2.0 * np.pi)) * np.log(s / r)
-
-
 def capacite_paire_plans(aire, hauteur_plans, epsilon_r):
     """La cavite vue comme un condensateur plan, en farads. EN METRES.
 

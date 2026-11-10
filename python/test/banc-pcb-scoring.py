@@ -129,49 +129,8 @@ def test_evaluer_placement_pcb():
     assert "hpwl_mm" in res
     assert "congestion" in res
     assert "decouplage" in res
-    assert "rotations_suggerees" in res
+    assert "rotations_suggerees" not in res     # O(n²), lue par personne : retiree
     print("[PASS] test_evaluer_placement_pcb")
-
-
-def test_rotation_optimale():
-    # U1 au centre (x=20, y=20) avec rot=0°
-    # Pin 1 en haut (ly=-2) reliée à NET_A
-    # Pin 2 en bas (ly=+2) reliée à NET_B
-    # Mais la cible NET_A est en bas à droite (x=30, y=25), et la cible NET_B est en haut à droite (x=30, y=15)
-    # À 0°, les deux liaisons se croisent en X ! À 180°, elles sont directes sans croisement.
-    fps = [
-        {
-            "ref": "U1", "x": 20.0, "y": 20.0, "rot": 0.0,
-            "pads": [
-                {"n": 1, "net": "NET_A", "x": 20.0, "y": 18.0, "lx": 0.0, "ly": -2.0},
-                {"n": 2, "net": "NET_B", "x": 20.0, "y": 22.0, "lx": 0.0, "ly": 2.0}
-            ]
-        },
-        {
-            "ref": "TARGET_A", "x": 30.0, "y": 25.0, "rot": 0.0,
-            "pads": [{"n": 1, "net": "NET_A", "x": 30.0, "y": 25.0}]
-        },
-        {
-            "ref": "TARGET_B", "x": 30.0, "y": 15.0, "rot": 0.0,
-            "pads": [{"n": 1, "net": "NET_B", "x": 30.0, "y": 15.0}]
-        }
-    ]
-
-    from pcb_scoring import evaluer_rotation_composant, optimiser_rotations_placement
-    diag = evaluer_rotation_composant("U1", fps)
-    assert diag is not None
-    assert diag["rotation_actuelle"] == 0
-    assert diag["rotation_optimale"] == 180
-    assert diag["croisements_actuels"] == 1
-    assert diag["croisements_optimaux"] == 0
-    assert diag["gain_croisements"] == 1
-    assert diag["gain_longueur_mm"] > 0
-
-    sugs = optimiser_rotations_placement(fps)
-    assert len(sugs) == 1
-    assert sugs[0]["ref"] == "U1"
-    assert sugs[0]["rotation_optimale"] == 180
-    print("[PASS] test_rotation_optimale")
 
 
 def _fp(ref, x, y, *pads, rot=0.0):
@@ -293,66 +252,11 @@ def test_ordonnancement_prefixes():
     print("[PASS] test_ordonnancement_prefixes")
 
 
-def test_segments_croisent():
-    from pcb_scoring import _segments_croisent
-    assert _segments_croisent((0, 0), (10, 10), (0, 10), (10, 0)) is True
-    assert _segments_croisent((0, 0), (10, 0), (0, 5), (10, 5)) is False      # parallèles
-    assert _segments_croisent((0, 0), (10, 10), (10, 10), (20, 0)) is False   # extrémité commune
-    assert _segments_croisent((0, 0), (1, 1), (5, 0), (6, -1)) is False       # disjoints
-    print("[PASS] test_segments_croisent")
-
-
-def test_rotation_cas_limites():
-    from pcb_scoring import evaluer_rotation_composant, optimiser_rotations_placement
-    fps = [_fp("R1", 0, 0, (1, "A", 0, 0)), _fp("R2", 5, 0, (1, "A", 5, 0))]
-    assert evaluer_rotation_composant("INCONNU", fps) is None
-    assert evaluer_rotation_composant("R1", fps) is None     # une seule pastille reliée
-
-    # Déjà bien orienté : aucune suggestion
-    fps = [
-        {"ref": "U1", "x": 20.0, "y": 20.0, "rot": 0.0, "pads": [
-            {"n": 1, "net": "A", "x": 20.0, "y": 18.0, "lx": 0.0, "ly": -2.0},
-            {"n": 2, "net": "B", "x": 20.0, "y": 22.0, "lx": 0.0, "ly": 2.0}]},
-        _fp("TA", 20, 10, (1, "A", 20, 10)),
-        _fp("TB", 20, 30, (1, "B", 20, 30)),
-    ]
-    diag = evaluer_rotation_composant("U1", fps)
-    assert diag["rotation_optimale"] == 0 and diag["gain_croisements"] == 0
-    assert optimiser_rotations_placement(fps) == []
-
-    # Rotation négative ramenée dans [0, 360)
-    fps[0]["rot"] = -90.0
-    assert evaluer_rotation_composant("U1", fps)["rotation_actuelle"] == 270
-
-    # Rotation hors quart de tour : évaluée telle quelle, pas confondue avec 0°
-    fps[0]["rot"] = 45.0
-    diag = evaluer_rotation_composant("U1", fps)
-    assert diag["rotation_actuelle"] == 45
-    a45 = [r for r in diag["rotations"] if r["angle"] == 45]
-    assert len(a45) == 1
-    assert diag["longueur_actuelle_mm"] == a45[0]["longueur_mm"]
-    print("[PASS] test_rotation_cas_limites")
-
-
-def test_rotation_sans_lx_ly():
-    # Pastilles sans coordonnées locales : dé-rotation depuis la position absolue
-    from pcb_scoring import evaluer_rotation_composant
-    fps = [
-        _fp("U1", 20, 20, (1, "NET_A", 20, 18), (2, "NET_B", 20, 22)),
-        _fp("TARGET_A", 30, 25, (1, "NET_A", 30, 25)),
-        _fp("TARGET_B", 30, 15, (1, "NET_B", 30, 15)),
-    ]
-    diag = evaluer_rotation_composant("U1", fps)
-    assert diag["croisements_actuels"] == 1
-    assert diag["rotation_optimale"] == 180
-    print("[PASS] test_rotation_sans_lx_ly")
-
-
 def test_evaluer_placement_vide():
     res = evaluer_placement_pcb({})
     assert res["succes"] is True
     assert res["hpwl_mm"] == 0.0
-    assert res["top_contributeurs"] == [] and res["rotations_suggerees"] == []
+    assert res["top_contributeurs"] == []
     assert res["ordonnancement"]["counts"] == {"anchor": 0, "semi_fixed": 0, "flexible": 0, "free": 0}
     print("[PASS] test_evaluer_placement_vide")
 
@@ -364,7 +268,6 @@ if __name__ == "__main__":
     test_decouplage()
     test_ordonnancement()
     test_evaluer_placement_pcb()
-    test_rotation_optimale()
     test_hpwl_masse_et_rails()
     test_hpwl_masses_variantes()
     test_top_contributeurs_limites()
@@ -372,8 +275,5 @@ if __name__ == "__main__":
     test_decouplage_connecteur_pas_une_capa()
     test_decouplage_cas_limites()
     test_ordonnancement_prefixes()
-    test_segments_croisent()
-    test_rotation_cas_limites()
-    test_rotation_sans_lx_ly()
     test_evaluer_placement_vide()
     print("\n TOUS LES TESTS DE PCB_SCORING SONT VALIDÉS AVEC SUCCÈS.")

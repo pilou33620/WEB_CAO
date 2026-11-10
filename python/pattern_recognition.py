@@ -34,6 +34,8 @@ _RE_GROUND_NET = re.compile(r"GND|VSS|(?<![\d.])0V(?!\d)", re.IGNORECASE)
 _RE_I2C_NET = re.compile(r"I2C|(?<![A-Z])(?:SDA|SCL)(?![A-Z])", re.IGNORECASE)
 # Passifs dont la valeur peut porter une fréquence (ferrite 600R@100MHz...)
 _RE_REF_PASSIF = re.compile(r"^(?:R|C|L|FB|D|TP)\d", re.IGNORECASE)
+# X1 est d'abord un connecteur : seul un X qui porte une fréquence passe pour un quartz
+_RE_REF_QUARTZ = re.compile(r"^(?:Y|XTAL|XY)\d", re.IGNORECASE)
 
 
 def _nets_masse(nets: Dict[str, List[Any]]) -> List[str]:
@@ -365,7 +367,7 @@ def identifier_oscillateurs(
         type_c = str(comp.get("type") or "").lower()
 
         freq_dans_valeur = ("MHZ" in val or "KHZ" in val) and not _RE_REF_PASSIF.match(ref)
-        is_crystal = ref.startswith("Y") or ref.startswith("X") or freq_dans_valeur or "crystal" in type_c
+        is_crystal = _RE_REF_QUARTZ.match(ref) or freq_dans_valeur or "crystal" in type_c
         if not is_crystal:
             continue
 

@@ -735,6 +735,10 @@ def test_decouplage():
     # le 10 µF tout près ET un 10 nF à 3 mm : le 10 nF découple, plus rien
     petit3 = dict(capa(3.0, ref="C2"), val="10nF", pkg="0402")
     assert de(analyser(composants=[u1, gros, petit3], natures=natures), "decouplage") == []
+    # « μ » grec (U+03BC) et sa majuscule valent « µ » (U+00B5) : plus de KeyError
+    for val in ("10µF", "10\u03bcF", "10\u039cF"):
+        k = de(analyser(composants=[u1, dict(gros, val=val)], natures=natures), "decouplage")
+        assert k and "résonance à" in k[0]["msg"], (val, k)
     print("[PASS] test_decouplage")
 
 
@@ -1109,8 +1113,23 @@ def test_classes_d_interface():
     print("[PASS] test_classes_d_interface")
 
 
+def test_type_composant_ipc():
+    """Le type que l'analyse lit vient du parseur IPC-2581 : des mots entiers,
+    pas des sous-chaînes (Resonators n'est pas RES, CERAMIC pas IC)."""
+    from ipc2581_parser import IPC2581Parser
+    q = IPC2581Parser._qualifier_type_composant
+    assert q("Y1", "", {"CATEGORY": "Crystals, Oscillators, Resonators"}) == "CRYSTAL"
+    assert q("C5", "", {"DEVICE": "C_0603_CERAMIC"}) == "CAPACITOR"
+    assert q("T1", "", {"TYPE": "Transformer"}) != "TRANSISTOR"
+    assert q("R1", "", {"TYPE": "Resistor"}) == "RESISTOR"
+    assert q("U1", "", {"CATEGORY": "Integrated Circuits (ICs)"}) == "IC"
+    assert q("Q1", "", {"CATEGORY": "Transistors"}) == "TRANSISTOR"
+    print("[PASS] test_type_composant_ipc")
+
+
 if __name__ == "__main__":
     test_coudes()
+    test_type_composant_ipc()
     test_jonctions()
     test_perimetre()
     test_hors_45()
