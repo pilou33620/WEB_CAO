@@ -211,9 +211,15 @@ function zoneCanvas(i,fixe){
     for(let k=1;k<ct.pts.length;k++)c.lineTo(ct.pts[k].x,ct.pts[k].y);
     c.closePath();c.fill();
   }
-  for(const P of zoneLanieres(i)){        // cuivre plus étroit que cuMin entre deux dégagements
-    c.beginPath();c.moveTo(P[0].x,P[0].y);for(let k=1;k<P.length;k++)c.lineTo(P[k].x,P[k].y);c.closePath();c.fill();
+  /* cuivre plus étroit que cuMin entre deux dégagements. D'un seul tracé : deux
+     enveloppes voisines peintes à part laissaient entre elles un liseré
+     d'anticrénelage, qui recollait les éclats au plan (toutes de même sens). */
+  c.beginPath();
+  for(const P of zoneLanieres(i)){
+    c.moveTo(P[0].x,P[0].y);for(let k=1;k<P.length;k++)c.lineTo(P[k].x,P[k].y);c.closePath();
   }
+  c.fill();
+  c.lineWidth=2/res;c.stroke();        // un pixel de débord : plus de liseré le long d'un dégagement
   for(const t of S.tracks){
     if(t.l!==i)continue;
     const tb=trkBBox(t);

@@ -969,10 +969,17 @@ function selDecoupes(){
 }
 function selDrawingsPcb(){return (S.drawings||[]).filter(d=>S.sel.drawings&&S.sel.drawings.has(d.id));}
 function selHolesPcb(){return (S.holes||[]).filter(h=>S.sel.holes&&S.sel.holes.has(h.id));}
+/* Un via se prend dès qu'UNE de ses couches est visible : jugé sur sa seule
+   couche haute, un via traversant ne se prenait plus dès que le Top était
+   masqué (travail sur le Bottom), et le clic emportait le plan autour. */
+function viaVisible(v){
+  for(let l=v.a;l<=v.b;l++)if(layerAlpha(l)>0)return true;
+  return false;
+}
 function hitTest(x,y,e){
   const tol=px(3);
   for(const v of S.vias)
-    if(filtreOk("vias")&&layerAlpha(v.a)>0&&dist(x,y,v.x,v.y)<=v.d/2+tol)return {via:v};
+    if(filtreOk("vias")&&viaVisible(v)&&dist(x,y,v.x,v.y)<=v.d/2+tol)return {via:v};
   if(S.holes&&filtreOk("holes")){
     for(let i=S.holes.length-1;i>=0;i--){
       const h=S.holes[i], a=axePercage(h);
@@ -4787,7 +4794,11 @@ cv.addEventListener("pointerdown",e=>{
   if(S.mode==="via"){
     const m=magnet(p.x,p.y,S.active);
     const x=m?m.x:snapX(p.x), y=m?m.y:snapY(p.y);
-    placeVia(x,y,m?m.net:"",0,S.cu-1,false);
+    /* posé dans le plein d'une zone, loin de tout cuivre : le via prend le net
+       de la zone (un via de masse dans le plan de masse), couche active d'abord */
+    let zn="";
+    if(!m)for(const l of [S.active].concat(S.cuL.map((_,i)=>i))){const z=zoneAt(l,x,y);if(z&&z.net){zn=z.net;break;}}
+    placeVia(x,y,m?m.net:zn,0,S.cu-1,false);
     refreshPanels();draw();return;
   }
   if(S.mode==="cut"){
@@ -5524,7 +5535,7 @@ function pcbRouletteCible(clientX,clientY,type){
 function pcbPisteProche(x,y,tol){
   let best=null,bd=tol;
   for(const v of S.vias){
-    if(layerAlpha(v.a)<=0)continue;
+    if(!viaVisible(v))continue;
     const d=dist(x,y,v.x,v.y)-v.d/2;
     if(d<=bd){bd=d;best={via:v};}
   }

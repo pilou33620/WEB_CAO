@@ -865,6 +865,40 @@ T("îlot de cuivre isolé : retiré d'office au remplissage, écran et Gerber, l
   if(cutsCuivre(true).some(x=>x.ilot&&inPoly(40,25,x.pts)))throw new Error("relié, le cuivre doit revenir");
   loadDoc(JSON.parse(saved),true);
 });
+T("éclats de cuivre : entre des pistes serrées, aucun morceau isolé ne reste peint, même sous le pixel du masque",()=>{
+  if(!realCanvas){console.log("     (canvas absent : essai ignoré)");return;}
+  const saved=serialize();
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.cuts=[];touch();
+  setCuCount(2);
+  S.board={x:0,y:0,w:30,h:20};
+  S.zones.push({id:999,l:1,net:"GND",pts:boardZonePts()});
+  // trois pistes parallèles qui tournent à 45° : les lanières laissaient des triangles de 0,2 mm
+  const P=(x1,y1,x2,y2,n)=>S.tracks.push({l:1,net:n,w:0.3,x1,y1,x2,y2});
+  P(5,5,12,5,"A");P(12,5,15,8,"A");P(15,8,15,14,"A");
+  P(5,5.75,11.6,5.75,"B");P(11.6,5.75,15,9.15,"B");P(15,9.15,15.9,10.05,"B");P(15.9,10.05,15.9,14,"B");
+  P(5,6.6,11,6.6,"C");P(11,6.6,14,9.6,"C");P(14,9.6,14,14,"C");
+  S.vias.push(mkVia(3,3,"GND",0,1));
+  touch();conn(true);zoneCache.clear();
+  const zc=zoneCanvas(1,{res:40}), W=zc.cvs.width, H=zc.cvs.height;
+  const d=zc.cvs.getContext("2d").getImageData(0,0,W,H).data, a=new Uint8Array(W*H);
+  for(let i=0,j=3;i<a.length;i++,j+=4)a[i]=d[j]>40?1:0;
+  const n=labelMask(a,W,H).count;
+  if(n!==1)throw new Error("un seul morceau de cuivre attendu à l'écran, "+n);
+  loadDoc(JSON.parse(saved),true);
+});
+T("un via traversant se prend au clic quand le Top est masqué, au lieu du plan qui l'entoure",()=>{
+  const saved=serialize();
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.cuts=[];touch();
+  setCuCount(2);
+  S.board={x:0,y:0,w:30,h:20};
+  S.zones.push({id:999,l:1,net:"GND",pts:boardZonePts()});
+  const v=mkVia(10,10,"GND",0,1);S.vias.push(v);
+  S.active=1;S.cuL[0].vis=false;touch();
+  const h=hitTest(10,10,null);
+  S.cuL[0].vis=true;
+  if(!h||h.via!==v)throw new Error("le via devrait être pris, pas "+JSON.stringify(h&&Object.keys(h)));
+  loadDoc(JSON.parse(saved),true);
+});
 T("classes de net",()=>{
   const d=classOf("N$1");
   if(d.name!=="Défaut")throw new Error("classe par défaut attendue");

@@ -188,11 +188,18 @@ function ilotContour(M,m,l,net){
   return loc.map(p=>({x:r3(wx(p.x)),y:r3(wy(p.y))}));
 }
 
+/* Pixels par mm du masque d'un groupe de zones, boîte (marges comprises) w × h.
+   Au moins ~2 pixels par isolation ; plus fin, jusqu'à 20 px/mm, tant que
+   l'analyse de toutes les zones tient dans MASK_BUDGET (donc reste immédiate) :
+   sur une petite carte, un éclat de cuivre de 0,1 mm y fait alors un îlot. */
+function maskRes(w,h){
+  const base=clamp(1/Math.max(0.08,maxClr()*0.6),4,14);
+  return Math.max(base,Math.min(20,Math.sqrt(MASK_BUDGET/Math.max(1,zoneGroups().length)/(w*h))));
+}
 function zoneMask(l,net){
   const zs=S.zones.filter(z=>!z.larme&&z.l===l&&(z.net||"")===net&&z.pts.length>=3);
   if(!zs.length)return null;
   const clr=classOf(net).clr;
-  const res=clamp(1/Math.max(0.08,maxClr()*0.6),4,14);   // ~2 pixels par isolation
   let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;
   for(const z of zs){
     const b=polyBBox(z.pts);
@@ -200,6 +207,7 @@ function zoneMask(l,net){
     x2=Math.max(x2,b.x2);y2=Math.max(y2,b.y2);
   }
   x1-=1;y1-=1;x2+=1;y2+=1;
+  const res=maskRes(x2-x1,y2-y1);
   const W=Math.max(1,Math.ceil((x2-x1)*res)), H=Math.max(1,Math.ceil((y2-y1)*res));
   if(W*H>2.5e6)return null;                         // trop gros : on renonce
   const o=document.createElement("canvas");o.width=W;o.height=H;
@@ -231,9 +239,15 @@ function zoneMask(l,net){
     for(let k=1;k<ct.pts.length;k++)c.lineTo(ct.pts[k].x,ct.pts[k].y);
     c.closePath();c.fill();
   }
-  for(const P of zoneLanieres(l)){        // cuivre plus étroit que cuMin entre deux dégagements
-    c.beginPath();c.moveTo(P[0].x,P[0].y);for(let k=1;k<P.length;k++)c.lineTo(P[k].x,P[k].y);c.closePath();c.fill();
+  /* cuivre plus étroit que cuMin entre deux dégagements. D'un seul tracé : deux
+     enveloppes voisines peintes à part laissaient entre elles un liseré
+     d'anticrénelage, qui recollait les éclats au plan (toutes de même sens). */
+  c.beginPath();
+  for(const P of zoneLanieres(l)){
+    c.moveTo(P[0].x,P[0].y);for(let k=1;k<P.length;k++)c.lineTo(P[k].x,P[k].y);c.closePath();
   }
+  c.fill();
+  c.lineWidth=1/res;c.stroke();        // un demi-pixel de débord : le liseré restant passe sous le seuil de `a0`
   c.strokeStyle="#000";c.fillStyle="#000";c.lineCap="round";c.lineJoin="round";
   /* ce qui tombe hors du masque n'y laisse rien : une carte importée compte
      des centaines de zones, chacune ne paie que son voisinage */
@@ -289,10 +303,12 @@ function zoneMask(l,net){
   }
   let img;
   try{img=c.getImageData(0,0,W,H);}catch(e){return null;}
-  const px8=img.data, a=new Uint8Array(W*H);
-  for(let i=0,j=3;i<a.length;i++,j+=4)a[i]=px8[j]>128?1:0;
+  const px8=img.data, a=new Uint8Array(W*H), a0=new Uint8Array(W*H);
+  for(let i=0,j=3;i<a.length;i++,j+=4){a[i]=px8[j]>128?1:0;a0[i]=px8[j]>24?1:0;}
   const {lab,count}=labelMask(a,W,H);
-  return {x:x1,y:y1,res,W,H,lab,count};
+  /* a0 : le moindre reste de cuivre, pour les éclats (`computeConn`). Le seuil
+     écarte le liseré d'anticrénelage entre deux formes retirées bord à bord. */
+  return {x:x1,y:y1,res,W,H,lab,count,a0};
 }
 
 /* ==========================================================================
@@ -306,7 +322,6 @@ const MASK_BUDGET=200e3;            // pixels au-delà desquels on diffère l'an
 let _conn=null, _connVer=-1, _connExact=false, _refineT=null;
 /* Coût estimé de la rasterisation des zones, en pixels. */
 function maskCost(){
-  const res=clamp(1/Math.max(0.08,maxClr()*0.6),4,14);
   let n=0;
   for(const g of zoneGroups()){
     let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;
@@ -315,7 +330,8 @@ function maskCost(){
       x1=Math.min(x1,b.x1);y1=Math.min(y1,b.y1);
       x2=Math.max(x2,b.x2);y2=Math.max(y2,b.y2);
     }
-    n+=((x2-x1)+2)*((y2-y1)+2)*res*res;
+    const w=(x2-x1)+2, h=(y2-y1)+2;
+    n+=w*h*maskRes(w,h)**2;
   }
   return n;
 }
@@ -530,9 +546,19 @@ function computeConn(exact){
        encore (plan posé avant le routage) reste entière : on ne retire que
        les îlots d'une zone qui en a au moins un de vivant. */
     const decoupes=[], morts=[];
-    for(const m of (!seen.size||g.zs.some(zoneFichier)||g.zs.some(z=>z.mortGarde||z.plein)?[]:ilotsMorts(M,seen))){
-      const P=ilotContour(M,m,g.l,g.net);
-      if(P)decoupes.push(P);else morts.push(m);
+    if(seen.size&&!g.zs.some(zoneFichier)&&!g.zs.some(z=>z.mortGarde||z.plein)){
+      /* LES ÉCLATS. Un reste de cuivre plus fin qu'un pixel du masque (pointe
+         entre deux dégagements, queue d'un îlot) n'y fait pas d'îlot, et restait
+         à l'écran comme au Gerber. On étiquette donc aussi le masque « faible »
+         (tout pixel où il reste un peu de cuivre) : un morceau qui
+         n'y porte aucun pixel d'un îlot vivant est mort tout entier, queues
+         comprises. Un îlot mort que le masque faible colle au cuivre vivant
+         (fente de moins d'un pixel) tombe comme avant, par son seul contour. */
+      const M0=Object.assign({},M,labelMask(M.a0,M.W,M.H)), vivant=new Set();
+      for(let p=0;p<M.lab.length;p++)if(M.lab[p]&&seen.has(M.lab[p]))vivant.add(M0.lab[p]);
+      const tomber=(Mk,m)=>{const P=ilotContour(Mk,m,g.l,g.net);if(P)decoupes.push(P);else morts.push(m);};
+      for(const m of ilotsMorts(M0,vivant))tomber(M0,m);
+      for(const m of ilotsMorts(M,seen))if(vivant.has(maskAt(M0,m.x,m.y)))tomber(M,m);
     }
     zoneIslands.push({l:g.l,net:g.net,islands:seen.size,total:M.count,morts,decoupes});
   }
