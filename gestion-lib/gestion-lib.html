@@ -33,6 +33,7 @@
       <button class="tb" id="bNewComp">➕ Nouveau composant</button>
       <button class="tb jlc-btn" id="bImportJlc" onclick="ouvrirModalImportJlc()" title="Importer directement un composant JLCPCB / LCSC">⚡ Importer JLCPCB / LCSC</button>
       <button class="tb" id="bAutoAssoc" title="Associe automatiquement les empreintes PCB et symboles selon le préfixe et boîtier, et complète le Brochage des références au brochage certain (transistors SOT-23, références relevées sur datasheet)">🔄 Auto-associer</button>
+      <button class="tb" id="bAuditLib" onclick="auditOuvrir()" title="Audit de cohérence du catalogue : références sans empreinte, sans symbole, sans modèle ou sans datasheet, fichiers cités mais absents, broches du symbole face aux pastilles, brochage qui cite une patte absente. Rien n'est écrit.">🩺 Audit</button>
       <button class="tb" id="bExportCsv" title="Télécharger le fichier CSV mis à jour">📥 Exporter CSV</button>
       <button class="tb success" id="bSave" title="Enregistrer les modifications sur le serveur (LIB/LIB_composants.csv)">💾 Enregistrer</button>
     </div>
@@ -442,6 +443,7 @@
   <script src="js/05-editeur-lib.js"></script>
   <script src="js/07-import-jlc.js"></script>
   <script src="js/08-pilote-lib.js"></script>
+  <script src="js/09-audit.js"></script>
 <script src="../commun/tuto.js" data-outil="lib"></script>
 <script src="../commun/pilote.js"></script>
 <script src="../commun/pilote-cao.js"></script>

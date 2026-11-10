@@ -103,9 +103,10 @@ const KICAD_SCH = (() => {
     testpoint: ["0,20", "l0 20 0 5|cf0 0 5"], testpoint_pth: ["0,20", "l0 20 0 7|cf0 0 7"],
     hole: ["0,20", "c0 0 10|l0 15 0 20"], fiducial: ["", "cf0 0 5|c0 0 20"],
     strap: ["-20,0 20,0", "l-20 0 -10 0|l20 0 10 0|a-10 0 10 90 270|a10 0 10 -90 90"],
-    annot_volt: ["0,20"], annot_curr: [""], annot_text: [""], annot_note: [""]
+    annot_volt: ["0,20"], annot_curr: [""], annot_text: [""], annot_note: [""],
+    nc: ["0,0", "l-7 -7 7 7|l-7 7 7 -7"]              // marqueur « non connecté » ↔ (no_connect)
   };
-  const SANS_REPERE = new Set(["vcc", "gnd", "port", "gport", "annot_volt", "annot_curr", "annot_text", "annot_note"]);
+  const SANS_REPERE = new Set(["vcc", "gnd", "port", "gport", "annot_volt", "annot_curr", "annot_text", "annot_note", "nc"]);
   const ANNOT = new Set(["annot_volt", "annot_curr", "annot_text", "annot_note"]);
   const points = s => s ? s.trim().split(/\s+/).map(p => p.split(",").map(Number)) : [];
   function trace(s) {
@@ -585,7 +586,10 @@ const KICAD_SCH = (() => {
         const [a, b] = xy(e, "start"), [c, d] = xy(e, "end");
         dessins.push({ id: ++id, shape: "rect", x1: px(a), y1: px(b), x2: px(c), y2: px(d), style: style(e), width: 2, color: "#6b7280", label: "" });
       }
-      if (enfants(arbre, "no_connect").length) rap.ecart("drapeaux de non-connexion (no_connect) non repris");
+      for (const e of enfants(arbre, "no_connect")) {
+        const [x, y] = soude([px(xy(e)[0]), px(xy(e)[1])]);       // sur la broche, même recalée à la grille
+        comps.push({ id: ++id, type: "nc", x: sg(x), y: sg(y), rot: 0, mir: false, ref: "", value: "NC" });
+      }
       const CONNUS = new Set(["version", "generator", "generator_version", "uuid", "paper", "title_block", "lib_symbols", "junction", "no_connect",
         "wire", "bus", "bus_entry", "label", "global_label", "hierarchical_label", "symbol", "sheet", "sheet_instances", "symbol_instances",
         "embedded_fonts", "embedded_files", "text", "text_box", "polyline", "rectangle", "bus_alias"]);
@@ -820,6 +824,7 @@ const KICAD_SCH = (() => {
                ["property", q("Intersheetrefs"), q("${INTERSHEET_REFS}"), at(pins[0], 0), police(true)]]);
           continue;
         }
+        if (c.type === "nc") { corps.push(["no_connect", at(pins[0]).slice(0, 3), uuidDe("c:" + c.id)]); continue; }
         if (ANNOT.has(c.type)) {
           if (v) corps.push(["text", q(v.replace(/\|/g, "\n")), ["exclude_from_sim", "no"], at([c.x, c.y], 0), police(), uuidDe("c:" + c.id)]);
           continue;

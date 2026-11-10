@@ -20,6 +20,16 @@ autre net, la Gestion LIB qui montait à environ 890 Mo au chargement.
 
 ## Fonctionnalités
 
+- [x] **Contrôles et réutilisation** (10/11/2026) : ERC du schéma (`editeur-schematique/js/31-erc.js`,
+  entrées en l'air, deux sorties sur un net, nets à une broche, alimentations non pilotées, marqueur
+  « Non connecté » repris de et vers le `no_connect` de KiCad) ; blocs réutilisables
+  (`32-blocs.js`, d'un projet à l'autre, export/import `.json`) ; audit de cohérence du catalogue
+  dans la Gestion LIB (`gestion-lib/js/09-audit.js`, `auditerReference` de
+  `commun/composants-lib.js`) ; zone d'encombrement (courtyard) des empreintes : générée
+  (IPC-7351, posée aussi par le générateur et lue du `F.CrtYd` KiCad), vérifiée, dessinée.
+  Reste : l'ERC devine le type d'une broche par son nom (pas de colonne « type ») ; le PCB ne
+  lit pas encore la zone d'encombrement (son anti-collision s'appuie sur le corps).
+
 - [x] **Éditeur PCB : outils manquants par rapport à Altium** (09/11/2026) : dessin (arcs,
   cercles, fill, région pleine, texte cuivre droit ou inversé, chaînes spéciales, pastille
   libre, cotes), couches mécaniques, keep-out cuivre, plans divisés et négatifs, réglages

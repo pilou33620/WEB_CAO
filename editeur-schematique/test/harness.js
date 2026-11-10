@@ -152,7 +152,10 @@ const EXPOSE=[
   /* classes d'interface (commun/classes-interface.js) */
   "CLASSES_INTERFACE","familleClasse","titreClasse","loadDoc",
   /* symboles de la LIB (29-symboles-lib.js) */
-  "schSymboleLire","schSymboleDefinir","schSymbolesDuDocument","SYM_LIB_LUS","schTypeDuCatalogue","LIB"
+  "schSymboleLire","schSymboleDefinir","schSymbolesDuDocument","SYM_LIB_LUS","schTypeDuCatalogue","LIB",
+  /* contrôle électrique (31-erc.js) et blocs réutilisables (32-blocs.js) */
+  "ercVerifier","ercTypeBroche","ercOuvrir","ercFermer","ERC_DERNIER",
+  "blocEnregistrer","blocsLire","blocPoser","blocSupprimer","blocsImporterTexte","blocsOuvrir","blocsFermer","BLOCS_KEY"
 ];
 /* les noms absents du bundle sont ignorés : le banc d'essai reste utilisable
    même si un module est renommé, les essais concernés échoueront tout seuls */
@@ -4380,6 +4383,86 @@ T("contraintes de nets : groupes d'appariement, nets disparus, résumé",()=>{
     if(SCM.filtre!=="CLK")throw new Error("la fenêtre s'ouvre filtrée sur le net");
   }finally{schCmFermer();}
   S.contraintes={nets:{},groupes:[]};
+});
+
+/* ==========================================================================
+   Contrôle électrique (31-erc.js)
+   ========================================================================== */
+T("ERC : type de broche deviné par son nom",()=>{
+  const op=C("opamp",0,0), ic=C("ic",0,0,{npins:6,pinNames:["VCC","GND","~RST","SDO","PA0/TX","NC"]});
+  const t=[0,1,2,3,4].map(i=>ercTypeBroche(op,i)).join();
+  if(t!=="in,in,out,pwr_in,pwr_in")throw new Error("AOP : "+t);
+  const u=[0,1,2,3,4,5].map(i=>ercTypeBroche(ic,i)).join();
+  if(u!=="pwr_in,pwr_in,in,out,bidir,nc")throw new Error("CI : "+u);
+  if(ercTypeBroche(C("regulator",0,0),1)!=="pwr_out")throw new Error("sortie du régulateur");
+  if(ercTypeBroche(C("resistor",0,0),0)!=="passive")throw new Error("résistance");
+});
+T("ERC : entrées en l'air, sortie libre, marqueur non connecté",()=>{
+  const op=C("opamp",10,10,{ref:"U1"});
+  sheet([op],[]);
+  let r=ercVerifier();
+  const air=r.filter(x=>x.code==="entree-en-l-air").length, nc=r.filter(x=>x.code==="non-connectee").length;
+  if(air!==4||nc!==1)throw new Error(JSON.stringify(r.map(x=>x.msg)));
+  // marqueur sur IN- (broche à -2,-1 du centre)
+  sheet([op,C("nc",8,9)],[]);
+  r=ercVerifier();
+  if(r.some(x=>/U1\.1\b/.test(x.msg)))throw new Error("IN- devrait se taire : "+JSON.stringify(r.map(x=>x.msg)));
+  if(r.filter(x=>x.code==="entree-en-l-air").length!==3)throw new Error("les trois autres restent");
+  sheet([op,C("nc",30,30)],[]);
+  if(!ercVerifier().some(x=>x.code==="nc-isole"))throw new Error("marqueur isolé");
+});
+T("ERC : deux sorties sur un net, net à une broche",()=>{
+  const a=C("opamp",10,10,{ref:"U1"}), b=C("opamp",10,20,{ref:"U2"});
+  sheet([a,b],[W(13,10,16,10),W(16,10,16,20),W(16,20,13,20)]);
+  const r=ercVerifier();
+  if(!r.some(x=>x.code==="deux-sorties"&&/U1\.3/.test(x.msg)&&/U2\.3/.test(x.msg)))throw new Error(JSON.stringify(r.map(x=>x.msg)));
+  sheet([a],[W(13,10,18,10)]);
+  if(!ercVerifier().some(x=>x.code==="une-broche"))throw new Error("net à une broche");
+});
+T("ERC : alimentation non pilotée, puis pilotée par un connecteur à travers une ferrite",()=>{
+  // AOP U1 : V+ en (10,8) ; symbole 3V3 dont la broche tombe en (10,7)
+  const op=C("opamp",10,10,{ref:"U1"}), v=C("vcc",10,6,{value:"3V3"});
+  sheet([op,v],[W(10,7,10,8)]);
+  let r=ercVerifier();
+  if(!r.some(x=>x.code==="alim-non-pilotee"&&/3V3/.test(x.msg)))throw new Error(JSON.stringify(r.map(x=>x.msg)));
+  // J1 broche 1 en (18,4) → ferrite FB1 (20,4)-(24,4) → 3V3 (étiquette sur le fil)
+  const j=C("header",20,5,{ref:"J1"}), fb=C("ferrite_bead",22,0,{ref:"FB1"}), v2=C("vcc",26,-1,{value:"3V3"});
+  sheet([op,v,j,fb,v2],[W(10,7,10,8),W(18,4,18,0),W(18,0,20,0),W(24,0,26,0)]);
+  r=ercVerifier();
+  if(r.some(x=>x.code==="alim-non-pilotee"&&/3V3/.test(x.msg)))throw new Error("3V3 est pilotée : "+JSON.stringify(r.map(x=>x.msg)));
+});
+
+/* ==========================================================================
+   Blocs réutilisables (32-blocs.js)
+   ========================================================================== */
+T("Blocs : enregistrer une sélection, la reposer avec des repères neufs",()=>{
+  localStorage.removeItem(BLOCS_KEY);
+  const r1=C("resistor",5,5,{ref:"R1",value:"10k"}), r2=C("resistor",5,9,{ref:"R2",value:"4k7"});
+  sheet([r1,r2],[W(7,5,7,9)]);
+  if(blocEnregistrer("Pont").ok)throw new Error("sans sélection, rien n'est enregistré");
+  S.sel.add(r1.id);S.sel.add(r2.id);S.selW.add(S.wires[0]);
+  const r=blocEnregistrer("Pont diviseur");
+  if(!r.ok||blocsLire().length!==1)throw new Error(r.msg);
+  blocEnregistrer("pont diviseur");                       // même nom : remplacé
+  if(blocsLire().length!==1)throw new Error("doublon de nom");
+  sheet([],[]);
+  if(!blocPoser("pont diviseur"))throw new Error("pose");
+  if(S.comps.length!==2||S.wires.length!==1)throw new Error(S.comps.length+" comp., "+S.wires.length+" fils");
+  if(S.comps.map(c=>c.value).sort().join()!=="10k,4k7")throw new Error("valeurs");
+  blocPoser("pont diviseur");
+  if(new Set(S.comps.map(c=>c.ref)).size!==4)throw new Error("repères en double : "+S.comps.map(c=>c.ref));
+});
+T("Blocs : import d'un fichier, refus de l'illisible",()=>{
+  if(blocsImporterTexte("pas du json").ok)throw new Error("JSON invalide accepté");
+  if(blocsImporterTexte('[{"nom":"x"}]').ok)throw new Error("bloc sans contenu accepté");
+  const r=blocsImporterTexte(JSON.stringify({format:"schblocs-1",blocs:[{nom:"LDO 3V3",contenu:{comps:[{type:"regulator",x:0,y:0,rot:0,ref:"U1",value:"AMS1117"}],wires:[]}}]}));
+  if(!r.ok||blocsLire().map(b=>b.nom).join()!=="LDO 3V3,pont diviseur")throw new Error(r.msg+" "+blocsLire().map(b=>b.nom));
+  blocSupprimer("LDO 3V3");
+  if(blocsLire().length!==1)throw new Error("suppression");
+  blocsOuvrir();
+  if(document.getElementById("blocsEd").hidden)throw new Error("fenêtre");
+  blocsFermer();
+  localStorage.removeItem(BLOCS_KEY);
 });
 
 (async()=>{

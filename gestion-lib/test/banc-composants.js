@@ -449,7 +449,7 @@ const banc = (async () => {
   };
   vm.createContext(page);
   for (const f of ["commun/echappe.js", "commun/csv.js", "commun/brochage.js", "gestion-lib/js/07-import-jlc.js", "commun/composants-lib.js",
-                   "gestion-lib/js/01-donnees.js", "gestion-lib/js/04-ui.js", "gestion-lib/js/05-editeur-lib.js"])
+                   "gestion-lib/js/01-donnees.js", "gestion-lib/js/04-ui.js", "gestion-lib/js/05-editeur-lib.js", "gestion-lib/js/09-audit.js"])
     vm.runInContext(lire(f), page, { filename: f });
   const ici = code => vm.runInContext(code, page);
   const etat = ici("LIB_STATE");
@@ -585,7 +585,75 @@ const banc = (async () => {
   verifier(noeud("simModeleTexte").value === "" && /à enregistrer|Enregistrer/.test(noeud("simModeleMessage").textContent), "modèle : la zone se vide, le message dit de quoi enregistrer");
   await ecrire("t.s2p", "# GHZ S MA R 50\n1 0 0 0 0 0 0 0 0");
   verifier(/Port 2/.test(noeud("inspSimForm").innerHTML) && !noeud("inspSimForm").hidden, "modèle : un Touchstone passe par le formulaire des ports");
+
+  /* 6. zone d'encombrement dans l'éditeur : générée, vérifiée, retirée */
+  edit.type = "pcb";
+  edit.data = { format: "pcbfp-1", name: "C", pins: 2, style: "chip", pads: [{ n: 1, x: -1, y: 0, w: 1, h: 1, shape: "rect" }, { n: 2, x: 1, y: 0, w: 1, h: 1, shape: "rect" }] };
+  noeud("edCrtMarge").value = "0.5";
+  ici("editeurCourtyardAuto()");
+  verifier(JSON.stringify(edit.data.courtyard) === JSON.stringify({ x1: -2, y1: -1, x2: 2, y2: 1 }) && noeud("edCrtX2").value === 2,
+           "courtyard : généré avec la marge saisie, recopié dans les champs (" + JSON.stringify(edit.data.courtyard) + ")");
+  verifier(/✓/.test(noeud("edCrtVerif").textContent), "courtyard : le contrôle l'approuve");
+  ici("editeurCourtyardRetirer()");
+  verifier(!edit.data.courtyard && noeud("edCrtX1").value === "" && /pas de zone/.test(noeud("edCrtVerif").textContent), "courtyard : retiré, la remarque revient");
+
+  /* 7. audit du catalogue : les fichiers cités sont lus, les écarts sortent */
+  etat.fichiers = { pcb: ["SOT-23.json"], schematique: [], simulation: [] };
+  fichiersLib["SOT-23.json"] = { pads: [1, 2, 3].map(n => ({ n, x: n, y: 0, w: 0.5, h: 0.5 })) };
+  etat.composants = [
+    { _id: 0, "Part Name": "R1K", "Empreinte PCB": "SOT-23", "Empreinte Schématique": "resistor", "Datasheet": "d", "Modèle Simulation": "m" },
+    { _id: 1, "Part Name": "LDO", "Empreinte PCB": "SOT-23", "Empreinte Schématique": "regulator", "Datasheet": "d", "Modèle Simulation": "m" },
+    { _id: 2, "Part Name": "NU", "Empreinte PCB": "QFN-99" }];
+  const audit = await ici("auditerCatalogue()");
+  verifier(audit.length === 2 && audit[0].comp["Part Name"] === "R1K" && /2 broche\(s\), empreinte à 3/.test(audit[0].erreurs[0]) &&
+           audit[1].erreurs.some(e => /QFN-99 » introuvable/.test(e)) && audit[1].erreurs.includes("sans symbole"),
+           "audit : broches face aux pastilles, empreinte absente, symbole manquant (" + JSON.stringify(audit.map(r => r.erreurs)) + ")");
 })();
+
+/* ---------- zone d'encombrement (courtyard) ---------- */
+console.log("— zone d'encombrement —");
+{
+  const fp = { format: "pcbfp-1", name: "T", pins: 2, style: "chip",
+               pads: [{ n: 1, x: -0.8, y: 0, w: 0.9, h: 1, shape: "rect" }, { n: 2, x: 0.8, y: 0, w: 0.9, h: 1, shape: "rect" }],
+               body: { x1: -1, y1: -0.6, x2: 1, y2: 0.6 } };
+  const c = CL.courtyardAuto(fp);
+  verifier(JSON.stringify(c) === JSON.stringify({ x1: -1.5, y1: -0.85, x2: 1.5, y2: 0.85 }), "générée : pastilles et corps + 0,25 mm, au pas de 0,05 (" + JSON.stringify(c) + ")");
+  verifier(CL.courtyardAuto(Object.assign({}, fp, { pads: [{ n: 1, x: 0, y: 0, w: 1, h: 2, shape: "rect", rot: 90 }], body: null }), 0).x2 === 1, "pastille tournée de 90° : largeur et hauteur échangées");
+  verifier(CL.verifierEmpreinte(fp, "T.json").remarques.some(r => /pas de zone d'encombrement/.test(r)), "absente : une remarque");
+  verifier(!CL.verifierEmpreinte(Object.assign({}, fp, { courtyard: c }), "T.json").erreurs.length, "générée : passe les contrôles");
+  const serree = CL.verifierEmpreinte(Object.assign({}, fp, { courtyard: { x1: -1.3, y1: -0.6, x2: 1.3, y2: 0.6 } }), "T.json");
+  verifier(!serree.erreurs.length && serree.remarques.some(r => /sous les 0,1 mm/.test(r)), "collée au cuivre : remarque de marge");
+  const courte = CL.verifierEmpreinte(Object.assign({}, fp, { courtyard: { x1: -1, y1: -1, x2: 1, y2: 1 } }), "T.json");
+  verifier(courte.erreurs.some(e => /pastille\(s\) hors de la zone d'encombrement : 1, 2/.test(e)), "trop petite : les pastilles dehors sont nommées");
+  verifier(CL.verifierEmpreinte(Object.assign({}, fp, { courtyard: { x1: 1, y1: 0, x2: -1, y2: 1 } }), "T.json").erreurs.some(e => /« courtyard »/.test(e)), "rectangle à l'envers : refusé");
+  const g = CL.genererEmpreinte("chip", { code: "0603", densite: "L" }).empreinte, gN = CL.genererEmpreinte("chip", { code: "0603" }).empreinte;
+  verifier(g.courtyard && gN.courtyard && gN.courtyard.x2 - g.courtyard.x2 > 0.1, "générateur IPC : zone posée, plus large en densité N qu'en L");
+  const k = CL.convertirKicad(`(footprint "R" (layer "F.Cu")
+    (fp_rect (start -1.48 -0.73) (end 1.48 0.73) (stroke (width 0.05) (type solid)) (layer "F.CrtYd"))
+    (pad "1" smd rect (at -0.8 0) (size 0.9 1) (layers "F.Cu"))
+    (pad "2" smd rect (at 0.8 0) (size 0.9 1) (layers "F.Cu")))`);
+  verifier(k.empreinte && JSON.stringify(k.empreinte.courtyard) === JSON.stringify({ x1: -1.48, y1: -0.73, x2: 1.48, y2: 0.73 }), "KiCad : F.CrtYd repris en zone d'encombrement");
+}
+
+/* ---------- audit d'une référence ---------- */
+console.log("— audit du catalogue —");
+{
+  const fp3 = { pads: [1, 2, 3].map(n => ({ n, x: n, y: 0, w: 0.5, h: 0.5 })) };
+  const vide = CL.auditerReference({ "Part Name": "X" }, {});
+  verifier(vide.erreurs.join("|") === "sans empreinte PCB|sans symbole" && /modèle/.test(vide.remarques[0]) && /datasheet/.test(vide.remarques[1]), "référence nue : empreinte, symbole, modèle et datasheet manquent");
+  const absente = CL.auditerReference({ "Empreinte PCB": "lib/pcb/SOT-23.json", "Empreinte Schématique": "resistor" }, { pcbConnues: ["0402.json"], schConnues: [] });
+  verifier(absente.erreurs.some(e => /SOT-23» introuvable|« SOT-23 » introuvable/.test(e)), "empreinte citée mais absente de la LIB");
+  const r3 = CL.auditerReference({ "Empreinte PCB": "SOT-23", "Empreinte Schématique": "resistor", "Datasheet": "http://x", "Modèle Simulation": "a.sub" },
+                                 { empreinte: fp3, pcbConnues: ["SOT-23.json"] });
+  verifier(r3.erreurs.length === 1 && /symbole à 2 broche\(s\), empreinte à 3 pastille\(s\)/.test(r3.erreurs[0]) && !r3.remarques.length, "2 broches face à 3 pastilles, sans brochage : erreur");
+  const reg = CL.auditerReference({ "Empreinte PCB": "SOT-223", "Empreinte Schématique": "regulator", "Brochage": "GND=1,OUT=2/4,IN=3" },
+                                  { empreinte: fp3, pcbConnues: ["SOT-223.json"] });
+  verifier(reg.erreurs.some(e => /brochage : patte\(s\) absente\(s\) de l'empreinte : 4/.test(e)), "brochage qui cite une pastille inexistante");
+  const ok = CL.auditerReference({ "Empreinte PCB": "SOT-23", "Empreinte Schématique": "regulator", "Brochage": "GND=1,OUT=2,IN=3", "Datasheet": "d", "Modèle Simulation": "m" },
+                                 { empreinte: fp3, pcbConnues: ["SOT-23.json"] });
+  verifier(!ok.erreurs.length && !ok.remarques.length, "référence complète et cohérente : rien à dire (" + ok.erreurs.concat(ok.remarques) + ")");
+  verifier(!CL.auditerReference({ "Empreinte PCB": "QFN-32", "Empreinte Schématique": "ic", "Datasheet": "d", "Modèle Simulation": "m" }, { empreinte: fp3 }).erreurs.length, "CI à broches libres : pas de comptage");
+}
 
 /* ---------- la LIB réelle passe les contrôles ---------- */
 const LIB = [process.env.WEB_CAO_LIB, path.join(RACINE, "LIB"), path.join(RACINE, "..", "PROJETS", "LIB_CAO")]

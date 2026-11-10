@@ -119,6 +119,10 @@ class PcbRenderer {
 
     // Calcul de l'emprise
     let x1 = -2, y1 = -2, x2 = 2, y2 = 2;
+    if (this.fp.courtyard) {
+      x1 = Math.min(x1, +this.fp.courtyard.x1 || 0); y1 = Math.min(y1, +this.fp.courtyard.y1 || 0);
+      x2 = Math.max(x2, +this.fp.courtyard.x2 || 0); y2 = Math.max(y2, +this.fp.courtyard.y2 || 0);
+    }
     if (this.fp.body) {
       x1 = Math.min(x1, this.fp.body.x1 || -2);
       y1 = Math.min(y1, this.fp.body.y1 || -2);
@@ -264,6 +268,17 @@ class PcbRenderer {
       ctx.beginPath();
       ctx.arc(bx + 6, by + 6, Math.max(2, 0.3 * z), 0, Math.PI * 2);
       ctx.fill();
+    }
+
+    // Zone d'encombrement (courtyard) : tirets, couleur de la couche CrtYd de KiCad
+    const c = fp.courtyard;
+    if (c && [c.x1, c.y1, c.x2, c.y2].every(Number.isFinite)) {
+      ctx.save();
+      ctx.strokeStyle = "#ff26e2";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([5, 4]);
+      ctx.strokeRect(c.x1 * z, c.y1 * z, (c.x2 - c.x1) * z, (c.y2 - c.y1) * z);
+      ctx.restore();
     }
 
     // Lignes sérigraphie personnalisées

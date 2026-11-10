@@ -132,6 +132,20 @@ Cette page décrit chaque tâche, puis chaque menu, bouton, raccourci et option,
 2. Corriger en choisissant la référence du catalogue (**⚠ Référence à choisir**), ou en renseignant les pattes (**✎ Modifier les pattes…** ouvre **Édition du composant**).
 3. Composant à plusieurs parties (LM358) : menu **Partie** et bouton **+ U3B** pour poser la partie suivante, même repère et même boîtier.
 
+### Je veux vérifier le schéma (ERC)
+
+1. **Dessin › Inspecter › ERC** : le contrôle porte sur toutes les feuilles. ⛔ erreur, ⚠️ avertissement ; un clic sur une ligne change de feuille, cadre l'endroit et sélectionne le composant.
+2. Ce qui est relevé : entrée en l'air (broche d'entrée seule), net fait d'entrées sans source, deux sorties sur un même net, net à une seule broche, broche non connectée, alimentation non pilotée (aucun connecteur, pile ni sortie de régulateur n'y arrive, même à travers une ferrite, une self, un fusible, une diode, une résistance, un pont ou un MOSFET).
+3. Une broche laissée libre exprès : poser dessus le marqueur **Non connecté** (bibliothèque, *Divers*, une croix rouge). Il fait taire la broche, et l'ERC signale un marqueur posé sur un net relié.
+4. Le type d'une broche se déduit du symbole et du nom de la broche : VCC, VDD, GND, VIN… alimentation ; VOUT, SW… sortie d'alimentation (et OUT d'un régulateur) ; OUT, TX, SDO… sortie ; IN, EN, RST, CS, FB… entrée ; NC non connectée. Les passifs, semi-conducteurs et connecteurs sont passifs ; un nom inconnu ou multifonction (PA0/TX) n'est contrôlé que pour sa connexion.
+
+### Je veux réutiliser un bloc (étage LDO, pont USB…) dans un autre schéma
+
+1. Sélectionner l'étage sur la feuille (lasso), puis **Dessin › Organiser ▾ › Blocs réutilisables…**.
+2. Nommer le bloc et **＋ Enregistrer la sélection** : composants, fils et traits, comme le presse-papier. Un nom déjà pris est remplacé.
+3. Dans n'importe quel schéma, du même projet ou d'un autre : **Poser** place le bloc au centre de la vue, repères refaits.
+4. Les blocs vivent dans ce navigateur ; **⇩ Exporter .json** et **⇧ Importer .json** les font passer sur un autre poste (un bloc du même nom est remplacé).
+
 ### Je veux poser un cadre, un cartouche, un trait ou une zone
 
 1. **Barre de vue → Affichage → Cartouche : …** : choisir le format de page (aucun, A4 paysage, A3 paysage), le titre, les noms, les dates, les numéros et la société (la société est mémorisée dans le profil).
@@ -252,6 +266,8 @@ Recadrer et Grille y sont en icônes ; les autres réglages sont dans son menu A
 | Rechercher | `Ctrl+F` | Cherche un repère (toutes feuilles) ou un net par son nom. | Voir ci-dessous. |
 | Montrer au PCB | `L` | Fait sauter le PCB ouvert dans un autre onglet sur la sélection. | Désactivé si le navigateur ne partage rien entre onglets (`file://`). |
 | Contraintes de nets… | | Fenêtre des contraintes pour le PCB. | Nets nommés seulement. |
+| ERC | | Contrôle électrique de tout le document : entrées en l'air, deux sorties sur un net, nets à une broche, broches non connectées, alimentations sans source. Un clic sur une ligne y emmène. | Types de broche devinés par leur nom ; voir *Je veux vérifier le schéma*. |
+| Blocs réutilisables… | | (menu **Organiser ▾**) Enregistre la sélection sous un nom, la repose dans un autre schéma, exporte ou importe les blocs en `.json`. | Rangés dans le navigateur. |
 | Renuméroter… | | Après confirmation, refait tous les repères par préfixe : feuille par feuille, de haut en bas puis de gauche à droite. Les parties d'un même boîtier gardent un seul repère. Une étape d'annulation. | Le PCB garde les anciens repères jusqu'à sa resynchronisation ; le pied de page signale les repères repris par un autre composant. |
 | Motifs & Blocs | | Relance l'analyse du panneau **Blocs et Motifs** et rouvre ce panneau s'il était fermé. | Demande le serveur. |
 
@@ -576,6 +592,8 @@ Un lot compte 40 opérations au plus ; le premier refus l'arrête. Le lot est jo
 - Un net anonyme (`N$…`) ne se classe ni ne se contraint : son nom change au moindre fil.
 - Les contraintes d'un net renommé ne suivent pas : elles passent sous **À revoir**.
 - Le CSV, le XLSX et la netlist n'exportent que ce que la LIB et le schéma renseignent ; « xx » signale une valeur manquante.
+- L'ERC devine le type électrique d'une broche par son nom : un nom hors des listes (VCC, GND, OUT, IN, EN…) n'est contrôlé que pour sa connexion. Les nets de masse sont soumis au contrôle d'alimentation comme les autres : un connecteur ou une pile doit y arriver.
+- Les blocs réutilisables restent dans le navigateur où ils ont été enregistrés (avec ses données de site) : exporter le `.json` pour les garder ou les passer à un autre poste.
 - 60 étapes d'annulation, 200 feuilles, 25 Mo à l'ouverture, 20 variantes, 40 opérations par carte de Claude.
 - Version « un seul fichier » : l'export vers le PCB n'est pas possible (message), la netlist `.txt` fait le lien.
 - Sans projet ouvert, il n'y a ni brouillon ni écriture dans un dossier : le fichier est téléchargé et l'avertissement de fermeture reste le seul filet.

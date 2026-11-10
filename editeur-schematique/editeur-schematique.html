@@ -94,12 +94,14 @@
             </div>
             <button class="mnu-t rg-t" type="button">Organiser <span class="car">▾</span></button>
             <div class="mnu-pop">
+              <button data-ic="▣" class="tb" id="bBlocs" title="Blocs réutilisables : enregistrer la sélection (étage LDO, pont USB…) sous un nom, la reposer dans un autre schéma ou un autre projet">Blocs réutilisables…</button>
               <button data-ic="⊞" class="tb" id="bRanger" title="Feuille racine : place les blocs du synoptique (alimentations en haut, bloc central au milieu, chaînes en bas). Ctrl+Z annule.">Ranger le synoptique</button>
             </div>
           </div>
           <div class="rg">
             <div class="rg-cmds">
               <button data-ic="📏" class="tb" id="mMesure" title="Mesurer une distance : deux points, la cote et les deltas X/Y">Mesure <kbd>K</kbd></button>
+              <button data-ic="✓" class="tb" id="bErc" title="Contrôle électrique (ERC) : entrées en l'air, deux sorties sur un net, nets à une broche, alimentations sans source. Le marqueur « Non connecté » (Divers) fait taire une broche laissée libre exprès">ERC</button>
               <button data-ic="⌕" class="tb" id="bFind" title="Chercher un composant par son repère (toutes feuilles), ou un net par son nom">Rechercher <kbd>Ctrl+F</kbd></button>
               <button data-ic="⊞" class="tb" id="bSchContraintes" title="Contraintes de nets pour le PCB : impédance, longueur, vias, couches, topologie, moignons, groupes d'appariement — reprises par le gestionnaire de contraintes du PCB">Contraintes de nets…</button>
             </div>
@@ -322,6 +324,8 @@
 <script src="js/28-dessin-pilote.js"></script>
 <script src="js/29-symboles-lib.js"></script>
 <script src="js/30-export-pdf.js"></script>
+<script src="js/31-erc.js"></script>
+<script src="js/32-blocs.js"></script>
 <script src="../commun/explorateur-lib.js"></script>
 <script src="../commun/workspace.js"></script>
 <script src="../commun/telephone.js"></script>

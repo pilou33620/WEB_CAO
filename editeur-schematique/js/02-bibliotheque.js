@@ -315,6 +315,11 @@ strap:{n:"Pont de soudure",cat:"Divers",p:"ST",v:"STRAP",ext:[-20,-10,20,10],pin
   d(c){L(c,-20,0,-10,0);L(c,20,0,10,0);
        c.beginPath();c.arc(-10,0,10,Math.PI/2,-Math.PI/2);c.stroke();
        c.beginPath();c.arc(10,0,10,-Math.PI/2,Math.PI/2);c.stroke();}},
+/* Marqueur « non connecté » : posé sur une broche laissée libre exprès, il fait
+   taire l'ERC (31-erc.js). Pas de repère, pas de nomenclature, pas de PCB. */
+nc:{n:"Non connecté",cat:"Divers",p:"#",v:"NC",noRef:true,noVal:true,flat:true,nc:true,
+  ext:[-10,-10,10,10],pins:[[0,0]],
+  d(c){c.strokeStyle=C_RED;c.lineWidth=2.5;L(c,-7,-7,7,7);L(c,-7,7,7,-7);c.lineWidth=3;c.strokeStyle=C_COMP;}},
 /* ---------------- annotations ----------------
    Leur taille dépend du texte saisi : l'emprise est arrondie au quart de
    millimètre (q5) pour que la boîte de sélection reste dans le quadrillage. */

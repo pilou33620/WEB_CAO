@@ -147,6 +147,8 @@ document.getElementById("tabBom").onclick=()=>setListTab("bom");
 document.getElementById("tabNets").onclick=()=>setListTab("nets");
 document.getElementById("bNets").onclick=cycleNetLabels;
 document.getElementById("bCartouche").onclick=schCartoucheDialogue;
+document.getElementById("bErc").onclick=()=>ercOuvrir();
+document.getElementById("bBlocs").onclick=()=>blocsOuvrir();
 document.getElementById("bNetlist").onclick=exportNetlist;
 document.getElementById("bCsv").onclick=exportBomCsv;
 document.getElementById("bXlsx").onclick=exportBomXlsx;

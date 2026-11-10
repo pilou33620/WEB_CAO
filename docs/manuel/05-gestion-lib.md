@@ -77,7 +77,8 @@ Lancée par WEB·SUITE, la page ne propose plus l'export CSV : « Enregistrer »
 2. Dans l'onglet « Général » de l'éditeur, renseigner le nom, le boîtier, le style, le pas, le nombre de broches, la description et le « Corps sérigraphie (mm) » ; « ⊡ Calculer d'après les pastilles » calcule le corps avec 0,4 mm de marge.
 3. Dans « Pastilles / Broches », ajouter (« ➕ Ajouter pastille »), régler X, Y, W, H, forme, perçage et fente, ou glisser les pastilles sur le plan (outil « 🖐️ Déplacer pad », grille magnétique réglable).
 4. Dans « 📏 Traits / Lignes », poser la sérigraphie : « 📏 Tracer au pointeur » ou « ➕ Ajouter ligne ».
-5. Saisir le nom du fichier en haut (`nom_fichier.json`) puis « 💾 Enregistrer ». Les contrôles de l'empreinte s'exécutent ; en cas d'erreur, la liste est montrée et la question « Enregistrer quand même ? » est posée. Le « Nom de l'empreinte » doit être le même que le nom du fichier sans `.json` : une empreinte neuve porte `NOUVEAU_BOITIER` pour `NOUVELLE_EMPREINTE.json`, ce qui déclenche la question tant qu'on n'a pas aligné les deux (le générateur aligne le nom du fichier d'une empreinte neuve).
+5. Dans « Général », « Zone d'encombrement — courtyard (mm) » : « ⊡ Générer (IPC-7351) » englobe pastilles, corps et trous avec la marge saisie (0,25 mm par défaut ; 0,1 en densité L, 0,5 en M) et cale le rectangle sur 0,05 mm. Le contrôle s'affiche sous les champs : pastille ou trou hors de la zone (erreur), corps qui dépasse ou marge sous 0,1 mm (remarque). Sur le plan, la zone est en tirets magenta. « ✕ Retirer » l'enlève.
+6. Saisir le nom du fichier en haut (`nom_fichier.json`) puis « 💾 Enregistrer ». Les contrôles de l'empreinte s'exécutent ; en cas d'erreur, la liste est montrée et la question « Enregistrer quand même ? » est posée. Le « Nom de l'empreinte » doit être le même que le nom du fichier sans `.json` : une empreinte neuve porte `NOUVEAU_BOITIER` pour `NOUVELLE_EMPREINTE.json`, ce qui déclenche la question tant qu'on n'a pas aligné les deux (le générateur aligne le nom du fichier d'une empreinte neuve).
 
 ### Je veux générer une empreinte depuis la datasheet (IPC-7351B)
 
@@ -85,7 +86,7 @@ Lancée par WEB·SUITE, la page ne propose plus l'export CSV : « Enregistrer »
 2. Choisir la « Famille » (`CHIP`, `SOT`, `SOIC`, `TSSOP`, `MSOP`, `QFN`, `DFN`, `DIP`, `BARRETTE`) : les champs changent selon la famille.
 3. Choisir la « Densité » : N nominale, M large, L serrée.
 4. Saisir les cotes de la datasheet en mm : « 5,8 6,2 » pour un minimum et un maximum, « 3,9 x 4,9 » pour largeur × longueur. Un champ vide prend la cote JEDEC courante pour SOT, SOIC, TSSOP, MSOP, DIP, BARRETTE et pour CHIP avec un code de puce, à vérifier sur la datasheet ; en revanche CHIP sans code, SOIC / TSSOP / MSOP sans nombre de broches, QFN et DFN (broches, pas, corps, longueur de plot, largeur de plot) refusent un champ vide.
-5. Cliquer « Générer » : l'empreinte remplace le contenu de l'éditeur, avec les cotes Z, G, X calculées et les remarques. Rien n'est écrit dans la LIB avant « 💾 Enregistrer ».
+5. Cliquer « Générer » : l'empreinte remplace le contenu de l'éditeur, avec les cotes Z, G, X calculées, la zone d'encombrement de la densité choisie (0,5 / 0,25 / 0,1 mm) et les remarques. Rien n'est écrit dans la LIB avant « 💾 Enregistrer ».
 
 ### Je veux importer une empreinte KiCad
 
@@ -93,6 +94,13 @@ Lancée par WEB·SUITE, la page ne propose plus l'export CSV : « Enregistrer »
 2. Coller le texte du `.kicad_mod` dans la zone, ou choisir le fichier (200 Ko au plus).
 3. Cliquer « Convertir dans l'éditeur » : l'éditeur reçoit l'empreinte et le nom de fichier suit celui de l'empreinte KiCad, rien n'est enregistré. Le message liste les remarques (ce qui n'est pas repris) et les défauts de contrôle. Si la conversion échoue, rien ne change.
 4. Vérifier, puis « 💾 Enregistrer le fichier » : les contrôles habituels s'appliquent, et un fichier du même nom demande avant d'être remplacé.
+
+### Je veux vérifier la cohérence du catalogue
+
+1. « 🩺 Audit » (barre du haut) : chaque référence est confrontée à son empreinte et à son symbole, lus dans la LIB. Rien n'est écrit.
+2. Erreurs (⛔) : sans empreinte PCB, sans symbole, fichier cité mais absent de la LIB, symbole et empreinte au nombre de broches différent sans brochage pour les relier, brochage qui cite une patte absente de l'empreinte ou une broche inconnue du symbole.
+3. Remarques (ℹ️) : sans modèle de simulation, sans datasheet (colonne « Datasheet »), pastilles sans broche, broches du symbole sans patte.
+4. « Erreurs seulement » filtre la liste ; un clic sur une référence ferme la fenêtre et l'ouvre dans l'inspecteur.
 
 ### Je veux poser des trous non métallisés, régler le masque, la pâte ou la forme par couche
 
@@ -192,6 +200,7 @@ Scripts en ligne de commande, hors de la page : voir [Scripts de maintenance](#s
 | ➕ Nouveau composant | — | Ouvre la fenêtre « Ajouter un composant à la bibliothèque » | Pas de contrôle de doublon de `Part Name` |
 | ⚡ Importer JLCPCB / LCSC | — | Ouvre la fenêtre d'import | Demande le serveur et l'accès à pcbparts |
 | 🔄 Auto-associer | — | Remplit les cases vides Empreinte PCB, Empreinte Schématique, Modèle Simulation et le Brochage certain, pour tout le catalogue ; toast « N association(s) automatique(s) générée(s) » ou « Tous les composants sont déjà associés » | Ne remplace jamais une case remplie ; n'associe une empreinte que si le fichier existe dans la LIB ; un préfixe inconnu reçoit `ic.json` |
+| 🩺 Audit | — | Audit de cohérence du catalogue (voir *Je veux vérifier la cohérence du catalogue*) | Lit chaque empreinte et symbole cités : une LIB lente ou distante prend quelques secondes ; un CI (`ic`) n'a pas de nombre de broches à comparer |
 | 📥 Exporter CSV | — | Télécharge `LIB_composants.csv` (`;`, CRLF, UTF-8 sans BOM) | Masqué quand la page est lancée par WEB·SUITE |
 | 💾 Enregistrer | Ctrl+S | Écrit le catalogue sur le serveur | Sans modification : « Aucune modification du catalogue à enregistrer ». Si le catalogue a changé ailleurs (autre onglet, carte de Claude), une confirmation prévient que l'enregistrement effacerait ces changements |
 
@@ -320,6 +329,8 @@ Remplissage des colonnes par l'import : `Part Type` = `General` ; `Vendor` = `JL
 | PCB : Nom de l'empreinte, Boîtier (Package), Style, Pitch / Pas (mm), Nombre de broches, Description | — | Champs `name`, `pkg`, `style`, `pitch`, `pins`, `description` | Style : `chip`, `row`, `dip`, `sop`, `quad`, `bga` ; `name` doit égaler le nom du fichier sans `.json` |
 | PCB : Corps sérigraphie (mm) X1, Y1, X2, Y2 | — | Rectangle du corps | Un champ vide ou nul retombe sur ±1 |
 | ⊡ Calculer d'après les pastilles | — | Corps = enveloppe des pastilles + 0,4 mm | Nécessite au moins une pastille |
+| PCB : Zone d'encombrement — courtyard (mm) X1, Y1, X2, Y2 | — | Champ `courtyard` ; les quatre cotes, ou aucune (pas de zone) | Rectangle seulement |
+| Marge, ⊡ Générer (IPC-7351), ✕ Retirer | — | Zone = enveloppe des pastilles, du corps et des trous + marge, au pas de 0,05 mm ; le contrôle de la zone s'affiche dessous | Une marge hors de 0 à 5 mm retombe sur 0,25 |
 | Symbole : ID Symbole, Nom du symbole, Préfixe de référence, Catégorie, Valeur par défaut, Boîtier par défaut | — | Champs `id`, `name`, `prefix`, `category`, `defaultValue`, `defaultPkg` | Préfixe : 5 caractères au plus ; `id` doit égaler le nom du fichier sans `.json` (contrôle de symbole côté MCP) |
 
 ### Éditeur : volet « Pastilles / Broches »
@@ -378,7 +389,7 @@ Règles du calcul IPC-7351B : voir les commentaires de `commun/composants-lib.js
 | Contrôle | Refus (erreur) ou remarque |
 |---|---|
 | `format` | Doit valoir `pcbfp-1` |
-| Clés connues | Seules `format`, `name`, `pkg`, `pins`, `style`, `pitch`, `span`, `pads`, `body`, `holes`, `description` ; toute autre est une erreur |
+| Clés connues | Seules `format`, `name`, `pkg`, `pins`, `style`, `pitch`, `span`, `pads`, `body`, `holes`, `lines`, `description`, `courtyard` ; toute autre est une erreur |
 | `name` | 1 à 60 caractères parmi `A-Z a-z 0-9 _ . + -`, égal au nom du fichier sans `.json` |
 | `style` | Un des six styles |
 | Autres champs | `pkg` 80 caractères au plus, `description` 2000 au plus, `pitch` et `span` de 0 à 1000 mm, `rot` en degrés, `poly` avec `pts` ; le recouvrement n'est cherché que si rien d'autre n'est en erreur |
@@ -388,6 +399,7 @@ Règles du calcul IPC-7351B : voir les commentaires de `commun/composants-lib.js
 | Recouvrement | Deux pastilles de numéros différents qui se recouvrent : erreur |
 | Trous | x, y à ±100 mm, Ø de 0,4 à 30 mm |
 | Corps | x1 < x2 et y1 < y2 ; absent : remarque |
+| Zone d'encombrement (`courtyard`) | x1 < x2 et y1 < y2 ; pastille ou trou hors de la zone : erreur ; corps qui dépasse, marge sous 0,1 mm ou zone absente : remarque |
 | Remarques | Numéros en double (pastille fractionnée ou thermique), pastilles CMS qui dépassent du corps |
 
 ### Brochage (colonne « Brochage »)
@@ -497,6 +509,7 @@ Les modifications de la LIB sont diffusées aux autres outils ouverts : un catal
 - Sans trait en cours ni sélection, Échap ferme l'éditeur sans confirmation, modifications non enregistrées perdues, même depuis un champ ou la vue JSON.
 - Modifier le numéro dans la colonne « # » de la table des pastilles ou des broches enregistre un texte (champ texte), alors que le contrôle d'empreinte exige un entier de 1 à 4096 : la question « Enregistrer quand même ? » apparaît. Les traits de sérigraphie (clé `lines`, écrite par l'onglet « Traits / Lignes » et le tracé au pointeur) sont acceptés par le contrôle, avec une remarque : l'éditeur PCB (`normFpDef`) ne lit pas `lines`, ces traits ne sont visibles que dans Gestion LIB.
 - L'import JLCPCB ne contrôle pas qu'une `Part Name` existe déjà. L'empreinte nommée par l'import (`Empreinte PCB liée`) n'est jamais créée : aucun code ne l'écrit, elle reste un nom (`SOT-23.json`) qui peut ne pas exister dans la LIB.
+- La zone d'encombrement est un rectangle ; l'éditeur PCB ne la lit pas encore (son anti-collision s'appuie sur le corps). L'import d'un `.kicad_mod` en reprend l'enveloppe du calque `F.CrtYd`.
 - Aucun bouton ne range un fichier STEP : dépôt dans `Models` et script `maillages_3d.mjs`.
 - `Part Name` ne se renomme pas dans la fiche (elle désigne la ligne).
 - La rotation d'une pastille (`rot`), les formes « Rect. angles droits » et « Chanfreiné » pour la forme principale, et les primitives de symbole autres que les traits ne se règlent que dans le code JSON.

@@ -1105,9 +1105,25 @@ function remplirFormulaireEditeur() {
           </div>
           <button class="tb mini" style="margin-top:6px;" onclick="editeurAjusterCorpsAuto()">⊡ Calculer d'après les pastilles</button>
         </div>
+        <div style="border-top:1px solid var(--border); padding-top:10px; margin-top:10px;">
+          <label style="font-weight:600; font-size:11.5px; color:var(--txt);" title="Courtyard (IPC-7351B) : l'espace réservé au boîtier ; deux boîtiers posés ne doivent pas s'y chevaucher. Vide : pas de zone.">Zone d'encombrement — courtyard (mm)</label>
+          <div style="display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:6px; margin-top:6px;">
+            <div class="form-group"><label>X1</label><input type="number" step="0.05" id="edCrtX1" value="${+(data.courtyard || {}).x1 || (data.courtyard ? 0 : "")}"></div>
+            <div class="form-group"><label>Y1</label><input type="number" step="0.05" id="edCrtY1" value="${+(data.courtyard || {}).y1 || (data.courtyard ? 0 : "")}"></div>
+            <div class="form-group"><label>X2</label><input type="number" step="0.05" id="edCrtX2" value="${+(data.courtyard || {}).x2 || (data.courtyard ? 0 : "")}"></div>
+            <div class="form-group"><label>Y2</label><input type="number" step="0.05" id="edCrtY2" value="${+(data.courtyard || {}).y2 || (data.courtyard ? 0 : "")}"></div>
+          </div>
+          <div style="display:flex; gap:6px; align-items:center; margin-top:6px; flex-wrap:wrap;">
+            <label style="font-size:11px;" title="Excédent IPC-7351B : 0,1 (densité L), 0,25 (N), 0,5 (M)">Marge <input type="number" step="0.05" min="0" max="5" id="edCrtMarge" value="0.25" style="width:60px"></label>
+            <button class="tb mini" type="button" onclick="editeurCourtyardAuto()">⊡ Générer (IPC-7351)</button>
+            <button class="tb mini" type="button" onclick="editeurCourtyardRetirer()">✕ Retirer</button>
+          </div>
+          <div id="edCrtVerif" style="font-size:11px; margin-top:4px; white-space:pre-line;"></div>
+        </div>
       `;
       // Écouteurs sur les champs généraux
-      ["edFpNom", "edFpPkg", "edFpStyle", "edFpPitch", "edFpPins", "edFpDesc", "edBodyX1", "edBodyY1", "edBodyX2", "edBodyY2"].forEach(id => {
+      ["edFpNom", "edFpPkg", "edFpStyle", "edFpPitch", "edFpPins", "edFpDesc", "edBodyX1", "edBodyY1", "edBodyX2", "edBodyY2",
+       "edCrtX1", "edCrtY1", "edCrtX2", "edCrtY2"].forEach(id => {
         const el = document.getElementById(id);
         if (el) {
           el.addEventListener("focus", () => { editeurInputSessionPushed = false; });
@@ -1117,6 +1133,7 @@ function remplirFormulaireEditeur() {
           });
         }
       });
+      editeurCourtyardVerifier();
     } else {
       // Symbole schématique
       contGen.innerHTML = `
@@ -1188,8 +1205,53 @@ function editeurCollecterGeneralPcb() {
     x2: parseFloat(document.getElementById("edBodyX2")?.value) || 1,
     y2: parseFloat(document.getElementById("edBodyY2")?.value) || 1
   };
+  /* zone d'encombrement : les quatre cotes, ou pas de zone */
+  const crt = ["edCrtX1", "edCrtY1", "edCrtX2", "edCrtY2"].map(id => document.getElementById(id)?.value ?? "");
+  if (crt.every(v => String(v).trim() !== "" && Number.isFinite(+v))) {
+    const [x1, y1, x2, y2] = crt.map(Number);
+    d.courtyard = { x1, y1, x2, y2 };
+  } else delete d.courtyard;
+  editeurCourtyardVerifier();
 
   if (EDITEUR_LIB.renderer) EDITEUR_LIB.renderer.render();
+}
+
+/* La zone générée d'après pastilles, corps et trous (COMPOSANTS_LIB.courtyardAuto). */
+function editeurCourtyardAuto() {
+  const d = EDITEUR_LIB.data;
+  if (!d) return;
+  const z = COMPOSANTS_LIB.courtyardAuto(d, parseFloat(document.getElementById("edCrtMarge")?.value));
+  if (!z) { afficherToast("Pas de pastille : rien à englober", "warning"); return; }
+  editeurHistoriquePush();
+  d.courtyard = z;
+  editeurCourtyardChamps();
+  editeurCourtyardVerifier();
+  if (EDITEUR_LIB.renderer) EDITEUR_LIB.renderer.render();
+}
+function editeurCourtyardRetirer() {
+  const d = EDITEUR_LIB.data;
+  if (!d || !d.courtyard) return;
+  editeurHistoriquePush();
+  delete d.courtyard;
+  editeurCourtyardChamps();
+  editeurCourtyardVerifier();
+  if (EDITEUR_LIB.renderer) EDITEUR_LIB.renderer.render();
+}
+function editeurCourtyardChamps() {
+  const z = EDITEUR_LIB.data && EDITEUR_LIB.data.courtyard;
+  for (const k of ["x1", "y1", "x2", "y2"]) {
+    const el = document.getElementById("edCrt" + k.toUpperCase());
+    if (el) el.value = z ? z[k] : "";
+  }
+}
+/* Sous les champs : ce que le contrôle d'empreinte dit de la zone. */
+function editeurCourtyardVerifier() {
+  const out = document.getElementById("edCrtVerif"), d = EDITEUR_LIB.data;
+  if (!out || !d || EDITEUR_LIB.type !== "pcb") return;
+  const v = COMPOSANTS_LIB.verifierEmpreinte(d, null);
+  const crt = m => /encombrement|courtyard/.test(m);
+  const lignes = v.erreurs.filter(crt).map(m => "⛔ " + m).concat(v.remarques.filter(crt).map(m => "ℹ️ " + m));
+  out.textContent = lignes.length ? lignes.join("\n") : (d.courtyard && !v.erreurs.length ? "✓ Englobe pastilles, corps et trous." : "");
 }
 
 function editeurCollecterGeneralSch() {

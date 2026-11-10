@@ -22,7 +22,7 @@ const COMPOSANTS_LIB = (() => {
   const STYLES = ["chip", "row", "dip", "sop", "quad", "bga"];
   const FORMES = ["rect", "sharp", "oval", "circ", "chamfer", "poly"];
   const CLES_EMPREINTE = ["format", "name", "pkg", "pins", "style", "pitch", "span",
-                          "pads", "body", "holes", "lines", "description"];
+                          "pads", "body", "holes", "lines", "description", "courtyard"];
   const NOM_EMPREINTE = /^[A-Za-z0-9_.+-]{1,60}$/;
   const CONTROLE = /[\x00-\x1f\x7f]/;
   /* une cellule du catalogue ne doit ni passer pour une formule à l'ouverture dans un tableur
@@ -47,7 +47,7 @@ const COMPOSANTS_LIB = (() => {
     relay: 5, motor: 2, buzzer: 2, lamp: 2, antenna: 1, header: 2, header_1x3: 3,
     header_1x4: 4, header_1x6: 6, header_1x8: 8, header_2x5: 10, usb_c_pwr: 5, usb_c: 8,
     usb_micro: 6, testpoint: 1, testpoint_pth: 1, hole: 1, fiducial: 0, strap: 2,
-    annot_volt: 1, annot_curr: 0, annot_text: 0, annot_note: 0
+    annot_volt: 1, annot_curr: 0, annot_text: 0, annot_note: 0, nc: 1
   };
 
   const fini = v => typeof v === "number" && Number.isFinite(v);
@@ -154,18 +154,60 @@ const COMPOSANTS_LIB = (() => {
       if (hors.length)
         remarques.push(hors.length + " pastille(s) CMS dépassent du corps (normal pour des pattes ou des terminaisons ; à vérifier sinon)");
     }
+
+    const c = def.courtyard;
+    if (c == null) remarques.push("pas de zone d'encombrement (« courtyard ») : à générer (pastilles, corps et trous + 0,25 mm)");
+    else if (!rectMm(c)) erreurs.push("« courtyard » : {x1, y1, x2, y2} en mm, x1 < x2 et y1 < y2");
+    else if (!erreurs.length) {
+      const EPS = 1e-6, dedans = b => b.x1 >= c.x1 - EPS && b.x2 <= c.x2 + EPS && b.y1 >= c.y1 - EPS && b.y2 <= c.y2 + EPS;
+      const pDehors = [...new Set(pads.filter(q => !dedans(boitePastille(q))).map(q => q.n))];
+      if (pDehors.length) erreurs.push("pastille(s) hors de la zone d'encombrement : " + pDehors.slice(0, 12).join(", ") + (pDehors.length > 12 ? "…" : ""));
+      const tDehors = (Array.isArray(def.holes) ? def.holes : []).filter(h => !dedans({ x1: h.x - h.d / 2, x2: h.x + h.d / 2, y1: h.y - h.d / 2, y2: h.y + h.d / 2 }));
+      if (tDehors.length) erreurs.push(tDehors.length + " trou(s) hors de la zone d'encombrement");
+      if (rectMm(b) && !dedans(b)) remarques.push("le corps dépasse de la zone d'encombrement");
+      const e = emprise(def);
+      const marge = e ? Math.min(e.x1 - c.x1, e.y1 - c.y1, c.x2 - e.x2, c.y2 - e.y2) : 0;
+      if (!pDehors.length && !tDehors.length && marge < 0.1 - 0.01)
+        remarques.push("zone d'encombrement à " + r2(Math.max(0, marge)) + " mm du cuivre ou du corps, sous les 0,1 mm de l'IPC-7351 (densité serrée ; 0,25 mm en nominale)");
+    }
     return { erreurs, remarques };
+  }
+
+  /* ---------- zone d'encombrement (courtyard) ----------
+     IPC-7351B : le rectangle qui englobe pastilles, corps et trous, agrandi d'une marge
+     (0,25 mm en densité nominale) et calé sur 0,05 mm. Deux boîtiers posés ne doivent pas
+     y empiéter l'un sur l'autre. */
+  const COURTYARD_MARGE = 0.25;
+  const rectMm = r => !!r && [r.x1, r.y1, r.x2, r.y2].every(fini) && r.x2 > r.x1 && r.y2 > r.y1 &&
+                      [r.x1, r.y1, r.x2, r.y2].every(v => Math.abs(v) <= COORD);
+  /* une pastille tournée d'un angle quelconque compte pour son cercle englobant */
+  function boitePastille(q) {
+    const r = ((q.rot || 0) % 180 + 180) % 180;
+    const [w, h] = r === 0 ? [q.w, q.h] : r === 90 ? [q.h, q.w] : [Math.hypot(q.w, q.h), Math.hypot(q.w, q.h)];
+    return { n: q.n, x1: q.x - w / 2, x2: q.x + w / 2, y1: q.y - h / 2, y2: q.y + h / 2 };
+  }
+  function emprise(def) {
+    const bs = (Array.isArray(def && def.pads) ? def.pads : []).filter(q => q && [q.x, q.y, q.w, q.h].every(fini)).map(boitePastille);
+    for (const h of Array.isArray(def && def.holes) ? def.holes : [])
+      if (h && [h.x, h.y, h.d].every(fini)) bs.push({ x1: h.x - h.d / 2, x2: h.x + h.d / 2, y1: h.y - h.d / 2, y2: h.y + h.d / 2 });
+    if (def && rectMm(def.body)) bs.push(def.body);
+    if (!bs.length) return null;
+    return { x1: Math.min(...bs.map(b => b.x1)), y1: Math.min(...bs.map(b => b.y1)),
+             x2: Math.max(...bs.map(b => b.x2)), y2: Math.max(...bs.map(b => b.y2)) };
+  }
+  function courtyardAuto(def, marge) {
+    const e = emprise(def);
+    if (!e) return null;
+    const m = fini(marge) && marge >= 0 && marge <= 5 ? marge : COURTYARD_MARGE;
+    const bas = v => r2(Math.floor(v / 0.05 + 1e-6) * 0.05), haut = v => r2(Math.ceil(v / 0.05 - 1e-6) * 0.05);
+    return { x1: bas(e.x1 - m), y1: bas(e.y1 - m), x2: haut(e.x2 + m), y2: haut(e.y2 + m) };
   }
 
   /* Paires de pastilles de numéros différents dont les rectangles se recouvrent (un même numéro,
      c'est une pastille fractionnée : permis). Une pastille tournée d'un angle quelconque compte
      pour son cercle englobant. Balayage selon x : pas de comparaison de tout avec tout. */
   function chevauchements(pads) {
-    const boites = pads.map(q => {
-      const r = ((q.rot || 0) % 180 + 180) % 180;
-      const [w, h] = r === 0 ? [q.w, q.h] : r === 90 ? [q.h, q.w] : [Math.hypot(q.w, q.h), Math.hypot(q.w, q.h)];
-      return { n: q.n, x1: q.x - w / 2, x2: q.x + w / 2, y1: q.y - h / 2, y2: q.y + h / 2 };
-    }).sort((a, b) => a.x1 - b.x1);
+    const boites = pads.map(boitePastille).sort((a, b) => a.x1 - b.x1);
     const out = [], EPS = 1e-6;
     for (let i = 0; i < boites.length && out.length < 50; i++)
       for (let j = i + 1; j < boites.length && boites[j].x1 < boites[i].x2 - EPS; j++) {
@@ -227,6 +269,38 @@ const COMPOSANTS_LIB = (() => {
           if (manquent.length) remarques.push("broche(s) du symbole sans patte" + ici + " : " + manquent.join(", "));
         }
       }
+    return { erreurs, remarques };
+  }
+
+  /* ---------- audit d'une référence du catalogue ----------
+     ref : la ligne du catalogue ; ctx : { empreinte, symbole (schsym-1), pcbConnues, schConnues }
+     — les fichiers lus (null s'ils manquent) et les noms de fichiers présents dans la LIB.
+     Rend { erreurs, remarques } : ce qui manque à la référence, nombre de broches du symbole
+     face au nombre de pastilles, brochage qui cite une patte absente. Rien n'est écrit. */
+  function auditerReference(ref, ctx) {
+    const erreurs = [], remarques = [], c = ctx || {}, r = ref || {};
+    const col = (...noms) => { for (const n of noms) if (r[n] != null && String(r[n]).trim()) return String(r[n]).trim(); return ""; };
+    const nomPcb = nomDeChemin(col("Empreinte PCB")), nomSym = nomDeChemin(col("Empreinte Schématique", "Empreinte Schematique"));
+    const integre = !!nomSym && Object.prototype.hasOwnProperty.call(SYMBOLES, nomSym.toLowerCase());
+    const connu = (liste, nom) => !Array.isArray(liste) || liste.some(f => nomDeChemin(f).toLowerCase() === nom.toLowerCase());
+    if (!nomPcb) erreurs.push("sans empreinte PCB");
+    else if (!connu(c.pcbConnues, nomPcb) || (c.pcbConnues && !c.empreinte)) erreurs.push("empreinte « " + nomPcb + " » introuvable dans la LIB");
+    if (!nomSym) erreurs.push("sans symbole");
+    else if (!integre && (!connu(c.schConnues, nomSym) || (c.schConnues && !c.symbole))) erreurs.push("symbole « " + nomSym + " » introuvable dans la LIB");
+    if (!col("Modèle Simulation", "Modele Simulation")) remarques.push("sans modèle de simulation");
+    if (!col("Datasheet", "Datasheet URL", "datasheet_url", "Fiche technique")) remarques.push("sans datasheet");
+    const pads = c.empreinte && Array.isArray(c.empreinte.pads) ? c.empreinte.pads : [];
+    const sym = integre ? SYMBOLES[nomSym.toLowerCase()] : c.symbole ? brochesSymbole(c.symbole) : undefined;
+    const brochage = col("Brochage");
+    if (brochage && (integre || c.symbole)) {
+      const v = verifierBrochage(brochage, c.empreinte || null, integre ? nomSym.toLowerCase() : nomSym, c.symbole || null);
+      erreurs.push(...v.erreurs.filter(e => !/^symbole intégré inconnu/.test(e)).map(e => "brochage : " + e));
+      remarques.push(...v.remarques.map(e => "brochage : " + e));
+    } else if (pads.length && sym !== undefined && sym !== Infinity) {
+      const nbSym = Array.isArray(sym) ? sym.length : sym, nbPads = new Set(pads.map(q => String(q.n))).size;
+      if (nbSym !== nbPads)
+        erreurs.push("symbole à " + nbSym + " broche(s), empreinte à " + nbPads + " pastille(s), sans brochage pour les relier");
+    }
     return { erreurs, remarques };
   }
 
@@ -556,6 +630,8 @@ const COMPOSANTS_LIB = (() => {
       const empreinte = { format: "pcbfp-1", name: nom, pkg: r.nom, pins: r.pins, style: r.style,
                           pitch: r.pitch, span: r.span, pads: r.pads, body: r.body,
                           description: "Généré (IPC-7351B, densité " + d + ") : " + r.nom };
+      // excédent de zone d'encombrement de l'IPC-7351B : M 0,5 · N 0,25 · L 0,1 mm
+      empreinte.courtyard = courtyardAuto(empreinte, { M: 0.5, N: 0.25, L: 0.1 }[d]);
       const v = verifierEmpreinte(empreinte, typeof nom === "string" ? nom + ".json" : null);
       return { empreinte, erreurs: v.erreurs, remarques: remarques.concat(v.remarques),
                cotes: r.cotes ? { Z: r.cotes.Z, G: r.cotes.G, X: r.cotes.X } : null };
@@ -710,7 +786,7 @@ const COMPOSANTS_LIB = (() => {
       const descr = enfant(r, "descr");
       const ignores = {};
       const ignorer = quoi => { ignores[quoi] = (ignores[quoi] || 0) + 1; };
-      const pads = [], holes = [], numeros = new Map(), fab = [];
+      const pads = [], holes = [], numeros = new Map(), fab = [], crt = [];
       let lettres = 0;
       for (const e of r.slice(2)) {
         if (!Array.isArray(e)) continue;
@@ -760,15 +836,17 @@ const COMPOSANTS_LIB = (() => {
           pads.push(q);
         } else if (/^fp_(line|rect|poly|circle|arc)$/.test(k) || /^gr_/.test(k)) {
           const couche = (enfant(e, "layer") || [])[1];
-          if (couche === "F.Fab" && /circle$/.test(k)) {
+          // F.Fab donne le corps, F.CrtYd la zone d'encombrement
+          const dest = couche === "F.Fab" ? fab : couche === "F.CrtYd" ? crt : null;
+          if (dest && /circle$/.test(k)) {
             // un cercle : son centre et un point du bord ; le corps prend tout le disque
             const [cx, cy] = nombres(enfant(e, "center"), 2, "cercle"), [ex, ey] = nombres(enfant(e, "end"), 2, "cercle");
             const rayon = Math.hypot(ex - cx, ey - cy);
-            fab.push([cx - rayon, cy - rayon], [cx + rayon, cy + rayon]);
-          } else if (couche === "F.Fab" && k !== "fp_arc") {
-            for (const s of ["start", "end", "center"]) { const a = enfant(e, s); if (a) fab.push(nombres(a, 2, "contour")); }
+            dest.push([cx - rayon, cy - rayon], [cx + rayon, cy + rayon]);
+          } else if (dest && k !== "fp_arc") {
+            for (const s of ["start", "end", "center"]) { const a = enfant(e, s); if (a) dest.push(nombres(a, 2, "contour")); }
             const pts = enfant(e, "pts");
-            if (pts) for (const xy of enfants(pts, "xy")) fab.push(nombres(xy, 2, "contour"));
+            if (pts) for (const xy of enfants(pts, "xy")) dest.push(nombres(xy, 2, "contour"));
           } else ignorer(k === "fp_arc" ? "arc(s)" : "tracé(s) " + (couche || "?"));
         } else if (k === "fp_text" || k === "property" || k === "fp_text_box") ignorer("texte(s)");
         else if (k === "model") ignorer("modèle(s) 3D");
@@ -793,6 +871,12 @@ const COMPOSANTS_LIB = (() => {
         const fx = fab.map(v => v[0]), fy = fab.map(v => v[1]);
         empreinte.body = { x1: r4(Math.min(...fx)), y1: r4(Math.min(...fy)), x2: r4(Math.max(...fx)), y2: r4(Math.max(...fy)) };
       }
+      if (crt.length) {
+        const cx = crt.map(v => v[0]), cy = crt.map(v => v[1]);
+        const z = { x1: r4(Math.min(...cx)), y1: r4(Math.min(...cy)), x2: r4(Math.max(...cx)), y2: r4(Math.max(...cy)) };
+        if (rectMm(z)) empreinte.courtyard = z;
+        else remarques.push("zone d'encombrement KiCad (F.CrtYd) incomplète : ignorée");
+      }
       if (descr && typeof descr[1] === "string")
         // coupée par caractères entiers : une paire de substitution tranchée ferait échouer l'écriture
         empreinte.description = Array.from(descr[1].replace(/[\x00-\x08\x0b-\x1f\x7f]/g, " ")).slice(0, 2000).join("");
@@ -804,6 +888,7 @@ const COMPOSANTS_LIB = (() => {
     }
   }
 
-  return { SYMBOLES, CHAMPS, KICAD_MAX, nomDeChemin, verifierEmpreinte, verifierBrochage, verifierCase, genererEmpreinte,
+  return { SYMBOLES, CHAMPS, KICAD_MAX, COURTYARD_MARGE, nomDeChemin, verifierEmpreinte, verifierBrochage, verifierCase, genererEmpreinte,
+    courtyardAuto, auditerReference,
            lireParametres, convertirKicad, lireS, Refus, portsTouchstone, lireBranchement, brancherTouchstone };
 })();

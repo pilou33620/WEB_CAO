@@ -312,8 +312,10 @@ function cutSel(){if(copySel())delSel();}
    pointeur. Les composants reçoivent un repère libre — coller deux fois ne
    crée pas deux R1 — et les fils gardent leur nom de net, donc leur
    connectivité logique. */
-function pasteClip(){
-  const c=getClip();
+/* src : un contenu à poser à la place du presse-papier (bloc réutilisable,
+   32-blocs.js) ; un évènement de clic n'en est pas un. */
+function pasteClip(src){
+  const c=(src&&(src.comps||src.wires||src.drawings))?src:getClip();
   if(!c||(!Array.isArray(c.comps)&&!Array.isArray(c.wires)&&!Array.isArray(c.drawings)))
     {clipHint("Presse-papier vide : copiez d'abord une sélection (Ctrl+C).");return;}
   const comps=Array.isArray(c.comps)?c.comps:[];

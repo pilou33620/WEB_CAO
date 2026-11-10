@@ -392,6 +392,7 @@ function computeNets(comps,wires){
     const n=net(nd.k);
     n.pts.push({x:nd.x,y:nd.y});
     if(NAME_SRC[nd.el.type])n.powers.push(nd.el);
+    else if(nd.def.nc)n.nc=(n.nc||0)+1;      // marqueur « non connecté » (31-erc.js)
     /* `pin` reste le numéro de la broche dans le symbole ; `pad` est la patte
        de l'empreinte où elle tombe (25-brochage.js) — c'est elle que la
        netlist écrit et que le PCB relie. Sans table, les deux coïncident.

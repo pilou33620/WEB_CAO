@@ -101,10 +101,10 @@ function comparer(a, b, quoi) {
 
 /* ---------- vérificateur « éditeur » : sur le document, sans rien normaliser ---------- */
 const BROCHES = {   // ceux dont le banc a besoin, recopiés de 02-bibliotheque.js
-  fiducial: [], vcc: [[0, 20]], gnd: [[0, -20]], port: [[20, 0]], gport: [[20, 0]], annot_volt: [[0, 20]], annot_text: [], annot_note: [], annot_curr: [],
+  fiducial: [], vcc: [[0, 20]], gnd: [[0, -20]], port: [[20, 0]], gport: [[20, 0]], annot_volt: [[0, 20]], annot_text: [], annot_note: [], annot_curr: [], nc: [[0, 0]],
   resistor: [[-40, 0], [40, 0]], capacitor: [[-40, 0], [40, 0]], opamp: [[-40, -20], [-40, 20], [60, 0], [0, -40], [0, 40]]
 };
-const SANS_REP = new Set(["vcc", "gnd", "port", "gport", "annot_volt", "annot_text", "annot_note", "annot_curr"]);
+const SANS_REP = new Set(["vcc", "gnd", "port", "gport", "annot_volt", "annot_text", "annot_note", "annot_curr", "nc"]);
 const NOM = { gnd: [1, "GND"], vcc: [1, "VCC"], gport: [1, "NET"], port: [0, "NET"] };
 const CS = { 0: [1, 0], 90: [0, 1], 180: [-1, 0], 270: [0, -1] };
 function brochesComp(c, doc) {
@@ -359,7 +359,7 @@ essai("symbole tourné de 90° et en miroir X, hors grille : broches au bout des
   const pv = brochesComp(vb, doc)[0];
   verifier(vb.value === "VBUS" && pv[0] % 20 === 0 && pv[1] % 20 === 0 && p.wires.some(w => w.x1 === pv[0] && w.y1 === pv[1] && w.x2 === 790 && w.y2 === 320),
            "VBUS hors grille : étiquette sur la grille et petit fil jusqu'à (790,320)");
-  verifier(rap.liste().some(m => /no_connect/.test(m)), "non-connexion signalée au rapport");
+  verifier(p.comps.some(c => c.type === "nc"), "non-connexion reprise en marqueur « non connecté » : " + JSON.stringify(p.comps.filter(c => c.type === "nc")));
   const part = partitionDoc(doc);
   comparer(part, ["R1:1", "R1:2"], "partition");
   comparer(partitionKicad(lireTextes({ "t.kicad_sch": t }), "t.kicad_sch"), part, "vérificateur KiCad");

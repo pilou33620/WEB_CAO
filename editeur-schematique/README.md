@@ -10,7 +10,7 @@ editeur-schematique/
 ├── editeur-schematique.html      structure de la page + ordre de chargement
 ├── css/
 │   └── editeur.css               thème « dashboard nocturne »
-├── js/                           31 modules (00 à 30), chargés dans l'ordre numéroté
+├── js/                           33 modules (00 à 32), chargés dans l'ordre numéroté
 ├── outils/
 │   └── build-monofichier.py      recompose un HTML unique dans dist/
 ├── test/
@@ -77,6 +77,8 @@ identiques pour l'éditeur PCB :
 | `js/28-dessin-pilote.js` | 554 | Dessin par Claude : les cartes d'opérations (poser, fil, relier, étiqueter, feuille…) appliquées par le canal de pilotage, 40 opérations au plus |
 | `js/29-symboles-lib.js` | 136 | Symboles de la LIB (fichiers `schsym-1`) : lus au chargement du catalogue, ajoutés à `LIB`, recopiés dans le document (`S.symboles`) |
 | `js/30-export-pdf.js` | 235 | Export PDF vectoriel (menu Fichier) : une page par feuille, références, valeurs et noms de nets en vrai texte cherchable |
+| `js/31-erc.js` | 210 | Contrôle électrique (ERC, Dessin › Inspecter) : type de broche déduit de son nom, entrées en l'air, deux sorties sur un net, nets à une broche, broches non connectées, alimentations sans source (traversée des éléments série) ; marqueur « Non connecté » (`nc`) |
+| `js/32-blocs.js` | 147 | Blocs réutilisables (Organiser ▾) : la sélection enregistrée sous un nom (contenu du presse-papier), reposée par `pasteClip`, rangée dans le navigateur, export/import `.json` |
 | `../commun/variantes.js` | 147 | Le modèle des variantes de montage, partagé avec le PCB — **chargé avant `js/`** |
 | `../commun/contraintes.js` | 109 | Ce qu'est une contrainte de net et un groupe d'appariement, et comment se lit une saisie : les mêmes bornes que le PCB — **chargé avant `js/`** |
 | `../commun/reperage.js` | 290 | Chercher un repère, mesurer une distance — le geste, partagé avec l'éditeur PCB et paramétré par l'adaptateur de `21-reperage.js` |
