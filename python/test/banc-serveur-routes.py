@@ -657,6 +657,15 @@ def test_routes():
                 assert res.status == 403, "%s %s sans en-tete : %d au lieu de 403" % (methode, route, res.status)
         assert not os.path.exists(os.path.join(LIB, "lib_empreinte_pcb", "sans-entete.json")), "ecrit sans en-tete"
         assert os.path.exists(os.path.join(LIB, "lib_empreinte_pcb", "0603.json")), "efface sans en-tete"
+        # le nom sans souligne (relais qui retire les « _ ») vaut l'autre, et le refus dit qui et pourquoi
+        REQUETE_BRUTE(conn, "POST", "/api/pilote/battement", json.dumps({"navigateur": "n", "onglets": []}).encode("utf-8"),
+                      {"Content-Type": "application/json", "X-Web-Cao": "1"})
+        res = conn.getresponse()
+        res.read()
+        assert res.status == 200, "X-Web-Cao seul : %d au lieu de 200" % res.status
+        REQUETE_BRUTE(conn, "POST", "/api/pcb/score-placement", b"{}", {"Content-Type": "application/json"})
+        res = conn.getresponse()
+        assert "WEB_CAO" in json.loads(res.read())["detail"], "le refus ne nomme pas l'outil"
         print("[PASS] En-tete maison X-WEB_CAO exige : sans lui, rien n'est ecrit (403)")
         # 30a. Datasheet en local : un corps JSON qui n'est pas un objet est un
         # refus (400), pas une « Erreur interne » 500.

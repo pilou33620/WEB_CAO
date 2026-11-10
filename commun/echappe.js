@@ -7,7 +7,9 @@
    Aussi ENTETE_WEB : l'en-tête maison que web_CAO.py exige sur tout POST/PUT/DELETE
    (une autre page ne peut pas l'ajouter sans pré-vol CORS) ; commun/pilote.js le lit.
    ============================================================================= */
-const ENTETE_WEB={"X-WEB_CAO":"1"};
+/* Deux noms pour le même en-tête : un relais peut retirer celui qui porte un « _ »
+   (nginx par défaut) ; web_CAO.py accepte l'un ou l'autre. */
+const ENTETE_WEB={"X-WEB_CAO":"1","X-Web-Cao":"1"};
 const ESC_HTML={"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;","`":"&#96;"};
 function esc(s){
   return s==null?"":String(s).replace(/[&<>"'`]/g,ch=>ESC_HTML[ch]);

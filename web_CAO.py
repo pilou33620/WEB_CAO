@@ -1782,8 +1782,13 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
         En-tete maison X-WEB_CAO exige (REGLES §2.3) : une page d'un autre site ne
         peut pas l'ajouter sans pre-vol CORS, que ce serveur ne valide pas."""
-        if self.headers.get("X-WEB_CAO") != "1":
-            self._envoyer_json({"detail": "Requete refusee"}, 403)
+        # « X-Web-Cao » : le meme, sans souligne. Certains relais (nginx par defaut...)
+        # retirent en silence un en-tete dont le nom porte un « _ » ; la page pose les deux.
+        if "1" not in (self.headers.get("X-WEB_CAO"), self.headers.get("X-Web-Cao")):
+            # le motif nomme l'outil et la cause : WEB_ANTENNA repond le meme 403, et
+            # « Requete refusee » seul ne disait ni qui refusait ni pourquoi
+            self._envoyer_json({"detail": "Requete refusee par WEB_CAO : en-tete X-WEB_CAO absent."
+                                " Rechargez la page ; sinon, un relais le retire en route."}, 403)
             return False
         origine = self.headers.get("Origin")
         if origine and not self._origine_permise(origine):
