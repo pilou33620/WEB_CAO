@@ -139,15 +139,16 @@ function dupSel(){
     return c;
   });
   clearSel();
+  const neuf=new Map();   // les parties d'un même boîtier (U1A, U1B) gardent un seul repère, comme addPage
   for(const e of els){
     const n=JSON.parse(JSON.stringify(e));
     n.id=S.uid++;n.x+=40;n.y+=40;
-    if(!defOf(n.type).noRef)n.ref=nextRef(defOf(n.type).p);
+    if(!defOf(n.type).noRef){n.ref=(e.ref&&neuf.get(e.ref))||nextRef(defOf(n.type).p);if(e.ref)neuf.set(e.ref,n.ref);}
     S.comps.push(n);S.sel.add(n.id);
   }
   for(const w of copies){S.wires.push(w);S.selW.add(w);}
   for(const d of copyDrawings){S.drawings.push(d);S.selD.add(d.id);}
-  if(copies.length)touchWires();
+  if(copies.length){touchWires();resolveSplits();}
   refreshPanels();draw();
 }
 function delSel(){
@@ -323,13 +324,14 @@ function pasteClip(){
   push();
   clearSel();
   let dropped=0;
+  const neuf=new Map();   // les parties d'un même boîtier (U1A, U1B) gardent un seul repère, comme addPage
   comps.forEach((src,i)=>{
     const el=normComp(src,i);
     if(!el){dropped++;return;}
     el.id=S.uid++;
     el.x+=bx;el.y+=by;
     const def=defOf(el.type);
-    if(!def.noRef)el.ref=nextRef(def.p);
+    if(!def.noRef){const vieux=el.ref;el.ref=(vieux&&neuf.get(vieux))||nextRef(def.p);if(vieux)neuf.set(vieux,el.ref);}
     S.comps.push(el);S.sel.add(el.id);
   });
   for(const src of wires){

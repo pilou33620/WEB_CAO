@@ -72,7 +72,7 @@ const EXPOSE=[
   "pkgBaseOf","pkgKnown","pkgBaseList","PKG_BASES",
   /* brochage (04 + 19) */
   "icPins","icBodyOf","icSideOf","icPinLabel","icFree","icShapeOf","icStep","IC_STEP",
-  "icSetCount","icSetShape","icSetBody","icFitNames","icMovePin","reshapeComp",
+  "icSetCount","icSetShape","icSetBody","icMovePin","reshapeComp",
   "ceOpen","ceClose",
   /* libellés déplaçables et étiquettes de net (08 + 09) */
   "compTexts","textBox","textOff","setTextOff","netLabelAt","netLabelBoxes",
@@ -81,7 +81,7 @@ const EXPOSE=[
   "rotateSel","mirrorSel",
   "splitWireArray","textW",
   /* presse-papier et grille (10) */
-  "copySel","cutSel","pasteClip","clipContent","setClip","getClip","setGridStep","snap","delSel","dupSel",
+  "pdfCtx","copySel","cutSel","pasteClip","clipContent","setClip","getClip","setGridStep","snap","delSel","dupSel",
   "delWiresSel","gridLabel","gridShownStep","normComp","normWire","normDrawing","selDrawings","hitDrawing","loadDoc",
   /* connectivité (07) */
   "computeNets","nets","docNets","splitWireArray","resolveSplits","endpointList",
@@ -1470,6 +1470,50 @@ T("presse-papier : un contenu invalide ne casse rien",()=>{
   S.mouse={x:0,y:0};
   pasteClip();
   if(S.comps.length||S.wires.length)throw new Error("rien ne devait être posé");
+});
+T("dupliquer : le bout du fil copié qui tombe au milieu d'un fil s'y raccorde",()=>{
+  const r1=C("resistor",0,0,{ref:"R1"}), r2=C("resistor",10,0,{ref:"R2"});
+  const a=allPins(r1)[1], b=allPins(r2)[0];
+  // R3 au-dessus : son fil vertical, décalé de 40 par D, finit au milieu de R1—R2
+  const r3=C("resistor",0,0,{ref:"R3"}), p0=allPins(r3)[1];
+  r3.x+=a.x+2*G-p0.x; r3.y+=a.y-6*G-p0.y;
+  const p=allPins(r3)[1];
+  sheet([r1,r2,r3],[{x1:a.x,y1:a.y,x2:b.x,y2:b.y},{x1:p.x,y1:p.y,x2:p.x,y2:a.y-40}]);
+  clearSel();S.sel.add(r3.id);S.selW.add(S.wires[1]);
+  dupSel();
+  const r4=S.comps.find(c=>S.sel.has(c.id));
+  relies(allPins(r4)[1],a);
+});
+T("dupliquer, coller, renuméroter une feuille : les parties d'un boîtier gardent un seul repère",()=>{
+  const avant=serialize(), pr=global.prompt, conf=global.confirm;
+  try{
+    const ua=C("ic",0,0,{ref:"U3",part:"A"}), ub=C("ic",20,0,{ref:"U3",part:"B"});
+    sheet([ua,ub],[]);
+    const copies=()=>S.comps.filter(c=>S.sel.has(c.id)).map(c=>c.ref);
+    clearSel();S.sel.add(ua.id);S.sel.add(ub.id);
+    copySel();dupSel();
+    let r=copies();
+    if(r.length!==2||r[0]!==r[1]||r[0]==="U3")throw new Error("dupliquer : "+r);
+    S.mouse={x:0,y:40*G};pasteClip();
+    r=copies();
+    if(r.length!==2||r[0]!==r[1]||r[0]==="U3")throw new Error("coller : "+r);
+    global.prompt=()=>"500"; global.confirm=()=>true;
+    refStartPage(S.page);
+    if(S.comps.find(c=>c.id===ua.id).ref!==S.comps.find(c=>c.id===ub.id).ref)
+      throw new Error("renuméroter : "+S.comps.map(c=>c.ref));
+  }finally{global.prompt=pr;global.confirm=conf;loadDoc(JSON.parse(avant),true);sheet([],[]);}
+});
+T("Propriétés d'une zone : les repères capturés sont échappés",()=>{
+  sheet([C("resistor",2,2,{ref:XSS})],[]);
+  S.drawings=[{id:9902,shape:"rect",x1:0,y1:0,x2:6*G,y2:6*G,isZone:true}];
+  clearSel();S.selD.add(9902);refreshPanels();
+  try{assertPropre(document.getElementById("props").innerHTML,"zone");}
+  finally{S.drawings=[];clearSel();}
+});
+T("export PDF : quadraticCurveTo (fusible, SAW, source AC) devient une cubique",()=>{
+  const c=pdfCtx(false,new Set());
+  c.beginPath();c.moveTo(0,0);c.quadraticCurveTo(30,30,60,0);
+  if(c.ops[c.ops.length-1]!=="20 20 40 20 60 0 c")throw new Error(c.ops.join(" | "));
 });
 
 /* ==========================================================================

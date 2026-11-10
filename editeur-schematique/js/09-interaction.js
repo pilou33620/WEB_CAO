@@ -965,13 +965,10 @@ cv.addEventListener("wheel",e=>{
 /* =============================================================================
    Boîte de dialogue contextuelle de piquage de bus
    ============================================================================= */
-let SCH_PIQUAGE_ACTIVE = null;
-
 function schFermerPiquageModal(){
   if(typeof document === "undefined") return;
   const m = document.getElementById("schPiquageModal");
   if(m) m.remove();
-  SCH_PIQUAGE_ACTIVE = null;
 }
 
 function schOuvrirPiquageModal(busWire, signalWire, tapPt){
@@ -1027,7 +1024,6 @@ function schOuvrirPiquageModal(busWire, signalWire, tapPt){
     '</div>';
 
   document.body.appendChild(m);
-  SCH_PIQUAGE_ACTIVE = { busWire, signalWire, busNom };
 
   const inp = document.getElementById("schPiqInput");
   if(inp){

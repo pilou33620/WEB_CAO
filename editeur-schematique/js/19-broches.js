@@ -73,19 +73,6 @@ function icSetBody(el,w,h){
                x2:icStep(cx+cw*IC_STEP/2),y2:icStep(cy+ch*IC_STEP/2)};
   });
 }
-/* Le corps s'ajuste tout seul à ce qu'il contient (icTextHalf) ; une largeur
-   saisie à la main ne fait que l'agrandir davantage. Ce bouton rend donc la
-   main au calcul automatique, au lieu d'imposer une largeur figée qu'un
-   renommage rendrait fausse. */
-function icFitNames(el){
-  reshapeComp(el,()=>{
-    delete el.icW;delete el.icHs;
-    if(icShapeOf(el)==="libre"){
-      const b=icAutoBody(icPins(el));
-      el.icBody={x1:b.x1,y1:b.y1,x2:b.x2,y2:b.y2};
-    }
-  });
-}
 /* Pose d'une broche. Deux pattes au même point se souderaient l'une à l'autre
    sans qu'aucun fil ne le montre : le déplacement est alors refusé. */
 function icMovePin(el,i,x,y){

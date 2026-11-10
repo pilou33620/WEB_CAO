@@ -125,12 +125,13 @@ function refStartPage(i){
       if(!parPrefixe.has(m[1]))parPrefixe.set(m[1],[]);
       parPrefixe.get(m[1]).push({c,num:+m[2]});
     }
+    const neuf=new Map();   // les parties d'un même boîtier (U1A, U1B) gardent un seul repère
     for(const [pre,l] of parPrefixe){
       l.sort((a,b)=>a.num-b.num);
       let k=n;
       for(const e of l){
-        while(autres.has(pre+k))k++;
-        e.c.ref=pre+k++;
+        if(!neuf.has(e.c.ref)){while(autres.has(pre+k))k++;neuf.set(e.c.ref,pre+k++);}
+        e.c.ref=neuf.get(e.c.ref);
       }
     }
     if(i===S.page)loadPage(i);

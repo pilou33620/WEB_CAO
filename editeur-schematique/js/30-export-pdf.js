@@ -98,6 +98,13 @@ function pdfCtx(papier,alphas){
       ops.push([p1[0]-ux*kk,p1[1]-uy*kk,p2[0]-vx*kk,p2[1]-vy*kk,p2[0],p2[1]].map(pdfN).join(" ")+" c");
       cur=p2;
     },
+    /* la quadratique en cubique : contrôles P0+2/3(C-P0) et P+2/3(C-P) */
+    quadraticCurveTo(cx,cy,x,y){
+      if(!cur)c.moveTo(cx,cy);
+      const [x0,y0]=cur;
+      ops.push([x0+2/3*(cx-x0),y0+2/3*(cy-y0),x+2/3*(cx-x),y+2/3*(cy-y),x,y].map(pdfN).join(" ")+" c");
+      cur=[x,y];
+    },
     roundRect(x,y,w,h,r){
       r=Math.min(Array.isArray(r)?r[0]:r||0,Math.abs(w)/2,Math.abs(h)/2);
       c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();

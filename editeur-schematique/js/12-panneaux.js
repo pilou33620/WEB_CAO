@@ -296,7 +296,7 @@ function refreshPanels(){
         '</select></div>'+
         '<div class="prop"><label>Composants capturés ('+inclus.length+')</label>'+
         '<div style="font-family:var(--mono);font-size:11px;color:'+(inclus.length?'var(--yellow)':'var(--txt-dim)')+';background:var(--bg);padding:5px 8px;border-radius:4px;border:1px solid var(--border2);max-height:60px;overflow-y:auto;">'+
-        (inclus.length ? inclus.join(', ') : 'Aucun (déposez des composants dans le cadre)')+
+        (inclus.length ? esc(inclus.join(', ')) : 'Aucun (déposez des composants dans le cadre)')+
         '</div></div>'
       ) : '')+
       '<div class="prop"><label>Style de trait</label>'+
