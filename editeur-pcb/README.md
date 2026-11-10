@@ -227,7 +227,7 @@ moment où ils s'exécutent. La règle pratique :
    encore quand `init()` s'exécute. Les points d'entrée que les fichiers
    antérieurs lui empruntent — `drawDp()` dans `paint()`, `dpDrc()` dans
    `runDrc()`, `buildDiffPairs()` dans `refreshPanels()`, `dpOfNet()` dans
-   `clrPair()` — passent donc tous par un `typeof … === "function"`.
+   `clrK()` — passent donc tous par un `typeof … === "function"`.
 9. `10-pns-*` à `14-pns-*` — le moteur de routage — viennent après
    `09-diffpair` pour la même raison qu'`08` et `09` : rien n'y tourne au
    chargement, tout y est appelé au clic. `05-tools` et `09-diffpair` les
@@ -1845,7 +1845,7 @@ une broche n'est pas encore reliée l'est pour information seulement.
 
 - le **DRC** liste chaque écart : `Contrainte SPI_CS : longueur 45,00 mm, au-delà du maximum de 30,00 mm (classe Défaut)`,
   `Groupe SPI : SPI_SCK à -28,63 mm de SPI_CS, tolérance ± 1,00 mm` ;
-- l'**isolation entre classes** entre dans `clrPair` / `clrK` : le routeur, le
+- l'**isolation entre classes** entre dans `clrK` : le routeur, le
   DRC, le remplissage des zones et les Gerber l'appliquent. C'est un minimum
   qui s'ajoute aux classes et à la matrice des natures, comme elle : une
   matrice vide ne change rien. Les deux nets d'une paire différentielle
@@ -2584,9 +2584,7 @@ Trois chemins, du plus explicite au plus rapide :
 `dpMakePair(p, n, keepOrder)` est le passage obligé des trois : deux nets
 distincts, aucun des deux déjà apparié, et un nom tiré de la base commune.
 `keepOrder` dit si l'appelant a déjà tranché la polarité — les deux listes le
-savent, `dpFromSel()` (deux pistes sélectionnées, resté accessible pour le cas
-où l'on vient de tirer deux amorces sans se rappeler leurs noms) s'en remet aux
-suffixes, et faute de suffixe lisible à l'ordre d'arrivée.
+savent.
 
 Le suffixe le plus long est essayé d'abord — sans quoi `USB_DP` se lirait
 `USB_D` + `P`, et son complémentaire serait `USB_DN` au lieu de `USB_DM`. La
@@ -2622,7 +2620,7 @@ tiennent pas la même impédance avec la même largeur.
 ### L'écart d'une paire passe devant l'isolation de classe
 
 Une paire à 0,15 mm sous une classe qui exige 0,25 mm n'est pas une carte en
-faute : c'est le principe même de la paire. `clrPair()` le sait — **entre les
+faute : c'est le principe même de la paire. `clrK()` le sait — **entre les
 deux nets d'une paire, c'est l'écart mini de la règle qui fait loi**, partout
 ailleurs c'est la plus exigeante des deux classes. Cette exception unique suffit
 à mettre d'accord le routeur (qui refusait d'avancer), le contrôle DRC (qui

@@ -6,7 +6,8 @@
    une via là où toutes les couches qu'elle traverse sont libres. Le cuivre des
    autres nets est gonflé de l'isolation (clrK) et de la demi-largeur de la piste ;
    bord de carte, découpes et trous NPTH aussi. Les zones de cuivre ne gênent
-   pas : elles se recoulent autour de la piste.
+   pas : elles se recoulent autour de la piste ; une région pleine (z.plein)
+   d'un autre net, elle, ne se recoule pas : c'est un obstacle.
 
    Rien n'est écrit : la réponse est la liste de points de passage qu'attend
    cao_router, qui fait le détail (contournement, poussée) et passe par sa carte.
@@ -134,6 +135,14 @@ function cheminObstacles(g, nets, larg, extra, bouts, Rv){
       for(const [G, R, on] of [[T, Rt, z.ko.pistes], [V, Rv, z.ko.vias]])
         if(on) cheminBoite(G, g, l, b.x1 - R, b.y1 - R, b.x2 + R, b.y2 + R,
                            (x, y) => inPoly(x, y, z.pts) || polyEdgeDist(x, y, z.pts) < R);
+    }
+    /* les régions pleines d'un autre net : du cuivre fixe, gonflé de l'isolement de la zone */
+    for(const z of S.zones){
+      if(!z.plein || z.l !== l || nets.includes(z.net)) continue;
+      const b = polyBBox(z.pts);
+      for(const [G, R] of [[T, Rt + clrZone(z, net, "cu", "trk")], [V, Rv + clrZone(z, net, "cu", "via")]])
+        cheminBoite(G, g, l, b.x1 - R, b.y1 - R, b.x2 + R, b.y2 + R,
+                    (x, y) => inPoly(x, y, z.pts) || polyEdgeDist(x, y, z.pts) < R);
     }
   }
   return {T, V};

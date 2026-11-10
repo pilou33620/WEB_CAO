@@ -131,7 +131,7 @@ function placerSatellites(){
   const hotes=new Set(S.fps.filter(fp=>!satConnecteur(fp)&&!placeManuelle(fp)&&
     padsOf(fp).length>=3&&centreSurCarte(fp)));
   /* satellites possibles : deux pattes */
-  const cands=S.fps.filter(fp=>padsOf(fp).length===2&&!placeManuelle(fp)&&!satConnecteur(fp));
+  const cands=S.fps.filter(fp=>padsOf(fp).length===2&&!fp.locked&&!placeManuelle(fp)&&!satConnecteur(fp));
   const candSet=new Set(cands);
   /* boîtes occupées : tout sauf les satellites possibles, qu'on soulève */
   const obst=S.fps.filter(fp=>!candSet.has(fp)).map(fpBBox);

@@ -156,11 +156,11 @@ function fanoutCommande(){
   return r;
 }
 function coutureRetirer(){
-  const n=S.vias.filter(v=>v.couture).length;
+  const n=S.vias.filter(v=>v.couture&&!v.locked).length;   // le verrouillé reste
   if(!n){hint("Aucun via de couture ni de clôture sur la carte.");return 0;}
   push();
-  S.vias=S.vias.filter(v=>!v.couture);
-  for(const v of [...S.sel.vias])if(v.couture)S.sel.vias.delete(v);
+  S.vias=S.vias.filter(v=>!v.couture||v.locked);
+  for(const v of [...S.sel.vias])if(v.couture&&!v.locked)S.sel.vias.delete(v);
   touch();refreshPanels();draw();
   hint(n+" via(s) de couture et de clôture retirés.");
   return n;

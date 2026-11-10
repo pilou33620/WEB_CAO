@@ -92,7 +92,9 @@ function busClic(x,y){
     }
     if(!B.pads.length){hint("Bus : commencez par cliquer les pastilles de départ (couche "+cuId(S.active,S.cu)+").");return true;}
   }
-  B.pts.push({x:snapX(x),y:snapY(y)});
+  const p={x:snapX(x),y:snapY(y)}, der=B.pts[B.pts.length-1];
+  if(der&&dist(p.x,p.y,der.x,der.y)<1e-6)return true;   // tronçon nul : sa normale serait (0, 0)
+  B.pts.push(p);
   hint("Bus : "+B.pts.length+" sommet(s) du trajet — Entrée pose les "+B.pads.length+" pistes, Retour arrière défait, Échap abandonne.");
   return true;
 }

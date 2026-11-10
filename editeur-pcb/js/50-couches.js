@@ -163,6 +163,13 @@ function keepoutDrc(out){
         if(d-v.d/2>-1e-6)continue;
         out.push({via:v,x:v.x,y:v.y,l:v.a,msg:"Via "+(v.net||"sans net")+" dans le keep-out « "+z.nom+" »"});
       }
+    /* une région pleine est peinte telle quelle, par-dessus les découpes
+       (04-fabrication.js) : le keep-out ne la creuse pas, il faut la signaler */
+    if(z.ko.zones)
+      for(const q of S.zones){
+        if(!q.plein||!L.has(q.l)||!polysTouchent(q.pts,z.pts))continue;
+        out.push({x:r3(q.pts[0].x),y:r3(q.pts[0].y),l:q.l,msg:"Région pleine "+(q.net||"sans net")+" dans le keep-out « "+z.nom+" » ("+cuId(q.l,S.cu)+")"});
+      }
   }
 }
 function propsKeepout(box,z){

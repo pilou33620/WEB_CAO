@@ -62,15 +62,15 @@ const EXPOSE=[
   "buildLayers","refreshPanels","buildList","buildProps","clearSel","rotateSel",
   "BLOC_PLACEMENT","PLACEMENT_SCORE","fpBBox",
   /* sélection multiple : les groupes du panneau Propriétés */
-  "mpOuvert","mpRaz","mpIdx","mpSection","mpRangs","MP_MIX",
+  "mpOuvert","mpIdx","mpSection","mpRangs","MP_MIX",
   /* nature d'un via : traversant, borgne dessus/dessous, enterre */
   "VIA_KINDS","viaKindOf","viaKindTxt","viaKindsAvail","viaSetKind","viaBuild","fabBase",
   "flipSel","push","undo","redo","touch","padsWorld","cuId","serialize","loadDoc","exportPng",
   "setFlip","setContrast","setFaceOpp","faceAlpha","autoPlace","placerSatellites","placeManuelle","satValeurF","conn","netTable","fit","zoneClick","zoneMove",
   "closeZone","fullBoardZone","zoneMask","labelMask","maskAt","classOf","setNetClass","defaultWidth",
-  "clrPair","applyClasses","jointAt","splitTrack","netTracks","selectNetRouting",
+  "applyClasses","jointAt","splitTrack","netTracks","selectNetRouting",
   "deleteNetRouting","autoClass","classOptionsHtml","poserClasseNet","schemaPublie","listNets","mkFp","w2s","runDrc","padsOf",
-  "buildFabFiles","jlcGerberFiles","jlcBomLignes","jlcBomCsvText","jlcCplCsvText","jlcCplXlsx","normFp","jlcNonPose","jlcFpsAPoser","vbValeur","vbValeurFiche","vbJuger","vbRequete","vbVerifier","vbAppliquer","exportJlcpcb","gerberCopper","gerberMask","gerberPaste","gerberSilk",
+  "buildFabFiles","jlcGerberFiles","jlcBomLignes","jlcBomCsvText","jlcCplLignes","ipcAccess","propsEnMil","jlcCplXlsx","normFp","jlcNonPose","jlcFpsAPoser","vbValeur","vbValeurFiche","vbJuger","vbRequete","vbVerifier","vbAppliquer","exportJlcpcb","gerberCopper","gerberMask","gerberPaste","gerberSilk",
   /* animation 3D de fabrication.zip (41-animation-3d.js) */
   "anim3dDonnees","anim3dPage","anim3dModeles","anim3dPose","anim3dAuto","anim3dExporter","silkTraits","silkRogne","silkContour","SILK_GARDE","fabLivrer","THREE_SOURCE",
   "gerberEdge","gerberOutline","ipcNetlist","ipc317","masterDrawingPdf","noAcc",
@@ -83,7 +83,7 @@ const EXPOSE=[
   "boardChanged","polyEdgeDist","segDist","orient","signedArea",
   "coordOpen","coordClose","coordApply","coordMode","coordPoint","coordAnchor",
   "placeOrigin","ux","uy","wxu","wyu","snapX","snapY","gOrigin","routeToPoint","hint",
-  "pushClear","magnet","projOnSeg","trkAt","mitreSel","mitreAt","miterCoin","miterClick","collinearRun","runFrom","segClearBad","setActive","segSegDist","segCross","routeBad","focusNet","cancelRoute","updateRoute","classOf","syncAutoZones","detachAuto","zoneCanvas","zoneCache","inPoly","hitTest","px","dist","boardZonePts",
+  "pushClear","magnet","projOnSeg","trkAt","mitreSel","mitreAt","miterCoin","miterClick","collinearRun","runFrom","segClearBad","setActive","segSegDist","segCross","focusNet","cancelRoute","updateRoute","classOf","syncAutoZones","detachAuto","zoneCanvas","zoneCache","inPoly","hitTest","px","dist","boardZonePts",
   "selectLayerZones","couchesToutes","zoneContient","inPoly","zoneUnder",
   /* repérage commun : chercher un repère, mesurer une distance
      (commun/reperage.js + le module d'adaptation de l'éditeur) */
@@ -134,15 +134,15 @@ const EXPOSE=[
   "docObj","normDoc","normDrawingPcb","selDrawingsPcb","normHole","selHolesPcb","mkHole","holeBBox","setNetClass",
   /* paires différentielles : modèle, règles, tracé couplé, contrôle */
   "DP_SUF","DP_FALLBACK","DP_KEYS","DP_PROFILES","DP_MITER","DP_STEP",
-  "dpSplit","dpMateName","dpMatch","dpDetect","dpById","dpByName","dpOfNet",
+  "dpSplit","dpMateName","dpMatch","dpDetect","dpByName","dpOfNet",
   "dpMateNet","dpFreeName","dpRuleFor","dpValues","dpMinGap","dpGeom","dpUid",
   "dpProfile","dpIsPlane","dpDiBetween","dpStripGeom","dpZ0","dpZdiff",
   "dpSolveW","dpSolveGap","normDpPair","normDpRule",
-  "dpPts","dpSegs","dpDir","dpPerp","dpCross","dpDot","dpOffset","dpLeg",
+  "dpSegs","dpDir","dpPerp","dpCross","dpDot","dpOffset","dpLeg",
   "dpFreeEnd","dpAnchors","dpNearest","dpPrimPair","dpPairAt","dpPush",
   "dpSelected","dpSelect","dpViaSpread","dpPosture","dpGate","dpMid","dpTarget",
   "dpStart","dpUpdate","dpStep","dpVia","dpToLayer","dpCommit","dpCancel",
-  "dpBack","drawDp","dpCoupling","dpDrc","dpMakePair","dpFromSel","dpAutoAll","dpDelete",
+  "dpBack","drawDp","dpCoupling","dpDrc","dpMakePair","dpAutoAll","dpDelete",
   "dpNetFree","dpNetOpts","dpMateGuess",
   "dpPanelRule","dpMaterialize","dpFigure","dpLayerCells","buildDiffPairs",
   "dpMeander","dpSkewForTrack","busSkewAnalyze","BUS_PRESETS",
@@ -168,7 +168,7 @@ const EXPOSE=[
   "pnsSimplify","pnsSplice","pnsDirOk","pnsIs45","pnsSnap45","pnsSnap45One",
   "PNS_CELL","PNS_EPS","PNS_MARGIN","pnsItemPad","pnsItemVia","pnsItemSeg",
   "pnsItemTrack","pnsMaxClr","pnsClr","pnsGap","pnsPairGap",
-  "pnsNode","pnsBuild","pnsWorld","pnsInvalidate","pnsStamp","pnsHullOct",
+  "pnsNode","pnsBuild","pnsWorld","pnsStamp","pnsHullOct",
   "PNS_D8","PNS_D4","pnsSupPad","pnsSupVia","pnsSupSeg","pnsPlaneMeet","pnsOct","pnsUnloop",
   "PNS_WALK_MAX","pnsSurCarte","pnsHullWalk","pnsWalkCross","pnsWalkSide","pnsWalkaround","routeSegsTo",
   "PNS_SHOVE_MAX","PNS_SHOVE_RANG","PNS_SHOVE_TRAVAIL","PNS_SHOVE_MS","pnsPushOut","pnsShoveAside","pnsRelink","pnsShoveVia",
@@ -184,7 +184,7 @@ const EXPOSE=[
   "parseNetlist","parseCompLine","applyNetlist","STYLES","bodyOf",
   /* empreintes dessinees a la main et bibliotheque personnelle */
   "fpFree","padClone","fpAutoBody","fpFreeze","fpGeneric","fpSyncPins",
-  "fpMovePad","fpSetPad","fpAddPad","fpDelPad","fpSetPins","fpSetBody",
+  "fpMovePad","fpSetPad","fpAddPad","fpSetPins","fpSetBody",
   "dPads","dHoles","trousMonde","fpTrousDe","axePercage","followBase","followWorld","fpLibRelire","pcbSurModifLib","drawHoles","dBody","normFpDef","fpApplyDef","fpDessinsMonde","dessinsMonde","fpLibAll","fpLibWrite",
   "fpLibGet",
   "fpLibMerge","FPLIB_KEY","FPLIB_FORMAT",
@@ -219,7 +219,7 @@ const EXPOSE=[
   "trkLen","trkAt","trkMid","trkDist","trkBBox","trkSegs","trkPath",
   "normTrack","gTrk","pnsItemsTrack",
   /* nom de projet commun (commun/projet.js) et nommage des exports */
-  "projNom","projOuvrir","projFermer","projDoc","projListe","projOublier",
+  "projNom","projOuvrir","projFermer","projDoc",
   "projNomValide","projSurChangement","projPeindre","PROJ_CLE",
   "pcbProjNom","fabBase","fabDocNum","pcbFile",
   /* dossier de projet sur le disque (commun/projet-disque.js) */
@@ -248,15 +248,15 @@ const EXPOSE=[
   "SIM_DC_UNITES_V","SIM_DC_UNITES_A","simDCUnites","simDCUnite",
   "simDCListeUnite","simChamp","simCorpsImpedance","simCorpsDiff",
   "simCorpsCrosstalk","simCorpsRetour","simCorpsCarte",
-  "SIM_BUS","simCorpsBus","simBrancherBus","simRendreBus","simBusCalculer","SIM_BUS_PRESETS","SIM_BUS_PROTOCOLES",
+  "SIM_BUS","simCorpsBus","simBrancherBus","simRendreBus","simBusCalculer","SIM_BUS_PROTOCOLES",
   "SIM_PDN","simCorpsPDN","simBrancherPDN","simRendrePDN","simCalculerPDN","simCourbePDN","simPDNActualiserComposants","simPDNExportCsv","simPDNExportJson","simPDNCsvTexte","simPDNJsonTexte","simPDNFormatFreq","simPDNFormatZ","simPDNCalculerModesCavite","simPDNGenererHeatmapCavite",
   /* Le modele multi-port de la cavite : couplage d un port a un mode,
      inductance d epandage et resolution complexe. */
   "simPDNCouplagePort","simPDNSinc","simPDNResoudreComplexe","simPDNInductancesEpandage",
   /* Ce que les deux adaptateurs partagent : filtre, parasites, montage, cavite. */
-  "simPDNEstMasse","simPDNEstCondensateur","simPDNParasitesCapa","simPDNParasitesDefaut","simPDNInductanceMontage","simPDNChoisirCavite","simPDNAppliquerCavite","simPDNChoisirCharge","SIM_PARASITES_MURATA_DEFAUT","simPDNLireChamps","simPDNCheminsPiste","simPDNInductanceLineique","simPDNHauteursRetour","simPDNEvaluerEvenement","simPDNZa","simPDNBilanEvenements","simPDNRendreEvenements","simPDNPreparerEvenements","simPDNEvenementsDefaut","simPDNEvLireChamp","simPDNFicheDefaut","simPDNFicheCharger","simPDNFicheSauver","simPDNFicheModifier","simPDNEvenementsDepuisFiche","SIM_PDN_FICHE","simPDNSynchroDeltaI","simPDNAssistantActif","simPDNBasculerAssistant",
+  "simPDNEstMasse","simPDNEstCondensateur","simPDNParasitesCapa","simPDNParasitesDefaut","simPDNInductanceMontage","simPDNChoisirCavite","simPDNAppliquerCavite","simPDNChoisirCharge","SIM_PARASITES_MURATA_DEFAUT","simPDNLireChamps","simPDNCheminsPiste","simPDNInductanceLineique","simPDNHauteursRetour","simPDNEvaluerEvenement","simPDNZa","simPDNBilanEvenements","simPDNRendreEvenements","simPDNPreparerEvenements","simPDNEvLireChamp","simPDNFicheDefaut","simPDNFicheCharger","simPDNFicheSauver","simPDNFicheModifier","simPDNEvenementsDepuisFiche","SIM_PDN_FICHE","simPDNSynchroDeltaI","simPDNAssistantActif","simPDNBasculerAssistant",
   "simInit","simRafraichir","simAllerAnalyse","simBusRendreNetsBar",
-  "simBusBasculerRole","simBusChangerNet","simBusChainerNet","simBusDechainerNet","simBusActiverRSerie","simBusDesactiverRSerie","simBusChangerNetAval","simBusChangerRSerieVal","simBusResoudreNetAvecPont","simBusLierComposants","simBusClassifierNets","simBusSupprimerSignal",
+  "simBusBasculerRole","simBusChangerNet","simBusActiverRSerie","simBusDesactiverRSerie","simBusChangerNetAval","simBusChangerRSerieVal","simBusResoudreNetAvecPont","simBusClassifierNets","simBusSupprimerSignal",
   "simThermiqueDC","simDCThermique","simDCThermiquePcb",
   /* Le choix de la couche peinte, et l'oubli qui va avec. */
   "simDCOublier","simDCCouchePeinte","simDCCouchesPeintes",
@@ -309,9 +309,6 @@ const EXPOSE=[
   /* L'onglet de Z differentielle (commun/simulation-em.js). */
   "simCouplage","simCouplagePaires","simFicheDiff",
   "simCorpsDiff","simRendreDiff",
-  /* Le seuil qui juge le crosstalk -- pourcentage ou millivolts -- et la
-     tension qui convertit un rapport en volts. */
-  "simTension",
   "simDocFinir",
   /* Les DEUX cartes de chaleur, et ce qui les colore. `simCarteSegment` est
      le seul point par lequel un canevas apprend ce qu'il peint. */
@@ -325,7 +322,7 @@ const EXPOSE=[
   /* Le voile : ce qui n'est pas dans la simulation s'estompe. */
   "simVoileActif","SIM_VOILE_ALPHA",
   /* Choisir sa paire a la main plutot que de la laisser deviner. */
-  "simPaireCandidats","simPaireSoi","simPaireEcrire","simDocFinir",
+  "simDocFinir",
   "simCoupleSection","simCoupleSections",
   "SIM_UNITES_TR","SIM_UNITES_V","simUniteTr","simUniteV",
   "simLotsPeints","simLotsMultiples","simPourChaqueLot","simLotMirroir",
@@ -878,7 +875,7 @@ T("classes de net",()=>{
   if(defaultWidth("N$1")!==a.w)throw new Error("la largeur devrait suivre la classe");
   // l'isolation retenue entre deux nets est la plus exigeante
   a.clr=0.4;
-  if(Math.abs(clrPair("N$1","N$2")-0.4)>1e-9)throw new Error("isolation de paire fausse");
+  if(Math.abs(clrK("N$1","N$2")-0.4)>1e-9)throw new Error("isolation de paire fausse");
   a.clr=0.25;
   // le routage existant ne bouge qu'à la demande
   const t=S.tracks.find(x=>x.net==="N$1");
@@ -4551,7 +4548,7 @@ TA("PCBA JLCPCB : archive Gerber, BOM et CPL aux colonnes de JLCPCB",async()=>{
     if(!bom.some(l=>l.endsWith(",C25804")&&l.includes(a.ref)))throw new Error("code LCSC absent : "+bom.join(" | "));
     const n=jlcBomLignes().reduce((t,l)=>t+l.refs.length,0);
     if(n!==jlcFpsAPoser().length)throw new Error("BOM : "+n+" repères pour "+jlcFpsAPoser().length);
-    const cpl=jlcCplCsvText().split("\r\n"), o=gOrigin();
+    const cpl=jlcCplLignes().map(r=>r.join(",")), o=gOrigin();
     if(cpl[0]!=="Designator,Mid X,Mid Y,Layer,Rotation")throw new Error("en-tête CPL : "+cpl[0]);
     const la=cpl.find(l=>l.startsWith(a.ref+",")).split(","), lb=cpl.find(l=>l.startsWith(b.ref+",")).split(",");
     if(la[1]!==fmt(a.x-o.x,4)+"mm"||la[2]!==fmt(o.y-a.y,4)+"mm")throw new Error("position : "+la.join(","));
@@ -7232,24 +7229,6 @@ T("pastille : dimensions, forme et perçage bornés",()=>{
   if(padsOf(fp)[0].w<0.05)throw new Error("une pastille garde une largeur positive");
   if(fpSetPad(fp,0,"couleur","rouge"))throw new Error("champ inconnu : rien à faire");
 });
-T("supprimer une pastille ne renumérote pas les autres",()=>{
-  S.fps=[];clearSel();touch();
-  const fp=mkFp("U1","","DIP-8",8);
-  fp.nets={1:"GND",4:"N$1",8:"+5V"};
-  S.fps.push(fp);touch();
-  fpFreeze(fp);
-  if(!fpDelPad(fp,2))throw new Error("la pastille 3 devait partir");
-  const ns=padsOf(fp).map(q=>q.n).join(" ");
-  if(ns!=="1 2 4 5 6 7 8")throw new Error("numéros attendus 1 2 4 5 6 7 8, obtenus "+ns);
-  if(fp.pins!==8)throw new Error("le brochage reste celui du plus grand numéro : "+fp.pins);
-  const q4=padsOf(fp).find(q=>q.n===4);
-  if(q4.net!=="N$1")throw new Error("le net de la broche 4 devait suivre son numéro");
-  /* la dernière pastille ne se retire pas : une empreinte sans cuivre ne
-     s'attrape plus à la souris */
-  while(fp.pads.length>1)fpDelPad(fp,0);
-  if(fpDelPad(fp,0))throw new Error("la dernière pastille devait résister");
-  if(!padsOf(fp).length)throw new Error("une empreinte garde au moins une pastille");
-});
 T("nombre de pastilles : ajout à la suite, retrait par la fin",()=>{
   S.fps=[];clearSel();touch();
   const fp=mkFp("J1","","",4);
@@ -8252,7 +8231,7 @@ T("empreinte sans cuivre : aucune pastille inventée, gardée par le document et
   if(S.drc.some(e=>/H1|LOGO1/.test(e.msg)))throw new Error("DRC : "+S.drc.map(e=>e.msg).join(" ; "));
   const np=buildFabFiles().files.find(f=>/NPTH/.test(f.name));
   if(!np||!/T1C3\.200/.test(np.text))throw new Error("le trou de H1 manque au perçage");
-  if(/H1|LOGO1/.test(positionsCsvText()+bomPcbCsvText()+jlcBomCsvText()+jlcCplCsvText()))throw new Error("rien à poser ni à acheter");
+  if(/H1|LOGO1/.test(positionsCsvText()+bomPcbCsvText()+jlcBomCsvText()+jlcCplLignes().join()))throw new Error("rien à poser ni à acheter");
   if(!/refDes="H1"[^>]*mountType="OTHER"/.test(ipc2581Fichier().text))throw new Error("IPC-2581 : composant sans broche");
   if(anim3dDonnees(true).composants.some(c=>/H1|LOGO1/.test(c.ref)))throw new Error("3D : pas de boîtier à dresser");
   /* ECO : présente des deux côtés, aucune disparité ; absente du schéma (logo), rien à supprimer */
@@ -8755,26 +8734,6 @@ T("détection : seules les paires dont les deux nets existent",()=>{
     throw new Error("les deux nets doivent désigner la même paire");
   if(dpMateNet("USB_DP")!=="USB_DM")throw new Error("net complémentaire perdu");
 });
-T("créer une paire depuis deux pistes sélectionnées",()=>{
-  carteDp();
-  push();
-  const t1={l:0,net:"USB_DP",w:0.2,x1:10,y1:10,x2:20,y2:10};
-  const t2={l:0,net:"USB_DM",w:0.2,x1:10,y1:11,x2:20,y2:11};
-  S.tracks.push(t1,t2);
-  clearSel();S.sel.tracks.add(t1);
-  if(dpFromSel())throw new Error("une seule piste ne fait pas une paire");
-  S.sel.tracks.add(t2);
-  const q=dpFromSel();
-  if(!q)throw new Error("deux pistes de deux nets devaient faire une paire");
-  if(q.p!=="USB_DP"||q.n!=="USB_DM")throw new Error("P et N mal rangés : "+JSON.stringify(q));
-  if(q.name!=="USB")throw new Error("nom de paire : "+q.name);
-  // un net déjà pris ne se reprend pas
-  const t3={l:0,net:"GND",w:0.3,x1:10,y1:12,x2:20,y2:12};
-  S.tracks.push(t3);
-  clearSel();S.sel.tracks.add(t1);S.sel.tracks.add(t3);
-  if(dpFromSel()!==q)throw new Error("un net déjà apparié doit renvoyer sa paire");
-  if(S.dpPairs.length!==1)throw new Error("aucune seconde paire ne devait naître");
-});
 T("deux listes de nets : la polarité choisie fait loi",()=>{
   carteDp();
   S.tracks.push({l:0,net:"GND",w:0.3,x1:10,y1:12,x2:20,y2:12});
@@ -8805,13 +8764,13 @@ T("l'écart d'une paire passe devant l'isolation de sa classe",()=>{
   carteDp();
   dpAutoAll();
   const q=S.dpPairs[0];
-  if(clrPair("USB_DP","GND")!==0.25)throw new Error("isolation ordinaire changée");
-  if(Math.abs(clrPair("USB_DP","USB_DM")-DP_FALLBACK.minGap)>1e-9)
-    throw new Error("entre les deux nets de la paire : "+clrPair("USB_DP","USB_DM"));
-  if(clrPair("USB_DM","USB_DP")!==clrPair("USB_DP","USB_DM"))
+  if(clrK("USB_DP","GND")!==0.25)throw new Error("isolation ordinaire changée");
+  if(Math.abs(clrK("USB_DP","USB_DM")-DP_FALLBACK.minGap)>1e-9)
+    throw new Error("entre les deux nets de la paire : "+clrK("USB_DP","USB_DM"));
+  if(clrK("USB_DM","USB_DP")!==clrK("USB_DP","USB_DM"))
     throw new Error("l'isolation ne dépend pas de l'ordre");
   dpDelete(q);
-  if(clrPair("USB_DP","USB_DM")!==0.25)
+  if(clrK("USB_DP","USB_DM")!==0.25)
     throw new Error("la paire supprimée, l'isolation de classe reprend");
 });
 T("F finit le tracé jusqu'à la cible, et un échec le rend tel quel",()=>{
@@ -9281,7 +9240,7 @@ T("anti-collision : un via ne se pose pas dans le cuivre du voisin",()=>{
      piste ne l'est pas pour la rondelle, et rien ne le disait */
   if(placeVia(30.1,30,"B",0,3,false))throw new Error("un via posé dans un autre");
   if(S.vias.length!==1)throw new Error("le via refusé a quand même été posé");
-  const clr=clrPair("A","B");
+  const clr=clrK("A","B");
   if(placeVia(30+S.vias[0].d+clr-0.01,30,"B",0,3,false))
     throw new Error("un via posé sous l'isolation exigée");
   if(!placeVia(30+S.vias[0].d+clr+0.01,30,"B",0,3,false))
@@ -9335,7 +9294,7 @@ T("un via tiré à la main bute sur un autre via",()=>{
   clearSel();S.sel.vias.add(gnd);
   glisseSur(gnd,{x:34,y:30},{x:30.1,y:30});
   const e=dist(gnd.x,gnd.y,cible.x,cible.y)-gnd.d/2-cible.d/2;
-  if(e<clrPair("GND","SIG")-1e-6)
+  if(e<clrK("GND","SIG")-1e-6)
     throw new Error("le via s'est posé sous l'isolation : "+fmt(e,3)+" mm");
   if(Math.abs(gnd.x-34)<1e-9)
     throw new Error("il devait tout de même avancer jusqu'à l'obstacle");
@@ -9348,7 +9307,7 @@ T("un via tiré à la main bute sur une piste d'un autre net",()=>{
   clearSel();S.sel.vias.add(v);
   glisseSur(v,{x:30,y:36},{x:30,y:30});
   const e=Math.abs(v.y-30)-v.d/2-0.15;
-  if(e<clrPair("GND","SIG")-1e-6)
+  if(e<clrK("GND","SIG")-1e-6)
     throw new Error("le via a traversé la piste : "+fmt(e,3)+" mm");
   if(Math.abs(v.y-36)<1e-9)throw new Error("il devait avancer jusqu'à l'obstacle");
   if(runDrc().some(x=>!x.info))throw new Error("le glissement a laissé une faute");
@@ -9394,7 +9353,7 @@ T("outil « Via » : un via sans net se fait juger comme les autres",()=>{
   fire("pointerdown",sc(30,30.5));fire("pointerup",sc(30,30.5));
   if(S.vias.length)throw new Error("un via sans net posé sur une piste étrangère");
   // plus loin, il tient : l'isolation de la classe par défaut suffit à trancher
-  const loin=30+0.15+0.4+clrPair("","SIG")+0.05;
+  const loin=30+0.15+0.4+clrK("","SIG")+0.05;
   fire("pointerdown",sc(30,loin));fire("pointerup",sc(30,loin));
   if(S.vias.length!==1)throw new Error("au-delà de l'isolation, le via devait tenir");
   setMode("select");
@@ -9508,7 +9467,7 @@ T("vias de paire : une règle plus large que la classe l'emporte quand même",()
     throw new Error("la règle de paire devait l'emporter : "+fmt(g,3)+" < "+fmt(mini,3));
 });
 T("contrôle : deux vias de paire rapprochés à la main sont signalés",()=>{
-  /* Le contrôle général mesure entre deux nets appariés à `clrPair` — l'écart
+  /* Le contrôle général mesure entre deux nets appariés à `clrK` — l'écart
      de la règle — et les laisserait donc passer bien plus près. La règle des
      vias est propre aux paires : c'est `dpDrc` qui la porte. */
   const c=carteDp(4);
@@ -9554,7 +9513,7 @@ T("vias de paire : l'écartement tient le cuivre ET les perçages",()=>{
      largement du trou. Et l'isolation retenue est l'ORDINAIRE, pas l'écart
      serré de la règle de paire : sur deux vias le couplage est rompu, il ne
      reste que du cuivre étranger. */
-  if(dpViaGap(q)<=clrPair(q.p,q.n))
+  if(dpViaGap(q)<=clrK(q.p,q.n))
     throw new Error("l'isolation des vias doit dépasser l'écart de la règle de paire");
   const parCuivre=cl.via+dpViaGap(q);
   if(dpViaSpread(q)<parCuivre-1e-9||dpViaSpread(q)>parCuivre+0.01)
@@ -10891,19 +10850,19 @@ T("index : le voisinage rend exactement ce que rendait le balayage complet",()=>
       for(const q of padsWorld(fp)){
         if(!padLayers(fp,q).includes(l))continue;
         if(net&&q.net===net)continue;
-        if(segPadDist({x1:s.x1,y1:s.y1,x2:s.x2,y2:s.y2,w},q)<clrPair(net,q.net)-PNS_EPS)
+        if(segPadDist({x1:s.x1,y1:s.y1,x2:s.x2,y2:s.y2,w},q)<clrK(net,q.net)-PNS_EPS)
           out.push("P"+fp.id+"."+q.n);
       }
     S.vias.forEach((v,i)=>{
       if(l<v.a||l>v.b)return;
       if(net&&v.net===net)return;
-      if(segDist(v.x,v.y,s.x1,s.y1,s.x2,s.y2)-v.d/2-w/2<clrPair(net,v.net)-PNS_EPS)
+      if(segDist(v.x,v.y,s.x1,s.y1,s.x2,s.y2)-v.d/2-w/2<clrK(net,v.net)-PNS_EPS)
         out.push("V"+i);
     });
     S.tracks.forEach((t,i)=>{
       if(t===self||t.l!==l)return;
       if(net&&t.net===net)return;
-      if(segSegDist({x1:s.x1,y1:s.y1,x2:s.x2,y2:s.y2},t)-t.w/2-w/2<clrPair(net,t.net)-PNS_EPS)
+      if(segSegDist({x1:s.x1,y1:s.y1,x2:s.x2,y2:s.y2},t)-t.w/2-w/2<clrK(net,t.net)-PNS_EPS)
         out.push("T"+i);
     });
     return out.sort().join(",");
@@ -18306,21 +18265,7 @@ T("la paire choisie à la main part avec le document, comme une déclarée",()=>
   if(d.paires[0][1]!=="AGR")
     throw new Error("le choix explicite ne passe pas devant");
 
-  /* ET LE CANDIDAT SE PROPOSE AVANT LE PREMIER CALCUL : sans cela il faudrait
-     calculer pour pouvoir demander le bon calcul. */
-  const res0=SIM.res, lots0=SIM.lots;
-  SIM.res=null; SIM.lots=[];
-  const cands=simPaireCandidats();
-  if(cands.indexOf("AGR")<0)
-    throw new Error("« AGR » longe la sélection et n'est pas proposé : "+
-                    JSON.stringify(cands));
-  /* LA MASSE N'EST PAS UNE MOITIÉ DE PAIRE : elle borde le groupe, elle ne
-     l'appaire pas — proposer « GND » comme second conducteur d'une paire
-     différentielle serait proposer un non-sens. */
-  if(cands.some(n=>simRefSet().has(n)))
-    throw new Error("un net de masse est proposé comme moitié de paire : "+
-                    JSON.stringify(cands));
-  SIM.res=res0; SIM.lots=lots0; SIM.saisie.paireN="";
+  SIM.saisie.paireN="";
 });
 
 
@@ -27103,7 +27048,7 @@ T("contraintes : vides, rien ne change — isolation, DRC, routeur",()=>{
   exCharger(1);cmRaz();
   const a="+3V3", b="USB_DP";
   const attendu=Math.max(classOf(a).clr,classOf(b).clr);
-  if(clrPair(a,b)!==attendu)throw new Error("clrPair a changé : "+clrPair(a,b));
+  if(clrK(a,b)!==attendu)throw new Error("clrK a changé : "+clrK(a,b));
   if(clrK(a,b,"trk","trk")!==Math.max(attendu,matGet("trk","trk")))throw new Error("clrK a changé");
   if(cmClrMax()!==0||cmClrClasses(a,b)!==0)throw new Error("matrice vide : 0 attendu");
   if(cmMsgs().length)throw new Error("aucun défaut de contrainte attendu sur une carte sans contrainte");
@@ -27199,18 +27144,18 @@ T("contraintes : largeur pour une impédance, couche par couche",()=>{
 T("contraintes : isolation entre classes — routeur et DRC, paire intacte, Ctrl+Z",()=>{
   exCharger(1);cmRaz();
   const a="+3V3", b="SPI_CS", ca=className(a), cb=className(b);
-  const avant=clrPair(a,b), mx=maxClr();
+  const avant=clrK(a,b), mx=maxClr();
   cmPoserMatrice(ca,cb,"0,9");
-  if(clrPair(a,b)!==0.9||clrK(a,b,"trk","via")<0.9)throw new Error("matrice non appliquée : "+clrPair(a,b));
-  if(clrPair(b,a)!==0.9)throw new Error("la case vaut dans les deux sens");
+  if(clrK(a,b)!==0.9||clrK(a,b,"trk","via")<0.9)throw new Error("matrice non appliquée : "+clrK(a,b));
+  if(clrK(b,a)!==0.9)throw new Error("la case vaut dans les deux sens");
   if(maxClr()<0.9||pnsMaxClr()<0.9)throw new Error("la marge d'interrogation doit l'inclure");
   /* les deux nets d'une paire différentielle gardent l'écart de leur règle */
   const p=S.dpPairs[0];
-  const gap=clrPair(p.p,p.n);
+  const gap=clrK(p.p,p.n);
   cmPoserMatrice(className(p.p),className(p.n),"2");
-  if(clrPair(p.p,p.n)!==gap)throw new Error("la paire perd son écart : "+clrPair(p.p,p.n));
+  if(clrK(p.p,p.n)!==gap)throw new Error("la paire perd son écart : "+clrK(p.p,p.n));
   undo();undo();
-  if(clrPair(a,b)!==avant||maxClr()!==mx)throw new Error("Ctrl+Z ne rend pas l'isolation d'avant");
+  if(clrK(a,b)!==avant||maxClr()!==mx)throw new Error("Ctrl+Z ne rend pas l'isolation d'avant");
   cmRaz();
 });
 T("contraintes : groupe d'appariement — cible, tolérance, serpentin",()=>{
@@ -30135,6 +30080,196 @@ T("verrou : un cadenas au coin de chaque objet verrouillé",()=>{
   if(P.length!==2)throw new Error("deux cadenas attendus : "+P.length);
   const b=fpBBox(R1);
   if(!P.some(p=>p.x===b.x2&&p.y===b.y1))throw new Error("cadenas du composant à son coin haut droit");
+});
+
+/* ---------- audit : collage en cercle, bus, unité mil, chemin auto, IPC-D-356 ---------- */
+T("collage en cercle : boîtier, fente, texte et zone interdite tournent comme leurs positions",()=>{
+  const {R1}=editionDecor();
+  const h={id:S.nextId++,x:20,y:30,d:1,w:3,rot:0,locked:false};S.holes.push(h);
+  const t={id:S.nextId++,shape:"text",type:"text",layer:"silkT",text:"AB",x1:25,y1:30,x2:25,y2:30,size:1.5,height:1.5,rot:0,width:0.15};
+  S.drawings.push(t);
+  S.interdits=[normInterdit({pts:[{x:30,y:5},{x:34,y:5},{x:34,y:8}]},0)];
+  touch();clearSel();S.sel.fps.add(R1.id);S.sel.holes.add(h.id);S.sel.drawings.add(t.id);S.sel.interdits.add(S.interdits[0]);
+  // 45° dans le sens direct à l'écran (y vers le bas) ; à 90° une fente ne montrerait pas le sens
+  const cx=10, cy=10, c=Math.cos(-Math.PI/4), s=Math.sin(-Math.PI/4);
+  const Q=p=>({x:cx+(p.x-cx)*c-(p.y-cy)*s,y:cy+(p.x-cx)*s+(p.y-cy)*c});
+  const ax=axePercage(h);
+  const att={pads:padsWorld(R1).map(Q),a1:Q({x:ax.x1,y:ax.y1}),a2:Q({x:ax.x2,y:ax.y2}),
+             traits:textStrokes("AB",25,30,1.5,false,0).map(L=>L.map(Q)),zi:S.interdits[0].pts.map(Q)};
+  try{
+    collageReseau({n:2,mode:"cercle",angle:45,cx,cy});
+    const pres=(a,b)=>!!a&&!!b&&Math.abs(a.x-b.x)<2e-3&&Math.abs(a.y-b.y)<2e-3;
+    const P=padsWorld(S.fps[S.fps.length-1]);
+    if(!att.pads.every((p,k)=>pres(p,P[k])))throw new Error("pastilles : "+JSON.stringify(P)+" ≠ "+JSON.stringify(att.pads));
+    const a=axePercage(S.holes[S.holes.length-1]), b1={x:a.x1,y:a.y1}, b2={x:a.x2,y:a.y2};
+    if(!(pres(att.a1,b1)&&pres(att.a2,b2)||pres(att.a1,b2)&&pres(att.a2,b1)))throw new Error("fente : "+JSON.stringify(a));
+    const d=S.drawings[S.drawings.length-1], tr=textStrokes("AB",d.x1,d.y1,1.5,false,d.rot);
+    if(!att.traits.every((L,i)=>L.every((p,j)=>pres(p,(tr[i]||[])[j]))))throw new Error("texte tourné à l'envers : rot "+d.rot);
+    if(S.interdits.length!==2||!att.zi.every((p,k)=>pres(p,S.interdits[1].pts[k])))throw new Error("zone interdite : "+JSON.stringify(S.interdits.map(z=>z.pts)));
+    if(!S.sel.interdits.has(S.interdits[1]))throw new Error("la zone interdite copiée doit rester sélectionnée");
+  }finally{S.interdits=[];}
+});
+T("bus : deux clics au même point ne font pas de tronçon nul (pas de court-circuit)",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.cuts=[];clearSel();
+  S.board={x:0,y:0,w:80,h:60,pts:null};S.active=0;setGridStep(0.5);S.scale=20;S.ox=0;S.oy=0;
+  const J=mkFp("J1","","",2);J.style="row";J.pitch=2.54;J.x=10;J.y=20;J.nets={1:"D0",2:"D1"};
+  S.fps.push(J);touch();
+  setMode("bus");
+  for(const q of padsWorld(J))busClic(q.x,q.y);
+  busClic(30,40);busClic(30,40);busClic(50,40);
+  if(S.bus.pts.length!==2)throw new Error("le point répété devait être ignoré : "+S.bus.pts.length+" sommets");
+  busTouche("enter");setMode("select");
+  const bouts=n=>S.tracks.filter(t=>t.net===n).flatMap(t=>[t.x1+","+t.y1,t.x2+","+t.y2]);
+  const d1=new Set(bouts("D1"));
+  if(bouts("D0").some(k=>d1.has(k)))throw new Error("D0 et D1 se touchent");
+});
+T("unité mil : Propriétés reconstruites, tous les champs relus en mm, champ inchangé sans dérive",()=>{
+  const {R1}=editionDecor();
+  clearSel();S.sel.tracks.add(S.tracks[0]);
+  const props=document.getElementById("props");
+  props.innerHTML="périmé";
+  uniteBasculer("mil");
+  const u0=S.unite;
+  try{
+    if(props.innerHTML==="périmé")throw new Error("le panneau Propriétés devait se reconstruire au changement d'unité");
+    const box=dom.el("div"), L=[];
+    box.addEventListener=(t,f)=>L.push(f);
+    const champ=(lab,v)=>{const d=dom.el("div"), l=dom.el("label"), i=dom.el("input");
+      l.textContent=lab;i.value=v;d.appendChild(l);d.appendChild(i);box.appendChild(d);return i;};
+    const pas=champ("Pas (mm)","2"), larg=champ("Largeur des traits (mm)","0.8");
+    propsEnMil(box);
+    if(pas.value!=="78.7"||larg.value!=="31.5")throw new Error("affichage en mil : "+pas.value+" / "+larg.value);
+    let lu=null;
+    pas.onchange=()=>{lu=[pas.value,larg.value];};
+    pas.value="100";
+    L[0]({target:pas});pas.onchange();if(L[1])L[1]({target:pas});
+    if(!lu||lu[0]!=="2.54"||lu[1]!=="0.8")throw new Error("le gestionnaire lit "+JSON.stringify(lu)+" au lieu de 2.54 / 0.8");
+    if(pas.value!=="100.0"||larg.value!=="31.5")throw new Error("les champs devaient revenir en mil : "+pas.value+" / "+larg.value);
+  }finally{uniteBasculer("mm");}
+  if(u0!=="mil"||S.unite!=="mm")throw new Error("bascule");
+});
+TA("chemin auto : une région pleine d'un autre net est un obstacle",async()=>{
+  const cmds={}, ancien=global.Pilote;
+  global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+  const garde={doc:serialize(),undo:S.undo.slice(),redo:S.redo.slice()};
+  try{
+    piloteCao("pcb");
+    loadDoc(exemple1());carteVide();S.interdits=[];
+    S.board={x:0,y:0,w:50,h:30,pts:null};
+    const A=mkFp("R1","","0603",2);A.x=10;A.y=15;A.nets={1:"SIG",2:"Z1"};
+    const B=mkFp("R2","","0603",2);B.x=40;B.y=15;B.nets={1:"SIG",2:"Z2"};
+    S.fps.push(A,B);
+    // une région pleine de GND sur chaque couche, du bord haut à y = 22 : il reste un passage en bas
+    const P=[{x:22,y:0},{x:28,y:0},{x:28,y:22},{x:22,y:22}];
+    for(let l=0;l<S.cu;l++)S.zones.push({id:S.nextId++,l,net:"GND",plein:true,pts:P.map(p=>({...p}))});
+    touch();
+    const r=await cmds.cao_chemin.executer({liaisons:[{depart:"R1.1",arrivee:"R2.1"}]});
+    const rt=r.routes[0];
+    if(!r.resultats[0].trouve||!rt)throw new Error("chemin : "+JSON.stringify(r.resultats));
+    for(let k=1;k<rt.points.length;k++){
+      const a=rt.points[k-1], b=rt.points[k];
+      if(distSegPoly({x1:a.x,y1:a.y,x2:b.x,y2:b.y},P)<0.15-1e-6)throw new Error("le chemin traverse la région pleine : "+JSON.stringify(rt.points));
+    }
+  }finally{
+    global.Pilote=ancien;
+    loadDoc(JSON.parse(garde.doc),true);S.undo=garde.undo;S.redo=garde.redo;
+  }
+});
+T("IPC-D-356 : un via enterré n'est pas déclaré accessible par le dessous",()=>{
+  const cu=S.cu;
+  try{
+    S.cu=4;
+    if(ipcAccess([0,1,2,3])!=="A00"||ipcAccess([0,1])!=="A01"||ipcAccess([2,3])!=="A04")throw new Error("faces extérieures");
+    if(ipcAccess([1,2])!=="A02")throw new Error("via L2-L3 : "+ipcAccess([1,2]));
+  }finally{S.cu=cu;}
+});
+
+/* ---------- audit : couches, verrous, DRC, netlist (01/02/05/13/28/48/49/50) ---------- */
+/* mpRaz a quitté le code (rien ne l'appelait en marche) : le banc garde son geste */
+function mpRaz(){for(const k in mpOuvert)delete mpOuvert[k];}
+T("passer de 2 à 4 couches : découpes, keep-out, règles de paire et pastilles par couche suivent",()=>{
+  zonesDecor();setCuCount(2);
+  const z={id:S.nextId++,l:1,net:"GND",pts:[{x:5,y:5},{x:30,y:5},{x:30,y:30},{x:5,y:30}]};
+  const ct={id:S.nextId++,l:1,pts:[{x:10,y:10},{x:12,y:10},{x:12,y:12},{x:10,y:12}]};
+  S.zones.push(z);S.cuts.push(ct);
+  S.interdits=[normInterdit({face:"dessus",pts:[{x:40,y:5},{x:44,y:5},{x:44,y:9}],ko:{l:1}},0)];
+  const garde=S.dpRules;
+  S.dpRules=[{name:"R",layers:{1:{prefW:0.11}}}];
+  S.fps[0].pads=padsOf(S.fps[0]).map(q=>Object.assign({},q,{parCouche:{1:{shape:"aucune"},int:{shape:"aucune"}}}));
+  try{
+    setCuCount(4);
+    if(z.l!==3||ct.l!==3)throw new Error("la découpe devait suivre sa zone en couche 4 : zone "+z.l+", découpe "+ct.l);
+    if(S.interdits[0].ko.l!==3)throw new Error("keep-out resté en couche "+S.interdits[0].ko.l);
+    if(!S.dpRules[0].layers[3]||S.dpRules[0].layers[1])throw new Error("règle de paire : "+JSON.stringify(S.dpRules[0].layers));
+    const pc=S.fps[0].pads[0].parCouche;
+    if(!pc[3]||pc[1]||!pc.int)throw new Error("pastille par couche : "+JSON.stringify(pc));
+  }finally{S.dpRules=garde;S.interdits=[];setCuCount(2);}
+});
+T("verrou : ni poussé (shove), ni effacé avec son net, ni déplacé par le placement auto",()=>{
+  plateau();
+  const G={l:0,net:"GENE",w:0.3,x1:10,y1:20.3,x2:50,y2:20.3,locked:true};
+  S.tracks.push(G);touch();
+  setMode("track");startRoute(15,20,true);
+  S.route.net="SIG";S.route.w=0.3;
+  routeToPoint({x:45,y:20});
+  const pousse=S.route.shove&&S.route.shove.lignes.some(L=>L.net==="GENE");
+  cancelRoute();setMode("select");
+  if(pousse)throw new Error("la piste verrouillée a été poussée");
+  if(S.tracks.length!==1||S.tracks[0]!==G||G.y1!==20.3)throw new Error("la piste verrouillée a changé");
+  S.tracks.push({l:0,net:"GENE",w:0.3,x1:10,y1:25,x2:50,y2:25});
+  S.vias.push(Object.assign(mkVia(30,30,"GENE"),{locked:true}));touch();
+  deleteNetRouting("GENE");
+  if(S.tracks.length!==1||S.tracks[0]!==G||S.vias.length!==1)throw new Error("deleteNetRouting a emporté du verrouillé");
+  S.tracks=[];S.vias=[];
+  for(const [r,x] of [["R1",10],["R2",12],["R3",14]]){const f=mkFp(r,"","R0805",2);f.x=x;f.y=20;f.nets={1:"A",2:"B"};S.fps.push(f);}
+  S.fps[0].locked=true;touch();
+  autoPlace(30);
+  const f0=S.fps.find(f=>f.ref==="R1");
+  if(f0.x!==10||f0.y!==20)throw new Error("composant verrouillé déplacé : "+f0.x+","+f0.y);
+  S.fps=[];touch();
+});
+T("DRC : le cuivre d'un via trop près d'un trou NPTH est signalé, comme une piste",()=>{
+  loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);clearSel();
+  S.board={x:0,y:0,w:60,h:40,pts:null};
+  S.holes=[mkHole(30,20,3)];
+  S.vias=[Object.assign(mkVia(30+1.5+0.4+0.06,20,"SIG"),{d:0.8,drill:0.4})];touch();
+  const e=runDrc().filter(o=>o.msg&&o.msg.indexOf("Cuivre trop proche du trou NPTH")>=0);
+  if(!e.length)throw new Error("via à 0,06 mm du trou non signalé");
+  S.holes=[];S.vias=[];touch();
+});
+T("DRC : un texte cuivre n'est ni sans net, ni trop fin, ni en défaut d'isolation avec lui-même",()=>{
+  zonesDecor();S.zones=[];touch();
+  texteCuivre({texte:"AB",x:20,y:10,h:2,ep:0.15,l:0});
+  if(!S.tracks.some(t=>t.texte))throw new Error("les traits du texte devaient être marqués");
+  loadDoc(JSON.parse(serialize()),true);
+  if(!S.tracks.some(t=>t.texte))throw new Error("la marque texte perdue à la relecture");
+  const e=runDrc().filter(o=>o.msg&&/Piste sans net|Isolation piste\/piste|Piste de 0.150/.test(o.msg));
+  if(e.length)throw new Error(e.length+" erreur(s) sur le texte : "+e[0].msg);
+});
+T("keep-out : une région pleine qui y entre est signalée",()=>{
+  const {z}=zonesDecor();
+  z.plein=true;
+  S.interdits=[normInterdit({face:"dessus",pts:[{x:40,y:2},{x:50,y:2},{x:50,y:10},{x:40,y:10}],ko:{l:0,pistes:false,vias:false}},0)];touch();
+  const out=[];keepoutDrc(out);
+  S.interdits=[];
+  if(!out.some(e=>/Région pleine GND dans le keep-out/.test(e.msg)))throw new Error("région pleine non signalée : "+out.map(e=>e.msg).join(" | "));
+});
+T("DRC : une piste en arc dit son écart le plus petit, pas celui de la première corde",()=>{
+  zonesDecor();S.zones=[];S.fps=[];
+  const A={l:0,net:"A",w:0.2,x1:10,y1:20,x2:20,y2:20,ca:Math.PI*0.9};
+  const B={l:0,net:"B",w:0.2,x1:5,y1:20.35,x2:25,y2:20.15};
+  S.tracks=[A,B];touch();
+  const lu=runDrc().filter(e=>/Isolation piste\/piste/.test(e.msg));
+  if(lu.length!==1)throw new Error("une seule erreur attendue, "+lu.length);
+  const vrai=Math.max(0,Math.min(...trkSegs(A).map(s=>segSegDist(s,B)))-0.2);
+  const d=parseFloat(lu[0].msg.replace(/^Isolation piste\/piste /,""));
+  if(Math.abs(d-vrai)>1.5e-3)throw new Error("écart affiché "+d+", le plus petit vaut "+fmt(vrai,3));
+});
+T("netlist « supprimer les absents » : les pastilles libres restent",()=>{
+  zonesDecor();
+  const f=pastilleLibre(10,10,"fiducial","");
+  applyNetlist("* Netlist\n=== Composants ===\n    J1     X     \n=== Feuille 1 ===\nNET \"GND\"\n    J1.1\n",true);
+  if(!S.fps.includes(f))throw new Error("la mire libre a été supprimée");
 });
 
 (async()=>{

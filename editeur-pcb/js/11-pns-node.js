@@ -121,7 +121,7 @@ function pnsItemsTrack(t){
 
 /* L'isolation la plus large que le document puisse exiger. Elle donne la marge
    des fenêtres d'interrogation : chercher plus près serait rater un obstacle
-   dont l'isolation porte plus loin que sa géométrie. `clrPair` ne rend jamais
+   dont l'isolation porte plus loin que sa géométrie. `clrK` ne rend jamais
    davantage — l'écart d'une paire différentielle est un minimum, pas un
    supplément. */
 function pnsMaxClr(){
@@ -448,4 +448,3 @@ function pnsWorld(){
   pnsCache={st,node:pnsBuild()};
   return pnsCache.node;
 }
-function pnsInvalidate(){pnsCache=null;}

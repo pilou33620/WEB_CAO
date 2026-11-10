@@ -25,7 +25,7 @@
      · Isolation entre classes : une matrice classe × classe.
 
    Ce qui se règle ici est contrôlé : les écarts partent au DRC (`cmDrc`),
-   l'isolation entre classes entre dans `clrPair` / `clrK` (01-core.js) — donc
+   l'isolation entre classes entre dans `clrK` (01-core.js) — donc
    au routeur, aux zones et aux Gerber. Les données sont dans le document,
    `contraintes`, bornées par `cmNorm` (01-core.js).
 

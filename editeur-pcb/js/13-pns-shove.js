@@ -471,6 +471,7 @@ function pnsShoveHeads(node,heads,skip,t0,opts){
        rendre en segments droits, et l'arc serait perdu. Le tracé la contourne,
        comme il contourne une pastille. */
     if(ob.it.arc)return fin({ok:false,cause:"courbe"});
+    if(ob.it.src&&ob.it.src.locked)return fin({ok:false,cause:"verrou"});   // verrouillé : on contourne
     if(cur.rang>=PNS_SHOVE_RANG)return fin({ok:false,cause:"profondeur"});
 
     if(ob.it.k==="V"){
@@ -483,6 +484,7 @@ function pnsShoveHeads(node,heads,skip,t0,opts){
        détacherait de ses voisins — et on l'écarte de la ligne courante. */
     const L=B.assemble(ob.it);
     if(L.pts.length<2)return fin({ok:false,cause:"assemblage"});
+    if(L.items.some(o=>o.src&&o.src.locked))return fin({ok:false,cause:"verrou"});
     const vu=(compte.get(ob.it)||0)+1;
     if(vu>PNS_SHOVE_REPRISE)return fin({ok:false,cause:"reprises"});
     for(const o of L.items)compte.set(o,vu);

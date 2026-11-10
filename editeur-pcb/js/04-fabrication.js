@@ -782,11 +782,15 @@ function ipcName(net){
     .replace(/[^A-Z0-9_+\-.$]/g,"_").slice(0,14);
 }
 /* Le champ d'accès dit sur quelles couches le point est piquable : A00 pour un
-   trou traversant, A01 pour la face composants, A02 pour la face soudure.
+   trou traversant, A01 pour la face composants, Ann (nn = S.cu) pour la face
+   soudure, Ann d'une couche interne pour un via enterré.
    C'est ce qui permet au testeur de choisir ses aiguilles. */
 function ipcAccess(layers){
   if(layers.length>=S.cu&&S.cu>1)return "A00";
-  return layers.indexOf(0)>=0?"A01":"A"+String(S.cu).padStart(2,"0");
+  if(layers.indexOf(0)>=0)return "A01";
+  if(!layers.length||layers.indexOf(S.cu-1)>=0)return "A"+String(S.cu).padStart(2,"0");
+  // enterré : aucune face piquable ; la couche touchée la plus haute, la plus proche du dessus (A01)
+  return "A"+String(Math.min(...layers)+1).padStart(2,"0");
 }
 /* Un enregistrement 317, champs à leur colonne. `pin` vide pour un via : le
    format admet un point de test qui n'appartient à aucun composant. */
@@ -1513,9 +1517,6 @@ function jlcCplLignes(){
     rows.push([fp.ref,fmt(fp.x-o.x,4)+"mm",fmt(o.y-fp.y,4)+"mm",fp.side?"Bottom":"Top",
       String(padRot(360-(fp.rot||0)))]);
   return rows;
-}
-function jlcCplCsvText(){
-  return jlcCplLignes().map(r=>r.map(pcbCsvCell).join(",")).join("\r\n")+"\r\n";
 }
 /* CPL au gabarit .xlsx de JLCPCB (JLCSMT_Sample_CPL) : en-tête jaune gras, cellules
    centrées à bordure fine, rotation numérique. Classeur minimal, chaînes en ligne. */

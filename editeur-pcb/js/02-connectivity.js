@@ -960,51 +960,54 @@ function runDrc(){
      proches — le contrôle les ignorait purement et simplement — et le fait que
      le routeur, désormais, juge du même œil. */
   const N=pnsWorld();
-  const vu=new Set(), idOf=new Map();
+  const vu=new Map(), idOf=new Map();
   /* Une piste circulaire entre dans le monde en une vingtaine de cordes : sans
      cela, un même défaut d'isolation se serait écrit vingt fois, une par corde.
-     C'est la piste qui compte, pas le morceau par lequel on l'a mesurée. */
+     C'est la piste qui compte, pas le morceau par lequel on l'a mesurée ; on
+     garde l'écart le plus petit de toutes ses cordes. */
   const uid=it=>{const o=it.arc||(it.k==="P"?it.src:it);let k=idOf.get(o);if(k==null)idOf.set(o,k=idOf.size);return k;};
-  const neuf=(a,b)=>{
-    const i=uid(a), j=uid(b), k=i<j?i+"|"+j:j+"|"+i;
-    if(vu.has(k))return false;
-    vu.add(k);return true;
-  };
+  const cle=(a,b)=>{const i=uid(a), j=uid(b);return i<j?i+"|"+j:j+"|"+i;};
   const tagOf=it=>it.fp.ref+"."+it.q.n+(it.trouSeul?" (trou, sans pastille sur cette couche)":"");
   const bTT=[], bTP=[], bV=[], bPP=[];
   for(const a of N.all())
     for(const b of N.colliding(a)){
       if(a.npth||b.npth)continue;       // les trous NPTH ont leur propre bloc, plus bas
       if(a.ko||b.ko)continue;           // le keep-out aussi (keepoutDrc, 50-couches.js)
-      if(!neuf(a,b))continue;
-      const d=fmt(Math.max(0,pnsPairGap(a,b)),3);
+      if(a.src&&a.src.texte&&b.src&&b.src.texte)continue;   // deux traits d'un texte cuivre se touchent
+      const k=cle(a,b), gap=Math.max(0,pnsPairGap(a,b)), deja=vu.get(k);
+      if(deja&&deja.gap<=gap)continue;
+      const d=fmt(gap,3);
+      let bk=null, e=null;
       /* La cote exigée est dite en clair : sans elle, une case de la matrice
          relevée pour les vias seulement resterait invisible dans la liste, et
          deux défauts de 0,2 mm se liraient comme le même défaut. */
       const req=" : la règle en exige "+fmt(pnsClrPair(a,b),3)+" mm";
       if(a.k==="S"&&b.k==="S")
-        bTT.push({x:(a.seg.x1+a.seg.x2+b.seg.x1+b.seg.x2)/4,
+        bk=bTT,e={x:(a.seg.x1+a.seg.x2+b.seg.x1+b.seg.x2)/4,
                   y:(a.seg.y1+a.seg.y2+b.seg.y1+b.seg.y2)/4, l:a.l0,
-          msg:"Isolation piste/piste "+d+" mm ("+(a.net||"?")+" / "+(b.net||"?")+")"+req});
+          msg:"Isolation piste/piste "+d+" mm ("+(a.net||"?")+" / "+(b.net||"?")+")"+req};
       else if(a.k==="P"&&b.k==="P"){
         // même empreinte : jugée plus bas, sur une autre règle et sans couches
         if(a.fp!==b.fp)
-          bPP.push({x:(a.q.x+b.q.x)/2,y:(a.q.y+b.q.y)/2,l:a.l0,
-            msg:"Pastilles trop proches : "+tagOf(a)+" / "+tagOf(b)});
+          bk=bPP,e={x:(a.q.x+b.q.x)/2,y:(a.q.y+b.q.y)/2,l:a.l0,
+            msg:"Pastilles trop proches : "+tagOf(a)+" / "+tagOf(b)};
       }else if(a.k==="V"&&b.k==="V")
-        bV.push({x:(a.v.x+b.v.x)/2,y:(a.v.y+b.v.y)/2,l:a.l0,
-          msg:"Isolation via/via "+d+" mm ("+(a.net||"?")+" / "+(b.net||"?")+")"+req});
+        bk=bV,e={x:(a.v.x+b.v.x)/2,y:(a.v.y+b.v.y)/2,l:a.l0,
+          msg:"Isolation via/via "+d+" mm ("+(a.net||"?")+" / "+(b.net||"?")+")"+req};
       else{
         const s=a.k==="S"?a:(b.k==="S"?b:null);
         const v=a.k==="V"?a:(b.k==="V"?b:null);
         const p=a.k==="P"?a:(b.k==="P"?b:null);
-        if(s&&p)bTP.push({x:p.q.x,y:p.q.y,l:s.l0,
-          msg:"Isolation piste/pastille "+tagOf(p)+" : "+d+" mm"+req});
-        else if(v&&s)bV.push({x:v.v.x,y:v.v.y,l:s.l0,
-          msg:"Isolation via/piste "+d+" mm"+req});
-        else if(v&&p)bV.push({x:v.v.x,y:v.v.y,l:v.l0,
-          msg:"Isolation via/pastille "+tagOf(p)+" : "+d+" mm"+req});
+        if(s&&p)bk=bTP,e={x:p.q.x,y:p.q.y,l:s.l0,
+          msg:"Isolation piste/pastille "+tagOf(p)+" : "+d+" mm"+req};
+        else if(v&&s)bk=bV,e={x:v.v.x,y:v.v.y,l:s.l0,
+          msg:"Isolation via/piste "+d+" mm"+req};
+        else if(v&&p)bk=bV,e={x:v.v.x,y:v.v.y,l:v.l0,
+          msg:"Isolation via/pastille "+tagOf(p)+" : "+d+" mm"+req};
       }
+      if(!e)continue;
+      if(deja){Object.assign(deja.e,e);deja.gap=gap;}   // corde plus serrée : on réécrit l'entrée
+      else{bk.push(e);vu.set(k,{e,gap});}
     }
   for(const e of bTT)out.push(e);
   for(const e of bTP)out.push(e);
@@ -1026,6 +1029,7 @@ function runDrc(){
      plages disjointes empilés au même point sont une technique, pas un défaut.
      Les pastilles traversantes comptent comme des perçages, ce qu'elles sont. */
   const hcl=holeClr();
+  const neuf=(a,b)=>{const k=cle(a,b);if(vu.has(k))return false;vu.set(k,null);return true;};   // une paire déjà jugée plus haut ne l'est pas deux fois
   for(const a of N.all()){
     if(a.k!=="V"||!(a.v.drill>0))continue;
     const r=a.v.d/2+hcl;
@@ -1089,6 +1093,13 @@ function runDrc(){
         if(e<hcl-1e-6){
           out.push({x:(h.x+v.x)/2,y:(h.y+v.y)/2,
             msg:"Trou NPTH Ø"+fmt(h.d,2)+" trop proche du perçage de via ("+fmt(Math.max(0,e),3)+" mm, min "+fmt(hcl,3)+" mm)"});
+        }
+        // le cuivre du via, lui, tient l'isolation de sa classe, comme une piste
+        const clr=(classOf(v.net)&&classOf(v.net).clr)||0.25;
+        const ec=e+v.drill/2-v.d/2;
+        if(ec<clr-1e-6){
+          out.push({x:h.x,y:h.y,l:v.a,
+            msg:"Cuivre trop proche du trou NPTH Ø"+fmt(h.d,2)+" (via "+(v.net||"sans net")+" à "+fmt(Math.max(0,ec),3)+" mm, min "+fmt(clr,3)+" mm)"});
         }
       }
     }
@@ -1168,11 +1179,11 @@ function runDrc(){
     /* Une piste de paire différentielle est plus fine que sa classe par
        construction : c'est l'impédance qui décide de sa largeur, pas la classe
        de net. C'est la règle de paire qui la borne, et `dpDrc` le vérifie. */
-    if(t.w<wc-1e-6&&!(typeof dpOfNet==="function"&&dpOfNet(t.net)))
+    if(t.w<wc-1e-6&&!t.texte&&!(typeof dpOfNet==="function"&&dpOfNet(t.net)))
       out.push({x:m.x,y:m.y,l:t.l,
         msg:"Piste de "+fmt(t.w,3)+" mm sous les "+fmt(wc,2)+
             " mm de la classe "+cl.name+(cl.wL&&cl.wL[t.l]>0?" sur "+cuId(t.l,S.cu):"")});
-    if(!t.net)
+    if(!t.net&&!t.texte)                // un texte cuivre (49-dessin.js) n'a pas de net
       out.push({x:m.x,y:m.y,l:t.l,msg:"Piste sans net"});
     /* l'arc par ses cordes, la flèche ajoutée à la marge */
     if(!trkSegs(t,0.01).every(s=>axeDansCarte(s,S.rule.edge+t.w/2+(arcOf(t)?0.01:0))))
@@ -1698,7 +1709,7 @@ function applyNetlist(txt,dropMissing){
   let removed=0;
   if(dropMissing){
     const before=S.fps.length;
-    S.fps=S.fps.filter(f=>refs.has(f.ref));
+    S.fps=S.fps.filter(f=>refs.has(f.ref)||f.libre);   // une pastille libre (49-dessin.js) n'est pas au schéma
     removed=before-S.fps.length;
   }
   arrange(added);
@@ -1777,7 +1788,7 @@ function contourChanger(fn){
    l'ensemble dégrossi, les satellites (découplage, composants série) vont
    contre leur broche — placerSatellites(), 28-placement-satellites.js. */
 function autoPlace(iter){
-  const fixe=fp=>typeof placeManuelle==="function"&&placeManuelle(fp);
+  const fixe=fp=>fp.locked||typeof placeManuelle==="function"&&placeManuelle(fp);
   const items=S.fps.map(fp=>({fp,bb:fpBBox(fp)}));
   if(items.filter(i=>!fixe(i.fp)).length<2)return null;
   push();

@@ -2316,9 +2316,6 @@ function cpHtmlVia(v){
    ========================================================================== */
 const MP_MIX=" mixte";   /* valeur de l'option « — mixte — » : aucun net ne la porte */
 const mpOuvert={};            /* par type : l'objet dont le groupe est déplié, ou "tous" */
-/* Repartir des lignes ouvertes d'office. Rien ne l'appelle en marche normale :
-   une ancre qui ne se retrouve plus dans la sélection est ignorée d'elle-même. */
-function mpRaz(){for(const k in mpOuvert)delete mpOuvert[k];}
 const mpIdx={};               /* lignes de la dernière construction, pour les clics */
 /* Vidé sur place plutôt que remplacé : le banc d'essai en garde la référence. */
 function mpNeuf(){for(const k in mpIdx)delete mpIdx[k];}

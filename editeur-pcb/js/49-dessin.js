@@ -156,7 +156,7 @@ function texteCuivre(o){
     res={tracks:[]};
     for(const [a,b] of segs){
       if(dist(a.x,a.y,b.x,b.y)<1e-6)continue;
-      const t={l,net:"",w:r4(ep),x1:r4(a.x),y1:r4(a.y),x2:r4(b.x),y2:r4(b.y)};
+      const t={l,net:"",texte:true,w:r4(ep),x1:r4(a.x),y1:r4(a.y),x2:r4(b.x),y2:r4(b.y)};
       S.tracks.push(t);S.sel.tracks.add(t);res.tracks.push(t);
     }
   }else{

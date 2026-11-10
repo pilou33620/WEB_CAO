@@ -533,6 +533,7 @@ function normTrack(t,cu){
   if(a1)out.a1=a1;
   if(a2)out.a2=a2;
   if(t.locked)out.locked=true;
+  if(t.texte)out.texte=true;                       // trait d'un texte cuivre (49-dessin.js)
   return out;
 }
 function normVia(v,cu){
@@ -2189,7 +2190,7 @@ function fpChevauchements(){
    nœud libre le plus proche, le gros circuit reste. Ce qui est posé à la main ne
    bouge pas. */
 function placementDegage(){
-  const fixe=fp=>typeof placeManuelle==="function"&&placeManuelle(fp);
+  const fixe=fp=>fp.locked||typeof placeManuelle==="function"&&placeManuelle(fp);
   const surface=f=>{const b=fpBBox(f);return (b.x2-b.x1)*(b.y2-b.y1);};
   touch();
   for(const f of S.fps.filter(o=>!fixe(o)).sort((a,c)=>surface(a)-surface(c))){
@@ -2586,6 +2587,7 @@ function runEnds(run){
    n'importe quel morceau d'une portion droite suffit : c'est la portion qui
    porte le coude, pas le segment. */
 function mitreSel(){
+  verrousRetirer();
   if(!S.sel.tracks.size){
     hint("Sélectionnez d'abord la piste dont il faut adoucir l'angle.");
     return 0;
@@ -2905,8 +2907,8 @@ function selectNetRouting(net){
 function deleteNetRouting(net){
   if(!net)return;
   push();
-  S.tracks=S.tracks.filter(t=>t.net!==net);
-  S.vias=S.vias.filter(v=>v.net!==net);
+  S.tracks=S.tracks.filter(t=>t.net!==net||t.locked);   // le verrouillé reste
+  S.vias=S.vias.filter(v=>v.net!==net||v.locked);
   clearSel();touch();refreshPanels();draw();
   hint("Routage du net "+net+" supprimé.");
 }
@@ -3633,11 +3635,6 @@ function movedTracks(){
   }
   return set;
 }
-function routeBad(segs,l,net,w,ignoreObj){
-  if(!S.avoid||!net)return false;
-  for(const s of segs)if(segClearBad(s,l,net,w,ignoreObj))return true;
-  return false;
-}
 function routeTarget(x,y){
   const l=S.route?S.route.layer:S.active;
   const net=S.route?S.route.net:"";
@@ -4007,7 +4004,7 @@ function viaIsole(v,nets,skip){
      fois. L'exempter revenait à laisser poser un via en plein milieu d'une
      piste étrangère sans un mot, ce qui n'est jamais ce qu'on voulait. Il se
      juge donc comme les autres, à l'isolation de la classe par défaut, que
-     `clrPair` rend déjà pour un net vide. */
+     `clrK` rend déjà pour un net vide. */
   const probe=pnsItemVia(v);
   /* Les deux nets d'une paire différentielle ne se gênent pas l'un l'autre :
      leur écartement, c'est l'éventail qui le tient, et il le tient au plus
@@ -4059,7 +4056,7 @@ function viaTrou(v,skip){
          ", la règle en exige "+fmt(h,3)+" mm";
 }
 /* Les deux vias d'une même paire différentielle. `viaIsole` ne peut pas s'en
-   charger : il mesure à `clrPair`, qui rend entre deux nets appariés l'écart
+   charger : il mesure à `clrK`, qui rend entre deux nets appariés l'écart
    serré de la règle de paire — celui des PISTES. Sur deux vias c'est
    l'isolation ordinaire qui vaut, et `dpViaGap` dit pourquoi. Cette cote-là est
    aussi celle que le contrôle applique (`dpDrc`) : le geste et le contrôle ne

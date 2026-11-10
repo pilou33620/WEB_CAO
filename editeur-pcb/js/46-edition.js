@@ -183,20 +183,21 @@ function semblables(crit){
 
 /* ---------- collage en réseau ---------- */
 /* Tourne autour de (cx, cy), de `deg` degrés dans le sens direct à l'écran, ce
-   que le collage vient de poser (la sélection courante). */
+   que le collage vient de poser (la sélection courante). Les angles (`rot`) des
+   boîtiers, fentes et textes comptent dans le sens horaire (rotateSel) : −deg. */
 function selTourner(cx,cy,deg){
   const a=-deg*Math.PI/180, c=Math.cos(a), s=Math.sin(a);
   const T=(x,y)=>({x:r4(cx+(x-cx)*c-(y-cy)*s),y:r4(cy+(x-cx)*s+(y-cy)*c)});
-  for(const id of S.sel.fps){const f=fpById(id);if(!f)continue;const p=T(f.x,f.y);f.x=r3(p.x);f.y=r3(p.y);f.rot=padRot((f.rot||0)+deg);}
+  for(const id of S.sel.fps){const f=fpById(id);if(!f)continue;const p=T(f.x,f.y);f.x=r3(p.x);f.y=r3(p.y);f.rot=padRot((f.rot||0)-deg);}
   const seg=o=>{const A=T(o.x1,o.y1),B=T(o.x2,o.y2);o.x1=r3(A.x);o.y1=r3(A.y);o.x2=r3(B.x);o.y2=r3(B.y);};
   for(const t of S.sel.tracks)seg(t);
   for(const v of S.sel.vias){const p=T(v.x,v.y);v.x=r3(p.x);v.y=r3(p.y);}
-  for(const z of [...S.sel.zones,...S.sel.cuts])z.pts=z.pts.map(q=>T(q.x,q.y));
-  for(const h of selHolesPcb()){const p=T(h.x,h.y);h.x=r3(p.x);h.y=r3(p.y);if(h.w>h.d)h.rot=padRot((h.rot||0)+deg);}
+  for(const z of [...S.sel.zones,...S.sel.cuts,...selInterdits()])z.pts=z.pts.map(q=>T(q.x,q.y));
+  for(const h of selHolesPcb()){const p=T(h.x,h.y);h.x=r3(p.x);h.y=r3(p.y);if(h.w>h.d)h.rot=padRot((h.rot||0)-deg);}
   for(const d of selDrawingsPcb()){
     if(d.pts){d.pts=d.pts.map(q=>T(q.x,q.y));if(d.trous)d.trous=d.trous.map(t=>t.map(q=>T(q.x,q.y)));
       const b=polyBBox(d.pts);d.x1=b.x1;d.y1=b.y1;d.x2=b.x2;d.y2=b.y2;}
-    else{seg(d);if(d.shape==="text"){d.x2=d.x1;d.y2=d.y1;d.rot=((d.rot||0)+deg)%360;}}
+    else{seg(d);if(d.shape==="text"){d.x2=d.x1;d.y2=d.y1;d.rot=padRot((d.rot||0)-deg);}}
   }
 }
 /* `o` : {n, mode:"ligne", dx, dy} ou {n, mode:"cercle", angle, cx, cy}. La
@@ -212,7 +213,7 @@ function collageReseau(o){
   if(!cercle&&!(+o.dx)&&!(+o.dy)){hint("Pas nul : les copies se superposeraient.");return 0;}
   if(cercle&&!(+o.angle)){hint("Angle nul : les copies se superposeraient.");return 0;}
   push();
-  const toutes={fps:[],tracks:[],vias:[],zones:[],cuts:[],drawings:[],holes:[]};
+  const toutes={fps:[],tracks:[],vias:[],zones:[],cuts:[],drawings:[],holes:[],interdits:[]};
   for(let k=1;k<n;k++){
     pasteClipPcb({exact:true,clip:c,sansPush:true,
                   x:cercle?c.ox:c.ox+k*(+o.dx),y:cercle?c.oy:c.oy+k*(+o.dy)});
@@ -220,6 +221,7 @@ function collageReseau(o){
     toutes.fps.push(...S.sel.fps);toutes.tracks.push(...S.sel.tracks);toutes.vias.push(...S.sel.vias);
     toutes.zones.push(...S.sel.zones);toutes.cuts.push(...S.sel.cuts);
     toutes.drawings.push(...(S.sel.drawings||[]));toutes.holes.push(...(S.sel.holes||[]));
+    toutes.interdits.push(...(S.sel.interdits||[]));
   }
   // toutes les copies restent sélectionnées : un Suppr les retire d'un coup
   clearSel();
@@ -308,6 +310,7 @@ function uniteBasculer(u){
     b.innerHTML="Unité : "+S.unite+" <kbd>Q</kbd>";}
   const f=$("fUnite");if(f)f.textContent=S.unite;
   if(S.coord&&S.coord.open)coordFill();
+  refreshPanels();   // les champs de longueur des Propriétés changent d'unité
   draw();
   hint("Unité d'affichage : "+(S.unite==="mil"?"mil (millième de pouce, 1 mil = 0,0254 mm)":"millimètre")+
        " — barre d'état, mesure et saisie de coordonnées. Les fichiers restent en mm.");
@@ -332,7 +335,9 @@ function propsLongueurs(box){
 function propsEnMil(box){
   for(const {i,lab} of propsLongueurs(box)){
     const v=parseFloat(String(i.value).replace(",","."));
+    i.dataset.mm=i.value;
     if(Number.isFinite(v))i.value=fmt(v/MIL,1);
+    i.dataset.affiche=i.value;
     const st=parseFloat(i.step);if(Number.isFinite(st)&&st>0)i.step=String(Math.max(0.1,Math.round(st/MIL*10)/10));
     const ph=parseFloat(String(i.placeholder||"").replace(",","."));
     if(Number.isFinite(ph)&&String(+ph)===String(i.placeholder).replace(",","."))i.placeholder=fmt(ph/MIL,1);
@@ -343,12 +348,28 @@ function propsEnMil(box){
   }
   if(!box._milEcoute&&box.addEventListener){
     box._milEcoute=true;
-    box.addEventListener("change",e=>{
-      const i=e.target;
-      if(S.unite!=="mil"||!i||!i.dataset||!i.dataset.mil)return;
-      const v=parseFloat(String(i.value).replace(",","."));
-      if(Number.isFinite(v))i.value=String(r4(v*MIL));
+    /* tous les champs en mm (un gestionnaire en relit plusieurs) ; un champ
+       inchangé reprend sa valeur mm d'origine, sans dérive d'arrondi */
+    box.addEventListener("change",()=>{
+      if(S.unite!=="mil")return;
+      for(const i of box.querySelectorAll("input[data-mil]")){
+        const v=parseFloat(String(i.value).replace(",","."));
+        if(i.value===i.dataset.affiche)i.value=i.dataset.mm;
+        else if(Number.isFinite(v))i.value=String(r4(v*MIL));
+        i.dataset.enMm="1";
+      }
     },true);
+    // après le gestionnaire du champ : ceux qui restent au panneau (non reconstruit) repassent en mil
+    box.addEventListener("change",()=>{
+      for(const i of box.querySelectorAll("input[data-mil]")){
+        if(!i.dataset.enMm)continue;
+        delete i.dataset.enMm;
+        const v=parseFloat(String(i.value).replace(",","."));
+        i.dataset.mm=i.value;
+        if(Number.isFinite(v))i.value=fmt(v/MIL,1);
+        i.dataset.affiche=i.value;
+      }
+    });
   }
 }
 const _buildPropsSansVerrou=buildProps;

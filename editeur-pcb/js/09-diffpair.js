@@ -43,13 +43,8 @@
    ========================================================================== */
 /* Une suite de segments bout à bout, vue comme une suite de points, et
    réciproquement. Le reste du module travaille en points — un décalage ne se
-   raisonne pas segment par segment, il se raisonne sommet par sommet. */
-function dpPts(segs){
-  if(!segs.length)return [];
-  const out=[{x:segs[0].x1,y:segs[0].y1}];
-  for(const s of segs)out.push({x:s.x2,y:s.y2});
-  return out;
-}
+   raisonne pas segment par segment, il se raisonne sommet par sommet.
+   Segments → points : `pnsPts` (10-pns-geom.js). */
 function dpSegs(pts){
   const out=[];
   for(let i=0;i<pts.length-1;i++){
@@ -488,7 +483,7 @@ function dpPose(D,gA,gB,t,axis,shove){
   const pair=D.pair, pitch=D.gap+D.w;
   D.shove=shove||null;
   D.midPrev=axis.map(sg=>Object.assign({l:D.layer},sg));
-  let pts=axis.length?dpPts(axis):[{x:gA.gate.x,y:gA.gate.y}];
+  let pts=axis.length?pnsPts(axis):[{x:gA.gate.x,y:gA.gate.y}];
   /* Le point d'appui, en arrière de la porte : il ne sera pas posé, il ne sert
      qu'à donner à l'onglet le sens d'ARRIVÉE de la paire. Sans lui, le premier
      sommet se décale perpendiculairement au sens de DÉPART de l'axe, et les
@@ -809,7 +804,7 @@ function dpCoupling(pair){
 /* Le contrôle des paires, greffé sur `runDrc`. Trois reproches possibles : une
    piste hors des bornes de largeur, un trop long trajet découplé, une paire
    dont un net a disparu de la carte. L'écart trop serré, lui, remonte tout seul
-   par l'isolation piste/piste — `clrPair` sait déjà qu'entre les deux nets
+   par l'isolation piste/piste — `clrK` sait déjà qu'entre les deux nets
    d'une paire, c'est l'écart mini qui fait loi. */
 function dpDrc(out){
   const nets=new Set(netTable().map(n=>n.name));
@@ -843,7 +838,7 @@ function dpDrc(out){
     }
     /* Les deux vias de la paire, jugés à l'isolation ORDINAIRE et non à l'écart
        serré de la règle : `dpViaGap` dit pourquoi. Le contrôle général, lui,
-       les mesure à `clrPair` — l'écart de paire — et les laisserait donc passer
+       les mesure à `clrK` — l'écart de paire — et les laisserait donc passer
        bien plus près. La règle est propre aux paires : sa place est ici. */
     const gV=dpViaGap(pair);
     const vP=S.vias.filter(v=>v.net===pair.p), vN=S.vias.filter(v=>v.net===pair.n);
@@ -903,21 +898,6 @@ function dpMakePair(a,b,keepOrder){
         "lequel est lequel.")+
        " Touche P pour la router.");
   return pair;
-}
-/* Deux pistes sélectionnées, deux nets : voilà une paire. Le panneau ne s'en
-   sert plus — il a ses deux listes — mais le geste garde son intérêt quand on
-   vient de tirer deux amorces à la main et qu'on ne sait plus leurs noms. */
-function dpFromSel(){
-  const nets=[];
-  for(const t of S.sel.tracks)if(t.net&&nets.indexOf(t.net)<0)nets.push(t.net);
-  for(const v of S.sel.vias)if(v.net&&nets.indexOf(v.net)<0)nets.push(v.net);
-  if(nets.length!==2){
-    hint(nets.length<2
-      ? "Sélectionnez deux pistes de deux nets différents pour en faire une paire."
-      : "Trop de nets dans la sélection ("+nets.length+") : une paire n'en réunit que deux.");
-    return null;
-  }
-  return dpMakePair(nets[0],nets[1],false);
 }
 /* Toutes les paires que les noms de net trahissent, d'un coup. */
 function dpAutoAll(){

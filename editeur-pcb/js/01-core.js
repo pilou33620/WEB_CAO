@@ -1175,19 +1175,32 @@ function setCuCount(n,silent){
   };
   for(const t of S.tracks) t.l=clamp(map(t.l),0,n-1);
   for(const z of S.zones) z.l=clamp(map(z.l),0,n-1);
+  for(const c of S.cuts) c.l=clamp(map(c.l),0,n-1);                   // la découpe suit sa zone
+  for(const z of S.interdits||[]) if(z.ko&&z.ko.l>=0) z.ko.l=clamp(map(z.ko.l),0,n-1);
   /* les réglages par couche suivent leur couche comme le cuivre : dessus et
      dessous d'abord, les internes par rang ; une couche qui disparaît
      emporte le sien */
   if(old!==n){
     const ordre=k=>k===0||k===old-1?0:1;
+    // clés numériques = indices de couche ; les autres (« int », « bas » de parCouche) restent
+    const remap=o=>{
+      const neuf={};
+      for(const k of Object.keys(o))if(!/^\d+$/.test(k))neuf[k]=o[k];
+      for(const k of Object.keys(o).filter(k=>/^\d+$/.test(k)).map(Number).filter(k=>k<old).sort((a,b)=>ordre(a)-ordre(b)||a-b)){
+        const j=k===0?0:(k===old-1?n-1:(k<n-1?k:-1));
+        if(j>=0&&neuf[j]==null)neuf[j]=o[k];
+      }
+      return neuf;
+    };
     for(const c of S.classes){
       if(!c.wL)continue;
-      const neuf={};
-      for(const k of Object.keys(c.wL).map(Number).filter(k=>k<old).sort((a,b)=>ordre(a)-ordre(b)||a-b)){
-        const j=k===0?0:(k===old-1?n-1:(k<n-1?k:-1));
-        if(j>=0&&neuf[j]==null)neuf[j]=c.wL[k];
-      }
+      const neuf=remap(c.wL);
       if(Object.keys(neuf).length)c.wL=neuf;else delete c.wL;
+    }
+    for(const r of S.dpRules)if(r.layers)r.layers=remap(r.layers);
+    for(const fp of S.fps)for(const q of fp.pads||[])if(q.parCouche){
+      const neuf=remap(q.parCouche);
+      if(Object.keys(neuf).length)q.parCouche=neuf;else delete q.parCouche;
     }
     const C=S.contraintes;
     if(C)for(const tab of [C.classes,C.nets])
@@ -2232,16 +2245,6 @@ function fpAddPad(fp){
   fpSyncPins(fp);
   return ps.length-1;
 }
-/* Suppression d'une pastille. Les numéros des autres ne bougent pas : le net
-   de la broche 5 reste celui de la broche 5. La dernière ne se retire pas —
-   une empreinte sans cuivre ne se sélectionne plus. */
-function fpDelPad(fp,i){
-  fpFreeze(fp);
-  if(fp.pads.length<=1||i<0||i>=fp.pads.length)return false;
-  fp.pads.splice(i,1);
-  fpSyncPins(fp);
-  return true;
-}
 /* Nombre de pastilles. Empreinte calculée : c'est `pins`, et tout se
    redessine. Empreinte libre : les pastilles déjà placées ne bougent pas, on
    ajoute à la suite ou on retire par la fin. */
@@ -2968,7 +2971,7 @@ function dpGapPair(a,b){
 }
 /* ---------- les contraintes du gestionnaire (30-contraintes.js) ----------
    Le modèle vit ici, avec les classes qu'il complète, parce que `normDoc` le
-   lit au démarrage et que l'isolation entre classes entre dans `clrPair` : les
+   lit au démarrage et que l'isolation entre classes entre dans `clrK` : les
    deux tournent avant que le module du gestionnaire soit chargé.
 
    Une contrainte de net ou de classe : impédance cible et sa tolérance (%),
@@ -3015,16 +3018,6 @@ function cmClrMax(){
   if(m)for(const k in m){const v=+m[k];if(v>x)x=v;}
   return x;
 }
-/* Isolation entre deux nets : la plus exigeante des deux classes l'emporte,
-   et la case de la matrice des classes si elle exige davantage. */
-function clrPair(a,b){
-  const g=dpGapPair(a,b);
-  if(g!=null)return g;
-  return Math.max(classOf(a).clr,classOf(b).clr,cmClrClasses(a,b));
-}
-/* La même, natures comprises : c'est celle-ci que le contrôle, le routeur et
-   les zones de cuivre appliquent. `ka` et `kb` disent de quoi il s'agit —
-   piste, pastille CMS, pastille traversante, via, cuivre plein. */
 /* L'ISOLEMENT D'UNE ZONE : celui des classes et de la matrice, au moins celui
    que la zone impose (`z.isol`). `z` : la zone, ou le seul nom de son net. */
 function clrZone(z,net,ka,kb){
@@ -3043,6 +3036,11 @@ function ecartThermique(q,l){
   const z=zoneDuPad(q,l);
   return z&&z.brasEcart>0?z.brasEcart:classOf(q.net).clr;
 }
+/* Isolation entre deux nets : la plus exigeante des deux classes l'emporte, et
+   la case de la matrice des classes si elle exige davantage. C'est celle-ci que
+   le contrôle, le routeur et les zones de cuivre appliquent. `ka` et `kb` disent
+   de quoi il s'agit — piste, pastille CMS, pastille traversante, via, cuivre
+   plein ; sans eux, la matrice des natures ne compte pas. */
 function clrK(a,b,ka,kb){
   const g=dpGapPair(a,b);
   if(g!=null)return g;
@@ -3353,7 +3351,6 @@ function dpDetect(){
   return out;
 }
 /* ---------- accès aux paires ---------- */
-function dpById(id){return S.dpPairs.find(x=>x.id===id)||null;}
 function dpByName(name){return S.dpPairs.find(x=>x.name===name)||null;}
 /* La paire à laquelle appartient un net, ou null. Un net n'est que dans une
    paire à la fois : la première trouvée est la bonne. */
@@ -3423,7 +3420,7 @@ function dpValues(rule,layer){
 }
 /* Le plus petit écart que la règle admette, toutes couches confondues : c'est
    la distance dont l'isolation ne doit jamais descendre entre les deux nets de
-   la paire. `clrPair` s'en sert, et il ne connaît pas la couche. */
+   la paire. `clrK` s'en sert, et il ne connaît pas la couche. */
 function dpMinGap(pair){
   const r=dpRuleFor(pair);
   let m=r.minGap;
@@ -3435,7 +3432,7 @@ function dpMinGap(pair){
   return Math.max(0.02,m);
 }
 /* ---------- l'isolation entre les DEUX VIAS d'une paire ----------
-   `clrPair` rend, entre les deux nets d'une paire, l'écart de la règle de paire
+   `clrK` rend, entre les deux nets d'une paire, l'écart de la règle de paire
    — 0,13 mm typiquement, bien en deçà de ce que la classe exigerait. C'est le
    principe même de la paire, et c'est juste POUR LES PISTES : l'écart tenu au
    centième sur toute la longueur, c'est ce qui fait l'impédance différentielle,
