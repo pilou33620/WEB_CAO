@@ -26,7 +26,6 @@
    pas relu de travers. */
 const PROJ_CLE = "cao.projet.v1";
 const PROJ_NOM_MAX = 60;
-const PROJ_MEMOIRE = 12;        // projets récents gardés dans la liste
 
 /* Suffixes par outil. C'est la seule table à toucher quand un outil arrive :
    la visionneuse IPC-2581 est le quatrième, et n'a demandé que cette ligne.
@@ -37,7 +36,7 @@ const PROJ_MEMOIRE = 12;        // projets récents gardés dans la liste
    le fabricant l'a livrée --, et son fichier se nomme comme les autres. */
 const PROJ_SUFFIXE = {schema:"-SCH", pcb:"-PCB", ipc2581:"-IPC"};
 
-let PROJ_ETAT = null;           // {nom, liste:[{nom,t}]} — chargé à la demande
+let PROJ_ETAT = null;           // {nom} — chargé à la demande
 let PROJ_ABONNES = [];
 
 /* ==========================================================================
@@ -91,25 +90,13 @@ function projMemeNom(a, b){
 /* ==========================================================================
    Lecture et écriture de l'état
    ========================================================================== */
-function projNeuf(){ return {nom:"", liste:[]}; }
+function projNeuf(){ return {nom:""}; }
 /* Rien de ce qui est relu n'est cru sur parole : le nom repasse par la
-   validation, et une entrée de liste douteuse est écartée plutôt que corrigée
-   à moitié. */
+   validation. */
 function projNormaliser(o){
   const p = projNeuf();
   if(!o || typeof o !== "object") return p;
   p.nom = projNomValide(o.nom);
-  if(Array.isArray(o.liste))
-    for(const e of o.liste){
-      if(!e || typeof e !== "object") continue;
-      const v = projNomValide(e.nom);
-      if(!v || p.liste.some(x => projMemeNom(x.nom, v))) continue;
-      const entree = {nom:v, t:(+e.t || 0)};
-      if(e.chemin && typeof e.chemin === "string") entree.chemin = e.chemin.trim();
-      if(e.mode && typeof e.mode === "string") entree.mode = e.mode.trim();
-      p.liste.push(entree);
-      if(p.liste.length >= PROJ_MEMOIRE) break;
-    }
   return p;
 }
 function projCharger(){
@@ -124,7 +111,7 @@ function projCharger(){
      « récents » gardée par le navigateur : elle désignait des dossiers qui
      avaient pu bouger ou vieillir depuis. Les projets se listent sur le
      disque (/api/projets), là où git les tient à jour. */
-  PROJ_ETAT = projNormaliser(brut && {nom:brut.nom});
+  PROJ_ETAT = projNormaliser(brut);
   return PROJ_ETAT;
 }
 function projEnregistrer(){
@@ -141,10 +128,9 @@ function projEnregistrer(){
    doivent traiter ce cas : on ne renvoie pas un nom inventé. */
 function projNom(){ return projCharger().nom; }
 
-/* Ouvre un projet, existant ou nouveau — c'est le même geste, seule la
-   présence dans la liste fait la différence. Renvoie le nom retenu, ou ""
-   si le nom est refusé. */
-function projOuvrir(brut, chemin, mode){
+/* Ouvre un projet, existant ou nouveau — c'est le même geste. Renvoie le nom
+   retenu, ou "" si le nom est refusé. */
+function projOuvrir(brut){
   const v = projNomValide(brut);
   if(!v) return "";
   const p = projCharger();
@@ -154,80 +140,37 @@ function projOuvrir(brut, chemin, mode){
       if(typeof sessEffacer === "function"){
         sessEffacer("schema");
         sessEffacer("pcb");
+        sessEffacer("ipc2581");
       }else if(typeof window !== "undefined" && window.sessionStorage){
         window.sessionStorage.removeItem("cao.session.v1.schema");
         window.sessionStorage.removeItem("cao.session.v1.pcb");
+        window.sessionStorage.removeItem("cao.session.v1.ipc2581");
       }
     }catch(_){}
   }
   p.nom = v;
-  const existant = p.liste.find(e => projMemeNom(e.nom, v));
-  const chemRetenu = (chemin && typeof chemin === "string") ? chemin.trim() : (existant && existant.chemin) || "";
-  const modeRetenu = (mode && typeof mode === "string") ? mode.trim() : (existant && existant.mode) || "";
-  p.liste = p.liste.filter(e => !projMemeNom(e.nom, v));
-  p.liste.unshift({nom:v, t:Date.now(), chemin:chemRetenu, mode:modeRetenu});
-  if(p.liste.length > PROJ_MEMOIRE) p.liste.length = PROJ_MEMOIRE;
   projEnregistrer();
   projSignaler();
   return v;
 }
-/* Met à jour le chemin ou le mode d'un projet déjà listé. */
-function projRenseignerChemin(nom, chemin, mode){
-  const v = projNomValide(nom);
-  if(!v) return;
-  const p = projCharger();
-  const entree = p.liste.find(x => projMemeNom(x.nom, v));
-  if(entree){
-    if(chemin) entree.chemin = String(chemin).trim();
-    if(mode) entree.mode = String(mode).trim();
-    projEnregistrer();
-    projSignaler();
-  }
-}
-/* Referme sans rien oublier : le projet reste dans la liste, il n'est
-   simplement plus celui sur lequel on travaille. */
+/* Referme sans rien effacer sur le disque : le projet n'est simplement plus
+   celui sur lequel on travaille. */
 function projFermer(){
   const p = projCharger();
   try{
     if(typeof sessEffacer === "function"){
       sessEffacer("schema");
       sessEffacer("pcb");
+      sessEffacer("ipc2581");
     }else if(typeof window !== "undefined" && window.sessionStorage){
       window.sessionStorage.removeItem("cao.session.v1.schema");
       window.sessionStorage.removeItem("cao.session.v1.pcb");
+      window.sessionStorage.removeItem("cao.session.v1.ipc2581");
     }
   }catch(_){}
   p.nom = "";
   projEnregistrer();
   projSignaler();
-}
-/* Retire un projet de la mémoire. Les fichiers, eux, sont sur le disque : ils
-   ne sont pas touchés. */
-function projOublier(brut){
-  const v = projNomValide(brut);
-  if(!v) return false;
-  const p = projCharger();
-  const avant = p.liste.length;
-  p.liste = p.liste.filter(e => !projMemeNom(e.nom, v));
-  if(projMemeNom(p.nom, v)){
-    p.nom = "";
-    try{
-      if(typeof sessEffacer === "function"){
-        sessEffacer("schema");
-        sessEffacer("pcb");
-      }else if(typeof window !== "undefined" && window.sessionStorage){
-        window.sessionStorage.removeItem("cao.session.v1.schema");
-        window.sessionStorage.removeItem("cao.session.v1.pcb");
-      }
-    }catch(_){}
-  }
-  projEnregistrer();
-  projSignaler();
-  return p.liste.length !== avant;
-}
-/* Les projets connus, le plus récent d'abord. Copie, jamais la liste rangée. */
-function projListe(){
-  return projCharger().liste.map(e => ({nom:e.nom, t:e.t, chemin:e.chemin||"", mode:e.mode||""}));
 }
 
 /* Le nom du document d'un outil : « carte PIR » + « pcb » → « carte PIR-PCB ».

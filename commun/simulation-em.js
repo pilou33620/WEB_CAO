@@ -4122,31 +4122,6 @@ function simDb(c){
 const SIM_PLANCHER=-300;
 
 /* ==========================================================================
-   UNE TENSION DANS SON ORDRE DE GRANDEUR — V, mV, µV
-   --------------------------------------------------------------------------
-   POURQUOI PAS L'UNITÉ CHOISIE POUR L'AMPLITUDE. Parce que ce n'est pas la
-   même grandeur : l'amplitude vaut des volts, le bruit qui en sort vaut des
-   millivolts ou des microvolts. Écrire un couplage de 0,4 % sur un signal de
-   3,3 V dans l'unité du signal donnerait « 0,013 V », qu'on relit en comptant
-   les zéros — et « 0,000 V » dès qu'on descend d'une décade. Un même tableau
-   peut donc porter des volts en haut et des microvolts en bas ; c'est le
-   contraire d'un défaut, puisque c'est précisément l'échelle qui est
-   l'information.
-
-   SOUS LE MICROVOLT ON ÉCRIT L'INÉGALITÉ, jamais un zéro : un bruit de
-   quelques dizaines de nanovolts N'EST PAS nul, il est négligeable — et ces
-   deux faits ne se corrigent pas de la même façon.
-   ========================================================================== */
-function simTension(v){
-  const a=Math.abs(v||0);
-  if(!(a>0))return "0 V";
-  if(a>=1)return simNb(v,a>=10?1:2)+" V";
-  if(a>=1e-3)return simNb(v*1e3,a>=1e-2?1:2)+" mV";
-  if(a>=1e-6)return simNb(v*1e6,a>=1e-5?1:2)+" µV";
-  return "< 1 µV";
-}
-
-/* ==========================================================================
    La carte de chaleur : trois couleurs, et ce qu'elles veulent dire
    --------------------------------------------------------------------------
      · BLEU   — dans la tolérance. C'est la cible, et la seule couleur qui ne
@@ -9173,24 +9148,6 @@ function simDiffSuivreSelection(){
   }
 }
 
-function simPaireCandidats(){
-  const vus=[], refs=simRefSet();
-  const ajoute=n=>{n=String(n||"");
-                   if(n&&!refs.has(n)&&vus.indexOf(n)<0)vus.push(n);};
-  for(const f of simCouplagePaires())ajoute(f.net_voisin);
-  if(!vus.length&&SIM_ED&&typeof SIM_ED.listeNets==="function"){
-    for(const n of SIM_ED.listeNets())ajoute(n);
-  }
-  vus.sort((a,b)=>String(a).localeCompare(String(b),"fr",{numeric:true}));
-  return vus;
-}
-function simPaireSoi(){
-  return SIM.saisie.diffPiste1||(SIM.res&&SIM.res.net)||(SIM.doc&&SIM.doc.net)||"";
-}
-function simPaireEcrire(){
-  simDiffNetlistEcrire();
-}
-
 /* Les boutons et les champs du cadre des deux pistes. `apresEchange` dit ce
    que l'onglet fait quand on permute Piste 1 et Piste 2 : « Z différentielle »
    relance son calcul s'il en avait un, l'œil se contente de redessiner. */
@@ -12769,14 +12726,6 @@ const SIM_BUS_PROTOCOLES={
   }
 };
 
-const SIM_BUS_PRESETS={
-  spi50:    {freq:50,  tsu:3.0, th:1.0, tcoMin:2.0, tcoMax:6.0},
-  qspi100:  {freq:100, tsu:1.5, th:0.8, tcoMin:1.2, tcoMax:3.5},
-  sdram133: {freq:133, tsu:1.5, th:0.8, tcoMin:1.5, tcoMax:5.4},
-  rgmii125: {freq:125, tsu:1.0, th:0.8, tcoMin:1.2, tcoMax:2.6},
-  ddr200:   {freq:200, tsu:0.5, th:0.4, tcoMin:0.6, tcoMax:1.8}
-};
-
 const SIM_BUS={
   nom:"Bus synchrone",
   comp1:"",
@@ -12898,64 +12847,6 @@ function simBusClassifierNets(nets, proto){
   }
 
   return {clocks, datas};
-}
-
-function simBusLierComposants(){
-  const c1Sel=simEl("simBusComp1");
-  const c2Sel=simEl("simBusComp2");
-  const protoSel=simEl("simBusProtocole");
-  const c1=(c1Sel&&c1Sel.value)?c1Sel.value:SIM_BUS.comp1;
-  const c2=(c2Sel&&c2Sel.value)?c2Sel.value:SIM_BUS.comp2;
-  const proto=(protoSel&&protoSel.value)?protoSel.value:SIM_BUS.protocole;
-
-  SIM_BUS.comp1=c1;
-  SIM_BUS.comp2=c2;
-  SIM_BUS.protocole=proto;
-
-  if(!c1||!c2){
-    SIM_BUS.erreur="Veuillez sélectionner Composant 1 et Composant 2.";
-    simRendre();
-    return;
-  }
-  if(c1===c2){
-    SIM_BUS.erreur="Veuillez choisir deux composants différents.";
-    simRendre();
-    return;
-  }
-  if(!SIM_ED||typeof SIM_ED.netsEntreComposants!=="function"){
-    SIM_BUS.erreur="L'outil ne fournit pas d'inspection de liaison inter-composants.";
-    simRendre();
-    return;
-  }
-
-  const nets=SIM_ED.netsEntreComposants(c1,c2);
-  if(!nets||!nets.length){
-    SIM_BUS.erreur="Aucun net commun trouvé entre "+c1+" et "+c2+".";
-    simRendre();
-    return;
-  }
-
-  const pCfg=SIM_BUS_PROTOCOLES[proto]||SIM_BUS_PROTOCOLES.spi;
-  SIM_BUS.nom=pCfg.court+" "+c1+" ➔ "+c2;
-  const nomIn=simEl("simBusNom");
-  if(nomIn) nomIn.value=SIM_BUS.nom;
-
-  if(pCfg.freq) SIM_BUS.freqMhz=pCfg.freq;
-  if(pCfg.tsu) SIM_BUS.tsu=pCfg.tsu;
-  if(pCfg.th) SIM_BUS.th=pCfg.th;
-  if(pCfg.tcoMin) SIM_BUS.tcoMin=pCfg.tcoMin;
-  if(pCfg.tcoMax) SIM_BUS.tcoMax=pCfg.tcoMax;
-  if(pCfg.rpu) SIM_BUS.rpuK=pCfg.rpu;
-  if(pCfg.baud) SIM_BUS.baudrate=pCfg.baud;
-
-  const classed=simBusClassifierNets(nets, proto);
-  SIM_BUS.clocks=classed.clocks;
-  SIM_BUS.datas=classed.datas;
-  SIM_BUS.dataClockMap={};
-  SIM_BUS.erreur="";
-
-  simPoser();
-  simBusCalculer();
 }
 
 function simBusRendreNetsBar(){
@@ -13371,31 +13262,6 @@ function simBusChangerNetAval(role, targetNet, newAval){
 
   simBusRendreNetsBar();
   simBusCalculer();
-}
-
-function simBusChainerNet(role, targetNet, netToAdd){
-  if(!netToAdd) return;
-  const newNet=targetNet+" + "+netToAdd;
-  if(role==="clk"){
-    const idx=SIM_BUS.clocks.indexOf(targetNet);
-    if(idx>=0) SIM_BUS.clocks[idx]=newNet;
-    for(const k in SIM_BUS.dataClockMap){
-      if(SIM_BUS.dataClockMap[k]===targetNet) SIM_BUS.dataClockMap[k]=newNet;
-    }
-  }else{
-    const idx=SIM_BUS.datas.indexOf(targetNet);
-    if(idx>=0) SIM_BUS.datas[idx]=newNet;
-    if(SIM_BUS.dataClockMap[targetNet]){
-      SIM_BUS.dataClockMap[newNet]=SIM_BUS.dataClockMap[targetNet];
-      delete SIM_BUS.dataClockMap[targetNet];
-    }
-  }
-  simBusRendreNetsBar();
-  simBusCalculer();
-}
-
-function simBusDechainerNet(role, targetNet){
-  simBusDesactiverRSerie(role, targetNet);
 }
 
 function simBusBasculerRole(role, net){
@@ -14934,12 +14800,6 @@ function simPDNEvenementsDepuisFiche(f, ref, avant) {
   const anciens = new Map((avant || []).map(e => [e.id, e]));
   for (const e of deriv) { const a = anciens.get(e.id); e.actif = a ? a.actif !== false : true; }
   return deriv.concat((avant || []).filter(e => e.type === "charge"));
-}
-
-// La liste de départ, sans fiche enregistrée : ce que la bibliothèque sait.
-function simPDNEvenementsDefaut(info) {
-  info = info || {};
-  return simPDNEvenementsDepuisFiche(simPDNFicheDefaut(info), info.ref, null);
 }
 
 /* ΔI et fréquence d'un événement. */

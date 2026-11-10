@@ -82,7 +82,7 @@ const EXPOSE=["simDsChamp","simDsLire","simDsEcrire","SIM_DS","SIM_PDN","simPDNA
   "mdlNetNom","mdlNb","mdlCharger","mdlCouches","mdlPlansDans",
   "mdlCheminsNet","mdlMevTout","mdlMonte","mdlPoserMonte","simEstMonte",
   "SIM","SIM_IPC","simRefSet","simRefListe","simRefCandidats","simInit",
-  "SIM_BUS","simCorpsBus","simBrancherBus","simRendreBus","simBusCalculer","SIM_BUS_PRESETS",
+  "SIM_BUS","simCorpsBus","simBrancherBus","simRendreBus","simBusCalculer",
   "simBusActiverRSerie","simBusDesactiverRSerie","simBusChangerNet","simBusChangerRSerieVal","simBusChangerNetAval","simBusResoudreNetAvecPont","SIM_ED",
   "simTermeDiff","simLireDiff","simLectureTexteDiff","simCourbeDiff","simFicheSDiff","simDiffExportS2p",
   "simRefCandidatsIpc",
@@ -146,9 +146,6 @@ const EXPOSE=["simDsChamp","simDsLire","simDsEcrire","SIM_DS","SIM_PDN","simPDNA
   /* L'onglet de Z differentielle (commun/simulation-em.js). */
   "simCouplage","simCouplagePaires","simFicheDiff",
   "simCorpsDiff","simRendreDiff",
-  /* Le seuil qui juge le crosstalk, et la tension qui convertit un rapport
-     en volts. */
-  "simTension",
   /* Les DEUX cartes de chaleur, et ce qui les colore. `simCarteSegment` est
      le seul point par lequel un canevas apprend ce qu'il peint. */
   "simCarteQuoi","simCarteActive","simCarteSegment","simCarteRetenir",
@@ -161,7 +158,7 @@ const EXPOSE=["simDsChamp","simDsLire","simDsEcrire","SIM_DS","SIM_PDN","simPDNA
   /* Le voile : ce qui n'est pas dans la simulation s'estompe. */
   "simVoileActif","SIM_VOILE_ALPHA",
   /* Choisir sa paire a la main plutot que de la laisser deviner. */
-  "simPaireCandidats","simPaireSoi","simPaireEcrire","simDocFinir",
+  "simDocFinir",
   "simCoupleSection","simCoupleSections",
   "SIM_UNITES_TR","SIM_UNITES_V","simUniteTr","simUniteV",
   "simLotsPeints","simLotsMultiples","simPourChaqueLot","simLotMirroir",
@@ -179,7 +176,7 @@ const EXPOSE=["simDsChamp","simDsLire","simDsEcrire","SIM_DS","SIM_PDN","simPDNA
   "simDCNomCouche","simDCOublier",
   /* Classification des nets et préréglages de simulation */
   "mdlDetecterClasseNet","mdlDetecterTensionNet","mdlAutoDetecterClassesNets",
-  "mdlAppliquerClassesNets","mdlNetClasse","mdlNetPoserClasse",
+  "mdlNetPoserClasse",
   "mdlNetPoserNature","MDL_NATURES_SIGNAL",
   /* Les règles que le fichier porte (parseur 1.79) : classes, paires. */
   "mdlRegles","mdlClasseFichier","mdlPaireFichier","mdlNatureDeClasse","simPairesFichierIpc",
@@ -4734,10 +4731,6 @@ T("Application des classes et modifications manuelles (mdlAutoDetecterClassesNet
   if(V.parNet[3].classe !== "pwr") throw new Error("NET_LIBRE aurait dû passer en pwr");
   if(V.parNet[3].autoDetecte !== false) throw new Error("NET_LIBRE aurait dû avoir autoDetecte = false");
   if(V.modele.netClasses["NET_LIBRE"] !== "pwr") throw new Error("V.modele.netClasses non mis à jour");
-
-  // mdlAppliquerClassesNets
-  mdlAppliquerClassesNets({ "CLK_OUT": "pwr", "GND": "gnd" });
-  if(V.parNet[2].classe !== "pwr") throw new Error("CLK_OUT aurait dû passer en pwr via dict");
 });
 
 T("Nature des nets : suggestion du serveur, choix manuel, famille qui suit", function(){

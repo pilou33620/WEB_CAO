@@ -422,7 +422,9 @@ try{ projSurChangement(ipcChargerProjet); }catch(_){}
     if(!V.modele)return null;
     const etat={modele:V.modele,fichier:V.fichier,
                 vue:{scale:V.vue.scale,ox:V.vue.ox,oy:V.vue.oy,flip:V.vue.flip}};
-    return (typeof sessTient!=="function"||sessTient(etat))?etat:null;
+    /* trop gros : l'ancienne carte mise de côté reviendrait au retour */
+    if(typeof sessTient==="function"&&!sessTient(etat)){sessEffacer(PREF);return null;}
+    return etat;
   }):null;
 
   if(repris&&repris.etat&&repris.etat.modele){

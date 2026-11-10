@@ -129,6 +129,11 @@ const etatCsv = vm.runInContext("LIB_STATE", sbCsv);
 assert(etatCsv.colonnes[0] === "Part Name", "Le BOM d'Excel ne colle plus au premier en-tête");
 assert(etatCsv.composants.length === 2 && etatCsv.composants[0].Description === "ligne 1\r\nligne 2",
   "Un champ entre guillemets sur deux lignes reste un seul composant");
+vm.runInContext("parserCsvBrut", sbCsv)('Part Name;Description;FP\nJ1;Barrette 0.1" 3 points;HDR-3\nR1;"a;""b""";R0603\nC1;ok;C0603\n');
+const etatPouce = vm.runInContext("LIB_STATE", sbCsv);
+assert(etatPouce.composants.length === 3 && etatPouce.composants[0].Description === 'Barrette 0.1" 3 points'
+  && etatPouce.composants[0].FP === "HDR-3" && etatPouce.composants[1].Description === 'a;"b"' && etatPouce.composants[2].FP === "C0603",
+  "Un guillemet au milieu d'un champ non cité (0.1\") n'avale pas les lignes suivantes");
 
 // 5c. « Générer Symbole CI » dessine toutes les broches, même en nombre impair (7 = 4 + 3)
 {

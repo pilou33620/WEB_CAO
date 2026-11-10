@@ -34,7 +34,8 @@ function parseCSVLine(text) {
         cur += char;
       }
     } else {
-      if (char === '"') {
+      // un guillemet n'ouvre qu'en début de champ : « 0.1" » reste du texte
+      if (char === '"' && (i === 0 || text[i - 1] === ';')) {
         inQuotes = true;
       } else if (char === ';') {
         result.push(cur);
@@ -57,7 +58,14 @@ function csvLignes(text) {
   let cur = "", q = false;
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
-    if (c === '"') q = !q;
+    if (c === '"') {
+      if (q) {
+        if (text[i + 1] === '"') { cur += '""'; i++; continue; }   // guillemet doublé
+        q = false;
+      } else if (i === 0 || text[i - 1] === ";" || text[i - 1] === "\n" || text[i - 1] === "\r") {
+        q = true;                        // n'ouvre qu'en début de champ, comme parseCSVLine
+      }
+    }
     if (!q && (c === "\n" || c === "\r")) {
       if (c === "\r" && text[i + 1] === "\n") i++;
       out.push(cur); cur = "";

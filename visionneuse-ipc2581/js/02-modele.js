@@ -1614,31 +1614,6 @@ function mdlAutoDetecterClassesNets(classesIpc, classesPersist){
   V.netClasses=mapClasses;
 }
 
-/* Applique un dictionnaire de classes { [nomNet]: "pwr"|"gnd"|"signal" } */
-function mdlAppliquerClassesNets(dictClasses){
-  if(!dictClasses||!V.parNet)return;
-  if(!V.modele)V.modele={};
-  if(!V.modele.netClasses)V.modele.netClasses={};
-  for(const n of V.parNet){
-    if(!n||!n.nom)continue;
-    if(dictClasses[n.nom]!=null){
-      const cl=String(dictClasses[n.nom]).toLowerCase();
-      n.classe=(cl==="pwr"||cl==="gnd")?cl:"signal";
-      n.autoDetecte=false;
-      n.tensionNominale=(n.classe==="pwr")?mdlDetecterTensionNet(n.nom):null;
-      mdlPoserNature(n);
-      V.modele.netClasses[n.nom]=n.classe;
-    }
-  }
-  V.netClasses=Object.assign({},V.modele.netClasses);
-}
-
-/* Classe d'un net par son index dans V.parNet ("signal", "pwr", ou "gnd") */
-function mdlNetClasse(i){
-  const n=(i>=0&&V.parNet&&i<V.parNet.length)?V.parNet[i]:null;
-  return n?(n.classe||"signal"):"signal";
-}
-
 /* Définit manuellement la classe d'un net */
 function mdlNetPoserClasse(i,classe){
   const n=(i>=0&&V.parNet&&i<V.parNet.length)?V.parNet[i]:null;

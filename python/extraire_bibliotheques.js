@@ -1004,7 +1004,8 @@ function parseCSVLine(text) {
         cur += char;
       }
     } else {
-      if (char === '"') {
+      // un guillemet n'ouvre qu'en début de champ : « 0.1" » reste du texte
+      if (char === '"' && (i === 0 || text[i - 1] === ';')) {
         inQuotes = true;
       } else if (char === ';') {
         result.push(cur);

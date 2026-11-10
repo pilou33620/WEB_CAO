@@ -34,7 +34,6 @@
 "use strict";
 
 const SIM_RAP_ORDRE={ok:0, info:1, warn:2, crit:3};
-const SIM_RAP_GLYPHE={crit:"✗", warn:"⚠", info:"ℹ", ok:"✓"};
 
 /* Le résultat de l'analyse courante, le document qui l'a produit, et ses
    réglages bruts (`regl`, ce qui part en annexe JSON). Chaque analyse range

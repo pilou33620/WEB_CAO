@@ -50,6 +50,19 @@ let PROJD_HANDLE = null;                 // FileSystemDirectoryHandle, si mode "
 let PROJD_ATTENTE = null;                // dossier retrouve, mais pas encore autorise
 let PROJD_SRV;                           // undefined = pas encore teste
 const PROJD_VU = {};                     // outil -> date (ms) du fichier lu ou ecrit par cette page
+/* PROJD_VU survit a l'aller-retour entre outils (sessionStorage, par page) : le
+   document revenu de la session d'onglet garde la date de sa lecture, et le
+   serveur peut encore refuser d'ecraser une version plus recente (409). */
+const PROJD_VU_CLE = "cao.projet.vu.v1.";
+function projdVuCle(){
+  try{ return PROJD_VU_CLE + location.pathname; }catch(_){ return PROJD_VU_CLE; }
+}
+function projdVuGarder(){
+  try{
+    sessionStorage.setItem(projdVuCle(),
+      JSON.stringify({mode:PROJD.mode, chemin:PROJD.chemin, vu:PROJD_VU}));
+  }catch(_){}
+}
 const PROJD_BROU = {};                   // outil -> {txt: dernier brouillon ecrit, p: ecriture en cours}
 
 /* ==========================================================================
@@ -326,11 +339,15 @@ function projdAdopter(mode, chemin, fichier, documents){
   PROJD = {mode:mode, chemin:chemin||"", fichier:fichier||null,
            documents:documents||null};
   for(const k in PROJD_VU) delete PROJD_VU[k];   // dates de l'ancien projet
+  let garde = null;
+  try{ garde = JSON.parse(sessionStorage.getItem(projdVuCle())||"null"); }catch(_){}
+  if(garde && garde.vu && PROJD.chemin && garde.chemin === PROJD.chemin && garde.mode === mode)
+    for(const k in garde.vu) if(typeof garde.vu[k] === "number") PROJD_VU[k] = garde.vu[k];
+  projdVuGarder();
   for(const k in PROJD_BROU) delete PROJD_BROU[k];
   const nom = fichier && fichier.nom;
   if(nom){
-    if(typeof projOuvrir === "function") projOuvrir(nom, chemin, mode);
-    if(typeof projRenseignerChemin === "function") projRenseignerChemin(nom, chemin, mode);
+    if(typeof projOuvrir === "function") projOuvrir(nom);
   }
   try{
     localStorage.setItem(PROJD_CLE, JSON.stringify({mode:mode, chemin:PROJD.chemin}));
@@ -502,7 +519,7 @@ function projdDocLire(outil){
   if(!projdLie() || !nom) return Promise.resolve(null);
   if(PROJD.mode === "serveur")
     return projdApi("GET","/api/projet/doc",{chemin:PROJD.chemin, doc:outil})
-      .then(function(r){ PROJD_VU[outil] = r.modifie || 0; return r.document||null; })
+      .then(function(r){ PROJD_VU[outil] = r.modifie || 0; projdVuGarder(); return r.document||null; })
       .catch(function(e){ if(e.code === 404) return null; throw e; });
   if(!PROJD_HANDLE) return Promise.resolve(null);
   /* Seul un fichier absent vaut « rien » : un fichier tronque ou plein de
@@ -527,7 +544,7 @@ function projdDocEcrire(outil, obj){
   if(PROJD.mode === "serveur"){
     const ecrire = function(vu){
       return projdApi("PUT","/api/projet/doc",{chemin:PROJD.chemin, doc:outil, modifie:vu}, obj)
-        .then(function(r){ PROJD_VU[outil] = r.modifie || 0; return note(r.fichier, r.modifie); });
+        .then(function(r){ PROJD_VU[outil] = r.modifie || 0; projdVuGarder(); return note(r.fichier, r.modifie); });
     };
     /* 409 : le fichier a change depuis que cette page l'a lu ou ecrit (autre
        onglet, tablette, export vers le PCB). On demande avant d'ecraser. */
