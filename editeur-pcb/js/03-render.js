@@ -554,8 +554,28 @@ function drawViaMarks(c){
   }
   c.globalAlpha=1;
 }
+/* Les ouvertures de masque rangées par case de 5 mm, une fois par image :
+   `silkContour` passait toute la liste pour chaque boîtier (78 % de l'image
+   à 800 boîtiers). Rend la fonction qui donne celles d'un cadre, dans l'ordre
+   de la liste ; une ouverture géante (plus de 400 cases) est toujours rendue. */
+function ouvParCase(ouv,w){
+  const G=new Map(), gros=[], k=v=>Math.floor(v/5);
+  ouv.forEach((o,i)=>{
+    const R=Math.hypot(o.q.w,o.q.h)/2+(o.grow||0)+w;
+    const ax=k(o.q.x-R), bx=k(o.q.x+R), ay=k(o.q.y-R), by=k(o.q.y+R);
+    if(!((bx-ax+1)*(by-ay+1)<=400)){gros.push(i);return;}
+    for(let x=ax;x<=bx;x++)for(let y=ay;y<=by;y++){
+      const c=x+"|"+y;let a=G.get(c);if(!a)G.set(c,a=[]);a.push(i);}
+  });
+  return (x1,y1,x2,y2)=>{
+    if(!((k(x2)-k(x1)+1)*(k(y2)-k(y1)+1)<=1e4))return ouv;   // boîtier démesuré : la liste entière
+    const s=new Set(gros);
+    for(let x=k(x1);x<=k(x2);x++)for(let y=k(y1);y<=k(y2);y++)for(const i of G.get(x+"|"+y)||[])s.add(i);
+    return [...s].sort((a,b)=>a-b).map(i=>ouv[i]);
+  };
+}
 function drawSilk(c){
-  const OUV=[null,null], ouvDe=f=>OUV[f]||(OUV[f]=maskOpenings(f));
+  const OUV=[null,null], ouvDe=f=>OUV[f]||(OUV[f]=ouvParCase(maskOpenings(f),0.15));
   for(const fp of S.fps){
     const top=!fp.side;
     const sel=S.sel.fps.has(fp.id);
@@ -581,7 +601,8 @@ function drawSilk(c){
     // le contour imprimé, rogné autour des pastilles comme dans le Gerber (silkContour)
     if(auto){
       c.beginPath();
-      for(const s of silkContour(fp,ouvDe(fp.side?1:0),0.15)){c.moveTo(s[0],s[1]);c.lineTo(s[2],s[3]);}
+      const xs=pts.map(p=>p.x), ys=pts.map(p=>p.y);
+      for(const s of silkContour(fp,ouvDe(fp.side?1:0)(Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)),0.15)){c.moveTo(s[0],s[1]);c.lineTo(s[2],s[3]);}
       c.stroke();
     }
     c.beginPath();

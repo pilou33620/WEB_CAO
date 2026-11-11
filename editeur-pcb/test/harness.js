@@ -467,7 +467,7 @@ const EXPOSE=[
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
      +fs.readFileSync(path.join(__dirname,"..","..","commun","test","essai-lots-ztrace.js"),"utf8")+"\n"
-     +EXPOSE.concat(["essaiLotsZTrace"]).map(n=>"globalThis."+n+"="+n+";").join("\n")+"\n"
+     +EXPOSE.concat(["essaiLotsZTrace","ouvParCase"]).map(n=>"globalThis."+n+"="+n+";").join("\n")+"\n"
      +'Object.defineProperty(globalThis,"WS",'
      +'{get:()=>WS,set:v=>{WS=v;},configurable:true});'
      /* SESS_QUITTE bascule à la sortie vers un autre outil : le banc
@@ -12639,7 +12639,9 @@ T("document : l'angle fait l'aller-retour, et lui seul",()=>{
                                "un document sans arc doit ressortir inchangé");
   /* Un fichier écrit à la main peut dire n'importe quoi : le tour complet n'a
      pas de corde, et un angle absurde ne doit pas faire de NaN. */
-  const fou=normDoc({cu:2,tracks:[{l:0,net:"",w:0.3,x1:0,y1:0,x2:5,y2:0,ca:99},
+  /* corde de 0,5 mm : l'angle borné fait un cercle de 0,5 m. Sur 5 mm de
+     corde le rayon passait 2 m, et normTrack écarte désormais une telle piste. */
+  const fou=normDoc({cu:2,tracks:[{l:0,net:"",w:0.3,x1:0,y1:0,x2:0.5,y2:0,ca:99},
                                   {l:0,net:"",w:0.3,x1:0,y1:1,x2:5,y2:1,ca:"oui"}]});
   if(Math.abs(fou.tracks[0].ca)>ARC_MAX)throw new Error("l'angle n'est pas borné");
   if("ca" in fou.tracks[1])throw new Error("un angle illisible doit disparaître");
@@ -30533,6 +30535,148 @@ T("via : refusé dans la marge du bord de carte (touche V, paire différentielle
     dpUpdate(30,0.4);
     if(!S.dp.bad)throw new Error("la paire dans la marge du bord devait être refusée");
   });
+});
+
+/* ---------- restes de l'audit : fabrication, « Nouveau », saisie, lecture, profil, sérigraphie ---------- */
+T("bom.csv et positions.csv : ni mire ni point de test, comme le dossier JLCPCB",()=>{
+  const g=serialize();
+  try{
+    loadDoc({cu:2,fps:[{id:1,ref:"R1",value:"10k",pkg:"0603",style:"chip",pins:2,x:30,y:30},
+      {id:2,ref:"FID1",pkg:"Fiducial",libre:true,pins:1,x:10,y:10,pads:[{n:1,x:0,y:0,w:1,h:1,shape:"circ"}]},
+      {id:3,ref:"TP1",pkg:"TestPoint",libre:true,pins:1,x:20,y:10,pads:[{n:1,x:0,y:0,w:1,h:1,shape:"circ"}]}]});
+    const t=bomPcbCsvText()+positionsCsvText();
+    if(/FID1|TP1/.test(t))throw new Error("mire ou point de test à poser :\n"+t);
+    if((t.match(/R1/g)||[]).length<3)throw new Error("R1 doit rester dans les deux fichiers :\n"+t);
+  }finally{loadDoc(JSON.parse(g),true);}
+});
+T("« Nouveau » ne garde ni découpe de zone, ni keep-out, ni port RF de la carte d'avant",()=>{
+  const g=serialize(), conf=global.confirm;let demandes=0;
+  global.confirm=()=>{demandes++;return true;};
+  try{
+    loadDoc({cu:2,fps:[{id:1,ref:"R1",style:"chip",pins:2,x:30,y:30}],
+      cuts:[{id:5,l:0,pts:[{x:1,y:1},{x:5,y:1},{x:5,y:5}]}],
+      interdits:[{id:7,nom:"KO",pts:[{x:25,y:5},{x:45,y:5},{x:45,y:25},{x:25,y:25}],ko:{l:-1,pistes:true,vias:true,zones:true}}],
+      rf:{ports:[{ref:"R1",pin:"1"},null]}});
+    if(!S.cuts.length||!S.interdits.length||!S.rf.ports[0])throw new Error("décor : "+JSON.stringify([S.cuts,S.interdits,S.rf]));
+    newDoc();
+    if(S.cuts.length||S.interdits.length||S.rf.ports[0])
+      throw new Error("restes : cuts "+S.cuts.length+", keep-out "+S.interdits.length+", RF "+JSON.stringify(S.rf.ports[0]));
+    // une carte faite de pistes seulement se vidait sans question
+    loadDoc({cu:2,tracks:[{l:0,net:"A",w:0.3,x1:1,y1:1,x2:9,y2:1}]});
+    demandes=0;newDoc();
+    if(demandes!==1)throw new Error("carte sans boîtier vidée sans confirmation");
+  }finally{global.confirm=conf;loadDoc(JSON.parse(g),true);}
+});
+T("export de fabrication : une carte de vias, zone et trous n'est pas « vide »",()=>{
+  const g=serialize(), al=global.alert;let dit="";
+  global.alert=m=>{dit=m;};
+  try{
+    loadDoc({cu:2,vias:[{x:10,y:10,d:0.8,drill:0.4,a:0,b:1,net:"GND"}],holes:[{id:3,x:5,y:5,d:3.2}],
+      zones:[{id:1,l:0,net:"GND",pts:[{x:0,y:0},{x:50,y:0},{x:50,y:40},{x:0,y:40}]}]});
+    if(!exportFab()||dit)throw new Error("exportFab refusé : "+dit);
+    if(!exportJlcpcb()||dit)throw new Error("exportJlcpcb refusé : "+dit);
+    loadDoc({cu:2});
+    if(exportFab()||!/vide/.test(dit))throw new Error("une carte vraiment vide reste refusée");
+  }finally{global.alert=al;loadDoc(JSON.parse(g),true);}
+});
+T("Propriétés : le champ Texte d'un dessin ne pousse qu'un instantané par saisie",()=>{
+  const g=serialize();
+  try{
+    loadDoc({cu:2,drawings:[{id:1,shape:"text",layer:"silkT",text:"A",x1:10,y1:10,size:1.5}]});
+    clearSel();S.sel.drawings.add(S.drawings[0].id);buildProps();
+    const el=document.getElementById("pDrwTxt"), n0=S.undo.length;
+    for(const v of ["AB","ABC","ABCD"])el.oninput({type:"input",target:{value:v}});
+    el.onchange({type:"change",target:{value:"ABCD"}});
+    if(S.drawings[0].text!=="ABCD")throw new Error("texte : "+S.drawings[0].text);
+    if(S.undo.length-n0!==1)throw new Error((S.undo.length-n0)+" instantanés pour une saisie");
+    undo();
+    if(S.drawings[0].text!=="A")throw new Error("un Ctrl+Z doit rendre « A » : "+S.drawings[0].text);
+    // la saisie suivante est un autre pas
+    S.sel.drawings.add(S.drawings[0].id);buildProps();
+    const e2=document.getElementById("pDrwTxt"), n1=S.undo.length;
+    e2.oninput({type:"input",target:{value:"B"}});e2.onchange({type:"change",target:{value:"B"}});
+    e2.oninput({type:"input",target:{value:"C"}});
+    if(S.undo.length-n1!==2)throw new Error("deux saisies : "+(S.undo.length-n1)+" instantané(s)");
+  }finally{loadDoc(JSON.parse(g),true);}
+});
+T("lecture : une piste de plus de 2 m ou un arc presque fermé est écarté",()=>{
+  const d=(x2,y2,ca)=>normTrack(Object.assign({l:0,net:"A",w:0.3,x1:0,y1:0,x2,y2},ca?{ca}:{}),2);
+  if(d(30000,30000))throw new Error("diagonale de 30 m gardée");
+  if(d(10,0,6.2822))throw new Error("arc de 10 mm de corde et de plusieurs mètres de rayon gardé");
+  if(!d(1500,1500)||!d(10,0,3)||!d(10,0,-1))throw new Error("une piste ordinaire doit rester");
+  const g=serialize();
+  try{
+    loadDoc({cu:2,tracks:[{l:0,net:"A",w:0.3,x1:0,y1:0,x2:30000,y2:30000},{l:0,net:"A",w:0.3,x1:0,y1:0,x2:5,y2:0}]});
+    if(S.tracks.length!==1)throw new Error(S.tracks.length+" piste(s) lue(s)");
+  }finally{loadDoc(JSON.parse(g),true);}
+});
+T("profil fabricant inconnu de ce navigateur : le repli sur JLCPCB est dit",()=>{
+  const garde=S.rule.mfgProfile, h=document.getElementById("fHint"), set=localStorage.setItem;
+  try{
+    h.textContent="";S.rule.mfgProfile="custom_ailleurs";
+    if(pcbGetMfgProfile().id!=="jlcpcb")throw new Error("repli attendu sur jlcpcb");
+    if(!/custom_ailleurs.*JLCPCB/.test(h.textContent))throw new Error("repli muet : « "+h.textContent+" »");
+    h.textContent="";pcbGetMfgProfile();
+    if(h.textContent)throw new Error("le repli ne se redit pas à chaque appel");
+    S.rule.mfgProfile="jlcpcb";pcbGetMfgProfile();
+    if(h.textContent)throw new Error("un profil connu ne dit rien");
+    // l'enregistrement refusé par le navigateur se dit aussi
+    localStorage.setItem=()=>{throw new Error("QuotaExceededError");};
+    pcbSaveMfgProfiles();
+    if(!/non enregistré/.test(h.textContent))throw new Error("écriture refusée muette : « "+h.textContent+" »");
+  }finally{localStorage.setItem=set;S.rule.mfgProfile=garde;h.textContent="";}
+});
+T("sérigraphie à l'écran : les ouvertures rangées par case donnent le même contour que la liste entière",()=>{
+  const g=serialize();
+  try{
+    const fps=[];let s=7;const rnd=()=>(s=(s*16807)%2147483647)/2147483647;
+    for(let i=0;i<60;i++)fps.push({id:i+1,ref:"R"+(i+1),style:i%3?"chip":"sop",pins:i%3?2:8,
+      x:5+rnd()*60,y:5+rnd()*60,rot:[0,90,45,30][i%4],side:i%5?0:1});
+    loadDoc({cu:2,board:{x:0,y:0,w:70,h:70},fps,vias:[{x:20,y:20,d:0.8,drill:0.4,a:0,b:1,net:""}]});
+    for(const f of [0,1]){
+      const ouv=maskOpenings(f), de=ouvParCase(ouv,0.15);
+      for(const fp of S.fps){
+        if(!!fp.side!==!!f)continue;
+        const b=fpBBox(fp), m=10;   // cadre large : seul compte que rien d'utile ne manque
+        const a=JSON.stringify(silkContour(fp,ouv,0.15)), z=JSON.stringify(silkContour(fp,de(b.x1-m,b.y1-m,b.x2+m,b.y2+m),0.15));
+        if(a!==z)throw new Error(fp.ref+" : contour différent");
+      }
+    }
+    // et au cadre exact du corps, celui que prend drawSilk
+    const fp=S.fps[0], ouv=maskOpenings(0), T2=fpXform(fp), bb=bodyOf(fp);
+    const c=[T2(bb.x1,bb.y1),T2(bb.x2,bb.y1),T2(bb.x2,bb.y2),T2(bb.x1,bb.y2)], xs=c.map(p=>p.x), ys=c.map(p=>p.y);
+    const z=silkContour(fp,ouvParCase(ouv,0.15)(Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)),0.15);
+    if(JSON.stringify(z)!==JSON.stringify(silkContour(fp,ouv,0.15)))throw new Error("cadre exact : contour différent");
+    draw();
+  }finally{loadDoc(JSON.parse(g),true);}
+});
+T("variantes PCB : un boîtier à plusieurs parties est non monté dès qu'une partie le dit, dans les deux ordres",()=>{
+  const g=serialize(), sch=carteVariantes();
+  try{
+    const nm=()=>JSON.stringify(S.fps.find(f=>f.ref==="U1").nonMonte||null);
+    sch.pages[0].comps=[{ref:"U1",type:"ic",nonMonte:["v1"]},{ref:"U1",type:"ic"}];
+    pcbVarDepuisSchema(sch);
+    if(nm()!=='["v1"]')throw new Error("U1A non monté, U1B lu après : "+nm());
+    sch.pages[0].comps.reverse();
+    pcbVarDepuisSchema(sch);
+    if(nm()!=='["v1"]')throw new Error("ordre inverse : "+nm());
+  }finally{loadDoc(JSON.parse(g),true);}
+});
+T("dessin : texte, cadre et arc sortent les mêmes traits au Gerber de sérigraphie et à celui d'une couche de dessin",()=>{
+  const g=serialize();
+  try{
+    const D=l=>[{id:1,shape:"text",layer:l,text:"Ab1",x1:10,y1:10,size:1.5,rot:90},
+      {id:2,shape:"rect",layer:l,x1:20,y1:20,x2:30,y2:25,width:0.2},
+      {id:3,shape:"line",layer:l,x1:5,y1:30,x2:15,y2:30,ca:1.2,width:0.2}];
+    const corps=t=>t.split("\n").filter(x=>/D0[123]\*$/.test(x)).join("\n");
+    for(const face of ["T","B"]){
+      loadDoc({cu:2,board:{x:0,y:0,w:50,h:40},drawings:D("silk"+face)});
+      const a=corps(gerberSilk(face==="B"?1:0));
+      loadDoc({cu:2,board:{x:0,y:0,w:50,h:40},drawings:D("fab"+face)});
+      const b=corps(gerberDessin("fab"+face,"Fab"));
+      if(!a||a!==b)throw new Error("face "+face+" : tracés différents ("+a.split("\n").length+" / "+b.split("\n").length+" lignes)");
+    }
+  }finally{loadDoc(JSON.parse(g),true);}
 });
 
 (async()=>{

@@ -462,14 +462,25 @@ function pcbSaveMfgProfiles(){
     const str = JSON.stringify(PCB_MFG_PROFILES);
     if(typeof localStorage !== "undefined") localStorage.setItem("web_cao_mfg_profiles", str);
     if(typeof sessionStorage !== "undefined") sessionStorage.setItem("web_cao_mfg_profiles", str);
-  } catch(e){}
+  } catch(e){
+    // quota plein, navigation privée : le profil vit jusqu'à la fermeture de l'onglet, autant le dire
+    if(typeof hint === "function") hint("Profil fabricant non enregistré : le stockage du navigateur a refusé ("+(e&&e.message||e)+").");
+  }
 }
 
 function pcbGetMfgProfile(id){
   pcbLoadMfgProfiles();
   const k = id || (typeof S !== "undefined" && S.rule && S.rule.mfgProfile) || "jlcpcb";
+  /* shortcut: le profil personnalisé n'est gardé que dans le navigateur, le projet
+     n'en porte que l'identifiant ; à reprendre le jour où il doit suivre le fichier.
+     En attendant le repli se dit, une fois par identifiant. */
+  if(!PCB_MFG_PROFILES[k] && pcbMfgInconnu !== k){
+    pcbMfgInconnu = k;
+    if(typeof hint === "function") hint("Profil fabricant « "+k+" » inconnu de ce navigateur : la carte est jugée sur les capacités JLCPCB.");
+  }
   return PCB_MFG_PROFILES[k] || PCB_MFG_PROFILES["jlcpcb"] || PCB_DEFAULT_MFG_PROFILES["jlcpcb"];
 }
+let pcbMfgInconnu = "";
 
 function pcbGetActiveMfgProfileId(){
   return (typeof S !== "undefined" && S.rule && S.rule.mfgProfile) || "jlcpcb";

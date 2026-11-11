@@ -2405,6 +2405,14 @@ function dessinsMonde(){
   return out;
 }
 const drwMiroir=d=>!!d.mir||drwFace(d.layer)===1;
+/* Les traits d'un dessin (texte, cadre, trait ou arc) en polylignes : la même
+   géométrie pour le Gerber, le DRC de sérigraphie et les couches de dessin.
+   Un aplat n'en a pas, chacun le traite à part. */
+function drwTraits(d){
+  return d.shape==="text"?textStrokes(d.text!=null?d.text:"TEXT",d.x1,d.y1,d.size||d.height||1.5,drwMiroir(d),d.rot||0)
+    :d.shape==="rect"?[[{x:d.x1,y:d.y1},{x:d.x2,y:d.y1},{x:d.x2,y:d.y2},{x:d.x1,y:d.y2},{x:d.x1,y:d.y1}]]
+    :[drwPoints(d)];           // un arc en cordes fines
+}
 /* Pastilles en coordonnées monde. `rot` y est en RADIANS : c'est l'angle du
    dessin, empreinte et pastille cumulées, tel que l'attendent padPath(),
    padDist() et les ouvertures Gerber. Sur une empreinte retournée, la
