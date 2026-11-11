@@ -478,14 +478,14 @@ function gerberCopper(i){
         if(same&&padLiaison(q,i)==="directe")continue;       // la zone la recouvre, sans bras
         const qc=padSurCouche(q,i);
         if(!qc){                       // pas de cuivre ici : le trou seul se dégage
-          if(q.drill>0)gPercage(body,A,q,clrZone(zoneAt(i,q.x,q.y)||z,q.net,"cu","th"));
+          if(q.drill>0)gPercage(body,A,q,clrZone(zoneAt(i,q.x,q.y)||z,q.net,"cu","th",q));
           continue;
         }
         gPad(body,A,qc,same?ecartThermique(q,i):
-          clrZone(zoneAt(i,q.x,q.y)||z,q.net,"cu",q.drill>0?"th":"smd"));
+          clrZone(zoneAt(i,q.x,q.y)||z,q.net,"cu",q.drill>0?"th":"smd",q));
         if(same)thermals.push(q);
         else if(q.drill>0)
-          gPercage(body,A,q,clrZone(zoneAt(i,q.x,q.y)||z,q.net,"cu","th"));
+          gPercage(body,A,q,clrZone(zoneAt(i,q.x,q.y)||z,q.net,"cu","th",q));
       }
     body.push("%LPD*%");
     /* région pleine : son cuivre exact, par-dessus les dégagements (47-zones.js).

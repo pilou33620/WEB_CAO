@@ -21,8 +21,8 @@ Décisions du 11/11 : toutes appliquées (boutons pour les fonctions sans appela
 | F | Un connecteur importé nommé `H1` sort de la nomenclature | `04-fabrication.js` (`jlcNonPose`) | |
 | F | Exemption des pastilles de bord (castellations) dans la règle de bord | `axeDansCarte` | |
 | F | Marque UTF-8 (« BOM » au sens octets, pas nomenclature) absente de l'export CSV de la LIB : accents illisibles dans Excel | `gestion-lib/js/01-donnees.js` |
-| C | Dessiner un arc (`ca`) dans une empreinte | `01-core.js` (`fpDessinsMonde`) | bloque l'import des `fp_arc` KiCad en arcs |
-| C | Champ `clearance` propre à une pastille | modèle + `padClone` | bloque l'aller-retour KiCad de ce réglage |
+| F | Dessiner un arc (`ca`) dans une empreinte | `01-core.js` (`fpDessinsMonde`) | bloque l'import des `fp_arc` KiCad en arcs |
+| F | Champ `clearance` propre à une pastille | modèle + `padClone` | bloque l'aller-retour KiCad de ce réglage |
 
 ## 2. Schématique
 
@@ -93,11 +93,11 @@ Décisions du 11/11 : toutes appliquées (boutons pour les fonctions sans appela
 | F | Pastilles sans numéro (nom « ∅ » dans l'éditeur) |
 | F | Arcs de la carte et des empreintes (`gr_arc`, `fp_arc` à l'export) |
 | F | « aucune connexion » exportée en thermique |
-| C | Marqueur « ∅ » des pastilles sans numéro : garder ou changer |
-| C | `fp_arc` importé reste en cordes | dépend de l'éditeur PCB (voir 1) |
-| C | `clearance` de pastille perdu | dépend de l'éditeur PCB (voir 1) |
+| F | Pastilles sans numéro : plus de marqueur « ∅ », numéro vide gardé, chacune son propre net |
+| F | `fp_arc` importé reste en cordes | dépend de l'éditeur PCB (voir 1) |
+| F | `clearance` de pastille perdu | dépend de l'éditeur PCB (voir 1) |
 | R | `roundrect_rratio` intermédiaire, `thermal_bridge_angle`, verrou d'une découpe | modèle sans champ |
-| C | Via dont `layers` ne nomme qu'une couche lu jusqu'à B.Cu | vu, non corrigé |
+| F | Via dont `layers` ne nomme qu'une couche lu jusqu'à B.Cu | vu, non corrigé |
 | R | Relecture par KiCad lui-même | `kicad-cli` absent ici |
 
 ## 6. Analyseurs Python
@@ -146,4 +146,6 @@ Décisions du 11/11 : toutes appliquées (boutons pour les fonctions sans appela
 |---|---|---|
 | R | Paire de pistes routée jusqu'à un demi-trou : encore refusée (exception absente des paires et des détours) | `09-diffpair.js`, `pnsSurCarte` |
 | R | Niveau établi d'une paire dissymétrique (brin par brin) : encore lu dans Re(B[0]) | `oeil._continu_brins` |
+| R | Isolement propre d'une pastille : pas encore pris par le contrôle des bras thermiques ni l'écart entre pastilles d'une même empreinte | `02-connectivity.js` (`clrK`) |
+| R | Messages du contrôle : une pastille sans numéro est désignée par son numéro interne (« J1.5 ») | |
 | L | Onglet Général du symbole : préfixe « U » si vidé | `editeurCollecterGeneralSch` |
