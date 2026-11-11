@@ -4,11 +4,19 @@ on:
   push:
   pull_request:
 
+# le flux ne fait que lire le dépôt : le jeton n'a pas d'autre droit
+permissions:
+  contents: read
+
 jobs:
   essais:
     runs-on: ubuntu-latest
+    # « bash » nommé : -o pipefail, sans quoi « banc | tee » cacherait l'échec du banc
+    defaults:
+      run:
+        shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0, épinglée : une étiquette se déplace
 
       # La LIB ne vit plus dans ce depot : c'est celle de WEB_SUITE, dans le
       # depot WEB_SUITE_PROJETS. Clonee a cote, la ou WEB_SUITE la range
@@ -37,11 +45,11 @@ jobs:
           git -C ../PROJETS remote set-url origin https://github.com/pilou33620/WEB_SUITE_PROJETS.git
           echo "LIB_REELLE=1" >> "$GITHUB_ENV"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020   # v4.4.0
         with:
           node-version: '22'
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065   # v5.6.0
         with:
           python-version: '3.12'
 
@@ -156,7 +164,9 @@ jobs:
           npm install --no-save --silent canvas
           python editeur-pcb/outils/build-monofichier.py
           node --check editeur-pcb/dist/pcb.js
-          node editeur-pcb/test/harness.js
+          # un essai « ignoré » (canvas absent) sortait compté réussi : ici c'est un échec
+          node editeur-pcb/test/harness.js | tee /tmp/banc-pcb.log
+          if grep -n "essai ignoré" /tmp/banc-pcb.log; then exit 1; fi
           # hors CI jusqu'ici, il s'etait casse sans que rien ne le signale
           node editeur-pcb/test/banc-trois-ponts.js
           # la carte d'essai du crosstalk se regenere, toute routee et sans
@@ -171,8 +181,9 @@ jobs:
           # n'est pas dans le dépôt ; on prend la copie que KiCad garde pour ses
           # propres essais. Injoignable, la validation XSD est sautée et le
           # banc le dit -- le reste de l'aller-retour tourne quand même.
-          pip install --quiet lxml || true
-          if curl -fsSL -o /tmp/IPC-2581C.xsd https://gitlab.com/kicad/code/kicad/-/raw/master/qa/data/pcbnew/ipc2581/IPC-2581C.xsd; then
+          # révision figée (KiCad 10.0.0), comme les démos plus bas
+          pip install --quiet lxml || echo "::warning title=lxml non installé::validation XSD sautée"
+          if curl -fsSL -o /tmp/IPC-2581C.xsd https://gitlab.com/kicad/code/kicad/-/raw/b0e9d3b0656e3770d11324b15e09b097f7fc33da/qa/data/pcbnew/ipc2581/IPC-2581C.xsd; then
             export IPC2581_XSD=/tmp/IPC-2581C.xsd
           else
             echo "::warning title=XSD IPC-2581 injoignable::validation XSD sautée"
@@ -188,7 +199,9 @@ jobs:
           # modèle -- où est le cuivre de masse, de quel côté, sur quelle
           # longueur --, là où banc-essai.py juste au-dessus éprouve le
           # parseur. Rien ne l'empêchait de tourner ici ; il n'y était pas.
-          node visionneuse-ipc2581/test/harness-sim.js
+          # même règle : un essai « sauté » faute d'export à relire est un échec ici
+          node visionneuse-ipc2581/test/harness-sim.js | tee /tmp/banc-visionneuse.log
+          if grep -n "(sauté" /tmp/banc-visionneuse.log; then exit 1; fi
 
       - name: Éditeur schématique — assemblage puis banc d'essai
         run: |
@@ -213,6 +226,14 @@ jobs:
           node commun/test/banc-kicad.js "$D"
           node commun/test/banc-kicad-pcb.js "$D"
           node commun/test/banc-kicad-sch.js "$D"
+
+      - name: Le manuel servi (docs/manuel/manuel.html) est à jour
+        run: |
+          # la page du bouton « Manuel » est générée puis versionnée : un chapitre .md
+          # modifié sans relancer le script laissait l'ancienne page (le script sort
+          # aussi en erreur sur un lien cassé)
+          python commun/outils/build-manuel.py
+          git diff --exit-code --stat -- docs/manuel/manuel.html
 
       - name: Le monofichier doit être reproductible
         run: |

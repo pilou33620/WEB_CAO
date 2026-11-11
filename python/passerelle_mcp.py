@@ -212,7 +212,7 @@ class ClientMCP:
 
     def appeler(self, nom, arguments):
         """Appel d'un outil de la liste blanche."""
-        if nom not in ALLOWED_TOOLS:
+        if not isinstance(nom, str) or nom not in ALLOWED_TOOLS:
             raise ErreurPasserelle(400, "Outil inconnu : %s" % nom)
         if arguments is not None and not isinstance(arguments, dict):
             raise ErreurPasserelle(400, "Arguments d'outil : objet JSON attendu")

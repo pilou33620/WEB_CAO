@@ -738,6 +738,13 @@ def dossier_lib():
 VERROU_CATALOGUE = threading.Lock()
 
 
+def _sur_disque(f):
+    """Les donnees sur le disque AVANT le renommage : sinon une coupure de courant
+    juste apres « Enregistrer » peut laisser le bon nom sur un fichier vide."""
+    f.flush()
+    os.fsync(f.fileno())
+
+
 def ecrire_texte_atomique(chemin, texte, encodage="utf-8"):
     """Ecrit `texte` (en UTF-8 par defaut) via un fichier temporaire puis os.replace.
 
@@ -752,6 +759,7 @@ def ecrire_texte_atomique(chemin, texte, encodage="utf-8"):
     try:
         with open(temp, "w", encoding=encodage, newline="") as f:
             f.write(texte)
+            _sur_disque(f)
         os.replace(temp, chemin)
     except BaseException:           # UnicodeEncodeError, KeyboardInterrupt... : pas de .tmp laisse
         try:
@@ -785,6 +793,7 @@ def ecrire_exclusif(chemin, contenu):
     try:
         with open(temp, **mode) as f:
             f.write(contenu)
+            _sur_disque(f)
         try:
             os.link(temp, chemin)
         except FileExistsError:
@@ -796,6 +805,7 @@ def ecrire_exclusif(chemin, contenu):
             try:
                 with os.fdopen(fd, **mode) as f:
                     f.write(contenu)
+                    _sur_disque(f)
             except BaseException:
                 os.remove(chemin)
                 raise
@@ -1857,7 +1867,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             # NaN/Infinity : Python les accepte, mais un fichier qui en contient
             # n'est plus du JSON et la page ne le rouvrirait pas
             return json.loads(self.rfile.read(taille) or b"{}", parse_constant=refuser)
-        except (ValueError, UnicodeDecodeError):
+        except (ValueError, RecursionError):      # RecursionError : [[[[… tres imbrique
             raise erreur(400, "Corps JSON illisible")
 
     def _api(self, action):
@@ -1951,6 +1961,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         # laisse l'ancien profil entier plutot qu'un fichier a moitie ecrit
         try:
             ecrire_texte_atomique(chemin, json.dumps(charge, ensure_ascii=False, indent=1))
+        except ValueError:      # UnicodeEncodeError (« \ud800 » seul)
+            raise ErreurProfil(400, "Profil : contenu impossible a ecrire en JSON UTF-8")
         except OSError as exc:
             raise ErreurProfil(500, "Profil non enregistre : %s" % exc)
         return {"ok": True, "nom": nom, "t": charge.get("t", 0)}
@@ -2191,7 +2203,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         except http.cookies.CookieError:
             biscuit = {}
         recu = biscuit[BISCUIT_LANCEUR].value if BISCUIT_LANCEUR in biscuit else ""
-        if not (JETON_LANCEUR and recu and hmac.compare_digest(recu, JETON_LANCEUR)):
+        if not (JETON_LANCEUR and recu and hmac.compare_digest(recu.encode(), JETON_LANCEUR.encode())):
             raise ErreurProjet(403, "Envoi sur GitHub refuse : ouvrez d'abord, sur cet"
                                     " appareil, l'adresse Reseau du lanceur WEB_SUITE"
                                     " (elle se termine par ?jeton=...).")
@@ -2939,7 +2951,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             corps = brut
         try:
             doc = _deplier_grilles(json.loads(corps.decode("utf-8")))
-        except (ValueError, UnicodeDecodeError) as exc:
+        except (ValueError, RecursionError) as exc:       # RecursionError : [[[[… tres imbrique
             raise ErreurIPC(400, "Document JSON illisible : %s" % exc)
         _borner_empilage(doc)
         return doc
@@ -3472,6 +3484,38 @@ class ThreadedServer(socketserver.ThreadingTCPServer):
     # changer de port (voir ports_voisins).
     allow_reuse_address = os.name != "nt"
     daemon_threads = True
+
+    # Un appareil du reseau, appaire ou non, ouvrait autant de connexions muettes
+    # qu'il voulait : un fil et un descripteur chacune pendant 120 s (timeout du
+    # CustomHandler), jusqu'a ce que le serveur ne puisse plus ouvrir un fichier.
+    # Au-dela du plafond la connexion est fermee d'emblee. Ce poste (et le relais,
+    # qui arrive par la boucle locale) n'est pas compte : il reste toujours servi.
+    # shortcut: plafond global, un seul appareil peut le remplir et en priver les
+    # autres 120 s ; compter par adresse si cela arrive sur un reseau partage.
+    MAX_CONNEXIONS = 256
+    connexions = threading.BoundedSemaphore(MAX_CONNEXIONS)
+
+    @staticmethod
+    def _hors_plafond(adresse):
+        return adresse[0].startswith(("127.", "::ffff:127.")) or adresse[0] == "::1"
+
+    def process_request(self, request, client_address):
+        if self._hors_plafond(client_address):
+            return super().process_request(request, client_address)
+        if not self.connexions.acquire(blocking=False):
+            return self.shutdown_request(request)
+        try:
+            super().process_request(request, client_address)
+        except BaseException:               # fil impossible a creer : la place est rendue
+            self.connexions.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            if not self._hors_plafond(client_address):
+                self.connexions.release()
 
 
 class DualStackServer(ThreadedServer):

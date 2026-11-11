@@ -285,6 +285,7 @@ L'accueil (`index.html`) s'ouvre en double-clic, sans serveur ; le serveur ajout
 | Jeton partagé | `~/.web_tools/jeton-reseau.txt`, commun aux web tools du poste ; supprimer le fichier en crée un neuf | Dossier personnel en lecture seule : jeton valable pour la session seulement |
 | HTTPS | Autorité propre au poste créée une fois dans `~/.web_tools/tls/` par la commande `openssl`, qui signe le certificat du serveur ; même port pour HTTP et HTTPS | Sans `openssl` (Windows sans Git) ou avec `WEB_TOOLS_HTTP=1` : tout reste en HTTP et le terminal le dit |
 | `/appairage/ca.pem` | Certificat de l'autorité, à installer une fois par appareil | Comparer l'empreinte SHA-256 avec celle du terminal |
+| Derrière un relais (Web Launcher de WEB·SUITE, Caddy, Tailscale Funnel) | Le relais se connecte par la boucle locale : chacun de ses visiteurs est « ce poste », sans code d'appairage et avec les droits du poste | C'est au relais d'authentifier chaque visiteur avant de transmettre : WEB_CAO ne lit pas `X-Forwarded-For`. Jamais derrière un relais ouvert sans connexion ; avec `--local`, le serveur n'est joignable que par le relais |
 
 ### Fichiers sur disque
 
