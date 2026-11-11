@@ -12819,6 +12819,36 @@ function simCorpsBus(){
   return h;
 }
 
+function simBusClassifierNets(nets, proto){
+  const clocks=[], datas=[];
+  const p=proto||"spi";
+
+  for(const net of nets){
+    const u=net.toUpperCase();
+    if(p==="i2c"){
+      if(u.includes("SCL")||u.includes("CLK")||u.includes("CK")){
+        clocks.push(net);
+      }else{
+        datas.push(net);
+      }
+    }else if(p==="uart"){
+      datas.push(net);
+    }else{
+      if(u.includes("CLK")||u.includes("SCK")||u.includes("CK")){
+        clocks.push(net);
+      }else{
+        datas.push(net);
+      }
+    }
+  }
+
+  if(p!=="uart"&&clocks.length===0&&datas.length>0){
+    clocks.push(datas.shift());
+  }
+
+  return {clocks, datas};
+}
+
 function simBusRendreNetsBar(){
   const bar=simEl("simBusNetsBar");
   if(!bar)return;
@@ -13610,7 +13640,8 @@ function simBusCalculer(){
     return;
   }
 
-  const freq=Math.max(1, SIM_BUS.freqMhz||100);
+  /* Plancher à 1 kHz : un SPI à 100 kHz se calcule à 100 kHz, pas à 1 MHz. */
+  const freq=Math.max(0.001, SIM_BUS.freqMhz||100);
   const Tcyc=1000/freq;
   const TcycPs=Tcyc*1000;
   const tsuPs=SIM_BUS.tsu*1000;
@@ -13649,7 +13680,9 @@ function simBusCalculer(){
       // Ligne retour MISO (aller horloge + temps interne esclave + retour donnée)
       const totalArrivalPs=clkDelay + tcoMaxPs + sDelay;
       slackSuPs=_simR1(TcycPs - totalArrivalPs - tsuPs);
-      slackHPs=_simR1((sDelay - clkDelay) + tcoMinPs - thPs);
+      /* Au retour la donnée ne quitte l'esclave qu'APRÈS l'aller de l'horloge :
+         le retard d'horloge s'AJOUTE à l'arrivée, il ne se retranche pas. */
+      slackHPs=_simR1(clkDelay + sDelay + tcoMinPs - thPs);
     }else{
       // Ligne aller classique MOSI
       slackSuPs=_simR1((TcycPs + clkDelay - sDelay) - (tcoMaxPs + tsuPs));
@@ -13664,7 +13697,9 @@ function simBusCalculer(){
     let meanderNeededMm=0;
     let meanderOptMm=0;
 
-    const tdataOptPs=(TcycPs + 2*clkDelay + thPs - tsuPs - tcoMinPs - tcoMaxPs)/2;
+    /* Le retard de donnée qui égalise setup et hold ; au retour l'horloge
+       compte en moins (elle retarde déjà la donnée). */
+    const tdataOptPs=(TcycPs + (isSpiReturn?-2:2)*clkDelay + thPs - tsuPs - tcoMinPs - tcoMaxPs)/2;
     if(tdataOptPs>sDelay){
       meanderOptMm=_simR2((tdataOptPs - sDelay)/psmm);
     }
@@ -13683,9 +13718,9 @@ function simBusCalculer(){
     let actionHtml="—";
     if(status==="hold_violation"){
       if(SIM_ED&&typeof SIM_ED.armerSerpentin==="function"){
-        actionHtml='<button class="tb mini on simBtnMeander" data-net="'+esc(dataNet)+'" data-add="'+meanderOptMm+'" title="Armer l\'outil serpentin pour ce net">Régler serpentin (+'+meanderOptMm+' mm)</button>';
+        actionHtml='<button class="tb mini on simBtnMeander" data-net="'+esc(dataNet)+'" data-add="'+meanderNeededMm+'" title="Armer l\'outil serpentin pour ce net">Régler serpentin (+'+meanderNeededMm+' mm)</button>';
       }else{
-        actionHtml='<span style="color:var(--txt-danger,#ef4444);font-weight:600">Serpentin requis (+'+meanderOptMm+' mm)</span>';
+        actionHtml='<span style="color:var(--txt-danger,#ef4444);font-weight:600">Serpentin requis (+'+meanderNeededMm+' mm)</span>';
       }
     }else if(meanderOptMm>0.3){
       if(SIM_ED&&typeof SIM_ED.armerSerpentin==="function"){

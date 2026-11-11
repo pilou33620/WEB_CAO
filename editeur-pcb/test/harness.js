@@ -256,7 +256,7 @@ const EXPOSE=[
   /* Ce que les deux adaptateurs partagent : filtre, parasites, montage, cavite. */
   "simPDNEstMasse","simPDNEstCondensateur","simPDNParasitesCapa","simPDNParasitesDefaut","simPDNInductanceMontage","simPDNChoisirCavite","simPDNAppliquerCavite","simPDNChoisirCharge","SIM_PARASITES_MURATA_DEFAUT","simPDNLireChamps","simPDNCheminsPiste","simPDNInductanceLineique","simPDNHauteursRetour","simPDNEvaluerEvenement","simPDNZa","simPDNBilanEvenements","simPDNRendreEvenements","simPDNPreparerEvenements","simPDNEvLireChamp","simPDNFicheDefaut","simPDNFicheCharger","simPDNFicheSauver","simPDNFicheModifier","simPDNEvenementsDepuisFiche","SIM_PDN_FICHE","simPDNSynchroDeltaI","simPDNAssistantActif","simPDNBasculerAssistant",
   "simInit","simRafraichir","simAllerAnalyse","simBusRendreNetsBar",
-  "simBusBasculerRole","simBusChangerNet","simBusActiverRSerie","simBusDesactiverRSerie","simBusChangerNetAval","simBusChangerRSerieVal","simBusResoudreNetAvecPont","simBusSupprimerSignal",
+  "simBusBasculerRole","simBusChangerNet","simBusActiverRSerie","simBusDesactiverRSerie","simBusChangerNetAval","simBusChangerRSerieVal","simBusResoudreNetAvecPont","simBusClassifierNets","simBusSupprimerSignal",
   "simThermiqueDC","simDCThermique","simDCThermiquePcb",
   /* Le choix de la couche peinte, et l'oubli qui va avec. */
   "simDCOublier","simDCCouchePeinte","simDCCouchesPeintes",
@@ -10115,6 +10115,13 @@ T("SIM_BUS : liaison composants, protocoles (SPI/I2C/UART) et gestion directe de
     throw new Error("netsEntreComposants doit trouver CLK_SPI, MISO, MOSI");
   if(netsPartages.includes("VCC") || netsPartages.includes("GND"))
     throw new Error("netsEntreComposants ne doit pas inclure les nets non partagés");
+
+  // 2. Classification automatique des signaux SPI
+  const classed = simBusClassifierNets(netsPartages, "spi");
+  if(!classed.clocks.includes("CLK_SPI"))
+    throw new Error("CLK_SPI aurait dû être classé en horloge");
+  if(!classed.datas.includes("MOSI") || !classed.datas.includes("MISO"))
+    throw new Error("MOSI et MISO auraient dû être classés en données");
 
 
   // 3. Configuration directe du protocole et des signaux (choix utilisateur)
