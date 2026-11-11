@@ -1183,6 +1183,94 @@ def test_routes():
         assert not [n for n in os.listdir(racine) if n.endswith(".tmp")]
         print("[PASS] Ecriture exclusive : nom pris -> FileExistsError, aucun .tmp")
 
+        # 50. Les deux ecritures passent par fsync avant de poser le nom : sans lui, une
+        # coupure de courant peut laisser le bon nom sur un fichier vide.
+        vrai_fsync, vus = os.fsync, []
+        os.fsync = lambda fd: (vus.append(fd), vrai_fsync(fd))[1]
+        try:
+            web_CAO.ecrire_texte_atomique(os.path.join(racine, "a.json"), "{}")
+            web_CAO.ecrire_exclusif(os.path.join(racine, "b.json"), "{}")
+        finally:
+            os.fsync = vrai_fsync
+        assert len(vus) == 2, vus
+        print("[PASS] Ecritures atomiques : fsync avant le renommage")
+
+        # 51. Corps que le serveur ne sait pas lire ou ecrire : 400, pas 500.
+        st, rep = req("PUT", "/api/profil?nom=zz-banc", b'{"format":"cao-profil-1","x":"\\ud800"}')
+        assert st == 400, (st, rep)
+        assert not os.path.exists(os.path.join(web_CAO.dossier_profils(), "zz-banc.json"))
+        for methode, route in (("PUT", "/api/profil?nom=zz-banc"), ("POST", "/api/analyse-carte")):
+            st, rep = req(methode, route, b"[" * 100000)
+            assert st == 400, (route, st, rep)
+        st, rep = req("POST", "/api/tool", b'{"name": ["a"]}')
+        assert st == 400 and "inconnu" in rep["detail"], (st, rep)
+        print("[PASS] 400 et non 500 : profil non encodable, JSON tres imbrique, nom d'outil non texte")
+
+        # 52. Appareil non appaire : un jeton, un code ou un cookie non ASCII recoit une
+        # reponse (hmac.compare_digest levait TypeError : connexion coupee sans reponse).
+        def brut(methode, route, corps=None, entetes=None):
+            c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            try:
+                c.request(methode, route, body=corps, headers=entetes or {})
+                r = c.getresponse()
+                r.read()
+                return r.status
+            finally:
+                c.close()
+        garde, poste = web_CAO.GARDE, web_CAO.appairage.Garde.ce_poste
+        web_CAO.GARDE = web_CAO.appairage.Garde("WEB_CAO", actif=True)
+        web_CAO.appairage.Garde.ce_poste = staticmethod(lambda h: False)
+        vrai_err, sys.stderr = sys.stderr, io.StringIO()
+        try:
+            web_CAO.GARDE.code.preparer()
+            assert brut("GET", "/?jeton=%C3%A9") in (303, 403)
+            assert brut("GET", "/", entetes={"Cookie": web_CAO.appairage.BISCUIT + "=\xe9"}) in (303, 403)
+            assert brut("POST", "/api/appairer", json.dumps({"code": "٣٣٣٣٣٣"}).encode("utf-8"),
+                        {"X-Appairage": "1", "Content-Type": "application/json"}) == 403
+        finally:
+            sys.stderr = vrai_err
+            web_CAO.GARDE, web_CAO.appairage.Garde.ce_poste = garde, poste
+        lanceur, jeton_l = web_CAO.LANCEUR, web_CAO.JETON_LANCEUR
+        web_CAO.LANCEUR, web_CAO.JETON_LANCEUR = "http://127.0.0.1:1", "abc"
+        web_CAO.CustomHandler._client_local = lambda self: False
+        ouvert, web_CAO.PROJETS_OUVERT = web_CAO.PROJETS_OUVERT, True
+        try:
+            st, rep = req("POST", "/api/github/identite", b"{}",
+                          {"Cookie": web_CAO.BISCUIT_LANCEUR + "=\xe9"})
+            assert st == 403, (st, rep)
+        finally:
+            web_CAO.CustomHandler._client_local = local
+            web_CAO.LANCEUR, web_CAO.JETON_LANCEUR, web_CAO.PROJETS_OUVERT = lanceur, jeton_l, ouvert
+        print("[PASS] Jeton, code et cookie non ASCII : une reponse, pas une connexion coupee")
+
+        # 53. Connexions muettes d'un autre appareil : au-dela du plafond, la suivante est
+        # fermee d'emblee ; les places se liberent ; ce poste n'est jamais compte.
+        httpd.connexions = threading.BoundedSemaphore(2)
+        muettes = []
+        hors = web_CAO.ThreadedServer._hors_plafond
+        assert hors(("127.0.0.1", 1)) and hors(("::1", 1)) and hors(("::ffff:127.0.0.1", 1))
+        assert not hors(("192.168.1.20", 1)) and not hors(("fd7a:115c:a1e0::1", 1))
+        httpd._hors_plafond = lambda adresse: False
+        try:
+            for _ in range(2):
+                muettes.append(socket.create_connection(("127.0.0.1", port)))
+                muettes[-1].sendall(b"G")
+            time.sleep(0.3)
+            try:
+                brut("GET", "/api/pcb/score-placement")
+                raise AssertionError("connexion servie au-dela du plafond")
+            except (http.client.RemoteDisconnected, ConnectionError):
+                pass
+            for s in muettes:
+                s.close()
+            time.sleep(0.5)
+            assert brut("GET", "/api/pcb/score-placement") == 200
+            time.sleep(0.3)                         # le fil de cette derniere rend sa place
+        finally:
+            del httpd._hors_plafond
+            del httpd.connexions
+        print("[PASS] Connexions simultanees plafonnees hors de ce poste")
+
     finally:
         conn.close()
         httpd.shutdown()
