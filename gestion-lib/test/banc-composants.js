@@ -613,8 +613,30 @@ const banc = (async () => {
   edit.type = "pcb";
   edit.data = { format: "pcbfp-1", name: "J", pins: 1, style: "chip", pads: [{ n: 1, x: 1, y: 0, w: 1, h: 1, shape: "rect" }] };
   for (const [id, v] of [["edBodyX1", "0"], ["edBodyY1", "-1.5"], ["edBodyX2", "4"], ["edBodyY2", ""]]) noeud(id).value = v;
-  ici("editeurCollecterGeneralPcb()");
+  ici("editeurCollecterGeneralPcb('edBodyX1')");
   verifier(JSON.stringify(edit.data.body) === JSON.stringify({ x1: 0, y1: -1.5, x2: 4, y2: 1 }), "corps : bord à 0 gardé, champ vide au défaut (" + JSON.stringify(edit.data.body) + ")");
+
+  /* 8b. renommer une empreinte sans corps ni pas : ni corps ni pas inventés, seul le nom change */
+  edit.data = { format: "pcbfp-1", name: "J", pins: 1, pads: [{ n: 1, x: 1, y: 0, w: 1, h: 1, shape: "rect" }] };
+  noeud("edFpNom").value = "J2"; noeud("edFpPitch").value = "0"; noeud("edFpStyle").value = "";
+  ici("editeurCollecterGeneralPcb('edFpNom')");
+  verifier(edit.data.name === "J2" && !("body" in edit.data) && !("pitch" in edit.data) && !("style" in edit.data),
+           "renommer : le nom change, pas de corps, de pas ni de style inventés (" + JSON.stringify(Object.keys(edit.data)) + ")");
+
+  /* 8c. vue JSON : seul un objet est un document */
+  for (const t of ["null", "5", "[]", '"x"'])
+    verifier((() => { try { ici("editeurLireJson")(t); return false; } catch (e) { return /objet/.test(e.message); } })(), "vue JSON : « " + t + " » refusé avec un message");
+  verifier(ici("editeurLireJson")('{"name":"A"}').name === "A", "vue JSON : un objet est accepté");
+  {
+    const avant = edit.data, alertesJ = [];
+    const vue0 = edit.vue, alerte0 = page.alert;
+    edit.vue = "json"; noeud("editeurCodeJson").value = "null"; noeud("editeurNomFichier").value = "J2.json";
+    page.alert = m => alertesJ.push(m);
+    const aJ = appels.length;
+    await ici("editeurEnregistrer()");
+    verifier(edit.data === avant && appels.length === aJ && /objet/.test(alertesJ[0] || ""), "vue JSON : « null » à l'enregistrement, refusé, rien n'est écrit");
+    edit.vue = vue0; page.alert = alerte0;
+  }
 
   /* 9. éditeur de symbole : ce qu'il enregistre, le schéma l'accepte ; sinon il le dit */
   edit.type = "schematique"; edit.historique = []; edit.pileRedo = [];

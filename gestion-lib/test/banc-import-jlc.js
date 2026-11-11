@@ -109,6 +109,21 @@ assert(compAMS["Package type"] === "SOT-223", "Package type conforme");
 assert(compAMS["Empreinte PCB"] === "SOT-223.json", "Empreinte PCB conforme");
 assert(compAMS["Empreinte Schématique"] === "regulator.json", "Empreinte Schématique conforme");
 
+// 4b. Import prudent : température en °C seulement, valeur tirée de la référence pour les passifs seulement
+{
+  const lm = jlcVers39({ model: "LM358P", category: "Amplifiers", subcategory: "Operational Amplifier", description: "Dual op amp 4~20mA loop" }, null);
+  assert(lm["Value"] === "LM358P", "LM358P : la valeur reste la référence (obtenu: " + lm["Value"] + ")");
+  assert(lm["Maximum operating temperature"] === "" && lm["Minimum operating temperature"] === "", "« 4~20mA » n'est pas une température");
+  const r = jlcVers39({ model: "RC0805-10k", category: "Chip Resistor", description: "10k -55℃~+155℃" }, null);
+  assert(r["Value"] === "10k" && r["Minimum operating temperature"] === "-55" && r["Maximum operating temperature"] === "155",
+    "Résistance : valeur tirée de la référence, température en ℃ lue");
+  assert(jlcVers39({ model: "X", specs: { "Operating Temperature": "-40°C ~ +85°C" } }, null)["Maximum operating temperature"] === "85", "« -40°C ~ +85°C » lu");
+  assert(infererClasse("Analog Switches / Multiplexers", "", "CD4066BM", "Quad bilateral switch").classe === "Integrated Circuit",
+    "« Analog Switches » : un CI, pas un interrupteur");
+  assert(infererClasse("Digital Transistors", "", "DTC114EKA", "NPN digital transistor with built-in resistor").classe === "Transistor",
+    "« digital transistor … resistor » : un transistor");
+}
+
 // 5. Génération de symbole schématique custom (STM32F103 avec pinout)
 const jlcGenererSym = vm.runInContext("jlcGenererSymbole", sandbox);
 const pinsMcu = [];

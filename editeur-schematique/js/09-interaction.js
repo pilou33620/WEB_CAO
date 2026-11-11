@@ -642,6 +642,24 @@ cv.addEventListener("pointerdown",e=>{
       }
     }
   }
+  /* broche d'un CI en disposition « Libre », seul sélectionné : la glisser la
+     déplace (icMovePin), le câblage suit ; une étape Ctrl+Z au relâchement */
+  if(!addSel&&!several&&S.sel.size===1){
+    const ci=S.comps.find(c=>S.sel.has(c.id));
+    if(ci&&typeof defOf(ci.type).pins==="function"&&icShapeOf(ci)==="libre"){
+      const tol=(e.pointerType==="mouse"?6:14)/S.scale;
+      const i=allPins(ci).findIndex(q=>Math.hypot(p.x-q.x,p.y-q.y)<=tol);
+      if(i>=0){
+        const q=pinPos(ci,i);
+        S.drag={sx:p.x,sy:p.y,moved:false,before:null,handle:false,items:[],
+                probes:[],probe:null,ends:[],contacts:[],
+                pinMove:{el:ci,i,x0:q.x,y0:q.y,fait:false}};
+        document.getElementById("fHint").textContent=
+          "Broche "+(i+1)+" : glisser pour la déplacer · une case déjà prise est refusée.";
+        draw();return;
+      }
+    }
+  }
   // libellé de composant : il se saisit avant le symbole
   const ht=hitText(p.x,p.y);
   // Ctrl/Maj, ou composant pris dans un groupe : le libellé vaut son composant
@@ -778,6 +796,16 @@ cv.addEventListener("pointermove",e=>{
         if(!(n.x0+dx)&&!(n.y0+dy))delete w.lblOff;
         else w.lblOff=[n.x0+dx,n.y0+dy];
       }
+      draw();return;
+    }
+    if(S.drag.pinMove){
+      const pm=S.drag.pinMove, el=pm.el, o=orient(el), s=CS[o.rot];
+      // monde → repère du symbole (inverse de pinPos)
+      const wx=pm.x0+dx-el.x, wy=pm.y0+dy-el.y;
+      let lx=wx*s[0]+wy*s[1]; const ly=-wx*s[1]+wy*s[0];
+      if(o.mir)lx=-lx;
+      if(icMovePin(el,pm.i,lx,ly)===1)pm.fait=true;
+      else if(!pm.fait)S.drag.moved=false;     // rien n'a bougé : pas d'étape vide
       draw();return;
     }
     if(S.drag.probe){probeDragMove(p);draw();return;}

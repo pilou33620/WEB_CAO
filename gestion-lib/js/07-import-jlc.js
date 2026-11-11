@@ -51,7 +51,8 @@ const COLONNES_CATALOGUE_39 = [
 function infererClasseEtPrefixe(cat, subcat, model, desc) {
   const texte = `${cat || ""} ${subcat || ""} ${model || ""} ${desc || ""}`.toLowerCase();
 
-  if (/resistor|résistance|chip resistor/i.test(texte)) {
+  // « digital transistor » (résistances de polarisation intégrées) reste un transistor
+  if (/resistor|résistance|chip resistor/i.test(texte) && !/transistor/i.test(texte)) {
     return { classe: "Resistor", prefix: "R", deviceType: "Passive", sym: "resistor.json" };
   }
   if (/capacitor|condensateur|mlcc/i.test(texte)) {
@@ -92,7 +93,7 @@ function infererClasseEtPrefixe(cat, subcat, model, desc) {
   if (/mcu|microcontroller|microprocesseur|dsp|fpga/i.test(texte)) {
     return { classe: "Integrated Circuit", prefix: "U", deviceType: "Active", sym: "ic.json" };
   }
-  if (/switch|bouton|pushbutton/i.test(texte)) {
+  if (/switch|bouton|pushbutton/i.test(texte) && !/analog/i.test(texte)) {   // « Analog Switches » : un CI
     return { classe: "Switch", prefix: "SW", deviceType: "Passive", sym: "switch.json" };
   }
   if (/connector|connecteur|header|usb|terminal block/i.test(texte)) {
@@ -198,8 +199,9 @@ function jlcVers39Colonnes(part, pinout) {
   else if (specs["Capacitance"]) valeur = specs["Capacitance"];
   else if (specs["Frequency"]) valeur = specs["Frequency"];
   else if (specs["Inductance"]) valeur = specs["Inductance"];
+  else if (classification.deviceType !== "Passive") valeur = model;   // « LM358P » ne vaut pas « 358P »
   else {
-    // Essayer d'extraire la valeur du modèle ou de la description
+    // Passif : essayer d'extraire la valeur de la référence fabricant
     const mVal = model.match(/(\d+(\.\d+)?(k|M|u|n|p|R|V|mH|uH|µF|nF|pF|Ω|ohm))/i);
     if (mVal) valeur = mVal[0];
     else valeur = model;
@@ -208,10 +210,11 @@ function jlcVers39Colonnes(part, pinout) {
   // Températures d'utilisation
   let tMin = "", tMax = "";
   const tStr = specs["Operating Temperature"] || desc;
-  const mTemp = tStr.match(/(-?\d+)\s*[°℃C]?\s*~\s*\+?(-?\d+)\s*[°℃C]?/);
-  if (mTemp) {
+  // unité °C/℃ exigée d'un côté au moins : « 4~20mA » n'est pas une température
+  const mTemp = String(tStr).match(/(-?\d+)\s*(°\s*C|℃)?\s*~\s*\+?(-?\d+)\s*(°\s*C|℃)?/);
+  if (mTemp && (mTemp[2] || mTemp[4])) {
     tMin = mTemp[1];
-    tMax = mTemp[2];
+    tMax = mTemp[3];
   }
 
   // Tension nominale

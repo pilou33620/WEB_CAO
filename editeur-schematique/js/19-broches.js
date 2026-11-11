@@ -166,7 +166,7 @@ function ceBuild(){
             '<select id="ceIcShape" title="Disposition des broches du circuit intégré">' +
               '<option value="dip">Deux rangées (DIP)</option>' +
               '<option value="quad">Quatre côtés (quad)</option>' +
-              '<option value="libre">Libre</option>' +
+              '<option value="libre" title="Sur la feuille, sélectionnez le composant seul puis glissez une broche">Libre (glisser les broches sur la feuille)</option>' +
             '</select>' +
             '<label style="margin-top:4px">Largeur du corps (cases)</label>' +
             '<input id="ceIcW" type="number" min="2" max="40" step="1">' +

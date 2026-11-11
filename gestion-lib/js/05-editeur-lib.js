@@ -1150,7 +1150,7 @@ function remplirFormulaireEditeur() {
           el.addEventListener("focus", () => { editeurInputSessionPushed = false; });
           el.addEventListener("input", () => {
             editeurInputBeforeChange();
-            editeurCollecterGeneralPcb();
+            editeurCollecterGeneralPcb(id);
           });
         }
       });
@@ -1210,26 +1210,30 @@ function remplirFormulaireEditeur() {
   remplirGenerateurEditeur();
 }
 
-function editeurCollecterGeneralPcb() {
+/* Ne réécrit que le champ saisi (id) : renommer une empreinte sans corps ni pas ne lui en invente pas. */
+function editeurCollecterGeneralPcb(id) {
   const d = EDITEUR_LIB.data;
   if (!d) return;
-  d.name = (document.getElementById("edFpNom")?.value || "").trim();
-  d.pkg = (document.getElementById("edFpPkg")?.value || "").trim();
-  d.style = (document.getElementById("edFpStyle")?.value || "sop").trim();
-  d.pitch = parseFloat(document.getElementById("edFpPitch")?.value) || 0;
-  d.pins = parseInt(document.getElementById("edFpPins")?.value, 10) || (d.pads ? d.pads.length : 0);
-  d.description = (document.getElementById("edFpDesc")?.value || "").trim();
-
-  // un bord à 0 est une cote comme une autre : seul un champ vide ou illisible prend la valeur par défaut
-  const bord = (id, defaut) => { const v = parseFloat(document.getElementById(id)?.value); return Number.isFinite(v) ? v : defaut; };
-  d.body = { x1: bord("edBodyX1", -1), y1: bord("edBodyY1", -1), x2: bord("edBodyX2", 1), y2: bord("edBodyY2", 1) };
-  /* zone d'encombrement : les quatre cotes, ou pas de zone */
-  const crt = ["edCrtX1", "edCrtY1", "edCrtX2", "edCrtY2"].map(id => document.getElementById(id)?.value ?? "");
-  if (crt.every(v => String(v).trim() !== "" && Number.isFinite(+v))) {
-    const [x1, y1, x2, y2] = crt.map(Number);
-    d.courtyard = { x1, y1, x2, y2 };
-  } else delete d.courtyard;
-  editeurCourtyardVerifier();
+  const val = i => document.getElementById(i)?.value;
+  if (id === "edFpNom") d.name = (val(id) || "").trim();
+  else if (id === "edFpPkg") d.pkg = (val(id) || "").trim();
+  else if (id === "edFpStyle") d.style = (val(id) || "sop").trim();
+  else if (id === "edFpPitch") d.pitch = parseFloat(val(id)) || 0;
+  else if (id === "edFpPins") d.pins = parseInt(val(id), 10) || (d.pads ? d.pads.length : 0);
+  else if (id === "edFpDesc") d.description = (val(id) || "").trim();
+  else if (/^edBody/.test(id)) {
+    // un bord à 0 est une cote comme une autre : seul un champ vide ou illisible prend la valeur affichée par défaut
+    const bord = (i, defaut) => { const v = parseFloat(val(i)); return Number.isFinite(v) ? v : defaut; };
+    d.body = { x1: bord("edBodyX1", -1), y1: bord("edBodyY1", -1), x2: bord("edBodyX2", 1), y2: bord("edBodyY2", 1) };
+  } else if (/^edCrt/.test(id)) {
+    /* zone d'encombrement : les quatre cotes, ou pas de zone */
+    const crt = ["edCrtX1", "edCrtY1", "edCrtX2", "edCrtY2"].map(i => val(i) ?? "");
+    if (crt.every(v => String(v).trim() !== "" && Number.isFinite(+v))) {
+      const [x1, y1, x2, y2] = crt.map(Number);
+      d.courtyard = { x1, y1, x2, y2 };
+    } else delete d.courtyard;
+    editeurCourtyardVerifier();
+  }
 
   if (EDITEUR_LIB.renderer) EDITEUR_LIB.renderer.render();
 }
@@ -2032,7 +2036,7 @@ async function editeurEnregistrer() {
     const txtArea = document.getElementById("editeurCodeJson");
     if (txtArea) {
       try {
-        EDITEUR_LIB.data = JSON.parse(txtArea.value);
+        EDITEUR_LIB.data = editeurLireJson(txtArea.value);
       } catch (err) {
         alert("Erreur dans le code JSON : " + err.message);
         return;
@@ -2085,6 +2089,13 @@ async function editeurEnregistrer() {
   }
 }
 
+/* Le texte de la vue JSON : un document est un objet ({…}) ; null, 5 ou [] sont refusés. */
+function editeurLireJson(texte) {
+  const v = JSON.parse(texte);
+  if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error("le document doit être un objet { … }");
+  return v;
+}
+
 // Initialisation des écouteurs de l'éditeur JSON
 document.addEventListener("DOMContentLoaded", () => {
   const txtJson = document.getElementById("editeurCodeJson");
@@ -2092,7 +2103,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (txtJson) {
     txtJson.addEventListener("input", () => {
       try {
-        const parsed = JSON.parse(txtJson.value);
+        const parsed = editeurLireJson(txtJson.value);
         EDITEUR_LIB.data = parsed;
         if (errDiv) errDiv.textContent = "";
         if (EDITEUR_LIB.renderer) {

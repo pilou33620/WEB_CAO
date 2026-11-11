@@ -1317,6 +1317,10 @@ T("import : conservation des métadonnées d'enrichissement (MPN, specs, datashe
   if(c.lcsc !== "C25804") throw new Error("lcsc perdu après import");
   if(c.mouser_part !== "603-0603WAF1002T5E") throw new Error("mouser_part perdu après import");
   if(c.digikey_part !== "DK-0603WAF1002T5E") throw new Error("digikey_part perdu après import");
+  // fichier hostile : specs en tableau, valeurs objet → seuls textes et nombres restent
+  const h = normComp({ id: 2, type: "resistor", x: 0, y: 0, ref: "R2", specs: { a: "1%", b: 5, c: { x: 1 }, d: [1], e: null } }, 1);
+  if(JSON.stringify(h.specs) !== '{"a":"1%","b":5}') throw new Error("specs hostiles mal normalisées : " + JSON.stringify(h.specs));
+  if("specs" in normComp({ id: 3, type: "resistor", x: 0, y: 0, ref: "R3", specs: ["x", { y: 1 }] }, 2)) throw new Error("specs en tableau gardées");
 });
 
 /* ==========================================================================
@@ -3822,6 +3826,31 @@ T("sélection multiple : saisir le libellé d'un composant emmène tout le group
     if(r.x!==(10+10*i+2)*G||r.y!==11*G)throw new Error(r.ref+" devait suivre le groupe : "+r.x+","+r.y);
   });
   if(textOff(rs[1],t.kind))throw new Error("le libellé ne devait pas se décaler de son symbole");
+});
+T("brochage libre : glisser une broche du CI seul sélectionné la déplace, une étape, le fil suit",()=>{
+  const u=C("ic",20,20,{ref:"U1",npins:8,rot:90,mir:true});
+  sheet([u],[]);
+  icSetShape(u,"libre");
+  const p=allPins(u)[0];
+  S.wires.push({x1:p.x,y1:p.y,x2:p.x-4*G,y2:p.y});touchWires();
+  S.scale=1;S.ox=0;S.oy=0;setMode("select");
+  clearSel();S.sel.add(u.id);
+  const n=S.hist.length, corps=[u.x,u.y].join();
+  const c=ptr(p.x,p.y);dom.fire("pointerdown",c);dom.fireWin("pointerup",c);
+  if(S.hist.length!==n)throw new Error("un clic sans glisser ne pose pas d'étape");
+  glisseSch(ptr(p.x,p.y),ptr(p.x+2*IC_STEP,p.y+IC_STEP));
+  const q=allPins(u)[0];
+  if(q.x!==p.x+2*IC_STEP||q.y!==p.y+IC_STEP)throw new Error("broche en "+q.x+","+q.y+", attendue "+(p.x+2*IC_STEP)+","+(p.y+IC_STEP));
+  if([u.x,u.y].join()!==corps)throw new Error("le composant ne devait pas bouger");
+  if(S.wires[0].x1!==q.x||S.wires[0].y1!==q.y)throw new Error("le fil est resté en arrière");
+  if(S.hist.length!==n+1)throw new Error((S.hist.length-n)+" étape(s) au lieu d'une");
+  // glisser sur une case occupée : rien ne bouge, pas d'étape
+  const r=allPins(u)[1];
+  dom.fire("pointerdown",ptr(q.x,q.y));dom.fire("pointermove",ptr(r.x,r.y));dom.fireWin("pointerup",ptr(r.x,r.y));
+  if(allPins(u)[0].x!==q.x||S.hist.length!==n+1)throw new Error("case occupée : refus attendu, sans étape");
+  undo();
+  const u2=S.comps.find(c=>c.ref==="U1");
+  if(allPins(u2)[0].x!==p.x||allPins(u2)[0].y!==p.y)throw new Error("Ctrl+Z devait remettre la broche");
 });
 T("composant seul sélectionné : son libellé se déplace toujours à part",()=>{
   const {rs}=groupeTroisR();
