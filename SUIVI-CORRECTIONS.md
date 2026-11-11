@@ -145,7 +145,8 @@ Décisions du 11/11 : toutes appliquées (boutons pour les fonctions sans appela
 | État | Point | Où |
 |---|---|---|
 | C | Paire de pistes routée jusqu'à un demi-trou : encore refusée (exception absente des paires et des détours) | `09-diffpair.js`, `pnsSurCarte` |
-| C | Niveau établi d'une paire dissymétrique (brin par brin) : encore lu dans Re(B[0]) | `oeil._continu_brins` |
+| F | Niveau établi d'une paire dissymétrique (brin par brin) : encore lu dans Re(B[0]) | `oeil._continu_brins` |
+| R | Cascade d'une paire dont le brin P est le plus long : les deux brins sont comptés trop longs de la surlongueur (segments de P + surlongueur ajoutée à P ; N reçoit la longueur de P). Écart de longueur juste, pertes surestimées de ΔL/L | `simulation_em.py` (~l.7404, 7598) |
 | C | Isolement propre d'une pastille : pas encore pris par le contrôle des bras thermiques ni l'écart entre pastilles d'une même empreinte | `02-connectivity.js` (`clrK`) |
 | C | Messages du contrôle : une pastille sans numéro est désignée par son numéro interne (« J1.5 ») | |
 | L | Onglet Général du symbole : préfixe « U » si vidé | `editeurCollecterGeneralSch` |
