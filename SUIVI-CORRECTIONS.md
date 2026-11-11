@@ -18,9 +18,9 @@ Décisions du 11/11 : toutes appliquées (boutons pour les fonctions sans appela
 | F | Sérigraphie plus rapide à l'écran | `03-render.js` | |
 | F | Empreinte LIB posée au panneau | `01-core.js`, `08-empreinte.js` | |
 | F | Fenêtre « bus synchrone » : mêmes marges que l'onglet Bus, retour SPI, plancher 1 kHz | `09-diffpair.js`, `06-panels.js` | calcul commun `simBusMarges` |
-| C | Un connecteur importé nommé `H1` sort de la nomenclature | `04-fabrication.js` (`jlcNonPose`) | |
-| C | Exemption des pastilles de bord (castellations) dans la règle de bord | `axeDansCarte` | |
-| C | BOM absent de `telechargerCsv` | | recommandé : l'ajouter |
+| F | Un connecteur importé nommé `H1` sort de la nomenclature | `04-fabrication.js` (`jlcNonPose`) | |
+| F | Exemption des pastilles de bord (castellations) dans la règle de bord | `axeDansCarte` | |
+| F | Marque UTF-8 (« BOM » au sens octets, pas nomenclature) absente de l'export CSV de la LIB : accents illisibles dans Excel | `gestion-lib/js/01-donnees.js` |
 | C | Dessiner un arc (`ca`) dans une empreinte | `01-core.js` (`fpDessinsMonde`) | bloque l'import des `fp_arc` KiCad en arcs |
 | C | Champ `clearance` propre à une pastille | modèle + `padClone` | bloque l'aller-retour KiCad de ce réglage |
 
@@ -36,7 +36,8 @@ Décisions du 11/11 : toutes appliquées (boutons pour les fonctions sans appela
 | F | Libellé d'un cadre annulable ; nom de broche : une étape par saisie | `12-panneaux.js` |
 | F | Synoptique : places et titres gardés à la renumérotation | `05-feuilles.js` |
 | F | Recherche de composants : une recherche lente n'écrase plus la suivante | `22-recherche-composants.js` |
-| C | Fonctions sans appelant (`fpMovePad`, `fpMoveMark`, `fpSetMarkD`, `fpSetBody`, `dfPlacerVue`, `stackSym`, `N.replace`, `N.commit`, `schCartoucheBasculer`, `icMovePin`, `fpSetMark`, `fpGeneric`) | divers | supprimer ou leur donner un bouton |
+| F | PCB : boutons du point de broche 1 (`fpSetMark`, `fpMoveMark`, `fpSetMarkD`), du contour imprimé (`fpSetBody`), « Revenir à l'empreinte calculée » (`fpGeneric`) | `06-panels.js` |
+| D | Sans bouton car doublons : `fpMovePad` (champs X/Y de la pastille), `stackSym` (déjà dans le panneau d'empilage), `dfPlacerVue` (glisser d'une vue) ; recommandé : garder pour les essais ou supprimer | `01-core.js`, `34-draftsman-vues.js` |
 | F | Schématique : `icMovePin` a son geste (glisser une broche d'un CI « Libre ») | `09-interaction.js` |
 | D | `schCartoucheBasculer` : doublon du bouton « Cartouche » (format aucun/A4/A3) ; recommandé : supprimer | `05-feuilles.js` |
 | D | `N.replace` (jamais appelé) et `N.commit` (essais seulement) : méthodes internes du routeur, pas d'action utilisateur ; recommandé : supprimer `N.replace` | `editeur-pcb/js/11-pns-node.js` |
@@ -115,7 +116,7 @@ Décisions du 11/11 : toutes appliquées (boutons pour les fonctions sans appela
 | F | Formule légère côté page : même défaut d'εeff en cuivre épais | `commun/simulation-em.js` (`ltWeff`, `ltEeff`) |
 | R | Essai « Scd21 miroir (N contre P) » recalé de 7 à 9 % : dissymétrie N/P de 7,8 % non expliquée | `banc-oeil.py`, modèle du via seul |
 | R | Cuivre épais sans référence : vernis autre que 25 µm, section sans plan, triplaque couplée, plus de trois conducteurs | |
-| C | Composante continue de la cascade (niveau établi −0,24 % à −0,78 %) | `oeil.transfert`, `simulation_em.simuler` |
+| F | Composante continue de la cascade (niveau établi −0,24 % à −0,78 %) | `oeil.transfert`, `simulation_em.simuler` |
 | R | Échauffement d'une piste oblique : +6 à +8 % (côté prudent) | `dc_solver.py` |
 | L | Plafond mémoire `MAX_IPC` (192 Mo) | décision : on se libère de la Pi plus tard |
 
@@ -128,7 +129,7 @@ Décisions du 11/11 : toutes appliquées (boutons pour les fonctions sans appela
 | F | CI : permissions, actions épinglées, essai sauté = échec | `ci.yml` |
 | L | 14 — « ce poste » derrière un relais : hypothèse écrite dans le README et le manuel | |
 | R | Reporter les deux lignes d'`appairage.py` dans web_suite | autre dépôt |
-| C | `banc-serveur-routes` : l'essai du plafond rend son compteur avant la fin de ses fils (« Semaphore released too many times », échec 1 fois sur 5 sous charge) | `python/test/banc-serveur-routes.py` |
+| F | `banc-serveur-routes` : l'essai du plafond rend son compteur avant la fin de ses fils (« Semaphore released too many times », échec 1 fois sur 5 sous charge) | `python/test/banc-serveur-routes.py` |
 | R | La CI durcie n'a pas encore tourné sur GitHub | |
 
 ## 8. Jamais vérifié
@@ -137,3 +138,12 @@ Décisions du 11/11 : toutes appliquées (boutons pour les fonctions sans appela
 - Relais réel.
 - LIB privée.
 - Raspberry Pi (temps, mémoire).
+
+
+## Restes nés de cette série
+
+| État | Point | Où |
+|---|---|---|
+| R | Paire de pistes routée jusqu'à un demi-trou : encore refusée (exception absente des paires et des détours) | `09-diffpair.js`, `pnsSurCarte` |
+| R | Niveau établi d'une paire dissymétrique (brin par brin) : encore lu dans Re(B[0]) | `oeil._continu_brins` |
+| L | Onglet Général du symbole : préfixe « U » si vidé | `editeurCollecterGeneralSch` |
