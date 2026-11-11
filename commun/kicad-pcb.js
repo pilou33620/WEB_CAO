@@ -72,6 +72,21 @@ const KICAD_PCB = (() => {
   const pt = (l, nom) => { const e = enfant(l, nom); return [co(e && e[1]), co(e && e[2])]; };
   const largeur = l => borne(val(enfant(l, "stroke"), "width", val(l, "width", 0.12)), 0, 10, 0.12);
   const plein = l => ["yes", "solid"].includes(val(l, "fill"));
+  /* verrou : « locked » nu (KiCad 7), (locked) ou (locked yes) ; d saute le nom ou le texte en tête */
+  const verrou = (l, d = 1) => { const e = enfant(l, "locked"); return l.slice(d).includes("locked") || (!!e && (e.length < 2 || e[1] === "yes" || e[1] === "true")); };
+  const VERROU = o => o && o.locked ? [["locked", "yes"]] : [];
+  /* point milieu d'un trait en arc, déduit de la corde et de l'angle balayé (arcOf, 01-core.js) */
+  function milieuArc(x1, y1, x2, y2, ca) {
+    const dx = x2 - x1, dy = y2 - y1, dl = Math.hypot(dx, dy), h = ca / 2, k = (dl / 2) / Math.tan(h);
+    const cx = (x1 + x2) / 2 - (dy / dl) * k, cy = (y1 + y2) / 2 + (dx / dl) * k;
+    const r = Math.abs(dl / (2 * Math.sin(h))), a = Math.atan2(y1 - cy, x1 - cx) + h;
+    return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+  }
+  const estArc = g => Math.abs(nb(g.ca)) > 1e-4 && Math.hypot(nb(g.x2) - nb(g.x1), nb(g.y2) - nb(g.y1)) > 1e-9;
+  const balayage = A => r4(Math.max(-(TOUR - 1e-3), Math.min(TOUR - 1e-3, A.sw)));
+  /* arrondi d'une pastille : l'éditeur n'en a qu'un (22 % du petit côté, padRadius) ; nul → angles droits, demi → oblong, exacts */
+  const arrondi = rr => rr < 0.05 ? "sharp" : rr >= 0.45 ? "oval" : "rect";
+  const SANS_NUM = "∅";       // pastille sans numéro : l'éditeur en veut un, le nom porte l'absence jusqu'au ré-export
   const cache = l => val(l, "hide") === "yes" || l.slice(3).includes("hide") ||
     val(enfant(l, "effects"), "hide") === "yes" || (enfant(l, "effects") || []).includes("hide");
 
@@ -188,9 +203,11 @@ const KICAD_PCB = (() => {
     return j === p.length;
   }
   const mini = a => a.reduce((m, v) => v < m ? v : m, Infinity), maxi = a => a.reduce((m, v) => v > m ? v : m, -Infinity);
-  /* couches de dessin de l'éditeur (DRW_COUCHES, 01-core.js) ⇄ KiCad ; Eco et User.N vont sur « user » */
+  /* couches de dessin de l'éditeur (DRW_COUCHES, 01-core.js) ⇄ KiCad : mec1…mec8 = User.2…User.9 ;
+     Eco et User.10 et suivantes vont sur « user » */
   const COUCHES_K = { silkT: "F.SilkS", silkB: "B.SilkS", fabT: "F.Fab", fabB: "B.Fab", crtT: "F.CrtYd", crtB: "B.CrtYd",
                       dwgs: "Dwgs.User", cmts: "Cmts.User", user: "User.1" };
+  for (let i = 1; i <= 8; i++) COUCHES_K["mec" + i] = "User." + (i + 1);
   const DE_K = new Map(Object.entries(COUCHES_K).map(([k, v]) => [v, k]));
   const coucheDe = n => DE_K.get(n) || (/^(Eco[12]\.User|User\.\d+)$/.test(n) ? "user" : null);
   const autreFace = l => /^(silk|fab|crt)[TB]$/.test(l) ? l.slice(0, -1) + (l.endsWith("B") ? "T" : "B") : l;
@@ -251,6 +268,15 @@ const KICAD_PCB = (() => {
           return;
         }
       }
+      /* shortcut: un arc d'empreinte reste en cordes, fpDessinsMonde (01-core.js) ne dessine pas `ca` ; à reprendre quand l'éditeur le fera */
+      if (/_arc$/.test(e[0]) && liste === drawings) {          // arc de carte : un trait en arc (drwArc, 01-core.js)
+        const s = T(...pt(e, "start")), f = T(...pt(e, "end")), A = arc3(s, T(...pt(e, "mid")), f);
+        if (A && Math.abs(A.sw) > 1e-4 && Math.hypot(f[0] - s[0], f[1] - s[1]) > 1e-4) {
+          poser(liste, { shape: "line", type: "line", layer, x1: r4(s[0]), y1: r4(s[1]), x2: r4(f[0]), y2: r4(f[1]),
+                         width: r4(Math.max(0.05, largeur(e))), ca: balayage(A) });
+          return;
+        }
+      }
       const t = trace(e, T);
       if (!t || t.pts.length < 2) return;
       if (t.ferme && t.plein && t.pts.length >= 3) {
@@ -274,7 +300,7 @@ const KICAD_PCB = (() => {
     const CARTE = { T: (x, y) => [x, y], monde: (x, y) => [x, y], liste: drawings, couche: c => c };
     const coucheL = n => {
       const c = coucheDe(n);
-      if (c === "user" && n !== "User.1") rap.ecart("couches Eco1, Eco2 et User.2 et suivantes : regroupées sur la couche utilisateur (User.1)");
+      if (c === "user" && n !== "User.1") rap.ecart("couches Eco1, Eco2 et User.10 et suivantes : regroupées sur la couche utilisateur (User.1)");
       return c;
     };
     /* un tracé selon sa couche : contour, dessin (carte ou empreinte F), ou écarté avec son motif */
@@ -311,17 +337,25 @@ const KICAD_PCB = (() => {
       }
       const net = enfant(z, "net_name") ? propre(val(z, "net_name", "")) : netDe(z);
       const cp = enfant(z, "connect_pads"), mode = cp && typeof cp[1] === "string" ? cp[1] : "";
-      const connexion = mode === "yes" ? "directe" : mode === "no" ? "aucune" : null;
-      if (mode === "thru_hole_only") rap.ecart("zone reliée aux seules pastilles traversantes : reprise avec bras thermiques partout");
+      const connexion = mode === "yes" ? "directe" : mode === "no" ? "aucune" : mode === "thru_hole_only" ? "cms-directe" : null;
       const priorite = Math.round(borne(val(z, "priority"), 0, 2147483647));
       const fill = enfant(z, "fill");
-      if (val(fill, "mode") === "hatch") rap.ecart("zone hachurée : reprise pleine");
+      /* réglages propres à la zone ; ceux qui ne disent rien de plus que la classe ou la règle sont retirés plus bas */
+      const propres = { isol: r4(borne(val(cp, "clearance"), 0, 50)), brasEcart: r4(borne(val(fill, "thermal_gap"), 0, 10)),
+                        brasLarg: r4(borne(val(fill, "thermal_bridge_width"), 0, 10)) };
+      if (val(fill, "mode") === "hatch") {                     // quadrillage : pas = trait + vide ; KiCad tourne dans l'autre sens
+        const ep = borne(val(fill, "hatch_thickness"), 0.05, 10, 0.25), pas = r4(borne(ep + borne(val(fill, "hatch_gap"), 0, 20, 0.75), 0.2, 20));
+        const an = ((Math.round(-nb(val(fill, "hatch_orientation"))) % 180) + 180) % 180;
+        propres.hachure = Object.assign({ pas, larg: r4(Math.max(0.05, Math.min(ep, pas - 0.05))) }, an ? { angle: an } : {});
+      }
       if (regle.thermal == null && enfant(fill, "thermal_bridge_width")) regle.thermal = borne(val(fill, "thermal_bridge_width"), 0, 100, 0.5);
       if (regle.cuMin == null && enfant(z, "min_thickness")) regle.cuMin = borne(val(z, "min_thickness"), 0, 5, 0.2);
       for (const l of ls) for (const p of polys) {
         const o = { id: id++, l, net, pts: pts(p) };
         if (connexion) o.connexion = connexion;
         if (priorite) o.priorite = priorite;
+        for (const k in propres) if (propres[k]) o[k] = propres[k];
+        if (verrou(z)) o.locked = true;
         zones.push(o);
       }
     };
@@ -370,10 +404,7 @@ const KICAD_PCB = (() => {
           if (genre === "connect") rap.ecart("pastille de contact (connect) : reprise comme CMS");
         }
         const o = { num, x: r4(x), y: r4(y), w: r4(Math.max(0.05, w)), h: r4(Math.max(0.05, h)), shape: "rect", drill: traversant ? r4(Math.min(dx, dy)) : 0, rot, net: netDe(p) };
-        if (traversant && Math.max(dx, dy) > Math.min(dx, dy) + 1e-6) {
-          o.slot = r4(Math.max(dx, dy));
-          if ((dx > dy) !== (w >= h)) rap.ecart("perçage oblong en travers de sa pastille : repris dans le sens de la pastille");
-        }
+        if (traversant && Math.max(dx, dy) > Math.min(dx, dy) + 1e-6) o.slot = r4(Math.max(dx, dy));
         if (forme === "rect") o.shape = "sharp";
         else if (forme === "circle") { o.shape = "circ"; o.h = o.w; }
         else if (forme === "oval") o.shape = "oval";
@@ -387,7 +418,12 @@ const KICAD_PCB = (() => {
             o.chamfer = r4(cr * Math.min(w, h));
             o.chamferCorners = hg && hd && bg && bd ? "all" : [hg, hd, bd, bg];
             if (nb(val(p, "roundrect_rratio"), 0) > 0.01) rap.ecart("pastille chanfreinée et arrondie : arrondi non repris");
-          } else if (nb(val(p, "roundrect_rratio"), 0.25) < 0.05) o.shape = "sharp";
+          } else {
+            /* shortcut: pas de rayon d'arrondi par pastille dans l'éditeur (padRadius, 01-core.js) ; à porter s'il en gagne un */
+            const rr = nb(val(p, "roundrect_rratio"), 0.25);
+            o.shape = arrondi(rr);
+            if (o.shape === "rect" && Math.abs(rr - 0.22) > 0.1) rap.ecart("pastille arrondie : rayon d'arrondi ramené à 22 % du petit côté");
+          }
         } else if (forme === "custom") {
           /* le plus grand polygone devient la pastille ; ses traits deviennent des pistes */
           const cand = [], [cx, cy] = monde(px, py);
@@ -419,8 +455,38 @@ const KICAD_PCB = (() => {
         if (enfant(p, "solder_paste_margin_ratio") || prF) rap.ecart("retrait de pâte en proportion : non repris");
         if (!ls.some(c => /Mask$/.test(c))) o.noMask = true;
         if (!traversant && !ls.some(c => /Paste$/.test(c))) o.noPaste = true;
-        const zc = val(p, "zone_connect");
-        if (zc === "0") o.connexion = "aucune"; else if (zc === "2") o.connexion = "directe";
+        /* liaison aux zones : 3 = bras pour les traversantes, plein pour les CMS ; celle de l'empreinte vaut pour ses pastilles */
+        const zc = val(p, "zone_connect", val(f, "zone_connect"));
+        if (zc === "0") o.connexion = "aucune"; else if (zc === "2" || (zc === "3" && !traversant)) o.connexion = "directe";
+        else if (zc === "1" || zc === "3") o.connexion = "thermique";
+        const tw = borne(val(p, "thermal_bridge_width", val(p, "thermal_width")), 0, 200), tg = borne(val(p, "thermal_gap"), 0, 200);
+        if (tw > 0) o.thermalWidth = r4(Math.max(0.05, tw));
+        if (tg > 0) o.thermalGap = r4(tg);
+        /* shortcut: pas d'isolement propre à une pastille dans l'éditeur ; à porter s'il en gagne un */
+        if (nb(val(p, "clearance", val(f, "clearance"))) > 0) rap.ecart("isolement propre à une pastille ou à une empreinte : non repris, celui de la classe s'applique");
+        /* fente : l'éditeur la couche le long du grand côté (axePercage, 01-core.js). Pastille aussi large que haute :
+           un quart de tour la remet dans l'axe sans rien changer au cuivre */
+        const travers = !!o.slot && (dx > dy) !== (w >= h);
+        const tourne = travers && Math.abs(w - h) < 1e-6 && ["circ", "sharp", "rect", "oval"].includes(o.shape);
+        if (tourne) o.rot = deg(o.rot + 90);
+        else if (travers) rap.ecart("perçage oblong en travers de sa pastille : repris dans le sens de la pastille");
+        /* géométrie par couche (padstack de KiCad 9) : « Inner » = couches internes, B.Cu = dessous, sinon la couche nommée */
+        const ps = traversant && enfant(p, "padstack");
+        if (ps) {
+          const pc = {};
+          for (const L of enfants(ps, "layer")) {
+            const nomL = String(L[1]), k = nomL === "Inner" ? "int" : nomL === "B.Cu" ? "bas" : couche(nomL);
+            if (k === 0 || k === -1) continue;
+            const fk = String(val(L, "shape", "")), sz = enfant(L, "size");
+            let lw = r4(borne(sz && sz[1], 0.05, 200, o.w)), lh = r4(borne(sz && sz[2], 0.05, 200, lw));
+            if (tourne) [lw, lh] = [lh, lw];
+            if (fk === "custom" || nb(val(L, "chamfer_ratio")) > 0) rap.ecart("pastille chanfreinée ou personnalisée sur une couche : reprise en rectangle sur cette couche");
+            const sh = fk === "circle" ? "circ" : fk === "oval" ? "oval" : fk === "roundrect" ? arrondi(nb(val(L, "roundrect_rratio"), 0.25)) : "sharp";
+            if (sh === "circ") lh = lw;
+            if (sh !== o.shape || lw !== o.w || lh !== o.h) pc[k] = { shape: sh, w: lw, h: lh };
+          }
+          if (Object.keys(pc).length) o.parCouche = pc;
+        }
         lus.push(o);
       }
       /* numéros : les entiers restent, les noms (« A1 », « EP », « ») suivent le plus grand */
@@ -434,7 +500,7 @@ const KICAD_PCB = (() => {
         if (n > 4096) { rap.ecart("empreinte de plus de 4096 pastilles : les dernières sont écartées"); continue; }
         const { num, net, ...pad } = o;
         pad.n = n;
-        if (!entier(num) && num) pad.nom = num.slice(0, 16);
+        if (!entier(num)) pad.nom = num ? num.slice(0, 16) : SANS_NUM;
         if (net) { if (nets[n] && nets[n] !== net) rap.ecart("pastilles de même numéro sur deux nets : le premier est gardé"); else nets[n] = net; }
         pads.push(pad);
       }
@@ -487,6 +553,7 @@ const KICAD_PCB = (() => {
                    rot: bas ? deg(180 - A) : deg(-A), side: bas ? 1 : 0, nets, pads, body, silk: false };
       if (trousL.length) fp.holes = trousL;
       if (des.length) fp.dessins = des;
+      if (verrou(f, 2)) fp.locked = true;
       fps.push(fp);
 
       /* empreinte de LIB : la première pose de chaque nom KiCad */
@@ -514,8 +581,9 @@ const KICAD_PCB = (() => {
         const t = { l, net: netDe(e), w: r4(borne(val(e, "width"), 0.01, 100, 0.25)), x1: s[0], y1: s[1], x2: f[0], y2: f[1] };
         if (k === "arc") {
           const A = arc3(s, pt(e, "mid"), f);
-          if (A && Math.abs(A.sw) > 1e-4) t.ca = r4(Math.max(-(TOUR - 1e-3), Math.min(TOUR - 1e-3, A.sw)));
+          if (A && Math.abs(A.sw) > 1e-4) t.ca = balayage(A);
         }
+        if (verrou(e)) t.locked = true;
         tracks.push(t);
       } else if (k === "via") {
         const ls = couches((enfant(e, "layers") || []).slice(1));
@@ -524,11 +592,19 @@ const KICAD_PCB = (() => {
         const [x, y] = pt(e, "at"), d = borne(val(e, "size"), 0.1, 20, 0.6);
         vias.push({ id: id++, x, y, d: r4(d), drill: r4(borne(val(e, "drill"), 0.05, Math.max(0.05, d - 0.05), 0.3)),
                     a: ls.length ? ls[0] : 0, b: ls.length > 1 ? ls[ls.length - 1] : cu - 1, net: netDe(e) });
+        if (verrou(e)) vias[vias.length - 1].locked = true;
       } else if (k === "zone") lireZone(e);
-      else if (/^gr_(line|arc|circle|rect|poly|curve|text_box)$/.test(k)) ranger(e, val(e, "layer", ""), CARTE);
-      else if (k === "gr_text") {
+      else if (/^gr_(line|arc|circle|rect|poly|curve|text_box)$/.test(k)) {
+        const n0 = drawings.length;
+        ranger(e, val(e, "layer", ""), CARTE);
+        if (verrou(e)) for (let i = n0; i < drawings.length; i++) drawings[i].locked = true;
+      } else if (k === "gr_text") {
         const L = String(val(e, "layer", "")), c = coucheL(L);
-        if (c) { const a = enfant(e, "at"); texte(e[1] == null ? "" : e[1], [co(a && a[1]), co(a && a[2])], -nb(a && a[3]), e, c, drawings); }
+        if (c) {
+          const a = enfant(e, "at");
+          texte(e[1] == null ? "" : e[1], [co(a && a[1]), co(a && a[2])], -nb(a && a[3]), e, c, drawings);
+          if (verrou(e, 2)) drawings[drawings.length - 1].locked = true;
+        }
         else if (/\.Cu$/.test(L)) rap.ecart("texte sur une couche de cuivre : non repris");
         else rap.ecart("texte sur le masque, la pâte, la colle ou une couche inconnue : non repris");
       } else if (k === "dimension") rap.ecart("cote (dimension) : non reprise");
@@ -631,6 +707,15 @@ const KICAD_PCB = (() => {
         }
     }
 
+    /* isolement ≤ celui de la classe (l'éditeur prend le plus grand), écart de bras = celui de la classe,
+       largeur de bras = la règle : sans effet, la zone suit alors sa classe */
+    for (const z of zones) {
+      const clr = nb((classes.find(c => c.name === netClass[z.net]) || classes[0]).clr, 0.2);
+      if (z.isol <= clr + 1e-9) delete z.isol;
+      if (Math.abs(z.brasEcart - clr) < 1e-9) delete z.brasEcart;
+      if (z.brasLarg === rule.thermal) delete z.brasLarg;
+    }
+
     const doc = { format: "pcbedit-1", cu, cuL: [], stack, board, rule, classes, netClass,
                   origin: aux ? { x: r4(co(aux[1])), y: r4(co(aux[2])) } : { x: 0, y: 0 },
                   fabOrigin: !!(aux && val(pp, "useauxorigin") === "yes"),
@@ -650,7 +735,8 @@ const KICAD_PCB = (() => {
   const COUCHES_UTILISATEUR = [[9, "F.Adhes", "F.Adhesive"], [11, "B.Adhes", "B.Adhesive"], [13, "F.Paste"], [15, "B.Paste"],
     [5, "F.SilkS", "F.Silkscreen"], [7, "B.SilkS", "B.Silkscreen"], [1, "F.Mask"], [3, "B.Mask"], [17, "Dwgs.User", "User.Drawings"],
     [19, "Cmts.User", "User.Comments"], [21, "Eco1.User", "User.Eco1"], [23, "Eco2.User", "User.Eco2"], [25, "Edge.Cuts"],
-    [27, "Margin"], [31, "F.CrtYd", "F.Courtyard"], [29, "B.CrtYd", "B.Courtyard"], [35, "F.Fab"], [33, "B.Fab"], [39, "User.1"]];
+    [27, "Margin"], [31, "F.CrtYd", "F.Courtyard"], [29, "B.CrtYd", "B.Courtyard"], [35, "F.Fab"], [33, "B.Fab"]]
+    .concat([1, 2, 3, 4, 5, 6, 7, 8, 9].map(i => [37 + 2 * i, "User." + i]));       // User_1 = 39 … User_9 = 55 (layer_ids.h)
   const COULEURS_K = Object.fromEntries(Object.entries(COULEURS).map(([k, v]) => [v, k]));
   const FINITIONS_K = { "ENIG (or chimique)": "ENIG", "HASL étain-plomb": "HAL SnPb", "HASL sans plomb": "HAL lead-free",
     "OSP": "OSP", "Argent chimique": "Immersion silver", "Or dur (contacts)": "Hard gold" };
@@ -716,6 +802,7 @@ const KICAD_PCB = (() => {
     const code = new Map([...tous].sort().map((n, i) => [n, i + 1]));
     const netK = n => n && code.has(n) ? ["net", code.get(n)] : ["net", 0];
     let troues = 0;                                    // aplats troués (carte et empreintes) : KiCad n'en a pas
+    let aucunes = 0, approchees = 0, dessus = 0;       // géométrie par couche des pastilles : ce que KiCad ne sait pas dire
 
     /* empreinte : arbre commun à la carte et à la bibliothèque */
     function arbreFp(fp, libId, o) {
@@ -758,12 +845,15 @@ const KICAD_PCB = (() => {
           if (arr(x.trous).length) troues++;
           out.push(["fp_poly", ["pts", ...x.pts.map(c => ["xy", ...fl(nb(c.x), nb(c.y))])], trait(0), ["fill", "yes"], L, u("d" + i)]);
         } else if (x.shape === "rect") out.push(["fp_rect", ["start", ...xy1], ["end", ...xy2], trait(nb(x.width, 0.15)), ["fill", "no"], L, u("d" + i)]);
+        else if (x.shape === "line" && estArc(x))
+          out.push(["fp_arc", ["start", ...xy1], ["mid", ...fl(...milieuArc(nb(x.x1), nb(x.y1), nb(x.x2), nb(x.y2), nb(x.ca)))], ["end", ...xy2],
+                    trait(nb(x.width, 0.15)), L, u("d" + i)]);
         else if (x.shape === "line") out.push(["fp_line", ["start", ...xy1], ["end", ...xy2], trait(nb(x.width, 0.15)), L, u("d" + i)]);
       });
       pads.forEach((p, i) => {
         const th = nb(p.drill) > 0, w = nb(p.w, 1), h = nb(p.h, 1);
         const forme = { sharp: "rect", oval: "oval", circ: Math.abs(w - h) < 1e-6 ? "circle" : "oval", chamfer: "roundrect", poly: "custom" }[p.shape] || "roundrect";
-        const pad = ["pad", q(p.nom || String(p.n)), th ? "thru_hole" : "smd", forme, at(...fl(nb(p.x), nb(p.y)), angle(p.rot)),
+        const pad = ["pad", q(p.nom === SANS_NUM ? "" : p.nom || String(p.n)), th ? "thru_hole" : "smd", forme, at(...fl(nb(p.x), nb(p.y)), angle(p.rot)),
                      forme === "custom" ? ["size", Math.min(w, h, 0.1), Math.min(w, h, 0.1)] : ["size", w, h]];
         if (th) pad.push(p.slot > p.drill ? ["drill", "oval", ...(w >= h ? [p.slot, p.drill] : [p.drill, p.slot])] : ["drill", p.drill]);
         pad.push(["layers", ...(th ? ["*.Cu"].concat(p.noMask ? [] : ["*.Mask"])
@@ -780,7 +870,28 @@ const KICAD_PCB = (() => {
         if (net && code.has(net)) pad.push(["net", code.get(net), q(net)]);
         if (p.mask != null) pad.push(["solder_mask_margin", nb(p.mask)]);
         if (p.paste != null) pad.push(["solder_paste_margin", nb(p.paste)]);
-        if (p.connexion) pad.push(["zone_connect", { aucune: 0, thermique: 1, directe: 2 }[p.connexion] || 1]);
+        if (p.connexion) pad.push(["zone_connect", p.connexion === "aucune" ? 0 : p.connexion === "directe" ? 2 : 1]);
+        if (nb(p.thermalWidth) > 0) pad.push(["thermal_bridge_width", nb(p.thermalWidth)]);
+        if (nb(p.thermalGap) > 0) pad.push(["thermal_gap", nb(p.thermalGap)]);
+        /* géométrie par couche (padSurCouche, 01-core.js) : le dessus est la pastille ; « int » et « bas », ou chaque couche dès qu'une est nommée.
+           shortcut: une empreinte posée dessous garde dessus/dessous de la carte dans sa définition de bibliothèque ; à retourner si on s'en sert */
+        const pc = th && p.parCouche && typeof p.parCouche === "object" ? p.parCouche : null;
+        if (pc) {
+          const cuP = Math.max(2, cu), sur = l => pc[l] || (l === cuP - 1 ? pc.bas : pc.int) || p;
+          const coucheP = (nom, o) => {
+            if (o.shape === "aucune") { aucunes++; o = p; }
+            if (o.shape === "poly" || o.shape === "chamfer") approchees++;
+            const lw = nb(o.w, w), lh = nb(o.h, h);
+            const f = { sharp: "rect", oval: "oval", circ: Math.abs(lw - lh) < 1e-6 ? "circle" : "oval", poly: "rect", chamfer: "rect" }[o.shape] || "roundrect";
+            return ["layer", q(nom), ["shape", f], ["size", lw, lh]].concat(f === "roundrect" ? [["roundrect_rratio", 0.22]] : []);
+          };
+          if (pc[0]) dessus++;
+          const nommees = Object.keys(pc).some(k => /^\d+$/.test(k) && +k > 0 && +k < cuP);
+          if (Object.values(pc).some(o => o && o.shape === "aucune")) pad.push(["remove_unused_layers", "yes"], ["keep_end_layers", "yes"]);
+          pad.push(["padstack", ["mode", nommees ? "custom" : "front_inner_back"]].concat(nommees
+            ? Array.from({ length: cuP - 1 }, (_, k) => coucheP(k + 1 === cuP - 1 ? "B.Cu" : "In" + (k + 1) + ".Cu", sur(k + 1)))
+            : [coucheP("Inner", pc.int || p), coucheP("B.Cu", pc.bas || p)]));
+        }
         if (forme === "custom")
           pad.push(["options", ["clearance", "outline"], ["anchor", "circle"]],
                    ["primitives", ["gr_poly", ["pts", ...arr(p.pts).map(c => ["xy", nb(c.x), bas ? -nb(c.y) : nb(c.y)])], ["width", 0], ["fill", "yes"]]]);
@@ -799,7 +910,7 @@ const KICAD_PCB = (() => {
     /* bibliothèque : une définition par géométrie distincte, suffixée si le nom est pris */
     const parSig = new Map(), prisNoms = new Set(), empreintes = [], librairie = new Map();
     const definir = (fp, base) => {
-      const sig = JSON.stringify([padsDe(fp).map(p => [p.n, p.nom, p.x, p.y, p.w, p.h, p.shape, p.drill, p.slot, p.rot, p.pts, p.chamfer, p.chamferCorners, p.noMask, p.noPaste, p.mask, p.paste]),
+      const sig = JSON.stringify([padsDe(fp).map(p => [p.n, p.nom, p.x, p.y, p.w, p.h, p.shape, p.drill, p.slot, p.rot, p.pts, p.chamfer, p.chamferCorners, p.noMask, p.noPaste, p.mask, p.paste, p.parCouche]),
                                   fp.holes || null, fp.body || null, arr(fp.dessins).filter(x => x && x.shape !== "text")]);
       if (parSig.has(sig)) return parSig.get(sig);
       const b = nomPropre(base || "EMPREINTE");
@@ -821,15 +932,18 @@ const KICAD_PCB = (() => {
       if (fp.ref) librairie.set(String(fp.ref), libId);
       if (fp.silk !== false) silkAuto++;
       items.push(arbreFp(fp, libId, { bas, A: deg(bas ? 180 - nb(fp.rot) : -nb(fp.rot)), ref: String(fp.ref || ""), value: String(fp.value || ""),
-        nets: fp.nets || {}, chemin: chemins && chemins.get ? chemins.get(fp.ref) : null, cacherRef: fp.silk === false || !!fp.refHide,
+        nets: fp.nets || {}, chemin: chemins && chemins.get ? chemins.get(fp.ref) : null, cacherRef: fp.silk === false || !!fp.refHide, entete: VERROU(fp),
         graine: "fp:" + i + ":" + fp.ref }));
     });
+    if (aucunes) rap.ecart("pastille retirée d'une couche : écrite « retirée des couches où rien ne s'y relie », KiCad n'a que cela");
+    if (approchees) rap.ecart("pastille chanfreinée ou en polygone sur une couche : écrite rectangulaire sur cette couche");
+    if (dessus) rap.ecart("forme propre à la couche du dessus d'une pastille : non exportée, la forme principale est écrite");
     if (silkAuto) rap.ecart("sérigraphie automatique des composants : non exportée (repère seul, corps en F.Fab)");
     /* trous de carte : KiCad n'en a pas hors empreinte, chacun devient un trou de fixation */
     arr(d.holes).forEach((h, i) => {
       const t = { pads: [], holes: [{ x: 0, y: 0, d: nb(h.d, 3.2), w: h.w, rot: 0 }], x: nb(h.x), y: nb(h.y) };
       const nom = definir(t, "TROU_" + String(r4(nb(h.d, 3.2))).replace(".", "_") + (nb(h.w) > nb(h.d) ? "_" + String(r4(nb(h.w))).replace(".", "_") : ""));
-      items.push(arbreFp(t, lib + ":" + nom, { bas: false, A: deg(-nb(h.rot)), ref: "TROU" + (i + 1), value: nom, cacherRef: true, graine: "trou:" + i }));
+      items.push(arbreFp(t, lib + ":" + nom, { bas: false, A: deg(-nb(h.rot)), ref: "TROU" + (i + 1), value: nom, cacherRef: true, graine: "trou:" + i, entete: VERROU(h) }));
     });
 
     /* contour : un polygone Edge.Cuts par contour */
@@ -844,54 +958,48 @@ const KICAD_PCB = (() => {
     arr(d.drawings).forEach((g, i) => {
       if (!g || typeof g !== "object") return;
       const L = COUCHES_K[g.layer] || "F.SilkS", u = ["uuid", q(uuid("dessin:" + i))];
-      if (g.shape === "poly" && arr(g.pts).length >= 3) { if (arr(g.trous).length) troues++; items.push(gpoly(g.pts, L, 0, true, "dessin:" + i)); }
+      let e;
+      if (g.shape === "poly" && arr(g.pts).length >= 3) { if (arr(g.trous).length) troues++; e = gpoly(g.pts, L, 0, true, "dessin:" + i); }
       else if (g.shape === "text")
-        items.push(["gr_text", q(g.text || ""), ["at", nb(g.x1), nb(g.y1), deg(-nb(g.rot))], ["layer", q(L)], u, police(nb(g.size, 1.5), nb(g.width, 0.15), /^B\./.test(L))]);
+        e = ["gr_text", q(g.text || ""), ["at", nb(g.x1), nb(g.y1), deg(-nb(g.rot))], ["layer", q(L)], u, police(nb(g.size, 1.5), nb(g.width, 0.15), /^B\./.test(L))];
       else if (g.shape === "rect")
-        items.push(["gr_rect", ["start", nb(g.x1), nb(g.y1)], ["end", nb(g.x2), nb(g.y2)], trait(nb(g.width, 0.15)), ["fill", "no"], ["layer", q(L)], u]);
-      else if (Math.abs(nb(g.ca)) > 1e-4 && Math.hypot(nb(g.x2) - nb(g.x1), nb(g.y2) - nb(g.y1)) > 1e-9) {
-        // un trait en arc : le point milieu déduit de la corde et de l'angle, comme les pistes
-        const dx = nb(g.x2) - nb(g.x1), dy = nb(g.y2) - nb(g.y1), dl = Math.hypot(dx, dy), h = nb(g.ca) / 2, k = (dl / 2) / Math.tan(h);
-        const cx = (nb(g.x1) + nb(g.x2)) / 2 - (dy / dl) * k, cy = (nb(g.y1) + nb(g.y2)) / 2 + (dx / dl) * k;
-        const r = Math.abs(dl / (2 * Math.sin(h))), a = Math.atan2(nb(g.y1) - cy, nb(g.x1) - cx) + h;
-        items.push(["gr_arc", ["start", nb(g.x1), nb(g.y1)], ["mid", cx + r * Math.cos(a), cy + r * Math.sin(a)], ["end", nb(g.x2), nb(g.y2)], trait(nb(g.width, 0.15)), ["layer", q(L)], u]);
-      }
-      else items.push(["gr_line", ["start", nb(g.x1), nb(g.y1)], ["end", nb(g.x2), nb(g.y2)], trait(nb(g.width, 0.15)), ["layer", q(L)], u]);
+        e = ["gr_rect", ["start", nb(g.x1), nb(g.y1)], ["end", nb(g.x2), nb(g.y2)], trait(nb(g.width, 0.15)), ["fill", "no"], ["layer", q(L)], u];
+      else if (estArc(g))                            // un trait en arc, comme les pistes
+        e = ["gr_arc", ["start", nb(g.x1), nb(g.y1)], ["mid", ...milieuArc(nb(g.x1), nb(g.y1), nb(g.x2), nb(g.y2), nb(g.ca))], ["end", nb(g.x2), nb(g.y2)], trait(nb(g.width, 0.15)), ["layer", q(L)], u];
+      else e = ["gr_line", ["start", nb(g.x1), nb(g.y1)], ["end", nb(g.x2), nb(g.y2)], trait(nb(g.width, 0.15)), ["layer", q(L)], u];
+      items.push(e.concat(VERROU(g)));
     });
     if (troues) rap.ecart("aplat de sérigraphie troué : écrit sans ses trous (KiCad n'en a pas)");
 
     /* pistes, vias */
     tracksD.forEach((t, i) => {
       if (!t) return;
-      const fin = [["width", nb(t.w, 0.25)], ["layer", q(nomCu(Math.max(0, Math.min(cu - 1, Math.round(nb(t.l))))))], netK(t.net), ["uuid", q(uuid("piste:" + i))]];
-      const ca = nb(t.ca), dx = nb(t.x2) - nb(t.x1), dy = nb(t.y2) - nb(t.y1), dl = Math.hypot(dx, dy);
-      if (Math.abs(ca) > 1e-4 && dl > 1e-9) {
-        // centre déduit de la corde et de l'angle balayé (arcOf, 01-core.js)
-        const h = ca / 2, k = (dl / 2) / Math.tan(h), cx = (nb(t.x1) + nb(t.x2)) / 2 - (dy / dl) * k, cy = (nb(t.y1) + nb(t.y2)) / 2 + (dx / dl) * k;
-        const r = Math.abs(dl / (2 * Math.sin(h))), a = Math.atan2(nb(t.y1) - cy, nb(t.x1) - cx) + h;
-        items.push(["arc", ["start", nb(t.x1), nb(t.y1)], ["mid", cx + r * Math.cos(a), cy + r * Math.sin(a)], ["end", nb(t.x2), nb(t.y2)], ...fin]);
-      } else items.push(["segment", ["start", nb(t.x1), nb(t.y1)], ["end", nb(t.x2), nb(t.y2)], ...fin]);
+      const fin = [["width", nb(t.w, 0.25)], ["layer", q(nomCu(Math.max(0, Math.min(cu - 1, Math.round(nb(t.l))))))], netK(t.net), ["uuid", q(uuid("piste:" + i))], ...VERROU(t)];
+      if (estArc(t)) items.push(["arc", ["start", nb(t.x1), nb(t.y1)], ["mid", ...milieuArc(nb(t.x1), nb(t.y1), nb(t.x2), nb(t.y2), nb(t.ca))], ["end", nb(t.x2), nb(t.y2)], ...fin]);
+      else items.push(["segment", ["start", nb(t.x1), nb(t.y1)], ["end", nb(t.x2), nb(t.y2)], ...fin]);
     });
     viasD.forEach((v, i) => {
       if (!v) return;
       const a = Math.max(0, Math.min(cu - 1, Math.round(nb(v.a)))), z = Math.max(0, Math.min(cu - 1, Math.round(nb(v.b, cu - 1))));
       items.push(["via"].concat(a > 0 || z < cu - 1 ? ["blind"] : [], [["at", nb(v.x), nb(v.y)], ["size", nb(v.d, 0.6)], ["drill", nb(v.drill, 0.3)],
-        ["layers", q(nomCu(Math.min(a, z))), q(nomCu(Math.max(a, z)))], netK(v.net), ["uuid", q(uuid("via:" + i))]]));
+        ["layers", q(nomCu(Math.min(a, z))), q(nomCu(Math.max(a, z)))], netK(v.net), ["uuid", q(uuid("via:" + i))], ...VERROU(v)]));
     });
 
     /* zones : contour seul, sans remplissage (KiCad remplit avec B) ; découpes en zones interdites */
     const pts = P => ["polygon", ["pts", ...arr(P).map(c => ["xy", nb(c.x), nb(c.y)])]];
-    let cmsDirecte = 0;
     zonesD.forEach((z, i) => {
       if (!z || arr(z.pts).length < 3) return;
       const net = z.net ? String(z.net) : "", clr = clrDe(net);
-      if (z.connexion === "cms-directe") cmsDirecte++;
-      items.push(["zone", netK(net), ["net_name", q(net)], ["layer", q(nomCu(Math.max(0, Math.min(cu - 1, Math.round(nb(z.l))))))], ["uuid", q(uuid("zone:" + i))],
-        ["hatch", "edge", 0.5], ...(nb(z.priorite) > 0 ? [["priority", Math.round(nb(z.priorite))]] : []), ["connect_pads"].concat(z.connexion === "directe" ? ["yes"] : z.connexion === "aucune" ? ["no"] : [], [["clearance", clr]]),
+      const isol = Math.max(clr, nb(z.isol)), h = z.hachure && nb(z.hachure.pas) > 0 ? z.hachure : null, hl = h ? nb(h.larg, 0.25) : 0;
+      items.push(["zone", netK(net), ["net_name", q(net)], ["layer", q(nomCu(Math.max(0, Math.min(cu - 1, Math.round(nb(z.l))))))], ["uuid", q(uuid("zone:" + i))], ...VERROU(z),
+        ["hatch", "edge", 0.5], ...(nb(z.priorite) > 0 ? [["priority", Math.round(nb(z.priorite))]] : []),
+        // « directe pour les CMS » = thru_hole_only de KiCad : bras pour les seules traversantes
+        ["connect_pads"].concat({ directe: ["yes"], aucune: ["no"], "cms-directe": ["thru_hole_only"] }[z.connexion] || [], [["clearance", isol]]),
         ["min_thickness", nb(rule.cuMin, 0.2)], ["filled_areas_thickness", "no"],
-        ["fill", ["thermal_gap", clr], ["thermal_bridge_width", nb(rule.thermal, 0.5)]], pts(z.pts)]);
+        ["fill"].concat(h ? [["mode", "hatch"]] : [], [["thermal_gap", nb(z.brasEcart) > 0 ? nb(z.brasEcart) : clr],
+          ["thermal_bridge_width", nb(z.brasLarg) > 0 ? nb(z.brasLarg) : nb(rule.thermal, 0.5)]],
+          h ? [["hatch_thickness", hl], ["hatch_gap", Math.max(0, nb(h.pas) - hl)], ["hatch_orientation", (180 - nb(h.angle)) % 180]] : []), pts(z.pts)]);
     });
-    if (cmsDirecte) rap.ecart("zone « directe pour les CMS » : écrite avec bras thermiques partout (KiCad n'a pas ce mode)");
     arr(d.cuts).forEach((c, i) => {
       if (!c || arr(c.pts).length < 3) return;
       items.push(["zone", ["net", 0], ["net_name", q("")], ["layer", q(nomCu(Math.max(0, Math.min(cu - 1, Math.round(nb(c.l))))))], ["uuid", q(uuid("decoupe-cuivre:" + i))],

@@ -81,7 +81,8 @@ function comparerMonde(arbre, doc, quoi) {
       const k = ref[i][j], [x, y] = mondeOutil(fp, q.x, q.y);
       verifier(proche(x, k.x) && proche(y, k.y), quoi + " " + fp.ref + " pastille " + j + " : (" + x + ", " + y + ") ≠ KiCad (" + k.x + ", " + k.y + ")");
       const rotMonde = fp.rot + (fp.side ? -1 : 1) * q.rot;               // horaire, degrés
-      verifier(proche((((rotMonde + k.P) % 180) + 180) % 180 % 180, 0, 2e-3) || proche((((rotMonde + k.P) % 180) + 180) % 180, 180, 2e-3),
+      const quart = q.slot && q.w === q.h ? 90 : 180;                      // fente en travers d'une pastille ronde ou carrée : un quart de tour la couche
+      verifier(proche((((rotMonde + k.P) % quart) + quart) % quart, 0, 2e-3) || proche((((rotMonde + k.P) % quart) + quart) % quart, quart, 2e-3),
                quoi + " " + fp.ref + " pastille " + j + " : angle " + rotMonde + " ≠ −" + k.P);
       if (q.shape === "poly" && k.sommets) {
         const a = rotMonde * Math.PI / 180, m = fp.side ? -1 : 1;
@@ -275,8 +276,8 @@ for (const k10 of [false, true]) {
            !q1.dessins.some(d => /B$/.test(d.layer)) && !j1.dessins.some(d => d.text === "${REFERENCE}"),
            quoi + " : Q1 dessous, dessins vus posé dessus (y opposé, faces échangées) ; repère caché de J1 écarté");
   verifier(doc.drawings.some(d => d.text === "TEST" && d.rot === 270 && d.size === 1.2) && doc.drawings.some(d => d.layer === "cmts" && d.shape === "line") &&
-           doc.drawings.some(d => d.layer === "fabT" && d.shape === "rect") && doc.drawings.some(d => d.layer === "user" && d.text === "NOTE") &&
-           doc.drawings.length === 4 && rap.liste().some(m => /regroupées/.test(m)) && !rap.liste().some(m => /Fab, Courtyard/.test(m)),
+           doc.drawings.some(d => d.layer === "fabT" && d.shape === "rect") && doc.drawings.some(d => d.layer === "mec2" && d.text === "NOTE") &&
+           doc.drawings.length === 4 && !rap.liste().some(m => /regroupées/.test(m)) && !rap.liste().some(m => /Fab, Courtyard/.test(m)),
            quoi + " : dessins de carte sur leurs couches, écarts à jour");
   /* dessins au monde = KiCad : le trait de sérigraphie de Q1 (dessous, 30°) et le texte de R1 */
   const sq = couche(q1, "silkT").find(d => d.shape === "line"), [ka, kb] = [rk(-0.5, -1.8, 30), rk(0.5, -1.6, 30)];
@@ -301,6 +302,163 @@ for (const k10 of [false, true]) {
            quoi + " : identifiants de bibliothèque et .kicad_pro partiel");
   verifier(P.ecrire(doc, "essai", K.rapport(), null).texte === out.texte.replace('\n\t\t(path "/a/b")', ""), quoi + " : écriture déterministe");
 }
+/* ---------- ce qu'un aller-retour doit garder : couches mécaniques, fentes, zones, verrous, pastilles, arcs ---------- */
+{
+  const J = JSON.stringify;
+  const carte = (corps, cuivres) => `(kicad_pcb (version 20241229) (generator "pcbnew")
+    (layers (0 "F.Cu" signal) ${cuivres || ""} (2 "B.Cu" signal) (25 "Edge.Cuts" user))
+    (net 0 "") (net 1 "GND")
+    (gr_rect (start 0 0) (end 50 50) (stroke (width 0.05) (type solid)) (fill no) (layer "Edge.Cuts"))
+    ${corps})`;
+  const lire = t => { const rap = K.rapport(), doc = P.lire(K.lire(t, "kicad_pcb"), null, rap).doc; return { doc, rap: rap.liste() }; };
+  const ecrire = doc => { const rap = K.rapport(), o = P.ecrire(doc, "x", rap, null); return { t: o.texte, rap: rap.liste(), mods: o.empreintes }; };
+  const base = () => ({ format: "pcbedit-1", cu: 2, board: { x: 0, y: 0, w: 50, h: 50 }, fps: [], tracks: [], vias: [], zones: [], cuts: [], holes: [], drawings: [] });
+  const fpDe = (pads, plus) => Object.assign({ id: 1, ref: "J1", pkg: "J", pins: pads.length, style: "row", x: 5, y: 5, rot: 0, side: 0, nets: {}, silk: false, pads }, plus);
+  const norm = d => PCB ? PCB.normDoc(JSON.parse(J(d))) : d;       // ce que l'éditeur en garde, s'il est construit
+  let d, e, r;
+
+  /* 1. couches mécaniques mec1…mec8 = User.2…User.9, sur la carte et dans une empreinte (dessus et dessous) */
+  d = base();
+  d.drawings = [1, 2, 3, 4, 5, 6, 7, 8].map(i => ({ id: i, shape: "line", layer: "mec" + i, x1: 0, y1: i, x2: 5, y2: i, width: 0.1 }))
+    .concat([{ id: 9, shape: "text", layer: "mec3", text: "M", x1: 1, y1: 1, size: 1, rot: 0, width: 0.15 }]);
+  d.fps = [0, 1].map(side => fpDe([{ n: 1, x: 0, y: 0, w: 1, h: 1, shape: "rect", drill: 0, rot: 0 }],
+    { id: 20 + side, ref: "R" + side, side, dessins: [{ shape: "line", layer: "mec2", x1: -1, y1: 1, x2: 1, y2: 1, width: 0.12 }] }));
+  e = ecrire(d); r = lire(e.t);
+  verifier([2, 3, 4, 5, 6, 7, 8, 9].every(i => e.t.includes('(' + (37 + 2 * i) + ' "User.' + i + '" user)')) && !/"F\.SilkS"\)\n?\s*\(uuid "[^"]*"\)\s*\)\s*\(gr_line/.test(e.t) &&
+           (e.t.match(/\(layer "User\.\d"\)/g) || []).length === 11, "mécanique : écrite sur User.2 à User.9, couches déclarées");
+  verifier(J(r.doc.drawings.map(g => g.layer)) === J(d.drawings.map(g => g.layer)) && r.doc.fps.every(f => f.dessins.some(g => g.layer === "mec2" && g.shape === "line")) &&
+           !r.rap.some(m => /regroupées|inconnue/.test(m)) && norm(r.doc).drawings.length === 9, "mécanique : relue sur ses couches, carte et empreintes");
+  r = lire(carte(`(gr_line (start 0 0) (end 5 0) (stroke (width 0.1) (type solid)) (layer "Eco1.User")) (gr_line (start 0 1) (end 5 1) (stroke (width 0.1) (type solid)) (layer "User.12"))`));
+  verifier(r.doc.drawings.every(g => g.layer === "user") && r.rap.some(m => /regroupées/.test(m)), "Eco1 et User.12 : regroupées sur la couche utilisateur, dit au rapport");
+
+  /* 2. fente verticale dans une pastille ronde ou carrée : un quart de tour, la fente reste verticale au monde */
+  const axe = (fp, q) => { const a = (fp.rot + (fp.side ? -1 : 1) * q.rot + (q.h > q.w ? 90 : 0)) * Math.PI / 180; return [Math.abs(Math.cos(a)), Math.abs(Math.sin(a))]; };
+  r = lire(carte(`(footprint "L:J" (layer "F.Cu") (at 5 5 30)
+    (pad "1" thru_hole circle (at 0 0) (size 3 3) (drill oval 1 2) (layers "*.Cu"))
+    (pad "2" thru_hole rect (at 5 0 30) (size 3 3) (drill oval 1 2) (layers "*.Cu"))
+    (pad "3" thru_hole circle (at 10 0 30) (size 3 3) (drill oval 2 1) (layers "*.Cu"))
+    (pad "4" thru_hole oval (at 15 0) (size 2 4) (drill oval 0.8 1.4) (layers "*.Cu"))
+    (pad "5" thru_hole oval (at 20 0) (size 4 2) (drill oval 0.8 1.4) (layers "*.Cu")))`));
+  {
+    const f = r.doc.fps[0], [a1, a2, a3, a4] = f.pads.map(q => axe(f, q)), c30 = Math.cos(Math.PI / 6);
+    // KiCad : fente le long de l'axe Y de la pastille (1, 2, 4), X pour la 3 ; angle de pastille absolu au fichier (0°, 30°, 30°, 0°)
+    verifier(f.pads[0].slot === 2 && f.pads[0].drill === 1 && proche(a1[0], 0) && proche(a1[1], 1) && proche(a2[0], 0.5) && proche(a2[1], c30) &&
+             proche(a3[0], c30) && proche(a3[1], 0.5) && proche(a4[0], 0) && proche(a4[1], 1), "fente : axe au monde = KiCad, pastille ronde ou carrée tournée d'un quart de tour");
+    verifier(r.rap.filter(m => /oblong en travers/.test(m)).length === 1 && !/×/.test(r.rap.find(m => /oblong en travers/.test(m))), "fente : seule l'ovale en travers reste un écart");
+    const r2 = lire(ecrire(r.doc).t), f2 = r2.doc.fps[0];
+    verifier(f2.pads.every((q, i) => q.slot === f.pads[i].slot && q.w === f.pads[i].w && q.h === f.pads[i].h && proche(axe(f2, q)[0], axe(f, f.pads[i])[0]) && proche(axe(f2, q)[1], axe(f, f.pads[i])[1])) &&
+             norm(r.doc).fps[0].pads[0].rot === f.pads[0].rot, "fente : aller-retour stable");
+  }
+
+  /* 3. réglages de zone */
+  d = base();
+  d.rule = { thermal: 0.5 };          // la règle de la carte suit la première zone du fichier : celle sans réglage passe devant
+  d.zones = [{ id: 2, l: 1, net: "GND", pts: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] },
+             { id: 1, l: 0, net: "GND", pts: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }], isol: 0.7, brasLarg: 0.9, brasEcart: 0.4, hachure: { pas: 1, larg: 0.3, angle: 45 }, connexion: "cms-directe", locked: true }];
+  e = ecrire(d); r = lire(e.t);
+  verifier(/\(connect_pads thru_hole_only\s*\(clearance 0\.7\)/.test(e.t) && /\(fill\s*\(mode hatch\)\s*\(thermal_gap 0\.4\)\s*\(thermal_bridge_width 0\.9\)\s*\(hatch_thickness 0\.3\)\s*\(hatch_gap 0\.7\)\s*\(hatch_orientation 135\)/.test(e.t) &&
+           !e.rap.some(m => /CMS/.test(m)), "zone : isolement, bras, hachures et « traversantes seules » écrits");
+  {
+    const [z2, z1] = norm(r.doc).zones;
+    verifier(z1.isol === 0.7 && z1.brasLarg === 0.9 && z1.brasEcart === 0.4 && J(z1.hachure) === J({ pas: 1, larg: 0.3, angle: 45 }) && z1.connexion === "cms-directe" && z1.locked === true,
+             "zone : réglages et verrou relus " + J(z1));
+    verifier(z2.isol == null && z2.brasLarg == null && z2.brasEcart == null && !z2.hachure && !z2.connexion && !z2.locked, "zone sans réglage : n'en gagne aucun " + J(z2));
+  }
+  r = lire(carte(`(zone (net 1) (net_name "GND") (layer "F.Cu") (connect_pads thru_hole_only (clearance 0.508)) (min_thickness 0.25)
+    (fill yes (mode hatch) (thermal_gap 0.3) (thermal_bridge_width 0.6) (hatch_thickness 0.2) (hatch_gap 0.8) (hatch_orientation 0)) (polygon (pts (xy 0 0) (xy 10 0) (xy 10 10))))
+   (zone (net 1) (net_name "GND") (layer "B.Cu") (connect_pads (clearance 0.2)) (fill yes (thermal_gap 0.2) (thermal_bridge_width 0.8)) (polygon (pts (xy 0 0) (xy 10 0) (xy 10 10))))`));
+  verifier(r.doc.zones[0].isol === 0.508 && r.doc.zones[0].brasEcart === 0.3 && r.doc.zones[0].brasLarg == null && r.doc.rule.thermal === 0.6 && J(r.doc.zones[0].hachure) === J({ pas: 1, larg: 0.2 }) &&
+           r.doc.zones[0].connexion === "cms-directe" && r.doc.zones[1].isol == null && r.doc.zones[1].brasEcart == null && r.doc.zones[1].brasLarg === 0.8 && !r.rap.some(m => /hachur|traversantes/.test(m)),
+           "zone KiCad : isolement et bras propres gardés, ceux de la classe et de la règle laissés à elles");
+
+  /* 4. verrous : empreinte, piste, arc, via, zone, dessins ; écriture de KiCad 7 (mot nu) comme de KiCad 9 */
+  d = base();
+  d.fps = [fpDe([{ n: 1, x: 0, y: 0, w: 1, h: 1, shape: "rect", drill: 0, rot: 0 }], { locked: true }), fpDe([{ n: 1, x: 0, y: 0, w: 1, h: 1, shape: "rect", drill: 0, rot: 0 }], { id: 2, ref: "J2", x: 9 })];
+  d.tracks = [{ l: 0, net: "A", w: 0.2, x1: 0, y1: 0, x2: 5, y2: 0, locked: true }, { l: 0, net: "A", w: 0.2, x1: 5, y1: 0, x2: 7, y2: 2, ca: 1, locked: true }, { l: 0, net: "A", w: 0.2, x1: 0, y1: 3, x2: 5, y2: 3 }];
+  d.vias = [{ id: 3, x: 5, y: 0, d: 0.6, drill: 0.3, a: 0, b: 1, net: "A", locked: true }, { id: 4, x: 8, y: 0, d: 0.6, drill: 0.3, a: 0, b: 1, net: "A" }];
+  d.drawings = [{ id: 5, shape: "line", layer: "silkT", x1: 0, y1: 8, x2: 5, y2: 8, width: 0.1, locked: true }, { id: 6, shape: "text", layer: "silkT", text: "locked", x1: 1, y1: 9, size: 1, rot: 0, width: 0.15 },
+                { id: 7, shape: "text", layer: "silkT", text: "T", x1: 1, y1: 12, size: 1, rot: 0, width: 0.15, locked: true },
+                { id: 8, shape: "poly", layer: "silkT", pts: [{ x: 20, y: 20 }, { x: 22, y: 20 }, { x: 22, y: 22 }], locked: true }, { id: 9, shape: "rect", layer: "silkT", x1: 30, y1: 30, x2: 32, y2: 32, width: 0.1, locked: true }];
+  d.holes = [{ id: 10, x: 40, y: 40, d: 3.2, locked: true }];
+  e = ecrire(d); r = lire(e.t);
+  {
+    const n = norm(r.doc), v = l => J(l.map(o => !!o.locked));
+    verifier(v(n.fps) === "[true,false,true]" && v(n.tracks) === "[true,true,false]" && v(n.vias) === "[true,false]" && v(n.drawings) === "[true,false,true,true,true]" &&
+             (e.t.match(/\(locked yes\)/g) || []).length === 9, "verrous : écrits et relus, objet par objet (texte « locked » non verrouillé)");
+  }
+  r = lire(carte(`(footprint "L:R" locked (layer "F.Cu") (at 5 5) (pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu")))
+    (footprint "L:R" (locked) (layer "F.Cu") (at 9 5) (pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu")))
+    (footprint "locked" (layer "F.Cu") (at 13 5) (pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu")))
+    (segment locked (start 0 0) (end 5 0) (width 0.2) (layer "F.Cu") (net 1)) (segment (start 0 1) (end 5 1) (width 0.2) (layer "F.Cu") (net 1) (locked no))
+    (via locked (at 3 3) (size 0.6) (drill 0.3) (layers "F.Cu" "B.Cu") (net 1)) (gr_line locked (start 0 9) (end 5 9) (stroke (width 0.1) (type solid)) (layer "F.SilkS"))`));
+  verifier(J(r.doc.fps.map(f => !!f.locked)) === "[true,true,false]" && J(r.doc.tracks.map(t => !!t.locked)) === "[true,false]" && r.doc.vias[0].locked === true && r.doc.drawings[0].locked === true,
+           "verrous : mot nu de KiCad 7, (locked), (locked no), empreinte nommée « locked »");
+
+  /* 5. réglages de pastille : liaison aux zones, bras, géométrie par couche */
+  d = base(); d.cu = 4;
+  d.fps = [fpDe([{ n: 1, x: 0, y: 0, w: 2, h: 2, shape: "circ", drill: 1, rot: 0, connexion: "thermique", thermalWidth: 0.9, thermalGap: 0.35, parCouche: { int: { shape: "sharp", w: 1.5, h: 1.5 }, bas: { shape: "oval", w: 3, h: 2 } } },
+                     { n: 2, x: 3, y: 0, w: 2, h: 2, shape: "circ", drill: 1, rot: 0, connexion: "aucune", parCouche: { 2: { shape: "rect", w: 2.4, h: 1.6 } } },
+                     { n: 3, x: 6, y: 0, w: 2, h: 2, shape: "circ", drill: 1, rot: 0, connexion: "directe", parCouche: { int: { shape: "aucune" } } },
+                     { n: 4, x: 9, y: 0, w: 2, h: 2, shape: "circ", drill: 1, rot: 0 }])];
+  e = ecrire(d); r = lire(e.t);
+  {
+    const q = norm(r.doc).fps[0].pads;
+    verifier(/\(padstack\s*\(mode front_inner_back\)\s*\(layer "Inner"\s*\(shape rect\)\s*\(size 1\.5 1\.5\)\s*\)\s*\(layer "B\.Cu"\s*\(shape oval\)\s*\(size 3 2\)/.test(e.t) &&
+             /\(padstack\s*\(mode custom\)\s*\(layer "In1\.Cu"\s*\(shape circle\)\s*\(size 2 2\)\s*\)\s*\(layer "In2\.Cu"\s*\(shape roundrect\)\s*\(size 2\.4 1\.6\)\s*\(roundrect_rratio 0\.22\)\s*\)\s*\(layer "B\.Cu"\s*\(shape circle\)/.test(e.t) &&
+             (e.t.match(/\(padstack/g) || []).length === 3 && (e.t.match(/\(remove_unused_layers yes\)/g) || []).length === 1 && e.rap.some(m => /retirée d'une couche/.test(m)) &&
+             e.mods.some(m => /\(padstack/.test(m.texte)), "pastille : géométrie par couche écrite (padstack), retrait d'une couche dit au rapport");
+    verifier(q[0].connexion === "thermique" && q[0].thermalWidth === 0.9 && q[0].thermalGap === 0.35 && J(q[0].parCouche) === J({ int: { shape: "sharp", w: 1.5, h: 1.5 }, bas: { shape: "oval", w: 3, h: 2 } }) &&
+             q[1].connexion === "aucune" && J(q[1].parCouche) === J({ 2: { shape: "rect", w: 2.4, h: 1.6 } }) && q[2].connexion === "directe" && !q[2].parCouche &&
+             !q[3].connexion && !q[3].parCouche && q[3].thermalWidth == null, "pastille : liaison, bras et géométrie par couche relus " + J(q));
+  }
+  r = lire(carte(`(footprint "L:R" (layer "F.Cu") (at 5 5) (zone_connect 2)
+    (pad "1" smd roundrect (at 0 0) (size 1 2) (layers "F.Cu") (roundrect_rratio 0.5) (zone_connect 1))
+    (pad "2" smd roundrect (at 3 0) (size 1 2) (layers "F.Cu") (roundrect_rratio 0) (zone_connect 3))
+    (pad "3" thru_hole circle (at 6 0) (size 2 2) (drill 1) (layers "*.Cu") (zone_connect 3) (thermal_bridge_width 0.8) (thermal_gap 0.45) (clearance 0.5))
+    (pad "4" thru_hole circle (at 9 0) (size 2 2) (drill 1) (layers "*.Cu") (remove_unused_layers yes) (keep_end_layers yes)
+      (padstack (mode front_inner_back) (layer "Inner" (shape circle) (size 1.4 1.4)) (layer "B.Cu" (shape roundrect) (size 2 3) (roundrect_rratio 0.25))))
+    (pad "5" smd roundrect (at 12 0) (size 1 2) (layers "F.Cu") (roundrect_rratio 0.25)))`, `(4 "In1.Cu" signal) (6 "In2.Cu" signal)`));
+  {
+    const q = r.doc.fps[0].pads;
+    verifier(J(q.map(x => x.shape)) === J(["oval", "sharp", "circ", "circ", "rect"]) && J(q.map(x => x.connexion)) === J(["thermique", "directe", "thermique", "directe", "directe"]) &&
+             q[2].thermalWidth === 0.8 && q[2].thermalGap === 0.45 && J(q[3].parCouche) === J({ int: { shape: "circ", w: 1.4, h: 1.4 }, bas: { shape: "rect", w: 2, h: 3 } }) &&
+             r.rap.some(m => /isolement propre à une pastille/.test(m)) && !r.rap.some(m => /arrondi/.test(m)),
+             "pastille KiCad : arrondi demi → oblong, nul → droit ; zone_connect 1 et 3, celui de l'empreinte ; padstack ; isolement propre dit au rapport " + J(q));
+  }
+
+  /* 6. pastilles sans numéro : le numéro reste vide au retour */
+  r = lire(carte(`(footprint "L:J" (layer "F.Cu") (at 5 5) (pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu") (net 1 "GND")) (pad "" smd rect (at 3 0) (size 1 1) (layers "F.Cu"))
+    (pad "" smd rect (at 6 0) (size 1 1) (layers "F.Cu")) (pad "EP" smd rect (at 9 0) (size 1 1) (layers "F.Cu")))`));
+  e = ecrire(norm(r.doc));
+  verifier(J((e.t.match(/\(pad "[^"]*"/g) || []).slice(0, 4)) === J(['(pad "1"', '(pad ""', '(pad ""', '(pad "EP"']) && e.mods.every(m => (m.texte.match(/\(pad ""/g) || []).length === 2) &&
+           J(lire(e.t).doc.fps[0].pads.map(q => [q.n, q.nom])) === J(r.doc.fps[0].pads.map(q => [q.n, q.nom])), "pastilles sans numéro : écrites sans numéro, carte et bibliothèque");
+
+  /* 7. arcs : gr_arc de la carte gardé en arc ; trait en arc d'une empreinte écrit en fp_arc (dessus et dessous) */
+  r = lire(carte(`(gr_arc (start 10 0) (mid 7.0710678 7.0710678) (end 0 10) (stroke (width 0.2) (type solid)) (layer "F.SilkS"))
+    (gr_arc locked (start 30 0) (mid 31 1) (end 32 0) (stroke (width 0.2) (type solid)) (layer "Dwgs.User"))`));
+  {
+    const [a, b] = norm(r.doc).drawings;
+    verifier(r.doc.drawings.length === 2 && a.shape === "line" && a.x1 === 10 && a.y2 === 10 && proche(a.ca, Math.PI / 2, 1e-4) && proche(b.ca, -Math.PI, 1e-4) && b.locked === true && a.width === 0.2,
+             "arc de sérigraphie : un trait en arc, balayage signé " + J(r.doc.drawings));
+    e = ecrire(r.doc);
+    const m = e.t.match(/\(gr_arc\s*\(start 10 0\)\s*\(mid ([\d.-]+) ([\d.-]+)\)\s*\(end 0 10\)/), r2 = lire(e.t);
+    verifier(m && proche(+m[1], 7.0710678) && proche(+m[2], 7.0710678) && (e.t.match(/\(gr_arc/g) || []).length === 2 && !/\(gr_line/.test(e.t) &&
+             r2.doc.drawings.every((g, i) => proche(g.ca, r.doc.drawings[i].ca, 1e-3)), "arc de sérigraphie : écrit en gr_arc, relu identique");
+  }
+  d = base();
+  d.fps = [0, 1].map(side => fpDe([{ n: 1, x: 0, y: 0, w: 1, h: 1, shape: "rect", drill: 0, rot: 0 }],
+    { id: 1 + side, ref: "R" + side, side, rot: 30, dessins: [{ shape: "line", layer: "silkT", x1: 2, y1: 0, x2: 0, y2: 2, width: 0.12, ca: Math.PI / 2 }] }));
+  e = ecrire(d); r = lire(e.t);
+  verifier((e.t.match(/\(fp_arc/g) || []).length === 2 && e.mods.every(m => /\(fp_arc\s*\(start 2 0\)\s*\(mid 1\.414214 1\.414214\)\s*\(end 0 2\)/.test(m.texte)), "arc d'empreinte : écrit en fp_arc");
+  r.doc.fps.forEach((f, i) => {
+    // relu en cordes (l'éditeur ne dessine pas d'arc dans une empreinte) : chaque bout reste sur le cercle d'origine, au monde
+    const c = mondeOutil(d.fps[i], 0, 0), L = f.dessins.filter(g => g.layer === "silkT" && g.shape === "line");
+    verifier(L.length > 8 && L.every(g => [[g.x1, g.y1], [g.x2, g.y2]].every(([x, y]) => { const w = mondeOutil(f, x, y); return proche(Math.hypot(w[0] - c[0], w[1] - c[1]), 2, 2e-3); })) &&
+             [[2, 0], [0, 2], [Math.SQRT2, Math.SQRT2]].every(([x, y]) => { const w = mondeOutil(d.fps[i], x, y); return L.some(g => { const u = mondeOutil(f, g.x1, g.y1), v = mondeOutil(f, g.x2, g.y2);
+               return Math.hypot((u[0] + v[0]) / 2 - w[0], (u[1] + v[1]) / 2 - w[1]) < 0.2; }); }), "arc d'empreinte " + (i ? "dessous" : "dessus") + " : même quart de cercle au monde");
+  });
+}
+
 /* entrées hostiles : refusées proprement ou bornées */
 const refuse = (f, motif) => { try { f(); return false; } catch (e) { return e instanceof K.Refus && motif.test(e.message); } };
 verifier(refuse(() => P.lire(K.lire("(kicad_sch (version 20250114))", "x"), null, K.rapport()), /pas une carte KiCad/), "hostile : schéma refusé");
