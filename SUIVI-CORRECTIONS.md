@@ -1,6 +1,8 @@
 # Suivi des corrections (restes de l'audit)
 
 Tenu à jour au fur et à mesure. Branche `claude/inspiring-rubin-wmo2lm`.
+Décisions du 11/11 : toutes appliquées (boutons pour les fonctions sans appelant, BOM au CSV, H1 gardé, castellations, onglet Général, horloges en mots entiers, fréquence 0 refusée, import JLC prudent, marqueur ∅ remplacé).
+
 État : **F** fait et poussé · **C** en cours · **R** reste à faire · **D** à décider par l'utilisateur · **L** laissé volontairement.
 
 ## 1. Éditeur PCB
@@ -16,11 +18,11 @@ Tenu à jour au fur et à mesure. Branche `claude/inspiring-rubin-wmo2lm`.
 | F | Sérigraphie plus rapide à l'écran | `03-render.js` | |
 | F | Empreinte LIB posée au panneau | `01-core.js`, `08-empreinte.js` | |
 | F | Fenêtre « bus synchrone » : mêmes marges que l'onglet Bus, retour SPI, plancher 1 kHz | `09-diffpair.js`, `06-panels.js` | calcul commun `simBusMarges` |
-| D | Un connecteur importé nommé `H1` sort de la nomenclature | `04-fabrication.js` (`jlcNonPose`) | |
-| D | Exemption des pastilles de bord (castellations) dans la règle de bord | `axeDansCarte` | |
-| D | BOM absent de `telechargerCsv` | | recommandé : l'ajouter |
-| R | Dessiner un arc (`ca`) dans une empreinte | `01-core.js` (`fpDessinsMonde`) | bloque l'import des `fp_arc` KiCad en arcs |
-| R | Champ `clearance` propre à une pastille | modèle + `padClone` | bloque l'aller-retour KiCad de ce réglage |
+| C | Un connecteur importé nommé `H1` sort de la nomenclature | `04-fabrication.js` (`jlcNonPose`) | |
+| C | Exemption des pastilles de bord (castellations) dans la règle de bord | `axeDansCarte` | |
+| C | BOM absent de `telechargerCsv` | | recommandé : l'ajouter |
+| C | Dessiner un arc (`ca`) dans une empreinte | `01-core.js` (`fpDessinsMonde`) | bloque l'import des `fp_arc` KiCad en arcs |
+| C | Champ `clearance` propre à une pastille | modèle + `padClone` | bloque l'aller-retour KiCad de ce réglage |
 
 ## 2. Schématique
 
@@ -34,8 +36,8 @@ Tenu à jour au fur et à mesure. Branche `claude/inspiring-rubin-wmo2lm`.
 | F | Libellé d'un cadre annulable ; nom de broche : une étape par saisie | `12-panneaux.js` |
 | F | Synoptique : places et titres gardés à la renumérotation | `05-feuilles.js` |
 | F | Recherche de composants : une recherche lente n'écrase plus la suivante | `22-recherche-composants.js` |
-| D | Fonctions sans appelant (`fpMovePad`, `fpMoveMark`, `fpSetMarkD`, `fpSetBody`, `dfPlacerVue`, `stackSym`, `N.replace`, `N.commit`, `schCartoucheBasculer`, `icMovePin`, `fpSetMark`, `fpGeneric`) | divers | supprimer ou leur donner un bouton |
-| R | `el.specs` d'un fichier hostile affiche « [object Object] » | import | ne plante pas |
+| C | Fonctions sans appelant (`fpMovePad`, `fpMoveMark`, `fpSetMarkD`, `fpSetBody`, `dfPlacerVue`, `stackSym`, `N.replace`, `N.commit`, `schCartoucheBasculer`, `icMovePin`, `fpSetMark`, `fpGeneric`) | divers | supprimer ou leur donner un bouton |
+| C | `el.specs` d'un fichier hostile affiche « [object Object] » | import | ne plante pas |
 | R | HTML du schématique : pas relu ligne à ligne | | ids vérifiés seulement |
 
 ## 3. Gestion LIB et recherche de composants
@@ -47,9 +49,9 @@ Tenu à jour au fur et à mesure. Branche `claude/inspiring-rubin-wmo2lm`.
 | F | Éditeur : fichier illisible, confirmation à la fermeture | `05-editeur-lib.js` |
 | F | Éditeur : clic sans déplacement, broche `[x, y]`, générateur CI borné à 1024 broches | `05-editeur-lib.js` |
 | F | `recherche-composants/` relu en entier | |
-| D | Onglet Général : toute saisie réécrit `body` (2 × 2 mm si absent) et `pitch: 0` | `editeurCollecterGeneralPcb` |
-| D | Import JLC : valeur tirée du modèle (« LM358P » → « 358P »), température lue dans « 4~20mA » | `07-import-jlc.js` |
-| R | Vue JSON de l'éditeur : `null` ou `5` accepté comme document | `05-editeur-lib.js` |
+| C | Onglet Général : toute saisie réécrit `body` (2 × 2 mm si absent) et `pitch: 0` | `editeurCollecterGeneralPcb` |
+| C | Import JLC : valeur tirée du modèle (« LM358P » → « 358P »), température lue dans « 4~20mA » | `07-import-jlc.js` |
+| C | Vue JSON de l'éditeur : `null` ou `5` accepté comme document | `05-editeur-lib.js` |
 | R | `05-editeur-lib.js` l.1–285 non relues dans ce lot | |
 | L | `banc-catalogue.js` ne tourne pas sans la LIB privée | |
 
@@ -70,8 +72,8 @@ Tenu à jour au fur et à mesure. Branche `claude/inspiring-rubin-wmo2lm`.
 | F | PDN : Vdd / ondulation / ΔI à 0 → dernière valeur valable, réécrite dans le champ |
 | F | Bus vide : plus de remplissage d'office |
 | L | `-12V` lu 12 V (trois calculs attendent le module) |
-| D | Bus : fréquence 0 acceptée, calcul à 100 MHz (affiché) |
-| D | Horloge reconnue par `/clk\|ck\|sck/` : « BACKLIGHT », « ACK » passent pour des horloges |
+| C | Bus : fréquence 0 acceptée, calcul à 100 MHz (affiché) |
+| C | Horloge reconnue par `/clk\|ck\|sck/` : « BACKLIGHT », « ACK » passent pour des horloges |
 | R | Z différentielle / couplage (~l.8660–9840) : relu plus vite que le reste |
 
 ## 5. Import / export KiCad (`commun/kicad-pcb.js`)
@@ -87,11 +89,11 @@ Tenu à jour au fur et à mesure. Branche `claude/inspiring-rubin-wmo2lm`.
 | F | Pastilles sans numéro (nom « ∅ » dans l'éditeur) |
 | F | Arcs de la carte et des empreintes (`gr_arc`, `fp_arc` à l'export) |
 | F | « aucune connexion » exportée en thermique |
-| D | Marqueur « ∅ » des pastilles sans numéro : garder ou changer |
-| R | `fp_arc` importé reste en cordes | dépend de l'éditeur PCB (voir 1) |
-| R | `clearance` de pastille perdu | dépend de l'éditeur PCB (voir 1) |
+| C | Marqueur « ∅ » des pastilles sans numéro : garder ou changer |
+| C | `fp_arc` importé reste en cordes | dépend de l'éditeur PCB (voir 1) |
+| C | `clearance` de pastille perdu | dépend de l'éditeur PCB (voir 1) |
 | R | `roundrect_rratio` intermédiaire, `thermal_bridge_angle`, verrou d'une découpe | modèle sans champ |
-| R | Via dont `layers` ne nomme qu'une couche lu jusqu'à B.Cu | vu, non corrigé |
+| C | Via dont `layers` ne nomme qu'une couche lu jusqu'à B.Cu | vu, non corrigé |
 | R | Relecture par KiCad lui-même | `kicad-cli` absent ici |
 
 ## 6. Analyseurs Python
@@ -107,10 +109,10 @@ Tenu à jour au fur et à mesure. Branche `claude/inspiring-rubin-wmo2lm`.
 | F | 30 — εeff et retard en cuivre épais (εeff : +24 % au pire → ≤ 1,3 %, contre différences finies) | `ligne_mom.py` |
 | F | Avertissement « flancs en regard » sur la fiche | `simulation_em.py` |
 | R | Flancs en regard (paire serrée, coplanaire à moins de 6 épaisseurs) : Z lue +3 à +7 % trop haut ; demande des panneaux sur les flancs | `ligne_mom.py` (`FLANCS_EN_REGARD`) |
-| R | Formule légère côté page : même défaut d'εeff en cuivre épais | `commun/simulation-em.js` (`ltWeff`, `ltEeff`) |
+| C | Formule légère côté page : même défaut d'εeff en cuivre épais | `commun/simulation-em.js` (`ltWeff`, `ltEeff`) |
 | R | Essai « Scd21 miroir (N contre P) » recalé de 7 à 9 % : dissymétrie N/P de 7,8 % non expliquée | `banc-oeil.py`, modèle du via seul |
 | R | Cuivre épais sans référence : vernis autre que 25 µm, section sans plan, triplaque couplée, plus de trois conducteurs | |
-| R | Composante continue de la cascade (niveau établi −0,24 % à −0,78 %) | `oeil.transfert`, `simulation_em.simuler` |
+| C | Composante continue de la cascade (niveau établi −0,24 % à −0,78 %) | `oeil.transfert`, `simulation_em.simuler` |
 | R | Échauffement d'une piste oblique : +6 à +8 % (côté prudent) | `dc_solver.py` |
 | L | Plafond mémoire `MAX_IPC` (192 Mo) | décision : on se libère de la Pi plus tard |
 
@@ -123,7 +125,7 @@ Tenu à jour au fur et à mesure. Branche `claude/inspiring-rubin-wmo2lm`.
 | F | CI : permissions, actions épinglées, essai sauté = échec | `ci.yml` |
 | L | 14 — « ce poste » derrière un relais : hypothèse écrite dans le README et le manuel | |
 | R | Reporter les deux lignes d'`appairage.py` dans web_suite | autre dépôt |
-| R | `banc-serveur-routes` : l'essai du plafond rend son compteur avant la fin de ses fils (« Semaphore released too many times », échec 1 fois sur 5 sous charge) | `python/test/banc-serveur-routes.py` |
+| C | `banc-serveur-routes` : l'essai du plafond rend son compteur avant la fin de ses fils (« Semaphore released too many times », échec 1 fois sur 5 sous charge) | `python/test/banc-serveur-routes.py` |
 | R | La CI durcie n'a pas encore tourné sur GitHub | |
 
 ## 8. Jamais vérifié
