@@ -942,6 +942,9 @@ function loadDoc(d,keepView){
   if(!keepView)fit();else draw();
 }
 function undo(){
+  // en plein tracé, annuler rend la carte d'avant le geste (cuivre poussé compris), pas l'édition d'avant
+  if(S.route){cancelRoute();return;}
+  if(S.dp){dpCancel();return;}
   if(!S.undo.length)return;
   S.redo.push(serialize());
   histBorner(S.redo);
@@ -3778,7 +3781,10 @@ function routeSegsTo(R,t){
   if(!N.firstObstacle(line,skip))return {segs:direct.map(seg),bad:false,retouche:ret};
   const mode=routeMode();
   if(mode==="shove"){
-    const r=pnsShove(N,line,skip,Date.now());
+    // les coudes déjà cliqués ne sont pas encore sur la carte : figés ici, le cuivre poussé ne les traverse pas
+    const B=N.branch();
+    for(const s of R.done)B.add(pnsItemSeg(s.l,R.net,s.w!=null?s.w:R.w,s.x1,s.y1,s.x2,s.y2,{locked:true}));
+    const r=pnsShove(B,line,skip,Date.now());
     if(r.ok)
       return {segs:pnsSegs(r.pts).map(seg),bad:false,
               contourne:pnsLen(r.pts)>pnsLen(line.pts)+1e-6,shove:r};
@@ -4035,6 +4041,7 @@ function viaIsole(v,nets,skip){
   }
   if(!pire)return "";
   const it=pire.it;
+  if(it.zone)return "dans la "+it.src.nom+", ou sous son isolement";
   if(it.ko)return "dans le keep-out « "+it.src.nom+" »";       // 50-couches.js
   const quoi=it.k==="V"?("d'un via "+(it.net?"de "+it.net:"sans net")):
              it.npth?"d'un trou NPTH":
@@ -4205,7 +4212,15 @@ function backRoute(){
   if(!R||!R.done.length)return;
   const s=R.done.pop();
   R.pt={x:s.x1,y:s.y1};
-  if(R.layer!==s.l){R.layer=s.l;setActive(s.l);}
+  if(R.layer!==s.l){
+    // on repasse sous le changement de couche : son via repart avec lui, comme dans `dpBack`
+    for(const v of R.vias.filter(v=>v.x===r3(s.x2)&&v.y===r3(s.y2))){
+      R.vias.splice(R.vias.indexOf(v),1);
+      const i=S.vias.indexOf(v);if(i>=0)S.vias.splice(i,1);
+    }
+    touch();
+    R.layer=s.l;setActive(s.l);
+  }
   if(s.w!=null)R.w=s.w;
   draw();
 }

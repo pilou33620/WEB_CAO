@@ -144,6 +144,7 @@ function pnsKind(it){
    du moteur où les classes de net et la matrice entrent en jeu ; le reste ne
    connaît que des polygones. */
 function pnsClr(it,net,kind){
+  if(it&&it.zone)return clrZone(it.zone,net,"cu",kind||"trk");   // une région pleine : l'isolement de zonesDrc
   if(it&&it.ko)return 0;                     // un keep-out : n'y pas entrer suffit (50-couches.js)
   if(it&&it.npth)return classOf(net).clr;   // un trou : la classe du cuivre, comme le bloc NPTH du contrôle
   return clrK(net,it.net,kind||"trk",pnsKind(it));
@@ -151,6 +152,7 @@ function pnsClr(it,net,kind){
 /* L'isolation exigée entre deux items quelconques : les deux natures viennent
    de l'index. C'est la mesure du contrôle DRC. */
 function pnsClrPair(a,b){
+  if(a.zone||b.zone){const z=a.zone?a:b, o=a.zone?b:a;return clrZone(z.zone,o.net,"cu",pnsKind(o));}
   if(a.ko||b.ko)return 0;
   if(a.npth)return classOf(b.net).clr;     // un trou : la classe du cuivre d'en face, comme le bloc NPTH du contrôle
   if(b.npth)return classOf(a.net).clr;
@@ -440,6 +442,17 @@ function pnsBuild(){
   for(const t of S.tracks)for(const it of pnsItemsTrack(t))N.add(it);
   for(const h of trousMonde())if(h.d>0)N.add(pnsItemTrou(h));
   if(typeof pnsItemsKeepout==="function")for(const it of pnsItemsKeepout())N.add(it);   // 50-couches.js
+  /* Une région pleine ne se recoule pas : obstacle fixe pour pistes et vias des
+     autres nets, sur le moule du keep-out (le DRC d'isolation l'ignore de même,
+     `zonesDrc` s'en charge). */
+  for(const z of S.zones){
+    if(!z.plein||z.pts.length<3)continue;
+    const b=polyBBox(z.pts), cx=(b.x1+b.x2)/2, cy=(b.y1+b.y2)/2;
+    const q={n:0,x:cx,y:cy,w:b.x2-b.x1,h:b.y2-b.y1,shape:"poly",rot:0,drill:0,net:z.net||"",
+             pts:z.pts.map(p=>({x:p.x-cx,y:p.y-cy}))};
+    N.add({k:"P",q,fp:{ref:"région pleine",id:-3},net:z.net||"",l0:z.l,l1:z.l,src:{nom:"région pleine "+(z.net||"sans net")},
+           zone:z,ko:true,koPistes:true,koVias:true,bx1:b.x1,by1:b.y1,bx2:b.x2,by2:b.y2});
+  }
   return N;
 }
 function pnsWorld(){

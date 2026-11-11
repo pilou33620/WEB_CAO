@@ -58,7 +58,7 @@ const EXPOSE=[
   "pnsWorld","pnsItemsKeepout","distSegPoly","contourTroue","zoneDecoupee","gOrigin","gXY","drwBBox","drwPoints","gerberSilk","viaObstacle","placeVia",
   "coutureZone","cloturePistes","fanoutFps","coutureRetirer","viaEssai","netMasseDefaut","fmtU","uLue","uAff","RP_PCB","hitTest","deleteSel","startRoute",
   "cutsCuivre","ilotContour","drcRangs","drcCategorie","drcFenetre","drcPas","copySelPcb","fpEssai","fpChevauchements","placementDegage","placementBilan","fpPlaceLibre","pasteClipPcb","rotateSel","flipSel","fpGene","routeRetouche","dragMoveBy","beginMove","dragRotate","gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
-  "updateRoute","stepRoute","commitRoute","routeToLayer","runDrc","buildTabs",
+  "updateRoute","stepRoute","commitRoute","routeToLayer","runDrc","buildTabs","backRoute",
   "buildLayers","refreshPanels","buildList","buildProps","clearSel","rotateSel",
   "BLOC_PLACEMENT","PLACEMENT_SCORE","fpBBox",
   /* sélection multiple : les groupes du panneau Propriétés */
@@ -7993,6 +7993,17 @@ T("rotation d'une pastille : cumulée à l'empreinte, inversée par le miroir",(
   if(Math.abs((haut.y2-haut.y1)-(large.x2-large.x1)-0.2)>1e-6)
     throw new Error("le contour garde ses marges : 0,35 en haut et en bas, "+
       "0,25 à gauche et à droite : "+JSON.stringify(haut));
+});
+T("bus : la résistance série du libellé passe par simParseResistance (4k7, 1M, repère seul)",()=>{
+  const lit=s=>SIM_PCB.busNetFlight("NET_A + NET_B ("+s+")");
+  const cas=[["R1 4k7",4700],["R1 4,7k",4700],["R1 1M",1e6],["R1 560Ω",560],["33Ω",33],["22R",22]];
+  for(const [txt,ohms] of cas)
+    if(lit(txt).rOhms!==ohms)
+      throw new Error("("+txt+") → "+lit(txt).rOhms+" Ω au lieu de "+ohms);
+  /* un repère seul n'est pas une valeur : « R12 » se lisait 12 Ω */
+  const seul=lit("R12");
+  if(seul.rOhms!==22||seul.rComp!=="R12")
+    throw new Error("(R12) → "+seul.rOhms+" Ω, repère "+JSON.stringify(seul.rComp));
 });
 T("fichier reçu : texte vidé absent du Gerber, nom de couche mécanique échappé",()=>{
   const avant=serialize();
@@ -30321,6 +30332,153 @@ T("netlist « supprimer les absents » : les pastilles libres restent",()=>{
   const f=pastilleLibre(10,10,"fiducial","");
   applyNetlist("* Netlist\n=== Composants ===\n    J1     X     \n=== Feuille 1 ===\nNET \"GND\"\n    J1.1\n",true);
   if(!S.fps.includes(f))throw new Error("la mire libre a été supprimée");
+});
+
+/* ---------- le routeur contre le DRC (audit du 11/11/2026) ----------
+   Chaque essai pose du cuivre par le routeur puis lit le DRC : ce que le routeur
+   accepte, le contrôle ne doit pas le refuser. `rtCarte` rend la carte d'avant. */
+function rtCarte(doc,fn){
+  const g={doc:serialize(),undo:S.undo.slice(),redo:S.redo.slice(),grid:S.grid,active:S.active,avoid:S.avoid,scale:S.scale};
+  try{
+    loadDoc(Object.assign({cu:2,board:{x:0,y:0,w:60,h:40},fps:[],tracks:[],vias:[]},doc));
+    S.avoid=true;S.active=0;
+    fn();
+  }finally{
+    S.route=null;S.dp=null;
+    loadDoc(JSON.parse(g.doc),true);
+    S.undo=g.undo;S.redo=g.redo;S.grid=g.grid;S.active=g.active;S.avoid=g.avoid;S.scale=g.scale;
+  }
+}
+const rtErr=re=>runDrc().filter(d=>!d.info&&(!re||re.test(d.msg))).map(d=>d.msg);
+const rtClic=(x,y)=>{routeToPoint({x,y});stepRoute();};
+const RT_A={l:0,net:"A",w:0.3,x1:8,y1:10,x2:10,y2:10};
+T("shove : une ligne poussée deux fois dans le même geste n'est posée qu'une fois",()=>{
+  rtCarte({tracks:[{l:0,net:"A",w:0.3,x1:20,y1:8,x2:20,y2:10},
+    {l:0,net:"N0",w:0.3,x1:20,y1:12.5,x2:23.5,y2:16},{l:0,net:"N1",w:0.3,x1:19.5,y1:12,x2:23,y2:8.5}]},()=>{
+    startRoute(20,10,true);rtClic(24,17.5);if(S.route)commitRoute();
+    const n1=S.tracks.filter(t=>t.net==="N1");
+    if(n1.length!==1)throw new Error("N1 posée en "+n1.length+" morceaux, sa géométrie intermédiaire est restée");
+    const e=rtErr(/Isolation/);
+    if(e.length)throw new Error(e[0]);
+  });
+});
+T("shove : le cuivre poussé ne traverse pas les coudes déjà cliqués du tracé en cours",()=>{
+  rtCarte({tracks:[RT_A,{l:0,net:"B",w:0.3,x1:5,y1:10.6,x2:30,y2:10.6}]},()=>{
+    startRoute(10,10,true);rtClic(20,10);rtClic(20,14);if(S.route)commitRoute();
+    const e=rtErr(/Isolation/);
+    if(e.length)throw new Error(e[0]);
+  });
+});
+T("shove : un via poussé est jugé à sa nouvelle place (via voisin, piste d'une autre couche, bord)",()=>{
+  const B={x:20,y:10.2,d:0.8,drill:0.4,a:0,b:1,net:"B"};
+  for(const [quoi,doc] of [
+    ["via voisin",{tracks:[RT_A],vias:[B,{x:20,y:11.3,d:0.8,drill:0.4,a:0,b:1,net:"C"},{x:20,y:8.6,d:0.8,drill:0.4,a:0,b:1,net:"D"}]}],
+    ["piste d'une autre couche",{tracks:[RT_A,{l:1,net:"C",w:0.3,x1:15,y1:11.2,x2:25,y2:11.2}],vias:[B]}],
+    ["bord",{tracks:[{l:0,net:"A",w:0.3,x1:8,y1:1.5,x2:10,y2:1.5}],vias:[{x:20,y:1.3,d:0.8,drill:0.4,a:0,b:1,net:"B"}],y:1.5}]])
+    rtCarte(doc,()=>{
+      const y=doc.y||10;
+      startRoute(10,y,true);rtClic(30,y);if(S.route)commitRoute();
+      const e=rtErr(/Isolation|Via hors du contour/);
+      if(e.length)throw new Error(quoi+" : "+e[0]);
+    });
+});
+T("shove : cartes au hasard en mode « pousser », le DRC ne trouve aucune isolation nouvelle",()=>{
+  let seed=1;const rnd=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};
+  const R=(a,b)=>a+(b-a)*rnd(), pick=a=>a[Math.floor(rnd()*a.length)], g=v=>Math.round(v*4)/4;
+  for(let c=0;c<25;c++){
+    const fps=[],tracks=[];
+    for(let i=0;i<14;i++){
+      const w=R(0.6,2.4);
+      fps.push({ref:"P"+i,x:g(R(6,54)),y:g(R(6,34)),rot:pick([0,90,30]),side:0,nets:{1:pick(["N1","N2","N3","N4"])},
+        pads:[{n:1,x:0,y:0,w,h:R(0.6,2.4),shape:pick(["rect","oval"]),drill:0}]});
+    }
+    for(let i=0;i<6;i++){
+      const x=g(R(6,54)),y=g(R(6,34)),d=pick([[1,0],[0,1],[1,1],[1,-1]]),len=g(R(2,12));
+      const x2=x+d[0]*len,y2=y+d[1]*len;
+      if(!len||x2>54||y2<6||y2>34)continue;
+      tracks.push({l:0,net:pick(["X1","X2"]),w:pick([0.2,0.3,0.5]),x1:x,y1:y,x2,y2});
+    }
+    rtCarte({fps,tracks,rule:{route:"shove"}},()=>{
+      const avant=new Set(rtErr(/Isolation/));
+      for(let k=0;k<6;k++){
+        const q=padsWorld(pick(S.fps))[0];
+        S.active=0;startRoute(q.x,q.y,true);
+        if(!S.route.net){S.route=null;continue;}
+        for(let j=1+Math.floor(rnd()*2);j>0&&S.route;j--){
+          routeToPoint({x:g(R(3,57)),y:g(R(3,37))});
+          if(!S.route.bad)stepRoute();
+        }
+        if(S.route)commitRoute();
+        const neuf=rtErr(/Isolation/).filter(m=>!avant.has(m));
+        if(neuf.length)throw new Error("carte "+c+", tracé "+k+" : "+neuf[0]);
+      }
+    });
+  }
+});
+T("paire : chaque tronçon garde la largeur de sa couche au dépôt",()=>{
+  rtCarte({fps:[{ref:"J1",x:10,y:10,rot:0,side:0,nets:{1:"DP",2:"DN"},
+      pads:[{n:1,x:0,y:-0.5,w:0.6,h:0.6,shape:"rect"},{n:2,x:0,y:0.5,w:0.6,h:0.6,shape:"rect"}]}],
+    dpPairs:[{id:1,name:"USB",p:"DP",n:"DN"}],
+    dpRules:[{name:"R",allLayers:false,minW:0.1,prefW:0.15,maxW:0.5,minGap:0.13,prefGap:0.15,maxGap:0.4,layers:{1:{prefW:0.4}}}]},()=>{
+    S.scale=20;S.grid=0;
+    if(!dpStart(10,10))throw new Error("départ de paire refusé");
+    dpUpdate(20,10);dpStep();dpVia();dpUpdate(30,10);dpStep();dpCommit();
+    const w0=[...new Set(S.tracks.filter(t=>t.l===0).map(t=>t.w))], w1=[...new Set(S.tracks.filter(t=>t.l===1).map(t=>t.w))];
+    if(w0.join()!=="0.15"||w1.join()!=="0.4")throw new Error("largeurs posées : couche 0 "+w0+", couche 1 "+w1);
+    const e=rtErr(/Isolation/);
+    if(e.length)throw new Error(e[0]);
+  });
+});
+T("shove : un texte cuivre ne se pousse pas",()=>{
+  rtCarte({tracks:[RT_A,{l:0,net:"",w:0.2,x1:20,y1:8,x2:20,y2:12,texte:true}]},()=>{
+    startRoute(10,10,true);rtClic(30,10);if(S.route)commitRoute();
+    const t=S.tracks.filter(x=>!x.net);
+    if(t.length!==1||!t[0].texte||t[0].y1!==8||t[0].y2!==12)throw new Error("le trait du texte a été déformé : "+JSON.stringify(t));
+  });
+});
+T("shove : un via poussé n'emmène pas une piste verrouillée",()=>{
+  rtCarte({tracks:[RT_A,{l:0,net:"B",w:0.3,x1:20,y1:10.2,x2:20,y2:20,locked:true}],
+           vias:[{x:20,y:10.2,d:0.8,drill:0.4,a:0,b:1,net:"B"}]},()=>{
+    startRoute(10,10,true);rtClic(30,10);if(S.route)commitRoute();
+    const t=S.tracks.filter(x=>x.net==="B");
+    if(t.length!==1||!t[0].locked||t[0].y1!==10.2)throw new Error("la piste verrouillée a bougé : "+JSON.stringify(t));
+  });
+});
+T("contournement : le détour ne passe pas entre l'obstacle et le bord, sous la marge du DRC",()=>{
+  rtCarte({rule:{route:"walk"},tracks:[{l:0,net:"A",w:0.3,x1:8,y1:1.5,x2:10,y2:1.5}],
+           fps:[{ref:"U1",x:20,y:1.6,rot:0,side:0,nets:{1:"B"},pads:[{n:1,x:0,y:0,w:1.5,h:1.5,shape:"rect"}]}]},()=>{
+    startRoute(10,1.5,true);rtClic(30,1.5);if(S.route)commitRoute();
+    if(S.tracks.length<2)throw new Error("rien n'est posé");
+    const e=rtErr(/trop près du bord|Isolation/);
+    if(e.length)throw new Error(e[0]);
+  });
+});
+T("tracé : une région pleine d'un autre net est un obstacle pour le routeur",()=>{
+  rtCarte({tracks:[RT_A],zones:[{id:5,l:0,net:"B",plein:true,pts:[{x:15,y:5},{x:25,y:5},{x:25,y:15},{x:15,y:15}]}]},()=>{
+    startRoute(10,10,true);rtClic(30,10);if(S.route)commitRoute();
+    const e=rtErr(/Région pleine/);
+    if(e.length)throw new Error(e[0]);
+  });
+});
+T("Ctrl+Z en plein tracé : le geste est abandonné, l'édition d'avant reste",()=>{
+  rtCarte({tracks:[RT_A,{l:0,net:"B",w:0.3,x1:5,y1:10.6,x2:30,y2:10.6},{l:0,net:"C",w:0.3,x1:40,y1:30,x2:50,y2:30}]},()=>{
+    S.undo=[serialize()];S.redo=[];
+    startRoute(10,10,true);rtClic(20,10);rtClic(20,14);
+    undo();
+    if(S.route)throw new Error("le tracé est encore en cours");
+    if(S.undo.length!==1||S.redo.length)throw new Error("l'historique a bougé : "+S.undo.length+" / "+S.redo.length);
+    if(S.tracks.length!==3||S.tracks.filter(t=>t.net==="B").length!==1)throw new Error("la carte n'est pas celle d'avant le geste : "+S.tracks.length+" pistes");
+  });
+});
+T("retour arrière sous un changement de couche : le via repart avec lui",()=>{
+  rtCarte({tracks:[RT_A]},()=>{
+    startRoute(10,10,true);rtClic(20,10);
+    if(!routeVia())throw new Error("via refusé");
+    rtClic(20,20);backRoute();
+    if(S.vias.length!==1)throw new Error("le via devait rester tant qu'on est dessus");
+    backRoute();
+    if(S.route.layer!==0||S.vias.length)throw new Error("couche "+S.route.layer+", "+S.vias.length+" via(s) resté(s)");
+  });
 });
 
 (async()=>{

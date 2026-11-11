@@ -464,7 +464,11 @@ function dpUpdate(x,y){
   if(dpPose(D,gA,gB,t,direct,null)){D.bad=false;return;}
   const mode=routeMode();
   if(mode==="shove"&&S.avoid){
-    const r=pnsShoveHeads(pnsWorld(),
+    // les coudes déjà cliqués de la paire, figés comme ceux d'une piste seule (routeSegsTo)
+    const B=pnsWorld().branch();
+    for(const [segs,net] of [[D.doneP,pair.p],[D.doneN,pair.n]])
+      for(const s of segs)B.add(pnsItemSeg(s.l,net,s.w!=null?s.w:D.w,s.x1,s.y1,s.x2,s.y2,{locked:true}));
+    const r=pnsShoveHeads(B,
       [{l:D.layer,net:pair.p,w:D.w,pts:pnsPts(D.prevP)},
        {l:D.layer,net:pair.n,w:D.w,pts:pnsPts(D.prevN)}],null,Date.now());
     if(r.ok&&dpPose(D,gA,gB,t,direct,r)){D.bad=false;return;}
@@ -523,8 +527,9 @@ function dpPose(D,gA,gB,t,axis,shove){
     chP=chP.concat(dpLeg(eP,t.tP));
     chN=chN.concat(dpLeg(eN,t.tN));
   }
-  D.prevP=chP.map(sg=>Object.assign({l:D.layer},sg));
-  D.prevN=chN.map(sg=>Object.assign({l:D.layer},sg));
+  // chaque tronçon garde la largeur de SA couche : la règle de paire peut en changer d'une couche à l'autre
+  D.prevP=chP.map(sg=>Object.assign({l:D.layer,w:D.w},sg));
+  D.prevN=chN.map(sg=>Object.assign({l:D.layer,w:D.w},sg));
   if(D.cross)return false;
   /* Le contrôle se fait sur le monde TEL QU'IL SERA : quand le shove a écarté
      du cuivre, c'est la branche qu'il faut relire, pas la carte d'avant. Sans
@@ -639,8 +644,8 @@ function dpVia(){
   }
   dpMark(D);
   if(ouvre){
-    D.doneP.push({l:D.layer,x1:D.aP.x,y1:D.aP.y,x2:pP.x,y2:pP.y});
-    D.doneN.push({l:D.layer,x1:D.aN.x,y1:D.aN.y,x2:pN.x,y2:pN.y});
+    D.doneP.push({l:D.layer,w:D.w,x1:D.aP.x,y1:D.aP.y,x2:pP.x,y2:pP.y});
+    D.doneN.push({l:D.layer,w:D.w,x1:D.aN.x,y1:D.aN.y,x2:pN.x,y2:pN.y});
     const before=D.pt;
     D.aP=pP;D.aN=pN;D.pt=dpMid(D);
     D.mid.push({l:D.layer,x1:before.x,y1:before.y,x2:D.pt.x,y2:D.pt.y});
@@ -680,7 +685,7 @@ function dpCommit(){
   for(const [segs,net] of [[D.doneP,D.pair.p],[D.doneN,D.pair.n]]){
     let prev=null;
     for(const s of segs){
-      const t={l:s.l,net:net,w:D.w,x1:r3(s.x1),y1:r3(s.y1),x2:r3(s.x2),y2:r3(s.y2)};
+      const t={l:s.l,net:net,w:s.w!=null?s.w:D.w,x1:r3(s.x1),y1:r3(s.y1),x2:r3(s.x2),y2:r3(s.y2)};
       if(t.x1===t.x2&&t.y1===t.y2)continue;
       if(prev&&sameLine(prev,t)){prev.x2=t.x2;prev.y2=t.y2;continue;}
       S.tracks.push(t);prev=t;posed.push(t);

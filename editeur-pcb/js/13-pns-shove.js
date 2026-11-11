@@ -141,6 +141,7 @@ function pnsShoveAside(B,line,gene,bud){
     return null;
   };
   const libre=pnsBoutsLibres(B,line.l,line.pts);
+  const m=S.rule.edge+line.w/2, marge=pnsSurCarte(line.pts,m);   // une ligne à sa marge du bord y reste
   const cand=[];
   for(const side of [1,-1]){
     let pts=pnsSimplify(line.pts), bon=true;
@@ -150,7 +151,7 @@ function pnsShoveAside(B,line,gene,bud){
       if(k===PNS_WALK_MAX){bon=false;break;}   // on tourne en rond
       const H=g.grp?pnsHullGroup(g.grp,line.net,line.w):pnsHullOct(g,line.net,line.w);
       const suite=pnsPushOut(pts,H,side)||(libre?pnsSlideOut(pts,H):null);
-      if(!suite||!pnsIs45(suite)||!pnsSurCarte(suite)){bon=false;break;}
+      if(!suite||!pnsIs45(suite)||!pnsSurCarte(suite)||marge&&!pnsSurCarte(suite,m)){bon=false;break;}
       pts=suite;
     }
     if(bon&&pts.length>1)cand.push(pts);
@@ -239,6 +240,23 @@ function pnsRelink(B,ligne,pts){
     neufs.push(B.add(pnsItemSeg(ligne.l,ligne.net,ligne.w,s.x1,s.y1,s.x2,s.y2,null)));
   return neufs;
 }
+/* Ce que le dépôt devra écrire pour une ligne déplacée. Une ligne déjà poussée
+   dans ce geste n'a plus de `src` : son ancien rec est repris ici, sans quoi
+   `pnsApply` poserait aussi sa géométrie intermédiaire. */
+function pnsRec(lignes,L,pts,neufs){
+  const orig=L.items.map(o=>o.src).filter(Boolean);
+  for(const r of new Set(L.items.map(o=>o.rec).filter(Boolean))){
+    orig.push(...r.orig);r.mort=true;
+    const i=lignes?lignes.indexOf(r):-1;
+    if(i>=0)lignes.splice(i,1);
+  }
+  const rec={l:L.l,net:L.net,w:L.w,pts,orig,items:neufs};
+  for(const it of neufs)it.rec=rec;
+  if(lignes)lignes.push(rec);
+  return rec;
+}
+/* Ce que le shove ne déplace pas : le cuivre verrouillé et les traits d'un texte. */
+function pnsFige(it){return !!(it.src&&(it.src.locked||it.src.texte));}
 /* Où le via doit aller pour se dégager, en fuyant **perpendiculairement** à la
    ligne qui pousse. Un via n'a pas de forme à longer, seulement un centre à
    déplacer : la normale est le plus court chemin dehors, et c'est la seule
@@ -306,6 +324,7 @@ function pnsViaSuites(B,it,p){
       if(o.it.arc)return null;             // une courbe part du fichier, pas du routeur
       const L=B.assemble(o.it);
       if(L.pts.length<2)return null;
+      if(L.items.some(pnsFige))return null;   // le via n'emmène pas une piste verrouillée
       const pts=L.pts.slice();
       const iBout=dist(pts[0].x,pts[0].y,it.v.x,it.v.y)<5e-4?0:pts.length-1;
       if(dist(pts[iBout].x,pts[iBout].y,it.v.x,it.v.y)>5e-4)return null;
@@ -328,7 +347,10 @@ function pnsShoveVia(B,via,gene,pile,rang,lignes){
     const p=pnsViaEscape(it,gene,sens);
     if(!p)continue;
     if(dist(p.x,p.y,it.v.x,it.v.y)<1e-9)continue;
-    if(!inBoard(p.x,p.y,S.rule.edge))continue;
+    if(!inBoard(p.x,p.y,S.rule.edge+it.v.d/2))continue;
+    // jugé où il arrive, comme à la pose : seules ses pistes repartent sur la pile, pas lui
+    const la=Object.assign({},it.v,{x:p.x,y:p.y}), moi=new Set([it,it.src||it.v]);
+    if(B.colliding(pnsItemVia(la),moi).length||viaPaire(la,moi)||viaTrou(la,moi))continue;
     const suites=pnsViaSuites(B,it,p);
     if(!suites)continue;
     const cout=dist(p.x,p.y,it.v.x,it.v.y)+
@@ -346,10 +368,8 @@ function pnsShoveVia(B,via,gene,pile,rang,lignes){
   B.add(nit);
   via.deplace={orig:nit.src,x:choix.p.x,y:choix.p.y};
   for(const s of choix.suites){
-    const orig=s.ligne.items.map(o=>o.src).filter(Boolean);
     const neufs=pnsRelink(B,s.ligne,s.pts);
-    const rec={l:s.ligne.l,net:s.ligne.net,w:s.ligne.w,pts:s.pts,orig,items:neufs};
-    if(lignes)lignes.push(rec);
+    const rec=pnsRec(lignes,s.ligne,s.pts,neufs);
     pile.push({items:neufs,pts:s.pts,l:s.ligne.l,net:s.ligne.net,w:s.ligne.w,
                rang:rang+1,reprises:0,rec:lignes?rec:null});
   }
@@ -444,6 +464,7 @@ function pnsShoveHeads(node,heads,skip,t0,opts){
     if(debut!=null&&Date.now()-debut>PNS_SHOVE_MS)return fin({ok:false,cause:"temps"});
     const cur=pile[pile.length-1];
     if(!cur)return fin({ok:true,node:B,lignes,vias,tete:teteItems});
+    if(cur.rec&&cur.rec.mort){pile.pop();continue;}   // repoussée depuis : sa géométrie n'existe plus
     bud.n+=PNS_SHOVE_INDEX*(cur.hitems?cur.hitems.length:Math.max(1,cur.pts.length-1));
     /* Une tête ne pousse pas une autre tête : elles forment ensemble la
        géométrie qu'on essaie de poser, et se tiennent déjà à leur écart. Le
@@ -463,6 +484,7 @@ function pnsShoveHeads(node,heads,skip,t0,opts){
       if(!neuf)return fin({ok:false,cause:"tête"});
       if(tendre)neuf=pnsTendre(B,cur,neuf,teteItems,new Set(cur.items),bud);
       cur.items=pnsRelink(B,cur,neuf);
+      for(const it of cur.items)it.rec=cur.rec;
       cur.pts=neuf;cur.rec.pts=neuf;cur.rec.items=cur.items;cur.reprises++;
       continue;
     }
@@ -471,7 +493,7 @@ function pnsShoveHeads(node,heads,skip,t0,opts){
        rendre en segments droits, et l'arc serait perdu. Le tracé la contourne,
        comme il contourne une pastille. */
     if(ob.it.arc)return fin({ok:false,cause:"courbe"});
-    if(ob.it.src&&ob.it.src.locked)return fin({ok:false,cause:"verrou"});   // verrouillé : on contourne
+    if(pnsFige(ob.it))return fin({ok:false,cause:"verrou"});   // verrouillé, ou texte cuivre : on contourne
     if(cur.rang>=PNS_SHOVE_RANG)return fin({ok:false,cause:"profondeur"});
 
     if(ob.it.k==="V"){
@@ -484,7 +506,7 @@ function pnsShoveHeads(node,heads,skip,t0,opts){
        détacherait de ses voisins — et on l'écarte de la ligne courante. */
     const L=B.assemble(ob.it);
     if(L.pts.length<2)return fin({ok:false,cause:"assemblage"});
-    if(L.items.some(o=>o.src&&o.src.locked))return fin({ok:false,cause:"verrou"});
+    if(L.items.some(pnsFige))return fin({ok:false,cause:"verrou"});
     const vu=(compte.get(ob.it)||0)+1;
     if(vu>PNS_SHOVE_REPRISE)return fin({ok:false,cause:"reprises"});
     for(const o of L.items)compte.set(o,vu);
@@ -492,10 +514,8 @@ function pnsShoveHeads(node,heads,skip,t0,opts){
     if(!neufPts)return fin({ok:false,cause:"coincé"});
     if(tendre)neufPts=pnsTendre(B,L,neufPts,cur.fixe?teteItems:cur.items.concat(teteItems),
                                 new Set(L.items),bud);
-    const orig=L.items.map(o=>o.src).filter(Boolean);
     const neufs=pnsRelink(B,L,neufPts);
-    const rec={l:L.l,net:L.net,w:L.w,pts:neufPts,orig,items:neufs};
-    lignes.push(rec);
+    const rec=pnsRec(lignes,L,neufPts,neufs);
     pile.push({items:neufs,pts:neufPts,l:L.l,net:L.net,w:L.w,
                rang:cur.rang+1,reprises:vu,rec});
   }
