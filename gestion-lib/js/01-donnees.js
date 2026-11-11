@@ -647,7 +647,9 @@ function telechargerCsv() {
     const row = LIB_STATE.colonnes.map(col => escapeField(c[col] || ""));
     lines.push(row.join(";"));
   }
-  const blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+  // Marque UTF-8 en tête : sans elle Excel lit les accents en cp1252 (« Ã© »).
+  // csvLignes et le serveur (utf-8-sig) la retirent à la relecture.
+  const blob = new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = "LIB_composants.csv";
