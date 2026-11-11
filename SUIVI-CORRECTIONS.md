@@ -37,10 +37,10 @@ Décisions du 11/11 : toutes appliquées (boutons pour les fonctions sans appela
 | F | Synoptique : places et titres gardés à la renumérotation | `05-feuilles.js` |
 | F | Recherche de composants : une recherche lente n'écrase plus la suivante | `22-recherche-composants.js` |
 | F | PCB : boutons du point de broche 1 (`fpSetMark`, `fpMoveMark`, `fpSetMarkD`), du contour imprimé (`fpSetBody`), « Revenir à l'empreinte calculée » (`fpGeneric`) | `06-panels.js` |
-| D | Sans bouton car doublons : `fpMovePad` (champs X/Y de la pastille), `stackSym` (déjà dans le panneau d'empilage), `dfPlacerVue` (glisser d'une vue) ; recommandé : garder pour les essais ou supprimer | `01-core.js`, `34-draftsman-vues.js` |
+| C | Sans bouton car doublons : `fpMovePad` (champs X/Y de la pastille), `stackSym` (déjà dans le panneau d'empilage), `dfPlacerVue` (glisser d'une vue) ; recommandé : garder pour les essais ou supprimer | `01-core.js`, `34-draftsman-vues.js` | — décision : supprimer
 | F | Schématique : `icMovePin` a son geste (glisser une broche d'un CI « Libre ») | `09-interaction.js` |
-| D | `schCartoucheBasculer` : doublon du bouton « Cartouche » (format aucun/A4/A3) ; recommandé : supprimer | `05-feuilles.js` |
-| D | `N.replace` (jamais appelé) et `N.commit` (essais seulement) : méthodes internes du routeur, pas d'action utilisateur ; recommandé : supprimer `N.replace` | `editeur-pcb/js/11-pns-node.js` |
+| F | `schCartoucheBasculer` supprimée (doublon du bouton « Cartouche ») | `05-feuilles.js` |
+| C | `N.replace` (jamais appelé) et `N.commit` (essais seulement) : méthodes internes du routeur, pas d'action utilisateur ; recommandé : supprimer `N.replace` | `editeur-pcb/js/11-pns-node.js` | — décision : supprimer
 | F | `el.specs` d'un fichier hostile affiche « [object Object] » | import | ne plante pas |
 | R | HTML du schématique : pas relu ligne à ligne | | ids vérifiés seulement |
 
@@ -112,7 +112,7 @@ Décisions du 11/11 : toutes appliquées (boutons pour les fonctions sans appela
 | F | IPC-2581 : coordonnée `inf` / `nan` | `ipc2581_parser.py` |
 | F | 30 — εeff et retard en cuivre épais (εeff : +24 % au pire → ≤ 1,3 %, contre différences finies) | `ligne_mom.py` |
 | F | Avertissement « flancs en regard » sur la fiche | `simulation_em.py` |
-| R | Flancs en regard (paire serrée, coplanaire à moins de 6 épaisseurs) : Z lue +3 à +7 % trop haut ; demande des panneaux sur les flancs | `ligne_mom.py` (`FLANCS_EN_REGARD`) |
+| R | Flancs en regard (paire serrée, coplanaire à moins de 6 épaisseurs) : Z lue +3 à +7 % trop haut ; demande des panneaux sur les flancs | `ligne_mom.py` (`FLANCS_EN_REGARD`) | — décision : plus tard
 | F | Formule légère côté page : même défaut d'εeff en cuivre épais | `commun/simulation-em.js` (`ltWeff`, `ltEeff`) |
 | R | Essai « Scd21 miroir (N contre P) » recalé de 7 à 9 % : dissymétrie N/P de 7,8 % non expliquée | `banc-oeil.py`, modèle du via seul |
 | R | Cuivre épais sans référence : vernis autre que 25 µm, section sans plan, triplaque couplée, plus de trois conducteurs | |
@@ -144,8 +144,8 @@ Décisions du 11/11 : toutes appliquées (boutons pour les fonctions sans appela
 
 | État | Point | Où |
 |---|---|---|
-| R | Paire de pistes routée jusqu'à un demi-trou : encore refusée (exception absente des paires et des détours) | `09-diffpair.js`, `pnsSurCarte` |
-| R | Niveau établi d'une paire dissymétrique (brin par brin) : encore lu dans Re(B[0]) | `oeil._continu_brins` |
-| R | Isolement propre d'une pastille : pas encore pris par le contrôle des bras thermiques ni l'écart entre pastilles d'une même empreinte | `02-connectivity.js` (`clrK`) |
-| R | Messages du contrôle : une pastille sans numéro est désignée par son numéro interne (« J1.5 ») | |
+| C | Paire de pistes routée jusqu'à un demi-trou : encore refusée (exception absente des paires et des détours) | `09-diffpair.js`, `pnsSurCarte` |
+| C | Niveau établi d'une paire dissymétrique (brin par brin) : encore lu dans Re(B[0]) | `oeil._continu_brins` |
+| C | Isolement propre d'une pastille : pas encore pris par le contrôle des bras thermiques ni l'écart entre pastilles d'une même empreinte | `02-connectivity.js` (`clrK`) |
+| C | Messages du contrôle : une pastille sans numéro est désignée par son numéro interne (« J1.5 ») | |
 | L | Onglet Général du symbole : préfixe « U » si vidé | `editeurCollecterGeneralSch` |

@@ -171,11 +171,6 @@ function schCartoucheFormat(f){
     if(b){p.pageX=snap((b.x1+b.x2-F.w*SCH_U)/2);p.pageY=snap((b.y1+b.y2-F.h*SCH_U)/2);}
   }else delete p.format;
 }
-function schCartoucheBasculer(){
-  push();storeCurrent();
-  schCartoucheFormat(cartoucheSuivant(S.pages[S.page].format||""));
-  buildTabs();fit();
-}
 /* Le bouton : format de la feuille, champs du document, société du profil */
 function schCartoucheDialogue(){
   cartoucheDialogue({format:S.pages[S.page].format||"",info:S.cartoucheInfo,appliquer:(f,info)=>{

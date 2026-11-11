@@ -55,7 +55,7 @@ global.BroadcastChannel.prototype.close=function(){
 const code=fs.readFileSync(path.join(__dirname,"..","dist","schema.js"),"utf8");
 const EXPOSE=[
   /* état et feuilles */
-  "S","G","newPage","refStartPage","refStartDe","usedRefs","schCartoucheBasculer","schCartouche","schPage","schContenu","CARTOUCHE_FORMATS","cartoucheSuivant","loadPage","storeCurrent","gotoPage","addPage","removePage","clearSel",
+  "S","G","newPage","refStartPage","refStartDe","usedRefs","schCartoucheFormat","schCartouche","schPage","schContenu","CARTOUCHE_FORMATS","cartoucheSuivant","loadPage","storeCurrent","gotoPage","addPage","removePage","clearSel",
   "SCHEMA_PATTERNS","NET_CLASSES","netClassSelect",
   "addComp","schComposantsDansZone","schToutesLesZones",
   "specEcrire","push","undo","redo","histBorner","HIST_MAX","touchWires","buildTabs","draw","fit","resize",
@@ -319,10 +319,17 @@ TA("canal de pilotage : cao_schema_lire lit sans rien écrire",async()=>{
     if(S.hist.length!==hist||S.dirty!==dirty||S.page!==page)throw new Error("une lecture a écrit");
   }finally{global.Pilote=ancien;sheet([],[]);}
 });
+/* Ce que fait la fenêtre « Cartouche » quand on y choisit le format suivant
+   (aucun → A4 → A3 → aucun). */
+function cartoucheEssaiSuivant(){
+  push();storeCurrent();
+  schCartoucheFormat(cartoucheSuivant(S.pages[S.page].format||""));
+  buildTabs();fit();
+}
 T("export PDF : une page par feuille, xref juste, textes cherchables, feuille d'origine remise",()=>{
   const avant=serialize(), Bl=global.Blob;
   try{
-    demo2();schCartoucheBasculer();
+    demo2();cartoucheEssaiSuivant();
     let oct=null;global.Blob=function(parts){oct=Buffer.concat(parts.map(x=>Buffer.from(x)));};
     const o={feuilles:"toutes",papier:"auto",l:297,h:210,orient:"auto",echelle:"fit",pct:100,fond:"blanc"};
     const page=S.page;
@@ -345,11 +352,11 @@ T("cartouche : aucun → A4 → A3 → aucun, par feuille, gardé à l'enregistr
   try{
     addPage(false); const i=S.page;
     const r=addComp("resistor",3000,4000);
-    schCartoucheBasculer();
+    cartoucheEssaiSuivant();
     if(S.pages[i].format!=="A4")throw new Error("A4 attendu : "+S.pages[i].format);
     const P=schPage();
     if(!(P.x1<r.x&&r.x<P.x2&&P.y1<r.y&&r.y<P.y2))throw new Error("la page doit entourer le dessin : "+JSON.stringify(P));
-    schCartoucheBasculer();
+    cartoucheEssaiSuivant();
     if(S.pages[i].format!=="A3")throw new Error("A3 attendu : "+S.pages[i].format);
     if(!/A3/.test(document.getElementById("bCartouche").textContent))throw new Error("bouton pas à jour");
     S.cartoucheInfo={titre:"Carte essai",dessine:"AB",dateDessin:"01/02/2026",schNo:"X1SCH-A",bidon:"<b>"};
@@ -360,7 +367,7 @@ T("cartouche : aucun → A4 → A3 → aucun, par feuille, gardé à l'enregistr
     if(S.cartoucheInfo.titre!=="Carte essai"||S.cartoucheInfo.schNo!=="X1SCH-A"||"bidon" in S.cartoucheInfo)
       throw new Error("champs du cartouche : "+JSON.stringify(S.cartoucheInfo));
     S.page=S.pages.findIndex(p=>p.name===nom&&p.format==="A3");loadPage(S.page);
-    schCartoucheBasculer();
+    cartoucheEssaiSuivant();
     if("format" in S.pages[S.page])throw new Error("retour à « aucun » attendu");
   }finally{loadDoc(JSON.parse(avant),true);}
 });
