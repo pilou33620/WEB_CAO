@@ -2347,6 +2347,41 @@ T("ECO : un point de test sans boîtier prend l'empreinte de la LIB, une seule p
       throw new Error("pastilles : "+JSON.stringify(pads.map(q=>[q.n,q.shape,q.w,q.net])));
   }finally{delete FPLIB["TP-SMD-1.0mm"];loadDoc(JSON.parse(saved),true);}
 });
+/* Le panneau (pcbAppliquerDefEmpreinte) prenait le fichier de la LIB brut : les
+   traits de sérigraphie dessinés dans la Gestion LIB n'arrivaient pas, un corps
+   saisi à l'envers passait tel quel, et un fichier abîmé laissait l'empreinte à
+   moitié refaite (pastilles sans coordonnées). La netliste (fpApplyDef), elle,
+   lisait bien : les deux poses doivent donner la même forme. */
+T("empreinte de la LIB : le panneau la lit comme la netliste (sérigraphie, corps, fichier abîmé)",()=>{
+  const def=()=>({format:"pcbfp-1",name:"ESSAI-L",pkg:"ESSAI-L",pins:2,style:"chip",
+    pads:[{n:1,x:-1,y:0,w:1,h:1.2,shape:"rect",drill:0},{n:2,x:1,y:0,w:1,h:1.2,shape:"rect",drill:0}],
+    body:{x1:1.5,y1:0.8,x2:-1.5,y2:-0.8},holes:[{x:0,y:2,d:1}],
+    lines:[{x1:-1.5,y1:-1,x2:1.5,y2:-1,width:0.15}]});
+  const neuf=()=>normDoc({fps:[{ref:"R1",pkg:"0603",pins:2,style:"chip",x:10,y:10,nets:{1:"A",2:"B"}}]}).fps[0];
+  const forme=f=>JSON.stringify([f.pads.map(({net,...q})=>q),f.body,f.holes,f.dessins,f.style,f.pins,f.nets]);
+  const a=neuf(), b=neuf();
+  fpApplyDef(a,def());
+  if(!pcbAppliquerDefEmpreinte(b,"ESSAI-L",def()))throw new Error("pose refusée");
+  if(!b.dessins||b.dessins.length!==1||b.dessins[0].layer!=="silkT"||b.dessins[0].y1!==-1)
+    throw new Error("trait de sérigraphie de la LIB perdu : "+JSON.stringify(b.dessins));
+  if(b.body.x1!==-1.5||b.body.y2!==0.8)throw new Error("corps non remis à l'endroit : "+JSON.stringify(b.body));
+  if(forme(a)!==forme(b))throw new Error("deux formes pour une même définition :\n"+forme(a)+"\n"+forme(b));
+  if(b.pkg!=="ESSAI-L")throw new Error("boîtier non renommé : "+b.pkg);
+  /* une définition sans trait ni corps retire ceux de la précédente */
+  const sans=def();delete sans.lines;delete sans.body;
+  pcbAppliquerDefEmpreinte(b,"ESSAI-L",sans);
+  if(b.dessins)throw new Error("traits de l'ancienne forme gardés");
+  if(b.body)throw new Error("corps de l'ancienne forme gardé : "+JSON.stringify(b.body));
+  /* fichier abîmé : rien d'inexploitable n'entre dans l'empreinte */
+  const c=neuf();
+  pcbAppliquerDefEmpreinte(c,"ABIME",{pins:1e9,style:"<b>",pitch:"x",span:-1,body:{x1:"a"},
+    pads:[{n:"x",x:"abc",y:1e300,w:-5,h:1e9,shape:"<img>",drill:"NaN"},null,
+          {n:2,x:0,y:0,w:1,h:1,shape:"poly",pts:[null,{x:"a"}]}]});
+  const w=padsWorld(c);
+  if(!w.length||w.length>4096||!w.every(q=>[q.x,q.y,q.w,q.h,q.rot].every(Number.isFinite)))
+    throw new Error("pastilles inexploitables : "+JSON.stringify(w.map(q=>[q.x,q.y,q.w,q.h])));
+  if(!(c.pins>=1&&c.pins<=4096)||c.nets[1]!=="A")throw new Error("brochage : "+c.pins+" "+JSON.stringify(c.nets));
+});
 T("repères renumérotés au schéma : l'empreinte est renommée, ni recréée ni orpheline",()=>{
   const saved=serialize();
   try{

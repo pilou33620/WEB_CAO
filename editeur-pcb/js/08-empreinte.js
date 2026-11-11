@@ -47,6 +47,15 @@ function normFpDef(d){
   if(des.length)out.dessins=des.map(o=>{delete o.id;return o;});
   return out;
 }
+/* Les dessins suivent la forme (`d` sort de normFpDef) ; une sérigraphie
+   importée qui s'en va rend la main à l'automatique. Les deux poses passent par
+   ici : celle de la netliste (fpApplyDef) et celle du panneau
+   (pcbAppliquerDefEmpreinte, 01-core.js). */
+function fpDessinsDef(fp,d){
+  if(fp.silk===false&&(fp.dessins||[]).some(o=>/^silk/.test(o.layer)))delete fp.silk;
+  if(d.dessins)fp.dessins=d.dessins.map(o=>({...o}));
+  else delete fp.dessins;
+}
 /* Pose d'une définition sur une empreinte de la carte. Le repère, la valeur,
    la position, la face, la rotation et les nets ne bougent pas : seule la
    forme change. Le nom du boîtier non plus — il vient du schéma et sert la
@@ -68,10 +77,7 @@ function fpApplyDef(fp,def){
      viennent avec la définition et partent avec elle */
   if(d.holes)fp.holes=d.holes.map(h=>({...h}));
   else delete fp.holes;
-  /* les dessins suivent la forme ; une sérigraphie importée qui s'en va rend la main à l'automatique */
-  if(fp.silk===false&&(fp.dessins||[]).some(o=>/^silk/.test(o.layer)))delete fp.silk;
-  if(d.dessins)fp.dessins=d.dessins.map(o=>({...o}));
-  else delete fp.dessins;
+  fpDessinsDef(fp,d);
   /* une broche câblée ne doit jamais se retrouver sans pastille */
   const w=fpWiredPins(fp);
   if(w>fp.pins)fpSetPins(fp,w);
