@@ -61,6 +61,11 @@ assert(resLdo.classe === "Voltage Regulator" && resLdo.prefix === "U" && resLdo.
 const resMcu = infererClasse("Microcontroller Units", "ARM Cortex-M3", "STM32F103C8T6", "32-bit MCU");
 assert(resMcu.classe === "Integrated Circuit" && resMcu.prefix === "U" && resMcu.deviceType === "Active", "Inférence microcontrôleur correcte");
 
+// « led » et « del » en mots entiers : « Sealed », « controlled », « model » ne font pas une LED
+const resSw = infererClasse("Switches", "Tactile", "TS-1187A", "Sealed tactile switch, model A");
+assert(resSw.classe === "Switch", "« Sealed … model » n'est pas une LED (obtenu: " + resSw.classe + ")");
+assert(infererClasse("Optoelectronics", "LEDs", "KT-0603R", "Red LED 0603").sym === "led.json", "une LED reste une LED");
+
 // 3. Inférence des empreintes PCB
 const infererFp = vm.runInContext("infererEmpreintePcb", sandbox);
 assert(infererFp("0805", "Resistor", 2) === "0805.json", "Empreinte 0805");

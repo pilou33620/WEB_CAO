@@ -30,7 +30,9 @@ function icSetCount(el,n){
           pos.push([icStep(mx)+2*IC_STEP,icStep(my)+(i-old.length)*IC_STEP]);
       }
       el.pinPos=pos;
-    }else{
+    }else if(typeof defOf(el.type).pins!=="function"){
+      /* un CI rectangle ou carré se recalcule sur npins : lui poser pinPos
+         donnait à la netlist d'autres broches que celles dessinées */
       const old=pinsOf(el);
       const pos=old.slice(0,n);
       while(pos.length<n)pos.push([40,(pos.length)*20]);

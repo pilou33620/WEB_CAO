@@ -45,7 +45,8 @@ function normComp(c,i){
     if(c.mouser_part) el.mouser_part = String(c.mouser_part).slice(0, 50);
     if(c.digikey_part) el.digikey_part = String(c.digikey_part).slice(0, 50);
     if(c.distributeurs && typeof c.distributeurs === "object") el.distributeurs = c.distributeurs;
-    if(Array.isArray(c.pinout)) el.pinout = c.pinout.map(p=>({number:String(p.number||""), name:String(p.name||"")}));
+    if(Array.isArray(c.pinout)) el.pinout = c.pinout.filter(p=>p&&typeof p==="object").slice(0,1024)       // une entrée nulle faisait tomber l'ouverture
+      .map(p=>({number:String(p.number||"").slice(0,32), name:String(p.name||"").slice(0,64)}));
     if(c.pinoutVerified) el.pinoutVerified = true;
     /* brochage par référence (25-brochage.js) : le texte de la LIB, la
        partie, et la table broche → patte, une patte courte par broche */

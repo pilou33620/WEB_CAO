@@ -369,9 +369,12 @@ function refreshPanels(){
       if(typeof SCHEMA_PATTERNS!=="undefined"&&SCHEMA_PATTERNS.analyser) SCHEMA_PATTERNS.analyser(150);
     };
     const iLabel=document.getElementById("pDLabel");
-    if(iLabel) iLabel.oninput=e=>{d.label=e.target.value;draw();};
+    /* l'étape se prend avant la première frappe : prise à la validation, elle gardait
+       le nouveau libellé et Ctrl+Z ne rendait rien */
+    const etapeLbl=()=>{if(PROP_FRAPPE!==d){push();PROP_FRAPPE=d;}};
+    if(iLabel) iLabel.oninput=e=>{etapeLbl();d.label=e.target.value;draw();};
     if(iLabel) iLabel.onchange=e=>{
-      push();d.label=e.target.value;draw();
+      etapeLbl();d.label=e.target.value;PROP_FRAPPE=null;draw();
       if(typeof SCHEMA_PATTERNS!=="undefined"&&SCHEMA_PATTERNS.analyser) SCHEMA_PATTERNS.analyser(150);
     };
     const bDel=document.getElementById("pDDel");
@@ -539,9 +542,14 @@ function refreshPanels(){
     if(r)r.oninput=()=>{etape();el.ref=r.value.trim();draw();buildList();};
     /* Vide pendant la frappe, oui ; vide une fois validé, non : la netlist sortait des
        nœuds « ?.1 » et la BOM une ligne sans repère. On rend le repère d'avant. */
-    const refAvant=el.ref;
+    let refAvant=el.ref;
     if(r&&refAvant)r.onchange=()=>{
-      if(r.value.trim())return;
+      if(r.value.trim()){
+        // son bloc du synoptique garde place et titre, sauf si une autre partie porte encore l'ancien repère
+        if(el.ref!==refAvant&&!usedRefs().has(refAvant))synRenommer(new Map([[refAvant,el.ref]]));
+        refAvant=el.ref;
+        return;
+      }
       el.ref=r.value=refAvant;draw();buildList();
       const h=document.getElementById("fHint");
       if(h)h.textContent="Un repère ne peut pas être vide : « "+refAvant+" » est rendu.";
@@ -807,7 +815,7 @@ function bindNetCells(box){
       const idx=+inp.dataset.pinIdx;
       const el=S.comps.find(c=>S.sel.has(c.id));
       if(!el)return;
-      push();
+      if(PROP_FRAPPE!==el){push();PROP_FRAPPE=el;}      // une étape, comme repère et valeur
       if(!Array.isArray(el.pinNames))el.pinNames=[];
       while(el.pinNames.length<=idx)el.pinNames.push("");
       el.pinNames[idx]=inp.value.trim().slice(0,32);

@@ -136,6 +136,7 @@ function refStartPage(i){
     }
     /* les autres parties d'un boîtier (U1B sur une autre feuille) suivent leur repère */
     S.pages.forEach((q,k)=>{if(k!==i)for(const c of q.comps||[])if(c.part&&neuf.has(c.ref))c.ref=neuf.get(c.ref);});
+    synRenommer(neuf);
     if(i===S.page)loadPage(i);
     refreshPanels();draw();
   }
@@ -516,6 +517,20 @@ function synPosSet(key,x,y){
   if(!r||key==="__proto__")return;
   if(!r.synPos||typeof r.synPos!=="object")r.synPos={};
   r.synPos[key]={x:snap(x),y:snap(y)};
+}
+
+/* Renumérotation (neuf : ancien repère → nouveau) : places et titres saisis suivent leur bloc,
+   sinon il repartait à sa place par défaut sous son titre deviné. */
+function synRenommer(neuf){
+  const r=S.pages[0];
+  for(const k of ["synPos","synTitres"]){
+    const o=r&&r[k];
+    if(!o||typeof o!=="object")continue;
+    const n={};
+    for(const [a,v] of Object.entries(o))if(!neuf.has(a))n[a]=v;
+    for(const [a,v] of Object.entries(o))if(neuf.has(a)&&neuf.get(a)!=="__proto__")n[neuf.get(a)]=v;
+    r[k]=n;
+  }
 }
 
 function hitSheetBlock(wx,wy,blocks){

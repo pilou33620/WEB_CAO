@@ -379,6 +379,7 @@ function crOuvrir(el) {
 
   CR_ETAT.open = true;
   CR_ETAT.el = el;
+  CR_ETAT.rech = null;                  // la recherche du composant précédent ne remplira pas cette fenêtre
   CR_ETAT.candidates = [];
   CR_ETAT.selectedCand = null;
   CR_ETAT.partDetails = null;
@@ -516,6 +517,7 @@ async function crLancerRecherche(overrideQuery, forceDistribOnly) {
   if (!q) return;
 
   CR_ETAT.query = q;
+  const moi = CR_ETAT.rech = {};        // jeton : une recherche plus récente, ou une autre fenêtre, périme celle-ci
   CR_ETAT.loadingSearch = true;
   const listEl = document.getElementById("crList");
   listEl.innerHTML = '<div class="cr-loading"><span class="cr-spinner"></span> Recherche en cours pour « ' + esc(q) + ' »...</div>';
@@ -531,6 +533,7 @@ async function crLancerRecherche(overrideQuery, forceDistribOnly) {
       });
       rawResults = (res && res.results) || (Array.isArray(res) ? res : []);
     }
+    if (CR_ETAT.rech !== moi) return;
 
     // Si aucun résultat chez JLCPCB (ou si recherche distributeurs explicite), bascule automatique sur Mouser / DigiKey
     if (!rawResults.length) {
@@ -540,6 +543,7 @@ async function crLancerRecherche(overrideQuery, forceDistribOnly) {
         '</div>';
 
       const distribRes = await crRechercherDistributeurs(q);
+      if (CR_ETAT.rech !== moi) return;
       if (distribRes && distribRes.length > 0) {
         rawResults = distribRes;
       }
@@ -560,6 +564,7 @@ async function crLancerRecherche(overrideQuery, forceDistribOnly) {
 
     crTrierEtAfficherCandidats(true);
   } catch (err) {
+    if (CR_ETAT.rech !== moi) return;
     CR_ETAT.loadingSearch = false;
     listEl.innerHTML = '<div class="cr-error">Erreur de recherche : ' + esc(err.message || err) + '</div>';
   }
