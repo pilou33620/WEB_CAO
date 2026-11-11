@@ -1281,7 +1281,7 @@ function busSkewOpen(netsPreselected){
   _bsState.selectedNets=nets;
 
   if(!_bsState.clkNet||!nets.includes(_bsState.clkNet)){
-    const clkGuess=nets.find(n=>/clk|ck|sck|bclk/i.test(n))||nets[0]||"";
+    const clkGuess=nets.find(n=>SIM_RE_HORLOGE.test(n))||nets[0]||"";
     _bsState.clkNet=clkGuess;
   }
 

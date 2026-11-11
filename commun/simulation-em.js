@@ -228,33 +228,54 @@ const SIM_DC_FORMAT="cao-sim-dc-1";   // FORMAT de python/dc_solver.py
    LIGNE DE TRANSMISSION, FORMULE LÉGÈRE
    `g` : {kind:"strip"|autre (microruban), er, h, b, t}, en mm.
    =========================================================================== */
-/* L'ÉPAISSEUR DU CUIVRE, RAMENÉE À UNE LARGEUR (Wheeler).
+/* L'ÉPAISSEUR DU CUIVRE, RAMENÉE À UNE LARGEUR.
 
    Hammerstad-Jensen traite un ruban d'épaisseur nulle. Un ruban épais porte de
    la charge sur ses flancs : il se comporte comme un ruban mince un peu plus
    large. Sans cette correction, la fiche lisait systématiquement HAUT — 51,0 Ω
    là où le solveur de section donne 48,0 —, et l'écart passait pour le prix de
-   la formule légère alors que c'était un terme manquant. Avec elle, la même
-   formule donne 48,1 : le mode rapide et le mode Simulation EM s'accordent
-   désormais à quelques dixièmes de pour cent, et quand ils divergent c'est que
-   la géométrie sort du domaine de la formule — ce qui est une information.
+   la formule légère alors que c'était un terme manquant.
 
-   C'est mot pour mot `_largeur_effective()` de python/ligne_mom.py, et c'est
-   voulu : les deux modes doivent partir de la même section pour que leur
-   comparaison veuille dire quelque chose. */
+   LES FLANCS SONT DANS L'AIR (constat 30, python/ligne_mom.py 2.12.0) : le
+   ruban élargi n'a pas la même largeur avec et sans diélectrique. Hammerstad
+   et Jensen (IEEE MTT-S Digest 1980, éq. 6-7) élargissent de
+       Δw1 = (t/π) ln(1 + 4e h / (t coth² √(6,517 w/h)))      dans l'air,
+       Δwr = Δw1 (1 + 1/cosh √(εr − 1)) / 2                   avec le stratifié,
+   puis  εeff = ε(wr) [Z_air(w1) / Z_air(wr)]²  et  Z0 = Z_air(w1) / √εeff.
+   La même largeur des deux côtés — ce que faisait cette page, copie de
+   l'ancien `_largeur_effective()` — comptait les flancs dans le stratifié :
+   εeff MONTAIT avec l'épaisseur au lieu de baisser.
+
+   `ltWeff` rend la largeur DANS L'AIR (celle de `_largeur_effective()` du
+   Python, même formule), `ltWeffDiel` celle avec le stratifié (sa
+   `_part_des_flancs()` pour un microruban nu : la formule légère ne connaît ni
+   vernis ni couverture). Les ε(w) et Z_air(w) restent les formes fermées de
+   la page (Hammerstad 1975), pas celles, ajustées, de 1980. */
 function ltWeff(g,w){
   const t=g.t||0, h=Math.max(g.h,1e-4);
   if(!(t>0)||!(w>0))return w;
-  return w+(t/Math.PI)*(1+Math.log(2*h/t));
+  const cth=1/Math.tanh(Math.sqrt(6.517*w/h));
+  return w+(t/Math.PI)*Math.log(1+4*Math.E*h/(t*cth*cth));
+}
+function ltWeffDiel(g,w){
+  return w+(ltWeff(g,w)-w)*0.5*(1+1/Math.cosh(Math.sqrt(Math.max(g.er-1,0))));
+}
+/* Z0 dans l'air d'un ruban mince de largeur réduite u = w/h (Hammerstad, deux
+   branches selon que la piste est plus étroite ou plus large que h). */
+function ltZair(u){
+  return u<=1 ? 60*Math.log(8/u+u/4)
+              : 120*Math.PI/(u+1.393+0.667*Math.log(u+1.444));
 }
 /* Permittivité effective (Hammerstad). Le microruban a de l'air d'un côté :
    il voit une moyenne entre l'air et le stratifié, et d'autant plus de
    stratifié que la piste est large devant la hauteur du diélectrique. La
-   triplaque, noyée, ne voit que le stratifié. */
+   triplaque, noyée, ne voit que le stratifié. Cuivre épais : voir `ltWeff`. */
 function ltEeff(g,w){
   if(g.kind==="strip")return g.er;
-  const h=Math.max(g.h,1e-4), x=Math.max(ltWeff(g,w),1e-4);
-  return (g.er+1)/2+(g.er-1)/2/Math.sqrt(1+12*h/x);
+  const h=Math.max(g.h,1e-4), x1=Math.max(ltWeff(g,w),1e-4),
+        xr=Math.max(ltWeffDiel(g,w),1e-4);
+  const e=(g.er+1)/2+(g.er-1)/2/Math.sqrt(1+12*h/xr);
+  return xr===x1 ? e : e*Math.pow(ltZair(x1/h)/ltZair(xr/h),2);
 }
 /* Impédance caractéristique. Microruban : Hammerstad-Jensen, en deux branches
    selon que la piste est plus étroite ou plus large que la hauteur du
@@ -294,9 +315,7 @@ function ltZ0(g,w){
       *Math.log(1+a*(2*a+Math.sqrt(4*a*a+6.27)));
   }
   if(!(g.h>0))return 0;
-  const h=g.h, e=Math.sqrt(ltEeff(g,w)), u=ltWeff(g,w)/h;
-  return u<=1 ? 60/e*Math.log(8/u+u/4)
-              : 120*Math.PI/(e*(u+1.393+0.667*Math.log(u+1.444)));
+  return ltZair(ltWeff(g,w)/g.h)/Math.sqrt(ltEeff(g,w));
 }
 
 /* ===========================================================================
@@ -12931,27 +12950,19 @@ function simCorpsBus(){
   return h;
 }
 
+/* UN NET D'HORLOGE, EN MOTS ENTIERS : CLK, SCK, SCL, CK, et tout mot qui finit
+   par CLK (MCLK, BCLK, SCLK, REFCLK…), suivi au besoin de P/N, OUT ou IN. Le mot
+   est borné par tout ce qui n'est pas une lettre (début, fin, _, -, chiffre, /) :
+   `/clk|ck|sck|scl|bclk/i` prenait BACKLIGHT, ACK ou LOCK pour une horloge. */
+const SIM_RE_HORLOGE=/(?:^|[^a-z])(?:[a-z]*clk(?:[pn]|out|in)?|sck|scl|ck[pn]?)(?![a-z])/i;
+
 function simBusClassifierNets(nets, proto){
   const clocks=[], datas=[];
   const p=proto||"spi";
 
   for(const net of nets){
-    const u=net.toUpperCase();
-    if(p==="i2c"){
-      if(u.includes("SCL")||u.includes("CLK")||u.includes("CK")){
-        clocks.push(net);
-      }else{
-        datas.push(net);
-      }
-    }else if(p==="uart"){
-      datas.push(net);
-    }else{
-      if(u.includes("CLK")||u.includes("SCK")||u.includes("CK")){
-        clocks.push(net);
-      }else{
-        datas.push(net);
-      }
-    }
+    if(p!=="uart"&&SIM_RE_HORLOGE.test(net)) clocks.push(net);
+    else datas.push(net);
   }
 
   if(p!=="uart"&&clocks.length===0&&datas.length>0){
@@ -13256,7 +13267,7 @@ function simBusSuivreSelection(){
     });
 
     if(!dejaPresent){
-      if(/clk|ck|sck|scl|bclk/i.test(resNet)&&!SIM_BUS.clocks.length&&SIM_BUS.protocole!=="uart"){
+      if(SIM_RE_HORLOGE.test(resNet)&&!SIM_BUS.clocks.length&&SIM_BUS.protocole!=="uart"){
         SIM_BUS.clocks.push(resNet);
       }else if(!SIM_BUS.datas.includes(resNet)&&!SIM_BUS.clocks.includes(resNet)){
         SIM_BUS.datas.push(resNet);
@@ -13490,13 +13501,17 @@ function simBrancherBus(){
     el.value=SIM_BUS[key];
     el.oninput=()=>{
       const v=parseFloat(String(el.value).replace(",","."));
-      if(isFinite(v)&&(signe||v>=0)){
+      if(isFinite(v)&&(signe===true||v>0||(v===0&&signe!=="positif"))){
         SIM_BUS[key]=v;
         simBusCalculer();
       }
     };
+    /* Comme `simPDNLireChamps` : un nombre refusé ne reste pas affiché quand on
+       quitte le champ, la dernière valeur valable y est réécrite. */
+    el.onblur=()=>{el.value=simNbLibre(SIM_BUS[key]);};
   };
-  numInput("simBusFreq","freqMhz");
+  /* Fréquence 0 refusée : le calcul prenait alors 100 MHz en silence. */
+  numInput("simBusFreq","freqMhz","positif");
   numInput("simBusTsu","tsu");
   numInput("simBusTh","th");
   numInput("simBusTcoMin","tcoMin",true);
@@ -13525,7 +13540,7 @@ function simBrancherBus(){
       let net=addNetSel.value;
       if(!net)return;
       net=simBusResoudreNetAvecPont(net);
-      if(/clk|ck|sck|scl/i.test(net)&&!SIM_BUS.clocks.length&&SIM_BUS.protocole!=="uart"){
+      if(SIM_RE_HORLOGE.test(net)&&!SIM_BUS.clocks.length&&SIM_BUS.protocole!=="uart"){
         if(!SIM_BUS.clocks.includes(net)) SIM_BUS.clocks.push(net);
       }else{
         if(!SIM_BUS.datas.includes(net)&&!SIM_BUS.clocks.includes(net)) SIM_BUS.datas.push(net);
@@ -13541,7 +13556,7 @@ function simBrancherBus(){
     bAddClk.onclick=()=>{
       const all=(SIM_ED&&typeof SIM_ED.listeNets==="function")?SIM_ED.listeNets():[];
       const dispo=all.filter(n=>!SIM_BUS.clocks.includes(n)&&!SIM_BUS.datas.includes(n));
-      const clkCandidate=dispo.find(n=>/clk|ck|sck|scl/i.test(n))||dispo[0]||("CLK_"+(SIM_BUS.clocks.length+1));
+      const clkCandidate=dispo.find(n=>SIM_RE_HORLOGE.test(n))||dispo[0]||("CLK_"+(SIM_BUS.clocks.length+1));
       SIM_BUS.clocks.push(simBusResoudreNetAvecPont(clkCandidate));
       simBusRendreNetsBar();
       simBusCalculer();
@@ -13603,7 +13618,7 @@ function simBrancherBus(){
        « Effacer » ; « Remplir » entre deux composants met les bons nets. */
     for(const n of initNets){
       const resNet=simBusResoudreNetAvecPont(n);
-      if(/clk|ck|sck|bclk/i.test(resNet)&&!SIM_BUS.clocks.length){
+      if(SIM_RE_HORLOGE.test(resNet)&&!SIM_BUS.clocks.length){
         SIM_BUS.clocks.push(resNet);
       }else if(!SIM_BUS.datas.includes(resNet)){
         SIM_BUS.datas.push(resNet);
