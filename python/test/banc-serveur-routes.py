@@ -1245,6 +1245,17 @@ def test_routes():
 
         # 53. Connexions muettes d'un autre appareil : au-dela du plafond, la suivante est
         # fermee d'emblee ; les places se liberent ; ce poste n'est jamais compte.
+        # LE COMPTEUR ET `_hors_plafond` NE CHANGENT QUE SERVEUR AU REPOS : un fil
+        # encore en vie au moment de l'echange rendrait sa place au mauvais
+        # compteur (« Semaphore released too many times » sous charge).
+        def au_repos():                             # fils de service : demons, non suivis
+            fin = time.time() + 10
+            while any(t.name.endswith("(process_request_thread)")
+                      for t in threading.enumerate()):
+                assert time.time() < fin, "des fils du serveur tournent encore"
+                time.sleep(0.02)
+        conn.close()                                # son fil, en attente, finit
+        au_repos()
         httpd.connexions = threading.BoundedSemaphore(2)
         muettes = []
         hors = web_CAO.ThreadedServer._hors_plafond
@@ -1263,9 +1274,11 @@ def test_routes():
                 pass
             for s in muettes:
                 s.close()
-            time.sleep(0.5)
+            au_repos()                              # leurs fils rendent leur place
             assert brut("GET", "/api/pcb/score-placement") == 200
-            time.sleep(0.3)                         # le fil de cette derniere rend sa place
+            au_repos()                              # chaque fil a rendu sa place
+            assert httpd.connexions.acquire(blocking=False)
+            assert httpd.connexions.acquire(blocking=False)
         finally:
             del httpd._hors_plafond
             del httpd.connexions

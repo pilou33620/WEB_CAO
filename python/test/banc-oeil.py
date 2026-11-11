@@ -2658,6 +2658,22 @@ def le_prbs15_tient_dans_un_petit_poste():
     assert sum(r["densite"]["comptes"]) >= 32767 * 64
 
 
+def niveau_etabli_diviseur_resistif_exact():
+    """Le niveau etabli de l'oeil est le diviseur Rl / (Rs + Rdc + Rl), Rdc
+    la resistance continue de la piste (1 / sigma w t) : Re(B) au premier
+    point de la grille, effet de peau compris, le mettait 0,24 a 0,78 % trop
+    bas (`oeil.r_continu`, `simulation_em.simuler` « r_continu »)."""
+    for longueur, debit in ((60, 2e9), (300, 2e9), (1000, 1e9)):
+        r_dc = longueur * 1e-3 / (5.8e7 * 0.2e-3 * 35e-6)
+        d = _doc([_brin(0, longueur, 0, "P")],
+                 {"debit": debit, "tr": 50e-12, "v_haut": 1.0, "v_bas": 0.0,
+                  "r_source": 50.0, "r_charge": 50.0, "c_charge": 0.0})
+        r = oeil.analyser(d)
+        proche(r["grille"]["h0"], 50.0 / (100.0 + r_dc), 1e-4,
+               "niveau etabli, %d mm" % longueur)
+        assert "exces_continu" not in r["parametres"]
+
+
 for nom, fn in list(globals().items()):
     if callable(fn) and getattr(fn, "__module__", "") == "__main__" \
             and not nom.startswith("_") and nom not in ("T", "proche"):
