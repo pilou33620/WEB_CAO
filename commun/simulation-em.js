@@ -857,7 +857,7 @@ function pcbParseCourant(val){
   if(!m)return null;
   const n=parseFloat(m[1].replace(",","."));
   const u=m[2].toLowerCase();
-  if(u.includes("u")||u.includes("µ"))return n*1e-6;
+  if(/[uµμ]/.test(u))return n*1e-6;      // µ (U+00B5) et μ grec : « 500 μA » valait 500 A
   if(u.includes("m"))return n*1e-3;
   return n;
 }
@@ -1043,10 +1043,19 @@ function pcbSpecsComposant(c){
   };
 }
 
-/* La tension écrite dans un nom de net : +3V3, 1V8, 5V, VCC_3.3V. */
+/* La tension écrite dans un nom de net : +3V3, 1V8, 5V, VCC_3.3V, V3P3.
+   LE MODULE, PAS LE SIGNE : « -12V » rend 12, exprès. Tout ce qui s'en sert
+   compte en valeur absolue — `simDCRoleRegulateur` compare à un Vout de
+   catalogue lu sans signe (un 7905 sur « -5V » deviendrait une entrée), la
+   cascade divise par Vin (un Vin négatif donne un courant négatif, pris pour
+   « aucun consommateur »), et la chute comme son pourcentage se rapportent à
+   la consigne (négative, tout serait « dans le budget »). Sur un rail négatif,
+   la chute en mV et en % de 12 V est la même qu'à +12 V. */
 function simDCTensionNet(n){
   const s=String(n||"");
   let m=s.match(/(\d+)[Vv](\d+)/);
+  if(m)return parseFloat(m[1]+"."+m[2]);
+  m=s.match(/(?:^|[^A-Za-z])[Vv](\d+)[Pp](\d+)(?!\d)/);        // « V3P3 », « V1P8_AUX »
   if(m)return parseFloat(m[1]+"."+m[2]);
   m=s.match(/(\d+)[Pp](\d+)\s*[Vv](?![A-Za-z])/);          // « 3P3V », « 1P8V »
   if(m)return parseFloat(m[1]+"."+m[2]);
@@ -9770,6 +9779,11 @@ function simFicheDiff(){
   /* AVANT LES HYPOTHÈSES, PAS DEDANS : une hypothèse dit ce que le calcul
      suppose, ce bloc-ci dit ce qu'il a TROUVÉ et laissé de côté. */
   h+=simCoupleSuperposes();
+  /* LES AVERTISSEMENTS DU SERVEUR, ICI AUSSI : plan non cousu, cuivre
+     flottant, voisinage tronqué changent la Z_diff affichée, et ne se lisaient
+     que dans l'onglet Impédance. */
+  for(const a of ((SIM.res&&SIM.res.avertissements)||[]))
+    h+='<p class="simNote">· '+esc(a)+"</p>";
   h+=simCoupleHypotheses();
   return h;
 }
@@ -10540,6 +10554,17 @@ function simXtPastille(s){
          ({vert:"vert",orange:"orange",rouge:"rouge"}[s]||s)+"</span>";
 }
 
+/* LE FEXT PLAFONNÉ (`fext_sature`, crosstalk.FEXT_PLAFOND) : au-delà de 50 %
+   le serveur n'applique plus la loi linéaire |Kf|·T_d/t_r, il rend le plafond.
+   Le chiffre affiché est alors une borne, et il faut le dire à côté. */
+const SIM_XT_FEXT_PLAFOND="plafonné à 50 % : l'écart de retard des modes pair "+
+  "et impair dépasse le front, la loi linéaire |Kf|·T_d/t_r ne vaut plus "+
+  "(lignes seules, avant pertes et hors fente)";
+function simXtFextPlafond(c){
+  return (c&&c.fext_sature)?' <span class="simTag" title="'+
+    esc("FEXT "+SIM_XT_FEXT_PLAFOND)+'">plafonné</span>':"";
+}
+
 /* Les réglages tels que le serveur les lit : secondes, fractions, mm. */
 function simXtReglages(){
   const s=SIM_XT.saisie, seuils=simXtSeuils();
@@ -11077,7 +11102,7 @@ function simXtCarteFiche(){
        "<td>"+simNb(p.ecart,3)+" mm</td>"+
        "<td>"+simXtPct(p.k_total)+" %</td>"+
        "<td>"+simXtPct(p.next)+" % "+simXtPastille(x.s.next)+"</td>"+
-       "<td>"+simXtPct(p.fext)+" % "+simXtPastille(x.s.fext)+"</td>"+
+       "<td>"+simXtPct(p.fext)+" % "+simXtPastille(x.s.fext)+simXtFextPlafond(p)+"</td>"+
        "<td>"+simXtPastille(x.s.paire)+"</td></tr>";
   }
   h+="</tbody></table>";
@@ -11242,6 +11267,8 @@ function simXtResume(r){
        (pire.sature?" · NEXT <b>saturé</b> (2T<sub>d</sub> ≥ t<sub>r</sub>)"
                    :" · NEXT non saturé (2T<sub>d</sub> = "+
                     simNb(2*(pire.td_ps||0),0)+" ps &lt; t<sub>r</sub>)")+
+       (pire.fext_sature?" · FEXT <b>plafonné</b> à 50 % (écart de retard des "+
+                         "modes ≥ t<sub>r</sub>)":"")+
        (pire.confirmee?"":" — <i>sous le seuil de confirmation</i>")+".</p>";
   }
   if(!conf.length&&pire)
@@ -11368,7 +11395,7 @@ function simXtTableauCouples(r){
        "<td>"+simXtPct(c.k_total)+" %</td>"+
        "<td>"+simXtPct(c.next)+" % "+simXtPastille(s.next)+"</td>"+
        "<td>"+simXtDb(c.next_db)+"</td>"+
-       "<td>"+simXtPct(c.fext)+" % "+simXtPastille(s.fext)+"</td>"+
+       "<td>"+simXtPct(c.fext)+" % "+simXtPastille(s.fext)+simXtFextPlafond(c)+"</td>"+
        "<td>"+simXtDb(c.fext_db)+"</td>"+
        "<td>"+(c.somme?'<span title="'+esc("somme "+
          simXtSommeNom(c.somme.mode)+" : "+((c.somme.agresseurs||[])
@@ -12440,7 +12467,7 @@ function simXtExportCsv(){
   l.push("# "+simXtCalculDit(r));
   l.push("victime;k_total_%;NEXT_%;NEXT_dB;statut_NEXT;FEXT_%;FEXT_dB;"+
          "statut_FEXT;somme_NEXT_%;somme_FEXT_%;statut_somme;statut;Td_ps;"+
-         "NEXT_sature;longement_mm;ecart_mm;confirmee;non_calcule");
+         "NEXT_sature;longement_mm;ecart_mm;confirmee;non_calcule;FEXT_plafonne");
   for(const c of (r.couples||[])){
     const s=simXtStatuts(c);
     l.push([c.victime, n(100*(c.k_total||0)), n(100*(c.next||0)),
@@ -12448,7 +12475,7 @@ function simXtExportCsv(){
             c.somme?n(100*c.somme.next):"", c.somme?n(100*c.somme.fext):"",
             s.somme||"", s.paire, n(c.td_ps||0), c.sature?"oui":"non", n(c.longement),
             n(c.distance), c.confirmee?"oui":"non",
-            c.non_calcule?"oui":"non"].join(";"));
+            c.non_calcule?"oui":"non", c.fext_sature?"oui":"non"].join(";"));
   }
   const ch=r.carte_chaleur;
   if(ch&&ch.lignes&&ch.lignes.length){
@@ -12499,13 +12526,14 @@ function simXtExportCarteCsv(){
            " ; agresseurs sommes "+simXtSommeNom(d.somme_mode),
            "victime;agresseur;couche;superposees;longueur_mm;ecart_mm;"+
            "k_total_%;NEXT_%;NEXT_dB;statut_NEXT;FEXT_%;FEXT_dB;statut_FEXT;"+
-           "statut;Td_ps;NEXT_sature;x;y"];
+           "statut;Td_ps;NEXT_sature;x;y;FEXT_plafonne"];
   for(const p of paires){
     const s=simXtStatuts(p);
     l.push([p.victime,p.agresseur,p.couche,p.superposee?"oui":"non",
             n(p.longueur),n(p.ecart),n(100*p.k_total),n(100*p.next),
             n(p.next_db),s.next,n(100*p.fext),n(p.fext_db),s.fext,s.paire,
-            n(p.td_ps),p.sature?"oui":"non",n(p.x),n(p.y)].join(";"));
+            n(p.td_ps),p.sature?"oui":"non",n(p.x),n(p.y),
+            p.fext_sature?"oui":"non"].join(";"));
   }
   if((d.sommes||[]).length){
     l.push("");
@@ -12556,7 +12584,8 @@ function simXtRapportTexte(r){
       "   k_total "+simXtPct(c.k_total)+" %"+
       "   NEXT "+simXtPct(c.next)+" % ("+simXtDb(c.next_db)+" dB, "+s.next+
       (c.sature?", saturé":"")+")"+
-      "   FEXT "+simXtPct(c.fext)+" % ("+simXtDb(c.fext_db)+" dB, "+s.fext+")"+
+      "   FEXT "+simXtPct(c.fext)+" % ("+simXtDb(c.fext_db)+" dB, "+s.fext+
+      (c.fext_sature?", plafonné":"")+")"+
       (c.somme?"   Σ "+simXtSommeNom(c.somme.mode)+" NEXT "+
                simXtPct(c.somme.next)+" % FEXT "+simXtPct(c.somme.fext)+
                " % ("+s.somme+")":"")+
@@ -17194,7 +17223,10 @@ const SIM_RF_MULT={p:1e-12,n:1e-9,u:1e-6,"µ":1e-6,k:1e3,K:1e3,G:1e9,R:1,r:1};
    lire : -1 (refusé par l'appelant) plutôt qu'un farad ou un court-circuit
    inventé ; seul un 0 explicite (« 0 nH », « 0 ») reste 0. */
 function simRfValeurSI(txt,genre){
-  const s=String(txt||"").trim().replace(",",".").replace(/\s+/g,"");
+  /* « meg » vaut méga, comme en SPICE et dans simParseResistance (« 1meg » se
+     lisait 1 mΩ) ; le μ grec vaut le µ. */
+  const s=String(txt||"").trim().replace(",",".").replace(/\s+/g,"")
+            .replace(/μ/g,"µ").replace(/^(\d*\.?\d+)meg/i,"$1M");
   const mult=l=>l==="m"?1e-3:l==="M"?1e6:
                 (SIM_RF_MULT[l]!=null?SIM_RF_MULT[l]:null);
   let m=s.match(/^(\d+)([pnuµmkKMGRr])(\d+)/);
@@ -19245,12 +19277,12 @@ async function simOeilGo(){
 
 /* Une tension se lit en millivolts sous le volt. */
 function simOeilV(v){
-  if(!isFinite(v))return "—";
+  if(v==null||!isFinite(v))return "—";
   return Math.abs(v)<1?simNb(v*1e3,1)+" mV":simNb(v,3)+" V";
 }
 /* Trois chiffres significatifs, dans l'unité qui les porte. */
 function simOeilT(s){
-  if(!isFinite(s))return "—";
+  if(s==null||!isFinite(s))return "—";
   const a=Math.abs(s);
   const ecrit=(v,u)=>simNb(v,Math.abs(v)>=100?0:Math.abs(v)>=10?1:2)+" "+u;
   if(a===0)return "0";
@@ -19569,8 +19601,10 @@ function simRendreOeil(){
   h+='<table class="simTab">'+det.map(l=>"<tr><td>"+l[0]+"</td><td>"+l[1]+"</td></tr>").join("")+"</table>";
   if(mc&&mc.courbe&&mc.courbe.v&&mc.courbe.v.length>1)h+=simOeilModeCommun(mc);
   if(am)h+=simOeilAmiParametres(am);
-  if(r.avertissements&&r.avertissements.length)
-    h+=r.avertissements.map(a=>'<p class="simNote">· '+esc(a)+"</p>").join("");
+  /* Ceux de l'œil, puis ceux de la LIGNE qui le porte (plan rompu, via sans
+     retour…) : le serveur les rend à part, et ils n'étaient pas affichés. */
+  h+=(r.avertissements||[]).concat(r.avertissements_ligne||[])
+       .map(a=>'<p class="simNote">· '+esc(a)+"</p>").join("");
   if(SIM_OEIL.err)h+='<p class="simErr">'+esc(SIM_OEIL.err)+"</p>";
   return h;
 }

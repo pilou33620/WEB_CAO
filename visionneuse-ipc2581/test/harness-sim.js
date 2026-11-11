@@ -217,7 +217,10 @@ const EXPOSE=["simDsChamp","simDsLire","simDsEcrire","SIM_DS","SIM_PDN","simPDNA
   "ltZ0","simParseResistance",
   /* les six corrections de l'audit des simulations (essais en fin de fichier) */
   "simVerdictDC","simTableauBornes","simSection","simRfBilan",
-  "simDCTensionNet","pcbParseVolt"];
+  "simDCTensionNet","pcbParseVolt",
+  /* restes de l'audit : FEXT plafonné, avertissements, lectures de valeurs */
+  "simXtCarteFiche","simOeilV","simOeilT","pcbParseCourant","simRfValeurSI",
+  "simDCRoleRegulateur"];
 
 /* Un seul `eval`, sur les fichiers concaténés : ils se voient l'un
    l'autre comme dans la page, où ils partagent la portée globale. Le "use
@@ -6581,12 +6584,14 @@ T("œil : l'œil statistique, la diaphonie et l'IBIS se rendent",()=>{
     ibis:{emetteur:{modele:"OUT33", type:"I/O", coin:"typ", fichier:"u1.ibs", c_comp:3e-12,
                     front_10_90:5e-10, commande:"[Ramp]"},
           pas_s:1e-12, lissage_s:2e-11, v_haut:0.4, v_bas:-0.4, asymetrie:0.1},
-    avertissements:[], duree:1
+    /* ceux de la LIGNE arrivent à part, et doivent se lire aussi */
+    avertissements:[], avertissements_ligne:["Plan de référence <rompu> sous la piste"], duree:1
   };
   try{
     const html=simRendreOeil();
     for(const t of ["simOeilContour","simOeilBaignoire","10⁻¹²","SCK","OUT33",
-                    "pas à 10⁻¹²","Simulation non linéaire"])
+                    "pas à 10⁻¹²","Simulation non linéaire",
+                    "Plan de référence &lt;rompu&gt; sous la piste"])
       if(html.indexOf(t)<0)throw new Error("absent du rendu : "+t);
   }finally{SIM_OEIL.res=null;}
 });
@@ -7442,6 +7447,82 @@ T("lecture des valeurs : 3P3V, 3V3, 5VDC, code boîtier en tête, 330E", functio
   egal("simParseResistance(330E)",simParseResistance("330E"),330);
   egal("simParseResistance(4E7)",simParseResistance("4E7"),4.7);
   egal("simParseResistance(4k7)",simParseResistance("4k7"),4700);
+});
+
+/* ---- restes de l'audit des simulations ---- */
+T("crosstalk : un FEXT plafonné à 50 % par le serveur (fext_sature) est dit plafonné", function(){
+  const cpl=sur=>Object.assign({agresseur:"CLK", victime:"VIC", rang:1, confirmee:true,
+    k_total:0.2, kb_max:0.1, next:0.05, next_db:-26, fext:0.5, fext_db:-6,
+    td_ps:250, sature:false, fext_sature:true, longement:300, distance:0.1,
+    resolution_next:1, cote:"gauche", nom_couche:"Top"},sur||{});
+  const R=sat=>({principal:"CLK", longueur:300, carte:"banc", t_r:1e-10,
+    source_tr:"saisi", classe:"Rapide", couples:[cpl({fext_sature:sat})],
+    carte_chaleur:{axe:[0,300], lignes:[], max:0.05, zones:[], espacements:{}},
+    risques:[], actions:[], graves:[], avertissements:[],
+    etape0:{candidats:[]}, reglages:{seuil_db:-40}});
+  const memeRes=SIM_XT.res, memeCarte=SIM_XT.carte.res;
+  try{
+    for(const sat of [true,false]){
+      const r=R(sat); SIM_XT.res=r;
+      const vues={fiche:simXtResume(r), tableau:simXtTableauCouples(r),
+                  rapport:simXtRapportTexte(r)};
+      SIM_XT.carte.res={bilan:{diaphonie:{t_r:1e-10, paires:[Object.assign(cpl({fext_sature:sat}),
+        {couche:"Top", longueur:300, ecart:0.1, statut:"rouge"})]}}, notes:[]};
+      vues.carte=simXtCarteFiche();
+      for(const k in vues)
+        if(/plafonn/.test(vues[k])!==sat)
+          throw new Error(k+" : « plafonné » "+(sat?"absent":"présent à tort"));
+    }
+  }finally{SIM_XT.res=memeRes; SIM_XT.carte.res=memeCarte;}
+});
+
+T("Z différentielle : les avertissements du serveur sont dans la fiche, pas seulement dans l'onglet Impédance", function(){
+  const meme=SIM.res;
+  try{
+    SIM.res={f_centre:1e9, reference_nets:["GND"], segments:[],
+      avertissements:["PLAN ARROSÉ NON COUSU sur 1 bord(s) de section <b>"],
+      couplage:{sections:[], temps_montee:70e-12, temps_montee_source:"", voisinage:12,
+        longements:1, hypotheses:[],
+        paires:[{couche:0, nom_couche:"Top", net:"USB_DP", net_voisin:"USB_DM",
+          longueur:25, ecart:0.25, ecart_min:0.25, largeur:0.25, largeur_voisine:0.25,
+          troncons:1, deux_cotes:false, differentielle:true, raison:"", topo:"micro",
+          h:0.2, er:4.3, z_diff:99.3, z_commune:32.5, z_impair:49.7, z_pair:65.0,
+          eps_eff_impair:3.17, eps_eff_pair:3.58, cote:"gauche", z0:57.1, z0_voisine:57.1,
+          k_c:0.104, k_l:0.163, k_arriere:0.067, k_avant:-0.030, next:0.067, fext:-0.065,
+          sature:true, longueur_saturation:5.7, retard:1.5e-10}]}};
+    const h=simFicheDiff();
+    if(h.indexOf("PLAN ARROSÉ NON COUSU")<0)throw new Error("avertissement absent de la fiche");
+    if(h.indexOf("section <b>")>=0)throw new Error("avertissement non échappé");
+  }finally{SIM.res=meme;}
+});
+
+T("œil : une grandeur que le serveur a mise à null est un tiret, pas « 0 »", function(){
+  if(simOeilV(null)!=="—"||simOeilT(null)!=="—")
+    throw new Error("simOeilV(null) → "+simOeilV(null)+", simOeilT(null) → "+simOeilT(null));
+  if(simOeilV(0)==="—"||simOeilT(0)!=="0")throw new Error("zéro reste un nombre");
+});
+
+T("lecture des valeurs : rail négatif en valeur absolue, faux amis, V3P3, µ grec, meg", function(){
+  const egal=(nom,a,b)=>{if(a!==b)throw new Error(nom+" → "+a+" au lieu de "+b);};
+  /* LE MODULE, exprès : chute, pourcentage et puissance se comptent en valeur
+     absolue sur un rail négatif (voir simDCTensionNet). */
+  egal("simDCTensionNet(-12V)",simDCTensionNet("-12V"),12);
+  egal("simDCTensionNet(-5V)",simDCTensionNet("-5V"),5);
+  for(const n of ["VEE","V-","USB_D-","IN-","RS485-"])
+    egal("simDCTensionNet("+n+")",simDCTensionNet(n),null);
+  /* un 7905 : sortie sur « -5V », Vout 5 V au catalogue — reste une sortie */
+  egal("rôle d'un régulateur négatif",
+       simDCRoleRegulateur({ref:"U1"},{type:""},{estSource:true,voltOut:5},"","-5V"),"sortie");
+  egal("simDCTensionNet(V3P3)",simDCTensionNet("V3P3"),3.3);
+  egal("simDCTensionNet(V1P8_AUX)",simDCTensionNet("V1P8_AUX"),1.8);
+  egal("simDCTensionNet(REV2P1)",simDCTensionNet("REV2P1"),null);
+  egal("pcbParseCourant(500 μA)",pcbParseCourant("500 μA"),500e-6);
+  egal("pcbParseCourant(500 µA)",pcbParseCourant("500 µA"),500e-6);
+  egal("pcbParseCourant(20mA)",pcbParseCourant("20mA"),0.02);
+  egal("simRfValeurSI(1meg)",simRfValeurSI("1meg","R"),1e6);
+  egal("simRfValeurSI(1MEG)",simRfValeurSI("1MEG","R"),1e6);
+  egal("simRfValeurSI(10m)",simRfValeurSI("10m","R"),0.01);
+  egal("simRfValeurSI(10μF)",simRfValeurSI("10μF","C"),10*1e-6);
 });
 
 
