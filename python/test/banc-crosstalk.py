@@ -1624,7 +1624,9 @@ def une_fente_franchie_par_les_deux_ajoute_le_terme_d_ott():
     direct = ct.impedance_commune_fente(10.0, 10.0, 0.25, 0.45, 1e-9, t["z0"],
                                         t["hauteur"], 0.25,
                                         t["resonance"]["eps_plan"])
-    assert abs(t["next"] / direct["next"] - 1.0) < 1e-6, (t["next"], direct["next"])
+    # 2e-4 : la fiche rend Z0 au centieme d'ohm (1e-4 a 50 ohms) et le terme
+    # a six decimales ; a 1e-6 l'essai tenait a la chance de l'arrondi.
+    assert abs(t["next"] / direct["next"] - 1.0) < 2e-4, (t["next"], direct["next"])
     assert t["next"] > 0.05, t["next"]
     # IL S'AJOUTE : les lignes seules sont le chiffre d'avant, le total les
     # depasse du terme, en NEXT comme en FEXT.

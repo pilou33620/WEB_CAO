@@ -1556,7 +1556,9 @@ def la_fiche_et_la_courbe_portent_le_meme_via():
         if i == t["troncon"]:
             a = a @ _tl.abcd_via_boucle(m["inductance_nH"] * 1e-9,
                                         m["capacite_fF"] * 1e-15, f)
-        a = a @ _tl.abcd_line(z_f, complex(ac + ad, beta),
+        # LA MEME LIGNE QUE LA CASCADE : Zc et gamma complexes depuis R, L, G,
+        # C (`ligne_a_pertes`, 2.11.0), et non plus Z0 reel avec alpha + j beta.
+        a = a @ _tl.abcd_line(*_tl.ligne_a_pertes(z_f, ac, ad, beta),
                               seg["longueur"] * 1e-3)
     s_main = _tl.cascade_to_s(a, r["impedance_reference"])
     s_rendu = complex(*r["s"][k][0])
@@ -5644,6 +5646,19 @@ def _gamma(abcd, longueur_m):
     return np.arccosh(complex(abcd[0, 0])) / longueur_m
 
 
+def _beta_lc(abcd, longueur_m):
+    """beta = w racine(L C) d'une ligne uniforme seule, lu sur son ABCD.
+
+    Depuis la 2.11.0 la ligne est un RLGC exact : Im gamma n'est plus beta
+    qu'au second ordre pres, (alpha_c - alpha_d)^2 / (2 beta^2). Mais
+    Z' = gamma Zc = R + j w L et Y' = gamma / Zc = G + j w C, avec
+    w L = beta Z0 et w C = beta / Z0 : Im Z' . Im Y' = beta^2 EXACTEMENT.
+    """
+    g = _gamma(abcd, longueur_m)
+    zc = np.sqrt(complex(abcd[0, 1]) / complex(abcd[1, 0]))
+    return float(np.sqrt((g * zc).imag * (g / zc).imag))
+
+
 def _ligne_seule(couches, couche, longueur, freqs, largeur=0.3, **stack):
     d = _doc_via([_piste(0, 0, longueur, 0, couche, largeur=largeur)],
                  couches=[dict(c) for c in couches], fc=1e9)
@@ -5723,9 +5738,17 @@ def le_dielectrique_causal_rend_la_fiche_a_f_ref():
     assert np.allclose(r0["abcd"][1], r1["abcd"][1], rtol=1e-12, atol=0), \
         "a f_ref, le causal doit rendre la fiche"
     for k, f in enumerate(fs):
-        rapport = (_gamma(r1["abcd"][k], lg).imag / _gamma(r0["abcd"][k], lg).imag) ** 2
+        # beta = w racine(L C), et non Im gamma : voir `_beta_lc`. La
+        # tolerance reste 1e-6, l'egalite reste exacte.
+        rapport = (_beta_lc(r1["abcd"][k], lg) / _beta_lc(r0["abcd"][k], lg)) ** 2
         er_f, _ = _tl.djordjevic_sarkar(4.0, 0.02, 1e9, f)
         proche(rapport, er_f / 4.0, 1e-6, "er(f)/er dans la vitesse de phase a %.1g Hz" % f)
+        # ET Im gamma S'EN ECARTE DE CE QUE LE RLGC DIT, pas davantage :
+        # (alpha_c - alpha_d)^2 / (2 beta^2) <= (Re gamma / beta)^2 / 2.
+        for r_ in (r0, r1):
+            g_, b_ = _gamma(r_["abcd"][k], lg), _beta_lc(r_["abcd"][k], lg)
+            assert 0.0 <= g_.imag / b_ - 1.0 <= 0.5 * (g_.real / b_) ** 2 + 1e-9, \
+                (f, g_, b_)
     assert _gamma(r1["abcd"][2], lg).imag < _gamma(r0["abcd"][2], lg).imag
     assert _gamma(r1["abcd"][0], lg).imag > _gamma(r0["abcd"][0], lg).imag
     # et le .s2p le dit
@@ -6320,6 +6343,90 @@ def un_empilage_homogene_ne_change_pas():
 
 T("un empilage homogene ne part pas en strates et rend le meme chiffre",
   un_empilage_homogene_ne_change_pas)
+
+
+def une_masse_coplanaire_serree_reste_une_masse():
+    """Sous le seuil (ecart - elargissement < epaisseur) la masse coplanaire
+    etait ABANDONNEE et Z0 sautait au microruban nu. ETALON : volumes finis
+    2D a cuivre epais (audit du 2026-11-10, a 0,5-1 % sur Hammerstad-Jensen
+    et Cohn), trois geometries sous le seuil :
+        w 0,3 / t 35 um / h 1,6 / ecart 60 um  : 46,89 ohms  (avant 125,55)
+        w 0,3 / t 70 um / h 1,6 / ecart 120 um : 54,64 ohms  (avant 121,16)
+        w 0,2 / t 35 um / h 0,2 / ecart 50 um  : 43,54 ohms  (avant  65,90)
+    10 % : sous le seuil l'ecart est FIGE a l'epaisseur (shortcut de
+    `_ecart_retenu`), Z0 ne suit plus l'ecart reel -- mesure +3,1 %, +1,2 %
+    et +8,4 %. Avant : +168 %, +122 % et +51 %."""
+    for w, t, h, e, z_ref in ((0.3e-3, 35e-6, 1.6e-3, 60e-6, 46.89),
+                              (0.3e-3, 70e-6, 1.6e-3, 120e-6, 54.64),
+                              (0.2e-3, 35e-6, 0.2e-3, 50e-6, 43.54)):
+        r = solve_line({"kind": "micro", "w": w, "t": t, "h": h,
+                        "epsilon_r": 4.3, "ecart": e})
+        assert r["cotes"] == 2, r
+        proche(r["z0"], z_ref, 0.10, "Z0 a %.0f um d'ecart" % (e * 1e6))
+    # ET LA PAIRE BORDEE DE MASSE SUIT LA MEME REGLE.
+    rm = solve_multiline({"kind": "micro", "t": 35e-6, "h": 1.6e-3,
+                          "epsilon_r": 4.3, "ecart": 60e-6,
+                          "conducteurs": [{"w": 0.3e-3, "x": 0.0},
+                                          {"w": 0.3e-3, "s": 0.3e-3}]})
+    assert rm["ecart_g"] == 35e-6 and rm["ecart_d"] == 35e-6, rm["ecart_g"]
+
+
+T("une masse coplanaire serree reste une masse : trois cas contre volumes finis",
+  une_masse_coplanaire_serree_reste_une_masse)
+
+
+def z0_ne_saute_plus_quand_l_ecart_traverse_le_seuil():
+    """CONTINUITE. w 0,3 / t 35 um / h 1,6 : le seuil est a 65,7 um (30,7 um
+    d'elargissement + 35 um). De part et d'autre, a +-1 um, Z0 ne bouge pas
+    de 1 % (avant : 48,65 -> 125,55, un facteur 2,6) ; et de 150 a 20 um
+    Z0 ne REMONTE jamais quand l'ecart se resserre. Ecart nul : toujours
+    « pas de masse », le microruban."""
+    geo = {"kind": "micro", "w": 0.3e-3, "t": 35e-6, "h": 1.6e-3,
+           "epsilon_r": 4.3}
+    seuil = (_tl.largeur_effective(0.3e-3, 35e-6, 1.6e-3) - 0.3e-3) / 2 + 35e-6
+    dessus = solve_line(dict(geo, ecart=seuil + 1e-6))["z0"]
+    dessous = solve_line(dict(geo, ecart=seuil - 1e-6))["z0"]
+    proche(dessous, dessus, 0.01, "Z0 de part et d'autre du seuil")
+    zs = [solve_line(dict(geo, ecart=e * 1e-6))["z0"]
+          for e in (150, 100, 80, 70, 66, 65, 60, 40, 20)]
+    assert all(b <= a + 1e-9 for a, b in zip(zs, zs[1:])), zs
+    nu = solve_line(dict(geo, ecart=0.0))
+    assert nu["cotes"] == 0 and nu["z0"] > 2 * zs[-1], nu
+
+
+T("Z0 ne saute plus quand l'ecart coplanaire traverse le seuil",
+  z0_ne_saute_plus_quand_l_ecart_traverse_le_seuil)
+
+
+def la_ligne_a_pertes_a_sa_resistance_en_serie():
+    """Basse frequence : 100 mm de piste 0,1 mm x 35 um, a 1 Hz. La ligne est
+    un RLGC exact (`ligne_a_pertes`), donc electriquement courte elle EST sa
+    resistance continue en serie, sans fuite :
+      · B -> R_dc l = l / (sigma w t) = 0,4926 ohm. 1 % : a 1 Hz l'effet de
+        peau et le plan n'ajoutent que 1e-4. Avec Z0 reel : 0,2463, la moitie.
+      · Re C -> G l, nul au tan delta pres (w C tan d l ~ 1e-13 S). Avec Z0
+        reel : 3,8e-5 S, soit R l / (2 Z0^2).
+      · bout ouvert : |Z| = 1/(w C l) ~ 1e10 ohms. Avec Z0 reel : 26,5 kohm.
+    Et sans pertes, `ligne_a_pertes` rend Z0 et j beta exactement."""
+    couches = [_cu("TOP", "signal"), _di("core", 0.2, 4.3), _cu("GND", "plane")]
+    d = _doc_via([_piste(0, 0, 100.0, 0, 0, largeur=0.1)], couches=couches,
+                 fc=1e3)
+    r = _se.simuler(d, garder_abcd=True, freqs_imposees=[1.0])
+    m = r["abcd"][0]
+    r_dc = 0.1 / (5.8e7 * 0.1e-3 * 35e-6)
+    proche(m[0, 1].real, r_dc, 0.01, "le terme serie B, contre R continu")
+    assert abs(m[1, 0].real) < 1e-9, "conductance parasite : %.3e S" % m[1, 0].real
+    z_ouvert = abs(m[0, 0] / m[1, 0])
+    assert z_ouvert > 1e8, "ligne ouverte vue a %.3e ohms" % z_ouvert
+    zc, g = _tl.ligne_a_pertes(50.0, 0.0, 0.0, 12.5)
+    assert zc == 50.0 and abs(g - 12.5j) < 1e-12, (zc, g)
+    # FAIBLES PERTES : Zc -> Z0 et gamma -> alpha + j beta, au second ordre.
+    zc, g = _tl.ligne_a_pertes(50.0, 0.3, 0.2, 100.0)
+    assert abs(zc / 50.0 - 1.0) < 2e-3 and abs(g / (0.5 + 100j) - 1.0) < 1e-5, (zc, g)
+
+
+T("la ligne a pertes a sa resistance en serie : B -> R continu, pas de fuite",
+  la_ligne_a_pertes_a_sa_resistance_en_serie)
 
 
 def la_quadrature_suit_l_etendue():

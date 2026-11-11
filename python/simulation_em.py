@@ -2,6 +2,19 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 5.7.0
+# Date: 2026-11-12
+# Explication: LA CASCADE POSE DES LIGNES RLGC. Chaque troncon etait
+#   `abcd_line(Z0 reel, alpha + j beta)` : la resistance du cuivre s'y
+#   partageait entre une resistance serie et une fuite vers la masse qui
+#   n'existe pas -- sans effet sur |S21| adapte, faux en basse frequence et
+#   hors adaptation (les ABCD gardes pour l'oeil et la RF). Zc et gamma
+#   viennent desormais de `ligne_mom.ligne_a_pertes` (2.11.0), dans la
+#   cascade simple, la ligne seule d'un brin, les deux modes de la paire et
+#   la cascade a quatre acces. Im gamma n'est plus beta qu'a
+#   (alpha_c - alpha_d)^2 / (2 beta^2) pres.
+# Fonctions modifiees : simuler, _abcd_ligne_seule, _cascade_differentielle.
+#
 # Version: 5.6.0
 # Date: 2026-11-11
 # Explication: DEUX DIELECTRIQUES DIFFERENTS PARTENT COUCHE PAR COUCHE.
@@ -833,7 +846,7 @@ import ligne_mom as tl
 
 FORMAT = "cao-sim-em-3"
 FORMAT_RESULTAT = "cao-sim-em-resultat-5"
-VERSION = "5.6.0"
+VERSION = "5.7.0"
 VERSION_MOTEURS = {
     "simulation_em": VERSION,
     "ligne_mom": getattr(tl, "VERSION", "2.5.0"),
@@ -6841,7 +6854,7 @@ def _abcd_ligne_seule(ls, couches, f, opts, longueur_m):
                                     ls["largeur"] * 1e-3, ls["ep"] * 1e-3,
                                     kw, opts)
     beta = 2 * math.pi * f * math.sqrt(eps_f) / tl.C_0
-    return tl.abcd_line(z_f, complex(a_c + a_d, beta), longueur_m)
+    return tl.abcd_line(*tl.ligne_a_pertes(z_f, a_c, a_d, beta), longueur_m)
 
 
 def _abscisse_sur_la_piste(objets, segments, x, y):
@@ -7458,23 +7471,27 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
                 er, tand = er_f, tand_f
 
             ac_odd, ad_odd = tl.line_losses(z_diff_k / 2.0, eps_odd, w_m, er, tand, f_flt, ep_m, **kw)
-            alpha_odd = ac_odd + ad_odd
             beta_odd = 2.0 * math.pi * f_flt * math.sqrt(max(eps_odd, 1.0)) / tl.C_0
-            gamma_odd = alpha_odd + 1j * beta_odd
+            # Zc ET gamma COMPLEXES, par brin (`tl.ligne_a_pertes`) ; le mode
+            # differentiel vaut deux fois le brin, le commun la moitie.
+            zc_odd, gamma_odd = tl.ligne_a_pertes(z_diff_k / 2.0, ac_odd,
+                                                  ad_odd, beta_odd)
+            z_diff_c = 2.0 * zc_odd
             ch_odd = np.cosh(gamma_odd * L_m)
             sh_odd = np.sinh(gamma_odd * L_m)
-            m_odd = np.array([[ch_odd, z_diff_k * sh_odd],
-                              [sh_odd / z_diff_k, ch_odd]], dtype=complex)
+            m_odd = np.array([[ch_odd, z_diff_c * sh_odd],
+                              [sh_odd / z_diff_c, ch_odd]], dtype=complex)
             abcd_diff = abcd_diff @ m_odd
 
             ac_even, ad_even = tl.line_losses(2.0 * z_comm_k, eps_even, w_m, er, tand, f_flt, ep_m, **kw)
-            alpha_even = ac_even + ad_even
             beta_even = 2.0 * math.pi * f_flt * math.sqrt(max(eps_even, 1.0)) / tl.C_0
-            gamma_even = alpha_even + 1j * beta_even
+            zc_even, gamma_even = tl.ligne_a_pertes(2.0 * z_comm_k, ac_even,
+                                                    ad_even, beta_even)
+            z_comm_c = zc_even / 2.0
             ch_even = np.cosh(gamma_even * L_m)
             sh_even = np.sinh(gamma_even * L_m)
-            m_even = np.array([[ch_even, z_comm_k * sh_even],
-                               [sh_even / z_comm_k, ch_even]], dtype=complex)
+            m_even = np.array([[ch_even, z_comm_c * sh_even],
+                               [sh_even / z_comm_c, ch_even]], dtype=complex)
             abcd_comm = abcd_comm @ m_even
 
             if not quatre:
@@ -7498,15 +7515,17 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
                                                    er_f)
                     a_c, a_d = tl.line_losses(z_bf, e_f, w_moy, er, tand,
                                               f_flt, ep_m, **kw)
-                    gam.append(a_c + a_d + 2j * math.pi * f_flt
-                               * math.sqrt(max(e_f, 1.0)) / tl.C_0)
-                    zm.append(float(md["zm"][k]) * z_bf / z_b)
+                    zc_k, g_k = tl.ligne_a_pertes(
+                        z_bf, a_c, a_d, 2.0 * math.pi * f_flt
+                        * math.sqrt(max(e_f, 1.0)) / tl.C_0)
+                    gam.append(g_k)
+                    zm.append(float(md["zm"][k]) * zc_k / z_b)
                 return _abcd_ligne_couplee(md, gam, zm, longueur)
 
             def seuls(longueur):
                 # la piste seule d'un cote (le mode impair d'un troncon non
                 # couple EST la ligne seule), la partenaire seule de l'autre
-                z_p = z_diff_k / 2.0
+                z_p = zc_odd
                 ch_, sh_ = np.cosh(gamma_odd * longueur), \
                     np.sinh(gamma_odd * longueur)
                 return _par_brin(
@@ -7515,7 +7534,7 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
                     _abcd_ligne_seule(ls_n, couches, f_flt, opts, longueur))
             def modes(longueur):
                 out = []
-                for g_, z_ in ((gamma_odd, z_diff_k), (gamma_even, z_comm_k)):
+                for g_, z_ in ((gamma_odd, z_diff_c), (gamma_even, z_comm_c)):
                     ch_, sh_ = np.cosh(g_ * longueur), np.sinh(g_ * longueur)
                     out.append(np.array([[ch_, z_ * sh_], [sh_ / z_, ch_]],
                                         dtype=complex))
@@ -8057,7 +8076,9 @@ def simuler(doc, journal=None, garder_abcd=False, freqs_imposees=None):
                     _impedance_traversee(mv["cavite"], float(f)),
                     mv["modele"])
 
-            abcd = abcd @ tl.abcd_line(z_f, complex(a_c + a_d, beta),
+            # Zc ET gamma COMPLEXES (`tl.ligne_a_pertes`) : la resistance du
+            # cuivre est en SERIE, pas a moitie en fuite vers la masse.
+            abcd = abcd @ tl.abcd_line(*tl.ligne_a_pertes(z_f, a_c, a_d, beta),
                                        seg["longueur"] * 1e-3)
 
         matrices.append(tl.cascade_to_s(abcd, z_ref))

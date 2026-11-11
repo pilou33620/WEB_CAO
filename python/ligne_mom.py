@@ -2,6 +2,22 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.11.0
+# Date: 2026-11-12
+# Explication: DEUX CORRECTIONS DE PLUS DE L'AUDIT DE JUSTESSE NUMERIQUE.
+#   1. UNE MASSE COPLANAIRE SERREE RESTE UNE MASSE (`_ecart_retenu`). Sous
+#      l'epaisseur du cuivre, elargissement deduit, l'ecart valait zero et la
+#      piste devenait un microruban nu : 48,65 ohms a 66,7 um, 125,55 a
+#      64,7 um. Il est borne a l'epaisseur : 48,35 ohms (volumes finis 46,9).
+#   2. LA LIGNE A PERTES EST UN RLGC (`ligne_a_pertes`) : Zc et gamma
+#      complexes depuis R = 2 alpha_c Z0, G = 2 alpha_d / Z0, wL = beta Z0,
+#      wC = beta / Z0. Avec Z0 reel, la resistance du cuivre etait a moitie
+#      en serie, a moitie en fuite vers la masse : 0,246 ohm pour 0,493 a
+#      1 Hz sur 100 mm, 26,5 kohm vus d'un bout ouvert. Identique au second
+#      ordre pres quand R << wL.
+# Fonctions ajoutees : _ecart_retenu, ligne_a_pertes.
+# Fonctions modifiees : solve_line, solve_multiline.
+#
 # Version: 2.10.0
 # Date: 2026-11-11
 # Explication: TROIS CORRECTIONS DE L'AUDIT DE JUSTESSE NUMERIQUE.
@@ -448,7 +464,7 @@ import math
 import numpy as np
 
 
-VERSION = "2.10.0"
+VERSION = "2.11.0"
 
 
 def etat():
@@ -1370,6 +1386,27 @@ def largeur_effective(largeur, epaisseur, distance_plan, ecart_plans=0.0):
     return float(_largeur_effective(largeur, epaisseur, distance_plan))
 
 
+def _ecart_retenu(valeur, marge, seuil):
+    """L'ecart a la masse coplanaire que le calcul retient, `marge` deduite.
+
+    UN ECART SERRE RESTE UNE MASSE, BORNEE AU SEUIL (2.11.0). Jusque-la un
+    ecart qui passait sous le seuil -- l'epaisseur du cuivre, une fois
+    l'elargissement de Wheeler deduit -- valait zero, « pas de masse de ce
+    cote » : la piste la plus serree devenait un microruban nu, l'impedance
+    la plus HAUTE, alors que la limite physique est une impedance qui BAISSE.
+    Sur 0,3 mm / 35 um / h 1,6 mm : 48,65 ohms a 66,7 um d'ecart, 125,55 a
+    64,7 um (volumes finis a 60 um : 46,9). Zero ou absent veut toujours dire
+    « pas de masse de ce cote ».
+    shortcut: sous le seuil l'ecart est FIGE a l'epaisseur, Z0 ne baisse plus
+    (+1 a +8 % contre volumes finis) ; a remplacer par un terme de flanc en
+    eps0 t / ecart si ces ecarts doivent tenir mieux.
+    """
+    v = float(valeur or 0.0)
+    if not (v > 0):
+        return 0.0
+    return max(v - marge, seuil)
+
+
 def solve_line(geometry, n=N_PANNEAUX, n_quadrature=N_QUADRATURE):
     """Résout la section et rend l'impédance quasi-statique de la ligne.
 
@@ -1407,9 +1444,9 @@ def solve_line(geometry, n=N_PANNEAUX, n_quadrature=N_QUADRATURE):
     # LE CUIVRE DE MASSE SUR LA MÊME COUCHE, s'il y en a, ET CÔTÉ PAR CÔTÉ.
     # L'écart est mesuré de cuivre à cuivre ; c'est la largeur EFFECTIVE du
     # ruban qui borde le calcul, donc chaque écart se réduit d'autant que le
-    # cuivre épais a élargi le ruban. Sous une épaisseur de cuivre, il n'y a
-    # plus d'écart du tout de ce côté-là : deux conducteurs qui se touchent ne
-    # forment pas une ligne.
+    # cuivre épais a élargi le ruban. Sous une épaisseur de cuivre, l'écart
+    # est BORNÉ à cette épaisseur (`_ecart_retenu`, 2.11.0) : la masse reste
+    # là, elle ne disparaît plus.
     #
     # « ecart » reste accepté et vaut LES DEUX CÔTÉS : c'est ce que veulent dire
     # les cas du banc d'essai écrits avant la 1.3.0, et une géométrie
@@ -1421,12 +1458,8 @@ def solve_line(geometry, n=N_PANNEAUX, n_quadrature=N_QUADRATURE):
     marge = (w - float(geometry["w"])) / 2.0
     seuil = max(t, 1e-9)
 
-    def _retenu(valeur):
-        e = float(valeur or 0.0) - marge
-        return 0.0 if e < seuil else e
-
-    ecart_g = _retenu(ecart_g)
-    ecart_d = _retenu(ecart_d)
+    ecart_g = _ecart_retenu(ecart_g, marge, seuil)
+    ecart_d = _ecart_retenu(ecart_d, marge, seuil)
 
     c = capacitance_coplanaire(w, ecart_g, ecart_d, g_diel, distance,
                                eps_moyen, n, n_quadrature, echelles)
@@ -1747,8 +1780,8 @@ def solve_multiline(geometry, n=N_PANNEAUX, n_quadrature=N_QUADRATURE):
 
     # Les ecarts au cuivre de masse, ramenes comme dans `solve_line` : ils sont
     # mesures de cuivre a cuivre, et c'est la largeur EFFECTIVE qui borde le
-    # calcul. Sous une epaisseur de cuivre, il n'y a plus d'ecart du tout de ce
-    # cote-la.
+    # calcul. Sous une epaisseur de cuivre, l'ecart est borne a cette epaisseur
+    # (`_ecart_retenu`).
     ecart_g = geometry.get("ecart_g")
     ecart_d = geometry.get("ecart_d")
     if ecart_g is None and ecart_d is None:
@@ -1756,10 +1789,8 @@ def solve_multiline(geometry, n=N_PANNEAUX, n_quadrature=N_QUADRATURE):
     seuil = max(t, 1e-9)
     marge_g = (places[0]["w"] - places[0]["w_nue"]) / 2.0
     marge_d = (places[-1]["w"] - places[-1]["w_nue"]) / 2.0
-    e_g = float(ecart_g or 0.0) - marge_g
-    e_d = float(ecart_d or 0.0) - marge_d
-    e_g = 0.0 if e_g < seuil else e_g
-    e_d = 0.0 if e_d < seuil else e_d
+    e_g = _ecart_retenu(ecart_g, marge_g, seuil)
+    e_d = _ecart_retenu(ecart_d, marge_d, seuil)
 
     c = capacitance_matrice(places, e_g, e_d, m["g_diel"], m["distance"],
                             m["eps_moyen"], n, n_quadrature, m["echelles"])
@@ -4641,6 +4672,35 @@ def abcd_coude(w, h, epsilon_r, freq, angle_deg=90.0):
     # [1 Z; 0 1] [1 0; Y 1] [1 Z; 0 1]
     return np.array([[1.0 + Z * Y, 2.0 * Z + Z * Z * Y],
                      [Y, 1.0 + Z * Y]], dtype=complex)
+
+
+def ligne_a_pertes(z0, alpha_c, alpha_d, beta):
+    """(Zc, gamma) COMPLEXES d'une ligne a pertes, depuis ses grandeurs
+    faibles pertes : Z0 reel, alpha_c et alpha_d en Np/m, beta en rad/m.
+
+    POURQUOI (2.11.0). Poser `abcd_line(Z0, alpha + j beta, l)` avec un Z0
+    REEL decrit une ligne ou R/L = G/C : la perte du cuivre s'y partage par
+    moitie entre une resistance serie et une conductance vers la masse qui
+    n'existe pas. Adaptee, |S21| est juste ; ailleurs non -- en basse
+    frequence le terme serie valait R l / 2 et la ligne fuyait R l/(2 Z0^2)
+    (100 mm de 0,1 mm x 35 um a 1 Hz : 0,246 ohm pour 0,493, et 26,5 kohm vus
+    d'un bout ouvert). On remonte donc aux quatre constantes lineiques,
+
+        R = 2 alpha_c Z0     G = 2 alpha_d / Z0
+        w L = beta Z0        w C = beta / Z0
+
+    et Zc = racine((R + jwL)/(G + jwC)), gamma = racine((R + jwL)(G + jwC)).
+    Quand R << wL et G << wC, c'est Z0 et alpha_c + alpha_d + j beta :
+    Re gamma et Im gamma s'en ecartent de (alpha_c - alpha_d)^2 / (2 beta^2)
+    en valeur relative, Zc de (alpha_c - alpha_d)/beta en phase. Sans pertes,
+    exactement.
+    """
+    z0 = float(z0)
+    z_s = complex(2.0 * float(alpha_c) * z0, float(beta) * z0)
+    y_p = complex(2.0 * float(alpha_d) / z0, float(beta) / z0)
+    if z_s == 0 or y_p == 0:
+        return complex(z0), complex(float(alpha_c) + float(alpha_d), float(beta))
+    return complex(np.sqrt(z_s / y_p)), complex(np.sqrt(z_s * y_p))
 
 
 def abcd_line(z_c, gamma, longueur):
