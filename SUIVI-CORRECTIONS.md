@@ -37,7 +37,10 @@ Décisions du 11/11 : toutes appliquées (boutons pour les fonctions sans appela
 | F | Synoptique : places et titres gardés à la renumérotation | `05-feuilles.js` |
 | F | Recherche de composants : une recherche lente n'écrase plus la suivante | `22-recherche-composants.js` |
 | C | Fonctions sans appelant (`fpMovePad`, `fpMoveMark`, `fpSetMarkD`, `fpSetBody`, `dfPlacerVue`, `stackSym`, `N.replace`, `N.commit`, `schCartoucheBasculer`, `icMovePin`, `fpSetMark`, `fpGeneric`) | divers | supprimer ou leur donner un bouton |
-| C | `el.specs` d'un fichier hostile affiche « [object Object] » | import | ne plante pas |
+| F | Schématique : `icMovePin` a son geste (glisser une broche d'un CI « Libre ») | `09-interaction.js` |
+| D | `schCartoucheBasculer` : doublon du bouton « Cartouche » (format aucun/A4/A3) ; recommandé : supprimer | `05-feuilles.js` |
+| D | `N.replace` (jamais appelé) et `N.commit` (essais seulement) : méthodes internes du routeur, pas d'action utilisateur ; recommandé : supprimer `N.replace` | `editeur-pcb/js/11-pns-node.js` |
+| F | `el.specs` d'un fichier hostile affiche « [object Object] » | import | ne plante pas |
 | R | HTML du schématique : pas relu ligne à ligne | | ids vérifiés seulement |
 
 ## 3. Gestion LIB et recherche de composants
@@ -49,9 +52,9 @@ Décisions du 11/11 : toutes appliquées (boutons pour les fonctions sans appela
 | F | Éditeur : fichier illisible, confirmation à la fermeture | `05-editeur-lib.js` |
 | F | Éditeur : clic sans déplacement, broche `[x, y]`, générateur CI borné à 1024 broches | `05-editeur-lib.js` |
 | F | `recherche-composants/` relu en entier | |
-| C | Onglet Général : toute saisie réécrit `body` (2 × 2 mm si absent) et `pitch: 0` | `editeurCollecterGeneralPcb` |
-| C | Import JLC : valeur tirée du modèle (« LM358P » → « 358P »), température lue dans « 4~20mA » | `07-import-jlc.js` |
-| C | Vue JSON de l'éditeur : `null` ou `5` accepté comme document | `05-editeur-lib.js` |
+| F | Onglet Général : toute saisie réécrit `body` (2 × 2 mm si absent) et `pitch: 0` | `editeurCollecterGeneralPcb` |
+| F | Import JLC : valeur tirée du modèle (« LM358P » → « 358P »), température lue dans « 4~20mA » | `07-import-jlc.js` |
+| F | Vue JSON de l'éditeur : `null` ou `5` accepté comme document | `05-editeur-lib.js` |
 | R | `05-editeur-lib.js` l.1–285 non relues dans ce lot | |
 | L | `banc-catalogue.js` ne tourne pas sans la LIB privée | |
 
