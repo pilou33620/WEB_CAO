@@ -72,8 +72,8 @@ Décisions du 11/11 : toutes appliquées (boutons pour les fonctions sans appela
 | F | PDN : Vdd / ondulation / ΔI à 0 → dernière valeur valable, réécrite dans le champ |
 | F | Bus vide : plus de remplissage d'office |
 | L | `-12V` lu 12 V (trois calculs attendent le module) |
-| C | Bus : fréquence 0 acceptée, calcul à 100 MHz (affiché) |
-| C | Horloge reconnue par `/clk\|ck\|sck/` : « BACKLIGHT », « ACK » passent pour des horloges |
+| F | Bus : fréquence 0 acceptée, calcul à 100 MHz (affiché) |
+| F | Horloge reconnue par `/clk\|ck\|sck/` : « BACKLIGHT », « ACK » passent pour des horloges |
 | R | Z différentielle / couplage (~l.8660–9840) : relu plus vite que le reste |
 
 ## 5. Import / export KiCad (`commun/kicad-pcb.js`)
@@ -109,7 +109,7 @@ Décisions du 11/11 : toutes appliquées (boutons pour les fonctions sans appela
 | F | 30 — εeff et retard en cuivre épais (εeff : +24 % au pire → ≤ 1,3 %, contre différences finies) | `ligne_mom.py` |
 | F | Avertissement « flancs en regard » sur la fiche | `simulation_em.py` |
 | R | Flancs en regard (paire serrée, coplanaire à moins de 6 épaisseurs) : Z lue +3 à +7 % trop haut ; demande des panneaux sur les flancs | `ligne_mom.py` (`FLANCS_EN_REGARD`) |
-| C | Formule légère côté page : même défaut d'εeff en cuivre épais | `commun/simulation-em.js` (`ltWeff`, `ltEeff`) |
+| F | Formule légère côté page : même défaut d'εeff en cuivre épais | `commun/simulation-em.js` (`ltWeff`, `ltEeff`) |
 | R | Essai « Scd21 miroir (N contre P) » recalé de 7 à 9 % : dissymétrie N/P de 7,8 % non expliquée | `banc-oeil.py`, modèle du via seul |
 | R | Cuivre épais sans référence : vernis autre que 25 µm, section sans plan, triplaque couplée, plus de trois conducteurs | |
 | C | Composante continue de la cascade (niveau établi −0,24 % à −0,78 %) | `oeil.transfert`, `simulation_em.simuler` |
