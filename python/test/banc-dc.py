@@ -1675,6 +1675,71 @@ essai("un composant en serie hors du cuivre est un refus qui le nomme", cas_une_
 essai("la masse se mesure a ses 0 V, dans le meme calcul que le rail", cas_la_masse_se_mesure_a_ses_zero_volts)
 essai("le placage de chaque via repart en mm", cas_le_placage_repart_en_mm)
 
+
+# -----------------------------------------------------------------------------
+# LA PISTE OBLIQUE : la trame est carree, la carte ne l'est pas
+# -----------------------------------------------------------------------------
+def _barreau_tourne(angle, pas=0.25e-3, rho=RESISTIVITE_CUIVRE):
+    """Le barreau 40 x 2 mm, 35 um, 3 A, tourne de `angle` degres : R, donc
+    la chute et l'echauffement, ne dependent pas de l'angle."""
+    L, W = 40e-3, 2e-3
+    c, s = math.cos(math.radians(angle)), math.sin(math.radians(angle))
+
+    def rot(x, y):
+        return [x * c - y * s, x * s + y * c]
+    a, b = rot(1e-3, W / 2), rot(L - 1e-3, W / 2)
+    return ds.resoudre_dc(
+        [{"vertices": [rot(0, 0), rot(L, 0), rot(L, W), rot(0, W)],
+          "couche": 0, "net": "VCC", "epaisseur": 35e-6}],
+        sources=[{"x": a[0], "y": a[1], "couche": 0, "net": "VCC",
+                  "courant": 3.0, "rayon": 1e-3}],
+        references=[{"x": b[0], "y": b[1], "couche": 0, "net": "VCC",
+                     "tension": 0.0, "rayon": 1e-3}], pas=pas, rho=rho)
+
+
+def cas_une_piste_oblique_chauffe_comme_la_meme_droite():
+    """La coupe suit la trame : a 45 degres elle voyait W.racine(2) de cuivre
+    et rendait 4,2 K pour 6,06. La section est ramenee a la perpendiculaire
+    du courant."""
+    droit = max(_barreau_tourne(0)["echauffement"])
+    vus = []
+    for angle in (30, 45):
+        dt = max(_barreau_tourne(angle)["echauffement"])
+        assert abs(dt / droit - 1.0) < 0.05, (angle, dt, droit)
+        vus.append("%d deg : %.2f K" % (angle, dt))
+    return "droit %.2f K ; %s" % (droit, " ; ".join(vus))
+
+
+def cas_une_piste_oblique_peu_maillee_le_dit():
+    """8 carreaux en travers a 45 degres : la chute sort 13 % trop forte
+    (l'escalier), et le resultat doit le dire. Droite, rien a dire."""
+    def dit(r):
+        return [a for a in r["avertissements"] if "OBLIQUE" in a]
+    droit, biais = _barreau_tourne(0), _barreau_tourne(45)
+    assert not dit(droit), dit(droit)
+    assert dit(biais), biais["avertissements"]
+    ecart = biais["chute_par_net"]["VCC"] / droit["chute_par_net"]["VCC"] - 1
+    assert 0.05 < ecart < 0.20, ecart       # le defaut que l'avis annonce
+    return "chute +%.1f %% a 45 deg, et l'avis le dit" % (100 * ecart)
+
+
+def cas_la_resistivite_saisie_chauffe_aussi():
+    """`rho` double : la chute double, et l'echauffement d'etalement suit
+    (il restait a 6,06 K, calcule sur le cuivre par defaut)."""
+    a = _barreau_tourne(0)
+    b = _barreau_tourne(0, rho=2 * RESISTIVITE_CUIVRE)
+    k = max(b["echauffement_etalement"]) / max(a["echauffement_etalement"])
+    assert 2.0 < k < 2.15, k                # x2, plus la boucle en temperature
+    return "rho x2 : echauffement x%.3f" % k
+
+
+essai("une piste oblique chauffe comme la meme piste droite (a 5 % pres)",
+      cas_une_piste_oblique_chauffe_comme_la_meme_droite)
+essai("une piste oblique maillee trop gros le dit dans les avertissements",
+      cas_une_piste_oblique_peu_maillee_le_dit)
+essai("la resistivite saisie entre aussi dans l'echauffement",
+      cas_la_resistivite_saisie_chauffe_aussi)
+
 print("\n" + "-" * 62)
 if ECHECS:
     print("  %d cas passes, %d EN ECHEC" % (len(REUSSIS), len(ECHECS)))

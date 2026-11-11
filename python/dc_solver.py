@@ -561,6 +561,8 @@ IPC2221_K_EXT = 0.048               # couche exterieure, a l'air libre
 IPC2221_K_INT = 0.024               # couche interne, noyee dans le stratifie
 MILS2_PAR_MM2 = 1.0 / (0.0254 ** 2)  # 1 mm2 = 1550,0031 mils2
 LARGEUR_MAX_CARREAUX = 400          # au-dela, c'est un plan, pas une piste
+CARREAUX_OBLIQUE = 16               # en travers d'un conducteur hors axe : en
+                                    # dessous, l'escalier fausse la chute de > 5 %
 
 # LE MODELE D'ETALEMENT. Ces quatre nombres sont ceux qu'on peut contester, et
 # c'est pour cela qu'ils sont nommes et rendus dans le resultat.
@@ -634,7 +636,8 @@ def _thermique(brut=None):
     return th
 
 
-def _echauffement_etalement(courant, section_m2, largeur_m, externe, th):
+def _echauffement_etalement(courant, section_m2, largeur_m, externe, th,
+                            rho=RESISTIVITE_CUIVRE):
     """La montee en temperature par etalement dans la carte, en kelvins.
 
     Rend (dT, emballement). `emballement` dit que la boucle resistivite ->
@@ -650,7 +653,7 @@ def _echauffement_etalement(courant, section_m2, largeur_m, externe, th):
         g += th["h_surface"] * max(float(largeur_m), 0.0)
     if not (g > 0):
         return 0.0, False
-    u = i * i * RESISTIVITE_CUIVRE / (a * g)          # K, cuivre a 20 degres
+    u = i * i * rho / (a * g)                         # K, cuivre a 20 degres
     boucle = ALPHA_CUIVRE * u
     if boucle >= BOUCLE_MAX:
         return float(u / (1.0 - BOUCLE_MAX)), True
@@ -764,6 +767,7 @@ def _densite_et_echauffement(maillage, potentiel, rho, externes, th):
 
     # -- PREMIERE PASSE : la densite en chaque point ------------------------
     axes = [None] * n                      # l'axe dominant du courant
+    courants = [(0.0, 0.0)] * n            # (ix, iy) traversant le carreau, A
     for i in range(n):
         cle = cellules[i]
         t = eps[i]
@@ -781,6 +785,7 @@ def _densite_et_echauffement(maillage, potentiel, rho, externes, th):
             sort = (conductance(i, apres) * (potentiel[i] - potentiel[apres])
                     if apres is not None and nets[apres] == nets[i] else 0.0)
             composante.append((entre + sort) / 2.0)
+        courants[i] = (composante[0], composante[1])
         jx, jy = composante[0] / face, composante[1] / face   # A/m2
         densites[i] = math.hypot(jx, jy) * 1e-6                # A/mm2
         if densites[i] > 0:
@@ -809,6 +814,8 @@ def _densite_et_echauffement(maillage, potentiel, rho, externes, th):
     par_cellule = {}
     for k, cle in enumerate(cellules):
         par_cellule[cle] = k
+
+    obliques = []       # (|courant|, carreaux en travers, cos) par coupe
 
     def coupe(axe):
         """`axe` = 0 : coupes verticales (le courant passe selon x)."""
@@ -849,10 +856,24 @@ def _densite_et_echauffement(maillage, potentiel, rho, externes, th):
             if section <= 0:
                 continue
             largeur = len(suite) * pas                       # m
+            # LA COUPE SUIT LA TRAME, PAS LE CONDUCTEUR. Sur une piste a
+            # l'angle a, elle traverse W / cos a de cuivre pour le meme
+            # courant : la section sortait trop grande et la temperature trop
+            # basse (-30 % a 45 degres). cos a = la part du courant moyen de
+            # la suite qui franchit la coupe ; section et largeur sont
+            # ramenees a la perpendiculaire du courant.
+            sx = sum(courants[v][0] for v in suite)
+            sy = sum(courants[v][1] for v in suite)
+            norme = math.hypot(sx, sy)
+            cos_a = (abs(sx if axe == 0 else sy) / norme) if norme > 0 else 1.0
+            cos_a = min(1.0, max(cos_a, 1e-9))
+            section *= cos_a
+            largeur *= cos_a
+            obliques.append((abs(total), len(suite) * cos_a, cos_a))
             externe = cellules[suite[0]][0] in externes
             ipc = _echauffement_ipc2221(total, section * 1e6, externe)
             dt, emballe = _echauffement_etalement(total, section, largeur,
-                                                  externe, th)
+                                                  externe, th, rho)
             if emballe:
                 emballes += 1
             # LE MODELE DEMANDE EST CELUI QUI DECIDE : c'est lui qui designe le
@@ -868,6 +889,15 @@ def _densite_et_echauffement(maillage, potentiel, rho, externes, th):
 
     coupe(0)
     coupe(1)
+    # LE CONDUCTEUR ETROIT ET HORS AXE : son bord en escalier etrangle le
+    # courant, et la chute sort trop forte (voir `resoudre_dc`). On retient le
+    # plus etroit de ceux qui portent au moins la moitie du plus fort courant,
+    # entre 10 et 80 degres de la trame.
+    fort = max([o[0] for o in obliques] or [0.0])
+    etroits = [o for o in obliques
+               if fort > 0 and o[0] >= 0.5 * fort and 0.17 < o[2] < 0.985
+               and o[1] < CARREAUX_OBLIQUE]
+    maillage["oblique"] = min(etroits, key=lambda o: o[1]) if etroits else None
     return densites, largeurs, etal, charte, emballes
 
 
@@ -876,7 +906,10 @@ def _resistance_via(via):
 
         R = rho * h / A     A = pi ((d/2 + p)^2 - (d/2)^2)
 
-    `h` est la hauteur traversee, `d` le percage, `p` le placage. Une valeur
+    `h` est la hauteur traversee, `d` le percage, `p` le placage. CONVENTION :
+    `d` est le diametre FINI du trou (celui des pages, de KiCad, de
+    l'IPC-2581), le cuivre est donc autour ; pour un diametre de foret, le
+    placage irait vers l'interieur et R vaudrait ~15 % de plus. Une valeur
     donnee dans le document l'emporte : un fabricant qui mesure ses trous a
     raison contre n'importe quelle formule.
     """
@@ -1455,6 +1488,16 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
     dire("densite et echauffement : modele '%s', %d couche(s) exterieure(s)"
          % (th["modele"], len(ext)))
     montees = charte if th["modele"] == "ipc2221" else etalement
+    if maillage.get("oblique"):
+        _i, carreaux, cos_a = maillage["oblique"]
+        avertissements.append(
+            "Conducteur OBLIQUE trop peu maillé : %.0f carreau(x) en travers,"
+            " à %.0f° de la trame. Le bord en escalier y étrangle le courant"
+            " et la chute rendue est SURESTIMÉE (environ +15 %% à 5 carreaux,"
+            " +10 %% à 8, +4 %% à 16). Un pas d'au plus %.3f mm en met %d en"
+            " travers."
+            % (carreaux, math.degrees(math.acos(cos_a)),
+               carreaux * pas / CARREAUX_OBLIQUE * 1e3, CARREAUX_OBLIQUE))
     if emballes:
         avertissements.append(
             "%d conducteur(s) en EMBALLEMENT THERMIQUE : la résistivité du"
