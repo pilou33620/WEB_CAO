@@ -1928,8 +1928,9 @@ function padClone(q){
   if(q.thermalGap!=null)out.thermalGap=Math.max(0,r4(q.thermalGap));
   if(LIAISONS_PASTILLE.includes(q.connexion))out.connexion=q.connexion;
   const nom=padNom(q.nom);
-  if(nom)out.nom=nom;
+  if(nom||typeof q.nom==="string")out.nom=nom;   // nom vide : pastille sans numéro (KiCad), gardée telle
   if(q.slot>out.drill&&out.drill>0)out.slot=r4(q.slot);
+  if(q.clr>0)out.clr=r4(Math.min(q.clr,50));     // isolement propre (mm) : le plus grand avec celui de la classe s'applique
   /* masque et pâte propres à la pastille (carte importée) */
   if(q.mask!=null&&isFinite(q.mask))out.mask=r4(q.mask);
   if(q.noMask)out.noMask=true;
@@ -1990,6 +1991,9 @@ function padSurCouche(q,l){
    quand il n'est pas son numéro. Le numéro `n` reste l'entier qui porte le
    net partout (netlist, DRC, ECO) ; le nom l'accompagne pour qu'une carte
    importée d'ailleurs, renumérotée, ne perde pas la correspondance. */
+/* Un nom VIDE (`""`) est une pastille sans numéro, comme KiCad en a : son `n`
+   lui est propre et aucune broche de netlist ne la vise (brocheNum,
+   02-connectivity.js). */
 function padNom(v){
   if(v==null)return "";
   return String(v).replace(/[\u0000-\u001f]/g,"").trim().slice(0,16);
@@ -2181,7 +2185,8 @@ function fpSetPad(fp,i,k,v){
   if(!q)return false;
   if(k==="shape"){q.shape=padShape(v);}
   else if(k==="rot"){q.rot=padRot(v);}
-  else if(k==="n"){q.n=clamp(Math.round(+v)||1,1,4096);fpSyncPins(fp);}
+  else if(k==="n"){q.n=clamp(Math.round(+v)||1,1,4096);if(q.nom==="")delete q.nom;fpSyncPins(fp);}
+  else if(k==="clr"){if(+v>0)q.clr=clamp(r4(+v),0,50);else delete q.clr;}   // vide ou 0 : la règle de la classe
   else if(k==="x"||k==="y"){
     if(!Number.isFinite(+v))return false;
     q[k]=clamp(r4(+v),-COORD,COORD);
@@ -2369,7 +2374,8 @@ function fpXform(fp){
 }
 /* Dessins de l'empreinte (fp.dessins : repère local, couches vues posé dessus)
    au monde, en enregistrements de S.drawings : dessous, miroir et face
-   échangée comme les pastilles ; le cadre tourne, il part en quatre traits.
+   échangée comme les pastilles ; le cadre tourne, il part en quatre traits ;
+   un trait en arc garde son angle balayé `ca`.
    Un texte sans face (couche utilisateur) d'un composant dessous garde son
    miroir dans `mir`. ${REFERENCE} et ${VALUE} suivent le composant (KiCad).
    Gardé par composant tant qu'il ne bouge pas : lecture seule. */
@@ -2398,6 +2404,7 @@ function fpDessinsMonde(fp){
         .map(q=>P({x:q[0],y:q[1]}));
       for(let i=1;i<Q.length;i++)
         out.push({shape:"line",type:"line",layer,fp,x1:Q[i-1].x,y1:Q[i-1].y,x2:Q[i].x,y2:Q[i].y,width:d.width});
+      if(drwArc(d))out[out.length-1].ca=m*d.ca;   // le miroir retourne le sens de l'arc, la rotation le garde
     }
   }
   FPD_CACHE.set(fp,{cle,src:fp.dessins,out});
@@ -2455,7 +2462,7 @@ function padsWorldCalc(fp){
       :Array.isArray(cc)?[cc[1],cc[0],cc[3],cc[2]]:cc;
     if(q.slot)o.slot=q.slot;
     for(const k of ["thermalSpokes","thermalAngle","thermalWidth","thermalGap","connexion",
-                    "mask","noMask","paste","noPaste","parCouche"])
+                    "mask","noMask","paste","noPaste","parCouche","clr"])
       if(q[k]!=null)o[k]=q[k];
     return o;
   });
@@ -3034,10 +3041,12 @@ function cmClrMax(){
   return x;
 }
 /* L'ISOLEMENT D'UNE ZONE : celui des classes et de la matrice, au moins celui
-   que la zone impose (`z.isol`). `z` : la zone, ou le seul nom de son net. */
-function clrZone(z,net,ka,kb){
+   que la zone impose (`z.isol`). `z` : la zone, ou le seul nom de son net.
+   `q`, la pastille dégagée s'il y en a une : son isolement propre (`q.clr`)
+   compte aussi, comme dans KiCad. */
+function clrZone(z,net,ka,kb,q){
   const o=z&&typeof z==="object"?z:null;
-  return Math.max(clrK(o?(o.net||""):(z||""),net,ka,kb),o&&o.isol>0?o.isol:0);
+  return Math.max(clrK(o?(o.net||""):(z||""),net,ka,kb),o&&o.isol>0?o.isol:0,q&&q.clr>0?q.clr:0);
 }
 /* la zone du net de la pastille qui la recouvre sur la couche l */
 function zoneDuPad(q,l){

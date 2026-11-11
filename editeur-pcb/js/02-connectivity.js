@@ -282,10 +282,10 @@ function zoneMask(l,net){
       }
       const qc=padSurCouche(q,l);
       if(!qc){
-        if(q.drill>0){c.beginPath();cheminPercage(c,q,clrZone(zr,q.net,"cu","th"));c.fill();}
+        if(q.drill>0){c.beginPath();cheminPercage(c,q,clrZone(zr,q.net,"cu","th",q));c.fill();}
         continue;
       }
-      padFill(c,qc,q.net===net?ecartThermique(q,l):clrZone(zr,q.net,"cu",q.drill>0?"th":"smd"));
+      padFill(c,qc,q.net===net?ecartThermique(q,l):clrZone(zr,q.net,"cu",q.drill>0?"th":"smd",q));
       if(q.net===net)thermals.push(q);
       else if(q.drill>0){c.beginPath();cheminPercage(c,q,clr);c.fill();}
     }
@@ -851,7 +851,7 @@ function zoneLanieres(l){
       const qc=padSurCouche(q,l), z=qc&&zoneAt(l,q.x,q.y);
       if(!z||zoneFichier(z))continue;
       const meme=!!q.net&&q.net===z.net;
-      const e=meme?(padLiaison(q,l,z)==="directe"?0:ecartThermique(q,l)):clrZone(z,q.net,"cu",q.drill>0?"th":"smd");
+      const e=meme?(padLiaison(q,l,z)==="directe"?0:ecartThermique(q,l)):clrZone(z,q.net,"cu",q.drill>0?"th":"smd",q);
       if(meme&&e===0)continue;
       const r=Math.hypot(qc.w,qc.h)/2+e;
       ajouter({fait:()=>bord(padWorldPts(qc,e)),d:(x,y)=>padDist(x,y,qc)-e,net:q.net},q.x-r,q.y-r,q.x+r,q.y+r);
@@ -1576,14 +1576,17 @@ function brocheNum(fp,pin){
    figées) pour que le nom reste écrit sur la pastille. Rend Map broche → n. */
 function brochesResoudre(fp,pins){
   const res=new Map(), libres=[];
+  // une pastille sans numéro (nom vide) n'est la broche de personne, comme dans KiCad : la broche reste sans pastille
+  const vides=new Set(padsOf(fp).filter(q=>q.nom==="").map(q=>q.n));
   for(const p of pins){
     if(res.has(p))continue;
     const n=brocheNum(fp,p);
+    if(n!=null&&vides.has(n))continue;
     if(n!=null)res.set(p,n);else libres.push(p);
   }
   if(libres.length){
     const pris=new Set(res.values());
-    for(const q of padsOf(fp))if(q.nom)pris.add(q.n);
+    for(const q of padsOf(fp))if(q.nom!=null)pris.add(q.n);
     let n=1;
     for(const p of libres){
       while(pris.has(n))n++;

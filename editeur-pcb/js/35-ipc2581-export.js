@@ -456,12 +456,12 @@ function ipcRemplir(z){
       if(meme&&padLiaison(q,i,z)==="directe")continue;   // la zone la recouvre, sans bras
       const qc=padSurCouche(q,i);
       if(!qc){
-        if(q.drill>0)prendre(moins,ipcPercage(q,clrZone(z,q.net,"cu","th")));
+        if(q.drill>0)prendre(moins,ipcPercage(q,clrZone(z,q.net,"cu","th",q)));
         continue;
       }
       if(!meme){
-        prendre(moins,ipcPastilleDegagee(qc,clrZone(z,q.net,"cu",q.drill>0?"th":"smd")));
-        if(q.drill>0)prendre(moins,ipcPercage(q,clrZone(z,q.net,"cu","th")));
+        prendre(moins,ipcPastilleDegagee(qc,clrZone(z,q.net,"cu",q.drill>0?"th":"smd",q)));
+        if(q.drill>0)prendre(moins,ipcPercage(q,clrZone(z,q.net,"cu","th",q)));
         continue;
       }
       /* liaison thermique : l'anneau de l'isolement de la zone, et ses bras */

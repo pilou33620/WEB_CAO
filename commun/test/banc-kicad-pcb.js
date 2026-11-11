@@ -422,13 +422,21 @@ for (const k10 of [false, true]) {
     const q = r.doc.fps[0].pads;
     verifier(J(q.map(x => x.shape)) === J(["oval", "sharp", "circ", "circ", "rect"]) && J(q.map(x => x.connexion)) === J(["thermique", "directe", "thermique", "directe", "directe"]) &&
              q[2].thermalWidth === 0.8 && q[2].thermalGap === 0.45 && J(q[3].parCouche) === J({ int: { shape: "circ", w: 1.4, h: 1.4 }, bas: { shape: "rect", w: 2, h: 3 } }) &&
-             r.rap.some(m => /isolement propre à une pastille/.test(m)) && !r.rap.some(m => /arrondi/.test(m)),
-             "pastille KiCad : arrondi demi → oblong, nul → droit ; zone_connect 1 et 3, celui de l'empreinte ; padstack ; isolement propre dit au rapport " + J(q));
+             q[2].clr === 0.5 && q.filter(x => x.clr).length === 1 && !r.rap.some(m => /arrondi|isolement/.test(m)),
+             "pastille KiCad : arrondi demi → oblong, nul → droit ; zone_connect 1 et 3, celui de l'empreinte ; padstack ; isolement propre repris " + J(q));
   }
 
-  /* 6. pastilles sans numéro : le numéro reste vide au retour */
+  /* 6. pastilles sans numéro : le numéro reste vide au retour (nom vide, sans marqueur), chacune son `n` : ni net ni broche partagés */
   r = lire(carte(`(footprint "L:J" (layer "F.Cu") (at 5 5) (pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu") (net 1 "GND")) (pad "" smd rect (at 3 0) (size 1 1) (layers "F.Cu"))
-    (pad "" smd rect (at 6 0) (size 1 1) (layers "F.Cu")) (pad "EP" smd rect (at 9 0) (size 1 1) (layers "F.Cu")))`));
+    (pad "" smd rect (at 6 0) (size 1 1) (layers "F.Cu") (net 1 "GND")) (pad "EP" smd rect (at 9 0) (size 1 1) (layers "F.Cu")))`));
+  {
+    const q = norm(r.doc).fps[0].pads, nets = r.doc.fps[0].nets;
+    verifier(J(q.map(x => [x.n, x.nom])) === J([[1, undefined], [2, ""], [3, ""], [4, "EP"]]) && nets[1] === "GND" && !nets[2] && nets[3] === "GND",
+             "pastilles sans numéro : nom vide gardé par normDoc, un numéro interne chacune, le net de chacune à elle " + J(q) + J(nets));
+    // l'ancien marqueur d'un document déjà enregistré s'écrit encore vide
+    const vieux = JSON.parse(J(r.doc)); vieux.fps[0].pads[1].nom = "∅";
+    verifier(/\(pad "1"[^]*\(pad ""[^]*\(pad ""/.test(ecrire(vieux).t), "pastilles sans numéro : l'ancien marqueur « ∅ » s'écrit vide");
+  }
   e = ecrire(norm(r.doc));
   verifier(J((e.t.match(/\(pad "[^"]*"/g) || []).slice(0, 4)) === J(['(pad "1"', '(pad ""', '(pad ""', '(pad "EP"']) && e.mods.every(m => (m.texte.match(/\(pad ""/g) || []).length === 2) &&
            J(lire(e.t).doc.fps[0].pads.map(q => [q.n, q.nom])) === J(r.doc.fps[0].pads.map(q => [q.n, q.nom])), "pastilles sans numéro : écrites sans numéro, carte et bibliothèque");
@@ -450,13 +458,43 @@ for (const k10 of [false, true]) {
     { id: 1 + side, ref: "R" + side, side, rot: 30, dessins: [{ shape: "line", layer: "silkT", x1: 2, y1: 0, x2: 0, y2: 2, width: 0.12, ca: Math.PI / 2 }] }));
   e = ecrire(d); r = lire(e.t);
   verifier((e.t.match(/\(fp_arc/g) || []).length === 2 && e.mods.every(m => /\(fp_arc\s*\(start 2 0\)\s*\(mid 1\.414214 1\.414214\)\s*\(end 0 2\)/.test(m.texte)), "arc d'empreinte : écrit en fp_arc");
+  /* milieu d'un trait en arc (même calcul que arcOf, 01-core.js) */
+  const milieu = g => { const dx = g.x2 - g.x1, dy = g.y2 - g.y1, dl = Math.hypot(dx, dy), h = g.ca / 2, k = (dl / 2) / Math.tan(h);
+    const cx = (g.x1 + g.x2) / 2 - (dy / dl) * k, cy = (g.y1 + g.y2) / 2 + (dx / dl) * k, R = Math.abs(dl / (2 * Math.sin(h))), a = Math.atan2(g.y1 - cy, g.x1 - cx) + h;
+    return [cx + R * Math.cos(a), cy + R * Math.sin(a)]; };
   r.doc.fps.forEach((f, i) => {
-    // relu en cordes (l'éditeur ne dessine pas d'arc dans une empreinte) : chaque bout reste sur le cercle d'origine, au monde
-    const c = mondeOutil(d.fps[i], 0, 0), L = f.dessins.filter(g => g.layer === "silkT" && g.shape === "line");
-    verifier(L.length > 8 && L.every(g => [[g.x1, g.y1], [g.x2, g.y2]].every(([x, y]) => { const w = mondeOutil(f, x, y); return proche(Math.hypot(w[0] - c[0], w[1] - c[1]), 2, 2e-3); })) &&
-             [[2, 0], [0, 2], [Math.SQRT2, Math.SQRT2]].every(([x, y]) => { const w = mondeOutil(d.fps[i], x, y); return L.some(g => { const u = mondeOutil(f, g.x1, g.y1), v = mondeOutil(f, g.x2, g.y2);
-               return Math.hypot((u[0] + v[0]) / 2 - w[0], (u[1] + v[1]) / 2 - w[1]) < 0.2; }); }), "arc d'empreinte " + (i ? "dessous" : "dessus") + " : même quart de cercle au monde");
+    // relu en arc : un seul trait, mêmes bouts et même milieu au monde que l'original
+    const L = f.dessins.filter(g => g.layer === "silkT" && g.shape === "line"), g = L[0], o = d.fps[i].dessins[0];
+    const pareil = (u, v) => proche(u[0], v[0], 2e-3) && proche(u[1], v[1], 2e-3);
+    verifier(L.length === 1 && Math.abs(g.ca) > 1 && pareil(mondeOutil(f, g.x1, g.y1), mondeOutil(d.fps[i], o.x1, o.y1)) && pareil(mondeOutil(f, g.x2, g.y2), mondeOutil(d.fps[i], o.x2, o.y2)) &&
+             pareil(mondeOutil(f, ...milieu(g)), mondeOutil(d.fps[i], ...milieu(o))), "arc d'empreinte " + (i ? "dessous" : "dessus") + " : relu en un trait en arc " + J(L));
+    if (PCB) {          // fpDessinsMonde le dessine en arc au monde (rendu, Gerber, IPC-2581 passent par lui)
+      const w = PCB.fpDessinsMonde(norm(r.doc).fps[i]).filter(x => x.layer === (i ? "silkB" : "silkT"));
+      verifier(w.length === 1 && Math.abs(w[0].ca) > 1 && pareil([w[0].x1, w[0].y1], mondeOutil(d.fps[i], o.x1, o.y1)) && pareil(milieu(w[0]), mondeOutil(d.fps[i], ...milieu(o))),
+               "arc d'empreinte " + (i ? "dessous" : "dessus") + " : fpDessinsMonde garde l'arc au monde " + J(w));
+    }
   });
+  e = ecrire(r.doc);
+  // l'angle balayé gardé à 1e-4 rad (r4) : le milieu bouge de quelques nm
+  verifier((e.t.match(/\(fp_arc/g) || []).length === 2 && e.mods.every(m => { const x = m.texte.match(/\(fp_arc\s*\(start 2 0\)\s*\(mid ([\d.]+) ([\d.]+)\)\s*\(end 0 2\)/);
+             return x && proche(+x[1], Math.SQRT2, 1e-4) && proche(+x[2], Math.SQRT2, 1e-4); }), "arc d'empreinte : fp_arc → fp_arc, aller-retour");
+
+  /* 8. isolement propre : celui de la pastille, sinon celui de l'empreinte ; aller-retour */
+  r = lire(carte(`(footprint "L:R" (layer "F.Cu") (at 5 5) (clearance 0.3)
+    (pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu") (clearance 0.5)) (pad "2" smd rect (at 3 0) (size 1 1) (layers "F.Cu")))
+    (footprint "L:R" (layer "F.Cu") (at 15 5) (pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu")))`));
+  {
+    const q = r.doc.fps.map(f => f.pads.map(x => x.clr));
+    verifier(J(q) === "[[0.5,0.3],[null]]" &&!r.rap.some(m => /isolement/.test(m)), "isolement propre : pastille, puis empreinte, relus " + J(q));
+    e = ecrire(norm(r.doc));
+    const q2 = norm(lire(e.t).doc).fps.map(f => f.pads.map(x => x.clr));
+    verifier(J(q2) === J(q) && (e.t.match(/\(clearance 0\.5\)/g) || []).length === 1 && (e.t.match(/\(clearance 0\.3\)/g) || []).length === 1, "isolement propre : écrit et relu " + J(q2));
+  }
+
+  /* 9. via dont « layers » ne nomme qu'une couche : KiCad refuse le fichier (parsePCB_VIA) ; ici le via est écarté, dit au rapport */
+  r = lire(carte(`(via (at 3 3) (size 0.6) (drill 0.3) (layers "F.Cu") (net 1)) (via (at 6 3) (size 0.6) (drill 0.3) (layers "F.Cu" "In1.Cu") (net 1))
+    (via (at 9 3) (size 0.6) (drill 0.3) (net 1))`, `(4 "In1.Cu" signal)`));
+  verifier(J(r.doc.vias.map(v => [v.x, v.a, v.b])) === J([[6, 0, 1], [9, 0, 2]]) && r.rap.some(m => /via sans deux couches/.test(m)), "via à une couche : écarté " + J(r.doc.vias));
 }
 
 /* entrées hostiles : refusées proprement ou bornées */

@@ -192,7 +192,8 @@ function dPads(a){
     /* nom d'origine de la broche (« A1 », « K ») : le numéro reste l'entier
        qui porte le net, le nom n'est qu'une étiquette qui l'accompagne */
     const nom=padNom(q.nom);
-    if(nom)o.nom=nom;
+    if(nom||typeof q.nom==="string")o.nom=nom;   // vide : pastille sans numéro (padNom, 01-core.js)
+    if(+q.clr>0)o.clr=r4(dRange(q.clr,0,0,50));   // isolement propre de la pastille
     /* perçage oblong : longueur hors tout, plus grande que la largeur (drill) */
     if(o.drill>0&&+q.slot>o.drill)o.slot=r4(dRange(q.slot,o.drill,o.drill,200));
     if(q.mask!=null&&isFinite(+q.mask))o.mask=r4(clamp(+q.mask,-5,5));
