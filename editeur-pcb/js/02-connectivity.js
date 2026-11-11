@@ -964,6 +964,24 @@ function axeDansCarte(a,m){
       if(segSegDist(a,{x1:P[j].x,y1:P[j].y,x2:P[i].x,y2:P[i].y})<m)return false;
   return true;
 }
+/* La même marge pour l'axe d'une piste du net `net` sur la couche `l`, une
+   pastille de bord mise à part : celle dont le centre est dans la marge
+   (demi-trou, doigt de tranche) est posée là exprès, et la piste qui la
+   rejoint n'est pas jugée à moins de `m` de son cuivre. DRC et routeur. */
+function axePisteAuBord(a,m,net,l){
+  if(axeDansCarte(a,m))return true;
+  const qs=[];
+  if(net)for(const fp of S.fps)for(const q of padsWorld(fp))
+    if(q.net===net&&!inBoard(q.x,q.y,S.rule.edge)&&padLayers(fp,q).includes(l))qs.push(q);
+  if(!qs.length)return false;
+  // shortcut: axe échantillonné au 0,05 mm, une encoche plus étroite entre deux points échappe ; passer au découpage exact du segment si cela compte
+  const n=Math.max(1,Math.ceil(dist(a.x1,a.y1,a.x2,a.y2)/0.05));
+  for(let i=0;i<=n;i++){
+    const x=a.x1+(a.x2-a.x1)*i/n, y=a.y1+(a.y2-a.y1)*i/n;
+    if(!inBoard(x,y,m)&&!qs.some(q=>padDist(x,y,q)<m))return false;
+  }
+  return true;
+}
 function runDrc(){
   const out=[];
   conn(true);              // le contrôle exige l'analyse fine des îlots
@@ -1212,13 +1230,15 @@ function runDrc(){
     if(!t.net&&!t.texte)                // un texte cuivre (49-dessin.js) n'a pas de net
       out.push({x:m.x,y:m.y,l:t.l,msg:"Piste sans net"});
     /* l'arc par ses cordes, la flèche ajoutée à la marge */
-    if(!trkSegs(t,0.01).every(s=>axeDansCarte(s,S.rule.edge+t.w/2+(arcOf(t)?0.01:0))))
+    if(!trkSegs(t,0.01).every(s=>axePisteAuBord(s,S.rule.edge+t.w/2+(arcOf(t)?0.01:0),t.net,t.l)))
       out.push({x:m.x,y:m.y,l:t.l,msg:"Piste hors du contour de carte ou trop près du bord"});
   }
   /* une pastille peut venir au ras du bord (embase SMA de bord de carte, connecteur
-     de tranche) : seule celle qui déborde du contour est une erreur */
+     de tranche) : seule celle qui déborde du contour est une erreur ; sauf la
+     traversante que le contour coupe en son trou : un demi-trou, voulu */
   for(const p of pads)
-    if(!padWorldPts(p.q).every(c=>inBoard(c.x,c.y,0)))
+    if(!padWorldPts(p.q).every(c=>inBoard(c.x,c.y,0))&&
+       !(p.q.drill>0&&polyEdgeDist(p.q.x,p.q.y,boardPoly())<p.q.drill/2))
       out.push({x:p.q.x,y:p.q.y,l:p.layers[0],msg:"Pastille "+p.tag+" hors du contour de carte"});
 
   /* ---------- échardes de gravure ----------

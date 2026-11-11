@@ -1481,7 +1481,10 @@ function pkgNote(fp){
     return '<div class="empty" style="padding:4px 12px 8px">Empreinte dessinée '+
       'à la main : '+padsOf(fp).length+' pastille(s) placées une à une. '+
       (fp.pkg?esc(fp.pkg)+' ne sert plus qu&rsquo;à la nomenclature. ':"")+
-      'Les cotes ci-dessous ne commandent plus rien.</div>';
+      'Les cotes ci-dessous ne commandent plus rien.'+
+      (fp.lib?"":'<div class="row"><button class="tb" id="pFpGeneric" title="Le dessin fait à la main est '+
+        'perdu (Ctrl+Z le rattrape) : le boîtier, ou les cotes en place, redessinent les pastilles">'+
+        'Revenir à l&rsquo;empreinte calculée</button></div>')+'</div>';
   }
   if(!fp.pkg)
     return '<div class="empty" style="padding:4px 12px 8px">Sans boîtier, '+
@@ -1510,6 +1513,7 @@ function pkgNote(fp){
 function propsFp(box,fp){
   const ps=padsOf(fp);
   const free=!!fpFree(fp), dis=free?" disabled":"";
+  const mk=fpMark(fp), bd=bodyOf(fp);
 
   let schComp = null;
   if (typeof pcbComposantsSchema === "function") {
@@ -1591,6 +1595,18 @@ function propsFp(box,fp){
       'title="Contour du boîtier, point de broche 1 et repère imprimés d\'office. Coupée quand '+
       'la sérigraphie de l\'empreinte est dessinée à part, dans les dessins.">'+
       '<input type="checkbox" id="pSilk"'+(fp.silk===false?"":" checked")+'> Sérigraphie automatique</label></div>'+
+    /* point de broche 1 et contour imprimé, en repère local (fpSetMark, fpSetBody) */
+    '<div class="prop"><label style="display:flex;align-items:center;gap:6px;cursor:pointer" '+
+      'title="Point de sérigraphie qui dit dans quel sens poser la pièce. Coché ou décoché à la main, '+
+      'la règle automatique (rien sur une résistance) ne décide plus.">'+
+      '<input type="checkbox" id="pMark"'+(mk?" checked":"")+'> Point de broche 1</label></div>'+
+    (mk?'<div class="prop two">'+numProp("pMarkX","Point X (mm)",fmt(mk.x,3),0.05,-1e4)+
+      numProp("pMarkY","Point Y (mm)",fmt(mk.y,3),0.05,-1e4)+'</div>'+
+      '<div class="prop two">'+numProp("pMarkD","Diamètre du point (mm)",fmt(mk.d,2),0.05,0.1)+'<div></div></div>':"")+
+    '<div class="prop two" title="Rectangle de sérigraphie, en coordonnées de l\'empreinte (origine au point d\'accrochage)">'+
+      numProp("pBx1","Contour X1 (mm)",fmt(bd.x1,3),0.05,-1e4)+numProp("pBy1","Contour Y1 (mm)",fmt(bd.y1,3),0.05,-1e4)+'</div>'+
+    '<div class="prop two">'+numProp("pBx2","Contour X2 (mm)",fmt(bd.x2,3),0.05,-1e4)+numProp("pBy2","Contour Y2 (mm)",fmt(bd.y2,3),0.05,-1e4)+'</div>'+
+    (fp.body?'<div class="prop"><div class="row"><button class="tb" id="pBodyAuto" title="Le contour reprend la taille calculée d\'après les pastilles">Contour automatique</button></div></div>':"")+
     '<div class="prop"><label style="display:flex;align-items:center;gap:6px;cursor:pointer" title="Le nom seul : décoché, il n\'est plus imprimé, le contour et la broche 1 restent. Les plans d\'assemblage PDF le gardent.">'+
       '<input type="checkbox" id="pRefShow"'+(fp.refHide||fp.silk===false?"":" checked")+(fp.silk===false?" disabled":"")+'> Nom imprimé ('+esc(fp.ref)+')</label></div>'+
     '<div class="prop"><label style="display:flex;align-items:center;gap:6px;cursor:pointer" '+
@@ -1664,6 +1680,17 @@ function propsFp(box,fp){
     touch();refreshPanels();draw();};
   if($("pSilk"))$("pSilk").onchange=e=>{push();if(e.target.checked)delete fp.silk;else fp.silk=false;
     touch();refreshPanels();draw();};
+  if($("pMark"))$("pMark").onchange=e=>{push();fpSetMark(fp,e.target.checked);touch();refreshPanels();draw();};
+  upd("pMarkX",v=>fpMoveMark(fp,v,fpMark(fp).y),true);
+  upd("pMarkY",v=>fpMoveMark(fp,fpMark(fp).x,v),true);
+  upd("pMarkD",v=>fpSetMarkD(fp,v),true);
+  for(const k of ["x1","y1","x2","y2"])upd("pB"+k,v=>{const b=bodyOf(fp);b[k]=v;fpSetBody(fp,b);},true);
+  if($("pBodyAuto"))$("pBodyAuto").onclick=()=>{push();fpSetBody(fp,null);touch();refreshPanels();draw();};
+  if($("pFpGeneric"))$("pFpGeneric").onclick=e=>{
+    e.preventDefault();
+    push();fpGeneric(fp);touch();refreshPanels();draw();
+    hint("Empreinte "+fp.ref+" rendue au calcul"+(fp.pkg?" du boîtier "+fp.pkg:"")+".");
+  };
   if($("pSimNM"))$("pSimNM").onchange=e=>{push();if(e.target.checked)fp.simNonMonte=true;else delete fp.simNonMonte;
     touch();refreshPanels();draw();};
   const ap=$("pPkgApply");
