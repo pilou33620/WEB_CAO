@@ -107,7 +107,8 @@ class PcbRenderer {
 
   setFootprint(fp) {
     this.fp = fp;
-    this.autoFit();
+    if (fp) this.autoFit();
+    else if (this.canvas) this.render();   // plus d'empreinte : l'ancien dessin ne reste pas à l'écran
   }
 
   autoFit() {

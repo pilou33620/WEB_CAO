@@ -56,5 +56,40 @@ verifier("tabulation neutralisée, saut de ligne entre guillemets",
          L[4] === "'\tTAB;\"ligne\nsuite\"", L[4]);
 verifier("une valeur ordinaire passe telle quelle", L[5] === "LM358DR;Ampli op", L[5]);
 
-console.log("\n" + ok + " ok, " + ko + " KO");
-process.exit(ko ? 1 : 0);
+/* ---------- fiche et lancement (03, 05, 06), sur un document factice ---------- */
+(async () => {
+  const el = () => ({ value: "", textContent: "", innerHTML: "", dataset: {}, classList: { toggle() {} },
+                      querySelectorAll: () => [], querySelector: () => null, focus() {} });
+  const els = {};
+  let repondre = null;
+  const ctx = vm.createContext({
+    console, window: {}, location: { origin: "http://x" }, navigator: {}, ENTETE_WEB: {},
+    document: { getElementById: id => els[id] || (els[id] = el()), querySelectorAll: () => [], addEventListener() {} },
+    sessBrancher: () => null, sessTient: () => true, sessEffacer() {},
+    fetch: async url => /\/api\/tools$/.test(url)
+      ? { ok: true, json: async () => ({ tools: [] }) }
+      : new Promise(r => { repondre = d => r({ ok: true, json: async () => ({ data: d }) }); })
+  });
+  const lire = f => fs.readFileSync(path.join(ICI, "js", f), "utf8").replace(/^"use strict";/, "");
+  vm.runInContext(sources + "\n;\n" + ["01-api.js", "03-formulaire.js", "05-details.js", "06-demarrage.js"].map(lire).join("\n;\n"), ctx);
+  await new Promise(r => setTimeout(r, 0));
+
+  /* une réponse du réseau avec un élément nul dans une liste ne fait pas tomber la fiche */
+  let h = "";
+  try { h = vm.runInContext('ficheHTML({ model: "X", prices: [null, { qty: 10, price: 0.5 }] })', ctx); } catch (e) { h = "LEVÉE : " + e.message; }
+  verifier("fiche : un élément nul dans une liste n'empêche pas l'affichage", /det-titre/.test(h) && !/LEVÉE/.test(h), h.slice(0, 80));
+
+  /* l'outil est changé pendant que la requête court : la réponse reste celle de l'outil interrogé */
+  vm.runInContext('OUTIL_COURANT = "jlc_search"; lireFormulaire = () => ({ query: "10k" });', ctx);
+  const p = vm.runInContext("lancer()", ctx);
+  await new Promise(r => setTimeout(r, 0));
+  vm.runInContext('OUTIL_COURANT = "board_get";', ctx);
+  repondre({ results: [{ lcsc: "C1", model: "R" }] });
+  await p;
+  const r = vm.runInContext("RESULTAT", ctx);
+  verifier("lancer : la réponse est rangée sous l'outil interrogé, pas sous celui choisi entre-temps",
+           r.outil === "jlc_search" && r.lignes.length === 1, r.outil + ", " + r.lignes.length + " ligne(s)");
+
+  console.log("\n" + ok + " ok, " + ko + " KO");
+  process.exit(ko ? 1 : 0);
+})().catch(e => { console.error(e); process.exit(1); });

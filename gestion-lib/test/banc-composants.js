@@ -640,6 +640,54 @@ const banc = (async () => {
   const a10 = appels.length;
   const refus = await ici("enregistrerCatalogue()").then(() => "", e => e.message);
   verifier(/lecture seule/.test(refus) && appels.length === a10 && etat.sale, "catalogue de secours : enregistrement refusé, rien n'est envoyé (" + refus.slice(0, 60) + ")");
+
+  /* 11. inspecteur : l'aperçu montre l'empreinte de la référence choisie, pas celle d'avant */
+  const vus = [];
+  let lacher = null;
+  fichiersLib["A11.json"] = { name: "A11" }; fichiersLib["LENT11.json"] = { name: "LENT11" };
+  page.fetch = async (url, o) => {
+    if (/LENT11/.test(url)) await new Promise(r => { lacher = r; });
+    return fetchPage(url, o);
+  };
+  ici("pcbRendererMain = { setFootprint: d => __vus.push(d && d.name) }; schRendererMain = null;");
+  page.__vus = vus;
+  etat.colonnes = ["Part Name", "Empreinte PCB", "Empreinte Schématique"];
+  etat.composants = [{ _id: 0, "Part Name": "A", "Empreinte PCB": "A11.json" }, { _id: 1, "Part Name": "B", "Empreinte PCB": "ABSENTE11.json" },
+                     { _id: 2, "Part Name": "L", "Empreinte PCB": "LENT11.json" }];
+  await ici("selectionnerComposant(0)");
+  await ici("selectionnerComposant(1)");
+  verifier(vus[vus.length - 1] === null, "inspecteur : empreinte introuvable, l'aperçu se vide au lieu de garder la précédente (" + vus + ")");
+  const lent = ici("selectionnerComposant(2)");
+  await new Promise(r => setImmediate(r));
+  await ici("selectionnerComposant(0)");
+  lacher(); await lent;
+  verifier(vus[vus.length - 1] === "A11", "inspecteur : une lecture lente d'une autre référence n'écrase pas l'aperçu courant (" + vus + ")");
+  page.fetch = fetchPage;
+
+  /* 12. « Nouveau composant » : une Part Name déjà au catalogue est refusée (deux lignes de même
+     nom, et le serveur refuse ensuite toute modification de la référence) */
+  const alertes = [];
+  page.alert = m => alertes.push(m);
+  etat.composants = []; etat.colonnes = ici("COLONNES_CATALOGUE_39").slice(); etat.lectureSeule = false;
+  noeud("newPartName").value = "DOUBLE"; noeud("newPrefix").value = "R";
+  ici("creerNouveauComposant()");
+  noeud("newPartName").value = " double ";
+  ici("creerNouveauComposant()");
+  verifier(etat.composants.length === 1 && /déjà au catalogue/.test(alertes[0] || ""), "création : nom déjà pris refusé, pas de ligne en double (" + etat.composants.length + " ligne(s))");
+
+  /* 13. choix des colonnes : chercher masque des cases, n'en retire aucune (« Appliquer » ne
+     gardait que les colonnes affichées par la recherche) */
+  const grille = noeud("gridColonnesPicker"), cherche = noeud("searchColonnes");
+  let surSaisie = null;
+  cherche.addEventListener = (_, f) => { surSaisie = f; };
+  etat.colonnes = ["Part Name", "Description", "Value"]; etat.colonnesVisibles = ["Part Name", "Value"];
+  ici("remplirGrilleColonnesPicker()");
+  const complet = grille.innerHTML;
+  const cases = etat.colonnes.map(c => ({ textContent: c, style: {} }));
+  grille.champs = cases;
+  cherche.value = "desc"; surSaisie();
+  verifier(grille.innerHTML === complet && cases.map(l => l.style.display).join() === "none,,none",
+           "colonnes : la recherche masque sans retirer (" + cases.map(l => l.style.display || "vue").join() + ")");
 })();
 
 /* ---------- zone d'encombrement (courtyard) ---------- */

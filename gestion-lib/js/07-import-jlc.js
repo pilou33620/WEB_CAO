@@ -556,7 +556,8 @@ async function lancerRechercheJlc() {
     for (const r of resultats) {
       const isBasic = String(r.library_type || "").toLowerCase() === "basic";
       const stock = Number(r.stock) || 0;   // donnée de pcbparts : un texte ne passe pas tel quel dans le HTML
-      const stockBadge = stock > 0 
+      const prix = Number(r.price);         // « "0.012" » en texte faisait tomber toute la liste (toFixed)
+      const stockBadge = stock > 0
         ? `<span class="jlc-pill ok">${stock.toLocaleString()} pcs</span>` 
         : `<span class="jlc-pill warn">Rupture</span>`;
       const basicBadge = isBasic 
@@ -579,7 +580,7 @@ async function lancerRechercheJlc() {
           <div class="jlc-card-footer">
             <span class="jlc-code">Code : <b>${esc(r.lcsc)}</b></span>
             <span>Boîtier : <b>${esc(r.package || "—")}</b></span>
-            <span class="jlc-prix">${r.price ? (r.price.toFixed(3) + " $") : "—"}</span>
+            <span class="jlc-prix">${prix > 0 ? (prix.toFixed(3) + " $") : "—"}</span>
             <button class="tb mini primary" style="margin-left:auto;">Vérifier & Importer ➔</button>
           </div>
         </div>

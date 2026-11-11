@@ -93,7 +93,8 @@ class SymboleRenderer {
 
   setSymbol(sym) {
     this.sym = sym;
-    this.autoFit();
+    if (sym) this.autoFit();
+    else if (this.canvas) this.render();   // plus de symbole : l'ancien dessin ne reste pas à l'écran
   }
 
   autoFit() {
