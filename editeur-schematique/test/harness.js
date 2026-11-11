@@ -132,7 +132,7 @@ const EXPOSE=[
   "setGrid","setGridStep","setNetLabels","setListTab",
   /* recherche de composants & conflits */
   "crDetecterConflitsCablage","crRealignerFilsBroches",
-  "CR_ETAT","crBuildModal","crRechercherDistributeurs","crSelectionnerCandidat","crTrierEtAfficherCandidats","crAppliquerAuComposant",
+  "CR_ETAT","crBuildModal","crLancerRecherche","bindNetCells","crRechercherDistributeurs","crSelectionnerCandidat","crTrierEtAfficherCandidats","crAppliquerAuComposant",
   /* synchronisation et alertes Gestion LIB */
   "SCH_LIB_ALERTE","schTrouverComposantsAmettreAJour","schComposantAlerteLib","schCleLib",
   "schAppliquerMajLibComposant","schAppliquerMajLibTous","sessDiffuserLibModif","sessEcouterLibModif",
@@ -4646,6 +4646,105 @@ T("Blocs : import d'un fichier, refus de l'illisible",()=>{
   if(document.getElementById("blocsEd").hidden)throw new Error("fenêtre");
   blocsFermer();
   localStorage.removeItem(BLOCS_KEY);
+});
+
+/* ==========================================================================
+   Relecture des parties jamais relues (09, 12, 15, 19, 22, 28)
+   ========================================================================== */
+T("trait : le tracé pose une étape (Ctrl+Z, « modifié »)",()=>{
+  const avant=serialize();
+  try{
+    loadDoc({pages:[{name:"Hiérarchie",isHierarchy:true},{name:"F1",comps:[],wires:[]}]});gotoPage(1);
+    S.hist.length=0;S.dirty=false;
+    setMode("draw");
+    for(const x of [0,100]){dom.fire("pointerdown",ptr(x,0,{button:0}));dom.fireWin("pointerup",ptr(x,0,{button:0}));}
+    setMode("select");
+    if(S.drawings.length!==1||S.hist.length!==1||!S.dirty)throw new Error("traits "+S.drawings.length+", étapes "+S.hist.length+", modifié "+S.dirty);
+    undo();
+    if(S.drawings.length)throw new Error("Ctrl+Z n'a pas retiré le trait");
+  }finally{loadDoc(JSON.parse(avant),true);}
+});
+T("CI rectangle : changer le nombre de broches garde netlist et dessin d'accord",()=>{
+  const avant=serialize();
+  try{
+    const u=addComp("ic",200,200);
+    icSetCount(u,10);
+    if(JSON.stringify(pinsOf(u))!==JSON.stringify(icPins(u)))throw new Error("netlist "+JSON.stringify(pinsOf(u))+" ≠ dessin "+JSON.stringify(icPins(u)));
+    const j=addComp("header",400,200);
+    icSetCount(j,4);                         // un symbole à broches fixes, lui, a besoin de pinPos
+    if(pinsOf(j).length!==4)throw new Error("connecteur : "+pinsOf(j).length+" broches");
+  }finally{loadDoc(JSON.parse(avant),true);}
+});
+T("ouverture : un brochage (pinout) avec des entrées nulles ne fait pas tomber le fichier",()=>{
+  const avant=serialize();
+  try{
+    loadDoc({pages:[{name:"Hiérarchie",isHierarchy:true},{name:"F1",wires:[],
+      comps:[{type:"resistor",x:0,y:0,ref:"R1",pinout:[null,3,{number:1,name:"A"}]}]}]});
+    const c=S.pages[1].comps[0];
+    if(!c||JSON.stringify(c.pinout)!=='[{"number":"1","name":"A"}]')throw new Error("pinout : "+JSON.stringify(c&&c.pinout));
+  }finally{loadDoc(JSON.parse(avant),true);}
+});
+T("Propriétés : le libellé d'un cadre et le nom d'une broche s'annulent en une étape",()=>{
+  const avant=serialize();
+  try{
+    loadDoc({pages:[{name:"Hiérarchie",isHierarchy:true},{name:"F1",wires:[],comps:[{type:"ic",x:0,y:0,ref:"U1",npins:8}],
+      drawings:[{shape:"rect",x1:200,y1:0,x2:300,y2:100,label:"AVANT"}]}]});gotoPage(1);
+    clearSel();S.selD.add(S.drawings[0].id);refreshPanels();
+    S.hist.length=0;
+    const il=document.getElementById("pDLabel");
+    for(const v of ["A","AP","APRES"]){il.value=v;il.oninput({target:il});}
+    il.onchange({target:il});
+    if(S.hist.length!==1)throw new Error("libellé : "+S.hist.length+" étape(s) pour une saisie");
+    undo();
+    if(S.drawings[0].label!=="AVANT")throw new Error("Ctrl+Z rend « "+S.drawings[0].label+" », pas « AVANT »");
+    // nom de broche : trois frappes, une étape
+    clearSel();S.sel.add(S.comps[0].id);S.hist.length=0;
+    const inp={dataset:{pinIdx:"0"},value:""};
+    bindNetCells({querySelectorAll:s=>s===".pin-name-inp"?[inp]:[]});
+    for(const v of ["V","VC","VCC"]){inp.value=v;inp.oninput();}
+    if(S.comps[0].pinNames[0]!=="VCC"||S.hist.length!==1)throw new Error("nom de broche : "+S.hist.length+" étape(s) pour trois frappes");
+    undo();
+    if((S.comps[0].pinNames||[])[0])throw new Error("Ctrl+Z n'a pas rendu le nom de broche");
+  }finally{loadDoc(JSON.parse(avant),true);}
+});
+T("synoptique : renuméroter garde la place et le titre des blocs",()=>{
+  const avant=serialize(), pr=global.prompt, conf=global.confirm;
+  try{
+    loadDoc({pages:[{name:"Hiérarchie",isHierarchy:true,synPos:{U7:{x:400,y:200},Q9:{x:800,y:200}},synTitres:{U7:"MON MCU"}},
+      {name:"F1",wires:[],comps:[{type:"ic",x:0,y:0,ref:"U7",npins:8},{type:"npn",x:400,y:0,ref:"Q9"}]}]});
+    global.prompt=()=>"100"; global.confirm=()=>true;
+    refStartPage(1);
+    const r=S.pages[0];
+    if(JSON.stringify(r.synPos)!==JSON.stringify({U100:{x:400,y:200},Q100:{x:800,y:200}})||r.synTitres.U100!=="MON MCU")
+      throw new Error("premier numéro : "+JSON.stringify([r.synPos,r.synTitres]));
+    const cmds={}, ancien=global.Pilote;
+    global.Pilote={declarer(){return this;},capture(){return this;},commande(n,d){cmds[n]=d;return this;}};
+    try{piloteCao("schema");cmds.cao_schema_dessiner.appliquer({lot:[{op:"renumeroter"}]});}finally{global.Pilote=ancien;}
+    if(JSON.stringify(r.synPos)!==JSON.stringify({U1:{x:400,y:200},Q1:{x:800,y:200}})||r.synTitres.U1!=="MON MCU")
+      throw new Error("renumeroter : "+JSON.stringify([r.synPos,r.synTitres]));
+    // repère changé à la main dans le panneau, deux fois de suite
+    gotoPage(1);clearSel();S.sel.add(S.comps.find(c=>c.ref==="U1").id);refreshPanels();
+    const ch=document.getElementById("pRef");
+    for(const v of ["U55","U56"]){ch.value=v;ch.oninput();ch.onchange();}
+    if(!r.synPos.U56||r.synPos.U56.x!==400||r.synTitres.U56!=="MON MCU"||r.synPos.U1||r.synPos.U55)
+      throw new Error("repère saisi : "+JSON.stringify([r.synPos,r.synTitres]));
+  }finally{global.prompt=pr;global.confirm=conf;loadDoc(JSON.parse(avant),true);}
+});
+TAcr("recherche composants : une recherche en retard n'écrase pas la liste de la suivante", async ()=>{
+  let lacher;
+  const retard=new Promise(r=>lacher=r);
+  global.fetch=async(url,opt)=>{
+    const b=JSON.parse(opt.body);
+    if(b.name!=="jlc_search")return {ok:true,json:async()=>({data:null})};
+    if(b.arguments.query==="LENT")await retard;
+    return {ok:true,json:async()=>({data:{results:[{lcsc:"C_"+b.arguments.query,model:"M_"+b.arguments.query}]}})};
+  };
+  crBuildModal();
+  const a=crLancerRecherche("LENT");
+  await crLancerRecherche("VITE");
+  lacher();await a;
+  for(let i=0;i<20;i++)await null;
+  if(CR_ETAT.candidates.length!==1||CR_ETAT.candidates[0].model!=="M_VITE")throw new Error("liste écrasée : "+JSON.stringify(CR_ETAT.candidates.map(c=>c.model)));
 });
 
 (async()=>{

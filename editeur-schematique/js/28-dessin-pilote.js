@@ -437,7 +437,7 @@ const DESSIN_OPS = {
   renumeroter(o, n) {
     storeCurrent();
     // les parties d'un même boîtier (U3A, U3B : même repère, el.part) gardent un seul repère
-    const parPrefixe = new Map(), nouveau = new Map(), lignes = [], anciens = new Set();
+    const parPrefixe = new Map(), nouveau = new Map(), lignes = [], anciens = new Set(), blocs = new Map();
     const tous = [];
     S.pages.forEach((p, i) => {
       tous.push(...(i === S.page ? S.comps : p.comps || []).filter(c => c.ref && !defOf(c.type).noRef)
@@ -453,9 +453,11 @@ const DESSIN_OPS = {
         nouveau.set(vieux, pre + k);
         if (dessinCle(pre + k) !== vieux) lignes.push({ quoi: (n + 1) + ". renumeroter " + c.ref, avant: c.ref, apres: pre + k });
       }
+      blocs.set(c.ref, nouveau.get(vieux));
       c.ref = nouveau.get(vieux);
     }
     if (!lignes.length) throw dessinRefus(n, "renumeroter", "les repères sont déjà dans l'ordre");
+    synRenommer(blocs);                                   // le synoptique garde places et titres
     // un repère repris par un autre composant : au PCB, l'empreinte déjà placée recevrait ses nets
     const repris = lignes.filter(l => anciens.has(dessinCle(l.apres))).map(l => l.apres);
     lignes.push({ quoi: (n + 1) + ". PCB", avant: null, apres: "garde les anciens repères jusqu'à sa resynchronisation" +

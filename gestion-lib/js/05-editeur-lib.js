@@ -653,12 +653,14 @@ function editeurPointerMove(e) {
 
   // 1. Déplacement actif d'une broche / pastille
   if (EDITEUR_LIB.drag) {
-    if (!EDITEUR_LIB.drag.hasMoved) {
-      editeurHistoriquePush();
-    }
     const w = EDITEUR_LIB.renderer.screenToWorld(e.clientX, e.clientY);
     const newX = isPcb ? parseFloat((editeurSnap(w.x, EDITEUR_LIB.grilleMm)).toFixed(3)) : editeurSnap(w.x, EDITEUR_LIB.grillePx);
     const newY = isPcb ? parseFloat((editeurSnap(w.y, EDITEUR_LIB.grilleMm)).toFixed(3)) : editeurSnap(w.y, EDITEUR_LIB.grillePx);
+    if (!EDITEUR_LIB.drag.hasMoved) {
+      // un clic qui tremble sans quitter sa case : ni étape vide, ni « Rétablir » vidé
+      if (newX === EDITEUR_LIB.drag.origX && newY === EDITEUR_LIB.drag.origY) return true;
+      editeurHistoriquePush();
+    }
     const idx = EDITEUR_LIB.drag.index;
 
     if (EDITEUR_LIB.drag.trou != null) {
@@ -677,7 +679,8 @@ function editeurPointerMove(e) {
       }
     } else {
       if (EDITEUR_LIB.data.pins[idx]) {
-        if (typeof EDITEUR_LIB.data.pins[idx] === "object") {
+        // une broche [x, y] est un tableau : lui poser .x et .y ne s'écrivait pas dans le fichier
+        if (!Array.isArray(EDITEUR_LIB.data.pins[idx])) {
           EDITEUR_LIB.data.pins[idx].x = newX;
           EDITEUR_LIB.data.pins[idx].y = newY;
         } else {
@@ -1500,7 +1503,7 @@ function remplirElementsEditeur() {
           const fld = e.target.getAttribute("data-field");
           const val = fld === "n" ? editeurNumero(e.target.value) : (parseFloat(e.target.value) || 0);
           if (EDITEUR_LIB.data.pins[idx]) {
-            if (typeof EDITEUR_LIB.data.pins[idx] === "object") {
+            if (!Array.isArray(EDITEUR_LIB.data.pins[idx])) {
               EDITEUR_LIB.data.pins[idx][fld] = val;
             } else {
               EDITEUR_LIB.data.pins[idx] = [fld === "x" ? val : (EDITEUR_LIB.data.pins[idx][0] || 0), fld === "y" ? val : (EDITEUR_LIB.data.pins[idx][1] || 0)];
@@ -1920,7 +1923,8 @@ function editeurGenererIpc() {
 
 function editeurGenererCiSch() {
   editeurHistoriquePush();
-  const pins = parseInt(document.getElementById("genSchPins")?.value, 10) || 8;
+  // borné à ce que le schéma accepte : un nombre négatif vidait le symbole, un très grand figeait l'onglet
+  const pins = Math.max(1, Math.min(typeof COMPOSANTS_LIB !== "undefined" ? COMPOSANTS_LIB.SYMBOLE_MAX.broches : 1024, parseInt(document.getElementById("genSchPins")?.value, 10) || 8));
   const spacing = parseFloat(document.getElementById("genSchSpacing")?.value) || 20;
   const width = parseFloat(document.getElementById("genSchWidth")?.value) || 50;
   const pinLen = parseFloat(document.getElementById("genSchPinLen")?.value) || 15;

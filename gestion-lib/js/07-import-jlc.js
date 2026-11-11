@@ -69,7 +69,7 @@ function infererClasseEtPrefixe(cat, subcat, model, desc) {
   if (/tvs|esd/i.test(texte)) {
     return { classe: "Diode", prefix: "D", deviceType: "Active", sym: "tvs_diode.json" };
   }
-  if (/led|del/i.test(texte)) {
+  if (/\b(leds?|del)\b/i.test(texte)) {      // en mots entiers : « sealed », « controlled », « model » n'en sont pas
     return { classe: "Diode", prefix: "D", deviceType: "Active", sym: "led.json" };
   }
   if (/diode/i.test(texte)) {

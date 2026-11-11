@@ -715,6 +715,36 @@ const banc = (async () => {
   confirmes.length = 0;
   await ici("editeurEnregistrer()");
   verifier(!edit.actif && !confirmes.length, "éditeur : après « Enregistrer », il se ferme sans question");
+
+  /* 16. éditeur, glisser : un clic qui ne déplace rien ne pose pas d'étape (ni ne vide « Rétablir ») */
+  const moteur = { canvas: { getBoundingClientRect: () => ({ left: 0, top: 0 }), style: {}, setPointerCapture() {}, releasePointerCapture() {} },
+                   zoom: 10, worldToScreen: (x, y) => ({ x: x * 10, y: y * 10 }), screenToWorld: (x, y) => ({ x: x / 10, y: y / 10 }),
+                   render() {}, autoFit() {}, setSymbol() {}, setFootprint() {} };
+  noeud('q:tr[data-idx="0"]').scrollIntoView = () => {};
+  const glisser = (x, y) => {
+    ici("editeurPointerDown")({ button: 0, clientX: 0, clientY: 0, pointerId: 1 });
+    ici("editeurPointerMove")({ clientX: x, clientY: y });
+    ici("editeurPointerUp")({ pointerId: 1 });
+  };
+  Object.assign(edit, { actif: true, type: "pcb", renderer: moteur, outilActif: "move", grilleMm: 0.1, drag: null, ligneEnCours: null,
+                        historique: [], pileRedo: ["{}"], data: { format: "pcbfp-1", name: "G16", pads: [{ n: 1, x: 0, y: 0, w: 1, h: 1, shape: "rect" }] } });
+  glisser(0.3, 0.2);
+  verifier(edit.historique.length === 0 && edit.pileRedo.length === 1, "éditeur : un clic sans déplacement ne pose pas d'étape (" + edit.historique.length + " étape, " + edit.pileRedo.length + " à rétablir)");
+  glisser(20, 0);
+  verifier(edit.data.pads[0].x === 2 && edit.historique.length === 1, "éditeur : un vrai glisser déplace la pastille et pose une étape");
+
+  /* 17. éditeur, glisser : une broche notée [x, y] garde son déplacement dans le fichier */
+  Object.assign(edit, { type: "schematique", grillePx: 10, historique: [], pileRedo: [], data: { format: "schsym-1", id: "G17", pins: [[0, 0]] } });
+  glisser(200, 100);
+  verifier(JSON.stringify(edit.data.pins) === "[[20,10]]", "éditeur : broche [x, y] déplacée, écrite telle quelle (" + JSON.stringify(edit.data.pins) + ")");
+
+  /* 18. générateur de symbole CI : le nombre de broches est borné (1 à SYMBOLE_MAX.broches) */
+  const genCi = n => { noeud("genSchPins").value = String(n); edit.data = { format: "schsym-1", id: "G18" }; ici("editeurGenererCiSch()"); return edit.data; };
+  const neg = genCi(-4), gros = genCi(5000);
+  verifier(neg.pins.length === 1 && neg.pinCount === 1, "générateur CI : nombre négatif ramené à 1 broche (" + neg.pins.length + ", pinCount " + neg.pinCount + ")");
+  verifier(gros.pins.length === CL.SYMBOLE_MAX.broches && !ici("COMPOSANTS_LIB").verifierSymbole(gros).some(e => /pins :/.test(e)),
+           "générateur CI : pas plus de broches que le schéma n'en accepte (" + gros.pins.length + ")");
+  edit.actif = false; edit.renderer = null;
 })();
 
 /* ---------- zone d'encombrement (courtyard) ---------- */
