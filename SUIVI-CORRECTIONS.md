@@ -37,10 +37,10 @@ Décisions du 11/11 : toutes appliquées (boutons pour les fonctions sans appela
 | F | Synoptique : places et titres gardés à la renumérotation | `05-feuilles.js` |
 | F | Recherche de composants : une recherche lente n'écrase plus la suivante | `22-recherche-composants.js` |
 | F | PCB : boutons du point de broche 1 (`fpSetMark`, `fpMoveMark`, `fpSetMarkD`), du contour imprimé (`fpSetBody`), « Revenir à l'empreinte calculée » (`fpGeneric`) | `06-panels.js` |
-| C | Sans bouton car doublons : `fpMovePad` (champs X/Y de la pastille), `stackSym` (déjà dans le panneau d'empilage), `dfPlacerVue` (glisser d'une vue) ; recommandé : garder pour les essais ou supprimer | `01-core.js`, `34-draftsman-vues.js` | — décision : supprimer
+| F | Supprimées (doublons) : `fpMovePad`, `stackSym`, `dfPlacerVue` ; essais repassés sur `fpSetPad`, `stackAsym`, `dfPoserVueRepousser` | `01-core.js`, `34-draftsman-vues.js` |
 | F | Schématique : `icMovePin` a son geste (glisser une broche d'un CI « Libre ») | `09-interaction.js` |
 | F | `schCartoucheBasculer` supprimée (doublon du bouton « Cartouche ») | `05-feuilles.js` |
-| C | `N.replace` (jamais appelé) et `N.commit` (essais seulement) : méthodes internes du routeur, pas d'action utilisateur ; recommandé : supprimer `N.replace` | `editeur-pcb/js/11-pns-node.js` | — décision : supprimer
+| F | Supprimés : `N.replace`, `N.commit` (méthodes internes du routeur sans appelant) | `editeur-pcb/js/11-pns-node.js` |
 | F | `el.specs` d'un fichier hostile affiche « [object Object] » | import | ne plante pas |
 | R | HTML du schématique : pas relu ligne à ligne | | ids vérifiés seulement |
 
@@ -144,9 +144,9 @@ Décisions du 11/11 : toutes appliquées (boutons pour les fonctions sans appela
 
 | État | Point | Où |
 |---|---|---|
-| C | Paire de pistes routée jusqu'à un demi-trou : encore refusée (exception absente des paires et des détours) | `09-diffpair.js`, `pnsSurCarte` |
+| F | Paire de pistes routée jusqu'à un demi-trou : encore refusée (exception absente des paires et des détours) | `09-diffpair.js`, `pnsSurCarte` |
 | F | Niveau établi d'une paire dissymétrique (brin par brin) : encore lu dans Re(B[0]) | `oeil._continu_brins` |
 | R | Cascade d'une paire dont le brin P est le plus long : les deux brins sont comptés trop longs de la surlongueur (segments de P + surlongueur ajoutée à P ; N reçoit la longueur de P). Écart de longueur juste, pertes surestimées de ΔL/L | `simulation_em.py` (~l.7404, 7598) |
-| C | Isolement propre d'une pastille : pas encore pris par le contrôle des bras thermiques ni l'écart entre pastilles d'une même empreinte | `02-connectivity.js` (`clrK`) |
-| C | Messages du contrôle : une pastille sans numéro est désignée par son numéro interne (« J1.5 ») | |
+| F | Isolement propre d'une pastille : pas encore pris par le contrôle des bras thermiques ni l'écart entre pastilles d'une même empreinte | `02-connectivity.js` (`clrK`) |
+| F | Pastille sans numéro désignée par sa place (« J1 (pastille sans numéro à x;y mm) ») dans tous les messages, `padDesig` | `01-core.js` |
 | L | Onglet Général du symbole : préfixe « U » si vidé | `editeurCollecterGeneralSch` |
