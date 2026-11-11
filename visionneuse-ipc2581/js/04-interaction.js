@@ -342,8 +342,11 @@ cv.addEventListener("pointermove",function(e){
   const t=resume(V.survol);
   if(t||avant)hint(t||"");
   cv.style.cursor=V.survol?"pointer":"crosshair";
+  /* Un plan : son bord souligné ne dépend pas de la souris (x la suit), on compare donc le
+     plan lui-même — sinon toute la carte était repeinte à chaque mouvement sur une masse. */
+  const repere=s=>s&&(s.plan||s.x);
   if((avant&&avant.type)!==(V.survol&&V.survol.type)||
-     (avant&&avant.x)!==(V.survol&&V.survol.x)||
+     repere(avant)!==repere(V.survol)||
      (avant&&avant.ref)!==(V.survol&&V.survol.ref))
     redessiner();
 });

@@ -232,7 +232,8 @@ const KICAD_PCB = (() => {
       if (!e || e.length < 2) return "";
       if (e.length >= 3) return propre(e[2]);
       const v = String(e[1]);
-      return table.has(v) ? propre(table.get(v)) : /^\d+$/.test(v) ? "" : propre(v);
+      /* sans table (KiCad 10), « 5 » est un nom de net, pas un numéro */
+      return table.has(v) ? propre(table.get(v)) : table.size && /^\d+$/.test(v) ? "" : propre(v);
     };
 
     let id = 1;

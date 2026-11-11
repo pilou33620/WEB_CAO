@@ -62,6 +62,9 @@ En mode réseau, la connexion est **chiffrée (HTTPS)** quand la commande `opens
 > [!NOTE]
 > Lancé **depuis un terminal**, le serveur écoute sur tout le réseau. Par prudence (pas de mot de passe), les dossiers de projet y sont alors refusés et la bibliothèque passe en lecture seule, sauf avec `--projets-reseau` sur un réseau de confiance. Lancé par double-clic ou avec `--local`, il n'écoute que la machine elle-même et tout est permis.
 
+> [!WARNING]
+> **Derrière un relais** (Web Launcher de WEB·SUITE, Caddy, Tailscale Funnel…), le relais se connecte par la boucle locale : pour WEB_CAO, chacun de ses visiteurs est « ce poste », sans code d'appairage et avec les droits du poste. **C'est au relais d'authentifier chaque visiteur avant de transmettre** ; WEB_CAO ne lit pas `X-Forwarded-For`. Ne placez jamais WEB_CAO derrière un relais ouvert sans connexion. Lancé avec `--local`, il n'est joignable que par le relais.
+
 ---
 
 ## 🛠️ Les outils
@@ -170,7 +173,7 @@ screen/                  Captures et animations
 
 ## 🧪 Tests
 
-Côté navigateur, JavaScript standard, sans dépendance. Côté serveur, Python 3 (testé en 3.12) avec numpy et scipy. Les bancs tournent en CI (`.github/workflows/ci.yml`), sauf `banc-synoptique.py` et `editeur-pcb/test/banc-anim3d-images.py` (Chromium), `python/test/banc-detection-plateforme.py`, `python/test/banc-usimmics.py`, `commun/test/banc-tactile-tuto.js`, à lancer à la main. `appairage.py` et `pilote.py` se vérifient en les exécutant ; la CI de web_suite passe ces vérifications sur ses originaux et compare les copies.
+Côté navigateur, JavaScript standard, sans dépendance. Côté serveur, Python 3 (testé en 3.12) avec numpy et scipy. Les bancs tournent en CI (`.github/workflows/ci.yml`), sauf `banc-synoptique.py`, `commun/test/banc-ruban.py` et `editeur-pcb/test/banc-anim3d-images.py` (Chromium), `python/test/banc-detection-plateforme.py`, `python/test/banc-usimmics.py`, à lancer à la main. Faute de `kicad-cli` sur la machine d'intégration, la relecture des exports KiCad par KiCad lui-même y est sautée (les bancs le disent). `appairage.py` et `pilote.py` se vérifient en les exécutant ; la CI de web_suite passe ces vérifications sur ses originaux et compare les copies.
 
 <details>
 <summary>Lancer les bancs en local</summary>

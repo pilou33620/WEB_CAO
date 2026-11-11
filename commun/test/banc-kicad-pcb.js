@@ -229,6 +229,14 @@ const PRO = { board: { design_settings: { rules: { min_copper_edge_clearance: 0.
                             { name: "Default", track_width: 0.2, clearance: 0.15, via_diameter: 0.6, via_drill: 0.3 }],
                   netclass_assignments: { SIG: ["pwr"] }, netclass_patterns: [{ netclass: "pwr", pattern: "V?C" }, { netclass: "pwr", pattern: "G*" }] } };
 
+/* KiCad 10 nomme les nets sans table : un net nommé d'un nombre (« 5 ») reste un nom ;
+   avec une table (KiCad 9), un numéro qui n'y est pas ne désigne rien */
+{
+  const lu = (texte) => P.lire(K.lire(texte, "kicad_pcb"), PRO, K.rapport()).doc;
+  verifier(lu(fixture(true).split('(net "SIG")').join('(net "5")')).fps[0].nets[2] === "5", "KiCad 10 : net nommé « 5 » gardé");
+  verifier(lu(fixture(false).split('(net 3 "SIG")').join('(net 7)')).fps[0].nets[2] === undefined, "KiCad 9 : numéro hors table → sans net");
+}
+
 for (const k10 of [false, true]) {
   const quoi = k10 ? "fixture KiCad 10" : "fixture KiCad 9";
   const arbre = K.lire(fixture(k10), "kicad_pcb"), rap = K.rapport();
