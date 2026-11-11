@@ -333,6 +333,7 @@ function pasteClip(src){
     el.id=S.uid++;
     el.x+=bx;el.y+=by;
     const def=defOf(el.type);
+    if(def.lib)schSymboleRetenir(el.type);   // collé d'un autre document : son symbole de la LIB part avec celui-ci
     if(!def.noRef){const vieux=el.ref;el.ref=(vieux&&neuf.get(vieux))||nextRef(def.p);if(vieux)neuf.set(vieux,el.ref);}
     S.comps.push(el);S.sel.add(el.id);
   });

@@ -304,6 +304,42 @@ const COMPOSANTS_LIB = (() => {
     return { erreurs, remarques };
   }
 
+  /* ---------- symbole schsym-1 ----------
+     Les règles que le schéma applique à un symbole de la LIB (29-symboles-lib.js, schSymboleLire) :
+     la Gestion LIB les passe avant d'enregistrer, sinon le schéma refusait le fichier en silence.
+     Rend la liste des refus (vide : le symbole est bon). */
+  const SYMBOLE_OPS = ["line", "rect", "arc", "circle", "poly", "text", "arrow"];
+  const SYMBOLE_MAX = { broches: 1024, primitives: 5000, coord: 4000 };
+  function verifierSymbole(sym) {
+    const erreurs = [];
+    const fini = v => typeof v === "number" && Number.isFinite(v) && Math.abs(v) <= SYMBOLE_MAX.coord;
+    if (!sym || typeof sym !== "object" || Array.isArray(sym)) return ["le symbole doit être un objet schsym-1"];
+    if (sym.format !== "schsym-1") erreurs.push("format : « schsym-1 » attendu");
+    if (typeof sym.id !== "string" || !NOM_EMPREINTE.test(sym.id)) erreurs.push("id : nom du fichier, [A-Za-z0-9_.+-], 60 caractères au plus");
+    const pins = Array.isArray(sym.pins) ? sym.pins : [];
+    if (!pins.length || pins.length > SYMBOLE_MAX.broches) erreurs.push("pins : de 1 à " + SYMBOLE_MAX.broches + " broches {n, x, y}");
+    const parN = new Set();
+    for (const p of pins) {
+      if (!p || !Number.isInteger(p.n) || p.n < 1 || !fini(p.x) || !fini(p.y)) { erreurs.push("broche illisible : " + JSON.stringify(p).slice(0, 60)); continue; }
+      if (parN.has(p.n)) erreurs.push("broche " + p.n + " en double");
+      parN.add(p.n);
+    }
+    for (let n = 1; n <= parN.size; n++) if (!parN.has(n)) { erreurs.push("broches numérotées de 1 à " + parN.size + " sans trou : la " + n + " manque"); break; }
+    const prims = Array.isArray(sym.primitives) ? sym.primitives : [];
+    if (prims.length > SYMBOLE_MAX.primitives) erreurs.push("primitives : " + SYMBOLE_MAX.primitives + " au plus");
+    for (const q of prims) {
+      if (!q || !SYMBOLE_OPS.includes(q.op)) { erreurs.push("primitive inconnue : " + String(q && q.op).slice(0, 20) + " (" + SYMBOLE_OPS.join(", ") + ")"); break; }
+      const nombres = { line: ["x1", "y1", "x2", "y2"], rect: ["x", "y", "w", "h"], arc: ["cx", "cy", "r", "start", "end"],
+                        circle: ["x", "y", "r"], text: ["x", "y"], arrow: ["x", "y"], poly: [] }[q.op];
+      if (nombres.some(k => !fini(q[k]))) { erreurs.push(q.op + " : coordonnées numériques finies"); break; }
+      if (q.op === "poly" && !(Array.isArray(q.pts) && q.pts.length >= 2 && q.pts.length <= 500 && q.pts.every(p => Array.isArray(p) && fini(p[0]) && fini(p[1])))) {
+        erreurs.push("poly : de 2 à 500 points [x, y]"); break;
+      }
+      if (q.op === "text" && typeof (q.text != null ? q.text : q.txt) !== "string") { erreurs.push("text : un texte"); break; }
+    }
+    return erreurs;
+  }
+
   const nomDeChemin = v => String(v == null ? "" : v).trim().replace(/^.*[\\/]/, "").replace(/\.json$/i, "");
 
   /* ---------- case du catalogue ----------
@@ -889,6 +925,6 @@ const COMPOSANTS_LIB = (() => {
   }
 
   return { SYMBOLES, CHAMPS, KICAD_MAX, COURTYARD_MARGE, nomDeChemin, verifierEmpreinte, verifierBrochage, verifierCase, genererEmpreinte,
-    courtyardAuto, auditerReference,
+    courtyardAuto, auditerReference, verifierSymbole, SYMBOLE_MAX,
            lireParametres, convertirKicad, lireS, Refus, portsTouchstone, lireBranchement, brancherTouchstone };
 })();

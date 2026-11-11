@@ -608,6 +608,38 @@ const banc = (async () => {
   verifier(audit.length === 2 && audit[0].comp["Part Name"] === "R1K" && /2 broche\(s\), empreinte à 3/.test(audit[0].erreurs[0]) &&
            audit[1].erreurs.some(e => /QFN-99 » introuvable/.test(e)) && audit[1].erreurs.includes("sans symbole"),
            "audit : broches face aux pastilles, empreinte absente, symbole manquant (" + JSON.stringify(audit.map(r => r.erreurs)) + ")");
+
+  /* 8. éditeur d'empreinte : un bord de corps à 0 reste à 0 */
+  edit.type = "pcb";
+  edit.data = { format: "pcbfp-1", name: "J", pins: 1, style: "chip", pads: [{ n: 1, x: 1, y: 0, w: 1, h: 1, shape: "rect" }] };
+  for (const [id, v] of [["edBodyX1", "0"], ["edBodyY1", "-1.5"], ["edBodyX2", "4"], ["edBodyY2", ""]]) noeud(id).value = v;
+  ici("editeurCollecterGeneralPcb()");
+  verifier(JSON.stringify(edit.data.body) === JSON.stringify({ x1: 0, y1: -1.5, x2: 4, y2: 1 }), "corps : bord à 0 gardé, champ vide au défaut (" + JSON.stringify(edit.data.body) + ")");
+
+  /* 9. éditeur de symbole : ce qu'il enregistre, le schéma l'accepte ; sinon il le dit */
+  edit.type = "schematique"; edit.historique = []; edit.pileRedo = [];
+  edit.data = ici("creerSymboleDefaut()");
+  ici("editeurSupprimerPin(1); editeurAjouterPin()");
+  verifier(edit.data.pins.map(q => q.n).sort().join() === "1,2,3,4", "symbole : « Ajouter broche » après une suppression reprend le numéro libre (" + edit.data.pins.map(q => q.n) + ")");
+  verifier(ici("editeurNumero")(" 4 ") === 4 && ici("editeurNumero")("A1") === "A1", "tableau : un numéro saisi devient un entier");
+  verifier(!ici("editeurControlerSymbole")(edit.data, "MON_SYM.json").length && edit.data.id === "MON_SYM", "symbole : id = nom du fichier, accepté par les règles du schéma");
+  edit.data.pins[0].n = 3;                                   // doublon : le schéma le refuserait
+  noeud("editeurNomFichier").value = "MON_SYM.json";
+  confirmes.length = 0;
+  const a9 = appels.length;
+  await ici("editeurEnregistrer()");
+  verifier(confirmes.length === 1 && /schéma refusera[\s\S]*broche 3 en double/.test(confirmes[0]) && appels.length === a9,
+           "symbole fautif : l'enregistrement le dit et, refusé, n'écrit rien (" + confirmes.join(" | ").slice(0, 80) + ")");
+
+  /* 10. catalogue lu en secours (API en panne au chargement) : lecture seule, jamais réécrit */
+  const fetchPage = page.fetch;
+  page.fetch = async () => ({ ok: true, text: async () => "Part Name;Description\nR1;R\ufffdsistance\n" });
+  await ici("chargerRepliCsv()");
+  page.fetch = fetchPage;
+  ici("modifierComposant(0, 'Description', 'x')");
+  const a10 = appels.length;
+  const refus = await ici("enregistrerCatalogue()").then(() => "", e => e.message);
+  verifier(/lecture seule/.test(refus) && appels.length === a10 && etat.sale, "catalogue de secours : enregistrement refusé, rien n'est envoyé (" + refus.slice(0, 60) + ")");
 })();
 
 /* ---------- zone d'encombrement (courtyard) ---------- */

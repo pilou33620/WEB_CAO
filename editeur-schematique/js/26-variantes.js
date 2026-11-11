@@ -22,6 +22,14 @@ function schVarModele(){
   if(!S.variantes||!Array.isArray(S.variantes.liste)) S.variantes=varVide();
   return S.variantes;
 }
+/* Monté ou non : le choix vaut pour le boîtier, donc pour toutes les parties du même repère
+   (U1A, U1B) -- sinon la BOM commandait U1 et le listait aussi en non monté. */
+function schVarDefinir(el,id,monte){
+  let change=false;
+  for(const c of (el.ref?schVarComposants().filter(x=>x.ref===el.ref):[el]))
+    if(varDefinirMonte(c,id,monte))change=true;
+  return change;
+}
 function schVarActive(){ return (S.variantes&&S.variantes.active)||""; }
 
 /* La variante active : la feuille, la nomenclature et son export la suivent.
@@ -75,7 +83,7 @@ function schVarPropsBind(el){
   box.querySelectorAll(".var-prop input[data-var]").forEach(inp=>{
     inp.onchange=()=>{
       push();
-      varDefinirMonte(el,inp.dataset.var,inp.checked);
+      schVarDefinir(el,inp.dataset.var,inp.checked);
       buildList();draw();
       if(VARD.ouvert)schVarRendre();
     };
@@ -95,7 +103,7 @@ function schVarMultiBind(els){
   const vid=schVarActive();
   const agir=monte=>{
     push();
-    for(const e of els) if(!defOf(e.type).noRef) varDefinirMonte(e,vid,monte);
+    for(const e of els) if(!defOf(e.type).noRef) schVarDefinir(e,vid,monte);
     refreshPanels();draw();
     if(VARD.ouvert)schVarRendre();
   };
@@ -209,9 +217,9 @@ function schVarConstruire(){
     const c=schVarComposants().find(x=>x.ref===t.dataset.ref&&String(x.id)===t.dataset.cid);
     if(!c)return;
     schVarPousser();
-    varDefinirMonte(c,t.dataset.var,t.checked);
+    schVarDefinir(c,t.dataset.var,t.checked);
     S.dirty=true;
-    schVarRendreListe();schVarMajCompte();buildList();draw();
+    schVarRendreListe();schVarRendreTable();schVarMajCompte();buildList();draw();
     if(selCount())refreshPanels();
   });
   /* en-tête de colonne : tout monter / ne rien monter (parmi les composants filtrés) */
@@ -219,7 +227,7 @@ function schVarConstruire(){
     const b=e.target.closest&&e.target.closest("button[data-col]");if(!b)return;
     schVarPousser();
     const monte=b.dataset.tout==="1";
-    for(const c of schVarFiltrer(schVarComposants()))varDefinirMonte(c,b.dataset.col,monte);
+    for(const c of schVarFiltrer(schVarComposants()))schVarDefinir(c,b.dataset.col,monte);
     S.dirty=true;
     schVarRendre();buildList();draw();
   });

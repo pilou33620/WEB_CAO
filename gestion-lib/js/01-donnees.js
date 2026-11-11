@@ -124,6 +124,7 @@ async function chargerDonneesBibliotheque() {
       return c;
     });
     LIB_STATE.sale = false;
+    LIB_STATE.lectureSeule = false;
 
     return { ok: true, total: LIB_STATE.composants.length };
   } catch (err) {
@@ -141,6 +142,9 @@ async function chargerRepliCsv() {
       if (resp.ok) {
         const text = await resp.text();
         parserCsvBrut(text);
+        /* lu hors de l'API : sans date du fichier (pas de garde 409), et décodé en UTF-8 quel que soit
+           son encodage. L'enregistrer réécrirait tout le catalogue depuis cette copie : refusé. */
+        LIB_STATE.lectureSeule = true;
         return { ok: true, total: LIB_STATE.composants.length };
       }
     } catch (_) {}
@@ -268,6 +272,9 @@ async function sauvegarderFichierLib(type, nom, dataOuContenu, options) {
 // Sauvegarde des modifications du catalogue vers le serveur
 async function enregistrerCatalogue() {
   if (!LIB_STATE.sale) return { ok: true, message: "Aucune modification à enregistrer" };
+  if (LIB_STATE.lectureSeule)
+    throw new Error("le catalogue a été lu en secours (le serveur n'a pas répondu au chargement) : il est en " +
+                    "lecture seule. Rien n'est écrit : rechargez la page, puis refaites vos changements.");
   // l'enregistrement réécrit tout le catalogue : ce qu'un autre onglet y a mis serait perdu
   if (LIB_STATE.perime && !confirm("Le catalogue a changé ailleurs (autre onglet ou appareil) depuis " +
       "son chargement. L'enregistrer maintenant effacera ces changements. Continuer ?"))

@@ -73,7 +73,7 @@ const EXPOSE=[
   /* brochage (04 + 19) */
   "icPins","icBodyOf","icSideOf","icPinLabel","icFree","icShapeOf","icStep","IC_STEP",
   "icSetCount","icSetShape","icSetBody","icMovePin","reshapeComp",
-  "ceOpen","ceClose",
+  "ceOpen","ceClose","ceIcRegler",
   /* libellés déplaçables et étiquettes de net (08 + 09) */
   "compTexts","textBox","textOff","setTextOff","netLabelAt","netLabelBoxes",
   "pinContacts","reconnectContacts","resetTexts","pinContactPoints","moveSelBy",
@@ -152,7 +152,7 @@ const EXPOSE=[
   /* classes d'interface (commun/classes-interface.js) */
   "CLASSES_INTERFACE","familleClasse","titreClasse","loadDoc",
   /* symboles de la LIB (29-symboles-lib.js) */
-  "schSymboleLire","schSymboleDefinir","schSymbolesDuDocument","SYM_LIB_LUS","schTypeDuCatalogue","LIB",
+  "schSymboleLire","schSymboleDefinir","schSymboleRemplacer","schVarDefinir","schCleLib","schSymbolesDuDocument","SYM_LIB_LUS","schTypeDuCatalogue","LIB",
   /* contrôle électrique (31-erc.js) et blocs réutilisables (32-blocs.js) */
   "ercVerifier","ercTypeBroche","ercOuvrir","ercFermer","ERC_DERNIER",
   "blocEnregistrer","blocsLire","blocPoser","blocSupprimer","blocsImporterTexte","blocsOuvrir","blocsFermer","BLOCS_KEY"
@@ -576,6 +576,73 @@ T("symboles de la LIB (schsym-1) : contrôlés, posés depuis le catalogue, gard
     const vdd=allPins(u)[0];
     if(!(f.wires||[]).some(w=>(w.x1===vdd.x&&w.y1===vdd.y)||(w.x2===vdd.x&&w.y2===vdd.y)))throw new Error("le fil de U1.VDD est perdu");
   }finally{global.Pilote=ancien;window.CSV_LIB=lib;delete LIB.mcu_essai;SYM_LIB_LUS.delete("mcu_essai");S.symboles={};sheet([],[]);}
+});
+T("zones : catégorie et cadre de note gardés à la réouverture",()=>{
+  try{
+    loadDoc({format:"schemedit-2",pages:[{name:"Racine",isHierarchy:true,comps:[],wires:[]},{name:"F1",comps:[],wires:[],drawings:[
+      {id:5,shape:"rect",x1:-100,y1:-100,x2:100,y2:100,label:"PUISSANCE",isZone:true,category:"Puissance"},
+      {id:6,shape:"rect",x1:200,y1:-100,x2:400,y2:100,label:"Note",isZone:false}]}]});
+    const z=schToutesLesZones();
+    if(z.length!==1||z[0].nom!=="PUISSANCE"||z[0].categorie!=="Puissance")
+      throw new Error("zones relues : "+JSON.stringify(z.map(x=>x.nom+" ["+x.categorie+"]")));
+  }finally{sheet([],[]);S.hist.length=0;}
+});
+T("symbole de la LIB : collé dans un autre document, il y est recopié",()=>{
+  const SYM={format:"schsym-1",id:"sym_essai",name:"Essai",prefix:"U",defaultValue:"E1",
+    pins:[{n:1,x:-60,y:-20,name:"VDD"},{n:2,x:-60,y:20,name:"GND"},{n:3,x:60,y:0,name:"TX"}],ext:[-60,-40,60,40],
+    primitives:[{op:"rect",x:-40,y:-40,w:80,h:80}]};
+  const clip=getClip();
+  try{
+    if(schSymboleDefinir(SYM)!=="sym_essai")throw new Error("symbole non défini");
+    sheet([],[]);S.symboles={};
+    const u=addComp("sym_essai",0,0);
+    clearSel();S.sel.add(u.id);
+    if(!copySel())throw new Error("copie refusée");
+    // un autre document, dans le même onglet
+    loadDoc({format:"schemedit-2",pages:[{name:"Racine",isHierarchy:true,comps:[],wires:[]},{name:"F1",comps:[],wires:[]}]});
+    gotoPage(1);
+    pasteClip();
+    const c=S.comps[0];
+    if(!c||c.type!=="sym_essai"||!S.symboles.sym_essai)throw new Error("collé sans son symbole : le document le perdrait à la réouverture");
+  }finally{setClip(clip);delete LIB.sym_essai;SYM_LIB_LUS.delete("sym_essai");S.symboles={};sheet([],[]);S.hist.length=0;S.redo.length=0;}
+});
+T("symbole de la LIB modifié dans la Gestion LIB : « Mettre à jour » le redéfinit, les fils suivent",()=>{
+  const SYM={format:"schsym-1",id:"sym_essai",name:"Essai",prefix:"U",defaultValue:"E1",
+    pins:[{n:1,x:-60,y:-20,name:"VDD"},{n:2,x:-60,y:20,name:"GND"},{n:3,x:60,y:0,name:"TX"}],ext:[-60,-40,60,40],
+    primitives:[{op:"rect",x:-40,y:-40,w:80,h:80}]};
+  try{
+    schSymboleDefinir(SYM);
+    sheet([],[]);S.symboles={};
+    const c=addComp("sym_essai",0,0);
+    // la broche TX se déplace, une broche RX arrive
+    const tx=allPins(c)[2];
+    S.wires.push({x1:tx.x,y1:tx.y,x2:tx.x+100,y2:tx.y});touchWires();
+    const V2=JSON.parse(JSON.stringify(SYM));V2.pins[2].x=80;V2.pins.push({n:4,x:80,y:20,name:"RX"});
+    SCH_LIB_ALERTE.active=true;SCH_LIB_ALERTE.compIds=new Set([schCleLib(c)]);
+    if(schAppliquerMajLibTous({genre:"fichier",nom:"sym_essai.json",data:V2})!==1)throw new Error("mise à jour non appliquée");
+    const tx2=allPins(c)[2];
+    if(allPins(c).length!==4||S.symboles.sym_essai.pins.length!==4||"pins" in c)throw new Error("symbole non redéfini : "+allPins(c).length+" broches");
+    if(tx2.x!==tx.x+20||S.wires[0].x1!==tx2.x||S.wires[0].y1!==tx2.y)throw new Error("le fil n'a pas suivi la broche déplacée");
+    undo();
+    if(allPins(S.comps[0]).length!==3)throw new Error("Ctrl+Z ne rend pas l'ancien symbole");
+  }finally{delete LIB.sym_essai;SYM_LIB_LUS.delete("sym_essai");S.symboles={};SCH_LIB_ALERTE.active=false;SCH_LIB_ALERTE.compIds.clear();
+           sheet([],[]);S.hist.length=0;S.redo.length=0;}
+});
+T("variantes : monté ou non vaut pour toutes les parties du même repère",()=>{
+  try{
+    loadDoc({format:"schemedit-2",variantes:{liste:[{id:"v1",nom:"Lite"}],active:"v1"},
+      pages:[{name:"Racine",isHierarchy:true,comps:[],wires:[]},
+        {name:"F1",wires:[],comps:[{id:1,type:"opamp",x:0,y:0,rot:0,ref:"U1",value:"LM358",part:"A"}]},
+        {name:"F2",wires:[],comps:[{id:1,type:"opamp",x:0,y:0,rot:0,ref:"U1",value:"LM358",part:"B"},
+                                   {id:2,type:"resistor",x:200,y:0,rot:0,ref:"R1",value:"1k"}]}]},true);
+    const tous=schVarComposants(), a=tous.find(c=>c.part==="A");
+    schVarDefinir(a,"v1",false);
+    const csv=bomCsvText("v1");
+    if(tous.some(c=>c.ref==="U1"&&varEstMonte(c,"v1"))||/U1;[^\n]*;Monté/.test(csv))throw new Error("une partie de U1 reste montée :\n"+csv);
+    if(!varEstMonte(tous.find(c=>c.ref==="R1"),"v1"))throw new Error("R1 ne devait pas changer");
+    schVarDefinir(tous.find(c=>c.part==="B"),"v1",true);
+    if(tous.some(c=>!varEstMonte(c,"v1")))throw new Error("remonter une partie remonte le boîtier");
+  }finally{S.variantes={liste:[],active:""};S.pages=[newPage("Synoptique"),newPage("Essai")];S.page=1;sheet([],[]);S.hist.length=0;}
 });
 T("canal de pilotage : cao_schema_dessiner, un fil par coordonnées ne relie que par ses bouts",()=>{
   const cmds={}, ancien=global.Pilote;
@@ -2781,6 +2848,26 @@ T("édition du composant (modale CE) pour modifier ref, valeur, boîtier",()=>{
   op.pkg = "SOIC-8";
   ceClose();
   if(op.ref!=="U5"||op.value!=="TL072"||op.pkg!=="SOIC-8") throw new Error("propriétés du composant non mises à jour");
+});
+
+T("édition du composant : représentation et largeur du corps d'un CI, absentes pour un symbole fixe",()=>{
+  const u = C("ic", 10, 10, {ref:"U1"}), r = C("resistor", 30, 10, {ref:"R1"});
+  sheet([u, r], []);
+  ceOpen(u);
+  const el = id => document.getElementById(id);
+  if(el("ceIcRow").hidden) throw new Error("un CI doit proposer sa représentation");
+  if(el("ceIcShape").value!=="dip") throw new Error("représentation de départ : "+el("ceIcShape").value);
+  ceIcRegler(icSetShape, "quad");
+  if(el("ceIcShape").value!=="quad") throw new Error("la liste ne suit pas : "+el("ceIcShape").value);
+  if(icShapeOf(u)!=="quad"||pinCount(u)%4) throw new Error("quad non appliqué : "+icShapeOf(u)+", "+pinCount(u)+" broches");
+  const l0 = +el("ceIcW").value;
+  ceIcRegler(icSetBody, l0+4);
+  const g = icGeom(u);
+  if((g.body.x2-g.body.x1)/IC_STEP!==l0+4) throw new Error("largeur du corps : "+(g.body.x2-g.body.x1)/IC_STEP+" au lieu de "+(l0+4));
+  ceClose();
+  ceOpen(r);
+  if(!el("ceIcRow").hidden) throw new Error("une résistance n'a pas de représentation à choisir");
+  ceClose();
 });
 
 T("normComp : conservation des broches personnalisées et des noms pour tout composant",()=>{

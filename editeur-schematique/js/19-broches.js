@@ -102,6 +102,12 @@ const CE = {open: false, el: null, pushed: false};
 function ceEl(id){ return document.getElementById(id); }
 function cePush(){ if(!CE.pushed){ push(); CE.pushed = true; } }
 
+/* Représentation ou largeur du corps du CI ouvert : une retouche, un pas d'historique. */
+function ceIcRegler(retouche, valeur){
+  if(!CE.el) return;
+  cePush(); retouche(CE.el, valeur);
+  ceSync(); draw();
+}
 function ceBuild(){
   if(ceEl("compEd")) return;
   const d = document.createElement("div");
@@ -131,6 +137,17 @@ function ceBuild(){
             '<label>Boîtier / Empreinte</label>' +
             '<select id="cePkgSel" style="margin-bottom:4px; width:100%;"></select>' +
             '<input id="cePkgTxt" placeholder="ex: 0603, SOIC-8, DIP-8...">' +
+          '</div>' +
+          /* CI générique seulement : icSetShape et icSetBody existaient sans commande */
+          '<div class="prop" id="ceIcRow" hidden>' +
+            '<label>Représentation</label>' +
+            '<select id="ceIcShape" title="Disposition des broches du circuit intégré">' +
+              '<option value="dip">Deux rangées (DIP)</option>' +
+              '<option value="quad">Quatre côtés (quad)</option>' +
+              '<option value="libre">Libre</option>' +
+            '</select>' +
+            '<label style="margin-top:4px">Largeur du corps (cases)</label>' +
+            '<input id="ceIcW" type="number" min="2" max="40" step="1">' +
           '</div>' +
           '<div class="ce-section-title" style="margin-top:14px;">Fabricant &amp; MPN</div>' +
           '<div class="prop">' +
@@ -246,6 +263,8 @@ function ceBuild(){
     CE.el.manufacturer = ceEl("ceMfr").value.trim().slice(0, 100);
   };
 
+  ceEl("ceIcShape").onchange = () => ceIcRegler(icSetShape, ceEl("ceIcShape").value);
+  ceEl("ceIcW").onchange = () => ceIcRegler(icSetBody, +ceEl("ceIcW").value);
   ceEl("cePkgTxt").oninput = () => {
     if(!CE.el) return;
     cePush();
@@ -308,6 +327,13 @@ function ceSync(){
   ceEl("ceMpn").value = el.mpn || "";
   ceEl("ceMfr").value = el.manufacturer || "";
   ceEl("cePkgTxt").value = el.pkg || "";
+  const estCi = typeof def.pins === "function";      // symbole à brochage réglable
+  ceEl("ceIcRow").hidden = !estCi;
+  if(estCi){
+    const g = icGeom(el);
+    ceEl("ceIcShape").value = g.shape;
+    ceEl("ceIcW").value = Math.round((g.body.x2 - g.body.x1) / IC_STEP);
+  }
 
   // Remplissage du select de boîtiers
   const selPkg = ceEl("cePkgSel");

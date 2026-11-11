@@ -207,18 +207,8 @@ function schAppliquerMajLibComposant(comp, dataFichier, dansUnLot) {
     }
   }
 
-  // 2. Mise à jour des broches si données de symbole fournies
-  if (dataFichier && (Array.isArray(dataFichier.pins) || Array.isArray(dataFichier.broches))) {
-    const newPins = dataFichier.pins || dataFichier.broches;
-    if (newPins.length > 0) {
-      comp.pins = newPins.map((p, idx) => ({
-        num: p.num || p.n || (idx + 1),
-        name: p.name || p.nom || String(idx + 1),
-        x: p.x || 0,
-        y: p.y || 0
-      }));
-    }
-  }
+  // 2. Le symbole de la LIB lui-même (schsym-1) : redéfini pour tout le document, les fils suivent
+  if (dataFichier && dataFichier.id === comp.type) schSymboleRemplacer(dataFichier);
 
   SCH_LIB_ALERTE.compIds.delete(cle);
   if (SCH_LIB_ALERTE.compIds.size === 0) {

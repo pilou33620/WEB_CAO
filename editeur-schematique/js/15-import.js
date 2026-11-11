@@ -142,7 +142,11 @@ function normDrawing(d,i){
   const color=String(d.color||"#6b7280").slice(0,32);
   const label=String(d.label==null?"":d.label).slice(0,120);
   const id=Math.max(1,Math.round(num(d.id,i+1)));
-  return {id,shape,type:shape,x1,y1,x2,y2,style,width,color,label};
+  const o={id,shape,type:shape,x1,y1,x2,y2,style,width,color,label};
+  // zone fonctionnelle (room du PCB) : sans ces deux champs, un cadre de note décoché redevenait une zone à la réouverture
+  if(typeof d.isZone==="boolean")o.isZone=d.isZone;
+  if(d.category)o.category=String(d.category).slice(0,40);
+  return o;
 }
 function normPage(p,i){
   const src=(p&&typeof p==="object")?p:{};

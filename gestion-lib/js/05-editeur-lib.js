@@ -1199,12 +1199,9 @@ function editeurCollecterGeneralPcb() {
   d.pins = parseInt(document.getElementById("edFpPins")?.value, 10) || (d.pads ? d.pads.length : 0);
   d.description = (document.getElementById("edFpDesc")?.value || "").trim();
 
-  d.body = {
-    x1: parseFloat(document.getElementById("edBodyX1")?.value) || -1,
-    y1: parseFloat(document.getElementById("edBodyY1")?.value) || -1,
-    x2: parseFloat(document.getElementById("edBodyX2")?.value) || 1,
-    y2: parseFloat(document.getElementById("edBodyY2")?.value) || 1
-  };
+  // un bord à 0 est une cote comme une autre : seul un champ vide ou illisible prend la valeur par défaut
+  const bord = (id, defaut) => { const v = parseFloat(document.getElementById(id)?.value); return Number.isFinite(v) ? v : defaut; };
+  d.body = { x1: bord("edBodyX1", -1), y1: bord("edBodyY1", -1), x2: bord("edBodyX2", 1), y2: bord("edBodyY2", 1) };
   /* zone d'encombrement : les quatre cotes, ou pas de zone */
   const crt = ["edCrtX1", "edCrtY1", "edCrtX2", "edCrtY2"].map(id => document.getElementById(id)?.value ?? "");
   if (crt.every(v => String(v).trim() !== "" && Number.isFinite(+v))) {
@@ -1406,7 +1403,7 @@ function remplirElementsEditeur() {
           const tr = e.target.closest("tr");
           const idx = parseInt(tr.getAttribute("data-idx"), 10);
           const fld = e.target.getAttribute("data-field");
-          const val = (fld === "n" || fld === "shape") ? e.target.value : (parseFloat(e.target.value) || 0);
+          const val = fld === "n" ? editeurNumero(e.target.value) : fld === "shape" ? e.target.value : (parseFloat(e.target.value) || 0);
           if (EDITEUR_LIB.data.pads[idx]) {
             EDITEUR_LIB.data.pads[idx][fld] = val;
             if (fld === "slot" && !(val > 0)) delete EDITEUR_LIB.data.pads[idx].slot;   // 0 = perçage rond
@@ -1483,7 +1480,7 @@ function remplirElementsEditeur() {
           const tr = e.target.closest("tr");
           const idx = parseInt(tr.getAttribute("data-idx"), 10);
           const fld = e.target.getAttribute("data-field");
-          const val = fld === "n" ? e.target.value : (parseFloat(e.target.value) || 0);
+          const val = fld === "n" ? editeurNumero(e.target.value) : (parseFloat(e.target.value) || 0);
           if (EDITEUR_LIB.data.pins[idx]) {
             if (typeof EDITEUR_LIB.data.pins[idx] === "object") {
               EDITEUR_LIB.data.pins[idx][fld] = val;
@@ -1518,10 +1515,30 @@ function remplirElementsEditeur() {
   }
 }
 
+/* Un numéro de pastille ou de broche saisi dans le tableau : un entier (le schéma et le contrôle
+   d'empreinte refusent « "4" ») ; un texte qui n'en est pas un reste tel quel, le contrôle le dira. */
+function editeurNumero(texte) {
+  const t = String(texte).trim();
+  return /^\d+$/.test(t) ? +t : texte;
+}
+/* Le premier numéro libre : après une suppression, « Ajouter » ne crée ni doublon ni trou. */
+function editeurNumeroLibre(liste) {
+  const pris = new Set(liste.map(p => +p.n));
+  let n = 1;
+  while (pris.has(n)) n++;
+  return n;
+}
+/* Ce que le schéma refuserait d'un symbole (COMPOSANTS_LIB.verifierSymbole) ; son id est le nom
+   du fichier, comme le schéma l'exige pour le lire dans la LIB. */
+function editeurControlerSymbole(data, nomFichier) {
+  data.id = String(nomFichier).replace(/\.json$/i, "");
+  return COMPOSANTS_LIB.verifierSymbole(data);
+}
+
 function editeurAjouterPad() {
   editeurHistoriquePush();
   if (!EDITEUR_LIB.data.pads) EDITEUR_LIB.data.pads = [];
-  const n = EDITEUR_LIB.data.pads.length + 1;
+  const n = editeurNumeroLibre(EDITEUR_LIB.data.pads);
   EDITEUR_LIB.data.pads.push({
     n: n,
     x: 0,
@@ -1569,7 +1586,7 @@ function editeurSupprimerSelection() {
 function editeurAjouterPin() {
   editeurHistoriquePush();
   if (!EDITEUR_LIB.data.pins) EDITEUR_LIB.data.pins = [];
-  const n = EDITEUR_LIB.data.pins.length + 1;
+  const n = editeurNumeroLibre(EDITEUR_LIB.data.pins);
   EDITEUR_LIB.data.pins.push({
     n: n,
     x: -40,
@@ -2006,6 +2023,13 @@ async function editeurEnregistrer() {
     const v = COMPOSANTS_LIB.verifierEmpreinte(EDITEUR_LIB.data, nom.replace(/\.json$/i, ".json"));
     if (v.erreurs.length && !confirm("Cette empreinte ne passe pas les contrôles :\n• " +
         v.erreurs.slice(0, 8).join("\n• ") + "\n\nEnregistrer quand même ?")) return;
+  }
+
+  // un symbole : les règles du schéma, qui sinon l'écarterait sans rien dire (CI générique à la place)
+  if (EDITEUR_LIB.type === "schematique" && typeof COMPOSANTS_LIB !== "undefined") {
+    const erreurs = editeurControlerSymbole(EDITEUR_LIB.data, nom);
+    if (erreurs.length && !confirm("Le schéma refusera ce symbole :\n• " +
+        erreurs.slice(0, 8).join("\n• ") + "\n\nEnregistrer quand même ?")) return;
   }
 
   const type = EDITEUR_LIB.type;

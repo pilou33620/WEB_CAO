@@ -18,42 +18,19 @@
    ========================================================================== */
 "use strict";
 
-const SYM_LIB_OPS = new Set(["line", "rect", "arc", "circle", "poly", "text", "arrow"]);
 const SYM_LIB_NOM = /^[A-Za-z0-9_.+-]{1,60}$/;
-const SYM_LIB_MAX = { broches: 1024, primitives: 5000, coord: 4000 };
 // symboles lus dans la LIB ou un document, par nom (les intégrés n'y sont jamais)
 const SYM_LIB_LUS = new Map();
 
 /* Contrôle un schsym-1 et rend {def, erreurs} : def est le symbole au format de LIB. Rien
    n'est exécuté du fichier : seules des primitives connues, aux nombres finis, sont dessinées. */
 function schSymboleLire(sym) {
-  const erreurs = [];
-  const fini = v => typeof v === "number" && Number.isFinite(v) && Math.abs(v) <= SYM_LIB_MAX.coord;
-  if (!sym || typeof sym !== "object" || Array.isArray(sym)) return { def: null, erreurs: ["le symbole doit être un objet schsym-1"] };
-  if (sym.format !== "schsym-1") erreurs.push("format : « schsym-1 » attendu");
-  if (typeof sym.id !== "string" || !SYM_LIB_NOM.test(sym.id)) erreurs.push("id : nom du fichier, [A-Za-z0-9_.+-], 60 caractères au plus");
-  const pins = Array.isArray(sym.pins) ? sym.pins : [];
-  if (!pins.length || pins.length > SYM_LIB_MAX.broches) erreurs.push("pins : de 1 à " + SYM_LIB_MAX.broches + " broches {n, x, y}");
-  const parN = new Map();
-  for (const p of pins) {
-    if (!p || !Number.isInteger(p.n) || p.n < 1 || !fini(p.x) || !fini(p.y)) { erreurs.push("broche illisible : " + JSON.stringify(p).slice(0, 60)); continue; }
-    if (parN.has(p.n)) erreurs.push("broche " + p.n + " en double");
-    parN.set(p.n, p);
-  }
-  for (let n = 1; n <= parN.size; n++) if (!parN.has(n)) { erreurs.push("broches numérotées de 1 à " + parN.size + " sans trou : la " + n + " manque"); break; }
-  const prims = Array.isArray(sym.primitives) ? sym.primitives : [];
-  if (prims.length > SYM_LIB_MAX.primitives) erreurs.push("primitives : " + SYM_LIB_MAX.primitives + " au plus");
-  for (const q of prims) {
-    if (!q || !SYM_LIB_OPS.has(q.op)) { erreurs.push("primitive inconnue : " + String(q && q.op).slice(0, 20) + " (" + [...SYM_LIB_OPS].join(", ") + ")"); break; }
-    const nombres = { line: ["x1", "y1", "x2", "y2"], rect: ["x", "y", "w", "h"], arc: ["cx", "cy", "r", "start", "end"],
-                      circle: ["x", "y", "r"], text: ["x", "y"], arrow: ["x", "y"], poly: [] }[q.op];
-    if (nombres.some(k => !fini(q[k]))) { erreurs.push(q.op + " : coordonnées numériques finies"); break; }
-    if (q.op === "poly" && !(Array.isArray(q.pts) && q.pts.length >= 2 && q.pts.length <= 500 && q.pts.every(p => Array.isArray(p) && fini(p[0]) && fini(p[1])))) {
-      erreurs.push("poly : de 2 à 500 points [x, y]"); break;
-    }
-    if (q.op === "text" && typeof (q.text != null ? q.text : q.txt) !== "string") { erreurs.push("text : un texte"); break; }
-  }
+  // les règles sont dans commun/composants-lib.js : la Gestion LIB passe les mêmes avant d'enregistrer
+  const erreurs = COMPOSANTS_LIB.verifierSymbole(sym);
   if (erreurs.length) return { def: null, erreurs };
+  const fini = v => typeof v === "number" && Number.isFinite(v) && Math.abs(v) <= COMPOSANTS_LIB.SYMBOLE_MAX.coord;
+  const parN = new Map(sym.pins.map(p => [p.n, p]));
+  const prims = Array.isArray(sym.primitives) ? sym.primitives : [];
 
   const ordre = [...parN.keys()].sort((a, b) => a - b).map(n => parN.get(n));
   const noms = ordre.map(p => typeof p.name === "string" ? p.name : typeof p.nom === "string" ? p.nom : "");
@@ -96,6 +73,28 @@ function schSymboleDefinir(sym) {
   LIB[t] = def;
   SYM_LIB_LUS.set(t, JSON.parse(JSON.stringify(sym)));
   return t;
+}
+
+/* Un symbole de la LIB modifié dans la Gestion LIB : redéfini ici et dans le document, sur toutes
+   les feuilles ; les bouts de fils accrochés à une broche qui a bougé la suivent. Faux s'il n'est
+   pas posé dans ce document ou s'il est refusé. */
+function schSymboleRemplacer(sym) {
+  const t = sym && sym.id;
+  if (!t || !S.symboles || !S.symboles[t]) return false;
+  storeCurrent();
+  const avant = S.pages.map(p => (p.comps || []).filter(c => c.type === t).map(c => [c, allPins(c)]));
+  if (!schSymboleDefinir(sym)) return false;
+  S.symboles[t] = SYM_LIB_LUS.get(t);
+  avant.forEach((l, i) => {
+    const fait = new Set();
+    for (const [c, pins] of l) for (const [a, b] of pinMoves(pins, allPins(c)))
+      (S.pages[i].wires || []).forEach((w, k) => {
+        if (!fait.has(k + ":1") && w.x1 === a.x && w.y1 === a.y) { w.x1 = b.x; w.y1 = b.y; fait.add(k + ":1"); }
+        if (!fait.has(k + ":2") && w.x2 === a.x && w.y2 === a.y) { w.x2 = b.x; w.y2 = b.y; fait.add(k + ":2"); }
+      });
+  });
+  touchWires();
+  return true;
 }
 
 /* Un symbole de la LIB qu'on pose part avec le document. */
