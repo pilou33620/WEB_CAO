@@ -1459,7 +1459,8 @@ const BUS_PRESETS=[
 
 function busSkewAnalyze(netNames, clkNetName, opts){
   opts=opts||{};
-  const freq=Math.max(1, opts.freqMhz||100);
+  /* Même plancher que l'onglet Bus : un SPI à 100 kHz se calcule à 100 kHz. */
+  const freq=Math.max(0.001, opts.freqMhz||100);
   const Tcyc=1000/freq;                 // période en nanosecondes
   const TcycPs=Tcyc*1000;               // période en picosecondes
   const tsuPs=(opts.tsu!=null?opts.tsu:1.5)*1000;
@@ -1507,39 +1508,19 @@ function busSkewAnalyze(netNames, clkNetName, opts){
     const skewMm=r3(sInfo.len - clkInfo.len);
     if(Math.abs(skewPs)>Math.abs(worstSkewPs)) worstSkewPs=skewPs;
 
-    // Slack Setup : (Tcyc + Tclk - Tdata) - (Tco_max + Tsu)
-    const slackSuPs=r1((TcycPs + clkInfo.tflight - sInfo.tflight) - (tcoMaxPs + tsuPs));
-    // Slack Hold : (Tdata - Tclk) + Tco_min - Th
-    const slackHPs=r1((sInfo.tflight - clkInfo.tflight) + tcoMinPs - thPs);
-
+    /* Les marges viennent de simBusMarges (commun/simulation-em.js), le calcul
+       de l'onglet Bus : la copie d'ici ignorait la ligne de retour SPI. */
+    const psmm=sInfo.psmm||6.7;
+    const isReturn=!!opts.spi&&SIM_BUS_RETOUR.test(netName);
+    const {slackSuPs,slackHPs,status,meanderNeededMm,meanderOptMm}=
+      simBusMarges(TcycPs,clkInfo.tflight,sInfo.tflight,tsuPs,thPs,tcoMinPs,tcoMaxPs,psmm,isReturn);
     if(slackHPs<worstHoldSlack) worstHoldSlack=slackHPs;
     if(slackSuPs<worstSetupSlack) worstSetupSlack=slackSuPs;
-
-    const psmm=sInfo.psmm||6.7;
-    let status="ok";
-    let meanderNeededMm=0;
-    let meanderOptMm=0;
-
-    // Calcul du point de centrage optimal dans l'œil : Tdata_opt
-    // tel que Slack_Hold = Slack_Setup
-    const tdataOptPs=(TcycPs + 2*clkInfo.tflight + thPs - tsuPs - tcoMinPs - tcoMaxPs)/2;
-    if(tdataOptPs>sInfo.tflight){
-      meanderOptMm=r2((tdataOptPs - sInfo.tflight)/psmm);
-    }
-
-    if(slackHPs<0){
-      status="hold_violation"; // Violation de maintien : donnée trop rapide !
-      allPass=false;
-      const dtNeededPs=Math.abs(slackHPs);
-      meanderNeededMm=r2(dtNeededPs/psmm);
-      if(meanderOptMm<meanderNeededMm) meanderOptMm=meanderNeededMm;
-    }else if(slackSuPs<0){
-      status="setup_violation"; // Violation d'établissement : donnée trop lente !
-      allPass=false;
-    }
+    if(status!=="ok") allPass=false;
 
     signals.push({
       net:netName,
+      isReturn:isReturn,
       len:sInfo.len,
       tflight:sInfo.tflight,
       psmm:sInfo.psmm,

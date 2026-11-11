@@ -9997,6 +9997,30 @@ T("busSkewAnalyze : fermeture temporelle Setup et Hold d'un bus synchrone",()=>{
   if(d2.status !== "setup_violation") throw new Error("D2 doit être en setup_violation mais est: " + d2.status);
   if(res.summary.pass !== false) throw new Error("summary.pass doit être faux");
 });
+T("busSkewAnalyze : mêmes marges que l'onglet Bus, ligne de retour SPI comprise",()=>{
+  carteVide();
+  S.tracks = [
+    { id: 201, net: "SCK",  l: 0, w: 0.25, x1: 0, y1: 0, x2: 30, y2: 0 },
+    { id: 202, net: "MOSI", l: 0, w: 0.25, x1: 0, y1: 5, x2: 40, y2: 5 },
+    { id: 203, net: "MISO", l: 0, w: 0.25, x1: 0, y1: 10, x2: 40, y2: 10 }
+  ];
+  const o={freqMhz:0.1, tsu:2, th:1, tcoMin:1, tcoMax:5};
+  const fen=busSkewAnalyze(["SCK","MOSI","MISO"],"SCK",Object.assign({spi:true},o));
+  if(fen.params.freqMhz!==0.1) throw new Error("100 kHz calculé à "+fen.params.freqMhz+" MHz");
+  const etat=Object.assign({},SIM_BUS);
+  try{
+    Object.assign(SIM_BUS,{protocole:"spi",clocks:["SCK"],datas:["MOSI","MISO"],dataClockMap:{}},o);
+    simBusCalculer();
+    for(const n of ["MOSI","MISO"]){
+      const a=fen.signals.find(s=>s.net===n), b=SIM_BUS.result.signals.find(s=>s.net===n);
+      if(a.isReturn!==(n==="MISO")) throw new Error(n+" : sens "+a.isReturn);
+      if(a.slackSuPs!==b.slackSuPs||a.slackHPs!==b.slackHPs||a.status!==b.status)
+        throw new Error(n+" : fenêtre "+a.slackSuPs+"/"+a.slackHPs+", onglet "+b.slackSuPs+"/"+b.slackHPs);
+    }
+    const sans=busSkewAnalyze(["SCK","MISO"],"SCK",o).signals[0];
+    if(sans.isReturn) throw new Error("hors SPI, MISO n'est pas un retour");
+  }finally{Object.assign(SIM_BUS,etat);}
+});
 T("meanderMenu et S.meanderOpts : réglages personnalisés de serpentin",()=>{
   S.meanderOpts = { amplitude: 3.0, pitch: 2.0, side: 1, targetDelta: 0 };
   const t = { x1: 10, y1: 10, x2: 40, y2: 10, w: 0.25, l: 0, net: "NET_A" };
@@ -20972,7 +20996,7 @@ T("Vérification de la carte : Z₀ par classe, porteuses par net, courants par 
     const L=simCarteMeta({pistes:1,tolerance_deg:1,bilan:{courant:{rails:2,courants_donnes:2}},
       reglages:{cadences:{Horloge:5e7},z0:50,budget:0.05,z0_classes:{Rapide:90},porteuses:{NFC:13.56e6}}}).join(" | ");
     if(!/cadence par classe : Horloge 50 MHz/.test(L)||
-       !/Z₀ par classe : Rapide 90 Ω/.test(L)||!/porteuses par net : NFC 13,6 MHz/.test(L)||
+       !/Z₀ par classe : Rapide 90 Ω/.test(L)||!/porteuses par net : NFC 13,56 MHz/.test(L)||
        !/courant donné pour 2 rail/.test(L))throw new Error("en-tête : "+L);
   }finally{
     Object.assign(r,JSON.parse(garde)); SIM_DCB.bornes=bornes;

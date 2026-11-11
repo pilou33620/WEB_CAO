@@ -1241,6 +1241,7 @@ let _bsState={
   open:false,
   busNom:"Bus synchrone",
   presetId:"qspi100",
+  spi:true,          // bus SPI/QSPI : une ligne MISO se calcule en aller-retour
   freqMhz:100,
   tsu:1.5,
   th:0.8,
@@ -1303,7 +1304,8 @@ function busSkewSync(){
         tsu:_bsState.tsu,
         th:_bsState.th,
         tcoMin:_bsState.tcoMin,
-        tcoMax:_bsState.tcoMax
+        tcoMax:_bsState.tcoMax,
+        spi:_bsState.spi
       })
     : {clk:{net:_bsState.clkNet,len:0,tflight:0},signals:[],summary:{pass:true,worstHoldSlack:0,worstSetupSlack:0,worstSkewPs:0}};
 
@@ -1322,7 +1324,7 @@ function busSkewSync(){
       '<div><label>Protocole / Préréglage</label><select id="bsPresetSelect">'+
         presets.map(p=>'<option value="'+p.id+'"'+(p.id===_bsState.presetId?' selected':'')+'>'+esc(p.name)+'</option>').join('')+
       '</select></div>'+
-      numProp("bsFreq","Fréquence (MHz)",_bsState.freqMhz,10,1)+
+      numProp("bsFreq","Fréquence (MHz)",_bsState.freqMhz,10,0.001)+
       numProp("bsTsu","Setup t_su (ns)",_bsState.tsu,0.1,0)+
       numProp("bsTh","Hold t_h (ns)",_bsState.th,0.1,0)+
       numProp("bsTcoMin","T_co min (ns)",_bsState.tcoMin,0.1,0)+
@@ -1375,7 +1377,7 @@ function busSkewSync(){
 
     h+='<tr>'+
       '<td><label style="cursor:pointer;font-size:10.5px"><input type="radio" name="bsClkPick" value="'+esc(sig.net)+'"'+(sig.net===_bsState.clkNet?' checked':'')+'> CLK</label></td>'+
-      '<td>'+esc(sig.net)+'</td>'+
+      '<td>'+esc(sig.net)+(sig.isReturn?' <small title="Ligne de retour (esclave vers maître) : marges en aller-retour">↩ retour</small>':'')+'</td>'+
       '<td class="n">'+fmt(sig.len,2)+' mm</td>'+
       '<td class="n">'+fmt(sig.tflight,1)+' ps</td>'+
       '<td class="n" style="color:'+(sig.skewPs>=0?'var(--txt)':'var(--yellow)')+'">'+(sig.skewPs>0?'+':'')+fmt(sig.skewPs,1)+' ps</td>'+
@@ -1418,6 +1420,7 @@ function busSkewSync(){
     const p=presets.find(x=>x.id===selPreset.value);
     if(p){
       _bsState.presetId=p.id;
+      _bsState.spi=/spi/.test(p.id);
       _bsState.freqMhz=p.freq;
       _bsState.tsu=p.tsu;
       _bsState.th=p.th;

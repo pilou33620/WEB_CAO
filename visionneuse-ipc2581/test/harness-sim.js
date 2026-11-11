@@ -76,7 +76,7 @@ const FICHIERS=[
   /* plans (Draftsman) : fabrication et assemblage */
   path.join(RACINE,"js","10-plans.js")
 ];
-const EXPOSE=["simDsChamp","simDsLire","simDsEcrire","SIM_DS","SIM_PDN","simPDNAssistantActif","SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
+const EXPOSE=["simDsChamp","simCarteF","simBusMarges","simPDNLireChamps","simDsLire","simDsEcrire","SIM_DS","SIM_PDN","simPDNAssistantActif","SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simSaisie","simPorts","SIM_FORMAT",
   "V","LT","ltAire","ltPreparer","LT_SEUIL_PLAN","mdlLongueur",
   "mdlNetNom","mdlNb","mdlCharger","mdlCouches","mdlPlansDans",
@@ -7702,6 +7702,49 @@ TA("vérification de carte : une réponse sans rapport est un refus dit, pas un 
       throw new Error("réponse sans constats acceptée : "+JSON.stringify(SIM_CARTE.res));
     simRendreCarte();
   }finally{globalThis.fetch=avant;simInit(ed,null);Object.assign(SIM_CARTE,garde);}
+});
+
+T("carte : une fréquence garde ses chiffres (13,56 MHz, 32,768 kHz)", function(){
+  const vu=[13.56e6,32768,2.4e9,100e6,433.92e6].map(simCarteF).join(" | ");
+  if(vu!=="13,56 MHz | 32,768 kHz | 2,4 GHz | 100 MHz | 433,92 MHz")throw new Error(vu);
+  if(simCarteF(null)!=="—")throw new Error("fréquence absente : "+simCarteF(null));
+});
+
+T("bus : marges setup/hold, aller et retour SPI (calcul commun aux deux écrans)", function(){
+  // 50 MHz (20 ns), horloge 200 ps, donnée 300 ps, tsu 2 ns, th 1 ns, tco 1 à 5 ns
+  const a=simBusMarges(20000,200,300,2000,1000,1000,5000,6.7,false);
+  if(a.slackSuPs!==12900||a.slackHPs!==100||a.status!=="ok")throw new Error("aller : "+JSON.stringify(a));
+  const r=simBusMarges(20000,200,300,2000,1000,1000,5000,6.7,true);
+  if(r.slackSuPs!==12500||r.slackHPs!==500)throw new Error("retour : "+JSON.stringify(r));
+  const h=simBusMarges(20000,500,100,2000,1000,1000,5000,10,false);
+  if(h.status!=="hold_violation"||h.meanderNeededMm!==40||h.meanderOptMm<40)throw new Error("hold : "+JSON.stringify(h));
+});
+
+T("bus : vide et rien de sélectionné, il reste vide", function(){
+  const ed=global.SIM_ED, etat=Object.assign({},SIM_BUS);
+  try{
+    simInit(Object.assign({},SIM_IPC,{netsSelectionnes:()=>[],listeNets:()=>["+3V3","GND","SCK","A","B"]}),
+            document.createElement("div"));
+    Object.assign(SIM_BUS,{protocole:"spi",clocks:[],datas:[],dataClockMap:{}});
+    simBrancherBus();
+    if(SIM_BUS.clocks.length||SIM_BUS.datas.length)
+      throw new Error("rempli d'office : "+SIM_BUS.clocks.concat(SIM_BUS.datas).join(","));
+  }finally{Object.assign(SIM_BUS,etat);simInit(ed,null);}
+});
+
+T("PDN : un ΔI, un Vdd ou une ondulation à 0 garde la dernière valeur valable, champ compris", function(){
+  const g={v:SIM_PDN.vdd,r:SIM_PDN.ripplePct,d:SIM_PDN.deltaIA};
+  const ids=["simPDNVdd","simPDNRipple","simPDNDeltaI"], els=ids.map(id=>{
+    const e=document.createElement("input"); e.id=id; e.value="0"; document.body.appendChild(e); return e;});
+  try{
+    Object.assign(SIM_PDN,{vdd:1.8,ripplePct:3,deltaIA:2.5});
+    simPDNLireChamps();
+    if(SIM_PDN.vdd!==1.8||SIM_PDN.ripplePct!==3||SIM_PDN.deltaIA!==2.5)
+      throw new Error("état : "+[SIM_PDN.vdd,SIM_PDN.ripplePct,SIM_PDN.deltaIA]);
+    if(els.map(e=>e.value).join("|")!=="1,8|3|2,5")throw new Error("champs : "+els.map(e=>e.value).join("|"));
+    els[0].value="0,9"; simPDNLireChamps();
+    if(SIM_PDN.vdd!==0.9)throw new Error("une valeur valable doit passer : "+SIM_PDN.vdd);
+  }finally{els.forEach(e=>e.remove&&e.remove());SIM_PDN.vdd=g.v;SIM_PDN.ripplePct=g.r;SIM_PDN.deltaIA=g.d;}
 });
 
 

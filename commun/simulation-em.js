@@ -7969,9 +7969,12 @@ function simCarteReglagesDoc(){
   if(Object.keys(p).length)d.porteuses=p;
   return d;
 }
+/* Cinq chiffres significatifs, zéros de fin retirés : à une décimale, 13,56 MHz
+   s'affichait « 13,6 MHz » et un quartz de 32,768 kHz « 32,8 kHz ». */
 function simCarteF(f){
-  return f>=1e9?simNb(f/1e9,f%1e9?1:0)+" GHz":f>=1e6?simNb(f/1e6,f%1e6?1:0)+" MHz":
-         simNb(f/1e3,f%1e3?1:0)+" kHz";
+  if(f==null||!isFinite(f))return "—";
+  const [k,u]=f>=1e9?[1e9," GHz"]:f>=1e6?[1e6," MHz"]:[1e3," kHz"];
+  return simNbLibre(Number((f/k).toPrecision(5)))+u;
 }
 const SIM_CARTE_SEV={critique:"CRITIQUE",vigilance:"VIGILANCE",info:"INFO"};
 /* Les noms que les logiciels de CAO donnent au cuivre sans net. */
@@ -13595,13 +13598,9 @@ function simBrancherBus(){
     if(SIM_ED&&typeof SIM_ED.netsSelectionnes==="function"){
       initNets=SIM_ED.netsSelectionnes();
     }
-    if(!initNets.length&&SIM_ED&&typeof SIM_ED.listeNets==="function"){
-      const all=SIM_ED.listeNets();
-      const clk=all.find(n=>/clk|ck|sck|bclk/i.test(n));
-      if(clk){
-        initNets=[clk, ...all.filter(n=>n!==clk).slice(0,7)];
-      }
-    }
+    /* Rien de sélectionné : le bus reste vide. Il se remplissait des sept
+       premiers nets de la carte (alimentations comprises), y compris après
+       « Effacer » ; « Remplir » entre deux composants met les bons nets. */
     for(const n of initNets){
       const resNet=simBusResoudreNetAvecPont(n);
       if(/clk|ck|sck|bclk/i.test(resNet)&&!SIM_BUS.clocks.length){
@@ -13614,6 +13613,36 @@ function simBrancherBus(){
 
   simBusRendreNetsBar();
   simBusCalculer();
+}
+
+/* Les noms d'une ligne de retour SPI (l'esclave répond au maître). */
+const SIM_BUS_RETOUR=/miso|din|rx|so\b|somi/i;
+/* Marges setup et hold d'UNE donnée, en ps. Seul calcul des deux écrans (onglet
+   Bus et fenêtre « bus synchrone » de l'éditeur PCB), qui en avaient chacun une
+   copie. `retour` : ligne lue par le maître (MISO). */
+function simBusMarges(TcycPs,clkDelay,sDelay,tsuPs,thPs,tcoMinPs,tcoMaxPs,psmm,retour){
+  let slackSuPs, slackHPs;
+  if(retour){
+    // aller de l'horloge + temps interne de l'esclave + retour de la donnée
+    slackSuPs=_simR1(TcycPs - (clkDelay + tcoMaxPs + sDelay) - tsuPs);
+    /* Au retour la donnée ne quitte l'esclave qu'APRÈS l'aller de l'horloge :
+       le retard d'horloge s'AJOUTE à l'arrivée, il ne se retranche pas. */
+    slackHPs=_simR1(clkDelay + sDelay + tcoMinPs - thPs);
+  }else{
+    slackSuPs=_simR1((TcycPs + clkDelay - sDelay) - (tcoMaxPs + tsuPs));
+    slackHPs=_simR1((sDelay - clkDelay) + tcoMinPs - thPs);
+  }
+  let status="ok", meanderNeededMm=0, meanderOptMm=0;
+  /* Le retard de donnée qui égalise setup et hold ; au retour l'horloge
+     compte en moins (elle retarde déjà la donnée). */
+  const tdataOptPs=(TcycPs + (retour?-2:2)*clkDelay + thPs - tsuPs - tcoMinPs - tcoMaxPs)/2;
+  if(tdataOptPs>sDelay) meanderOptMm=_simR2((tdataOptPs - sDelay)/psmm);
+  if(slackHPs<0){
+    status="hold_violation";
+    meanderNeededMm=_simR2(-slackHPs/psmm);
+    if(meanderOptMm<meanderNeededMm) meanderOptMm=meanderNeededMm;
+  }else if(slackSuPs<0) status="setup_violation";
+  return {slackSuPs,slackHPs,status,meanderNeededMm,meanderOptMm};
 }
 
 function simBusCalculer(){
@@ -13813,51 +13842,18 @@ function simBusCalculer(){
     const sDelay=(sInfo.tflightTotal||sInfo.tflight);
     const clkDelay=(clkInfo.tflightTotal||clkInfo.tflight);
 
-    const isSpiReturn=(proto==="spi"||proto==="qspi")&&/miso|din|rx|so\b|somi/i.test(dataNet);
+    const isSpiReturn=(proto==="spi"||proto==="qspi")&&SIM_BUS_RETOUR.test(dataNet);
 
     const skewPs=_simR1(sDelay - clkDelay);
     const skewMm=_simR3(sInfo.len - clkInfo.len);
     if(Math.abs(skewPs)>Math.abs(worstSkewPs)) worstSkewPs=skewPs;
 
-    let slackSuPs=0, slackHPs=0;
-    if(isSpiReturn){
-      // Ligne retour MISO (aller horloge + temps interne esclave + retour donnée)
-      const totalArrivalPs=clkDelay + tcoMaxPs + sDelay;
-      slackSuPs=_simR1(TcycPs - totalArrivalPs - tsuPs);
-      /* Au retour la donnée ne quitte l'esclave qu'APRÈS l'aller de l'horloge :
-         le retard d'horloge s'AJOUTE à l'arrivée, il ne se retranche pas. */
-      slackHPs=_simR1(clkDelay + sDelay + tcoMinPs - thPs);
-    }else{
-      // Ligne aller classique MOSI
-      slackSuPs=_simR1((TcycPs + clkDelay - sDelay) - (tcoMaxPs + tsuPs));
-      slackHPs=_simR1((sDelay - clkDelay) + tcoMinPs - thPs);
-    }
-
+    const psmm=sInfo.psmm||clkInfo.psmm||6.7;
+    const {slackSuPs,slackHPs,status,meanderNeededMm,meanderOptMm}=
+      simBusMarges(TcycPs,clkDelay,sDelay,tsuPs,thPs,tcoMinPs,tcoMaxPs,psmm,isSpiReturn);
     if(slackHPs<worstHoldSlack) worstHoldSlack=slackHPs;
     if(slackSuPs<worstSetupSlack) worstSetupSlack=slackSuPs;
-
-    const psmm=sInfo.psmm||clkInfo.psmm||6.7;
-    let status="ok";
-    let meanderNeededMm=0;
-    let meanderOptMm=0;
-
-    /* Le retard de donnée qui égalise setup et hold ; au retour l'horloge
-       compte en moins (elle retarde déjà la donnée). */
-    const tdataOptPs=(TcycPs + (isSpiReturn?-2:2)*clkDelay + thPs - tsuPs - tcoMinPs - tcoMaxPs)/2;
-    if(tdataOptPs>sDelay){
-      meanderOptMm=_simR2((tdataOptPs - sDelay)/psmm);
-    }
-
-    if(slackHPs<0){
-      status="hold_violation";
-      allPass=false;
-      const dtNeededPs=Math.abs(slackHPs);
-      meanderNeededMm=_simR2(dtNeededPs/psmm);
-      if(meanderOptMm<meanderNeededMm) meanderOptMm=meanderNeededMm;
-    }else if(slackSuPs<0){
-      status="setup_violation";
-      allPass=false;
-    }
+    if(status!=="ok") allPass=false;
 
     let actionHtml="—";
     if(status==="hold_violation"){
@@ -16119,13 +16115,24 @@ function simPDNLireChamps() {
   const getNum = (id, def) => {
     const el = simEl(id);
     if (!el) return def;
-    const v = parseFloat(el.value.replace(",", "."));
+    const v = parseFloat(String(el.value).replace(",", "."));
     return isNaN(v) ? def : v;
   };
 
-  SIM_PDN.vdd = getNum("simPDNVdd", SIM_PDN.vdd || 3.3);
-  SIM_PDN.ripplePct = getNum("simPDNRipple", SIM_PDN.ripplePct || 5.0);
-  SIM_PDN.deltaIA = getNum("simPDNDeltaI", SIM_PDN.deltaIA || 1.0);
+  /* Zéro ou moins n'a pas de sens pour ces trois grandeurs (Z cible =
+     Vdd·ondulation/ΔI) : la dernière valeur valable est gardée ET réécrite dans
+     le champ dès qu'on le quitte — le calcul la remplaçait en silence, le champ
+     et le .csv affichant toujours 0. */
+  const getPos = (id, def) => {
+    const v = getNum(id, def);
+    if (v > 0) return v;
+    const el = simEl(id);
+    if (el && document.activeElement !== el) el.value = simNbLibre(def);
+    return def;
+  };
+  SIM_PDN.vdd = getPos("simPDNVdd", SIM_PDN.vdd > 0 ? SIM_PDN.vdd : 3.3);
+  SIM_PDN.ripplePct = getPos("simPDNRipple", SIM_PDN.ripplePct > 0 ? SIM_PDN.ripplePct : 5.0);
+  SIM_PDN.deltaIA = getPos("simPDNDeltaI", SIM_PDN.deltaIA > 0 ? SIM_PDN.deltaIA : 1.0);
   SIM_PDN.rVrmMOhm = getNum("simPDNRvrm", SIM_PDN.rVrmMOhm || 2.0);
   SIM_PDN.fVrmKhz = getNum("simPDNFvrm", SIM_PDN.fVrmKhz || 100.0);
   SIM_PDN.planEpaisseurUm = getNum("simPDNPlaneD", SIM_PDN.planEpaisseurUm || 100.0);
