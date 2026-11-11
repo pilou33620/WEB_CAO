@@ -2674,6 +2674,27 @@ def niveau_etabli_diviseur_resistif_exact():
         assert "exces_continu" not in r["parametres"]
 
 
+def niveau_etabli_paire_dissymetrique_exact():
+    """Paire dissymetrique, simulee brin par brin : le niveau etabli est le
+    diviseur Rl / (Rs + Rdc_P + Rdc_N + Rl), chaque Rdc la resistance
+    continue de son brin (largeur, surlongueur) -- Re(B) au premier point,
+    effet de peau compris, le mettait trop bas (`_continu_brins`,
+    `simulation_em` « r_continu_brins »)."""
+    o = {"debit": 2e9, "tr": 50e-12, "v_haut": 1.0, "v_bas": -1.0,
+         "r_source": 100.0, "r_charge": 100.0, "c_charge": 0.0,
+         "mode": "diff"}
+    for (lp, wp), (ln, wn) in (((300, 0.2), (300, 0.4)),
+                               ((300, 0.2), (306, 0.2))):
+        r = oeil.analyser(_doc([_brin(0, lp, 0, "P", wp)], dict(o),
+                               [_brin(0, ln, 1.2, "N", wn)], [("P", "N")]))
+        assert "paire_brins" in r, "paire non dissymetrique"
+        r_dc = sum(l * 1e-3 / (5.8e7 * w * 1e-3 * 35e-6)
+                   for l, w in ((lp, wp), (ln, wn)))
+        proche(r["grille"]["h0"], 100.0 / (200.0 + r_dc), 1e-4,
+               "niveau etabli, brins %s / %s" % ((lp, wp), (ln, wn)))
+        assert "exces_brins" not in r["parametres"]
+
+
 for nom, fn in list(globals().items()):
     if callable(fn) and getattr(fn, "__module__", "") == "__main__" \
             and not nom.startswith("_") and nom not in ("T", "proche"):

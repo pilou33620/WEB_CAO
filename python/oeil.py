@@ -2852,16 +2852,18 @@ def _boitiers_brin(freqs, bt, mut, sens, cpl=None, symetrique=False):
                               len(freqs))
 
 
-def _continu_brins(m):
-    """La paire par brin (N, 4, 4) au continu, (1, 4, 4) : les resistances
-    serie, que la partie reelle de B au premier point approche."""
-    # shortcut: le continu de la paire par brin reste Re(B) au premier point,
-    # effet de peau compris (niveau etabli bas de quelques 0,1 %) ; a
-    # reprendre quand `simulation_em` rendra la resistance continue de
-    # chaque brin d'une paire dissymetrique.
+def _continu_brins(m, exces=(0.0, 0.0)):
+    """La paire par brin (N, 4, 4) au continu, (1, 4, 4) : la resistance
+    serie de chaque brin, la partie reelle de B au premier point moins
+    `exces` (P, N), le surplus d'effet de peau du brin (`p["exces_brins"]`,
+    voir `r_continu`). Au continu, deux brins sur une masse ideale n'ont pas
+    de resistance mutuelle : le terme croise de Re(B), effet de peau des
+    modes, tombe."""
+    b = np.real(np.asarray(m)[0, :2, 2:])
     m0 = np.zeros((1, 4, 4), dtype=complex)
     m0[0] = np.eye(4)
-    m0[0, :2, 2:] = np.real(np.asarray(m)[0, :2, 2:])
+    for k in (0, 1):
+        m0[0, k, 2 + k] = max(0.0, float(b[k, k]) - exces[k])
     return m0
 
 
@@ -2953,7 +2955,7 @@ def transfert_paire(ctx, freqs, m_brins, p, continu=None):
     simple."""
     freqs = np.asarray(freqs, dtype=float)
     m = np.array(m_brins, dtype=complex)
-    m0 = _continu_brins(m)
+    m0 = _continu_brins(m, p.get("exces_brins", (0.0, 0.0)))
     compte = False
     if ctx:
         m, m0, compte = _poser_boitiers_brins(ctx, freqs, m, m0)
@@ -2992,7 +2994,7 @@ def _canal_paire(ctx, freqs, abcd_dd, abcd_cc, p, r0, dt, symetrique=False,
     zero = np.array([0.0])
     if m_brins is not None and not symetrique:
         m = np.array(m_brins, dtype=complex)
-        m0 = _continu_brins(m)
+        m0 = _continu_brins(m, p.get("exces_brins", (0.0, 0.0)))
         surlongueur = None
     else:
         m = ibis.abcd_brins(abcd_dd, abcd_cc)
@@ -3922,7 +3924,11 @@ def analyser(doc, journal=None, racines_ami=None):
     # -- le continu vrai de la ligne (`r_continu`) --------------------------
     # Le surplus d'effet de peau que la ligne porte deja au premier point,
     # par mode : le differentiel voit deux brins en serie, le commun deux en
-    # parallele. La paire par brin garde le sien (`_continu_brins`).
+    # parallele ; la paire par brin, celui de chaque brin (`_continu_brins`).
+    if m_brins is not None and sd.get("r_continu_brins") is not None:
+        p["exces_brins"] = tuple(
+            float(np.real(m_brins[0, k, 2 + k])) - float(r)
+            for k, r in enumerate(sd["r_continu_brins"]))
     if m_brins is None and res.get("r_continu") is not None:
         r_dc = float(res["r_continu"])
         k_dc = 2.0 if p["mode"] == "diff" else 1.0
@@ -4092,7 +4098,7 @@ def analyser(doc, journal=None, racines_ami=None):
         "ligne": res.get("ligne"),
         "avertissements_ligne": res.get("avertissements") or [],
         "parametres": {k: v for k, v in p.items() if k not in (
-            "ctle", "exces_continu", "exces_continu_cc")},
+            "ctle", "exces_continu", "exces_continu_cc", "exces_brins")},
         "duree": round(time.time() - debut, 3),
     })
     if m_brins is not None:
