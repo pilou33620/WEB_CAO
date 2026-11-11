@@ -2,6 +2,21 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.3.0
+# Date: 2026-11-11
+# Explication: LES ARETES DE BORD SONT PONDEREES PAR LEUR CUIVRE. Tout ou
+#   rien, le bord en escalier d'une piste oblique etranglait le courant (+14 %
+#   de chute a 30 degres, +18 % a 45, a cinq carreaux en travers) et une piste
+#   droite de 1 mm au pas de 0,4 en valait 1,2. Apres : moins de 1 % a cinq
+#   carreaux, moins de 4 % a un et quart. L'avis « conducteur OBLIQUE trop peu
+#   maille » n'a plus d'objet et disparait. La densite, la section des coupes
+#   et l'injection des bornes suivent la meme ponderation.
+#   Limite : au bout d'une fente ou a la pointe d'une decoupe plus fines que
+#   le pas, l'ecart au pas grossier change de signe (-2 a -5 % mesures, contre
+#   +2 a +4 % avant) ; il se referme avec le pas, comme avant.
+# Fonctions ajoutees/modifiees : _parts_des_bords, _dedans (nouvelles),
+#   mailler, _densite_et_echauffement, resoudre_dc
+#
 # Version: 2.2.2
 # Date: 2026-11-03
 # Explication: la lecture du document passe dans _lire_document_dc ; un champ
@@ -117,7 +132,7 @@ PLACAGE_DEFAUT = 25e-6              # placage de trou metallise courant
 MAX_NOEUDS = 400000
 FORMAT = "cao-sim-dc-1"
 FORMAT_RESULTAT = "cao-sim-dc-resultat-1"
-VERSION = "2.2.1"
+VERSION = "2.3.0"
 VERSION_MOTEURS = {
     "dc_solver": VERSION,
 }
@@ -167,9 +182,14 @@ def _cases_dedans(sommets, x0, y0, pas, i0, i1, j0, j1):
     ix puis iy croissants. Le test est vectorise sur la fenetre --
     meme parite, meme formule que `_dans_polygone` : un plan de 1000 sommets
     au pas de 0,5 mm prenait 22 s en Python pur."""
-    x = (x0 + np.arange(i0, i1 + 1) * pas)[:, None]
-    y = (y0 + np.arange(j0, j1 + 1) * pas)[None, :]
-    dedans = np.zeros((i1 - i0 + 1, j1 - j0 + 1), dtype=bool)
+    dedans = _dedans((x0 + np.arange(i0, i1 + 1) * pas)[:, None],
+                     (y0 + np.arange(j0, j1 + 1) * pas)[None, :], sommets)
+    return [(int(a) + i0, int(b) + j0) for a, b in np.argwhere(dedans)]
+
+
+def _dedans(x, y, sommets):
+    """Les points (tableaux diffusables) sont-ils dans le polygone ?"""
+    dedans = np.zeros(np.broadcast(x, y).shape, dtype=bool)
     n = len(sommets)
     j = n - 1
     for i in range(n):
@@ -179,7 +199,7 @@ def _cases_dedans(sommets, x0, y0, pas, i0, i1, j0, j1):
             dedans ^= (((yi > y) != (yj > y))
                        & (x < xi + ((y - yi) / (yj - yi)) * (xj - xi)))
         j = i
-    return [(int(a) + i0, int(b) + j0) for a, b in np.argwhere(dedans)]
+    return dedans
 
 
 def _boite(polygones):
@@ -214,15 +234,65 @@ def _normaliser(polygones):
     return out
 
 
+SONDES_BORD = 8      # par demi-pas, le long de la face d'une arete de bord
+
+
+def _parts_des_bords(bords, polygones, pas):
+    """UNE ARETE DE BORD NE PORTE QUE LE CUIVRE QUI LA BORDE. Tout ou rien, un
+    carreau valait un pas de large quel que soit le cuivre reel : le bord en
+    escalier d'une piste oblique etranglait le courant (+10 a +19 % de chute a
+    cinq carreaux en travers), et une piste DROITE de 1 mm au pas de 0,4 en
+    valait 1,2 (-17 %). La face d'une arete est le segment d'un pas qui la
+    coupe en son milieu ; on y sonde le cuivre du net, et la conductance est
+    ponderee par la part couverte. Du cote ou aucune arete parallele ne suit,
+    la face est prolongee d'un demi-pas : ce cuivre-la n'a pas d'autre arete
+    pour le porter. Rend {rang de l'arete: part}.
+    shortcut: seul le cuivre du MEME net est sonde ; un autre net pose
+    par-dessus un bord n'en retire rien. A reprendre si des nets se
+    chevauchent sur une meme couche."""
+    if not bords:
+        return {}
+    k = SONDES_BORD
+    t = ((np.arange(6 * k) + 0.5) / (2 * k) - 1.5) * pas    # -1,5 a +1,5 pas
+    axe = np.array([b[5] for b in bords])[:, None]
+    x = np.array([b[3] for b in bords])[:, None] + t[None, :] * axe
+    y = np.array([b[4] for b in bords])[:, None] + t[None, :] * (1 - axe)
+    couche = np.array([b[1] for b in bords])
+    noms = sorted({b[2] for b in bords})
+    net = np.array([noms.index(b[2]) for b in bords])
+    cuivre = np.zeros(x.shape, dtype=bool)
+    # Le cuivre d'abord, les trous ensuite -- comme la trame.
+    for p in sorted(polygones, key=lambda q: bool(q.get("trou"))):
+        sx = [v[0] for v in p["sommets"]]
+        sy = [v[1] for v in p["sommets"]]
+        qui = ((couche == p["couche"])
+               & (x[:, -1] >= min(sx)) & (x[:, 0] <= max(sx))
+               & (y[:, -1] >= min(sy)) & (y[:, 0] <= max(sy)))
+        if not (p.get("trou") and p["net"] == "?"):
+            if p["net"] not in noms:
+                continue
+            qui &= net == noms.index(p["net"])
+        if not qui.any():
+            continue
+        dedans = _dedans(x[qui], y[qui], p["sommets"])
+        cuivre[qui] = (cuivre[qui] & ~dedans) if p.get("trou") \
+            else (cuivre[qui] | dedans)
+    part = (cuivre[:, 2 * k:4 * k].mean(axis=1)
+            + np.array([b[6] for b in bords]) * cuivre[:, :2 * k].mean(axis=1)
+            + np.array([b[7] for b in bords]) * cuivre[:, 4 * k:].mean(axis=1))
+    return {b[0]: float(f) for b, f in zip(bords, part)}
+
+
 def mailler(polygones, pas):
     """Trame le cuivre, couche par couche, et rend les noeuds et les aretes.
 
     UNE CELLULE PAR CARREAU DE CUIVRE, prise a son centre. La conductance
     entre deux cellules voisines d'une trame CARREE vaut sigma*t*(a/a) =
     sigma*t : elle ne depend pas du pas, et c'est ce qui fait qu'un barreau
-    tombe sur rho*L/(W*t) sans qu'on ait rien a ajuster. Raffiner la trame ne
-    change donc que le contour et les constrictions -- c'est-a-dire ce que la
-    trame decrit mal, et rien d'autre.
+    tombe sur rho*L/(W*t) sans qu'on ait rien a ajuster. Au BORD du cuivre,
+    l'arete ne porte que la part de cuivre de sa face (`_parts_des_bords`).
+    Raffiner la trame ne change donc que les constrictions -- c'est-a-dire ce
+    que la trame decrit mal, et rien d'autre.
 
     Deux cellules ne sont reliees que si elles portent LE MEME NET : deux
     cuivres qui se croisent sur une meme couche sans se toucher ne conduisent
@@ -334,19 +404,55 @@ def mailler(polygones, pas):
     # Les aretes de la trame : voisin de droite et voisin du dessus, ce qui
     # donne chaque paire UNE fois.
     aretes = []
+    bords = []      # (rang de l'arete, couche, net, x, y, axe, libre -, libre +)
+    vide = ("",)
     for (couche, ix, iy), (net, ep) in cases.items():
         a = index[(couche, ix, iy)]
-        for voisin in ((couche, ix + 1, iy), (couche, ix, iy + 1)):
+        for axe, voisin in enumerate(((couche, ix + 1, iy),
+                                      (couche, ix, iy + 1))):
             autre = cases.get(voisin)
             if autre is None or autre[0] != net:
                 continue
             # Une arete entre deux epaisseurs differentes est la mise en serie
             # de deux demi-carreaux : la conductance harmonique le dit.
             e = 2.0 * ep * autre[1] / (ep + autre[1]) if (ep + autre[1]) else 0.0
-            aretes.append((a, index[voisin], e / RESISTIVITE_CUIVRE))
+            # L'arete est AU BORD du cuivre si l'arete parallele d'a cote
+            # manque, d'un cote ou de l'autre.
+            libres = [not (cases.get((couche, ix + s * axe,
+                                      iy + s * (1 - axe)), vide)[0] == net
+                           == cases.get((couche, voisin[1] + s * axe,
+                                         voisin[2] + s * (1 - axe)), vide)[0])
+                      for s in (-1, 1)]
+            if libres[0] or libres[1]:
+                bords.append((len(aretes), couche, net,
+                              x0 + (ix + 0.5 * (1 - axe)) * pas,
+                              y0 + (iy + 0.5 * axe) * pas, axe) + tuple(libres))
+            aretes.append((a, index[voisin], e / RESISTIVITE_CUIVRE, axe))
+    parts = _parts_des_bords(bords, polygones, pas)
+    # LA PART DE CUIVRE D'UN CARREAU : ses aretes selon x disent son etendue
+    # en y, et l'inverse ; le produit est sa surface. Une borne y repartit son
+    # courant, sans quoi le demi-carreau d'un bord en recevrait autant qu'un
+    # plein et la densite y ferait un pic qui n'existe pas.
+    bouts = np.array([a[:2] for a in aretes], dtype=int).reshape(-1, 2)
+    sens = np.array([a[3] for a in aretes], dtype=int)
+    f = np.ones(len(aretes))
+    f[list(parts)] = list(parts.values())
+    couvertures = np.ones(len(coords))
+    for axe in (0, 1):
+        qui = np.concatenate((bouts[sens == axe, 0], bouts[sens == axe, 1]))
+        compte = np.bincount(qui, minlength=len(coords))
+        somme = np.bincount(qui, np.tile(f[sens == axe], 2),
+                            minlength=len(coords))
+        couvertures *= np.where(compte > 0, somme / np.maximum(compte, 1), 1.0)
+    couvertures = couvertures.tolist()
+    # Par paire de noeuds : `_densite_et_echauffement` relit la meme part.
+    parts = {aretes[k][:2]: f for k, f in parts.items()}
+    aretes = [(a, b, g * parts.get((a, b), 1.0)) for a, b, g, _axe in aretes
+              if parts.get((a, b), 1.0) > 0]
 
     return {"index": index, "coords": coords, "nets": nets, "aretes": aretes,
             "epaisseurs": epaisseurs, "cellules": cellules,
+            "couvertures": couvertures, "parts": parts,
             "pas": pas, "origine": (x0, y0), "taille": (nx, ny),
             "couches": couches}
 
@@ -561,8 +667,6 @@ IPC2221_K_EXT = 0.048               # couche exterieure, a l'air libre
 IPC2221_K_INT = 0.024               # couche interne, noyee dans le stratifie
 MILS2_PAR_MM2 = 1.0 / (0.0254 ** 2)  # 1 mm2 = 1550,0031 mils2
 LARGEUR_MAX_CARREAUX = 400          # au-dela, c'est un plan, pas une piste
-CARREAUX_OBLIQUE = 16               # en travers d'un conducteur hors axe : en
-                                    # dessous, l'escalier fausse la chute de > 5 %
 
 # LE MODELE D'ETALEMENT. Ces quatre nombres sont ceux qu'on peut contester, et
 # c'est pour cela qu'ils sont nommes et rendus dans le resultat.
@@ -755,12 +859,15 @@ def _densite_et_echauffement(maillage, potentiel, rho, externes, th):
     if not n:
         return densites, largeurs, etal, charte, emballes
 
+    parts = maillage["parts"]
+
     def conductance(i, j):
-        """Celle que `mailler` a posee : moyenne harmonique des epaisseurs."""
+        """Celle que `mailler` a posee : moyenne harmonique des epaisseurs,
+        et la part de cuivre d'une arete de bord."""
         a, b = eps[i], eps[j]
         if a + b <= 0:
             return 0.0
-        return (2.0 * a * b / (a + b)) / rho
+        return (2.0 * a * b / (a + b)) / rho * parts.get((i, j), 1.0)
 
     def voisin(cle, dx, dy):
         return index.get((cle[0], cle[1] + dx, cle[2] + dy))
@@ -775,9 +882,17 @@ def _densite_et_echauffement(maillage, potentiel, rho, externes, th):
         if face <= 0:
             continue
         composante = []
+        faces = []
         for dx, dy in ((1, 0), (0, 1)):
             avant = voisin(cle, -dx, -dy)
             apres = voisin(cle, dx, dy)
+            # LA FACE D'UN CARREAU DE BORD est celle que `mailler` a ponderee :
+            # divise par la face pleine, le carreau qui porte un pas et demi
+            # de cuivre affichait une fois et demie la densite.
+            g = [conductance(u, v) for u, v in ((avant, i), (i, apres))
+                 if u is not None and v is not None and nets[u] == nets[v]]
+            g = [c for c in g if c]
+            faces.append(rho * pas * sum(g) / len(g) if g else face)
             # Le courant qui ENTRE par la face amont, celui qui SORT par
             # l'aval. Une face absente ne laisse rien passer.
             entre = (conductance(avant, i) * (potentiel[avant] - potentiel[i])
@@ -786,7 +901,7 @@ def _densite_et_echauffement(maillage, potentiel, rho, externes, th):
                     if apres is not None and nets[apres] == nets[i] else 0.0)
             composante.append((entre + sort) / 2.0)
         courants[i] = (composante[0], composante[1])
-        jx, jy = composante[0] / face, composante[1] / face   # A/m2
+        jx, jy = composante[0] / faces[0], composante[1] / faces[1]  # A/m2
         densites[i] = math.hypot(jx, jy) * 1e-6                # A/mm2
         if densites[i] > 0:
             # Courant selon x -> la largeur se mesure selon y, et l'inverse.
@@ -814,8 +929,6 @@ def _densite_et_echauffement(maillage, potentiel, rho, externes, th):
     par_cellule = {}
     for k, cle in enumerate(cellules):
         par_cellule[cle] = k
-
-    obliques = []       # (|courant|, carreaux en travers, cos) par coupe
 
     def coupe(axe):
         """`axe` = 0 : coupes verticales (le courant passe selon x)."""
@@ -845,6 +958,7 @@ def _densite_et_echauffement(maillage, potentiel, rho, externes, th):
             pas_flux = (1, 0) if axe == 0 else (0, 1)
             total = 0.0
             section = 0.0
+            franchie = 0.0      # la section que les aretes franchissent, m2
             for v in suite:
                 cv = cellules[v]
                 apres = par_cellule.get((cv[0], cv[1] + pas_flux[0],
@@ -852,6 +966,7 @@ def _densite_et_echauffement(maillage, potentiel, rho, externes, th):
                 if apres is not None and nets[apres] == nets[v]:
                     total += conductance(v, apres) * (potentiel[v]
                                                       - potentiel[apres])
+                    franchie += conductance(v, apres) * rho * pas
                 section += eps[v] * pas                       # m2
             if section <= 0:
                 continue
@@ -866,10 +981,23 @@ def _densite_et_echauffement(maillage, potentiel, rho, externes, th):
             sy = sum(courants[v][1] for v in suite)
             norme = math.hypot(sx, sy)
             cos_a = (abs(sx if axe == 0 else sy) / norme) if norme > 0 else 1.0
-            cos_a = min(1.0, max(cos_a, 1e-9))
+            # UNE COUPE RASANTE NE MESURE RIEN : le courant la longe, son flux
+            # net est un reste et cos a tombe vers zero -- la section avec
+            # lui, et un disque de 10 mm entre deux bornes rendait des dizaines
+            # de millions de kelvins. L'autre axe coupe ce conducteur-la.
+            if cos_a < 0.5:
+                continue
+            cos_a = min(1.0, cos_a)
+            # UN CARREAU DE BORD N'EST PAS PLEIN : la section est celle que
+            # `mailler` a ponderee, sans quoi une piste de 1 mm au pas de 0,4
+            # chauffait comme une de 0,8 ou de 1,2 selon ou tombait la trame.
+            # Seulement sur la coupe qui barre le courant : une coupe rasante
+            # perd aux deux bouts les aretes que l'escalier n'a pas.
+            if franchie > 0 and cos_a > 0.71:
+                largeur *= franchie / section
+                section = franchie
             section *= cos_a
             largeur *= cos_a
-            obliques.append((abs(total), len(suite) * cos_a, cos_a))
             externe = cellules[suite[0]][0] in externes
             ipc = _echauffement_ipc2221(total, section * 1e6, externe)
             dt, emballe = _echauffement_etalement(total, section, largeur,
@@ -889,15 +1017,6 @@ def _densite_et_echauffement(maillage, potentiel, rho, externes, th):
 
     coupe(0)
     coupe(1)
-    # LE CONDUCTEUR ETROIT ET HORS AXE : son bord en escalier etrangle le
-    # courant, et la chute sort trop forte (voir `resoudre_dc`). On retient le
-    # plus etroit de ceux qui portent au moins la moitie du plus fort courant,
-    # entre 10 et 80 degres de la trame.
-    fort = max([o[0] for o in obliques] or [0.0])
-    etroits = [o for o in obliques
-               if fort > 0 and o[0] >= 0.5 * fort and 0.17 < o[2] < 0.985
-               and o[1] < CARREAUX_OBLIQUE]
-    maillage["oblique"] = min(etroits, key=lambda o: o[1]) if etroits else None
     return densites, largeurs, etal, charte, emballes
 
 
@@ -1273,10 +1392,14 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
                 "Une injection tombe hors du cuivre de la couche %d : elle est"
                 " ignorée." % couche)
             continue
-        for i in noeuds:
-            injecte[i] += courant / len(noeuds)
+        # AU PRORATA DU CUIVRE de chaque carreau (voir `mailler`).
+        couv = [maillage["couvertures"][i] for i in noeuds]
+        if not sum(couv) > 0:
+            couv = [1.0] * len(noeuds)
+        for i, c in zip(noeuds, couv):
+            injecte[i] += courant * c / sum(couv)
             courant_par_net[nets[i]] = (courant_par_net.get(nets[i], 0.0)
-                                        + courant / len(noeuds))
+                                        + courant * c / sum(couv))
         points.append({"repere": str(src.get("repere") or ""),
                        "composant": str(src.get("composant") or ""),
                        "role": "courant", "couche": couche,
@@ -1488,16 +1611,6 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
     dire("densite et echauffement : modele '%s', %d couche(s) exterieure(s)"
          % (th["modele"], len(ext)))
     montees = charte if th["modele"] == "ipc2221" else etalement
-    if maillage.get("oblique"):
-        _i, carreaux, cos_a = maillage["oblique"]
-        avertissements.append(
-            "Conducteur OBLIQUE trop peu maillé : %.0f carreau(x) en travers,"
-            " à %.0f° de la trame. Le bord en escalier y étrangle le courant"
-            " et la chute rendue est SURESTIMÉE (environ +15 %% à 5 carreaux,"
-            " +10 %% à 8, +4 %% à 16). Un pas d'au plus %.3f mm en met %d en"
-            " travers."
-            % (carreaux, math.degrees(math.acos(cos_a)),
-               carreaux * pas / CARREAUX_OBLIQUE * 1e3, CARREAUX_OBLIQUE))
     if emballes:
         avertissements.append(
             "%d conducteur(s) en EMBALLEMENT THERMIQUE : la résistivité du"

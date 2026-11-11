@@ -533,6 +533,16 @@ class IPC2581Parser:
         return v if math.isfinite(v) else default
 
     @staticmethod
+    def _fini(value) -> float:
+        """float() qui LEVE sur un non-fini, pour une coordonnee obligatoire :
+        l'appelant ignore alors la forme, au lieu de laisser un « inf » faire
+        tomber l'arrondi de ipc2581_json et la lecture du fichier entier."""
+        v = float(value)
+        if not math.isfinite(v):
+            raise ValueError("coordonnée non finie : %r" % (value,))
+        return v
+
+    @staticmethod
     def _safe_int(value, default: int = 0) -> int:
         """Convertit en int sans lever d'exception."""
         try:
@@ -993,8 +1003,8 @@ class IPC2581Parser:
 
             for line in entry.iter(self._tag("Line")):
                 try:
-                    p1 = Point(float(line.attrib["startX"]), float(line.attrib["startY"]))
-                    p2 = Point(float(line.attrib["endX"]), float(line.attrib["endY"]))
+                    p1 = Point(self._fini(line.attrib["startX"]), self._fini(line.attrib["startY"]))
+                    p2 = Point(self._fini(line.attrib["endX"]), self._fini(line.attrib["endY"]))
                     width = self._get_width(line)
                     fill_prop = self._get_fill_desc(line)
                     user_shape.tracks.append(Track(width=width, points=[p1, p2], fill_property=fill_prop))
@@ -1010,9 +1020,9 @@ class IPC2581Parser:
 
             for arc in entry.iter(self._tag("Arc")):
                 try:
-                    start = Point(float(arc.attrib["startX"]), float(arc.attrib["startY"]))
-                    end = Point(float(arc.attrib["endX"]), float(arc.attrib["endY"]))
-                    center = Point(float(arc.attrib["centerX"]), float(arc.attrib["centerY"]))
+                    start = Point(self._fini(arc.attrib["startX"]), self._fini(arc.attrib["startY"]))
+                    end = Point(self._fini(arc.attrib["endX"]), self._fini(arc.attrib["endY"]))
+                    center = Point(self._fini(arc.attrib["centerX"]), self._fini(arc.attrib["centerY"]))
                     clockwise = arc.attrib.get("clockwise", "false").lower() == "true"
                     width = self._get_width(arc)
                     fill_prop = self._get_fill_desc(arc)
@@ -2734,8 +2744,8 @@ class IPC2581Parser:
     def _process_simple_line(self, line_elem: ET.Element, layer: str, default_net: str, xf=None):
         try:
             net = line_elem.attrib.get("net", default_net)
-            p1 = Point(float(line_elem.attrib["startX"]), float(line_elem.attrib["startY"]))
-            p2 = Point(float(line_elem.attrib["endX"]), float(line_elem.attrib["endY"]))
+            p1 = Point(self._fini(line_elem.attrib["startX"]), self._fini(line_elem.attrib["startY"]))
+            p2 = Point(self._fini(line_elem.attrib["endX"]), self._fini(line_elem.attrib["endY"]))
             if xf:
                 p1, p2 = xf(p1), xf(p2)
             width = self._get_width(line_elem)
@@ -2821,9 +2831,9 @@ class IPC2581Parser:
                      xf=None, miroir: bool = False):
         try:
             net = arc_elem.attrib.get("net", default_net)
-            start = Point(float(arc_elem.attrib["startX"]), float(arc_elem.attrib["startY"]))
-            end = Point(float(arc_elem.attrib["endX"]), float(arc_elem.attrib["endY"]))
-            center = Point(float(arc_elem.attrib["centerX"]), float(arc_elem.attrib["centerY"]))
+            start = Point(self._fini(arc_elem.attrib["startX"]), self._fini(arc_elem.attrib["startY"]))
+            end = Point(self._fini(arc_elem.attrib["endX"]), self._fini(arc_elem.attrib["endY"]))
+            center = Point(self._fini(arc_elem.attrib["centerX"]), self._fini(arc_elem.attrib["centerY"]))
             clockwise = arc_elem.attrib.get("clockwise", "false").lower() == "true"
             if xf:
                 start, end, center = xf(start), xf(end), xf(center)
