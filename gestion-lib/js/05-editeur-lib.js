@@ -52,6 +52,8 @@ async function ouvrirEditeurPcb(nomFichier, donneesExistantes = null) {
     if (charge) {
       EDITEUR_LIB.data = JSON.parse(JSON.stringify(charge));
       EDITEUR_LIB.estNouveau = false;
+    } else if (editeurFichierIllisible("pcb", nomFichier)) {
+      return;
     } else {
       EDITEUR_LIB.data = creerEmpreinteDefaut();
     }
@@ -90,6 +92,8 @@ async function ouvrirEditeurSch(nomFichier, donneesExistantes = null) {
     if (charge) {
       EDITEUR_LIB.data = JSON.parse(JSON.stringify(charge));
       EDITEUR_LIB.estNouveau = false;
+    } else if (editeurFichierIllisible("schematique", nomFichier)) {
+      return;
     } else {
       EDITEUR_LIB.data = creerSymboleDefaut();
     }
@@ -98,6 +102,16 @@ async function ouvrirEditeurSch(nomFichier, donneesExistantes = null) {
   }
 
   afficherModaleEditeur();
+}
+
+/* Un fichier que la LIB liste mais qui ne se lit pas (serveur en panne) : ouvrir à sa place le
+   modèle par défaut, sous son nom, invitait à l'écraser. On ne l'ouvre pas, et on le dit. */
+function editeurFichierIllisible(type, nomFichier) {
+  const nom = String(nomFichier).replace(/^.*[\\\/]/, "");
+  const liste = LIB_STATE.fichiers[type] || [];
+  if (!liste.includes(nom) && !liste.includes(nom + ".json")) return false;
+  afficherToast("Lecture de " + nom + " impossible (le serveur n'a pas répondu) : éditeur non ouvert, réessayez", "error");
+  return true;
 }
 
 function creerNouvelleEmpreintePcb() {
@@ -160,6 +174,7 @@ function afficherModaleEditeur() {
   if (!modal) return;
 
   EDITEUR_LIB.actif = true;
+  EDITEUR_LIB.origine = JSON.stringify(EDITEUR_LIB.data);   // pour savoir, à la fermeture, si quelque chose a changé
   modal.hidden = false;
   modal.style.display = "flex";
 
@@ -194,6 +209,9 @@ function afficherModaleEditeur() {
 }
 
 function fermerEditeurLib() {
+  /* Échap, ✕ ou « Fermer » avec un travail non enregistré : il partait sans un mot */
+  if (EDITEUR_LIB.actif && EDITEUR_LIB.origine != null && JSON.stringify(EDITEUR_LIB.data) !== EDITEUR_LIB.origine &&
+      !confirm("Fermer l'éditeur ? Les modifications de " + EDITEUR_LIB.nomFichier + " ne sont pas enregistrées : elles seront perdues.")) return;
   const modal = document.getElementById("modalEditeurLib");
   if (modal) {
     modal.hidden = true;
@@ -2043,6 +2061,7 @@ async function editeurEnregistrer() {
     await sauvegarderFichierLib(type, nom, EDITEUR_LIB.data);
     afficherToast(`${nom} enregistré avec succès dans la bibliothèque`, "success");
 
+    EDITEUR_LIB.origine = JSON.stringify(EDITEUR_LIB.data);   // enregistré : la fermeture ne demande rien
     fermerEditeurLib();
 
     // Rafraîchir l'interface

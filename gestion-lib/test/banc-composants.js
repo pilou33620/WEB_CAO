@@ -688,6 +688,33 @@ const banc = (async () => {
   cherche.value = "desc"; surSaisie();
   verifier(grille.innerHTML === complet && cases.map(l => l.style.display).join() === "none,,none",
            "colonnes : la recherche masque sans retirer (" + cases.map(l => l.style.display || "vue").join() + ")");
+
+  /* 14. éditeur : un fichier de la LIB illisible (serveur en panne) n'ouvre pas une empreinte
+     par défaut sous son nom, qu'un « Enregistrer » poserait à la place du vrai fichier */
+  const toasts = [];
+  page.afficherToast = (m, t) => toasts.push(t + ":" + m);
+  etat.fichiers = { pcb: ["PANNE14.json", "OK14.json"], schematique: [], simulation: [] };
+  fichiersLib["OK14.json"] = { format: "pcbfp-1", name: "OK14", pins: 1, style: "chip", pads: [{ n: 1, x: 0, y: 0, w: 1, h: 1, shape: "rect" }] };
+  edit.actif = false; edit.data = null;
+  page.PcbRenderer = class { setFootprint() {} render() {} };
+  ici("initialiserInteractionsEditeur = () => {}");
+  await ici("ouvrirEditeurPcb")("PANNE14.json");
+  verifier(!edit.actif && toasts.some(t => /^error:.*PANNE14/.test(t)), "éditeur : fichier listé mais illisible, il ne s'ouvre pas et le dit (" + toasts.slice(-1) + ")");
+
+  /* 15. éditeur : fermer avec des modifications non enregistrées demande confirmation */
+  await ici("ouvrirEditeurPcb")("OK14.json");
+  confirmes.length = 0;
+  ici("fermerEditeurLib()");
+  verifier(!edit.actif && !confirmes.length, "éditeur : fermé sans question quand rien n'a changé");
+  await ici("ouvrirEditeurPcb")("OK14.json");
+  edit.data.pads[0].x = 3;
+  ici("fermerEditeurLib()");
+  verifier(edit.actif && confirmes.length === 1 && /pas enregistrées/.test(confirmes[0]), "éditeur : modifié, la fermeture demande (refusée : il reste ouvert)");
+  noeud("editeurNomFichier").value = "OK14.json";
+  serveur.reponse = () => ({ ok: true });
+  confirmes.length = 0;
+  await ici("editeurEnregistrer()");
+  verifier(!edit.actif && !confirmes.length, "éditeur : après « Enregistrer », il se ferme sans question");
 })();
 
 /* ---------- zone d'encombrement (courtyard) ---------- */
