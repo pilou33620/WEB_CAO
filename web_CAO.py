@@ -427,6 +427,13 @@ import webbrowser
 import zlib
 import ssl
 
+# UN SEUL FIL BLAS, sauf reglage de l'utilisateur. Les solveurs ne gagnent rien
+# a plusieurs (matrices de quelques centaines de lignes, gradient conjugue
+# creux) et y perdent : mesure sur 4 coeurs, chute DC de 30 000 noeuds en 1,1 s
+# avec un fil contre 1,5 s par defaut, et jusqu'a 22 s quand les coeurs sont
+# pris ailleurs. A poser AVANT le premier import de numpy.
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+
 # numpy et scipy sont obligatoires (requirements.txt) : sans eux, autant le dire
 # tout de suite que laisser les solveurs echouer un par un.
 try:
