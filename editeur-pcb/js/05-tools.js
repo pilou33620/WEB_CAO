@@ -264,6 +264,7 @@ function dBody(b){
   return o;
 }
 const COORD=1e5;                    // garde-fou de coordonnée, en mm
+const TRK_MAX=2000;                 // étendue admise d'une piste lue d'un fichier, en mm
 const FPD_MAX=5000;                  // dessins par empreinte (normFp)
 
 /* polygone : les sommets exploitables, ou null s'il en reste moins de `min` */
@@ -529,6 +530,11 @@ function normTrack(t,cu){
     out.ca=r4(clamp(ca,-ARC_MAX,ARC_MAX));
   /* les liens de ses bouts (`25-liens.js`) : vérifiés avant usage, un lien
      faux ne coûte que d'être reconstruit */
+  /* Une piste de plus de 2 m (ou un arc presque fermé, dont le rayon se compte
+     en mètres) : l'index de connectivité prend une case par 5 mm de sa boîte,
+     et l'onglet tombait à l'ouverture du fichier. */
+  const bb=trkBBox(out);
+  if(bb.x2-bb.x1>TRK_MAX||bb.y2-bb.y1>TRK_MAX)return null;
   const a1=linkNorm(t.a1), a2=linkNorm(t.a2);
   if(a1)out.a1=a1;
   if(a2)out.a2=a2;

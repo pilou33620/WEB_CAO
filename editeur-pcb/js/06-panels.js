@@ -1029,8 +1029,13 @@ function propsDrawing(box, d){
       '<div class="pinnote">Texte vectoriel tracé sur la sérigraphie. Exporté dans les fichiers Gerber .GTO et .GBO.</div>';
 
     const inTxt=$("pDrwTxt");
+    let saisie=false;   // un seul instantané par saisie, pas un par frappe (la pile en garde 80)
     if(inTxt)inTxt.oninput=inTxt.onchange=e=>{
-      push();d.text=e.target.value;touch();draw();
+      if(e.target.value!==d.text){
+        if(!saisie){push();saisie=true;}
+        d.text=e.target.value;touch();draw();
+      }
+      if(e.type==="change")saisie=false;
     };
     const sShape=$("pDrwShape");
     if(sShape)sShape.onchange=e=>{

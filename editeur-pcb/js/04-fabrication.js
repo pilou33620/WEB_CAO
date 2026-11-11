@@ -609,22 +609,8 @@ function silkTraits(side){
         out.push({k:"poly",pts:d.pts,trous:d.trous||[]});
         continue;
       }
-      if(d.shape === "text"){
-        const strokes = textStrokes(d.text != null ? d.text : "TEXT", d.x1, d.y1, d.size || d.height || 1.5, !!side, d.rot || 0);
-        for(const poly of strokes){
-          for(let k=0; k+1<poly.length; k++){
-            seg(poly[k].x, poly[k].y, poly[k+1].x, poly[k+1].y, w);
-          }
-        }
-      }else if(d.shape === "rect"){
-        seg(d.x1, d.y1, d.x2, d.y1, w);
-        seg(d.x2, d.y1, d.x2, d.y2, w);
-        seg(d.x2, d.y2, d.x1, d.y2, w);
-        seg(d.x1, d.y2, d.x1, d.y1, w);
-      }else{
-        const P=drwPoints(d);           // un arc en cordes fines (01-core.js)
+      for(const P of drwTraits(d))
         for(let k=0;k+1<P.length;k++)seg(P[k].x, P[k].y, P[k+1].x, P[k+1].y, w);
-      }
     }
   }
   return out;
@@ -1312,8 +1298,7 @@ function fabFpsMontes(){
 function positionsCsvText(){
   const o=gOrigin(), rows=[];
   rows.push("Designator,Value,Package,X,Y,Rotation,Side");
-  for(const fp of fabFpsMontes()){
-    if(fpSansCuivre(fp))continue;   // trou de fixation, logo : rien à poser (KiCad les exclut aussi)
+  for(const fp of jlcFpsAPoser()){   // ni trou de fixation, ni logo, ni mire, ni point de test : rien à poser
     const x=fmt(fp.x-o.x,4);
     const y=fmt(o.y-fp.y,4);   // Y Gerber monte, le document descend
     /* anti-horaire vu de dessus (IPC-7351, KiCad), comme le CPL JLCPCB ;
@@ -1336,8 +1321,8 @@ function positionsCsvText(){
    nomenclature du schéma, mais les données viennent du PCB. */
 function bomPcbCsvText(){
   const rows=[];
-  for(const fp of fabFpsMontes())
-    if(!fpSansCuivre(fp))rows.push({ref:fp.ref||"", value:fp.value||"", pkg:fp.pkg||""});
+  for(const fp of jlcFpsAPoser())    // la même règle que positions.csv et le dossier JLCPCB
+    rows.push({ref:fp.ref||"", value:fp.value||"", pkg:fp.pkg||""});
   rows.sort((a,b)=>String(a.ref).localeCompare(String(b.ref),"fr",{numeric:true}));
   const out=["Reference,Value,Package"];
   for(const r of rows)
@@ -1554,8 +1539,11 @@ function jlcLisezMoi(base,sansCode){
     ...sansCode.map(g=>"  "+g.refs.join(",")+" — "+(g.val||"?")+" ("+(g.pkg||"?")+")"));
   return L.join("\n")+"\n";
 }
+/* Carte mécanique ou plaque de blindage : des vias, une zone ou des trous
+   suffisent à faire un dossier, sans boîtier ni piste. */
+function fabVide(){return !S.fps.length&&!S.tracks.length&&!S.vias.length&&!S.zones.length&&!(S.holes||[]).length;}
 function exportJlcpcb(){
-  if(!S.fps.length&&!S.tracks.length){alert("Rien à fabriquer : la carte est vide.");return null;}
+  if(fabVide()){alert("Rien à fabriquer : la carte est vide.");return null;}
   if(typeof pcbVarDepuisSchema==="function")pcbVarDepuisSchema();
   const vid=(S.variantes&&S.variantes.active)||"", sl=vid?"-"+varSlug(S.variantes,vid):"";
   const base=fabBase()+sl, sansCode=jlcBomLignes().filter(g=>!g.lcsc);
@@ -1574,7 +1562,7 @@ function exportJlcpcb(){
 /* L'archive ZIP (crc32, zipBlob) est dans commun/zip.js : la visionneuse
    IPC-2581 s'en sert aussi, pour le dossier mécanique. */
 function exportFab(){
-  if(!S.fps.length&&!S.tracks.length){
+  if(fabVide()){
     alert("Rien à fabriquer : la carte est vide.");
     return null;
   }

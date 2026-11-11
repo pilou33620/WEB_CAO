@@ -27,7 +27,9 @@ function pcbVarDepuisSchema(doc,dejaPousse){
   const parRef=new Map();
   for(const p of (Array.isArray(doc.pages)?doc.pages:[doc]))
     for(const c of ((p&&Array.isArray(p.comps))?p.comps:[]))
-      if(c&&c.ref)parRef.set(String(c.ref),varNormNonMonte(c.nonMonte,modele));
+      /* un boîtier à plusieurs parties (U1A, U1B) n'a qu'une empreinte : non
+         monté dès qu'une partie le dit, pas selon la dernière partie lue */
+      if(c&&c.ref)parRef.set(String(c.ref),varNormNonMonte((parRef.get(String(c.ref))||[]).concat(c.nonMonte||[]),modele));
   const active=varTrouver(modele,pcbVarActive())?pcbVarActive():modele.active;
   const neuf={liste:modele.liste,active:active};
   const nmDe=fp=>{const l=parRef.get(fp.ref);return l&&l.length?l:null;};
