@@ -1710,17 +1710,65 @@ def cas_une_piste_oblique_chauffe_comme_la_meme_droite():
     return "droit %.2f K ; %s" % (droit, " ; ".join(vus))
 
 
-def cas_une_piste_oblique_peu_maillee_le_dit():
-    """8 carreaux en travers a 45 degres : la chute sort 13 % trop forte
-    (l'escalier), et le resultat doit le dire. Droite, rien a dire."""
-    def dit(r):
-        return [a for a in r["avertissements"] if "OBLIQUE" in a]
-    droit, biais = _barreau_tourne(0), _barreau_tourne(45)
-    assert not dit(droit), dit(droit)
-    assert dit(biais), biais["avertissements"]
-    ecart = biais["chute_par_net"]["VCC"] / droit["chute_par_net"]["VCC"] - 1
-    assert 0.05 < ecart < 0.20, ecart       # le defaut que l'avis annonce
-    return "chute +%.1f %% a 45 deg, et l'avis le dit" % (100 * ecart)
+def cas_une_piste_oblique_chute_comme_la_meme_droite():
+    """R = rho L / (W t) ne depend pas de l'angle. Au pas PAR DEFAUT (5
+    carreaux en travers) le bord en escalier rendait +14 % a 30 degres et
+    +18 % a 45 ; les aretes de bord ponderees par leur cuivre le ramenent sous
+    3 %. La pente au milieu du barreau est celle du calcul a la main."""
+    main = RESISTIVITE_CUIVRE * 3.0 / (2e-3 * 35e-6)        # V/m
+    vus = []
+    for angle in (0, 30, 45, 90):
+        r = _barreau_tourne(angle, pas=None)
+        c, s = math.cos(math.radians(angle)), math.sin(math.radians(angle))
+        le_long = [(n[0] * c + n[1] * s, v)
+                   for n, v in zip(r["noeuds"], r["potentiel"])]
+        a = min(le_long, key=lambda t: abs(t[0] - 12e-3))
+        b = min(le_long, key=lambda t: abs(t[0] - 28e-3))
+        ecart = (a[1] - b[1]) / (b[0] - a[0]) / main - 1
+        assert abs(ecart) < 0.03, (angle, ecart)
+        vus.append("%d deg : %+.1f %%" % (angle, 100 * ecart))
+    return "pente contre rho I / (W t), " + " ; ".join(vus)
+
+
+def cas_une_piste_droite_hors_trame_garde_sa_largeur():
+    """Une piste alignee dont la largeur n'est pas un multiple du pas : 1 mm
+    au pas de 0,4 comptait 3 carreaux, soit 1,2 mm et -17 % de chute."""
+    L, W = 40e-3, 1e-3
+    r = ds.resoudre_dc(
+        [{"vertices": [[0, 0], [L, 0], [L, W], [0, W]],
+          "couche": 0, "net": "VCC", "epaisseur": 35e-6}],
+        sources=[{"boite": [0, 0, 0.5e-3, W], "couche": 0, "net": "VCC",
+                  "courant": 1.0}],
+        references=[{"boite": [L - 0.5e-3, 0, L, W], "couche": 0,
+                     "net": "VCC", "tension": 0.0}], pas=0.4e-3)
+    v = {(round(n[0] * 1e3, 1), round(n[1] * 1e3, 1)): p
+         for n, p in zip(r["noeuds"], r["potentiel"])}
+    pente = (v[(10.0, 0.4)] - v[(30.0, 0.4)]) / 20e-3
+    main = RESISTIVITE_CUIVRE * 1.0 / (W * 35e-6)
+    assert abs(pente / main - 1) < 0.005, (pente, main)
+    # ... et la densite du pire carreau est I / (W t), pas celle d'un bord.
+    j = r["pire_par_net"]["VCC"]["densite"]
+    assert abs(j / (1.0 / (1.0 * 0.035)) - 1) < 0.02, j
+    return "%.4f V/m contre %.4f a la main, %.2f A/mm2" % (pente, main, j)
+
+
+def cas_un_disque_entre_deux_bornes_ne_fond_pas():
+    """Sur l'axe des deux bornes, le courant longe la coupe et son flux net
+    est un reste : cos a tombait a 1e-9, la section avec lui, et le disque de
+    10 mm rendait 48 millions de kelvins pour un demi-kelvin."""
+    R = 10e-3
+    r = ds.resoudre_dc(
+        [{"vertices": [[R + R * math.cos(2 * math.pi * k / 60),
+                        R + R * math.sin(2 * math.pi * k / 60)]
+                       for k in range(60)],
+          "couche": 0, "net": "VCC", "epaisseur": 35e-6}],
+        sources=[{"x": 0.4 * R, "y": R, "couche": 0, "net": "VCC",
+                  "courant": 3.0, "rayon": 0.5e-3}],
+        references=[{"x": 1.6 * R, "y": R, "couche": 0, "net": "VCC",
+                     "tension": 0.0, "rayon": 0.5e-3}], pas=0.25e-3)
+    pire = max(r["echauffement"])
+    assert 0.3 < pire < 1.0, pire
+    return "pire %.2f K" % pire
 
 
 def cas_la_resistivite_saisie_chauffe_aussi():
@@ -1735,8 +1783,12 @@ def cas_la_resistivite_saisie_chauffe_aussi():
 
 essai("une piste oblique chauffe comme la meme piste droite (a 5 % pres)",
       cas_une_piste_oblique_chauffe_comme_la_meme_droite)
-essai("une piste oblique maillee trop gros le dit dans les avertissements",
-      cas_une_piste_oblique_peu_maillee_le_dit)
+essai("une piste oblique chute comme la meme piste droite (a 3 % pres)",
+      cas_une_piste_oblique_chute_comme_la_meme_droite)
+essai("une piste droite hors trame garde sa largeur",
+      cas_une_piste_droite_hors_trame_garde_sa_largeur)
+essai("un disque entre deux bornes ne fond pas",
+      cas_un_disque_entre_deux_bornes_ne_fond_pas)
 essai("la resistivite saisie entre aussi dans l'echauffement",
       cas_la_resistivite_saisie_chauffe_aussi)
 
