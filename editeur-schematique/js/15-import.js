@@ -31,7 +31,10 @@ function normComp(c,i){
     if(c.csvPartName) el.csvPartName = String(c.csvPartName).slice(0, 100);
     if(c.mpn) el.mpn = String(c.mpn).slice(0, 100);
     if(c.manufacturer) el.manufacturer = String(c.manufacturer).slice(0, 100);
-    if(c.specs && typeof c.specs === "object") el.specs = c.specs;
+    if(c.specs && typeof c.specs === "object" && !Array.isArray(c.specs)){   // un tableau ou une valeur objet s'affichait « [object Object] »
+      const sp = Object.fromEntries(Object.entries(c.specs).filter(([,v]) => typeof v === "string" || (typeof v === "number" && Number.isFinite(v))));
+      if(Object.keys(sp).length) el.specs = sp;
+    }
     if(c.specsProvenance) el.specsProvenance = String(c.specsProvenance).slice(0, 40);
     // ce que la LIB a posé (09-interaction.js, 24-lib-sync.js) : empreinte, symbole, modèle, description
     if(c.fpPcb) el.fpPcb = String(c.fpPcb).slice(0, 260);
