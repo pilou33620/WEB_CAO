@@ -842,7 +842,12 @@ function simEstResistance(ref, val, type){
    ========================================================================== */
 function pcbParseVolt(val){
   if(val==null)return null;
-  const m=String(val).match(/(\d+(?:[.,]\d+)?)\s*V\b/i);
+  const s=String(val);
+  /* « 3V3 », « 5V0 » : le V tient lieu de virgule. Pas collé à un autre mot,
+     pour ne pas lire une tension au milieu d'une référence. */
+  let m=s.match(/(?:^|[^A-Za-z0-9.,])(\d+)V(\d+)(?![A-Za-z0-9])/i);
+  if(m)return parseFloat(m[1]+"."+m[2]);
+  m=s.match(/(\d+(?:[.,]\d+)?)\s*V(?:DC|AC)?\b/i);        // « 5VDC » compris
   return m?parseFloat(m[1].replace(",",".")):null;
 }
 
@@ -1043,6 +1048,8 @@ function simDCTensionNet(n){
   const s=String(n||"");
   let m=s.match(/(\d+)[Vv](\d+)/);
   if(m)return parseFloat(m[1]+"."+m[2]);
+  m=s.match(/(\d+)[Pp](\d+)\s*[Vv](?![A-Za-z])/);          // « 3P3V », « 1P8V »
+  if(m)return parseFloat(m[1]+"."+m[2]);
   m=s.match(/(\d+(?:[.,]\d+)?)\s*[Vv](?![A-Za-z])/);
   return m?parseFloat(m[1].replace(",",".")):null;
 }
@@ -1073,11 +1080,11 @@ function simDCRendement(c){
 
 function simParseResistance(val){
   if(val==null) return null;
-  const s=String(val).trim();
-  if(!s) return null;
-
   const pkgCodes = ["0402", "0603", "0805", "1206", "1210", "1812", "2010", "2512", "0201", "01005"];
-  if(pkgCodes.includes(s)) return null;
+  /* Le code boîtier sort AVANT la lecture, où qu'il soit : « 0402 10k »
+     se lisait 402 Ω. */
+  const s=String(val).trim().split(/\s+/).filter(t=>!pkgCodes.includes(t)).join(" ");
+  if(!s) return null;
 
   // 1. Valeur numérique pure (ex: "560", "22", "1000", "4.7")
   if(/^\d+(?:[.,]\d+)?$/.test(s)){
@@ -1092,7 +1099,7 @@ function simParseResistance(val){
   //     « 10 mΩ » fait 0,01 Ω ; le méga s'écrit « M » ou « meg ».
   //     La valeur s'arrête au premier blanc : « 4.7k 1% » est 4,7 kΩ, sa
   //     tolérance ne la fait pas retomber sur les codes ci-dessous (7000 Ω).
-  const mDec = s.match(/^(\d+(?:[.,]\d+)?)\s*(k|K|MEG|Meg|meg|M|m)?\s*(?:ohms?|Ohms?|OHMS?|Ω|R)?(?=\s|$)/);
+  const mDec = s.match(/^(\d+(?:[.,]\d+)?)\s*(k|K|MEG|Meg|meg|M|m)?\s*(?:ohms?|Ohms?|OHMS?|Ω|R|E)?(?=\s|$)/);
   if(mDec){
     const u = mDec[2] || "";
     const mult = (u === "k" || u === "K") ? 1e3 : (u === "m" ? 1e-3 : (u ? 1e6 : 1));
@@ -1100,7 +1107,8 @@ function simParseResistance(val){
   }
 
   // 2. Format R standard : 4R7 -> 4.7, 22R -> 22, 0R5 -> 0.5, 22R0 -> 22.0
-  const mCode = s.match(/\b(\d+)[rR](\d*)\b/);
+  //    « E » majuscule vaut « R » (330E, 4E7) ; « e » reste hors lecture.
+  const mCode = s.match(/\b(\d+)[rRE](\d*)\b/);
   if(mCode){
     const dec = mCode[2] ? ("." + mCode[2]) : "";
     return parseFloat(mCode[1] + dec);
@@ -2566,21 +2574,37 @@ function simRendreDC(){
    sur du 24 V ne sont pas le même défaut. Sans source déclarée, le pour-cent
    n'existe pas — on le dit, et on ne juge que la température.
    ========================================================================== */
+/* LA CONSIGNE DU RAIL D'UN NET : la plus haute source de CE net — c'est à elle
+   que le serveur rapporte la chute (`consigne_du_net`, python/dc_solver.py).
+   Un net sans source à lui retombe sur la plus haute de la carte. Rapporter
+   200 mV perdus sur un 3,3 V au 5 V d'à côté donnait 4 % au lieu de 6. */
+function simDCConsigne(res,net){
+  const alims=((res&&res.bornes)||[]).filter(b=>b.role==="tension");
+  const duNet=net?alims.filter(b=>b.net===net):[];
+  const l=(duNet.length?duNet:alims).map(b=>b.consigne);
+  return l.length?Math.max.apply(null,l):0;
+}
 function simDCMesures(res){
   const bornes=(res&&res.bornes)||[];
-  const alims=bornes.filter(b=>b.role==="tension");
   const charges=bornes.filter(b=>b.role==="courant");
-  const ref=alims.length?Math.max.apply(null,alims.map(b=>b.consigne)):0;
   const masses=simDCNetsMasse(res);
   const parComp=simDCParComposant(res);
-  const surRail=charges.filter(b=>!masses.has(b.net));
-  let pire=surRail.length
-    ? surRail.reduce((a,b)=>(b.chute>a.chute?b:a)) : null;
+  /* LE PIRE EST LE PIRE EN PROPORTION DE SON RAIL : c'est le pourcentage que
+     le budget juge. Sans aucune source (ref 0), la chute en volts départage. */
+  const poids=x=>x.ref>0?x.chute/x.ref:x.chute;
+  let pire=null;
+  for(const b of charges){
+    if(masses.has(b.net))continue;
+    const x={repere:b.repere, chute:b.chute, ref:simDCConsigne(res,b.net)};
+    if(!pire||poids(x)>poids(pire))pire=x;
+  }
   /* AVEC LA MASSE, LA PIRE CHARGE EST CELLE QUI VOIT LE MOINS ENTRE SES DEUX
      BROCHES : la chute du rail plus la remontée de sa masse. */
-  for(const c of parComp)
-    if(!pire||c.perdu>pire.chute)
-      pire={repere:c.composant+" (rail + masse)", chute:c.perdu};
+  for(const c of parComp){
+    const x={repere:c.composant+" (rail + masse)", chute:c.perdu, ref:c.ref};
+    if(!pire||poids(x)>poids(pire))pire=x;
+  }
+  const ref=pire?pire.ref:simDCConsigne(res,"");
   let dt=0, dtNet="", dtCharte=0;
   for(const net of Object.keys(res&&res.pire_par_net||{})){
     const p=res.pire_par_net[net];
@@ -2614,8 +2638,6 @@ function simDCNetsMasse(res){
 function simDCParComposant(res){
   const masses=simDCNetsMasse(res);
   if(!masses.size)return [];
-  const ref=Math.max.apply(null,((res.bornes||[]).filter(b=>b.role==="tension")
-                                 .map(b=>b.consigne)).concat([0]));
   const comps=new Map();
   for(const b of (res.bornes||[])){
     if(b.role!=="courant"||!b.composant)continue;
@@ -2623,13 +2645,15 @@ function simDCParComposant(res){
     const c=comps.get(b.composant);
     if(masses.has(b.net)){
       if(c.masse==null||b.tension>c.masse)c.masse=b.tension;
-    }else if(c.rail==null||b.tension<c.rail)c.rail=b.tension;
+    }else if(c.rail==null||b.tension<c.rail){c.rail=b.tension;c.net=b.net;}
   }
   const out=[];
   for(const [nom,c] of comps)
-    if(c.rail!=null&&c.masse!=null)
-      out.push({composant:nom, rail:c.rail, masse:c.masse, vu:c.rail-c.masse,
+    if(c.rail!=null&&c.masse!=null){
+      const ref=simDCConsigne(res,c.net);      // la consigne de SON rail
+      out.push({composant:nom, rail:c.rail, masse:c.masse, vu:c.rail-c.masse, ref:ref,
                 perdu:ref-(c.rail-c.masse), chuteRail:ref-c.rail, remontee:c.masse});
+    }
   return out.sort((a,b)=>b.perdu-a.perdu);
 }
 
@@ -2858,7 +2882,6 @@ function simTableauBornes(res){
      C'est la même graduation que la colonne « Écart » de la fiche
      d'impédance — un lecteur qui vient d'y apprendre que le rouge est le
      dépassement ne doit pas la réapprendre ici. */
-  const ref=alims.length?Math.max.apply(null,alims.map(b=>b.consigne)):0;
   const bud=SIM.dcBudget.chute;
   /* LA COUCHE DE CHAQUE BORNE, ET C'EST CE QUI MANQUAIT. La carte ne peint
      qu'UNE couche ; une charge posée ailleurs n'y apparaît pas, et son cuivre
@@ -2877,7 +2900,8 @@ function simTableauBornes(res){
     if(!src&&masses.has(b.net)){
       perdu="+"+simNb(b.tension*1e3,2)+" mV<small>remontée</small>";
     }else if(!src){
-      const pct=(ref>0)?100*b.chute/ref:null;
+      const refNet=simDCConsigne(res,b.net);
+      const pct=(refNet>0)?100*b.chute/refNet:null;
       perdu="−"+simNb(b.chute*1e3,2)+" mV";
       if(pct!=null){
         perdu+="<small>"+simNb(pct,2)+" %</small>";
@@ -2905,7 +2929,7 @@ function simTableauBornes(res){
   alims.forEach(b=>ligne(b,true));
   charges.forEach(b=>ligne(b,false));
   html+="</table>";
-  html+=simTableauParComposant(res,ref,bud);
+  html+=simTableauParComposant(res,bud);
   /* CE QUE LA CARTE NE MONTRE PAS. Une borne hors de la couche peinte n'a
      aucune couleur autour d'elle, et c'est le piège : on lit un défaut là où
      il n'y a qu'un changement de point de vue. */
@@ -2921,7 +2945,9 @@ function simTableauBornes(res){
     /* LA PIRE CHARGE, dite en une phrase — mais seulement s'il y en a
        PLUSIEURS. Avec une seule, le verdict d'en-tête l'a déjà nommée trois
        lignes plus haut, et la répéter apprend à sauter les notes. */
-    const pire=charges.reduce((a,b)=>(b.chute>a.chute?b:a));
+    const part=b=>{const r=simDCConsigne(res,b.net);return r>0?b.chute/r:b.chute;};
+    const pire=charges.reduce((a,b)=>(part(b)>part(a)?b:a));
+    const ref=simDCConsigne(res,pire.net);
     html+='<p class="simNote">· La charge la plus mal servie est <b>'+
           esc(pire.repere||"—")+"</b> : il lui arrive "+
           simNb(pire.tension,4)+" V, soit "+simNb(pire.chute*1e3,2)+
@@ -2932,13 +2958,13 @@ function simTableauBornes(res){
 }
 
 /* Ce que voit chaque composant quand la masse est dans le calcul. */
-function simTableauParComposant(res,ref,bud){
+function simTableauParComposant(res,bud){
   const comps=simDCParComposant(res);
   if(!comps.length)return '';
   let h='<table class="simTab simTabDC"><tr><th>Composant</th><th>Rail</th>'+
         "<th>Masse</th><th>Vu</th><th>Perdu</th></tr>";
   for(const c of comps){
-    const pct=ref>0?100*c.perdu/ref:null;
+    const pct=c.ref>0?100*c.perdu/c.ref:null;
     const cls=pct==null?"":((pct>bud)?"z0ko":((pct>0.8*bud)?"z0limite":"z0ok"));
     h+="<tr><td>"+esc(c.composant)+"</td>"+
        "<td>−"+simNb(c.chuteRail*1e3,2)+" mV</td>"+
@@ -4084,7 +4110,9 @@ function simUniteBande2(){
 function simEl(id){return document.getElementById(id);}
 /* Virgule décimale, comme partout ailleurs dans les deux outils. */
 function simNb(v,dec){
-  if(!isFinite(v))return "—";
+  /* null et "" sont FINIS pour isFinite (ils valent 0) : une grandeur que le
+     serveur a rendue null (non finie chez lui) s'écrivait « 0,00 ». */
+  if(v==null||v===""||!isFinite(v))return "—";
   return Number(v).toFixed(dec==null?2:dec).replace(".",",");
 }
 
@@ -5027,13 +5055,19 @@ function simSection(res){
        " → ε_eff "+simNb(s.eps_eff,3)+
        (vues.size>1?" ("+simNb(v.longueur,2)+" mm)":"")+"."+
        (prov?" <i>"+esc(prov)+"</i>":"")+
-       /* LE MASQUE DE SOUDURE N'EST PAS DANS L'EMPILAGE ENVOYÉ, et sur une
-          piste de couche extérieure il compte : il remplit l'écart coplanaire,
-          là où le champ est le plus fort. Deux à trois pour cent de Z₀ en
-          moins, dans le sens qui rapproche du cuivre réel. Le dire ICI, sur la
-          section concernée, plutôt qu'en note générale : une piste interne n'a
-          pas de masque, et l'avertir n'aurait aucun sens. */
-       ((s.topo==="micro"&&!(s.couverture>0))
+       /* LE MASQUE DE SOUDURE, sur une piste de couche extérieure, compte : il
+          remplit l'écart coplanaire, là où le champ est le plus fort — deux à
+          trois pour cent de Z₀ en moins. Le serveur le pose désormais lui-même
+          (`_masque_exterieur`, python/simulation_em.py : celui de l'empilage,
+          sinon 25 µm à ε_r 3,8) et le rend dans `s.masque` : on dit alors ce
+          qui a été COMPTÉ. La note « non compté » ne reste que pour un
+          résultat qui ne le porte pas. Le dire ICI, sur la section concernée :
+          une piste interne n'a pas de masque. */
+       ((s.topo==="micro"&&s.masque)
+         ? " <i>Masque de soudure compté : "+
+           simNb(s.masque.epaisseur*1e3,0)+" µm, ε<sub>r</sub> "+
+           simNb(s.masque.epsilon_r,2)+".</i>"
+         : (s.topo==="micro"&&!(s.couverture>0))
          ? ' <i>Le masque de soudure n\'est pas dans l\'empilage : sur une '+
            "couche extérieure il fait baisser Z₀ de deux à trois pour cent, "+
            "non comptés ici.</i>"
@@ -12807,6 +12841,11 @@ function simCorpsBus(){
     '<select class="simU simUSel" id="simBusAddNet" title="Sélectionner un net du design à ajouter manuellement au bus" style="max-width:130px">'+
       '<option value="">+ Ajouter net… ▾</option>'+
     '</select>'+
+    /* remplir le bus depuis deux composants : listeComposants, netsEntreComposants et
+       simBusClassifierNets existaient, essayés, sans commande pour les appeler */
+    '<select class="simU simUSel" id="simBusCompA" title="Premier composant du bus (le maître)" style="max-width:90px"></select>'+
+    '<select class="simU simUSel" id="simBusCompB" title="Second composant du bus" style="max-width:90px"></select>'+
+    '<button class="tb mini" id="simBusRemplir" title="Ajouter au bus les nets qui relient ces deux composants (hors alimentations), classés en horloge et données">Remplir</button>'+
     '<button class="tb mini" id="simBusAddClk" title="Ajouter une ligne Horloge (CLK)">+ Horloge</button>'+
     '<button class="tb mini" id="simBusAddData" title="Ajouter une ligne Donnée (DATA)">+ Donnée</button>'+
     '<button class="tb mini" id="simBusRaz" title="Vider tous les signaux">Vider</button>'+
@@ -12847,6 +12886,19 @@ function simBusClassifierNets(nets, proto){
   }
 
   return {clocks, datas};
+}
+
+/* Ajoute au bus les nets qui relient deux composants ; rend le nombre de signaux ajoutés.
+   Une horloge déjà désignée reste la seule : les nouveaux nets entrent alors en données. */
+function simBusRemplirDepuis(refA, refB){
+  if(!refA||!refB||refA===refB||!SIM_ED||typeof SIM_ED.netsEntreComposants!=="function")return 0;
+  const deja=n=>SIM_BUS.clocks.includes(n)||SIM_BUS.datas.includes(n);
+  const nets=SIM_ED.netsEntreComposants(refA,refB).filter(n=>!deja(n));
+  const methode=(SIM_BUS_PROTOCOLES[SIM_BUS.protocole]||SIM_BUS_PROTOCOLES.spi).methode;
+  const c=SIM_BUS.clocks.length?{clocks:[],datas:nets}:simBusClassifierNets(nets,methode);
+  SIM_BUS.clocks.push(...c.clocks);
+  SIM_BUS.datas.push(...c.datas);
+  return nets.length;
 }
 
 function simBusRendreNetsBar(){
@@ -12890,6 +12942,15 @@ function simBusRendreNetsBar(){
     }
     optHtml+='</optgroup>';
     addNetSel.innerHTML=optHtml;
+  }
+
+  const comps=(SIM_ED&&typeof SIM_ED.listeComposants==="function")?SIM_ED.listeComposants():[];
+  for(const [id,cle,invite] of [["simBusCompA","comp1","Composant A…"],["simBusCompB","comp2","Composant B…"]]){
+    const sel=simEl(id);
+    if(!sel)continue;
+    sel.innerHTML='<option value="">'+invite+'</option>'+comps.map(c=>
+      '<option value="'+esc(c.ref)+'"'+(c.ref===SIM_BUS[cle]?' selected':'')+'>'+esc(c.ref+(c.val?" · "+c.val:""))+'</option>').join("");
+    sel.onchange=()=>{SIM_BUS[cle]=sel.value;};
   }
 
   if(!SIM_BUS.clocks.length&&!SIM_BUS.datas.length){
@@ -13420,6 +13481,16 @@ function simBrancherBus(){
       SIM_BUS.datas.push(simBusResoudreNetAvecPont(dataCandidate));
       simBusRendreNetsBar();
       simBusCalculer();
+    };
+  }
+
+  const bRemplir=simEl("simBusRemplir");
+  if(bRemplir){
+    bRemplir.onclick=()=>{
+      const n=simBusRemplirDepuis(SIM_BUS.comp1,SIM_BUS.comp2);
+      SIM_BUS.erreur=n?"":"Aucun net (hors alimentations) ne relie ces deux composants : choisissez les composants A et B.";
+      simBusRendreNetsBar();
+      if(n)simBusCalculer();else simRendre();
     };
   }
 
@@ -14189,11 +14260,16 @@ function simPDNFormatZ(z) {
    10 000 F — une résistance devenait un découplage parfait entre deux plans.
    On prend le premier mot qui est une capacité (« 10V 1uF » → 1 µF), notation
    « 4n7 » comprise. Sans préfixe, « 100 » n'est pas cent farads : c'est une
-   valeur qu'on ne sait pas lire, et le serveur a son repli annoncé. */
+   valeur qu'on ne sait pas lire, et le serveur a son repli annoncé.
+   « 10 µF » (un blanc avant l'unité, F exigé pour ne pas coller « 10 m »),
+   « 10μF » (le mu GREC, U+03BC, que /i confond avec le micro U+00B5) et
+   « 10uF,X7R » se lisent aussi : ils rendaient 0 ou NaN, et le découplage
+   retombait en silence sur 100 nF. */
 function simValeurFarads(txt){
-  const mult = {p:1e-12, n:1e-9, u:1e-6, "µ":1e-6, m:1e-3};
-  for(const mot of String(txt || "").trim().split(/[\s\/;_]+/)){
-    const m = mot.match(/^(\d+(?:[.,]\d+)?)(p|n|u|µ|m)(\d*)F?$/i);
+  const mult = {p:1e-12, n:1e-9, u:1e-6, "µ":1e-6, "μ":1e-6, m:1e-3};
+  const colle = String(txt || "").trim().replace(/(\d)\s+(?=[pnuµμm]F(?![A-Za-z0-9]))/gi, "$1");
+  for(const mot of colle.split(/[\s\/;_()±]+/)){
+    const m = mot.match(/^(\d+(?:[.,]\d+)?)(p|n|u|µ|μ|m)(\d*)F?(?![A-Za-z0-9])/i);
     if(!m) continue;
     const ent = m[1].replace(",", ".");
     const v = parseFloat(m[3] && ent.indexOf(".") < 0 ? ent + "." + m[3] : ent);
@@ -18082,7 +18158,8 @@ function simRfBilan(r){
     "<tr><td>Z vue par la puce</td><td>"+simRfZTxt(b.zin)+" (cible : "+
       simRfZTxt(b.zin_cible)+")</td></tr>"+
     "<tr><td>Z vue par la charge</td><td>"+simRfZTxt(b.zout)+"</td></tr>"+
-    (r.validite&&isFinite(r.validite.f_max)
+    (r.validite&&Number.isFinite(r.validite.f_max)&&
+     r.validite.limites&&r.validite.limites.length
       ? "<tr><td>Validité</td><td>quasi-statique jusqu'à "+
         simFreq(r.validite.f_max)+" — "+esc(r.validite.limites[0].cause+
         " ("+r.validite.limites[0].detail+")")+"</td></tr>"

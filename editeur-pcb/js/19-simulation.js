@@ -4936,22 +4936,23 @@ const SIM_PCB={
     if(rMatch){
       const raw = rMatch[1].trim();
       const tokens = raw.split(/\s+/);
+      /* La valeur passe par simParseResistance, comme dans la visionneuse :
+         « 4k7 », « 4,7k », « 1M », « 22R ». La lecture d'ici prenait le premier
+         nombre et ne connaissait que « k » : 4k7 donnait 4000 Ω et 1M, 1 Ω. */
       if(tokens.length > 1){
         rComp = tokens[0] || "";
-        const valStr = tokens.slice(1).join(" ");
-        const valMatch = valStr.match(/([0-9]+(?:\.[0-9]+)?)/);
-        if(valMatch){
-          let valNum = parseFloat(valMatch[1]);
-          if(/k/i.test(valStr)) valNum *= 1000;
-          rOhms = valNum;
-        }
+        const v = simParseResistance(tokens.slice(1).join(" "));
+        if(v != null && v > 0) rOhms = v;
       }else if(tokens.length === 1){
-        const vMatch = tokens[0].match(/([0-9]+(?:\.[0-9]+)?)/);
-        if(/^[A-Za-z]+/.test(tokens[0]) && !/[ΩR]/i.test(tokens[0])){
+        /* Un seul jeton : une valeur commence par un chiffre (22R, 4k7, 33Ω),
+           un repère par une lettre (R5, RS3) — « R12 » se lisait 12 Ω. Un
+           repère seul garde la valeur type de 22 Ω. */
+        if(!/^\d/.test(tokens[0])){
           rComp = tokens[0];
           rOhms = 22;
-        }else if(vMatch){
-          rOhms = parseFloat(vMatch[1]);
+        }else{
+          const v = simParseResistance(tokens[0]);
+          if(v != null && v > 0) rOhms = v;
         }
       }
       if(rOhms > 0 && parts.length > 1){

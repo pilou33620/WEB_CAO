@@ -82,7 +82,7 @@ const EXPOSE=["simDsChamp","simDsLire","simDsEcrire","SIM_DS","SIM_PDN","simPDNA
   "mdlNetNom","mdlNb","mdlCharger","mdlCouches","mdlPlansDans",
   "mdlCheminsNet","mdlMevTout","mdlMonte","mdlPoserMonte","simEstMonte",
   "SIM","SIM_IPC","simRefSet","simRefListe","simRefCandidats","simInit",
-  "SIM_BUS","simCorpsBus","simBrancherBus","simRendreBus","simBusCalculer",
+  "SIM_BUS","simCorpsBus","simBusRemplirDepuis","simBrancherBus","simRendreBus","simBusCalculer",
   "simBusActiverRSerie","simBusDesactiverRSerie","simBusChangerNet","simBusChangerRSerieVal","simBusChangerNetAval","simBusResoudreNetAvecPont","SIM_ED",
   "simTermeDiff","simLireDiff","simLectureTexteDiff","simCourbeDiff","simFicheSDiff","simDiffExportS2p",
   "simRefCandidatsIpc",
@@ -214,7 +214,10 @@ const EXPOSE=["simDsChamp","simDsLire","simDsEcrire","SIM_DS","SIM_PDN","simPDNA
   /* plans (Draftsman) */
   "plnIpcFeuilles","plnPercages",
   /* formule légère et lecture des valeurs */
-  "ltZ0","simParseResistance"];
+  "ltZ0","simParseResistance",
+  /* les six corrections de l'audit des simulations (essais en fin de fichier) */
+  "simVerdictDC","simTableauBornes","simSection","simRfBilan",
+  "simDCTensionNet","pcbParseVolt"];
 
 /* Un seul `eval`, sur les fichiers concaténés : ils se voient l'un
    l'autre comme dans la page, où ils partagent la portée globale. Le "use
@@ -7325,6 +7328,122 @@ T("ltZ0 triplaque : Wheeler 1978, le chiffre du Python, aussi hors IPC-2141A",()
     if(!(Math.abs(r-z)<1e-9*z))throw new Error("w="+w+" b="+b+" : "+r+" au lieu de "+z);
   }
 });
+
+/* --------------------------------------------------------------------------
+   AUDIT DES SIMULATIONS : un essai par correction, chacun échoue sans elle.
+   -------------------------------------------------------------------------- */
+T("bus : « Remplir » ajoute les nets qui relient deux composants, horloge reconnue, sans doublon", function(){
+  const ed=global.SIM_ED, garde={clocks:SIM_BUS.clocks,datas:SIM_BUS.datas,protocole:SIM_BUS.protocole};
+  try{
+    /* simInit sans conteneur ne fait que désigner l'adaptateur de l'outil */
+    simInit({netsEntreComposants:(a,b)=>a==="U1"&&b==="U2"?["MOSI","CLK_SPI","MISO"]:[]},null);
+    SIM_BUS.clocks=[];SIM_BUS.datas=[];SIM_BUS.protocole="spi";
+    if(simBusRemplirDepuis("U1","U2")!==3)throw new Error("3 nets attendus");
+    if(SIM_BUS.clocks.join()!=="CLK_SPI"||SIM_BUS.datas.join()!=="MOSI,MISO")
+      throw new Error("classement : horloges "+SIM_BUS.clocks+" ; données "+SIM_BUS.datas);
+    if(simBusRemplirDepuis("U1","U2")!==0||SIM_BUS.datas.length!==2)throw new Error("un second clic ne doit rien doubler");
+    if(simBusRemplirDepuis("U1","U1")!==0||simBusRemplirDepuis("U1","")!==0)throw new Error("deux composants distincts exigés");
+    if(!/id="simBusRemplir"/.test(simCorpsBus()))throw new Error("le bouton manque au panneau");
+  }finally{simInit(ed,null);Object.assign(SIM_BUS,garde);}
+});
+T("bus SPI : au retour (MISO) le retard d'horloge s'ajoute au maintien", function(){
+  const garde=SIM_IPC.busNetFlight;
+  /* horloge 150 mm (1000 ps), données 10 mm (67 ps) */
+  SIM_IPC.busNetFlight=n=>n==="SCK"?{len:150,tflight:1000,psmm:6.67}
+                                   :{len:10,tflight:67,psmm:6.67};
+  try{
+    simInit(SIM_IPC, document.createElement("div"));
+    Object.assign(SIM_BUS,{protocole:"spi",clocks:["SCK"],datas:["MISO","MOSI"],
+      dataClockMap:{},freqMhz:10,tsu:2,th:0.5,tcoMin:0.5,tcoMax:5});
+    simBusCalculer();
+    const miso=SIM_BUS.result.signals.find(x=>x.net==="MISO");
+    const mosi=SIM_BUS.result.signals.find(x=>x.net==="MOSI");
+    /* retour : 1000 + 67 + 500 - 500 ; aller : 67 - 1000 + 500 - 500 */
+    if(miso.slackHPs!==1067)throw new Error("maintien MISO "+miso.slackHPs+" ps au lieu de +1067");
+    if(miso.status!=="ok")throw new Error("MISO ne viole rien : "+miso.status);
+    if(mosi.slackHPs!==-933||mosi.status!=="hold_violation")
+      throw new Error("MOSI (aller) reste en violation de maintien : "+mosi.slackHPs);
+    /* le bouton propose ce qu'il FAUT (933 ps / 6,67 = 139,88 mm), pas le centrage */
+    if(mosi.action.indexOf("+"+mosi.meanderNeededMm+" mm")<0||mosi.meanderNeededMm>200)
+      throw new Error("le serpentin proposé doit être le nécessaire : "+mosi.action);
+    /* un SPI à 100 kHz se calcule à 100 kHz */
+    SIM_BUS.freqMhz=0.1; simBusCalculer();
+    if(SIM_BUS.result.summary.Tcyc!==10000)
+      throw new Error("Tcyc à 100 kHz : "+SIM_BUS.result.summary.Tcyc+" ns au lieu de 10000");
+  }finally{
+    SIM_IPC.busNetFlight=garde;
+    Object.assign(SIM_BUS,{clocks:[],datas:[],result:null,freqMhz:100});
+  }
+});
+
+T("chute DC : le pourcentage se rapporte à la consigne du rail de la borne", function(){
+  const res={bornes:[
+    {role:"tension",consigne:5,net:"+5V",repere:"J1.1",tension:5,chute:0},
+    {role:"tension",consigne:3.3,net:"+3V3",repere:"U1.2",tension:3.3,chute:0},
+    {role:"courant",consigne:1,net:"+3V3",chute:0.2,repere:"U2.1",tension:3.1},
+    {role:"courant",consigne:1,net:"+5V",chute:0.21,repere:"U3.1",tension:4.79}],
+    pire_par_net:{},vias:[]};
+  const garde=SIM.dcBudget;
+  SIM.dcBudget={chute:5, dt:10, via:null, densite:null};
+  try{
+    /* 200 mV sur 3,3 V = 6,06 % : hors budget, et pire que 210 mV sur 5 V (4,2 %) */
+    const v=simVerdictDC(res);
+    if(v.indexOf("Hors budget")<0||v.indexOf("6,06 % de 3,30 V")<0||v.indexOf("U2.1")<0)
+      throw new Error("verdict : "+v.replace(/<[^>]+>/g," "));
+    const t=simTableauBornes(res);
+    if(t.indexOf("6,06 %")<0||t.indexOf("4,20 %")<0)
+      throw new Error("tableau des bornes : "+t.replace(/<[^>]+>/g," "));
+  }finally{SIM.dcBudget=garde;}
+});
+
+T("simValeurFarads : blanc avant l'unité, mu grec, suffixe collé", function(){
+  const pres=(a,b)=>Math.abs(a-b)<=1e-9*b;
+  for(const [txt,v] of [["10 µF",10e-6],["4.7 uF 16V",4.7e-6],["100 nF/50V",100e-9],
+                        ["10μF",10e-6],["10uF,X7R",10e-6],["4n7",4.7e-9],["10V 1uF",1e-6]])
+    if(!pres(simValeurFarads(txt),v))
+      throw new Error(JSON.stringify(txt)+" → "+simValeurFarads(txt)+" au lieu de "+v);
+  for(const txt of ["10k","10 m","100nH","5mA","104",""])
+    if(simValeurFarads(txt)!==0)
+      throw new Error(JSON.stringify(txt)+" n'est pas une capacité : "+simValeurFarads(txt));
+});
+
+T("fiche d'impédance : le masque que le serveur a compté est dit compté", function(){
+  const seg={z0:46.8,h:0.21,topo:"micro",longueur:40,largeur:0.4,couche:0,er:4.3,
+             tan_delta:0.02,cuivre:0.035,eps_eff:3.455,plan_bas:"Inner 1"};
+  const avec=simSection({segments:[Object.assign({masque:{epaisseur:0.025,epsilon_r:3.8}},seg)]});
+  if(avec.indexOf("non comptés")>=0||avec.indexOf("Masque de soudure compté : 25 µm")<0)
+    throw new Error("avec masque : "+avec.replace(/<[^>]+>/g," "));
+  if(simSection({segments:[seg]}).indexOf("non comptés")<0)
+    throw new Error("sans masque rendu par le serveur, la réserve reste");
+});
+
+T("simNb(null) est un tiret, et le bilan RF tient sans limite de validité", function(){
+  if(simNb(null)!=="—"||simNb("")!=="—")throw new Error("simNb(null) → "+simNb(null));
+  if(simNb(0)!=="0,00")throw new Error("simNb(0) → "+simNb(0));
+  const b={f:2.4e9,s21_db:-1,s11_db:-10,s22_db:-10,zin:[50,0],zin_cible:[50,0],
+           zout:[50,0],perte_desadaptation_db:0.1,perte_dissipee_db:0.5};
+  /* f_max infini chez le serveur → null dans le JSON, limites vides */
+  const h=simRfBilan({bilan:b,validite:{f_max:null,limites:[],k0h:0}});
+  if(h.indexOf("Validité")>=0)throw new Error("pas de ligne Validité sans limite");
+});
+
+T("lecture des valeurs : 3P3V, 3V3, 5VDC, code boîtier en tête, 330E", function(){
+  const egal=(nom,a,b)=>{if(a!==b)throw new Error(nom+" → "+a+" au lieu de "+b);};
+  egal("simDCTensionNet(3P3V)",simDCTensionNet("3P3V"),3.3);
+  egal("simDCTensionNet(VDD_1P8V)",simDCTensionNet("VDD_1P8V"),1.8);
+  egal("simDCTensionNet(+3V3)",simDCTensionNet("+3V3"),3.3);
+  egal("simDCTensionNet(+12V)",simDCTensionNet("+12V"),12);
+  egal("pcbParseVolt(3V3)",pcbParseVolt("3V3"),3.3);
+  egal("pcbParseVolt(5VDC)",pcbParseVolt("5VDC"),5);
+  egal("pcbParseVolt(3.3V)",pcbParseVolt("3.3V"),3.3);
+  egal("pcbParseVolt(500mV)",pcbParseVolt("500mV"),null);
+  egal("simParseResistance(0402 10k)",simParseResistance("0402 10k"),10000);
+  egal("simParseResistance(0402)",simParseResistance("0402"),null);
+  egal("simParseResistance(330E)",simParseResistance("330E"),330);
+  egal("simParseResistance(4E7)",simParseResistance("4E7"),4.7);
+  egal("simParseResistance(4k7)",simParseResistance("4k7"),4700);
+});
+
 
 (async()=>{
   for(const [nom,fn] of T_ASYNC){
