@@ -2,6 +2,20 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 5.6.0
+# Date: 2026-11-11
+# Explication: DEUX DIELECTRIQUES DIFFERENTS PARTENT COUCHE PAR COUCHE.
+#   `section_de_couche` ramenait tout a UN er, moyenne a l'epaisseur : le
+#   poids allait au dielectrique epais alors que le champ est du cote du plan
+#   proche. Triplaque prepreg 0,1 mm er 3,6 / ame 1,0 mm er 4,6 : Z0 -6,7 %,
+#   retard +7,3 %. Quand les permittivites different (triplaque, piste
+#   enterree, microruban sur deux dielectriques, vernis compris), la geometrie
+#   emporte `strates` et ligne_mom 2.10.0 les resout. Empilage homogene : rien
+#   ne part, au bit pres. `er` et tan delta de la fiche et des pertes restent
+#   la moyenne (shortcut dit sur place) ; la carte sans plan aussi.
+# Fonctions ajoutees : _strates, _heterogene.
+# Fonctions modifiees : section_de_couche.
+#
 # Version: 5.5.0
 # Date: 2026-10-12
 # Explication: LA PAIRE PAR BRIN VOIT CE QUE LA PARTENAIRE FAIT SEULE.
@@ -819,7 +833,7 @@ import ligne_mom as tl
 
 FORMAT = "cao-sim-em-3"
 FORMAT_RESULTAT = "cao-sim-em-resultat-5"
-VERSION = "5.5.0"
+VERSION = "5.6.0"
 VERSION_MOTEURS = {
     "simulation_em": VERSION,
     "ligne_mom": getattr(tl, "VERSION", "2.5.0"),
@@ -948,6 +962,41 @@ def _couverture(couches, indice, vers_le_bas):
     return total
 
 
+def _strates(couches, indice, jusqu_a, avec_cuivre):
+    """Les dielectriques rencontres de la piste vers `jusqu_a` (un indice de
+    plan, ou -1 / len(couches) pour la face de la carte) : [[er, epaisseur en
+    METRES], ...], les voisins de meme er fondus.
+
+    `avec_cuivre` : le cuivre des couches de signal traversees compte dans
+    l'epaisseur du dielectrique qui le precede (la resine le noie) -- c'est
+    la convention de l'ecart « b » d'une triplaque (`_cuivre_entre`) ; la
+    hauteur d'un microruban, elle, ne le compte pas (`_entre`).
+    """
+    pas = 1 if jusqu_a > indice else -1
+    out = []
+    for i in range(indice + pas, jusqu_a, pas):
+        c = couches[i]
+        e = _nombre(c.get("thickness"))
+        if e <= 0:
+            continue
+        if c.get("type") == "copper":
+            if avec_cuivre and out:
+                out[-1][1] += e * 1e-3
+            continue
+        er = _nombre(c.get("epsilon_r"), 4.3)
+        if out and abs(out[-1][0] - er) < 1e-9:
+            out[-1][1] += e * 1e-3
+        else:
+            out.append([er, e * 1e-3])
+    return out
+
+
+def _heterogene(*listes):
+    """Vrai quand ces couches n'ont pas toutes la meme permittivite."""
+    ers = [er for liste in listes for er, _ in liste]
+    return bool(ers) and max(ers) - min(ers) > 1e-9
+
+
 def section_de_couche(couches, indice, largeur_mm, epaisseur_mm,
                       ecart_g_mm=0.0, ecart_d_mm=None, plans_ignores=(),
                       sans_plan=False):
@@ -1036,9 +1085,22 @@ def section_de_couche(couches, indice, largeur_mm, epaisseur_mm,
         df = (df_h * t_haut + df_b * t_bas) / total if total > 0 else 0.02
         if not (b > 0) or not (0 < y0 < b):
             return None, "empilage incoherent entre les deux plans"
-        return ({"kind": "strip", "w": w, "t": t, "b": b, "y0": y0,
-                 "epsilon_r": er, "tan_delta": df,
-                 "ecart_g": e_g * 1e-3, "ecart_d": e_d * 1e-3},
+        geo_strip = {"kind": "strip", "w": w, "t": t, "b": b, "y0": y0,
+                     "epsilon_r": er, "tan_delta": df,
+                     "ecart_g": e_g * 1e-3, "ecart_d": e_d * 1e-3}
+        # DEUX DIELECTRIQUES DIFFERENTS NE SE MOYENNENT PAS (5.6.0) : le champ
+        # est du cote du plan proche. Ils partent couche par couche et
+        # `ligne_mom` les resout (`green_spectral_multicouche`). Homogene,
+        # rien ne part et le calcul est celui d'avant au bit pres.
+        # shortcut: `er` et tan delta restent la moyenne a l'epaisseur pour
+        # les pertes et la fiche ; a ponderer par l'energie si alpha_d doit
+        # tenir mieux que quelques pour cent sur un empilage tres contraste.
+        s_bas = _strates(couches, indice, bas, True)
+        s_haut = _strates(couches, indice, haut, True)
+        if _heterogene(s_bas, s_haut):
+            geo_strip["strates"] = {"dessous": s_bas, "dessus": s_haut,
+                                    "plan_dessus": True}
+        return (geo_strip,
                 {"topo": "strip", "ref": 2, "h": min(y0, b - y0), "b": b,
                  "er": er, "tan_delta": df,
                  "ecart_g": e_g, "ecart_d": e_d,
@@ -1115,6 +1177,20 @@ def section_de_couche(couches, indice, largeur_mm, epaisseur_mm,
                  "ecart_g": e_g * 1e-3, "ecart_d": e_d * 1e-3}
     if masque_info:
         geo_micro["masque"] = masque_info
+    # DES DIELECTRIQUES DIFFERENTS, couche par couche (5.6.0) -- voir la
+    # triplaque plus haut. Le vernis est la couche du dessus quand il y en a
+    # un ; sinon, ce qui couvre la piste jusqu'a la face.
+    s_bas = _strates(couches, indice, proche, False)
+    if masque_info:
+        s_haut = [[masque_info["epsilon_r"], masque_info["epaisseur"]]]
+    else:
+        s_haut = _strates(couches, indice,
+                          len(couches) if haut >= 0 else -1, False)
+        if sum(ep for _, ep in s_haut) < max(t, 1e-9):
+            s_haut = []                  # comme `couverture` dans ligne_mom
+    if _heterogene(s_bas) or (not masque_info and _heterogene(s_bas, s_haut)):
+        geo_micro["strates"] = {"dessous": s_bas, "dessus": s_haut,
+                                "plan_dessus": False}
 
     info_micro = {"topo": "micro", "ref": 1, "h": h_mm * 1e-3, "b": 0.0,
                   "er": er_couv, "tan_delta": df, "couverture": couv_mm * 1e-3,

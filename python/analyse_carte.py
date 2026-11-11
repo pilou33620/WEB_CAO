@@ -734,7 +734,7 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None, surf=None)
     échelon unitaire, des lignes adaptées, `crosstalk.niveau2` :
         k_total = ½ (Cm/C11 + Lm/L11) ;
         NEXT = Kb si 2 T_d ≥ t_r, Σ Kb·2Td / t_r sinon ;
-        FEXT = |Σ Kf·Td| / t_r.
+        FEXT = |Σ Kf·Td| / t_r, plafonné à 50 % (`fext_sature`).
     t_r est le front GLOBAL de la carte (1 ns par défaut, réglable), et
     chaque niveau se juge aux seuils vert / orange / rouge (3 % et 7 %).
 
@@ -1351,6 +1351,7 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None, surf=None)
                  "k_total": n2["k_total"], "next": n2["next"],
                  "next_db": n2["next_db"], "fext": n2["fext"],
                  "fext_db": n2["fext_db"], "sature": n2["sature"],
+                 "fext_sature": n2.get("fext_sature", False),
                  "td_ps": n2["td_ps"], "statut_next": n2["statut_next"],
                  "statut_fext": n2["statut_fext"], "statut": n2["statut"],
                  # LES PORTIONS DE LA VICTIME QUI FONT FACE À L'AGRESSEUR,

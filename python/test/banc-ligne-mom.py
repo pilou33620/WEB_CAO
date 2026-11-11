@@ -6208,6 +6208,165 @@ T("sans plan : la plaque est le stratifie entier, couche externe seule",
   sans_plan_n_a_que_la_couche_exterieure)
 
 
+# ==========================================================================
+# ligne_mom 2.10.0 / simulation_em 5.6.0 : ce que l'audit de justesse
+# numerique du 2026-11-10 a corrige. Chaque cas echoue sur la version d'avant.
+# ==========================================================================
+print("\nAudit de justesse numerique : deux dielectriques, quadrature, coude")
+
+
+def la_green_multicouche_se_reduit_aux_quatre_autres():
+    """Une seule couche de chaque cote : la multicouche EST le microruban nu,
+    le couvert, le verni et la triplaque -- meme physique, autre ecriture.
+    1e-12 : ce sont des identites algebriques, il ne reste que l'arrondi."""
+    be = np.geomspace(1.0, 1e6, 40)
+    g = _tl.green_spectral_multicouche
+    for vu, attendu, quoi in (
+            (g(be, [(4.3, 0.2e-3)]),
+             green_spectral_micro(be, 0.2e-3, 4.3), "nu"),
+            (g(be, [(4.3, 0.2e-3)], [(4.3, 0.7e-3)]),
+             green_spectral_micro_couvert(be, 0.2e-3, 0.7e-3, 4.3), "couvert"),
+            (g(be, [(4.3, 0.2e-3)], [(3.8, 25e-6)]),
+             green_spectral_micro_masque(be, 0.2e-3, 25e-6, 4.3, 3.8), "verni"),
+            (g(be, [(4.3, 0.1e-3)], [(4.3, 0.4e-3)], True),
+             _tl.green_spectral_strip(be, 0.1e-3, 0.5e-3, 4.3), "triplaque"),
+            # deux couches de MEME er valent une couche de leur somme
+            (g(be, [(4.3, 0.05e-3), (4.3, 0.15e-3)]),
+             green_spectral_micro(be, 0.2e-3, 4.3), "deux couches egales")):
+        assert np.allclose(vu, attendu, rtol=1e-12, atol=0), \
+            "%s : %.2e" % (quoi, np.max(np.abs(vu / attendu - 1)))
+
+
+T("la Green multicouche se reduit au nu, au couvert, au verni, a la triplaque",
+  la_green_multicouche_se_reduit_aux_quatre_autres)
+
+
+def _deux_dielectriques(w_mm, ep_mm=0.035):
+    """Triplaque : ame de 1,0 mm a er 4,6 au-dessus, prepreg de 0,1 mm a
+    er 3,6 en dessous -- l'empilage quatre couches ordinaire."""
+    couches = [{"name": "G1", "type": "copper", "thickness": 0.035, "role": "plane"},
+               {"name": "ame", "type": "dielectric", "thickness": 1.0,
+                "epsilon_r": 4.6, "tan_delta": 0.02},
+               {"name": "S", "type": "copper", "thickness": 0.035, "role": "signal"},
+               {"name": "pp", "type": "dielectric", "thickness": 0.1,
+                "epsilon_r": 3.6, "tan_delta": 0.02},
+               {"name": "G2", "type": "copper", "thickness": 0.035, "role": "plane"}]
+    geo, _info = _se.section_de_couche(couches, 2, w_mm, ep_mm)
+    return geo, solve_line(geo)
+
+
+def deux_dielectriques_ne_se_moyennent_pas():
+    """Le champ est du cote du plan PROCHE. Deux etalons independants du
+    solveur :
+      · RUBAN LARGE (w = 10 mm, w/h = 100) : deux condensateurs plans en
+        parallele, eps_eff = (er1/h1 + er2/h2)/(1/h1 + 1/h2) = 3,6909 --
+        analytique. 1 % : ce que le champ de bord laisse a w/h = 100 (mesure
+        +0,26 %). La moyenne a l'epaisseur rendait 4,509 (+22 %).
+      · 0,15 mm / 35 um : volumes finis 2D a cuivre epais (grille graduee,
+        energie ; audit du 2026-11-10, valides a 0,5-1 % sur Hammerstad-
+        Jensen et Cohn) : 45,73 ohms, eps_eff 3,957. 2,5 % : le 1 % de
+        l'etalon plus les flancs du cuivre, que le ruban mince elargi ne
+        place pas dans l'ame (mesure +1,2 % et -1,4 %). Avant : 43,03 ohms
+        (-5,9 %) et 4,509 (+14 %)."""
+    geo, r = _deux_dielectriques(10.0)
+    assert geo.get("strates"), "les deux dielectriques doivent partir en strates"
+    proche(r["eps_eff"], (3.6 / 0.1 + 4.6 / 1.0) / (1 / 0.1 + 1 / 1.0), 0.01,
+           "eps_eff du ruban large, plaques paralleles")
+    geo, r = _deux_dielectriques(0.15)
+    proche(r["z0"], 45.73, 0.025, "Z0 contre volumes finis")
+    proche(r["eps_eff"], 3.957, 0.025, "eps_eff contre volumes finis")
+    # ET LA PAIRE SUIT : meme milieu pour `solve_multiline`.
+    geo = dict(geo, conducteurs=[{"w": 0.15e-3, "x": 0.0},
+                                 {"w": 0.15e-3, "s": 0.15e-3}])
+    rm = solve_multiline(geo)
+    assert 3.6 < rm["paire"]["eps_eff_impair"] < 4.2, rm["paire"]
+
+
+T("deux dielectriques differents : plaques paralleles et volumes finis",
+  deux_dielectriques_ne_se_moyennent_pas)
+
+
+def un_empilage_homogene_ne_change_pas():
+    """Sans dielectriques differents, `strates` ne part pas : le calcul est
+    celui d'avant AU BIT PRES. Et la meme section passee de force par la
+    multicouche rend le meme chiffre a 1e-9."""
+    def cu(nom, role):
+        return {"name": nom, "type": "copper", "thickness": 0.035, "role": role}
+
+    def di(ep):
+        return {"name": "d", "type": "dielectric", "thickness": ep,
+                "epsilon_r": 4.3, "tan_delta": 0.02}
+    quatre = [cu("T", "signal"), di(0.2), cu("G", "plane"), di(0.8),
+              cu("S", "signal"), di(0.2), cu("B", "plane")]
+    for couche in (0, 4):
+        geo, _info = _se.section_de_couche(quatre, couche, 0.3, 0.035)
+        assert "strates" not in geo, geo
+    geo = {"kind": "strip", "w": 0.15e-3, "t": 35e-6, "b": 1.135e-3,
+           "y0": 0.1175e-3, "epsilon_r": 4.3}
+    a = solve_line(geo)
+    b = solve_line(dict(geo, strates={"dessous": [[4.3, 0.1e-3]],
+                                      "dessus": [[4.3, 1.0e-3]],
+                                      "plan_dessus": True}))
+    proche(b["z0"], a["z0"], 1e-9, "triplaque homogene par la multicouche")
+    geo = {"kind": "micro", "w": 0.3e-3, "t": 35e-6, "h": 0.2e-3,
+           "epsilon_r": 4.3, "ecart": 0.15e-3,
+           "masque": {"epaisseur": 25e-6, "epsilon_r": 3.8}}
+    a = solve_line(geo)
+    b = solve_line(dict(geo, strates={"dessous": [[4.3, 0.2e-3]],
+                                      "dessus": [[3.8, 25e-6]]}))
+    proche(b["z0"], a["z0"], 1e-9, "coplanaire verni par la multicouche")
+    proche(b["eps_eff"], a["eps_eff"], 1e-9, "eps_eff, idem")
+
+
+T("un empilage homogene ne part pas en strates et rend le meme chiffre",
+  un_empilage_homogene_ne_change_pas)
+
+
+def la_quadrature_suit_l_etendue():
+    """w/h = 1000 : trois cents points ne suivaient plus cos(beta x) et
+    eps_eff sortait a 5,06 -- AU-DESSUS de er = 4,3, sans erreur -- et Z0 a
+    -7,8 %. Etalon : Hammerstad-Jensen du banc, 0,5 % sur eps_eff et 1 % sur
+    Z0 (sa precision a ce rapport ; mesure 0,1 % et 0,2 %)."""
+    h, er = 0.1e-3, 4.3
+    r = solve_line({"kind": "micro", "w": 1000 * h, "t": 0.0, "h": h,
+                    "epsilon_r": er})
+    z_ref, e_ref = hammerstad_jensen(1000.0, er)
+    assert r["eps_eff"] < er, r["eps_eff"]
+    proche(r["eps_eff"], e_ref, 5e-3, "eps_eff a w/h = 1000")
+    proche(r["z0"], z_ref, 1e-2, "Z0 a w/h = 1000")
+    # sous etendue/h = 100, la quadrature est celle d'avant
+    assert _tl._n_quadrature(300, 3e-3, 0.1e-3) == 300
+    assert 3000 <= _tl._n_quadrature(300, 0.1, 0.1e-3) <= 3001
+
+
+T("la quadrature suit l'etendue : un ruban tres large garde eps_eff < er",
+  la_quadrature_suit_l_etendue)
+
+
+def le_coude_etroit_suit_la_formule_publiee():
+    """w/h < 1 : le crochet entier se divise par racine(w/h), plus 0,02 er
+    /(w/h). ETALON INDEPENDANT : Kirschning, Jansen et Koster (1983), tel que
+    le donne la documentation technique de Qucs (« Microstrip corner ») :
+
+        C [pF] = W [(10,35 er + 2,5) W/h + 2,6 er + 5,64]      W en metres
+
+    donnee pour 0,2 <= W/h <= 6. 20 % : les deux formules publiees different
+    de 13 % au pire sur la branche w/h >= 1 que le banc valide deja, de 16 %
+    sur celle-ci (mesure). L'ancienne ecriture s'en ecartait de 52 a 74 % a
+    w/h = 0,3."""
+    h = 0.2e-3
+    for er in (2.5, 4.3, 10.0):
+        for u in (0.3, 0.5, 0.75, 1.5):
+            w = u * h
+            _l, c = elements_coude(w, h, er, 90.0)
+            kjk = w * ((10.35 * er + 2.5) * u + 2.6 * er + 5.64) * 1e-12
+            proche(c, kjk, 0.20, "C du coude, er %.1f, w/h %.2f" % (er, u))
+
+
+T("le coude etroit (w/h < 1) suit la formule publiee, contre Kirschning-Jansen",
+  le_coude_etroit_suit_la_formule_publiee)
+
+
 print("\n" + "-" * 62)
 print("  %d cas, %s" % (ok + ko, "tous passes" if not ko else "%d en echec" % ko))
 sys.exit(1 if ko else 0)

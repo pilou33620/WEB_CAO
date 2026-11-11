@@ -2,6 +2,26 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.10.0
+# Date: 2026-11-11
+# Explication: TROIS CORRECTIONS DE L'AUDIT DE JUSTESSE NUMERIQUE.
+#   1. DEUX DIELECTRIQUES DIFFERENTS NE SE MOYENNENT PLUS. `geometry` peut
+#      porter `strates` = {dessous, dessus, plan_dessus}, les dielectriques
+#      couche par couche du ruban vers l'exterieur ; `_milieu` prend alors
+#      `green_spectral_multicouche` (Laplace spectral exact, recursion
+#      d'admittance). Prepreg 0,1 mm er 3,6 sous ame 1,0 mm er 4,6 : eps_eff
+#      3,92 au lieu de 4,51, Z0 +6,7 %. Sans `strates`, rien ne change.
+#   2. LA QUADRATURE SUIT L'ETENDUE (`_n_quadrature`) : au-dela de w/h = 100
+#      les 300 points decrochaient sans rien dire (eps_eff 5,06 > er 4,3 a
+#      w/h = 1000). En dessous, au bit pres comme avant.
+#   3. LE COUDE ETROIT (w/h < 1) : le crochet entier se divise par
+#      racine(w/h), plus 0,02 er/(w/h) -- la formule publiee, recoupee par
+#      Kirschning-Jansen-Koster. 0,2 fF -> 5,7 fF sur 0,3 mm a 1,6 mm du plan.
+# Fonctions ajoutees : green_spectral_multicouche, _milieu_strates,
+#   _n_quadrature. Constante : N_QUADRATURE_MAX.
+# Fonctions modifiees : _milieu, capacitance, capacitance_coplanaire,
+#   capacitance_matrice, elements_coude.
+#
 # Version: 2.9.0
 # Date: 2026-10-11
 # Explication: SANS PLAN. Une piste qu'aucun plan ne reference, bordee de
@@ -428,7 +448,7 @@ import math
 import numpy as np
 
 
-VERSION = "2.9.0"
+VERSION = "2.10.0"
 
 
 def etat():
@@ -619,6 +639,92 @@ def green_spectral_strip(beta, y0, b, epsilon_r):
     rapport = (np.expm1(-2.0 * b1) * np.expm1(-2.0 * b2)
                / (-2.0 * np.expm1(-2.0 * (b1 + b2))))
     return rapport / (EPSILON_0 * epsilon_r * beta)
+
+
+def green_spectral_multicouche(beta, dessous, dessus=(), plan_dessus=False):
+    """Ruban entre DEUX EMPILEMENTS de dielectriques differents (2.10.0).
+
+    `dessous` et `dessus` : [(er, epaisseur en m), ...] du ruban vers
+    l'exterieur. `dessous` finit sur un plan ; `dessus` finit sur un plan
+    (`plan_dessus`, la triplaque) ou dans l'air (microruban nu, couvert,
+    verni) -- vide, c'est l'air tout de suite.
+
+    C'est Laplace spectral, exact comme les autres : dans chaque couche phi
+    est en sh / ch(beta y), et le rapport D_n / (eps0 beta phi) -- une
+    admittance normalisee Y -- se transporte de l'exterieur vers le ruban
+    comme une impedance le long d'une ligne :
+
+        sur un plan        Y = er coth(beta e)
+        vers l'air         Y = er (1 + er th) / (er + th)      th = th(beta e)
+        couche suivante    Y = er (Y_ext + er th) / (er + Y_ext th)
+
+    et le saut de D_n au ruban donne G = 1 / (eps0 beta (Y_dessous + Y_dessus)).
+    Une seule couche de chaque cote redonne `green_spectral_micro`,
+    `_couvert`, `_masque` et `_strip` -- le banc le verifie.
+
+    POURQUOI ELLE EXISTE : deux dielectriques differents etaient ramenes a UN
+    er, moyenne a l'epaisseur. Or le champ est du cote du plan PROCHE, donc
+    du dielectrique mince : un prepreg de 0,1 mm a er 3,6 sous une ame de
+    1,0 mm a 4,6 sortait eps_eff = 4,51 pour 3,92, Z0 a -6,7 %.
+    """
+    def admittance(couches, plan):
+        if not couches:
+            return 1.0                       # l'air, tout de suite
+        y = None
+        for er, ep in reversed(list(couches)):
+            th = np.tanh(np.clip(beta * ep, 0.0, 350.0))
+            if y is None:
+                y = er / np.maximum(th, 1e-300) if plan \
+                    else er * (1.0 + er * th) / (er + th)
+            else:
+                y = er * (y + er * th) / (er + y * th)
+        return y
+
+    return 1.0 / (EPSILON_0 * beta * (admittance(dessous, True)
+                                      + admittance(dessus, plan_dessus)))
+
+
+def _milieu_strates(geometry, strates):
+    """Le milieu d'une section dont les dielectriques different : voir
+    `green_spectral_multicouche`. `strates` = {dessous, dessus, plan_dessus},
+    epaisseurs en metres, de la face du cuivre vers l'exterieur."""
+    def lire(cle):
+        out = [(float(er), float(ep)) for er, ep in (strates.get(cle) or ())
+               if float(ep) > 0]
+        if any(not (er >= 1.0) for er, _ in out):
+            raise ValueError("strates : permittivite inferieure a 1")
+        return out
+    bas, haut = lire("dessous"), lire("dessus")
+    plan_dessus = bool(strates.get("plan_dessus"))
+    if not bas or (plan_dessus and not haut):
+        raise ValueError("strates : pas de dielectrique jusqu'au plan")
+    t = float(geometry.get("t", 0.0) or 0.0)
+    d_bas = sum(ep for _, ep in bas)
+    d_haut = sum(ep for _, ep in haut)
+    vide = lambda couches: [(1.0, ep) for _, ep in couches]
+    m = {"kind": "strip" if plan_dessus else "micro",
+         "distance": min(d_bas, d_haut) if plan_dessus else d_bas,
+         # L'asymptote de la Green : la moyenne des deux dielectriques qui
+         # TOUCHENT le ruban, comme pour le vernis.
+         "eps_moyen": EPSILON_0 * (bas[0][0] + (haut[0][0] if haut else 1.0)) / 2.0,
+         "eps_vide": EPSILON_0,
+         "g_diel": lambda be: green_spectral_multicouche(be, bas, haut, plan_dessus),
+         "g_vide": lambda be: green_spectral_multicouche(
+             be, vide(bas), vide(haut), plan_dessus),
+         "echelles": tuple(sorted({ep for _, ep in bas + haut}
+                                  | {d_bas} | ({d_haut} if haut else set()))),
+         "couvert": bool(haut) and not plan_dessus,
+         "masque": None}
+    if plan_dessus:
+        # Le meme elargissement que la triplaque homogene : Wheeler 1978 sur
+        # l'ecart equivalent 2 min(y0, b - y0), cuivre compris.
+        b_eq = 2.0 * min(d_bas, d_haut) + t
+        m["elargir"] = lambda w, ep: w + _elargissement_triplaque(w, ep, b_eq)
+    masque = geometry.get("masque")
+    if isinstance(masque, dict) and not plan_dessus:
+        m["masque"] = {"epaisseur": masque.get("epaisseur", 0.0),
+                       "epsilon_r": masque.get("epsilon_r", 3.8)}
+    return m
 
 
 # ==========================================================================
@@ -840,6 +946,27 @@ def _quadrature(distance_plan, echelles, n_quadrature, beta_max):
     return np.concatenate(betas), np.concatenate(poids)
 
 
+# Plafond de la quadrature etiree par `_n_quadrature` : w/h = 6 600.
+N_QUADRATURE_MAX = 20000
+
+
+def _n_quadrature(n_quadrature, etendue, distance_plan):
+    """Le nombre de points de quadrature, ETIRE AVEC L'ETENDUE des rubans.
+
+    Le reste spectral oscille en cos(beta x) jusqu'a x = l'etendue du ou des
+    rubans, et s'eteint en e^(-2 beta d) : il faut des noeuds en proportion
+    de etendue/d. Trois cents tiennent jusqu'a etendue/d = 100 (eps_eff a
+    0,03 % de la quadrature fine) et decrochent au-dela SANS RIEN DIRE : a
+    w/h = 1000, eps_eff sortait a 5,06 pour un er de 4,3. Trois points par
+    unite de etendue/d rendent 4,285 (Hammerstad-Jensen : 4,285). En dessous
+    de 100, rien ne change, au bit pres.
+    """
+    if not (etendue > 0 and distance_plan > 0):
+        return n_quadrature
+    return max(n_quadrature, min(N_QUADRATURE_MAX,
+                                 int(math.ceil(3.0 * etendue / distance_plan))))
+
+
 def _matrice(centres, largeurs, green, distance_plan, epsilon_moyen,
              n_quadrature=N_QUADRATURE, beta_max=BETA_MAX, echelles=None):
     """La matrice des potentiels, terme extrait + reste spectral."""
@@ -919,7 +1046,8 @@ def capacitance(largeur, green, distance_plan, epsilon_moyen,
                          " conducteur ne porte le retour")
     centres, largeurs = _panneaux(largeur, n)
     a = _matrice(centres, largeurs, green, distance_plan, epsilon_moyen,
-                 n_quadrature, echelles=echelles)
+                 _n_quadrature(n_quadrature, largeur, distance_plan),
+                 echelles=echelles)
     q = np.linalg.solve(a, np.ones(n))
     return float(np.sum(q * largeurs))
 
@@ -1031,7 +1159,8 @@ def capacitance_coplanaire(largeur, ecart_g, ecart_d, green, distance_plan,
     # intégrer, et `_quadrature` place un intervalle sur chacune.
     ech = tuple(echelles or ()) + tuple(e for e in (g, d) if e > 0)
     mat = _matrice(centres, largeurs, green, distance_plan, epsilon_moyen,
-                   n_quadrature, echelles=ech)
+                   _n_quadrature(n_quadrature, largeur, distance_plan),
+                   echelles=ech)
     q = _resoudre(mat, tension, largeurs, green)
     # La charge du RUBAN seul : c'est elle que le volt appliqué a fait monter.
     return float(np.sum(q[debut:debut + n] * ws))
@@ -1062,6 +1191,12 @@ def _milieu(geometry):
     """
     kind = geometry.get("kind", "micro")
     epsilon_r = float(geometry.get("epsilon_r", 4.3))
+
+    # DES DIELECTRIQUES DIFFERENTS (2.10.0) : l'appelant les donne couche par
+    # couche (`strates`), et c'est la Green multicouche. Sans cette cle --
+    # tout empilage homogene --, rien ne change.
+    if geometry.get("strates") and kind in ("micro", "strip"):
+        return _milieu_strates(geometry, geometry["strates"])
 
     if kind == "strip":
         b = float(geometry.get("b", 0.0))
@@ -1502,7 +1637,8 @@ def capacitance_matrice(conducteurs, ecart_g, ecart_d, green, distance_plan,
     ech = tuple(echelles or ()) + tuple(e for e in ecarts if e > 0)
 
     mat = _matrice(centres, largeurs, green, distance_plan, epsilon_moyen,
-                   n_quadrature, echelles=ech)
+                   _n_quadrature(n_quadrature, droite - gauche, distance_plan),
+                   echelles=ech)
 
     # LES N SECONDS MEMBRES D'UN COUP. `np.linalg.solve` factorise la matrice
     # une fois et substitue N fois : c'est exactement la LU reutilisee, sans
@@ -2526,7 +2662,8 @@ def elements_coude(w, h, epsilon_r, angle_deg=90.0):
     est le parametre DOMINANT, ni l'angle : un coude a dix degres pesait autant
     qu'un coude a angle droit.
 
-        w/h < 1 :  C/w = (14 er + 12,5) w/h - (1,83 er - 2,25)/racine(w/h)
+        w/h < 1 :  C/w = [(14 er + 12,5) w/h - (1,83 er - 2,25)]/racine(w/h)
+                         + 0,02 er/(w/h)
         w/h >= 1 : C/w = (9,5 er + 1,25) w/h + 5,2 er + 7,0     [pF/m]
         L/h = 100 (4 racine(w/h) - 4,21)                        [nH/m]
 
@@ -2548,7 +2685,11 @@ def elements_coude(w, h, epsilon_r, angle_deg=90.0):
 
     u = w_m / h_m
     if u < 1.0:
-        c_sur_w = (14.0 * er + 12.5) * u - (1.83 * er - 2.25) / np.sqrt(u)
+        # LE CROCHET ENTIER SE DIVISE PAR racine(w/h) (2.10.0). Jusqu'a la
+        # 2.9.0 seul le second terme l'etait, et le terme en 0,02 er/(w/h)
+        # manquait : 0,2 fF pour 5,7 sur 0,3 mm a 1,6 mm du plan.
+        c_sur_w = (((14.0 * er + 12.5) * u - (1.83 * er - 2.25)) / np.sqrt(u)
+                   + 0.02 * er / u)
     else:
         c_sur_w = (9.5 * er + 1.25) * u + 5.2 * er + 7.0
     c = max(c_sur_w, 0.0) * 1e-12 * w_m          # pF/m * m -> F

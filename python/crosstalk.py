@@ -748,7 +748,7 @@ LES FORMULES.
   Kf      = 1/2 (Lm/L11 - Cm/C11)       nul en stripline homogene
   NEXT    = Kb_max                       si 2 T_d >= t_r  (sature)
           = Sum(Kb . 2 dT) / t_r         sinon            (non sature)
-  FEXT    = |Sum(Kf . dT)| / t_r
+  FEXT    = |Sum(Kf . dT)| / t_r        plafonne a 50 % (`fext_sature`)
 Avec un couplage uniforme, Sum(Kb . 2 dT) = Kb . 2 T_d et l'on retrouve
 exactement les deux cas classiques ; avec un couplage qui varie, la somme
 pondere chaque morceau par son propre Kb, et la saturation se lit sur le
@@ -922,6 +922,8 @@ def famille(classe):
 # LES SEUILS DRC, en fraction de l'agresseur : vert dessous, rouge au-dela.
 SEUIL_ORANGE = 0.03
 SEUIL_ROUGE = 0.07
+# Le FEXT de deux lignes adaptees ne depasse pas la moitie de l'agresseur.
+FEXT_PLAFOND = 0.5
 
 DEFAUTS = {
     # -- etape 0a : la preselection geometrique
@@ -2274,7 +2276,14 @@ def niveau2(morceaux, t_r, orange=SEUIL_ORANGE, rouge=SEUIL_ROUGE,
     non_sature = 2.0 * s_kb / t_r
     sature = bool(kb_plafond > 0 and non_sature >= kb_plafond)
     nxt = kb_plafond if sature else non_sature
-    fxt = abs(s_kf) * float(att_fext) / t_r
+    # LE FEXT SATURE A 50 % : quand l'ecart de retard des modes pair et impair
+    # depasse le front, la victime ne voit plus que la demi-difference de deux
+    # echelons separes. La loi lineaire |Kf|.T_d/t_r, elle, n'a pas de borne
+    # (300 mm de microruban sous 100 ps : 75 % annonces, 50 % reels).
+    fext_brut = abs(s_kf) / t_r
+    fext_sature = bool(fext_brut >= FEXT_PLAFOND)
+    fxt = (FEXT_PLAFOND * float(att_fext) if fext_sature
+           else abs(s_kf) * float(att_fext) / t_r)
     s_n, s_f = statut(nxt, orange, rouge), statut(fxt, orange, rouge)
     return {
         # LE COUPLAGE GEOMETRIQUE PUR, au morceau le plus serre :
@@ -2286,7 +2295,7 @@ def niveau2(morceaux, t_r, orange=SEUIL_ORANGE, rouge=SEUIL_ROUGE,
         # uniforme, moins quand il culmine sur une partie du longement.
         "t_sature_ps": round(1e12 * 2.0 * s_kb / kb_max, 3) if kb_max > 0
         else 0.0,
-        "t_r": t_r, "sature": sature,
+        "t_r": t_r, "sature": sature, "fext_sature": fext_sature,
         "next": round(nxt, 6), "next_pc": round(100.0 * nxt, 3),
         "next_db": round(_db(nxt), 2),
         "fext": round(fxt, 6), "fext_pc": round(100.0 * fxt, 3),
@@ -5474,7 +5483,7 @@ def _hypotheses(reglages, masse, seuils, base):
         " Kf = ½ (Lm/L11 − Cm/C11), avec C11 la diagonale de Maxwell (capacité"
         " totale) et [C], [L] résolues par la méthode des moments sur la coupe"
         " de chaque bloc. NEXT = Kb si 2·T_d ≥ t_r (saturé), Kb·2·T_d / t_r"
-        " sinon ; FEXT = |Kf|·T_d / t_r. T_d est le retard de la victime le"
+        " sinon ; FEXT = |Kf|·T_d / t_r, plafonné à 50 %. T_d est le retard de la victime le"
         " long du COUPLAGE, sommé bloc par bloc avec v = c0/√ε_eff : un"
         " longement dont l'écart varie est compté morceau par morceau, et la"
         " saturation se lit sur le plus fort des Kb.",

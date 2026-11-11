@@ -2236,7 +2236,16 @@ def les_formules_du_niveau_2():
     mix = ct.niveau2([(0.10, 0.0, 50e-12), (0.01, 0.0, 50e-12)], 1e-9)
     assert abs(mix["next"] - (0.10 * 100e-12 + 0.01 * 100e-12) / 1e-9) < 1e-12
     assert ct.niveau2([(0.10, 0.0, 1e-9)], 100e-12)["next"] == 0.10
-    # LES SEUILS : vert < 3 %, orange de 3 a 7 %, rouge > 7 %, reglables.
+    # LE FEXT NE DEPASSE PAS 50 %, et le dit (`fext_sature`), comme le NEXT
+    # dit `sature`. 300 mm de microruban (Kf = 4,2 %, T_d = 1785 ps) sous
+    # 100 ps : 74,6 % par la loi lineaire, 49,7 % par la simulation exacte de
+    # deux lignes couplees adaptees. Avec pertes, le plafond s'attenue aussi.
+    loin = ct.niveau2([(0.0818, 0.0418, 1785e-12)], 100e-12)
+    assert loin["fext"] == 0.5 and loin["fext_sature"] is True, loin
+    assert loin["statut_fext"] == "rouge", loin
+    assert vif["fext_sature"] is False and lent["fext_sature"] is False
+    perdu = ct.niveau2([(0.0818, 0.0418, 1785e-12)], 100e-12, att_fext=0.8)
+    assert abs(perdu["fext"] - 0.4) < 1e-9 and perdu["fext_sature"], perdu
     assert ct.statut(0.029) == "vert" and ct.statut(0.03) == "orange"
     assert ct.statut(0.07) == "orange" and ct.statut(0.0701) == "rouge"
     assert ct.statut(0.05, 0.01, 0.04) == "rouge"

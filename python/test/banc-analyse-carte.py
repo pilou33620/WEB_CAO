@@ -413,6 +413,21 @@ def test_diaphonie():
     print("[PASS] test_diaphonie")
 
 
+def test_diaphonie_fext_plafonne():
+    # 300 mm de microruban sous 50 ps : la loi linéaire |Kf|·Td/t_r annonçait
+    # plus de 100 % ; deux lignes adaptées ne dépassent pas 50 %, et la paire
+    # le dit comme elle dit le NEXT saturé.
+    res = analyser(pistes=[droite("CLK", 0.0, x2=300.0), droite("DATA", 0.4, x2=300.0)],
+                   natures={"CLK": "Horloge", "DATA": "Lent"},
+                   reglages={"xt_tr": 50e-12})
+    p = res["bilan"]["diaphonie"]["paires"][0]
+    assert p["fext"] == 0.5 and p["fext_sature"] is True, p
+    court = analyser(pistes=[droite("CLK", 0.0), droite("DATA", 0.4)],
+                     natures={"CLK": "Horloge", "DATA": "Lent"})
+    q = court["bilan"]["diaphonie"]["paires"][0]
+    assert q["fext"] < 0.5 and q["fext_sature"] is False, q
+
+
 def test_diaphonie_garde_seuil_front_rf():
     """Les constats de la carte d'essai du banc crosstalk, côté « toute la carte »."""
     import crosstalk as ct
@@ -1139,6 +1154,7 @@ if __name__ == "__main__":
     test_retour_gnd_vers_alim()
     test_retour_cavite_modale()
     test_diaphonie()
+    test_diaphonie_fext_plafonne()
     test_diaphonie_garde_seuil_front_rf()
     test_diaphonie_fente()
     test_document_sans_empilage()
