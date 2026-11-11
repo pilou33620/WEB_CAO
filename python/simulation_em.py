@@ -8251,6 +8251,16 @@ def simuler(doc, journal=None, garder_abcd=False, freqs_imposees=None):
     }
     if garder_abcd:
         resultat["abcd"] = abcds
+        # LA RESISTANCE CONTINUE DE LA LIGNE, en ohms : `R_dc` de
+        # `ligne_mom.line_losses` (1 / sigma w t) sur chaque troncon. Au
+        # premier point de la grille, l'effet de peau est deja la et Re(B)
+        # vaut 1,3 a 2,6 fois ce chiffre : l'oeil en tire son niveau etabli.
+        # Les vias et les coudes de la cascade n'ont pas de resistance serie.
+        resultat["r_continu"] = float(sum(
+            seg["longueur"] / (tl.SIGMA_CU * seg["largeur"] * seg["cuivre"])
+            * 1e3 for seg in segments
+            if seg.get("z0", 0) > 0 and seg.get("largeur", 0) > 0
+            and seg.get("cuivre", 0) > 0))
     return resultat
 
 

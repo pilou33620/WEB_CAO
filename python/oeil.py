@@ -754,31 +754,39 @@ def _gain_continu_ctle(spec):
     return float(spec.get("adc", 10.0 ** (float(spec.get("adc_db", 0.0)) / 20.0)))
 
 
-def transfert(abcds, freqs, r_source, r_charge, c_charge):
+def r_continu(abcds, exces=0.0):
+    """LA RESISTANCE SERIE CONTINUE de la cascade : au continu une ligne
+    n'est plus que sa resistance serie, que la partie reelle de B au premier
+    point approche -- trop haut, l'effet de peau y est deja (1,3 a 2,6 fois
+    la resistance continue). `exces` est ce surplus, celui de la ligne seule
+    (`analyser` le pose dans `p["exces_continu"]`, d'apres le `r_continu`
+    de `simulation_em`) : boitiers et condensateurs poses autour gardent
+    leur part."""
+    b = np.asarray(abcds, dtype=complex)[:, 0, 1]
+    return max(0.0, float(np.real(b[0])) - exces) if len(b) else 0.0
+
+
+def transfert(abcds, freqs, r_source, r_charge, c_charge, exces=0.0):
     """V_charge / V_generateur a travers la cascade ABCD, sur `freqs`.
 
         H = 1 / (A + B Y_L + Z_s (C + D Y_L)),  Y_L = 1/R_L + j w C_L
 
-    R_L nul ou infini : haute impedance, il ne reste que la capacite."""
+    R_L nul ou infini : haute impedance, il ne reste que la capacite.
+    `exces` : voir `r_continu`."""
     m = np.asarray(abcds, dtype=complex)
     a, b, c, d = m[:, 0, 0], m[:, 0, 1], m[:, 1, 0], m[:, 1, 1]
     w = 2 * math.pi * np.asarray(freqs, dtype=float)
     g_l = (1.0 / r_charge) if (r_charge and r_charge < 1e9) else 0.0
     y_l = g_l + 1j * w * c_charge
     h = 1.0 / (a + b * y_l + r_source * (c + d * y_l))
-    # LE CONTINU, extrapole : au continu une ligne n'est plus que sa
-    # resistance serie, que la partie reelle de B au premier point approche.
-    # shortcut: a df l'effet de peau est deja la -- Re(B) y vaut 1,3 a 2,6
-    # fois la resistance continue, et le niveau etabli sort trop bas de
-    # 0,24 % (60 mm), 0,40 % (300 mm), 0,78 % (1 m) entre 50 et 50 ohms. A
-    # reprendre quand `simulation_em.simuler` rendra la resistance continue
-    # de la cascade ; les autres lectures de Re(B[0]) suivront.
-    r_ligne = max(0.0, float(np.real(b[0]))) if len(b) else 0.0
+    # LE CONTINU : la resistance serie de la cascade (`r_continu`).
+    r_ligne = r_continu(m, exces)
     h0 = 1.0 / (1.0 + (r_ligne + r_source) * g_l)
     return h, h0
 
 
-def continu_couplage_ac(ca, abcds, freqs, r_source, r_charge, c_charge):
+def continu_couplage_ac(ca, abcds, freqs, r_source, r_charge, c_charge,
+                        exces=0.0):
     """La case du continu de l'IFFT quand la cascade porte des condensateurs
     de liaison (voir l'en-tete « LES CONDENSATEURS DE LIAISON ») : le
     transfert au continu avec `resistance_continu_ac` a la place du
@@ -787,8 +795,7 @@ def continu_couplage_ac(ca, abcds, freqs, r_source, r_charge, c_charge):
     le continu SANS condensateur, celui autour duquel l'oeil se centre."""
     freqs = np.asarray(freqs, dtype=float)
     g_l = (1.0 / r_charge) if (r_charge and r_charge < 1e9) else 0.0
-    b = np.asarray(abcds, dtype=complex)[:, 0, 1]
-    r_ligne = max(0.0, float(np.real(b[0]))) if len(b) else 0.0
+    r_ligne = r_continu(abcds, exces)
     if g_l <= 0:
         return ca["c_x"] / (ca["c_x"] + c_charge) if c_charge > 0 else 1.0
     r_x = resistance_continu_ac(ca["c_x"], r_ligne + r_source + 1.0 / g_l,
@@ -804,15 +811,14 @@ def _continu_ac_simple(ca, abcds, freqs, p):
     (`continu_couplage_ac`). (None, None) sans condensateur."""
     if not ca:
         return None, None
+    exces = p.get("exces_continu", 0.0)
     h0_bin = continu_couplage_ac(ca, abcds, freqs, p["r_source"],
-                                 p["r_charge"], p["c_charge"])
+                                 p["r_charge"], p["c_charge"], exces)
     if not (0 < p["r_charge"] < 1e9):
         return h0_bin, None
-    b = np.asarray(abcds, dtype=complex)[:, 0, 1]
-    r_ligne = max(0.0, float(np.real(b[0]))) if len(b) else 0.0
-    r_tot = r_ligne + p["r_source"] + p["r_charge"]
+    r_tot = r_continu(abcds, exces) + p["r_source"] + p["r_charge"]
     _, h0 = transfert(np.asarray(abcds, dtype=complex)[:1], freqs[:1],
-                      p["r_source"], p["r_charge"], p["c_charge"])
+                      p["r_source"], p["r_charge"], p["c_charge"], exces)
     return h0_bin, {"h0": float(h0), "tau": ca["c_x"] * r_tot}
 
 
@@ -1699,7 +1705,7 @@ def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None,
         h, h0 = None, float(nl.get("x0", 1.0))
     elif arr.ndim == 3:
         h, h0 = transfert(arr, freqs, p["r_source"], p["r_charge"],
-                          p["c_charge"])
+                          p["c_charge"], p.get("exces_continu", 0.0))
         if ca and h0_bin is None and lent is None:
             h0_bin, lent = _continu_ac_simple(ca, arr, freqs, p)
     else:
@@ -2760,7 +2766,9 @@ def simuler_non_lineaire(ctx, freqs, abcds, p, r0):
         r0 = r0 / 2.0
     g_l = (1.0 / r_l) if 0 < r_l < 1e9 else 0.0
     y_l = g_l + 2j * math.pi * freqs * c_l
-    r_ligne = max(0.0, float(np.real(abcd[0, 0, 1])))
+    # en differentiel, le demi-circuit porte la moitie de l'exces
+    r_ligne = r_continu(abcd, p.get("exces_continu", 0.0) / (2.0 if diff
+                                                             else 1.0))
     ca = p.get("couplage_ac")
     if ca and len(freqs) > 1:
         # Le continu des condensateurs de liaison (voir l'en-tete) : le
@@ -2847,6 +2855,10 @@ def _boitiers_brin(freqs, bt, mut, sens, cpl=None, symetrique=False):
 def _continu_brins(m):
     """La paire par brin (N, 4, 4) au continu, (1, 4, 4) : les resistances
     serie, que la partie reelle de B au premier point approche."""
+    # shortcut: le continu de la paire par brin reste Re(B) au premier point,
+    # effet de peau compris (niveau etabli bas de quelques 0,1 %) ; a
+    # reprendre quand `simulation_em` rendra la resistance continue de
+    # chaque brin d'une paire dissymetrique.
     m0 = np.zeros((1, 4, 4), dtype=complex)
     m0[0] = np.eye(4)
     m0[0, :2, 2:] = np.real(np.asarray(m)[0, :2, 2:])
@@ -2985,9 +2997,11 @@ def _canal_paire(ctx, freqs, abcd_dd, abcd_cc, p, r0, dt, symetrique=False,
     else:
         m = ibis.abcd_brins(abcd_dd, abcd_cc)
         m0 = ibis.abcd_brins(
-            np.array([[[1.0, max(0.0, float(np.real(abcd_dd[0][0][1])))],
+            np.array([[[1.0, r_continu(abcd_dd,
+                                       p.get("exces_continu", 0.0))],
                        [0.0, 1.0]]]),
-            np.array([[[1.0, max(0.0, float(np.real(abcd_cc[0][0][1])))],
+            np.array([[[1.0, r_continu(abcd_cc,
+                                       p.get("exces_continu_cc", 0.0))],
                        [0.0, 1.0]]]))
     lg = None
     if surlongueur and not symetrique:
@@ -3301,7 +3315,7 @@ def _echelon_canal(freqs, canal, h0, h0_bin, p, nl, lent=None):
         arr = np.asarray(canal)
         if arr.ndim == 3:
             h, h0 = transfert(arr, freqs, p["r_source"], p["r_charge"],
-                              p["c_charge"])
+                              p["c_charge"], p.get("exces_continu", 0.0))
             if p.get("couplage_ac") and h0_bin is None and lent is None:
                 h0_bin, lent = _continu_ac_simple(p["couplage_ac"], arr,
                                                   freqs, p)
@@ -3905,6 +3919,16 @@ def analyser(doc, journal=None, racines_ami=None):
                       "simulée en demi-circuit du mode impair, le mode "
                       "commun tenu fixe — décalage et dissymétries des deux "
                       "brins ne sont pas suivis.")
+    # -- le continu vrai de la ligne (`r_continu`) --------------------------
+    # Le surplus d'effet de peau que la ligne porte deja au premier point,
+    # par mode : le differentiel voit deux brins en serie, le commun deux en
+    # parallele. La paire par brin garde le sien (`_continu_brins`).
+    if m_brins is None and res.get("r_continu") is not None:
+        r_dc = float(res["r_continu"])
+        k_dc = 2.0 if p["mode"] == "diff" else 1.0
+        p["exces_continu"] = r_continu(abcds) - k_dc * r_dc
+        if abcd_cc is not None:
+            p["exces_continu_cc"] = r_continu(abcd_cc) - 0.5 * r_dc
     # -- les condensateurs de liaison, dans les cascades du canal ---------
     # Entre le boitier et la piste : devant le canal (position emetteur) ou
     # derriere (recepteur), avant que les boitiers IBIS ne les encadrent.
@@ -4067,7 +4091,8 @@ def analyser(doc, journal=None, racines_ami=None):
                        if p["mode"] == "diff" else None),
         "ligne": res.get("ligne"),
         "avertissements_ligne": res.get("avertissements") or [],
-        "parametres": {k: v for k, v in p.items() if k != "ctle"},
+        "parametres": {k: v for k, v in p.items() if k not in (
+            "ctle", "exces_continu", "exces_continu_cc")},
         "duree": round(time.time() - debut, 3),
     })
     if m_brins is not None:
