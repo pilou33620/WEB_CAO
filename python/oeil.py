@@ -768,6 +768,11 @@ def transfert(abcds, freqs, r_source, r_charge, c_charge):
     h = 1.0 / (a + b * y_l + r_source * (c + d * y_l))
     # LE CONTINU, extrapole : au continu une ligne n'est plus que sa
     # resistance serie, que la partie reelle de B au premier point approche.
+    # shortcut: a df l'effet de peau est deja la -- Re(B) y vaut 1,3 a 2,6
+    # fois la resistance continue, et le niveau etabli sort trop bas de
+    # 0,24 % (60 mm), 0,40 % (300 mm), 0,78 % (1 m) entre 50 et 50 ohms. A
+    # reprendre quand `simulation_em.simuler` rendra la resistance continue
+    # de la cascade ; les autres lectures de Re(B[0]) suivront.
     r_ligne = max(0.0, float(np.real(b[0]))) if len(b) else 0.0
     h0 = 1.0 / (1.0 + (r_ligne + r_source) * g_l)
     return h, h0
@@ -1914,6 +1919,9 @@ def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None,
             y = np.fft.irfft(np.fft.rfft(y) * ctle(fy, m["spec"]), ns)
     else:
         y = v_c + amp * np.fft.irfft(np.fft.rfft(imp) * np.fft.rfft(pp), ns)
+    # En PRBS15 chaque tableau de `ns` flottants pese 17 Mo : ceux qui ne
+    # servent plus sont rendus (pic de 219 Mo ramene a 126).
+    del imp, pp
     # LE DFE, sur la forme d'onde : la contre-reaction du bit n vaut
     # sum d_j a_(n-j) et tient toute l'UI centree sur son echantillonnage.
     if prises:
@@ -1923,9 +1931,7 @@ def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None,
         rang = ((np.arange(ns) - i_s + spu // 2) // spu) % nb
         y = y - fb[rang]
     # Le rang de chaque echantillon dans les deux UI affichees.
-    rel = (np.arange(ns) - i_s) % ns
-    col = (rel + spu) % (2 * spu)
-    tau_ech = (col - spu) / float(spu)
+    col = ((np.arange(ns, dtype=np.int32) - i_s) % ns + spu) % (2 * spu)
     # Hauteur et largeur PRBS, phase par phase.
     idx_bits = np.arange(nb) * spu
     uns = a > 0
@@ -1975,6 +1981,7 @@ def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None,
                  "lieu": gab.get("lieu", ""), "polygone": poly,
                  "v_max": gab.get("v_max"), "v_min": gab.get("v_min")}
         if poly and len(poly) >= 3:
+            tau_ech = (col - spu) / float(spu)
             dans = np.abs(tau_ech) <= 0.5 + 1e-9
             jg = jauge(poly, np.stack([tau_ech[dans], y[dans]], axis=1))
             mes_g = {"violations": int(np.sum(jg < 1.0)),
@@ -2070,13 +2077,21 @@ def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None,
     r1 = np.roll(ligne_v, -1)
     bas_r = np.minimum(r0, r1)
     n_r = np.abs(r1 - r0) + 1
-    debut_r = np.cumsum(n_r) - n_r
+    debut_r = np.cumsum(n_r, dtype=np.int64) - n_r
     total = int(n_r.sum())
-    cases = np.repeat((bas_r.astype(np.int64) - debut_r) * (2 * spu) + col,
-                      n_r)
-    cases += np.arange(total, dtype=np.int64) * (2 * spu)
+    # (bas_r - debut_r) * 2 spu + col, puis + rang * 2 spu : en place, pour
+    # ne pas tenir quatre tableaux de plus en PRBS15.
+    debut_r -= bas_r
+    debut_r *= -2 * spu
+    debut_r += col
+    cases = np.repeat(debut_r, n_r)
+    del bas_r, debut_r
+    rangs = np.arange(total, dtype=np.int64)
+    rangs *= 2 * spu
+    cases += rangs
+    del rangs
     comptes = np.bincount(cases, minlength=ny * 2 * spu)
-    del cases, r0, r1, bas_r, n_r, debut_r
+    del cases, r0, r1, n_r
 
     # -- la reponse a un bit, pour la figure et l'export -----------------
     debut = max(0, i_s - 2 * spu)
@@ -3318,6 +3333,16 @@ def _decaler_ffe(s, ffe, spu):
     return out
 
 
+def _un_bit(s, spu):
+    """La reponse a un bit d'une reponse a un echelon, TENUE UNE UI DE PLUS,
+    comme dans `oeil`. Coupee a la longueur de l'echelon, elle s'arretait sur
+    s(fin) - s(fin - UI) au lieu de redescendre a zero : sur une ligne a
+    pertes, dont la queue traine, la forme d'onde du flot AMI s'ecartait de
+    2,8e-6 de celle de l'oeil pour un modele qui ne fait rien."""
+    return (np.concatenate([s, np.full(spu, s[-1])])
+            - np.concatenate([np.zeros(spu), s]))
+
+
 def _onde_lineaire(bits, p_bit, spu, amp, v_c):
     """La forme d'onde periodique d'une sequence par superposition de la
     reponse a un bit `p_bit` (au pas UI / spu) : ce que fait `oeil` en
@@ -3463,8 +3488,8 @@ def executer_ami(ami, p, freqs, canal, h0, h0_bin, nl, racines, notes,
     s_stat = np.cumsum(imp_rx) * dt_e / swing
     s_tx = np.cumsum(imp_tx) * dt_e / swing
     x0_ami = float(np.mean(s_stat[-max(1, spu):]))
-    p_tx = s_tx - np.concatenate([np.zeros(spu), s_tx[:-spu]])
-    p_rx = s_stat - np.concatenate([np.zeros(spu), s_stat[:-spu]])
+    p_tx = _un_bit(s_tx, spu)
+    p_rx = _un_bit(s_stat, spu)
     # Le niveau moyen : celui du canal pour la forme d'onde qui ENTRE dans
     # le modele du recepteur, celui que le modele rend pour l'oeil.
     v_in, v_c = v_mil * x0, v_mil * x0_ami
@@ -3478,7 +3503,7 @@ def executer_ami(ami, p, freqs, canal, h0, h0_bin, nl, racines, notes,
     ignore_tx = int(_nombre(ibis.reserve_ami(lus["emetteur"], "Ignore_Bits",
                                              0) if tx is not None else 0, 0))
     s_b = np.asarray(s_brut, dtype=float)
-    p_brut = s_b - np.concatenate([np.zeros(spu), s_b[:-spu]])
+    p_brut = _un_bit(s_b, spu)
     # LE RECEPTEUR SANS GETWAVE, DERRIERE UN EMETTEUR A GETWAVE : son
     # egaliseur seul, sur le canal BRUT -- une seconde instance, initialisee
     # sur l'impulsion du canal sans l'emetteur (c'est elle que la forme

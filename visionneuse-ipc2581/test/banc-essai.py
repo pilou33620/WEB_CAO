@@ -1572,6 +1572,20 @@ def arc_decoupe_selon_l_unite():
 T(u"un arc de polygone se decoupe tous les 0,05 mm, meme en pouces", arc_decoupe_selon_l_unite)
 
 
+def coordonnee_non_finie_ignoree():
+    ligne = u'<Line startX="%s" startY="0" endX="1" endY="0"><LineDesc lineWidth="0.2"/></Line>'
+    arc = (u'<Arc startX="0" startY="0" endX="2" endY="0" centerX="%s" centerY="0" clockwise="true">'
+           u'<LineDesc lineWidth="0.2"/></Arc>')
+    for mauvais in (u"inf", u"nan", u"1e400"):
+        m = _modele(_mini(step=u"""
+    <LayerFeature layerRef="TOP"><Set net="A"><Features>%s%s%s</Features></Set></LayerFeature>"""
+                          % (ligne % u"0", ligne % mauvais, arc % mauvais)))
+        assert m["stats"]["pistes"] == 1, (mauvais, m["stats"])
+
+
+T(u"une coordonnee inf ou nan fait ignorer la forme, pas tomber l'import", coordonnee_non_finie_ignoree)
+
+
 # =============================================================================
 print(u"-" * 62)
 if ECHECS:

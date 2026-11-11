@@ -2572,10 +2572,11 @@ def le_modele_ami_execute_concorde_avec_la_ffe_interne():
     assert ex["parametres_out"] == {"c0": 1.0, "c1": 0.0, "taps": 2.0}, ex
     assert ex["parametres_in"] == "(ffe_test (c0 1) (c1 0) (echec 0))", ex
     assert "64 ech./bit" in ex["message"]
-    # 1e-5 et non 1e-6 : la chaine AMI (GetWave par blocs) ecarte deja l'identite de
-    # 3e-7 ; avec la ligne a pertes en RLGC exact, de 2,8e-6 (cause non etablie).
+    # 1e-6 : il reste 6e-8, la reponse a un echelon du flot AMI etant tenue a
+    # sa valeur un pas d'oeil plus tot que celle de l'oeil. Les 2,8e-6 d'avant
+    # venaient de la reponse a un bit coupee une UI trop tot (`oeil._un_bit`).
     for cle in ("hauteur_prbs", "hauteur_pire", "retard"):
-        proche(rid["mesures"][cle], m0[cle], 1e-5, "identite : " + cle)
+        proche(rid["mesures"][cle], m0[cle], 1e-6, "identite : " + cle)
     assert rid["mesures"]["largeur_prbs_ui"] == m0["largeur_prbs_ui"]
     assert any("exécuté(s) : récepteur" in a for a in rid["avertissements"])
     assert rid["ami"]["execution_ok"] == ["recepteur"]
@@ -2628,6 +2629,29 @@ def le_modele_ami_execute_concorde_avec_la_ffe_interne():
             assert "AMI_Init" in exc.message
         else:
             raise AssertionError("libm prise pour un modele AMI")
+
+
+def le_prbs15_tient_dans_un_petit_poste():
+    """32767 bits a 64 echantillons : chaque tableau pese 17 Mo, et l'oeil en
+    tenait treize a la fois (219 Mo). Les tableaux morts sont rendus : 126 Mo,
+    et le PRBS15 atteint toujours le pire cas de la liaison."""
+    import tracemalloc
+    o = {"debit": 1e8, "tr": 50e-12, "v_haut": 1.0, "v_bas": 0.0,
+         "r_source": 20.0, "r_charge": 0.0, "c_charge": 0.0, "motif": "prbs15"}
+    p = oeil._params(o, None)
+    df, n, _, _ = oeil.grille(1e8, 50e-12, 20e-9)
+    f = df * np.arange(1, n + 1)
+    canal = oeil.ligne_ideale(f, 50.0, 20e-9, 1.0)
+    tracemalloc.start()
+    try:
+        r = oeil.oeil(f, canal, p, None)
+        pic = tracemalloc.get_traced_memory()[1] / 1e6
+    finally:
+        tracemalloc.stop()
+    assert pic < 160.0, pic
+    m = r["mesures"]
+    proche(m["hauteur_prbs"], m["hauteur_pire"], 1e-6, "hauteur")
+    assert sum(r["densite"]["comptes"]) >= 32767 * 64
 
 
 for nom, fn in list(globals().items()):
