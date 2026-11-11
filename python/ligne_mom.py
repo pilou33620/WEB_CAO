@@ -2,6 +2,27 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.12.0
+# Date: 2026-11-12
+# Explication: LES FLANCS DU CUIVRE EPAIS SONT DANS L'AIR (constat 30 de
+#   l'audit de justesse numerique). Le ruban mince elargi qui remplace le
+#   cuivre epais avait la meme largeur avec et sans dielectrique : eps_eff
+#   MONTAIT avec l'epaisseur (+5 % a 35 um sur 0,3 / 0,2 mm, +17 % a 210 um,
+#   +18 % sur le mode impair d'une paire), soit +2,5 a +8 % de retard. C'est
+#   desormais Hammerstad-Jensen 1980 ecrit en capacites : elargissement plein
+#   dans l'air (`_largeur_effective`, leur eq. 6 et non plus Wheeler ruban
+#   large), reduit avec le dielectrique (`_part_des_flancs`, eq. 7, etendue
+#   au vernis et a la couverture), et C = C(w_d) C0(w_d) / C0(w) -- un calcul
+#   de plus par section a cuivre epais, aucun en triplaque. Contre differences
+#   finies 2D a cuivre epais, t de 17,5 a 210 um : microruban nu 0,4 % sur Z0
+#   et 0,6 % sur eps_eff, verni 0,6 % et 1 %, eps_eff d'une paire 1,3 %.
+#   CE QUI RESTE : les flancs EN REGARD (paire serree, masse coplanaire) ne
+#   sont pas un condensateur dans ce modele ; Z0 en sort 1 a 7 % trop haute
+#   et le resultat le dit (`flancs_en_regard`, FLANCS_EN_REGARD).
+# Fonctions ajoutees : _part_des_flancs, _flancs_en_regard.
+# Fonctions modifiees : _largeur_effective, _milieu, _milieu_strates,
+#   solve_line, solve_multiline.
+#
 # Version: 2.11.0
 # Date: 2026-11-12
 # Explication: DEUX CORRECTIONS DE PLUS DE L'AUDIT DE JUSTESSE NUMERIQUE.
@@ -464,7 +485,7 @@ import math
 import numpy as np
 
 
-VERSION = "2.11.0"
+VERSION = "2.12.0"
 
 
 def etat():
@@ -731,7 +752,10 @@ def _milieu_strates(geometry, strates):
                                   | {d_bas} | ({d_haut} if haut else set()))),
          "couvert": bool(haut) and not plan_dessus,
          "masque": None}
-    if plan_dessus:
+    if not plan_dessus:
+        m["flancs"] = _part_des_flancs(bas[0][0], t, d_haut,
+                                       haut[0][0] if haut else 1.0)
+    else:
         # Le meme elargissement que la triplaque homogene : Wheeler 1978 sur
         # l'ecart equivalent 2 min(y0, b - y0), cuivre compris.
         b_eq = 2.0 * min(d_bas, d_haut) + t
@@ -1253,6 +1277,10 @@ def _milieu(geometry):
         # PAS DE PLAN : le stratifie d'epaisseur h, de l'air dessus et
         # dessous, et la masse coplanaire pour seul retour. Ni couverture ni
         # vernis : la Green en images ne connait qu'une plaque.
+        # shortcut: le cuivre epais y garde UNE largeur (pas de cle
+        # « flancs ») et l'elargissement du microruban, faute d'etalon a
+        # cuivre epais sans plan ; eps_eff y est sans doute trop haute comme
+        # elle l'etait avec plan (constat 30). A reprendre avec lui.
         h = float(geometry.get("h", 0.0))
         if not (h > 0):
             raise ValueError("sans plan : epaisseur de stratifie nulle")
@@ -1343,7 +1371,51 @@ def _milieu(geometry):
             "g_vide": lambda be: green_spectral_micro(be, h, 1.0),
             "echelles": (h,),
         })
+    if masque_epaisseur > 0:
+        commun["flancs"] = _part_des_flancs(epsilon_r, t, masque_epaisseur,
+                                            masque_epsilon)
+    else:
+        commun["flancs"] = _part_des_flancs(epsilon_r, t, c_diel, epsilon_r)
     return commun
+
+
+def _part_des_flancs(epsilon_r, epaisseur, dessus=0.0, epsilon_dessus=1.0):
+    """La part de l'elargissement qui vaut pour le calcul AVEC dielectrique.
+
+    LES FLANCS D'UNE PISTE EXTERIEURE SONT DANS L'AIR. Le ruban mince elargi
+    qui remplace le cuivre epais n'a donc pas la meme largeur avec et sans
+    dielectrique : Hammerstad et Jensen (« Accurate Models for Microstrip
+    Computer-Aided Design », IEEE MTT-S Digest 1980, eq. 6-7) elargissent de
+    du1 dans l'air et de
+
+        dur = du1 (1 + 1/cosh racine(er - 1)) / 2
+
+    avec le dielectrique, puis  Z0 = Z01(ur) / racine(eps(ur))  et
+    eps_eff = eps(ur) [Z01(u1) / Z01(ur)]^2. La meme largeur des deux cotes
+    -- ce que le module faisait -- mettait les flancs dans le stratifie :
+    eps_eff MONTAIT avec l'epaisseur au lieu de baisser, +5 % a 35 um sur
+    0,3 / 0,2 mm, +17 % a 210 um, soit +2,5 a +8 % de retard (constat 30).
+
+    `dessus`, `epsilon_dessus` : l'epaisseur et la permittivite du
+    dielectrique AU-DESSUS du ruban (vernis ou couverture). Sans lui les
+    flancs sont dans l'air et c'est la formule ; epais devant le cuivre, ils
+    y sont noyes et c'est la meme formule avec le contraste er / er_dessus
+    -- 1 exactement sous une couverture du meme stratifie, ce que le module
+    a toujours fait.
+    shortcut: entre les deux, interpolation en dessus / (dessus + t), sans
+    source publiee -- verifiee sur differences finies pour un vernis conforme
+    de 25 um a er 3,8 et une couverture de 0,2-0,3 mm seulement (banc :
+    eps_eff a 1 %) ; a reprendre par un solveur a cuivre epais si un autre
+    vernis doit tenir mieux.
+    """
+    def part(contraste):
+        return 0.5 * (1.0 + 1.0 / math.cosh(
+            math.sqrt(max(contraste - 1.0, 0.0))))
+    nu = part(epsilon_r)
+    if not (dessus > 0 and epaisseur > 0):
+        return nu
+    noye = part(epsilon_r / max(epsilon_dessus, 1.0))
+    return nu + (noye - nu) * dessus / (dessus + epaisseur)
 
 
 def _largeur_effective(largeur, epaisseur, distance_plan):
@@ -1351,24 +1423,59 @@ def _largeur_effective(largeur, epaisseur, distance_plan):
 
     La méthode traite un ruban d'épaisseur nulle. Un ruban épais porte plus de
     charge sur ses flancs : il se comporte comme un ruban mince un peu plus
-    large, et c'est la correction de Wheeler qui le dit. Sur du 35 µm sous
-    0,2 mm de diélectrique elle vaut une dizaine de pour cent de largeur, soit
-    quelques pour cent d'impédance — pas de quoi l'ignorer.
+    large. C'est l'élargissement DANS L'AIR de Hammerstad-Jensen 1980, celui
+    de `_z_air_microruban` :
+
+        dw = (t/pi) ln(1 + 4e h / (t coth^2 racine(6,517 w/h)))
+
+    Sur du 35 µm sous 0,2 mm de diélectrique il vaut une dizaine de pour cent
+    de largeur, soit quelques pour cent d'impédance — pas de quoi l'ignorer.
+    Avant le constat 30 c'était la forme de Wheeler pour ruban large,
+    (t/pi)(1 + ln(2h/t)), plus courte de (t/pi) ln 2 : la capacité dans l'air
+    en sortait 1,5 % trop basse, ce que les flancs comptés dans le stratifié
+    compensaient sur Z0 -- et pas sur eps_eff. Avec le diélectrique, la part
+    à retenir est `_part_des_flancs`.
     """
-    if not (epaisseur > 0) or not (distance_plan > 0):
+    if not (epaisseur > 0) or not (distance_plan > 0) or not (largeur > 0):
         return largeur
-    return largeur + (epaisseur / np.pi) * (
-        1.0 + np.log(2.0 * distance_plan / epaisseur))
+    cth = 1.0 / math.tanh(math.sqrt(6.517 * largeur / distance_plan))
+    return largeur + (epaisseur / math.pi) * math.log(
+        1.0 + 4.0 * math.e * distance_plan / (epaisseur * cth * cth))
+
+
+# FLANCS EN REGARD : LA LIMITE DE L'ELARGISSEMENT. Un ruban mince elargi rend
+# la charge qu'un flanc envoie au plan ; il ne rend pas le condensateur que
+# deux flancs de cuivre font face a face, dans l'air, a travers un ecart.
+# Contre differences finies 2D (banc, « cuivre epais »), des que l'ecart passe
+# sous six epaisseurs : Z0 d'une coplanaire +3 a +7 %, Z differentielle +1 a
+# +4 %, Z commune -1 a -2,5 % ; eps_eff tient, a 2 % (paire) et 5 %
+# (coplanaire). Sous vernis l'ecart etait deja la (+4 a +7 % en coplanaire,
+# +2 a +3 % en differentiel) ; sur piste nue, les flancs comptes dans le
+# stratifie le masquaient sur Z0 -- et le payaient sur eps_eff, +12 a +19 %.
+# shortcut: ni terme de flanc ni cuivre epais dans la matrice -- les formules
+# publiees (Jansen 1978, coplanaire de Gupta) ne tiennent pas mieux ici ; a
+# remplacer par des panneaux sur les flancs (une Green hors de l'interface)
+# si ces ecarts doivent tenir a 1 %. D'ici la, `flancs_en_regard` le signale.
+FLANCS_EN_REGARD = 6.0
+
+
+def _flancs_en_regard(m, epaisseur, ecarts):
+    """Vrai si du cuivre epais fait face a du cuivre a moins de
+    FLANCS_EN_REGARD epaisseurs, sur un microruban (`ecarts` de cuivre a
+    cuivre, en metres ; nul ou absent : rien de ce cote)."""
+    return bool("flancs" in m and epaisseur > 0 and any(
+        0 < float(e or 0.0) < FLANCS_EN_REGARD * epaisseur for e in ecarts))
 
 
 def _elargir(m):
-    """L'elargissement du milieu `m` : le sien (triplaque), sinon Wheeler."""
+    """L'elargissement du milieu `m` : le sien (triplaque), sinon celui du
+    microruban dans l'air."""
     return m.get("elargir") or (
         lambda w, ep: _largeur_effective(w, ep, m["distance"]))
 
 
 def largeur_effective(largeur, epaisseur, distance_plan, ecart_plans=0.0):
-    """L'elargissement de Wheeler, offert a qui pose une section.
+    """L'elargissement du cuivre epais, offert a qui pose une section.
 
     C'EST LA MEME FONCTION QUE `_largeur_effective`, et elle est publique parce
     qu'un appelant qui POSE des conducteurs doit pouvoir savoir, AVANT de les
@@ -1426,8 +1533,8 @@ def solve_line(geometry, n=N_PANNEAUX, n_quadrature=N_QUADRATURE):
         y0          triplaque : hauteur du ruban au-dessus du plan bas
         epsilon_r   permittivité du diélectrique
 
-    Rend {z0, eps_eff, c, c0, couvert, masque, ecart_g, ecart_d, cotes} —
-    Z₀ en ohms, C et C₀ en F/m.
+    Rend {z0, eps_eff, c, c0, couvert, masque, ecart_g, ecart_d, cotes,
+    flancs_en_regard} — Z₀ en ohms, C et C₀ en F/m.
     """
     m = _milieu(geometry)
     t = float(geometry.get("t", 0.0))
@@ -1436,7 +1543,8 @@ def solve_line(geometry, n=N_PANNEAUX, n_quadrature=N_QUADRATURE):
     eps_moyen, eps_vide = m["eps_moyen"], m["eps_vide"]
     g_diel, g_vide = m["g_diel"], m["g_vide"]
     echelles = m["echelles"]
-    w = _elargir(m)(float(geometry["w"]), t)
+    w_nue = float(geometry["w"])
+    w = _elargir(m)(w_nue, t)
 
     if not (w > 0):
         raise ValueError("largeur de ruban nulle")
@@ -1455,18 +1563,31 @@ def solve_line(geometry, n=N_PANNEAUX, n_quadrature=N_QUADRATURE):
     ecart_d = geometry.get("ecart_d")
     if ecart_g is None and ecart_d is None:
         ecart_g = ecart_d = geometry.get("ecart", 0.0)
-    marge = (w - float(geometry["w"])) / 2.0
     seuil = max(t, 1e-9)
+    en_regard = _flancs_en_regard(m, t, (ecart_g, ecart_d))
 
-    ecart_g = _ecart_retenu(ecart_g, marge, seuil)
-    ecart_d = _ecart_retenu(ecart_d, marge, seuil)
+    def capacite(largeur, green, eps):
+        marge = (largeur - w_nue) / 2.0
+        return capacitance_coplanaire(
+            largeur, _ecart_retenu(ecart_g, marge, seuil),
+            _ecart_retenu(ecart_d, marge, seuil), green, distance, eps, n,
+            n_quadrature, echelles)
 
-    c = capacitance_coplanaire(w, ecart_g, ecart_d, g_diel, distance,
-                               eps_moyen, n, n_quadrature, echelles)
-    c0 = capacitance_coplanaire(w, ecart_g, ecart_d, g_vide, distance,
-                                eps_vide, n, n_quadrature, echelles)
+    # DEUX LARGEURS, PAS UNE (constat 30, `_part_des_flancs`) : w dans l'air
+    # pour C0, w_d avec le diélectrique, et Hammerstad-Jensen 1980 écrit en
+    # capacités -- C = C(w_d) C0(w_d) / C0(w). Un calcul de plus quand le
+    # cuivre est épais et les flancs dans l'air ; aucun sinon (triplaque,
+    # cuivre mince), où w_d = w et C = C(w) comme avant.
+    c0 = capacite(w, g_vide, eps_vide)
+    w_d = w_nue + m.get("flancs", 1.0) * (w - w_nue)
+    c = capacite(w_d, g_diel, eps_moyen)
+    if w_d < w:
+        c *= capacite(w_d, g_vide, eps_vide) / c0
     if not (c > 0 and c0 > 0):
         raise ValueError("capacité non physique : géométrie incohérente")
+    # Les ecarts RENDUS sont ceux du ruban le plus large, celui de l'air.
+    ecart_g = _ecart_retenu(ecart_g, (w - w_nue) / 2.0, seuil)
+    ecart_d = _ecart_retenu(ecart_d, (w - w_nue) / 2.0, seuil)
 
     # « ecart » en sortie est le côté LE PLUS SERRÉ de ceux qui portent de la
     # masse : c'est celui qui commande, et c'est ce que le champ « Écart » du
@@ -1485,6 +1606,9 @@ def solve_line(geometry, n=N_PANNEAUX, n_quadrature=N_QUADRATURE):
         "ecart_g": ecart_g,
         "ecart_d": ecart_d,
         "cotes": len(positifs),
+        # Du cuivre epais face a la masse coplanaire, de pres : Z0 sort trop
+        # haute. Voir FLANCS_EN_REGARD.
+        "flancs_en_regard": en_regard,
     }
     # LOT 2 : signaler le masque
     if m["masque"]:
@@ -1787,15 +1911,35 @@ def solve_multiline(geometry, n=N_PANNEAUX, n_quadrature=N_QUADRATURE):
     if ecart_g is None and ecart_d is None:
         ecart_g = ecart_d = geometry.get("ecart", 0.0)
     seuil = max(t, 1e-9)
+
     marge_g = (places[0]["w"] - places[0]["w_nue"]) / 2.0
     marge_d = (places[-1]["w"] - places[-1]["w_nue"]) / 2.0
     e_g = _ecart_retenu(ecart_g, marge_g, seuil)
     e_d = _ecart_retenu(ecart_d, marge_d, seuil)
 
-    c = capacitance_matrice(places, e_g, e_d, m["g_diel"], m["distance"],
-                            m["eps_moyen"], n, n_quadrature, m["echelles"])
-    c0 = capacitance_matrice(places, e_g, e_d, m["g_vide"], m["distance"],
-                             m["eps_vide"], n, n_quadrature, m["echelles"])
+    def matrice(pl, green, eps):
+        return capacitance_matrice(
+            pl,
+            _ecart_retenu(ecart_g, (pl[0]["w"] - pl[0]["w_nue"]) / 2.0, seuil),
+            _ecart_retenu(ecart_d, (pl[-1]["w"] - pl[-1]["w_nue"]) / 2.0, seuil),
+            green, m["distance"], eps, n, n_quadrature, m["echelles"])
+
+    # DEUX LARGEURS, comme dans `solve_line` (constat 30) : [C0] sur les rubans
+    # elargis dans l'air, [C] sur ceux, moins elargis, du dielectrique, et
+    # [C] = [C(w_d)] [C0(w)]^-1 [C0(w_d)] -- la formule d'un ruban seul, mode
+    # par mode sur une paire symetrique ou les trois matrices commutent.
+    # shortcut: sur une section dissymetrique elles ne commutent qu'a peu
+    # pres, et l'on symetrise -- verifie sur UN cas a trois conducteurs
+    # (banc : eps_eff a 1 %, kC - kL a 6 %) ; a reprendre avec le solveur a
+    # cuivre epais.
+    c0 = matrice(places, m["g_vide"], m["eps_vide"])
+    part = m.get("flancs", 1.0)
+    places_d = [dict(pl, w=pl["w_nue"] + part * (pl["w"] - pl["w_nue"]))
+                for pl in places]
+    c = matrice(places_d, m["g_diel"], m["eps_moyen"])
+    if any(d["w"] < pl["w"] for d, pl in zip(places_d, places)):
+        c = c @ np.linalg.solve(c0, matrice(places_d, m["g_vide"], m["eps_vide"]))
+        c = 0.5 * (c + c.T)
     if np.any(np.diag(c) <= 0) or np.any(np.diag(c0) <= 0):
         raise ValueError("capacite non physique : geometrie incoherente")
 
@@ -1852,6 +1996,8 @@ def solve_multiline(geometry, n=N_PANNEAUX, n_quadrature=N_QUADRATURE):
                                     - (a["x"] + a["w_nue"] / 2.0))
                               for a, b in zip(places, places[1:])],
     }
+    resultat["flancs_en_regard"] = _flancs_en_regard(
+        m, t, [ecart_g, ecart_d] + resultat["ecart_conducteurs"])
     if m["masque"]:
         resultat["masque"] = m["masque"]
     if len(ports) == 2:

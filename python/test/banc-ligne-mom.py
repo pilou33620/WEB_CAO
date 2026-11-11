@@ -3816,11 +3816,19 @@ def un_conducteur_par_la_matrice_redonne_la_ligne_seule():
     seul = solve_line(geo)
     m = _tl._milieu(geo)
     places = _tl._conducteurs_places([{"w": 0.35e-3}], 35e-6, _tl._elargir(m))
-    c = _tl.capacitance_matrice(places, 0.0, 0.0, m["g_diel"], m["distance"],
-                                m["eps_moyen"])
     c0 = _tl.capacitance_matrice(places, 0.0, 0.0, m["g_vide"], m["distance"],
                                  m["eps_vide"])
-    proche(c[0, 0], seul["c"], 1e-12, "C par la matrice")
+    # Depuis le constat 30, C se calcule sur le ruban MOINS elargi du
+    # dielectrique (`_part_des_flancs`) : C = C(w_d) C0(w_d) / C0(w). Meme
+    # reduction, meme tolerance -- les trois matrices a une case.
+    places_d = [dict(p, w=p["w_nue"] + m["flancs"] * (p["w"] - p["w_nue"]))
+                for p in places]
+    c = _tl.capacitance_matrice(places_d, 0.0, 0.0, m["g_diel"],
+                                m["distance"], m["eps_moyen"])
+    c0_d = _tl.capacitance_matrice(places_d, 0.0, 0.0, m["g_vide"],
+                                   m["distance"], m["eps_vide"])
+    proche(c[0, 0] * c0_d[0, 0] / c0[0, 0], seul["c"], 1e-12,
+           "C par la matrice")
     proche(c0[0, 0], seul["c0"], 1e-12, "C0 par la matrice")
 
 
@@ -3839,13 +3847,16 @@ def la_pose_d_une_triplaque_elargit_comme_le_solveur():
            _tl._elargir(m)(w, t), 1e-9, "largeur effective")
     sc = {"net": "SIG", "largeur": 0.12, "epaisseur": 0.035, "gap_g": 0.0,
           "gap_d": 0.0, "voisins": [
-              {"net": "V", "x": 0.156, "largeur": 0.12, "garde": False,
-               "longueur": 1.0, "ecart": 0.036, "ecart_min": 0.036,
+              {"net": "V", "x": 0.1575, "largeur": 0.12, "garde": False,
+               "longueur": 1.0, "ecart": 0.0375, "ecart_min": 0.0375,
                "troncons": 1, "cote": "droite", "deux_cotes": False}]}
-    # 0,036 mm de cuivre nu : Wheeler microruban (h = 0,1) en ajoute 0,031
-    # et laisse passer, celui de la triplaque (b = 0,3, y0 = 0,1) 0,037.
-    assert not _se._poser_section(sc, 0.1)[1]
-    assert _se._poser_section(sc, 0.1, 0.0, 0.3)[1]
+    # 0,0375 mm de cuivre nu : l'elargissement de la triplaque (b = 0,3,
+    # y0 = 0,1) en ajoute 0,0368 et laisse passer, celui du microruban
+    # (h = 0,1) 0,0385. (Avant le constat 30 le microruban n'ajoutait que
+    # 0,031 -- Wheeler ruban large -- et l'essai separait les deux a 0,036,
+    # dans l'autre sens.)
+    assert _se._poser_section(sc, 0.1)[1]
+    assert not _se._poser_section(sc, 0.1, 0.0, 0.3)[1]
 
 
 T("la pose d'une triplaque elargit comme le solveur",
@@ -6376,16 +6387,21 @@ T("une masse coplanaire serree reste une masse : trois cas contre volumes finis"
 
 
 def z0_ne_saute_plus_quand_l_ecart_traverse_le_seuil():
-    """CONTINUITE. w 0,3 / t 35 um / h 1,6 : le seuil est a 65,7 um (30,7 um
-    d'elargissement + 35 um). De part et d'autre, a +-1 um, Z0 ne bouge pas
+    """CONTINUITE. w 0,3 / t 35 um / h 1,6 : le seuil est a 67,2 um (32,2 um
+    d'elargissement + 35 um). De part et d'autre, a +-0,5 um, Z0 ne bouge pas
     de 1 % (avant : 48,65 -> 125,55, un facteur 2,6) ; et de 150 a 20 um
     Z0 ne REMONTE jamais quand l'ecart se resserre. Ecart nul : toujours
     « pas de masse », le microruban."""
     geo = {"kind": "micro", "w": 0.3e-3, "t": 35e-6, "h": 1.6e-3,
            "epsilon_r": 4.3}
     seuil = (_tl.largeur_effective(0.3e-3, 35e-6, 1.6e-3) - 0.3e-3) / 2 + 35e-6
-    dessus = solve_line(dict(geo, ecart=seuil + 1e-6))["z0"]
-    dessous = solve_line(dict(geo, ecart=seuil - 1e-6))["z0"]
+    # A +-0,5 um et non plus +-1 : depuis le constat 30 le calcul avec
+    # dielectrique se fait sur un ruban moins elargi, que le seuil ne fige
+    # qu'a 56 um ; Z0 garde donc sa pente de 0,5 %/um des DEUX cotes du seuil
+    # (avant : nulle dessous), et 2 um en font 1,04 %. Un saut, lui, ne
+    # dependrait pas du pas.
+    dessus = solve_line(dict(geo, ecart=seuil + 0.5e-6))["z0"]
+    dessous = solve_line(dict(geo, ecart=seuil - 0.5e-6))["z0"]
     proche(dessous, dessus, 0.01, "Z0 de part et d'autre du seuil")
     zs = [solve_line(dict(geo, ecart=e * 1e-6))["z0"]
           for e in (150, 100, 80, 70, 66, 65, 60, 40, 20)]
@@ -6472,6 +6488,349 @@ def le_coude_etroit_suit_la_formule_publiee():
 
 T("le coude etroit (w/h < 1) suit la formule publiee, contre Kirschning-Jansen",
   le_coude_etroit_suit_la_formule_publiee)
+
+
+# ==========================================================================
+# Le cuivre epais (constat 30 de l'audit)
+# --------------------------------------------------------------------------
+# DEUX ETALONS INDEPENDANTS DU MODULE, QUI S'ACCORDENT ENTRE EUX.
+#   · Hammerstad et Jensen, « Accurate Models for Microstrip Computer-Aided
+#     Design », IEEE MTT-S Digest 1980, eq. 6-7 : la correction d'epaisseur
+#     du microruban, ecrite plus bas en formule fermee ;
+#   · des differences finies 2D a CUIVRE EPAIS (rectangle de cuivre maille,
+#     forme variationnelle de l'energie, grille graduee raffinee trois fois
+#     par bissection et extrapolee a l'ordre 4/3 du coin a 270 degres ; le
+#     vernis y est CONFORME : substrat, flancs et dessus du cuivre). Rien de
+#     commun avec le module, ni Green ni panneaux. A cuivre nul elles rendent
+#     Hammerstad-Jensen a 0,1 % sur Z0 et 0,2 % sur eps_eff, la triplaque
+#     exacte a 0,06 % ; a cuivre epais elles suivent la formule de 1980 a
+#     0,4 % (Z0) et 0,6 % (eps_eff) jusqu'a t/h = 1.
+# Les chiffres « DF » ci-dessous en sortent, t de 17,5 a 210 um. Les
+# tolerances sont l'ecart mesure, arrondi au-dessus, et jamais moins que ce
+# que l'etalon vaut lui-meme (0,5 %).
+#
+# AVANT LE CONSTAT 30 : eps_eff +3 % (17,5 um) a +17 % (210 um) sur 0,3 / 0,2,
+# jusqu'a +18 % sur le mode impair d'une paire et +19 % en coplanaire -- les
+# flancs etaient comptes dans le stratifie.
+# ==========================================================================
+
+print("\nLe cuivre epais contre Hammerstad-Jensen 1980 et les differences finies")
+
+import math                                                    # noqa: E402
+
+_UM = 1e-6
+_VERNIS = {"epaisseur": 25e-6, "epsilon_r": 3.8}
+
+
+def hammerstad_jensen_epais(w, t, h, er):
+    """Z0 et eps_eff d'un microruban a cuivre epais, Hammerstad-Jensen 1980.
+
+    Le modele de 1980 en entier, et pas `hammerstad_jensen` plus haut, qui
+    est la forme courte de 1975 (1 % a elle seule) :
+
+        Z01(u) = (eta0/2pi) ln(f/u + racine(1 + 4/u^2))                 eq. 1-2
+        f = 6 + (2pi - 6) exp(-(30,666/u)^0,7528)
+        eps(u, er) = (er+1)/2 + (er-1)/2 (1 + 10/u)^(-a b)              eq. 3-5
+        a = 1 + ln((u^4 + (u/52)^2)/(u^4 + 0,432))/49 + ln(1 + (u/18,1)^3)/18,7
+        b = 0,564 ((er - 0,9)/(er + 3))^0,053
+        du1 = (t/pi) ln(1 + 4e / (t coth^2 racine(6,517 u)))            eq. 6
+        dur = du1 (1 + 1/cosh racine(er - 1)) / 2                       eq. 7
+        Z0 = Z01(u + dur) / racine(eps(u + dur, er))
+        eps_eff = eps(u + dur, er) [Z01(u + du1) / Z01(u + dur)]^2
+
+    t et u rapportes a h. Donnee a 0,01 % (Z01) et 0,2 % (eps) a t = 0.
+    """
+    def z01(u):
+        f = 6.0 + (2.0 * math.pi - 6.0) * math.exp(-(30.666 / u) ** 0.7528)
+        return 376.730313668 / (2.0 * math.pi) * math.log(
+            f / u + math.sqrt(1.0 + 4.0 / u ** 2))
+
+    def eps(u):
+        a = (1.0 + math.log((u ** 4 + (u / 52.0) ** 2) / (u ** 4 + 0.432)) / 49.0
+             + math.log(1.0 + (u / 18.1) ** 3) / 18.7)
+        b = 0.564 * ((er - 0.9) / (er + 3.0)) ** 0.053
+        return (er + 1.0) / 2.0 + (er - 1.0) / 2.0 * (1.0 + 10.0 / u) ** (-a * b)
+
+    u, tn = w / h, t / h
+    du1 = (tn / math.pi) * math.log(
+        1.0 + 4.0 * math.e / (tn / math.tanh(math.sqrt(6.517 * u)) ** 2))
+    dur = 0.5 * (1.0 + 1.0 / math.cosh(math.sqrt(er - 1.0))) * du1
+    return (z01(u + dur) / math.sqrt(eps(u + dur)),
+            eps(u + dur) * (z01(u + du1) / z01(u + dur)) ** 2)
+
+
+def cuivre_epais_contre_hammerstad_jensen():
+    """t de 17,5 a 210 um, trois sections, deux stratifies : 1 % sur Z0 et
+    sur eps_eff (mesure : 0,3 %), la formule etant donnee pour t/h < 1."""
+    for w, h, er in ((0.3e-3, 0.2e-3, 4.3), (1.0e-3, 0.5e-3, 4.3),
+                     (0.2e-3, 0.3e-3, 3.0), (0.25e-3, 0.25e-3, 10.0)):
+        for t in (17.5, 35, 70, 105, 210):
+            if t * _UM > 0.75 * h:
+                continue
+            r = solve_line({"kind": "micro", "w": w, "t": t * _UM, "h": h,
+                            "epsilon_r": er})
+            z_ref, e_ref = hammerstad_jensen_epais(w, t * _UM, h, er)
+            quoi = "w/h %.2f, er %g, t %g um" % (w / h, er, t)
+            proche(r["z0"], z_ref, 0.01, "Z0, " + quoi)
+            proche(r["eps_eff"], e_ref, 0.01, "eps_eff, " + quoi)
+
+
+T("microruban nu, t de 17,5 a 210 um : Z0 et eps_eff a 1 % de la formule",
+  cuivre_epais_contre_hammerstad_jensen)
+
+
+def eps_eff_baisse_quand_le_cuivre_epaissit():
+    """LE SYMPTOME DU CONSTAT : les flancs sont dans l'air, eps_eff BAISSE avec
+    l'epaisseur. Elle montait (3,13 a nu, 3,23 a 35 um, 3,28 a 210 um)."""
+    vus = [solve_line({"kind": "micro", "w": 0.3e-3, "t": t * _UM,
+                       "h": 0.2e-3, "epsilon_r": 4.3})["eps_eff"]
+           for t in (0, 17.5, 35, 70, 105, 210)]
+    assert all(b < a for a, b in zip(vus, vus[1:])), vus
+    # ... et sous une couverture epaisse du meme stratifie elle ne bouge
+    # presque plus : les flancs sont noyes.
+    noyes = [solve_line({"kind": "micro", "w": 0.3e-3, "t": t * _UM,
+                         "h": 0.2e-3, "epsilon_r": 4.3,
+                         "couverture": 5e-3})["eps_eff"] for t in (0, 105)]
+    proche(noyes[1], noyes[0], 0.01, "eps_eff sous couverture")
+
+
+T("eps_eff baisse quand le cuivre epaissit, sauf noye",
+  eps_eff_baisse_quand_le_cuivre_epaissit)
+
+
+# (w, t, h en um, er, Z0, eps_eff) -- differences finies, piste NUE
+_DF_NU = (
+    (150, 17.5, 100, 4.3, 55.10, 3.071),
+    (150, 35, 100, 4.3, 53.28, 2.994),
+    (150, 70, 100, 4.3, 50.79, 2.888),
+    (150, 105, 100, 4.3, 49.04, 2.812),
+    (200, 70, 200, 10, 44.42, 5.964),
+    (300, 17.5, 200, 4.3, 56.31, 3.122),
+    (300, 105, 200, 4.3, 51.91, 2.936),
+    (1000, 35, 200, 4.3, 25.58, 3.503),
+    (1000, 105, 200, 4.3, 24.95, 3.430),
+    (1000, 210, 200, 4.3, 24.34, 3.356),
+    (500, 105, 300, 3, 58.67, 2.246),
+    (100, 70, 1600, 4.3, 154.52, 2.632),
+    (100, 70, 1600, 10, 108.27, 5.360),
+    (3000, 35, 1600, 4.3, 50.68, 3.235),
+    (3000, 105, 1600, 4.3, 50.02, 3.203),
+    (3000, 210, 1600, 4.3, 49.25, 3.166),
+)
+
+
+def microruban_epais_contre_differences_finies():
+    """Seize sections, t/h jusqu'a 1,05, w/h de 0,06 a 5, er 3 a 10 : 1 % sur
+    Z0 (mesure 0,4 %) et sur eps_eff (mesure 0,6 %). Le module y etait a
+    -7 % / +17 %. A t/h = 2,1 (210 um sur 0,1 mm) la formule de 1980 sort de
+    son domaine : 2 % et 3 % (mesure -1,0 % / +1,9 %)."""
+    for w, t, h, er, z_ref, e_ref in _DF_NU:
+        r = solve_line({"kind": "micro", "w": w * _UM, "t": t * _UM,
+                        "h": h * _UM, "epsilon_r": er})
+        quoi = "w %g / t %g / h %g um, er %g" % (w, t, h, er)
+        proche(r["z0"], z_ref, 0.01, "Z0, " + quoi)
+        proche(r["eps_eff"], e_ref, 0.01, "eps_eff, " + quoi)
+        assert r["flancs_en_regard"] is False, quoi
+    r = solve_line({"kind": "micro", "w": 150e-6, "t": 210e-6, "h": 100e-6,
+                    "epsilon_r": 4.3})
+    proche(r["z0"], 45.69, 0.02, "Z0 a t/h = 2,1")
+    proche(r["eps_eff"], 2.664, 0.03, "eps_eff a t/h = 2,1")
+
+
+T("microruban nu epais contre differences finies : 1 % sur Z0 et eps_eff",
+  microruban_epais_contre_differences_finies)
+
+
+def vernis_et_couverture_contre_differences_finies():
+    """LE CAS COURANT : une couche exterieure est vernie. Vernis conforme de
+    25 um a er 3,8, t de 17,5 a 105 um : Z0 a 1 % (mesure 0,6 %), eps_eff a
+    2 % (mesure 1,0 % ; avant : +1 a +8 %). Piste couverte de 0,2 et 0,3 mm
+    du meme stratifie : 1 % (mesure 0,2 % / 0,6 % ; avant +2,1 % / +2,8 %).
+    C'est l'interpolation de `_part_des_flancs` qui est eprouvee ici."""
+    for w, t, h, z_ref, e_ref in ((150, 35, 100, 49.93, 3.410),
+                                  (300, 17.5, 200, 54.16, 3.375),
+                                  (300, 35, 200, 52.88, 3.333),
+                                  (300, 105, 200, 49.85, 3.183)):
+        r = solve_line({"kind": "micro", "w": w * _UM, "t": t * _UM,
+                        "h": h * _UM, "epsilon_r": 4.3, "masque": _VERNIS})
+        quoi = "verni, w %g / t %g / h %g um" % (w, t, h)
+        proche(r["z0"], z_ref, 0.01, "Z0, " + quoi)
+        proche(r["eps_eff"], e_ref, 0.02, "eps_eff, " + quoi)
+    for w, t, h, c, z_ref, e_ref in ((300, 35, 200, 200, 48.76, 3.920),
+                                     (300, 105, 200, 300, 44.68, 3.963)):
+        r = solve_line({"kind": "micro", "w": w * _UM, "t": t * _UM,
+                        "h": h * _UM, "epsilon_r": 4.3,
+                        "couverture": c * _UM})
+        quoi = "couvert, t %g um" % t
+        proche(r["z0"], z_ref, 0.01, "Z0, " + quoi)
+        proche(r["eps_eff"], e_ref, 0.01, "eps_eff, " + quoi)
+
+
+T("piste vernie ou couverte, cuivre epais, contre differences finies",
+  vernis_et_couverture_contre_differences_finies)
+
+
+def triplaque_epaisse_contre_differences_finies():
+    """JEU DE CONTROLE : la triplaque n'a pas de flanc dans l'air, et le
+    constat 30 ne doit pas l'avoir touchee. (w, t, b, bas du cuivre en um,
+    Z0), t de 17,5 a 210 um, centree et decentree : 1,5 % (mesure 1,0 % au
+    pire, decentree) ; eps_eff = er au millieme."""
+    for w, t, b, bas, z_ref in ((200, 17.5, 500, 241.25, 49.97),
+                                (200, 35, 500, 232.5, 46.80),
+                                (200, 70, 500, 215, 41.76),
+                                (200, 105, 500, 197.5, 37.64),
+                                (200, 210, 500, 145, 27.82),
+                                (150, 35, 1135, 100, 44.00),
+                                (200, 70, 600, 100, 34.70),
+                                (300, 105, 800, 200, 38.54)):
+        r = solve_line({"kind": "strip", "w": w * _UM, "t": t * _UM,
+                        "b": b * _UM, "y0": (bas + t / 2.0) * _UM,
+                        "epsilon_r": 4.3})
+        proche(r["z0"], z_ref, 0.015, "Z0, triplaque t %g um / b %g" % (t, b))
+        proche(r["eps_eff"], 4.3, 1e-3, "eps_eff, triplaque t %g um" % t)
+
+
+T("triplaque epaisse, t de 17,5 a 210 um, contre differences finies",
+  triplaque_epaisse_contre_differences_finies)
+
+
+# (w, s, t, h en um, Zdiff, Zcommune, eps impair, eps pair) -- er 4,3
+_DF_PAIRES_NUES = (
+    (150, 150, 35, 100, 93.15, 29.61, 2.659, 3.255),
+    (200, 200, 17.5, 200, 115.02, 39.56, 2.686, 3.252),
+    (300, 200, 70, 200, 86.35, 30.83, 2.558, 3.284),
+    (300, 300, 105, 200, 89.00, 29.13, 2.562, 3.216),
+    (500, 500, 210, 300, 83.19, 26.94, 2.550, 3.212),
+)
+_DF_PAIRES_VERNIES = (
+    (150, 150, 35, 100, 85.40, 28.13, 3.163, 3.604),
+    (300, 200, 70, 200, 81.11, 29.91, 2.899, 3.488),
+)
+
+
+def paire_epaisse_contre_differences_finies():
+    """LE RETARD D'UNE PAIRE : eps_eff des deux modes a 2 % (mesure 1,3 % ;
+    avant : +5 a +18 % sur le mode impair, +3 a +9 % sur le pair), nue et
+    vernie.
+
+    LES IMPEDANCES PORTENT LA LIMITE CONNUE (`ligne_mom.FLANCS_EN_REGARD`) :
+    le condensateur des flancs face a face manque. Z commune a 3 % (mesure
+    -0,2 a -2,4 %), Z differentielle a 5 % et TOUJOURS AU-DESSUS (mesure
+    +1,1 a +4,3 %, croissant avec t/s). Ces deux tolerances sont celles du
+    raccourci, pas de l'etalon ; elles se resserreront avec lui."""
+    for table, masque in ((_DF_PAIRES_NUES, None),
+                          (_DF_PAIRES_VERNIES, _VERNIS)):
+        for w, s, t, h, zd, zc, e_i, e_p in table:
+            geo = {"kind": "micro", "t": t * _UM, "h": h * _UM,
+                   "epsilon_r": 4.3,
+                   "conducteurs": [{"w": w * _UM},
+                                   {"w": w * _UM, "s": s * _UM}]}
+            if masque:
+                geo["masque"] = masque
+            r = solve_multiline(geo)
+            p = r["paire"]
+            quoi = "%s w %g / s %g / t %g um" % (
+                "vernie" if masque else "nue", w, s, t)
+            proche(p["eps_eff_impair"], e_i, 0.02, "eps impair, " + quoi)
+            proche(p["eps_eff_pair"], e_p, 0.02, "eps pair, " + quoi)
+            proche(p["z_commune"], zc, 0.03, "Z commune, " + quoi)
+            proche(p["z_diff"], zd, 0.05, "Z diff, " + quoi)
+            assert p["z_diff"] > zd, (quoi, p["z_diff"], zd)
+            assert r["flancs_en_regard"] is (s < 6 * t), (quoi, s, t)
+
+
+T("paire a cuivre epais : eps_eff a 2 %, Zdiff a 5 % (flancs en regard)",
+  paire_epaisse_contre_differences_finies)
+
+
+def trois_conducteurs_dissymetriques_contre_differences_finies():
+    """La formule a deux largeurs est ecrite en MATRICES, et elles ne
+    commutent que sur une section symetrique (`solve_multiline`, shortcut).
+    Le cas du banc de diaphonie -- trois pistes de 0,25 mm / 35 um vernies sur
+    0,2 mm, ecarts 0,20 et 0,35 mm -- contre [C] et [C0] par differences
+    finies (pF/m, energie de six jeux de tensions). eps_eff de chaque piste a
+    1 % (mesure 0,4 % ; avant +4 %), et le moteur du FEXT, kC - kL, a 6 %
+    (mesure -1 et -5 % ; avant -18 et -14 %)."""
+    c_ref = np.array([[108.399, -15.349, -0.716], [-15.349, 109.04, -6.793],
+                      [-0.716, -6.793, 105.722]])
+    c0_ref = np.array([[33.782, -7.135, -0.78], [-7.135, 34.37, -4.04],
+                       [-0.78, -4.04, 32.495]])
+    r = solve_multiline({"kind": "micro", "t": 35e-6, "h": 0.2e-3,
+                         "epsilon_r": 4.3, "masque": _VERNIS,
+                         "conducteurs": [{"w": 0.25e-3, "x": -0.45e-3},
+                                         {"w": 0.25e-3, "x": 0.0},
+                                         {"w": 0.25e-3, "x": 0.60e-3}]})
+    c, c0 = np.array(r["c"]) * 1e12, np.array(r["c0"]) * 1e12
+
+    def moteur(c, c0, i, j):
+        l = np.linalg.inv(c0)
+        return (-c[i, j] / math.sqrt(c[i, i] * c[j, j])
+                - l[i, j] / math.sqrt(l[i, i] * l[j, j]))
+    for i in range(3):
+        proche(c[i, i] / c0[i, i], c_ref[i, i] / c0_ref[i, i], 0.01,
+               "eps_eff du conducteur %d" % (i + 1))
+    for j, quoi in ((0, "0,20 mm"), (2, "0,35 mm")):
+        proche(moteur(c, c0, 1, j), moteur(c_ref, c0_ref, 1, j), 0.06,
+               "kC - kL a " + quoi)
+
+
+T("trois conducteurs dissymetriques : eps_eff a 1 %, kC - kL a 6 %",
+  trois_conducteurs_dissymetriques_contre_differences_finies)
+
+
+def coplanaire_epaisse_contre_differences_finies():
+    """Coplanaire avec plan, masses de la meme epaisseur. (w, t, h, ecart en
+    um, Z0, eps_eff), nue puis vernie. eps_eff a 5 % (mesure -0,8 a +4,4 % ;
+    avant : +6 a +19 %). Z0 porte la limite des flancs en regard : 8 %, et
+    toujours AU-DESSUS (mesure +3,1 a +7,3 % ; avant : -0,6 a +2,9 % nue par
+    compensation, +4,4 a +6,6 % vernie). Le drapeau le dit."""
+    for masque, table in ((None, ((200, 35, 200, 100, 53.90, 2.529),
+                                  (300, 105, 200, 250, 47.78, 2.667),
+                                  (500, 210, 500, 500, 56.28, 2.514),
+                                  (300, 35, 1600, 70, 49.95, 2.301),
+                                  (300, 35, 1600, 100, 56.86, 2.363),
+                                  (300, 70, 1600, 200, 66.99, 2.315),
+                                  (1000, 35, 1600, 200, 51.30, 2.555))),
+                          (_VERNIS, ((200, 35, 200, 100, 48.75, 3.091),
+                                     (300, 17.5, 200, 150, 48.35, 3.213),
+                                     (300, 105, 200, 250, 45.46, 2.947)))):
+        for w, t, h, e, z_ref, e_ref in table:
+            geo = {"kind": "micro", "w": w * _UM, "t": t * _UM, "h": h * _UM,
+                   "epsilon_r": 4.3, "ecart": e * _UM}
+            if masque:
+                geo["masque"] = masque
+            r = solve_line(geo)
+            quoi = "%s w %g / t %g / ecart %g um" % (
+                "vernie" if masque else "nue", w, t, e)
+            proche(r["eps_eff"], e_ref, 0.05, "eps_eff, " + quoi)
+            proche(r["z0"], z_ref, 0.08, "Z0, " + quoi)
+            assert r["z0"] > z_ref, (quoi, r["z0"], z_ref)
+            assert r["flancs_en_regard"] is (e < 6 * t), quoi
+
+
+T("coplanaire a cuivre epais : eps_eff a 5 %, Z0 a 8 % (flancs en regard)",
+  coplanaire_epaisse_contre_differences_finies)
+
+
+def les_flancs_en_regard_remontent_en_avertissement():
+    """Le drapeau du solveur devient UNE phrase dans la fiche, pas une par
+    troncon ; une piste loin de tout cuivre n'en dit rien."""
+    assert _tl._flancs_en_regard({"flancs": 0.66}, 35e-6, [0.0, 200e-6])
+    assert not _tl._flancs_en_regard({"flancs": 0.66}, 35e-6, [0.0, 220e-6])
+    assert not _tl._flancs_en_regard({"flancs": 0.66}, 0.0, [100e-6])
+    assert not _tl._flancs_en_regard({}, 35e-6, [100e-6])      # triplaque
+
+    def fiche(gap):
+        doc = _doc_via([dict(_piste(0, 0, 15, 0, 0), gap=gap),
+                        dict(_piste(15, 0, 30, 0, 0), gap=gap)])
+        return [a for a in _se.simuler(doc)["avertissements"]
+                if "flancs face à face" in a]
+    assert len(fiche(0.1)) == 1, fiche(0.1)
+    assert not fiche(0.0)
+
+
+T("les flancs en regard remontent en un avertissement, un seul",
+  les_flancs_en_regard_remontent_en_avertissement)
 
 
 print("\n" + "-" * 62)

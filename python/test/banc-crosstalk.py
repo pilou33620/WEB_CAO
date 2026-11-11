@@ -441,11 +441,17 @@ def deux_victimes_de_part_et_d_autre_ne_se_melangent_pas():
         "les deux victimes sont du meme cote : %s" % cotes
     # LA PLUS PROCHE PREND LE PLUS : c'est la seule chose que la physique
     # impose ici, et elle suffit a verifier que les deux ne sont pas melangees.
+    # C'EST VRAI DU NEXT (Kb, la somme des deux couplages), PAS DU PIRE DES
+    # DEUX SENS : sous vernis kC rattrape kL quand l'ecart se resserre, et le
+    # FEXT (leur difference) de la victime a 0,35 mm depasse le NEXT de celle
+    # a 0,20 mm. L'essai comparait `pire_db` et ne tenait qu'a 0,5 dB, sur un
+    # FEXT sous-estime d'un quart (cuivre epais, constat 30 de l'audit :
+    # kC - kL a -24 % contre differences finies, -4 % depuis).
     par_net = dict((c["victime"], c) for c in res["couples"])
-    assert par_net["GAUCHE"]["pire_db"] > par_net["DROITE"]["pire_db"], \
+    assert par_net["GAUCHE"]["next_db"] > par_net["DROITE"]["next_db"], \
         ("la victime a 0,20 mm doit prendre plus que celle a 0,35 mm :"
-         " %.2f contre %.2f dB" % (par_net["GAUCHE"]["pire_db"],
-                                   par_net["DROITE"]["pire_db"]))
+         " %.2f contre %.2f dB" % (par_net["GAUCHE"]["next_db"],
+                                   par_net["DROITE"]["next_db"]))
 
 
 T("deux victimes encadrant l'agresseur donnent deux lignes distinctes",

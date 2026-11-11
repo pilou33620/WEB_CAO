@@ -2,6 +2,15 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 5.8.0
+# Date: 2026-11-12
+# Explication: LE CUIVRE EPAIS FACE A FACE SE DIT. ligne_mom 2.12.0 rend
+#   `flancs_en_regard` quand du cuivre epais fait face a une masse coplanaire
+#   ou a une voisine a moins de six epaisseurs : le condensateur des flancs
+#   n'est pas calcule et Z0 sort 1 a 7 % trop haute. Un avertissement, une
+#   fois par fiche, pour la ligne seule et un pour les sections couplees.
+# Fonctions modifiees : simuler, _couplage.
+#
 # Version: 5.7.0
 # Date: 2026-11-12
 # Explication: LA CASCADE POSE DES LIGNES RLGC. Chaque troncon etait
@@ -846,7 +855,7 @@ import ligne_mom as tl
 
 FORMAT = "cao-sim-em-3"
 FORMAT_RESULTAT = "cao-sim-em-resultat-5"
-VERSION = "5.7.0"
+VERSION = "5.8.0"
 VERSION_MOTEURS = {
     "simulation_em": VERSION,
     "ligne_mom": getattr(tl, "VERSION", "2.5.0"),
@@ -5889,6 +5898,16 @@ def _couplage(couches, objets, doc, analyse, avertissements):
     # ordonne, parce que c'est lui qui fait la Z differentielle.
     paires.sort(key=lambda f: _nombre(f.get("ecart"), 1e9))
 
+    # LE CUIVRE EPAIS FACE A FACE, que la section ne sait pas chiffrer : voir
+    # `ligne_mom.FLANCS_EN_REGARD`. Une fois pour toute la selection.
+    if any((c.get("r") or {}).get("flancs_en_regard") for c in cache.values()):
+        avertissements.append(
+            "Cuivre épais face à du cuivre proche (moins de %g épaisseurs"
+            " d'écart) sur au moins une section couplée : le condensateur que"
+            " font les flancs face à face n'est pas calculé. Z différentielle"
+            " sort 1 à 4 %% trop haute et Z commune 1 à 2,5 %% trop basse ;"
+            " ε_eff et le retard tiennent à 2 %%." % tl.FLANCS_EN_REGARD)
+
     # LE CUIVRE QUI NE BLINDE PAS, DIT AVEC LE RESULTAT. C'est le seul endroit
     # de cette chaine ou le dessin peut RASSURER a tort : on voit du cuivre de
     # masse entre deux pistes, on le croit protecteur, et il transfere.
@@ -7744,6 +7763,8 @@ def simuler(doc, journal=None, garder_abcd=False, freqs_imposees=None):
     # section peut etre a la fois dissymetrique et bordee d'un seul cote, et
     # partager le jeu ferait taire l'un des deux.
     un_cote = set()
+    # Meme regle pour le cuivre epais face a la masse coplanaire.
+    en_regard = set()
 
     # LA TOPOLOGIE DE LA SELECTION, ET CE QU'ELLE AUTORISE. Voir `_topologie`.
     # ON REFUSE DESORMAIS LA CASCADE PLUTOT QUE DE L'ASSORTIR D'UNE RESERVE.
@@ -7840,6 +7861,17 @@ def simuler(doc, journal=None, garder_abcd=False, freqs_imposees=None):
                             " s'arrête là."
                             % (1e3 * max(r.get("ecart_g", 0.0),
                                          r.get("ecart_d", 0.0))))
+                    if r.get("flancs_en_regard") and not en_regard:
+                        en_regard.add(cle)
+                        avertissements.append(
+                            "Cuivre épais face à la masse coplanaire, de près"
+                            " (%.3f mm d'écart, moins de %g épaisseurs de"
+                            " cuivre) sur au moins un tronçon : le"
+                            " condensateur que font les flancs face à face"
+                            " n'est pas calculé, et Z₀ sort 3 à 7 %% trop"
+                            " haute. ε_eff et le retard tiennent à 5 %%."
+                            % (min(e for e in (gap_g, gap_d) if e > 0),
+                               tl.FLANCS_EN_REGARD))
                     if info["topo"] == "strip" and info["dissym"] > 0.4 \
                             and cle not in vus:
                         vus.add(cle)
