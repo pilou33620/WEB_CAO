@@ -1078,26 +1078,26 @@ T("le corps d'une piste accroche départ et arrivée, à tous les pas",()=>{
     for(const g of GRID_STEPS){
       S.fps=[];S.vias=[];S.zones=[];S.origin={x:0,y:0};S.avoid=true;
       setMode("track");S.active=0;S.grid=g;
-      const P={x1:0,y1:0.2,x2:20,y2:0.2,l:0,w:0.3,net:"N"};
-      S.tracks=[P,{x1:30,y1:10,x2:30,y2:8,l:0,w:0.3,net:"N"},
-                  {x1:40,y1:10,x2:40,y2:8,l:0,w:0.3,net:"M"}];
+      const P={x1:0,y1:10.2,x2:20,y2:10.2,l:0,w:0.3,net:"N"};   // à 10 mm du bord : l'essai vise l'accroche, pas la marge
+      S.tracks=[P,{x1:30,y1:20,x2:30,y2:18,l:0,w:0.3,net:"N"},
+                  {x1:40,y1:20,x2:40,y2:18,l:0,w:0.3,net:"M"}];
       touch();
-      startRoute(10.02,0.25);
+      startRoute(10.02,10.25);
       if(S.route.net!=="N")throw new Error(g+" mm : départ sans net");
-      if(Math.abs(S.route.pt.y-0.2)>1e-3)throw new Error(g+" mm : départ hors de l'axe");
+      if(Math.abs(S.route.pt.y-10.2)>1e-3)throw new Error(g+" mm : départ hors de l'axe");
       // le cuivre d'où l'on repart n'est pas une arrivée
-      updateRoute(14,0.2);stepRoute();
+      updateRoute(14,10.2);stepRoute();
       if(!S.route)throw new Error(g+" mm : refermé sur sa propre piste de départ");
       cancelRoute();
       const nb=S.tracks.length;
-      startRoute(30,8);updateRoute(10.02,0.25);stepRoute();
+      startRoute(30,18);updateRoute(10.02,10.25);stepRoute();
       if(S.route)throw new Error(g+" mm : arrivée sur le corps non reconnue");
       // le chanfrein range ses segments à la suite : le dernier n'est pas forcément l'arrivée
       const posee=S.tracks.slice(nb);
       if(!posee.some(t=>trkDist(t.x2,t.y2,P)<=1e-3))
         throw new Error(g+" mm : arrivée hors de l'axe "+JSON.stringify(posee));
       // un net étranger ne ferme rien
-      startRoute(40,8);updateRoute(10.02,0.25);
+      startRoute(40,18);updateRoute(10.02,10.25);
       if(S.route.end.net)throw new Error(g+" mm : accroché sur un net étranger");
       cancelRoute();
     }
@@ -1135,10 +1135,10 @@ T("V attache le via au curseur, le clic le pose au bout du segment",()=>{
   const reg={avoid:S.avoid,grid:S.grid,mouse:S.mouse};
   try{
     S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.origin={x:0,y:0};S.avoid=true;S.grid=0.5;touch();
-    S.tracks.push({x1:0,y1:0,x2:2,y2:0,l:0,w:0.3,net:"N"});touch();
+    S.tracks.push({x1:0,y1:10,x2:2,y2:10,l:0,w:0.3,net:"N"});touch();   // à 10 mm du bord : l'essai vise l'attache au curseur
     setMode("track");S.active=0;
-    startRoute(2,0);
-    S.mouse={x:6,y:0};updateRoute(6,0);
+    startRoute(2,10);
+    S.mouse={x:6,y:10};updateRoute(6,10);
     const n=S.vias.length;
     key("v");
     if(!S.route.viaNext||S.vias.length!==n)throw new Error("V ne doit encore rien poser");
@@ -1149,15 +1149,15 @@ T("V attache le via au curseur, le clic le pose au bout du segment",()=>{
     stepRoute();
     if(S.vias.length!==n+1)throw new Error("le clic devait poser le via");
     const v=S.vias[S.vias.length-1];
-    if(v.x!==6||v.y!==0)throw new Error("via hors du bout : "+v.x+";"+v.y);
+    if(v.x!==6||v.y!==10)throw new Error("via hors du bout : "+v.x+";"+v.y);
     if(S.route.layer===0||S.route.viaNext)throw new Error("la couche devait changer");
     commitRoute();
     // du cuivre étranger sur l'autre couche : le curseur n'y est pas repoussé, le
     // via y passerait, et le clic ne pose alors ni le segment ni le via
-    S.tracks=[{x1:0,y1:0,x2:2,y2:0,l:0,w:0.3,net:"N"},{x1:0,y1:5,x2:12,y2:5,l:1,w:0.3,net:"M"}];
+    S.tracks=[{x1:0,y1:10,x2:2,y2:10,l:0,w:0.3,net:"N"},{x1:0,y1:15,x2:12,y2:15,l:1,w:0.3,net:"M"}];
     S.vias=[];S.rule.route="mark";touch();
-    S.active=0;startRoute(2,0);
-    S.mouse={x:6,y:5};updateRoute(6,5);
+    S.active=0;startRoute(2,10);
+    S.mouse={x:6,y:15};updateRoute(6,15);
     key("v");
     if(!S.route.viaGene)throw new Error("la gêne du via devait se voir dans l'aperçu : "+JSON.stringify(S.route.end));
     const nb=S.route.done.length;
@@ -30478,6 +30478,60 @@ T("retour arrière sous un changement de couche : le via repart avec lui",()=>{
     if(S.vias.length!==1)throw new Error("le via devait rester tant qu'on est dessus");
     backRoute();
     if(S.route.layer!==0||S.vias.length)throw new Error("couche "+S.route.layer+", "+S.vias.length+" via(s) resté(s)");
+  });
+});
+
+T("tracé : un clic dans la marge du bord de carte est refusé, à la cote du DRC",()=>{
+  rtCarte({tracks:[{l:0,net:"A",w:0.3,x1:8,y1:1.5,x2:10,y2:1.5}]},()=>{
+    startRoute(10,1.5,true);
+    routeToPoint({x:12,y:0.5});                   // axe à 0,5 mm du contour : il en faut 0,4 + 0,15
+    if(!S.route.bad||!S.route.bord)throw new Error("le trajet dans la marge devait être refusé");
+    const n=S.route.done.length;stepRoute();
+    if(S.route.done.length!==n)throw new Error("un trajet refusé ne se pose pas");
+    routeToPoint({x:12,y:0.55});                  // pile à la cote : accepté, et le DRC d'accord
+    if(S.route.bad)throw new Error("à la cote exacte, le trajet devait passer");
+    stepRoute();commitRoute();
+    const e=rtErr(/trop près du bord/);
+    if(e.length)throw new Error(e[0]);
+  });
+});
+T("tracé : on sort d'une pastille de bord de carte, on ne longe pas le bord depuis elle",()=>{
+  const fp=(h,y)=>({ref:"J1",x:20,y,rot:0,side:0,nets:{1:"A"},pads:[{n:1,x:0,y:0,w:1.5,h,shape:"rect"}]});
+  // pastille au ras du contour, centre à 0,75 mm : la sortie vers l'intérieur passe, routeur et DRC d'accord
+  rtCarte({fps:[fp(1.5,0.75)]},()=>{
+    startRoute(20,0.75,true);routeToPoint({x:20,y:5});
+    if(S.route.bad)throw new Error("la sortie perpendiculaire devait passer");
+    stepRoute();commitRoute();
+    const e=rtErr(/trop près du bord/);
+    if(e.length)throw new Error(e[0]);
+    startRoute(20,0.75,true);routeToPoint({x:30,y:0.3});
+    if(!S.route.bad)throw new Error("longer le bord dans la marge devait être refusé");
+  });
+  // centre de la pastille DANS la marge (0,3 mm) : le DRC signale la piste qui en sort, le routeur refuse de même
+  rtCarte({fps:[fp(0.6,0.3)]},()=>{
+    startRoute(20,0.3,true);routeToPoint({x:20,y:5});
+    if(!S.route.bad)throw new Error("le routeur devait refuser comme le DRC");
+    S.avoid=false;routeToPoint({x:20,y:5});stepRoute();commitRoute();
+    if(!rtErr(/trop près du bord/).length)throw new Error("le DRC ne signale plus ce cas : le refus du routeur n'est plus aligné");
+  });
+});
+T("via : refusé dans la marge du bord de carte (touche V, paire différentielle)",()=>{
+  rtCarte({tracks:[{l:0,net:"A",w:0.3,x1:8,y1:0.6,x2:10,y2:0.6}]},()=>{
+    startRoute(10,0.6,true);routeToPoint({x:20,y:0.6});stepRoute();
+    if(routeVia()||S.vias.length)throw new Error("via posé à 0,2 mm du contour");
+    if(S.route.layer!==0)throw new Error("un via refusé ne change pas de couche");
+  });
+  rtCarte({fps:[{ref:"J1",x:10,y:1.2,rot:0,side:0,nets:{1:"DP",2:"DN"},
+      pads:[{n:1,x:0,y:-0.5,w:0.6,h:0.6,shape:"rect"},{n:2,x:0,y:0.5,w:0.6,h:0.6,shape:"rect"}]}],
+    dpPairs:[{id:1,name:"USB",p:"DP",n:"DN"}]},()=>{
+    S.scale=20;S.grid=0;
+    if(!dpStart(10,1.2))throw new Error("départ de paire refusé");
+    dpUpdate(20,1.2);
+    if(S.dp.bad)throw new Error("la paire à 1,2 mm du bord devait passer");
+    dpStep();dpVia();
+    if(S.vias.length||S.dp.layer!==0)throw new Error("vias de paire posés dans la marge : "+S.vias.length);
+    dpUpdate(30,0.4);
+    if(!S.dp.bad)throw new Error("la paire dans la marge du bord devait être refusée");
   });
 });
 

@@ -3773,12 +3773,17 @@ function routeSegsTo(R,t){
   const direct=routeCorner(ret||R.pt,{x:t.x,y:t.y},routePosture(R,t),null,jog);
   if(!direct.length)return {segs:[],bad:false};
   if(!S.avoid||!R.net)return {segs:direct.map(seg),bad:false,retouche:ret};
+  // la marge de bord, à la cote et par la fonction du DRC : un trajet qui y entre ne se pose pas
+  const bord=r=>{
+    if(r.segs.some(s=>!axeDansCarte(s,S.rule.edge+R.w/2))){r.bad=r.bord=true;delete r.shove;}
+    return r;
+  };
   const N=pnsWorld();
   // l'arrivée accrochée est une destination, pas un obstacle
   const skip=new Set();
   if(t&&t.obj)skip.add(t.obj);
   const line={l:R.layer,net:R.net,w:R.w,pts:pnsPts(direct)};
-  if(!N.firstObstacle(line,skip))return {segs:direct.map(seg),bad:false,retouche:ret};
+  if(!N.firstObstacle(line,skip))return bord({segs:direct.map(seg),bad:false,retouche:ret});
   const mode=routeMode();
   if(mode==="shove"){
     // les coudes déjà cliqués ne sont pas encore sur la carte : figés ici, le cuivre poussé ne les traverse pas
@@ -3786,12 +3791,12 @@ function routeSegsTo(R,t){
     for(const s of R.done)B.add(pnsItemSeg(s.l,R.net,s.w!=null?s.w:R.w,s.x1,s.y1,s.x2,s.y2,{locked:true}));
     const r=pnsShove(B,line,skip,Date.now());
     if(r.ok)
-      return {segs:pnsSegs(r.pts).map(seg),bad:false,
-              contourne:pnsLen(r.pts)>pnsLen(line.pts)+1e-6,shove:r};
+      return bord({segs:pnsSegs(r.pts).map(seg),bad:false,
+                   contourne:pnsLen(r.pts)>pnsLen(line.pts)+1e-6,shove:r});
   }
   if(mode!=="mark"){
     const tour=pnsWalkaround(N,line,skip);
-    if(tour.ok)return {segs:pnsSegs(tour.pts).map(seg),bad:false,contourne:true};
+    if(tour.ok)return bord({segs:pnsSegs(tour.pts).map(seg),bad:false,contourne:true});
   }
   return {segs:direct.map(seg),bad:true};
 }
@@ -3819,7 +3824,7 @@ function updateRoute(x,y){
   R.end=t;R.pushed=!!t.pushed;R.contourne=!!r.contourne;R.shove=r.shove||null;
   const last=R.preview[R.preview.length-1];
   if(last){R.end.x=last.x2;R.end.y=last.y2;}     // l'aimant a pu déplacer l'arrivée
-  R.bad=r.bad;
+  R.bad=r.bad;R.bord=!!r.bord;
   R.viaGene=R.viaNext&&!R.end.net?viaObstacle(routeViaVise(R)):"";
 }
 /* Le via tel qu'il serait posé au bout de l'aperçu. */
@@ -3910,7 +3915,7 @@ function routeToPoint(pt){
   const last=R.preview[R.preview.length-1];
   R.end={x:last?last.x2:pt.x,y:last?last.y2:pt.y,net:t.net,pad:false};
   R.pushed=false;R.contourne=!!r.contourne;R.shove=r.shove||null;
-  R.bad=r.bad;
+  R.bad=r.bad;R.bord=!!r.bord;
 }
 function stepRoute(){
   const R=S.route;
@@ -3924,7 +3929,8 @@ function stepRoute(){
     return;
   }
   if(R.bad){
-    hint("Ce trajet passe sous l'isolation de "+fmt(classOf(R.net).clr,2)+
+    hint(R.bord?"Ce trajet passe à moins de "+fmt(S.rule.edge,2)+" mm du bord de carte : écartez-le, ou coupez l'anti-collision pour forcer."
+         :"Ce trajet passe sous l'isolation de "+fmt(classOf(R.net).clr,2)+
          " mm : contournez l'obstacle, ou coupez l'anti-collision pour forcer.");
     return;
   }
@@ -4104,7 +4110,9 @@ function viaPaire(v,skip){
 }
 function viaObstacle(v,nets,skip){
   if(!S.avoid)return "";
-  return viaIsole(v,nets,skip)||viaPaire(v,skip)||viaTrou(v,skip);
+  // le bord de carte en dernier, à la cote du DRC et de `viaEssai` (48-vias.js)
+  return viaIsole(v,nets,skip)||viaPaire(v,skip)||viaTrou(v,skip)||
+         (inBoard(v.x,v.y,S.rule.edge+v.d/2)?"":"à moins de "+fmt(S.rule.edge,2)+" mm du bord de carte");
 }
 function placeVia(x,y,net,a,b,inRoute,nets){
   if(S.cu<2){hint("Une seule couche de cuivre : un via n'aurait rien à relier.");return null;}
