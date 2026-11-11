@@ -146,7 +146,7 @@ const EXPOSE=[
   "dpNetFree","dpNetOpts","dpMateGuess",
   "dpPanelRule","dpMaterialize","dpFigure","dpLayerCells","buildDiffPairs",
   "dpMeander","dpSkewForTrack","busSkewAnalyze","BUS_PRESETS",
-  "meanderMenuToggle","meanderMenuClose","busSkewOpen","busSkewClose",
+  "meanderMenuToggle","meanderMenuClose","busSkewOpen","busSkewClose","_bsState",
   /* ligne de transmission : impédance, retard, C et L de la sélection */
   "LT_C0","LT_KIND","ltEeff","ltZ0","ltSeg","ltVia","ltLine",
   "ltT","ltC","ltL","ltRange","ltTable","ltSection","propsTrack","propsTracks",
@@ -10059,6 +10059,11 @@ T("modale busSkewModal : cycle d'ouverture, calcul et fermeture",()=>{
   if(!m || m.hidden) throw new Error("modale non ouverte");
   busSkewClose();
   if(!m.hidden) throw new Error("modale non fermée");
+  /* l'horloge devinée l'est en mots entiers (SIM_RE_HORLOGE) : BACKLIGHT n'en est pas une */
+  _bsState.clkNet = "";
+  busSkewOpen(["LCD_BACKLIGHT", "D0", "SPI1_SCK"]);
+  busSkewClose();
+  if(_bsState.clkNet !== "SPI1_SCK") throw new Error("horloge devinée : "+_bsState.clkNet);
 });
 T("SIM_BUS dans le panneau de simulation : calcul sur bus nommé avec paramètres manuels",()=>{
   carteVide();

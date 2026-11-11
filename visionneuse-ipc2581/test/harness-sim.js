@@ -214,7 +214,7 @@ const EXPOSE=["simDsChamp","simCarteF","simBusMarges","simPDNLireChamps","simDsL
   /* plans (Draftsman) */
   "plnIpcFeuilles","plnPercages",
   /* formule légère et lecture des valeurs */
-  "ltZ0","simParseResistance",
+  "ltZ0","ltEeff","simParseResistance","SIM_RE_HORLOGE","simBusClassifierNets",
   /* les six corrections de l'audit des simulations (essais en fin de fichier) */
   "simVerdictDC","simTableauBornes","simSection","simRfBilan",
   "simDCTensionNet","pcbParseVolt",
@@ -7745,6 +7745,62 @@ T("PDN : un ΔI, un Vdd ou une ondulation à 0 garde la dernière valeur valable
     els[0].value="0,9"; simPDNLireChamps();
     if(SIM_PDN.vdd!==0.9)throw new Error("une valeur valable doit passer : "+SIM_PDN.vdd);
   }finally{els.forEach(e=>e.remove&&e.remove());SIM_PDN.vdd=g.v;SIM_PDN.ripplePct=g.r;SIM_PDN.deltaIA=g.d;}
+});
+
+T("formule légère, cuivre épais : εeff et Z0 à 2 % de Hammerstad-Jensen 1980, flancs dans l'air",()=>{
+  /* Hammerstad et Jensen, « Accurate Models for Microstrip Computer-Aided
+     Design », IEEE MTT-S Digest 1980 : Z01 (éq. 1-2), ε(u) (éq. 3-5),
+     élargissement dans l'air (éq. 6) et avec le stratifié (éq. 7), puis
+     Z0 = Z01(ur)/√ε(ur) et εeff = ε(ur) [Z01(u1)/Z01(ur)]². */
+  const er=4.3, h=0.2, w=0.3, u=w/h;
+  const z01=x=>376.730313668/(2*Math.PI)*Math.log(
+    (6+(2*Math.PI-6)*Math.exp(-Math.pow(30.666/x,0.7528)))/x+Math.sqrt(1+4/(x*x)));
+  const eps=x=>{
+    const a=1+Math.log((x**4+(x/52)**2)/(x**4+0.432))/49+Math.log(1+(x/18.1)**3)/18.7;
+    const b=0.564*Math.pow((er-0.9)/(er+3),0.053);
+    return (er+1)/2+(er-1)/2*Math.pow(1+10/x,-a*b);
+  };
+  let e0=Infinity;
+  for(const t of [0.035,0.070,0.105]){
+    const T=t/h, cth=1/Math.tanh(Math.sqrt(6.517*u));
+    const du1=T/Math.PI*Math.log(1+4*Math.E/(T*cth*cth));
+    const u1=u+du1, ur=u+du1*0.5*(1+1/Math.cosh(Math.sqrt(er-1)));
+    const zRef=z01(ur)/Math.sqrt(eps(ur)), eRef=eps(ur)*(z01(u1)/z01(ur))**2;
+    const g={kind:"micro",er:er,h:h,t:t};
+    const e=ltEeff(g,w), z=ltZ0(g,w);
+    if(Math.abs(e/eRef-1)>0.02)throw new Error("t="+t+" : εeff "+e+" au lieu de "+eRef);
+    if(Math.abs(z/zRef-1)>0.02)throw new Error("t="+t+" : Z0 "+z+" au lieu de "+zRef);
+    if(!(e<e0))throw new Error("t="+t+" : εeff doit baisser avec l'épaisseur ("+e+" après "+e0+")");
+    e0=e;
+  }
+  /* triplaque inchangée : noyée, εeff vaut εr */
+  if(ltEeff({kind:"strip",er:er,h:0.2,b:0.4,t:0.105},w)!==er)throw new Error("triplaque : εeff ≠ εr");
+});
+
+T("bus : une horloge se reconnaît en mots entiers (ni BACKLIGHT, ni ACK, ni LOCK)",()=>{
+  const vrais=["CLK","SCK","SCLK","SCL","BCLK","MCLK","CLK_OUT","SPI1_SCK","CK","CLKP","CLKN",
+               "I2C1-SCL","/CLK","ck_p","REFCLK","DDR_CK0","LRCLK"];
+  const faux=["BACKLIGHT","ACK","LOCK","DQS","MOSI","SDA","CLOCKWISE","SCKX","PLL_LOCK","BACK","CKE"];
+  const mal=vrais.filter(n=>!SIM_RE_HORLOGE.test(n)).concat(faux.filter(n=>SIM_RE_HORLOGE.test(n)));
+  if(mal.length)throw new Error("mal classés : "+mal.join(", "));
+  const c=simBusClassifierNets(["LCD_BACKLIGHT","I2C_ACK","SPI1_SCK","MOSI"],"spi");
+  if(c.clocks.join()!=="SPI1_SCK")throw new Error("classement : "+JSON.stringify(c));
+});
+
+T("bus : une fréquence à 0 garde la dernière valeur valable, champ compris", function(){
+  const ed=global.SIM_ED, etat=Object.assign({},SIM_BUS);
+  try{
+    simInit(SIM_IPC, document.createElement("div"));
+    Object.assign(SIM_BUS,{protocole:"spi",freqMhz:50,clocks:["CK"],datas:["D0"],dataClockMap:{}});
+    simBrancherBus();
+    const e=document.getElementById("simBusFreq");
+    e.value="0"; e.oninput();
+    if(SIM_BUS.freqMhz!==50)throw new Error("0 MHz accepté : "+SIM_BUS.freqMhz);
+    e.onblur();
+    if(e.value!=="50")throw new Error("le champ garde « "+e.value+" »");
+    e.value="12,5"; e.oninput();
+    if(SIM_BUS.freqMhz!==12.5)throw new Error("une valeur valable doit passer : "+SIM_BUS.freqMhz);
+  }finally{Object.assign(SIM_BUS,etat);simInit(ed,null);}
 });
 
 
