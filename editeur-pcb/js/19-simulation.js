@@ -1394,21 +1394,6 @@ function simTrackU(t, pt){
   return clamp(((pt.x-t.x1)*dx+(pt.y-t.y1)*dy)/l2, 0, 1);
 }
 
-function simPistePartenaire(trk, netVoisin){
-  if(!trk||!netVoisin||typeof S==="undefined"||!S.tracks)return null;
-  let meilleur=null, minD=Infinity;
-  const pMid=trkMid(trk);
-  for(const t of S.tracks){
-    if(t.l!==trk.l||t.net!==netVoisin||t===trk)continue;
-    const d=trkDist(pMid.x,pMid.y,t);
-    if(d<minD&&d<=4.0){ // écartement maximal d'une paire à portée (< 4 mm)
-      minD=d;
-      meilleur=t;
-    }
-  }
-  return meilleur;
-}
-
 function simProjSegmentSurPiste(tSource, u1, u2, tCible){
   if(!tSource||!tCible)return null;
   const p1=trkAt(tSource, u1);

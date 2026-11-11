@@ -134,6 +134,8 @@ function refStartPage(i){
         e.c.ref=neuf.get(e.c.ref);
       }
     }
+    /* les autres parties d'un boîtier (U1B sur une autre feuille) suivent leur repère */
+    S.pages.forEach((q,k)=>{if(k!==i)for(const c of q.comps||[])if(c.part&&neuf.has(c.ref))c.ref=neuf.get(c.ref);});
     if(i===S.page)loadPage(i);
     refreshPanels();draw();
   }

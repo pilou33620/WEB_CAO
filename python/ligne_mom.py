@@ -87,7 +87,7 @@
 #   facteur_rugosite, djordjevic_sarkar, abcd_via_ligne, _pertes,
 #   _z_air_microruban, _z_air_triplaque, _hauteur_deduite, _recul,
 #   _topologie_pertes, _z_air_section. Constantes : ETA_0,
-#   MODELES_CONDUCTEUR, MODELES_RUGOSITE, EPAISSEUR_MIN_WHEELER.
+#   MODELES_CONDUCTEUR, EPAISSEUR_MIN_WHEELER.
 # Fonctions modifiees : line_losses, line_losses_detaillees (parametres nommes
 #   optionnels en plus ; meme forme de retour, cles ajoutees au detail).
 #
@@ -2177,9 +2177,6 @@ def _hauteur_deduite(topo, z_air, w, t):
 # Zero rugosite rend K = 1 exactement : rien ne change pour qui ne la donne pas.
 # ==========================================================================
 
-MODELES_RUGOSITE = ("hammerstad", "huray")
-
-
 def facteur_rugosite(freq, rugosite_rms=0.0, modele="hammerstad",
                      rayon_nodule=0.0, rapport_surface=0.0, sigma=SIGMA_CU):
     """Le facteur K >= 1 de la rugosite sur alpha_c. TOUT EN METRES.
@@ -2561,11 +2558,6 @@ def elements_coude(w, h, epsilon_r, angle_deg=90.0):
 
     part = min(theta, 180.0) / 90.0
     return l * part, c * part
-
-
-def capacite_coude(w, h, epsilon_r, angle_deg=90.0):
-    """La seule capacite d'exces du coude -- voir `elements_coude`."""
-    return elements_coude(w, h, epsilon_r, angle_deg)[1]
 
 
 def inductance_via(h, d):

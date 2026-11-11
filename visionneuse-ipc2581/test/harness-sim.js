@@ -153,7 +153,7 @@ const EXPOSE=["simDsChamp","simDsLire","simDsEcrire","SIM_DS","SIM_PDN","simPDNA
   "simZSegment","simZActif","simZVerdict","simZTolAbs",
   "simZDiffCouleur","simZDiffTolAbs","simZDiffVerdict",
   "simCarteDiffPartenaire","simCarteDiffLegende",
-  "simPistePartenaireIpc","simProjSegmentSurPisteIpc","simLotsSontPaireDiff",
+  "simProjSegmentSurPisteIpc","simLotsSontPaireDiff",
   "simZValeurs","simZDrawnLabels","simZTrace","simDocDiff",
   /* Le voile : ce qui n'est pas dans la simulation s'estompe. */
   "simVoileActif","SIM_VOILE_ALPHA",
@@ -4011,10 +4011,6 @@ T("simulation EM IPC-2581 - Z Différentielle : projection géométrique, piste 
     { i: 1, nom: "DIFF_N", pistes: [pAutre, p2] }
   ];
 
-  const part = simPistePartenaireIpc(p1, "DIFF_N");
-  if (!part || part !== p2) {
-    throw new Error("simPistePartenaireIpc doit retrouver la piste du même layer la plus proche");
-  }
 
   // 3. Projection d'un tronçon couplé via simProjSegmentSurPisteIpc
   const cum1 = simCumul(p1.p);

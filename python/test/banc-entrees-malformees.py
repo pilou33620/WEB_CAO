@@ -47,6 +47,13 @@ for module, fonction, erreur in (("simulation_em", "simuler", "ErreurSimulation"
                                  ("rf_reseau", "analyser", "ErreurRF"),
                                  ("analyse_carte", "analyser_document", "ErreurAnalyse")):
     refus(module, fonction, erreur, ["x", [], {"format": 1}, {"pistes": "x"}, {"empilage": "x"}])
+# la cle lue est « stackup » : avec un format valide, un empilage qui n'est pas un objet est un refus
+import rf_reseau as _rf
+for module, fonction, erreur, fmt in (("simulation_em", "simuler", "ErreurSimulation", "cao-sim-em-3"),
+                                      ("crosstalk", "analyser", "ErreurCrosstalk", "cao-crosstalk-1"),
+                                      ("rf_reseau", "analyser", "ErreurRF", _rf.FORMAT),
+                                      ("oeil", "analyser", "ErreurOeil", "cao-sim-em-3")):
+    refus(module, fonction, erreur, [{"format": fmt, "stackup": "x"}])
 
 if ECHECS:
     print("%d cas, %d ECHEC(S)" % (len(CAS), len(ECHECS)))

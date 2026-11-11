@@ -1070,7 +1070,7 @@ function ipc2581Document(opts){
     if(f&&n<2)continue;
     const k=set(SILK[f],"S",[]), w=d.width||0.15;
     if(d.shape==="poly"){if(d.pts&&d.pts.length>=3)k.push(["Features",[],[contour(d.pts,d.trous)]]);}
-    else if(d.shape==="text")k.push(texte(d.text||"TEXT",d.x1,d.y1,d.size||1.5,!!f,d.rot||0,w));
+    else if(d.shape==="text")k.push(texte(d.text!=null?d.text:"TEXT",d.x1,d.y1,d.size||d.height||1.5,!!f,d.rot||0,w));
     else if(d.shape==="rect")
       k.push(["Features",[],[polyligne([{x:d.x1,y:d.y1},{x:d.x2,y:d.y1},{x:d.x2,y:d.y2},{x:d.x1,y:d.y2}],w,true)]]);
     else if(drwArc(d))k.push(["Features",[],[polyligne(drwPoints(d),w,false)]]);

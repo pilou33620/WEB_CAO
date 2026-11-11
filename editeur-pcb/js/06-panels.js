@@ -67,7 +67,7 @@ function buildLayers(){
        (DRW_COUL[k]||{maskT:C_MASK,maskB:C_MASK,
          pasteT:C_PASTE,pasteB:C_PASTE,ptst:C_PTST,edge:C_EDGE,plane:"#3a6b58",
          rats:C_RATS,drc:C_ERR}[k])+'"></i>'+
-       '<span class="nm">'+n+'</span><span class="tp">'+id+'</span>'+
+       '<span class="nm">'+esc(n)+'</span><span class="tp">'+esc(id)+'</span>'+
        '<span class="eye">'+(S.show[k]?"◉":"○")+'</span></div>';
   h+='<div class="cat">Couche active</div><div id="actLay"></div>';
   box.innerHTML=h;
@@ -975,7 +975,7 @@ function propsHole(box, h){
   const bDel=$("pHoleDel");
   if(bDel)bDel.onclick=deleteSel;
 }
-const drwCouchesOptions=l=>DRW_COUCHES.map(c=>'<option value="'+c[0]+'"'+(l===c[0]?" selected":"")+'>'+c[2]+" ("+c[1]+")</option>").join("");
+const drwCouchesOptions=l=>DRW_COUCHES.map(c=>'<option value="'+c[0]+'"'+(l===c[0]?" selected":"")+'>'+esc(c[2]+" ("+c[1]+")")+"</option>").join("");
 function propsDrawing(box, d){
   /* aplat de sérigraphie : sa face, sa taille, et le retirer */
   if(d.shape==="poly"){
@@ -1686,7 +1686,7 @@ function propsFp(box,fp){
         /* le chemin du dossier d'abord : un projet rangé en sous-dossier ou
            sous une autre racine n'est pas retrouvé par son seul nom */
         const nomP=(typeof projdChemin==="function"?projdChemin():"")||(typeof projNom==="function"?projNom():"")||(typeof pcbProjNom==="function"?pcbProjNom():"")||"";
-        window.open("/api/datasheet/ouvrir?projet="+encodeURIComponent(nomP)+"&fichier="+encodeURIComponent(schComp.datasheet_local),"_blank");
+        window.open(RACINE_OUTIL+"/api/datasheet/ouvrir?projet="+encodeURIComponent(nomP)+"&fichier="+encodeURIComponent(schComp.datasheet_local),"_blank");
       }else if(schComp.datasheet_web&&(schComp.datasheet_web.startsWith("http://")||schComp.datasheet_web.startsWith("https://"))){
         window.open(schComp.datasheet_web,"_blank");
       }

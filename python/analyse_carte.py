@@ -67,10 +67,13 @@ def _constat(regle, x, y, c, n, msg, deg=None):
 
 
 def _cases(case, x1, y1, x2, y2, marge):
-    for i in range(math.floor((min(x1, x2) - marge) / case),
-                   math.floor((max(x1, x2) + marge) / case) + 1):
-        for j in range(math.floor((min(y1, y2) - marge) / case),
-                       math.floor((max(y1, y2) + marge) / case) + 1):
+    i0, i1 = math.floor((min(x1, x2) - marge) / case), math.floor((max(x1, x2) + marge) / case)
+    j0, j1 = math.floor((min(y1, y2) - marge) / case), math.floor((max(y1, y2) + marge) / case)
+    # une coordonnee aberrante remplirait la grille de millions de cases (2 Go a 6 m)
+    if (i1 - i0 + 1) * (j1 - j0 + 1) > 100000:
+        raise ErreurAnalyse("Un segment de la carte couvre plus de 600 mm : coordonnées aberrantes.")
+    for i in range(i0, i1 + 1):
+        for j in range(j0, j1 + 1):
             yield i, j
 
 
@@ -3159,7 +3162,10 @@ def branches_t(doc, couches, reg, unite, troncons):
             for b, L in v:
                 prec, cur, tot = k, b, L
                 while len(adj[cur]) == 2 and not sur_pad(cur):
-                    nxt, dl = next((q, d) for q, d in adj[cur] if q != prec)
+                    # piste tracee deux fois : les deux aretes menent au meme voisin
+                    nxt, dl = next(((q, d) for q, d in adj[cur] if q != prec), (None, 0))
+                    if nxt is None:
+                        break
                     prec, cur, tot = cur, nxt, tot + dl
                     if cur == k:
                         break

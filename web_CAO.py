@@ -537,6 +537,7 @@ import analyse_carte  # noqa: E402
 # Toutes les pistes et toutes les pastilles placees d'une carte : 12 000
 # pastilles sur quatre couches font quelques mega-octets de JSON.
 MAX_ANALYSE = 32 * 1024 * 1024
+MAX_DEPLIE = 64 * 1024 * 1024     # un corps gzip, une fois deplie (_lire_document)
 
 
 def _borner_empilage(doc):
@@ -1635,6 +1636,10 @@ STATIQUE_LIB = re.compile(r"^/LIB(?:/[^/.:\\][^/:\\]*)+$")
 class CustomHandler(http.server.SimpleHTTPRequestHandler):
     """Sert ROOT, sans cache, avec redirection vers <dossier>/<dossier>.html."""
 
+    # Un client muet (corps annonce jamais envoye, connexion d'un octet) ne garde
+    # ni son fil ni une place de calcul : la lecture abandonne apres 120 s.
+    timeout = 120
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=ROOT, **kwargs)
 
@@ -2430,7 +2435,10 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         ecrivain.writerow(colonnes)
         for comp in composants:
             if isinstance(comp, dict):
-                ligne = [self._valeur_catalogue(col, comp.get(col, "")) for col in colonnes]
+                try:
+                    ligne = [self._valeur_catalogue(col, comp.get(col, "")) for col in colonnes]
+                except ErreurLib as exc:        # dire quelle ligne : le catalogue en a des centaines
+                    raise ErreurLib(exc.code, "« %s » : %s" % (str(comp.get("Part Name", ""))[:80], exc.message))
                 ecrivain.writerow(ligne)
 
         texte = sortie.getvalue()
@@ -2446,7 +2454,18 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                 raise ErreurLib(409, "Le catalogue a ete modifie ailleurs depuis son chargement :"
                                      " rien n'est enregistre, recharge la page pour le reprendre")
             try:
-                ecrire_texte_atomique(cible, texte)
+                if os.path.exists(cible):
+                    # encodage et BOM d'origine gardes, comme pour une case : sans BOM,
+                    # Excel relit les accents en « Ã© ». Un caractere hors cp1252 : UTF-8 avec BOM.
+                    _, brut, _, enc = self._catalogue_brut()
+                    try:
+                        self._catalogue_ecrire(cible, brut, enc, texte)
+                    except ErreurLib as exc:
+                        if exc.code != 400:
+                            raise
+                        ecrire_texte_atomique(cible, "\ufeff" + texte)
+                else:
+                    ecrire_texte_atomique(cible, texte)
             except UnicodeEncodeError:
                 raise ErreurLib(400, "Texte invalide (caractere non encodable en UTF-8)")
             except OSError as exc:
@@ -2462,7 +2481,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         Une description peut garder deux lignes (champ entre guillemets)."""
         if not isinstance(v, (str, int, float)) or isinstance(v, bool):
             raise ErreurLib(400, "Colonne « %s » : texte attendu" % k)
-        v = str(v)
+        v = str(v).replace("\u00a0", " ")   # espace insecable (Excel, texte de distributeur) : une espace
         if len(v) > 500 or re.search(r"[\x00-\x09\x0b\x0c\x0e-\x1f\x7f]", v):
             raise ErreurLib(400, "Colonne « %s » : 500 caracteres au plus, sans caractere de controle" % k)
         if re.match(r"\s*([=@]|[+-]\s*[A-Za-z(])", v):
@@ -2906,17 +2925,17 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         corps = self.rfile.read(taille)
         # LE CORPS ARRIVE COMPRESSE quand la page l'annonce (`simCorpsJson`).
         # Le plafond garde son sens : on ne decompresse pas au-dela de huit
-        # fois ce qu'il autorise -- un corps de 1 Mo qui se deplie en 1 Go
-        # n'est pas un document.
+        # fois ce qu'il autorise, ni au-dela de MAX_DEPLIE -- 256 Mo de JSON
+        # deplies coutaient 1,6 Go d'objets Python, de quoi faire tuer le Pi.
         if (self.headers.get("Content-Encoding") or "").strip().lower() == "gzip":
             d = zlib.decompressobj(16 + zlib.MAX_WBITS)
             try:
-                brut = d.decompress(corps, 8 * plafond)
+                brut = d.decompress(corps, min(8 * plafond, MAX_DEPLIE))
             except zlib.error as exc:
                 raise ErreurIPC(400, "Document gzip illisible : %s" % exc)
             if d.unconsumed_tail:
                 raise ErreurIPC(413, "Document décompressé trop grand : plus de %d Mo"
-                                     % (8 * plafond // 1048576))
+                                     % (min(8 * plafond, MAX_DEPLIE) // 1048576))
             corps = brut
         try:
             doc = _deplier_grilles(json.loads(corps.decode("utf-8")))

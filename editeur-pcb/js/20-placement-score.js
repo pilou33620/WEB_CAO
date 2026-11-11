@@ -251,7 +251,7 @@ var PLACEMENT_SCORE = (function() {
           <div style="color:var(--yellow);font-weight:600;margin-bottom:6px;">⚠️ ${exc && exc.repondu ? "Analyse refusée par le serveur" : "Serveur d'analyse non disponible"}</div>
           <div>${esc(erreur)}</div>
           <div style="margin-top:8px;font-size:11px;color:var(--txt-dim);">${
-            exc && exc.appairer ? 'Cet appareil n\'est plus reconnu (serveur relancé ?) : <a href="/appairage" target="_blank" rel="noopener">ressaisir le code d\'appairage</a>, puis Réessayer.'
+            exc && exc.appairer ? 'Cet appareil n\'est plus reconnu (serveur relancé ?) : <a href="'+RACINE_OUTIL+'/appairage" target="_blank" rel="noopener">ressaisir le code d\'appairage</a>, puis Réessayer.'
             : exc && exc.repondu ? "Le serveur a refusé la requête : voir le motif ci-dessus."
             : "Lancez <code>python web_CAO.py</code> en console pour activer le calcul en temps réel."}</div>
           <button class="tb" id="bPlacementRefresh" style="margin-top:10px;width:100%;justify-content:center;">🔄 Réessayer</button>

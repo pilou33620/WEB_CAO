@@ -12819,36 +12819,6 @@ function simCorpsBus(){
   return h;
 }
 
-function simBusClassifierNets(nets, proto){
-  const clocks=[], datas=[];
-  const p=proto||"spi";
-
-  for(const net of nets){
-    const u=net.toUpperCase();
-    if(p==="i2c"){
-      if(u.includes("SCL")||u.includes("CLK")||u.includes("CK")){
-        clocks.push(net);
-      }else{
-        datas.push(net);
-      }
-    }else if(p==="uart"){
-      datas.push(net);
-    }else{
-      if(u.includes("CLK")||u.includes("SCK")||u.includes("CK")){
-        clocks.push(net);
-      }else{
-        datas.push(net);
-      }
-    }
-  }
-
-  if(p!=="uart"&&clocks.length===0&&datas.length>0){
-    clocks.push(datas.shift());
-  }
-
-  return {clocks, datas};
-}
-
 function simBusRendreNetsBar(){
   const bar=simEl("simBusNetsBar");
   if(!bar)return;

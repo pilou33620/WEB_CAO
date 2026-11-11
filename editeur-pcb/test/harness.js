@@ -135,7 +135,7 @@ const EXPOSE=[
   /* paires différentielles : modèle, règles, tracé couplé, contrôle */
   "DP_SUF","DP_FALLBACK","DP_KEYS","DP_PROFILES","DP_MITER","DP_STEP",
   "dpSplit","dpMateName","dpMatch","dpDetect","dpByName","dpOfNet",
-  "dpMateNet","dpFreeName","dpRuleFor","dpValues","dpMinGap","dpGeom","dpUid",
+  "dpFreeName","dpRuleFor","dpValues","dpMinGap","dpGeom","dpUid",
   "dpProfile","dpIsPlane","dpDiBetween","dpStripGeom","dpZ0","dpZdiff",
   "dpSolveW","dpSolveGap","normDpPair","normDpRule",
   "dpSegs","dpDir","dpPerp","dpCross","dpDot","dpOffset","dpLeg",
@@ -256,7 +256,7 @@ const EXPOSE=[
   /* Ce que les deux adaptateurs partagent : filtre, parasites, montage, cavite. */
   "simPDNEstMasse","simPDNEstCondensateur","simPDNParasitesCapa","simPDNParasitesDefaut","simPDNInductanceMontage","simPDNChoisirCavite","simPDNAppliquerCavite","simPDNChoisirCharge","SIM_PARASITES_MURATA_DEFAUT","simPDNLireChamps","simPDNCheminsPiste","simPDNInductanceLineique","simPDNHauteursRetour","simPDNEvaluerEvenement","simPDNZa","simPDNBilanEvenements","simPDNRendreEvenements","simPDNPreparerEvenements","simPDNEvLireChamp","simPDNFicheDefaut","simPDNFicheCharger","simPDNFicheSauver","simPDNFicheModifier","simPDNEvenementsDepuisFiche","SIM_PDN_FICHE","simPDNSynchroDeltaI","simPDNAssistantActif","simPDNBasculerAssistant",
   "simInit","simRafraichir","simAllerAnalyse","simBusRendreNetsBar",
-  "simBusBasculerRole","simBusChangerNet","simBusActiverRSerie","simBusDesactiverRSerie","simBusChangerNetAval","simBusChangerRSerieVal","simBusResoudreNetAvecPont","simBusClassifierNets","simBusSupprimerSignal",
+  "simBusBasculerRole","simBusChangerNet","simBusActiverRSerie","simBusDesactiverRSerie","simBusChangerNetAval","simBusChangerRSerieVal","simBusResoudreNetAvecPont","simBusSupprimerSignal",
   "simThermiqueDC","simDCThermique","simDCThermiquePcb",
   /* Le choix de la couche peinte, et l'oubli qui va avec. */
   "simDCOublier","simDCCouchePeinte","simDCCouchesPeintes",
@@ -317,7 +317,7 @@ const EXPOSE=[
   "simZSegment","simZActif","simZVerdict","simZTolAbs",
   "simZDiffCouleur","simZDiffTolAbs","simZDiffVerdict",
   "simCarteDiffPartenaire","simCarteDiffLegende",
-  "simTrackU","simPistePartenaire","simProjSegmentSurPiste","simLotsSontPaireDiff",
+  "simTrackU","simProjSegmentSurPiste","simLotsSontPaireDiff",
   "simZValeurs","simZDrawnLabels","simZTraceLot","simZTrace","simDocDiff",
   /* Le voile : ce qui n'est pas dans la simulation s'estompe. */
   "simVoileActif","SIM_VOILE_ALPHA",
@@ -7994,6 +7994,16 @@ T("rotation d'une pastille : cumulée à l'empreinte, inversée par le miroir",(
     throw new Error("le contour garde ses marges : 0,35 en haut et en bas, "+
       "0,25 à gauche et à droite : "+JSON.stringify(haut));
 });
+T("fichier reçu : texte vidé absent du Gerber, nom de couche mécanique échappé",()=>{
+  const avant=serialize();
+  try{
+    loadDoc({cu:2,mecaNoms:{mec1:"<img src onerror=x>"},
+             drawings:[{id:1,shape:"text",layer:"silkT",text:"",x1:10,y1:10,size:1.5}]});
+    if(/D01\*/.test(gerberSilk(0)))throw new Error("un texte vide grave quelque chose dans le .GTO");
+    buildLayers();
+    if(/<img/.test($("layers").innerHTML))throw new Error("nom de couche mécanique non échappé");
+  }finally{loadDoc(JSON.parse(avant));}
+});
 T("ouvertures Gerber : rond, rectangle, oblong, et leurs rotations",()=>{
   const ap=q=>{const A=apSet();apForPad(A,q,0);return A.defs.join(" ")+" "+A.macros.join(" ");};
   if(!/ADD10C,1\.5/.test(ap({x:0,y:0,w:1.5,h:1.5,shape:"circ",rot:0})))
@@ -8012,6 +8022,9 @@ T("ouvertures Gerber : rond, rectangle, oblong, et leurs rotations",()=>{
   const ob=ap({x:0,y:0,w:2,h:1,shape:"oval",rot:Math.PI/6});
   if(!/AMOBR/.test(ob)||!/ADD10OBR,/.test(ob))
     throw new Error("oblong de biais : macro attendue : "+ob);
+  /* le rectangle central fait (longueur − largeur) : entier, il noyait les deux disques
+     et la pastille sortait en rectangle à coins vifs */
+  if(!/21,1,\$1-\$2,\$2,0,0,\$5\*/.test(ob))throw new Error("macro OBR : rectangle central faux : "+ob);
   /* un angle quelconque sur un rectangle garde la macro de rectangle tourné */
   if(!/AMRRECT/.test(ap({x:0,y:0,w:2,h:1,shape:"sharp",rot:Math.PI/6})))
     throw new Error("rectangle de biais : macro RRECT attendue");
@@ -8777,7 +8790,6 @@ T("détection : seules les paires dont les deux nets existent",()=>{
   if(dpAutoAll()!==0)throw new Error("une paire déjà déclarée ne se recrée pas");
   if(dpOfNet("USB_DP")!==dpOfNet("USB_DM"))
     throw new Error("les deux nets doivent désigner la même paire");
-  if(dpMateNet("USB_DP")!=="USB_DM")throw new Error("net complémentaire perdu");
 });
 T("deux listes de nets : la polarité choisie fait loi",()=>{
   carteDp();
@@ -10104,12 +10116,6 @@ T("SIM_BUS : liaison composants, protocoles (SPI/I2C/UART) et gestion directe de
   if(netsPartages.includes("VCC") || netsPartages.includes("GND"))
     throw new Error("netsEntreComposants ne doit pas inclure les nets non partagés");
 
-  // 2. Classification automatique des signaux SPI
-  const classed = simBusClassifierNets(netsPartages, "spi");
-  if(!classed.clocks.includes("CLK_SPI"))
-    throw new Error("CLK_SPI aurait dû être classé en horloge");
-  if(!classed.datas.includes("MOSI") || !classed.datas.includes("MISO"))
-    throw new Error("MOSI et MISO auraient dû être classés en données");
 
   // 3. Configuration directe du protocole et des signaux (choix utilisateur)
   SIM_BUS.protocole = "spi";
@@ -21711,13 +21717,6 @@ T("simulation EM - Z Différentielle : projection géométrique, piste partenair
   const tLoin = { l: 0, net: "D_N", w: 0.2, x1: 50, y1: 10, x2: 50, y2: 40 };
   const tAutreCouche = { l: 1, net: "D_N", w: 0.2, x1: 10.3, y1: 10, x2: 10.3, y2: 40 };
   S.tracks.push(tP, tN, tLoin, tAutreCouche);
-
-  // 1. Détection de la piste partenaire
-  const vt = simPistePartenaire(tP, "D_N");
-  if (!vt || vt !== tN) throw new Error("La piste partenaire D_N devrait être tN");
-
-  const vtFaux = simPistePartenaire(tP, "INCONNU");
-  if (vtFaux !== null) throw new Error("Aucun partenaire ne devrait être trouvé pour un net inexistant");
 
   // 2. Calcul du paramètre u sur la piste
   const uMid = simTrackU(tP, { x: 10, y: 25 });

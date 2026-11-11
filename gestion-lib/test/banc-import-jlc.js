@@ -157,6 +157,19 @@ assert(etatPouce.composants.length === 3 && etatPouce.composants[0].Description 
   vm.runInContext('LIB_STATE = { composants: [], filtres: {} }; JLC_IMPORT_ETAT.pinoutActif = { pins: [{number:"1",name:"B"},{number:"2",name:"E"},{number:"3",name:"C"}] };', sandbox);
   await vm.runInContext("validerEtEnregistrerJlc", sandbox)();
   assert(appels.length === 1 && appels[0].nom === "npn.json" && appels[0].siAbsent, "Symbole générique partagé : écriture refusée si existant (si_absent)");
+  // la même pièce une seconde fois : refusée (deux lignes de même Part Name bloquent le catalogue)
+  const alertes = [];
+  sandbox.alert = m => alertes.push(m);
+  await vm.runInContext("validerEtEnregistrerJlc", sandbox)();
+  assert(vm.runInContext("LIB_STATE.composants.length", sandbox) === 1 && /déjà au catalogue/.test(alertes[0] || ""),
+    "Pièce déjà au catalogue : import refusé, pas de ligne en double");
+  // enregistrement refusé par le serveur : la ligne ajoutée est retirée
+  vm.runInContext("LIB_STATE.composants = [];", sandbox);
+  sandbox.enregistrerCatalogue = async () => { throw new Error("409"); };
+  await vm.runInContext("validerEtEnregistrerJlc", sandbox)();
+  assert(vm.runInContext("LIB_STATE.composants.length", sandbox) === 0, "Enregistrement refusé : la ligne ajoutée est retirée");
+  sandbox.enregistrerCatalogue = async () => {};
+  appels.length = 1;
   vals["Empreinte Schématique"] = "BC847.json";
   await vm.runInContext("validerEtEnregistrerJlc", sandbox)();
   assert(appels[1].nom === "BC847.json" && !appels[1].siAbsent, "Symbole propre à la pièce : réécriture permise");

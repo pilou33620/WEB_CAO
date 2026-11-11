@@ -4477,6 +4477,8 @@ def _doc_valide(doc):
             % ", ".join("« %s »" % n for n in externes),
             "Le couplage se calcule ici, à partir du design. Retirez ces"
             " champs.")
+    if not isinstance(doc.get("stackup") or {}, dict):
+        raise ErreurCrosstalk("« stackup » doit être un objet.")
     couches = (doc.get("stackup") or {}).get("layers") or []
     if not couches:
         raise ErreurCrosstalk(

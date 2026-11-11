@@ -122,7 +122,7 @@ function mdlNb(v,dec){
   return Number(v).toFixed(d).replace(/\.?0+$/,"").replace(".",",")||"0";
 }
 function mdlMes(v,dec){ return mdlNb(v,dec)+" "+V.unite; }
-function mdlEntier(n){ return String(n).replace(/\B(?=(\d{3})+(?!\d))/g," "); }
+function mdlEntier(n){ return esc(n).replace(/\B(?=(\d{3})+(?!\d))/g," "); }
 function mdlNetNom(i){
   const t=V.modele&&V.modele.nets;
   return (t&&i>=0&&i<t.length)?t[i]:"";

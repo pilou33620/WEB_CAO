@@ -402,14 +402,19 @@ function bomRows(variante){
             return p1 === targetMpn || p2 === targetMpn;
           });
         }
+        /* replis par la valeur : même famille (préfixe du repère) et même boîtier entier,
+           sinon un condensateur 10u prenait la self 10u, et SOT-23 le SOT-23-5 */
+        const pre = defOf(c.type).p;
+        const famille = it => { const q = (it["Reference designator Prefix"]||"").trim().toUpperCase(); return !q || !pre || q === String(pre).toUpperCase(); };
         if(!entry && targetVal){
-          entry = lib.find(it => (it["Part Name"]||"").toLowerCase().trim() === targetVal);
+          entry = lib.find(it => (it["Part Name"]||"").toLowerCase().trim() === targetVal && famille(it));
         }
         if(!entry && targetVal && targetPkg){
           entry = lib.find(it => {
             const v = (it["Value"]||"").toLowerCase().trim();
             const pk = (it["Package type"]||it["Empreinte PCB"]||"").toLowerCase().trim();
-            return v === targetVal && pk.includes(targetPkg);
+            const k = pk.indexOf(targetPkg), bord = ch => !ch || !/[a-z0-9-]/.test(ch);
+            return v === targetVal && famille(it) && k >= 0 && bord(pk[k-1]) && bord(pk[k+targetPkg.length]);
           });
         }
       }

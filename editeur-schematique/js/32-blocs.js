@@ -45,7 +45,14 @@ function blocPoser(nom) {
   if (!b) return false;
   const W = cv.clientWidth || 800, H = cv.clientHeight || 600;
   S.mouse = { x: (W / 2 - S.ox) / S.scale, y: (H / 2 - S.oy) / S.scale };
-  pasteClip(b.contenu);
+  /* un fil nommé garde son nom au collage (même nom = même net) : posé deux fois, le bloc
+     reliait ses « FB » entre eux. Un nom déjà pris sur le schéma reçoit un suffixe. */
+  const pris = new Set();
+  S.pages.forEach((p, i) => { for (const w of (i === S.page ? S.wires : p.wires || [])) if (w.net) pris.add(w.net); });
+  const neuf = new Map();
+  const libre = n => { if (!neuf.has(n)) { let k = 2; while (pris.has(n + "_" + k)) k++; neuf.set(n, n + "_" + k); pris.add(n + "_" + k); } return neuf.get(n); };
+  const contenu = Object.assign({}, b.contenu, { wires: (b.contenu.wires || []).map(w => w.net && pris.has(w.net) ? Object.assign({}, w, { net: libre(w.net) }) : w) });
+  pasteClip(contenu);
   return true;
 }
 function blocSupprimer(nom) { blocsEcrire(blocsLire().filter(b => b.nom !== nom)); }

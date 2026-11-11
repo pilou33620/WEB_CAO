@@ -13,13 +13,22 @@ const ENTETE_WEB={"X-WEB_CAO":"1","X-Web-Cao":"1"};
 /* Sous un relais (launcher : la page est à /o/web_cao/…), un fetch("/api/x") perd le
    préfixe de l'outil : le relais devait deviner l'outil visé d'après le Referer ou un
    cookie. La racine de l'outil se lit dans l'adresse de ce script ; toute adresse
-   absolue du site la reprend. Servie en direct, la racine est vide : rien ne change. */
-(function(){
+   absolue du site la reprend. Servie en direct, la racine est vide : rien ne change.
+   Monofichier (dist/*.html) : ce script est en ligne, sans adresse ; la racine se lit
+   alors dans l'adresse de la page. RACINE_OUTIL sert aussi aux liens (window.open, href). */
+const RACINE_OUTIL=(function(){
   let racine="";
-  try{racine=new URL(document.currentScript.src).pathname.replace(/\/commun\/echappe\.js$/,"");}catch(_){}
-  if(!racine||racine.endsWith(".js")||typeof window.fetch!=="function")return;
+  try{
+    const src=document.currentScript&&document.currentScript.src;
+    racine=src?new URL(src).pathname.replace(/\/commun\/echappe\.js$/,"")
+      :/^http/.test(location.protocol)?location.pathname.replace(
+        /\/(?:(?:editeur-pcb|editeur-schematique|gestion-lib|visionneuse-ipc2581|recherche-composants)\/.*|[^\/]*)$/,""):"";
+  }catch(_){}
+  if(racine.endsWith(".js"))racine="";
+  if(!racine||typeof window.fetch!=="function")return racine;
   const f=window.fetch.bind(window);
   window.fetch=(u,o)=>f(typeof u==="string"&&u[0]==="/"&&u[1]!=="/"&&!u.startsWith(racine+"/")?racine+u:u,o);
+  return racine;
 })();
 const ESC_HTML={"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;","`":"&#96;"};
 function esc(s){

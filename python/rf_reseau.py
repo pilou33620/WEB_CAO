@@ -104,6 +104,7 @@ MASSE = "0"
 MAX_CORPS = 8 * 1024 * 1024
 MAX_BRANCHES = 200
 MAX_COMPOSANTS = 200
+MAX_ELEMENTS = 5000          # R, L, C d'un modele SPICE deplie : matrice pleine par frequence
 
 # Une resistance ou une self NULLE est un court-circuit : on la pose en tres
 # grande admittance plutot que de fusionner les noeuds.
@@ -153,6 +154,7 @@ def lire_touchstone(texte, nom="", n_ports=None):
     n = int(m.group(1)) if m else n_ports
     unite, param, forme, r_ref = 1e9, "s", "ma", 50.0
     refs = None
+    ref_ouverte = False                 # [Reference] peut continuer sur les lignes suivantes
     ordre_21_12 = True
     nombres = []
     for brute in str(texte).splitlines():
@@ -181,6 +183,7 @@ def lire_touchstone(texte, nom="", n_ports=None):
         if ligne.startswith("["):
             cle, _, reste = ligne[1:].partition("]")
             cle = cle.strip().lower()
+            ref_ouverte = cle == "reference"
             if cle == "number of ports":
                 n = int(_nombre(reste, 0))
             elif cle == "two-port data order":
@@ -196,6 +199,9 @@ def lire_touchstone(texte, nom="", n_ports=None):
             elif cle == "end":
                 break
             continue
+        if ref_ouverte and n and len(refs) < n:
+            refs.extend(_nombre(x, 50.0) for x in ligne.split())
+            continue
         nombres.extend(ligne.split())
     if not n or n < 1:
         raise ErreurRF("%s : nombre de ports inconnu." % (nom or "Touchstone"),
@@ -204,6 +210,10 @@ def lire_touchstone(texte, nom="", n_ports=None):
         valeurs = [float(x) for x in nombres]
     except ValueError as exc:
         raise ErreurRF("%s : donnée illisible (%s)." % (nom, exc))
+    if not all(math.isfinite(v) for v in valeurs):
+        raise ErreurRF("%s : valeur non finie (nan ou inf) dans les données." % (nom or "Touchstone"))
+    if r_ref <= 0 or (refs and min(refs) <= 0):
+        raise ErreurRF("%s : impédance de référence nulle ou négative." % (nom or "Touchstone"))
     pas = 1 + 2 * n * n
     freqs, mats = [], []
     for i in range(0, len(valeurs) - pas + 1, pas):
@@ -304,7 +314,10 @@ def valeur_spice(jeton, params=None):
     if not m:
         raise ErreurRF("Valeur SPICE illisible : « %s »." % j)
     v = float(m.group(0))
-    reste = j[m.end():].lower()
+    reste = j[m.end():].lower().replace("µ", "u")
+    if reste and not reste[0].isalpha():      # « 1,5n » lu 1 : refuse plutot que tronque
+        raise ErreurRF("Valeur SPICE illisible : « %s »." % j,
+                       "Le séparateur décimal est le point.")
     for suf, mult in _SUFFIXES:
         if reste.startswith(suf):
             return v * mult
@@ -413,6 +426,9 @@ def _aplatir(circuits, nom, noeuds, params, prefixe, sortie, profondeur=0):
                      prefixe + "x%d." % i, sortie, profondeur + 1)
         else:
             sortie.append((el[0], g(el[1]), g(el[2]), valeur_spice(el[3], p)))
+            if len(sortie) > MAX_ELEMENTS:
+                raise ErreurRF("Modèle SPICE trop gros : plus de %d éléments une fois déplié."
+                               % MAX_ELEMENTS)
 
 
 def _admittance(genre, valeur, omega):
@@ -496,7 +512,12 @@ class ModeleSnp(object):
         self.nom = nom
 
     def y(self, f):
-        return _s_vers_y(_interpoler(self.freqs, self.s, f, self.nom), self.z0)
+        try:
+            return _s_vers_y(_interpoler(self.freqs, self.s, f, self.nom), self.z0)
+        except np.linalg.LinAlgError:
+            # S = -1 (court-circuit ideal) : l'admittance est infinie
+            raise ErreurRF("%s : court-circuit idéal (S = −1), sans admittance finie." % self.nom,
+                           "Remplacez ce modèle par une résistance de quelques milliohms.")
 
 
 class ModeleIdeal(object):

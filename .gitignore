@@ -82,12 +82,8 @@ exports/
 
 # Builds
 dist/
-# Graphe graphify : le graphe est versionne ; son cache, ses copies datees et ses
-# fichiers propres au poste ne le sont pas.
-/graphify-out/cache/
-/graphify-out/20*/
-/graphify-out/.graphify_python
-/graphify-out/.graphify_root
+# Graphe graphify : sortie d'analyse (9 Mo) que rien ne lit, regenerable a la demande.
+/graphify-out/
 # Config personnelle d'outils d'analyse de code : ne fait pas partie du depot.
 /opencode.json
 

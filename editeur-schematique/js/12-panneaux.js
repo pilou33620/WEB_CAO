@@ -769,7 +769,7 @@ function refreshPanels(){
            sous une autre racine n'est pas retrouvé par son seul nom */
         const nomP = (typeof projdChemin === "function" ? projdChemin() : "") ||
                      (typeof projNom === "function" ? projNom() : "") || "";
-        window.open("/api/datasheet/ouvrir?projet=" + encodeURIComponent(nomP) + "&fichier=" + encodeURIComponent(el.datasheet_local), "_blank");
+        window.open(RACINE_OUTIL+"/api/datasheet/ouvrir?projet=" + encodeURIComponent(nomP) + "&fichier=" + encodeURIComponent(el.datasheet_local), "_blank");
       } else if (el.datasheet_web && (el.datasheet_web.startsWith("http://") || el.datasheet_web.startsWith("https://"))) {
         window.open(el.datasheet_web, "_blank");
       }

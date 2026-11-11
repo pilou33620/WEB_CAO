@@ -777,6 +777,7 @@ async function validerEtEnregistrerJlc() {
     btn.innerHTML = '<span class="jlc-spinner"></span> Enregistrement...';
   }
 
+  let pousse = null;   // la ligne ajoutée, à retirer si l'enregistrement est refusé
   try {
     // 1. Récupérer les 39 colonnes depuis les inputs
     const composantFinal = {};
@@ -786,6 +787,9 @@ async function validerEtEnregistrerJlc() {
     });
 
     const partName = composantFinal["Part Name"] || "COMPOSANT";
+    /* deux lignes de même Part Name : le serveur refuse ensuite toute modification de la référence */
+    if (LIB_STATE.composants.some(c => (c["Part Name"] || "") === partName))
+      throw new Error("« " + partName + " » est déjà au catalogue.");
     const symName = composantFinal["Empreinte Schématique"] || "";
 
     // 2. Si le composant a un pinout et qu'un nouveau symbole est requis, l'enregistrer
@@ -813,6 +817,7 @@ async function validerEtEnregistrerJlc() {
     // 3. Insérer le composant dans LIB_STATE.composants
     composantFinal._id = LIB_STATE.composants.length;
     LIB_STATE.composants.push(composantFinal);
+    pousse = composantFinal;
     LIB_STATE.sale = true;
 
     // S'assurer que LIB_STATE.colonnes contient l'ensemble des 39 colonnes
@@ -823,6 +828,7 @@ async function validerEtEnregistrerJlc() {
 
     // 4. Enregistrer le catalogue CSV sur le serveur
     await enregistrerCatalogue();
+    pousse = null;
 
     // 5. Diffuser la mise à jour via BroadcastChannel
     if (typeof sessDiffuserLibModif === "function") {
@@ -852,6 +858,7 @@ async function validerEtEnregistrerJlc() {
     afficherToast(`✅ Composant "${partName}" (${composantFinal["vendor reference"] || "JLCPCB"}) importé avec succès (39 colonnes validées)`, "success");
 
   } catch (err) {
+    if (pousse) LIB_STATE.composants = LIB_STATE.composants.filter(c => c !== pousse);
     alert("Erreur lors de l'enregistrement du composant : " + err.message);
     if (btn) {
       btn.disabled = false;

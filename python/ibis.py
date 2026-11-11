@@ -78,7 +78,7 @@ import numpy as np
 
 VERSION = "1.5.0"
 COINS = {"typ": 0, "min": 1, "max": 2}
-SUFFIXES = {"T": 1e12, "G": 1e9, "M": 1e6, "k": 1e3, "m": 1e-3, "u": 1e-6,
+SUFFIXES = {"T": 1e12, "G": 1e9, "M": 1e6, "k": 1e3, "K": 1e3, "m": 1e-3, "u": 1e-6,
             "n": 1e-9, "p": 1e-12, "f": 1e-15}
 _NOMBRE = re.compile(r"^([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)([A-Za-z]*)")
 # Plafond du texte d'un fichier : les plus gros .ibs du commerce (FPGA a
@@ -104,7 +104,7 @@ def nombre(txt):
     if not txt or txt.upper() == "NA":
         return None
     m = _NOMBRE.match(txt)
-    if not m:
+    if not m or m.end() != len(txt):          # « 1,5pF » lu 1 farad : refuse plutot que tronque
         raise ValueError("nombre illisible : %r" % txt)
     v = float(m.group(1))
     suite = m.group(2)
@@ -243,6 +243,10 @@ def lire(texte, nom_fichier="", complet=False):
                 if champs:
                     modele[REFERENCES[cle]] = _trois(champs)
                 section = None
+            elif cle == "submodel":
+                # ses tableaux ne sont pas ceux du [Model] precedent (ODT des .ibs DDR)
+                modele = None
+                ignores.add("[%s]" % mot.strip())
             elif modele is not None and cle in TABLEAUX_VI:
                 modele["tableaux"][cle] = []
             elif modele is not None and cle in ("rising waveform",

@@ -702,7 +702,12 @@ $("bAnim3d").onclick=()=>anim3dChoisir();   // 41-animation-3d.js se charge apr�
 $("bVariantes").onclick=()=>pcbVarOuvrir();   // 26-variantes.js se charge après ce fichier
 $("bNew").onclick=newDoc;
 $("cuCount").onchange=()=>{
-  const n=+$("cuCount").value;
+  const n=+$("cuCount").value, old=S.cu, part=o=>o.l>Math.max(0,n-2)&&o.l<old-1;
+  /* une couche interne qui disparaît rabat son cuivre sur une autre : courts-circuits */
+  if(n<old&&(S.tracks.some(part)||S.zones.some(part))&&
+     !confirm("Des pistes ou des plans sont sur une couche interne qui disparaît : ils seront rabattus sur une autre couche (courts-circuits possibles). Continuer ?")){
+    $("cuCount").value=old;return;
+  }
   push();setCuCount(n);zoneCache.clear();
   hint("Empilage : "+n+" couche(s) de cuivre.");
 };

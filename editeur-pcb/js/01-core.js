@@ -3358,11 +3358,6 @@ function dpOfNet(net){
   if(!net)return null;
   return S.dpPairs.find(x=>x.p===net||x.n===net)||null;
 }
-/* Le net d'en face, dans la paire d'un net donné. */
-function dpMateNet(net){
-  const d=dpOfNet(net);
-  return d?(d.p===net?d.n:d.p):null;
-}
 /* Un nom de paire libre, dérivé de la base commune aux deux nets. */
 function dpFreeName(base){
   const b=String(base||"PAIRE").replace(/[_\-.]+$/,"")||"PAIRE";

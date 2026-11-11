@@ -128,7 +128,10 @@ jobs:
         run: node commun/test/banc-pilote-cao.js
 
       - name: Menus déroulants — restent dans l'écran
-        run: node commun/test/banc-menus.js
+        run: |
+          node commun/test/banc-menus.js
+          node commun/test/banc-tactile-tuto.js
+          node commun/test/banc-racine.js
 
       - name: Mise à jour automatique GitHub — banc d'essai
         run: python python/test/banc-maj-github.py
@@ -138,15 +141,6 @@ jobs:
           # La moitié d'outil qui ne tourne pas dans le navigateur. Il porte sa
           # propre carte d'essai : rien à télécharger, rien de lourd versionné.
           python visionneuse-ipc2581/test/banc-essai.py
-
-      - name: Visionneuse IPC-2581 — banc de la mesure de masse
-        run: |
-          # Pur JavaScript sur Node : ce banc lit les sources telles quelles,
-          # sans assemblage ni dépendance. Il éprouve la GÉOMÉTRIE lue sur le
-          # modèle -- où est le cuivre de masse, de quel côté, sur quelle
-          # longueur --, là où banc-essai.py juste au-dessus éprouve le
-          # parseur. Rien ne l'empêchait de tourner ici ; il n'y était pas.
-          node visionneuse-ipc2581/test/harness-sim.js
 
       # LE MONOFICHIER N'EST PAS VERSIONNÉ (.gitignore : « dist/ »), et il n'y a
       # donc rien à y vérifier de fraîcheur : chaque exécution le reconstruit
@@ -158,6 +152,8 @@ jobs:
       # relancer build-monofichier.py fait partie du geste.
       - name: Éditeur PCB — assemblage puis banc d'essai
         run: |
+          # sans le module canvas, les essais du cuivre des plans (îlots, éclats) sont ignorés
+          npm install --no-save --silent canvas
           python editeur-pcb/outils/build-monofichier.py
           node --check editeur-pcb/dist/pcb.js
           node editeur-pcb/test/harness.js
@@ -182,6 +178,17 @@ jobs:
             echo "::warning title=XSD IPC-2581 injoignable::validation XSD sautée"
           fi
           python editeur-pcb/test/banc-ipc2581-export.py
+
+      # après l'export ci-dessus : deux de ses essais relisent editeur-pcb/dist/essai-ipc2581/,
+      # et se sautaient en silence quand ce dossier n'existait pas encore
+      - name: Visionneuse IPC-2581 — banc de la mesure de masse
+        run: |
+          # Pur JavaScript sur Node : ce banc lit les sources telles quelles,
+          # sans assemblage ni dépendance. Il éprouve la GÉOMÉTRIE lue sur le
+          # modèle -- où est le cuivre de masse, de quel côté, sur quelle
+          # longueur --, là où banc-essai.py juste au-dessus éprouve le
+          # parseur. Rien ne l'empêchait de tourner ici ; il n'y était pas.
+          node visionneuse-ipc2581/test/harness-sim.js
 
       - name: Éditeur schématique — assemblage puis banc d'essai
         run: |

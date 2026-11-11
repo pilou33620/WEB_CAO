@@ -1255,6 +1255,8 @@ def doc_valide(doc):
             "Format inattendu : « %s » au lieu de « %s »."
             % (doc.get("format") or "absent", " ou ".join(formats_acceptes)))
 
+    if not isinstance(doc.get("stackup") or {}, dict):
+        raise ErreurSimulation("« stackup » doit être un objet.")
     couches = (doc.get("stackup") or {}).get("layers") or []
     if not couches:
         raise ErreurSimulation(

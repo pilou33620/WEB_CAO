@@ -73,7 +73,7 @@ function gerberDessin(layer,nom){
       gRegion(body,d.pts);
       if(d.trous&&d.trous.length){body.push("%LPC*%");for(const t of d.trous)gRegion(body,t);body.push("%LPD*%");}
     }else if(d.shape==="text"){
-      for(const P of textStrokes(d.text||"TEXT",d.x1,d.y1,d.size||1.5,drwMiroir(d),d.rot||0))
+      for(const P of textStrokes(d.text!=null?d.text:"TEXT",d.x1,d.y1,d.size||d.height||1.5,drwMiroir(d),d.rot||0))
         for(let k=0;k+1<P.length;k++)gSeg(body,A,P[k].x,P[k].y,P[k+1].x,P[k+1].y,w);
     }else if(d.shape==="rect"){
       gSeg(body,A,d.x1,d.y1,d.x2,d.y1,w);gSeg(body,A,d.x2,d.y1,d.x2,d.y2,w);

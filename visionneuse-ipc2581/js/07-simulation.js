@@ -2475,27 +2475,6 @@ function simCandidatsPartenaireIpc(netVoisinNom, couche){
   return res;
 }
 
-/* Recherche de la piste partenaire de la paire différentielle sur la même couche. */
-function simPistePartenaireIpc(pisteSource, netVoisinNom){
-  if(!pisteSource||!netVoisinNom||typeof V==="undefined"||!V.parNet)return null;
-  const couche=(pisteSource.c!=null)?pisteSource.c:(pisteSource.coucheIdx!=null?pisteSource.coucheIdx:-1);
-  const cands=simCandidatsPartenaireIpc(netVoisinNom, couche).filter(p=>p!==pisteSource);
-  if(!cands.length)return null;
-  if(cands.length===1)return cands[0];
-  const cumSource=pisteSource._cum||(pisteSource._cum=simCumul(pisteSource.p));
-  const pMid=simSurPoly(pisteSource.p,cumSource,0.5);
-  let best=null, bestDist=Infinity;
-  for(const cand of cands){
-    const cum=cand._cum||(cand._cum=simCumul(cand.p));
-    const pr=simProjPoly(cand.p,cum,pMid.x,pMid.y);
-    if(pr&&pr.d<bestDist){
-      bestDist=pr.d;
-      best=cand;
-    }
-  }
-  return best;
-}
-
 /* Projection d'un tronçon [u1, u2] d'une piste sur sa partenaire pour l'éclairer ensemble. */
 function simProjSegmentSurPisteIpc(pSource, cumSource, u1, u2, pCible, cumCible){
   if(!pSource||!pCible||!cumSource||!cumCible)return null;

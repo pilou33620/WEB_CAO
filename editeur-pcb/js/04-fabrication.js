@@ -208,7 +208,7 @@ const AM_RECT="%AMRRECT*\n21,1,$1,$2,0,0,$3*%";
 /* Oblong tourné d'un angle quelconque : un rectangle et deux disques à ses
    bouts. Les décalages des disques sont calculés ici et passés en paramètres —
    une macro Gerber ne sait pas prendre un cosinus. */
-const AM_OBR="%AMOBR*\n21,1,$1,$2,0,0,$5*\n1,1,$2,$3,$4*\n1,1,$2,-$3,-$4*%";
+const AM_OBR="%AMOBR*\n21,1,$1-$2,$2,0,0,$5*\n1,1,$2,$3,$4*\n1,1,$2,-$3,-$4*%";
 /* Rectangle à coins arrondis tourné : deux rectangles en croix et un disque
    à chaque coin, centres des disques calculés ici (tournés de $10). */
 const AM_RRND="%AMRRND*\n21,1,$1,$2,0,0,$10*\n21,1,$3,$4,0,0,$10*\n"+
@@ -610,7 +610,7 @@ function silkTraits(side){
         continue;
       }
       if(d.shape === "text"){
-        const strokes = textStrokes(d.text || "TEXT", d.x1, d.y1, d.size || 1.5, !!side, d.rot || 0);
+        const strokes = textStrokes(d.text != null ? d.text : "TEXT", d.x1, d.y1, d.size || d.height || 1.5, !!side, d.rot || 0);
         for(const poly of strokes){
           for(let k=0; k+1<poly.length; k++){
             seg(poly[k].x, poly[k].y, poly[k+1].x, poly[k+1].y, w);

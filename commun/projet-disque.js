@@ -546,6 +546,17 @@ function projdDocEcrire(outil, obj){
       return projdApi("PUT","/api/projet/doc",{chemin:PROJD.chemin, doc:outil, modifie:vu}, obj)
         .then(function(r){ PROJD_VU[outil] = r.modifie || 0; projdVuGarder(); return note(r.fichier, r.modifie); });
     };
+    /* Document present sur le disque mais jamais lu par cette page (lecture en
+       echec) : sans date, le serveur ecrirait sans controle. On demande d'abord. */
+    const surDisque = PROJD.documents && PROJD.documents[outil];
+    if(!PROJD_VU[outil] && surDisque && surDisque.present &&
+       !(typeof confirm === "function" && confirm(
+         "Ce document existe déjà dans le dossier du projet, mais cette page ne l'a pas lu "+
+         "(lecture en échec ?).\n\nLe remplacer par la version de cette page ?"))){
+      const n = new Error("Enregistrement annulé : le document du projet n'a pas été lu");
+      n.annule = true;
+      return Promise.reject(n);
+    }
     /* 409 : le fichier a change depuis que cette page l'a lu ou ecrit (autre
        onglet, tablette, export vers le PCB). On demande avant d'ecraser. */
     return ecrire(PROJD_VU[outil] || undefined).catch(function(e){

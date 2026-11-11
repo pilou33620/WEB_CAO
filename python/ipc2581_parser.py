@@ -357,14 +357,6 @@ class IPC2581ParseError(ValueError):
     """Levée lorsque le fichier IPC-2581 ne peut pas être parsé (fichier absent, XML corrompu, etc.)."""
 
 
-def parse_ipc2581_file(xml_file: str) -> IPCDesign:
-    """API courte d'intégration : parse un fichier IPC-2581 et retourne l'IPCDesign.
-
-    Lève IPC2581ParseError en cas d'échec.
-    """
-    return IPC2581Parser(xml_file).parse()
-
-
 # layerFunction IPC-2581 qui designent du cuivre (CONDUCTOR, SIGNAL, PLANE,
 # MIXED, CONDFILM, CONDFOIL, POWER_GROUND...). Meme famille que celle que la
 # page reconnait (js/02-modele.js).
@@ -710,14 +702,15 @@ class IPC2581Parser:
             if line_dict is not None and "units" in line_dict.attrib:
                 self.design.units = line_dict.attrib["units"]
                 logger.info(f"Unités trouvées (DictionaryLineDesc): {self.design.units}")
-            ecad = self.root.find(self._tag("Ecad"))
-            # « is not None » et non « if ecad » : un Element sans enfant est
-            # faux au sens booléen, et <Ecad> peut n'en avoir qu'un seul.
-            if ecad is not None:
-                header = ecad.find(self._tag("CadHeader"))
-                if header is not None and "units" in header.attrib:
-                    self.design.units = header.attrib["units"]
-                    logger.info(f"Unités trouvées (CadHeader): {self.design.units}")
+        # hors du « if content » : un fichier en pouces sans <Content> était lu en mm
+        ecad = self.root.find(self._tag("Ecad"))
+        # « is not None » et non « if ecad » : un Element sans enfant est
+        # faux au sens booléen, et <Ecad> peut n'en avoir qu'un seul.
+        if ecad is not None:
+            header = ecad.find(self._tag("CadHeader"))
+            if header is not None and "units" in header.attrib:
+                self.design.units = header.attrib["units"]
+                logger.info(f"Unités trouvées (CadHeader): {self.design.units}")
 
     # ------------------------------------------------------------------
     # Étape 2 : Dictionnaire de lignes
@@ -806,7 +799,7 @@ class IPC2581Parser:
         f = lambda cle: self._safe_float(noeud.attrib.get(cle)) * k
         forme = (noeud.attrib.get("shape") or "ROUND").upper()
         ro, ri = f("outerDiameter") / 2, f("innerDiameter") / 2
-        n = self._safe_int(noeud.attrib.get("spokeCount"), 4)
+        n = min(self._safe_int(noeud.attrib.get("spokeCount"), 4), 360)   # la boucle suit n
         demi = (f("spokeWidth") or f("gap")) / 2
         if n <= 0 or demi <= 0:
             return [(self._anneau(forme, ro), [self._anneau(forme, ri)])]
@@ -1852,7 +1845,10 @@ class IPC2581Parser:
             logger.info(f"  - Couche {layer.sequence:02d} : {layer.name} "
                         f"(Épaisseur: {layer.thickness} {self.design.units}){details_str}")
 
-        step = cad_data.find(self._tag("Step"))
+        # panneau d'abord, carte ensuite : le <Step> utile est celui qui porte le cuivre
+        steps = cad_data.findall(self._tag("Step"))
+        step = next((s for s in steps if s.find(self._tag("LayerFeature")) is not None),
+                    steps[0] if steps else None)
         if step is None:
             logger.warning("Balise <Step> non trouvée.")
             return
@@ -1899,7 +1895,7 @@ class IPC2581Parser:
                 continue
 
             for item_set in layer_feature.findall(self._tag("Set")):
-                net_name = item_set.attrib.get("net", "Non-Net")
+                net_name = item_set.attrib.get("net") or "Non-Net"   # net="" perdait ses pistes
 
                 for pad_node in item_set.iter(self._tag("Pad")):
                     pad_inst = self._process_pad_instance(pad_node, layer_ref, net_name)
@@ -2111,8 +2107,7 @@ class IPC2581Parser:
                          item_set.findall(self._tag("SpecRef"))]
 
             holes = item_set.findall(self._tag("Hole"))
-            features = item_set.find(self._tag("Features"))
-            if features is not None:
+            for features in item_set.findall(self._tag("Features")):
                 holes.extend(features.findall(self._tag("Hole")))
 
             for hole in holes:

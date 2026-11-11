@@ -667,6 +667,33 @@ def test_routes():
         res = conn.getresponse()
         assert "WEB_CAO" in json.loads(res.read())["detail"], "le refus ne nomme pas l'outil"
         print("[PASS] En-tete maison X-WEB_CAO exige : sans lui, rien n'est ecrit (403)")
+        # 30d. Enregistrement complet du catalogue : le BOM reste (Excel), une espace insecable
+        # devient une espace au lieu de bloquer, et un refus nomme la ligne fautive.
+        csv_cat = os.path.join(LIB, "LIB_composants.csv")
+        with open(csv_cat, "rb") as f:
+            garde = f.read()
+        try:
+            with open(csv_cat, "wb") as f:
+                f.write(b"\xef\xbb\xbfPart Name;Description\r\nR1;x\r\n")
+            poster = lambda comps: conn.request("POST", "/api/lib/composants", body=json.dumps(
+                {"colonnes": ["Part Name", "Description"], "composants": comps}).encode("utf-8"),
+                headers={"Content-Type": "application/json"})
+            poster([{"Part Name": "R1", "Description": "10\u00a0\u00b5F"}])
+            res = conn.getresponse()
+            assert res.status == 200, "espace insecable : %d %s" % (res.status, res.read())
+            res.read()
+            with open(csv_cat, "rb") as f:
+                ecrit = f.read()
+            assert ecrit.startswith(b"\xef\xbb\xbf"), "BOM du catalogue perdu"
+            assert "10 \u00b5F".encode("utf-8") in ecrit, ecrit
+            poster([{"Part Name": "R1", "Description": "x"}, {"Part Name": "C7", "Description": "=1+1"}])
+            res = conn.getresponse()
+            detail = json.loads(res.read())["detail"]
+            assert res.status == 400 and "C7" in detail, (res.status, detail)
+        finally:
+            with open(csv_cat, "wb") as f:
+                f.write(garde)
+        print("[PASS] Catalogue : BOM garde, espace insecable acceptee, refus qui nomme la ligne")
         # 30a. Datasheet en local : un corps JSON qui n'est pas un objet est un
         # refus (400), pas une « Erreur interne » 500.
         for corps in (b"null", b"[1]"):

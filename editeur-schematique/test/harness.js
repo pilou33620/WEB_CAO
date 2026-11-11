@@ -4452,6 +4452,42 @@ T("Blocs : enregistrer une sélection, la reposer avec des repères neufs",()=>{
   blocPoser("pont diviseur");
   if(new Set(S.comps.map(c=>c.ref)).size!==4)throw new Error("repères en double : "+S.comps.map(c=>c.ref));
 });
+T("Blocs : posé deux fois, un fil nommé ne relie pas les deux copies",()=>{
+  const r1=C("resistor",5,5,{ref:"R1",value:"10k"});
+  sheet([r1],[W(7,5,7,9)]);S.wires[0].net="FB";
+  S.sel.add(r1.id);S.selW.add(S.wires[0]);
+  if(!blocEnregistrer("ldo").ok)throw new Error("enregistrement");
+  sheet([],[]);
+  blocPoser("ldo");blocPoser("ldo");
+  const noms=S.wires.map(w=>w.net).sort().join();
+  if(noms!=="FB,FB_2")throw new Error("noms des fils : "+noms);
+  blocSupprimer("ldo");sheet([],[]);
+});
+T("nomenclature : le repli par la valeur reste dans la famille et le boîtier",()=>{
+  const lib=window.CSV_LIB;
+  try{
+    window.CSV_LIB=[
+      {"Part Name":"LQM18PN100MFRL","Value":"10u","Package type":"0603","Reference designator Prefix":"L"},
+      {"Part Name":"CAP-10U-0603-5","Value":"10u","Package type":"0603-5","Reference designator Prefix":"C"},
+      {"Part Name":"GRM188R61A106KE69D","Value":"10u","Package type":"C_0603_1608Metric","Reference designator Prefix":"C"}];
+    sheet([C("capacitor",0,0,{ref:"C1",value:"10u",pkg:"0603"})],[]);
+    const r=bomRows()[0];
+    if(r.csvPartName!=="GRM188R61A106KE69D")throw new Error("référence prise : "+r.csvPartName);
+  }finally{window.CSV_LIB=lib;sheet([],[]);}
+});
+T("feuille : renuméroter garde ensemble les parties d'un boîtier réparti sur deux feuilles",()=>{
+  const avant=serialize(), pr=global.prompt, conf=global.confirm;
+  try{
+    sheet([C("ic",0,0,{ref:"U1",part:"A"})],[]);
+    const i=S.page;
+    addPage(false);S.comps.push(C("ic",0,0,{ref:"U1",part:"B"}));storeCurrent();
+    gotoPage(i);
+    global.prompt=()=>"300"; global.confirm=()=>true;
+    refStartPage(i);
+    const refs=S.pages.map((p,k)=>(k===S.page?S.comps:p.comps||[]).filter(c=>c.part).map(c=>c.ref)).flat();
+    if(refs.join()!=="U300,U300")throw new Error("repères des deux parties : "+refs);
+  }finally{global.prompt=pr;global.confirm=conf;loadDoc(JSON.parse(avant),true);}
+});
 T("Blocs : import d'un fichier, refus de l'illisible",()=>{
   if(blocsImporterTexte("pas du json").ok)throw new Error("JSON invalide accepté");
   if(blocsImporterTexte('[{"nom":"x"}]').ok)throw new Error("bloc sans contenu accepté");
