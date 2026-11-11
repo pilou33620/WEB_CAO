@@ -7710,6 +7710,27 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
         sortie["abcd_cc"] = abcds_cc
         if quatre:
             sortie["abcd_brins"] = abcds_brins
+            # LA RESISTANCE CONTINUE DE CHAQUE BRIN (P, N), en ohms : comme
+            # le « r_continu » de `simuler` (1 / sigma w t), a la largeur que
+            # la cascade donne a chaque brin, surlongueur comprise.
+            r_brins = [0.0, 0.0]
+            for i, seg in enumerate(segments):
+                t = seg.get("cuivre", 0)
+                if seg.get("z0", 0) <= 0 or seg.get("largeur", 0) <= 0 \
+                        or t <= 0:
+                    continue
+                w_n = seg["largeur"]
+                if i in brins["sections"]:
+                    w_n = chaleur[i]["matrices_paire"]["largeur_n"]
+                elif i in brins["seuls_n"] or i in brins["superposees"]:
+                    w_n = brins["largeur_n"] or w_n
+                for k, w in ((0, seg["largeur"]), (1, w_n)):
+                    r_brins[k] += seg["longueur"] / (tl.SIGMA_CU * w * t) * 1e3
+            if surlong is not None:
+                r_brins[0 if brins["brin_long"] == "p" else 1] += (
+                    brins["surlongueur_mm"] / (tl.SIGMA_CU * surlong["largeur"]
+                                               * surlong["ep"]) * 1e3)
+            sortie["r_continu_brins"] = r_brins
     return sortie
 
 
