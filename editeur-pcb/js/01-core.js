@@ -1565,13 +1565,18 @@ function pcbAppliquerDefEmpreinteBrut(fp, pkgName, def){
     }
   }
 
-  if(Array.isArray(def.pads)){
+  /* La définition est un fichier de la LIB : même lecture défensive que la pose
+     par netliste (normFpDef, 08-empreinte.js). Prise brute, une pastille nulle
+     ou un nombre de broches absurde laissait l'empreinte à moitié refaite, un
+     corps aux bords inversés passait tel quel, et les traits de sérigraphie
+     dessinés dans la Gestion LIB (« lines ») restaient dans le fichier. */
+  const d = typeof def === "object" ? normFpDef(Object.assign({}, def, {name: def.name || pkgName})) : null;
+  if(d && d.pads){
     fp.pkg = pkgName;
-    fp.style = def.style || "chip";
-    fp.pitch = def.pitch || 1.0;
-    fp.span = def.span || 1.0;
-    fp.pins = Math.max(fpWiredPins(fp), def.pins || def.pads.length);
-    fp.pads = def.pads.map(padClone);
+    fp.style = d.style;
+    fp.pitch = d.pitch;
+    fp.span = d.span;
+    fp.pads = d.pads.map(padClone);
     for(const q of fp.pads){
       if(!q.net && q.n && netMap[q.n]){
         q.net = netMap[q.n];
@@ -1581,8 +1586,10 @@ function pcbAppliquerDefEmpreinteBrut(fp, pkgName, def){
     for(const [n, net] of Object.entries(netMap)){
       fp.nets[n] = net;
     }
-    if(def.body) fp.body = {...def.body};
-    fpTrousDe(fp, def);
+    if(d.body) fp.body = d.body;
+    else delete fp.body;               // sans corps : celui des pastilles (bodyOf), pas celui de l'ancienne forme
+    fpTrousDe(fp, d);
+    fpDessinsDef(fp, d);
     fpSyncPins(fp);
     return true;
   }
