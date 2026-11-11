@@ -1777,6 +1777,11 @@ T("import : décalages de libellés bornés, réglages d'étiquette relus",()=>{
 /* ==========================================================================
    Corps du CI ajusté à la valeur (04-etat.js)
    ========================================================================== */
+T("largeur d'un texte : table fixe, la même sur toutes les machines (les broches n'en dépendent pas)",()=>{
+  // chasses Helvetica-Bold : L611 P667 2 9 8 0 (4×556) - 333 3 556 . 278 3 556 = 5225
+  if(Math.abs(textW("LP2980-3.3",13,true)-5225*13/1000)>1e-9)throw new Error("LP2980-3.3 : "+textW("LP2980-3.3",13,true));
+  if(textW("é",12)!==textW("e",12))throw new Error("une lettre accentuée prend la chasse de sa base");
+});
 T("une valeur trop longue élargit le corps du CI",()=>{
   const u=C("ic",0,0,{ref:"U1",value:"NE555",npins:8});
   sheet([u],[]);

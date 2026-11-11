@@ -150,3 +150,6 @@ Décisions du 11/11 : toutes appliquées (boutons pour les fonctions sans appela
 | F | Isolement propre d'une pastille : pas encore pris par le contrôle des bras thermiques ni l'écart entre pastilles d'une même empreinte | `02-connectivity.js` (`clrK`) |
 | F | Pastille sans numéro désignée par sa place (« J1 (pastille sans numéro à x;y mm) ») dans tous les messages, `padDesig` | `01-core.js` |
 | L | Onglet Général du symbole : préfixe « U » si vidé | `editeurCollecterGeneralSch` |
+
+| F | Largeur des symboles indépendante de la police (table fixe Helvetica) : un CI ne s'élargit plus selon la machine, les fils ne se décrochent plus d'un poste à l'autre ; CI GitHub rouge depuis l'installation de canvas | `editeur-schematique/js/01-noyau.js` (`textW`) |
+| R | Schémas existants : un CI à broches nommées peut changer de largeur une fois à l'ouverture (fils à vérifier) | |

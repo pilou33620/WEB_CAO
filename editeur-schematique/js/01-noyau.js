@@ -54,18 +54,34 @@ function ARR(c,x,y,ang,s,col){ // pointe de flèche pleine
   c.beginPath();c.moveTo(0,0);c.lineTo(-d,-d*0.42);c.lineTo(-d,d*0.42);c.closePath();
   c.fillStyle=col||C_COMP;c.fill();c.restore();
 }
-const _meas=document.createElement("canvas").getContext("2d");
-/* La largeur d'un texte sert maintenant à dimensionner les symboles : elle est
-   demandée pour chaque broche, à chaque image. measureText coûte cher répété
-   des milliers de fois par seconde — on garde le résultat, la police ne changeant
-   jamais en cours de route. */
+/* LA LARGEUR D'UN TEXTE DIMENSIONNE LES SYMBOLES (un CI s'élargit pour loger
+   sa valeur et le nom de ses broches), donc elle place les broches : elle ne
+   doit pas dépendre de la police de la machine. Mesurée par measureText, une
+   police plus large (autre poste, iPad) écartait les broches et décrochait des
+   fils dessinés ailleurs. Table fixe : chasses Helvetica / Helvetica-Bold (AFM
+   Adobe, millièmes de cadratin) ; le texte, lui, reste dessiné dans la vraie
+   police et peut déborder un peu. */
+const _CHASSE=" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+const _CH_N=[278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,
+  667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,333,
+  556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584];
+const _CH_G=[278,333,474,556,556,889,722,238,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,333,333,584,584,584,611,975,
+  722,722,722,722,667,611,778,722,278,556,722,611,833,722,778,667,778,722,667,611,722,667,944,667,667,611,333,278,333,584,556,333,
+  556,611,556,611,556,333,611,611,278,278,556,278,889,611,611,611,611,389,556,333,611,556,778,556,556,500,389,280,389,584];
 const _measCache=new Map();
 function textW(t,size,bold){
   const k=(bold?"b":"n")+(size||12)+"\u0000"+t;
   let w=_measCache.get(k);
   if(w!==undefined)return w;
-  _meas.font=(bold?"bold ":"")+(size||12)+'px "Segoe UI",system-ui,sans-serif';
-  w=_meas.measureText(String(t)).width;
+  const tab=bold?_CH_G:_CH_N;
+  let m=0;
+  // une lettre accentuée prend la chasse de sa lettre de base ; le reste, 600
+  for(const ch of String(t).normalize("NFD")){
+    if(/[\u0300-\u036f]/.test(ch))continue;
+    const i=_CHASSE.indexOf(ch);
+    m+=i>=0?tab[i]:600;
+  }
+  w=m*(size||12)/1000;
   if(_measCache.size>4000)_measCache.clear();
   _measCache.set(k,w);
   return w;
