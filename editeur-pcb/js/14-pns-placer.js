@@ -70,7 +70,7 @@ function pnsMergeTry(node,line,pts,i,n,mode,skip){
     if(pnsLen(cand)>=pnsLen(pts)-1e-6)continue;       // rien à gagner
     if(!pnsIs45(cand,mode))continue;
     if(!pnsSurCarte(cand))continue;
-    if(!pnsSurCarte(cand,m)&&pnsSurCarte(pts,m))continue;   // le raccourci n'entre pas dans la marge du bord
+    if(!pnsSurCarte(cand,m,line.net,line.l)&&pnsSurCarte(pts,m,line.net,line.l))continue;   // le raccourci n'entre pas dans la marge du bord
     if(node.firstObstacle({l:line.l,net:line.net,w:line.w,nets:line.nets,pts:cand},skip))continue;
     if(!best||pnsLen(cand)<pnsLen(best))best=cand;
   }
@@ -149,7 +149,7 @@ function pnsDejog(node,line,pts,skip,mode,i0){
             const n=pnsEchardes(cand,line.w);
             if(n>=nbMieux)continue;
             if(!pnsIs45(cand,mode)||!pnsSurCarte(cand))continue;
-            if(!pnsSurCarte(cand,S.rule.edge+line.w/2)&&pnsSurCarte(pts,S.rule.edge+line.w/2))continue;
+            if(!pnsSurCarte(cand,S.rule.edge+line.w/2,line.net,line.l)&&pnsSurCarte(pts,S.rule.edge+line.w/2,line.net,line.l))continue;
             if(node.firstObstacle({l:line.l,net:line.net,w:line.w,nets:line.nets,pts:cand},skip))continue;
             mieux=cand;nbMieux=n;
           }

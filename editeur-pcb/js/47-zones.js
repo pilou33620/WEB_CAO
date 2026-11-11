@@ -172,7 +172,7 @@ function zonesDrc(out){
       for(const q of padsWorld(fp)){
         if(!padLayers(fp,q).includes(l)||!padSurCouche(q,l)||!autre(q.net))continue;
         juger(dPad(q),clrZone(z,q.net,"cu",q.drill>0?"th":"smd",q),q.x,q.y,
-              "la pastille "+fp.ref+"."+q.n+" ("+(q.net||"sans net")+")");
+              "la pastille "+padDesig(fp,q)+" ("+(q.net||"sans net")+")");
       }
   }
 }

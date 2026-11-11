@@ -72,11 +72,11 @@ function pnsWalkCross(pts,H){
    l'extérieur : géométriquement valide, matériellement absurde — il n'y a pas
    de cuivre là-bas. On ne juge que les tours qui NAISSENT dedans : une carte
    dont le cuivre déborde déjà doit rester routable. */
-function pnsSurCarte(pts,m){
+function pnsSurCarte(pts,m,net,l){
   const P=boardPoly();
   if(!P||P.length<3)return true;
-  // `m` : la marge de bord du DRC (S.rule.edge + demi-largeur), jugée sur l'axe comme lui
-  if(m>0&&!pnsSegs(pts).every(s=>axeDansCarte(s,m)))return false;
+  // `m` : la marge de bord du DRC (S.rule.edge + demi-largeur), jugée sur l'axe comme lui, pastille de bord du net `net` sur `l` comprise
+  if(m>0&&!pnsSegs(pts).every(s=>axePisteAuBord(s,m,net,l)))return false;
   /* Le bord compte comme dedans. `inPoly` tranche l'intérieur strict : une
      piste posée pile sur le contour — cela arrive, et c'est légitime — s'y
      déclare dehors, et le moteur refusait alors de la toucher. */
@@ -99,7 +99,7 @@ function pnsWalkSide(node,line,skip,side,max,only){
   let pts=pnsSimplify(line.pts);
   const l0=pnsLen(pts);
   const dedans=pnsSurCarte(pts);          // la route directe tenait-elle sur la carte ?
-  const m=S.rule.edge+line.w/2, marge=pnsSurCarte(pts,m);   // … et à sa marge du bord ?
+  const m=S.rule.edge+line.w/2, marge=pnsSurCarte(pts,m,line.net,line.l);   // … et à sa marge du bord ?
   const vus=new Set();
   for(let k=0;k<(max||PNS_WALK_MAX);k++){
     const ob=node.firstObstacle({l:line.l,net:line.net,w:line.w,nets:line.nets,pts},skip,only);
@@ -114,7 +114,7 @@ function pnsWalkSide(node,line,skip,side,max,only){
     const suite=pnsUnloop(pnsSplice(pts,c.A.i,c.B.i+1,
                                     pnsHullWalk(H,c.A.edge,c.A,c.B.edge,c.B,side)));
     if(pnsLen(suite)>l0*PNS_WALK_GROWTH+10)return {pts,ok:false,bloque:ob.it};
-    if(dedans&&!pnsSurCarte(suite)||marge&&!pnsSurCarte(suite,m))return {pts,ok:false,bloque:ob.it};
+    if(dedans&&!pnsSurCarte(suite)||marge&&!pnsSurCarte(suite,m,line.net,line.l))return {pts,ok:false,bloque:ob.it};
     pts=suite;
   }
   return {pts,ok:false};

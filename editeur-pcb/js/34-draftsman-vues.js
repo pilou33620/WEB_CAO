@@ -343,16 +343,6 @@ function dfSupprimerDetail(id){
     return c.details.length<n;
   });
 }
-/* Position d'une vue : le coin haut gauche de sa boîte, aimanté sur la
-   grille. Le cadre et le cartouche sont respectés au dessin (dfBorner),
-   d'après la boîte du moment. */
-function dfPlacerVue(cle,x,y){
-  if(!DF_CLE_RE.test(String(cle)))return false;
-  return dfEcrire(c=>{
-    c.vues[cle]={x:Math.round(x/DF_GRILLE)*DF_GRILLE,y:Math.round(y/DF_GRILLE)*DF_GRILLE};
-    return true;
-  });
-}
 /* Sans argument, toutes les vues reviennent à la disposition calculée ;
    sinon celles dont la clé est donnée. */
 function dfReplacer(cles){

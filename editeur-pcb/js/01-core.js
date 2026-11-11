@@ -685,7 +685,6 @@ function stackAsym(){
   }
   return out;
 }
-function stackSym(){return stackAsym().length===0;}
 /* « Diélectrique 1 (0.210 mm) contre le 3 (0.500 mm) » */
 function asymLabel(x){
   const nm=x.what==="cu"?"Cuivre ":"Diélectrique ";
@@ -1998,6 +1997,11 @@ function padNom(v){
   if(v==null)return "";
   return String(v).replace(/[\u0000-\u001f]/g,"").trim().slice(0,16);
 }
+/* Une pastille dans un message : « J1.5 » ; sans numéro, son `n` interne ne
+   dit rien à l'utilisateur, on la situe (q en coordonnées carte, padsWorld). */
+function padDesig(fp,q){
+  return q.nom===""?fp.ref+" (pastille sans numéro à "+fmt(q.x,2)+";"+fmt(q.y,2)+" mm)":fp.ref+"."+q.n;
+}
 /* Rotation d'une pastille, en degrés, dans le repère de l'empreinte — comme
    `fp.rot` pour l'empreinte entière. Ramenée dans [0, 360[ : deux pastilles
    tournées de -90° et de 270° sont la même, et le document ne doit pas en
@@ -2159,20 +2163,6 @@ function fpGeneric(fp){
     }
   };
   if(typeof fpReshape==="function")fpReshape(fp,brut);else brut();
-  return true;
-}
-/* Pose d'une pastille, en coordonnées locales. Le premier déplacement fige
-   l'empreinte : on ne déplace pas une pastille calculée, on quitte le calcul.
-   Deux pastilles superposées ne sont pas refusées — une traversante peut
-   recouvrir une plage — mais la fenêtre les signale et le DRC les rattrape si
-   elles portent des nets différents. */
-function fpMovePad(fp,i,x,y){
-  fpFreeze(fp);
-  const q=fp.pads[i];
-  if(!q)return false;
-  const nx=r4(x), ny=r4(y);
-  if(q.x===nx&&q.y===ny)return false;
-  q.x=nx;q.y=ny;
   return true;
 }
 /* Retouche d'une pastille : numéro, dimensions, forme, perçage. Un perçage
@@ -2462,7 +2452,7 @@ function padsWorldCalc(fp){
       :Array.isArray(cc)?[cc[1],cc[0],cc[3],cc[2]]:cc;
     if(q.slot)o.slot=q.slot;
     for(const k of ["thermalSpokes","thermalAngle","thermalWidth","thermalGap","connexion",
-                    "mask","noMask","paste","noPaste","parCouche","clr"])
+                    "mask","noMask","paste","noPaste","parCouche","clr","nom"])   // nom : padDesig
       if(q[k]!=null)o[k]=q[k];
     return o;
   });

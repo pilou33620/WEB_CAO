@@ -4646,12 +4646,12 @@ const SIM_PCB={
                                boite:boite(b), repere:b.nom,
                                composant:b.compRef||""}))
       .concat(retours.map(r=>Object.assign(plot(r.q,r.fp),
-        {courant:r.courant, repere:r.ref+"."+r.q.n+" (masse)", composant:r.ref})));
+        {courant:r.courant, repere:padDesig(r.fp,r.q)+" (masse)", composant:r.ref})));
     const references=alims.map(b=>({couche:b.couche, net:b.net,
                                 tension:(+b.valeur)||0, boite:boite(b),
                                 repere:b.nom, composant:b.compRef||""}))
       .concat(zeros.map(r=>Object.assign(plot(r.q,r.fp),
-        {tension:0, repere:r.ref+"."+r.q.n+" (masse)", composant:r.ref})));
+        {tension:0, repere:padDesig(r.fp,r.q)+" (masse)", composant:r.ref})));
     const net=alims[0].net;
     return {
       polygones:polygones,

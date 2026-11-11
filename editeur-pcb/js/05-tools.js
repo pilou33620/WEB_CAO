@@ -2159,7 +2159,7 @@ function fpGene(fp,skip,duresSeules){
         if(duresSeules&&o.k!=="P")continue;          // le cuivre qui s'écarte ne bute pas
         return o.k==="V"?"un via"+(o.net?" de "+o.net:""):
                o.npth?"un trou NPTH":
-               o.k==="P"?"la pastille "+o.fp.ref+"."+o.q.n:
+               o.k==="P"?"la pastille "+padDesig(o.fp,o.src):
                          "une piste"+(o.net?" de "+o.net:"");
       }
   const A=fpCorps(fp), ab=polyBBox(A), I=fpCorpsIndex(), C=FP_CASE;
@@ -3896,7 +3896,7 @@ function finirTrace(){
     if(!c.routes.length)throw routageRefus(c.resultats[0].raison);
     const arr=routagePoint(nom);
     routageMarche(c.routes[0].points.map(routagePoint).concat([arr]),R.w,R.pt,arr,R.net);
-    hint("Tracé fini jusqu'à "+nom+".");
+    hint("Tracé fini jusqu'à "+padDesig(cible.fp,cible.q)+".");
   }catch(err){
     if(!(err instanceof RoutageRefus))throw err;
     if(S.route===R){                               // sinon il a touché son net en chemin : il est posé
@@ -4058,7 +4058,7 @@ function viaIsole(v,nets,skip){
   if(it.ko)return "dans le keep-out « "+it.src.nom+" »";       // 50-couches.js
   const quoi=it.k==="V"?("d'un via "+(it.net?"de "+it.net:"sans net")):
              it.npth?"d'un trou NPTH":
-             it.k==="P"?("de la pastille "+it.fp.ref+"."+it.q.n):
+             it.k==="P"?("de la pastille "+padDesig(it.fp,it.src)):
                         ("de la piste "+(it.net||"sans net"));
   return "à "+fmt(Math.max(0,pire.g),3)+" mm "+quoi+", l'isolation en exige "+
          fmt(pnsClr(it,v.net,"via"),3)+" mm";
@@ -4080,7 +4080,7 @@ function viaTrou(v,skip){
       qui="d'un autre via"+(it.net?" ("+it.net+")":"");}
     else if(it.npth){d=it.src.d;qui="d'un trou NPTH";}
     else if(it.k==="P"&&it.q.drill>0){d=it.q.drill;cx=it.q.x;cy=it.q.y;
-      qui="du perçage de "+it.fp.ref+"."+it.q.n;}
+      qui="du perçage de "+padDesig(it.fp,it.src);}
     else continue;
     /* un trou NPTH (rond ou fente) se mesure sur son axe */
     const ax=it.npth?axePercage(it.src):null;

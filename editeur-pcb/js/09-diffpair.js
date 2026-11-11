@@ -544,7 +544,7 @@ function dpPose(D,gA,gB,t,axis,shove){
       const sk=new Set(hors);
       if(ignore)sk.add(ignore);
       if(NB.segBad(sg,D.layer,net,D.w,sk))return true;
-      if(!axeDansCarte(sg,S.rule.edge+D.w/2))return true;   // la marge de bord du DRC, comme routeSegsTo
+      if(!axePisteAuBord(sg,S.rule.edge+D.w/2,net,D.layer))return true;   // la marge de bord du DRC, comme routeSegsTo (pastille de bord du net comprise)
     }
     return false;
   };
