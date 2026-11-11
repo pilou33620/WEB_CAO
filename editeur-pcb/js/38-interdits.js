@@ -76,7 +76,7 @@ function interditsDrc(out){
         for(const q of padsWorld(fp))
           if(q.drill>0&&inPoly(q.x,q.y,z.pts)){
             out.push({x:q.x,y:q.y,l:couche(z.face),
-              msg:"Patte traversante "+fp.ref+"."+q.n+" : elle ressort sur le "+z.face+" dans « "+z.nom+" »"});
+              msg:"Patte traversante "+padDesig(fp,q)+" : elle ressort sur le "+z.face+" dans « "+z.nom+" »"});
             break;
           }
       if(z.face!==face||!polysTouchent(corps,z.pts))continue;

@@ -114,7 +114,7 @@ const EXPOSE=[
   "esc","fmt","$",
   /* empilage physique et rôles de couche */
   "stackDefaults","stackResize","stackRows","rowT","stackTotal","stackLam",
-  "stackCuT","stackDiT","stackSpan","stackFit","stackSym","stackMirror",
+  "stackCuT","stackDiT","stackSpan","stackFit","stackMirror",
   "worstAspect","applyPreset","presetsFor","diCount","cuT","diAt","maskFaces",
   "stackAsym","asymLabel","viaBuild","viaCensus","aspectOf","viaTented",
   "pressNorm","pressList","dfNotesFab",
@@ -184,7 +184,7 @@ const EXPOSE=[
   "parseNetlist","parseCompLine","applyNetlist","STYLES","bodyOf",
   /* empreintes dessinees a la main et bibliotheque personnelle */
   "fpFree","padClone","fpAutoBody","fpFreeze","fpGeneric","fpSyncPins",
-  "fpMovePad","fpSetPad","fpAddPad","fpSetPins","fpSetBody",
+  "fpSetPad","fpAddPad","fpSetPins","fpSetBody",
   "dPads","dHoles","trousMonde","fpTrousDe","axePercage","followBase","followWorld","fpLibRelire","pcbSurModifLib","drawHoles","dBody","normFpDef","fpApplyDef","fpDessinsMonde","dessinsMonde","fpLibAll","fpLibWrite",
   "fpLibGet",
   "fpLibMerge","FPLIB_KEY","FPLIB_FORMAT",
@@ -192,7 +192,7 @@ const EXPOSE=[
   /* formes de pastille, rotation, origine de l'empreinte */
   "PAD_SHAPES","padShape","padRadius","padRot","padHalf","padDist","padOpening",
   "fpLocalBox",
-  "apSet","apForPad","netAtPoint","padCuLayers","pnsItemsPad","aplatClick","closeAplat","selDecoupes","deleteSel","hitTest","selectHit","brocheNum","parseNetlist","applyNetlist","padSurCouche","padLiaison","padBras","zoneLanieres","maskOpenings","pasteOpenings","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","classesAProposer","carteVide","UNDO_BUDGET","rotChoix","padNom",
+  "apSet","apForPad","netAtPoint","padCuLayers","pnsItemsPad","aplatClick","closeAplat","selDecoupes","deleteSel","hitTest","selectHit","brocheNum","parseNetlist","applyNetlist","padSurCouche","padLiaison","padBras","zoneLanieres","maskOpenings","pasteOpenings","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","classesAProposer","carteVide","UNDO_BUDGET","rotChoix","padNom","padDesig",
   /* repère de broche 1 */
   "MARK_D","PASSIF_REF","fpMarkWanted","fpMarkAuto","fpMark","fpSetMark",
   "fpMoveMark","fpSetMarkD","fpXform",
@@ -426,7 +426,7 @@ const EXPOSE=[
   /* cotes à la main, vues à la souris, détails (34-draftsman-vues.js) */
   "dfNormCotes","dfNormVues","dfNormDetails","dfResoudre","dfMesurer","dfAccroches","dfAccrocher","dfNormRef","dfRefTexte",
   "dfAjouterCote","dfModifierCote","dfSupprimerCote","dfDeplacerCote","dfAjouterDetail","dfSupprimerDetail",
-  "dfPlacerVue","dfReplacer","dfBoiteVue","dfBoiteItems","dfVersFeuille","dfDansPoly","dfCoupeLigne",
+  "dfReplacer","dfBoiteVue","dfBoiteItems","dfVersFeuille","dfDansPoly","dfCoupeLigne",
   "dfCoupePoly","dfClicFeuille","dfGlisser","dfLacher","dfToucher","dfChoisirOutil","dfOutilsTouche","dfSurSvg",
   "dfOublierCarte","DF_ROUGE","DF_GRILLE",
   /* cote angulaire, chaînes, ordonnées, tolérances, vues qui s'écartent */
@@ -5818,7 +5818,7 @@ T("empilage physique : les modèles d'usine tombent sur leur épaisseur",()=>{
       throw new Error(pr.name+" : "+S.stack.di.length+" diélectriques");
     const e=Math.abs(stackTotal()-pr.th);
     if(e>0.02)throw new Error(pr.name+" : "+stackTotal()+" mm au lieu de "+pr.th);
-    if(!stackSym())throw new Error(pr.name+" : modèle asymétrique");
+    if(stackAsym().length)throw new Error(pr.name+" : modèle asymétrique");
   }
   setCuCount(4);
 });
@@ -5844,11 +5844,11 @@ T("empilage physique : répartir, symétriser",()=>{
   S.stack.target=2.4;
   if(!stackFit())throw new Error("répartition refusée");
   if(Math.abs(stackTotal()-2.4)>0.02)throw new Error("cible manquée : "+stackTotal());
-  if(!stackSym())throw new Error("une répartition proportionnelle reste symétrique");
+  if(stackAsym().length)throw new Error("une répartition proportionnelle reste symétrique");
   S.stack.di[0].t=0.4;
-  if(stackSym())throw new Error("l'asymétrie devrait être vue");
+  if(!stackAsym().length)throw new Error("l'asymétrie devrait être vue");
   stackMirror();
-  if(!stackSym())throw new Error("symétrisation ratée");
+  if(stackAsym().length)throw new Error("symétrisation ratée");
   // le cuivre à lui seul dépasse la cible : la répartition refuse plutôt que d'inventer
   S.stack.target=0.05;
   if(stackFit())throw new Error("cible inatteignable acceptée");
@@ -6115,7 +6115,7 @@ T("panneau d'empilage : les boutons sans effet le disent",()=>{
   if(h.indexOf('id="skFit" disabled')>=0)throw new Error("« Répartir » devrait être actif");
   if(h.indexOf('id="skSym" disabled')>=0)throw new Error("« Symétriser » devrait être actif");
   $("skSym").onclick();
-  if(!stackSym())throw new Error("le bouton n'a pas symétrisé");
+  if(stackAsym().length)throw new Error("le bouton n'a pas symétrisé");
   $("skFit").onclick();
   if(Math.abs(stackTotal()-1.2)>0.02)throw new Error("le bouton n'a pas réparti");
   applyPreset(presetsFor(4)[0]);
@@ -6385,7 +6385,7 @@ T("empilage : l'asymétrie est nommée",()=>{
   if(h.indexOf("Diélectrique 1")<0||h.indexOf("Cuivre 1")<0)
     throw new Error("le panneau devrait nommer les paires fautives");
   applyPreset(presetsFor(4)[0]);
-  if(!stackSym())throw new Error("le modèle d'usine devrait tout remettre d'aplomb");
+  if(stackAsym().length)throw new Error("le modèle d'usine devrait tout remettre d'aplomb");
 });
 T("feuille d'empilage dans le dossier de fabrication",()=>{
   setCuCount(4);applyPreset(presetsFor(4)[0]);
@@ -7275,12 +7275,12 @@ T("figer une empreinte ne déplace pas une pastille",()=>{
   if(JSON.stringify(bodyOf(fp))!==bAvant)throw new Error("le contour a bougé");
   if(fpFreeze(fp))throw new Error("figer deux fois ne fait rien de plus");
 });
-T("glisser une pastille fait passer l'empreinte en dessin à la main",()=>{
+T("retoucher la position d'une pastille fait passer l'empreinte en dessin à la main",()=>{
   S.fps=[];clearSel();touch();
   const fp=mkFp("U1","","SOIC-8",8);
   S.fps.push(fp);touch();
   const avant=padsOf(fp);
-  if(!fpMovePad(fp,0,-4,-3))throw new Error("le déplacement devait aboutir");
+  fpSetPad(fp,0,"x",-4);fpSetPad(fp,0,"y",-3);
   if(!fpFree(fp))throw new Error("le premier déplacement fige l'empreinte");
   const apres=padsOf(fp);
   if(apres[0].x!==-4||apres[0].y!==-3)
@@ -7288,7 +7288,6 @@ T("glisser une pastille fait passer l'empreinte en dessin à la main",()=>{
   for(let i=1;i<apres.length;i++)
     if(apres[i].x!==avant[i].x||apres[i].y!==avant[i].y)
       throw new Error("la pastille "+apres[i].n+" n'avait pas à bouger");
-  if(fpMovePad(fp,0,-4,-3))throw new Error("reposer au même endroit ne change rien");
   /* les cotes génériques ne commandent plus : le pas ne redessine rien */
   const fige=JSON.stringify(padsOf(fp));
   fp.pitch=5;
@@ -7334,7 +7333,7 @@ T("retour au calcul : le boîtier reprend la main",()=>{
   const fp=mkFp("U1","","TSSOP-8",8);
   S.fps.push(fp);touch();
   const attendu=JSON.stringify(padsOf(fp));
-  fpMovePad(fp,0,-9,-9);
+  fpSetPad(fp,0,"x",-9);fpSetPad(fp,0,"y",-9);
   fpSetBody(fp,{x1:-9,y1:-9,x2:9,y2:9});
   if(!fpGeneric(fp))throw new Error("le retour au calcul devait avoir lieu");
   if(fpFree(fp)||fp.body)throw new Error("ni pastilles ni contour ne doivent rester");
@@ -7381,7 +7380,7 @@ T("document : une empreinte dessinée fait l'aller-retour sans rien perdre",()=>
   fp.x=20;fp.y=15;fp.nets={1:"GND",8:"+5V"};
   S.fps.push(fp);
   fpFreeze(fp);
-  fpMovePad(fp,0,-3.81,-4.5);
+  fpSetPad(fp,0,"x",-3.81);fpSetPad(fp,0,"y",-4.5);
   fpSetPad(fp,0,"shape","circ");
   fpSetPad(fp,0,"drill",0.8);
   fpSetBody(fp,{x1:-4,y1:-5,x2:4,y2:5});
@@ -7405,7 +7404,7 @@ T("empreinte dessinée : ni le boîtier ni la netlist ne la refont",()=>{
   S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
   const fp=mkFp("U1","","DIP-8",8);
   fp.x=20;fp.y=15;S.fps.push(fp);touch();
-  fpMovePad(fp,0,-5,-5);
+  fpSetPad(fp,0,"x",-5);fpSetPad(fp,0,"y",-5);
   const dessin=JSON.stringify(padsOf(fp));
   if(applyPkgGeom(fp))throw new Error("le boîtier ne doit pas refaire un dessin manuel");
   const res=applyNetlist(NET_MANUEL,false);
@@ -7482,7 +7481,7 @@ T("bibliothèque : appliquer une empreinte de la LIB",()=>{
   S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
   const src=mkFp("U1","","DIP-8",8);
   src.x=20;src.y=15;S.fps.push(src);
-  fpMovePad(src,0,-6,-6);
+  fpSetPad(src,0,"x",-6);fpSetPad(src,0,"y",-6);
   fpSetPad(src,0,"drill",0.9);
   FPLIB["DIP-8 maison"]=normFpDef({name:"DIP-8 maison",pins:8,style:"dip",pads:fpFree(src).map(padClone)});
   const cible=mkFp("U2","LM358","SOIC-8",8);
@@ -8305,6 +8304,46 @@ T("pastille : isolement propre, le plus grand avec la classe, au contrôle et au
   if(clrZone(z,p.net,"cu","smd",p)!==0.9||!(clrZone(z,p.net,"cu","smd")<0.9))throw new Error("zone : isolement de la pastille "+clrZone(z,p.net,"cu","smd",p));
   carteVide();
 });
+T("pastille : l'isolement propre vaut aussi pour ses bras thermiques et contre ses voisines d'empreinte",()=>{
+  carteVide();
+  const d=JSON.parse(serialize());
+  // bras : J1 (GND) dans une zone GND, J2 (B) à 0,7 mm à droite du bout du bras droit
+  d.fps=[{id:1,ref:"J1",value:"",x:10,y:10,rot:0,pins:1,style:"chip",silk:false,nets:{1:"GND"},
+          pads:[{n:1,x:0,y:0,w:1,h:1,shape:"rect",drill:0}]},
+         {id:2,ref:"J2",value:"",x:12.6,y:10,rot:0,pins:1,style:"chip",silk:false,nets:{1:"B"},
+          pads:[{n:1,x:0,y:0,w:1,h:1,shape:"rect",drill:0}]},
+         // voisines d'empreinte : 0,3 mm entre les bords
+         {id:3,ref:"U1",value:"",x:30,y:10,rot:0,pins:2,style:"chip",silk:false,nets:{1:"A",2:"B"},
+          pads:[{n:1,x:0,y:0,w:1,h:1,shape:"rect",drill:0},{n:2,x:1.3,y:0,w:1,h:1,shape:"rect",drill:0}]}];
+  d.zones=[{id:9,l:0,net:"GND",pts:[{x:5,y:5},{x:11.5,y:5},{x:11.5,y:15},{x:5,y:15}]}];
+  loadDoc(d,true);
+  const bras=()=>padBras(padsWorld(S.fps[0])[0],0).bras.filter(b=>b.gene).map(b=>b.gene);
+  if(bras().length)throw new Error("sans isolement propre, aucun bras gêné : "+bras());
+  fpSetPad(S.fps[0],0,"clr",1.2);touch();
+  if(!bras().some(g=>/J2\.1/.test(g)))throw new Error("1,2 mm propre à la pastille : le bras droit doit buter sur J2 "+bras());
+  fpSetPad(S.fps[0],0,"clr","");fpSetPad(S.fps[1],0,"clr",1.2);touch();
+  if(!bras().some(g=>/J2\.1/.test(g)))throw new Error("1,2 mm propre à la voisine : le bras droit doit buter sur J2 "+bras());
+  const pp=()=>runDrc().filter(e=>/Pastilles trop proches : U1/.test(e.msg));
+  if(pp().length)throw new Error("même empreinte, sans isolement propre : rien à dire "+pp().map(e=>e.msg));
+  fpSetPad(S.fps[2],1,"clr",0.5);touch();
+  const e=pp();
+  if(e.length!==1||!/U1\.1 \/ U1\.2/.test(e[0].msg)||!/exige 0[.,]500/.test(e[0].msg))throw new Error("0,5 mm propre : U1.1/U1.2 à 0,3 mm en défaut "+JSON.stringify(e));
+  carteVide();
+});
+T("pastille sans numéro : désignée par sa place, pas par son n interne",()=>{
+  carteVide();
+  const d=JSON.parse(serialize());
+  d.fps=[{id:1,ref:"J1",value:"",x:10,y:10,rot:0,pins:2,style:"chip",silk:false,nets:{1:"A",2:"B"},
+          pads:[{n:1,x:0,y:0,w:1,h:1,shape:"rect",drill:0},{n:2,x:0.5,y:3,w:1,h:1,shape:"rect",drill:0,nom:""}]}];
+  d.tracks=[{l:0,net:"A",w:0.3,x1:5,y1:13.7,x2:15,y2:13.7}];   // 0,05 mm du bord de la pastille sans numéro
+  loadDoc(d,true);
+  const P=padsWorld(S.fps[0]);
+  if(padDesig(S.fps[0],P[0])!=="J1.1")throw new Error("numérotée : "+padDesig(S.fps[0],P[0]));
+  if(padDesig(S.fps[0],P[1])!=="J1 (pastille sans numéro à 10.50;13.00 mm)")throw new Error("sans numéro : "+padDesig(S.fps[0],P[1]));
+  const e=runDrc().filter(x=>/Isolation piste\/pastille J1/.test(x.msg));
+  if(e.length!==1||!/J1 \(pastille sans numéro à 10[.,]50;13[.,]00 mm\)/.test(e[0].msg))throw new Error("message : "+JSON.stringify(e));
+  carteVide();
+});
 /* PASTILLE SANS NUMÉRO (KiCad « pad "" ») : le nom vide survit, sans marqueur,
    et aucune broche de netlist ne la vise. */
 T("pastille sans numéro : nom vide gardé, la netlist ne la relie pas",()=>{
@@ -8848,7 +8887,7 @@ T("Propriétés : point de broche 1, contour imprimé et retour au calcul ont le
     const u=mkFp("U1","","SOIC-8",8);
     u.x=50;u.y=20;S.fps.push(u);touch();
     const attendu=JSON.stringify(padsOf(u));
-    fpMovePad(u,0,-9,-9);touch();
+    fpSetPad(u,0,"x",-9);fpSetPad(u,0,"y",-9);touch();
     clearSel();S.sel.fps.add(u.id);refreshPanels();
     if(!/id="pFpGeneric"/.test(h()))throw new Error("le bouton de retour au calcul manque");
     $("pFpGeneric").onclick({preventDefault(){}});
@@ -11155,10 +11194,6 @@ T("index : une branche essaie sans salir son parent",()=>{
   if(R.segBad(sonde,0,"SIG",0.3))
     throw new Error("il ne doit pas exister pour le parent");
 
-  B.commit();
-  if(R.segBad(seg,0,"SIG",0.3))throw new Error("après versement, le retrait vaut pour le parent");
-  if(!R.segBad(sonde,0,"SIG",0.3))
-    throw new Error("après versement, l'ajout vaut pour le parent");
 });
 T("assemblage : des segments bout à bout font une ligne, un embranchement l'arrête",()=>{
   S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();
@@ -25907,10 +25942,10 @@ T("plans : cotes, positions de vues et détails — aller-retour du document, bo
   dfAjouterCote({vue:"fab/carte",type:"v",a:{type:"contour",i:0},b:{type:"bord",i:1,t:0.5},dx:-5,dy:0});
   dfAjouterCote({vue:"asmT/carte",type:"h",a:{type:"pastille",fp:"J2",pad:"1",ou:"g"},
                  b:{type:"pastille",fp:"J2",pad:"4",ou:"d"},dx:0,dy:6});
-  dfPlacerVue("fab/notes",31.2,42.6);
+  dfPoserVueRepousser("fab/notes",31.2,42.6);
   const did=dfAjouterDetail({source:"fab/carte",forme:"rect",x:c0.x+5,y:c0.y+5,w:8,h:6,echelle:4});
   if(!did)throw new Error("détail refusé");
-  dfPlacerVue("det/"+did,40,150);
+  dfPoserVueRepousser("det/"+did,40,150);
   const a=serialize();
   loadDoc(JSON.parse(a),true);
   if(serialize()!==a)throw new Error("l'aller-retour change le document");
@@ -25945,9 +25980,9 @@ T("plans : cotes, positions de vues et détails — aller-retour du document, bo
 T("plans : vue déplacée — aimantée, gardée dans le cadre et hors du cartouche",()=>{
   exCharger(1);
   const avant=JSON.stringify(dfDocument().feuilles.map(F=>F.items));
-  dfPlacerVue("asmT/carte",-80,9999);
-  dfPlacerVue("fab/percage",30.3,41.2);
-  dfPlacerVue("bom/nomenclature",9999,9999);
+  dfPoserVueRepousser("asmT/carte",-80,9999);
+  dfPoserVueRepousser("fab/percage",30.3,41.2);
+  dfPoserVueRepousser("bom/nomenclature",9999,9999);
   const doc=dfDocument();
   for(const [g,cle] of [["asmT","asmT/carte"],["fab","fab/percage"],["bom","bom/nomenclature"]]){
     const F=doc.feuilles.find(f=>f.genre===g), v=F.vues.find(v=>v.cle===cle);
@@ -26031,7 +26066,7 @@ T("plans : PDF toujours produit — cotes, vues déplacées, détails, toutes fe
   S.holes=[];
   dfAjouterDetail({source:"asmT/carte",forme:"rect",x:c0.x+6,y:c0.y+6,w:10,h:8,echelle:3});
   dfAjouterDetail({source:"cu0/carte",forme:"cercle",x:c0.x+10,y:c0.y+10,r:4,echelle:10});
-  dfPlacerVue("fab/empilage",20,150);
+  dfPoserVueRepousser("fab/empilage",20,150);
   try{
     const doc=dfDocument();
     const t=dfLatin(dfPdfOctets(doc));
@@ -26062,7 +26097,7 @@ T("plans : vue de détail sur une autre feuille — renvois, repli, annulation",
       throw new Error("feuille mal bornée : "+JSON.stringify(n));
     const id=dfAjouterDetail({source:"fab/carte",forme:"cercle",x:c0.x+3,y:c0.y+3,r:4,echelle:5}), cle="det/"+id;
     if(dfFeuilleDetail(id,"zz")!==false)throw new Error("une feuille inconnue doit être refusée");
-    dfPlacerVue(cle,40,150);
+    dfPoserVueRepousser(cle,40,150);
     if(!dfFeuilleDetail(id,"asmT"))throw new Error("feuille refusée");
     if(dfCfg().vues[cle])throw new Error("la place d'avant ne vaut plus sur l'autre feuille");
     let doc=dfDocument();
@@ -30740,6 +30775,25 @@ T("via : refusé dans la marge du bord de carte (touche V, paire différentielle
     if(S.vias.length||S.dp.layer!==0)throw new Error("vias de paire posés dans la marge : "+S.vias.length);
     dpUpdate(30,0.4);
     if(!S.dp.bad)throw new Error("la paire dans la marge du bord devait être refusée");
+  });
+});
+T("paire différentielle : jusqu'à deux demi-trous de bord, pas le long du bord loin d'eux",()=>{
+  const dp=(ref,y,drill)=>({ref,x:30,y,rot:0,side:0,nets:{1:"DP",2:"DN"},
+    pads:[{n:1,x:-0.75,y:0,w:0.8,h:0.8,shape:drill?"circ":"rect",drill},{n:2,x:0.75,y:0,w:0.8,h:0.8,shape:drill?"circ":"rect",drill}]});
+  rtCarte({fps:[dp("J1",10,0),dp("J2",0,0.4)],dpPairs:[{id:1,name:"USB",p:"DP",n:"DN"}]},()=>{
+    S.scale=20;S.grid=0;
+    if(!dpStart(30,10))throw new Error("départ de paire refusé");
+    dpUpdate(30,0);
+    if(S.dp.bad)throw new Error("la paire jusqu'aux deux demi-trous devait passer");
+    dpUpdate(45,0.4);
+    if(!S.dp.bad)throw new Error("la paire qui longe le bord loin des demi-trous devait être refusée");
+  });
+  // le détour du routeur : une ligne du net jusqu'au demi-trou reste sur la carte à sa marge
+  rtCarte({fps:[dp("J2",0,0.4)]},()=>{
+    const m=S.rule.edge+0.1, pts=[{x:29.25,y:5},{x:29.25,y:0}];
+    if(!pnsSurCarte(pts,m,"DP",0))throw new Error("jusqu'au demi-trou de son net : sur la carte");
+    if(pnsSurCarte(pts,m,"B",0))throw new Error("un autre net n'a pas l'exception");
+    if(pnsSurCarte([{x:29.25,y:0.2},{x:45,y:0.2}],m,"DP",0))throw new Error("loin du demi-trou, le long du bord : refusé");
   });
 });
 

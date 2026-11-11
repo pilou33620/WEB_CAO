@@ -747,8 +747,8 @@ function brasObstacles(l){
       if(!padLayers(f,p).includes(l))continue;
       const pc=padSurCouche(p,l);
       if(!pc)continue;
-      const r=Math.hypot(pc.w,pc.h)/2;
-      ranger({k:"pad",net:p.net,pc,drill:p.drill,nom:"la pastille "+f.ref+"."+p.n+(p.net?" ("+p.net+")":""),
+      const r=Math.hypot(pc.w,pc.h)/2+(p.clr>0?p.clr:0);   // l'isolement propre porte plus loin que `loin`
+      ranger({k:"pad",net:p.net,pc,drill:p.drill,clr:p.clr>0?p.clr:0,nom:"la pastille "+padDesig(f,p)+(p.net?" ("+p.net+")":""),
               b:{x1:p.x-r,y1:p.y-r,x2:p.x+r,y2:p.y+r}});
     }
   for(const t of S.tracks)if(t.l===l){
@@ -782,7 +782,8 @@ function padBras(q,l){
   const n=padLiaison(q,l)==="aucune"?0:(q.thermalSpokes>0)?q.thermalSpokes:(zb&&zb.brasNb>0)?zb.brasNb:4;
   const a0=(q.rot||0)+(((q.thermalAngle!=null)?q.thermalAngle:(zb&&zb.brasAngle)||0)*Math.PI/180);
   const len=Math.max(q.w,q.h)/2+ecartThermique(q,l)+0.2;
-  const loin=len+tw+maxClr()+0.1;              // au-delà, rien ne peut gêner
+  const cq=q.clr>0?q.clr:0;                    // isolement propre de la pastille : le plus grand avec la règle, comme KiCad
+  const loin=len+tw+Math.max(maxClr(),cq)+0.1; // au-delà, rien ne peut gêner
   // les voisins, une fois pour tous les bras ; la pastille elle-même et son net ne gênent pas
   const voisins=n?brasObstacles(l).pres(q.x-loin,q.y-loin,q.x+loin,q.y+loin).filter(o=>o.k==="trou"||o.net!==q.net||!q.net):[];
   const bras=[];
@@ -792,10 +793,10 @@ function padBras(q,l){
     const sw=Object.assign({},ax,{w:tw});
     let gene=null;
     for(const o of voisins){
-      const g=o.k==="pad"?segPadDist(sw,o.pc)-clrK(q.net,o.net,"cu",o.drill>0?"th":"smd")
-             :o.k==="trk"?distAxePiste(ax,o.t)-o.t.w/2-tw/2-clrK(q.net,o.t.net,"cu","trk")
-             :o.k==="via"?segDist(o.v.x,o.v.y,ax.x1,ax.y1,ax.x2,ax.y2)-o.v.d/2-tw/2-clrK(q.net,o.v.net,"cu","via")
-             :segSegDist(ax,o.ah)-o.ah.d/2-tw/2-classOf(q.net).clr;
+      const g=o.k==="pad"?segPadDist(sw,o.pc)-Math.max(clrK(q.net,o.net,"cu",o.drill>0?"th":"smd"),cq,o.clr)
+             :o.k==="trk"?distAxePiste(ax,o.t)-o.t.w/2-tw/2-Math.max(clrK(q.net,o.t.net,"cu","trk"),cq)
+             :o.k==="via"?segDist(o.v.x,o.v.y,ax.x1,ax.y1,ax.x2,ax.y2)-o.v.d/2-tw/2-Math.max(clrK(q.net,o.v.net,"cu","via"),cq)
+             :segSegDist(ax,o.ah)-o.ah.d/2-tw/2-Math.max(classOf(q.net).clr,cq);
       if(g<-1e-6){gene=o.k==="pad"?o.nom:o.k==="trk"?"une piste "+(o.net||"sans net"):o.k==="via"?"une via "+(o.net||"sans net"):"un trou non métallisé";break;}
     }
     if(!gene&&!axeDansCarte(ax,S.rule.edge+tw/2))gene="le bord de carte";
@@ -988,7 +989,7 @@ function runDrc(){
   const pads=[];
   for(const fp of S.fps)
     for(const q of padsWorld(fp))
-      pads.push({q,fp,layers:padLayers(fp,q),tag:fp.ref+"."+q.n});
+      pads.push({q,fp,layers:padLayers(fp,q),tag:padDesig(fp,q)});
 
   /* ---------- isolations ----------
      Les conflits se comptaient deux à deux : toutes les pistes contre toutes
@@ -1011,7 +1012,7 @@ function runDrc(){
      garde l'écart le plus petit de toutes ses cordes. */
   const uid=it=>{const o=it.arc||(it.k==="P"?it.src:it);let k=idOf.get(o);if(k==null)idOf.set(o,k=idOf.size);return k;};
   const cle=(a,b)=>{const i=uid(a), j=uid(b);return i<j?i+"|"+j:j+"|"+i;};
-  const tagOf=it=>it.fp.ref+"."+it.q.n+(it.trouSeul?" (trou, sans pastille sur cette couche)":"");
+  const tagOf=it=>padDesig(it.fp,it.src)+(it.trouSeul?" (trou, sans pastille sur cette couche)":"");
   const bTT=[], bTP=[], bV=[], bPP=[];
   for(const a of N.all())
     for(const b of N.colliding(a)){
@@ -1084,7 +1085,7 @@ function runDrc(){
       if(b.k==="V"){d=b.v.drill;cx=b.v.x;cy=b.v.y;
         qui="deux vias ("+(a.net||"sans net")+" / "+(b.net||"sans net")+")";}
       else if(b.k==="P"&&b.q.drill>0){d=b.q.drill;cx=b.q.x;cy=b.q.y;
-        qui="un via et la pastille "+b.fp.ref+"."+b.q.n;}
+        qui="un via et la pastille "+padDesig(b.fp,b.src);}
       else continue;
       /* une fente se mesure sur son axe ; un rond, de centre à centre comme avant */
       const ax=b.k==="P"&&b.q.slot?axePercage(b.q):null;
@@ -1186,7 +1187,7 @@ function runDrc(){
     for(const q of padsWorld(fp))
       if(q.drill>0&&q.slot>q.drill&&(q.slot>Math.max(q.w,q.h)+1e-6||q.drill>Math.min(q.w,q.h)+1e-6))
         out.push({x:q.x,y:q.y,l:0,
-          msg:"Fente de la pastille "+fp.ref+"."+q.n+" ("+fmt(q.drill,2)+" × "+fmt(q.slot,2)+" mm) plus grande que sa pastille ("+
+          msg:"Fente de la pastille "+padDesig(fp,q)+" ("+fmt(q.drill,2)+" × "+fmt(q.slot,2)+" mm) plus grande que sa pastille ("+
               fmt(q.w,2)+" × "+fmt(q.h,2)+" mm) : le foret coupe l'anneau"});
   /* ---------- pastilles d'une même empreinte ----------
      Deux pastilles d'une même empreinte se touchent presque, par construction :
@@ -1206,16 +1207,24 @@ function runDrc(){
      un convertisseur, un pont de zéro ohm dessiné en cuivre. La règle
      « autoriser les court-circuits » se tait alors, plutôt que de répéter
      quinze fois un défaut qu'on a posé exprès. */
-  if(!S.rule.short)
+  /* L'isolement propre d'une pastille (`q.clr`), lui, vaut aussi contre ses
+     voisines : posé à la main, il dit l'écart voulu ; le plus grand des deux,
+     comme KiCad. */
   for(const g of parFp.values())
     for(let i=0;i<g.length;i++)
       for(let j=i+1;j<g.length;j++){
         const a=g[i], b=g[j];
         if(!(a.q.net&&b.q.net&&a.q.net!==b.q.net))continue;
-        if(padPadDist(a.q,b.q)<-1e-6)
-          out.push({x:(a.q.x+b.q.x)/2,y:(a.q.y+b.q.y)/2,l:a.layers[0],
-            msg:"Pastilles superposées : "+a.tag+" / "+b.tag+
-                " ("+a.q.net+" / "+b.q.net+")"});
+        const e=padPadDist(a.q,b.q), c=Math.max(a.q.clr>0?a.q.clr:0,b.q.clr>0?b.q.clr:0);
+        if(e<-1e-6){
+          if(!S.rule.short)
+            out.push({x:(a.q.x+b.q.x)/2,y:(a.q.y+b.q.y)/2,l:a.layers[0],
+              msg:"Pastilles superposées : "+a.tag+" / "+b.tag+
+                  " ("+a.q.net+" / "+b.q.net+")"});
+        }else if(e<c-1e-6&&a.layers.some(l=>b.layers.includes(l)))
+          out.push({x:(a.q.x+b.q.x)/2,y:(a.q.y+b.q.y)/2,l:a.layers.find(l=>b.layers.includes(l)),
+            msg:"Pastilles trop proches : "+a.tag+" / "+b.tag+" : "+fmt(e,3)+
+                " mm, l'isolement propre de la pastille en exige "+fmt(c,3)+" mm"});
       }
   /* largeur, net manquant, débordement */
   for(const t of S.tracks){
@@ -1319,10 +1328,10 @@ function runDrc(){
         if(!retires.length||B.ok.length>=Math.min(2,B.bras.length))continue;
         const qui=[...new Set(retires.map(b=>b.gene))].join(", ");
         out.push(B.ok.length?{info:true,x:q.x,y:q.y,l,
-            msg:"Liaison thermique "+fp.ref+"."+q.n+" ("+q.net+") : "+retires.length+" bras sur "+B.bras.length+
+            msg:"Liaison thermique "+padDesig(fp,q)+" ("+q.net+") : "+retires.length+" bras sur "+B.bras.length+
                 " non tracé(s), trop près de "+qui}
           :{x:q.x,y:q.y,l,
-            msg:"Liaison thermique "+fp.ref+"."+q.n+" ("+q.net+") : aucun bras possible ("+qui+
+            msg:"Liaison thermique "+padDesig(fp,q)+" ("+q.net+") : aucun bras possible ("+qui+
                 ") — la pastille n'est pas reliée à sa zone, passez-la en liaison directe ou dégagez-la"});
       }
   /* intégration mécanique : zones interdites par face, hauteurs (38-interdits.js) */
@@ -1349,7 +1358,7 @@ function runDrc(){
           const R=Math.hypot(q.w,q.h)/2+w;
           if(Math.min(sg.x1,sg.x2)>q.x+R||Math.max(sg.x1,sg.x2)<q.x-R||Math.min(sg.y1,sg.y2)>q.y+R||Math.max(sg.y1,sg.y2)<q.y-R)continue;
           if(segPadDist(sg,q)<0){
-            const qui=o.q.fp?"la pastille "+o.q.fp.ref+"."+o.q.n:"une via";
+            const qui=o.q.fp?"la pastille "+padDesig(o.q.fp,o.q):"une via";
             out.push({info:true,x,y,l:side?S.cu-1:0,
               msg:"Sérigraphie sur le cuivre nu ("+(side?"dessous":"dessus")+") : "+nom+" recouvre "+qui+
                   " — le fabricant l'efface là ; déplacez-le"});

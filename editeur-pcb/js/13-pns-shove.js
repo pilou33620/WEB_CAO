@@ -141,7 +141,7 @@ function pnsShoveAside(B,line,gene,bud){
     return null;
   };
   const libre=pnsBoutsLibres(B,line.l,line.pts);
-  const m=S.rule.edge+line.w/2, marge=pnsSurCarte(line.pts,m);   // une ligne à sa marge du bord y reste
+  const m=S.rule.edge+line.w/2, marge=pnsSurCarte(line.pts,m,line.net,line.l);   // une ligne à sa marge du bord y reste
   const cand=[];
   for(const side of [1,-1]){
     let pts=pnsSimplify(line.pts), bon=true;
@@ -151,7 +151,7 @@ function pnsShoveAside(B,line,gene,bud){
       if(k===PNS_WALK_MAX){bon=false;break;}   // on tourne en rond
       const H=g.grp?pnsHullGroup(g.grp,line.net,line.w):pnsHullOct(g,line.net,line.w);
       const suite=pnsPushOut(pts,H,side)||(libre?pnsSlideOut(pts,H):null);
-      if(!suite||!pnsIs45(suite)||!pnsSurCarte(suite)||marge&&!pnsSurCarte(suite,m)){bon=false;break;}
+      if(!suite||!pnsIs45(suite)||!pnsSurCarte(suite)||marge&&!pnsSurCarte(suite,m,line.net,line.l)){bon=false;break;}
       pts=suite;
     }
     if(bon&&pts.length>1)cand.push(pts);

@@ -248,20 +248,9 @@ function pnsNode(parent){
       });
     }else N.gone.add(it);    // né plus haut : on le masque, sans toucher au parent
   };
-  N.replace=function(a,b){N.remove(a);return N.add(b);};
 
   /* --- branches --- */
   N.branch=function(){return pnsNode(N);};
-  /* Verser la branche dans son parent : ce qu'elle masquait disparaît, ce
-     qu'elle a posé s'installe. On ne remonte que d'un cran — une branche de
-     branche se verse d'abord dans la sienne. */
-  N.commit=function(){
-    if(!N.parent)return N;
-    for(const it of N.gone)N.parent.remove(it);
-    for(const it of N.own)N.parent.add(it);
-    N.own.clear();N.gone.clear();N.grid.clear();
-    return N.parent;
-  };
 
   /* --- interrogation --- */
   /* Tous les items visibles depuis ce nœud dont la boîte croise la fenêtre, sur

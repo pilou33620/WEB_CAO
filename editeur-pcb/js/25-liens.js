@@ -762,7 +762,7 @@ function linkHorsCentreDrc(out){
       if(vus.has(k))continue;
       vus.add(k);
       out.push({info:true,x,y,l:t.l,
-        msg:"Piste "+(t.net||"sans net")+" : entre dans "+f.ref+"."+q.n+" à "+fmt(d,2)+
+        msg:"Piste "+(t.net||"sans net")+" : entre dans "+padDesig(f,q)+" à "+fmt(d,2)+
             " mm de son centre"});
     }
 }
