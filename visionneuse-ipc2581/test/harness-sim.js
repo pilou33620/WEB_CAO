@@ -220,6 +220,11 @@ const EXPOSE=["simDsChamp","simDsLire","simDsEcrire","SIM_DS","SIM_PDN","simPDNA
   "simDCTensionNet","pcbParseVolt",
   /* restes de l'audit : FEXT plafonné, avertissements, lectures de valeurs */
   "simXtCarteFiche","simOeilV","simOeilT","pcbParseCourant","simRfValeurSI",
+  /* relecture des parties jamais relues (essais en fin de fichier) */
+  "simRetourNotes","simDCCoucheInteressante","simDCMesures","simBusExportCsv",
+  "simPDNCsvTexte","simOccupeQuelconque","simProgresDemarrer","simProgresFini",
+  "SIM_CARTE","simCarteGo","simRendreCarte","simBrancherDC","simCorpsDC",
+  "SIM_DC_CARREAUX_MINI",
   "simDCRoleRegulateur"];
 
 /* Un seul `eval`, sur les fichiers concaténés : ils se voient l'un
@@ -7523,6 +7528,180 @@ T("lecture des valeurs : rail négatif en valeur absolue, faux amis, V3P3, µ gr
   egal("simRfValeurSI(1MEG)",simRfValeurSI("1MEG","R"),1e6);
   egal("simRfValeurSI(10m)",simRfValeurSI("10m","R"),0.01);
   egal("simRfValeurSI(10μF)",simRfValeurSI("10μF","C"),10*1e-6);
+});
+
+/* ==========================================================================
+   RELECTURE DES PARTIES JAMAIS RELUES : retour, chute DC, bus, PDN, registre
+   ========================================================================== */
+const sansBalise=h=>String(h).replace(/<[^>]+>/g,"");
+
+T("retour : un bilan sans f₀ ni front ne fait pas tomber la fiche", function(){
+  /* `resHF` était lu avant sa déclaration (ReferenceError) */
+  const h=simRetourNotes([{bilan_sante:{f0_hz:0,f_fondamentale:0,temps_montee:1e-10,
+    score_reconstruction_pct:90,verdict:"ok",f_knee:3.5e9},retour:{},modelise:{}}]);
+  if(h.indexOf("Bilan de santé")<0)throw new Error("bilan absent : "+sansBalise(h));
+});
+
+T("retour : le bilan d'impact n'écrit que ce que le serveur a chiffré", function(){
+  const via={retour:{vias:[{retenu:true,distance_mm:1.0,part:1}],retenus:1,statut:"optimal",
+    rayon_optimal_mm:1.8},modelise:{inductance_nH:0.3}};
+  /* sans `impact_retour`, pas de valeurs d'usine (35 ps, 0,300 nH, +60 dB) */
+  let h=sansBalise(simRetourNotes([via]));
+  if(/Bilan d'impact|35,0 ps|60,0 dB/.test(h))throw new Error("bloc inventé : "+h);
+  /* marge CEM non chiffrée : dite, pas remplacée par +60 dB */
+  h=sansBalise(simRetourNotes([Object.assign({},via,{impact_retour:{statut:"optimal",tr_s:1e-10,
+    fknee_hz:3.5e9,distance_retour_mm:1.0,l_boucle_nh:0.31,z_knee_ohm:6.8,ground_bounce_v:0.2,
+    cem_pire_marge_db:null,cem_pire_champ_dbuv_m:null}})]));
+  if(/60,0 dB/.test(h)||h.indexOf("champ rayonné non chiffré")<0)
+    throw new Error("marge CEM inventée : "+h.slice(-200));
+  /* une marge négative n'est pas « maîtrisée » */
+  h=sansBalise(simRetourNotes([Object.assign({},via,{impact_retour:{statut:"optimal",tr_s:1e-10,
+    fknee_hz:3.5e9,l_boucle_nh:0.31,z_knee_ohm:6.8,ground_bounce_v:0.2,cem_pire_marge_db:-4}})]));
+  if(/maîtrisées/.test(h)||h.indexOf("dépassement de 4,0 dB")<0)
+    throw new Error("dépassement CEM tu : "+h.slice(-200));
+});
+
+T("retour : une boucle ouverte n'est pas annoncée « zone optimale »", function(){
+  const h=sansBalise(simRetourNotes([{retour:{retenus:0,statut:"ouvert",source:"self",vias:[]},
+    modelise:{inductance_nH:1.2,inductance_source:"self"},
+    impact_retour:{statut:"ouvert",tr_s:1e-10,fknee_hz:3.5e9,l_boucle_nh:1.2,z_knee_ohm:26.4,
+                   ground_bounce_v:0.8,distance_retour_mm:null}}]));
+  if(/Zone optimale|Boucle courte|maîtrisée/.test(h))throw new Error("ouvert dit optimal : "+h);
+  if(h.indexOf("Boucle ouverte")<0||h.indexOf("1,200 nH")<0)throw new Error("ouvert non dit : "+h);
+});
+
+T("retour : le rang du chevelu est celui de la fiche, via sans position compris", function(){
+  const garde={ouvert:SIM.ouvert,analyse:SIM.analyse,res:SIM.res};
+  try{
+    SIM.ouvert=true; SIM.analyse="retour";
+    SIM.res={discontinuites:{coudes:[],transitions:[
+      {retour:{source:"absent"},modelise:{}},                     // ligne #1, non tracée
+      {retour:{x:5,y:6,retenus:0,vias:[]},modelise:{}}]}};        // ligne #2
+    const l=simCheveluRes();
+    if(l.length!==1||l[0].idx!==1)
+      throw new Error("le via de la ligne #2 porte le rang "+(l[0]&&l[0].idx)+" au lieu de 1");
+  }finally{Object.assign(SIM,garde);}
+});
+
+T("chute DC : la couche peinte d'office est celle de la charge que le verdict nomme", function(){
+  const garde=SIM.resDC;
+  const res={bornes:[
+    {role:"tension",net:"+5V",consigne:5,repere:"U1.1",couche:0},
+    {role:"tension",net:"+3V3",consigne:3.3,repere:"U2.1",couche:2},
+    {role:"courant",net:"+5V",chute:0.20,tension:4.8,repere:"U3.1",couche:0},
+    {role:"courant",net:"+3V3",chute:0.15,tension:3.15,repere:"U4.1",couche:2}],
+    pire_par_net:{},vias:[]};
+  try{
+    SIM.resDC=res;
+    /* 150 mV sur 3,3 V (4,5 %) pèse plus que 200 mV sur 5 V (4 %) */
+    if(simDCMesures(res).pire.repere!=="U4.1")throw new Error("verdict : "+simDCMesures(res).pire.repere);
+    if(simDCCoucheInteressante()!==2)
+      throw new Error("couche peinte "+simDCCoucheInteressante()+" au lieu de 2 (celle de U4.1)");
+  }finally{SIM.resDC=garde;}
+});
+
+T("chute DC : un budget à décimale s'écrit comme il compte", function(){
+  const garde=SIM.dcBudget, ed=global.SIM_ED;
+  SIM.dcBudget={chute:5, dt:10, via:null, densite:null};
+  try{
+    simInit(SIM_IPC, document.createElement("div"));
+    simBrancherDC();
+    const e=document.getElementById("simDCMaxChute");
+    e.value="2,5"; e.onchange();
+    if(SIM.dcBudget.chute!==2.5)throw new Error("budget lu : "+SIM.dcBudget.chute);
+    if(e.value!=="2,5")throw new Error("le champ réécrit « "+e.value+" » pour 2,5 %");
+    /* 2,8 % de chute : hors d'un budget de 2,5 %, et la phrase ne dit pas « budget 3 % » */
+    const v=sansBalise(simVerdictDC({bornes:[
+      {role:"tension",consigne:5,net:"+5V",repere:"J1.1",tension:5,chute:0},
+      {role:"courant",net:"+5V",chute:0.14,repere:"U3.1",tension:4.86}],pire_par_net:{},vias:[]}));
+    if(v.indexOf("Hors budget")<0||v.indexOf("budget 2,5 %")<0)throw new Error("verdict : "+v);
+    /* l'aide de la trame annonce la règle que le calcul applique */
+    if(simCorpsDC().indexOf("au moins "+SIM_DC_CARREAUX_MINI+" carreaux")<0)
+      throw new Error("l'aide de la trame ne dit pas "+SIM_DC_CARREAUX_MINI+" carreaux");
+  }finally{SIM.dcBudget=garde;simInit(ed,null);}
+});
+
+T("bus : le .csv porte le temps total de l'horloge et protège ses points-virgules", function(){
+  const garde=SIM_IPC.busNetFlight, B=global.Blob, U=global.URL, ed=global.SIM_ED;
+  const etat=Object.assign({},SIM_BUS);
+  let sorti="";
+  global.Blob=function(p){sorti=p[0];};
+  global.URL={createObjectURL:()=>"x",revokeObjectURL:()=>{}};
+  SIM_IPC.busNetFlight=n=>/CLK/.test(n)?{len:30,tflight:200,tflightTotal:350,rcDelayPs:150,psmm:6.7}
+                                        :{len:30,tflight:200,psmm:6.7};
+  try{
+    simInit(SIM_IPC, document.createElement("div"));
+    Object.assign(SIM_BUS,{protocole:"spi",nom:"bus;A",comp1:"U1",comp2:"U2",
+      clocks:["CLK + CLK_R (R1 22Ω)"],datas:["D;0"],dataClockMap:{},
+      freqMhz:25,tsu:3,th:1.5,tcoMin:1.5,tcoMax:7});
+    simBusCalculer();
+    simBusExportCsv();
+    const l=sorti.replace(/^﻿/,"").split("\r\n");
+    if(l[0].indexOf('"bus;A"')<0)throw new Error("nom du bus non protégé : "+l[0]);
+    const clk=l.find(x=>/^HORLOGE/.test(x)).split(";");
+    if(clk[5]!=="350")throw new Error("horloge au .csv : "+clk[5]+" ps, 350 à l'écran");
+    const d=l.find(x=>/^DATA/.test(x));
+    if(d.indexOf('"D;0"')<0)throw new Error("net non protégé : "+d);
+  }finally{
+    SIM_IPC.busNetFlight=garde; global.Blob=B; global.URL=U;
+    Object.assign(SIM_BUS,etat); simInit(ed,null);
+  }
+});
+
+T("bus : un t_co négatif (RGMII) se saisit", function(){
+  const ed=global.SIM_ED, etat=Object.assign({},SIM_BUS);
+  try{
+    simInit(SIM_IPC, document.createElement("div"));
+    Object.assign(SIM_BUS,{protocole:"rgmii",tcoMin:-0.5,clocks:["CK"],datas:["D0"],dataClockMap:{}});
+    simBrancherBus();
+    const e=document.getElementById("simBusTcoMin");
+    e.value="-0,3"; e.oninput();
+    if(SIM_BUS.tcoMin!==-0.3)throw new Error("le champ dit −0,3 ns, le calcul garde "+SIM_BUS.tcoMin);
+  }finally{Object.assign(SIM_BUS,etat);simInit(ed,null);}
+});
+
+T("PDN : une valeur à point-virgule ne décale pas les colonnes du .csv", function(){
+  const garde={result:SIM_PDN.result,condensateurs:SIM_PDN.condensateurs,rail:SIM_PDN.rail};
+  try{
+    SIM_PDN.rail="3V3;A";
+    SIM_PDN.result={freqs:[],zPdn:[],zVrm:[],zPlane:[],zTarget:0.1,conforme:true};
+    SIM_PDN.condensateurs=[{id:1,ref:"C1",val:"100n;X7R",pkg:"0402",cap:1e-7,esr:0.02,
+      esl:4e-10,lMount:5e-10,f0:16,x:5,y:5,prov:"défaut",actif:true}];
+    const l=simPDNCsvTexte().split("\r\n");
+    const i=l.findIndex(x=>/^id;ref/.test(x));
+    if(l[i+1].indexOf('"100n;X7R"')<0)throw new Error("valeur non protégée : "+l[i+1]);
+    if(l[i+1].replace(/"[^"]*"/g,"x").split(";").length!==l[i].split(";").length)
+      throw new Error("colonnes décalées : "+l[i+1]);
+    if(l[0].indexOf('"3V3;A"')<0)throw new Error("rail non protégé : "+l[0]);
+  }finally{Object.assign(SIM_PDN,garde);}
+});
+
+T("progression : l'horloge tient tant qu'un calcul tourne, diaphonie de carte comprise", function(){
+  const g={dc:SIM.occupeDC,xt:SIM_XT.carte.occupe,depuis:SIM.depuis};
+  try{
+    SIM_XT.carte.occupe=true;
+    if(!simOccupeQuelconque())throw new Error("la diaphonie de toute la carte n'est pas comptée comme un calcul");
+    SIM_XT.carte.occupe=false;
+    /* deux calculs à la fois : la fin du premier ne fige pas le temps du second */
+    SIM.occupeDC=true; simProgresDemarrer();
+    simProgresFini();
+    if(!(SIM.depuis>0))throw new Error("la fin d'un calcul efface l'heure de départ de celui qui tourne");
+    SIM.occupeDC=false; simProgresFini();
+    if(SIM.depuis!==0)throw new Error("le dernier calcul fini, l'heure de départ reste");
+  }finally{SIM.occupeDC=g.dc;SIM_XT.carte.occupe=g.xt;simProgresFini();SIM.depuis=g.depuis;}
+});
+
+TA("vérification de carte : une réponse sans rapport est un refus dit, pas un panneau cassé",async ()=>{
+  const avant=globalThis.fetch, ed=global.SIM_ED;
+  const garde={res:SIM_CARTE.res,err:SIM_CARTE.err};
+  globalThis.fetch=async()=>({ok:true,status:200,json:async()=>({dispo:true})});
+  try{
+    simInit(Object.assign({},SIM_IPC,{carteEntiere:()=>({doc:{unite_mm:1,natures:{}},parDefaut:[]})}),null);
+    await simCarteGo();
+    if(SIM_CARTE.res||!SIM_CARTE.err)
+      throw new Error("réponse sans constats acceptée : "+JSON.stringify(SIM_CARTE.res));
+    simRendreCarte();
+  }finally{globalThis.fetch=avant;simInit(ed,null);Object.assign(SIM_CARTE,garde);}
 });
 
 

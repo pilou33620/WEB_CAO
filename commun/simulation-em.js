@@ -1303,7 +1303,7 @@ function simCorpsDC(){
     simChamp("simDCPas","Le côté du carreau de maillage, en millimètres — la "+
                         "finesse du calcul. LAISSEZ VIDE : elle est choisie "+
                         "pour que la forme la plus étroite du cuivre reçoive "+
-                        "au moins quatre carreaux dans sa largeur, ce qui est "+
+                        "au moins "+SIM_DC_CARREAUX_MINI+" carreaux dans sa largeur, ce qui est "+
                         "ce qu'il faut pour qu'une résistance veuille dire "+
                         "quelque chose. N'y touchez que pour raffiner un "+
                         "rétrécissement, ou pour alléger un calcul trop lourd.")+
@@ -1429,11 +1429,11 @@ function simBrancherDC(){
   const nb=(id,cle)=>{
     const e=simEl(id);
     if(!e)return;
-    e.value=simNb(SIM.dcBudget[cle],0);
+    e.value=simNbLibre(SIM.dcBudget[cle]);
     e.onchange=()=>{
       const v=parseFloat(String(e.value||"").replace(",","."));
       if(v>0)SIM.dcBudget[cle]=v;
-      e.value=simNb(SIM.dcBudget[cle],0);
+      e.value=simNbLibre(SIM.dcBudget[cle]);
       simRendre();
     };
   };
@@ -1461,11 +1461,11 @@ function simBrancherDC(){
      donc elle ne passe pas par `nb`, qui refuse ce qui n'est pas positif. */
   const amb=simEl("simDCAmbiante");
   if(amb){
-    amb.value=simNb(SIM.dcAmbiante,0);
+    amb.value=simNbLibre(SIM.dcAmbiante);
     amb.onchange=()=>{
       const v=parseFloat(String(amb.value||"").replace(",","."));
       if(isFinite(v))SIM.dcAmbiante=v;
-      amb.value=simNb(SIM.dcAmbiante,0);
+      amb.value=simNbLibre(SIM.dcAmbiante);
       simRendre();
     };
   }
@@ -2406,10 +2406,16 @@ function simDCCoucheProposee(){
    choix explicite de la liste l'emporte toujours ; à défaut de résultat, on
    retombe sur ce que l'outil propose. */
 function simDCCoucheInteressante(){
-  const charges=((SIM.resDC&&SIM.resDC.bornes)||[])
-                  .filter(b=>b.role==="courant");
+  /* LA MÊME RÈGLE QUE LE VERDICT (simDCMesures) : la chute en proportion de la
+     consigne du rail, hors bornes de masse. En volts bruts, deux rails
+     faisaient nommer U4 par le verdict et peindre la couche de U3. */
+  const res=SIM.resDC, masses=simDCNetsMasse(res);
+  const toutes=((res&&res.bornes)||[]).filter(b=>b.role==="courant");
+  const rails=toutes.filter(b=>!masses.has(b.net));
+  const charges=rails.length?rails:toutes;
+  const poids=b=>{const r=simDCConsigne(res,b.net);return r>0?b.chute/r:b.chute;};
   if(charges.length){
-    const pire=charges.reduce((a,b)=>(b.chute>a.chute?b:a));
+    const pire=charges.reduce((a,b)=>(poids(b)>poids(a)?b:a));
     if(pire&&pire.couche>=0)return pire.couche;
   }
   return simDCCoucheProposee();
@@ -2717,7 +2723,7 @@ function simVerdictDC(res){
   if(m.pire)
     bouts.push(simNb(m.pire.chute*1e3,1)+" mV à "+(m.pire.repere||"—")+
                (m.pct!=null?" ("+simNb(m.pct,2)+" % de "+
-                  simNb(m.ref,2)+" V, budget "+simNb(bud.chute,0)+" %)"
+                  simNb(m.ref,2)+" V, budget "+simNbLibre(bud.chute)+" %)"
                 : " (aucune source déclarée : la chute ne se rapporte à rien)"));
   if(m.dt>0)
     /* L'ÉCART ET L'ABSOLU DANS LA MÊME PHRASE : « +1,6 °C » dit ce que le
@@ -2725,7 +2731,7 @@ function simVerdictDC(res){
        qu'on met en face d'un Tg. */
     bouts.push("+"+simNb(m.dt,1)+" °C sur "+(m.dtNet||"?")+
                " → "+simNb(SIM.dcAmbiante+m.dt,1)+" °C"+
-               " (budget "+simNb(bud.dt,0)+" °C"+
+               " (budget "+simNbLibre(bud.dt)+" °C"+
                (m.dtCharte>0?", IPC-2221 en annoncerait "+
                   simNb(m.dtCharte,1)+" °C":"")+")");
   if(viasDehors){
@@ -3039,7 +3045,7 @@ function simTableauPire(res){
     html+="<tr><td>"+esc(net)+"</td>"+
           '<td class="'+cls+'" title="'+
           esc("Échauffement physique par étalement thermique"+ou+". Ambiante "+
-                 simNb(SIM.dcAmbiante,0)+" °C.")+'">+'+
+                 simNbLibre(SIM.dcAmbiante)+" °C.")+'">+'+
           simNb(p.echauffement,2)+" °C<small>"+
           simNb(SIM.dcAmbiante+p.echauffement,1)+" °C</small></td>"+
           '<td class="simFaible" title="'+
@@ -3112,7 +3118,7 @@ function simThermiqueDC(res){
      est un écart —, et c'est précisément pour cela qu'il faut l'écrire : le
      chiffre absolu du tableau en dépend entièrement, et personne ne devine
      d'où il sort. */
-  h+='<p class="simNote">· <b>Ambiante</b> : '+simNb(SIM.dcAmbiante,0)+
+  h+='<p class="simNote">· <b>Ambiante</b> : '+simNbLibre(SIM.dcAmbiante)+
      ' °C. Elle n\'entre dans aucun calcul — l\'échauffement est un ÉCART, et '+
      'un écart vaut autant en kelvins qu\'en degrés Celsius — mais c\'est '+
      'elle qui donne la température ABSOLUE du point chaud, la seule qu\'on '+
@@ -3213,7 +3219,7 @@ function simTableauVias(res){
     html+='<p class="simNote simAlerte">· '+ko.length+' via(s) au-delà de '+
           'leur tenue ('+(SIM.dcBudget.via>0
             ? simNb(SIM.dcBudget.via,2)+' A imposés'
-            : 'IPC-2221 sur le tube, +'+simNb(SIM.dcBudget.dt,0)+' °C')+
+            : 'IPC-2221 sur le tube, +'+simNbLibre(SIM.dcBudget.dt)+' °C')+
           ') : '+ko.slice(0,8).map(v=>esc(v.repere||"?")+" ("+
             simNb(Math.abs(v.courant),2)+" / "+simNb(simDCTenueVia(v),2)+
             " A)").join(", ")+(ko.length>8?"…":"")+
@@ -3407,7 +3413,7 @@ function simDCCelluleTenue(v,i){
            ? "Tenue imposée dans le champ « Tenue »."
            : "IPC-2221 sur la section du tube ("+simNb(v.percage||0.3,2)+
              " mm percé, "+simNb((v.placage||0.025)*1e3,0)+" µm de placage), "+
-             "couche interne, +"+simNb(SIM.dcBudget.dt,0)+" °C.")+'">'+
+             "couche interne, +"+simNbLibre(SIM.dcBudget.dt)+" °C.")+'">'+
          simNb(t,2)+" A<small>"+simNb(100*i/t,0)+" %</small></td>";
 }
 /* Le seuil en ampères, tiré du passage du groupe. Une fonction plutôt qu'une
@@ -6386,8 +6392,12 @@ function simCheveluRes(){
   const d=r.discontinuites||{};
   const trs=(d.transitions||[]).concat(d.vias_hors_chaine||[]);
   const out=[];
-  let idx=0;
+  /* LE RANG EST CELUI DE LA FICHE (`simFicheRetour`), vias sans position
+     compris : compté sur les seuls vias tracés, un via sans x/y décalait tous
+     les suivants, et cliquer la ligne #2 allumait le via #3. */
+  let idx=-1;
   for(const t of trs){
+    idx++;
     const ret=t.retour||{}, mod=t.modelise||{}, cotes=t.cotes||{};
     /* LES PONTS VIENNENT DU RÉSULTAT, PAS DE LA PAGE. Ce chevelu-ci est celui
        qui lit `SIM.res` — c'est le seul que la visionneuse ait, et l'éditeur
@@ -6402,7 +6412,7 @@ function simCheveluRes(){
        un point là où l'outil n'en connaît aucun. */
     if(ret.x==null||ret.y==null)continue;
     out.push({
-      idx:idx++,
+      idx:idx,
       x:ret.x, y:ret.y,
       pastille:cotes.pastille_mm||0,
       vias:ret.vias||[],
@@ -6886,6 +6896,10 @@ function simRetourNotes(vias){
     }
   }
 
+  /* Lu par les deux bilans : déclaré APRÈS le premier, un bilan sans f₀ ni
+     front le lisait avant sa déclaration et toute la fiche tombait. */
+  const resHF = (typeof SIM !== "undefined" && SIM.res) || {};
+
   /* LE BILAN DE SANTÉ DU SIGNAL */
   const avecBilan=vias.filter(t=>t.bilan_sante||(t.cavite||{}).bilan_sante);
   if(avecBilan.length){
@@ -6908,8 +6922,10 @@ function simRetourNotes(vias){
   }
 
   /* BILAN D'IMPACT PHYSIQUE DU RETOUR HF, REBOND DE MASSE & CEM */
-  const resHF = (typeof SIM !== "undefined" && SIM.res) || {};
-  const avecImpact = vias.filter(t => t.impact_retour || ((t.retour||{}).vias||[]).some(v => v.retenu));
+  /* SEULEMENT CE QUE LE SERVEUR A CHIFFRÉ : sans `impact_retour`, le bloc
+     affichait des valeurs d'usine (0,300 nH, 0,020 Ω, front de 35 ps, marge
+     de +60 dB) comme si elles sortaient du calcul. */
+  const avecImpact = vias.filter(t => t.impact_retour);
   if (avecImpact.length) {
     const vigis = avecImpact.filter(t => {
       const imp = t.impact_retour;
@@ -6920,10 +6936,16 @@ function simRetourNotes(vias){
     });
 
     const estVigi = vigis.length > 0;
-    const bordCouleur = estVigi ? "#f59f00" : "#49c07a";
-    const titreCouleur = estVigi ? "#f59f00" : "#49c07a";
+    const toutOuvert = !estVigi && avecImpact.every(t => t.impact_retour.statut === "ouvert");
+    const bordCouleur = estVigi ? "#f59f00" : (toutOuvert ? "#e8564a" : "#49c07a");
+    const titreCouleur = bordCouleur;
 
-    const tRef = vigis[0] || avecImpact[0];
+    /* UNE BOUCLE OUVERTE N'EST PAS « OPTIMALE » : le serveur dit « ouvert »
+       quand aucun via de masse ne la referme, et ce via-là passait par la
+       branche verte « Boucle courte, inductance maîtrisée » — sous la note qui
+       dit que rien ne referme la boucle. */
+    const ouvert = t => t.impact_retour.statut === "ouvert";
+    const tRef = vigis[0] || avecImpact.find(t => !ouvert(t)) || avecImpact[0];
     const impGlobal = tRef.impact_retour || {};
     const trGlobal = impGlobal.tr_s != null ? impGlobal.tr_s : (resHF.temps_montee || 35e-12);
     const fkneeGlobal = impGlobal.fknee_hz != null ? impGlobal.fknee_hz : (0.35 / trGlobal);
@@ -7012,21 +7034,33 @@ function simRetourNotes(vias){
              simNb(gainCem, 1) + ' dB</b>.</div>';
         h += '</div>';
       });
+    } else if (toutOuvert) {
+      const lO = impGlobal.l_boucle_nh != null ? impGlobal.l_boucle_nh : impGlobal.inductance_boucle_nH;
+      h += '<p class="simNote" style="margin:0; color:#e8564a;">' +
+           '✖ <b>Boucle ouverte :</b> aucun via de masse ne referme le retour. ' +
+           'Les chiffres de ce via sont ceux d\'un conducteur seul' +
+           (lO != null ? ' (L &ge; ' + simNb(lO, 3) + ' nH)' : '') +
+           ' : un plancher, la boucle réelle vaut davantage.</p>';
     } else {
       const impOpt = (tRef && tRef.impact_retour) || impGlobal || {};
-      const dOpt = impOpt.distance_retour_mm != null ? impOpt.distance_retour_mm : (impOpt.d_retour_mm != null ? impOpt.d_retour_mm : 1.0);
+      const dOpt = impOpt.distance_retour_mm != null ? impOpt.distance_retour_mm : impOpt.d_retour_mm;
       const lOpt = impOpt.l_boucle_nh != null ? impOpt.l_boucle_nh : (impOpt.inductance_boucle_nH != null ? impOpt.inductance_boucle_nH : 0.30);
       const zOpt = impOpt.z_knee_ohm != null ? impOpt.z_knee_ohm : (impOpt.zl_fknee_ohm != null ? impOpt.zl_fknee_ohm : 0.02);
       const gbOpt = impOpt.ground_bounce_v != null ? impOpt.ground_bounce_v : (impOpt.delta_v_ground_bounce_v != null ? impOpt.delta_v_ground_bounce_v : 0.01);
-      const mOpt = impOpt.cem_pire_marge_db != null ? impOpt.cem_pire_marge_db : (impOpt.marge_cispr32_db != null ? impOpt.marge_cispr32_db : 60.0);
+      /* La marge CEM manque quand le serveur n'a pas chiffré le rayonnement :
+         on le dit, comme dans la branche « vigilance », au lieu d'écrire
+         +60 dB ; et une marge négative n'est pas « maîtrisée ». */
+      const mOpt = impOpt.cem_pire_marge_db != null ? impOpt.cem_pire_marge_db : impOpt.marge_cispr32_db;
+      const cemOpt = mOpt == null ? 'champ rayonné non chiffré'
+        : mOpt < 0 ? '<span style="color:#e8564a; font-weight:700;">dépassement de ' + simNb(-mOpt, 1) + ' dB de la norme CISPR 32 Classe B</span>'
+        : 'émissions CEM maîtrisées (marge CISPR 32 : +' + simNb(mOpt, 1) + ' dB)';
       const zOptStr = zOpt < 0.1 ? simNb(zOpt, 3) : simNb(zOpt, 1);
       const gbOptStr = gbOpt < 0.01 ? simNb(gbOpt * 1000, 1) + ' mV' : simNb(gbOpt, 2) + ' V';
       h += '<p class="simNote" style="margin:0; color:#49c07a;">' +
-           '✔ <b>Zone optimale (&le; 1,8 mm) :</b> Boucle courte (d &le; ' + simNb(dOpt, 2) + ' mm), ' +
+           '✔ <b>Zone optimale (&le; 1,8 mm) :</b> Boucle courte' + (dOpt != null ? ' (d &le; ' + simNb(dOpt, 2) + ' mm)' : '') + ', ' +
            'inductance maîtrisée (' + simNb(lOpt, 3) + ' nH), impédance de retour Z<sub>L</sub> &approx; ' +
            zOptStr + ' &Omega;, rebond de masse &Delta;V &approx; ' +
-           gbOptStr + ' et émissions CEM maîtrisées (marge CISPR 32 : +' +
-           simNb(mOpt, 1) + ' dB).' +
+           gbOptStr + ' et ' + cemOpt + '.' +
            '</p>';
     }
     h += '</div>';
@@ -8214,6 +8248,11 @@ async function simCarteGo(){
     if(!rep.ok)
       throw new Error((corps&&corps.detail)||
                       ("Le serveur a refusé l'analyse ("+rep.status+")."));
+    /* 200 SANS RAPPORT (autre service sur le port, réponse tronquée) : le
+       dire. Pris tel quel, il cassait le rendu du panneau, ou rien du tout
+       ne s'affichait. */
+    if(!corps||!Array.isArray(corps.constats))
+      throw new Error("Le serveur a répondu sans rapport lisible.");
     SIM_CARTE.res=corps; SIM_CARTE.rev=rev;
     SIM_CARTE.unite=+c.doc.unite_mm||1;
     SIM_CARTE.parDefaut=(c.parDefaut||[]).slice().sort();
@@ -10962,6 +11001,8 @@ async function simXtCarteGo(){
     if(!rep.ok)
       throw new Error((corps&&corps.detail)||
                       ("Le serveur a refusé l'analyse ("+rep.status+")."));
+    if(!corps||!Array.isArray(corps.constats))        // voir simCarteGo
+      throw new Error("Le serveur a répondu sans rapport lisible.");
     C.res=corps; C.rev=rev;
     C.unite=+c.doc.unite_mm||1;
   }catch(e){
@@ -13437,13 +13478,16 @@ function simBrancherBus(){
     nomIn.oninput=()=>{SIM_BUS.nom=nomIn.value.trim()||"Bus synchrone";};
   }
 
-  const numInput=(id, key)=>{
+  /* `signe` : un t_co peut être NÉGATIF (RGMII : −0,5 ns, la donnée part
+     avant le front). Refusé, le champ gardait le nombre tapé et le calcul
+     l'ancien. */
+  const numInput=(id, key, signe)=>{
     const el=simEl(id);
     if(!el)return;
     el.value=SIM_BUS[key];
     el.oninput=()=>{
       const v=parseFloat(String(el.value).replace(",","."));
-      if(isFinite(v)&&v>=0){
+      if(isFinite(v)&&(signe||v>=0)){
         SIM_BUS[key]=v;
         simBusCalculer();
       }
@@ -13452,8 +13496,8 @@ function simBrancherBus(){
   numInput("simBusFreq","freqMhz");
   numInput("simBusTsu","tsu");
   numInput("simBusTh","th");
-  numInput("simBusTcoMin","tcoMin");
-  numInput("simBusTcoMax","tcoMax");
+  numInput("simBusTcoMin","tcoMin",true);
+  numInput("simBusTcoMax","tcoMax",true);
   numInput("simBusRpu","rpuK");
 
   const selI2cMode=simEl("simBusI2cMode");
@@ -14097,25 +14141,28 @@ function simBusExportCsv(){
   }
   const r=SIM_BUS.result;
   const n=v=>String(v).replace(".",",");
-  const l=["bus_nom;"+(SIM_BUS.nom||"bus")+";protocole;"+r.protocole+";composant_1;"+(SIM_BUS.comp1||"")+";composant_2;"+(SIM_BUS.comp2||"")];
+  /* `simCsvLigne` : un nom de bus, de net ou de composant qui porte un « ; »
+     décalait toutes les colonnes de sa ligne. */
+  const l=[simCsvLigne(["bus_nom",SIM_BUS.nom||"bus","protocole",r.protocole,"composant_1",SIM_BUS.comp1||"","composant_2",SIM_BUS.comp2||""])];
   if(r.methode==="i2c"){
     l.push("signal;net;longueur_mm;cap_pf;tr_ns;tr_max_ns;statut;rpu_max_k");
     for(const sig of r.signals){
-      l.push([sig.role, sig.net, n(sig.len), n(sig.capPf), n(sig.trNs), n(sig.trMaxNs), sig.status, n(sig.rpuMaxK)].join(";"));
+      l.push(simCsvLigne([sig.role, sig.net, n(sig.len), n(sig.capPf), n(sig.trNs), n(sig.trMaxNs), sig.status, n(sig.rpuMaxK)]));
     }
   }else if(r.methode==="uart"){
     l.push("signal;net;longueur_mm;tflight_ps;tbit_ns;ratio_pct;statut");
     for(const sig of r.signals){
-      l.push([sig.role, sig.net, n(sig.len), n(sig.tflightPs), n(sig.tbitNs), n(sig.ratioPct), sig.status].join(";"));
+      l.push(simCsvLigne([sig.role, sig.net, n(sig.len), n(sig.tflightPs), n(sig.tbitNs), n(sig.ratioPct), sig.status]));
     }
   }else{
     l.push("role;direction;horloge_ref;net;longueur_mm;tflight_ps;skew_ps;hold_slack_ps;setup_slack_ps;statut;meander_opt_mm");
     for(const clk of SIM_BUS.clocks){
       const ci=r.clkMap[clk]||{len:0,tflight:0};
-      l.push("HORLOGE;aller;ref;"+clk+";"+n(ci.len)+";"+n(ci.tflight)+";0;0;0;REF_CLK;0");
+      /* le temps TOTAL, R série comprise : celui de l'écran et du skew */
+      l.push(simCsvLigne(["HORLOGE","aller","ref",clk,n(ci.len),n(ci.tflightTotal||ci.tflight),0,0,0,"REF_CLK",0]));
     }
     for(const sig of r.signals){
-      l.push(["DATA", sig.direction||"", sig.clkRef, sig.net, n(sig.len), n(sig.tflight), n(sig.skewPs), n(sig.slackHPs), n(sig.slackSuPs), sig.status, n(sig.meanderOptMm)].join(";"));
+      l.push(simCsvLigne(["DATA", sig.direction||"", sig.clkRef, sig.net, n(sig.len), n(sig.tflight), n(sig.skewPs), n(sig.slackHPs), n(sig.slackSuPs), sig.status, n(sig.meanderOptMm)]));
     }
   }
   const nom=(SIM_BUS.nom||"bus").toLowerCase().replace(/[^a-z0-9_-]+/g,"_")+"-"+r.protocole+".csv";
@@ -16925,7 +16972,7 @@ function simPDNCsvTexte() {
   const r = SIM_PDN.result;
   const n = v => (v != null ? String(v).replace(".", ",") : "");
   const lines = [
-    "pdn_rail;" + (SIM_PDN.rail || "VCC") + ";vdd_V;" + n(SIM_PDN.vdd) + ";ripple_pct;" + n(SIM_PDN.ripplePct) + ";delta_i_A;" + n(SIM_PDN.deltaIA) + ";z_target_ohm;" + n(r.zTarget) + ";conforme;" + (r.conforme ? "OUI" : "NON"),
+    "pdn_rail;" + simCsvCell(SIM_PDN.rail || "VCC") + ";vdd_V;" + n(SIM_PDN.vdd) + ";ripple_pct;" + n(SIM_PDN.ripplePct) + ";delta_i_A;" + n(SIM_PDN.deltaIA) + ";z_target_ohm;" + n(r.zTarget) + ";conforme;" + (r.conforme ? "OUI" : "NON"),
     "frequence_Hz;z_pdn_ohm;z_target_ohm;z_vrm_ohm;z_plane_ohm"
   ];
   for (let i = 0; i < r.freqs.length; i++) {
@@ -16942,7 +16989,7 @@ function simPDNCsvTexte() {
   for (const c of SIM_PDN.condensateurs || []) {
     lines.push([
       c.id, c.ref, c.val, c.pkg, n(c.cap), n(c.esr), n(c.esl), n(c.lMount), n(c.f0), n(c.x), n(c.y), c.prov, c.actif ? 1 : 0
-    ].join(";"));
+    ].map(simCsvCell).join(";"));   // « 100n;X7R » décalait les colonnes
   }
   if (r.caviteModes && r.caviteModes.length) {
     lines.push("");
@@ -20464,7 +20511,8 @@ function simProgres(detail,faits,total){
 let SIM_TIC=null;
 function simOccupeQuelconque(){
   return !!(SIM.occupe||SIM.occupeDC||SIM_RF.occupe||SIM_CARTE.occupe||SIM_OEIL.occupe||
-            (typeof SIM_XT!=="undefined"&&SIM_XT&&SIM_XT.occupe));
+            (typeof SIM_XT!=="undefined"&&SIM_XT&&
+             (SIM_XT.occupe||(SIM_XT.carte&&SIM_XT.carte.occupe))));
 }
 function simProgresDemarrer(taille){
   SIM.depuis=Date.now();
@@ -20481,6 +20529,9 @@ function simProgresDemarrer(taille){
   },1000);
 }
 function simProgresFini(){
+  /* Un AUTRE calcul tourne encore (DC lancé, puis l'audit) : son horloge
+     continue, sinon son temps écoulé se figeait à la fin du premier. */
+  if(simOccupeQuelconque()){simSortieReveler();return;}
   SIM.depuis=0; SIM.taille="";
   if(SIM_TIC){clearInterval(SIM_TIC);SIM_TIC=null;}
   simSortieReveler();
