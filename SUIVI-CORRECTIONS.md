@@ -104,7 +104,12 @@ Tenu à jour au fur et à mesure. Branche `claude/inspiring-rubin-wmo2lm`.
 | F | 36 — un fil BLAS par défaut | `web_CAO.py` |
 | F | Œil : identité AMI à 1e-6, PRBS15 de 219 à 126 Mo | `oeil.py` |
 | F | IPC-2581 : coordonnée `inf` / `nan` | `ipc2581_parser.py` |
-| C | 30 — εeff et retard en cuivre épais | solveur de ligne MoM |
+| F | 30 — εeff et retard en cuivre épais (εeff : +24 % au pire → ≤ 1,3 %, contre différences finies) | `ligne_mom.py` |
+| F | Avertissement « flancs en regard » sur la fiche | `simulation_em.py` |
+| R | Flancs en regard (paire serrée, coplanaire à moins de 6 épaisseurs) : Z lue +3 à +7 % trop haut ; demande des panneaux sur les flancs | `ligne_mom.py` (`FLANCS_EN_REGARD`) |
+| R | Formule légère côté page : même défaut d'εeff en cuivre épais | `commun/simulation-em.js` (`ltWeff`, `ltEeff`) |
+| R | Essai « Scd21 miroir (N contre P) » recalé de 7 à 9 % : dissymétrie N/P de 7,8 % non expliquée | `banc-oeil.py`, modèle du via seul |
+| R | Cuivre épais sans référence : vernis autre que 25 µm, section sans plan, triplaque couplée, plus de trois conducteurs | |
 | R | Composante continue de la cascade (niveau établi −0,24 % à −0,78 %) | `oeil.transfert`, `simulation_em.simuler` |
 | R | Échauffement d'une piste oblique : +6 à +8 % (côté prudent) | `dc_solver.py` |
 | L | Plafond mémoire `MAX_IPC` (192 Mo) | décision : on se libère de la Pi plus tard |
