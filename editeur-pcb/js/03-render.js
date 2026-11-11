@@ -256,12 +256,12 @@ function zoneCanvas(i,fixe){
       }
       const qc=padSurCouche(q,i);
       if(!qc){                         // pas de cuivre sur cette couche : le trou seul
-        if(q.drill>0){c.beginPath();cheminPercage(c,q,clrZone(zoneAt(i,q.x,q.y),q.net,"cu","th"));c.fill();}
+        if(q.drill>0){c.beginPath();cheminPercage(c,q,clrZone(zoneAt(i,q.x,q.y),q.net,"cu","th",q));c.fill();}
         continue;
       }
-      padFill(c,qc,same?ecartThermique(q,i):clrZone(zoneAt(i,q.x,q.y),q.net,"cu",q.drill>0?"th":"smd"));
+      padFill(c,qc,same?ecartThermique(q,i):clrZone(zoneAt(i,q.x,q.y),q.net,"cu",q.drill>0?"th":"smd",q));
       if(same)thermals.push(q);
-      else if(q.drill>0){c.beginPath();cheminPercage(c,q,clrZone(zoneAt(i,q.x,q.y),q.net,"cu","th"));c.fill();}
+      else if(q.drill>0){c.beginPath();cheminPercage(c,q,clrZone(zoneAt(i,q.x,q.y),q.net,"cu","th",q));c.fill();}
     }
   /* liaisons thermiques : quatre bras par défaut, ou configuration personnalisée */
   c.globalCompositeOperation="source-over";

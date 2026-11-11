@@ -86,7 +86,7 @@ const KICAD_PCB = (() => {
   const balayage = A => r4(Math.max(-(TOUR - 1e-3), Math.min(TOUR - 1e-3, A.sw)));
   /* arrondi d'une pastille : l'éditeur n'en a qu'un (22 % du petit côté, padRadius) ; nul → angles droits, demi → oblong, exacts */
   const arrondi = rr => rr < 0.05 ? "sharp" : rr >= 0.45 ? "oval" : "rect";
-  const SANS_NUM = "∅";       // pastille sans numéro : l'éditeur en veut un, le nom porte l'absence jusqu'au ré-export
+  const SANS_NUM = "∅";       // ancien marqueur de pastille sans numéro (documents d'avant le nom vide) : relu comme vide à l'écriture
   const cache = l => val(l, "hide") === "yes" || l.slice(3).includes("hide") ||
     val(enfant(l, "effects"), "hide") === "yes" || (enfant(l, "effects") || []).includes("hide");
 
@@ -268,8 +268,7 @@ const KICAD_PCB = (() => {
           return;
         }
       }
-      /* shortcut: un arc d'empreinte reste en cordes, fpDessinsMonde (01-core.js) ne dessine pas `ca` ; à reprendre quand l'éditeur le fera */
-      if (/_arc$/.test(e[0]) && liste === drawings) {          // arc de carte : un trait en arc (drwArc, 01-core.js)
+      if (/_arc$/.test(e[0])) {                                // arc de carte ou d'empreinte : un trait en arc (drwArc, fpDessinsMonde, 01-core.js)
         const s = T(...pt(e, "start")), f = T(...pt(e, "end")), A = arc3(s, T(...pt(e, "mid")), f);
         if (A && Math.abs(A.sw) > 1e-4 && Math.hypot(f[0] - s[0], f[1] - s[1]) > 1e-4) {
           poser(liste, { shape: "line", type: "line", layer, x1: r4(s[0]), y1: r4(s[1]), x2: r4(f[0]), y2: r4(f[1]),
@@ -462,8 +461,9 @@ const KICAD_PCB = (() => {
         const tw = borne(val(p, "thermal_bridge_width", val(p, "thermal_width")), 0, 200), tg = borne(val(p, "thermal_gap"), 0, 200);
         if (tw > 0) o.thermalWidth = r4(Math.max(0.05, tw));
         if (tg > 0) o.thermalGap = r4(tg);
-        /* shortcut: pas d'isolement propre à une pastille dans l'éditeur ; à porter s'il en gagne un */
-        if (nb(val(p, "clearance", val(f, "clearance"))) > 0) rap.ecart("isolement propre à une pastille ou à une empreinte : non repris, celui de la classe s'applique");
+        /* isolement propre : celui de la pastille, sinon celui de l'empreinte ; le plus grand avec la classe s'applique (clr, 01-core.js) */
+        const clr = borne(val(p, "clearance", val(f, "clearance")), 0, 50);
+        if (clr > 0) o.clr = r4(clr);
         /* fente : l'éditeur la couche le long du grand côté (axePercage, 01-core.js). Pastille aussi large que haute :
            un quart de tour la remet dans l'axe sans rien changer au cuivre */
         const travers = !!o.slot && (dx > dy) !== (w >= h);
@@ -489,18 +489,20 @@ const KICAD_PCB = (() => {
         }
         lus.push(o);
       }
-      /* numéros : les entiers restent, les noms (« A1 », « EP », « ») suivent le plus grand */
+      /* numéros : les entiers restent, les noms (« A1 », « EP ») suivent le plus grand ; chaque pastille sans numéro a le sien,
+         nom vide : rien ne la relie à une autre (KiCad ne relie jamais deux pastilles sans numéro) */
       const entier = s => /^\d+$/.test(s) && +s >= 1 && +s <= 4096;
-      const max = lus.reduce((m, o) => entier(o.num) ? Math.max(m, +o.num) : m, 0);
+      let suivant = lus.reduce((m, o) => entier(o.num) ? Math.max(m, +o.num) : m, 0);
       const pads = [], nets = {};
       for (const o of lus) {
         let n;
         if (entier(o.num)) n = +o.num;
-        else { if (!noms.has(o.num)) noms.set(o.num, max + noms.size + 1); n = noms.get(o.num); }
+        else if (!o.num) n = ++suivant;
+        else { if (!noms.has(o.num)) noms.set(o.num, ++suivant); n = noms.get(o.num); }
         if (n > 4096) { rap.ecart("empreinte de plus de 4096 pastilles : les dernières sont écartées"); continue; }
         const { num, net, ...pad } = o;
         pad.n = n;
-        if (!entier(num)) pad.nom = num ? num.slice(0, 16) : SANS_NUM;
+        if (!entier(num)) pad.nom = num.slice(0, 16);
         if (net) { if (nets[n] && nets[n] !== net) rap.ecart("pastilles de même numéro sur deux nets : le premier est gardé"); else nets[n] = net; }
         pads.push(pad);
       }
@@ -587,6 +589,8 @@ const KICAD_PCB = (() => {
         tracks.push(t);
       } else if (k === "via") {
         const ls = couches((enfant(e, "layers") || []).slice(1));
+        /* KiCad refuse un via dont « layers » ne nomme pas deux couches (parsePCB_VIA) ; ici il est écarté, le reste se lit */
+        if (enfant(e, "layers") && ls.length < 2) { rap.ecart("via sans deux couches de cuivre connues : écarté"); continue; }
         if (e.includes("micro")) rap.ecart("microvia : reprise comme via borgne");
         if (enfant(e, "padstack")) rap.ecart("via à diamètres par couche : le diamètre principal est gardé");
         const [x, y] = pt(e, "at"), d = borne(val(e, "size"), 0.1, 20, 0.6);
@@ -853,7 +857,7 @@ const KICAD_PCB = (() => {
       pads.forEach((p, i) => {
         const th = nb(p.drill) > 0, w = nb(p.w, 1), h = nb(p.h, 1);
         const forme = { sharp: "rect", oval: "oval", circ: Math.abs(w - h) < 1e-6 ? "circle" : "oval", chamfer: "roundrect", poly: "custom" }[p.shape] || "roundrect";
-        const pad = ["pad", q(p.nom === SANS_NUM ? "" : p.nom || String(p.n)), th ? "thru_hole" : "smd", forme, at(...fl(nb(p.x), nb(p.y)), angle(p.rot)),
+        const pad = ["pad", q(p.nom === SANS_NUM ? "" : p.nom != null ? p.nom : String(p.n)), th ? "thru_hole" : "smd", forme, at(...fl(nb(p.x), nb(p.y)), angle(p.rot)),
                      forme === "custom" ? ["size", Math.min(w, h, 0.1), Math.min(w, h, 0.1)] : ["size", w, h]];
         if (th) pad.push(p.slot > p.drill ? ["drill", "oval", ...(w >= h ? [p.slot, p.drill] : [p.drill, p.slot])] : ["drill", p.drill]);
         pad.push(["layers", ...(th ? ["*.Cu"].concat(p.noMask ? [] : ["*.Mask"])
@@ -873,6 +877,7 @@ const KICAD_PCB = (() => {
         if (p.connexion) pad.push(["zone_connect", p.connexion === "aucune" ? 0 : p.connexion === "directe" ? 2 : 1]);
         if (nb(p.thermalWidth) > 0) pad.push(["thermal_bridge_width", nb(p.thermalWidth)]);
         if (nb(p.thermalGap) > 0) pad.push(["thermal_gap", nb(p.thermalGap)]);
+        if (nb(p.clr) > 0) pad.push(["clearance", nb(p.clr)]);
         /* géométrie par couche (padSurCouche, 01-core.js) : le dessus est la pastille ; « int » et « bas », ou chaque couche dès qu'une est nommée.
            shortcut: une empreinte posée dessous garde dessus/dessous de la carte dans sa définition de bibliothèque ; à retourner si on s'en sert */
         const pc = th && p.parCouche && typeof p.parCouche === "object" ? p.parCouche : null;
@@ -910,7 +915,7 @@ const KICAD_PCB = (() => {
     /* bibliothèque : une définition par géométrie distincte, suffixée si le nom est pris */
     const parSig = new Map(), prisNoms = new Set(), empreintes = [], librairie = new Map();
     const definir = (fp, base) => {
-      const sig = JSON.stringify([padsDe(fp).map(p => [p.n, p.nom, p.x, p.y, p.w, p.h, p.shape, p.drill, p.slot, p.rot, p.pts, p.chamfer, p.chamferCorners, p.noMask, p.noPaste, p.mask, p.paste, p.parCouche]),
+      const sig = JSON.stringify([padsDe(fp).map(p => [p.n, p.nom, p.x, p.y, p.w, p.h, p.shape, p.drill, p.slot, p.rot, p.pts, p.chamfer, p.chamferCorners, p.noMask, p.noPaste, p.mask, p.paste, p.parCouche, p.clr]),
                                   fp.holes || null, fp.body || null, arr(fp.dessins).filter(x => x && x.shape !== "text")]);
       if (parSig.has(sig)) return parSig.get(sig);
       const b = nomPropre(base || "EMPREINTE");

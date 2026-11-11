@@ -4870,7 +4870,7 @@ const SIM_PCB={
       for(const fp of S.fps)
         for(const q of padsWorld(fp)){
           if((zn&&q.net===zn)||!padLayers(fp,q).includes(z.l)||!dans(q.x,q.y))continue;
-          trous.push(rect(q,clrZone(z,q.net,"cu",q.drill>0?"th":"smd")));
+          trous.push(rect(q,clrZone(z,q.net,"cu",q.drill>0?"th":"smd",q)));
         }
       for(const c of cutsCuivre(true))if(c.l===z.l&&c.pts.length>2)trous.push(plat(c.pts));
       for(const P of zoneLanieres(z.l))trous.push(plat(P));   // les lanières, comme au Gerber

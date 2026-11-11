@@ -1601,13 +1601,13 @@ function propsFp(box,fp){
     '<div class="cat">Broches et nets</div><table class="bom"><tbody>';
   for(const [k,q] of ps.entries()){
     let pinSchName = "";
-    if (schComp) {
+    if (schComp && q.nom !== "") {      // sans numéro : la broche de personne
       const pinObj = Array.isArray(schComp.pinout) ? schComp.pinout.find(x => String(x.number) === String(q.n)) : null;
       pinSchName = (pinObj && pinObj.name) || (Array.isArray(schComp.pinNames) && schComp.pinNames[q.n - 1]) || "";
     }
     h+='<tr data-net="'+esc(q.net||"")+'"'+(q.net&&S.hlNet===q.net?' class="on"':"")+
        '><td class="r" style="width:28px"'+(q.nom?' title="Broche « '+esc(q.nom)+' » à l\'origine"':"")+
-       '>#'+esc(q.n)+(q.nom?'<br><span style="color:var(--txt-dim);font-size:10px">'+esc(q.nom)+'</span>':"")+'</td>'+
+       '>'+(q.nom===""?'':'#'+esc(q.n))+(q.nom?'<br><span style="color:var(--txt-dim);font-size:10px">'+esc(q.nom)+'</span>':"")+'</td>'+
        (pinSchName ? '<td style="font-family:var(--mono);font-size:11px;color:#f0abfc;font-weight:600;width:75px;overflow:hidden;text-overflow:ellipsis" title="Broche schéma : '+esc(pinSchName)+'">'+esc(pinSchName)+'</td>' : '<td style="width:30px;color:var(--txt-dim);font-size:10px">—</td>')+
        '<td class="net">'+(q.net?'<span class="dot" style="background:'+netColor(q.net)+
        '"></span>'+esc(q.net):'<span style="color:var(--txt-dim)">non connectée</span>')+'</td>'+
@@ -1837,8 +1837,9 @@ function propsPad(box,fp,k){
   const q=padsOf(fp)[k], w=padsWorld(fp)[k]||q;
   const shapes=Object.keys(PAD_SHAPES).filter(s=>s!=="poly"||q.shape==="poly");
   box.innerHTML=
-    '<div class="cat">Pastille '+esc(fp.ref)+'.'+esc(q.n)+(q.nom?' — '+esc(q.nom):'')+'</div>'+
-    '<div class="prop two">'+numProp("ppN","Numéro de broche",q.n,1,1)+
+    // sans numéro (nom vide, KiCad) : le numéro s'affiche vide ; en saisir un la numérote
+    '<div class="cat">Pastille '+esc(fp.ref)+(q.nom===""?'':'.'+esc(q.n)+(q.nom?' — '+esc(q.nom):''))+'</div>'+
+    '<div class="prop two">'+numProp("ppN","Numéro de broche",q.nom===""?"":q.n,1,1)+
       '<div><label>Net</label><input value="'+esc(q.net||"non connectée")+'" disabled></div></div>'+
     '<div class="prop"><label>Forme</label><select id="ppShape">'+
       shapes.map(s=>'<option value="'+s+'"'+(padShape(q.shape)===s?" selected":"")+'>'+esc(PAD_SHAPES[s])+'</option>').join("")+'</select></div>'+
@@ -1852,13 +1853,15 @@ function propsPad(box,fp,k){
       [["","celle de la zone"],["thermique","bras thermiques"],["directe","directe"],["aucune","aucune"]].map(([v,t])=>'<option value="'+v+'"'+((q.connexion||"")===v?" selected":"")+'>'+t+'</option>').join("")+'</select></div>'+
     '<div class="prop two"><div><label>Masque (mm)</label><input id="ppMask" type="number" step="0.01" min="-5" max="5" placeholder="règle" value="'+(q.mask!=null?q.mask:"")+'"></div>'+
       '<div><label>Pâte (mm)</label><input id="ppPaste" type="number" step="0.01" min="-5" max="5" placeholder="règle" value="'+(q.paste!=null?q.paste:"")+'"></div></div>'+
+    '<div class="prop" title="Isolement propre à la pastille ; le plus grand des deux, le sien ou celui de la classe, s\'applique (contrôle, routeur, zones)">'+
+      '<label>Isolement propre (mm)</label><input id="ppClr" type="number" step="0.01" min="0" max="50" placeholder="celui de la classe ('+fmt(classOf(q.net).clr,2)+')" value="'+(q.clr>0?q.clr:"")+'"></div>'+
     '<div class="prop"><div class="row"><button class="tb" id="ppFp">Composant '+esc(fp.ref)+' →</button></div></div>'+
-    '<div class="pinnote">Modifier une pastille fige l\'empreinte : ses cotes génériques (pas, écartement) ne la commandent plus. Ctrl+Z annule. Masque et pâte vides = règle de la carte.</div>';
+    '<div class="pinnote">Modifier une pastille fige l\'empreinte : ses cotes génériques (pas, écartement) ne la commandent plus. Ctrl+Z annule. Masque et pâte vides = règle de la carte ; isolement vide = règle de la classe.</div>';
   for(const [id,key] of [["ppN","n"],["ppShape","shape"],["ppW","w"],["ppH","h"],["ppDrill","drill"],["ppRot","rot"],
-                         ["ppX","x"],["ppY","y"],["ppConn","connexion"],["ppMask","mask"],["ppPaste","paste"]])
+                         ["ppX","x"],["ppY","y"],["ppConn","connexion"],["ppMask","mask"],["ppPaste","paste"],["ppClr","clr"]])
     $(id).onchange=e=>{
       let v=e.target.value;
-      if(key!=="shape"&&key!=="connexion"&&!(v===""&&(key==="mask"||key==="paste"))){v=parseFloat(v);if(!Number.isFinite(v))return refreshPanels();}
+      if(key!=="shape"&&key!=="connexion"&&!(v===""&&(key==="mask"||key==="paste"||key==="clr"))){v=parseFloat(v);if(!Number.isFinite(v))return refreshPanels();}
       push();fpSetPad(fp,k,key,v);touch();refreshPanels();draw();
     };
   $("ppFp").onclick=()=>{S.selPad=null;refreshPanels();draw();};

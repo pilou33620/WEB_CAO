@@ -198,7 +198,7 @@ const EXPOSE=[
   "fpMoveMark","fpSetMarkD","fpXform",
   /* matrice des natures de cuivre et éditeur de règles */
   "DRC_KINDS","DRC_ORDER","DRC_KIND_NAME","matKey","matHas","matGet","matSet",
-  "matMax","matEff","clrK","dpGapPair","dMat","pnsKind","pnsClrPair",
+  "matMax","matEff","clrK","dpGapPair","dMat","pnsKind","pnsClrPair","brochesResoudre",
   "defClass","maxClr","FALLBACK_CLASS",
   "RE_TREE","RE_MATCH","RE_PAGE","reIsOpen","reOpen","reClose","reGo",
   "reSync","reTree","reBind","reTitle","reCat","reFindings","reMatrix","reObj",
@@ -8241,6 +8241,83 @@ T("dessins d'empreinte : normalisés, suivent le composant, faces échangées de
   /* « lines » d'une empreinte de LIB : sérigraphie de l'empreinte */
   const def=normFpDef({name:"X",style:"chip",pins:2,lines:[{x1:0,y1:2,x2:1,y2:2,width:0.1},{x1:"z"}]});
   if(!def.dessins||def.dessins.length!==1||def.dessins[0].layer!=="silkT"||def.dessins[0].shape!=="line")throw new Error("lines de LIB : "+JSON.stringify(def.dessins));
+  carteVide();
+});
+/* UN TRAIT EN ARC DANS UNE EMPREINTE (fp_arc de KiCad) : fpDessinsMonde garde
+   son angle balayé, retourné au miroir ; le Gerber de sérigraphie et
+   l'IPC-2581, qui passent par lui, le sortent en arc et non en corde. */
+T("dessins d'empreinte : un trait en arc reste un arc au monde, au Gerber et à l'IPC-2581",()=>{
+  carteVide();
+  const d=JSON.parse(serialize());
+  d.fps=[{id:1,ref:"U1",value:"",x:10,y:20,rot:30,pins:1,style:"chip",silk:false,
+          pads:[{n:1,x:0,y:0,w:1,h:1,shape:"rect",drill:0}],
+          dessins:[{layer:"silkT",shape:"line",x1:2,y1:0,x2:0,y2:2,width:0.12,ca:Math.PI/2}]}];
+  loadDoc(d,true);
+  const f=S.fps[0], prox=(a,b)=>Math.abs(a-b)<1e-3;
+  if(!(Math.abs(f.dessins[0].ca-Math.PI/2)<1e-3))throw new Error("normalisé : l'angle balayé gardé "+JSON.stringify(f.dessins));
+  const surCercle=P=>P.length>8&&P.every(p=>prox(Math.hypot(p.x-f.x,p.y-f.y),2));
+  for(const side of [0,1]){
+    if(side){S.sel.fps=new Set([f.id]);flipSel();f.x=10;f.y=20;f.rot=30;}
+    const w=fpDessinsMonde(f).filter(x=>/^silk/.test(x.layer));
+    if(w.length!==1||!(Math.abs(w[0].ca-(side?-1:1)*Math.PI/2)<1e-3))throw new Error("fpDessinsMonde, face "+side+" : "+JSON.stringify(w));
+    if(!surCercle(drwPoints(w[0])))throw new Error("l'arc au monde passe par le cercle d'origine, face "+side);
+    const segs=silkTraits(side).filter(s=>s.k==="seg");
+    // le repère et le point de broche 1 sortent aussi : seuls comptent les morceaux de l'arc
+    const surC=(x,y)=>prox(Math.hypot(x-f.x,y-f.y),2), sur=segs.filter(s=>surC(s.x1,s.y1)&&surC(s.x2,s.y2));
+    if(sur.length<8)throw new Error("Gerber : l'arc en cordes fines sur le cercle, face "+side+" ("+segs.length+" segments)");
+  }
+  const ipc=ipc2581Fichier().text, avec=(ipc.match(/<PolyStepSegment/g)||[]).length;
+  S.fps[0].dessins=S.fps[0].dessins.map(({ca,...o})=>o);touch();   // un nouveau tableau : fpDessinsMonde garde le sien en cache
+  const sans=(ipc2581Fichier().text.match(/<PolyStepSegment/g)||[]).length;
+  if(!(avec>sans+5))throw new Error("IPC-2581 : l'arc en cordes, pas une seule droite ("+avec+" / "+sans+")");
+  carteVide();
+});
+/* ISOLEMENT PROPRE D'UNE PASTILLE (q.clr, « clearance » de KiCad) : le plus
+   grand des deux, le sien ou celui de la classe, pour le contrôle et pour le
+   dégagement des zones ; padClone et l'enregistrement le gardent. */
+T("pastille : isolement propre, le plus grand avec la classe, au contrôle et aux zones",()=>{
+  carteVide();
+  const d=JSON.parse(serialize());
+  d.fps=[{id:1,ref:"J1",value:"",x:10,y:10,rot:0,pins:1,style:"chip",silk:false,nets:{1:"A"},
+          pads:[{n:1,x:0,y:0,w:1,h:1,shape:"rect",drill:0,clr:0.9}]}];
+  d.tracks=[{l:0,net:"B",w:0.3,x1:5,y1:11.05,x2:15,y2:11.05}];   // 0,4 mm du bord de la pastille
+  loadDoc(d,true);
+  const q=S.fps[0].pads[0];
+  if(q.clr!==0.9||padClone(q).clr!==0.9||padsWorld(S.fps[0])[0].clr!==0.9)throw new Error("gardé : "+JSON.stringify(q));
+  const a=serialize();loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("aller-retour non neutre");
+  const iso=()=>runDrc().filter(e=>/Isolation piste\/pastille J1/.test(e.msg));
+  if(classOf("A").clr>=0.4||classOf("B").clr>=0.4)throw new Error("le décor veut une classe sous 0,4 mm");
+  let e=iso();
+  if(e.length!==1||!/exige 0[.,]900/.test(e[0].msg))throw new Error("0,9 mm propre : la piste à 0,4 mm en défaut "+JSON.stringify(e));
+  fpSetPad(S.fps[0],0,"clr",0.3);touch();
+  if(iso().length)throw new Error("0,3 mm propre, sous l'écart : plus de défaut");
+  fpSetPad(S.fps[0],0,"clr","");touch();
+  if(S.fps[0].pads[0].clr!=null||iso().length)throw new Error("vide : la règle de la classe");
+  // zones : le dégagement autour de la pastille prend le plus grand
+  fpSetPad(S.fps[0],0,"clr",0.9);touch();
+  const z={id:9,l:0,net:"B",pts:[{x:0,y:0},{x:20,y:0},{x:20,y:20},{x:0,y:20}]};
+  const p=padsWorld(S.fps[0])[0];
+  if(clrZone(z,p.net,"cu","smd",p)!==0.9||!(clrZone(z,p.net,"cu","smd")<0.9))throw new Error("zone : isolement de la pastille "+clrZone(z,p.net,"cu","smd",p));
+  carteVide();
+});
+/* PASTILLE SANS NUMÉRO (KiCad « pad "" ») : le nom vide survit, sans marqueur,
+   et aucune broche de netlist ne la vise. */
+T("pastille sans numéro : nom vide gardé, la netlist ne la relie pas",()=>{
+  carteVide();
+  const d=JSON.parse(serialize());
+  d.fps=[{id:1,ref:"J1",value:"",x:10,y:10,rot:0,pins:3,style:"chip",silk:false,nets:{},
+          pads:[{n:1,x:0,y:0,w:1,h:1,shape:"rect",drill:0},{n:2,x:3,y:0,w:1,h:1,shape:"rect",drill:0,nom:""},
+                {n:3,x:6,y:0,w:1,h:1,shape:"rect",drill:0,nom:""}]}];
+  loadDoc(d,true);
+  const f=S.fps[0];
+  if(f.pads[1].nom!==""||padClone(f.pads[2]).nom!==""||padsOf(f)[1].nom!=="")throw new Error("nom vide perdu : "+JSON.stringify(f.pads));
+  const a=serialize();loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("aller-retour non neutre");
+  const r=brochesResoudre(S.fps[0],[1,2,3]);
+  if(r.get(1)!==1||r.has(2)||r.has(3)||S.fps[0].pads.length!==3)throw new Error("broches : "+JSON.stringify([...r]));
+  fpSetPad(S.fps[0],1,"n",7);
+  if("nom" in S.fps[0].pads[1])throw new Error("un numéro saisi la numérote");
   carteVide();
 });
 /* JUSQU'À 32 COUCHES, nombre impair compris : un document les garde, et

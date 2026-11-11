@@ -45,7 +45,7 @@ const PNS_MARGIN=1e-3;
    nul pour le cuivre qui n'existe encore que dans une branche.
    ========================================================================== */
 function pnsItemPad(fp,q,qc,l0,l1){
-  const ls=padLayers(fp,q), g=qc||q, r=Math.hypot(g.w,g.h)/2;
+  const ls=padLayers(fp,q), g=qc||q, r=Math.hypot(g.w,g.h)/2+(q.clr>0?q.clr:0);   // l'isolement propre porte plus loin que la fenêtre (pnsMaxClr)
   return {k:"P", q:g, fp, net:q.net||"", l0:l0!=null?l0:ls[0], l1:l1!=null?l1:ls[ls.length-1], src:q,
           bx1:q.x-r, by1:q.y-r, bx2:q.x+r, by2:q.y+r};
 }
@@ -147,16 +147,19 @@ function pnsClr(it,net,kind){
   if(it&&it.zone)return clrZone(it.zone,net,"cu",kind||"trk");   // une région pleine : l'isolement de zonesDrc
   if(it&&it.ko)return 0;                     // un keep-out : n'y pas entrer suffit (50-couches.js)
   if(it&&it.npth)return classOf(net).clr;   // un trou : la classe du cuivre, comme le bloc NPTH du contrôle
-  return clrK(net,it.net,kind||"trk",pnsKind(it));
+  return Math.max(clrK(net,it.net,kind||"trk",pnsKind(it)),pnsClrPropre(it));
 }
+/* L'isolement propre d'une pastille (`q.clr`, KiCad « clearance ») : le plus
+   grand des deux, le sien ou celui des classes, s'applique, comme dans KiCad. */
+function pnsClrPropre(it){return it&&it.k==="P"&&it.src&&it.src.clr>0?it.src.clr:0;}
 /* L'isolation exigée entre deux items quelconques : les deux natures viennent
    de l'index. C'est la mesure du contrôle DRC. */
 function pnsClrPair(a,b){
-  if(a.zone||b.zone){const z=a.zone?a:b, o=a.zone?b:a;return clrZone(z.zone,o.net,"cu",pnsKind(o));}
+  if(a.zone||b.zone){const z=a.zone?a:b, o=a.zone?b:a;return clrZone(z.zone,o.net,"cu",pnsKind(o),o.k==="P"?o.src:null);}
   if(a.ko||b.ko)return 0;
-  if(a.npth)return classOf(b.net).clr;     // un trou : la classe du cuivre d'en face, comme le bloc NPTH du contrôle
-  if(b.npth)return classOf(a.net).clr;
-  return clrK(a.net,b.net,pnsKind(a),pnsKind(b));
+  if(a.npth)return Math.max(classOf(b.net).clr,pnsClrPropre(b));     // un trou : la classe du cuivre d'en face, comme le bloc NPTH du contrôle
+  if(b.npth)return Math.max(classOf(a.net).clr,pnsClrPropre(a));
+  return Math.max(clrK(a.net,b.net,pnsKind(a),pnsKind(b)),pnsClrPropre(a),pnsClrPropre(b));
 }
 /* L'enveloppe d'un item, vue par une piste de largeur `w` sur ce net : la forme
    gonflée de l'isolation, de la demi-largeur de la piste et d'un micron de
