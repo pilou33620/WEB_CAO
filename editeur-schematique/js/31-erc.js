@@ -38,7 +38,8 @@ function ercSource(el) {
 
 /* in, out, bidir, pwr_in, pwr_out, passive ou nc. */
 function ercTypeBroche(el, i) {
-  if (el.type === "battery" || el.type === "acsource") return "pwr_out";
+  /* pile et source : « passive » (catégorie Alimentation), sinon deux piles en
+     série donnaient « Deux sorties » ; elles restent des sources par ercSource */
   const def = defOf(el.type);
   if (ERC_PASSIFS.has(def.cat) || ercSource(el)) return "passive";
   const brut = String(typeof brNomBroche === "function" ? brNomBroche(el, i) : ((el.pinNames || [])[i] || "")).trim();
@@ -79,6 +80,9 @@ function ercVerifier() {
   };
   const dire = (niveau, code, msg, b) => res.push({ niveau, code, msg, page: b.page, x: b.x, y: b.y, id: b.id || null });
 
+  const relies = new Set();              // ref.patte présente dans un net
+  for (const g of D.groups) for (const nd of g.nodes) relies.add(nd.ref + "." + nlPad(nd));
+
   /* 1. broches seules et marqueurs isolés (points qui ne forment pas de net) */
   for (const sh of D.sheets) for (const n of sh.nets.loose) {
     const bs = broches(n.nodes.map(nd => Object.assign({ page: sh.page }, nd)));
@@ -89,6 +93,9 @@ function ercVerifier() {
     if (n.nc) continue;
     for (const b of bs) {
       if (b.t === "nc" || defOf(b.el.type).p === "MECA") continue;
+      /* patte commune d'un boîtier en plusieurs parties (V+ d'un AOP double) :
+         câblée sur une autre partie, elle est reliée, comme dans la netlist */
+      if (b.el.ref && relies.has(b.el.ref + "." + nlPad(b.nd))) continue;
       const pos = { page: sh.page, x: b.nd.x, y: b.nd.y, id: b.el.id };
       if (b.t === "in" || b.t === "pwr_in") dire("erreur", "entree-en-l-air", "Entrée en l'air : " + nomB(b.el, b.i), pos);
       else dire("avert", "non-connectee", "Broche non connectée : " + nomB(b.el, b.i), pos);

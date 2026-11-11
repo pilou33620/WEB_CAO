@@ -1087,8 +1087,10 @@ function schPoserDepuisCatalogue(el, it){
     el.ref = nextRef(pref);
   }
   const nPins = parseInt(it["Number Of pins"], 10);
-  if((el.type === "ic" || el.type === "connector") && nPins > 0) {
+  if(el.type === "ic" && nPins > 0) {
     el.npins = Math.min(64, nPins);             // la géométrie lit npins (icCount, 1..64)
+  } else if(el.type === "header" && nPins > 0 && nPins !== pinsOf(el).length && typeof icSetCount === "function") {
+    icSetCount(el, nPins);                      // le connecteur du catalogue a ses N broches, pas les 2 du symbole
   }
   const fp = it["Empreinte PCB"] || "";
   if(fp) {

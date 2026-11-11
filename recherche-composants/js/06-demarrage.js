@@ -64,12 +64,13 @@ async function lancer(){
   EN_COURS=true;
   q("bRun").disabled=q("bRun2").disabled=true;
   hint("Interrogation de pcbparts.dev…");
+  const outil=OUTIL_COURANT;       // un autre outil peut être choisi pendant l'attente
   try{
-    const data=await apiAppel(OUTIL_COURANT,args);
+    const data=await apiAppel(outil,args);
     if(RESULTAT.data!==null)
       HISTORIQUE.push({outil:RESULTAT.outil,args:RESULTAT.args,data:RESULTAT.data});
     if(HISTORIQUE.length>30)HISTORIQUE.shift();
-    afficherResultat(OUTIL_COURANT,args,data);
+    afficherResultat(outil,args,data);
     hint("Réponse reçue.");
   }catch(e){
     const msg=(e&&e.message)||String(e);
@@ -213,6 +214,7 @@ function sessionComposants(repris){
     if(navigator.clipboard&&navigator.clipboard.writeText)
       navigator.clipboard.writeText(t).then(function(){hint("JSON copié.");},
                                             function(){hint("Copie refusée par le navigateur.");});
+    else hint("Copie indisponible dans ce navigateur : utilisez l'export JSON.");
   };
   q("filtreOutils").oninput=function(){construireListeOutils(this.value);};
 

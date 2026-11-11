@@ -73,7 +73,7 @@ const EXPOSE=[
   /* brochage (04 + 19) */
   "icPins","icBodyOf","icSideOf","icPinLabel","icFree","icShapeOf","icStep","IC_STEP",
   "icSetCount","icSetShape","icSetBody","icMovePin","reshapeComp",
-  "ceOpen","ceClose","ceIcRegler",
+  "ceOpen","ceClose","ceIcRegler","ceChangerType",
   /* libellés déplaçables et étiquettes de net (08 + 09) */
   "compTexts","textBox","textOff","setTextOff","netLabelAt","netLabelBoxes",
   "pinContacts","reconnectContacts","resetTexts","pinContactPoints","moveSelBy",
@@ -1277,6 +1277,7 @@ T("nomenclature : les séparateurs sont protégés",()=>{
   if(csvCell('dit "oui"')!=='"dit ""oui"""')throw new Error("guillemets : "+csvCell('dit "oui"'));
   if(csvCell("simple")!=="simple")throw new Error("valeur simple inutilement protégée");
   if(csvCell(null)!=="")throw new Error("valeur absente : chaîne vide attendue");
+  if(csvCell("a\rb")!=='"a\rb"')throw new Error("retour chariot seul non protégé : la ligne serait coupée à la relecture");
   // une valeur écrite par Claude ou venue d'un projet ne doit pas devenir une formule de tableur
   for(const [v,att] of [["=1+1","'=1+1"],["+5V","'+5V"],["@SUM(A1)","'@SUM(A1)"],["-x","'-x"],["-40","-40"],["-.5","-.5"],["10k","10k"]])
     if(csvCell(v)!==att)throw new Error("formule : "+v+" → "+csvCell(v));
@@ -2850,6 +2851,34 @@ T("édition du composant (modale CE) pour modifier ref, valeur, boîtier",()=>{
   if(op.ref!=="U5"||op.value!=="TL072"||op.pkg!=="SOIC-8") throw new Error("propriétés du composant non mises à jour");
 });
 
+T("catalogue sans symbole connu : un connecteur et un régulateur reçoivent un vrai symbole, câblable",()=>{
+  for(const it of [{"Part Name":"HDR-1x4","Reference designator Prefix":"J"},
+                   {"Part Name":"LM7805","Reference designator Prefix":"VR","Description":"Regulateur 5V"}]){
+    const t=schTypeDuCatalogue(it);
+    if(!LIB[t]) throw new Error(it["Part Name"]+" : type « "+t+" » absent de la bibliothèque");
+    if(LIB[t].noRef) throw new Error(it["Part Name"]+" : posé en « "+t+" », un symbole sans repère (alimentation)");
+    if(!pinsOf(C(t,0,0)).length) throw new Error(it["Part Name"]+" : « "+t+" » sans broche");
+  }
+  sheet([],[]);
+  const it={"Part Name":"HDR-1x4","Reference designator Prefix":"J","Number Of pins":"4"};
+  const j=addComp(schTypeDuCatalogue(it),200,200);
+  schPoserDepuisCatalogue(j,it);
+  if(pinsOf(j).length!==4||!/^J\d/.test(j.ref)) throw new Error("connecteur 4 points du catalogue : "+pinsOf(j).length+" broche(s), repère "+j.ref);
+});
+T("édition du composant : l'ouvrir ne fige pas les broches (largeur d'un DIP, changement de type)",()=>{
+  const u = C("ic", 10, 10, {ref:"U1", npins:8}), r = C("resistor", 30, 10, {ref:"R1"});
+  sheet([u, r], []);
+  const avant = JSON.stringify(pinsOf(u));
+  ceOpen(u);
+  if(Array.isArray(u.pinPos)) throw new Error("ouvrir l'éditeur a recopié les broches dans pinPos");
+  ceIcRegler(icSetBody, +document.getElementById("ceIcW").value+4);
+  if(JSON.stringify(pinsOf(u))===avant) throw new Error("corps élargi, broches restées en place");
+  ceClose();
+  ceOpen(r);
+  ceChangerType("opamp");
+  if(pinsOf(r).length!==5) throw new Error("résistance devenue AOP : "+pinsOf(r).length+" broche(s) au lieu de 5");
+  ceClose();
+});
 T("édition du composant : représentation et largeur du corps d'un CI, absentes pour un symbole fixe",()=>{
   const u = C("ic", 10, 10, {ref:"U1"}), r = C("resistor", 30, 10, {ref:"R1"});
   sheet([u, r], []);
@@ -4517,6 +4546,37 @@ T("ERC : alimentation non pilotée, puis pilotée par un connecteur à travers u
   sheet([op,v,j,fb,v2],[W(10,7,10,8),W(18,4,18,0),W(18,0,20,0),W(24,0,26,0)]);
   r=ercVerifier();
   if(r.some(x=>x.code==="alim-non-pilotee"&&/3V3/.test(x.msg)))throw new Error("3V3 est pilotée : "+JSON.stringify(r.map(x=>x.msg)));
+});
+
+T("ERC : deux piles en série ne sont pas « deux sorties », et pilotent toujours une alimentation",()=>{
+  const b1=C("battery",0,0,{ref:"BT1"}), b2=C("battery",0,6,{ref:"BT2"}), r=C("resistor",8,3,{ref:"R1"});
+  const p1=allPins(b1), p2=allPins(b2), pr=allPins(r), fil=(a,b)=>({x1:a.x,y1:a.y,x2:b.x,y2:b.y});
+  sheet([b1,b2,r],[fil(p1[1],p2[0]),fil(p1[0],pr[0]),fil(p2[1],pr[1])]);
+  const m=ercVerifier().filter(x=>x.niveau==="erreur").map(x=>x.msg);
+  if(m.length)throw new Error(JSON.stringify(m));
+  // la pile reste une source : V+ de l'AOP relié à BT1 n'est pas « non pilotée »
+  const op=C("opamp",10,10,{ref:"U1"}), bt=C("battery",20,10,{ref:"BT1"}), po=allPins(op), pb=allPins(bt);
+  sheet([op,bt],[fil(po[3],{x:po[3].x,y:pb[0].y-G}),fil({x:po[3].x,y:pb[0].y-G},{x:pb[0].x,y:pb[0].y-G}),fil({x:pb[0].x,y:pb[0].y-G},pb[0])]);
+  const r2=ercVerifier();
+  if(r2.some(x=>x.code==="alim-non-pilotee"||x.code==="deux-sorties"))throw new Error(JSON.stringify(r2.map(x=>x.msg)));
+});
+T("ERC : alimentation d'un AOP double câblée sur la partie A, la partie B ne crie pas « en l'air »",()=>{
+  const BR="A:OUT=1,IN-=2,IN+=3|B:OUT=7,IN-=6,IN+=5|*:V-=4,V+=8";
+  const a=C("opamp",0,0,{ref:"U1",value:"LM358",brochage:BR,part:"A"}), b=C("opamp",0,10,{ref:"U1",value:"LM358",brochage:BR,part:"B"});
+  brAppliquer(a);brAppliquer(b);
+  const j=C("ic",12,5,{ref:"J1",npins:8}), pa=allPins(a), pb=allPins(b), pj=allPins(j), w=[];
+  for(let i=0;i<5;i++){
+    const k={x:pa[i].x-200-i*20,y:pa[i].y-200};
+    w.push({x1:pa[i].x,y1:pa[i].y,x2:k.x,y2:k.y},{x1:k.x,y1:k.y,x2:pj[i].x,y2:pj[i].y});
+  }
+  for(let i=0;i<3;i++)w.push({x1:pb[i].x,y1:pb[i].y,x2:pj[5+i].x,y2:pj[5+i].y});
+  sheet([a,b,j],w);
+  let r=ercVerifier().filter(x=>x.code==="entree-en-l-air");
+  if(r.length)throw new Error(JSON.stringify(r.map(x=>x.msg)));
+  // sans aucun fil, les pattes communes restent signalées
+  sheet([a,b],[]);
+  r=ercVerifier().filter(x=>x.code==="entree-en-l-air"&&/V[+-]/.test(x.msg));
+  if(!r.length)throw new Error("V+ et V- libres partout doivent rester signalés");
 });
 
 /* ==========================================================================

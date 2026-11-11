@@ -365,7 +365,7 @@ function csvCell(v){
   let t=String(v==null?"":v);
   // un tableur lit « =… », « +… », « @… » comme une formule : la valeur vient du projet, pas d'un calcul
   if(/^[=+@\t\r]|^-(?![\d.])/.test(t))t="'"+t;
-  return /[";\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t;
+  return /[";\r\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t;
 }
 /* `variante` : l'identifiant d'une variante de montage (commun/variantes.js),
    la variante active si absent, "" pour la carte complète. Chaque ligne dit
@@ -377,6 +377,9 @@ function bomRows(variante){
   const lib = (typeof window !== "undefined" && Array.isArray(window.CSV_LIB)) ? window.CSV_LIB : [];
   /* U3A et U3B sont un seul boîtier : une ligne, une empreinte */
   const boitiers=new Set();
+  /* la même recherche au catalogue ne se fait qu'une fois par appel : autosave()
+     repasse ici toutes les 4 s, et cent résistances 10k 0603 valent une recherche */
+  const trouves=new Map();
   S.pages.forEach((p,i)=>{
     const src=(i===S.page)?S.comps:(p.comps||[]);
     for(const c of src) if(!defOf(c.type).noRef) {
@@ -391,6 +394,9 @@ function bomRows(variante){
         const targetMpn = (c.mpn || c.csvMpn || "").toLowerCase().trim();
         const targetVal = (c.value || "").toLowerCase().trim();
         const targetPkg = (c.pkg || "").toLowerCase().trim();
+        const pre = defOf(c.type).p;
+        const cle = [targetPart,targetMpn,targetVal,targetPkg,pre].join("\n");
+        if(trouves.has(cle)) entry = trouves.get(cle); else {
 
         if(targetPart){
           entry = lib.find(it => (it["Part Name"]||"").toLowerCase().trim() === targetPart);
@@ -404,7 +410,6 @@ function bomRows(variante){
         }
         /* replis par la valeur : même famille (préfixe du repère) et même boîtier entier,
            sinon un condensateur 10u prenait la self 10u, et SOT-23 le SOT-23-5 */
-        const pre = defOf(c.type).p;
         const famille = it => { const q = (it["Reference designator Prefix"]||"").trim().toUpperCase(); return !q || !pre || q === String(pre).toUpperCase(); };
         if(!entry && targetVal){
           entry = lib.find(it => (it["Part Name"]||"").toLowerCase().trim() === targetVal && famille(it));
@@ -416,6 +421,8 @@ function bomRows(variante){
             const k = pk.indexOf(targetPkg), bord = ch => !ch || !/[a-z0-9-]/.test(ch);
             return v === targetVal && famille(it) && k >= 0 && bord(pk[k-1]) && bord(pk[k+targetPkg.length]);
           });
+        }
+        trouves.set(cle, entry);
         }
       }
 

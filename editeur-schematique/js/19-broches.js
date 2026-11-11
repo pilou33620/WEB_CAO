@@ -108,6 +108,26 @@ function ceIcRegler(retouche, valeur){
   cePush(); retouche(CE.el, valeur);
   ceSync(); draw();
 }
+/* Autre symbole : les broches posées pour l'ancien n'ont plus de sens (une
+   résistance devenue AOP gardait ses 2 broches). */
+function ceChangerType(newType){
+  if(!CE.el) return;
+  cePush();
+  const oldDef = defOf(CE.el.type), newDef = defOf(newType);
+  CE.el.type = newType;
+  if(newDef.p && (!CE.el.ref || (oldDef.p && CE.el.ref.startsWith(oldDef.p)))){
+    CE.el.ref = nextRef(newDef.p);
+  }
+  if(!CE.el.value || (oldDef.v && CE.el.value === oldDef.v)){
+    CE.el.value = newDef.v || "";
+  }
+  delete CE.el.pinPos; delete CE.el.icBody;
+  if(CE.el.icShape === "libre") delete CE.el.icShape;
+  if(typeof newDef.pins !== "function") delete CE.el.npins;
+  touchWires();
+  ceSync();
+  draw();
+}
 function ceBuild(){
   if(ceEl("compEd")) return;
   const d = document.createElement("div");
@@ -214,27 +234,7 @@ function ceBuild(){
     });
   }
 
-  selType.onchange = () => {
-    if(!CE.el) return;
-    cePush();
-    const newType = selType.value;
-    const oldDef = defOf(CE.el.type), newDef = defOf(newType);
-    CE.el.type = newType;
-    if(newDef.p && (!CE.el.ref || (oldDef.p && CE.el.ref.startsWith(oldDef.p)))){
-      CE.el.ref = nextRef(newDef.p);
-    }
-    if(!CE.el.value || (oldDef.v && CE.el.value === oldDef.v)){
-      CE.el.value = newDef.v || "";
-    }
-    // Mise à jour des broches si nécessaire
-    if(!Array.isArray(CE.el.pinPos)){
-      const ps = pinsOf(CE.el);
-      CE.el.pinPos = ps.map(p => [p[0], p[1]]);
-      CE.el.npins = ps.length;
-    }
-    ceSync();
-    draw();
-  };
+  selType.onchange = () => ceChangerType(selType.value);
 
   ceEl("ceRef").oninput = () => {
     if(!CE.el) return;
@@ -297,13 +297,9 @@ function ceOpen(el){
   ceBuild();
   CE.open = true; CE.el = el; CE.pushed = false;
   if(!Array.isArray(el.pinNames)) el.pinNames = [];
-  if(!Array.isArray(el.pinPos)){
-    const ps = pinsOf(el);
-    if(ps && ps.length){
-      el.pinPos = ps.map(p => [p[0], p[1]]);
-      el.npins = ps.length;
-    }
-  }
+  /* pas de copie des broches dans el.pinPos à l'ouverture : elle figeait le
+     symbole (largeur du corps sans effet sur les broches, type changé à
+     l'ancien brochage, mise à jour depuis la LIB ignorée) */
   ceEl("compEd").hidden = false;
   ceSync();
 }

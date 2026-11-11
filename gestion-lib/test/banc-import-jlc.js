@@ -181,5 +181,17 @@ assert(etatPouce.composants.length === 3 && etatPouce.composants[0].Description 
     "En-tête sans accent : la ligne importée prend l'en-tête du catalogue");
   assert(Object.keys(ligneJ).every(k => k === "_id" || etatJ.colonnes.includes(k)) && etatJ.colonnes.includes("tolerance")
     && !etatJ.colonnes.includes("Empreinte Schématique"), "Les colonnes manquantes s'ajoutent au catalogue, sans doublon d'accent");
+  // un prix reçu en texte (pcbparts) : la liste s'affiche quand même, prix compris
+  {
+    const corps = { innerHTML: "", querySelectorAll: () => [] };
+    sandbox.document.getElementById = id => id === "inpJlcQuery" ? { value: "100nF" } : id === "jlcModalBody" ? corps : null;
+    sandbox.esc = t => String(t == null ? "" : t).replace(/[&<>"']/g, "_");
+    sandbox.ENTETE_WEB = {};
+    sandbox.fetch = async () => ({ ok: true, json: async () => ({ data: { results: [
+      { lcsc: "C1", model: "A", price: "0.012", stock: 5 }, { lcsc: "C2", model: "B", price: 0.5 }, { lcsc: "C3", model: "C", price: "<b>" }] } }) });
+    await vm.runInContext("lancerRechercheJlc", sandbox)();
+    assert(!/Erreur/.test(corps.innerHTML) && /0\.012 \$/.test(corps.innerHTML) && /0\.500 \$/.test(corps.innerHTML) && !/NaN/.test(corps.innerHTML),
+      "Prix reçu en texte : les résultats s'affichent, un prix illisible donne « — »");
+  }
   console.log("\nRésultat : " + passedTests + "/" + totalTests + " tests réussis avec succès !");
 })().catch(e => { console.error(e); process.exit(1); });

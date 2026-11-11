@@ -280,6 +280,9 @@ const BAK="schemedit.autosave";      // ancienne sauvegarde : effacée au démar
 /* dernière netlist annoncée aux autres onglets : tant que le schéma reste
    « modifié », autosave() passe toutes les 4 s, et chaque annonce fait
    recalculer l'ECO complet côté PCB -- on n'annonce que ce qui a changé */
+/* shortcut: la netlist est recalculée à chaque passage tant que S.dirty, même
+   sans retouche (bomRows ne cherche plus qu'une fois par valeur au catalogue) ;
+   poser un compteur de modifications si l'à-coup se voit encore sur iPad. */
 let AUTOSAVE_NL_DIFFUSEE=null;
 function autosave(){
   if(!S.dirty)return;

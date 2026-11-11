@@ -102,4 +102,22 @@ assert.ok(pres(1 * z, 0.5 * z) && pres(-1 * z, 0.5 * z), "trou oblong dessine : 
 // en ferait du HTML. Forcee en nombre (+) ou passee par n() de l'editeur.
 const bruts = src.split("\n").filter(l => /type="number"/.test(l) && /value="\$\{(?!\+|n\()/.test(l));
 assert.ok(!bruts.length, "valeur injectee brute dans un champ numerique :\n" + bruts.join("\n"));
+// 5. Plus d'empreinte (reference sans association, fichier introuvable) : l'apercu est
+// redessine vide, sinon le dessin de la reference precedente restait a l'ecran. Idem symbole.
+{
+  let fonds = 0;
+  const ctx5 = new Proxy({}, { get: (_, k) => k === "fillRect" ? () => { fonds++; } : () => {}, set: () => true });
+  const cv5 = Object.assign({}, canvas, { getContext: () => ctx5 });
+  const r5 = new c.window.PcbRenderer(cv5);
+  r5.setFootprint({ pads: [{ n: 1, x: 0, y: 0, w: 1, h: 1, shape: "rect" }] });
+  fonds = 0; r5.setFootprint(null);
+  assert.ok(fonds > 0, "setFootprint(null) doit redessiner l'apercu (vide)");
+  const cs = { window: { devicePixelRatio: 1 }, Math };
+  vm.createContext(cs);
+  vm.runInContext(fs.readFileSync(path.join(R, "03-rendu-symbole.js"), "utf8"), cs);
+  const s5 = new cs.window.SymboleRenderer(cv5);
+  s5.setSymbol({ pins: [], primitives: [] });
+  fonds = 0; s5.setSymbol(null);
+  assert.ok(fonds > 0, "setSymbol(null) doit redessiner l'apercu (vide)");
+}
 console.log("ok repere y vers le bas");

@@ -93,7 +93,7 @@ function ficheHTML(o){
     const v=o[k];
     if(typeof v==="string"&&v.length>320){textes[k]=v;continue;}
     if(v&&typeof v==="object"&&!Array.isArray(v)){tables[k]=v;continue;}
-    if(Array.isArray(v)&&v.length&&typeof v[0]==="object"){tables[k]=v;continue;}
+    if(Array.isArray(v)&&v[0]&&typeof v[0]==="object"){tables[k]=v;continue;}   // [null,…] : en ligne simple
     simples[k]=v;
   }
   h+=lignesDet(simples);
@@ -105,7 +105,8 @@ function ficheHTML(o){
       /* liste d'objets : on aligne les clés du premier élément */
       const cols=Object.keys(v[0]).slice(0,3);
       let t="";
-      for(const l of v.slice(0,60)){
+      for(const l0 of v.slice(0,60)){
+        const l=l0&&typeof l0==="object"?l0:{};      // la réponse vient du réseau
         t+='<tr><td class="k">'+esc(valeurTexte(l[cols[0]]))+'</td><td class="v">'+
            esc(cols.slice(1).map(c=>valeurTexte(l[c])).join(" · "))+"</td></tr>";
       }

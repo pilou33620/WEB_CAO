@@ -191,8 +191,10 @@ function schTypeDuCatalogue(item) {
   else if(cat === "d") compType = "diode";
   else if(cat === "q") compType = "npn";
   else if(cat === "ic") compType = "ic";
-  else if(cat === "conn") compType = "connector";
-  else if(cat === "pwr") compType = "vcc";
+  /* « connector » n'existe pas dans la bibliothèque (composant « ? » sans broche), et « vcc »
+     est un symbole d'alimentation : un régulateur posé ainsi nommait un net global */
+  else if(cat === "conn") compType = "header";
+  else if(cat === "pwr") compType = "regulator";
   else compType = "ic";
 
   const symRaw = String(item["Empreinte Schématique"] || item["Empreinte Schematique"] || "");

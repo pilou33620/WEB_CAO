@@ -163,7 +163,8 @@ function initApp() {
   // Chargement initial des données
   afficherToast("Chargement de la bibliothèque...", "info");
   chargerDonneesBibliotheque().then(res => {
-    afficherToast(`${res.total} composants chargés avec succès`, "success");
+    if (LIB_STATE.lectureSeule) afficherToast(`${res.total} composants lus en secours (le serveur n'a pas répondu) : lecture seule, rechargez la page pour modifier`, "error");
+    else afficherToast(`${res.total} composants chargés avec succès`, "success");
     remplirFiltresPrefixes();
     rafraichirTout();
     // Gestion des paramètres d'URL (liaison directe depuis Schématique ou PCB)
@@ -483,28 +484,17 @@ async function selectionnerComposant(id) {
   document.getElementById("inspPcbName").textContent = nomPcb || "Non associée";
   document.getElementById("inspSchName").textContent = nomSch || "Non associé";
 
-  // Rendu de l'empreinte PCB
+  /* Fichier introuvable : l'aperçu se vide (il gardait le dessin de la référence d'avant).
+     Une autre référence choisie pendant la lecture : cette réponse n'est plus la bonne. */
   if (pcbRendererMain) {
-    if (nomPcb) {
-      const pcbData = await obtenirFichierLib("pcb", nomPcb);
-      if (pcbData) {
-        pcbRendererMain.setFootprint(pcbData);
-      }
-    } else {
-      pcbRendererMain.setFootprint(null);
-    }
+    const pcbData = nomPcb ? await obtenirFichierLib("pcb", nomPcb) : null;
+    if (LIB_STATE.selection !== comp) return;
+    pcbRendererMain.setFootprint(pcbData || null);
   }
-
-  // Rendu du symbole schématique
   if (schRendererMain) {
-    if (nomSch) {
-      const schData = await obtenirFichierLib("schematique", nomSch);
-      if (schData) {
-        schRendererMain.setSymbol(schData);
-      }
-    } else {
-      schRendererMain.setSymbol(null);
-    }
+    const schData = nomSch ? await obtenirFichierLib("schematique", nomSch) : null;
+    if (LIB_STATE.selection !== comp) return;
+    schRendererMain.setSymbol(schData || null);
   }
 
   inspSimAfficher(comp);
@@ -1006,7 +996,7 @@ function rafraichirGalerieSim() {
     const el = document.getElementById(`sim_code_${f.replace(/\./g, '_')}`);
     if (el) {
       const data = await obtenirFichierLib("simulation", f);
-      el.textContent = data || "(Fichier vide)";
+      el.textContent = data == null ? "(fichier illisible : le serveur n'a pas répondu)" : data || "(Fichier vide)";
     }
   });
 }
@@ -1060,6 +1050,11 @@ function creerNouveauComposant() {
   const partName = document.getElementById("newPartName").value.trim();
   if (!partName) {
     alert("Le nom du composant (Part Name) est obligatoire.");
+    return;
+  }
+  /* deux lignes de même Part Name : le serveur refuse ensuite toute modification de la référence */
+  if (LIB_STATE.composants.some(c => String(c["Part Name"] || "").trim().toLowerCase() === partName.toLowerCase())) {
+    alert("« " + partName + " » est déjà au catalogue.");
     return;
   }
   const prefix = document.getElementById("newPrefix").value.trim().toUpperCase() || "U";
@@ -1135,15 +1130,13 @@ function fermerModaleColonnes() {
   }
 }
 
-function remplirGrilleColonnesPicker(filtre = "") {
+function remplirGrilleColonnesPicker() {
   const grid = document.getElementById("gridColonnesPicker");
   if (!grid) return;
-  const q = (filtre || "").toLowerCase().trim();
   const visibles = new Set(LIB_STATE.colonnesVisibles);
 
   let html = "";
   LIB_STATE.colonnes.forEach((col) => {
-    if (q && !col.toLowerCase().includes(q)) return;
     const isChecked = visibles.has(col);
     html += `
       <label class="col-item ${isChecked ? 'checked' : ''}">
@@ -1158,10 +1151,14 @@ function remplirGrilleColonnesPicker(filtre = "") {
   const inpSearch = document.getElementById("searchColonnes");
   if (inpSearch && !inpSearch._bound) {
     inpSearch._bound = true;
+    /* la recherche masque les cases sans reconstruire la grille : reconstruite, elle oubliait
+       les cases cochées, et « Appliquer » ne gardait que les colonnes affichées */
     inpSearch.addEventListener("input", () => {
-      remplirGrilleColonnesPicker(inpSearch.value);
+      const q = inpSearch.value.toLowerCase().trim();
+      grid.querySelectorAll("label").forEach(l => { l.style.display = q && !l.textContent.toLowerCase().includes(q) ? "none" : ""; });
     });
   }
+  if (inpSearch) inpSearch.value = "";
 }
 
 function majCompteurColsPicker() {
@@ -1173,6 +1170,7 @@ function majCompteurColsPicker() {
 
 function cocherToutesColonnes(val) {
   document.querySelectorAll("#gridColonnesPicker input[type='checkbox']").forEach(cb => {
+    if (cb.parentElement.style.display === "none") return;      // masquée par la recherche
     cb.checked = val;
     cb.parentElement.classList.toggle("checked", val);
   });
