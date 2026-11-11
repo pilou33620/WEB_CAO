@@ -4570,6 +4570,10 @@ TA("Vérif BOM JLCPCB : valeur, tension, stock et boîtier jugés, candidats pro
   if(!eq(vbValeurFiche("50V 6pF C0G 0805 Multilayer","F"),6e-12)||!eq(vbValeurFiche("4.7kΩ ±1% 0603","Ω"),4700))
     throw new Error("vbValeurFiche");
   if(!jlcNonPose({ref:"TP101"})||jlcNonPose({ref:"C1"}))throw new Error("jlcNonPose");
+  // H1 est un connecteur tant que son empreinte n'est pas un trou de fixation
+  if(jlcNonPose({ref:"H1",pkg:"PinHeader_1x02"}))throw new Error("le connecteur H1 doit rester");
+  if(!jlcNonPose({ref:"MH1",pkg:""})||!jlcNonPose({ref:"H2",pkg:"MountingHole_3.2mm_M3_Pad"}))
+    throw new Error("un trou de fixation sort");
   // le cas de la capture JLCPCB : 6,8 µF demandé, C67560 est un 6 pF
   const g={refs:["C106"],val:"6,8µ/6,3VX5R",pkg:"0805",lcsc:"C67560"};
   const faux={lcsc:"C67560",model:"0805CG6R0C500NT",package:"0805",stock:89595,library_type:"extended",
@@ -8735,6 +8739,45 @@ T("repère de broche 1 : montré, déplacé, retiré, et le document s'en souvie
   if(b[0].mark)throw new Error("un point sans coordonnées est écarté");
   if(b[1].mark.d>10)throw new Error("diamètre borné : "+b[1].mark.d);
   if(b[2].mark)throw new Error("un point qui n'est pas un point est écarté");
+});
+T("Propriétés : point de broche 1, contour imprimé et retour au calcul ont leurs champs, Ctrl+Z compris",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
+  try{
+    let fp=mkFp("R1","10k","0603",2);
+    fp.x=30;fp.y=20;S.fps.push(fp);touch();
+    clearSel();S.sel.fps.add(fp.id);refreshPanels();
+    const h=()=>$("props").innerHTML;
+    if(/id="pMark" checked/.test(h())||/id="pMarkX"/.test(h()))throw new Error("une résistance n'a pas de point d'office");
+    S.undo.length=0;
+    $("pMark").checked=true;$("pMark").onchange({target:$("pMark")});
+    if(!fpMark(fp)||S.undo.length!==1)throw new Error("la case devait poser le point, en une étape");
+    if(!/id="pMarkX"/.test(h()))throw new Error("le point posé, ses champs paraissent");
+    $("pMarkX").value="1.5";$("pMarkX").onchange();
+    $("pMarkD").value="0.8";$("pMarkD").onchange();
+    const m=fpMark(fp);
+    if(m.x!==1.5||m.d!==0.8)throw new Error("point mal réglé : "+JSON.stringify(m));
+    undo();
+    fp=S.fps.find(f=>f.ref==="R1");             // l'historique relit le document : un nouvel objet
+    if(fpMark(fp).d!==MARK_D)throw new Error("Ctrl+Z devait rendre le diamètre");
+    // contour : un coin saisi, puis « Contour automatique »
+    clearSel();S.sel.fps.add(fp.id);refreshPanels();
+    const auto=JSON.stringify(bodyOf(fp));
+    $("pBx1").value="-3";$("pBx1").onchange();
+    if(bodyOf(fp).x1!==-3)throw new Error("le coin X1 devait être pris : "+JSON.stringify(bodyOf(fp)));
+    if(!/id="pBodyAuto"/.test(h()))throw new Error("contour imposé : le bouton « automatique » paraît");
+    $("pBodyAuto").onclick();
+    if(fp.body||JSON.stringify(bodyOf(fp))!==auto)throw new Error("le contour devait revenir au calcul");
+    // empreinte dessinée à la main : le bouton la rend au boîtier
+    const u=mkFp("U1","","SOIC-8",8);
+    u.x=50;u.y=20;S.fps.push(u);touch();
+    const attendu=JSON.stringify(padsOf(u));
+    fpMovePad(u,0,-9,-9);touch();
+    clearSel();S.sel.fps.add(u.id);refreshPanels();
+    if(!/id="pFpGeneric"/.test(h()))throw new Error("le bouton de retour au calcul manque");
+    $("pFpGeneric").onclick({preventDefault(){}});
+    if(fpFree(u)||JSON.stringify(padsOf(u))!==attendu)throw new Error("le SOIC-8 devait être reposé");
+    if(/pFpGeneric/.test(pkgNote(u)))throw new Error("calculée, plus de bouton");
+  }finally{S.fps=[];touch();clearSel();}
 });
 T("sérigraphie : le point sort sur le film, et seulement s'il existe",()=>{
   S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
@@ -30568,12 +30611,34 @@ T("tracé : on sort d'une pastille de bord de carte, on ne longe pas le bord dep
     startRoute(20,0.75,true);routeToPoint({x:30,y:0.3});
     if(!S.route.bad)throw new Error("longer le bord dans la marge devait être refusé");
   });
-  // centre de la pastille DANS la marge (0,3 mm) : le DRC signale la piste qui en sort, le routeur refuse de même
+  /* centre de la pastille DANS la marge (0,3 mm) : posée là exprès (doigt de tranche) ;
+     la sortie perpendiculaire passe, routeur et DRC d'accord, longer le bord reste refusé */
   rtCarte({fps:[fp(0.6,0.3)]},()=>{
     startRoute(20,0.3,true);routeToPoint({x:20,y:5});
-    if(!S.route.bad)throw new Error("le routeur devait refuser comme le DRC");
-    S.avoid=false;routeToPoint({x:20,y:5});stepRoute();commitRoute();
-    if(!rtErr(/trop près du bord/).length)throw new Error("le DRC ne signale plus ce cas : le refus du routeur n'est plus aligné");
+    if(S.route.bad)throw new Error("la sortie d'une pastille de bord devait passer");
+    stepRoute();commitRoute();
+    const e=rtErr(/trop près du bord/);
+    if(e.length)throw new Error(e[0]);
+    startRoute(20,0.3,true);routeToPoint({x:30,y:0.3});
+    if(!S.route.bad)throw new Error("longer le bord loin de la pastille devait être refusé");
+  });
+});
+T("demi-trou (castellation) : ni la pastille coupée ni sa piste ne sont signalées, une piste quelconque au bord si",()=>{
+  const j=(y,drill)=>({ref:"J1",x:20,y,rot:0,side:0,nets:{1:"A"},pads:[{n:1,x:0,y:0,w:1.2,h:1.2,shape:"circ",drill}]});
+  rtCarte({fps:[j(0,0.6)],tracks:[{l:0,net:"A",w:0.3,x1:20,y1:0,x2:20,y2:5},
+                                  {l:0,net:"B",w:0.3,x1:30,y1:0.3,x2:40,y2:0.3},
+                                  {l:0,net:"A",w:0.3,x1:20,y1:0.3,x2:30,y2:0.3}]},()=>{
+    const e=runDrc().filter(d=>!d.info&&/contour de carte/.test(d.msg));
+    if(e.some(d=>/Pastille/.test(d.msg)))throw new Error("demi-trou signalé : "+e.map(d=>d.msg));
+    const bord=e.filter(d=>/Piste/.test(d.msg));
+    if(bord.length!==2)throw new Error("seules les deux pistes qui longent le bord sont attendues : "+bord.map(d=>d.msg+" @"+d.x));
+    if(bord.some(d=>d.x===20&&d.y===2.5))throw new Error("la piste du demi-trou est signalée");
+  });
+  // une CMS qui déborde reste une erreur, une traversante entière dehors aussi
+  rtCarte({fps:[{ref:"J1",x:20,y:0,rot:0,side:0,nets:{},pads:[{n:1,x:0,y:0,w:1.2,h:1.2,shape:"rect"}]},
+                {ref:"J2",x:30,y:-2,rot:0,side:0,nets:{},pads:[{n:1,x:0,y:0,w:1.2,h:1.2,shape:"circ",drill:0.6}]}]},()=>{
+    const n=runDrc().filter(d=>/^Pastille J[12]\.1 hors du contour/.test(d.msg)).length;
+    if(n!==2)throw new Error("deux pastilles hors du contour attendues, "+n);
   });
 });
 T("via : refusé dans la marge du bord de carte (touche V, paire différentielle)",()=>{

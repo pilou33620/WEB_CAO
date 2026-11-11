@@ -1467,9 +1467,11 @@ function jlcGerberFiles(){
 /* BOM : une ligne par pièce (valeur, empreinte, code LCSC), repères groupés.
    Le code LCSC vient du schéma (champ lcsc, ou « vendor reference » de la LIB). */
 /* points de test, mires, trous de fixation : rien à poser, JLCPCB les
-   listerait en « Unmatched components » */
+   listerait en « Unmatched components ». H1 est aussi un connecteur
+   (header) : un trou de fixation se reconnaît à son empreinte (sans cuivre,
+   ou « MountingHole »), pas au seul H */
 function jlcNonPose(fp){
-  return fpSansCuivre(fp)||/^(TP|FID|MH|H)\d/i.test(fp.ref||"")||/test.?point|fiducial|mounting.?hole/i.test(fp.pkg||"");
+  return fpSansCuivre(fp)||/^(TP|FID|MH)\d/i.test(fp.ref||"")||/test.?point|fiducial|mounting.?hole/i.test(fp.pkg||"");
 }
 function jlcFpsAPoser(){return fabFpsMontes().filter(fp=>!jlcNonPose(fp));}
 function jlcBomLignes(){

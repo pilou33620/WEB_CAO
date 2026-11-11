@@ -3781,7 +3781,7 @@ function routeSegsTo(R,t){
   if(!S.avoid||!R.net)return {segs:direct.map(seg),bad:false,retouche:ret};
   // la marge de bord, à la cote et par la fonction du DRC : un trajet qui y entre ne se pose pas
   const bord=r=>{
-    if(r.segs.some(s=>!axeDansCarte(s,S.rule.edge+R.w/2))){r.bad=r.bord=true;delete r.shove;}
+    if(r.segs.some(s=>!axePisteAuBord(s,S.rule.edge+R.w/2,R.net,R.layer))){r.bad=r.bord=true;delete r.shove;}
     return r;
   };
   const N=pnsWorld();
