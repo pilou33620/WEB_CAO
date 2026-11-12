@@ -4,7 +4,7 @@
    Contrôle des règles du schéma (docs/regles/02-schema.md) qu'un programme peut
    juger sur le document : cartouche (S3), repères normalisés (S6), uniques et
    numérotés (S7), paires nommées (S13), référence fabricant (S27), empreinte
-   liée (S29), ERC (S34). Pour Claude in Chrome : commun/regles-controle.js.
+   liée (S29), ERC (S34). Fenêtre et résultat : commun/regles-controle.js.
    ============================================================================= */
 
 /* S6 : préfixes admis en plus de celui de la bibliothèque (usages courants). */
@@ -52,3 +52,5 @@ function schReglesControler() {
     ["S34", "ERC sans erreur", erc]
   ]);
 }
+
+function schReglesOuvrir() { return reglesFenetre("Contrôle des règles du schéma", schReglesControler); }

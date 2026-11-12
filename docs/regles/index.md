@@ -1,13 +1,13 @@
 # Règles de conception WEB_CAO
 
-Les règles que **Claude in Chrome** suit quand il conçoit une carte électronique dans WEB_CAO, du schéma aux fichiers de fabrication, chacune avec **pourquoi** elle existe. La page s'ouvre par le lien 📏 « Règles de conception » de la barre du haut de l'Éditeur schématique et de l'Éditeur PCB : c'est par lui que Claude in Chrome la trouve.
+Les règles que **Claude in Chrome** suit quand il conçoit une carte électronique dans WEB_CAO, du schéma aux fichiers de fabrication, chacune avec **pourquoi** elle existe. La page s'ouvre par le lien **📏 Règles** de la barre du haut de l'Éditeur schématique et de l'Éditeur PCB, comme le lien Règles de la page de conception de WEB_3D : c'est par lui que Claude in Chrome la trouve. Le bouton **Règles** du ruban (groupe Inspecter du schéma, onglet Vérifier du PCB) lance le contrôle des règles vérifiables.
 
 ## Consignes pour Claude in Chrome
 
 1. Lire cette page en entier avant toute modification du schéma ou du PCB.
 2. Appliquer les règles ; dans le plan et le compte rendu, citer le repère de chaque règle utilisée (C…, S…, R…).
 3. Une règle impossible à respecter : le dire avant d'agir, avec la raison.
-4. Après les modifications, lancer le contrôle dans la console de l'onglet de l'éditeur (outil JavaScript) et recopier son résultat dans le compte rendu :
+4. Après les modifications, lancer le contrôle (bouton **Règles** du ruban, ou dans la console de l'onglet de l'éditeur avec l'outil JavaScript) et recopier son résultat dans le compte rendu :
    - Éditeur schématique : `reglesTexte(schReglesControler())`
    - Éditeur PCB : `reglesTexte(pcbReglesControler())`
    - Par le MCP de web_suite : l'outil `cao_regles` fait le même contrôle, sur l'onglet schéma ou PCB ouvert. Ces règles y sont la fiche `savoir_lire conception-electronique`, à lire avant de concevoir.

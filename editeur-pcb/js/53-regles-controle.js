@@ -5,7 +5,7 @@
    qu'un programme peut juger et que le DRC ne voit pas : cartouche (C46),
    empilage symétrique (C7), repères de pose (C30), sérigraphie lisible (C36),
    anneaux des vias et des traversants (R16), points de test (C39) ; puis le DRC
-   lui-même (R1). Pour Claude in Chrome : commun/regles-controle.js.
+   lui-même (R1). Fenêtre et résultat : commun/regles-controle.js.
    ============================================================================= */
 
 // shortcut: un seul anneau minimal (conception, classes 2 et 3), sans classe IPC saisie ; à lier à une classe du document si elle apparaît
@@ -92,4 +92,10 @@ function pcbReglesControler() {
     ["C39", "Un point de test par net", pcbReglesPointsTest()],
     ["R1", "DRC sans erreur", drc]
   ]);
+}
+
+function pcbReglesOuvrir() {
+  const r = reglesFenetre("Contrôle des règles de la carte", pcbReglesControler);
+  draw();                                   // le DRC relancé : ses marques à jour
+  return r;
 }
