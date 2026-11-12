@@ -10,6 +10,7 @@ Les règles que **Claude in Chrome** suit quand il conçoit une carte électroni
 4. Après les modifications, lancer le contrôle dans la console de l'onglet de l'éditeur (outil JavaScript) et recopier son résultat dans le compte rendu :
    - Éditeur schématique : `reglesTexte(schReglesControler())`
    - Éditeur PCB : `reglesTexte(pcbReglesControler())`
+   - Par le MCP de web_suite : l'outil `cao_regles` fait le même contrôle, sur l'onglet schéma ou PCB ouvert. Ces règles y sont la fiche `savoir_lire conception-electronique`, à lire avant de concevoir.
 5. Le contrôle ne couvre que les règles qu'un programme peut juger (liste au chapitre [Avant de livrer](04-avant-livrer.md)) : le reste se vérifie en relisant le document.
 
 ## Base de travail
