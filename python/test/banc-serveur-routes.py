@@ -907,13 +907,13 @@ def test_routes():
                     "/bancs-mesure/crosstalk/banc-crosstalk-mesure.py", "/README.md", "/SPEC.md",
                     "/python/oeil.py", "/commun/test/dom-stub.js", "/editeur-pcb/test/harness.js",
                     "/editeur-pcb/outils/build-monofichier.py", "/screen/pcb.png", "/simulations-si-pi.json",
-                    "/docs/manuel/index.md", "/commun/%2e%2e/web_CAO.py", "/commun/.env",
+                    "/docs/manuel/index.md", "/docs/regles/01-conception.md", "/commun/%2e%2e/web_CAO.py", "/commun/.env",
                     "/commun/menus.js::$DATA", "/LIB/x.py", "/LIB/.git/config", "/LIB/LIB_composants.csv"):
             assert not h._statique_permis(nom), nom
         for nom in ("/", "/index.html", "/editeur-pcb/", "/editeur-pcb/editeur-pcb.html",
                     "/commun/menus.js", "/commun/pilote-aide.json", "/commun/vendor/three-source.js",
                     "/editeur-pcb/js/fontes/plans-sans.js", "/gestion-lib/css/gestion-lib.css",
-                    "/docs/manuel/manuel.html", "/profils/fabricants/jlcpcb.json",
+                    "/docs/manuel/manuel.html", "/docs/regles/regles.html", "/profils/fabricants/jlcpcb.json",
                     "/LIB/lib_empreinte_pcb/0603.json", "/LIB/Models/R%C3%A9ed%20SMD.step"):
             assert h._statique_permis(nom), nom
         for nom, attendu in (("/README.md", 404), ("/graphify-out/GRAPH_REPORT.md", 404),

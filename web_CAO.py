@@ -1628,7 +1628,7 @@ def attendre_touche():
 
 
 # Fichiers statiques : liste blanche (REGLES-NOUVEAU-WEB-TOOL §3.1). Ne sort que
-# ce que les pages chargent : leur .html, leurs js/ et css/, commun/, le manuel,
+# ce que les pages chargent : leur .html, leurs js/ et css/, commun/, le manuel, les regles,
 # les regles des fabricants (24-pcb-capabilities.js) et les monofichiers dist/.
 # Le reste est 404 : python/, tests, bancs-mesure/, tasks/, graphify-out/,
 # *.md, profils d'utilisateur, projets/ (ils ont leurs routes /api/...).
@@ -1643,7 +1643,7 @@ STATIQUE = re.compile(
     r"|^/editeur-(?:pcb|schematique)/dist/[\w-]+\.html$"
     r"|^/" + _PAGES + r"/(?:js|css)(?:/[\w-]+)*/[\w-][\w.-]*\.(?:js|css|json|png|svg|gif|woff2?|ttf|wasm)$"
     r"|^/commun(?:/vendor)?/[\w-][\w.-]*\.(?:js|css|json)$"
-    r"|^/docs/manuel/manuel\.html$"
+    r"|^/docs/(?:manuel/manuel|regles/regles)\.html$"
     r"|^/profils/fabricants/[\w-][\w.-]*\.json$")
 # /LIB/ : les fichiers de donnees de la bibliotheque active (memes extensions que
 # l'API) ; son catalogue passe par /api/lib/composants.

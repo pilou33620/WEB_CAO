@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Assemble les chapitres Markdown de docs/manuel/ en une page unique, docs/manuel/manuel.html.
+Assemble les chapitres Markdown de docs/manuel/ en une page unique, docs/manuel/manuel.html,
+et ceux de docs/regles/ en docs/regles/regles.html (le bouton « Règles »).
 
 Page autonome (styles et script en ligne) : elle s'ouvre en double-clic, sans serveur.
 Sommaire à gauche, recherche plein texte. Les chapitres sont pris dans l'ordre alphabétique
@@ -23,8 +24,9 @@ import re
 import sys
 
 RACINE = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
-SRC = os.path.join(RACINE, "docs", "manuel")
-SORTIE = os.path.join(SRC, "manuel.html")
+# (dossier des chapitres, page produite dans ce dossier, titre de la page)
+LIVRES = [("manuel", "manuel.html", "Manuel WEB_CAO"),
+          ("regles", "regles.html", "Règles de conception WEB_CAO")]
 DEPOT_WEB = "https://github.com/pilou33620/WEB_CAO/blob/main/"
 
 
@@ -36,8 +38,8 @@ def slug(texte):
 
 
 class Convertisseur:
-    def __init__(self, stem, chapitres, erreurs):
-        self.stem, self.chapitres, self.erreurs = stem, chapitres, erreurs
+    def __init__(self, src, stem, chapitres, erreurs):
+        self.src, self.stem, self.chapitres, self.erreurs = src, stem, chapitres, erreurs
         self.ancres = set()
         self.titres = []  # (niveau, id, texte)
 
@@ -49,13 +51,15 @@ class Convertisseur:
         chemin, _, frag = cible.partition("#")
         if not chemin:
             return '<a href="#%s--%s">%s</a>' % (self.stem, frag, texte)
-        cible_abs = os.path.normpath(os.path.join(SRC, chemin))
-        if chemin.endswith(".md") and os.path.dirname(cible_abs) == SRC:
+        cible_abs = os.path.normpath(os.path.join(self.src, chemin))
+        if chemin.endswith(".md") and os.path.dirname(cible_abs) == self.src:
             autre = os.path.basename(chemin)[:-3]
             self.chapitres.append((self.stem, autre, frag, cible))
             return '<a href="#%s%s">%s</a>' % (autre, "--" + frag if frag else "", texte)
         if not os.path.exists(cible_abs):
             self.erreurs.append("%s : fichier introuvable : %s" % (self.stem, cible))
+        elif chemin.endswith(".html"):  # une autre page servie (le manuel depuis les règles)
+            return '<a href="%s" target="_blank" rel="noopener">%s</a>' % (html.escape(cible, quote=True), texte)
         # Un fichier du dépôt : web_CAO.py ne sert que manuel.html de ce dossier (liste
         # blanche), le lien relatif tombait en 404. On renvoie à sa page sur GitHub, et
         # data-local garde le chemin relatif que le script reprend en double-clic (file://).
@@ -213,16 +217,16 @@ if(location.protocol==='file:')[].forEach.call(document.querySelectorAll('a[data
 """
 
 
-def main():
-    fichiers = sorted(f for f in os.listdir(SRC) if f.endswith(".md"))
+def construire(src, sortie, titre):
+    fichiers = sorted(f for f in os.listdir(src) if f.endswith(".md"))
     fichiers.sort(key=lambda f: (f != "index.md", f))
     chapitres, erreurs, corps, nav = [], [], [], []
     ancres = {}
     for f in fichiers:
         stem = f[:-3]
-        with io.open(os.path.join(SRC, f), encoding="utf-8") as fh:
+        with io.open(os.path.join(src, f), encoding="utf-8") as fh:
             texte = fh.read()
-        cv = Convertisseur(stem, chapitres, erreurs)
+        cv = Convertisseur(src, stem, chapitres, erreurs)
         morceaux = re.split(r"(?m)^(?=#{1,2} )", texte)  # une section par titre de niveau 1 ou 2
         for k, morceau in enumerate(m for m in morceaux if m.strip()):
             cv.titres = []
@@ -242,20 +246,28 @@ def main():
         elif frag and "%s--%s" % (stem, frag) not in ancres[stem]:
             erreurs.append("%s : ancre introuvable : %s" % (src, brut))
     if erreurs:
-        print("%d lien(s) cassé(s) :" % len(erreurs))
+        print("%s : %d lien(s) cassé(s) :" % (titre, len(erreurs)))
         print("\n".join("  " + e for e in sorted(set(erreurs))))
         return 1
     page = ('<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
-            '<title>Manuel WEB_CAO</title><style>%s</style></head><body>'
+            '<title>%s</title><style>%s</style></head><body>'
             '<nav><a class="acc" href="../../index.html">← Accueil WEB_CAO</a>'
-            '<input id="q" type="search" placeholder="Rechercher dans le manuel…" autocomplete="off">%s</nav>'
+            '<input id="q" type="search" placeholder="Rechercher dans la page…" autocomplete="off">%s</nav>'
             '<main>%s<p id="vide">Aucun passage ne contient tous ces mots.</p></main><script>%s</script></body></html>'
-            % (STYLE, "\n".join(nav), html_corps, SCRIPT))
-    with io.open(SORTIE, "w", encoding="utf-8", newline="\n") as fh:
+            % (html.escape(titre), STYLE, "\n".join(nav), html_corps, SCRIPT))
+    with io.open(sortie, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(page)
-    print("%d chapitre(s), %d section(s) -> %s" % (len(fichiers), len(corps), os.path.relpath(SORTIE, RACINE)))
+    print("%d chapitre(s), %d section(s) -> %s" % (len(fichiers), len(corps), os.path.relpath(sortie, RACINE)))
     return 0
+
+
+def main():
+    codes = []
+    for dossier, page, titre in LIVRES:
+        src = os.path.join(RACINE, "docs", dossier)
+        codes.append(construire(src, os.path.join(src, page), titre))
+    return max(codes)
 
 
 if __name__ == "__main__":
