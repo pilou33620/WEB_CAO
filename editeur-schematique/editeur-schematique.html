@@ -45,8 +45,8 @@
         <button type="button" data-cao-nav="composants" title="Composants — le schéma reste dans l'onglet">⌕</button>
         <button type="button" data-cao-nav="lib" title="Gestion LIB (catalogue, empreintes, symboles)">📚</button>
         <button type="button" data-cao-nav="accueil" title="Accueil">⌂</button>
-        <a href="../docs/regles/regles.html" target="_blank" rel="noopener" aria-label="Règles de conception" title="Règles de conception, schéma et routage (base IPC CID / CID+) : à lire et appliquer par Claude in Chrome avant de modifier le schéma ou le PCB">📏</a>
       </nav>
+      <a class="tb" id="lienRegles" href="../docs/regles/regles.html" target="_blank" rel="noopener" title="Les règles de conception, schéma et routage (base IPC CID / CID+), à suivre aussi par Claude">📏 Règles</a>
       <button class="tb" id="bProfil" data-cao-profil title="Utilisateur : panneaux, réglages et derniers documents lui appartiennent">👤 …</button>
       <button class="tb tb-tactile-indicator" id="bTactileToggle" title="Mode tactile (iPad / tablette)"><span class="tactile-dot"></span> 📱 Tactile</button>
     </div>
@@ -103,6 +103,7 @@
             <div class="rg-cmds">
               <button data-ic="📏" class="tb" id="mMesure" title="Mesurer une distance : deux points, la cote et les deltas X/Y">Mesure <kbd>K</kbd></button>
               <button data-ic="✓" class="tb" id="bErc" title="Contrôle électrique (ERC) : entrées en l'air, deux sorties sur un net, nets à une broche, alimentations sans source. Le marqueur « Non connecté » (Divers) fait taire une broche laissée libre exprès">ERC</button>
+              <button data-ic="☑" class="tb" id="bReglesCtl" title="Contrôler les règles de conception vérifiables (page Règles, base IPC CID/CID+) : ce qu'un programme peut juger, avec le repère de chaque règle">Règles</button>
               <button data-ic="⌕" class="tb" id="bFind" title="Chercher un composant par son repère (toutes feuilles), ou un net par son nom">Rechercher <kbd>Ctrl+F</kbd></button>
               <button data-ic="⊞" class="tb" id="bSchContraintes" title="Contraintes de nets pour le PCB : impédance, longueur, vias, couches, topologie, moignons, groupes d'appariement — reprises par le gestionnaire de contraintes du PCB">Contraintes de nets…</button>
             </div>

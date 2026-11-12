@@ -38,12 +38,12 @@
   border:1px solid var(--border2);border-radius:3px;padding:1px 6px}
   .tools{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
   .sep{width:1px;height:22px;background:var(--border2);margin:0 4px}
-  button.tb{
+  button.tb,a.tb{
     background:var(--panel2);color:var(--txt);border:1px solid var(--border2);
     padding:6px 10px;border-radius:5px;font-size:12px;cursor:pointer;font-family:var(--ui);
-    display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
+    display:inline-flex;align-items:center;gap:6px;white-space:nowrap;text-decoration:none;
   }
-  button.tb:hover{border-color:var(--blue);color:#fff}
+  button.tb:hover,a.tb:hover{border-color:var(--blue);color:#fff}
   button.tb.on{background:var(--blue-deep);border-color:var(--blue);color:#fff}
   button.tb kbd{font-family:var(--mono);font-size:9px;color:var(--txt-dim);border:1px solid var(--border2);border-radius:3px;padding:0 3px}
   button.tb.on kbd{color:#dff0ff;border-color:#5cb4f0}

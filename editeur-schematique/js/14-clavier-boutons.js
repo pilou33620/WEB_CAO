@@ -148,6 +148,7 @@ document.getElementById("tabNets").onclick=()=>setListTab("nets");
 document.getElementById("bNets").onclick=cycleNetLabels;
 document.getElementById("bCartouche").onclick=schCartoucheDialogue;
 document.getElementById("bErc").onclick=()=>ercOuvrir();
+document.getElementById("bReglesCtl").onclick=()=>schReglesOuvrir();
 document.getElementById("bBlocs").onclick=()=>blocsOuvrir();
 document.getElementById("bNetlist").onclick=exportNetlist;
 document.getElementById("bCsv").onclick=exportBomCsv;

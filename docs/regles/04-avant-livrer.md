@@ -27,7 +27,7 @@ La liste à dérouler avant d'envoyer les fichiers au fabricant. Chaque ligne re
 
 ## Ce que WEB_CAO vérifie seul
 
-Le contrôle des règles, lancé par Claude in Chrome dans la console de l'éditeur (`reglesTexte(schReglesControler())` au schéma, `reglesTexte(pcbReglesControler())` au PCB), juge d'un coup les règles qu'un programme peut voir sur le document et cite le repère de chaque règle en écart. Il ne change rien au document ; au PCB, il relance le DRC.
+Le contrôle des règles, comme le bouton Règles de WEB_3D, se lance par le bouton **Règles** du ruban (groupe Inspecter du schéma, onglet Vérifier du PCB), dans la console de l'éditeur (`reglesTexte(schReglesControler())` au schéma, `reglesTexte(pcbReglesControler())` au PCB) ou par l'outil MCP `cao_regles`. Il juge d'un coup les règles qu'un programme peut voir sur le document et cite le repère de chaque règle en écart. Il ne change rien au document ; au PCB, il relance le DRC.
 
 | Contrôle | Règles contrôlées |
 |---|---|
