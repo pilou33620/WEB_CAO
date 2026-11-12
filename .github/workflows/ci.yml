@@ -227,13 +227,13 @@ jobs:
           node commun/test/banc-kicad-pcb.js "$D"
           node commun/test/banc-kicad-sch.js "$D"
 
-      - name: Le manuel servi (docs/manuel/manuel.html) est à jour
+      - name: Le manuel et les règles servis (docs/manuel/manuel.html, docs/regles/regles.html) sont à jour
         run: |
           # la page du bouton « Manuel » est générée puis versionnée : un chapitre .md
           # modifié sans relancer le script laissait l'ancienne page (le script sort
           # aussi en erreur sur un lien cassé)
           python commun/outils/build-manuel.py
-          git diff --exit-code --stat -- docs/manuel/manuel.html
+          git diff --exit-code --stat -- docs/manuel/manuel.html docs/regles/regles.html
 
       - name: Le monofichier doit être reproductible
         run: |

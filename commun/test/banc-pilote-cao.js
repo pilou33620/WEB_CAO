@@ -196,6 +196,14 @@ async function refuse(promesse, motif) {
          [[true, false], [true, true], [true, false], [false, false]]);
   });
 
+  await T("cao_regles : le contrôle des règles du schéma et du PCB, en texte", async () => {
+    const sim = { reglesTexte: r => "texte " + r, schReglesControler: () => "sch", pcbReglesControler: () => "pcb" };
+    egal(await page("schema", sim).declare.commandes.cao_regles.executer({}), "texte sch");
+    egal(await page("pcb", sim).declare.commandes.cao_regles.executer({}), "texte pcb");
+    egal(["visionneuse-ipc", "gestion-lib"].map(p => !!page(p, sim).declare.commandes.cao_regles), [false, false]);
+    egal(!!page("schema").declare.commandes.cao_regles, false, "sans le module des règles, pas de commande");
+  });
+
   await T("écritures : aucune hors du routage et du dessin (leurs fichiers, absents ici, ont leur banc)", () => {
     const vues = {};
     for (const p of ["schema", "pcb", "visionneuse-ipc", "gestion-lib"]) {

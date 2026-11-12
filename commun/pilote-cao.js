@@ -211,6 +211,10 @@ function piloteCao(page) {
   for (const f of PILOTE_LIRE[page] || []) Pilote.commande("cao_" + f + "_lire", { executer: async a => piloteLire(f, a) });
   if (PILOTE_LIRE[page]) Pilote.commande("cao_vue", { executer: a => piloteVue(page, a) });
   if (page === "pcb") Pilote.commande("cao_drc", { executer: piloteDrc });
+  /* cao_regles : le contrôle des règles vérifiables (docs/regles/, commun/regles-controle.js), sans écriture */
+  const regles = { schema: "schReglesControler", pcb: "pcbReglesControler" }[page];
+  if (regles && typeof globalThis[regles] === "function")
+    Pilote.commande("cao_regles", { executer: async () => reglesTexte(globalThis[regles]()) });
   if (page === "gestion-lib" && typeof libPiloteCommandes === "function")
     for (const [nom, def] of Object.entries(libPiloteCommandes())) Pilote.commande(nom, def);
 }
