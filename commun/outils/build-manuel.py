@@ -234,10 +234,10 @@ def construire(src, sortie, titre):
             # « x.md » sans ancre vise #x : le premier morceau du chapitre porte ce nom
             debut = '<span id="%s"></span>' % stem if k == 0 else ""
             corps.append('<section id="%s">%s%s</section>' % (sec, debut, cv.convertir(morceau)))
-            for niv, id_, titre in cv.titres:
+            for niv, id_, t in cv.titres:
                 if niv <= 2:
                     nav.append('<a class="%s" href="#%s" data-s="%s">%s</a>'
-                               % ("c" if niv == 1 else "s", id_, sec, titre))
+                               % ("c" if niv == 1 else "s", id_, sec, t))
         ancres[stem] = cv.ancres
     html_corps = "\n".join(corps)
     for src, stem, frag, brut in chapitres:

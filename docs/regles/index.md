@@ -1,6 +1,6 @@
 # Règles de conception WEB_CAO
 
-Les règles que **Claude in Chrome** suit quand il conçoit une carte électronique dans WEB_CAO, du schéma aux fichiers de fabrication, chacune avec **pourquoi** elle existe. Elles ne sont pas affichées dans l'interface : seule l'IA les applique.
+Les règles que **Claude in Chrome** suit quand il conçoit une carte électronique dans WEB_CAO, du schéma aux fichiers de fabrication, chacune avec **pourquoi** elle existe. La page s'ouvre par le lien 📏 « Règles de conception » de la barre du haut de l'Éditeur schématique et de l'Éditeur PCB : c'est par lui que Claude in Chrome la trouve.
 
 ## Consignes pour Claude in Chrome
 
