@@ -133,6 +133,8 @@
               <button data-ic="⇳" class="tb ic-glyphe" data-aligner="centreY">Centres sur une horizontale</button>
               <button data-ic="↔" class="tb ic-glyphe" data-aligner="repH">Répartir horizontalement</button>
               <button data-ic="↕" class="tb ic-glyphe" data-aligner="repV">Répartir verticalement</button>
+              <div class="mtitle">Repères de sérigraphie</div>
+              <button data-ic="R1" class="tb" id="bReperes" title="Poser le repère (R1, C3…) des composants sélectionnés, ou de tous, au-dessus, au centre, en dessous, à gauche ou à droite">Replacer les repères…</button>
               <div class="mtitle">Sélectionner les objets semblables</div>
               <button data-ic="≈" class="tb ic-glyphe" data-semblable="net">Même net</button>
               <button data-ic="≈" class="tb ic-glyphe" data-semblable="couche">Même couche / face</button>
@@ -190,6 +192,7 @@
             </div>
             <button class="mnu-t rg-t" type="button">Zones de cuivre <span class="car">▾</span></button>
             <div class="mnu-pop">
+              <button data-ic="⇄" class="tb" id="bZonesLot" title="Les zones sélectionnées : convertir en zone, zone hachurée, polygone plein ou rectangle plein, changer leur net, d'un coup">Convertir / changer de net…</button>
               <button data-ic="◧" class="tb" id="bPlanDivise" title="Sur une couche plan : donner une partie du plan à un autre net, qui passe devant, isolement compris">Plan divisé</button>
             </div>
           </div>
@@ -343,6 +346,7 @@
 
   <div class="ctr" id="ctr">
     <div id="canvasWrap"><canvas id="board"></canvas>
+      <div id="inspBulle" hidden></div>
       <div class="vue-bar" id="vueBar">
         <button data-ic="⤢" class="tb" id="bFit">Recadrer</button>
         <button data-ic="#" data-bascule class="tb" id="bGrid">Grille</button>
@@ -352,7 +356,17 @@
           <button class="mnu-t" type="button" title="Affichage" aria-label="Affichage"><span class="car">▾</span></button>
           <div class="mnu-pop">
             <label class="mnu-row" data-ic="⋯">Pas de grille <select class="tbsel" id="selGrid" title="Pas d'accrochage de la grille"></select></label>
+            <label class="mnu-row" data-ic="☰">Couches <select class="tbsel" id="selJeu" title="Jeux de couches : ne montrer que le dessus, le dessous, les plans, les signaux ou la couche active">
+              <option value="">choisir…</option>
+              <option value="tout">toutes</option>
+              <option value="dessus">dessus seul</option>
+              <option value="dessous">dessous seul</option>
+              <option value="signaux">signaux seuls</option>
+              <option value="plans">plans seuls</option>
+              <option value="seule">couche active seule (H)</option>
+            </select></label>
             <button data-ic="▭" class="tb" id="bCartouche" title="Cadre de page et cartouche autour de la carte : format (aucun, A4 ou A3 paysage), titre, noms et dates, numéro, société">Cartouche : aucun</button>
+            <button data-ic="🔍" data-bascule class="tb on" id="bInspecteur" title="Le pointeur posé un instant sur un objet montre son net, sa couche, sa largeur et son isolement">Inspecteur au survol : actif</button>
             <button data-ic="◐" data-bascule class="tb" id="bView">Vue : dessus <kbd>Y</kbd></button>
             <button data-ic="📏" data-bascule class="tb" id="bUnite" title="Unité de la barre d'état, de la mesure et de la saisie de coordonnées">Unité : mm <kbd>Q</kbd></button>
             <button data-ic="◑" data-bascule class="tb" id="bContrast">Contraste : atténué <kbd>H</kbd></button>
@@ -649,6 +663,7 @@
 <script src="js/49-dessin.js"></script>
 <script src="js/50-couches.js"></script>
 <script src="js/51-bus.js"></script>
+<script src="js/52-outils-vue.js"></script>
 <script src="../commun/explorateur-lib.js"></script>
 <script src="../commun/workspace.js"></script>
 <script src="../commun/telephone.js"></script>

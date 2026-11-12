@@ -101,6 +101,25 @@ function couchesToutes(v,cuivreSeul){
   $("bRats").classList.toggle("on",S.show.rats);
   touch();buildLayers();buildTabs();draw();
 }
+/* Jeux de couches (barre de vue > Affichage) : un clic pour ne voir que le dessus,
+   le dessous, les plans ou les signaux. « seule » est le contraste couche seule (H). */
+function couchesJeu(nom){
+  if(nom==="seule"){setContrast(2);hint("Couche active seule : H fait tourner les contrastes.");return;}
+  const voit=i=>{const plan=rolePlane(layerRole(i));
+    return nom==="tout"||nom==="dessus"&&i===0||nom==="dessous"&&i===S.cu-1||nom==="plans"&&plan||nom==="signaux"&&!plan;};
+  const vis=S.cuL.map((_,i)=>voit(i));
+  if(!vis.some(Boolean)){hint(nom==="plans"?"Aucune couche plan (rôle GND, PWR ou blindage) sur cette carte.":"Aucune couche à montrer.");return;}
+  S.cuL.forEach((L,i)=>L.vis=vis[i]);
+  const face=k=>/^(silk|fab|crt|mask|paste)[TB]$/.test(k)?(k.endsWith("B")?"B":"T"):"";
+  for(const k of Object.keys(S.show)){
+    const f=face(k);if(!f)continue;
+    if(nom==="tout")S.show[k]=/^silk/.test(k)||S.show[k];
+    else if(nom==="dessus"||nom==="dessous")S.show[k]=(f==="T")===(nom==="dessus")&&(/^silk/.test(k)||S.show[k]);
+  }
+  if(S.contrast===2)setContrast(1);
+  if(!vis[S.active])S.active=vis.indexOf(true);
+  touch();buildLayers();buildTabs();buildActiveLayer();draw();
+}
 function buildActiveLayer(){
   const box=$("actLay");
   if(!box)return;

@@ -54,6 +54,7 @@ const EXPOSE=[
   "mecaNomsAppliquer","mecaGerbers","gerberDessin","keepoutDrc","keepoutCuts","normInterdit","planNegatif",
   "setLayerRole","buildFabFiles","DRW_COUCHES","closeInterdit",
   "busClic","busTouche","busPlan","polyDecalee","busPoser",
+  "couchesJeu","inspLignes","reperesPlacer","reperesCommande","zonesLot","zonesLotCommande","fpTextPos",
   "viaSuivante","viaTailles","verrousCoins","routeViaCurseur","mkVia",
   "pnsWorld","pnsItemsKeepout","distSegPoly","contourTroue","zoneDecoupee","gOrigin","gXY","drwBBox","drwPoints","gerberSilk","viaObstacle","placeVia",
   "coutureZone","cloturePistes","fanoutFps","coutureRetirer","viaEssai","netMasseDefaut","fmtU","uLue","uAff","RP_PCB","hitTest","deleteSel","startRoute",
@@ -30938,6 +30939,79 @@ T("dessin : texte, cadre et arc sortent les mêmes traits au Gerber de sérigrap
     }
   }finally{loadDoc(JSON.parse(g),true);}
 });
+
+/* ---------- outils de vue et de lot (52-outils-vue.js, jeux de couches) ---------- */
+const ETAT_AVANT_OUTILS=serialize();   // les essais asynchrones, à la fin, reprennent la carte laissée ici
+T("jeux de couches : dessus, dessous, plans, signaux ; la couche active reste visible",()=>{
+  loadDoc({cu:4,board:{x:0,y:0,w:50,h:40}});
+  S.cuL[1].role="gnd";S.cuL[1].plane=true;S.cuL[1].net="GND";S.active=2;
+  const vis=()=>S.cuL.map(L=>L.vis?1:0).join("");
+  couchesJeu("dessus");
+  if(vis()!=="1000"||S.active!==0||S.show.silkB||!S.show.silkT)throw new Error("dessus : "+vis()+" active "+S.active);
+  couchesJeu("dessous");
+  if(vis()!=="0001"||S.active!==3||S.show.silkT||!S.show.silkB)throw new Error("dessous : "+vis());
+  couchesJeu("plans");
+  if(vis()!=="0100"||S.active!==1)throw new Error("plans : "+vis());
+  couchesJeu("signaux");
+  if(vis()!=="1011")throw new Error("signaux : "+vis());
+  couchesJeu("tout");
+  if(vis()!=="1111"||!S.show.silkT||!S.show.silkB)throw new Error("tout : "+vis());
+  S.cuL[1].role="signal";S.cuL[1].plane=false;
+  couchesJeu("plans");
+  if(vis()!=="1111")throw new Error("sans plan, rien ne doit changer : "+vis());
+  couchesJeu("seule");
+  if(S.contrast!==2)throw new Error("couche seule : contraste "+S.contrast);
+  setContrast(0);
+});
+T("inspecteur : net, couche, largeur et isolement de ce qui est sous le pointeur",()=>{
+  loadDoc({cu:2,board:{x:0,y:0,w:50,h:40}});
+  S.tracks.push({l:0,net:"SIG",w:0.3,x1:5,y1:5,x2:20,y2:5});
+  S.vias.push(mkVia(30,10,"GND"));touch();
+  const t=inspLignes(hitTest(10,5)).join(" | ");
+  if(!/^Piste · SIG/.test(t)||!/largeur 0\.3 mm/.test(t)||!/Isolement \d/.test(t))throw new Error(t);
+  const v=inspLignes(hitTest(30,10)).join(" | ");
+  if(!/^Via · GND/.test(v)||!/perçage/.test(v))throw new Error(v);
+  if(inspLignes(hitTest(40,30)).length)throw new Error("rien sous le pointeur : pas de bulle");
+  S.unite="mil";
+  if(!/largeur 11\.8 mil/.test(inspLignes(hitTest(10,5)).join(" ")))throw new Error("unité mil");
+  S.unite="mm";
+});
+T("repères : au-dessus, au centre, en dessous, à gauche, à droite ; un composant verrouillé ne bouge pas",()=>{
+  loadDoc({cu:2,board:{x:0,y:0,w:50,h:40}});
+  const R=mkFp("R1","10k","",2);R.x=20;R.y=20;S.fps.push(R);
+  const C=mkFp("C1","1u","",2);C.x=35;C.y=20;C.locked=true;S.fps.push(C);touch();
+  const bb=fpBBox(R);
+  reperesPlacer([R],"centre");
+  if(Math.abs(fpTextPos(R).ref.y-(bb.y1+bb.y2)/2)>1e-3||Math.abs(fpTextPos(R).ref.x-20)>1e-3)throw new Error("centre");
+  reperesPlacer([R],"dessous");
+  if(!(fpTextPos(R).ref.y>bb.y2))throw new Error("dessous");
+  reperesPlacer([R],"gauche");
+  if(!(fpTextPos(R).ref.x<bb.x1))throw new Error("gauche");
+  reperesPlacer([R],"droite");
+  if(!(fpTextPos(R).ref.x>bb.x2))throw new Error("droite");
+  reperesPlacer([R],"dessus");
+  if(R.refOffX||R.refOffY)throw new Error("au-dessus : le repère d'usine, sans décalage");
+  R.refOffY=3;
+  if(reperesCommande("centre",true)!==1||C.refOffY)throw new Error("le verrouillé reste");
+  undo();if(S.fps.find(f=>f.ref==="R1").refOffY!==3)throw new Error("Ctrl+Z rend le décalage");
+});
+T("zones en lot : zone → polygone plein → rectangle plein → hachurée, net changé d'un coup",()=>{
+  loadDoc({cu:2,board:{x:0,y:0,w:50,h:40}});
+  const z1={l:0,net:"GND",pts:[{x:5,y:5},{x:15,y:5},{x:12,y:15}]}, z2={l:1,net:"GND",pts:[{x:20,y:5},{x:30,y:5},{x:30,y:15},{x:20,y:15}],hachure:{pas:1,larg:0.25}};
+  S.zones.push(z1,z2);clearSel();S.sel.zones.add(z1);S.sel.zones.add(z2);touch();
+  zonesLotCommande({type:"polygone plein",net:"3V3"});
+  if(!z1.plein||!z2.plein||z2.hachure||z1.net!=="3V3"||z2.net!=="3V3"||z1.pts.length!==3)throw new Error("polygone plein");
+  zonesLotCommande({type:"rectangle plein",net:""});
+  if(z1.pts.length!==4||z1.pts[2].x!==15||z1.pts[2].y!==15||z1.net!=="3V3")throw new Error("rectangle plein : "+JSON.stringify(z1.pts));
+  zonesLotCommande({type:"zone hachurée",net:"(aucun)"});
+  if(z1.plein||!z1.hachure||z1.net!=="")throw new Error("hachurée, sans net");
+  zonesLotCommande({type:"zone de cuivre",net:""});
+  if(z1.plein||z1.hachure)throw new Error("zone de cuivre");
+  undo();if(!S.zones.some(z=>z.hachure))throw new Error("Ctrl+Z rend la zone hachurée");
+  clearSel();
+  if(zonesLotCommande({type:"polygone plein"})!==0)throw new Error("sans sélection : rien");
+});
+loadDoc(JSON.parse(ETAT_AVANT_OUTILS),true);
 
 (async()=>{
   for(const [name,fn] of T_ASYNC){
