@@ -66,7 +66,7 @@ Le détail technique (formats, structure des fichiers) est dans [editeur-pcb/REA
 
 ### Je veux interdire une zone d'une face (boîtier, LED, pièce voisine)
 
-1. **Carte & zones → Zone interdite** (bouton `⊘`).
+1. **Carte → Interdit aux composants** (bouton `⊘`).
 2. Cliquez un sommet après l'autre, ou deux coins opposés puis `Entrée` pour un rectangle ; revenez sur le premier point pour fermer. `Échap` abandonne. La face est celle que vous regardez (dessous si la vue est retournée ou si la couche active est la dernière).
 3. La zone est sélectionnée : dans **Propriétés**, réglez **Nom**, **Face** (Dessus / Dessous) et **Hauteur permise (mm)**. Vide : aucun composant n'y est permis.
 4. Lancez le **Contrôle DRC** : une patte traversante qui ressort sur la face de la zone, un composant posé dans la zone, ou un composant trop haut sont signalés.
@@ -77,7 +77,7 @@ Le détail technique (formats, structure des fichiers) est dans [editeur-pcb/REA
 
 ### Je veux poser un trou de fixation (NPTH) sur la carte
 
-1. **Carte & zones → Trou NPTH** (`○`), puis un clic à l'endroit voulu (accroché à la grille).
+1. **Carte → Trou NPTH** (`○`), puis un clic à l'endroit voulu (accroché à la grille).
 2. Dans **Propriétés**, réglez **Diamètre de perçage (mm)** (0,4 à 30) ou cliquez **M2 (2,2 mm)**, **M2.5 (2,7 mm)**, **M3 (3,2 mm)**, **M4 (4,2 mm)**.
 3. Une **Longueur (mm)** supérieure au diamètre en fait une fente, avec son **Angle (°)** ; 0 ou moins que le diamètre : trou rond.
 4. Réglez **X (mm)** / **Y (mm)**, cochez **Verrouiller la position** si besoin.
@@ -85,7 +85,7 @@ Le détail technique (formats, structure des fichiers) est dans [editeur-pcb/REA
 
 ### Je veux dessiner de la sérigraphie
 
-1. **Carte & zones → Sérigraphie** ouvre un petit menu : **Trait (segment)**, **Rectangle (cadre)**, **Aplat plein (logo, bandeau)**, **Texte libre**. Au clavier, `Maj+S` entre dans le mode et passe à la forme suivante dans cet ordre : trait, rectangle, aplat, texte. `S` seul ramène à la sélection ; le bouton et le titre du menu affichent `Maj+S`.
+1. **Dessin → Sérigraphie** ouvre un petit menu : **Trait (segment)**, **Rectangle (cadre)**, **Aplat plein (logo, bandeau)**, **Texte libre**. Au clavier, `Maj+S` entre dans le mode et passe à la forme suivante dans cet ordre : trait, rectangle, aplat, texte. `S` seul ramène à la sélection ; le bouton et le titre du menu affichent `Maj+S`.
 2. Trait : cliquez-glissez (ou deux clics), `Maj` contraint à l'horizontale, la verticale ou 45°. Rectangle : deux coins. Aplat : un clic par sommet (retour sur le premier point pour fermer), ou deux coins puis `Entrée`. Texte : un clic, puis une boîte demande le texte (`TEXT` proposé).
 3. Dans **Propriétés**, choisissez la couche (**F.SilkS** dessus, **B.SilkS** dessous), l'épaisseur de trait et, pour un texte, le texte, la hauteur de police et l'orientation.
 4. Le contour du boîtier, le point de broche 1 et le repère de chaque composant sont imprimés d'office (case **Sérigraphie automatique** des propriétés du composant). Le contour est rogné autour des ouvertures du vernis : l'encre ne couvre pas les pastilles.
@@ -162,7 +162,7 @@ L'export DXF n'existe plus : le STEP le remplace.
 
 ### Je veux reprendre le contour de la carte dessinée par la mécanique (STEP)
 
-1. **Carte & zones → ⬚ Importer contour STEP…** (section **Depuis la mécanique**, avant les exports) et choisissez le `.stp` / `.step` de la carte.
+1. **Carte → Forme de la carte ▾ → ⬚ Importer contour STEP…** et choisissez le `.stp` / `.step` de la carte.
 2. La plus grande face plane du fichier donne le contour (droites et arcs ; un coin arrondi reste un arc à l'export), ses ouvertures non rondes deviennent des découpes, ses trous ronds des trous non métallisés (NPTH).
 3. L'origine du STEP devient l'origine des fichiers, fixée là où elle était : un **Export STEP…** retombe sur le modèle de la mécanique.
 4. Le contour et les découpes remplacent les anciens ; un trou qui tombe sur un perçage déjà là (trou, pastille, via) n'est pas ajouté. **Ctrl+Z** annule l'import.
@@ -218,13 +218,13 @@ L'export DXF n'existe plus : le STEP le remplace.
 | Plans (Draftsman)… | | Ouvre la fenêtre des plans. | Voir « Fenêtre Plans ». |
 | Variante de montage… | | Choisit la variante active : ses empreintes non montées sont barrées sur la carte et retirées de `bom.csv`, `positions.csv` et des fichiers JLCPCB. Choix : **Carte complète** (aucune variante) ou une variante du schéma ; boutons **⟳ Reprendre du schéma**, **Fermer**. | Les variantes se créent dans le schéma (Sorties → Variantes de montage…). Le cuivre ne change pas : les pastilles restent gravées. |
 
-### Onglet Carte & zones : zones et mécanique
+### Onglets Carte et Dessin : zones et mécanique
 
 | Bouton ou menu | Raccourci | Effet | Limites |
 |---|---|---|---|
-| Zone interdite | | Mode de tracé d'un polygone interdit sur la face regardée. | Pas de raccourci clavier. Un clic par sommet, ou deux coins puis `Entrée` ; rectangle de moins de 0,05 mm de côté : « Rectangle trop fin : zone interdite abandonnée. » |
+| Interdit aux composants (Carte) | | Mode de tracé d'un polygone interdit sur la face regardée. | Pas de raccourci clavier. Un clic par sommet, ou deux coins puis `Entrée` ; rectangle de moins de 0,05 mm de côté : « Rectangle trop fin : zone interdite abandonnée. » |
 | Trou NPTH | | Pose un trou mécanique non métallisé autonome, hors empreinte. | Pas de raccourci clavier. Diamètre posé : dernier diamètre utilisé, 3,2 mm au départ. Un trou d'empreinte se pose depuis la LIB, pas ici. |
-| Sérigraphie | `Maj+S` | Ouvre le menu des formes de sérigraphie et passe en mode sérigraphie. | Voir « Menu Sérigraphie ». `S` seul revient à la sélection ; `Maj+S` passe d'une forme à la suivante. |
+| Sérigraphie (Dessin) | `Maj+S` | Ouvre le menu des formes de sérigraphie et passe en mode sérigraphie. | Voir « Menu Sérigraphie ». `S` seul revient à la sélection ; `Maj+S` passe d'une forme à la suivante. |
 | Origine | `O` | Pose l'origine utilisateur, un clic (une pastille proche l'attire, sinon accrochée à la grille), puis revient à la sélection. | Les fichiers de fabrication ne la prennent que si **Vérifier → Règles… → Dimensions et origine → Repère des fichiers de fabrication** vaut **origine utilisateur** (par défaut : **coin de la carte**). Le bouton **Remettre à zéro** de la même page ramène l'origine en (0 ; 0) ; **Placer l'origine** y refait le geste. Voir [03](03-editeur-pcb-edition-routage.md). |
 | Serpentin | `M` | Pose un serpentin d'appariement ; la flèche ▾ règle amplitude, pas et allongement forcé. | Cible : ce qui manque au net dans son groupe d'appariement. |
 

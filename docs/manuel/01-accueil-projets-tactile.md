@@ -321,7 +321,7 @@ L'accueil (`index.html`) s'ouvre en double-clic, sans serveur ; le serveur ajout
 |---|---|---|---|
 | Menu Fichier | `Échap` ferme | Nouveau, Ouvrir, Enregistrer, Sauvegarder le projet, Exemples. Un clic ouvre ; un clic sur une entrée ferme le menu après son action | |
 | Barre rapide | `Ctrl+S`, `Ctrl+Z`, `Ctrl+Y` | Enregistrer, Annuler, Rétablir, à côté du menu Fichier | |
-| Onglets du ruban | | Schéma : Dessin, Sorties. PCB : Placer & router, Carte & zones, Vérifier, Fabriquer. Un clic montre leur bande de commandes, rangées par groupes | Une touche de raccourci agit quel que soit l'onglet affiché |
+| Onglets du ruban | | Schéma : Dessin, Sorties. PCB : Placer & router, Carte, Cuivre, Dessin, Vérifier, Fabriquer. Un clic montre leur bande de commandes, rangées par groupes | Une touche de raccourci agit quel que soit l'onglet affiché |
 | Groupe du ruban marqué ▾ | `Échap` ferme | Un clic sur son titre ouvre la liste de ses autres commandes | Sur téléphone, elles sont dans la bande |
 | ▴ / ▾ à droite des onglets | | Replie ou déplie le ruban ; replié, un onglet pose sa bande par-dessus le canevas le temps d'une commande | Mémorisé par navigateur ; replié d'usine sur téléphone |
 | Barre de vue, en bas du canevas | | Recadrer, Grille, Chevelu (PCB) et menu Affichage : pas de grille, cartouche, vue, contraste, rooms, espace de travail | |

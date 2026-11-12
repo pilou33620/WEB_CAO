@@ -5855,7 +5855,7 @@ function setMode(m){
     origin:"Cliquez le point qui servira d'origine — une pastille proche l'attire.",
     cut:"Découpe de zone de cuivre : un clic par sommet, retour sur le premier point (ou Entrée) pour fermer · Maj contraint à 45° · Retour arrière annule le dernier · Échap abandonne.",
     miter:"Clic sur un coin du contour, d'une découpe ou d'un coude de piste de la couche active : il s'arrondit "+
-          "au rayon réglé sous Carte & zones > Contour (négatif : chanfrein droit) · Ctrl+Z annule · Échap revient à la sélection.",
+          "au rayon réglé sous Carte > Forme de la carte (négatif : chanfrein droit) · Ctrl+Z annule · Échap revient à la sélection.",
     mesure:"Cliquez le premier point, puis le second : la cote se fige · les pastilles, "+
            "les vias et les sommets de piste de la couche active attirent le point · "+
            "un nouveau clic repart d'ailleurs · Échap efface."

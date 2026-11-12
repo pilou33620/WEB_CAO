@@ -1192,5 +1192,5 @@
   .zg-liste input{width:130px}
   .zg-liste button.tb{padding:1px 6px}
   /* les entrées de menu sans icône dessinée : leur glyphe (data-ic) */
-  .rg .mnu-pop button.tb.ic-glyphe::before{content:attr(data-ic);background:none;width:24px;height:24px;
+  .rg .mnu-pop button.tb.ic-glyphe::before,.rg-cmds button.tb.ic-glyphe::before{content:attr(data-ic);background:none;width:24px;height:24px;
     line-height:24px;text-align:center;font-size:15px;color:var(--txt-dim)}

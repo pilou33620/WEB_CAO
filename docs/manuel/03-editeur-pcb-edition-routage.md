@@ -9,7 +9,7 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 ### Je veux me repérer dans l'écran
 
 1. La barre du haut porte, à gauche, quatre boutons de navigation : ⬅ (éditeur schématique), ⌕ (composants), 📚 (Gestion LIB), ⌂ (accueil). Le travail en cours reste dans l'onglet quand on change d'outil et revient tel quel (carte, vue, état « modifié »).
-2. Viennent ensuite le bouton du profil utilisateur (👤), le bouton 📱 Tactile, puis la pastille « OUTIL », qui rappelle l'outil actif ; un clic dessus montre son bouton. À côté du titre de l'éditeur, le menu **Fichier** et la barre rapide (Enregistrer, Annuler, Rétablir). Dessous, le ruban et ses onglets **Placer & router**, **Carte & zones**, **Vérifier**, **Fabriquer** ; le ▴ à droite le replie. La barre de vue est en bas du canevas, le cube de vue en haut à droite.
+2. Viennent ensuite le bouton du profil utilisateur (👤), le bouton 📱 Tactile, puis la pastille « OUTIL », qui rappelle l'outil actif ; un clic dessus montre son bouton. À côté du titre de l'éditeur, le menu **Fichier** et la barre rapide (Enregistrer, Annuler, Rétablir). Dessous, le ruban et ses onglets **Placer & router**, **Carte**, **Cuivre**, **Dessin**, **Vérifier**, **Fabriquer** ; le ▴ à droite le replie. La barre de vue est en bas du canevas, le cube de vue en haut à droite.
 3. Sous la barre, la rangée d'onglets liste les couches de cuivre (nom, repère `F.Cu`/`In1.Cu`…/`B.Cu`, rang) et le total « n couches · n segments · n vias · n zones ». Un clic sur un onglet rend la couche active.
 4. Le canevas occupe le centre. Les panneaux (Empilage, Propriétés, Nets & composants, Empilage physique…) sont rangés à gauche, à droite et en bas ; le menu **Barre de vue > Affichage > Espace de travail** les affiche, les masque et remet la disposition d'usine.
 5. Le pied de page donne la couche, le mode (outil actif), les coordonnées du pointeur en mm, le zoom, la grille, les compteurs (empreintes, pistes, vias, non routés), le net sous le pointeur et une ligne d'aide qui change avec l'outil.
@@ -98,10 +98,10 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 ### Je veux poser un plan ou une zone de cuivre
 
 1. Plan pleine carte : dans « Couche active », régler le rôle sur GND ou PWR et choisir le « Net du plan ». La zone suit le contour de la carte.
-2. Zone libre : **Carte & zones > Zone cuivre** (`Z`) puis cliquer chaque sommet ; retour sur le premier point ou `Entrée` ferme, `Maj` contraint à 45°, `Échap` abandonne. Une fenêtre demande le « Net de la zone de cuivre ».
+2. Zone libre : **Cuivre > Zone de cuivre** (`Z`) puis cliquer chaque sommet ; retour sur le premier point ou `Entrée` ferme, `Maj` contraint à 45°, `Échap` abandonne. Une fenêtre demande le « Net de la zone de cuivre ».
 3. Le triangle ▾ du bouton ouvre le menu de la couche : rôle, net du plan, **Zone à main levée**, **Zone pleine carte (libre)**, **Sélectionner le cuivre de la couche**.
 4. Propriétés d'une zone : couche, net rattaché, « Liaison des pastilles du net » (bras thermiques, directe pour les CMS, directe pour toutes, aucune), « Priorité ». Sur une même couche, une zone d'un autre net de priorité plus haute est retirée de celle-ci, isolement compris ; à priorité égale, les zones se superposent dans l'ordre où elles ont été posées.
-5. Pour percer un trou dans une zone sans la supprimer : **Carte & zones > Découpe zone** (`X`), même geste de tracé.
+5. Pour percer un trou dans une zone sans la supprimer : **Cuivre > Retirer du cuivre** (`X`), même geste de tracé.
 
 ### Je veux contrôler la carte (DRC)
 
@@ -134,19 +134,19 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 
 ### Je veux poser un trou de fixation (NPTH)
 
-1. **Carte & zones > Trou NPTH**, cliquer : un trou non métallisé est posé et sélectionné (3,2 mm la première fois, puis le dernier diamètre réglé).
+1. **Carte > Trou NPTH**, cliquer : un trou non métallisé est posé et sélectionné (3,2 mm la première fois, puis le dernier diamètre réglé).
 2. Dans Propriétés, régler le diamètre (boutons M2, M2.5, M3, M4), une fente éventuelle (Longueur, Angle), la position, et cocher « Verrouiller la position » si besoin.
 
 ### Je veux dessiner le contour, une découpe ou une zone interdite
 
-1. **Carte & zones > Contour carte** (`E`) : un clic par sommet, retour sur le premier point pour fermer, `Maj` contraint à 45°.
-2. **Carte & zones > Découpe carte** (`Maj+E`) : fenêtre intérieure fraisée ; un clic par sommet, ou deux coins puis `Entrée` pour un rectangle. Une découpe qui sort du contour est refusée.
-3. **Carte & zones > Zone interdite** : zone posée sur une face ; le DRC signale toute patte traversante qui en ressort et tout composant qui la touche.
+1. **Carte > Contour** (`E`) : un clic par sommet, retour sur le premier point pour fermer, `Maj` contraint à 45°.
+2. **Carte > Découpe intérieure** (`Maj+E`) : fenêtre intérieure fraisée ; un clic par sommet, ou deux coins puis `Entrée` pour un rectangle. Une découpe qui sort du contour est refusée.
+3. **Carte > Interdit aux composants** : zone posée sur une face ; le DRC signale toute patte traversante qui en ressort et tout composant qui la touche.
 4. Sélectionner le contour (clic sur son trait) pour régler largeur et hauteur, ou utiliser les boutons **Redessiner**, **Revenir au rectangle**, **Disque**.
 
 ### Je veux ajouter de la sérigraphie
 
-1. **Carte & zones > Sérigraphie** ouvre un menu : Trait (segment), Rectangle (cadre), Aplat plein (logo, bandeau), Texte libre.
+1. **Dessin > Sérigraphie** ouvre un menu : Trait (segment), Rectangle (cadre), Aplat plein (logo, bandeau), Texte libre.
 2. Trait et rectangle : cliquer-glisser ou deux clics. Texte : un clic, puis saisie dans une boîte. Aplat : un clic par sommet, ou deux coins puis `Entrée`.
 3. La face est B.SilkS quand la vue est retournée ou que la couche active est la dernière, F.SilkS sinon ; elle se change dans Propriétés. Texte posé : 1,5 mm de haut, trait de 0,15 mm au départ (modifiables dans Propriétés).
 
@@ -178,7 +178,7 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 
 ### Menu Fichier et commandes d'échange
 
-Le menu **Fichier** garde Nouveau, Ouvrir, Enregistrer, Sauvegarder le projet et Exemples. Les exports sont dans l'onglet **Fabriquer**, le lien au schéma dans **Placer & router**, l'import du contour STEP dans **Carte & zones**.
+Le menu **Fichier** garde Nouveau, Ouvrir, Enregistrer, Sauvegarder le projet et Exemples. Les exports sont dans l'onglet **Fabriquer**, le lien au schéma dans **Placer & router**, l'import du contour STEP dans **Carte** (menu « Forme de la carte ▾ »).
 
 | Bouton ou menu | Raccourci | Effet | Limites |
 |---|---|---|---|
@@ -215,7 +215,7 @@ Groupe **Modifier** ; Annuler et Rétablir sont dans la barre rapide.
 | Dérouter | `U` | Supprime les pistes et les vias de la sélection, laisse les empreintes | Les zones, contours et découpes restent ; sans piste ni via sélectionné, rien n'est supprimé |
 | Supprimer | `Suppr` | Supprime la sélection | |
 
-### Onglets Placer & router et Carte & zones
+### Onglets Placer & router, Carte, Cuivre et Dessin
 
 | Bouton ou menu | Raccourci | Effet | Limites |
 |---|---|---|---|
@@ -229,18 +229,18 @@ Groupe **Modifier** ; Annuler et Rétablir sont dans la barre rapide.
 | Larmes | | Pose ou refait les larmes : un renfort de cuivre entre une piste droite et le via ou la pastille ronde où elle s'arrête en son centre ; une étape d'annulation | Rien n'est posé si la place manque. Elles ne suivent pas le cuivre : si du cuivre bouge, le DRC dit « Larmes à refaire » et ce bouton les refait |
 | Retirer les larmes | | Retire toutes les larmes de la carte | |
 | Anti-collision | | Bascule : le tracé se tient (ou non) à la distance d'isolation | Actif d'office ; réglage du profil utilisateur |
-| Zone cuivre ▾ | `Z` | Trace une zone de cuivre ; ▾ ouvre le menu de la couche | |
-| Sérigraphie ▾ | `Maj+S` | Trait, rectangle, aplat ou texte de sérigraphie | `S` seule active la Sélection (voir la note ci-dessous) |
-| Contour carte | `E` | Dessine le contour de la carte | |
-| Découpe carte | `Maj+E` | Découpe intérieure de la carte | Doit rester dans le contour |
-| Zone interdite | | Zone interdite d'une face | |
-| Découpe zone | `X` | Polygone où une zone de cuivre ne se remplit pas | |
-| Trou NPTH | | Trou mécanique non métallisé autonome | |
+| Zone de cuivre ▾ (Cuivre) | `Z` | Trace une zone de cuivre ; ▾ ouvre le menu de la couche | |
+| Sérigraphie ▾ (Dessin) | `Maj+S` | Trait, rectangle, aplat ou texte de sérigraphie | `S` seule active la Sélection (voir la note ci-dessous) |
+| Contour (Carte) | `E` | Dessine le contour de la carte | |
+| Découpe intérieure (Carte) | `Maj+E` | Découpe intérieure de la carte | Doit rester dans le contour |
+| Interdit aux composants (Carte) | | Zone interdite d'une face | |
+| Retirer du cuivre (Cuivre) | `X` | Polygone où une zone de cuivre ne se remplit pas | |
+| Trou NPTH (Carte) | | Trou mécanique non métallisé autonome | |
 | Origine | `O` | Clic sur le point qui servira d'origine : une pastille, un via ou un bout de piste proche (couche active) l'attire, sinon le point tombe sur la grille. L'outil repasse en Sélection ; la grille et les coordonnées affichées suivent la nouvelle origine | Annulable ; se remet à zéro dans **Règles… > Carte et repères** |
 | Mesure | `K` | Mesure une distance | |
 
 > [!NOTE]
-> Le bouton Sérigraphie de l'onglet Carte & zones et le titre de son menu déroulant affichent `Maj+S`, ce que fait la touche : `Maj+S` active la Sérigraphie en faisant tourner la forme (trait, rectangle, aplat, texte), et `S` seule active la Sélection. Les entrées Trait et Rectangle n'ont pas de raccourci propre.
+> Le bouton Sérigraphie de l'onglet Dessin et le titre de son menu déroulant affichent `Maj+S`, ce que fait la touche : `Maj+S` active la Sérigraphie en faisant tourner la forme (trait, rectangle, aplat, texte), et `S` seule active la Sélection. Les entrées Trait et Rectangle n'ont pas de raccourci propre.
 
 ### Barre de vue
 
@@ -291,13 +291,13 @@ Les touches d'une seule lettre se taisent quand un champ de saisie a le focus. T
 | `Tab` | Ouvre ou ferme la saisie de coordonnées | Fonctionne en mode Piste, Zone, Contour, Découpe, Zone interdite, et en Sélection d'une seule empreinte |
 | `1` à `9`, `0` | Couche 1 à 10 (pose un via si un tracé est en cours) | Seules les couches existantes répondent |
 | `Page ↑` / `Page ↓` | Couche voisine | Seule façon d'atteindre les couches au-delà de dix au clavier |
-| `S` | Sélection | Voir la note de l'onglet Carte & zones |
+| `S` | Sélection | Voir la note sur la Sérigraphie |
 | `Maj+S` | Sérigraphie ; fait tourner la forme (trait, rectangle, aplat, texte) | |
 | `T` | Piste | |
 | `V` | Via ; en tracé de piste, attache le via au curseur (le clic le pose) ; en tracé de paire, pose les deux vias | |
 | `P` | Paire différentielle | |
 | `M` | Serpentin | |
-| `Z` | Zone cuivre | |
+| `Z` | Zone de cuivre | |
 | `X` | Découpe zone | |
 | `E` / `Maj+E` | Contour carte / Découpe carte | |
 | `O` | Origine | |
@@ -514,7 +514,7 @@ Les règles gérées en Min / Typique / Max sont : Largeur de piste, Isolement &
 
 | Menu | Entrées | Limites |
 |---|---|---|
-| Zone cuivre ▾ | Rôle de la couche ; Net du plan ; **Zone à main levée** (`Z`) ; **Zone pleine carte (libre)** ; **Sélectionner le cuivre de la couche** | La dernière entrée n'apparaît que si la couche porte des zones |
+| Zone de cuivre ▾ | Rôle de la couche ; Net du plan ; **Zone à main levée** (`Z`) ; **Zone pleine carte (libre)** ; **Sélectionner le cuivre de la couche** | La dernière entrée n'apparaît que si la couche porte des zones |
 | Sérigraphie ▾ | **Trait (segment)**, **Rectangle (cadre)**, **Aplat plein (logo, bandeau)**, **Texte libre** | |
 | Serpentin ▾ | Titre « Réglages du Serpentin » : Amplitude max (mm), Pas / Pitch (mm), Allongement forcé ΔL (mm) ; **⚡ Simuler appariement de bus (Skew)…** | Valeurs d'usine : 1,5 mm, 1,2 mm, 0 ; planchers imposés : 0,5 mm et 0,3 mm |
 

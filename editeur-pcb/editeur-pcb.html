@@ -154,50 +154,59 @@
         </div>
       </div>
       <div class="ong" data-mnu="carte">
-        <button class="mnu-t" type="button">Carte &amp; zones</button>
+        <button class="mnu-t" type="button">Carte</button>
         <div class="band">
           <div class="rg mnu">
             <div class="rg-cmds">
-              <button data-ic="⬚" class="tb" id="mEdge">Contour carte <kbd>E</kbd></button>
-              <button data-ic="◰" class="tb" id="mDecoupe" title="Découpe intérieure de carte : un clic par sommet, ou deux coins puis Entrée pour un rectangle">Découpe carte <kbd>Maj+E</kbd></button>
-              <button data-ic="◜" class="tb" id="mMiter" title="Miter, comme dans Fusion : un clic sur un coin du contour, d'une découpe ou d'un coude de piste l'arrondit au rayon ci-dessous ; un rayon négatif le coupe d'une droite">Miter (arrondir un coin)</button>
+              <button data-ic="⬚" class="tb" id="mEdge">Contour <kbd>E</kbd></button>
+              <button data-ic="◰" class="tb" id="mDecoupe" title="Découpe intérieure de carte : un clic par sommet, ou deux coins puis Entrée pour un rectangle">Découpe intérieure <kbd>Maj+E</kbd></button>
+              <button data-ic="◜" class="tb" id="mMiter" title="Arrondir un coin (miter, comme dans Fusion) : un clic sur un coin du contour, d'une découpe ou d'un coude de piste l'arrondit au rayon ci-dessous ; un rayon négatif le coupe d'une droite">Arrondir un coin</button>
+              <button data-ic="○" class="tb" id="mHole" title="Poser un trou mécanique non métallisé autonome hors empreinte (NPTH)">Trou NPTH</button>
             </div>
-            <button class="mnu-t rg-t" type="button">Contour <span class="car">▾</span></button>
+            <button class="mnu-t rg-t" type="button">Forme de la carte <span class="car">▾</span></button>
             <div class="mnu-pop">
-              <label class="mnu-row" data-ic="⌒">Rayon miter (mm) <input class="tbsel" id="miterR" type="number" step="0.1" value="1" style="width:64px"></label>
+              <label class="mnu-row" data-ic="⌒">Rayon de l'arrondi (mm) <input class="tbsel" id="miterR" type="number" step="0.1" value="1" style="width:64px"></label>
               <button data-ic="⬚" class="tb" id="bStepImport" title="Le contour de la carte tiré d'un STEP de la mécanique : sa plus grande face plane donne le contour, les découpes et les trous ronds (en NPTH). L'origine du STEP devient celle des fichiers. Ctrl+Z annule">Importer contour STEP…</button>
             </div>
           </div>
           <div class="rg">
             <div class="rg-cmds">
-              <button data-ic="▦" class="tb" id="mZone">Zone cuivre <kbd>Z</kbd> <span class="car">▾</span></button>
-              <button data-ic="⛔" class="tb" id="mKeepout" title="Keep-out cuivre : une zone où ni piste, ni via, ni zone n'entre, sur une couche ou toutes. Un clic par sommet, ou deux coins puis Entrée">Keep-out cuivre</button>
-              <button data-ic="⊘" class="tb" id="mInterdit" title="Zone interdite d'une face : aucune patte traversante n'en ressort, aucun composant n'y dépasse la hauteur permise. Un clic par sommet, ou deux coins puis Entrée">Zone interdite</button>
-              <button data-ic="✕" class="tb" id="mErase" title="Découper une zone de cuivre : un polygone où la zone ne se remplit pas">Découpe zone <kbd>X</kbd></button>
+              <button data-ic="⛔" class="tb" id="mKeepout" title="Interdit au cuivre (keep-out) : une zone où ni piste, ni via, ni zone n'entre, sur une couche ou toutes. Un clic par sommet, ou deux coins puis Entrée">Interdit au cuivre</button>
+              <button data-ic="⊘" class="tb" id="mInterdit" title="Interdit aux composants (zone interdite d'une face) : aucune patte traversante n'en ressort, aucun composant n'y dépasse la hauteur permise. Un clic par sommet, ou deux coins puis Entrée">Interdit aux composants</button>
             </div>
-            <div class="rg-t">Zones</div>
+            <div class="rg-t">Interdictions</div>
           </div>
+        </div>
+      </div>
+      <div class="ong" data-mnu="cuivre">
+        <button class="mnu-t" type="button">Cuivre</button>
+        <div class="band">
           <div class="rg mnu">
             <div class="rg-cmds">
-              <button data-ic="■" class="tb" id="mFill" title="Fill : un rectangle de cuivre plein (deux coins puis Entrée), que rien ne dégage">Fill</button>
-              <button data-ic="⬟" class="tb" id="mRegion" title="Région pleine : un polygone de cuivre exact (antenne, pastille spéciale), que rien ne dégage ; le DRC surveille l'autre cuivre">Région pleine</button>
-              <button data-ic="☰" class="tb" id="bZonesGest" title="Toutes les zones : nom, couche, net, ordre de remplissage, remplissage ; tout recalculer">Gestionnaire de zones…</button>
+              <button data-ic="▦" class="tb" id="mZone">Zone de cuivre <kbd>Z</kbd> <span class="car">▾</span></button>
+              <button data-ic="✕" class="tb" id="mErase" title="Retirer du cuivre d'une zone (découpe de zone) : un polygone où la zone ne se remplit pas">Retirer du cuivre <kbd>X</kbd></button>
+              <button data-ic="☰" class="tb" id="bZonesGest" title="Toutes les zones : nom, couche, net, ordre de remplissage, remplissage ; tout recalculer">Gestionnaire</button>
+              <button data-ic="⟳" class="tb ic-glyphe" id="bZonesCalc" title="Recalculer toutes les zones">Recalculer</button>
             </div>
-            <button class="mnu-t rg-t" type="button">Cuivre <span class="car">▾</span></button>
+            <button class="mnu-t rg-t" type="button">Zones de cuivre <span class="car">▾</span></button>
             <div class="mnu-pop">
               <button data-ic="◧" class="tb ic-glyphe" id="bPlanDivise" title="Sur une couche plan : donner une partie du plan à un autre net, qui passe devant, isolement compris">Plan divisé</button>
-              <button data-ic="⟳" class="tb ic-glyphe" id="bZonesCalc">Recalculer toutes les zones</button>
-              <button data-ic="⁘" class="tb ic-glyphe" id="bCouture" title="Coudre les zones sélectionnées : un réseau de vias de leur net, au pas voulu, là où la place est libre">Vias de couture…</button>
-              <button data-ic="⫶" class="tb ic-glyphe" id="bCloture" title="Clôture de vias de part et d'autre des pistes sélectionnées (blindage RF, horloge)">Clôture de vias…</button>
-              <button data-ic="⊖" class="tb ic-glyphe" id="bCoutureRetirer">Retirer couture et clôture</button>
             </div>
           </div>
           <div class="rg">
             <div class="rg-cmds">
-              <button data-ic="✎" class="tb" id="mSilk" title="Tracer un trait, rectangle ou texte libre de sérigraphie (F.SilkS / B.SilkS)">Sérigraphie <kbd>Maj+S</kbd> <span class="car">▾</span></button>
-              <button data-ic="○" class="tb" id="mHole" title="Poser un trou mécanique non métallisé autonome hors empreinte (NPTH)">Trou NPTH</button>
+              <button data-ic="■" class="tb" id="mFill" title="Rectangle plein (fill) : un rectangle de cuivre plein (deux coins puis Entrée), que rien ne dégage">Rectangle plein</button>
+              <button data-ic="⬟" class="tb" id="mRegion" title="Polygone plein (région) : un polygone de cuivre exact (antenne, pastille spéciale), que rien ne dégage ; le DRC surveille l'autre cuivre">Polygone plein</button>
             </div>
-            <div class="rg-t">Marquage</div>
+            <div class="rg-t">Cuivre plein</div>
+          </div>
+          <div class="rg">
+            <div class="rg-cmds">
+              <button data-ic="⁘" class="tb ic-glyphe" id="bCouture" title="Coudre les zones sélectionnées : un réseau de vias de leur net, au pas voulu, là où la place est libre">Couture…</button>
+              <button data-ic="⫶" class="tb ic-glyphe" id="bCloture" title="Clôture de vias de part et d'autre des pistes sélectionnées (blindage RF, horloge)">Clôture…</button>
+              <button data-ic="⊖" class="tb ic-glyphe" id="bCoutureRetirer" title="Retirer couture et clôture">Retirer</button>
+            </div>
+            <div class="rg-t">Vias de masse</div>
           </div>
         </div>
       </div>
@@ -206,6 +215,7 @@
         <div class="band">
           <div class="rg mnu">
             <div class="rg-cmds">
+              <button data-ic="✎" class="tb" id="mSilk" title="Tracer un trait, rectangle ou texte libre de sérigraphie (F.SilkS / B.SilkS)">Sérigraphie <kbd>Maj+S</kbd> <span class="car">▾</span></button>
               <button data-ic="◠" class="tb" id="mArc" title="Arc : le centre, puis le départ, puis la fin (Maj : l'autre sens)">Arc</button>
               <button data-ic="◯" class="tb" id="mCercle" title="Cercle : le centre, puis un point du cercle">Cercle</button>
             </div>

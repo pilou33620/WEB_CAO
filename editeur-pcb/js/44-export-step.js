@@ -1,6 +1,6 @@
 "use strict";
 /* ==========================================================================
-   Éditeur PCB — Export STEP et import du contour (onglets Fabriquer et Carte & zones)
+   Éditeur PCB — Export STEP et import du contour (onglets Fabriquer et Carte)
    --------------------------------------------------------------------------
    La scène de l'animation 3D (anim3dDonnees, sans l'image des zones) et le
    contour des zones de cuivre, écrits par commun/export-step.js. Une fenêtre
