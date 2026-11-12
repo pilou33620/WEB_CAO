@@ -47,7 +47,7 @@ fabrication, Draftsman, STEP, IPC-2581) est au niveau d'Altium ou au-delà.
 | ✅ Keep-out cuivre : interdit aux pistes, vias, zones, par couche ou toutes couches (la zone interdite actuelle ne vise que les pattes et la hauteur) | Keep-Out layer / Keepout objects | 1 | M |
 | ✅ Plans négatifs (couche plan écrite en négatif, plus légère, Gerber en polarité inverse) | Internal Plane | 2 | G |
 | ✅ Plans divisés : partager un plan entre plusieurs nets par une ligne de séparation | Split Plane | 1 | M |
-| Jeux de couches (signal seuls, plans seuls, dessus seul, dessous seul) et mode couche unique | Layer Sets, Single Layer Mode | 2 | P |
+| ✅ Jeux de couches (signal seuls, plans seuls, dessus seul, dessous seul) et mode couche unique | Layer Sets, Single Layer Mode | 2 | P |
 | Couleurs et transparence par couche, réglables et rangées dans le profil | View Configuration | 3 | P |
 
 ## 3. Cuivre, zones et plans
@@ -63,7 +63,7 @@ fabrication, Draftsman, STEP, IPC-2581) est au niveau d'Altium ou au-delà.
 | ✅ Seuils réglables : aire min d'un îlot, largeur min d'un col (retirés ou gardés au choix) | Remove islands / necks less than | 2 | P |
 | Zones gelées (non recalculées) pour garder l'éditeur rapide sur une grosse carte | Shelve / Restore | 3 | P |
 | Équilibrage de cuivre (thieving) dans les vides des couches | Copper thieving | 3 | M |
-| Convertir zone ↔ région ↔ fill, changer le net de plusieurs zones d'un coup | Convert, Find Similar | 3 | P |
+| ✅ Convertir zone ↔ région ↔ fill, changer le net de plusieurs zones d'un coup | Convert, Find Similar | 3 | P |
 
 ## 4. Édition et placement
 
@@ -74,7 +74,7 @@ fabrication, Draftsman, STEP, IPC-2581) est au niveau d'Altium ou au-delà.
 | ✅ Filtre de sélection (ne prendre que pistes, vias, zones, composants, sérigraphie…) | Selection Filter | 1 | P |
 | ✅ Sélectionner les objets semblables puis les modifier ensemble (même largeur, même net, même couche) | Find Similar Objects | 2 | M |
 | ✅ Collage en réseau linéaire ou circulaire | Paste Array | 2 | P |
-| Repositionner les repères de sérigraphie de toute la sélection (au-dessus, au centre…) | Position Component Text | 2 | P |
+| ✅ Repositionner les repères de sérigraphie de toute la sélection (au-dessus, au centre…) | Position Component Text | 2 | P |
 | ✅ Changer de largeur (W) ou de via (Maj+V) en cours de tracé, passer à la couche suivante au clavier | Shift+W, Shift+V, `*` | 2 | P |
 | ✅ Routage de plusieurs pistes à la fois (bus) | Interactive Multi-Routing | 2 | G |
 | ✅ Fanout automatique des BGA et CMS (via en éventail sous chaque broche) | Fanout | 2 | M |
@@ -85,7 +85,7 @@ fabrication, Draftsman, STEP, IPC-2581) est au niveau d'Altium ou au-delà.
 | Manque | Ce que fait Altium | Prio | Effort |
 |---|---|---|---|
 | Vue 3D en direct dans l'éditeur, qui suit les retouches (three.js est déjà chargé pour l'animation 3D) | 3D mode (touche 3) | 2 | M |
-| Inspecteur au survol : net, couche, largeur, isolement de l'objet sous le pointeur | Board Insight | 3 | P |
+| ✅ Inspecteur au survol : net, couche, largeur, isolement de l'objet sous le pointeur | Board Insight | 3 | P |
 
 ## 6. Fabrication
 

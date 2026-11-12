@@ -1,6 +1,6 @@
 "use strict";
 /* =============================================================================
-   Éditeur PCB — 52-regles-controle.js
+   Éditeur PCB — 53-regles-controle.js
    Contrôle des règles de la carte (docs/regles/01-conception.md, 03-routage.md)
    qu'un programme peut juger et que le DRC ne voit pas : cartouche (C46),
    empilage symétrique (C7), repères de pose (C30), sérigraphie lisible (C36),

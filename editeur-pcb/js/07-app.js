@@ -652,6 +652,7 @@ $("bCopy").onclick=copySelPcb;
 $("bPaste").onclick=pasteClipPcb;
 $("bGrid").onclick=()=>setGrid(!S.showGrid);
 $("selGrid").onchange=e=>setGridStep(e.target.value);
+$("selJeu").onchange=e=>{const v=e.target.value;e.target.value="";if(v)couchesJeu(v);};
 buildGridMenu();
 $("bAvoid").onclick=()=>{
   S.avoid=!S.avoid;

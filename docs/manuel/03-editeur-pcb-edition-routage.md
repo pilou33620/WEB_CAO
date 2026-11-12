@@ -238,6 +238,8 @@ Groupe **Modifier** ; Annuler et Rétablir sont dans la barre rapide.
 | Trou NPTH (Carte) | | Trou mécanique non métallisé autonome | |
 | Origine | `O` | Clic sur le point qui servira d'origine : une pastille, un via ou un bout de piste proche (couche active) l'attire, sinon le point tombe sur la grille. L'outil repasse en Sélection ; la grille et les coordonnées affichées suivent la nouvelle origine | Annulable ; se remet à zéro dans **Règles… > Carte et repères** |
 | Mesure | `K` | Mesure une distance | |
+| Replacer les repères… (Aligner & sélectionner ▾) | | Pose le repère (R1, C3…) des composants sélectionnés, ou de tous : au-dessus, au centre, en dessous, à gauche, à droite | Un composant verrouillé ne bouge pas ; Ctrl+Z annule |
+| Convertir / changer de net… (Cuivre > Zones de cuivre ▾) | | Les zones sélectionnées passent en zone de cuivre, zone hachurée, polygone plein ou rectangle plein (leur boîte englobante), et/ou changent de net, d'un coup | Sélectionner d'abord les zones (Ctrl+clic pour en ajouter) ; Ctrl+Z annule |
 
 > [!NOTE]
 > Le bouton Sérigraphie de l'onglet Dessin et le titre de son menu déroulant affichent `Maj+S`, ce que fait la touche : `Maj+S` active la Sérigraphie en faisant tourner la forme (trait, rectangle, aplat, texte), et `S` seule active la Sélection. Les entrées Trait et Rectangle n'ont pas de raccourci propre.
@@ -251,6 +253,8 @@ Recadrer, Grille et Chevelu y sont en icônes ; les autres réglages sont dans s
 | Grille | `G` | Affiche ou masque la grille d'accrochage | |
 | Pas de grille | | Liste : 0,05 · 0,1 · 0,25 · 0,5 · 1 · 1,27 · 2 · 2,54 · 5 mm (« Grille … mm ») | Pas de 0,5 mm au démarrage ; `Maj+G` bascule entre 0,5 et 0,1 mm, même pendant un tracé ; trop serrée à l'écran, la grille n'est tracée que sur une case sur deux, cinq… (le pied de page dit la case visible) |
 | Chevelu | `N` | Affiche ou masque les liaisons non routées | |
+| Couches (jeux de couches) | | Liste : toutes, dessus seul, dessous seul, signaux seuls, plans seuls, couche active seule. Dessus ou dessous montre aussi la sérigraphie de cette face seulement | « Plans seuls » ne fait rien si aucune couche n'a le rôle GND, PWR ou blindage ; « couche active seule » est le contraste couche seule (`H`) |
+| Inspecteur au survol : actif / coupé | | Le pointeur posé un instant sur un objet, en sélection, affiche une bulle : net, couche, largeur ou taille, perçage, isolement et classe | Pas pendant un geste ni au toucher ; mémorisé par navigateur |
 | Cartouche : aucun | | Cadre de page et cartouche : aucun, A4 ou A3 paysage, titre, noms, dates, numéro, société | |
 | Vue : dessus / dessous | `Y` | Retourne la carte vue de dessous | Retourner la vue en couche externe passe aussi la couche active à l'autre face |
 | Contraste | `H` | Cycle : complet, atténué, couche seule, cuivre final | « Cuivre final » montre la couche telle que le Gerber la grave, sans chevelu ni sérigraphie |

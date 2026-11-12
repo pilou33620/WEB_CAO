@@ -165,8 +165,8 @@ function coutureRetirer(){
   hint(n+" via(s) de couture et de clôture retirés.");
   return n;
 }
-/* une petite boîte de réglages : [{id,label,val,type,options}] → valeurs */
-function vDialogue(titre,champs,ok){
+/* une petite boîte de réglages : [{id,label,val,type,options}] → valeurs ; `oui` : le bouton (Poser) */
+function vDialogue(titre,champs,ok,oui){
   const d=document.createElement("dialog");
   d.className="ed-dlg";
   d.innerHTML='<div class="mtitle">'+esc(titre)+'</div>'+champs.map(c=>
