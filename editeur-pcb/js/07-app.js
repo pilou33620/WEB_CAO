@@ -670,6 +670,7 @@ $("bFaceOpp").onclick=()=>setFaceOpp((S.faceOpp+1)%3);
 $("bFit").onclick=fit;
 $("bImport").onclick=openImport;
 if($("bEcoSync")) $("bEcoSync").onclick=()=>{ if(typeof pcbOuvrirFenetreEco==="function") pcbOuvrirFenetreEco(); };
+$("bReglesCtl").onclick=()=>pcbReglesOuvrir();
 $("bDrc").onclick=()=>{
   const e=runDrc();
   S.listTab="drc";

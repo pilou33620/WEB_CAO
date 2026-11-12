@@ -155,6 +155,7 @@ const EXPOSE=[
   "schSymboleLire","schSymboleDefinir","schSymboleRemplacer","schVarDefinir","schCleLib","schSymbolesDuDocument","SYM_LIB_LUS","schTypeDuCatalogue","LIB",
   /* contrôle électrique (31-erc.js) et blocs réutilisables (32-blocs.js) */
   "ercVerifier","ercTypeBroche","ercOuvrir","ercFermer","ERC_DERNIER",
+  "schReglesControler","reglesResultat","reglesTexte",
   "blocEnregistrer","blocsLire","blocPoser","blocSupprimer","blocsImporterTexte","blocsOuvrir","blocsFermer","BLOCS_KEY"
 ];
 /* les noms absents du bundle sont ignorés : le banc d'essai reste utilisable
@@ -4545,6 +4546,26 @@ T("contraintes de nets : groupes d'appariement, nets disparus, résumé",()=>{
 /* ==========================================================================
    Contrôle électrique (31-erc.js)
    ========================================================================== */
+T("Règles : repères, paires nommées, référence fabricant, cartouche (33-regles.js)",()=>{
+  const fil=(a,b)=>({x1:a.x,y1:a.y,x2:b.x,y2:b.y});
+  const r1=C("resistor",0,0,{ref:"R1",mpn:"RC0603"}), r1b=C("resistor",0,10,{ref:"R1",mpn:"RC0603"}),
+        c1=C("resistor",0,20,{ref:"C1",mpn:"RC0603"}), rq=C("resistor",0,30,{ref:"R?"}),
+        dp=C("port",10,0,{value:"USB_P"}), dm=C("port",10,10,{value:"D+"});
+  sheet([r1,r1b,c1,rq,dp,dm],[fil(allPins(r1)[1],allPins(dp)[0]),fil(allPins(r1b)[1],allPins(dm)[0])]);
+  const prev=S.cartoucheInfo;S.cartoucheInfo={titre:"Carte",dessine:"PL",dateDessin:"2026-11-12"};
+  try{
+    const r=schReglesControler(), de=k=>r.controles.find(c=>c.regle===k).ecarts.join(" | ");
+    if(r.ok)throw new Error("des écarts attendus");
+    if(!/C1 .*préfixe attendu « R »/.test(de("S6")))throw new Error("S6 : "+de("S6"));
+    if(!/R1 : repère porté par 2/.test(de("S7"))||!/« R\? ».*sans numéro/.test(de("S7")))throw new Error("S7 : "+de("S7"));
+    if(!/« USB_P » sans « USB_N »/.test(de("S13"))||!/« D\+ » sans « D- »/.test(de("S13")))throw new Error("S13 : "+de("S13"));
+    if(!/1 sans référence fabricant : R\?/.test(de("S27")))throw new Error("S27 : "+de("S27"));
+    if(de("S3"))throw new Error("cartouche rempli : "+de("S3"));
+    S.cartoucheInfo={};
+    if(!/Dessiné par/.test(schReglesControler().controles.find(c=>c.regle==="S3").ecarts.join()))throw new Error("cartouche vide non signalé");
+    if(!/✗ S6/.test(reglesTexte(r)))throw new Error(reglesTexte(r));
+  }finally{S.cartoucheInfo=prev;}
+});
 T("ERC : type de broche deviné par son nom",()=>{
   const op=C("opamp",0,0), ic=C("ic",0,0,{npins:6,pinNames:["VCC","GND","~RST","SDO","PA0/TX","NC"]});
   const t=[0,1,2,3,4].map(i=>ercTypeBroche(op,i)).join();

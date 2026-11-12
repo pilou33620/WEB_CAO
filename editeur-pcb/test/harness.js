@@ -54,6 +54,7 @@ const EXPOSE=[
   "mecaNomsAppliquer","mecaGerbers","gerberDessin","keepoutDrc","keepoutCuts","normInterdit","planNegatif",
   "setLayerRole","buildFabFiles","DRW_COUCHES","closeInterdit",
   "busClic","busTouche","busPlan","polyDecalee","busPoser",
+  "pcbReglesControler",
   "viaSuivante","viaTailles","verrousCoins","routeViaCurseur","mkVia",
   "pnsWorld","pnsItemsKeepout","distSegPoly","contourTroue","zoneDecoupee","gOrigin","gXY","drwBBox","drwPoints","gerberSilk","viaObstacle","placeVia",
   "coutureZone","cloturePistes","fanoutFps","coutureRetirer","viaEssai","netMasseDefaut","fmtU","uLue","uAff","RP_PCB","hitTest","deleteSel","startRoute",
@@ -6190,6 +6191,26 @@ T("empilage : nature des vias que le pressage permet",()=>{
   if(c.through!==1||c.buried!==2)throw new Error("recensement faux : "+JSON.stringify(c));
   if(c.seq!==1)throw new Error("un seul via hors pressage unique attendu, "+c.seq);
   setCuCount(4);applyPreset(presetsFor(4)[0]);S.vias=[];touch();
+});
+T("Règles : repères de pose, sérigraphie, anneaux, points de test, empilage (52-regles-controle.js)",()=>{
+  const avant=serialize();
+  try{
+    S.fps=[];S.vias=[];S.tracks=[];S.zones=[];S.drawings=[];
+    const r1=mkFp("R1","","",2);r1.style="chip";r1.x=10;r1.y=10;r1.nets={1:"A",2:"B"};r1.refSize=0.5;
+    const r2=mkFp("R2","","",2);r2.style="chip";r2.x=20;r2.y=10;r2.nets={1:"A",2:"B"};
+    const tp=mkFp("TP1","","",1);tp.x=30;tp.y=10;tp.nets={1:"A"};
+    S.fps.push(r1,r2,tp);
+    S.vias.push({x:5,y:5,d:0.4,drill:0.35,a:0,b:S.cu-1,net:"A"},{x:6,y:5,d:0.6,drill:0.3,a:0,b:S.cu-1,net:"A"});
+    S.stack.cu[0].t=0.07;touch();
+    const r=pcbReglesControler(), de=k=>r.controles.find(c=>c.regle===k).ecarts.join(" | ");
+    if(r.ok)throw new Error("des écarts attendus");
+    if(!/dessus peuplée : 0 repère/.test(de("C30"))||/dessous/.test(de("C30")))throw new Error("C30 : "+de("C30"));
+    if(!/Repère R1 : texte de 0,5 mm/.test(de("C36"))||/R2/.test(de("C36")))throw new Error("C36 : "+de("C36"));
+    if(!/^1 via\(s\) Ø 0,4 mm percé 0,35 mm/.test(de("R16")))throw new Error("R16 : "+de("R16"));
+    if(!/1 net\(s\) sans point de test \(TP…\) : B\./.test(de("C39")))throw new Error("C39 : "+de("C39"));
+    if(!/Cuivres 1 \(0,07 mm\)/.test(de("C7")))throw new Error("C7 : "+de("C7"));
+    if(!r.controles.some(c=>c.regle==="R1"))throw new Error("le DRC fait partie du contrôle");
+  }finally{loadDoc(JSON.parse(avant),true);}
 });
 T("DRC : rapport d'aspect et faisabilité des vias",()=>{
   setCuCount(4);applyPreset(presetsFor(4)[0]);
