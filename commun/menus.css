@@ -59,11 +59,11 @@ body>header{position:relative;z-index:75}
 .nav-rapide{display:inline-flex;gap:2px;background:var(--panel2);border:1px solid var(--border2);
   border-radius:6px;padding:2px}
 .nav-rapide:not(:has(button:not([hidden]))){display:none}
-.nav-rapide :is(button,a){background:none;border:0;color:var(--txt-dim);width:30px;height:26px;border-radius:4px;
-  cursor:pointer;font:14px var(--ui);display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+.nav-rapide button{background:none;border:0;color:var(--txt-dim);width:30px;height:26px;border-radius:4px;
+  cursor:pointer;font:14px var(--ui);display:inline-flex;align-items:center;justify-content:center}
 .nav-rapide button[hidden]{display:none}
-.nav-rapide :is(button,a):hover{background:#262a31;color:#fff}
-body.mode-tactile .nav-rapide :is(button,a){width:38px;height:38px;font-size:16px}
+.nav-rapide button:hover{background:#262a31;color:#fff}
+body.mode-tactile .nav-rapide button{width:38px;height:38px;font-size:16px}
 /* moins de 560 px à côté du titre (iPad portrait) : la barre passe en entier sous le titre */
 header .tools{flex:1 1 560px}
 

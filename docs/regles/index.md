@@ -1,6 +1,16 @@
 # Règles de conception WEB_CAO
 
-Les règles à suivre pour concevoir une carte électronique dans WEB_CAO, du schéma aux fichiers de fabrication, chacune avec **pourquoi** elle existe. Elles valent pour l'utilisateur comme pour Claude quand il pilote les éditeurs.
+Les règles que **Claude in Chrome** suit quand il conçoit une carte électronique dans WEB_CAO, du schéma aux fichiers de fabrication, chacune avec **pourquoi** elle existe. Elles ne sont pas affichées dans l'interface : seule l'IA les applique.
+
+## Consignes pour Claude in Chrome
+
+1. Lire cette page en entier avant toute modification du schéma ou du PCB.
+2. Appliquer les règles ; dans le plan et le compte rendu, citer le repère de chaque règle utilisée (C…, S…, R…).
+3. Une règle impossible à respecter : le dire avant d'agir, avec la raison.
+4. Après les modifications, lancer le contrôle dans la console de l'onglet de l'éditeur (outil JavaScript) et recopier son résultat dans le compte rendu :
+   - Éditeur schématique : `reglesTexte(schReglesControler())`
+   - Éditeur PCB : `reglesTexte(pcbReglesControler())`
+5. Le contrôle ne couvre que les règles qu'un programme peut juger (liste au chapitre [Avant de livrer](04-avant-livrer.md)) : le reste se vérifie en relisant le document.
 
 ## Base de travail
 

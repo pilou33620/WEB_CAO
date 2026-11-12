@@ -27,9 +27,9 @@ La liste à dérouler avant d'envoyer les fichiers au fabricant. Chaque ligne re
 
 ## Ce que WEB_CAO vérifie seul
 
-Le bouton **Règles** (groupe Inspecter de l'Éditeur schématique, onglet Vérifier de l'Éditeur PCB) contrôle d'un coup les règles qu'un programme peut juger sur le document et cite le repère de chaque règle en écart. Il ne change rien au document. Dans la console de la page : `reglesTexte(schReglesControler())` ou `reglesTexte(pcbReglesControler())`.
+Le contrôle des règles, lancé par Claude in Chrome dans la console de l'éditeur (`reglesTexte(schReglesControler())` au schéma, `reglesTexte(pcbReglesControler())` au PCB), juge d'un coup les règles qu'un programme peut voir sur le document et cite le repère de chaque règle en écart. Il ne change rien au document ; au PCB, il relance le DRC.
 
-| Bouton Règles | Règles contrôlées |
+| Contrôle | Règles contrôlées |
 |---|---|
 | Éditeur schématique | S3 cartouche, S6 préfixes des repères, S7 repères uniques et numérotés, S13 paires nommées des deux côtés, S27 référence fabricant, S29 empreinte liée, S34 ERC sans erreur |
 | Éditeur PCB | C46 cartouche, C7 empilage symétrique, C30 trois repères de pose par face peuplée (repères FID…), C36 sérigraphie ≥ 0,8 mm et trait ≥ 0,15 mm, R16 anneau ≥ 0,05 mm des vias et traversants, C39 un point de test (TP…) par net, R1 DRC sans erreur |
