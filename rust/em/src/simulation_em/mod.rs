@@ -260,6 +260,7 @@ pub fn simuler(doc: &mut Json, mut journal: Option<&mut dyn FnMut(&str)>, garder
     // arrondis au nanometre : cent segments identiques ne coutent qu'un calcul.
     let mut cache: HashMap<CleSection, SectionCalc> = HashMap::new();
     let mut segments: Vec<Json> = Vec::new();
+    let mut numpys: Vec<bool> = Vec::new();
     let mut avertissements: Vec<String> = AVERTISSEMENTS_MODELE.iter().map(|s| s.to_string()).collect();
     avertissements.extend(els(&analyse["ajuste"]).iter().map(str_py));
     let mut vus: HashSet<CleSection> = HashSet::new();
@@ -394,14 +395,18 @@ pub fn simuler(doc: &mut Json, mut journal: Option<&mut dyn FnMut(&str)>, garder
         }
 
         let c = &cache[&cle];
-        let mut seg = obj! {"z0" => round(c.z0, 3), "longueur" => round(longueur, 4),
+        // Z0 EST UN FLOTTANT NUMPY HORS DU MICRORUBAN (`dispersion_getsinger` rend un float,
+        // le solveur un np.float64) : son arrondi, la somme et la moyenne plus bas le suivent.
+        let numpy = c.info["topo"].as_str() != Some("micro");
+        numpys.push(numpy);
+        let mut seg = obj! {"z0" => rnd(c.z0, 3, numpy), "longueur" => round(longueur, 4),
                             "largeur" => round(largeur, 4), "couche" => indice,
                             "raison" => &c.raison};
         if c.z0 > 0.0 {
             let v = tl::C_0 / c.eps_eff.sqrt();
             let retard = (longueur * 1e-3) / v;
             maj(&mut seg, obj! {
-                "z0_statique" => round(c.z0_statique, 3),
+                "z0_statique" => rnp(c.z0_statique, 3),
                 "eps_eff" => round(c.eps_eff, 4),
                 "topo" => &c.info["topo"],
                 // Une piste interne qui n'a de plan que d'un cote est un
@@ -453,16 +458,19 @@ pub fn simuler(doc: &mut Json, mut journal: Option<&mut dyn FnMut(&str)>, garder
 
     // -- le bilan de la liaison ------------------------------------------
     let long_tot = py::sum(valides.iter().map(|s| num(s, "longueur")));
-    let z_moyen = if long_tot > 0.0 {
-        py::sum(valides.iter().map(|s| num(s, "z0") * num(s, "longueur"))) / long_tot
-    } else {
-        num(valides[0], "z0")
-    };
+    // sum() de Python compense (Neumaier) la suite de floats du debut, puis additionne
+    // sans compensation des le premier flottant numpy : on fait de meme.
+    let np_valides: Vec<bool> = segments.iter().zip(&numpys).filter(|(s, _)| num(s, "z0") > 0.0).map(|(_, n)| *n).collect();
+    let produits: Vec<f64> = valides.iter().map(|s| num(s, "z0") * num(s, "longueur")).collect();
+    let premier_np = np_valides.iter().position(|n| *n).unwrap_or(produits.len());
+    let somme = produits[premier_np..].iter().fold(py::sum(produits[..premier_np].iter().copied()), |s, x| s + x);
+    let moyen_numpy = if long_tot > 0.0 { premier_np < produits.len() } else { np_valides[0] };
+    let z_moyen = if long_tot > 0.0 { somme / long_tot } else { num(valides[0], "z0") };
     let z0s: Vec<f64> = valides.iter().map(|s| num(s, "z0")).collect();
     let mut ligne = obj! {
         "z0_min" => round(minf(&z0s), 3),
         "z0_max" => round(maxf(&z0s), 3),
-        "z0_moyen" => round(z_moyen, 3),
+        "z0_moyen" => rnd(z_moyen, 3, moyen_numpy),
         "longueur" => round(long_tot, 3),
         "retard" => py::sum(valides.iter().map(|s| num(s, "retard"))),
         "pertes_db" => round(py::sum(valides.iter().map(|s| num(s, "pertes_db"))), 4),
@@ -711,7 +719,7 @@ pub fn simuler(doc: &mut Json, mut journal: Option<&mut dyn FnMut(&str)>, garder
         let z0 = if seg["z0"].vrai() { num(seg, "z0") } else { 50.0 };
         poser(coude, "modelise", obj! {
             "type" => "T_L_C_Gupta",
-            "inductance_pH" => round(l * 1e12, 2),
+            "inductance_pH" => rnp(l * 1e12, 2),
             "capacite_fF" => round(c * 1e15, 2),
             // Ce que l'element pese, en degres de phase, a la frequence
             // centrale : c'est CE chiffre qui dit s'il faut s'en soucier.

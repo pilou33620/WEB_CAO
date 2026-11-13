@@ -483,7 +483,7 @@ pub fn _cascade_differentielle(
             "m_impair_nH" => round(num(m, "m_impair") * 1e9, 4),
             "m_pair_nH" => round(num(m, "m_pair") * 1e9, 4),
             "c_mutuelle_fF" => round(num(m, "c_m") * 1e15, 3),
-            "l_impair_nH" => round((modeles_via[i_v].l - num(m, "m_impair")) * 1e9, 4),
+            "l_impair_nH" => rnp((modeles_via[i_v].l - num(m, "m_impair")) * 1e9, 4),
             "ecart_mm" => &m["ecart_mm"], "ecart_source" => &m["source"],
             "retours" => &m["retours"]}).collect::<Vec<Json>>(),
         "delta_l_mm" => round(delta_l_mm, 4),

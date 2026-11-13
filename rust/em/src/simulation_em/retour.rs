@@ -462,8 +462,8 @@ pub fn _capacite_transition(
     poser(cotes, "pastilles_internes", internes);
     poser(cotes, "pastilles_internes_source", if a_internes { "page" } else { "repli" });
     poser(trans, "capacite", obj! {
-        "totale_fF" => round(c_tot * 1e15, 3),
-        "antipad_fF" => round(detail.antipad * 1e15, 3),
+        "totale_fF" => rnp(c_tot * 1e15, 3),
+        "antipad_fF" => rnp(detail.antipad * 1e15, 3),
         "pastille_depart_fF" => round(detail.pastille_depart * 1e15, 3),
         "pastille_arrivee_fF" => round(detail.pastille_arrivee * 1e15, 3),
         "plans_traverses" => traverses.iter().map(|t| t["nom"].clone()).collect::<Vec<Json>>(),

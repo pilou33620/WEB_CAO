@@ -258,3 +258,20 @@ pub fn numd(d: &Json, cle: &str, defaut: f64) -> f64 {
         None => defaut,
     }
 }
+
+/// round(x, n) quand x etait un flottant NUMPY (np.float64) en Python : numpy arrondit par
+/// rint(x * 10^n) / 10^n, et non par l'arrondi decimal exact de `round` sur un float. Les
+/// deux ne different qu'aux moities -- 65,9645 rend 65,964 ici et 65,965 la --, mais la
+/// moyenne de deux impedances a trois decimales y tombe une fois sur deux.
+pub fn rnp(x: f64, n: i32) -> f64 {
+    if !x.is_finite() {
+        return x;
+    }
+    let p = 10f64.powi(n);
+    (x * p).round_ties_even() / p
+}
+
+/// round(x, n) selon que x etait un flottant numpy ou un float de Python.
+pub fn rnd(x: f64, n: i32, numpy: bool) -> f64 {
+    if numpy { rnp(x, n) } else { py::round(x, n as usize) }
+}

@@ -240,9 +240,9 @@ pub fn _fiche_moignon(m: &Json, d_percage: f64, d_antipad: f64, fc: f64) -> Json
         // dans un a er 4,3, et sans le chiffre on ne peut pas refaire le calcul.
         "er" => &m["er"],
         "tan_delta" => &m["tan_delta"],
-        "resonance_hz" => if !f_res.is_finite() { None } else { Some(round(f_res, 1)) },
-        "capacite_fF" => if omega > 0.0 { round(y.im / omega * 1e15, 2) } else { 0.0 },
-        "impedance_ohm" => if y.norm() > 1e-12 { Some(round(1.0 / y.norm(), 1)) } else { None },
+        "resonance_hz" => if !f_res.is_finite() { None } else { Some(rnp(f_res, 1)) },
+        "capacite_fF" => if omega > 0.0 { rnp(y.im / omega * 1e15, 2) } else { 0.0 },
+        "impedance_ohm" => if y.norm() > 1e-12 { Some(rnp(1.0 / y.norm(), 1)) } else { None },
         "couches" => &m["couches"],
     };
     if m["contre_perce"].vrai() {
@@ -361,8 +361,8 @@ pub fn _cavite_de_retour(trans: &Json, via: &Json, couches: &[Json], segments: &
         // le sens qui flatte, et il doit se lire.
         "aire_majoree" => via["aire_plans_majoree"].vrai(),
         "capacite_plans_pF" => round(c_plans * 1e12, 2),
-        "etalement_cavite_nH" => round(l_cavite * 1e9, 4),
-        "impedance_plans_ohm" => round(
+        "etalement_cavite_nH" => rnp(l_cavite * 1e9, 4),
+        "impedance_plans_ohm" => rnp(
             tl::impedance_paire_plans(h_cav * 1e-3, 2.0 * rayon_cav * 1e-3,
                                       er_cav), 3),
     });
@@ -387,7 +387,7 @@ pub fn _cavite_de_retour(trans: &Json, via: &Json, couches: &[Json], segments: &
                      \x20sous-estimée", haut, bas)
         });
         poser(&mut fiche, "etalement_seul", true);
-        poser(&mut fiche, "inductance_nH", round(l_cavite * 1e9, 4));
+        poser(&mut fiche, "inductance_nH", rnp(l_cavite * 1e9, 4));
         return Some(fiche);
     }
 
@@ -435,7 +435,7 @@ pub fn _cavite_de_retour(trans: &Json, via: &Json, couches: &[Json], segments: &
             "y" => round(_nombre(&p["y"], y0), 4),
             "distance_mm" => round(d, 4),
             "repere" => str_ou_vide(&p["repere"]),
-            "etalement_nH" => round(l_etal * 1e9, 4),
+            "etalement_nH" => rnp(l_etal * 1e9, 4),
             "esl_nH" => round(_nombre(&p["esl_nH"], ESL_PONT_REPLI), 3),
             "esl_source" => if !nul(&p["esl_nH"]) { "page" } else { "repli" },
             "esr_ohm" => round(esr, 4),
@@ -461,7 +461,7 @@ pub fn _cavite_de_retour(trans: &Json, via: &Json, couches: &[Json], segments: &
                                                 haut, bas,
                                                 if !pourquoi.is_empty() { format!(" — {pourquoi}") } else { String::new() }));
             poser(&mut fiche, "etalement_seul", true);
-            poser(&mut fiche, "inductance_nH", round(l_cavite * 1e9, 4));
+            poser(&mut fiche, "inductance_nH", rnp(l_cavite * 1e9, 4));
             return Some(fiche);
         }
         // RIEN NON PLUS AU-DELA DU RAYON : aucun decouplage ne joint ces deux
@@ -479,7 +479,7 @@ pub fn _cavite_de_retour(trans: &Json, via: &Json, couches: &[Json], segments: &
         detail = vec![(obj! {
             "x" => round(x0, 4), "y" => round(y0, 4),
             "distance_mm" => round(rayon, 4), "repere" => "",
-            "etalement_nH" => round(l_etal * 1e9, 4),
+            "etalement_nH" => rnp(l_etal * 1e9, 4),
             "esl_nH" => round(ESL_PONT_REPLI, 3), "esl_source" => "repli",
             "esr_ohm" => round(ESR_PONT_REPLI, 4), "esr_source" => "repli",
             "capacite_F" => C_PONT_REPLI, "capacite_source" => "repli",
@@ -510,7 +510,7 @@ pub fn _cavite_de_retour(trans: &Json, via: &Json, couches: &[Json], segments: &
                         "repere" => &dom["repere"]},
         "ponts_detail" => detail.iter().map(|f| f.0.clone()).collect::<Vec<Json>>(),
         "ponts_branches" => detail.iter().map(|f| obj! {"l" => f.1, "esr" => f.2, "c" => f.3}).collect::<Vec<Json>>(),
-        "inductance_nH" => round(dom_l * 1e9, 4),
+        "inductance_nH" => rnp(dom_l * 1e9, 4),
         "etalement_nH" => &dom["etalement_nH"],
         "esl_nH" => &dom["esl_nH"],
         "esl_source" => &dom["esl_source"],
@@ -609,7 +609,8 @@ pub fn _modele_transition(
             let (parts, part_cav) = tl::repartition_traversee_param(f_eval_cav, Some(p));
             if let Some(Json::Liste(l)) = dans_opt(cav, "ponts_detail") {
                 for (f_pont, part) in l.iter_mut().zip(parts) {
-                    poser(f_pont, "part", round(part, 4));
+                    // (des flottants numpy quand la cavite est modale)
+                    poser(f_pont, "part", rnd(part, 4, p.modal.is_some()));
                 }
             }
             // « CENT POUR CENT PAR LA CAVITE » NE VEUT RIEN DIRE QUAND IL N'Y A
@@ -621,7 +622,7 @@ pub fn _modele_transition(
             // plans », ce qui est faux : on n'a pas regarde, voila tout. On ne
             // rend donc la part que quand la branche capacitive existe.
             if p.c_plans.is_some_and(|c| c != 0.0) {
-                poser(cav, "part_cavite", round(part_cav, 4));
+                poser(cav, "part_cavite", rnd(part_cav, 4, p.modal.is_some()));
             }
             poser(cav, "freq_parts_hz", f_eval_cav);
             poser(cav, "inductance_equivalente_nH",
@@ -674,10 +675,11 @@ pub fn _modele_transition(
     let a_cav = param_cav.is_some();
     poser(trans, "modelise", obj! {
         "type" => if y_dep == zero && y_arr == zero { "pi_L_C" } else { "pi_L_C_moignons" },
-        "inductance_nH" => round(l_via * 1e9, 4),
+        // (la self partielle est un flottant numpy, la boucle un float)
+        "inductance_nH" => rnd(l_via * 1e9, 4, source.starts_with("self")),
         "inductance_source" => &source,
-        "capacite_fF" => round(c_via * 1e15, 3),
-        "capacite_totale_fF" => round(c_effective * 1e15, 3),
+        "capacite_fF" => rnp(c_via * 1e15, 3),
+        "capacite_totale_fF" => rnp(c_effective * 1e15, 3),
         // LA TRAVERSEE N'EST PAS FONDUE DANS L'INDUCTANCE DU VIA : ce sont deux
         // grandeurs de natures differentes -- l'une decrit le barreau et sa
         // boucle de retour, l'autre le passage d'un plan a l'autre --, et le
@@ -937,7 +939,7 @@ pub fn _vias_hors_chaine(vias: &Json, couches: &[Json], z_bornes: &[f64], refs_n
             // chaque champ, et personne pour la lire.
             "cotes_supposees" => trans["cotes_supposees"].vrai(),
             "retour" => ou_vide(&trans["retour"]),
-            "modelise" => obj! {"inductance_nH" => round(l_via * 1e9, 4),
+            "modelise" => obj! {"inductance_nH" => rnd(l_via * 1e9, 4, source == "self"),
                                 "inductance_source" => source},
             // LE VIA N'EST PAS CASCADE, ET LA FICHE DOIT LE DIRE. Un chiffre
             // d'inductance affiche a cote d'une courbe S laisse croire qu'il y
