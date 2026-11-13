@@ -89,3 +89,7 @@ dist/
 
 # Cles d'API & secrets
 api_key_free_ia_studio.txt
+
+# Rust
+target/
+bin/
