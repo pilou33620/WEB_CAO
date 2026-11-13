@@ -201,29 +201,30 @@ pub fn _matrice(
     // approximation, c'est la formule d'addition du cosinus — et le calcul passe
     // d'une demi-seconde à quelques dizaines de millisecondes.
     //
-    // (Ici les deux produits n'en font qu'un : cosinus et sinus sont ranges cote a cote dans
-    // la meme matrice N x 2B, et `faer` tient le role de BLAS.)
+    // (Ici `faer` tient le role de BLAS, et les cosinus se calculent sur tous les coeurs.)
     let (n, nb) = (centres.len(), betas.len());
-    let mut gauche = Mat::<f64>::zeros(n, 2 * nb);
-    let mut droite = Mat::<f64>::zeros(n, 2 * nb);
-    for (b, (&be, &ps)) in betas.iter().zip(&poids_spectral).enumerate() {
+    // une colonne par noeud b, quatre blocs de n lignes : cos.p, sin.p, cos.sinc, sin.sinc
+    let blocs = alg::par_colonnes(4 * n, nb, |b, col| {
+        let (be, ps) = (betas[b], poids_spectral[b]);
         for m in 0..n {
             let (sin_m, cos_m) = (centres[m] * be).sin_cos();
             // np.sinc(u) = sin(pi u)/(pi u)
             let u = largeurs[m] * be / (2.0 * PI);
             let y = PI * if u == 0.0 { 1.0e-20 } else { u };
             let sinc = y.sin() / y;
-            gauche[(m, b)] = cos_m * ps;
-            gauche[(m, nb + b)] = sin_m * ps;
-            droite[(m, b)] = cos_m * sinc;
-            droite[(m, nb + b)] = sin_m * sinc;
+            col[m] = cos_m * ps;
+            col[n + m] = sin_m * ps;
+            col[2 * n + m] = cos_m * sinc;
+            col[3 * n + m] = sin_m * sinc;
         }
-    }
-    let reste = &gauche * droite.transpose();
+    });
+    let bloc = |k: usize| blocs.as_ref().subrows(k * n, n);
+    let reste = bloc(0) * bloc(2).transpose() + bloc(1) * bloc(3).transpose();
 
-    Mat::from_fn(n, n, |m, k| {
-        _integrale_extraite(centres[m] - centres[k], largeurs[k], distance_plan, epsilon_moyen)
-            + reste[(m, k)] * (largeurs[k] / PI)
+    alg::par_colonnes(n, n, |k, col| {
+        for (m, v) in col.iter_mut().enumerate() {
+            *v = _integrale_extraite(centres[m] - centres[k], largeurs[k], distance_plan, epsilon_moyen) + reste[(m, k)] * (largeurs[k] / PI);
+        }
     })
 }
 

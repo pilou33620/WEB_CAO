@@ -288,15 +288,17 @@ impl NoyauSansPlan {
         // signe que la charge, a l'inverse de celle d'un plan de masse.
         let p_image = |u: f64, a: f64| -(0.5 * u * (u * u + a * a).ln() - u + a * (u / a).atan());
         let facteur = std::f64::consts::PI * EPSILON_0 * (self.epsilon_r + 1.0);
-        faer::Mat::from_fn(centres.len(), centres.len(), |m, k| {
-            let d = centres[m] - centres[k];
-            let lo = d - largeurs[k] / 2.0;
-            let hi = d + largeurs[k] / 2.0;
-            let mut total = p_log(hi) - p_log(lo);
-            for &(a, c) in &self.images {
-                total += c * (p_image(hi, a) - p_image(lo, a));
+        crate::alg::par_colonnes(centres.len(), centres.len(), |k, col| {
+            for (m, v) in col.iter_mut().enumerate() {
+                let d = centres[m] - centres[k];
+                let lo = d - largeurs[k] / 2.0;
+                let hi = d + largeurs[k] / 2.0;
+                let mut total = p_log(hi) - p_log(lo);
+                for &(a, c) in &self.images {
+                    total += c * (p_image(hi, a) - p_image(lo, a));
+                }
+                *v = total / facteur;
             }
-            total / facteur
         })
     }
 }

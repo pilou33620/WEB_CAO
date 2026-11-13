@@ -44,3 +44,27 @@ pub(crate) fn depuis_listes(l: &[Vec<f64>]) -> Mat<f64> {
 pub(crate) fn symetrise(m: &Mat<f64>) -> Mat<f64> {
     Mat::from_fn(m.nrows(), m.ncols(), |i, j| 0.5 * (m[(i, j)] + m[(j, i)]))
 }
+
+/// Remplit une matrice n x p, colonne par colonne et sur tous les coeurs : `f(k, colonne)`
+/// ecrit la colonne k. Chaque case ne depend que de ses indices : le resultat est le meme, au
+/// bit pres, quel que soit le nombre de fils -- c'est ce que numpy faisait d'un trait.
+pub(crate) fn par_colonnes(n: usize, p: usize, f: impl Fn(usize, &mut [f64]) + Sync) -> Mat<f64> {
+    let mut tampon = vec![0.0; n * p];
+    if n > 0 && p > 0 {
+        // un petit tableau va plus vite d'un seul trait que par des fils a lancer
+        let fils = if n * p < 100_000 { 1 } else { std::thread::available_parallelism().map_or(1, |k| k.get()).min(p) };
+        let par_fil = p.div_ceil(fils);
+        std::thread::scope(|s| {
+            for (g, bloc) in tampon.chunks_mut(par_fil * n).enumerate() {
+                let f = &f;
+                let mut tache = move || bloc.chunks_mut(n).enumerate().for_each(|(k, col)| f(g * par_fil + k, col));
+                if fils == 1 {
+                    tache();
+                } else {
+                    s.spawn(tache);
+                }
+            }
+        });
+    }
+    Mat::from_fn(n, p, |i, j| tampon[j * n + i])
+}

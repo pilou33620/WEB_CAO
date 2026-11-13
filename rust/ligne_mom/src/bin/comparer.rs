@@ -108,17 +108,19 @@ fn main() {
 }
 
 fn temps() {
+    // le meilleur de sept passages : la machine est partagee
     for (nom, g) in sections() {
-        let t0 = std::time::Instant::now();
-        let n = 5;
-        for _ in 0..n {
+        let mut meilleur = f64::INFINITY;
+        for _ in 0..7 {
+            let t0 = std::time::Instant::now();
             if g.conducteurs.is_empty() {
                 let _ = solve_line(&g);
             } else {
                 let _ = solve_multiline(&g);
             }
+            meilleur = meilleur.min(t0.elapsed().as_secs_f64());
         }
-        println!("{nom} {:.2} ms", t0.elapsed().as_secs_f64() * 1e3 / n as f64);
+        println!("{nom} {:.2} ms", meilleur * 1e3);
     }
 }
 
