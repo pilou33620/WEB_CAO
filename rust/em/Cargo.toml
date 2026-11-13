@@ -1,0 +1,8 @@
+[package]
+name = "em"
+version = "0.1.0"
+edition = "2021"
+description = "simulation_em et crosstalk (ils s'appellent l'un l'autre : une seule caisse)"
+
+[dependencies]
+ligne_mom = { path = "../ligne_mom" }
