@@ -1,0 +1,15 @@
+| Fichier .ami du modele d'essai ami_ffe.c (FFE a deux coefficients).
+| Les parametres In partent dans AMI_parameters_in avec leur valeur par
+| defaut (typ du Range) ; « taps » revient dans AMI_parameters_out.
+(ffe_test
+  (Description "FFE d'essai a deux coefficients, pour le banc de l'oeil")
+  (Reserved_Parameters
+    (AMI_Version (Usage Info) (Type String) (Value "7.0"))
+    (Init_Returns_Impulse (Usage Info) (Type Boolean) (Value True))
+    (GetWave_Exists (Usage Info) (Type Boolean) (Value True))
+    (Ignore_Bits (Usage Info) (Type Integer) (Value 4)))
+  (Model_Specific
+    (c0 (Usage In) (Type Float) (Range 0.7 0 1) (Description "principal"))
+    (c1 (Usage In) (Type Float) (Range -0.3 -1 1) (Description "post-curseur"))
+    (echec (Usage In) (Type Integer) (Value 0) (Description "1 : AMI_Init rend 0, pour le banc du repli"))
+    (taps (Usage Out) (Type Integer) (Value 2))))

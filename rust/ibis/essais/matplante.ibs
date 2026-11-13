@@ -1,0 +1,10 @@
+[Model] A
+C_comp 1p
+[Pullup]
+0 0
+[Define Package Model] P
+[Pin Numbers]
+A
+[Inductance Matrix]
+[Row] 1
+abc
