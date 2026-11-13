@@ -260,7 +260,6 @@ name = "em"
 version = "0.1.0"
 dependencies = [
  "dc_solver",
- "faer",
  "ipc2581",
  "ligne_mom",
  "num-complex",
