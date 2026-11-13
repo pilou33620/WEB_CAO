@@ -56,3 +56,27 @@ fn le_monofichier_est_celui_du_script_python() {
     assert!(lire(&js) == lire(&t.join("attendu").join("bundle.js")), "bundle.js diffère");
     std::fs::remove_dir_all(&t).unwrap();
 }
+
+/// La fonte des plans suivie dans le dépôt est celle que l'outil refait depuis Liberation Sans.
+/// Sans la fonte du système, ou avec une autre version que celle qui a servi : l'essai le dit
+/// et ne conclut rien.
+#[test]
+fn la_fonte_des_plans_est_celle_du_depot() {
+    let depot = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../editeur-pcb/js/fontes/plans-sans.js");
+    let Ok(attendu) = std::fs::read_to_string(&depot) else {
+        println!("fonte des plans : {} absent, essai non exécuté", depot.display());
+        return;
+    };
+    for source in outils::fonte_plans::SOURCES {
+        let taille = std::fs::metadata(source).map(|m| m.len()).unwrap_or(0);
+        if !attendu.contains(&format!("(original {taille})")) {
+            println!("fonte des plans : {source} absente ou d'une autre version, essai non exécuté");
+            return;
+        }
+    }
+    let t = std::env::temp_dir().join(format!("outils-fonte-{}", std::process::id()));
+    outils::fonte_plans::main(&t, &[]);
+    let vu = std::fs::read_to_string(t.join("js/fontes/plans-sans.js")).unwrap();
+    std::fs::remove_dir_all(&t).unwrap();
+    assert!(vu == attendu, "plans-sans.js diffère de celui du dépôt");
+}
