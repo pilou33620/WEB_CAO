@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["rust/ligne_mom", "rust/dc_solver", "rust/ibis", "rust/motifs"]
+members = ["rust/ligne_mom", "rust/dc_solver", "rust/ibis", "rust/motifs", "rust/outils"]
 
 [profile.release]
 opt-level = 3
