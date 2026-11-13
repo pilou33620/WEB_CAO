@@ -119,8 +119,8 @@ fn bloc(m: &Mat, lignes: &[usize], colonnes: &[usize]) -> Mat {
 pub(crate) fn somme(a: &[f64]) -> f64 {
     let n = a.len();
     if n < 8 {
-        // numpy part de -0.0, pour que la somme de zeros negatifs le reste
-        return a.iter().fold(-0.0, |s, x| s + x);
+        // numpy part de -0.0, pour que la somme de zeros negatifs le reste ; d'un tableau vide, 0.0
+        return if n == 0 { 0.0 } else { a.iter().fold(-0.0, |s, x| s + x) };
     }
     if n <= 128 {
         let mut r = [0.0; 8];

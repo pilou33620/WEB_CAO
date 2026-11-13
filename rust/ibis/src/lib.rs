@@ -1,8 +1,10 @@
 //! Modeles IBIS : lecture d'un fichier .ibs et tampons non lineaires -- le portage en Rust de
 //! python/ibis.py (1.5.0).
 //!
-//!     let m = ibis::lire(&texte, "composant.ibs", false)?;
-//!     m.modeles.keys()
+//! ```text
+//! let m = ibis::lire(&texte, "composant.ibs", false)?;
+//! m.modeles.keys()
+//! ```
 //!
 //! POURQUOI. L'oeil de `oeil.py` ferme la liaison sur un generateur de Thevenin
 //! -- une source et une resistance --, ce qu'un tampon CMOS n'est pas : sa
