@@ -10,9 +10,10 @@ Une carte d'essai à faire fabriquer, six couples agresseur / victime, et de quo
 bancs-mesure/crosstalk/
   generer-carte.js          la carte, construite par le code de l'Éditeur PCB, puis DRC
   exporter-docs-sim.js      les documents de l'onglet Crosstalk, un par cas (Chromium)
-  docs-sim/casN.json        ces documents, figés : le banc Python tourne sans navigateur
+  docs-sim/casN.json        ces documents, figés : le banc tourne sans navigateur
   sortie/banc-crosstalk-PCB.json   la carte générée (à ouvrir dans l'Éditeur PCB)
-  banc-crosstalk-mesure.py  prévisions WEB_CAO + comparaison aux relevés
+  (rust/outils) banc-crosstalk-mesure  prévisions WEB_CAO + comparaison aux relevés
+                            (le moteur est encore python/crosstalk.py, appelé par l'outil)
   releves.csv               à remplir : mesure et SIwave
 ```
 
@@ -66,7 +67,7 @@ Plus deux lignes d'étalonnage, de même largeur et avec les mêmes embases :
 
 ### Prévisions de WEB_CAO
 
-`python bancs-mesure/crosstalk/banc-crosstalk-mesure.py` (rampe linéaire de durée t_r, sans pertes ; NEXT / FEXT en % de l'agresseur) :
+`cargo run -p outils --bin banc-crosstalk-mesure` (rampe linéaire de durée t_r, sans pertes ; NEXT / FEXT en % de l'agresseur) :
 
 | Cas | t_r 0,5 ns | 1 ns | 2,5 ns | 5 ns | 10 ns |
 |---|---|---|---|---|---|
@@ -140,8 +141,8 @@ Le cas 4 est celui à regarder de près. Si le scan SIwave travaille, comme celu
 ## Comparer
 
 ```bash
-python bancs-mesure/crosstalk/banc-crosstalk-mesure.py            # tableau + comparaison
-python bancs-mesure/crosstalk/banc-crosstalk-mesure.py --tr 2.5   # tableau à un front donné
+cargo run -p outils --bin banc-crosstalk-mesure                 # tableau + comparaison
+cargo run -p outils --bin banc-crosstalk-mesure -- --tr 2.5     # tableau à un front donné
 ```
 
 Pour chaque relevé, WEB_CAO est recalculé **au front de ce relevé**, sous deux lectures :

@@ -3,7 +3,7 @@
    Banc d'essai : le bundle dist/pcb.js est exécuté sur le DOM minimal partagé
    (commun/test/dom-stub.js), sans navigateur.
 
-       python3 outils/build-monofichier.py && node test/harness.js
+       cargo run -p outils --bin build-monofichier -- editeur-pcb && node test/harness.js
 
    L'installation de « canvas » (npm i canvas) est facultative : sans elle, les
    essais qui rasterisent vraiment le cuivre sont ignorés, les autres tournent.
@@ -4468,7 +4468,7 @@ T("animation 3D : composants présentés, nets allumés, choix gardé avec la ca
     const auto=anim3dAuto();
     if(!auto.length||auto.length>6||auto.some(r=>/^(R|C|L|D|LED)\d/i.test(r)))throw new Error("choix d'office : "+auto.join());
     let J=anim3dDonnees();
-    /* la page, pour test/banc-anim3d-images.py qui en prend des images dans Chromium */
+    /* la page, pour rust/outils/tests/banc_anim3d_images.rs qui en prend des images dans Chromium */
     fs.mkdirSync(path.join(__dirname,"..","dist","essai-anim3d"),{recursive:true});
     fs.writeFileSync(path.join(__dirname,"..","dist","essai-anim3d","carte-ASSEMBLAGE-3D.html"),anim3dPage(J));
     if(J.vedettes.map(v=>v.ref).sort().join()!==J.composants.filter(c=>auto.includes(c.ref)).map(c=>c.ref).sort().join())throw new Error("vedettes : "+J.vedettes.map(v=>v.ref).join());
@@ -28476,7 +28476,7 @@ T("empilage : un plan lisse DÉCLARÉ part comme Rq = 0 sous une piste rugueuse"
    quelconque, pastilles chanfreinée, polygonale et oblongue, arc, découpe de
    carte, trous NPTH, variante de montage. Chaque export est écrit dans
    dist/essai-ipc2581/ avec ce que l'éditeur en attend ; c'est
-   test/banc-ipc2581-export.py qui les relit par la chaîne de la visionneuse
+   rust/outils/tests/banc_ipc2581_export.rs qui les relit par la chaîne de la visionneuse
    (ipc2581_parser.py → ipc2581_json.py) et les valide contre le XSD.
    ========================================================================== */
 const IPC_DATE="2026-10-10T12:00:00Z";

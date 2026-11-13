@@ -2,7 +2,7 @@
    bancs-mesure/crosstalk/generer-carte.js
    La carte d'essai du crosstalk, construite par le code même de l'Éditeur PCB.
 
-       python3 editeur-pcb/outils/build-monofichier.py
+       cargo run -p outils --bin build-monofichier -- editeur-pcb
        node bancs-mesure/crosstalk/generer-carte.js [fichier-sortie.json]
 
    POURQUOI UNE CARTE GÉNÉRÉE. Une carte d'essai ne vaut que par ses cotes :
@@ -117,7 +117,7 @@ global.BroadcastChannel.prototype.postMessage=function(){};
 global.BroadcastChannel.prototype.close=function(){};
 const bundle=path.join(RACINE,"editeur-pcb","dist","pcb.js");
 if(!fs.existsSync(bundle)){
-  console.error("dist/pcb.js absent : lancez d'abord python3 editeur-pcb/outils/build-monofichier.py");
+  console.error("dist/pcb.js absent : lancez d'abord cargo run -p outils --bin build-monofichier -- editeur-pcb");
   process.exit(2);
 }
 const EXPOSE=["S","loadDoc","serialize","runDrc","conn","exDoc","exFp","exPin",

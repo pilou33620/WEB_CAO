@@ -6,7 +6,7 @@ critère (1 à 5) renvoient à la spec.
 Bancs :
 - `PY_RF` = `python python/test/banc-rf.py`
 - `PY_ROUTES` = `python python/test/banc-serveur-routes.py`
-- `JS_PCB` = `node editeur-pcb/test/harness.js` (après `python3 editeur-pcb/outils/build-monofichier.py`)
+- `JS_PCB` = `node editeur-pcb/test/harness.js` (après `cargo run -p outils --bin build-monofichier -- editeur-pcb`)
 - `JS_IPC` = le banc de la visionneuse (`visionneuse-ipc2581/test/`)
 
 ---

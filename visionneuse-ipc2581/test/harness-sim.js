@@ -7021,13 +7021,13 @@ T("plans (Draftsman), visionneuse : fabrication, assemblage dessus et dessous, P
 });
 
 /* Le même dossier que l'éditeur : ses exports IPC-2581 de banc, relus par la
-   chaîne Python (editeur-pcb/test/banc-ipc2581-export.py écrit le modèle,
+   chaîne du lecteur (rust/outils/tests/banc_ipc2581_export.rs écrit le modèle,
    le banc de l'éditeur le dossier attendu). Sans eux, l'essai le dit. */
 T("dossier méca, visionneuse : sur un export de l'éditeur, les mêmes trous, corps, hauteurs et ouvertures",()=>{
   const dir=path.join(RACINE,"..","editeur-pcb","dist","essai-ipc2581");
   const noms=fs.existsSync(dir)?fs.readdirSync(dir).filter(f=>f.endsWith(".modele.json")).map(f=>f.slice(0,-12))
     .filter(n=>fs.existsSync(path.join(dir,n+".meca.json"))):[];
-  if(!noms.length){console.log("      (sauté : lancer le banc de l'éditeur puis banc-ipc2581-export.py)");return;}
+  if(!noms.length){console.log("      (sauté : lancer le banc de l'éditeur puis cargo test -p outils --test banc_ipc2581_export)");return;}
   const pres=(a,b,q)=>{if(Math.abs(a-b)>0.01)throw new Error(q+" : "+a+" ≠ "+b);};
   const boite=P=>[Math.min(...P.map(p=>p[0])),Math.min(...P.map(p=>p[1])),Math.max(...P.map(p=>p[0])),Math.max(...P.map(p=>p[1]))];
   try{
@@ -7063,7 +7063,7 @@ T("dossier méca, visionneuse : sur un export de l'éditeur, les mêmes trous, c
    longueur et leur angle, dessinées, et au dossier méca (points ouverts, T4). */
 T("fentes : lues dans le SlotCavity, dessinées et au dossier méca",()=>{
   const f=path.join(RACINE,"..","editeur-pcb","dist","essai-ipc2581","exemple-1-fentes.modele.json");
-  if(!fs.existsSync(f)){console.log("      (sauté : lancer le banc de l'éditeur puis banc-ipc2581-export.py)");return;}
+  if(!fs.existsSync(f)){console.log("      (sauté : lancer le banc de l'éditeur puis cargo test -p outils --test banc_ipc2581_export)");return;}
   try{
     mdlCharger(JSON.parse(fs.readFileSync(f,"utf8")),"exemple-1-fentes.xml");
     const fe=V.modele.percages.filter(t=>t.l>t.d);

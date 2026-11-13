@@ -896,7 +896,7 @@ function simRapCopier(){
    recopiée garde ses classes, et sans les règles de simulation-em.css ses
    tableaux et ses courbes perdraient leur mise en page. Les règles se
    choisissent par leur CLASSE (.rap-…, .sim…) et non par le nom de leur
-   feuille : la version un seul fichier (outils/build-monofichier.py) les
+   feuille : la version un seul fichier (build-monofichier, rust/outils) les
    inline, et ses feuilles n'ont plus de nom. */
 function simRapTelecharger(){
   const d=SIM_RAP_DONNEES||simRapCollecter();

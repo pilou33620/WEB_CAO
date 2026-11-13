@@ -15,7 +15,7 @@
    l'enverrait. À refaire seulement quand la carte change.
 
    Il faut Playwright (npm i -g playwright) et le monofichier à jour
-   (python3 editeur-pcb/outils/build-monofichier.py).
+   (cargo run -p outils --bin build-monofichier -- editeur-pcb).
    ============================================================================= */
 "use strict";
 const fs=require("fs");

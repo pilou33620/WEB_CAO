@@ -18,8 +18,10 @@
 // cote de ce que l'editeur en attend (<nom>.attendu.json) : ce banc compare.
 //
 // LE XSD. IPC-2581C.xsd n'est pas dans le depot : il appartient a l'IPC.
-// Le banc Python validait chaque export contre lui quand lxml etait installe ;
-// il n'y a pas de validateur XSD ici : la validation est sautee et le banc le dit.
+// KiCad en garde une copie (qa/data/pcbnew/ipc2581/IPC-2581C.xsd). Donne par
+// la variable IPC2581_XSD, et xmllint installe (libxml2, le validateur que lxml
+// appelait cote Python), chaque export est valide contre lui ; sans eux, la
+// validation est sautee et le banc le dit.
 //
 // Sans les exports (dist/essai-ipc2581/ vide) : le banc le dit et ne conclut rien.
 // =============================================================================
@@ -252,7 +254,16 @@ fn cas_export(banc: &mut Banc, dossier: &Path, nom: &str) {
     let racine = || doc.as_ref().expect("XML illisible").root_element();
 
     match std::env::var("IPC2581_XSD") {
-        Ok(xsd) if Path::new(&xsd).is_file() => banc.sautes.push(format!("{nom} : pas de validateur XSD ici (lxml, cote Python), XSD non verifie")),
+        Ok(xsd) if Path::new(&xsd).is_file() => {
+            let xml = dossier.join(format!("{nom}.xml"));
+            match std::process::Command::new("xmllint").arg("--noout").arg("--schema").arg(&xsd).arg(&xml).output() {
+                Err(_) => banc.sautes.push(format!("{nom} : xmllint absent, XSD non verifie")),
+                Ok(r) => banc.t(format!("{nom} : conforme a {}", Path::new(&xsd).file_name().unwrap().to_string_lossy()), || {
+                    let premiere = String::from_utf8_lossy(&r.stderr).lines().next().unwrap_or("").to_string();
+                    vrai(r.status.success(), || premiere)
+                }),
+            }
+        }
         _ => banc.sautes.push(format!("{nom} : XSD non fourni (IPC2581_XSD)")),
     }
 

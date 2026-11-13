@@ -55,8 +55,15 @@ jobs:
 
       - name: Vérification syntaxique des scripts Python
         run: |
-          python -m compileall -q web_CAO.py python commun/outils \
-            editeur-pcb/outils editeur-schematique/outils
+          python -m compileall -q web_CAO.py python
+
+      # Les outils de construction (manuel, monofichiers, fonte des plans) et les petits
+      # bancs sont en Rust (rust/outils) : construits une fois, appelés plus bas depuis
+      # target/debug. Les bancs qui demandent Chromium sont marqués « ignored ».
+      - name: Outils Rust — construction et essais
+        run: |
+          cargo build -p outils
+          cargo test -p outils
 
       # ====================================================================
       # LES SOLVEURS
@@ -76,7 +83,8 @@ jobs:
         run: python python/test/banc-crosstalk.py
 
       - name: Banc de mesure crosstalk — prévisions WEB_CAO
-        run: python bancs-mesure/crosstalk/banc-crosstalk-mesure.py
+        # le moteur crosstalk est encore celui de python/crosstalk.py, que l'outil appelle
+        run: target/debug/banc-crosstalk-mesure
 
       - name: Simulation RF (S21 port à port) — banc d'essai
         run: |
@@ -157,12 +165,12 @@ jobs:
       # conséquence à connaître : un dist/ resté sur un poste peut avoir des
       # semaines de retard sur js/ sans que rien ne le signale, et c'est ce
       # fichier-là qu'on ouvre en double-clic. Après avoir touché à js/,
-      # relancer build-monofichier.py fait partie du geste.
+      # relancer build-monofichier (rust/outils) fait partie du geste.
       - name: Éditeur PCB — assemblage puis banc d'essai
         run: |
           # sans le module canvas, les essais du cuivre des plans (îlots, éclats) sont ignorés
           npm install --no-save --silent canvas
-          python editeur-pcb/outils/build-monofichier.py
+          target/debug/build-monofichier editeur-pcb
           node --check editeur-pcb/dist/pcb.js
           # un essai « ignoré » (canvas absent) sortait compté réussi : ici c'est un échec
           node editeur-pcb/test/harness.js | tee /tmp/banc-pcb.log
@@ -182,13 +190,13 @@ jobs:
           # propres essais. Injoignable, la validation XSD est sautée et le
           # banc le dit -- le reste de l'aller-retour tourne quand même.
           # révision figée (KiCad 10.0.0), comme les démos plus bas
-          pip install --quiet lxml || echo "::warning title=lxml non installé::validation XSD sautée"
+          command -v xmllint >/dev/null || sudo apt-get install -y -qq libxml2-utils || echo "::warning title=xmllint non installé::validation XSD sautée"
           if curl -fsSL -o /tmp/IPC-2581C.xsd https://gitlab.com/kicad/code/kicad/-/raw/b0e9d3b0656e3770d11324b15e09b097f7fc33da/qa/data/pcbnew/ipc2581/IPC-2581C.xsd; then
             export IPC2581_XSD=/tmp/IPC-2581C.xsd
           else
             echo "::warning title=XSD IPC-2581 injoignable::validation XSD sautée"
           fi
-          python editeur-pcb/test/banc-ipc2581-export.py
+          cargo test -p outils --test banc_ipc2581_export -- --nocapture
 
       # après l'export ci-dessus : deux de ses essais relisent editeur-pcb/dist/essai-ipc2581/,
       # et se sautaient en silence quand ce dossier n'existait pas encore
@@ -205,7 +213,7 @@ jobs:
 
       - name: Éditeur schématique — assemblage puis banc d'essai
         run: |
-          python editeur-schematique/outils/build-monofichier.py
+          target/debug/build-monofichier editeur-schematique
           node --check editeur-schematique/dist/schema.js
           node editeur-schematique/test/harness.js
 
@@ -230,9 +238,9 @@ jobs:
       - name: Le manuel et les règles servis (docs/manuel/manuel.html, docs/regles/regles.html) sont à jour
         run: |
           # la page du bouton « Manuel » est générée puis versionnée : un chapitre .md
-          # modifié sans relancer le script laissait l'ancienne page (le script sort
+          # modifié sans relancer l'outil laissait l'ancienne page (l'outil sort
           # aussi en erreur sur un lien cassé)
-          python commun/outils/build-manuel.py
+          target/debug/build-manuel
           git diff --exit-code --stat -- docs/manuel/manuel.html docs/regles/regles.html
 
       - name: Le monofichier doit être reproductible
@@ -241,7 +249,6 @@ jobs:
           # d'horodaté ni d'aléatoire ne se glisse dans la sortie
           cp editeur-pcb/dist/pcb.js /tmp/pcb-1.js
           cp editeur-schematique/dist/schema.js /tmp/schema-1.js
-          python editeur-pcb/outils/build-monofichier.py
-          python editeur-schematique/outils/build-monofichier.py
+          target/debug/build-monofichier
           diff -q /tmp/pcb-1.js editeur-pcb/dist/pcb.js
           diff -q /tmp/schema-1.js editeur-schematique/dist/schema.js

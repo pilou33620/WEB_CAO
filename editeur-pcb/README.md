@@ -7,8 +7,8 @@ de la netlist produite par l'éditeur schématique.
 
 - **Projet éclaté** : ouvrir `editeur-pcb.html`. C'est la version à modifier.
 - **Fichier unique** : `dist/editeur-pcb.html`, autonome, à envoyer ou archiver.
-  Il est régénéré par `python3 outils/build-monofichier.py` (sous Windows,
-  `python` : `python3` y renvoie vers le raccourci du Microsoft Store).
+  Il est régénéré par `cargo run -p outils --bin build-monofichier -- editeur-pcb`
+  (outil Rust, `rust/outils`).
 
 Les scripts sont des scripts classiques, pas des modules : `editeur-pcb.html`
 s'ouvre directement depuis le disque, sans serveur local, et n'a alors besoin de
@@ -84,7 +84,7 @@ js/29-draftsman.js       plans de fabrication et d'assemblage (Draftsman) :
 js/33-draftsman-export.js  plans : fonte TrueType embarquée en sous-ensemble
                          dans le PDF des plans et dans le Master Drawing
 js/fontes/plans-sans.js  la fonte PlansSans (Liberation Sans pré-réduite, en
-                         base64), produite par outils/fonte-plans.py ; sa
+                         base64), produite par l'outil fonte-plans (rust/outils) ; sa
                          licence OFL à côté, js/fontes/OFL-PlansSans.txt
 js/30-contraintes.js     gestionnaire de contraintes : mesures par net,
                          contraintes héritées ou propres, groupes
@@ -142,14 +142,16 @@ js/50-couches.js         couches mécaniques (Gerber .GM2 à .GM9), keep-out
                          cuivre (respecté par le routeur et le chemin auto),
                          plans négatifs
 js/51-bus.js             routage de plusieurs pistes à la fois (bus)
-outils/build-monofichier.py assemble le tout dans dist/
-outils/fonte-plans.py    réduit Liberation Sans à la fonte des plans
+../rust/outils           les outils de construction, en Rust : build-monofichier
+                         assemble le tout dans dist/, fonte-plans réduit
+                         Liberation Sans à la fonte des plans
 test/harness.js          banc d'essai sans navigateur
-test/banc-ipc2581-export.py  relit les exports IPC-2581 écrits par le banc
-                         d'essai par la chaîne de la visionneuse
-                         (python/ipc2581_parser.py → ipc2581_json.py),
+../rust/outils/tests/banc_ipc2581_export.rs  relit les exports IPC-2581 écrits
+                         par le banc d'essai par la chaîne de la visionneuse
+                         (le lecteur IPC-2581, caisse ipc2581),
                          et les valide contre le XSD s'il est fourni
-test/banc-anim3d-images.py  images de la page d'animation 3D écrite par le banc
+../rust/outils/tests/banc_anim3d_images.rs  images de la page d'animation 3D
+                         écrite par le banc
 test/banc-trois-ponts.js  blocs, courants DC et classes passés du schéma au PCB
 ```
 
@@ -187,7 +189,7 @@ Ces fichiers viennent du dossier partagé, à la racine du dépôt :
                          par l'animation 3D et recopié dans sa page ; licence
                          MIT à côté, commun/vendor/LICENSE-three.txt
 ../commun/test/dom-stub.js  DOM minimal du banc d'essai
-../commun/outils/monofichier.py  mécanique d'assemblage
+../rust/outils/src/monofichier.rs  mécanique d'assemblage
 ```
 
 S'y ajoutent, sans plus de détail ici : `echappe.js`, `projet.js`,
@@ -1403,7 +1405,7 @@ emporte donc sa fonte, **PlansSans** : Liberation Sans 2.x (licence SIL Open
 Font License 1.1), dont les chasses sont celles d'Arial, donc d'Helvetica —
 la mise en page ne bouge pas d'un trait. Elle arrive en deux temps :
 
-1. **À la construction**, `outils/fonte-plans.py` (Python sans module
+1. **À la construction**, l'outil `fonte-plans` (`rust/outils`, sans caisse
    externe) réduit les deux graisses de la fonte du système à ce qu'un plan
    écrit — ASCII, Latin-1, Latin étendu A, ponctuation WinAnsi, grec,
    flèches et symboles (± ° ≤ ≥ ≈ ≠ ∞ √ ‰…) : 432 caractères, le hinting et
@@ -1442,7 +1444,7 @@ peu plus larges que les « - » et « C » d'avant, dans des cases qui ont la
 place. Option décochée, ou fonte absente : Helvetica en WinAnsi, accents
 compris (Ω → `Ohm`, ≥ → `>=`).
 
-Pour changer de fonte ou de jeu de caractères : `python3 outils/fonte-plans.py
+Pour changer de fonte ou de jeu de caractères : `cargo run -p outils --bin fonte-plans --
 [Regular.ttf Bold.ttf]`, puis reconstruire le monofichier.
 
 ### Le Master Drawing et le LISEZ-MOI.txt
@@ -1654,7 +1656,7 @@ liaisons thermiques et marge de bord compris. La barre d'état dit le format de
 la vidéo, le nombre d'images par seconde du rendu et le nombre de composants
 présentés. Un second clic pendant l'enregistrement ne relance rien.
 
-`test/banc-anim3d-images.py` prend des images de la page que le banc d'essai
+`rust/outils/tests/banc_anim3d_images.rs` (`cargo test -p outils --test banc_anim3d_images -- --ignored --nocapture`) prend des images de la page que le banc d'essai
 écrit dans `dist/essai-anim3d/` (Chromium sans fenêtre, instants figés) et
 n'imprime qu'une ligne par image.
 
@@ -1765,7 +1767,7 @@ qui leur manque (contre-perçage, rugosité Rq et Huray, composants dessous à
 trous NPTH, variante, impédance cible de classe, contraintes de net, groupe
 d'appariement, matrice d'isolation), la première aux coins arrondis percée
 d'une découpe ronde — et ce que l'éditeur en attend.
-`test/banc-ipc2581-export.py` les relit par la chaîne de la visionneuse et
+`rust/outils/tests/banc_ipc2581_export.rs` les relit par la chaîne de la visionneuse et
 compare : composants (place, rotation, face, chaque broche sur sa pastille),
 nets, pistes et arcs, vias et trous, contour (aire au millième, arcs),
 couches et empilage, rugosité (Rq, Huray), contre-perçage, zones (le net
@@ -1773,8 +1775,8 @@ raccordé, les autres dégagés), masque, pâte, nomenclature, et les règles
 (classe de chaque net, règles des classes, contraintes, paires, groupes,
 matrice).
 
-    python3 outils/build-monofichier.py && node test/harness.js
-    python3 test/banc-ipc2581-export.py --xsd chemin/IPC-2581C.xsd
+    cargo run -p outils --bin build-monofichier -- editeur-pcb && node test/harness.js
+    IPC2581_XSD=chemin/IPC-2581C.xsd cargo test -p outils --test banc_ipc2581_export -- --nocapture
 
 Le XSD n'est pas dans le dépôt (il est à l'IPC) : KiCad en garde une copie,
 `qa/data/pcbnew/ipc2581/IPC-2581C.xsd`, que la CI télécharge. Sans `--xsd`
@@ -3724,7 +3726,7 @@ n'est écrit à la fermeture : une requête partie de `pagehide` est bornée à
 ## Banc d'essai
 
 ```
-python3 outils/build-monofichier.py && node test/harness.js
+cargo run -p outils --bin build-monofichier -- editeur-pcb && node test/harness.js
 ```
 
 Le banc s'appuie sur le DOM minimal partagé (`../commun/test/dom-stub.js`),

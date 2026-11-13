@@ -17,7 +17,7 @@
    <SurfaceFinish> (normalisée par les codes de l'IPC-6012), le type de
    <Step> et l'état de l'empilage, et retire le niveau des <FunctionMode>.
    Le fichier est validé contre IPC-2581C.xsd (celui que KiCad garde dans
-   qa/data/pcbnew/ipc2581) par le banc test/banc-ipc2581-export.py.
+   qa/data/pcbnew/ipc2581) par le banc rust/outils/tests/banc_ipc2581_export.rs.
 
    CE QUI PART, section par section :
      Content         rôle, fonction (USERDEF : fabrication, assemblage et

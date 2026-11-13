@@ -216,7 +216,7 @@ PY_VIS = python visionneuse-ipc2581/test/banc-essai.py
 PY_SRV = python python/test/banc-serveur-routes.py
 COMP   = python -m compileall -q web_CAO.py python
 Lancer : python web_CAO.py   (ou demarrer_WEB_CAO.cmd)
-Monofichier : python editeur-pcb/outils/build-monofichier.py
+Monofichier : cargo run -p outils --bin build-monofichier -- editeur-pcb
 ```
 
 ## Structure
@@ -229,7 +229,7 @@ Monofichier : python editeur-pcb/outils/build-monofichier.py
 | `editeur-pcb/js/29-draftsman.js` | entrée `meca` dans `DF_FEUILLES`, `dfCfg` (borne `meca`), `dfDocument`, tableau des réglages et bouton du zip |
 | `editeur-pcb/js/36-dossier-meca.js` (nouveau) | `mecaEntreeEditeur()` : l'entrée neutre tirée de `S` |
 | `editeur-pcb/js/35-ipc2581-export.js` | `height` du `<Package>` quand la hauteur est connue (saisie ou LIB) |
-| `editeur-pcb/editeur-pcb.html`, `outils/build-monofichier.py` | balises des nouveaux scripts |
+| `editeur-pcb/editeur-pcb.html`, `build-monofichier` (rust/outils) | balises des nouveaux scripts |
 | `python/ipc2581_parser.py`, `ipc2581_data.py`, `ipc2581_json.py` | `<Package><Outline>` et `height` → `corps`, `hauteur` |
 | `visionneuse-ipc2581/js/08-dossier-meca.js` (nouveau) | `mecaEntreeIpc(modele)`, fenêtre, bouton |
 | `visionneuse-ipc2581/visionneuse-ipc2581.html` | bouton et balises |
@@ -274,7 +274,7 @@ entrée neutre écrite à la main puis sur la carte d'exemple de l'éditeur :
 6. Plans existants : les 44 essais Draftsman passent sans changement, le
    `fabrication.zip` est identique (zip déplacé, pas réécrit).
 
-Export IPC (`banc-ipc2581-export.py`) : la hauteur écrite par l'éditeur
+Export IPC (`rust/outils/tests/banc_ipc2581_export.rs`) : la hauteur écrite par l'éditeur
 est relue par la visionneuse.
 
 Visionneuse (`banc-essai.py`) : une carte IPC avec `<Package height>` et

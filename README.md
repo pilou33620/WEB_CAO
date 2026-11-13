@@ -173,21 +173,21 @@ screen/                  Captures et animations
 
 ## 🧪 Tests
 
-Côté navigateur, JavaScript standard, sans dépendance. Côté serveur, Python 3 (testé en 3.12) avec numpy et scipy. Les bancs tournent en CI (`.github/workflows/ci.yml`), sauf `banc-synoptique.py`, `commun/test/banc-ruban.py` et `editeur-pcb/test/banc-anim3d-images.py` (Chromium), `python/test/banc-detection-plateforme.py`, `python/test/banc-usimmics.py`, à lancer à la main. Faute de `kicad-cli` sur la machine d'intégration, la relecture des exports KiCad par KiCad lui-même y est sautée (les bancs le disent). `appairage.py` et `pilote.py` se vérifient en les exécutant ; la CI de web_suite passe ces vérifications sur ses originaux et compare les copies.
+Côté navigateur, JavaScript standard, sans dépendance. Côté serveur, Python 3 (testé en 3.12) avec numpy et scipy. Les bancs tournent en CI (`.github/workflows/ci.yml`), sauf `banc_synoptique`, `banc_ruban` et `banc_anim3d_images` de `rust/outils/tests/` (Chromium ; essais marqués « ignored »), `python/test/banc-detection-plateforme.py`, `python/test/banc-usimmics.py`, à lancer à la main. Faute de `kicad-cli` sur la machine d'intégration, la relecture des exports KiCad par KiCad lui-même y est sautée (les bancs le disent). `appairage.py` et `pilote.py` se vérifient en les exécutant ; la CI de web_suite passe ces vérifications sur ses originaux et compare les copies.
 
 <details>
 <summary>Lancer les bancs en local</summary>
 
 ```bash
-python editeur-pcb/outils/build-monofichier.py && node editeur-pcb/test/harness.js
-python editeur-schematique/outils/build-monofichier.py && node editeur-schematique/test/harness.js
-python commun/test/banc-ruban.py          # le ruban des deux éditeurs, dans Chromium s'il est installé
+cargo run -p outils --bin build-monofichier -- editeur-pcb && node editeur-pcb/test/harness.js
+cargo run -p outils --bin build-monofichier -- editeur-schematique && node editeur-schematique/test/harness.js
+cargo test -p outils --test banc_ruban -- --ignored --nocapture   # le ruban des deux éditeurs, dans Chromium s'il est installé
 node visionneuse-ipc2581/test/harness-sim.js
 node gestion-lib/test/banc-catalogue.js
 python python/test/banc-ligne-mom.py      # et les autres banc-*.py de python/test/
 python appairage.py
 python pilote.py
-python3 editeur-schematique/test/banc-synoptique.py [--captures]   # synoptique de chaque schématique de PROJETS/CAO (Chromium)
+cargo test -p outils --test banc_synoptique -- --ignored --nocapture   # (SYNOPTIQUE_CAPTURES=1 : captures) synoptique de chaque schématique de PROJETS/CAO (Chromium)
 ```
 
 Les bancs lisent la LIB à son emplacement par défaut (`../PROJETS/LIB_CAO`). WEB_SUITE_PROJETS étant privé, l'intégration continue ne l'a pas : `banc-lib-routes.py`, `banc-rf.py` et `gestion-lib/test/banc-catalogue.js` y sont sautés (avertissement dans le journal) et les routes du serveur tournent sur une LIB factice (`WEB_CAO_LIB_MINIMALE=1`). Ces trois bancs se lancent sur un poste qui a la LIB (clone fait avec votre compte GitHub, ou `WEB_CAO_LIB=<dossier>`). Un secret `PROJETS_TOKEN` (token en lecture seule sur WEB_SUITE_PROJETS) les remettrait dans l'intégration continue.
@@ -195,7 +195,7 @@ Les bancs lisent la LIB à son emplacement par défaut (`../PROJETS/LIB_CAO`). W
 </details>
 
 > [!IMPORTANT]
-> `dist/` n'est pas versionné. Après une modification de `js/`, régénérez le monofichier de l'éditeur (`python editeur-pcb/outils/build-monofichier.py`, idem pour le schématique) : c'est lui que lisent les bancs `harness.js`, et c'est le fichier autonome qu'on ouvre en double-clic ou qu'on envoie par courriel. `index.html`, lui, ouvre les pages non assemblées, qui chargent `js/` directement.
+> `dist/` n'est pas versionné. Après une modification de `js/`, régénérez le monofichier de l'éditeur (`cargo run -p outils --bin build-monofichier -- editeur-pcb`, idem pour le schématique) : c'est lui que lisent les bancs `harness.js`, et c'est le fichier autonome qu'on ouvre en double-clic ou qu'on envoie par courriel. `index.html`, lui, ouvre les pages non assemblées, qui chargent `js/` directement.
 
 ## 🗺️ Feuille de route
 

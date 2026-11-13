@@ -7,5 +7,5 @@
 # V_NEXT_mV     : crete de la victime cote source (J{cas}2), en valeur absolue
 # V_FEXT_mV     : crete de la victime cote charge (J{cas}4), en valeur absolue
 # Les virgules decimales sont acceptees. Laisser vide ce qui n'est pas releve.
-# Puis : python bancs-mesure/crosstalk/banc-crosstalk-mesure.py
+# Puis : cargo run -p outils --bin banc-crosstalk-mesure
 cas;source;t_10_90_ns;V_agresseur_mV;V_NEXT_mV;V_FEXT_mV;note
