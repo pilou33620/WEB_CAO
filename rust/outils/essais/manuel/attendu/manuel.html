@@ -1,0 +1,77 @@
+<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Manuel WEB_CAO</title><style>
+:root{--fond:#14161a;--panel:#1c1f25;--bord:#2e333b;--txt:#d9dde3;--dim:#8d95a1;--jaune:#f2c230;--code:#0f1115}
+@media(prefers-color-scheme:light){:root{--fond:#fff;--panel:#f4f5f7;--bord:#d5d9df;--txt:#1d2127;--dim:#5b6570;--jaune:#9a6b00;--code:#eef0f3}}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:12px}
+body{margin:0;background:var(--fond);color:var(--txt);font:15px/1.55 system-ui,sans-serif;display:flex;min-height:100vh}
+nav{position:sticky;top:0;align-self:flex-start;width:300px;height:100vh;overflow:auto;background:var(--panel);border-right:1px solid var(--bord);padding:12px 10px;flex:none}
+nav input{width:100%;padding:7px 9px;border-radius:6px;border:1px solid var(--bord);background:var(--code);color:var(--txt);font:inherit;margin-bottom:8px}
+nav a{display:block;color:var(--txt);text-decoration:none;padding:2px 6px;border-radius:4px;font-size:13px}
+nav a:hover{background:var(--code)}nav a.c{font-weight:700;margin-top:8px}nav a.s{padding-left:18px;color:var(--dim)}
+nav .acc{font-size:12px;margin-bottom:6px}
+main{flex:1;min-width:0;max-width:980px;padding:20px 32px 80px;margin:0 auto}
+h1{border-bottom:2px solid var(--jaune);padding-bottom:6px;margin-top:2.2em}h1:first-child{margin-top:0}
+h2{margin-top:1.8em;border-bottom:1px solid var(--bord);padding-bottom:3px}h3{margin-top:1.4em}h4{color:var(--dim)}
+a{color:var(--jaune)}code{background:var(--code);padding:1px 5px;border-radius:4px;font:13px ui-monospace,monospace}
+pre{background:var(--code);padding:10px 12px;border-radius:6px;overflow:auto}pre code{padding:0;background:none}
+.tab{overflow-x:auto}table{border-collapse:collapse;margin:.8em 0;font-size:14px}
+th,td{border:1px solid var(--bord);padding:5px 9px;text-align:left;vertical-align:top}th{background:var(--panel)}
+blockquote{margin:1em 0;padding:2px 14px;border-left:4px solid var(--jaune);background:var(--panel)}
+blockquote.warning,blockquote.caution,blockquote.important{border-color:#e5534b}
+hr{border:0;border-top:1px solid var(--bord)}mark{background:var(--jaune);color:#000}
+.cache{display:none}#vide{display:none;color:var(--dim)}
+@media(max-width:800px){body{display:block}nav{position:static;width:auto;height:auto;max-height:40vh}main{padding:14px}}
+@media print{nav{display:none}main{max-width:none}}
+</style></head><body><nav><a class="acc" href="../../index.html">← Accueil WEB_CAO</a><input id="q" type="search" placeholder="Rechercher dans la page…" autocomplete="off"><a class="c" href="#index--seuil-du-manuel-code" data-s="s-index-0">Seuil du manuel &amp; code &lt;b&gt;</a>
+<a class="s" href="#index--deuxième-titre" data-s="s-index-1">Deuxième titre</a>
+<a class="s" href="#index--deuxième-titre-2" data-s="s-index-2">Deuxième titre</a>
+<a class="c" href="#index--pas-un-titre" data-s="s-index-3">pas un titre ?</a>
+<a class="c" href="#01-chap--chapitre-un" data-s="s-01-chap-0">Chapitre un</a>
+<a class="s" href="#01-chap--titre-en-double" data-s="s-01-chap-1">Titre en double</a>
+<a class="s" href="#01-chap--titre-en-double-2" data-s="s-01-chap-2">Titre en double</a>
+<a class="s" href="#01-chap--section" data-s="s-01-chap-3"></a></nav><main><section id="s-index-0"><span id="index"></span><h1 id="index--seuil-du-manuel-code">Seuil <i>du</i> manuel &amp; <code>code &lt;b&gt;</code></h1>
+<p>Un paragraphe avec <b>gras</b>, <i>italique</i>, <b><i>les deux</b></i> et a*b*c, 2 * 3 * 4, *pas fermé. Suite du paragraphe avec <code>a &lt; b &amp;&amp; &quot;c&quot;</code> et un <a href="https://exemple.org/a?b=1&amp;c=2" target="_blank" rel="noopener">lien externe</a>, <a href="mailto:x@y.z" target="_blank" rel="noopener">courriel</a>, <a href="#index--deuxieme-titre">ancre locale</a>, <a href="#01-chap">chapitre</a>, <a href="#01-chap--titre-en-double-2">chapitre ancré</a>, <a href="https://github.com/pilou33620/WEB_CAO/blob/main/autre/fichier.txt#L3" data-local="../../autre/fichier.txt#L3" target="_blank" rel="noopener">fichier du dépôt</a>, <a href="../regles/regles.html" target="_blank" rel="noopener">page</a>, <a href="#01-chap">chemin détourné</a>.</p></section>
+<section id="s-index-1"><h2 id="index--deuxième-titre">Deuxième titre</h2></section>
+<section id="s-index-2"><h2 id="index--deuxième-titre-2">Deuxième titre</h2>
+<p>Texte <i>avec séparateur</i> de ligne et tabulation	ici.</p>
+<hr>
+<ul><li>puce un suite de la puce<ul><li>sous-puce <i>a</i></li><li>sous-puce b encore</li></ul></li><li>puce deux</li><li>puce trois</li></ul>
+<ol><li>premier</li><li>second<ul><li>dedans</li></ul></li><li>troisième</li></ol>
+<blockquote class="warning"><p>Attention <b>ici</b>.</p>
+<ul><li>une liste</li></ul>
+<p>fin</p></blockquote>
+<blockquote><p>citation simple</p></blockquote>
+<p>sur une ligne collée</p>
+<div class="tab"><table><thead><tr><th>Col A</th><th>Col `B</th><th>`</th><th>C</th></tr></thead><tbody><tr><td>1</td><td><i>deux</i></td><td><a href="#01-chap">x</a></td></tr><tr><td>ligne courte</td></tr><tr><td></td><td>vide</td><td></td></tr></tbody></table></div>
+<pre><code></code></pre></section>
+<section id="s-index-3"><h1 id="index--pas-un-titre">pas un titre ?</h1>
+<p>&lt;b&gt;code&lt;/b&gt; &amp; "guillemets" 'simples'</p>
+<pre><code>
+#### Niveau 4 ½ ² _souligné_ É‿x
+##### pas un titre
+#pas non plus
+-- deux tirets
+|pas un tableau</code></pre>
+<p>bloc non fermé</p></section>
+<section id="s-01-chap-0"><span id="01-chap"></span><h1 id="01-chap--chapitre-un">Chapitre un</h1>
+<p>Ligne CRLF <i>x</i> .</p></section>
+<section id="s-01-chap-1"><h2 id="01-chap--titre-en-double">Titre en double</h2></section>
+<section id="s-01-chap-2"><h2 id="01-chap--titre-en-double-2">Titre en double</h2>
+<h3 id="01-chap--trois">Trois</h3>
+<p>texte collé</p></section>
+<section id="s-01-chap-3"><h2 id="01-chap--section"></h2></section><p id="vide">Aucun passage ne contient tous ces mots.</p></main><script>
+// ouvert par double-clic, hors ligne : les fichiers du dépôt sont juste à côté
+if(location.protocol==='file:')[].forEach.call(document.querySelectorAll('a[data-local]'),function(a){a.href=a.getAttribute('data-local');});
+(function(){
+ var q=document.getElementById('q'),secs=[].slice.call(document.querySelectorAll('main section')),
+     liens=[].slice.call(document.querySelectorAll('nav a[data-s]')),vide=document.getElementById('vide');
+ function norme(s){return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');}
+ secs.forEach(function(s){s._t=norme(s.textContent);});
+ q.addEventListener('input',function(){
+  var mots=norme(q.value).split(/\s+/).filter(Boolean),reste=0;
+  secs.forEach(function(s){var ok=mots.every(function(m){return s._t.indexOf(m)>=0;});
+   s.classList.toggle('cache',!ok);if(ok)reste++;});
+  liens.forEach(function(a){var s=document.getElementById(a.dataset.s);a.classList.toggle('cache',s.classList.contains('cache'));});
+  vide.style.display=reste?'none':'block';
+ });
+})();
+</script></body></html>

@@ -2,5 +2,10 @@
 name = "outils"
 version = "0.1.0"
 edition = "2021"
+description = "Outils de construction de WEB_CAO (manuel, monofichiers, fonte des plans), passerelle MCP et petits bancs"
+
+[lib]
+doctest = false
 
 [dependencies]
+regex = "1" # le Markdown du manuel et les balises des monofichiers
