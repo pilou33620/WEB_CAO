@@ -12,3 +12,10 @@ faer = "0.24"          # dense réel et complexe (LU, valeurs propres), creux (C
 num-complex = "0.4"    # les impédances, les matrices ABCD et S
 serde = { version = "1", features = ["derive"] } # les résultats finissent en JSON dans les pages : mêmes clés, même ordre
 serde_json = { version = "1", features = ["preserve_order"] } # l'exécutable de comparaison avec l'ancien Python
+
+# Le banc d'essai porté de python/test/banc-ligne-mom.py : comme lui, pas de harnais, un
+# décompte à la fin et un code de retour.
+[[test]]
+name = "banc"
+path = "tests/banc/main.rs"
+harness = false
