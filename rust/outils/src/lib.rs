@@ -5,6 +5,7 @@
 pub mod fonte_plans;
 pub mod manuel;
 pub mod monofichier;
+pub mod passerelle_mcp;
 
 use std::path::{Component, Path, PathBuf};
 

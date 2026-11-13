@@ -317,19 +317,7 @@ pub fn _milieu(geometry: &Geometrie) -> Res<Milieu> {
         }
     }
 
-    let mut commun = Milieu {
-        kind: Kind::Micro,
-        distance: h,
-        eps_vide: EPSILON_0,
-        couvert,
-        masque: None,
-        eps_moyen: 0.0,
-        g_diel: Green::spectral(|_| 0.0),
-        g_vide: Green::spectral(|_| 0.0),
-        echelles: Vec::new(),
-        flancs: None,
-        b_eq: None,
-    };
+    let (eps_moyen, g_diel, g_vide, echelles, masque);
     if masque_epaisseur > 0.0 {
         // LE MILIEU MOYEN EST L'ASYMPTOTE DE LA GREEN, pas le substrat.
         // Quand beta -> l'infini : coth(beta h) -> 1, K -> (1+1/er2)e^{beta c}/2
@@ -338,36 +326,38 @@ pub fn _milieu(geometry: &Geometrie) -> Res<Milieu> {
         // dielectriques qui bordent le ruban, exactement comme le microruban nu
         // donne eps0 (1+er)/2 avec l'air pour second milieu. Poser le substrat
         // seul decalait l'extraction de la partie singuliere.
-        commun.eps_moyen = EPSILON_0 * (epsilon_r + masque_epsilon) / 2.0;
-        commun.g_diel = Green::spectral(move |be| green_spectral_micro_masque(be, h, masque_epaisseur, epsilon_r, masque_epsilon));
+        eps_moyen = EPSILON_0 * (epsilon_r + masque_epsilon) / 2.0;
+        g_diel = Green::spectral(move |be| green_spectral_micro_masque(be, h, masque_epaisseur, epsilon_r, masque_epsilon));
         // LE VIDE, C'EST TOUT LE DIELECTRIQUE RETIRE -- le masque compris.
         // Le laisser a son er dans la reference gonflait C0, et eps_eff
         // BAISSAIT quand on vernissait la piste : l'inverse de la physique.
-        commun.g_vide = Green::spectral(move |be| green_spectral_micro_masque(be, h, masque_epaisseur, 1.0, 1.0));
-        commun.echelles = vec![h, masque_epaisseur];
-        commun.masque = masque_info;
+        g_vide = Green::spectral(move |be| green_spectral_micro_masque(be, h, masque_epaisseur, 1.0, 1.0));
+        echelles = vec![h, masque_epaisseur];
+        masque = masque_info;
     } else if couvert {
         // Ruban couvert : du dielectrique des deux cotes, donc le milieu moyen
         // est le stratifie tout entier -- c'est l'asymptote de la fonction de
         // Green qui le dit, et c'est ce qui change tout par rapport au cas nu.
-        commun.eps_moyen = EPSILON_0 * epsilon_r;
-        commun.g_diel = Green::spectral(move |be| green_spectral_micro_couvert(be, h, c_diel, epsilon_r));
-        commun.g_vide = Green::spectral(move |be| green_spectral_micro_couvert(be, h, c_diel, 1.0));
-        commun.echelles = vec![h, c_diel];
+        eps_moyen = EPSILON_0 * epsilon_r;
+        g_diel = Green::spectral(move |be| green_spectral_micro_couvert(be, h, c_diel, epsilon_r));
+        g_vide = Green::spectral(move |be| green_spectral_micro_couvert(be, h, c_diel, 1.0));
+        echelles = vec![h, c_diel];
+        masque = None;
     } else {
         // Le milieu moyen d'un microruban nu : moitie air, moitie stratifie.
         // C'est ce que dit l'asymptote, pas une convention.
-        commun.eps_moyen = EPSILON_0 * (1.0 + epsilon_r) / 2.0;
-        commun.g_diel = Green::spectral(move |be| green_spectral_micro(be, h, epsilon_r));
-        commun.g_vide = Green::spectral(move |be| green_spectral_micro(be, h, 1.0));
-        commun.echelles = vec![h];
+        eps_moyen = EPSILON_0 * (1.0 + epsilon_r) / 2.0;
+        g_diel = Green::spectral(move |be| green_spectral_micro(be, h, epsilon_r));
+        g_vide = Green::spectral(move |be| green_spectral_micro(be, h, 1.0));
+        echelles = vec![h];
+        masque = None;
     }
-    commun.flancs = Some(if masque_epaisseur > 0.0 {
+    let flancs = Some(if masque_epaisseur > 0.0 {
         _part_des_flancs(epsilon_r, t, masque_epaisseur, masque_epsilon)
     } else {
         _part_des_flancs(epsilon_r, t, c_diel, epsilon_r)
     });
-    Ok(commun)
+    Ok(Milieu { kind: Kind::Micro, distance: h, eps_moyen, eps_vide: EPSILON_0, g_diel, g_vide, echelles, couvert, masque, flancs, b_eq: None })
 }
 
 /// La part de l'elargissement qui vaut pour le calcul AVEC dielectrique.

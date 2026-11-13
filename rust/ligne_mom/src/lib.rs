@@ -39,6 +39,9 @@
 //     · il ne rayonne pas et ne resonne pas. Pour cela il faut l'onde complete,
 //       que le depot n'a plus (mom_solver/, retire le 2026-09-16).
 
+// `!(x > 0.0)` n'est pas `x <= 0.0` : il refuse aussi NaN, comme le `not (x > 0)` du Python.
+#![allow(clippy::neg_cmp_op_on_partial_ord, clippy::needless_range_loop)]
+
 mod alg;
 mod creux;
 pub mod cavite;
