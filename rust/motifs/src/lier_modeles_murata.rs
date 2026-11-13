@@ -436,12 +436,12 @@ pub fn valeur_reference(reference: &str) -> Option<f64> {
         let texte = format!("{}.{}", if entier.is_empty() { "0" } else { entier }, if decimale.is_empty() { "0" } else { decimale });
         return Some(py::float(&texte)? * echelle);
     }
-    // shortcut: str.isdigit() admet aussi les chiffres d'autres écritures ; seuls ceux d'ASCII
-    // sont lus ici (une référence Murata n'en porte pas d'autres)
-    if !code.bytes().all(|c| c.is_ascii_digit()) {
+    // shortcut: str.isdigit() admet aussi les chiffres en exposant (« ² »), sur lesquels float()
+    // arrêtait le script ; ici la référence est simplement sans valeur lisible
+    if !code.chars().all(|c| c.is_ascii_digit() || (!c.is_ascii() && py::float(c.encode_utf8(&mut [0; 4])).is_some())) {
         return None;
     }
-    Some(code[..2].parse::<f64>().ok()? * 10f64.powi((code.as_bytes()[2] - b'0') as i32) * echelle)
+    Some(py::float(tranche(code, 0, 2))? * 10f64.powi(py::float(tranche(code, 2, 3))? as i32) * echelle)
 }
 
 /// Vrai si la valeur du catalogue et celle codee dans la reference different.
@@ -565,14 +565,14 @@ pub fn principal(args: &[String], lieux: &Lieux, sortie: &mut dyn Write) -> Resu
             appliquer = true;
         } else if let Some((option, valeur)) = a.split_once('=').filter(|(o, _)| o.len() >= 3 && "--appliquer".starts_with(o)) {
             let _ = option;
-            eprint!("{USAGE}lier_modeles_murata: error: argument --appliquer: ignored explicit argument '{valeur}'\n");
+            eprintln!("{USAGE}lier_modeles_murata: error: argument --appliquer: ignored explicit argument '{valeur}'");
             return Ok(2);
         } else {
             inconnus.push(a.as_str());
         }
     }
     if !inconnus.is_empty() {
-        eprint!("{USAGE}lier_modeles_murata: error: unrecognized arguments: {}\n", inconnus.join(" "));
+        eprintln!("{USAGE}lier_modeles_murata: error: unrecognized arguments: {}", inconnus.join(" "));
         return Ok(2);
     }
 
