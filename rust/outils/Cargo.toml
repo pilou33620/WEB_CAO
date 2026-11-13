@@ -15,3 +15,6 @@ ureq = { version = "2", default-features = false, features = ["tls", "native-cer
 
 [dev-dependencies]
 flate2 = "1" # les captures PNG de banc_anim3d_images (PIL, côté Python)
+# banc_ipc2581_export : le lecteur d'en face, et le moteur de motifs qu'il appelle (natures des nets)
+ipc2581 = { git = "https://github.com/pilou33620/web_suite", rev = "915bf4fd282b442d23f3e15f59644f89e71175a5" }
+motifs = { path = "../motifs" }

@@ -1024,6 +1024,8 @@ name = "outils"
 version = "0.1.0"
 dependencies = [
  "flate2",
+ "ipc2581",
+ "motifs",
  "regex",
  "serde_json",
  "ureq",
