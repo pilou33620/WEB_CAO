@@ -40,28 +40,29 @@
 //       que le depot n'a plus (mom_solver/, retire le 2026-09-16).
 
 mod alg;
-//pub mod cavite;
+mod creux;
+pub mod cavite;
 pub mod couplees;
 pub mod discontinuites;
-//pub mod emission;
+pub mod emission;
 pub mod green;
-//pub mod grille;
+pub mod grille;
 pub mod ligne;
 pub mod matrice;
 pub mod pertes;
-//pub mod traversee;
+pub mod traversee;
 
-//pub use cavite::*;
+pub use cavite::*;
 pub use couplees::*;
 pub use discontinuites::*;
-//pub use emission::*;
+pub use emission::*;
 pub use green::*;
-//pub use grille::*;
+pub use grille::*;
 pub use ligne::*;
 pub use matrice::*;
 pub use num_complex::Complex64;
 pub use pertes::*;
-//pub use traversee::*;
+pub use traversee::*;
 
 use serde::Serialize;
 
