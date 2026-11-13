@@ -228,7 +228,7 @@ pub struct Modele {
     /// le renvoi [Algorithmic Model], en lecture complete
     pub ami: Option<Vec<RenvoiAmi>>,
     // la place de la cle « ami » parmi `refs`, pour rendre le dict dans l'ordre de Python
-    rang_ami: usize,
+    pub(crate) rang_ami: usize,
 }
 
 /// [Package] : R_pkg, L_pkg, C_pkg (indices R, L, C).
