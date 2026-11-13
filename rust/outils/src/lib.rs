@@ -1,6 +1,9 @@
 //! Les outils de construction de WEB_CAO, portés de Python : le manuel et les règles
 //! (`manuel`), les monofichiers des deux éditeurs (`monofichier`), la fonte des plans
 //! (`fonte_plans`). Chaque exécutable de `src/bin/` n'est qu'un appel ; la mécanique est ici.
+//! S'y ajoutent la passerelle MCP vers pcbparts.dev (`passerelle_mcp`, pour le serveur), le
+//! banc de mesure du crosstalk (`banc_crosstalk`) et Chromium sans fenêtre (`chromium`), que
+//! les bancs de `tests/` lancent.
 
 pub mod banc_crosstalk;
 pub mod chromium;
