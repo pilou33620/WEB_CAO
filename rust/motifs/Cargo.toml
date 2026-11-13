@@ -2,5 +2,14 @@
 name = "motifs"
 version = "0.1.0"
 edition = "2021"
+description = "Reconnaissance de motifs du schéma, qualité de placement PCB et liaison des modèles Murata de WEB_CAO"
+
+[lib]
+doctest = false
 
 [dependencies]
+# Json / Objet (les dict de Python, ordre gardé), dumps, float(), round(), sum(), hypot() -- et le
+# crochet `Motifs` du lecteur IPC-2581, que `motifs::motifs_ipc2581` remplit
+ipc2581 = { git = "https://github.com/pilou33620/web_suite", rev = "915bf4fd282b442d23f3e15f59644f89e71175a5" }
+regex = "1"
+zip = { version = "2", default-features = false, features = ["deflate"] } # les packs Murata livrés en .zip
