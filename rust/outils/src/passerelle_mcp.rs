@@ -147,6 +147,26 @@ pub struct ClientMCP {
     verrou: Mutex<Session>,
 }
 
+/// L'hote de `url` est-il de ceux qu'on joint sans proxy : la machine elle-meme, ou un nom
+/// de NO_PROXY (le nom entier, ou un suffixe de domaine).
+fn hors_proxy(url: &str) -> bool {
+    let apres = url.split_once("://").map_or(url, |(_, r)| r);
+    let hote = apres.split(['/', '?']).next().unwrap_or("");
+    let hote = hote.rsplit_once('@').map_or(hote, |(_, h)| h);
+    let hote = match hote.strip_prefix('[') {
+        Some(v6) => v6.split(']').next().unwrap_or(""),
+        None => hote.split(':').next().unwrap_or(""),
+    }
+    .to_lowercase();
+    if hote == "localhost" || hote == "::1" || hote.starts_with("127.") {
+        return true;
+    }
+    let liste = std::env::var("NO_PROXY").or_else(|_| std::env::var("no_proxy")).unwrap_or_default().to_lowercase();
+    liste.split(',').map(|e| e.trim().trim_start_matches(['*', '.'])).any(|e| {
+        !e.is_empty() && (e == "*" || hote == e || hote.ends_with(&format!(".{e}")))
+    })
+}
+
 fn decoder(octets: &[u8]) -> String {
     String::from_utf8_lossy(octets).into_owned()
 }
@@ -157,8 +177,11 @@ impl ClientMCP {
             url: url.into(),
             // native-certs lit le magasin de certificats du systeme :
             // indispensable derriere un proxy d'entreprise qui reecrit le TLS.
-            // try_proxy_from_env : urllib suivait HTTPS_PROXY tout seul.
-            agent: ureq::AgentBuilder::new().timeout(Duration::from_secs_f64(timeout)).try_proxy_from_env(true).build(),
+            // try_proxy_from_env : urllib suivait HTTPS_PROXY tout seul, NO_PROXY compris.
+            agent: ureq::AgentBuilder::new()
+                .timeout(Duration::from_secs_f64(timeout))
+                .try_proxy_from_env(!hors_proxy(url))
+                .build(),
             verrou: Mutex::new(Session { session_id: None, pret: false, outils: None }),
         }
     }
