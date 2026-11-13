@@ -12,3 +12,6 @@ regex = "1" # le Markdown du manuel et les balises des monofichiers
 serde_json = { version = "1", features = ["preserve_order"] } # les dict de Python gardent l'ordre d'insertion
 # La passerelle MCP : urllib + ssl de Python. native-certs lit le magasin de certificats du système.
 ureq = { version = "2", default-features = false, features = ["tls", "native-certs"] }
+
+[dev-dependencies]
+flate2 = "1" # les captures PNG de banc_anim3d_images (PIL, côté Python)

@@ -3,6 +3,7 @@
 //! (`fonte_plans`). Chaque exécutable de `src/bin/` n'est qu'un appel ; la mécanique est ici.
 
 pub mod banc_crosstalk;
+pub mod chromium;
 pub mod fonte_plans;
 pub mod manuel;
 pub mod monofichier;
