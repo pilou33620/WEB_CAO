@@ -103,7 +103,7 @@ fn dot(a: &[f64], b: &[f64]) -> f64 {
 pub fn gradient_conjugue(a: &Csr, b: &[f64], rtol: f64, atol: f64, maxiter: usize) -> Result<Vec<f64>, usize> {
     let n = b.len();
     // Le préconditionneur de Jacobi : v / diagonale, une diagonale nulle prise pour 1.
-    let inverse: Vec<f64> = a.diagonale().iter().map(|d| if d.abs() > 0.0 { *d } else { 1.0 }).collect();
+    let diagonale: Vec<f64> = a.diagonale().iter().map(|d| if d.abs() > 0.0 { *d } else { 1.0 }).collect();
     let bnrm2 = dot(b, b).sqrt();
     let atol = crate::pyth::max_py(atol, rtol * bnrm2);
     if bnrm2 == 0.0 {
@@ -120,7 +120,7 @@ pub fn gradient_conjugue(a: &Csr, b: &[f64], rtol: f64, atol: f64, maxiter: usiz
             return Ok(x); // Are we done?
         }
         for i in 0..n {
-            z[i] = r[i] / inverse[i];
+            z[i] = r[i] / diagonale[i];
         }
         let rho_cur = dot(&r, &z);
         if iteration > 0 {
