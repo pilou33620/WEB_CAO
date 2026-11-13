@@ -2,5 +2,13 @@
 name = "ligne_mom"
 version = "0.1.0"
 edition = "2021"
+description = "Impédance d'une ligne par méthode des moments sur la section droite, discontinuités et cavité entre plans : le portage de python/ligne_mom.py"
+
+[lib]
+doctest = false # les schémas indentés des commentaires ne sont pas du code
 
 [dependencies]
+faer = "0.24"          # dense réel et complexe (LU, valeurs propres), creux (Cholesky) : ce que numpy et scipy.sparse faisaient
+num-complex = "0.4"    # les impédances, les matrices ABCD et S
+serde = { version = "1", features = ["derive"] } # les résultats finissent en JSON dans les pages : mêmes clés, même ordre
+serde_json = { version = "1", features = ["preserve_order"] } # l'exécutable de comparaison avec l'ancien Python
