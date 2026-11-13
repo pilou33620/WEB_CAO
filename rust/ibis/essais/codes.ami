@@ -1,0 +1,6 @@
+(codes (Model_Specific
+  (ffe (pre (Usage In) (Type Integer) (Range 3 0 31)) (main (Usage In) (Type Integer) (Range 20 0 31)) (post (Usage In)(Type Integer)(Value 5)))
+  (rx (ctle (peak_db (Usage In) (Type Float) (Increment 2 0 20 0.5)) ) (dfe (n_taps (Usage In) (Type Integer) (Value 3)) (2 (Usage In) (Type Float) (Value 0.5))))
+  (a (Usage In) (Type Float) (Value 1))
+  (a (b (c (Usage In) (Type Float) (Value 2))))
+))

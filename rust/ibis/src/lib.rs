@@ -81,6 +81,9 @@ mod lecture;
 mod py;
 mod tampon;
 
+#[cfg(test)]
+mod essais;
+
 pub use abcd::*;
 pub use ami::*;
 pub use lecture::*;

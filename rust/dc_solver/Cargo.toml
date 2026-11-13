@@ -2,5 +2,11 @@
 name = "dc_solver"
 version = "0.1.0"
 edition = "2021"
+description = "Chute de tension continue dans le cuivre et échauffement : le portage de python/dc_solver.py"
+
+[lib]
+doctest = false # les schémas indentés des commentaires ne sont pas du code
 
 [dependencies]
+# Json (les dict de Python, ordre des clés compris), dumps, round, sum et hypot de Python
+ipc2581 = { git = "https://github.com/pilou33620/web_suite", rev = "915bf4fd282b442d23f3e15f59644f89e71175a5" }
