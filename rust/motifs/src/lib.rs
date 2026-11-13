@@ -7,6 +7,7 @@
 //! Les documents sont des `Json` (le dict de Python, ordre des clés gardé) et les résultats
 //! s'écrivent avec `dumps` : à l'octet ce que rendait `json.dumps(..., ensure_ascii=False)`.
 
+pub mod appel;
 pub mod lier_modeles_murata;
 pub mod pattern_recognition;
 pub mod pcb_scoring;
