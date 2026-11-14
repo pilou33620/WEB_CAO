@@ -14,6 +14,7 @@ ipc2581 = { git = "https://github.com/pilou33620/web_suite", rev = "915bf4fd282b
 # son module `pyth` : float(), str(), « %g » et json.loads de Python, déjà portés
 dc_solver = { path = "../dc_solver" }
 num-complex = "0.4"    # les matrices ABCD et S
+faer = "0.24"          # crosstalk : Cholesky, valeurs propres symétriques et LU denses (numpy.linalg), comme ligne_mom
 serde = "1"            # les structures de résultat de ligne_mom, remises en dict
 serde_json = { version = "1", features = ["preserve_order"] }
 
