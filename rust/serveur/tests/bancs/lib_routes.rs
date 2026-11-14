@@ -201,6 +201,17 @@ fn test_12b_corps_trop_gros_refuse_en_413_et_non_en_500() {
     assert_eq!(refus(&s, "/api/lib/composants", &format!(r#"{{"colonnes": ["Part Name"], "composants": [{{"Part Name": "{}"}}]}}"#, "x".repeat(4096))), 413);
 }
 
+/// L'union des colonnes relit la liste pour chaque clé : au-delà de 500 colonnes, refus.
+#[test]
+fn test_12c_trop_de_colonnes_refuse() {
+    let (tmp, s, _) = serveur_tmp("webcao-lib-12c", |_| {});
+    let avant = std::fs::read(format!("{tmp}/LIB_composants.csv")).unwrap();
+    let cles: Vec<String> = (0..600).map(|i| format!(r#""c{i}": "x""#)).collect();
+    let corps = format!(r#"{{"colonnes": ["Part Name"], "composants": [{{{}}}]}}"#, cles.join(", "));
+    assert_eq!(refus(&s, "/api/lib/composants", &corps), 400);
+    assert_eq!(std::fs::read(format!("{tmp}/LIB_composants.csv")).unwrap(), avant);
+}
+
 #[test]
 fn test_13_catalogue_ancien_format_crcrlf_toujours_lisible() {
     let (tmp, s, reelle) = serveur_tmp("webcao-lib-13", |_| {});

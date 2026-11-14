@@ -418,6 +418,10 @@ fn la_chaine_de_parametres_ami_s_ecrit_et_se_relit() {
     for (brut, rac, message) in [
         ("x.so", &[][..], "Aucun dossier autorisé pour les bibliothèques AMI."),
         ("http://a/b.so", &["/tmp"], "Chemin de bibliothèque AMI invalide."),
+        // un partage reseau : refuse sans y toucher (condensat NTLM sous Windows)
+        (r"\\hote\partage\x.dll", &["/tmp"], "Chemin de bibliothèque AMI invalide."),
+        ("//hote/partage/x.so", &["/tmp"], "Chemin de bibliothèque AMI invalide."),
+        (r"/\hote\partage\x.dll", &["/tmp"], "Chemin de bibliothèque AMI invalide."),
         ("fichier.txt", &["/tmp"], "« fichier.txt » n'est pas une bibliothèque (.so, .dll, .dylib)."),
         ("", &["/tmp"], "Aucune bibliothèque AMI désignée."),
         ("/etc/hostname", &["/etc"], "« hostname » n'est pas une bibliothèque (.so, .dll, .dylib)."),

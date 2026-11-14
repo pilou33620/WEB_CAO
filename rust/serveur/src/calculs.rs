@@ -1,6 +1,7 @@
 //! Les routes de calcul : la page envoie un document, le serveur rend le résultat. Rien
 //! n'est écrit sur le disque, rien n'est gardé en mémoire au-delà de la réponse.
 
+use std::collections::HashMap;
 use std::io::Read;
 
 use web_tools_commun::serveur::{Reponse, Requete};
@@ -34,6 +35,9 @@ pub const MAX_PATTERNS: usize = 16 * 1024 * 1024;
 // pastilles sur quatre couches font quelques mega-octets de JSON.
 pub const MAX_ANALYSE: usize = 32 * 1024 * 1024;
 const MAX_DEPLIE: usize = 64 * 1024 * 1024; // un corps gzip, une fois deplie (lire_document)
+// Les grilles une fois recopiees dans leurs vias, en noeuds JSON (~70 octets chacun) :
+// 440 Ko de document (une grille de 100 000 nombres, 10 000 cles) en demandaient 72 Go.
+const MAX_GRILLES: usize = MAX_DEPLIE / 16;
 
 /// Refuse une epaisseur d'empilage hors bornes physiques (mm).
 ///
@@ -59,28 +63,42 @@ fn borner_empilage(doc: &Json) -> Result<(), Refus> {
 /// vias n'en portent que la cle (`simCorpsJson`). On la remet en place.
 // shortcut: la grille est recopiée dans chaque via (Json n'a pas de partage, Python posait le
 // même objet) ; si la mémoire en souffre sur une grosse carte, faire lire la table par `em`.
-pub fn deplier_grilles(mut doc: Json) -> Json {
-    let Json::Objet(o) = &mut doc else { return doc };
-    let Some(table) = o.shift_remove("cavites_grilles").filter(Json::vrai) else { return doc };
-    fn poser(v: &mut Json, table: &Json) {
+pub fn deplier_grilles(mut doc: Json) -> Result<Json, Refus> {
+    let Json::Objet(o) = &mut doc else { return Ok(doc) };
+    let Some(table) = o.shift_remove("cavites_grilles").filter(Json::vrai) else { return Ok(doc) };
+    fn noeuds(v: &Json) -> usize {
+        match v {
+            Json::Objet(o) => 1 + o.values().map(noeuds).sum::<usize>(),
+            Json::Liste(l) => 1 + l.iter().map(noeuds).sum::<usize>(),
+            _ => 1,
+        }
+    }
+    // chaque grille est comptee une fois ; chaque cle en coute autant, sur le budget
+    let tailles: HashMap<&str, usize> = table.as_objet().into_iter().flatten().map(|(k, g)| (k.as_str(), noeuds(g))).collect();
+    fn poser(v: &mut Json, table: &Json, tailles: &HashMap<&str, usize>, reste: &mut usize) -> Option<()> {
         match v {
             Json::Objet(o) => {
                 for (k, v) in o.iter_mut() {
                     if k != "cavite_grille" {
-                        poser(v, table);
+                        poser(v, table, tailles, reste)?;
                     } else if let Some(cle) = v.as_str() {
+                        *reste = reste.checked_sub(tailles.get(cle).copied().unwrap_or(1))?;
                         // pas de descente dans la grille : une grille qui se cite elle-meme
                         // bouclait sans fin
                         *v = table[cle].clone();
                     }
                 }
             }
-            Json::Liste(l) => l.iter_mut().for_each(|v| poser(v, table)),
+            Json::Liste(l) => l.iter_mut().try_for_each(|v| poser(v, table, tailles, reste))?,
             _ => {}
         }
+        Some(())
     }
-    poser(&mut doc, &table);
-    doc
+    let mut reste = MAX_GRILLES;
+    if poser(&mut doc, &table, &tailles, &mut reste).is_none() {
+        return Err(refus(413, "Document trop grand une fois les grilles de cavite depliees"));
+    }
+    Ok(doc)
 }
 
 /// Un calcul sur son propre fil : une pile large (les solveurs descendent profond), et une
@@ -213,7 +231,7 @@ impl Poste {
             corps = brut;
         }
         let texte = json::decoder_utf8(corps).map_err(|exc| refus(400, format!("Document JSON illisible : {}", exc)))?;
-        let doc = deplier_grilles(json::loads(&texte).map_err(|exc| refus(400, format!("Document JSON illisible : {}", exc)))?);
+        let doc = deplier_grilles(json::loads(&texte).map_err(|exc| refus(400, format!("Document JSON illisible : {}", exc)))?)?;
         borner_empilage(&doc)?;
         Ok(doc)
     }
@@ -307,14 +325,25 @@ impl Poste {
         sur_un_fil(|| rf_reseau::analyser(&doc, Some(&mut terminal)).map_err(|exc| refus_solveur(exc.message, exc.conseil, exc.interne)))
     }
 
+    /// Les dossiers d'ou une bibliotheque AMI s'execute : aucun pour un autre appareil,
+    /// meme appaire -- charger du code natif reste un geste de ce poste (le module refuse
+    /// une liste vide, l'oeil se replie sur l'egaliseur de reference).
+    pub fn racines_ami(&self, local: bool) -> Vec<String> {
+        if !local {
+            return Vec::new();
+        }
+        let mut racines = vec![self.dossier_lib()];
+        racines.extend(self.racines());
+        racines
+    }
+
     /// POST /api/oeil : l'oeil d'une liaison et son gabarit.
     fn oeil_lancer(&self, r: &mut Requete) -> Rendu {
         let doc = Self::lire_document(r, MAX_OEIL)?;
         // UNE BIBLIOTHEQUE AMI ne s'execute que depuis la LIB ou une racine
         // de projets declaree (`ibis::chemin_bibliotheque_ami`) :
         // c'est ici que le serveur dit lesquelles.
-        let mut racines = vec![self.dossier_lib()];
-        racines.extend(self.racines());
+        let racines = self.racines_ami(self.client_local(r));
         let racines: Vec<&str> = racines.iter().map(String::as_str).collect();
         sur_un_fil(|| oeil::analyser(&doc, Some(&mut terminal), Some(&racines)).map_err(|exc| refus_solveur(exc.message, exc.conseil, exc.interne)))
     }
@@ -360,10 +389,10 @@ mod essais {
     #[test]
     fn grilles_et_empilage() {
         let doc = loads(r#"{"cavites_grilles": {"g0": {"pas": 0.5, "lignes": []}}, "vias": [{"x": 0, "y": 0, "cavite_grille": "g0"}]}"#).unwrap();
-        assert_eq!(dumps(&deplier_grilles(doc)), r#"{"vias": [{"x": 0, "y": 0, "cavite_grille": {"pas": 0.5, "lignes": []}}]}"#);
+        assert_eq!(dumps(&deplier_grilles(doc).unwrap()), r#"{"vias": [{"x": 0, "y": 0, "cavite_grille": {"pas": 0.5, "lignes": []}}]}"#);
         // une grille de cavite qui se cite elle-meme ne bloque plus le serveur
         let doc = loads(r#"{"cavites_grilles": {"a": {"cavite_grille": "a"}}, "v": {"cavite_grille": "a"}}"#).unwrap();
-        assert_eq!(dumps(&deplier_grilles(doc)["v"]["cavite_grille"]), r#"{"cavite_grille": "a"}"#);
+        assert_eq!(dumps(&deplier_grilles(doc).unwrap()["v"]["cavite_grille"]), r#"{"cavite_grille": "a"}"#);
         let empilage = |couche: &str| borner_empilage(&loads(&format!(r#"{{"stackup": {{"layers": [{}]}}}}"#, couche)).unwrap());
         assert!(empilage(r#"{"type": "copper", "name": "TOP", "thickness": 0.035}, {"thickness": ""}, {"thickness": null}, 5"#).is_ok());
         let exc = empilage(r#"{"type": "copper", "name": "TOP", "thickness": 1e9}"#).unwrap_err();

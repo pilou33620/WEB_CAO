@@ -655,6 +655,12 @@ fn nom_de_fichier(chemin: &str) -> &str {
     chemin.rsplit(std::path::MAIN_SEPARATOR).next().unwrap_or(chemin)
 }
 
+/// Un chemin de partage reseau (« \\hote\partage », « //hote/partage ») : sous Windows, le
+/// seul fait de le resoudre ouvre une session chez `hote` (le condensat NTLM y part).
+fn chemin_reseau(chemin: &str) -> bool {
+    chemin.chars().take(2).filter(|c| matches!(c, '/' | '\\')).count() == 2
+}
+
 /// Le chemin absolu de la bibliotheque AMI designee par `brut`, sous une
 /// des `racines` autorisees (le verdict se fonde sur le chemin reel), ou rend
 /// ErreurIbis. Un chemin absolu est accepte s'il tombe sous une racine.
@@ -663,7 +669,8 @@ pub fn chemin_bibliotheque_ami(brut: &str, racines: &[&str]) -> Result<String, E
     if brut.is_empty() {
         return Err(ErreurIbis::new("Aucune bibliothèque AMI désignée.", ""));
     }
-    if brut.chars().count() > 400 || brut.contains('\0') || brut.contains("://") {
+    // refuse avant tout acces au disque
+    if brut.chars().count() > 400 || brut.contains('\0') || brut.contains("://") || chemin_reseau(brut) {
         return Err(ErreurIbis::new(
             "Chemin de bibliothèque AMI invalide.",
             "Un chemin de fichier sous la LIB ou le projet, pas une URL.",
@@ -939,13 +946,14 @@ impl ModeleAmi {
 
     /// AMI_GetWave sur un bloc : (ok, onde rendue, instants d'horloge,
     /// parametres_out).
-    pub fn getwave(&mut self, onde: &[f64], echantillons_par_bit: i64) -> Result<(bool, Vec<f64>, Vec<f64>, String), ErreurIbis> {
+    pub fn getwave(&mut self, onde: &[f64], _echantillons_par_bit: i64) -> Result<(bool, Vec<f64>, Vec<f64>, String), ErreurIbis> {
         let Some(getwave) = self.ami_getwave else {
             return Err(ErreurIbis::new("Le modèle n'a pas d'AMI_GetWave.", ""));
         };
         let mut w = onde.to_vec();
-        let n_h = w.len() / echantillons_par_bit.max(1) as usize + 2;
-        let mut horloges = vec![-1.0; n_h];
+        // autant de cases que d'echantillons (la norme) : un modele qui rend plus d'un
+        // instant par bit ecrivait hors du tableau
+        let mut horloges = vec![-1.0; w.len() + 2];
         let mut p_out = std::ptr::null();
         // SAFETY: comme pour AMI_Init ; la memoire est celle que le modele a rendue
         let ret = unsafe {
