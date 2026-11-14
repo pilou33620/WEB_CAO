@@ -29,6 +29,7 @@ mod usimmics;
 mod xt;
 mod xt_a;
 mod xt_b;
+mod xt_c;
 
 pub use em::simulation_em::base::*;
 pub use em::simulation_em::*;
@@ -153,6 +154,7 @@ fn main() {
     usimmics::banc();
     xt_a::banc();
     xt_b::banc();
+    xt_c::banc();
     let (ok, ko) = (OK.load(Ordering::Relaxed), KO.load(Ordering::Relaxed));
     println!("\n{}", "-".repeat(62));
     println!("  {} cas, {}", ok + ko, if ko == 0 { "tous passes".to_string() } else { format!("{ko} en echec") });
