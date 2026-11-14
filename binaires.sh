@@ -6,6 +6,8 @@
 DEPOT_BINAIRES="https://github.com/pilou33620/WEB_CAO/releases/download/binaires"
 
 obtenir_binaires() {
+  # archive de production (publication « binaires », sans les sources) : son executable est deja la
+  if [ ! -f Cargo.toml ] && [ -x bin/web_cao ]; then return 0; fi
   mkdir -p bin
   if command -v cargo >/dev/null 2>&1; then
     # web_cao seul : les outils de construction et de comparaison des caisses restent dans target/

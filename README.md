@@ -37,6 +37,8 @@ Ouvrir `index.html` sans serveur ne demande rien. Le serveur est un exécutable 
 | **Raspberry Pi, Debian** | `sudo apt install git curl` puis `git clone https://github.com/pilou33620/WEB_CAO.git` | `./demarrer_WEB_CAO.sh` |
 | **Windows** | Git, puis `git clone https://github.com/pilou33620/WEB_CAO.git` | double-clic sur `demarrer_WEB_CAO.cmd` (mode local) ; `bin\web_cao.exe` dans un terminal pour le réseau |
 
+**Sans git ni cargo** : l'archive de production `web_cao-prod-<système>` (`.tar.gz` ; `.zip` sous Windows) de la [publication « binaires »](https://github.com/pilou33620/WEB_CAO/releases/tag/binaires) contient l'exécutable, les scripts de démarrage et les pages (outils, manuel, règles des fabricants), sans les sources. Décompressez-la, puis lancez `demarrer_WEB_CAO` comme ci-dessus. Elle ne se met pas à jour seule : pour changer de version, reprenez l'archive (en gardant vos dossiers `projets/`, `LIB/` et `profils/`).
+
 ## 💻 Sur quels appareils ?
 
 WEB_CAO tourne dans n'importe quel navigateur récent ; seul le serveur demande un poste où tourne l'exécutable `web_cao` (Linux, Raspberry Pi, macOS, Windows).

@@ -1,7 +1,11 @@
 name: exécutables
 
 # Compile l'exécutable Rust de WEB_CAO pour chaque système et les dépose dans la
-# publication « binaires » : binaires.sh / binaires.cmd les y prennent sur les postes sans cargo.
+# publication « binaires », en deux archives par système :
+# - web_cao-<système> : l'exécutable seul, que binaires.sh / binaires.cmd prennent sur un
+#   clone git sans cargo ;
+# - web_cao-prod-<système> : la production, complète et sans git — l'exécutable, les scripts
+#   de démarrage et ce que le serveur sert (pages, js, css, données). Ni sources, ni specs, ni bancs.
 on:
   push:
     branches: [main]
@@ -51,6 +55,34 @@ jobs:
             tar -czf web_cao-${{ matrix.nom }}.tar.gz -C bin .
           fi
 
+      - name: Archive de production (exécutable, scripts de démarrage, pages)
+        shell: bash
+        run: |
+          P=prod/web_cao
+          mkdir -p $P/commun/vendor $P/docs/manuel $P/docs/regles $P/profils
+          cp -r bin $P/
+          cp demarrer_*.sh demarrer_*.cmd binaires.sh binaires.cmd README.md LICENSE $P/
+          # ce que le serveur sert (STATIQUE de rust/serveur/src/poste.rs) : l'accueil, la page
+          # de chaque outil avec ses js/ et css/ (ni test/, ni dist/), commun/, le manuel et
+          # les règles générés, les règles des fabricants
+          cp index.html $P/
+          for o in editeur-pcb editeur-schematique gestion-lib visionneuse-ipc2581 recherche-composants; do
+            mkdir -p $P/$o
+            cp $o/*.html $P/$o/
+            cp -r $o/js $o/css $P/$o/
+          done
+          cp commun/*.js commun/*.css commun/*.json $P/commun/
+          cp commun/vendor/* $P/commun/vendor/
+          cp docs/manuel/manuel.html $P/docs/manuel/
+          cp docs/regles/regles.html $P/docs/regles/
+          # profils/ : le serveur y range aussi les profils des utilisateurs
+          cp -r profils/fabricants profils/LISEZ-MOI.md $P/profils/
+          if [ "${{ runner.os }}" = Windows ]; then
+            (cd prod && 7z a ../web_cao-prod-${{ matrix.nom }}.zip web_cao)
+          else
+            tar -czf web_cao-prod-${{ matrix.nom }}.tar.gz -C prod web_cao
+          fi
+
       - name: Publication
         shell: bash
         env:
@@ -59,6 +91,6 @@ jobs:
           # les quatre compilations arrivent ensemble : une seule crée la publication
           gh release view binaires >/dev/null 2>&1 \
             || gh release create binaires --title "Exécutables" \
-                 --notes "Exécutables de WEB_CAO, recompilés à chaque envoi sur main. Pris par binaires.sh et binaires.cmd." \
+                 --notes "Exécutables de WEB_CAO, recompilés à chaque envoi sur main. web_cao-<système> : pris par binaires.sh et binaires.cmd. web_cao-prod-<système> : la production complète (exécutable, scripts de démarrage, pages), à décompresser puis lancer par demarrer_WEB_CAO." \
             || true
-          gh release upload binaires web_cao-${{ matrix.nom }}.* --clobber
+          gh release upload binaires web_cao-${{ matrix.nom }}.* web_cao-prod-${{ matrix.nom }}.* --clobber
