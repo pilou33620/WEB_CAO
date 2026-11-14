@@ -100,7 +100,8 @@ pub fn niveau2(morceaux: &[Morceau], t_r: f64, orange: f64, rouge: f64, att_fext
         // 1/2 (Cm/C11 + Lm/L11), soit deux fois le Kb.
         "k_total" => round(2.0 * kb_max, 6),
         "kb" => round(kb_max, 6), "kf" => round(kf_max, 6),
-        "td_s" => td, "td_ps" => round(1e12 * td, 3),
+        // sans morceau, sum() rend l'ENTIER 0 de Python
+        "td_s" => if morceaux.is_empty() { Json::Entier(0) } else { Json::Flottant(td) }, "td_ps" => round(1e12 * td, 3),
         // LE FRONT AU-DESSOUS DUQUEL LE NEXT SATURE : 2 T_d pour un couplage
         // uniforme, moins quand il culmine sur une partie du longement.
         "t_sature_ps" => if kb_max > 0.0 { round(1e12 * 2.0 * s_kb / kb_max, 3) } else { 0.0 },

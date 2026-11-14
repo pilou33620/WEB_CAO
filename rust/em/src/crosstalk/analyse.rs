@@ -1070,7 +1070,8 @@ pub fn _lire_couples(base: &mut Json, infos: &Infos, retenus: &[Json], couches: 
             "type" => &fiche["type"], "cote" => &fiche["cote"],
             "nom_couche" => fiche.get("nom_couche").cloned().unwrap_or(Json::Texte(String::new())),
             "superposee" => !sup.is_empty(),
-            "longueur_superposee" => round(long_sup, 3),
+            // sum() d'une liste vide est l'ENTIER 0 de Python, et round le laisse entier
+            "longueur_superposee" => if sup.is_empty() { Json::Entier(0) } else { Json::Flottant(round(long_sup, 3)) },
             "mesure_partielle" => etat.mesure_partielle,
             "longueur_non_calculee" => etat.longueur_non_calculee,
             "bloc_max" => round(bloc_max, 3),

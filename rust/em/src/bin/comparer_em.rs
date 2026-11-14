@@ -1,18 +1,96 @@
-//! Passe des documents JSON a `simuler` et aux autres points d'entree, et sort les resultats
+//! Passe des documents JSON a `simuler`, a `crosstalk.analyser` et aux autres points d'entree, et sort les resultats
 //! en JSON : la meme liste que le script Python jetable de la verification par comparaison.
 //!
 //!     cargo run --release -p em --bin comparer_em -- cas.json > rust.json
 //!
 //! `cas.json` : {nom: {"f": fonction, "doc": document, ...}}. La sortie : {nom: resultat}.
 
+use em::crosstalk as xt;
 use em::simulation_em::base::*;
 use em::simulation_em::*;
+
+fn mat(v: &Json) -> Vec<Vec<f64>> {
+    els(v).iter().map(|l| els(l).iter().map(nb).collect()).collect()
+}
+
+fn cplx_n(m: &[Vec<Complex64>]) -> Json {
+    Json::Liste(m.iter().map(|l| Json::Liste(l.iter().map(|z| vec![z.re, z.im].j()).collect())).collect())
+}
+
+fn trc(v: &Json) -> Vec<xt::Trc> {
+    els(v).iter().map(|t| (nb(&t[0]), nb(&t[1]), nb(&t[2]), nb(&t[3]), nb(&t[4]), ent(&t[5], 0))).collect()
+}
+
+/// Les points d'entree de crosstalk, un par un ; None si la fonction n'en est pas.
+fn un_cas_xt(cas: &Json) -> Option<Json> {
+    let a = |k: usize, i: usize| nb(&cas["args"][k][i]);
+    let args = els(&cas["args"]);
+    Some(match cas["f"].as_str()? {
+        "xt_analyser" => match xt::analyser(&cas["doc"], None) {
+            Err(e) if e.interne => obj! {"exception" => "interne", "message" => e.message},
+            Err(e) => obj! {"erreur" => e.message, "conseil" => e.conseil},
+            Ok(r) => r,
+        },
+        "xt_etat" => xt::etat(),
+        "xt_geosup" => els(&cas["piles"]).iter().map(|p| {
+            let p = els(p);
+            let mut l = Vec::new();
+            for i in 0..p.len() {
+                for k in 0..p.len() {
+                    let g = xt::geometrie_superposee(p, i as i64, k as i64);
+                    l.push(vec![i.j(), k.j(), g.map(|g| vec![g.0.j(), g.1.j(), g.2.j(), g.3.j()]).j()].j());
+                }
+            }
+            Json::Liste(l)
+        }).collect::<Vec<Json>>().j(),
+        "xt_niveau2" => (0..args.len()).map(|k| {
+            let m: Vec<xt::Morceau> = els(&args[k][0]).iter().map(|m| (nb(&m[0]), nb(&m[1]), nb(&m[2]), _nombre(&m[3], 1.0))).collect();
+            xt::niveau2(&m, a(k, 1), a(k, 2), a(k, 3), a(k, 4))
+        }).collect::<Vec<Json>>().j(),
+        "xt_ott" => (0..args.len()).map(|k| xt::impedance_commune_fente(a(k, 0), a(k, 1), a(k, 2), a(k, 3), a(k, 4), a(k, 5), a(k, 6),
+                                                                      args[k][7].as_f64(), a(k, 8), args[k][9].vrai(), args[k][10].vrai())).collect::<Vec<Json>>().j(),
+        "xt_front" => args.iter().map(|x| {
+            let (t, s) = xt::front_de_classe(x[0].as_str().unwrap_or(""), &x[1], nb(&x[2]));
+            vec![t.j(), s.j()].j()
+        }).collect::<Vec<Json>>().j(),
+        "xt_kbsup" => (0..args.len()).map(|k| xt::kb_superposees(a(k, 0), a(k, 1), a(k, 2), a(k, 3), a(k, 4), args[k][5].as_f64()).ok()).collect::<Vec<_>>().j(),
+        "xt_seuil_couture" => args.iter().map(|x| {
+            let (s, o, e) = xt::_seuil_couture(x);
+            vec![s.j(), o.j(), e.j()].j()
+        }).collect::<Vec<Json>>().j(),
+        "xt_mtl" => {
+            let (l, c) = (mat(&cas["l"]), mat(&cas["c"]));
+            let omegas: Vec<f64> = els(&cas["omegas"]).iter().map(nb).collect();
+            let ch = xt::chaine_mtl(&l, &c, nb(&cas["longueur"]), &omegas, nb(&cas["tan_delta"])).unwrap();
+            let s = xt::s_depuis_chaine(&ch, nb(&cas["z0"])).unwrap();
+            obj! {"racines" => xt::_modes_mtl(&l, &c).unwrap().2,
+                  "chaine" => ch.iter().map(|m| cplx_n(m)).collect::<Vec<Json>>(),
+                  "s" => s.iter().map(|m| cplx_n(m)).collect::<Vec<Json>>()}
+        }
+        "xt_peec" => {
+            let vict: Vec<(String, Vec<xt::Trc>)> = els(&cas["vict"]).iter().map(|v| (str_py(&v[0]), trc(&v[1]))).collect();
+            let (scene, noms, raison) = xt::scene_fente(&cas["maillage"], els(&cas["couches"]), &trc(&cas["agr"]), &vict);
+            let Some(scene) = scene else { return Some(obj! {"scene" => Json::Nul, "raison" => raison}) };
+            match xt::peec_fente(&scene, nb(&cas["freq"])) {
+                Err(e) => obj! {"noms" => noms, "refus" => e},
+                Ok(None) => obj! {"noms" => noms, "peec" => Json::Nul},
+                Ok(Some(r)) => obj! {"noms" => noms, "cles_u" => scene.cles_u.clone(), "cles_v" => scene.cles_v.clone(), "s_min" => scene.s_min, "eps" => scene.eps.clone(),
+                                     "ld" => r.ld, "m" => r.m.clone(), "selfs" => r.selfs.clone(), "mailles" => vec![r.mailles.0, r.mailles.1],
+                                     "branches" => r.branches, "croissance" => r.croissance, "pas_max" => r.pas_max},
+            }
+        }
+        _ => return None,
+    })
+}
 
 fn cplx(m: &[[Complex64; 2]; 2]) -> Json {
     Json::Liste(m.iter().flatten().map(|v| vec![v.re, v.im].j()).collect())
 }
 
 fn un_cas(cas: &Json) -> Json {
+    if let Some(r) = un_cas_xt(cas) {
+        return r;
+    }
     let mut doc = cas["doc"].clone();
     match cas["f"].as_str().unwrap_or("simuler") {
         "simuler" => {
