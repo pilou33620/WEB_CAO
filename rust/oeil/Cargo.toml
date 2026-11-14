@@ -2,8 +2,23 @@
 name = "oeil"
 version = "0.1.0"
 edition = "2021"
+description = "python/oeil.py : le diagramme de l'oeil, la liaison vue par le recepteur"
+
+[lib]
+doctest = false # les schémas indentés des commentaires ne sont pas du code
 
 [dependencies]
 em = { path = "../em" }
 ligne_mom = { path = "../ligne_mom" }
 ibis = { path = "../ibis" }
+# float() et l'iteration de Python sur ce que le navigateur envoie
+dc_solver = { path = "../dc_solver" }
+# np.fft.rfft / irfft, de toute longueur (une periode PRBS n'est pas une puissance de deux)
+rustfft = "6"
+
+# python/test/banc-oeil.py et la part oeil de banc-entrees-malformees.py : comme eux, pas de
+# harnais, un décompte à la fin et un code de retour.
+[[test]]
+name = "banc"
+path = "tests/banc/main.rs"
+harness = false
