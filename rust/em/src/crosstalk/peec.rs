@@ -50,6 +50,32 @@ use std::sync::Arc;
 // ==========================================================================
 
 pub const PEEC_BRANCHES_MAX: usize = 3000; // branches de courant, tous plans : la memoire
+
+// Le banc REGLE ces deux plafonds le temps d'un cas (`ct.PEEC_BRANCHES_MAX = ...` en Python,
+// ou ce sont des variables du module) : la valeur qui sert est lue ici, la constante en est
+// le depart.
+static BRANCHES_MAX: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(PEEC_BRANCHES_MAX);
+static FENTES_MAX: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(PEEC_FENTES_MAX);
+
+/// `PEEC_BRANCHES_MAX` tel qu'il est regle.
+pub fn peec_branches_max() -> usize {
+    BRANCHES_MAX.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// `crosstalk.PEEC_BRANCHES_MAX = n`
+pub fn regler_peec_branches_max(n: usize) {
+    BRANCHES_MAX.store(n, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// `PEEC_FENTES_MAX` tel qu'il est regle.
+pub fn peec_fentes_max() -> usize {
+    FENTES_MAX.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// `crosstalk.PEEC_FENTES_MAX = n`
+pub fn regler_peec_fentes_max(n: usize) {
+    FENTES_MAX.store(n, std::sync::atomic::Ordering::Relaxed);
+}
 pub const PEEC_CROISSANCES: [(f64, f64); 5] = [(1.35, 3.0), (1.5, 4.0), (1.7, 6.0), (2.0, 8.0),
                                                (2.6, 12.0)];
 pub const PEEC_REG: f64 = 1e-18; // F : chaque noeud a la terre lointaine
@@ -559,7 +585,7 @@ pub fn peec_fente(scene: &Scene, f: f64) -> Result<Option<Peec>, String> {
     for (g, s_max) in PEEC_CROISSANCES {
         let (eu, ev) = _maillage_peec(scene, g, s_max);
         n_b = 2 * (eu.len() - 1) * (ev.len() - 1) * n_plans;
-        if n_b <= PEEC_BRANCHES_MAX {
+        if n_b <= peec_branches_max() {
             choix = Some((g, s_max));
             break;
         }
@@ -569,7 +595,7 @@ pub fn peec_fente(scene: &Scene, f: f64) -> Result<Option<Peec>, String> {
     // branches : 4,6 Go) et des minutes par fente -- vingt minutes
     // d'audit sur une carte reelle. Les appelants passent alors a Ott.
     let Some((g, s_max)) = choix else {
-        return Err(format!("maillage trop fin : {n_b} branches, budget {PEEC_BRANCHES_MAX}"));
+        return Err(format!("maillage trop fin : {n_b} branches, budget {}", peec_branches_max()));
     };
     let Some(r) = _resoudre_peec(scene, f, g, s_max) else { return Ok(None) };
     let w = 2.0 * PI * f;

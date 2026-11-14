@@ -293,7 +293,7 @@ pub fn termes_fentes(doc: &Json, couches: &[Json], parcours: &[Troncon], retenus
     let mut imagees: Vec<usize> = (0..fentes.len()).filter(|&k| fentes[k].as_objet().is_some() && fentes[k]["maillage"].as_objet().is_some()).collect();
     let poids = |k: &usize| -(maxf(&[nb(&fentes[*k]["d1"]), nb(&fentes[*k]["d2"])]) + nb(&fentes[*k]["longueur"]));
     imagees.sort_by(|a, b| poids(a).partial_cmp(&poids(b)).unwrap_or(std::cmp::Ordering::Equal));
-    imagees.truncate(PEEC_FENTES_MAX);
+    imagees.truncate(peec_fentes_max());
     for (rang, f) in fentes.iter().enumerate() {
         if f.as_objet().is_none() {
             continue;
@@ -404,8 +404,8 @@ pub fn termes_fentes(doc: &Json, couches: &[Json], parcours: &[Troncon], retenus
         } else if image.is_some() {
             signales.push(obj! {"s0" => round(s0, 3), "s1" => round(s1, 3),
                                 "cause" => "budget",
-                                "texte" => format!("plus de {PEEC_FENTES_MAX} fentes à résoudre : celle-ci \
-                                                    prend le modèle d'Ott")});
+                                "texte" => format!("plus de {} fentes à résoudre : celle-ci \
+                                                    prend le modèle d'Ott", peec_fentes_max())});
         }
         if sans_detours {
             continue;
