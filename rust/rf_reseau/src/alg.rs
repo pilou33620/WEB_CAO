@@ -67,10 +67,57 @@ fn depuis_faer(m: &Mat<Complex64>) -> Option<MatC> {
     l.iter().flatten().all(|z| z.re.is_finite() && z.im.is_finite()).then_some(l)
 }
 
+// Jusqu'a cette taille, l'elimination s'ecrit ici, dans l'ordre de LAPACK sans blocs : un
+// reseau de quelques noeuds aux valeurs exactes (un fil, un bloc S ideal) rend alors ses
+// zeros exacts, la ou une factorisation par blocs laisse 1e-16.
+const PETIT: usize = 48;
+
+/// Gauss a pivot partiel (le plus grand |re| + |im|, comme `izamax`), None si un pivot est nul.
+fn resoudre_petit(a: &MatC, b: &MatC) -> Option<MatC> {
+    let n = a.len();
+    let (mut a, mut x) = (a.clone(), b.clone());
+    for k in 0..n {
+        let p = (k..n).fold(k, |m, i| if a[i][k].re.abs() + a[i][k].im.abs() > a[m][k].re.abs() + a[m][k].im.abs() { i } else { m });
+        if a[p][k] == c(0.0) || !(a[p][k].re.is_finite() && a[p][k].im.is_finite()) {
+            return None;
+        }
+        a.swap(k, p);
+        x.swap(k, p);
+        let r = inv(a[k][k]);
+        for i in k + 1..n {
+            let l = a[i][k] * r;
+            if l == c(0.0) {
+                continue;
+            }
+            for j in k + 1..n {
+                let v = a[k][j];
+                a[i][j] -= l * v;
+            }
+            for j in 0..x[i].len() {
+                let v = x[k][j];
+                x[i][j] -= l * v;
+            }
+        }
+    }
+    for k in (0..n).rev() {
+        for j in 0..x[k].len() {
+            let mut v = x[k][j];
+            for i in k + 1..n {
+                v -= a[k][i] * x[i][j];
+            }
+            x[k][j] = div(v, a[k][k]);
+        }
+    }
+    x.iter().flatten().all(|z| z.re.is_finite() && z.im.is_finite()).then_some(x)
+}
+
 /// `np.linalg.solve(a, b)`, None la ou numpy levait `LinAlgError`.
 pub fn resoudre(a: &MatC, b: &MatC) -> Option<MatC> {
     if a.is_empty() {
         return Some(b.clone());
+    }
+    if a.len() <= PETIT {
+        return resoudre_petit(a, b);
     }
     depuis_faer(&vers_faer(a).partial_piv_lu().solve(vers_faer(b)))
 }
@@ -79,6 +126,9 @@ pub fn resoudre(a: &MatC, b: &MatC) -> Option<MatC> {
 pub fn inverse(a: &MatC) -> Option<MatC> {
     if a.is_empty() {
         return Some(Vec::new());
+    }
+    if a.len() <= PETIT {
+        return resoudre_petit(a, &ident(a.len()));
     }
     depuis_faer(&vers_faer(a).partial_piv_lu().inverse())
 }

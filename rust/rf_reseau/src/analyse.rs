@@ -674,7 +674,9 @@ pub fn analyser(doc: &Json, mut journal: Option<&mut dyn FnMut(&str)>) -> Res<Js
         "zin_cible" => vec![z_ports[0].re, -z_ports[0].im],
         // Ce que les pistes des autres nets emportent, sur la puissance
         // disponible du port 1.
-        "voisines_pct" => if energie_voisines.is_empty() { 0.0 } else { rnp(100.0 * voisines_k0.iter().fold(0.0, |s, (_, v)| s + v), 4) },
+        // sans voisine, la somme de rien : l'entier 0 de Python
+        "voisines_pct" => if energie_voisines.is_empty() { 0.0.j() } else if voisines_k0.is_empty() { 0i64.j() }
+                          else { rnp(100.0 * voisines_k0.iter().fold(0.0, |s, (_, v)| s + v), 4).j() },
     };
     let mut fiches_voisines: Vec<Json> = voisines_k0.iter().map(|(net, v)| obj! {"net" => net, "pct" => rnp(100.0 * v, 4)}).collect();
     fiches_voisines.sort_by(|a, b| (-num(a, "pct")).partial_cmp(&-num(b, "pct")).unwrap_or(std::cmp::Ordering::Equal));

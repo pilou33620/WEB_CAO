@@ -385,9 +385,15 @@ pub struct ModeleIdeal {
 
 impl ModeleIdeal {
     pub fn new(genre: &Json, valeur: f64, nom: &str) -> Res<ModeleIdeal> {
+        Self::_new(genre, Some(valeur), nom)
+    }
+
+    /// `valeur` None : celle que `modele` n'a pas su lire, le -1 entier de Python.
+    fn _new(genre: &Json, lue: Option<f64>, nom: &str) -> Res<ModeleIdeal> {
+        let valeur = lue.unwrap_or(-1.0);
         let genre = str_ou_vide(genre).to_lowercase();
         if !["r", "l", "c"].contains(&genre.as_str()) || !(valeur >= 0.0) {
-            return Err(ErreurRF::new(format!("{} : modèle idéal « {} = {} » invalide.", nom, genre.to_uppercase(), py::repr_flottant(valeur)), ""));
+            return Err(ErreurRF::new(format!("{} : modèle idéal « {} = {} » invalide.", nom, genre.to_uppercase(), lue.map_or("-1".to_string(), py::repr_flottant)), ""));
         }
         Ok(ModeleIdeal { genre: genre.chars().next().unwrap_or('r'), valeur, nom: nom.to_string() })
     }
@@ -466,7 +472,7 @@ pub fn modele(spec: &Json, ref_: &str) -> Res<Modele> {
     let texte = || if spec["texte"].vrai() { str_py(&spec["texte"]) } else { String::new() };
     match t.as_str() {
         Some("z") => Ok(Modele::Z(ModeleZ::new(nb(&spec["re"]), nb(&spec["im"]), ref_)?)),
-        Some("ideal") => Ok(Modele::Ideal(ModeleIdeal::new(&spec["genre"], _nombre(&spec["valeur"], -1.0), ref_)?)),
+        Some("ideal") => Ok(Modele::Ideal(ModeleIdeal::_new(&spec["genre"], nb_opt(&spec["valeur"]), ref_)?)),
         Some("spice") => Ok(Modele::Spice(ModeleSpice::new(&texte(), &nom, &spec["sous_circuit"], &spec["params"])?)),
         Some("snp") => Ok(Modele::Snp(ModeleSnp::new(&texte(), &nom)?)),
         _ => Err(ErreurRF::new(format!("{} : type de modèle « {} » inconnu.", ref_, str_py(t)), "")),
