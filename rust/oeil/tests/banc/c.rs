@@ -4,10 +4,6 @@ use crate::b::cascade_sans_vias;
 use crate::*;
 use em::simulation_em as se;
 
-fn cabs(x: &[Complex64]) -> Vec<f64> {
-    x.iter().map(|z| z.norm()).collect()
-}
-
 /// |x[:, 2]| des S a plat
 fn s21(x: &Json) -> Vec<f64> {
     _plats(x).iter().map(|m| m[2].norm()).collect()
@@ -23,9 +19,10 @@ fn s21(x: &Json) -> Vec<f64> {
 /// de la paire par brin est celui du mode impair.
 ///
 /// (Le banc Python doublait l'appel de `se._cascade_differentielle` dans `simuler`, vias
-/// compris. Ici la cascade est rejouee -- deux modes, puis quatre acces d'office -- sur les
-/// troncons que `simuler` a resolus, SANS les modeles de via, que `simuler` ne rend pas : les
-/// deux cascades se comparent sur la paire sans ses vias.)
+/// compris, ce qu'un appel de fonction ne permet pas ici : `simuler` ne rend pas ses modeles de
+/// via. La paire a vias est donc verifiee par defaut -- deux modes, un via --, et les deux
+/// cascades se comparent sur la MEME paire sans changement de couche, rejouee a quatre acces
+/// d'office sur les troncons que `simuler` a resolus. La mutuelle des futs n'y est pas.)
 fn une_paire_symetrique_rejoint_la_cascade_des_deux_modes() {
     let objets = vec![_brin(0.0, 20.0, 0.0, "P", 0.2, 0, false), _brin(20.0, 40.0, 0.0, "P", 0.2, 4, true)];
     let vois = vec![_brin(0.0, 20.0, 0.35, "N", 0.2, 0, false), _brin(20.0, 40.0, 0.35, "N", 0.2, 4, true)];
@@ -34,9 +31,13 @@ fn une_paire_symetrique_rejoint_la_cascade_des_deux_modes() {
     let res = simg(&d, &f);
     assert!(!res.json["s_diff"]["quatre_acces"].vrai(), "{}", dumps(&res.json["s_diff"]["dissymetries"]));
     assert!(n(&res.json["s_diff"]["vias"]) == 1.0);
+    let d = avec_pile(_doc(vec![brin(0.0, 40.0, 0.0, "P")], obj! {}, vec![brin(0.0, 40.0, 0.35, "N")], &[("P", "N")]), SIX());
+    let res = simg(&d, &f);
     let sd = cascade_sans_vias(&d, &res.json, &f, None);
     let frc = cascade_sans_vias(&d, &res.json, &f, Some(true));
-    assert!(!sd.json["quatre_acces"].vrai() && frc.json["quatre_acces"].vrai());
+    assert!(!sd.json["quatre_acces"].vrai() && frc.json["quatre_acces"].vrai(), "{}", dumps(&sd.json["dissymetries"]));
+    assert!(n(&frc.json["vias_brins"]["deux"]) == 0.0 && n(&frc.json["vias_brins"]["p"]) == 0.0 && n(&frc.json["vias_brins"]["n"]) == 0.0);
+    assert!(res.json["s_diff"]["s_dd"] == sd.json["s_dd"], "la cascade rejouee n'est pas celle de simuler");
     for cle in ["s_dd", "s_cc"] {
         let e = maxi(_plats(&sd.json[cle]).iter().zip(_plats(&frc.json[cle])).flat_map(|(a, b)| (0..4).map(move |k| (a[k] - b[k]).norm())));
         assert!(e < 1e-9, "{cle} {e}");
@@ -283,7 +284,6 @@ fn des_brins_superposes_couplent_en_large_face() {
     let sp_d = &r_dec["s_diff"]["superposees"][0];
     assert!((n(&sp_d["decalage_mm"]) - 0.3).abs() < 1e-6);
     assert!(n(&sp_d["z_diff"]) > n(&sp["z_diff"]), "{} {}", n(&sp_d["z_diff"]), n(&sp["z_diff"]));
-    let _ = cabs;
 }
 
 /// L'oeil d'une paire dont un brin est plus long de 4 mm : la cascade a
