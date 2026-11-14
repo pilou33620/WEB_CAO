@@ -307,9 +307,11 @@ impl Poste {
         };
         // une ligne par requete, jeton masque
         eprintln!("  {}", appairage::masquer(&format!("\"{} {}\" {} -", r.methode, r.cible, rendu.code)));
-        let a = |rendu: &Reponse, nom: &str| rendu.entetes.iter().any(|(k, _)| k.eq_ignore_ascii_case(nom));
-        let rendu = if a(&rendu, "Cache-Control") { rendu } else { rendu.entete("Cache-Control", "no-cache, no-store, must-revalidate") };
+        let mut rendu = rendu;
+        // un seul Cache-Control, le même pour tout : les réponses de la garde et du pilote en portent déjà un
+        rendu.entetes.retain(|(k, _)| !k.eq_ignore_ascii_case("Cache-Control"));
         rendu
+            .entete("Cache-Control", "no-cache, no-store, must-revalidate")
             .entete("Pragma", "no-cache")
             .entete("Expires", "0")
             // un .txt ou un .json de la LIB ne doit jamais etre interprete en page

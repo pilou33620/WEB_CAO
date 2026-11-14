@@ -2147,6 +2147,7 @@ dependencies = [
 name = "web_cao"
 version = "0.1.0"
 dependencies = [
+ "analyse_carte",
  "chrono",
  "dc_solver",
  "em",

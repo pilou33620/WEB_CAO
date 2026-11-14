@@ -103,7 +103,8 @@ pub fn dumps_indente(v: &Json, n: usize) -> String {
 // jusqu'à faire déborder la pile du fil.
 const PROFONDEUR_MAX: usize = 900;
 
-fn trop_profond(texte: &str) -> bool {
+/// Le crochet ou l'accolade qui dépasse la profondeur admise, s'il y en a un.
+fn trop_profond(texte: &str) -> Option<u8> {
     let (mut niveau, mut dans_texte, mut echappe) = (0usize, false, false);
     for c in texte.bytes() {
         if dans_texte {
@@ -120,20 +121,20 @@ fn trop_profond(texte: &str) -> bool {
             b'[' | b'{' => {
                 niveau += 1;
                 if niveau > PROFONDEUR_MAX {
-                    return true;
+                    return Some(c);
                 }
             }
             b']' | b'}' => niveau = niveau.saturating_sub(1),
             _ => {}
         }
     }
-    false
+    None
 }
 
 /// json.loads, avec le texte de l'exception de Python : « ... : line 1 column 5 (char 4) ».
 pub fn loads(texte: &str) -> Result<Json, String> {
-    if trop_profond(texte) {
-        return Err("maximum recursion depth exceeded".into());
+    if let Some(c) = trop_profond(texte) {
+        return Err(format!("maximum recursion depth exceeded while decoding a JSON {} from a unicode string", if c == b'[' { "array" } else { "object" }));
     }
     dc_solver::pyth::loads(texte).map_err(|e| {
         let Some((message, octet)) = e.rsplit_once(": char ").and_then(|(m, n)| Some((m, n.parse::<usize>().ok()?))) else { return e };
@@ -141,6 +142,19 @@ pub fn loads(texte: &str) -> Result<Json, String> {
         let ligne = avant.matches('\n').count() + 1;
         let colonne = avant.rsplit('\n').next().unwrap_or("").chars().count() + 1;
         format!("{}: line {} column {} (char {})", message, ligne, colonne, avant.chars().count())
+    })
+}
+
+/// octets.decode("utf-8"), avec le texte de l'UnicodeDecodeError de Python.
+pub fn decoder_utf8(octets: Vec<u8>) -> Result<String, String> {
+    String::from_utf8(octets).map_err(|e| {
+        let (i, o) = (e.utf8_error().valid_up_to(), e.as_bytes());
+        let raison = match e.utf8_error().error_len() {
+            None => "unexpected end of data",
+            Some(_) if (0xC2..=0xF4).contains(&o[i]) => "invalid continuation byte",
+            Some(_) => "invalid start byte",
+        };
+        format!("'utf-8' codec can't decode byte 0x{:02x} in position {}: {}", o[i], i, raison)
     })
 }
 
@@ -202,7 +216,10 @@ mod essais {
         assert_eq!(ascii(dumps(&v)), r#"{"d\u00e9tail": "\u00e9t\u00e9 \u20ac\ud83d\ude00", "n": [1, 2.5, null], "v": {}, "l": []}"#);
         assert_eq!(dumps_indente(&v, 1), "{\n \"détail\": \"été €😀\",\n \"n\": [\n  1,\n  2.5,\n  null\n ],\n \"v\": {},\n \"l\": []\n}");
         assert_eq!(loads("{\"a\": 1,\n \"é\": x}").unwrap_err(), "Expecting value: line 2 column 7 (char 15)");
-        assert!(loads(&"[".repeat(100000)).is_err());
+        assert_eq!(loads(&"[".repeat(100000)).unwrap_err(), "maximum recursion depth exceeded while decoding a JSON array from a unicode string");
+        assert_eq!(decoder_utf8(vec![b'a', 0xff]).unwrap_err(), "'utf-8' codec can't decode byte 0xff in position 1: invalid start byte");
+        assert_eq!(decoder_utf8(vec![0xc3]).unwrap_err(), "'utf-8' codec can't decode byte 0xc3 in position 0: unexpected end of data");
+        assert_eq!(decoder_utf8(vec![0xc3, b'a']).unwrap_err(), "'utf-8' codec can't decode byte 0xc3 in position 0: invalid continuation byte");
         let mut n = loads(r#"{"a": [NaN, -Infinity, 1.5]}"#).unwrap();
         assert_eq!(non_fini(&n), Some("NaN"));
         sans_non_finis(&mut n);

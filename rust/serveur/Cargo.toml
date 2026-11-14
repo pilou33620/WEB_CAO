@@ -17,6 +17,7 @@ dc_solver = { path = "../dc_solver" }  # /api/simulation-dc, /api/thermique-comp
 rf_reseau = { path = "../rf_reseau" }  # /api/simulation-rf
 oeil = { path = "../oeil" }            # /api/oeil
 motifs = { path = "../motifs" }        # /api/pcb/score-placement, /api/schema/patterns
+analyse_carte = { path = "../analyse_carte" } # /api/analyse-carte
 outils = { path = "../outils" }        # la passerelle MCP (/api/tools, /api/tool), la racine du dépôt
 regex = "1"
 serde_json = { version = "1", features = ["preserve_order"] } # ce que rend la passerelle MCP

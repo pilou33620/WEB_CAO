@@ -116,7 +116,7 @@ pub fn ipc2581_etat() -> Json {
 
 /// GET /api/analyse-carte : verifie la disponibilite de l'analyse.
 pub fn analyse_etat() -> Json {
-    obj! {"dispo" => true, "format" => "cao-analyse-carte-1"}
+    obj! {"dispo" => true, "format" => analyse_carte::FORMAT}
 }
 
 type Calcul = fn(&Poste, &mut Requete) -> Rendu;
@@ -202,13 +202,17 @@ impl Poste {
         if r.entete("Content-Encoding").is_some_and(|e| json::strip(e).eq_ignore_ascii_case("gzip")) {
             let max = (8 * plafond).min(MAX_DEPLIE);
             let mut brut = Vec::new();
-            flate2::read::GzDecoder::new(&corps[..]).take(max as u64 + 1).read_to_end(&mut brut).map_err(|exc| refus(400, format!("Document gzip illisible : {}", exc)))?;
+            flate2::read::GzDecoder::new(&corps[..]).take(max as u64 + 1).read_to_end(&mut brut).map_err(|exc| {
+                // le texte de zlib, que Python rendait pour un corps qui n'est pas du gzip
+                let exc = exc.to_string();
+                refus(400, format!("Document gzip illisible : {}", if exc == "invalid gzip header" { "Error -3 while decompressing data: incorrect header check" } else { &exc }))
+            })?;
             if brut.len() > max {
                 return Err(refus(413, format!("Document décompressé trop grand : plus de {} Mo", max / 1048576)));
             }
             corps = brut;
         }
-        let texte = String::from_utf8(corps).map_err(|exc| refus(400, format!("Document JSON illisible : {}", exc)))?;
+        let texte = json::decoder_utf8(corps).map_err(|exc| refus(400, format!("Document JSON illisible : {}", exc)))?;
         let doc = deplier_grilles(json::loads(&texte).map_err(|exc| refus(400, format!("Document JSON illisible : {}", exc)))?);
         borner_empilage(&doc)?;
         Ok(doc)
@@ -340,10 +344,8 @@ impl Poste {
         // la ligne de la requete ne sort qu'a la reponse : dire qu'on calcule
         eprintln!("  Verification de la carte : {} piste(s), analyse en cours...", doc["pistes"].as_liste().map_or(0, Vec::len));
         let debut = std::time::Instant::now();
-        // À BRANCHER : analyse_carte (rust/analyse_carte, en cours de portage) --
-        // analyse_carte::analyser_document(&doc), son refus (ErreurAnalyse) en 422.
-        let res: Rendu = Err(refus(503, "Verification de la carte indisponible : le moteur analyse_carte n'est pas encore branche sur ce serveur."));
-        let res = res?;
+        // le fil de l'eau de l'analyse (l'etape qui traine) part dans le terminal, comme en Python
+        let res = sur_un_fil(|| analyse_carte::analyser_document_avec(&doc, Some(&mut terminal)).map_err(|exc| refus_solveur(exc.message, String::new(), exc.interne)))?;
         eprintln!("  Verification de la carte : {} constat(s) en {:.1} s", res["constats"].as_liste().map_or(0, Vec::len), debut.elapsed().as_secs_f64());
         Ok(res)
     }
