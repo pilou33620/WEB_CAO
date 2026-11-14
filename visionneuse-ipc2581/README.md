@@ -11,14 +11,14 @@ Elle ne modifie rien — ce n'est pas un éditeur, et rien de ce qui s'y passe n
 touche le fichier.
 
 Comme la recherche de composants, **cette page a besoin d'un serveur**, et pour
-une raison précise : le parseur IPC-2581 est en Python (`../python/ipc2581_parser.py`),
-un navigateur ne peut pas l'exécuter. La page envoie le fichier à
-`../web_CAO.py`, qui renvoie le modèle traduit en JSON — et à partir de là, tout
+une raison précise : le parseur IPC-2581 est dans le serveur (caisse Rust `ipc2581` de web_suite),
+un navigateur ne peut pas l'exécuter. La page envoie le fichier au serveur
+`web_cao`, qui renvoie le modèle traduit en JSON — et à partir de là, tout
 se passe dans le navigateur.
 
 Ce modèle JSON s'exporte (« Exporter .json ») et se rouvre ici **sans serveur**,
 en double-clic : de quoi archiver une carte lue à un instant donné, ou la
-consulter sur une machine sans Python. La page ouverte ainsi fait tout ce qui
+consulter sur une machine sans le serveur. La page ouverte ainsi fait tout ce qui
 se passe dans le navigateur : dessin, fiches, exports, plans, dossier méca (sans
 la LIB, et la fenêtre le dit). Elle annonce à l'ouverture qu'elle ne trouve pas
 de serveur : ni lecture d'un XML ou d'un `.zip`, ni Simulation EM, dont le
@@ -31,17 +31,16 @@ visionneuse-ipc2581/
 │   └── visionneuse.css           thème « dashboard nocturne »
 ├── js/                           12 modules (00 à 11), chargés dans l'ordre de la page (11 avant 09)
 └── test/
-    ├── banc-essai.py             banc d'essai du parseur, carte d'essai incluse
     ├── carte-contre-percage.xml  carte d'essai du contre-perçage
     └── harness-sim.js            banc d'essai de la simulation, sous Node
 ```
 
-Côté Python, trois fichiers dans python/, à la racine du dépôt :
+Côté serveur, le lecteur est la caisse Rust `ipc2581` du dépôt web_suite (dépendance git de `rust/serveur`) :
 
 ```
-../python/ipc2581_data.py         le modèle : Point, Track, Pad, Component…
-../python/ipc2581_parser.py       le parseur XML -> IPCDesign
-../python/ipc2581_json.py         IPCDesign -> JSON compact pour cette page
+ipc2581/src/data.rs      le modèle : Point, Track, Pad, Component…
+ipc2581/src/parser.rs    le parseur XML -> IPCDesign
+ipc2581/src/json.rs      IPCDesign -> JSON compact pour cette page
 ```
 
 et ceux du dossier partagé, identiques aux autres outils :
@@ -85,7 +84,7 @@ et ceux du dossier partagé, identiques aux autres outils :
 |---|---:|---|
 | `js/00-espace-config.js` | 36 | `WS_CONFIG` : clé de stockage local et disposition d'usine des sept panneaux (Simulation EM et Résultats masqués) |
 | `js/01-api.js` | 109 | Sonde du serveur (l'origine qui sert la page, et elle seule), envoi du fichier à `/api/ipc2581`, relecture d'un `.json` déjà traduit |
-| `../python/ipc2581_json.py` | 731 | Traduction `IPCDesign` → dictionnaire JSON : couches et nets deviennent des index, les polygones des tableaux plats. Ouvre aussi les archives `.zip` |
+| `ipc2581/src/json.rs` (web_suite) | | Traduction `IPCDesign` → dictionnaire JSON : couches et nets deviennent des index, les polygones des tableaux plats. Ouvre aussi les archives `.zip` |
 | `js/02-modele.js` | 1759 | Table des couches et couleurs, rangement par couche et par net, placement des pastilles, assemblage des `Path2D`, et la ligne de transmission (impédance, retard, capacité, self) |
 | `js/03-rendu.js` | 514 | Canevas : repère écran/monde, ordre de dessin, couches, perçages, textes, mise en évidence, règle d'échelle |
 | `js/04-interaction.js` | 513 | Déplacement, zoom, pincement à deux doigts, règle de mesure (`M`), désignation (piste, pastille, perçage, plan, boîtier), clavier |
@@ -96,19 +95,18 @@ et ceux du dossier partagé, identiques aux autres outils :
 | `js/09-fiche-mesure.js` | 40 | Fiche de mesure et retrofit : pastilles du modèle lu (les mesures vont dans `V.modele.mesures`, le retrofit dans `V.modele.retrofit`) ; la fenêtre est celle des plans |
 | `js/11-animation-3d.js` | 153 | Animation 3D : le modèle lu relevé dans la scène de `commun/animation-3d.js` (cuivre, pastilles, vias, plans en image, sérigraphie, composants présentés) |
 | `js/10-plans.js` | 238 | Plans du Draftsman (fabrication, assemblage dessus / dessous) refaits sur le modèle lu, et la seule fenêtre des plans : cases des feuilles, volets fiche de mesure et retrofit, aperçu et PDF |
-| `../python/simulation_em.py` | 8144 | Pont vers `python/ligne_mom.py` : empilage à plat → section droite, résolution par tronçon, **appariement des tronçons parallèles**, cascade ABCD → JSON |
+| `../rust/em/src/simulation_em` | | Pont vers `rust/ligne_mom` : empilage à plat → section droite, résolution par tronçon, **appariement des tronçons parallèles**, cascade ABCD → JSON |
 | `test/harness-sim.js` | 7350 | Banc d'essai de la masse coplanaire, de la chute continue, du voisinage et des trois mesures du crosstalk, sous Node : `node test/harness-sim.js` |
 
 ## Démarrage
 
 ```bash
-python web_CAO.py
+./demarrer_WEB_CAO.sh        # Windows : demarrer_WEB_CAO.cmd
 ```
 
 puis, depuis la page d'accueil, « Visionneuse IPC-2581 ». Le fichier se choisit
 au bouton ou se dépose n'importe où sur la page. Le serveur refuse un fichier de
-plus de 192 Mo (`MAX_IPC`, `web_CAO.py`) et l'annonce à la sonde de la page.
-Le serveur ne démarre pas sans numpy et scipy, voir « Simuler » plus bas.
+plus de 192 Mo (`MAX_IPC`, `web_cao`) et l'annonce à la sonde de la page.
 
 Formats acceptés : `.xml`, `.cvg`, `.ipc`, `.ipc2581`, l'archive `.zip` qui en
 contient un — c'est souvent sous cette forme qu'arrive un dossier de
@@ -265,7 +263,7 @@ l'intérieur) et n'entre pas dans les perçages de la carte — un trou nu posé
 sur le via le ferait passer pour non relié. Un foret sans via est compté à
 part.
 
-Le parseur (`ipc2581_parser.py`, 1.76 et suivants) pose le résultat sur le perçage, et le
+Le parseur (`ipc2581_parser`, 1.76 et suivants) pose le résultat sur le perçage, et le
 modèle le transporte dans `percages[i].cp` : `cote` (« dessous » / « dessus »),
 `de` et `g` (rangs de la face et de la couche gardée), `res` (mm), `prof`
 (mm), `d` (diamètre du foret), `spec`, `src`. Dans la page :
@@ -346,7 +344,7 @@ Un IPC-2581 écrit par l'éditeur PCB de ce dépôt — ou par tout outil qui su
 la même forme : `<LogicalNet netClass netPair>`, `<NonstandardAttribute>`
 `NET_CLASS` / `DIFF_PAIR`, `<SpecRef>` vers des `<Spec>` de règles — nomme la
 **classe** de chaque net et ses **paires différentielles**. Le lecteur
-(`python/ipc2581_parser.py` 1.80) les rend dans `regles`, et la page s'en
+(`caisse ipc2581 de web_suite` 1.80) les rend dans `regles`, et la page s'en
 sert comme **classement initial** : la nature d'un net (Horloge, Rapide, RF,
 Analogique, Antenne, Lent) vient d'abord de sa classe dans le fichier — les
 mêmes motifs de nom que l'éditeur, « Impédance 50Ω » est RF, « Défaut » est
@@ -372,21 +370,18 @@ au lieu de lui prêter la rugosité de la piste.
 
 Le panneau **« Simulation EM »** — bouton du même nom dans la barre d'outils —
 envoie la section droite des pistes désignées au solveur du dépôt
-(`../python/ligne_mom.py`), qui la résout par méthode des moments
+(`../rust/ligne_mom`), qui la résout par méthode des moments
 et rend leur impédance caractéristique. La carte se colore et la valeur s'écrit
 dessus. C'est le même panneau que celui de l'éditeur PCB, au mot près : le code
 est dans `../commun/simulation-em.js`, et seul l'adaptateur
 `js/07-simulation.js` change — il décrit une carte lue là où l'autre décrit
 une carte routée.
 
-Le solveur demande numpy et scipy, et ils sont **obligatoires** pour
-`web_CAO.py` : sans eux le serveur s'arrête au démarrage (code 3) en disant quoi
-installer. Une fois lancé, ses routes de solveurs ne répondent jamais
-« indisponible ».
+Le solveur est compilé dans `web_cao` : une fois le serveur lancé, ses routes
+de solveurs ne répondent jamais « indisponible ».
 
 ```bash
-pip install -r requirements.txt   # ou : sudo apt install python3-numpy python3-scipy
-python web_CAO.py
+./demarrer_WEB_CAO.sh        # Windows : demarrer_WEB_CAO.cmd
 ```
 
 **L'empilage envoyé est celui du calcul**, `LT` — le même que celui de la fiche
@@ -473,7 +468,7 @@ exactement à l'inverse de ce qu'elle veut dire.
 ### Z différentielle : la section à N conducteurs, lue en ohms
 
 Le solveur résout la section à **N conducteurs** (`solve_multiline`,
-`../python/ligne_mom.py`) : la matrice de capacité de Maxwell **[C]**, puis
+`../rust/ligne_mom`) : la matrice de capacité de Maxwell **[C]**, puis
 **[L] = μ₀ε₀[C₀]⁻¹** puisque le milieu n'est pas magnétique. De ces deux
 matrices sortent, sans aucun solveur de plus, les modes **pair** et **impair**
 — donc Z_diff = 2·Z_impair et Z_comm = Z_pair/2.
@@ -626,7 +621,7 @@ Ce n'est pas la formule de la fiche de ligne, c'est un calcul de champ sur la
 section — et il traite des cas que la formule ne traite pas, à commencer par
 la **triplaque décentrée**, que la formule IPC-2141A suppose centrée (la fiche
 de ligne lui demande alors Z₀, voir « Limites connues » plus bas). Vérifié contre étalons extérieurs
-(`../python/test/banc-ligne-mom.py`) : **0,42 %** d'écart
+(`../rust/ligne_mom/tests/banc`) : **0,42 %** d'écart
 au pire contre Hammerstad-Jensen sur le microruban, **0,30 %** contre la
 solution exacte en intégrales elliptiques sur la triplaque. La géométrie qui
 mesure la masse coplanaire sur le cuivre lu a son propre banc,
@@ -885,30 +880,31 @@ du projet s'il y en a un (« carte PIR-IPC.json »), sous celui du fichier lu
 sinon.
 
 Un modèle traduit pèse lourd — 8 Mo pour une 4 couches de taille moyenne. La
-voie serveur plafonne à 16 Mo (`MAX_PROJET`, `web_CAO.py`) : au-delà,
+voie serveur plafonne à 16 Mo (`MAX_PROJET`, `web_cao`) : au-delà,
 l'écriture est refusée et le téléchargement prend le relais, en le disant.
 
 ## Banc d'essai
 
 ```bash
-python visionneuse-ipc2581/test/banc-essai.py
+cargo test -p outils --test banc_essai      # la chaîne lue d'ici ; les essais du lecteur sont dans la caisse ipc2581 (web_suite)
+node visionneuse-ipc2581/test/harness-sim.js
 ```
 
-Un banc d'essai en Python, et pour la raison qui fait exister la
-route `/api/ipc2581` : ce qui se teste ici ne tourne pas dans le navigateur.
-Il porte sur le parseur et le modèle JSON — empilage et permittivités, contour,
+Les essais du lecteur ne sont pas en JavaScript, et pour la raison qui fait exister la
+route `/api/ipc2581` : ce qui se teste là ne tourne pas dans le navigateur.
+Ils portent sur le parseur et le modèle JSON — empilage et permittivités, contour,
 largeurs de piste dans les deux écritures, pastilles, perçages, vias,
 composants et boîtiers, index des couches et des nets, archive `.zip`, et les
 refus (fichier vide, XML tronqué, archive illisible, archive sans IPC-2581).
 
-Il porte sa propre carte d'essai, écrite dans le fichier : deux couches, une
+Ils portent leur propre carte d'essai : deux couches, une
 piste coudée de 20 + 10 mm, un via là où elle s'arrête, un Dk de 4,37 rangé
 dans une `<Spec>`. Un IPC-2581 réel pèse une dizaine de mégaoctets et n'a pas
 sa place dans l'historique ; une carte dont chaque valeur se vérifie à la main
 prouve davantage. Le contre-perçage a la sienne, à côté du banc
 ([test/carte-contre-percage.xml](test/carte-contre-percage.xml), quatre
 couches, un via à la manière de KiCad, un via repassé par un foret à part, un
-foret sans via) : `banc-essai.py` la lit, et `harness-sim.js` vérifie ce qui
+foret sans via) : les essais du lecteur la lisent, et `harness-sim.js` vérifie ce qui
 part au serveur. C'est la carte d'essai qui a montré que le lien composant → empreinte
 suivait `part` au lieu de `packageRef` — sur la carte de référence, 282
 composants sur 285 ressortaient sans empreinte, donc sans broches, et la fiche
@@ -978,14 +974,8 @@ Le parseur lit les deux emplacements et les deux écritures depuis la version
 Reste que tous les outils n'écrivent pas ces spécifications : c'est à cela que
 sert la saisie du panneau « La carte ».
 
-Pour voir ce qu'un fichier donne vraiment, sans passer par le navigateur :
-
-```bash
-python python/ipc2581_json.py votre-carte.xml
-```
-
-La sortie liste l'empilage couche par couche — type, épaisseur, Dk, Df,
-matériau — et marque d'un `?` ce que le fichier ne dit pas.
+L'ancienne ligne de commande du parseur (qui listait l'empilage lu, couche par couche) n'a pas
+d'équivalent : ce qu'un fichier donne se lit dans le panneau « La carte » de la page.
 
 **Un plan de référence peut n'être déclaré nulle part.** Beaucoup de fichiers
 annoncent toutes leurs couches de cuivre en `SIGNAL`, y compris celles qui

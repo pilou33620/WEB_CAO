@@ -5,9 +5,9 @@
    parle jamais directement au serveur MCP : sans passerelle locale, ni le CORS
    ni le protocole ne le permettraient.
 
-   La passerelle est l'origine qui sert la page (web_CAO.py relaie lui-même).
-   web_CAO.py n'admet que sa propre origine : une page ouverte en file://, ou
-   servie par un autre port, ne peut pas l'appeler. Si web_CAO.py a dû prendre
+   La passerelle est l'origine qui sert la page (web_cao relaie lui-même).
+   web_cao n'admet que sa propre origine : une page ouverte en file://, ou
+   servie par un autre port, ne peut pas l'appeler. Si web_cao a dû prendre
    un autre port (8000 peut être réservé par le système), ouvrez l'adresse
    qu'il affiche au démarrage.
    ============================================================================= */

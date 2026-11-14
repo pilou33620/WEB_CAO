@@ -1,0 +1,35 @@
+| commentaire
+(essai_tx
+  (Description "Emetteur d'essai (FFE 3 prises)")
+  (Reserved_Parameters
+    (AMI_Version (Usage Info) (Type String) (Value "7.0"))
+    (Init_Returns_Impulse (Usage Info) (Type Boolean) (Value True))
+    (GetWave_Exists (Usage Info) (Type Boolean) (Value False))
+    (Ignore_Bits (Usage Info) (Type Integer) (Value 4))
+    (Tx_Rj (Usage Info) (Type Float) (Value 1.2e-12))
+    (Tx_Dj (Usage Info) (Type Float) (Value 5e-12))
+    (Tx_DCD (Usage Info) (Type Float) (Range 1p 0 2p))
+    (Rx_Rj (Usage Info) (Type Float) (Value 1.6e-12))
+    (Rx_Noise (Usage Info) (Type Float) (Value -3m))
+    (Rx_Receiver_Sensitivity (Usage Info) (Type Float) (Value 0.02)))
+  (Model_Specific
+    (TX_FFE
+      (Tap
+        (-1 (Usage In) (Type Float) (Range -0.1 -0.25 0) (Description "pre"))
+        (0 (Usage In) (Type Float) (Range 0.7 0.5 1.0))
+        (1 (Usage InOut) (Type Float) (Format Range -0.2 -0.35 0))
+        (post2 (Usage In) (Type Float) (Increment 0.05 0 0.1 0.01))
+        (c_m2 (Usage In) (Type Float) (Steps 0.01 0 0.1 5))))
+    (Swing (Usage In) (Type Float) (List 0.8 0.6 "1.0" abc) (Description "V" "crete"))
+    (Mode (Usage In) (Type String) (Value "rapide \"x\""))
+    (Table1 (Usage In) (Type Float) (Table (Labels a b) (1 2) (3 4)))
+    (Corner1 (Usage In) (Type Float) (Corner 1 2 3))
+    (CTLE (CTLE_Boost_dB (Usage In) (Type Float) (List 0 3 6 9 -3 3.004 -0))
+          (dc_gain (Usage In) (Type Float) (Range 0 -12 0) (Description "gain en dB")))
+    (DFE (Taps (Usage In) (Type Integer) (Range 5 1 12))
+         (Tap1 (Usage In) (Type Float) (Range 0 -0.08 0.08))
+         (dfe_tap_2 (Usage In) (Type Float) (Value 0.03))
+         (h3 (Usage Out) (Type Float)))
+    (Sans (Usage))
+    (Vide)))
+(autre (x 1))

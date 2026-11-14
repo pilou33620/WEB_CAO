@@ -8,7 +8,7 @@
    l'empilage avec ses matières, le cuivre avec ses nets, les perçages avec
    leur portée, les composants avec leur empreinte et leur nomenclature. C'est
    ce que lisent les chaînes de FAO récentes, et c'est ce que lit la
-   visionneuse de ce dépôt (python/ipc2581_parser.py → ipc2581_json.py).
+   visionneuse de ce dépôt (caisse ipc2581 de web_suite → ipc2581_json).
 
    POURQUOI LA RÉVISION C. Elle est la révision en vigueur (2020), celle
    qu'écrit KiCad par défaut, et ses deux XSD sont publiés. Ce qui compte ici
@@ -17,7 +17,7 @@
    <SurfaceFinish> (normalisée par les codes de l'IPC-6012), le type de
    <Step> et l'état de l'empilage, et retire le niveau des <FunctionMode>.
    Le fichier est validé contre IPC-2581C.xsd (celui que KiCad garde dans
-   qa/data/pcbnew/ipc2581) par le banc test/banc-ipc2581-export.py.
+   qa/data/pcbnew/ipc2581) par le banc rust/outils/tests/banc_ipc2581_export.rs.
 
    CE QUI PART, section par section :
      Content         rôle, fonction (USERDEF : fabrication, assemblage et
@@ -93,7 +93,7 @@
                      structure de ligne (<SingleEnded> ou <EdgeCoupled> :
                      largeur, écart, plans de référence, STRIPLINE_* ou
                      MICROSTRIP_*) sur chaque couche de signal qui a un plan.
-   C'est ce que relit python/ipc2581_parser.py (1.80) : la visionneuse
+   C'est ce que relit la caisse ipc2581 de web_suite (1.80) : la visionneuse
    retrouve ses classes et ses paires sans reclasser.
 
    LA RUGOSITÉ DE HURAY n'a pas de type normalisé ; elle part sous le type

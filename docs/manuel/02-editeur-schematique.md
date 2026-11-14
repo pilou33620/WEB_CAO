@@ -501,7 +501,7 @@ Une virgule vaut un point. `Échap` ferme. Seuls les nets nommés sont listés. 
 | Courants DC inférés (Solveur PI) | Source, type, mA | |
 | **Valider pour PI** (puis **✓ Enregistré !**) | Enregistre les courants dans l'onglet pour le solveur d'alimentation | |
 
-Motifs reconnus par `python/pattern_recognition.py` :
+Motifs reconnus par `rust/motifs/src/pattern_recognition.rs` :
 
 | Motif | Reconnu par |
 |---|---|
@@ -587,7 +587,7 @@ Un lot compte 40 opérations au plus ; le premier refus l'arrête. Le lot est jo
 - Il n'y a plus de fenêtre **Brochage** dans le schéma : les noms de broches et les pattes se règlent dans **Édition du composant**, le tracé du symbole dans la Gestion LIB.
 - `T` entre en mode Trait avec la forme courante ; seul `Maj+T` bascule entre trait et rectangle. Le menu **Forme du tracé** affiche `T` pour le trait et `Maj+T` pour le rectangle : à l'usage, `Maj+T` alterne les deux formes. `T` ou `Maj+T` après `Z` rendent le tracé ordinaire (trait ou rectangle) : le caractère « zone » ne survit ni à `T` ni à la sortie du mode.
 - La mesure n'est pas une cote de fabrication : une case vaut 1 mm par convention de dessin.
-- La reconnaissance de motifs, la classification automatique des nets et la recherche en ligne demandent le serveur (`python web_CAO.py`). Sans lui, seules la masse et les alimentations reconnues par leur nom reçoivent une classe, et le PCB ne reçoit que les corrections et les évidences.
+- La reconnaissance de motifs, la classification automatique des nets et la recherche en ligne demandent le serveur (`demarrer_WEB_CAO`). Sans lui, seules la masse et les alimentations reconnues par leur nom reçoivent une classe, et le PCB ne reçoit que les corrections et les évidences.
 - Les amplificateurs ne sont pas reconnus comme blocs ; un AOP ou un ampli audio sert seulement d'indice pour classer ses nets en Analogique.
 - Un net anonyme (`N$…`) ne se classe ni ne se contraint : son nom change au moindre fil.
 - Les contraintes d'un net renommé ne suivent pas : elles passent sous **À revoir**.

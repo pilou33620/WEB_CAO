@@ -89,7 +89,7 @@ Voir [Gestion LIB](05-gestion-lib.md).
 
 ### Je veux utiliser Claude Code depuis un terminal
 
-1. Déclarer le serveur une fois sur le poste des outils : `claude mcp add -s user web_suite -- python3 <dépôt web_suite>/lanceur/mcp_web_suite.py` (sous Windows : `py -3` et le chemin du dépôt). Depuis Windows vers un Pi, par SSH : voir `lanceur/docs/DETAILS.md` du dépôt web_suite.
+1. Déclarer le serveur une fois sur le poste des outils : `claude mcp add -s user web_suite -- <dépôt web_suite>/bin/mcp_web_suite` (sous Windows : `bin\mcp_web_suite.exe`). Depuis Windows vers un Pi, par SSH : voir `lanceur/docs/DETAILS.md` du dépôt web_suite.
 2. Dans Claude Code, `/mcp` affiche l'état de la connexion.
 3. Demander à Claude d'appeler `etat` : il dit quels outils tournent et sur quel port.
 4. Pour agir dans une page, Claude liste les onglets (`pilote_onglets`) puis vise l'un d'eux (argument `onglet`) ; par défaut, l'onglet du bon type utilisé le plus récemment.
@@ -159,7 +159,7 @@ Plusieurs onglets d'un même outil dans un navigateur : un seul tient la connexi
 | `cao_chemin` | Propose des points de passage (A* sur grille, 45°, vias) pour des liaisons ou une paire | Lecture | Rien n'est écrit ; à donner à `cao_router` ou `cao_paire` |
 | `pcbparts_outils`, `pcbparts_appeler` | Relais vers pcbparts.dev (JLCPCB, Mouser, Digi-Key, brochages, règles de fabrication) | Lecture | Liste blanche côté WEB_CAO, passe par Internet |
 
-Le relais pcbparts est celui de `python/passerelle_mcp.py` (client MCP de WEB_CAO vers pcbparts.dev), distinct du serveur MCP de web_suite.
+Le relais pcbparts est celui de `rust/outils/src/passerelle_mcp.rs` (client MCP de WEB_CAO vers pcbparts.dev), distinct du serveur MCP de web_suite.
 
 ### Ce que Claude écrit, avec une carte
 

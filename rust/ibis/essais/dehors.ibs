@@ -1,0 +1,208 @@
+[IBIS Ver] 4.0
+[Comment Char] #_char
+[File Name]  riche.ibs
+[File Rev]   1.0
+[Date] 12/11/2026
+[Notes] fichier d'essai | avec commentaire
+[Component]  U_RICHE
+[Manufacturer] Essai
+[Package]
+# variable | pas un commentaire  typ  min  max
+R_pkg  0.2  0.1  0.3
+L_pkg  8nH  NA  10nH
+C_pkg = 1pF  0.8pF  NA
+[Pin] signal_name model_name R_pin L_pin C_pin
+A1  DP   SEL   0.05  2nH  0.4pF
+A2  DN   SEL   NA  NA  0.6pF
+A3  VCC  POWER
+A4  GND  gnd
+A5  NC1  NC
+B1  DQ0  IO1   50m 1.5n 300f
+B2  DQ1  ABSENT
+B3  CLK  IN1
+B1  DQ0b IO1   51m 1.6n 301f
+[Package Model] DEHORS
+[Diff Pin] inv_pin vdiff tdelay_typ tdelay_min tdelay_max
+A1 A2 0.2V 40ps NA 50ps
+B1 B3 NA
+B2 B1
+[Model Selector] SEL
+IO1 le premier
+IO2 l'autre
+[Model Selector]
+[Model] IO1
+Model_type I/O
+Polarity Non-Inverting
+C_comp 3.0pF 2.5pF 3.5pF
+Vinl = 0.8V
+Vinh = 2.0V
+[Model Spec]
+Vinh 2.0 1.9 2.1
+[Temperature Range] 25 85 0
+[Voltage Range] 3.3V 3.0V 3.6V
+[Pullup Reference] 3.3 NA 3.5
+[Pulldown Reference] 0 0.1 -0.1
+[POWER Clamp Reference] 3.3 3.0 3.6
+[GND Clamp Reference] 0 0 0
+[Rgnd] 1k 900 1.1k
+[Rpower] 2k NA NA
+[Pulldown]
+3.3 52mA 42mA 62mA
+-3.3 -60mA -50mA -70mA
+0.0 0 0 0
+0.3 15mA 12mA 18mA
+1.0 40mA 32mA 48mA
+6.6 54mA NA 64mA
+NA 1 2 3
+7.0 NA 1 2
+[Pullup]
+-3.3 60mA 50mA 70mA
+0.0 0 0 0
+0.3 -12mA -10mA -15mA
+1.0 -32mA -26mA -39mA
+3.3 -42mA -34mA -50mA
+6.6 -44mA -36mA -52mA
+[GND Clamp]
+-3.3 -300mA -250mA -350mA
+-1.0 -50mA -40mA -60mA
+-0.7 -5mA -4mA -6mA
+-0.3 0 0 0
+0 0 0 0
+[POWER Clamp]
+-3.3 300mA 250mA 350mA
+-1.0 50mA 40mA 60mA
+-0.7 5mA 4mA 6mA
+0 0 0 0
+[Ramp]
+dV/dt_r 1.6/0.6n 1.4/0.8n 1.8/0.45n
+dV/dt_f 1.6/0.5n NA 1.8/0.4n
+R_load = 50
+[Rising Waveform]
+R_fixture = 50
+V_fixture = 0
+V_fixture_min = 0.1
+V_fixture_max = -0.1
+C_fixture = 1p
+L_fixture = 1n
+R_dut = NA
+0.0ns 0.0 0.0 0.0
+0.1ns 0.1 0.08 0.12
+0.2ns 0.8 0.6 0.9
+0.3ns 1.5 1.3 1.6
+0.5ns 1.8 1.6 2.0
+1.0ns 1.9 NA NA
+[Rising Waveform]
+R_fixture = 50
+V_fixture = 3.3
+0.0ns 0.3 0.3 0.3
+0.1ns 0.5 0.4 0.6
+0.2ns 1.8 1.6 1.9
+0.3ns 2.8 2.6 2.9
+0.5ns 3.2 3.0 3.5
+1.0ns 3.3 3.0 3.6
+[Falling Waveform]
+R_fixture = 50
+V_fixture = 0
+0.0ns 1.9 1.7 2.0
+0.2ns 1.0 0.8 1.1
+0.4ns 0.1 0.1 0.1
+1.0ns 0.0 0.0 0.0
+[Algorithmic Model]
+Executable Linux_gcc4.1.2_64 tx.so tx.ami
+Executable Windows_VisualStudio_64 tx.dll tx.ami
+Executable trop court
+[End Algorithmic Model]
+[Model] IO2
+Model_type Output
+C_comp 2p
+[Voltage Range] 1.8 1.7 1.9
+[Pulldown]
+-1.8 -30m -25m -35m
+0 0 0 0
+1.8 30m 25m 35m
+3.6 32m 27m 37m
+[Pullup]
+-1.8 30m 25m 35m
+0 0 0 0
+1.8 -30m -25m -35m
+3.6 -32m -27m -37m
+[Ramp]
+dV/dt_r 1.0/0.2n 0.9/0.3n 1.1/0.15n
+dV/dt_f 1.0/0.2n 0.9/0.3n 1.1/0.15n
+[Submodel] ODT
+[Pulldown]
+0 0 0 0
+[Model] IN1
+Model_type Input
+C_comp 4pF NA NA
+[Voltage Range] 3.3 3.0 3.6
+[GND Clamp]
+-1.0 -50mA NA NA
+-0.7 -5mA NA NA
+0 0 NA NA
+[Model]
+Model_type Terminator
+[End]
+[Define Package Model] PKG1
+[Manufacturer] Essai
+[OEM] Essai
+[Description] boitier d'essai
+[Number Of Pins] 5
+[Pin Numbers]
+A1
+A2
+B1
+A3
+B3
+[Model Data]
+[Resistance Matrix] Banded_matrix
+[Bandwidth] 1
+[Row] A1
+0.1 0.01
+[Row] A2
+0.1 0.02
+[Row] B1
+0.2
+[Inductance Matrix] Full_matrix
+[Row] 1
+3.0nH 0.6nH 0.1nH 0.5nH 0
+[Row] 2
+3.5nH 0.2nH 0.4nH 0.05nH
+[Row] 3
+4.0nH 0 0.3nH
+[Row] 4
+2.0nH NA
+[Row] 5
+3.3nH
+[Row] 9
+1 2 3
+[Capacitance Matrix] Sparse_matrix
+[Row] 1
+1 0.7pF
+2 -0.1pF
+B1 0.05pF
+7 1pF
+zz 2pF
+[Row] 2
+2 0.8pF
+3 -0.02pF
+[Row] B1
+B1 0.9pF
+[End Model Data]
+[End Package Model]
+[Define Package Model] PKG_S
+[Number Of Sections] 3
+[Pin Numbers]
+A1 Len = 0 L=0.5n /
+   Len = 10 L=0.25n C=0.1p R=0.01 G=1u /
+   Len = 0 C=0.2p /
+A2 Len = 10 L=0.25n C=0.1p /
+   Fork
+   Len = 2 L=0.25n C=0.1p /
+   Fork Len=1 C=1p / Endfork
+   Endfork
+   Endfork
+   Len = 0 L=1n X=3 /
+B1
+[End Package Model]
+[End]

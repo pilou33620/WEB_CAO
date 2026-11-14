@@ -1,0 +1,52 @@
+[IBIS Ver] 5.0
+[Comment Char] #_char
+[Component] CMOS33
+[Package]
+R_pkg 0.2 0.1 0.3
+# un commentaire, | n'en est plus un
+[Model] OUT33
+Model_type I/O
+C_comp 3.0pF 2.5pF 3.5pF
+Vinl = 0.8V
+Vinh = 2.0V
+[Voltage Range] 3.3V 3.0V 3.6V
+[Pulldown]
+-3.3 -60mA -50mA -70mA
+0.0 0 0 0
+0.3 15mA 12mA 18mA
+1.0 40mA 32mA 48mA
+3.3 52mA 42mA 62mA
+6.6 54mA NA 64mA
+[Pullup]
+-3.3 60mA 50mA 70mA
+0.0 0 0 0
+0.3 -12mA -10mA -15mA
+1.0 -32mA -26mA -39mA
+3.3 -42mA -34mA -50mA
+6.6 -44mA -36mA -52mA
+[GND Clamp]
+-3.3 -300mA -250mA -350mA
+-1.0 -50mA -40mA -60mA
+-0.7 -5mA -4mA -6mA
+-0.3 0 0 0
+0 0 0 0
+[POWER Clamp]
+-3.3 300mA 250mA 350mA
+-1.0 50mA 40mA 60mA
+-0.7 5mA 4mA 6mA
+-0.3 0 0 0
+0 0 0 0
+[Ramp]
+dV/dt_r 1.6/0.6n 1.4/0.8n 1.8/0.45n
+dV/dt_f 1.6/0.5n 1.4/0.7n 1.8/0.4n
+R_load = 50
+[Model] IN33
+Model_type Input
+C_comp 4pF NA NA
+[GND Clamp]
+-3.3 -300mA NA NA
+-1.0 -50mA NA NA
+-0.7 -5mA NA NA
+-0.3 0 NA NA
+0 0 NA NA
+[End]

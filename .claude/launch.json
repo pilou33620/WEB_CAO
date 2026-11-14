@@ -3,9 +3,12 @@
   "configurations": [
     {
       "name": "serveur CAO Web",
-      "runtimeExecutable": "python",
+      "runtimeExecutable": "cargo",
       "runtimeArgs": [
-        "web_CAO.py",
+        "run",
+        "--bin",
+        "web_cao",
+        "--",
         "--port",
         "8137",
         "--sans-navigateur",
@@ -16,9 +19,12 @@
     },
     {
       "name": "serveur CAO Web 8138",
-      "runtimeExecutable": "python",
+      "runtimeExecutable": "cargo",
       "runtimeArgs": [
-        "web_CAO.py",
+        "run",
+        "--bin",
+        "web_cao",
+        "--",
         "--port",
         "8138",
         "--sans-navigateur",
@@ -29,24 +35,28 @@
     },
     {
       "name": "statique 8140",
-      "runtimeExecutable": "python",
+      "runtimeExecutable": "npx",
       "runtimeArgs": [
-        "-m",
-        "http.server",
-        "--bind",
+        "--yes",
+        "http-server",
+        ".",
+        "-a",
         "127.0.0.1",
+        "-p",
         "8140"
       ],
       "port": 8140
     },
     {
       "name": "statique 8141",
-      "runtimeExecutable": "python",
+      "runtimeExecutable": "npx",
       "runtimeArgs": [
-        "-m",
-        "http.server",
-        "--bind",
+        "--yes",
+        "http-server",
+        ".",
+        "-a",
         "127.0.0.1",
+        "-p",
         "8141"
       ],
       "port": 8141

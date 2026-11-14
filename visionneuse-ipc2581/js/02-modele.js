@@ -1,7 +1,7 @@
 "use strict";
 /* =============================================================================
    visionneuse IPC-2581 — 02-modele.js
-   Le modèle reçu du serveur (voir python/ipc2581_json.py) est compact : les couches et
+   Le modèle reçu du serveur (voir caisse ipc2581 de web_suite) est compact : les couches et
    les nets y sont des index, les points des tableaux plats. C'est ce qu'il faut
    pour le transporter ; ce n'est pas ce qu'il faut pour dessiner.
 
@@ -131,7 +131,7 @@ function mdlCoucheNom(i){
   const c=V.couches[i];
   return c?c.nom:"";
 }
-/* LE CONTRE-PERÇAGE D'UN PERÇAGE (`cp` du modèle, ipc2581_json.py), noms de
+/* LE CONTRE-PERÇAGE D'UN PERÇAGE (`cp` du modèle, ipc2581_json), noms de
    couche résolus ; null s'il n'en a pas. Le fichier peut n'en dire qu'une
    partie — une spec sans couche à ne pas couper, une face qui n'en est pas
    une : `complet` dit si la face, la couche gardée et le moignon résiduel

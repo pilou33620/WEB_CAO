@@ -1,0 +1,26 @@
+[package]
+name = "em"
+version = "0.1.0"
+edition = "2021"
+description = "simulation_em et crosstalk (ils s'appellent l'un l'autre : une seule caisse)"
+
+[lib]
+doctest = false # les schémas indentés des commentaires ne sont pas du code
+
+[dependencies]
+ligne_mom = { path = "../ligne_mom" }
+# Json (les dict de Python, ordre des clés compris), dumps, round, sum et hypot de Python
+ipc2581 = { git = "https://github.com/pilou33620/web_suite", rev = "915bf4fd282b442d23f3e15f59644f89e71175a5" }
+# son module `pyth` : float(), str(), « %g » et json.loads de Python, déjà portés
+dc_solver = { path = "../dc_solver" }
+num-complex = "0.4"    # les matrices ABCD et S
+faer = "0.24"          # crosstalk : Cholesky, valeurs propres symétriques et LU denses (numpy.linalg), comme ligne_mom
+serde = "1"            # les structures de résultat de ligne_mom, remises en dict
+serde_json = { version = "1", features = ["preserve_order"] }
+
+# Les bancs d'essai portés de python/test/ : comme eux, pas de harnais, un décompte à la fin
+# et un code de retour.
+[[test]]
+name = "banc"
+path = "tests/banc/main.rs"
+harness = false

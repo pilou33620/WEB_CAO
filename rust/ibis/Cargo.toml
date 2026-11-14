@@ -1,0 +1,14 @@
+[package]
+name = "ibis"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# round(), float(), json.dumps de Python, pour rendre aux pages les memes octets
+ipc2581 = { git = "https://github.com/pilou33620/web_suite", rev = "915bf4fd282b442d23f3e15f59644f89e71175a5" }
+# les dict de Python gardent l'ordre d'insertion
+indexmap = "2"
+# np.fft.irfft et les complexes (rustfft::num_complex)
+rustfft = "6"
+# ctypes.CDLL : la bibliotheque AMI du fabricant
+libloading = "0.8"

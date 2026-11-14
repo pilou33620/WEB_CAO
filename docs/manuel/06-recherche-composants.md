@@ -1,6 +1,6 @@
 # Recherche de composants
 
-La Recherche de composants interroge [pcbparts.dev](https://pcbparts.dev/) : stock et prix JLCPCB / LCSC, équivalences, brochage, symbole et empreinte KiCad, fiches Mouser et DigiKey, cartes de référence et règles de conception. Elle passe par le serveur local (`python web_CAO.py`) et ne s'ouvre pas en `file://`.
+La Recherche de composants interroge [pcbparts.dev](https://pcbparts.dev/) : stock et prix JLCPCB / LCSC, équivalences, brochage, symbole et empreinte KiCad, fiches Mouser et DigiKey, cartes de référence et règles de conception. Elle passe par le serveur local (`demarrer_WEB_CAO`) et ne s'ouvre pas en `file://`.
 Depuis l'Éditeur Schématique, une fenêtre « Enrichissement composant » applique le résultat à un composant déjà posé : référence, fabricant, boîtier, caractéristiques, brochage, datasheet.
 Un composant JLCPCB / LCSC se verse aussi dans la bibliothèque : le bouton « ⚡ Ajouter à Gestion LIB » ouvre l'import de [Gestion LIB](05-gestion-lib.md).
 
@@ -221,11 +221,11 @@ Tableau de brochage : colonnes « N° », « Broche officielle » (avec « ✓ A
 | `POST /api/datasheet/telecharger` | Téléchargement d'une datasheet dans le projet |
 | `GET /api/datasheet/ouvrir?projet=…&fichier=…` | Ouvre un PDF `.pdf` déjà rangé dans `datasheets/` |
 
-Seuls les 14 outils de la liste blanche (`ALLOWED_TOOLS` de `python/passerelle_mcp.py`) sont acceptés (« Outil inconnu » sinon, code 400) ; chaque appel vers pcbparts.dev attend 30 s au plus. La page n'appelle que son propre serveur : ouverte en `file://` ou depuis un autre port que celui affiché par `web_CAO.py`, elle affiche « Passerelle introuvable ». Tout ce qui vient du réseau est échappé avant affichage.
+Seuls les 14 outils de la liste blanche (`ALLOWED_TOOLS` de `rust/outils/src/passerelle_mcp.rs`) sont acceptés (« Outil inconnu » sinon, code 400) ; chaque appel vers pcbparts.dev attend 30 s au plus. La page n'appelle que son propre serveur : ouverte en `file://` ou depuis un autre port que celui affiché par `web_cao`, elle affiche « Passerelle introuvable ». Tout ce qui vient du réseau est échappé avant affichage.
 
 ## Limites connues
 
-- Il faut `python web_CAO.py` et un accès à pcbparts.dev ; hors ligne, aucune recherche. Les quotas de Mouser et DigiKey sont journaliers.
+- Il faut `demarrer_WEB_CAO` et un accès à pcbparts.dev ; hors ligne, aucune recherche. Les quotas de Mouser et DigiKey sont journaliers.
 - La page garde 30 résultats d'historique (5 d'entre eux au retour d'un autre outil) ; une réponse trop volumineuse pour la session d'onglet n'est pas reprise (seule la requête l'est).
 - « Recherche JLCPCB » ne montre que les pièces en stock (≥ 10) ; « Stock en direct » avec « Stock minimum » à 0 montre les ruptures.
 - Le texte KiCad renvoyé n'est pas converti automatiquement en composant de la LIB.

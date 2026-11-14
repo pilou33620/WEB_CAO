@@ -1,5 +1,5 @@
 PlansSans — fonte embarquée dans les plans PDF de l'éditeur PCB
-(js/fontes/plans-sans.js, produit par outils/fonte-plans.py)
+(js/fontes/plans-sans.js, produit par l'outil fonte-plans, rust/outils)
 
 PlansSans est une Version Modifiée (sous-ensemble de glyphes, hinting retiré,
 tables réécrites, fonte renommée) de Liberation Sans 2.1.5, Regular et Bold :

@@ -1,0 +1,22 @@
+[IBIS Ver] 3.2
+[Component] DEUX
+[Package]
+R_pkg 1 2 3
+[Pin] signal_name model_name
+1 A M
+[Component] AUTRE
+[Package]
+R_pkg 9 9 9
+[Pin]
+2 B M
+[Model] M
+Model_type 3-state
+C_comp NA NA NA
+[Voltage Range] NA NA NA
+[Pullup]
+0 0
+1 1m
+[Model] M
+Model_type Output
+[Ramp]
+dV/dt_r NA 1/1n

@@ -1,7 +1,7 @@
 /* =============================================================================
    bancs-mesure/crosstalk/exporter-docs-sim.js
    Les documents que l'onglet Crosstalk envoie au serveur, un par cas, rangés
-   dans docs-sim/ pour que le banc Python tourne sans navigateur.
+   dans docs-sim/ pour que le banc Rust tourne sans navigateur.
 
        node bancs-mesure/crosstalk/exporter-docs-sim.js [carte-PCB.json]
 
@@ -15,7 +15,7 @@
    l'enverrait. À refaire seulement quand la carte change.
 
    Il faut Playwright (npm i -g playwright) et le monofichier à jour
-   (python3 editeur-pcb/outils/build-monofichier.py).
+   (cargo run -p outils --bin build-monofichier -- editeur-pcb).
    ============================================================================= */
 "use strict";
 const fs=require("fs");

@@ -1,0 +1,6 @@
+[Model] A
+C_comp ١٢p 1e999 .5k
+Vinl 1.e2V
+[Pulldown]
+1e 2E 3eV 4mA
+-.5 +1.5u

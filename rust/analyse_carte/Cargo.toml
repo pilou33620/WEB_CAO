@@ -1,0 +1,26 @@
+[package]
+name = "analyse_carte"
+version = "0.1.0"
+edition = "2021"
+description = "python/analyse_carte.py : les règles de la carte entière (angles, puis règles électriques)"
+
+[lib]
+doctest = false # les schémas indentés des commentaires ne sont pas du code
+
+[dependencies]
+em = { path = "../em" }                # simulation_em et crosstalk
+ligne_mom = { path = "../ligne_mom" }
+rf_reseau = { path = "../rf_reseau" }  # z_fente
+# son module `pyth` (float(), int(), str() de Python) et les constantes IPC-2221
+dc_solver = { path = "../dc_solver" }
+# Json (les dict de Python, ordre des clés compris), et le lecteur IPC-2581 d'`analyser_modele`
+ipc2581 = { git = "https://github.com/pilou33620/web_suite", rev = "915bf4fd282b442d23f3e15f59644f89e71175a5" }
+indexmap = "2"   # les dict de Python gardent l'ordre d'insertion, et l'ordre des constats en sort
+regex = "1"      # les repères de composants (re de Python)
+
+# python/test/banc-analyse-carte.py : comme les autres bancs, pas de harnais, un décompte à
+# la fin et un code de retour.
+[[test]]
+name = "banc"
+path = "tests/banc/main.rs"
+harness = false

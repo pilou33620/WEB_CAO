@@ -1,11 +1,11 @@
 # Simulation RF : le S₂₁ d'un réseau entre deux ports
 
 La famille **RF** du panneau « Simulation EM… » (éditeur PCB et visionneuse IPC-2581) répond à une question : quelle part de la puissance disponible d'une puce radio arrive au connecteur ou à l'antenne, à travers les pistes et les composants du réseau d'adaptation, et que faut-il retoucher ?
-Elle porte un seul onglet, **S21**, entre deux ports d'impédance complexe (R + jX), simples ou différentiels. Le réseau est trouvé par la page, calculé par le serveur (`python/rf_reseau.py`).
+Elle porte un seul onglet, **S21**, entre deux ports d'impédance complexe (R + jX), simples ou différentiels. Le réseau est trouvé par la page, calculé par le serveur (`rust/rf_reseau`).
 Ce chapitre suit la famille RF seule ; l'ouverture du panneau, les réglages communs et les familles SI et PI sont au chapitre [08 Simulation SI](08-simulation-si.md). Le traitement de chaque broche d'une puce radio est dans [Simulation RF : que faire de chaque broche](10b-rf-acces-des-broches.md), à lire avant de poser les ports.
 
 > [!NOTE]
-> Le calcul passe par le serveur (`python web_CAO.py`). Le principe, les étalonnages et les formules sont dans [../simulation-em.md](../simulation-em.md), section « RF — le S₂₁ d'un réseau entre deux ports ». Ce chapitre dit comment s'en servir.
+> Le calcul passe par le serveur (`demarrer_WEB_CAO`). Le principe, les étalonnages et les formules sont dans [../simulation-em.md](../simulation-em.md), section « RF — le S₂₁ d'un réseau entre deux ports ». Ce chapitre dit comment s'en servir.
 
 ## Guide par tâche
 
@@ -199,7 +199,7 @@ Valeurs d'un composant idéal : lues dans le champ Valeur du composant, sous des
 - **Résultat périmé.** Le résultat part si la carte change ; il ne dépend pas de la sélection d'une piste (cliquer une piste ne l'efface pas).
 - **Pas de peinture sur la carte.** Contrairement à l'onglet Impédance, S21 ne colore pas le cuivre.
 - **Visionneuse.** Le fichier IPC-2581 n'est jamais modifié ; l'état RF (ports, modèles importés, broches annexes, états) est gardé dans le navigateur, sous le nom du fichier, et un modèle trop lourd pour ce stockage reste en mémoire seulement.
-- **Établi ou non.** Les cas du banc `python/test/banc-rf.py` couvrent notamment le réseau en L, les ports différentiels, les Touchstone, le couplage, les selfs, les fentes et les zones ; ces étalons sont des formules, des solveurs du dépôt ou des cas à solution exacte. Le dépôt ne contient aucune mesure d'un montage RF : aucun écart avec une mesure n'est annoncé.
+- **Établi ou non.** Les cas du banc `rust/rf_reseau/tests/banc` couvrent notamment le réseau en L, les ports différentiels, les Touchstone, le couplage, les selfs, les fentes et les zones ; ces étalons sont des formules, des solveurs du dépôt ou des cas à solution exacte. Le dépôt ne contient aucune mesure d'un montage RF : aucun écart avec une mesure n'est annoncé.
 
 ## Voir aussi
 

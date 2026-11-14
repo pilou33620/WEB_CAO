@@ -32,13 +32,12 @@ le long du parcours, le NEXT se fabrique. Voir
 > obtenus par deux physiques différentes, et rien pour les arbitrer.
 
 Le serveur résout la **section droite** de chaque tronçon par méthode des
-moments (`python/ligne_mom.py`), rend son impédance caractéristique
+moments (`rust/ligne_mom`), rend son impédance caractéristique
 à la fréquence choisie, et les paramètres S de la liaison entière par mise en
 cascade. La page peint le résultat **sur la piste** et y écrit la valeur.
 
 ```bash
-pip install -r requirements.txt      # numpy et scipy, obligatoires
-python web_CAO.py
+./demarrer_WEB_CAO.sh        # Windows : demarrer_WEB_CAO.cmd
 ```
 
 ### La carte de chaleur
@@ -166,7 +165,7 @@ ne savent pas traiter — à commencer par la **triplaque décentrée**, que la
 formule IPC suppose centrée alors qu'un empilage 4 couches ne l'est jamais.
 
 Il est vérifié contre des étalons extérieurs, et le banc d'essai le refait à
-chaque exécution (`python/test/banc-ligne-mom.py`) :
+chaque exécution (`rust/ligne_mom/tests/banc`) :
 
 | Géométrie | Étalon | Écart maximal |
 | --- | --- | --- |
@@ -307,7 +306,7 @@ l'analyse géométrique complétée par un front.
 
 La coupe de chaque **bloc** du parcours — une portion où les voisines et leurs
 écarts ne changent pas — est résolue par la méthode des moments
-(`python/ligne_mom.py`) à partir du design (IPC-2581 ou éditeur PCB) : **[C]**
+(`rust/ligne_mom`) à partir du design (IPC-2581 ou éditeur PCB) : **[C]**
 et **[L]**, soit C11 (la diagonale de Maxwell, capacité totale), L11 et les
 mutuelles Cm, Lm. La vitesse est `v = c0 / √ε_eff` avec `ε_eff = C11 / C11(vide)`
 — égale à `1/√(L11·C11)` pour une ligne seule, sans le biais que ce produit de
@@ -368,7 +367,7 @@ microrubans FR-4 de 0,2 mm : à 1 ns, −2 % à −10 % du FEXT de 50 à 150 mm,
 NEXT saturé presque inchangé ; à 100 ps, jusqu'à −45 % sur les longs
 longements. Elles comptent donc pour les fronts raides et les liaisons
 longues, à peine pour le reste. *À vérifier* : ces pourcentages ne sont repris
-par aucun banc (celui de `banc-crosstalk.py` n'exige, pour 150 mm, que ≥ 90 %
+par aucun banc (celui de `rust/em/tests/banc` n'exige, pour 150 mm, que ≥ 90 %
 du NEXT et du FEXT conservés à 1 ns et ≥ 60 % à 100 ps, soit au plus −40 % à
 100 ps, pas −45 %).
 
@@ -536,7 +535,7 @@ lequel elle se produit), le longement, l'écart et la couche.
 
 #### Deux portées, le même calcul
 
-- **Analyser la piste** (`python/crosstalk.py`, route `/api/crosstalk`) : on
+- **Analyser la piste** (`rust/em/src/crosstalk`, route `/api/crosstalk`) : on
   sélectionne l'agresseur, ses voisines sont trouvées seules — la
   **présélection géométrique** (étape 0a, distance et longement mesurés, règle
   3W/3H) puis la **confirmation** (étape 0b : pire du NEXT et du FEXT au-dessus
@@ -547,7 +546,7 @@ lequel elle se produit), le longement, l'écart et la couche.
   chiffré) ; une voisine écartée à moins de 1,5 × le seuil est **nommée**, dans
   sa fiche et dans un avertissement (« écartée par la présélection (S = … ≥
   seuil …) »), avec le geste qui la chiffre (ouvrir la distance max).
-- **Toute la carte** (`python/analyse_carte.py`, règle `diaphonie`) : chaque
+- **Toute la carte** (`rust/analyse_carte`, règle `diaphonie`) : chaque
   paire de pistes voisines de la carte, sous le `t_r` global, avec les mêmes
   formules et les mêmes seuils — et la **même section** : une piste de garde ou
   une voisine qui longe le couple sur la même couche est posée avec lui (garde
@@ -621,7 +620,7 @@ hypothèses) et, pour toute la carte, le `.csv` de toutes les paires.
 ### Le moignon d'un via, et son contre-perçage
 
 Le via d'une transition est un π L-C, avec un **moignon** en dérivation à
-chaque bout que le signal n'emprunte pas (`_moignons`, `python/simulation_em.py`) :
+chaque bout que le signal n'emprunte pas (`_moignons`, `rust/em/src/simulation_em`) :
 la portée percée (`layer_from`, `layer_to`) moins les couches de départ et
 d'arrivée, en épaisseur d'empilage, avec sa résonance quart d'onde.
 
@@ -760,7 +759,7 @@ Mesuré (via traversant de 0,3 mm, 4 couches, sans via de masse,
 L = 0,534 nH) : L_impair 0,294 nH à 0,6 mm d'écart, 0,373 à 1 mm, 0,464 à
 2,5 mm ; C_m 7,2 / 1,0 / 0,002 fF.
 
-**Étalons** ([banc-ligne-mom.py](../python/test/banc-ligne-mom.py)) : la
+**Étalons** ([rust/ligne_mom/tests/banc](../rust/ligne_mom/tests/banc)) : la
 rugosité multiplie l'α_c de la cascade par le K attendu (Hammerstad et Huray,
 à 0,3 % près) ; le causal rend la fiche à f_ref à 10⁻¹² près (cascade simple
 et paire) et (β/β₀)² = εr(f)/εr à 10⁻⁶ en triplaque (la paire : même ABCD à
@@ -768,7 +767,7 @@ f_ref, phase qui avance au-dessus) ; le via en ligne rejoint le π
 à 10 MHz (réactances à 10⁻⁵), garde moignon et contre-perçage, et « auto »
 rend le π au bit près sous le seuil ; la rugosité propre du plan ne touche que
 `R_plan`, égale ou absente elle rend la même ABCD au bit près ; la mutuelle baisse L_impair quand les
-fûts se rapprochent et vaut Grover sans retour. RF : [banc-rf.py](../python/test/banc-rf.py).
+fûts se rapprochent et vaut Grover sans retour. RF : [rust/rf_reseau/tests/banc](../rust/rf_reseau/tests/banc).
 
 
 ### Lire la courbe
@@ -815,7 +814,7 @@ de six. Ce qu'il resterait à y mettre est listé dans
 > Mode d'emploi pas à pas : [verification-carte.md](verification-carte.md).
 
 **Toute la carte, tous les nets, sans sélection.** Le serveur
-(`python/analyse_carte.py`, route `/api/analyse-carte`) reçoit de l'outil ses
+(`rust/analyse_carte`, route `/api/analyse-carte`) reçoit de l'outil ses
 pistes et ses arcs des seules couches de cuivre, ses pastilles **déjà
 placées** — la visionneuse sait tourner et poser celles des composants, le
 serveur n'a pas à le refaire —, le cuivre de ses surfaces (contours et trous),
@@ -889,8 +888,8 @@ Return Path ne chiffrait pas la cavité d'un via GND → alimentation ; la
 vérification la chiffre, en posant les deux plans que la cavité attend.
 
 La ligne de commande juge un fichier sans ouvrir de page :
-`python python/analyse_carte.py carte.xml`. Bancs :
-[python/test/banc-analyse-carte.py](../python/test/banc-analyse-carte.py),
+`cargo run -p analyse_carte --bin comparer_analyse -- --ipc carte.xml` (les angles). Bancs :
+[rust/analyse_carte/tests/banc](../rust/analyse_carte/tests/banc),
 plus un essai par adaptateur dans les deux harnais.
 
 ### Diagramme de l'œil — la liaison vue par le récepteur
@@ -910,7 +909,7 @@ mode différentiel, c'est la cascade du mode impair de la paire
 (`s_diff["abcd_dd"]`), ses vias et ses coudes compris (voir plus bas) — et,
 pour une paire **dissymétrique**, la cascade à quatre accès brin par brin
 (`s_diff["abcd_brins"]`, voir « La paire dissymétrique, brin par brin »).
-`python/oeil.py` (2.4.1) n'ajoute que ce qui l'entoure :
+`rust/oeil` (2.4.1) n'ajoute que ce qui l'entoure :
 
 1. **l'émetteur**, générateur de Thévenin linéaire (ou tampon IBIS, voir plus
    bas) : tension à vide, résistance
@@ -953,7 +952,7 @@ les points de ces frontières comme des traces serait faux : dans les
 croisements elles plongent sous le seuil, là où de vraies traces passent par
 zéro, et la marge pire cas dépasserait celle du PRBS.
 
-**Les gabarits** vivent dans `python/oeil.py` (`GABARITS`) et la page les reçoit
+**Les gabarits** vivent dans `rust/oeil` (`GABARITS`) et la page les reçoit
 par `GET /api/oeil`. Il n'y a donc qu'une source. Chacun porte sa **fiabilité**,
 affichée à côté du verdict, parce que les normes sont payantes :
 
@@ -1049,7 +1048,7 @@ statistique comme ±sa crête. Les agresseurs se saisissent (`agresseurs` :
 crête en volts, ou coefficient × excursion), ou se **reprennent du couplage**
 (`agresseurs_auto`) : chaque voisine de la fiche de couplage de
 `simulation_em` donne ses modes pair et impair, d'où Kb et Kf — les mêmes que
-`crosstalk.coefficients_couple` —, et le **niveau 2** de `crosstalk.py` rend
+`crosstalk.coefficients_couple` —, et le **niveau 2** de `crosstalk` rend
 le NEXT et le FEXT, saturés ou non selon le front. Une voisine qui émet dans
 le même sens que la victime lui envoie son FEXT, en sens opposé son NEXT ;
 sans le savoir on prend le plus grand. L'excursion de l'agresseur est, faute
@@ -1064,7 +1063,7 @@ celles de la 1.0.0, au chiffre près (c'est un cas du banc).
 
 #### Les modèles IBIS — émetteur et récepteur non linéaires
 
-`python/ibis.py` lit un fichier `.ibs` (ANSI/EIA-656) : de chaque `[Model]`,
+`rust/ibis` lit un fichier `.ibs` (ANSI/EIA-656) : de chaque `[Model]`,
 `Model_type`, `C_comp` (typ/min/max), `Vinl`/`Vinh`, les références
 (`[Voltage Range]`, `[Pullup Reference]`…), les quatre courbes V-I
 (`[Pullup]`, `[Pulldown]`, `[GND Clamp]`, `[POWER Clamp]`), `[Ramp]`, autant de
@@ -1484,7 +1483,7 @@ L'Ethernet cuivre (MLT-3, PAM-5) n'est pas binaire et n'a pas de gabarit.
 L'I²C (drain ouvert, front montant RC) n'a pas de gabarit non plus — mais son
 tampon IBIS se simule maintenant.
 
-**Étalons** ([python/test/banc-oeil.py](../python/test/banc-oeil.py), 62 cas) :
+**Étalons** ([rust/oeil/tests/banc](../rust/oeil/tests/banc), 62 cas) :
 la ligne adaptée sans pertes rend un œil parfait (demi-excursion, 1 UI, retard
 de la ligne) ; une ligne ouverte attaquée par 30 Ω rend l'œil pire cas du
 diagramme en treillis à 0,3 % près ; avec 10 Ω, l'œil fermé se dit fermé ; le
@@ -1547,7 +1546,7 @@ PRBS15 se ferme de plus de moitié ; fenêtre plus courte que τ (et, depuis la
 10⁻³ près et le résultat dit que la fenêtre ne couvre pas la décharge ; la
 chaîne `AMI_parameters_in` s'écrit et se relit, et une bibliothèque hors des
 dossiers autorisés, une URL ou un fichier qui n'en est pas sont refusés ; le
-modèle AMI d'essai (`python/test/ami_test/ami_ffe.c`, FFE à deux coefficients,
+modèle AMI d'essai (`rust/ibis/essais/ami_ffe.c`, FFE à deux coefficients,
 compilé par `cc -shared -fPIC` à la volée, sauté sans compilateur) rend
 l'identité à 10⁻⁶ près par Init et GetWave, la FFE 0,7/−0,3 de l'œil à 10⁻⁴
 près à l'émetteur (Init) comme au récepteur (GetWave par blocs), relit ses
@@ -1916,7 +1915,7 @@ pour n'importe quel rail d'alimentation (+3V3, +5V, VDD...) présent sur la cart
      25 mΩ pour un C0G/NP0). La copie embarquée de la base est
      `SIM_PARASITES_MURATA_DEFAUT`, dans `commun/simulation-em.js`, identique à
      `commun/parasites-murata.json` (110 références, dont des selfs `{l, dcr}`) :
-     la visionneuse n'en avait aucune dans le navigateur. Servie par `web_CAO.py`,
+     la visionneuse n'en avait aucune dans le navigateur. Servie par `web_cao`,
      la table est complétée par `/api/lib/parasites`, relue dans les `.sub` de
      `lib_simulation` : d'un MLCC Murata, C = C01, ESL = **somme des selfs de
      l'échelle** (chaque étage L‖R ou C‖L‖R est une self en série sous la

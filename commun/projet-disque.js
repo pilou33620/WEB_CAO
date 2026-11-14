@@ -16,7 +16,7 @@
 
    Deux voies vers le disque, parce qu'un navigateur ne peut pas ouvrir un
    chemin qu'on lui tape :
-     - « serveur »  : web_CAO.py tient le disque (routes /api/projet*). C'est la
+     - « serveur »  : web_cao tient le disque (routes /api/projet*). C'est la
                       seule voie qui accepte un chemin ecrit a la main, et elle
                       marche dans tous les navigateurs.
      - « dossier »  : le selecteur de dossier du navigateur (File System Access).
@@ -444,7 +444,7 @@ function projdCreerDansParent(parentHandle, nom){
 function projdChoisirDossier(creer, nomImpose){
   if(!projdSelecteurDispo())
     return Promise.reject(new Error("Ce navigateur n'a pas de selecteur de"
-      + " dossier. Lancez web_CAO.py --local, ou utilisez Chrome ou Edge."));
+      + " dossier. Lancez demarrer_WEB_CAO --local, ou utilisez Chrome ou Edge."));
   /* `id` fait revenir la boite de dialogue la ou on l'a laissee la derniere
      fois : on range en general ses projets au meme endroit. */
   return window.showDirectoryPicker({mode:"readwrite", id:"cao-projet"})
@@ -669,7 +669,7 @@ function projdBrouillonProposer(outil, quoi, occupe){
 /* ==========================================================================
    Enregistrer (local) et Sauvegarder le projet (GitHub) -- WEB_SUITE
    --------------------------------------------------------------------------
-   Lance par WEB_SUITE, web_CAO.py relaie au lanceur l'envoi de PROJETS sur
+   Lance par WEB_SUITE, web_cao relaie au lanceur l'envoi de PROJETS sur
    GitHub (commit + pull + push, routes /api/github*). Deux gestes, alors :
      - Enregistrer (Ctrl+S, menu Fichier, roulette tactile) et l'export du
        schema vers le PCB ecrivent le document dans le dossier du projet

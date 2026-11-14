@@ -2,7 +2,7 @@
 
 Gestion LIB tient la bibliothèque centrale : le catalogue `LIB_composants.csv` (une ligne par référence), les empreintes PCB, les symboles schématiques, les modèles de simulation (SPICE, Touchstone) et les modèles 3D, partagés par le schéma, le PCB et les simulations.
 Elle contient les éditeurs d'empreintes et de symboles, la saisie du brochage, la liaison des modèles de simulation et l'import JLCPCB / LCSC.
-Elle passe par le serveur local (`python web_CAO.py`) : la page ne s'ouvre pas en `file://`. Ouverture : bouton « Gestion LIB » de l'accueil, ou « 📚 Ouvrir dans Gestion LIB ↗ » depuis une fiche du schéma ou du PCB.
+Elle passe par le serveur local (`demarrer_WEB_CAO`) : la page ne s'ouvre pas en `file://`. Ouverture : bouton « Gestion LIB » de l'accueil, ou « 📚 Ouvrir dans Gestion LIB ↗ » depuis une fiche du schéma ou du PCB.
 
 ## Guide par tâche
 
@@ -157,7 +157,7 @@ Le choix est mémorisé dans `config_lib.json`, à la racine de l'outil. Lancée
 ### Je veux faire figurer un modèle 3D (STEP) sur une référence
 
 1. Déposer le fichier STEP dans le dossier `Models` de la LIB (aucun bouton de Gestion LIB ne le fait).
-2. Lancer `node python/maillages_3d.mjs <dossier LIB>` : chaque STEP devient un maillage léger dans `Models/maillages`, et la colonne `Position 3D` est calculée pour chaque ligne qui a un `Modèle 3D`.
+2. Lancer `node outils/maillages_3d.mjs <dossier LIB>` : chaque STEP devient un maillage léger dans `Models/maillages`, et la colonne `Position 3D` est calculée pour chaque ligne qui a un `Modèle 3D`.
 3. Renseigner la colonne `Modèle 3D` (`Models/<fichier>`) : affichée dans le tableau par « ⚙️ Colonnes », éditable dans « Colonnes du composant » de la fiche.
 4. Un modèle mal posé se corrige au même endroit dans `Position 3D` (`haut=Y+ rot=90 x=0 y=0 z=0.4`). Le script ne remplace jamais une position écrite.
 
@@ -497,9 +497,9 @@ Les modifications de la LIB sont diffusées aux autres outils ouverts : un catal
 
 | Script | Usage | Limites |
 |---|---|---|
-| `python/maillages_3d.mjs` | `node python/maillages_3d.mjs <dossier LIB> [--recalculer]` : maillages des STEP de `Models`, calcul de `Position 3D`, hauteur `Maximun Height` si vide | Demande `npm install occt-import-js` ; ne remplace jamais une position écrite (sauf `--recalculer`) |
-| `python/lier_modeles_murata.py` | `python python/lier_modeles_murata.py` (rapport) ; `--appliquer` écrit les `.sub` à plat dans `lib_simulation` et met à jour le CSV | Ne remplace que les modèles génériques (`capacitor.sub`, `inductor.sub`, vide) ; LIB désignée par la variable `WEB_CAO_LIB` ou le dossier par défaut |
-| `python/extraire_bibliotheques.js` | `node python/extraire_bibliotheques.js` : génère l'arborescence `LIB/` (`lib_empreinte_pcb`, `lib_empreinte_schematique`, `lib_simulation`, `LIB_composants.csv`) | Génération initiale, aucun autre fichier du dépôt ne l'appelle ; les empreintes et symboles sont codés dans le script, qui écrit `LIB/` à la racine de l'outil (pas la LIB active) et réécrit le `LIB_composants.csv` de la racine ; à ne pas lancer sans sauvegarde |
+| `outils/maillages_3d.mjs` | `node outils/maillages_3d.mjs <dossier LIB> [--recalculer]` : maillages des STEP de `Models`, calcul de `Position 3D`, hauteur `Maximun Height` si vide | Demande `npm install occt-import-js` ; ne remplace jamais une position écrite (sauf `--recalculer`) |
+| `rust/motifs/src/lier_modeles_murata.rs` | `cargo run -p motifs --bin lier_modeles_murata` (rapport) ; `--appliquer` écrit les `.sub` à plat dans `lib_simulation` et met à jour le CSV | Ne remplace que les modèles génériques (`capacitor.sub`, `inductor.sub`, vide) ; LIB désignée par la variable `WEB_CAO_LIB` ou le dossier par défaut |
+| `outils/extraire_bibliotheques.js` | `node outils/extraire_bibliotheques.js` : génère l'arborescence `LIB/` (`lib_empreinte_pcb`, `lib_empreinte_schematique`, `lib_simulation`, `LIB_composants.csv`) | Génération initiale, aucun autre fichier du dépôt ne l'appelle ; les empreintes et symboles sont codés dans le script, qui écrit `LIB/` à la racine de l'outil (pas la LIB active) et réécrit le `LIB_composants.csv` de la racine ; à ne pas lancer sans sauvegarde |
 | `commun/parasites-murata.json` | Table `{ "<référence Murata>": { "c", "esl", "esr" } }` pour un condensateur, `{ "l", "dcr" }` pour une self, en unités SI | Copie de repli ; le serveur relit les `.sub` de `lib_simulation` (route `/api/lib/parasites`) : un modèle ajouté compte au calcul suivant, sans régénérer la table |
 
 ## Limites connues

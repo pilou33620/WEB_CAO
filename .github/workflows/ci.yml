@@ -20,14 +20,15 @@ jobs:
 
       # La LIB ne vit plus dans ce depot : c'est celle de WEB_SUITE, dans le
       # depot WEB_SUITE_PROJETS. Clonee a cote, la ou WEB_SUITE la range
-      # (../PROJETS/LIB_CAO) : web_CAO.py et les bancs l'y trouvent seuls.
+      # (../PROJETS/LIB_CAO) : web_cao et les bancs l'y trouvent seuls.
       #
       # WEB_SUITE_PROJETS EST PRIVE. Sans token, la vraie LIB n'est pas
-      # disponible ici : les bancs qui eprouvent son CONTENU (banc-lib-routes,
-      # banc-rf, catalogue) sont sautes avec un avertissement, et les autres
-      # (routes et securites du serveur) tournent sur une LIB factice minimale
-      # (WEB_CAO_LIB_MINIMALE, voir python/test/lib_essai.py). Ces trois bancs
-      # restent a lancer sur un poste qui a la LIB.
+      # disponible ici : les cas qui eprouvent son CONTENU (ceux de
+      # rust/serveur/tests/bancs/lib_routes.rs, les cas Murata du banc de
+      # rf_reseau, le catalogue) sont sautes avec un avertissement, et les
+      # autres (routes et securites du serveur) tournent sur une LIB factice
+      # minimale, que les bancs se fabriquent seuls (rust/serveur/tests/bancs/
+      # commun.rs). Ces cas restent a lancer sur un poste qui a la LIB.
       #
       # Avec un secret PROJETS_TOKEN (token en lecture seule sur
       # WEB_SUITE_PROJETS), la LIB est clonee et tout tourne : le jeton est
@@ -37,8 +38,7 @@ jobs:
           JETON: ${{ secrets.PROJETS_TOKEN }}
         run: |
           if [ -z "$JETON" ]; then
-            echo "::warning title=LIB privée non testée::WEB_SUITE_PROJETS est privé : banc-lib-routes, banc-rf et le catalogue de la Gestion LIB sont sautés. Les routes et sécurités du serveur tournent sur une LIB factice."
-            echo "WEB_CAO_LIB_MINIMALE=1" >> "$GITHUB_ENV"
+            echo "::warning title=LIB privée non testée::WEB_SUITE_PROJETS est privé : les cas de la vraie LIB (routes LIB, modèles Murata de la simulation RF, catalogue de la Gestion LIB) sont sautés. Les routes et sécurités du serveur tournent sur une LIB factice."
             exit 0
           fi
           git clone --depth 1 "https://x-access-token:${JETON}@github.com/pilou33620/WEB_SUITE_PROJETS.git" ../PROJETS
@@ -49,71 +49,28 @@ jobs:
         with:
           node-version: '22'
 
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065   # v5.6.0
-        with:
-          python-version: '3.12'
-
-      - name: Vérification syntaxique des scripts Python
-        run: |
-          python -m compileall -q web_CAO.py python commun/outils \
-            editeur-pcb/outils editeur-schematique/outils
+      # Les outils de construction (manuel, monofichiers, fonte des plans) sont en Rust
+      # (rust/outils) : construits une fois, appelés plus bas depuis target/debug. Leurs
+      # essais tournent avec le reste de l'espace de travail, juste après ; les bancs qui
+      # demandent Chromium sont marqués « ignored ».
+      - name: Outils Rust — construction
+        run: cargo build -p outils
 
       # ====================================================================
-      # LES SOLVEURS
+      # LES SOLVEURS ET LE SERVEUR
       # --------------------------------------------------------------------
-      # Les solveurs d'impédance 2D MoM, de diaphonie, d'IR drop, les routes
-      # du serveur et les sécurités sont systématiquement éprouvés ici.
-      #
-      # numpy et scipy sont ceux de requirements.txt : web_CAO.py ne démarre
-      # pas sans eux.
-      - name: Solveurs — dépendances de calcul
-        run: pip install --quiet -r requirements.txt
-
-      - name: Solveur de section (MoM 2D) — banc d'essai
-        run: python python/test/banc-ligne-mom.py
-
-      - name: Crosstalk (MTL en cascade) — banc d'essai
-        run: python python/test/banc-crosstalk.py
+      # Tout l'espace de travail Rust : les solveurs (section MoM 2D, diaphonie,
+      # RF, œil, IR drop, motifs et score de placement, vérification de carte),
+      # leurs entrées malformées, et le serveur web_cao (rust/serveur) :
+      #   src/                 : ligne de commande, mise à jour git, détection de plateforme
+      #   tests/bancs          : routes et sécurités, LIB, relai GitHub, --projets-reseau
+      #   tests/banc_appairage : l'appareil non appairé
+      # Sans la LIB privée, les cas qui lisent son contenu se sautent seuls et le disent.
+      - name: Solveurs et serveur (Rust) — bancs d'essai
+        run: cargo test --workspace
 
       - name: Banc de mesure crosstalk — prévisions WEB_CAO
-        run: python bancs-mesure/crosstalk/banc-crosstalk-mesure.py
-
-      - name: Simulation RF (S21 port à port) — banc d'essai
-        run: |
-          if [ "$LIB_REELLE" = 1 ]; then python python/test/banc-rf.py
-          else echo "::warning title=Banc sauté::banc-rf.py : la LIB privée n'est pas disponible ici (voir l'étape LIB)."; fi
-
-      - name: Diagramme de l'œil (PRBS, pire cas, gabarits) — banc d'essai
-        run: python python/test/banc-oeil.py
-
-      - name: Chute de tension continue (IR drop) — banc d'essai
-        run: python python/test/banc-dc.py
-
-      - name: Scoring de placement PCB — banc d'essai
-        run: python python/test/banc-pcb-scoring.py
-
-      - name: Reconnaissance de motifs schématiques — banc d'essai
-        run: python python/test/banc-patterns.py
-
-      - name: Entrées malformées des solveurs — banc d'essai
-        run: python python/test/banc-entrees-malformees.py
-
-      - name: Vérification de la carte — banc d'essai
-        run: python python/test/banc-analyse-carte.py
-
-      - name: Routes du serveur et sécurités — banc d'essai
-        run: python python/test/banc-serveur-routes.py
-
-      - name: Routes de gestion de bibliothèque — banc d'essai
-        run: |
-          if [ "$LIB_REELLE" = 1 ]; then python python/test/banc-lib-routes.py
-          else echo "::warning title=Banc sauté::banc-lib-routes.py : la LIB privée n'est pas disponible ici (voir l'étape LIB)."; fi
-
-      - name: Enregistrer + GitHub (relai au lanceur WEB_SUITE) — banc d'essai
-        run: python python/test/banc-github-relai.py
-
-      - name: Projets en écoute réseau (--projets-reseau) — banc d'essai
-        run: python python/test/banc-projets-reseau.py
+        run: target/debug/banc-crosstalk-mesure
 
       - name: Gestion LIB — catalogue et import JLCPCB
         run: |
@@ -127,7 +84,7 @@ jobs:
         run: node gestion-lib/test/banc-repere-pcb.js
 
       - name: Modèles 3D de la LIB — placement sur l'empreinte
-        run: node python/test/banc-maillages-3d.mjs
+        run: node test/banc-maillages-3d.mjs
 
       - name: Rapport de simulation (Markdown) — banc d'essai
         run: node commun/test/banc-rapport-sim.js
@@ -141,15 +98,6 @@ jobs:
           node commun/test/banc-tactile-tuto.js
           node commun/test/banc-racine.js
 
-      - name: Mise à jour automatique GitHub — banc d'essai
-        run: python python/test/banc-maj-github.py
-
-      - name: Visionneuse IPC-2581 — banc d'essai du parseur
-        run: |
-          # La moitié d'outil qui ne tourne pas dans le navigateur. Il porte sa
-          # propre carte d'essai : rien à télécharger, rien de lourd versionné.
-          python visionneuse-ipc2581/test/banc-essai.py
-
       # LE MONOFICHIER N'EST PAS VERSIONNÉ (.gitignore : « dist/ »), et il n'y a
       # donc rien à y vérifier de fraîcheur : chaque exécution le reconstruit
       # depuis les sources, ci-dessous. C'est le bon choix — un artefact de
@@ -157,12 +105,12 @@ jobs:
       # conséquence à connaître : un dist/ resté sur un poste peut avoir des
       # semaines de retard sur js/ sans que rien ne le signale, et c'est ce
       # fichier-là qu'on ouvre en double-clic. Après avoir touché à js/,
-      # relancer build-monofichier.py fait partie du geste.
+      # relancer build-monofichier (rust/outils) fait partie du geste.
       - name: Éditeur PCB — assemblage puis banc d'essai
         run: |
           # sans le module canvas, les essais du cuivre des plans (îlots, éclats) sont ignorés
           npm install --no-save --silent canvas
-          python editeur-pcb/outils/build-monofichier.py
+          target/debug/build-monofichier editeur-pcb
           node --check editeur-pcb/dist/pcb.js
           # un essai « ignoré » (canvas absent) sortait compté réussi : ici c'est un échec
           node editeur-pcb/test/harness.js | tee /tmp/banc-pcb.log
@@ -182,13 +130,13 @@ jobs:
           # propres essais. Injoignable, la validation XSD est sautée et le
           # banc le dit -- le reste de l'aller-retour tourne quand même.
           # révision figée (KiCad 10.0.0), comme les démos plus bas
-          pip install --quiet lxml || echo "::warning title=lxml non installé::validation XSD sautée"
+          command -v xmllint >/dev/null || sudo apt-get install -y -qq libxml2-utils || echo "::warning title=xmllint non installé::validation XSD sautée"
           if curl -fsSL -o /tmp/IPC-2581C.xsd https://gitlab.com/kicad/code/kicad/-/raw/b0e9d3b0656e3770d11324b15e09b097f7fc33da/qa/data/pcbnew/ipc2581/IPC-2581C.xsd; then
             export IPC2581_XSD=/tmp/IPC-2581C.xsd
           else
             echo "::warning title=XSD IPC-2581 injoignable::validation XSD sautée"
           fi
-          python editeur-pcb/test/banc-ipc2581-export.py
+          cargo test -p outils --test banc_ipc2581_export -- --nocapture
 
       # après l'export ci-dessus : deux de ses essais relisent editeur-pcb/dist/essai-ipc2581/,
       # et se sautaient en silence quand ce dossier n'existait pas encore
@@ -197,7 +145,7 @@ jobs:
           # Pur JavaScript sur Node : ce banc lit les sources telles quelles,
           # sans assemblage ni dépendance. Il éprouve la GÉOMÉTRIE lue sur le
           # modèle -- où est le cuivre de masse, de quel côté, sur quelle
-          # longueur --, là où banc-essai.py juste au-dessus éprouve le
+          # longueur --, là où les essais du lecteur, juste au-dessus, éprouvent le
           # parseur. Rien ne l'empêchait de tourner ici ; il n'y était pas.
           # même règle : un essai « sauté » faute d'export à relire est un échec ici
           node visionneuse-ipc2581/test/harness-sim.js | tee /tmp/banc-visionneuse.log
@@ -205,7 +153,7 @@ jobs:
 
       - name: Éditeur schématique — assemblage puis banc d'essai
         run: |
-          python editeur-schematique/outils/build-monofichier.py
+          target/debug/build-monofichier editeur-schematique
           node --check editeur-schematique/dist/schema.js
           node editeur-schematique/test/harness.js
 
@@ -230,9 +178,9 @@ jobs:
       - name: Le manuel et les règles servis (docs/manuel/manuel.html, docs/regles/regles.html) sont à jour
         run: |
           # la page du bouton « Manuel » est générée puis versionnée : un chapitre .md
-          # modifié sans relancer le script laissait l'ancienne page (le script sort
+          # modifié sans relancer l'outil laissait l'ancienne page (l'outil sort
           # aussi en erreur sur un lien cassé)
-          python commun/outils/build-manuel.py
+          target/debug/build-manuel
           git diff --exit-code --stat -- docs/manuel/manuel.html docs/regles/regles.html
 
       - name: Le monofichier doit être reproductible
@@ -241,7 +189,6 @@ jobs:
           # d'horodaté ni d'aléatoire ne se glisse dans la sortie
           cp editeur-pcb/dist/pcb.js /tmp/pcb-1.js
           cp editeur-schematique/dist/schema.js /tmp/schema-1.js
-          python editeur-pcb/outils/build-monofichier.py
-          python editeur-schematique/outils/build-monofichier.py
+          target/debug/build-monofichier
           diff -q /tmp/pcb-1.js editeur-pcb/dist/pcb.js
           diff -q /tmp/schema-1.js editeur-schematique/dist/schema.js

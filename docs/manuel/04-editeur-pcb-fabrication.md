@@ -94,7 +94,7 @@ Le détail technique (formats, structure des fichiers) est dans [editeur-pcb/REA
 ### Je veux estimer l'échauffement d'un composant qui dissipe
 
 1. Sélectionnez le composant, saisissez **Puissance dissipée (W)** dans ses propriétés.
-2. Cliquez **Estimer l'échauffement** (le serveur doit tourner : `python web_CAO.py`). La fiche affiche `≈ n K au-dessus de l'ambiante (… mm² de cuivre relié, … K/W)` : un ordre de grandeur, ±30 %.
+2. Cliquez **Estimer l'échauffement** (le serveur doit tourner : `demarrer_WEB_CAO`). La fiche affiche `≈ n K au-dessus de l'ambiante (… mm² de cuivre relié, … K/W)` : un ordre de grandeur, ±30 %.
 3. Le DRC signale ensuite tout composant dont l'échauffement dépasse la limite, tant que la carte n'a pas été retouchée. Réglez la limite avec le contour sélectionné : **Échauffement max (K)** (40 par défaut).
 
 ### Je veux produire le dossier de fabrication
@@ -535,7 +535,7 @@ Fenêtre ouverte par **Fabriquer → 🧊 Export STEP…**.
 | Sérigraphie | `SERIGRAPHIE_DESSUS` / `_DESSOUS`, blanches, 15 µm posés sur le cuivre. | |
 | Exporter le .step | Télécharge `<projet>-3D.step` (`carte-3D.step` sans projet). | Message de fin : nombre de pièces, de composants avec leur modèle et de boîtes. « rien à exporter » si aucune case ne donne de pièce. |
 
-Le fichier est un assemblage nommé (ISO 10303-21, AP214), en millimètres, dans le repère des Gerber (Y vers le haut) ; Z = 0 sur la face dessus. Les modèles 3D sont lus par le serveur (`python web_CAO.py`) ; sans lui, tous les composants sortent en boîtes.
+Le fichier est un assemblage nommé (ISO 10303-21, AP214), en millimètres, dans le repère des Gerber (Y vers le haut) ; Z = 0 sur la face dessus. Les modèles 3D sont lus par le serveur (`demarrer_WEB_CAO`) ; sans lui, tous les composants sortent en boîtes.
 
 ### Dossier mécanique
 
@@ -612,7 +612,7 @@ Les zones partent remplies (cuivre calculé en géométrie exacte, dégagements 
 - Le gestionnaire de contraintes ne juge pas un net qui porte une zone de cuivre (un plan) ; un net dont une broche n'est pas encore reliée n'est jugé que pour information.
 - Les impédances (Z₀) du gestionnaire sont des formules de ligne ; elles ne remplacent pas l'audit par la méthode des moments de **Simulation EM** (voir [08](08-simulation-si.md)). Pas de plan de référence : Z₀ non calculable.
 - Les groupes d'appariement du schéma se lisent mais ne se modifient que dans le schéma.
-- L'estimation thermique est un ordre de grandeur (±30 %), calculée par le serveur (`python web_CAO.py`) : sans lui, elle est refusée. Elle ne vaut que pour la révision de carte courante. Voir aussi [09](09-simulation-pi-thermique-audit.md).
+- L'estimation thermique est un ordre de grandeur (±30 %), calculée par le serveur (`demarrer_WEB_CAO`) : sans lui, elle est refusée. Elle ne vaut que pour la révision de carte courante. Voir aussi [09](09-simulation-pi-thermique-audit.md).
 - Une zone interdite se pose sur une face seule ; sa hauteur permise vaut pour toute la zone. Une hauteur de composant inconnue n'est jamais supposée : elle est signalée.
 - Le trou NPTH autonome ne se pose que sur la carte ; les trous d'une empreinte viennent de la LIB et ne se modifient pas dans l'éditeur PCB. Aucun trou NPTH ne figure dans l'IPC-D-356.
 - Les Gerber ne dégagent pas les zones autour d'un trou NPTH ; l'IPC-2581 non plus.

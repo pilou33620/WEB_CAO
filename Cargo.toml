@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = ["rust/ligne_mom", "rust/dc_solver", "rust/ibis", "rust/motifs", "rust/outils", "rust/em", "rust/rf_reseau", "rust/oeil", "rust/analyse_carte", "rust/serveur"]
+
+[profile.release]
+opt-level = 3
+strip = true
+
+# Les solveurs sont trop lents sans optimisation pour faire tourner leurs bancs
+[profile.dev]
+opt-level = 2
+
+[profile.test]
+opt-level = 2

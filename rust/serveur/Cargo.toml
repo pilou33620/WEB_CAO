@@ -1,0 +1,33 @@
+[package]
+name = "web_cao"
+version = "0.1.0"
+edition = "2021"
+description = "WEB_CAO : le serveur des pages (fichiers, profils, projets, bibliothèque, calculs) — le portage de web_CAO.py"
+
+[lib]
+doctest = false # les schémas indentés des commentaires ne sont pas du code
+
+[dependencies]
+# Serveur HTTP/HTTPS, appairage et canal de pilotage : communs aux web tools (dépôt web_suite)
+web_tools_commun = { git = "https://github.com/pilou33620/web_suite", rev = "5c79b906e1fcf0e9b8e1589d106b0a92e2236021" }
+# Le lecteur IPC-2581, et `py` (le JSON de Python) : la même révision que les caisses de calcul
+ipc2581 = { git = "https://github.com/pilou33620/web_suite", rev = "915bf4fd282b442d23f3e15f59644f89e71175a5" }
+em = { path = "../em" }                # /api/simulation, /api/crosstalk
+dc_solver = { path = "../dc_solver" }  # /api/simulation-dc, /api/thermique-composants, et `pyth` (str(), float(), json.loads)
+rf_reseau = { path = "../rf_reseau" }  # /api/simulation-rf
+oeil = { path = "../oeil" }            # /api/oeil
+motifs = { path = "../motifs" }        # /api/pcb/score-placement, /api/schema/patterns
+analyse_carte = { path = "../analyse_carte" } # /api/analyse-carte
+outils = { path = "../outils" }        # la passerelle MCP (/api/tools, /api/tool), la racine du dépôt
+regex = "1"
+serde_json = { version = "1", features = ["preserve_order"] } # ce que rend la passerelle MCP
+# Les datasheets : urllib + ssl de Python, comme la passerelle
+ureq = { version = "2", default-features = false, features = ["tls", "native-certs"] }
+flate2 = "1"   # un document envoyé en gzip (zlib de Python)
+chrono = { version = "0.4", default-features = false, features = ["clock"] } # la date locale de config_lib.json
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Console", "Win32_System_Threading"] }

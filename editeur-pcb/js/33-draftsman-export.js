@@ -6,7 +6,7 @@
    embarquée : chaque lecteur la remplace par ce qu'il a (Arial, Nimbus,
    parfois pire), et WinAnsi ne connaît ni Ω, ni ≤, ni ≥. La fonte est ici
    PlansSans, un sous-ensemble de Liberation Sans (OFL 1.1) pré-réduit par
-   outils/fonte-plans.py dans js/fontes/plans-sans.js : 432 caractères,
+   l'outil fonte-plans (rust/outils) dans js/fontes/plans-sans.js : 432 caractères,
    29 Ko par graisse, 80 Ko de base64 pour les deux — pour 820 Ko de
    fontes d'origine. Liberation Sans a les chasses d'Arial, donc
    d'Helvetica : la mise en page des plans (repères centrés, colonnes

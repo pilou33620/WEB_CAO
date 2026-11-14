@@ -3,7 +3,7 @@
    Banc d'essai : le bundle dist/schema.js est exécuté sur le DOM minimal
    partagé (commun/test/dom-stub.js), sans navigateur.
 
-       python3 outils/build-monofichier.py && node test/harness.js
+       cargo run -p outils --bin build-monofichier -- editeur-schematique && node test/harness.js
 
    Ce qui est couvert en priorité, parce que c'est du code pur et que tout le
    reste en dépend : la découpe automatique des fils et l'extraction des nets
@@ -3025,7 +3025,7 @@ function TAcr(name,fn){
   });
 }
 
-/* réponse de la passerelle POST /api/tool : {name, arguments} -> {data} (python/passerelle_mcp.py) */
+/* réponse de la passerelle POST /api/tool : {name, arguments} -> {data} (rust/outils/src/passerelle_mcp.rs) */
 TAcr("recherche distributeurs : agrégation Mouser et DigiKey", async ()=>{
   const ancienFetch = global.fetch;
   global.fetch = async (url, opts) => {

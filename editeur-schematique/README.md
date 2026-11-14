@@ -11,11 +11,10 @@ editeur-schematique/
 ├── css/
 │   └── editeur.css               thème « dashboard nocturne »
 ├── js/                           33 modules (00 à 32), chargés dans l'ordre numéroté
-├── outils/
-│   └── build-monofichier.py      recompose un HTML unique dans dist/
+├── (../rust/outils)              build-monofichier recompose un HTML unique dans dist/
 ├── test/
 │   ├── harness.js                banc d'essai sans navigateur
-│   └── banc-synoptique.py        synoptique de chaque schématique de PROJETS/CAO (Chromium, hors CI)
+│   └── (../rust/outils/tests/banc_synoptique.rs)  synoptique de chaque schématique de PROJETS/CAO (Chromium, hors CI)
 └── dist/
     ├── editeur-schematique.html  version un-seul-fichier (générée)
     └── schema.js                 bundle JavaScript seul (banc d'essai)
@@ -38,7 +37,7 @@ identiques pour l'éditeur PCB :
 ../commun/reperage.js            chercher un repère, mesurer une distance —
                                  paramétré par l'adaptateur de js/21-reperage.js
 ../commun/test/dom-stub.js       DOM minimal du banc d'essai
-../commun/outils/monofichier.py  mécanique d'assemblage
+../rust/outils/src/monofichier.rs  mécanique d'assemblage
 ```
 
 ## Les modules
@@ -476,7 +475,7 @@ CORS des navigateurs). Là, un double-clic sur le HTML suffit toujours.
 ## Version un seul fichier
 
 ```bash
-python3 outils/build-monofichier.py     # -> dist/editeur-schematique.html
+cargo run -p outils --bin build-monofichier -- editeur-schematique     # -> dist/editeur-schematique.html
 ```
 
 Recopie le CSS et tous les scripts dans un HTML autonome, sans minification ni
@@ -487,7 +486,7 @@ l'archiver ; le développement reste sur les fichiers séparés.
 ## Banc d'essai
 
 ```bash
-python3 outils/build-monofichier.py && node test/harness.js
+cargo run -p outils --bin build-monofichier -- editeur-schematique && node test/harness.js
 ```
 
 Sans navigateur : découpe automatique des fils, extraction des nets

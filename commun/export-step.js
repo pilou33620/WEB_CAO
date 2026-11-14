@@ -119,7 +119,7 @@ function ctrSegments(P0){
    Les modèles 3D de la LIB : leur pose sur l'empreinte
    --------------------------------------------------------------------------
    « Position 3D » le pose sur l'empreinte : « haut=Y+ rot=90 x=0.1 y=0 z=0.4 »,
-   dans le repère de l'empreinte, Y vers le haut (python/maillages_3d.mjs).
+   dans le repère de l'empreinte, Y vers le haut (outils/maillages_3d.mjs).
    ========================================================================== */
 /* l'axe du modèle qui monte : lignes de la matrice qui le couche dans le repère de l'empreinte */
 const ANIM3D_HAUTS={"Z+":[1,0,0,0,1,0,0,0,1],"Z-":[1,0,0,0,-1,0,0,0,-1],"Y+":[1,0,0,0,0,-1,0,1,0],

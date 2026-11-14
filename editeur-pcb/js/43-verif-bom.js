@@ -2,7 +2,7 @@
 /* ==========================================================================
    Vérif BOM JLCPCB — avant de téléverser le dossier PCBA, chaque ligne de la
    nomenclature JLCPCB (jlcBomLignes) est confrontée à la base JLCPCB par la
-   passerelle pcbparts de web_CAO.py (/api/tool) :
+   passerelle pcbparts de web_cao (/api/tool) :
      - avec un code LCSC : la pièce existe, son stock couvre le lot, sa valeur,
        sa tension et son boîtier sont ceux de la BOM (c'est l'avertissement
        « The comment … does not match » que JLCPCB donne trop tard) ;

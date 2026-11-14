@@ -1,0 +1,22 @@
+[package]
+name = "rf_reseau"
+version = "0.1.0"
+edition = "2021"
+description = "python/rf_reseau.py : le S21 d'un reseau pistes + composants entre deux ports"
+
+[lib]
+doctest = false # les schémas indentés des commentaires ne sont pas du code
+
+[dependencies]
+em = { path = "../em" }
+ligne_mom = { path = "../ligne_mom" }
+# son module `pyth` : int(), repr() et l'iteration de Python sur un document, deja portes
+dc_solver = { path = "../dc_solver" }
+faer = "0.24"          # LU denses et creuse (numpy.linalg, scipy.sparse.linalg.splu), comme em et ligne_mom
+
+# python/test/banc-rf.py et ce que les autres bancs attendaient de rf_reseau : comme eux, pas
+# de harnais, un décompte à la fin et un code de retour.
+[[test]]
+name = "banc"
+path = "tests/banc/main.rs"
+harness = false

@@ -1,17 +1,17 @@
 # Visionneuse IPC-2581
 
 La Visionneuse IPC-2581 ouvre une carte livrée au format IPC-2581 (un seul fichier XML : empilage, cuivre, plans, perçages, composants, nets) et l'affiche couche par couche. Elle ne modifie rien : ce n'est pas un éditeur, et le fichier d'origine n'est jamais touché.
-La lecture du fichier se fait par le parseur Python du serveur (`/api/ipc2581`) ; une fois le modèle reçu, tout se passe dans le navigateur. Le modèle traduit s'exporte en `.json` et se rouvre sans serveur.
+La lecture du fichier se fait par le parseur du serveur (`/api/ipc2581`) ; une fois le modèle reçu, tout se passe dans le navigateur. Le modèle traduit s'exporte en `.json` et se rouvre sans serveur.
 À partir de la carte lue, la visionneuse sert aussi à mesurer, à classer les nets, à produire des dossiers PDF et STEP (mécanique, plans, fiche de mesure, carte en 3D) et à lancer les simulations du panneau « Simulation EM » ([chapitre 08](08-simulation-si.md), [09](09-simulation-pi-thermique-audit.md), [10](10-simulation-rf-em.md)).
 
 > [!NOTE]
-> La page a besoin du serveur (`python web_CAO.py`) pour lire un `.xml`, `.cvg`, `.ipc`, `.ipc2581` ou `.zip`. Ouverte en double-clic (`file://`), elle ne peut relire qu'un `.json` déjà exporté de cette page.
+> La page a besoin du serveur (`demarrer_WEB_CAO`) pour lire un `.xml`, `.cvg`, `.ipc`, `.ipc2581` ou `.zip`. Ouverte en double-clic (`file://`), elle ne peut relire qu'un `.json` déjà exporté de cette page.
 
 ## Guide par tâche
 
 ### Je veux ouvrir une carte
 
-1. Lancer le serveur (`python web_CAO.py`), puis ouvrir « Visionneuse IPC-2581 » depuis l'[accueil](01-accueil-projets-tactile.md).
+1. Lancer le serveur (`demarrer_WEB_CAO`), puis ouvrir « Visionneuse IPC-2581 » depuis l'[accueil](01-accueil-projets-tactile.md).
 2. Cliquer **📂 Ouvrir un fichier…** (ou **📂 Choisir un fichier…** sur l'écran d'accueil de la page), appuyer sur `O`, ou déposer le fichier n'importe où sur la page.
 3. Formats acceptés : `.xml`, `.cvg`, `.ipc`, `.ipc2581`, l'archive `.zip` qui en contient un, et le `.json` exporté depuis cette page.
 4. Attendre l'écran « Lecture de … » : le pied de page annonce ensuite « … ouvert : N composant(s), N piste(s) », et signale un empilage incomplet s'il y en a un.
@@ -368,7 +368,7 @@ Disposition d'usine : Couches à gauche ; La carte et Sélection à droite ; Com
 
 ## Limites connues
 
-- **Serveur requis** pour tout sauf un `.json` exporté. La taille maximale d'un fichier est annoncée par le serveur (192 Mo dans `web_CAO.py`) ; au-delà, l'ouverture est refusée.
+- **Serveur requis** pour tout sauf un `.json` exporté. La taille maximale d'un fichier est annoncée par le serveur (192 Mo dans `web_cao`) ; au-delà, l'ouverture est refusée.
 - **Un modèle traduit pèse lourd** (de l'ordre de 8 Mo pour une 4 couches moyenne). La voie « projet » plafonne à 16 Mo ; au-delà, l'export bascule en téléchargement.
 - **Contour d'un boîtier** : dessiné seulement si le fichier le donne (`<Package><Outline>`) ; sinon cadre en tirets, estimé à partir des pastilles (un connecteur à une seule rangée apparaît comme une bande).
 - **Hauteur des textes** : celle de la boîte du texte, sinon de sa taille de police, sinon 1,2 mm ; la police est celle de l'écran, pas celle du fichier.

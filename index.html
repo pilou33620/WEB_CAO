@@ -667,8 +667,8 @@
         Une fois un outil ouvert, les boutons de son entête mènent aux deux autres sans perdre le travail en cours, tant que l'onglet reste ouvert.
       </div>
       <div>
-        La recherche de composants et la visionneuse IPC-2581 ont besoin du serveur du dépôt : <code>python web_CAO.py</code><br>
-        Le parseur IPC-2581 est en Python — d'où le serveur ; une fois la carte traduite, son <code>.json</code> se rouvre en double-clic.
+        La recherche de composants et la visionneuse IPC-2581 ont besoin du serveur du dépôt : <code>demarrer_WEB_CAO</code><br>
+        Le parseur IPC-2581 tourne dans le serveur ; une fois la carte traduite, son <code>.json</code> se rouvre en double-clic.
       </div>
     </footer>
   </div>
@@ -717,7 +717,7 @@ function uRendreInfo(){
     txt += "en attente du serveur ; pour l'instant dans ce navigateur seulement.";
   else
     txt += "gardés dans ce navigateur : ouverte en double-clic, une page ne peut " +
-           "rien écrire sur le disque. Lancez <code>python web_CAO.py</code> " +
+           "rien écrire sur le disque. Lancez <code>demarrer_WEB_CAO</code> " +
            "pour que le fichier suive.";
   document.getElementById("uInfo").innerHTML = txt;
 }
@@ -1328,7 +1328,7 @@ function libRendreEtat(cfg){
   if(!elCur) return;
 
   if(!cfg){
-    elCur.innerHTML = "<i>Serveur non connecté. Lancez <code>python web_CAO.py</code> pour gérer la bibliothèque centrale.</i>";
+    elCur.innerHTML = "<i>Serveur non connecté. Lancez <code>demarrer_WEB_CAO</code> pour gérer la bibliothèque centrale.</i>";
     if(elBadge) elBadge.innerHTML = '<span class="badge-lib" style="background:#3a2020;color:#f87171;border:1px solid #7f1d1d;">Déconnecté</span>';
     return;
   }
@@ -1358,7 +1358,7 @@ function libRendreEtat(cfg){
   elCur.innerHTML = detailChemin + "<br><div style='margin-top:6px; display:flex; flex-wrap:wrap; gap:6px;'>" + statsHtml + "</div>";
 
   /* Écoute réseau : le serveur refuse de déplacer ou de modifier la
-     bibliothèque (voir _lib_garde dans web_CAO.py). On le dit d'avance plutôt
+     bibliothèque (voir _lib_garde dans web_cao). On le dit d'avance plutôt
      que de laisser l'utilisateur buter sur un 403 après avoir tapé un chemin.
      `modifiable` absent (ancien serveur) : on laisse faire, comme avant. */
   const verrou = cfg.modifiable === false;

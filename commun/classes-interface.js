@@ -8,7 +8,7 @@
    cadence (Hz) et la Z_diff de sa norme (Ω). Pas de Z₀ de brin : la norme
    n'en fixe pas, le panneau de vérification peut en donner une.
 
-   La MÊME table que `INTERFACES` de python/crosstalk.py, écrite en JSON pour
+   La MÊME table que `INTERFACES` de rust/em/src/crosstalk, écrite en JSON pour
    que le banc crosstalk la relise et les compare. Lue par le schéma, le PCB
    et la visionneuse : des données et une fonction pure, rien d'autre.
    ============================================================================= */

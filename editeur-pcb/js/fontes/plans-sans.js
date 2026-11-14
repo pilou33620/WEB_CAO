@@ -2,7 +2,7 @@
 /* ==========================================================================
    PlansSans — fonte des plans PDF (29-draftsman.js, 33-draftsman-export.js)
    --------------------------------------------------------------------------
-   FICHIER GÉNÉRÉ par outils/fonte-plans.py : ne pas modifier à la main.
+   FICHIER GÉNÉRÉ par fonte-plans (rust/outils) : ne pas modifier à la main.
    Sous-ensemble de Liberation Sans 2.x (Regular et Bold), renommé comme
    l'exige la licence SIL Open Font License 1.1 (noms réservés « Liberation »
    et « Arimo ») ; texte de la licence dans js/fontes/OFL-PlansSans.txt.

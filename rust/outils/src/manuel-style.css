@@ -1,0 +1,23 @@
+
+:root{--fond:#14161a;--panel:#1c1f25;--bord:#2e333b;--txt:#d9dde3;--dim:#8d95a1;--jaune:#f2c230;--code:#0f1115}
+@media(prefers-color-scheme:light){:root{--fond:#fff;--panel:#f4f5f7;--bord:#d5d9df;--txt:#1d2127;--dim:#5b6570;--jaune:#9a6b00;--code:#eef0f3}}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:12px}
+body{margin:0;background:var(--fond);color:var(--txt);font:15px/1.55 system-ui,sans-serif;display:flex;min-height:100vh}
+nav{position:sticky;top:0;align-self:flex-start;width:300px;height:100vh;overflow:auto;background:var(--panel);border-right:1px solid var(--bord);padding:12px 10px;flex:none}
+nav input{width:100%;padding:7px 9px;border-radius:6px;border:1px solid var(--bord);background:var(--code);color:var(--txt);font:inherit;margin-bottom:8px}
+nav a{display:block;color:var(--txt);text-decoration:none;padding:2px 6px;border-radius:4px;font-size:13px}
+nav a:hover{background:var(--code)}nav a.c{font-weight:700;margin-top:8px}nav a.s{padding-left:18px;color:var(--dim)}
+nav .acc{font-size:12px;margin-bottom:6px}
+main{flex:1;min-width:0;max-width:980px;padding:20px 32px 80px;margin:0 auto}
+h1{border-bottom:2px solid var(--jaune);padding-bottom:6px;margin-top:2.2em}h1:first-child{margin-top:0}
+h2{margin-top:1.8em;border-bottom:1px solid var(--bord);padding-bottom:3px}h3{margin-top:1.4em}h4{color:var(--dim)}
+a{color:var(--jaune)}code{background:var(--code);padding:1px 5px;border-radius:4px;font:13px ui-monospace,monospace}
+pre{background:var(--code);padding:10px 12px;border-radius:6px;overflow:auto}pre code{padding:0;background:none}
+.tab{overflow-x:auto}table{border-collapse:collapse;margin:.8em 0;font-size:14px}
+th,td{border:1px solid var(--bord);padding:5px 9px;text-align:left;vertical-align:top}th{background:var(--panel)}
+blockquote{margin:1em 0;padding:2px 14px;border-left:4px solid var(--jaune);background:var(--panel)}
+blockquote.warning,blockquote.caution,blockquote.important{border-color:#e5534b}
+hr{border:0;border-top:1px solid var(--bord)}mark{background:var(--jaune);color:#000}
+.cache{display:none}#vide{display:none;color:var(--dim)}
+@media(max-width:800px){body{display:block}nav{position:static;width:auto;height:auto;max-height:40vh}main{padding:14px}}
+@media print{nav{display:none}main{max-width:none}}

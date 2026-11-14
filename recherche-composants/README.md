@@ -7,9 +7,8 @@ règles de conception.
 
 Contrairement aux éditeurs, **cette page a besoin d'un serveur** : le
 navigateur ne peut pas appeler le serveur MCP de pcbparts.dev directement (ni
-le CORS ni le protocole ne le permettent). `../web_CAO.py` fait le relais —
-c'est le même serveur que celui des éditeurs, rien à installer de plus que
-ses numpy et scipy.
+le CORS ni le protocole ne le permettent). Le serveur `web_cao` (`../demarrer_WEB_CAO`) fait le relais —
+c'est le même serveur que celui des éditeurs, rien à installer de plus.
 
 ```
 recherche-composants/
@@ -41,7 +40,7 @@ Le schéma s'en sert aussi : `editeur-schematique/js/22-recherche-composants.js`
 |---|---:|---|
 | `js/00-espace-config.js` | 21 | `WS_CONFIG` : clé de stockage local et disposition d'usine des trois panneaux |
 | `js/01-api.js` | 72 | Découverte de la passerelle (l'origine qui sert la page, rien d'autre), appels `/api/tools` et `/api/tool` |
-| `../python/passerelle_mcp.py` | 236 | Client MCP : session, liste blanche, déballage des réponses. Toute la logique de protocole est là, `web_CAO.py` ne fait que l'exposer |
+| `../rust/outils/src/passerelle_mcp.rs` | 236 | Client MCP : session, liste blanche, déballage des réponses. Toute la logique de protocole est là, `web_cao` ne fait que l'exposer |
 | `js/02-outils.js` | 284 | Catalogue des 14 outils : familles, libellés français, champs et colonnes de résultats |
 | `js/03-formulaire.js` | 227 | Formulaire construit en croisant le catalogue et le schéma d'arguments du serveur ; lecture et validation des champs |
 | `js/04-resultats.js` | 196 | Tableau, fiche ou bloc de texte selon la réponse ; exports `.csv` et `.json` |
@@ -51,23 +50,23 @@ Le schéma s'en sert aussi : `editeur-schematique/js/22-recherche-composants.js`
 ## Démarrage
 
 ```bash
-python web_CAO.py
+./demarrer_WEB_CAO.sh        # Windows : demarrer_WEB_CAO.cmd
 ```
 
 Puis l'adresse affichée au démarrage : la page d'accueil donne accès à tous les
 outils, et la recherche passe par ce même serveur. `--local` limite l'écoute à cette machine, `--port` change le port.
 
 La passerelle est l'origine qui sert la page : ouverte depuis l'adresse
-qu'affiche `web_CAO.py`, elle la trouve d'office. `web_CAO.py` n'admet que sa
+qu'affiche `web_cao`, elle la trouve d'office. `web_cao` n'admet que sa
 propre origine : une page ouverte en `file://`, ou servie par un autre port,
 ne peut pas l'appeler.
 
 Le second serveur `serveur-composants.py` (FastAPI et uvicorn, port 8420) a été
 supprimé. Il exposait exactement les mêmes routes `/api/tools` et `/api/tool`
-que `web_CAO.py`, au prix de `fastapi`, `uvicorn` et `pydantic`, alors que la
-logique de protocole vit dans `../python/passerelle_mcp.py` — en bibliothèque
+que `web_cao`, au prix de `fastapi`, `uvicorn` et `pydantic`, alors que la
+logique de protocole vit dans `../rust/outils/src/passerelle_mcp.rs` — en bibliothèque
 standard, donc partageable. Si la page affiche « Passerelle introuvable », il
-n'y a plus qu'un serveur à démarrer : `web_CAO.py`.
+n'y a plus qu'un serveur à démarrer : `web_cao`.
 
 ## Ce que fait l'interface
 

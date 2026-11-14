@@ -1,0 +1,96 @@
+name: exécutables
+
+# Compile l'exécutable Rust de WEB_CAO pour chaque système et les dépose dans la
+# publication « binaires », en deux archives par système :
+# - web_cao-<système> : l'exécutable seul, que binaires.sh / binaires.cmd prennent sur un
+#   clone git sans cargo ;
+# - web_cao-prod-<système> : la production, complète et sans git — l'exécutable, les scripts
+#   de démarrage et ce que le serveur sert (pages, js, css, données). Ni sources, ni specs, ni bancs.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  compiler:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # musl : exécutables statiques, indépendants de la glibc du poste (Raspberry Pi OS)
+          - { os: ubuntu-latest, cible: x86_64-unknown-linux-musl, nom: linux-x86_64 }
+          - { os: ubuntu-24.04-arm, cible: aarch64-unknown-linux-musl, nom: linux-aarch64 }
+          - { os: macos-latest, cible: aarch64-apple-darwin, nom: macos-aarch64 }
+          - { os: windows-latest, cible: x86_64-pc-windows-msvc, nom: windows-x86_64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0, épinglée : une étiquette se déplace
+
+      - run: rustup target add ${{ matrix.cible }}
+
+      - if: contains(matrix.cible, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      # web_cao seul : les outils de construction et de comparaison des caisses ne se publient pas
+      - run: cargo build --release --bin web_cao --target ${{ matrix.cible }}
+
+      - name: Archive (l'exécutable et le commit dont il vient)
+        shell: bash
+        run: |
+          mkdir bin
+          cd target/${{ matrix.cible }}/release
+          if [ "${{ runner.os }}" = Windows ]; then
+            cp ./web_cao.exe ../../../bin/
+          else
+            cp ./web_cao ../../../bin/
+          fi
+          cd ../../..
+          git rev-parse HEAD > bin/commit
+          if [ "${{ runner.os }}" = Windows ]; then
+            (cd bin && 7z a ../web_cao-${{ matrix.nom }}.zip .)
+          else
+            tar -czf web_cao-${{ matrix.nom }}.tar.gz -C bin .
+          fi
+
+      - name: Archive de production (exécutable, scripts de démarrage, pages)
+        shell: bash
+        run: |
+          P=prod/web_cao
+          mkdir -p $P/commun/vendor $P/docs/manuel $P/docs/regles $P/profils
+          cp -r bin $P/
+          cp demarrer_*.sh demarrer_*.cmd binaires.sh binaires.cmd README.md LICENSE $P/
+          # ce que le serveur sert (STATIQUE de rust/serveur/src/poste.rs) : l'accueil, la page
+          # de chaque outil avec ses js/ et css/ (ni test/, ni dist/), commun/, le manuel et
+          # les règles générés, les règles des fabricants
+          cp index.html $P/
+          for o in editeur-pcb editeur-schematique gestion-lib visionneuse-ipc2581 recherche-composants; do
+            mkdir -p $P/$o
+            cp $o/*.html $P/$o/
+            cp -r $o/js $o/css $P/$o/
+          done
+          cp commun/*.js commun/*.css commun/*.json $P/commun/
+          cp commun/vendor/* $P/commun/vendor/
+          cp docs/manuel/manuel.html $P/docs/manuel/
+          cp docs/regles/regles.html $P/docs/regles/
+          # profils/ : le serveur y range aussi les profils des utilisateurs
+          cp -r profils/fabricants profils/LISEZ-MOI.md $P/profils/
+          if [ "${{ runner.os }}" = Windows ]; then
+            (cd prod && 7z a ../web_cao-prod-${{ matrix.nom }}.zip web_cao)
+          else
+            tar -czf web_cao-prod-${{ matrix.nom }}.tar.gz -C prod web_cao
+          fi
+
+      - name: Publication
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # les quatre compilations arrivent ensemble : une seule crée la publication
+          gh release view binaires >/dev/null 2>&1 \
+            || gh release create binaires --title "Exécutables" \
+                 --notes "Exécutables de WEB_CAO, recompilés à chaque envoi sur main. web_cao-<système> : pris par binaires.sh et binaires.cmd. web_cao-prod-<système> : la production complète (exécutable, scripts de démarrage, pages), à décompresser puis lancer par demarrer_WEB_CAO." \
+            || true
+          gh release upload binaires web_cao-${{ matrix.nom }}.* web_cao-prod-${{ matrix.nom }}.* --clobber
