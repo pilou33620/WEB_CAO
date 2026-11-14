@@ -619,7 +619,11 @@ impl Poste {
                 let taille = Self::taille_corps(r).map_err(|e| ErreurPasserelle::new(e.code, e.message))?;
                 let brut = Self::octets(r, taille, MAX_CORPS, || "Requete trop grande".into()).map_err(|e| ErreurPasserelle::new(e.code, e.message))?;
                 let charge: Value =
-                    if brut.is_empty() { Value::Object(Default::default()) } else { serde_json::from_slice(&brut).map_err(|_| ErreurPasserelle::new(400, "Corps JSON illisible"))? };
+                    if brut.is_empty() { Value::Object(Default::default()) } else { serde_json::from_slice(&brut).map_err(|_| {
+                        // NaN/Infinity, que serde refuse : le message de _corps_json les nomme
+                        let nom = std::str::from_utf8(&brut).ok().and_then(|t| json::loads(t).ok()).and_then(|j| json::non_fini(&j));
+                        ErreurPasserelle::new(400, nom.map_or("Corps JSON illisible".to_string(), |n| format!("Corps JSON illisible ({} n'est pas du JSON)", n)))
+                    })? };
                 let vrai = |v: &Value| !matches!(v, Value::Null | Value::Bool(false)) && v.as_str() != Some("") && v.as_f64() != Some(0.0) && v.as_array().is_none_or(|l| !l.is_empty()) && v.as_object().is_none_or(|o| !o.is_empty());
                 if !charge.is_object() || !vrai(&charge["name"]) {
                     return Err(ErreurPasserelle::new(400, "Outil non precise"));

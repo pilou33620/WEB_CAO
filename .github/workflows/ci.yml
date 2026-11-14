@@ -109,6 +109,13 @@ jobs:
       - name: Vérification de la carte — banc d'essai
         run: python python/test/banc-analyse-carte.py
 
+      # Le serveur Rust (rust/serveur, exécutable web_cao) : les mêmes bancs, portés.
+      #   src/            : ligne de commande, mise à jour git, détection de plateforme
+      #   tests/bancs     : routes et sécurités, LIB (celle de lib_essai.py), relai GitHub, --projets-reseau
+      #   tests/banc_appairage : l'appareil non appairé
+      - name: Serveur Rust (web_cao) — routes, sécurités, LIB, relai GitHub, projets en réseau
+        run: cargo test -p web_cao
+
       - name: Routes du serveur et sécurités — banc d'essai
         run: python python/test/banc-serveur-routes.py
 
