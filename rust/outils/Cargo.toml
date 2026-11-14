@@ -8,6 +8,7 @@ description = "Outils de construction de WEB_CAO (manuel, monofichiers, fonte de
 doctest = false
 
 [dependencies]
+em = { path = "../em" } # banc-crosstalk-mesure : le moteur crosstalk, appelé directement
 regex = "1" # le Markdown du manuel et les balises des monofichiers
 serde_json = { version = "1", features = ["preserve_order"] } # les dict de Python gardent l'ordre d'insertion
 # La passerelle MCP : urllib + ssl de Python. native-certs lit le magasin de certificats du système.

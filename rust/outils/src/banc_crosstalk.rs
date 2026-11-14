@@ -27,9 +27,9 @@
 //! les grandeurs que rend WEB_CAO, et celles qu'on lit dans SIwave en divisant
 //! ses millivolts par l'amplitude de l'echelon saisi.
 //!
-//! POINT D'ACCROCHE. Le moteur (`crosstalk.analyser` de python/crosstalk.py) n'est pas
-//! encore porte : il est recu en parametre (`Analyser`), document JSON -> resultat JSON.
-//! Tout le reste du banc est ici.
+//! LE MOTEUR (`crosstalk.analyser`, caisse `em`) est recu en parametre (`Analyser`),
+//! document JSON -> resultat JSON : l'executable banc-crosstalk-mesure l'appelle
+//! directement. Tout le reste du banc est ici.
 
 use serde_json::{json, Value};
 use std::collections::BTreeMap;

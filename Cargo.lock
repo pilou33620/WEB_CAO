@@ -260,6 +260,7 @@ name = "em"
 version = "0.1.0"
 dependencies = [
  "dc_solver",
+ "faer",
  "ipc2581",
  "ligne_mom",
  "num-complex",
@@ -1022,6 +1023,7 @@ checksum = "d05e27ee213611ffe7d6348b942e8f942b37114c00cc03cec254295a4a17852e"
 name = "outils"
 version = "0.1.0"
 dependencies = [
+ "em",
  "flate2",
  "ipc2581",
  "motifs",

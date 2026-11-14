@@ -13,7 +13,13 @@
 //!
 //! EN ATTENTE DE rf_reseau : les deux dernieres verifications du cas « la section passe la
 //! rugosite de son plan de reference » (`rf_reseau._ligne`) ; le reste du cas est porte.
-//! Aucun cas ne passe par crosstalk.
+//!
+//! S'y ajoute python/test/banc-crosstalk.py en entier (`xt_a`, `xt_b`, `xt_c` ; `xt` porte la
+//! carte d'essai) : 56 de ses 57 cas, memes titres, memes etalons, memes tolerances.
+//! EN ATTENTE DE rf_reseau : « rf_reseau : deux instances SPICE ont chacune leurs noeuds
+//! internes ». EN ATTENTE DE analyse_carte : la comparaison au fil fin de « deux niveaux »
+//! (`analyse_carte._kb_larges_faces`), dont le reste est porte. Et la part crosstalk de
+//! banc-entrees-malformees.py.
 
 #![allow(clippy::excessive_precision, clippy::approx_constant, non_snake_case)]
 
@@ -141,7 +147,7 @@ pub fn plus(mut l: Vec<Json>, e: Json) -> Vec<Json> {
 fn main() {
     std::panic::set_hook(Box::new(|_| {})); // le message sort sur la ligne KO, pas en vrac
     println!("{}", "=".repeat(62));
-    println!("  BANC D'ESSAI  --  python/simulation_em.py (portage Rust)");
+    println!("  BANC D'ESSAI  --  python/simulation_em.py et python/crosstalk.py (portage Rust)");
     println!("{}", "=".repeat(62));
     empilage_vias::banc();
     moignons_cavite::banc();
