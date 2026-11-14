@@ -285,7 +285,7 @@ pub fn GABARITS() -> &'static [Json] {
                    Microchip SAM9X7, Intel AN 754, TI TDA2 — c'est le pire cas \
                    retenu ; un récepteur réel peut faire mieux (Efinix T55, \
                    D-PHY v1.1 : VIDTH 40 mV au plus). Fenêtre setup + hold de \
-                   0,3 UI (TSETUPvec![RX] 0,15 + THOLDvec![RX] 0,15 UI, tableau des \
+                   0,3 UI (TSETUP[RX] 0,15 + THOLD[RX] 0,15 UI, tableau des \
                    temps données-horloge de D-PHY) non recoupée.",
          "note" => "Émetteur HS terminé 50 Ω par fil, ±200 mV différentiel sur \
                  100 Ω.",

@@ -164,12 +164,18 @@ fn convoluer(dens: &[f64], noyau: &[f64]) -> Vec<f64> {
     let dec = (m - 1) / 2;
     // le noyau retourne, pour un produit scalaire de deux tranches
     let inv: Vec<f64> = noyau.iter().rev().copied().collect();
+    // la densite n'est pas nulle que sur quelques cases : hors d'elles, la somme n'ajoute que des zeros
+    let Some(premier) = dens.iter().position(|x| *x != 0.0) else { return vec![0.0; n] };
+    let dernier = dens.iter().rposition(|x| *x != 0.0).unwrap_or(premier);
     (0..n)
         .map(|i| {
             // full[j] = sum_k dens[k] noyau[j - k], j = i + dec
             let j = i + dec;
-            let k0 = (j + 1).saturating_sub(m);
-            let k1 = j.min(n - 1);
+            let k0 = (j + 1).saturating_sub(m).max(premier);
+            let k1 = j.min(n - 1).min(dernier);
+            if k0 > k1 {
+                return 0.0;
+            }
             let a = &dens[k0..=k1];
             let b = &inv[(m - 1) - (j - k0)..];
             // huit accumulateurs : la somme se vectorise, comme le produit scalaire de BLAS
