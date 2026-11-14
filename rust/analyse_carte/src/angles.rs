@@ -76,11 +76,15 @@ pub fn angles(pistes: &[Json], arcs: &[Json], pastilles: &[Json], unite_mm: f64,
     for p in pistes {
         let p = dict(p)?;
         let (c, n) = (&p["c"], &p["n"]);
+        hachable(c)?;
+        hachable(n)?;
         let pts = els(&p["p"]);
-        let hw = nombre_ou0(&p["w"])? / 2.0;
+        let hw = moitie(&p["w"])?;
         let (mut hors, mut premier) = (0usize, None);
         let mut k = 0;
         while k + 3 < pts.len() {
+            moins(&pts[k + 2], &pts[k])?;
+            moins(&pts[k + 3], &pts[k + 1])?;
             let (x1, y1, x2, y2) = (nombre(&pts[k])?, nombre(&pts[k + 1])?, nombre(&pts[k + 2])?, nombre(&pts[k + 3])?);
             let (dx, dy) = (x2 - x1, y2 - y1);
             let l = hyp(dx, dy);
@@ -111,28 +115,36 @@ pub fn angles(pistes: &[Json], arcs: &[Json], pastilles: &[Json], unite_mm: f64,
     // (180°), un arc qui arrive de biais fait un vrai coude.
     for a in arcs {
         let a = dict(a)?;
-        let xy = |cle: &str| -> R<(f64, f64, Json, Json)> {
-            let v = req(a, cle)?;
-            let l = v.as_liste().filter(|l| l.len() == 2).ok_or_else(|| Exc::MalForme("not enough values to unpack (expected 2)".into()))?;
-            Ok((nombre(&l[0])?, nombre(&l[1])?, l[0].clone(), l[1].clone()))
+        let xy = |cle: &str| -> R<(&Json, &Json)> {
+            let (x, y) = deux(req(a, cle)?)?;
+            Ok((x, y))
         };
-        let ((sx, sy, jsx, jsy), (ex, ey, jex, jey), (mx, my, _, _)) = (xy("s")?, xy("e")?, xy("m")?);
-        let (corde, hw) = (hyp(ex - sx, ey - sy), nombre_ou0(&a["w"])? / 2.0);
+        let ((jsx, jsy), (jex, jey), (jmx, jmy)) = (xy("s")?, xy("e")?, xy("m")?);
+        let (corde, hw) = (hyp(moins(jex, jsx)?, moins(jey, jsy)?), moitie(&a["w"])?);
+        let ((sx, sy), (ex, ey)) = ((nombre(jsx)?, nombre(jsy)?), (nombre(jex)?, nombre(jey)?));
         if corde < eps {
             continue; // cercle entier : pas de bout
         }
+        moins(jsy, jmy)?;
+        moins(jsx, jmx)?;
+        let (mx, my) = (nombre(jmx)?, nombre(jmy)?);
+        hachable(&a["c"])?;
+        hachable(&a["n"])?;
         let sens = if a["h"].vrai() { -1.0 } else { 1.0 }; // tangente = rayon tourné d'un quart de tour
-        let i = _accrocher(&mut noeuds, &a["c"], &a["n"], (sx, &jsx), (sy, &jsy), eps);
+        let i = _accrocher(&mut noeuds, &a["c"], &a["n"], (sx, jsx), (sy, jsy), eps);
         noeuds[i].attaches.push(((sens * (sx - mx)).atan2(-sens * (sy - my)), corde, hw));
-        let i = _accrocher(&mut noeuds, &a["c"], &a["n"], (ex, &jex), (ey, &jey), eps);
+        let i = _accrocher(&mut noeuds, &a["c"], &a["n"], (ex, jex), (ey, jey), eps);
         noeuds[i].attaches.push(((-sens * (ex - mx)).atan2(sens * (ey - my)), corde, hw));
     }
 
     let mut couvert: HashMap<(i64, i64), Vec<(f64, f64, f64, &Json)>> = HashMap::new();
     for t in pastilles {
         let t = dict(t)?;
-        let r = maxf(&[nombre_ou0(&t["r"])?, eps]);
-        let (x, y) = (nombre(req(t, "x")?)?, nombre(req(t, "y")?)?);
+        // max(r, eps) : « eps > r » ne se compare pas à un texte
+        let r = maxf(&[nombre_ou0(&t["r"]).map_err(|_| {
+            Exc::MalForme(format!("'>' not supported between instances of 'float' and '{}'", dc_solver::pyth::type_py(&t["r"])))
+        })?, eps]);
+        let (x, y) = (coordonnee(req(t, "x")?)?, coordonnee(req(t, "y")?)?);
         for ij in _cases(case, x, y, x, y, r)? {
             couvert.entry(ij).or_default().push((x, y, r, &t["c"]));
         }

@@ -405,6 +405,7 @@ pub fn _troncons(doc: &Doc, unite: f64) -> R<Vec<Troncon>> {
     let mut out = Vec::new();
     for p in doc.liste("pistes") {
         let p = dict(p)?;
+        hachable(&p["c"])?;
         let mut pts = Vec::new();
         for v in els(&p["p"]) {
             pts.push(fl(v)? * unite);
@@ -420,6 +421,7 @@ pub fn _troncons(doc: &Doc, unite: f64) -> R<Vec<Troncon>> {
     }
     for a in doc.liste("arcs") {
         let a = dict(a)?;
+        hachable(&a["c"])?;
         let (s, e, m) = (point(req(a, "s")?, unite)?, point(req(a, "e")?, unite)?, point(req(a, "m")?, unite)?);
         let ((sx, sy), (ex, ey), (mx, my)) = (s, e, m);
         let r = hyp(sx - mx, sy - my);
@@ -454,12 +456,8 @@ pub fn _troncons(doc: &Doc, unite: f64) -> R<Vec<Troncon>> {
 
 /// `(float(u) * unite, float(v) * unite) for u, v in ...` : un point [x, y] du document.
 pub fn point(v: &Json, unite: f64) -> R<(f64, f64)> {
-    match v.as_liste() {
-        Some(l) if l.len() == 2 => Ok((fl(&l[0])? * unite, fl(&l[1])? * unite)),
-        Some(l) if l.len() < 2 => Err(Exc::MalForme(format!("not enough values to unpack (expected 2, got {})", l.len()))),
-        Some(_) => Err(Exc::MalForme("too many values to unpack (expected 2)".into())),
-        None => Err(Exc::MalForme(format!("cannot unpack non-iterable {} object", dc_solver::pyth::type_py(v)))),
-    }
+    let (x, y) = deux(v)?;
+    Ok((fl(x)? * unite, fl(y)? * unite))
 }
 
 /// Les cases de la grille que touche un segment élargi de `marge`.

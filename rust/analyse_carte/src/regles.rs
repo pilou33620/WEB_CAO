@@ -503,6 +503,11 @@ pub const AIRE_PLAN_MM2: f64 = 100.0;
 pub const AIRE_COMMUNE_MM2: f64 = 25.0;
 pub const BANDE_BORD_MM: f64 = 2.0;
 
+/// `doc.get("contour") or {}`
+fn contour<'a>(doc: &Doc<'a>) -> R<&'a Json> {
+    if doc.d["contour"].vrai() { dict(&doc.d["contour"]) } else { Ok(&Json::Nul) }
+}
+
 /// np.argmax : le rang du PREMIER des plus grands.
 fn argmax(v: &[f64]) -> usize {
     (0..v.len()).fold(0, |m, q| if v[q] > v[m] { q } else { m })
@@ -532,7 +537,7 @@ pub fn coutures(k: &Carte, surf: &Surfaces) -> Regle {
     }
     let (mut out, mut cavites) = (Vec::new(), 0usize);
     let mut bord: Option<Vec<f64>> = None;
-    let ct = &doc.d["contour"];
+    let ct = contour(doc)?;
     if els(&ct["o"]).len() >= 6 {
         let mut dedans = vec![0i32; h * w];
         surf.peindre(&mut dedans, &anneau(&ct["o"], unite)?, 1);
@@ -1050,7 +1055,7 @@ pub const PAS_BORD_MM: f64 = 0.1;
 
 pub fn bords(k: &Carte, notes: &mut Vec<String>) -> Regle {
     let (doc, couches, reg, unite) = (k.doc, k.couches, k.reg, k.unite);
-    let ct = &doc.d["contour"];
+    let ct = contour(doc)?;
     let mut anneaux = Vec::new();
     for a in std::iter::once(&ct["o"]).chain(els(&ct["t"])) {
         if a.vrai() && dc_solver::pyth::len_py(a)? >= 6 {

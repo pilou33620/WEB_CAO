@@ -81,9 +81,59 @@ pub fn nombre(v: &Json) -> R<f64> {
     }
 }
 
+/// Le TypeError d'une opération de Python entre deux valeurs du document, dont une n'est pas
+/// un nombre (`b` : le type du second opérande quand il n'est pas dans le document).
+fn operande(op: &str, a: &Json, b: Result<&Json, &str>) -> Exc {
+    let nom = |v: &Json| dc_solver::pyth::type_py(v);
+    Exc::MalForme(format!("unsupported operand type(s) for {op}: '{}' and '{}'", nom(a), b.map_or_else(|t| t, nom)))
+}
+
+fn est_nombre(v: &Json) -> bool {
+    matches!(v, Json::Bool(_) | Json::Entier(_) | Json::Flottant(_) | Json::GrandEntier(_))
+}
+
+/// `a - b`
+pub fn moins(a: &Json, b: &Json) -> R<f64> {
+    if est_nombre(a) && est_nombre(b) { Ok(nombre(a)? - nombre(b)?) } else { Err(operande("-", a, Ok(b))) }
+}
+
+/// `(v or 0) / 2`
+pub fn moitie(v: &Json) -> R<f64> {
+    if !v.vrai() {
+        Ok(0.0)
+    } else if est_nombre(v) {
+        Ok(nombre(v)? / 2.0)
+    } else {
+        Err(operande("/", v, Err("int")))
+    }
+}
+
+/// Une coordonnée dont Python retranchait une marge flottante (`min(x1, x2) - marge`).
+pub fn coordonnee(v: &Json) -> R<f64> {
+    if est_nombre(v) { nombre(v) } else { Err(operande("-", v, Err("float"))) }
+}
+
 /// `v or 0`, en nombre.
 pub fn nombre_ou0(v: &Json) -> R<f64> {
     if v.vrai() { nombre(v) } else { Ok(0.0) }
+}
+
+/// `a, b = v` : les deux éléments d'une liste du document, ValueError ou TypeError sinon.
+pub fn deux(v: &Json) -> R<(&Json, &Json)> {
+    match v.as_liste() {
+        Some(l) if l.len() == 2 => Ok((&l[0], &l[1])),
+        Some(l) if l.len() < 2 => Err(Exc::MalForme(format!("not enough values to unpack (expected 2, got {})", l.len()))),
+        Some(_) => Err(Exc::MalForme("too many values to unpack (expected 2)".into())),
+        None => Err(Exc::MalForme(format!("cannot unpack non-iterable {} object", dc_solver::pyth::type_py(v)))),
+    }
+}
+
+/// Une clé de dict de Python : TypeError pour une liste ou un objet.
+pub fn hachable(v: &Json) -> R<()> {
+    match v {
+        Json::Liste(_) | Json::Objet(_) => Err(Exc::MalForme(format!("unhashable type: '{}'", dc_solver::pyth::type_py(v)))),
+        _ => Ok(()),
+    }
 }
 
 /// Une clé opaque (couche ou net : un rang ou un nom) telle qu'un dict de Python la compare :

@@ -112,6 +112,9 @@ pub fn analyser_document_avec(doc: &Json, mut journal: Option<&mut dyn FnMut(&st
     if !listes.iter().all(|l| !l.vrai() || l.as_liste().is_some()) || !(0.0 < unite && unite < 1e3) {
         return Err(ErreurAnalyse { message: "Document mal formé : pistes, arcs et pastilles sont des listes, unite_mm un nombre positif.".into(), interne: false });
     }
+    if doc["natures"].vrai() && doc["natures"].as_objet().is_none() {
+        return Err(ErreurAnalyse { message: format!("'{}' object has no attribute 'items'", dc_solver::pyth::type_py(&doc["natures"])), interne: true });
+    }
     let mut notes: Vec<String> = Vec::new();
     let mut bilan = obj! {};
     let mut durees = obj! {};
@@ -129,7 +132,10 @@ pub fn analyser_document_avec(doc: &Json, mut journal: Option<&mut dyn FnMut(&st
     // `regles` : la liste des règles à faire tourner, toutes à défaut. Le panneau Crosstalk
     // n'y met que « diaphonie » : la carte entière, sous son front global, sans attendre les
     // angles, les impédances ni les retours.
-    let regles: HashSet<String> = els(&doc["regles"]).iter().filter(|x| x.vrai()).map(str_py).collect();
+    let regles: HashSet<String> = match &doc["regles"] {
+        v if v.vrai() => dc_solver::pyth::elements(v).map_err(Exc::from)?.iter().filter(|x| x.vrai()).map(str_py).collect(),
+        _ => HashSet::new(),
+    };
     let voulue = |r: &str| regles.is_empty() || regles.contains(r);
 
     let t0 = std::time::Instant::now();
@@ -174,6 +180,12 @@ pub fn analyser_document_avec(doc: &Json, mut journal: Option<&mut dyn FnMut(&st
     let couches_j = &doc["stackup"]["layers"];
     if doc["stackup"].vrai() {
         dict(&doc["stackup"])?;
+    }
+    // une liste de couches qui n'en est pas une : Python y itérait (les lettres d'un texte,
+    // les clés d'un objet), et butait sur leur `.get`
+    if couches_j.vrai() && couches_j.as_liste().is_none() {
+        dc_solver::pyth::elements(couches_j).map_err(Exc::from)?;
+        return Err(Exc::Interne("'str' object has no attribute 'get'".into()).into());
     }
     let couches = els(couches_j);
     for c in couches {
