@@ -17,6 +17,9 @@
 #![allow(clippy::excessive_precision, clippy::approx_constant, non_snake_case)]
 
 mod empilage_vias;
+mod hors_chaine_topologie;
+mod moignons_cavite;
+mod retour_cavite;
 mod malformees;
 mod usimmics;
 
@@ -133,6 +136,9 @@ fn main() {
     println!("  BANC D'ESSAI  --  python/simulation_em.py (portage Rust)");
     println!("{}", "=".repeat(62));
     empilage_vias::banc();
+    moignons_cavite::banc();
+    retour_cavite::banc();
+    hors_chaine_topologie::banc();
     malformees::banc();
     usimmics::banc();
     let (ok, ko) = (OK.load(Ordering::Relaxed), KO.load(Ordering::Relaxed));

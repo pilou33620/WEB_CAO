@@ -611,6 +611,17 @@ static _GRILLES_PAGE: Mutex<Vec<(String, Json)>> = Mutex::new(Vec::new());
 /// dominent souvent l'essai. Une marge serree est un signal fort ; une marge
 /// large ne promet rien.
 pub fn _rayonnement_cavite(param: &tl::Traversee, f0: f64, tr: f64, v0: f64, z0: f64, distance: f64, classe: &str) -> Json {
+    _rayonnement_cavite_avec(param, f0, tr, v0, z0, distance, classe, &tl::rayonnement_cavite)
+}
+
+/// `_rayonnement_cavite`, le rayonnement unitaire des bords donne par l'appelant : le banc y
+/// met un rayonnement constant pour ne juger que le spectre (Python remplacait
+/// `tl.rayonnement_cavite` le temps de l'essai).
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+pub fn _rayonnement_cavite_avec(
+    param: &tl::Traversee, f0: f64, tr: f64, v0: f64, z0: f64, distance: f64, classe: &str,
+    rayonnement: &dyn Fn(&[f64], &tl::Traversee) -> (Vec<f64>, Vec<f64>),
+) -> Json {
     let (f_lo, f_hi) = (30e6, 1e9);
     let f0 = (if f0.is_nan() { 0.0 } else { f0 }).max(1.0);
     let tr = (if tr.is_nan() { 0.0 } else { tr }).max(1e-12);
@@ -626,7 +637,7 @@ pub fn _rayonnement_cavite(param: &tl::Traversee, f0: f64, tr: f64, v0: f64, z0:
     }
     let pi = std::f64::consts::PI;
     let sinc = |x: f64| if x == 0.0 { 1.0 } else { (pi * x).sin() / (pi * x) };
-    let (e1, _) = tl::rayonnement_cavite(&fs, param);
+    let (e1, _) = rayonnement(&fs, param);
     let mut meilleur: Option<(usize, f64, f64, f64)> = None;
     for (i, &f) in fs.iter().enumerate() {
         let amp = 2.0 * v0 * f0 / (pi * f) * sinc(f * tr).abs();
@@ -891,7 +902,7 @@ fn ponts(branches: &Json) -> Vec<tl::Pont> {
 }
 
 /// La grille que la page envoie, telle que `ligne_mom` la lit.
-fn grille_de(g: &Json) -> tl::Grille {
+pub fn grille_de(g: &Json) -> tl::Grille {
     let f = |v: &Json| nb(v);
     let i = |v: &Json| nb(v) as i64;
     let lignes = |v: &Json| -> Vec<tl::LigneCellules> { els(v).iter().map(|l| (i(&l[0]), els(&l[1]).iter().map(i).collect())).collect() };

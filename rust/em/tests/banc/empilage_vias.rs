@@ -1,4 +1,4 @@
-//! L'empilage, les vias et le chemin de retour (cas de banc-ligne-mom.py, lignes 534 a 1650).
+//! L'empilage, les vias et le chemin de retour (cas de banc-ligne-mom.py).
 
 use crate::*;
 
