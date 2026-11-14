@@ -93,4 +93,8 @@ jobs:
             || gh release create binaires --title "Exécutables" \
                  --notes "Exécutables de WEB_CAO, recompilés à chaque envoi sur main. web_cao-<système> : pris par binaires.sh et binaires.cmd. web_cao-prod-<système> : la production complète (exécutable, scripts de démarrage, pages), à décompresser puis lancer par demarrer_WEB_CAO." \
             || true
+          # l'empreinte de chaque archive, que binaires.sh et binaires.cmd verifient apres telechargement
+          for f in web_cao-${{ matrix.nom }}.* web_cao-prod-${{ matrix.nom }}.*; do
+            (sha256sum "$f" 2>/dev/null || shasum -a 256 "$f") | cut -d" " -f1 > "$f.sha256"
+          done
           gh release upload binaires web_cao-${{ matrix.nom }}.* web_cao-prod-${{ matrix.nom }}.* --clobber

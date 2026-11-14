@@ -57,6 +57,12 @@ pub fn dessous(chemin: &str, racine: &str) -> bool {
     chemin == racine || chemin.strip_prefix(racine).is_some_and(|r| racine.ends_with(MAIN_SEPARATOR) || r.starts_with(MAIN_SEPARATOR))
 }
 
+/// Un chemin de partage reseau (« \\hote\partage », « //hote/partage ») : sous Windows, le
+/// seul fait de le resoudre ouvre une session chez `hote` (le condensat NTLM y part).
+pub fn chemin_reseau(chemin: &str) -> bool {
+    chemin.chars().take(2).filter(|c| matches!(c, '/' | '\\')).count() == 2
+}
+
 /// os.path.join(a, b).
 pub fn joindre(a: &str, b: &str) -> String {
     if b.is_empty() {
@@ -131,5 +137,18 @@ pub fn errno(e: &std::io::Error, chemin: &str) -> String {
     match e.raw_os_error() {
         Some(n) => format!("[Errno {}] {}: '{}'", n, texte.split(" (os error").next().unwrap_or(&texte), chemin),
         None => texte,
+    }
+}
+
+#[cfg(test)]
+mod essais {
+    #[test]
+    fn partage_reseau() {
+        for c in [r"\\hote\partage\x.dll", "//hote/partage", r"/\hote\x", r"\\?\UNC\hote\x"] {
+            assert!(super::chemin_reseau(c), "{c}");
+        }
+        for c in ["", "/", "/home/x", r"C:\projets\carte", "clients/acme", r"a\\b", "~//x"] {
+            assert!(!super::chemin_reseau(c), "{c}");
+        }
     }
 }

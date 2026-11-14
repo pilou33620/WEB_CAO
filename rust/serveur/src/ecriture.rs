@@ -8,14 +8,18 @@ use std::sync::atomic::{AtomicU64, Ordering};
 // dans le meme .tmp et le rename posait un melange des deux
 static NUMERO: AtomicU64 = AtomicU64::new(0);
 
+// Le nom est previsible : un reste (ou un lien pose la d'avance) est retire, et `poser` cree
+// sans jamais suivre ce qui s'y trouverait.
 fn temporaire(chemin: &str) -> String {
-    format!("{}.{}-{}.tmp", chemin, std::process::id(), NUMERO.fetch_add(1, Ordering::Relaxed))
+    let temp = format!("{}.{}-{}.tmp", chemin, std::process::id(), NUMERO.fetch_add(1, Ordering::Relaxed));
+    let _ = std::fs::remove_file(&temp);
+    temp
 }
 
 /// Les donnees sur le disque AVANT le renommage : sinon une coupure de courant
 /// juste apres « Enregistrer » peut laisser le bon nom sur un fichier vide.
-fn poser(chemin: &str, contenu: &[u8], exclusif: bool) -> io::Result<()> {
-    let mut f = std::fs::File::options().write(true).create(true).truncate(!exclusif).create_new(exclusif).open(chemin)?;
+fn poser(chemin: &str, contenu: &[u8]) -> io::Result<()> {
+    let mut f = std::fs::File::options().write(true).create_new(true).open(chemin)?;
     f.write_all(contenu)?;
     f.sync_all()
 }
@@ -26,7 +30,7 @@ fn poser(chemin: &str, contenu: &[u8], exclusif: bool) -> io::Result<()> {
 /// mauvais moment laisse l'ancien fichier entier plutot qu'un catalogue tronque.
 pub fn ecrire_atomique(chemin: &str, contenu: &[u8]) -> io::Result<()> {
     let temp = temporaire(chemin);
-    let fait = poser(&temp, contenu, false).and_then(|_| std::fs::rename(&temp, chemin));
+    let fait = poser(&temp, contenu).and_then(|_| std::fs::rename(&temp, chemin));
     if fait.is_err() {
         let _ = std::fs::remove_file(&temp); // pas de .tmp laisse
     }
@@ -40,11 +44,11 @@ pub fn ecrire_atomique(chemin: &str, contenu: &[u8]) -> io::Result<()> {
 /// sous son nom.
 pub fn ecrire_exclusif(chemin: &str, contenu: &[u8]) -> io::Result<()> {
     let temp = temporaire(chemin);
-    let fait = poser(&temp, contenu, false).and_then(|_| match std::fs::hard_link(&temp, chemin) {
+    let fait = poser(&temp, contenu).and_then(|_| match std::fs::hard_link(&temp, chemin) {
         Err(e) if e.kind() != io::ErrorKind::AlreadyExists => {
             // systeme de fichiers sans liens (FAT, exFAT) : creation exclusive, puis ecriture ;
             // un echec en cours d'ecriture retire le fichier, pour ne pas laisser un vide
-            match poser(chemin, contenu, true) {
+            match poser(chemin, contenu) {
                 Err(e) if e.kind() != io::ErrorKind::AlreadyExists => {
                     let _ = std::fs::remove_file(chemin);
                     Err(e)
@@ -75,6 +79,16 @@ mod essais {
         ecrire_atomique(&cible, b"%PDF-3").unwrap();
         assert_eq!(std::fs::read(&cible).unwrap(), b"%PDF-3");
         assert!(ecrire_atomique(&d.join("absent/x").to_string_lossy(), b"x").is_err());
+        // un lien pose d'avance sous le nom du prochain temporaire n'est pas suivi
+        #[cfg(unix)]
+        {
+            let victime = d.join("victime");
+            std::fs::write(&victime, b"intact").unwrap();
+            std::os::unix::fs::symlink(&victime, format!("{}.{}-{}.tmp", cible, std::process::id(), NUMERO.load(Ordering::Relaxed))).unwrap();
+            ecrire_atomique(&cible, b"%PDF-4").unwrap();
+            assert_eq!(std::fs::read(&victime).unwrap(), b"intact");
+            std::fs::remove_file(&victime).unwrap();
+        }
         let restes: Vec<_> = std::fs::read_dir(&d).unwrap().map(|e| e.unwrap().file_name()).collect();
         assert_eq!(restes, ["fiche.pdf"]);
         std::fs::remove_dir_all(&d).unwrap();

@@ -20,6 +20,7 @@ const LIB_DIR_NAME: &str = "LIB";
 // echouait a chaque fois. Un BGA-256 ou un modele SPICE depassent eux aussi
 // les 64 Ko des qu'ils grossissent un peu.
 pub const MAX_LIB: usize = 16 * 1024 * 1024;
+const MAX_COLONNES: usize = 500; // le vrai catalogue en a une quarantaine
 const LIB_CONFIG_FICHIER: &str = "config_lib.json";
 const CATALOGUE: &str = "LIB_composants.csv";
 // modele3d : maillages des modeles STEP de Models/ ; step : les modeles STEP
@@ -440,7 +441,13 @@ impl Poste {
         if creer {
             std::fs::create_dir_all(&rep).map_err(|e| interne(errno(&e, &rep)))?;
         }
-        Ok(joindre(&rep, nom))
+        let chemin = joindre(&rep, nom);
+        // comme le statique /LIB/ : un lien symbolique ne doit pas ouvrir le reste du disque
+        // (un fichier pas encore cree garde son nom au bout du chemin reel)
+        if !dessous(&realpath(&chemin), &realpath(&self.dossier_lib())) {
+            return Err(refus(403, "Fichier hors de la bibliotheque : refuse"));
+        }
+        Ok(chemin)
     }
 
     /// Corps JSON d'une route de bibliotheque.
@@ -529,9 +536,13 @@ impl Poste {
         // les composants (catalogue vide au depart : seule « Modele Simulation »
         // etait annoncee, et tout le reste partait).
         let mut colonnes: Vec<String> = charge.get("colonnes").and_then(Json::as_liste).map(|l| l.iter().map(|c| if matches!(c, Json::Nul) { String::new() } else { str_py(c) }).collect()).unwrap_or_default();
+        // l'union ci-dessous relit `colonnes` pour chaque cle : sans plafond, quadratique
+        let borner = |n: usize| if n > MAX_COLONNES { Err(refus(400, format!("Trop de colonnes : {} au plus", MAX_COLONNES))) } else { Ok(()) };
+        borner(colonnes.len())?;
         for comp in composants.iter().filter_map(Json::as_objet) {
             let neuves: Vec<String> = comp.keys().filter(|k| !colonnes.contains(k) && !k.starts_with('_')).cloned().collect();
             colonnes.extend(neuves);
+            borner(colonnes.len())?;
         }
         if colonnes.is_empty() {
             return Err(refus(400, "Colonnes non definies"));

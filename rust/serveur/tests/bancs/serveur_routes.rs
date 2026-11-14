@@ -189,6 +189,11 @@ fn analyse_carte() {
     let r = requete(p, "POST", "/api/analyse-carte", &[("Content-Encoding", "gzip")], &gzip(&doc_g));
     assert_eq!(r.code, 200, "{}", r.texte());
     assert_eq!(regles(&r)[..2], ["orphelin", "angle_droit"]);
+    // une grille de 100 000 nombres citee 10 000 fois : 440 Ko de document, 72 Go une fois
+    // deplies -- refus avant la premiere copie
+    let doc_b = format!(r#"{{"cavites_grilles": {{"g": [{}0]}}, "vias": [{}{{"cavite_grille": "g"}}]}}"#, "0,".repeat(100_000), r#"{"cavite_grille": "g"},"#.repeat(10_000));
+    let r = post(p, "/api/analyse-carte", &doc_b);
+    assert!(r.code == 413 && r.detail().contains("grilles"), "{} {}", r.code, r.texte());
     let r = requete(p, "POST", "/api/analyse-carte", &[("Content-Encoding", "gzip")], b"pas du gzip");
     assert!(r.code == 400 && r.detail().contains("gzip"), "{} {}", r.code, r.texte());
     // une epaisseur de cuivre absurde (1e9 mm) faisait mailler la diaphonie
@@ -198,6 +203,16 @@ fn analyse_carte() {
     assert!(r.code == 422 && r.detail().contains("hors bornes"), "{} {}", r.code, r.texte());
     // 51. un JSON tres imbrique : 400, pas 500
     assert_eq!(post(p, "/api/analyse-carte", &"[".repeat(100000)).code, 400);
+}
+
+/// Une bibliothèque AMI (du code natif) ne se charge qu'à la demande de ce poste : un autre
+/// appareil, même appairé, n'a aucun dossier autorisé.
+#[test]
+fn racines_ami() {
+    let d = dossier_neuf("webcao-racines-ami");
+    let poste = poste_essai(&d);
+    assert_eq!(poste.racines_ami(true), [vec![poste.dossier_lib()], poste.racines()].concat());
+    assert!(poste.racines_ami(false).is_empty());
 }
 
 /// 5 à 13, 24, 26, 30, 30a à 30c, 32, 38, 39, 41, 42 : fichiers servis, Host, origine,
@@ -505,6 +520,22 @@ fn bibliotheque() {
     assert_eq!(code, 200, "{}", dumps(&rep));
     assert_eq!(lire(&csv_), b"Part Name;Value;Description\r\nR1;2k;r\x92sistance \x96 0603\r\n");
 
+    // Un lien symbolique de la LIB qui en sort n'est ni lu ni ecrit (comme le statique /LIB/) ;
+    // un fichier pas encore cree reste permis.
+    #[cfg(unix)]
+    {
+        let s = lancer(poste_essai(&d));
+        let lib = s.poste.dossier_lib();
+        ecrire(format!("{d}/secret.txt"), "secret");
+        std::os::unix::fs::symlink(format!("{d}/secret.txt"), format!("{lib}/lib_simulation/k.txt")).unwrap();
+        let r = get(s.port, "/api/lib/fichier?type=simulation&nom=k.txt");
+        assert!(r.code == 403 && !r.texte().contains("secret"), "{} {}", r.code, r.texte());
+        assert_eq!(requete(s.port, "PUT", "/api/lib/fichier", &[], br#"{"type": "simulation", "nom": "k.txt", "contenu": "x"}"#).code, 403);
+        assert_eq!(lire(&format!("{d}/secret.txt")), b"secret");
+        assert_eq!(requete(s.port, "PUT", "/api/lib/fichier", &[], br#"{"type": "simulation", "nom": "neuf.txt", "contenu": "x"}"#).code, 200);
+        assert_eq!(get(s.port, "/api/lib/fichier?type=simulation&nom=neuf.txt").json()["contenu"].as_str(), Some("x"));
+    }
+
     // 46. Client du reseau : /api/lib/config ne donne que des noms de dossier, et un 500
     // ne porte ni le texte de l'exception ni un chemin du poste (REGLES §3.3).
     let mut poste = poste_essai(&d);
@@ -549,6 +580,10 @@ fn projets() {
         assert_eq!(s.poste.chemin_projet(brut, None).map_or_else(|e| e.code, |_| 0), code, "{brut:?}");
     }
     assert_eq!(s.poste.chemin_projet("x", Some("/nulle/part")).unwrap_err().code, 403);
+    // un partage reseau (UNC) est refuse avant toute resolution, meme en ecoute locale
+    for (brut, base) in [(r"\\hote\partage\carte", None), ("//hote/partage/carte", None), ("x", Some("//hote/partage"))] {
+        assert_eq!(s.poste.chemin_projet(brut, base).unwrap_err().code, 403, "{brut:?} {base:?}");
+    }
 
     // 33. Un projet.cao.json ne designe plus n'importe quel .json.
     let dossier = format!("{d}/ailleurs/carte");
@@ -562,6 +597,23 @@ fn projets() {
     assert!(st == 200 && data["fichier"].as_str() == Some("carte-SCH.json"), "{}", dumps(&data));
     assert!(!std::path::Path::new(&format!("{dossier}/settings.json")).exists());
     assert_eq!(lire(&format!("{dossier}/carte-SCH.json")), b"{\n \"a\": 1\n}");
+
+    // Un lien symbolique qui sort du dossier du projet n'est ni lu ni ecrit.
+    #[cfg(unix)]
+    {
+        let lie = format!("{d}/ailleurs/liee");
+        ecrire(format!("{d}/secret.json"), r#"{"secret": 1}"#);
+        ecrire(format!("{lie}/projet.cao.json"), r#"{"format": "cao-projet-1", "nom": "liee"}"#);
+        std::os::unix::fs::symlink(format!("{d}/secret.json"), format!("{lie}/liee-SCH.json")).unwrap();
+        let url = format!("/api/projet/doc?doc=schema&chemin={}", quote(&lie));
+        let r = get(p, &url);
+        assert!(r.code == 403 && !r.texte().contains("secret\""), "{} {}", r.code, r.texte());
+        assert_eq!(req("PUT", &url, r#"{"a": 1}"#, &[]).0, 403);
+        assert_eq!(lire(&format!("{d}/secret.json")), br#"{"secret": 1}"#);
+        std::fs::remove_file(format!("{lie}/projet.cao.json")).unwrap();
+        std::os::unix::fs::symlink(format!("{d}/secret.json"), format!("{lie}/projet.cao.json")).unwrap();
+        assert_eq!(get(p, &format!("/api/projet?chemin={}", quote(&lie))).code, 403);
+    }
 
     // 34. L'heure de la derniere sauvegarde suit l'ecriture du document :
     // l'accueil l'affiche, et celle du seul projet.cao.json ne bougeait pas.

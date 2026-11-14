@@ -109,6 +109,16 @@ fn nom_fichier_doc(valeur: &str) -> Option<String> {
 /// plus par le suffixe de l'outil : ni le releve des documents, ni le repli
 /// projet_doc_trouver, ni derniere_sauvegarde ne le prennent pour le
 /// document. Ignore par git (lanceur de web_suite, GITIGNORE).
+/// Refuse un fichier de projet dont le chemin reel sort de son dossier : un lien symbolique
+/// (venu d'un depot clone, par exemple) ne doit pas faire lire ou ecrire ailleurs. Ce qui
+/// n'existe pas encore reste permis (`realpath`).
+fn dans_dossier(chemin: &str, dossier: &str) -> Result<(), Refus> {
+    if dessous(&realpath(chemin), &realpath(dossier)) {
+        return Ok(());
+    }
+    Err(refus(403, format!("« {} » sort du dossier du projet (lien symbolique) : refuse", basename(chemin))))
+}
+
 fn chemin_brouillon(chemin: &str) -> String {
     format!("{}.brouillon.json", &chemin[..chemin.len() - ".json".len()])
 }
@@ -265,6 +275,12 @@ impl Poste {
         if brut.contains('\0') {
             return Err(refus(400, "Chemin de projet invalide"));
         }
+        // Un partage reseau ne se resout pas (`chemin_reseau`) : refuse avant tout acces au
+        // disque, sauf sous une racine declaree (--projets \\nas\projets), comparee en texte.
+        let partage_inconnu = |c: &str| chemin_reseau(c) && !self.racines().iter().any(|r| dessous(&abspath(c), &abspath(r)));
+        if partage_inconnu(brut) || base.is_some_and(partage_inconnu) {
+            return Err(refus(403, format!("Hors des racines declarees : refuse. Racines : {}", self.racines().join(" ; "))));
+        }
         let mut depart = self.racine_projets();
         if let Some(base) = base {
             match self.sous_racine(base) {
@@ -378,7 +394,9 @@ impl Poste {
     }
 
     fn projet_charge(dossier: &str) -> Rendu {
-        Self::projet_fichier_lire(&joindre(dossier, PROJET_FICHIER), &format!("Le fichier projet ({})", PROJET_FICHIER))
+        let chemin = joindre(dossier, PROJET_FICHIER);
+        dans_dossier(&chemin, dossier)?;
+        Self::projet_fichier_lire(&chemin, &format!("Le fichier projet ({})", PROJET_FICHIER))
     }
 
     /// Le fichier d'un outil dans ce dossier.
@@ -393,7 +411,7 @@ impl Poste {
     /// la main, s'ouvre ainsi au lieu de paraitre vide -- mais on n'ecrit
     /// jamais sur un fichier trouve de cette facon : ce qu'on ecrit porte le
     /// nom canonique.
-    fn projet_doc_chemin(dossier: &str, outil: &str, charge: &Json, lire: bool) -> String {
+    fn projet_doc_chemin(dossier: &str, outil: &str, charge: &Json, lire: bool) -> Result<String, Refus> {
         let suff = suffixe(outil);
         // Le nom declare doit porter le suffixe de l'outil : sans cela, un
         // projet.cao.json pose dans n'importe quel dossier designait n'importe
@@ -403,13 +421,14 @@ impl Poste {
             let base = charge.as_objet().and_then(|o| nom_projet(&texte_ou_vide(o.get("nom").unwrap_or(&Json::Nul))));
             format!("{}{}", base.unwrap_or_else(|| basename(dossier.trim_end_matches(['/', std::path::MAIN_SEPARATOR])).to_string()), suff)
         });
-        let chemin = joindre(dossier, &nom);
+        let mut chemin = joindre(dossier, &nom);
         if lire && !lisible(&chemin) {
             if let Some(trouve) = Self::projet_doc_trouver(dossier, outil) {
-                return trouve;
+                chemin = trouve;
             }
         }
-        chemin
+        dans_dossier(&chemin, dossier)?;
+        Ok(chemin)
     }
 
     /// Le premier fichier du dossier qui porte le suffixe de l'outil.
@@ -439,7 +458,7 @@ impl Poste {
         let charge = Self::projet_charge(&dossier)?;
         let mut etat = Objet::new();
         for (outil, _) in PROJET_SUFFIXE {
-            let chemin = Self::projet_doc_chemin(&dossier, outil, &charge, true);
+            let chemin = Self::projet_doc_chemin(&dossier, outil, &charge, true)?;
             etat.insert(outil.into(), obj! {"fichier" => basename(&chemin), "present" => lisible(&chemin), "modifie" => mtime_ms(&chemin)});
         }
         let sauve = derniere_sauvegarde(&dossier);
@@ -474,9 +493,9 @@ impl Poste {
         let outil = Self::projet_outil(r)?;
         let charge = Self::projet_charge(&dossier)?;
         let chemin = if Self::projet_brouillon(r) {
-            chemin_brouillon(&Self::projet_doc_chemin(&dossier, &outil, &charge, false))
+            chemin_brouillon(&Self::projet_doc_chemin(&dossier, &outil, &charge, false)?)
         } else {
-            Self::projet_doc_chemin(&dossier, &outil, &charge, true)
+            Self::projet_doc_chemin(&dossier, &outil, &charge, true)?
         };
         let document = Self::projet_fichier_lire(&chemin, &format!("Le document {}", outil))?;
         Ok(obj! {"document" => document, "fichier" => basename(&chemin), "modifie" => mtime_ms(&chemin)})
@@ -491,7 +510,7 @@ impl Poste {
         }
         // le fichier projet est l'ancre : sans lui, ce dossier n'est pas un
         // projet et on n'y ecrit pas de document
-        let mut chemin = Self::projet_doc_chemin(&dossier, &outil, &Self::projet_charge(&dossier)?, false);
+        let mut chemin = Self::projet_doc_chemin(&dossier, &outil, &Self::projet_charge(&dossier)?, false)?;
         // `modifie` : la date du fichier que la page a lu ou ecrit en dernier.
         // Si le fichier a change depuis (autre onglet, tablette, export vers
         // le PCB), 409 : la page demande avant d'ecraser. Sans parametre,
@@ -517,7 +536,7 @@ impl Poste {
         if !Self::projet_brouillon(r) {
             return Err(refus(405, "Seul le brouillon d'un document s'efface (brouillon=1)"));
         }
-        let chemin = chemin_brouillon(&Self::projet_doc_chemin(&dossier, &outil, &Self::projet_charge(&dossier)?, false));
+        let chemin = chemin_brouillon(&Self::projet_doc_chemin(&dossier, &outil, &Self::projet_charge(&dossier)?, false)?);
         let _tenu = verrou(&self.verrou_docs);
         match std::fs::remove_file(&chemin) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(refus(500, format!("Brouillon {} non efface ({})", outil, errno(&e, &chemin)))),
