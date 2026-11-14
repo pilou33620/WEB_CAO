@@ -63,6 +63,7 @@ fn un_cas(cas: &Json) -> Json {
 }
 
 fn main() {
+    std::panic::set_hook(Box::new(|_| {}));
     let args: Vec<String> = std::env::args().collect();
     let texte = std::fs::read_to_string(&args[1]).expect("fichier des cas");
     let cas = loads(&texte).expect("JSON des cas");
@@ -83,7 +84,11 @@ fn main() {
             }
             poser(&mut out, nom, meilleur);
         } else {
-            poser(&mut out, nom, un_cas(c));
+            // un cas qui passe par crosstalk (pas encore porte) le dit au lieu d'arreter le lot
+            let r = std::panic::catch_unwind(|| un_cas(c)).unwrap_or_else(|e| {
+                obj! {"panique" => e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default()}
+            });
+            poser(&mut out, nom, r);
         }
     }
     println!("{}", dumps(&out));
