@@ -6,8 +6,8 @@
 //! Les cas qui n'éprouvaient pas le serveur lui-même sont là où vit ce qu'ils éprouvent :
 //! 13 et 40 (lecteur IPC-2581, appairage) dans les caisses de web_suite, 29 (passerelle MCP)
 //! dans rust/outils/tests/passerelle.rs, 28, 37, 39 et 49 dans les essais de src/. Trois cas
-//! n'ont pas d'équivalent : 39 bis (numpy absent), 50 (fsync compté par substitution) et 53
-//! (plafond de connexions, que le serveur commun ne tient pas).
+//! n'ont pas d'équivalent ici : 39 bis (numpy absent), 50 (fsync compté par substitution) et 53
+//! (plafond de connexions : il est dans le serveur commun de web_suite, avec son essai).
 
 use crate::commun::*;
 use std::io::Write;
