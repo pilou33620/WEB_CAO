@@ -133,6 +133,15 @@ pub fn rfft_n(x: &[f64], n: usize) -> Vec<Complex64> {
     t
 }
 
+/// np.fft.fft(x) d'un tableau reel : les n termes.
+pub fn fft_reel(x: &[f64]) -> Vec<Complex64> {
+    let mut t: Vec<Complex64> = x.iter().map(|v| Complex64::new(*v, 0.0)).collect();
+    if !t.is_empty() {
+        plan(t.len(), false).process(&mut t);
+    }
+    t
+}
+
 /// np.fft.rfft(x)
 pub fn rfft(x: &[f64]) -> Vec<Complex64> {
     rfft_n(x, x.len())

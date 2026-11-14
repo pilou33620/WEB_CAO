@@ -401,16 +401,15 @@ pub fn oeil(
             y = irfft(&x, ns);
         }
     } else {
-        let mut imp = vec![0.0; ns];
-        for (k, v) in a.iter().enumerate() {
-            imp[k * spu] = *v;
-        }
+        // np.fft.rfft(imp), imp[::spu] = a : le spectre d'un peigne est celui de `a`, repete -- une
+        // transformee de nb points au lieu de ns
+        let sa = fft_reel(&a);
         let mut pp = vec![0.0; ns];
         pp[..p_eq.len()].copy_from_slice(p_eq);
-        let x: Vec<Complex64> = rfft(&imp).iter().zip(rfft(&pp)).map(|(a, b)| a * b).collect();
+        let x: Vec<Complex64> = rfft(&pp).iter().enumerate().map(|(k, b)| sa[k % nb_] * b).collect();
         // En PRBS15 chaque tableau de `ns` flottants pese 17 Mo : ceux qui ne
         // servent plus sont rendus (pic de 219 Mo ramene a 126).
-        drop((imp, pp));
+        drop(pp);
         y = irfft(&x, ns).iter().map(|v| v_c + amp * v).collect();
     }
     // LE DFE, sur la forme d'onde : la contre-reaction du bit n vaut
