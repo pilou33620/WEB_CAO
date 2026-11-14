@@ -11,8 +11,9 @@
 //! S'y ajoutent python/test/banc-usimmics.py (`usimmics`) et la part simulation_em de
 //! python/test/banc-entrees-malformees.py (`malformees`).
 //!
-//! EN ATTENTE : le cas « la paire de masse passe la rugosite de son plan » demande rf_reseau,
-//! et suivra son module.
+//! EN ATTENTE DE rf_reseau : les deux dernieres verifications du cas « la section passe la
+//! rugosite de son plan de reference » (`rf_reseau._ligne`) ; le reste du cas est porte.
+//! Aucun cas ne passe par crosstalk.
 
 #![allow(clippy::excessive_precision, clippy::approx_constant, non_snake_case)]
 
@@ -20,6 +21,7 @@ mod appariement;
 mod empilage_vias;
 mod hors_chaine_topologie;
 mod moignons_cavite;
+mod options;
 mod paire;
 mod retour_cavite;
 mod malformees;
@@ -143,6 +145,7 @@ fn main() {
     hors_chaine_topologie::banc();
     appariement::banc();
     paire::banc();
+    options::banc();
     malformees::banc();
     usimmics::banc();
     let (ok, ko) = (OK.load(Ordering::Relaxed), KO.load(Ordering::Relaxed));
