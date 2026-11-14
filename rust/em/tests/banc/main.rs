@@ -26,6 +26,8 @@ mod paire;
 mod retour_cavite;
 mod malformees;
 mod usimmics;
+mod xt;
+mod xt_a;
 
 pub use em::simulation_em::base::*;
 pub use em::simulation_em::*;
@@ -148,6 +150,7 @@ fn main() {
     options::banc();
     malformees::banc();
     usimmics::banc();
+    xt_a::banc();
     let (ok, ko) = (OK.load(Ordering::Relaxed), KO.load(Ordering::Relaxed));
     println!("\n{}", "-".repeat(62));
     println!("  {} cas, {}", ok + ko, if ko == 0 { "tous passes".to_string() } else { format!("{ko} en echec") });
