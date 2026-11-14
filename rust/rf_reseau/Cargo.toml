@@ -1,0 +1,8 @@
+[package]
+name = "rf_reseau"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+em = { path = "../em" }
+ligne_mom = { path = "../ligne_mom" }

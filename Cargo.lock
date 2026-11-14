@@ -1008,6 +1008,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "oeil"
+version = "0.1.0"
+dependencies = [
+ "em",
+ "ibis",
+ "ligne_mom",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1345,6 +1354,14 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
+
+[[package]]
+name = "rf_reseau"
+version = "0.1.0"
+dependencies = [
+ "em",
+ "ligne_mom",
+]
 
 [[package]]
 name = "ring"

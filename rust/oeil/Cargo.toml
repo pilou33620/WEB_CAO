@@ -1,0 +1,9 @@
+[package]
+name = "oeil"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+em = { path = "../em" }
+ligne_mom = { path = "../ligne_mom" }
+ibis = { path = "../ibis" }
