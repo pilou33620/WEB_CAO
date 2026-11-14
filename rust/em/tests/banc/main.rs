@@ -11,15 +11,15 @@
 //! S'y ajoutent python/test/banc-usimmics.py (`usimmics`) et la part simulation_em de
 //! python/test/banc-entrees-malformees.py (`malformees`).
 //!
-//! EN ATTENTE DE rf_reseau : les deux dernieres verifications du cas « la section passe la
-//! rugosite de son plan de reference » (`rf_reseau._ligne`) ; le reste du cas est porte.
+//! Les deux dernieres verifications du cas « la section passe la rugosite de son plan de
+//! reference » (`rf_reseau._ligne`) sont dans le banc de rf_reseau (`restes`).
 //!
 //! S'y ajoute python/test/banc-crosstalk.py en entier (`xt_a`, `xt_b`, `xt_c` ; `xt` porte la
 //! carte d'essai) : 56 de ses 57 cas, memes titres, memes etalons, memes tolerances.
-//! EN ATTENTE DE rf_reseau : « rf_reseau : deux instances SPICE ont chacune leurs noeuds
-//! internes ». EN ATTENTE DE analyse_carte : la comparaison au fil fin de « deux niveaux »
-//! (`analyse_carte._kb_larges_faces`), dont le reste est porte. Et la part crosstalk de
-//! banc-entrees-malformees.py.
+//! Le 57e, « rf_reseau : deux instances SPICE ont chacune leurs noeuds internes », est dans le
+//! banc de rf_reseau (`restes`) ; la comparaison au fil fin de « deux niveaux »
+//! (`analyse_carte._kb_larges_faces`) dans celui d'analyse_carte (`restes`). Et la part
+//! crosstalk de banc-entrees-malformees.py.
 
 #![allow(clippy::excessive_precision, clippy::approx_constant, non_snake_case)]
 

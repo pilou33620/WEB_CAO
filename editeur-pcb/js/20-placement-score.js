@@ -253,7 +253,7 @@ var PLACEMENT_SCORE = (function() {
           <div style="margin-top:8px;font-size:11px;color:var(--txt-dim);">${
             exc && exc.appairer ? 'Cet appareil n\'est plus reconnu (serveur relancé ?) : <a href="'+RACINE_OUTIL+'/appairage" target="_blank" rel="noopener">ressaisir le code d\'appairage</a>, puis Réessayer.'
             : exc && exc.repondu ? "Le serveur a refusé la requête : voir le motif ci-dessus."
-            : "Lancez <code>python web_CAO.py</code> en console pour activer le calcul en temps réel."}</div>
+            : "Lancez <code>demarrer_WEB_CAO</code> en console pour activer le calcul en temps réel."}</div>
           <button class="tb" id="bPlacementRefresh" style="margin-top:10px;width:100%;justify-content:center;">🔄 Réessayer</button>
         </div>
       `;
@@ -585,7 +585,7 @@ var PLACEMENT_SCORE = (function() {
         });
 
         if (!res.ok) {
-          // le serveur a répondu : son motif ({"detail"}) dit pourquoi, pas « lancez web_CAO.py »
+          // le serveur a répondu : son motif ({"detail"}) dit pourquoi, pas « lancez web_cao »
           let detail = "";
           try { detail = (await res.json()).detail || ""; } catch (_) {}
           const e = new Error("HTTP " + res.status + (detail ? " : " + detail : ""));

@@ -1,5 +1,5 @@
 //! La comparaison a l'octet, figee : ibis_json sur les fichiers de essais/ doit rendre les
-//! lignes que le jumeau Python (essais/ibis_json.py, sur python/ibis.py) a ecrites dans
+//! lignes que le jumeau Python (sur l'ancien python/ibis.py, retire depuis) a ecrites dans
 //! essais/ibis_json.txt -- lectures simple et complete, boitiers, paires, voisins, tampons,
 //! .ami, propositions d'egaliseur, chaines de parametres, refus et plantages compris.
 

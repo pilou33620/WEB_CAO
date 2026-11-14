@@ -3,7 +3,7 @@
    Modèles 3D de la LIB : maillages légers et placement sur l'empreinte
    -----------------------------------------------------------------------------
      npm install occt-import-js        (une fois, à côté de ce script ou au-dessus)
-     node python/maillages_3d.mjs <dossier LIB> [--recalculer]
+     node outils/maillages_3d.mjs <dossier LIB> [--recalculer]
 
    1. Chaque STEP de <LIB>/Models devient <LIB>/Models/maillages/<fichier>.json :
       triangles regroupés par couleur, coordonnées entières en µm. C'est ce que
@@ -226,7 +226,7 @@ export function echantillon(m, n) {
 async function principal() {
   const args = process.argv.slice(2), lib = args.find(a => !a.startsWith("--")), forcer = args.includes("--recalculer");
   if (!lib || !fs.existsSync(path.join(lib, "LIB_composants.csv"))) {
-    console.error("usage : node python/maillages_3d.mjs <dossier LIB> [--recalculer]");
+    console.error("usage : node outils/maillages_3d.mjs <dossier LIB> [--recalculer]");
     process.exit(2);
   }
   const occt = await createRequire(import.meta.url)("occt-import-js")();

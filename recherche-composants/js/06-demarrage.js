@@ -121,7 +121,7 @@ async function connecter(){
       majEtatApi(false,"pcbparts.dev injoignable");
       q("formResume").textContent="Le serveur local répond, mais il n'atteint pas pcbparts.dev.";
       q("resultats").innerHTML='<div class="vide"><b>pcbparts.dev injoignable.</b><br>'+
-        "Le serveur local (<b>web_CAO.py</b>) fonctionne, mais sa requête vers pcbparts.dev "+
+        "Le serveur local (<b>web_cao</b>) fonctionne, mais sa requête vers pcbparts.dev "+
         "a échoué : connexion Internet, proxy ou pare-feu du poste, ou service momentanément "+
         "indisponible. Réessayez plus tard ; inutile de relancer le serveur.<br><br>"+
         '<span class="err">'+esc(e.message)+"</span></div>";
@@ -136,9 +136,9 @@ async function connecter(){
       '<div class="vide"><b>Passerelle introuvable.</b><br>'+
       "Cette page a besoin d'un serveur local pour relayer les requêtes vers "+
       "pcbparts.dev (le navigateur ne peut pas l'appeler directement). "+
-      "<b>web_CAO.py</b> s'en charge, sans dépendance à installer.<br><br>"+
+      "<b>web_cao</b> s'en charge, sans dépendance à installer.<br><br>"+
       "Dans le dossier du dépôt :<br>"+
-      "<code>python web_CAO.py</code><br><br>"+
+      "<code>demarrer_WEB_CAO</code><br><br>"+
       "puis ouvrez la page depuis l'adresse affichée au démarrage.<br><br>"+
       '<span class="err">'+esc((e&&e.message)||String(e))+"</span></div>";
     hint("Passerelle introuvable.");

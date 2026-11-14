@@ -85,7 +85,7 @@ function anim3dVedettes(J,choisis,info){
 
 /* ---------- les modèles 3D de la LIB ----------
    « Modèle 3D » nomme un STEP de LIB/Models ; son maillage (Models/maillages,
-   fait par python/maillages_3d.mjs) vient par /api/lib/fichier?type=modele3d.
+   fait par outils/maillages_3d.mjs) vient par /api/lib/fichier?type=modele3d.
    ANIM3D_HAUTS, anim3dPosition et anim3dPose : commun/export-step.js. */
 /* Charge les maillages, pose chaque composant qui en a un (`mod`, `mat`), et
    rend leur nombre ; un maillage absent laisse la boîte extrudée. */

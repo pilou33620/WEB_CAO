@@ -12661,7 +12661,7 @@ T("règles : le panneau des paires vit dans la page qui le porte",()=>{
    Ce qui est vérifié ici : un nom devient un nom de fichier, deux personnes
    ne se marchent pas dessus, et changer d'utilisateur replace vraiment les
    panneaux et les réglages. Le fichier profils/<nom>.json, lui, est du
-   ressort de web_CAO.py — le banc d'essai n'a pas de serveur, et le module
+   ressort de web_cao — le banc d'essai n'a pas de serveur, et le module
    doit s'en passer sans broncher : c'est le cas du double-clic (file://).
    ========================================================================== */
 T("premier utilisateur : Pilou",()=>{
@@ -13877,7 +13877,7 @@ T("Ctrl+clic sur plusieurs vias : la nature se change pour tout le groupe",()=>{
    --------------------------------------------------------------------------
    Trois hypothèses tacites sont tombées dans `19-simulation.js`, et ce sont
    elles qu'on éprouve ici — pas le solveur, qui a son propre banc
-   (python/test/banc-ligne-mom.py) :
+   (rust/ligne_mom/tests/banc) :
 
      · l'écart n'était mesuré QU'AU MILIEU de la piste ;
      · il était posé DES DEUX CÔTÉS, symétriquement ;
@@ -14271,7 +14271,7 @@ T("un via loin du raccord ne donne pas ses cotes",()=>{
    en routant.
 
    CE QUE CES CAS VERROUILLENT :
-     · que la physique JS rende EXACTEMENT ce que rend `ligne_mom` en Python.
+     · que la physique JS rende EXACTEMENT ce que rend `ligne_mom` au serveur.
        C'est le seul essai qui tienne la duplication assumée : le chevelu doit
        répondre pendant qu'on déplace le via, donc sans serveur ;
      · que la référence qui change SANS être rejointe soit vue et nommée ;
@@ -14315,10 +14315,10 @@ function simPoserMasse(x,y,a,b,net){
 
 T("la physique du chevelu rend ce que rend ligne_mom",()=>{
   /* LE SEUL ESSAI QUI TIENNE LA DUPLICATION. `simBoucleVias` refait en JS ce
-     que `ligne_mom.inductance_boucle_vias` fait en Python — il le faut, un
+     que `ligne_mom.inductance_boucle_vias` fait au serveur — il le faut, un
      chevelu qui demande un aller-retour au serveur à chaque mouvement de
      souris n'est pas un chevelu. Les valeurs attendues viennent du banc
-     Python, pas d'ici : `python/test/banc-ligne-mom.py`, mêmes géométries.
+     du solveur, pas d'ici : `rust/ligne_mom/tests/banc`, mêmes géométries.
      Le jour où l'une des deux dérive, celui-ci tombe. */
   const h=1.54, sig={x:0, y:0, drill:0.25};
   const un=simBoucleVias(h, sig, [{x:0.6, y:0, drill:0.25}]);
@@ -15671,7 +15671,7 @@ T("les plages : dix pour cent d'écart les sépare, un demi-millimètre les fond
 /* ==========================================================================
    LA CHUTE CONTINUE : le cuivre qui part au solveur, et les deux bornes
    --------------------------------------------------------------------------
-   Le solveur resistif a ses propres essais (python/test/banc-dc.py) et il est
+   Le solveur resistif a ses propres essais (rust/dc_solver/tests/banc_dc.rs) et il est
    verifie contre rho L/(W t). Ce qui se joue ICI est l'autre moitie : ce que
    l'editeur LUI ENVOIE. Un solveur juste nourri d'un mauvais cuivre rend un
    mauvais chiffre, et rien dans le panneau ne le dirait.
@@ -16846,7 +16846,7 @@ T("chute DC : un rail qui plonge et remonte envoie TOUS ses vias",()=>{
      le changement de couche et les vias sont pris en compte ? ». Un plan en
      couche 1, trois vias qui plongent, un plan en couche 3, trois vias qui
      remontent, et le composant en couche 1. Le solveur a son propre etalon
-     pour le CALCUL (python/test/banc-dc.py, la loi des noeuds a chaque etage
+     pour le CALCUL (rust/dc_solver/tests/banc_dc.rs, la loi des noeuds a chaque etage
      a 0,00 %) ; ce qui se joue ici est ce que la PAGE lui envoie.
 
      DEUX ILOTS EN COUCHE 1 ET NON UN PLAN CONTINU : c'est ce qui force le
@@ -17099,8 +17099,8 @@ T("vias DC : la fiche montre que les culs-de-sac portent ZERO",()=>{
      pastille ou je n'ai regle aucune charge ? », et l'objection est juste : un
      morceau de cuivre sans issue ne peut porter aucun courant.
 
-     Le solveur le verifie lui-meme (`_culs_de_sac` dans dc_solver.py, cas en
-     dur dans banc-dc.py : 2e-10 A sur un rail de 3 A). Cette note le rend
+     Le solveur le verifie lui-meme (`_culs_de_sac` dans dc_solver, cas en
+     dur dans rust/dc_solver/tests/banc_dc.rs : 2e-10 A sur un rail de 3 A). Cette note le rend
      VISIBLE, et c'est ce qui permet de conclure sur sa propre carte : les
      culs-de-sac portent zero, donc un via qui porte du courant n'en est pas
      un -- le cuivre continue au-dela de sa pastille. */
@@ -17541,8 +17541,8 @@ T("carte DC : chaque grandeur porte son unite et son avertissement",()=>{
 
 /* Un resultat de laboratoire pour la fiche : une piste de VDD qui tient sa
    chute et chauffe un peu, avec les DEUX modeles thermiques et les cotes sur
-   lesquelles l'etalement a travaille. Les chiffres sont ceux du banc Python
-   (`python/test/banc-dc.py`, carte nue) pour qu'on les reconnaisse. */
+   lesquelles l'etalement a travaille. Les chiffres sont ceux du banc Rust
+   (`rust/dc_solver/tests/banc_dc.rs`, carte nue) pour qu'on les reconnaisse. */
 function dcResFiche(sur){
   return Object.assign({
     pas:0.1, n_noeuds:12000, n_aretes:23000, n_vias:2,
@@ -18297,7 +18297,7 @@ T("chaque lot chaîne ses propres tronçons, sans regarder ceux du voisin",()=>{
    L'AGRESSEUR N'EST JAMAIS DANS LA SÉLECTION, et l'autre moitié d'une paire
    non plus : sans ce que la page joint au document, les deux onglets n'ont
    rien à calculer. Ce que ces cas verrouillent est le CONTRAT, pas la
-   physique — le serveur apparie et chiffre, le banc de `python/test` le
+   physique — le serveur apparie et chiffre, le banc de `rust/em` le
    mesure. Ici : ce qui part, ce qui ne part pas, et sous quel format.
    -------------------------------------------------------------------------- */
 
@@ -18391,7 +18391,7 @@ T("les paires déclarées dans l'éditeur partent avec le problème",()=>{
    --------------------------------------------------------------------------
    ELLES LISENT LA MÊME LISTE et n'en montrent pas les mêmes colonnes : c'est
    tout l'intérêt d'avoir résolu UNE section à deux conducteurs. Ce qu'on
-   vérifie ici est ce qu'aucun banc Python ne peut voir — que la fiche se monte
+   vérifie ici est ce qu'aucun banc Rust ne peut voir — que la fiche se monte
    sans lever sur un résultat réel, qu'elle juge dans le bon sens, et qu'elle
    distingue les trois silences possibles (pas de serveur, pas de voisinage,
    rien qui longe) au lieu d'afficher une page vide qui ressemble à « aucun
@@ -20976,7 +20976,7 @@ NET "GND"
 /* ==========================================================================
    Vérification de la carte (famille « Audit de la carte ») : ce que l'éditeur envoie, et
    le rapport qu'il en lit. Les règles elles-mêmes sont éprouvées côté serveur
-   (python/test/banc-analyse-carte.py).
+   (rust/analyse_carte/tests/banc).
    ========================================================================== */
 function carteVerif(){
   carteVide();
@@ -21186,7 +21186,7 @@ T("Vérification de la carte : Z₀ par classe, porteuses par net, courants par 
 });
 
 T("Vérification de la carte : un arc part dans le sens que le serveur lit",()=>{
-  /* La tangente que python/analyse_carte.py prend au départ d'un arc, avec
+  /* La tangente que rust/analyse_carte prend au départ d'un arc, avec
      le même `h`. Un congé posé bout à bout avec la piste qui le précède doit
      la prolonger : sinon chaque arc de la carte sortirait en angle droit. */
   const tangente=a=>{
@@ -21547,7 +21547,7 @@ T("Chevelu du retour : la part de chaque condensateur, MÊME formule que le serv
      serveur : c'est ce qui fait vivre `simPartsPonts` à côté de
      `ligne_mom.repartition_traversee`. Il faut donc que ce soit la MÊME
      physique — deux calculs pour une même grandeur, ce sont deux valeurs le
-     jour où l'un bouge. Les valeurs de référence viennent du banc Python
+     jour où l'un bouge. Les valeurs de référence viennent du banc Rust
      (`tous_les_ponts_comptent_pas_seulement_le_plus_proche`). */
   const ref = {
     freq: 12e6, lCav: 1.0917e-9, cPlans: 74.82e-12,
@@ -24227,7 +24227,7 @@ T("paire différentielle : la Piste 2 part en voisinage, jamais dans la ligne",(
 });
 
 /* Le decor commun aux deux essais qui suivent : un agresseur, une victime qui
-   le longe, et un resultat serveur tel que `crosstalk.py` le rend vraiment —
+   le longe, et un resultat serveur tel que `crosstalk` le rend vraiment —
    une ligne NEXT, pas de ligne FEXT (les deux vitesses etant egales, sa loi
    d'arrivee est plate et le serveur n'en trace aucune). */
 function xtDecorChaleur(largeur){
@@ -28477,7 +28477,7 @@ T("empilage : un plan lisse DÉCLARÉ part comme Rq = 0 sous une piste rugueuse"
    carte, trous NPTH, variante de montage. Chaque export est écrit dans
    dist/essai-ipc2581/ avec ce que l'éditeur en attend ; c'est
    rust/outils/tests/banc_ipc2581_export.rs qui les relit par la chaîne de la visionneuse
-   (ipc2581_parser.py → ipc2581_json.py) et les valide contre le XSD.
+   (ipc2581_parser → ipc2581_json) et les valide contre le XSD.
    ========================================================================== */
 const IPC_DATE="2026-10-10T12:00:00Z";
 /* ce que l'éditeur attend de la relecture, dans le repère du fichier */
@@ -28645,7 +28645,7 @@ function ipcCarteChargee(){
   mecaRegler(deux[0].id,"h",0.5);mecaRegler(deux[1].id,"h",0.8);
   touch();
 }
-T("IPC-2581 : les cartes d'exemple écrites pour le banc Python, contenu compté",()=>{
+T("IPC-2581 : les cartes d'exemple écrites pour le banc Rust, contenu compté",()=>{
   const avant=serialize();
   const dir=path.join(__dirname,"..","dist","essai-ipc2581");
   fs.mkdirSync(dir,{recursive:true});

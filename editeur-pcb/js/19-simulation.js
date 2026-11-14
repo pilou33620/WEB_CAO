@@ -2,7 +2,7 @@
 /* ==========================================================================
    Éditeur PCB — simulation électromagnétique
    L'adaptateur qui relie la carte routée au solveur de section
-   (python/ligne_mom.py, via python/simulation_em.py). Ce n'est PAS
+   (rust/ligne_mom, via rust/em/src/simulation_em). Ce n'est PAS
    mom_solver/ : le moteur 2,5D pleine onde est hors du chemin de calcul, et
    docs/HISTORIQUE_DEVELOPPEMENT.md dit pourquoi.
 
@@ -28,7 +28,7 @@
       tronçon désigne une entrée de cette liste-là, pas un rang de cuivre —
       d'où `simCuIndex()`, qui fait la conversion en un seul endroit. C'est le
       serveur qui y cherche les plans de référence (`section_de_couche`,
-      python/simulation_em.py), avec la même règle que `dpStripGeom()` ici : le
+      rust/em/src/simulation_em), avec la même règle que `dpStripGeom()` ici : le
       premier conducteur de rôle « plan » au-dessus et en dessous. Le masque de
       soudure n'y est pas — l'ajouter en tête décalerait tous les indices pour
       un effet marginal sur un microruban.
@@ -85,7 +85,7 @@ function simStackup(){
       net:L.net||""
     };
     /* LA RUGOSITÉ, EN MICROMÈTRES et la clé le dit : le serveur la passe à
-       `line_losses` (python/simulation_em.py, `_rugosite_couche`). Lisse, rien
+       `line_losses` (rust/em/src/simulation_em, `_rugosite_couche`). Lisse, rien
        ne part : le document reste celui d'avant. Un plan LISSE DÉCLARÉ
        (`rug.decl`, 01-core.js) part avec `rugosite_rms_um: 0` : c'est la
        déclaration que `_rugosite_section` lit pour ne pas lui prêter la
@@ -223,9 +223,9 @@ function simRefCandidatsPcb(){
    ========================================================================== */
 const SIM_ECART_MAX=3.0;        // mm ; au-delà, l'effet coplanaire est nul
 /* LA PORTÉE DU COUPLAGE, et elle n'est pas celle de la masse coplanaire. Elle
-   doit valoir ECART_COUPLAGE_MAX de `python/simulation_em.py` — c'est le
+   doit valoir ECART_COUPLAGE_MAX de `rust/em/src/simulation_em` — c'est le
    serveur qui écarte, la page ne fait que ne pas l'inonder. */
-const SIM_ECART_COUPLAGE=3.0;   // mm ; ECART_COUPLAGE_MAX de simulation_em.py
+const SIM_ECART_COUPLAGE=3.0;   // mm ; ECART_COUPLAGE_MAX de simulation_em
 /* Les distances de sonde, depuis le BORD du cuivre de la piste. La première
    porte presque tout : la piste est d'ordinaire DEDANS le plan, creusé autour
    d'elle à la règle d'isolation, et deux centièmes au-delà de son bord tombent
@@ -567,7 +567,7 @@ function simAntipadVia(v){
 const SIM_RAYON_PONT = 10.0;
 
 /* Les replis du serveur, repris à l'identique : `ESL_PONT_REPLI`,
-   `C_PONT_REPLI` et `ESR_PONT_REPLI` de simulation_em.py. Deux jeux de valeurs
+   `C_PONT_REPLI` et `ESR_PONT_REPLI` de simulation_em. Deux jeux de valeurs
    pour une même hypothèse, ce sont deux chiffres le jour où l'un bouge. */
 const SIM_ESL_PONT = 1.0e-9;      /* H — un 0402 sur deux vias courts */
 const SIM_C_PONT   = 100e-9;      /* F — la valeur universelle du découplage */
@@ -839,7 +839,7 @@ function simCotesVia(v, x, y, cuA, cuB){
        deviner : la portée percée reste L1–L4, c'est le foret repassé depuis
        une face qui en retire le bout. On envoie la face, la couche à ne pas
        couper (indice d'empilage, comme `layer_from`) et le moignon résiduel ;
-       `_moignons` (python/simulation_em.py) y arrête le moignon de ce côté.
+       `_moignons` (rust/em/src/simulation_em) y arrête le moignon de ce côté.
        Un contre-perçage fautif ne part pas : il ne se ferait pas tel quel. */
     const cp = typeof cpVia === "function" ? cpVia(v) : null;
     if(cp && !cp.faute)
@@ -1467,12 +1467,12 @@ function simZProchePcb(t,net,altLot){
    question « faut-il le rapprocher ? » n'a donc de réponse que si le chiffre
    bouge quand on le rapproche, sous les yeux, sans repasser par le serveur.
 
-   POURQUOI LA PHYSIQUE EST ICI AUSSI, ALORS QU'ELLE EST DÉJÀ EN PYTHON. Parce
+   POURQUOI LA PHYSIQUE EST ICI AUSSI, ALORS QU'ELLE EST DÉJÀ AU SERVEUR. Parce
    qu'un chevelu qui demande un aller-retour au serveur à chaque déplacement de
    souris n'est pas un chevelu. C'est une duplication, elle est assumée, et
    elle est TENUE : le banc de l'éditeur vérifie que cette fonction rend, sur
    une géométrie donnée, exactement ce que `ligne_mom.inductance_boucle_vias`
-   rend sur la même — la valeur attendue vient du banc Python, pas d'ici. Le
+   rend sur la même — la valeur attendue vient du banc du solveur, pas d'ici. Le
    jour où l'une des deux dérive, l'essai tombe.
 
    CE QUE LE CHEVELU MONTRE, ET C'EST PLUS QUE DES TRAITS :
@@ -2426,7 +2426,7 @@ function simVoisinagePcb(liste,adjacentes){
   /* CHAQUE VOISINE PART AVEC SES DEUX ÉCARTS À LA MASSE, exactement comme les
      tronçons de la sélection. C'est ce qui permet au serveur de savoir si du
      cuivre de masse S'INTERPOSE entre les deux pistes — voir
-     `_masse_interposee` dans `python/simulation_em.py`.
+     `_masse_interposee` dans `rust/em/src/simulation_em`.
 
      CE QUE CELA CORRIGEAIT, ET C'ÉTAIT GROS. La page ne mesurait que l'écart
      de LA SÉLECTION à la masse ; le serveur repoussait donc la masse au bord

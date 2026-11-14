@@ -882,7 +882,7 @@ impl ModeleAmi {
             ErreurIbis::new(
                 format!("La bibliothèque AMI « {} » ne se charge pas : {}", nom_de_fichier(chemin), exc),
                 "Architecture ou système différent de celui du serveur (une .dll ne se charge pas sous Linux, une \
-                 bibliothèque 32 bits sous un Python 64 bits), ou dépendances absentes.",
+                 bibliothèque 32 bits sous un serveur 64 bits), ou dépendances absentes.",
             )
         })?;
         // SAFETY: les signatures sont celles de la norme ; un symbole de ce nom d'un autre type

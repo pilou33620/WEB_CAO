@@ -5,7 +5,7 @@ Ce chapitre décrit le panneau lui-même (onglets, boutons communs, rapport, ré
 Les familles PI, thermique et Audit sont dans le [chapitre 09](09-simulation-pi-thermique-audit.md), la famille RF dans le [chapitre 10](10-simulation-rf-em.md) ; la physique, les équations et les étalons de validation sont dans [../simulation-em.md](../simulation-em.md).
 
 > [!NOTE]
-> Tout calcul de section (Impédance, Z différentielle, Crosstalk, Current Return Path, Diagramme de l'œil) passe par le serveur local : `python web_CAO.py`, puis la page ouverte à l'adresse qu'il affiche. Une page ouverte en `file://` ne peut pas l'appeler. Seul l'onglet « Bus synchrone » calcule dans la page, sans serveur.
+> Tout calcul de section (Impédance, Z différentielle, Crosstalk, Current Return Path, Diagramme de l'œil) passe par le serveur local : `demarrer_WEB_CAO`, puis la page ouverte à l'adresse qu'il affiche. Une page ouverte en `file://` ne peut pas l'appeler. Seul l'onglet « Bus synchrone » calcule dans la page, sans serveur.
 
 ## Guide par tâche
 
@@ -175,7 +175,7 @@ Les résultats se peignent sur la carte : Z₀ ou Zdiff sous Impédance et Z dif
 
 ### Impédance (Z₀ et paramètres S)
 
-Le serveur résout la section droite de chaque tronçon (méthode des moments 2D, `python/ligne_mom.py`), puis met les tronçons en cascade pour obtenir les paramètres S de la liaison. Topologies traitées : microruban, microruban couvert, triplaque (centrée ou non), ligne coplanaire.
+Le serveur résout la section droite de chaque tronçon (méthode des moments 2D, `rust/ligne_mom`), puis met les tronçons en cascade pour obtenir les paramètres S de la liaison. Topologies traitées : microruban, microruban couvert, triplaque (centrée ou non), ligne coplanaire.
 
 | Bouton ou champ | Effet | Limites |
 |---|---|---|
@@ -350,7 +350,7 @@ I2C : le tableau donne **Longueur / Capacité C_bus / Temps montée t_r / Limite
 
 ### Diagramme de l'œil
 
-Question posée : que voit le récepteur quand les bits se superposent ? La liaison est celle de l'onglet Impédance (ou de Z différentielle en mode différentiel), fermée sur l'émetteur et le récepteur, puis passée en temporel (`python/oeil.py`). Deux yeux sortent de la réponse à un bit : l'œil **PRBS** (superposition d'une séquence) et l'œil **pire cas** (analyse de distorsion crête : la pire combinaison de bits voisins).
+Question posée : que voit le récepteur quand les bits se superposent ? La liaison est celle de l'onglet Impédance (ou de Z différentielle en mode différentiel), fermée sur l'émetteur et le récepteur, puis passée en temporel (`rust/oeil`). Deux yeux sortent de la réponse à un bit : l'œil **PRBS** (superposition d'une séquence) et l'œil **pire cas** (analyse de distorsion crête : la pire combinaison de bits voisins).
 
 | Bouton ou champ | Effet | Limites |
 |---|---|---|
@@ -400,7 +400,7 @@ Ce que la fiche affiche :
 
 #### Gabarits
 
-Famille, nom (tel qu'affiché) et fiabilité, d'après `python/oeil.py`.
+Famille, nom (tel qu'affiché) et fiabilité, d'après `rust/oeil`.
 
 | Famille | Gabarits | Fiabilité |
 |---|---|---|
@@ -418,7 +418,7 @@ Un fichier `.ibs` (ANSI/EIA-656) remplace le générateur de Thévenin de l'éme
 
 | Bouton ou champ | Effet | Limites |
 |---|---|---|
-| **fichier .ibs…** | Charge un fichier `.ibs`, `.ibis` ou `.txt`. | Le serveur refuse avec la ligne fautive ce qu'il ne comprend pas. Plafond du texte : 12 Mio d'après `python/ibis.py`. |
+| **fichier .ibs…** | Charge un fichier `.ibs`, `.ibis` ou `.txt`. | Le serveur refuse avec la ligne fautive ce qu'il ne comprend pas. Plafond du texte : 12 Mio d'après `rust/ibis`. |
 | Liste du **[Model]** | Choix du modèle (type affiché entre parenthèses). | |
 | Liste du coin | **typ**, **min** (faible, lent), **max** (fort, rapide). | |
 | **N : = P** / **N : modèle** ; **coin N** | Modèle et coin du brin inverse. | En différentiel : un brin rapide contre un brin lent fait du mode commun. |
@@ -487,7 +487,7 @@ Une classe d'interface est une classe de net rattachée à une famille. La famil
 | Front d'un net | Sous Crosstalk, le front vide d'une piste est déduit de sa classe : Horloge 2 ns, Rapide 1 ns, RF 100 ps, Analogique 100 ns, Lent 10 ns, Découpage 5 ns, ou celui de l'interface. Le front d'une interface est borné par sa cadence : min(tr, 0,1 / cadence). | Classe sans front (Masse, Alimentation…) : jugée comme « Lent » ; net sans classe : 1 ns. Le panneau de vérification de carte peut régler ces fronts. |
 | Z_diff d'une interface | Sert de Z_diff visée par classe dans le panneau de vérification de toute la carte ([chapitre 09](09-simulation-pi-thermique-audit.md)), où elle se règle par classe. | Pas de reprise automatique dans l'onglet Z différentielle : sa cible (100 Ω d'office) se saisit à la main, se règle par datasheet ou par « Cibler N Ω » (terminaison du schéma). |
 
-La table est écrite deux fois, en JSON dans `commun/classes-interface.js` et en Python dans `python/crosstalk.py` (`INTERFACES`) ; un banc les compare.
+La table est écrite deux fois, en JSON dans `commun/classes-interface.js` et en Rust dans `rust/em/src/crosstalk` (`INTERFACES`) ; un banc les compare.
 
 ## Limites connues
 

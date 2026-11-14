@@ -4,13 +4,13 @@
    Le fichier part au serveur, le modèle en revient.
 
    Pourquoi passer par un serveur alors que les deux éditeurs se passent de
-   tout ? Parce que le parseur IPC-2581 est en Python (python/ipc2581_parser.py)
+   tout ? Parce que le parseur IPC-2581 est dans le serveur (caisse ipc2581 de web_suite)
    et qu'un navigateur ne peut pas l'exécuter. Le rendu, lui,
    est bien ici : une fois le modèle traduit en JSON, la page n'a plus besoin
    de personne — c'est aussi pourquoi « Exporter .json » existe, et pourquoi le
    .json exporté se rouvre en double-clic, serveur éteint.
 
-   Le serveur est celui qui sert la page (web_CAO.py) : il n'admet que sa
+   Le serveur est celui qui sert la page (web_cao) : il n'admet que sa
    propre origine, une page ouverte en file:// ne peut donc pas l'appeler.
    ============================================================================= */
 
@@ -54,7 +54,7 @@ async function apiConnecter(){
     }
   }
   throw new Error("Aucun serveur pour lire l'IPC-2581.\n\n"+
-    "Le parseur est en Python : lancez « python web_CAO.py » depuis le dossier "+
+    "Le parseur tourne sur le serveur : lancez « demarrer_WEB_CAO » depuis le dossier "+
     "du dépôt, puis ouvrez cette page par l'adresse qu'il affiche.\n\n"+
     "Tentatives :\n  "+essais.join("\n  "));
 }

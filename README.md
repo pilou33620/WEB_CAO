@@ -4,7 +4,7 @@
 
 Du schéma au dossier de fabrication : saisie multi-feuilles, routage *Push & Shove*, bibliothèque de composants, inspection de fichiers IPC-2581 et simulation d'intégrité du signal et de l'alimentation (SI / PI / RF). Claude Code, par le serveur MCP de web_suite, lit vos datasheets et propose les réglages de simulation, valeur par valeur.
 
-Les éditeurs s'ouvrent par simple double-clic dans le navigateur, sans `npm install` ni serveur. Ce qui passe par le serveur (simulations, LIB, visionneuse IPC-2581, recherche de composants) demande la page ouverte à l'adresse qu'affiche `web_CAO.py` : il n'admet que sa propre origine, une page en `file://` ne peut pas l'appeler.
+Les éditeurs s'ouvrent par simple double-clic dans le navigateur, sans `npm install` ni serveur. Ce qui passe par le serveur (simulations, LIB, visionneuse IPC-2581, recherche de composants) demande la page ouverte à l'adresse qu'affiche `web_cao` : il n'admet que sa propre origine, une page en `file://` ne peut pas l'appeler.
 
 <p align="center">
   <img src="screen/schematique-carte-usb.svg" width="800" alt="Animation : saisie du schéma d'une carte USB dans l'Éditeur Schématique, puis envoi de la netlist à l'Éditeur PCB">
@@ -20,28 +20,26 @@ Les éditeurs s'ouvrent par simple double-clic dans le navigateur, sans `npm ins
 
 **Sans rien installer** : ouvrez `index.html` dans un navigateur récent. Schéma, routage et exports de fabrication fonctionnent tels quels. Chaque outil s'ouvre dans un nouvel onglet : l'accueil reste ouvert.
 
-**Avec le serveur local** (recommandé ; Python 3, numpy et scipy) : il ajoute la recherche de composants en ligne, le parseur IPC-2581, les solveurs de simulation, les dossiers de projet sur disque et la bibliothèque centrale.
+**Avec le serveur local** (recommandé ; un exécutable, `web_cao`, sans rien d'autre à installer) : il ajoute la recherche de composants en ligne, le parseur IPC-2581, les solveurs de simulation, les dossiers de projet sur disque et la bibliothèque centrale.
 
 ```bash
-python web_CAO.py
+./demarrer_WEB_CAO.sh        # Windows : demarrer_WEB_CAO.cmd
 ```
 
-Le navigateur s'ouvre à la bonne adresse. Sous Windows, un double-clic sur `web_CAO.py` (ou `demarrer_WEB_CAO.cmd`) suffit. Au démarrage, le serveur se met à jour depuis GitHub quand `git` est présent et que le dossier est un dépôt (mise à jour `--ff-only` ; hors ligne, il démarre quand même ; `--sans-maj` pour s'en passer).
-
-Sans numpy ou scipy, le serveur s'arrête au démarrage (code de sortie 3) en disant quoi installer.
+Le navigateur s'ouvre à la bonne adresse. Sous Windows, un double-clic sur `demarrer_WEB_CAO.cmd` suffit. Le lanceur met l'exécutable dans `bin/` : compilé sur place si `cargo` est installé, téléchargé sinon depuis la publication « binaires » du dépôt GitHub. Au démarrage, le serveur se met à jour depuis GitHub quand `git` est présent et que le dossier est un dépôt (mise à jour `--ff-only` ; hors ligne, il démarre quand même ; `--sans-maj` pour s'en passer).
 
 ## 📦 Installation
 
-Ouvrir `index.html` sans serveur ne demande rien. Le serveur demande Python 3, numpy et scipy (`requirements.txt`) ; `git` et `openssl` sont facultatifs (mises à jour, HTTPS).
+Ouvrir `index.html` sans serveur ne demande rien. Le serveur est un exécutable (`bin/web_cao`), que `demarrer_WEB_CAO` télécharge ou compile (`cargo`, s'il est installé) ; `git` et `openssl` sont facultatifs (mises à jour, HTTPS).
 
 | Système | Installer | Lancer |
 | :--- | :--- | :--- |
-| **Raspberry Pi, Debian** | `sudo apt install git python3-numpy python3-scipy` puis `git clone https://github.com/pilou33620/WEB_CAO.git` (pip y refuse la Python du système : apt, ou un venv) | `python3 web_CAO.py` |
-| **Windows** | Python 3 et Git, `git clone https://github.com/pilou33620/WEB_CAO.git`, puis `pip install -r requirements.txt` | double-clic sur `web_CAO.py` ou `demarrer_WEB_CAO.cmd` (mode local) ; `python web_CAO.py` dans un terminal pour le réseau |
+| **Raspberry Pi, Debian** | `sudo apt install git curl` puis `git clone https://github.com/pilou33620/WEB_CAO.git` | `./demarrer_WEB_CAO.sh` |
+| **Windows** | Git, puis `git clone https://github.com/pilou33620/WEB_CAO.git` | double-clic sur `demarrer_WEB_CAO.cmd` (mode local) ; `bin\web_cao.exe` dans un terminal pour le réseau |
 
 ## 💻 Sur quels appareils ?
 
-WEB_CAO tourne dans n'importe quel navigateur récent ; seul le serveur demande Python, numpy et scipy.
+WEB_CAO tourne dans n'importe quel navigateur récent ; seul le serveur demande un poste où tourne l'exécutable `web_cao` (Linux, Raspberry Pi, macOS, Windows).
 
 | Appareil | Comment l'utiliser |
 | :--- | :--- |
@@ -55,7 +53,7 @@ WEB_CAO tourne dans n'importe quel navigateur récent ; seul le serveur demande 
 
 Lancez le serveur depuis un terminal, sans `--local` : il affiche l'adresse Réseau du poste (ligne `adresse`, et ligne `tailscale` si Tailscale est actif). Ouvrez-la dans le navigateur de l'autre appareil, sur le même réseau.
 
-Depuis un autre appareil, la page demande une fois un **code d'appairage** à 6 chiffres, affiché dans la console du serveur (ou dans les logs de WEB_CAO, dans WEB·SUITE). L'appareil s'en souvient ensuite, pour tous les web tools de ce poste (`appairage.py`, commun aux web tools) ; la machine elle-même n'en a jamais besoin.
+Depuis un autre appareil, la page demande une fois un **code d'appairage** à 6 chiffres, affiché dans la console du serveur (ou dans les logs de WEB_CAO, dans WEB·SUITE). L'appareil s'en souvient ensuite, pour tous les web tools de ce poste (caisse `web_tools_commun` de web_suite, commune aux web tools) ; la machine elle-même n'en a jamais besoin.
 
 En mode réseau, la connexion est **chiffrée (HTTPS)** quand la commande `openssl` est présente sur le poste (Raspberry Pi, Linux, macOS ; sous Windows, celle de Git) : une autorité propre au poste, créée une fois dans `~/.web_tools/tls/`, signe le certificat du serveur. Chaque appareil l'installe une fois, depuis le lien de la page du code (`/appairage/ca.pem`) ; sur iPad : Réglages › Profil téléchargé › Installer, puis Général › Informations › Réglages des certificats › activer. Comparer son empreinte SHA-256 avec celle du terminal. Sans `openssl` (ou avec `WEB_TOOLS_HTTP=1`), tout reste en HTTP et le terminal le dit.
 
@@ -115,7 +113,7 @@ L'ancien assistant IA intégré est retiré. **Claude Code** pilote les pages ou
 ## 🖥️ Options du serveur
 
 <details>
-<summary><code>python web_CAO.py [options]</code></summary>
+<summary><code>demarrer_WEB_CAO [options]</code></summary>
 
 | Option | Effet |
 | :--- | :--- |
@@ -140,7 +138,7 @@ La visionneuse IPC-2581 enregistre sa carte puis l'envoie directement. La Gestio
 
 ## 🔄 Mises à jour
 
-Au démarrage, quand `git` est présent et que le dossier est un dépôt, `web_CAO.py` interroge GitHub (`git fetch`, 10 s au plus). S'il y a du nouveau, il applique `git pull --ff-only` puis redémarre seul avec les mêmes options ; un historique réécrit ou divergent est refusé, jamais fusionné. Des fichiers suivis modifiés sur le poste passent par `git stash` le temps du pull, puis reviennent ; en cas de conflit, ils restent dans la réserve et le terminal le dit. Hors ligne ou sur un échec, l'outil démarre avec sa version actuelle. `--sans-maj` coupe cette vérification : le lanceur WEB·SUITE, qui cherche lui-même les mises à jour, la passe aux outils déjà vérifiés.
+Au démarrage, quand `git` est présent et que le dossier est un dépôt, `web_cao` interroge GitHub (`git fetch`, 10 s au plus). S'il y a du nouveau, il applique `git pull --ff-only` puis redémarre seul avec les mêmes options ; un historique réécrit ou divergent est refusé, jamais fusionné. Des fichiers suivis modifiés sur le poste passent par `git stash` le temps du pull, puis reviennent ; en cas de conflit, ils restent dans la réserve et le terminal le dit. Hors ligne ou sur un échec, l'outil démarre avec sa version actuelle. `--sans-maj` coupe cette vérification : le lanceur WEB·SUITE, qui cherche lui-même les mises à jour, la passe aux outils déjà vérifiés.
 
 ## 🗄️ Où vivent les données
 
@@ -157,14 +155,14 @@ Au démarrage, quand `git` est présent et que le dossier est un dépôt, `web_C
 
 ```
 index.html               Accueil : outils, projet, bibliothèque, profil, mode tactile
-web_CAO.py               Serveur local et API
-requirements.txt         numpy et scipy, obligatoires pour le serveur
-appairage.py             Code d'appairage et HTTPS du mode réseau (commun aux web tools)
-pilote.py                Canal de pilotage des pages par le MCP de web_suite
+demarrer_WEB_CAO.sh/.cmd Lance le serveur local (exécutable bin/web_cao, obtenu par binaires.sh/.cmd)
+rust/                    Le serveur (rust/serveur, exécutable web_cao), les solveurs (MoM, diaphonie, DC, RF, œil, vérification de carte), les outils de construction, et leurs bancs d'essai
+Cargo.toml               L'espace de travail Rust
 editeur-schematique/     editeur-pcb/     gestion-lib/
 recherche-composants/    visionneuse-ipc2581/
 commun/                  Code partagé : panneaux, projets, profils, tactile, variantes de montage, canal de pilotage, simulation
-python/                  Solveurs (MoM, diaphonie, DC, RF), parseur IPC-2581, bancs d'essai
+outils/                  Scripts Node de la LIB (maillages 3D, extraction initiale)
+test/                    Banc des maillages 3D
 bancs-mesure/            Cartes d'essai à fabriquer et comparaison simulation / mesure (crosstalk)
 profils/                 Profils utilisateurs et fabricants
 docs/                    Manuel, guides de simulation et historique de développement
@@ -173,7 +171,7 @@ screen/                  Captures et animations
 
 ## 🧪 Tests
 
-Côté navigateur, JavaScript standard, sans dépendance. Côté serveur, Python 3 (testé en 3.12) avec numpy et scipy. Les bancs tournent en CI (`.github/workflows/ci.yml`), sauf `banc_synoptique`, `banc_ruban` et `banc_anim3d_images` de `rust/outils/tests/` (Chromium ; essais marqués « ignored »), `python/test/banc-detection-plateforme.py`, `python/test/banc-usimmics.py`, à lancer à la main. Faute de `kicad-cli` sur la machine d'intégration, la relecture des exports KiCad par KiCad lui-même y est sautée (les bancs le disent). `appairage.py` et `pilote.py` se vérifient en les exécutant ; la CI de web_suite passe ces vérifications sur ses originaux et compare les copies.
+Côté navigateur, JavaScript standard, sans dépendance. Côté serveur, Rust (`cargo test --workspace`). Les bancs tournent en CI (`.github/workflows/ci.yml`), sauf `banc_synoptique`, `banc_ruban` et `banc_anim3d_images` de `rust/outils/tests/` (Chromium ; essais marqués « ignored »), `rust/serveur/src/plateforme.rs`, `rust/em/tests/banc/usimmics.rs`, à lancer à la main. Faute de `kicad-cli` sur la machine d'intégration, la relecture des exports KiCad par KiCad lui-même y est sautée (les bancs le disent). `appairage.py` et `pilote.py` se vérifient en les exécutant ; la CI de web_suite passe ces vérifications sur ses originaux et compare les copies.
 
 <details>
 <summary>Lancer les bancs en local</summary>
@@ -184,13 +182,11 @@ cargo run -p outils --bin build-monofichier -- editeur-schematique && node edite
 cargo test -p outils --test banc_ruban -- --ignored --nocapture   # le ruban des deux éditeurs, dans Chromium s'il est installé
 node visionneuse-ipc2581/test/harness-sim.js
 node gestion-lib/test/banc-catalogue.js
-python python/test/banc-ligne-mom.py      # et les autres banc-*.py de python/test/
-python appairage.py
-python pilote.py
+cargo test --workspace      # solveurs, serveur, outils ; `cargo test -p ligne_mom` pour un seul
 cargo test -p outils --test banc_synoptique -- --ignored --nocapture   # (SYNOPTIQUE_CAPTURES=1 : captures) synoptique de chaque schématique de PROJETS/CAO (Chromium)
 ```
 
-Les bancs lisent la LIB à son emplacement par défaut (`../PROJETS/LIB_CAO`). WEB_SUITE_PROJETS étant privé, l'intégration continue ne l'a pas : `banc-lib-routes.py`, `banc-rf.py` et `gestion-lib/test/banc-catalogue.js` y sont sautés (avertissement dans le journal) et les routes du serveur tournent sur une LIB factice (`WEB_CAO_LIB_MINIMALE=1`). Ces trois bancs se lancent sur un poste qui a la LIB (clone fait avec votre compte GitHub, ou `WEB_CAO_LIB=<dossier>`). Un secret `PROJETS_TOKEN` (token en lecture seule sur WEB_SUITE_PROJETS) les remettrait dans l'intégration continue.
+Les bancs lisent la LIB à son emplacement par défaut (`../PROJETS/LIB_CAO`). WEB_SUITE_PROJETS étant privé, l'intégration continue ne l'a pas : `rust/serveur/tests/bancs/lib_routes.rs`, `rust/rf_reseau/tests/banc` et `gestion-lib/test/banc-catalogue.js` y sont sautés (avertissement dans le journal) et les routes du serveur tournent sur une LIB factice. Ces trois bancs se lancent sur un poste qui a la LIB (clone fait avec votre compte GitHub, ou `WEB_CAO_LIB=<dossier>`). Un secret `PROJETS_TOKEN` (token en lecture seule sur WEB_SUITE_PROJETS) les remettrait dans l'intégration continue.
 
 </details>
 

@@ -4,11 +4,11 @@
    Échappement HTML d'un texte avant innerHTML ou un attribut entre guillemets,
    pour toutes les pages de WEB_CAO. Chargé en premier par chacune d'elles.
    null et undefined donnent une chaîne vide ; un nombre s'écrit (0 compris).
-   Aussi ENTETE_WEB : l'en-tête maison que web_CAO.py exige sur tout POST/PUT/DELETE
+   Aussi ENTETE_WEB : l'en-tête maison que web_cao exige sur tout POST/PUT/DELETE
    (une autre page ne peut pas l'ajouter sans pré-vol CORS) ; commun/pilote.js le lit.
    ============================================================================= */
 /* Deux noms pour le même en-tête : un relais peut retirer celui qui porte un « _ »
-   (nginx par défaut) ; web_CAO.py accepte l'un ou l'autre. */
+   (nginx par défaut) ; web_cao accepte l'un ou l'autre. */
 const ENTETE_WEB={"X-WEB_CAO":"1","X-Web-Cao":"1"};
 /* Sous un relais (launcher : la page est à /o/web_cao/…), un fetch("/api/x") perd le
    préfixe de l'outil : le relais devait deviner l'outil visé d'après le Referer ou un

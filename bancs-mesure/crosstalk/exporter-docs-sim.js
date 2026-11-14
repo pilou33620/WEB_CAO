@@ -1,7 +1,7 @@
 /* =============================================================================
    bancs-mesure/crosstalk/exporter-docs-sim.js
    Les documents que l'onglet Crosstalk envoie au serveur, un par cas, rangés
-   dans docs-sim/ pour que le banc Python tourne sans navigateur.
+   dans docs-sim/ pour que le banc Rust tourne sans navigateur.
 
        node bancs-mesure/crosstalk/exporter-docs-sim.js [carte-PCB.json]
 

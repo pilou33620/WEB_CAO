@@ -716,7 +716,7 @@ pub fn analyser(doc: &Json, mut journal: Option<&mut dyn FnMut(&str)>) -> Res<Js
     }
 
     let carte = ou_json(&doc["carte"], "".j());
-    let entete = vec!["Genere par WEB_CAO -- simulation RF (python/rf_reseau.py)".to_string(),
+    let entete = vec!["Genere par WEB_CAO -- simulation RF (rust/rf_reseau)".to_string(),
                       format!("Carte : {}", if doc["carte"].vrai() { str_py(&doc["carte"]) } else { "-".to_string() }),
                       format!("RENORMALISE A 50 OHM. Le calcul a ete fait entre Z1 = {} et Z2 = {} ohm.", _cplx_txt(z_ports[0]), _cplx_txt(z_ports[1]))];
     let paires = |l: &[Complex64]| l.iter().map(|z| vec![z.re, z.im]).collect::<Vec<_>>();

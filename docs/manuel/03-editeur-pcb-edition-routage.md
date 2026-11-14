@@ -275,7 +275,7 @@ Recadrer, Grille et Chevelu y sont en icônes ; les autres réglages sont dans s
 | Règles… | | Fenêtre « Règles & Fabrication », onglet Règles de conception | |
 | Contraintes… (Vérifier) | | Contraintes par net | Voir [04-editeur-pcb-fabrication.md](04-editeur-pcb-fabrication.md) |
 | Capabilités & Règles… | | Fenêtre « Règles & Fabrication », onglet Capabilités Fabricant | |
-| Simulation EM… | | Paramètres S d'un net par la méthode des moments | Calcul sur le serveur (`python web_CAO.py`) ; voir [08-simulation-si.md](08-simulation-si.md) |
+| Simulation EM… | | Paramètres S d'un net par la méthode des moments | Calcul sur le serveur (`demarrer_WEB_CAO`) ; voir [08-simulation-si.md](08-simulation-si.md) |
 
 ### Raccourcis clavier (carte)
 

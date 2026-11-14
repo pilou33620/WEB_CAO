@@ -1,8 +1,8 @@
-/* Banc du placement des modèles 3D (python/maillages_3d.mjs), sans OpenCascade :
+/* Banc du placement des modèles 3D (outils/maillages_3d.mjs), sans OpenCascade :
    un SOT-23 dessiné Y vers le haut et décalé, comme un modèle de fabricant,
    doit retomber patte par patte sur ses pastilles (deux d'un côté, une de
    l'autre : le sens de la broche 1 compte). */
-import { placer, HAUTS, lirePosition, ecrirePosition } from "../maillages_3d.mjs";
+import { placer, HAUTS, lirePosition, ecrirePosition } from "../outils/maillages_3d.mjs";
 
 let ko = 0;
 const verifier = (nom, ok, detail) => { console.log((ok ? "  ok  " : "  KO  ") + nom + (ok ? "" : " : " + detail)); if (!ok) ko++; };

@@ -4,7 +4,7 @@
 
        node test/harness-sim.js
 
-   POURQUOI UN BANC À PART. `banc-essai.py` éprouve le PARSEUR — ce qui entre
+   POURQUOI UN BANC À PART. Les essais du lecteur (caisse ipc2581 de web_suite) éprouvent le PARSEUR — ce qui entre
    dans le modèle. Ce fichier-ci éprouve la GÉOMÉTRIE qu'on lit ensuite dessus :
    où est le cuivre de masse, de quel côté, sur quelle longueur, et si des vias
    le ramènent au plan d'en face. C'est le morceau le plus délicat de la
@@ -17,7 +17,7 @@
      · TOUT cuivre d'un autre net comptait comme masse.
 
    CE QUI N'EST PAS ICI : le solveur, qui a son propre banc
-   (python/test/banc-ligne-mom.py) et ses étalons extérieurs.
+   (rust/ligne_mom/tests/banc) et ses étalons extérieurs.
 
    Le style est celui du banc de l'éditeur PCB (editeur-pcb/test/harness.js) :
    pas de framework, un décompte à la fin, un code de retour.
@@ -250,7 +250,7 @@ function T(nom,fn){
    géométrie, et un fichier d'essai ne ferait qu'ajouter un parseur entre la
    question et la réponse. Le modèle est celui que `mdlCharger` produit — mêmes
    champs, mêmes unités —, ce qui est justement ce qu'il faut vérifier par
-   ailleurs, et que `banc-essai.py` vérifie.
+   ailleurs, et que les essais du lecteur (caisse ipc2581 de web_suite) vérifie.
 
    La carte : 60 × 40 mm, deux couches, une piste de 40 mm sur la couche 0.
    ========================================================================== */
@@ -1004,7 +1004,7 @@ T("le bout de la chaîne nomme la pastille et son composant",()=>{
 /* ==========================================================================
    LA CHUTE CONTINUE : le cuivre d'une carte LIVREE
    --------------------------------------------------------------------------
-   Le solveur a ses propres etalons (python/test/banc-dc.py, contre rho L/(W t)).
+   Le solveur a ses propres etalons (rust/dc_solver/tests/banc_dc.rs, contre rho L/(W t)).
    Ce qui se joue ici est l'autre moitie : ce que la visionneuse LUI ENVOIE.
    Un solveur juste nourri d'un mauvais cuivre rend un mauvais chiffre, et rien
    dans le panneau ne le dirait.
@@ -2153,7 +2153,7 @@ function carteJonctions(trousGnd){
    supposition.
 
    ET IL Y EN A UNE DEUXIÈME, EN AMONT. Quand aucun <PadstackDef> ne porte le
-   nom du perçage, `ipc2581_parser.py` fabrique la pastille à « perçage +
+   nom du perçage, `ipc2581_parser` fabrique la pastille à « perçage +
    0,3 mm ». La page reçoit donc parfois une pastille qui n'est pas dans le
    fichier — d'où le drapeau `pad_sup`, qu'elle doit relayer.
    -------------------------------------------------------------------------- */
@@ -3013,7 +3013,7 @@ T("la carte peint tous les lots, et le reflet est remis en place",()=>{
    CE QUE CES CAS VERROUILLENT est le CONTRAT — ce qui part, ce qui ne part
    pas, sous quel format et dans quelle unité. L'appariement lui-même et la
    physique sont au serveur, qui les fait pour les deux outils à la fois, et
-   `python/test/banc-ligne-mom.py` les mesure.
+   `rust/ligne_mom/tests/banc` les mesure.
    ========================================================================== */
 
 /* La carte de laboratoire, plus une piste voisine parallèle à `dy` de l'axe. */
@@ -6332,7 +6332,7 @@ T("vérification de la carte : surfaces, contour, trous et broches partent aussi
 /* ==========================================================================
    LE CONTRE-PERÇAGE PART COMME DEPUIS L'ÉDITEUR
    --------------------------------------------------------------------------
-   Le modèle porte `cp` sur le perçage (ipc2581_json.py) : la face, la couche
+   Le modèle porte `cp` sur le perçage (ipc2581_json) : la face, la couche
    à ne pas couper, le moignon résiduel. La simulation le reçoit dans la fiche
    du via (`contre_percage`), AVEC la portée percée — sans elle le serveur ne
    peut rien soustraire ; la vérification de la carte dans `percages[].cp`.
@@ -7330,8 +7330,8 @@ T("simParseResistance : la tolérance après un blanc ne change pas la valeur",(
   }
 });
 
-T("ltZ0 triplaque : Wheeler 1978, le chiffre du Python, aussi hors IPC-2141A",()=>{
-  // python/ligne_mom.py : _z_air_triplaque(w, t, b) / sqrt(4,3)
+T("ltZ0 triplaque : Wheeler 1978, le chiffre du solveur, aussi hors IPC-2141A",()=>{
+  // rust/ligne_mom : _z_air_triplaque(w, t, b) / sqrt(4,3)
   for(const [w,b,t,z] of [[0.5,0.4,0.035,23.36422862789895],[0.1,0.2,0.035,35.710662990321495],
                           [0.06,0.6,0.035,75.64880331304208],[0.2,0.3,0,40.975872770984545]]){
     const r=ltZ0({kind:"strip",h:b/2,b:b,t:t,er:4.3},w);

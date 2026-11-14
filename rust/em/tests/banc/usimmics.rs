@@ -15,7 +15,7 @@
 //! LE PARTAGE DU TRAVAIL. Le script imprime, pour chaque cas, les valeurs a
 //! saisir dans le calculateur de uSimmics (Tools > Transmission Line
 //! Calculator). On recopie les quatre resultats de uSimmics (Z_even, Z_odd,
-//! eps_eff_even, eps_eff_odd) dans python/test/usimmics-releves.csv, et on
+//! eps_eff_even, eps_eff_odd) dans rust/em/tests/banc/usimmics-releves.csv, et on
 //! relance : le script calcule les memes grandeurs avec le moteur de l'outil et
 //! imprime les ecarts.
 //!
@@ -37,7 +37,7 @@ use em::crosstalk as ct;
 use std::collections::HashMap;
 
 const C0: f64 = 299792458.0;
-const RELEVES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../python/test/usimmics-releves.csv");
+const RELEVES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/banc/usimmics-releves.csv");
 
 // ==========================================================================
 // La carte : FR-4 4 couches classique, 1,6 mm, cuivre 1 oz

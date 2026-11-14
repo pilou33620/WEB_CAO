@@ -343,7 +343,7 @@ const COMPOSANTS_LIB = (() => {
   const nomDeChemin = v => String(v == null ? "" : v).trim().replace(/^.*[\\/]/, "").replace(/\.json$/i, "");
 
   /* ---------- case du catalogue ----------
-     Une case que la fiche va écrire : les règles du serveur (_valeur_catalogue de web_CAO.py), plus
+     Une case que la fiche va écrire : les règles du serveur (_valeur_catalogue de web_cao), plus
      la forme du préfixe et du nombre de pattes. Rend le refus en texte, ou null. Une case peut
      tenir sur plusieurs lignes : le catalogue la garde entre guillemets. */
   function verifierCase(colonne, valeur) {

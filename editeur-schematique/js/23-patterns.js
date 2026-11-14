@@ -86,7 +86,7 @@ var SCHEMA_PATTERNS = (function() {
   /* ---------- Classes de nets : suggestion de l'analyse + corrections ---------- */
   /* Sans serveur, ou avant la première analyse, la masse et les alimentations
      se reconnaissent encore à leur nom, avec les règles du serveur
-     (python/pattern_recognition.py, _RE_GROUND_NET puis _RE_POWER_NET) ; le
+     (rust/motifs/src/pattern_recognition.rs, _RE_GROUND_NET puis _RE_POWER_NET) ; le
      reste est « Lent », la classe par défaut. */
   const RE_MASSE = /GND|VSS|(?<![\d.])0V(?!\d)|^MASSE$/i;
   const RE_ALIM = /VCC|VDD|VBAT|3V3|3[.,]3V|5V|12V|\bPWR\b|AVCC|DVCC|\+V/i;
@@ -228,7 +228,7 @@ var SCHEMA_PATTERNS = (function() {
         <div style="padding:12px;color:var(--txt-dim);font-size:12px;line-height:1.5;">
           <div style="color:var(--yellow);font-weight:600;margin-bottom:6px;">⚠️ ${repondu ? "Analyse refusée par le serveur" : "Serveur non disponible"}</div>
           <div>${esc(erreur)}</div>
-          ${repondu ? "" : '<div style="margin-top:8px;font-size:11px;color:var(--txt-dim);">Lancez <code>python web_CAO.py</code> pour activer la reconnaissance de motifs.</div>'}
+          ${repondu ? "" : '<div style="margin-top:8px;font-size:11px;color:var(--txt-dim);">Lancez <code>demarrer_WEB_CAO</code> pour activer la reconnaissance de motifs.</div>'}
           <button class="tb" id="bPatternsRefresh" style="margin-top:10px;width:100%;justify-content:center;">🔄 Réessayer</button>
         </div>
       `;

@@ -360,7 +360,7 @@ La classe **Antenne** est jugée en fabrication seulement (angles, détourage, p
 
 ### Score de placement
 
-Ce n'est pas une règle de la vérification de carte mais un panneau de l'Éditeur PCB (bouton **Score Placement** : « Qualité de placement : chevelu minimal HPWL, découplage et congestion »), recalculé par le serveur (`python/pcb_scoring.py`) à chaque retouche. Les composants à placer sont traités au chapitre [Éditeur PCB : édition et routage](03-editeur-pcb-edition-routage.md).
+Ce n'est pas une règle de la vérification de carte mais un panneau de l'Éditeur PCB (bouton **Score Placement** : « Qualité de placement : chevelu minimal HPWL, découplage et congestion »), recalculé par le serveur (`rust/motifs/src/pcb_scoring.rs`) à chaque retouche. Les composants à placer sont traités au chapitre [Éditeur PCB : édition et routage](03-editeur-pcb-edition-routage.md).
 
 | Élément | Ce qu'on lit | Limites |
 |---|---|---|

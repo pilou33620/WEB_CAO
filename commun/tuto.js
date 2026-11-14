@@ -98,7 +98,7 @@
     ],
     composants:[
       {titre:"Bienvenue dans la recherche de composants",
-       texte:"Stocks et prix JLCPCB, équivalences, brochages et empreintes KiCad, interrogés via <b>pcbparts.dev</b>. Il faut le serveur : <kbd>python web_CAO.py</kbd>."},
+       texte:"Stocks et prix JLCPCB, équivalences, brochages et empreintes KiCad, interrogés via <b>pcbparts.dev</b>. Il faut le serveur : <kbd>demarrer_WEB_CAO</kbd>."},
       {sel:'[data-pnl="outils"]',titre:"Les outils de recherche",
        texte:"Recherche par paramètres, équivalents, brochage, modèles CAO… Le clic choisit l'outil, le formulaire s'adapte."},
       {sel:"#form",titre:"Le formulaire",
@@ -116,7 +116,7 @@
     ],
     lib:[
       {titre:"Bienvenue dans la gestion LIB",
-       texte:"Le catalogue <b>LIB_composants.csv</b> partagé par le schéma et le PCB, avec ses empreintes, symboles et modèles de simulation. Il faut le serveur : <kbd>python web_CAO.py</kbd>."},
+       texte:"Le catalogue <b>LIB_composants.csv</b> partagé par le schéma et le PCB, avec ses empreintes, symboles et modèles de simulation. Il faut le serveur : <kbd>demarrer_WEB_CAO</kbd>."},
       {sel:".nav-tabs",titre:"Quatre vues",faire:lib("composants"),
        texte:"Catalogue, empreintes PCB, symboles schématiques, modèles SPICE. Les pastilles comptent ce que chaque vue contient."},
       {sel:".stats-band",titre:"Associations",faire:lib("composants"),

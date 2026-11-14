@@ -29,9 +29,6 @@
 //! Le résultat est écrit en base64 dans js/fontes/plans-sans.js, que l'éditeur
 //! charge comme ses autres scripts : la fonte est là quand on ouvre la page
 //! depuis le disque, sans serveur, et dans le monofichier dist/editeur-pcb.html.
-//!
-//! L'en-tête du fichier produit nomme encore « outils/fonte-plans.py » : il est gardé tel
-//! quel pour que la sortie reste, à l'octet, celle du script d'origine.
 
 use crate::quitter;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -489,7 +486,7 @@ pub fn main(root: &Path, args: &[String]) {
         "/* ==========================================================================\n",
         "   PlansSans — fonte des plans PDF (29-draftsman.js, 33-draftsman-export.js)\n",
         "   --------------------------------------------------------------------------\n",
-        "   FICHIER GÉNÉRÉ par outils/fonte-plans.py : ne pas modifier à la main.\n",
+        "   FICHIER GÉNÉRÉ par fonte-plans (rust/outils) : ne pas modifier à la main.\n",
         "   Sous-ensemble de Liberation Sans 2.x (Regular et Bold), renommé comme\n",
         "   l'exige la licence SIL Open Font License 1.1 (noms réservés « Liberation »\n",
         "   et « Arimo ») ; texte de la licence dans js/fontes/OFL-PlansSans.txt.\n",

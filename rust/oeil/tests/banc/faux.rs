@@ -1,5 +1,5 @@
 //! Un modele AMI ECRIT A LA MAIN, a l'interface de `ibis.ModeleAmi` :
-//! ce que fait python/test/ami_test/ami_ffe.c -- une FFE a deux
+//! ce que fait rust/ibis/essais/ami_ffe.c -- une FFE a deux
 //! coefficients, dans AMI_Init et AMI_GetWave --, plus deux choses que la
 //! bibliotheque compilee n'essaie pas sur un poste sans compilateur :
 //!   (gw_seul 1)   AMI_Init rend l'impulsion telle quelle, la FFE n'est

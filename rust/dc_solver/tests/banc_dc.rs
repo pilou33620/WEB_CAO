@@ -1711,3 +1711,21 @@ fn la_resistivite_saisie_entre_aussi_dans_l_echauffement() {
     assert!(2.0 < k && k < 2.15, "{k}"); // x2, plus la boucle en temperature
     println!("rho x2 : echauffement x{k:.3}");
 }
+
+/// La part dc_solver de python/test/banc-entrees-malformees.py : un champ d'un autre type
+/// que prevu sort par le refus du module (422 lisible), jamais par une panique.
+#[test]
+fn les_documents_malformes_sont_refuses() {
+    let tri = r#"{"vertices": [[0, 0], [1, 0], [1, 1]]}"#;
+    for doc in [
+        r#"{"polygones": "x"}"#.to_string(),
+        r#"{"polygones": [null]}"#.to_string(),
+        r#"{"polygones": [{"vertices": [[0, 0], [1, 0], [1, 1]], "epaisseur": "x"}]}"#.to_string(),
+        format!(r#"{{"polygones": [{tri}], "pas": "x"}}"#),
+        format!(r#"{{"polygones": [{tri}], "pas": [1]}}"#),
+        format!(r#"{{"polygones": [{tri}], "pas": 1e-310}}"#),
+        format!(r#"{{"polygones": [{tri}], "sources": [{{"x": "a"}}]}}"#),
+    ] {
+        assert!(resoudre_document(&j(&doc), None).is_err(), "accepte : {doc}");
+    }
+}

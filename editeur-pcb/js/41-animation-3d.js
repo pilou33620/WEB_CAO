@@ -123,7 +123,7 @@ function anim3dDonnees(sansZone){
 
 /* ---------- les modèles 3D de la LIB ----------
    « Modèle 3D » nomme un STEP de LIB/Models ; son maillage (Models/maillages,
-   fait par python/maillages_3d.mjs) vient par /api/lib/fichier?type=modele3d.
+   fait par outils/maillages_3d.mjs) vient par /api/lib/fichier?type=modele3d.
    « Position 3D » le pose sur l'empreinte : « haut=Y+ rot=90 x=0.1 y=0 z=0.4 »,
    dans le repère de l'empreinte, Y vers le haut. */
 function anim3dLigneLib(fp){

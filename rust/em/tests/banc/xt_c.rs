@@ -1,9 +1,9 @@
 //! python/test/banc-crosstalk.py, troisieme partie : l'impedance commune d'une fente (Ott,
 //! puis le PEEC), les formules du niveau 2, la triplaque exacte, les classes d'interface.
 //!
-//! EN ATTENTE DE rf_reseau : « rf_reseau : deux instances SPICE ont chacune leurs noeuds
-//! internes » (`rf_reseau.ModeleSpice`). EN ATTENTE DE analyse_carte : la comparaison au fil
-//! fin (`analyse_carte._kb_larges_faces`) du cas « deux niveaux », dont le reste est porte.
+//! « rf_reseau : deux instances SPICE ont chacune leurs noeuds internes » est dans le banc de
+//! rf_reseau (`restes`) ; la comparaison au fil fin (`analyse_carte._kb_larges_faces`) du cas
+//! « deux niveaux » dans celui d'analyse_carte (`restes`).
 
 use crate::xt::*;
 use crate::*;
@@ -859,8 +859,8 @@ fn deux_niveaux_tient_cohn_et_rejoint_le_fil_fin() {
     let r = tl::section_deux_niveaux(&[tl::Ruban { x: 0.0, y: 0.2e-3, w: 20e-6 },
                                        tl::Ruban { x: 2e-3, y: 0.4e-3, w: 20e-6 }], None, 1.0, 30, 8).unwrap();
     let _kb = ct::coefficients_couple(&r.c, &r.l, 0, 1).0;
-    // EN ATTENTE DE analyse_carte : ki = ac._kb_larges_faces(0.2, 0.4, 2.0, 0.02, 0.02),
-    // et |kb / ki - 1| < 0,05.
+    // ki = ac._kb_larges_faces(0.2, 0.4, 2.0, 0.02, 0.02) et |kb / ki - 1| < 0,05 : dans le
+    // banc d'analyse_carte (`restes`), qui depend de cette caisse.
     assert!((r.c[0][1] - r.c[1][0]).abs() < 1e-9 * r.c[0][1].abs(), "{:?}", r.c);
 }
 
@@ -969,6 +969,5 @@ pub fn banc() {
       une_classe_d_interface_a_son_front_et_sa_famille);
     T("classes d'interface : la table des pages est celle du serveur",
       la_table_des_pages_est_celle_du_serveur);
-    // EN ATTENTE DE rf_reseau : « rf_reseau : deux instances SPICE ont chacune leurs noeuds
-    // internes » (deux_instances_spice_ne_partagent_pas_leurs_noeuds).
+    // « rf_reseau : deux instances SPICE ont chacune leurs noeuds internes » : banc de rf_reseau.
 }

@@ -1,5 +1,5 @@
 //! Les essais : les assertions de python/test/banc-oeil.py qui visent ibis, et la non-regression
-//! contre les references figees de essais/ (voir essais/references.py, qui les tire du Python).
+//! contre les references figees de essais/ (tirées de l'ancien python/ibis.py, avant son retrait).
 
 use std::collections::HashMap;
 use std::f64::consts::PI;
@@ -427,7 +427,7 @@ fn la_chaine_de_parametres_ami_s_ecrit_et_se_relit() {
     }
 }
 
-/// La bibliotheque AMI d'essai (essais/ami_ffe.c, celle de python/test/ami_test), compilee a la
+/// La bibliotheque AMI d'essai (essais/ami_ffe.c), compilee a la
 /// volee : AMI_Init applique la FFE a l'impulsion, AMI_GetWave a la forme d'onde, bloc apres
 /// bloc ; le chemin n'est accepte que sous une racine ; une bibliotheque sans AMI_Init n'est pas
 /// un modele. Sans compilateur, le cas ne verifie que les refus.

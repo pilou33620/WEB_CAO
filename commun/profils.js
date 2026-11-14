@@ -11,7 +11,7 @@
 
    Deux stockages, et ce n'est pas une hésitation :
 
-     · profils/<nom>.json, sur le disque, écrit par web_CAO.py — c'est le
+     · profils/<nom>.json, sur le disque, écrit par web_cao — c'est le
        profil, celui qu'on sauvegarde, qu'on copie sur un autre poste, qu'on
        lit dans un éditeur de texte. C'est ce que demandait le besoin : un
        fichier par utilisateur, portant son nom.
@@ -331,7 +331,7 @@ function profSupprimer(brut){
 }
 
 /* ==========================================================================
-   Fichier profils/<nom>.json — par web_CAO.py
+   Fichier profils/<nom>.json — par web_cao
    ========================================================================== */
 function profEnLigne(){
   try{
@@ -482,7 +482,7 @@ function profMenuConstruire(){
        '<div class="mnote">' +
        (PROF_SERVEUR === false
          ? "Préférences gardées dans ce navigateur : sans " +
-           "<code>web_CAO.py</code>, aucun fichier ne peut être écrit."
+           "<code>web_cao</code>, aucun fichier ne peut être écrit."
          : "Préférences enregistrées dans " + esc(profEtat().fichier) + ".") +
        '</div>';
   m.innerHTML = h;

@@ -2,7 +2,7 @@
 
 Une carte d'essai à faire fabriquer, six couples agresseur / victime, et de quoi comparer **trois résultats** sur les mêmes cas :
 
-1. **WEB_CAO** : l'onglet *Crosstalk* (niveau 2, `python/crosstalk.py`), par le même chemin que le bouton « Analyser la piste » ;
+1. **WEB_CAO** : l'onglet *Crosstalk* (niveau 2, `rust/em/src/crosstalk`), par le même chemin que le bouton « Analyser la piste » ;
 2. **ANSYS SIwave** : le *Crosstalk Scan* dans le domaine temporel, sur la même carte importée ;
 3. **la mesure** : un générateur d'impulsions et un oscilloscope sur la carte réelle.
 
@@ -13,7 +13,7 @@ bancs-mesure/crosstalk/
   docs-sim/casN.json        ces documents, figés : le banc tourne sans navigateur
   sortie/banc-crosstalk-PCB.json   la carte générée (à ouvrir dans l'Éditeur PCB)
   (rust/outils) banc-crosstalk-mesure  prévisions WEB_CAO + comparaison aux relevés
-                            (le moteur est encore python/crosstalk.py, appelé par l'outil)
+                            (le moteur est rust/em/src/crosstalk, appelé directement)
   releves.csv               à remplir : mesure et SIwave
 ```
 

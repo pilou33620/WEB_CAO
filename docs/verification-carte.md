@@ -71,7 +71,7 @@ signale.
 **En ligne de commande** (angles seulement, sans empilage) :
 
 ```bash
-python python/analyse_carte.py IPC2581_Exemple/P01x274PCB-C.xml
+cargo run -p analyse_carte --bin comparer_analyse -- --ipc IPC2581_Exemple/P01x274PCB-C.xml
 ```
 
 ---
@@ -764,11 +764,11 @@ Le détail, avec ce que chaque point réutilisera, est dans
 
 | Où | Quoi |
 | :--- | :--- |
-| `python/analyse_carte.py` | les règles : `angles`, `orphelins`, `empilage`, `impedances`, `retours`, `fentes`, `coutures` (et la clôture du bord), `diaphonie`, `paires_diff`, `decouplages` (`_Chemins`), `bords`, `moignons_vias`, `branches_t` (`_graphe_topo`), `quartz`, `esd`, `courants` ; `_Surfaces` peint le cuivre des surfaces une fois ; `analyser_document` les enchaîne et rend la durée de chacune |
-| `web_CAO.py` | route `POST /api/analyse-carte` (plafond 32 Mo) |
+| `rust/analyse_carte` | les règles : `angles`, `orphelins`, `empilage`, `impedances`, `retours`, `fentes`, `coutures` (et la clôture du bord), `diaphonie`, `paires_diff`, `decouplages` (`_Chemins`), `bords`, `moignons_vias`, `branches_t` (`_graphe_topo`), `quartz`, `esd`, `courants` ; `_Surfaces` peint le cuivre des surfaces une fois ; `analyser_document` les enchaîne et rend la durée de chacune |
+| `web_cao` | route `POST /api/analyse-carte` (plafond 32 Mo) |
 | `commun/simulation-em.js` | famille « Audit de la carte », réglages, rapport, marque sur la carte, export |
 | `visionneuse-ipc2581/js/07-simulation.js`, `editeur-pcb/js/19-simulation.js` | `carteEntiere()` : ce que chaque outil envoie |
-| `python/simulation_em.py`, `python/crosstalk.py`, `python/ligne_mom.py`, `python/rf_reseau.py` | les moteurs réutilisés (retour, cavité, section MoM, Kb/Kf, Z_diff, fente d'Ott) |
+| `rust/em/src/simulation_em`, `rust/em/src/crosstalk`, `rust/ligne_mom`, `rust/rf_reseau` | les moteurs réutilisés (retour, cavité, section MoM, Kb/Kf, Z_diff, fente d'Ott) |
 
 **Le cuivre des surfaces, peint une fois.** Plans et versements arrivent en
 contours ; plusieurs règles posent la même question en des milliers de points
@@ -787,6 +787,6 @@ l'empilage, les fiches de via de chaque net de signal (même format que
 Current Return Path), la nature de chaque net, les nœuds bruyants, les paires
 différentielles, la masse de référence, les `courants` par rail (facultatif)
 et les réglages (dont `porteuse_rf` et `fmax`). Bancs :
-`python/test/banc-analyse-carte.py` (25 cas), `banc-serveur-routes.py`, et
+`rust/analyse_carte/tests/banc` (25 cas), `rust/serveur/tests/bancs`, et
 les essais des deux harnais (15 « Vérification de la carte » dans l'éditeur,
 3 dans la visionneuse, 4 avec le contre-perçage).

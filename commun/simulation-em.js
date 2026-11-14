@@ -42,7 +42,7 @@
    la carte. En ajouter une, c'est ajouter une entrée — l'onglet apparaît seul.
 
    CE QUE FAIT « IMPÉDANCE » : le serveur résout la section droite de chaque
-   tronçon par méthode des moments (`python/ligne_mom.py`), rend son impédance
+   tronçon par méthode des moments (`rust/ligne_mom`), rend son impédance
    caractéristique à la fréquence centrale, et les paramètres S de la liaison
    entière par mise en cascade. La page peint le résultat SUR la piste et
    l'écrit à côté.
@@ -92,7 +92,7 @@
    sépare sont comptés et tus : le plan est un écran, et c'est la raison d'être
    de l'empilage.
 
-   Le solveur est en Python et en numpy : un navigateur ne peut pas l'exécuter,
+   Le solveur est un exécutable natif (Rust) : un navigateur ne peut pas l'exécuter,
    et c'est la seule raison pour laquelle ce fichier parle à un serveur — le
    chemin est exactement celui de la visionneuse IPC-2581.
 
@@ -222,7 +222,7 @@
 
 const SIM_ROUTE="/api/simulation";
 const SIM_DC_ROUTE="/api/simulation-dc";
-const SIM_DC_FORMAT="cao-sim-dc-1";   // FORMAT de python/dc_solver.py
+const SIM_DC_FORMAT="cao-sim-dc-1";   // FORMAT de rust/dc_solver
 
 /* ===========================================================================
    LIGNE DE TRANSMISSION, FORMULE LÉGÈRE
@@ -236,7 +236,7 @@ const SIM_DC_FORMAT="cao-sim-dc-1";   // FORMAT de python/dc_solver.py
    là où le solveur de section donne 48,0 —, et l'écart passait pour le prix de
    la formule légère alors que c'était un terme manquant.
 
-   LES FLANCS SONT DANS L'AIR (constat 30, python/ligne_mom.py 2.12.0) : le
+   LES FLANCS SONT DANS L'AIR (constat 30, rust/ligne_mom 2.12.0) : le
    ruban élargi n'a pas la même largeur avec et sans diélectrique. Hammerstad
    et Jensen (IEEE MTT-S Digest 1980, éq. 6-7) élargissent de
        Δw1 = (t/π) ln(1 + 4e h / (t coth² √(6,517 w/h)))      dans l'air,
@@ -247,7 +247,7 @@ const SIM_DC_FORMAT="cao-sim-dc-1";   // FORMAT de python/dc_solver.py
    εeff MONTAIT avec l'épaisseur au lieu de baisser.
 
    `ltWeff` rend la largeur DANS L'AIR (celle de `_largeur_effective()` du
-   Python, même formule), `ltWeffDiel` celle avec le stratifié (sa
+   solveur, même formule), `ltWeffDiel` celle avec le stratifié (sa
    `_part_des_flancs()` pour un microruban nu : la formule légère ne connaît ni
    vernis ni couverture). Les ε(w) et Z_air(w) restent les formes fermées de
    la page (Hammerstad 1975), pas celles, ajustées, de 1980. */
@@ -280,7 +280,7 @@ function ltEeff(g,w){
 /* Impédance caractéristique. Microruban : Hammerstad-Jensen, en deux branches
    selon que la piste est plus étroite ou plus large que la hauteur du
    diélectrique — c'est la même courbe, mais aucune des deux expressions ne la
-   suit sur toute sa longueur. Triplaque : Wheeler 1978, celle du Python.
+   suit sur toute sa longueur. Triplaque : Wheeler 1978, celle du solveur.
 
    UNE SEULE FORMULE LÉGÈRE pour l'éditeur PCB et la visionneuse (et `dpZ0()`
    des paires différentielles) : deux copies avaient divergé — arrondi d'ε_eff
@@ -289,7 +289,7 @@ function ltEeff(g,w){
    dichotomie ; l'affichage arrondit.
 
    CE QUE CETTE FORMULE EST, ET CE QU'ELLE N'EST PAS. C'est l'aperçu : elle
-   répond au clic, sans serveur ni Python, et elle vaut mieux que le pour cent
+   répond au clic, sans serveur, et elle vaut mieux que le pour cent
    sur un microruban courant. Elle ne voit pas ce que voit le panneau
    « Simulation EM » — une triplaque décentrée, une piste interne couverte, une
    section qui sort de son domaine d'ajustement. Les deux ne se remplacent pas
@@ -298,7 +298,7 @@ function ltZ0(g,w){
   if(!(w>0))return 0;
   if(g.kind==="strip"){
     /* Wheeler 1978 (Wadell 3.5.1), mot pour mot `_z_air_triplaque()` de
-       python/ligne_mom.py, divisée par √εr. L'IPC-2141A ne vaut que sous
+       rust/ligne_mom, divisée par √εr. L'IPC-2141A ne vaut que sous
        w/b ≈ 0,35 et rendait 0 dès que son logarithme passait sous 1 — une
        piste large sur un stratifié mince. b est l'écart entre les plans. */
     const b=Math.max(g.b,1e-4), t=g.t||0, x=t/b;
@@ -1191,9 +1191,9 @@ function simParseResistance(val){
    L'ANALYSE « CHUTE DC » (IR drop), famille PI
 
    CE QUE C'EST. Pas de l'électromagnétisme : un problème résistif sur les
-   formes de cuivre, sans fréquence — `python/dc_solver.py`, un réseau de
+   formes de cuivre, sans fréquence — `rust/dc_solver`, un réseau de
    résistances sur une trame carrée et un gradient conjugué. Vérifié contre
-   ρL/(Wt), qui se pose à la main : 16 cas dans `python/test/banc-dc.py`.
+   ρL/(Wt), qui se pose à la main : 16 cas dans `rust/dc_solver/tests/banc_dc.rs`.
 
    LE VOCABULAIRE, ET IL EST CELUI DU SCHÉMA. Deux sortes de bornes, et elles
    ne se règlent pas avec la même grandeur :
@@ -1235,7 +1235,7 @@ function simParseResistance(val){
    « Stratifié » du panneau qui l'emporte pour λ — aucun fichier de CAO ne le
    porte. LA CHARTE RESTE CALCULÉE ET RENDUE À CÔTÉ : quand les deux s'écartent,
    c'est que la carte évacue, et c'est ce qu'on veut savoir. Voir
-   `simDCThermique` et `python/dc_solver.py`.
+   `simDCThermique` et `rust/dc_solver`.
 
    L'ADAPTATEUR :
 
@@ -1772,7 +1772,7 @@ function simDCListeUnite(id,b){
    rétrécissements les plus fins ne sont plus décrits.
    ========================================================================== */
 const SIM_DC_CARREAUX_MINI=8;      // dans la largeur de la forme la plus fine
-const SIM_DC_NOEUDS_CIBLE=250000;  // MAX_NOEUDS de dc_solver.py est à 400 000
+const SIM_DC_NOEUDS_CIBLE=250000;  // MAX_NOEUDS de dc_solver est à 400 000
 /* ===========================================================================
    DEUX BUDGETS, ET LE SECOND MANQUAIT — CE QUI RENDAIT LE CALCUL IMPOSSIBLE
    ---------------------------------------------------------------------------
@@ -1804,7 +1804,7 @@ const SIM_DC_NOEUDS_CIBLE=250000;  // MAX_NOEUDS de dc_solver.py est à 400 000
    deux. La marge de 0,8 sur le plafond de grille couvre le `ceil()` et le
    « + 1 » par axe que `mailler` ajoute.
    =========================================================================== */
-const SIM_DC_CARREAUX_MAX=1600000;   // MAX_NOEUDS * 4 de dc_solver.py
+const SIM_DC_CARREAUX_MAX=1600000;   // MAX_NOEUDS * 4 de dc_solver
 const SIM_DC_MARGE_GRILLE=0.8;       // le ceil() et le +1 par axe de mailler
 
 function simDCFinesse(polygones){
@@ -2529,7 +2529,7 @@ function simRendreDC(){
     const l=simEl("simDCListe");
     if(l)l.innerHTML="";
     return '<p class="simEtat">Le solveur de chute continue existe et '+
-      'est vérifié (<code>python/dc_solver.py</code>), mais '+
+      'est vérifié (<code>rust/dc_solver</code>), mais '+
       (SIM_ED&&SIM_ED.outil?'<b>'+SIM_ED.outil+'</b>':'cet outil')+
       ' ne sait pas encore lui livrer le cuivre à analyser.</p>';
   }
@@ -2609,7 +2609,7 @@ function simRendreDC(){
    n'existe pas — on le dit, et on ne juge que la température.
    ========================================================================== */
 /* LA CONSIGNE DU RAIL D'UN NET : la plus haute source de CE net — c'est à elle
-   que le serveur rapporte la chute (`consigne_du_net`, python/dc_solver.py).
+   que le serveur rapporte la chute (`consigne_du_net`, rust/dc_solver).
    Un net sans source à lui retombe sur la plus haute de la carte. Rapporter
    200 mV perdus sur un 3,3 V au 5 V d'à côté donnait 4 % au lieu de 6. */
 function simDCConsigne(res,net){
@@ -4443,7 +4443,7 @@ function simCarteRetenir(parValeur){
 
 /* ==========================================================================
    Trouver le serveur
-   L'origine qui sert la page, et elle seule : web_CAO.py refuse toute autre
+   L'origine qui sert la page, et elle seule : web_cao refuse toute autre
    origine (une page en file:// ne peut pas l'appeler). La sonde ne se fait
    qu'une fois par session.
    ========================================================================== */
@@ -4480,7 +4480,7 @@ async function simConnecter(){
     }
   }
   throw new Error("Aucun serveur pour calculer.\n\n"+
-    "Le solveur est en Python : lancez « python web_CAO.py » depuis le dossier "+
+    "Les solveurs tournent sur le serveur : lancez « demarrer_WEB_CAO » depuis le dossier "+
     "du dépôt, puis ouvrez cette page par l'adresse qu'il affiche.\n\n"+
     "Tentatives :\n  "+essais.join("\n  "));
 }
@@ -5092,7 +5092,7 @@ function simSection(res){
        /* LE MASQUE DE SOUDURE, sur une piste de couche extérieure, compte : il
           remplit l'écart coplanaire, là où le champ est le plus fort — deux à
           trois pour cent de Z₀ en moins. Le serveur le pose désormais lui-même
-          (`_masque_exterieur`, python/simulation_em.py : celui de l'empilage,
+          (`_masque_exterieur`, rust/em/src/simulation_em : celui de l'empilage,
           sinon 25 µm à ε_r 3,8) et le rend dans `s.masque` : on dit alors ce
           qui a été COMPTÉ. La note « non compté » ne reste que pour un
           résultat qui ne le porte pas. Le dire ICI, sur la section concernée :
@@ -7689,7 +7689,7 @@ function simBrancherRetourFiche(){
    VÉRIFICATION DE LA CARTE (famille « Audit de la carte »)
    --------------------------------------------------------------------------
    Toute la carte, tous les nets, sans sélection, jugée par le serveur
-   (python/analyse_carte.py, route /api/analyse-carte) : les angles des
+   (rust/analyse_carte, route /api/analyse-carte) : les angles des
    pistes et les bouts orphelins, l'empilage, puis l'impédance de chaque net,
    le chemin de retour de chaque via, les fentes des plans de référence, les
    vias de couture, la diaphonie, les paires différentielles, le découplage
@@ -7709,7 +7709,7 @@ function simBrancherRetourFiche(){
    cache, et les règles à venir le jugeraient comme lent sans le dire.
    ========================================================================== */
 const SIM_CARTE_ROUTE="/api/analyse-carte";
-const SIM_CARTE_FORMAT="cao-analyse-carte-1";   // FORMAT de python/analyse_carte.py
+const SIM_CARTE_FORMAT="cao-analyse-carte-1";   // FORMAT de rust/analyse_carte
 const SIM_CARTE={res:null,err:"",occupe:false,actif:-1,unite:1,parDefaut:[],natures:{},
   tout:false,           // tous les constats peints sur la carte, pas seulement le choisi
   /* Les réglages : cadences en Hz, fronts en s (comme `SIM.saisie`), Ω, %.
@@ -8717,7 +8717,7 @@ function simCouplageVide(quoi){
     return '<p class="simEtat">Ce serveur ne rend pas de couplage.<br>'+
       "<small>La réponse ne porte pas de section « couplage » : le solveur "+
       "est d'une version antérieure à celle qui résout N conducteurs. "+
-      "Relancez <code>python web_CAO.py</code> depuis ce dépôt.</small></p>";
+      "Relancez <code>demarrer_WEB_CAO</code> depuis ce dépôt.</small></p>";
   if(!c.voisinage)
     return '<p class="simEtat">Aucun cuivre voisin n’a été envoyé.<br>'+
       "<small>Le couplage se calcule entre la sélection et ce qui la longe ; "+
@@ -10420,10 +10420,10 @@ function simZPeindreCurseur(c,dpr,w2e){
    deux seuils réglables — pour le NEXT, pour le FEXT, et pour la paire (le
    pire des deux).
 
-   DEUX PORTÉES, LE MÊME CALCUL. La PISTE SÉLECTIONNÉE (python/crosstalk.py) :
+   DEUX PORTÉES, LE MÊME CALCUL. La PISTE SÉLECTIONNÉE (rust/em/src/crosstalk) :
    ses voisines trouvées seules, le tableau Niveau 2, et la carte locale — OÙ,
    le long du parcours, le NEXT se fabrique. TOUTE LA CARTE
-   (python/analyse_carte.py, règle « diaphonie ») : toutes les paires voisines
+   (rust/analyse_carte, règle « diaphonie ») : toutes les paires voisines
    sous le t_r global, avec les mêmes formules et les mêmes seuils. Ces deux
    réglages-là — t_r global et seuils — sont ceux de la vérification de carte :
    un seul jeu, donc jamais deux verdicts pour le même longement.
@@ -14243,7 +14243,7 @@ if (typeof window !== "undefined" && SIM_PARASITES_MURATA) {
 if (typeof global !== "undefined" && SIM_PARASITES_MURATA) {
   global.SIM_PARASITES_MURATA = SIM_PARASITES_MURATA;
 }
-/* Servie par web_CAO.py, la table est relue dans les .sub de lib_simulation :
+/* Servie par web_cao, la table est relue dans les .sub de lib_simulation :
    un modèle ajouté à la bibliothèque compte sans rien régénérer. Elle complète
    l'objet en place — les deux noms (variable et window) le voient. Hors
    serveur (monofichier ouvert en double-clic), la copie ci-dessus reste. */
@@ -17111,7 +17111,7 @@ function simPDNExportJson() {
    bout, et qu'est-ce qu'il faut retoucher ?
 
    LA PAGE TROUVE LE RÉSEAU (`simRfProbleme`), LE SERVEUR LE CALCULE
-   (`/api/simulation-rf`, `python/rf_reseau.py`) : les pistes par le solveur
+   (`/api/simulation-rf`, `rust/rf_reseau`) : les pistes par le solveur
    de l'onglet Impédance, les composants par leurs modèles, le tout en
    paramètres S GÉNÉRALISÉS sur les deux impédances complexes des ports.
 
@@ -18562,14 +18562,14 @@ function simRfApres(){
    DIAGRAMME DE L'ŒIL
    --------------------------------------------------------------------------
    La liaison vue par le récepteur, bit après bit, et le gabarit du protocole.
-   Le calcul est au serveur (`/api/oeil`, `python/oeil.py`) : la sélection part
+   Le calcul est au serveur (`/api/oeil`, `rust/oeil`) : la sélection part
    EXACTEMENT comme sous « Impédance » — ou comme sous « Z différentielle » pour
    une paire —, le serveur la cascade sur une grille fine, la ferme sur
    l'émetteur et le récepteur, et rend l'œil PRBS, l'œil pire cas et le
    contrôle du gabarit. Ce panneau ne fait que saisir et dessiner.
 
    LES GABARITS VIENNENT DU SERVEUR (GET /api/oeil) et ne sont pas recopiés
-   ici : un gabarit corrigé dans `oeil.py` l'est dans les deux outils. Chacun
+   ici : un gabarit corrigé dans `oeil` l'est dans les deux outils. Chacun
    porte sa FIABILITÉ — les normes sont payantes, et une valeur qui n'a pas pu
    être recoupée le dit à l'écran, à côté du verdict.
    ========================================================================== */
@@ -18647,7 +18647,7 @@ async function simOeilCharger(){
     const rep=await fetch(SIM_BASE+SIM_OEIL_ROUTE,{headers:{Accept:"application/json"}});
     if(rep.status===404)
       throw new Error("Ce serveur ne connaît pas le diagramme de l'œil : "+
-        "relancez « python web_CAO.py » depuis une version à jour du dépôt.");
+        "relancez « demarrer_WEB_CAO » depuis une version à jour du dépôt.");
     const j=await rep.json();
     if(!j||!j.dispo)throw new Error((j&&j.detail)||"Diagramme de l'œil indisponible.");
     SIM_OEIL.gabarits=j.gabarits||[];
@@ -18860,7 +18860,7 @@ function simOeilBer(b){
 
 /* LES MODÈLES IBIS. Le fichier est lu ICI (FileReader), sa liste de [Model]
    tirée d'une lecture légère pour le menu, et le texte entier part avec la
-   requête : c'est le serveur (`python/ibis.py`) qui le lit pour de bon et
+   requête : c'est le serveur (`rust/ibis`) qui le lit pour de bon et
    qui refuse, avec la ligne fautive, ce qu'il ne comprend pas. */
 function simOeilIbisModeles(txt){
   const out=[];
@@ -20520,8 +20520,8 @@ function simProgres(detail,faits,total){
   h+='<p class="simNote">· '+esc(detail)+"</p>";
   /* OÙ REGARDER QUAND C'EST LONG. Le terminal du serveur porte une ligne par
      étape, avec sa durée : c'est le seul endroit qui dise LAQUELLE coince. */
-  h+='<p class="simNote">· Le terminal du serveur (<code>python '+
-     "web_CAO.py</code>) écrit une ligne par étape, avec sa durée : c'est là "+
+  h+='<p class="simNote">· Le terminal du serveur (<code>demarrer_WEB_CAO'+
+     "</code>) écrit une ligne par étape, avec sa durée : c'est là "+
      "que se lit ce qui prend du temps.</p>";
   return h+"</div>";
 }
@@ -20599,8 +20599,8 @@ function simRendreImpedance(){
     "<b>Ctrl+clic</b> : ajouter un morceau à la sélection — chaque parcours "+
     "continu est alors calculé SÉPARÉMENT, ce qu'il faut pour vérifier une "+
     "ligne RF coupée par des composants.<br>"+
-    "Le calcul a lieu sur le serveur (<code>python web_CAO.py</code>) : le "+
-    "solveur est en Python.</small></p>";
+    "Le calcul a lieu sur le serveur (<code>demarrer_WEB_CAO</code>), pas "+
+    "dans le navigateur.</small></p>";
 }
 
 /* ==========================================================================

@@ -1,6 +1,6 @@
 # Releves du calculateur de lignes de uSimmics, a remplir a la main.
 # Une ligne par configuration ; laisser vide ce qui n'est pas encore releve.
-# Les virgules decimales sont acceptees. Puis : python python/test/banc-usimmics.py
+# Les virgules decimales sont acceptees. Puis : cargo test -p em -- --nocapture
 cas;S_mm;Z_even;Z_odd;eps_even;eps_odd
 cas1;0.2;;;;
 cas1;0.35;;;;

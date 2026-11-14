@@ -682,7 +682,7 @@ pub fn simuler(doc: &mut Json, mut journal: Option<&mut dyn FnMut(&str)>, garder
 
     let mut entete = vec![
         "Genere par WEB_CAO -- MoM quasi-statique sur la section droite\
-         \x20(python/ligne_mom.py), mise en cascade ABCD".to_string(),
+         \x20(rust/ligne_mom), mise en cascade ABCD".to_string(),
         format!("Source : {}", ou_txt(&doc["source"], "inconnue")),
         format!("Carte : {}", ou_txt(&doc["carte"], "-")),
         format!("Net : {}", ou_txt(&doc["net"], "-")),

@@ -1,6 +1,6 @@
 /* Modele IBIS-AMI d'essai : une FFE a deux coefficients.
  *
- * Compile a la volee par python/test/banc-oeil.py :
+ * Compile a la volee par les bancs de rust/ibis et de rust/oeil :
  *     cc -shared -fPIC -o ami_ffe.so ami_ffe.c
  * et execute par `ibis.ModeleAmi` (ctypes). Il n'a d'autre but que de
  * verifier la chaine d'execution de l'oeil : l'impulsion rendue par AMI_Init

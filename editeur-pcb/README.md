@@ -12,8 +12,8 @@ de la netlist produite par l'éditeur schématique.
 
 Les scripts sont des scripts classiques, pas des modules : `editeur-pcb.html`
 s'ouvre directement depuis le disque, sans serveur local, et n'a alors besoin de
-rien. Les calculs Python (simulation EM, échauffement) demandent en revanche le
-serveur `web_CAO.py`, qui exige numpy et scipy.
+rien. Les calculs (simulation EM, échauffement) demandent en revanche le
+serveur `web_cao` (`demarrer_WEB_CAO`).
 
 ## Arborescence
 
@@ -1640,9 +1640,9 @@ sont dessinées à côté de la carte, avec la carte nue puis pour le tour final
 
 Un composant dont la LIB a un modèle 3D est dessiné avec ce modèle : colonne
 « Modèle 3D » (un STEP de `LIB/Models`), posé selon « Position 3D », et
-maillé d'avance dans `LIB/Models/maillages` par `python/maillages_3d.mjs`
+maillé d'avance dans `LIB/Models/maillages` par `outils/maillages_3d.mjs`
 (à relancer après avoir ajouté des STEP : `npm install occt-import-js`, puis
-`node python/maillages_3d.mjs <dossier LIB>`). La ligne LIB se trouve par la
+`node outils/maillages_3d.mjs <dossier LIB>`). La ligne LIB se trouve par la
 Part Name, la référence fabricant, la valeur (carte IPC-2581), sinon c'est le
 modèle le plus courant de la même empreinte LIB. Un modèle mal posé se
 corrige dans la LIB, colonne « Position 3D » (`haut=Y+ rot=90 x=0 y=0 z=0.4` :
@@ -1745,8 +1745,8 @@ réserve, rien d'inventé :
 | `<Impedance value tolPlus tolMinus tolPercent>` | l'impédance cible (classe, net ou paire), l'élément normalisé, avec sa structure de ligne sur chaque couche de signal qui a un plan : `<SingleEnded>` ou `<EdgeCoupled>` (`STRIPLINE_SYMMETRIC` / `_ASYMMETRIC`, `MICROSTRIP_MASK_COVERED` / `_EMBEDDED`), `LineWidth`, `Spacing`, `RefPlane` |
 | `<Set netPair>` | chaque jeu de cuivre d'un net apparié nomme sa partenaire |
 
-Le lecteur de la visionneuse (`python/ipc2581_parser.py` 1.80,
-`ipc2581_json.py` → `regles`) les relit : une carte exportée puis rouverte
+Le lecteur de la visionneuse (`caisse ipc2581 de web_suite` 1.80,
+`ipc2581_json` → `regles`) les relit : une carte exportée puis rouverte
 dans la visionneuse retrouve ses classes et ses paires sans reclassement, la
 correction à la main restant possible.
 
@@ -2841,19 +2841,11 @@ ne répond ne veut rien dire.
 La section précédente dégrossit — une formule fermée, une piste, un plan. Le
 panneau **« Simulation EM »**, ouvert par l'entrée du même nom dans le menu
 *Outils*, fait l'autre calcul : la **section droite** de chaque tronçon
-sélectionné part au solveur `python/ligne_mom.py`, qui la résout
+sélectionné part au solveur `rust/ligne_mom`, qui la résout
 par méthode des moments et rend son impédance caractéristique. La carte se
 colore, et la valeur s'écrit dessus.
 
-numpy et scipy sont obligatoires pour le serveur : sans eux, `web_CAO.py`
-s'arrête dès le démarrage (code 3) en disant quoi installer. À la racine du
-dépôt :
-
-```bash
-pip install -r requirements.txt
-```
-
-Le solveur est en Python et en numpy : le navigateur ne peut pas l'exécuter, et
+Le solveur est dans le serveur (`rust/ligne_mom`, lancé par `demarrer_WEB_CAO`) : le navigateur ne peut pas l'exécuter, et
 c'est la seule raison pour laquelle cette fonction passe par le serveur —
 exactement comme la lecture d'un IPC-2581. Le panneau, lui, est commun aux deux
 outils (`../commun/simulation-em.js`) ; seul l'adaptateur `js/19-simulation.js`
@@ -3175,7 +3167,7 @@ et le phare du cross-probing : ni l'une ni l'autre ne décrivent la carte.
 | La cible, la tolérance, la fréquence, la bande | Ce qui est saisi dans le panneau |
 
 C'est le serveur qui cherche les plans de référence dans l'empilage
-(`section_de_couche`, `../python/simulation_em.py`), avec la même règle que
+(`section_de_couche`, `../rust/em/src/simulation_em`), avec la même règle que
 `dpStripGeom()` ici : le premier conducteur de rôle « plan » au-dessus et en
 dessous. Un empilage 4 couches dissymétrique est traité **tel quel**, ruban là
 où il est — c'est justement ce que la formule IPC de la section précédente ne
@@ -3337,7 +3329,7 @@ couloir de 2 mm est fixe plutôt que déduit de la hauteur au plan.
 Ce n'est pas une formule de plus : c'est un calcul de champ sur la section, qui
 converge quand on raffine. Il est vérifié contre des étalons extérieurs, et le
 banc d'essai le refait à chaque exécution
-(`../python/test/banc-ligne-mom.py`) :
+(`../rust/ligne_mom/tests/banc`) :
 
 | Géométrie | Étalon | Écart maximal |
 | --- | --- | --- |

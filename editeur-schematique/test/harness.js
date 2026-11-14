@@ -3025,7 +3025,7 @@ function TAcr(name,fn){
   });
 }
 
-/* réponse de la passerelle POST /api/tool : {name, arguments} -> {data} (python/passerelle_mcp.py) */
+/* réponse de la passerelle POST /api/tool : {name, arguments} -> {data} (rust/outils/src/passerelle_mcp.rs) */
 TAcr("recherche distributeurs : agrégation Mouser et DigiKey", async ()=>{
   const ancienFetch = global.fetch;
   global.fetch = async (url, opts) => {

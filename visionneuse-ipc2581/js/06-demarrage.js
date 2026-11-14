@@ -107,7 +107,7 @@ async function charger(fichier){
   attente(true,"Lecture de "+fichier.name+"…",
           /\.json$/i.test(fichier.name)
             ? "relecture d'un modèle déjà traduit"
-            : "le parseur Python travaille sur le serveur");
+            : "le parseur travaille sur le serveur");
   hint("Lecture de "+fichier.name+"…");
   try{
     const modele=await apiCharger(fichier);
@@ -181,7 +181,7 @@ function nomBase(){
    disque n'est possible.
 
    Un modèle traduit pèse lourd — 8 Mo pour une 4 couches de taille moyenne —
-   et la voie serveur plafonne à 16 Mo (MAX_PROJET, web_CAO.py). Au-delà,
+   et la voie serveur plafonne à 16 Mo (MAX_PROJET, web_cao). Au-delà,
    l'écriture est refusée et le téléchargement prend le relais, en le disant. */
 function exportJson(){
   if(!V.modele){ hint("Aucune carte ouverte : rien à enregistrer."); return Promise.resolve(false); }

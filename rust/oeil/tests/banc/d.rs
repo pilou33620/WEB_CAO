@@ -342,11 +342,11 @@ fn l_ami_lit_la_forme_d_onde_des_tampons_ibis() {
     proche(mes(&r, "v_max_vu"), mes(&r0, "v_max_vu"), 1e-6, "depassement des tampons");
 }
 
-/// La bibliotheque AMI d'essai (python/test/ami_test/ami_ffe.c), compilee
+/// La bibliotheque AMI d'essai (rust/ibis/essais/ami_ffe.c), compilee
 /// a la volee dans un dossier temporaire : (dossier, texte du .ami), ou
 /// None sans compilateur.
 fn _modele_ami_compile() -> Option<(String, String)> {
-    let src = format!("{}/../../python/test/ami_test", env!("CARGO_MANIFEST_DIR"));
+    let src = format!("{}/../ibis/essais", env!("CARGO_MANIFEST_DIR"));
     let d = std::env::temp_dir().join(format!("ami_essai_{}", std::process::id()));
     std::fs::create_dir_all(&d).ok()?;
     let fait = ["cc", "gcc", "clang"].iter().any(|cc| {

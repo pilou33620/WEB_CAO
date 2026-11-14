@@ -2,7 +2,7 @@
 /* =============================================================================
    visionneuse IPC-2581 — 07-simulation.js
    L'adaptateur qui relie la carte lue au solveur de section
-   (python/ligne_mom.py, via python/simulation_em.py). Ce n'est PAS
+   (rust/ligne_mom, via rust/em/src/simulation_em). Ce n'est PAS
    mom_solver/ : le moteur 2,5D pleine onde est hors du chemin de calcul, et
    docs/HISTORIQUE_DEVELOPPEMENT.md dit pourquoi.
 
@@ -787,7 +787,7 @@ const SIM_TOL_VIA_IPC = 0.02;           /* mm — la tolérance de raccord du se
 /* LE CONTRE-PERÇAGE D'UN TROU, AU FORMAT DU SERVEUR — le même que l'éditeur
    PCB (`simCotesVia`, editeur-pcb/js/19-simulation.js) : la face, la couche à
    ne pas couper (rang d'empilage, comme `layer_from`) et le moignon résiduel.
-   `_moignons` (python/simulation_em.py) y arrête le moignon de ce côté.
+   `_moignons` (rust/em/src/simulation_em) y arrête le moignon de ce côté.
 
    IL PART AVEC LA PORTÉE PERCÉE, ET SEULEMENT AVEC ELLE. Le serveur soustrait
    le moignon de la portée percée ; sans elle il ne peut rien conclure, et un
@@ -806,11 +806,11 @@ function simContrePercageIpc(t){
 }
 
 /* LA PORTÉE PERCÉE D'UN TROU, telle que le fichier la déclare (`sa` / `sb`,
-   ipc2581_json.py), en rangs d'empilage : {layer_from, layer_to}, ou null
+   ipc2581_json), en rangs d'empilage : {layer_from, layer_to}, ou null
    quand le fichier ne la dit pas, qu'une des deux couches n'est pas dans
    l'empilage de calcul, ou qu'elle ne joint qu'une couche.
 
-   CE QU'ELLE CHANGE AU SERVEUR. `_moignons` (python/simulation_em.py)
+   CE QU'ELLE CHANGE AU SERVEUR. `_moignons` (rust/em/src/simulation_em)
    soustrait le saut du signal de la portée percée : sans elle, le moignon est
    « inconnu », car un via traversant et un borgne bien ajusté ont la même
    apparence dans le reste du document. Le contre-perçage l'envoie toujours
@@ -857,7 +857,7 @@ function simViaAuRaccordIpc(N, x, y, cuA, cuB){
         pastille = Math.max(pastille, (q.d || 0) * k);
     /* LA PASTILLE DU PADSTACK, faute de pastille de composant au même
        endroit — et l'aveu qui va avec : sans définition dans le fichier,
-       `ipc2581_parser.py` la fabrique à « perçage + 0,3 mm ». */
+       `ipc2581_parser` la fabrique à « perçage + 0,3 mm ». */
     let sup = false;
     if(!(pastille > 0)){
       const ps = (V.modele && V.modele.padstacks) ? V.modele.padstacks[t.ps]
@@ -962,7 +962,7 @@ function simJonctionsIpc(N){
                pastille: 0, pastilleSup: false, perce: true};
     /* LA PASTILLE DU PERÇAGE SE LIT DANS SON PADSTACK — et il faut savoir si
        le fichier la déclare ou si le lecteur l'a devinée. Faute de définition,
-       `ipc2581_parser.py` en fabrique une à « perçage + 0,3 mm », soit un
+       `ipc2581_parser` en fabrique une à « perçage + 0,3 mm », soit un
        anneau de 0,15 posé par convention. C'est un repli honnête pour
        dessiner ; ce n'est pas une cote, et la faire entrer dans la capacité
        d'un via sans le dire reviendrait à inventer un chiffre. */
@@ -3258,7 +3258,7 @@ function simDCCuivreNetIpc(net,k,cpt){
         IPC-2581 la déclare sur le CALQUE de perçage
         (`<Layer layerFunction="DRILL"><Span fromLayer toLayer/>`), et le
         parseur la fait voyager en rangs de couche sous `sa` / `sb` — voir
-        `_lire_span` dans `python/ipc2581_parser.py`. Un via borgne ou
+        `_lire_span` dans `caisse ipc2581 de web_suite`. Un via borgne ou
         enterré ne relie donc plus que les couches qu'il traverse.
 
         CE QUE ÇA CORRIGEAIT, ET DANS LES DEUX SENS. Tous les trous étaient
@@ -3529,7 +3529,7 @@ function simDCCuivreNetIpc(net,k,cpt){
    qu'il sort des quinze degrés.
    ========================================================================== */
 const SIM_VOISINAGE_MAX_IPC=600;   /* tronçons envoyés ; au-delà, on écrête */
-const SIM_ECART_COUPLAGE_IPC=3.0;  /* mm ; ECART_COUPLAGE_MAX de simulation_em.py */
+const SIM_ECART_COUPLAGE_IPC=3.0;  /* mm ; ECART_COUPLAGE_MAX de simulation_em */
 
 /* ==========================================================================
    UNE PISTE N'EST PAS TOUJOURS UNE PISTE DANS LE FICHIER
@@ -3657,7 +3657,7 @@ function simVoisinageIpc(envoi,objets,adjacentes,refus){
   /* CHAQUE VOISINE PART AVEC SES DEUX ÉCARTS À LA MASSE, comme les tronçons de
      la sélection : c'est ce qui permet au serveur de savoir si du cuivre de
      masse S'INTERPOSE entre les deux pistes — voir `_masse_interposee` dans
-     `python/simulation_em.py`. Sans eux, deux pistes séparées par un plan
+     `rust/em/src/simulation_em`. Sans eux, deux pistes séparées par un plan
      arrosé se résolvaient comme deux pistes face à face au-dessus du
      diélectrique nu.
 
@@ -4588,7 +4588,7 @@ function simXtAretesIpc(coucheIdx){
 
    LA PORTÉE VIENT DU FICHIER QUAND IL LA DÉCLARE, et c'est le sens de l'erreur
    qui l'imposait. IPC-2581 la porte sur le calque de perçage (`<Span
-   fromLayer toLayer>`, voir `_lire_span` dans `python/ipc2581_parser.py`), et
+   fromLayer toLayer>`, voir `_lire_span` dans `caisse ipc2581 de web_suite`), et
    le modèle la transporte sous `sa` / `sb`. Un via enterré compté comme
    traversant fait passer pour REFERMÉ un retour qui ne l'est pas : ici,
    contrairement au solveur DC, l'erreur ne penche pas du côté prudent — elle
@@ -5594,7 +5594,7 @@ const SIM_IPC={
       if(t.sa!=null&&t.sb!=null){f.de=mdlCoucheNom(t.sa);f.a=mdlCoucheNom(t.sb);}
       /* contre-perçage : la face repercée, la couche à ne pas couper et le
          moignon résiduel, comme l'éditeur PCB — la règle des moignons de
-         vias (python/analyse_carte.py) y arrête le moignon de ce côté */
+         vias (rust/analyse_carte) y arrête le moignon de ce côté */
       const cp=mdlContrePercage(t);
       if(cp&&cp.complet)f.cp={cote:cp.cote,garde:cp.garde,res:cp.res};
       percages.push(f);

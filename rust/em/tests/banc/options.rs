@@ -387,10 +387,10 @@ fn la_section_passe_la_rugosite_de_son_plan() {
         proche(a_p / a_1, r_pl.r_ac_par_m / r_ru.r_ac_par_m, 3e-3,
                &format!("plan lisse sous ruban Rq 1 um a {:.0} GHz", f / 1e9));
     }
-    // EN ATTENTE DE rf_reseau : les deux dernieres verifications du cas Python --
+    // Les deux dernieres verifications du cas Python --
     // « la RF : la piste de masse de `rf_reseau` recoit la rugosite du plan »
     // (`rf_reseau._ligne(pl, ...)["kw_pertes"]["rugosite_plan"] == {}`, absent pour
-    // `egal`) -- suivront le portage de rf_reseau.
+    // `egal`) -- sont dans le banc de rf_reseau (`restes`).
 }
 
 /// `section_de_couche` : la plaque est le stratifie entier, et une couche

@@ -10,14 +10,7 @@ $RECYCLE.BIN/
 *.swp
 *.swo
 
-# Python (just in case, given the parent folder name)
-__pycache__/
-*.py[cod]
-*$py.class
-.venv/
-venv/
-ENV/
-env/
+# Secrets locaux
 .env
 
 # Node
@@ -25,9 +18,7 @@ node_modules/
 npm-debug.log
 yarn-error.log
 
-# Solveur EM
-# mom_solver/main.py, en ligne de commande, ouvre un journal a cote de lui.
-# Le serveur, lui, n'ecrit rien : /api/simulation calcule et rend, sans disque.
+# Sorties locales
 mom_solver.log
 exports/
 
@@ -42,7 +33,7 @@ exports/
 # local, propre a chaque machine.
 /config_lib.json
 
-# Doublons crees par l'explorateur Windows (« serveur - Copie.py »)
+# Doublons crees par l'explorateur Windows (« fichier - Copie.js »)
 * - Copie.*
 * - Copy.*
 

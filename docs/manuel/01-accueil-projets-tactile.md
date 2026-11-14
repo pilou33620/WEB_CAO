@@ -1,6 +1,6 @@
 # Accueil, projets, profils et gestes communs
 
-Ce chapitre décrit ce qui entoure les outils : la page d'accueil, le serveur local `web_CAO.py`, les projets sur disque, les utilisateurs, le mode tactile et la roulette, le mode tuto, ainsi que les gestes que partagent le schéma et le PCB (recherche, mesure, cross-probing, annuler/rétablir, variantes de montage, panneaux).
+Ce chapitre décrit ce qui entoure les outils : la page d'accueil, le serveur local `web_cao`, les projets sur disque, les utilisateurs, le mode tactile et la roulette, le mode tuto, ainsi que les gestes que partagent le schéma et le PCB (recherche, mesure, cross-probing, annuler/rétablir, variantes de montage, panneaux).
 Les raccourcis propres à un éditeur sont dans [l'Éditeur Schématique](02-editeur-schematique.md) et [l'Éditeur PCB](03-editeur-pcb-edition-routage.md) ; la tablette et le téléphone sont traités ici.
 L'accueil (`index.html`) s'ouvre en double-clic, sans serveur ; le serveur ajoute les projets sur disque, les profils en fichier, la LIB, la recherche de composants, la visionneuse IPC-2581 et les simulations.
 
@@ -9,17 +9,16 @@ L'accueil (`index.html`) s'ouvre en double-clic, sans serveur ; le serveur ajout
 ### Je veux lancer WEB_CAO
 
 1. Sans rien installer : ouvrir `index.html` dans un navigateur récent. Schéma, routage et exports de fabrication fonctionnent ; chaque outil s'ouvre dans un nouvel onglet et l'accueil reste ouvert.
-2. Avec le serveur local (Python 3, numpy et scipy) : installer d'abord numpy et scipy (`pip install -r requirements.txt`, ou `sudo apt install python3-numpy python3-scipy` sur Raspberry Pi), puis lancer `python web_CAO.py`. Le navigateur s'ouvre à la bonne adresse, sauf sur un Raspberry Pi ou un poste Linux sans affichage graphique (voir `--navigateur` / `--sans-navigateur`).
-3. Sous Windows, un double-clic sur `web_CAO.py` ou sur `demarrer_WEB_CAO.cmd` suffit. Le premier démarre en mode local ; le second passe `--local` explicitement et garde le message à l'écran si Python ne démarre pas.
-4. Sans numpy ou scipy, le serveur s'arrête aussitôt en disant quoi installer (code de sortie 3).
-5. Au démarrage, le serveur cherche une mise à jour sur GitHub (si `git` est présent et le dossier est un dépôt) et se relance si elle est appliquée ; hors ligne, ou si l'application échoue, il démarre quand même avec la version en place. `--sans-maj` désactive cette étape.
+2. Avec le serveur local : lancer `./demarrer_WEB_CAO.sh` (Linux, Raspberry Pi, macOS). Rien d'autre à installer : le lanceur met l'exécutable `web_cao` dans `bin/` (compilé sur place si `cargo` est présent, téléchargé depuis GitHub sinon). Le navigateur s'ouvre à la bonne adresse, sauf sur un Raspberry Pi ou un poste Linux sans affichage graphique (voir `--navigateur` / `--sans-navigateur`).
+3. Sous Windows, un double-clic sur `demarrer_WEB_CAO.cmd` suffit : il passe `--local` et garde le message à l'écran si le serveur ne démarre pas.
+4. Au démarrage, le serveur cherche une mise à jour sur GitHub (si `git` est présent et le dossier est un dépôt) et se relance si elle est appliquée ; hors ligne, ou si l'application échoue, il démarre quand même avec la version en place. `--sans-maj` désactive cette étape.
 
 > [!NOTE]
-> Une page ouverte en `file://` (double-clic) ne peut pas appeler le serveur : le serveur n'admet que sa propre origine. Pour tout ce qui passe par lui (simulations, LIB, visionneuse IPC-2581, recherche de composants, projets sur disque saisis par chemin), ouvrir la page à l'adresse qu'affiche `web_CAO.py`.
+> Une page ouverte en `file://` (double-clic) ne peut pas appeler le serveur : le serveur n'admet que sa propre origine. Pour tout ce qui passe par lui (simulations, LIB, visionneuse IPC-2581, recherche de composants, projets sur disque saisis par chemin), ouvrir la page à l'adresse qu'affiche `web_cao`.
 
 ### Je veux utiliser WEB_CAO depuis une tablette ou un téléphone
 
-1. Sur le poste ou le Raspberry Pi, lancer `python web_CAO.py` depuis un terminal (sans `--local`) : le serveur écoute sur le réseau et affiche son adresse, plus l'adresse Tailscale s'il y en a une.
+1. Sur le poste ou le Raspberry Pi, lancer `demarrer_WEB_CAO` depuis un terminal (sans `--local`) : le serveur écoute sur le réseau et affiche son adresse, plus l'adresse Tailscale s'il y en a une.
 2. Sur la tablette, ouvrir cette adresse dans le navigateur.
 3. À la première visite, la page demande un code d'appairage à 6 chiffres : le lire dans la console du serveur (ou dans les logs de WEB_CAO dans WEB·SUITE) et le saisir, puis « Valider ». L'appareil s'en souvient ensuite (cookie d'un an), pour tous les web tools de ce poste.
 4. Si la connexion est chiffrée (HTTPS), installer une fois le certificat de ce poste depuis le lien « le certificat de ce poste » de la page du code (`/appairage/ca.pem`). Sur iPad : Réglages, Profil téléchargé, Installer ; puis Général, Informations, Réglages des certificats, activer. Comparer l'empreinte SHA-256 du certificat, que l'appareil montre à l'installation, avec celle que le terminal affiche.
@@ -140,7 +139,7 @@ L'accueil (`index.html`) s'ouvre en double-clic, sans serveur ; le serveur ajout
 
 ### Je veux voir dans l'autre éditeur ce que je regarde ici
 
-1. Garder le schéma et le PCB ouverts dans deux onglets du même navigateur, servis par `web_CAO.py`.
+1. Garder le schéma et le PCB ouverts dans deux onglets du même navigateur, servis par `web_cao`.
 2. Sélectionner un seul composant (ou une seule empreinte) ; à défaut, au schéma sélectionner un fil (c'est le net du premier fil qui est montré), au PCB mettre un net en évidence. Puis `L` (Outils, « Montrer au PCB » ou « Montrer au schéma »). Le bouton est grisé si le navigateur n'a pas de canal entre onglets.
 3. L'autre onglet saute sur la cible sans que celui-ci bouge. Un message dit le résultat : montré, absent du document de l'autre onglet, aucun onglet ouvert sur l'autre outil, ou navigateur sans partage entre onglets.
 4. Pour changer d'outil dans le même onglet avec la cible : sélectionner d'abord, puis cliquer sur le bouton d'outil de l'entête (➔ vers le PCB, ⬅ vers le schéma). L'outil d'arrivée se place sur la cible.
@@ -205,7 +204,7 @@ L'accueil (`index.html`) s'ouvre en double-clic, sans serveur ; le serveur ajout
 | Carte « Éditeur PCB » | | Ouvre `editeur-pcb/editeur-pcb.html` | La simulation passe par le serveur |
 | Carte « Recherche de composants » | | Ouvre `recherche-composants/recherche-composants.html` | Demande le serveur |
 | Carte « Gestion LIB » | | Ouvre `gestion-lib/gestion-lib.html` | Demande le serveur |
-| Carte « Visionneuse IPC-2581 » | | Ouvre `visionneuse-ipc2581/visionneuse-ipc2581.html` | Le parseur est en Python : demande le serveur ; un `.json` exporté se rouvre sans serveur |
+| Carte « Visionneuse IPC-2581 » | | Ouvre `visionneuse-ipc2581/visionneuse-ipc2581.html` | Le parseur tourne dans le serveur ; un `.json` exporté se rouvre sans serveur |
 
 ### Page d'accueil : bloc « Projet »
 
@@ -256,7 +255,7 @@ L'accueil (`index.html`) s'ouvre en double-clic, sans serveur ; le serveur ajout
 | Ligne « Schéma / PCB » (derniers documents) | | Jusqu'à 4 derniers noms et dates par outil | Mémoire de noms, pas un raccourci : le navigateur ne rouvre pas un fichier à partir de son nom |
 | Case « Mode tactile (iPad Pro / tablette / écran tactile) » | | Active le tactile (`cao.modeTactile`) | |
 
-### Serveur `web_CAO.py` : options
+### Serveur `web_cao` : options
 
 | Option | Effet | Limites |
 |---|---|---|
@@ -445,7 +444,7 @@ Les autres raccourcis (tracé, zone, serpentin, coordonnées avec `Tab`, `Ctrl+G
 
 | Bouton ou menu | Raccourci | Effet | Limites |
 |---|---|---|---|
-| Outils, « Montrer au PCB » (schéma) / « Montrer au schéma » (PCB) | `L` | Envoie la sélection à l'onglet voisin par `BroadcastChannel` ; réponse : montré / absent / aucun onglet / indisponible | Sur demande, pas en suivi permanent. En `file://`, deux onglets n'ont pas la même origine : servir le dépôt par `web_CAO.py`. Rien de sélectionné : « Rien à montrer » |
+| Outils, « Montrer au PCB » (schéma) / « Montrer au schéma » (PCB) | `L` | Envoie la sélection à l'onglet voisin par `BroadcastChannel` ; réponse : montré / absent / aucun onglet / indisponible | Sur demande, pas en suivi permanent. En `file://`, deux onglets n'ont pas la même origine : servir le dépôt par `web_cao`. Rien de sélectionné : « Rien à montrer » |
 | Bouton d'entête vers l'autre éditeur | | Part avec la cible : un seul composant sélectionné ; à défaut, au schéma le net du premier fil sélectionné, au PCB le net mis en évidence | Rien de sélectionné : navigation simple |
 | Mise de côté du travail | | Document, vue et état « modifié » rangés dans `sessionStorage` à chaque départ, à `pagehide` et à la mise en arrière-plan de l'onglet | Propre à l'onglet ; plafond de 3 Mo ; trop gros ou stockage indisponible : confirmation avant de partir |
 | Garde de fermeture | | Question à la fermeture d'un onglet modifié | Pas posée pour un changement d'outil |

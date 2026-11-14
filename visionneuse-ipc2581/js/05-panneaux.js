@@ -623,7 +623,7 @@ function pnlComps(){
 /* « SUPPOSÉ », ÉCRIT UNE FOIS ET AU MÊME ENDROIT.
 
    POURQUOI CETTE MENTION EXISTE. Un IPC-2581 ne déclare pas toujours le
-   padstack de ses vias. Quand il ne le fait pas, `ipc2581_parser.py` en
+   padstack de ses vias. Quand il ne le fait pas, `ipc2581_parser` en
    fabrique un à « perçage + 0,3 mm » — c'est-à-dire un anneau de 0,15 mm posé
    par convention — pour avoir quelque chose à dessiner. Le repli est
    raisonnable ; le taire ne l'est pas. Affiché nu, ce 0,15 se lit comme une
