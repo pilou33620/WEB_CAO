@@ -285,19 +285,19 @@ impl EnsembleEntiers {
 mod essais {
     use super::*;
 
-    /// L'ordre de parcours d'un set de CPython 3.13, relevé sur des listes au hasard
-    /// (ANALYSE_ENSEMBLES : le fichier [[liste, ordre du set], ...]).
+    /// L'ordre de parcours d'un set de CPython 3.13, relevé sur trois listes (`list(set(l))`).
     #[test]
     fn ensemble_comme_cpython() {
-        let Ok(chemin) = std::env::var("ANALYSE_ENSEMBLES") else { return };
-        let cas = loads(&std::fs::read_to_string(chemin).unwrap()).unwrap();
-        for c in els(&cas) {
+        let cas: [(&[usize], &[usize]); 3] = [
+            (&[17, 4, 9, 33, 4, 120, 64, 8], &[64, 33, 4, 8, 9, 17, 120]),
+            (&[5000, 3, 70, 1024, 31, 32, 33, 2048, 7, 15, 23], &[1024, 32, 33, 3, 2048, 70, 7, 5000, 15, 23, 31]),
+            (&[900000, 12, 77, 13, 524288, 262144, 1], &[900000, 524288, 262144, 1, 12, 13, 77]),
+        ];
+        for (liste, attendu) in cas {
             let mut e = EnsembleEntiers::default();
-            e.etendre(els(&c[0]).iter().map(|k| k.as_i64().unwrap() as usize));
-            let attendu: Vec<usize> = els(&c[1]).iter().map(|k| k.as_i64().unwrap() as usize).collect();
+            e.etendre(liste.iter().copied());
             assert_eq!(e.dans_l_ordre(), attendu);
         }
-        assert!(!els(&cas).is_empty());
     }
 
     #[test]
