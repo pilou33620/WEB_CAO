@@ -5,12 +5,14 @@ rem --local est passe explicitement : lance par ce fichier, le serveur voit une
 rem console de shell et non celle de l'Explorateur, donc il ne peut pas deviner
 rem qu'il s'agit d'un double-clic.
 cd /d "%~dp0"
+rem Un seul fichier a cliquer : le lanceur de lautre systeme (.sh) est masque.
+attrib +h "%~dp0*.sh" >nul 2>nul
 rem Le serveur sort avec le code 75 quand il vient de se mettre a jour (git pull) :
 rem on reprend les executables de la nouvelle version, puis on le relance.
 set WEB_CAO_RELANCEUR=1
 set WEB_CAO_RACINE=%CD%
 :encore
-call binaires.cmd
+call scripts\binaires.cmd
 if errorlevel 1 goto echec
 bin\web_cao.exe --local %*
 if %errorlevel%==75 (

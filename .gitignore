@@ -84,3 +84,6 @@ api_key_free_ia_studio.txt
 # Rust
 target/
 /bin/
+
+# Cache le lanceur Windows sous Linux (ecrit par demarrer_*.sh)
+.hidden

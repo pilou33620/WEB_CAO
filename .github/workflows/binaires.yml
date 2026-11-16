@@ -61,7 +61,7 @@ jobs:
           P=prod/web_cao
           mkdir -p $P/commun/vendor $P/docs/manuel $P/docs/regles $P/profils
           cp -r bin $P/
-          cp demarrer_*.sh demarrer_*.cmd binaires.sh binaires.cmd README.md LICENSE $P/
+          cp -r scripts $P/ && cp demarrer_*.sh demarrer_*.cmd README.md LICENSE $P/
           # ce que le serveur sert (STATIQUE de rust/serveur/src/poste.rs) : l'accueil, la page
           # de chaque outil avec ses js/ et css/ (ni test/, ni dist/), commun/, le manuel et
           # les règles générés, les règles des fabricants
