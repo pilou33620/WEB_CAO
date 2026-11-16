@@ -1,6 +1,6 @@
 # Plan : simulation RF à plus de deux ports
 
-Source : `SPEC-rf-multiports.md`. La liste cochable est dans `tasks/todo-rf-multiports.md`.
+Source : `docs/SPEC-rf-multiports.md`. La liste cochable est dans `docs/tasks/todo-rf-multiports.md`.
 
 ## Vue d'ensemble
 
@@ -51,7 +51,7 @@ la visionneuse. Un seul endroit à changer pour les deux outils.
 3. **Page** : ports dynamiques, marche vers tous les ports, menus Sij et « de → vers »,
    table des Sij, export `.sNp` (nom du fichier selon N).
 4. **Documentation** : `docs/simulation-em.md` (section RF), docstring de `rf_reseau.py`,
-   `A-FAIRE.md` (ligne remplacée par la fonction livrée).
+   `docs/A-FAIRE.md` (ligne remplacée par la fonction livrée).
 
 ## Risques
 

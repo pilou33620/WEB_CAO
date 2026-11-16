@@ -1,6 +1,6 @@
 # À faire : simulation RF à plus de deux ports
 
-Plan : `tasks/plan-rf-multiports.md`. Spec : `SPEC-rf-multiports.md`. Les numéros de
+Plan : `docs/tasks/plan-rf-multiports.md`. Spec : `docs/SPEC-rf-multiports.md`. Les numéros de
 critère (1 à 5) renvoient à la spec.
 
 Bancs :
@@ -48,5 +48,5 @@ Bancs :
 ### T6
 - [ ] `docs/simulation-em.md` (section RF), docstring de `rf_reseau.py`, version 1.10.0
 - [ ] Description de l'outil MCP `simulation_rf` : ports de 2 à 4
-- [ ] `A-FAIRE.md` de WEB_CAO : la ligne P01x274 renvoie à cette fonction
+- [ ] `docs/A-FAIRE.md` de WEB_CAO : la ligne P01x274 renvoie à cette fonction
 - [ ] `/review` complet avant de déclarer terminé

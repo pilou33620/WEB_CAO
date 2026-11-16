@@ -172,7 +172,7 @@ L'export DXF n'existe plus : le STEP le remplace.
 1. Dans la fenêtre Plans, cochez **Plan mécanique**.
 2. Un tableau **Dossier méca : hauteurs (mm) et ouvertures** apparaît sous les réglages : saisissez la hauteur des composants qui n'en ont pas (la valeur retenue et sa source sont en grisé), cochez ou décochez **Ouv.** pour une ouverture dans le boîtier.
 3. **⬇ Dossier méca .zip** télécharge `<projet>-MECA.zip` (`meca.zip` sans projet) : `<projet>-PLAN-MECA.pdf`, `<projet>-MECA.json` et `<projet>-MECA.step` (`carte-…` sans projet), la carte en 3D avec ses composants dessus et dessous. Le PDF est celui du plan mécanique seul, indépendamment des feuilles cochées.
-4. Le JSON (format `web_cao-meca-1`) est conçu pour un script ou une IA ; il est décrit dans [SPEC-dossier-meca.md](../../SPEC-dossier-meca.md).
+4. Le JSON (format `web_cao-meca-1`) est conçu pour un script ou une IA ; il est décrit dans [SPEC-dossier-meca.md](../SPEC-dossier-meca.md).
 
 ### Je veux faire mesurer des points de la carte à un technicien (fiche de mesure)
 
@@ -635,5 +635,5 @@ Les zones partent remplies (cuivre calculé en géométrie exacte, dégagements 
 - [Simulation SI](08-simulation-si.md) et [Simulation PI, thermique, audit](09-simulation-pi-thermique-audit.md) : Z₀ par la méthode des moments, échauffement.
 - [Claude et le MCP](11-claude-mcp.md) : gestes de l'interface (`pilote_interface`), `cao_thermique`.
 - [editeur-pcb/README.md](../../editeur-pcb/README.md) : détail technique.
-- [SPEC-dossier-meca.md](../../SPEC-dossier-meca.md).
+- [SPEC-dossier-meca.md](../SPEC-dossier-meca.md).
 - [Simulation EM (calcul)](../simulation-em.md).

@@ -4,7 +4,7 @@
    --------------------------------------------------------------------------
    Ce qu'un mécanicien (ou une IA) doit savoir pour dessiner le boîtier d'une
    carte : contour, épaisseur, trous de fixation, encombrement et hauteur de
-   chaque composant, ouvertures à prévoir. Spec : SPEC-dossier-meca.md.
+   chaque composant, ouvertures à prévoir. Spec : docs/SPEC-dossier-meca.md.
 
    Chaque outil fabrique une ENTRÉE NEUTRE (mm, repère des Gerber, Y vers le
    haut, vue de dessus) :

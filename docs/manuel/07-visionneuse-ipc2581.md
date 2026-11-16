@@ -391,4 +391,4 @@ Disposition d'usine : Couches à gauche ; La carte et Sélection à droite ; Com
 - [Simulation SI](08-simulation-si.md), [PI, thermique et audit](09-simulation-pi-thermique-audit.md), [RF et EM](10-simulation-rf-em.md)
 - [Claude et le MCP](11-claude-mcp.md) (lecture de la carte IPC par Claude)
 - [README de la visionneuse](../../visionneuse-ipc2581/README.md) (détails de l'implémentation et des bancs d'essai)
-- [Guide Simulation EM](../simulation-em.md), [vérification de carte](../verification-carte.md), [spécification du dossier mécanique](../../SPEC-dossier-meca.md)
+- [Guide Simulation EM](../simulation-em.md), [vérification de carte](../verification-carte.md), [spécification du dossier mécanique](../SPEC-dossier-meca.md)

@@ -1566,7 +1566,7 @@ le bouton **⬇ Dossier méca .zip** télécharge `<projet>-MECA.zip` :
 | Fichier | Contenu |
 | --- | --- |
 | `-PLAN-MECA.pdf` | vue de dessus cotée (hors tout, trous de fixation en ordonnée depuis l'origine), vue de face (depuis le bord S) et de gauche (depuis le bord O) avec chaque composant en pavé à sa hauteur ; tableaux : carte, fixations, ouvertures ; notes et composants sans hauteur |
-| `-MECA.json` | les mêmes données pour une IA ou un script (format `web_cao-meca-1`, décrit dans `SPEC-dossier-meca.md`) |
+| `-MECA.json` | les mêmes données pour une IA ou un script (format `web_cao-meca-1`, décrit dans `docs/SPEC-dossier-meca.md`) |
 | `-MECA.step` | la carte en 3D avec ses composants dessus et dessous, comme **Export STEP…** avec ces trois cases (voir « Export STEP pour la mécanique ») |
 
 Repère : celui des Gerber (origine `gOrigin`, Y vers le haut, vue de dessus) ;

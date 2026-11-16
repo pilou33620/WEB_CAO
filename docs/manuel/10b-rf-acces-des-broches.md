@@ -28,7 +28,7 @@ composant : cette page dit comment traiter une broche, pas laquelle est laquelle
 - **Une puce à deux sorties** (par exemple basse puissance et haute puissance). Aujourd'hui
   vous en posez une comme port et l'autre comme broche annexe, puis vous refaites avec
   l'autre. Les deux ensemble demandent les N ports, dans la spec mais pas codés
-  ([../../SPEC-rf-multiports.md](../../SPEC-rf-multiports.md)).
+  ([../SPEC-rf-multiports.md](../SPEC-rf-multiports.md)).
 - **Un balun, un filtre, un coupleur.** On lui lie son Touchstone à N ports (`! broches`
   nomme les pattes, `! masse` la référence). Existe. Sans `! broches`, le fichier prend toutes
   les broches du composant, commandes comprises : la marche passe alors par elles.

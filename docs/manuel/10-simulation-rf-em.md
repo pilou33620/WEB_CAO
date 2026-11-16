@@ -191,7 +191,7 @@ Valeurs d'un composant idéal : lues dans le champ Valeur du composant, sous des
 - **Petit signal, linéaire.** Le calcul est un balayage en fréquence sur des composants linéaires. Un amplificateur, un mélangeur, un transistor ne passent que par leur Touchstone ; aucun point de polarisation, aucune compression, aucun bruit.
 - **Quasi-statique.** Sections en 2D, pastilles en 3D, dispersion de Getsinger par-dessus : ni modes supérieurs, ni ondes de surface, ni rayonnement (une fente du plan rayonne en vrai ; ici elle est une self estimée). La fiche donne la fréquence où cela cesse de valoir.
 - **Deux ports exactement.** Une seule matrice S 2 × 2, un seul S₂₁, un seul bilan (port 1 vers port 2). Émission et réception sont deux calculs : on déplace le port 2, on change l'état du commutateur. Une puce à deux sorties se calcule en posant l'une comme port et l'autre comme broche annexe.
-- **Les N ports ne sont pas codés.** La spécification [../../SPEC-rf-multiports.md](../../SPEC-rf-multiports.md) prévoit de 2 à 4 ports (matrice S complète, menu Sij, export `.sNp`) ; le plan [../../tasks/plan-rf-multiports.md](../../tasks/plan-rf-multiports.md) est en cours et rien de cela n'est livré. Aujourd'hui, le bouton d'export est `.s2p` et rien d'autre.
+- **Les N ports ne sont pas codés.** La spécification [../SPEC-rf-multiports.md](../SPEC-rf-multiports.md) prévoit de 2 à 4 ports (matrice S complète, menu Sij, export `.sNp`) ; le plan [../tasks/plan-rf-multiports.md](../tasks/plan-rf-multiports.md) est en cours et rien de cela n'est livré. Aujourd'hui, le bouton d'export est `.s2p` et rien d'autre.
 - **Pas de mode commun** sur un port différentiel : seule la tension V(+) − V(−) est vue.
 - **Export renormalisé à 50 Ω**, parce que Touchstone n'accepte pas de référence complexe ; l'en-tête garde les impédances réelles.
 - **Taille du problème.** 200 branches et 200 composants au plus, 40 nets pour la marche, requête de 8 Mio au plus ; un maillage de zone est plafonné à 30 000 cellules (la fiche dit s'il a fallu desserrer).
@@ -210,4 +210,4 @@ Valeurs d'un composant idéal : lues dans le champ Valeur du composant, sous des
 - [03 Éditeur PCB : édition, routage](03-editeur-pcb-edition-routage.md) et [07 Visionneuse IPC-2581](07-visionneuse-ipc2581.md) : les deux outils qui portent le panneau.
 - [11 Claude et le MCP](11-claude-mcp.md) : piloter la simulation depuis Claude.
 - [../simulation-em.md](../simulation-em.md) : le détail du calcul, section « RF — le S₂₁ d'un réseau entre deux ports ».
-- [../../SPEC-rf-multiports.md](../../SPEC-rf-multiports.md) : la spécification (non codée) des simulations à plusieurs ports.
+- [../SPEC-rf-multiports.md](../SPEC-rf-multiports.md) : la spécification (non codée) des simulations à plusieurs ports.
