@@ -157,7 +157,7 @@ Au démarrage, quand `git` est présent et que le dossier est un dépôt, `web_c
 
 ```
 index.html               Accueil : outils, projet, bibliothèque, profil, mode tactile
-demarrer_WEB_CAO.sh/.cmd Lance le serveur local (exécutable bin/web_cao, obtenu par binaires.sh/.cmd)
+demarrer_WEB_CAO.sh/.cmd Lance le serveur local (exécutable bin/web_cao, obtenu par scripts/binaires.sh/.cmd)
 rust/                    Le serveur (rust/serveur, exécutable web_cao), les solveurs (MoM, diaphonie, DC, RF, œil, vérification de carte), les outils de construction, et leurs bancs d'essai
 Cargo.toml               L'espace de travail Rust
 editeur-schematique/     editeur-pcb/     gestion-lib/
