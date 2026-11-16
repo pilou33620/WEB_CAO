@@ -469,7 +469,7 @@ const EXPOSE=[
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
      +fs.readFileSync(path.join(__dirname,"..","..","commun","test","essai-lots-ztrace.js"),"utf8")+"\n"
-     +EXPOSE.concat(["essaiLotsZTrace","ouvParCase"]).map(n=>"globalThis."+n+"="+n+";").join("\n")+"\n"
+     +EXPOSE.concat(["essaiLotsZTrace","ouvParCase","FOND","drawLeger","drawBientot","padsFiges"]).map(n=>"globalThis."+n+"="+n+";").join("\n")+"\n"
      +'Object.defineProperty(globalThis,"WS",'
      +'{get:()=>WS,set:v=>{WS=v;},configurable:true});'
      /* SESS_QUITTE bascule à la sortie vers un autre outil : le banc
@@ -683,6 +683,51 @@ T("via et changement de couche",()=>{
   const last=S.tracks[S.tracks.length-1];
   if(last.l!==2)throw new Error("piste posée sur la mauvaise couche");
   if(S.tracks.length<=n)throw new Error("piste manquante");
+});
+T("dessin au survol : une image par rafale, cliché du fond, pastilles figées, garde du tracé",()=>{
+  /* dix demandes entre deux images : une seule image ; un draw() direct annule la demande */
+  const raf=global.requestAnimationFrame, file=[];
+  global.requestAnimationFrame=f=>{file.push(f);return file.length;};
+  try{
+    for(let k=0;k<10;k++)drawBientot(k%2===0);
+    if(file.length!==1)throw new Error("une seule image demandée, "+file.length);
+    draw();FOND.n=7;file.shift()(0);
+    if(FOND.n!==7)throw new Error("un draw() direct annule la demande en attente");
+  }finally{global.requestAnimationFrame=raf;}
+  /* le cliché : pris au deuxième dessin léger, périmé par tout draw(), toute retouche, tout mouvement de vue */
+  const seuil=FOND.seuil;FOND.seuil=0;
+  try{
+    draw();if(FOND.n!==0)throw new Error("draw() périme le cliché");
+    drawLeger();if(FOND.n!==1)throw new Error("premier dessin léger : complet");
+    drawLeger();if(FOND.n!==2||!FOND.cvs)throw new Error("deuxième : le cliché est pris");
+    drawLeger();if(FOND.n!==2)throw new Error("ensuite : le cliché sert");
+    touch();drawLeger();if(FOND.n!==1)throw new Error("document retouché : cliché périmé");
+    drawLeger();S.ox+=1;drawLeger();S.ox-=1;
+    if(FOND.n!==1)throw new Error("vue déplacée : cliché périmé");
+    drawLeger();drawLeger();S.hlNet="N$1";drawLeger();S.hlNet=null;
+    if(FOND.n!==1)throw new Error("net mis en avant : cliché périmé");
+    FOND.seuil=1e9;draw();drawLeger();drawLeger();
+    if(FOND.n!==1)throw new Error("carte légère : jamais de cliché");
+  }finally{FOND.seuil=seuil;draw();}
+  /* les pastilles : les mêmes objets tant que S.ver ne bouge pas, recalculées après */
+  const u1=S.fps.find(f=>f.ref==="U1");
+  const p1=padsFiges(()=>padsWorld(u1)), p2=padsFiges(()=>padsWorld(u1));
+  if(p1!==p2)throw new Error("même version : les pastilles ne se recalculent pas");
+  if(padsWorld(u1)===p1)throw new Error("hors de padsFiges : pas de cache");
+  u1.x+=1;touch();
+  const p3=padsFiges(()=>padsWorld(u1));
+  if(p3===p1||p3[0].x===p1[0].x)throw new Error("après une retouche : les pastilles suivent le boîtier");
+  u1.x-=1;touch();
+  /* le tracé : même cible, rien à refaire ; un appel sans garde recalcule toujours */
+  setMode("track");startRoute(50,50);
+  if(updateRoute(60,58,true)!==true)throw new Error("nouvelle cible : un calcul");
+  const ap=S.route.preview;
+  if(updateRoute(60,58,true)!==false||S.route.preview!==ap)throw new Error("même cible : l'aperçu reste");
+  if(updateRoute(60,58)!==true||S.route.preview===ap)throw new Error("sans garde : toujours recalculé");
+  if(updateRoute(62,58,true)!==true)throw new Error("cible déplacée : un calcul");
+  S.route.w+=0.1;
+  if(updateRoute(62,58,true)!==true)throw new Error("largeur changée : un calcul");
+  cancelRoute();
 });
 T("connexion via inter-couches",()=>{
   const before=conn().unrouted;

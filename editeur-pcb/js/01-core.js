@@ -2437,6 +2437,16 @@ function padsWorld(fp){
   }
   return padsWorldCalc(fp);
 }
+/* Entre deux retouches (`S.ver`), les pastilles ne bougent pas : le survol et
+   l'aperçu d'un tracé, qui les relisent à chaque mouvement, passent par ici
+   pour ne pas les recalculer. Jamais autour d'un code qui déplace un boîtier. */
+let PADS_VER=null;
+function padsFiges(f){
+  if(PADS_IMAGE)return f();
+  if(!PADS_VER||PADS_VER.ver!==S.ver)PADS_VER={ver:S.ver,m:new Map()};
+  PADS_IMAGE=PADS_VER.m;
+  try{return f();}finally{PADS_IMAGE=null;}
+}
 function padsWorldCalc(fp){
   const T=fpXform(fp), a=(fp.rot||0)*Math.PI/180, m=fp.side?-1:1;
   return padsOf(fp).map(q=>{

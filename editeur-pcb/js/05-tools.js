@@ -3820,10 +3820,18 @@ function routeDiagGrille(R,t){
   const L=Math.abs(snapX(R.pt.x+sx*(adx+ady)/2)-R.pt.x);
   t.x=r3(R.pt.x+sx*L);t.y=r3(R.pt.y+sy*L);
 }
-function updateRoute(x,y){
+/* `siChange` (le mouvement du pointeur) : même cible accrochée et même état que
+   la dernière fois, l'aperçu est déjà le bon — on rend false sans rien
+   recalculer. Les autres appelants (clavier, couche, largeur) recalculent
+   toujours. */
+function updateRoute(x,y,siChange){
   const R=S.route;
   if(!R)return;
   const t=routeTarget(x,y);
+  const cle=[t.x,t.y,t.net,!!t.pad,!!t.via,!!t.off,!!t.pushed,S.ver,R.layer,R.w,R.pt.x,R.pt.y,R.done.length,
+             R.flip,!!R.viaNext,S.avoid,routeMode(),cornerMode(),S.grid,S.rule.edge].join("|");
+  if(siChange&&R.cle===cle&&R.cleObj===(t.obj||null))return false;
+  R.cle=cle;R.cleObj=t.obj||null;
   routeDiagGrille(R,t);
   const r=routeSegsTo(R,t);
   R.preview=r.segs;
@@ -3833,6 +3841,7 @@ function updateRoute(x,y){
   if(last){R.end.x=last.x2;R.end.y=last.y2;}     // l'aimant a pu déplacer l'arrivée
   R.bad=r.bad;R.bord=!!r.bord;
   R.viaGene=R.viaNext&&!R.end.net?viaObstacle(routeViaVise(R)):"";
+  return true;
 }
 /* Le via tel qu'il serait posé au bout de l'aperçu. */
 function routeViaVise(R){
@@ -3917,6 +3926,7 @@ function routeToPoint(pt){
   const at=netAtPoint(pt.x,pt.y,R.layer);
   const t={x:pt.x,y:pt.y,net:(at||{}).net||null,pad:false,jog:at?0:minJog(R.w)};
   const r=routeSegsTo(R,t);
+  R.cle=null;                       // aperçu imposé : le prochain mouvement recalcule
   R.preview=r.segs;
   R.retouche=null;
   const last=R.preview[R.preview.length-1];
@@ -4624,11 +4634,23 @@ function cancelLongpress(){
   if(LONGPRESS_TIMER){clearTimeout(LONGPRESS_TIMER);LONGPRESS_TIMER=null;}
   LONGPRESS_START=null;
 }
+/* Le rectangle du canevas, relu au plus quatre fois par seconde : le lire à
+   chaque mouvement forçait une mise en page, le pied de page venant d'être
+   réécrit. Un appui, un redimensionnement ou un défilement le périment.
+   shortcut: un déplacement du canevas sans rien de tout cela est vu avec 250 ms de retard au plus, passer à un ResizeObserver si cela se voit. */
+let CV_RECT=null, CV_RECT_T=0;
+function cvRectPerime(){CV_RECT=null;}
 function evPos(e){
-  const r=cv.getBoundingClientRect();
-  return s2w(e.clientX-r.left,e.clientY-r.top);
+  const t=performance.now();
+  if(!CV_RECT||t-CV_RECT_T>250){CV_RECT=cv.getBoundingClientRect();CV_RECT_T=t;}
+  return s2w(e.clientX-CV_RECT.left,e.clientY-CV_RECT.top);
+}
+if(typeof window!=="undefined"&&window.addEventListener){
+  window.addEventListener("resize",cvRectPerime);
+  window.addEventListener("scroll",cvRectPerime,true);
 }
 cv.addEventListener("pointerdown",e=>{
+  cvRectPerime();
   PTR_PCB.set(e.pointerId,{x:e.clientX,y:e.clientY,type:e.pointerType});
   S.padOff=!!(e.ctrlKey||e.metaKey);       // Ctrl : bout posé hors du centre (`routeTarget`)
   if(e.pointerType!=="mouse"&&e.cancelable)e.preventDefault();
@@ -5166,7 +5188,7 @@ cv.addEventListener("pointermove",e=>{
   S.mouse=p;
   $("fX").textContent=fmtU(ux(p.x));
   $("fY").textContent=fmtU(uy(p.y));
-  const at=netAtPoint(p.x,p.y,S.active);
+  const at=padsFiges(()=>netAtPoint(p.x,p.y,S.active));
   $("fNet").textContent=at&&at.net?at.net:"—";
   if(drag&&drag.pan){
     S.ox=drag.ox+(e.clientX-drag.sx);
@@ -5174,7 +5196,7 @@ cv.addEventListener("pointermove",e=>{
     drawVue();return;
   }
   if(drag&&drag.marquee){
-    S.marquee.x2=p.x;S.marquee.y2=p.y;draw();return;
+    S.marquee.x2=p.x;S.marquee.y2=p.y;drawBientot();return;
   }
   if(drag&&drag.drawingEnd){
     const d=drag.drawingEnd.d, en=drag.drawingEnd.e;
@@ -5184,7 +5206,7 @@ cv.addEventListener("pointermove",e=>{
       if(en===1){d.x1=nx;d.y1=ny;}
       else{d.x2=nx;d.y2=ny;}
       drag.at={x:nx,y:ny};
-      touch();refreshPanels();draw();
+      touch();drawBientot();
     }
     return;
   }
@@ -5217,7 +5239,7 @@ cv.addEventListener("pointermove",e=>{
     // le bout bute sur l'obstacle : il reste où il était, l'accroche avec lui
     if((clearStop()||crossStop()||acuteStop()||offAngleStop(drag.tend,landed))&&drag.at){put(drag.at.x,drag.at.y);}
     else{drag.at={x:nx,y:ny};drag.landed=landed;S.hover=m?{x:m.x,y:m.y}:null;}
-    touch();draw();return;
+    touch();drawBientot();return;
   }
   if(drag&&drag.vert){
     if(!drag.moved){
@@ -5229,7 +5251,7 @@ cv.addEventListener("pointermove",e=>{
     }
     drag.vert.z.pts[drag.vert.i]={x:snapX(p.x),y:snapY(p.y)};
     if(drag.board)boardChanged();else touch();
-    draw();return;
+    drawBientot();return;
   }
   if(drag&&drag.moveText){
     const dx=snapX(p.x)-snapX(drag.x), dy=snapY(p.y)-snapY(drag.y);
@@ -5244,7 +5266,7 @@ cv.addEventListener("pointermove",e=>{
         f.valOffY = r3((f.valOffY||0)+dy);
       }
       drag.x+=dx;drag.y+=dy;
-      touch();draw();
+      touch();drawBientot();
     }
     return;
   }
@@ -5257,11 +5279,11 @@ cv.addEventListener("pointermove",e=>{
     if(dx||dy){
       if(!drag.moved){push();drag.moved=true;beginMove();}
       dragMoveVers(dx,dy,e.altKey);
-      touch();draw();
+      touch();drawBientot();
     }
     return;
   }
-  if(S.aplatDraft){aplatMove(p.x,p.y,e.shiftKey);draw();return;}
+  if(S.aplatDraft){aplatMove(p.x,p.y,e.shiftKey);drawBientot();return;}
   if(S.silkDraft){
     let nx=snapX(p.x), ny=snapY(p.y);
     if(e.shiftKey){
@@ -5279,11 +5301,11 @@ cv.addEventListener("pointermove",e=>{
       }
     }
     S.silkDraft.x2=nx;S.silkDraft.y2=ny;
-    draw();return;
+    drawBientot();return;
   }
-  if(S.mode==="mesure"){if(rpMesBouge(p.x,p.y))draw();return;}
-  if(dessinBouge(p.x,p.y,e)){draw();return;}
-  if(busBouge(p.x,p.y)){draw();return;}
+  if(S.mode==="mesure"){if(rpMesBouge(p.x,p.y))drawBientot();return;}
+  if(dessinBouge(p.x,p.y,e)){drawBientot();return;}
+  if(busBouge(p.x,p.y)){drawBientot();return;}
   if(S.mode==="meander"&&S.meanderDraft){
     const trk=S.meanderDraft.track;
     const L=Math.hypot(trk.x2-trk.x1,trk.y2-trk.y1);
@@ -5303,7 +5325,7 @@ cv.addEventListener("pointermove",e=>{
           side:side
         });
       }
-      draw();
+      drawBientot();
       return;
     }
   }
@@ -5314,12 +5336,16 @@ cv.addEventListener("pointermove",e=>{
      redessinerait la carte à chaque pixel parcouru. */
   if(typeof simDCSurvol==="function"&&
      simDCSurvol(p.x,p.y,(typeof simDCCoucheVoulue==="function")
-                           ?simDCCoucheVoulue():S.active))draw();
-  if(S.mode==="zone"&&S.zoneDraft){zoneMove(p.x,p.y,e.shiftKey);draw();return;}
-  if(S.mode==="cut"&&S.cutDraft){cutMove(p.x,p.y,e.shiftKey);draw();return;}
-  if((S.mode==="edge"||S.mode==="decoupe"||S.mode==="interdit")&&S.edgeDraft){edgeMove(p.x,p.y,e.shiftKey);draw();return;}
-  if(S.mode==="track"&&S.route){updateRoute(p.x,p.y);curseurPose(S.route.end||S.route.pt);draw();return;}
-  if(S.mode==="dpair"&&S.dp){dpUpdate(p.x,p.y);curseurPose(S.dp.end||S.dp.pt);draw();return;}
+                           ?simDCCoucheVoulue():S.active))drawBientot();
+  if(S.mode==="zone"&&S.zoneDraft){zoneMove(p.x,p.y,e.shiftKey);drawBientot();return;}
+  if(S.mode==="cut"&&S.cutDraft){cutMove(p.x,p.y,e.shiftKey);drawBientot();return;}
+  if((S.mode==="edge"||S.mode==="decoupe"||S.mode==="interdit")&&S.edgeDraft){edgeMove(p.x,p.y,e.shiftKey);drawBientot();return;}
+  if(S.mode==="track"&&S.route){
+    const change=padsFiges(()=>updateRoute(p.x,p.y,true));
+    if(curseurPose(S.route.end||S.route.pt)||change)drawBientot(true);
+    return;
+  }
+  if(S.mode==="dpair"&&S.dp){dpUpdate(p.x,p.y);curseurPose(S.dp.end||S.dp.pt);drawBientot(true);return;}
   if(S.mode==="dpair"){
     /* Sans tracé en cours, on montre où la paire s'accrocherait : le milieu du
        couple d'ancres, et non la pastille la plus proche — une paire part
@@ -5329,17 +5355,17 @@ cv.addEventListener("pointermove",e=>{
     const h=a?{x:r3((a.P.x+a.N.x)/2),y:r3((a.P.y+a.N.y)/2)}:null;
     const bouge=curseurPose(h||{x:snapX(p.x),y:snapY(p.y)});
     if((h&&!S.hover)||(!h&&S.hover)||(h&&S.hover&&(h.x!==S.hover.x||h.y!==S.hover.y))){
-      S.hover=h;draw();
-    }else if(bouge)draw();
+      S.hover=h;drawBientot(true);
+    }else if(bouge)drawBientot(true);
     return;
   }
   if(S.mode==="track"||S.mode==="via"){
-    const m=magnet(p.x,p.y,S.active)||(S.mode==="track"?trackBody(p.x,p.y,S.active,""):null);
+    const m=padsFiges(()=>magnet(p.x,p.y,S.active))||(S.mode==="track"?trackBody(p.x,p.y,S.active,""):null);
     const h=m?{x:m.x,y:m.y}:null;
     const bouge=curseurPose(h||{x:snapX(p.x),y:snapY(p.y)});
     if((h&&!S.hover)||(!h&&S.hover)||(h&&S.hover&&(h.x!==S.hover.x||h.y!==S.hover.y))){
-      S.hover=h;draw();
-    }else if(bouge)draw();
+      S.hover=h;drawBientot(true);
+    }else if(bouge)drawBientot(true);
   }
 });
 cv.addEventListener("pointerup",e=>{
@@ -5489,6 +5515,7 @@ cv.addEventListener("pointercancel",e=>{
   if(drag&&drag.follow){pruneDeadTracks();S.dragShove=null;}   // jambes de réserve repliées
   fanoutRelease(drag);
   const gele=drag&&drag.moved;
+  if(gele&&drag.drawingEnd)refreshPanels();
   drag=null;
   if(gele)draw();
 });

@@ -12,6 +12,7 @@ function resize(){
   const r=cv.parentElement.getBoundingClientRect(), dpr=window.devicePixelRatio||1;
   cv.width=Math.round(r.width*dpr);cv.height=Math.round(r.height*dpr);
   cv.style.width=r.width+"px";cv.style.height=r.height+"px";
+  if(typeof cvRectPerime==="function")cvRectPerime();     // le canevas a pu bouger (05-tools.js)
   draw();
 }
 /* Pas réellement affiché : trop serrée à l'écran, la grille devient un aplat.
@@ -444,6 +445,9 @@ function drawTracks(c,i,a){
   for(const g of (S.aRerouter||[]))for(const t of g.trk)marque.add(t);
   for(const t of S.tracks){
     if(t.l!==i)continue;
+    // hors de la vue, comme les pastilles et les vias : rien à tracer
+    const b=trkBBox(t);
+    if(horsVue(b.x1-t.w,b.y1-t.w,b.x2+t.w,b.y2+t.w))continue;
     if(S.sel.tracks.has(t))lot(halo,t.w).push(t);
     if(marque.has(t))lot(rouge,t.w).push(t);
     lot(cu,t.w+"|"+netAlpha(t.net)).push(t);
@@ -1184,15 +1188,23 @@ function padHorsVue(q){
   const r=Math.max(q.w,q.h);
   return horsVue(q.x-r,q.y-r,q.x+r,q.y+r);
 }
-function paint(c,dpr,w,h,noGrid){
+/* `part` : "fond" ou "dessus" pour n'en peindre qu'une moitié (drawLeger). */
+function paint(c,dpr,w,h,noGrid,part){
   const a=s2w(0,0), b=s2w(w/dpr,h/dpr), m=px(30);
   VUE_MONDE={x1:Math.min(a.x,b.x)-m,y1:Math.min(a.y,b.y)-m,
              x2:Math.max(a.x,b.x)+m,y2:Math.max(a.y,b.y)+m};
   PADS_IMAGE=new Map();
-  try{paintCarte(c,dpr,w,h,noGrid);}
+  try{
+    if(part!=="dessus")paintFond(c,dpr,w,h,noGrid);
+    if(part!=="fond")paintDessus(c,dpr,w,h,noGrid);
+  }
   finally{VUE_MONDE=null;PADS_IMAGE=null;}
 }
-function paintCarte(c,dpr,w,h,noGrid){
+/* LE FOND : la carte telle qu'elle est posée. Rien ici ne dépend du curseur,
+   du survol ni de l'aperçu d'un tracé — c'est ce qui permet à `drawLeger` de
+   le garder en cliché. Seule exception connue, le net suivi (`focusNet`), qui
+   entre dans la clé du cliché. */
+function paintFond(c,dpr,w,h,noGrid){
   c.setTransform(1,0,0,1,0,0);
   c.fillStyle=C_BG;c.fillRect(0,0,w,h);
 
@@ -1240,6 +1252,10 @@ function paintCarte(c,dpr,w,h,noGrid){
     if(typeof groupesDessiner==="function")groupesDessiner(c); // cadre du groupe sélectionné
     drawTech(c);
   }
+}
+/* LE DESSUS : aperçus, curseur, survol, annotations de travail. */
+function paintDessus(c,dpr,w,h,noGrid){
+  const fin=S.contrast===3;
   drawRoute(c);
   if(typeof routageApercuDessiner==="function")routageApercuDessiner(c);   // l'aperçu d'une carte de routage (37-routage-pilote.js)
   if(S.dragShove)drawShove(c,S.dragShove);     // le cuivre qu'écarte le boîtier tiré
@@ -1374,13 +1390,72 @@ function pcbCartoucheDialogue(apres){
     if(typeof apres==="function")apres();
   }});
 }
+/* Un seul dessin par image, quel que soit le nombre de mouvements reçus entre
+   deux : 1 = le dessus seul (`drawLeger`), 2 = tout. Un `draw()` direct annule
+   la demande. Onglet caché : pas d'image à attendre, on dessine tout de suite. */
+let DRAW_ATT=0;
+function drawBientot(leger){
+  const q=leger?1:2;
+  if(typeof requestAnimationFrame!=="function"||(typeof document!=="undefined"&&document.hidden)){
+    if(leger)drawLeger();else draw();
+    return;
+  }
+  if(DRAW_ATT){if(q>DRAW_ATT)DRAW_ATT=q;return;}
+  DRAW_ATT=q;
+  requestAnimationFrame(()=>{
+    const a=DRAW_ATT;
+    if(!a)return;                    // un draw() complet est passé entre-temps
+    DRAW_ATT=0;
+    if(a===1)drawLeger();else draw();
+  });
+}
+/* Pendant un survol ou un tracé, seul le dessus change : le fond est gardé dans
+   un cliché et recollé tel quel, pixel pour pixel. Tout `draw()` périme le
+   cliché ; il ne sert qu'entre deux dessins complets, à document (`S.ver`),
+   vue, taille et net suivi inchangés, et se refait de toute façon chaque
+   seconde. Le premier dessin léger après un complet repeint tout : un cliché
+   ne se prend que si le survol dure. Carte légère (`seuil`, en ms) : pas de
+   cliché, la repeindre coûte moins que de l'entretenir. */
+const FOND={cvs:null,n:0,cle:"",t:0,seuil:3};
+const FOND_ETAT=["fillStyle","strokeStyle","lineWidth","lineCap","lineJoin","miterLimit","lineDashOffset",
+                 "globalAlpha","globalCompositeOperation","font","textAlign","textBaseline"];
+/* L'état du pinceau passe d'un canevas à l'autre : certains tracés héritent de
+   celui que le dessin d'avant a laissé (le contour de carte et ses angles
+   arrondis, par exemple). Sans cela, le cliché différait de l'écran. */
+function fondEtat(de,vers){
+  for(const k of FOND_ETAT)vers[k]=de[k];
+  if(de.getLineDash)vers.setLineDash(de.getLineDash());
+}
+function fondCle(){return [S.ver,S.scale,S.ox,S.oy,cv.width,cv.height,focusNet(),S.hlNet].join("|");}
+function drawLeger(){
+  if(VUE.cout<FOND.seuil||VUE.img||!FOND.n||fondCle()!==FOND.cle||performance.now()-FOND.t>1000){
+    draw();FOND.n=1;return;
+  }
+  const dpr=window.devicePixelRatio||1, w=cv.width, h=cv.height;
+  if(FOND.n===1){
+    const o=FOND.cvs||(FOND.cvs=document.createElement("canvas"));
+    if(o.width!==w||o.height!==h){o.width=w;o.height=h;}
+    fondEtat(ctx,o.getContext("2d"));     // le fond part de l'état qu'il aurait trouvé à l'écran
+    paint(o.getContext("2d"),dpr,w,h,false,"fond");
+    FOND.n=2;
+  }
+  DRAW_ATT=0;
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.globalAlpha=1;ctx.globalCompositeOperation="source-over";
+  ctx.drawImage(FOND.cvs,0,0);
+  setWorld(ctx,dpr);
+  fondEtat(FOND.cvs.getContext("2d"),ctx);  // et le dessus, de celui que le fond a laissé
+  paint(ctx,dpr,w,h,false,"dessus");
+}
 function draw(){
+  DRAW_ATT=0;FOND.n=0;
   clearTimeout(VUE.t);VUE.img=null;
   const bc=$("bCartouche");
   if(bc){bc.textContent="Cartouche : "+(S.cartouche||"aucun");bc.classList.toggle("on",!!S.cartouche);}
   const dpr=window.devicePixelRatio||1, t0=performance.now();
   paint(ctx,dpr,cv.width,cv.height,false);
   VUE.cout=performance.now()-t0;VUE.s=S.scale;VUE.ox=S.ox;VUE.oy=S.oy;
+  FOND.cle=fondCle();FOND.t=t0;
   $("fZoom").textContent=Math.round(S.scale*20)+"%";
   updateGridInfo();
   $("fN").textContent=S.fps.length;
