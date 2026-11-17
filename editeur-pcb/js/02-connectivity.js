@@ -855,7 +855,10 @@ function zoneLanieres(l){
       const e=meme?(padLiaison(q,l,z)==="directe"?0:ecartThermique(q,l)):clrZone(z,q.net,"cu",q.drill>0?"th":"smd",q);
       if(meme&&e===0)continue;
       const r=Math.hypot(qc.w,qc.h)/2+e;
-      ajouter({fait:()=>bord(padWorldPts(qc,e)),d:(x,y)=>padDist(x,y,qc)-e,net:q.net},q.x-r,q.y-r,q.x+r,q.y+r);
+      /* la distance au dégagement TEL QU'IL EST TRACÉ : coins vifs pour une pastille à pans
+         (padWorldPts, comme l'écran et le Gerber), ronds pour un cercle ou un oblong */
+      const PP=(qc.shape==="circ"||qc.shape==="oval")?null:padWorldPts(qc,e);
+      ajouter({fait:()=>bord(PP||padWorldPts(qc,e)),d:PP?(x,y)=>ptPolyDist(x,y,PP):(x,y)=>padDist(x,y,qc)-e,net:q.net},q.x-r,q.y-r,q.x+r,q.y+r);
     }
   for(const v of S.vias){
     if(l<v.a||l>v.b)continue;
@@ -881,10 +884,14 @@ function zoneLanieres(l){
       if(A){
         const b=trkBBox(t);
         ajouter({piste:true,net:t.net,d:(x,y)=>trkDist(x,y,t)-r,
-                 fait:()=>{const m2=Math.max(2,Math.ceil(trkLen(t)/0.1)),o=[];
-                   for(let j=0;j<=m2;j++){const p=trkAt(t,j/m2), a=Math.atan2(p.y-A.cy,p.x-A.cx);
-                     o.push({x:p.x+r*Math.cos(a),y:p.y+r*Math.sin(a)},{x:p.x-r*Math.cos(a),y:p.y-r*Math.sin(a)});}
-                   return o.concat(cercle(t.x1,t.y1,r,0,2*Math.PI),cercle(t.x2,t.y2,r,0,2*Math.PI));}},
+                 // le bord, en boucle ordonnée : le flanc extérieur, un bout, le flanc intérieur, l'autre bout
+                 fait:()=>{const m2=Math.max(2,Math.ceil(trkLen(t)/0.1)),ext=[],int=[];
+                   const ang=p=>Math.atan2(p.y-A.cy,p.x-A.cx);
+                   for(let j=0;j<=m2;j++){const p=trkAt(t,j/m2), a=ang(p);
+                     ext.push({x:p.x+r*Math.cos(a),y:p.y+r*Math.sin(a)});int.unshift({x:p.x-r*Math.cos(a),y:p.y-r*Math.sin(a)});}
+                   const q=trkAt(t,1-1/m2), a2=ang({x:t.x2,y:t.y2}), a1=ang({x:t.x1,y:t.y1});
+                   const s=Math.cos(a2)*(t.y2-q.y)-Math.sin(a2)*(t.x2-q.x)>=0?1:-1;   // de quel côté part l'avant
+                   return ext.concat(cercle(t.x2,t.y2,r,a2,a2+s*Math.PI),int,cercle(t.x1,t.y1,r,a1+Math.PI,a1+Math.PI+s*Math.PI));}},
                 b.x1-r,b.y1-r,b.x2+r,b.y2+r);
         continue;
       }
@@ -907,6 +914,49 @@ function zoneLanieres(l){
   const pts=F=>F.pts||(F.pts=F.fait());
   // seuls les points en face de l'autre forme (dans sa boîte) passent la mesure exacte
   const face=(F,H)=>pts(F).filter(p=>p.x>=H.b.x1&&p.x<=H.b.x2&&p.y>=H.b.y1&&p.y<=H.b.y2&&H.d(p.x,p.y)<w);
+  /* r : le rayon du disque. Le gradient de la distance d'une forme, puis son bord poussé de r ;
+     les centres où le disque touche les deux formes à la fois (d_A = d_B = r) sont les
+     changements de signe de d_B − r le long de ce bord, affinés par Newton. */
+  const r=w/2, ro=r-Math.min(0.003,r/10);
+  const grad=(F,x,y)=>{const e=1e-4, gx=F.d(x+e,y)-F.d(x-e,y), gy=F.d(x,y+e)-F.d(x,y-e), n=Math.hypot(gx,gy)||1;return {x:gx/n,y:gy/n};};
+  const pousse=(F,p)=>{const g=grad(F,p.x,p.y), k=r-F.d(p.x,p.y);return {x:p.x+k*g.x,y:p.y+k*g.y};};
+  const dec=F=>{
+    if(F.dec)return F.dec;
+    const Q=pts(F).map(p=>pousse(F,p)), o=[];
+    // autour d'un coin vif, le bord décalé tourne d'un arc : on le garnit tous les 0,05 mm
+    Q.forEach((a,k)=>{
+      const b=Q[(k+1)%Q.length], n=Math.min(40,Math.ceil(Math.hypot(b.x-a.x,b.y-a.y)/0.12));
+      o.push(a);
+      for(let j=1;j<n;j++)o.push(pousse(F,pousse(F,{x:a.x+(b.x-a.x)*j/n,y:a.y+(b.y-a.y)*j/n})));
+    });
+    return F.dec=o;
+  };
+  const affine=(c,A,B)=>{
+    for(let k=0;k<4;k++){
+      const ga=grad(A,c.x,c.y), gb=grad(B,c.x,c.y), a=A.d(c.x,c.y)-r, b=B.d(c.x,c.y)-r, det=ga.x*gb.y-ga.y*gb.x;
+      if(Math.abs(det)<1e-3)break;
+      c={x:c.x-(a*gb.y-b*ga.y)/det,y:c.y-(ga.x*b-gb.x*a)/det};
+    }
+    return c;
+  };
+  const croise=(A,B)=>{
+    const Q=dec(A), C=[], f=q=>(q.x<B.b.x1||q.x>B.b.x2||q.y<B.b.y1||q.y>B.b.y2)?1:B.d(q.x,q.y)-r;
+    let qp=Q[Q.length-1], fp=f(qp);
+    for(const q of Q){
+      const fq=f(q);
+      if((fp<0)!==(fq<0)){const u=fp/(fp-fq);C.push(affine({x:qp.x+(q.x-qp.x)*u,y:qp.y+(q.y-qp.y)*u},A,B));}
+      qp=q;fp=fq;
+    }
+    return C;
+  };
+  const pied=(F,c,k)=>{const g=grad(F,c.x,c.y);return {x:c.x-k*g.x,y:c.y-k*g.y};};   // le point de F en face de c, k plus loin
+  const arc=(c,p,q)=>{                                                              // l'arc court du disque (rayon ro), de p à q
+    const a0=Math.atan2(p.y-c.y,p.x-c.x);let da=Math.atan2(q.y-c.y,q.x-c.x)-a0;
+    da-=2*Math.PI*Math.round(da/(2*Math.PI));
+    const n=Math.max(2,Math.ceil(Math.abs(da)/(Math.PI/12))), o=[];
+    for(let k=0;k<=n;k++)o.push({x:c.x+ro*Math.cos(a0+da*k/n),y:c.y+ro*Math.sin(a0+da*k/n)});
+    return o;
+  };
   const out=[], vues=new Set();
   for(const cases of G.values())
     for(let i=0;i<cases.length;i++)
@@ -918,6 +968,33 @@ function zoneLanieres(l){
         if(A.b.x2<B.b.x1||B.b.x2<A.b.x1||A.b.y2<B.b.y1||B.b.y2<A.b.y1)continue;
         // une piste et ce qui est de son net (segment suivant, sa pastille) : la jonction, pas une fente
         if((A.piste||B.piste)&&A.net&&A.net===B.net)continue;
+        const C=croise(A,B);
+        if(C.length===2){
+          /* LA FERMETURE DE RAYON cuMin/2 (l'« Inflate » de KiCad, zone_filler.cpp) : le cuivre
+             garde tout ce qu'un disque de ce rayon peut atteindre. Entre deux dégagements, le
+             disque bute en deux centres ; ce qui reste au-delà de ses deux arcs part, bordé de
+             congés. Les cordes rentrent de 0,05 mm dans chaque dégagement : rien ne reste au bord.
+             L'arc est tracé 3 µm en deçà du disque (ro) : il coupe franchement le bord du
+             dégagement au lieu de lui être tangent, ce qu'aucun calcul booléen (IPC-2581) n'aime. */
+          const [c1,c2]=C, a1=pied(A,c1,ro), b1=pied(B,c1,ro), a2=pied(A,c2,ro), b2=pied(B,c2,ro);
+          const A1=pied(A,c1,r+0.05), B1=pied(B,c1,r+0.05), A2=pied(A,c2,r+0.05), B2=pied(B,c2,r+0.05);
+          const h=Math.hypot(c2.x-c1.x,c2.y-c1.y)/2, Ps=[];
+          if(h>=ro)Ps.push([A1].concat(arc(c1,a1,b1),[B1,B2],arc(c2,b2,a2),[A2]));
+          else{
+            // les deux disques se recouvrent : un éclat de chaque côté, jusqu'au point où les arcs se croisent
+            const k=Math.sqrt(ro*ro-h*h)/(2*h||1), mx=(c1.x+c2.x)/2, my=(c1.y+c2.y)/2;
+            let I={x:mx-(c2.y-c1.y)*k,y:my+(c2.x-c1.x)*k}, J={x:mx+(c2.y-c1.y)*k,y:my-(c2.x-c1.x)*k};
+            if(A.d(J.x,J.y)<A.d(I.x,I.y))[I,J]=[J,I];
+            Ps.push([A1].concat(arc(c1,a1,I),arc(c2,I,a2),[A2]),[B1].concat(arc(c1,b1,J),arc(c2,J,b2),[B2]));
+          }
+          for(const P of Ps){
+            if(signedArea(P)<0)P.reverse();          // toutes de même sens, comme les enveloppes
+            if(signedArea(P)>1e-5)out.push(P);
+          }
+          continue;
+        }
+        if(!C.length)continue;
+        // formes qui se traversent (plus de deux croisements) : l'enveloppe des bords en regard
         const pres=face(A,B).concat(face(B,A));
         if(pres.length<3)continue;
         const H=enveloppeConvexe(pres);

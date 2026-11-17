@@ -194,7 +194,7 @@ const EXPOSE=[
   /* formes de pastille, rotation, origine de l'empreinte */
   "PAD_SHAPES","padShape","padRadius","padRot","padHalf","padDist","padOpening",
   "fpLocalBox",
-  "apSet","apForPad","netAtPoint","padCuLayers","pnsItemsPad","aplatClick","closeAplat","selDecoupes","deleteSel","hitTest","selectHit","brocheNum","parseNetlist","applyNetlist","padSurCouche","padLiaison","padBras","zoneLanieres","maskOpenings","pasteOpenings","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","classesAProposer","carteVide","UNDO_BUDGET","rotChoix","padNom","padDesig",
+  "apSet","apForPad","netAtPoint","padCuLayers","pnsItemsPad","aplatClick","closeAplat","selDecoupes","deleteSel","hitTest","hitTous","selectHit","brocheNum","parseNetlist","applyNetlist","padSurCouche","padLiaison","padBras","zoneLanieres","maskOpenings","pasteOpenings","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","classesAProposer","carteVide","UNDO_BUDGET","rotChoix","padNom","padDesig",
   /* repère de broche 1 */
   "MARK_D","PASSIF_REF","fpMarkWanted","fpMarkAuto","fpMark","fpSetMark",
   "fpMoveMark","fpSetMarkD","fpXform",
@@ -1508,6 +1508,29 @@ T("un clic sur une pastille prend le boîtier, même si une piste y aboutit (car
   if(!h||h.fp!==fp)throw new Error("le clic sur la pastille devait prendre le boîtier : "+JSON.stringify(h&&Object.keys(h)));
   const t=hitTest(q.x+6,q.y);
   if(!t||!t.track)throw new Error("la piste, loin de la pastille, reste attrapable");
+});
+T("une piste sous un boîtier se prend d'un clic ; hitTous rend ce qui est dessous, dans l'ordre",()=>{
+  const saved=serialize();
+  try{
+    setCuCount(2);S.tracks=[];S.vias=[];S.zones=[];
+    const f=S.fps[0], b=bodyOf(f);
+    // un point du corps hors de toute pastille, et une piste de l'autre couche qui y passe
+    let pt=null;
+    for(let u=0.05;u<1&&!pt;u+=0.05)for(let v=0.05;v<1&&!pt;v+=0.05){
+      const lx=b.x1+(b.x2-b.x1)*u, ly=b.y1+(b.y2-b.y1)*v, a=(f.rot||0)*Math.PI/180;
+      const x=f.x+(f.side?-lx:lx)*Math.cos(a)-ly*Math.sin(a), y=f.y+(f.side?-lx:lx)*Math.sin(a)+ly*Math.cos(a);
+      const h=hitTest(x,y);
+      if(h&&h.fp===f&&!h.pad&&padsWorld(f).every(q=>padDist(x,y,q)>0.5))pt={x,y};
+    }
+    if(!pt)throw new Error("l'essai attend un corps de boîtier libre");
+    S.active=f.side?S.cu-1:0;
+    const t={l:f.side?0:S.cu-1,net:"T",w:0.3,x1:pt.x-0.2,y1:pt.y,x2:pt.x+0.2,y2:pt.y};
+    S.tracks=[t];touch();
+    const L=[...hitTous(pt.x,pt.y,null)];
+    if(!L[0]||L[0].track!==t)throw new Error("la piste d'abord : "+JSON.stringify(L.map(h=>Object.keys(h))));
+    if(!L.some(h=>h.fp===f))throw new Error("le boîtier ensuite");
+    if(hitTest(pt.x,pt.y).track!==t)throw new Error("hitTest rend le premier");
+  }finally{loadDoc(JSON.parse(saved),true);}
 });
 T("recentrer une piste sur le centre d'une pastille",()=>{
   const q=pastilleHorsGrille();
@@ -4113,6 +4136,13 @@ T("cuivre mini : la bande trop étroite entre deux dégagements est retirée, pa
     const lan=zoneLanieres(0);
     if(lan.length!==1)throw new Error("une lanière attendue : "+lan.length);
     if(!inPoly(xm,20,lan[0])||inPoly(xm,21.5,lan[0])||inPoly(20.2,20,lan[0]))throw new Error("la fente seule : "+JSON.stringify(polyBBox(lan[0])));
+    /* la fermeture de rayon cuMin/2, comme KiCad : la fente part ENTIÈRE et finit par deux congés,
+       là où un disque de 0,1 mm se pose sur les coins des deux dégagements — ce cuivre-là reste. */
+    const VA={x:20.5+ca,y:20.5+ca}, VB={x:20.5+gap-cb,y:20.5+cb};          // les coins vifs des deux dégagements
+    const D=Math.hypot(VB.x-VA.x,VB.y-VA.y), hd=Math.sqrt(0.01-D*D/4);
+    const cx=(VA.x+VB.x)/2-(VB.y-VA.y)/D*hd, cy=(VA.y+VB.y)/2+(VB.x-VA.x)/D*hd;   // le disque posé sur les deux coins
+    if(inPoly(cx,cy,lan[0])||inPoly(cx,cy-0.07,lan[0]))throw new Error("le disque de 0,1 mm reste en cuivre");
+    if(!inPoly(cx,cy-0.13,lan[0])||!inPoly(xm,20.5+Math.min(ca,cb)-0.02,lan[0]))throw new Error("sous le disque, la fente part jusqu'au bout");
     const regions=()=>(gerberCopper(0).match(/G36\*/g)||[]).length;
     const avec=regions();
     S.rule.cuMin=0;touch();

@@ -995,14 +995,17 @@ function fpVisible(fp){
   return S.sel.fps.has(fp.id)||!!((fp.side?S.show.silkB:S.show.silkT)&&faceAlpha(!fp.side))||
     padsWorld(fp).some(q=>padVisible(fp,q));
 }
-function hitTest(x,y,e){
+/* TOUT ce qui se trouve sous le point, du dessus vers le dessous. `hitTest` en
+   rend le premier ; un second clic au même endroit passe au suivant (pointerup). */
+function hitTest(x,y,e){return hitTous(x,y,e).next().value||null;}
+function* hitTous(x,y,e){
   const tol=px(3);
   for(const v of S.vias)
-    if(filtreOk("vias")&&viaVisible(v)&&dist(x,y,v.x,v.y)<=v.d/2+tol)return {via:v};
+    if(filtreOk("vias")&&viaVisible(v)&&dist(x,y,v.x,v.y)<=v.d/2+tol)yield {via:v};
   if(S.holes&&filtreOk("holes")){
     for(let i=S.holes.length-1;i>=0;i--){
       const h=S.holes[i], a=axePercage(h);
-      if(segDist(x,y,a.x1,a.y1,a.x2,a.y2)<=h.d/2+tol)return {hole:h};
+      if(segDist(x,y,a.x1,a.y1,a.x2,a.y2)<=h.d/2+tol)yield {hole:h};
     }
   }
   /* Le cuivre d'une pastille appartient à son boîtier : une piste qui y aboutit
@@ -1011,26 +1014,29 @@ function hitTest(x,y,e){
   const surUnePastille=()=>surPastille!==null?surPastille:(surPastille=S.fps.some(fp=>
     padsWorld(fp).some(q=>padCuLayers(fp,q).includes(S.active)&&padDist(x,y,q)<=0)));
   for(const t of S.tracks)
-    if(filtreOk("tracks")&&t.l===S.active&&trkDist(x,y,t)<=t.w/2+tol&&!surUnePastille())return {track:t};
+    if(filtreOk("tracks")&&t.l===S.active&&trkDist(x,y,t)<=t.w/2+tol&&!surUnePastille())yield {track:t};
   /* Les pastilles avant les repères : sur une carte importée, le repère est
      souvent posé sur le boîtier, et le clic prenait le texte au lieu du composant. */
   if(filtreOk("fps"))for(let i=S.fps.length-1;i>=0;i--)
     for(const q of padsWorld(S.fps[i]))
-      if(padDist(x,y,q)<=tol&&padVisible(S.fps[i],q))return {fp:S.fps[i],pad:q};
+      if(padDist(x,y,q)<=tol&&padVisible(S.fps[i],q))yield {fp:S.fps[i],pad:q};
+  /* Les pistes de toute couche visible avant le corps du boîtier : une piste qui
+     passe sous un composant se prend d'un clic, le composant par ses pastilles
+     ou son corps à côté. */
+  for(const t of S.tracks)
+    if(filtreOk("tracks")&&layerAlpha(t.l)>0&&trkDist(x,y,t)<=t.w/2+tol)yield {track:t};
   if(filtreOk("fps"))for(let i=S.fps.length-1;i>=0;i--){
     const fp=S.fps[i];
     if(!fpVisible(fp))continue;
     const tp = fpTextPos(fp);
     // textStrokes : 5/6 de la hauteur par caractère
-    if(Math.abs(x-tp.ref.x)<=(fp.ref.length||0)*tp.ref.size*0.42 && Math.abs(y-tp.ref.y)<=tp.ref.size*0.6) return {fpText:fp, kind:"ref"};
+    if(Math.abs(x-tp.ref.x)<=(fp.ref.length||0)*tp.ref.size*0.42 && Math.abs(y-tp.ref.y)<=tp.ref.size*0.6) yield {fpText:fp, kind:"ref"};
     const b=bodyOf(fp);
     const a=-(fp.rot||0)*Math.PI/180, ca=Math.cos(a), sa=Math.sin(a);
     let lx=(x-fp.x)*ca-(y-fp.y)*sa, ly=(x-fp.x)*sa+(y-fp.y)*ca;
     if(fp.side)lx=-lx;
-    if(lx>=b.x1&&lx<=b.x2&&ly>=b.y1&&ly<=b.y2)return {fp};
+    if(lx>=b.x1&&lx<=b.x2&&ly>=b.y1&&ly<=b.y2)yield {fp};
   }
-  for(const t of S.tracks)
-    if(filtreOk("tracks")&&layerAlpha(t.l)>0&&trkDist(x,y,t)<=t.w/2+tol)return {track:t};
   /* traits et textes de sérigraphie */
   if(S.drawings&&filtreOk("drawings")){
     for(let i=S.drawings.length-1;i>=0;i--){
@@ -1038,14 +1044,14 @@ function hitTest(x,y,e){
       if(!drwAlpha(d))continue;     // couche cachée, face opposée masquée : rien à prendre
       const tol=Math.max((d.width||0)/2,px(3.5));
       if(d.shape==="poly"){
-        if(inPoly(x,y,d.pts)||polyEdgeDist(x,y,d.pts)<=tol)return {drawing:d};
+        if(inPoly(x,y,d.pts)||polyEdgeDist(x,y,d.pts)<=tol)yield {drawing:d};
         continue;
       }
       if(d.shape==="rect"){
         if(segDist(x,y,d.x1,d.y1,d.x2,d.y1)<=tol||
            segDist(x,y,d.x2,d.y1,d.x2,d.y2)<=tol||
            segDist(x,y,d.x2,d.y2,d.x1,d.y2)<=tol||
-           segDist(x,y,d.x1,d.y2,d.x1,d.y1)<=tol) return {drawing:d};
+           segDist(x,y,d.x1,d.y2,d.x1,d.y1)<=tol) yield {drawing:d};
       }else if(d.shape==="text"){
         const L=String(d.text!=null?d.text:"TEXT").length;
         const h=d.size||d.height||1.5;
@@ -1055,10 +1061,10 @@ function hitTest(x,y,e){
         const c=Math.cos(rad), s=Math.sin(rad);
         const dx=x-d.x1, dy=y-d.y1;
         const lx=dx*c-dy*s, ly=dx*s+dy*c;
-        if(Math.abs(lx)<=hw+tol&&Math.abs(ly)<=hh+tol) return {drawing:d};
+        if(Math.abs(lx)<=hw+tol&&Math.abs(ly)<=hh+tol) yield {drawing:d};
       }else{
         const P=drwPoints(d);
-        for(let k=0;k+1<P.length;k++)if(segDist(x,y,P[k].x,P[k].y,P[k+1].x,P[k+1].y)<=tol)return {drawing:d};
+        for(let k=0;k+1<P.length;k++)if(segDist(x,y,P[k].x,P[k].y,P[k+1].x,P[k+1].y)<=tol)yield {drawing:d};
       }
     }
   }
@@ -1066,20 +1072,20 @@ function hitTest(x,y,e){
   if(filtreOk("zones"))for(let i=S.zones.length-1;i>=0;i--){
     const z=S.zones[i];
     if(z.larme||layerAlpha(z.l)<=0||z.pts.length<2)continue;
-    if(polyEdgeDist(x,y,z.pts)<=px(5))return {zone:z};
-    if(e&&(e.ctrlKey||e.shiftKey||e.metaKey||e.altKey)&&inPoly(x,y,z.pts))return {zone:z};
+    if(polyEdgeDist(x,y,z.pts)<=px(5))yield {zone:z};
+    if(e&&(e.ctrlKey||e.shiftKey||e.metaKey||e.altKey)&&inPoly(x,y,z.pts))yield {zone:z};
   }
   if(filtreOk("zones"))for(let i=S.cuts.length-1;i>=0;i--){
     const c=S.cuts[i];
-    if(layerAlpha(c.l)>0&&c.pts.length>1&&polyEdgeDist(x,y,c.pts)<=px(5))return {cut:c};
+    if(layerAlpha(c.l)>0&&c.pts.length>1&&polyEdgeDist(x,y,c.pts)<=px(5))yield {cut:c};
   }
   /* une zone interdite se prend par son bord : son intérieur laisse passer le clic */
-  if(filtreOk("autres"))for(const z of interditsListe())if(polyEdgeDist(x,y,z.pts)<=px(5))return {interdit:z};
+  if(filtreOk("autres"))for(const z of interditsListe())if(polyEdgeDist(x,y,z.pts)<=px(5))yield {interdit:z};
   /* une découpe de carte se prend par son bord ou par son vide */
   if(S.show.edge&&filtreOk("autres"))
     for(const D of boardCutouts())
-      if(polyEdgeDist(x,y,D)<=px(5)||inPoly(x,y,D))return {decoupe:D};
-  if(S.show.edge&&filtreOk("autres")&&polyEdgeDist(x,y,boardPoly())<=px(5))return {edge:true};
+      if(polyEdgeDist(x,y,D)<=px(5)||inPoly(x,y,D))yield {decoupe:D};
+  if(S.show.edge&&filtreOk("autres")&&polyEdgeDist(x,y,boardPoly())<=px(5))yield {edge:true};
   /* Dernier recours : le plein d'une zone. Un plan de masse ou d'alimentation
      couvre toute la carte — son contour se confond avec celui de la carte et
      n'offre rien à viser. On le rend donc attrapable par son intérieur, mais
@@ -1088,9 +1094,8 @@ function hitTest(x,y,e){
      d'un plan commencerait par emporter le plan. */
   if(S.show.plane&&filtreOk("zones")){
     const zi=zoneUnder(x,y);
-    if(zi)return {zone:zi,inside:true};
+    if(zi)yield {zone:zi,inside:true};
   }
-  return null;
 }
 /* Zone visible dont le plein contient le point. La couche active passe devant
    les autres — c'est celle sur laquelle on travaille — et une découpe rend son
@@ -5026,6 +5031,7 @@ cv.addEventListener("pointerdown",e=>{
      geste glisse, c'est toute la sélection qui part, lui compris. Sans
      modificateur, saisir un élément de la sélection l'emmène avec les autres. */
   let toggleOff=null;
+  const deja=!add&&selCount()===1&&hitSelected(h);   // reclic sur le seul objet pris : pointerup passe à celui du dessous
   if(add){
     if(hitSelected(h))toggleOff=h;
     else toggleHit(h);
@@ -5045,7 +5051,7 @@ cv.addEventListener("pointerdown",e=>{
      s'alignaient jamais. Par identifiant : dragRestart recharge le document. */
   const anc=(h.fp&&S.sel.fps.has(h.fp.id))?h.fp.id:null;
   drag={move:true,x:p.x,y:p.y,moved:false,dx:0,dy:0,
-        trk:null,via:null,joints:null,toggleOff,anc};
+        trk:null,via:null,joints:null,toggleOff,anc,dessous:deja};
   refreshPanels();
   // la mise en avant se voit sur le canevas : on la montre aussi dans la liste
   if(pn)revealNet(pn);
@@ -5368,6 +5374,7 @@ cv.addEventListener("pointermove",e=>{
     }else if(bouge)drawBientot(true);
   }
 });
+let dessousT=-1e9;
 cv.addEventListener("pointerup",e=>{
   cancelLongpress();
   PTR_PCB.delete(e.pointerId);
@@ -5503,6 +5510,22 @@ cv.addEventListener("pointerup",e=>{
   // Ctrl/Maj sur un élément déjà pris, sans glisser : c'était un retrait
   if(drag&&drag.move&&!drag.moved&&drag.toggleOff){
     toggleHit(drag.toggleOff);groupeRetirerSel(drag.toggleOff);refreshPanels();draw();
+  }
+  /* Reclic, sans glisser, sur le seul objet pris : la sélection passe à l'objet
+     du dessous, puis au suivant, et revient au premier. Le plein d'une zone et
+     les repères n'en sont pas : ils ont leur propre geste. */
+  const doubleClic=e.timeStamp-dessousT<400;dessousT=e.timeStamp;   // un double-clic n'est pas un reclic
+  if(drag&&drag.move&&!drag.moved&&drag.dessous&&!doubleClic){
+    const vus=new Set(), L=[];
+    for(const c of hitTous(drag.x,drag.y,null)){
+      const o=!c.inside&&!c.fpText&&(c.fp||c.track||c.via||c.zone||c.cut||c.hole||c.drawing||c.decoupe||c.interdit||(c.edge&&"bord"));
+      if(o&&!vus.has(o)){vus.add(o);L.push(c);}
+    }
+    const k=L.findIndex(hitSelected);
+    if(k>=0&&L.length>1){
+      selectHit(L[(k+1)%L.length],false);groupeEtendreSel();refreshPanels();draw();
+      hint("Objet du dessous pris ("+((k+1)%L.length+1)+"/"+L.length+") — recliquez pour le suivant.");
+    }
   }
   const gele=drag&&drag.moved;
   drag=null;
