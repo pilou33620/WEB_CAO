@@ -868,8 +868,26 @@ function zoneLanieres(l){
       const r=Math.hypot(qc.w,qc.h)/2+e;
       /* la distance au dégagement TEL QU'IL EST TRACÉ : coins vifs pour une pastille à pans
          (padWorldPts, comme l'écran et le Gerber), ronds pour un cercle ou un oblong */
-      const PP=(qc.shape==="circ"||qc.shape==="oval")?null:padWorldPts(qc,e);
-      ajouter({fait:()=>bord(PP||padWorldPts(qc,e)),d:PP?(x,y)=>ptPolyDist(x,y,PP):(x,y)=>padDist(x,y,qc)-e,net:q.net},q.x-r,q.y-r,q.x+r,q.y+r);
+      if(qc.shape==="circ"||qc.shape==="oval"){
+        ajouter({fait:()=>bord(padWorldPts(qc,e)),d:(x,y)=>padDist(x,y,qc)-e,net:q.net},q.x-r,q.y-r,q.x+r,q.y+r);
+        continue;
+      }
+      const W=qc.w+2*e, H=qc.h+2*e, Rc=Math.min(padRadius(qc.shape,W,H),W/2,H/2);
+      if(Rc>0){
+        /* « rect » : coins arrondis de padRadius sur la pastille dilatée, comme padPath et le Gerber */
+        const ca=Math.cos(qc.rot||0), sa=Math.sin(qc.rot||0), hx=W/2-Rc, hy=H/2-Rc;
+        ajouter({rond:true,net:q.net,
+          d:(x,y)=>{const dx=x-qc.x, dy=y-qc.y, u=Math.abs(dx*ca+dy*sa)-hx, v=Math.abs(-dx*sa+dy*ca)-hy;
+            return Math.hypot(Math.max(u,0),Math.max(v,0))+Math.min(Math.max(u,v),0)-Rc;},
+          fait:(g=0)=>{const o=[];
+            for(const [sx,sy,a0] of [[1,1,0],[-1,1,Math.PI/2],[-1,-1,Math.PI],[1,-1,1.5*Math.PI]])
+              for(const p of cercle(sx*hx,sy*hy,Rc+g,a0,a0+Math.PI/2))o.push({x:qc.x+p.x*ca-p.y*sa,y:qc.y+p.x*sa+p.y*ca});
+            return bord(o);}},
+          q.x-r,q.y-r,q.x+r,q.y+r);
+        continue;
+      }
+      const PP=padWorldPts(qc,e);
+      ajouter({fait:()=>bord(PP),d:(x,y)=>ptPolyDist(x,y,PP),net:q.net},q.x-r,q.y-r,q.x+r,q.y+r);
     }
   for(const v of S.vias){
     if(l<v.a||l>v.b)continue;

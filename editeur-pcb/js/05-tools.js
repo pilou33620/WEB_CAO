@@ -4859,7 +4859,13 @@ cv.addEventListener("pointerdown",e=>{
     placeOrigin(p.x,p.y);setMode("select");return;
   }
   if(S.mode==="via"){
-    const m=magnet(p.x,p.y,S.active);
+    /* un via traverse toutes les couches : une pastille sous le clic, quelle que soit sa
+       couche, l'emporte (une CMS du dessous cliquée depuis Top) ; sinon l'accroche de la couche active,
+       puis celle d'une autre couche */
+    const couches=[S.active].concat(S.cuL.map((_,i)=>i).filter(i=>i!==S.active));
+    const ms=couches.map(l=>({l,m:magnet(p.x,p.y,l)}));
+    const sur=ms.find(({l,m})=>m&&m.pad&&padDist(p.x,p.y,padSurCouche(m.obj,l))<=0);
+    const m=sur?sur.m:ms[0].m||(ms.find(o=>o.m)||{}).m;
     const x=m?m.x:snapX(p.x), y=m?m.y:snapY(p.y);
     /* posé dans le plein d'une zone, loin de tout cuivre : le via prend le net
        de la zone (un via de masse dans le plan de masse), couche active d'abord */
@@ -5182,7 +5188,7 @@ cv.addEventListener("pointermove",e=>{
     const [a,b]=[...PTR_PCB.values()];
     const d=Math.max(1,Math.hypot(a.x-b.x,a.y-b.y));
     const r=cv.getBoundingClientRect();
-    const k=Math.max(0.6/PINCH_PCB.scale,Math.min(80/PINCH_PCB.scale,d/PINCH_PCB.d));
+    const k=Math.max(0.6/PINCH_PCB.scale,Math.min(ZOOM_MAX/PINCH_PCB.scale,d/PINCH_PCB.d));
     const mx=PINCH_PCB.mx-r.left, my=PINCH_PCB.my-r.top;
     S.scale=PINCH_PCB.scale*k;
     S.ox=mx-(mx-PINCH_PCB.ox)*k+((a.x+b.x)/2-PINCH_PCB.mx);
@@ -5573,7 +5579,7 @@ cv.addEventListener("wheel",e=>{
   e.preventDefault();
   const r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
   const b=s2w(mx,my);
-  S.scale=clamp(S.scale*(e.deltaY<0?1.12:1/1.12),0.6,80);
+  S.scale=clamp(S.scale*(e.deltaY<0?1.12:1/1.12),0.6,ZOOM_MAX);
   const a=s2w(mx,my);
   S.ox+=(mirX(a.x)-mirX(b.x))*S.scale;
   S.oy+=(a.y-b.y)*S.scale;

@@ -1238,6 +1238,8 @@ function activeColor(){return layerColor(S.active);}
 function bcx(){return S.board.x+S.board.w/2;}
 function mirX(x){return S.flip?(2*bcx()-x):x;}
 function w2s(x,y){return {x:mirX(x)*S.scale+S.ox, y:y*S.scale+S.oy};}
+/* zoom maximal, en pixels par millimètre (×20 pour le pourcentage affiché : 8000 %) */
+const ZOOM_MAX=400;
 function s2w(px,py){
   const X=(px-S.ox)/S.scale;
   return {x:mirX(X), y:(py-S.oy)/S.scale};

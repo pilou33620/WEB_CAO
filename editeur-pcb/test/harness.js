@@ -4213,6 +4213,54 @@ T("cuivre mini : la poche entre trois dégagements, la fente le long du bord de 
     if(!dans(cx+0.05,cy))throw new Error("la bande entre la via et le contour de la zone");
   }finally{suiviFin(reg);loadDoc(JSON.parse(saved),true);}
 });
+T("cuivre mini : entre deux pastilles « rect » d'un SOIC, le congé suit leurs coins arrondis",()=>{
+  const saved=serialize(), reg=suiviDecor();
+  try{
+    /* l'écran et le Gerber arrondissent les coins d'une pastille « rect » (padRadius) : le
+       calcul les prenait à coins vifs, et une dent de cuivre restait à la pointe entre deux
+       dégagements (carte PIR V4) */
+    S.fps=[];S.tracks=[];S.vias=[];S.cuts=[];S.rule.cuMin=0.2;
+    const bb=polyBBox(boardPoly()), f=mkFp("U9","","SOIC-8",8);
+    f.x=(bb.x1+bb.x2)/2;f.y=(bb.y1+bb.y2)/2;for(let i=1;i<=8;i++)f.nets[i]="N"+i;S.fps=[f];
+    S.zones=[{id:S.nextId++,l:0,net:"GND",pts:boardZonePts()}];touch();
+    const [a,b]=padsWorld(f).filter(q=>q.x>f.x).sort((p,q)=>p.y-q.y), e=clrK("GND","N1","cu","smd");
+    const W=a.w+2*e, Rc=Math.min(padRadius(a.shape,W,a.h+2*e),W/2), ym=(a.y+b.y)/2;
+    /* la fermeture : chaque point de cuivre gardé près de la pointe est atteint par un disque
+       de rayon cuMin/2 posé dans le cuivre (à 10 µm près) */
+    const r=S.rule.cuMin/2, L=zoneLanieres(0), dd=(x,y)=>Math.min(padDist(x,y,a),padDist(x,y,b))-e;
+    let dents=0, entailles=0;
+    for(let x=a.x+W/2-0.4;x<=a.x+W/2+0.2;x+=0.01)for(let y=ym-0.3;y<=ym+0.3;y+=0.01){
+      if(dd(x,y)<=0.005)continue;
+      // le meilleur disque qui contient ce point : marge = son jeu au dégagement le plus proche
+      let jeu=-1;
+      for(let k=0;k<5;k++)for(let j=0;j<24;j++){
+        const t=r*k/4, cx=x+t*Math.cos(j*Math.PI/12), cy=y+t*Math.sin(j*Math.PI/12);
+        jeu=Math.max(jeu,dd(cx,cy)-r);
+      }
+      const parti=L.some(H=>inPoly(x,y,H));
+      if(!parti&&jeu<-0.01)dents++;                // cuivre qu'aucun disque n'atteint, resté
+      if(parti&&jeu>0.02)entailles++;              // cuivre qu'un disque atteint, retiré
+    }
+    if(dents)throw new Error(dents+" point(s) de cuivre qu'aucun disque n'atteint : une dent reste à la pointe");
+    if(entailles)throw new Error(entailles+" point(s) de cuivre sain retirés : une entaille près des coins arrondis");
+    if(zoneLanieres(0).some(H=>inPoly(a.x+W/2+0.3,ym,H)))throw new Error("loin des pastilles, rien ne part");
+  }finally{suiviFin(reg);loadDoc(JSON.parse(saved),true);}
+});
+T("outil « Via » : une pastille CMS du dessous, cliquée depuis Top, donne son net",()=>{
+  const saved=serialize(), reg=suiviDecor();
+  try{
+    S.fps=[];S.tracks=[];S.vias=[];S.cuts=[];S.zones=[];clearSel();setCuCount(4,true);S.avoid=true;
+    const bb=polyBBox(boardPoly()), f=mkFp("U9","","SOIC-8",8);
+    f.x=(bb.x1+bb.x2)/2;f.y=(bb.y1+bb.y2)/2;f.side=1;for(let i=1;i<=8;i++)f.nets[i]="N"+i;S.fps=[f];
+    S.zones=[{id:S.nextId++,l:3,net:"GND",pts:boardZonePts()}];touch();
+    S.active=0;setMode("via");
+    const q=padsWorld(f)[0];
+    fire("pointerdown",sc(q.x,q.y));fire("pointerup",sc(q.x,q.y));
+    setMode("select");
+    if(S.vias.length!==1||S.vias[0].net!==q.net)
+      throw new Error("via sur la pastille du dessous : "+(S.vias.length?"net "+S.vias[0].net:"refusée ("+$("fHint").textContent+")"));
+  }finally{suiviFin(reg);loadDoc(JSON.parse(saved),true);}
+});
 T("sérigraphie sur le cuivre nu : repère posé au-dessus des pastilles, sinon le DRC le dit",()=>{
   const saved=serialize(), reg=suiviDecor();
   try{

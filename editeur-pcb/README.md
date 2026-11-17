@@ -937,7 +937,14 @@ enveloppe anguleuse. Le disque se pose entre deux formes ; si une troisième
 l'en empêche, le bord passe par elle, et une poche fermée entre trois
 dégagements part entière. Le **bord de carte** (la marge `edge`, découpes
 comprises) et le **contour d'une zone** comptent comme des formes : la bande
-trop étroite entre un dégagement et un bord part aussi.
+trop étroite entre un dégagement et un bord part aussi. Les formes sont celles
+qui sont tracées : une pastille « rect » a des coins arrondis (`padRadius`, sur
+la pastille dilatée), comme à l'écran et au Gerber ; prise à coins vifs, elle
+laissait des entailles entre deux pastilles voisines d'un SOIC.
+
+**Outil « Via »** : un via traverse toutes les couches, il prend le net de la
+pastille cliquée quelle que soit sa couche (une CMS du dessous, cliquée depuis
+Top). Le zoom va jusqu'à 400 px/mm (8000 %, `ZOOM_MAX`).
 
 **Zones interdites et hauteurs** (`38-interdits.js`, outil « Zone interdite »
 du menu Placer, sans raccourci) : une zone se pose sur UNE face, comme
