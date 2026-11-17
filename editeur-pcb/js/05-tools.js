@@ -1316,8 +1316,10 @@ function crossN(a,b){
    son angle — il basculerait de travers. On ne s'arrête donc qu'au vrai coude
    et au changement de net. Un via ne l'arrête pas non plus : une ligne droite
    qui change de couche reste une ligne droite, et la laisser derrière la
-   coucherait de la même façon. */
-function collinearRun(t0){
+   coucherait de la même façon. `passe(v)` dit quels vias franchir : au
+   glissement, seuls les vias tirés eux aussi — un via resté en place arrête
+   la portion sur les autres couches. */
+function collinearRun(t0,passe){
   /* Une courbe n'est colinéaire de rien : sa corde dit une direction que son
      cuivre ne suit pas. Elle reste seule, et le geste ne prend qu'elle. */
   if(isArc(t0))return new Set([t0]);
@@ -1328,7 +1330,7 @@ function collinearRun(t0){
       const x=en===1?t.x1:t.x2, y=en===1?t.y1:t.y2;
       let ends=jointAt(x,y,t.l).ends;
       const v=viaAt(t.l,x,y);
-      if(v)for(let L=v.a;L<=v.b;L++)
+      if(v&&(!passe||passe(v)))for(let L=v.a;L<=v.b;L++)
         if(L!==t.l)ends=ends.concat(jointAt(x,y,L).ends);
       for(const o of ends){
         if(o.t===t||run.has(o.t)||o.t.net!==t.net||isArc(o.t))continue;
@@ -1497,7 +1499,43 @@ function moveJoints(rigid){
       if(j.slide)break;
     }
   }
+  /* Un via qu'on n'a pas pris reste où il est : tirer la piste ne le déplace
+     pas. Ses voisins non tirés restent avec lui, et un talon né de longueur
+     nulle sur le via rattrape le segment tiré (`stubAt`) ; resté nul, il
+     disparaît au relâchement (`pruneDeadTracks`). */
+  for(const [k,j] of J){
+    if(rigid&&rigid.has(k))continue;
+    if(!j.vias.length||j.vias.some(a=>a.sel))continue;
+    const sel=j.ends.filter(o=>o.sel);
+    if(!sel.length)continue;
+    const V=j.vias[0].v, x=r3(V.x), y=r3(V.y);
+    j.vias=[];j.ends=sel.slice();j.slide=null;
+    for(const l of new Set(sel.map(o=>o.t.l))){
+      const s=sel.find(o=>o.t.l===l).t;
+      const t={l,net:s.net,w:s.w,x1:x,y1:y,x2:x,y2:y};
+      S.tracks.push(t);
+      j.ends.push({t,e:2,x0:x,y0:y,f0:{x,y},sel:false});
+    }
+    j.stub={vx:V.x,vy:V.y,g:endFar(sel[0].t,sel[0].e),gd:endDir(sel[0].t,sel[0].e)};
+  }
   return [...J.values()];
+}
+/* Où le talon parti du via fixe rejoint la ligne du segment tiré : à 45° de
+   lui (droit en règle 90° ou libre), du côté de son autre bout — le segment
+   raccourcit au lieu de dépasser le via. */
+function stubAt(s,dx,dy){
+  const L=Math.hypot(s.gd.x,s.gd.y)||1, ux=s.gd.x/L, uy=s.gd.y/L, c=Math.SQRT1_2;
+  const m=cornerMode();
+  const W=(m==="45"||m==="arc")?[{x:c*(ux-uy),y:c*(ux+uy)},{x:c*(ux+uy),y:c*(uy-ux)}]:[{x:-uy,y:ux}];
+  const gx=s.g.x+dx-s.vx, gy=s.g.y+dy-s.vy;
+  let best=null;
+  for(const w of W){
+    const k=(gx*uy-gy*ux)/(w.x*uy-w.y*ux);
+    const p={x:s.vx+w.x*k,y:s.vy+w.y*k,eat:0};
+    if(w.x*k*ux+w.y*k*uy<=1e-9)return p;      // gd regarde le via : du côté opposé
+    if(!best)best=p;
+  }
+  return best;
 }
 /* Le mur retourné : sa direction renvoyée par la ligne du segment tiré. Un
    45° reste un 45°, un angle droit un angle droit — seul le côté change. C'est
@@ -1587,7 +1625,7 @@ function applyJoints(J,dx,dy,detach){
       continue;
     }
     // intersection de la ligne du voisin (fixe) et de celle du segment tiré
-    j.opt=j.slide?slideAt(j.slide,dx,dy):[];
+    j.opt=j.stub?[stubAt(j.stub,dx,dy)]:j.slide?slideAt(j.slide,dx,dy):[];
     j.pick=0;
     place(j,j.opt[0]||null);
   }
@@ -2109,7 +2147,7 @@ function beginMove(){
   // la sélection d'origine, pour rejouer le geste sous une autre conduite
   if(!drag.selSnap)drag.selSnap=dragSelSnap();
   for(const t of [...S.sel.tracks])
-    for(const o of collinearRun(t))S.sel.tracks.add(o);
+    for(const o of collinearRun(t,v=>S.sel.vias.has(v)))S.sel.tracks.add(o);
   verrousRetirer();                // les objets verrouillés restent où ils sont (46-edition.js)
   // les vias de sortie des boîtiers tirés partent avec eux (`25-liens.js`)
   drag.fanout=fanoutTake();
@@ -2156,12 +2194,15 @@ function beginMove(){
    à l'isolation (la mesure du DRC, `colliding`), et son corps contre celui d'un
    boîtier de la même face. Deux faces opposées se superposent légitimement, tant
    que les pastilles traversantes ne se gênent pas. Rend la gêne en clair, ou "". */
+let FP_GENE_QUI="";                    // l'obstacle de la dernière gêne : son boîtier, ou son net
 function fpGene(fp,skip,duresSeules){
   const N=pnsWorld();
+  FP_GENE_QUI="";
   for(const q of padsWorld(fp))
     for(const probe of pnsItemsPad(fp,q))
       for(const o of N.colliding(probe,skip)){
         if(duresSeules&&o.k!=="P")continue;          // le cuivre qui s'écarte ne bute pas
+        FP_GENE_QUI=o.k==="P"&&o.fp?"F"+o.fp.id:o.k+"|"+(o.net||"")+(o.npth?"|npth":"");
         return o.k==="V"?"un via"+(o.net?" de "+o.net:""):
                o.npth?"un trou NPTH":
                o.k==="P"?"la pastille "+padDesig(o.fp,o.src):
@@ -2174,7 +2215,7 @@ function fpGene(fp,skip,duresSeules){
         const g=o.f, bb=o.b;
         if(g===fp||skip.has(g)||!!g.side!==!!fp.side)continue;
         if(bb.x1>ab.x2||bb.x2<ab.x1||bb.y1>ab.y2||bb.y2<ab.y1)continue;
-        if(polysTouchent(A,o.P))return "le corps de "+g.ref;
+        if(polysTouchent(A,o.P)){FP_GENE_QUI="F"+g.id;return "le corps de "+g.ref;}
       }
   return "";
 }
@@ -2252,7 +2293,8 @@ function fpEssai(mutate){
     if(a.v!==undefined)a.f.valOffX=a.v;
   }
   for(const o of apres)
-    if(o.g&&!fpGene(o.f,skip))return o.f.ref+" buterait sur "+o.g;   // déjà en faute avant : réparable
+    // déjà en faute avant contre la même gêne : réparable ; une gêne nouvelle, non
+    if(o.g&&fpGene(o.f,skip)!==o.g)return o.f.ref+" buterait sur "+o.g;
   return "";
 }
 function fpRefus(gene){
@@ -2298,16 +2340,38 @@ function armFpClear(){
   drag.fpClear=null;
   if(!S.avoid||!S.sel.fps.size)return;
   const {fps,skip}=fpClearSkip();
-  drag.fpClear={was:new Set(fps.filter(f=>fpGene(f,skip))),warned:false};
+  const was=new Map();
+  for(const f of fps)if(fpGene(f,skip))was.set(f,fpGeneTous(f,skip));
+  drag.fpClear={was,warned:false};
+}
+/* Un boîtier déjà en faute au départ peut glisser pour en sortir, mais
+   seulement contre ce qui le gênait déjà : il ne traverse pas un autre
+   composant en chemin. */
+function fpDejaGene(c,f){
+  const avant=c.was.get(f);
+  return !!avant&&[...fpGeneTous(f,fpClearSkip().skip)].every(k=>avant.has(k));
+}
+/* Tous les obstacles d'un boîtier : on les écarte un à un du monde jusqu'à
+   ce que plus rien ne gêne. */
+function fpGeneTous(f,skip){
+  const out=new Set(), sk=new Set(skip);
+  for(let n=0;n<32&&fpGene(f,sk);n++){
+    if(out.has(FP_GENE_QUI))break;
+    out.add(FP_GENE_QUI);
+    const id=FP_GENE_QUI[0]==="F"?+FP_GENE_QUI.slice(1):null;
+    if(id==null)break;                    // piste ou via : on n'en écarte qu'un par net, on s'arrête là
+    const g=fpById(id);if(!g)break;
+    sk.add(g);
+  }
+  return out;
 }
 function fpStop(){
   const c=drag&&drag.fpClear;
   if(!c||!S.avoid)return false;
   const {fps,skip}=fpClearSkip();
   for(const f of fps){
-    if(c.was.has(f))continue;
     const gene=fpGene(f,skip,drag.follow&&drag.follow.shove);
-    if(!gene)continue;
+    if(!gene||fpDejaGene(c,f))continue;
     if(!c.warned){
       c.warned=true;
       hint(f.ref+" bute sur "+gene+". Tirez-le ailleurs, ou coupez l'anti-collision pour forcer.");
@@ -5084,7 +5148,7 @@ function dragMoveVers(dx,dy,alt){
     const sx=cale(dx*k/n,fa?fa.x:0,snapX), sy=cale(dy*k/n,fa?fa.y:0,snapY);
     if(!sx&&!sy)continue;
     for(const f of fps){f.x=r3(f.x+sx);f.y=r3(f.y+sy);}
-    const ok=fps.every(f=>c.was.has(f)||!fpGene(f,skip,dures));
+    const ok=fps.every(f=>{const g=fpGene(f,skip,dures);return !g||fpDejaGene(c,f);});
     for(const f of fps){f.x=r3(f.x-sx);f.y=r3(f.y-sy);}
     if(!ok)continue;
     dragMoveBy(sx,sy,alt);

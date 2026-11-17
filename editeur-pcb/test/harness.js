@@ -59,7 +59,7 @@ const EXPOSE=[
   "viaSuivante","viaTailles","verrousCoins","routeViaCurseur","mkVia",
   "pnsWorld","pnsItemsKeepout","distSegPoly","contourTroue","zoneDecoupee","gOrigin","gXY","drwBBox","drwPoints","gerberSilk","viaObstacle","placeVia",
   "coutureZone","cloturePistes","fanoutFps","coutureRetirer","viaEssai","netMasseDefaut","fmtU","uLue","uAff","RP_PCB","hitTest","deleteSel","startRoute",
-  "cutsCuivre","ilotContour","drcRangs","drcCategorie","drcFenetre","drcPas","copySelPcb","fpEssai","fpChevauchements","placementDegage","placementBilan","fpPlaceLibre","pasteClipPcb","rotateSel","flipSel","fpGene","routeRetouche","dragMoveBy","beginMove","dragRotate","gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
+  "cutsCuivre","ilotContour","drcRangs","drcCategorie","drcFenetre","drcPas","copySelPcb","fpEssai","fpGeneTous","fpChevauchements","placementDegage","placementBilan","fpPlaceLibre","pasteClipPcb","rotateSel","flipSel","fpGene","routeRetouche","dragMoveBy","beginMove","dragRotate","gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
   "updateRoute","stepRoute","commitRoute","routeToLayer","runDrc","buildTabs","backRoute",
   "buildLayers","refreshPanels","buildList","buildProps","clearSel","rotateSel",
   "BLOC_PLACEMENT","PLACEMENT_SCORE","fpBBox",
@@ -3547,9 +3547,13 @@ T("Alt pendant le glissement détache le voisin",()=>{
   if(Math.abs(b.y1-10)>1e-9)throw new Error("Alt devait laisser le voisin en place : "+b.y1);
   undo();
 });
-T("une ligne droite qui change de couche reste droite",()=>{
+/* Tirer une piste ne déplace pas le via qui la tient : il reste où il est,
+   la piste de l'autre couche aussi, et un talon à 45° relie le via au
+   segment tiré. Pour emporter le via, on le sélectionne avec la piste. */
+T("tirer une piste laisse le via en place, un talon le relie",()=>{
   if(S.cu<2)setCuCount(2);
   S.fps=[];S.tracks=[];S.vias=[];touch();
+  const reg=S.rule.corner;S.rule.corner="45";
   const a={l:0,net:"T",w:0.3,x1:10,y1:10,x2:20,y2:10};
   const b={l:1,net:"T",w:0.3,x1:20,y1:10,x2:30,y2:10};
   S.tracks.push(a,b);
@@ -3560,32 +3564,35 @@ T("une ligne droite qui change de couche reste droite",()=>{
   fire("pointerdown",sc(15,10));
   fire("pointermove",sc(15,14));
   fire("pointerup",sc(15,14));
-  if(Math.abs(v.y-14)>0.6)throw new Error("le via devait suivre : "+v.y);
-  // le via n'interrompt pas la ligne : la laisser derrière la coucherait
-  if(Math.abs(b.y1-14)>0.6||Math.abs(b.y2-14)>0.6)
-    throw new Error("la piste de l'autre couche devait suivre en entier : "+b.y1+" / "+b.y2);
-  undo();
+  try{
+    if(v.x!==20||v.y!==10)throw new Error("le via ne devait pas bouger : "+v.x+","+v.y);
+    if(b.y1!==10||b.y2!==10||b.x1!==20)throw new Error("la piste de l'autre couche ne devait pas bouger");
+    if(Math.abs(a.y1-14)>0.6)throw new Error("le segment tiré devait descendre : "+a.y1);
+    const top=S.tracks.filter(t=>t.l===0);
+    if(top.length!==2)throw new Error("un talon devait relier le via : "+top.length+" segment(s)");
+    for(const t of top)if(!surGrille(t))throw new Error("talon de travers");
+    chemin("T",{x:10,y:a.y1},{x:30,y:10});
+  }finally{undo();S.rule.corner=reg;}
 });
-T("au via, la piste perpendiculaire glisse au lieu de basculer",()=>{
+T("via sélectionné avec la piste : il part avec elle",()=>{
   if(S.cu<2)setCuCount(2);
   S.fps=[];S.tracks=[];S.vias=[];touch();
   const a={l:0,net:"T",w:0.3,x1:10,y1:10,x2:20,y2:10};
-  const b={l:1,net:"T",w:0.3,x1:20,y1:10,x2:20,y2:30};   // repart à 90°
+  const b={l:1,net:"T",w:0.3,x1:20,y1:10,x2:20,y2:30};
   S.tracks.push(a,b);
   const v={x:20,y:10,d:0.8,drill:0.4,a:0,b:1,net:"T"};
   S.vias.push(v);touch();
   setMode("select");S.active=0;
-  clearSel();S.sel.tracks.add(a);
+  clearSel();S.sel.tracks.add(a);S.sel.vias.add(v);
   fire("pointerdown",sc(15,10));
   fire("pointermove",sc(15,14));
   fire("pointerup",sc(15,14));
-  if(S.sel.tracks.has(b))throw new Error("un coude ne fait pas partie de la portion droite");
-  if(Math.abs(b.x1-20)>1e-9||Math.abs(b.x2-20)>1e-9)
-    throw new Error("la piste perpendiculaire a basculé : "+b.x1+" / "+b.x2);
-  if(Math.abs(b.y1-14)>0.6)throw new Error("elle devait glisser jusqu'à la ligne : "+b.y1);
-  if(Math.abs(b.y2-30)>1e-9)throw new Error("son autre bout ne devait pas bouger");
-  if(Math.abs(v.y-14)>0.6)throw new Error("le via devait suivre le coude : "+v.y);
-  undo();
+  try{
+    if(Math.abs(v.y-14)>0.6)throw new Error("le via sélectionné devait suivre : "+v.y);
+    const ys=[b.y1,b.y2].sort((p,q)=>p-q);
+    if(b.x1!==20||b.x2!==20||Math.abs(ys[0]-14)>0.6||ys[1]!==30)
+      throw new Error("la piste du dessous devait glisser : "+JSON.stringify(b));
+  }finally{undo();}
 });
 /* Garde-fou : un glissement ne doit jamais créer d'angle bâtard. Une ligne
    droite se trouve coupée par tout ce qu'elle rencontre — pastille traversée,
@@ -9328,6 +9335,14 @@ T("un boîtier tiré bute sur les pastilles et le corps d'un autre, et reste ré
     S.avoid=true;
     const sort=tire(B,60,40);
     if(sort.x!==60||sort.y!==40)throw new Error("une faute d'avant le geste reste réparable : "+JSON.stringify(sort));
+    // déjà en faute sur J1, il ne traverse pas pour autant un troisième boîtier
+    const R=mkFp("R9","1k","0603",2);R.x=40;R.y=60;S.fps.push(R);touch();
+    S.avoid=false;tire(B,A.x,A.y);S.avoid=true;
+    const dans=tire(B,R.x,R.y);
+    if(fpGene(B,new Set([B]))&&[...fpGeneTous(B,new Set([B]))].includes("F"+R.id))
+      throw new Error("un boîtier déjà en faute s'est posé sur un autre : "+JSON.stringify(dans));
+    S.fps=S.fps.filter(f=>f!==R);touch();
+    tire(B,60,40);
     // du cuivre étranger sous la destination : une piste d'un autre net bloque aussi
     const q=padsWorld(B)[0], qx=40+q.x-B.x;
     for(const l of padCuLayers(B,q))S.tracks.push({x1:qx,y1:25,x2:qx,y2:55,l,w:0.3,net:"AUTRE"});
