@@ -429,6 +429,23 @@ essai("export d'un document de l'éditeur : intégrés, parties, alimentations, 
   return chargeur(doc, part).slice(2) || "chargeur non construit";
 });
 
+essai("types électriques des broches : écrits dans la bibliothèque, relus sur le composant", () => {
+  const doc = { format: "schemedit-2", page: 1, symboles: {},
+    pages: [{ name: "Hiérarchie", isHierarchy: true, comps: [], wires: [], drawings: [] },
+      { name: "Feuille 1", uid: 3, comps: [
+        { id: 1, type: "opamp", x: 200, y: 200, rot: 0, mir: false, ref: "U1", value: "X", pinTypes: ["in", "in", "oc", "pwr_in", "constructor"] },
+        { id: 2, type: "resistor", x: 400, y: 200, rot: 0, mir: false, ref: "R1", value: "1k" }],
+        wires: [{ x1: 260, y1: 200, x2: 360, y2: 200 }], drawings: [] }]};
+  const ex = KS.ecrire(copie(doc), "essai", "essai_lib", KICAD.rapport(), null);
+  verifier(/\(pin input /.test(ex.bibliotheque) && /\(pin open_collector /.test(ex.bibliotheque) && /\(pin power_in /.test(ex.bibliotheque),
+           "types saisis écrits");
+  verifier(/\(pin passive /.test(ex.bibliotheque), "type inconnu (« constructor ») et broches non saisies : passive");
+  const m = lireTextes(Object.fromEntries(ex.fichiers.map(f => [f.nom, f.texte])));
+  const re = KS.lire(m, "essai.kicad_sch", KICAD.rapport());
+  const u1 = re.doc.pages.flatMap(p => p.comps).find(c => c.ref === "U1");
+  verifier(u1 && Array.isArray(u1.pinTypes) && u1.pinTypes.includes("oc") && u1.pinTypes.includes("pwr_in"), "relu : " + JSON.stringify(u1 && u1.pinTypes));
+});
+
 /* ======================================================================
    2. projets de démonstration
    ====================================================================== */

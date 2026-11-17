@@ -155,6 +155,8 @@ const EXPOSE=[
   "schSymboleLire","schSymboleDefinir","schSymboleRemplacer","schVarDefinir","schCleLib","schSymbolesDuDocument","SYM_LIB_LUS","schTypeDuCatalogue","LIB",
   /* contrôle électrique (31-erc.js) et blocs réutilisables (32-blocs.js) */
   "ercVerifier","ercTypeBroche","ercOuvrir","ercFermer","ERC_DERNIER",
+  "ercTypeSaisi","ercTypeDevine","ercNiveau","ercMatriceNorm","ercMatriceBasculer","ercMatriceHtml","ERC_TYPES",
+  "busAliasLire","busAliasNorm","busAliasTexte","schDevelopperSignauxBus","normComp","serialize","undo",
   "schReglesControler","reglesResultat","reglesTexte",
   "blocEnregistrer","blocsLire","blocPoser","blocSupprimer","blocsImporterTexte","blocsOuvrir","blocsFermer","BLOCS_KEY"
 ];
@@ -4639,6 +4641,78 @@ T("ERC : alimentation d'un AOP double câblée sur la partie A, la partie B ne c
   sheet([a,b],[]);
   r=ercVerifier().filter(x=>x.code==="entree-en-l-air"&&/V[+-]/.test(x.msg));
   if(!r.length)throw new Error("V+ et V- libres partout doivent rester signalés");
+});
+
+T("ERC : type saisi prioritaire, nom inconnu « libre », matrice réglable et gardée dans le document",()=>{
+  const ic=C("ic",0,0,{npins:3,pinNames:["XYZ","OUT","B"],pinTypes:["","oc","constructor"]});
+  if(ercTypeBroche(ic,0)!=="free")throw new Error("nom inconnu : "+ercTypeBroche(ic,0));
+  if(ercTypeBroche(ic,1)!=="oc"||ercTypeDevine(ic,1)!=="out")throw new Error("type saisi");
+  if(ercTypeSaisi(ic,2)!=="")throw new Error("« constructor » n'est pas un type");
+  // AOP U1 (sortie en 13,10) et CI U2 en collecteur ouvert sur le même net
+  const op=C("opamp",10,10,{ref:"U1"}), u2=C("ic",20,10,{ref:"U2",npins:2,pinNames:["A","B"],pinTypes:["oc",""]});
+  const p2=allPins(u2)[0];
+  sheet([op,u2],[W(13,10,13,6),{x1:13*G,y1:6*G,x2:p2.x,y2:6*G},{x1:p2.x,y1:6*G,x2:p2.x,y2:p2.y}]);
+  S.ercMatrice={};
+  let r=ercVerifier().filter(x=>x.code==="conflit-broches");
+  if(r.length!==1||r[0].niveau!=="erreur"||!/Sortie.*U1\.3.*Collecteur ouvert.*U2\.1/.test(r[0].msg))throw new Error(JSON.stringify(r.map(x=>x.msg)));
+  ercMatriceBasculer("oc|out");                            // erreur → permis
+  if(ercNiveau("out","oc")!=="ok"||S.ercMatrice["out|oc"]!=="ok")throw new Error("bascule : "+JSON.stringify(S.ercMatrice));
+  if(ercVerifier().some(x=>x.code==="conflit-broches"))throw new Error("permis : plus de conflit");
+  if(!/data-erck="out\|oc"/.test(ercMatriceHtml()))throw new Error("case de la matrice");
+  const js=JSON.parse(serialize());
+  if(!js.ercMatrice||js.ercMatrice["out|oc"]!=="ok")throw new Error("pas dans le document");
+  const n=ercMatriceNorm({"out|oc":"ok","in|in":"ok","constructor":"erreur","__proto__":{x:1},"in|nc":"bof","oc|out":"avert"});
+  if(JSON.stringify(n)!=='{"out|oc":"ok"}')throw new Error("lecture bornée : "+JSON.stringify(n));
+  undo();
+  if(ercNiveau("out","oc")!=="erreur")throw new Error("Ctrl+Z rend la matrice");
+  S.ercMatrice={};
+  const el=normComp({type:"resistor",id:3,x:0,y:0,ref:"R1",pinTypes:["pwr_out","__proto__",5]},0);
+  if(JSON.stringify(el.pinTypes)!=='["pwr_out","",""]')throw new Error("import : "+JSON.stringify(el.pinTypes));
+});
+T("ERC : noms rivaux, casse, étiquette seule, fil en l'air, broche hors grille, piquage hors du bus",()=>{
+  const r1=C("resistor",10,10,{ref:"R1"}), r2=C("resistor",10,20,{ref:"R2"});
+  const a=allPins(r1), b=allPins(r2);
+  const fil=(p,q,net)=>Object.assign({x1:p.x,y1:p.y,x2:q.x,y2:q.y},net?{net}:{});
+  sheet([r1,r2,C("port",30,30,{value:"Sda"}),C("port",30,34,{value:"SDA"}),C("port",40,40,{value:"SEUL"})],
+        [fil(a[1],b[1],"AA"),fil(b[1],{x:b[1].x,y:b[1].y+2*G},"BB"),fil(a[0],{x:a[0].x-3*G,y:a[0].y})]);
+  let r=ercVerifier();
+  const de=c=>r.filter(x=>x.code===c).map(x=>x.msg).join(" | ");
+  if(!/AA \/ BB|BB \/ AA/.test(de("noms-rivaux")))throw new Error("rivaux : "+de("noms-rivaux"));
+  if(!/Sda \/ SDA/.test(de("casse")))throw new Error("casse : "+de("casse"));
+  if(!/« SEUL »/.test(de("etiquette-seule"))||/Sda|SDA/.test(de("etiquette-seule")))throw new Error("seule : "+de("etiquette-seule"));
+  if(r.filter(x=>x.code==="fil-en-l-air").length!==1)throw new Error("fil en l'air : "+de("fil-en-l-air"));
+  if(de("hors-grille"))throw new Error("tout est sur la grille : "+de("hors-grille"));
+  // un fil qui traverse une broche n'est pas en l'air ; un composant décalé d'un demi-pas, si
+  const grille=S.grid;S.grid=G;                            // la grille de pose fait foi
+  sheet([C("resistor",10,10.5,{ref:"R3"})],[W(5,10,15,10)]);
+  r=ercVerifier();S.grid=grille;
+  if(!/R3\.1/.test(de("hors-grille")))throw new Error("hors grille ("+S.grid+") : "+de("hors-grille"));
+  const r4=C("resistor",10,10,{ref:"R4"}), p4=allPins(r4);
+  sheet([r4],[{x1:p4[0].x-G,y1:p4[0].y,x2:p4[0].x+G/2,y2:p4[0].y}]);
+  if(ercVerifier().some(x=>x.code==="fil-en-l-air"))throw new Error("le fil traverse la broche");
+  // bus D[0..3] et deux piquages : D2 en est, X9 non
+  sheet([],[W(0,0,10,0,"D[0..3]"),W(2,0,2,4,"D2"),W(4,0,4,4,"X9")].map((w,i)=>i?w:Object.assign(w,{bus:true})));
+  r=ercVerifier();
+  if(!/« X9 »/.test(de("piquage-hors-bus"))||/« D2 »/.test(de("piquage-hors-bus")))throw new Error("piquage : "+de("piquage-hors-bus"));
+});
+T("Alias de bus : lecture, développement, alias imbriqués et en boucle, gardés dans le document",()=>{
+  const l=busAliasLire("mem = A[0..1], WR\nX = {MEM}, CLK\nBOUCLE = BOUCLE2\nBOUCLE2 = BOUCLE\n__proto__ = Z\n9mal = A");
+  if(l.ecarts.length!==1||!/ligne 6/.test(l.ecarts[0]))throw new Error("écarts : "+l.ecarts);
+  S.busAlias=l.alias;
+  if(Object.prototype.hasOwnProperty.call({},"Z")||({}).Z)throw new Error("prototype pollué");
+  const d=n=>schDevelopperSignauxBus(n).join(",");
+  if(d("MEM")!=="A0,A1,WR"||d("{mem}")!=="A0,A1,WR")throw new Error("MEM : "+d("MEM"));
+  if(d("X")!=="A0,A1,WR,CLK")throw new Error("imbriqué : "+d("X"));
+  if(d("{MEM,EN}")!=="A0,A1,WR,EN")throw new Error("faisceau : "+d("{MEM,EN}"));
+  if(d("P{MEM}")!=="P_A0,P_A1,P_WR")throw new Error("préfixe : "+d("P{MEM}"));
+  if(d("{A[0..1],B}")!=="A0,A1,B")throw new Error("vecteur dans un faisceau : "+d("{A[0..1],B}"));
+  if(!d("BOUCLE"))throw new Error("boucle : rien");          // s'arrête, sans débordement de pile
+  if(d("SPI")!=="SPI_MOSI,SPI_MISO,SPI_SCK,SPI_CS")throw new Error("standard intact");
+  const js=JSON.parse(serialize());
+  if(js.busAlias.MEM.join()!=="A[0..1],WR")throw new Error("pas dans le document");
+  if(JSON.stringify(busAliasNorm({"bad name":["A"],OK:["A",{}],V:"x"}))!=='{"OK":["A","[object Object]"]}')throw new Error("lecture bornée : "+JSON.stringify(busAliasNorm({"bad name":["A"],OK:["A",{}],V:"x"})));
+  if(!/^MEM = A\[0\.\.1\], WR$/m.test(busAliasTexte(S.busAlias)))throw new Error(busAliasTexte(S.busAlias));
+  S.busAlias={};
 });
 
 /* ==========================================================================

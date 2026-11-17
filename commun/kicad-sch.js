@@ -458,6 +458,8 @@ const KICAD_SCH = (() => {
         if (fp) c.pkg = fp.replace(/^.*:/, "").slice(0, 120);
         if (sym.nbU > 1) c.part = lettre(u);
         if (sym.pinMap) c.pinMap = sym.pinMap.slice();
+        const types = sym.pins.map(p => Object.prototype.hasOwnProperty.call(TYPE_LU, p.type) ? TYPE_LU[p.type] : "");
+        if (types.some(Boolean)) c.pinTypes = types;
         for (const [k, nomK] of PROPS) { const v = prop(s, nomK); if (v) c[k] = v.slice(0, 100); }
         const ds = prop(s, "Datasheet");
         if (/^https?:\/\//i.test(ds)) c.datasheet_url = ds.slice(0, 500);
@@ -657,6 +659,14 @@ const KICAD_SCH = (() => {
     return null;
   }
   /* une unité : broches (le trait de patte qui part d'une broche devient sa longueur) et tracé */
+  /* types électriques KiCad ⇄ éditeur (31-erc.js) ; l'émetteur ouvert devient collecteur ouvert */
+  const TYPE_LU = { input: "in", output: "out", bidirectional: "bidir", tri_state: "tri", passive: "passive",
+                    open_collector: "oc", open_emitter: "oc", power_in: "pwr_in", power_out: "pwr_out",
+                    unspecified: "unspec", free: "free", no_connect: "nc" };
+  const TYPE_ECRIT = { in: "input", out: "output", bidir: "bidirectional", tri: "tri_state", passive: "passive",
+                       oc: "open_collector", pwr_in: "power_in", pwr_out: "power_out", unspec: "unspecified", free: "free", nc: "no_connect" };
+  /* type d'écriture de la broche i : celui saisi sur le composant, sinon passive */
+  const typesDe = c => i => (c && Array.isArray(c.pinTypes) && Object.prototype.hasOwnProperty.call(TYPE_ECRIT, c.pinTypes[i]) ? TYPE_ECRIT[c.pinTypes[i]] : "passive");
   function unite(def, numeros, typeBroche) {
     const g = def.g.slice(), pins = [];
     def.pins.forEach(([x, y], i) => {
@@ -670,7 +680,7 @@ const KICAD_SCH = (() => {
         g[k] = null;
       }
       for (const n of numeros[i])
-        pins.push(["pin", typeBroche, "line", ["at", mm(x), -mm(y), A], ["length", mm(lg)],
+        pins.push(["pin", typeof typeBroche === "function" ? typeBroche(i) : typeBroche, "line", ["at", mm(x), -mm(y), A], ["length", mm(lg)],
                    ["name", q(def.noms[i] || "~"), police()], ["number", q(n), police()]]);
     });
     return g.filter(Boolean).map(graphisme).filter(Boolean).concat(pins);
@@ -726,7 +736,7 @@ const KICAD_SCH = (() => {
       if (!parties.has(c.ref)) parties.set(c.ref, new Map());
       const m = parties.get(c.ref);
       if (m.has(c.part)) rap.ecart("partie de composant posée deux fois : " + c.ref + c.part);
-      else m.set(c.part, unite(def, numeros(c, def), "passive"));
+      else m.set(c.part, unite(def, numeros(c, def), typesDe(c)));
     }
     const libParties = new Map(), uniteDe = new Map();
     for (const [ref, m] of parties) {
@@ -843,7 +853,7 @@ const KICAD_SCH = (() => {
           nomS = libParties.get(c.ref);
           unitN = uniteDe.get(c.ref + "\u0000" + c.part);
         } else {
-          nomS = symLib(c.type, [unite(def, numeros(c, def), "passive")], { ref: prefixe(c), valeur: c.type });
+          nomS = symLib(c.type, [unite(def, numeros(c, def), typesDe(c))], { ref: prefixe(c), valeur: c.type });
         }
         libsPage.add(nomS);
         const uS = uuid("symbole:" + base + ":" + c.id);

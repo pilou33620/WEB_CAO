@@ -806,7 +806,7 @@ function serialize(){
   storeCurrent();
   return JSON.stringify({pages:S.pages,page:S.page,netClasses:S.netClasses,variantes:S.variantes,symboles:S.symboles,
                          cartouche:S.cartoucheInfo||{},
-                         contraintes:S.contraintes});
+                         contraintes:S.contraintes,ercMatrice:S.ercMatrice,busAlias:S.busAlias});
 }
 /* Pile pleine, deux lots de Claude d'affilée (instantanés marqués d'une espace finale par
    ECRITURE_CAO.pousser, que JSON.parse ignore) se fondent en un avant qu'une étape plus
@@ -838,6 +838,8 @@ function restore(js){
   S.cartoucheInfo=cartoucheInfoNorm(o.cartouche);
   S.contraintes={nets:cmNormNets(o.contraintes&&o.contraintes.nets),
                  groupes:cmNormGroupes(o.contraintes&&o.contraintes.groupes)};
+  S.ercMatrice=ercMatriceNorm(o.ercMatrice);
+  S.busAlias=busAliasNorm(o.busAlias);
   buildTabs();refreshPanels();draw();
   if(typeof SCHEMA_PATTERNS!=="undefined"&&SCHEMA_PATTERNS.analyser)SCHEMA_PATTERNS.analyser(150);
   S.dirty=true;

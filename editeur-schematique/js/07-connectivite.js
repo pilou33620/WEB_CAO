@@ -122,11 +122,52 @@ function netColor(net){
  * - {TX,RX,RTS,CTS} -> ["TX", "RX", "RTS", "CTS"]
  * - CLK,DATA,EN -> ["CLK", "DATA", "EN"]
  * - Noms protocolaires simples : "SPI", "I2C", "UART", "CAN", "USB"
+ * - Alias du document (S.busAlias, comme les bus aliases de KiCad) : MEM ou
+ *   {MEM} → ses membres ; un membre peut être un vecteur ou un autre alias.
  */
-function schDevelopperSignauxBus(nomBus){
+const BUS_ALIAS_NOM=/^[A-Za-z_][\w]{0,31}$/;
+/* Membres d'un alias, ou null. Clés en capitales : « __proto__ » n'en est pas une. */
+function busAliasDe(nom){
+  const a=(typeof S!=="undefined"&&S.busAlias)||{}, k=String(nom||"").trim().toUpperCase();
+  return BUS_ALIAS_NOM.test(k)&&Object.prototype.hasOwnProperty.call(a,k)?a[k]:null;
+}
+/* Lecture d'un fichier : noms valides, membres en texte court, bornés. */
+function busAliasNorm(o){
+  const r={};
+  if(!o||typeof o!=="object"||Array.isArray(o))return r;
+  for(const [k,v] of Object.entries(o).slice(0,200)){
+    const nom=String(k).trim().toUpperCase();
+    if(!BUS_ALIAS_NOM.test(nom)||!Array.isArray(v))continue;
+    const m=v.map(x=>String(x==null?"":x).trim().slice(0,64)).filter(Boolean).slice(0,256);
+    if(m.length)r[nom]=m;
+  }
+  return r;
+}
+/* Texte de la fenêtre : « NOM = A[0..7], WR » par ligne, et retour. */
+function busAliasTexte(a){
+  return Object.entries(a||{}).map(([k,v])=>k+" = "+v.join(", ")).join("\n");
+}
+function busAliasLire(txt){
+  const o={}, ecarts=[];
+  String(txt||"").split(/\r?\n/).forEach((l,i)=>{
+    if(!l.trim())return;
+    const m=l.match(/^\s*([^=]+?)\s*=\s*(.+)$/);
+    if(!m||!BUS_ALIAS_NOM.test(m[1])){ecarts.push("ligne "+(i+1)+" : « NOM = membre, membre… » attendu");return;}
+    o[m[1].toUpperCase()]=m[2].split(",").map(x=>x.trim()).filter(Boolean);
+  });
+  return {alias:busAliasNorm(o),ecarts};
+}
+function schDevelopperSignauxBus(nomBus,prof){
   if(!nomBus) return [];
   const raw = String(nomBus).trim();
   if(!raw) return [];
+  prof=prof||0;
+  // un membre qui est lui-même un vecteur ou un alias se développe (alias en boucle : arrêt à 4 niveaux)
+  const membre = it => (prof<4 && (busAliasDe(it.replace(/^\{|\}$/g,"")) || /\[/.test(it))) ? schDevelopperSignauxBus(it,prof+1) : [it];
+
+  // 0. Alias du document : NOM ou {NOM}
+  const al = busAliasDe(raw.replace(/^\{\s*|\s*\}$/g,""));
+  if(al && prof<4) return al.flatMap(membre);
 
   // 1. Détection des protocoles standards sans suffixe
   const STANDARDS = {
@@ -143,7 +184,7 @@ function schDevelopperSignauxBus(nomBus){
   const mBundle = raw.match(/^([A-Za-z_][\w]*)\s*\{\s*([^}]+)\s*\}$/);
   if(mBundle){
     const prefix = mBundle[1];
-    const items = mBundle[2].split(",").map(s=>s.trim()).filter(Boolean);
+    const items = mBundle[2].split(",").map(s=>s.trim()).filter(Boolean).flatMap(membre);
     return items.map(it => {
       if(prefix && !it.toUpperCase().startsWith(prefix.toUpperCase()+"_")){
         return prefix + "_" + it;
@@ -153,7 +194,7 @@ function schDevelopperSignauxBus(nomBus){
   }
   const mBareBundle = raw.match(/^\{\s*([^}]+)\s*\}$/);
   if(mBareBundle){
-    return mBareBundle[1].split(",").map(s=>s.trim()).filter(Boolean);
+    return mBareBundle[1].split(",").map(s=>s.trim()).filter(Boolean).flatMap(membre);
   }
 
   // 3. Vecteurs avec crochets : PREFIX[START..END] ou PREFIX[START:END]
@@ -174,7 +215,7 @@ function schDevelopperSignauxBus(nomBus){
   // 4. Liste séparée par des virgules : CLK,DATA,EN
   if(raw.includes(",")){
     const list = raw.split(",").map(s=>s.trim()).filter(Boolean);
-    if(list.length > 1) return list;
+    if(list.length > 1) return list.flatMap(membre);
   }
 
   // 5. Cas générique : renvoie le nom brut

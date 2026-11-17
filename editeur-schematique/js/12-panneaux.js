@@ -112,7 +112,8 @@ function wireInfo(wires){
       '<div style="background:var(--bg); border:1px solid var(--border2); border-radius:4px; padding:6px; max-height:80px; overflow-y:auto;">' +
       (chips || '<span style="color:var(--txt-dim); font-size:11px;">Aucun signal déduit (nommez le bus ex: D[0..7])</span>') +
       '</div></div>' +
-      '<div class="prop"><div class="row"><button class="tb on" id="pBusTap" style="background:#00c4df; color:#0b0d11; font-weight:bold;">⚡ Piquer un signal</button></div></div>';
+      '<div class="prop"><div class="row"><button class="tb on" id="pBusTap" style="background:#00c4df; color:#0b0d11; font-weight:bold;">⚡ Piquer un signal</button>' +
+      '<button class="tb" id="pBusAlias" title="Alias de bus du document : un nom (MEM) pour une liste de membres (A[0..7], D[0..7], WR)">Alias de bus…</button></div></div>';
   } else {
     const piq = (typeof schPiquageSurFil === "function") ? schPiquageSurFil(w) : null;
     if(piq){
@@ -866,6 +867,8 @@ function bindNetBlock(wires){
       }
     };
   }
+  const bBusAlias = document.getElementById("pBusAlias");
+  if(bBusAlias) bBusAlias.onclick = schBusAliasOuvrir;
   const pPiqSelect = document.getElementById("pPiqSelect");
   if(pPiqSelect && wires.length){
     pPiqSelect.onchange = e => {
@@ -1151,4 +1154,37 @@ function specsBrancher(el){
     fin(el.specs&&Object.prototype.hasOwnProperty.call(el.specs,k)?"« "+k+" » existe déjà : changez sa valeur dans sa ligne"
                                                                   :specEcrire(el,k,document.getElementById("pSpecNouv").value));
   };
+}
+
+/* ---------- alias de bus (07-connectivite.js) ----------
+   Une ligne par alias : « MEM = A[0..7], D[0..7], WR ». Un bus nommé MEM ou
+   {MEM} prend ces membres ; gardés dans le document. */
+function schBusAliasOuvrir(){
+  let d=document.getElementById("busAliasEd");
+  if(!d){
+    d=document.createElement("div");
+    d.id="busAliasEd";d.className="modal";d.hidden=true;
+    d.setAttribute("role","dialog");d.setAttribute("aria-modal","true");d.setAttribute("aria-labelledby","busAliasTitre");
+    d.innerHTML='<div class="modal-box" style="width:min(560px,94vw)">'+
+      '<header class="modal-head"><span class="modal-title" id="busAliasTitre">Alias de bus</span>'+
+      '<button class="pnl-btn" id="busAliasFermer" title="Fermer" type="button">✕</button></header>'+
+      '<div style="padding:10px 14px">'+
+      '<div style="color:var(--txt-dim);margin-bottom:6px">Une ligne par alias : <code>MEM = A[0..7], D[0..7], WR</code>. Un bus nommé <code>MEM</code> ou <code>{MEM}</code> prend ces membres.</div>'+
+      '<textarea id="busAliasTxt" rows="8" spellcheck="false" style="width:100%;font-family:var(--mono);font-size:12px"></textarea>'+
+      '<div id="busAliasEcarts" style="color:#e8443a;min-height:1em"></div>'+
+      '<div class="row" style="justify-content:flex-end"><button class="tb" id="busAliasOk" type="button">Enregistrer</button></div></div></div>';
+    document.body.appendChild(d);
+    const fermer=()=>{d.hidden=true;};
+    document.getElementById("busAliasFermer").onclick=fermer;
+    d.addEventListener("keydown",e=>{if(e.key==="Escape")fermer();});
+    document.getElementById("busAliasOk").onclick=()=>{
+      const r=busAliasLire(document.getElementById("busAliasTxt").value);
+      document.getElementById("busAliasEcarts").textContent=r.ecarts.join(" · ");
+      if(r.ecarts.length)return;
+      push();S.busAlias=r.alias;fermer();refreshPanels();draw();
+    };
+  }
+  document.getElementById("busAliasTxt").value=busAliasTexte(S.busAlias);
+  document.getElementById("busAliasEcarts").textContent="";
+  d.hidden=false;
 }

@@ -26,7 +26,9 @@ const S={
   netClasses:{},                  // corrections manuelles : nom de net → classe
   symboles:{},                    // symboles de la LIB posés (schsym-1), recopiés dans le document
   contraintes:{nets:{},groupes:[]},// contraintes de nets pour le PCB (27-contraintes.js)
-  variantes:{liste:[],active:""}  // variantes de montage (commun/variantes.js)
+  variantes:{liste:[],active:""}, // variantes de montage (commun/variantes.js)
+  ercMatrice:{},                  // écarts à la matrice ERC par défaut (31-erc.js)
+  busAlias:{}                     // alias de bus : NOM → membres (07-connectivite.js)
 };
 // classes de net proposées au routage ; un net absent de S.netClasses suit l'analyse.
 // Les classes d'interface (commun/classes-interface.js) se posent à la main : jamais devinées.

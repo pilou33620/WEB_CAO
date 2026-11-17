@@ -59,6 +59,11 @@ function normComp(c,i){
       el.pinMap = c.pinMap.map(v => { const t = brochageListe(v).join("/"); return BROCHAGE_PATTES.test(t) ? t : ""; });
     if(el.pinMap && !el.pinMap.some(Boolean)) delete el.pinMap;
     if(el.pinMap && c.pinMapMain) el.pinMapMain = true;
+    // types électriques saisis (31-erc.js) : un type connu ou "" (deviné)
+    if(Array.isArray(c.pinTypes) && c.pinTypes.length <= 1024){
+      const pt = c.pinTypes.map(v => ercTypeOk(v) ? v : "");
+      if(pt.some(Boolean)) el.pinTypes = pt;
+    }
     // variantes de montage où il n'est pas posé (réduites au modèle par loadDoc)
     const nm = varNormNonMonte(c.nonMonte);
     if(nm.length) el.nonMonte = nm;
@@ -235,6 +240,8 @@ function loadDoc(o, keepPage){
   /* contraintes de nets pour le PCB : les bornes de commun/contraintes.js */
   S.contraintes={nets:cmNormNets(o.contraintes&&o.contraintes.nets),
                  groupes:cmNormGroupes(o.contraintes&&o.contraintes.groupes)};
+  S.ercMatrice=ercMatriceNorm(o.ercMatrice);
+  S.busAlias=busAliasNorm(o.busAlias);
   for(const p of S.pages) for(const c of p.comps){
     if(!c.nonMonte)continue;
     const nm=varNormNonMonte(c.nonMonte,S.variantes);

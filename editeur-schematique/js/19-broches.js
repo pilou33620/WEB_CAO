@@ -198,6 +198,7 @@ function ceBuild(){
                   '<th style="width:34px; text-align:center;">N°</th>' +
                   '<th>Nom de la broche</th>' +
                   '<th style="width:58px; text-align:center;" title="Patte de l\'empreinte où va la broche (datasheet). Vide : la patte de même numéro.">Patte</th>' +
+                  '<th style="width:118px;" title="Type électrique pour l\'ERC. Auto : deviné d\'après le nom de la broche.">Type</th>' +
                   '<th style="width:75px; text-align:center;">Pos (X,Y)</th>' +
                   '<th>Net connecté</th>' +
                 '</tr>' +
@@ -379,6 +380,8 @@ function ceSync(){
        colonne Brochage de la LIB désigne */
     const pDefaut = (typeof brNomBroche === "function") ? brNomBroche({type: el.type}, i) : "";
     const pPatte = (Array.isArray(el.pinMap) && el.pinMap[i]) || "";
+    const pType = (typeof ercTypeSaisi === "function") ? ercTypeSaisi(el, i) : "";
+    const pAuto = (typeof ercTypeDevine === "function") ? ERC_NOM[ercTypeDevine(el, i)] : "";
     const worldP = pinPos(el, i);
     const n = netAt(worldP.x, worldP.y);
     const live = isRealNet(n);
@@ -387,6 +390,10 @@ function ceSync(){
       '<td style="text-align:center; font-family:var(--mono); color:var(--txt-dim); font-size:11px;">' + (i + 1) + '</td>' +
       '<td><input class="ce-pin-name" data-idx="' + i + '" value="' + esc(pName) + '" placeholder="' + esc(pDefaut || "Nom (ex: VCC, GND, IN...)") + '" style="width:100%; padding:3px 6px; font-size:11.5px; background:var(--bg); border:1px solid var(--border); border-radius:4px; color:var(--txt);"></td>' +
       '<td><input class="ce-pin-pad" data-idx="' + i + '" value="' + esc(pPatte) + '" placeholder="' + (i + 1) + '" maxlength="71" title="Patte de l\'empreinte ; plusieurs : 2/4" style="width:100%; padding:3px 6px; font-size:11.5px; font-family:var(--mono); text-align:center; background:var(--bg); border:1px solid var(--border); border-radius:4px; color:var(--txt);"></td>' +
+      '<td><select class="ce-pin-type" data-idx="' + i + '" style="width:100%; font-size:11px;">' +
+        '<option value="">Auto (' + esc(pAuto) + ')</option>' +
+        (typeof ERC_TYPES !== "undefined" ? ERC_TYPES.map(([t, nm]) => '<option value="' + t + '"' + (t === pType ? " selected" : "") + '>' + esc(nm) + '</option>').join("") : "") +
+      '</select></td>' +
       '<td style="text-align:center; font-family:var(--mono); font-size:10px; color:var(--txt-dim);">' + Math.round(p[0]/IC_STEP) + ' , ' + Math.round(p[1]/IC_STEP) + '</td>' +
       '<td style="font-size:11px;">' +
         (live ? '<span style="color:' + netColor(n) + '; font-weight:600;">' + esc(n.name) + '</span>' : '<span style="color:var(--txt-dim); font-style:italic;">non connecté</span>') +
@@ -403,6 +410,16 @@ function ceSync(){
       if (!brSaisirPatte(el, +inp.dataset.idx, inp.value)) inp.style.borderColor = "#ef4444";
       else inp.style.borderColor = "";
       draw();
+    };
+  });
+  tbody.querySelectorAll(".ce-pin-type").forEach(sel => {
+    sel.onchange = () => {
+      cePush();
+      const idx = +sel.dataset.idx, v = ercTypeOk(sel.value) ? sel.value : "";
+      if (!Array.isArray(el.pinTypes)) el.pinTypes = [];
+      while (el.pinTypes.length <= idx) el.pinTypes.push("");
+      el.pinTypes[idx] = v;
+      if (!el.pinTypes.some(Boolean)) delete el.pinTypes;
     };
   });
   tbody.querySelectorAll(".ce-pin-name").forEach(inp => {
