@@ -59,7 +59,7 @@ const EXPOSE=[
   "viaSuivante","viaTailles","verrousCoins","routeViaCurseur","mkVia",
   "pnsWorld","pnsItemsKeepout","distSegPoly","contourTroue","zoneDecoupee","gOrigin","gXY","drwBBox","drwPoints","gerberSilk","viaObstacle","placeVia",
   "coutureZone","cloturePistes","fanoutFps","coutureRetirer","viaEssai","netMasseDefaut","fmtU","uLue","uAff","RP_PCB","hitTest","deleteSel","startRoute",
-  "cutsCuivre","ilotContour","drcRangs","drcCategorie","drcFenetre","drcPas","copySelPcb","fpEssai","fpGeneTous","fpChevauchements","placementDegage","placementBilan","fpPlaceLibre","pasteClipPcb","rotateSel","flipSel","fpGene","routeRetouche","dragMoveBy","beginMove","dragRotate","gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
+  "cutsCuivre","ilotContour","drcRangs","drcCategorie","drcFenetre","drcPas","copySelPcb","fpEssai","fpGeneTous","fpGardeAuto","fpGardeVerifier","fpChevauchements","placementDegage","placementBilan","fpPlaceLibre","pasteClipPcb","rotateSel","flipSel","fpGene","routeRetouche","dragMoveBy","beginMove","dragRotate","gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
   "updateRoute","stepRoute","commitRoute","routeToLayer","runDrc","buildTabs","backRoute",
   "buildLayers","refreshPanels","buildList","buildProps","clearSel","rotateSel",
   "BLOC_PLACEMENT","PLACEMENT_SCORE","fpBBox",
@@ -578,6 +578,8 @@ function HORS_SUJET_BORD(e){
   return /^Piste hors du contour/.test(e.msg);
 }
 let ok=0,ko=0;
+// le garde-fou des chevauchements se juge à la main ici : le banc est synchrone
+fpGardeAuto(false);
 function T(name,fn){
   try{fn();console.log("  ok  "+name);ok++;}
   catch(e){console.log("  KO  "+name+" → "+e.message+"\n"+(e.stack||"").split("\n")[1]);ko++;}
@@ -9306,6 +9308,32 @@ T("l'arrivée entre dans l'axe de sa pastille, dans les deux sens du tracé",()=
     if(S.route.retouche)throw new Error("le coude ne doit pas glisser dans le cuivre voisin");
     cancelRoute();
   }finally{S.route=null;S.tracks=[];S.vias=[];touch();S.avoid=reg.avoid;S.grid=reg.grid;setMode("select");}
+});
+T("garde-fou : aucune action ne laisse un boîtier sur un autre",()=>{
+  const c=carteDp();
+  const reg=S.avoid;S.avoid=true;
+  const A=c.j1,B=c.j2;
+  try{
+    // une action quelconque (aligner, édition multiple…) qui pose B sur A : annulée
+    push();B.x=A.x;B.y=A.y;touch();
+    const r=fpGardeVerifier();
+    if(!r)throw new Error("le chevauchement devait être refusé");
+    const B2=S.fps.find(f=>f.ref==="J2");
+    if(B2.x!==60||B2.y!==40)throw new Error("l'action devait être défaite : "+B2.x+","+B2.y);
+    if(S.redo.length)throw new Error("le refus ne doit rien laisser à refaire");
+    // un boîtier nouveau sur un autre : il va à la place libre la plus proche
+    const A2=S.fps.find(f=>f.ref==="J1");
+    push();const R=mkFp("R9","1k","0603",2);R.x=A2.x;R.y=A2.y;S.fps.push(R);touch();
+    if(fpGardeVerifier())throw new Error("le nouveau devait être déplacé, pas refusé");
+    if(fpGene(R,new Set([R])))throw new Error("le nouveau est resté en faute : "+fpGene(R,new Set([R])));
+    // déjà en faute : le dégager reste permis
+    S.avoid=false;const J2=S.fps.find(f=>f.ref==="J2");J2.x=A2.x;J2.y=A2.y;touch();S.avoid=true;
+    push();J2.x=A2.x+1;touch();
+    if(fpGardeVerifier())throw new Error("un boîtier déjà en faute contre le même voisin reste réparable");
+    // anti-collision coupée : on force
+    S.avoid=false;push();J2.x=A2.x;touch();
+    if(fpGardeVerifier())throw new Error("coupée, l'anti-collision laisse forcer");
+  }finally{S.avoid=reg;}
 });
 T("un boîtier tiré bute sur les pastilles et le corps d'un autre, et reste réparable",()=>{
   const c=carteDp();

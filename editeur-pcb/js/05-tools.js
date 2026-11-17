@@ -65,7 +65,9 @@ function histBorner(pile){
   }
 }
 function pushSnap(snap){
+  if(typeof fpGardeArmer==="function")fpGardeArmer();
   S.undo.push(snap||serialize());
+  if(FP_GARDE&&FP_GARDE.snap==null)FP_GARDE.snap=S.undo[S.undo.length-1];
   histBorner(S.undo);
   S.redo.length=0;S.dirty=true;
 }
@@ -2296,6 +2298,67 @@ function fpEssai(mutate){
     // déjà en faute avant contre la même gêne : réparable ; une gêne nouvelle, non
     if(o.g&&fpGene(o.f,skip)!==o.g)return o.f.ref+" buterait sur "+o.g;
   return "";
+}
+/* ==========================================================================
+   Le garde-fou des chevauchements
+   --------------------------------------------------------------------------
+   Chaque chemin qui pose un boîtier (glisser, R, F, Propriétés) fait son
+   propre essai ; mais il y en a d'autres — aligner, tourner d'un angle,
+   édition multiple, coller, importer, placements automatiques, mises à jour
+   de bibliothèque — et il y en aura encore. Ce filet les prend tous : chaque
+   action annulable (`pushSnap`) relève la pose des boîtiers, et à la fin de
+   l'action (fin du geste pour un glissement) on juge ceux qui ont changé.
+   - Un boîtier nouveau (collé, importé) qui gêne va à la place libre la plus
+     proche (`fpPlaceLibre`).
+   - Un boîtier existant qui gêne quelque chose qu'il ne gênait pas avant :
+     l'action entière est annulée, avec la raison.
+   Anti-collision coupée, rien n'est jugé : c'est le moyen de forcer.
+   ========================================================================== */
+let FP_GARDE=null, FP_GARDE_AUTO=true;
+const fpPose=f=>({x:f.x,y:f.y,rot:f.rot,side:f.side});
+function fpGardeArmer(){
+  if(FP_GARDE&&FP_GARDE_AUTO)return;           // une action : la base est celle de son premier instantané
+  const base=new Map();
+  for(const f of S.fps)base.set(f.id,{j:JSON.stringify(f),pose:fpPose(f)});
+  FP_GARDE={base,snap:null};
+  if(FP_GARDE_AUTO)queueMicrotask(fpGardeVerifier);
+}
+/* Le banc d'essai est synchrone : il appelle `fpGardeVerifier` lui-même. */
+function fpGardeAuto(on){FP_GARDE_AUTO=!!on;FP_GARDE=null;}
+function fpGardeVerifier(){
+  const g=FP_GARDE;
+  if(!g)return "";
+  // geste en cours : on jugera la pose finale
+  if(FP_GARDE_AUTO&&(drag||S.route||S.dp)){setTimeout(fpGardeVerifier,40);return "";}
+  FP_GARDE=null;
+  if(!S.avoid||g.snap==null||S.undo.indexOf(g.snap)<0)return "";   // annulé entre-temps
+  const ch=S.fps.filter(f=>{const b=g.base.get(f.id);return !b||b.j!==JSON.stringify(f);});
+  let refus="";
+  for(const f of ch){
+    const sk=new Set([f]);
+    if(!fpGene(f,sk))continue;
+    const b=g.base.get(f.id);
+    if(!b){                                       // nouveau : à la place libre la plus proche
+      const p=fpPlaceLibre([f]);
+      if(p){f.x=r3(f.x+p.dx);f.y=r3(f.y+p.dy);touch();continue;}
+      refus=f.ref+" ne trouve aucune place libre";break;
+    }
+    const neuf=fpGeneTous(f,sk), now=fpPose(f);
+    Object.assign(f,b.pose);touch();
+    const avant=fpGene(f,sk)?fpGeneTous(f,sk):new Set();
+    Object.assign(f,now);touch();
+    const k=[...neuf].find(q=>!avant.has(q));
+    if(k===undefined)continue;                    // déjà en faute contre la même chose : réparable
+    const o=k[0]==="F"?fpById(+k.slice(1)):null;
+    refus=f.ref+" chevaucherait "+(o?o.ref:"du cuivre d'un autre net");break;
+  }
+  if(!refus){if(ch.length)touch();return "";}
+  // on défait jusqu'à l'instantané de départ compris : l'action entière
+  for(let top=null;S.undo.length&&top!==g.snap;){top=S.undo[S.undo.length-1];undo();S.redo.pop();}
+  if(typeof refreshPanels==="function")refreshPanels();
+  if(typeof draw==="function")draw();
+  hint("Action annulée : "+refus+". Faites-lui de la place, ou coupez l'anti-collision pour forcer.");
+  return refus;
 }
 function fpRefus(gene){
   hint("Geste refusé : "+gene+". Faites-lui de la place, ou coupez l'anti-collision pour forcer.");
