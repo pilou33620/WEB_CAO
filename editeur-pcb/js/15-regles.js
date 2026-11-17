@@ -93,7 +93,7 @@ const RE_TREE=[
 const RE_MATCH={
   clr:       /^Isolation |Pastilles trop proches/,
   short:     /Pastilles superposées/,
-  open:      /liaison\(s\) non routée/,
+  open:      /^Liaison non routée/,
   width:     /sous les .+ de la classe|Piste sans net/,
   angle:     /hors des huit sens|^Angle aigu/,
   sliver:    /écharde/,

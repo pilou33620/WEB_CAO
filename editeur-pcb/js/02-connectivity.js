@@ -577,7 +577,7 @@ function computeConn(exact){
     for(const p of n.pads){
       const r=find(p.k);
       if(!cl.has(r))cl.set(r,[]);
-      cl.get(r).push(p.q);
+      cl.get(r).push(p);
     }
     const groups=[...cl.values()];
     n.clusters=groups.length;
@@ -591,10 +591,12 @@ function computeConn(exact){
           for(const g of used)
             for(const p of rest[i])
               for(const q of g){
-                const d=dist(p.x,p.y,q.x,q.y);
+                const d=dist(p.q.x,p.q.y,q.q.x,q.q.y);
                 if(d<bd){bd=d;bi=i;ba=p;bb=q;}
               }
-        if(ba)rats.push({x1:ba.x,y1:ba.y,x2:bb.x,y2:bb.y,net:n.name});
+        // les deux broches nommées : le DRC et la fenêtre des connexions disent où
+        if(ba)rats.push({x1:ba.q.x,y1:ba.q.y,x2:bb.q.x,y2:bb.q.y,net:n.name,
+                         a:padDesig(ba.fp,ba.q),b:padDesig(bb.fp,bb.q)});
         used.push(rest[bi]);rest.splice(bi,1);
       }
     }
@@ -1638,10 +1640,10 @@ function runDrc(){
           " — "+rc.hint});
   }
 
-  for(const n of c.nets.values())
-    if(n.miss>0)
-      out.push({info:true,x:n.pads[0].q.x,y:n.pads[0].q.y,l:0,
-        msg:"Net "+n.name+" : "+n.miss+" liaison(s) non routée(s)"});
+  // une entrée par liaison manquante, posée sur sa première broche
+  for(const r of c.rats)
+    out.push({info:true,x:r.x1,y:r.y1,l:0,
+      msg:"Liaison non routée · classe "+className(r.net)+" · net "+r.net+" : "+r.a+" ↔ "+r.b});
   /* les paires différentielles : largeur hors bornes, trajet découplé trop
      long, net disparu — le module qui les connaît fait lui-même le contrôle */
   if(typeof dpDrc==="function")dpDrc(out);

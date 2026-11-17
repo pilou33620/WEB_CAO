@@ -270,6 +270,7 @@ Recadrer, Grille et Chevelu y sont en icônes ; les autres réglages sont dans s
 | Rechercher | `Ctrl+F` | Cherche une empreinte (repère) ou un net | Prend le raccourci du navigateur à dessein |
 | Montrer au schéma | `L` | Fait sauter l'onglet du schéma sur la sélection | Désactivé en `file://` (deux onglets n'ont pas la même origine) ; sans accusé, le pied de page le dit |
 | Contrôle DRC | | Lance le DRC et ouvre la liste DRC | Lancé à la demande |
+| Connexions | | Vérifie, classe de nets par classe, que tous les nets sont reliés ; chaque liaison manquante donne ses deux broches et l'endroit. Chacune figure aussi au DRC (remarques), un clic y mène | Une broche seule sur son net n'est pas comptée |
 | ⚡ Pinout : Vérifier | | Contrôle brochage, pas et dimensions du boîtier contre le schéma | |
 | Score Placement | | Ouvre le panneau « Qualité de placement » | Voir la référence du panneau |
 | Règles… | | Fenêtre « Règles & Fabrication », onglet Règles de conception | |

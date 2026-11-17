@@ -99,3 +99,36 @@ function pcbReglesOuvrir() {
   draw();                                   // le DRC relancé : ses marques à jour
   return r;
 }
+
+/* Connexions par classe de nets : chaque classe dit combien de ses nets sont
+   entièrement reliés, et chaque liaison manquante donne ses deux broches et
+   l'endroit. Le chevelu (`conn().rats`) les connaît déjà ; le DRC les liste
+   aussi, une entrée par liaison, pour y aller d'un clic. */
+function pcbConnexionsControler() {
+  const c = conn(), u = S.unite === "mil" ? " mil" : " mm", par = new Map();
+  const classe = nom => { if (!par.has(nom)) par.set(nom, { nets: 0, complets: 0, ecarts: [] }); return par.get(nom); };
+  for (const n of c.nets.values()) {
+    if (n.pads.length < 2) continue;              // une broche seule n'a rien à rejoindre
+    const k = classe(className(n.name));
+    k.nets++;
+    if (!n.miss) k.complets++;
+  }
+  for (const r of c.rats)
+    classe(className(r.net)).ecarts.push("Net " + r.net + " : " + r.a + " ↔ " + r.b +
+      " non reliés, vers X " + fmtU(ux(r.x1)) + " ; Y " + fmtU(uy(r.y1)) + u);
+  const ordre = S.classes.map(k => k.name).filter(n => par.has(n)).concat([...par.keys()].filter(n => !S.classes.some(k => k.name === n)));
+  return reglesResultat(ordre.map(n => {
+    const k = par.get(n);
+    return ["Classe " + n, k.complets + " net(s) relié(s) sur " + k.nets, k.ecarts];
+  }));
+}
+
+function pcbConnexionsOuvrir() {
+  const r = reglesFenetre("Connexions par classe de nets", pcbConnexionsControler, res => {
+    const n = res.controles.reduce((s, c) => s + c.ecarts.length, 0);
+    return n ? n + " liaison(s) manquante(s). Chacune figure aussi au Contrôle DRC (remarques) : un clic y mène à l'endroit."
+             : "Tous les nets sont reliés, dans toutes les classes.";
+  });
+  draw();
+  return r;
+}

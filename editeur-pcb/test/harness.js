@@ -59,7 +59,7 @@ const EXPOSE=[
   "viaSuivante","viaTailles","verrousCoins","routeViaCurseur","mkVia",
   "pnsWorld","pnsItemsKeepout","distSegPoly","contourTroue","zoneDecoupee","gOrigin","gXY","drwBBox","drwPoints","gerberSilk","viaObstacle","placeVia",
   "coutureZone","cloturePistes","fanoutFps","coutureRetirer","viaEssai","netMasseDefaut","fmtU","uLue","uAff","RP_PCB","hitTest","deleteSel","startRoute",
-  "cutsCuivre","ilotContour","drcRangs","drcCategorie","drcFenetre","drcPas","copySelPcb","fpEssai","fpGeneTous","fpGardeAuto","fpGardeVerifier","fpChevauchements","placementDegage","placementBilan","fpPlaceLibre","pasteClipPcb","rotateSel","flipSel","fpGene","routeRetouche","dragMoveBy","beginMove","dragRotate","gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
+  "cutsCuivre","ilotContour","drcRangs","drcCategorie","drcFenetre","drcPas","copySelPcb","fpEssai","fpGeneTous","pcbConnexionsControler","fpGardeAuto","fpGardeVerifier","fpChevauchements","placementDegage","placementBilan","fpPlaceLibre","pasteClipPcb","rotateSel","flipSel","fpGene","routeRetouche","dragMoveBy","beginMove","dragRotate","gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
   "updateRoute","stepRoute","commitRoute","routeToLayer","runDrc","buildTabs","backRoute",
   "buildLayers","refreshPanels","buildList","buildProps","clearSel","rotateSel",
   "BLOC_PLACEMENT","PLACEMENT_SCORE","fpBBox",
@@ -9308,6 +9308,23 @@ T("l'arrivée entre dans l'axe de sa pastille, dans les deux sens du tracé",()=
     if(S.route.retouche)throw new Error("le coude ne doit pas glisser dans le cuivre voisin");
     cancelRoute();
   }finally{S.route=null;S.tracks=[];S.vias=[];touch();S.avoid=reg.avoid;S.grid=reg.grid;setMode("select");}
+});
+T("connexions par classe : chaque liaison manquante, ses broches et l'endroit",()=>{
+  const c=carteDp();
+  const rats=conn().rats;
+  if(!rats.length)throw new Error("la carte d'essai devait avoir des liaisons à router");
+  const r=pcbConnexionsControler();
+  if(r.ok)throw new Error("des nets non reliés : le contrôle ne doit pas passer");
+  const lignes=r.controles.flatMap(k=>k.ecarts);
+  if(lignes.length!==rats.length)throw new Error(lignes.length+" ligne(s) pour "+rats.length+" liaison(s)");
+  if(!lignes.every(l=>/↔/.test(l)&&/X .* ; Y /.test(l)))throw new Error("broches et endroit attendus : "+lignes[0]);
+  if(!r.controles.every(k=>/^Classe /.test(k.regle)))throw new Error("regroupé par classe");
+  // le DRC en donne une entrée par liaison, posée sur sa première broche
+  const d=runDrc().filter(e=>/^Liaison non routée/.test(e.msg));
+  if(d.length!==rats.length||d[0].x!==rats[0].x1)throw new Error("DRC : "+d.length+" entrée(s)");
+  // tout relié : chaque classe passe
+  S.tracks=rats.map(q=>({l:0,net:q.net,w:0.2,x1:q.x1,y1:q.y1,x2:q.x2,y2:q.y2}));touch();
+  if(!pcbConnexionsControler().ok)throw new Error("tout est relié : le contrôle devait passer");
 });
 T("garde-fou : aucune action ne laisse un boîtier sur un autre",()=>{
   const c=carteDp();

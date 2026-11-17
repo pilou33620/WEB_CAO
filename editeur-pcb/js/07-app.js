@@ -672,6 +672,7 @@ $("bFit").onclick=fit;
 $("bImport").onclick=openImport;
 if($("bEcoSync")) $("bEcoSync").onclick=()=>{ if(typeof pcbOuvrirFenetreEco==="function") pcbOuvrirFenetreEco(); };
 $("bReglesCtl").onclick=()=>pcbReglesOuvrir();
+$("bConnClasses").onclick=()=>pcbConnexionsOuvrir();
 $("bDrc").onclick=()=>{
   const e=runDrc();
   S.listTab="drc";

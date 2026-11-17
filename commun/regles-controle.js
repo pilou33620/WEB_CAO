@@ -46,8 +46,9 @@ function reglesTexte(r) {
   return L.join("\n");
 }
 
-/* La fenêtre : `controler` est relancé par ⟳. */
-function reglesFenetre(titre, controler) {
+/* La fenêtre : `controler` est relancé par ⟳ ; `resume(r)`, s'il est donné,
+   remplace la phrase d'en-tête propre aux règles. */
+function reglesFenetre(titre, controler, resume) {
   const echap = t => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   let d = document.getElementById("reglesCtl");
   if (!d) {
@@ -74,7 +75,7 @@ function reglesFenetre(titre, controler) {
   const afficher = () => {
     const r = controler(), ko = r.controles.filter(c => !c.ok).length;
     document.getElementById("reglesCtlTitre").textContent = titre;
-    document.getElementById("reglesCtlResume").textContent = ko
+    document.getElementById("reglesCtlResume").textContent = resume ? resume(r) : ko
       ? ko + " règle(s) sur " + r.controles.length + " en écart. Seules les règles qu'un programme peut juger sont contrôlées : le reste se relit sur la page Règles (📏)."
       : "Les " + r.controles.length + " règles vérifiables sont respectées. Le reste se relit sur la page Règles (📏).";
     document.getElementById("reglesCtlListe").innerHTML = r.controles.map(c =>
