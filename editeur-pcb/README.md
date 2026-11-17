@@ -930,6 +930,15 @@ longueur où la bande est étroite ; une forme du net de la zone (liaison
 directe, piste ou via du net) tient le cuivre qu'elle touche et n'en fait pas
 retirer. Les arcs de piste aussi. 0 désactive.
 
+Ce retrait est une **fermeture de rayon cuMin/2**, comme l'`Inflate` du
+remplissage de KiCad (`zone_filler.cpp`) : le cuivre garde ce qu'un disque de
+ce rayon peut atteindre, et la fente finit par deux **congés** au lieu d'une
+enveloppe anguleuse. Le disque se pose entre deux formes ; si une troisième
+l'en empêche, le bord passe par elle, et une poche fermée entre trois
+dégagements part entière. Le **bord de carte** (la marge `edge`, découpes
+comprises) et le **contour d'une zone** comptent comme des formes : la bande
+trop étroite entre un dégagement et un bord part aussi.
+
 **Zones interdites et hauteurs** (`38-interdits.js`, outil « Zone interdite »
 du menu Placer, sans raccourci) : une zone se pose sur UNE face, comme
 une découpe (un clic par sommet, ou deux coins puis Entrée). Le DRC y signale
@@ -1888,6 +1897,13 @@ la sélection, et l'en retire au clic suivant (`toggleHit`). Un lasso tiré
 modificateur enfoncé s'ajoute à ce qui est déjà pris. Le déplacement, la
 rotation, le retournement et la suppression travaillent depuis toujours sur
 l'ensemble de la sélection.
+
+**Ce qui est dessous.** Une piste d'une couche visible se prend d'un clic même
+sous le corps d'un boîtier ; le boîtier se prend par ses pastilles, ou par son
+corps à côté. Un **second clic au même endroit**, sans glisser, sur l'objet
+déjà pris seul passe à celui du dessous, puis au suivant, et revient au premier
+(`hitTous`, 05-tools.js). Le plein d'une zone et les repères n'entrent pas dans
+ce tour ; deux clics à moins de 0,4 s restent un double-clic.
 
 Le groupe se saisit par **n'importe lequel** de ses éléments. Le repère d'une
 empreinte prise avec d'autres vaut son empreinte — il passe devant le boîtier au

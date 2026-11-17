@@ -4186,6 +4186,33 @@ T("cuivre mini : la bande trop étroite entre deux dégagements est retirée, pa
     if(zoneLanieres(0).some(H=>inPoly(P.x,ym,H)))throw new Error("piste GND : rien à retirer");
   }finally{suiviFin(reg);loadDoc(JSON.parse(saved),true);}
 });
+T("cuivre mini : la poche entre trois dégagements, la fente le long du bord de carte et du contour de zone",()=>{
+  const saved=serialize(), reg=suiviDecor();
+  try{
+    S.fps=[];S.tracks=[];S.cuts=[];S.rule.cuMin=0.2;
+    S.zones=[{id:S.nextId++,l:0,net:"GND",pts:boardZonePts()}];
+    const cv=clrK("GND","A","cu","via"), bb=polyBBox(boardPoly()), cx=(bb.x1+bb.x2)/2, cy=(bb.y1+bb.y2)/2;
+    const dans=(x,y)=>zoneLanieres(0).some(H=>inPoly(x,y,H));
+    // trois vias en triangle autour d'une poche où ne tient qu'un disque de 0,08 mm : elle part entière
+    const v0=mkVia(0,0,"A",0,S.cu-1), R=v0.d/2+cv, e=(R+0.08)*Math.sqrt(3), hT=e*Math.sqrt(3)/2;
+    S.vias=[["A",cx-e/2,cy],["B",cx+e/2,cy],["C",cx,cy+hT]].map(([n,x,y])=>mkVia(x,y,n,0,S.cu-1));touch();
+    const gy=cy+hT/3;                                   // le centre de la poche
+    for(const [dx,dy] of [[0,0],[0.03,0.02],[-0.03,0.02],[0,-0.04]])
+      if(!dans(cx+dx,gy+dy))throw new Error("la poche entre trois vias : un éclat reste en "+dx+","+dy);
+    if(dans(cx,cy-R-0.3))throw new Error("hors de la poche, rien ne part");
+    // une via à 0,1 mm de cuivre de la marge de bord : la bande part ; à 0,4 mm, rien
+    const m=S.rule.edge, xb=bb.x1+m+0.1+R;
+    S.vias=[mkVia(xb,cy,"A",0,S.cu-1)];touch();
+    if(!dans(bb.x1+m+0.05,cy))throw new Error("la bande entre la via et le bord de carte");
+    if(dans(bb.x1+m+0.05,cy+R+0.6))throw new Error("le long du bord, loin de la via, rien ne part");
+    S.vias[0].x=xb+0.3;touch();
+    if(zoneLanieres(0).length)throw new Error("0,4 mm de cuivre au bord : rien à retirer");
+    // le contour d'une zone au milieu de la carte : même chose
+    S.zones=[{id:S.nextId++,l:0,net:"GND",pts:[{x:cx,y:bb.y1+2},{x:bb.x2-2,y:bb.y1+2},{x:bb.x2-2,y:bb.y2-2},{x:cx,y:bb.y2-2}]}];
+    S.vias=[mkVia(cx+0.1+R,cy,"A",0,S.cu-1)];touch();
+    if(!dans(cx+0.05,cy))throw new Error("la bande entre la via et le contour de la zone");
+  }finally{suiviFin(reg);loadDoc(JSON.parse(saved),true);}
+});
 T("sérigraphie sur le cuivre nu : repère posé au-dessus des pastilles, sinon le DRC le dit",()=>{
   const saved=serialize(), reg=suiviDecor();
   try{

@@ -845,6 +845,17 @@ function zoneLanieres(l){
     for(let k=0;k<=n;k++){const a=a0+(a1-a0)*k/n;o.push({x:x+r*Math.cos(a),y:y+r*Math.sin(a)});}return o;};
   const ligne=(a,b)=>{const n=Math.max(1,Math.ceil(Math.hypot(b.x-a.x,b.y-a.y)/0.1)),o=[];
     for(let j=0;j<=n;j++)o.push({x:a.x+(b.x-a.x)*j/n,y:a.y+(b.y-a.y)*j/n});return o;};
+  // le bord d'une gélule de rayon R : un flanc, le bout arrondi, l'autre flanc, l'autre bout
+  const capsule=(p,q,R)=>{
+    const a=Math.atan2(q.y-p.y,q.x-p.x), nx=-Math.sin(a)*R, ny=Math.cos(a)*R;
+    return ligne({x:p.x+nx,y:p.y+ny},{x:q.x+nx,y:q.y+ny}).concat(cercle(q.x,q.y,R,a+Math.PI/2,a-Math.PI/2),
+      ligne({x:q.x-nx,y:q.y-ny},{x:p.x-nx,y:p.y-ny}),cercle(p.x,p.y,R,a-Math.PI/2,a-3*Math.PI/2));
+  };
+  // la distance à une gélule, sans appel : c'est elle que tout le calcul répète
+  const dGelule=(p,q,R)=>{
+    const dx=q.x-p.x, dy=q.y-p.y, L2=dx*dx+dy*dy||1;
+    return (x,y)=>{let u=((x-p.x)*dx+(y-p.y)*dy)/L2;u=u<0?0:u>1?1:u;return Math.hypot(x-p.x-u*dx,y-p.y-u*dy)-R;};
+  };
   const ajouter=(F,x1,y1,x2,y2)=>{F.b={x1:x1-w,y1:y1-w,x2:x2+w,y2:y2+w};formes.push(F);};
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
@@ -865,7 +876,7 @@ function zoneLanieres(l){
     const z=zoneAt(l,v.x,v.y);
     if(!z||zoneFichier(z)||(v.net&&v.net===z.net))continue;
     const r=v.d/2+clrZone(z,v.net,"cu","via");
-    ajouter({fait:()=>cercle(v.x,v.y,r,0,2*Math.PI),d:(x,y)=>Math.hypot(x-v.x,y-v.y)-r,net:v.net},v.x-r,v.y-r,v.x+r,v.y+r);
+    ajouter({rond:true,fait:(g=0)=>cercle(v.x,v.y,r+g,0,2*Math.PI),d:(x,y)=>Math.hypot(x-v.x,y-v.y)-r,net:v.net},v.x-r,v.y-r,v.x+r,v.y+r);
   }
   /* les pistes, par TRONÇONS (2 mm au plus ; un arc : 1 mm ou 15° au plus) : l'enveloppe d'une
      paire reste locale — celle de deux arcs entiers couvrait tout le creux d'un virage, du cuivre
@@ -883,9 +894,10 @@ function zoneLanieres(l){
       const r=t.w/2+clrZone(z,t.net,"cu","trk"), A=arcOf(t);
       if(A){
         const b=trkBBox(t);
+        const r0=r;
         ajouter({piste:true,net:t.net,d:(x,y)=>trkDist(x,y,t)-r,
                  // le bord, en boucle ordonnée : le flanc extérieur, un bout, le flanc intérieur, l'autre bout
-                 fait:()=>{const m2=Math.max(2,Math.ceil(trkLen(t)/0.1)),ext=[],int=[];
+                 rond:true,fait:(g=0)=>{const m2=Math.max(2,Math.ceil(trkLen(t)/0.1)),ext=[],int=[],r=r0+g;
                    const ang=p=>Math.atan2(p.y-A.cy,p.x-A.cx);
                    for(let j=0;j<=m2;j++){const p=trkAt(t,j/m2), a=ang(p);
                      ext.push({x:p.x+r*Math.cos(a),y:p.y+r*Math.sin(a)});int.unshift({x:p.x-r*Math.cos(a),y:p.y-r*Math.sin(a)});}
@@ -895,16 +907,41 @@ function zoneLanieres(l){
                 b.x1-r,b.y1-r,b.x2+r,b.y2+r);
         continue;
       }
-      const a=Math.atan2(t.y2-t.y1,t.x2-t.x1), nx=-Math.sin(a)*r, ny=Math.cos(a)*r;
-      ajouter({piste:true,net:t.net,d:(x,y)=>segDist(x,y,t.x1,t.y1,t.x2,t.y2)-r,
-               // le bord de la gélule : un flanc, le bout arrondi, l'autre flanc, l'autre bout
-               fait:()=>ligne({x:t.x1+nx,y:t.y1+ny},{x:t.x2+nx,y:t.y2+ny}).concat(
-                 cercle(t.x2,t.y2,r,a+Math.PI/2,a-Math.PI/2),
-                 ligne({x:t.x2-nx,y:t.y2-ny},{x:t.x1-nx,y:t.y1-ny}),
-                 cercle(t.x1,t.y1,r,a-Math.PI/2,a-3*Math.PI/2))},
+      ajouter({piste:true,net:t.net,d:dGelule({x:t.x1,y:t.y1},{x:t.x2,y:t.y2},r),
+                        rond:true,fait:(g=0)=>capsule({x:t.x1,y:t.y1},{x:t.x2,y:t.y2},r+g)},
               Math.min(t.x1,t.x2)-r,Math.min(t.y1,t.y2)-r,Math.max(t.x1,t.x2)+r,Math.max(t.y1,t.y2)+r);
     }
   }
+  /* LES BORDS : la marge le long du contour de carte et de ses découpes (une gélule de rayon
+     `edge` par arête, ce que rogne clipToBoard), et le contour de chaque zone là où le cuivre
+     s'arrête vraiment — dans la carte, sans autre zone derrière (rayon 0,01 mm : il faut une
+     épaisseur au gradient). Par tronçons de 2 mm, comme les pistes ; deux bords ne font pas
+     une fente entre eux. */
+  const gelule=(a,b,rg,net)=>{
+    const len=Math.hypot(b.x-a.x,b.y-a.y), n=Math.max(1,Math.ceil(len/2));
+    if(len<1e-6)return;
+    for(let k=0;k<n;k++){
+      const p={x:a.x+(b.x-a.x)*k/n,y:a.y+(b.y-a.y)*k/n}, q={x:a.x+(b.x-a.x)*(k+1)/n,y:a.y+(b.y-a.y)*(k+1)/n};
+      ajouter({piste:true,bord:true,net,d:dGelule(p,q,rg),
+               rond:true,fait:(g=0)=>capsule(p,q,rg+g)},
+              Math.min(p.x,q.x)-rg,Math.min(p.y,q.y)-rg,Math.max(p.x,q.x)+rg,Math.max(p.y,q.y)+rg);
+    }
+  };
+  const BP=boardPoly(), me=S.rule.edge;
+  if(me>0)for(const R of [BP].concat(boardCutouts()))
+    R.forEach((a,k)=>gelule(a,R[(k+1)%R.length],me,"\0bord"));
+  S.zones.forEach((z,iz)=>{
+    if(z.l!==l||z.larme||z.plein||z.pts.length<3||zoneFichier(z))return;
+    z.pts.forEach((a,k)=>{
+      const b=z.pts[(k+1)%z.pts.length], len=Math.hypot(b.x-a.x,b.y-a.y);
+      if(len<1e-6)return;
+      // juste dehors, au milieu de l'arête : hors carte ou sous une autre zone, ce n'est pas un bord de cuivre
+      const mx=(a.x+b.x)/2, my=(a.y+b.y)/2, ux=-(b.y-a.y)/len*0.02, uy=(b.x-a.x)/len*0.02;
+      const h=zoneContient(z,mx+ux,my+uy)?{x:mx-ux,y:my-uy}:{x:mx+ux,y:my+uy};
+      if(!inPoly(h.x,h.y,BP)||polyEdgeDist(h.x,h.y,BP)<=me||zoneAt(l,h.x,h.y))return;
+      gelule(a,b,0.01,"\0zone"+iz);
+    });
+  });
   /* les paires proches, par cases de 2 mm : une piste longue rendait inutile un balayage en x */
   const G=new Map(), PAS=2;
   formes.forEach((F,k)=>{
@@ -922,6 +959,7 @@ function zoneLanieres(l){
   const pousse=(F,p)=>{const g=grad(F,p.x,p.y), k=r-F.d(p.x,p.y);return {x:p.x+k*g.x,y:p.y+k*g.y};};
   const dec=F=>{
     if(F.dec)return F.dec;
+    if(F.rond)return F.dec=F.fait(r);      // cercles et gélules : le bord décalé se calcule, sans gradient
     const Q=pts(F).map(p=>pousse(F,p)), o=[];
     // autour d'un coin vif, le bord décalé tourne d'un arc : on le garnit tous les 0,05 mm
     Q.forEach((a,k)=>{
@@ -933,13 +971,17 @@ function zoneLanieres(l){
   };
   const affine=(c,A,B)=>{
     for(let k=0;k<4;k++){
-      const ga=grad(A,c.x,c.y), gb=grad(B,c.x,c.y), a=A.d(c.x,c.y)-r, b=B.d(c.x,c.y)-r, det=ga.x*gb.y-ga.y*gb.x;
+      const a=A.d(c.x,c.y)-r, b=B.d(c.x,c.y)-r;
+      if(Math.abs(a)<1e-6&&Math.abs(b)<1e-6)break;
+      const ga=grad(A,c.x,c.y), gb=grad(B,c.x,c.y), det=ga.x*gb.y-ga.y*gb.x;
       if(Math.abs(det)<1e-3)break;
       c={x:c.x-(a*gb.y-b*ga.y)/det,y:c.y-(ga.x*b-gb.x*a)/det};
     }
     return c;
   };
   const croise=(A,B)=>{
+    const vu=(A.cr||(A.cr=new Map())).get(B);      // la troisième forme (cote) redemande les mêmes paires
+    if(vu)return vu;
     const Q=dec(A), C=[], f=q=>(q.x<B.b.x1||q.x>B.b.x2||q.y<B.b.y1||q.y>B.b.y2)?1:B.d(q.x,q.y)-r;
     let qp=Q[Q.length-1], fp=f(qp);
     for(const q of Q){
@@ -947,6 +989,7 @@ function zoneLanieres(l){
       if((fp<0)!==(fq<0)){const u=fp/(fp-fq);C.push(affine({x:qp.x+(q.x-qp.x)*u,y:qp.y+(q.y-qp.y)*u},A,B));}
       qp=q;fp=fq;
     }
+    A.cr.set(B,C);
     return C;
   };
   const pied=(F,c,k)=>{const g=grad(F,c.x,c.y);return {x:c.x-k*g.x,y:c.y-k*g.y};};   // le point de F en face de c, k plus loin
@@ -956,6 +999,29 @@ function zoneLanieres(l){
     const n=Math.max(2,Math.ceil(Math.abs(da)/(Math.PI/12))), o=[];
     for(let k=0;k<=n;k++)o.push({x:c.x+ro*Math.cos(a0+da*k/n),y:c.y+ro*Math.sin(a0+da*k/n)});
     return o;
+  };
+  /* UNE TROISIÈME FORME dans le disque posé en c entre A et B : il n'y tient pas. Les tronçons
+     voisins d'une même piste (ou d'un même bord) n'en sont pas : leur jonction n'est pas du cuivre. */
+  const tiers=(c,A,B)=>{
+    for(const k of (G.get(Math.floor(c.x/PAS)+"|"+Math.floor(c.y/PAS))||[])){
+      const T=formes[k];
+      if(T===A||T===B||c.x<T.b.x1||c.x>T.b.x2||c.y<T.b.y1||c.y>T.b.y2)continue;
+      if(T.piste&&T.net&&(T.net===A.net||T.net===B.net))continue;
+      if(T.d(c.x,c.y)<r-1e-3)return T;
+    }
+    return null;
+  };
+  /* Le côté d'une fente, de l'intérieur de A à l'intérieur de B : l'arc du disque posé en c.
+     Si une troisième forme T l'en empêche, le disque se pose entre A et T puis entre T et B
+     (les centres les plus proches de c) et le bord passe par T ; si là non plus il ne tient
+     pas — trois dégagements autour d'une poche — la poche part entière, par l'intérieur de T. */
+  const proche=(L,c)=>L.slice().sort((p,q)=>Math.hypot(p.x-c.x,p.y-c.y)-Math.hypot(q.x-c.x,q.y-c.y))[0];
+  const cote=(A,B,c,T)=>{
+    const A1=pied(A,c,r+0.05), B1=pied(B,c,r+0.05);
+    if(!T)return [A1].concat(arc(c,pied(A,c,ro),pied(B,c,ro)),[B1]);
+    const ca=proche(croise(A,T),c), cb=proche(croise(T,B),c);
+    if(ca&&cb&&!tiers(ca,A,T)&&!tiers(cb,T,B))return [A1].concat(cote(A,T,ca,null),cote(T,B,cb,null),[B1]);
+    return [A1,pied(T,c,T.d(c.x,c.y)+0.05),B1];
   };
   const out=[], vues=new Set();
   for(const cases of G.values())
@@ -968,6 +1034,7 @@ function zoneLanieres(l){
         if(A.b.x2<B.b.x1||B.b.x2<A.b.x1||A.b.y2<B.b.y1||B.b.y2<A.b.y1)continue;
         // une piste et ce qui est de son net (segment suivant, sa pastille) : la jonction, pas une fente
         if((A.piste||B.piste)&&A.net&&A.net===B.net)continue;
+        if(A.bord&&B.bord)continue;
         const C=croise(A,B);
         if(C.length===2){
           /* LA FERMETURE DE RAYON cuMin/2 (l'« Inflate » de KiCad, zone_filler.cpp) : le cuivre
@@ -976,12 +1043,13 @@ function zoneLanieres(l){
              congés. Les cordes rentrent de 0,05 mm dans chaque dégagement : rien ne reste au bord.
              L'arc est tracé 3 µm en deçà du disque (ro) : il coupe franchement le bord du
              dégagement au lieu de lui être tangent, ce qu'aucun calcul booléen (IPC-2581) n'aime. */
-          const [c1,c2]=C, a1=pied(A,c1,ro), b1=pied(B,c1,ro), a2=pied(A,c2,ro), b2=pied(B,c2,ro);
-          const A1=pied(A,c1,r+0.05), B1=pied(B,c1,r+0.05), A2=pied(A,c2,r+0.05), B2=pied(B,c2,r+0.05);
+          const [c1,c2]=C, t1=tiers(c1,A,B), t2=tiers(c2,A,B);
           const h=Math.hypot(c2.x-c1.x,c2.y-c1.y)/2, Ps=[];
-          if(h>=ro)Ps.push([A1].concat(arc(c1,a1,b1),[B1,B2],arc(c2,b2,a2),[A2]));
+          if(t1||t2||h>=ro)Ps.push(cote(A,B,c1,t1).concat(cote(A,B,c2,t2).reverse()));
           else{
             // les deux disques se recouvrent : un éclat de chaque côté, jusqu'au point où les arcs se croisent
+            const a1=pied(A,c1,ro), b1=pied(B,c1,ro), a2=pied(A,c2,ro), b2=pied(B,c2,ro);
+            const A1=pied(A,c1,r+0.05), B1=pied(B,c1,r+0.05), A2=pied(A,c2,r+0.05), B2=pied(B,c2,r+0.05);
             const k=Math.sqrt(ro*ro-h*h)/(2*h||1), mx=(c1.x+c2.x)/2, my=(c1.y+c2.y)/2;
             let I={x:mx-(c2.y-c1.y)*k,y:my+(c2.x-c1.x)*k}, J={x:mx+(c2.y-c1.y)*k,y:my-(c2.x-c1.x)*k};
             if(A.d(J.x,J.y)<A.d(I.x,I.y))[I,J]=[J,I];
