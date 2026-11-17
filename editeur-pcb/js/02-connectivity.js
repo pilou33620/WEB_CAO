@@ -1385,8 +1385,10 @@ function runDrc(){
   /* L'isolement propre d'une pastille (`q.clr`), lui, vaut aussi contre ses
      voisines : posé à la main, il dit l'écart voulu ; le plus grand des deux,
      comme KiCad. */
+  /* Un pont de nets (`fp.netTie`, comme le net_tie_pad_groups de KiCad) est
+     fait pour réunir ses nets : ses pastilles se touchent exprès. */
   for(const g of parFp.values())
-    for(let i=0;i<g.length;i++)
+    if(!g[0].fp.netTie)for(let i=0;i<g.length;i++)
       for(let j=i+1;j<g.length;j++){
         const a=g[i], b=g[j];
         if(!(a.q.net&&b.q.net&&a.q.net!==b.q.net))continue;
@@ -1680,7 +1682,9 @@ function runDrc(){
   /* les bouts de piste qui n'entrent pas au centre de leur pastille (info) */
   if(typeof linkHorsCentreDrc==="function")linkHorsCentreDrc(out);
 
-  S.drc=out; S.drcRun=true;
+  /* contrôles repris de KiCad (54-controles.js) : encombrement, vernis, sérigraphie, bouts en l'air, LIB */
+  if(typeof drcComplements==="function")drcComplements(out,pads);
+  S.drc=typeof drcTrier==="function"?drcTrier(out):out; S.drcRun=true;
   if(typeof drcFenetreMaj==="function")drcFenetreMaj();   // la fenêtre DRC, si elle est ouverte
   return out;
 }

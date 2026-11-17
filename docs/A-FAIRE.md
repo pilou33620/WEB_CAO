@@ -20,6 +20,19 @@ autre net, la Gestion LIB qui montait à environ 890 Mo au chargement.
 
 ## Fonctionnalités
 
+- [x] **Contrôles repris de KiCad** (17/11/2026). Schéma (`31-erc.js`, `07-connectivite.js`) : type
+  électrique saisi par broche (Détails du composant, aller-retour KiCad), matrice des conflits de
+  KiCad réglable et gardée dans le document, contrôles des noms rivaux, de la casse, des étiquettes
+  seules, des fils en l'air, des broches hors grille et des piquages hors du bus, alias de bus.
+  PCB (`45-drc-gestion.js`, `54-controles.js`) : code stable par écart et exclusions avec raison
+  gardées dans la carte, encombrement (courtyard), ponts de vernis, sérigraphie trop fine ou
+  superposée, pistes et vias en l'air, empreinte différente de la table ou de la LIB, pont de nets
+  (`net_tie_pad_groups` de KiCad), statistiques, permutation de deux couches.
+  Restent : encombrement pris en enveloppe convexe ; repère à taille automatique non jugé (il
+  descend à 0,8 mm, sous le 1,0 mm de JLCPCB) ; pas de sévérité réglable par contrôle au DRC ;
+  le pont de nets vaut pour toute l'empreinte (pas de groupes de pastilles) ; les alias de bus ne
+  passent pas encore par KiCad (`bus_alias`).
+
 - [x] **Contrôles et réutilisation** (10/11/2026) : ERC du schéma (`editeur-schematique/js/31-erc.js`,
   entrées en l'air, deux sorties sur un net, nets à une broche, alimentations non pilotées, marqueur
   « Non connecté » repris de et vers le `no_connect` de KiCad) ; blocs réutilisables
@@ -27,8 +40,8 @@ autre net, la Gestion LIB qui montait à environ 890 Mo au chargement.
   dans la Gestion LIB (`gestion-lib/js/09-audit.js`, `auditerReference` de
   `commun/composants-lib.js`) ; zone d'encombrement (courtyard) des empreintes : générée
   (IPC-7351, posée aussi par le générateur et lue du `F.CrtYd` KiCad), vérifiée, dessinée.
-  Reste : l'ERC devine le type d'une broche par son nom (pas de colonne « type ») ; le PCB ne
-  lit pas encore la zone d'encombrement (son anti-collision s'appuie sur le corps).
+  Reste : le PCB n'utilise la zone d'encombrement qu'au DRC (son anti-collision s'appuie sur le
+  corps).
 
 - [x] **Éditeur PCB : outils manquants par rapport à Altium** (09/11/2026) : dessin (arcs,
   cercles, fill, région pleine, texte cuivre droit ou inversé, chaînes spéciales, pastille

@@ -108,9 +108,17 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 1. **Vérifier > Contrôle DRC** lance le contrôle. La liste « DRC » du panneau Nets & composants s'ouvre ; les erreurs sont aussi peintes sur la carte.
 2. Cliquer une ligne centre la vue sur l'écart, sélectionne le via ou passe sur la couche fautive.
 3. Pour savoir à quelle règle se rattache un écart, ouvrir **Vérifier > Règles…** : chaque page affiche le nombre de défauts relevés au dernier contrôle, et **Contrôler maintenant** relance sans quitter la fenêtre.
+4. Un écart voulu : **⊘** au début de sa ligne, dans la fenêtre du contrôle, l'exclut avec une raison. Il quitte la liste, les marqueurs et les comptes ; la section repliée **Exclus** le garde avec sa raison, et **↺** le rétablit. L'exclusion est enregistrée dans la carte et suit le code de l'écart et son endroit : le défaut déplacé, il revient.
+5. Ce que le contrôle relève aussi, en remarque : zones d'encombrement (F.CrtYd / B.CrtYd) qui se chevauchent (en erreur), pont de vernis entre deux nets sous la digue minimale du fabricant, sérigraphie plus fine ou plus petite que son minimum (le repère à taille automatique n'est pas jugé), repère posé sur la sérigraphie d'un autre composant, bout de piste ou via qui ne touche rien, empreinte tirée de la table ou de la LIB dont les pastilles ont changé depuis (**Revenir à l'empreinte calculée** la réaligne).
+6. Une empreinte qui réunit volontairement deux nets (shunt Kelvin, liaison AGND/DGND) : cocher **Pont de nets (net-tie)** dans ses Propriétés. Ses pastilles peuvent alors se toucher ; la case part vers KiCad (`net_tie_pad_groups`) et en revient.
 
 > [!NOTE]
 > Le contrôle DRC n'est pas continu : il se lance par le bouton (ou par « Contrôler maintenant »), et la liste reste celle du dernier contrôle tant qu'on ne le relance pas. Il repart aussi de lui-même après certaines opérations : application d'un ECO, rechargement d'une empreinte depuis la LIB, suppression des pistes en conflit après un import, action « DRC » du Gestionnaire de contraintes. Ce qui agit en continu, c'est le routeur, qui juge au même seuil que le contrôle tant que **Anti-collision** est actif.
+
+### Je veux les statistiques de la carte, ou permuter deux couches
+
+1. **Vérifier > Inspecter > Statistiques** : dimensions et surface, composants (dessus, dessous, CMS, traversants), pastilles, vias par type, perçages par diamètre, longueur de piste par couche, zones, nets et liaisons non routées. **Copier** met le texte dans le presse-papiers.
+2. **Cuivre > Couches > Permuter deux couches…** : pistes, zones, découpes de zone et keep-out passent d'une couche à l'autre, et un via borgne ou enterré qui s'arrêtait sur l'une s'arrête sur l'autre. L'empilage (noms, rôles, épaisseurs) ne bouge pas. Ctrl+Z annule.
 
 ### Je veux régler les règles et les aligner sur un fabricant
 
@@ -235,6 +243,7 @@ Groupe **Modifier** ; Annuler et Rétablir sont dans la barre rapide.
 | Découpe intérieure (Carte) | `Maj+E` | Découpe intérieure de la carte | Doit rester dans le contour |
 | Interdit aux composants (Carte) | | Zone interdite d'une face | |
 | Retirer du cuivre (Cuivre) | `X` | Polygone où une zone de cuivre ne se remplit pas | |
+| Permuter deux couches… (Cuivre) | | Pistes, zones, découpes, keep-out et bouts des vias borgnes passent d'une couche à l'autre | L'empilage ne bouge pas |
 | Trou NPTH (Carte) | | Trou mécanique non métallisé autonome | |
 | Origine | `O` | Clic sur le point qui servira d'origine : une pastille, un via ou un bout de piste proche (couche active) l'attire, sinon le point tombe sur la grille. L'outil repasse en Sélection ; la grille et les coordonnées affichées suivent la nouvelle origine | Annulable ; se remet à zéro dans **Règles… > Carte et repères** |
 | Mesure | `K` | Mesure une distance | |
@@ -269,7 +278,8 @@ Recadrer, Grille et Chevelu y sont en icônes ; les autres réglages sont dans s
 |---|---|---|---|
 | Rechercher | `Ctrl+F` | Cherche une empreinte (repère) ou un net | Prend le raccourci du navigateur à dessein |
 | Montrer au schéma | `L` | Fait sauter l'onglet du schéma sur la sélection | Désactivé en `file://` (deux onglets n'ont pas la même origine) ; sans accusé, le pied de page le dit |
-| Contrôle DRC | | Lance le DRC et ouvre la liste DRC | Lancé à la demande |
+| Contrôle DRC | | Lance le DRC et ouvre la liste DRC ; **⊘** exclut un écart voulu avec sa raison, **↺** le rétablit | Lancé à la demande |
+| Statistiques | | Dimensions, composants, pastilles, vias par type, perçages par diamètre, longueur de piste par couche | |
 | Connexions | | Vérifie, classe de nets par classe, que tous les nets sont reliés ; chaque liaison manquante donne ses deux broches et l'endroit. Chacune figure aussi au DRC (remarques), un clic y mène | Une broche seule sur son net n'est pas comptée |
 | ⚡ Pinout : Vérifier | | Contrôle brochage, pas et dimensions du boîtier contre le schéma | |
 | Score Placement | | Ouvre le panneau « Qualité de placement » | Voir la référence du panneau |

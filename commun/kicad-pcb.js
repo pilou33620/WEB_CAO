@@ -556,6 +556,7 @@ const KICAD_PCB = (() => {
       if (trousL.length) fp.holes = trousL;
       if (des.length) fp.dessins = des;
       if (verrou(f, 2)) fp.locked = true;
+      if (enfant(f, "net_tie_pad_groups")) fp.netTie = true;     // pont de nets : les groupes se réduisent à « toute l'empreinte »
       fps.push(fp);
 
       /* empreinte de LIB : la première pose de chaque nom KiCad */
@@ -840,6 +841,7 @@ const KICAD_PCB = (() => {
       const attr = ["attr"].concat(pads.length ? [pads.every(q => q.drill > 0) ? "through_hole" : "smd"] : o.chemin ? [] : ["board_only"]);
       if (!pads.length) attr.push("exclude_from_pos_files", "exclude_from_bom");
       out.push(attr);
+      if (fp.netTie && pads.length) out.push(["net_tie_pad_groups", q([...new Set(pads.map(p => String(p.n)))].join(", "))]);
       if (b && !des.some(x => /^fab/.test(x.layer))) out.push(["fp_rect", ["start", ...fl(b.x1, b.y1)], ["end", ...fl(b.x2, b.y2)], trait(0.1), ["fill", "no"], ["layer", q(Lc + "Fab")], u("corps")]);
       des.forEach((x, i) => {
         if (x === dRef || x === dVal) return;

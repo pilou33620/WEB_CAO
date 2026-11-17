@@ -1621,6 +1621,10 @@ function propsFp(box,fp){
       'title="Contour du boîtier, point de broche 1 et repère imprimés d\'office. Coupée quand '+
       'la sérigraphie de l\'empreinte est dessinée à part, dans les dessins.">'+
       '<input type="checkbox" id="pSilk"'+(fp.silk===false?"":" checked")+'> Sérigraphie automatique</label></div>'+
+    '<div class="prop"><label style="display:flex;align-items:center;gap:6px;cursor:pointer" '+
+      'title="Pont de nets (net-tie) : l\'empreinte réunit volontairement les nets de ses pastilles (shunt Kelvin, liaison AGND/DGND). '+
+      'Le DRC accepte que ses pastilles se touchent ; repris de et vers KiCad.">'+
+      '<input type="checkbox" id="pNetTie"'+(fp.netTie?" checked":"")+'> Pont de nets (net-tie)</label></div>'+
     /* point de broche 1 et contour imprimé, en repère local (fpSetMark, fpSetBody) */
     '<div class="prop"><label style="display:flex;align-items:center;gap:6px;cursor:pointer" '+
       'title="Point de sérigraphie qui dit dans quel sens poser la pièce. Coché ou décoché à la main, '+
@@ -1705,6 +1709,8 @@ function propsFp(box,fp){
   if($("pRefShow"))$("pRefShow").onchange=e=>{push();if(e.target.checked)delete fp.refHide;else fp.refHide=true;
     touch();refreshPanels();draw();};
   if($("pSilk"))$("pSilk").onchange=e=>{push();if(e.target.checked)delete fp.silk;else fp.silk=false;
+    touch();refreshPanels();draw();};
+  if($("pNetTie"))$("pNetTie").onchange=e=>{push();if(e.target.checked)fp.netTie=true;else delete fp.netTie;
     touch();refreshPanels();draw();};
   if($("pMark"))$("pMark").onchange=e=>{push();fpSetMark(fp,e.target.checked);touch();refreshPanels();draw();};
   upd("pMarkX",v=>fpMoveMark(fp,v,fpMark(fp).y),true);

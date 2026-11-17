@@ -55,6 +55,9 @@ const EXPOSE=[
   "setLayerRole","buildFabFiles","DRW_COUCHES","closeInterdit",
   "busClic","busTouche","busPlan","polyDecalee","busPoser",
   "pcbReglesControler",
+  /* contrôles repris de KiCad (45-drc-gestion.js, 54-controles.js) */
+  "drcKind","drcCle","drcExclure","drcRetablir","drcExclusNorm","drcFenetre","drcFenetreMaj","fpEncombrement","fpEcartsLib",
+  "pcbStatistiques","pcbStatistiquesTexte","couchesPermuter","pkgGeom","fpFreeze","setCuCount","fpTextPos",
   "couchesJeu","inspLignes","reperesPlacer","reperesCommande","zonesLot","zonesLotCommande","fpTextPos",
   "viaSuivante","viaTailles","verrousCoins","routeViaCurseur","mkVia",
   "pnsWorld","pnsItemsKeepout","distSegPoly","contourTroue","zoneDecoupee","gOrigin","gXY","drwBBox","drwPoints","gerberSilk","viaObstacle","placeVia",
@@ -31315,6 +31318,148 @@ T("zones en lot : zone → polygone plein → rectangle plein → hachurée, net
   if(zonesLotCommande({type:"polygone plein"})!==0)throw new Error("sans sélection : rien");
 });
 loadDoc(JSON.parse(ETAT_AVANT_OUTILS),true);
+
+
+/* ==========================================================================
+   Contrôles repris de KiCad : code stable et exclusions du DRC, encombrement,
+   vernis, sérigraphie, bouts en l'air, empreinte contre LIB, pont de nets,
+   statistiques et permutation de couches (45-drc-gestion.js, 54-controles.js)
+   ========================================================================== */
+// les essais asynchrones, plus bas, reprennent la carte laissée par ceux d'avant
+const DOC_AVANT_KICAD=serialize();
+T("DRC : code stable par écart, exclusion avec sa raison, gardée dans la carte, rétablie",()=>{
+  carteRegles();
+  S.tracks.push({l:0,net:"C",w:0.25,x1:5,y1:10,x2:40,y2:10},{l:0,net:"D",w:0.25,x1:5,y1:10.3,x2:40,y2:10.3});
+  touch();S.drcExclus=[];
+  let e=runDrc().find(x=>/^Isolation piste\/piste/.test(x.msg));
+  if(!e||e.kind!=="isolation"||!/^isolation@[\d.]+,[\d.]+@0$/.test(drcCle(e)))throw new Error("code : "+(e&&e.kind)+" "+(e&&drcCle(e)));
+  if(drcKind({msg:"Quelque chose d'inédit : 3 mm"})!=="autre-quelque-chose-d-inedit")throw new Error(drcKind({msg:"Quelque chose d'inédit : 3 mm"}));
+  const cle=drcCle(e);
+  drcExclure(e,"écart voulu, validé avec le fabricant");
+  if(S.drc.some(x=>x.kind==="isolation"))throw new Error("l'écart exclu reste dans la liste");
+  if(S.drcExclues.length!==1||S.drcExclues[0].exclu!=="écart voulu, validé avec le fabricant")throw new Error("exclus : "+JSON.stringify(S.drcExclues.map(x=>x.exclu)));
+  drcFenetre();drcFenetreMaj();                                 // la fenêtre se peint avec sa section « Exclus »
+  loadDoc(JSON.parse(serialize()),true);
+  if(S.drcExclus.length!==1||S.drcExclus[0].cle!==cle)throw new Error("perdue à la relecture");
+  runDrc();
+  if(S.drc.some(x=>x.kind==="isolation"))throw new Error("relue, l'exclusion doit tenir");
+  undo();                                                      // Ctrl+Z de l'exclusion
+  runDrc();
+  if(!S.drc.some(x=>x.kind==="isolation"))throw new Error("Ctrl+Z rend l'écart");
+  redo();runDrc();
+  drcRetablir(cle);
+  if(!S.drc.some(x=>x.kind==="isolation")||S.drcExclus.length)throw new Error("rétablir");
+  const n=drcExclusNorm([{cle:"x"},{cle:"isolation@1,2@0",note:5},{cle:"isolation@1,2@0"},{cle:"__proto__@1,2@0"},null,{cle:"bord@-1.5,2@"}]);
+  if(JSON.stringify(n.map(x=>x.cle+"|"+x.note))!=='["isolation@1,2@0|5","bord@-1.5,2@|"]')throw new Error("lecture bornée : "+JSON.stringify(n));
+  carteRegles();
+});
+T("DRC : un pont de nets (net-tie) fait taire les pastilles superposées, et lui seul",()=>{
+  carteRegles();
+  const fp=mkFp("NT1","","",2);
+  fp.x=40;fp.y=30;fp.nets={1:"AGND",2:"GND"};
+  S.fps.push(fp);fpFreeze(fp);
+  fpSetPad(fp,1,"x",padsOf(fp)[0].x+0.3);fpSetPad(fp,1,"y",padsOf(fp)[0].y);
+  touch();
+  const cc=()=>runDrc().filter(e=>/Pastilles superposées/.test(e.msg)).length;
+  if(!cc())throw new Error("sans pont, le recouvrement est un court-circuit");
+  fp.netTie=true;touch();
+  if(cc())throw new Error("pont de nets : se taire");
+  loadDoc(JSON.parse(serialize()),true);
+  if(!S.fps[0].netTie)throw new Error("perdu à la relecture");
+  carteRegles();
+});
+T("DRC : zones d'encombrement qui se chevauchent, corps à l'écart",()=>{
+  carteRegles();
+  const R=(ref,x)=>{const f=mkFp(ref,"","",2);f.x=x;f.y=20;f.nets={};f.dessins=[{shape:"rect",layer:"crtT",x1:-3,y1:-1.2,x2:3,y2:1.2,width:0.05}];return f;};
+  S.fps.push(R("R1",20),R("R2",25.5));touch();
+  if(!fpEncombrement(S.fps[0]))throw new Error("encombrement non lu");
+  let e=runDrc().filter(x=>x.kind==="encombrement");
+  if(e.length!==1||!/R1 et R2/.test(e[0].msg))throw new Error(JSON.stringify(e.map(x=>x.msg)));
+  if(runDrc().some(x=>/^Composants qui se chevauchent/.test(x.msg)))throw new Error("les corps ne se touchent pas");
+  S.fps[1].x=27;touch();
+  if(runDrc().some(x=>x.kind==="encombrement"))throw new Error("écartés : plus rien");
+  carteRegles();
+});
+T("DRC : pont de vernis entre deux nets, digue sous le minimum du fabricant",()=>{
+  carteRegles();
+  const f=mkFp("U1","","",2);
+  f.x=30;f.y=20;f.nets={1:"A",2:"B"};
+  f.pads=[{n:1,x:0,y:0,w:1,h:1,shape:"rect"},{n:2,x:1.06,y:0,w:1,h:1,shape:"rect"}];
+  S.fps.push(f);touch();
+  let e=runDrc().filter(x=>x.kind==="pont-vernis");
+  if(e.length!==1||!e[0].info||!/U1 \/ U1/.test(e[0].msg))throw new Error(JSON.stringify(e.map(x=>x.msg)));
+  f.pads[1].x=1.6;touch();
+  if(runDrc().some(x=>x.kind==="pont-vernis"))throw new Error("digue large : rien");
+  f.nets={1:"A",2:"A"};f.pads[1].x=1.06;touch();
+  if(runDrc().some(x=>x.kind==="pont-vernis"))throw new Error("même net : rien");
+  carteRegles();
+});
+T("DRC : sérigraphie trop fine et repère posé sur la sérigraphie d'un autre",()=>{
+  carteRegles();
+  const a=mkFp("R1","","",2), b=mkFp("R2","","",2);
+  a.x=20;a.y=20;b.x=20;b.y=26;a.nets={};b.nets={};
+  S.fps.push(a,b);touch();
+  const ta=fpTextPos(a).ref, tb=fpTextPos(b).ref;
+  b.refOffX=(b.refOffX||0)+ta.x-tb.x;b.refOffY=(b.refOffY||0)+ta.y-tb.y+0.2;
+  a.refSize=0.6;b.refSize=0.6;touch();
+  let e=runDrc();
+  if(!e.some(x=>x.kind==="serigraphie-superposee"&&/R1|R2/.test(x.msg)))throw new Error("superposée : "+JSON.stringify(e.filter(x=>x.kind&&x.kind.startsWith("seri")).map(x=>x.msg)));
+  if(e.filter(x=>x.kind==="serigraphie-taille").length!==2)throw new Error("taille : "+JSON.stringify(e.filter(x=>x.kind==="serigraphie-taille").map(x=>x.msg)));
+  delete a.refSize;delete b.refSize;b.refOffY=(b.refOffY||0)-0.2+10;touch();
+  e=runDrc();
+  if(e.some(x=>x.kind==="serigraphie-taille"||x.kind==="serigraphie-superposee"))throw new Error("taille automatique et repères écartés : rien");
+  carteRegles();
+});
+T("DRC : pistes et vias en l'air, arrivée en T et via relié acceptés",()=>{
+  carteRegles();
+  S.tracks.push({l:0,net:"A",w:0.25,x1:10,y1:10,x2:20,y2:10},{l:0,net:"A",w:0.25,x1:15,y1:10,x2:15,y2:15});
+  S.vias.push({x:30,y:30,d:0.6,drill:0.3,a:0,b:1,net:"A"});
+  touch();
+  let e=runDrc();
+  const air=e.filter(x=>x.kind==="piste-en-l-air"), via=e.filter(x=>x.kind==="via-en-l-air");
+  if(air.length!==3||air.some(x=>x.x===15&&x.y===10))throw new Error("pistes : "+JSON.stringify(air.map(x=>[x.x,x.y])));
+  if(via.length!==1||!/relié à rien/.test(via[0].msg))throw new Error("via : "+JSON.stringify(via.map(x=>x.msg)));
+  S.tracks.push({l:0,net:"A",w:0.25,x1:20,y1:10,x2:30,y2:30},{l:1,net:"A",w:0.25,x1:30,y1:30,x2:40,y2:30});
+  touch();
+  if(runDrc().some(x=>x.kind==="via-en-l-air"))throw new Error("via relié aux deux couches");
+  carteRegles();
+});
+T("DRC : empreinte tirée de la table différente de ce qu'elle donne aujourd'hui",()=>{
+  carteRegles();
+  const pk=["SOIC-8","SOT-23","0603","QFN-16","SOT-223"].find(p=>{const g=pkgGeom(p,2);return g&&Array.isArray(g.pads);});
+  if(!pk)throw new Error("aucun boîtier de la table ne donne ses pastilles");
+  const f=mkFp("U3","",pk,pkgGeom(pk,2).pads.length);
+  f.x=30;f.y=20;S.fps.push(f);touch();
+  if(!f.lib)throw new Error("fp.lib attendu pour "+pk);
+  if(runDrc().some(x=>x.kind==="empreinte-lib"))throw new Error("tout juste posée : identique");
+  fpSetPad(f,0,"x",f.pads[0].x+0.4);touch();
+  const e=runDrc().filter(x=>x.kind==="empreinte-lib");
+  if(e.length!==1||!/1 déplacée/.test(e[0].msg))throw new Error(JSON.stringify(e.map(x=>x.msg)));
+  if(fpEcartsLib([{n:1,x:0,y:0,w:1,h:1}],[{n:1,x:0,y:0,w:1,h:1},{n:2}])!=="1 pastille(s) contre 2")throw new Error("compte");
+  carteRegles();
+});
+T("statistiques de la carte, permutation de deux couches (vias borgnes compris)",()=>{
+  carteRegles();setCuCount(4);
+  const f=mkFp("J1","","",2);f.style="row";f.pitch=2.54;f.x=10;f.y=10;f.nets={1:"A",2:"B"};
+  S.fps.push(f);
+  S.tracks.push({l:0,net:"A",w:0.25,x1:10,y1:20,x2:20,y2:20},{l:1,net:"A",w:0.25,x1:20,y1:20,x2:30,y2:20});
+  S.vias.push({x:20,y:20,d:0.6,drill:0.3,a:0,b:1,net:"A"},{x:40,y:20,d:0.8,drill:0.4,a:0,b:3,net:"A"});
+  S.zones.push({id:S.nextId++,l:1,net:"A",pts:[{x:2,y:2},{x:8,y:2},{x:8,y:8},{x:2,y:8}]});
+  touch();
+  const st=pcbStatistiques();
+  if(st.composants.total!==1||st.vias.total!==2||st.vias.traversants!==1||st.vias.micro!==1)throw new Error("vias : "+JSON.stringify(st.vias));
+  if(Math.abs(st.pistes.longueur-20)>1e-6||Math.abs(st.pistes.parCouche[1]-10)>1e-6)throw new Error("pistes : "+JSON.stringify(st.pistes));
+  if(!/Carte : 60\.00 × 40\.00 mm, 24\.00 cm²/.test(pcbStatistiquesTexte(st))||!/Ø 0\.30 mm : 1 métallisé/.test(pcbStatistiquesTexte(st)))throw new Error(pcbStatistiquesTexte(st));
+  const n=couchesPermuter(1,2);
+  if(S.tracks[1].l!==2||S.zones[0].l!==2||S.tracks[0].l!==0)throw new Error("pistes et zones");
+  if(S.vias[0].a!==0||S.vias[0].b!==2||S.vias[1].b!==3)throw new Error("vias : "+JSON.stringify(S.vias.map(v=>[v.a,v.b])));
+  if(n!==3)throw new Error("objets permutés : "+n);
+  if(couchesPermuter(1,1)||couchesPermuter(0,9))throw new Error("couches invalides refusées");
+  couchesPermuter(2,1);
+  if(S.tracks[1].l!==1||S.vias[0].b!==1)throw new Error("aller-retour");
+  carteRegles();
+});
+loadDoc(JSON.parse(DOC_AVANT_KICAD),true);
 
 (async()=>{
   for(const [name,fn] of T_ASYNC){

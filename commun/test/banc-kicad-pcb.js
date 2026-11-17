@@ -317,6 +317,14 @@ for (const k10 of [false, true]) {
   const norm = d => PCB ? PCB.normDoc(JSON.parse(J(d))) : d;       // ce que l'éditeur en garde, s'il est construit
   let d, e, r;
 
+  /* 0. pont de nets : net_tie_pad_groups écrit et relu, gardé par l'éditeur */
+  d = base();
+  d.fps = [fpDe([{ n: 1, x: 0, y: 0, w: 1, h: 1, shape: "rect", drill: 0, rot: 0 }, { n: 2, x: 0.8, y: 0, w: 1, h: 1, shape: "rect", drill: 0, rot: 0 }],
+    { ref: "NT1", netTie: true, nets: { 1: "AGND", 2: "GND" } })];
+  e = ecrire(d); r = lire(e.t);
+  verifier(/\(net_tie_pad_groups "1, 2"\)/.test(e.t), "pont de nets : écrit");
+  verifier(r.doc.fps[0].netTie === true && norm(r.doc).fps[0].netTie === true, "pont de nets : relu et gardé");
+
   /* 1. couches mécaniques mec1…mec8 = User.2…User.9, sur la carte et dans une empreinte (dessus et dessous) */
   d = base();
   d.drawings = [1, 2, 3, 4, 5, 6, 7, 8].map(i => ({ id: i, shape: "line", layer: "mec" + i, x1: 0, y1: i, x2: 5, y2: i, width: 0.1 }))

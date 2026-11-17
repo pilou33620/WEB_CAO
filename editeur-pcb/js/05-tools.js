@@ -20,6 +20,7 @@ function docObj(){
           interdits:interditsListe(),
           mecaNoms:S.mecaNoms||{},
           pinoutAcquits:S.pinoutAcquits||{},
+          drcExclus:S.drcExclus||[],
           fabExclus:S.fabExclus||[],
           anim3dEtiq:Array.isArray(S.anim3dEtiq)?S.anim3dEtiq:null,
           cartouche:S.cartouche||"",
@@ -508,6 +509,7 @@ function normFp(f,i){
   if(+f.puissance>0)out.puissance=r3(dRange(f.puissance,0,0,100));   // dissipée en service, W (39-thermique.js)
   if(f.mark===false)out.mark=false;
   if(f.locked)out.locked=true;
+  if(f.netTie===true)out.netTie=true;             // pont de nets voulu (54-controles.js)
   if(f.libre)out.libre=true;                      // pastille libre, posée hors schéma (49-dessin.js)
   else if(f.mark&&typeof f.mark==="object"){
     const mx=+f.mark.x, my=+f.mark.y;
@@ -851,6 +853,7 @@ function normDoc(d){
     for(const [k,v] of Object.entries(pa).slice(0,2000))
       if(typeof v==="string"&&/^[^\x00-\x1f]{1,40}$/.test(k)&&!["__proto__","constructor","prototype"].includes(k))out.pinoutAcquits[k]=v.slice(0,4000);
   out.fabExclus=arr(src.fabExclus).filter(k=>FAB_GROUPES.some(g=>g[0]===k));
+  out.drcExclus=typeof drcExclusNorm==="function"?drcExclusNorm(src.drcExclus):[];   // écarts DRC exclus (45-drc-gestion.js)
   /* les composants présentés par l'animation 3D (null : le choix d'office) */
   out.anim3dEtiq=Array.isArray(src.anim3dEtiq)?src.anim3dEtiq.filter(r=>typeof r==="string"&&/^[^\x00-\x1f]{1,40}$/.test(r)).slice(0,500):null;
   out.cartouche=CARTOUCHE_FORMATS[src.cartouche]?src.cartouche:"";
@@ -922,6 +925,7 @@ function loadDoc(d,keepView){
   S.zones=d.zones;S.cuts=d.cuts;S.holes=d.holes||[];S.drawings=d.drawings||[];S.pinoutAcquits=d.pinoutAcquits||{};S.interdits=d.interdits||[];
   S.mecaNoms=d.mecaNoms||{};if(typeof mecaNomsAppliquer==="function")mecaNomsAppliquer();
   S.fabExclus=d.fabExclus||[];
+  S.drcExclus=d.drcExclus||[];S.drcExclues=[];
   S.anim3dEtiq=d.anim3dEtiq||null;
   S.cartouche=d.cartouche||"";
   S.cartoucheInfo=d.cartoucheInfo||{};
