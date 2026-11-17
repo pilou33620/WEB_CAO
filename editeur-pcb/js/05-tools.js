@@ -2288,15 +2288,14 @@ function fpEssai(mutate){
   mutate();
   const bouges=avant.filter(a=>a.f.x!==a.x||a.f.y!==a.y||a.f.rot!==a.rot||a.f.side!==a.side).map(a=>a.f);
   const skip=new Set(bouges);
-  const apres=bouges.map(f=>({f,g:fpGene(f,skip)}));
+  const apres=bouges.map(f=>{const g=fpGene(f,skip);return {f,g,k:g?fpGeneTous(f,skip):null};});
   for(const a of avant){
     a.f.x=a.x;a.f.y=a.y;a.f.rot=a.rot;a.f.side=a.side;
     if(a.r!==undefined)a.f.refOffX=a.r;
     if(a.v!==undefined)a.f.valOffX=a.v;
   }
   for(const o of apres)
-    // déjà en faute avant contre la même gêne : réparable ; une gêne nouvelle, non
-    if(o.g&&fpGene(o.f,skip)!==o.g)return o.f.ref+" buterait sur "+o.g;
+    if(o.g&&!fpTolere(o.k,fpGene(o.f,skip)?fpGeneTous(o.f,skip):null))return o.f.ref+" buterait sur "+o.g;
   return "";
 }
 /* ==========================================================================
@@ -2347,8 +2346,11 @@ function fpGardeVerifier(){
     Object.assign(f,b.pose);touch();
     const avant=fpGene(f,sk)?fpGeneTous(f,sk):new Set();
     Object.assign(f,now);touch();
-    const k=[...neuf].find(q=>!avant.has(q));
-    if(k===undefined)continue;                    // déjà en faute contre la même chose : réparable
+    // sans bouger (valeur, repère…), on ne lui reproche que ce qui est nouveau ;
+    // s'il a bougé, plus aucun boîtier sous lui (`fpTolere`)
+    const bouge=JSON.stringify(now)!==JSON.stringify(b.pose);
+    if(bouge?fpTolere(neuf,avant):[...neuf].every(q=>avant.has(q)))continue;
+    const k=[...neuf].find(q=>bouge?(q[0]==="F"||!avant.has(q)):!avant.has(q));
     const o=k[0]==="F"?fpById(+k.slice(1)):null;
     refus=f.ref+" chevaucherait "+(o?o.ref:"du cuivre d'un autre net");break;
   }
@@ -2402,18 +2404,18 @@ function fpClearSkip(){
 function armFpClear(){
   drag.fpClear=null;
   if(!S.avoid||!S.sel.fps.size)return;
-  const {fps,skip}=fpClearSkip();
-  const was=new Map();
+  const {fps,skip}=fpClearSkip(), was=new Map();
   for(const f of fps)if(fpGene(f,skip))was.set(f,fpGeneTous(f,skip));
   drag.fpClear={was,warned:false};
 }
-/* Un boîtier déjà en faute au départ peut glisser pour en sortir, mais
-   seulement contre ce qui le gênait déjà : il ne traverse pas un autre
-   composant en chemin. */
-function fpDejaGene(c,f){
-  const avant=c.was.get(f);
-  return !!avant&&[...fpGeneTous(f,fpClearSkip().skip)].every(k=>avant.has(k));
+/* Ce qu'on tolère d'un boîtier déjà en faute : jamais un autre boîtier — il
+   ne se pose sur aucun, il sort d'un chevauchement en sautant jusqu'au libre
+   (`dragMoveVers`) —, mais le cuivre d'un autre net qui le gênait déjà : on
+   le répare en déplaçant ce cuivre, ou en tournant le boîtier sur place. */
+function fpTolere(apres,avant){
+  return !!avant&&[...apres].every(k=>k[0]!=="F"&&avant.has(k));
 }
+function fpDejaGene(c,f){return fpTolere(fpGeneTous(f,fpClearSkip().skip),c.was.get(f));}
 /* Tous les obstacles d'un boîtier : on les écarte un à un du monde jusqu'à
    ce que plus rien ne gêne. */
 function fpGeneTous(f,skip){

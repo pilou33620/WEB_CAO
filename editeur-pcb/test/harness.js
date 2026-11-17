@@ -9329,7 +9329,12 @@ T("garde-fou : aucune action ne laisse un boîtier sur un autre",()=>{
     // déjà en faute : le dégager reste permis
     S.avoid=false;const J2=S.fps.find(f=>f.ref==="J2");J2.x=A2.x;J2.y=A2.y;touch();S.avoid=true;
     push();J2.x=A2.x+1;touch();
-    if(fpGardeVerifier())throw new Error("un boîtier déjà en faute contre le même voisin reste réparable");
+    if(!fpGardeVerifier())throw new Error("déjà en faute, il ne doit pas rester sur son voisin en bougeant");
+    push();J2.x=60;J2.y=40;touch();
+    if(fpGardeVerifier())throw new Error("le sortir vers une place libre reste permis");
+    S.avoid=false;J2.x=A2.x;J2.y=A2.y;touch();S.avoid=true;
+    push();J2.val="2k";touch();
+    if(fpGardeVerifier())throw new Error("changer sa valeur sans le bouger reste permis");
     // anti-collision coupée : on force
     S.avoid=false;push();J2.x=A2.x;touch();
     if(fpGardeVerifier())throw new Error("coupée, l'anti-collision laisse forcer");
@@ -9365,6 +9370,11 @@ T("un boîtier tiré bute sur les pastilles et le corps d'un autre, et reste ré
     if(sort.x!==60||sort.y!==40)throw new Error("une faute d'avant le geste reste réparable : "+JSON.stringify(sort));
     // déjà en faute sur J1, il ne traverse pas pour autant un troisième boîtier
     const R=mkFp("R9","1k","0603",2);R.x=40;R.y=60;S.fps.push(R);touch();
+    S.avoid=false;tire(B,A.x,A.y);S.avoid=true;
+    // déjà sur J1 : un petit glissement qui reste dessus est refusé
+    const pres=tire(B,A.x+1,A.y);
+    if(pres.x===A.x+1&&[...fpGeneTous(B,new Set([B]))].includes("F"+A.id))
+      throw new Error("il ne doit pas glisser en restant sur J1");
     S.avoid=false;tire(B,A.x,A.y);S.avoid=true;
     const dans=tire(B,R.x,R.y);
     if(fpGene(B,new Set([B]))&&[...fpGeneTous(B,new Set([B]))].includes("F"+R.id))

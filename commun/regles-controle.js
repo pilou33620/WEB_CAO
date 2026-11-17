@@ -63,7 +63,7 @@ function reglesFenetre(titre, controler) {
           '<button class="pnl-btn" id="reglesCtlFermer" title="Fermer" type="button">✕</button>' +
         '</header>' +
         '<div id="reglesCtlResume" style="padding:8px 14px;color:var(--txt-dim)"></div>' +
-        '<div id="reglesCtlListe" style="overflow:auto;padding:0 14px 12px;flex:1"></div>' +
+        '<div id="reglesCtlListe" style="overflow:auto;padding:0 14px 12px;flex:1;min-height:0"></div>' +
       '</div>';
     document.body.appendChild(d);
     const fermer = () => { d.hidden = true; };

@@ -197,7 +197,7 @@
   select.tbsel option{background:#101216;color:var(--txt);font-family:var(--mono)}
   /* ---------- fenêtre modale (éditeur de brochage) ---------- */
   .modal{
-    position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;
+    position:fixed;inset:0;z-index:950;display:flex;align-items:center;justify-content:center;
     background:rgba(8,9,11,.72);padding:24px;
   }
   .modal .box{background:var(--panel);border:1px solid var(--border2);border-radius:8px;padding:16px;max-width:540px;width:100%}

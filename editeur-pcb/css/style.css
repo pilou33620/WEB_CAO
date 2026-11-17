@@ -346,7 +346,7 @@
   .segb.on{background:var(--blue-deep);color:#fff}
   /* ---------- boîte de dialogue ---------- */
   .modal{position:fixed;inset:0;background:rgba(8,9,11,.74);display:flex;
-    align-items:center;justify-content:center;z-index:50}
+    align-items:center;justify-content:center;z-index:950}   /* au-dessus du ruban (75) et de la fenêtre DRC (900) */
   .modal .box{width:600px;max-width:92vw;background:var(--panel);border:1px solid var(--border2);
     border-radius:8px;padding:14px 16px 16px;box-shadow:0 24px 60px rgba(0,0,0,.55)}
   .modal h3{margin:0 0 4px;font-size:13px;letter-spacing:.12em;text-transform:uppercase;font-weight:600}
