@@ -361,6 +361,8 @@ function normStack(s,cu){
   /* séquence de pressages (01-core.js) : de même */
   const press=pressNorm(src.press,cu,out.di);
   if(press.length)out.press=press;
+  // micro-vias empilés acceptés ou refusés par le fabricant ; muet = à confirmer
+  if(src.microEmpile==="oui"||src.microEmpile==="non")out.microEmpile=src.microEmpile;
   return out;
 }
 function normClass(c,i){
@@ -745,6 +747,7 @@ function normDoc(d){
             mask:dRange(r.mask,0.05,-100,100),paste:dRange(r.paste,0,-100,100),
             viaFinish:VIA_FINISH[vf]?vf:(r.tented===false?"open":"tented"),
             corner:CORNER_MODES[cm]?cm:"45",
+            smartPads:r.smartPads!==false,   // accrochage décalé : actif d'usine, il ne touche qu'aux tracés à venir
             route:ROUTE_MODES[rm]?rm:"shove",
             /* le trou à trou n'existait pas : les fichiers muets prennent le
                minimum de fabrication courant, qu'ils respectaient déjà */
@@ -890,7 +893,7 @@ function loadDoc(d,keepView){
   S.fabOrigin=d.fabOrigin;
   const r=d.rule;
   S.rule={edge:r.edge, thermal:r.thermal, cuMin:r.cuMin, hDessus:r.hDessus, hDessous:r.hDessous, dTMax:r.dTMax, mask:r.mask, paste:r.paste,
-          viaFinish:r.viaFinish, corner:r.corner, route:r.route, hole:r.hole,
+          viaFinish:r.viaFinish, corner:r.corner, smartPads:r.smartPads, route:r.route, hole:r.hole,
           mat:r.mat, short:r.short, aspWarn:r.aspWarn, aspMax:r.aspMax,
           mfgProfile:r.mfgProfile||"jlcpcb"};
   if(r.designRules!==undefined){
@@ -2842,7 +2845,13 @@ function miterClick(x,y,r=miterR){
     }
   }
   let co=null;bd=tol;
-  const polys=[{P:boardPoly(),bord:true}].concat(boardCutouts().map(P=>({P})));
+  /* le contour, ses découpes, et les polygones de la couche active : zones de
+     cuivre (un plan qui suit la carte s'arrondit avec elle), découpes de zone,
+     zones interdites */
+  const polys=[{P:boardPoly(),bord:true}].concat(boardCutouts().map(P=>({P})),
+    S.zones.filter(z=>z.l===S.active&&!z.auto&&z.pts.length>=3).map(z=>({P:z.pts})),
+    S.cuts.filter(c=>c.l===S.active&&c.pts.length>=3).map(c=>({P:c.pts})),
+    (typeof interditsListe==="function"?interditsListe():[]).map(z=>({P:z.pts})));
   for(const o of polys)
     for(let i=0;i<o.P.length;i++){
       const d=dist(x,y,o.P[i].x,o.P[i].y);
@@ -2850,7 +2859,7 @@ function miterClick(x,y,r=miterR){
     }
   if(!co){
     hint(tr?"Ce coude de piste ne s'arrondit pas : il faut deux portions droites de même largeur et de même net, sans via ni pastille au coude."
-           :"Cliquez sur un coin du contour, d'une découpe ou d'un coude de piste de la couche active.");
+           :"Cliquez sur un coin du contour, d'une découpe, d'une zone (cuivre, découpe de zone, interdite) ou d'un coude de piste de la couche active.");
     return false;
   }
   const res=miterCoin(co.o.P,co.i,r);
@@ -4220,6 +4229,8 @@ function viaTrou(v,skip){
        ce qu'un geste emmène est donc à refaire ici, à l'identique. */
     if(skip&&(skip.has(it)||(it.src&&skip.has(it.src))||(it.fp&&skip.has(it.fp))))continue;
     let d=0,cx=0,cy=0,qui="";
+    // micro-vias empilés ou décalés (01-core.js, `viaEmpilable`) : seul le recouvrement partiel gêne, comme au DRC
+    const pile=it.k==="V"&&viaEmpilable(v,it.v);
     if(it.k==="V"){d=it.v.drill;cx=it.v.x;cy=it.v.y;
       qui="d'un autre via"+(it.net?" ("+it.net+")":"");}
     else if(it.npth){d=it.src.d;qui="d'un trou NPTH";}
@@ -4230,6 +4241,7 @@ function viaTrou(v,skip){
     const ax=it.npth?axePercage(it.src):null;
     const e=(ax?segDist(v.x,v.y,ax.x1,ax.y1,ax.x2,ax.y2):dist(v.x,v.y,cx,cy))-v.drill/2-d/2;
     if(e>=h-1e-6)continue;
+    if(pile&&(dist(v.x,v.y,cx,cy)<=1e-6||e>=-1e-6))continue;
     if(!pire||e<pire.e)pire={e:e,qui:qui};
   }
   if(!pire)return "";
@@ -4296,12 +4308,59 @@ function sameLine(a,b){
   if(u.x*v.x+u.y*v.y<=0)return false;               // repli sur soi : ce n'est pas une suite
   return !viaAt(a.l,a.x2,a.y2);
 }
+/* ==========================================================================
+   L'accrochage décalé (« smart pads » de KiCad)
+   --------------------------------------------------------------------------
+   Le routeur mène la piste au centre de la pastille. Sur une pastille longue,
+   abordée de biais, le dernier segment y entre déjà franchement, puis un petit
+   coude va chercher le centre : du cuivre pour rien. Au dépôt, si un segment
+   plus tôt entre dans la pastille d'arrivée assez pour que le bout rond de la
+   piste y tienne entier (une demi-largeur de profondeur), la piste s'arrête là
+   et les segments d'après tombent. Même chose au départ. On ne fait que
+   retirer du cuivre déjà jugé par le routeur : aucune isolation ne peut s'en
+   trouver plus courte. Une entrée droite vers le centre ne change pas.
+   shortcut: appliqué au dépôt seulement, l'aperçu du tracé montre encore le
+   coude ; le faire dans `updateRoute` si l'écart gêne à l'œil.
+   ========================================================================== */
+function smartPadsTrim(segs,net,w){
+  if(!(S.rule&&S.rule.smartPads)||!net||segs.length<2)return segs;
+  const prof=(f,q,l,x,y)=>{const s=padSurCouche(q,l);return s?-padDist(x,y,s):-1;};
+  // L orienté vers la pastille : elle est au bout du dernier segment
+  const bout=L=>{
+    const der=L[L.length-1];
+    if(isArc(der))return null;
+    const l=der.l;
+    let pad=null;
+    for(const f of S.fps)for(const q of padsWorld(f))
+      if(q.net===net&&dist(q.x,q.y,der.x2,der.y2)<=EPS_J&&padCuLayers(f,q).includes(l))pad={f,q};
+    if(!pad)return null;
+    let k0=L.length-1;
+    while(k0>0&&L[k0-1].l===l&&!isArc(L[k0-1]))k0--;
+    for(let i=k0;i<L.length-1;i++){              // il faut qu'au moins un segment tombe
+      const s=L[i], len=dist(s.x1,s.y1,s.x2,s.y2), demi=(s.w!=null?s.w:w)/2;
+      if(len<1e-9)continue;
+      if(prof(pad.f,pad.q,l,s.x1,s.y1)>=0)return null;
+      const n=Math.ceil(len/0.01);
+      for(let j=1;j<=n;j++){
+        const x=s.x1+(s.x2-s.x1)*j/n, y=s.y1+(s.y2-s.y1)*j/n;
+        if(prof(pad.f,pad.q,l,x,y)>=demi-1e-6)
+          return L.slice(0,i).concat([Object.assign({},s,{x2:r3(x),y2:r3(y)})]);
+      }
+    }
+    return null;
+  };
+  const inv=L=>L.slice().reverse().map(s=>Object.assign({},s,{x1:s.x2,y1:s.y2,x2:s.x1,y2:s.y1}));
+  let out=bout(segs)||segs;
+  if(out.length>=2){const d=bout(inv(out));if(d)out=inv(d);}
+  return out;
+}
 function commitRoute(){
   const R=S.route;
   S.route=null;
   if(!R)return;
   if(!R.done.length&&!R.shoved){touch();draw();return;}
   pushSnap(R.snap);
+  R.done=smartPadsTrim(R.done,R.net,R.w);
   let prev=null;
   const posed=[];
   for(const s of R.done){

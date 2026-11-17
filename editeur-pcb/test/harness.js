@@ -59,7 +59,7 @@ const EXPOSE=[
   "viaSuivante","viaTailles","verrousCoins","routeViaCurseur","mkVia",
   "pnsWorld","pnsItemsKeepout","distSegPoly","contourTroue","zoneDecoupee","gOrigin","gXY","drwBBox","drwPoints","gerberSilk","viaObstacle","placeVia",
   "coutureZone","cloturePistes","fanoutFps","coutureRetirer","viaEssai","netMasseDefaut","fmtU","uLue","uAff","RP_PCB","hitTest","deleteSel","startRoute",
-  "cutsCuivre","ilotContour","drcRangs","drcCategorie","drcFenetre","drcPas","copySelPcb","fpEssai","fpGeneTous","pcbConnexionsControler","fpGardeAuto","fpGardeVerifier","fpChevauchements","placementDegage","placementBilan","fpPlaceLibre","pasteClipPcb","rotateSel","flipSel","fpGene","routeRetouche","dragMoveBy","beginMove","dragRotate","gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
+  "cutsCuivre","ilotContour","drcRangs","drcCategorie","drcFenetre","drcPas","copySelPcb","fpEssai","fpGeneTous","viaEmpilements","smartPadsTrim","padHolds","pcbConnexionsControler","fpGardeAuto","fpGardeVerifier","fpChevauchements","placementDegage","placementBilan","fpPlaceLibre","pasteClipPcb","rotateSel","flipSel","fpGene","routeRetouche","dragMoveBy","beginMove","dragRotate","gridRapide","routeViaCurseur","routeCible","finirTrace","larmesPoser","larmesRetirer","larmesCalc","dpCorps","curseurPose","pushClear","zoneDessus","zoneGroups","S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
   "updateRoute","stepRoute","commitRoute","routeToLayer","runDrc","buildTabs","backRoute",
   "buildLayers","refreshPanels","buildList","buildProps","clearSel","rotateSel",
   "BLOC_PLACEMENT","PLACEMENT_SCORE","fpBBox",
@@ -2325,8 +2325,31 @@ T("via marqué sur la capa : il la suit même à 7 mm, pas s'il n'y est plus rel
     if(g.x!==g0.x||g.y!==g0.y)throw new Error("un via qui n'est plus relié à la capa ne la suit pas");
   }finally{undo();suiviFin(D.reg);}
 });
+T("accrochage décalé : la piste s'arrête dans la pastille, sans le coude final",()=>{
+  const smart=S.rule.smartPads;
+  S.fps=[];S.tracks=[];touch();
+  const f=mkFp("R1","1k","0805",2);f.x=20;f.y=20;f.nets={1:"N",2:"M"};S.fps.push(f);touch();
+  const q=padsWorld(f)[0], o=0.1, w=0.1;
+  // à l'horizontale à o au-dessus de l'axe, puis 45° jusqu'au centre
+  const segs=[{l:0,w,x1:q.x-10,y1:q.y+o,x2:q.x-o,y2:q.y+o},{l:0,w,x1:q.x-o,y1:q.y+o,x2:q.x,y2:q.y}];
+  try{
+    S.rule.smartPads=true;
+    const r=smartPadsTrim(segs,"N",w);
+    if(r.length!==1)throw new Error("le coude final devait tomber : "+JSON.stringify(r));
+    const e=r[0];
+    if(!padHolds(f,q,0,e.x2,e.y2))throw new Error("le bout doit rester dans la pastille");
+    if(e.x2>=q.x-o-1e-6)throw new Error("la piste devait s'arrêter avant, au bord de la pastille : "+e.x2);
+    if(e.y2!==r3(q.y+o))throw new Error("la direction doit rester droite");
+    // une entrée droite vers le centre ne change pas
+    const droit=[{l:0,w,x1:q.x-10,y1:q.y,x2:q.x-3,y2:q.y},{l:0,w,x1:q.x-3,y1:q.y,x2:q.x,y2:q.y}];
+    if(smartPadsTrim(droit,"N",w).length!==2)throw new Error("une entrée droite garde ses segments");
+    S.rule.smartPads=false;
+    if(smartPadsTrim(segs,"N",w)!==segs)throw new Error("option coupée : rien ne change");
+  }finally{S.rule.smartPads=smart;S.fps=[];touch();}
+});
 T("contrôle : un bout de piste arrêté hors du centre de sa pastille est signalé (info)",()=>{
-  const reg=suiviDecor();
+  const reg=suiviDecor(), smart=S.rule.smartPads;
+  S.rule.smartPads=false;       // accrochage décalé actif, entrer hors du centre est la règle : rien à dire
   const R=mkFp("R1","","",2);R.style="row";R.pitch=2.54;R.x=60;R.y=60;S.fps.push(R);touch();
   const p=padsWorld(R)[0];
   S.tracks.push({l:0,net:"N",w:0.3,x1:p.x+0.3,y1:p.y,x2:p.x+0.3,y2:p.y-8});
@@ -2339,7 +2362,9 @@ T("contrôle : un bout de piste arrêté hors du centre de sa pastille est signa
     const e=runDrc().filter(x=>/de son centre/.test(x.msg));
     if(e.length!==1||!e[0].info||!/R1\.1 à 0\.30 mm/.test(e[0].msg))
       throw new Error("une seule info attendue, sur R1.1 : "+JSON.stringify(e.map(x=>x.msg)));
-  }finally{S.tracks=[];S.fps=[];touch();suiviFin(reg);}
+    S.rule.smartPads=true;
+    if(runDrc().some(x=>/de son centre/.test(x.msg)))throw new Error("accrochage décalé : la remarque se tait");
+  }finally{S.rule.smartPads=smart;S.tracks=[];S.fps=[];touch();suiviFin(reg);}
 });
 /* Empreinte refaite (ECO, LIB, boîtier changé) : les pistes retrouvent la
    pastille de même numéro. */
@@ -3786,7 +3811,15 @@ T("miter : coin de carte arrondi, chanfrein, rayon trop grand, coude de piste",(
   if(!miterClick(20,0,2))throw new Error("le coude devait s'arrondir");
   const arc=S.tracks.find(t=>t.ca);
   if(!arc||Math.abs(arcOf(arc).r-2)>0.01)throw new Error("arc de 2 mm attendu");
-  setMode("select");S.tracks=[];touch();
+  S.tracks=[];touch();
+  // une zone de cuivre de la couche active s'arrondit aussi, et le Gerber l'écrit en arc
+  const z={l:0,net:"GND",pts:[{x:5,y:5},{x:25,y:5},{x:25,y:20},{x:5,y:20}],prio:0};
+  S.zones.push(z);touch();
+  if(!miterClick(25,20,4))throw new Error("le coin de la zone devait s'arrondir");
+  const za=ctrSegments(z.pts).filter(q=>q.t==="a");
+  if(za.length!==1||Math.abs(za[0].r-4)>0.01)throw new Error("zone : un arc de 4 mm attendu");
+  if(!/^G0[23]X.*I.*J.*D01\*$/m.test(gerberCopper(0)))throw new Error("le Gerber devait écrire la zone en arc");
+  S.zones=[];setMode("select");touch();
 });
 /* Un champ garde ses lettres pour lui — sans quoi taper « 0,3 » dans l'isolation
    basculerait de couche. Mais le canevas n'est pas focusable : cliquer dessus ne
@@ -9308,6 +9341,35 @@ T("l'arrivée entre dans l'axe de sa pastille, dans les deux sens du tracé",()=
     if(S.route.retouche)throw new Error("le coude ne doit pas glisser dans le cuivre voisin");
     cancelRoute();
   }finally{S.route=null;S.tracks=[];S.vias=[];touch();S.avoid=reg.avoid;S.grid=reg.grid;setMode("select");}
+});
+T("micro-vias empilés : reconnus, jugés selon le fabricant, décalage partiel refusé",()=>{
+  setCuCount(4,true);S.fps=[];S.tracks=[];S.vias=[];S.zones=[];delete S.stack.microEmpile;touch();
+  const haut={x:10,y:10,d:0.3,drill:0.1,a:0,b:1,net:"A"}, bas={x:10,y:10,d:0.45,drill:0.2,a:1,b:2,net:"A"};
+  S.vias.push(haut,bas);touch();
+  const msgs=()=>runDrc().filter(e=>/[Mm]icro-vias|perçages au même point|Perçages qui se recouvrent/.test(e.msg));
+  try{
+    if(viaEmpilements().length!==1)throw new Error("un empilement attendu");
+    let m=msgs();
+    if(m.length!==1||!m[0].info||!/à confirmer/.test(m[0].msg))throw new Error("à confirmer : "+JSON.stringify(m.map(e=>e.msg)));
+    S.stack.microEmpile="non";touch();m=msgs();
+    if(m.length!==1||m[0].info||!/ne les accepte pas/.test(m[0].msg))throw new Error("refusés : "+JSON.stringify(m.map(e=>e.msg)));
+    S.stack.microEmpile="oui";touch();
+    if(msgs().length)throw new Error("acceptés, deux niveaux : rien à dire");
+    // le réglage suit le document
+    const d=JSON.parse(serialize());
+    if(d.stack.microEmpile!=="oui")throw new Error("le réglage doit s'enregistrer");
+    // la pose ne refuse pas un micro-via sur un autre
+    if(viaTrou(Object.assign({},haut),new Set([haut])))throw new Error("la pose devait accepter l'empilement");
+    // décalés à moitié : refusé ; en escalier franc : rien
+    haut.x=10.05;touch();m=msgs();
+    if(m.length!==1||!/ni empilés ni décalés/.test(m[0].msg))throw new Error("décalage partiel : "+JSON.stringify(m.map(e=>e.msg)));
+    haut.x=10.6;touch();
+    if(msgs().length)throw new Error("en escalier : rien à dire");
+    // deux nets différents au même point : toujours deux perçages en faute
+    haut.x=10;haut.net="B";touch();
+    const err=runDrc().filter(e=>!e.info);
+    if(!err.length||err.some(e=>/[Mm]icro-vias/.test(e.msg)))throw new Error("deux nets : une erreur, pas un empilement : "+JSON.stringify(err.map(e=>e.msg)));
+  }finally{S.vias=[];delete S.stack.microEmpile;setCuCount(2,true);touch();}
 });
 T("connexions par classe : chaque liaison manquante, ses broches et l'endroit",()=>{
   const c=carteDp();

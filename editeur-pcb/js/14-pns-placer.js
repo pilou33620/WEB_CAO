@@ -22,11 +22,10 @@
    décrochant une connexion ne serait pas une optimisation, ce serait une
    erreur — et le chevelu ne le dirait qu'après coup.
 
-   Ce que cet optimiseur ne reprend PAS de KiCad : `SMART_PADS`, qui décale
-   l'entrée d'une piste vers le bord d'une grosse pastille plutôt que vers son
-   centre. Cet éditeur fait le choix inverse, explicitement : `magnet` accroche
-   au **centre** de la pastille, et un essai du banc le vérifie. Les deux
-   règles ne peuvent pas coexister ; celle d'ici est restée.
+   Ce que cet optimiseur ne reprend PAS de KiCad : `SMART_PADS`. Pendant le
+   tracé, `magnet` accroche au **centre** de la pastille (un essai du banc le
+   vérifie) ; l'entrée décalée se fait au dépôt seulement (`smartPadsTrim`,
+   05-tools.js), qui retire le coude final quand la piste est déjà entrée.
    ============================================================================= */
 
 const PNS_OPT_WIN=8;           // largeur maximale de la fenêtre de fusion

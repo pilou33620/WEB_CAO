@@ -404,6 +404,37 @@ function pressNorm(src,cu,di){
 }
 /* les pressages déclarés, relus contre l'empilage du moment : une âme posée
    depuis peut en avoir rendu un impossible */
+/* ---------- micro-vias empilés ----------
+   Un micro-via ne franchit qu'un diélectrique, au laser (jamais une âme). Pour
+   descendre plus bas on les EMPILE au même point (chacun rempli de cuivre et
+   bouché, l'autre se pose dessus) ou on les DÉCALE en escalier. Deux vias du
+   même net qui se touchent par une seule couche, l'un au moins micro-via,
+   forment un empilement s'ils sont au même point. Le fabricant dit s'il les
+   accepte (`S.stack.microEmpile` : "oui", "non", absent = à confirmer). */
+const MICRO_EMPILE_MAX=3;      // niveaux empilés au-delà desquels la fiabilité baisse (IPC-6012, HDI)
+function viaMicro(v){
+  const a=Math.min(v.a,v.b), b=Math.max(v.a,v.b);
+  return b===a+1&&diAt(a).k!=="core";
+}
+function viaEmpilable(u,v){
+  const ua=Math.min(u.a,u.b), ub=Math.max(u.a,u.b), va=Math.min(v.a,v.b), vb=Math.max(v.a,v.b);
+  return !!u.net&&u.net===v.net&&(ub===va||vb===ua)&&(viaMicro(u)||viaMicro(v));
+}
+/* Les empilements de la carte : listes de vias au même point, de haut en bas. */
+function viaEmpilements(){
+  const vus=new Set(), out=[];
+  for(const v of S.vias){
+    if(vus.has(v))continue;
+    const pile=[v], file=[v];vus.add(v);
+    while(file.length){
+      const u=file.pop();
+      for(const w of S.vias)
+        if(!vus.has(w)&&dist(u.x,u.y,w.x,w.y)<=1e-6&&viaEmpilable(u,w)){vus.add(w);pile.push(w);file.push(w);}
+    }
+    if(pile.length>1)out.push(pile.sort((p,q)=>Math.min(p.a,p.b)-Math.min(q.a,q.b)));
+  }
+  return out;
+}
 function pressList(){return S.stack?pressNorm(S.stack.press,S.cu,S.stack.di):[];}
 function pressNom(p){return "L"+(p.a+1)+"–L"+(p.b+1);}
 /* « L2–L5, puis la carte entière » */
@@ -1099,7 +1130,7 @@ const S = {
      pas à la condamner quinze fois.
      `aspWarn`/`aspMax` : les seuils du rapport d'aspect, que le fabricant
      annonce et qui ne sont donc pas les mêmes partout. */
-  rule:{edge:0.4,thermal:0.5,cuMin:0.2,hDessus:null,hDessous:null,dTMax:40,mask:0.05,paste:0.0,viaFinish:"tented",corner:"45",
+  rule:{edge:0.4,thermal:0.5,cuMin:0.2,hDessus:null,hDessous:null,dTMax:40,mask:0.05,paste:0.0,viaFinish:"tented",corner:"45",smartPads:true,
         route:"shove",hole:0.25,mat:{},short:false,
         aspWarn:ASPECT_WARN,aspMax:ASPECT_MAX,mfgProfile:"jlcpcb"},
   classes:[{name:"Défaut",      w:0.3, clr:0.25, via:0.8, drill:0.4},

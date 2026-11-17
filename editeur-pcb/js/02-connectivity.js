@@ -1247,6 +1247,9 @@ function runDrc(){
       if(b.npth)continue;                 // un trou NPTH : jugé par son bloc, sur son axe
       if(b===a||!neuf(a,b))continue;
       let d=0,cx=0,cy=0,qui="";
+      // deux micro-vias empilés au même point : c'est une technique, jugée plus bas
+      const pile=b.k==="V"&&viaEmpilable(a.v,b.v);
+      if(pile&&dist(a.v.x,a.v.y,b.v.x,b.v.y)<=1e-6)continue;
       if(b.k==="V"){d=b.v.drill;cx=b.v.x;cy=b.v.y;
         qui="deux vias ("+(a.net||"sans net")+" / "+(b.net||"sans net")+")";}
       else if(b.k==="P"&&b.q.drill>0){d=b.q.drill;cx=b.q.x;cy=b.q.y;
@@ -1256,6 +1259,13 @@ function runDrc(){
       const ax=b.k==="P"&&b.q.slot?axePercage(b.q):null;
       const e=(ax?segDist(a.v.x,a.v.y,ax.x1,ax.y1,ax.x2,ax.y2):dist(a.v.x,a.v.y,cx,cy))-a.v.drill/2-d/2;
       if(e>=hcl-1e-6)continue;
+      if(pile){
+        // percés au laser dans deux diélectriques : seul le recouvrement compte
+        if(e<-1e-6)out.push({via:a.v,x:(a.v.x+cx)/2,y:(a.v.y+cy)/2,l:a.l0,
+          msg:"Micro-vias ni empilés ni décalés (net "+a.v.net+") : le second se pose à moitié dans le creux du "+
+              "premier. Empilez-les au même point, ou décalez-les d'au moins "+fmt((a.v.drill+d)/2,3)+" mm"});
+        continue;
+      }
       out.push({via:a.v,x:(a.v.x+cx)/2,y:(a.v.y+cy)/2,l:a.l0,
         msg:dist(a.v.x,a.v.y,cx,cy)<1e-6
           ? "Deux perçages au même point ("+qui+") : un seul suffit"
@@ -1593,6 +1603,21 @@ function runDrc(){
   /* sans séquence décrite, un pressage unique est une hypothèse : la remarque
      suffit ; décrite, un via qu'aucun pressage ne permet est une erreur */
   const seqDecl=pressList().length>0;
+  // les micro-vias empilés : ce que le fabricant en accepte
+  const me=S.stack&&S.stack.microEmpile;
+  for(const P of viaEmpilements()){
+    const v=P[0], ch=cuId(Math.min(v.a,v.b),S.cu)+P.map(u=>" → "+cuId(Math.max(u.a,u.b),S.cu)).join("");
+    const dit="Micro-vias empilés "+ch+" (net "+v.net+", "+P.length+" niveaux)";
+    if(me==="non")
+      out.push({via:v,x:v.x,y:v.y,l:Math.min(v.a,v.b),msg:dit+" : le fabricant ne les accepte pas, décalez-les en escalier"});
+    else if(me==="oui"){
+      if(P.length>MICRO_EMPILE_MAX)
+        out.push({info:true,via:v,x:v.x,y:v.y,l:Math.min(v.a,v.b),
+          msg:dit+" : au-delà de "+MICRO_EMPILE_MAX+" niveaux la fiabilité baisse, préférez l'escalier"});
+    }else
+      out.push({info:true,via:v,x:v.x,y:v.y,l:Math.min(v.a,v.b),
+        msg:dit+" : chacun doit être rempli de cuivre et bouché, à confirmer avec le fabricant (Empilage physique)"});
+  }
   for(const v of S.vias){
     const len=stackSpan(v.a,v.b), r=aspectOf(len,v.drill);
     const dit=fmt(len,2)+" mm percés pour "+fmt(v.drill,2)+" mm";

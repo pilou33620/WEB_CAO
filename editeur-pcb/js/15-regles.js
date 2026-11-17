@@ -1050,6 +1050,9 @@ angle(){
       Object.keys(CORNER_MODES).map(k=>'<option value="'+k+'"'+
         (k===cornerMode()?" selected":"")+'>'+esc(CORNER_MODES[k])+'</option>').join("")+
       '</select></div>'+
+    '<div class="prop"><label class="check" title="Comme les « smart pads » de KiCad : au dépôt, une piste '+
+      'qui entre déjà franchement dans sa pastille s’y arrête, sans le petit coude qui va chercher le centre.">'+
+      '<input type="checkbox" id="reSmart"'+(S.rule.smartPads?" checked":"")+'> Accrochage décalé sur la pastille</label></div>'+
     '<div class="restate pad">Un segment qui ne tombe sur aucun des huit sens est '+
     'un <i>off-angle track</i> : le rendu Gerber ne l\'optimise plus, et certains '+
     'fabricants le refusent au contrôle d\'entrée. En angle libre, la règle se '+
@@ -1871,6 +1874,7 @@ function reBind(){
   num("reAspM",v=>S.rule.aspMax=Math.max(1,v));
   chk("reShort",v=>S.rule.short=v);
   sel("reCorner",v=>{setCornerMode(v);reSync();});
+  chk("reSmart",v=>{push();S.rule.smartPads=v;touch();});
   sel("reRoute",v=>{setRouteMode(v);reSync();});
   sel("reMoveEtch",v=>{setMoveEtch(v);reSync();});
   sel("reFinish",v=>{

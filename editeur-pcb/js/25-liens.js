@@ -739,6 +739,7 @@ function fpsTourner(ids,sens){
    ========================================================================== */
 function linkHorsCentreDrc(out){
   linkSync();
+  if(S.rule.smartPads)return;     // accrochage décalé : entrer hors du centre est la règle
   const vus=new Set();
   /* un coude qui tombe dans le cuivre d'une pastille longue n'est pas une
      entrée : la piste continue jusqu'au centre. Seul le bout où elle S'ARRÊTE

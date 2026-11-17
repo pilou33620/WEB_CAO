@@ -630,6 +630,11 @@ function stkHtmlPressages(P){
        : 'Séquence non décrite : un seul pressage est supposé, et les vias qui en '+
          'demandent plus restent des remarques au DRC. Décrire les pressages, de '+
          'l\'intérieur vers l\'extérieur, en fait des erreurs.')+'</div>';
+  const me=S.stack.microEmpile||"";
+  h+='<div class="prop"><label title="Micro-vias empilés au même point : chacun rempli de cuivre et bouché. '+
+     'Sans réponse du fabricant, le DRC le rappelle en remarque.">Micro-vias empilés</label><select id="skMicro">'+
+     [["","à confirmer"],["oui","acceptés"],["non","refusés (escalier seulement)"]].map(([k,t])=>
+       '<option value="'+k+'"'+(k===me?" selected":"")+'>'+t+'</option>').join("")+'</select></div>';
   return h;
 }
 function stkBindPressages(P){
@@ -639,6 +644,8 @@ function stkBindPressages(P){
     if(x)x.onclick=()=>{push();fini(P.filter((q,k)=>k!==i));
       hint("Pressage "+pressNom(p)+" retiré.");};
   });
+  const mi=$("skMicro");
+  if(mi)mi.onchange=()=>{push();if(mi.value)S.stack.microEmpile=mi.value;else delete S.stack.microEmpile;touch();buildStackup();};
   const add=$("skPrAdd");
   if(add)add.onclick=()=>{
     const a=+$("skPrA").value, b=+$("skPrB").value;

@@ -593,13 +593,13 @@ Voir [11-claude-mcp.md](11-claude-mcp.md) pour le protocole de pilotage.
 - L'éditeur n'est pas livré avec une bibliothèque d'empreintes : les empreintes de départ sont paramétriques, le nom du boîtier venu du schéma fixe style et cotes (`PKG_LIB`). Languettes de dissipation (DPAK, SOT-223), pastilles thermiques centrales (QFN) et brochage réel d'un BGA se dessinent à la main dans Gestion LIB.
 - Le dessin d'une empreinte se fait dans Gestion LIB ; `08-empreinte.js` ne garde que la bibliothèque locale des empreintes retouchées.
 - Le DRC n'est pas continu : il se lance à la demande. Seul le routeur applique les isolations en direct.
-- Le routeur accroche le centre de la pastille et ne reprend pas le décalage « SMART_PADS » de KiCad.
+- Le routeur accroche le centre de la pastille ; l'accrochage décalé (« smart pads » de KiCad, Règles → Angle, actif d'usine) ne s'applique qu'au dépôt de la piste : l'aperçu du tracé montre encore le coude final.
 - Pas d'autorouteur à la main : le moteur assiste un geste ; le chercheur de chemin n'est joignable que par Claude.
-- Les pistes savent être circulaires, mais les zones, découpes de cuivre et contours restent des polygones : aucun outil ne dessine d'arc dans une zone (elle arrive en sommets ou d'un fichier). Le routeur ne défait jamais un arc et contourne ou refuse de le pousser.
+- Les zones, découpes et contours se rangent en sommets : un arc y naît de l'outil **Arrondir un coin** (contour, découpes de carte, zones de cuivre, découpes de zone, zones interdites) ou d'une carte ronde, et les sorties (Gerber, STEP, IPC-2581) le reconnaissent et l'écrivent en vrai arc. On ne dessine pas encore un arc au fil du tracé d'une zone. Le routeur ne défait jamais un arc et contourne ou refuse de le pousser.
 - `Retour arrière` recule d'un coude sans remettre en place le cuivre que ce coude avait poussé ; `Échap` ou `Ctrl+Z` le font en une fois.
-- Une paire différentielle ne traverse pas un cuivre étranger qui barre tout son passage et ne vit que sur une couche à la fois.
+- Une paire différentielle ne traverse pas un cuivre étranger qui barre tout son passage. Ses deux pistes sont toujours sur la même couche ; pour changer de couche, `V` (ou `1`–`9`) pose les deux vias en éventail et la paire continue sur l'autre face.
 - Le serpentin ne se pose que sur une portion droite (pas sur un arc).
-- Le laminage séquentiel est jugé via par via, d'un seul perçage : pas de micro-vias empilés ou décalés sur plusieurs pressages. Le chercheur de chemin et la pose de vias ne consultent pas la faisabilité : le DRC le dit après coup.
+- Le laminage séquentiel est jugé via par via. Les micro-vias empilés au même point (même net, une couche commune) sont reconnus : le DRC les juge selon le réglage **Micro-vias empilés** du panneau Empilage physique (à confirmer, acceptés, refusés) et refuse un décalage partiel. Le chercheur de chemin et la pose de vias ne consultent pas la faisabilité du pressage : le DRC le dit après coup.
 - Sans projet ouvert, il n'y a pas de sauvegarde automatique : fermer l'onglet sans `Enregistrer .json` perd le travail (l'avertissement de fermeture le rappelle). Avec un projet, le brouillon est écrit toutes les 30 secondes ; il ne couvre pas les 30 dernières.
 - L'estimation d'échauffement d'un composant est un ordre de grandeur (±30 %), pas une simulation.
 - L'impédance différentielle des paires est donnée à ±10 % au mieux ; la ligne de transmission d'une piste à ±5 %.
