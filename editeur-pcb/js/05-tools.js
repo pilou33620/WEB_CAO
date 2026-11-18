@@ -595,6 +595,9 @@ function normVia(v,cu){
   // marqué à la main : 0 = libre, sinon le boîtier qu'il suit (`25-liens.js`)
   const lie=+v.lie;
   if(v.lie!=null&&Number.isInteger(lie)&&lie>=0&&lie<=Number.MAX_SAFE_INTEGER)out.lie=lie;
+  // posé par les vias de masse auto : la capa qu'il sert (55-capa-vias.js), seul à pouvoir être replacé
+  const capa=+v.capa;
+  if(v.capa!=null&&Number.isInteger(capa)&&capa>=1&&capa<=1e9)out.capa=capa;
   // contre-perçage imposé au via : une règle de l'empilage, ou « non » (01-core.js)
   const cp=cmLireCp(v.cp);
   if(cp)out.cp=cp;
@@ -780,6 +783,7 @@ function normDoc(d){
             viaFinish:Object.hasOwn(VIA_FINISH,vf)?vf:(r.tented===false?"open":"tented"),
             corner:Object.hasOwn(CORNER_MODES,cm)?cm:"45",
             smartPads:r.smartPads!==false,   // accrochage décalé : actif d'usine, il ne touche qu'aux tracés à venir
+            capaVia:r.capaVia===true,         // vias de masse auto des capas de découplage (55-capa-vias.js) : coupé d'usine
             route:Object.hasOwn(ROUTE_MODES,rm)?rm:"shove",
             /* le trou à trou n'existait pas : les fichiers muets prennent le
                minimum de fabrication courant, qu'ils respectaient déjà */
@@ -936,7 +940,7 @@ function loadDoc(d,keepView){
   S.fabOrigin=d.fabOrigin;
   const r=d.rule;
   S.rule={edge:r.edge, thermal:r.thermal, cuMin:r.cuMin, hDessus:r.hDessus, hDessous:r.hDessous, dTMax:r.dTMax, mask:r.mask, paste:r.paste,
-          viaFinish:r.viaFinish, corner:r.corner, smartPads:r.smartPads, route:r.route, hole:r.hole,
+          viaFinish:r.viaFinish, corner:r.corner, smartPads:r.smartPads, capaVia:r.capaVia, route:r.route, hole:r.hole,
           mat:r.mat, short:r.short, aspWarn:r.aspWarn, aspMax:r.aspMax,
           mfgProfile:r.mfgProfile||"jlcpcb"};
   if(r.designRules!==undefined){
@@ -993,6 +997,7 @@ function loadDoc(d,keepView){
   if(!d.classes)autoClass();
   $("cuCount").value=String(S.cu);
   buildLayers();buildTabs();
+  if(typeof capaViaBouton==="function")capaViaBouton();
   /* La fenêtre des règles est dans un fichier chargé APRÈS celui de l'amorçage,
      et loadDoc() tourne dès le démarrage : c'est ainsi que revient la carte
      laissée dans l'onglet. L'appel doit donc survivre à une fenêtre qui
@@ -3413,6 +3418,7 @@ function pasteClipPcb(opt){
     S.sel.drawings.add(d.id);
   }
   zoneCache.clear();
+  if(typeof capaViasAuto==="function")capaViasAuto([...S.sel.fps].map(fpById));   // vias de masse des capas (55-capa-vias.js)
   touch();refreshPanels();draw();
   hint(S.sel.fps.size+" empreinte(s), "+S.sel.tracks.size+" piste(s), "+
        S.sel.vias.size+" via(s) collés"+(ng?", en "+ng+" nouveau(x) groupe(s)":"")+"."+
@@ -3466,6 +3472,7 @@ function rotateSel(){
       h.x=r3(rx); h.y=r3(ry);
     }
   }
+  if(typeof capaViasAuto==="function")capaViasAuto([...S.sel.fps].map(fpById));   // vias de masse des capas (55-capa-vias.js)
   touch();refreshPanels();draw();
 }
 function flipSel(){
@@ -3483,6 +3490,7 @@ function flipSel(){
   const mir={ids:null};
   transformFps(list,()=>{mir.ids=fpsRetourner(list);},{miroir:mir});
   for(const d of drw)d.layer=drwAutreFace(d.layer);
+  if(typeof capaViasAuto==="function")capaViasAuto([...S.sel.fps].map(fpById));   // vias de masse des capas (55-capa-vias.js)
   touch();refreshPanels();draw();
 }
 
@@ -4860,7 +4868,7 @@ function coordApply(){
     const f=fpById([...S.sel.fps][0]);
     const gene=f?fpEssai(()=>{f.x=pt.x;f.y=pt.y;}):"";
     if(gene)fpRefus(gene);
-    else if(f){push();transformFps([f.id],()=>{f.x=pt.x;f.y=pt.y;});touch();refreshPanels();}
+    else if(f){push();transformFps([f.id],()=>{f.x=pt.x;f.y=pt.y;});if(typeof capaViasAuto==="function")capaViasAuto([f]);touch();refreshPanels();}
   }
   S.mouse={x:pt.x,y:pt.y};
   if(S.coord.mode!=="abs"){$("ciA").value="0";$("ciB").value="0";}
@@ -5660,6 +5668,8 @@ function dragFinir(){
     rerouteHint(followCheck(drag.follow));
     const bouge=[...movedTracks()], avant=drag.diag;
     pruneAfterDrag(bouge);
+    if(typeof capaViasAuto==="function")capaViasAuto([...S.sel.fps].map(fpById));   // vias de masse des capas (55-capa-vias.js)
+
     if(mitreAfterDrag(bouge,avant))
       hint("Le coude a repris son 45° : le chanfrein s'était replié en "+
            "raccourcissant la piste.");

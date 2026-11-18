@@ -95,6 +95,15 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 3. Le texte sous les champs dit comment la portée sera fabriquée (par exemple borgne au laser dans le prépreg extérieur) et prévient quand un seul pressage ne suffit pas.
 4. Voir les erreurs de portée avec **Contrôle DRC**. La séquence de pressages se décrit dans l'Empilage physique (voir [04-editeur-pcb-fabrication.md](04-editeur-pcb-fabrication.md)).
 
+### Je veux les vias de masse de mes capas de découplage
+
+Une capa CMS dont le repère commence par C, avec une patte sur une alimentation (VCC, +3V3, VDD…) et l'autre sur la masse (GND, VSS, AGND…), est une capa de découplage.
+
+1. **Cuivre > Vias de masse > Vias des capas** pose, pour chaque capa de découplage qui n'en a pas, un via de masse traversant à la taille de la classe du net, relié à sa pastille de masse par une courte piste à la largeur de la classe. Une seule étape d'annulation couvre l'ensemble.
+2. Le via se place au plus près de la pastille, du côté de la patte de masse du CI découplé (le boîtier qui partage l'alimentation de la capa), pour la boucle la plus courte. Sans CI, il part du côté opposé à la patte d'alimentation.
+3. Chaque place est contrôlée comme au DRC : isolement contre le cuivre des autres nets (composant voisin compris), trous, bord de carte, et une digue de vernis entre la pastille et le via (jamais de via dans la pastille). Une place sous un autre boîtier ne sert qu'en dernier recours. Une capa sans place libre est comptée dans le message.
+4. **Auto capas** (bascule, enregistrée avec la carte, coupée d'usine) : une capa de découplage posée, collée, tournée, retournée ou déplacée reçoit son via, ou le replace au mieux. Seuls les vias posés par cette fonction sont replacés ; un via posé à la main reste où il est.
+
 ### Je veux poser un plan ou une zone de cuivre
 
 1. Plan pleine carte : dans « Couche active », régler le rôle sur GND ou PWR et choisir le « Net du plan ». La zone suit le contour de la carte.

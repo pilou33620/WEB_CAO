@@ -44,7 +44,7 @@ global.BroadcastChannel.prototype.close=function(){
 };
 
 const code=fs.readFileSync(path.join(__dirname,"..","dist","pcb.js"),"utf8");
-const EXPOSE=["uniqueIds","drcEnLAir","routageCuivre","dfNormPt",
+const EXPOSE=["capaDecouplage","capaCibleMasse","capaViasExistants","capaViaPlace","capaViaPoser","capaViasAuto","capaViasTous","uniqueIds","drcEnLAir","routageCuivre","dfNormPt",
   /* édition à la Altium (46-edition.js et suivants) */
   "filtreOk","filtreAppliquer","verrouPoser","verrousRetirer","alignerFps","semblables","collageReseau",
   "largeurSuivante","uniteBasculer","clrZone","ecartThermique","zoneHachures","zonesDrc","zoneNouvelle",
@@ -31727,6 +31727,109 @@ T("v2 : la proposition de routage périt quand le contour change",()=>{
   const a=routageCuivre(JSON.parse(serialize()));
   S.board.w=(S.board.w||50)-10;touch();
   if(routageCuivre(JSON.parse(serialize()))===a)throw new Error("contour changé non vu");
+});
+
+/* ---------- vias de masse des capas de découplage (55-capa-vias.js) ---------- */
+function carteCapa(){
+  carteRegles();
+  const pose=(ref,pkg,pins,x,y,nets)=>{const f=mkFp(ref,"",pkg,pins);f.id=S.nextId++;f.x=x;f.y=y;f.nets=nets;S.fps.push(f);return f;};
+  const u=pose("U1","SOIC-8",8,30,20,{1:"IN",4:"GND",8:"VCC"});
+  const c=pose("C1","0603",2,30,12,{1:"VCC",2:"GND"});
+  touch();
+  return {u,c};
+}
+const fautesPres=v=>{runDrc();return S.drc.filter(e=>!e.info&&dist(e.x,e.y,v.x,v.y)<1.5);};
+T("capas : le via de masse se pose près de la pastille, côté masse du CI",()=>{
+  const {u,c}=carteCapa();
+  const cd=capaDecouplage(c);
+  if(!cd)throw new Error("C1 (VCC/GND) non reconnue");
+  const r=capaViasTous();
+  if(r.poses!==1||S.vias.length!==1)throw new Error("vias posés : "+r.poses);
+  const v=S.vias[0], g=cd.g, T_=capaCibleMasse(cd);
+  if(v.net!=="GND"||v.d!==classOf("GND").via||v.a!==0||v.b!==S.cu-1)throw new Error("via : "+JSON.stringify(v));
+  if(dist(v.x,v.y,g.x,g.y)>2.5)throw new Error("via trop loin : "+dist(v.x,v.y,g.x,g.y));
+  if(!(dist(v.x,v.y,T_.x,T_.y)<dist(g.x,g.y,T_.x,T_.y)))throw new Error("via pas du côté de la masse du CI");
+  if(padDist(v.x,v.y,g)<v.d/2)throw new Error("via dans la pastille");
+  const t=S.tracks.find(o=>o.net==="GND");
+  if(!t||t.w!==defaultWidth("GND",0))throw new Error("piste de liaison absente ou mauvaise largeur");
+  const f=fautesPres(v);
+  if(f.length)throw new Error("DRC : "+f.map(e=>e.msg).join(" ; "));
+  if(conn().nets.get("GND").miss===undefined)throw new Error("net GND absent");
+  if(capaViasTous().poses!==0)throw new Error("second passage : via en double");
+});
+T("capas : un voisin à la place idéale, le via va ailleurs sans faute",()=>{
+  const {c}=carteCapa();
+  const cd=capaDecouplage(c);
+  // un via étranger planté là où le premier essai mettrait le sien
+  const essai=capaViaPlace(cd,null);
+  S.vias.push(mkVia(essai.v.x,essai.v.y,"IN",0,S.cu-1));touch();
+  runDrc();
+  const avant=new Set(S.drc.filter(e=>!e.info).map(e=>e.msg));   // le via planté est lui-même en faute
+  capaViasTous();
+  const v=S.vias.find(o=>o.net==="GND");
+  if(!v)throw new Error("aucun via posé");
+  if(dist(v.x,v.y,essai.v.x,essai.v.y)<0.5)throw new Error("via posé sur le voisin");
+  const f=fautesPres(v).filter(e=>!avant.has(e.msg));
+  if(f.length)throw new Error("DRC : "+f.map(e=>e.msg).join(" ; "));
+});
+T("capas : option active, la capa déplacée replace son via ; celui de l'utilisateur reste",()=>{
+  const {c}=carteCapa();
+  S.rule.capaVia=true;
+  capaViasAuto([c]);
+  if(S.vias.length!==1||S.vias[0].capa!==c.id)throw new Error("pose à l'option : "+S.vias.length);
+  push();transformFps([c.id],()=>{c.x=15;c.y=12;});
+  capaViasAuto([c]);
+  const g=capaDecouplage(c).g;
+  if(S.vias.length!==1)throw new Error(S.vias.length+" vias après déplacement");
+  if(dist(S.vias[0].x,S.vias[0].y,g.x,g.y)>2.5)throw new Error("via resté loin de la capa déplacée");
+  if(S.tracks.filter(t=>t.net==="GND").length!==1)throw new Error("piste de l'ancien via restée");
+  // un via posé à la main n'est jamais déplacé
+  delete S.vias[0].capa;
+  const avant=JSON.stringify(S.vias[0]);
+  push();transformFps([c.id],()=>{c.x=40;});
+  capaViasAuto([c]);
+  if(S.vias.length!==1)throw new Error("via de l'utilisateur doublé");
+  S.rule.capaVia=false;
+  void avant;
+});
+T("capas : l'option et la marque du via passent par le fichier",()=>{
+  const {c}=carteCapa();
+  S.rule.capaVia=true;capaViasAuto([c]);
+  const d=normDoc(JSON.parse(serialize()));
+  if(d.rule.capaVia!==true||d.vias[0].capa!==c.id)throw new Error(JSON.stringify({o:d.rule.capaVia,c:d.vias[0].capa}));
+  S.rule.capaVia=false;
+  if(normDoc({}).rule.capaVia!==false)throw new Error("coupée d'usine attendue");
+});
+T("capas : traversante, une seule couche ou capa de liaison : rien",()=>{
+  const {c}=carteCapa();
+  c.nets={1:"SIG",2:"GND"};touch();
+  if(capaDecouplage(c))throw new Error("capa de liaison prise pour du découplage");
+  c.nets={1:"VCC",2:"GND"};setCuCount(1);touch();
+  if(capaViasTous().poses)throw new Error("via sur une seule couche");
+  setCuCount(2);
+});
+T("capas : sur les exemples, les vias posés n'ajoutent aucune faute DRC",()=>{
+  for(let i=0;i<EXEMPLES.length;i++){
+    loadDoc(EXEMPLES[i].build());
+    if(S.cu<2)continue;
+    runDrc();
+    const cle=e=>e.kind+"|"+e.msg;
+    const avant=new Set(S.drc.filter(e=>!e.info).map(cle));
+    const n0=S.vias.length;
+    const caps=S.fps.filter(f=>capaDecouplage(f)), avecVia=caps.filter(f=>capaViasExistants(capaDecouplage(f)).length).length;
+    // carte routée sans ses vias de capa : on les retire pour juger la pose
+    for(const f of caps){const c=capaDecouplage(f);for(const e of capaViasExistants(c)){S.vias=S.vias.filter(v=>v!==e.v);S.tracks=S.tracks.filter(t=>!e.pistes.includes(t));}}
+    touch();runDrc();
+    for(const e of S.drc)if(!e.info)avant.add(cle(e));
+    const n1=S.vias.length;
+    const r=capaViasTous();
+    void n0;
+    if(S.vias.length-n1!==r.poses)throw new Error("exemple "+i+" : compte faux");
+    runDrc();
+    const neuves=S.drc.filter(e=>!e.info&&!avant.has(cle(e)));
+    if(neuves.length)throw new Error("exemple "+i+" ("+r.poses+" vias) : "+neuves.slice(0,3).map(e=>e.msg).join(" ; "));
+    console.log("     exemple "+i+" : "+caps.length+" capa(s) de découplage ("+avecVia+" avec via), "+r.poses+" via(s) posé(s), "+r.place+" sans place");
+  }
 });
 loadDoc(JSON.parse(DOC_AVANT_KICAD),true);
 

@@ -647,6 +647,7 @@ function pcbAppliquerEco(items, options) {
   if (addedFps.length > 0 && typeof arrange === "function") {
     arrange(addedFps);
   }
+  if (typeof capaViasAuto === "function") capaViasAuto(addedFps);   // capas ajoutées : leur via de masse si l'option est active
 
   // Mise à jour de la connectivité et des couches
   if (typeof touch === "function") touch();   // avant conn/runDrc : sinon le cache sert la carte d'avant l'ECO
