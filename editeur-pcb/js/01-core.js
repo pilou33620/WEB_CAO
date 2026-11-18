@@ -1650,7 +1650,10 @@ function pkgGeom(pkg,pinsHint){
   if(!key)return null;
 
   // 1. Recherche dans le cache de la bibliothèque centralisée LIB
-  const libDef = PCB_LIB_CACHE.get(key) || PCB_LIB_CACHE.get(pkg);
+  // une définition LIB vient d'un fichier : relue comme les autres (normFpDef, 08-empreinte.js)
+  const brut = PCB_LIB_CACHE.get(key) || PCB_LIB_CACHE.get(pkg);
+  const libDef = brut && typeof brut === "object"
+    ? (typeof normFpDef === "function" ? normFpDef({...brut, name: brut.name || pkg}) : brut) : null;
   if(libDef){
     const g={
         style:libDef.style||"chip",
@@ -2476,6 +2479,12 @@ function padsWorldCalc(fp){
     const o={n:q.n, x:r3(c.x), y:r3(c.y), w:q.w, h:q.h, shape:q.shape,
              drill:q.drill, net:q.net, rot:a+m*(q.rot||0)*Math.PI/180, fp};
     if(q.pts)o.pts=fp.side?q.pts.map(p=>({x:-p.x,y:p.y})):q.pts;
+    /* poly : w/h couvrent au moins ses sommets — les boîtes d'index (routeur,
+       DRC, bras) se lisent sur hypot(w,h)/2, et w/h peuvent avoir été retouchés seuls */
+    if(q.shape==="poly"&&Array.isArray(q.pts)&&q.pts.length){
+      let ax=0,ay=0;for(const p of q.pts){ax=Math.max(ax,Math.abs(+p.x||0));ay=Math.max(ay,Math.abs(+p.y||0));}
+      o.w=Math.max(o.w||0,2*ax);o.h=Math.max(o.h||0,2*ay);
+    }
     if(q.chamfer!=null)o.chamfer=q.chamfer;
     /* coins 0..3 = haut-gauche, haut-droit, bas-droit, bas-gauche : le miroir
        en x échange 0↔1 et 2↔3, comme l'IPC-2581 (empreinte + mirror) */
@@ -2486,6 +2495,9 @@ function padsWorldCalc(fp){
     for(const k of ["thermalSpokes","thermalAngle","thermalWidth","thermalGap","connexion",
                     "mask","noMask","paste","noPaste","parCouche","clr","nom"])   // nom : padDesig
       if(q[k]!=null)o[k]=q[k];
+    // l'angle des bras suit le miroir de la pastille (l'angle d'une zone, lui, reste absolu)
+    // miroir x→−x : une direction θ devient 180°−θ (3 bras à 0° : {0,120,240} → {60,180,300})
+    if(fp.side&&q.thermalAngle!=null)o.thermalAngle=((180-q.thermalAngle)%360+360)%360;
     return o;
   });
 }

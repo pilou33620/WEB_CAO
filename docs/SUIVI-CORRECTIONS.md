@@ -182,4 +182,23 @@ sur le bundle, puis corrigé avec un essai (`harness.js` des deux éditeurs, ban
 | R | ECO : renumérotation décalée (R1→R2, R2→R3) non reconnue comme un renommage | `23-eco-sync.js`, `fpRenommages` |
 | R | Gabarits buck/LDO : la diode et les C1/C2 du repli écrasés par la boucle des passifs | `22-bloc-placement.js` |
 | R | Score de placement recalculé à chaque rafraîchissement (≈ 0,5 s sur 1 000 empreintes) | `20-placement-score.js` |
-| L | Probables non confirmés : poussée de vias jugée sur la carte d'avant le geste (`pnsShoveVia`), netlist d'un schéma sans projet acceptée, étanchéité du pilotage aux règles, note « vias non modélisés » | |
+| L | Probables non confirmés : poussée de vias jugée sur la carte d'avant le geste (`pnsShoveVia`), netlist d'un schéma sans projet acceptée | |
+
+## Seconde vérification du 18/11/2026
+
+Dix relecteurs, dont deux sur les régressions des corrections précédentes. Points confirmés
+sur le bundle, corrigés, avec un essai « v2 : » dans les bancs.
+
+| État | Point | Où |
+|---|---|---|
+| F | Schéma : N$k reprenant un nom posé, nom de bus 32→255, alias (casse, faisceau coupé aux virgules), refStartPage borné, contacts broche à broche au redimensionnement, broche NC, zone en trait, préfixe de repère perdu à la copie, cache KiCad par feuille, casse des noms KiCad, types « Auto », « 40 mil » lu en mm | `07`, `10`, `05`, `13`, `15`, `31-erc.js`, `commun/kicad-sch.js` |
+| F | Gerber : plan divisé (zone du même net au milieu), NPTH sous une région pleine, larmes effacées dans un plan, isolement propre de zone ; chanfrein masque/pâte (écran, IPC) ; contour IPC en arcs ; sérigraphie IPC coupée aux ouvertures ; plan maître GM2–GM9 | `04-fabrication.js`, `35-ipc2581-export.js`, `04-pdf-masterdraw.js` |
+| F | Chevelu : deux pistes croisées en X non reliées | `02-connectivity.js` (`computeConn`) |
+| F | Outils : boucle sans fin sur des ids au plafond, coordonnées tapées non bornées, lasso après Ctrl+Z, « Nouveau » et changement de couches en plein tracé, `push()` termine le tracé, pincement/pointercancel en glissement, verrous (poignées, sommets, Miter), vias à 1 couche (passage, collage), tables « constructor », Ctrl+Z/Y sans « modifié » | `05-tools.js`, `07-app.js` |
+| F | Panneaux et placement : bloc sans son cuivre, X/Y monde des trous et dessins, verrous, repère en double, TCO min>max, paires min≤préf≤max, portée vidée, repérage net/empreinte, LIB en échec, via de classe, lib-sync sans étape vide | `06`, `09`, `15`, `18`, `21`, `22` |
+| F | Routeur/DRC : pastille poly plus grande que w/h invisible, bras thermiques sur la forme de la couche et au miroir, isolement propre d'une région ignoré du routeur, LIB brute non relue (`pkgGeom`) | `01-core.js`, `02-connectivity.js`, `11-pns-node.js` |
+| F | Via traversant rendu borgne par la permutation de couches, région pleine contre une zone d'un autre net non signalée, maille de hachure mordant une zone prioritaire, copie déplacée sans ses pistes, proposition de routage appliquée après un changement de contour ou de règles, « 100NF » lu NaN, cote orpheline démesurée | `54`, `47`, `05` (garde-fou), `37`, `43`, `34` |
+| F | ECO : broches nommées à l'ajout et à la détection, DRC sur l'ancienne connectivité, variantes du fichier comparé, plancher de 2 pastilles ; variante choisie sans révision ; règles par défaut hors capabilités ; Réinitialiser sans étape ; note « vias non modélisés » | `23`, `26`, `24`, `19` |
+| F | Régressions : « 0402C », « R_0603_… », « SOT-23-5 », « TSSOP-20_… » ; piste « en l'air » dont le cuivre touche la pastille ; pont de vernis sur un pont de nets ; « NET (R1 22Ω) » | `07-app.js`, `54-controles.js`, `19-simulation.js` |
+| L | Bus, arc et texte cuivre posés en collision malgré l'anti-collision : comportement annoncé (« signalé, pas refusé »), le DRC les relève | `51-bus.js`, `49-dessin.js` |
+| L | Probables : formes par couche (`parCouche`) non permutées au retournement (sens non spécifié, l'import KiCad s'en sert) ; vue « cuivre final » peignant la forme principale des traversantes | `01-core.js`, `03-render.js` |

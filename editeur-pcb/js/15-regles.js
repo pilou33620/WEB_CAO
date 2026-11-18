@@ -1717,7 +1717,8 @@ function reBind(){
   });
   num("clsW",v=>c.w=Math.max(0.05,v));
   num("clsClr",v=>c.clr=Math.max(0.02,v));
-  num("clsVia",v=>c.via=Math.max(0.2,v));
+  // un via plus petit ramène son perçage dessous (couronne de 0,05 mm au moins), comme normClass
+  num("clsVia",v=>{c.via=Math.max(0.2,v);if(c.drill>c.via-0.05)c.drill=r3(Math.max(0.05,c.via-0.1));});
   num("clsDrill",v=>c.drill=clamp(v,0.1,c.via-0.1));
   clk("clsApply",()=>{applyClasses();reSync();});
   clk("clsAutoSchema",()=>{

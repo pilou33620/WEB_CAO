@@ -123,10 +123,13 @@ function dfNormRef(r){
   }
   return null;
 }
+const dfMemoV=v=>Number.isFinite(+v)&&Math.abs(+v)<=1e5?+v:NaN;   // NaN : pas de valeur gardée, comme avant
 function dfNormPt(p,avecD){
-  if(!p||typeof p!=="object"||!Number.isFinite(+p.x)||!Number.isFinite(+p.y))return null;
+  // borné comme une coordonnée de la carte : « 6e+26 » rendait le PDF illisible
+  const ok=n=>Number.isFinite(+n)&&Math.abs(+n)<=1e5;
+  if(!p||typeof p!=="object"||!ok(p.x)||!ok(p.y))return null;
   const o={x:+p.x,y:+p.y};
-  if(avecD&&Number.isFinite(+p.d)&&+p.d>0)o.d=+p.d;
+  if(avecD&&ok(p.d)&&+p.d>0)o.d=+p.d;
   return o;
 }
 /* La tolérance portée par une cote, ou null. Les écarts sont signés, dans
@@ -195,7 +198,7 @@ function dfNormCotes(src){
       o.a=a;o.b=b;
       if(m&&Number.isFinite(+m.v)){
         const ms=dfNormPt(m.s), ma=dfNormPt(m.a), mb=dfNormPt(m.b);
-        if(ms&&ma&&mb)memo={s:ms,a:ma,b:mb,v:+m.v};
+        if(ms&&ma&&mb)memo={s:ms,a:ma,b:mb,v:dfMemoV(m.v)};
       }
     }else{
       const deux=t!=="d"&&t!=="r";
@@ -206,7 +209,7 @@ function dfNormCotes(src){
       /* la dernière place connue : de quoi dessiner encore une orpheline */
       if(m&&Number.isFinite(+m.v)){
         const ma=dfNormPt(m.a,true), mb=deux?dfNormPt(m.b):null;
-        if(ma&&(!deux||mb)&&(deux||ma.d))memo=deux?{a:ma,b:mb,v:+m.v}:{a:ma,v:+m.v};
+        if(ma&&(!deux||mb)&&(deux||ma.d))memo=deux?{a:ma,b:mb,v:dfMemoV(m.v)}:{a:ma,v:dfMemoV(m.v)};
       }
     }
     vus.add(id);

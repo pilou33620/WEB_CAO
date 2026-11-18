@@ -35,8 +35,10 @@ function vbValeurFiche(txt,unite){
   while((m=re.exec(String(txt||"")))){
     const u=/^oh/i.test(m[3])?"Ω":m[3].toUpperCase();
     if(u!==unite)continue;
-    const p=m[2]?m[2].replace(/[µμ]/,"u"):"";
-    return parseFloat(m[1])*(p?VB_PREFIXE[p]:1);
+    let p=m[2]?m[2].replace(/[µμ]/,"u"):"";
+    if(p&&p!=="M"&&p!=="K")p=p.toLowerCase();   // « 100NF », « 2.2UF » : la fiche écrit souvent en capitales
+    const k=p?VB_PREFIXE[p]:1;
+    if(k!==undefined)return parseFloat(m[1])*k;
   }
   return null;
 }

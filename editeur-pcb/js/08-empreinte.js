@@ -25,7 +25,7 @@ function normFpDef(d){
   if(!d||typeof d!=="object")return null;
   const name=dStr(d.name,80).trim();
   if(!name)return null;
-  const style=STYLES[d.style]?d.style:defaultStyle(dInt(d.pins,2,1,4096));
+  const style=Object.hasOwn(STYLES,d.style)?d.style:defaultStyle(dInt(d.pins,2,1,4096));
   const g=defaultGeom(style);
   const out={name:name, pkg:dStr(d.pkg,80), pins:dInt(d.pins,2,1,4096),
              style:style, pitch:dRange(d.pitch,g.pitch,0.05,100),

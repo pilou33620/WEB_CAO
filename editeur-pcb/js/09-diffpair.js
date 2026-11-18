@@ -927,7 +927,8 @@ function dpDelete(pair){
   if(i<0)return;
   push();
   S.dpPairs.splice(i,1);
-  for(const r of S.dpRules)if(r.scope===pair.name)r.scope="";
+  // la règle de la paire supprimée garde sa portée (vers un nom absent) : vidée, elle devenait générale
+  // et passait devant la vraie règle générale pour toutes les autres paires
   _dpSel=clamp(_dpSel,0,Math.max(0,S.dpPairs.length-1));
   touch();refreshPanels();draw();
   hint("Paire "+pair.name+" supprimée. Le cuivre déjà posé ne bouge pas : "+
@@ -1196,7 +1197,15 @@ function buildDiffPairs(){
     if(!el)return;
     el.onchange=()=>edit(rr=>{
       const v=parseFloat(el.value);
-      if(Number.isFinite(v)&&v>0)rr[key]=r3(v);
+      if(!(Number.isFinite(v)&&v>0))return;
+      rr[key]=r3(v);
+      /* mini ≤ préférée ≤ maxi, la valeur saisie l'emportant : sans cela le routeur
+         posait le maxi et le DRC criait sur chaque piste de la paire */
+      const g=/Gap$/.test(key)?["minGap","prefGap","maxGap"]:["minW","prefW","maxW"], i=g.indexOf(key);
+      for(let j=0;j<3;j++){
+        if(j<i&&rr[g[j]]>v)rr[g[j]]=r3(v);
+        if(j>i&&rr[g[j]]<v)rr[g[j]]=r3(v);
+      }
     });
   };
   num("dpMinW","minW");num("dpPrefW","prefW");num("dpMaxW","maxW");
@@ -1381,7 +1390,8 @@ function dpMeander(track, opts){
 
   let N=1;
   if(target>0){
-    N=Math.max(1, Math.min(maxCycles, Math.round(target/deltaPerCycle)));
+    // assez de créneaux pour rester sous l'amplitude réglée (ceil, pas round)
+    N=Math.max(1, Math.min(maxCycles, Math.ceil(target/deltaPerCycle)));
     ampPour(N);
     // une cible plus courte que le plus petit créneau tenable : rien plutôt qu'un serpentin faux
     if(amp<w*1.5)return {tracks:[Object.assign({},track)], addedLen:0};
@@ -1398,6 +1408,8 @@ function dpMeander(track, opts){
     r=Math.min(pitch*0.25, amp*0.25, 0.35);
     if(target>0){ampPour(N);if(amp<w*1.5)return {tracks:[Object.assign({},track)], addedLen:0};}
   }
+  // la cible ne tient pas sous l'amplitude maximale réglée, faute de place : rien plutôt qu'un dépassement
+  if(target>0&&amp>Math.max(w*2.0,aWanted)+1e-6)return {tracks:[Object.assign({},track)], addedLen:0};
 
   const span=N*pitch;
   const tStart=margin+(avail-span)/2;

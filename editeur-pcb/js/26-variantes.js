@@ -42,6 +42,7 @@ function pcbVarDepuisSchema(doc,dejaPousse){
     const l=nmDe(fp);
     if(l)fp.nonMonte=l.slice();else delete fp.nonMonte;
   }
+  touch();                                  // les simulations filtrées par simFpMonte sont périmées
   return true;
 }
 
@@ -51,7 +52,7 @@ function pcbVarChoisir(id){
   const m=pcbVarModele();
   const v=varTrouver(m,id)?id:"";
   if(m.active===v)return;
-  m.active=v;S.dirty=true;
+  m.active=v;S.dirty=true;touch();         // révision : RF et vérifications suivent la variante
   const nm=varReperesNonMontes(S.fps,v);
   hint(v?"Variante « "+varNom(m,v)+" » : "+nm.length+" empreinte(s) non montée(s), retirées de bom.csv et positions.csv."
         :"Carte complète : toutes les empreintes sont montées.");

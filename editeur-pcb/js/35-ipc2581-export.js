@@ -630,7 +630,7 @@ function ipc2581Document(opts){
     }
     /* chanfrein et polygone : les sommets mêmes de `padWorldPts` */
     const P=q.shape==="poly"&&Array.isArray(q.pts)&&q.pts.length>=3?polyOffset(q.pts,g)
-      :padChamferPts(w,h,(q.chamfer!=null?q.chamfer:padChamferVal(q))+g,q.chamferCorners);
+      :padChamferPts(w,h,(q.chamfer!=null?q.chamfer:padChamferVal(q))+g*(2-Math.SQRT2),q.chamferCorners);
     const cle="P"+P.map(p=>ipcN(p.x)+","+ipcN(-p.y)).join(";");
     return forme(cle,["Contour",[],[["Polygon",[],poly(P,"FILL",true)]]]);
   };
@@ -1054,12 +1054,16 @@ function ipc2581Document(opts){
     }
   }
   /* la sérigraphie, comme `gerberSilk` */
+  const ouvSilk=[];
   for(const fp of S.fps){
     if(fp.silk===false)continue;
     const f=fp.side?1:0;
     if(f&&n<2)continue;
-    const k=set(SILK[f],"S",[]), T=fpXform(fp), bb=bodyOf(fp), lw=0.15;
-    k.push(["Features",[],[polyligne([T(bb.x1,bb.y1),T(bb.x2,bb.y1),T(bb.x2,bb.y2),T(bb.x1,bb.y2)],lw,true)]]);
+    const k=set(SILK[f],"S",[]), T=fpXform(fp), lw=0.15;
+    /* contour coupé autour des ouvertures du vernis, comme `silkTraits` */
+    const ouv=ouvSilk[f]||(ouvSilk[f]=maskOpenings(f));
+    for(const s of silkContour(fp,ouv,lw))
+      k.push(["Features",[],[polyligne([{x:s[0],y:s[1]},{x:s[2],y:s[3]}],lw,false)]]);
     const mk=fpMark(fp);
     if(mk){
       const w=T(mk.x,mk.y);
@@ -1092,7 +1096,7 @@ function ipc2581Document(opts){
   }
   /* le contour, au trait : la fraise le suit */
   for(const P of [boardPoly()].concat(boardCutouts()))
-    set(CONTOUR,"C",[]).push(["Features",[],[["Polyline",[],contourArcs(P).k.concat([trait(0.1)])]]]);
+    set(CONTOUR,"C",[]).push(["Features",[],[["Polyline",[],contourArcs(P,true).k.concat([trait(0.1)])]]]);
 
   /* ---------- les perçages : un calque par portée ---------- */
   const percages=new Map();     // "a-b" -> Map(cle de Set -> ...)

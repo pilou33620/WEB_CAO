@@ -116,6 +116,7 @@ function drcPontsVernis(out){
         const b=O[j];
         if(b.q.x-b.R>a.q.x+a.R+min)break;
         if(a.q.net===b.q.net||Math.abs(a.q.y-b.q.y)>a.R+b.R+min)continue;
+        if(a.src.fp&&a.src.fp===b.src.fp&&netTieRelie(a.src.fp,a.src,b.src))continue;   // pont de nets : voulu
         const e=padPadDist(a.q,b.q);
         if(e>=min-1e-6)continue;
         const qui=o=>o.src.fp?o.src.fp.ref:"via";
@@ -220,14 +221,15 @@ function drcSerigraphieSuperposee(out){
 function drcEnLAir(out,pads){
   const C=2, grille=new Map(), cle=(i,j)=>i+"|"+j;
   for(const p of pads){
-    const R=Math.hypot(p.q.w,p.q.h)/2;
+    const R=Math.hypot(p.q.w,p.q.h)/2+1;     // +1 : la demi-largeur de piste admise par surPastille
     for(let i=Math.floor((p.q.x-R)/C);i<=Math.floor((p.q.x+R)/C);i++)
       for(let j=Math.floor((p.q.y-R)/C);j<=Math.floor((p.q.y+R)/C);j++){
         const k=cle(i,j);if(!grille.has(k))grille.set(k,[]);grille.get(k).push(p);
       }
   }
-  const surPastille=(l,x,y)=>(grille.get(cle(Math.floor(x/C),Math.floor(y/C)))||[])
-    .some(p=>p.layers.includes(l)&&padDist(x,y,padSurCouche(p.q,l)||p.q)<=1e-3);
+  // tol : la demi-largeur d'une piste, dont le cuivre touche la pastille avant son axe (comme conn())
+  const surPastille=(l,x,y,tol=0)=>(grille.get(cle(Math.floor(x/C),Math.floor(y/C)))||[])
+    .some(p=>p.layers.includes(l)&&padDist(x,y,padSurCouche(p.q,l)||p.q)<=tol+1e-3);
   const bouts=new Map(), k3=(l,x,y)=>l+"|"+r3(x)+"|"+r3(y);
   for(const t of S.tracks)for(const k of [k3(t.l,t.x1,t.y1),k3(t.l,t.x2,t.y2)])bouts.set(k,(bouts.get(k)||0)+1);
   const parCouche=new Map();
@@ -237,7 +239,7 @@ function drcEnLAir(out,pads){
     if(t.texte)continue;
     for(const [x,y] of [[t.x1,t.y1],[t.x2,t.y2]]){
       const dansVia=S.vias.some(v=>t.l>=Math.min(v.a,v.b)&&t.l<=Math.max(v.a,v.b)&&dist(x,y,v.x,v.y)<=v.d/2+1e-3);
-      if((bouts.get(k3(t.l,x,y))||0)>1||dansVia||surPastille(t.l,x,y)||zoneNet(t.l,x,y,t.net))continue;
+      if((bouts.get(k3(t.l,x,y))||0)>1||dansVia||surPastille(t.l,x,y,t.w/2)||zoneNet(t.l,x,y,t.net))continue;
       if((parCouche.get(t.l)||[]).some(o=>o!==t&&trkDist(x,y,o)<=o.w/2+1e-3))continue;   // arrivée en T
       out.push({kind:"piste-en-l-air",info:true,x:r3(x),y:r3(y),l:t.l,
         msg:"En l'air : piste sur "+cuId(t.l,S.cu)+" ("+(t.net||"sans net")+"), un bout ne touche rien — une antenne à retirer"});
@@ -381,6 +383,7 @@ function couchesPermuter(a,b){
   const La=S.cuL[a], Lb=S.cuL[b];
   if(La&&Lb&&(La.plane||Lb.plane))for(const k of ["plane","net","role","negatif"]){const t=La[k];La[k]=Lb[k];Lb[k]=t;}
   for(const v of S.vias){
+    if(v.a===0&&v.b===S.cu-1)continue;       // un traversant relie toujours toutes les couches
     const va=sw(v.a), vb=sw(v.b);
     if(va!==v.a||vb!==v.b){v.a=Math.min(va,vb);v.b=Math.max(va,vb);n++;}
   }

@@ -272,11 +272,12 @@ function pcbDetecterDisparitesEco(schData) {
 
   const fpsMap = new Map(S.fps.map(f => [f.ref, f]));
   // Repères renumérotés au schéma : l'empreinte est renommée, pas recréée
-  const netsDe = new Map();
+  const netsDe = new Map(), pinsDe = new Map();
   for (const [k, n] of schData.pinNet) {
     const r = k.slice(0, k.indexOf("."));
-    if (!netsDe.has(r)) netsDe.set(r, []);
+    if (!netsDe.has(r)) { netsDe.set(r, []); pinsDe.set(r, []); }
     netsDe.get(r).push(n);
+    pinsDe.get(r).push([k.slice(r.length + 1), n]);
   }
   const renommees = new Set();
   if (typeof fpRenommages === "function") {
@@ -386,9 +387,16 @@ function pcbDetecterDisparitesEco(schData) {
 
       // C. Disparités de netlist / connexions sur les broches
       const maxPins = Math.max(fp.pins || 0, comp.pins || 0);
+      // les broches nommées (« Q1.B ») rejoignent leur pastille par son nom, comme applyNetlist
+      const nommees = new Map();
+      for (const [pn, nn] of pinsDe.get(ref) || []) {
+        if (/^\d+$/.test(pn)) continue;
+        const q = typeof brocheNum === "function" ? brocheNum(fp, pn) : null;
+        if (q != null && !nommees.has(q)) nommees.set(q, nn);
+      }
       for (let p = 1; p <= maxPins; p++) {
         const oldN = (fp.nets && fp.nets[p]) || "";
-        const newN = schData.pinNet.get(ref + "." + p) || "";
+        const newN = schData.pinNet.get(ref + "." + p) || nommees.get(p) || "";
         if (oldN !== newN) {
           const padTrks = pcbPistesConnecteesPad(fp, p);
           const hasDirectConflict = (oldN && newN && oldN !== newN && padTrks.length > 0);
@@ -541,13 +549,22 @@ function pcbAppliquerEco(items, options) {
           const fp = mkFp(item.ref, item.value, item.pkg, pins);
           // l'empreinte de la LIB du boîtier, comme l'import de netlist (applyNetlist)
           const lib = typeof fpLibPourBoitier === "function" ? fpLibPourBoitier(item.pkg) : null;
-          if (lib && fpApplyDef(fp, lib)) { if ((item.pins || 0) > fp.pins) fpSetPins(fp, item.pins); fp.lib = lib.name; }
+          if (lib && fpApplyDef(fp, lib)) {
+            // les broches câblées seulement : le plancher de 2 de item.pins n'ajoute pas de pastille
+            const cab = Math.max(0, ...Object.keys(item.nets || {}).filter(k => /^\d+$/.test(k)).map(Number));
+            if (cab > fp.pins) fpSetPins(fp, cab);
+            fp.lib = lib.name;
+          }
           if (item.nets) {
             fp.nets = {};
-            for (const [k, nn] of Object.entries(item.nets)) {
-              const n = /^\d+$/.test(k) ? +k : (typeof brocheNum === "function" ? brocheNum(fp, k) : null);
-              if (n != null) fp.nets[n] = nn;
-            }
+            /* une broche nommée inconnue de l'empreinte prend un numéro libre et
+               donne son nom à la pastille (brochesResoudre), comme applyNetlist */
+            const cles = Object.keys(item.nets), pins = cles.map(k => /^\d+$/.test(k) ? +k : k);
+            const num = typeof brochesResoudre === "function" ? brochesResoudre(fp, pins) : null;
+            cles.forEach((k, i) => {
+              const n = num ? num.get(pins[i]) : (/^\d+$/.test(k) ? +k : null);
+              if (n != null) fp.nets[n] = item.nets[k];
+            });
           }
           S.fps.push(fp);
           fpsMap.set(fp.ref, fp);
@@ -632,17 +649,17 @@ function pcbAppliquerEco(items, options) {
   }
 
   // Mise à jour de la connectivité et des couches
+  if (typeof touch === "function") touch();   // avant conn/runDrc : sinon le cache sert la carte d'avant l'ECO
   if (typeof autoClass === "function") autoClass();
   if (typeof zoneCache !== "undefined" && zoneCache.clear) zoneCache.clear();
   if (typeof conn === "function") conn();
   if (typeof buildLayers === "function") buildLayers();
   if (typeof refreshPanels === "function") refreshPanels();
   if (typeof runDrc === "function") runDrc();
-  if (typeof touch === "function") touch();
   /* Les variantes de montage suivent : une empreinte ajoutée hérite des
      variantes où son composant n'est pas posé. Même pas d'historique. */
   if (typeof pcbVarDepuisSchema === "function") {
-    try { pcbVarDepuisSchema(null, true); } catch (_) {}
+    try { pcbVarDepuisSchema((options && options.schDoc) || null, true); } catch (_) {}
   }
 
   if (typeof draw === "function") draw();
@@ -948,6 +965,7 @@ function pcbOuvrirFenetreEco(source) {
 
       const res = pcbAppliquerEco(rapport.items, {
         garderRoutage: true,
+        schDoc: schData.schDoc || null,      // les variantes du fichier comparé, pas celles de la session
         nettoyerConflits: nettoyerConflits,
         supprimerPistesOrphelines: false
       });

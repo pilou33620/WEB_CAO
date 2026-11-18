@@ -452,6 +452,18 @@ function computeConn(exact){
     touchSeg(t.l,t.x1,t.y1,t.w/2,"T"+i+"a");
     touchSeg(t.l,t.x2,t.y2,t.w/2,"T"+i+"b");
   });
+  /* croisement en X ou recouvrement de deux pistes droites, sans bout commun :
+     le cuivre est continu (les arcs restent reliés par leurs bouts) */
+  S.tracks.forEach((t,i)=>{
+    if(arcOf(t))return;
+    const b=trkBBox(t), cx=(b.x1+b.x2)/2, cy=(b.y1+b.y2)/2;
+    for(const j of near(t.l,cx,cy,Math.hypot(b.x2-b.x1,b.y2-b.y1)/2+t.w+1)){
+      if(j<=i)continue;
+      const u=S.tracks[j];
+      if(arcOf(u))continue;
+      if(segSegDist(t,u)<=(t.w+u.w)/2+1e-6)uni("T"+i+"a","T"+j+"a");
+    }
+  });
   S.vias.forEach((v,i)=>{for(let l=v.a;l<=v.b;l++)touchSeg(l,v.x,v.y,v.d/2,"V"+i);});
   /* une pastille touche par sa vraie forme : une piste qui s'arrête dans le
      cuivre sans atteindre le centre, ou une via posée dans un plot thermique,
@@ -783,7 +795,9 @@ function padBras(q,l){
   const tw=(q.thermalWidth>0)?q.thermalWidth:(zb&&zb.brasLarg>0)?zb.brasLarg:S.rule.thermal;
   const n=padLiaison(q,l)==="aucune"?0:(q.thermalSpokes>0)?q.thermalSpokes:(zb&&zb.brasNb>0)?zb.brasNb:4;
   const a0=(q.rot||0)+(((q.thermalAngle!=null)?q.thermalAngle:(zb&&zb.brasAngle)||0)*Math.PI/180);
-  const len=Math.max(q.w,q.h)/2+ecartThermique(q,l)+0.2;
+  // le dégagement est peint autour de la forme de CETTE couche (padSurCouche) : les bras le traversent
+  const qcb=padSurCouche(q,l)||q;
+  const len=Math.max(q.w,q.h,qcb.w,qcb.h)/2+ecartThermique(q,l)+0.2;
   const cq=q.clr>0?q.clr:0;                    // isolement propre de la pastille : le plus grand avec la règle, comme KiCad
   const loin=len+tw+Math.max(maxClr(),cq)+0.1; // au-delà, rien ne peut gêner
   // les voisins, une fois pour tous les bras ; la pastille elle-même et son net ne gênent pas

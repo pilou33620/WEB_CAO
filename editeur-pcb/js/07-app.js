@@ -542,6 +542,7 @@ function newDoc(){
   S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.holes=[];S.drawings=[];S.drc=[];S.drcRun=false;S.drcExclus=[];S.drcExclues=[];S.drcGravites={};S.drcIgnores=0;S.hlNet=null;
   S.cuts=[];S.interdits=[];S.rf=normRf(null);   // découpes de zone, keep-out, ports RF : ceux de la carte d'avant
   S.pinoutAcquits={};S.anim3dEtiq=null;S.cartoucheInfo={};   // acquits, étiquettes 3D et cartouche : ceux d'une autre carte
+  S.zoneDraft=S.edgeDraft=S.cutDraft=S.aplatDraft=S.silkDraft=S.meanderDraft=S.dessinDraft=S.bus=S.marquee=null;
   S.dpPairs=[];S.dp=null;   // les règles restent : elles décrivent un métier, pas une carte
   /* contraintes : celles des classes et la matrice restent (un métier),
      celles des nets et les groupes d'appariement partent avec la carte */
@@ -708,13 +709,18 @@ $("bVariantes").onclick=()=>pcbVarOuvrir();   // 26-variantes.js se charge aprè
 $("bNew").onclick=newDoc;
 $("cuCount").onchange=()=>{
   // une couche qui disparaît : interne, ou le dessous quand on passe à une seule couche
+  if(S.route)commitRoute();                // le tracé en cours compte dans la question
+  if(S.dp)dpCommit();
   const n=+$("cuCount").value, old=S.cu, part=o=>n===1?o.l>=1:(o.l>Math.max(0,n-2)&&o.l<old-1);
-  /* une couche interne qui disparaît rabat son cuivre sur une autre : courts-circuits */
-  if(n<old&&(S.tracks.some(part)||S.zones.some(part))&&
-     !confirm("Des pistes ou des plans sont sur une couche qui disparaît : ils seront rabattus sur une autre couche (courts-circuits possibles). Continuer ?")){
+  /* une couche interne qui disparaît rabat son cuivre sur une autre : courts-circuits ;
+     à une seule couche, aucun via ne relie plus rien (normDoc les retire aussi) */
+  const viasPerdus=n<2?S.vias.length:0;
+  if(n<old&&(S.tracks.some(part)||S.zones.some(part)||viasPerdus)&&
+     !confirm((S.tracks.some(part)||S.zones.some(part)?"Des pistes ou des plans sont sur une couche qui disparaît : ils seront rabattus sur une autre couche (courts-circuits possibles). ":"")+
+              (viasPerdus?viasPerdus+" via(s) seront supprimés (une seule couche). ":"")+"Continuer ?")){
     $("cuCount").value=old;return;
   }
-  push();setCuCount(n);zoneCache.clear();
+  push();setCuCount(n);if(n<2)S.vias=[];zoneCache.clear();
   hint("Empilage : "+n+" couche(s) de cuivre.");
 };
 $("bCouTout").onclick=()=>couchesToutes(true);
@@ -1013,12 +1019,13 @@ function pcbPlacerEmpreinteDepuisLib(item) {
   /* les puces et SOT d'abord ; ensuite seul le nombre après un tiret compte (« SOIC-8 ») :
      « 0402 » donnait 402 pastilles, « TO-220 » 220 */
   let pins = 8;
-  const mPins = cleanPkg.match(/-(\d+)\b/);
-  if (/^(0201|0402|0603|0805|1206|1210|2010|2512)\b/i.test(cleanPkg)) {
+  // le dernier « -n » entier (« SOT-23-5 » : 5 ; « QFN-32-1EP » : 32), puces non ancrées (« 0402C », « R_0603_… »)
+  const mPins = cleanPkg.match(/-(\d+)(?![0-9A-Za-z])(?!.*-\d+(?![0-9A-Za-z]))/);
+  if (/(^|[^0-9])(0201|0402|0603|0805|1206|1210|2010|2512)(?!\d)/.test(cleanPkg)) {
     pins = 2;
   } else if (/SOT-?23(?!-\d)/i.test(cleanPkg)) {
     pins = 3;
-  } else if (/^TO-?(220|92|126|247|263|252)\b/i.test(cleanPkg)) {
+  } else if (/(^|[^A-Z])TO-?(220|92|126|247|263|252)(?!\d)/i.test(cleanPkg)) {
     pins = 3;
   } else if (mPins && +mPins[1] > 0 && +mPins[1] <= 1024) {
     pins = +mPins[1];

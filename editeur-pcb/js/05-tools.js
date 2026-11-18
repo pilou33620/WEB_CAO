@@ -43,7 +43,9 @@ function serialize(){
   for(const m of Object.values(d.rf.modeles)){m.cle=rfTexteId(m.texte);delete m.texte;}
   return JSON.stringify(d);
 }
-function push(){pushSnap(null);}
+/* en plein tracé (Suppr, U, ouverture…), le tracé est d'abord posé : son
+   instantané d'avant le geste passe avant celui-ci, l'historique reste dans l'ordre */
+function push(){if(S.route)commitRoute();if(S.dp)dpCommit();pushSnap(null);}
 /* Un instantané choisi plutôt que l'instant présent. Le tracé s'en sert : le
    shove écarte du cuivre dès le premier clic, bien avant le dépôt, si bien que
    l'état à retenir pour un Ctrl+Z est celui d'AVANT le geste — pas celui d'un
@@ -350,7 +352,7 @@ function normStack(s,cu){
     const o=(sd[i]&&typeof sd[i]==="object")?sd[i]:{};
     const d=def.di[Math.min(i,def.di.length-1)];
     const k=dStr(o.k,16);
-    out.di.push({k:DI_KIND[k]?k:d.k,
+    out.di.push({k:Object.hasOwn(DI_KIND,k)?k:d.k,
                  t:dRange(o.t,d.t,0.005,20),
                  er:dRange(o.er,d.er,1,30),
                  df:dRange(o.df,d.df,0,1),
@@ -402,7 +404,7 @@ function normDpPair(d,i){
   if(!d||typeof d!=="object")return null;
   const p=dNet(d.p), n=dNet(d.n);
   if(!p||!n||p===n)return null;
-  return {id:dInt(d.id,i+1,1,Number.MAX_SAFE_INTEGER),
+  return {id:dInt(d.id,i+1,1,1e9),
           name:dStr(d.name,40).trim()||("PAIRE"+(i+1)),
           p:p,n:n};
 }
@@ -464,10 +466,10 @@ function netTieLire(txt){
 }
 function normFp(f,i){
   if(!f||typeof f!=="object")return null;
-  const style=STYLES[f.style]?f.style:defaultStyle(dInt(f.pins,2,1,4096));
+  const style=Object.hasOwn(STYLES,f.style)?f.style:defaultStyle(dInt(f.pins,2,1,4096));
   const g=defaultGeom(style);
   const out={
-    id:dInt(f.id,i+1,1,Number.MAX_SAFE_INTEGER),
+    id:dInt(f.id,i+1,1,1e9),
     ref:dStr(f.ref,32).trim()||("U"+(i+1)),
     value:dStr(f.value,240),
     pkg:dStr(f.pkg,120),            // PKG_MAX du schéma : le boîtier relie les deux éditeurs
@@ -589,7 +591,7 @@ function normVia(v,cu){
              a:a,b:b,net:dNet(v.net)};
   // l'identifiant que visent les liens des pistes ; absent, `viaIds` en donne un
   const id=+v.id;
-  if(Number.isInteger(id)&&id>=1&&id<=Number.MAX_SAFE_INTEGER)out.id=id;
+  if(Number.isInteger(id)&&id>=1&&id<=1e9)out.id=id;
   // marqué à la main : 0 = libre, sinon le boîtier qu'il suit (`25-liens.js`)
   const lie=+v.lie;
   if(v.lie!=null&&Number.isInteger(lie)&&lie>=0&&lie<=Number.MAX_SAFE_INTEGER)out.lie=lie;
@@ -604,7 +606,7 @@ function normZone(z,cu,i){
   if(!z||typeof z!=="object")return null;
   const pts=dPts(z.pts,3);
   if(!pts)return null;                             // moins de 3 sommets : pas une zone
-  const out={id:dInt(z.id,i+1,1,Number.MAX_SAFE_INTEGER),
+  const out={id:dInt(z.id,i+1,1,1e9),
              l:dInt(z.l,0,0,cu-1),net:dNet(z.net),pts:pts};
   if(z.auto)out.auto=true;
   if(z.larme)out.larme=true;
@@ -626,7 +628,7 @@ function normCut(c,cu,i){
   if(!c||typeof c!=="object")return null;
   const pts=dPts(c.pts,3);
   if(!pts)return null;
-  return {id:dInt(c.id,i+1,1,Number.MAX_SAFE_INTEGER),
+  return {id:dInt(c.id,i+1,1,1e9),
           l:dInt(c.l,0,0,cu-1),pts:pts};
 }
 /* identifiants uniques : un fichier peut en porter deux fois le même, ce qui
@@ -635,7 +637,7 @@ function uniqueIds(list){
   const seen=new Set();
   let max=0;
   for(const o of list){
-    while(seen.has(o.id))o.id++;
+    while(seen.has(o.id))o.id=Math.max(max,o.id)+1;   // pas o.id++ : ids bornés à 1e9 par dInt
     seen.add(o.id);
     if(o.id>max)max=o.id;
   }
@@ -664,7 +666,7 @@ function normDrawingPcb(d,i){
     if(!pts)return null;
     const P=pts.map(p=>({x:r4(p.x),y:r4(p.y)}));
     const b=polyBBox(P);
-    const out={id:dInt(d.id,i+1,1,Number.MAX_SAFE_INTEGER),shape:"poly",type:"poly",
+    const out={id:dInt(d.id,i+1,1,1e9),shape:"poly",type:"poly",
                layer:drwCouche(d.layer),pts:P,
                x1:r4(b.x1),y1:r4(b.y1),x2:r4(b.x2),y2:r4(b.y2)};
     const tr=(Array.isArray(d.trous)?d.trous:[]).map(t=>dPts(t,3)).filter(Boolean)
@@ -683,7 +685,7 @@ function normDrawingPcb(d,i){
     const rot=dRange(d.rot||0,0,-360,360);
     const width=dRange(d.width,0.15,0.05,5);
     return {
-      id:dInt(d.id,i+1,1,Number.MAX_SAFE_INTEGER),
+      id:dInt(d.id,i+1,1,1e9),
       shape:"text",
       type:"text",
       layer:layer,
@@ -703,7 +705,7 @@ function normDrawingPcb(d,i){
   if(shape==="rect"&&(Math.abs(x2-x1)<1e-4||Math.abs(y2-y1)<1e-4))shape="line";
   const width=dRange(d.width,0.15,0.05,10);
   const out={
-    id:dInt(d.id,i+1,1,Number.MAX_SAFE_INTEGER),
+    id:dInt(d.id,i+1,1,1e9),
     shape:shape,
     type:shape,
     layer:layer,
@@ -722,7 +724,7 @@ function normHole(h,i){
   const y=dRange(h.y,0,-COORD,COORD);
   const d=dRange(h.d,3.2,0.4,30.0);
   const out={
-    id:dInt(h.id,i+1,1,Number.MAX_SAFE_INTEGER),
+    id:dInt(h.id,i+1,1,1e9),
     x:r4(x),
     y:r4(y),
     d:r4(d)
@@ -775,10 +777,10 @@ function normDoc(d){
             hDessus:+r.hDessus>0?dRange(r.hDessus,null,0.1,100):null,hDessous:+r.hDessous>0?dRange(r.hDessous,null,0.1,100):null,
             dTMax:dRange(r.dTMax,40,1,500),   // échauffement estimé au-delà duquel le DRC le signale (39-thermique.js)
             mask:dRange(r.mask,0.05,-100,100),paste:dRange(r.paste,0,-100,100),
-            viaFinish:VIA_FINISH[vf]?vf:(r.tented===false?"open":"tented"),
-            corner:CORNER_MODES[cm]?cm:"45",
+            viaFinish:Object.hasOwn(VIA_FINISH,vf)?vf:(r.tented===false?"open":"tented"),
+            corner:Object.hasOwn(CORNER_MODES,cm)?cm:"45",
             smartPads:r.smartPads!==false,   // accrochage décalé : actif d'usine, il ne touche qu'aux tracés à venir
-            route:ROUTE_MODES[rm]?rm:"shove",
+            route:Object.hasOwn(ROUTE_MODES,rm)?rm:"shove",
             /* le trou à trou n'existait pas : les fichiers muets prennent le
                minimum de fabrication courant, qu'ils respectaient déjà */
             hole:dRange(r.hole,0.25,0,100),
@@ -894,7 +896,7 @@ function normDoc(d){
   out.drcGravites=typeof drcGravitesNorm==="function"?drcGravitesNorm(src.drcGravites):{};   // gravité par code DRC
   /* les composants présentés par l'animation 3D (null : le choix d'office) */
   out.anim3dEtiq=Array.isArray(src.anim3dEtiq)?src.anim3dEtiq.filter(r=>typeof r==="string"&&/^[^\x00-\x1f]{1,40}$/.test(r)).slice(0,500):null;
-  out.cartouche=CARTOUCHE_FORMATS[src.cartouche]?src.cartouche:"";
+  out.cartouche=Object.hasOwn(CARTOUCHE_FORMATS,src.cartouche)?src.cartouche:"";
   out.cartoucheInfo=cartoucheInfoNorm(src.cartoucheInfo);
   if(cu<2)out.vias=[];                    // une seule couche : aucun via ne relie rien
 
@@ -902,7 +904,7 @@ function normDoc(d){
                        uniqueIds(out.holes),uniqueIds(out.dpPairs),uniqueIds(out.drawings),uniqueIds(out.interdits),
                        uniqueIds(out.vias.filter(v=>v.id)));
   out.active=dInt(src.active,0,0,cu-1);
-  out.nextId=Math.max(dInt(src.nextId,1,1,Number.MAX_SAFE_INTEGER),maxId+1);
+  out.nextId=Math.max(dInt(src.nextId,1,1,1e9),maxId+1);
   out.rf=normRf(src.rf);
   /* variantes de montage : une empreinte ne garde que celles que le document déclare */
   out.variantes=varNorm(src.variantes);
@@ -986,6 +988,7 @@ function loadDoc(d,keepView){
   clearSel();S.route=null;S.dp=null;S.zoneDraft=null;S.edgeDraft=null;S.drc=[];S.hlNet=null;
   // toute esquisse en cours visait l'ancienne carte (loadDoc sert aussi à Ctrl+Z)
   S.cutDraft=S.aplatDraft=S.silkDraft=S.meanderDraft=S.dessinDraft=S.bus=S.marquee=null;
+  if(typeof drag!=="undefined"&&drag&&drag.marquee)drag=null;   // lasso en cours : son cadre vient d'être effacé
   zoneCache.clear();touch();
   if(!d.classes)autoClass();
   $("cuCount").value=String(S.cu);
@@ -1008,6 +1011,7 @@ function undo(){
   S.redo.push(serialize());
   histBorner(S.redo);
   loadDoc(JSON.parse(S.undo.pop()),true);
+  S.dirty=true;
 }
 function redo(){
   if(!S.redo.length)return;
@@ -1017,6 +1021,7 @@ function redo(){
   S.undo.push(serialize());
   histBorner(S.undo);
   loadDoc(JSON.parse(S.redo.pop()),true);
+  S.dirty=true;
 }
 
 /* ==========================================================================
@@ -2392,7 +2397,8 @@ function fpGardeVerifier(){
     const b=g.base.get(f.id);
     if(!b){                                       // nouveau : à la place libre la plus proche
       const p=fpPlaceLibre([f]);
-      if(p){f.x=r3(f.x+p.dx);f.y=r3(f.y+p.dy);touch();continue;}
+      // son cuivre suit (transformFps) : une copie collée garde ses pistes sur ses pastilles
+      if(p){transformFps([f.id],()=>{f.x=r3(f.x+p.dx);f.y=r3(f.y+p.dy);});touch();continue;}
       refus=f.ref+" ne trouve aucune place libre";break;
     }
     const neuf=fpGeneTous(f,sk), now=fpPose(f);
@@ -2879,7 +2885,7 @@ function miterClick(x,y,r=miterR){
   /* un coude de piste de la couche active passe devant le contour */
   let tr=null, bd=tol;
   for(const t of S.tracks){
-    if(t.l!==S.active)continue;
+    if(t.l!==S.active||t.locked)continue;     // un coude verrouillé reste tel quel
     for(const [ex,ey] of [[t.x1,t.y1],[t.x2,t.y2]]){
       const d=dist(x,y,ex,ey);
       if(d<bd){bd=d;tr={t,x:ex,y:ey};}
@@ -2899,7 +2905,7 @@ function miterClick(x,y,r=miterR){
      cuivre (un plan qui suit la carte s'arrondit avec elle), découpes de zone,
      zones interdites */
   const polys=[{P:boardPoly(),bord:true}].concat(boardCutouts().map(P=>({P})),
-    S.zones.filter(z=>z.l===S.active&&!z.auto&&z.pts.length>=3).map(z=>({P:z.pts})),
+    S.zones.filter(z=>z.l===S.active&&!z.auto&&!z.locked&&z.pts.length>=3).map(z=>({P:z.pts})),
     S.cuts.filter(c=>c.l===S.active&&c.pts.length>=3).map(c=>({P:c.pts})),
     (typeof interditsListe==="function"?interditsListe():[]).map(z=>({P:z.pts})));
   for(const o of polys)
@@ -3346,7 +3352,7 @@ function pasteClipPcb(opt){
     S.fps.push(f);S.sel.fps.add(f.id);nf[i]=f;
   }
   for(const [i,src] of arr(c.vias).entries()){
-    const v=normVia(src,S.cu);
+    const v=S.cu<2?null:normVia(src,S.cu);   // une seule couche : pas de via (comme normDoc)
     if(!v){dropped++;continue;}
     v.x=r3(v.x+bx);v.y=r3(v.y+by);
     v.id=S.nextId++;
@@ -3555,7 +3561,7 @@ function dir8(s){
 const CORNER_MODES={"45":"45°","90":"90°","free":"libre","arc":"arrondi"};
 function cornerMode(){
   const m=S.rule&&S.rule.corner;
-  return CORNER_MODES[m]?m:"45";
+  return Object.hasOwn(CORNER_MODES,m)?m:"45";
 }
 /* ==========================================================================
    Ce que le routeur fait d'un obstacle
@@ -3572,7 +3578,7 @@ function cornerMode(){
 const ROUTE_MODES={shove:"pousser le cuivre",walk:"contourner",mark:"signaler"};
 function routeMode(){
   const m=S.rule&&S.rule.route;
-  return ROUTE_MODES[m]?m:"shove";
+  return Object.hasOwn(ROUTE_MODES,m)?m:"shove";
 }
 function setRouteMode(m){
   if(!ROUTE_MODES[m]||m===routeMode())return;
@@ -4826,8 +4832,12 @@ function coordPoint(){
   const m=S.coord.mode, a=coordAnchor();
   const va=uLue(parseFloat(String($("ciA").value).replace(",",".")));
   let vb=parseFloat(String($("ciB").value).replace(",","."));
-  if(isNaN(va)||isNaN(vb))return null;
+  if(!isFinite(va)||!isFinite(vb))return null;
   if(m!=="pol")vb=uLue(vb);                 // l'angle polaire reste en degrés
+  const p=coordPointBrut(m,a,va,vb);
+  return {x:Math.max(-COORD,Math.min(COORD,p.x)),y:Math.max(-COORD,Math.min(COORD,p.y))};
+}
+function coordPointBrut(m,a,va,vb){
   if(m==="abs")return {x:wxu(va),y:wyu(vb)};
   const base=a||{x:S.origin.x,y:S.origin.y};
   if(m==="rel")return {x:r3(base.x+va),y:r3(base.y+vb)};
@@ -4837,6 +4847,8 @@ function coordPoint(){
 function coordApply(){
   const pt=coordPoint();
   if(!pt){hint("Coordonnées illisibles.");return;}
+  const an=coordAnchor();                   // même borne qu'une piste lue d'un fichier (normTrack)
+  if(an&&(Math.abs(pt.x-an.x)>TRK_MAX||Math.abs(pt.y-an.y)>TRK_MAX)){hint("Point trop éloigné (plus de "+TRK_MAX+" mm).");return;}
   if(S.mode==="track"){
     if(!S.route)startRoute(pt.x,pt.y,true);
     else{routeToPoint(pt);stepRoute();}
@@ -4902,7 +4914,7 @@ cv.addEventListener("pointerdown",e=>{
   // deux doigts : pincement pour zoomer et translater
   if(PTR_PCB.size===2){
     cancelLongpress();
-    drag=null;
+    if(drag)dragFinir();
     if(S.silkDraft)S.silkDraft=null;
     const [p1,p2]=[...PTR_PCB.values()];
     const d=Math.max(1,Math.hypot(p1.x-p2.x,p1.y-p2.y));
@@ -5147,6 +5159,7 @@ cv.addEventListener("pointerdown",e=>{
       if(dist(p.x,p.y,ex,ey)<=px(6)){
         // Alt : on détache cette extrémité au lieu d'emmener tout le coude
         const g=e.altKey?{ends:[{t,e:en}],vias:[]}:jointAt(ex,ey,t.l);
+        if(g.ends.some(o=>o.t.locked)||(g.vias||[]).some(v=>v.locked)){hint("Objet verrouillé : Déverrouiller pour le modifier.");return;}
         drag={tend:g,l:t.l,moved:false,at:{x:ex,y:ey}};
         return;
       }
@@ -5155,6 +5168,7 @@ cv.addEventListener("pointerdown",e=>{
   if(e.altKey)                       // Alt+clic sur une piste : on y insère un point
     for(const t of S.sel.tracks)
       if(segDist(p.x,p.y,t.x1,t.y1,t.x2,t.y2)<=t.w/2+px(4)){
+        if(t.locked){hint("Objet verrouillé : Déverrouiller pour le modifier.");return;}
         push();
         const pt=projOnSeg(p.x,p.y,t), nt=splitTrack(t,pt);
         S.sel.tracks.add(nt);
@@ -5184,7 +5198,7 @@ cv.addEventListener("pointerdown",e=>{
   /* sommets d'une zone interdite sélectionnée : même geste que le contour */
   for(const z of selInterdits())
     for(let i=0;i<z.pts.length;i++)
-      if(dist(p.x,p.y,z.pts[i].x,z.pts[i].y)<=px(6)){drag={vert:{z,i},moved:false};return;}
+      if(dist(p.x,p.y,z.pts[i].x,z.pts[i].y)<=px(6)){if(z.locked){hint("Objet verrouillé : Déverrouiller pour le modifier.");return;}drag={vert:{z,i},moved:false};return;}
   /* sommets d'une découpe de carte sélectionnée : même geste que le contour */
   for(const D of selDecoupes()){
     for(let i=0;i<D.length;i++)
@@ -5206,6 +5220,9 @@ cv.addEventListener("pointerdown",e=>{
   // les sommets d'une zone déjà sélectionnée passent aussi devant
   if(handles)
   for(const z of S.sel.zones){
+    const prise=[...z.pts.keys()].some(i=>dist(p.x,p.y,z.pts[i].x,z.pts[i].y)<=px(6))||
+                (e.altKey&&polyEdgeDist(p.x,p.y,z.pts)<=px(6));
+    if(prise&&z.locked){hint("Objet verrouillé : Déverrouiller pour le modifier.");return;}
     for(let i=0;i<z.pts.length;i++)
       if(dist(p.x,p.y,z.pts[i].x,z.pts[i].y)<=px(6)){
         drag={vert:{z,i},moved:false};return;
@@ -5623,6 +5640,37 @@ cv.addEventListener("pointermove",e=>{
   }
 });
 let dessousT=-1e9;
+/* Termine un glissement de bout de piste ou de boîtier comme au relâchement :
+   le relâchement, mais aussi un second doigt ou un pointercancel, qui sans
+   cela laissaient la poussée en l'air et des pistes de longueur nulle. */
+function dragFinir(){
+  if(drag&&drag.tend){
+    if(drag.moved&&straightenTend(drag.tend,drag.landed))
+      hint("Piste redressée sur le centre de l'arrivée : le coude a suivi.");
+    pruneAfterDrag(drag.moved?drag.tend.ends.map(o=>o.t):[]);
+    S.hover=null;
+  }else if(drag&&drag.move&&drag.moved){
+    const sh=drag.follow&&drag.follow.shove;
+    S.dragShove=null;
+    if(sh&&pnsApply(sh)){
+      const n=(sh.lignes||[]).length, v=(sh.vias||[]).length;
+      hint("Le cuivre voisin s'est écarté : "+n+" piste(s)"+(v?", "+v+" via(s)":"")+" poussée(s).");
+    }
+    // la liaison restée en faute est marquée, pas refaite (`25-liens.js`)
+    rerouteHint(followCheck(drag.follow));
+    const bouge=[...movedTracks()], avant=drag.diag;
+    pruneAfterDrag(bouge);
+    if(mitreAfterDrag(bouge,avant))
+      hint("Le coude a repris son 45° : le chanfrein s'était replié en "+
+           "raccourcissant la piste.");
+  }else if(drag){
+    if(drag.follow)pruneDeadTracks();
+    if(drag.marquee)S.marquee=null;
+  }
+  S.dragShove=null;
+  fanoutRelease(drag);
+  drag=null;refreshPanels();draw();
+}
 cv.addEventListener("pointerup",e=>{
   cancelLongpress();
   PTR_PCB.delete(e.pointerId);
@@ -5674,29 +5722,7 @@ cv.addEventListener("pointerup",e=>{
       S.silkDraft.dragging=false;
     }
   }
-  if(drag&&drag.tend){
-    if(drag.moved&&straightenTend(drag.tend,drag.landed))
-      hint("Piste redressée sur le centre de l'arrivée : le coude a suivi.");
-    pruneAfterDrag(drag.moved?drag.tend.ends.map(o=>o.t):[]);
-    S.hover=null;drag=null;refreshPanels();draw();return;
-  }
-  if(drag&&drag.move&&drag.moved){
-    const sh=drag.follow&&drag.follow.shove;
-    S.dragShove=null;
-    if(sh&&pnsApply(sh)){
-      const n=(sh.lignes||[]).length, v=(sh.vias||[]).length;
-      hint("Le cuivre voisin s'est écarté : "+n+" piste(s)"+(v?", "+v+" via(s)":"")+" poussée(s).");
-    }
-    // la liaison restée en faute est marquée, pas refaite (`25-liens.js`)
-    rerouteHint(followCheck(drag.follow));
-    const bouge=[...movedTracks()], avant=drag.diag;
-    pruneAfterDrag(bouge);
-    if(mitreAfterDrag(bouge,avant))
-      hint("Le coude a repris son 45° : le chanfrein s'était replié en "+
-           "raccourcissant la piste.");
-    fanoutRelease(drag);
-    drag=null;refreshPanels();draw();return;
-  }
+  if(drag&&(drag.tend||(drag.move&&drag.moved))){dragFinir();return;}
   if(drag&&drag.marquee){
     const m=S.marquee;
     const x1=Math.min(m.x1,m.x2),x2=Math.max(m.x1,m.x2);
@@ -5785,13 +5811,7 @@ cv.addEventListener("pointercancel",e=>{
   cancelLongpress();
   PTR_PCB.delete(e.pointerId);
   if(PTR_PCB.size<2)PINCH_PCB=null;
-  if(drag&&drag.follow){pruneDeadTracks();S.dragShove=null;}   // jambes de réserve repliées
-  fanoutRelease(drag);
-  const gele=drag&&drag.moved;
-  if(gele&&drag.drawingEnd)refreshPanels();
-  if(drag&&drag.marquee){S.marquee=null;draw();}   // lasso interrompu par le navigateur
-  drag=null;
-  if(gele)draw();
+  if(drag)dragFinir();       // geste interrompu par le navigateur : terminé comme au relâchement
 });
 cv.addEventListener("contextmenu",e=>{
   e.preventDefault();

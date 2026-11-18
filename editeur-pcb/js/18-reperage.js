@@ -270,15 +270,17 @@ function rpPhareTrace(c,dpr){
 /* Le repère demandé, s'il est sur cette carte. Exact seulement : une
    correspondance partielle amènerait sur le mauvais composant sans le dire,
    pire qu'une absence de saut. */
-function pcbCibleTrouver(valeur){
+function pcbCibleTrouver(valeur,quoi){
   const q=String(valeur==null?"":valeur).toLowerCase();
   if(!q)return null;
-  return rpTrouve(valeur).find(x=>String(x.cle).toLowerCase()===q)||null;
+  // le schéma dit ce qu'il montre : un net TP1 n'est pas l'empreinte TP1
+  const type=quoi==="net"?"net":quoi==="ref"?"empreinte":null;
+  return rpTrouve(valeur).find(x=>String(x.cle).toLowerCase()===q&&(!type||x.type===type))||null;
 }
 /* Y aller. Renvoie la cible atteinte, ou null — c'est ce que l'onglet voisin
    attend en retour pour savoir s'il a été entendu utilement. */
-function pcbCibleAller(valeur){
-  const t=pcbCibleTrouver(valeur);
+function pcbCibleAller(valeur,quoi){
+  const t=pcbCibleTrouver(valeur,quoi);
   if(!t)return null;
   t.aller();
   /* Après le cadrage, pas avant : rpPhare() a besoin de la vue déjà placée
@@ -289,7 +291,7 @@ function pcbCibleAller(valeur){
 function pcbSonderCible(){
   const c=(typeof sessCiblePrendre==="function")?sessCiblePrendre("pcb"):null;
   if(!c)return;
-  const t=pcbCibleAller(c.valeur);
+  const t=pcbCibleAller(c.valeur,c.quoi);
   if(!t){
     /* Le cas courant n'est pas une faute de frappe : c'est une carte qui n'a
        pas encore reçu la netlist du schéma. Les deux documents sont
@@ -345,7 +347,7 @@ function pcbMontrerAilleurs(){
 
 if(typeof sessEcouterProbe==="function")
   sessEcouterProbe("pcb",function(quoi,valeur){
-    const t=pcbCibleAller(valeur);
+    const t=pcbCibleAller(valeur,quoi);
     if(t)hint("Montré depuis le schéma (autre onglet) : "+t.libelle+".");
     return !!t;
   });

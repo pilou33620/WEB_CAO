@@ -443,7 +443,9 @@ function pnsBuild(){
     const q={n:0,x:cx,y:cy,w:b.x2-b.x1,h:b.y2-b.y1,shape:"poly",rot:0,drill:0,net:z.net||"",
              pts:z.pts.map(p=>({x:p.x-cx,y:p.y-cy}))};
     N.add({k:"P",q,fp:{ref:"région pleine",id:-3},net:z.net||"",l0:z.l,l1:z.l,src:{nom:"région pleine "+(z.net||"sans net")},
-           zone:z,ko:true,koPistes:true,koVias:true,bx1:b.x1,by1:b.y1,bx2:b.x2,by2:b.y2});
+           // la boîte porte l'isolement propre de la région : la fenêtre (pnsMaxClr) ne le compte pas
+           zone:z,ko:true,koPistes:true,koVias:true,bx1:b.x1-(z.isol>0?z.isol:0),by1:b.y1-(z.isol>0?z.isol:0),
+           bx2:b.x2+(z.isol>0?z.isol:0),by2:b.y2+(z.isol>0?z.isol:0)});
   }
   return N;
 }

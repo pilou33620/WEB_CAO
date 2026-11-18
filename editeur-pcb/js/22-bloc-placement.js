@@ -373,7 +373,22 @@ var BLOC_PLACEMENT = (function() {
   }
 
   /* ---------- Action 1 : Compacter sur place en 1 clic ---------- */
-  function compacterSurPlace(motifOrId) {
+  /* Les poses calculées (x, y, rot, face) s'appliquent d'un coup par transformFps :
+     le cuivre accroché aux empreintes déplacées suit, au lieu d'être arraché. */
+  function avecCuivre(calcul) {
+    const avant = new Map(S.fps.map(f => [f.id, { x: f.x, y: f.y, rot: f.rot, side: f.side }]));
+    const res = calcul();
+    if (typeof transformFps !== "function") return res;
+    const bouges = S.fps.filter(f => { const a = avant.get(f.id); return a && (a.x !== f.x || a.y !== f.y || a.rot !== f.rot || a.side !== f.side); });
+    if (!bouges.length) return res;
+    const apres = new Map(bouges.map(f => [f.id, { x: f.x, y: f.y, rot: f.rot, side: f.side }]));
+    for (const f of bouges) Object.assign(f, avant.get(f.id));
+    transformFps(bouges.map(f => f.id), () => { for (const f of bouges) Object.assign(f, apres.get(f.id)); });
+    return res;
+  }
+
+  function compacterSurPlace(motifOrId) { return avecCuivre(() => compacterSurPlaceBrut(motifOrId)); }
+  function compacterSurPlaceBrut(motifOrId) {
     const motif = trouverMotifOuZone(motifOrId);
     if (!motif) return false;
 
@@ -409,7 +424,8 @@ var BLOC_PLACEMENT = (function() {
   }
 
   /* ---------- Action 2 : Déposer en grappe en 1 clic ---------- */
-  function deposerEnGrappe(motifOrId, cibleX = null, cibleY = null) {
+  function deposerEnGrappe(motifOrId, cibleX = null, cibleY = null) { return avecCuivre(() => deposerEnGrappeBrut(motifOrId, cibleX, cibleY)); }
+  function deposerEnGrappeBrut(motifOrId, cibleX = null, cibleY = null) {
     const motif = trouverMotifOuZone(motifOrId);
     if (!motif) return false;
 
@@ -474,7 +490,8 @@ var BLOC_PLACEMENT = (function() {
   }
 
   /* ---------- Action 3 : Agencer automatiquement une liste de nouveaux composants par grappes fonctionnelles ---------- */
-  function agencerListeNouveauxComposants(addedFps) {
+  function agencerListeNouveauxComposants(addedFps) { return avecCuivre(() => agencerListeBrut(addedFps)); }
+  function agencerListeBrut(addedFps) {
     if (!addedFps || !addedFps.length || typeof S === "undefined" || !S || !S.board) return;
 
     const b = S.board;
@@ -547,7 +564,7 @@ var BLOC_PLACEMENT = (function() {
         const hasD = satellites.some(s => /^D/i.test(s.ref));
         if (hasL && hasD) tpl = "buck_compact";
         else if (/ldo|reg|1117/i.test(mFp.value || "") || (/^VR|^REG/i.test(mFp.ref) && satellites.length >= 2)) tpl = "ldo_inline";
-        else if (/^Y|^X/i.test(mFp.ref)) tpl = "quartz_compact";
+        else if (/^Y|^X/i.test(mFp.ref)) tpl = "crystal_symmetric";   // le nom que calculerAgencement connaît
 
         const pseudoMotif = {
           label: "Grappe " + mRef,

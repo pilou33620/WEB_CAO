@@ -44,7 +44,7 @@ global.BroadcastChannel.prototype.close=function(){
 };
 
 const code=fs.readFileSync(path.join(__dirname,"..","dist","pcb.js"),"utf8");
-const EXPOSE=[
+const EXPOSE=["uniqueIds","drcEnLAir","routageCuivre","dfNormPt",
   /* édition à la Altium (46-edition.js et suivants) */
   "filtreOk","filtreAppliquer","verrouPoser","verrousRetirer","alignerFps","semblables","collageReseau",
   "largeurSuivante","uniteBasculer","clrZone","ecartThermique","zoneHachures","zonesDrc","zoneNouvelle",
@@ -9835,9 +9835,9 @@ T("anti-collision : le changement de couche refusé ne change pas de couche",()=
   dpStart((c.a.p.x+c.a.n.x)/2,(c.a.p.y+c.a.n.y)/2);
   dpUpdate(40,45);dpStep();
   /* deux vias d'un autre net posés pile là où la paire voudrait les siens */
-  S.avoid=false;
-  placeVia(S.dp.aP.x,S.dp.aP.y,"GND",0,3,false);
-  placeVia(S.dp.aN.x,S.dp.aN.y,"GND",0,3,false);
+  S.avoid=false;                // sans instantané : push() terminerait la paire en cours
+  placeVia(S.dp.aP.x,S.dp.aP.y,"GND",0,3,true);
+  placeVia(S.dp.aN.x,S.dp.aN.y,"GND",0,3,true);
   S.avoid=true;
   const av=S.vias.length, cu=S.dp.layer, pas=S.dp.steps.length;
   const dp=S.dp.doneP.length;
@@ -31606,6 +31606,127 @@ T("revue 18/11 : serpentin exact pour une petite cible, refusé sous le plus pet
   const r=dpMeander(t,{targetDelta:1.0,pitch:1.2,amplitude:1.5});
   if(Math.abs(r.addedLen-1.0)>0.05)throw new Error("cible 1 mm : "+r.addedLen);
   if(dpMeander(t,{targetDelta:0.05,pitch:1.2,amplitude:1.5}).addedLen>0.1)throw new Error("cible 0,05 mm : serpentin démesuré");
+});
+
+/* ---------- seconde vérification (18/11) ---------- */
+function carteV2(n){
+  carteRegles();if(n)setCuCount(n);
+  const pose=(ref,x,y,nets)=>{const f=mkFp(ref,"",ref[0]==="R"?"0603":"SOIC-8",2);f.id=S.nextId++;f.x=x;f.y=y;f.nets=nets;S.fps.push(f);return f;};
+  return pose;
+}
+const pad1=(f,n)=>padsWorld(f).find(q=>q.n===(n||1));
+T("v2 : des identifiants au plafond ne figent plus l'ouverture",()=>{
+  const fp={ref:"R1",pkg:"0603",pins:2,x:0,y:0,id:Number.MAX_SAFE_INTEGER};
+  const d=normDoc({fps:[fp,Object.assign({},fp,{ref:"R2"}),Object.assign({},fp,{ref:"R3"})]});
+  const ids=d.fps.map(f=>f.id);
+  if(new Set(ids).size!==3||ids.some(i=>!(i<=1e9+10)))throw new Error("ids : "+ids);
+  if(!(d.nextId>Math.max(...ids)))throw new Error("nextId "+d.nextId);
+});
+T("v2 : deux pistes du même net croisées en X sont reliées",()=>{
+  const pose=carteV2();
+  const a=pose("R1",10,10,{1:"EN",2:"N1"}), b=pose("R2",30,10,{1:"EN",2:"N2"});
+  const p=pad1(a), q=pad1(b), D=q.x-p.x;
+  S.tracks.push({l:0,net:"EN",w:0.25,x1:p.x,y1:p.y,x2:p.x+D*0.75,y2:p.y+D*0.75},
+                {l:0,net:"EN",w:0.25,x1:q.x,y1:q.y,x2:q.x-D*0.75,y2:q.y+D*0.75});
+  touch();
+  const n=conn().nets.get("EN");
+  if(!n||n.miss!==0)throw new Error("liaison EN : "+(n&&n.miss));
+});
+T("v2 : permuter L1/L2 laisse un via traversant traversant",()=>{
+  carteV2(4);
+  S.vias.push(mkVia(5,5,"A",0,3));touch();
+  couchesPermuter(0,1);
+  if(S.vias[0].a!==0||S.vias[0].b!==3)throw new Error("via "+S.vias[0].a+"→"+S.vias[0].b);
+});
+T("v2 : fiche JLCPCB en capitales (100NF) lue à la bonne valeur",()=>{
+  const v=vbValeurFiche("50V 100NF X7R 0402","F");
+  if(!(Math.abs(v-1e-7)<1e-12))throw new Error("valeur "+v);
+});
+T("v2 : catalogue « 0402C », « SOT-23-5 » : le bon nombre de pastilles",()=>{
+  carteV2();
+  pcbPlacerEmpreinteDepuisLib({"Package type":"0402C","Reference designator Prefix":"C"});
+  if(S.fps[S.fps.length-1].pins!==2)throw new Error("0402C : "+S.fps[S.fps.length-1].pins);
+  pcbPlacerEmpreinteDepuisLib({"Package type":"SOT-23-5","Reference designator Prefix":"U"});
+  if(S.fps[S.fps.length-1].pins!==5)throw new Error("SOT-23-5 : "+S.fps[S.fps.length-1].pins);
+});
+T("v2 : « NET (R1 22Ω) » est un net et sa série",()=>{
+  const c=simNetCompose("CLKV2 (R1 22Ω)");
+  if(c.nets.join()!=="CLKV2"||c.serie!=="R1 22Ω")throw new Error(JSON.stringify(c));
+});
+T("v2 : règles par défaut dans les capabilités du profil",()=>{
+  const r=pcbGetDefaultDesignRules(pcbGetMfgProfile());
+  for(const k in r)if(!(r[k].typ>=r[k].min-1e-9&&r[k].typ<=r[k].max+1e-9))throw new Error(k+" "+JSON.stringify(r[k]));
+});
+T("v2 : bras thermiques d'une empreinte retournée au miroir",()=>{
+  const pose=carteV2();
+  const f=pose("R1",10,10,{1:"A",2:"B"});
+  f.pads=padsOf(f).map(padClone);f.pads[0].thermalAngle=30;f.side=1;touch();
+  if(pad1(f).thermalAngle!==150)throw new Error("angle "+pad1(f).thermalAngle);
+});
+T("v2 : Ctrl+Z et Ctrl+Y marquent la carte modifiée",()=>{
+  carteV2();push();S.dirty=false;undo();
+  if(!S.dirty)throw new Error("undo");
+  S.dirty=false;redo();
+  if(!S.dirty)throw new Error("redo");
+});
+T("v2 : « constructor » n'est pas un traitement de via",()=>{
+  const d=normDoc({rule:{viaFinish:"constructor",corner:"toString"},cartouche:"valueOf"});
+  if(d.rule.viaFinish==="constructor"||d.rule.corner==="toString"||d.cartouche==="valueOf")throw new Error(JSON.stringify(d.rule));
+});
+T("v2 : région pleine sur une zone d'un autre net de même priorité : signalée",()=>{
+  carteV2();
+  const R=(x1,y1,x2,y2)=>[{x:x1,y:y1},{x:x2,y:y1},{x:x2,y:y2},{x:x1,y:y2}];
+  S.zones.push({id:S.nextId++,l:0,net:"A",pts:R(5,5,15,15),plein:true},
+               {id:S.nextId++,l:0,net:"B",pts:R(12,5,25,15)});
+  touch();runDrc();
+  if(!S.drc.some(e=>e.kind==="region-isolation"&&/la zone B/.test(e.msg)))throw new Error("court-circuit région/zone muet");
+});
+T("v2 : ECO, broches nommées d'un composant ajouté gardées",()=>{
+  carteV2();
+  pcbAppliquerEco([{type:"AJOUT",active:true,ref:"Q1",value:"BC847",pkg:"SOT-23",pins:3,nets:{B:"NB",C:"NC",E:"NE"}}]);
+  const q=S.fps.find(f=>f.ref==="Q1");
+  if(!q||Object.keys(q.nets).length!==3)throw new Error("nets "+JSON.stringify(q&&q.nets));
+});
+T("v2 : Réinitialiser les règles, puis Ctrl+Z, rend celles du projet",()=>{
+  carteV2();
+  pcbGetProjectDesignRules();
+  S.rule.designRules.clearance={min:0.2,typ:0.33,max:1};
+  pcbResetRulesToMfgRecommendations();
+  undo();
+  if(S.rule.designRules.clearance.typ!==0.33)throw new Error(JSON.stringify(S.rule.designRules.clearance));
+});
+T("v2 : un bout de piste dont le cuivre recouvre la pastille n'est pas en l'air",()=>{
+  const pose=carteV2();
+  const a=pose("R1",20,10,{1:"A",2:"N1"}), b=pose("R2",5,10,{1:"A",2:"N2"});
+  const p=pad1(a), q=pad1(b);
+  S.tracks.push({l:0,net:"A",w:0.3,x1:q.x,y1:q.y,x2:p.x-p.w/2-0.1,y2:p.y});touch();
+  const out=[];drcEnLAir(out,[]);
+  const pads=[];for(const f of S.fps)for(const o of padsWorld(f))pads.push({q:o,layers:padLayers(f,o)});
+  out.length=0;drcEnLAir(out,pads);
+  if(out.some(e=>e.kind==="piste-en-l-air"))throw new Error(out.map(e=>e.msg).join(" ; "));
+});
+T("v2 : une définition LIB brute est relue (normFpDef)",()=>{
+  PCB_LIB_CACHE.set("V2BRUT",{name:"V2BRUT",pins:200000,pitch:"abc",pads:[null]});
+  try{
+    const g=pkgGeom("V2BRUT",2);
+    if(g&&(g.pins>4096||typeof g.pitch!=="number"))throw new Error(JSON.stringify(g).slice(0,200));
+  }finally{PCB_LIB_CACHE.delete("V2BRUT");}
+});
+T("v2 : choisir une variante périme les simulations",()=>{
+  carteV2();
+  S.variantes={liste:[{id:"v1",nom:"V1"}],active:""};
+  const v=S.ver;pcbVarChoisir("v1");
+  if(S.ver===v)throw new Error("révision inchangée");
+});
+T("v2 : une cote orpheline hors bornes est oubliée",()=>{
+  if(dfNormPt({x:1e25,y:0})!==null)throw new Error("1e25 gardé");
+  if(!dfNormPt({x:3,y:4}))throw new Error("point valide refusé");
+});
+T("v2 : la proposition de routage périt quand le contour change",()=>{
+  carteV2();
+  const a=routageCuivre(JSON.parse(serialize()));
+  S.board.w=(S.board.w||50)-10;touch();
+  if(routageCuivre(JSON.parse(serialize()))===a)throw new Error("contour changé non vu");
 });
 loadDoc(JSON.parse(DOC_AVANT_KICAD),true);
 

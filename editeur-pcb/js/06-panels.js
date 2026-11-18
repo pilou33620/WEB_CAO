@@ -952,8 +952,8 @@ function propsHole(box, h){
     '<div class="prop two"><div><label title="Longueur hors tout d\'une fente ; 0, ou pas plus que le Ø : trou rond">Longueur (mm)</label>'+
     '<input id="pHoleL" type="number" step="0.1" min="0" max="60" value="'+(h.w>h.d?fmt(h.w,2):0)+'"></div>'+
     '<div><label title="Angle de la longueur, en degrés">Angle (°)</label><input id="pHoleR" type="number" step="15" value="'+fmt(h.rot||0,1)+'"></div></div>'+
-    '<div class="prop two"><div><label>X (mm)</label><input id="pHoleX" type="number" step="0.1" value="'+fmt(h.x,3)+'"></div>'+
-    '<div><label>Y (mm)</label><input id="pHoleY" type="number" step="0.1" value="'+fmt(h.y,3)+'"></div></div>'+
+    '<div class="prop two"><div><label>X (mm)</label><input id="pHoleX" type="number" step="0.1" value="'+fmt(ux(h.x),3)+'"></div>'+
+    '<div><label>Y (mm)</label><input id="pHoleY" type="number" step="0.1" value="'+fmt(uy(h.y),3)+'"></div></div>'+
     '<div class="prop"><label><input id="pHoleLock" type="checkbox"'+(h.locked?' checked':'')+'> Verrouiller la position</label></div>'+
     '<div class="prop"><div class="row"><button class="tb" id="pHoleDel">Supprimer le trou NPTH</button></div></div>'+
     '<div class="pinnote">Perçage non plaqué sans cuivre, traversant toutes les couches. '+
@@ -990,12 +990,14 @@ function propsHole(box, h){
   const inX=$("pHoleX");
   if(inX)inX.onchange=e=>{
     const v=numSaisi(e.target.value);
-    if(Number.isFinite(v)){push();h.x=r4(v);touch();buildProps();draw();}
+    if(h.locked){buildProps();hint("Trou verrouillé : déverrouillez-le pour le déplacer.");return;}
+    if(Number.isFinite(v)){push();h.x=r4(wxu(v));touch();buildProps();draw();}   // saisi depuis l'origine, comme une empreinte
   };
   const inY=$("pHoleY");
   if(inY)inY.onchange=e=>{
     const v=numSaisi(e.target.value);
-    if(Number.isFinite(v)){push();h.y=r4(v);touch();buildProps();draw();}
+    if(h.locked){buildProps();hint("Trou verrouillé : déverrouillez-le pour le déplacer.");return;}
+    if(Number.isFinite(v)){push();h.y=r4(wyu(v));touch();buildProps();draw();}
   };
   const inLock=$("pHoleLock");
   if(inLock)inLock.onchange=e=>{
@@ -1052,8 +1054,8 @@ function propsDrawing(box, d){
       '<option value="180"'+(((d.rot||0)%360===180)?' selected':'')+'>180°</option>'+
       '<option value="270"'+(((d.rot||0)%360===270)?' selected':'')+'>270°</option>'+
       '</select></div>'+
-      '<div class="prop two"><div><label>X (mm)</label><input id="pDrwX" value="'+fmt(d.x1,3)+'"></div>'+
-      '<div><label>Y (mm)</label><input id="pDrwY" value="'+fmt(d.y1,3)+'"></div></div>'+
+      '<div class="prop two"><div><label>X (mm)</label><input id="pDrwX" value="'+fmt(ux(d.x1),3)+'"></div>'+
+      '<div><label>Y (mm)</label><input id="pDrwY" value="'+fmt(uy(d.y1),3)+'"></div></div>'+
       '<div class="prop"><div class="row"><button class="tb" id="pDrwDel">Supprimer le texte</button></div></div>'+
       '<div class="pinnote">Texte vectoriel tracé sur la sérigraphie. Exporté dans les fichiers Gerber .GTO et .GBO.</div>';
 
@@ -1095,12 +1097,12 @@ function propsDrawing(box, d){
     const inX=$("pDrwX");
     if(inX)inX.onchange=e=>{
       const v=numSaisi(e.target.value);
-      if(Number.isFinite(v)){push();d.x1=r4(v);d.x2=d.x1;touch();buildProps();draw();}
+      if(Number.isFinite(v)){push();d.x1=r4(wxu(v));d.x2=d.x1;touch();buildProps();draw();}
     };
     const inY=$("pDrwY");
     if(inY)inY.onchange=e=>{
       const v=numSaisi(e.target.value);
-      if(Number.isFinite(v)){push();d.y1=r4(v);d.y2=d.y1;touch();buildProps();draw();}
+      if(Number.isFinite(v)){push();d.y1=r4(wyu(v));d.y2=d.y1;touch();buildProps();draw();}
     };
     const bDel=$("pDrwDel");
     if(bDel)bDel.onclick=deleteSel;
@@ -1128,10 +1130,10 @@ function propsDrawing(box, d){
     '<option value="0.3"' + (Math.abs(d.width - 0.3) < 1e-4 ? " selected" : "") + '>0,30 mm (Épaisse)</option>' +
     '<option value="0.5"' + (Math.abs(d.width - 0.5) < 1e-4 ? " selected" : "") + '>0,50 mm</option>' +
     '</select></div>' +
-    '<div class="prop two"><div><label>X1 (mm)</label><input id="pDrwX1" value="' + fmt(d.x1, 3) + '"></div>' +
-    '<div><label>Y1 (mm)</label><input id="pDrwY1" value="' + fmt(d.y1, 3) + '"></div></div>' +
-    '<div class="prop two"><div><label>X2 (mm)</label><input id="pDrwX2" value="' + fmt(d.x2, 3) + '"></div>' +
-    '<div><label>Y2 (mm)</label><input id="pDrwY2" value="' + fmt(d.y2, 3) + '"></div></div>' +
+    '<div class="prop two"><div><label>X1 (mm)</label><input id="pDrwX1" value="' + fmt(ux(d.x1), 3) + '"></div>' +
+    '<div><label>Y1 (mm)</label><input id="pDrwY1" value="' + fmt(uy(d.y1), 3) + '"></div></div>' +
+    '<div class="prop two"><div><label>X2 (mm)</label><input id="pDrwX2" value="' + fmt(ux(d.x2), 3) + '"></div>' +
+    '<div><label>Y2 (mm)</label><input id="pDrwY2" value="' + fmt(uy(d.y2), 3) + '"></div></div>' +
     (isRect ? "" : '<div class="prop"><label>Angle de l\'arc (°, 0 = droit)</label><input id="pDrwCa" type="number" step="15" value="' +
       (drwArc(d) ? r1(-d.ca * 180 / Math.PI) : 0) + '" title="Positif : sens trigonométrique à l\'écran ; négatif : l\'autre sens"></div>') +
     '<div class="prop"><label>Dimensions</label><input value="' + (isRect ? ("L: " + fmt(dx, 3) + " mm · H: " + fmt(dy, 3) + " mm") : (fmt(len, 3) + " mm" + (drwArc(d) ? " de corde · rayon " + fmt(arcOf(d).r, 3) + " mm" : ""))) + '" disabled></div>' +
@@ -1148,8 +1150,9 @@ function propsDrawing(box, d){
   const bindCoord = (id, key) => {
     const inp = $(id);
     if(inp) inp.onchange = e => {
-      const v = +e.target.value.replace(",", ".");
-      if(Number.isFinite(v)) { push(); d[key] = r3(v); touch(); buildProps(); draw(); }
+      // vidé : rien (numSaisi rend NaN) ; saisi depuis l'origine, comme les empreintes
+      const v = numSaisi(e.target.value);
+      if(Number.isFinite(v)) { push(); d[key] = r3(key[0] === "x" ? wxu(v) : wyu(v)); touch(); buildProps(); draw(); }
     };
   };
   bindCoord("pDrwX1", "x1"); bindCoord("pDrwY1", "y1");
@@ -1462,7 +1465,12 @@ function busSkewSync(){
   const inFreq=$("bsFreq"), inTsu=$("bsTsu"), inTh=$("bsTh"), inTcoMin=$("bsTcoMin"), inTcoMax=$("bsTcoMax");
   /* 0 ns est une valeur courante (t_h d'un SPI) : seule une saisie illisible garde la
      valeur en place, et la fréquence doit être positive */
-  const bsLire=(el,k,pos)=>{const v=parseFloat(el.value);if(Number.isFinite(v)&&(!pos||v>0)){_bsState[k]=v;_bsState.presetId="custom";}else el.value=_bsState[k];busSkewSync();};
+  const bsLire=(el,k,pos)=>{
+    const v=parseFloat(el.value), essai=Object.assign({},_bsState,{[k]:v});
+    // T_co min au-delà de T_co max rendait les deux marges optimistes : refusé
+    if(Number.isFinite(v)&&(!pos||v>0)&&!(essai.tcoMin>essai.tcoMax)){_bsState[k]=v;_bsState.presetId="custom";}else el.value=_bsState[k];
+    busSkewSync();
+  };
   if(inFreq)inFreq.onchange=()=>bsLire(inFreq,"freqMhz",true);
   if(inTsu)inTsu.onchange=()=>bsLire(inTsu,"tsu");
   if(inTh)inTh.onchange=()=>bsLire(inTh,"th");
@@ -1682,9 +1690,16 @@ function propsFp(box,fp){
   const upd=(id,fn,num)=>{
     const el=$(id);
     if(!el)return;
-    el.onchange=()=>{push();fn(num?(parseFloat(el.value)||0):el.value);touch();refreshPanels();draw();};
+    el.onchange=()=>{
+      // nombre vidé ou illisible : rien ne change (0 envoyait le bord du corps à l'origine), sauf « vide = auto »
+      const v=num?numSaisi(el.value):el.value;
+      if(num&&!Number.isFinite(v)&&num!=="vide"){refreshPanels();return;}
+      push();fn(v);touch();refreshPanels();draw();
+    };
   };
-  upd("pRef",v=>fp.ref=v.trim()||fp.ref);
+  // un repère déjà porté par un autre composant est refusé : la réimportation de la netlist les confondrait
+  const refLibre=v=>!S.fps.some(o=>o!==fp&&o.ref===v);
+  upd("pRef",v=>{v=v.trim();if(!v)return;if(refLibre(v))fp.ref=v;else hint("Repère « "+v+" » déjà porté par un autre composant : refusé.");});
   upd("pVal",v=>fp.value=v);
   /* le boîtier nommé commande l'empreinte, ici comme à l'import de la netlist :
      saisir « SOIC-8 » repose les pastilles, un nom hors table ne touche à rien */
@@ -1704,6 +1719,7 @@ function propsFp(box,fp){
     el.onchange=()=>{
       const v=numSaisi(el.value);
       if(!Number.isFinite(v)){el.value=enVigueur;return;}        // vidé : l'objet ne saute pas à l'origine
+      if(fp.locked){el.value=enVigueur;hint(fp.ref+" est verrouillé : déverrouillez-le pour le déplacer ou le tourner.");return;}
       const gene=fpEssai(()=>fn(v));
       if(gene){el.value=enVigueur;fpRefus(gene);return;}
       push();transformFps([fp.id],()=>fn(v));touch();refreshPanels();draw();
@@ -1713,7 +1729,7 @@ function propsFp(box,fp){
   updPose("pX",v=>fp.x=wxu(v));
   updPose("pY",v=>fp.y=wyu(v));
   updPose("pRot",v=>fp.rot=+v);
-  upd("pRefSize",v=>{if(v>=0.5&&v<=25)fp.refSize=r4(v);else delete fp.refSize;},true);
+  upd("pRefSize",v=>{if(v>=0.5&&v<=25)fp.refSize=r4(v);else delete fp.refSize;},"vide");
   upd("pRefRot",v=>{if(+v)fp.refRot=+v;else delete fp.refRot;},true);
   if($("pRefShow"))$("pRefShow").onchange=e=>{push();if(e.target.checked)delete fp.refHide;else fp.refHide=true;
     touch();refreshPanels();draw();};
@@ -1776,14 +1792,18 @@ function propsFp(box,fp){
       const selVal=$("pFpLibSel")?$("pFpLibSel").value:"";
       if(!selVal)return;
       push();
+      const pkgAvant=fp.pkg;
       fp.pkg=selVal;
       const inpPkg=$("pPkg");
       if(inpPkg)inpPkg.value=selVal;
+      let ok=true;
       if(typeof pcbAppliquerEmpreinteLib==="function"){
-        await pcbAppliquerEmpreinteLib(fp,selVal);
+        ok=await pcbAppliquerEmpreinteLib(fp,selVal);
       }else{
         applyPkgGeom(fp);
       }
+      // définition introuvable : le boîtier ne change pas de nom sans ses pastilles
+      if(ok===false){fp.pkg=pkgAvant;S.undo.pop();refreshPanels();hint("Empreinte « "+selVal+" » introuvable dans la bibliothèque : "+fp.ref+" garde la sienne.");return;}
       touch();refreshPanels();draw();
       hint("Empreinte "+fp.ref+" mise à jour sur "+selVal+".");
     };
@@ -1886,7 +1906,7 @@ function propsRefText(box,fp){
       (tr.size<P.hMin-1e-6||tr.w<P.wMin-1e-6?' <span class="warn">Sous le minimum du fabricant : choisissez une taille prête.</span>':'')+
       (fp.silk===false?' <b>Sérigraphie automatique coupée sur ce composant : le repère n\'est pas imprimé.</b>':'')+'</div>';
   const set=(id,fn)=>{$(id).onchange=e=>{push();fn(e.target.value);touch();refreshPanels();draw();};};
-  set("rtRef",v=>{v=v.trim();if(v)fp.ref=v;});
+  set("rtRef",v=>{v=v.trim();if(!v)return;if(!S.fps.some(o=>o!==fp&&o.ref===v))fp.ref=v;else hint("Repère « "+v+" » déjà porté par un autre composant : refusé.");});
   set("rtSize",v=>{v=parseFloat(v);if(v>=0.5&&v<=25)fp.refSize=r4(v);else delete fp.refSize;});
   set("rtPreset",v=>{const o=P.liste[+v];if(v!==""&&o){fp.refSize=o.h;fp.refWidth=o.w;}});
   $("rtAll").onclick=()=>{push();
@@ -2542,6 +2562,7 @@ const MP_KINDS={
         el.onchange=()=>{
           const v=parseFloat(el.value);
           if(el.value===MP_MIX||!isFinite(v))return;
+          if(list.some(f=>f.locked)){hint("La sélection contient un composant verrouillé : rien ne bouge.");refreshPanels();return;}
           const tous=()=>list.forEach(f=>fn(f,v)), gene=fpEssai(tous);
           if(gene){fpRefus(gene);refreshPanels();return;}
           push();transformFps(list.map(f=>f.id),tous);touch();refreshPanels();draw();

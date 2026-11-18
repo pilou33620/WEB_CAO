@@ -93,7 +93,8 @@ function pcbAfficherToastFeedback(msg, succes) {
 
 function pcbAppliquerMajLib(pkgName) {
   if (!pkgName) return 0;
-  if (typeof push === "function") push();
+  // l'étape d'historique seulement si quelque chose a été appliqué (onDone)
+  const avant = typeof serialize === "function" ? serialize() : null;
 
   // Invalider le cache pour cette empreinte
   const key = (typeof pkgKey === "function") ? pkgKey(pkgName) : String(pkgName).toUpperCase();
@@ -116,6 +117,7 @@ function pcbAppliquerMajLib(pkgName) {
       pcbAfficherToastFeedback("⚠ Mise à jour impossible : la définition de « " + pkgName + " » n'a pas pu être lue depuis la bibliothèque.", false);
       return 0;
     }
+    if (count && avant != null && typeof pushSnap === "function") pushSnap(avant);
     const kTarget = (typeof pkgKey === "function") ? pkgKey(pkgName) : String(pkgName).toUpperCase();
     for (const name of Array.from(PCB_LIB_ALERTE.pkgNames)) {
       const k = (typeof pkgKey === "function") ? pkgKey(name) : String(name).toUpperCase();

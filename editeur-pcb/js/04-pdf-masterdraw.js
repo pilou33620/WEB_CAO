@@ -493,6 +493,7 @@ function masterDrawingPdf(fabFiles){
     "GTP":"Paste mask Top","GBP":"Paste mask Bottom",
     "GTO":"Silk screen Top","GBO":"Silk screen Bottom",
     "GM1":"Board outline (Mechanical 1, profile)","GKO":"Keep-out layer"};
+  for(let n=2;n<10;n++)gerberDesc["GM"+n]="Mechanical layer "+n;
   /* La portée vient du fichier lui-même (drillFile la pose dessus) et non de
      son nom : celui-ci commence par le nom du projet, chiffres compris. */
   const drillDesc=f=>{
@@ -503,7 +504,7 @@ function masterDrawingPdf(fabFiles){
     const kind=f.kind==="blind"?"Blind":f.kind==="buried"?"Buried":"Through hole";
     return kind+" Excellon drill file (plated), copper layer "+(a+1)+" to "+(b+1);
   };
-  const gFiles=(fabFiles||[]).filter(f=>/\.(GTL|GBL|GL\d+|GTS|GBS|GTP|GBP|GTO|GBO|GM1|GKO)$/.test(f.name));
+  const gFiles=(fabFiles||[]).filter(f=>/\.(GTL|GBL|GL\d+|GTS|GBS|GTP|GBP|GTO|GBO|GM\d|GKO)$/.test(f.name));
   const dFiles=(fabFiles||[]).filter(f=>/\.(TXT|DRL)$/.test(f.name));
   /* Le même contre-perçage en Gerber X2 (cpGerberX2, 04-fabrication.js) :
      annoncé juste sous son Excellon, la paire de couches faisant le lien.

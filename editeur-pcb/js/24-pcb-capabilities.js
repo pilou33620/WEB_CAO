@@ -680,17 +680,25 @@ function pcbGetDefaultDesignRules(profile){
   const limits = pcbGetMfgLimits(profile);
   const p = profile || pcbGetMfgProfile();
   const isLdi = p.general && p.general.solderMask && p.general.solderMask.expansionRatio === "1:1";
-  return {
+  const r = {
     trackWidth:  { min: limits.trackWidth.min,  typ: 0.21, max: limits.trackWidth.max },
     clearance:   { min: limits.clearance.min,   typ: 0.20, max: 3.00 },
     drill:       { min: limits.drill.min,       typ: 0.30, max: limits.drill.max },
-    viaDia:      { min: 0.40,                   typ: 0.60, max: limits.viaDia.max },
+    viaDia:      { min: limits.viaDia.min,      typ: 0.60, max: limits.viaDia.max },
     annularRing: { min: limits.annularRing.min, typ: 0.20, max: limits.annularRing.max },
     edge:        { min: limits.edge.min,        typ: 0.40, max: 5.00 },
     mask:        { min: limits.mask.min,        typ: isLdi ? 0.00 : 0.05, max: 0.25 },
     paste:       { min: 0.00,                   typ: 0.00, max: 0.10 },
     thermal:     { min: 0.20,                   typ: 0.50, max: 2.00 }
   };
+  /* les typiques fixes restent dans les capabilités du profil (2 oz, 1 couche,
+     profil générique) : sinon l'audit refuse aussitôt ce qu'on vient de poser */
+  for(const k in r){
+    const o = r[k];
+    if(!(o.max >= o.min)) o.max = o.min;
+    o.typ = Math.min(o.max, Math.max(o.min, o.typ));
+  }
+  return r;
 }
 
 /* Récupère les règles du projet courant avec initialisation sécurisée */
@@ -770,9 +778,9 @@ function pcbSetProjectDesignRule(ruleKey, field, val){
 }
 
 /* Applique l'ensemble des règles de conception du projet au routage et aux classes */
-function pcbApplyProjectDesignRules(){
+function pcbApplyProjectDesignRules(sansPush){
   const rules = pcbGetProjectDesignRules();
-  if(typeof push === "function") push();
+  if(!sansPush && typeof push === "function") push();
 
   for(const k in rules){
     pcbPropagateTypiqueToProject(k, rules[k].typ);
@@ -800,8 +808,10 @@ function pcbApplyProjectDesignRules(){
 function pcbResetRulesToMfgRecommendations(profileId){
   const prof = pcbGetMfgProfile(profileId);
   if(!S.rule) pcbEnsureDefaultProjectRules();
+  // une seule étape d'historique, prise AVANT d'écraser les règles : Ctrl+Z les rend
+  if(typeof push === "function") push();
   S.rule.designRules = pcbGetDefaultDesignRules(prof);
-  pcbApplyProjectDesignRules();                    // une seule étape d'historique : la sienne
+  pcbApplyProjectDesignRules(true);
   return S.rule.designRules;
 }
 

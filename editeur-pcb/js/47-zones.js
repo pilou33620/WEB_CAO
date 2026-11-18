@@ -75,6 +75,16 @@ function zoneHachures(z,l){
     }
     return true;
   };
+  /* le cuivre qui passe devant z (zoneAt), larmes comprises : une maille à
+     cheval dessus en creuserait un morceau */
+  const iz=S.zones.indexOf(z), pz=zonePrio(z);
+  const devant=S.zones.filter((o,i)=>o!==z&&o.l===l&&o.pts.length>=3&&
+      (o.larme||zonePrio(o)>pz||(zonePrio(o)===pz&&i>iz))).map(o=>({P:o.pts,b:polyBBox(o.pts)}));
+  const mordDevant=E=>{
+    if(!devant.length)return false;
+    const b=polyBBox(E);
+    return devant.some(o=>!(o.b.x2<b.x1||o.b.x1>b.x2||o.b.y2<b.y1||o.b.y1>b.y2)&&polysTouchent(E,o.P));
+  };
   const n=((s1-s0)/pas+1)*((t1-t0)/pas+1);
   if(n<=HACH_MAX)
     for(let gs=Math.floor(s0/pas)*pas;gs<s1;gs+=pas)
@@ -84,7 +94,7 @@ function zoneHachures(z,l){
         const E=[W(a-larg,b-larg),W(a+c+larg,b-larg),W(a+c+larg,b+c+larg),W(a-larg,b+c+larg)];
         if(!E.every(p=>zoneContient(z,p.x,p.y))||!cadreLibre(E))continue;
         const m=W(a+c/2,b+c/2);
-        if(zoneAt(l,m.x,m.y)!==z)continue;
+        if(zoneAt(l,m.x,m.y)!==z||mordDevant(E))continue;
         out.push(P);
       }
   HACH_MEMO.m.set(z,out);
@@ -174,6 +184,23 @@ function zonesDrc(out){
         juger(dPad(q),clrZone(z,q.net,"cu",q.drill>0?"th":"smd",q),q.x,q.y,
               "la pastille "+padDesig(fp,q)+" ("+(q.net||"sans net")+")");
       }
+    /* une zone d'un autre net qui ne la découpe pas : même priorité, ou une
+       autre région pleine moins prioritaire — au Gerber les deux restent
+       sombres, sans dégagement entre elles */
+    for(const w of S.zones){
+      if(w===z||w.l!==l||w.larme||w.pts.length<3||!autre(w.net))continue;
+      const pw=zonePrio(w), pz=zonePrio(z);
+      if(pw>pz||(pw<pz&&!w.plein))continue;
+      if(w.plein&&pw===pz&&S.zones.indexOf(w)<S.zones.indexOf(z))continue;   // la paire, une seule fois
+      const Q=w.pts;
+      let d=0, at=Q.find(p=>inPoly(p.x,p.y,P))||P.find(p=>inPoly(p.x,p.y,Q))||Q[0];
+      if(!polysTouchent(P,Q)){
+        d=1e9;
+        for(let k=0;k<Q.length;k++){const a=Q[k], b=Q[(k+1)%Q.length], e=dSeg1({x1:a.x,y1:a.y,x2:b.x,y2:b.y});
+          if(e<d){d=e;at=a;}}
+      }
+      juger(d,clrZone(z,w.net,"cu","trk"),at.x,at.y,"la zone "+(w.net||"sans net"));
+    }
   }
 }
 

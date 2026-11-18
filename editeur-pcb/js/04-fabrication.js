@@ -75,7 +75,7 @@ function padOpening(c,q,grow,color,lw){
     c.closePath();
   }
   else if(q.shape==="chamfer"){
-    const ch=(q.chamfer!=null?q.chamfer:padChamferVal(q))+g;
+    const ch=(q.chamfer!=null?q.chamfer:padChamferVal(q))+g*(2-Math.SQRT2);   // comme padWorldPts (Gerber)
     const pts=padChamferPts(q.w+2*g,q.h+2*g,ch,q.chamferCorners);
     c.moveTo(pts[0].x,pts[0].y);
     for(let i=1;i<pts.length;i++)c.lineTo(pts[i].x,pts[i].y);
@@ -449,9 +449,11 @@ function gerberCopper(i){
     for(const t of S.tracks){
       if(t.l!==i)continue;
       const m=trkMid(t);
+      /* la zone sous le milieu, et si elle est du même net (ou absente) celle d'un autre net
+         où la piste déborde (plan divisé) : la marge compte l'isolement propre de la zone */
       let zo=zoneAt(i,m.x,m.y);
-      if(!zo)zo=zoneEtrangereProcheZ(zs,t.net,(a,b)=>segSegDist(t,seg(a,b)),
-        q=>t.w/2+clrK(q.net,t.net,"cu","trk"));
+      if(!zo||(zo.net===t.net&&t.net))zo=zoneEtrangereProcheZ(zs,t.net,(a,b)=>segSegDist(t,seg(a,b)),
+        q=>t.w/2+clrZone(q,t.net,"cu","trk"))||zo;
       // même net : rien à dégager ; sans net des deux côtés, si (l'écran et les lanières l'isolent)
       if(!zo||(zo.net===t.net&&t.net))continue;
       gTrk(body,A,t,t.w+2*clrZone(zo,t.net,"cu","trk"));
@@ -459,8 +461,8 @@ function gerberCopper(i){
     for(const v of S.vias){
       if(i<v.a||i>v.b)continue;
       let zo=zoneAt(i,v.x,v.y);
-      if(!zo)zo=zoneEtrangereProcheZ(zs,v.net,(a,b)=>segDist(v.x,v.y,a.x,a.y,b.x,b.y),
-        q=>v.d/2+clrK(q.net,v.net,"cu","via"));
+      if(!zo||(zo.net===v.net&&v.net))zo=zoneEtrangereProcheZ(zs,v.net,(a,b)=>segDist(v.x,v.y,a.x,a.y,b.x,b.y),
+        q=>v.d/2+clrZone(q,v.net,"cu","via"))||zo;
       if(!zo)continue;
       if(zo.net===v.net&&v.net)gFlash(body,A,A.get("C,"+fmt(v.drill,4)),v.x,v.y);
       else gFlash(body,A,A.get("C,"+fmt(v.d+2*clrZone(zo,v.net,"cu","via"),4)),v.x,v.y);
@@ -478,7 +480,7 @@ function gerberCopper(i){
         if(!padLayers(fp,q).includes(i))continue;
         let zo=zoneAt(i,q.x,q.y);
         if(!zo)zo=zoneEtrangereProcheZ(zs,q.net,(a,b)=>segPadDist(Object.assign(seg(a,b),{w:0}),q),
-          o=>clrK(o.net,q.net,"cu",q.drill>0?"th":"smd"));
+          o=>clrZone(o,q.net,"cu",q.drill>0?"th":"smd",q));
         if(!zo)continue;
         const z=zo.net;
         const same=(z===q.net&&q.net);
@@ -500,9 +502,16 @@ function gerberCopper(i){
        Les trous qu'y creuse une zone plus prioritaire entrent dans le même
        contour par des coupures (cut-in) : un %LPC% effacerait aussi le cuivre
        de cette zone-là, déjà peint. */
-    for(const z of zs)if(z.plein){const il=zoneDecoupee(z);
+    // les larmes aussi : peintes avec les zones, le dégagement d'un plan voisin les effaçait
+    for(const z of zs)if(z.plein||z.larme){const il=z.plein?zoneDecoupee(z):null;
       if(!il)gRegionArcs(body,z.pts);
       else for(const o of il){if(o.t.length)gRegion(body,contourTroue(o.o,o.t));else gRegionArcs(body,o.o);}}
+    /* un trou NPTH sous une région pleine : la région repeinte le recouvrait (la vis
+       de fixation touchait le cuivre) ; il se redégage par-dessus */
+    if(zs.some(z=>z.plein)){
+      const sous=trousMonde().filter(h=>zoneDuTrou(i,h,zs)!==null);
+      if(sous.length){body.push("%LPC*%");for(const h of sous)gPercage(body,A,h,classOf(zoneDuTrou(i,h,zs)).clr);body.push("%LPD*%");}
+    }
     for(const q of thermals){          // liaisons thermiques : les bras qui ne touchent aucun autre net (padBras)
       for(const b of padBras(q,i).ok)gSeg(body,A,b.ax.x1,b.ax.y1,b.ax.x2,b.ax.y2,b.tw);
       if(q.drill>0){

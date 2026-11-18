@@ -21,7 +21,10 @@
 const ROUTAGE_MAX = 20, ROUTAGE_POINTS = 200, ROUTAGE_VIAS = 50;
 const ROUTAGE_POINTS_LOT = 1000, ROUTAGE_BUDGET_MS = 10000;   // le lot entier : la page reste utilisable
 const CUIVRE = ["fps", "tracks", "vias", "zones", "holes", "nextId"];   // ce qu'une carte de routage touche ou doit retrouver intact
-const routageCuivre = d => JSON.stringify(CUIVRE.map(k => d[k]));
+/* le cuivre, et ce qui le juge : contour, découpes, règles et classes changés
+   entre la proposition et le clic rendent la proposition caduque */
+const routageCuivre = d => JSON.stringify(CUIVRE.map(k => d[k]).concat(
+  ["board", "cuts", "rule", "classes", "netClass", "dpRules", "cu"].map(k => d[k])));
 // un nom venu du projet ne fabrique pas d'autre ligne sur la carte
 const routagePropre = t => String(t == null ? "" : t).replace(/[\x00-\x1f\x7f\u2028\u2029]/g, " ").slice(0, 120);
 // var, pas const : dans le bundle d'un seul script, paint() la lit avant que ce fichier ne s'exécute
@@ -259,7 +262,7 @@ function routageCommande(titre, jouer){
       const doc = JSON.parse(serialize());
       if(routageCuivre(doc) !== prop.cuivre){
         ROUTAGE.apercu = null; draw();
-        throw new Error("Le cuivre a changé depuis la proposition : rien n'est appliqué, à reproposer.");
+        throw new Error("La carte a changé depuis la proposition (cuivre, contour ou règles) : rien n'est appliqué, à reproposer.");
       }
       let avant = null;
       try{ avant = ECRITURE_CAO.drc.erreurs(); }catch(e){}

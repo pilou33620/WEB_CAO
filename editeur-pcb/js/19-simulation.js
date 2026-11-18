@@ -2507,7 +2507,9 @@ function simDocPcb(liste,opts){
   const notes=[];
   const nets=new Set(sel.map(t=>t.net).filter(Boolean));
   const net=nets.size===1?[...nets][0]:"";
-  const vias=net?S.vias.filter(v=>v.net===net).length:0;
+  // les vias de la sélection partent au modèle (simViasPcb) : seuls les autres manquent
+  const modelise=v=>(g.vias||[]).some(o=>Math.abs(o.x-r3(v.x))<1e-6&&Math.abs(o.y-r3(v.y))<1e-6);
+  const vias=net?S.vias.filter(v=>v.net===net&&!modelise(v)).length:0;
   if(vias)
     notes.push(vias+" via(s) du net ne sont pas modélisés : la transition "+
                "verticale manque au modèle.");
@@ -3032,6 +3034,9 @@ function simNetCompose(nom){
   const existe=x=>typeof S!=="undefined"&&((S.tracks||[]).some(t=>t.net===x)||(S.fps||[]).some(f=>Object.values(f.nets||{}).includes(x)));
   const m=/^(.+?) \+ (.+?)(?: \(([^()]*)\))?$/.exec(n);
   if(m&&!existe(n))return {nets:[m[1].trim(),m[2].trim()],serie:m[3]?m[3].trim():""};
+  // « NET (R1 22Ω) » : un seul net et sa série, quand l'aval est vide (simulation-em.js)
+  const u=/^(.+?) \(([^()]*)\)$/.exec(n);
+  if(u&&!existe(n))return {nets:[u[1].trim()],serie:u[2].trim()};
   return {nets:n?[n]:[],serie:""};
 }
 function pcbNomPatte(c,q){
