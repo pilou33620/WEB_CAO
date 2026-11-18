@@ -58,6 +58,7 @@ const EXPOSE=[
   /* contrôles repris de KiCad (45-drc-gestion.js, 54-controles.js) */
   "drcKind","drcCle","drcExclure","drcRetablir","drcExclusNorm","drcFenetre","drcFenetreMaj","fpEncombrement","fpEcartsLib",
   "pcbStatistiques","pcbStatistiquesTexte","couchesPermuter","pkgGeom","fpFreeze","setCuCount","fpTextPos",
+  "padPadDist","netTieNorm","netTieLire","netTieTexte","netTieRelie","drcGravitesNorm","drcGravitesAppliquer","drcGravitesCodes","drcGravitesOuvrir",
   "couchesJeu","inspLignes","reperesPlacer","reperesCommande","zonesLot","zonesLotCommande","fpTextPos",
   "viaSuivante","viaTailles","verrousCoins","routeViaCurseur","mkVia",
   "pnsWorld","pnsItemsKeepout","distSegPoly","contourTroue","zoneDecoupee","gOrigin","gXY","drwBBox","drwPoints","gerberSilk","viaObstacle","placeVia",
@@ -30339,6 +30340,8 @@ T("zone : réglages relus à l'identique, fill rectangle et plan divisé",()=>{
 /* ---------- vias en série (48-vias.js) ---------- */
 T("vias de couture : réseau au pas, retrait du bord, aucun via en faute",()=>{
   const {z}=zonesDecor();
+  if(coutureZone(z,{pas:3,pasY:3,retrait:1})!==0)throw new Error("sans zone GND sur une autre couche, un via ne relierait rien");
+  S.zones.push({id:S.nextId++,l:1,net:"GND",pts:z.pts.map(p=>({x:p.x,y:p.y}))});touch();
   push();
   const n=coutureZone(z,{pas:3,pasY:3,retrait:1});
   if(n<50)throw new Error("trop peu de vias : "+n);
@@ -31458,6 +31461,68 @@ T("statistiques de la carte, permutation de deux couches (vias borgnes compris)"
   couchesPermuter(2,1);
   if(S.tracks[1].l!==1||S.vias[0].b!==1)throw new Error("aller-retour");
   carteRegles();
+});
+T("DRC : encombrement en L enchaîné exactement, enveloppe convexe pour un tracé ouvert",()=>{
+  carteRegles();
+  const L=[[-6,-6],[6,-6],[6,0],[0,0],[0,6],[-6,6]];
+  const traits=L.map((p,i)=>{const q=L[(i+1)%L.length];return {shape:"line",layer:"crtT",x1:p[0],y1:p[1],x2:q[0],y2:q[1],width:0.05};});
+  const a=mkFp("U1","","",2);a.x=20;a.y=20;a.nets={};a.dessins=traits.slice().reverse();     // ordre et sens quelconques
+  const b=mkFp("R1","","",2);b.x=23.5;b.y=23.5;b.nets={};b.dessins=[{shape:"rect",layer:"crtT",x1:-2,y1:-2,x2:2,y2:2,width:0.05}];
+  S.fps.push(a,b);touch();
+  const P=fpEncombrement(a);
+  if(P.length!==1||P[0].length!==6)throw new Error("contour en L : "+JSON.stringify(P.map(x=>x.length)));
+  let e=runDrc();
+  if(e.some(x=>/^Composants qui se chevauchent/.test(x.msg)))throw new Error("décor : les corps ne doivent pas se toucher");
+  if(e.some(x=>x.kind==="encombrement"))throw new Error("R1 loge dans l'encoche du L : pas de chevauchement");
+  b.x=17;b.y=23.5;touch();
+  if(!runDrc().some(x=>x.kind==="encombrement"||/^Composants qui se chevauchent/.test(x.msg)))throw new Error("R1 sur la branche du L : chevauchement");
+  a.dessins=traits.slice(1);touch();                       // un côté manque : enveloppe convexe
+  const H=fpEncombrement(a);
+  if(H.length!==1||H[0].length!==5)throw new Error("enveloppe : "+JSON.stringify(H.map(x=>x.length)));
+  carteRegles();
+});
+T("DRC : pont de nets par groupes de pastilles, lu et écrit comme dans le panneau",()=>{
+  carteRegles();
+  const f=mkFp("NT2","","",4);
+  f.x=30;f.y=20;f.nets={1:"A",2:"B",3:"C",4:"D"};
+  f.pads=[{n:1,x:0,y:0,w:1,h:1,shape:"rect"},{n:2,x:0.5,y:0,w:1,h:1,shape:"rect"},
+          {n:3,x:0,y:5,w:1,h:1,shape:"rect"},{n:4,x:0.5,y:5,w:1,h:1,shape:"rect"}];
+  S.fps.push(f);touch();
+  const sup=()=>runDrc().filter(e=>/Pastilles superposées/.test(e.msg)).map(e=>/NT2\.1|NT2\.2/.test(e.msg)?"12":"34").sort().join();
+  if(sup()!=="12,34")throw new Error("sans pont : "+sup());
+  // recouvrement bord à bord d'une demi-largeur : autrefois jugé « écart nul »
+  if(!(padPadDist(padsWorld(f)[0],padsWorld(f)[1])<0))throw new Error("recouvrement non vu");
+  if(padPadDist({x:0,y:0,w:1,h:1,shape:"rect",rot:0},{x:1,y:0,w:1,h:1,shape:"rect",rot:0})!==0)throw new Error("bord à bord : écart nul");
+  f.netTie=netTieLire("1, 2");touch();
+  if(sup()!=="34")throw new Error("groupe 1,2 : "+sup());
+  f.netTie=netTieLire("1,2 ; 3,4");touch();
+  if(sup()!=="")throw new Error("deux groupes : "+sup());
+  if(netTieTexte(f.netTie)!=="1,2 ; 3,4"||netTieLire("")!==true||netTieLire(" ; 5")!==true)throw new Error("texte du panneau");
+  if(JSON.stringify(netTieNorm([["1","1"],["x"],"z",[" 7 ","8",null]]))!=='[["7","8"]]')throw new Error("lecture bornée : "+JSON.stringify(netTieNorm([["1","1"],["x"],"z",[" 7 ","8",null]])));
+  loadDoc(JSON.parse(serialize()),true);
+  if(JSON.stringify(S.fps[0].netTie)!=='[["1","2"],["3","4"]]')throw new Error("relu : "+JSON.stringify(S.fps[0].netTie));
+  carteRegles();
+});
+T("DRC : gravité réglée par code (erreur, remarque, ignoré), gardée dans la carte",()=>{
+  carteRegles();S.drcGravites={};
+  S.tracks.push({l:0,net:"C",w:0.25,x1:5,y1:10,x2:40,y2:10},{l:0,net:"D",w:0.25,x1:5,y1:10.3,x2:40,y2:10.3});
+  touch();
+  let e=runDrc().find(x=>x.kind==="isolation");
+  if(!e||e.info)throw new Error("par défaut : erreur");
+  if(!drcGravitesCodes().some(([k])=>k==="isolation"))throw new Error("code proposé dans la fenêtre");
+  drcGravitesOuvrir();                                         // la fenêtre se construit sans erreur
+  drcGravitesAppliquer({isolation:"remarque"});
+  e=S.drc.find(x=>x.kind==="isolation");
+  if(!e||!e.info)throw new Error("passée en remarque");
+  drcGravitesAppliquer({isolation:"ignore",bord:"erreur"});
+  if(S.drc.some(x=>x.kind==="isolation")||!S.drcIgnores)throw new Error("ignorée : "+S.drcIgnores);
+  loadDoc(JSON.parse(serialize()),true);
+  if(JSON.stringify(S.drcGravites)!=='{"isolation":"ignore","bord":"erreur"}')throw new Error("relue : "+JSON.stringify(S.drcGravites));
+  undo();runDrc();
+  if(S.drc.find(x=>x.kind==="isolation").info!==true)throw new Error("Ctrl+Z rend la remarque");
+  if(JSON.stringify(drcGravitesNorm({a:"erreur","B":"ignore",c:"grave",__proto__:{x:1},constructor:"remarque"}))!=='{"a":"erreur","constructor":"remarque"}')
+    throw new Error("lecture bornée : "+JSON.stringify(drcGravitesNorm({a:"erreur","B":"ignore",c:"grave",constructor:"remarque"})));
+  S.drcGravites={};carteRegles();
 });
 loadDoc(JSON.parse(DOC_AVANT_KICAD),true);
 

@@ -323,7 +323,13 @@ for (const k10 of [false, true]) {
     { ref: "NT1", netTie: true, nets: { 1: "AGND", 2: "GND" } })];
   e = ecrire(d); r = lire(e.t);
   verifier(/\(net_tie_pad_groups "1, 2"\)/.test(e.t), "pont de nets : écrit");
-  verifier(r.doc.fps[0].netTie === true && norm(r.doc).fps[0].netTie === true, "pont de nets : relu et gardé");
+  // toute l'empreinte s'écrit comme un seul groupe de toutes ses pastilles, et se relit ainsi
+  verifier(J(r.doc.fps[0].netTie) === '[["1","2"]]' && J(norm(r.doc).fps[0].netTie) === '[["1","2"]]', "pont de nets : relu et gardé " + J(r.doc.fps[0].netTie));
+  d.fps[0].pads.push({ n: 3, x: 0, y: 3, w: 1, h: 1, shape: "rect", drill: 0, rot: 0 }, { n: 4, x: 0.8, y: 3, w: 1, h: 1, shape: "rect", drill: 0, rot: 0 });
+  d.fps[0].pins = 4; d.fps[0].netTie = [["1", "2"], ["3", "4"]];
+  e = ecrire(d); r = lire(e.t);
+  verifier(/\(net_tie_pad_groups "1, 2" "3, 4"\)/.test(e.t), "pont de nets : un groupe par chaîne");
+  verifier(J(r.doc.fps[0].netTie) === '[["1","2"],["3","4"]]' && J(norm(r.doc).fps[0].netTie) === '[["1","2"],["3","4"]]', "pont de nets : groupes relus " + J(r.doc.fps[0].netTie));
 
   /* 1. couches mécaniques mec1…mec8 = User.2…User.9, sur la carte et dans une empreinte (dessus et dessous) */
   d = base();

@@ -539,7 +539,7 @@ function exportPng(){
 function newDoc(){
   if((S.fps.length||S.tracks.length||S.vias.length||S.zones.length||S.drawings.length)&&!confirm("Repartir d'une carte vide ? Le travail en cours sera perdu."))return;
   push();
-  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.holes=[];S.drawings=[];S.drc=[];S.drcRun=false;S.drcExclus=[];S.drcExclues=[];S.hlNet=null;
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.holes=[];S.drawings=[];S.drc=[];S.drcRun=false;S.drcExclus=[];S.drcExclues=[];S.drcGravites={};S.drcIgnores=0;S.hlNet=null;
   S.cuts=[];S.interdits=[];S.rf=normRf(null);   // découpes de zone, keep-out, ports RF : ceux de la carte d'avant
   S.dpPairs=[];S.dp=null;   // les règles restent : elles décrivent un métier, pas une carte
   /* contraintes : celles des classes et la matrice restent (un métier),

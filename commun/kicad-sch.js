@@ -608,8 +608,13 @@ const KICAD_SCH = (() => {
       return filles;
     }
 
+    const busAlias = {};                   // (bus_alias "MEM" (members "A[0..7]" "WR")), de toutes les feuilles
     function visite(arbre, chem, nomChem, nom, prof) {
       if (++nbFeuilles > PAGES_MAX) { rap.ecart("plus de " + PAGES_MAX + " feuilles : la suite n'est pas reprise"); return; }
+      for (const ba of enfants(arbre, "bus_alias").slice(0, 200)) {
+        const nomA = String(ba[1] == null ? "" : ba[1]);
+        if (/^[A-Za-z_]\w{0,31}$/.test(nomA)) busAlias[nomA] = (enfant(ba, "members") || []).slice(1, 257).map(m => String(m).slice(0, 64)).filter(Boolean);
+      }
       for (const [sh, sn] of feuille(arbre, chem, nomChem, nom)) {
         const f = prop(sh, "Sheetfile") || prop(sh, "Sheet file"), a = fichiers.get(chemin(dossier, f));
         if (!Array.isArray(a) || a[0] !== "kicad_sch") { rap.ecart("feuille absente de l'archive : " + String(f).slice(0, 80)); continue; }
@@ -625,7 +630,7 @@ const KICAD_SCH = (() => {
     for (const cm of enfants(tb, "comment")) for (const [k, l] of CARTOUCHE)
       if (String(cm[2] || "").startsWith(l + " : ")) cartouche[k] = String(cm[2]).slice(l.length + 3, l.length + 123);
     const doc = { format: "schemedit-2", pages, page: pages.length > 1 ? 1 : 0, netClasses: {}, variantes: { liste: [], active: "" },
-                  symboles, cartouche, contraintes: { nets: {}, groupes: [] }, netlist: null };
+                  symboles, cartouche, contraintes: { nets: {}, groupes: [] }, busAlias, netlist: null };
     return { doc, symboles: Object.values(symboles) };
   }
 
@@ -902,6 +907,10 @@ const KICAD_SCH = (() => {
         ["instances", ["project", q(nomProjet), ["path", q("/" + uRacine), ["page", q(String(f.page))]]]]];
     });
     const racine = entete(uRacine, papR[0], [], feuilles.concat([["sheet_instances", ["path", q("/"), ["page", q("1")]]]]));
+    /* alias de bus du document, juste après lib_symbols comme chez KiCad */
+    const ba = doc.busAlias && typeof doc.busAlias === "object" ? doc.busAlias : {};
+    racine.splice(7, 0, ...Object.entries(ba).filter(([k, m]) => /^[A-Za-z_]\w{0,31}$/.test(k) && Array.isArray(m)).slice(0, 200)
+      .map(([k, m]) => ["bus_alias", q(k), ["members", ...m.slice(0, 256).map(x => q(String(x).slice(0, 64)))]]));
     const ci = doc.cartouche && typeof doc.cartouche === "object" ? doc.cartouche : {};
     const tb = ["title_block", ...(ci.titre ? [["title", q(ci.titre)]] : []), ...(ci.dateDessin ? [["date", q(ci.dateDessin)]] : []),
       ...CARTOUCHE.filter(([k]) => ci[k]).map(([k, l], i) => ["comment", i + 1, q(l + " : " + ci[k])])];

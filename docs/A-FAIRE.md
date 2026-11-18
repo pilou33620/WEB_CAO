@@ -28,10 +28,13 @@ autre net, la Gestion LIB qui montait à environ 890 Mo au chargement.
   gardées dans la carte, encombrement (courtyard), ponts de vernis, sérigraphie trop fine ou
   superposée, pistes et vias en l'air, empreinte différente de la table ou de la LIB, pont de nets
   (`net_tie_pad_groups` de KiCad), statistiques, permutation de deux couches.
-  Restent : encombrement pris en enveloppe convexe ; repère à taille automatique non jugé (il
-  descend à 0,8 mm, sous le 1,0 mm de JLCPCB) ; pas de sévérité réglable par contrôle au DRC ;
-  le pont de nets vaut pour toute l'empreinte (pas de groupes de pastilles) ; les alias de bus ne
-  passent pas encore par KiCad (`bus_alias`).
+  Complétés le 18/11/2026 : encombrement exact (contours enchaînés, enveloppe convexe seulement
+  pour un tracé ouvert), pont de nets par groupes de pastilles, gravité réglable par code DRC
+  (erreur, remarque, ignoré), vias de couture jugés et posés seulement là où une autre couche
+  du net les attend, alias de bus de et vers KiCad (`bus_alias`). Corrigé au passage : deux
+  pastilles de même hauteur recouvertes d'une demi-largeur passaient pour « bord à bord »
+  (`padPadDist`), le DRC ne voyait pas le court-circuit.
+  Reste : repère à taille automatique non jugé (il descend à 0,8 mm, sous le 1,0 mm de JLCPCB).
 
 - [x] **Contrôles et réutilisation** (10/11/2026) : ERC du schéma (`editeur-schematique/js/31-erc.js`,
   entrées en l'air, deux sorties sur un net, nets à une broche, alimentations non pilotées, marqueur

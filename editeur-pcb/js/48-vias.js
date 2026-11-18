@@ -38,7 +38,13 @@ function netMasseDefaut(){
 
 /* ---------- couture d'une zone ---------- */
 /* `o` : {pas, pasY, retrait}. La grille part de l'origine : deux zones
-   voisines se cousent en quinconce régulière. Rend le nombre de vias posés. */
+   voisines se cousent en quinconce régulière. Un via ne se pose que là où le
+   net a une autre zone sur une autre couche : sinon il ne relierait rien (le
+   DRC le dirait « en l'air »). Rend le nombre de vias posés. */
+function coutureAutreCouche(z,x,y){
+  for(let l=0;l<S.cu;l++)if(l!==z.l){const o=zoneAt(l,x,y);if(o&&o.net===z.net)return true;}
+  return false;
+}
 function coutureZone(z,o){
   if(!z||z.pts.length<3)return 0;
   if(!z.net){hint("Une zone sans net ne se coud pas : donnez-lui d'abord un net (Propriétés).");return 0;}
@@ -50,6 +56,7 @@ function coutureZone(z,o){
     for(let y=Math.ceil(b.y1/py_)*py_;y<=b.y2;y+=py_){
       if(zoneAt(z.l,x,y)!==z||polyEdgeDist(x,y,z.pts)<ret+d/2)continue;
       if(S.cuts.some(c=>c.l===z.l&&c.pts.length>2&&inPoly(x,y,c.pts)))continue;
+      if(!coutureAutreCouche(z,x,y))continue;
       if(viaEssai(x,y,z.net,{couture:true}))n++;
     }
   return n;
@@ -134,7 +141,7 @@ function coutureCommande(o){
   let n=0;
   for(const z of zs)n+=coutureZone(z,o);
   touch();refreshPanels();draw();
-  hint(n+" via(s) de couture posé(s) — les places trop proches d'un autre cuivre ont été sautées. Ctrl+Z les retire.");
+  hint(n+" via(s) de couture posé(s) — les places trop proches d'un autre cuivre, ou sans zone du même net sur une autre couche, ont été sautées. Ctrl+Z les retire.");
   return n;
 }
 function clotureCommande(o){

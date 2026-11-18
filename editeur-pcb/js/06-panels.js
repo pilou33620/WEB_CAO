@@ -1624,7 +1624,8 @@ function propsFp(box,fp){
     '<div class="prop"><label style="display:flex;align-items:center;gap:6px;cursor:pointer" '+
       'title="Pont de nets (net-tie) : l\'empreinte réunit volontairement les nets de ses pastilles (shunt Kelvin, liaison AGND/DGND). '+
       'Le DRC accepte que ses pastilles se touchent ; repris de et vers KiCad.">'+
-      '<input type="checkbox" id="pNetTie"'+(fp.netTie?" checked":"")+'> Pont de nets (net-tie)</label></div>'+
+      '<input type="checkbox" id="pNetTie"'+(fp.netTie?" checked":"")+'> Pont de nets (net-tie)</label>'+
+      (fp.netTie?'<input id="pNetTieG" placeholder="toutes les pastilles ; ou 1,2 ; 3,4" title="Groupes de pastilles réunies, séparés par « ; » : seules les pastilles d\'un même groupe peuvent se toucher. Vide : toute l\'empreinte." value="'+esc(netTieTexte(fp.netTie))+'">':"")+'</div>'+
     /* point de broche 1 et contour imprimé, en repère local (fpSetMark, fpSetBody) */
     '<div class="prop"><label style="display:flex;align-items:center;gap:6px;cursor:pointer" '+
       'title="Point de sérigraphie qui dit dans quel sens poser la pièce. Coché ou décoché à la main, '+
@@ -1712,6 +1713,7 @@ function propsFp(box,fp){
     touch();refreshPanels();draw();};
   if($("pNetTie"))$("pNetTie").onchange=e=>{push();if(e.target.checked)fp.netTie=true;else delete fp.netTie;
     touch();refreshPanels();draw();};
+  if($("pNetTieG"))$("pNetTieG").onchange=e=>{push();fp.netTie=netTieLire(e.target.value);touch();refreshPanels();draw();};
   if($("pMark"))$("pMark").onchange=e=>{push();fpSetMark(fp,e.target.checked);touch();refreshPanels();draw();};
   upd("pMarkX",v=>fpMoveMark(fp,v,fpMark(fp).y),true);
   upd("pMarkY",v=>fpMoveMark(fp,fpMark(fp).x,v),true);

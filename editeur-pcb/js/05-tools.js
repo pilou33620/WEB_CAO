@@ -21,6 +21,7 @@ function docObj(){
           mecaNoms:S.mecaNoms||{},
           pinoutAcquits:S.pinoutAcquits||{},
           drcExclus:S.drcExclus||[],
+          drcGravites:S.drcGravites||{},
           fabExclus:S.fabExclus||[],
           anim3dEtiq:Array.isArray(S.anim3dEtiq)?S.anim3dEtiq:null,
           cartouche:S.cartouche||"",
@@ -435,6 +436,29 @@ function normDpRule(d,i,cu){
   }
   return out;
 }
+/* Pont de nets (net-tie) : true réunit toutes les pastilles de l'empreinte ;
+   une liste de groupes ([["1","2"],["3","4"]], numéros ou noms de pastilles,
+   comme le net_tie_pad_groups de KiCad) ne réunit que celles d'un même groupe. */
+function netTieNorm(v){
+  if(v===true)return true;
+  if(!Array.isArray(v))return null;
+  const g=v.filter(Array.isArray).slice(0,64)
+    .map(l=>[...new Set(l.map(x=>String(x==null?"":x).trim().slice(0,16)).filter(Boolean))].slice(0,256))
+    .filter(l=>l.length>=2);
+  return g.length?g:null;
+}
+function padNomTie(q){return q.nom!=null&&q.nom!==""?String(q.nom):String(q.n);}
+function netTieRelie(fp,a,b){
+  const t=fp&&fp.netTie;
+  if(t===true)return true;
+  return Array.isArray(t)&&t.some(g=>g.includes(padNomTie(a))&&g.includes(padNomTie(b)));
+}
+/* Texte du panneau : « 1,2 ; 3,4 », vide = toute l'empreinte ; et retour. */
+function netTieTexte(t){return Array.isArray(t)?t.map(g=>g.join(",")).join(" ; "):"";}
+function netTieLire(txt){
+  const s=String(txt||"").trim();
+  return s?netTieNorm(s.split(";").map(g=>g.split(",")))||true:true;
+}
 function normFp(f,i){
   if(!f||typeof f!=="object")return null;
   const style=STYLES[f.style]?f.style:defaultStyle(dInt(f.pins,2,1,4096));
@@ -509,7 +533,7 @@ function normFp(f,i){
   if(+f.puissance>0)out.puissance=r3(dRange(f.puissance,0,0,100));   // dissipée en service, W (39-thermique.js)
   if(f.mark===false)out.mark=false;
   if(f.locked)out.locked=true;
-  if(f.netTie===true)out.netTie=true;             // pont de nets voulu (54-controles.js)
+  const nt=netTieNorm(f.netTie);if(nt)out.netTie=nt;   // pont de nets voulu : true ou groupes de pastilles
   if(f.libre)out.libre=true;                      // pastille libre, posée hors schéma (49-dessin.js)
   else if(f.mark&&typeof f.mark==="object"){
     const mx=+f.mark.x, my=+f.mark.y;
@@ -854,6 +878,7 @@ function normDoc(d){
       if(typeof v==="string"&&/^[^\x00-\x1f]{1,40}$/.test(k)&&!["__proto__","constructor","prototype"].includes(k))out.pinoutAcquits[k]=v.slice(0,4000);
   out.fabExclus=arr(src.fabExclus).filter(k=>FAB_GROUPES.some(g=>g[0]===k));
   out.drcExclus=typeof drcExclusNorm==="function"?drcExclusNorm(src.drcExclus):[];   // écarts DRC exclus (45-drc-gestion.js)
+  out.drcGravites=typeof drcGravitesNorm==="function"?drcGravitesNorm(src.drcGravites):{};   // gravité par code DRC
   /* les composants présentés par l'animation 3D (null : le choix d'office) */
   out.anim3dEtiq=Array.isArray(src.anim3dEtiq)?src.anim3dEtiq.filter(r=>typeof r==="string"&&/^[^\x00-\x1f]{1,40}$/.test(r)).slice(0,500):null;
   out.cartouche=CARTOUCHE_FORMATS[src.cartouche]?src.cartouche:"";
@@ -925,7 +950,7 @@ function loadDoc(d,keepView){
   S.zones=d.zones;S.cuts=d.cuts;S.holes=d.holes||[];S.drawings=d.drawings||[];S.pinoutAcquits=d.pinoutAcquits||{};S.interdits=d.interdits||[];
   S.mecaNoms=d.mecaNoms||{};if(typeof mecaNomsAppliquer==="function")mecaNomsAppliquer();
   S.fabExclus=d.fabExclus||[];
-  S.drcExclus=d.drcExclus||[];S.drcExclues=[];
+  S.drcExclus=d.drcExclus||[];S.drcExclues=[];S.drcGravites=d.drcGravites||{};S.drcIgnores=0;
   S.anim3dEtiq=d.anim3dEtiq||null;
   S.cartouche=d.cartouche||"";
   S.cartoucheInfo=d.cartoucheInfo||{};

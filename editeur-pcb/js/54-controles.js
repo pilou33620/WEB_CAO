@@ -22,8 +22,9 @@ function drcComplements(out,pads){
 
 /* ---------- zones d'encombrement (courtyard) ----------
    Celle d'une empreinte : ses dessins F.CrtYd / B.CrtYd (carte importée, LIB).
-   shortcut: enveloppe convexe des tracés, exacte pour les rectangles et
-   polygones convexes de l'IPC-7351 ; un encombrement en L est surestimé.
+   Les traits et arcs s'enchaînent bout à bout en contours fermés : un
+   encombrement en L reste en L. Un tracé qui ne se ferme pas (dessin
+   incomplet) retombe sur l'enveloppe convexe de ses points.
    Sans dessin d'encombrement, le corps fait foi (« Composants qui se chevauchent »). */
 function enveloppe(P){
   const p=P.slice().sort((a,b)=>a.x-b.x||a.y-b.y);
@@ -33,21 +34,48 @@ function enveloppe(P){
   for(let i=p.length-1;i>=0;i--){const q=p[i];while(haut.length>=2&&x(haut[haut.length-2],haut[haut.length-1],q)<=0)haut.pop();haut.push(q);}
   return bas.slice(0,-1).concat(haut.slice(0,-1));
 }
+/* Polylignes enchaînées par leurs bouts (au micron) : les contours fermés,
+   et les points de ce qui n'a pas pu se fermer. */
+function enchainer(morceaux){
+  const pres=(a,b)=>Math.abs(a.x-b.x)<1e-3&&Math.abs(a.y-b.y)<1e-3;
+  const reste=morceaux.filter(m=>m.length>=2).map(m=>m.slice()), fermes=[], ouverts=[];
+  while(reste.length){
+    const c=reste.shift();
+    for(let suite=true;suite&&!pres(c[0],c[c.length-1]);){
+      suite=false;
+      for(let i=0;i<reste.length;i++){
+        const m=reste[i], fin=c[c.length-1];
+        if(pres(m[0],fin)){c.push(...m.slice(1));}
+        else if(pres(m[m.length-1],fin)){c.push(...m.slice(0,-1).reverse());}
+        else continue;
+        reste.splice(i,1);suite=true;break;
+      }
+    }
+    if(c.length>=4&&pres(c[0],c[c.length-1]))fermes.push(c.slice(0,-1));else ouverts.push(...c);
+  }
+  return {fermes,ouverts};
+}
+/* Les contours d'encombrement d'une empreinte en coordonnées monde, ou null. */
 function fpEncombrement(fp){
-  const L=fp.side?"crtB":"crtT", P=[];
+  const L=fp.side?"crtB":"crtT", polys=[], morceaux=[];
   for(const d of fpDessinsMonde(fp)){
     if(d.layer!==L)continue;
-    if(d.shape==="poly")P.push(...d.pts);else P.push(...drwPoints(d));
+    if(d.shape==="poly"){if(d.pts.length>=3)polys.push(d.pts);}
+    else morceaux.push(drwPoints(d));
   }
-  const H=enveloppe(P);
-  if(H.length<3)return null;
+  const {fermes,ouverts}=enchainer(morceaux);
+  polys.push(...fermes);
+  if(ouverts.length){const H=enveloppe(ouverts);if(H.length>=3)polys.push(H);}
+  if(!polys.length)return null;
   // un micron vers l'intérieur : deux encombrements bord à bord ne se chevauchent pas
-  const cx=H.reduce((s,p)=>s+p.x,0)/H.length, cy=H.reduce((s,p)=>s+p.y,0)/H.length;
-  return H.map(p=>{const d=Math.hypot(p.x-cx,p.y-cy)||1;return {x:p.x-(p.x-cx)/d*1e-3,y:p.y-(p.y-cy)/d*1e-3};});
+  return polys.map(P=>{
+    const cx=P.reduce((s,p)=>s+p.x,0)/P.length, cy=P.reduce((s,p)=>s+p.y,0)/P.length;
+    return P.map(p=>{const d=Math.hypot(p.x-cx,p.y-cy)||1;return {x:p.x-(p.x-cx)/d*1e-3,y:p.y-(p.y-cy)/d*1e-3};});
+  });
 }
 function drcEncombrement(out){
   const L=[];
-  for(const f of S.fps){const P=fpEncombrement(f);if(P)L.push({f,P,b:polyBBox(P)});}
+  for(const f of S.fps){const P=fpEncombrement(f);if(P)L.push({f,P,b:polyBBox([].concat(...P))});}
   L.sort((a,c)=>a.b.x1-c.b.x1);
   const corps=new Set();
   for(const [a,b] of fpChevauchements()){corps.add(a.id+"|"+b.id);corps.add(b.id+"|"+a.id);}
@@ -56,7 +84,7 @@ function drcEncombrement(out){
       const a=L[i], c=L[j];
       if(!!a.f.side!==!!c.f.side||c.b.y1>a.b.y2||c.b.y2<a.b.y1)continue;
       if(corps.has(a.f.id+"|"+c.f.id))continue;      // déjà dit par le corps
-      if(!polysTouchent(a.P,c.P))continue;
+      if(!a.P.some(A=>c.P.some(C=>polysTouchent(A,C))))continue;
       out.push({kind:"encombrement",x:r3((a.f.x+c.f.x)/2),y:r3((a.f.y+c.f.y)/2),l:a.f.side?S.cu-1:0,
         msg:"Zones d'encombrement qui se chevauchent : "+a.f.ref+" et "+c.f.ref+" ("+(a.f.side?"dessous":"dessus")+
             ") — la pose automatique ne passera pas"});
@@ -214,7 +242,6 @@ function drcEnLAir(out,pads){
     }
   }
   for(const v of S.vias){
-    if(v.couture)continue;      // posé par la couture dans une zone (48-vias.js) : voulu
     const couches=new Set();
     for(let l=Math.min(v.a,v.b);l<=Math.max(v.a,v.b);l++){
       if((parCouche.get(l)||[]).some(t=>dist(t.x1,t.y1,v.x,v.y)<=v.d/2+1e-3||dist(t.x2,t.y2,v.x,v.y)<=v.d/2+1e-3||trkDist(v.x,v.y,t)<=t.w/2+1e-3)||

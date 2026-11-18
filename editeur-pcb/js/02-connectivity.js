@@ -1109,6 +1109,15 @@ function padPadDist(a,b){
         // bords qui se croisent : les cuivres se recouvrent (profondeur non mesurée)
         if(segCross({x1:a1.x,y1:a1.y,x2:a2.x,y2:a2.y},{x1:b1.x,y1:b1.y,x2:b2.x,y2:b2.y}))return -1e-3;
       }
+  /* Écart nul : bord à bord, ou recouvrement dont tous les sommets tombent
+     sur le bord de l'autre (deux pastilles de même hauteur décalées d'une
+     demi-largeur). Rétrécies d'un micron, les premières se séparent, les
+     secondes se recouvrent encore. */
+  if(best===0&&!a.retreci){
+    const r=q=>Object.assign({},q,{retreci:true,w:q.w-2e-3,h:q.h-2e-3},
+      Array.isArray(q.pts)?{pts:polyOffset(q.pts,-1e-3)}:{},q.chamfer!=null?{chamfer:Math.max(0,q.chamfer-1e-3)}:{});
+    if(padPadDist(r(a),r(b))<0)return -1e-3;
+  }
   return best;
 }
 function inBoard(x,y,m){
@@ -1386,12 +1395,12 @@ function runDrc(){
      voisines : posé à la main, il dit l'écart voulu ; le plus grand des deux,
      comme KiCad. */
   /* Un pont de nets (`fp.netTie`, comme le net_tie_pad_groups de KiCad) est
-     fait pour réunir ses nets : ses pastilles se touchent exprès. */
+     fait pour réunir ses nets : les pastilles d'un même groupe se touchent exprès. */
   for(const g of parFp.values())
-    if(!g[0].fp.netTie)for(let i=0;i<g.length;i++)
+    for(let i=0;i<g.length;i++)
       for(let j=i+1;j<g.length;j++){
         const a=g[i], b=g[j];
-        if(!(a.q.net&&b.q.net&&a.q.net!==b.q.net))continue;
+        if(!(a.q.net&&b.q.net&&a.q.net!==b.q.net)||netTieRelie(a.fp,a.q,b.q))continue;
         const e=padPadDist(a.q,b.q), c=Math.max(a.q.clr>0?a.q.clr:0,b.q.clr>0?b.q.clr:0);
         if(e<-1e-6){
           if(!S.rule.short)

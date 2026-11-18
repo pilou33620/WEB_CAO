@@ -56,17 +56,76 @@ function drcExclusNorm(a){
   }
   return out;
 }
-/* appelé par runDrc : pose les codes, écarte les exclus (gardés à part pour la fenêtre) */
+/* ---------- gravité par contrôle ----------
+   Comme les « severities » de KiCad : un code peut passer en erreur, en
+   remarque, ou être ignoré ; gardé dans la carte (`S.drcGravites`, code →
+   gravité). Un code absent garde la gravité que le contrôle lui donne. */
+const DRC_GRAVITES={erreur:"Erreur",remarque:"Remarque",ignore:"Ignoré"};
+function drcGravitesNorm(o){
+  const r={};
+  if(!o||typeof o!=="object"||Array.isArray(o))return r;
+  for(const [k,v] of Object.entries(o).slice(0,200))
+    if(/^[a-z0-9-]{1,48}$/.test(k)&&Object.prototype.hasOwnProperty.call(DRC_GRAVITES,v))r[k]=v;
+  return r;
+}
+function drcGravite(kind){
+  const g=S.drcGravites||{};
+  return Object.prototype.hasOwnProperty.call(g,kind)?g[kind]:"";
+}
+/* appelé par runDrc : pose les codes et les gravités choisies, écarte les
+   ignorés et les exclus (gardés à part pour la fenêtre) */
 function drcTrier(out){
   const ex=new Map((S.drcExclus||[]).map(x=>[x.cle,x]));
-  const garde=[], exclus=[];
+  const garde=[], exclus=[], vus=new Map();
+  let ignores=0;
   for(const e of out){
     e.kind=drcKind(e);
+    if(!vus.has(e.kind))vus.set(e.kind,{n:0,msg:e.msg,info:!!e.info});
+    vus.get(e.kind).n++;
+    const g=drcGravite(e.kind);
+    if(g==="ignore"){ignores++;continue;}
+    if(g==="erreur")delete e.info;else if(g==="remarque")e.info=true;
     const x=ex.get(drcCle(e));
     if(x){e.exclu=x.note||"";exclus.push(e);}else garde.push(e);
   }
-  S.drcExclues=exclus;
+  S.drcExclues=exclus;S.drcVus=vus;S.drcIgnores=ignores;
   return garde;
+}
+/* La fenêtre des gravités : les codes du dernier contrôle et ceux déjà réglés. */
+function drcGravitesCodes(){
+  const m=new Map(S.drcVus||[]);
+  for(const k of Object.keys(S.drcGravites||{}))if(!m.has(k))m.set(k,{n:0,msg:"",info:false});
+  return [...m].sort((a,b)=>a[0].localeCompare(b[0]));
+}
+function drcGravitesAppliquer(o){
+  push();
+  S.drcGravites=drcGravitesNorm(o);
+  runDrc();
+}
+function drcGravitesOuvrir(){
+  if(typeof document==="undefined")return;
+  const codes=drcGravitesCodes();
+  const d=document.createElement("dialog");
+  d.className="ed-dlg";
+  d.innerHTML='<div class="mtitle">Gravité des contrôles DRC</div>'+
+    (codes.length?'':'<div class="empty">Lancez d\'abord le contrôle : les codes relevés s\'affichent ici.</div>')+
+    '<div style="max-height:60vh;overflow:auto">'+codes.map(([k,v],i)=>
+      '<div class="prop two" title="'+esc(v.msg||k)+'"><label>'+esc(k)+(v.n?' <span style="color:var(--txt-dim)">('+v.n+')</span>':'')+'</label>'+
+      '<select data-k="'+esc(k)+'"><option value="">par défaut ('+(v.info?"remarque":"erreur")+')</option>'+
+      Object.entries(DRC_GRAVITES).map(([g,n])=>'<option value="'+g+'"'+(drcGravite(k)===g?" selected":"")+'>'+n+'</option>').join("")+
+      '</select></div>').join("")+'</div>'+
+    '<div class="row"><button class="tb" id="dgNon">Annuler</button><button class="tb" id="dgOui">Appliquer</button></div>';
+  document.body.appendChild(d);
+  if(!d.querySelector("#dgNon"))return;          // DOM sans rendu (banc d'essai)
+  const fermer=()=>{d.close();d.remove();};
+  d.querySelector("#dgNon").onclick=fermer;
+  d.addEventListener("cancel",e=>{e.preventDefault();fermer();});
+  d.querySelector("#dgOui").onclick=()=>{
+    const o={};
+    d.querySelectorAll("select[data-k]").forEach(s=>{if(s.value)o[s.dataset.k]=s.value;});
+    fermer();drcGravitesAppliquer(o);refreshPanels();draw();
+  };
+  d.showModal();
 }
 function drcExclure(e,note){
   if(!e)return false;
@@ -119,6 +178,7 @@ function drcFenetre(){
     w.id="drcWin";w.className="drcw";
     w.innerHTML='<div class="drcw-head"><b>Contrôle DRC</b><span id="drcwNb"></span>'+
       '<button class="tb mini" id="drcwRun" title="Relancer le contrôle">↻ Relancer</button>'+
+      '<button class="tb mini" id="drcwGrav" title="Gravité de chaque contrôle : erreur, remarque ou ignoré (gardée dans la carte)">⚙</button>'+
       '<button class="tb mini" id="drcwX" title="Fermer">✕</button></div>'+
       '<div class="drcw-bar"><button class="tb mini" id="drcwPrev" title="Écart précédent">◀</button>'+
       '<span id="drcwPos"></span><button class="tb mini" id="drcwNext" title="Écart suivant">▶</button>'+
@@ -129,6 +189,7 @@ function drcFenetre(){
     if(!q("drcwX"))return;              // DOM sans rendu (banc d'essai)
     q("drcwX").onclick=()=>{w.remove();S.drcSel=null;draw();};
     q("drcwRun").onclick=()=>{runDrc();refreshPanels();draw();};
+    q("drcwGrav").onclick=drcGravitesOuvrir;
     q("drcwPrev").onclick=()=>drcPas(-1);
     q("drcwNext").onclick=()=>drcPas(1);
     q("drcwInfo").onchange=ev=>{DRCW.info=ev.target.checked;drcFenetreMaj();};
@@ -152,7 +213,7 @@ function drcFenetreMaj(){
   if(!q("drcwList"))return;          // fenêtre fermée
   const durs=S.drc.filter(e=>!e.info).length, rq=S.drc.length-durs, nx=(S.drcExclues||[]).length;
   q("drcwNb").textContent=!S.drcRun?" — non lancé":
-    " — "+durs+" erreur"+(durs>1?"s":"")+(rq?", "+rq+" remarque"+(rq>1?"s":""):"")+(nx?", "+nx+" exclu"+(nx>1?"s":""):"");
+    " — "+durs+" erreur"+(durs>1?"s":"")+(rq?", "+rq+" remarque"+(rq>1?"s":""):"")+(nx?", "+nx+" exclu"+(nx>1?"s":""):"")+(S.drcIgnores?", "+S.drcIgnores+" ignoré"+(S.drcIgnores>1?"s":""):"");
   const g=drcRangs(), tous=[].concat(...g.values());
   const i=tous.indexOf(S.drcSel);
   q("drcwPos").textContent=tous.length?(i<0?"–":(i+1))+" / "+tous.length:"0";

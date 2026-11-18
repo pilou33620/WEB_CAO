@@ -144,7 +144,7 @@ Cette page décrit chaque tâche, puis chaque menu, bouton, raccourci et option,
 
 1. Sélectionner un bus, puis **Alias de bus…** dans Propriétés.
 2. Une ligne par alias : `MEM = A[0..7], D[0..7], WR`. Un membre peut être un vecteur ou un autre alias.
-3. Un bus nommé `MEM` ou `{MEM}` prend ces membres (liste du faisceau, signal suivant à piquer) ; `P{MEM}` les préfixe (`P_A0`…). Les alias sont gardés dans le document.
+3. Un bus nommé `MEM` ou `{MEM}` prend ces membres (liste du faisceau, signal suivant à piquer) ; `P{MEM}` les préfixe (`P_A0`…). Les alias sont gardés dans le document et partent vers KiCad (`bus_alias`), d'où ils reviennent.
 
 ### Je veux réutiliser un bloc (étage LDO, pont USB…) dans un autre schéma
 

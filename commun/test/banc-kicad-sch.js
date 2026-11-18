@@ -446,6 +446,19 @@ essai("types électriques des broches : écrits dans la bibliothèque, relus sur
   verifier(u1 && Array.isArray(u1.pinTypes) && u1.pinTypes.includes("oc") && u1.pinTypes.includes("pwr_in"), "relu : " + JSON.stringify(u1 && u1.pinTypes));
 });
 
+essai("alias de bus : écrits après lib_symbols, relus dans le document", () => {
+  const doc = { format: "schemedit-2", page: 1, symboles: {}, busAlias: { MEM: ["A[0..7]", "WR"], "bad name": ["X"], NUL: "x" },
+    pages: [{ name: "Hiérarchie", isHierarchy: true, comps: [], wires: [], drawings: [] },
+      { name: "Feuille 1", uid: 4, comps: [{ id: 1, type: "resistor", x: 200, y: 200, rot: 0, mir: false, ref: "R1", value: "1k" }],
+        wires: [{ x1: 240, y1: 200, x2: 300, y2: 200 }, { x1: 100, y1: 100, x2: 300, y2: 100, bus: true, net: "{MEM}" }], drawings: [] }]};
+  const ex = KS.ecrire(copie(doc), "essai", "essai_lib", KICAD.rapport(), null);
+  const t = ex.fichiers[0].texte;
+  verifier(/\(lib_symbols\)\s*\(bus_alias "MEM"\s*\(members "A\[0\.\.7\]" "WR"\)\s*\)/.test(t), "écrit à la racine, après lib_symbols : " + t.slice(0, 400));
+  verifier(!/bad name|NUL/.test(t), "noms invalides écartés");
+  const re = KS.lire(lireTextes(Object.fromEntries(ex.fichiers.map(f => [f.nom, f.texte]))), "essai.kicad_sch", KICAD.rapport());
+  verifier(JSON.stringify(re.doc.busAlias) === '{"MEM":["A[0..7]","WR"]}', "relu : " + JSON.stringify(re.doc.busAlias));
+});
+
 /* ======================================================================
    2. projets de démonstration
    ====================================================================== */
