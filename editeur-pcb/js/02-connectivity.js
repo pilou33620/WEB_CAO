@@ -1171,6 +1171,64 @@ function axePisteAuBord(a,m,net,l){
   }
   return true;
 }
+/* ---------- angles aigus piste / pastille ----------
+   La piste qui entre en biais dans une pastille forme avec son bord le même V
+   qu'entre deux segments : le coin sous la piste piège le bain de gravure.
+   On coupe l'axe de la piste (prolongé d'une demi-largeur : un bout posé au
+   ras du bord compte) avec le contour de la pastille, et on mesure l'angle à
+   chaque traversée. Près d'un sommet du contour, le cuivre de la piste comble
+   le coin : rien à dire. Même seuil que entre deux segments (ACUTE_MAX).
+   shortcut: pastilles rondes et oblongues non jugées (pas de bord droit), à
+   reprendre si le cas se présente. */
+function acutePadDrc(out,pads){
+  const G=new Map(), cle=(i,j)=>i+","+j;
+  for(const p of pads){
+    const q=p.q;
+    if(q.shape==="circ"||q.shape==="oval"||!q.net)continue;
+    const P=padWorldPts(q,0), b=polyBBox(P);
+    const e={p,P,b};
+    for(let i=Math.floor(b.x1/CELL);i<=Math.floor(b.x2/CELL);i++)
+      for(let j=Math.floor(b.y1/CELL);j<=Math.floor(b.y2/CELL);j++){
+        const k=cle(i,j);(G.get(k)||G.set(k,[]).get(k)).push(e);
+      }
+  }
+  if(!G.size)return;
+  for(const t of S.tracks){
+    if(isArc(t)||!t.net)continue;
+    const L=dist(t.x1,t.y1,t.x2,t.y2);
+    if(L<1e-9)continue;
+    const ux=(t.x2-t.x1)/L, uy=(t.y2-t.y1)/L, h=t.w/2;
+    const a={x1:t.x1-ux*h,y1:t.y1-uy*h,x2:t.x2+ux*h,y2:t.y2+uy*h};
+    const vus=new Set();
+    for(let i=Math.floor(Math.min(a.x1,a.x2)/CELL);i<=Math.floor(Math.max(a.x1,a.x2)/CELL);i++)
+      for(let j=Math.floor(Math.min(a.y1,a.y2)/CELL);j<=Math.floor(Math.max(a.y1,a.y2)/CELL);j++)
+        for(const e of G.get(cle(i,j))||[]){
+          if(vus.has(e))continue;
+          vus.add(e);
+          const {p,P,b}=e;
+          if(p.q.net!==t.net||!p.layers.includes(t.l))continue;
+          if(Math.max(a.x1,a.x2)<b.x1||Math.min(a.x1,a.x2)>b.x2||Math.max(a.y1,a.y2)<b.y1||Math.min(a.y1,a.y2)>b.y2)continue;
+          let pire=null;
+          for(let k=0;k<P.length;k++){
+            const A=P[k], B=P[(k+1)%P.length];
+            const ex=B.x-A.x, ey=B.y-A.y, el=Math.hypot(ex,ey);
+            if(el<1e-9)continue;
+            const den=(a.x2-a.x1)*ey-(a.y2-a.y1)*ex;
+            if(Math.abs(den)<1e-12)continue;           // parallèle au bord : pas de coin
+            const wx=A.x-a.x1, wy=A.y-a.y1;
+            const s=(wx*ey-wy*ex)/den, u=(wx*(a.y2-a.y1)-wy*(a.x2-a.x1))/den;
+            if(s<0||s>1||u<0||u>1)continue;
+            if(Math.min(u,1-u)*el<h)continue;          // au coin de la pastille : comblé par la piste
+            const deg=Math.acos(Math.min(1,Math.abs(ux*ex+uy*ey)/el))*180/Math.PI;
+            if(deg<ACUTE_MAX&&(!pire||deg<pire.deg))
+              pire={deg,x:a.x1+s*(a.x2-a.x1),y:a.y1+s*(a.y2-a.y1)};
+          }
+          if(pire)out.push({info:true,x:pire.x,y:pire.y,l:t.l,
+            msg:"Angle aigu de "+fmt(pire.deg,0)+"° entre la piste et la pastille "+p.tag+" ("+t.net+
+                ") : le coin sous la piste piège le bain de gravure, entrez dans l'axe du bord"});
+        }
+  }
+}
 function runDrc(){
   const out=[];
   conn(true);              // le contrôle exige l'analyse fine des îlots
@@ -1512,6 +1570,7 @@ function runDrc(){
     out.push({info:true,x:a.x,y:a.y,l:a.l,
       msg:"Angle aigu de "+fmt(a.deg,0)+"° sur "+(a.net||"?")+
           " : le fond du V piège le bain de gravure, reprenez le coude"});
+  acutePadDrc(out,pads);
 
   /* Liaisons thermiques : un bras qui toucherait le cuivre d'un autre net n'est
      pas tracé (padBras). Comme KiCad, le dire quand il en reste moins de deux :

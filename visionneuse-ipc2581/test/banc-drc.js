@@ -27,13 +27,16 @@ const modele={unites:"MILLIMETER",couches:["TOP","BOTTOM"],
   nets:["NET1","NET2"],
   pistes:[{c:0,n:0,w:0.2,p:[10,10, 20,10, 12,18]},
           {c:0,n:1,w:0.2,p:[10,10.25, 9,10.25]},
-          {c:1,n:1,w:0.25,p:[30,10, 30,20]}],
+          {c:1,n:1,w:0.25,p:[30,10, 30,20]},
+          // la capture : à 45° jusqu'au bord gauche de la pastille de U2, puis à plat dedans
+          {c:0,n:1,w:0.25,p:[22,25, 27,30, 30,30]}],
   arcs:[],plans:[],textes:[],pads:[{x:30,y:20,ps:"V",n:1}],
   padstacks:{V:{pad:0.6,trou:0.3,pads:[{c:"TOP",f:"C6",d:0.6},{c:"BOTTOM",f:"C6",d:0.6}]},
-             R:{pad:1,pads:[{c:"TOP",f:"R1",d:1}]}},
-  formes:{C6:{t:"CIRCLE",d:0.6},R1:{t:"RECTCENTER",w:1,h:1.2}},formesuser:{},
+             R:{pad:1,pads:[{c:"TOP",f:"R1",d:1}]},Q:{pad:6,pads:[{c:"TOP",f:"Q6",d:6}]}},
+  formes:{C6:{t:"CIRCLE",d:0.6},R1:{t:"RECTCENTER",w:1,h:1.2},Q6:{t:"RECTCENTER",w:6,h:6}},formesuser:{},
   composants:[{ref:"R1",val:"10k",pkg:"0805",x:40,y:30,r:90,m:false,c:0,
-               pads:[{x:-1,y:0,ps:"R",n:0,pin:"1"},{x:1,y:0,ps:"R",n:1,pin:"2"}]}],
+               pads:[{x:-1,y:0,ps:"R",n:0,pin:"1"},{x:1,y:0,ps:"R",n:1,pin:"2"}]},
+              {ref:"U2",val:"",pkg:"",x:30,y:30,r:0,m:false,c:0,pads:[{x:0,y:0,ps:"Q",n:1,pin:"1"}]}],
   percages:[{x:30,y:20,d:0.3,p:"PLATED",ps:"V"}],
   contour:{o:[0,0, 50,0, 50,40, 0,40]}};
 bac.MODELE=modele;
@@ -57,6 +60,8 @@ global.BroadcastChannel.prototype.postMessage=global.BroadcastChannel.prototype.
 __pcb.loadDoc(JSON.parse(JSON.stringify(doc)));
 const msgs=__pcb.runDrc().map(e=>e.msg);
 verifier(msgs.some(m=>/^Angle aigu de 45°/.test(m)),"angle aigu de 45° détecté\n"+msgs.join("\n"));
+const pp=msgs.filter(m=>/^Angle aigu de \d+° entre la piste et la pastille/.test(m));
+verifier(pp.length===1&&/^Angle aigu de 45° entre la piste et la pastille U2/.test(pp[0]),"angle aigu piste/pastille de 45° sur U2, et lui seul\n"+msgs.join("\n"));
 verifier(msgs.some(m=>/^Isolation piste\/piste/.test(m)),"isolation NET1/NET2 détectée\n"+msgs.join("\n"));
 console.log("banc-drc : OK ("+msgs.length+" écarts relevés par l'éditeur)");
 process.exit(0);   // les minuteries de l'éditeur garderaient Node en vie
