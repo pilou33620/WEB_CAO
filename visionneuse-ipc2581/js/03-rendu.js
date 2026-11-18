@@ -221,6 +221,7 @@ function peindre(c,dpr,W,H){
   /* LE CONSTAT CHOISI DANS LA VÉRIFICATION DE LA CARTE : une marque sur un
      point, par-dessus tout, comme le viseur. */
   if(typeof simCarteTrace==="function")simCarteTrace(c,dpr,w2s);
+  if(typeof drcTrace==="function")drcTrace(c,dpr);      // les écarts du DRC (12-drc.js)
   /* Les boîtiers retenus — plusieurs quand on les a pris à Ctrl+clic. Le reflet
      `V.comp` sert de repli : un banc d'essai peut le poser sans passer par la
      liste de sélection. */

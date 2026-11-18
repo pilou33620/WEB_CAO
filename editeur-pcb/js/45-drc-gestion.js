@@ -259,3 +259,25 @@ function drcFenetreMaj(){
   const on=box.querySelector(".drcw-row.on");
   if(on&&on.scrollIntoView)on.scrollIntoView({block:"nearest"});
 }
+
+/* ---------- le DRC prêté à un autre outil ----------
+   La visionneuse IPC-2581 ouvre cette page en iframe cachée (?drc-externe,
+   07-app.js), envoie sa carte traduite en document pcbedit-1 et relit la
+   liste : mêmes règles, même code, rien de recopié. Seul le parent est
+   écouté ; le document passe par normDoc comme n'importe quel fichier. */
+if(typeof window!=="undefined"&&DRC_EXTERNE&&window.parent!==window){
+  window.addEventListener("message",ev=>{
+    const d=ev.data;
+    if(ev.source!==window.parent||!d||d.type!=="drc-externe")return;
+    let r;
+    try{
+      loadDoc(d.doc);
+      r={erreurs:runDrc().map(e=>({x:+e.x||0,y:+e.y||0,l:Number.isInteger(e.l)?e.l:null,
+                                   msg:String(e.msg),info:!!e.info,kind:e.kind||drcKind(e),
+                                   cat:drcCategorie(e)}))};
+    }catch(err){r={echec:String(err&&err.message||err)};}
+    r.type="drc-externe-resultat";r.id=d.id;
+    window.parent.postMessage(r,"*");
+  });
+  window.addEventListener("load",()=>window.parent.postMessage({type:"drc-externe-pret"},"*"));
+}

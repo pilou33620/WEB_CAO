@@ -3,6 +3,10 @@
    Éditeur PCB — fichiers et démarrage
    Enregistrement, import, exports, câblage de l'interface, initialisation.
    ========================================================================== */
+/* Ouvert par la visionneuse IPC-2581 dans une iframe cachée, pour son seul DRC
+   (45-drc-gestion.js) : la carte reçue n'est pas celle de l'utilisateur, elle
+   ne doit aller ni en session, ni en brouillon, ni écraser celle du projet. */
+const DRC_EXTERNE=typeof location!=="undefined"&&/[?&]drc-externe\b/.test(location.search);
 /* ==========================================================================
    Fichiers
    ========================================================================== */
@@ -793,7 +797,7 @@ window.addEventListener("beforeunload",e=>{
 /* Sauvegarde automatique : un brouillon à côté de la carte du projet toutes
    les 30 s, tant qu'elle est modifiée (commun/projet-disque.js). Pas à la
    fermeture : une requête partie de pagehide est bornée à 64 Ko. */
-if(typeof projdBrouillonTic==="function")
+if(typeof projdBrouillonTic==="function"&&!DRC_EXTERNE)
   setInterval(function(){projdBrouillonTic("pcb",S.dirty,docObj);},30000);
 
 /* ==========================================================================
@@ -883,6 +887,7 @@ function init(){
      loadDoc() s'appuie sur des fichiers chargés après celui-ci (groupes,
      liens…), absents à cet instant en pages séparées — la reprise levait et
      la session était effacée à chaque aller-retour avec le schéma. */
+  if(DRC_EXTERNE)return;
   sessCibleAuChargement(function(){ PCB_REPRISE=sessionPcb(); pcbChargerProjet(); });
   setTimeout(() => {
     if (typeof pcbSyncSchema === "function") {
@@ -912,7 +917,7 @@ function init(){
 let PCB_PROJET_LU=false;
 let PCB_PROJET_P=null;     // la lecture en cours, pour qui doit l'attendre (export du schéma)
 function pcbChargerProjet(){
-  if(PCB_PROJET_LU||PCB_REPRISE||S.dirty)return;
+  if(DRC_EXTERNE||PCB_PROJET_LU||PCB_REPRISE||S.dirty)return;
   if(typeof projdLie!=="function")return;
   /* Dossier retrouvé mais autorisation perdue : une demande sans geste de
      l'utilisateur échoue, et il n'y a pas de geste à offrir ici. On le dit. */

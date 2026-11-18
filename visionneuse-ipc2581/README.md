@@ -29,10 +29,11 @@ visionneuse-ipc2581/
 ├── visionneuse-ipc2581.html      structure de la page + ordre de chargement
 ├── css/
 │   └── visionneuse.css           thème « dashboard nocturne »
-├── js/                           12 modules (00 à 11), chargés dans l'ordre de la page (11 avant 09)
+├── js/                           13 modules (00 à 12), chargés dans l'ordre de la page (11 avant 09)
 └── test/
     ├── carte-contre-percage.xml  carte d'essai du contre-perçage
-    └── harness-sim.js            banc d'essai de la simulation, sous Node
+    ├── harness-sim.js            banc d'essai de la simulation, sous Node
+    └── banc-drc.js               banc du DRC (traduction + runDrc de l'éditeur), sous Node
 ```
 
 Côté serveur, le lecteur est la caisse Rust `ipc2581` du dépôt web_suite (dépendance git de `rust/serveur`) :
@@ -95,6 +96,7 @@ et ceux du dossier partagé, identiques aux autres outils :
 | `js/09-fiche-mesure.js` | 40 | Fiche de mesure et retrofit : pastilles du modèle lu (les mesures vont dans `V.modele.mesures`, le retrofit dans `V.modele.retrofit`) ; la fenêtre est celle des plans |
 | `js/11-animation-3d.js` | 153 | Animation 3D : le modèle lu relevé dans la scène de `commun/animation-3d.js` (cuivre, pastilles, vias, plans en image, sérigraphie, composants présentés) |
 | `js/10-plans.js` | 238 | Plans du Draftsman (fabrication, assemblage dessus / dessous) refaits sur le modèle lu, et la seule fenêtre des plans : cases des feuilles, volets fiche de mesure et retrofit, aperçu et PDF |
+| `js/12-drc.js` | 220 | **DRC** : la carte traduite en document pcbedit-1, jugée par le `runDrc()` de l'éditeur PCB ouvert en iframe cachée (`?drc-externe`) — mêmes règles (isolations, bord, angles aigus, perçages…) ; liste des écarts et marques sur la carte |
 | `../rust/em/src/simulation_em` | | Pont vers `rust/ligne_mom` : empilage à plat → section droite, résolution par tronçon, **appariement des tronçons parallèles**, cascade ABCD → JSON |
 | `test/harness-sim.js` | 7350 | Banc d'essai de la masse coplanaire, de la chute continue, du voisinage et des trois mesures du crosstalk, sous Node : `node test/harness-sim.js` |
 
