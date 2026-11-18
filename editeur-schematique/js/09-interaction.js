@@ -1135,6 +1135,10 @@ function schPoserDepuisCatalogue(el, it){
     if(cleanPkg) el.pkg = cleanPkg;
   } else if(it["Package type"] && it["Package type"] !== "xx") {
     el.pkg = it["Package type"];
+  } else {
+    // aucun boîtier au catalogue : celui du symbole, recalculé sur le nombre de broches ou le type devenus
+    const def = defOf(el.type);
+    if(def.pkg) el.pkg = (typeof def.pkg === "function") ? def.pkg(el) : def.pkg;
   }
   const sim = it["Modèle Simulation"] || it["Modele Simulation"] || "";
   if(sim && sim !== "-" && sim !== "xx") el.simModel = sim;

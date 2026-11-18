@@ -6,7 +6,7 @@
 /* ==========================================================================
    Clavier
    ========================================================================== */
-let arrowStamp=0, arrowSplit=0;
+let arrowStamp=0, arrowSplit=0, arrowHist=-1;
 /* Un champ de saisie garde ses lettres pour lui : sans ce garde-fou, taper le
    nom d'un net poserait un fil (W), repasserait en sélection (V)… On regarde la
    cible de l'événement ET le champ qui a réellement le focus, les deux pouvant
@@ -82,8 +82,9 @@ window.addEventListener("keydown",e=>{
     e.preventDefault();
     // une rafale de flèches ne compte que pour une entrée d'historique
     const now=Date.now();
-    if(now-arrowStamp>700)push();
-    arrowStamp=now;
+    // un Ctrl+Z au milieu de la rafale (pile changée) en ouvre une nouvelle : sinon Ctrl+Y effaçait le déplacement
+    if(now-arrowStamp>700||S.hist.length!==arrowHist)push();
+    arrowStamp=now;arrowHist=S.hist.length;
     moveSelBy(d[0],d[1]);
     // la découpe attend la fin de la rafale : sinon on sèmerait un point de
     // coupe à chaque case traversée

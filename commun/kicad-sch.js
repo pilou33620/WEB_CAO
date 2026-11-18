@@ -316,8 +316,12 @@ const KICAD_SCH = (() => {
     }
 
     /* un symbole de bibliothèque (unité u, style b, décalé de d) → schsym-1 du document */
+    /* chaque feuille porte sa copie de lib_symbols, qui peut différer (symbole mis à
+       jour dans une seule) : le contenu entre dans la clé, pas seulement le nom */
+    const sigLibs = new WeakMap();
+    const sigLib = l => { let s = sigLibs.get(l); if (s === undefined) sigLibs.set(l, s = JSON.stringify(l)); return s; };
     function symboleDe(lib, libs, u, b, d) {
-      const libId = lib[1], cle = libId + "|" + u + "|" + b + "|" + d;
+      const libId = lib[1], cle = libId + "|" + u + "|" + b + "|" + d + "|" + sigLib(lib);
       if (idsSym.has(cle)) return idsSym.get(cle);
       let subs = enfants(lib, "symbol");
       const ext = val(lib, "extends");
@@ -671,7 +675,16 @@ const KICAD_SCH = (() => {
   const TYPE_ECRIT = { in: "input", out: "output", bidir: "bidirectional", tri: "tri_state", passive: "passive",
                        oc: "open_collector", pwr_in: "power_in", pwr_out: "power_out", unspec: "unspecified", free: "free", nc: "no_connect" };
   /* type d'écriture de la broche i : celui saisi sur le composant, sinon passive */
-  const typesDe = c => i => (c && Array.isArray(c.pinTypes) && Object.prototype.hasOwnProperty.call(TYPE_ECRIT, c.pinTypes[i]) ? TYPE_ECRIT[c.pinTypes[i]] : "passive");
+  /* type d'écriture : celui saisi ; sinon celui que l'ERC de l'éditeur devine (ercTypeBroche,
+     quand il est chargé), pour qu'un aller-retour ne fige pas EN ou VCC en « passive » */
+  const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+  const typesDe = c => i => {
+    const t = c && Array.isArray(c.pinTypes) ? c.pinTypes[i] : "";
+    if (has(TYPE_ECRIT, t)) return TYPE_ECRIT[t];
+    let d = "";
+    try { if (c && typeof ercTypeBroche === "function") d = ercTypeBroche(c, i); } catch (e) { d = ""; }
+    return has(TYPE_ECRIT, d) ? TYPE_ECRIT[d] : "passive";
+  };
   function unite(def, numeros, typeBroche) {
     const g = def.g.slice(), pins = [];
     def.pins.forEach(([x, y], i) => {
@@ -709,7 +722,28 @@ const KICAD_SCH = (() => {
     gnd: "l0 -20 0 0|l-20 0 20 0|l-10 5 10 5|l-5 10 5 10"
   };
 
+  /* L'éditeur confond « sda » et « SDA » (un seul net), KiCad les distingue : chaque nom
+     s'écrit sous sa première graphie (dans tout le document pour un nom global, par
+     feuille pour un nom local), sur une copie du document. */
+  function harmoniserCasse(doc) {
+    if (!doc || !Array.isArray(doc.pages)) return doc;
+    const d = JSON.parse(JSON.stringify(doc)), globaux = new Map();
+    const GLOB = new Set(["gport", "vcc", "gnd"]);
+    for (const p of d.pages) {
+      if (!p || typeof p !== "object") continue;
+      const locaux = new Map();
+      const graphie = (table, v) => { const k = String(v).toUpperCase(); if (!table.has(k)) table.set(k, String(v)); return table.get(k); };
+      for (const c of p.comps || []) {
+        if (!c || !c.value) continue;
+        if (GLOB.has(c.type)) { c.value = graphie(globaux, c.value); graphie(locaux, c.value); }
+      }
+      for (const c of p.comps || []) if (c && c.value && c.type === "port") c.value = graphie(locaux, c.value);
+      for (const w of p.wires || []) if (w && w.net && !w.bus) w.net = graphie(locaux, w.net);
+    }
+    return d;
+  }
   function ecrire(doc, nomProjet, nomLib, rap, librairie) {
+    doc = harmoniserCasse(doc);
     const embarques = doc && doc.symboles && typeof doc.symboles === "object" ? doc.symboles : {};
     const pages = (doc && Array.isArray(doc.pages) ? doc.pages : []).filter(p => p && typeof p === "object" && !p.isHierarchy).slice(0, PAGES_MAX);
     if (!pages.length) throw new Refus("le schéma n'a aucune feuille à exporter");

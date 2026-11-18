@@ -18,6 +18,13 @@ function pdfRgba(s){
     return [0,2,4].map(i=>parseInt(h.substr(i,2),16)/255).concat(h.length>6?parseInt(h.substr(6,2),16)/255:1);
   }
   if((m=/^rgba?\(([^)]+)\)/.exec(s))){const v=m[1].split(/[ ,\/]+/).map(parseFloat);return [v[0]/255,v[1]/255,v[2]/255,v.length>3?v[3]:1];}
+  // hsl(…) : la couleur des nets nommés (netColor) ; sans elle, leurs étiquettes sortaient noires ou invisibles
+  if((m=/^hsla?\(([^)]+)\)/.exec(s))){
+    const v=m[1].split(/[ ,\/]+/).filter(Boolean).map(parseFloat), h=((v[0]%360)+360)%360/360, sa=(v[1]||0)/100, l=(v[2]||0)/100;
+    const q=l<0.5?l*(1+sa):l+sa-l*sa, p=2*l-q;
+    const t=x=>{x=(x+1)%1;return x<1/6?p+(q-p)*6*x:x<1/2?q:x<2/3?p+(q-p)*(2/3-x)*6:p;};
+    return [t(h+1/3),t(h),t(h-1/3),v.length>3?v[3]:1];
+  }
   return [0,0,0,1];
 }
 /* Sur papier blanc : les teintes sombres du fond d'écran deviennent blanches,

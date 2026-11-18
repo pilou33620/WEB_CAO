@@ -156,6 +156,7 @@ const EXPOSE=[
   /* contrôle électrique (31-erc.js) et blocs réutilisables (32-blocs.js) */
   "ercVerifier","ercTypeBroche","ercOuvrir","ercFermer","ERC_DERNIER",
   "ercTypeSaisi","ercTypeDevine","ercNiveau","ercMatriceNorm","ercMatriceBasculer","ercMatriceHtml","ERC_TYPES",
+  "pdfRgba","bomRows","cmLireChamp","schToutesLesZones","prefixeDe","reshapeComp","dupSel","netlistText",
   "normPage","idLu","crIndexBroche","crDetecterConflitsCablage","schSuggererProchainSignal","schPiquerSignal","icRetouche","DESSIN_OPS","SCHEMA_PATTERNS","usedRefs",
   "busAliasLire","busAliasNorm","busAliasTexte","schDevelopperSignauxBus","normComp","serialize","undo",
   "schReglesControler","reglesResultat","reglesTexte",
@@ -4712,9 +4713,11 @@ T("Alias de bus : lecture, développement, alias imbriqués et en boucle, gardé
   if(!d("BOUCLE"))throw new Error("boucle : rien");          // s'arrête, sans débordement de pile
   if(d("SPI")!=="SPI_MOSI,SPI_MISO,SPI_SCK,SPI_CS")throw new Error("standard intact");
   const js=JSON.parse(serialize());
-  if(js.busAlias.MEM.join()!=="A[0..1],WR")throw new Error("pas dans le document");
-  if(JSON.stringify(busAliasNorm({"bad name":["A"],OK:["A",{}],V:"x"}))!=='{"OK":["A","[object Object]"]}')throw new Error("lecture bornée : "+JSON.stringify(busAliasNorm({"bad name":["A"],OK:["A",{}],V:"x"})));
-  if(!/^MEM = A\[0\.\.1\], WR$/m.test(busAliasTexte(S.busAlias)))throw new Error(busAliasTexte(S.busAlias));
+  // la casse d'origine reste (KiCad la distingue), la recherche l'ignore
+  if(js.busAlias.mem.join()!=="A[0..1],WR")throw new Error("pas dans le document");
+  if(JSON.stringify(busAliasNorm({"bad name":["A"],OK:["A",{}],V:"x",ok:["B"]}))!=='{"OK":["A"]}')throw new Error("lecture bornée : "+JSON.stringify(busAliasNorm({"bad name":["A"],OK:["A",{}],V:"x",ok:["B"]})));
+  if(!/^mem = A\[0\.\.1\], WR$/m.test(busAliasTexte(S.busAlias)))throw new Error(busAliasTexte(S.busAlias));
+  if(busAliasLire("X = {A,B}, C").alias.X.join("|")!=="{A,B}|C")throw new Error("faisceau coupé à ses virgules");
   S.busAlias={};
 });
 
@@ -4766,6 +4769,40 @@ T("CI : changer la valeur ou un nom de broche emmène les fils",()=>{
   if(q.x===p.x)throw new Error("décor : la valeur devait élargir le corps");
   if(w.x2!==q.x||w.y2!==q.y)throw new Error("le fil reste à "+w.x2+" au lieu de "+q.x);
   if(!nets().list.some(n=>n.nodes.some(nd=>nd.ref==="U9")))throw new Error("U9.1 décroché de son net");
+});
+
+/* ---------- seconde vérification du 18/11 ---------- */
+T("v2 : nom automatique distinct d'une étiquette N$1, préfixe gardé à la copie, nomenclature des parties",()=>{
+  const a=C("resistor",5,5,{ref:"R1"}), b=C("resistor",5,9,{ref:"R2"}), c=C("resistor",5,13,{ref:"R3"});
+  const pa=allPins(a),pb=allPins(b),pc=allPins(c);
+  sheet([a,b,c],[{x1:pa[1].x,y1:pa[1].y,x2:pa[1].x+40,y2:pa[1].y,net:"N$1"},{x1:pb[1].x,y1:pb[1].y,x2:pc[1].x,y2:pc[1].y}]);
+  const noms=nets().list.map(n=>n.name);
+  if(noms.filter(n=>n==="N$1").length!==1)throw new Error("deux nets N$1 : "+noms);
+  if(prefixeDe({ref:"J100",type:"ic"})!=="J"||prefixeDe({ref:"",type:"resistor"})!=="R")throw new Error("préfixe");
+  const u=C("opamp",20,5,{ref:"U1",part:"A",value:"LM358"}), v=C("opamp",20,15,{ref:"U1",part:"B",value:"LM358"});
+  sheet([u,v],[]);
+  if(bomRows("").filter(r=>r.ref==="U1").length!==1)throw new Error("U1 en double dans la nomenclature");
+});
+T("v2 : ERC (NIC libre, NC deviné toléré, casse par feuille), unités des contraintes, couleur hsl au PDF",()=>{
+  const ic=C("ic",0,0,{npins:2,pinNames:["NIC","NC"]});
+  if(ercTypeBroche(ic,0)!=="free")throw new Error("NIC : "+ercTypeBroche(ic,0));
+  if(cmLireChamp("lMax","40 mil")!==1.016||cmLireChamp("lMax",".5")!==0.5||cmLireChamp("skew","1 ns")!==1000)throw new Error("unités");
+  const c=pdfRgba("hsl(120,100%,50%)");
+  if(Math.abs(c[0])>1e-6||Math.abs(c[1]-1)>1e-6||Math.abs(c[2])>1e-6)throw new Error("hsl : "+c);
+  // « Sda » local sur f1, « SDA » local sur f2 : deux nets, pas d'avertissement de casse
+  const r1=C("resistor",5,5,{ref:"R1"}), r2=C("resistor",5,5,{ref:"R2"});
+  sheet([r1,C("port",9,5,{value:"Sda"})],[]);
+  const p2=newPage("F2");p2.comps=[r2,C("port",9,5,{value:"SDA"})];p2.wires=[];S.pages.push(p2);touchWires();
+  if(ercVerifier().some(x=>x.code==="casse"))throw new Error("casse comparée entre feuilles pour des noms locaux");
+});
+T("v2 : zone passée en trait, broches d'un grand symbole, ordre des chaînes renuméroté",()=>{
+  sheet([C("resistor",10,10,{ref:"R1"})],[]);
+  S.drawings=[{id:9,shape:"line",type:"line",x1:0,y1:0,x2:400,y2:0,isZone:true,label:"ALIM"}];S.pages[0].drawings=S.drawings;
+  if(schToutesLesZones().length)throw new Error("un trait compté comme zone");
+  sheet([C("resistor",5,5,{ref:"R5"}),C("resistor",5,9,{ref:"R1"})],[]);
+  S.contraintes={nets:{CLK:{topo:"chaine",ordre:["R5","R1"]}},groupes:[]};
+  DESSIN_OPS.renumeroter({},0);
+  if(S.contraintes.nets.CLK.ordre.join()!=="R1,R2")throw new Error("ordre : "+S.contraintes.nets.CLK.ordre);
 });
 
 /* ==========================================================================

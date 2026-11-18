@@ -128,18 +128,33 @@ function netColor(net){
 const BUS_ALIAS_NOM=/^[A-Za-z_][\w]{0,31}$/;
 /* Membres d'un alias, ou null. Clés en capitales : « __proto__ » n'en est pas une. */
 function busAliasDe(nom){
+  // la casse d'origine est gardée (KiCad la distingue) ; la recherche, elle, l'ignore
   const a=(typeof S!=="undefined"&&S.busAlias)||{}, k=String(nom||"").trim().toUpperCase();
-  return BUS_ALIAS_NOM.test(k)&&Object.prototype.hasOwnProperty.call(a,k)?a[k]:null;
+  if(!BUS_ALIAS_NOM.test(k))return null;
+  const cle=Object.keys(a).find(x=>x.toUpperCase()===k);
+  return cle?a[cle]:null;
+}
+const BUS_ALIAS_INTERDITS=new Set(["__PROTO__","CONSTRUCTOR","PROTOTYPE"]);
+/* Membres d'une ligne d'alias : coupés aux virgules hors accolades ({A,B} reste un membre). */
+function busAliasMembres(t){
+  const out=[];let prof=0,cur="";
+  for(const ch of String(t)){
+    if(ch==="{")prof++;else if(ch==="}")prof=Math.max(0,prof-1);
+    if(ch===","&&!prof){out.push(cur.trim());cur="";}else cur+=ch;
+  }
+  out.push(cur.trim());
+  return out.filter(Boolean);
 }
 /* Lecture d'un fichier : noms valides, membres en texte court, bornés. */
 function busAliasNorm(o){
   const r={};
   if(!o||typeof o!=="object"||Array.isArray(o))return r;
+  const vus=new Set();
   for(const [k,v] of Object.entries(o).slice(0,200)){
-    const nom=String(k).trim().toUpperCase();
-    if(!BUS_ALIAS_NOM.test(nom)||!Array.isArray(v))continue;
-    const m=v.map(x=>String(x==null?"":x).trim().slice(0,64)).filter(Boolean).slice(0,256);
-    if(m.length)r[nom]=m;
+    const nom=String(k).trim(), K=nom.toUpperCase();
+    if(!BUS_ALIAS_NOM.test(nom)||BUS_ALIAS_INTERDITS.has(K)||vus.has(K)||!Array.isArray(v))continue;
+    const m=v.filter(x=>typeof x==="string").map(x=>x.trim().slice(0,64)).filter(Boolean).slice(0,256);
+    if(m.length){r[nom]=m;vus.add(K);}
   }
   return r;
 }
@@ -148,12 +163,12 @@ function busAliasTexte(a){
   return Object.entries(a||{}).map(([k,v])=>k+" = "+v.join(", ")).join("\n");
 }
 function busAliasLire(txt){
-  const o={}, ecarts=[];
+  const o=Object.create(null), ecarts=[];
   String(txt||"").split(/\r?\n/).forEach((l,i)=>{
     if(!l.trim())return;
     const m=l.match(/^\s*([^=]+?)\s*=\s*(.+)$/);
     if(!m||!BUS_ALIAS_NOM.test(m[1])){ecarts.push("ligne "+(i+1)+" : « NOM = membre, membre… » attendu");return;}
-    o[m[1].toUpperCase()]=m[2].split(",").map(x=>x.trim()).filter(Boolean);
+    o[m[1]]=busAliasMembres(m[2]);
   });
   return {alias:busAliasNorm(o),ecarts};
 }
@@ -477,8 +492,12 @@ function computeNets(comps,wires){
   }
   // numérotation stable : de haut en bas, puis de gauche à droite
   list.sort((a,b)=>(a.min.y-b.min.y)||(a.min.x-b.min.x));
+  /* un nom automatique ne reprend jamais un nom posé (étiquette « N$1 » venue d'Eagle) :
+     deux nets du même nom seraient fusionnés par la netlist et le PCB */
+  const pris=new Set(list.filter(n=>n.named).map(n=>String(n.name).toUpperCase()));
   let auto=0;
-  for(const n of list) if(!n.named) n.name = n.isBus ? ("BUS$"+(++auto)) : ("N$"+(++auto));
+  const suivant=pre=>{let nm;do nm=pre+(++auto);while(pris.has(nm.toUpperCase()));return nm;};
+  for(const n of list) if(!n.named) n.name = suivant(n.isBus ? "BUS$" : "N$");
 
   const byWire=new Map(), byPoint=new Map();
   for(const n of list) for(const w of n.wires) byWire.set(w,n);
@@ -599,7 +618,8 @@ function netAtLive(x,y){const n=netAt(x,y);return isRealNet(n)?n:null;}
    Les anciens labels du même net sont retirés pour éviter deux noms rivaux. */
 function setNetName(net,name){
   if(!net||!net.wires.length)return false;
-  const nm=String(name||"").trim().slice(0,32);
+  // un nom de bus porte sa liste (ADC{CH0,…,CH7}) : 255 comme à la lecture d'un fichier
+  const nm=String(name||"").trim().slice(0,net.isBus?255:32);
   if(net.src>=2 && nm){                 // nom déjà imposé par un symbole
     return false;
   }

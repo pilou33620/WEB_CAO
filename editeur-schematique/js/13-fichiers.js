@@ -384,7 +384,8 @@ function bomRows(variante){
   S.pages.forEach((p,i)=>{
     const src=(i===S.page)?S.comps:(p.comps||[]);
     for(const c of src) if(!defOf(c.type).noRef) {
-      if(c.ref&&c.part&&typeof brLu==="function"&&brochageParties(brLu(c)).length){
+      // une partie (A, B…) suffit, brochage de la LIB ou non : l'import KiCad pose part sans brochage
+      if(c.ref&&c.part){
         if(boitiers.has(c.ref))continue;
         boitiers.add(c.ref);
       }

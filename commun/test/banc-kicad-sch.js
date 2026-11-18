@@ -459,6 +459,19 @@ essai("alias de bus : écrits après lib_symbols, relus dans le document", () =>
   verifier(JSON.stringify(re.doc.busAlias) === '{"MEM":["A[0..7]","WR"]}', "relu : " + JSON.stringify(re.doc.busAlias));
 });
 
+essai("noms de nets : une seule graphie à l'export (KiCad distingue la casse) ; symboles homonymes de deux feuilles", () => {
+  const doc = { format: "schemedit-2", page: 1, symboles: {},
+    pages: [{ name: "Hiérarchie", isHierarchy: true, comps: [], wires: [], drawings: [] },
+      { name: "Feuille 1", uid: 5, comps: [
+        { id: 1, type: "resistor", x: 200, y: 200, rot: 0, mir: false, ref: "R1", value: "1k" },
+        { id: 2, type: "port", x: 300, y: 200, rot: 0, mir: false, ref: "", value: "sda" },
+        { id: 3, type: "port", x: 300, y: 300, rot: 0, mir: false, ref: "", value: "SDA" }],
+        wires: [], drawings: [] }]};
+  const ex = KS.ecrire(copie(doc), "essai", "essai_lib", KICAD.rapport(), null);
+  const t = ex.fichiers.map(f => f.texte).join("\n");
+  verifier(/label "sda"/.test(t) && !/label "SDA"/.test(t), "une graphie : " + (t.match(/label "[^"]*"/g) || []).join(" "));
+});
+
 /* ======================================================================
    2. projets de démonstration
    ====================================================================== */

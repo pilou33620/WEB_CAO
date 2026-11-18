@@ -89,7 +89,9 @@ function normComp(c,i){
     }
     const defaultN = isIc ? 8 : pinCount(el);
     const minN = el.icShape==="quad" ? IC_QUAD_MIN : (isIc ? 2 : 1);
-    el.npins = Math.max(minN, Math.min(64, Math.round(num(c.npins, defaultN))));
+    // un symbole à broches fixes (LIB, KiCad) en a jusqu'à 1024 : 64 tronquait les noms d'un MCU de 80 broches
+    const fixes = !isIc && Array.isArray(def.pins) && c.pinPos == null;
+    el.npins = Math.max(minN, Math.min(fixes ? Math.min(1024, def.pins.length) : 64, Math.round(num(c.npins, defaultN))));
     if(Array.isArray(c.pinNames)){
       el.pinNames = c.pinNames.slice(0, el.npins).map(v=>String(v==null?"":v).slice(0,32));
     }else if(isIc){
@@ -181,8 +183,9 @@ function normPage(p,i){
   const wires=(Array.isArray(src.wires)?src.wires:[]).map(normWire).filter(Boolean);
   splitWireArray(wires);          // un fichier importé arrive avec ses fils déjà scindés
   // le nom ne décide que pour un fichier d'avant le drapeau, et pour la première feuille
-  const isHier = typeof src.isHierarchy==="boolean" ? src.isHierarchy
-    : i===0 && (src.name==="Hiérarchie" || src.name==="Feuille hiérarchique");
+  // seule la première feuille peut être la racine : une autre marquée ainsi échapperait à l'ERC
+  const isHier = i===0 && (typeof src.isHierarchy==="boolean" ? src.isHierarchy
+    : (src.name==="Hiérarchie" || src.name==="Feuille hiérarchique"));
   const pObj = {
     name:String(src.name==null?(isHier?"Hiérarchie":("Feuille "+(i+1))):src.name).slice(0,60)||(isHier?"Hiérarchie":("Feuille "+(i+1))),
     isHierarchy: isHier,

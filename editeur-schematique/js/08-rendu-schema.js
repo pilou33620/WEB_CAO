@@ -11,7 +11,7 @@
 function pinContactPoints(){
   const seen=new Map(), out=[];
   for(const el of S.comps){
-    if(isProbe(el))continue;
+    if(isProbe(el)||defOf(el.type).nc)continue;   // un marqueur NC n'est pas un contact
     for(const q of allPins(el)){
       const k=key(q.x,q.y), prev=seen.get(k);
       if(prev===undefined){seen.set(k,el);continue;}

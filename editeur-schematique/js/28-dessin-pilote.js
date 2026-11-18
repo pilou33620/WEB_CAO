@@ -466,6 +466,9 @@ const DESSIN_OPS = {
     }
     if (!lignes.length) throw dessinRefus(n, "renumeroter", "les repères sont déjà dans l'ordre");
     synRenommer(blocs);                                   // le synoptique garde places et titres
+    /* l'ordre d'une chaîne (contraintes de nets) liste des repères : il suit aussi */
+    for (const r of Object.values((S.contraintes && S.contraintes.nets) || {}))
+      if (Array.isArray(r.ordre)) r.ordre = r.ordre.map(x => blocs.has(x) ? blocs.get(x) : x);
     // un repère repris par un autre composant : au PCB, l'empreinte déjà placée recevrait ses nets
     const repris = lignes.filter(l => anciens.has(dessinCle(l.apres))).map(l => l.apres);
     lignes.push({ quoi: (n + 1) + ". PCB", avant: null, apres: "garde les anciens repères jusqu'à sa resynchronisation" +
@@ -525,12 +528,14 @@ function dessinJouer(ops) {
    sélection, vue et geste en cours (pose, fil, glissé) reviennent tels quels. */
 function dessinSimuler(args) {
   storeCurrent();
-  const garde = { pages: S.pages, page: S.page, comps: S.comps, wires: S.wires, drawings: S.drawings, uid: S.uid,
+  // les symboles de la LIB aussi : addComp en retient un, une simple proposition ne doit rien laisser
+  const garde = { pages: S.pages, page: S.page, comps: S.comps, wires: S.wires, drawings: S.drawings, uid: S.uid, symboles: S.symboles,
                   dirty: S.dirty, hist: S.hist, redo: S.redo, vue: [S.scale, S.ox, S.oy],
                   sel: new Set(S.sel), selW: new Set(S.selW), selD: S.selD ? new Set(S.selD) : null, selBlock: S.selBlock,
                   geste: { place: S.place, placeLibItem: S.placeLibItem, wireStart: S.wireStart, drawStart: S.drawStart,
                            drag: S.drag, marquee: S.marquee } };
   S.pages = JSON.parse(JSON.stringify(S.pages));
+  S.symboles = Object.assign({}, S.symboles);        // retenu pendant la simulation : dans une copie
   const p = S.pages[S.page];
   S.comps = p.comps; S.wires = p.wires; S.drawings = p.drawings || []; S.uid = p.uid || 1;
   S.hist = S.hist.slice(); S.redo = S.redo.slice();
@@ -541,7 +546,7 @@ function dessinSimuler(args) {
     if (!e.dessin) throw e;
     return { lignes: [], refus: [e.message] };
   } finally {
-    Object.assign(S, { pages: garde.pages, page: garde.page, comps: garde.comps, wires: garde.wires, drawings: garde.drawings,
+    Object.assign(S, { pages: garde.pages, page: garde.page, comps: garde.comps, wires: garde.wires, drawings: garde.drawings, symboles: garde.symboles,
                        uid: garde.uid, dirty: garde.dirty, hist: garde.hist, redo: garde.redo, sel: garde.sel, selW: garde.selW,
                        selBlock: garde.selBlock }, garde.geste);
     if (garde.selD) S.selD = garde.selD;

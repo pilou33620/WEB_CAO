@@ -333,7 +333,9 @@ function refreshPanels(){
       '<div class="row"><button class="tb" id="pDDel">Supprimer le '+(isRect?"rectangle":"trait")+'</button></div>';
 
     const sShape=document.getElementById("pDShape");
-    if(sShape) sShape.onchange=e=>{push();d.shape=e.target.value;d.type=d.shape;refreshPanels();draw();};
+    if(sShape) sShape.onchange=e=>{push();d.shape=e.target.value;d.type=d.shape;
+      if(d.shape!=="rect"){delete d.isZone;delete d.category;}   // un trait n'est pas une zone (la case disparaît)
+      refreshPanels();draw();};
     const cIsZone=document.getElementById("pDIsZone");
     if(cIsZone) cIsZone.onchange=e=>{
       push();
@@ -864,9 +866,16 @@ function bindNetBlock(wires){
   const bBusTap = document.getElementById("pBusTap");
   if(bBusTap){
     bBusTap.onclick = () => {
-      if(wires.length && typeof schOuvrirPiquageModal === "function"){
-        schOuvrirPiquageModal(wires[0], null, {x: wires[0].x1, y: wires[0].y1});
+      if(!wires.length || typeof schOuvrirPiquageModal !== "function") return;
+      /* il faut un fil qui touche ce bus : c'est lui qui reçoit le nom du signal */
+      const piq = schTousLesPiquages().find(p => p.bus === wires[0] && !String(p.wire.net || "").trim()) ||
+                  schTousLesPiquages().find(p => p.bus === wires[0]);
+      if(!piq){
+        const h = document.getElementById("fHint");
+        if(h) h.textContent = "Piquer un signal : tracez d'abord un fil qui part de ce bus (mode Fil, depuis le bus).";
+        return;
       }
+      schOuvrirPiquageModal(wires[0], piq.wire, {x: piq.x, y: piq.y});
     };
   }
   const bBusAlias = document.getElementById("pBusAlias");

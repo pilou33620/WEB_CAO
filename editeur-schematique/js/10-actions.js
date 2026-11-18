@@ -65,13 +65,20 @@ function transformSel(fn){
    brochage n'empile qu'une fois, à l'ouverture. */
 /* Retouche de la valeur ou d'un nom de broche : sur un CI, ils décident de la
    largeur du corps (icTextHalf), les broches s'écartent et les fils doivent suivre. */
+/* Préfixe du repère d'un composant (« J » de J100 posé depuis le catalogue) :
+   une copie le garde, au lieu de reprendre celui du symbole (U). */
+function prefixeDe(el){
+  const m=/^([A-Za-z_]+)\d+$/.exec(String(el&&el.ref||""));
+  return m?m[1]:defOf(el.type).p;
+}
 function icRetouche(el,fn){
   if(typeof defOf(el.type).pins==="function")reshapeComp(el,fn);else fn(el);
 }
 function reshapeComp(el,fn){
-  const before=allPins(el);
+  const before=allPins(el), ct=pinContacts([el]);   // broche posée sur une broche : la liaison suit aussi
   fn(el);
   followWires(pinMoves(before,allPins(el)),new Set([el]));
+  reconnectContacts(ct);
   touchWires();
 }
 /* ==========================================================================
@@ -86,13 +93,15 @@ function reshapeComp(el,fn){
 function pinContacts(els){
   if(!els||!els.length)return [];
   const moving=new Set(els), fixed=new Set();
+  // le marqueur « non connecté » n'est pas une broche : il ne se relie à rien
+  const passe=el=>isProbe(el)||defOf(el.type).nc;
   for(const el of S.comps){
-    if(moving.has(el)||isProbe(el))continue;
+    if(moving.has(el)||passe(el))continue;
     for(const q of allPins(el))fixed.add(key(q.x,q.y));
   }
   const out=[];
   for(const el of els){
-    if(isProbe(el))continue;
+    if(passe(el))continue;
     allPins(el).forEach((p,i)=>{
       if(fixed.has(key(p.x,p.y)))out.push({el,i,x:p.x,y:p.y});
     });
@@ -148,7 +157,7 @@ function dupSel(){
   for(const e of els){
     const n=JSON.parse(JSON.stringify(e));
     n.id=S.uid++;n.x+=40;n.y+=40;
-    if(!defOf(n.type).noRef){n.ref=(e.ref&&neuf.get(e.ref))||nextRef(defOf(n.type).p);if(e.ref)neuf.set(e.ref,n.ref);}
+    if(!defOf(n.type).noRef){n.ref=(e.ref&&neuf.get(e.ref))||nextRef(prefixeDe(e));if(e.ref)neuf.set(e.ref,n.ref);}
     S.comps.push(n);S.sel.add(n.id);
   }
   for(const w of copies){S.wires.push(w);S.selW.add(w);}
@@ -339,7 +348,7 @@ function pasteClip(src){
     el.x+=bx;el.y+=by;
     const def=defOf(el.type);
     if(def.lib)schSymboleRetenir(el.type);   // collé d'un autre document : son symbole de la LIB part avec celui-ci
-    if(!def.noRef){const vieux=el.ref;el.ref=(vieux&&neuf.get(vieux))||nextRef(def.p);if(vieux)neuf.set(vieux,el.ref);}
+    if(!def.noRef){const vieux=el.ref;el.ref=(vieux&&neuf.get(vieux))||nextRef(prefixeDe(el));if(vieux)neuf.set(vieux,el.ref);}
     S.comps.push(el);S.sel.add(el.id);
   });
   for(const src of wires){

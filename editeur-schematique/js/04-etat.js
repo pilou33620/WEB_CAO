@@ -84,7 +84,8 @@ function schToutesLesZones(){
     dList.forEach(d=>{
       /* une zone : cochée (isZone, category), ou un rectangle étiqueté d'avant la case
          (carte PIR v2) ; un rectangle de note décoché (isZone:false) n'en est pas une */
-      if(d&&(d.isZone||d.category||(d.shape==="rect"&&d.label&&d.isZone===undefined))){
+      // un rectangle seulement : un cadre passé en trait n'entoure plus rien
+      if(d&&d.shape==="rect"&&(d.isZone||d.category||(d.label&&d.isZone===undefined))){
         const comps=schComposantsDansZone(d,cList);
         zones.push({
           id:d.id||("zone_"+zones.length),

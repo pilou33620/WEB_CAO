@@ -63,7 +63,7 @@ function addPage(copyCurrent){
     const neuf=new Map();
     for(const c of S.comps){
       if(defOf(c.type).noRef||!c.ref)continue;
-      if(!neuf.has(c.ref))neuf.set(c.ref,nextRef(defOf(c.type).p));
+      if(!neuf.has(c.ref))neuf.set(c.ref,nextRef(prefixeDe(c)));
       c.ref=neuf.get(c.ref);
     }
   }
@@ -109,7 +109,8 @@ function refStartPage(i){
                  String(refStartDe(i)));
   if(t===null)return;
   const n=parseInt(t,10);
-  if(!(n>=1)){alert("Un entier positif, s'il vous plaît.");return;}
+  // la borne de la lecture d'un fichier : au-delà, nextRef chercherait sans fin et la valeur ne survivrait pas
+  if(!(n>=1&&n<=1e6)){alert("Un entier de 1 à 1 000 000, s'il vous plaît.");return;}
   push();storeCurrent();
   if(n!==i*100)p.refStart=n;else delete p.refStart;
   const comps=p.comps||[];
@@ -484,7 +485,8 @@ function sheetBlocks(links){
   const racine=S.pages[0]||{};
   links=links||sheetLinks();
   const pos=racine.synPos||{}, titres=racine.synTitres||{};
-  const cle=_synLiensSig+"#"+JSON.stringify(pos)+"#"+JSON.stringify(titres);
+  // le composant central (hub) fait partie de la clé : un câblage qui le change agrandit son bloc
+  const cle=_synLiensSig+"#"+JSON.stringify(pos)+"#"+JSON.stringify(titres)+"#"+(links.centre||"");
   if(links===_synLiens&&cle===_synBlocsCle)return _synBlocs;
   const comps=synComposants(), hub=links.centre||null;
   const blocks=[];

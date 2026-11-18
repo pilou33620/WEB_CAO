@@ -52,10 +52,14 @@ var SCHEMA_PATTERNS = (function() {
          nets (N$1 de chaque feuille, étiquette locale répétée) prend le numéro
          de sa feuille, sinon deux nets distincts n'en font qu'un */
       const nlNom = n => String(n == null ? "" : n).replace(/"/g, "_");
+      /* exactement la règle de netlistText : les bus n'y sont pas, un net global garde
+         son nom, seul un net local homonyme prend le suffixe */
+      const estBus = g => g.isBus || (g.members && g.members[0] && g.members[0].net.isBus);
       const occ = new Map();
-      for (const g of dn.groups) occ.set(nlNom(g.name), (occ.get(nlNom(g.name)) || 0) + 1);
+      for (const g of dn.groups) if (!estBus(g)) occ.set(nlNom(g.name), (occ.get(nlNom(g.name)) || 0) + 1);
       dn.groups.forEach(g => {
-        const k = nlNom(g.name), nName = occ.get(k) > 1 ? k + "_f" + ((g.pages || [0])[0] + 1) : k;
+        if (estBus(g)) return;
+        const k = nlNom(g.name), nName = !g.global && occ.get(k) > 1 ? k + "_f" + ((g.pages || [0])[0] + 1) : k;
         if (!netsMap[nName]) netsMap[nName] = [];
         (g.nodes || []).forEach(nd => {
           const compRef = (nd.comp && nd.comp.ref) ? nd.comp.ref : (nd.ref || "");

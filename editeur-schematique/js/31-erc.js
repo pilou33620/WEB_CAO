@@ -25,7 +25,8 @@ const ERC_PASSIFS = new Set(["Passifs", "Semi-conducteurs", "Divers", "Alimentat
 /* éléments série que l'alimentation traverse : 2 broches, ou D/S d'un MOSFET */
 const ERC_SERIE = new Set(["resistor", "inductor", "ferrite_bead", "fuse", "diode", "schottky", "strap", "button", "nmos", "pmos"]);
 const ERC_RE = {
-  nc: /^(NC|N\.C\.?|DNC|NIC)$/,
+  nc: /^(NC|N\.C\.?|DNC)$/,
+  free: /^NIC$/,                       // « not internally connected » : se câble librement (free de KiCad)
   pwrOut: /^(VOUT\w*|VO|VREG\w*|REGOUT|SW\d*|LX\d*)$/,
   pwrIn: /^(VCC\w*|VDD\w*|AVDD\w*|DVDD\w*|PVDD\w*|VIN\d*|PVIN\d*|VBAT\w*|VS|VSUP|V\+|VEE|VSS\w*|V-|GND\w*|AGND|DGND|PGND|EP|EPAD)$/,
   out: /^(OUT[A-D0-9]?|OUT[+-]|DOUT|DO|SDO|TXD?\d*|Q\d*|CLKOUT)$/,
@@ -98,6 +99,7 @@ function ercTypeDevine(el, i) {
   const nom = brut.replace(/^[~\/!]+/, "").replace(/^n(?=[A-Z])/, "").toUpperCase();
   if (!nom) return "free";
   if (ERC_RE.nc.test(nom)) return "nc";
+  if (ERC_RE.free.test(nom)) return "free";
   if (nom.includes("/")) return "bidir";              // broche multifonction
   if (el.type === "regulator") return nom === "IN" ? "pwr_in" : /^OUT\d*$/.test(nom) ? "pwr_out" : ERC_RE.pwrIn.test(nom) ? "pwr_in" : "free";
   if (ERC_RE.pwrOut.test(nom)) return "pwr_out";
@@ -175,8 +177,13 @@ function ercVerifier() {
       dire("avert", "une-broche", "Net " + nom + " à une seule broche : " + nomB(f.bs[0].el, f.bs[0].i), f.pos);
     /* conflits de types, selon la matrice : une ligne par paire de types ;
        les sorties entre elles gardent leur message « Deux sorties » */
+    /* une broche devinée « nc » d'après son nom (NC relié à la masse, courant dans les
+       fiches) ne crie pas : seul un type saisi « non connectée » entre dans la matrice */
     const parT = new Map();
-    for (const b of f.bs) { if (!parT.has(b.t)) parT.set(b.t, []); parT.get(b.t).push(b); }
+    for (const b of f.bs) {
+      const t = b.t === "nc" && !ercTypeSaisi(b.el, b.i) ? "free" : b.t;
+      if (!parT.has(t)) parT.set(t, []); parT.get(t).push(b);
+    }
     const ts = [...parT.keys()].sort((a, b) => ERC_IDX[a] - ERC_IDX[b]);
     const liste = bs => bs.slice(0, 4).map(b => nomB(b.el, b.i)).join(", ") + (bs.length > 4 ? "…" : "");
     let nivSorties = "ok";
@@ -257,8 +264,12 @@ function ercNoms(D, dire) {
   const graphies = new Map(), parPage = new Map(), globaux = new Map(), etiquettes = [];
   const noter = (nom, page, x, y, global) => {
     const k = nom.toUpperCase();
-    if (!graphies.has(k)) graphies.set(k, { vu: new Set(), pos: { page, x, y } });
-    graphies.get(k).vu.add(nom);
+    /* un nom local ne rejoint que sa feuille : la casse se compare par feuille, et
+       entre feuilles seulement pour les noms globaux */
+    for (const kg of global ? ["G|" + k, page + "|" + k] : [page + "|" + k]) {
+      if (!graphies.has(kg)) graphies.set(kg, { vu: new Set(), pos: { page, x, y } });
+      graphies.get(kg).vu.add(nom);
+    }
     const kp = page + "|" + k;
     parPage.set(kp, (parPage.get(kp) || 0) + 1);
     if (global) globaux.set(k, (globaux.get(k) || 0) + 1);
@@ -278,8 +289,9 @@ function ercNoms(D, dire) {
       if (nom && !NET_AUTO.test(nom) && !w.bus) noter(nom, pi, (w.x1 + w.x2) / 2, (w.y1 + w.y2) / 2, false);
     }
   });
+  const dits = new Set();
   for (const g of graphies.values())
-    if (g.vu.size > 1) dire("avert", "casse", "Nom de net écrit de plusieurs façons : " + [...g.vu].join(" / ") + " (un seul net)", g.pos);
+    if (g.vu.size > 1 && !dits.has([...g.vu].sort().join("|")) && dits.add([...g.vu].sort().join("|"))) dire("avert", "casse", "Nom de net écrit de plusieurs façons : " + [...g.vu].join(" / ") + " (un seul net)", g.pos);
   for (const e of etiquettes) {
     const k = e.nom.toUpperCase(), ici = parPage.get(e.page + "|" + k) || 0;
     const seule = e.el.type === "gport" ? (globaux.get(k) || 0) <= 1 && ici <= 1 : ici <= 1;
@@ -294,7 +306,8 @@ function ercNoms(D, dire) {
 
 /* 5. dessin : fil en l'air, broche hors grille, piquage hors du bus */
 function ercDessin(dire) {
-  const g = S.grid || G, horsGrille = v => Math.abs(v / g - Math.round(v / g)) > 1e-3;
+  // la grille des broches (G) : un pas d'accrochage plus large n'en fait pas des broches « hors grille »
+  const g = Math.min(S.grid || G, G), horsGrille = v => Math.abs(v / g - Math.round(v / g)) > 1e-3;
   S.pages.forEach((p, pi) => {
     if (p.isHierarchy) return;
     const f = ercFeuille(pi), bouts = new Map(), broches = new Set(), pts = [];

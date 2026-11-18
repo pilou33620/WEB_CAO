@@ -104,8 +104,11 @@ function cmLireChamp(cle,txt,nCouches){
   }
   /* un nombre entier, une unité usuelle au plus : « 5O » (lettre O) ou « abc »
      ne passent plus pour 5 ou pour un champ vidé (cmChampInvalide) */
-  const m=t.replace(",",".").match(/^([+-]?\d+(?:\.\d+)?)\s*(mm|mils?|ps|ns|Ω|ohms?|%)?$/i);
-  return m?+m[1]:null;
+  // l'unité tapée est convertie dans celle du champ : 40 mil → 1,016 mm, 1 ns → 1000 ps
+  const m=t.replace(",",".").match(/^([+-]?(?:\d+(?:\.\d*)?|\.\d+))\s*(mm|mils?|ps|ns|Ω|ohms?|%)?$/i);
+  if(!m)return null;
+  const u=(m[2]||"").toLowerCase(), v=+m[1];
+  return u.startsWith("mil")?Math.round(v*0.0254*1e6)/1e6:u==="ns"?v*1000:v;
 }
 /* Saisie non vide que cmLireChamp ne sait pas lire, ou que les bornes de
    cmNormRegle écarteraient : l'appelant refuse au lieu d'effacer la valeur en place. */
