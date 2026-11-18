@@ -212,8 +212,8 @@ function bindPkgField(el){
     tx.style.display="none";fr.style.display="none";
     if(bs.value==="__custom"){
       ns.style.display="none";
+      if(!tx.value)tx.value=el.pkg||"";   // part du boîtier en place, sans l'effacer
       tx.style.display="";tx.focus();
-      set(tx.value);
       return;
     }
     const b=baseOf();
@@ -540,7 +540,7 @@ function refreshPanels(){
     bindNetCells(box);
     const r=document.getElementById("pRef"), v=document.getElementById("pVal");
     const etape=()=>{if(PROP_FRAPPE!==el){push();PROP_FRAPPE=el;}};
-    if(r)r.oninput=()=>{etape();el.ref=r.value.trim();draw();buildList();};
+    if(r)r.oninput=()=>{etape();el.ref=r.value.trim().slice(0,32);draw();buildList();};
     /* Vide pendant la frappe, oui ; vide une fois validé, non : la netlist sortait des
        nœuds « ?.1 » et la BOM une ligne sans repère. On rend le repère d'avant. */
     let refAvant=el.ref;
@@ -563,8 +563,8 @@ function refreshPanels(){
        emmène les fils qui y sont accrochés plutôt que de les décrocher. */
     v.oninput=()=>{
       etape();
-      if(typeof def.pins==="function")reshapeComp(el,()=>{el.value=v.value;});
-      else el.value=v.value;
+      if(typeof def.pins==="function")reshapeComp(el,()=>{el.value=v.value.slice(0,240);});
+      else el.value=v.value.slice(0,240);
       draw();
       if(NAME_SRC[el.type])refreshPanels();else buildList();
     };
@@ -673,7 +673,7 @@ function refreshPanels(){
             el.csvPartName = opt.value;
             el.csvMpn = opt.dataset.mpn;
             if (opt.dataset.mfr) el.manufacturer = opt.dataset.mfr;
-            if (opt.dataset.val) el.value = opt.dataset.val;
+            if (opt.dataset.val) icRetouche(el, () => { el.value = opt.dataset.val; });
             if (opt.dataset.sch) el.symSch = opt.dataset.sch;
             if (opt.dataset.fp) {
                 el.fpPcb = opt.dataset.fp;
@@ -818,8 +818,10 @@ function bindNetCells(box){
       if(!el)return;
       if(PROP_FRAPPE!==el){push();PROP_FRAPPE=el;}      // une étape, comme repère et valeur
       if(!Array.isArray(el.pinNames))el.pinNames=[];
-      while(el.pinNames.length<=idx)el.pinNames.push("");
-      el.pinNames[idx]=inp.value.trim().slice(0,32);
+      icRetouche(el,()=>{
+        while(el.pinNames.length<=idx)el.pinNames.push("");
+        el.pinNames[idx]=inp.value.trim().slice(0,32);
+      });
       draw();
     };
   });

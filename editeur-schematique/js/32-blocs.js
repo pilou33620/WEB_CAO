@@ -45,13 +45,20 @@ function blocPoser(nom) {
   if (!b) return false;
   const W = cv.clientWidth || 800, H = cv.clientHeight || 600;
   S.mouse = { x: (W / 2 - S.ox) / S.scale, y: (H / 2 - S.oy) / S.scale };
-  /* un fil nommé garde son nom au collage (même nom = même net) : posé deux fois, le bloc
-     reliait ses « FB » entre eux. Un nom déjà pris sur le schéma reçoit un suffixe. */
-  const pris = new Set();
-  S.pages.forEach((p, i) => { for (const w of (i === S.page ? S.wires : p.wires || [])) if (w.net) pris.add(w.net); });
+  /* un fil nommé ou une étiquette locale garde son nom au collage (même nom = même net) :
+     posé deux fois, le bloc reliait ses « FB » entre eux. Un nom déjà pris sur le schéma
+     reçoit un suffixe ; la connectivité ignore la casse, la comparaison aussi. */
+  const pris = new Set(), K = n => String(n).trim().toUpperCase();
+  S.pages.forEach((p, i) => {
+    for (const w of (i === S.page ? S.wires : p.wires || [])) if (w.net) pris.add(K(w.net));
+    for (const c of (i === S.page ? S.comps : p.comps || [])) if (c.type === "port" && c.value) pris.add(K(c.value));
+  });
   const neuf = new Map();
-  const libre = n => { if (!neuf.has(n)) { let k = 2; while (pris.has(n + "_" + k)) k++; neuf.set(n, n + "_" + k); pris.add(n + "_" + k); } return neuf.get(n); };
-  const contenu = Object.assign({}, b.contenu, { wires: (b.contenu.wires || []).map(w => w.net && pris.has(w.net) ? Object.assign({}, w, { net: libre(w.net) }) : w) });
+  const libre = n => { if (!neuf.has(K(n))) { let k = 2; while (pris.has(K(n + "_" + k))) k++; neuf.set(K(n), n + "_" + k); pris.add(K(n + "_" + k)); } return neuf.get(K(n)); };
+  const contenu = Object.assign({}, b.contenu, {
+    wires: (b.contenu.wires || []).map(w => w.net && pris.has(K(w.net)) ? Object.assign({}, w, { net: libre(w.net) }) : w),
+    comps: (b.contenu.comps || []).map(c => c.type === "port" && c.value && pris.has(K(c.value)) ? Object.assign({}, c, { value: libre(c.value) }) : c)
+  });
   pasteClip(contenu);
   return true;
 }

@@ -35,7 +35,8 @@ function icSetCount(el,n){
          donnait à la netlist d'autres broches que celles dessinées */
       const old=pinsOf(el);
       const pos=old.slice(0,n);
-      while(pos.length<n)pos.push([40,(pos.length)*20]);
+      // les broches ajoutées prolongent la colonne de la dernière, au pas du symbole
+      while(pos.length<n){const d=pos[pos.length-1]||[-40,-20];pos.push([d[0],d[1]+IC_STEP]);}
       el.pinPos=pos;
     }
     el.npins=n;
@@ -241,16 +242,27 @@ function ceBuild(){
 
   ceEl("ceRef").oninput = () => {
     if(!CE.el) return;
+    const v = ceEl("ceRef").value.trim().slice(0, 32);
+    if(!v) return;                         // vide : rien n'est écrit, onchange rend l'ancien repère
     cePush();
-    CE.el.ref = ceEl("ceRef").value.trim().slice(0, 32);
+    if(CE.refAvant == null) CE.refAvant = CE.el.ref;
+    CE.el.ref = v;
     ceEl("ceTitle").textContent = "Édition du composant — " + (CE.el.ref || defOf(CE.el.type).n);
     draw(); buildList();
+  };
+  /* comme le panneau Propriétés : le bloc du synoptique suit le nouveau repère */
+  ceEl("ceRef").onchange = () => {
+    if(!CE.el) return;
+    if(!ceEl("ceRef").value.trim()) ceEl("ceRef").value = CE.el.ref || "";
+    const avant = CE.refAvant; CE.refAvant = null;
+    if(avant && avant !== CE.el.ref && typeof synRenommer === "function" && !usedRefs().has(avant))
+      synRenommer(new Map([[avant, CE.el.ref]]));
   };
 
   ceEl("ceVal").oninput = () => {
     if(!CE.el) return;
     cePush();
-    CE.el.value = ceEl("ceVal").value.slice(0, 240);
+    icRetouche(CE.el, el => { el.value = ceEl("ceVal").value.slice(0, 240); });
     draw(); buildList();
   };
 
@@ -426,8 +438,10 @@ function ceSync(){
     inp.oninput = () => {
       cePush();
       const idx = +inp.dataset.idx;
-      while(el.pinNames.length <= idx) el.pinNames.push("");
-      el.pinNames[idx] = inp.value.trim().slice(0, 32);
+      icRetouche(el, () => {
+        while(el.pinNames.length <= idx) el.pinNames.push("");
+        el.pinNames[idx] = inp.value.trim().slice(0, 32);
+      });
       draw();
     };
   });

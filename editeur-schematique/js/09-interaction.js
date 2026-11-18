@@ -589,7 +589,10 @@ cv.addEventListener("pointerdown",e=>{
       S.wireBusStart=null;
 
       if(busTapped && segs.length && typeof schOuvrirPiquageModal === "function"){
-        const wireCible = segs[segs.length - 1];
+        /* resolveSplits a pu couper le segment posé : on reprend, dans S.wires, le fil
+           ordinaire qui touche le bus au point de piquage */
+        const surBus = w => !w.bus && ((w.x1 === busTapPt.x && w.y1 === busTapPt.y) || (w.x2 === busTapPt.x && w.y2 === busTapPt.y));
+        const wireCible = S.wires.find(surBus) || segs[segs.length - 1];
         schOuvrirPiquageModal(busTapped, wireCible, busTapPt);
       }
     }
@@ -1118,6 +1121,8 @@ function schPoserDepuisCatalogue(el, it){
   const nPins = parseInt(it["Number Of pins"], 10);
   if(el.type === "ic" && nPins > 0) {
     el.npins = Math.min(64, nPins);             // la géométrie lit npins (icCount, 1..64)
+  } else if(el.type === "header" && nPins > 0 && Object.prototype.hasOwnProperty.call(LIB, "header_1x" + nPins)) {
+    el.type = "header_1x" + nPins;              // la barrette dessinée à N broches, si la bibliothèque l'a
   } else if(el.type === "header" && nPins > 0 && nPins !== pinsOf(el).length && typeof icSetCount === "function") {
     icSetCount(el, nPins);                      // le connecteur du catalogue a ses N broches, pas les 2 du symbole
   }

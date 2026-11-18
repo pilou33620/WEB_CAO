@@ -42,7 +42,8 @@ function dessinComp(ref, n, op) {
   }
   const c = typeof ref === "string" && dessinCle(ref) ? S.comps.find(x => dessinCle(x.ref) === dessinCle(ref)) : null;
   if (c) return c;
-  const ailleurs = typeof ref === "string" && dessinCle(ref) &&
+  if (!(typeof ref === "string" && dessinCle(ref))) throw dessinRefus(n, op, "donne « ref », le repère du composant (voir cao_schema_lire composants)");
+  const ailleurs =
     S.pages.findIndex((p, i) => i !== S.page && (p.comps || []).some(x => dessinCle(x.ref) === dessinCle(ref)));
   throw dessinRefus(n, op, "repère « " + ref + " » " + (ailleurs >= 0 ? "sur la feuille f" + (ailleurs + 1) + ", pas sur la feuille affichée" :
                                                         "introuvable (voir cao_schema_lire composants)"));
@@ -444,17 +445,24 @@ const DESSIN_OPS = {
         .sort((a, b) => (a.y - b.y) || (a.x - b.x)));
     });
     for (const c of tous) anciens.add(dessinCle(c.ref));
+    /* seules des parties distinctes (A, B…) d'un même repère restent ensemble ; deux
+       composants sans partie, ou la même partie deux fois (R? / R?, doublon), sont distincts */
     for (const c of tous) {
       const vieux = dessinCle(c.ref);
-      if (!nouveau.has(vieux)) {
+      let g = c.part ? nouveau.get(vieux) : null;
+      if (g && g.parts.has(c.part)) g = null;
+      if (!g) {
         const pre = (String(c.ref).match(/^[A-Za-z_]+/) || [defOf(c.type).p || "X"])[0];
         const k = (parPrefixe.get(pre.toUpperCase()) || 0) + 1;     // « r5 » et « R3 » : un seul compteur
         parPrefixe.set(pre.toUpperCase(), k);
-        nouveau.set(vieux, pre + k);
-        if (dessinCle(pre + k) !== vieux) lignes.push({ quoi: (n + 1) + ". renumeroter " + c.ref, avant: c.ref, apres: pre + k });
+        g = { ref: pre + k, parts: new Set() };
+        if (c.part && !nouveau.has(vieux)) nouveau.set(vieux, g);
+        if (dessinCle(pre + k) !== vieux || anciens.has("\u0000" + vieux)) lignes.push({ quoi: (n + 1) + ". renumeroter " + c.ref, avant: c.ref, apres: pre + k });
+        anciens.add("\u0000" + vieux);                    // un second porteur du même repère change forcément
       }
-      blocs.set(c.ref, nouveau.get(vieux));
-      c.ref = nouveau.get(vieux);
+      if (c.part) g.parts.add(c.part);
+      blocs.set(c.ref, g.ref);
+      c.ref = g.ref;
     }
     if (!lignes.length) throw dessinRefus(n, "renumeroter", "les repères sont déjà dans l'ordre");
     synRenommer(blocs);                                   // le synoptique garde places et titres

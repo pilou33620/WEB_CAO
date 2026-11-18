@@ -11,12 +11,15 @@
 const ROT_OK={0:1,90:1,180:1,270:1};
 function num(v,d){const n=+v;return Number.isFinite(n)?n:d;}
 // coordonnées internes d'un symbole : quelques dizaines de pas, pas davantage
+/* Un identifiant lu : entier de 1 à 1e9. Au-delà de 2^53, c.id++ ne change plus
+   la valeur et la dédoublonnage de normPage tournait sans fin. */
+function idLu(v,d){const n=Math.round(num(v,d));return n>=1&&n<=1e9?n:d;}
 function clampIc(v){return Number.isFinite(v)?Math.max(-4000,Math.min(4000,v)):NaN;}
 function normComp(c,i){
   if(!c||typeof c!=="object"||!hasType(c.type))return null;
   const def=LIB[c.type];
   const el={
-    id:Math.max(1,Math.round(num(c.id,i+1))),
+    id:idLu(c.id,i+1),
     type:c.type,
     x:snap(num(c.x,0)), y:snap(num(c.y,0)),
     rot:ROT_OK[num(c.rot,0)]?num(c.rot,0):0,
@@ -150,7 +153,7 @@ function normDrawing(d,i){
   const width=Math.max(1,Math.min(10,+d.width||2));
   const color=String(d.color||"#6b7280").slice(0,32);
   const label=String(d.label==null?"":d.label).slice(0,120);
-  const id=Math.max(1,Math.round(num(d.id,i+1)));
+  const id=idLu(d.id,i+1);
   const o={id,shape,type:shape,x1,y1,x2,y2,style,width,color,label};
   // zone fonctionnelle (room du PCB) : sans ces deux champs, un cadre de note décoché redevenait une zone à la réouverture
   if(typeof d.isZone==="boolean")o.isZone=d.isZone;
@@ -177,19 +180,21 @@ function normPage(p,i){
   }
   const wires=(Array.isArray(src.wires)?src.wires:[]).map(normWire).filter(Boolean);
   splitWireArray(wires);          // un fichier importé arrive avec ses fils déjà scindés
-  const isHier = !!src.isHierarchy || (src.name==="Hiérarchie") || (src.name==="Feuille hiérarchique");
+  // le nom ne décide que pour un fichier d'avant le drapeau, et pour la première feuille
+  const isHier = typeof src.isHierarchy==="boolean" ? src.isHierarchy
+    : i===0 && (src.name==="Hiérarchie" || src.name==="Feuille hiérarchique");
   const pObj = {
     name:String(src.name==null?(isHier?"Hiérarchie":("Feuille "+(i+1))):src.name).slice(0,60)||(isHier?"Hiérarchie":("Feuille "+(i+1))),
     isHierarchy: isHier,
     comps,
     wires,
     drawings,
-    uid:Math.max(Math.round(num(src.uid,1))||1, maxId+1),
+    uid:Math.max(idLu(src.uid,1), maxId+1),
     scale:Math.max(.25,Math.min(4,num(src.scale,1))),
     ox:num(src.ox,0), oy:num(src.oy,0)
   };
   const rs=Math.round(num(src.refStart,0));
-  if(rs>=1)pObj.refStart=rs;
+  if(rs>=1&&rs<=1e6)pObj.refStart=rs;         // au-delà, nextRef chercherait sans fin
   if(CARTOUCHE_FORMATS[src.format]){
     pObj.format=src.format;
     if(Number.isFinite(+src.pageX))pObj.pageX=+src.pageX;
@@ -221,7 +226,7 @@ function loadDoc(o, keepPage){
   const symboles=schSymbolesDuDocument(o);   // ses symboles de la LIB : avant normPage, qui écarte les types inconnus
   const pages=raw.slice(0,200).map(normPage);
   let addedHier = false;
-  if(!pages[0].isHierarchy && pages[0].name!=="Hiérarchie" && pages[0].name!=="Feuille hiérarchique"){
+  if(!pages[0].isHierarchy){                 // normPage a déjà tranché, nom compris pour un vieux fichier
     pages.unshift(newHierPage("Hiérarchie"));
     addedHier = true;
   }

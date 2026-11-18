@@ -78,6 +78,7 @@ function schChargerProjet(){
     if(!d)return;            // dossier sans schéma : il n'y a rien à reprendre
     if(S.dirty)return;       // travail commencé pendant la lecture : on n'écrase pas
     loadDoc(d);
+    S.hist.length=0;S.redo.length=0;   // Ctrl+Z ne ramène pas le document de démarrage
     S.dirty=!!r.b;           // un brouillon repris n'est pas enregistré
     const h=document.getElementById("fHint");
     if(h)h.textContent=r.b?"Brouillon repris : enregistrez pour le garder."

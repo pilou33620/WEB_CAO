@@ -102,8 +102,20 @@ function cmLireChamp(cle,txt,nCouches){
     const o=t.split(/[\s,;>\u2192]+/).map(x=>x.trim()).filter(Boolean);
     return o.length?o:null;
   }
-  const v=parseFloat(t.replace(",","."));
-  return Number.isFinite(v)?v:null;
+  /* un nombre entier, une unité usuelle au plus : « 5O » (lettre O) ou « abc »
+     ne passent plus pour 5 ou pour un champ vidé (cmChampInvalide) */
+  const m=t.replace(",",".").match(/^([+-]?\d+(?:\.\d+)?)\s*(mm|mils?|ps|ns|Ω|ohms?|%)?$/i);
+  return m?+m[1]:null;
+}
+/* Saisie non vide que cmLireChamp ne sait pas lire, ou que les bornes de
+   cmNormRegle écarteraient : l'appelant refuse au lieu d'effacer la valeur en place. */
+function cmChampInvalide(cle,txt,nCouches){
+  if(String(txt==null?"":txt).trim()==="")return false;
+  const v=cmLireChamp(cle,txt,nCouches);
+  if(v==null)return true;
+  // les clés d'une règle de net ont leurs bornes ; clr, w, tol… sont bornées par leur appelant
+  const regle=["z","zTol","lMax","lMin","viasMax","couches","topo","ordre","stubMax","viaStubMax","etoileTol","cp"];
+  return regle.includes(cle)&&!Object.prototype.hasOwnProperty.call(cmNormRegle({[cle]:v})||{},cle);
 }
 /* Les noms des topologies, pour les listes des deux éditeurs. */
 const CM_TOPO_NOMS={p2p:"point à point",chaine:"chaîne",etoile:"étoile",flyby:"fly-by"};

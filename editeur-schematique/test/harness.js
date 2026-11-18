@@ -156,6 +156,7 @@ const EXPOSE=[
   /* contrôle électrique (31-erc.js) et blocs réutilisables (32-blocs.js) */
   "ercVerifier","ercTypeBroche","ercOuvrir","ercFermer","ERC_DERNIER",
   "ercTypeSaisi","ercTypeDevine","ercNiveau","ercMatriceNorm","ercMatriceBasculer","ercMatriceHtml","ERC_TYPES",
+  "normPage","idLu","crIndexBroche","crDetecterConflitsCablage","schSuggererProchainSignal","schPiquerSignal","icRetouche","DESSIN_OPS","SCHEMA_PATTERNS","usedRefs",
   "busAliasLire","busAliasNorm","busAliasTexte","schDevelopperSignauxBus","normComp","serialize","undo",
   "schReglesControler","reglesResultat","reglesTexte",
   "blocEnregistrer","blocsLire","blocPoser","blocSupprimer","blocsImporterTexte","blocsOuvrir","blocsFermer","BLOCS_KEY"
@@ -1289,7 +1290,7 @@ T("nomenclature : les séparateurs sont protégés",()=>{
   if(csvCell(null)!=="")throw new Error("valeur absente : chaîne vide attendue");
   if(csvCell("a\rb")!=='"a\rb"')throw new Error("retour chariot seul non protégé : la ligne serait coupée à la relecture");
   // une valeur écrite par Claude ou venue d'un projet ne doit pas devenir une formule de tableur
-  for(const [v,att] of [["=1+1","'=1+1"],["+5V","'+5V"],["@SUM(A1)","'@SUM(A1)"],["-x","'-x"],["-40","-40"],["-.5","-.5"],["10k","10k"]])
+  for(const [v,att] of [["=1+1","'=1+1"],["+5V","'+5V"],["@SUM(A1)","'@SUM(A1)"],["-x","'-x"],["-40","-40"],["-.5","-.5"],["10k","10k"],["-1+1","'-1+1"],["-2+cmd|' /C calc'!A0","'-2+cmd|' /C calc'!A0"]])
     if(csvCell(v)!==att)throw new Error("formule : "+v+" → "+csvCell(v));
 });
 T("nomenclature : colonnes enrichies (MPN, Fabricant, Specs, Datasheet)",()=>{
@@ -3769,7 +3770,7 @@ T("bus de signaux : détection de piquage, suggestion auto-incrémentée et appl
   if(piq.x !== 50 || piq.y !== 100) throw new Error("Coordonnées de piquage incorrectes: " + piq.x + "," + piq.y);
 
   // Test suggestion auto-incrémentée
-  delete SCH_PIQUAGE_MEMOIRE["D[0..7]"];
+  SCH_PIQUAGE_MEMOIRE.delete("D[0..7]");
   const s1 = schSuggererProchainSignal("D[0..7]");
   if(s1 !== "D0") throw new Error("Premier signal suggéré doit être D0, reçu: " + s1);
 
@@ -4490,11 +4491,13 @@ T("contraintes de nets : saisie bornée comme au PCB",()=>{
   const r=schCmModele().nets.CLK;
   const att={z:50,zTol:5,lMax:40.5,couches:[0,3],topo:"chaine",ordre:["R1","R2"],stubMax:0};
   if(JSON.stringify(r)!==JSON.stringify(att))throw new Error(JSON.stringify(r));
-  schCmPoser("CLK","z","abc");
-  if("z" in schCmModele().nets.CLK)throw new Error("une saisie illisible efface le champ");
-  schCmPoser("CLK","lMax","1e9");
-  if("lMax" in schCmModele().nets.CLK)throw new Error("hors bornes : écarté");
-  for(const k of ["zTol","couches","topo","ordre","stubMax"])schCmPoser("CLK",k,"");
+  // illisible ou tronquable (« 5O ») : refusée, la valeur en place reste
+  if(schCmPoser("CLK","z","abc")!==false||schCmModele().nets.CLK.z!==50)throw new Error("une saisie illisible est refusée");
+  if(schCmPoser("CLK","z","5O")!==false||schCmModele().nets.CLK.z!==50)throw new Error("« 5O » n'est pas 5");
+  schCmPoser("CLK","z","");
+  if("z" in schCmModele().nets.CLK)throw new Error("vide efface le champ");
+  if(schCmPoser("CLK","lMax","1e9")!==false||schCmModele().nets.CLK.lMax!==40.5)throw new Error("hors bornes : refusée, la valeur en place reste");
+  for(const k of ["zTol","lMax","couches","topo","ordre","stubMax"])schCmPoser("CLK",k,"");
   if(schCmModele().nets.CLK)throw new Error("un net sans contrainte disparaît de la table");
 });
 T("contraintes de nets : dans le document, l'aller-retour et l'annulation",()=>{
@@ -4713,6 +4716,56 @@ T("Alias de bus : lecture, développement, alias imbriqués et en boucle, gardé
   if(JSON.stringify(busAliasNorm({"bad name":["A"],OK:["A",{}],V:"x"}))!=='{"OK":["A","[object Object]"]}')throw new Error("lecture bornée : "+JSON.stringify(busAliasNorm({"bad name":["A"],OK:["A",{}],V:"x"})));
   if(!/^MEM = A\[0\.\.1\], WR$/m.test(busAliasTexte(S.busAlias)))throw new Error(busAliasTexte(S.busAlias));
   S.busAlias={};
+});
+
+/* ---------- revue de bugs du 18/11 ---------- */
+T("import : identifiants et refStart démesurés bornés, feuille « Hiérarchie » gardée normale",()=>{
+  const p=normPage({name:"Feuille 2",isHierarchy:false,refStart:1e17,uid:1e17,
+    comps:[{id:1e17,type:"resistor",x:0,y:0},{id:1e17,type:"resistor",x:40,y:0}]},1);  // tournait sans fin
+  if(new Set(p.comps.map(c=>c.id)).size!==2||p.comps.some(c=>c.id>1e9)||p.uid>1e9+2)throw new Error("ids : "+JSON.stringify(p.comps.map(c=>c.id))+" uid "+p.uid);
+  if(p.refStart!==undefined)throw new Error("refStart gardé : "+p.refStart);
+  if(normPage({name:"Hiérarchie",isHierarchy:false,comps:[]},3).isHierarchy)throw new Error("le nom ne fait pas la feuille hiérarchique");
+  if(!normPage({name:"Hiérarchie",comps:[]},0).isHierarchy)throw new Error("vieux fichier : la première feuille au nom « Hiérarchie » l'est");
+});
+T("renumeroter : deux composants au même repère sans partie reçoivent deux repères",()=>{
+  sheet([C("resistor",5,5,{ref:"R?",value:"1k"}),C("resistor",5,9,{ref:"R?",value:"2k"}),C("resistor",5,13,{ref:"R5",value:"3k"}),C("resistor",5,17,{ref:"R5",value:"4k"})],[]);
+  DESSIN_OPS.renumeroter({},0);
+  const r=S.comps.map(c=>c.ref).join();
+  if(r!=="R1,R2,R3,R4")throw new Error(r);
+  try{DESSIN_OPS.supprimer({},0);throw new Error("refus attendu");}catch(e){if(!/donne « ref »/.test(e.message))throw new Error("message : "+e.message);}
+});
+T("recherche de composants : la broche du brochage LCSC se retrouve par sa patte",()=>{
+  const q=C("npn",10,10,{ref:"Q1",pinMap:["1","3","2"]});
+  if(crIndexBroche(q,"3")!==1||crIndexBroche(q,"2")!==2||crIndexBroche(q,"9")!==-1)throw new Error("par la table");
+  const r=C("resistor",10,10,{ref:"R1"});
+  if(crIndexBroche(r,"2")!==1||crIndexBroche(r,"5")!==4)throw new Error("sans table : patte n = broche n");
+});
+T("motifs : nets homonymes de deux feuilles distincts, net « constructor » sans plantage",()=>{
+  const a=C("resistor",5,5,{ref:"R1"}), b=C("resistor",5,9,{ref:"R2"});
+  sheet([a,b],[{x1:allPins(a)[1].x,y1:allPins(a)[1].y,x2:allPins(b)[1].x,y2:allPins(b)[1].y,net:"constructor"}]);
+  const p2=newPage("F2"), c=C("resistor",5,5,{ref:"R3"}), d=C("resistor",5,9,{ref:"R4"});
+  p2.comps=[c,d];p2.wires=[{x1:allPins(c)[1].x,y1:allPins(c)[1].y,x2:allPins(d)[1].x,y2:allPins(d)[1].y,net:"SIG"}];
+  S.pages[0].wires[0].net="SIG";S.pages.push(p2);touchWires();
+  let doc=SCHEMA_PATTERNS.extraireDonneesSchema();
+  if(!doc.nets.SIG_f1||!doc.nets.SIG_f2||doc.nets.SIG)throw new Error(JSON.stringify(Object.keys(doc.nets)));
+  S.pages[0].wires[0].net="constructor";touchWires();
+  doc=SCHEMA_PATTERNS.extraireDonneesSchema();
+  if(!Array.isArray(doc.nets.constructor)||doc.nets.constructor.length!==2)throw new Error("constructor : "+JSON.stringify(doc.nets.constructor));
+});
+T("bus : vecteur démesuré refusé, mémoire des piquages sans clé héritée",()=>{
+  if(schDevelopperSignauxBus("D[0..9999999]").length!==1)throw new Error("vecteur non borné");
+  if(schDevelopperSignauxBus("D[0..1023]").length!==1024)throw new Error("mille signaux restent possibles");
+  for(const n of ["constructor","toString","__proto__"])schSuggererProchainSignal(n);          // plantait
+});
+T("CI : changer la valeur ou un nom de broche emmène les fils",()=>{
+  const u=C("ic",10,10,{ref:"U9",npins:8,pinNames:[]}), p=allPins(u)[0];
+  sheet([u],[{x1:p.x-60,y1:p.y,x2:p.x,y2:p.y}]);
+  const avant=nets().list.length;
+  icRetouche(u,()=>{u.value="UNE_REFERENCE_TRES_LONGUE_DE_CATALOGUE";});
+  const q=allPins(u)[0], w=S.wires[0];
+  if(q.x===p.x)throw new Error("décor : la valeur devait élargir le corps");
+  if(w.x2!==q.x||w.y2!==q.y)throw new Error("le fil reste à "+w.x2+" au lieu de "+q.x);
+  if(!nets().list.some(n=>n.nodes.some(nd=>nd.ref==="U9")))throw new Error("U9.1 décroché de son net");
 });
 
 /* ==========================================================================

@@ -38,6 +38,7 @@ function buildPalette(){
       const s=document.createElement("span");s.textContent=def.n;b.appendChild(s);
       b.onclick=()=>{
         setMode("select");
+        S.placeLibItem=null;                 // l'article du catalogue choisi avant ne suit pas le symbole de la palette
         S.place = S.place===type?null:type;S.placeRot=0;
         setPalette(S.place);
         document.getElementById("fHint").textContent = S.place

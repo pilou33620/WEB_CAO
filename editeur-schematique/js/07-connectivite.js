@@ -165,9 +165,9 @@ function schDevelopperSignauxBus(nomBus,prof){
   // un membre qui est lui-même un vecteur ou un alias se développe (alias en boucle : arrêt à 4 niveaux)
   const membre = it => (prof<4 && (busAliasDe(it.replace(/^\{|\}$/g,"")) || /\[/.test(it))) ? schDevelopperSignauxBus(it,prof+1) : [it];
 
-  // 0. Alias du document : NOM ou {NOM}
+  // 0. Alias du document : NOM ou {NOM} ; 4096 signaux au plus, alias imbriqués compris
   const al = busAliasDe(raw.replace(/^\{\s*|\s*\}$/g,""));
-  if(al && prof<4) return al.flatMap(membre);
+  if(al && prof<4) return al.flatMap(membre).slice(0, 4096);
 
   // 1. Détection des protocoles standards sans suffixe
   const STANDARDS = {
@@ -204,6 +204,7 @@ function schDevelopperSignauxBus(nomBus,prof){
     const start = parseInt(mVec[2], 10);
     const end = parseInt(mVec[3], 10);
     const signals = [];
+    if(Math.abs(end - start) > 1023) return [raw];   // D[0..9999999] gelait l'onglet : un bus réel n'a pas mille signaux
     if(start <= end){
       for(let i = start; i <= end; i++) signals.push(prefix + i);
     } else {
@@ -279,7 +280,7 @@ function schTousLesPiquages(wires){
   return res;
 }
 
-const SCH_PIQUAGE_MEMOIRE = {};
+const SCH_PIQUAGE_MEMOIRE = new Map();     // bus → dernier signal piqué ; une Map : « constructor » n'y est pas
 
 /**
  * Retourne l'ensemble des noms de signaux actuellement piqués sur le bus.
@@ -306,7 +307,7 @@ function schSignauxOccupesSurBus(busWire, wires){
 function schSuggererProchainSignal(busNom){
   const signaux = schDevelopperSignauxBus(busNom);
   if(!signaux.length) return "SIG0";
-  const dernier = SCH_PIQUAGE_MEMOIRE[busNom];
+  const dernier = SCH_PIQUAGE_MEMOIRE.get(busNom);
   if(!dernier) return signaux[0];
 
   const idx = signaux.indexOf(dernier);
@@ -335,7 +336,7 @@ function schPiquerSignal(signalWire, nomSignal, busNom){
 
   signalWire.net = sig;
   if(busNom){
-    SCH_PIQUAGE_MEMOIRE[busNom] = sig;
+    SCH_PIQUAGE_MEMOIRE.set(busNom, sig);
   }
   if(typeof touchWires === "function") touchWires();
   if(typeof resolveSplits === "function") resolveSplits();
@@ -503,7 +504,7 @@ function compSig(c){
   return c.type+","+c.x+","+c.y+","+(c.rot|0)+(c.mir?"m":"")+(c.npins||0)+
     (c.icShape==="quad"?"q":c.icShape==="libre"?("f"+posHash(c.pinPos)):"")+
     ((c.icW||c.icHs)?("w"+(c.icW||0)+"/"+(c.icHs||0)):"")+
-    (NAME_SRC[c.type]?(","+c.value):"")+
+    (NAME_SRC[c.type]||typeof defOf(c.type).pins==="function"?(","+c.value):"")+   // la valeur d'un CI écarte ses broches
     /* repère, noms et pattes partent dans les nœuds : les changer doit
        refaire les nets, sinon la netlist garderait l'ancien brochage */
     ","+(c.ref||"")+(c.pinMap?",p"+c.pinMap.join("."):"")+

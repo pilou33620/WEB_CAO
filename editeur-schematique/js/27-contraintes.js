@@ -49,6 +49,7 @@ function schCmEdit(fn){
   S.dirty=true;
 }
 function schCmPoser(net,cle,txt){
+  if(cmChampInvalide(cle,txt,64))return false;
   const v=cmLireChamp(cle,txt,64);
   schCmEdit(C=>{
     const r=Object.assign({},C.nets[net]||{});
@@ -167,7 +168,12 @@ function schCmChangement(e){
   if(d.netcls!=null)return;                // la classe : bindNetClassSelects s'en charge
   if(!d.scm)return;
   const p=d.scm.split(SCH_CM_SEP);
-  if(p[0]==="net")schCmPoser(p[1],p[2],t.value);
+  if(p[0]==="net"){
+    if(schCmPoser(p[1],p[2],t.value)===false){
+      t.style.borderColor="#ef4444";
+      const h=document.getElementById("fHint");if(h)h.textContent="Valeur refusée : un nombre, avec au plus une unité (mm, mil, ps, ns, Ω, %) ; vide efface.";
+    }else t.style.borderColor="";
+  }
   else if(p[0]==="grp"){
     const [_,id,cle]=p;
     schCmGroupeModifier(id,g=>{

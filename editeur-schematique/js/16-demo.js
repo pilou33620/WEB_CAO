@@ -399,7 +399,12 @@ function schChargerExemple(i){
     return false;
   }
   if(typeof push==="function") push();
-  S.variantes={liste:[],active:""};   // un autre document : ses variantes à lui
+  // un autre document : rien ne reste du précédent (variantes, classes, cartouche, contraintes…)
+  S.variantes={liste:[],active:""};
+  S.netClasses={};S.symboles={};
+  S.cartoucheInfo=cartoucheInfoNorm();
+  S.contraintes={nets:{},groupes:[]};
+  S.ercMatrice={};S.busAlias={};
 
   if(i === 0){
     S.pages = [newHierPage("Hiérarchie"), newPage("Microcontrôleur & Bus"), newPage("Alimentation & RF")];

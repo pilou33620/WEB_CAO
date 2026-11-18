@@ -63,6 +63,11 @@ function transformSel(fn){
    du corps, position d'une patte : le câblage suit les broches déplacées, comme
    pour une rotation. L'historique est laissé à l'appelant : l'éditeur de
    brochage n'empile qu'une fois, à l'ouverture. */
+/* Retouche de la valeur ou d'un nom de broche : sur un CI, ils décident de la
+   largeur du corps (icTextHalf), les broches s'écartent et les fils doivent suivre. */
+function icRetouche(el,fn){
+  if(typeof defOf(el.type).pins==="function")reshapeComp(el,fn);else fn(el);
+}
 function reshapeComp(el,fn){
   const before=allPins(el);
   fn(el);

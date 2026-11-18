@@ -108,6 +108,10 @@ function TXT(c,t,x,y,size,col,align){
     // on annule le miroir, et on ramène l'angle à 0° ou 90° : les deux seules
     // orientations lisibles, comme dans les outils du métier
     const rot=((_symT.rot%360)+360)%360;
+    /* redressé, le texte part dans l'autre sens : son ancrage gauche/droite
+       aussi, sinon un nom de broche déborde sur la patte */
+    if(!!_symT.mir!==(rot===180||rot===270)&&(c.textAlign==="left"||c.textAlign==="right"))
+      c.textAlign=c.textAlign==="left"?"right":"left";
     c.translate(x,y);
     if(_symT.mir)c.scale(-1,1);
     c.rotate((rot%180-rot)*Math.PI/180);

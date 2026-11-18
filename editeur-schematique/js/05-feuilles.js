@@ -830,6 +830,8 @@ function push(snapshot){
 }
 function restore(js){
   PROP_FRAPPE=null;
+  // la fenêtre Détails tiendrait un composant que restore() remplace : on la ferme
+  if(typeof CE!=="undefined"&&CE.open&&typeof ceClose==="function")ceClose();
   const o=JSON.parse(js);
   S.symboles=schSymbolesDuDocument(o);      // avant que les composants ne se dessinent
   S.pages=o.pages;loadPage(o.page||0);

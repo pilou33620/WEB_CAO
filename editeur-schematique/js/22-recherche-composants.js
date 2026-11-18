@@ -53,6 +53,16 @@ function crNormSig(s) {
   return String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
+/* Broche du symbole (index) qui tombe sur la patte `num` du brochage du
+   distributeur : par la table broche → patte (25-brochage.js), pas par son
+   rang. Sans table, la patte n est la broche n, au-delà du compte compris
+   (un CI qui grandit). -1 : patte sans broche. */
+function crIndexBroche(el, num) {
+  const s = String(num == null ? "" : num).trim(), n = pinsOf(el).length;
+  for (let i = 0; i < n; i++) if (brPattes(el, i).map(String).includes(s)) return i;
+  return !brAUneTable(el) && /^\d+$/.test(s) ? +s - 1 : -1;
+}
+
 function crDetecterConflitsCablage(el, pinoutData) {
   if (!el || !pinoutData || !Array.isArray(pinoutData) || !pinoutData.length) return [];
   if (typeof allPins !== "function" || typeof nets !== "function" || typeof S === "undefined" || !Array.isArray(S.wires)) return [];
@@ -73,7 +83,7 @@ function crDetecterConflitsCablage(el, pinoutData) {
                                       (typeof insideSeg === "function" && insideSeg(pt, w)));
 
     const pinNum = i + 1;
-    const pData = pinoutData.find(p => parseInt(p.number, 10) === pinNum);
+    const pData = pinoutData.find(p => crIndexBroche(el, p.number) === i);
     const newPinName = pData && pData.name ? String(pData.name).trim() : "";
 
     pinInfos.push({
@@ -660,7 +670,7 @@ function crClassifierBroche(nom) {
 function crBrocheRaccordementSchema(el, pinNum) {
   if (!el || typeof allPins !== "function" || typeof nets !== "function" || typeof S === "undefined" || !Array.isArray(S.wires)) return null;
   const pins = allPins(el);
-  const idx = pinNum - 1;
+  const idx = crIndexBroche(el, pinNum);
   if (idx < 0 || idx >= pins.length) return null;
   const pt = pins[idx];
   const nInfo = nets();
@@ -983,8 +993,9 @@ function crAfficherDetailsComplets() {
       const num = parseInt(p.number, 10);
       const nom = p.name || "";
       const typeInfo = crClassifierBroche(nom);
-      const racc = crBrocheRaccordementSchema(CR_ETAT.el, num);
-      const nomActuel = (CR_ETAT.el && CR_ETAT.el.pinNames && CR_ETAT.el.pinNames[num - 1]) || "";
+      const racc = crBrocheRaccordementSchema(CR_ETAT.el, p.number);
+      const iSym = CR_ETAT.el ? crIndexBroche(CR_ETAT.el, p.number) : -1;
+      const nomActuel = (iSym >= 0 && CR_ETAT.el.pinNames && CR_ETAT.el.pinNames[iSym]) || "";
 
       let cellNom = '<b>' + esc(nom) + '</b>';
       if (nomActuel && nomActuel.toUpperCase() === nom.toUpperCase()) {
@@ -1152,13 +1163,15 @@ async function crAppliquerDonnees() {
   if (typeof push === "function") push();
 
   // 2. Assignation des propriétés sur le composant cible
+  const mpnAvant = el.mpn;
   if (checkMpn && mpn) el.mpn = mpn;
   if (checkMfr && mfr) el.manufacturer = mfr;
   if (checkPkg && pkg) el.pkg = pkg;
   if (Object.keys(specsSelectionnees).length > 0) el.specs = specsSelectionnees;
 
   if (checkLcsc && d.lcsc) el.lcsc = d.lcsc;
-  else if (!d.lcsc) delete el.lcsc;
+  // un autre MPN retenu sans code LCSC : l'ancien code désignait l'ancienne pièce
+  else if (!d.lcsc && checkMpn && mpn && mpn !== mpnAvant) delete el.lcsc;
   if (checkMouser && CR_ETAT.mouserData) el.mouser_part = CR_ETAT.mouserData.part_number;
   if (checkDigikey && CR_ETAT.digikeyData) el.digikey_part = CR_ETAT.digikeyData.part_number;
 
@@ -1174,7 +1187,7 @@ async function crAppliquerDonnees() {
     if (!el.pinNames) el.pinNames = [];
     let maxPin = el.npins || 8;
     CR_ETAT.pinoutData.forEach(p => {
-      const idx = parseInt(p.number, 10) - 1;
+      const idx = crIndexBroche(el, p.number);   // patte sans broche du symbole : rien à nommer
       if (idx >= 0 && idx < 64 && p.name) {
         el.pinNames[idx] = p.name;
         if (idx + 1 > maxPin) maxPin = idx + 1;

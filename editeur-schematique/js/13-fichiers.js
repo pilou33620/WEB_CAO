@@ -364,7 +364,8 @@ function exportNetlist(){
 function csvCell(v){
   let t=String(v==null?"":v);
   // un tableur lit « =… », « +… », « @… » comme une formule : la valeur vient du projet, pas d'un calcul
-  if(/^[=+@\t\r]|^-(?![\d.])/.test(t))t="'"+t;
+  // « -1+1 » ou « -2+cmd|… » aussi : seul un nombre pur commence par « - » sans apostrophe
+  if(/^[=+@\t\r]|^-(?!(?:\d+(?:[.,]\d*)?|[.,]\d+)$)/.test(t))t="'"+t;
   return /[";\r\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t;
 }
 /* `variante` : l'identifiant d'une variante de montage (commun/variantes.js),

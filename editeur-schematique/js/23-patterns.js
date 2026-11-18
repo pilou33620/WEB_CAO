@@ -12,7 +12,7 @@
 var SCHEMA_PATTERNS = (function() {
   let _timer = 0;
   let _derniersMotifs = null;
-  let _chargementEnCours = false;
+  let _chargementEnCours = false, _relance = false;
   let _derniersNets = {};
   let _netsOuverts = false;
 
@@ -20,7 +20,7 @@ var SCHEMA_PATTERNS = (function() {
   function extraireDonneesSchema() {
     if (typeof S === "undefined" || !S) return null;
 
-    const compsMap = {};
+    const compsMap = Object.create(null);     // un repère « constructor » n'y trouve rien d'hérité
     const allComps = [];
 
     if (Array.isArray(S.pages) && S.pages.length > 0) {
@@ -44,12 +44,18 @@ var SCHEMA_PATTERNS = (function() {
       };
     });
 
-    const netsMap = {};
+    const netsMap = Object.create(null);
     const dn = (typeof docNets === "function") ? docNets() : null;
 
     if (dn && Array.isArray(dn.groups)) {
+      /* les noms de la netlist (13-fichiers.js) : un nom porté par plusieurs
+         nets (N$1 de chaque feuille, étiquette locale répétée) prend le numéro
+         de sa feuille, sinon deux nets distincts n'en font qu'un */
+      const nlNom = n => String(n == null ? "" : n).replace(/"/g, "_");
+      const occ = new Map();
+      for (const g of dn.groups) occ.set(nlNom(g.name), (occ.get(nlNom(g.name)) || 0) + 1);
       dn.groups.forEach(g => {
-        const nName = g.name;
+        const k = nlNom(g.name), nName = occ.get(k) > 1 ? k + "_f" + ((g.pages || [0])[0] + 1) : k;
         if (!netsMap[nName]) netsMap[nName] = [];
         (g.nodes || []).forEach(nd => {
           const compRef = (nd.comp && nd.comp.ref) ? nd.comp.ref : (nd.ref || "");
@@ -364,7 +370,8 @@ var SCHEMA_PATTERNS = (function() {
         return;
       }
 
-      if (_chargementEnCours) return;
+      // une analyse en cours : celle-ci repartira à sa fin, sur le schéma d'alors
+      if (_chargementEnCours) { _relance = true; return; }
       _derniersNets = doc.nets;
       _chargementEnCours = true;
 
@@ -414,6 +421,7 @@ var SCHEMA_PATTERNS = (function() {
         if (!_derniersMotifs) publierClasses(null);
       } finally {
         _chargementEnCours = false;
+        if (_relance) { _relance = false; analyser(0); }
       }
     }, delaiMs);
   }
@@ -441,6 +449,7 @@ var SCHEMA_PATTERNS = (function() {
 
   return {
     analyser,
+    extraireDonneesSchema,
     ciblerComposantSchema,
     classeAuto,
     poserClasse,
