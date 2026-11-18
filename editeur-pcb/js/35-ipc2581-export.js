@@ -490,7 +490,10 @@ function ipcNomsCuivre(){
   const vus=new Set(), out=[];
   for(let i=0;i<S.cu;i++){
     let n=ipcNom(S.cuL[i]&&S.cuL[i].name,cuId(i,S.cu));
-    if(vus.has(n.toUpperCase()))n=cuId(i,S.cu);
+    // les noms des autres couches du fichier sont pris : une couche « CONTOUR » doublait la clé du XSD
+    const pris=x=>vus.has(x.toUpperCase())||/^(CONTOUR|FENTES|MASQUE_.*|PATE_.*|SERIGRAPHIE_.*|DIELECTRIQUE_\d+|PERCAGE.*)$/i.test(x);
+    if(pris(n))n=cuId(i,S.cu);
+    for(let k=2;pris(n);k++)n=cuId(i,S.cu)+"_"+k;
     vus.add(n.toUpperCase());out.push(n);
   }
   return out;
@@ -784,14 +787,16 @@ function ipc2581Document(opts){
     const attrs=[["VALUE",fp.value],["MPN",mpn],["MANUFACTURER",fab],["PART_NAME",fp.csvPartName],
                  ["PACKAGE",fp.pkg],["NOT_MOUNTED_IN",nm.join(" ; ")]]
       .filter(([,v])=>v).map(([k,v])=>["NonstandardAttribute",[["name",k],["type","STRING"],["value",v]]]);
-    comps.push(["Component",[["refDes",ref],["packageRef",pkg],["part",part],
+    /* la ligne de nomenclature d'abord : son nom OEM (dédoublonné, nettoyé) est aussi
+       le « part » du composant, sinon R3 pointait la ligne de R2 au même MPN */
+    const cle=[part,fp.value||"",fp.pkg||"",fab].join("|");
+    if(!lignes.has(cle))lignes.set(cle,{part,oem:uniqOem(ipcNom(part,"REF")),val:fp.value||"",pkg:fp.pkg||"",mpn,fab,
+                                         nom:fp.csvPartName||"",pins:ps.length,refs:[]});
+    comps.push(["Component",[["refDes",ref],["packageRef",pkg],["part",lignes.get(cle).oem],
       ["layerRef",cuN[fp.side?n-1:0]],["mountType",!ps.length?"OTHER":ps.some(q=>q.drill>0)?"THMT":"SMT"]],
       attrs.concat([xform(-(fp.rot||0),!!fp.side),["Location",[["x",X(fp.x)],["y",Y(fp.y)]]]])]);
     stats.composants++;
-    /* la ligne de nomenclature : même référence, même valeur, même boîtier */
-    const cle=[part,fp.value||"",fp.pkg||"",fab].join("|");
-    if(!lignes.has(cle))lignes.set(cle,{part,val:fp.value||"",pkg:fp.pkg||"",mpn,fab,
-                                         nom:fp.csvPartName||"",pins:ps.length,refs:[]});
+    // la ligne de nomenclature (créée plus haut) : même référence, même valeur, même boîtier
     lignes.get(cle).refs.push({ref,pose:varEstMonte(fp,vid),couche:cuN[fp.side?n-1:0],pkg});
     for(const q of ps)
       if(q.net){
@@ -1219,7 +1224,7 @@ function ipc2581Document(opts){
   /* ---------- la nomenclature ---------- */
   const bomItems=[];
   for(const L of lignes.values()){
-    const oem=uniqOem(ipcNom(L.part,"REF"));
+    const oem=L.oem;
     const tx=[["VALUE",L.val],["PACKAGE",L.pkg],["MPN",L.mpn],["MANUFACTURER",L.fab],["PART_NAME",L.nom]]
       .filter(([,v])=>v).map(([k,v])=>["Textual",[["definitionSource","WEB_CAO"],
         ["textualCharacteristicName",k],["textualCharacteristicValue",v]]]);

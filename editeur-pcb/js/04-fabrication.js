@@ -141,6 +141,7 @@ const FONT={
   ",":"2526","=":"0242 0444","'":"2022","!":"2024 2526"
 };
 function glyph(ch){
+  if(FONT[ch])return FONT[ch];          // « µ » d'abord : en capitale il devient le Μ grec, absent de la fonte
   const c=String(ch).toUpperCase();
   if(FONT[c])return FONT[c];
   if(c===" ")return "";
@@ -389,11 +390,17 @@ function zoneDuTrou(i,h,zs){
   return z;
 }
 function zoneEtrangereProche(zs,net,ecart,marge){
+  const z=zoneEtrangereProcheZ(zs,net,ecart,marge);
+  return z?z.net:null;
+}
+/* La zone elle-même : son isolement propre (z.isol) compte au dégagement, pas
+   seulement celui de la classe de son net. */
+function zoneEtrangereProcheZ(zs,net,ecart,marge){
   for(const z of zs){
     if(net!==TOUS_LES_NETS&&(z.net||"")===(net||""))continue;   // un trou : aucun net à exclure
     const P=z.pts, lim=marge(z);
     for(let k=0,j=P.length-1;k<P.length;j=k++)
-      if(ecart(P[j],P[k])<lim)return z.net;
+      if(ecart(P[j],P[k])<lim)return z;
   }
   return null;
 }
@@ -438,25 +445,25 @@ function gerberCopper(i){
     for(const z of zs)
       if(zoneFichier(z)&&Array.isArray(z.trous))
         for(const t of z.trous)if(t&&t.length>=3)gRegion(body,t);
-    const zn=(x,y)=>{const z=zoneAt(i,x,y);return z?z.net:null;};
     const seg=(a,b)=>({x1:a.x,y1:a.y,x2:b.x,y2:b.y});
     for(const t of S.tracks){
       if(t.l!==i)continue;
       const m=trkMid(t);
-      let z=zn(m.x,m.y);
-      if(z===null)z=zoneEtrangereProche(zs,t.net,(a,b)=>segSegDist(t,seg(a,b)),
+      let zo=zoneAt(i,m.x,m.y);
+      if(!zo)zo=zoneEtrangereProcheZ(zs,t.net,(a,b)=>segSegDist(t,seg(a,b)),
         q=>t.w/2+clrK(q.net,t.net,"cu","trk"));
-      if(z===null||z===t.net)continue;
-      gTrk(body,A,t,t.w+2*clrZone(zoneAt(i,m.x,m.y)||z,t.net,"cu","trk"));
+      // même net : rien à dégager ; sans net des deux côtés, si (l'écran et les lanières l'isolent)
+      if(!zo||(zo.net===t.net&&t.net))continue;
+      gTrk(body,A,t,t.w+2*clrZone(zo,t.net,"cu","trk"));
     }
     for(const v of S.vias){
       if(i<v.a||i>v.b)continue;
-      let z=zn(v.x,v.y);
-      if(z===null)z=zoneEtrangereProche(zs,v.net,(a,b)=>segDist(v.x,v.y,a.x,a.y,b.x,b.y),
+      let zo=zoneAt(i,v.x,v.y);
+      if(!zo)zo=zoneEtrangereProcheZ(zs,v.net,(a,b)=>segDist(v.x,v.y,a.x,a.y,b.x,b.y),
         q=>v.d/2+clrK(q.net,v.net,"cu","via"));
-      if(z===null)continue;
-      if(z===v.net)gFlash(body,A,A.get("C,"+fmt(v.drill,4)),v.x,v.y);
-      else gFlash(body,A,A.get("C,"+fmt(v.d+2*clrZone(zoneAt(i,v.x,v.y)||z,v.net,"cu","via"),4)),v.x,v.y);
+      if(!zo)continue;
+      if(zo.net===v.net&&v.net)gFlash(body,A,A.get("C,"+fmt(v.drill,4)),v.x,v.y);
+      else gFlash(body,A,A.get("C,"+fmt(v.d+2*clrZone(zo,v.net,"cu","via"),4)),v.x,v.y);
     }
     /* trou NPTH (carte ou empreinte) : la zone s'en écarte de l'écartement de
        sa classe — le foret ne doit pas mordre le cuivre ni le laisser à vif */
@@ -469,23 +476,24 @@ function gerberCopper(i){
     for(const fp of S.fps)
       for(const q of padsWorld(fp)){
         if(!padLayers(fp,q).includes(i))continue;
-        let z=zn(q.x,q.y);
-        if(z===null)z=zoneEtrangereProche(zs,q.net,(a,b)=>segPadDist(Object.assign(seg(a,b),{w:0}),q),
+        let zo=zoneAt(i,q.x,q.y);
+        if(!zo)zo=zoneEtrangereProcheZ(zs,q.net,(a,b)=>segPadDist(Object.assign(seg(a,b),{w:0}),q),
           o=>clrK(o.net,q.net,"cu",q.drill>0?"th":"smd"));
-        if(z===null)continue;
+        if(!zo)continue;
+        const z=zo.net;
         const same=(z===q.net&&q.net);
         if(same&&zoneFichier(zoneAt(i,q.x,q.y)))continue;   // raccordée par le fichier
         if(same&&padLiaison(q,i)==="directe")continue;       // la zone la recouvre, sans bras
         const qc=padSurCouche(q,i);
         if(!qc){                       // pas de cuivre ici : le trou seul se dégage
-          if(q.drill>0)gPercage(body,A,q,clrZone(zoneAt(i,q.x,q.y)||z,q.net,"cu","th",q));
+          if(q.drill>0)gPercage(body,A,q,clrZone(zo,q.net,"cu","th",q));
           continue;
         }
         gPad(body,A,qc,same?ecartThermique(q,i):
-          clrZone(zoneAt(i,q.x,q.y)||z,q.net,"cu",q.drill>0?"th":"smd",q));
+          clrZone(zo,q.net,"cu",q.drill>0?"th":"smd",q));
         if(same)thermals.push(q);
         else if(q.drill>0)
-          gPercage(body,A,q,clrZone(zoneAt(i,q.x,q.y)||z,q.net,"cu","th",q));
+          gPercage(body,A,q,clrZone(zo,q.net,"cu","th",q));
       }
     body.push("%LPD*%");
     /* région pleine : son cuivre exact, par-dessus les dégagements (47-zones.js).
@@ -621,12 +629,9 @@ function gerberSilk(side){
     if(t.k==="seg")gSeg(body,A,t.x1,t.y1,t.x2,t.y2,t.w);
     else if(t.k==="pt")gFlash(body,A,A.get("C,"+fmt(t.d,4)),t.x,t.y);
     else{
-      gRegion(body,t.pts);
-      if(t.trous.length){
-        body.push("%LPC*%");
-        for(const h of t.trous)gRegion(body,h);
-        body.push("%LPD*%");
-      }
+      /* une seule région à coupures (cut-in) : un %LPC% effaçait aussi la sérigraphie
+         déjà écrite dessous (repères, contours, dessins précédents) */
+      gRegion(body,t.trous.length?contourTroue(t.pts,t.trous):t.pts);
     }
   }
   return gAssemble(gHeader("Legend,"+(side?"Bot":"Top")),A,body);
@@ -1174,7 +1179,8 @@ function fabReadme(files,dr){
   L.push("Origine des coordonnees : "+(S.fabOrigin
     ? "origine utilisateur (les coordonnees peuvent etre negatives)"
     : "coin inferieur gauche de la carte")+".");
-  if(gerber)L.push("Gerber RS-274X, millimetres, format 4.6, polarite positive.");
+  if(gerber)L.push("Gerber RS-274X, millimetres, format 4.6 ; polarite positive, sauf le masque de soudure"+
+    (S.cuL.some(L=>L&&L.negatif)?" et les plans en negatif":"")+" (FileFunction et FilePolarity de chaque fichier).");
   const drl=dr.files.filter(f=>files.includes(f));
   if(drl.length){
     L.push("Percage Excellon metrique, trous metallises.");

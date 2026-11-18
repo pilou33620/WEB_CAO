@@ -98,6 +98,9 @@ function rfTexteId(t){
   if(!id){id="t"+(RF_IDS.size+1);RF_IDS.set(t,id);RF_TEXTES.set(id,t);}
   return id;
 }
+/* clés qu'un objet littéral prend pour son prototype : une clé « __proto__ » lue
+   d'un fichier remplaçait celui de la table des modèles RF */
+const CLES_HERITEES=new Set(["__proto__","constructor","prototype"]);
 function normRf(src){
   if(!src||typeof src!=="object")return {ports:[null,null],modeles:{},exclus:[],broches:{},variantes:{}};
   const port=p=>(p&&typeof p==="object"&&p.ref!=null&&p.pin!=null)
@@ -109,19 +112,19 @@ function normRf(src){
   if(src.modeles&&typeof src.modeles==="object")
     for(const [ref,m] of Object.entries(src.modeles)){
       const t=m&&(typeof m.texte==="string"?m.texte:RF_TEXTES.get(m.cle));
-      if(typeof t==="string"&&t.length<=16e6)
+      if(typeof t==="string"&&t.length<=16e6&&!CLES_HERITEES.has(dStr(ref,64)))
         modeles[dStr(ref,64)]={nom:dStr(m.nom,128), texte:t};
     }
   const broches={};
   if(src.broches&&typeof src.broches==="object")
     for(const [cle,z] of Object.entries(src.broches))
-      if(z&&typeof z==="object")
+      if(z&&typeof z==="object"&&!CLES_HERITEES.has(dStr(cle,80)))
         broches[dStr(cle,80)]={re:dRange(z.re,0,-1e9,1e9),
                                im:dRange(z.im,0,-1e9,1e9)};
   const variantes={};
   if(src.variantes&&typeof src.variantes==="object")
     for(const [ref,nom] of Object.entries(src.variantes))
-      if(typeof nom==="string")variantes[dStr(ref,64)]=dStr(nom,256);
+      if(typeof nom==="string"&&!CLES_HERITEES.has(dStr(ref,64)))variantes[dStr(ref,64)]=dStr(nom,256);
   return {ports:[port(ports[0]),port(ports[1])], modeles:modeles,
           exclus:(Array.isArray(src.exclus)?src.exclus:[])
                    .slice(0,500).map(r=>dStr(r,64)),
@@ -670,7 +673,7 @@ function normDrawingPcb(d,i){
     return out;
   }
   const isText=(d.shape==="text"||d.type==="text");
-  const shape=isText?"text":((d.shape==="rect"||d.type==="rect")?"rect":"line");
+  let shape=isText?"text":((d.shape==="rect"||d.type==="rect")?"rect":"line");
   const layer=drwCouche(d.layer);
   const x1=dRange(d.x1,0,-COORD,COORD);
   const y1=dRange(d.y1,0,-COORD,COORD);
@@ -696,7 +699,8 @@ function normDrawingPcb(d,i){
   const x2=dRange(d.x2,0,-COORD,COORD);
   const y2=dRange(d.y2,0,-COORD,COORD);
   if(Math.hypot(x2-x1,y2-y1)<1e-6)return null;
-  if(shape==="rect"&&(Math.abs(x2-x1)<1e-4||Math.abs(y2-y1)<1e-4))return null;
+  // un cadre aplati (tiré à l'horizontale) est un trait : le garder tel, plutôt que le perdre au Ctrl+Z
+  if(shape==="rect"&&(Math.abs(x2-x1)<1e-4||Math.abs(y2-y1)<1e-4))shape="line";
   const width=dRange(d.width,0.15,0.05,10);
   const out={
     id:dInt(d.id,i+1,1,Number.MAX_SAFE_INTEGER),
@@ -790,9 +794,18 @@ function normDoc(d){
             aspMax:dRange(r.aspMax,ASPECT_MAX,1,100),
             mfgProfile:dStr(r.mfgProfile,32)||"jlcpcb"};
   if(r.designRules!==undefined){
-    out.rule.designRules=(r.designRules&&typeof r.designRules==="object")
-      ? JSON.parse(JSON.stringify(r.designRules))
-      : r.designRules;
+    /* règles min/typique/max du projet (24-pcb-capabilities.js) : neuf clés connues,
+       trois nombres de 0 à 100 rangés ; le reste d'un fichier hostile part (une
+       valeur finissait dans un value="…" de la fenêtre des règles) */
+    const dr={};
+    if(r.designRules&&typeof r.designRules==="object")
+      for(const k of ["trackWidth","clearance","drill","viaDia","annularRing","edge","mask","paste","thermal"]){
+        const e=r.designRules[k];
+        if(!e||typeof e!=="object")continue;
+        const v=[e.min,e.typ,e.max].map(Number);
+        if(v.every(x=>Number.isFinite(x)&&x>=0&&x<=100)){v.sort((a,b)=>a-b);dr[k]={min:v[0],typ:v[1],max:v[2]};}
+      }
+    out.rule.designRules=Object.keys(dr).length?dr:null;
   }
   /* largeurs de la V1.0 : loadDoc() en tire deux classes quand `classes`
      manque, on les laisse donc passer */
@@ -934,9 +947,10 @@ function loadDoc(d,keepView){
   }else{
     /* fichiers antérieurs aux classes : les deux largeurs deviennent deux
        classes, et les nets d'alimentation sont rattachés comme avant */
-    S.classes=[{name:"Défaut",w:r.w||0.3,clr:r.clr||0.25,via:r.via||0.8,drill:r.drill||0.4},
-               {name:"Alimentation",w:r.wPwr||0.6,clr:r.clr||0.25,
-                via:r.via||0.8,drill:r.drill||0.4}];
+    // bornées comme toute classe lue (normClass) : un vieux fichier n'impose pas w=-5 ni drill > via
+    S.classes=[normClass({name:"Défaut",w:r.w||0.3,clr:r.clr||0.25,via:r.via||0.8,drill:r.drill||0.4},0),
+               normClass({name:"Alimentation",w:r.wPwr||0.6,clr:r.clr||0.25,
+                via:r.via||0.8,drill:r.drill||0.4},1)];
     S.netClass={};
   }
   S.netClassAuto=d.netClassAuto||{};
@@ -946,6 +960,8 @@ function loadDoc(d,keepView){
   S.groupes=d.groupes;S.groupesSt=null;
   S.dessin=d.dessin;
   S.contraintes=d.contraintes;
+  // les nets cochés dans le gestionnaire de contraintes étaient ceux de l'ancienne carte
+  if(typeof CM!=="undefined"){CM.sel.clear();CM.grpSel.clear();}
   S.fps=d.fps;S.tracks=d.tracks;S.vias=d.vias;
   S.zones=d.zones;S.cuts=d.cuts;S.holes=d.holes||[];S.drawings=d.drawings||[];S.pinoutAcquits=d.pinoutAcquits||{};S.interdits=d.interdits||[];
   S.mecaNoms=d.mecaNoms||{};if(typeof mecaNomsAppliquer==="function")mecaNomsAppliquer();
@@ -968,6 +984,8 @@ function loadDoc(d,keepView){
     L.plane=false;L.net="";L.role="mixed";   // le cuivre reste, le rôle le dit
   });
   clearSel();S.route=null;S.dp=null;S.zoneDraft=null;S.edgeDraft=null;S.drc=[];S.hlNet=null;
+  // toute esquisse en cours visait l'ancienne carte (loadDoc sert aussi à Ctrl+Z)
+  S.cutDraft=S.aplatDraft=S.silkDraft=S.meanderDraft=S.dessinDraft=S.bus=S.marquee=null;
   zoneCache.clear();touch();
   if(!d.classes)autoClass();
   $("cuCount").value=String(S.cu);
@@ -993,6 +1011,9 @@ function undo(){
 }
 function redo(){
   if(!S.redo.length)return;
+  // comme undo : un tracé en cours n'entre pas dans l'instantané à moitié fait
+  if(S.route)cancelRoute();
+  if(S.dp)dpCancel();
   S.undo.push(serialize());
   histBorner(S.undo);
   loadDoc(JSON.parse(S.redo.pop()),true);
@@ -4387,7 +4408,8 @@ function commitRoute(){
   const R=S.route;
   S.route=null;
   if(!R)return;
-  if(!R.done.length&&!R.shoved){touch();draw();return;}
+  // un via posé en plein tracé (touche V, puis Échap) est un geste : il lui faut son étape
+  if(!R.done.length&&!R.shoved&&!(R.vias&&R.vias.length)){touch();draw();return;}
   pushSnap(R.snap);
   R.done=smartPadsTrim(R.done,R.net,R.w);
   let prev=null;
@@ -5003,7 +5025,8 @@ cv.addEventListener("pointerdown",e=>{
     if(S.silkShape==="aplat"){aplatClick(p.x,p.y);draw();return;}
     if(S.silkShape==="text"){
       const sx=snapX(p.x), sy=snapY(p.y);
-      const txt=(typeof prompt==="function")?prompt("Texte de sérigraphie :","TEXT"):"TEXT";
+      let txt=(typeof prompt==="function")?prompt("Texte de sérigraphie :","TEXT"):"TEXT";
+      if(typeof txt==="string")txt=txt.slice(0,200);     // la lecture d'un document n'en garde pas plus
       if(txt){
         push();
         const layer=(S.flip||S.active===S.cu-1)?"silkB":"silkT";
@@ -5110,6 +5133,8 @@ cv.addEventListener("pointerdown",e=>{
       for(const en of [1,2]){
         const ex=en===1?d.x1:d.x2, ey=en===1?d.y1:d.y2;
         if(dist(p.x,p.y,ex,ey)<=px(6)){
+          // un texte ou un aplat n'a pas de seconde extrémité : il se déplace en bloc
+          if(d.shape!=="line"&&d.shape!=="rect")break;
           drag={drawingEnd:{d,e:en},moved:false,at:{x:ex,y:ey}};
           return;
         }
@@ -5610,6 +5635,8 @@ cv.addEventListener("pointerup",e=>{
       const idx=S.tracks.indexOf(d.track);
       if(idx>=0){
         S.tracks.splice(idx,1,...d.result.tracks);
+        // la piste remplacée ne reste pas sélectionnée : ses segments neufs prennent sa place
+        if(S.sel.tracks.delete(d.track))for(const t of d.result.tracks)S.sel.tracks.add(t);
         touch();
         refreshPanels();
         hint("Serpentin appliqué : +"+fmt(d.result.addedLen,2)+" mm ajoutés au tracé.");
@@ -5762,6 +5789,7 @@ cv.addEventListener("pointercancel",e=>{
   fanoutRelease(drag);
   const gele=drag&&drag.moved;
   if(gele&&drag.drawingEnd)refreshPanels();
+  if(drag&&drag.marquee){S.marquee=null;draw();}   // lasso interrompu par le navigateur
   drag=null;
   if(gele)draw();
 });

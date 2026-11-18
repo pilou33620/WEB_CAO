@@ -123,13 +123,13 @@ function thermiqueDrc(out){
   if(!d){
     // faite sur une autre révision : elle ne vaut plus, le dire plutôt que se taire
     if(THERMIQUE.res&&S.fps.some(f=>f.puissance>0))
-      out.push({info:true,x:S.board.x,y:S.board.y,l:0,msg:"Échauffement : l'estimation date d'avant la dernière retouche — relancez-la (propriétés d'un composant qui dissipe, ou cao_thermique)"});
+      out.push({kind:"thermique-estimation",info:true,x:S.board.x,y:S.board.y,l:0,msg:"Échauffement : l'estimation date d'avant la dernière retouche — relancez-la (propriétés d'un composant qui dissipe, ou cao_thermique)"});
     return;
   }
   for(const c of d.composants){
     if(!(c.dT>lim))continue;
     const fp=S.fps.find(f=>f.ref===c.ref);
-    out.push({x:fp?fp.x:0,y:fp?fp.y:0,l:fp&&fp.side?S.cu-1:0,
+    out.push({kind:"echauffement",x:fp?fp.x:0,y:fp?fp.y:0,l:fp&&fp.side?S.cu-1:0,
       msg:c.ref+" : échauffement estimé "+fmt(c.dT,0)+" K pour "+fmt(c.puissance_w,2)+" W (limite "+fmt(lim,0)+
           " K) — plus de cuivre relié (zone, liaison directe, vias vers un plan) ou moins de puissance"});
   }

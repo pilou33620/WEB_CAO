@@ -106,6 +106,7 @@ function drcPontsVernis(out){
   for(const side of [0,1]){
     const O=maskOpenings(side).filter(o=>o.q.net).map(o=>{
       const q=o.grow?Object.assign({},o.q,{w:o.q.w+2*o.grow,h:o.q.h+2*o.grow}):o.q;
+      if(o.grow&&Array.isArray(o.q.pts))q.pts=polyOffset(o.q.pts,o.grow);   // comme l'ouverture du Gerber
       return {q,src:o.q,R:Math.hypot(q.w,q.h)/2};
     }).sort((a,b)=>(a.q.x-a.R)-(b.q.x-b.R));
     const paires=new Map();
@@ -235,7 +236,8 @@ function drcEnLAir(out,pads){
   for(const t of S.tracks){
     if(t.texte)continue;
     for(const [x,y] of [[t.x1,t.y1],[t.x2,t.y2]]){
-      if((bouts.get(k3(t.l,x,y))||0)>1||viaAt(t.l,x,y)||surPastille(t.l,x,y)||zoneNet(t.l,x,y,t.net))continue;
+      const dansVia=S.vias.some(v=>t.l>=Math.min(v.a,v.b)&&t.l<=Math.max(v.a,v.b)&&dist(x,y,v.x,v.y)<=v.d/2+1e-3);
+      if((bouts.get(k3(t.l,x,y))||0)>1||dansVia||surPastille(t.l,x,y)||zoneNet(t.l,x,y,t.net))continue;
       if((parCouche.get(t.l)||[]).some(o=>o!==t&&trkDist(x,y,o)<=o.w/2+1e-3))continue;   // arrivée en T
       out.push({kind:"piste-en-l-air",info:true,x:r3(x),y:r3(y),l:t.l,
         msg:"En l'air : piste sur "+cuId(t.l,S.cu)+" ("+(t.net||"sans net")+"), un bout ne touche rien — une antenne à retirer"});
@@ -261,7 +263,10 @@ function drcEmpreinteLib(out){
   for(const fp of S.fps){
     if(!fp.lib||!Array.isArray(fp.pads)||typeof pkgGeom!=="function")continue;
     let g=null;
-    try{g=pkgGeom(fp.lib,fpWiredPins(fp));}catch(e){g=null;}
+    try{
+      const def=typeof fpLibPourBoitier==="function"?fpLibPourBoitier(fp.lib):null;   // la LIB d'empreintes (08-empreinte.js)
+      g=def?normFpDef(def):pkgGeom(fp.lib,fpWiredPins(fp));
+    }catch(e){g=null;}
     if(!g||!Array.isArray(g.pads))continue;
     const ecarts=fpEcartsLib(fp.pads,g.pads);
     if(ecarts)
@@ -371,6 +376,10 @@ function couchesPermuter(a,b){
   let n=0;
   for(const o of S.tracks.concat(S.zones,S.cuts))if(o.l===a||o.l===b){o.l=sw(o.l);n++;}
   for(const z of S.interdits||[])if(z.ko&&(z.ko.l===a||z.ko.l===b)){z.ko.l=sw(z.ko.l);n++;}
+  /* un plan de couche est son rôle plus une zone auto : le rôle suit la zone,
+     sinon syncAutoZones ou la relecture la ramèneraient sur l'ancienne couche */
+  const La=S.cuL[a], Lb=S.cuL[b];
+  if(La&&Lb&&(La.plane||Lb.plane))for(const k of ["plane","net","role","negatif"]){const t=La[k];La[k]=Lb[k];Lb[k]=t;}
   for(const v of S.vias){
     const va=sw(v.a), vb=sw(v.b);
     if(va!==v.a||vb!==v.b){v.a=Math.min(va,vb);v.b=Math.max(va,vb);n++;}

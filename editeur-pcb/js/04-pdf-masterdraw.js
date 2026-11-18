@@ -421,7 +421,9 @@ function masterDrawingPdf(fabFiles){
   section("Solder mask (IPC-SM-840)");
   mdText(L,"Applied to Top & Bottom        Colour: "+maskC,MD_ML+2,y,8);
   y+=MD_LH;
-  mdText(L,"In supplied artwork, solder mask opening is same size as pad (1:1).",MD_ML+2,y,8);
+  // ce que le Gerber du masque contient vraiment : la dilatation S.rule.mask autour des pastilles
+  mdText(L,(S.rule.mask>0?"In supplied artwork, solder mask opening is pad + "+fmt(S.rule.mask,2)+" mm per side."
+                         :"In supplied artwork, solder mask opening is same size as pad (1:1)."),MD_ML+2,y,8);
   y+=MD_LH;
   mdText(L,"Manufacturer may open solder mask clearance as necessary and shall not",MD_ML+2,y,8);
   y+=MD_LH;

@@ -541,6 +541,7 @@ function newDoc(){
   push();
   S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.holes=[];S.drawings=[];S.drc=[];S.drcRun=false;S.drcExclus=[];S.drcExclues=[];S.drcGravites={};S.drcIgnores=0;S.hlNet=null;
   S.cuts=[];S.interdits=[];S.rf=normRf(null);   // découpes de zone, keep-out, ports RF : ceux de la carte d'avant
+  S.pinoutAcquits={};S.anim3dEtiq=null;S.cartoucheInfo={};   // acquits, étiquettes 3D et cartouche : ceux d'une autre carte
   S.dpPairs=[];S.dp=null;   // les règles restent : elles décrivent un métier, pas une carte
   /* contraintes : celles des classes et la matrice restent (un métier),
      celles des nets et les groupes d'appariement partent avec la carte */
@@ -635,7 +636,7 @@ $("mZone").onclick=e=>{e.stopPropagation();setMode("zone");zoneMenuToggle();};
 if($("mSilk")) $("mSilk").onclick=e=>{e.stopPropagation();setMode("silk");silkMenuToggle();};
 $("mEdge").onclick=()=>setMode("edge");
 $("mDecoupe").onclick=()=>setMode("decoupe");
-$("mInterdit").onclick=()=>setMode("interdit");
+$("mInterdit").onclick=()=>{setMode("interdit");S.interditKo=false;};
 $("mOrigin").onclick=()=>setMode("origin");
 $("mErase").onclick=()=>setMode("cut");
 $("mMiter").onclick=()=>setMode("miter");
@@ -706,10 +707,11 @@ $("bAnim3d").onclick=()=>anim3dChoisir();   // 41-animation-3d.js se charge apr�
 $("bVariantes").onclick=()=>pcbVarOuvrir();   // 26-variantes.js se charge après ce fichier
 $("bNew").onclick=newDoc;
 $("cuCount").onchange=()=>{
-  const n=+$("cuCount").value, old=S.cu, part=o=>o.l>Math.max(0,n-2)&&o.l<old-1;
+  // une couche qui disparaît : interne, ou le dessous quand on passe à une seule couche
+  const n=+$("cuCount").value, old=S.cu, part=o=>n===1?o.l>=1:(o.l>Math.max(0,n-2)&&o.l<old-1);
   /* une couche interne qui disparaît rabat son cuivre sur une autre : courts-circuits */
   if(n<old&&(S.tracks.some(part)||S.zones.some(part))&&
-     !confirm("Des pistes ou des plans sont sur une couche interne qui disparaît : ils seront rabattus sur une autre couche (courts-circuits possibles). Continuer ?")){
+     !confirm("Des pistes ou des plans sont sur une couche qui disparaît : ils seront rabattus sur une autre couche (courts-circuits possibles). Continuer ?")){
     $("cuCount").value=old;return;
   }
   push();setCuCount(n);zoneCache.clear();
@@ -1008,14 +1010,18 @@ function pcbPlacerEmpreinteDepuisLib(item) {
   const newRef = freeFpRef(p + "1", used);
 
   // Estimer le nombre de broches
+  /* les puces et SOT d'abord ; ensuite seul le nombre après un tiret compte (« SOIC-8 ») :
+     « 0402 » donnait 402 pastilles, « TO-220 » 220 */
   let pins = 8;
-  const mPins = cleanPkg.match(/\b(\d+)\b/);
-  if (mPins && parseInt(mPins[1], 10) > 0) {
-    pins = parseInt(mPins[1], 10);
-  } else if (/0402|0603|0805|1206|2512/i.test(cleanPkg)) {
+  const mPins = cleanPkg.match(/-(\d+)\b/);
+  if (/^(0201|0402|0603|0805|1206|1210|2010|2512)\b/i.test(cleanPkg)) {
     pins = 2;
-  } else if (/SOT-?23/i.test(cleanPkg)) {
+  } else if (/SOT-?23(?!-\d)/i.test(cleanPkg)) {
     pins = 3;
+  } else if (/^TO-?(220|92|126|247|263|252)\b/i.test(cleanPkg)) {
+    pins = 3;
+  } else if (mPins && +mPins[1] > 0 && +mPins[1] <= 1024) {
+    pins = +mPins[1];
   }
 
   // Créer l'empreinte avec le moteur géométrique

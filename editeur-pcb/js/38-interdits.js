@@ -75,27 +75,27 @@ function interditsDrc(out){
       if(z.face===autre)
         for(const q of padsWorld(fp))
           if(q.drill>0&&inPoly(q.x,q.y,z.pts)){
-            out.push({x:q.x,y:q.y,l:couche(z.face),
+            out.push({kind:"interdit-patte",x:q.x,y:q.y,l:couche(z.face),
               msg:"Patte traversante "+padDesig(fp,q)+" : elle ressort sur le "+z.face+" dans « "+z.nom+" »"});
             break;
           }
       if(z.face!==face||!polysTouchent(corps,z.pts))continue;
       if(z.hMax==null)
-        out.push({x:fp.x,y:fp.y,l:couche(face),msg:fp.ref+" ("+face+") dans « "+z.nom+" » : aucun composant n'y est permis"});
+        out.push({kind:"interdit-composant",x:fp.x,y:fp.y,l:couche(face),msg:fp.ref+" ("+face+") dans « "+z.nom+" » : aucun composant n'y est permis"});
       else if(h==null)
-        out.push({info:true,x:fp.x,y:fp.y,l:couche(face),
+        out.push({kind:"interdit-hauteur",info:true,x:fp.x,y:fp.y,l:couche(face),
           msg:fp.ref+" dans « "+z.nom+" » : hauteur inconnue, "+mm(z.hMax)+" mm permis — saisissez-la (dossier mécanique) ou dans la LIB"});
       else if(h>z.hMax+1e-6)
-        out.push({x:fp.x,y:fp.y,l:couche(face),msg:fp.ref+" trop haut dans « "+z.nom+" » : "+mm(h)+" mm pour "+mm(z.hMax)+" mm permis"});
+        out.push({kind:"interdit-hauteur",x:fp.x,y:fp.y,l:couche(face),msg:fp.ref+" trop haut dans « "+z.nom+" » : "+mm(h)+" mm pour "+mm(z.hMax)+" mm permis"});
     }
     const L=lim[face];
     if(L>0){
       if(h==null)inconnues.push(fp.ref);
-      else if(h>L+1e-6)out.push({x:fp.x,y:fp.y,l:couche(face),msg:fp.ref+" ("+face+") trop haut : "+mm(h)+" mm pour "+mm(L)+" mm permis sur la carte"});
+      else if(h>L+1e-6)out.push({kind:"hauteur",x:fp.x,y:fp.y,l:couche(face),msg:fp.ref+" ("+face+") trop haut : "+mm(h)+" mm pour "+mm(L)+" mm permis sur la carte"});
     }
   }
   if(inconnues.length)
-    out.push({info:true,x:S.board.x,y:S.board.y,l:0,
+    out.push({kind:"hauteur",info:true,x:S.board.x,y:S.board.y,l:0,
       msg:"Hauteur maximale de la carte : "+inconnues.length+" composant(s) de hauteur inconnue ("+
           inconnues.slice(0,10).join(", ")+(inconnues.length>10?"…":"")+") — saisissez-la (dossier mécanique) ou dans la LIB"});
 }

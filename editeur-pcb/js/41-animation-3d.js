@@ -102,7 +102,7 @@ function anim3dDonnees(sansZone){
     const h=c.hauteur!=null?c.hauteur:anim3dR(Math.min(3,Math.max(0.3,0.4*Math.sqrt(s))));
     const l=parRef.has(c.ref)?anim3dLigneLib(parRef.get(c.ref)):null;
     const nom=l?String(l["Modèle 3D"]||"").trim().replace(/^Models\//,""):"";
-    const m3d=nom&&anim3dPosition(l["Position 3D"])?{nom,pos:l["Position 3D"],x:c.x,y:c.y,rot:c.rot}:null;
+    const m3d=nom&&anim3dPosition(l["Position 3D"])?{nom,pos:l["Position 3D"],x:c.x,y:c.y,rot:-(c.rot||0)}:null;   // dossier en sens trigo, pose en sens horaire (comme la visionneuse)
     return {ref:c.ref,face:c.face==="dessous"?1:0,corps:c.corps,h,v:s*h,couleur:anim3dTeinte(c.ref,c.boitier),m3d};
   }).sort((a,b)=>a.face-b.face||b.v-a.v);
   const faces=[{cuivre:cuivre(0),seri:seri(0)},

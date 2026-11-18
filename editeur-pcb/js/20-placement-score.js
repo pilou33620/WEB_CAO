@@ -57,7 +57,7 @@ var PLACEMENT_SCORE = (function() {
     if (!fp) return;
 
     if (S.sel && S.sel.fps) {
-      S.sel.fps.clear();
+      if (typeof clearSel === "function") clearSel(); else S.sel.fps.clear();   // une piste sélectionnée avant partirait au Suppr
       S.sel.fps.add(fp.id);
     }
     const b = (typeof fpBBox === "function") ? fpBBox(fp) : { x1: fp.x - 2, y1: fp.y - 2, x2: fp.x + 2, y2: fp.y + 2 };
@@ -72,7 +72,7 @@ var PLACEMENT_SCORE = (function() {
     if (typeof S === "undefined" || !S || !Array.isArray(S.fps) || !Array.isArray(refs)) return;
     if (!S.sel || !S.sel.fps) return;
 
-    S.sel.fps.clear();
+    if (typeof clearSel === "function") clearSel(); else S.sel.fps.clear();
     let x1 = 1e9, y1 = 1e9, x2 = -1e9, y2 = -1e9;
     let trouve = 0;
 
@@ -216,8 +216,14 @@ var PLACEMENT_SCORE = (function() {
     if (typeof S === "undefined" || !Array.isArray(S.fps)) return;
     const fp = S.fps.find(f => f.ref === ref);
     if (!fp) return;
+    if (fp.locked) { if (typeof hint === "function") hint(ref + " est verrouillé : déverrouillez-le pour le tourner."); return; }
+    /* comme la rotation du panneau : le cuivre accroché suit, un chevauchement refuse */
+    const rot = ((angle % 360) + 360) % 360, tourner = () => { fp.rot = rot; };
+    // ce module se charge aussi seul (banc des trois ponts) : sans l'éditeur, la rotation directe
+    const gene = typeof fpEssai === "function" ? fpEssai(tourner) : null;
+    if (gene) { if (typeof fpRefus === "function") fpRefus(gene); return; }
     if (typeof push === "function") push();
-    fp.rot = ((angle % 360) + 360) % 360;
+    if (typeof transformFps === "function") transformFps([fp.id], tourner); else tourner();
     if (typeof touch === "function") touch();
     if (typeof refreshPanels === "function") refreshPanels();
     if (typeof draw === "function") draw();

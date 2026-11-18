@@ -182,6 +182,8 @@ function routageUneVia(v){
   let a = 0, b = S.cu - 1;
   try{ if(v.de != null) a = routageCouche(v.de); if(v.a != null) b = routageCouche(v.a); }
   catch(e){ return {ok:false, raison:e.message}; }
+  // une seule couche ne fait pas un via : mkVia en ferait silencieusement un traversant
+  if(a === b) return {ok:false, raison:"via : « de » et « a » doivent être deux couches différentes"};
   const fait = placeVia(r3(v.x), r3(v.y), v.net, Math.min(a, b), Math.max(a, b), false);
   return fait ? {ok:true, net:routagePropre(v.net)} : {ok:false, raison:"la page la refuse en (" + r3(v.x) + ", " + r3(v.y) + ") : elle gênerait le cuivre voisin"};
 }
@@ -250,7 +252,7 @@ function routageCommande(titre, jouer){
       if(!s.lignes.some(l => l.ok && !/^attention/.test(l.texte))) throw new Error("Rien n'est posé : " + s.lignes.map(l => l.texte).join(" ; "));
       ROUTAGE.apercu = s.apercu;
       draw();
-      return {titre:titre(args), avant:"", apres:s.lignes.map(l => l.texte).join("\n"), resultat:s.resultat, cuivre:s.cuivre};
+      return {titre:titre(args), avant:"", apres:s.lignes.map(l => l.texte).join("\n"), resultat:s.resultat, cuivre:s.cuivre, apercuRef:s.apercu};
     },
     appliquer:(args, prop) => {
       if(!prop || !prop.resultat) throw new Error("Carte sans résultat : à reproposer.");
@@ -263,7 +265,12 @@ function routageCommande(titre, jouer){
       try{ avant = ECRITURE_CAO.drc.erreurs(); }catch(e){}
       ECRITURE_CAO.pousser();
       JSON.parse(prop.resultat).forEach((v, i) => { doc[CUIVRE[i]] = v; });
+      /* les réglages de l'utilisateur restent les siens (comme routageSimuler) :
+         loadDoc remettait la paire de couches du via, le net surligné et la sélection */
+      const garde = {pair: S.pair.slice(), hlNet: S.hlNet, fps: [...S.sel.fps]};
       loadDoc(doc, true);
+      S.pair = garde.pair; S.hlNet = garde.hlNet;
+      for(const id of garde.fps) if(S.fps.some(f => f.id === id)) S.sel.fps.add(id);
       ROUTAGE.apercu = null; prop.resultat = null;          // le document relevé ne sert plus
       touch(); refreshPanels(); draw();
       // le lot est appliqué : un DRC qui échoue ne doit pas le faire passer pour raté
@@ -271,7 +278,8 @@ function routageCommande(titre, jouer){
       catch(e){ prop.apres += "\nDRC indisponible après l'écriture : " + ((e && e.message) || e); }
     },
     // la carte refusée dans le panneau : son aperçu s'en va (pilote.js appelle ce crochet)
-    refuser:() => { ROUTAGE.apercu = null; draw(); },
+    // seul l'aperçu de CETTE carte part : une carte plus récente, encore en attente, garde le sien
+    refuser:(a, prop) => { if(!prop || !prop.apercuRef || ROUTAGE.apercu === prop.apercuRef){ ROUTAGE.apercu = null; draw(); } },
   };
 }
 

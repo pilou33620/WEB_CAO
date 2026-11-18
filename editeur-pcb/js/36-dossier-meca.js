@@ -28,7 +28,8 @@ function mecaEntreeEditeur(){
     composants:S.fps.map(fp=>{
       const T=fpXform(fp), b=bodyOf(fp);
       return Object.assign(P(fp),{
-        id:fp.id, ref:fp.ref, face:fp.side?"dessous":"dessus", rot:fp.rot||0,
+        // Y vers le haut : la rotation en sens trigonométrique, comme l'IPC et la visionneuse
+        id:fp.id, ref:fp.ref, face:fp.side?"dessous":"dessus", rot:padRot(-(fp.rot||0)),
         corps:[T(b.x1,b.y1),T(b.x2,b.y1),T(b.x2,b.y2),T(b.x1,b.y2)].map(P),
         part_name:fp.csvPartName||fp.partName||"", mpn:fp.mpn||fp.csvMpn||"",
         pkg:fp.pkg||"", val:fp.value||"",

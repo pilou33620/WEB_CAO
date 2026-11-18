@@ -328,6 +328,9 @@ function pcbDetecterDisparitesEco(schData) {
         const nn = schData.pinNet.get(ref + "." + p);
         if (nn) item.nets[p] = nn;
       }
+      // broches nommées (« D1.K », « U1.A1 ») : résolues sur l'empreinte une fois créée
+      for (const [k, nn] of schData.pinNet)
+        if (k.startsWith(ref + ".") && !/^\d+$/.test(k.slice(ref.length + 1))) item.nets[k.slice(ref.length + 1)] = nn;
       items.push(item);
       ajouts.push(item);
     } else {
@@ -536,7 +539,16 @@ function pcbAppliquerEco(items, options) {
         if (!fpsMap.has(item.ref) && typeof mkFp === "function") {
           const pins = Math.max(1, item.pins || 2);
           const fp = mkFp(item.ref, item.value, item.pkg, pins);
-          if (item.nets) fp.nets = { ...item.nets };
+          // l'empreinte de la LIB du boîtier, comme l'import de netlist (applyNetlist)
+          const lib = typeof fpLibPourBoitier === "function" ? fpLibPourBoitier(item.pkg) : null;
+          if (lib && fpApplyDef(fp, lib)) { if ((item.pins || 0) > fp.pins) fpSetPins(fp, item.pins); fp.lib = lib.name; }
+          if (item.nets) {
+            fp.nets = {};
+            for (const [k, nn] of Object.entries(item.nets)) {
+              const n = /^\d+$/.test(k) ? +k : (typeof brocheNum === "function" ? brocheNum(fp, k) : null);
+              if (n != null) fp.nets[n] = nn;
+            }
+          }
           S.fps.push(fp);
           fpsMap.set(fp.ref, fp);
           addedFps.push(fp);

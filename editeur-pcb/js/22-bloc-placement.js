@@ -219,7 +219,7 @@ var BLOC_PLACEMENT = (function() {
     const fps = [];
     for (const ref of refs) {
       const fp = S.fps.find(f => String(f.ref).trim().toUpperCase() === ref);
-      if (fp) fps.push(fp);
+      if (fp && !fp.locked) fps.push(fp);         // un composant verrouillé ne bouge pas, ni ne tourne
     }
     if (fps.length < 2) return null;
 
@@ -377,11 +377,11 @@ var BLOC_PLACEMENT = (function() {
     const motif = trouverMotifOuZone(motifOrId);
     if (!motif) return false;
 
-    if (typeof push === "function") push();
-    else if (typeof undoPush === "function") undoPush();
-
+    // l'étape d'historique seulement si quelque chose a bougé (moins de deux empreintes : rien)
+    const avant = serialize();
     const res = calculerAgencement(motif);
     if (!res) return false;
+    pushSnap(avant);
 
     // Recalculer le chevelu et rafraîchir
     finaliserAction(motif, "agencé sur place");
@@ -413,12 +413,11 @@ var BLOC_PLACEMENT = (function() {
     const motif = trouverMotifOuZone(motifOrId);
     if (!motif) return false;
 
-    if (typeof push === "function") push();
-    else if (typeof undoPush === "function") undoPush();
-
-    // 1. Trouve les positions relatives idéales
+    // 1. Trouve les positions relatives idéales (l'étape d'historique seulement si elles existent)
+    const avant = serialize();
     const res = calculerAgencement(motif);
     if (!res || !res.anchor) return false;
+    pushSnap(avant);
 
     // 2. Détermine le centre cible
     let targetX = cibleX;
@@ -490,7 +489,8 @@ var BLOC_PLACEMENT = (function() {
         const mRefs = (m.components || m.composants || []).map(r => String(r).trim().toUpperCase());
         const matchRefs = mRefs.filter(r => addedRefs.has(r) && !traites.has(r));
         if (matchRefs.length >= 2) {
-          const res = calculerAgencement(m);
+          // les seuls composants nouveaux : ceux du motif déjà posés sur la carte restent où ils sont
+          const res = calculerAgencement(Object.assign({}, m, { components: matchRefs, composants: matchRefs }));
           if (res && res.all && res.all.length >= 2) {
             grappes.push({ motif: m, res, fps: res.all });
             matchRefs.forEach(r => traites.add(r));

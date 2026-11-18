@@ -1294,8 +1294,7 @@ function runDrc(){
      connecteur) — mais jamais le recouvrir */
   const trous=trousMonde();
   const sienne=(h,p,e)=>h.fp&&h.fp===p.fp&&e>=-1e-6;
-  if(trous.length){
-    const hcl=S.rule.hole||0.25;
+  if(trous.length){                     // hcl : holeClr(), comme les vias (0 permis)
     const axes=new Map(trous.map(h=>[h,axePercage(h)]));
     const rond=a=>a.x1===a.x2&&a.y1===a.y2;
     for(const h of trous){
@@ -1695,7 +1694,7 @@ function runDrc(){
   if(typeof drcComplements==="function")drcComplements(out,pads);
   S.drc=typeof drcTrier==="function"?drcTrier(out):out; S.drcRun=true;
   if(typeof drcFenetreMaj==="function")drcFenetreMaj();   // la fenêtre DRC, si elle est ouverte
-  return out;
+  return S.drc;              // sans les exclus ni les ignorés : les comptes des appelants suivent la liste
 }
 
 /* ==========================================================================
@@ -1902,13 +1901,15 @@ function applyNetlist(txt,dropMissing){
   const libPour=pkg=>(typeof fpLibPourBoitier==="function")?fpLibPourBoitier(pkg):null;
   for(const ref of refs){
     const meta=comps.get(ref)||{value:"",pkg:""};
-    const pins=Math.max(1,pinCount.get(ref)||2);
+    /* broches câblées au schéma : 0 pour un trou de fixation sans net. Le plancher
+       de 2 ne sert qu'à créer une empreinte ; il ne doit jamais ajouter de pastille. */
+    const cablees=pinCount.get(ref)||0, pins=Math.max(1,cablees||2);
     let fp=byRef.get(ref);
     if(!fp){
       fp=mkFp(ref,meta.value,meta.pkg,pins);
       const lib=libPour(meta.pkg);
       if(lib&&fpApplyDef(fp,lib)){
-        if(pins>fp.pins)fpSetPins(fp,pins);
+        if(cablees>fp.pins)fpSetPins(fp,cablees);
         fp.lib=lib.name;
         libFp.push(fp);
       }
@@ -1938,7 +1939,7 @@ function applyNetlist(txt,dropMissing){
         if(typeof fpReshape==="function")fpReshape(fp,refaire);else refaire();
       }
       kept.push(fp);
-      if(pins>fp.pins)fpSetPins(fp,pins);
+      if(cablees>fp.pins)fpSetPins(fp,cablees);
     }
     const oldNets={...(fp.nets||{})};
     fp.nets={};

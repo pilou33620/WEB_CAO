@@ -225,7 +225,7 @@ function cmLargeurPourZ(z,l){
   try{
     const g=dpStripGeom(l);
     if(!g||!g.ref)return null;
-    let lo=0.03,hi=5;
+    let lo=0.05,hi=5;                   // 0,05 mm : le plancher de normClass et de cmPoserLargeurCouche
     if(!(ltZ0(g,lo)>z&&ltZ0(g,hi)<z))return null;
     for(let i=0;i<44;i++){const m=(lo+hi)/2;if(ltZ0(g,m)>z)lo=m;else hi=m;}
     return r3((lo+hi)/2);
@@ -288,6 +288,7 @@ function cmEdit(fn){
    vaut un point. Les couches s'écrivent « 1, 4 » ou « L1 L4 ». */
 function cmLire(cle,txt){return cmLireChamp(cle,txt,S.cu);}
 function cmPoser(portee,nom,cle,txt){
+  if(cmChampInvalide(cle,txt,S.cu))return false;
   const v=cmLire(cle,txt);
   cmEdit(C=>{
     const tab=C[portee];
@@ -300,13 +301,18 @@ function cmPoserPhysique(classe,cle,txt){
   const c=S.classes.find(x=>x.name===classe);
   const v=cmLire(cle,txt);
   if(!c||v==null||!(v>0)||v>50)return false;
+  /* les bornes de normClass (05-tools.js) : ce qui passe ici doit survivre à la relecture,
+     et un perçage ne dépasse jamais le via (couronne négative) */
+  const borne={w:[0.05,50],clr:[0.02,50],via:[0.2,20],drill:[0.05,Math.max(0.05,(c.via||0.8)-0.05)]}[cle];
+  if(borne&&(v<borne[0]||v>borne[1]))return false;
   cmEdit(()=>{
     c[cle]=r3(v);
-    if(cle==="via"&&c.drill>=c.via)c.drill=r3(Math.max(0.1,c.via-0.2));
+    if(cle==="via"&&c.drill>=c.via-0.05)c.drill=r3(Math.max(0.05,c.via-0.2));
   });
   return true;
 }
 function cmPoserMatrice(a,b,txt){
+  if(cmChampInvalide("clr",txt,S.cu))return false;
   const v=cmLire("clr",txt);
   cmEdit(C=>{
     const k=cmCle(a,b);
@@ -338,7 +344,7 @@ function cmGroupeSupprimer(id){
 function cmPoserLargeurCouche(classe,l,txt){
   const c=S.classes.find(x=>x.name===classe);
   const v=cmLire("w",txt);
-  if(!c||!Number.isInteger(+l)||+l<0||+l>=S.cu)return false;
+  if(!c||!Number.isInteger(+l)||+l<0||+l>=S.cu||cmChampInvalide("w",txt,S.cu))return false;
   if(v!=null&&!(v>=0.05&&v<=50))return false;
   cmEdit(()=>{
     const wL=Object.assign({},c.wL||{});
@@ -455,10 +461,10 @@ function cmChangement(e){
   if(d.grpnet!=null){if(t.checked)CM.grpSel.add(d.grpnet);else CM.grpSel.delete(d.grpnet);return;}
   if(!d.cm)return;
   const p=d.cm.split(CM_SEP);
-  if(p[0]==="net"||p[0]==="classe")cmPoser(p[0]==="net"?"nets":"classes",p[1],p[2],t.value);
+  if(p[0]==="net"||p[0]==="classe"){if(cmPoser(p[0]==="net"?"nets":"classes",p[1],p[2],t.value)===false)hint("Valeur refusée : un nombre, avec au plus une unité (mm, mil, ps, ns, Ω, %) ; vide efface.");}
   else if(p[0]==="phys"){if(!cmPoserPhysique(p[1],p[2],t.value))hint("Valeur refusée : un nombre positif, en mm.");}
   else if(p[0]==="wl"){if(!cmPoserLargeurCouche(p[1],+p[2],t.value))hint("Largeur refusée : entre 0,05 et 50 mm, ou vide pour la largeur de la classe.");}
-  else if(p[0]==="mat")cmPoserMatrice(p[1],p[2],t.value);
+  else if(p[0]==="mat"){if(cmPoserMatrice(p[1],p[2],t.value)===false)hint("Valeur refusée : un nombre, avec au plus une unité (mm, mil, ps, ns, Ω, %) ; vide efface.");}
   else if(p[0]==="netclasse"){
     const net=p[1];
     cmEdit(()=>{poserClasseNet(net,t.value);});

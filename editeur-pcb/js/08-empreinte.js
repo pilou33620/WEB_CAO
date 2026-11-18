@@ -131,7 +131,7 @@ function fpLibGet(name){return fpLibAll()[String(name)]||null;}
 function fpLibPourBoitier(pkg){
   const nom=String(pkg==null?"":pkg).replace(/^.*[\\/]/,"").replace(/\.json$/i,"").trim();
   if(!nom)return null;
-  if(FPLIB[nom])return FPLIB[nom];
+  if(Object.prototype.hasOwnProperty.call(FPLIB,nom))return FPLIB[nom];
   const k=pkgKey(nom);
   if(!k)return null;
   for(const n of Object.keys(FPLIB))

@@ -138,6 +138,21 @@ function focusNet(){return (S.route&&S.route.net)||S.hlNet||null;}
    `fixe` ({res} en px/mm) : toute la couche à cette finesse, hors du cache et
    de la vue — l'animation 3D (41-animation-3d.js) en fait sa texture. */
 const zoneCache=new Map();
+/* La zone dont un objet prend l'isolement : celle sous son centre, sinon (centre
+   dehors, cuivre dedans) la plus prioritaire d'un autre net dont la boîte touche
+   la sienne — comme le Gerber (zoneEtrangereProcheZ), qui garde son z.isol. */
+function zoneDegagement(l,x,y,b,net){
+  const z=zoneAt(l,x,y);
+  if(z)return z;
+  let best=null;
+  for(const o of S.zones){
+    if(o.l!==l||o.larme||(o.net||"")===(net||"")||!o.pts||o.pts.length<3)continue;
+    const zb=polyBBox(o.pts);
+    if(zb.x2<b.x1||zb.x1>b.x2||zb.y2<b.y1||zb.y1>b.y2)continue;
+    if(!best||zonePrio(o)>zonePrio(best))best=o;
+  }
+  return best;
+}
 function zoneCanvas(i,fixe){
   const zs=S.zones.filter(z=>z.l===i&&z.pts.length>=3);
   if(!zs.length)return null;
@@ -227,14 +242,14 @@ function zoneCanvas(i,fixe){
     if(hors(tb.x1,tb.y1,tb.x2,tb.y2,t.w))continue;
     const m=trkMid(t);
     if(sameNet(m.x,m.y,t.net))continue;
-    c.lineWidth=t.w+2*clrZone(zoneAt(i,m.x,m.y),t.net,"cu","trk");
+    c.lineWidth=t.w+2*clrZone(zoneDegagement(i,m.x,m.y,tb,t.net),t.net,"cu","trk");
     c.beginPath();trkPath(c,t);c.stroke();
   }
   for(const v of S.vias){
     if(i<v.a||i>v.b||hors(v.x,v.y,v.x,v.y,v.d))continue;
     const same=sameNet(v.x,v.y,v.net);
     c.beginPath();
-    c.arc(v.x,v.y,same?v.drill/2:v.d/2+clrZone(zoneAt(i,v.x,v.y),v.net,"cu","via"),0,Math.PI*2);
+    c.arc(v.x,v.y,same?v.drill/2:v.d/2+clrZone(zoneDegagement(i,v.x,v.y,{x1:v.x-v.d/2,y1:v.y-v.d/2,x2:v.x+v.d/2,y2:v.y+v.d/2},v.net),v.net,"cu","via"),0,Math.PI*2);
     c.fill();
   }
   for(const h of trousMonde()){       // trou NPTH : la zone choisie comme au Gerber (zoneDuTrou)
@@ -255,14 +270,15 @@ function zoneCanvas(i,fixe){
         if(q.drill>0){c.beginPath();cheminPercage(c,q);c.fill();}
         continue;
       }
+      const zq=zoneDegagement(i,q.x,q.y,{x1:q.x-q.w,y1:q.y-q.h,x2:q.x+q.w,y2:q.y+q.h},q.net);
       const qc=padSurCouche(q,i);
       if(!qc){                         // pas de cuivre sur cette couche : le trou seul
-        if(q.drill>0){c.beginPath();cheminPercage(c,q,clrZone(zoneAt(i,q.x,q.y),q.net,"cu","th",q));c.fill();}
+        if(q.drill>0){c.beginPath();cheminPercage(c,q,clrZone(zq,q.net,"cu","th",q));c.fill();}
         continue;
       }
-      padFill(c,qc,same?ecartThermique(q,i):clrZone(zoneAt(i,q.x,q.y),q.net,"cu",q.drill>0?"th":"smd",q));
+      padFill(c,qc,same?ecartThermique(q,i):clrZone(zq,q.net,"cu",q.drill>0?"th":"smd",q));
       if(same)thermals.push(q);
-      else if(q.drill>0){c.beginPath();cheminPercage(c,q,clrZone(zoneAt(i,q.x,q.y),q.net,"cu","th",q));c.fill();}
+      else if(q.drill>0){c.beginPath();cheminPercage(c,q,clrZone(zq,q.net,"cu","th",q));c.fill();}
     }
   /* liaisons thermiques : quatre bras par défaut, ou configuration personnalisée */
   c.globalCompositeOperation="source-over";
@@ -296,7 +312,8 @@ function padPath(c,q,grow){
     c.closePath();
   }
   else if(q.shape==="chamfer"){
-    const ch=(q.chamfer!=null?q.chamfer:padChamferVal(q))+g;
+    // l'arête du chanfrein recule de g sur sa normale : le chanfrein grandit de g·(2−√2), pas de g
+    const ch=(q.chamfer!=null?q.chamfer:padChamferVal(q))+g*(2-Math.SQRT2);
     const pts=padChamferPts(q.w+2*g,q.h+2*g,ch,q.chamferCorners);
     c.moveTo(pts[0].x,pts[0].y);
     for(let i=1;i<pts.length;i++)c.lineTo(pts[i].x,pts[i].y);

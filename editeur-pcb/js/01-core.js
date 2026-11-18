@@ -1185,7 +1185,7 @@ function setCuCount(n,silent){
     if(oldL.length){
       if(i===0)src=oldL[0];
       else if(i===n-1)src=oldL[old-1];
-      else src=oldL[Math.min(i,old-2)]||null;
+      else src=i<=old-2?oldL[i]:null;      // une couche interne nouvelle part des réglages d'usine
     }
     L.push({
       name:(src&&src.custom)?src.name:cuLabel(i,n),
@@ -1551,13 +1551,8 @@ async function pcbChargerCatalogueEmpreintes(){
 function pcbObtenirEmpreinteLib(pkg){
   if(!pkg) return null;
   const cle = pkgKey(pkg);
-  let def = null;
-  if(PCB_LIB_CACHE && typeof PCB_LIB_CACHE.get === "function"){
-    def = PCB_LIB_CACHE.get(cle) || PCB_LIB_CACHE.get(pkg);
-  }
-  if(!def && PCB_LIB_CACHE){
-    def = PCB_LIB_CACHE[cle] || PCB_LIB_CACHE[pkg];
-  }
+  // une Map, lue par get : « constructor » ou « keys » n'y trouvent rien d'hérité
+  const def = PCB_LIB_CACHE.get(cle) || PCB_LIB_CACHE.get(pkg);
   if(def) return def;
 
   const nomFichier = pkg.endsWith(".json") ? pkg : (pkg + ".json");
@@ -1567,8 +1562,7 @@ function pcbObtenirEmpreinteLib(pkg){
       if(!data) return null;
       const contenu = data.data !== undefined ? data.data : data.contenu;
       if(contenu && typeof contenu === "object"){
-        if(PCB_LIB_CACHE && typeof PCB_LIB_CACHE.set === "function") PCB_LIB_CACHE.set(cle, contenu);
-        else if(PCB_LIB_CACHE) PCB_LIB_CACHE[cle] = contenu;
+        PCB_LIB_CACHE.set(cle, contenu);
         return contenu;
       }
       return null;
@@ -1656,13 +1650,7 @@ function pkgGeom(pkg,pinsHint){
   if(!key)return null;
 
   // 1. Recherche dans le cache de la bibliothèque centralisée LIB
-  let libDef = null;
-  if(PCB_LIB_CACHE && typeof PCB_LIB_CACHE.get === "function"){
-    libDef = PCB_LIB_CACHE.get(key) || PCB_LIB_CACHE.get(pkg);
-  }
-  if(!libDef && PCB_LIB_CACHE){
-    libDef = PCB_LIB_CACHE[key] || PCB_LIB_CACHE[pkg];
-  }
+  const libDef = PCB_LIB_CACHE.get(key) || PCB_LIB_CACHE.get(pkg);
   if(libDef){
     const g={
         style:libDef.style||"chip",
@@ -1905,7 +1893,8 @@ function padWorldPts(q,grow){
   if(q.shape==="poly"&&Array.isArray(q.pts)&&q.pts.length>=3){
     localPts=polyOffset(q.pts,g);
   }else if(q.shape==="chamfer"){
-    const ch=(q.chamfer!=null?q.chamfer:padChamferVal(q))+g;
+    // l'arête du chanfrein recule de g sur sa normale : le chanfrein grandit de g·(2−√2), pas de g
+    const ch=(q.chamfer!=null?q.chamfer:padChamferVal(q))+g*(2-Math.SQRT2);
     localPts=padChamferPts(q.w+2*g,q.h+2*g,ch,q.chamferCorners);
   }else if(q.shape==="circ"){
     const r=Math.max(q.w,q.h)/2+g;
@@ -2577,6 +2566,8 @@ function fpBBox(fp){
   for(const q of ps){
     const r=Math.max(q.w,q.h)/2;
     x1=Math.min(x1,q.x-r);x2=Math.max(x2,q.x+r);y1=Math.min(y1,q.y-r);y2=Math.max(y2,q.y+r);
+    // une pastille tournée de 45° ou polygonale dépasse ce cercle inscrit : ses sommets comptent aussi
+    for(const c of padWorldPts(q)){x1=Math.min(x1,c.x);x2=Math.max(x2,c.x);y1=Math.min(y1,c.y);y2=Math.max(y2,c.y);}
   }
   for(const h of trousDe(fp)){          // un plot de centrage peut dépasser du corps
     const b=holeBBox(h);
@@ -3454,7 +3445,7 @@ function dpRuleFor(pair){
   const nm=pair&&pair.name;
   for(const r of S.dpRules)if(r.scope&&nm&&r.scope===nm)return r;
   for(const r of S.dpRules)if(!r.scope)return r;
-  return S.dpRules[0]||DP_FALLBACK;
+  return DP_FALLBACK;                   // la règle d'une autre paire ne vaut pas pour celle-ci
 }
 /* Les six contraintes, résolues pour une couche donnée. Une règle porte des
    valeurs générales et, si elle ne s'applique pas à toutes les couches, des

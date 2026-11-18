@@ -2028,16 +2028,18 @@ function simDCPolyPastille(q){
     return pts.map(p=>mo(p.x,p.y));
   }
   if(q.shape==="oval"){
-    const r=Math.min(q.w,q.h)/2;
-    const dx=Math.max(0,q.w/2-r), dy=Math.max(0,q.h/2-r);
+    /* demi-cercles aux deux bouts du grand axe : en x si w ≥ h, en y sinon (une
+       oblongue debout donnait deux demi-disques reliés par un trait nul) */
+    const r=Math.min(q.w,q.h)/2, d=Math.max(0,Math.max(q.w,q.h)/2-r);
+    const t0=q.w>=q.h?0:Math.PI/2, ux=Math.cos(t0), uy=Math.sin(t0);
     const pts=[];
     for(let i=0;i<=12;i++){                    // le bout « positif »
-      const a=-Math.PI/2+Math.PI*i/12;
-      pts.push(mo(dx+r*Math.cos(a), dy*0+r*Math.sin(a)+dy));
+      const a=t0-Math.PI/2+Math.PI*i/12;
+      pts.push(mo(d*ux+r*Math.cos(a), d*uy+r*Math.sin(a)));
     }
     for(let i=0;i<=12;i++){                    // le bout opposé
-      const a=Math.PI/2+Math.PI*i/12;
-      pts.push(mo(-dx+r*Math.cos(a), -dy+r*Math.sin(a)));
+      const a=t0+Math.PI/2+Math.PI*i/12;
+      pts.push(mo(-d*ux+r*Math.cos(a), -d*uy+r*Math.sin(a)));
     }
     return pts;
   }
@@ -2282,8 +2284,7 @@ function simDCBornePastille(x,y){
           const c=sm&&sm.get(fp.ref);
           if(c){
             const sp=pcbSpecsComposant(c);
-            const pinKey=String(q.n!=null?q.n:"");
-            const pinNom=c.pinNames&&(c.pinNames[pinKey]||c.pinNames[q.n]);
+            const pinNom=pcbNomPatte(c,q);
             if(pinNom)nom+=" ("+pinNom+")";
             else if(sp.mpn||sp.value)nom+=" ("+(sp.mpn||sp.value)+")";
             specProv=sp.provenance;
@@ -2339,9 +2340,9 @@ function simDCClic(x,y){
        pastille ; depuis qu'il se RENOMME, recliquer une pastille renommée
        posait une SECONDE borne au même endroit — deux injections au même point,
        donc deux fois le courant, sans un mot. */
+    // même point, quelle que soit la couche active au clic : une traversante est une seule borne
     const k=SIM_DCB.bornes.findIndex(o=>Math.abs(o.x-b.x)<1e-6&&
-                                        Math.abs(o.y-b.y)<1e-6&&
-                                        o.couche===b.couche);
+                                        Math.abs(o.y-b.y)<1e-6);
     /* RECLIQUER LA MEME PASTILLE CORRIGE LE TIR : on remplace, et on garde ce
        que l'utilisateur avait posé dessus -- sa valeur, son unité ET SON NOM.
        L'unité oubliée ici, un « 500 mA » corrigé d'un clic redevenait
@@ -3021,6 +3022,22 @@ async function pcbSyncSchema(){
   return pcbSchemaDoc();
 }
 
+/* Nom de la broche qui tombe sur la pastille q : pinNames est rangé par patte
+   moins un (pcbRangerBroches), pinNames[q.n] donnait le nom de la suivante. */
+/* Un net de bus, ou un net composé « A + B (R1 22) » (deux tronçons de part et
+   d'autre d'une résistance série). Un nom qui existe tel quel sur la carte reste
+   un seul net : « LVDS_CLK+ » ou « Net-(U1-PA5) » de KiCad n'étaient plus trouvés. */
+function simNetCompose(nom){
+  const n=String(nom==null?"":nom).trim();
+  const existe=x=>typeof S!=="undefined"&&((S.tracks||[]).some(t=>t.net===x)||(S.fps||[]).some(f=>Object.values(f.nets||{}).includes(x)));
+  const m=/^(.+?) \+ (.+?)(?: \(([^()]*)\))?$/.exec(n);
+  if(m&&!existe(n))return {nets:[m[1].trim(),m[2].trim()],serie:m[3]?m[3].trim():""};
+  return {nets:n?[n]:[],serie:""};
+}
+function pcbNomPatte(c,q){
+  const n=+(q&&q.n);
+  return c&&Array.isArray(c.pinNames)&&Number.isInteger(n)&&n>=1?(c.pinNames[n-1]||""):"";
+}
 function pcbComposantsSchema(doc){
   const sch=doc||pcbSchemaDoc();
   const m=new Map();
@@ -3413,8 +3430,7 @@ function pcbNetComposants(net){
     if(!padsNet.length)continue;
 
     for(const q of padsNet){
-      const pinKey=String(q.n!=null?q.n:"");
-      const pinNom=(c.pinNames&&(c.pinNames[pinKey]||c.pinNames[q.n]))||"";
+      const pinNom=pcbNomPatte(c,q);
       
       let isSource=false;
       let isCharge=false;
@@ -3591,7 +3607,11 @@ function simDCGroupe(net,pile){
     const vIn=simDCTensionNet(g.entrees[0].net)||
               (sources[0]&&sources[0].valeur)||vOut||1;
     const eta=simDCRendement(g.comp);
-    const iIn=(eta>=1)?iOut:(vOut*iOut)/(eta*vIn);
+    /* tension de sortie inconnue : iIn = iOut, le côté prudent (dit dans une note),
+       au lieu de conclure qu'il n'y a pas de consommateur */
+    const iIn=(eta>=1||!(vOut>0))?iOut:(vOut*iOut)/(eta*vIn);
+    if(!(vOut>0)&&iOut>0)
+      notes.push(ref+" : tension de sortie inconnue, son entrée est comptée au courant de sortie ("+fmt(iOut,3)+" A), par excès.");
     if(!(iIn>0)){
       notes.push(ref+" : aucun consommateur trouvé sur sa sortie ("+
                  (sorties.join(", ")||"?")+") — son entrée ne tire rien.");
@@ -3850,8 +3870,7 @@ const SIM_PCB={
         if(padLayers(fp,q).indexOf(cu)>=0&&padDist(pt[0],pt[1],q)<=0.02){
           const schMap=typeof pcbComposantsSchema==="function"?pcbComposantsSchema():null;
           const c=schMap&&schMap.get(fp.ref);
-          const pinKey=String(q.n!=null?q.n:"");
-          const pinNom=c&&c.pinNames&&(c.pinNames[pinKey]||c.pinNames[q.n]);
+          const pinNom=c?pcbNomPatte(c,q):"";
           const compDesc=c?(" ("+(pinNom||c.mpn||c.value||fp.ref)+")"):"";
           return "la pastille "+(fp.ref||"?")+"."+(q.n==null?"?":q.n)+compDesc;
         }
@@ -3895,11 +3914,10 @@ const SIM_PCB={
   schemaInfosDiff:function(netA, netB){
     let nA=netA, nB=netB;
     if(!nA||!nB){
-      if(typeof dpOfNet==="function"&&typeof S!=="undefined"&&S.sel&&S.sel.tracks&&S.sel.tracks.size){
-        const tr=[...S.sel.tracks][0];
-        const dp=tr&&dpOfNet(tr.net);
-        if(dp){nA=dp.netA; nB=dp.netB;}
-      }
+      // un seul net (l'appelant de commun/simulation-em.js) : sa paire ; sinon celle de la piste sélectionnée
+      const tr=typeof S!=="undefined"&&S.sel&&S.sel.tracks&&S.sel.tracks.size?[...S.sel.tracks][0]:null;
+      const dp=typeof dpOfNet==="function"?dpOfNet(nA||nB||(tr&&tr.net)):null;
+      if(dp){nA=dp.p; nB=dp.n;}            // une paire porte p et n (dpOfNet, 01-core.js)
     }
     if(!nA||!nB)return null;
     const schM=pcbComposantsSchema();
@@ -3969,12 +3987,9 @@ const SIM_PCB={
     const arr=[...rails].filter(Boolean);
     if(arr.length) return arr.sort((a,b)=>a.localeCompare(b,"fr",{numeric:true}));
 
-    if(aDesNets&&S.nets){
-      const tous=Object.keys(S.nets).filter(n=>n&&!isGnd(n));
-      if(tous.length) return tous.sort((a,b)=>a.localeCompare(b,"fr",{numeric:true}));
-    }
-
-    return ["+3V3", "+5V", "VCC", "VDD"];
+    // S.nets n'existe pas dans l'éditeur : les nets de la carte (pistes, zones), jamais un nom absent
+    const tous=this.pdnTousNets().filter(n=>n&&!isGnd(n));
+    return tous.sort((a,b)=>a.localeCompare(b,"fr",{numeric:true}));
   },
 
   /* Tous les nets de la carte */
@@ -3984,6 +3999,8 @@ const SIM_PCB={
     const set=new Set();
     if(S.nets) for(const n of Object.keys(S.nets)) if(n&&!isGnd(n)) set.add(n);
     if(Array.isArray(S.tracks)) for(const t of S.tracks) if(t&&t.net&&!isGnd(t.net)) set.add(t.net);
+    if(Array.isArray(S.zones)) for(const z of S.zones) if(z&&z.net&&!isGnd(z.net)) set.add(z.net);
+    if(Array.isArray(S.fps)) for(const f of S.fps) for(const n of Object.values(f.nets||{})) if(n&&!isGnd(n)) set.add(n);
     return [...set].sort((a,b)=>a.localeCompare(b,"fr",{numeric:true}));
   },
 
@@ -4021,7 +4038,8 @@ const SIM_PCB={
       const nets=pads.map(q=>q.net||(fp.nets&&fp.nets[q.n])).filter(Boolean);
       if(!nets.some(isTargetNet)||!nets.some(simPDNEstMasse)) continue;
 
-      const c=Object.assign({type:"capacitor"}, fp, sch);
+      // seuls les champs renseignés du schéma l'emportent : un boîtier vide n'efface pas « 0402 »
+      const c=Object.assign({type:"capacitor"}, fp, Object.fromEntries(Object.entries(sch||{}).filter(([,v])=>v!==""&&v!=null)));
       const par=pcbParasitesComposant(c);
       /* La paire de vias descend de la face du composant jusqu'au premier plan
          de la cavité : c'est cette longueur qui corrige la table par boîtier. */
@@ -4395,7 +4413,7 @@ const SIM_PCB={
     const prevBornes = SIM_DCB.bornes.slice();
     SIM_DCB.bornes=[];
     for(const s of sources){
-      const exist = prevBornes.find(b=>Math.abs(b.x-s.pad.x)<1e-6&&Math.abs(b.y-s.pad.y)<1e-6&&b.couche===s.couche);
+      const exist = prevBornes.find(b=>Math.abs(b.x-s.pad.x)<1e-6&&Math.abs(b.y-s.pad.y)<1e-6);   // la couche n'identifie pas une pastille traversante
       if(exist && exist.provenance === "manuel"){
         SIM_DCB.bornes.push(exist);
       } else {
@@ -4417,7 +4435,7 @@ const SIM_PCB={
       }
     }
     for(const c of charges){
-      const exist = prevBornes.find(b=>Math.abs(b.x-c.pad.x)<1e-6&&Math.abs(b.y-c.pad.y)<1e-6&&b.couche===c.couche);
+      const exist = prevBornes.find(b=>Math.abs(b.x-c.pad.x)<1e-6&&Math.abs(b.y-c.pad.y)<1e-6);
       if(exist && exist.provenance === "manuel"){
         SIM_DCB.bornes.push(exist);
       } else {
@@ -4901,8 +4919,8 @@ const SIM_PCB={
   /* Extraction physique du temps de vol pour l'analyse de bus synchrone (supporte les XNets / nets composés "NET1 + NET2") */
   busNetFlight:function(netName){
     if(!netName) return {net:"", len:0, tflight:0, psmm:6.7, capPf:0, trksCount:0, viasCount:0};
-    const cleanStr = String(netName).replace(/\s*\([^)]*\)/g, "");
-    const parts = cleanStr.split(/[\+,]/).map(s=>s.trim()).filter(Boolean);
+    const compo = simNetCompose(netName);
+    const parts = compo.nets;
     let totalLen = 0, totalTflightPs = 0, totalCapPf = 0, totalTrks = 0, totalVias = 0;
 
     for(const partNet of parts){
@@ -4932,7 +4950,7 @@ const SIM_PCB={
 
     // Détection d'une résistance série et calcul du retard RC induit
     let rOhms = 0, rComp = "", rcDelayPs = 0;
-    const rMatch = String(netName).match(/\(([^)]+)\)/);
+    const rMatch = compo.serie ? [null, compo.serie] : null;
     if(rMatch){
       const raw = rMatch[1].trim();
       const tokens = raw.split(/\s+/);
@@ -4990,7 +5008,7 @@ const SIM_PCB={
 
   trouverPontSerie:function(netName){
     if(typeof S==="undefined"||!Array.isArray(S.fps)||!netName) return null;
-    const cleanTarget = String(netName).replace(/\s*\([^)]*\)/g, "").split(/[\+,]/)[0].trim();
+    const cleanTarget = simNetCompose(netName).nets[0] || "";
     if(!cleanTarget) return null;
     const cleanTargetUpper = cleanTarget.toUpperCase();
     const isPwr=n=>/^(GND|VCC|\+?3V3|\+?5V|\+?1V[0-9]|\+?2V[0-9]|VDD|VSS|VIN|VBAT)$/i.test(n);

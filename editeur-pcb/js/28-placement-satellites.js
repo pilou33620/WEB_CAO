@@ -37,8 +37,10 @@ function satEstAlim(n){
 function satValeurF(v){
   const m=String(v||"").trim().replace(",",".").match(/^(\d+(?:\.\d+)?)\s*([pnuµm]?)(\d*)/i);
   if(!m)return Infinity;
-  const mult={p:1e-12,n:1e-9,u:1e-6,"µ":1e-6,m:1e-3,"":1}[m[2].toLowerCase()];
-  return parseFloat(m[1]+(m[3]?"."+m[3]:""))*mult;
+  // le drapeau /i laisse passer le μ grec (U+03BC) à côté du µ micro (U+00B5)
+  const mult={p:1e-12,n:1e-9,u:1e-6,"µ":1e-6,"μ":1e-6,m:1e-3,"":1}[m[2].toLowerCase()];
+  const r=parseFloat(m[1]+(m[3]?"."+m[3]:""))*mult;
+  return Number.isFinite(r)?r:Infinity;
 }
 
 /* La carte en boîte englobante, l'empreinte entièrement dedans. */
@@ -131,7 +133,9 @@ function placerSatellites(){
   const hotes=new Set(S.fps.filter(fp=>!satConnecteur(fp)&&!placeManuelle(fp)&&
     padsOf(fp).length>=3&&centreSurCarte(fp)));
   /* satellites possibles : deux pattes */
-  const cands=S.fps.filter(fp=>padsOf(fp).length===2&&!fp.locked&&!placeManuelle(fp)&&!satConnecteur(fp));
+  // un membre de groupe (27-groupes.js) se déplace avec son groupe, pas seul
+  const cands=S.fps.filter(fp=>padsOf(fp).length===2&&!fp.locked&&!placeManuelle(fp)&&!satConnecteur(fp)&&
+    !(typeof groupeDeFp==="function"&&groupeDeFp(fp.id)));
   const candSet=new Set(cands);
   /* boîtes occupées : tout sauf les satellites possibles, qu'on soulève */
   const obst=S.fps.filter(fp=>!candSet.has(fp)).map(fpBBox);

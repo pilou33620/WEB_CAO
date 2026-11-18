@@ -680,7 +680,8 @@ function dpCommit(){
   const D=S.dp;
   S.dp=null;
   if(!D)return;
-  if(!D.doneP.length&&!D.doneN.length&&!D.shoved){touch();draw();return;}
+  // des vias posés dès le départ (sans éventail) sont un geste : il leur faut leur étape
+  if(!D.doneP.length&&!D.doneN.length&&!D.shoved&&!(D.vias&&D.vias.length)){touch();draw();return;}
   pushSnap(D.doc);
   const posed=[];
   for(const [segs,net] of [[D.doneP,D.pair.p],[D.doneN,D.pair.n]]){
@@ -1312,7 +1313,12 @@ function dpLayerEdit(i){
   if(!(W>0)||!(G>0)){alert("Deux cotes en millimètres, strictement positives.");return;}
   const rr=draft?dpMaterialize(r):(push(),r);
   rr.allLayers=false;
-  rr.layers[i]=Object.assign({},rr.layers[i]||{},{prefW:r3(W),prefGap:r3(G)});
+  /* une cote saisie hors des bornes générales les élargit sur cette couche : sinon
+     dpGeom la ramenait dans les bornes et le routeur posait autre chose qu'affiché */
+  const Lc={prefW:r3(W),prefGap:r3(G)};
+  if(W<v.minW)Lc.minW=r3(W);if(W>v.maxW)Lc.maxW=r3(W);
+  if(G<v.minGap)Lc.minGap=r3(G);if(G>v.maxGap)Lc.maxGap=r3(G);
+  rr.layers[i]=Object.assign({},rr.layers[i]||{},Lc);
   touch();setActive(i);buildDiffPairs();refreshPanels();draw();
 }
 
@@ -1363,8 +1369,11 @@ function dpMeander(track, opts){
   const aWanted=(opts.amplitude!=null)?opts.amplitude:(mOpts.amplitude||1.5);
   let pitch=Math.max(w*2.5, pWanted);
   let amp=Math.max(w*2.0, aWanted);
-  const r=Math.min(pitch*0.25, amp*0.25, 0.35); // coin à 45°
-  const deltaPerCycle=Math.max(0.1, 2*amp-2*r*(2-Math.sqrt(2)));
+  let r=Math.min(pitch*0.25, amp*0.25, 0.35); // coin à 45°
+  const coin=()=>2*r*(2-Math.SQRT2);           // longueur que les coins retirent à un créneau
+  const deltaPerCycle=Math.max(0.1, 2*amp-coin());
+  /* l'amplitude qui ajoute exactement `target` en N créneaux ; le coin suit l'amplitude */
+  const ampPour=n=>{for(let k=0;k<4;k++){amp=(target/n+coin())/2;r=Math.min(pitch*0.25,amp*0.25,0.35);}};
 
   const margin=Math.max(0.2, pitch*0.4);
   const avail=Math.max(0, L-2*margin);
@@ -1373,9 +1382,9 @@ function dpMeander(track, opts){
   let N=1;
   if(target>0){
     N=Math.max(1, Math.min(maxCycles, Math.round(target/deltaPerCycle)));
-    if(N>0&&target/N>0.1){
-      amp=Math.max(w*1.5, (target/N + 2*r*(2-Math.sqrt(2)))/2);
-    }
+    ampPour(N);
+    // une cible plus courte que le plus petit créneau tenable : rien plutôt qu'un serpentin faux
+    if(amp<w*1.5)return {tracks:[Object.assign({},track)], addedLen:0};
   }else{
     N=Math.min(maxCycles, Math.max(1, Math.floor(avail/(pitch*1.5))));
   }
@@ -1385,6 +1394,9 @@ function dpMeander(track, opts){
     if(pitch<w*2){
       return {tracks:[Object.assign({},track)], addedLen:0};
     }
+    // pas réduit : le coin aussi, sinon le haut du créneau repart en arrière (t2 < t1)
+    r=Math.min(pitch*0.25, amp*0.25, 0.35);
+    if(target>0){ampPour(N);if(amp<w*1.5)return {tracks:[Object.assign({},track)], addedLen:0};}
   }
 
   const span=N*pitch;

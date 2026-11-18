@@ -142,10 +142,13 @@ function buildActiveLayer(){
           '</select></div><div><label>Zones posées</label><input value="'+n+'" disabled></div></div>'
       : '<div class="prop"><label>Zones posées</label><input value="'+n+'" disabled></div>');
   const nm=$("laName");
-  if(nm)nm.onchange=()=>{L.name=nm.value.trim()||cuLabel(S.active,S.cu);L.custom=true;
-    buildLayers();buildTabs();};
+  // nom et couleur font partie du document : une étape d'historique, la carte marquée modifiée
+  if(nm)nm.onchange=()=>{push();L.name=nm.value.trim()||cuLabel(S.active,S.cu);L.custom=true;
+    touch();buildLayers();buildTabs();};
   const col=$("laCol");
-  if(col)col.oninput=()=>{L.color=col.value;L.custom=true;touch();buildLayers();buildTabs();draw();};
+  let colGeste=false;                  // une étape par geste dans le sélecteur, pas une par teinte
+  if(col)col.oninput=()=>{if(!colGeste){push();colGeste=true;}L.color=col.value;L.custom=true;touch();buildLayers();buildTabs();draw();};
+  if(col)col.onchange=()=>{colGeste=false;};
   const rl=$("laRole");
   if(rl)rl.onchange=()=>{
     const r=rl.value;
@@ -986,12 +989,12 @@ function propsHole(box, h){
   };
   const inX=$("pHoleX");
   if(inX)inX.onchange=e=>{
-    const v=+e.target.value.replace(",",".");
+    const v=numSaisi(e.target.value);
     if(Number.isFinite(v)){push();h.x=r4(v);touch();buildProps();draw();}
   };
   const inY=$("pHoleY");
   if(inY)inY.onchange=e=>{
-    const v=+e.target.value.replace(",",".");
+    const v=numSaisi(e.target.value);
     if(Number.isFinite(v)){push();h.y=r4(v);touch();buildProps();draw();}
   };
   const inLock=$("pHoleLock");
@@ -1091,12 +1094,12 @@ function propsDrawing(box, d){
     };
     const inX=$("pDrwX");
     if(inX)inX.onchange=e=>{
-      const v=+e.target.value.replace(",",".");
+      const v=numSaisi(e.target.value);
       if(Number.isFinite(v)){push();d.x1=r4(v);d.x2=d.x1;touch();buildProps();draw();}
     };
     const inY=$("pDrwY");
     if(inY)inY.onchange=e=>{
-      const v=+e.target.value.replace(",",".");
+      const v=numSaisi(e.target.value);
       if(Number.isFinite(v)){push();d.y1=r4(v);d.y2=d.y1;touch();buildProps();draw();}
     };
     const bDel=$("pDrwDel");
@@ -1457,11 +1460,14 @@ function busSkewSync(){
   };
 
   const inFreq=$("bsFreq"), inTsu=$("bsTsu"), inTh=$("bsTh"), inTcoMin=$("bsTcoMin"), inTcoMax=$("bsTcoMax");
-  if(inFreq)inFreq.onchange=()=>{_bsState.freqMhz=parseFloat(inFreq.value)||100;_bsState.presetId="custom";busSkewSync();};
-  if(inTsu)inTsu.onchange=()=>{_bsState.tsu=parseFloat(inTsu.value)||1.5;_bsState.presetId="custom";busSkewSync();};
-  if(inTh)inTh.onchange=()=>{_bsState.th=parseFloat(inTh.value)||1.0;_bsState.presetId="custom";busSkewSync();};
-  if(inTcoMin)inTcoMin.onchange=()=>{_bsState.tcoMin=parseFloat(inTcoMin.value)||0;_bsState.presetId="custom";busSkewSync();};
-  if(inTcoMax)inTcoMax.onchange=()=>{_bsState.tcoMax=parseFloat(inTcoMax.value)||0.5;_bsState.presetId="custom";busSkewSync();};
+  /* 0 ns est une valeur courante (t_h d'un SPI) : seule une saisie illisible garde la
+     valeur en place, et la fréquence doit être positive */
+  const bsLire=(el,k,pos)=>{const v=parseFloat(el.value);if(Number.isFinite(v)&&(!pos||v>0)){_bsState[k]=v;_bsState.presetId="custom";}else el.value=_bsState[k];busSkewSync();};
+  if(inFreq)inFreq.onchange=()=>bsLire(inFreq,"freqMhz",true);
+  if(inTsu)inTsu.onchange=()=>bsLire(inTsu,"tsu");
+  if(inTh)inTh.onchange=()=>bsLire(inTh,"th");
+  if(inTcoMin)inTcoMin.onchange=()=>bsLire(inTcoMin,"tcoMin");
+  if(inTcoMax)inTcoMax.onchange=()=>bsLire(inTcoMax,"tcoMax");
 
   d.querySelectorAll('input[name="bsClkPick"]').forEach(r=>{
     r.onchange=()=>{
@@ -1696,7 +1702,9 @@ function propsFp(box,fp){
     if(!el)return;
     const enVigueur=el.value;
     el.onchange=()=>{
-      const v=parseFloat(el.value)||0, gene=fpEssai(()=>fn(v));
+      const v=numSaisi(el.value);
+      if(!Number.isFinite(v)){el.value=enVigueur;return;}        // vidé : l'objet ne saute pas à l'origine
+      const gene=fpEssai(()=>fn(v));
       if(gene){el.value=enVigueur;fpRefus(gene);return;}
       push();transformFps([fp.id],()=>fn(v));touch();refreshPanels();draw();
     };
@@ -2323,6 +2331,7 @@ function propsVia(box,v){
     v.a=+$("vA").value;v.b=+$("vB").value;
     if(v.a>v.b){const k=v.a;v.a=v.b;v.b=k;}
     if(v.a===v.b)v.b=Math.min(S.cu-1,v.a+1);
+    if(v.a===v.b)v.a=Math.max(0,v.b-1);       // sur la dernière couche : on descend d'une
     v.net=$("vN").value;
     touch();refreshPanels();draw();
   };
@@ -2447,6 +2456,12 @@ function mpNets(vide){
 /* Un champ qui commande tout un groupe. Le « mixte » laissé tel quel ne touche
    à rien : c'est ce qui permet de ne changer QUE le diamètre sur une sélection
    qui diffère aussi par le net et par les couches. */
+/* Nombre saisi dans un champ : vide ou illisible donne NaN, pas 0 (+"" vaut 0 :
+   un X vidé envoyait l'objet à l'origine). La virgule vaut un point. */
+function numSaisi(t){
+  const s=String(t==null?"":t).trim().replace(",",".");
+  return s===""?NaN:+s;
+}
 function mpBranche(id,list,fn,num,apres){
   const el=$(id);
   if(!el)return;
@@ -2519,8 +2534,21 @@ const MP_KINDS={
       mpBranche("mpFpPins",list,(f,v)=>fpSetPins(f,v),1);
       mpBranche("mpFpPitch",geo,(f,v)=>{f.pitch=Math.max(0.2,v);},1);
       mpBranche("mpFpSpan",geo,(f,v)=>{f.span=Math.max(0.2,v);},1);
-      mpBranche("mpFpSide",list,(f,v)=>{f.side=+v;},1);
-      mpBranche("mpFpRot",list,(f,v)=>{f.rot=+v;},1);
+      /* face et rotation : comme une seule empreinte (updPose), le cuivre accroché suit
+         (transformFps) et un chevauchement refuse le geste (fpEssai) */
+      const mpPose=(id,fn)=>{
+        const el=$(id);
+        if(!el)return;
+        el.onchange=()=>{
+          const v=parseFloat(el.value);
+          if(el.value===MP_MIX||!isFinite(v))return;
+          const tous=()=>list.forEach(f=>fn(f,v)), gene=fpEssai(tous);
+          if(gene){fpRefus(gene);refreshPanels();return;}
+          push();transformFps(list.map(f=>f.id),tous);touch();refreshPanels();draw();
+        };
+      };
+      mpPose("mpFpSide",(f,v)=>{f.side=+v;});
+      mpPose("mpFpRot",(f,v)=>{f.rot=+v;});
     }},
   tracks:{titre:"Segments",nom:["segment","segments"],
     sig:t=>t.l+"|"+fmt(t.w,3)+"|"+(t.net||""),

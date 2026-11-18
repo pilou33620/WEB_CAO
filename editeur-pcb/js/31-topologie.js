@@ -54,7 +54,9 @@ function topoGraphe(net){
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
       if(q.net!==net)continue;
-      pads.push(nd("p:"+fp.id+":"+q.n,{type:"pad",ref:String(fp.ref||"?"),pin:q.n,x:q.x,y:q.y,fp,q}));
+      // deux pattes au même numéro (bouton 1,1,2,2) font un seul nœud, compté une fois
+      const k="p:"+fp.id+":"+q.n, neuf=!nodes.has(k), n=nd(k,{type:"pad",ref:String(fp.ref||"?"),pin:q.n,x:q.x,y:q.y,fp,q});
+      if(neuf)pads.push(n);
     }
   const vias=S.vias.filter(v=>v.net===net);
   for(const v of vias)nd("v:"+v.id,{type:"via",x:v.x,y:v.y,v});
@@ -112,6 +114,8 @@ function topoGraphe(net){
       if(p.q.drill>0)continue;
       const l=padLayers(p.fp,p.q)[0];
       if(l<Math.min(v.a,v.b)||l>Math.max(v.a,v.b))continue;
+      // déjà relié par une piste : un second lien ferait croire à une boucle (« maillé »)
+      if(vn.adj.some(a=>a.n===p))continue;
       if(typeof padHolds==="function"?padHolds(p.fp,p.q,l,v.x,v.y):dist(v.x,v.y,p.x,p.y)<Math.min(p.q.w,p.q.h)/2)
         lier(vn,p,0,null);
     }

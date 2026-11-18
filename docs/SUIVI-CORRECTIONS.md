@@ -153,3 +153,33 @@ Décisions du 11/11 : toutes appliquées (boutons pour les fonctions sans appela
 
 | F | Largeur des symboles indépendante de la police (table fixe Helvetica) : un CI ne s'élargit plus selon la machine, les fils ne se décrochent plus d'un poste à l'autre ; CI GitHub rouge depuis l'installation de canvas | `editeur-schematique/js/01-noyau.js` (`textW`) |
 | R | Schémas existants : un CI à broches nommées peut changer de largeur une fois à l'ouverture (fils à vérifier) | |
+
+## Revue complète du 18/11/2026 (schéma et PCB, fonction par fonction)
+
+Treize relecteurs, un lot de fichiers chacun ; chaque point confirmé par une expérience
+sur le bundle, puis corrigé avec un essai (`harness.js` des deux éditeurs, bancs KiCad).
+
+| État | Point | Où |
+|---|---|---|
+| F | Import : id, uid et refStart démesurés (boucle sans fin sur 1e17) ; feuille « Hiérarchie » décidée par son drapeau | `15-import.js` |
+| F | CI : valeur, nom de broche, choix au catalogue emmènent les fils ; cache des nets suit la valeur | `10-actions.js` (`icRetouche`), `07-connectivite.js` |
+| F | Recherche de composants : broche retrouvée par sa patte (pinMap) ; LCSC gardé | `22-recherche-composants.js` |
+| F | Motifs : nets homonymes de deux feuilles fusionnés, net « constructor », analyse demandée pendant une autre | `23-patterns.js` |
+| F | Renumérotation : doublons et « R? » gardaient le même repère | `28-dessin-pilote.js` |
+| F | Contraintes : « 5O » lu 5, « abc » effaçait, hors bornes effaçait (schéma et PCB) | `commun/contraintes.js` (`cmChampInvalide`) |
+| F | Blocs (étiquettes locales), bus (vecteur démesuré, mémoire des piquages), piquage après découpe, CSV « -1+1 », palette, Détails, exemple, Ctrl+Z après ouverture de projet, boîtier « Personnalisé », texte redressé, connecteur du catalogue | schéma |
+| F | `runDrc` rendait les écarts exclus ou ignorés ; codes DRC explicites (interdits, thermique, keep-out, régions) | `02-connectivity.js`, `38`, `39`, `47`, `50` |
+| F | Permutation de couches : le rôle de plan suit sa zone ; empreinte comparée à la LIB d'empreintes ; vernis des pastilles polygonales ; bout de piste dans un via ; perçage de l'inspecteur | `54-controles.js`, `52-outils-vue.js` |
+| F | Netlist : pastilles ajoutées à un trou de fixation ; nouvelles couches internes copiant le dessus ; chanfrein grossi trop court ; règle d'une autre paire ; trou à trou NPTH à 0 ; boîte d'une pastille tournée ; cache LIB lu par crochets | `01-core.js`, `02-connectivity.js`, `03-render.js` |
+| F | Via posé en plein tracé sans étape ; serpentin qui laissait la piste remplacée sélectionnée ; Ctrl+Y en plein tracé ; esquisses gardées au Ctrl+Z ; classes V1.0 non bornées ; poignée d'un texte ou d'un aplat ; cadre aplati perdu ; modèle RF « __proto__ » ; lasso figé | `05-tools.js` |
+| F | Rotation/face de groupe sans le cuivre ; via sur une seule couche ; t_h = 0 lu 1 ns ; couche active hors historique ; champ vidé → 0 ; serpentin faux pour une petite cible ou une piste courte ; vias de paire sans étape ; cote de couche ramenée dans les bornes | `06-panels.js`, `09-diffpair.js` |
+| F | Injections HTML (règles du projet, nom de profil) ; designRules non validé ; court-circuit admis sans étape ; classe renommée perdant sa matrice ; double étape ; rotation depuis le score ; exemple sans confirmation ; sélection fantôme ; verrous et composants posés dans l'agencement ; mise à jour LIB annoncée réussie | `15-regles.js`, `20`, `22`, `21`, `17` |
+| F | ECO : broches nommées et LIB à l'ajout ; profils : fusion profonde, « __proto__ », profil intégré écrasé, stockage, ligne de cuivre selon l'épaisseur, anneau des vias, cases de matrice ; satellites (μ grec, groupes) | `23-eco-sync.js`, `24-pcb-capabilities.js`, `28` |
+| F | Gerber : isolement propre de la zone perdu, cuivre sans net non dégagé, sérigraphie trouée effaçant la précédente ; passage à 1 couche sans confirmation ; 402 pastilles pour un 0402 ; « Nouveau » gardait acquits et cartouche ; µ gravé blanc ; plan maître (dilatation du masque) et LISEZ-MOI (polarités) | `04-fabrication.js`, `03-render.js`, `07-app.js`, `04-pdf-masterdraw.js` |
+| F | Simulation : nom de broche décalé (régulateur inversé), bornes DC doublées, terminaison différentielle jamais lue, oblongue debout, nets « LVDS_CLK+ », régulateur sans Vout, condensateurs PDN, rails inexistants | `19-simulation.js` |
+| F | Contraintes physiques non bornées, largeur pour Z sous 0,05, topologie (arête doublée, pattes homonymes), nets cochés d'une ancienne carte | `30-contraintes.js`, `31-topologie.js` |
+| F | IPC-2581 : composant pointant la mauvaise ligne de nomenclature, couche « CONTOUR » ; dossier méca en sens trigo (animation 3D suivie) ; pilotage : via à une couche, réglages perdus à l'application, aperçu d'une autre carte effacé | `35`, `36`, `41`, `37` |
+| R | ECO : renumérotation décalée (R1→R2, R2→R3) non reconnue comme un renommage | `23-eco-sync.js`, `fpRenommages` |
+| R | Gabarits buck/LDO : la diode et les C1/C2 du repli écrasés par la boucle des passifs | `22-bloc-placement.js` |
+| R | Score de placement recalculé à chaque rafraîchissement (≈ 0,5 s sur 1 000 empreintes) | `20-placement-score.js` |
+| L | Probables non confirmés : poussée de vias jugée sur la carte d'avant le geste (`pnsShoveVia`), netlist d'un schéma sans projet acceptée, étanchéité du pilotage aux règles, note « vias non modélisés » | |

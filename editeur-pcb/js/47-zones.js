@@ -157,7 +157,7 @@ function zonesDrc(out){
       return Math.max(0,d);
     };
     // `d` : la distance du bord du cuivre à la région ; `e` : l'isolement exigé
-    const juger=(d,e,x,y,quoi)=>{if(d-e<-1e-6)out.push({x:r3(x),y:r3(y),l,
+    const juger=(d,e,x,y,quoi)=>{if(d-e<-1e-6)out.push({kind:"region-isolation",x:r3(x),y:r3(y),l,
       msg:nom+" : "+quoi+(d<=1e-6?" la touche — rien ne dégage une région pleine"
                                  :" à "+fmt(d,3)+" mm, sous l'isolement de "+fmt(e,3)+" mm")});};
     for(const t of S.tracks){

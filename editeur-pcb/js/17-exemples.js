@@ -502,7 +502,8 @@ const EXEMPLES=[
 function exCharger(i){
   const ex=EXEMPLES[i];
   if(!ex)return false;
-  if(S.fps.length&&
+  // comme « Nouveau » : une carte sans composant mais routée a aussi quelque chose à perdre
+  if((S.fps.length||S.tracks.length||S.vias.length||S.zones.length||(S.drawings||[]).length)&&
      !confirm("Ouvrir l'exemple « "+ex.titre+" » ? La carte en cours sera perdue."))
     return false;
   push();

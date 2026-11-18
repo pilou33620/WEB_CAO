@@ -148,7 +148,7 @@ function keepoutDrc(out){
         // un arc : ses cordes (trkSegs, 01-core.js)
         if(!L.has(t.l)||Math.min(...trkSegs(t).map(s=>distSegPoly(s,z.pts)))-t.w/2>-1e-6)continue;
         const m=trkMid(t);
-        out.push({x:r3(m.x),y:r3(m.y),l:t.l,msg:"Piste "+(t.net||"sans net")+" dans le keep-out « "+z.nom+" » ("+cuId(t.l,S.cu)+")"});
+        out.push({kind:"keepout",x:r3(m.x),y:r3(m.y),l:t.l,msg:"Piste "+(t.net||"sans net")+" dans le keep-out « "+z.nom+" » ("+cuId(t.l,S.cu)+")"});
       }
     if(z.ko.vias)
       for(const v of S.vias){
@@ -156,14 +156,14 @@ function keepoutDrc(out){
         if(!dans)continue;
         const d=inPoly(v.x,v.y,z.pts)?0:polyEdgeDist(v.x,v.y,z.pts);
         if(d-v.d/2>-1e-6)continue;
-        out.push({via:v,x:v.x,y:v.y,l:v.a,msg:"Via "+(v.net||"sans net")+" dans le keep-out « "+z.nom+" »"});
+        out.push({kind:"keepout",via:v,x:v.x,y:v.y,l:v.a,msg:"Via "+(v.net||"sans net")+" dans le keep-out « "+z.nom+" »"});
       }
     /* une région pleine est peinte telle quelle, par-dessus les découpes
        (04-fabrication.js) : le keep-out ne la creuse pas, il faut la signaler */
     if(z.ko.zones)
       for(const q of S.zones){
         if(!q.plein||!L.has(q.l)||!polysTouchent(q.pts,z.pts))continue;
-        out.push({x:r3(q.pts[0].x),y:r3(q.pts[0].y),l:q.l,msg:"Région pleine "+(q.net||"sans net")+" dans le keep-out « "+z.nom+" » ("+cuId(q.l,S.cu)+")"});
+        out.push({kind:"keepout",x:r3(q.pts[0].x),y:r3(q.pts[0].y),l:q.l,msg:"Région pleine "+(q.net||"sans net")+" dans le keep-out « "+z.nom+" » ("+cuId(q.l,S.cu)+")"});
       }
   }
 }
@@ -214,7 +214,7 @@ function planNegatif(i,on){
 /* ---------- branchement ---------- */
 (function(){
   const on=(id,f)=>{const b=$(id);if(b)b.onclick=f;};
-  on("mInterdit",()=>setMode("interdit"));
+  on("mInterdit",()=>{setMode("interdit");S.interditKo=false;});   // depuis le keep-out, le mode reste « interdit »
   on("mKeepout",()=>{setMode("interdit");S.interditKo=true;
     hint("Keep-out cuivre : un clic par sommet, ou deux coins puis Entrée. Ni piste, ni via, ni zone n'y entrera sans que le DRC le dise.");});
   on("bMeca",mecaDialogue);

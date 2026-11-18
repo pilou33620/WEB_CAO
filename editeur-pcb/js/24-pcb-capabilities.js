@@ -439,6 +439,18 @@ var PCB_MFG_PROFILES = JSON.parse(JSON.stringify(PCB_DEFAULT_MFG_PROFILES));
 
 /* ---------- Fonctions de gestion des profils ---------- */
 
+const MFG_CLES_INTERDITES = new Set(["__proto__", "constructor", "prototype"]);
+/* Fusion profonde d'objets simples (les tableaux sont remplacés), sans clé héritée. */
+function mfgFusion(base, src){
+  if(!src || typeof src !== "object" || Array.isArray(src)) return base;
+  for(const k of Object.keys(src)){
+    if(MFG_CLES_INTERDITES.has(k)) continue;
+    const v = src[k];
+    if(v && typeof v === "object" && !Array.isArray(v) && base[k] && typeof base[k] === "object" && !Array.isArray(base[k])) mfgFusion(base[k], v);
+    else base[k] = v;
+  }
+  return base;
+}
 function pcbLoadMfgProfiles(){
   try {
     const raw = (typeof localStorage !== "undefined" && localStorage.getItem("web_cao_mfg_profiles")) ||
@@ -446,8 +458,11 @@ function pcbLoadMfgProfiles(){
     if(raw){
       const parsed = JSON.parse(raw);
       if(parsed && typeof parsed === "object"){
-        for(const k in parsed){
-          if(parsed[k] && parsed[k].id && parsed[k].name){
+        /* seuls les profils personnels reviennent du stockage : un profil intégré
+           garde sa version du dépôt (profils/fabricants/), et un nom hérité ne passe pas */
+        for(const k of Object.keys(parsed)){
+          if(MFG_CLES_INTERDITES.has(k) || Object.prototype.hasOwnProperty.call(PCB_DEFAULT_MFG_PROFILES, k)) continue;
+          if(parsed[k] && parsed[k].id && parsed[k].name && parsed[k]._custom){
             PCB_MFG_PROFILES[k] = parsed[k];
           }
         }
@@ -459,7 +474,9 @@ function pcbLoadMfgProfiles(){
 
 function pcbSaveMfgProfiles(){
   try {
-    const str = JSON.stringify(PCB_MFG_PROFILES);
+    const perso = {};
+    for(const k of Object.keys(PCB_MFG_PROFILES)) if(PCB_MFG_PROFILES[k] && PCB_MFG_PROFILES[k]._custom) perso[k] = PCB_MFG_PROFILES[k];
+    const str = JSON.stringify(perso);
     if(typeof localStorage !== "undefined") localStorage.setItem("web_cao_mfg_profiles", str);
     if(typeof sessionStorage !== "undefined") sessionStorage.setItem("web_cao_mfg_profiles", str);
   } catch(e){
@@ -474,11 +491,12 @@ function pcbGetMfgProfile(id){
   /* shortcut: le profil personnalisé n'est gardé que dans le navigateur, le projet
      n'en porte que l'identifiant ; à reprendre le jour où il doit suivre le fichier.
      En attendant le repli se dit, une fois par identifiant. */
-  if(!PCB_MFG_PROFILES[k] && pcbMfgInconnu !== k){
+  const connu = Object.prototype.hasOwnProperty.call(PCB_MFG_PROFILES, k);   // « constructor » n'est pas un profil
+  if(!connu && pcbMfgInconnu !== k){
     pcbMfgInconnu = k;
     if(typeof hint === "function") hint("Profil fabricant « "+k+" » inconnu de ce navigateur : la carte est jugée sur les capacités JLCPCB.");
   }
-  return PCB_MFG_PROFILES[k] || PCB_MFG_PROFILES["jlcpcb"] || PCB_DEFAULT_MFG_PROFILES["jlcpcb"];
+  return (connu && PCB_MFG_PROFILES[k]) || PCB_MFG_PROFILES["jlcpcb"] || PCB_DEFAULT_MFG_PROFILES["jlcpcb"];
 }
 let pcbMfgInconnu = "";
 
@@ -615,18 +633,33 @@ const PCB_RULE_METAS = {
 };
 
 /* Calcule les bornes technologiques infranchissables de l'usine pour le profil actif */
+/* La ligne de cuivre du profil qui vaut pour cette carte : nombre de couches
+   (« 1-2 », « 2 », « multilayer », « all ») et épaisseur du cuivre de l'empilage
+   (la plus épaisse des couches, en oz). Une carte en 2 oz ne se juge pas sur les
+   minima du 1 oz. */
+function pcbLigneCuivre(p){
+  const W = (p && p.copper && Array.isArray(p.copper.weights)) ? p.copper.weights.filter(w => w && typeof w === "object") : [];
+  if(!W.length) return {};
+  const cu = (typeof S !== "undefined" && S.cu) || 2, multi = cu > 2;
+  let oz = 1;
+  try { for(let i = 0; i < cu; i++) oz = Math.max(oz, cuT(i) / OZ); } catch(e) {}
+  const pourCouches = w => { const l = String(w.layers || ""); return l === "all" || (multi ? /multi/.test(l) : !/multi/.test(l)); };
+  const ok = W.filter(pourCouches);
+  return ok.filter(w => (w.oz || 1) >= oz - 0.05).sort((a, b) => (a.oz || 1) - (b.oz || 1))[0]
+      || ok.sort((a, b) => (b.oz || 1) - (a.oz || 1))[0]
+      || W[multi && W[1] ? 1 : 0];
+}
 function pcbGetMfgLimits(profile){
   const p = profile || pcbGetMfgProfile();
   const cu = (typeof S !== "undefined" && S.cu) || 2;
   const isMulti = cu > 2;
-  const wIdx = isMulti && p.copper && p.copper.weights && p.copper.weights[1] ? 1 : 0;
-
-  const minTrackW = (p.copper && p.copper.weights && p.copper.weights[wIdx]?.minTrackWidth) || 0.10;
-  const minClr = (p.copper && p.copper.weights && p.copper.weights[wIdx]?.minTrackSpacing) || 0.10;
+  const ligne = pcbLigneCuivre(p);
+  const minTrackW = ligne.minTrackWidth || 0.10;
+  const minClr = ligne.minTrackSpacing || 0.10;
   const minDrill = cu === 1 ? (p.drilling?.drillDiameterMin?.layer1 || 0.30) : (p.drilling?.drillDiameterMin?.layer2Plus || 0.15);
   const maxDrill = (p.drilling?.drillDiameterMax) || 6.30;
   const minViaDia = (p.drilling?.vias?.minViaDiameter) || 0.25;
-  const minRing = isMulti ? (p.copper && p.copper.weights && p.copper.weights[1]?.pthAnnularRingMin || 0.15) : (p.copper && p.copper.weights && p.copper.weights[0]?.pthAnnularRingMin || 0.18);
+  const minRing = ligne.pthAnnularRingMin || (isMulti ? 0.15 : 0.18);
   const minEdge = (p.outline?.routed?.copperClearance) || 0.20;
 
   return {
@@ -666,27 +699,29 @@ function pcbGetProjectDesignRules(){
   if(!S.rule.designRules){
     S.rule.designRules = pcbGetDefaultDesignRules();
   }
+  // une clé absente (fichier partiel) prend la valeur par défaut : rules.drill.min ne plante plus
+  const def = pcbGetDefaultDesignRules();
+  for(const k in def) if(!S.rule.designRules[k]) S.rule.designRules[k] = def[k];
   return S.rule.designRules;
 }
 
 /* Propage la valeur typique aux paramètres actifs du projet (classes, règles globales) */
+/* La classe visée est celle par défaut (S.classes[0]), pas celle que la fenêtre
+   des règles affichait en dernier : « Réinitialiser » touchait sinon la classe
+   Alimentation consultée juste avant. */
 function pcbPropagateTypiqueToProject(ruleKey, typ){
   if(typeof S === "undefined") return;
   const num = Math.round(Number(typ) * 1000) / 1000;
   if(isNaN(num)) return;
 
   if(ruleKey === "trackWidth"){
-    if(typeof reCls === "function" && reCls()) reCls().w = num;
-    else if(Array.isArray(S.classes) && S.classes[0]) S.classes[0].w = num;
+    if(Array.isArray(S.classes) && S.classes[0]) S.classes[0].w = num;
   } else if(ruleKey === "clearance"){
-    if(typeof reCls === "function" && reCls()) reCls().clr = num;
-    else if(Array.isArray(S.classes) && S.classes[0]) S.classes[0].clr = num;
+    if(Array.isArray(S.classes) && S.classes[0]) S.classes[0].clr = num;
   } else if(ruleKey === "drill"){
-    if(typeof reCls === "function" && reCls()) reCls().drill = num;
-    else if(Array.isArray(S.classes) && S.classes[0]) S.classes[0].drill = num;
+    if(Array.isArray(S.classes) && S.classes[0]) S.classes[0].drill = num;
   } else if(ruleKey === "viaDia"){
-    if(typeof reCls === "function" && reCls()) reCls().via = num;
-    else if(Array.isArray(S.classes) && S.classes[0]) S.classes[0].via = num;
+    if(Array.isArray(S.classes) && S.classes[0]) S.classes[0].via = num;
   } else if(ruleKey === "edge"){
     if(S.rule){
       S.rule.edge = num;
@@ -710,8 +745,7 @@ function pcbSetProjectDesignRule(ruleKey, field, val){
   const r = rules[ruleKey];
   const num = Math.round(Number(val) * 1000) / 1000;
   if(isNaN(num)) return false;
-
-  if(typeof push === "function") push();
+  // l'étape d'historique est celle de l'appelant (reEdit, 15-regles.js) : une seule par saisie
 
   if(field === "min"){
     // Min ne peut pas descendre sous la borne usine absolue
@@ -765,10 +799,9 @@ function pcbApplyProjectDesignRules(){
 /* Réinitialise les règles de conception aux valeurs recommandées par le fabricant */
 function pcbResetRulesToMfgRecommendations(profileId){
   const prof = pcbGetMfgProfile(profileId);
-  if(typeof push === "function") push();
   if(!S.rule) pcbEnsureDefaultProjectRules();
   S.rule.designRules = pcbGetDefaultDesignRules(prof);
-  pcbApplyProjectDesignRules();
+  pcbApplyProjectDesignRules();                    // une seule étape d'historique : la sienne
   return S.rule.designRules;
 }
 
@@ -809,12 +842,15 @@ function pcbImportMfgProfileFromJson(jsonStr){
   try {
     const data = typeof jsonStr === "string" ? JSON.parse(jsonStr) : jsonStr;
     if(!data || typeof data !== "object") throw new Error("JSON invalide");
-    const id = String(data.id || ("custom_" + Date.now())).toLowerCase().replace(/[^a-z0-9_]/g, "_");
-    const name = String(data.name || "Profil importé");
+    let id = String(data.id || ("custom_" + Date.now())).toLowerCase().replace(/[^a-z0-9_]/g, "_").slice(0, 60);
+    if(MFG_CLES_INTERDITES.has(id)) throw new Error("identifiant de profil réservé : " + id);
+    // un profil intégré réimporté après retouche ne le remplace pas : il devient un profil personnel
+    if(Object.prototype.hasOwnProperty.call(PCB_DEFAULT_MFG_PROFILES, id)) id += "_perso";
+    const name = String(data.name || "Profil importé").slice(0, 120);
     
-    // Fusionner sur le canevas de JLCPCB pour garantir que tous les champs existent
+    // Fusion profonde sur le canevas de JLCPCB : un « copper » partiel garde les champs qu'il ne donne pas
     const base = JSON.parse(JSON.stringify(PCB_DEFAULT_MFG_PROFILES.jlcpcb));
-    const merged = Object.assign(base, data, { id: id, name: name, _custom: true });
+    const merged = Object.assign(mfgFusion(base, data), { id: id, name: name, _custom: true });
     
     PCB_MFG_PROFILES[id] = merged;
     pcbSaveMfgProfiles();
@@ -936,13 +972,14 @@ function pcbApplyMfgProfileToProject(profileId, options){
     }
     
     // 4. Classes de net (piste min, isolation min, via min, drill min, couronne min)
-    const isMulti = (S.cu || 2) > 2;
-    const wIdx = isMulti && prof.copper.weights[1] ? 1 : 0;
-    const minW = prof.copper.weights[wIdx]?.minTrackWidth || 0.10;
-    const minClr = prof.copper.weights[wIdx]?.minTrackSpacing || 0.10;
-    const minDrill = (S.cu || 2) === 1 ? (prof.drilling.drillDiameterMin?.layer1 || 0.3) : (prof.drilling.drillDiameterMin?.layer2Plus || 0.15);
-    const minViaDia = (prof.drilling.vias && prof.drilling.vias.minViaDiameter) || 0.25;
-    const minRing = prof.copper.pthAnnularRingMinOverall || 0.18;
+    // un profil importé incomplet ne fait plus planter (prof.copper.weights absent)
+    const ligne = pcbLigneCuivre(prof);
+    const minW = ligne.minTrackWidth || 0.10;
+    const minClr = ligne.minTrackSpacing || 0.10;
+    const minDrill = (S.cu || 2) === 1 ? (prof.drilling?.drillDiameterMin?.layer1 || 0.3) : (prof.drilling?.drillDiameterMin?.layer2Plus || 0.15);
+    const minViaDia = (prof.drilling?.vias?.minViaDiameter) || 0.25;
+    // anneau d'un via : la règle des vias du profil (diamètre − trou), pas celle des pastilles traversantes
+    const minRing = (prof.drilling?.vias?.viaDiaOverHoleMin) ? prof.drilling.vias.viaDiaOverHoleMin / 2 : (prof.copper?.pthAnnularRingMinOverall || 0.18);
     
     if(Array.isArray(S.classes)){
       S.classes.forEach(c => {
@@ -974,20 +1011,16 @@ function pcbApplyMfgProfileToProject(profileId, options){
     
     // 5. Matrice d'isolation via/via et cuivre
     if(typeof matSet === "function" && typeof matGet === "function"){
-      const v2v = (prof.copper && prof.copper.viaHoleToTrack) || 0.20;
+      // cases cuivre/cuivre : des écarts de cuivre, pas des distances trou/cuivre
+      const v2v = minClr;
       if(matGet("via","via") < v2v){
         matSet("via","via", v2v);
         changes.push("Matrice Via ↔ Via relevée à " + v2v + " mm");
       }
-      const cuTrk = (prof.copper && prof.copper.padToTrackClearance) || 0.10;
-      if(matGet("cu","trk") < cuTrk){
-        matSet("cu","trk", cuTrk);
-        changes.push("Matrice Cuivre ↔ Piste relevée à " + cuTrk + " mm");
-      }
-      const cuVia = (prof.copper && prof.copper.innerLayerViaHoleToCopper) || 0.20;
-      if(matGet("cu","via") < cuVia){
-        matSet("cu","via", cuVia);
-        changes.push("Matrice Cuivre ↔ Via relevée à " + cuVia + " mm");
+      const padTrk = (prof.copper && prof.copper.padToTrackClearance) || 0.10;
+      for(const k of ["smd","th"]) if(matGet(k,"trk") < padTrk){
+        matSet(k,"trk", padTrk);
+        changes.push("Matrice " + (k === "smd" ? "Pastille CMS" : "Pastille TH") + " ↔ Piste relevée à " + padTrk + " mm");
       }
     }
     
@@ -1069,14 +1102,14 @@ function pcbAuditBoardAgainstMfg(profile){
     }
   }
   const isMulti = cu > 2;
-  const wIdx = isMulti && p.copper?.weights && p.copper.weights[1] ? 1 : 0;
-  const reqTrackW = (p.copper?.weights && p.copper.weights[wIdx]?.minTrackWidth) || 0.10;
+  const ligneCu = pcbLigneCuivre(p);
+  const reqTrackW = ligneCu.minTrackWidth || 0.10;
   if(minTrackW !== Infinity){
     items.push({
       cat: "Cuivre",
       label: "Largeur de piste min",
       val: minTrackW.toFixed(3) + " mm",
-      limit: "≥ " + reqTrackW.toFixed(3) + " mm (1 oz)",
+      limit: "≥ " + reqTrackW.toFixed(3) + " mm (" + (ligneCu.oz || 1) + " oz)",
       ok: minTrackW >= reqTrackW - 1e-6,
       msg: minTrackW >= reqTrackW - 1e-6 ? "Conforme" : "Piste sous la tolérance minimale fabricant (" + reqTrackW + " mm)"
     });
@@ -1135,7 +1168,8 @@ function pcbAuditBoardAgainstMfg(profile){
       }
     }
   }
-  const reqRing = isMulti ? (p.copper?.weights && p.copper.weights[1]?.pthAnnularRingMin || 0.15) : (p.copper?.weights && p.copper.weights[0]?.pthAnnularRingMin || 0.18);
+  // anneau d'un via : diamètre − trou du profil (viaDiaOverHoleMin), sinon celui des pastilles traversantes
+  const reqRing = p.drilling?.vias?.viaDiaOverHoleMin ? p.drilling.vias.viaDiaOverHoleMin / 2 : (pcbLigneCuivre(p).pthAnnularRingMin || (isMulti ? 0.15 : 0.18));
   if(minRing !== Infinity){
     items.push({
       cat: "Cuivre",
@@ -1182,7 +1216,8 @@ function pcbAuditBoardAgainstMfg(profile){
   };
   poste("Fente métallisée min",minFente,cu>2?(fs.platedMinW_multilayer||fs.platedMinW_2layer):fs.platedMinW_2layer," mm","Fente métallisée plus étroite que la fraise minimale du fabricant");
   poste("Allongement des fentes métallisées",minAllong,fs.platedLengthOverWidthMin,"","Fente trop courte pour sa largeur : le fabricant la percerait ronde");
-  poste("Anneau des fentes min",minAnneauF,reqRing," mm","Couronne trop fine autour de la fente (dans un sens ou l'autre)");
+  // une fente est une pastille traversante : la couronne des pastilles, pas celle des vias
+  poste("Anneau des fentes min",minAnneauF,pcbLigneCuivre(p).pthAnnularRingMin || (isMulti ? 0.15 : 0.18)," mm","Couronne trop fine autour de la fente (dans un sens ou l'autre)");
   poste("Fente NPTH min",minFenteNp,fs.nonPlatedMinW," mm","Fente non métallisée plus étroite que la fraise minimale du fabricant");
 
   // 9. Marge au contour

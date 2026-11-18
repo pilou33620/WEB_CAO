@@ -152,6 +152,27 @@ function reSvg(inner,label,h){
 /* Le bloc complet : le dessin, et sous lui la ligne qui le résume en chiffres.
    Même gabarit que la figure des paires différentielles, dont celle-ci reprend
    le rôle : dire lequel est lequel. */
+/* Une classe renommée (ou supprimée, nouveau = null) : ses cases de la matrice
+   d'isolation classe à classe et ses contraintes la suivent, sinon elles
+   disparaissaient du routeur et du DRC sans un mot. */
+function clsContraintesRenommer(ancien,nouveau){
+  const C=S.contraintes;
+  if(!C)return;
+  if(C.matrice&&typeof C.matrice==="object"){
+    const m={};
+    for(const [k,v] of Object.entries(C.matrice)){
+      const [a,b]=k.split("|");
+      if(a!==ancien&&b!==ancien){m[k]=v;continue;}
+      if(nouveau==null)continue;
+      m[cmCle(a===ancien?nouveau:a,b===ancien?nouveau:b)]=v;
+    }
+    C.matrice=m;
+  }
+  if(C.classes&&Object.prototype.hasOwnProperty.call(C.classes,ancien)){
+    if(nouveau!=null)C.classes[nouveau]=C.classes[ancien];
+    delete C.classes[ancien];
+  }
+}
 function reFig(inner,label,note,h){
   return '<div class="refig">'+reSvg(inner,label,h)+
     (note?'<div class="refignote">'+note+'</div>':"")+'</div>';
@@ -633,9 +654,9 @@ function figMfg(){
   const prof = typeof pcbGetMfgProfile === "function" ? pcbGetMfgProfile() : { name: "JLCPCB" };
   const cu = (typeof S !== "undefined" && S.cu) || 2;
   const isMulti = cu > 2;
-  const wIdx = isMulti && prof.copper && prof.copper.weights && prof.copper.weights[1] ? 1 : 0;
-  const mW = (prof.copper && prof.copper.weights && prof.copper.weights[wIdx]?.minTrackWidth) || 0.10;
-  const mClr = (prof.copper && prof.copper.weights && prof.copper.weights[wIdx]?.minTrackSpacing) || 0.10;
+  const ligneCu = typeof pcbLigneCuivre === "function" ? pcbLigneCuivre(prof) : {};
+  const mW = ligneCu.minTrackWidth || 0.10;
+  const mClr = ligneCu.minTrackSpacing || 0.10;
   const mDrill = cu === 1 ? (prof.drilling?.drillDiameterMin?.layer1 || 0.3) : (prof.drilling?.drillDiameterMin?.layer2Plus || 0.15);
   const mVia = (prof.drilling?.vias?.minViaDiameter) || 0.25;
   const mEdge = (prof.outline?.routed?.copperClearance) || 0.20;
@@ -652,10 +673,10 @@ function figMfg(){
     reDimV(180, 46, 58, "w: "+fmt(mW,2)+" mm")+
     reDimV(180, 58, 70, "clr: "+fmt(mClr,2)+" mm")+
     reNote(242, 30, "Via Ø"+fmt(mVia,2)+" (foret "+fmt(mDrill,2)+")", "middle")+
-    reNote(326, 122, esc(prof.name)+" · "+cu+" couches", "end");
+    reNote(326, 122, prof.name+" · "+cu+" couches", "end");       // reNote échappe
 
   return reFig(inner, "Gabarit des capabilités d'usinage ("+prof.name+")",
-    prof.name+" · Piste min "+fmt(mW,2)+" mm · Isolement min "+fmt(mClr,2)+" mm · Perçage min "+fmt(mDrill,2)+" mm · Bord "+fmt(mEdge,2)+" mm");
+    esc(prof.name)+" · Piste min "+fmt(mW,2)+" mm · Isolement min "+fmt(mClr,2)+" mm · Perçage min "+fmt(mDrill,2)+" mm · Bord "+fmt(mEdge,2)+" mm");
 }
 
 /* Règles de conception du projet : schéma coté des tolérances Min / Typique / Max. */
@@ -1241,7 +1262,7 @@ mfg(){
     const p = allProfs[k];
     const isSel = (p.id === prof.id);
     const layersTxt = (p.general && p.general.layerCount) ? (p.general.layerCount.min + "-" + p.general.layerCount.max + " couches") : "";
-    optHtml += '<option value="' + esc(p.id) + '"' + (isSel ? ' selected' : '') + '>' + esc(p.name) + (layersTxt ? ' (' + layersTxt + ')' : '') + '</option>';
+    optHtml += '<option value="' + esc(p.id) + '"' + (isSel ? ' selected' : '') + '>' + esc(p.name) + (layersTxt ? ' (' + esc(layersTxt) + ')' : '') + '</option>';
   }
 
   let auditRows = "";
@@ -1363,13 +1384,13 @@ mfg_rules(){
         '</span>' +
       '</td>' +
       '<td>' +
-        '<input type="number" id="mfgRule_min_' + esc(k) + '" class="mfg-num-inp" step="' + meta.step + '" value="' + r.min + '" title="Valeur minimale admissible pour DRC (>= usine min)">' +
+        '<input type="number" id="mfgRule_min_' + esc(k) + '" class="mfg-num-inp" step="' + meta.step + '" value="' + esc(fmt(+r.min,3)) + '" title="Valeur minimale admissible pour DRC (>= usine min)">' +
       '</td>' +
       '<td>' +
-        '<input type="number" id="mfgRule_typ_' + esc(k) + '" class="mfg-num-inp typ-inp" step="' + meta.step + '" value="' + r.typ + '" title="Valeur nominale / de travail utilisée pour le tracé">' +
+        '<input type="number" id="mfgRule_typ_' + esc(k) + '" class="mfg-num-inp typ-inp" step="' + meta.step + '" value="' + esc(fmt(+r.typ,3)) + '" title="Valeur nominale / de travail utilisée pour le tracé">' +
       '</td>' +
       '<td>' +
-        '<input type="number" id="mfgRule_max_' + esc(k) + '" class="mfg-num-inp" step="' + meta.step + '" value="' + r.max + '" title="Valeur maximale admissible (<= usine max)">' +
+        '<input type="number" id="mfgRule_max_' + esc(k) + '" class="mfg-num-inp" step="' + meta.step + '" value="' + esc(fmt(+r.max,3)) + '" title="Valeur maximale admissible (<= usine max)">' +
       '</td>' +
       '<td>' + badge + '</td>' +
     '</tr>';
@@ -1726,6 +1747,7 @@ function reBind(){
     push();
     for(const k in S.netClass)if(S.netClass[k]===c.name)S.netClass[k]=n;
     for(const k in S.netClassAuto)if(S.netClassAuto[k]===c.name)S.netClassAuto[k]=n;
+    clsContraintesRenommer(c.name,n);
     c.name=n;
     touch();refreshPanels();reSync();
   });
@@ -1733,6 +1755,7 @@ function reBind(){
     if(RE.cls<=0)return;
     push();
     for(const k in S.netClass)if(S.netClass[k]===c.name)delete S.netClass[k];
+    clsContraintesRenommer(c.name,null);
     S.classes.splice(RE.cls,1);
     RE.cls=0;touch();zoneCache.clear();refreshPanels();draw();reSync();
     hint("Classe supprimée : ses nets repassent à « "+defClass().name+" ».");
@@ -1872,7 +1895,7 @@ function reBind(){
   num("rePaste",v=>S.rule.paste=v);
   num("reAspW",v=>S.rule.aspWarn=Math.max(1,v));
   num("reAspM",v=>S.rule.aspMax=Math.max(1,v));
-  chk("reShort",v=>S.rule.short=v);
+  chk("reShort",v=>reEdit(()=>{S.rule.short=v;}));
   sel("reCorner",v=>{setCornerMode(v);reSync();});
   chk("reSmart",v=>{push();S.rule.smartPads=v;touch();});
   sel("reRoute",v=>{setRouteMode(v);reSync();});
@@ -1887,6 +1910,7 @@ function reBind(){
     S.avoid=!!av.checked;
     const b=$("bAvoid");
     if(b)b.classList.toggle("on",S.avoid);
+    if(typeof profilNoter==="function")profilNoter();    // comme le bouton du ruban : gardé dans le profil
     reSync();
   };
 

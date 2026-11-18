@@ -19,7 +19,7 @@ function inspLignes(h){
   if(h.track){const t=h.track;
     return ["Piste · "+(t.net||"sans net"),inspCouche(t.l)+" · largeur "+inspLong(t.w),iso(t.net,clrK(t.net||"","","trk","trk"))];}
   if(h.via){const v=h.via;
-    return ["Via · "+(v.net||"sans net"),"Ø "+inspLong(v.d)+" · perçage "+inspLong(v.dr)+" · "+inspCouche(v.a)+" → "+inspCouche(v.b),iso(v.net,clrK(v.net||"","","via","via"))];}
+    return ["Via · "+(v.net||"sans net"),"Ø "+inspLong(v.d)+" · perçage "+inspLong(v.drill)+" · "+inspCouche(v.a)+" → "+inspCouche(v.b),iso(v.net,clrK(v.net||"","","via","via"))];}
   if(h.pad){const q=h.pad;
     return ["Pastille "+padDesig(h.fp,q)+" · "+(q.net||"sans net"),
       inspLong(q.w)+" × "+inspLong(q.h)+(q.drill>0?" · perçage "+inspLong(q.drill):" · CMS "+(h.fp.side?"dessous":"dessus")),

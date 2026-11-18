@@ -58,6 +58,8 @@ const EXPOSE=[
   /* contrôles repris de KiCad (45-drc-gestion.js, 54-controles.js) */
   "drcKind","drcCle","drcExclure","drcRetablir","drcExclusNorm","drcFenetre","drcFenetreMaj","fpEncombrement","fpEcartsLib",
   "pcbStatistiques","pcbStatistiquesTexte","couchesPermuter","pkgGeom","fpFreeze","setCuCount","fpTextPos",
+  "DP_FALLBACK","pcbImportMfgProfileFromJson","PCB_MFG_PROFILES","PCB_DEFAULT_MFG_PROFILES","pcbLigneCuivre","satValeurF","glyph",
+  "simNetCompose","pcbNomPatte","topoGraphe","ipcNomsCuivre","routageUneVia","mecaEntreeEditeur","clsContraintesRenommer","numSaisi","dpMeander",
   "padPadDist","netTieNorm","netTieLire","netTieTexte","netTieRelie","drcGravitesNorm","drcGravitesAppliquer","drcGravitesCodes","drcGravitesOuvrir",
   "couchesJeu","inspLignes","reperesPlacer","reperesCommande","zonesLot","zonesLotCommande","fpTextPos",
   "viaSuivante","viaTailles","verrousCoins","routeViaCurseur","mkVia",
@@ -20616,11 +20618,11 @@ T("rectangle de sérigraphie : normalisation, hit-test périmétrique, panneau e
   const nr=normDrawingPcb({shape:"rect",layer:"silkT",x1:10,y1:10,x2:50,y2:30,width:0.15},0);
   if(!nr||nr.shape!=="rect"||nr.type!=="rect")
     throw new Error("normDrawingPcb n'a pas normalisé la forme rect");
-  // rectangle dégénéré (aire nulle) rejeté
-  if(normDrawingPcb({shape:"rect",x1:10,y1:10,x2:10,y2:30},0))
-    throw new Error("rectangle sans largeur accepté");
-  if(normDrawingPcb({shape:"rect",x1:10,y1:10,x2:50,y2:10},0))
-    throw new Error("rectangle sans hauteur accepté");
+  // rectangle dégénéré (aire nulle) : gardé comme un trait, plutôt que perdu au Ctrl+Z
+  if((normDrawingPcb({shape:"rect",x1:10,y1:10,x2:10,y2:30},0)||{}).shape!=="line")
+    throw new Error("rectangle sans largeur : un trait attendu");
+  if((normDrawingPcb({shape:"rect",x1:10,y1:10,x2:50,y2:10},0)||{}).shape!=="line")
+    throw new Error("rectangle sans hauteur : un trait attendu");
 
   // 2. Hit-test sur le périmètre
   const d={id:S.nextId++,shape:"rect",type:"rect",layer:"silkT",x1:10,y1:10,x2:50,y2:30,width:0.15};
@@ -22468,13 +22470,13 @@ T("Gestion LIB PCB : catalogue centralisé d'empreintes et application depuis le
     throw new Error("PCB_LIB_CACHE doit être défini");
   }
   // Enregistrer une empreinte issue de la bibliothèque centralisée
-  PCB_LIB_CACHE["TEST_LIB_FP"] = {
+  PCB_LIB_CACHE.set("TEST_LIB_FP", {
     pads: [
       { n: 1, x: -2, y: 0, w: 1.2, h: 1.2, shape: "rect" },
       { n: 2, x: 2, y: 0, w: 1.2, h: 1.2, shape: "round" }
     ],
     body: { w: 6, h: 3 }
-  };
+  });
 
   const fp = pcbObtenirEmpreinteLib("TEST_LIB_FP");
   if(!fp || !Array.isArray(fp.pads) || fp.pads.length !== 2){
@@ -22495,7 +22497,7 @@ T("Gestion LIB PCB : catalogue centralisé d'empreintes et application depuis le
   }
 });
 
-T("Gestion LIB PCB : alerte de modification d'empreinte et mise à jour assistée", function(){
+TA("Gestion LIB PCB : alerte de modification d'empreinte et mise à jour assistée", async function(){
   // Préparer une empreinte sur la carte
   const c1 = mkFp("C1", "100nF", "TEST_RELOAD_FP", 2);
   c1.pads = [
@@ -22518,16 +22520,19 @@ T("Gestion LIB PCB : alerte de modification d'empreinte et mise à jour assisté
     throw new Error("pcbEmpreinteAlerteLib doit retourner true pour C1");
   }
 
-  // Nouvelle version en bibliothèque (pastilles agrandies à 1.2x1.2 mm)
-  PCB_LIB_CACHE["TEST_RELOAD_FP"] = {
+  /* Nouvelle version en bibliothèque (pastilles agrandies à 1.2x1.2 mm). La mise à jour
+     vide le cache puis relit la définition au serveur : le serveur est simulé. */
+  const nouvelle = {
     pads: [
       { n: 1, x: -1.2, y: 0, w: 1.2, h: 1.2, shape: "rect" },
       { n: 2, x: 1.2, y: 0, w: 1.2, h: 1.2, shape: "round" }
     ],
     body: { w: 4, h: 2 }
   };
-
-  pcbAppliquerMajLib("TEST_RELOAD_FP");
+  PCB_LIB_CACHE.set("TEST_RELOAD_FP", { pads: [], body: { w: 1, h: 1 } });     // l'ancienne, oubliée
+  const fetchAvant = global.fetch;
+  global.fetch = async () => ({ ok: true, json: async () => ({ data: nouvelle }) });
+  try { await pcbAppliquerMajLib("TEST_RELOAD_FP"); } finally { global.fetch = fetchAvant; }
 
   if(c1.pads[0].w !== 1.2 || c1.pads[1].w !== 1.2) {
     throw new Error("La géométrie des pastilles n'a pas été mise à jour");
@@ -22861,7 +22866,7 @@ T("Explorateur visuel pop-up PCB : réaffectation dynamique d'une empreinte exis
 
   // Fournir une définition en cache de TSSOP-8
   if (!PCB_LIB_CACHE) PCB_LIB_CACHE = {};
-  PCB_LIB_CACHE["TSSOP8"] = {
+  PCB_LIB_CACHE.set("TSSOP8", {
     name: "TSSOP-8",
     style: "smd",
     pitch: 0.65,
@@ -22877,7 +22882,7 @@ T("Explorateur visuel pop-up PCB : réaffectation dynamique d'une empreinte exis
       { n: 7, x: 2.2, y: -0.325, w: 1.0, h: 0.4, shape: "rect" },
       { n: 8, x: 2.2, y: -0.975, w: 1.0, h: 0.4, shape: "rect" }
     ]
-  };
+  });
 
   // Réaffecter l'empreinte via l'explorateur
   let capturedOnSelect = null;
@@ -22913,13 +22918,13 @@ T("Catalogue → PCB : l'empreinte associée l'emporte sur le « Package type »
      associée juste. Lu par le premier, un 0402 devenait une puce générique au
      pas de 2,4 mm. */
   if (!PCB_LIB_CACHE) PCB_LIB_CACHE = {};
-  PCB_LIB_CACHE["0402"] = {
+  PCB_LIB_CACHE.set("0402", {
     name: "0402", style: "chip", pitch: 0.95, span: 0.95, pins: 2,
     pads: [
       { n: 1, x: -0.475, y: 0, w: 0.5225, h: 0.589, shape: "rect" },
       { n: 2, x: 0.475, y: 0, w: 0.5225, h: 0.589, shape: "rect" }
     ]
-  };
+  });
   const ligne = {
     "Part Name": "C0402_0.7pF_COG_50V_AUTO_MU", "Reference designator Prefix": "C",
     "Value": "0.7pF", "Package type": "0402C", "Empreinte PCB": "lib/empreinte/0402.json"
@@ -24239,10 +24244,11 @@ T("Capabilités PCB : application automatique et création des règles de concep
   const jlcCl = S.classes.find(c => c.name === "JLCPCB Standard");
   if(!jlcCl) throw new Error("La classe 'JLCPCB Standard' devait être créée");
 
-  if(matGet("via", "via") < 0.20)
-    throw new Error("Matrice Via ↔ Via devait être relevée à 0.20 mm");
-  if(matGet("cu", "trk") < 0.10)
-    throw new Error("Matrice Cuivre ↔ Piste devait être relevée à 0.10 mm");
+  // via ↔ via : l'écart cuivre du profil (pas la distance trou/piste) ; pastille ↔ piste : padToTrackClearance
+  if(matGet("via", "via") < 0.09)
+    throw new Error("Matrice Via ↔ Via devait être relevée à l'écart cuivre du profil");
+  if(matGet("smd", "trk") < 0.10)
+    throw new Error("Matrice Pastille CMS ↔ Piste devait être relevée à 0.10 mm");
 });
 
 T("Capabilités PCB : audit de conformité de la carte en temps réel", () => {
@@ -31523,6 +31529,83 @@ T("DRC : gravité réglée par code (erreur, remarque, ignoré), gardée dans la
   if(JSON.stringify(drcGravitesNorm({a:"erreur","B":"ignore",c:"grave",__proto__:{x:1},constructor:"remarque"}))!=='{"a":"erreur","constructor":"remarque"}')
     throw new Error("lecture bornée : "+JSON.stringify(drcGravitesNorm({a:"erreur","B":"ignore",c:"grave",constructor:"remarque"})));
   S.drcGravites={};carteRegles();
+});
+/* ---------- revue de bugs du 18/11 ---------- */
+T("revue 18/11 : DRC rendu sans les exclus, plan de couche permuté avec sa zone",()=>{
+  carteRegles();
+  S.tracks.push({l:0,net:"C",w:0.25,x1:5,y1:10,x2:40,y2:10},{l:0,net:"D",w:0.25,x1:5,y1:10.3,x2:40,y2:10.3});
+  touch();S.drcGravites={isolation:"ignore"};
+  if(runDrc().some(e=>e.kind==="isolation"))throw new Error("runDrc rend encore l'écart ignoré");
+  S.drcGravites={};
+  carteRegles();setCuCount(4);
+  S.cuL[1].plane=true;S.cuL[1].net="GND";S.cuL[1].role="gnd";syncAutoZones();
+  couchesPermuter(1,2);syncAutoZones();
+  if(!S.cuL[2].plane||S.cuL[1].plane||!S.zones.some(z=>z.auto&&z.l===2)||S.zones.some(z=>z.auto&&z.l===1))
+    throw new Error("le plan doit passer sur L3 avec son rôle : "+JSON.stringify(S.zones.map(z=>[z.l,z.auto])));
+  carteRegles();
+});
+T("revue 18/11 : géométrie (chanfrein grossi, couches nouvelles, règle de paire, trou NPTH à 0, cache LIB)",()=>{
+  // l'arête diagonale d'une pastille chanfreinée grossie de g recule de g
+  const q={x:0,y:0,w:2,h:2,shape:"chamfer",chamfer:0.5,chamferCorners:[true,true,true,true],rot:0};
+  const P=padWorldPts(q,0.5), d=Math.min(...P.map(p=>Math.abs(p.x)+Math.abs(p.y)));
+  // sur la diagonale, |x|+|y| du chanfrein d'origine vaut 2-0,5=1,5 ; grossi de g : 1,5+g·√2
+  if(Math.abs(d-(1.5+0.5*Math.SQRT2))>0.02)throw new Error("chanfrein grossi : "+d);
+  carteRegles();
+  S.cuL[0].plane=true;S.cuL[0].net="GND";S.cuL[0].role="gnd";S.cuL[0].name="Composants";S.cuL[0].custom=true;
+  setCuCount(4);
+  if(S.cuL[1].plane||S.cuL[2].plane||S.cuL[1].name==="Composants")throw new Error("les couches internes neuves copient le dessus");
+  const sauve=S.dpRules;S.dpRules=[Object.assign({},DP_FALLBACK,{name:"USB",scope:"USB"})];
+  if(dpRuleFor({name:"LVDS"}).name==="USB")throw new Error("la règle de l'USB vaut pour LVDS");
+  S.dpRules=sauve;
+  if(pkgGeom("constructor"))throw new Error("« constructor » pris pour une empreinte de la LIB");
+  carteRegles();
+});
+T("revue 18/11 : fichier hostile (modèles RF, règles du projet), profils fabricants importés",()=>{
+  const rf=normRf({modeles:{"__proto__":{texte:"! s2p"},U1:{texte:"! s2p"}}});
+  if(Object.getPrototypeOf(rf.modeles)!==Object.prototype||Object.keys(rf.modeles).join()!=="U1")throw new Error("modèles RF : "+Object.keys(rf.modeles));
+  const d=normDoc({cu:2,rule:{designRules:{trackWidth:{min:'"><img src=x>',typ:0.2,max:1},clearance:{min:0.1,typ:0.2,max:0.15}}}});
+  if(d.rule.designRules.trackWidth||JSON.stringify(d.rule.designRules.clearance)!=='{"min":0.1,"typ":0.15,"max":0.2}')
+    throw new Error("designRules : "+JSON.stringify(d.rule.designRules));
+  if(pcbImportMfgProfileFromJson({id:"__proto__",name:"x"}).ok)throw new Error("identifiant « __proto__ » accepté");
+  const r=pcbImportMfgProfileFromJson({id:"jlcpcb",name:"JLC retouché",copper:{padToTrackClearance:0.12}});
+  if(!r.ok||r.profile.id!=="jlcpcb_perso"||PCB_MFG_PROFILES.jlcpcb._custom)throw new Error("profil intégré remplacé");
+  if(!Array.isArray(r.profile.copper.weights)||r.profile.copper.padToTrackClearance!==0.12)throw new Error("fusion superficielle");
+  delete PCB_MFG_PROFILES.jlcpcb_perso;S.rule.mfgProfile="jlcpcb";
+  carteRegles();
+  for(const c of S.stack.cu)c.t=0.07;                       // 70 µm : 2 oz
+  if(pcbLigneCuivre(PCB_DEFAULT_MFG_PROFILES.jlcpcb).oz!==2)throw new Error("2 oz jugé en 1 oz");
+  carteRegles();
+});
+T("revue 18/11 : petites lectures (μ, glyphe µ, nets composés, nom de patte, nombre saisi)",()=>{
+  if(!(satValeurF("4.7μF")>4e-6&&satValeurF("4.7μF")<5e-6)||satValeurF("x")!==Infinity)throw new Error("μ grec");
+  if(!glyph("µ"))throw new Error("glyphe µ vide");
+  const c=simNetCompose("A + B (R1 22)");
+  if(c.nets.join()!=="A,B"||c.serie!=="R1 22")throw new Error("composé : "+JSON.stringify(c));
+  if(simNetCompose("LVDS_CLK+").nets.join()!=="LVDS_CLK+"||simNetCompose("Net-(U1-PA5)").nets.join()!=="Net-(U1-PA5)")throw new Error("nom simple découpé");
+  if(pcbNomPatte({pinNames:["GND","VOUT","VIN"]},{n:2})!=="VOUT")throw new Error("nom de patte décalé");
+  if(!Number.isNaN(numSaisi(""))||numSaisi("2,5")!==2.5)throw new Error("champ vidé lu 0");
+});
+T("revue 18/11 : topologie, IPC (noms de couches), pilotage (via), dossier méca, classe renommée",()=>{
+  carteRegles();
+  const b=mkFp("SW1","","",4);b.x=20;b.y=20;b.pads=[{n:1,x:-2,y:-1,w:1,h:1,shape:"rect"},{n:1,x:2,y:-1,w:1,h:1,shape:"rect"},{n:2,x:-2,y:1,w:1,h:1,shape:"rect"},{n:2,x:2,y:1,w:1,h:1,shape:"rect"}];
+  b.nets={1:"K",2:"M"};S.fps.push(b);touch();
+  if(topoGraphe("K").pads.length!==1)throw new Error("deux pattes « 1 » comptées deux fois");
+  S.cuL[0].name="CONTOUR";S.cuL[0].custom=true;
+  if(ipcNomsCuivre()[0]==="CONTOUR")throw new Error("couche « CONTOUR » en double");
+  if(routageUneVia({x:5,y:5,net:"K",de:"L1_Top",a:"L1_Top"}).ok)throw new Error("via d'une seule couche accepté");
+  b.rot=270;touch();
+  const m=mecaEntreeEditeur().composants.find(x=>x.ref==="SW1");
+  if(m.rot!==90)throw new Error("rotation méca : "+m.rot);
+  S.contraintes=Object.assign({},S.contraintes,{matrice:{"Alim|Défaut":1}});
+  clsContraintesRenommer("Alim","Puissance");
+  if(S.contraintes.matrice["Défaut|Puissance"]!==1||S.contraintes.matrice["Alim|Défaut"])throw new Error("matrice : "+JSON.stringify(S.contraintes.matrice));
+  carteRegles();
+});
+T("revue 18/11 : serpentin exact pour une petite cible, refusé sous le plus petit créneau",()=>{
+  const t={l:0,net:"A",w:0.25,x1:0,y1:0,x2:30,y2:0};
+  const r=dpMeander(t,{targetDelta:1.0,pitch:1.2,amplitude:1.5});
+  if(Math.abs(r.addedLen-1.0)>0.05)throw new Error("cible 1 mm : "+r.addedLen);
+  if(dpMeander(t,{targetDelta:0.05,pitch:1.2,amplitude:1.5}).addedLen>0.1)throw new Error("cible 0,05 mm : serpentin démesuré");
 });
 loadDoc(JSON.parse(DOC_AVANT_KICAD),true);
 

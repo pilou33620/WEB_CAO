@@ -111,6 +111,11 @@ function pcbAppliquerMajLib(pkgName) {
   let count = 0;
 
   const onDone = () => {
+    // rien n'a pu être appliqué (définition introuvable, serveur absent) : l'alerte reste, l'échec se dit
+    if (matches.length && !count) {
+      pcbAfficherToastFeedback("⚠ Mise à jour impossible : la définition de « " + pkgName + " » n'a pas pu être lue depuis la bibliothèque.", false);
+      return 0;
+    }
     const kTarget = (typeof pkgKey === "function") ? pkgKey(pkgName) : String(pkgName).toUpperCase();
     for (const name of Array.from(PCB_LIB_ALERTE.pkgNames)) {
       const k = (typeof pkgKey === "function") ? pkgKey(name) : String(name).toUpperCase();
@@ -141,10 +146,9 @@ function pcbAppliquerMajLib(pkgName) {
   for (const fp of matches) {
     if (typeof pcbAppliquerEmpreinteLib === "function") {
       const res = pcbAppliquerEmpreinteLib(fp, fp.pkg);
-      count++;
-      if (res && typeof res.then === "function") {
-        promises.push(res);
-      }
+      // compté quand l'application réussit (false : définition introuvable ou lecture en échec)
+      if (res && typeof res.then === "function") promises.push(res.then(ok => { if (ok) count++; }));
+      else if (res) count++;
     }
   }
 
