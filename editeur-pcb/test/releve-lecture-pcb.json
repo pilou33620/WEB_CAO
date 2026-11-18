@@ -111,7 +111,7 @@
   "famille": "pcb",
   "quoi": "drc",
   "args": {},
-  "sortie": "DRC propre : aucune erreur."
+  "sortie": "- [remarque] Angle aigu de 45° entre la piste et la pastille C1.1 (12V) : le coin sous la piste piège le bain de gravure, entrez dans l'axe du bord (x 7.039, y 12.411)\n- [remarque] Angle aigu de 45° entre la piste et la pastille C2.1 (+5V) : le coin sous la piste piège le bain de gravure, entrez dans l'axe du bord (x 22.6, y 8.85)\n- [remarque] Angle aigu de 45° entre la piste et la pastille Q3.1 (BASE_Q3) : le coin sous la piste piège le bain de gravure, entrez dans l'axe du bord (x 16.4, y 20.75)\n- [remarque] Angle aigu de 45° entre la piste et la pastille Q3.2 (GND) : le coin sous la piste piège le bain de gravure, entrez dans l'axe du bord (x 16.4, y 23.25)"
  },
  {
   "ex": 0,
