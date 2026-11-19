@@ -78,7 +78,7 @@ const EXPOSE=["capaDecouplage","capaCibleMasse","capaViasExistants","capaViaPlac
   "closeZone","fullBoardZone","zoneMask","labelMask","maskAt","classOf","setNetClass","defaultWidth",
   "applyClasses","jointAt","splitTrack","netTracks","selectNetRouting",
   "deleteNetRouting","autoClass","classOptionsHtml","poserClasseNet","schemaPublie","listNets","mkFp","w2s","runDrc","padsOf",
-  "buildFabFiles","jlcGerberFiles","jlcBomLignes","jlcBomCsvText","jlcCplLignes","ipcAccess","propsEnMil","jlcCplXlsx","normFp","jlcNonPose","jlcFpsAPoser","vbValeur","vbListe","vbValeurFiche","vbJuger","vbRequete","vbVerifier","vbAppliquer","exportJlcpcb","gerberCopper","gerberMask","gerberPaste","gerberSilk",
+  "buildFabFiles","jlcGerberFiles","jlcBomLignes","jlcBomCsvText","jlcCplLignes","ipcAccess","propsEnMil","jlcCplXlsx","normFp","jlcNonPose","jlcFpsAPoser","vbValeur","vbListe","vbVerifierLigne","vbValeurFiche","vbJuger","vbRequete","vbVerifier","vbAppliquer","exportJlcpcb","gerberCopper","gerberMask","gerberPaste","gerberSilk",
   /* animation 3D de fabrication.zip (41-animation-3d.js) */
   "anim3dDonnees","anim3dPage","anim3dModeles","anim3dPose","anim3dAuto","anim3dExporter","silkTraits","silkRogne","silkContour","SILK_GARDE","fabLivrer","THREE_SOURCE",
   "gerberEdge","gerberOutline","ipcNetlist","ipc317","masterDrawingPdf","noAcc",
@@ -4833,6 +4833,18 @@ TA("Vérif BOM JLCPCB : valeur, tension, stock et boîtier jugés, candidats pro
     // la pièce connue passe par les équivalences de JLCPCB ; la bonne valeur (C6) est proposée
     if(!appels.includes("jlc_find_alternatives"))throw new Error("équivalences non demandées : "+appels);
     if(ra.candidats[0].p.lcsc!=="C6"||ra.candidats[0].statut!=="ok")throw new Error("équivalent de "+a.ref+" : "+ra.candidats.map(c=>c.p.lcsc));
+    // rien d'approchant : ni autre boîtier, ni autre diélectrique, ni tolérance plus large, ni fiche illisible
+    const strict=async(val,pkg,fiches)=>{
+      const f1=global.fetch;
+      global.fetch=async()=>({ok:true,json:async()=>({data:{results:fiches.map((d,i)=>({lcsc:"C5"+i,model:"M"+i,package:d[1],stock:1e5,library_type:"basic",description:d[0]}))}})});
+      try{return (await vbVerifierLigne({refs:["C1"],val,pkg,lcsc:""},1)).candidats.map(c=>c.p.description);}
+      finally{global.fetch=f1;}
+    };
+    const gardes=await strict("100n/16VX7R","0603",[["100nF 16V X7R 0603","0603"],["100nF 50V X7R 0603","0603"],
+      ["100nF 16V X5R 0603","0603"],["100nF 16V X7R 0805","0805"],["120nF 16V X7R 0603","0603"],["MLCC 0603","0603"]]);
+    if(gardes.join("|")!=="100nF 16V X7R 0603|100nF 50V X7R 0603")throw new Error("équivalents approchants : "+gardes.join("|"));
+    if(vbJuger({refs:["R1"],val:"10k 1%",pkg:"0603"},{package:"0603",stock:9,description:"10kΩ ±5% 0603"},1).statut!=="revoir")
+      throw new Error("5 % accepté pour 1 %");
     if(vbListe({alternatives:[1]}).length!==1||vbListe([1,2]).length!==2||vbListe(null).length)throw new Error("vbListe");
     if(rb.candidats[0].p.lcsc!=="C8")throw new Error("Basic d'abord : "+rb.candidats.map(c=>c.p.lcsc));
     if(rb.candidats.some(c=>c.p.lcsc==="C7"))throw new Error("10 µF proposé pour 100 µF");

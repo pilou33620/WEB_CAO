@@ -47,6 +47,11 @@ function vbTension(txt){
   const m=String(txt||"").replace(",",".").match(/(\d+(?:\.\d+)?)\s*V/i);
   return m?parseFloat(m[1]):null;
 }
+/* « 10k 1% », « ±5% » → 1, 5 ; null si la tolérance n'est pas écrite */
+function vbTol(txt){
+  const m=String(txt||"").replace(",",".").match(/(\d+(?:\.\d+)?)\s*%/);
+  return m?parseFloat(m[1]):null;
+}
 function vbDiel(txt){
   const m=String(txt||"").match(VB_DIEL);
   return m?m[1].toUpperCase().replace("NP0","C0G"):"";
@@ -78,6 +83,8 @@ function vbJuger(g,part,besoin){
     if(tb!=null&&tp!=null&&tp<tb){pire("bloque");notes.push("tension "+tp+" V < "+tb+" V");}
     const db=vbDiel(g.val), dp=vbDiel(part.description);
     if(db&&dp&&db!==dp){pire("revoir");notes.push("diélectrique "+dp+" au lieu de "+db);}
+    const ob=vbTol(g.val), op=vbTol(part.description);
+    if(ob!=null&&op!=null&&op>ob){pire("revoir");notes.push("tolérance "+op+" % au lieu de "+ob+" %");}
   }else if(g.val){
     const n=s=>String(s||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
     const a=n(g.val), b=n(part.model);
@@ -138,17 +145,20 @@ async function vbVerifierLigne(g,nbCartes){
       if(!p||!p.lcsc||vus.has(p.lcsc))continue;
       vus.add(p.lcsc);
       const c=Object.assign({p},vbJuger(g,p,besoin));
-      if(c.statut!=="bloque")cand.push(c);
+      // un équivalent se pose sans y regarder : même valeur lue dans la fiche, même boîtier,
+      // tension au moins égale, même diélectrique, tolérance au moins aussi serrée — rien d'« à peu près »
+      if(c.statut==="ok")cand.push(c);
     }
   };
   // les équivalences de JLCPCB d'abord ; d'une pièce fausse (6 pF pour 6,8 µF) elles
   // sont fausses aussi et vbJuger les écarte : la recherche par valeur complète alors
+  if(!g.val)return out;   // sans valeur, rien ne dit ce qui serait équivalent
   if(out.part)try{prendre(await vbAppel("jlc_find_alternatives",{lcsc:g.lcsc,same_package:true,limit:10}));}catch(_){}
   if(cand.length<3)
     try{prendre(await vbAppel("jlc_search",{query:vbRequete(g),limit:20}));}
     catch(e){if(!cand.length)out.notes.push("recherche impossible : "+e.message);}
   const lib=c=>VB_LIB[String(c.p.library_type||"").toLowerCase()]??3;
-  out.candidats=cand.sort((a,b)=>(a.statut==="ok"?0:1)-(b.statut==="ok"?0:1)||lib(a)-lib(b)||(+a.p.price||0)-(+b.p.price||0))
+  out.candidats=cand.sort((a,b)=>lib(a)-lib(b)||(+a.p.price||0)-(+b.p.price||0))
     .slice(0,VB_NB_EQUIV);
   return out;
 }
@@ -229,7 +239,7 @@ function vbFenetre(){
       res.map((r,i)=>{
         const p=r.part;
         // pré-coché : le meilleur équivalent quand la ligne n'a pas de pièce utilisable
-        const pre=!!r.candidats.length&&(!r.g.lcsc||(r.statut==="bloque"&&r.candidats[0].statut==="ok"));
+        const pre=!!r.candidats.length&&(!r.g.lcsc||r.statut==="bloque");
         const prix=c=>+c.p.price>0?' · prix '+(+c.p.price):"";
         const cand=r.candidats.map((c,k)=>'<label style="display:block;cursor:pointer">'+
           '<input type="radio" name="vb'+i+'" value="'+esc(c.p.lcsc)+'"'+(k===0&&pre?" checked":"")+'> '+
