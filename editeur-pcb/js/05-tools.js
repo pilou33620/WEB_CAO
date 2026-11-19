@@ -3122,6 +3122,7 @@ function splitTrack(t,pt){
     if(!isArc(nt))delete nt.ca;
   }
   t.x2=pt.x;t.y2=pt.y;
+  if(t.locked)nt.locked=true;      // la seconde moitié d'une piste verrouillée l'est aussi
   S.tracks.push(nt);
   return nt;
 }
@@ -3433,20 +3434,32 @@ function rotateSel(){
   const drw=selDrawingsPcb();
   const hls=selHolesPcb();
   if(!list.length&&!drw.length&&!hls.length)return;
-  const gene=fpEssai(()=>fpsTourner(list,1));
+  /* Boîtiers, dessins et trous mêlés : un seul centre, celui de l'ensemble.
+     Chaque famille tournait autour du sien et la sélection se disloquait. */
+  let C=null;
+  if((list.length?1:0)+(drw.length?1:0)+(hls.length?1:0)>1){
+    let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;
+    const bb=(a,b,c,d)=>{x1=Math.min(x1,a,c);y1=Math.min(y1,b,d);x2=Math.max(x2,a,c);y2=Math.max(y2,b,d);};
+    for(const id of list){const f=fpById(id);if(f){const b=fpBBox(f);bb(b.x1,b.y1,b.x2,b.y2);}}
+    for(const d of drw)bb(d.x1,d.y1,d.x2,d.y2);
+    for(const h of hls)bb(h.x,h.y,h.x,h.y);
+    C={x:(x1+x2)/2,y:(y1+y2)/2};
+  }
+  const gene=fpEssai(()=>fpsTourner(list,1,C));
   if(gene){fpRefus(gene);return;}
   push();
   // autour du centre de chaque boîtier, son cuivre avec lui
   // un boîtier autour de son centre, plusieurs ensemble (`fpsTourner`)
-  transformFps(list,()=>fpsTourner(list,1));
+  transformFps(list,()=>fpsTourner(list,1,C));
   if(drw.length){
     let cx=0, cy=0;
     for(const d of drw){cx+=d.x1+d.x2; cy+=d.y1+d.y2;}
     cx/=(drw.length*2); cy/=(drw.length*2);
+    if(C){cx=C.x;cy=C.y;}
     for(const d of drw){
       if(d.shape==="text"){
         d.rot=((d.rot||0)+90)%360;
-        if(drw.length>1){
+        if(drw.length>1||C){
           const rx=-(d.y1-cy)+cx, ry=(d.x1-cx)+cy;
           d.x1=r3(rx); d.y1=r3(ry);
           d.x2=d.x1; d.y2=d.y1;
@@ -3465,10 +3478,11 @@ function rotateSel(){
     }
   }
   for(const h of hls)if(!h.locked&&h.w>h.d)h.rot=padRot((h.rot||0)+90);   // la fente tourne avec la sélection
-  if(hls.length>1){
+  if(hls.length>1||C){
     let cx=0, cy=0;
     for(const h of hls){cx+=h.x; cy+=h.y;}
     cx/=hls.length; cy/=hls.length;
+    if(C){cx=C.x;cy=C.y;}
     for(const h of hls){
       if(h.locked)continue;
       const rx=-(h.y-cy)+cx, ry=(h.x-cx)+cy;
@@ -4449,6 +4463,10 @@ function commitRoute(){
     // de longueur nulle salit le .json comme le Gerber
     if(t.x1===t.x2&&t.y1===t.y2)continue;
     if(prev&&sameLine(prev,t)){prev.x2=t.x2;prev.y2=t.y2;continue;}
+    // l'exact retour du segment d'avant (reclic sur le départ) : deux cuivres superposés, on retire les deux
+    if(prev&&!isArc(prev)&&t.l===prev.l&&t.x1===prev.x2&&t.y1===prev.y2&&t.x2===prev.x1&&t.y2===prev.y1){
+      S.tracks.pop();posed.pop();prev=posed[posed.length-1]||null;continue;
+    }
     S.tracks.push(t);prev=t;posed.push(t);
   }
   chamferPosed(posed);
@@ -5668,6 +5686,12 @@ let dessousT=-1e9;
    le relâchement, mais aussi un second doigt ou un pointercancel, qui sans
    cela laissaient la poussée en l'air et des pistes de longueur nulle. */
 function dragFinir(){
+  const pousse=drag&&drag.moved&&(drag.move||drag.tend);
+  dragFinirGeste();
+  // geste buté ou refusé : la carte n'a pas bougé, l'étape posée au premier mouvement n'aurait rien à annuler
+  if(pousse&&S.undo.length&&S.undo[S.undo.length-1]===serialize())S.undo.pop();
+}
+function dragFinirGeste(){
   if(drag&&drag.tend){
     if(drag.moved&&straightenTend(drag.tend,drag.landed))
       hint("Piste redressée sur le centre de l'arrivée : le coude a suivi.");
@@ -6089,6 +6113,11 @@ document.addEventListener("keydown",e=>{
     case "escape":
       if(typeof silkMenuClose==="function")silkMenuClose();
       // Échap termine ce qui est en cours puis rend la main à la sélection
+      if(drag&&drag.moved&&(drag.move||drag.tend)){
+        // en plein glissement : on rend la carte d'avant le geste, sans laisser de « rétablir »
+        drag=null;S.dragShove=null;S.hover=null;undo();S.redo.pop();
+        hint("Glissement annulé.");break;
+      }
       if(S.dp)dpCommit();
       else if(S.route)commitRoute();
       else if(dessinAnnuler()){}

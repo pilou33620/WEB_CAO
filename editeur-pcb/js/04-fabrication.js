@@ -1269,12 +1269,12 @@ function fabReadme(files,dr){
   L.push("");
   L.push("Regles :");
   for(const c of S.classes)
-    L.push("  classe "+c.name+" : piste "+fmt(c.w,2)+" mm, isolation "+fmt(c.clr,2)+
+    L.push("  classe "+String(c.name).normalize("NFD").replace(/[\u0300-\u036f]/g,"")+" : piste "+fmt(c.w,2)+" mm, isolation "+fmt(c.clr,2)+
            " mm, via "+fmt(c.via,2)+"/"+fmt(c.drill,2)+" mm");
   L.push("  dilatation du masque : "+fmt(S.rule.mask,2)+" mm");
   L.push("  retrait de la pate : "+fmt(S.rule.paste,2)+" mm");
   L.push("  traitement des vias : "+VIA_TXT[S.rule.viaFinish]);
-  L.push("  percages : "+dr.tools+" outil(s), "+dr.holes+" trou(s)");
+  if(files.some(f=>/\.(DRL|XLN|TXT)$/.test(f.name)))L.push("  percages : "+dr.tools+" outil(s), "+dr.holes+" trou(s)");   // pas de ligne si le percage n'est pas dans l'archive
   if(gerber){
     L.push("");
     L.push("Les zones de cuivre utilisent la polarite negative (LPC) pour leurs");

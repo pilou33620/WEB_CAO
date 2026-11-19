@@ -269,9 +269,10 @@ function dfNormDetails(src){
    Écriture : chaque geste est un pas d'historique (Ctrl+Z)
    ========================================================================== */
 function dfEcrire(fn){
-  if(typeof push==="function")push();
   const c=dfCfg();
   const r=fn(c);
+  if(r===false)return r;          // rien trouvé à modifier : pas d'étape d'annulation vide
+  if(typeof push==="function")push();
   S.dessin=c;
   S.dessin=dfCfg();               // ce qui vient d'être posé repasse par les bornes
   S.dirty=true;

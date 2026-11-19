@@ -11916,7 +11916,8 @@ T("shove : le résultat ne dépend pas de la vitesse de la machine",()=>{
   const boitier=()=>{
     const {reg,f}=boitierSurPiste("shove");
     // le cuivre et la place du boîtier ; les numéros d'objet, eux, changent à chaque essai
-    try{return JSON.stringify({tracks:S.tracks,vias:S.vias.map(v=>[v.x,v.y,v.net]),x:f.x,y:f.y});}
+    // sans les liens de bout (a1, a2) : ils portent des numéros d'objet
+    try{return JSON.stringify({tracks:S.tracks.map(t=>Object.assign({},t,{a1:undefined,a2:undefined})),vias:S.vias.map(v=>[v.x,v.y,v.net]),x:f.x,y:f.y});}
     finally{undo();boitierFin(reg);}
   };
   const c=boitier(), d=horlogeLente(boitier);
@@ -13300,7 +13301,7 @@ T("antenne ronde : deux demi-tours font un net d'un seul tenant",()=>{
     if(c.find("T0a")!==c.find("T2a"))
       throw new Error("une piste posée sur le ventre de l'arc devrait s'y relier");
     /* Le même point, sur la corde et non sur le cuivre, ne relie rien. */
-    S.tracks[2]={l:0,net:"ANT",w:0.3,x1:20,y1:15,x2:20,y2:2};
+    S.tracks[2]={l:0,net:"ANT",w:0.3,x1:20,y1:15,x2:20,y2:12};   // s'arrête avant le ventre : plus loin, elle le croiserait et s'y relierait
     touch();
     const c2=conn(true);
     if(c2.find("T0a")===c2.find("T2a"))

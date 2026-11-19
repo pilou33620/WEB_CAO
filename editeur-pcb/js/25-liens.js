@@ -709,11 +709,12 @@ function dragAltHold(alt){
    de tour garde l'encombrement d'un groupe centré sur lui-même : enchaîner les
    quarts de tour, ou les rejouer après un décalage, donne la même chose.
    ========================================================================== */
-function fpsTourner(ids,sens){
+function fpsTourner(ids,sens,centre){
   const fps=ids.map(fpById).filter(Boolean);
   if(!fps.length)return;
   let cx=null, cy=null;
-  if(fps.length>1){
+  if(centre){cx=centre.x;cy=centre.y;}   // imposé : la sélection mêlée de rotateSel
+  else if(fps.length>1){
     let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;
     for(const f of fps){
       const b=fpBBox(f);

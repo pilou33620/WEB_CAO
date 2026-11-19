@@ -73,9 +73,9 @@ function topoGraphe(net){
   /* jonctions en T : un point libre posé au milieu d'une autre piste droite */
   const coupes=new Map();
   for(const n of nodes.values()){
-    if(n.type!=="pt")continue;
+    if(n.type!=="pt"&&n.type!=="via")continue;   // un via posé sur une piste non coupée la coupe aussi
     tracks.forEach((t,i)=>{
-      if(t.l!==n.l||isArc(t)||ends[i][0]===n||ends[i][1]===n)return;
+      if((n.type==="via"?(t.l<n.v.a||t.l>n.v.b):t.l!==n.l)||isArc(t)||ends[i][0]===n||ends[i][1]===n)return;
       const L=Math.hypot(t.x2-t.x1,t.y2-t.y1);
       if(L<1e-6)return;
       const u=((n.x-t.x1)*(t.x2-t.x1)+(n.y-t.y1)*(t.y2-t.y1))/(L*L);

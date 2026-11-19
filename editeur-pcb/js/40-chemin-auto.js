@@ -95,7 +95,9 @@ function cheminCarte(T, g, l, marge){
    et V (où le centre d'une via peut tomber). `extra` : les chemins déjà trouvés dans l'appel. Le
    cuivre du net lui-même gêne aussi (le routeur s'arrête dès qu'il le touche), sauf les pastilles
    des deux bouts (`bouts` : leurs clés REF.n). Rv : le rayon de la via (d'une paire, ses deux vias). */
-function cheminObstacles(g, nets, larg, extra, bouts, Rv){
+function cheminObstacles(g, nets, larg, extra, bouts, Rv, libres){
+  // un bout donné en point nu (bout de piste, via) : le cuivre du net qui le porte n'est pas un obstacle
+  const porte = (l, d) => (libres || []).some(p => p.couches.includes(l) && d(p) <= 1e-6);
   const net = nets[0];
   const N = g.nx * g.ny * g.L, T = new Uint8Array(N), V = new Uint8Array(N);
   const cl = classOf(net);
@@ -115,11 +117,13 @@ function cheminObstacles(g, nets, larg, extra, bouts, Rv){
     }
     for(const t of S.tracks.concat(extra.pistes)){
       if(t.l !== l) continue;
+      if(nets.includes(t.net) && porte(l, p => trkDist(p.x, p.y, t) - t.w / 2)) continue;
       cheminSegment(T, g, l, t, t.w / 2 + Rt + ecart(t.net, "trk", "trk"));
       cheminSegment(V, g, l, t, t.w / 2 + Rv + ecart(t.net, "via", "trk"));
     }
     for(const v of S.vias.concat(extra.vias)){
       if(l < v.a || l > v.b) continue;
+      if(nets.includes(v.net) && porte(l, p => dist(p.x, p.y, v.x, v.y) - v.d / 2)) continue;
       for(const [G, R] of [[T, v.d / 2 + Rt + ecart(v.net, "trk", "via")], [V, v.d / 2 + Rv + ecart(v.net, "via", "via")]])
         cheminBoite(G, g, l, v.x - R, v.y - R, v.x + R, v.y + R, (x, y) => dist(x, y, v.x, v.y) < R);
     }
@@ -231,7 +235,8 @@ function cheminUne(g, li, extra, fin){
          Math.max(classOf(pair.p).via, classOf(pair.n).via) / 2;
   }
   const nets = pair ? [pair.p, pair.n] : [net];
-  const {T, V} = cheminObstacles(g, nets, larg, extra, new Set(pair ? dep.pads.concat(arr.pads) : [dep.nom, arr.nom]), Rv);
+  const {T, V} = cheminObstacles(g, nets, larg, extra, new Set(pair ? dep.pads.concat(arr.pads) : [dep.nom, arr.nom]), Rv,
+                                  pair ? [] : [dep, arr].filter(b => !b.q));
   const nxy = g.nx * g.ny, N = nxy * g.L;
   const cel = (x, y) => [Math.round((x - g.x0) / g.pas), Math.round((y - g.y0) / g.pas)];
   const dans = (i, j) => i >= 0 && j >= 0 && i < g.nx && j < g.ny;

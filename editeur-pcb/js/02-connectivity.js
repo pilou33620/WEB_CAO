@@ -456,13 +456,12 @@ function computeConn(exact){
   /* croisement en X ou recouvrement de deux pistes droites, sans bout commun :
      le cuivre est continu (les arcs restent reliés par leurs bouts) */
   S.tracks.forEach((t,i)=>{
-    if(arcOf(t))return;
-    const b=trkBBox(t), cx=(b.x1+b.x2)/2, cy=(b.y1+b.y2)/2;
+    const b=trkBBox(t), cx=(b.x1+b.x2)/2, cy=(b.y1+b.y2)/2, at=isArc(t);
     for(const j of near(t.l,cx,cy,Math.hypot(b.x2-b.x1,b.y2-b.y1)/2+t.w+1)){
       if(j<=i)continue;
-      const u=S.tracks[j];
-      if(arcOf(u))continue;
-      if(segSegDist(t,u)<=(t.w+u.w)/2+1e-6)uni("T"+i+"a","T"+j+"a");
+      const u=S.tracks[j], lim=(t.w+u.w)/2+1e-6;
+      // un arc se mesure corde par corde : croisé sans bout commun, il restait « non relié »
+      if(at||isArc(u)?trkSegs(t).some(a=>trkSegs(u).some(c=>segSegDist(a,c)<=lim)):segSegDist(t,u)<=lim)uni("T"+i+"a","T"+j+"a");
     }
   });
   S.vias.forEach((v,i)=>{for(let l=v.a;l<=v.b;l++)touchSeg(l,v.x,v.y,v.d/2,"V"+i);});
@@ -1688,6 +1687,14 @@ function runDrc(){
       out.push({x:m.x,y:m.y,l:zi.l,ilot:true,aire:m.aire,
         msg:"Îlot de cuivre isolé : zone "+zi.net+" sur "+cuId(zi.l,S.cu)+
             ", relié à rien, un autre cuivre loge dans ses trous : à retirer à la main (découpe)"});
+  /* ---------- l'anneau des vias ----------
+     Un via sans cuivre autour de son trou ne relie rien de fiable ; seule la
+     fenêtre des règles le disait (R16), même seuil ici. */
+  for(const v of S.vias){
+    const an=(v.d-v.drill)/2;
+    if(an<0.05-1e-9)out.push({x:v.x,y:v.y,l:v.a,via:v,
+      msg:"Anneau de via de "+fmt(Math.max(0,an),3)+" mm (Ø "+fmt(v.d,2)+" percé "+fmt(v.drill,2)+") : il en faut au moins 0.050 mm"});
+  }
   /* ---------- ce que l'empilage impose ----------
      Le rapport d'aspect et la nature des vias ne se voient pas sur le dessin :
      c'est la pile qui les décide, d'où leur place ici plutôt que dans le seul
