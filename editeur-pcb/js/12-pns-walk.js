@@ -28,6 +28,7 @@
    ============================================================================= */
 
 const PNS_WALK_MAX=24;         // tours d'enveloppe avant d'abandonner
+const PNS_WALK_LONG=1.6;       // au-delà de ce rapport au trajet direct, on essaie de changer de côté en route
 const PNS_WALK_GROWTH=6;       // un détour six fois plus long que la ligne : on renonce
 
 /* ==========================================================================
@@ -112,7 +113,8 @@ function pnsWalkSide(node,line,skip,side,max,only){
     const c=pnsWalkCross(pts,H);
     if(!c)return {pts,ok:false,bloque:ob.it};
     const suite=pnsUnloop(pnsSplice(pts,c.A.i,c.B.i+1,
-                                    pnsHullWalk(H,c.A.edge,c.A,c.B.edge,c.B,side)));
+                                    pnsHullWalk(H,c.A.edge,c.A,c.B.edge,c.B,
+                                                typeof side==="number"?side:side[Math.min(k,side.length-1)])));
     if(pnsLen(suite)>l0*PNS_WALK_GROWTH+10)return {pts,ok:false,bloque:ob.it};
     if(dedans&&!pnsSurCarte(suite)||marge&&!pnsSurCarte(suite,m,line.net,line.l))return {pts,ok:false,bloque:ob.it};
     pts=suite;
@@ -132,6 +134,18 @@ function pnsWalkaround(node,line,skip,max,only){
   if(G.ok&&D.ok)r=pnsLen(G.pts)<=pnsLen(D.pts)?G:D;
   else if(G.ok)r=G;
   else if(D.ok)r=D;
+  /* Garder le même côté d'un obstacle à l'autre enferme parfois la piste dans
+     un tour de carte (135 mm pour 27 visés), ou la bloque, alors qu'il
+     suffisait de changer de côté au deuxième ou au troisième obstacle. Quand
+     le tour est franchement long ou n'aboutit pas, on essaie donc les six
+     autres combinaisons de côtés sur les trois premiers obstacles. */
+  const l0=pnsLen(pnsSimplify(line.pts));
+  if(!r||pnsLen(r.pts)>PNS_WALK_LONG*l0)
+    for(const a of [1,-1])for(const b of [1,-1])for(const c of [1,-1]){
+      if(a===b&&b===c)continue;                     // les deux tours uniformes sont faits
+      const X=pnsWalkSide(node,line,skip,[a,b,c],max,only);
+      if(X.ok&&(!r||pnsLen(X.pts)<pnsLen(r.pts)-1e-6))r=X;
+    }
   if(!r)return {ok:false,pts:pnsSimplify(line.pts),bloque:(G.bloque||D.bloque)||null};
   /* Filet de sécurité : en règle « libre » une ligne peut arriver de biais et
      ressortir de biais. Les enveloppes, elles, restent octogonales — le tour

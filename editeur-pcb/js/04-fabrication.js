@@ -1320,7 +1320,9 @@ function positionsCsvText(){
     const y=fmt(o.y-fp.y,4);   // Y Gerber monte, le document descend
     /* anti-horaire vu de dessus (IPC-7351, KiCad), comme le CPL JLCPCB ;
        l'éditeur tourne en horaire. -90 ou 450 saisis sortent en 90 / 270 */
-    const rot=padRot(360-(fp.rot||0));
+    /* Dessous, c'est l'angle de KiCad : son boîtier retourné se pose par miroir haut-bas
+       puis rotation, l'éditeur par miroir gauche-droite (fpXform) — un demi-tour d'écart. */
+    const rot=padRot((fp.side?180:360)-(fp.rot||0));
     const side=fp.side?"Bottom":"Top";
     rows.push([
       fp.ref,
@@ -1515,11 +1517,16 @@ function jlcBomCsvText(){
 /* CPL : centre de l'empreinte (origine des Gerber, Y vers le haut), face, et
    l'angle compté dans le sens anti-horaire vu de dessus comme le veut JLCPCB —
    l'éditeur, lui, tourne dans le sens horaire (fpXform, y vers le bas). */
+/* Dessous, JLCPCB veut 180° − l'angle KiCad (kicad-jlcpcb-tools, « bottom angles need to be
+   mirrored on Y-axis ») ; l'angle KiCad d'un boîtier dessous vaut ici 180° − rot (miroir
+   gauche-droite d'fpXform contre miroir haut-bas de KiCad) : il reste rot. Avec 360 − rot,
+   toute pièce dessous hors 0/180° partait retournée d'un demi-tour. */
+function jlcRotation(fp){return padRot(fp.side?(fp.rot||0):360-(fp.rot||0));}
 function jlcCplLignes(){
   const o=gOrigin(), rows=[["Designator","Mid X","Mid Y","Layer","Rotation"]];
   for(const fp of jlcFpsAPoser())
     rows.push([fp.ref,fmt(fp.x-o.x,4)+"mm",fmt(o.y-fp.y,4)+"mm",fp.side?"Bottom":"Top",
-      String(padRot(360-(fp.rot||0)))]);
+      String(jlcRotation(fp))]);
   return rows;
 }
 /* CPL au gabarit .xlsx de JLCPCB (JLCSMT_Sample_CPL) : en-tête jaune gras, cellules

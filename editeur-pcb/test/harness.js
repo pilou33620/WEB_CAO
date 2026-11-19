@@ -78,7 +78,7 @@ const EXPOSE=["capaDecouplage","capaCibleMasse","capaViasExistants","capaViaPlac
   "closeZone","fullBoardZone","zoneMask","labelMask","maskAt","classOf","setNetClass","defaultWidth",
   "applyClasses","jointAt","splitTrack","netTracks","selectNetRouting",
   "deleteNetRouting","autoClass","classOptionsHtml","poserClasseNet","schemaPublie","listNets","mkFp","w2s","runDrc","padsOf",
-  "buildFabFiles","jlcGerberFiles","jlcBomLignes","jlcBomCsvText","jlcCplLignes","ipcAccess","propsEnMil","jlcCplXlsx","normFp","jlcNonPose","jlcFpsAPoser","vbValeur","vbListe","vbVerifierLigne","vbValeurFiche","vbJuger","vbRequete","vbVerifier","vbAppliquer","exportJlcpcb","gerberCopper","gerberMask","gerberPaste","gerberSilk",
+  "buildFabFiles","jlcGerberFiles","jlcBomLignes","jlcBomCsvText","jlcCplLignes","ipcAccess","propsEnMil","jlcCplXlsx","normFp","jlcNonPose","jlcFpsAPoser","vbValeur","vbListe","jlcRotation","vbVerifierLigne","vbValeurFiche","vbJuger","vbRequete","vbVerifier","vbAppliquer","exportJlcpcb","gerberCopper","gerberMask","gerberPaste","gerberSilk",
   /* animation 3D de fabrication.zip (41-animation-3d.js) */
   "anim3dDonnees","anim3dPage","anim3dModeles","anim3dPose","anim3dAuto","anim3dExporter","silkTraits","silkRogne","silkContour","SILK_GARDE","fabLivrer","THREE_SOURCE",
   "gerberEdge","gerberOutline","ipcNetlist","ipc317","masterDrawingPdf","noAcc",
@@ -4867,6 +4867,8 @@ TA("Vérif BOM JLCPCB : valeur, tension, stock et boîtier jugés, candidats pro
     if(rb.candidats.some(c=>c.p.lcsc==="C7"))throw new Error("10 µF proposé pour 100 µF");
     const n=vbAppliquer([[rb.g.refs,"C8"]]);
     if(n!==1||b.lcsc!=="C8"||!jlcBomCsvText().includes(",C8"))throw new Error("code non posé");
+    // CPL : dessus, anti-horaire (360 − rot) ; dessous, JLCPCB veut l'angle tel quel (180 − l'angle KiCad, lui-même 180 − rot)
+    if(jlcRotation({side:0,rot:90})!==270||jlcRotation({side:1,rot:90})!==90||jlcRotation({side:1,rot:0})!==0)throw new Error("rotation du CPL");
     if(normFp(JSON.parse(JSON.stringify(b)),0).lcsc!=="C8")throw new Error("lcsc perdu à l'enregistrement");
   }finally{global.fetch=f0;S.schDoc=sch;loadDoc(JSON.parse(avant),true);}
 });
@@ -11986,6 +11988,20 @@ T("Gerber : dans une région, la droite qui suit un arc repasse en G01",()=>{
     if(mode!==1&&/D01\*$/.test(x)&&!/I-?\d/.test(x))throw new Error("droite en mode circulaire : "+x);
   }
   S.zones=[];touch();
+});
+T("contourner : pas de tour de carte, un détour de plus du double est refusé",()=>{
+  plateau(60,40,"walk");
+  // une longue piste étrangère barre la route : la contourner, c'est en faire le tour
+  S.tracks.push({l:0,net:"AUTRE",w:0.3,x1:2,y1:20,x2:50,y2:20});touch();
+  setMode("track");S.grid=0.5;
+  startRoute(10,15,true);S.route.net="SIG";S.route.w=0.3;
+  updateRoute(10,25);
+  if(!S.route.bad)throw new Error("le tour de la piste (≈ 100 mm pour 10) devait être refusé : "+S.route.preview.length+" segment(s)");
+  // près du bout de la piste, le détour est court : il passe
+  S.route=null;startRoute(48,15,true);S.route.net="SIG";S.route.w=0.3;
+  updateRoute(48,25);
+  if(S.route.bad||!S.route.contourne)throw new Error("le petit contournement devait passer");
+  S.route=null;setMode("select");S.tracks=[];touch();
 });
 T("optimiseur : il ne raccourcit jamais à travers un obstacle",()=>{
   plateau();

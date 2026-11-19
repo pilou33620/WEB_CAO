@@ -1574,7 +1574,8 @@ function moveJoints(rigid){
     const sel=j.ends.filter(o=>o.sel);
     if(!sel.length)continue;
     // une pastille tient le bout comme un via : sans talon, glisser la piste l'en arrachait sans rien dire
-    if(!j.vias.length&&!padAt(sel[0].t.l,j.x0,j.y0))continue;
+    // ... et une voisine verrouillée aussi : elle ne se replie pas, le talon fait le lien
+    if(!j.vias.length&&!padAt(sel[0].t.l,j.x0,j.y0)&&!j.ends.some(o=>!o.sel&&o.t.locked))continue;
     const V=j.vias.length?j.vias[0].v:{x:j.x0,y:j.y0}, x=r3(V.x), y=r3(V.y);
     j.vias=[];j.ends=sel.slice();j.slide=null;
     for(const l of new Set(sel.map(o=>o.t.l))){
@@ -1780,13 +1781,15 @@ function followMoved(){
     return null;
   };
   for(const v of vias)out.keys.add(anchorKey(v.a,v.x,v.y));
-  const mode=cornerMode(), seen=new Set();
+  const mode=cornerMode(), seen=new Set(), verrous=new Set();
   for(const t of [...S.tracks]){
     for(const en of [1,2]){
       const x=en===1?t.x1:t.x2, y=en===1?t.y1:t.y2;
       if(!held(t.l,x,y))continue;
       out.keys.add(anchorKey(t.l,x,y));
       if(user.has(t)||seen.has(t))continue;
+      // une piste verrouillée ne suit pas le boîtier : elle reste, la liaison est à refaire
+      if(t.locked){verrous.add(t);continue;}
       seen.add(t);
       const P0={x,y}, hid=holder(t,en,x,y);
       out.p0fp.set(P0,hid);
@@ -1811,7 +1814,7 @@ function followMoved(){
         // un morceau sélectionné bouge avec sa propre articulation : on s'arrête
         // avant lui, et seul le bout accroché s'étire
         if(user.has(nx.t)){end="sel";break;}
-        if(isArc(nx.t)||nx.t.w!==cur.w||seen.has(nx.t))break;
+        if(isArc(nx.t)||nx.t.w!==cur.w||seen.has(nx.t)||nx.t.locked)break;   // ni repliée par sa voisine
         list.push(nx.t);seen.add(nx.t);
         cur=nx.t;ce=nx.e;
       }
@@ -1859,6 +1862,7 @@ function followMoved(){
                        P0,l:t.l,net:t.net,w:t.w,mode});
     }
   }
+  if(verrous.size)hint(verrous.size+" piste(s) verrouillée(s) laissée(s) en place : la liaison sera à refaire — Déverrouiller pour qu'elles suivent.");
   return out;
 }
 /* Sens d'un segment rangé parmi les huit du tracé : 0 = est, puis par
@@ -2398,6 +2402,7 @@ function fpGardeVerifier(){
   if(!S.avoid||g.snap==null||S.undo.indexOf(g.snap)<0)return "";   // annulé entre-temps
   const ch=S.fps.filter(f=>{const b=g.base.get(f.id);return !b||b.j!==JSON.stringify(f);});
   let refus="";
+  const ecartes=[];                 // les nouveaux venus déplacés : ça se dit, sinon la copie « tombe ailleurs » sans raison
   for(const f of ch){
     const sk=new Set([f]);
     if(!fpGene(f,sk))continue;
@@ -2405,7 +2410,7 @@ function fpGardeVerifier(){
     if(!b){                                       // nouveau : à la place libre la plus proche
       const p=fpPlaceLibre([f]);
       // son cuivre suit (transformFps) : une copie collée garde ses pistes sur ses pastilles
-      if(p){transformFps([f.id],()=>{f.x=r3(f.x+p.dx);f.y=r3(f.y+p.dy);});touch();continue;}
+      if(p){transformFps([f.id],()=>{f.x=r3(f.x+p.dx);f.y=r3(f.y+p.dy);});touch();if(p.dx||p.dy)ecartes.push(f.ref);continue;}
       refus=f.ref+" ne trouve aucune place libre";break;
     }
     const neuf=fpGeneTous(f,sk), now=fpPose(f);
@@ -2420,7 +2425,15 @@ function fpGardeVerifier(){
     const o=k[0]==="F"?fpById(+k.slice(1)):null;
     refus=f.ref+" chevaucherait "+(o?o.ref:"du cuivre d'un autre net");break;
   }
-  if(!refus){if(ch.length)touch();return "";}
+  if(!refus){
+    if(ch.length)touch();
+    if(ecartes.length){
+      if(typeof draw==="function")draw();
+      hint("Anti-collision : "+ecartes.join(", ")+" tombai"+(ecartes.length>1?"ent":"t")+" sur un autre boîtier et "+
+           (ecartes.length>1?"ont été posés":"a été posé")+" à la place libre la plus proche. Écartez le pas, ou coupez l'anti-collision pour forcer.");
+    }
+    return "";
+  }
   // on défait jusqu'à l'instantané de départ compris : l'action entière
   for(let top=null;S.undo.length&&top!==g.snap;){top=S.undo[S.undo.length-1];undo();S.redo.pop();}
   if(typeof refreshPanels==="function")refreshPanels();
@@ -4004,6 +4017,7 @@ function routeRetouche(R,t){
   }
   return q;
 }
+const ROUTE_DETOUR_MAX=2;       // rapport maximal d'un contournement au trajet direct, plus 2 mm
 function routeSegsTo(R,t){
   const seg=s=>Object.assign({l:R.layer},s);
   // `jog` imposé : c'est la saisie au clavier qui décide, pas l'aimant angulaire
@@ -4035,7 +4049,11 @@ function routeSegsTo(R,t){
   }
   if(mode!=="mark"){
     const tour=pnsWalkaround(N,line,skip);
-    if(tour.ok)return bord({segs:pnsSegs(tour.pts).map(seg),bad:false,contourne:true});
+    /* Un tour plus de deux fois plus long que le trajet visé n'est pas un contournement :
+       c'est le tour d'une longue piste, aller et retour le long d'elle. Mieux vaut dire
+       que ça ne passe pas — un coude de plus, un via — que de poser 135 mm pour 27. */
+    if(tour.ok&&pnsLen(tour.pts)<=ROUTE_DETOUR_MAX*pnsLen(line.pts)+2)
+      return bord({segs:pnsSegs(tour.pts).map(seg),bad:false,contourne:true});
   }
   return {segs:direct.map(seg),bad:true};
 }
