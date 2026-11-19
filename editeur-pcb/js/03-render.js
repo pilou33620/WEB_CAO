@@ -1173,6 +1173,7 @@ function drawHover(c){
     return;
   }
   c.beginPath();c.arc(h.x,h.y,px(7),0,Math.PI*2);c.stroke();
+  if(h.quoi)TXT(c,h.quoi,h.x,h.y+px(18),px(10),C_SEL);     // ce qui a accroché : centre, bout, milieu, piste, via
 }
 function drawHoles(c){
   for(const h of trousMonde()){
@@ -1288,6 +1289,7 @@ function paintDessus(c,dpr,w,h,noGrid){
   drawTextLink(c);
   drawHover(c);
   drawCurseur(c);
+  if(typeof drawGuides==="function")drawGuides(c);
   if(!fin)drawDrc(c);
   if(S.marquee){
     const m=S.marquee;

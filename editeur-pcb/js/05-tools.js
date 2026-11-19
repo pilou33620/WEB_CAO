@@ -3721,15 +3721,16 @@ function routePosture(R,b){
    l'intérieur : la portée s'ajoute au bord de la pastille, quelle que soit sa
    taille. Le point rendu reste le centre — c'est là que la piste doit entrer. */
 function magnet(x,y,layer,skip){
-  const R=px(9);
+  const R=typeof snapPortee==="function"?snapPortee():px(9), sn=S.snap||{};
   let best=null,bd=R;
-  for(const fp of S.fps)
+  if(sn.pad!==false)for(const fp of S.fps)
     for(const q of padsWorld(fp)){
       if(!padCuLayers(fp,q).includes(layer))continue;
       const d=padDist(x,y,padSurCouche(q,layer));
       if(d<=0)return {x:q.x,y:q.y,net:q.net,pad:true,obj:q};
       if(d<bd){bd=d;best={x:q.x,y:q.y,net:q.net,pad:true,obj:q};}
     }
+  if(sn.bout===false)return best;
   for(const v of S.vias){
     if(layer<v.a||layer>v.b)continue;
     const d=dist(x,y,v.x,v.y);
@@ -3785,8 +3786,13 @@ function trackBody(x,y,l,net,ancre,portee){
     best=t;bd=d;
   }
   if(!best)return null;
-  const p=trackAlign(best,{x:snapXn(x,ancre?ancre.x:null),y:snapYn(y,ancre?ancre.y:null)});
-  return {x:p.x,y:p.y,net:best.net,obj:best};
+  let p=trackAlign(best,{x:snapXn(x,ancre?ancre.x:null),y:snapYn(y,ancre?ancre.y:null)}), quoi="piste";
+  // le milieu du segment attire le point, à portée d'aimant
+  if(S.snap&&S.snap.milieu&&!isArc(best)){
+    const mx=r3((best.x1+best.x2)/2), my=r3((best.y1+best.y2)/2);
+    if(dist(x,y,mx,my)<=snapPortee()){p={x:mx,y:my};quoi="milieu";}
+  }
+  return {x:p.x,y:p.y,net:best.net,obj:best,quoi};
 }
 /* Repousse un point hors des obstacles de sa couche : on cherche à chaque
    passe le manque d'isolation le plus criant et on s'en écarte, jusqu'à ce que
@@ -3916,17 +3922,19 @@ function routeTarget(x,y){
   if(m&&(!net||!m.net||m.net===net)){
     const off=m.pad&&S.padOff?padOffPoint(m.obj,l,x,y,S.route?S.route.pt:null):null;
     if(off){S.hover=off;return Object.assign({},m,off,{off:true});}
-    S.hover={x:m.x,y:m.y};return m;
+    S.hover={x:m.x,y:m.y,quoi:m.pad?"centre":m.via?"via":"bout"};return m;
   }
   // le point de départ sert d'ancre : depuis un centre de pastille hors grille,
   // le quadrillage seul ferait sortir la piste de travers dès le premier segment
   const a=S.route?S.route.pt:null;
   const c=trackBody(x,y,l,net,a);
-  if(c){S.hover={x:c.x,y:c.y};return c;}
+  if(c){S.hover={x:c.x,y:c.y,quoi:c.quoi};return c;}
   S.hover=null;
   // un via attendu au bout du curseur tient plus de place que la piste qui l'amène
   const w=S.route?(S.route.viaNext?(S.route.viaTaille?S.route.viaTaille.d:classOf(net).via):S.route.w):defaultWidth(net,l);
-  const p=pushClear({x:snapXn(x,a?a.x:null),y:snapYn(y,a?a.y:null)},l,net,w);
+  // l'axe d'un objet voisin passe avant le nœud de grille (56-accrochage.js)
+  const g=accrocheAxes({x:snapXn(x,a?a.x:null),y:snapYn(y,a?a.y:null)},x,y,l);
+  const p=pushClear(g,l,net,w);
   return {x:p.x,y:p.y,net:null,pushed:p.pushed};
 }
 function startRoute(x,y,exact){
@@ -4495,7 +4503,7 @@ function smartPadsTrim(segs,net,w){
 }
 function commitRoute(){
   const R=S.route;
-  S.route=null;
+  S.route=null;S.guides=[];
   if(!R)return;
   // un via posé en plein tracé (touche V, puis Échap) est un geste : il lui faut son étape
   if(!R.done.length&&!R.shoved&&!(R.vias&&R.vias.length)){touch();draw();return;}
@@ -5702,11 +5710,16 @@ cv.addEventListener("pointermove",e=>{
     // un clic qui tremble ne recale pas le boîtier : il faut vraiment tirer
     // … et un doigt tremble plus qu'une souris : la tolérance de l'appui long (14 px)
     if(fa&&!drag.moved&&Math.hypot(p.x-drag.x,p.y-drag.y)<px(e.pointerType==="touch"?14:3))return;
-    const dx=fa?r3(snapX(fa.x+p.x-drag.x)-fa.x):snapX(p.x)-snapX(drag.x);
-    const dy=fa?r3(snapY(fa.y+p.y-drag.y)-fa.y):snapY(p.y)-snapY(drag.y);
+    let dx=fa?r3(snapX(fa.x+p.x-drag.x)-fa.x):snapX(p.x)-snapX(drag.x);
+    let dy=fa?r3(snapY(fa.y+p.y-drag.y)-fa.y):snapY(p.y)-snapY(drag.y);
+    if(fa&&S.snap.axe){                // le centre d'un boîtier voisin aligne celui qu'on tire (56-accrochage.js)
+      const q=accrocheAxes({x:fa.x+dx,y:fa.y+dy},fa.x+p.x-drag.x,fa.y+p.y-drag.y,null,S.sel.fps);
+      dx=r3(q.x-fa.x);dy=r3(q.y-fa.y);
+    }
     if(dx||dy){
       if(!drag.moved){push();drag.moved=true;beginMove();}
       dragMoveVers(dx,dy,e.altKey);
+      if(fa)S.guides=accrocheGuides({x:fa.x,y:fa.y},null,S.sel.fps);
       touch();drawBientot();
     }
     return;
@@ -5801,6 +5814,7 @@ let dessousT=-1e9;
    le relâchement, mais aussi un second doigt ou un pointercancel, qui sans
    cela laissaient la poussée en l'air et des pistes de longueur nulle. */
 function dragFinir(){
+  S.guides=[];
   const pousse=drag&&drag.moved&&(drag.move||drag.tend);
   dragFinirGeste();
   // geste buté ou refusé : la carte n'a pas bougé, l'étape posée au premier mouvement n'aurait rien à annuler
@@ -6321,7 +6335,7 @@ function setMode(m){
   /* La cote appartient au mode : la garder affichee en revenant a la selection
      laisserait une annotation qu'aucun geste ne reprend. */
   if(m!=="mesure"&&typeof rpMesRaz==="function")rpMesRaz();
-  S.mode=m;S.hover=null;S.curseur=null;
+  S.mode=m;S.hover=null;S.curseur=null;S.guides=[];
   if(m!=="zone")zoneMenuClose();
   if(m!=="meander"&&typeof meanderMenuClose==="function")meanderMenuClose();
   for(const [id,md] of [["mSelect","select"],["mTrack","track"],["mVia","via"],["mHole","hole"],
@@ -6387,6 +6401,7 @@ const GRID_STEPS=[0.05,0.1,0.25,0.5,1,1.27,2,2.54,5];
 function curseurPose(q){
   const a=S.curseur, bouge=!a||a.x!==q.x||a.y!==q.y;
   S.curseur={x:q.x,y:q.y};
+  if(bouge)S.guides=accrocheGuides(q,S.route?S.route.layer:S.active);
   $("fX").textContent=fmtU(ux(q.x));
   $("fY").textContent=fmtU(uy(q.y));
   return bouge;

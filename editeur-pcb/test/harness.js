@@ -78,7 +78,7 @@ const EXPOSE=["capaDecouplage","capaCibleMasse","capaViasExistants","capaViaPlac
   "closeZone","fullBoardZone","zoneMask","labelMask","maskAt","classOf","setNetClass","defaultWidth",
   "applyClasses","jointAt","splitTrack","netTracks","selectNetRouting",
   "deleteNetRouting","autoClass","classOptionsHtml","poserClasseNet","schemaPublie","listNets","mkFp","w2s","runDrc","padsOf",
-  "buildFabFiles","jlcGerberFiles","jlcBomLignes","jlcBomCsvText","jlcCplLignes","ipcAccess","propsEnMil","jlcCplXlsx","normFp","jlcNonPose","jlcFpsAPoser","vbValeur","vbListe","routeJauge","jlcRotation","vbVerifierLigne","vbValeurFiche","vbJuger","vbRequete","vbVerifier","vbAppliquer","exportJlcpcb","gerberCopper","gerberMask","gerberPaste","gerberSilk",
+  "buildFabFiles","jlcGerberFiles","jlcBomLignes","jlcBomCsvText","jlcCplLignes","ipcAccess","propsEnMil","jlcCplXlsx","normFp","jlcNonPose","jlcFpsAPoser","vbValeur","vbListe","routeJauge","accrocheAxes","accrocheGuides","snapNorm","bouclesRetirer","jlcRotation","vbVerifierLigne","vbValeurFiche","vbJuger","vbRequete","vbVerifier","vbAppliquer","exportJlcpcb","gerberCopper","gerberMask","gerberPaste","gerberSilk",
   /* animation 3D de fabrication.zip (41-animation-3d.js) */
   "anim3dDonnees","anim3dPage","anim3dModeles","anim3dPose","anim3dAuto","anim3dExporter","silkTraits","silkRogne","silkContour","SILK_GARDE","fabLivrer","THREE_SOURCE",
   "gerberEdge","gerberOutline","ipcNetlist","ipc317","masterDrawingPdf","noAcc",
@@ -12042,6 +12042,25 @@ T("boucles : retracer entre deux points d'une piste retire l'ancien trajet, sauf
   if(T1.length!==6)throw new Error("le détour tenu par un via devait rester : "+T1.length);
   // règle coupée : la boucle reste
   plateau();
+});
+T("accrochage aux objets : l'axe d'un via hors grille attire le curseur, un guide le relie, et le réglage le coupe",()=>{
+  plateau();S.grid=0.5;S.scale=60;
+  S.vias.push({x:20.13,y:10,d:0.8,drill:0.4,a:0,b:1,net:"A"});touch();
+  S.snap=snapNorm(null);
+  if(!S.snap.axe||S.snap.portee!==9)throw new Error("valeurs d'usine : "+JSON.stringify(S.snap));
+  // pointeur à 0,03 mm de l'axe X du via : le nœud 20 cède la place à 20,13
+  let p=accrocheAxes({x:20,y:25},20.16,25.02,0);
+  if(p.x!==20.13||p.y!==25)throw new Error("axe non pris : "+JSON.stringify(p));
+  const g=accrocheGuides(p,0);
+  if(g.length!==1||g[0].x2!==20.13||g[0].y2!==10)throw new Error("guide : "+JSON.stringify(g));
+  // loin de l'axe : la grille
+  p=accrocheAxes({x:20.5,y:25},20.4,25,0);
+  if(p.x!==20.5)throw new Error("la grille devait rester : "+JSON.stringify(p));
+  S.snap=snapNorm({axe:false,portee:99});
+  if(S.snap.portee!==9)throw new Error("portée hors bornes acceptée");
+  p=accrocheAxes({x:20,y:25},20.16,25.02,0);
+  if(p.x!==20||accrocheGuides({x:20.13,y:25},0).length)throw new Error("réglage coupé : rien ne doit accrocher");
+  S.snap=snapNorm(null);S.vias=[];touch();
 });
 T("optimiseur : il ne raccourcit jamais à travers un obstacle",()=>{
   plateau();

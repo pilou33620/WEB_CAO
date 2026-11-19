@@ -115,6 +115,9 @@ js/38-interdits.js       zones interdites par face et hauteurs maximales :
 js/39-thermique.js       échauffement estimé des composants qui dissipent :
                          cuivre relié, appel au serveur, DRC, fiche
 js/40-chemin-auto.js     chercheur de chemin : A* sur une grille par couche
+js/56-accrochage.js      accrochage aux objets à priorités réglables (centre de
+                         pastille, bout de piste, milieu de segment, axe d'un
+                         voisin), guides d'alignement, fenêtre des réglages
 js/41-larmes.js          larmes de piste ; voir « Larmes »
 js/41-animation-3d.js    animation 3D de la carte qui s'assemble, en option
                          de Fabrication .zip : vidéo et page HTML autonome
