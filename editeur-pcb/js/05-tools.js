@@ -3784,7 +3784,7 @@ function pushClear(pt,l,net,w){
   if(moved&&S.grid>0){
     const nx=snapX(p.x), ny=snapY(p.y);
     let bd=Infinity,noeud=null;
-    for(let i=-1;i<=1;i++)for(let j=-1;j<=1;j++){
+    for(let i=-3;i<=3;i++)for(let j=-3;j<=3;j++){   // ±3 pas : en grille fine, ±1 ne sortait pas de l'isolation
       const q={x:r3(nx+i*S.grid),y:r3(ny+j*S.grid)}, d=dist(q.x,q.y,p.x,p.y);
       if(d<bd&&libre(q)){bd=d;noeud=q;}
     }
@@ -3925,7 +3925,15 @@ function startRoute(x,y,exact){
    avec elle. Le décrochement qui subsiste au pied d'une pastille hors grille,
    c'est le contrôle DRC qui le dit, après coup. */
 function routeJog(R,t){
-  return (t&&(t.obj||t.net))?0:minJog(R.w);
+  return (t&&(t.obj||t.net))?0:jogGrille(R.w);
+}
+/* Sous le curseur, l'aimant angulaire ne dépasse jamais le pas de grille : en
+   grille fine (0,1 mm sous une piste de 0,4), il avalait trois nœuds de part et
+   d'autre de chaque rail et l'arrivée ne tombait plus sur le nœud visé. Tout
+   nœud est maintenant atteignable ; seul le reliquat d'une ancre hors grille
+   (centre de pastille), plus court qu'un pas, est encore écrasé. */
+function jogGrille(w){
+  return S.grid>0?Math.min(minJog(w),S.grid-1e-6):minJog(w);
 }
 /* ==========================================================================
    Le trajet d'un clic
@@ -4022,7 +4030,7 @@ function routeDiagGrille(R,t){
   const m=cornerMode();
   if(m!=="45"&&m!=="arc")return;
   const dx=t.x-R.pt.x, dy=t.y-R.pt.y, adx=Math.abs(dx), ady=Math.abs(dy), s=Math.abs(adx-ady);
-  if(adx<1e-9||ady<1e-9||s<1e-9||s>=minJog(R.w))return;
+  if(adx<1e-9||ady<1e-9||s<1e-9||s>=jogGrille(R.w))return;
   const sx=Math.sign(dx), sy=Math.sign(dy);
   const L=Math.abs(snapX(R.pt.x+sx*(adx+ady)/2)-R.pt.x);
   t.x=r3(R.pt.x+sx*L);t.y=r3(R.pt.y+sy*L);

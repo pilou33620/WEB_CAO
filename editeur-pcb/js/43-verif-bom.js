@@ -6,9 +6,10 @@
      - avec un code LCSC : la pièce existe, son stock couvre le lot, sa valeur,
        sa tension et son boîtier sont ceux de la BOM (c'est l'avertissement
        « The comment … does not match » que JLCPCB donne trop tard) ;
-     - sans code, ou code refusé : recherche de pièces qui conviennent, Basic
-       d'abord, et le code choisi s'écrit sur la carte (et dans le schéma s'il
-       est ouvert dans un autre onglet).
+     - pour chaque ligne, des équivalents sont proposés (jlc_find_alternatives
+       sur la pièce connue, jlc_search sinon), Basic d'abord ; l'équivalent
+       choisi s'écrit sur la carte (et dans le schéma s'il est ouvert dans un
+       autre onglet) et part dans la BOM JLCPCB, colonne « JLCPCB Part # ».
    ========================================================================== */
 const VB_PREFIXE={p:1e-12,n:1e-9,u:1e-6,m:1e-3,k:1e3,K:1e3,M:1e6,G:1e9,R:1};
 const VB_DIEL=/(X5R|X7R|X6S|X7S|X8R|C0G|NP0|Y5V)/i;
@@ -114,7 +115,15 @@ async function vbAppel(nom,args){
   const j=await r.json();
   return j?j.data:null;
 }
-/* Une ligne : la pièce du code LCSC, et des candidats quand elle ne va pas. */
+/* la passerelle rend la liste sous l'une de ces clés, selon l'outil */
+function vbListe(r){
+  if(Array.isArray(r))return r;
+  for(const k of ["alternatives","results","parts"])if(r&&Array.isArray(r[k]))return r[k];
+  return [];
+}
+const VB_NB_EQUIV=5;
+/* Une ligne : la pièce du code LCSC, et ses équivalents — proposés même quand
+   elle va (second choix, Basic sans frais de pose), indispensables sinon. */
 async function vbVerifierLigne(g,nbCartes){
   const besoin=g.refs.length*nbCartes, out={g,besoin,part:null,statut:"bloque",notes:[],candidats:[]};
   if(g.lcsc){
@@ -123,25 +132,38 @@ async function vbVerifierLigne(g,nbCartes){
     if(!part||!(part.model||part.lcsc))out.notes.push("code "+g.lcsc+" inconnu chez JLCPCB");
     else{out.part=part;Object.assign(out,vbJuger(g,part,besoin));}
   }else out.notes.push("pas de code LCSC");
-  if(out.statut==="ok")return out;
-  try{
-    const r=await vbAppel("jlc_search",{query:vbRequete(g),limit:20});
-    const liste=(r&&r.results)||(Array.isArray(r)?r:[]);
-    out.candidats=liste.filter(p=>p&&p.lcsc&&p.lcsc!==g.lcsc)
-      .map(p=>Object.assign({p},vbJuger(g,p,besoin))).filter(c=>c.statut!=="bloque")
-      .sort((a,b)=>(a.statut==="ok"?0:1)-(b.statut==="ok"?0:1)
-        ||(VB_LIB[String(a.p.library_type||"").toLowerCase()]??3)-(VB_LIB[String(b.p.library_type||"").toLowerCase()]??3)
-        ||(+a.p.price||0)-(+b.p.price||0))
-      .slice(0,3);
-  }catch(e){out.notes.push("recherche impossible : "+e.message);}
+  const vus=new Set([g.lcsc]), cand=[];
+  const prendre=r=>{
+    for(const p of vbListe(r)){
+      if(!p||!p.lcsc||vus.has(p.lcsc))continue;
+      vus.add(p.lcsc);
+      const c=Object.assign({p},vbJuger(g,p,besoin));
+      if(c.statut!=="bloque")cand.push(c);
+    }
+  };
+  // les équivalences de JLCPCB d'abord ; d'une pièce fausse (6 pF pour 6,8 µF) elles
+  // sont fausses aussi et vbJuger les écarte : la recherche par valeur complète alors
+  if(out.part)try{prendre(await vbAppel("jlc_find_alternatives",{lcsc:g.lcsc,same_package:true,limit:10}));}catch(_){}
+  if(cand.length<3)
+    try{prendre(await vbAppel("jlc_search",{query:vbRequete(g),limit:20}));}
+    catch(e){if(!cand.length)out.notes.push("recherche impossible : "+e.message);}
+  const lib=c=>VB_LIB[String(c.p.library_type||"").toLowerCase()]??3;
+  out.candidats=cand.sort((a,b)=>(a.statut==="ok"?0:1)-(b.statut==="ok"?0:1)||lib(a)-lib(b)||(+a.p.price||0)-(+b.p.price||0))
+    .slice(0,VB_NB_EQUIV);
   return out;
 }
+/* Quatre lignes de front : chaque ligne coûte jusqu'à trois appels à la passerelle. */
 async function vbVerifier(nbCartes,suivi){
-  const lignes=jlcBomLignes(), res=[];
-  for(let i=0;i<lignes.length;i++){
-    if(suivi)suivi(i,lignes.length);
-    res.push(await vbVerifierLigne(lignes[i],nbCartes));
-  }
+  const lignes=jlcBomLignes(), res=new Array(lignes.length);
+  let i=0,faites=0;
+  const ouvrier=async()=>{
+    while(i<lignes.length){
+      const k=i++;
+      res[k]=await vbVerifierLigne(lignes[k],nbCartes);
+      if(suivi)suivi(faites++,lignes.length);
+    }
+  };
+  await Promise.all([0,1,2,3].map(ouvrier));
   return res;
 }
 /* Les codes retenus : sur la carte (ils partent dans la BOM JLCPCB), et au
@@ -167,7 +189,7 @@ function vbFenetre(){
   m.innerHTML='<div class="box" style="max-width:920px;width:96vw">'+
     '<h3>🔎 Vérif BOM JLCPCB</h3>'+
     '<p style="color:var(--txt-dim);font-size:12.5px;margin:6px 0 10px">Chaque ligne de la BOM JLCPCB est comparée à la base JLCPCB : '+
-    'stock, valeur, tension, boîtier. Points de test, mires et trous de fixation ne sont pas posés et sortent de la BOM et du CPL.</p>'+
+    'stock, valeur, tension, boîtier, et des équivalents sont proposés ; celui qui est coché part dans la BOM JLCPCB. Points de test, mires et trous de fixation ne sont pas posés et sortent de la BOM et du CPL.</p>'+
     '<div style="display:flex;align-items:center;gap:8px;font-size:12.5px">Nombre de cartes '+
     '<input type="number" id="vbN" min="1" value="5" style="width:70px"> '+
     '<button class="tb on" id="vbGo">Vérifier</button><span id="vbEtat" style="color:var(--txt-dim)"></span></div>'+
@@ -180,8 +202,23 @@ function vbFenetre(){
   const $m=id=>m.querySelector("#"+id), close=()=>m.remove();
   m.onclick=e=>{if(e.target===m)close();};
   $m("vbFermer").onclick=close;
-  $m("vbExp").onclick=()=>{close();exportJlcpcb();};
   let res=[];
+  const choisis=()=>{
+    const choix=[];
+    res.forEach((r,i)=>{
+      const c=m.querySelector('input[name="vb'+i+'"]:checked');
+      if(c&&c.value)choix.push([r.g.refs,c.value]);
+    });
+    return choix;
+  };
+  const dire=(etat,n)=>hint(n+" repère(s) reçoivent leur code LCSC sur la carte"+
+    (etat==="vu"?" et dans le schéma ouvert (à enregistrer).":
+     " — schéma pas ouvert dans un autre onglet : le code reste sur la carte, recopiez-le au schéma."));
+  // l'export prend les équivalents cochés : sans cela ils restaient dans la fenêtre et la BOM partait sans eux
+  $m("vbExp").onclick=()=>{
+    if(vbAppliquer(choisis(),dire)){refreshPanels();draw();}
+    close();exportJlcpcb();
+  };
   const couleur={ok:"var(--green,#3a3)",revoir:"var(--orange,#d80)",bloque:"var(--red,#d33)"};
   const libelle={ok:"OK",revoir:"À revoir",bloque:"Bloquant"};
   const rendre=()=>{
@@ -191,14 +228,17 @@ function vbFenetre(){
       '<tr style="text-align:left"><th>Repères</th><th>Valeur</th><th>Boîtier</th><th>Pièce JLCPCB</th><th>Stock</th><th>État</th></tr>'+
       res.map((r,i)=>{
         const p=r.part;
+        // pré-coché : le meilleur équivalent quand la ligne n'a pas de pièce utilisable
+        const pre=!!r.candidats.length&&(!r.g.lcsc||(r.statut==="bloque"&&r.candidats[0].statut==="ok"));
+        const prix=c=>+c.p.price>0?' · prix '+(+c.p.price):"";
         const cand=r.candidats.map((c,k)=>'<label style="display:block;cursor:pointer">'+
-          '<input type="radio" name="vb'+i+'" value="'+esc(c.p.lcsc)+'"'+(k===0&&!r.g.lcsc?" checked":"")+'> '+
+          '<input type="radio" name="vb'+i+'" value="'+esc(c.p.lcsc)+'"'+(k===0&&pre?" checked":"")+'> '+
           esc(c.p.lcsc)+' — '+esc(c.p.model||"")+' · '+esc(c.p.package||"")+' · stock '+esc(c.p.stock)+
-          ' · '+esc(c.p.library_type||"")+(c.notes.length?' <span style="color:var(--txt-dim)">('+esc(c.notes.join(", "))+')</span>':"")+'</label>').join("");
+          ' · '+esc(c.p.library_type||"")+prix(c)+(c.notes.length?' <span style="color:var(--txt-dim)">('+esc(c.notes.join(", "))+')</span>':"")+'</label>').join("");
         return '<tr style="border-top:1px solid var(--line,#444);vertical-align:top">'+
           '<td>'+esc(r.g.refs.join(", "))+'</td><td>'+esc(r.g.val)+'</td><td>'+esc(r.g.pkg)+'</td>'+
           '<td>'+(p?esc(r.g.lcsc)+' — '+esc(p.model||"")+'<br><span style="color:var(--txt-dim)">'+esc(p.description||"")+'</span>':esc(r.g.lcsc||"—"))+
-          (cand?'<div style="margin-top:4px">'+(r.g.lcsc?'<label style="display:block"><input type="radio" name="vb'+i+'" value="" checked> garder '+esc(r.g.lcsc)+'</label>':"")+cand+'</div>':"")+'</td>'+
+          (cand?'<div style="margin-top:4px"><span style="color:var(--txt-dim)">Équivalents :</span>'+(r.g.lcsc?'<label style="display:block"><input type="radio" name="vb'+i+'" value=""'+(pre?"":" checked")+'> garder '+esc(r.g.lcsc)+'</label>':"")+cand+'</div>':"")+'</td>'+
           '<td>'+(p?esc(p.stock)+" / "+r.besoin:"")+'</td>'+
           '<td style="color:'+couleur[r.statut]+'"><b>'+libelle[r.statut]+'</b>'+(r.notes.length?'<br>'+esc(r.notes.join(" ; ")):"")+'</td></tr>';
       }).join("")+'</table>';
@@ -212,14 +252,7 @@ function vbFenetre(){
     $m("vbGo").disabled=false;
   };
   $m("vbAppl").onclick=()=>{
-    const choix=[];
-    res.forEach((r,i)=>{
-      const c=m.querySelector('input[name="vb'+i+'"]:checked');
-      if(c&&c.value)choix.push([r.g.refs,c.value]);
-    });
-    const n=vbAppliquer(choix,(etat,n)=>hint(n+" repère(s) reçoivent leur code LCSC sur la carte"+
-      (etat==="vu"?" et dans le schéma ouvert (à enregistrer).":
-       " — schéma pas ouvert dans un autre onglet : le code reste sur la carte, recopiez-le au schéma.")));
+    const n=vbAppliquer(choisis(),dire);
     if(!n){alert("Aucun code choisi.");return;}
     refreshPanels();draw();
     $m("vbGo").onclick();

@@ -78,7 +78,7 @@ const EXPOSE=["capaDecouplage","capaCibleMasse","capaViasExistants","capaViaPlac
   "closeZone","fullBoardZone","zoneMask","labelMask","maskAt","classOf","setNetClass","defaultWidth",
   "applyClasses","jointAt","splitTrack","netTracks","selectNetRouting",
   "deleteNetRouting","autoClass","classOptionsHtml","poserClasseNet","schemaPublie","listNets","mkFp","w2s","runDrc","padsOf",
-  "buildFabFiles","jlcGerberFiles","jlcBomLignes","jlcBomCsvText","jlcCplLignes","ipcAccess","propsEnMil","jlcCplXlsx","normFp","jlcNonPose","jlcFpsAPoser","vbValeur","vbValeurFiche","vbJuger","vbRequete","vbVerifier","vbAppliquer","exportJlcpcb","gerberCopper","gerberMask","gerberPaste","gerberSilk",
+  "buildFabFiles","jlcGerberFiles","jlcBomLignes","jlcBomCsvText","jlcCplLignes","ipcAccess","propsEnMil","jlcCplXlsx","normFp","jlcNonPose","jlcFpsAPoser","vbValeur","vbListe","vbValeurFiche","vbJuger","vbRequete","vbVerifier","vbAppliquer","exportJlcpcb","gerberCopper","gerberMask","gerberPaste","gerberSilk",
   /* animation 3D de fabrication.zip (41-animation-3d.js) */
   "anim3dDonnees","anim3dPage","anim3dModeles","anim3dPose","anim3dAuto","anim3dExporter","silkTraits","silkRogne","silkContour","SILK_GARDE","fabLivrer","THREE_SOURCE",
   "gerberEdge","gerberOutline","ipcNetlist","ipc317","masterDrawingPdf","noAcc",
@@ -1103,27 +1103,29 @@ T("route45 : le décrochement sous le seuil s'aimante sur le rail",()=>{
   if(route45({x:0,y:0},{x:10,y:9.97},false).length!==2)
     throw new Error("sans seuil, le décrochement se pose tel quel");
 });
-/* Le seuil se prend sur la largeur de la piste, et le tracé le porte de
-   lui-même : une grille au dixième sous une piste de trois dixièmes fabriquait
-   des échardes à la chaîne. */
-T("le tracé ne pose plus d'écharde sous la largeur de piste",()=>{
+/* L'aimant angulaire ne dépasse pas le pas de grille : en grille fine, chaque
+   nœud reste atteignable (l'arrivée tombe sous le curseur, comme dans Altium),
+   et seul le reliquat d'une ancre hors grille, plus court qu'un pas, est écrasé. */
+T("grille fine : l'arrivée tombe sur le nœud visé, le reliquat hors grille reste écrasé",()=>{
   S.fps=[];S.tracks=[];S.vias=[];S.zones=[];touch();
-  S.avoid=false;setMode("track");S.active=0;S.grid=0.1;
+  S.avoid=false;setMode("track");S.active=0;S.grid=0.1;S.origin={x:0,y:0};
   startRoute(0,0,true);
-  const W=S.route.w;
-  updateRoute(10,9.9);                       // un décrochement d'un pas de grille
-  if(S.route.preview.length!==1)
-    throw new Error("l'aimant devait tout ramener sur la diagonale : "+
-                    JSON.stringify(S.route.preview));
-  stepRoute();
-  updateRoute(14,9.9);stepRoute();           // puis une horizontale franche
-  commitRoute();
-  for(const t of S.tracks){
-    const L=Math.hypot(t.x2-t.x1,t.y2-t.y1);
-    if(L<W-1e-9)
-      throw new Error("écharde de "+L.toFixed(3)+" mm posée : "+JSON.stringify(t));
-  }
-  setMode("select");
+  if(!(S.route.w>0.1))throw new Error("l'essai veut une piste plus large que le pas");
+  const vise=(x,y)=>{
+    updateRoute(x,y);
+    const e=S.route.end;
+    if(Math.abs(e.x-snapX(x))>1e-9||Math.abs(e.y-snapY(y))>1e-9)
+      throw new Error("visé "+snapX(x)+";"+snapY(y)+", arrivé "+e.x+";"+e.y);
+  };
+  // les nœuds collés aux rails (diagonale, axes), que l'aimant large avalait
+  for(const [x,y] of [[10,9.9],[10,9.8],[10,9.7],[10,0.1],[10,0.2],[0.1,10],[9.93,9.71],[10.04,0.33]])vise(x,y);
+  S.route=null;
+  // depuis une ancre hors grille, le reliquat de 0,04 ne fait pas de marche
+  startRoute(0,0.04,true);
+  updateRoute(10,0);
+  const p=S.route.preview;
+  if(p.length!==1||Math.abs(p[0].y2-0.04)>1e-9)throw new Error("reliquat non écrasé : "+JSON.stringify(p));
+  S.route=null;setMode("select");
 });
 /* Le départ et l'arrivée sur le corps d'une piste : à chaque pas proposé, le point
    reste sur l'axe, même quand la piste passe entre deux nœuds. */
@@ -4808,6 +4810,10 @@ TA("Vérif BOM JLCPCB : valeur, tension, stock et boîtier jugés, candidats pro
     const ra=res.find(r=>r.g.refs.includes(a.ref)), rb=res.find(r=>r.g.refs.includes(b.ref));
     if(ra.statut!=="bloque"||rb.statut!=="bloque")throw new Error("statuts : "+ra.statut+" "+rb.statut);
     if(!appels.includes("jlc_get_part")||!appels.includes("jlc_search"))throw new Error("appels : "+appels);
+    // la pièce connue passe par les équivalences de JLCPCB ; la bonne valeur (C6) est proposée
+    if(!appels.includes("jlc_find_alternatives"))throw new Error("équivalences non demandées : "+appels);
+    if(ra.candidats[0].p.lcsc!=="C6"||ra.candidats[0].statut!=="ok")throw new Error("équivalent de "+a.ref+" : "+ra.candidats.map(c=>c.p.lcsc));
+    if(vbListe({alternatives:[1]}).length!==1||vbListe([1,2]).length!==2||vbListe(null).length)throw new Error("vbListe");
     if(rb.candidats[0].p.lcsc!=="C8")throw new Error("Basic d'abord : "+rb.candidats.map(c=>c.p.lcsc));
     if(rb.candidats.some(c=>c.p.lcsc==="C7"))throw new Error("10 µF proposé pour 100 µF");
     const n=vbAppliquer([[rb.g.refs,"C8"]]);
