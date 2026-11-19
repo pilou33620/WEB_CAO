@@ -518,7 +518,7 @@ function masterDrawingPdf(fabFiles){
   let alt=false;
   for(const f of gFiles){
     const ext=f.name.split(".").pop();
-    tableRow(f.name,gerberDesc[ext]||"Gerber data",true,alt=!alt);
+    tableRow(f.name,gerberDesc[ext]||(/^GL\d+$/.test(ext)?"Copper layer "+ext.slice(2)+" (Inner)":"Gerber data"),true,alt=!alt);
   }
   const xVus=new Set();
   for(const f of dFiles){

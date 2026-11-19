@@ -11954,6 +11954,21 @@ T("DRC : deux zones ordinaires de nets différents qui se recouvrent sont signal
   if(out.length)throw new Error("même net : "+JSON.stringify(out));
   S.zones=[];touch();
 });
+T("Gerber : dans une région, la droite qui suit un arc repasse en G01",()=>{
+  plateau();
+  const P=[], coin=(cx,cy,a0)=>{for(let k=0;k<=24;k++){const a=a0+Math.PI/2*k/24;P.push({x:r3(cx+2*Math.cos(a)),y:r3(cy+2*Math.sin(a))});}};
+  coin(28,20,0);coin(12,20,Math.PI/2);coin(12,12,Math.PI);coin(28,12,3*Math.PI/2);
+  S.zones.push(normZone({l:0,net:"GND",pts:P}));touch();
+  const L=gerberCopper(0).split("\n");
+  if(!L.some(x=>/^G0[23]/.test(x)))throw new Error("l'essai veut une région à arcs");
+  let mode=1;
+  for(const x of L){
+    const m=x.match(/^G0([123])/);
+    if(m)mode=+m[1];
+    if(mode!==1&&/D01\*$/.test(x)&&!/I-?\d/.test(x))throw new Error("droite en mode circulaire : "+x);
+  }
+  S.zones=[];touch();
+});
 T("optimiseur : il ne raccourcit jamais à travers un obstacle",()=>{
   plateau();
   S.vias.push({x:25,y:20,d:1.2,drill:0.6,a:0,b:1,net:"AUTRE"});touch();

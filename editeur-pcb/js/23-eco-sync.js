@@ -512,6 +512,8 @@ function pcbAppliquerEco(items, options) {
   const nettoyerConflits = !!opt.nettoyerConflits;  // FALSE par défaut
   const supprimerPistesOrphelines = !!opt.supprimerPistesOrphelines;
 
+  // rien de coché : pas d'étape d'annulation vide
+  if (!items.some(i => i && i.active)) return { succes: false, nbAppliques: 0, msg: "Aucune modification cochée." };
   if (typeof push === "function") push(); // Instantané d'annulation Undo/Redo
 
   const fpsMap = new Map(S.fps.map(f => [f.ref, f]));

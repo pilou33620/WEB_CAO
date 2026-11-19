@@ -380,7 +380,7 @@ function dpPosture(D,from,b){
    pastille d'arrivée suffit à terminer la paire. */
 function dpTarget(D,x,y){
   const pair=D.pair, pitch=D.gap+D.w, mid=dpMid(D);
-  const skip=[D.aP,D.aN];
+  const skip=[D.aP,D.aN].concat(D.orig||[]);   // ni les bouts courants, ni les pastilles d'où la paire est partie
   const tgt=dpPrimPair(pair,x,y,D.layer,Math.max(px(14),1),skip);
   if(tgt){
     S.hover={x:r3((tgt.P.x+tgt.N.x)/2),y:r3((tgt.P.y+tgt.N.y)/2)};
@@ -416,6 +416,7 @@ function dpStart(x,y){
   S.dp={pair:pair,layer:S.active,w:g.w,gap:g.gap,
         pt:{x:r3((a.P.x+a.N.x)/2),y:r3((a.P.y+a.N.y)/2)},
         aP:{x:a.P.x,y:a.P.y}, aN:{x:a.N.x,y:a.N.y},
+        orig:[{x:a.P.x,y:a.P.y},{x:a.N.x,y:a.N.y}], couche0:S.active,
         side:1, mid:[], doneP:[], doneN:[], prevP:[], prevN:[], midPrev:[],
         vias:[], steps:[], flip:false, bad:false, end:null, snap:false,
         /* `doc` : la carte avant le geste. Le shove écarte du cuivre dès le
@@ -512,8 +513,12 @@ function dpPose(D,gA,gB,t,axis,shove){
     oN=[{x:r3(gA.gate.x-pr.x*gA.side*pitch/2),y:r3(gA.gate.y-pr.y*gA.side*pitch/2)}];
   }
   if(!oP.length||!oN.length){D.prevP=[];D.prevN=[];D.cross=false;return true;}
-  let chP=dpLeg(D.aP,oP[0]).concat(dpSegs(oP));
-  let chN=dpLeg(D.aN,oN[0]).concat(dpSegs(oN));
+  // un micron d'arrondi ne fait pas un coude : l'entrée de l'axe se cale sur le bout de la diagonale
+  const jambe=(a,o)=>{const L=dpLeg(a,o[0]),d=L[L.length-1];
+    if(L.length>1&&o.length>1&&Math.hypot(d.x2-d.x1,d.y2-d.y1)<0.002){L.pop();o[0]={x:d.x1,y:d.y1};}
+    return L.concat(dpSegs(o));};
+  let chP=jambe(D.aP,oP);
+  let chN=jambe(D.aN,oN);
   D.cross=false;
   if(t.snap&&t.tP&&t.tN){
     const eP=oP[oP.length-1], eN=oN[oN.length-1];
@@ -548,8 +553,12 @@ function dpPose(D,gA,gB,t,axis,shove){
     }
     return false;
   };
-  return !chaineBad(D.prevP,pair.p,t.snap?t.tP.obj:null)&&
-         !chaineBad(D.prevN,pair.n,t.snap?t.tN.obj:null);
+  if(chaineBad(D.prevP,pair.p,t.snap?t.tP.obj:null)||chaineBad(D.prevN,pair.n,t.snap?t.tN.obj:null))return false;
+  if(!S.avoid)return true;
+  // la paire se juge aussi contre elle-même : ses tronçons cliqués ne sont pas encore sur la carte
+  const lim=D.w+dpMinGap(pair)-1e-3;
+  const proche=(A,B)=>A.some(a=>B.some(b=>a.l===b.l&&segSegDist(a,b)<lim));
+  return !(proche(D.prevP,D.prevN)||proche(D.prevP,D.doneN)||proche(D.prevN,D.doneP));
 }
 /* Un clic : le trajet en cours passe du côté « posé ». Comme pour une piste
    seule, un trajet qui ne respecte pas l'isolation ne se pose pas — on le dit
@@ -709,6 +718,7 @@ function dpCancel(){
   // le cuivre poussé se remet en place, comme pour une piste seule
   if(D.shoved&&D.doc){loadDoc(JSON.parse(D.doc),true);return;}
   for(const v of D.vias){const i=S.vias.indexOf(v);if(i>=0)S.vias.splice(i,1);}
+  if(D.couche0!=null&&S.active!==D.couche0)setActive(D.couche0);   // les vias retirés, la couche de départ revient
   touch();draw();
 }
 /* Revenir d'un coude : les deux pistes reculent ensemble, l'axe aussi, et les

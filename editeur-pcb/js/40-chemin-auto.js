@@ -329,7 +329,8 @@ function cheminPoints(g, cells, dep, net, larg, extra, dv){
   const dir = (a, b) => (b.i - a.i) + "," + (b.j - a.j);
   const points = [];
   let attente = null, vias = 0;
-  const poser = c => { const p = xy(c); if(attente != null){ p.couche = nom(attente); attente = null; } points.push(p); };
+  // un virage dans le cuivre de la pastille de départ : cao_router s'y croirait arrivé et refuserait la route
+  const poser = c => { const p = xy(c); if(attente != null){ p.couche = nom(attente); attente = null; } else if(dep.q && padDist(p.x, p.y, dep.q) <= 0) return; points.push(p); };
   for(let k = 1; k < cells.length; k++){
     const a = cells[k - 1], b = cells[k], c = cells[k + 1];
     if(a.l !== b.l){

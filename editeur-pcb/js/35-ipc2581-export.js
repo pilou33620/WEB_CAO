@@ -1232,7 +1232,7 @@ function ipc2581Document(opts){
     const tx=[["VALUE",L.val],["PACKAGE",L.pkg],["MPN",L.mpn],["MANUFACTURER",L.fab],["PART_NAME",L.nom]]
       .filter(([,v])=>v).map(([k,v])=>["Textual",[["definitionSource","WEB_CAO"],
         ["textualCharacteristicName",k],["textualCharacteristicValue",v]]]);
-    bomItems.push(["BomItem",[["OEMDesignNumberRef",oem],["quantity",String(L.refs.length)],["pinCount",String(L.pins)],
+    bomItems.push(["BomItem",[["OEMDesignNumberRef",oem],["quantity",String(L.refs.filter(r=>r.pose).length)],["pinCount",String(L.pins)],
       ["category","ELECTRICAL"],["description",[L.val,L.pkg].filter(Boolean).join(" ")||null]],
       L.refs.map(r=>["RefDes",[["name",r.ref],["packageRef",r.pkg],["populate",r.pose?"true":"false"],["layerRef",r.couche]]])
         .concat([["Characteristics",[["category","ELECTRICAL"]],tx]])]);

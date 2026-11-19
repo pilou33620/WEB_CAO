@@ -327,7 +327,7 @@ function gRegionArcs(body,pts){
   body.push(gXY(dep.x,-dep.y)+"D02*");
   body.push("G75*");
   L.forEach((s,k)=>{
-    if(s.t==="l"){cur=s.b;body.push(gXY(cur.x,-cur.y)+"D01*");return;}
+    if(s.t==="l"){cur=s.b;body.push("G01"+gXY(cur.x,-cur.y)+"D01*");return;}   // G02/G03 sont modaux : sans G01, la droite après un arc serait un arc sans I/J
     const p1=pt(s,s.a1), p2=pt(s,s.a2);
     const cw=Math.hypot(p2.x-cur.x,p2.y-cur.y)<Math.hypot(p1.x-cur.x,p1.y-cur.y);
     const to=k===L.length-1?dep:(cw?p1:p2);
@@ -434,6 +434,8 @@ function gerberCopper(i){
       zx1=Math.min(zx1,q.x1);zy1=Math.min(zy1,q.y1);
       zx2=Math.max(zx2,q.x2);zy2=Math.max(zy2,q.y2);
     }
+    // la carte entière dans le rectangle : s'il la coupait, le contour d'effacement se recroiserait
+    {const bb=polyBBox(boardPoly());zx1=Math.min(zx1,bb.x1);zy1=Math.min(zy1,bb.y1);zx2=Math.max(zx2,bb.x2);zy2=Math.max(zy2,bb.y2);}
     zx1-=1;zy1-=1;zx2+=1;zy2+=1;
     gOutside(body,A,zx1,zy1,zx2,zy2);
     for(const ct of cutsCuivre(true)){      // découpes du document et cuivre mort
