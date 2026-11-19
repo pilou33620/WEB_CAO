@@ -65,7 +65,9 @@ function pcbObtenirDonneesSchema(source) {
     if (typeof sessLire === "function") {
       try {
         const s = sessLire("schema");
-        if (s && s.etat) {
+        // périmée : le schéma du projet a été écrit (autre onglet) après cette mise de côté
+        const perime = s && S.schDoc && typeof PROJD_VU !== "undefined" && (PROJD_VU.schema || 0) > s.t;
+        if (s && s.etat && !perime) {
           if (s.etat.netlist) netlistTxt = s.etat.netlist;
           if (s.etat.doc) schDoc = s.etat.doc;
           sourceNom = "Schéma en session";
@@ -394,7 +396,8 @@ function pcbDetecterDisparitesEco(schData) {
         const q = typeof brocheNum === "function" ? brocheNum(fp, pn) : null;
         if (q != null && !nommees.has(q)) nommees.set(q, nn);
       }
-      for (let p = 1; p <= maxPins; p++) {
+      // un document schéma sans netlist ne dit rien des connexions : ne pas proposer de tout décâbler
+      for (let p = 1; schData.pinNet.size && p <= maxPins; p++) {
         const oldN = (fp.nets && fp.nets[p]) || "";
         const newN = schData.pinNet.get(ref + "." + p) || nommees.get(p) || "";
         if (oldN !== newN) {
@@ -1094,6 +1097,9 @@ function pcbInitialiserEcoSync() {
         if (typeof pcbVerifierEtNotifierEco === "function") {
           pcbVerifierEtNotifierEco(true);
         }
+        // contraintes et variantes ne voyagent pas avec la netlist : au retour sur l'onglet, le schéma du projet est relu
+        if (typeof projdLie === "function" && projdLie() && typeof pcbSyncSchema === "function")
+          pcbSyncSchema().then(() => pcbVerifierEtNotifierEco(true)).catch(() => {});
       }, 200);
     });
   }

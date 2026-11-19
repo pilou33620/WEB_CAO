@@ -13883,7 +13883,8 @@ TA("dossier : brouillon écrit par la minuterie, effacé à l'enregistrement, pr
     finally{ avis.querySelector=qs; }
     await tic();await tic();await tic();
     if(disque.brouillon)throw new Error("le brouillon devait être effacé après l'enregistrement");
-    if(appels.slice(2).join()!=="PUT pcb,DELETE brouillon")throw new Error("appels : "+appels);
+    // « GET autre » : le schéma du projet, relu à chaque contrôle d'ECO (le fichier fait foi, pas la copie de l'onglet)
+    if(appels.slice(2).filter(x=>x!=="GET autre").join()!=="PUT pcb,DELETE brouillon")throw new Error("appels : "+appels);
     if(S.dirty)throw new Error("la carte enregistrée reste modifiée");
     const enregistree=disque.pcb.document;
     /* réouverture, brouillon plus récent : proposé, accepté -> repris, carte modifiée */

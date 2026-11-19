@@ -1555,7 +1555,9 @@ function pcbObtenirEmpreinteLib(pkg){
   const def = PCB_LIB_CACHE.get(cle) || PCB_LIB_CACHE.get(pkg);
   if(def) return def;
 
-  const nomFichier = pkg.endsWith(".json") ? pkg : (pkg + ".json");
+  // « SOT23-5 » sur la carte, « SOT-23-5.json » dans la LIB : le fichier de même clé
+  const memeCle = PCB_LIB_LIST.find(n => pkgKey(n) === cle);
+  const nomFichier = pkg.endsWith(".json") ? pkg : ((memeCle || pkg) + ".json");
   return fetch("/api/lib/fichier?type=pcb&nom=" + encodeURIComponent(nomFichier))
     .then(res => res.ok ? res.json() : null)
     .then(data => {
@@ -1617,6 +1619,7 @@ function pcbAppliquerDefEmpreinteBrut(fp, pkgName, def){
     fpTrousDe(fp, d);
     fpDessinsDef(fp, d);
     fpSyncPins(fp);
+    fp.lib = pkgName;                  // la source des pastilles a changé : le contrôle « différente de la LIB » compare à celle-ci
     return true;
   }
   fp.pkg = pkgName;

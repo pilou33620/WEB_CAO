@@ -520,7 +520,11 @@ function projdDocLire(outil){
   if(PROJD.mode === "serveur")
     return projdApi("GET","/api/projet/doc",{chemin:PROJD.chemin, doc:outil})
       .then(function(r){ PROJD_VU[outil] = r.modifie || 0; projdVuGarder(); return r.document||null; })
-      .catch(function(e){ if(e.code === 404) return null; throw e; });
+      .catch(function(e){
+        if(e.code === 404) return null;
+        delete PROJD_VU[outil]; projdVuGarder();   // pas lu : la date gardée d'avant ne vaut plus accord pour écraser
+        throw e;
+      });
   if(!PROJD_HANDLE) return Promise.resolve(null);
   /* Seul un fichier absent vaut « rien » : un fichier tronque ou plein de
      marqueurs de conflit git ouvert vide serait ensuite ecrase. */
@@ -977,7 +981,11 @@ function projdReprendre(){
   try{ garde = JSON.parse(localStorage.getItem(PROJD_CLE)||"null"); }catch(_){}
   if(!garde || !garde.mode) return Promise.resolve(null);
   if(garde.mode === "serveur")
-    return projdOuvrirServeur(garde.chemin).catch(function(){ return null; });
+    /* Une panne passagère du serveur (500, coupure, corps illisible) n'est pas un projet disparu :
+       rendre null le refermait pour tous les onglets, et Ctrl+S téléchargeait alors « carte.json ». */
+    return projdOuvrirServeur(garde.chemin).catch(function(e){
+      return (e instanceof TypeError || !e || !e.code || e.code >= 500) ? undefined : null;
+    });
   return projdHandleRelire().then(function(h){
     if(!h) return null;
     return projdHandleAutorise(h,false).then(function(ok){
@@ -1004,7 +1012,7 @@ function projdReprendre(){
    un dossier : on le garde, l'accueil propose de le rouvrir. */
 function projdReprendreOuFermer(){
   return projdReprendre().then(function(r){
-    if(!r && !PROJD_ATTENTE && typeof projNom === "function" && projNom()
+    if(r === null && !PROJD_ATTENTE && typeof projNom === "function" && projNom()
        && typeof projFermer === "function") projFermer();
     return r;
   });

@@ -3011,16 +3011,18 @@ function pcbSchemaDoc(){
 }
 
 async function pcbSyncSchema(){
-  if(typeof S!=="undefined"&&S.schDoc)return S.schDoc;
   if(typeof projdLie==="function"&&projdLie()&&typeof projdDocLire==="function"){
     try{
       const d=await projdDocLire("schema");
-      if(d){
+      // le fichier du projet fait foi, sauf schéma mis de côté dans l'onglet APRÈS son écriture
+      const s=typeof sessLire==="function"?sessLire("schema"):null;
+      if(d&&!(s&&s.etat&&s.etat.doc&&s.t>=(PROJD_VU.schema||0))){
         if(typeof S!=="undefined")S.schDoc=d;
         return d;
       }
     }catch(_){}
   }
+  if(typeof S!=="undefined"&&S.schDoc)return S.schDoc;
   return pcbSchemaDoc();
 }
 

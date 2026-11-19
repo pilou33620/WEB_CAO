@@ -1792,6 +1792,7 @@ function propsFp(box,fp){
       e.preventDefault();
       const selVal=$("pFpLibSel")?$("pFpLibSel").value:"";
       if(!selVal)return;
+      const retablir=S.redo.slice();    // push vide « rétablir » : un Appliquer raté le rend
       push();
       const pkgAvant=fp.pkg;
       fp.pkg=selVal;
@@ -1804,7 +1805,7 @@ function propsFp(box,fp){
         applyPkgGeom(fp);
       }
       // définition introuvable : le boîtier ne change pas de nom sans ses pastilles
-      if(ok===false){fp.pkg=pkgAvant;S.undo.pop();refreshPanels();hint("Empreinte « "+selVal+" » introuvable dans la bibliothèque : "+fp.ref+" garde la sienne.");return;}
+      if(ok===false){fp.pkg=pkgAvant;S.undo.pop();S.redo.push(...retablir);refreshPanels();hint("Empreinte « "+selVal+" » introuvable dans la bibliothèque : "+fp.ref+" garde la sienne.");return;}
       touch();refreshPanels();draw();
       hint("Empreinte "+fp.ref+" mise à jour sur "+selVal+".");
     };
