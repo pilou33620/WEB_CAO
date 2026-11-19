@@ -270,7 +270,7 @@ Recadrer, Grille et Chevelu y sont en icônes ; les autres réglages sont dans s
 | Bouton ou menu | Raccourci | Effet | Limites |
 |---|---|---|---|
 | Grille | `G` | Affiche ou masque la grille d'accrochage | |
-| Pas de grille | | Liste : 0,05 · 0,1 · 0,25 · 0,5 · 1 · 1,27 · 2 · 2,54 · 5 mm (« Grille … mm ») | Pas de 0,5 mm au démarrage ; `Maj+G` bascule entre 0,5 et 0,1 mm, même pendant un tracé ; trop serrée à l'écran, la grille n'est tracée que sur une case sur deux, cinq… (le pied de page dit la case visible) |
+| Pas de grille | | Liste : 0,05 · 0,1 · 0,25 · 0,5 · 1 · 1,27 · 2 · 2,54 · 5 mm (« Grille … mm ») | Pas de 0,5 mm au démarrage ; `Maj+G` fait tourner 0,1 → 0,5 → 1 mm, même pendant un tracé ; trop serrée à l'écran, la grille n'est tracée que sur une case sur deux, cinq… (le pied de page dit la case visible) |
 | Chevelu | `N` | Affiche ou masque les liaisons non routées | |
 | Couches (jeux de couches) | | Liste : toutes, dessus seul, dessous seul, signaux seuls, plans seuls, couche active seule. Dessus ou dessous montre aussi la sérigraphie de cette face seulement | « Plans seuls » ne fait rien si aucune couche n'a le rôle GND, PWR ou blindage ; « couche active seule » est le contraste couche seule (`H`) |
 | Inspecteur au survol : actif / coupé | | Le pointeur posé un instant sur un objet, en sélection, affiche une bulle : net, couche, largeur ou taille, perçage, isolement et classe | Pas pendant un geste ni au toucher ; mémorisé par navigateur |
@@ -334,7 +334,7 @@ Les touches d'une seule lettre se taisent quand un champ de saisie a le focus. T
 | `D` | Adoucit un angle droit en 45° (chanfrein maximal) | Refuse un coude portant un via ou une pastille, ou deux largeurs différentes |
 | `U` | Dérouter la sélection | |
 | `G` | Grille | |
-| `Maj+G` | Bascule le pas de grille entre 0,5 et 0,1 mm | Depuis un autre pas, revient à 0,5 mm ; le tracé en cours suit aussitôt |
+| `Maj+G` | Fait tourner le pas de grille : 0,1 → 0,5 → 1 → 0,1 mm | Depuis un autre pas, passe à 0,5 mm ; le tracé en cours suit aussitôt |
 | `N` | Chevelu | |
 | `Y` | Vue dessus / dessous | |
 | `H` | Contraste | |

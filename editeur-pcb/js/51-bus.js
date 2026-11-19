@@ -30,7 +30,8 @@ function busPlan(B){
   let clr=0;
   for(const a of nets)for(const b of nets)if(a!==b)clr=Math.max(clr,clrK(a,b,"trk","trk"));
   if(!clr)clr=Math.max(...nets.map(n=>classOf(n).clr));
-  const pas=r3(w+clr);
+  // + et − écartent ou resserrent le bus pendant le geste, jamais sous l'isolement
+  const pas=r3(w+clr+Math.max(0,B.plus||0));
   const dx=P[1].x-P[0].x, dy=P[1].y-P[0].y, L=Math.hypot(dx,dy)||1, nx=-dy/L, ny=dx/L;
   const ordre=B.pads.slice().sort((a,b)=>((a.q.x-P[0].x)*nx+(a.q.y-P[0].y)*ny)-((b.q.x-P[0].x)*nx+(b.q.y-P[0].y)*ny));
   const n=ordre.length;
@@ -95,7 +96,7 @@ function busClic(x,y){
   const p={x:snapX(x),y:snapY(y)}, der=B.pts[B.pts.length-1];
   if(der&&dist(p.x,p.y,der.x,der.y)<1e-6)return true;   // tronçon nul : sa normale serait (0, 0)
   B.pts.push(p);
-  hint("Bus : "+B.pts.length+" sommet(s) du trajet — Entrée pose les "+B.pads.length+" pistes, Retour arrière défait, Échap abandonne.");
+  hint("Bus : "+B.pts.length+" sommet(s) du trajet — Entrée pose les "+B.pads.length+" pistes, + / − règlent l'écart, Retour arrière défait, Échap abandonne.");
   return true;
 }
 function busBouge(x,y){
@@ -108,6 +109,13 @@ function busTouche(k){
   if(k==="enter"){const B=S.bus;S.bus=null;busPoser(B);return true;}
   if(k==="escape"){S.bus=null;hint("Bus abandonné.");draw();return true;}
   if(k==="backspace"){if(S.bus.pts.length)S.bus.pts.pop();else S.bus.pads.pop();draw();return true;}
+  if(k==="+"||k==="="||k==="-"){
+    const pasG=S.grid>0?S.grid:0.1;
+    S.bus.plus=r3(Math.max(0,(S.bus.plus||0)+(k==="-"?-pasG:pasG)));
+    const P=busPlan({pads:S.bus.pads,pts:[{x:0,y:0},{x:1,y:0}],plus:S.bus.plus});
+    hint("Bus : pas de "+(P?fmt(P.pas,3):"?")+" mm entre pistes (+"+fmt(S.bus.plus,3)+" mm au-delà de l'isolement) — + écarte, − resserre.");
+    draw();return true;
+  }
   return false;
 }
 function busApercu(c){
@@ -116,7 +124,7 @@ function busApercu(c){
   c.save();c.strokeStyle=C_SEL;c.fillStyle=C_SEL;c.lineWidth=px(1.4);
   for(const o of B.pads){c.beginPath();c.arc(o.q.x,o.q.y,Math.max(o.q.w,o.q.h)/2+px(3),0,Math.PI*2);c.stroke();}
   const pts=B.pts.concat(B.cur?[B.cur]:[]);
-  const plan=pts.length>=2?busPlan({pads:B.pads,pts}):null;
+  const plan=pts.length>=2?busPlan({pads:B.pads,pts,plus:B.plus}):null;
   c.setLineDash([px(4),px(3)]);
   if(plan)for(const o of plan.ordre){
     const Q=[{x:o.q.x,y:o.q.y}].concat(polyDecalee(pts,o.d));

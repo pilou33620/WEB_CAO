@@ -4136,6 +4136,25 @@ function routeCibles(R){
   return R.cibles;
 }
 /* La plus proche : le chevelu de l'aperçu la montre, la touche F y va. */
+/* La jauge du tracé, près du curseur : ce qu'on pose, la longueur du net une fois posé, ce
+   qu'il reste à vol d'oiseau jusqu'à la cible, et la longueur imposée s'il y en a une
+   (contrainte du net, 30-contraintes.js) — rouge dès que le maximum est dépassé. */
+function routeJauge(R,long,cible){
+  const out={txt:fmt(long,2)+" mm",faute:false};
+  if(!R.net||typeof cmMesures!=="function")return out;
+  let m=null,r=null;
+  try{m=cmMesures().get(R.net);r=cmRegleDe(R.net);}catch(_){}
+  const net=(m?m.len:0)+long, a=R.end||R.pt;
+  const reste=cible?dist(a.x,a.y,cible.q.x,cible.q.y):0;
+  if(m&&m.len>0)out.txt+=" · net "+fmt(net,2);
+  if(reste>0.01)out.txt+=" · reste ≈ "+fmt(reste,1);
+  const lMin=r&&r.lMin?r.lMin.v:null, lMax=r&&r.lMax?r.lMax.v:null;
+  if(lMin!=null||lMax!=null){
+    out.txt+=" · cible "+(lMin!=null?fmt(lMin,1):"")+(lMin!=null&&lMax!=null?"–":lMin!=null?" min":"")+(lMax!=null?fmt(lMax,1)+(lMin==null?" max":""):"");
+    out.faute=lMax!=null&&net+reste>lMax+1e-6;
+  }
+  return out;
+}
 function routeCible(R){
   const a=R.end||R.pt;
   let best=null,bd=Infinity;
@@ -6327,11 +6346,13 @@ function setGridStep(v){
   if(S.dp)dpUpdate(S.mouse.x,S.mouse.y);
   draw();
 }
-/* Les deux pas rapides (Maj+G), comme les « fast grids » de KiCad : le pas de
+/* Les pas rapides (Maj+G), comme les « fast grids » de KiCad : le pas de
    travail, et le pas fin pour sortir d'un boîtier serré sans passer par le menu. */
-const GRID_RAPIDES=[0.5,0.1];
+const GRID_RAPIDES=[0.1,0.5,1];
+/* Maj+G : 0,1 → 0,5 → 1 → 0,1 mm, comme la touche G d'Altium ; depuis un autre pas, 0,5 mm. */
 function gridRapide(){
-  setGridStep(S.grid===GRID_RAPIDES[0]?GRID_RAPIDES[1]:GRID_RAPIDES[0]);
+  const i=GRID_RAPIDES.indexOf(S.grid);
+  setGridStep(i<0?0.5:GRID_RAPIDES[(i+1)%GRID_RAPIDES.length]);
 }
 /* L'angle imposé aux pistes se range avec le document : il décrit la carte, au
    même titre que l'isolation ou la marge de bord, et se défait donc d'un

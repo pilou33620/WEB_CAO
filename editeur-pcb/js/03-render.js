@@ -1078,7 +1078,10 @@ function drawRoute(c){
   let long=0;
   for(const s of R.done)long+=dist(s.x1,s.y1,s.x2,s.y2);
   for(const s of R.preview)long+=dist(s.x1,s.y1,s.x2,s.y2);
-  if(long>0)TXT(c,fmt(long,2)+" mm",bout.x,bout.y-px(16),px(11),"#fff");
+  if(long>0){
+    const J=routeJauge(R,long,cible);
+    TXT(c,J.txt,bout.x,bout.y-px(16),px(11),J.faute?C_ERR:"#fff");
+  }
   c.fillStyle=C_SEL;
   c.beginPath();c.arc(R.pt.x,R.pt.y,px(3),0,Math.PI*2);c.fill();
   if(R.end&&R.pushed){                // repoussé : on montre où le point a été ramené

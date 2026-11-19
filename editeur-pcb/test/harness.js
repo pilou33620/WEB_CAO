@@ -78,7 +78,7 @@ const EXPOSE=["capaDecouplage","capaCibleMasse","capaViasExistants","capaViaPlac
   "closeZone","fullBoardZone","zoneMask","labelMask","maskAt","classOf","setNetClass","defaultWidth",
   "applyClasses","jointAt","splitTrack","netTracks","selectNetRouting",
   "deleteNetRouting","autoClass","classOptionsHtml","poserClasseNet","schemaPublie","listNets","mkFp","w2s","runDrc","padsOf",
-  "buildFabFiles","jlcGerberFiles","jlcBomLignes","jlcBomCsvText","jlcCplLignes","ipcAccess","propsEnMil","jlcCplXlsx","normFp","jlcNonPose","jlcFpsAPoser","vbValeur","vbListe","jlcRotation","vbVerifierLigne","vbValeurFiche","vbJuger","vbRequete","vbVerifier","vbAppliquer","exportJlcpcb","gerberCopper","gerberMask","gerberPaste","gerberSilk",
+  "buildFabFiles","jlcGerberFiles","jlcBomLignes","jlcBomCsvText","jlcCplLignes","ipcAccess","propsEnMil","jlcCplXlsx","normFp","jlcNonPose","jlcFpsAPoser","vbValeur","vbListe","routeJauge","jlcRotation","vbVerifierLigne","vbValeurFiche","vbJuger","vbRequete","vbVerifier","vbAppliquer","exportJlcpcb","gerberCopper","gerberMask","gerberPaste","gerberSilk",
   /* animation 3D de fabrication.zip (41-animation-3d.js) */
   "anim3dDonnees","anim3dPage","anim3dModeles","anim3dPose","anim3dAuto","anim3dExporter","silkTraits","silkRogne","silkContour","SILK_GARDE","fabLivrer","THREE_SOURCE",
   "gerberEdge","gerberOutline","ipcNetlist","ipc317","masterDrawingPdf","noAcc",
@@ -1192,19 +1192,23 @@ T("le corps d'une piste accroche départ et arrivée, à tous les pas",()=>{
     cancelRoute();
   }finally{S.tracks=[];touch();S.grid=reg.grid;S.avoid=reg.avoid;setMode("select");}
 });
-T("Maj+G bascule entre les deux pas rapides, tracé en cours compris",()=>{
+T("Maj+G fait tourner les trois pas rapides (0,1 · 0,5 · 1), tracé en cours compris",()=>{
   const reg={grid:S.grid,avoid:S.avoid,mouse:S.mouse};
   try{
     S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.origin={x:0,y:0};S.avoid=false;touch();
     setMode("track");S.grid=2.54;
-    gridRapide();if(S.grid!==0.5)throw new Error("un autre pas revient au premier pas rapide");
-    gridRapide();if(S.grid!==0.1)throw new Error("second pas rapide attendu");
-    gridRapide();if(S.grid!==0.5)throw new Error("retour au premier pas rapide attendu");
+    gridRapide();if(S.grid!==0.5)throw new Error("un autre pas revient à 0,5");
+    gridRapide();if(S.grid!==1)throw new Error("0,5 → 1 attendu");
+    gridRapide();if(S.grid!==0.1)throw new Error("1 → 0,1 attendu");
+    gridRapide();if(S.grid!==0.5)throw new Error("0,1 → 0,5 attendu");
     startRoute(0,0);
-    S.mouse={x:3.07,y:0};updateRoute(3.07,0);
-    if(S.route.end.x!==3)throw new Error("au pas de 0,5 : "+S.route.end.x);
+    S.mouse={x:3.4,y:0};updateRoute(3.4,0);
+    if(S.route.end.x!==3.5)throw new Error("au pas de 0,5 : "+S.route.end.x);
     gridRapide();
-    if(S.route.end.x!==3.1)throw new Error("le tracé en cours devait suivre le pas : "+S.route.end.x);
+    if(S.route.end.x!==3)throw new Error("le tracé en cours devait suivre le pas de 1 : "+S.route.end.x);
+    // la jauge : longueur posée, et la cible du net quand il en a une
+    const J=routeJauge(S.route,3,null);
+    if(!/^3\.00 mm/.test(J.txt)||J.faute)throw new Error("jauge : "+JSON.stringify(J));
     cancelRoute();
   }finally{S.grid=reg.grid;S.avoid=reg.avoid;S.mouse=reg.mouse;setMode("select");}
 });

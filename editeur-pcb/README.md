@@ -3448,7 +3448,7 @@ même sur ses deux pistes (`dpCorps()`, `js/09-diffpair.js`), portée d'un pas d
 L'éditeur ouvre sur un pas de **0,5 mm**, le défaut de KiCad : à 0,1 mm un cran
 vaut à peine un pixel à faible zoom, et la piste semble aller où elle veut. Le
 centre d'une pastille reste atteint par l'aimant, quel que soit le pas.
-**Maj+G** bascule entre 0,5 et 0,1 mm (`gridRapide()`), pour sortir d'un boîtier
+**Maj+G** fait tourner 0,1 → 0,5 → 1 mm (`gridRapide()`), pour sortir d'un boîtier
 serré, y compris pendant un tracé. Le pas se règle aussi à deux endroits, qui restent
 d'accord : *Pas de grille* dans le menu *Affichage*, sous *Grille*, et le
 panneau *Règles*. Les deux passent par `setGridStep()`, dans `js/05-tools.js`. Des millimètres ronds
