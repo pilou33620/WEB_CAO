@@ -3731,6 +3731,7 @@ async function simDCLancer(){
     SIM.erreurDC=(e&&e.message)||String(e);
   }finally{
     SIM.occupeDC=false;
+    simOublierPerimes();   // la carte a changé pendant le calcul : ce résultat est celui d'une autre carte
     simProgresFini();
     if(btn)btn.disabled=false;
     simRendre();
@@ -3941,6 +3942,8 @@ async function simDCCalculer(doc){
   if(!rep.ok)
     throw new Error((corps&&corps.detail)||("Le serveur a refusé le calcul ("+
                     rep.status+")."));
+  // un 200 sans résultat (proxy, corps vide) donnait « Dans le budget » et des rails « ok » en vert
+  if(!corps||!Array.isArray(corps.bornes))throw new Error("Le serveur a répondu sans résultat lisible.");
   return corps;
 }
 
@@ -8285,6 +8288,7 @@ async function simCarteGo(){
     SIM_CARTE.err=(e&&e.message)||String(e);
   }finally{
     SIM_CARTE.occupe=false;
+    simOublierPerimes();   // la carte a changé pendant le calcul : ce résultat est celui d'une autre carte
     if(go)go.disabled=false;
     simProgresFini();
     simRendre();
@@ -11032,6 +11036,7 @@ async function simXtCarteGo(){
     C.err=(e&&e.message)||String(e);
   }finally{
     C.occupe=false;
+    simOublierPerimes();   // la carte a changé pendant le calcul : ce résultat est celui d'une autre carte
     simProgresFini();
     simRendre();
   }
@@ -15307,6 +15312,9 @@ function simPDNActualiserComposants(force) {
       return;
     }
   }
+  /* Sur une vraie carte, pas de jeu de référence : cinq condensateurs fictifs donnaient un verdict
+     PDN chiffré sur un rail qui n'en porte aucun (ou gardaient ceux de la carte d'avant). */
+  if (typeof SIM_ED !== "undefined" && SIM_ED && typeof SIM_ED.pdnCondensateurs === "function") { SIM_PDN.condensateurs = []; return; }
   // Jeu de référence réaliste par défaut avec composants Murata et coordonnées spatiales
   // (C3-C5 : base Murata relue sur l'échelle complète -- ESL = somme des selfs ; f0 = 1/2π√((ESL+L_mount)·C))
   if (!SIM_PDN.condensateurs || !SIM_PDN.condensateurs.length || force) {
@@ -18222,6 +18230,7 @@ async function simRfGo(){
     SIM_RF.err=(e&&e.message)||String(e);
   }finally{
     SIM_RF.occupe=false;
+    simOublierPerimes();   // la carte a changé pendant le calcul : ce résultat est celui d'une autre carte
     simProgresFini();
     simRendre();
   }

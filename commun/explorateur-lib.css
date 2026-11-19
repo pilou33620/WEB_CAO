@@ -490,6 +490,7 @@
 }
 
 /* Pied de page modal */
+body.tel .elib-foot{flex-wrap:wrap;gap:6px}   /* téléphone : Annuler et Placer restaient hors écran */
 .elib-foot {
   display: flex;
   align-items: center;

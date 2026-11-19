@@ -195,12 +195,13 @@ function drcFenetre(){
     q("drcwInfo").onchange=ev=>{DRCW.info=ev.target.checked;drcFenetreMaj();};
     /* la fenêtre se déplace par sa barre de titre */
     const head=w.querySelector(".drcw-head");
-    head.onmousedown=ev=>{
+    head.style.touchAction="none";
+    head.onpointerdown=ev=>{            // pointeur, pas souris : la fenêtre se déplace aussi au doigt
       if(ev.target.tagName==="BUTTON")return;
       const r=w.getBoundingClientRect(), ox=ev.clientX-r.left, oy=ev.clientY-r.top;
       const mv=e=>{w.style.left=Math.max(0,e.clientX-ox)+"px";w.style.top=Math.max(0,e.clientY-oy)+"px";w.style.right="auto";};
-      const up=()=>{document.removeEventListener("mousemove",mv);document.removeEventListener("mouseup",up);};
-      document.addEventListener("mousemove",mv);document.addEventListener("mouseup",up);
+      const up=()=>{document.removeEventListener("pointermove",mv);document.removeEventListener("pointerup",up);document.removeEventListener("pointercancel",up);};
+      document.addEventListener("pointermove",mv);document.addEventListener("pointerup",up);document.addEventListener("pointercancel",up);
       ev.preventDefault();
     };
   }

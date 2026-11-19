@@ -14,7 +14,7 @@ var PLACEMENT_SCORE = (function() {
   let _dernierHpwl = null;
   let _dernierResultat = null;
   let _patternsCache = null;
-  let _chargementEnCours = false;
+  let _chargementEnCours = false, _aRefaire = false;
 
   /* Couleur de zone venue du schéma (via /api/schema/patterns) : posée dans un
      attribut style, elle n'est admise qu'en #rgb(a) — un « red"><img …> »
@@ -228,6 +228,7 @@ var PLACEMENT_SCORE = (function() {
     if (typeof refreshPanels === "function") refreshPanels();
     if (typeof draw === "function") draw();
     actualiser(100);
+    return true;                       // les refus (verrou, anti-collision) rendent undefined
   }
 
   function optimiserEtAppliquerRotation(ref) {
@@ -239,7 +240,7 @@ var PLACEMENT_SCORE = (function() {
       }
       return;
     }
-    appliquerRotation(ref, diag.rotOptimale);
+    if (!appliquerRotation(ref, diag.rotOptimale)) return;   // refusée : son message reste, on n'annonce pas une rotation
     if (typeof hint === "function") {
       const msgG = diag.gainCroisements > 0 ? (diag.gainCroisements + " croisement(s) éliminé(s)") : (diag.gainLongueurMm + " mm gagnés");
       hint("✨ " + ref + " tourné à " + diag.rotOptimale + "° (" + msgG + ").");
@@ -580,7 +581,8 @@ var PLACEMENT_SCORE = (function() {
         return;
       }
 
-      if (_chargementEnCours) return;
+      // un calcul est en vol : on refera le score à son retour (sinon il restait figé sur l'ancien placement)
+      if (_chargementEnCours) { _aRefaire = true; return; }
       _chargementEnCours = true;
 
       try {
@@ -606,12 +608,15 @@ var PLACEMENT_SCORE = (function() {
           _dernierHpwl = data.hpwl_mm;
           _dernierResultat = data;
         } else {
+          _dernierResultat = null;     // l'erreur ne s'efface pas au premier rafraîchissement
           rendrePanneau(null, (data && data.detail) || "Échec du calcul de scoring.");
         }
       } catch (err) {
+        _dernierResultat = null;
         rendrePanneau(null, err.message, err);
       } finally {
         _chargementEnCours = false;
+        if (_aRefaire) { _aRefaire = false; actualiser(0); }
       }
 
       // Tente aussi de rafraîchir les motifs si le cache est vide

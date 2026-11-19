@@ -4972,6 +4972,10 @@ if(typeof window!=="undefined"&&window.addEventListener){
   window.addEventListener("resize",cvRectPerime);
   window.addEventListener("scroll",cvRectPerime,true);
 }
+/* Au doigt, en mode de pose, on n'agit qu'au lever : au contact on ne sait pas encore si
+   c'est un tap, un pincement ou un appui long — pincer posait un via, un trou, un coude. */
+const POSE_PCB=new Set(["via","hole","track","dpair","zone","edge","decoupe","interdit","cut","origin"]);
+let TAP_PCB=null, SEL_TACT=null;
 cv.addEventListener("pointerdown",e=>{
   cvRectPerime();
   PTR_PCB.set(e.pointerId,{x:e.clientX,y:e.clientY,type:e.pointerType});
@@ -4981,6 +4985,9 @@ cv.addEventListener("pointerdown",e=>{
   // deux doigts : pincement pour zoomer et translater
   if(PTR_PCB.size===2){
     cancelLongpress();
+    TAP_PCB=null;
+    // le premier doigt d'un pincement, posé sur le vide, avait vidé la sélection : on la rend
+    if(SEL_TACT){for(const k in SEL_TACT)if(S.sel[k]){S.sel[k].clear();for(const o of SEL_TACT[k])S.sel[k].add(o);}SEL_TACT=null;refreshPanels();draw();}
     if(drag)dragFinir();
     if(S.silkDraft)S.silkDraft=null;
     const [p1,p2]=[...PTR_PCB.values()];
@@ -4994,9 +5001,12 @@ cv.addEventListener("pointerdown",e=>{
   // appui long (tactile) : comme le clic droit, annule le geste en cours ou désélectionne
   if(e.pointerType==="touch"&&e.button===0){
     cancelLongpress();
+    SEL_TACT={};
+    for(const k in S.sel)if(S.sel[k] instanceof Set)SEL_TACT[k]=[...S.sel[k]];
     LONGPRESS_START={x:e.clientX,y:e.clientY,id:e.pointerId};
     LONGPRESS_TIMER=setTimeout(()=>{
       LONGPRESS_TIMER=null;
+      TAP_PCB=null;                    // un appui long n'est pas un tap : rien ne se pose au lever
       if(typeof document!=="undefined"&&document.body){
         const rip=document.createElement("div");
         rip.className="longpress-ripple";
@@ -5030,6 +5040,7 @@ cv.addEventListener("pointerdown",e=>{
      passage, comme il le ferait n'importe où ailleurs sur la page. */
   const af=document.activeElement;
   if(isField(af)&&af.blur)af.blur();
+  if(e.pointerType==="touch"&&e.isTrusted&&POSE_PCB.has(S.mode)){TAP_PCB=e.pointerId;return;}
   const p=evPos(e);
   if(e.button===1||(e.button===0&&e.altKey&&!altTarget(p.x,p.y))){
     drag={pan:true,sx:e.clientX,sy:e.clientY,ox:S.ox,oy:S.oy};
@@ -5311,6 +5322,8 @@ cv.addEventListener("pointerdown",e=>{
     draw(); return;
   }
   let h=hitTest(p.x,p.y,e);
+  // au doigt, 3 px de tolérance ne suffisent pas : à défaut d'objet net, la piste ou le via à 12 px
+  if(e.pointerType==="touch"&&(!h||h.inside))h=pcbPisteProche(p.x,p.y,px(12))||h;
   /* Maj+clic ou double-clic sur une piste : c'est la piste entière qui est prise, et le
      doublé l'étend à toutes les couches (`selectRun`). Ailleurs — empreinte,
      via, zone, vide — Maj garde son rôle d'ajout, comme Ctrl.
@@ -5612,7 +5625,8 @@ cv.addEventListener("pointermove",e=>{
   if(drag&&drag.move){
     const fa=drag.anc!=null?fpById(drag.anc):null;
     // un clic qui tremble ne recale pas le boîtier : il faut vraiment tirer
-    if(fa&&!drag.moved&&Math.hypot(p.x-drag.x,p.y-drag.y)<px(3))return;
+    // … et un doigt tremble plus qu'une souris : la tolérance de l'appui long (14 px)
+    if(fa&&!drag.moved&&Math.hypot(p.x-drag.x,p.y-drag.y)<px(e.pointerType==="touch"?14:3))return;
     const dx=fa?r3(snapX(fa.x+p.x-drag.x)-fa.x):snapX(p.x)-snapX(drag.x);
     const dy=fa?r3(snapY(fa.y+p.y-drag.y)-fa.y):snapY(p.y)-snapY(drag.y);
     if(dx||dy){
@@ -5747,10 +5761,25 @@ function dragFinirGeste(){
   fanoutRelease(drag);
   drag=null;refreshPanels();draw();
 }
+/* Deux doigts restent (un troisième s'est levé, une paume) : le pincement se recale sur eux,
+   sans quoi le premier mouvement faisait sauter la vue. */
+function pinceRecaler(){
+  if(PTR_PCB.size<2){PINCH_PCB=null;return;}
+  const [p1,p2]=[...PTR_PCB.values()];
+  PINCH_PCB={d:Math.max(1,Math.hypot(p1.x-p2.x,p1.y-p2.y)),mx:(p1.x+p2.x)/2,my:(p1.y+p2.y)/2,scale:S.scale,ox:S.ox,oy:S.oy};
+}
 cv.addEventListener("pointerup",e=>{
   cancelLongpress();
+  SEL_TACT=null;
+  if(TAP_PCB===e.pointerId){
+    TAP_PCB=null;
+    // le tap : l'action du contact se joue ici, comme un clic (sauf roulette ouverte entre-temps)
+    if(!(typeof TR!=="undefined"&&TR&&TR.roue))
+      cv.dispatchEvent(new PointerEvent("pointerdown",{pointerId:e.pointerId,pointerType:"mouse",clientX:e.clientX,clientY:e.clientY,
+                                                       button:0,buttons:1,bubbles:true,cancelable:true,isPrimary:true}));
+  }
   PTR_PCB.delete(e.pointerId);
-  if(PTR_PCB.size<2)PINCH_PCB=null;
+  pinceRecaler();
   if(S.hlText){S.hlText=null;draw();}
   if(S.mode==="meander"&&S.meanderDraft){
     const d=S.meanderDraft;
@@ -5885,8 +5914,10 @@ cv.addEventListener("pointerup",e=>{
 });
 cv.addEventListener("pointercancel",e=>{
   cancelLongpress();
+  if(TAP_PCB===e.pointerId)TAP_PCB=null;
+  SEL_TACT=null;
   PTR_PCB.delete(e.pointerId);
-  if(PTR_PCB.size<2)PINCH_PCB=null;
+  pinceRecaler();
   if(drag)dragFinir();       // geste interrompu par le navigateur : terminé comme au relâchement
 });
 cv.addEventListener("contextmenu",e=>{

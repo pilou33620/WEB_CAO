@@ -286,6 +286,7 @@ function wsHeadDown(e){
   if(wsPlaceOf(id)==="float")wsRaise(id);
   window.addEventListener("pointermove",wsHeadMove);
   window.addEventListener("pointerup",wsHeadUp,{once:true});
+  window.addEventListener("pointercancel",wsHeadUp,{once:true});   // sans lui, le geste suivant emmenait le panneau
 }
 function wsHeadMove(e){
   const id=wsDrag.id;if(!id)return;
@@ -330,6 +331,8 @@ function wsHeadMove(e){
 }
 function wsHeadUp(e){
   window.removeEventListener("pointermove",wsHeadMove);
+  window.removeEventListener("pointerup",wsHeadUp);
+  window.removeEventListener("pointercancel",wsHeadUp);
   const id=wsDrag.id;wsDrag.id=null;
   wsQ("dragGhost").classList.remove("on");
   wsQ("dropZone").classList.remove("on","line");

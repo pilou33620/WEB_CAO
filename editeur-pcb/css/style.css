@@ -383,6 +383,7 @@
     background:var(--panel);border:1px solid var(--border2);border-radius:8px;
     box-shadow:0 18px 60px rgba(0,0,0,.55);overflow:hidden;
   }
+  body.tel .modal-head{flex-wrap:wrap;gap:6px}   /* téléphone : sans retour à la ligne, ✕ et Exporter sortaient de l'écran (fenêtre Plans sans sortie) */
   .modal-head{
     display:flex;align-items:center;gap:10px;padding:9px 12px;
     background:var(--panel2);border-bottom:1px solid var(--border);

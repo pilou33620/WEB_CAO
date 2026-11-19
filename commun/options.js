@@ -98,9 +98,10 @@
       fen.style.left=Math.max(0,Math.min(w.width-r.width,m.clientX-w.left-dx))+"px";
       fen.style.top=Math.max(0,Math.min(w.height-30,m.clientY-w.top-dy))+"px";
     };
-    const finir=()=>{tete.removeEventListener("pointermove",bouger);tete.removeEventListener("pointerup",finir);};
+    const finir=()=>{tete.removeEventListener("pointermove",bouger);tete.removeEventListener("pointerup",finir);tete.removeEventListener("pointercancel",finir);};
     tete.addEventListener("pointermove",bouger);
     tete.addEventListener("pointerup",finir);
+    tete.addEventListener("pointercancel",finir);
   });
 
   new MutationObserver(maj).observe(box,{childList:true});

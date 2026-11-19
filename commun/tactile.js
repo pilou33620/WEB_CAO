@@ -781,7 +781,11 @@ function trRouePointerDown(e){
   e.preventDefault(); e.stopPropagation();
   TR.roulettePtr = e.pointerId;
   try{ TR.el.setPointerCapture(e.pointerId); }catch(_){}
+  const g0 = TR.roue ? TR.roue.grp : -1;
   trSurvol(e.clientX, e.clientY);
+  /* Ce toucher vient d'ouvrir un éventail : recalé pour tenir à l'écran, il met parfois une
+     pastille sous le doigt, et le lever du même tap lançait une commande qu'on n'avait pas vue. */
+  if(TR.roue) TR.roue.ouvertIci = (TR.roue.grp !== g0 && TR.roue.grp >= 0) ? {x:e.clientX, y:e.clientY} : null;
 }
 function trRouePointerMove(e){
   if(TR.roulettePtr===e.pointerId || e.buttons===0) trSurvol(e.clientX, e.clientY);
@@ -790,7 +794,14 @@ function trRouePointerUp(e){
   e.stopPropagation();
   if(TR.roulettePtr !== e.pointerId || !TR.roue) return;
   TR.roulettePtr = null;
+  const o = TR.roue.ouvertIci;
+  TR.roue.ouvertIci = null;
+  if(o && Math.hypot(e.clientX-o.x, e.clientY-o.y) < TR_GLISSE_PX) return;   // l'éventail reste ouvert, rien n'est choisi
   trChoisir(e.clientX, e.clientY, false);
+  /* La roulette fermée, le clic du même tap tomberait sur le bouton qu'elle couvrait. */
+  const av = ev=>{ if(ev.isTrusted){ ev.stopPropagation(); ev.preventDefault(); } };
+  window.addEventListener("click", av, {capture:true, once:true});
+  setTimeout(()=>window.removeEventListener("click", av, true), 400);
 }
 /* Lever la pointe en (x, y) : une pastille ou une commande se lance, un groupe
    s'ouvre, le bouton central ferme. `glisse` : la pointe arrive de l'appui long
