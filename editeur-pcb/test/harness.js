@@ -3937,6 +3937,23 @@ T("en 45°, un sommet sans place d'aplomb bute",()=>{
       if(!angleOk(t.x2-t.x1,t.y2-t.y1))throw new Error("jambe de biais posée : "+JSON.stringify(t));
   }finally{undo();}
 });
+T("glisser une portion posée sur une pastille : un talon la garde reliée",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];
+  const f=mkFp("R9","","",2);f.style="chip";f.x=20;f.y=20;f.nets={1:"N",2:""};S.fps.push(f);touch();
+  const q=padsWorld(f)[0];
+  const a={l:0,net:"N",w:0.25,x1:q.x,y1:q.y,x2:q.x-6,y2:q.y};
+  S.tracks.push(a);touch();
+  S.avoid=false;setMode("select");S.active=0;S.grid=0.5;setCornerMode("45");
+  clearSel();S.sel.tracks.add(a);
+  fire("pointerdown",sc(q.x-3,q.y));
+  fire("pointermove",sc(q.x-3,q.y+1.5));
+  fire("pointerup",sc(q.x-3,q.y+1.5));
+  try{
+    if(Math.abs(a.y1-(q.y+1.5))>1e-6)throw new Error("la portion devait suivre : "+JSON.stringify(a));
+    if(!S.tracks.some(t=>t!==a&&((t.x1===q.x&&t.y1===q.y)||(t.x2===q.x&&t.y2===q.y))))
+      throw new Error("plus rien sur la pastille : "+JSON.stringify(S.tracks));
+  }finally{undo();S.fps=[];S.tracks=[];touch();}
+});
 /* Ce que l'aimant ne peut pas empêcher — deux bouts fixes ne laissent pas
    toujours de place d'aplomb — le contrôle le dit avant l'export. */
 T("le DRC signale l'angle bâtard",()=>{

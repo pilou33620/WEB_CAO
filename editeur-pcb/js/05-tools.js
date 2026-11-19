@@ -1509,7 +1509,7 @@ function wallChain(f){
     // un embranchement non plus : replier l'un tirerait les autres de travers
     if(at.ends.length!==2||at.vias.length)break;
     const nx=at.ends.filter(o=>o.t!==cur.t&&!S.sel.tracks.has(o.t)&&o.t.net===cur.t.net);
-    if(nx.length!==1)break;
+    if(nx.length!==1||nx[0].t.locked)break;   // un voisin verrouillé ne se replie pas
     near=at.ends.map(o=>({t:o.t,e:o.e,x0:r3(A.x),y0:r3(A.y)}));
     cur=nx[0];
   }
@@ -1570,10 +1570,12 @@ function moveJoints(rigid){
      disparaît au relâchement (`pruneDeadTracks`). */
   for(const [k,j] of J){
     if(rigid&&rigid.has(k))continue;
-    if(!j.vias.length||j.vias.some(a=>a.sel))continue;
+    if(j.vias.some(a=>a.sel))continue;
     const sel=j.ends.filter(o=>o.sel);
     if(!sel.length)continue;
-    const V=j.vias[0].v, x=r3(V.x), y=r3(V.y);
+    // une pastille tient le bout comme un via : sans talon, glisser la piste l'en arrachait sans rien dire
+    if(!j.vias.length&&!padAt(sel[0].t.l,j.x0,j.y0))continue;
+    const V=j.vias.length?j.vias[0].v:{x:j.x0,y:j.y0}, x=r3(V.x), y=r3(V.y);
     j.vias=[];j.ends=sel.slice();j.slide=null;
     for(const l of new Set(sel.map(o=>o.t.l))){
       const s=sel.find(o=>o.t.l===l).t;
@@ -2758,6 +2760,7 @@ function mitreAt(l,x,y,dry,cap,arc){
   if(arc&&(th<1e-3||th>Math.PI-0.1))return false;          // tout droit, ou demi-tour
   const tg=arc?Math.tan(th/2):1, ca=arc?r4(Math.sign(dB.x*dA.y-dB.y*dA.x)*th):0;
   const ra=runFrom(A.t,A.e), rb=runFrom(B.t,B.e);
+  if(ra.segs.concat(rb.segs).some(o=>o.t.locked))return false;   // un segment verrouillé ne se raccourcit ni ne disparaît
   /* On recule d'autant des deux côtés — c'est ce qui fait le 45°. La portion la
      plus longue garde donc l'écart des deux longueurs : sous la largeur de
      piste, ce reste est une écharde, celle-là même que le tracé s'interdit

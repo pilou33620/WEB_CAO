@@ -2813,7 +2813,7 @@ function syncAutoZones(){
 function detachAuto(z){
   if(!z||!z.auto)return false;
   z.auto=false;
-  if(S.cuL[z.l])S.cuL[z.l].plane=false;
+  if(S.cuL[z.l]){S.cuL[z.l].plane=false;S.cuL[z.l].role=coherentRole(S.cuL[z.l].role,false,S.cuL[z.l].net);}   // le rôle suit, comme à la relecture
   return true;
 }
 /* Contour de carte : rectangle par défaut, polygone dès qu'on en dessine un.
