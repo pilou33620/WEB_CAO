@@ -30,7 +30,6 @@
 
 const PNS_OPT_WIN=8;           // largeur maximale de la fenêtre de fusion
 const PNS_OPT_ROUNDS=4;        // passes avant de s'arrêter, en plus d'une par sommet
-const PNS_OPT_QUEUE=16;        // sommets réexaminés après un clic, en plus de ceux qu'il a posés
 
 /* ==========================================================================
    Les ancres
@@ -131,7 +130,7 @@ function pnsDejog(node,line,pts,skip,mode,i0){
     let mieux=null,nbMieux=nb;
     for(let k=Math.max(1,i0);k+2<pts.length&&!mieux;k++){
       if(dist(pts[k].x,pts[k].y,pts[k+1].x,pts[k+1].y)>=minJog(line.w)-1e-6)continue;
-      for(let i=Math.max(0,k-3);i<=k;i++)
+      for(let i=Math.max(i0,k-3);i<=k;i++)
         for(let j=k+1;j<pts.length&&j<=k+4;j++){
           let libre=true;
           for(let m=i+1;m<j&&libre;m++)if(anc.has(m))libre=false;
@@ -175,10 +174,10 @@ function routeOptimizeTail(R,ajout){
   const pts=pnsPts(R.done.slice(i));
   if(pts.length<3)return false;
   const N=pnsWorld();
-  /* Un clic à la main pose un coude ; un contournement, lui, en pose
-     parfois cinquante d'un coup. La file suit donc ce que le clic a posé
-     (`ajout` segments), et pas seulement ses seize derniers sommets. */
-  const depuis=Math.max(0,pts.length-1-PNS_OPT_QUEUE-(ajout||0));
+  /* On ne relit que ce que CE clic a posé (`ajout` segments) : les sommets des
+     clics d'avant sont des intentions, sur la grille, et y repasser les
+     remplaçait par un raccourci hors grille dès qu'un contournement suivait. */
+  const depuis=Math.max(0,pts.length-1-(ajout||0));
   const opt=pnsOptimize(N,{l:R.layer,net:R.net,w:R.w,pts},null,depuis);
   // gagné : plus court, ou moins d'échardes (pnsDejog peut rallonger un peu)
   if(pnsLen(opt)>=pnsLen(pts)-1e-6&&pnsEchardes(opt,R.w)>=pnsEchardes(pts,R.w))return false;

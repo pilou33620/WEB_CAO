@@ -1127,6 +1127,26 @@ T("grille fine : l'arrivée tombe sur le nœud visé, le reliquat hors grille re
   if(p.length!==1||Math.abs(p[0].y2-0.04)>1e-9)throw new Error("reliquat non écrasé : "+JSON.stringify(p));
   S.route=null;setMode("select");
 });
+T("grille fine : un contournement ne mange pas les coudes déjà cliqués",()=>{
+  const avant=serialize(), reg={grid:S.grid,avoid:S.avoid,scale:S.scale};
+  try{
+    loadDoc(EXEMPLES[0].build());
+    S.grid=0.1;S.avoid=true;S.rule.route="shove";S.scale=60;   // l'aimant porte en pixels : le zoom du relevé
+    S.tracks=S.tracks.filter(t=>t.net!=="12V");touch();
+    let dep=null;
+    for(const fp of S.fps)for(const q of padsWorld(fp))if(!dep&&q.net==="12V"&&padCuLayers(fp,q).includes(0))dep=q;
+    setMode("track");S.active=0;startRoute(dep.x,dep.y);
+    updateRoute(dep.x+2.03,dep.y+0.37);stepRoute();
+    updateRoute(dep.x+3.512,dep.y+0.33);stepRoute();
+    updateRoute(dep.x+4.47,dep.y+1.76);
+    if(!S.route.contourne&&!S.route.shove)throw new Error("l'essai veut un troisième clic contourné");
+    stepRoute();
+    const som=S.route.done.map(s=>s.x2+";"+s.y2);
+    for(const v of [[dep.x+2,r3(dep.y+0.34)],[dep.x+3.5,r3(dep.y+0.34)]])
+      if(!som.includes(v[0]+";"+v[1]))throw new Error("coude cliqué "+v+" disparu : "+som.join(" "));
+    S.route=null;setMode("select");
+  }finally{loadDoc(JSON.parse(avant),true);S.grid=reg.grid;S.avoid=reg.avoid;S.scale=reg.scale;}
+});
 /* Le départ et l'arrivée sur le corps d'une piste : à chaque pas proposé, le point
    reste sur l'axe, même quand la piste passe entre deux nœuds. */
 T("le corps d'une piste accroche départ et arrivée, à tous les pas",()=>{
