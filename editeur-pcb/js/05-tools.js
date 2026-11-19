@@ -782,6 +782,7 @@ function normDoc(d){
             mask:dRange(r.mask,0.05,-100,100),paste:dRange(r.paste,0,-100,100),
             viaFinish:Object.hasOwn(VIA_FINISH,vf)?vf:(r.tented===false?"open":"tented"),
             corner:Object.hasOwn(CORNER_MODES,cm)?cm:"45",
+            boucles:r.boucles!==false,       // suppression des boucles au dépôt : active d'usine
             smartPads:r.smartPads!==false,   // accrochage décalé : actif d'usine, il ne touche qu'aux tracés à venir
             capaVia:r.capaVia===true,         // vias de masse auto des capas de découplage (55-capa-vias.js) : coupé d'usine
             route:Object.hasOwn(ROUTE_MODES,rm)?rm:"shove",
@@ -940,7 +941,7 @@ function loadDoc(d,keepView){
   S.fabOrigin=d.fabOrigin;
   const r=d.rule;
   S.rule={edge:r.edge, thermal:r.thermal, cuMin:r.cuMin, hDessus:r.hDessus, hDessous:r.hDessous, dTMax:r.dTMax, mask:r.mask, paste:r.paste,
-          viaFinish:r.viaFinish, corner:r.corner, smartPads:r.smartPads, capaVia:r.capaVia, route:r.route, hole:r.hole,
+          viaFinish:r.viaFinish, corner:r.corner, smartPads:r.smartPads, boucles:r.boucles, capaVia:r.capaVia, route:r.route, hole:r.hole,
           mat:r.mat, short:r.short, aspWarn:r.aspWarn, aspMax:r.aspMax,
           mfgProfile:r.mfgProfile||"jlcpcb"};
   if(r.designRules!==undefined){
@@ -4514,8 +4515,63 @@ function commitRoute(){
     }
     S.tracks.push(t);prev=t;posed.push(t);
   }
+  const otes=bouclesRetirer(posed,R.net);
   chamferPosed(posed);
   touch();refreshPanels();draw();
+  if(otes)hint("Ancien trajet retiré : "+otes+" segment(s) que le nouveau tracé remplace (boucle) — Ctrl+Z rend l'ancien, "+
+               "la règle « Supprimer les boucles » se coupe dans Règles de tracé.");
+}
+/* ==========================================================================
+   La suppression des boucles (Altium « Automatically remove loops », KiCad)
+   --------------------------------------------------------------------------
+   Retracer un chemin entre deux points d'un même cuivre laisse l'ancien en
+   double. Au dépôt, si les deux bouts du tracé tombent sur du cuivre déjà posé
+   du net, sur la même couche, on retire l'ancien chemin qui les joignait —
+   pourvu qu'il ne tienne rien d'autre : ni pastille, ni via, ni embranchement
+   entre les deux. Rend le nombre de segments retirés.
+   shortcut: une seule couche, sans via dans le nouveau tracé ; à étendre si l'on
+   retrace souvent à travers un changement de couche.
+   ========================================================================== */
+function bouclesRetirer(posed,net){
+  if(!(S.rule&&S.rule.boucles)||!net||!posed.length)return 0;
+  const l=posed[0].l, der=posed[posed.length-1];
+  if(posed.some(t=>t.l!==l))return 0;
+  const A={x:posed[0].x1,y:posed[0].y1}, B={x:der.x2,y:der.y2};
+  if(dist(A.x,A.y,B.x,B.y)<1e-6)return 0;
+  const neuf=new Set(posed);
+  const vieux=()=>S.tracks.filter(t=>t.l===l&&t.net===net&&!neuf.has(t)&&!t.locked&&!t.texte);
+  const touche=P=>vieux().some(t=>trkDist(P.x,P.y,t)<1e-6);
+  if(!touche(A)||!touche(B))return 0;
+  // un bout posé au milieu d'une vieille piste la coupe là : le chemin se lit de bout en bout
+  for(const P of [A,B])
+    for(const t of vieux()){
+      if(isArc(t)||dist(P.x,P.y,t.x1,t.y1)<1e-6||dist(P.x,P.y,t.x2,t.y2)<1e-6)continue;
+      if(segDist(P.x,P.y,t.x1,t.y1,t.x2,t.y2)<1e-6){splitTrack(t,{x:P.x,y:P.y});break;}
+    }
+  const cle=(x,y)=>r3(x)+"|"+r3(y), V=vieux(), adj=new Map();
+  for(const t of V)for(const [x,y] of [[t.x1,t.y1],[t.x2,t.y2]]){
+    const k=cle(x,y);if(!adj.has(k))adj.set(k,[]);adj.get(k).push(t);
+  }
+  const kA=cle(A.x,A.y), kB=cle(B.x,B.y);
+  for(const t0 of adj.get(kA)||[]){
+    const chaine=[t0];
+    let cur=t0, k=kA;
+    for(let g=0;g<V.length;g++){
+      const k1=cle(cur.x1,cur.y1), kn=k1===k?cle(cur.x2,cur.y2):k1;      // l'autre bout
+      if(kn===kB){
+        S.tracks=S.tracks.filter(t=>!chaine.includes(t));
+        for(const t of chaine)S.sel.tracks.delete(t);
+        return chaine.length;
+      }
+      const [x,y]=kn.split("|").map(Number), vois=adj.get(kn)||[];
+      // rien d'autre ne doit tenir à ce point : ni embranchement, ni pastille, ni via
+      if(vois.length!==2||padAt(l,x,y)||viaAt(l,x,y))break;
+      cur=vois[0]===cur?vois[1]:vois[0];
+      if(chaine.includes(cur))break;
+      chaine.push(cur);k=kn;
+    }
+  }
+  return 0;
 }
 /* ==========================================================================
    L'angle droit que le routeur laissait derrière lui

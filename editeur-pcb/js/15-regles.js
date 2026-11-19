@@ -1074,6 +1074,9 @@ angle(){
     '<div class="prop"><label class="check" title="Comme les « smart pads » de KiCad : au dépôt, une piste '+
       'qui entre déjà franchement dans sa pastille s’y arrête, sans le petit coude qui va chercher le centre.">'+
       '<input type="checkbox" id="reSmart"'+(S.rule.smartPads?" checked":"")+'> Accrochage décalé sur la pastille</label></div>'+
+    '<div class="prop"><label class="check" title="Comme « Automatically remove loops » d’Altium : retracer un chemin entre deux points '+
+      'd’une piste retire l’ancien, s’il ne tient ni pastille, ni via, ni embranchement.">'+
+      '<input type="checkbox" id="reBoucles"'+(S.rule.boucles?" checked":"")+'> Supprimer les boucles au dépôt</label></div>'+
     '<div class="restate pad">Un segment qui ne tombe sur aucun des huit sens est '+
     'un <i>off-angle track</i> : le rendu Gerber ne l\'optimise plus, et certains '+
     'fabricants le refusent au contrôle d\'entrée. En angle libre, la règle se '+
@@ -1899,6 +1902,7 @@ function reBind(){
   chk("reShort",v=>reEdit(()=>{S.rule.short=v;}));
   sel("reCorner",v=>{setCornerMode(v);reSync();});
   chk("reSmart",v=>{push();S.rule.smartPads=v;touch();});
+  chk("reBoucles",v=>{push();S.rule.boucles=v;touch();});
   sel("reRoute",v=>{setRouteMode(v);reSync();});
   sel("reMoveEtch",v=>{setMoveEtch(v);reSync();});
   sel("reFinish",v=>{

@@ -12020,6 +12020,29 @@ T("annuler : une étape vide s'efface, Ctrl+Z défait la dernière vraie modific
   if(S.tracks[0].x2!==12)throw new Error("rétablir devait reposer la modification");
   S.tracks=[];touch();
 });
+T("boucles : retracer entre deux points d'une piste retire l'ancien trajet, sauf s'il tient quelque chose",()=>{
+  const pose=(avecVia)=>{
+    plateau();S.avoid=false;S.grid=0.5;S.rule.boucles=true;
+    // un détour en U de (10,20) à (30,20) par y=30
+    S.tracks.push({l:0,net:"N",w:0.3,x1:5,y1:20,x2:10,y2:20},{l:0,net:"N",w:0.3,x1:10,y1:20,x2:10,y2:30},
+                  {l:0,net:"N",w:0.3,x1:10,y1:30,x2:30,y2:30},{l:0,net:"N",w:0.3,x1:30,y1:30,x2:30,y2:20},
+                  {l:0,net:"N",w:0.3,x1:30,y1:20,x2:35,y2:20});
+    if(avecVia)S.vias.push({x:10,y:30,d:0.8,drill:0.4,a:0,b:1,net:"N"});
+    touch();setMode("track");S.active=0;
+    startRoute(10,20,true);updateRoute(30,20);stepRoute();if(S.route)commitRoute();
+    setMode("select");
+    return S.tracks.filter(t=>t.net==="N");
+  };
+  let T1=pose(false);
+  if(T1.length!==3||T1.some(t=>t.y1===30||t.y2===30))throw new Error("le U devait partir : "+JSON.stringify(T1.map(t=>[t.x1,t.y1,t.x2,t.y2])));
+  undo();
+  if(S.tracks.filter(t=>t.net==="N").length!==5)throw new Error("Ctrl+Z devait rendre l'ancien trajet");
+  // un via sur le détour : il tient quelque chose, rien ne part
+  T1=pose(true);
+  if(T1.length!==6)throw new Error("le détour tenu par un via devait rester : "+T1.length);
+  // règle coupée : la boucle reste
+  plateau();
+});
 T("optimiseur : il ne raccourcit jamais à travers un obstacle",()=>{
   plateau();
   S.vias.push({x:25,y:20,d:1.2,drill:0.6,a:0,b:1,net:"AUTRE"});touch();
