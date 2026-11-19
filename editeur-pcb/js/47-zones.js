@@ -139,9 +139,9 @@ function zonesPleinesPeindre(c,zs,x1,y1,x2,y2){
    quand le cuivre d'un autre net la touche ou passe sous l'isolement. */
 function zonesDrc(out){
   for(const z of S.zones){
-    if(!z.plein||z.pts.length<3)continue;
+    if(z.larme||z.pts.length<3)continue;
     const l=z.l, net=z.net||"", P=z.pts;
-    const nom="Région pleine "+(net||"sans net")+" sur "+cuId(l,S.cu);
+    const nom=(z.plein?"Région pleine ":"Zone ")+(net||"sans net")+" sur "+cuId(l,S.cu);
     const autre=n=>!net||(n||"")!==net;
     const dPt=(x,y)=>zoneContient(z,x,y)?0:polyEdgeDist(x,y,P);
     const dSeg1=s=>{
@@ -168,17 +168,18 @@ function zonesDrc(out){
     };
     // `d` : la distance du bord du cuivre à la région ; `e` : l'isolement exigé
     const juger=(d,e,x,y,quoi)=>{if(d-e<-1e-6)out.push({kind:"region-isolation",x:r3(x),y:r3(y),l,
-      msg:nom+" : "+quoi+(d<=1e-6?" la touche — rien ne dégage une région pleine"
+      msg:nom+" : "+quoi+(d<=1e-6?(z.plein?" la touche — rien ne dégage une région pleine":" la touche sans isolement — donnez une priorité à l'une des deux")
                                  :" à "+fmt(d,3)+" mm, sous l'isolement de "+fmt(e,3)+" mm")});};
-    for(const t of S.tracks){
+    // pistes, vias, pastilles : une zone ordinaire s'en dégage d'elle-même, seule la région pleine se juge
+    if(z.plein)for(const t of S.tracks){
       if(t.l!==l||!autre(t.net))continue;
       const m=trkMid(t);juger(Math.max(0,dSeg(t)-t.w/2),clrZone(z,t.net,"cu","trk"),m.x,m.y,"la piste "+(t.net||"sans net"));
     }
-    for(const v of S.vias){
+    if(z.plein)for(const v of S.vias){
       if(l<v.a||l>v.b||!autre(v.net))continue;
       juger(Math.max(0,dPt(v.x,v.y)-v.d/2),clrZone(z,v.net,"cu","via"),v.x,v.y,"le via "+(v.net||"sans net"));
     }
-    for(const fp of S.fps)
+    if(z.plein)for(const fp of S.fps)
       for(const q of padsWorld(fp)){
         if(!padLayers(fp,q).includes(l)||!padSurCouche(q,l)||!autre(q.net))continue;
         juger(dPad(q),clrZone(z,q.net,"cu",q.drill>0?"th":"smd",q),q.x,q.y,
@@ -191,7 +192,8 @@ function zonesDrc(out){
       if(w===z||w.l!==l||w.larme||w.pts.length<3||!autre(w.net))continue;
       const pw=zonePrio(w), pz=zonePrio(z);
       if(pw>pz||(pw<pz&&!w.plein))continue;
-      if(w.plein&&pw===pz&&S.zones.indexOf(w)<S.zones.indexOf(z))continue;   // la paire, une seule fois
+      // la paire, une seule fois : la région pleine la dit, sinon la première des deux
+      if(pw===pz&&((!z.plein&&w.plein)||(!w.plein===!z.plein&&S.zones.indexOf(w)<S.zones.indexOf(z))))continue;
       const Q=w.pts;
       let d=0, at=Q.find(p=>inPoly(p.x,p.y,P))||P.find(p=>inPoly(p.x,p.y,Q))||Q[0];
       if(!polysTouchent(P,Q)){

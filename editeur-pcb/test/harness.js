@@ -11938,6 +11938,22 @@ T("optimiseur : un détour inutile se résorbe, les bouts ne bougent pas",()=>{
     throw new Error("le détour devait se résorber entièrement : "+fmt(pnsLen(opt),3)+
                     " mm au lieu de 30");
 });
+T("DRC : deux zones ordinaires de nets différents qui se recouvrent sont signalées, une seule fois",()=>{
+  plateau();
+  const z=(net,x1,y1,x2,y2)=>normZone({l:0,net,pts:[{x:x1,y:y1},{x:x2,y:y1},{x:x2,y:y2},{x:x1,y:y2}]});
+  S.zones.push(z("GND",2,2,38,28),z("VCC",10,10,20,20));touch();
+  let out=[];zonesDrc(out);
+  if(out.length!==1||!/Zone GND.*zone VCC/.test(out[0].msg))throw new Error("recouvrement : "+JSON.stringify(out));
+  // une priorité donnée à l'une des deux : elle découpe l'autre, plus rien à dire
+  S.zones[1].priorite=1;touch();
+  out=[];zonesDrc(out);
+  if(out.length)throw new Error("avec priorité : "+JSON.stringify(out));
+  // même net : jamais une faute
+  S.zones[1].priorite=0;S.zones[1].net="GND";touch();
+  out=[];zonesDrc(out);
+  if(out.length)throw new Error("même net : "+JSON.stringify(out));
+  S.zones=[];touch();
+});
 T("optimiseur : il ne raccourcit jamais à travers un obstacle",()=>{
   plateau();
   S.vias.push({x:25,y:20,d:1.2,drill:0.6,a:0,b:1,net:"AUTRE"});touch();

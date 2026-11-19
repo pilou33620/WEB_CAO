@@ -275,6 +275,7 @@ function zoneMask(l,net){
     for(const q of padsWorld(fp)){
       const qr=Math.max(q.w,q.h);
       if(hors(q.x-qr,q.y-qr,q.x+qr,q.y+qr)||!padLayers(fp,q).includes(l))continue;
+      if(q.net===net&&!zs.includes(zoneAt(l,q.x,q.y)))continue;   // hors de sa zone : ni bras ni dégagement à peindre
       if(q.net===net&&zoneFichier(zoneAt(l,q.x,q.y)))continue;   // raccordée par le fichier
       if(q.net===net&&padLiaison(q,l)==="directe"){            // le cuivre de la zone la touche
         if(q.drill>0){c.beginPath();cheminPercage(c,q);c.fill();}
@@ -534,7 +535,10 @@ function computeConn(exact){
       continue;
     }
     for(const p of padNodes){
-      if(p.q.net!==g.net||!p.layers.includes(g.l)||!relieeZone(p.q,g.l))continue;
+      if(p.q.net!==g.net||!p.layers.includes(g.l))continue;
+      // centre hors de la zone (encoche, zone d'un autre net par-dessus) : seul un cuivre qui la recouvre vraiment relie
+      if(!g.zs.includes(zoneAt(g.l,p.q.x,p.q.y))){link(p.k,maskLabels(M,p.q.x,p.q.y,Math.min(p.q.w,p.q.h)*0.45,p.q.rot));continue;}
+      if(!relieeZone(p.q,g.l))continue;
       // on interroge le cuivre là où les bras thermiques rejoignent la zone
       link(p.k,maskLabels(M,p.q.x,p.q.y,
         Math.max(p.q.w,p.q.h)/2+classOf(g.net).clr+0.3,p.q.rot));
@@ -1289,9 +1293,15 @@ function runDrc(){
         const s=a.k==="S"?a:(b.k==="S"?b:null);
         const v=a.k==="V"?a:(b.k==="V"?b:null);
         const p=a.k==="P"?a:(b.k==="P"?b:null);
-        if(s&&p)bk=bTP,e={x:p.q.x,y:p.q.y,l:s.l0,
+        /* Le défaut se pose sur la piste, au plus près de la pastille : posé au centre
+           de la pastille, deux pistes y partageaient la même clé d'exclusion, et
+           tolérer l'une masquait le court-circuit de l'autre. */
+        if(s&&p){
+          const g=s.seg, dx=g.x2-g.x1, dy=g.y2-g.y1,
+                u=clamp(((p.q.x-g.x1)*dx+(p.q.y-g.y1)*dy)/((dx*dx+dy*dy)||1),0,1);
+          bk=bTP,e={x:r3(g.x1+u*dx),y:r3(g.y1+u*dy),l:s.l0,
           msg:"Isolation piste/pastille "+tagOf(p)+" : "+d+" mm"+req};
-        else if(v&&s)bk=bV,e={x:v.v.x,y:v.v.y,l:s.l0,
+        }else if(v&&s)bk=bV,e={x:v.v.x,y:v.v.y,l:s.l0,
           msg:"Isolation via/piste "+d+" mm"+req};
         else if(v&&p)bk=bV,e={x:v.v.x,y:v.v.y,l:v.l0,
           msg:"Isolation via/pastille "+tagOf(p)+" : "+d+" mm"+req};

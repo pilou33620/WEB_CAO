@@ -336,7 +336,7 @@ function topoVerifier(net,r){
     }else{
       /* chaîne et fly-by : un chemin, des dérivations courtes */
       const smax=r.stubMax?r.stubMax.v:TOPO_MOIGNON_DEFAUT;
-      if(T.forme==="étoile")out.push({cle:"topo",msg:nom+" attendue, le cuivre fait une étoile"+de(r.topo)});
+      if(T.forme==="étoile"&&T.moignons.some(m=>m.len>smax+1e-9))out.push({cle:"topo",msg:nom+" attendue, le cuivre fait une étoile"+de(r.topo)});
       else{
         const longs=T.moignons.filter(m=>m.len>smax+1e-9);
         if(longs.length&&!r.stubMax)
