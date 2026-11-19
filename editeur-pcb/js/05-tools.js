@@ -867,8 +867,8 @@ function normDoc(d){
     });
     const names=new Set(out.dpPairs.map(q=>q.name));
     out.dpRules=(Array.isArray(src.dpRules)?src.dpRules:[]).map((d,i)=>normDpRule(d,i,cu));
-    // une règle qui vise une paire disparue ne vise plus rien : elle redevient générale
-    for(const r of out.dpRules)if(r.scope&&!names.has(r.scope))r.scope="";
+    // une règle qui vise une paire disparue garde sa portée (voir dpDelete) : vidée, elle
+    // devenait générale et passait devant la vraie règle générale pour les autres paires
     // paires déjà proposées par le schéma (voir autoPairs) : de simples clés « p|n »
     out.dpSchema=(Array.isArray(src.dpSchema)?src.dpSchema:[])
       .filter(k=>typeof k==="string").map(k=>k.slice(0,200)).slice(0,5000);

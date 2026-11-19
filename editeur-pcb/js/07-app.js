@@ -125,6 +125,7 @@ function openFile(f){
           return;
         }
         push();loadDoc(d);
+        S.dirty=false;                 // tout juste ouvert : rien à enregistrer
         PCB_FICHIER=String(f.name).replace(/\.[^.]*$/,"");
         if(typeof profNoterDocument==="function")profNoterDocument("pcb",f.name);
         hint("Carte "+f.name+" chargée.");
@@ -543,6 +544,7 @@ function exportPng(){
 function newDoc(){
   if((S.fps.length||S.tracks.length||S.vias.length||S.zones.length||S.drawings.length)&&!confirm("Repartir d'une carte vide ? Le travail en cours sera perdu."))return;
   push();
+  S.zones.forEach(detachAuto);       // sinon les couches restaient « plan » sans zone, et la relecture recréait du cuivre plein
   S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.holes=[];S.drawings=[];S.drc=[];S.drcRun=false;S.drcExclus=[];S.drcExclues=[];S.drcGravites={};S.drcIgnores=0;S.hlNet=null;
   S.cuts=[];S.interdits=[];S.rf=normRf(null);   // découpes de zone, keep-out, ports RF : ceux de la carte d'avant
   S.pinoutAcquits={};S.anim3dEtiq=null;S.cartoucheInfo={};   // acquits, étiquettes 3D et cartouche : ceux d'une autre carte
@@ -724,7 +726,7 @@ $("cuCount").onchange=()=>{
               (viasPerdus?viasPerdus+" via(s) seront supprimés (une seule couche). ":"")+"Continuer ?")){
     $("cuCount").value=old;return;
   }
-  push();setCuCount(n);if(n<2)S.vias=[];zoneCache.clear();
+  push();if(n<2){S.vias=[];S.sel.vias.clear();}setCuCount(n);zoneCache.clear();   // avant setCuCount : il redessine
   hint("Empilage : "+n+" couche(s) de cuivre.");
 };
 $("bCouTout").onclick=()=>couchesToutes(true);

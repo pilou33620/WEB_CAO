@@ -362,7 +362,7 @@ function pcbStatistiquesOuvrir(){
   document.body.appendChild(d);
   const fermer=()=>{d.close();d.remove();};
   d.querySelector("#statFermer").onclick=fermer;
-  d.querySelector("#statCopier").onclick=()=>{try{navigator.clipboard.writeText(pcbStatistiquesTexte());hint("Statistiques copiées.");}catch(e){}};
+  d.querySelector("#statCopier").onclick=()=>pcbCopierTexte(pcbStatistiquesTexte(),"Statistiques copiées.");
   d.addEventListener("cancel",e=>{e.preventDefault();fermer();});
   d.showModal();
 }

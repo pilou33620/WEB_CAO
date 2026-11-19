@@ -255,10 +255,12 @@ function numProp(id,label,val,step,min,off){
    à tous les panneaux, et cette fenêtre s'en sert aussi. */
 /* Recale le routage déjà posé sur les règles des classes. C'est explicite :
    changer une largeur ne doit pas remuer la carte sans qu'on l'ait demandé. */
+const COTE_MAX=1e4;               // mm : au-delà, une coordonnée saisie est une faute de frappe
 function applyClasses(){
   push();
   let nt=0,nv=0;
   for(const t of S.tracks){
+    if(t.texte||!t.net)continue;      // ni les traits d'un texte cuivre, ni le cuivre sans net
     const w=classWidth(t.net,t.l);
     if(Math.abs(t.w-w)>1e-6){t.w=w;nt++;}
   }
@@ -1708,8 +1710,8 @@ function propsFp(box,fp){
   const fpForme=fn=>v=>fpReshape(fp,()=>fn(v));
   upd("pStyle",fpForme(v=>{fp.style=v;const g=defaultGeom(v);fp.pitch=g.pitch;fp.span=g.span;}));
   upd("pPins",fpForme(v=>fpSetPins(fp,v)),true);
-  upd("pPitch",fpForme(v=>fp.pitch=Math.max(0.2,v)),true);
-  upd("pSpan",fpForme(v=>fp.span=Math.max(0.2,v)),true);
+  upd("pPitch",fpForme(v=>fp.pitch=clamp(v,0.2,200)),true);
+  upd("pSpan",fpForme(v=>fp.span=clamp(v,0.2,200)),true);
   // position, face, rotation : le cuivre accroché suit (`transformFps`)
   // refusé : ni étape Ctrl+Z, et le panneau reprend la valeur en vigueur
   const updPose=(id,fn)=>{
@@ -1718,7 +1720,7 @@ function propsFp(box,fp){
     const enVigueur=el.value;
     el.onchange=()=>{
       const v=numSaisi(el.value);
-      if(!Number.isFinite(v)){el.value=enVigueur;return;}        // vidé : l'objet ne saute pas à l'origine
+      if(!Number.isFinite(v)||Math.abs(v)>COTE_MAX){el.value=enVigueur;return;}   // vidé ou démesuré : l'objet ne saute pas
       if(fp.locked){el.value=enVigueur;hint(fp.ref+" est verrouillé : déverrouillez-le pour le déplacer ou le tourner.");return;}
       const gene=fpEssai(()=>fn(v));
       if(gene){el.value=enVigueur;fpRefus(gene);return;}
@@ -2213,13 +2215,13 @@ function propsTrack(box,t){
     ltSection([t],[]);
   $("tMit").onclick=mitreSel;
   $("tL").onchange=()=>{push();t.l=+$("tL").value;touch();refreshPanels();draw();};
-  $("tW").onchange=()=>{push();t.w=Math.max(0.05,parseFloat($("tW").value)||cl.w);
+  $("tW").onchange=()=>{push();t.w=clamp(parseFloat($("tW").value)||cl.w,0.05,20);   // 50000 saisi par mégarde gelait l'onglet
     touch();refreshPanels();draw();};
   $("tN").onchange=()=>{push();t.net=$("tN").value;touch();refreshPanels();draw();};
   // un bout déplacé emmène les segments et vias qui s'y rejoignent
   for(const e of [1,2])for(const ax of ["X","Y"])$("t"+ax+e).onchange=ev=>{
     const v=parseFloat(ev.target.value), x=t["x"+e], y=t["y"+e];
-    if(!Number.isFinite(v))return refreshPanels();
+    if(!Number.isFinite(v)||Math.abs(v)>COTE_MAX)return refreshPanels();
     push();pointDeplacer(x,y,t.l,t.l,ax==="X"?wxu(v):x,ax==="Y"?wyu(v):y);touch();refreshPanels();draw();
   };
   $("tC").onchange=()=>{
@@ -2235,6 +2237,7 @@ function propsTrack(box,t){
     touch();refreshPanels();draw();
   };
   $("tCls").onclick=()=>{
+    if(!t.net)return;                 // sans net, « tout le cuivre sans net » y passait
     push();
     for(const o of S.tracks)if(o.net===t.net)o.w=classWidth(t.net,o.l);
     touch();refreshPanels();draw();
@@ -2283,7 +2286,7 @@ function propsTracks(box,list,vias){
     if(v==="")return;
     push();list.forEach(t=>t.l=+v);touch();refreshPanels();draw();
   };
-  mpBranche("msW",list,(t,v)=>{t.w=Math.max(0.05,v);},1);
+  mpBranche("msW",list,(t,v)=>{t.w=clamp(v,0.05,20);},1);
   $("msCls").onclick=()=>{
     push();list.forEach(t=>t.w=classWidth(t.net,t.l));touch();refreshPanels();draw();
   };
@@ -2346,7 +2349,7 @@ function propsVia(box,v){
   const f=()=>{
     push();
     const cl=classOf(v.net);
-    v.d=Math.max(0.2,parseFloat($("vD").value)||cl.via);
+    v.d=clamp(parseFloat($("vD").value)||cl.via,0.2,20);
     v.drill=Math.min(v.d-0.1,Math.max(0.1,parseFloat($("vDr").value)||cl.drill));
     v.a=+$("vA").value;v.b=+$("vB").value;
     if(v.a>v.b){const k=v.a;v.a=v.b;v.b=k;}
@@ -2359,7 +2362,7 @@ function propsVia(box,v){
   // le via emmène les bouts de pistes accrochés sur ses couches
   for(const ax of ["X","Y"])$("v"+ax).onchange=ev=>{
     const n=parseFloat(ev.target.value);
-    if(!Number.isFinite(n))return refreshPanels();
+    if(!Number.isFinite(n)||Math.abs(n)>COTE_MAX)return refreshPanels();
     push();pointDeplacer(v.x,v.y,v.a,v.b,ax==="X"?wxu(n):v.x,ax==="Y"?wyu(n):v.y);touch();refreshPanels();draw();
   };
   $("vLie").onchange=()=>{

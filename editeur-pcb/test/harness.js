@@ -10361,7 +10361,8 @@ T("document : une paire venue d'ailleurs ne passe pas telle quelle",()=>{
   if(d.dpPairs[0].id===d.dpPairs[1].id)throw new Error("identifiants distincts attendus");
   const r=d.dpRules[0];
   if(/[^A-Za-z0-9]/.test(r.uid))throw new Error("identifiant non filtré : "+r.uid);
-  if(r.scope!=="")throw new Error("une portée vers une paire absente ne vise plus rien");
+  // la portée vers une paire absente se garde : vidée, la règle devenait générale et prenait les autres paires
+  if(r.scope!=="inconnue")throw new Error("la portée vers une paire absente devait rester : "+r.scope);
   if(r.minW<0.01||r.maxW>100)throw new Error("largeurs non bornées");
   if(r.maxUncoupled!==DP_FALLBACK.maxUncoupled)throw new Error("longueur illisible non redressée");
   if(r.imp!=="")throw new Error("profil inconnu accepté");
