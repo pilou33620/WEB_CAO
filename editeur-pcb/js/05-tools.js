@@ -2708,7 +2708,7 @@ function trimRun(run,L){
   let rest=L, pt=null;
   for(const o of run.segs){
     const len=dist(o.t.x1,o.t.y1,o.t.x2,o.t.y2);
-    if(rest>=len-1e-9){
+    if(rest>=len-1e-3){      // run.len est arrondi au micron : à 1e-9, une diagonale laissait un segment nul
       rest=rest-len;
       pt=endFar(o.t,o.e);
       S.tracks=S.tracks.filter(x=>x!==o.t);
@@ -3593,7 +3593,7 @@ function routeMode(){
 }
 function setRouteMode(m){
   if(!ROUTE_MODES[m]||m===routeMode())return;
-  push();
+  if(!S.route&&!S.dp)push();
   S.rule.route=m;
   touch();
   if(S.route)updateRoute(S.mouse.x,S.mouse.y);
@@ -4118,7 +4118,11 @@ function finirTrace(){
   const regle=S.rule.route;
   S.rule.route="walk";
   try{
-    const c=cheminCommande({liaisons:[{depart:{x:R.pt.x,y:R.pt.y,couche:LECTURE_CAO.aides.nomCouchePcb(R.layer)},
+    // parti du centre d'une pastille, on la nomme : en point nu, le chercheur prenait son cuivre pour un obstacle
+    let dep={x:R.pt.x,y:R.pt.y,couche:LECTURE_CAO.aides.nomCouchePcb(R.layer)};
+    for(const f of S.fps)for(const q of padsWorld(f))
+      if(q.net===R.net&&dist(q.x,q.y,R.pt.x,R.pt.y)<1e-6&&padCuLayers(f,q).includes(R.layer))dep=f.ref+"."+q.n;
+    const c=cheminCommande({liaisons:[{depart:dep,
                                        arrivee:nom,largeur:R.w}]});
     if(!c.routes.length)throw routageRefus(c.resultats[0].raison);
     const arr=routagePoint(nom);
@@ -4197,7 +4201,7 @@ function stepRoute(){
       R.end.obj.net = R.net;
       R.end.net = R.net;
     }
-    if (R.end.net && (!R.net || R.end.net === R.net)) commitRoute();
+    if (R.end.net && (!R.net || R.end.net === R.net)) { if(!R.net)R.net=R.end.net; commitRoute(); }   // parti du vide : le net de l'arrivée
   }
   if(S.route===R&&R.viaNext){R.viaNext=false;routeVia();}
 }
@@ -5136,7 +5140,8 @@ cv.addEventListener("pointerdown",e=>{
     const couches=[S.active].concat(S.cuL.map((_,i)=>i).filter(i=>i!==S.active));
     const ms=couches.map(l=>({l,m:magnet(p.x,p.y,l)}));
     const sur=ms.find(({l,m})=>m&&m.pad&&padDist(p.x,p.y,padSurCouche(m.obj,l))<=0);
-    const m=sur?sur.m:ms[0].m||(ms.find(o=>o.m)||{}).m;
+    // à défaut, le plein cuivre d'une piste sous le clic : le via prend son net au lieu d'être refusé
+    const m=(sur?sur.m:ms[0].m||(ms.find(o=>o.m)||{}).m)||couches.map(l=>trackBody(p.x,p.y,l,"",null,0)).find(Boolean);
     const x=m?m.x:snapX(p.x), y=m?m.y:snapY(p.y);
     /* posé dans le plein d'une zone, loin de tout cuivre : le via prend le net
        de la zone (un via de masse dans le plan de masse), couche active d'abord */
@@ -6248,7 +6253,7 @@ function gridRapide(){
    souris. Rien de ce qui est déjà posé ne bouge : la règle vaut pour la suite. */
 function setCornerMode(m){
   if(!CORNER_MODES[m]||m===cornerMode())return;
-  push();
+  if(!S.route&&!S.dp)push();   // push dépose le tracé en cours : la règle changée en plein tracé part avec son étape
   S.rule.corner=m;
   touch();
   if(S.route){S.route.flip=false;updateRoute(S.mouse.x,S.mouse.y);}
