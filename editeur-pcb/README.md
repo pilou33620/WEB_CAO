@@ -115,6 +115,9 @@ js/38-interdits.js       zones interdites par face et hauteurs maximales :
 js/39-thermique.js       échauffement estimé des composants qui dissipent :
                          cuivre relié, appel au serveur, DRC, fiche
 js/40-chemin-auto.js     chercheur de chemin : A* sur une grille par couche
+js/57-pousse.js          pousser au lieu de buter : les boîtiers voisins font de
+                         la place au relâchement, une piste glissée écarte ses
+                         voisines
 js/56-accrochage.js      accrochage aux objets à priorités réglables (centre de
                          pastille, bout de piste, milieu de segment, axe d'un
                          voisin), guides d'alignement, fenêtre des réglages

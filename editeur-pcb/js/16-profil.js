@@ -52,6 +52,7 @@ function profilEtat(){
     contraste:S.contrast,
     faceOpp:S.faceOpp,
     rooms:S.voirRooms!==false,
+    pousse:!!S.pousse,                // pousser les boîtiers (57-pousse.js)
     accrocheObj:S.snap,               // aimants et portée (56-accrochage.js)
     /* « drc » est un résultat de contrôle, pas une habitude : on ne rouvre pas
        l'éditeur sur une liste d'erreurs qui n'ont pas encore été cherchées. */
@@ -97,6 +98,8 @@ function profilAppliquer(garderVue){
   if([0,1,2,3].indexOf(+p.contraste)>=0)setContrast(+p.contraste);
   if([0,1,2].indexOf(+p.faceOpp)>=0)setFaceOpp(+p.faceOpp);
   S.snap=typeof snapNorm==="function"?snapNorm(p.accrocheObj):S.snap;
+  S.pousse=p.pousse===true;
+  if($("bPousse"))$("bPousse").classList.toggle("on",S.pousse);
   /* les rooms (32-rooms.js, chargé après ce fichier : il lira S.voirRooms) */
   if(typeof p.rooms==="boolean"){
     S.voirRooms=p.rooms;

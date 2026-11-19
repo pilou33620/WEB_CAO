@@ -78,7 +78,7 @@ const EXPOSE=["capaDecouplage","capaCibleMasse","capaViasExistants","capaViaPlac
   "closeZone","fullBoardZone","zoneMask","labelMask","maskAt","classOf","setNetClass","defaultWidth",
   "applyClasses","jointAt","splitTrack","netTracks","selectNetRouting",
   "deleteNetRouting","autoClass","classOptionsHtml","poserClasseNet","schemaPublie","listNets","mkFp","w2s","runDrc","padsOf",
-  "buildFabFiles","jlcGerberFiles","jlcBomLignes","jlcBomCsvText","jlcCplLignes","ipcAccess","propsEnMil","jlcCplXlsx","normFp","jlcNonPose","jlcFpsAPoser","vbValeur","vbListe","routeJauge","accrocheAxes","accrocheGuides","snapNorm","bouclesRetirer","jlcRotation","vbVerifierLigne","vbValeurFiche","vbJuger","vbRequete","vbVerifier","vbAppliquer","exportJlcpcb","gerberCopper","gerberMask","gerberPaste","gerberSilk",
+  "buildFabFiles","jlcGerberFiles","jlcBomLignes","jlcBomCsvText","jlcCplLignes","ipcAccess","propsEnMil","jlcCplXlsx","normFp","jlcNonPose","jlcFpsAPoser","vbValeur","vbListe","routeJauge","pousseAuDepot","pousseGlisse","accrocheAxes","accrocheGuides","snapNorm","bouclesRetirer","jlcRotation","vbVerifierLigne","vbValeurFiche","vbJuger","vbRequete","vbVerifier","vbAppliquer","exportJlcpcb","gerberCopper","gerberMask","gerberPaste","gerberSilk",
   /* animation 3D de fabrication.zip (41-animation-3d.js) */
   "anim3dDonnees","anim3dPage","anim3dModeles","anim3dPose","anim3dAuto","anim3dExporter","silkTraits","silkRogne","silkContour","SILK_GARDE","fabLivrer","THREE_SOURCE",
   "gerberEdge","gerberOutline","ipcNetlist","ipc317","masterDrawingPdf","noAcc",
@@ -12061,6 +12061,37 @@ T("accrochage aux objets : l'axe d'un via hors grille attire le curseur, un guid
   p=accrocheAxes({x:20,y:25},20.16,25.02,0);
   if(p.x!==20||accrocheGuides({x:20.13,y:25},0).length)throw new Error("réglage coupé : rien ne doit accrocher");
   S.snap=snapNorm(null);S.vias=[];touch();
+});
+T("pousser : un boîtier posé sur son voisin l'écarte au relâchement ; une piste glissée écarte sa voisine",()=>{
+  plateau();S.grid=0.5;
+  const a=mkFp("R1","","",2);a.style="chip";a.x=20;a.y=20;
+  const b=mkFp("R2","","",2);b.style="chip";b.x=30;b.y=20;
+  S.fps.push(a,b);touch();
+  a.x=30;a.y=20.5;touch();                       // R1 lâché sur R2
+  S.pousse=false;
+  if(pousseAuDepot([a.id])!==0||b.x!==30)throw new Error("mode coupé : rien ne doit bouger");
+  S.pousse=true;
+  try{
+    if(pousseAuDepot([a.id])!==1)throw new Error("R2 devait être poussé");
+    if(fpGene(a,new Set([a]))||fpGene(b,new Set([b])))throw new Error("il reste un recouvrement");
+    if(a.x!==30||a.y!==20.5)throw new Error("le boîtier tiré ne doit pas bouger");
+    // un voisin verrouillé ne se pousse pas
+    b.x=30;b.y=20;b.locked=true;touch();
+    if(pousseAuDepot([a.id])!==0||b.x!==30)throw new Error("un boîtier verrouillé a été poussé");
+  }finally{S.pousse=false;}
+  // pistes : en conduite « pousser », glisser A sous l'isolation de B écarte B
+  plateau(60,40,"shove");S.grid=0.1;S.avoid=true;
+  const A={l:0,net:"A",w:0.3,x1:10,y1:10,x2:30,y2:10}, B={l:0,net:"B",w:0.3,x1:10,y1:11,x2:30,y2:11};
+  S.tracks.push(A,B);touch();setMode("select");S.active=0;clearSel();S.sel.tracks.add(A);
+  fire("pointerdown",sc(20,10));fire("pointermove",sc(20,10.5));fire("pointermove",sc(20,10.9));fire("pointerup",sc(20,10.9));
+  try{
+    const tb=S.tracks.find(t=>t.net==="B");
+    if(Math.abs(A.y1-10.9)>1e-6)throw new Error("A devait arriver en 10,9 : "+A.y1);
+    if(!(tb.y1>11.39))throw new Error("B devait s'écarter : "+tb.y1);
+    if(runDrc().some(e=>!e.info&&/Isolation/.test(e.msg)))throw new Error("isolation en faute après la poussée");
+  }finally{undo();}
+  if(S.tracks.find(t=>t.net==="B").y1!==11)throw new Error("Ctrl+Z devait rendre B");
+  S.tracks=[];touch();
 });
 T("optimiseur : il ne raccourcit jamais à travers un obstacle",()=>{
   plateau();

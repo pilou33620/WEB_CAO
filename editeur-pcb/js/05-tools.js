@@ -2252,7 +2252,7 @@ function beginMove(){
   fol.skip=new Set([...movedTracks(),...S.sel.vias,...fps]);
   armClear([...movedTracks()],[...S.sel.vias],fps);
   // le monde que les pistes qui suivent doivent éviter, sans ce qui bouge
-  if(S.avoid&&(fol.fps.length||fol.vias.length)){fol.mobile=[...movedTracks()];fol.base=followBase(fol);}
+  if(S.avoid&&(fol.fps.length||fol.vias.length||(routeMode()==="shove"&&drag.trk.length))){fol.mobile=[...movedTracks()];fol.base=followBase(fol);}
   // les chanfreins présents AVANT le geste : ce sont eux qu'on rendra s'ils se replient.
   // Ceux d'une piste qui suit sont redessinés par elle : ils ne se « perdent » pas
   drag.diag=diagTracks([...movedTracks()].filter(t=>!fol.own.has(t)));
@@ -2525,6 +2525,7 @@ function fpStop(){
   for(const f of fps){
     const gene=fpGene(f,skip,drag.follow&&drag.follow.shove);
     if(!gene||fpDejaGene(c,f))continue;
+    if(typeof pousseLaissePasser==="function"&&pousseLaissePasser(f,skip))continue;   // 57-pousse.js
     if(!c.warned){
       c.warned=true;
       hint(f.ref+" bute sur "+gene+". Tirez-le ailleurs, ou coupez l'anti-collision pour forcer.");
@@ -5559,6 +5560,7 @@ function dragMoveBy(dx,dy,alt){
   dragRotFix(alt);
   applyJoints(drag.joints,drag.dx,drag.dy,alt);
   applyFollow(drag.follow,drag.dx,drag.dy,alt);
+  if(!alt&&typeof pousseGlisse==="function")pousseGlisse();     // une piste glissée écarte ses voisines (57-pousse.js)
   /* Le déplacement s'applique en absolu : revenir au décalage précédent
      suffit à replacer tout ce que le geste avait touché, coudes compris. */
   if(fpStop()||clearStop()||crossStop()||acuteStop()){
@@ -5816,7 +5818,9 @@ let dessousT=-1e9;
 function dragFinir(){
   S.guides=[];
   const pousse=drag&&drag.moved&&(drag.move||drag.tend);
+  const tires=drag&&drag.move&&drag.moved?[...S.sel.fps]:[];
   dragFinirGeste();
+  if(tires.length&&typeof pousseAuDepot==="function")pousseAuDepot(tires);   // 57-pousse.js
   // geste buté ou refusé : la carte n'a pas bougé, l'étape posée au premier mouvement n'aurait rien à annuler
   if(pousse&&S.undo.length&&S.undo[S.undo.length-1]===serialize())S.undo.pop();
 }

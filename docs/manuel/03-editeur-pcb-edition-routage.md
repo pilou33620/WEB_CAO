@@ -60,7 +60,8 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 1. Glisser une empreinte : les pistes accrochées suivent en gardant leurs 45°. En règle « pousser le cuivre », le cuivre voisin est poussé comme au routage.
 2. Maintenir `Alt` pendant le glissement laisse le cuivre en place. `Maj+Espace` change la conduite des pistes (glisser, étirer, arracher) en plein geste.
 3. `R` ou `Espace` en plein glissement tourne le boîtier d'un quart de tour sans lâcher.
-4. Pour garder un bloc ensemble : sélectionner les composants, `Ctrl+G` crée un groupe ; un clic sur un membre prend tout le groupe. `Ctrl+Maj+G` ou le bouton **Dissoudre** (Propriétés) défait le groupe.
+4. **Placer & router > Router ▾ > Pousser les boîtiers** (coupé d'usine) : un boîtier tiré passe par-dessus ses voisins et, au relâchement, chaque voisin recouvert rejoint la place libre la plus proche, son cuivre avec lui. Un voisin verrouillé ne se pousse pas : le geste bute sur lui. Pendant le glissement, le boîtier s'aligne sur le centre de ses voisins (guide en pointillé), si l'aimant « axe » est coché.
+5. Pour garder un bloc ensemble : sélectionner les composants, `Ctrl+G` crée un groupe ; un clic sur un membre prend tout le groupe. `Ctrl+Maj+G` ou le bouton **Dissoudre** (Propriétés) défait le groupe.
 
 ### Je veux router une piste
 
@@ -71,7 +72,14 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 5. Face à un obstacle, le comportement dépend de la « Conduite » choisie dans **Vérifier > Règles… > Face à un obstacle** : pousser le cuivre, contourner ou signaler. Une pastille n'est jamais poussée.
 6. `Tab` ouvre la saisie de coordonnées au clavier (Absolu, Relatif, Polaire) : taper X/Y, `Entrée` pose le point.
 7. `D` (ou « Angle droit → 45° » dans Propriétés) adoucit un angle droit de la piste sélectionnée.
-8. Pour laisser l'outil trouver le chemin d'une liaison : cliquer une pastille de cette liaison (ou `Alt`+clic sur une pastille, ou un net de la liste, pour viser un net), puis **Placer & router > Chemin auto**. La liaison du chevelu la plus proche de la pastille est routée d'un coup, en contournant le cuivre existant ; un `Ctrl+Z` la défait. S'il n'y a pas de chemin, rien n'est posé et le pied de page dit pourquoi.
+8. Aides du tracé :
+   - **Grille** : `Maj+G` fait tourner le pas 0,1 → 0,5 → 1 mm sans quitter le tracé.
+   - **Accrochage aux objets** (**Affichage ▾ > Accrochage aux objets…**) : par ordre de priorité, centre de pastille, via et bout de piste, milieu de segment, axe d'un objet voisin, puis la grille. Chaque aimant se coche, la portée se règle en pixels. Le point accroché porte son nom (centre, bout, milieu…) et un guide en pointillé relie le curseur à l'objet avec lequel il est aligné. Ces réglages vous suivent (profil), ils ne sont pas dans la carte.
+   - **Jauge de longueur** près du curseur : longueur du tracé, longueur du net une fois posé, reste à vol d'oiseau jusqu'à la cible, et la longueur imposée par la contrainte du net s'il y en a une (rouge au-delà du maximum).
+   - **Boucles** : retracer un chemin entre deux points d'une piste retire l'ancien trajet au dépôt, s'il ne tient ni pastille, ni via, ni embranchement (**Vérifier > Règles… > Supprimer les boucles au dépôt**, actif d'usine).
+   - **Glisser une piste** en conduite « pousser » écarte les pistes voisines ; une pastille ou un via ne s'écartent pas.
+   - **Bus** : pendant le tracé d'un bus, `+` et `−` écartent ou resserrent les pistes, jamais sous l'isolement.
+9. Pour laisser l'outil trouver le chemin d'une liaison : cliquer une pastille de cette liaison (ou `Alt`+clic sur une pastille, ou un net de la liste, pour viser un net), puis **Placer & router > Chemin auto**. La liaison du chevelu la plus proche de la pastille est routée d'un coup, en contournant le cuivre existant ; un `Ctrl+Z` la défait. S'il n'y a pas de chemin, rien n'est posé et le pied de page dit pourquoi.
 
 ### Je veux router une paire différentielle
 
