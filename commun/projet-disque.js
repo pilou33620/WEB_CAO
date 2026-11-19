@@ -350,6 +350,7 @@ function projdAdopter(mode, chemin, fichier, documents){
     if(typeof projOuvrir === "function") projOuvrir(nom);
   }
   try{
+    try{ sessionStorage.setItem(PROJD_CLE, JSON.stringify({mode:mode, chemin:PROJD.chemin})); }catch(_){}   // le dossier de cet onglet (voir projOnglet)
     localStorage.setItem(PROJD_CLE, JSON.stringify({mode:mode, chemin:PROJD.chemin}));
   }catch(_){}
   try{ projSignaler(); }catch(_){}
@@ -964,6 +965,7 @@ function projdDetacher(){
   PROJD = {mode:"", chemin:"", fichier:null, documents:null};
   PROJD_HANDLE = null;
   PROJD_ATTENTE = null;
+  try{ sessionStorage.removeItem(PROJD_CLE); }catch(_){}
   try{ localStorage.removeItem(PROJD_CLE); }catch(_){}
   try{ projSignaler(); }catch(_){}
 }
@@ -978,7 +980,8 @@ function projdDetacher(){
    ========================================================================== */
 function projdReprendre(){
   let garde = null;
-  try{ garde = JSON.parse(localStorage.getItem(PROJD_CLE)||"null"); }catch(_){}
+  try{ garde = JSON.parse(sessionStorage.getItem(PROJD_CLE)||"null"); }catch(_){}
+  if(!garde) try{ garde = JSON.parse(localStorage.getItem(PROJD_CLE)||"null"); }catch(_){}
   if(!garde || !garde.mode) return Promise.resolve(null);
   if(garde.mode === "serveur")
     /* Une panne passagère du serveur (500, coupure, corps illisible) n'est pas un projet disparu :

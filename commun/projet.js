@@ -99,12 +99,19 @@ function projNormaliser(o){
   p.nom = projNomValide(o.nom);
   return p;
 }
+/* Le projet de CET onglet passe avant celui du navigateur. Avec deux onglets sur deux projets,
+   le dernier ouvert s'imposait à l'autre : il en affichait le nom tout en écrivant dans le sien,
+   et après un rechargement sa carte non enregistrée partait dans le projet du voisin.
+   localStorage reste le projet proposé à un onglet neuf, et le lendemain. */
+function projOnglet(){
+  try{ return window.sessionStorage.getItem(PROJ_CLE); }catch(_){ return null; }
+}
 function projCharger(){
   if(PROJ_ETAT) return PROJ_ETAT;
   const s = projStock();
   let brut = null;
   if(s){
-    try{ brut = JSON.parse(s.getItem(PROJ_CLE) || "null"); }
+    try{ brut = JSON.parse(projOnglet() || s.getItem(PROJ_CLE) || "null"); }
     catch(_){ brut = null; }
   }
   /* Seul le nom du projet ouvert traverse les pages. Plus de liste de
@@ -117,6 +124,7 @@ function projCharger(){
 function projEnregistrer(){
   const s = projStock();
   if(!s || !PROJ_ETAT) return false;
+  try{ window.sessionStorage.setItem(PROJ_CLE, JSON.stringify({nom:PROJ_ETAT.nom})); }catch(_){}
   try{ s.setItem(PROJ_CLE, JSON.stringify({nom:PROJ_ETAT.nom})); return true; }
   catch(_){ return false; }
 }
@@ -206,6 +214,8 @@ function projSignaler(){
 try{
   window.addEventListener("storage", function(e){
     if(e && e.key === PROJ_CLE){
+      // un autre onglet a changé de projet : celui-ci garde le sien s'il en a un
+      try{ if((JSON.parse(projOnglet() || "null") || {}).nom) return; }catch(_){}
       PROJ_ETAT = null;              // relu au prochain accès
       projSignaler();
     }
