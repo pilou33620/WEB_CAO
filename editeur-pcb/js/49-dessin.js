@@ -125,7 +125,7 @@ function arcPoser(g){
       S.drawings.push(d);S.sel.drawings.add(d.id);res.drawings.push(d);P=B;
     }
   }
-  touch();refreshPanels();draw();
+  touch();buildLayers();refreshPanels();draw();   // buildLayers : le compteur de segments de la couche
   hint((plein?"Cercle":"Arc")+" de rayon "+fmt(g.r,3)+" mm posé — Ctrl+Z annule.");
   return res;
 }
@@ -174,7 +174,7 @@ function texteCuivre(o){
       S.cuts.push(ct);S.sel.cuts.add(ct);res.cuts.push(ct);
     }
   }
-  touch();refreshPanels();draw();
+  touch();buildLayers();refreshPanels();draw();   // buildLayers : le compteur de segments de la couche
   hint("Texte « "+txt+" » posé sur "+cuId(l,S.cu)+(o.inverse?" en réserve dans un aplat de cuivre":"")+
        (miroir?" (en miroir : il se lit par-dessous)":"")+" — Ctrl+Z annule.");
   return res;
@@ -215,10 +215,10 @@ function pastilleLibre(x,y,type,net){
     pads:[Object.assign({n:1,x:0,y:0,rot:0},T.pad)],body:{x1:-r,y1:-r,x2:r,y2:r},
     nets:{1:T.sansNet?"":(net||"")},x:snapX(x),y:snapY(y),side:T.pad.drill>0?0:(S.active===S.cu-1&&S.cu>1?1:0)},0);
   if(!f)return null;
+  push();                              // avant de prendre le numéro : l'annulation le rend
   f.id=S.nextId++;f.libre=true;f.silk=false;
-  push();
   S.fps.push(f);clearSel();S.sel.fps.add(f.id);
-  touch();refreshPanels();draw();
+  touch();buildLayers();refreshPanels();draw();   // buildLayers : le compteur de segments de la couche
   hint(f.ref+" posée"+(f.nets[1]?" sur le net "+f.nets[1]:"")+
        " — hors schéma, l'ECO la laisse en place ; son net se change dans les Propriétés de la pastille.");
   return f;
@@ -253,7 +253,7 @@ function coteLineaire(A,B,P,layer){
   const t={id:S.nextId++,shape:"text",type:"text",layer:lay,text:fmtU(L)+" "+uNom(),
            x1:r4(M.x),y1:r4(M.y),x2:r4(M.x),y2:r4(M.y),size:h,height:h,rot:r4(rot),width:0.12};
   S.drawings.push(t);S.sel.drawings.add(t.id);res.push(t);
-  touch();refreshPanels();draw();
+  touch();buildLayers();refreshPanels();draw();   // buildLayers : le compteur de segments de la couche
   hint("Cote de "+fmtU(L)+" "+uNom()+" posée sur « "+lay+" » — Ctrl+Z annule.");
   return res;
 }

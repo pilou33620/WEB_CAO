@@ -107,6 +107,15 @@ function projdCopieDeSecours(){
    projet, quand il y en a un, passe devant (SIM_PCB.carte). Gardé dans la
    session de l'onglet. */
 let PCB_FICHIER="";
+/* Annuler l'ouverture d'un fichier rend aussi le nom d'avant (et rétablir, celui du fichier) :
+   l'instantané d'où l'on vient → le nom qu'il portait. */
+const PCB_NOMS=new Map();
+function pcbNomRendre(rendu,quitte){
+  if(!PCB_NOMS.has(rendu))return;
+  const n=PCB_NOMS.get(rendu);
+  PCB_NOMS.set(quitte,PCB_FICHIER);
+  PCB_FICHIER=n;
+}
 function openFile(f){
   const r=new FileReader();
   r.onload=()=>{
@@ -124,7 +133,7 @@ function openFile(f){
           alert("Ce fichier est un schéma (.json).\n\nDans l'éditeur schématique, cliquez sur « Netlist .txt », puis importez ce fichier ici.");
           return;
         }
-        push();loadDoc(d);
+        push();PCB_NOMS.set(S.undo[S.undo.length-1],PCB_FICHIER);loadDoc(d);
         S.dirty=false;                 // tout juste ouvert : rien à enregistrer
         PCB_FICHIER=String(f.name).replace(/\.[^.]*$/,"");
         if(typeof profNoterDocument==="function")profNoterDocument("pcb",f.name);

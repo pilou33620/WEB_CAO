@@ -273,7 +273,7 @@ function dBody(b){
   if(o.y2-o.y1<0.1)o.y2=r4(o.y1+0.1);
   return o;
 }
-const COORD=1e5;                    // garde-fou de coordonnée, en mm
+const COORD=5e3;                    // garde-fou de coordonnée, en mm : au-delà, les index spatiaux gèlent l'onglet
 const TRK_MAX=2000;                 // étendue admise d'une piste lue d'un fichier, en mm
 const FPD_MAX=5000;                  // dessins par empreinte (normFp)
 
@@ -1012,10 +1012,16 @@ function undo(){
   // en plein tracé, annuler rend la carte d'avant le geste (cuivre poussé compris), pas l'édition d'avant
   if(S.route){cancelRoute();return;}
   if(S.dp){dpCancel();return;}
+  /* Les étapes vides s'effacent : bien des boutons posent leur instantané avant de savoir
+     si quelque chose changera, et Ctrl+Z semblait alors ne rien faire. */
+  const ici=serialize();
+  while(S.undo.length&&S.undo[S.undo.length-1].trimEnd()===ici)S.undo.pop();
   if(!S.undo.length)return;
-  S.redo.push(serialize());
+  S.redo.push(ici);
   histBorner(S.redo);
-  loadDoc(JSON.parse(S.undo.pop()),true);
+  const rendu=S.undo.pop();
+  loadDoc(JSON.parse(rendu),true);
+  if(typeof pcbNomRendre==="function")pcbNomRendre(rendu,ici);
   S.dirty=true;
 }
 function redo(){
@@ -1023,9 +1029,11 @@ function redo(){
   // comme undo : un tracé en cours n'entre pas dans l'instantané à moitié fait
   if(S.route)cancelRoute();
   if(S.dp)dpCancel();
-  S.undo.push(serialize());
+  const ici=serialize(), rendu=S.redo.pop();
+  S.undo.push(ici);
   histBorner(S.undo);
-  loadDoc(JSON.parse(S.redo.pop()),true);
+  loadDoc(JSON.parse(rendu),true);
+  if(typeof pcbNomRendre==="function")pcbNomRendre(rendu,ici);
   S.dirty=true;
 }
 

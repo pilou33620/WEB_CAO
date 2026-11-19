@@ -12004,6 +12004,18 @@ T("contourner : pas de tour de carte, un détour de plus du double est refusé",
   if(S.route.bad||!S.route.contourne)throw new Error("le petit contournement devait passer");
   S.route=null;setMode("select");S.tracks=[];touch();
 });
+T("annuler : une étape vide s'efface, Ctrl+Z défait la dernière vraie modification",()=>{
+  plateau();
+  S.tracks.push({l:0,net:"A",w:0.3,x1:5,y1:5,x2:9,y2:5});touch();
+  const avant=serialize();
+  push();S.tracks[0].x2=12;touch();        // une vraie étape
+  push();push();                            // deux boutons sans effet
+  undo();
+  if(serialize()!==avant)throw new Error("Ctrl+Z devait rendre la piste d'avant");
+  redo();
+  if(S.tracks[0].x2!==12)throw new Error("rétablir devait reposer la modification");
+  S.tracks=[];touch();
+});
 T("optimiseur : il ne raccourcit jamais à travers un obstacle",()=>{
   plateau();
   S.vias.push({x:25,y:20,d:1.2,drill:0.6,a:0,b:1,net:"AUTRE"});touch();
@@ -27295,7 +27307,7 @@ T("STEP : importer le contour — aller-retour de l'exemple, origine gardée, pe
   if(S.holes.length!==nTrous)throw new Error(S.holes.length+" trou(s) importé(s), "+nTrous+" attendu(s) : les pastilles et vias ne reviennent pas");
   stepImporterTexte(t,"carte.step");
   if(S.holes.length!==nTrous)throw new Error("réimporter ne double pas les trous");
-  undo();undo();
+  undo();        // le réimport n'a rien changé : son étape vide s'efface, un seul Ctrl+Z suffit
   if(serialize()!==avant)throw new Error("Ctrl+Z doit rendre la carte d'avant");
   if(stepImporterTexte("pas un STEP","x.step")!==null)throw new Error("un fichier illisible est refusé");
   exCharger(1);

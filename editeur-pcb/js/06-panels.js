@@ -255,7 +255,6 @@ function numProp(id,label,val,step,min,off){
    à tous les panneaux, et cette fenêtre s'en sert aussi. */
 /* Recale le routage déjà posé sur les règles des classes. C'est explicite :
    changer une largeur ne doit pas remuer la carte sans qu'on l'ait demandé. */
-const COTE_MAX=1e4;               // mm : au-delà, une coordonnée saisie est une faute de frappe
 function applyClasses(){
   push();
   let nt=0,nv=0;
@@ -1720,7 +1719,7 @@ function propsFp(box,fp){
     const enVigueur=el.value;
     el.onchange=()=>{
       const v=numSaisi(el.value);
-      if(!Number.isFinite(v)||Math.abs(v)>COTE_MAX){el.value=enVigueur;return;}   // vidé ou démesuré : l'objet ne saute pas
+      if(!Number.isFinite(v)||Math.abs(v)>COORD){el.value=enVigueur;return;}   // vidé ou démesuré : l'objet ne saute pas
       if(fp.locked){el.value=enVigueur;hint(fp.ref+" est verrouillé : déverrouillez-le pour le déplacer ou le tourner.");return;}
       const gene=fpEssai(()=>fn(v));
       if(gene){el.value=enVigueur;fpRefus(gene);return;}
@@ -2221,7 +2220,7 @@ function propsTrack(box,t){
   // un bout déplacé emmène les segments et vias qui s'y rejoignent
   for(const e of [1,2])for(const ax of ["X","Y"])$("t"+ax+e).onchange=ev=>{
     const v=parseFloat(ev.target.value), x=t["x"+e], y=t["y"+e];
-    if(!Number.isFinite(v)||Math.abs(v)>COTE_MAX)return refreshPanels();
+    if(!Number.isFinite(v)||Math.abs(v)>COORD)return refreshPanels();
     push();pointDeplacer(x,y,t.l,t.l,ax==="X"?wxu(v):x,ax==="Y"?wyu(v):y);touch();refreshPanels();draw();
   };
   $("tC").onchange=()=>{
@@ -2362,7 +2361,7 @@ function propsVia(box,v){
   // le via emmène les bouts de pistes accrochés sur ses couches
   for(const ax of ["X","Y"])$("v"+ax).onchange=ev=>{
     const n=parseFloat(ev.target.value);
-    if(!Number.isFinite(n)||Math.abs(n)>COTE_MAX)return refreshPanels();
+    if(!Number.isFinite(n)||Math.abs(n)>COORD)return refreshPanels();
     push();pointDeplacer(v.x,v.y,v.a,v.b,ax==="X"?wxu(n):v.x,ax==="Y"?wyu(n):v.y);touch();refreshPanels();draw();
   };
   $("vLie").onchange=()=>{
