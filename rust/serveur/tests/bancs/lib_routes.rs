@@ -212,6 +212,18 @@ fn test_12c_trop_de_colonnes_refuse() {
     assert_eq!(std::fs::read(format!("{tmp}/LIB_composants.csv")).unwrap(), avant);
 }
 
+/// Un nom de colonne s'ouvre dans le tableur comme une case : une formule y est refusée aussi,
+/// qu'elle vienne de la liste ou d'une clé de composant.
+#[test]
+fn test_12d_formule_en_en_tete_refusee() {
+    let (tmp, s, _) = serveur_tmp("webcao-lib-12d", |_| {});
+    let avant = std::fs::read(format!("{tmp}/LIB_composants.csv")).unwrap();
+    for corps in [r#"{"colonnes": ["Part Name", "=cmd|x!A1"], "composants": []}"#, r#"{"colonnes": ["Part Name"], "composants": [{"Part Name": "R1", "@SUM(A1)": "x"}]}"#] {
+        assert_eq!(refus(&s, "/api/lib/composants", corps), 400, "{corps}");
+    }
+    assert_eq!(std::fs::read(format!("{tmp}/LIB_composants.csv")).unwrap(), avant);
+}
+
 #[test]
 fn test_13_catalogue_ancien_format_crcrlf_toujours_lisible() {
     let (tmp, s, reelle) = serveur_tmp("webcao-lib-13", |_| {});

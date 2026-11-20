@@ -547,6 +547,10 @@ impl Poste {
         if colonnes.is_empty() {
             return Err(refus(400, "Colonnes non definies"));
         }
+        // l'en-tete s'ouvre dans le meme tableur que les cases : memes regles
+        for col in &colonnes {
+            valeur_catalogue(col, &col.as_str().into())?;
+        }
         let mut texte = csv::ecrire(&colonnes, "\r\n");
         for comp in composants.iter().filter_map(Json::as_objet) {
             let ligne: Result<Vec<String>, Refus> = colonnes.iter().map(|col| valeur_catalogue(col, comp.get(col).unwrap_or(&Json::Texte(String::new())))).collect();

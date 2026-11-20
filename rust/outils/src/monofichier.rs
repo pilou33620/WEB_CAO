@@ -35,6 +35,19 @@ pub fn build(root: &Path, page: &str, dst_html: &Path, dst_js: Option<&Path>) ->
         })
         .into_owned();
 
+    // Une balise a attributs (« data-outil », lu par document.currentScript) garde son bloc a elle :
+    // laissee telle quelle, elle designait ../commun/ depuis dist/, qui n'existe pas.
+    let html = Regex::new(r#"<script src="([^"]+)"( [^>]+)></script>"#)
+        .unwrap()
+        .replace_all(&html, |m: &Captures| {
+            let code = read(root, &m[1]);
+            if code.to_lowercase().contains("</script") {
+                quitter(&format!("« </script » présent dans {} : impossible d'inliner tel quel.", &m[1]));
+            }
+            format!("<script{}>\n/* ---------- {} ---------- */\n{}\n</script>", &m[2], &m[1], code.trim_end_matches('\n'))
+        })
+        .into_owned();
+
     let scripts: Vec<String> = src_re.captures_iter(&html).map(|m| m[1].to_string()).collect();
     if scripts.is_empty() {
         quitter(&format!("aucune balise <script src> trouvée dans {page} : le gabarit a changé ?"));

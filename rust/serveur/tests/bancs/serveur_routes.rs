@@ -339,9 +339,11 @@ fn securites() {
 
     // 39. Fichiers statiques par liste blanche (REGLES §3.1) : ce que les pages
     // chargent sort, le reste est 404 (la liste elle-même : essais de src/poste.rs).
-    for (nom, attendu) in [("/README.md", 404), ("/graphify-out/GRAPH_REPORT.md", 404), ("/python/test/lib_essai.py", 404), ("/commun/menus.js", 200), ("/", 200), ("/editeur-pcb/", 200), ("/editeur-pcb", 200), ("/favicon.ico", 204)] {
+    for (nom, attendu) in [("/README.md", 404), ("/graphify-out/GRAPH_REPORT.md", 404), ("/python/test/lib_essai.py", 404), ("/commun/menus.js", 200), ("/", 200), ("/editeur-pcb/", 200), ("/editeur-pcb", 301), ("/favicon.ico", 204)] {
         assert_eq!(get(p, nom).code, attendu, "{nom}");
     }
+    // sans barre finale, la page chercherait ses js/ et css/ a la racine : redirection
+    assert_eq!(get(p, "/editeur-pcb?x=1").entete("Location"), Some("/editeur-pcb/?x=1"));
     let r = get(p, "/commun/menus.js");
     assert_eq!((r.entete("Content-type"), r.entete("Content-Length").map(|n| n.parse::<usize>().unwrap())), (Some("text/javascript"), Some(r.corps.len())));
     let tete = brute(p, "HEAD", "/commun/menus.js", &[], b"");

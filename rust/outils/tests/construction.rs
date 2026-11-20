@@ -54,6 +54,13 @@ fn le_monofichier_est_celui_du_script_python() {
     let lire = |p: &Path| outils::lire_texte(p).unwrap();
     assert!(lire(&html) == lire(&t.join("attendu").join("page.html")), "page.html diffère");
     assert!(lire(&js) == lire(&t.join("attendu").join("bundle.js")), "bundle.js diffère");
+    // une balise a attributs (tuto.js, data-outil) est inlinee dans son propre bloc, hors du bundle
+    let page = lire(&t.join("editeur").join("page.html")).replace("</body>", "<script src=\"js/2.js\" data-outil=\"pcb\"></script>\n</body>");
+    std::fs::write(t.join("editeur").join("page.html"), page).unwrap();
+    assert_eq!(outils::monofichier::build(&t.join("editeur"), "page.html", &html, Some(&js)), (2, 3));
+    let vu = lire(&html);
+    assert!(!vu.contains("<script src=") && vu.contains("<script data-outil=\"pcb\">\n/* ---------- js/2.js ---------- */\n"), "{vu}");
+    assert!(lire(&js) == lire(&t.join("attendu").join("bundle.js")), "bundle.js diffère");
     std::fs::remove_dir_all(&t).unwrap();
 }
 

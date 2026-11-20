@@ -372,7 +372,9 @@ impl Poste {
             return cible;
         }
         let fichier = chemin.split('/').filter(|m| !m.is_empty() && *m != "." && *m != "..").fold(self.racine.clone(), |c, m| joindre(&c, m));
-        if est_dossier(&fichier) && !existe(&joindre(&fichier, "index.html")) {
+        // sans barre finale, `statique` redirige d'abord : servie a /editeur-pcb, la page
+        // cherchait ses js/ et css/ a la racine
+        if chemin.ends_with('/') && est_dossier(&fichier) && !existe(&joindre(&fichier, "index.html")) {
             let candidat = joindre(&fichier, &format!("{}.html", crate::chemins::basename(&fichier)));
             if existe(&candidat) {
                 return candidat;
