@@ -391,6 +391,11 @@ pub fn analyser(doc: &Json, journal: Option<&mut dyn FnMut(&str)>) -> Result<Jso
     let (t_r, source_tr);
     if num(&reglages, "t_r") > 0.0 {
         (t_r, source_tr) = (num(&reglages, "t_r"), "saisi".to_string());
+    } else if _nb(&reglages["tr_nets"][principal.as_str()], 0.0) > 0.0 {
+        // LE FRONT CALCULE DES COMPOSANTS (mode composants de la page) : R de
+        // sortie + R serie, C des pastilles + piste. Il passe devant la classe.
+        (t_r, source_tr) = (_nb(&reglages["tr_nets"][principal.as_str()], 0.0),
+                            "calculé des composants (R·C)".to_string());
     } else if !classe.is_empty() {
         let porteuse = num(&reglages, "porteuse_rf");
         (t_r, source_tr) = front_de_classe(&classe, &reglages["tr_classes"],

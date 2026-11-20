@@ -233,6 +233,8 @@ pub fn retours(doc: &Doc, couches: &[Json], reg: &Json, unite: f64) -> R<(Vec<Js
         let f0 = &freqs[0];
         let hypothese = if f0["porteuse"].vrai() {
             format!("jugé à la porteuse {}", _hz(num(f0, "porteuse")))
+        } else if f0["tr_composants"].vrai() {
+            format!("jugé au front de {} ns calculé des composants", fmt_g(num(f0, "tr") * 1e9, 2))
         } else {
             format!("jugé au front de {} ns de la classe {classe}", fmt_g(num(f0, "tr") * 1e9, 2))
         };

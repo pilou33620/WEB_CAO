@@ -76,7 +76,7 @@ const FICHIERS=[
   /* plans (Draftsman) : fabrication et assemblage */
   path.join(RACINE,"js","10-plans.js")
 ];
-const EXPOSE=["mdlBoitePlan","mdlPlanContient","simDsChamp","simCarteF","simBusMarges","simPDNLireChamps","simDsLire","simDsEcrire","SIM_DS","SIM_PDN","simPDNAssistantActif","SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
+const EXPOSE=["simCompCalculer","simCompVol","simCompFronts","simCompTrNets","mdlBoitePlan","mdlPlanContient","simDsChamp","simCarteF","simBusMarges","simPDNLireChamps","simDsLire","simDsEcrire","SIM_DS","SIM_PDN","simPDNAssistantActif","SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simSaisie","simPorts","SIM_FORMAT",
   "V","LT","ltAire","ltPreparer","LT_SEUIL_PLAN","mdlLongueur",
   "mdlNetNom","mdlNb","mdlCharger","mdlCouches","mdlPlansDans",
@@ -7867,6 +7867,33 @@ T("export .json : rouvert, une classe détectée reste détectée, et aucun chem
   if(par("GND").classe!=="gnd"||par("GND").autoDetecte!==true)
     throw new Error("GND revient « "+par("GND").autoRaison+" » au lieu de détecté");
   if(par("+3V3").autoDetecte!==true)throw new Error("+3V3 revient en choix mémorisé");
+});
+
+T("mode composants : t_r = 2,2·(R sortie + R série)·(C pastilles + C piste), le plus raide et le plus lent par net", function(){
+  const comps=[{ref:"U1",broches:[{pin:"1",net:"CLK"},{pin:"2",net:"MISO"}]},
+               {ref:"U2",broches:[{pin:"6",net:"CLK_R"},{pin:"2",net:"MISO"}]},
+               {ref:"J1",broches:[{pin:"1",net:"CLK"}]}];       // sans fiche : ignoré
+  const fiches={U1:{v:3.3,c:5,r:25},U2:{v:1.8,c:8,r:50}};
+  const pont=n=>n==="CLK"?{rOhms:33,netAval:"CLK_R",comp:"R5"}:
+                n==="CLK_R"?{rOhms:33,netAval:"CLK",comp:"R5"}:null;
+  const r=simCompCalculer(comps,fiches,()=>1,pont);
+  const pres=(a,b)=>Math.abs(a-b)<=1e-6*b;
+  const clk=r.lignes.find(l=>l.ref==="U1"&&l.pin==="1");
+  // U1 -> R5 -> U2 : (25+33) Ω, 8 pF de pastille + 2 nets de 1 pF
+  if(!clk||clk.serie!=="R5"||!pres(clk.tr,2.2*58*10e-12))throw new Error("CLK : "+JSON.stringify(clk));
+  if(clk.vAutre!==1.8)throw new Error("l'écart de tension 3,3 V / 1,8 V n'est pas signalé");
+  // MISO, bidirectionnel : U1 (25 Ω, 8+1 pF) est le plus raide, U2 (50 Ω, 5+1 pF) le plus lent
+  if(!pres(r.nets.MISO.raide.tr,2.2*25*9e-12)||!pres(r.nets.MISO.lent.tr,2.2*50*6e-12))
+    throw new Error("MISO : "+JSON.stringify(r.nets.MISO));
+  if(!r.nets.CLK||!r.nets.CLK_R)throw new Error("les deux côtés de la R série portent le front");
+  // le bus : retard à 50 % = 0,693·R·C du plus lent, et les pastilles dans la capacité
+  const v=simCompVol({net:"MISO",tflight:100,capPf:1},r);
+  if(Math.abs(v.rcDelayPs-0.693*50*6)>0.1||v.capPf!==6||Math.abs(v.tflightTotal-100-v.rcDelayPs)>0.1)
+    throw new Error("vol : "+JSON.stringify(v));
+  if(simCompVol({net:"AUTRE",tflight:1},r).rcDelayPs!==undefined)throw new Error("un net sans composant est modifié");
+  // décoché : rien ne part
+  SIM_CARTE.reglages.composants.actif=false;
+  if(simCompFronts()!==null||Object.keys(simCompTrNets()).length)throw new Error("décoché, le mode calcule encore");
 });
 
 (async()=>{

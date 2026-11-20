@@ -380,6 +380,7 @@ function ouvrirModalNets(){
   mettreAJourKpiModaleNets();
   rendreModalNets();
   mettreAJourApercuPrereglages();
+  if(typeof simCompMonter==="function")simCompMonter($("modaleComp"));
 }
 
 function fermerModalNets(){

@@ -127,6 +127,15 @@ Deux pistes d'un même net sont refusées (« Piste 1 et Piste 2 ont le même ne
 2. Calculer. Une colonne « à 10⁻¹² » (ou le taux choisi) s'ajoute au tableau, avec les contours de taux d'erreur sur l'œil et la baignoire en dessous. Le gabarit se juge aussi sur le contour du taux visé.
 3. Cocher « voisines de la sélection » pour ajouter la diaphonie des voisines au pire cas et à l'œil statistique, et choisir leur sens (« sens inconnu (le pire) », « même sens (FEXT) », « sens opposé (NEXT) »).
 
+### Je veux que le temps de montée soit calculé depuis les composants (visionneuse IPC-2581)
+
+1. À l'import, dans la fenêtre **Classification des Nets**, cocher **Mode composants** (la même case se retrouve dans l'onglet **Audit de la carte**, sous le tableau des classes).
+2. Pour chaque composant qui communique (microcontrôleur, mémoire…), saisir depuis sa datasheet : **V alim** (V), **C pastille** (pF, « input capacitance ») et **R sortie** (Ω, soit (VDD − VOH) / IOH ; vide pour un composant qui ne fait que recevoir).
+3. Le tableau **Fronts calculés** donne, pour chaque broche émettrice : le net, le composant d'en face, R sortie + R série (la résistance vue sur la carte entre les deux, avec sa valeur), C pastilles + C piste et le front t_r = 2,2 · R · C. Une alimentation différente en face est signalée.
+4. Le front le plus raide de chaque net remplace celui de sa classe dans l'**audit** et le **crosstalk** (champ tr vide) ; le plus lent donne le retard RC du **bus synchrone**. Case décochée : les réglages prédéfinis par classe, sans aucun changement.
+
+Limites : un seul pôle RC (ligne courte devant le front), la diaphonie « toute la carte » garde son front global. Pour une ligne longue, utiliser un modèle IBIS.
+
 ### Je veux utiliser un modèle IBIS pour l'émetteur ou le récepteur
 
 1. Dans le bloc **IBIS** de l'onglet **Diagramme de l'œil**, cliquer **fichier .ibs…** à la ligne « émetteur » ou « récepteur » et choisir le fichier.
