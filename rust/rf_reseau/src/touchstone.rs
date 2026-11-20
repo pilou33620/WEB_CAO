@@ -124,8 +124,14 @@ pub fn lire_touchstone(texte: &str, nom: &str, n_ports: Option<i64>) -> Res<(Vec
         let mut i = 0;
         while i + pas <= valeurs.len() {
             let f = valeurs[i] * unite;
-            if freqs.last().is_some_and(|d| f <= *d) {
-                break; // donnees de bruit : fin du reseau
+            if let Some(d) = freqs.last().filter(|d| f <= **d) {
+                if n == 2 {
+                    break; // donnees de bruit : fin du reseau
+                }
+                // Seul un 2 ports porte du bruit : ailleurs, s'arreter ici perdait la fin du fichier sans le dire.
+                return Err(ErreurRF::new(
+                    format!("{} : les fréquences ne sont pas croissantes ({} GHz après {} GHz).", ou_touchstone, fmt_g(f / 1e9, 6), fmt_g(*d / 1e9, 6)),
+                    "Supprimez le point en double ou réexportez le fichier."));
             }
             let paires = &valeurs[i + 1..i + pas];
             let mut cplx = Vec::with_capacity(n * n);

@@ -133,6 +133,9 @@ fn touchstone_formats_db_ri_mhz_et_bruit() {
     proche(s[1][1][0].arg(), PI / 4.0, 1e-9, "phase de S21");
     let (_f, s, _) = lire_touchstone("# GHZ S RI R 50\n1 0.5 0.5\n2 0.1 -0.1\n", "c.s1p", None).unwrap();
     assert!(s.len() == 2 && s[0].len() == 1 && s[0][0].len() == 1 && s[1][0][0] == cx(0.1, -0.1));
+    // Hors 2 ports il n'y a pas de bruit : une frequence qui recule est refusee, pas la fin du fichier perdue.
+    let e = lire_touchstone("# GHZ S RI R 50\n1 0.1 0\n2 0.2 0\n2 0.3 0\n3 0.4 0\n", "c.s1p", None).unwrap_err();
+    assert!(e.message.contains("croissantes") && !e.interne, "{}", e.message);
 }
 
 fn touchstone_trois_ports_en_rangees_et_version_2() {
