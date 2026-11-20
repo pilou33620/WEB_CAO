@@ -130,8 +130,8 @@ Deux pistes d'un même net sont refusées (« Piste 1 et Piste 2 ont le même ne
 ### Je veux que le temps de montée soit calculé depuis les composants (visionneuse IPC-2581)
 
 1. À l'import, dans la fenêtre **Classification des Nets**, cocher **Mode composants** (la même case se retrouve dans l'onglet **Audit de la carte**, sous le tableau des classes).
-2. Pour chaque composant qui communique (microcontrôleur, mémoire…), saisir depuis sa datasheet : **V alim** (V), **C pastille** (pF, « input capacitance ») et **R sortie** (Ω, soit (VDD − VOH) / IOH ; vide pour un composant qui ne fait que recevoir).
-3. Le tableau **Fronts calculés** donne, pour chaque broche émettrice : le net, le composant d'en face, R sortie + R série (la résistance vue sur la carte entre les deux, avec sa valeur), C pastilles + C piste et le front t_r = 2,2 · R · C. Une alimentation différente en face est signalée.
+2. Pour chaque composant qui communique (microcontrôleur, mémoire…), saisir depuis sa datasheet : **V alim** (V), **C pastille** (pF, « input capacitance ») et **R interne sortie** (Ω, celle du tampon : (VDD − VOH) / IOH, 20 à 50 Ω ; vide : 25 Ω). Ce n'est pas la résistance série de la carte : celle-ci est trouvée seule, broche par broche, avec sa valeur lue dans le fichier.
+3. Le tableau **Fronts calculés** donne, pour chaque broche émettrice : le net, le composant d'en face, R interne + R série (la résistance vue sur la carte entre les deux, avec son repère et sa valeur), C pastilles + C piste et le front t_r = 2,2 · R · C. Une alimentation différente en face est signalée.
 4. Le front le plus raide de chaque net remplace celui de sa classe dans l'**audit** et le **crosstalk** (champ tr vide) ; le plus lent donne le retard RC du **bus synchrone**. Case décochée : les réglages prédéfinis par classe, sans aucun changement.
 
 Limites : un seul pôle RC (ligne courte devant le front), la diaphonie « toute la carte » garde son front global. Pour une ligne longue, utiliser un modèle IBIS.
