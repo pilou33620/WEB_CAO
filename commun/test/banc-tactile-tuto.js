@@ -49,6 +49,40 @@ T("tuto : ← sur la carte de départ ne lance pas la visite, → oui",()=>{
   if(!/étape 1 \//.test(bulle.innerHTML))throw new Error("→ n'ouvre pas l'étape 1");
 });
 
+/* ---------- commun/profils.js : deux onglets n'effacent pas les sections l'un de l'autre ---------- */
+T("profils : une section écrite par un autre onglet survit à l'écriture de celui-ci",()=>{
+  const mem=new Map(), ecoutes={};
+  const localStorage={getItem:k=>mem.has(k)?mem.get(k):null,setItem:(k,v)=>mem.set(k,String(v)),removeItem:k=>mem.delete(k)};
+  const onglet=()=>{
+    const ctx={window:{localStorage,addEventListener(k,f){if(k==="storage")ctx.stockage=f;}},
+      document:{addEventListener(){},querySelectorAll:()=>[],getElementById:()=>null},location:{protocol:"file:"},console};
+    vm.runInNewContext(lire("profils.js"),ctx);
+    return ctx;
+  };
+  const a=onglet(), b=onglet();
+  b.profEcrire("reglages:pcb",{x:1});
+  const cle="cao.profils.v1.p.pilou";
+  if(!a.stockage)throw new Error("pas d'écoute de « storage »");
+  a.stockage({key:cle,newValue:mem.get(cle)});
+  a.profEcrire("reglages:schema",{y:2});
+  const fin=JSON.parse(mem.get(cle)).sections;
+  if(!fin["reglages:pcb"]||!fin["reglages:schema"])throw new Error("section perdue : "+Object.keys(fin));
+});
+
+/* ---------- commun/explorateur-lib.js : la sélection suit le filtre ---------- */
+T("explorateur LIB : un composant écarté par le filtre n'est plus celui que « Placer » pose",()=>{
+  const ctx={document:{getElementById:()=>null}};
+  vm.runInNewContext(lire("explorateur-lib.js")+";this.ELIB=ELIB;",ctx);
+  const r={"Part Name":"RES_10k"}, c={"Part Name":"CAP_100n"};
+  let pose=null;
+  Object.assign(ctx.ELIB,{items:[r,c],selected:r,category:"all",query:"cap",onSelect:it=>{pose=it;}});
+  ctx.elibFiltrerEtAfficher();
+  ctx.elibValiderSelection();
+  if(pose===r)throw new Error("RES_10k posé alors que le filtre ne montre que CAP_100n");
+  ctx.ELIB.selected=c; ctx.elibFiltrerEtAfficher();
+  if(ctx.ELIB.selected!==c)throw new Error("sélection visible perdue");
+});
+
 /* ---------- commun/projet.js : changer de projet oublie aussi la carte IPC ---------- */
 T("projet : ouvrir B ou fermer efface la session ipc2581 de A",()=>{
   const effaces=[];

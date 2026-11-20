@@ -20,7 +20,7 @@ const code=["echappe.js","classes-interface.js","simulation-em.js","simulation-r
 /* Le "use strict" de chaque fichier est retiré, et ce banc n'en a pas : en
    mode strict, `eval` aurait sa propre portée. Les `const` y restent de toute
    façon — on les sort à la main, comme visionneuse-ipc2581/test/harness-sim.js. */
-const EXPOSE=["SIM","SIM_ANALYSES","SIM_RAP_ETAT","SIM_RAP_KPI","SIM_RAP_GUIDE",
+const EXPOSE=["SIM","SIM_PDN","SIM_ANALYSES","SIM_RAP_ETAT","SIM_RAP_KPI","SIM_RAP_GUIDE",
               "SIM_RAP_JSON_MAX","simRapJson","simOnglets",
               "simRapPiste","simRapMarkdown"];
 eval(code+"\n"+EXPOSE.map(n=>"globalThis."+n+"="+n+";").join("\n"));
@@ -112,6 +112,25 @@ T("le Markdown porte les sections et ses tableaux",function(){
                   "**[WARN]** Réserve — pas de couture","| A\\|B | L1 | 1 | 2,000 | 0,100 |",
                   "- Fréquence centrale : 1 GHz","Document autonome",". Consignes pour une IA"])
     if(md.indexOf(s)<0)throw new Error("absent : "+s);
+});
+
+T("PDN : ΔI de 1 A s'écrit « 1000 mA », pas « 1.00e+3 mA »",function(){
+  const garde={deltaIA:SIM_PDN.deltaIA};
+  for(const [a,att] of [[1,"ΔI 1000 mA"],[0.0025,"ΔI 2.5 mA"],[0.25,"ΔI 250 mA"]]){
+    SIM_PDN.deltaIA=a;
+    const d=SIM_RAP_KPI.pdn({zMax:1,fZMax:1e6,zTarget:0.1,conforme:true})[1].detail;
+    if(d.indexOf(att+" ·")!==0)throw new Error(a+" A : "+d);
+  }
+  SIM_PDN.deltaIA=garde.deltaIA;
+});
+
+T("saisie : « 1 500 » (espace des milliers) vaut 1500, pas 1",function(){
+  const e=simEl("simFc"), garde=SIM.saisie.fc, k=simUnite().f;
+  for(const [txt,att] of [["1 500",1500],["2\u00a0400,5",2400.5],["3,5",3.5]]){
+    e.value=txt;
+    egal(simSaisie().fc/k,att,"« "+txt+" »");
+  }
+  e.value=""; SIM.saisie.fc=garde;
 });
 
 T("simulation RF : valeurs lues en SI, C ou L illisible refusée (-1), 0 explicite gardé",function(){

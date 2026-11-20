@@ -111,7 +111,7 @@
        texte:"Revient au résultat d'avant : on peut suivre une piste d'équivalences et revenir sur ses pas."},
       {sel:"#bCsv",titre:"Exporter",
        texte:"La liste en .csv (tableur) ou .json, telle qu'affichée."},
-      {sel:"#bApi",titre:"Le serveur",
+      {sel:"#fApi",titre:"Le serveur",
        texte:"L'adresse du serveur de recherche. La barre d'état dit s'il répond."}
     ],
     lib:[

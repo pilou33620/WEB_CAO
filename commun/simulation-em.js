@@ -20295,7 +20295,8 @@ function simSaisieEcrire(){
 function simSaisie(){
   const lu=(id,defaut,mini)=>{
     const el=simEl(id);
-    const v=el?parseFloat(String(el.value).replace(",",".")):NaN;
+    // « 1 500 » (milliers à la française) se lisait 1 : le champ affichait 1 500 MHz, le calcul partait à 1 MHz
+    const v=el?parseFloat(String(el.value).replace(/[\s\u00a0\u202f]/g,"").replace(",",".")):NaN;
     return (isFinite(v)&&v>=(mini==null?0:mini))?v:defaut;
   };
   const s=SIM.saisie, k=simUnite().f, kb1=simUniteBande1().f, kb2=simUniteBande2().f;

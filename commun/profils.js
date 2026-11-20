@@ -561,6 +561,17 @@ function profBarre(){
   /* pagehide plutôt que beforeunload : il part aussi sur mobile et lors d'un
      retour arrière, et l'écriture différée ne doit pas mourir avec la page. */
   try{ window.addEventListener("pagehide", profVider); }catch(_){}
+  /* Un autre onglet a écrit le profil courant : on reprend sa copie, sinon la prochaine écriture
+     d'ici (profil entier) effaçait ses sections. Sans profSignaler : cet onglet garde son affichage. */
+  try{
+    window.addEventListener("storage", function(e){
+      if(!e || !PROF_NOM || !e.newValue || e.key !== PROF_CLE_P + PROF_NOM.toLowerCase()) return;
+      let o = null;
+      try{ o = JSON.parse(e.newValue); }catch(_){ return; }
+      const p = profNormaliser(o, PROF_NOM);
+      if(p && p.t > (PROF_DATA ? PROF_DATA.t : 0)) PROF_DATA = p;
+    });
+  }catch(_){}
 
   profBarre();
   profSynchroniser();

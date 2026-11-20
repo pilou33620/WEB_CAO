@@ -269,6 +269,7 @@ function cartoucheDialogue(o){
   q("logoFichier").onchange=ev=>{
     const f=ev.target.files&&ev.target.files[0];
     if(!f)return;
+    ev.target.value="";            // sinon rechoisir le même fichier après « Retirer » ne déclenche rien
     /* ramené à 400 px de large au plus, en PNG : le profil reste léger */
     const rd=new FileReader();
     rd.onload=()=>{

@@ -77,7 +77,8 @@
   }
   function annuler(){
     const p=pile(), i=repere===null?-1:p.lastIndexOf(repere);
-    for(let k=p.length-1-i;k>0&&p.length;k--)undo();
+    // repère sorti de la pile (historique borné) : on ne sait plus où s'arrêter, donc on ne défait rien
+    if(repere===null||i>=0)for(let k=p.length-1-i;k>0&&p.length;k--)undo();
     vue=signature();     // la sélection rendue par l'annulation n'est pas une nouvelle sélection
     cacher();
   }

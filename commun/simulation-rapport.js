@@ -166,7 +166,7 @@ const SIM_RAP_KPI={
       {lbl:"Z max", val:simPDNFormatZ(r.zMax), detail:"à "+simPDNFormatFreq(r.fZMax),
        rang:r.conforme?"ok":"crit"},
       {lbl:"Z cible", val:simPDNFormatZ(r.zTarget), rang:"accent",
-       detail:"ΔI "+(P.deltaIA*1e3).toPrecision(3)+" mA · ondulation "+
+       detail:"ΔI "+(+(P.deltaIA*1e3).toPrecision(3))+" mA · ondulation "+
          P.ripplePct+" % de "+P.vdd+" V"},
       {lbl:"Rail", val:P.rail||"—",
        detail:(P.condensateurs||[]).length+" condensateur(s) au modèle"},

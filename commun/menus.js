@@ -132,7 +132,12 @@
     if(deroule&&!deroule.contains(e.target)&&!e.target.closest(".pilote"))ongFermer();
   },true);
   document.addEventListener("keydown",function(e){
-    if(e.key==="Escape"&&(ouvert||deroule)){fermer();ongFermer();e.stopPropagation();}
+    if(e.key==="Escape"&&(ouvert||deroule)){
+      // le focus ne disparaît pas avec l'entrée qu'on referme : il revient au titre du menu
+      const m=ouvert||deroule, a=document.activeElement;
+      if(a&&a!==document.body&&m.contains(a)&&!a.classList.contains("mnu-t"))m.querySelector(".mnu-t").focus();
+      fermer();ongFermer();e.stopPropagation();
+    }
   },true);
   window.addEventListener("resize",function(){fermer();ongFermer();});
 

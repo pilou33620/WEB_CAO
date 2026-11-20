@@ -484,6 +484,8 @@ function elibFiltrerEtAfficher() {
   }
 
   ELIB.filtered = res;
+  // une sélection que le filtre écarte n'est plus à l'écran : « Placer » ou Entrée la posait quand même
+  if (ELIB.selected && res.indexOf(ELIB.selected) < 0) ELIB.selected = null;
 
   // Mise à jour compteur
   const countEl = document.getElementById("elibCount");
