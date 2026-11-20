@@ -317,6 +317,18 @@ for (const k10 of [false, true]) {
   const norm = d => PCB ? PCB.normDoc(JSON.parse(J(d))) : d;       // ce que l'éditeur en garde, s'il est construit
   let d, e, r;
 
+  /* repère des fichiers sur l'origine utilisateur (fabOrigin) : écrit et relu, origine en (0, 0) comprise */
+  for (const o of [{ x: 5, y: 35 }, { x: 0, y: 0 }]) {
+    d = base(); d.origin = o; d.fabOrigin = true;
+    r = lire(ecrire(d).t);
+    verifier(r.doc.fabOrigin === true && r.doc.origin.x === o.x && r.doc.origin.y === o.y, "origine des fichiers (fabOrigin) : relue après écriture");
+  }
+  d = base(); d.origin = { x: 5, y: 35 };
+  verifier(lire(ecrire(d).t).doc.fabOrigin === false, "origine posée sans fabOrigin : relue sans");
+
+  d = base(); d.fps = [null]; d.classes = [null];
+  verifier(lire(ecrire(d).t).doc.fps.length === 0, "document abîmé (empreinte ou classe nulle) : écrit sans exception");
+
   /* 0. pont de nets : net_tie_pad_groups écrit et relu, gardé par l'éditeur */
   d = base();
   d.fps = [fpDe([{ n: 1, x: 0, y: 0, w: 1, h: 1, shape: "rect", drill: 0, rot: 0 }, { n: 2, x: 0.8, y: 0, w: 1, h: 1, shape: "rect", drill: 0, rot: 0 }],

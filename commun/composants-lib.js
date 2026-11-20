@@ -774,7 +774,7 @@ const COMPOSANTS_LIB = (() => {
             if (k === 34) break;
             if (i + 1 >= n) { v += "\\"; i++; continue; }     // « \ » final : gardé tel quel
             i++;
-            v += texte[i] === "n" ? "\n" : texte[i];
+            v += texte[i] === "n" ? "\n" : texte[i] === "r" ? "\r" : texte[i] === "t" ? "\t" : texte[i];   // KiCad écrit « \r » pour un retour chariot
             i++;
           }
           i++;

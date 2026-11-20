@@ -800,13 +800,13 @@ const KICAD_PCB = (() => {
     const nomCu = i => i === 0 ? "F.Cu" : i === cu - 1 ? "B.Cu" : "In" + i + ".Cu";
     const arr = v => Array.isArray(v) ? v : [];
     const fpsD = arr(d.fps), tracksD = arr(d.tracks), viasD = arr(d.vias), zonesD = arr(d.zones);
-    const rule = d.rule || {}, classes = arr(d.classes).length ? d.classes : [{ name: "Default", w: 0.25, clr: 0.2, via: 0.6, drill: 0.3 }];
+    const rule = d.rule || {}, vraies = arr(d.classes).filter(c => c && typeof c === "object"), classes = vraies.length ? vraies : [{ name: "Default", w: 0.25, clr: 0.2, via: 0.6, drill: 0.3 }];
     const netClass = d.netClass && typeof d.netClass === "object" ? d.netClass : {};
     const clrDe = net => { const c = classes.find(c => c.name === netClass[net]) || classes[0]; return nb(c.clr, 0.2); };
 
     /* table des nets */
     const tous = new Set();
-    for (const f of fpsD) for (const n of Object.values(f.nets || {})) if (n) tous.add(String(n));
+    for (const f of fpsD) for (const n of Object.values((f && f.nets) || {})) if (n) tous.add(String(n));
     for (const o of tracksD.concat(viasD, zonesD)) if (o && o.net) tous.add(String(o.net));
     const code = new Map([...tous].sort().map((n, i) => [n, i + 1]));
     const netK = n => n && code.has(n) ? ["net", code.get(n)] : ["net", 0];
@@ -1046,7 +1046,8 @@ const KICAD_PCB = (() => {
     if (nb(rule.paste)) setup.push(["pad_to_paste_clearance", nb(rule.paste)]);
     setup.push(["allow_soldermask_bridges_in_footprints", "no"]);
     if (rule.viaFinish == null || rule.viaFinish === "tented") setup.push(["tenting", "front", "back"]);
-    if (d.origin && (nb(d.origin.x) || nb(d.origin.y))) setup.push(["aux_axis_origin", nb(d.origin.x), nb(d.origin.y)]);
+    if (d.origin && (d.fabOrigin || nb(d.origin.x) || nb(d.origin.y))) setup.push(["aux_axis_origin", nb(d.origin.x), nb(d.origin.y)]);
+    if (d.origin && d.fabOrigin) setup.push(["pcbplotparams", ["useauxorigin", "yes"]]);     // relu en fabOrigin ; KiCad complète le reste
     const couchesK = ["layers", [0, q("F.Cu"), "signal"]];
     for (let i = 1; i < nCu - 1; i++) couchesK.push([2 + 2 * i, q(nomS(i)), "signal"]);
     couchesK.push([2, q("B.Cu"), "signal"], ...COUCHES_UTILISATEUR.map(([k, n, u]) => [k, q(n), "user"].concat(u ? [q(u)] : [])));

@@ -92,6 +92,7 @@ const refuse = async (f, motif) => { try { await f(); return false; } catch (e) 
   const relu = K.lire(t, "essai");
   verifier(relu[1] === 'x "y"\\\nz' && relu[2] === "1.234568" && relu[3] === "0" && relu[4] === "0" && relu[5][1] === "2",
            "expressions S : guillemets, échappements et nombres relus à l'identique");
+  verifier(K.lire('(a "l1\\r\\nl2\\tx")', "essai")[1] === "l1\r\nl2\tx", "expressions S : « \\r » et « \\t » de KiCad relus (pas « r » et « t »)");
   verifier(K.uuid("a") === K.uuid("a") && K.uuid("a") !== K.uuid("b") && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(K.uuid("a")),
            "identifiants stables au format UUID v4");
 
