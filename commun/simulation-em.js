@@ -8023,7 +8023,6 @@ function simCarteReglagesDoc(){
    ============================================================================= */
 /* Pur, pour le banc : `comps` [{ref, broches:[{pin, net}]}], `fiches`
    {ref:{v,c,r}}, `capPiste(net)` en pF, `pont(net)` -> {rOhms, netAval, comp}. */
-const SIM_COMP_R_DEFAUT=25;
 function simCompCalculer(comps,fiches,capPiste,pont){
   const surNet={}, lignes=[], nets={};
   for(const k of comps){
@@ -8032,11 +8031,7 @@ function simCompCalculer(comps,fiches,capPiste,pont){
   }
   for(const net in surNet)for(const e of surNet[net]){
     const f=fiches[e.ref];
-    /* La R INTERNE du tampon : celle saisie, sinon 25 Ω (CMOS courant) dès que
-       la fiche porte une tension ou une capacité. La R série, elle, se lit
-       sur la carte, broche par broche. */
-    const rInt=f.r>0?+f.r:(f.v>0||f.c>0)?SIM_COMP_R_DEFAUT:0;
-    if(!(rInt>0))continue;
+    if(!(f.r>0))continue;
     let recs=surNet[net].filter(x=>x.ref!==e.ref), rs=0, serie="", aval="";
     if(!recs.length){
       /* Personne en direct : une R série vers un autre composant renseigné ? */
@@ -8049,9 +8044,9 @@ function simCompCalculer(comps,fiches,capPiste,pont){
     const cPiste=(+capPiste(net)||0)+(aval?+capPiste(aval)||0:0);
     if(!(cPads+cPiste>0))continue;
     const vs=recs.map(x=>+fiches[x.ref].v||0).filter(x=>x>0&&f.v>0&&Math.abs(x-f.v)>0.05);
-    const l={ref:e.ref,pin:e.pin,net,aval,serie,rs,r:rInt,rDefaut:!(f.r>0),cPads,cPiste,v:+f.v||0,
+    const l={ref:e.ref,pin:e.pin,net,aval,serie,rs,r:+f.r,cPads,cPiste,v:+f.v||0,
              vAutre:vs[0]||0,vers:[...new Set(recs.map(x=>x.ref))],
-             tr:2.2*(rInt+rs)*(cPads+cPiste)*1e-12};
+             tr:2.2*(+f.r+rs)*(cPads+cPiste)*1e-12};
     lignes.push(l);
     for(const n of aval?[net,aval]:[net]){
       const d=nets[n]=nets[n]||{raide:l,lent:l};
@@ -8108,16 +8103,15 @@ function simCompHtml(){
     !/^(R|RN|RP|C|L|FB|TP|D)\d/i.test(k.ref));
   const ch=(ref,k,t)=>'<input type="text" inputmode="decimal" class="simChamp" data-comp="'+
     esc(ref)+'" data-k="'+k+'" title="'+esc(t)+'" value="'+
-    (((c.fiches[ref]||{})[k])>0?simNbLibre(c.fiches[ref][k]):"")+'"'+
-    (k==="r"?' placeholder="'+SIM_COMP_R_DEFAUT+'"':"")+'>';
+    (((c.fiches[ref]||{})[k])>0?simNbLibre(c.fiches[ref][k]):"")+'">';
   h+='<div class="pnl-bar"><table class="simTab"><tr><th>Composant</th><th>Valeur</th>'+
     '<th title="Tension d\'alimentation de ses entrées-sorties">V alim (V)</th>'+
     '<th title="Capacité d\'une broche : « Input capacitance », C_IN / C_IO">C pastille (pF)</th>'+
-    '<th title="Résistance INTERNE du tampon de sortie : (VDD − VOH) / IOH de la datasheet, typiquement 20 à 50 Ω. Ce n\'est PAS la résistance série de la carte : celle-ci est trouvée seule, broche par broche. Vide : 25 Ω.">R interne sortie (Ω)</th></tr>'+
+    '<th title="Résistance de sortie : (VDD − VOH) / IOH de la datasheet, typiquement 20 à 50 Ω. Vide : ce composant ne fait que recevoir.">R sortie (Ω)</th></tr>'+
     comps.map(k=>'<tr><td>'+esc(k.ref)+'</td><td class="simEx">'+esc(k.val)+'</td><td>'+
       ch(k.ref,"v","Tension d'alimentation des E/S de "+k.ref)+'</td><td>'+
       ch(k.ref,"c","Capacité d'une broche de "+k.ref)+'</td><td>'+
-      ch(k.ref,"r","Résistance interne de sortie de "+k.ref+" (pas la R série, trouvée sur la carte) ; vide : "+SIM_COMP_R_DEFAUT+" Ω")+
+      ch(k.ref,"r","Résistance de sortie de "+k.ref+" ; vide : récepteur seulement")+
       '</td></tr>').join("")+'</table></div><div data-comp-res>'+simCompResHtml()+'</div>';
   return h;
 }
@@ -8125,16 +8119,16 @@ function simCompHtml(){
 function simCompResHtml(){
   const r=simCompFronts();
   if(!r||!r.lignes.length)
-    return '<p class="simNote">Aucun front calculé : il faut une fiche remplie sur un '+
-           'composant (tension ou capacité) et une C de pastille sur celui d\'en face, reliés par un net '+
+    return '<p class="simNote">Aucun front calculé : il faut une R de sortie sur un '+
+           'composant et une C de pastille sur celui d\'en face, reliés par un net '+
            '(ou par une résistance série).</p>';
   const pf=x=>simNbLibre(+x.toPrecision(3));
   return '<details open><summary>Fronts calculés : '+r.lignes.length+' broche(s), '+
     Object.keys(r.nets).length+' net(s)</summary><table class="simTab"><tr><th>Broche</th>'+
-    '<th>Net</th><th>Vers</th><th>R interne + R série (carte)</th><th>C pastilles + piste</th>'+
+    '<th>Net</th><th>Vers</th><th>R sortie + série</th><th>C pastilles + piste</th>'+
     '<th>t_r</th><th>Niveau</th></tr>'+r.lignes.map(l=>'<tr><td>'+esc(l.ref+"."+l.pin)+
     '</td><td>'+esc(l.net+(l.aval?" → "+l.aval:""))+'</td><td>'+esc(l.vers.join(", "))+
-    '</td><td>'+pf(l.r)+(l.rDefaut?" (défaut)":"")+(l.rs?" + "+pf(l.rs)+" Ω ("+esc(l.serie)+")":" Ω")+'</td><td>'+
+    '</td><td>'+pf(l.r)+(l.rs?" + "+pf(l.rs)+" Ω ("+esc(l.serie)+")":" Ω")+'</td><td>'+
     pf(l.cPads)+" + "+pf(l.cPiste)+' pF</td><td><b>'+simDureeXt(l.tr)+'</b></td><td>'+
     (l.v?pf(l.v)+" V":"—")+(l.vAutre?' <span class="simTag" title="'+
       esc("L'émetteur est alimenté en "+pf(l.v)+" V et un récepteur en "+pf(l.vAutre)+

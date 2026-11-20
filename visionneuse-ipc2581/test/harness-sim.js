@@ -7930,9 +7930,6 @@ T("mode composants : t_r = 2,2·(R sortie + R série)·(C pastilles + C piste), 
   if(Math.abs(v.rcDelayPs-0.693*50*6)>0.1||v.capPf!==6||Math.abs(v.tflightTotal-100-v.rcDelayPs)>0.1)
     throw new Error("vol : "+JSON.stringify(v));
   if(simCompVol({net:"AUTRE",tflight:1},r).rcDelayPs!==undefined)throw new Error("un net sans composant est modifié");
-  // R interne vide : 25 Ω, la R série de la carte s'y ajoute
-  const d=simCompCalculer(comps,{U1:{v:3.3,c:5},U2:{v:3.3,c:8}},()=>1,pont).lignes.find(l=>l.ref==="U1"&&l.pin==="1");
-  if(!d.rDefaut||!pres(d.tr,2.2*(25+33)*10e-12))throw new Error("R par défaut : "+JSON.stringify(d));
   // décoché : rien ne part
   SIM_CARTE.reglages.composants.actif=false;
   if(simCompFronts()!==null||Object.keys(simCompTrNets()).length)throw new Error("décoché, le mode calcule encore");
