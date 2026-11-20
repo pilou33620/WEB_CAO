@@ -2408,6 +2408,8 @@ function fpGardeVerifier(){
   // geste en cours : on jugera la pose finale
   if(FP_GARDE_AUTO&&(drag||S.route||S.dp)){setTimeout(fpGardeVerifier,40);return "";}
   FP_GARDE=null;
+  const dit=typeof pousseAuDepot==="function"?pousseAuDepot.dit:"";
+  if(dit)pousseAuDepot.dit="";                  // lue une fois, par la garde du geste qui l'a posée
   if(!S.avoid||g.snap==null||S.undo.indexOf(g.snap)<0)return "";   // annulé entre-temps
   const ch=S.fps.filter(f=>{const b=g.base.get(f.id);return !b||b.j!==JSON.stringify(f);});
   let refus="";
@@ -2447,7 +2449,9 @@ function fpGardeVerifier(){
   for(let top=null;S.undo.length&&top!==g.snap;){top=S.undo[S.undo.length-1];undo();S.redo.pop();}
   if(typeof refreshPanels==="function")refreshPanels();
   if(typeof draw==="function")draw();
-  hint("Action annulée : "+refus+". Faites-lui de la place, ou coupez l'anti-collision pour forcer.");
+  // un voisin que la poussée a laissé en place : sa raison, sinon couverte par celle-ci (57-pousse.js)
+  const pousse=dit?" ("+dit+")":"";
+  hint("Action annulée : "+refus+pousse+". Faites-lui de la place, ou coupez l'anti-collision pour forcer.");
   return refus;
 }
 function fpRefus(gene){
@@ -2458,8 +2462,10 @@ function fpRefus(gene){
    la place visée. Rend le décalage, ou null si toute la carte est prise : l'appelant
    refuse, plutôt que de poser une faute. Par anneaux, au pas de la grille autour du
    point, puis de quatre en quatre : sur une carte pleine, le pas fin ne finirait pas.
-   `force` : cherche même anti-collision coupée (placement automatique). */
-function fpPlaceLibre(fps,force){
+   `force` : cherche même anti-collision coupée (placement automatique).
+   `accepte(dx,dy)` (facultatif) : un juge de plus, appelé sur les nœuds libres de
+   l'anneau du plus proche au plus loin ; un nœud qu'il refuse (false) est sauté, null arrête la recherche. */
+function fpPlaceLibre(fps,force,accepte){
   if((!S.avoid&&!force)||!fps.length)return {dx:0,dy:0};
   const skip=new Set(fps), s=Math.max(S.grid>0?S.grid:0.5,0.5), b=S.board;
   const essai=(dx,dy,carte)=>{
@@ -2473,13 +2479,18 @@ function fpPlaceLibre(fps,force){
   const portee=Math.hypot(b.w,b.h)+dist(f0.x,f0.y,b.x+b.w/2,b.y+b.h/2);
   for(let r=1,st=1;r*s<=portee;r+=st){
     if(r===61){st=4;r=64;}
-    let best=null,bd=Infinity;
+    const libres=[];let bd=Infinity;
     for(let i=-r;i<=r;i+=st)for(let j=-r;j<=r;j+=st){
       if(Math.max(Math.abs(i),Math.abs(j))!==r)continue;     // l'anneau seulement
       const d=Math.hypot(i,j);
-      if(d<bd&&essai(r3(i*s),r3(j*s),true)){bd=d;best={dx:r3(i*s),dy:r3(j*s)};}
+      if((accepte||d<bd)&&essai(r3(i*s),r3(j*s),true)){libres.push({d,dx:r3(i*s),dy:r3(j*s)});if(!accepte)bd=d;}
     }
-    if(best)return best;
+    libres.sort((a,c)=>a.d-c.d);                              // stable : à distance égale, l'ordre du balayage
+    for(const c of libres){
+      const ok=!accepte||accepte(c.dx,c.dy);
+      if(ok===null)return null;                               // le juge renonce : plus la peine de chercher
+      if(ok)return {dx:c.dx,dy:c.dy};
+    }
   }
   return null;
 }
