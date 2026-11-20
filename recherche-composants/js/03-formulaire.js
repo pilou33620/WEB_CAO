@@ -9,7 +9,10 @@
 
 /* ---------- utilitaires d'affichage, partagés par les modules suivants ------ */
 function fmtEntier(n){
-  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g," ");
+  // la partie entière seule : « 1234.5678 » s'écrivait « 1 234.5 678 »
+  const p=String(n).split(".");
+  p[0]=p[0].replace(/\B(?=(\d{3})+(?!\d))/g," ");
+  return p.join(".");
 }
 function fmtPrix(n){
   if(typeof n!=="number")return String(n);
@@ -84,7 +87,7 @@ function estAvance(c){
 
 /* ---------- construction ---------- */
 function champHTML(c){
-  const id="ch_"+c.cle;
+  const id=esc("ch_"+c.cle);          // la clé vient du schéma du serveur distant
   const lbl='<label for="'+id+'">'+esc(c.lib)+
             (c.requis?'<span class="req" title="obligatoire">*</span>':"")+'</label>';
   const aide=c.aide?'<span class="aide">'+esc(c.aide)+'</span>':"";
@@ -215,6 +218,7 @@ function remplirFormulaire(nom,valeurs){
     if(!el)continue;
     const v=valeurs[cle];
     if(div.dataset.type==="case")el.checked=!!v;
+    else if(div.dataset.type==="trois")el.value=v===true?"oui":v===false?"non":"";   // « true » n'est pas une option
     else if(Array.isArray(v))el.value=v.join(", ");
     else if(v&&typeof v==="object")el.value=JSON.stringify(v);
     else el.value=v===null||v===undefined?"":String(v);

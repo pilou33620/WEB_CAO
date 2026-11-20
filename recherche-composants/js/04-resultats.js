@@ -178,6 +178,7 @@ function exportCsv(){
   const cols=RESULTAT.colonnes.length?RESULTAT.colonnes:Object.keys(RESULTAT.lignes[0]);
   const cell=function(v){
     let t=valeurTexte(v);
+    if(t==="—")t="";                 // le tiret d'affichage n'est pas une donnée : case vide
     // même règle que csvCell (schéma, 13-fichiers.js) : « =… », « +… », « @… » serait lu comme une formule
     if(/^[=+@\t\r]|^-(?![\d.])/.test(t))t="'"+t;
     t=t.replace(/"/g,'""');

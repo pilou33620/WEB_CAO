@@ -424,14 +424,15 @@ const banc = (async () => {
   const noeud = id => noeuds[id] || (noeuds[id] = {
     id, value: "", textContent: "", innerHTML: "", hidden: false, disabled: false, style: {}, dataset: {}, onclick: null,
     classList: { toggle() {}, add() {}, remove() {} }, accept: "", champs: [], querySelectorAll() { return this.champs; },
-    querySelector: q => noeud("q:" + q), addEventListener() {}, getAttribute: () => null, setAttribute() {}, appendChild() {}, focus() {} });
-  const appels = [], fichiersLib = {}, confirmes = [];
+    querySelector: q => noeud("q:" + q), addEventListener() {}, getAttribute: () => null, setAttribute() {}, appendChild() {}, focus() {},
+    cloneNode() { return this; }, replaceWith() {}, scrollIntoView() {} });
+  const appels = [], fichiersLib = {}, confirmes = [], ecouteurs = [];
   const serveur = { reponse: () => ({ ok: true, mtime_ms: 2, mtime_avant: 1, champs: {} }) };
   const page = {
     console,
     document: { getElementById: noeud, querySelector: () => null, querySelectorAll: () => [], createElement: () => noeud("?"),
                 body: { appendChild() {}, classList: { add() {}, remove() {}, toggle() {} } }, addEventListener() {} },
-    window: { location: { search: "" }, addEventListener() {} },
+    window: { location: { search: "" }, devicePixelRatio: 1, addEventListener(t, f, capture) { ecouteurs.push({ t, f, capture }); } },
     localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
     confirm: m => { confirmes.push(m); return false; },
     setTimeout: () => 0, clearTimeout() {},
@@ -767,6 +768,102 @@ const banc = (async () => {
   verifier(gros.pins.length === CL.SYMBOLE_MAX.broches && !ici("COMPOSANTS_LIB").verifierSymbole(gros).some(e => /pins :/.test(e)),
            "générateur CI : pas plus de broches que le schéma n'en accepte (" + gros.pins.length + ")");
   edit.actif = false; edit.renderer = null;
+
+  /* 19. Échap dans l'éditeur : le trait en cours, puis la sélection, puis la fermeture — traité en
+     capture avec preventDefault, sinon commun/echappe.js cliquait le « ✕ » de la première pastille */
+  {
+    const touche = () => {
+      const e = { key: "Escape", target: {}, empeche: false, preventDefault() { this.empeche = true; }, stopPropagation() {} };
+      ecouteurs.filter(x => x.t === "keydown" && x.capture === true).forEach(x => x.f(e));
+      return e.empeche;
+    };
+    Object.assign(edit, { actif: true, type: "pcb", renderer: moteur, ligneEnCours: { x1: 0 }, selectionIndex: 0, historique: [], pileRedo: [],
+                          data: { format: "pcbfp-1", name: "G19", pads: [{ n: 1, x: 0, y: 0, w: 1, h: 1, shape: "rect" }] } });
+    edit.origine = JSON.stringify(edit.data);
+    const e1 = touche(), apres1 = [edit.ligneEnCours, edit.selectionIndex, edit.actif];
+    const e2 = touche(), apres2 = [edit.selectionIndex, edit.actif];
+    const e3 = touche();
+    verifier(e1 && e2 && e3 && apres1[0] === null && apres1[1] === 0 && apres1[2] && apres2[0] === -1 && apres2[1] && !edit.actif && edit.data.pads.length === 1,
+             "éditeur : Échap annule le trait, puis la sélection, puis ferme, sans effacer de pastille");
+    verifier(!touche(), "éditeur fermé : Échap est laissé aux autres fenêtres");
+  }
+
+  /* 20. éditeur rouvert : un canvas neuf, sans les écouteurs du moteur de l'ouverture d'avant
+     (chaque clic comptait deux fois : deux trous posés, trait fini dès son premier point) */
+  {
+    const toile = noeud("canvasEditeurLib");
+    let remplace = 0;
+    toile.replaceWith = () => { remplace++; };
+    await ici("ouvrirEditeurPcb")("OK14.json");
+    await ici("ouvrirEditeurPcb")("OK14.json");
+    verifier(remplace === 2, "éditeur : le canvas est remplacé à chaque ouverture (" + remplace + ")");
+    toile.replaceWith = () => {};
+  }
+
+  /* 21. une case du catalogue dit « lib/empreinte/OK14.json » ou « OK14 » : l'éditeur ouvre et
+     enregistre OK14.json, et l'aperçu relit ce qui vient d'être enregistré (cache du même nom) */
+  await ici("ouvrirEditeurPcb")("lib/empreinte/OK14.json");
+  verifier(edit.nomFichier === "OK14.json" && !edit.estNouveau, "éditeur : ouvert par son chemin, il porte le nom du fichier (" + edit.nomFichier + ")");
+  await ici("obtenirFichierLib")("pcb", "OK14");
+  await ici("ouvrirEditeurPcb")("OK14");
+  edit.data.pads[0].w = 0.77;
+  noeud("editeurNomFichier").value = edit.nomFichier;
+  confirmes.length = 0; appels.length = 0;
+  await ici("editeurEnregistrer()");
+  const relu = await ici("obtenirFichierLib")("pcb", "OK14");
+  verifier(!confirmes.length && appels.length === 1 && appels[0].corps.nom === "OK14.json" && relu.pads[0].w === 0.77 &&
+           etat.fichiers.pcb.filter(n => /OK14/.test(n)).length === 1,
+           "éditeur : ouvert sous « OK14 », enregistré dans OK14.json sans question, l'aperçu relit le nouveau (" + relu.pads[0].w + ")");
+
+  /* 22. corps « d'après les pastilles » : une pastille tournée d'un quart de tour compte couchée */
+  Object.assign(edit, { type: "pcb", data: { format: "pcbfp-1", name: "G22", pads: [{ n: 1, x: 0, y: 0, w: 0.4, h: 2, shape: "rect", rot: 90 }] } });
+  ici("editeurAjusterCorpsAuto(true)");
+  verifier(JSON.stringify(edit.data.body) === '{"x1":-1.4,"y1":-0.6,"x2":1.4,"y2":0.6}', "corps auto : pastille à 90° comptée couchée (" + JSON.stringify(edit.data.body) + ")");
+
+  /* 23. tri de la colonne Value : par grandeur (préfixes p n µ m k M, « 2k2 »), le texte après */
+  etat.composants = ["10k", "4.7M", "100n", "LM358", "2k2", "4R7", "10µF", "1,5k"].map((v, i) => ({ _id: i, "Part Name": "P" + i, Value: v }));
+  etat.filtres = { recherche: "", prefix: "TOUS", statut: "TOUS" };
+  etat.tri = { colonne: "Value", asc: true };
+  let ordre = ici("obtenirComposantsFiltres()").map(c => c.Value).join(" ");
+  verifier(ordre === "100n 10µF 4R7 1,5k 2k2 10k 4.7M LM358", "tri par valeur croissante : " + ordre);
+  etat.tri = { colonne: "Part Name", asc: true };
+
+  /* 24. aperçu d'un symbole : le texte « txt » des symboles importés de JLCPCB, et le numéro de
+     chaque broche (son « n », pas son rang dans le fichier) */
+  {
+    vm.runInContext(lire("gestion-lib/js/03-rendu-symbole.js"), page, { filename: "03-rendu-symbole.js" });
+    const ecrits = [], rien = () => {};
+    const ctx = new Proxy({ fillText: t => ecrits.push(t) }, { get: (o, k) => k in o ? o[k] : rien, set: () => true });
+    const toile = { getContext: () => ctx, addEventListener() {}, clientWidth: 300, clientHeight: 200, getBoundingClientRect: () => ({ left: 0, top: 0 }) };
+    const r = new (ici("SymboleRenderer"))(toile);
+    r.setSymbol({ pins: [{ n: 3, x: -40, y: 0 }, { n: 1, x: 40, y: 0 }], primitives: [{ op: "text", txt: "IMP", x: 0, y: 0 }, { op: "text", text: "T", x: 0, y: 9 }] });
+    verifier(ecrits.join(" ") === "IMP T 3 1", "aperçu symbole : texte « txt » lu, broches à leur numéro (" + ecrits.join(" ") + ")");
+  }
+
+  /* 25. import JLCPCB : même nom à la casse près refusé (le serveur ne les distingue pas) ; un symbole
+     généré que le schéma refuserait (numéro en double) est annoncé ; un refus ne laisse rien « à enregistrer » */
+  {
+    const cols = ici("COLONNES_CATALOGUE_39");
+    const vals = { "Part Name": "lm358", "Part Number": "lm358", "Empreinte Schématique": "lm358.json", "Reference designator Prefix": "U" };
+    cols.forEach((c, i) => { noeud("jlc_input_col_" + i).value = vals[c] || ""; });
+    const alertes = [];
+    page.alert = m => alertes.push(m);
+    etat.colonnes = cols.slice(); etat.composants = [{ _id: 0, "Part Name": " LM358 " }]; etat.sale = false; etat.lectureSeule = false;
+    ici("JLC_IMPORT_ETAT.pinoutActif = null");
+    await ici("validerEtEnregistrerJlc()");
+    verifier(etat.composants.length === 1 && /déjà au catalogue/.test(alertes[0] || ""), "import JLC : « lm358 » refusé quand « LM358 » existe");
+    etat.composants = [];
+    ici('JLC_IMPORT_ETAT.pinoutActif = { pins: [{ number: "1", name: "A" }, { number: "2", name: "B" }, { number: "2", name: "C" }, { number: "EP", name: "PAD" }, { number: "5", name: "E" }] }');
+    confirmes.length = 0; appels.length = 0; alertes.length = 0;
+    await ici("validerEtEnregistrerJlc()");
+    verifier(confirmes.length === 1 && /schéma refusera/.test(confirmes[0]) && /en double/.test(confirmes[0]) && !appels.length && !etat.composants.length && !etat.sale,
+             "import JLC : symbole généré que le schéma refuserait, annoncé ; refusé, rien n'est écrit (" + (confirmes[0] || "").split("\n")[1] + ")");
+    ici("JLC_IMPORT_ETAT.pinoutActif = null");
+    serveur.reponse = () => ({ status: 500, detail: "panne" });
+    await ici("validerEtEnregistrerJlc()");
+    verifier(!etat.composants.length && !etat.sale, "import JLC : enregistrement refusé, la ligne est retirée et rien ne reste « à enregistrer »");
+    serveur.reponse = () => ({ ok: true });
+  }
 })();
 
 /* ---------- zone d'encombrement (courtyard) ---------- */

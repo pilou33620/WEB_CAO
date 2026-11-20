@@ -50,7 +50,8 @@ function echapFenetreDuDessus(){
 function echapBoutonFermer(m){
   const b=m.querySelector(ECHAP_FERMER);
   if(b)return b;
-  return [...m.querySelectorAll("button")].find(x=>/^\s*(✕|×|Fermer|Annuler|Passer)\s*$/.test(x.textContent))||null;
+  return [...m.querySelectorAll("button")].find(x=>/^\s*(✕|×|Fermer|Annuler|Passer)\s*$/.test(x.textContent)
+    &&!(x.closest&&x.closest("tr")))||null;   // un « ✕ » de ligne de tableau supprime la ligne, il ne ferme pas la fenêtre
 }
 if(typeof document!=="undefined"&&document.addEventListener)document.addEventListener("keydown",function(e){
   if(e.key!=="Escape"||e.defaultPrevented)return;

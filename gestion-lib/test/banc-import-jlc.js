@@ -118,6 +118,9 @@ assert(compAMS["Empreinte Schématique"] === "regulator.json", "Empreinte Schém
   assert(r["Value"] === "10k" && r["Minimum operating temperature"] === "-55" && r["Maximum operating temperature"] === "155",
     "Résistance : valeur tirée de la référence, température en ℃ lue");
   assert(jlcVers39({ model: "X", specs: { "Operating Temperature": "-40°C ~ +85°C" } }, null)["Maximum operating temperature"] === "85", "« -40°C ~ +85°C » lu");
+  const buck = jlcVers39({ model: "TPS5430", category: "DC-DC Converters", description: "Buck 5.5V~36V 4~20mA -40℃~+125℃" }, null);
+  assert(buck["Minimum operating temperature"] === "-40" && buck["Maximum operating temperature"] === "125",
+    "Une plage sans unité avant la température (« 4~20mA -40℃~+125℃ ») ne la cache pas");
   assert(infererClasse("Analog Switches / Multiplexers", "", "CD4066BM", "Quad bilateral switch").classe === "Integrated Circuit",
     "« Analog Switches » : un CI, pas un interrupteur");
   assert(infererClasse("Digital Transistors", "", "DTC114EKA", "NPN digital transistor with built-in resistor").classe === "Transistor",

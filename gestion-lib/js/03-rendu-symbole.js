@@ -278,7 +278,7 @@ class SymboleRenderer {
         ctx.fillStyle = p.color || SCH_COLORS.txt;
         ctx.textAlign = p.align || "center";
         ctx.textBaseline = "middle";
-        ctx.fillText(p.text, p.x, p.y);
+        ctx.fillText(String(p.text != null ? p.text : p.txt != null ? p.txt : ""), p.x, p.y);   // « txt » : symboles importés de JLCPCB, comme le schéma
       }
 
       ctx.restore();
@@ -308,7 +308,7 @@ class SymboleRenderer {
 
       const offX = px < 0 ? -6 : (px > 0 ? 6 : 0);
       const offY = py < 0 ? -6 : (py > 0 ? 6 : 0);
-      ctx.fillText(String(i + 1), px + offX, py + offY);
+      ctx.fillText(String(p.n !== undefined ? p.n : i + 1), px + offX, py + offY);   // le numéro de la broche, pas son rang dans le fichier
     }
   }
 }

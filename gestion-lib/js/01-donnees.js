@@ -182,7 +182,9 @@ function parserCsvBrut(csvText) {
 // Lecture d'un fichier d'empreinte ou symbole avec cache
 async function obtenirFichierLib(type, nom) {
   if (!nom) return null;
-  const cleanNom = String(nom || "").replace(/^.*[\\\/]/, "");
+  let cleanNom = String(nom || "").replace(/^.*[\\\/]/, "");
+  // même nom qu'à l'écriture : « 0603 » gardait son propre cache, périmé dès que 0603.json était enregistré
+  if (!cleanNom.endsWith(".json") && (type === "pcb" || type === "schematique")) cleanNom += ".json";
   const cle = `${type}:${cleanNom}`;
   if (LIB_STATE.cacheFichiers.has(cle)) {
     return LIB_STATE.cacheFichiers.get(cle);
@@ -225,6 +227,7 @@ function libSuiteNoter(quoi) {
 /* options.si_absent : le serveur refuse (409) si le fichier existe déjà, jamais d'écrasement */
 async function sauvegarderFichierLib(type, nom, dataOuContenu, options) {
   if (!type || !nom) throw new Error("Type et nom de fichier requis");
+  nom = String(nom).replace(/^.*[\\\/]/, "");   // le serveur ne garde que le nom : la liste et le cache aussi
   if (!nom.endsWith(".json") && (type === "pcb" || type === "schematique")) {
     nom += ".json";
   }
@@ -352,6 +355,15 @@ const COLONNES_RECHERCHE = [
   "Source alternative", "2nd source P/N", "3nd source P/N", "4nd source P/N"
 ];
 
+/* « 10k », « 4.7M », « 100n », « 2k2 », « 4R7 », « 10µF » → nombre ; null si ce n'est pas une valeur. */
+function valeurSI(texte) {
+  const m = /^(\d+(?:[.,]\d+)?)\s*([pnuµmkKMGR]?)(\d*)/.exec(String(texte).trim());
+  if (!m) return null;
+  const mult = { p: 1e-12, n: 1e-9, u: 1e-6, "µ": 1e-6, m: 1e-3, k: 1e3, K: 1e3, M: 1e6, G: 1e9 }[m[2]] || 1;
+  // « 2k2 » : le préfixe tient lieu de virgule
+  return parseFloat(m[2] && m[3] && !/[.,]/.test(m[1]) ? m[1] + "." + m[3] : m[1].replace(",", ".")) * mult;
+}
+
 function obtenirComposantsFiltres() {
   const q = LIB_STATE.filtres.recherche.toLowerCase().trim();
   const pref = LIB_STATE.filtres.prefix;
@@ -396,6 +408,11 @@ function obtenirComposantsFiltres() {
   out.sort((a, b) => {
     const va = (a[tc] || "").toString();
     const vb = (b[tc] || "").toString();
+    if (tc === "Value") {          // 100n < 10k < 4.7M : le tri de texte rangeait 4.7M avant 10k
+      const na = valeurSI(va), nb = valeurSI(vb);
+      if (na !== null && nb !== null && na !== nb) return (na - nb) * asc;
+      if ((na === null) !== (nb === null)) return (na === null ? 1 : -1) * asc;
+    }
     return va.localeCompare(vb, "fr", { numeric: true }) * asc;
   });
 

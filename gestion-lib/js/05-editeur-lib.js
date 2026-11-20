@@ -31,6 +31,7 @@ const EDITEUR_LIB = {
  */
 async function ouvrirEditeurPcb(nomFichier, donneesExistantes = null) {
   EDITEUR_LIB.type = "pcb";
+  nomFichier = editeurNomNu(nomFichier);
   EDITEUR_LIB.nomFichier = nomFichier || "NOUVELLE_EMPREINTE.json";
   EDITEUR_LIB.estNouveau = !nomFichier || !donneesExistantes;
   EDITEUR_LIB.selectionIndex = -1;
@@ -71,6 +72,7 @@ async function ouvrirEditeurPcb(nomFichier, donneesExistantes = null) {
  */
 async function ouvrirEditeurSch(nomFichier, donneesExistantes = null) {
   EDITEUR_LIB.type = "schematique";
+  nomFichier = editeurNomNu(nomFichier);
   EDITEUR_LIB.nomFichier = nomFichier || "NOUVEAU_SYMBOLE.json";
   EDITEUR_LIB.estNouveau = !nomFichier || !donneesExistantes;
   EDITEUR_LIB.selectionIndex = -1;
@@ -102,6 +104,12 @@ async function ouvrirEditeurSch(nomFichier, donneesExistantes = null) {
   }
 
   afficherModaleEditeur();
+}
+
+/* Le nom du fichier comme la LIB le range : une case du catalogue dit aussi « lib/empreinte/0603.json » ou « 0603 ». */
+function editeurNomNu(nomFichier) {
+  const nom = String(nomFichier || "").trim().replace(/^.*[\\\/]/, "");
+  return nom && !/\.json$/i.test(nom) ? nom + ".json" : nom;
 }
 
 /* Un fichier que la LIB liste mais qui ne se lit pas (serveur en panne) : ouvrir à sa place le
@@ -190,8 +198,13 @@ function afficherModaleEditeur() {
   if (inpNom) inpNom.value = EDITEUR_LIB.nomFichier;
 
   // Initialisation du canvas d'édition
-  const canvas = document.getElementById("canvasEditeurLib");
+  let canvas = document.getElementById("canvasEditeurLib");
   if (canvas) {
+    /* un canvas neuf à chaque ouverture : le moteur de l'ouverture d'avant y restait branché, et
+       chaque clic comptait deux fois (deux trous posés, le trait fini dès son premier point) */
+    const neuf = canvas.cloneNode(false);
+    canvas.replaceWith(neuf);
+    canvas = neuf;
     if (isPcb) {
       EDITEUR_LIB.renderer = new PcbRenderer(canvas);
       EDITEUR_LIB.renderer.setFootprint(EDITEUR_LIB.data);
@@ -259,7 +272,7 @@ function basculerVueEditeur(vue) {
       } else {
         EDITEUR_LIB.renderer.setSymbol(EDITEUR_LIB.data);
       }
-      setTimeout(() => EDITEUR_LIB.renderer.autoFit(), 50);
+      setTimeout(() => { if (EDITEUR_LIB.renderer) EDITEUR_LIB.renderer.autoFit(); }, 50);   // fermé entre-temps
     }
   }
 }
@@ -1298,8 +1311,9 @@ function editeurAjusterCorpsAuto(skipHistory = false) {
 
   let minX = 999, minY = 999, maxX = -999, maxY = -999;
   d.pads.forEach(p => {
-    const hw = (p.w || 1) / 2;
-    const hh = (p.h || 1) / 2;
+    const couchee = Math.abs((+p.rot || 0) % 180) === 90;      // tournée d'un quart de tour : largeur et hauteur s'échangent
+    const hw = ((couchee ? p.h : p.w) || 1) / 2;
+    const hh = ((couchee ? p.w : p.h) || 1) / 2;
     minX = Math.min(minX, p.x - hw);
     maxX = Math.max(maxX, p.x + hw);
     minY = Math.min(minY, p.y - hh);
@@ -2122,6 +2136,24 @@ if (typeof window !== "undefined" && typeof window.addEventListener === "functio
   window.addEventListener("keydown", e => {
     if (!EDITEUR_LIB.actif) return;
 
+    /* Échap : le trait en cours, puis la sélection, puis l'éditeur. Traité ici, en capture et avant
+       commun/echappe.js, qui prenait le premier bouton « ✕ » de la fenêtre pour son bouton de
+       fermeture : c'était « Supprimer » de la première pastille, effacée à chaque Échap. */
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      if (EDITEUR_LIB.ligneEnCours) {
+        EDITEUR_LIB.ligneEnCours = null;
+        editeurAfficherInfoCanvas("Tracé de trait annulé");
+        if (EDITEUR_LIB.renderer) EDITEUR_LIB.renderer.render();
+      } else if (EDITEUR_LIB.selectionIndex >= 0) {
+        EDITEUR_LIB.selectionIndex = -1;
+        editeurMettreAJourSelectionTable(-1);
+        if (EDITEUR_LIB.renderer) EDITEUR_LIB.renderer.render();
+      } else fermerEditeurLib();
+      return;
+    }
+
     // Si l'utilisateur tape dans le textarea JSON brut, laisser l'undo/redo natif du navigateur agir
     if (e.target && (e.target.id === "editeurCodeJson" || e.target.id === "kicadTexte")) {
       return;
@@ -2153,19 +2185,7 @@ if (typeof window !== "undefined" && typeof window.addEventListener === "functio
       if (editeurSupprimerSelection()) { e.preventDefault(); if (EDITEUR_LIB.renderer) EDITEUR_LIB.renderer.render(); }
       return;
     }
-
-    if (e.key === "Escape") {
-      if (EDITEUR_LIB.ligneEnCours) {
-        EDITEUR_LIB.ligneEnCours = null;
-        editeurAfficherInfoCanvas("Tracé de trait annulé");
-        if (EDITEUR_LIB.renderer) EDITEUR_LIB.renderer.render();
-      } else if (EDITEUR_LIB.selectionIndex >= 0) {
-        EDITEUR_LIB.selectionIndex = -1;
-        editeurMettreAJourSelectionTable(-1);
-        if (EDITEUR_LIB.renderer) EDITEUR_LIB.renderer.render();
-      }
-    }
-  });
+  }, true);
 }
 
 // Export global

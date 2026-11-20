@@ -211,8 +211,9 @@ function jlcVers39Colonnes(part, pinout) {
   let tMin = "", tMax = "";
   const tStr = specs["Operating Temperature"] || desc;
   // unité °C/℃ exigée d'un côté au moins : « 4~20mA » n'est pas une température
-  const mTemp = String(tStr).match(/(-?\d+)\s*(°\s*C|℃)?\s*~\s*\+?(-?\d+)\s*(°\s*C|℃)?/);
-  if (mTemp && (mTemp[2] || mTemp[4])) {
+  // la première plage qui la porte : « 4~20mA -40℃~+85℃ » s'arrêtait à « 4~20 » et ne lisait rien
+  const mTemp = [...String(tStr).matchAll(/(-?\d+)\s*(°\s*C|℃)?\s*~\s*\+?(-?\d+)\s*(°\s*C|℃)?/g)].find(m => m[2] || m[4]);
+  if (mTemp) {
     tMin = mTemp[1];
     tMax = mTemp[3];
   }
@@ -233,7 +234,7 @@ function jlcVers39Colonnes(part, pinout) {
   let dielectrique = specs["Dielectric Characteristic"] || specs["Temperature Coefficient"] || "";
 
   // Type de montage
-  let mType = (p.mounting_type || "").toUpperCase() === "SMD" ? "SMD" : (p.mounting_type ? "Through Hole" : "SMD");
+  let mType = /smd|smt|surface/i.test(p.mounting_type || "") ? "SMD" : (p.mounting_type ? "Through Hole" : "SMD");
 
   // Nom de composant Part Name
   const partName = model || p.lcsc || "COMP_SANS_NOM";
@@ -782,6 +783,7 @@ async function validerEtEnregistrerJlc() {
   }
 
   let pousse = null;   // la ligne ajoutée, à retirer si l'enregistrement est refusé
+  const saleAvant = LIB_STATE.sale;
   try {
     // 1. Récupérer les 39 colonnes depuis les inputs
     const composantFinal = {};
@@ -792,7 +794,8 @@ async function validerEtEnregistrerJlc() {
 
     const partName = composantFinal["Part Name"] || "COMPOSANT";
     /* deux lignes de même Part Name : le serveur refuse ensuite toute modification de la référence */
-    if (LIB_STATE.composants.some(c => (c["Part Name"] || "") === partName))
+    // sans la casse ni les espaces, comme le serveur : « lm358 » à côté de « LM358 » bloquait les deux
+    if (LIB_STATE.composants.some(c => String(c["Part Name"] || "").trim().toLowerCase() === partName.toLowerCase()))
       throw new Error("« " + partName + " » est déjà au catalogue.");
     const symName = composantFinal["Empreinte Schématique"] || "";
 
@@ -807,6 +810,11 @@ async function validerEtEnregistrerJlc() {
           composantFinal["Reference designator Prefix"], 
           partName
         );
+        // numéros de broche en double ou à trou (« EP », patte absente du brochage) : le schéma écarterait le symbole sans rien dire
+        const refus = typeof COMPOSANTS_LIB !== "undefined" ? COMPOSANTS_LIB.verifierSymbole(symData) : [];
+        if (refus.length && !confirm("Le schéma refusera le symbole généré (" + symName + ") et dessinera un CI générique :\n• " +
+            refus.slice(0, 8).join("\n• ") + "\n\nImporter quand même ? Le symbole restera à corriger dans l'éditeur."))
+          throw new Error("import annulé, rien n'est écrit.");
         // Un symbole existant qui n'est pas celui de la pièce (npn.json, ic.json…) est réutilisé, jamais écrasé (409).
         const pn = composantFinal["Part Number"];
         const propre = !!pn && symName === jlcNomSymbolePropre(pn);
@@ -862,7 +870,10 @@ async function validerEtEnregistrerJlc() {
     afficherToast(`✅ Composant "${partName}" (${composantFinal["vendor reference"] || "JLCPCB"}) importé avec succès (39 colonnes validées)`, "success");
 
   } catch (err) {
-    if (pousse) LIB_STATE.composants = LIB_STATE.composants.filter(c => c !== pousse);
+    if (pousse) {
+      LIB_STATE.composants = LIB_STATE.composants.filter(c => c !== pousse);
+      LIB_STATE.sale = saleAvant;      // la ligne retirée, il ne reste rien de plus à enregistrer
+    }
     alert("Erreur lors de l'enregistrement du composant : " + err.message);
     if (btn) {
       btn.disabled = false;

@@ -55,6 +55,10 @@ verifier("« ; » et guillemets échappés", L[3] === "\"a;b\";\"dit \"\"oui\"\"
 verifier("tabulation neutralisée, saut de ligne entre guillemets",
          L[4] === "'\tTAB;\"ligne\nsuite\"", L[4]);
 verifier("une valeur ordinaire passe telle quelle", L[5] === "LM358DR;Ampli op", L[5]);
+{
+  const vide = exporter(["mpn", "stock", "package"], [{ mpn: "X", stock: null, package: [] }]).split("\r\n")[1];
+  verifier("une case vide reste vide (pas le tiret d'affichage « — »)", vide === "X;;", vide);
+}
 
 /* ---------- fiche et lancement (03, 05, 06), sur un document factice ---------- */
 (async () => {
@@ -78,6 +82,23 @@ verifier("une valeur ordinaire passe telle quelle", L[5] === "LM358DR;Ampli op",
   let h = "";
   try { h = vm.runInContext('ficheHTML({ model: "X", prices: [null, { qty: 10, price: 0.5 }] })', ctx); } catch (e) { h = "LEVÉE : " + e.message; }
   verifier("fiche : un élément nul dans une liste n'empêche pas l'affichage", /det-titre/.test(h) && !/LEVÉE/.test(h), h.slice(0, 80));
+
+  /* un nombre à décimales : les milliers ne se groupent que dans la partie entière */
+  const e = vm.runInContext('fmtEntier(1234.5678) + "|" + fmtEntier(1234567)', ctx);
+  verifier("fmtEntier : « 1 234.5678 », pas « 1 234.5 678 »", e === "1 234.5678|1 234 567", e);
+  /* une clé de paramètre vient du schéma du serveur distant : elle n'injecte pas de balise */
+  const ch = vm.runInContext('champHTML({ cle: \'x"><img src=x onerror=1>\', lib: "x", t: "texte" })', ctx);
+  verifier("formulaire : une clé de paramètre hostile est échappée", !/<img/.test(ch), ch.slice(0, 80));
+  /* un filtre à trois états (oui / non / indifférent) revient avec « Précédent » et à la reprise */
+  {
+    const sel = { value: "" }, div = { dataset: { type: "trois" }, querySelector: () => sel, closest: () => null };
+    vm.runInContext("construireFormulaire = () => {};", ctx);
+    ctx.document.querySelector = () => div;
+    vm.runInContext('remplirFormulaire("jlc_find_alternatives", { has_easyeda_footprint: true })', ctx);
+    const oui = sel.value;
+    vm.runInContext('remplirFormulaire("jlc_find_alternatives", { has_easyeda_footprint: false })', ctx);
+    verifier("formulaire : true / false reposés sur « oui » / « non »", oui === "oui" && sel.value === "non", oui + ", " + sel.value);
+  }
 
   /* l'outil est changé pendant que la requête court : la réponse reste celle de l'outil interrogé */
   vm.runInContext('OUTIL_COURANT = "jlc_search"; lireFormulaire = () => ({ query: "10k" });', ctx);
