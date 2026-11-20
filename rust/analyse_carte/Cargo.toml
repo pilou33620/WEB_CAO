@@ -14,7 +14,7 @@ rf_reseau = { path = "../rf_reseau" }  # z_fente
 # son module `pyth` (float(), int(), str() de Python) et les constantes IPC-2221
 dc_solver = { path = "../dc_solver" }
 # Json (les dict de Python, ordre des clés compris), et le lecteur IPC-2581 d'`analyser_modele`
-ipc2581 = { git = "https://github.com/pilou33620/web_suite", rev = "e78f42a010aabd64ed3c6d285773b099d4b682ac" }
+ipc2581 = { git = "https://github.com/pilou33620/web_suite", rev = "76e59aa824fbb826d98c8e7c532d54bc82824e53" }
 indexmap = "2"   # les dict de Python gardent l'ordre d'insertion, et l'ordre des constats en sort
 regex = "1"      # les repères de composants (re de Python)
 

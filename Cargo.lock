@@ -896,7 +896,7 @@ dependencies = [
 [[package]]
 name = "ipc2581"
 version = "0.1.0"
-source = "git+https://github.com/pilou33620/web_suite?rev=e78f42a010aabd64ed3c6d285773b099d4b682ac#e78f42a010aabd64ed3c6d285773b099d4b682ac"
+source = "git+https://github.com/pilou33620/web_suite?rev=76e59aa824fbb826d98c8e7c532d54bc82824e53#76e59aa824fbb826d98c8e7c532d54bc82824e53"
 dependencies = [
  "indexmap",
  "regex",
@@ -2168,7 +2168,7 @@ dependencies = [
 [[package]]
 name = "web_tools_commun"
 version = "0.1.0"
-source = "git+https://github.com/pilou33620/web_suite?rev=e78f42a010aabd64ed3c6d285773b099d4b682ac#e78f42a010aabd64ed3c6d285773b099d4b682ac"
+source = "git+https://github.com/pilou33620/web_suite?rev=76e59aa824fbb826d98c8e7c532d54bc82824e53#76e59aa824fbb826d98c8e7c532d54bc82824e53"
 dependencies = [
  "base64",
  "chrono",

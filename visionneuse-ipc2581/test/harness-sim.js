@@ -79,7 +79,7 @@ const FICHIERS=[
 const EXPOSE=["mdlBoitePlan","mdlPlanContient","simDsChamp","simCarteF","simBusMarges","simPDNLireChamps","simDsLire","simDsEcrire","SIM_DS","SIM_PDN","simPDNAssistantActif","SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simSaisie","simPorts","SIM_FORMAT",
   "V","LT","ltAire","ltPreparer","LT_SEUIL_PLAN","mdlLongueur",
-  "mdlNetNom","mdlNb","mdlCharger","mdlCouches","mdlPlansDans",
+  "mdlNetNom","mdlNb","mdlTexteTrace","mdlCharger","mdlCouches","mdlPlansDans",
   "mdlCheminsNet","mdlMevTout","mdlMonte","mdlPoserMonte","simEstMonte",
   "SIM","SIM_IPC","simRefSet","simRefListe","simRefCandidats","simInit",
   "SIM_BUS","simCorpsBus","simBusRemplirDepuis","simBrancherBus","simRendreBus","simBusCalculer",
@@ -7859,6 +7859,12 @@ T("bus : une fréquence à 0 garde la dernière valeur valable, champ compris", 
 });
 
 
+T("textes : un repère dont le fichier trace les lettres n'est pas repeint, un texte seul l'est", function(){
+  const c={pistes:[{p:[9.6,20,10.4,20]}]};
+  if(!mdlTexteTrace({t:"U1",x:10,y:20,h:1},c))throw new Error("lettres tracées autour du repère non vues");
+  if(mdlTexteTrace({t:"U1",x:40,y:20,h:1},c))throw new Error("un texte loin de tout trait doit rester peint");
+  if(mdlTexteTrace({t:"U1",x:10,y:20,h:0},c))throw new Error("sans hauteur connue, on peint");
+});
 T("mdlNb : un entier rond garde ses zéros (100 à 0 décimale n'est pas « 1 »)", function(){
   const u=V.unite;
   try{

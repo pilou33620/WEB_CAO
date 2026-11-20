@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 # round(), float(), json.dumps de Python, pour rendre aux pages les memes octets
-ipc2581 = { git = "https://github.com/pilou33620/web_suite", rev = "e78f42a010aabd64ed3c6d285773b099d4b682ac" }
+ipc2581 = { git = "https://github.com/pilou33620/web_suite", rev = "76e59aa824fbb826d98c8e7c532d54bc82824e53" }
 # les dict de Python gardent l'ordre d'insertion
 indexmap = "2"
 # np.fft.irfft et les complexes (rustfft::num_complex)
