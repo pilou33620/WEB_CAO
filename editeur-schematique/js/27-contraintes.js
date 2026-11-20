@@ -75,21 +75,27 @@ function schCmGroupeModifier(id,fn){
 function schCmGroupeSupprimer(id){
   schCmEdit(C=>{C.groupes=C.groupes.filter(g=>g.id!==id);});
 }
-/* Les nets nommés du document : seuls eux passent au PCB sous leur nom. Un
-   même nom posé sur plusieurs feuilles (étiquette locale répétée) est un
-   seul net pour le PCB, qui ne voit que le nom : une ligne. */
+/* Les nets nommés du document : seuls eux passent au PCB sous leur nom, celui
+   de la netlist (nomNetlist). Une même étiquette locale sur deux feuilles fait
+   deux nets distincts, SIG_f2 et SIG_f3 : deux lignes. */
 function schCmNetsNommes(){
-  const parNom=new Map();
-  for(const g of docNets().groups){
-    if(!g.members.some(m=>m.net&&m.net.named))continue;
-    let e=parNom.get(g.name);
-    if(!e)parNom.set(g.name,e={name:g.name,refs:new Set(),nodes:0});
+  const D=docNets(), parNom=new Map();
+  for(const g of D.groups){
+    if(nlEstBus(g)||!g.members.some(m=>m.net&&m.net.named))continue;
+    const nom=nomNetlist(g,D);
+    let e=parNom.get(nom);
+    if(!e)parNom.set(nom,e={name:nom,base:g.name,refs:new Set(),nodes:0});
     for(const n of g.nodes)if(n.ref)e.refs.add(n.ref);
     e.nodes+=g.nodes.length;
   }
-  return [...parNom.values()].map(e=>({name:e.name,nodes:e.nodes,
+  return [...parNom.values()].map(e=>({name:e.name,base:e.base,nodes:e.nodes,
       refs:[...e.refs].sort((a,b)=>triFr(String(a),String(b)))}))
     .sort((a,b)=>triFr(String(a.name),String(b.name)));
+}
+/* Les nets de la netlist qui portent aujourd'hui l'ancien nom `nom` (une
+   contrainte posée sur « SIG » avant que la netlist ne dise SIG_f2, SIG_f3). */
+function schCmHeritiers(nom){
+  return schCmNetsNommes().filter(n=>n.base===nom&&n.name!==nom).map(n=>n.name);
 }
 /* Les contraintes dont le net n'existe plus (renommé, supprimé) : dites, pas
    effacées d'office — un renommage se rattrape. */
@@ -205,6 +211,11 @@ function schCmClic(e){
     const [id,net]=v.split(SCH_CM_SEP);
     schCmGroupeModifier(id,g=>{g.nets=g.nets.filter(n=>n!==net);if(g.ref===net)g.ref="";});
     schCmRendreCorps();
+  }else if(a==="orphreporter"){
+    const her=schCmHeritiers(v);
+    schCmEdit(C=>{for(const n of her)if(!C.nets[n])C.nets[n]=Object.assign({},C.nets[v]);delete C.nets[v];});
+    schCmDire("Contraintes de "+v+" reportées sur "+her.join(", ")+".");
+    schCmRendreCorps();
   }else if(a==="orphsuppr"){
     schCmEdit(C=>{delete C.nets[v];});
     schCmRendreCorps();
@@ -279,8 +290,14 @@ function schCmRendreCorps(){
   const o=schCmOrphelins();
   if(o.nets.length||o.groupes.length){
     h+='<div class="scm-h">À revoir</div><p class="scm-note">';
-    for(const n of o.nets)h+='Contraintes du net <b>'+esc(n)+'</b>, qui n\'existe plus (renommé ?) '+
-      '<button type="button" class="tb" data-a="orphsuppr" data-v="'+esc(n)+'">Effacer</button><br>';
+    for(const n of o.nets){
+      const her=schCmHeritiers(n);
+      h+='Contraintes du net <b>'+esc(n)+'</b>, '+(her.length
+        ?'qui est au PCB '+her.length+' nets distincts (une étiquette locale par feuille) : '+esc(her.join(", "))+' '+
+          '<button type="button" class="tb" data-a="orphreporter" data-v="'+esc(n)+'">Reporter sur chacun</button>'
+        :'qui n\'existe plus (renommé ?) ')+
+        '<button type="button" class="tb" data-a="orphsuppr" data-v="'+esc(n)+'">Effacer</button><br>';
+    }
     for(const x of o.groupes)h+='Groupe <b>'+esc(x.g.nom)+'</b> : '+esc(x.manque.join(", "))+' absent(s) du schéma<br>';
     h+='</p>';
   }

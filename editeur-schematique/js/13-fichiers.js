@@ -289,22 +289,8 @@ function netlistText(horodatage){
   for(const g of D.groups)for(const nd of g.nodes)relies.add(nd.ref+"."+nlPad(nd));
   const globals=D.groups.filter(g=>g.global&&!g.isBus&&!g.members[0].net.isBus);
   const multi=S.pages.length>1;
-  /* Le PCB fusionne les sections NET de même nom : les noms automatiques
-     (N$1…) repartent à 1 sur chaque feuille, et une étiquette locale peut
-     porter le nom d'une autre feuille. Un nom écrit plus d'une fois prend
-     donc le numéro de sa feuille, sinon deux nets distincts deviennent un
-     court-circuit sur la carte. Les « " » coupaient le nom à la lecture. */
-  const nlNom=n=>String(n==null?"":n).replace(/"/g,"_");
-  const occurrences=new Map();
-  for(const g of D.groups){
-    if(g.isBus||g.members[0].net.isBus)continue;
-    const k=nlNom(g.name);
-    occurrences.set(k,(occurrences.get(k)||0)+1);
-  }
-  const nomLocal=g=>{
-    const k=nlNom(g.name);
-    return occurrences.get(k)>1?k+"_f"+(g.pages[0]+1):k;
-  };
+  /* noms : nomNetlist (07-connectivite.js), partagé avec contraintes et classes */
+  const nomLocal=g=>nomNetlist(g,D);
   if(globals.length){
     out.push("=== Nets globaux (masses, alimentations, étiquettes globales) ===");
     for(const g of globals){

@@ -15,13 +15,16 @@ function deleteComps(ids){
    mouvement : sans cela, une rotation — ou un changement de brochage —
    détacherait visuellement tout le câblage. `moves` liste les couples
    (position avant, position après). */
-function followWires(moves,movedEls){
+/* `seuls` (facultatif) : les seules extrémités (« indice:1|2 ») qui ont le droit
+   de suivre. Rend les extrémités déplacées. */
+function followWires(moves,movedEls,seuls){
   const done=new Set();
+  const ok=k=>!done.has(k)&&(!seuls||seuls.has(k));
   for(const [a,b] of moves){
     for(let i=0;i<S.wires.length;i++){
       const w=S.wires[i];
-      if(!done.has(i+":1")&&w.x1===a.x&&w.y1===a.y){w.x1=b.x;w.y1=b.y;done.add(i+":1");}
-      if(!done.has(i+":2")&&w.x2===a.x&&w.y2===a.y){w.x2=b.x;w.y2=b.y;done.add(i+":2");}
+      if(ok(i+":1")&&w.x1===a.x&&w.y1===a.y){w.x1=b.x;w.y1=b.y;done.add(i+":1");}
+      if(ok(i+":2")&&w.x2===a.x&&w.y2===a.y){w.x2=b.x;w.y2=b.y;done.add(i+":2");}
     }
   }
   // les sondes posées sur une broche déplacée suivent aussi
@@ -33,6 +36,7 @@ function followWires(moves,movedEls){
       if(p&&p.x===a.x&&p.y===a.y){el.x+=b.x-a.x;el.y+=b.y-a.y;shifted.add(el);}
     }
   }
+  return done;
 }
 // couples avant/après pour les broches d'un composant que `fn` vient de modifier
 function pinMoves(before,after){
@@ -44,20 +48,64 @@ function pinMoves(before,after){
   return moves;
 }
 /* Transforme la sélection en emmenant les extrémités de fils accrochées aux
-   broches. */
+   broches. Rotations et miroirs enchaînés sur la même sélection (R R R R) ne
+   forment qu'un geste, refait chaque fois depuis son départ : seuls suivent
+   les fils et contacts reliés AVANT le premier appui, et les fils tirés pour
+   garder un contact sont retirés puis retracés. Un fil ou une broche
+   simplement rencontré à une orientation intermédiaire n'est pas emmené,
+   sinon quatre R soudaient l'étiquette à son voisin. ROT_GESTE vaut tant que
+   rien d'autre ne change la feuille ; les fils tirés sont en queue de S.wires. */
+var ROT_GESTE=null;
+function rotSig(els){return S.page+"#"+els.map(e=>e.id).join(",")+"#"+pageSig(S.comps,S.wires);}
 function transformSel(fn){
   const els=selEls();if(!els.length)return;
   push();
-  const contacts=pinContacts(els);
+  let G0=ROT_GESTE&&ROT_GESTE.sig===rotSig(els)?ROT_GESTE:null;
+  if(G0)S.wires.length=G0.nW;                    // les fils tirés au dernier appui seront retracés
+  else{
+    const at=new Set(), fins=new Set();
+    for(const el of els)for(const p of allPins(el))at.add(key(p.x,p.y));
+    S.wires.forEach((w,i)=>{if(at.has(key(w.x1,w.y1)))fins.add(i+":1");if(at.has(key(w.x2,w.y2)))fins.add(i+":2");});
+    G0={nW:S.wires.length,fins,contacts:pinContacts(els).map(c=>({id:c.el.id,i:c.i,x:c.x,y:c.y})),avant:rotPartition()};
+  }
   const moves=[];
   for(const el of els){
     const before=allPins(el);
     fn(el);
     moves.push(...pinMoves(before,allPins(el)));
   }
-  followWires(moves,new Set(els));
-  reconnectContacts(contacts);
-  touchWires();refreshPanels();draw();
+  followWires(moves,new Set(els),G0.fins);
+  const parId=new Map(els.map(e=>[e.id,e]));
+  reconnectContacts(G0.contacts.filter(c=>parId.has(c.id)).map(c=>({el:parId.get(c.id),i:c.i,x:c.x,y:c.y})));
+  touchWires();
+  ROT_GESTE=Object.assign(G0,{sig:rotSig(els)});
+  /* ce que le geste a soudé, depuis son départ */
+  const fus=rotFusions(G0.avant);
+  const fh=document.getElementById("fHint"), avis="⚠ La broche touche maintenant un autre net : ";
+  if(fus.length)clipHint(avis+fus.map(f=>f.join(" et ")).join(", ")+" sont reliés. Un nouvel appui peut les séparer ; Ctrl+Z annule.");
+  else if(fh&&fh.textContent.startsWith(avis))fh.textContent="";   // l'avis de l'appui précédent ne vaut plus
+  refreshPanels();draw();
+}
+/* net de chaque broche de la feuille, pour voir ce qu'un geste a soudé */
+function rotPartition(){
+  const N=nets(), m=new Map();
+  for(const el of S.comps)allPins(el).forEach((p,i)=>{
+    const n=N.byPoint.get(key(p.x,p.y));
+    if(n&&isRealNet(n))m.set(el.id+":"+i,n);
+  });
+  return m;
+}
+function rotFusions(avant){
+  const N=nets(), par=new Map();
+  for(const el of S.comps)allPins(el).forEach((p,i)=>{
+    const a=avant.get(el.id+":"+i), n=N.byPoint.get(key(p.x,p.y));
+    if(!a||!n)return;
+    if(!par.has(n))par.set(n,new Set());
+    par.get(n).add(a);
+  });
+  const out=[];
+  for(const s of par.values())if(s.size>1)out.push([...new Set([...s].map(n=>n.name))]);
+  return out;
 }
 /* Modification du symbole lui-même — nombre de broches, représentation, taille
    du corps, position d'une patte : le câblage suit les broches déplacées, comme

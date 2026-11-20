@@ -29,11 +29,11 @@ function netBlock(net){
       (hidden?"Étiquette masquée":"Masquer l'étiquette")+'</button>'+
       (moved?'<button class="tb" id="pNetHome">Replacer l\'étiquette</button>':"")+
     '</div></div>'+
-    (net.named?'<div class="prop"><label>Classe du net</label>'+netClassSelect(net.name)+'</div>'+
+    (net.named?'<div class="prop"><label>Classe du net</label>'+netClassSelect(nomNetlistDuNet(net))+'</div>'+
       /* les contraintes que le PCB tiendra (27-contraintes.js) */
       '<div class="prop"><label>Contraintes pour le PCB</label>'+
-        '<div class="pinnote" id="pNetCm">'+(typeof schCmResumeNet==="function"&&schCmResumeNet(net.name)
-          ?esc(schCmResumeNet(net.name)):"aucune")+'</div>'+
+        '<div class="pinnote" id="pNetCm">'+(typeof schCmResumeNet==="function"&&schCmResumeNet(nomNetlistDuNet(net))
+          ?esc(schCmResumeNet(nomNetlistDuNet(net))):"aucune")+'</div>'+
         '<div class="row"><button class="tb" id="pNetCmBtn">Contraintes du net…</button></div></div>':"");
   const g=docGroupOf(net);
   h+='<div class="pinnote">'+
@@ -844,7 +844,7 @@ function bindNetBlock(wires){
   const net=[...own][0];
   if(btn)btn.onclick=()=>selectNet(net);
   const cmb=document.getElementById("pNetCmBtn");
-  if(cmb&&net.named&&typeof schCmOuvrir==="function")cmb.onclick=()=>schCmOuvrir(net.name);
+  if(cmb&&net.named&&typeof schCmOuvrir==="function")cmb.onclick=()=>schCmOuvrir(nomNetlistDuNet(net));
   const box=document.getElementById("props");
   if(box)bindNetClassSelects(box);
   /* Masquage et déplacement de l'étiquette sont rangés sur tous les fils du
@@ -964,7 +964,7 @@ function buildNetsDoc(box){
         '<span class="dot" style="background:'+(g.global?col:"#8b919c")+'"></span>'+
         (g.global?"⇄ ":"")+esc(g.name)+(g.conflict?" ⚠":"")+
         '<span class="pkgcell">'+esc(sheetList(g.pages))+'</span></td>'+
-      '<td>'+(named?netClassSelect(g.name):'<span class="netcls-none">—</span>')+'</td>'+
+      '<td>'+(named?netClassSelect(nomNetlist(g,D)):'<span class="netcls-none">—</span>')+'</td>'+
       '<td class="n">'+g.nodes.length+'</td></tr>';
   }
   html+='</tbody></table>';
@@ -1012,7 +1012,7 @@ function buildNets(){
         (n.global?"⇄ ":"")+esc(n.name)+(n.conflict?" ⚠":"")+
         '<span class="pkgcell">'+src+
           (g&&g.pages.length>1?' · '+esc(sheetList(g.pages)):"")+'</span></td>'+
-      '<td>'+(n.named?netClassSelect(n.name):'<span class="netcls-none" title="Nommez le net pour le classer">—</span>')+'</td>'+
+      '<td>'+(n.named?netClassSelect(nomNetlistDuNet(n)):'<span class="netcls-none" title="Nommez le net pour le classer">—</span>')+'</td>'+
       '<td class="n">'+n.nodes.length+'</td></tr>';
   }
   html+='</tbody></table>';

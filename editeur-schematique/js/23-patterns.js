@@ -48,18 +48,10 @@ var SCHEMA_PATTERNS = (function() {
     const dn = (typeof docNets === "function") ? docNets() : null;
 
     if (dn && Array.isArray(dn.groups)) {
-      /* les noms de la netlist (13-fichiers.js) : un nom porté par plusieurs
-         nets (N$1 de chaque feuille, étiquette locale répétée) prend le numéro
-         de sa feuille, sinon deux nets distincts n'en font qu'un */
-      const nlNom = n => String(n == null ? "" : n).replace(/"/g, "_");
-      /* exactement la règle de netlistText : les bus n'y sont pas, un net global garde
-         son nom, seul un net local homonyme prend le suffixe */
-      const estBus = g => g.isBus || (g.members && g.members[0] && g.members[0].net.isBus);
-      const occ = new Map();
-      for (const g of dn.groups) if (!estBus(g)) occ.set(nlNom(g.name), (occ.get(nlNom(g.name)) || 0) + 1);
+      /* les noms de la netlist (nomNetlist, 07-connectivite.js) ; les bus n'y sont pas */
       dn.groups.forEach(g => {
-        if (estBus(g)) return;
-        const k = nlNom(g.name), nName = !g.global && occ.get(k) > 1 ? k + "_f" + ((g.pages || [0])[0] + 1) : k;
+        if (nlEstBus(g)) return;
+        const nName = nomNetlist(g, dn);
         if (!netsMap[nName]) netsMap[nName] = [];
         (g.nodes || []).forEach(nd => {
           const compRef = (nd.comp && nd.comp.ref) ? nd.comp.ref : (nd.ref || "");
@@ -115,7 +107,7 @@ var SCHEMA_PATTERNS = (function() {
     try {
       if (typeof docNets === "function")
         return docNets().groups.filter(g => g.name && g.members.some(m => m.net && m.net.named))
-          .map(g => g.name);
+          .map(g => nomNetlist(g));
     } catch (_) {}
     return Object.keys(_derniersNets || {}).filter(Boolean);
   }
@@ -132,6 +124,9 @@ var SCHEMA_PATTERNS = (function() {
     Object.assign(res, (data && data.classes_suggerees) || {});
     const man = (typeof S !== "undefined" && S && S.netClasses) || {};
     for (const n in man) res[n] = man[n];
+    // une classe posée sur « SIG » avant qu'il ne devienne SIG_f2, SIG_f3 : reportée sur chacun
+    if (typeof schCmHeritiers === "function")
+      for (const n in man) for (const h of schCmHeritiers(n)) if (!man[h]) res[h] = man[n];
     return res;
   }
 
