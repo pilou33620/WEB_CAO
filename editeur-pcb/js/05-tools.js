@@ -4568,6 +4568,16 @@ function bouclesRetirer(posed,net){
     for(let g=0;g<V.length;g++){
       const k1=cle(cur.x1,cur.y1), kn=k1===k?cle(cur.x2,cur.y2):k1;      // l'autre bout
       if(kn===kB){
+        /* Ce que les nœuds ne montrent pas : une branche verrouillée, un T, un via ou une
+           pastille posés sur le corps d'un segment. L'ancien trajet les tient : il reste. */
+        const tenu=(x,y,r)=>dist(x,y,A.x,A.y)>r&&dist(x,y,B.x,B.y)>r&&chaine.some(c=>trkDist(x,y,c)<=c.w/2);
+        if(S.tracks.some(t=>t.l===l&&t.net===net&&!neuf.has(t)&&!chaine.includes(t)&&
+                            (tenu(t.x1,t.y1,t.w/2)||tenu(t.x2,t.y2,t.w/2)))||
+           S.vias.some(v=>l>=v.a&&l<=v.b&&tenu(v.x,v.y,v.d/2))||
+           S.fps.some(f=>padsWorld(f).some(q=>{
+             const s=padCuLayers(f,q).includes(l)&&padSurCouche(q,l);
+             return s&&padDist(A.x,A.y,s)>0&&padDist(B.x,B.y,s)>0&&tenu(q.x,q.y,0);
+           })))break;
         S.tracks=S.tracks.filter(t=>!chaine.includes(t));
         for(const t of chaine)S.sel.tracks.delete(t);
         return chaine.length;

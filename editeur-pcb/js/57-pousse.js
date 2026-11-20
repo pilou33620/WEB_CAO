@@ -30,6 +30,7 @@ function pousseLaissePasser(f,skip){
 function pousseAuDepot(ids){
   if(!S.pousse||!S.avoid||!ids.length||(typeof drag!=="undefined"&&drag))return 0;
   const tires=new Set(ids), refs=[];
+  let ouvertes=null;                              // liaisons ouvertes avant la première poussée
   for(let tour=0;tour<24;tour++){
     let v=null;
     for(const id of [...tires]){
@@ -44,6 +45,7 @@ function pousseAuDepot(ids){
     if(!v)break;
     const p=fpPlaceLibre([v]);
     if(!p||(!p.dx&&!p.dy))break;                 // nulle part où aller : la garde anti-collision tranchera
+    if(ouvertes==null)ouvertes=conn().unrouted;
     transformFps([v.id],()=>{v.x=r3(v.x+p.dx);v.y=r3(v.y+p.dy);});
     touch();
     tires.add(v.id);                             // il est posé : il ne se repousse pas, il peut pousser
@@ -51,7 +53,10 @@ function pousseAuDepot(ids){
   }
   if(refs.length){
     refreshPanels();draw();
-    hint(refs.join(", ")+(refs.length>1?" poussés":" poussé")+" à la place libre la plus proche — Ctrl+Z défait le geste entier.");
+    hint(refs.join(", ")+(refs.length>1?" poussés":" poussé")+" à la place libre la plus proche"+
+         // le cuivre d'un voisin poussé ne suit pas toujours : le dire, pas seulement le chevelu
+         (conn().unrouted>ouvertes?" · "+(conn().unrouted-ouvertes)+" liaison(s) ouverte(s) par la poussée, à re-router":"")+
+         " — Ctrl+Z défait le geste entier.");
   }
   return refs.length;
 }
