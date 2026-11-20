@@ -54,9 +54,33 @@ function capaViasExistants(c){
     if(padDist(v.x,v.y,c.g)<=v.d/2){out.push({v,pistes:[]});continue;}
     const pistes=S.tracks.filter(t=>t.net===c.g.net&&t.l===c.l&&
       ((dansPad(t.x1,t.y1)&&dist(t.x2,t.y2,v.x,v.y)<=v.d/2)||(dansPad(t.x2,t.y2)&&dist(t.x1,t.y1,v.x,v.y)<=v.d/2)));
-    if(pistes.length)out.push({v,pistes});
+    if(pistes.length){out.push({v,pistes});continue;}
+    /* le via posé ici pour cette capa, dont la piste a été étirée en plusieurs segments par un déplacement */
+    const ch=v.capa===c.fp.id&&capaChaine(c,v);
+    if(ch)out.push({v,pistes:ch});
   }
   return out;
+}
+/* Les pistes qui mènent de la pastille de masse au via, bout à bout (6 segments au plus), ou null. */
+function capaChaine(c,v){
+  // du centre de la pastille d'abord : un bout de piste resté dans la pastille fait partie de la chaîne
+  const pres=t=>Math.min(dist(t.x1,t.y1,c.g.x,c.g.y),dist(t.x2,t.y2,c.g.x,c.g.y));
+  const T=S.tracks.filter(t=>t.net===c.g.net&&t.l===c.l).sort((a,b)=>pres(a)-pres(b));
+  const aller=(x,y,vus)=>{
+    if(vus.length>=6)return null;
+    for(const t of T){
+      if(vus.includes(t))continue;
+      for(const [ax,ay,bx,by] of [[t.x1,t.y1,t.x2,t.y2],[t.x2,t.y2,t.x1,t.y1]]){
+        if(!(vus.length?dist(ax,ay,x,y)<=1e-3:padDist(ax,ay,c.g)<=1e-3))continue;
+        const suite=vus.concat([t]);
+        if(dist(bx,by,v.x,v.y)<=v.d/2)return suite;
+        const r=aller(bx,by,suite);
+        if(r)return r;
+      }
+    }
+    return null;
+  };
+  return aller(0,0,[]);
 }
 
 /* La meilleure place pour le via de la capa `c`, ou null. `skip` : le cuivre

@@ -32028,6 +32028,91 @@ T("capas : sur les exemples, les vias posés n'ajoutent aucune faute DRC",()=>{
   }
 });
 loadDoc(JSON.parse(DOC_AVANT_KICAD),true);
+T("boucles : l'ancien trajet reste s'il tient une branche verrouillée, un T ou un via en plein segment",()=>{
+  const avant=serialize();
+  try{
+    const pose=prep=>{
+      plateau();S.avoid=false;S.grid=0.5;S.rule.boucles=true;
+      S.tracks.push({l:0,net:"N",w:0.3,x1:5,y1:20,x2:10,y2:20},{l:0,net:"N",w:0.3,x1:10,y1:20,x2:10,y2:30},
+                    {l:0,net:"N",w:0.3,x1:10,y1:30,x2:30,y2:30},{l:0,net:"N",w:0.3,x1:30,y1:30,x2:30,y2:20},
+                    {l:0,net:"N",w:0.3,x1:30,y1:20,x2:35,y2:20});
+      prep();touch();setMode("track");S.active=0;
+      startRoute(10,20,true);updateRoute(30,20);stepRoute();if(S.route)commitRoute();
+      setMode("select");
+      return S.tracks.filter(t=>t.net==="N").length;
+    };
+    if(pose(()=>{})!==3)throw new Error("le U libre devait partir");
+    if(pose(()=>S.tracks.push({l:0,net:"N",w:0.3,x1:10,y1:30,x2:10,y2:38,locked:true}))!==7)
+      throw new Error("la branche verrouillée au coude a perdu son trajet");
+    if(pose(()=>S.tracks.push({l:0,net:"N",w:0.3,x1:20,y1:30,x2:20,y2:38}))!==7)
+      throw new Error("la branche en T au milieu d'un segment a perdu son trajet");
+    if(pose(()=>S.vias.push({x:20,y:30,d:0.8,drill:0.4,a:0,b:1,net:"N"}))!==6)
+      throw new Error("le via en plein segment a perdu son trajet");
+  }finally{loadDoc(JSON.parse(avant),true);}
+});
+T("pousser : une liaison que la poussée d'un voisin routé ouvre est annoncée",()=>{
+  const avant=serialize(), reg={grid:S.grid,avoid:S.avoid};
+  try{
+    loadDoc(EXEMPLES[0].build(),true);S.grid=0.1;S.avoid=true;S.pousse=true;
+    const r3_=S.fps.find(f=>f.ref==="R3"), r2=S.fps.find(f=>f.ref==="R2"), u0=conn().unrouted;
+    transformFps([r3_.id],()=>{r3_.x=12.4;r3_.y=21.1;});touch();      // R3 lâché sur R2
+    const u1=conn().unrouted;
+    if(pousseAuDepot([r3_.id])!==1||r2.y===20.5)throw new Error("R2 devait être poussé");
+    const dit=/liaison\(s\) ouverte/.test(document.getElementById("fHint").textContent);
+    if((conn().unrouted>u1)!==dit)throw new Error("liaisons "+u0+" → "+u1+" → "+conn().unrouted+", message : "+document.getElementById("fHint").textContent);
+    if(!dit)throw new Error("le décor devait ouvrir une liaison (R3.1 – R2.2)");
+  }finally{S.pousse=false;loadDoc(JSON.parse(avant),true);S.grid=reg.grid;S.avoid=reg.avoid;}
+});
+T("capas : la piste étirée en plusieurs segments par un déplacement, le via est replacé, pas doublé",()=>{
+  const doc=serialize();
+  try{
+    loadDoc(EXEMPLES[1].build());
+    for(const f of S.fps.filter(f=>capaDecouplage(f))){const c=capaDecouplage(f);for(const e of capaViasExistants(c)){S.vias=S.vias.filter(v=>v!==e.v);S.tracks=S.tracks.filter(t=>!e.pistes.includes(t));}}
+    touch();
+    S.rule.capaVia=true;
+    const f=S.fps.find(x=>x.ref==="C5"), avant=new Set(S.tracks);
+    if(capaViaPoser(f,true)!=="pose")throw new Error("pas de via posé");
+    transformFps([f.id],()=>{f.x+=3;});
+    if(S.tracks.filter(t=>!avant.has(t)).length<2)throw new Error("l'essai attend une piste étirée en plusieurs segments");
+    capaViasAuto([f]);
+    const miens=S.vias.filter(v=>v.capa===f.id).length, reste=S.tracks.filter(t=>!avant.has(t)).length;
+    if(miens!==1)throw new Error(miens+" vias pour la même capa");
+    if(reste!==1)throw new Error(reste+" pistes laissées, 1 attendue");
+  }finally{loadDoc(JSON.parse(doc),true);}
+});
+T("règles de la carte : un point de test PTST compte (C39), un point de test seul ne peuple pas une face (C30)",()=>{
+  const doc=serialize();
+  try{
+    loadDoc(EXEMPLES[0].build());
+    const de=r=>pcbReglesControler().controles.find(c=>c.regle===r).ecarts.join(" ");
+    if(!/GND/.test(de("C39")))throw new Error("l'essai attend GND sans point de test");
+    const t=mkFp("PTST1","","TP-SMD",1);t.x=S.board.x+2;t.y=S.board.y+2;t.nets={1:"GND"};S.fps.push(t);
+    const u=mkFp("TP7","","TP-SMD",1);u.x=S.board.x+4;u.y=S.board.y+2;u.side=1;u.nets={1:"+5V"};S.fps.push(u);
+    touch();
+    if(/GND|\+5V/.test(de("C39")))throw new Error("C39 : "+de("C39"));
+    if(/dessous/.test(de("C30")))throw new Error("C30 : "+de("C30"));
+  }finally{loadDoc(JSON.parse(doc),true);}
+});
+T("STEP : une fente sort à sa forme (découpe oblongue), pas en rond ; réimporté, le fichier n'en fait pas une découpe de carte",()=>{
+  const doc=serialize();
+  try{
+    exCharger(1);
+    const h=mkHole(S.board.x+5,S.board.y+6,2);h.w=4;h.rot=30;
+    S.holes=[h];touch();
+    const J=stepSceneEditeur();
+    if(J.trous.some(t=>!t[3]&&Math.hypot(t[0]-(h.x-gOrigin().x),t[1]-(gOrigin().y-h.y))<0.01))throw new Error("la fente est restée un trou rond");
+    const L=stepLireCarte(stepScene(J,{carte:true},{}).texte);
+    const aire=P=>Math.abs(signedArea(P)), A=Math.PI+2*2;       // Ø 2, longueur 4
+    if(L.decoupes.length!==1||Math.abs(aire(L.decoupes[0])-A)>0.05)throw new Error("découpe relue : "+L.decoupes.map(aire));
+    /* à cheval sur le bord : le rond d'avant, que le STEP entaille */
+    h.x=S.board.x+0.5;touch();
+    if(stepSceneEditeur().decoupes.length)throw new Error("une fente qui sort de la carte ne devient pas une découpe");
+    h.x=S.board.x+5;touch();
+    stepImporterTexte(stepScene(stepSceneEditeur(),{carte:true},{}).texte,"carte.step");
+    if(boardCutouts().length)throw new Error("la fente déjà là est devenue une découpe de la carte");
+    if(S.holes.length!==1)throw new Error(S.holes.length+" trous");
+  }finally{loadDoc(JSON.parse(doc),true);}
+});
 
 (async()=>{
   for(const [name,fn] of T_ASYNC){

@@ -30,7 +30,8 @@ function pcbReglesFiducials() {
   const fid = fp => /^FID/i.test(fp.ref || "") || /fiduc/i.test((fp.pkg || "") + " " + (fp.value || ""));
   const e = [];
   for (const side of [0, 1]) {
-    if (!S.fps.some(fp => (fp.side ? 1 : 0) === side && !fid(fp))) continue;     // face non peuplée
+    // peuplée : au moins une pièce à poser — un point de test ou un trou de fixation seul n'appelle pas de mire
+    if (!S.fps.some(fp => (fp.side ? 1 : 0) === side && !fid(fp) && !jlcNonPose(fp))) continue;
     const n = S.fps.filter(fp => (fp.side ? 1 : 0) === side && fid(fp)).length;
     if (n < 3) e.push("Face " + (side ? "dessous" : "dessus") + " peuplée : " + n + " repère(s) de pose (FID…), 3 attendus.");
   }
@@ -70,7 +71,7 @@ function pcbReglesAnneaux() {
 }
 
 function pcbReglesPointsTest() {
-  const tp = fp => /^TP/i.test(fp.ref || ""), compte = new Map(), testes = new Set();
+  const tp = fp => /^TP/i.test(fp.ref || "") || fpPointTest(fp), compte = new Map(), testes = new Set();
   for (const fp of S.fps) for (const q of padsWorld(fp)) {
     if (!q.net) continue;
     if (tp(fp)) testes.add(q.net);

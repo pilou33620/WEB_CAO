@@ -928,7 +928,7 @@ async function pcbFetchAvailableProfiles(){
   const list = ["jlcpcb", "generique", "eurocircuits", "pcbway"];
   for(const id of list){
     try {
-      const resp = await fetch("../profils/fabricants/" + id + ".json");
+      const resp = await fetch((/\/dist\/[^/]*$/.test(location.pathname)?"../../":"../") + "profils/fabricants/" + id + ".json")   // monofichier : un dossier plus bas;
       if(resp.ok){
         const data = await resp.json();
         if(data && data.id && data.name){
