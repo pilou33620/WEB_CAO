@@ -284,7 +284,7 @@ function carte(opts){
        nom-la. */
     couches:opts.couches||["Top","Bottom"],
     pistes:(opts.pistes||[piste]),
-    arcs:[], plans:(opts.plans||[]), textes:[],
+    arcs:(opts.arcs||[]), plans:(opts.plans||[]), textes:[],
     /* Pastilles et composants : vides par defaut -- la plupart des essais
        n'eprouvent que du cuivre. `padstacks` doit exister meme vide :
        `mdlPadPlace` y cherche la definition avant tout autre test, et un
@@ -4208,6 +4208,39 @@ T("sélection et chaînage de piste sur la même couche : mdlChainePistesMemeCou
   V.parNet = null;
   V.modele = null;
   V.sel = [];
+});
+
+/* La désignation au clic (04-interaction.js, qui n'est pas chargé : il branche
+   le canevas) : on en reprend les seules fonctions de désignation, telles
+   qu'écrites. Un arc de piste n'était pas désignable — le clic tombait sur le
+   plan du dessous ou sur rien. Il l'est maintenant sous le type « piste »,
+   que la chaîne et la simulation savent déjà suivre jusqu'à un arc. */
+T("désignation : un arc de piste se désigne au clic, dans sa portée et dans les deux sens",()=>{
+  const src=fs.readFileSync(path.join(RACINE,"js","04-interaction.js"),"utf8");
+  const fn=n=>{const i=src.indexOf("function "+n+"(");return src.slice(i,src.indexOf("\n}\n",i)+2);};
+  (0,eval)("var PICK_PX=3;"+["couchesDesignation","boitePiste","distSegment","designer"].map(fn).join("\n"));
+  /* Les deux arcs de la carte d'essai de l'éditeur (aller-retour IPC-2581) :
+     centre, début, fin, et le sens `h` tel que le lecteur le rend. */
+  const aH={c:0,n:0,w:0.25,s:[20,35],e:[25,30],m:[20,30],h:1};   // 90° → 0°, horaire
+  const aT={c:0,n:0,w:0.2, s:[30,18],e:[35,13],m:[35,18],h:0};   // 180° → 270°, trigo
+  carte({arcs:[aH,aT]});
+  V.vue.scale=10; V.vue.flip=false;
+  const d=Math.SQRT1_2*5;
+  const a1=designer(20+d,30+d), a2=designer(35-d,18-d);
+  if(!a1||a1.type!=="piste"||a1.piste!==aH)throw new Error("le milieu de l'arc horaire n'est pas désigné : "+(a1&&a1.type));
+  if(!a2||a2.piste!==aT)throw new Error("le milieu de l'arc trigo n'est pas désigné : "+(a2&&a2.type));
+  if(designer(20-d,30-d))throw new Error("le côté opposé du cercle (hors portée) est désigné");
+  if(designer(35+d,18+d))throw new Error("le côté opposé de l'arc trigo est désigné");
+  if(designer(20+d*1.1,30+d*1.1))throw new Error("un point à 0,5 mm du cercle est désigné");
+  /* Une désignation utilisable : la simulation la chaîne sans exception, en
+     polyligne de la longueur de l'arc. */
+  V.sel=[]; selPoser(a1,{couche:0,quoi:"",seul:null},false);
+  const z=simZPistes();
+  const lg=z.reduce((t,e)=>t+mdlLongueur(e.piste.p),0);
+  if(!z.length||Math.abs(lg-Math.PI*5/2)>0.05)throw new Error("simZPistes rend "+z.length+" morceau(x), "+lg.toFixed(3)+" mm");
+  const doc=simDocIpc(null,0,{z0:50,f1:1e8,f2:5e9,points:11,fc:1e9,tr:0});
+  if(doc.erreur)throw new Error("simDocIpc refuse l'arc : "+doc.erreur);
+  V.sel=[];
 });
 
 T("arcs dans ltNet et mdlArcLongueur : calcul exact de longueur, impédance et agrégation", function(){

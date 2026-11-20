@@ -868,8 +868,10 @@ function pnlDetail(){
     const chaine=(typeof mdlChainePistesMemeCouche==="function")?mdlChainePistesMemeCouche(s.piste):[s.piste];
     const lgTot=chaine.reduce((acc,p)=>acc+(p.p?mdlLongueur(p.p):mdlArcLongueur(p)),0);
     const segsTot=chaine.reduce((acc,p)=>acc+(p.p?Math.max(0,p.p.length/2-1):1),0);
-    h+='<div class="fiche"><h3>Piste</h3><table>'
+    const arc=s.piste.p?null:mdlArc(s.piste);   // un arc désigné (voir designer)
+    h+='<div class="fiche"><h3>'+(arc?"Arc de piste":"Piste")+'</h3><table>'
       +l("Largeur",'<span class="val">'+mdlMes(s.piste.w)+"</span>")
+      +(arc?l("Rayon",mdlMes(arc.r))+l("Longueur de l'arc",mdlMes(mdlArcLongueur(s.piste),2)):"")
       +l("Longueur",mdlMes(lgTot,2)+(chaine.length>1?' <span class="simNote">('+chaine.length+' tronçons continus)</span>':''))
       +l("Segments",segsTot)
       +l("Couche",esc(mdlCoucheNom(s.couche)))
@@ -1047,7 +1049,7 @@ async function ltMomLancer(piste){
 }
 
 function pnlLigne(piste,coucheIdx){
-  const e=ltPiste(piste,coucheIdx);
+  const e=(piste.p?ltPiste:ltArc)(piste,coucheIdx);
   const c=V.couches[coucheIdx];
   if(!e){
     /* Pas de ligne à calculer : la couche n'est pas du cuivre de l'empilage,

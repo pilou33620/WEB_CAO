@@ -156,6 +156,21 @@ function designer(wx,wy){
                     piste:t};
         }
       }
+      /* Les arcs, sous le même type : `mdlChainePistesMemeCouche` et la
+         simulation (`simZPistesDe`) savent déjà qu'un maillon peut être un
+         arc ({s,e,m,h}) plutôt qu'une polyligne. */
+      for(const a of couche.arcs){
+        if(!a.s||!a.e||!a.m)continue;
+        const g=mdlArc(a), seuil=(a.w||0)/2+tol;
+        if(Math.abs(Math.hypot(wx-g.cx,wy-g.cy)-g.r)>seuil)continue;
+        // portée angulaire : `h` vrai, l'angle décroît du début à la fin (Path2D.arc)
+        const th=Math.atan2(wy-g.cy,wx-g.cx), deux=2*Math.PI;
+        const ecart=(((g.h?g.d-th:th-g.d)%deux)+deux)%deux;
+        const bout=Math.min(Math.hypot(wx-a.s[0],wy-a.s[1]),Math.hypot(wx-a.e[0],wy-a.e[1]));
+        if(ecart<=mdlArcAngle(g)||bout<=seuil)
+          return {type:"piste",x:wx,y:wy,r:seuil,net:a.n,couche:couche.i,
+                  piste:a};
+      }
     }
   }
   /* Les plans : du cuivre comme le reste, mais une surface. Ils passent après
