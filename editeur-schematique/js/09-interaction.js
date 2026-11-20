@@ -535,9 +535,9 @@ cv.addEventListener("pointerdown",e=>{
         const col=isZ?"#f59e0b":(realSh==="rect"?"#2f86cc":"#6b7280");
         const lbl=isZ?"ALIMENTATION":"";
         const cat=isZ?"Alimentation":"";
+        push();                       // sans étape : ni Ctrl+Z, ni « modifié » avant de fermer
         const nd={id:S.uid++,shape:realSh,type:realSh,x1:S.drawStart.x,y1:S.drawStart.y,x2:pt.x,y2:pt.y,
                   style:"dashed",width:2,color:col,label:lbl,isZone:isZ,category:cat};
-        push();                       // sans étape : ni Ctrl+Z, ni « modifié » avant de fermer
         if(!S.drawings)S.drawings=[];
         S.drawings.push(nd);
         clearSel();

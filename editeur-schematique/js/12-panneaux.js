@@ -264,6 +264,10 @@ function propsRefocus(f){
   if(f.s!=null&&typeof el.setSelectionRange==="function")
     try{el.setSelectionRange(f.s,f.e);}catch(_){}
 }
+/* Un champ validé (Tab, Entrée, clic ailleurs) referme l'étape de saisie : sans cela,
+   repère puis valeur — ou boîtier — du même composant ne faisaient qu'une étape, et
+   Ctrl+Z après la seconde saisie défaisait aussi la première. */
+document.getElementById("props").onchange=()=>{PROP_FRAPPE=null;};
 function refreshPanels(){
   const _focus=propsFocus();
   pruneSel();

@@ -125,6 +125,10 @@ function ceChangerType(newType){
     CE.el.value = newDef.v || "";
   }
   delete CE.el.pinPos; delete CE.el.icBody;
+  /* noms, types et pattes saisis broche par broche pour l'ancien symbole : gardés, un CI
+     devenu transistor nommait B/C/E « VIN/GND/VOUT » et la netlist suivait l'ancienne table */
+  CE.el.pinNames = []; delete CE.el.pinTypes; delete CE.el.pinMap; delete CE.el.pinMapMain;
+  if(CE.el.brochage && typeof brAppliquer === "function") brAppliquer(CE.el);   // la table de la LIB se refait sur les nouvelles broches
   if(CE.el.icShape === "libre") delete CE.el.icShape;
   if(typeof newDef.pins !== "function") delete CE.el.npins;
   touchWires();

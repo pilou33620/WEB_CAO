@@ -418,6 +418,21 @@ T("Propriétés : une sélection mêlée dit qui est dedans",()=>{
     if(document.getElementById("props").innerHTML.indexOf("Aucune sélection")<0)throw new Error("le vide doit rester dit");
   }finally{clearSel();loadDoc(JSON.parse(avant),true);}
 });
+T("Propriétés : un champ validé referme l'étape, Ctrl+Z ne défait que la saisie suivante",()=>{
+  const avant=serialize();
+  try{
+    const el=addComp("resistor",300,300); el.ref="R41"; el.value="1k";
+    clearSel();S.sel.add(el.id);refreshPanels();
+    const n=S.hist.length;
+    let i=document.getElementById("pRef"); i.value="R42"; i.oninput();
+    document.getElementById("props").onchange();          // Tab : l'évènement « change » remonte au panneau
+    i=document.getElementById("pVal"); i.value="4k7"; i.oninput();
+    if(S.hist.length!==n+2)throw new Error("deux étapes attendues, "+(S.hist.length-n)+" poussée(s)");
+    undo();
+    const r=S.comps.find(c=>c.ref==="R42");
+    if(!r||r.value!=="1k")throw new Error("Ctrl+Z a défait aussi le repère");
+  }finally{restore(avant);}
+});
 T("Propriétés : repère, valeur et boîtier font une étape, que Ctrl+Z défait",()=>{
   const el=addComp("resistor",300,300); el.ref="R41"; el.value="1k";
   clearSel();S.sel.add(el.id);refreshPanels();
@@ -2899,6 +2914,17 @@ T("édition du composant : l'ouvrir ne fige pas les broches (largeur d'un DIP, c
   ceChangerType("opamp");
   if(pinsOf(r).length!==5) throw new Error("résistance devenue AOP : "+pinsOf(r).length+" broche(s) au lieu de 5");
   ceClose();
+});
+T("édition du composant : changer de symbole oublie noms, types et pattes de l'ancien",()=>{
+  const u = C("ic", 10, 10, {ref:"U1", npins:3, pinNames:["VIN","GND","VOUT"], pinMap:["3","1","2"], pinMapMain:true, pinTypes:["pwr_in","pwr_in","pwr_out"]});
+  sheet([u], []);
+  ceOpen(u);
+  ceChangerType("npn");
+  ceClose();
+  const noms=[0,1,2].map(i=>brNomBroche(u,i)).join(), pattes=[0,1,2].map(i=>brPatte(u,i)).join();
+  if(noms!==defOf("npn").pn.join()) throw new Error("noms de l'ancien symbole gardés : "+noms);
+  if(pattes!=="1,2,3") throw new Error("pattes de l'ancien symbole gardées : "+pattes);
+  if(u.pinTypes) throw new Error("types de l'ancien symbole gardés");
 });
 T("édition du composant : représentation et largeur du corps d'un CI, absentes pour un symbole fixe",()=>{
   const u = C("ic", 10, 10, {ref:"U1"}), r = C("resistor", 30, 10, {ref:"R1"});
