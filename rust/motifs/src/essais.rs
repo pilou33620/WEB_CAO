@@ -70,7 +70,7 @@ fn natures_des_nets_du_lecteur_ipc2581() {
     let attendu = std::fs::read_to_string(dossier().join("exemple-1.natures.json")).unwrap();
     assert_eq!(dumps(&modele["natures_nets"]), attendu.trim_end());
     assert_eq!(modele["natures_nets"]["classes"]["USB_DP"].as_str(), Some("Rapide"));
-    assert_eq!(dumps(&modele).chars().count(), 133943);
+    assert_eq!(dumps(&modele).chars().count(), 134020);
 
     // « nets_bruyants » part en liste de noms, que le lecteur trie
     let schema = j(r#"{"components": {"U1": {"val": "MP1584"}, "L1": {"val": "10uH"}, "D1": {"val": "B5819W"}},

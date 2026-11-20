@@ -603,6 +603,29 @@ function docNets(){
   _docCache={sheets,groups};_docSig=sig;
   return _docCache;
 }
+/* Le nom qu'un net porte dans la netlist (netlistText), donc au PCB. Le PCB
+   fusionne les sections NET de même nom : les noms automatiques (N$1…)
+   repartent à 1 sur chaque feuille, et une étiquette locale peut porter le
+   nom d'une autre feuille. Un nom local écrit plus d'une fois prend donc le
+   numéro de sa feuille, sinon deux nets distincts deviennent un
+   court-circuit sur la carte ; un net global garde son nom. Les « " »
+   coupaient le nom à la lecture. Contraintes et classes s'y accrochent. */
+function nlNom(n){return String(n==null?"":n).replace(/"/g,"_");}
+function nlEstBus(g){return !!(g.isBus||(g.members[0]&&g.members[0].net.isBus));}
+function nomNetlist(g,D){
+  D=D||docNets();
+  if(!D._nlOcc){
+    D._nlOcc=new Map();
+    for(const h of D.groups)if(!nlEstBus(h)){const k=nlNom(h.name);D._nlOcc.set(k,(D._nlOcc.get(k)||0)+1);}
+  }
+  const k=nlNom(g.name);
+  return !g.global&&D._nlOcc.get(k)>1?k+"_f"+(g.pages[0]+1):k;
+}
+/* idem pour un net de la feuille courante */
+function nomNetlistDuNet(net){
+  const D=docNets(), g=D.groups.find(h=>h.members.some(m=>m.net===net));
+  return g?nomNetlist(g,D):nlNom(net.name);
+}
 function docGroupOf(net){
   if(!net||!net.global)return null;
   return docNets().groups.find(g=>g.global&&(g.members.some(m=>m.net===net)||

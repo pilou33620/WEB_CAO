@@ -1832,7 +1832,7 @@ function propsFp(box,fp){
     bFpUpLib.onclick=async (e)=>{
       e.preventDefault();
       if(typeof pcbAppliquerMajLib==="function"){
-        await pcbAppliquerMajLib(fp.pkg);
+        await pcbAppliquerMajLib(fp.lib||fp.pkg);   // le fichier LIB d'où viennent les pastilles
       }
     };
   }

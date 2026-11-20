@@ -147,7 +147,7 @@ const EXPOSE=[
   "brAjouterPartie","brPartieLibre","brRepere","brPanneauHtml","PKG_MAX","buildProps",
   /* contraintes de nets pour le PCB (commun/contraintes.js, 27-contraintes.js) */
   "schCmModele","schCmPoser","schCmGroupeCreer","schCmGroupeModifier","schCmGroupeSupprimer",
-  "schCmNetsNommes","schCmOrphelins","schCmResumeNet","schCmOuvrir","schCmFermer","SCM",
+  "schCmNetsNommes","schCmOrphelins","schCmHeritiers","schCmClic","schCmResumeNet","schCmOuvrir","schCmFermer","SCM",
   "cmNormNets","cmNormGroupes","cmLireChamp","schDocCourant","restore",
   /* classes d'interface (commun/classes-interface.js) */
   "CLASSES_INTERFACE","familleClasse","titreClasse","loadDoc",
@@ -1737,6 +1737,21 @@ T("rotation : le contact se change aussi en fil",()=>{
   if(!S.wires.length)throw new Error("la liaison devait être matérialisée");
 });
 
+T("rotation : quatre R en zone dense rendent la netlist de départ, la soudure en route est dite",()=>{
+  const conf=global.confirm;global.confirm=()=>true;
+  try{
+    schChargerExemple(0);loadPage(2);
+    const avant=netlistText("x");
+    const l=S.comps.find(c=>c.type==="gport"&&c.value==="SWDIO");
+    clearSel();S.sel.add(l.id);
+    rotateSel();
+    const h=document.getElementById("fHint").textContent;
+    if(!/\+3V3/.test(h)||!/SWDIO/.test(h))throw new Error("la soudure à +3V3 n'est pas dite : "+h);
+    rotateSel();rotateSel();rotateSel();
+    if(netlistText("x")!==avant)throw new Error("la netlist a changé après 4 R");
+  }finally{global.confirm=conf;}
+});
+
 /* ==========================================================================
    Libellés déplaçables (08-rendu-schema.js)
    ========================================================================== */
@@ -2925,6 +2940,15 @@ T("édition du composant : changer de symbole oublie noms, types et pattes de l'
   if(noms!==defOf("npn").pn.join()) throw new Error("noms de l'ancien symbole gardés : "+noms);
   if(pattes!=="1,2,3") throw new Error("pattes de l'ancien symbole gardées : "+pattes);
   if(u.pinTypes) throw new Error("types de l'ancien symbole gardés");
+});
+T("édition du composant : d'un CI générique à un autre, les noms saisis restent",()=>{
+  const u = C("ic", 10, 10, {ref:"U1", npins:3, pinNames:["VIN","GND","VOUT"], pinMap:["3","1","2"], pinTypes:["pwr_in","pwr_in","pwr_out"]});
+  sheet([u], []);
+  ceOpen(u);
+  ceChangerType("ic");
+  ceClose();
+  if((u.pinNames||[]).join()!=="VIN,GND,VOUT"||(u.pinMap||[]).join()!=="3,1,2"||(u.pinTypes||[]).length!==3)
+    throw new Error("noms perdus : "+JSON.stringify([u.pinNames,u.pinMap,u.pinTypes]));
 });
 T("édition du composant : représentation et largeur du corps d'un CI, absentes pour un symbole fixe",()=>{
   const u = C("ic", 10, 10, {ref:"U1"}), r = C("resistor", 30, 10, {ref:"R1"});
@@ -4572,6 +4596,24 @@ T("contraintes de nets : groupes d'appariement, nets disparus, résumé",()=>{
   try{
     if(SCM.filtre!=="CLK")throw new Error("la fenêtre s'ouvre filtrée sur le net");
   }finally{schCmFermer();}
+  S.contraintes={nets:{},groupes:[]};
+});
+
+T("contraintes de nets : une étiquette locale sur deux feuilles, deux nets sous leurs noms de netlist",()=>{
+  const a=C("resistor",5,5,{ref:"R1"}), b=C("resistor",5,9,{ref:"R2"});
+  sheet([a,b],[{x1:allPins(a)[1].x,y1:allPins(a)[1].y,x2:allPins(b)[1].x,y2:allPins(b)[1].y,net:"SIG"}]);
+  const p2=newPage("F2"), c=C("resistor",5,5,{ref:"R3"}), d=C("resistor",5,9,{ref:"R4"});
+  p2.comps=[c,d];p2.wires=[{x1:allPins(c)[1].x,y1:allPins(c)[1].y,x2:allPins(d)[1].x,y2:allPins(d)[1].y,net:"SIG"}];
+  S.pages.push(p2);touchWires();
+  const nl=(netlistText("x").match(/^NET "SIG[^"]*"/gm)||[]).map(x=>x.slice(5,-1)).sort();
+  const cm=schCmNetsNommes().map(n=>n.name).filter(n=>/^SIG/.test(n)).sort();
+  if(nl.join()!=="SIG_f1,SIG_f2"||cm.join()!==nl.join())throw new Error("netlist "+nl+" / contraintes "+cm);
+  /* l'ancienne contrainte sur « SIG » est signalée et se reporte sur les deux */
+  S.contraintes={nets:{SIG:{lMax:20}},groupes:[]};
+  if(schCmOrphelins().nets.join()!=="SIG"||schCmHeritiers("SIG").join()!=="SIG_f1,SIG_f2")throw new Error("héritiers : "+schCmHeritiers("SIG"));
+  schCmClic({target:{closest:()=>({dataset:{a:"orphreporter",v:"SIG"}})}});
+  const N=schCmModele().nets;
+  if(N.SIG||!N.SIG_f1||N.SIG_f1.lMax!==20||!N.SIG_f2||N.SIG_f2.lMax!==20)throw new Error(JSON.stringify(N));
   S.contraintes={nets:{},groupes:[]};
 });
 

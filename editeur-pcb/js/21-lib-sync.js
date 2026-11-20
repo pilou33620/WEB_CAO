@@ -13,18 +13,21 @@ const PCB_LIB_ALERTE = {
 function pcbTrouverEmpreintesAmettreAJour(pkgName) {
   if (!pkgName || typeof S === "undefined" || !Array.isArray(S.fps)) return [];
   const kTarget = (typeof pkgKey === "function") ? pkgKey(pkgName) : String(pkgName).toUpperCase();
-  return S.fps.filter(fp => {
-    const kFp = (typeof pkgKey === "function") ? pkgKey(fp.pkg) : String(fp.pkg).toUpperCase();
-    return kFp === kTarget;
-  });
+  return S.fps.filter(fp => pcbFpDeLaLib(fp, kTarget));
+}
+/* L'empreinte vient du fichier LIB de clé k : par son boîtier, ou par le nom
+   de la définition LIB appliquée (`fp.lib`), qui peut différer du boîtier
+   (fichier « Foo.json » de boîtier « SOT-23 », posé par netliste). */
+function pcbFpDeLaLib(fp, k) {
+  const cle = s => (typeof pkgKey === "function") ? pkgKey(s) : String(s).toUpperCase();
+  return cle(fp.pkg) === k || (!!fp.lib && cle(fp.lib) === k);
 }
 
 function pcbEmpreinteAlerteLib(fp) {
   if (!fp || !PCB_LIB_ALERTE.active) return false;
-  const kFp = (typeof pkgKey === "function") ? pkgKey(fp.pkg) : String(fp.pkg).toUpperCase();
   for (const name of PCB_LIB_ALERTE.pkgNames) {
     const k = (typeof pkgKey === "function") ? pkgKey(name) : String(name).toUpperCase();
-    if (k === kFp) return true;
+    if (pcbFpDeLaLib(fp, k)) return true;
   }
   return false;
 }
@@ -147,10 +150,13 @@ function pcbAppliquerMajLib(pkgName) {
   if (typeof fpLibRelire === "function") PCB_LIB_ALERTE.relu = fpLibRelire(pkgName);
   for (const fp of matches) {
     if (typeof pcbAppliquerEmpreinteLib === "function") {
-      const res = pcbAppliquerEmpreinteLib(fp, fp.pkg);
+      /* la définition du fichier modifié (pkgName), pas celle du boîtier ; le boîtier,
+         lui, ne change pas : BOM, CPL et ECO le lisent (l'application l'écrase) */
+      const pkg = fp.pkg;
+      const res = pcbAppliquerEmpreinteLib(fp, pkgName);
       // compté quand l'application réussit (false : définition introuvable ou lecture en échec)
-      if (res && typeof res.then === "function") promises.push(res.then(ok => { if (ok) count++; }));
-      else if (res) count++;
+      if (res && typeof res.then === "function") promises.push(res.then(ok => { fp.pkg = pkg; if (ok) count++; }));
+      else { fp.pkg = pkg; if (res) count++; }
     }
   }
 

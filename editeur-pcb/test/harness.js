@@ -32114,6 +32114,70 @@ T("STEP : une fente sort à sa forme (découpe oblongue), pas en rond ; réimpor
   }finally{loadDoc(JSON.parse(doc),true);}
 });
 
+
+/* Une empreinte posée par netliste depuis une définition LIB dont le nom n'est pas
+   le boîtier (« Foo.json », boîtier « SOT-23 ») : `fp.lib` = « Foo », `fp.pkg` =
+   « SOT-23 ». Modifier Foo dans Gestion LIB ne levait aucune alerte (la recherche
+   ne regardait que le boîtier), et la mise à jour aurait lu « SOT-23.json ». Elle
+   doit aussi garder le boîtier : BOM et CPL le lisent. */
+TA("Gestion LIB PCB : une définition LIB nommée autrement que le boîtier déclenche l'alerte et la mise à jour",async function(){
+  const doc=serialize(), fetchAvant=global.fetch, libAvant=FPLIB.Foo;
+  const pad=(n,x,y,w)=>({n,x,y,w,h:w,shape:"rect"});
+  try{
+    loadDoc(EXEMPLES[0].build());
+    FPLIB.Foo={name:"Foo",pkg:"SOT-23",pads:[pad(1,-1,0,0.6),pad(2,1,0,0.6),pad(3,0,1,0.6)]};
+    const fp=mkFp("Q9","BC847","SOT-23",3);
+    const lib=fpLibPourBoitier("SOT-23");
+    if(!lib||!fpApplyDef(fp,lib))throw new Error("la définition Foo n'a pas été trouvée par son boîtier");
+    fp.lib=lib.name;fp.x=S.board.x+S.board.w/2;fp.y=S.board.y+S.board.h/2;S.fps.push(fp);
+    const nouvelle={name:"Foo",pkg:"SOT-23",pads:[pad(1,-1.1,0,0.9),pad(2,1.1,0,0.9),pad(3,0,1.2,0.9)]};
+    const lus=[];
+    global.fetch=async url=>{lus.push(decodeURIComponent(url));
+      const corps=JSON.stringify({data:nouvelle});
+      return {ok:true,status:200,json:async()=>JSON.parse(corps),text:async()=>corps};};
+    PCB_LIB_ALERTE.active=false;PCB_LIB_ALERTE.pkgNames=new Set();
+    // l'annonce de l'onglet Gestion LIB, par le canal de session
+    const gl=new BroadcastChannel("cao.lib.v1");
+    gl.postMessage({v:1,type:"lib_modif",genre:"fichier",typeFichier:"pcb",nom:"Foo.json",data:null,t:1});gl.close();
+    if(!PCB_LIB_ALERTE.active||!pcbEmpreinteAlerteLib(fp))throw new Error("aucune alerte pour Q9 après la modification de Foo");
+    lus.length=0;
+    await pcbAppliquerMajLib("Foo");
+    if(!lus.some(u=>/nom=Foo\.json/.test(u)))throw new Error("définition lue : "+lus.join(" ; "));
+    if(fp.pads[0].w!==0.9)throw new Error("pastilles non mises à jour : "+fp.pads[0].w);
+    if(fp.pkg!=="SOT-23"||fp.lib!=="Foo")throw new Error("boîtier "+fp.pkg+", LIB "+fp.lib);
+    if(!jlcBomLignes().some(g=>g.refs.includes("Q9")&&g.pkg==="SOT-23"))throw new Error("la BOM JLCPCB a perdu le boîtier de Q9");
+    if(pcbEmpreinteAlerteLib(fp))throw new Error("l'alerte reste après la mise à jour");
+  }finally{
+    global.fetch=fetchAvant;
+    if(libAvant)FPLIB.Foo=libAvant;else delete FPLIB.Foo;
+    PCB_LIB_ALERTE.active=false;PCB_LIB_ALERTE.pkgNames=new Set();
+    loadDoc(JSON.parse(doc),true);
+  }
+});
+
+/* La place libre d'un voisin poussé se jugeait sur le boîtier et ses pastilles, pas
+   sur le cuivre qui le suit : C1 lâché sur Q3 (exemple 0) poussait Q3 là où ses pistes
+   et son via frôlaient R3 (isolation piste/pastille et via/pastille R3.1). La place
+   retenue ne doit ajouter aucune erreur au DRC, et le geste reste d'un seul Ctrl+Z. */
+T("pousser : la place d'un voisin poussé est propre au DRC, son cuivre compris",()=>{
+  const avant=serialize(), reg={grid:S.grid,avoid:S.avoid};
+  const erreurs=()=>{runDrc();return S.drc.filter(e=>!e.info&&e.kind!=="non-routee").map(drcCle);};
+  try{
+    loadDoc(EXEMPLES[0].build(),true);S.grid=0.1;S.avoid=true;S.pousse=true;
+    const c1=S.fps.find(f=>f.ref==="C1"), q3=S.fps.find(f=>f.ref==="Q3"), q0={x:q3.x,y:q3.y};
+    const depart=serialize();
+    push();                                                    // l'étape du geste, posée au premier mouvement
+    transformFps([c1.id],()=>{c1.x=r3(q3.x+0.3);c1.y=r3(q3.y+0.4);});touch();   // C1 lâché sur Q3
+    const base=erreurs();
+    if(pousseAuDepot([c1.id])!==1||(q3.x===q0.x&&q3.y===q0.y))throw new Error("Q3 devait être poussé : "+document.getElementById("fHint").textContent);
+    const reste=base.slice(), neuves=[];
+    for(const k of erreurs()){const i=reste.indexOf(k);if(i>=0)reste.splice(i,1);else neuves.push(k);}
+    if(neuves.length)throw new Error("la poussée ajoute des erreurs : "+S.drc.filter(e=>neuves.indexOf(drcCle(e))>=0).map(e=>e.msg).join(" ; "));
+    undo();
+    if(serialize()!==depart)throw new Error("un Ctrl+Z ne défait pas le geste entier");
+  }finally{S.pousse=false;loadDoc(JSON.parse(avant),true);S.grid=reg.grid;S.avoid=reg.avoid;}
+});
+
 (async()=>{
   for(const [name,fn] of T_ASYNC){
     try{await fn();console.log("  ok  "+name);ok++;}

@@ -415,6 +415,7 @@ function peindreTextes(c,dpr){
     if(!couche.visible||!couche.textes.length)continue;
     c.fillStyle=couche.couleur;
     for(const t of couche.textes){
+      if(t.traits)continue;                  // ses lettres sont déjà dessinées par le fichier
       const h=t.h>0?t.h:href, px=h*V.vue.scale;
       if(px<5)continue;                      // illisible : autant ne rien mettre
       if(!dansFenetre(f,t.x-4*h,t.y-4*h,t.x+4*h,t.y+4*h))continue;

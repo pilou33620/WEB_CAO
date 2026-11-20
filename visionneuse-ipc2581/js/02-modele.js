@@ -163,6 +163,13 @@ function mdlPlacer(px,py,cx,cy,rot,mir){
   const a=(rot||0)*Math.PI/180, c=Math.cos(a), s=Math.sin(a);
   return {x:cx+px*c-py*s, y:cy+px*s+py*c};
 }
+/* Un texte dont le fichier dessine aussi les lettres (traits de la même couche autour de
+   sa place, comme l'export de l'éditeur PCB) : la visionneuse ne le repeint pas par-dessus. */
+function mdlTexteTrace(t,c){
+  const h=t.h>0?t.h:0, r=Math.max(h,String(t.t||"").length*h)/2;
+  if(!(r>0))return false;
+  return c.pistes.some(p=>{for(let i=0;i+1<p.p.length;i+=2)if(Math.hypot(p.p[i]-t.x,p.p[i+1]-t.y)<=r)return true;return false;});
+}
 function mdlLongueur(p){
   let t=0;
   for(let i=0;i+3<p.length;i+=2)t+=Math.hypot(p[i+2]-p[i],p[i+3]-p[i+1]);
@@ -666,7 +673,7 @@ function mdlCharger(modele,nomFichier){
     const n=net(g.n); if(n){n.plans.push(g);if(g.c>=0)n.couches.add(g.c);}
   }
   for(const t of modele.textes){
-    const c=V.couches[t.c]; if(c){c.textes.push(t);c.cpt++;}
+    const c=V.couches[t.c]; if(c){c.textes.push(t);c.cpt++;t.traits=mdlTexteTrace(t,c);}
   }
 
   /* Les pastilles : libres d'abord, puis celles que portent les composants. */

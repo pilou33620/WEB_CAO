@@ -125,9 +125,15 @@ function ceChangerType(newType){
     CE.el.value = newDef.v || "";
   }
   delete CE.el.pinPos; delete CE.el.icBody;
-  /* noms, types et pattes saisis broche par broche pour l'ancien symbole : gardés, un CI
+  /* noms, types et pattes saisis broche par broche pour l'ancien symbole : oubliés, un CI
      devenu transistor nommait B/C/E « VIN/GND/VOUT » et la netlist suivait l'ancienne table */
-  CE.el.pinNames = []; delete CE.el.pinTypes; delete CE.el.pinMap; delete CE.el.pinMapMain;
+  if(typeof oldDef.pins === "function" && typeof newDef.pins === "function"){
+    // d'un CI générique à un autre : les noms saisis valent toujours, tronqués au nombre de broches
+    const nb = pinCount(CE.el);
+    for(const k of ["pinNames","pinTypes","pinMap"]) if(Array.isArray(CE.el[k]) && CE.el[k].length > nb) CE.el[k].length = nb;
+  }else{
+    CE.el.pinNames = []; delete CE.el.pinTypes; delete CE.el.pinMap; delete CE.el.pinMapMain;
+  }
   if(CE.el.brochage && typeof brAppliquer === "function") brAppliquer(CE.el);   // la table de la LIB se refait sur les nouvelles broches
   if(CE.el.icShape === "libre") delete CE.el.icShape;
   if(typeof newDef.pins !== "function") delete CE.el.npins;
