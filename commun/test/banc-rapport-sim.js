@@ -22,7 +22,7 @@ const code=["echappe.js","classes-interface.js","simulation-em.js","simulation-r
    façon — on les sort à la main, comme visionneuse-ipc2581/test/harness-sim.js. */
 const EXPOSE=["SIM","SIM_PDN","SIM_ANALYSES","SIM_RAP_ETAT","SIM_RAP_KPI","SIM_RAP_GUIDE",
               "SIM_RAP_JSON_MAX","simRapJson","simOnglets",
-              "simRapPiste","simRapMarkdown"];
+              "simRapPiste","simRapMarkdown","SIM_XT"];
 eval(code+"\n"+EXPOSE.map(n=>"globalThis."+n+"="+n+";").join("\n"));
 
 let ok=0, ko=0;
@@ -131,6 +131,18 @@ T("saisie : « 1 500 » (espace des milliers) vaut 1500, pas 1",function(){
     egal(simSaisie().fc/k,att,"« "+txt+" »");
   }
   e.value=""; SIM.saisie.fc=garde;
+});
+
+T("saisie hors simSaisie : « 1 500 » vaut 1500 (aide, diaphonie, charge PDN), illisible reste NaN",function(){
+  for(const [txt,att] of [["1 500",1500],["1 500,25",1500.25],[" 3,5 ",3.5],["-2",-2],[12,12]])
+    egal(simLireNb(txt),att,"« "+txt+" »");
+  for(const t of ["","abc",null,undefined])
+    if(!isNaN(simLireNb(t)))throw new Error("« "+t+" » devrait rester NaN");
+  const e=simEl("simXtLong"), garde=SIM_XT.saisie.longueur;
+  e.value="1 500"; egal(simXtSaisie().longueur,1500,"longueur diaphonie");
+  e.value="xyz"; egal(simXtSaisie().longueur,1500,"illisible : valeur précédente gardée");
+  e.value=""; SIM_XT.saisie.longueur=garde;
+  const ev={iA:0}; simPDNEvLireChamp(ev,"iA_mA","1 500"); egal(ev.iA,1.5,"charge PDN 1 500 mA");
 });
 
 T("simulation RF : valeurs lues en SI, C ou L illisible refusée (-1), 0 explicite gardé",function(){

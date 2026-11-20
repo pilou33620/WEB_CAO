@@ -1450,7 +1450,7 @@ function simBrancherDC(){
     if(!e)return;
     e.value=simNbLibre(SIM.dcBudget[cle]);
     e.onchange=()=>{
-      const v=parseFloat(String(e.value||"").replace(",","."));
+      const v=simLireNb(e.value);
       if(v>0)SIM.dcBudget[cle]=v;
       e.value=simNbLibre(SIM.dcBudget[cle]);
       simRendre();
@@ -1470,7 +1470,7 @@ function simBrancherDC(){
     e.placeholder=(cle==="via")?"auto":"—";
     e.value=SIM.dcBudget[cle]>0?simNb(SIM.dcBudget[cle],2):"";
     e.onchange=()=>{
-      const v=parseFloat(String(e.value||"").replace(",","."));
+      const v=simLireNb(e.value);
       SIM.dcBudget[cle]=(v>0)?v:null;
       e.value=SIM.dcBudget[cle]?simNb(SIM.dcBudget[cle],2):"";
       simRendre();
@@ -1482,7 +1482,7 @@ function simBrancherDC(){
   if(amb){
     amb.value=simNbLibre(SIM.dcAmbiante);
     amb.onchange=()=>{
-      const v=parseFloat(String(amb.value||"").replace(",","."));
+      const v=simLireNb(amb.value);
       if(isFinite(v))SIM.dcAmbiante=v;
       amb.value=simNbLibre(SIM.dcAmbiante);
       simRendre();
@@ -1688,7 +1688,7 @@ function simRendreBornes(){
     if(ch){
       ch.value=simNbLibre(b.valeur/u.f);
       ch.onchange=()=>{
-        const v=parseFloat(String(ch.value).replace(",","."));
+        const v=simLireNb(ch.value);
         b.provenance = "manuel";
         if(SIM_ED.dcValeur)
           SIM_ED.dcValeur(k,isFinite(v)?v*simDCUnite(b).f:0);
@@ -3119,8 +3119,8 @@ function simThermiqueDC(res){
           : ' — <b>aucun plan</b> : c\'est la carte la plus chaude que ce '+
             'modèle décrive')+
        ', échange '+simNb(th.h_surface,0)+' W/(m²·K) par face.</p>';
-    if(SIM.dcLambda&&parseFloat(String(SIM.dcLambda).replace(",","."))>0){
-      const saisi=parseFloat(String(SIM.dcLambda).replace(",","."));
+    if(SIM.dcLambda&&simLireNb(SIM.dcLambda)>0){
+      const saisi=simLireNb(SIM.dcLambda);
       if(Math.abs(saisi-th.k_stratifie)>1e-9)
         h+='<p class="simNote simAlerte">· Le λ saisi ('+simNb(saisi,2)+
            ') n\'est pas celui de ce résultat ('+simNb(th.k_stratifie,2)+
@@ -3466,7 +3466,7 @@ function SIM_DC_ACTIF_SEUIL(total){return SIM_DC_VIA_ACTIF*total;}
    ========================================================================== */
 function simDCThermique(probleme){
   const th=Object.assign({}, (probleme&&probleme.thermique)||{});
-  const saisi=parseFloat(String(SIM.dcLambda||"").replace(",","."));
+  const saisi=simLireNb(SIM.dcLambda);
   if(saisi>0)th.k_stratifie=saisi;
   /* PAS DE SÉLECTEUR DE MODÈLE, et ce n'est pas un oubli : le solveur rend les
      DEUX tableaux dans le même résultat, la fiche affiche les deux chiffres et
@@ -3801,8 +3801,7 @@ function simDCCauseTrame(message,probleme,finesse){
    a écrite, sinon celle que le cuivre impose. */
 function simDCDocument(probleme){
   const fin=simDCFinesse(probleme.polygones);
-  const saisi=parseFloat(String((simEl("simDCPas")||{}).value||"")
-                           .replace(",","."));
+  const saisi=simLireNb((simEl("simDCPas")||{}).value);
   const pas=(saisi>0)?saisi:(fin?fin.pas:0);
   return {
     finesse:fin?Object.assign({},fin,{choisi:pas, impose:(saisi>0)}):null,
@@ -4145,6 +4144,13 @@ function simUniteBande2(){
 }
 
 function simEl(id){return document.getElementById(id);}
+/* Un nombre SAISI : « 1 500 » (espace de milliers, normale, insécable ou fine)
+   se lisait 1, et la virgule décimale vaut le point. Illisible -> NaN, comme
+   parseFloat : chaque appelant garde son repli. Une fonction, pas un const :
+   le bundle peut l'appeler avant l'exécution de ce fichier. */
+function simLireNb(t){
+  return parseFloat(String(t==null?"":t).replace(/[\s\u00a0\u202f]/g,"").replace(",","."));
+}
 /* Virgule décimale, comme partout ailleurs dans les deux outils. */
 function simNb(v,dec){
   /* null et "" sont FINIS pour isFinite (ils valent 0) : une grandeur que le
@@ -7942,7 +7948,7 @@ function simCarteParNet(txt,unites,defaut){
   const out={};
   for(const m of String(txt||"").split(/[;\n]/)){
     const i=m.lastIndexOf("="), n=m.slice(0,i).trim();
-    const v=/^\s*([0-9]*[.,]?[0-9]+(?:e[-+]?[0-9]+)?)\s*([a-zµ]*)\s*$/i.exec(m.slice(i+1));
+    const v=/^\s*([0-9]*[.,]?[0-9]+(?:e[-+]?[0-9]+)?)\s*([a-zµ]*)\s*$/i.exec(m.slice(i+1).replace(/(\d)[\s\u00a0\u202f]+(?=\d)/g,"$1"));   // « 1 500 mm » : espaces de milliers
     if(i<1||!n||!v)continue;
     const u=unites.find(x=>x.cle.toLowerCase()===(v[2]||defaut).toLowerCase());
     const x=parseFloat(v[1].replace(",","."));
@@ -8184,7 +8190,7 @@ function simBrancherCarte(){
     e.value=vide&&!lire()?"":simNbLibre(lire());
     if(vide)e.placeholder=vide;
     e.oninput=function(){
-      const v=parseFloat(String(this.value).replace(",","."));
+      const v=simLireNb(this.value);
       if(v>0)ecrire(v);
       else if(vide&&!String(this.value).trim())ecrire(0);
       simCarteAvertEcrire();
@@ -10797,7 +10803,7 @@ function simBrancherCrosstalk(){
      elle, et ils ne jettent rien. */
   for(const [id,cle] of [["simXtOrange","xt_orange"],["simXtRouge","xt_rouge"]])
     pose(id,"oninput",function(){
-      const v=parseFloat(String(this.value).replace(",","."));
+      const v=simLireNb(this.value);
       if(v>0&&v<100){
         SIM_CARTE.reglages[cle]=v;
         if(typeof simCarteReglagesGarder==="function")simCarteReglagesGarder();
@@ -10820,7 +10826,7 @@ function simBrancherCrosstalk(){
     if(jete){simRendre(); simRepeindre();}
   });
   pose("simXtTrCarte","oninput",function(){
-    const v=parseFloat(String(this.value).replace(",","."));
+    const v=simLireNb(this.value);
     if(v>0){
       SIM_CARTE.reglages.xt_tr=v*1e-9;
       if(typeof simCarteReglagesGarder==="function")simCarteReglagesGarder();
@@ -10887,7 +10893,7 @@ function simXtSaisie(){
     if(!e)return defaut;
     const t=String(e.value||"").trim();
     if(!t)return videZero?0:defaut;
-    const v=parseFloat(t.replace(",","."));
+    const v=simLireNb(t);
     return isFinite(v)?v:defaut;
   };
   const s=SIM_XT.saisie;
@@ -13505,7 +13511,7 @@ function simBrancherBus(){
     if(!el)return;
     el.value=SIM_BUS[key];
     el.oninput=()=>{
-      const v=parseFloat(String(el.value).replace(",","."));
+      const v=simLireNb(el.value);
       if(isFinite(v)&&(signe===true||v>0||(v===0&&signe!=="positif"))){
         SIM_BUS[key]=v;
         simBusCalculer();
@@ -16138,7 +16144,7 @@ function simPDNLireChamps() {
   const getNum = (id, def) => {
     const el = simEl(id);
     if (!el) return def;
-    const v = parseFloat(String(el.value).replace(",", "."));
+    const v = simLireNb(el.value);
     return isNaN(v) ? def : v;
   };
 
@@ -16689,7 +16695,7 @@ function simPDNRendreEvenements(r) {
 /* Lecture d'un champ d'une charge ajoutée, dans son unité d'affichage. */
 function simPDNEvLireChamp(ev, champ, texte) {
   if (champ === "nom") { ev.nom = String(texte || "").slice(0, 40) || "Charge"; return; }
-  const v = parseFloat(String(texte).replace(",", "."));
+  const v = simLireNb(texte);
   if (!isFinite(v) || v < 0) return;
   if (champ === "iA_mA") { ev.iA = v * 1e-3; ev.iSuppose = false; }
   else if (champ === "front_us") ev.frontNs = Math.max(0.1, v * 1e3);
@@ -16705,7 +16711,7 @@ function simPDNEvLireChamp(ev, champ, texte) {
 function simPDNFicheModifier(cle, texte) {
   const f = SIM_PDN.fiche;
   if (!f || !SIM_PDN_FICHE.some(c => c.cle === cle)) return false;
-  const v = parseFloat(String(texte).replace(",", "."));
+  const v = simLireNb(texte);
   if (!isFinite(v) || v < 0) return false;
   f[cle] = v;
   delete f.suppose[cle];
@@ -18101,7 +18107,7 @@ function simCorpsRf(){
 }
 
 function simRfNb(el){
-  const v=parseFloat(String((el&&el.value)||"").replace(",","."));
+  const v=simLireNb(el&&el.value);
   return isFinite(v)?v:NaN;
 }
 
@@ -19055,7 +19061,7 @@ function simOeilLire(){
     if(!el)return defaut;
     const txt=String(el.value).trim();
     if(!txt)return null;
-    const v=parseFloat(txt.replace(",","."));
+    const v=simLireNb(txt);
     return (isFinite(v)&&v>=(mini==null?-1e9:mini))?v:defaut;
   };
   const d=lu("simOeilDebit",s.debit/simOeilUDebit().f,0);
@@ -20296,7 +20302,7 @@ function simSaisie(){
   const lu=(id,defaut,mini)=>{
     const el=simEl(id);
     // « 1 500 » (milliers à la française) se lisait 1 : le champ affichait 1 500 MHz, le calcul partait à 1 MHz
-    const v=el?parseFloat(String(el.value).replace(/[\s\u00a0\u202f]/g,"").replace(",",".")):NaN;
+    const v=el?simLireNb(el.value):NaN;
     return (isFinite(v)&&v>=(mini==null?0:mini))?v:defaut;
   };
   const s=SIM.saisie, k=simUnite().f, kb1=simUniteBande1().f, kb2=simUniteBande2().f;
