@@ -203,13 +203,11 @@ pub fn _reglages(doc: &Doc) -> R<Json> {
     // porte deux radios : 868 MHz sur l'une, 13,56 MHz sur l'autre, et juger le NFC à
     // 868 MHz le condamne à tort. De même une vidéo à 75 Ω et une RF à 50 Ω sur la même
     // carte. Clés absentes du rapport quand rien n'est donné.
-    // `tr_nets` : le front d'un net calculé de ses composants (R de sortie, R série, C des
-    // pastilles), devant celui de sa classe.
-    for cle in ["z0_classes", "porteuses", "tr_nets"] {
+    for cle in ["z0_classes", "porteuses"] {
         let mut d = Objet::new();
         for (k, v) in _table(r, cle)? {
-            // porteuses, tr_nets : par NET
-            if _positif(v)? && (cle != "z0_classes" || garde(k)) {
+            // porteuses : par NET
+            if _positif(v)? && (cle == "porteuses" || garde(k)) {
                 d.insert(k.clone(), fl(v)?.j());
             }
         }
@@ -254,11 +252,6 @@ pub fn _porteuse(reg: &Json, classe: &str, net: Option<&str>) -> Option<f64> {
     p.or_else(|| if classe == "RF" { reg["porteuse_rf"].as_f64().filter(|p| *p != 0.0) } else { None })
 }
 
-/// Le front propre d'un net (`tr_nets`), calculé de ses composants ; None sans lui.
-pub fn _tr_net(reg: &Json, net: Option<&str>) -> Option<f64> {
-    net.and_then(|n| reg["tr_nets"].get(n)).and_then(Json::as_f64).filter(|t| *t > 0.0)
-}
-
 /// Ce que `juge(f_eval, tr)` rend : la valeur, le verdict, et des champs de plus (un objet,
 /// ou Nul).
 pub type Jugement = (f64, &'static str, Json);
@@ -272,17 +265,14 @@ pub fn _par_frequence(reg: &Json, classe: &str, net: Option<&str>, juge: impl Fn
     let porteuse = _porteuse(reg, c, net);
     let cad = |k: &str| reg["cadences"].get(k).and_then(Json::as_f64).filter(|x| *x != 0.0);
     let f = porteuse.or_else(|| cad(c)).unwrap_or_else(|| num(&reg["cadences"], "Lent"));
-    let tr_net = _tr_net(reg, net);
     let tr = match porteuse {
         Some(p) => 0.35 / p,
-        None => tr_effectif(tr_net.unwrap_or_else(|| num(&reg["tr"], c)), f),
+        None => tr_effectif(num(&reg["tr"], c), f),
     };
     let (valeur, verdict, extra) = juge(0.35 / tr, tr)?;
     let mut col = obj! {"f" => f, "tr" => tr, "f_eval" => 0.35 / tr, "valeur" => round(valeur, 5), "verdict" => verdict};
     if let Some(p) = porteuse {
         poser(&mut col, "porteuse", p);
-    } else if tr_net.is_some() {
-        poser(&mut col, "tr_composants", true);
     }
     maj(&mut col, extra);
     Ok(vec![col])
@@ -294,9 +284,7 @@ pub fn _plus_vite(reg: &Json, doc: &Doc, nets: &[String]) -> (Option<String>, St
         let c = doc.classe(n);
         match _porteuse(reg, &c, Some(n)) {
             Some(p) => 0.35 / p,
-            None => _tr_net(reg, Some(n))
-                .or_else(|| reg["tr"].get(&c).and_then(Json::as_f64))
-                .unwrap_or_else(|| num(&reg["tr"], "Lent")),
+            None => reg["tr"].get(&c).and_then(Json::as_f64).unwrap_or_else(|| num(&reg["tr"], "Lent")),
         }
     };
     match premier_min(nets, tr) {
@@ -520,23 +508,3 @@ pub fn face(a: &Seg, b: &Seg) -> Option<(f64, f64, (f64, f64))> {
 }
 
 pub const ANGLE_PARALLELE: f64 = 0.17453292519943295; // math.radians(10)
-
-#[cfg(test)]
-mod essais {
-    use super::*;
-
-    /// `tr_nets` passe devant le front de la classe, pour ce net seulement, et reste borné
-    /// par 10 % de la période de la cadence.
-    #[test]
-    fn front_par_net() {
-        let reg = obj! {"tr" => obj! {"Lent" => 1e-8}, "cadences" => obj! {"Lent" => 1e7},
-                        "tr_nets" => obj! {"CLK" => 2e-9, "MOU" => 1.0}};
-        let tr = |net: &str| {
-            let f = _par_frequence(&reg, "Lent", Some(net), |_f, tr| Ok((tr, "ok", Json::Nul))).ok().unwrap();
-            (num(&f[0], "tr"), f[0]["tr_composants"].vrai())
-        };
-        assert_eq!(tr("CLK"), (2e-9, true));
-        assert_eq!(tr("AUTRE"), (1e-8, false));
-        assert_eq!(tr("MOU"), (1e-8, true)); // 0,1 / 10 MHz
-    }
-}

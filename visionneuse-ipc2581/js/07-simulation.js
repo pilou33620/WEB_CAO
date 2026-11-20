@@ -5815,18 +5815,6 @@ const SIM_IPC={
     return fallback;
   },
 
-  /* Les broches de SIGNAL de chaque composant monté, pour le mode composants
-     (simCompFronts, commun) : [{ref, val, broches:[{pin, net}]}]. Un net
-     classé masse ou alimentation n'y paraît pas. */
-  brochesComposants:function(){
-    if(typeof V==="undefined"||!V) return [];
-    const hors=new Set((V.parNet||[]).filter(n=>n&&n.classe&&n.classe!=="signal").map(n=>n.nom));
-    return simIpcEntrees().map(([ref,comp])=>({
-      ref:ref, val:simIpcValeurComp(comp).rawVal||comp.package||"",
-      broches:simIpcCompNets(comp).pinNets.filter(b=>!hors.has(b.net))
-    })).sort((a,b)=>a.ref.localeCompare(b.ref,undefined,{numeric:true}));
-  },
-
   listeComposants:function(){
     if(typeof V==="undefined"||!V) return [];
     const entries = simIpcEntrees();

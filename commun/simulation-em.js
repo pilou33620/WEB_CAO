@@ -7747,11 +7747,7 @@ const SIM_CARTE={res:null,err:"",occupe:false,actif:-1,unite:1,parDefaut:[],natu
             zdc:{},
             /* Du TEXTE, tel que saisi : « NFC=13,56 MHz ; LORA=868 MHz »,
                « VCC=0,5 ; 3V3=1,2 A ». Lu à l'envoi par simCarteParNet. */
-            porteuses:"", courants:"",
-            /* LE MODE COMPOSANTS (simCompFronts) : décoché, rien ne change.
-               `fiches` : par repère, {v (V), c (pF par pastille), r (Ω de
-               sortie)} lus dans la datasheet. */
-            composants:{actif:false, fiches:{}}},
+            porteuses:"", courants:""},
   unites:{xt_tr:"ns",
           tr:{Horloge:"ns",Rapide:"ns",RF:"ps",Analogique:"ns",Lent:"ns","Découpage":"ns"},
           cadences:{Horloge:"MHz",Rapide:"MHz",RF:"GHz",Analogique:"MHz",Lent:"MHz","Découpage":"MHz"},
@@ -7999,164 +7995,7 @@ function simCarteReglagesDoc(){
   for(const k in r.zdc)if(r.zdc[k]>0&&r.zdc[k]!==(CLASSES_INTERFACE[k]||{}).zdiff)zdc[k]=r.zdc[k];
   if(Object.keys(zdc).length)d.zdiff_classes=zdc;
   if(Object.keys(p).length)d.porteuses=p;
-  const tn=simCompTrNets();
-  if(Object.keys(tn).length)d.tr_nets=tn;
   return d;
-}
-
-/* =============================================================================
-   LE MODE COMPOSANTS : le front d'un net calculé de ce qui le pilote et de ce
-   qui le charge, au lieu du front de sa classe. Par composant, trois valeurs
-   de datasheet : tension d'alimentation, capacité d'une pastille, résistance
-   de sortie. Pour chaque broche d'un composant qui a une R de sortie :
-
-       t_r (10–90 %) = 2,2 · (R sortie + R série) · (C pastilles en face + C piste)
-
-   La R série est celle que la carte porte entre les deux composants
-   (trouverPontSerie), la C de piste celle du temps de vol (busNetFlight).
-   Tout composant renseigné avec une R de sortie est essayé en émetteur : le
-   front le plus RAIDE du net part vers l'audit et le crosstalk (c'est lui qui
-   rayonne et qui couple), le plus LENT donne le retard RC du bus.
-   shortcut: un seul pôle RC, ligne électriquement courte, pastille de
-   l'émetteur non comptée ; passer à l'IBIS (onglet Œil) quand le temps de
-   vol approche le front.
-   ============================================================================= */
-/* Pur, pour le banc : `comps` [{ref, broches:[{pin, net}]}], `fiches`
-   {ref:{v,c,r}}, `capPiste(net)` en pF, `pont(net)` -> {rOhms, netAval, comp}. */
-function simCompCalculer(comps,fiches,capPiste,pont){
-  const surNet={}, lignes=[], nets={};
-  for(const k of comps){
-    if(!fiches[k.ref])continue;
-    for(const b of k.broches)(surNet[b.net]=surNet[b.net]||[]).push({ref:k.ref,pin:b.pin});
-  }
-  for(const net in surNet)for(const e of surNet[net]){
-    const f=fiches[e.ref];
-    if(!(f.r>0))continue;
-    let recs=surNet[net].filter(x=>x.ref!==e.ref), rs=0, serie="", aval="";
-    if(!recs.length){
-      /* Personne en direct : une R série vers un autre composant renseigné ? */
-      const p=pont(net);
-      recs=p&&p.netAval!==net?(surNet[p.netAval]||[]).filter(x=>x.ref!==e.ref):[];
-      if(!recs.length)continue;
-      rs=+p.rOhms||0; serie=p.comp||"R"; aval=p.netAval;
-    }
-    const cPads=recs.reduce((s,x)=>s+(+fiches[x.ref].c||0),0);
-    const cPiste=(+capPiste(net)||0)+(aval?+capPiste(aval)||0:0);
-    if(!(cPads+cPiste>0))continue;
-    const vs=recs.map(x=>+fiches[x.ref].v||0).filter(x=>x>0&&f.v>0&&Math.abs(x-f.v)>0.05);
-    const l={ref:e.ref,pin:e.pin,net,aval,serie,rs,r:+f.r,cPads,cPiste,v:+f.v||0,
-             vAutre:vs[0]||0,vers:[...new Set(recs.map(x=>x.ref))],
-             tr:2.2*(+f.r+rs)*(cPads+cPiste)*1e-12};
-    lignes.push(l);
-    for(const n of aval?[net,aval]:[net]){
-      const d=nets[n]=nets[n]||{raide:l,lent:l};
-      if(l.tr<d.raide.tr)d.raide=l;
-      if(l.tr>d.lent.tr)d.lent=l;
-    }
-  }
-  lignes.sort((a,b)=>(a.ref+"."+a.pin).localeCompare(b.ref+"."+b.pin,undefined,{numeric:true}));
-  return {lignes,nets};
-}
-/* null quand le mode est décoché ou que l'outil ne décrit pas ses broches :
-   tout appelant garde alors les réglages prédéfinis. */
-function simCompFronts(){
-  const c=SIM_CARTE.reglages.composants;
-  if(!c||!c.actif||!SIM_ED||typeof SIM_ED.brochesComposants!=="function")return null;
-  const cap={};
-  return simCompCalculer(SIM_ED.brochesComposants(),c.fiches||{},
-    n=>n in cap?cap[n]:(cap[n]=typeof SIM_ED.busNetFlight==="function"?
-                                (SIM_ED.busNetFlight(n)||{}).capPf||0:0),
-    n=>typeof SIM_ED.trouverPontSerie==="function"?SIM_ED.trouverPontSerie(n):null);
-}
-/* {net: t_r en s}, le plus raide de chaque net : `tr_nets` des documents. */
-function simCompTrNets(){
-  const r=simCompFronts(), o={};
-  if(r)for(const n in r.nets)o[n]=r.nets[n].raide.tr;
-  return o;
-}
-/* Le temps de vol d'un net du bus, complété par ses composants : la capacité
-   des pastilles s'ajoute à celle de la piste (I2C), et le retard RC devient
-   celui du front le plus lent, à 50 % : 0,693 · R · C. */
-function simCompVol(info,fronts){
-  const nom=String((info&&info.net)||"").replace(/\s*\([^)]*\)/g,"").split("+")[0].trim();
-  const d=fronts&&fronts.nets[nom];
-  if(!d)return info;
-  const l=d.lent, rc=Math.round(l.tr*0.693/2.2*1e13)/10;
-  return Object.assign({},info,{capPf:Math.round(((info.capPf||0)+l.cPads)*100)/100,
-    rcDelayPs:rc, tflightTotal:Math.round(((info.tflight||0)+rc)*10)/10,
-    rOhms:l.rs||info.rOhms||0, rComp:l.serie||info.rComp||""});
-}
-function simCompHtml(){
-  /* Un outil qui ne décrit pas ses broches n'affiche rien. */
-  if(!SIM_ED||typeof SIM_ED.brochesComposants!=="function")return "";
-  const c=SIM_CARTE.reglages.composants;
-  let h='<div class="pnl-bar"><label title="'+esc("Coché : le front de chaque net "+
-    "reliant deux composants renseignés est calculé de leur datasheet — R de sortie, "+
-    "R série vue sur la carte, C des pastilles et de la piste — et remplace le front "+
-    "de sa classe dans l'audit, le crosstalk et le bus. Décoché : les réglages "+
-    "prédéfinis par classe, comme avant.")+'"><input type="checkbox" data-comp-actif'+
-    (c.actif?" checked":"")+'> <b>Mode composants</b> : fronts '+
-    'calculés des datasheets (R de sortie, C des pastilles, R série)</label></div>';
-  if(!c.actif)return h;
-  /* Ni passifs ni points de test : ce qui émet ou reçoit a au moins 3 broches de signal. */
-  const comps=SIM_ED.brochesComposants().filter(k=>k.broches.length>=3&&
-    !/^(R|RN|RP|C|L|FB|TP|D)\d/i.test(k.ref));
-  const ch=(ref,k,t)=>'<input type="text" inputmode="decimal" class="simChamp" data-comp="'+
-    esc(ref)+'" data-k="'+k+'" title="'+esc(t)+'" value="'+
-    (((c.fiches[ref]||{})[k])>0?simNbLibre(c.fiches[ref][k]):"")+'">';
-  h+='<div class="pnl-bar"><table class="simTab"><tr><th>Composant</th><th>Valeur</th>'+
-    '<th title="Tension d\'alimentation de ses entrées-sorties">V alim (V)</th>'+
-    '<th title="Capacité d\'une broche : « Input capacitance », C_IN / C_IO">C pastille (pF)</th>'+
-    '<th title="Résistance de sortie : (VDD − VOH) / IOH de la datasheet, typiquement 20 à 50 Ω. Vide : ce composant ne fait que recevoir.">R sortie (Ω)</th></tr>'+
-    comps.map(k=>'<tr><td>'+esc(k.ref)+'</td><td class="simEx">'+esc(k.val)+'</td><td>'+
-      ch(k.ref,"v","Tension d'alimentation des E/S de "+k.ref)+'</td><td>'+
-      ch(k.ref,"c","Capacité d'une broche de "+k.ref)+'</td><td>'+
-      ch(k.ref,"r","Résistance de sortie de "+k.ref+" ; vide : récepteur seulement")+
-      '</td></tr>').join("")+'</table></div><div data-comp-res>'+simCompResHtml()+'</div>';
-  return h;
-}
-/* Le front de chaque broche émettrice, avec le R et le C qui le font. */
-function simCompResHtml(){
-  const r=simCompFronts();
-  if(!r||!r.lignes.length)
-    return '<p class="simNote">Aucun front calculé : il faut une R de sortie sur un '+
-           'composant et une C de pastille sur celui d\'en face, reliés par un net '+
-           '(ou par une résistance série).</p>';
-  const pf=x=>simNbLibre(+x.toPrecision(3));
-  return '<details open><summary>Fronts calculés : '+r.lignes.length+' broche(s), '+
-    Object.keys(r.nets).length+' net(s)</summary><table class="simTab"><tr><th>Broche</th>'+
-    '<th>Net</th><th>Vers</th><th>R sortie + série</th><th>C pastilles + piste</th>'+
-    '<th>t_r</th><th>Niveau</th></tr>'+r.lignes.map(l=>'<tr><td>'+esc(l.ref+"."+l.pin)+
-    '</td><td>'+esc(l.net+(l.aval?" → "+l.aval:""))+'</td><td>'+esc(l.vers.join(", "))+
-    '</td><td>'+pf(l.r)+(l.rs?" + "+pf(l.rs)+" Ω ("+esc(l.serie)+")":" Ω")+'</td><td>'+
-    pf(l.cPads)+" + "+pf(l.cPiste)+' pF</td><td><b>'+simDureeXt(l.tr)+'</b></td><td>'+
-    (l.v?pf(l.v)+" V":"—")+(l.vAutre?' <span class="simTag" title="'+
-      esc("L'émetteur est alimenté en "+pf(l.v)+" V et un récepteur en "+pf(l.vAutre)+
-          " V : vérifier la compatibilité des niveaux (VIH, tolérance).")+
-      '">⚠ '+pf(l.vAutre)+' V en face</span>':"")+'</td></tr>').join("")+
-    '</table><p class="simNote">Le front le plus raide de chaque net remplace celui de '+
-    'sa classe dans l\'audit et le crosstalk ; le plus lent donne le retard RC du bus. '+
-    'La diaphonie « toute la carte » garde son front global.</p></details>';
-}
-/* Pose le bloc dans `boite` (le panneau d'audit, la fenêtre des nets à
-   l'import) et le branche : pas d'id, les deux peuvent coexister. */
-function simCompMonter(boite){
-  if(!boite)return;
-  simCarteReglagesCharger();
-  const c=SIM_CARTE.reglages.composants;
-  boite.innerHTML=simCompHtml();
-  const a=boite.querySelector("[data-comp-actif]");
-  if(a)a.onchange=function(){c.actif=this.checked;simCarteReglagesGarder();simCompMonter(boite);};
-  boite.querySelectorAll("[data-comp]").forEach(function(e){
-    e.oninput=function(){
-      const v=parseFloat(String(this.value).replace(",",".")), f=c.fiches[this.dataset.comp]||{};
-      f[this.dataset.k]=v>0?v:0;
-      if(f.v||f.c||f.r)c.fiches[this.dataset.comp]=f; else delete c.fiches[this.dataset.comp];
-      simCarteReglagesGarder();
-      const res=boite.querySelector("[data-comp-res]");
-      if(res)res.innerHTML=simCompResHtml();
-    };
-  });
 }
 /* Cinq chiffres significatifs, zéros de fin retirés : à une décimale, 13,56 MHz
    s'affichait « 13,6 MHz » et un quartz de 32,768 kHz « 32,8 kHz ». */
@@ -8294,7 +8133,6 @@ function simCorpsCarte(){
     '<th>Exemples de nets</th>'+
   '</tr>'+classes+'</table></div>'+
   '<div class="pnl-bar simCarteAvert" id="simCarteAvert" style="display:none"></div>'+
-  '<div id="simCompBoite"></div>'+
   /* Les deux porteuses ensemble : celle de tous les nets RF, celle d'un net. */
   '<div class="pnl-bar">'+
     champU("simCartePorteuse",
@@ -8322,7 +8160,6 @@ function simCorpsCarte(){
 }
 function simBrancherCarte(){
   simCarteReglagesCharger();
-  simCompMonter(simEl("simCompBoite"));
   const go=simEl("simCarteGo"), ex=simEl("simCarteExport"), r=SIM_CARTE.reglages;
   if(go)go.onclick=simCarteGo;
   if(ex){ex.onclick=simCarteExporter;ex.disabled=!SIM_CARTE.res;}
@@ -8601,8 +8438,6 @@ function simCarteMeta(res){
   if(zc.length)L.push("Z₀ par classe : "+zc.map(([c,z])=>c+" "+simNbLibre(z)+" Ω").join(", "));
   const pn=Object.entries((r&&r.porteuses)||{});
   if(pn.length)L.push("porteuses par net : "+pn.map(([n,f])=>n+" "+simCarteF(f)).join(", "));
-  const tn=Object.keys((r&&r.tr_nets)||{}).length;
-  if(tn)L.push("front calculé des composants pour "+tn+" net(s)");
   if(b.courant&&b.courant.courants_donnes)
     L.push("courant donné pour "+b.courant.courants_donnes+" rail(s)");
   return L;
@@ -10807,7 +10642,6 @@ function simXtReglages(){
   return {
     t_r:s.tr>0?s.tr:0,
     tr_classes:Object.assign({},(SIM_CARTE.reglages||{}).tr||{}),
-    tr_nets:simCompTrNets(),
     /* LA PORTEUSE RF DU PANNEAU DE VÉRIFICATION, en hertz : un agresseur de
        classe RF sans front saisi se juge alors à t_r = 0,35 / f au lieu du
        front de sa classe (100 ps), et la fiche le dit. */
@@ -13848,8 +13682,6 @@ function simBusCalculer(){
     return;
   }
 
-  /* Mode composants : pastilles et retard RC réels ; décoché, `vol` est busNetFlight. */
-  const fronts=simCompFronts(), vol=n=>simCompVol(SIM_ED.busNetFlight(n),fronts);
   const allSignals=[...SIM_BUS.clocks, ...SIM_BUS.datas];
   if(!allSignals.length){
     SIM_BUS.result=null;
@@ -13883,7 +13715,7 @@ function simBusCalculer(){
     let maxTrSeen=0;
 
     for(const net of allSignals){
-      const info=vol(net);
+      const info=SIM_ED.busNetFlight(net);
       const capPf=info.capPf||_simR2(info.len*0.08)||1.0;
       if(capPf>maxCapSeen) maxCapSeen=capPf;
 
@@ -13953,7 +13785,7 @@ function simBusCalculer(){
     let maxFlightPs=0;
 
     for(const net of allSignals){
-      const info=vol(net);
+      const info=SIM_ED.busNetFlight(net);
       if(info.tflight>maxFlightPs) maxFlightPs=info.tflight;
       const tflightNs=_simR3(info.tflight/1000);
       const ratioPct=_simR2((tflightNs/tbitNs)*100);
@@ -14018,7 +13850,7 @@ function simBusCalculer(){
 
   const clkMap={};
   for(const clkNet of SIM_BUS.clocks){
-    clkMap[clkNet]=vol(clkNet);
+    clkMap[clkNet]=SIM_ED.busNetFlight(clkNet);
   }
 
   const signals=[];
@@ -14028,7 +13860,7 @@ function simBusCalculer(){
   let allPass=true;
 
   for(const dataNet of SIM_BUS.datas){
-    const sInfo=vol(dataNet);
+    const sInfo=SIM_ED.busNetFlight(dataNet);
     let clkRefName=SIM_BUS.dataClockMap[dataNet]||SIM_BUS.clocks[0];
     if(!clkMap[clkRefName]) clkRefName=SIM_BUS.clocks[0];
     const clkInfo=clkMap[clkRefName]||{len:0,tflight:0,psmm:6.7};
