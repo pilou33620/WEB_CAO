@@ -433,7 +433,7 @@ function peindreTextes(c,dpr){
 }
 
 function compCorpsChemin(comp){
-  if(comp.corpsChemin)return comp.corpsChemin;
+  if(comp.corpsChemin instanceof Path2D)return comp.corpsChemin;   // passé par JSON (session, .json) : {}
   const p=new Path2D(), q=comp.corpsPl;
   p.moveTo(q[0],q[1]);
   for(let i=2;i+1<q.length;i+=2)p.lineTo(q[i],q[i+1]);

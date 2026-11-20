@@ -30,21 +30,25 @@ const modele={unites:"MILLIMETER",couches:["TOP","BOTTOM"],
           {c:1,n:1,w:0.25,p:[30,10, 30,20]},
           // la capture : à 45° jusqu'au bord gauche de la pastille de U2, puis à plat dedans
           {c:0,n:1,w:0.25,p:[22,25, 27,30, 30,30]}],
-  arcs:[],plans:[],textes:[],pads:[{x:30,y:20,ps:"V",n:1}],
+  arcs:[],plans:[],textes:[],
+  // le second via est écrit comme le fait l'export de l'éditeur : une pastille libre PAR COUCHE
+  pads:[{x:30,y:20,ps:"V",n:1},{x:5,y:35,ps:"VT",n:1},{x:5,y:35,ps:"VB",n:1}],
   padstacks:{V:{pad:0.6,trou:0.3,pads:[{c:"TOP",f:"C6",d:0.6},{c:"BOTTOM",f:"C6",d:0.6}]},
+             VT:{pad:0,trou:0,pads:[{c:"TOP",f:"C6",d:0.6}]},VB:{pad:0,trou:0,pads:[{c:"BOTTOM",f:"C6",d:0.6}]},
              R:{pad:1,pads:[{c:"TOP",f:"R1",d:1}]},Q:{pad:6,pads:[{c:"TOP",f:"Q6",d:6}]}},
   formes:{C6:{t:"CIRCLE",d:0.6},R1:{t:"RECTCENTER",w:1,h:1.2},Q6:{t:"RECTCENTER",w:6,h:6}},formesuser:{},
   composants:[{ref:"R1",val:"10k",pkg:"0805",x:40,y:30,r:90,m:false,c:0,
                pads:[{x:-1,y:0,ps:"R",n:0,pin:"1"},{x:1,y:0,ps:"R",n:1,pin:"2"}]},
               {ref:"U2",val:"",pkg:"",x:30,y:30,r:0,m:false,c:0,pads:[{x:0,y:0,ps:"Q",n:1,pin:"1"}]}],
-  percages:[{x:30,y:20,d:0.3,p:"PLATED",ps:"V"}],
+  percages:[{x:30,y:20,d:0.3,p:"PLATED",ps:"V"},{x:5,y:35,d:0.3,p:"VIA",ps:""}],
   contour:{o:[0,0, 50,0, 50,40, 0,40]}};
 bac.MODELE=modele;
 vm.runInContext("mdlCharger(MODELE,'essai.xml');",bac);
 const doc=vm.runInContext("drcDocPcb()",bac);
 
 verifier(doc.cu===2,"deux cuivres");
-verifier(doc.vias.length===1&&doc.vias[0].drill===0.3&&doc.vias[0].y===-20,"le via, en Y vers le bas");
+verifier(doc.vias.length===2&&doc.vias[0].drill===0.3&&doc.vias[0].y===-20,"le via, en Y vers le bas ; une pastille libre par couche ne fait qu'un via ("+doc.vias.length+")");
+verifier(doc.vias[1].a===0&&doc.vias[1].b===1,"le via écrit par couche traverse les deux cuivres");
 const r1=doc.fps.find(f=>f.ref==="R1");
 verifier(r1&&r1.pads.length===2&&r1.nets[1]==="NET1"&&r1.side===0,"R1 et ses nets");
 verifier(Math.abs(r1.pads[0].x-40)<1e-9&&Math.abs(r1.pads[0].y+29)<1e-9,"pastille 1 de R1 au monde (rotation 90°)");

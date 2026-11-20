@@ -15,6 +15,16 @@ function mesEntreeIpc(m){
      la pastille libre posée au même endroit */
   const cle=(x,y)=>Math.round(x*100)+","+Math.round(y*100), libres=new Map();
   for(const L of V.couches)if(L.cuivre)for(const q of L.pads)if(!q.hote&&!libres.has(cle(q.x,q.y)))libres.set(cle(q.x,q.y),q);
+  /* la pastille libre sous une broche : la case de la broche ET ses voisines — une cote en
+     x,xx5 tombe d'un côté ou de l'autre de l'arrondi selon le calcul qui l'a produite */
+  const libre=(x,y)=>{
+    let m=null, dm=0.02/k;                         // 0,02 mm au plus
+    for(let i=-1;i<=1;i++)for(let j=-1;j<=1;j++){
+      const q=libres.get((Math.round(x*100)+i)+","+(Math.round(y*100)+j)), d=q?Math.hypot(q.x-x,q.y-y):Infinity;
+      if(d<dm){m=q;dm=d;}
+    }
+    return m;
+  };
   E.composants=E.composants.map((o,i)=>{
     const c=m.composants[i], pads=[], vus=new Set();
     const poser=(n,net,q,x,y)=>{
@@ -22,7 +32,9 @@ function mesEntreeIpc(m){
       if(vus.has(n))return;                      // une traversante : une fois, pas une par couche
       vus.add(n);
       const poly=q?simDCPadPolysIpc(q,k).plein[0]||[]:[], ps=q&&m.padstacks&&m.padstacks[q.pad.ps], e=0.25;
-      pads.push({n,net:net>=0?m.nets[net]||"":"",x:x*k,y:y*k,trou:!!(ps&&ps.trou>0),
+      // traversante aussi par le perçage métallisé au même point : une pastille libre n'a pas de trou dans son padstack
+      const tr=mdlTrouEn(x,y);
+      pads.push({n,net:net>=0?m.nets[net]||"":"",x:x*k,y:y*k,trou:!!(ps&&ps.trou>0)||!!(tr&&!/NON/i.test(tr.p||"")),
         pts:poly.length?poly.map(([x,y])=>({x,y})):[[-e,-e],[e,-e],[e,e],[-e,e]].map(([u,v])=>({x:x*k+u,y:y*k+v}))});
     };
     const places=[];
@@ -30,7 +42,7 @@ function mesEntreeIpc(m){
     places.forEach((q,j)=>poser(q.pad.pin||j+1,q.pad.n,q,q.x,q.y));
     for(const p of (c.pins||[])){
       const w=mdlPlacer(p.x,p.y,c.x,c.y,c.r,!!c.m);
-      poser(p.num,p.n,libres.get(cle(w.x,w.y)),w.x,w.y);
+      poser(p.num,p.n,libre(w.x,w.y),w.x,w.y);
     }
     return {ref:o.ref,face:o.face,corps:o.corps,pads,val:o.val,pkg:o.pkg,mpn:mesMpn(MECA_IPC.lib,(c.props||{}).MPN||(o.part_name&&c.part!==o.part_name?c.part:""),o.part_name||c.part),monte:o.monte};   // les trois derniers : les plans (10-plans.js)
   });

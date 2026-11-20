@@ -54,8 +54,12 @@ function drcDocPcb(){
      traversante — ou un via quand aucun composant ne la porte. */
   const parPad=new Map();
   for(const c of cuivres)for(const q of c.pads){
-    let e=parPad.get(q.pad);
-    if(!e)parPad.set(q.pad,e={q,couches:[]});
+    /* Une pastille LIBRE percée peut être écrite une fois par couche (c'est ce que fait
+       l'export de l'éditeur) : c'est le même via, pas quatre vias empilés au même point. */
+    const t=q.hote?null:V.parXY.get(mdlCleXY(q.x,q.y));
+    const cle=t&&!/NON/i.test(t.p||"")&&t.d>0?t:q.pad;
+    let e=parPad.get(cle);
+    if(!e)parPad.set(cle,e={q,couches:[]});
     e.couches.push(rang.get(c.i));
   }
   const percesUtilises=new Set(), vias=[], fps=new Map();

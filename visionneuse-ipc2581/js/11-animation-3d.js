@@ -92,7 +92,8 @@ function ipcAnimDonnees(){
   const cuivre=c=>c?{pistes:ipcAnimTraits(c,k),
     pads:c.pads.flatMap(q=>ipcAnimPad(q,k).map(g=>g.p)),
     /* shortcut: un via borgne se montre sur une face externe si elle est l'une de ses bornes (sa/sb), sinon pas */
-    vias:vias.filter(x=>(!x.sa&&!x.sb)||x.sa===c.nom||x.sb===c.nom).map(x=>x.v),
+    // sa / sb sont des INDEX de couche (ipc2581_json), pas des noms : comparés au nom, aucun via ne sortait
+    vias:vias.filter(x=>(x.sa==null&&x.sb==null)||x.sa===c.i||x.sb===c.i).map(x=>x.v),
     zone:ipcAnimZone(c,k)}:{pistes:[],pads:[],vias:[],zone:null};
   const seri=f=>{
     const L=V.couches.filter(c=>c.genre==="serigraphie"&&ipcAnimFace(c)===f);

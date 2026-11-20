@@ -687,7 +687,7 @@ function pnlSelection(){
     if(s.type==="net")t="net "+mdlNetNom(s.net)+" — toutes les couches";
     else if(s.type==="piste"){
       const chaine=(typeof mdlChainePistesMemeCouche==="function")?mdlChainePistesMemeCouche(s.piste):[s.piste];
-      const lgTot=chaine.reduce((acc,p)=>acc+(p.p?mdlLongueur(p.p):(p.s&&p.e?Math.hypot(p.e[0]-p.s[0],p.e[1]-p.s[1]):0)),0);
+      const lgTot=chaine.reduce((acc,p)=>acc+(p.p?mdlLongueur(p.p):mdlArcLongueur(p)),0);
       t="piste "+mdlMes(s.piste.w)+" · net "+mdlNetNom(s.net)+" · "+mdlCoucheNom(s.couche)+" ("+mdlMes(lgTot,2)+")";
     }
     else t=(typeof resume==="function")?resume(s):s.type;
@@ -866,7 +866,7 @@ function pnlDetail(){
   }
   if(s&&s.type==="piste"){
     const chaine=(typeof mdlChainePistesMemeCouche==="function")?mdlChainePistesMemeCouche(s.piste):[s.piste];
-    const lgTot=chaine.reduce((acc,p)=>acc+(p.p?mdlLongueur(p.p):(p.s&&p.e?Math.hypot(p.e[0]-p.s[0],p.e[1]-p.s[1]):0)),0);
+    const lgTot=chaine.reduce((acc,p)=>acc+(p.p?mdlLongueur(p.p):mdlArcLongueur(p)),0);
     const segsTot=chaine.reduce((acc,p)=>acc+(p.p?Math.max(0,p.p.length/2-1):1),0);
     h+='<div class="fiche"><h3>Piste</h3><table>'
       +l("Largeur",'<span class="val">'+mdlMes(s.piste.w)+"</span>")

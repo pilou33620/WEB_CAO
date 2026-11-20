@@ -119,7 +119,9 @@ function mdlK(){ return V.unite==="in"?25.4:V.unite==="µm"?0.001:1; }
 function mdlNb(v,dec){
   if(v==null||isNaN(v))return "—";
   const d=(dec==null)?(V.unite==="in"?4:V.unite==="µm"?0:3):dec;
-  return Number(v).toFixed(d).replace(/\.?0+$/,"").replace(".",",")||"0";
+  // les zéros de fin ne tombent qu'APRÈS la virgule : « 100 » à 0 décimale ne devient pas « 1 »
+  const t=Number(v).toFixed(d);
+  return (t.indexOf(".")<0?t:t.replace(/\.?0+$/,"")).replace(".",",")||"0";
 }
 function mdlMes(v,dec){ return mdlNb(v,dec)+" "+V.unite; }
 function mdlEntier(n){ return esc(n).replace(/\B(?=(\d{3})+(?!\d))/g," "); }
@@ -291,8 +293,8 @@ function mdlBoitePlan(g){
   for(const ct of g.g){
     const p=ct.o;
     for(let i=0;i+1<p.length;i+=2){
-      if(p[i]<x1)x1=p[i]; else if(p[i]>x2)x2=p[i];
-      if(p[i+1]<y1)y1=p[i+1]; else if(p[i+1]>y2)y2=p[i+1];
+      if(p[i]<x1)x1=p[i]; if(p[i]>x2)x2=p[i];
+      if(p[i+1]<y1)y1=p[i+1]; if(p[i+1]>y2)y2=p[i+1];
     }
   }
   g._b={x1:x1,y1:y1,x2:x2,y2:y2};
@@ -385,7 +387,12 @@ function mdlCouches(m){
 
   const couches=m.couches.map(function(nom,i){
     const e=empilage.get(nom);
-    const genre=mdlGenre(nom,e);
+    let genre=mdlGenre(nom,e);
+    /* hors empilage, un nom qui ne dit rien (« PATE_DESSUS ») : la fonction que le
+       fichier déclare pour le calque (`calques`) tranche — sauf vers le cuivre, que
+       seul l'empilage désigne */
+    const q=!e&&genre==="autre"&&m.calques&&m.calques[nom];
+    if(q&&q.f){const g=mdlGenre("",{type:q.f}); if(g!=="cuivre")genre=g;}
     return {i:i,nom:nom,genre:genre,cuivre:genre==="cuivre",
             seq:e?e.seq:0, ep:e?e.ep:0, mat:e?e.mat:"", dk:e?e.dk:"", df:e?e.df:"",
             type:e?(e.type||""):"", empile:!!e,
@@ -1609,7 +1616,12 @@ function mdlAutoDetecterClassesNets(classesIpc, classesPersist){
     mapClasses[n.nom]=n.classe;
   }
   if(V.modele){
-    V.modele.netClasses=mapClasses;
+    /* dans le modèle (donc dans le .json exporté et la session), les SEULS choix
+       faits à la main : y verser les classes détectées les faisait revenir en
+       « Choix mémorisé » à la réouverture, et la détection ne jouait plus */
+    const manuels={};
+    for(const n of V.parNet)if(n&&n.nom&&n.autoDetecte===false)manuels[n.nom]=n.classe;
+    V.modele.netClasses=manuels;
   }
   V.netClasses=mapClasses;
 }
@@ -1729,6 +1741,6 @@ function mdlNetPoserNature(i,nature){
    d'un plan (`_p`, un Path2D) ne survivrait pas au voyage : JSON en fait `{}`. */
 function modeleTexte(){
   return JSON.stringify(V.modele,function(cle,valeur){
-    return (cle==="boite"||cle==="_b"||cle==="_p")?undefined:valeur;
+    return (cle==="boite"||cle==="_b"||cle==="_p"||cle==="corpsChemin")?undefined:valeur;
   });
 }

@@ -76,7 +76,7 @@ const FICHIERS=[
   /* plans (Draftsman) : fabrication et assemblage */
   path.join(RACINE,"js","10-plans.js")
 ];
-const EXPOSE=["simDsChamp","simCarteF","simBusMarges","simPDNLireChamps","simDsLire","simDsEcrire","SIM_DS","SIM_PDN","simPDNAssistantActif","SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
+const EXPOSE=["mdlBoitePlan","mdlPlanContient","simDsChamp","simCarteF","simBusMarges","simPDNLireChamps","simDsLire","simDsEcrire","SIM_DS","SIM_PDN","simPDNAssistantActif","SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simSaisie","simPorts","SIM_FORMAT",
   "V","LT","ltAire","ltPreparer","LT_SEUIL_PLAN","mdlLongueur",
   "mdlNetNom","mdlNb","mdlCharger","mdlCouches","mdlPlansDans",
@@ -4731,7 +4731,10 @@ T("Application des classes et modifications manuelles (mdlAutoDetecterClassesNet
   if(V.parNet[1].classe !== "pwr") throw new Error("+3V3 aurait dû être détecté pwr");
   if(V.parNet[2].classe !== "signal") throw new Error("CLK_OUT aurait dû être détecté signal");
   if(V.parNet[3].classe !== "signal") throw new Error("NET_LIBRE aurait dû être détecté signal");
-  if(!V.modele.netClasses || V.modele.netClasses["+3V3"] !== "pwr") throw new Error("V.modele.netClasses non synchronisé");
+  /* le modèle (donc le .json exporté) ne garde que les choix faits à la main : une
+     classe DÉTECTÉE qui y figurait revenait en « Choix mémorisé » à la réouverture */
+  if(!V.modele.netClasses || "+3V3" in V.modele.netClasses) throw new Error("V.modele.netClasses ne doit porter que les choix manuels");
+  if(V.netClasses["+3V3"] !== "pwr") throw new Error("V.netClasses non synchronisé");
 
   // Modification manuelle avec mdlNetPoserClasse
   mdlNetPoserClasse(3, "pwr");
@@ -6973,6 +6976,24 @@ T("fiche de mesure, visionneuse : broches sans pastille rattachée, face dessous
   if(!txt.some(t=>/^VUE DE DESSOUS/.test(t))||!txt.some(t=>/^DÉTAIL B .*DESSOUS$/.test(t)))throw new Error(txt.join(" | "));
 });
 
+T("fiche de mesure, visionneuse : pastille libre en x,xx5 retrouvée sous sa broche, traversante par son perçage",()=>{
+  // la forme d'un export de l'éditeur : composants sans pastilles, broches seules, pastilles libres au monde
+  carte({padstacks:{P:{trou:0,pad:1.5,pads:[{c:"Top",d:1.5,f:"R",a:0}]}},
+         formes:{R:{t:"RECTCENTER",w:1.5,h:0.8}},
+         // la broche 1 (2,5 ; 0,4 à 30°, miroir) retombe en 37,63509… : de l'autre côté de l'arrondi que 37,635
+         pads:[{x:37.635,y:30.904,ps:"P",n:0},{x:20,y:10,ps:"P",n:1}],
+         percages:[{x:20,y:10,d:0.8,p:"PLATED",ps:""}],
+         composants:[{ref:"U2",x:40,y:30,r:330,m:1,c:0,pads:[],pins:[{num:"1",x:2.5,y:-0.4,n:0}]},
+                     {ref:"J1",x:20,y:10,r:0,m:0,c:0,pads:[],pins:[{num:"1",x:0,y:0,n:1}]}]});
+  try{
+    const E=mesEntreeIpc(V.modele), p=E.composants[0].pads[0], j=E.composants[1].pads[0];
+    const l=Math.max(...p.pts.map(q=>q.x))-Math.min(...p.pts.map(q=>q.x));
+    if(l<0.6)throw new Error("U2.1 dessinée en carré de repli ("+l.toFixed(2)+" mm) : sa pastille n'a pas été retrouvée");
+    if(p.trou)throw new Error("U2.1 est une CMS");
+    if(!j.trou)throw new Error("J1.1 a un perçage métallisé : elle se mesure des deux faces");
+  }finally{carte();}
+});
+
 T("plans (Draftsman), visionneuse : retrofit coché, liste vide : la feuille vide s'affiche quand même",()=>{
   carteMeca();
   PLN_CHOIX.ret=true;
@@ -7142,7 +7163,8 @@ T("animation 3D, visionneuse : cuivre, pastilles, vias et sérigraphie par face,
     composants:[{ref:"J1",pkg:"USB",c:0,x:20,y:20,r:0,m:0,pins:[],props:{PART_NAME:"USB_B",DESCRIPTION:"Prise USB"},part:"",val:"",
       corps:[-2,-3,2,-3,2,3,-2,3,-2,-3],hauteur:3,
       pads:[{ps:"P",x:-1,y:0,r:0,n:0},{ps:"P",x:1,y:0,r:0,n:1}]}],
-    percages:[{x:5,y:5,d:0.3,p:"VIA",ps:"P"}]});
+    /* le second porte sa portée comme l'écrit le serveur : des INDEX de couche (Top = 0, Bottom = 1) */
+    percages:[{x:5,y:5,d:0.3,p:"VIA",ps:"P"},{x:7,y:7,d:0.3,p:"VIA",ps:"P",sa:0,sb:1}]});
   V.modele.arcs=[{c:0,n:0,w:0.2,s:[5,4],e:[5,6],m:[5,5],h:0}];V.couches[0].arcs=V.modele.arcs;
   const garde=MECA_IPC.lib;
   MECA_IPC.lib=[{"Part Name":"USB_B","Description":"Connecteur USB type B","Part Number":""}];
@@ -7152,7 +7174,7 @@ T("animation 3D, visionneuse : cuivre, pastilles, vias et sérigraphie par face,
     const fin=D.pistes[D.pistes.length-1];
     if(Math.abs(fin[2]-5)>1e-3||Math.abs(fin[3]-6)>1e-3)throw new Error("arc mal échantillonné : "+fin);
     if(D.pads.length!==2||Math.abs(Math.max(...D.pads[1].map(p=>p[0]))-21.5)>1e-3)throw new Error("pastilles : "+JSON.stringify(D.pads));
-    if(D.vias.length!==1||J.faces[1].cuivre.vias.length!==1||D.vias[0][2]!==1||D.vias[0][3]!==0.3)throw new Error("vias : "+JSON.stringify(D.vias));
+    if(D.vias.length!==2||J.faces[1].cuivre.vias.length!==2||D.vias[0][2]!==1||D.vias[0][3]!==0.3)throw new Error("vias : "+JSON.stringify(D.vias));
     if(J.faces[1].cuivre.pistes.length)throw new Error("une piste dessous de trop");
     if(J.faces[1].seri.segs.length!==1||J.faces[0].seri.segs.length)throw new Error("sérigraphie : "+JSON.stringify(J.faces.map(F=>F.seri.segs)));
     const j=J.composants.find(c=>c.ref==="J1");
@@ -7803,6 +7825,49 @@ T("bus : une fréquence à 0 garde la dernière valeur valable, champ compris", 
   }finally{Object.assign(SIM_BUS,etat);simInit(ed,null);}
 });
 
+
+T("mdlNb : un entier rond garde ses zéros (100 à 0 décimale n'est pas « 1 »)", function(){
+  const u=V.unite;
+  try{
+    V.unite="mm";
+    for(const [v,d,att] of [[100,0,"100"],[20,0,"20"],[0,0,"0"],[1.5,3,"1,5"],[10,3,"10"],[0.25,null,"0,25"]])
+      if(mdlNb(v,d)!==att)throw new Error("mdlNb("+v+","+d+") = « "+mdlNb(v,d)+" », attendu « "+att+" »");
+    V.unite="µm";
+    if(mdlNb(250)!=="250")throw new Error("en microns, 250 s'écrit « "+mdlNb(250)+" »");
+  }finally{V.unite=u;}
+});
+
+T("couches : hors empilage, la fonction déclarée du calque donne le genre (pâte à braser)", function(){
+  carte({couches:["Top","Bottom","PATE_DESSUS","FENTES"]});
+  try{
+    V.modele.calques={PATE_DESSUS:{f:"SOLDERPASTE",s:"TOP"},FENTES:{f:"ROUT",s:"ALL"}};
+    const c=mdlCouches(V.modele);
+    if(c[2].genre!=="pate"||c[2].cuivre)throw new Error("PATE_DESSUS lue « "+c[2].genre+" »");
+    if(c[3].cuivre)throw new Error("un calque hors empilage ne devient pas du cuivre");
+  }finally{carte();}
+});
+
+T("plan : la boîte compte le PREMIER sommet, même s'il est le seul extrême", function(){
+  // triangle dont le premier sommet est seul à x=10 : sa boîte s'arrêtait à x=5
+  const g={c:0,n:0,g:[{o:[10,0, 0,0, 5,-5],t:[]}]};
+  const b=mdlBoitePlan(g);
+  if(b.x2!==10||b.x1!==0||b.y1!==-5||b.y2!==0)throw new Error("boîte fausse : "+JSON.stringify(b));
+  if(!mdlPlanContient(g,7,-1))throw new Error("un point du cuivre (7 ; -1) n'est pas reconnu dans le plan");
+});
+
+T("export .json : rouvert, une classe détectée reste détectée, et aucun chemin de dessin ne voyage", function(){
+  carte({nets:["SIG","GND","+3V3"]});
+  V.modele.composants=[{ref:"U1",x:0,y:0,r:0,c:0,pads:[],corpsChemin:new Path2D()}];
+  mdlNetPoserClasse(0,"pwr");                      // un choix manuel, et un seul
+  const m=JSON.parse(modeleTexte());
+  if("corpsChemin" in m.composants[0])throw new Error("le Path2D du boîtier part dans le .json (il en revient en {})");
+  mdlCharger(m,"essai.json");
+  const par=n=>V.parNet.find(x=>x.nom===n);
+  if(par("SIG").classe!=="pwr"||par("SIG").autoDetecte!==false)throw new Error("le choix manuel est perdu");
+  if(par("GND").classe!=="gnd"||par("GND").autoDetecte!==true)
+    throw new Error("GND revient « "+par("GND").autoRaison+" » au lieu de détecté");
+  if(par("+3V3").autoDetecte!==true)throw new Error("+3V3 revient en choix mémorisé");
+});
 
 (async()=>{
   for(const [nom,fn] of T_ASYNC){
