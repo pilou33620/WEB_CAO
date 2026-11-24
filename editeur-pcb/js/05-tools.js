@@ -3216,6 +3216,8 @@ function deleteNetRouting(net){
    Sans piste ni via dans la sélection, rien n'est supprimé : le pied de page le
    dit plutôt que d'emporter les empreintes. */
 function unrouteSel(){
+  // des composants seuls : leur routage (Dérouter le composant)
+  if(!S.sel.tracks.size&&!S.sel.vias.size&&S.sel.fps.size)return unrouteComposant();
   verrousRetirer();
   const tr=S.tracks.filter(t=>S.sel.tracks.has(t));
   const vi=S.vias.filter(v=>S.sel.vias.has(v));
@@ -3238,6 +3240,72 @@ function unrouteSel(){
        (S.sel.fps.size?" · "+S.sel.fps.size+" empreinte(s) laissée(s) en place.":"."));
   refreshPanels();draw();
   return tr.length+vi.length;
+}
+/* Le cuivre d'une liaison, depuis des pistes de départ : on suit les bouts de
+   piste et les vias jusqu'aux pastilles, sans les franchir, et on s'arrête à un
+   embranchement (trois bouts ou plus), qui mène vers d'autres pastilles. Le
+   verrouillé et les vias de couture restent, et arrêtent la marche. */
+function cuivreLiaison(depart){
+  const T=new Set(), V=new Set(), file=[];
+  const prendre=t=>{if(t.locked||T.has(t))return;T.add(t);file.push([t.l,t.x1,t.y1],[t.l,t.x2,t.y2]);};
+  const bouts=(lo,hi,x,y)=>{const r=[];for(let l=lo;l<=hi;l++)for(const o of jointAt(x,y,l).ends)r.push(o.t);return r;};
+  depart.forEach(prendre);
+  while(file.length){
+    const [l,x,y]=file.pop();
+    if(padAt(l,x,y))continue;                     // une pastille : la liaison s'arrête là
+    const v=viaAt(l,x,y);
+    if(v&&V.has(v))continue;
+    const b=v?bouts(v.a,v.b,v.x,v.y):bouts(l,l,x,y);
+    if(b.length>2)continue;                       // embranchement
+    if(v){if(v.locked||v.couture)continue;V.add(v);}
+    b.forEach(prendre);
+  }
+  return {T,V};
+}
+/* Le routage qui part des pastilles des composants : les pistes qui y finissent,
+   les vias posés dedans, puis chaque liaison jusqu'à la pastille d'en face. */
+function cuivreComposants(fps){
+  const dep=[], V=new Set();
+  for(const f of fps)for(const q of padsWorld(f))for(const l of padCuLayers(f,q)){
+    for(const t of S.tracks)if(t.l===l&&(padHolds(f,q,l,t.x1,t.y1)||padHolds(f,q,l,t.x2,t.y2)))dep.push(t);
+    for(const v of S.vias)if(!v.locked&&!v.couture&&l>=v.a&&l<=v.b&&padHolds(f,q,l,v.x,v.y))V.add(v);
+  }
+  for(const v of V)for(let l=v.a;l<=v.b;l++)for(const o of jointAt(v.x,v.y,l).ends)dep.push(o.t);
+  const r=cuivreLiaison(dep);
+  for(const v of V)r.V.add(v);
+  return r;
+}
+function deroutage(T,V,qui){
+  if(!T.size&&!V.size){hint("Rien à dérouter pour "+qui+" : aucune piste libre.");return 0;}
+  push();
+  S.tracks=S.tracks.filter(t=>!T.has(t));
+  S.vias=S.vias.filter(v=>!V.has(v));
+  for(const t of T)S.sel.tracks.delete(t);
+  for(const v of V)S.sel.vias.delete(v);
+  touch();refreshPanels();draw();
+  hint(qui+" : "+T.size+" segment(s)"+(V.size?" et "+V.size+" via(s)":"")+" supprimé(s). Ctrl+Z annule.");
+  return T.size+V.size;
+}
+/* Dérouter le composant : son routage part, lui reste en place et sélectionné. */
+function unrouteComposant(){
+  const fps=[...S.sel.fps].map(fpById).filter(Boolean);
+  if(!fps.length){hint("Sélectionnez un ou plusieurs composants, puis Dérouter le composant.");return 0;}
+  const {T,V}=cuivreComposants(fps);
+  return deroutage(T,V,(fps.length===1?fps[0].ref:fps.length+" composants")+" dérouté"+(fps.length>1?"s":""));
+}
+/* Dérouter la liaison (mode « deroute ») : la piste touchée et son chemin
+   jusqu'aux deux pastilles qu'elle relie ; le reste du net ne bouge pas. */
+function unrouteLiaisonAt(x,y){
+  let best=null, bd=Infinity;
+  for(const t of S.tracks){
+    if(!S.cuL[t.l]||!S.cuL[t.l].vis)continue;
+    const d=trkDist(x,y,t)-t.w/2-(t.l===S.active?px(2):0);   // la couche active d'abord
+    if(d<bd){bd=d;best=t;}
+  }
+  if(!best||bd>px(6)){hint("Touchez une piste : son chemin jusqu'aux deux pastilles qu'elle relie sera supprimé.");return 0;}
+  if(best.locked){hint("Piste verrouillée : Déverrouiller pour la dérouter.");return 0;}
+  const {T,V}=cuivreLiaison([best]);
+  return deroutage(T,V,"Liaison "+(best.net||"sans net")+" déroutée");
 }
 /* Dérouter tout : toutes les pistes et les vias de routage. Le verrouillé reste,
    comme les vias de couture : ils tiennent le plan, ils ne relient pas deux pastilles. */
@@ -5346,6 +5414,7 @@ cv.addEventListener("pointerdown",e=>{
   if(S.mode==="cut"){
     cutClick(p.x,p.y);draw();return;
   }
+  if(S.mode==="deroute"){unrouteLiaisonAt(p.x,p.y);return;}
   if(S.mode==="miter"){
     miterClick(p.x,p.y);return;
   }
@@ -6380,7 +6449,7 @@ function setMode(m){
   for(const [id,md] of [["mSelect","select"],["mTrack","track"],["mVia","via"],["mHole","hole"],
                         ["mDiff","dpair"],["mMeander","meander"],
                         ["mZone","zone"],["mSilk","silk"],["mEdge","edge"],["mDecoupe","decoupe"],["mInterdit","interdit"],["mOrigin","origin"],
-                        ["mErase","cut"],["mMiter","miter"],["mMesure","mesure"],
+                        ["mErase","cut"],["mMiter","miter"],["mDeroute","deroute"],["mMesure","mesure"],
                         ["mArc","arc"],["mTexteCu","texteCu"],["mPastille","pastille"],["mCote","cote"],["mBus","bus"]]){
     const b=$(id);
     if(b)b.classList.toggle("on",m===md);
@@ -6389,7 +6458,7 @@ function setMode(m){
                           dpair:"Paire différentielle",meander:"Serpentin (Appariement)",
                           zone:"Zone de cuivre",silk:"Sérigraphie",edge:"Contour de carte",
                           decoupe:"Découpe de carte",interdit:"Zone interdite",
-                          origin:"Origine",cut:"Découpe de zone",miter:"Miter",
+                          origin:"Origine",cut:"Découpe de zone",miter:"Miter",deroute:"Dérouter la liaison",
                           mesure:"Mesure",arc:"Arc / cercle",texteCu:"Texte sur cuivre",
                           pastille:"Pastille libre",cote:"Cote",bus:"Bus (multi-pistes)"}[m]||m;
   cv.style.cursor="crosshair";
@@ -6415,6 +6484,7 @@ function setMode(m){
     interdit:"Zone interdite de la face regardée : un clic par sommet, ou deux coins puis Entrée · retour sur le premier point pour fermer · Échap abandonne.",
     origin:"Cliquez le point qui servira d'origine — une pastille proche l'attire.",
     cut:"Découpe de zone de cuivre : un clic par sommet, retour sur le premier point (ou Entrée) pour fermer · Maj contraint à 45° · Retour arrière annule le dernier · Échap abandonne.",
+    deroute:"Touchez une piste : son chemin jusqu'aux deux pastilles qu'elle relie est supprimé, le reste du net reste · Ctrl+Z annule · Échap revient à la sélection.",
     miter:"Clic sur un coin du contour, d'une découpe ou d'un coude de piste de la couche active : il s'arrondit "+
           "au rayon réglé sous Carte > Forme de la carte (négatif : chanfrein droit) · Ctrl+Z annule · Échap revient à la sélection.",
     mesure:"Cliquez le premier point, puis le second : la cote se fige · les pastilles, "+

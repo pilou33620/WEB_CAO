@@ -1199,3 +1199,33 @@
   /* les entrées de menu sans icône dessinée : leur glyphe (data-ic) */
   .rg .mnu-pop button.tb.ic-glyphe::before,.rg-cmds button.tb.ic-glyphe::before{content:attr(data-ic);background:none;width:24px;height:24px;
     line-height:24px;text-align:center;font-size:15px;color:var(--txt-dim)}
+
+/* ---------- historique : la frise des étapes, en bas du canevas (58-historique.js) ---------- */
+.histo{position:absolute;left:10px;right:10px;bottom:8px;z-index:16;height:36px;display:flex;align-items:center;gap:6px;padding:0 8px;
+  background:rgba(24,27,33,.78);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.08);
+  border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.45);font:12px var(--ui,system-ui);color:#c9ced6}
+.histo[hidden]{display:none}
+.histo-ctl{display:flex;gap:2px;padding-right:8px;border-right:1px solid rgba(255,255,255,.1);flex:none}
+.histo-ctl button{width:26px;height:26px;padding:0;border:0;border-radius:4px;background:none;color:#c9ced6;font-size:11px;cursor:pointer}
+.histo-ctl button:hover:not(:disabled){background:rgba(255,255,255,.08)}
+.histo-ctl button:disabled{opacity:.3;cursor:default}
+.histo-pistes{flex:1;min-width:0;display:flex;align-items:center;gap:3px;overflow-x:auto;overflow-y:hidden;height:100%;scrollbar-width:none;touch-action:pan-x}
+.histo-pistes::-webkit-scrollbar{display:none}
+.histo-e{width:24px;height:24px;flex:none;padding:0;display:grid;place-items:center;border:0;border-radius:4px;background:rgba(255,255,255,.06);font-size:12px;line-height:1;cursor:pointer}
+.histo-e:hover{background:rgba(255,255,255,.14)}
+.histo-e.fut{opacity:.3}
+.histo-e.sel{outline:1px solid #3fa0ea;background:rgba(63,160,234,.25)}
+.histo-cur{width:4px;height:28px;flex:none;margin:0 3px;border-radius:2px;background:#f2c230;box-shadow:0 0 6px rgba(242,194,48,.7);cursor:ew-resize;touch-action:none;position:relative}
+.histo-cur::before{content:"";position:absolute;inset:-4px -10px}   /* une prise plus large que le trait, pour le doigt */
+.histo-vide{color:#8d95a1;font-style:italic;white-space:nowrap}
+.histo-n{flex:none;padding-left:8px;border-left:1px solid rgba(255,255,255,.1);color:#8d95a1;font:11px ui-monospace,monospace}
+.histo-bulle{position:absolute;z-index:22;padding:4px 8px;border-radius:5px;background:rgba(14,16,20,.94);border:1px solid rgba(255,255,255,.1);
+  font:12px var(--ui,system-ui);color:#e8ebef;white-space:nowrap;pointer-events:none}
+.histo-bulle[hidden]{display:none}
+.histo-bulle i{font-style:normal;color:#8d95a1}
+#canvasWrap.histo-on .vue-bar{bottom:54px}
+#canvasWrap.histo-on #coordBox.on{bottom:98px}
+body.mode-tactile .histo{height:44px}
+body.mode-tactile .histo-e{width:32px;height:32px;font-size:15px}
+body.mode-tactile .histo-ctl button{width:34px;height:34px;font-size:13px}
+body.mode-tactile #canvasWrap.histo-on .vue-bar{bottom:62px}

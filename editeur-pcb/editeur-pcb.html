@@ -104,6 +104,8 @@
               <button data-ic="⇔" class="tb ic-glyphe" id="bLargeur" title="En plein tracé : passe à la largeur suivante (W), Maj+W pour la précédente">Largeur suivante <kbd>W</kbd></button>
               <button data-ic="◣" class="tb" id="bLarmes" title="Pose ou refait les larmes : un renfort de cuivre entre une piste et le via ou la pastille ronde où elle s'arrête">Larmes</button>
               <button data-ic="◁" class="tb" id="bLarmesRetirer" title="Retire toutes les larmes de la carte">Retirer les larmes</button>
+              <button data-ic="✂" class="tb" id="bUnrouteComp" title="Supprimer le routage qui part des pastilles des composants sélectionnés, jusqu'à la pastille d'en face ; les composants restent en place">Dérouter le composant</button>
+              <button data-ic="✂" class="tb" id="mDeroute" title="Outil : touchez une piste, son chemin jusqu'aux deux pastilles qu'elle relie est supprimé (le reste du net reste)">Dérouter la liaison</button>
               <button data-ic="✂" class="tb" id="bUnrouteTout" title="Supprimer toutes les pistes et tous les vias de routage de la carte (les verrouillés et les vias de couture restent) ; Ctrl+Z annule">Dérouter tout</button>
             </div>
           </div>
@@ -361,8 +363,21 @@
   <div class="ctr" id="ctr">
     <div id="canvasWrap"><canvas id="board"></canvas>
       <div id="inspBulle" hidden></div>
+      <div class="histo" id="histoBar" hidden>
+        <div class="histo-ctl">
+          <button type="button" data-h="debut" title="Revenir au début de l'historique">⏮</button>
+          <button type="button" data-h="prec" title="Annuler (Ctrl+Z)">◀</button>
+          <button type="button" data-h="suiv" title="Rétablir (Ctrl+Y)">▶</button>
+          <button type="button" data-h="fin" title="Aller à la dernière étape">⏭</button>
+        </div>
+        <div class="histo-pistes" id="histoPistes"></div>
+        <div class="histo-n" id="histoN"></div>
+      </div>
+      <div class="histo-bulle" id="histoBulle" hidden></div>
       <div class="vue-bar" id="vueBar">
         <button data-ic="↶" class="tb" id="bUndoVue" title="Annuler la dernière action (Ctrl+Z) ; en plein tracé, le dernier point">Annuler <kbd>Ctrl+Z</kbd></button>
+        <button data-ic="↷" class="tb" id="bRedoVue" title="Rétablir (Ctrl+Y)">Rétablir <kbd>Ctrl+Y</kbd></button>
+        <button data-ic="🕘" data-bascule class="tb" id="bHisto" title="Historique : la frise des étapes en bas du canevas ; touchez une étape pour y revenir">Historique</button>
         <i></i>
         <button data-ic="⤢" class="tb" id="bFit">Recadrer</button>
         <button data-ic="#" data-bascule class="tb" id="bGrid">Grille</button>
@@ -687,6 +702,7 @@
 <script src="js/55-capa-vias.js"></script>
 <script src="js/56-accrochage.js"></script>
 <script src="js/57-pousse.js"></script>
+<script src="js/58-historique.js"></script>
 <script src="../commun/explorateur-lib.js"></script>
 <script src="../commun/workspace.js"></script>
 <script src="../commun/telephone.js"></script>

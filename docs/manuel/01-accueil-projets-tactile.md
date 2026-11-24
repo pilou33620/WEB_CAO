@@ -152,7 +152,7 @@ L'accueil (`index.html`) s'ouvre en double-clic, sans serveur ; le serveur ajout
 
 ### Je veux annuler ou rétablir
 
-1. `Ctrl+Z` annule, `Ctrl+Y` (ou `Ctrl+Maj+Z`) rétablit ; ou les flèches de la barre rapide, à côté du menu Fichier. Au PCB, Annuler est aussi le premier bouton de la barre de vue, en bas du canevas ; en plein tracé de zone, de découpe ou de contour, il retire seulement le dernier point.
+1. `Ctrl+Z` annule, `Ctrl+Y` (ou `Ctrl+Maj+Z`) rétablit ; ou les flèches de la barre rapide, à côté du menu Fichier. Au PCB, Annuler et Rétablir sont aussi les premiers boutons de la barre de vue, en bas du canevas ; en plein tracé de zone, de découpe ou de contour, Annuler retire seulement le dernier point. Le bouton Historique, à côté, affiche la frise des étapes : un toucher sur une étape y ramène la carte.
 2. Au schéma, l'historique garde 60 étapes ; au PCB, 80 étapes dans la limite d'un budget mémoire.
 3. Une carte appliquée par Claude est une étape. Dans les fenêtres de brochage (schéma) et de règles (PCB), `Ctrl+Z` et `Ctrl+Y` restent actifs.
 
@@ -323,7 +323,7 @@ L'accueil (`index.html`) s'ouvre en double-clic, sans serveur ; le serveur ajout
 | Onglets du ruban | | Schéma : Dessin, Sorties. PCB : Placer & router, Carte, Cuivre, Dessin, Vérifier, Fabriquer. Un clic montre leur bande de commandes, rangées par groupes | Une touche de raccourci agit quel que soit l'onglet affiché |
 | Groupe du ruban marqué ▾ | `Échap` ferme | Un clic sur son titre ouvre la liste de ses autres commandes | Sur téléphone, elles sont dans la bande |
 | ▴ / ▾ à droite des onglets | | Replie ou déplie le ruban ; replié, un onglet pose sa bande par-dessus le canevas le temps d'une commande | Mémorisé par navigateur ; replié d'usine sur téléphone |
-| Barre de vue, en bas du canevas | | Annuler (PCB), Recadrer, Grille, Chevelu (PCB) et menu Affichage : pas de grille, cartouche, vue, contraste, rooms, espace de travail | |
+| Barre de vue, en bas du canevas | | Annuler, Rétablir et Historique (PCB), Recadrer, Grille, Chevelu (PCB) et menu Affichage : pas de grille, cartouche, vue, contraste, rooms, espace de travail | |
 | Cube de vue, en haut à droite du canevas | `Y` | Passe de la vue de dessus à celle de dessous | PCB |
 | Fenêtre d'options, à droite du canevas | | Quand le panneau Propriétés est replié ou fermé, une sélection y pose ses propriétés (panneau déplié : elles y restent, sans doublon), appliquées en direct. **OK** garde tout, **Annuler** défait ce qui a changé depuis l'ouverture, y compris un déplacement. Elle se déplace par sa tête | Le panneau Propriétés reprend le contenu à sa fermeture. Une fenêtre fermée revient à la sélection suivante. Sur téléphone, les propriétés restent dans le tiroir |
 | Étiquette « OUTIL » | | Recopie le mode actif ; un clic montre son bouton dans le ruban | |

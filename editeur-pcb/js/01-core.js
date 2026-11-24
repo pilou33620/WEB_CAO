@@ -1173,7 +1173,7 @@ const S = {
   ver:0, nextId:1,
   undo:[], redo:[], dirty:false
 };
-function touch(){S.ver++;}
+function touch(){S.ver++;if(typeof histoPlanifier==="function")histoPlanifier();}   // la frise de l'historique suit (58-historique.js)
 
 /* Construit / reconstruit l'empilage en conservant ce qui peut l'être.
    Les pistes des couches supprimées sont ramenées vers la couche voisine :

@@ -79,8 +79,25 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
    - **Boucles** : retracer un chemin entre deux points d'une piste retire l'ancien trajet au dépôt, s'il ne tient ni pastille, ni via, ni embranchement (**Vérifier > Règles… > Supprimer les boucles au dépôt**, actif d'usine).
    - **Glisser une piste** en conduite « pousser » écarte les pistes voisines ; une pastille ou un via ne s'écartent pas.
    - **Bus** : pendant le tracé d'un bus, `+` et `−` écartent ou resserrent les pistes, jamais sous l'isolement.
-9. Pour défaire du routage : sélectionner les pistes et vias (ou un lasso, qui prend aussi les composants), puis **Placer & router > Dérouter** (`U`) : pistes et vias partent, les composants restent. **Router ▾ > Dérouter tout** vide le routage de toute la carte ; `Ctrl+Z` le rend.
+9. Pour défaire du routage :
+   - sélectionner les pistes et vias (ou un lasso, qui prend aussi les composants), puis **Placer & router > Dérouter** (`U`) : pistes et vias partent, les composants restent ;
+   - un composant seul sélectionné, **Dérouter** (ou **Router ▾ > Dérouter le composant**) supprime le routage qui part de ses pastilles, jusqu'à la pastille d'en face ;
+   - **Router ▾ > Dérouter la liaison** : toucher une piste supprime son chemin jusqu'aux deux pastilles qu'elle relie, le reste du net reste ; l'outil reste actif pour la piste suivante, `Échap` revient à la sélection ;
+   - **Router ▾ > Dérouter tout** vide le routage de toute la carte.
+
+   Le verrouillé et les vias de couture restent toujours ; `Ctrl+Z` rend ce qui a été supprimé.
 10. Pour laisser l'outil trouver le chemin d'une liaison : cliquer une pastille de cette liaison (ou `Alt`+clic sur une pastille, ou un net de la liste, pour viser un net), puis **Placer & router > Chemin auto**. La liaison du chevelu la plus proche de la pastille est routée d'un coup, en contournant le cuivre existant ; un `Ctrl+Z` la défait. S'il n'y a pas de chemin, rien n'est posé et le pied de page dit pourquoi.
+
+### Je veux revenir plusieurs étapes en arrière (historique)
+
+1. Le bouton **Historique** (horloge) de la barre de vue affiche ou masque la frise des étapes, en bas du canevas. Elle est affichée d'usine ; le choix est mémorisé par navigateur.
+2. Chaque action y laisse une petite icône, de la plus ancienne à gauche à la plus récente à droite, colorée selon sa nature (rouge : routage ou suppression, bleu : composant ou zone, jaune : via, gris : découpe, contour, réglage). Le pointeur posé dessus, ou un toucher, en donne le nom : « Pivoter · U1 », « Routage · GND · 14 pistes », « Découpe · Bottom ».
+3. Les tracés successifs d'un même net forment une seule icône (« Routage · GND · 14 pistes ») ; le même geste répété sur le même objet aussi (« Pivoter · U1 ×4 »). Un routage ne remplit donc pas la frise.
+4. Toucher une icône rend la carte telle qu'elle était juste après cette étape. Le curseur jaune marque la position ; on le glisse pour remonter ou redescendre le temps, la carte suit au relâchement. Les étapes à sa droite, grisées, restent rétablissables jusqu'à la prochaine action, qui les efface (comme `Ctrl+Y`).
+5. À gauche, **⏮** revient au début, **◀** annule, **▶** rétablit, **⏭** va à la dernière étape ; à droite, le compteur donne la position (« 5 / 8 »).
+
+> [!NOTE]
+> La frise montre l'historique d'annulation : 80 étapes au plus, dans le même budget mémoire. Une étape regroupée se défait d'un bloc depuis la frise ; `Ctrl+Z` la défait tracé par tracé.
 
 ### Je veux router une paire différentielle
 
@@ -252,7 +269,9 @@ Groupe **Modifier** ; Annuler et Rétablir sont dans la barre rapide, Annuler au
 | Serpentin ▾ | `M` | Génère un serpentin d'appariement ; ▾ ouvre les réglages | Ne se pose que sur une piste droite (une piste en arc est refusée) |
 | Via | `V` | Pose un via traversant ; en plein tracé, l'attache au curseur et le clic le pose en changeant de couche | Refusé dans l'isolation : rien n'est posé, ni le segment ni le via |
 | Chemin auto | | Route seule la liaison du chevelu de la pastille cliquée (ou du net mis en avant) : A* sur grille, puis le routeur, en contournement ; une étape d'annulation | Une liaison à la fois, jamais une paire ; la page se fige le temps du calcul (8 s au plus pour le chemin, 10 s pour la pose). Échec : rien n'est posé, la raison au pied de page |
-| Dérouter | `U` | Supprime les pistes et les vias de la sélection, laisse les empreintes | Les zones, contours et découpes restent ; sans piste ni via sélectionné, rien n'est supprimé |
+| Dérouter | `U` | Supprime les pistes et les vias de la sélection, laisse les empreintes ; des composants seuls sélectionnés : Dérouter le composant | Les zones, contours et découpes restent |
+| Dérouter le composant (Router ▾) | | Supprime le routage qui part des pastilles des composants sélectionnés : chaque liaison jusqu'à la pastille d'en face, vias compris ; une étape d'annulation | La marche s'arrête à une pastille et à un embranchement (trois bouts de piste ou plus au même point) ; le verrouillé et les vias de couture restent |
+| Dérouter la liaison (Router ▾) | | Outil : toucher une piste supprime son chemin jusqu'aux deux pastilles qu'elle relie ; une étape d'annulation par toucher | Mêmes arrêts que ci-dessus ; une piste verrouillée est refusée |
 | Dérouter tout (Router ▾) | | Supprime toutes les pistes et tous les vias de la carte ; une étape d'annulation | Les pistes et vias verrouillés et les vias de couture restent ; pas de confirmation, `Ctrl+Z` rend tout |
 | Larmes | | Pose ou refait les larmes : un renfort de cuivre entre une piste droite et le via ou la pastille ronde où elle s'arrête en son centre ; une étape d'annulation | Rien n'est posé si la place manque. Elles ne suivent pas le cuivre : si du cuivre bouge, le DRC dit « Larmes à refaire » et ce bouton les refait |
 | Retirer les larmes | | Retire toutes les larmes de la carte | |
@@ -275,11 +294,13 @@ Groupe **Modifier** ; Annuler et Rétablir sont dans la barre rapide, Annuler au
 
 ### Barre de vue
 
-Annuler, Recadrer, Grille et Chevelu y sont en icônes ; les autres réglages sont dans son menu Affichage. Le cube de vue équivaut au bouton Vue.
+Annuler, Rétablir, Historique, Recadrer, Grille et Chevelu y sont en icônes ; les autres réglages sont dans son menu Affichage. Le cube de vue équivaut au bouton Vue.
 
 | Bouton ou menu | Raccourci | Effet | Limites |
 |---|---|---|---|
 | Annuler | `Ctrl+Z` | Même effet que l'Annuler de la barre rapide (voir Modifier), sous le doigt en mode tactile | |
+| Rétablir | `Ctrl+Y` | Même effet que le Rétablir de la barre rapide | |
+| Historique | | Affiche ou masque la frise des étapes (voir la tâche « revenir plusieurs étapes en arrière ») | Mémorisé par navigateur |
 | Grille | `G` | Affiche ou masque la grille d'accrochage | |
 | Pas de grille | | Liste : 0,05 · 0,1 · 0,25 · 0,5 · 1 · 1,27 · 2 · 2,54 · 5 mm (« Grille … mm ») | Pas de 0,5 mm au démarrage ; `Maj+G` fait tourner 0,1 → 0,5 → 1 mm, même pendant un tracé ; trop serrée à l'écran, la grille n'est tracée que sur une case sur deux, cinq… (le pied de page dit la case visible) |
 | Chevelu | `N` | Affiche ou masque les liaisons non routées | |

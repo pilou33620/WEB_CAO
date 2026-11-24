@@ -74,7 +74,7 @@ const EXPOSE=["capaDecouplage","capaCibleMasse","capaViasExistants","capaViaPlac
   /* nature d'un via : traversant, borgne dessus/dessous, enterre */
   "VIA_KINDS","viaKindOf","viaKindTxt","viaKindsAvail","viaSetKind","viaBuild","fabBase",
   "flipSel","push","undo","redo","touch","padsWorld","cuId","serialize","loadDoc","exportPng",
-  "setFlip","setContrast","setFaceOpp","faceAlpha","autoPlace","placerSatellites","placeManuelle","satValeurF","conn","netTable","fit","zoneClick","zoneMove","cutClick","unrouteTout",
+  "setFlip","setContrast","setFaceOpp","faceAlpha","autoPlace","placerSatellites","placeManuelle","satValeurF","conn","netTable","fit","zoneClick","zoneMove","cutClick","unrouteTout","histoEtapes","histoAller","cuivreLiaison","unrouteComposant","unrouteLiaisonAt","unrouteSel",
   "closeZone","fullBoardZone","zoneMask","labelMask","maskAt","classOf","setNetClass","defaultWidth",
   "applyClasses","jointAt","splitTrack","netTracks","selectNetRouting",
   "deleteNetRouting","autoClass","classOptionsHtml","poserClasseNet","schemaPublie","listNets","mkFp","w2s","runDrc","padsOf",
@@ -764,6 +764,63 @@ T("Dérouter tout : pistes et vias partent, verrouillés et couture restent",()=
     undo();
     if(S.tracks.length!==2||S.vias.length!==2)throw new Error("Ctrl+Z doit tout rendre");
   }finally{S.tracks=sv.t;S.vias=sv.v;touch();}
+});
+T("historique : étapes nommées, routage d'un net regroupé, retour à une étape",()=>{
+  const sv={fps:S.fps,t:S.tracks,v:S.vias,u:S.undo,r:S.redo,avoid:S.avoid};
+  try{
+    S.avoid=false;S.fps=[];S.tracks=[];S.vias=[];S.undo=[];S.redo=[];
+    const a=mkFp("R1","","",2), b=mkFp("R2","","",2), c=mkFp("R3","","",2);
+    a.x=10;a.y=10;b.x=30;b.y=10;c.x=50;c.y=30;S.fps.push(a,b,c);touch();
+    const pa=padsWorld(a)[1], pb=padsWorld(b)[0];
+    push();S.tracks.push({l:0,w:0.3,net:"N1",x1:pa.x,y1:pa.y,x2:20,y2:pa.y},{l:0,w:0.3,net:"N1",x1:20,y1:pa.y,x2:pb.x,y2:pb.y});touch();
+    push();S.tracks.push({l:0,w:0.3,net:"N1",x1:pa.x,y1:pa.y,x2:pa.x,y2:pa.y+5});touch();
+    clearSel();S.sel.fps.add(c.id);rotateSel();
+    const {E,pos}=histoEtapes();
+    rotateSel();
+    const G=histoEtapes();
+    if(G.E.length!==2||G.E[1].det!=="R3 ×2")throw new Error("deux pivots d'affilée : une icône ×2, "+G.E.map(e=>e.lib+" "+e.det).join(" | "));
+    undo();
+    if(E.length!==2)throw new Error("2 étapes attendues (routage regroupé, pivoter) : "+E.map(e=>e.lib+" "+e.det).join(" | "));
+    if(E[0].lib!=="Routage"||E[0].det!=="N1 · 3 pistes")throw new Error("routage : "+E[0].lib+" "+E[0].det);
+    if(E[1].lib!=="Pivoter"||E[1].det!=="R3")throw new Error("pivoter : "+E[1].lib+" "+E[1].det);
+    if(pos!==3)throw new Error("position : "+pos);
+    histoAller(0);
+    if(S.tracks.length!==0||c.rot!==0&&fpById(c.id).rot!==0)throw new Error("retour au début : la carte d'origine");
+    histoAller(E[0].fin);
+    if(S.tracks.length!==3)throw new Error("après le routage : 3 pistes, "+S.tracks.length);
+    if(fpById(c.id).rot!==0)throw new Error("le pivot vient après");
+    const F=histoEtapes();
+    if(F.E.length!==2||F.pos!==2)throw new Error("les étapes suivantes restent rétablissables");
+    histoAller(3);
+    if(fpById(c.id).rot!==90)throw new Error("fin : le pivot rétabli");
+  }finally{S.fps=sv.fps;S.tracks=sv.t;S.vias=sv.v;S.undo=sv.u;S.redo=sv.r;S.avoid=sv.avoid;touch();clearSel();}
+});
+T("Dérouter la liaison et Dérouter le composant",()=>{
+  const sv={fps:S.fps,t:S.tracks,v:S.vias};
+  try{
+    S.fps=[];S.tracks=[];S.vias=[];
+    const a=mkFp("R1","","",2), b=mkFp("R2","","",2), c=mkFp("R3","","",2);
+    a.x=10;a.y=10;b.x=30;b.y=10;c.x=30;c.y=30;S.fps.push(a,b,c);touch();
+    const pa=padsWorld(a)[1], pb=padsWorld(b)[0], pc=padsWorld(c)[0], pb2=padsWorld(b)[1];
+    const t1={l:0,w:0.3,net:"N1",x1:pa.x,y1:pa.y,x2:20,y2:pa.y}, t2={l:0,w:0.3,net:"N1",x1:20,y1:pa.y,x2:pb.x,y2:pb.y};
+    const t3={l:0,w:0.3,net:"N2",x1:pb2.x,y1:pb2.y,x2:pc.x,y2:pc.y};
+    S.tracks.push(t1,t2,t3);touch();
+    // liaison : les deux segments entre R1 et R2, pas celle de R2 à R3
+    if(unrouteLiaisonAt(15,pa.y)!==2)throw new Error("2 segments attendus");
+    if(S.tracks.length!==1||S.tracks[0].net!=="N2")throw new Error("la liaison N2 doit rester");
+    undo();
+    // embranchement : on s'arrête au T
+    const t4={l:0,w:0.3,net:"N1",x1:20,y1:pa.y,x2:20,y2:pa.y+6};
+    S.tracks.push(t4);touch();
+    if(unrouteLiaisonAt(15,pa.y)!==1)throw new Error("au T, seul le segment touché part");
+    undo();
+    // composant : R1 seul sélectionné → son routage, jusqu'à R2 ; R2-R3 reste
+    S.tracks=S.tracks.filter(t=>t.y2!==pa.y+6);touch();
+    clearSel();S.sel.fps.add(a.id);
+    if(unrouteSel()!==2)throw new Error("U sur R1 seul : son routage");
+    if(S.tracks.length!==1||S.tracks[0].net!=="N2")throw new Error("le routage R2-R3 doit rester");
+    if(!S.sel.fps.has(a.id))throw new Error("R1 reste sélectionné");
+  }finally{S.fps=sv.fps;S.tracks=sv.t;S.vias=sv.v;touch();clearSel();}
 });
 T("zone dessinée point par point",()=>{
   setCuCount(4);
