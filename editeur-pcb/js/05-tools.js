@@ -1010,7 +1010,9 @@ function loadDoc(d,keepView){
   if(!keepView)fit();else draw();
 }
 function brouillonRecul(){
-  for(const k of ["zoneDraft","cutDraft","edgeDraft","aplatDraft"]){
+  const B=S.bus;            // bus : les sommets du trajet, puis les pastilles de départ
+  if(B&&(B.pts.length||B.pads.length)){(B.pts.length?B.pts:B.pads).pop();if(!B.pts.length&&!B.pads.length)S.bus=null;return true;}
+  for(const k of ["zoneDraft","cutDraft","edgeDraft","aplatDraft","dessinDraft"]){
     const D=S[k];
     if(!D)continue;
     D.pts.pop();
@@ -3235,6 +3237,19 @@ function unrouteSel(){
   hint(dit.join(" et ")+(tr.length+vi.length>1?" supprimés":" supprimé")+
        (S.sel.fps.size?" · "+S.sel.fps.size+" empreinte(s) laissée(s) en place.":"."));
   refreshPanels();draw();
+  return tr.length+vi.length;
+}
+/* Dérouter tout : toutes les pistes et les vias de routage. Le verrouillé reste,
+   comme les vias de couture : ils tiennent le plan, ils ne relient pas deux pastilles. */
+function unrouteTout(){
+  const tr=S.tracks.filter(t=>!t.locked), vi=S.vias.filter(v=>!v.locked&&!v.couture);
+  if(!tr.length&&!vi.length){hint("Rien à dérouter : aucune piste ni via de routage libre.");return 0;}
+  push();
+  S.tracks=S.tracks.filter(t=>t.locked);
+  S.vias=S.vias.filter(v=>v.locked||v.couture);
+  S.sel.tracks.clear();S.sel.vias.clear();
+  touch();refreshPanels();draw();
+  hint("Carte déroutée : "+tr.length+" segment(s) et "+vi.length+" via(s) supprimés. Ctrl+Z annule.");
   return tr.length+vi.length;
 }
 function deleteSel(){

@@ -93,6 +93,7 @@
               <button data-ic="∿" class="tb" id="mMeander" title="Générer un serpentin d'appariement de longueur (accordéon) pour compenser le retard d'une piste ou d'une paire différentielle">Serpentin <kbd>M</kbd> <span class="car">▾</span></button>
               <button data-ic="☰" class="tb" id="mBus" title="Router plusieurs pistes à la fois : cliquez les pastilles de départ, puis les sommets du trajet ; Entrée pose les pistes parallèles">Bus</button>
               <button data-ic="⤳" class="tb" id="bCheminAuto" title="Route seul une liaison du chevelu : cliquez d'abord une pastille (ou Alt+clic pour un net). Le chemin évite le cuivre des autres nets ; s'il n'y en a pas, rien n'est posé et le pied de page dit pourquoi. Ctrl+Z défait la piste.">Chemin auto</button>
+              <button data-ic="✂" class="tb" id="bUnroute" title="Supprimer les pistes et les vias de la sélection, sans toucher aux empreintes">Dérouter <kbd>U</kbd></button>
             </div>
             <button class="mnu-t rg-t" type="button">Router <span class="car">▾</span></button>
             <div class="mnu-pop">
@@ -103,13 +104,13 @@
               <button data-ic="⇔" class="tb ic-glyphe" id="bLargeur" title="En plein tracé : passe à la largeur suivante (W), Maj+W pour la précédente">Largeur suivante <kbd>W</kbd></button>
               <button data-ic="◣" class="tb" id="bLarmes" title="Pose ou refait les larmes : un renfort de cuivre entre une piste et le via ou la pastille ronde où elle s'arrête">Larmes</button>
               <button data-ic="◁" class="tb" id="bLarmesRetirer" title="Retire toutes les larmes de la carte">Retirer les larmes</button>
+              <button data-ic="✂" class="tb" id="bUnrouteTout" title="Supprimer toutes les pistes et tous les vias de routage de la carte (les verrouillés et les vias de couture restent) ; Ctrl+Z annule">Dérouter tout</button>
             </div>
           </div>
           <div class="rg mnu">
             <div class="rg-cmds">
               <button data-ic="⟳" class="tb" id="bRot">Pivoter <kbd>R</kbd></button>
               <button data-ic="⇋" class="tb" id="bFlip">Retourner <kbd>F</kbd></button>
-              <button data-ic="✂" class="tb" id="bUnroute" title="Supprimer les pistes et les vias de la sélection, sans toucher aux empreintes">Dérouter <kbd>U</kbd></button>
               <button data-ic="🗑" class="tb" id="bDel">Supprimer <kbd>Suppr</kbd></button>
             </div>
             <button class="mnu-t rg-t" type="button">Modifier <span class="car">▾</span></button>
@@ -361,6 +362,8 @@
     <div id="canvasWrap"><canvas id="board"></canvas>
       <div id="inspBulle" hidden></div>
       <div class="vue-bar" id="vueBar">
+        <button data-ic="↶" class="tb" id="bUndoVue" title="Annuler la dernière action (Ctrl+Z) ; en plein tracé, le dernier point">Annuler <kbd>Ctrl+Z</kbd></button>
+        <i></i>
         <button data-ic="⤢" class="tb" id="bFit">Recadrer</button>
         <button data-ic="#" data-bascule class="tb" id="bGrid">Grille</button>
         <button data-ic="⋰" data-bascule class="tb" id="bRats">Chevelu <kbd>N</kbd></button>

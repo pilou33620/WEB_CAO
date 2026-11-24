@@ -74,7 +74,7 @@ const EXPOSE=["capaDecouplage","capaCibleMasse","capaViasExistants","capaViaPlac
   /* nature d'un via : traversant, borgne dessus/dessous, enterre */
   "VIA_KINDS","viaKindOf","viaKindTxt","viaKindsAvail","viaSetKind","viaBuild","fabBase",
   "flipSel","push","undo","redo","touch","padsWorld","cuId","serialize","loadDoc","exportPng",
-  "setFlip","setContrast","setFaceOpp","faceAlpha","autoPlace","placerSatellites","placeManuelle","satValeurF","conn","netTable","fit","zoneClick","zoneMove","cutClick",
+  "setFlip","setContrast","setFaceOpp","faceAlpha","autoPlace","placerSatellites","placeManuelle","satValeurF","conn","netTable","fit","zoneClick","zoneMove","cutClick","unrouteTout",
   "closeZone","fullBoardZone","zoneMask","labelMask","maskAt","classOf","setNetClass","defaultWidth",
   "applyClasses","jointAt","splitTrack","netTracks","selectNetRouting",
   "deleteNetRouting","autoClass","classOptionsHtml","poserClasseNet","schemaPublie","listNets","mkFp","w2s","runDrc","padsOf",
@@ -751,6 +751,19 @@ T("annuler pendant une découpe de zone : retire le dernier sommet, garde le tra
   if(S.cutDraft)throw new Error("le brouillon vide doit disparaître");
   if(S.cuts.length!==n)throw new Error("aucune découpe ne doit être touchée");
   setMode("select");
+});
+T("Dérouter tout : pistes et vias partent, verrouillés et couture restent",()=>{
+  const sv={t:S.tracks,v:S.vias};
+  try{
+    S.tracks=[{id:S.nextId++,l:0,w:0.2,net:"A",x1:0,y1:0,x2:5,y2:0},{id:S.nextId++,l:0,w:0.2,net:"B",x1:0,y1:2,x2:5,y2:2,locked:true}];
+    S.vias=[{id:S.nextId++,x:5,y:0,d:0.6,drill:0.3,a:0,b:1,net:"A"},{id:S.nextId++,x:9,y:9,d:0.6,drill:0.3,a:0,b:1,net:"GND",couture:true}];
+    touch();
+    if(unrouteTout()!==2)throw new Error("2 objets attendus");
+    if(S.tracks.length!==1||!S.tracks[0].locked)throw new Error("la piste verrouillée doit rester");
+    if(S.vias.length!==1||!S.vias[0].couture)throw new Error("le via de couture doit rester");
+    undo();
+    if(S.tracks.length!==2||S.vias.length!==2)throw new Error("Ctrl+Z doit tout rendre");
+  }finally{S.tracks=sv.t;S.vias=sv.v;touch();}
 });
 T("zone dessinée point par point",()=>{
   setCuCount(4);
