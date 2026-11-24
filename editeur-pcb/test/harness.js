@@ -74,7 +74,7 @@ const EXPOSE=["capaDecouplage","capaCibleMasse","capaViasExistants","capaViaPlac
   /* nature d'un via : traversant, borgne dessus/dessous, enterre */
   "VIA_KINDS","viaKindOf","viaKindTxt","viaKindsAvail","viaSetKind","viaBuild","fabBase",
   "flipSel","push","undo","redo","touch","padsWorld","cuId","serialize","loadDoc","exportPng",
-  "setFlip","setContrast","setFaceOpp","faceAlpha","autoPlace","placerSatellites","placeManuelle","satValeurF","conn","netTable","fit","zoneClick","zoneMove","cutClick","unrouteTout","histoEtapes","histoAller","cuivreLiaison","unrouteComposant","unrouteLiaisonAt","unrouteSel",
+  "setFlip","setContrast","setFaceOpp","faceAlpha","autoPlace","placerSatellites","placeManuelle","satValeurF","conn","netTable","fit","zoneClick","zoneMove","cutClick","unrouteTout","histoEtapes","histoAller","histoMarquer","histoChangements","histoResume","cuivreLiaison","unrouteComposant","unrouteLiaisonAt","unrouteSel",
   "closeZone","fullBoardZone","zoneMask","labelMask","maskAt","classOf","setNetClass","defaultWidth",
   "applyClasses","jointAt","splitTrack","netTracks","selectNetRouting",
   "deleteNetRouting","autoClass","classOptionsHtml","poserClasseNet","schemaPublie","listNets","mkFp","w2s","runDrc","padsOf",
@@ -794,6 +794,28 @@ T("historique : étapes nommées, routage d'un net regroupé, retour à une éta
     histoAller(3);
     if(fpById(c.id).rot!==90)throw new Error("fin : le pivot rétabli");
   }finally{S.fps=sv.fps;S.tracks=sv.t;S.vias=sv.v;S.undo=sv.u;S.redo=sv.r;S.avoid=sv.avoid;touch();clearSel();}
+});
+T("historique : repère nommé et aperçu des changements d'une étape",()=>{
+  const sv={fps:S.fps,t:S.tracks,v:S.vias,u:S.undo,r:S.redo,act:S.active};
+  try{
+    S.fps=[];S.tracks=[];S.vias=[];S.undo=[];S.redo=[];touch();
+    const seg=(y)=>{push();S.tracks.push({l:0,w:0.3,net:"N1",x1:0,y1:y,x2:10,y2:y});touch();};
+    seg(0);histoEtapes();
+    histoMarquer("avant essai");
+    S.active=S.cu-1;                                  // la couche active change : le repère tient
+    seg(5);seg(10);
+    const {E,hs}=histoEtapes();
+    if(E.length!==2)throw new Error("le repère coupe le regroupement : 2 icônes attendues, "+E.map(e=>e.det).join(" | "));
+    if(E[0].det!=="N1 · 1 piste"||E[1].det!=="N1 · 2 pistes")throw new Error("détails : "+E.map(e=>e.det).join(" | "));
+    const G=histoEtapes();
+    histoAller(E[0].fin);
+    if(S.tracks.length!==1)throw new Error("retour au repère : 1 piste");
+    histoAller(3);
+    // aperçu : l'étape regroupée a ajouté deux pistes, rien retiré
+    const R=histoChangements(histoResume(G.hs.length&&S.undo[1]),histoResume(serialize()));
+    if(R.aj.length!==2||R.re.length)throw new Error("aperçu : "+R.aj.length+" ajoutées, "+R.re.length+" retirées");
+    if(R.aj[0].w!==0.3||!(R.aj[0].x2===10))throw new Error("géométrie relue de la clé");
+  }finally{S.fps=sv.fps;S.tracks=sv.t;S.vias=sv.v;S.undo=sv.u;S.redo=sv.r;S.active=sv.act;touch();}
 });
 T("Dérouter la liaison et Dérouter le composant",()=>{
   const sv={fps:S.fps,t:S.tracks,v:S.vias};

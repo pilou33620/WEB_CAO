@@ -1283,6 +1283,7 @@ function paintDessus(c,dpr,w,h,noGrid){
   if(typeof drawDp==="function")drawDp(c);
   drawZoneDraft(c);
   drawCutDraft(c);
+  if(typeof histoApercuDessiner==="function")histoApercuDessiner(c);   // ce qu'une étape de l'historique a changé (58-historique.js)
   drawEdgeDraft(c);
   drawOrigin(c);
   if(typeof drawMeanderDraft==="function")drawMeanderDraft(c);

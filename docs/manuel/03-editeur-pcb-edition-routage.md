@@ -95,9 +95,11 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 3. Les tracés successifs d'un même net forment une seule icône (« Routage · GND · 14 pistes ») ; le même geste répété sur le même objet aussi (« Pivoter · U1 ×4 »). Un routage ne remplit donc pas la frise.
 4. Toucher une icône rend la carte telle qu'elle était juste après cette étape. Le curseur jaune marque la position ; on le glisse pour remonter ou redescendre le temps, la carte suit au relâchement. Les étapes à sa droite, grisées, restent rétablissables jusqu'à la prochaine action, qui les efface (comme `Ctrl+Y`).
 5. À gauche, **⏮** revient au début, **◀** annule, **▶** rétablit, **⏭** va à la dernière étape ; à droite, le compteur donne la position (« 5 / 8 »).
+6. Pour voir ce qu'une étape a changé sans y revenir : poser le pointeur sur son icône, ou au doigt un appui long (le relâcher ne ramène pas la carte). Ce qu'elle a ajouté ou déplacé s'allume en jaune sur la carte, ce qu'elle a retiré en rouge pointillé ; si c'est hors de l'écran, la bulle ajoute « hors de la vue ». Glisser le curseur jaune montre de même l'étape visée.
+7. Pour retrouver un état plus tard : **⚑** (à droite des flèches) pose un repère nommé sur l'état actuel (« avant essai placement »). Un drapeau à son nom s'inscrit dans la frise ; le toucher ramène la carte à cet état. **⚑** sur un état déjà marqué le renomme, ou l'efface si le nom est vide. Un repère coupe les regroupements : il reste visible entre deux icônes.
 
 > [!NOTE]
-> La frise montre l'historique d'annulation : 80 étapes au plus, dans le même budget mémoire. Une étape regroupée se défait d'un bloc depuis la frise ; `Ctrl+Z` la défait tracé par tracé.
+> La frise montre l'historique d'annulation : 80 étapes au plus, dans le même budget mémoire. Les repères ne sont pas enregistrés avec la carte ; un repère disparaît quand son état sort de l'historique (au-delà des 80 étapes, ou après un retour en arrière suivi d'une nouvelle action). Une étape regroupée se défait d'un bloc depuis la frise ; `Ctrl+Z` la défait tracé par tracé.
 
 ### Je veux router une paire différentielle
 

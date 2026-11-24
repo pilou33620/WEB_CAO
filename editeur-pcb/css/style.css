@@ -1229,3 +1229,8 @@ body.mode-tactile .histo{height:44px}
 body.mode-tactile .histo-e{width:32px;height:32px;font-size:15px}
 body.mode-tactile .histo-ctl button{width:34px;height:34px;font-size:13px}
 body.mode-tactile #canvasWrap.histo-on .vue-bar{bottom:62px}
+.histo-ctl .histo-pose{color:#f2c230}
+.histo-rep{flex:none;height:24px;max-width:130px;display:flex;align-items:center;gap:3px;padding:0 6px;border:1px solid rgba(242,194,48,.45);border-radius:4px;
+  background:rgba(242,194,48,.12);color:#f2c230;font:11px var(--ui,system-ui);cursor:pointer;white-space:nowrap}
+.histo-rep span{overflow:hidden;text-overflow:ellipsis;color:#e8ebef}
+body.mode-tactile .histo-rep{height:32px}
