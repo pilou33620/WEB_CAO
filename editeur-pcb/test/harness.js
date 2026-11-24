@@ -74,7 +74,7 @@ const EXPOSE=["capaDecouplage","capaCibleMasse","capaViasExistants","capaViaPlac
   /* nature d'un via : traversant, borgne dessus/dessous, enterre */
   "VIA_KINDS","viaKindOf","viaKindTxt","viaKindsAvail","viaSetKind","viaBuild","fabBase",
   "flipSel","push","undo","redo","touch","padsWorld","cuId","serialize","loadDoc","exportPng",
-  "setFlip","setContrast","setFaceOpp","faceAlpha","autoPlace","placerSatellites","placeManuelle","satValeurF","conn","netTable","fit","zoneClick","zoneMove",
+  "setFlip","setContrast","setFaceOpp","faceAlpha","autoPlace","placerSatellites","placeManuelle","satValeurF","conn","netTable","fit","zoneClick","zoneMove","cutClick",
   "closeZone","fullBoardZone","zoneMask","labelMask","maskAt","classOf","setNetClass","defaultWidth",
   "applyClasses","jointAt","splitTrack","netTracks","selectNetRouting",
   "deleteNetRouting","autoClass","classOptionsHtml","poserClasseNet","schemaPublie","listNets","mkFp","w2s","runDrc","padsOf",
@@ -740,6 +740,17 @@ T("dessin au survol : une image par rafale, cliché du fond, pastilles figées, 
 T("connexion via inter-couches",()=>{
   const before=conn().unrouted;
   if(typeof before!=="number")throw new Error("unrouted non calculé");
+});
+T("annuler pendant une découpe de zone : retire le dernier sommet, garde le tracé",()=>{
+  setMode("cut");
+  const n=S.cuts.length;
+  cutClick(5,5,true);cutClick(20,5,true);cutClick(20,20,true);
+  undo();
+  if(!S.cutDraft||S.cutDraft.pts.length!==2)throw new Error("2 sommets attendus après annuler");
+  undo();undo();
+  if(S.cutDraft)throw new Error("le brouillon vide doit disparaître");
+  if(S.cuts.length!==n)throw new Error("aucune découpe ne doit être touchée");
+  setMode("select");
 });
 T("zone dessinée point par point",()=>{
   setCuCount(4);

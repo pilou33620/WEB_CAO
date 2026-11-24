@@ -88,9 +88,13 @@ function ilotsMorts(M,seen){
    `force` : demander l'analyse fine (export) ; sinon, celle déjà faite.
    shortcut: sur une carte trop grosse pour que l'analyse fine se relance seule
    (`_connExactCout`), l'écran garde les îlots jusqu'au DRC ; les fichiers non. */
-let _cutsCu=null;
+let _cutsCu=null, _connFinVu=null;
 function cutsCuivre(force){
-  const c=force?conn(true):(_conn&&_connVer===S.ver&&_connExact?_conn:null);
+  let c=force?conn(true):(_conn&&_connVer===S.ver&&_connExact?_conn:null);
+  /* analyse fine en attente (scheduleRefine) : on garde les îlots de la précédente,
+     sinon le cuivre mort réapparaît 220 ms à chaque retouche et clignote.
+     shortcut: un îlot que la retouche vient de relier reste masqué jusqu'à l'affinage. */
+  if(c)_connFinVu=c;else if(_refineT)c=_connFinVu;
   // les keep-out cuivre interdits aux zones s'y découpent comme une découpe de zone (50-couches.js)
   if(!c)return S.cuts.concat((typeof keepoutCuts==="function"?keepoutCuts():[]));
   if(_cutsCu&&_cutsCu.c===c&&_cutsCu.n===S.cuts.length&&_cutsCu.ver===S.ver)return _cutsCu.a;

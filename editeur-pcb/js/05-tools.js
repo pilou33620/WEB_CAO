@@ -1009,10 +1009,22 @@ function loadDoc(d,keepView){
   refreshPanels();
   if(!keepView)fit();else draw();
 }
+function brouillonRecul(){
+  for(const k of ["zoneDraft","cutDraft","edgeDraft","aplatDraft"]){
+    const D=S[k];
+    if(!D)continue;
+    D.pts.pop();
+    if(!D.pts.length)S[k]=null;
+    return true;
+  }
+  return false;
+}
 function undo(){
   // en plein tracé, annuler rend la carte d'avant le geste (cuivre poussé compris), pas l'édition d'avant
   if(S.route){cancelRoute();return;}
   if(S.dp){dpCancel();return;}
+  // polygone en cours (zone, découpe, contour, aplat) : on retire le dernier sommet, pas tout le tracé
+  if(brouillonRecul()){draw();return;}
   /* Les étapes vides s'effacent : bien des boutons posent leur instantané avant de savoir
      si quelque chose changera, et Ctrl+Z semblait alors ne rien faire. */
   const ici=serialize();
@@ -6314,26 +6326,7 @@ document.addEventListener("keydown",e=>{
     case "backspace":
       if(S.dp){dpBack();e.preventDefault();}
       else if(S.route){backRoute();e.preventDefault();}
-      else if(S.zoneDraft){
-        S.zoneDraft.pts.pop();
-        if(!S.zoneDraft.pts.length)S.zoneDraft=null;
-        draw();e.preventDefault();
-      }
-      else if(S.cutDraft){
-        S.cutDraft.pts.pop();
-        if(!S.cutDraft.pts.length)S.cutDraft=null;
-        draw();e.preventDefault();
-      }
-      else if(S.edgeDraft){
-        S.edgeDraft.pts.pop();
-        if(!S.edgeDraft.pts.length)S.edgeDraft=null;
-        draw();e.preventDefault();
-      }
-      else if(S.aplatDraft){
-        S.aplatDraft.pts.pop();
-        if(!S.aplatDraft.pts.length)S.aplatDraft=null;
-        draw();e.preventDefault();
-      }
+      else if(brouillonRecul()){draw();e.preventDefault();}
       break;
     case "delete":deleteSel();break;
   }
