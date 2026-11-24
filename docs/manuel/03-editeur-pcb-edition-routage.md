@@ -79,7 +79,8 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
    - **Boucles** : retracer un chemin entre deux points d'une piste retire l'ancien trajet au dépôt, s'il ne tient ni pastille, ni via, ni embranchement (**Vérifier > Règles… > Supprimer les boucles au dépôt**, actif d'usine).
    - **Glisser une piste** en conduite « pousser » écarte les pistes voisines ; une pastille ou un via ne s'écartent pas.
    - **Bus** : pendant le tracé d'un bus, `+` et `−` écartent ou resserrent les pistes, jamais sous l'isolement.
-9. Pour laisser l'outil trouver le chemin d'une liaison : cliquer une pastille de cette liaison (ou `Alt`+clic sur une pastille, ou un net de la liste, pour viser un net), puis **Placer & router > Chemin auto**. La liaison du chevelu la plus proche de la pastille est routée d'un coup, en contournant le cuivre existant ; un `Ctrl+Z` la défait. S'il n'y a pas de chemin, rien n'est posé et le pied de page dit pourquoi.
+9. Pour défaire du routage : sélectionner les pistes et vias (ou un lasso, qui prend aussi les composants), puis **Placer & router > Dérouter** (`U`) : pistes et vias partent, les composants restent. **Router ▾ > Dérouter tout** vide le routage de toute la carte ; `Ctrl+Z` le rend.
+10. Pour laisser l'outil trouver le chemin d'une liaison : cliquer une pastille de cette liaison (ou `Alt`+clic sur une pastille, ou un net de la liste, pour viser un net), puis **Placer & router > Chemin auto**. La liaison du chevelu la plus proche de la pastille est routée d'un coup, en contournant le cuivre existant ; un `Ctrl+Z` la défait. S'il n'y a pas de chemin, rien n'est posé et le pied de page dit pourquoi.
 
 ### Je veux router une paire différentielle
 
@@ -115,10 +116,10 @@ Une capa CMS dont le repère commence par C, avec une patte sur une alimentation
 ### Je veux poser un plan ou une zone de cuivre
 
 1. Plan pleine carte : dans « Couche active », régler le rôle sur GND ou PWR et choisir le « Net du plan ». La zone suit le contour de la carte.
-2. Zone libre : **Cuivre > Zone de cuivre** (`Z`) puis cliquer chaque sommet ; retour sur le premier point ou `Entrée` ferme, `Maj` contraint à 45°, `Échap` abandonne. Une fenêtre demande le « Net de la zone de cuivre ».
+2. Zone libre : **Cuivre > Zone de cuivre** (`Z`) puis cliquer chaque sommet ; retour sur le premier point ou `Entrée` ferme, `Maj` contraint à 45°, `Échap` abandonne. Un sommet mal placé : **Annuler** (`Ctrl+Z`, la barre rapide ou la barre de vue) ou `Retour arrière` retire le dernier, le reste du tracé est gardé. Une fenêtre demande le « Net de la zone de cuivre ».
 3. Le triangle ▾ du bouton ouvre le menu de la couche : rôle, net du plan, **Zone à main levée**, **Zone pleine carte (libre)**, **Sélectionner le cuivre de la couche**.
 4. Propriétés d'une zone : couche, net rattaché, « Liaison des pastilles du net » (bras thermiques, directe pour les CMS, directe pour toutes, aucune), « Priorité ». Sur une même couche, une zone d'un autre net de priorité plus haute est retirée de celle-ci, isolement compris ; à priorité égale, les zones se superposent dans l'ordre où elles ont été posées.
-5. Pour percer un trou dans une zone sans la supprimer : **Cuivre > Retirer du cuivre** (`X`), même geste de tracé.
+5. Pour percer un trou dans une zone sans la supprimer : **Cuivre > Retirer du cuivre** (`X`), même geste de tracé ; **Annuler** retire le dernier point posé, une fois le polygone fermé il défait la découpe entière.
 
 ### Je veux contrôler la carte (DRC)
 
@@ -227,18 +228,17 @@ Le menu **Fichier** garde Nouveau, Ouvrir, Enregistrer, Sauvegarder le projet et
 
 ### Onglet Placer & router : modifier
 
-Groupe **Modifier** ; Annuler et Rétablir sont dans la barre rapide.
+Groupe **Modifier** ; Annuler et Rétablir sont dans la barre rapide, Annuler aussi dans la barre de vue.
 
 | Bouton ou menu | Raccourci | Effet | Limites |
 |---|---|---|---|
-| Annuler | `Ctrl+Z` | Annule la dernière étape | 80 instantanés au plus, dans un budget mémoire ; au moins le plus récent reste |
+| Annuler | `Ctrl+Z` | Annule la dernière étape, quelle qu'elle soit. En plein tracé de zone, découpe, contour, aplat, bus ou dessin, retire seulement le dernier point ; en plein tracé de piste, abandonne le tracé | 80 instantanés au plus, dans un budget mémoire ; au moins le plus récent reste |
 | Rétablir | `Ctrl+Y` ou `Ctrl+Maj+Z` | Rétablit | |
 | Copier | `Ctrl+C` | Copie empreintes, pistes, vias, zones et découpes sélectionnés | Sur du texte sélectionné dans la page, `Ctrl+C` reste celui du navigateur |
 | Coller | `Ctrl+V` | Colle sous le pointeur, repères refaits (`R12` devient `R13`), nets conservés | Un groupe copié entier est collé en nouveau groupe (« G1 (copie) ») avec son cuivre interne |
 | (Couper) | `Ctrl+X` | Coupe la sélection | Pas de bouton de menu (raccourci seul) |
-| Pivoter | `R` | Tourne la sélection d'un quart de tour (`Maj+R` en sens inverse en plein glissement) ; le cuivre accroché suit | |
-| Retourner | `F` | Passe un composant sur l'autre face ; un groupe est retourné en miroir autour de l'axe vertical de son cadre | |
-| Dérouter | `U` | Supprime les pistes et les vias de la sélection, laisse les empreintes | Les zones, contours et découpes restent ; sans piste ni via sélectionné, rien n'est supprimé |
+| Pivoter | `R` | Tourne la sélection d'un quart de tour (`Maj+R` en sens inverse en plein glissement) ; le cuivre accroché suit | Un composant routé tourne avec ses pistes : son propre cuivre ne bloque pas l'anti-collision |
+| Retourner | `F` | Passe un composant sur l'autre face ; un groupe est retourné en miroir autour de l'axe vertical de son cadre | Idem |
 | Supprimer | `Suppr` | Supprime la sélection | |
 
 ### Onglets Placer & router, Carte, Cuivre et Dessin
@@ -252,6 +252,8 @@ Groupe **Modifier** ; Annuler et Rétablir sont dans la barre rapide.
 | Serpentin ▾ | `M` | Génère un serpentin d'appariement ; ▾ ouvre les réglages | Ne se pose que sur une piste droite (une piste en arc est refusée) |
 | Via | `V` | Pose un via traversant ; en plein tracé, l'attache au curseur et le clic le pose en changeant de couche | Refusé dans l'isolation : rien n'est posé, ni le segment ni le via |
 | Chemin auto | | Route seule la liaison du chevelu de la pastille cliquée (ou du net mis en avant) : A* sur grille, puis le routeur, en contournement ; une étape d'annulation | Une liaison à la fois, jamais une paire ; la page se fige le temps du calcul (8 s au plus pour le chemin, 10 s pour la pose). Échec : rien n'est posé, la raison au pied de page |
+| Dérouter | `U` | Supprime les pistes et les vias de la sélection, laisse les empreintes | Les zones, contours et découpes restent ; sans piste ni via sélectionné, rien n'est supprimé |
+| Dérouter tout (Router ▾) | | Supprime toutes les pistes et tous les vias de la carte ; une étape d'annulation | Les pistes et vias verrouillés et les vias de couture restent ; pas de confirmation, `Ctrl+Z` rend tout |
 | Larmes | | Pose ou refait les larmes : un renfort de cuivre entre une piste droite et le via ou la pastille ronde où elle s'arrête en son centre ; une étape d'annulation | Rien n'est posé si la place manque. Elles ne suivent pas le cuivre : si du cuivre bouge, le DRC dit « Larmes à refaire » et ce bouton les refait |
 | Retirer les larmes | | Retire toutes les larmes de la carte | |
 | Anti-collision | | Bascule : le tracé se tient (ou non) à la distance d'isolation | Actif d'office ; réglage du profil utilisateur |
@@ -273,10 +275,11 @@ Groupe **Modifier** ; Annuler et Rétablir sont dans la barre rapide.
 
 ### Barre de vue
 
-Recadrer, Grille et Chevelu y sont en icônes ; les autres réglages sont dans son menu Affichage. Le cube de vue équivaut au bouton Vue.
+Annuler, Recadrer, Grille et Chevelu y sont en icônes ; les autres réglages sont dans son menu Affichage. Le cube de vue équivaut au bouton Vue.
 
 | Bouton ou menu | Raccourci | Effet | Limites |
 |---|---|---|---|
+| Annuler | `Ctrl+Z` | Même effet que l'Annuler de la barre rapide (voir Modifier), sous le doigt en mode tactile | |
 | Grille | `G` | Affiche ou masque la grille d'accrochage | |
 | Pas de grille | | Liste : 0,05 · 0,1 · 0,25 · 0,5 · 1 · 1,27 · 2 · 2,54 · 5 mm (« Grille … mm ») | Pas de 0,5 mm au démarrage ; `Maj+G` fait tourner 0,1 → 0,5 → 1 mm, même pendant un tracé ; trop serrée à l'écran, la grille n'est tracée que sur une case sur deux, cinq… (le pied de page dit la case visible) |
 | Chevelu | `N` | Affiche ou masque les liaisons non routées | |
@@ -373,7 +376,7 @@ Les touches d'une seule lettre se taisent quand un champ de saisie a le focus. T
 | Deux doigts | Pincer pour zoomer, glisser pour déplacer la vue | |
 | `Ctrl` (ou `Cmd`) enfoncé à la pose d'un bout de piste, au départ comme à l'arrivée | Le bout se pose là où l'on vise dans le cuivre de la pastille (sur la grille si elle tombe dans la pastille, au point exact sinon) au lieu d'être attiré au centre ; il garde ce décalage si le boîtier tourne ou se retourne | Hors du cuivre de la pastille, `Ctrl` ne change rien : l'aimant ramène au centre |
 | Glisser un composant, ou le tourner en plein glissement, avec l'anti-collision active | Il bute sur le cuivre des autres nets et sur le corps d'un composant de la même face ; le pied de page dit sur quoi. En mode « pousser le cuivre », pistes et vias s'écartent s'ils le peuvent : seules pastilles et corps l'arrêtent | Un composant sur l'autre face ne gêne pas, sauf par ses pastilles traversantes. Déjà en faute au départ, il reste libre. Refusé, il vient au plus près de l'obstacle ; il passe par-dessus dès que la souris est au-delà |
-| `R`, `F`, X, Y, face et rotation des Propriétés, coordonnées au clavier, avec l'anti-collision active | Refusés s'ils mettraient le composant en collision : rien ne bouge, et le pied de page dit pourquoi | Un refus ne laisse pas d'étape Ctrl+Z, et le panneau reprend la valeur en vigueur |
+| `R`, `F`, X, Y, face et rotation des Propriétés, coordonnées au clavier, avec l'anti-collision active | Refusés s'ils mettraient le composant en collision : rien ne bouge, et le pied de page dit pourquoi | Un refus ne laisse pas d'étape Ctrl+Z, et le panneau reprend la valeur en vigueur. Les pistes et vias des nets du composant, qui le suivent, ne comptent pas comme obstacle |
 | Coller, ou ajouter un composant de la bibliothèque, avec l'anti-collision active | Il va au nœud de grille libre le plus proche du point visé | La recherche couvre toute la carte. Carte pleine : le geste est refusé, sauf anti-collision coupée |
 | Placement automatique, rangement, blocs | Envoie au nœud libre le plus proche ce qui reste en collision, le plus petit d'abord, et dit ce que rien n'a pu séparer | Ne touche pas aux points de test posés à la main |
 | Arrivée d'une piste sur une pastille, depuis un coude posé à moins d'une largeur de piste de son axe | Le coude glisse jusqu'à l'axe : la piste entre droit au centre, quel que soit le sens du tracé | Ne se fait pas si le cuivre voisin l'en empêche |
