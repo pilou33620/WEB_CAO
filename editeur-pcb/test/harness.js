@@ -9621,6 +9621,20 @@ T("R, F et les coordonnées refusent une collision, sans rien changer",()=>{
     if(!fpEssai(()=>{a.x=80;a.y=80;}))throw new Error("fpEssai devait voir la gêne");
   }finally{S.fps=[];touch();S.avoid=reg.avoid;S.grid=reg.grid;clearSel();}
 });
+T("R et F sur un boîtier routé : son propre cuivre ne bloque pas le geste",()=>{
+  const reg={avoid:S.avoid};
+  try{
+    S.avoid=true;S.fps=[];S.tracks=[];S.vias=[];S.zones=[];touch();
+    const f=mkFp("U1","SOIC-8","",8);f.x=30;f.y=30;f.nets={};for(let i=1;i<=8;i++)f.nets[i]="N"+i;S.fps.push(f);touch();
+    for(const q of padsWorld(f)){const dx=q.x>f.x?1:-1;
+      S.tracks.push({id:S.nextId++,l:0,w:0.25,net:q.net,x1:q.x,y1:q.y,x2:q.x+dx*3,y2:q.y});}
+    touch();clearSel();S.sel.fps.add(f.id);
+    rotateSel();fpGardeVerifier();
+    if(f.rot!==90)throw new Error("R refusé sur un boîtier routé : rot="+f.rot);
+    const face=f.side;flipSel();fpGardeVerifier();
+    if(f.side===face)throw new Error("F refusé sur un boîtier routé");
+  }finally{S.fps=[];S.tracks=[];touch();S.avoid=reg.avoid;clearSel();}
+});
 T("le collage et la bibliothèque vont au nœud libre le plus proche",()=>{
   const reg={avoid:S.avoid,grid:S.grid,mouse:S.mouse};
   S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();S.origin={x:0,y:0};

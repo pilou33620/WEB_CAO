@@ -2378,6 +2378,12 @@ function fpEssai(mutate){
   mutate();
   const bouges=avant.filter(a=>a.f.x!==a.x||a.f.y!==a.y||a.f.rot!==a.rot||a.f.side!==a.side).map(a=>a.f);
   const skip=new Set(bouges);
+  /* leurs pistes et vias partent avec eux (transformFps) : laissés à l'ancienne place,
+     un boîtier routé « butait » sur son propre cuivre et R/F étaient toujours refusés.
+     La garde (fpGardeVerifier) juge ensuite la pose réelle, cuivre déplacé. */
+  const nets=new Set();
+  for(const f of bouges)for(const q of padsWorld(f))if(q.net)nets.add(q.net);
+  for(const o of S.tracks.concat(S.vias))if(o.net&&nets.has(o.net))skip.add(o);
   const apres=bouges.map(f=>{const g=fpGene(f,skip);return {f,g,k:g?fpGeneTous(f,skip):null};});
   for(const a of avant){
     a.f.x=a.x;a.f.y=a.y;a.f.rot=a.rot;a.f.side=a.side;
