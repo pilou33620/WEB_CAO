@@ -52,8 +52,9 @@ Les noms de boutons, de menus et de champs sont ceux de l'écran ; ce qui n'a pu
 1. À la main : sélectionner une empreinte, la glisser ; `R` la tourne, `F` la retourne sur l'autre face. Les pistes accrochées la suivent (voir « Je veux déplacer des composants déjà routés »).
 2. Ajouter une empreinte : **Placer & router > Empreinte…** (`A`) ouvre le catalogue de la LIB ; l'empreinte choisie est posée sous le pointeur avec un repère libre (`U1`, `R2`…).
 3. En masse : sans rien sélectionner, le panneau **Propriétés** propose **Placement auto** (ensemble puis satellites, un seul `Ctrl+Z` pour tout défaire), **Satellites** (seulement les découplages et composants série contre leur broche, le reste ne bouge pas, un `Ctrl+Z`) et **Ranger à côté**.
-4. Par blocs fonctionnels : **Vérifier > Score Placement** ouvre le panneau « Qualité de placement ». Dans « Groupes de placement & Zones », chaque bloc du schéma offre **Grouper** (sélectionner), **Disposer** (compacter autour de son ancre) et **Déposer** (poser en grappe dans une zone libre).
-5. Contrôler : HPWL (longueur de chevelu), congestion, découplage HF, orientation optimale de chaque composant (voir la référence du panneau).
+4. Pour quelques composants seulement : les sélectionner, puis **Placer ▾ > À côté de son circuit**. Une capa de découplage va contre la patte d'alimentation de son circuit, une résistance série contre sa broche ; les autres composants ne bougent pas (un `Ctrl+Z`).
+5. Par blocs fonctionnels : **Vérifier > Score Placement** ouvre le panneau « Qualité de placement ». Dans « Groupes de placement & Zones », chaque bloc du schéma offre **Grouper** (sélectionner), **Disposer** (compacter autour de son ancre) et **Déposer** (poser en grappe dans une zone libre).
+6. Contrôler : HPWL (longueur de chevelu), congestion, découplage HF, orientation optimale de chaque composant (voir la référence du panneau).
 
 ### Je veux déplacer des composants déjà routés
 
@@ -272,6 +273,8 @@ Groupe **Modifier** ; Annuler et Rétablir sont dans la barre rapide, Annuler au
 | Via | `V` | Pose un via traversant ; en plein tracé, l'attache au curseur et le clic le pose en changeant de couche | Refusé dans l'isolation : rien n'est posé, ni le segment ni le via |
 | Chemin auto | | Route seule la liaison du chevelu de la pastille cliquée (ou du net mis en avant) : A* sur grille, puis le routeur, en contournement ; une étape d'annulation | Une liaison à la fois, jamais une paire ; la page se fige le temps du calcul (8 s au plus pour le chemin, 10 s pour la pose). Échec : rien n'est posé, la raison au pied de page |
 | Dérouter | `U` | Supprime les pistes et les vias de la sélection, laisse les empreintes ; des composants seuls sélectionnés : Dérouter le composant | Les zones, contours et découpes restent |
+| Coude en arc (Router ▾) | | Raccourci de l'outil **Arrondir un coin** (onglet Carte) : toucher un coude de piste de la couche active le passe en arc | Rayon réglé sous Carte > Arrondir un coin ; négatif : chanfrein |
+| À côté de son circuit (Placer ▾) | | Les composants à deux pattes sélectionnés vont contre la broche de leur circuit (Satellites limité à la sélection) | Il faut un circuit de 3 pattes ou plus sur le même net ; un composant verrouillé ne bouge pas |
 | Dérouter le composant (Router ▾) | | Supprime le routage qui part des pastilles des composants sélectionnés : chaque liaison jusqu'à la pastille d'en face, vias compris ; une étape d'annulation | La marche s'arrête à une pastille et à un embranchement (trois bouts de piste ou plus au même point) ; le verrouillé et les vias de couture restent |
 | Dérouter la liaison (Router ▾) | | Outil : toucher une piste supprime son chemin jusqu'aux deux pastilles qu'elle relie ; une étape d'annulation par toucher | Mêmes arrêts que ci-dessus ; une piste verrouillée est refusée |
 | Dérouter tout (Router ▾) | | Supprime toutes les pistes et tous les vias de la carte ; une étape d'annulation | Les pistes et vias verrouillés et les vias de couture restent ; pas de confirmation, `Ctrl+Z` rend tout |
@@ -309,6 +312,7 @@ Annuler, Rétablir, Historique, Recadrer, Grille et Chevelu y sont en icônes ; 
 | Couches (jeux de couches) | | Liste : toutes, dessus seul, dessous seul, signaux seuls, plans seuls, couche active seule. Dessus ou dessous montre aussi la sérigraphie de cette face seulement | « Plans seuls » ne fait rien si aucune couche n'a le rôle GND, PWR ou blindage ; « couche active seule » est le contraste couche seule (`H`) |
 | Inspecteur au survol : actif / coupé | | Le pointeur posé un instant sur un objet, en sélection, affiche une bulle : net, couche, largeur ou taille, perçage, isolement et classe | Pas pendant un geste ni au toucher ; mémorisé par navigateur |
 | Cartouche : aucun | | Cadre de page et cartouche : aucun, A4 ou A3 paysage, titre, noms, dates, numéro, société | |
+| Stylet : doigt = vue / doigt = outils | | Avec un stylet : après son premier contact, un doigt fait glisser la vue et le stylet fait tout le reste ; « doigt = outils » garde le doigt actif | Mémorisé par navigateur ; « (stylet détecté) » s'ajoute au libellé quand le stylet a touché la carte |
 | Vue : dessus / dessous | `Y` | Retourne la carte vue de dessous | Retourner la vue en couche externe passe aussi la couche active à l'autre face |
 | Contraste | `H` | Cycle : complet, atténué, couche seule, cuivre final | « Cuivre final » montre la couche telle que le Gerber la grave, sans chevelu ni sérigraphie |
 | Face opposée | | Cycle : normale, atténuée, masquée (sérigraphie, masque et pâte de la face non regardée) | |

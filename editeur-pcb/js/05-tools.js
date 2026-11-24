@@ -5182,8 +5182,20 @@ if(typeof window!=="undefined"&&window.addEventListener){
    c'est un tap, un pincement ou un appui long — pincer posait un via, un trou, un coude. */
 const POSE_PCB=new Set(["via","hole","track","dpair","zone","edge","decoupe","interdit","cut","origin"]);
 let TAP_PCB=null, SEL_TACT=null;
+/* Stylet : dès qu'il touche la carte, le doigt ne sert plus qu'à naviguer (glisser déplace la
+   vue, pincer zoome) et le stylet fait tout le reste, comme la souris. Coupé dans Affichage. */
+let STYLET_VU=false;
+function styletDoigtVue(){
+  try{if(localStorage.getItem("cao.pcb.styletDoigt")==="0")return false;}catch(_){}
+  return STYLET_VU;
+}
 cv.addEventListener("pointerdown",e=>{
   cvRectPerime();
+  if(e.pointerType==="pen"&&!STYLET_VU){
+    STYLET_VU=true;
+    if(styletDoigtVue())hint("Stylet détecté : le stylet dessine et sélectionne, le doigt déplace la vue (Affichage ▾ pour changer).");
+    if(typeof styletBouton==="function")styletBouton();
+  }
   PTR_PCB.set(e.pointerId,{x:e.clientX,y:e.clientY,type:e.pointerType});
   S.padOff=!!(e.ctrlKey||e.metaKey);       // Ctrl : bout posé hors du centre (`routeTarget`)
   if(e.pointerType!=="mouse"&&e.cancelable)e.preventDefault();
@@ -5204,6 +5216,12 @@ cv.addEventListener("pointerdown",e=>{
   }
   if(PTR_PCB.size>2)return;
 
+  // stylet en service : un seul doigt fait glisser la vue, rien d'autre
+  if(e.pointerType==="touch"&&PTR_PCB.size===1&&styletDoigtVue()){
+    try{cv.setPointerCapture(e.pointerId);}catch(_){}
+    drag={pan:true,sx:e.clientX,sy:e.clientY,ox:S.ox,oy:S.oy};
+    return;
+  }
   // appui long (tactile) : comme le clic droit, annule le geste en cours ou désélectionne
   if(e.pointerType==="touch"&&e.button===0){
     cancelLongpress();

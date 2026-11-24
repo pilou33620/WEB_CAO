@@ -126,7 +126,7 @@ function satLibre(fp,obst){
 
 /* Le placement des satellites lui-même. Ne fait pas de push() : l'appelant
    (autoPlace) a déjà mémorisé l'état pour Ctrl+Z. */
-function placerSatellites(){
+function placerSatellites(seulement){
   const res={decouplage:0,serie:0,chaine:0,sansPlace:[]};
   const centreSurCarte=fp=>inBoard(fp.x,fp.y);
   /* circuits d'accueil : trois pattes ou plus, posés sur la carte */
@@ -134,7 +134,8 @@ function placerSatellites(){
     padsOf(fp).length>=3&&centreSurCarte(fp)));
   /* satellites possibles : deux pattes */
   // un membre de groupe (27-groupes.js) se déplace avec son groupe, pas seul
-  const cands=S.fps.filter(fp=>padsOf(fp).length===2&&!fp.locked&&!placeManuelle(fp)&&!satConnecteur(fp)&&
+  // `seulement` (Set) : ces composants-là, les autres deux-pattes restent où ils sont et font obstacle
+  const cands=S.fps.filter(fp=>(!seulement||seulement.has(fp))&&padsOf(fp).length===2&&!fp.locked&&!placeManuelle(fp)&&!satConnecteur(fp)&&
     !(typeof groupeDeFp==="function"&&groupeDeFp(fp.id)));
   const candSet=new Set(cands);
   /* boîtes occupées : tout sauf les satellites possibles, qu'on soulève */

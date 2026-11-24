@@ -817,6 +817,20 @@ T("historique : repère nommé et aperçu des changements d'une étape",()=>{
     if(R.aj[0].w!==0.3||!(R.aj[0].x2===10))throw new Error("géométrie relue de la clé");
   }finally{S.fps=sv.fps;S.tracks=sv.t;S.vias=sv.v;S.undo=sv.u;S.redo=sv.r;S.active=sv.act;touch();}
 });
+T("À côté de son circuit : seuls les composants sélectionnés vont contre leur broche",()=>{
+  const sv={fps:S.fps,t:S.tracks,avoid:S.avoid};
+  try{
+    S.avoid=false;S.fps=[];S.tracks=[];
+    const u=mkFp("U1","SOIC-8","",8);u.x=30;u.y=20;u.nets={1:"VCC",2:"A",3:"B",4:"GND",5:"C",6:"D",7:"E",8:"VCC"};
+    const c1=mkFp("C1","0603","100nF",2);c1.x=5;c1.y=5;c1.value="100nF";c1.nets={1:"VCC",2:"GND"};
+    const c2=mkFp("C2","0603","100nF",2);c2.x=55;c2.y=35;c2.value="100nF";c2.nets={1:"VCC",2:"GND"};
+    S.fps.push(u,c1,c2);touch();
+    const r=placerSatellites(new Set([c1]));
+    if(r.decouplage!==1)throw new Error("C1 attendu en découplage : "+JSON.stringify(r));
+    if(Math.hypot(c1.x-u.x,c1.y-u.y)>10)throw new Error("C1 doit venir près de U1 : "+c1.x+","+c1.y);
+    if(c2.x!==55||c2.y!==35)throw new Error("C2 (non sélectionné) ne bouge pas");
+  }finally{S.fps=sv.fps;S.tracks=sv.t;S.avoid=sv.avoid;touch();}
+});
 T("Dérouter la liaison et Dérouter le composant",()=>{
   const sv={fps:S.fps,t:S.tracks,v:S.vias};
   try{

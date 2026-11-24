@@ -665,6 +665,28 @@ $("bUnroute").onclick=unrouteSel;
 $("bUnrouteTout").onclick=unrouteTout;
 $("bUnrouteComp").onclick=unrouteComposant;
 $("mDeroute").onclick=()=>setMode("deroute");
+$("bCoudeArc").onclick=()=>setMode("miter");
+$("bSatSel").onclick=()=>{
+  const sel=new Set([...S.sel.fps].map(fpById).filter(f=>f&&padsOf(f).length===2));
+  if(!sel.size){hint("Sélectionnez une ou plusieurs capas ou résistances (deux pattes), puis À côté de son circuit.");return;}
+  const avant=serialize(), r=placerSatellites(sel);
+  if(serialize()!==avant){pushSnap(avant);touch();refreshPanels();draw();}
+  const n=r.decouplage+r.serie+r.chaine;
+  hint(n?n+" composant(s) placé(s) contre la broche de leur circuit"+(r.sansPlace.length?" · sans place : "+r.sansPlace.join(", "):"")+". Ctrl+Z annule."
+        :"Aucun circuit trouvé pour "+[...sel].map(f=>f.ref).join(", ")+" : il faut un circuit de 3 pattes ou plus sur le même net (alimentation pour une capa de découplage).");
+};
+function styletBouton(){
+  let off=false;try{off=localStorage.getItem("cao.pcb.styletDoigt")==="0";}catch(_){}
+  const b=$("bStylet");if(!b)return;
+  b.classList.toggle("on",!off);
+  b.textContent="Stylet : "+(off?"doigt = outils":"doigt = vue")+(STYLET_VU?" (stylet détecté)":"");
+}
+$("bStylet").onclick=()=>{
+  let off=false;try{off=localStorage.getItem("cao.pcb.styletDoigt")==="0";localStorage.setItem("cao.pcb.styletDoigt",off?"1":"0");}catch(_){}
+  styletBouton();
+  hint(off?"Avec un stylet, le doigt déplace la vue.":"Le doigt garde tous les outils, même avec un stylet.");
+};
+styletBouton();
 $("bDel").onclick=deleteSel;
 $("bUndo").onclick=undo;
 $("bUndoVue").onclick=undo;

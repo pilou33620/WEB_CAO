@@ -93,7 +93,7 @@ L'accueil (`index.html`) s'ouvre en double-clic, sans serveur ; le serveur ajout
 
 1. Accueil, bloc « Ergonomie & Écran tactile » : cocher « Mode tactile (iPad Pro / tablette / écran tactile) ». Le réglage est gardé dans le navigateur (`cao.modeTactile`) et copié dans le profil, mais seul le navigateur le relit : un autre appareil ne le reprend pas par le profil.
 2. Ou, dans le schéma, le PCB ou la visionneuse IPC-2581 : bouton « 📱 Tactile » de l'entête (il s'allume quand le mode est actif).
-3. Un pincement zoome, deux doigts déplacent la vue, le stylet est reconnu et la paume est ignorée tant qu'il est posé.
+3. Un pincement zoome, deux doigts déplacent la vue, le stylet est reconnu et la paume est ignorée tant qu'il est posé. Au PCB, dès que le stylet touche la carte, le doigt ne sert plus qu'à naviguer : un doigt fait glisser la vue, le stylet dessine et sélectionne. **Barre de vue > Affichage ▾ > Stylet : doigt = vue** le coupe (réglage du navigateur) ; le mode repart à zéro au rechargement de la page, jusqu'au prochain contact du stylet.
 4. Un appui long sur la feuille ouvre la roulette de commandes (voir ci-dessous).
 
 ### Je veux utiliser la roulette de commandes
@@ -340,7 +340,7 @@ L'accueil (`index.html`) s'ouvre en double-clic, sans serveur ; le serveur ajout
 |---|---|---|---|
 | Pincement (deux doigts) | | Zoom | Mode tactile actif |
 | Deux doigts glissés | | Déplace la vue | |
-| Stylet | | Reconnu ; la paume et les doigts posés sont ignorés tant que le stylet est posé et 0,4 s après | Réglable (case « Ignorer la paume… ») |
+| Stylet | | Reconnu ; la paume et les doigts posés sont ignorés tant que le stylet est posé et 0,4 s après. Au PCB, après son premier contact, un seul doigt fait glisser la vue au lieu d'agir | Réglable (case « Ignorer la paume… ») ; au PCB, Affichage ▾ > Stylet. Seul un stylet que l'iPad reconnaît comme tel compte (Apple Pencil, Logitech Crayon et compatibles) : un stylet passif à embout caoutchouc est vu comme un doigt |
 | Appui long (0,45 s, tolérance de déplacement 10 px au stylet, 14 px au doigt) | | Ouvre la roulette selon ce qui est touché : composant, fil / piste, vide, ou tracé en cours | Le doigt ne l'ouvre que si la case « L'appui long au doigt… » est cochée (cochée par défaut) ; vibration brève si l'appareil la permet |
 | Bouton latéral du stylet | | Ouvre la roulette tout de suite | Stylet qui en a un |
 | Anneau sous la pointe | | Montre la progression de l'appui long | |
