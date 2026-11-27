@@ -512,8 +512,11 @@ function empreinteCandidate(pkg, pref) {
    la numérotation diffère d'un fabricant à l'autre — se saisit à la main.
    Une valeur déjà saisie n'est jamais remplacée. */
 const BROCHAGES_REFERENCES = [
-  // OPA369AIDCK, SC70-5 (DCK) : OUT 1, V− 2, +IN 3, −IN 4, V+ 5
-  [/^OPA369A?IDCK/i, "opamp", "OUT=1,V-=2,IN+=3,IN-=4,V+=5"],
+  // OPA369AIDCK, SC70-5 (DCK) : +IN 1, V− 2, −IN 3, OUT 4, V+ 5
+  // (TI SBOS414B p. 2 — pas le brochage SOT-23-5 habituel)
+  [/^OPA369A?IDCK/i, "opamp", "IN+=1,V-=2,IN-=3,OUT=4,V+=5"],
+  // LMC7215 en SOT-23-5 : OUT 1, V+ 2, +IN 3, −IN 4, V− 5 (TI SNOS882E fig. 2)
+  [/^LMC7215IM5/i, "opamp", "OUT=1,V+=2,IN+=3,IN-=4,V-=5"],
   // LM78Lxx en SO-8 : sortie 1, masse 2-3-6-7, entrée 8, 4 et 5 libres
   [/^LM78L\d+A?CM/i, "regulator", "OUT=1,GND=2/3/6/7,IN=8,NC=4/5"],
   // LP2980 en SOT-23-5 : VIN 1, GND 2, ON/OFF 3 (relié à l'entrée : toujours
